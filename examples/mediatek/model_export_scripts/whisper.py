@@ -410,7 +410,7 @@ def export_to_et_ir(
         max_num_token, max_cache_size, True
     )
     print("Getting pre autograd ATen Dialect Graph")
-    pre_autograd_aten_dialect = torch.export.export_for_training(
+    pre_autograd_aten_dialect = torch.export.export(
         model, example_inputs, dynamic_shapes=dynamic_shapes, strict=True
     ).module()  # NOTE: Will be replaced with export
     quantizer = NeuropilotQuantizer()
@@ -483,7 +483,7 @@ def export_encoder_to_et_ir(
     print(f"Exporting Encoder to PTE")
     example_inputs = model.get_example_inputs(num_mel_bins)
     print("Getting pre autograd ATen Dialect Graph")
-    pre_autograd_aten_dialect = torch.export.export_for_training(
+    pre_autograd_aten_dialect = torch.export.export(
         model, example_inputs, strict=True
     ).module()  # NOTE: Will be replaced with export
     quantizer = NeuropilotQuantizer()

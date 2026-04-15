@@ -1,4 +1,4 @@
-# Copyright 2025 Arm Limited and/or its affiliates.
+# Copyright 2025-2026 Arm Limited and/or its affiliates.
 #
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
@@ -59,6 +59,9 @@ def test_logit_tosa_INT(test_data: Tuple):
         (*test_data,),
         aten_op=[],
         exir_op=exir_op,
+        # Quantization issues when logit(x) -> inf
+        frobenius_threshold=None,
+        cosine_threshold=None,
     )
     pipeline.run()
 
@@ -92,13 +95,13 @@ def test_logit_u85_INT(test_data: Tuple):
     test_data_suite,
 )
 @common.SkipIfNoModelConverter
-def test_logit_vgf_FP(test_data: input_t1):
+def test_logit_vgf_no_quant(test_data: input_t1):
     pipeline = VgfPipeline[input_t1](
         Logit(),
         (*test_data,),
         [],
         [],
-        tosa_version="TOSA-1.0+FP",
+        quantize=False,
     )
     pipeline.run()
 
@@ -108,12 +111,12 @@ def test_logit_vgf_FP(test_data: input_t1):
     test_data_suite,
 )
 @common.SkipIfNoModelConverter
-def test_logit_vgf_INT(test_data: input_t1):
+def test_logit_vgf_quant(test_data: input_t1):
     pipeline = VgfPipeline[input_t1](
         Logit(),
         (*test_data,),
         [],
         [],
-        tosa_version="TOSA-1.0+INT",
+        quantize=True,
     )
     pipeline.run()

@@ -20,7 +20,12 @@ ExecuteNode::ExecuteNode(
       resize_args_(resize_args),
       args_(args),
       name_(name),
-      has_data_dependent_shape_(has_data_dependent_shape) {}
+      has_data_dependent_shape_(has_data_dependent_shape) {
+#ifdef ET_EVENT_TRACER_ENABLED
+  operator_json = set_and_get_current_operator_json("");
+  operator_count = get_current_operator_count();
+#endif
+}
 
 bool ExecuteNode::trigger_resize(ComputeGraph* graph) {
   bool any_arg_updated = was_any_arg_updated(graph);

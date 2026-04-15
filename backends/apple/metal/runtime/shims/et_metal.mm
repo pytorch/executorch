@@ -10,12 +10,46 @@
 #import <MetalPerformanceShaders/MetalPerformanceShaders.h>
 #import <MetalPerformanceShadersGraph/MetalPerformanceShadersGraph.h>
 #import <Foundation/Foundation.h>
+#include <simd/simd.h>
 #include <executorch/runtime/platform/log.h>
 #include <executorch/runtime/core/exec_aten/exec_aten.h>
 #include <executorch/backends/apple/metal/runtime/shims/et_metal.h>
 #include <algorithm>
+#include <climits>
+#include <cstdlib>
+#include <list>
+#include <map>
 #include <optional>
 #include <exception>
+
+#if (defined(__MAC_OS_X_VERSION_MAX_ALLOWED) && __MAC_OS_X_VERSION_MAX_ALLOWED >= 150000) || \
+    (defined(__IPHONE_OS_VERSION_MAX_ALLOWED) && __IPHONE_OS_VERSION_MAX_ALLOWED >= 180000) || \
+    (defined(__TV_OS_VERSION_MAX_ALLOWED) && __TV_OS_VERSION_MAX_ALLOWED >= 180000) || \
+    (defined(__WATCH_OS_VERSION_MAX_ALLOWED) && __WATCH_OS_VERSION_MAX_ALLOWED >= 110000)
+#define ET_METAL_SDK_HAS_MTL_MATH_COMPILE_OPTIONS 1
+#else
+#define ET_METAL_SDK_HAS_MTL_MATH_COMPILE_OPTIONS 0
+#endif
+
+#if !ET_METAL_SDK_HAS_MTL_MATH_COMPILE_OPTIONS
+// When building with an older SDK, declare newer Metal compile option symbols so we can still
+// use them behind runtime availability checks.
+typedef NS_ENUM(NSInteger, MTLMathMode) {
+    MTLMathModeSafe = 0,
+    MTLMathModeRelaxed = 1,
+    MTLMathModeFast = 2,
+};
+
+typedef NS_ENUM(NSInteger, MTLMathFloatingPointFunctions) {
+    MTLMathFloatingPointFunctionsFast = 0,
+    MTLMathFloatingPointFunctionsPrecise = 1,
+};
+
+@interface MTLCompileOptions ()
+@property(readwrite, nonatomic) MTLMathMode mathMode;
+@property(readwrite, nonatomic) MTLMathFloatingPointFunctions mathFloatingPointFunctions;
+@end
+#endif
 
 namespace executorch {
 namespace backends {
@@ -47,6 +81,115 @@ void dispatch_sync_with_rethrow(dispatch_queue_t queue, void (^block)()) {
 // Global Metal buffer mapping - accessible for MPS shim
 std::unordered_map<void*, id<MTLBuffer>> ptr_to_mtl_buffer;
 
+// Metal buffer pool with best-fit matching and LRU eviction.
+// On free, buffers are recycled into a sorted pool. On alloc, the smallest
+// buffer >= requested size is returned (if within the headroom bound). When the
+// pool exceeds its max size, least-recently-used buffers are released.
+//
+// The headroom limits internal fragmentation: a cached buffer is only
+// reused if its size is at most min(2x requested, requested + kMaxHeadroom).
+static const size_t kMaxHeadroom = 32768; // 32KB
+
+struct PoolEntry {
+    id<MTLBuffer> buffer;
+    size_t size;
+};
+
+class MetalBufferPool {
+public:
+    explicit MetalBufferPool(size_t max_bytes = 256 * 1024 * 1024)
+        : max_bytes_(max_bytes), cached_bytes_(0) {}
+
+    id<MTLBuffer> reuse(size_t size) {
+        auto it = size_map_.lower_bound(size);
+        // Use saturating arithmetic to avoid size_t overflow.
+        size_t double_size = (size > SIZE_MAX / 2) ? SIZE_MAX : 2 * size;
+        size_t size_plus_headroom = (size > SIZE_MAX - kMaxHeadroom) ? SIZE_MAX : size + kMaxHeadroom;
+        size_t max_acceptable = std::min(double_size, size_plus_headroom);
+        if (it == size_map_.end() || it->first > max_acceptable) {
+            return nil;
+        }
+
+        auto lru_it = it->second;
+        id<MTLBuffer> buffer = lru_it->buffer;
+        cached_bytes_ -= lru_it->size;
+        lru_list_.erase(lru_it);
+        size_map_.erase(it);
+        return buffer;
+    }
+
+    void recycle(id<MTLBuffer> buffer) {
+        size_t size = [buffer length];
+
+        // Don't pool buffers larger than half the max pool size — a single
+        // large buffer would evict all the small frequently-reused buffers.
+        if (size > max_bytes_ / 2) {
+            [buffer release];
+            return;
+        }
+
+        lru_list_.push_front({buffer, size});
+        size_map_.insert({size, lru_list_.begin()});
+        cached_bytes_ += size;
+
+        while (cached_bytes_ > max_bytes_ && !lru_list_.empty()) {
+            evict_oldest();
+        }
+    }
+
+    void clear() {
+        for (auto& entry : lru_list_) {
+            [entry.buffer release];
+        }
+        lru_list_.clear();
+        size_map_.clear();
+        cached_bytes_ = 0;
+    }
+
+private:
+    void evict_oldest() {
+        auto tail = std::prev(lru_list_.end());
+        cached_bytes_ -= tail->size;
+
+        // Find and remove the matching size_map_ entry for this LRU tail.
+        // O(k) where k = number of cached buffers of the same size (typically 1-2).
+        auto range = size_map_.equal_range(tail->size);
+        for (auto it = range.first; it != range.second; ++it) {
+            if (it->second == tail) {
+                size_map_.erase(it);
+                break;
+            }
+        }
+
+        [tail->buffer release];
+        lru_list_.erase(tail);
+    }
+
+    size_t max_bytes_;
+    size_t cached_bytes_;
+    std::list<PoolEntry> lru_list_;       // newest at front, oldest at back
+    std::multimap<size_t, std::list<PoolEntry>::iterator> size_map_;
+};
+
+static constexpr size_t kMaxPoolSizeMB = 16384; // 16 GB upper bound
+
+static MetalBufferPool& get_metal_buffer_pool() {
+    static auto* pool = [] {
+        size_t max_bytes = 256 * 1024 * 1024; // 256 MB default
+        const char* env = std::getenv("ET_METAL_BUFFER_POOL_SIZE_MB");
+        if (env) {
+            char* end = nullptr;
+            long mb = std::strtol(env, &end, 10);
+            if (end != env && *end == '\0' && mb > 0 &&
+                static_cast<unsigned long>(mb) <= kMaxPoolSizeMB) {
+                max_bytes = static_cast<size_t>(mb) * 1024 * 1024;
+            }
+        }
+        return new MetalBufferPool(max_bytes);
+    }();
+    return *pool;
+}
+
 // Global storage to keep shared_ptr alive while raw pointers are used
 static std::unordered_map<ETMetalKernelFunction*, std::shared_ptr<ETMetalKernelFunction>> function_storage;
 static std::unordered_map<ETMetalShaderLibrary*, std::unique_ptr<ETMetalShaderLibrary>> library_storage;
@@ -64,6 +207,23 @@ static thread_local ETMetalStream* currentStream_ = nullptr;
 extern "C" {
 
 void* metal_allocate_buffer(long bytes) {
+    if (bytes <= 0) {
+        ET_LOG(Error, "Invalid Metal buffer allocation size: %ld", bytes);
+        return nullptr;
+    }
+    size_t size = static_cast<size_t>(bytes);
+
+    // Check the buffer pool first (best-fit with bounded headroom)
+    auto& pool = get_metal_buffer_pool();
+    id<MTLBuffer> buffer = pool.reuse(size);
+    if (buffer) {
+        void* ptr = [buffer contents];
+        ptr_to_mtl_buffer[ptr] = buffer;
+        ET_LOG(Debug, "Reused %zu byte Metal buffer from pool (requested %ld)", [buffer length], bytes);
+        return ptr;
+    }
+
+    // Pool miss — allocate a new buffer
     ETMetalStream* stream = getCurrentMetalStream();
     id<MTLDevice> device = stream->device();
     if (!device) {
@@ -72,44 +232,59 @@ void* metal_allocate_buffer(long bytes) {
     }
 
     @autoreleasepool {
-        id<MTLBuffer> buffer = [device newBufferWithLength:bytes options:MTLResourceStorageModeShared];
+        buffer = [device newBufferWithLength:size options:MTLResourceStorageModeShared];
         if (!buffer) {
-            ET_LOG(Error, "Failed to allocate %ld bytes on Metal device", bytes);
+            ET_LOG(Error, "Failed to allocate %zu bytes on Metal device", size);
             return nullptr;
         }
 
         void* ptr = [buffer contents];
         ptr_to_mtl_buffer[ptr] = buffer;
 
-        ET_LOG(Debug, "Allocated %ld bytes on Metal device", bytes);
+        ET_LOG(Debug, "Allocated %zu bytes on Metal device", size);
         return ptr;
     }
 }
 
 void metal_deallocate_buffer(void* ptr) {
-    @autoreleasepool {
-        auto it = ptr_to_mtl_buffer.find(ptr);
-        if (it != ptr_to_mtl_buffer.end()) {
-            id<MTLBuffer> buffer = it->second;
-            [buffer release];
-            ptr_to_mtl_buffer.erase(it);
-            ET_LOG(Debug, "Deallocated Metal buffer for pointer %p", ptr);
-            ptr = nullptr;
-        } else {
-            ET_LOG(Error, "Failed to find Metal buffer for pointer %p", ptr);
-        }
+    if (!ptr) {
+        return;
+    }
+    auto it = ptr_to_mtl_buffer.find(ptr);
+    if (it != ptr_to_mtl_buffer.end()) {
+        id<MTLBuffer> buffer = it->second;
+        ET_LOG(Debug, "Recycling %zu byte Metal buffer to pool (ptr %p)", (size_t)[buffer length], ptr);
+        ptr_to_mtl_buffer.erase(it);
+        get_metal_buffer_pool().recycle(buffer);
+    } else {
+        ET_LOG(Error, "Failed to find Metal buffer for pointer %p", ptr);
     }
 }
 
 void metal_cleanup_resources() {
-    if (!ptr_to_mtl_buffer.empty()) {
-        @autoreleasepool {
-            for (auto& pair : ptr_to_mtl_buffer) {
-                pair.second = nil;
-            }
-            ptr_to_mtl_buffer.clear();
-        }
+    for (auto& pair : ptr_to_mtl_buffer) {
+        [pair.second release];
     }
+    ptr_to_mtl_buffer.clear();
+    get_metal_buffer_pool().clear();
+}
+
+bool metal_buffer_nocopy(void* ptr, size_t nbytes, bool map_ptr_to_buffer) {
+    id<MTLDevice> device = get_metal_device();
+    id<MTLBuffer> subBuffer = [device newBufferWithBytesNoCopy:ptr
+                                                        length:nbytes
+                                                        options:MTLResourceCPUCacheModeWriteCombined | MTLResourceStorageModeShared
+                                                    deallocator:nil];
+    if (!subBuffer) {
+        ET_LOG(Error, "metal_buffer_nocopy: Failed to create no-copy buffer (ptr=%p, nbytes=%zu)", ptr, nbytes);
+        return false;
+    }
+
+    if (map_ptr_to_buffer) {
+        ptr_to_mtl_buffer[ptr] = subBuffer;  // Map contents to buffer
+    }
+
+    return true;
 }
 
 bool metal_is_device_pointer(void* ptr) {
@@ -215,7 +390,13 @@ void ETMetalShaderLibrary::compileLibrary() {
         NSString* sourceString = [NSString stringWithUTF8String:shaderSource_.c_str()];
         NSError* error = nil;
 
-        library_ = [device newLibraryWithSource:sourceString options:nil error:&error];
+        MTLCompileOptions* options = [[MTLCompileOptions new] autorelease];
+        if (@available(macOS 15.0, iOS 18.0, tvOS 18.0, watchOS 11.0, *)) {
+            options.mathMode = MTLMathModeSafe;
+            options.mathFloatingPointFunctions = MTLMathFloatingPointFunctionsPrecise;
+        }
+
+        library_ = [device newLibraryWithSource:sourceString options:options error:&error];
         if (!library_ || error) {
             ET_LOG(Error, "ETMetalShaderLibrary: Failed to compile shader library: %s",
                    error ? [[error localizedDescription] UTF8String] : "unknown error");
@@ -377,6 +558,58 @@ void ETMetalKernelFunction::setArg(unsigned idx, int64_t val) {
     ET_LOG(Debug, "ETMetalKernelFunction::setArg: Set int64_t value %lld at index %u", val, idx);
 }
 
+void ETMetalKernelFunction::setArg(unsigned idx, uint32_t val) {
+    if (!encoder_) {
+        ET_LOG(Error, "ETMetalKernelFunction::setArg: No active encoder");
+        return;
+    }
+
+    [encoder_ setBytes:&val length:sizeof(uint32_t) atIndex:idx];
+    ET_LOG(Debug, "ETMetalKernelFunction::setArg: Set uint32_t value %u at index %u", val, idx);
+}
+
+void ETMetalKernelFunction::setArg(unsigned idx, float val) {
+    if (!encoder_) {
+        ET_LOG(Error, "ETMetalKernelFunction::setArg: No active encoder");
+        return;
+    }
+
+    [encoder_ setBytes:&val length:sizeof(float) atIndex:idx];
+    ET_LOG(Debug, "ETMetalKernelFunction::setArg: Set float value %f at index %u", val, idx);
+}
+
+void ETMetalKernelFunction::setArg(unsigned idx, bool val) {
+    if (!encoder_) {
+        ET_LOG(Error, "ETMetalKernelFunction::setArg: No active encoder");
+        return;
+    }
+
+    [encoder_ setBytes:&val length:sizeof(bool) atIndex:idx];
+    ET_LOG(Debug, "ETMetalKernelFunction::setArg: Set bool value %s at index %u", val ? "true" : "false", idx);
+}
+
+void ETMetalKernelFunction::setArg(unsigned idx, const void* data, size_t size) {
+    if (!encoder_) {
+        ET_LOG(Error, "ETMetalKernelFunction::setArg: No active encoder");
+        return;
+    }
+
+    [encoder_ setBytes:data length:size atIndex:idx];
+    ET_LOG(Debug, "ETMetalKernelFunction::setArg: Set bytes at index %u (size: %zu)", idx, size);
+}
+
+void ETMetalKernelFunction::setArgUint3(unsigned idx, uint32_t x, uint32_t y, uint32_t z) {
+    if (!encoder_) {
+        ET_LOG(Error, "ETMetalKernelFunction::setArgUint3: No active encoder");
+        return;
+    }
+
+    // Use SIMD library's uint3 type which matches Metal shader's uint3 layout
+    simd_uint3 val = {x, y, z};
+    [encoder_ setBytes:&val length:sizeof(simd_uint3) atIndex:idx];
+    ET_LOG(Debug, "ETMetalKernelFunction::setArgUint3: Set uint3{%u, %u, %u} at index %u", x, y, z, idx);
+}
+
 void ETMetalKernelFunction::dispatchSingle(uint64_t length) {
     if (!encoder_) {
         ET_LOG(Error, "ETMetalKernelFunction::dispatchSingle: No active encoder");
@@ -390,6 +623,8 @@ void ETMetalKernelFunction::dispatchSingle(uint64_t length) {
     auto threadGroupSize = MTLSizeMake(actualGroupSize, 1, 1);
 
     [encoder_ dispatchThreads:size threadsPerThreadgroup:threadGroupSize];
+    getCurrentMetalStream()->notifyDispatch();
+    encoder_ = nil; // May be invalidated by flush; re-obtain via startEncoding()
     ET_LOG(Debug, "ETMetalKernelFunction::dispatchSingle: Dispatched with length %llu, group size %llu", length, actualGroupSize);
 
 }
@@ -407,6 +642,8 @@ void ETMetalKernelFunction::dispatchSingleWithGroupSize(uint64_t length, uint64_
     auto threadGroupSize = MTLSizeMake(actualGroupSize, 1, 1);
 
     [encoder_ dispatchThreads:size threadsPerThreadgroup:threadGroupSize];
+    getCurrentMetalStream()->notifyDispatch();
+    encoder_ = nil; // May be invalidated by flush; re-obtain via startEncoding()
     ET_LOG(Debug, "ETMetalKernelFunction::dispatchSingleWithGroupSize: Dispatched with length %llu, group size %llu", length, actualGroupSize);
 
 }
@@ -444,6 +681,8 @@ void ETMetalKernelFunction::dispatchArray(const uint64_t* length, size_t length_
     }
 
     [encoder_ dispatchThreads:size threadsPerThreadgroup:threadGroupSize];
+    getCurrentMetalStream()->notifyDispatch();
+    encoder_ = nil; // May be invalidated by flush; re-obtain via startEncoding()
     ET_LOG(Debug, "ETMetalKernelFunction::dispatchArray: Dispatched %zuD with size [%lu, %lu, %lu], group [%lu, %lu, %lu]",
            length_size, size.width, size.height, size.depth,
            threadGroupSize.width, threadGroupSize.height, threadGroupSize.depth);
@@ -496,10 +735,48 @@ void ETMetalKernelFunction::dispatchArrayWithGroupSize(const uint64_t* length, s
     }
 
     [encoder_ dispatchThreads:size threadsPerThreadgroup:threadGroupSize];
+    getCurrentMetalStream()->notifyDispatch();
+    encoder_ = nil; // May be invalidated by flush; re-obtain via startEncoding()
     ET_LOG(Debug, "ETMetalKernelFunction::dispatchArrayWithGroupSize: Dispatched %zuD with size [%lu, %lu, %lu], group [%lu, %lu, %lu]",
            length_size, size.width, size.height, size.depth,
            threadGroupSize.width, threadGroupSize.height, threadGroupSize.depth);
 
+}
+
+void ETMetalKernelFunction::dispatchThreadgroups(uint64_t gridX, uint64_t gridY, uint64_t gridZ,
+                                                  uint64_t threadsX, uint64_t threadsY, uint64_t threadsZ) {
+    if (!encoder_) {
+        ET_LOG(Error, "ETMetalKernelFunction::dispatchThreadgroups: No active encoder");
+        return;
+    }
+
+    if (!cps_) {
+        ET_LOG(Error, "ETMetalKernelFunction::dispatchThreadgroups: No compute pipeline state");
+        return;
+    }
+
+    // Calculate total threads per threadgroup
+    uint64_t totalThreads = threadsX * threadsY * threadsZ;
+
+    const auto maxThreadsPerGroup = static_cast<uint64_t>([cps_ maxTotalThreadsPerThreadgroup]);
+
+    // Validate total thread count
+    if (totalThreads > maxThreadsPerGroup) {
+        ET_LOG(Error, "ETMetalKernelFunction::dispatchThreadgroups: Requested %llu total threads per threadgroup exceeds device maximum of %llu",
+               (unsigned long long)totalThreads, (unsigned long long)maxThreadsPerGroup);
+        return;
+    }
+
+    MTLSize threadgroupsPerGrid = MTLSizeMake(gridX, gridY, gridZ);
+    MTLSize threadsPerThreadgroup = MTLSizeMake(threadsX, threadsY, threadsZ);
+
+    [encoder_ dispatchThreadgroups:threadgroupsPerGrid threadsPerThreadgroup:threadsPerThreadgroup];
+    getCurrentMetalStream()->notifyDispatch();
+    encoder_ = nil; // May be invalidated by flush; re-obtain via startEncoding()
+
+    ET_LOG(Debug, "ETMetalKernelFunction::dispatchThreadgroups: Dispatched grid [%llu, %llu, %llu] with threadgroup [%llu, %llu, %llu]",
+           (unsigned long long)gridX, (unsigned long long)gridY, (unsigned long long)gridZ,
+           (unsigned long long)threadsX, (unsigned long long)threadsY, (unsigned long long)threadsZ);
 }
 
 void ETMetalKernelFunction::runCommandBlock(std::function<void(void)> f) {
@@ -519,9 +796,49 @@ void ETMetalKernelFunction::runCommandBlock(std::function<void(void)> f) {
 // ETMetalStream Implementation
 // =======================
 
+// Returns the default commitAndContinue flush interval for the given device.
+// The GPU architecture name (e.g. "applegpu_g14g") ends with a chip class:
+//   'p' = iPhone, 'g' = base/Pro, 's' = Max, 'd' = Ultra
+// See also: https://github.com/ml-explore/mlx (Metal backend flush-interval
+// selection uses the same heuristic).
+static int getDefaultFlushInterval(MTLDevice_t device, const char** outArch) {
+    char suffix = 'g';
+    NSString* arch = nil;
+
+    if (@available(macOS 13.0, iOS 16.0, tvOS 16.0, watchOS 9.0, *)) {
+        id architecture = [device architecture];
+        if (architecture != nil) {
+            arch = [architecture name];
+            const char* str = arch ? [arch UTF8String] : nullptr;
+            if (str) {
+                size_t len = strlen(str);
+                if (len > 0) {
+                    suffix = str[len - 1];
+                }
+            }
+        }
+    }
+
+    if (!arch) {
+        arch = @"unknown";
+    }
+    if (outArch) {
+        *outArch = [arch UTF8String];
+    }
+
+    switch (suffix) {
+        case 'p': return 20;  // iPhone
+        case 'g': return 40;  // base/Pro
+        case 's': return 50;  // Max
+        case 'd': return 50;  // Ultra
+        default:  return 40;
+    }
+}
+
 ETMetalStream::ETMetalStream()
     : device_(nil), commandQueue_(nil), commandBuffer_(nil), prevCommandBuffer_(nil),
-      commandEncoder_(nil), serialQueue_(nullptr), enableCommitAndContinue_(true) {
+      commandEncoder_(nil), serialQueue_(nullptr), enableCommitAndContinue_(true),
+      flushInterval_(0), dispatchCount_(0) {
     @autoreleasepool {
         // Create device and command queue
         device_ = MTLCreateSystemDefaultDevice();
@@ -541,7 +858,14 @@ ETMetalStream::ETMetalStream()
         // Create serial queue for thread safety
         serialQueue_ = dispatch_queue_create("metal gpu stream", nullptr);
 
-        ET_LOG(Debug, "ETMetalStream: Created stream with device %p, queue %p", device_, commandQueue_);
+        // Dispatch pipelining: periodically call [commandBuffer commitAndContinue]
+        // every flushInterval_ dispatches so the driver can prepare the next batch
+        // while the GPU executes the current one. Enabled by default for all Apple
+        // Silicon. Set ET_METAL_FLUSH_INTERVAL=0 to disable.
+        const char* archStr = nullptr;
+        flushInterval_ = getDefaultFlushInterval(device_, &archStr);
+        ET_LOG(Info, "ETMetalStream: arch='%s', flush interval=%d",
+               archStr ? archStr : "unknown", flushInterval_);
     }
 }
 
@@ -678,6 +1002,29 @@ void ETMetalStream::endKernelCoalescing() {
     }
 }
 
+// Dispatch pipelining
+void ETMetalStream::setFlushInterval(int interval) {
+    flushInterval_ = interval;
+    dispatchCount_ = 0;
+    ET_LOG(Info, "ETMetalStream: flush interval set to %d dispatches", interval);
+}
+
+void ETMetalStream::notifyDispatch() {
+    if (!enableCommitAndContinue_ || flushInterval_ <= 0) {
+        return;
+    }
+    dispatchCount_++;
+    if (dispatchCount_ >= flushInterval_) {
+        dispatchCount_ = 0;
+        // Submit current work to GPU via commitAndContinue. The command buffer
+        // stays alive for further encoding, enabling pipelined execution.
+        endKernelCoalescing();
+        if (commandBuffer_) {
+            [commandBuffer_ commitAndContinue];
+        }
+    }
+}
+
 // Commit methods
 void ETMetalStream::commit() {
     if (!commandBuffer_) {
@@ -690,6 +1037,7 @@ void ETMetalStream::commit() {
 
     [commandBuffer_ release];
     commandBuffer_ = nil;
+    dispatchCount_ = 0;
 }
 
 void ETMetalStream::commitAndWait() {
@@ -700,7 +1048,8 @@ void ETMetalStream::commitAndWait() {
         prevCommandBuffer_ = nil;
     }
 
-    // Handle current command buffer
+    // Commit the final batch and wait for all work (including prior
+    // commitAndContinue batches) to complete on the GPU.
     if (commandBuffer_) {
         [commandBuffer_ commit];
         [commandBuffer_ waitUntilCompleted];
@@ -708,6 +1057,7 @@ void ETMetalStream::commitAndWait() {
         commandBuffer_ = nil;
     }
 
+    dispatchCount_ = 0;
     ET_LOG(Debug, "ETMetalStream::commitAndWait: Committed and waited for completion");
 }
 
@@ -735,6 +1085,7 @@ void ETMetalStream::flush() {
             [commandBuffer_ release];
         }
         commandBuffer_ = nil;
+        dispatchCount_ = 0;
 
         ET_LOG(Debug, "ETMetalStream::flush: Flushed command buffer");
     }

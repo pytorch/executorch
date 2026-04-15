@@ -24,12 +24,15 @@ from executorch.backends.cadence.aot.quantizer.patterns import (
     LayerNormPattern,
     LinearPattern,
     MatmulPattern,
+    MaxPool2dPattern,
+    MaxPool2dWithoutIndicesPattern,
     MixedW8A32ConvPattern,
     MixedW8A32GruPattern,
     MixedW8A32LinearPattern,
     QuantizationPattern,
     ReluPattern0,
     ReluPattern1,
+    RmsNormPattern,
     SoftmaxPattern,
 )
 from executorch.backends.cadence.aot.quantizer.utils import (
@@ -37,9 +40,7 @@ from executorch.backends.cadence.aot.quantizer.utils import (
     is_annotated,
     no_outside_users,
 )
-
 from torch import fx
-
 from torchao.quantization.pt2e import HistogramObserver, MinMaxObserver
 from torchao.quantization.pt2e.quantizer import (
     ComposableQuantizer,
@@ -228,6 +229,8 @@ def get_cadence_default_quantizers() -> List[Quantizer]:
         CadenceAtenQuantizer(Conv2dPattern(), qconfig_A8W8sym),
         CadenceAtenQuantizer(LinearPattern(), qconfig_A8W8),
         CadenceAtenQuantizer(MatmulPattern(), qconfig_A8W8),
+        CadenceAtenQuantizer(MaxPool2dPattern(), qconfig_A8W8),
+        CadenceAtenQuantizer(MaxPool2dWithoutIndicesPattern(), qconfig_A8W8),
         CadenceAtenQuantizer(ReluPattern0(), qconfig_A8W8),
         CadenceAtenQuantizer(ReluPattern1(), qconfig_A8W8),
     ]
@@ -283,6 +286,15 @@ class CadenceNopQuantizer(CadenceQuantizer):
         self,
     ) -> None:
         super().__init__([])
+
+
+class CadenceRmsNormNopQuantizer(CadenceQuantizer):
+    """
+    Nop quantizer that preserves rms_norm from decomposition.
+    """
+
+    def __init__(self) -> None:
+        super().__init__([CadenceAtenQuantizer(RmsNormPattern(), qconfig_A8W8)])
 
 
 class CadenceWithLayerNormQuantizer(CadenceQuantizer):

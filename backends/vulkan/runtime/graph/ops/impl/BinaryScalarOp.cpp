@@ -48,10 +48,7 @@ void add_binary_scalar_op_node(
   add_storage_type_suffix(kernel_name, graph.storage_type_of(out));
   add_dtype_suffix(kernel_name, graph.dtype_of(in));
 
-  vkapi::ParamsBindList param_ubos = {
-      graph.meta_ubo(out),
-      graph.meta_ubo(in),
-      graph.create_params_buffer(scalar_val)};
+  vkapi::ParamsBindList param_ubos = {graph.meta_ubo(out), graph.meta_ubo(in)};
 
   graph.execute_nodes().emplace_back(new DynamicDispatchNode(
       graph,
@@ -63,7 +60,7 @@ void add_binary_scalar_op_node(
       // Shader params buffers
       param_ubos,
       // Push Constants
-      {},
+      {PushConstantDataInfo(&scalar_val, sizeof(scalar_val))},
       // Specialization Constants
       {},
       // Resize Args

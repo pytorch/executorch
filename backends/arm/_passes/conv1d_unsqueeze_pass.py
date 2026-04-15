@@ -1,6 +1,6 @@
 # Copyright (c) Meta Platforms, Inc. and affiliates.
 # All rights reserved.
-# Copyright 2024-2025 Arm Limited and/or its affiliates.
+# Copyright 2024-2026 Arm Limited and/or its affiliates.
 #
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
@@ -10,7 +10,7 @@ from typing import Set, Type
 
 from executorch.backends.arm._passes import ArmPass
 
-from executorch.backends.arm._passes.rewrite_conv2d_pass import RewriteConv2dPass
+from executorch.backends.arm._passes.rewrite_conv_pass import RewriteConvPass
 from executorch.backends.arm._passes.size_adjust_input_pass import SizeAdjustInputPass
 
 from executorch.exir.dialects._ops import ops as exir_ops
@@ -18,18 +18,20 @@ from executorch.exir.pass_base import ExportPass
 
 
 class Conv1dUnsqueezePass(ArmPass):
-    """
-    This pass is used to change conv1d ops into conv2d since TOSA only
-    supports 2d and 3d convolution. This is done by modifying the graph to do the
+    """This pass is used to change conv1d ops into conv2d since TOSA only
+    supports 2d and 3d convolution.
+
+    This is done by modifying the graph to do the
     following:
     1a) unsqueeze the convolution's input from 3d to 4d
     1b) unsqueeze the convolution's weight from 3d to 4d
     2) perform a conv2d (with a modified version of the original conv1d args)
     3) squeeze the output back down to 3d.
+
     """
 
     _passes_required_after: Set[Type[ExportPass]] = {
-        RewriteConv2dPass,
+        RewriteConvPass,
         SizeAdjustInputPass,
     }
 

@@ -1,5 +1,5 @@
 # Copyright (c) Meta Platforms, Inc. and affiliates.
-# Copyright 2024-2025 Arm Limited and/or its affiliates.
+# Copyright 2024-2026 Arm Limited and/or its affiliates.
 # All rights reserved.
 #
 # This source code is licensed under the BSD-style license found in the
@@ -23,6 +23,11 @@ from executorch.backends.arm.test.tester.test_pipeline import (
 from torchaudio import models  # type: ignore[import-untyped]
 
 input_t = Tuple[torch.Tensor]  # Input x
+
+quant_test_data = {
+    "per_channel_quantization=true": True,
+    "per_channel_quantization=false": False,
+}
 
 
 def get_test_inputs(batch_size, num_features, input_frames):
@@ -72,6 +77,8 @@ def test_w2l_tosa_INT():
         aten_op=[],
         exir_op=TestW2L.all_operators,
         use_to_edge_transform_and_lower=True,
+        frobenius_threshold=None,
+        cosine_threshold=None,
     )
     pipeline.run()
 
@@ -97,40 +104,41 @@ def test_w2l_u55_INT():
 
 @pytest.mark.slow
 @common.XfailIfNoCorstone320
-@pytest.mark.skip(reason="Intermittent timeout issue: MLETORCH-856")
-def test_w2l_u85_INT():
+@common.parametrize("per_channel_quantization", quant_test_data)
+def test_w2l_u85_INT(per_channel_quantization):
     pipeline = EthosU85PipelineINT[input_t](
-        TestW2L.create_model(),
+        TestW2L.create_model("power_spectrum"),
         TestW2L.model_example_inputs,
         aten_ops=[],
         exir_ops=[],
         use_to_edge_transform_and_lower=True,
+        per_channel_quantization=per_channel_quantization,
     )
     pipeline.run()
 
 
 @common.SkipIfNoModelConverter
 @pytest.mark.slow
-def test_w2l_vgf_INT():
+def test_w2l_vgf_quant():
     pipeline = VgfPipeline[input_t](
         TestW2L.create_model(),
         TestW2L.model_example_inputs,
         aten_op=[],
         exir_op=TestW2L.all_operators,
-        tosa_version="TOSA-1.0+INT",
         use_to_edge_transform_and_lower=True,
+        quantize=True,
     )
     pipeline.run()
 
 
 @common.SkipIfNoModelConverter
-def test_w2l_vgf_FP():
+def test_w2l_vgf_no_quant():
     pipeline = VgfPipeline[input_t](
         TestW2L.create_model(),
         TestW2L.model_example_inputs,
         aten_op=[],
         exir_op=TestW2L.all_operators,
-        tosa_version="TOSA-1.0+FP",
         use_to_edge_transform_and_lower=True,
+        quantize=False,
     )
     pipeline.run()

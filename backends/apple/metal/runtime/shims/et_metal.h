@@ -44,6 +44,7 @@ typedef void* MPSCommandBuffer_t;
 typedef void* NSDictionary_t;
 #endif
 
+#include <atomic>
 #include <functional>
 #include <memory>
 #include <string>
@@ -181,6 +182,13 @@ class ETMetalKernelFunction {
   void startEncoding();
   void setArg(unsigned idx, const executorch::runtime::etensor::Tensor& tensor);
   void setArg(unsigned idx, int64_t val);
+  void setArg(unsigned idx, uint32_t val);
+  void setArg(unsigned idx, float val);
+  void setArg(unsigned idx, bool val);
+  void setArg(unsigned idx, const void* data, size_t size);
+
+  // Helper for Metal uint3 struct
+  void setArgUint3(unsigned idx, uint32_t x, uint32_t y, uint32_t z);
 
   void dispatchSingle(uint64_t length);
   void dispatchSingleWithGroupSize(uint64_t length, uint64_t group_size);
@@ -190,6 +198,15 @@ class ETMetalKernelFunction {
       size_t length_size,
       const uint64_t* group_size,
       size_t group_size_size);
+
+  // Dispatch with explicit threadgroup count (not thread count)
+  void dispatchThreadgroups(
+      uint64_t gridX,
+      uint64_t gridY,
+      uint64_t gridZ,
+      uint64_t threadsX,
+      uint64_t threadsY,
+      uint64_t threadsZ);
 
   void runCommandBlock(std::function<void(void)> f);
 
@@ -284,6 +301,11 @@ class ETMetalStream {
   void commitCommandBuffer(MTLCommandBuffer_t commandBuffer);
   void flush();
 
+  // Dispatch pipelining: periodically commitAndContinue so the driver
+  // can prepare batch N+1 while the GPU executes batch N.
+  void notifyDispatch();
+  void setFlushInterval(int interval);
+
   // Memory operations
   void fill(
       MTLBuffer_t buffer,
@@ -316,6 +338,8 @@ class ETMetalStream {
 
   // Configuration
   bool enableCommitAndContinue_;
+  int flushInterval_; // 0 = disabled, >0 = flush every N dispatches
+  std::atomic<int> dispatchCount_; // dispatches since last flush
 
   // Singleton instance
   static ETMetalStream* defaultStream_;
@@ -363,6 +387,7 @@ int metal_copy_memory(
     bool src_is_device,
     bool dst_is_device);
 void metal_cleanup_resources();
+bool metal_buffer_nocopy(void* ptr, size_t nbytes, bool map_ptr_to_buffer);
 
 // Helper functions to access Metal objects
 MTLDevice_t get_metal_device();

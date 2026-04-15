@@ -5,9 +5,9 @@ import shutil
 import subprocess
 import tempfile
 from pathlib import Path
-from typing import Tuple
+from typing import Sequence, Tuple
 
-import executorch.backends.qualcomm.python.PyQnnWrapperAdaptor as PyQnnWrapper
+import executorch.backends.qualcomm.python.PyQnnManagerAdaptor as PyQnnManager
 import pandas as pd
 import torch
 from executorch.backends.qualcomm.serialization.qc_schema import QcomChipset
@@ -21,7 +21,7 @@ class DrawGraph:
         self,
         filename: str,
         directory: str,
-        py_op_wrapper_list: [PyQnnWrapper.PyQnnOpWrapper],
+        py_op_wrapper_list: [PyQnnManager.PyQnnOpWrapper],
         dot_string=False,
     ):
         self.filename = filename
@@ -98,13 +98,13 @@ class DrawGraph:
             offset = []
             if (
                 quantization_encoding
-                == PyQnnWrapper.Qnn_QuantizationEncoding_t.QNN_QUANTIZATION_ENCODING_SCALE_OFFSET
+                == PyQnnManager.Qnn_QuantizationEncoding_t.QNN_QUANTIZATION_ENCODING_SCALE_OFFSET
             ):
                 scale.append(node.quantizeParams.scaleOffsetEncoding.scale)
                 offset.append(node.quantizeParams.scaleOffsetEncoding.offset)
             elif (
                 quantization_encoding
-                == PyQnnWrapper.Qnn_QuantizationEncoding_t.QNN_QUANTIZATION_ENCODING_AXIS_SCALE_OFFSET
+                == PyQnnManager.Qnn_QuantizationEncoding_t.QNN_QUANTIZATION_ENCODING_AXIS_SCALE_OFFSET
             ):
                 for i in range(
                     node.quantizeParams.axisScaleOffsetEncoding.numScaleOffsets
@@ -159,7 +159,7 @@ class DrawGraph:
             offset = entry["offset"]
             if (
                 entry["tensor_type"]
-                == PyQnnWrapper.Qnn_TensorType_t.QNN_TENSOR_TYPE_STATIC
+                == PyQnnManager.Qnn_TensorType_t.QNN_TENSOR_TYPE_STATIC
             ):
                 param_rows.append({"name": name, "scale": scale, "offset": offset})
             else:
@@ -216,9 +216,6 @@ class QnnTool:
             "backend_extension_config": {
                 "backend_extensions": {
                     "config_file_path": "config.json",
-                },
-                "features": {
-                    "qhas_json": True,
                 },
             },
             "config": {
@@ -316,9 +313,6 @@ class QnnTool:
         ), f"Error: qnn-profiling-data_0.log not found in {self.tmp_dir}"
 
     def qnn_profile_viewer(self, graph_name="forward_schematic", graph_idx=0):
-        self.config["backend_extension_config"]["backend_extensions"][
-            "shared_library_path"
-        ] = "./libQnnHtpNetRunExtensions.so"
         self.config["backend_extension_config"] = {"features": {"qhas_json": True}}
         for file_name, data in self.config.items():
             with open(f"{self.tmp_dir}/{file_name}.json", "w") as json_file:
@@ -348,8 +342,8 @@ class QnnTool:
         qnn_binary_file="forward_0.dlc",
     ):
         """
-        Generate Qnn HTP Optrace Profiling https://docs.qualcomm.com/bundle/publicresource/topics/80-63442-50/htp_backend.html#qnn-htp-optrace-profiling
-        and QNN HTP Analysis Summary (QHAS) https://docs.qualcomm.com/bundle/publicresource/topics/80-63442-50/htp_backend.html#qnn-htp-analysis-summary-qhas
+        Generate Qnn HTP Optrace Profiling https://docs.qualcomm.com/bundle/publicresource/topics/80-63442-10/htp_backend.html#qnn-htp-optrace-profiling
+        and QNN HTP Analysis Summary (QHAS) https://docs.qualcomm.com/bundle/publicresource/topics/80-63442-10/htp_backend.html#qnn-htp-analysis-summary-qhas
         . You can utilize the QAIRT Visualizer (https://pypi.org/project/qairt-visualizer/) to visualize the results from the files above.
         """
         graph_name, file_extension = os.path.splitext(qnn_binary_file)
@@ -398,7 +392,11 @@ class QnnTool:
 
 
 def generate_optrace(
-    artifact, soc_id: QcomChipset, adb, pte_path: str, inputs: Tuple[torch.Tensor]
+    artifact,
+    soc_id: QcomChipset,
+    adb,
+    pte_path: str,
+    inputs: Sequence[Tuple[torch.Tensor]],
 ):
     """
     Generate optrace and QHAS (QNN HTP Analysis Summary) JSON files.
@@ -407,7 +405,7 @@ def generate_optrace(
         artifact (str): Path to the artifact folder.
         adb (SimpleADB): An object for communicating with Android device
         pte_path (str): The path to the generated PTE file, including the file extension (e.g., model.pte).
-        inputs (Tuple[torch.Tensor]): The input tensors for the model.
+        inputs Sequence((Tuple[torch.Tensor])): The input tensors for the model.
 
 
     Returns:

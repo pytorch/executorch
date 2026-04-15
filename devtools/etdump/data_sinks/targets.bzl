@@ -17,10 +17,7 @@ def define_data_sink_target(data_sink_name, aten_suffix):
                 "//executorch/runtime/core/exec_aten:lib" + aten_suffix,
                 ":data_sink_base" + aten_suffix,
             ],
-            visibility = [
-                "//executorch/...",
-                "@EXECUTORCH_CLIENTS",
-            ],
+            visibility = ["PUBLIC"],
         )
 
 def define_common_targets():
@@ -40,10 +37,7 @@ def define_common_targets():
             exported_deps = [
                 "//executorch/runtime/core/exec_aten/util:scalar_type_util" + aten_suffix,
             ],
-            visibility = [
-                "//executorch/...",
-                "@EXECUTORCH_CLIENTS",
-            ],
+            visibility = ["PUBLIC"],
         )
 
         define_data_sink_target("buffer_data_sink", aten_suffix)

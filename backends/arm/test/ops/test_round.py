@@ -1,4 +1,4 @@
-# Copyright 2025 Arm Limited and/or its affiliates.
+# Copyright 2025-2026 Arm Limited and/or its affiliates.
 #
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
@@ -32,19 +32,24 @@ test_data_suite = {
     "ramp": lambda: torch.arange(-16, 16, 0.2),
 }
 
+test_data_suite_bf16 = {
+    "ramp_bf16": lambda: torch.linspace(-7.7, 7.7, 32, dtype=torch.bfloat16),
+}
+
 
 class Round(torch.nn.Module):
     def forward(self, x: torch.Tensor):
         return x.round()
 
 
-@common.parametrize("test_data", test_data_suite)
+@common.parametrize("test_data", test_data_suite | test_data_suite_bf16)
 def test_round_tosa_FP(test_data: torch.Tensor):
     pipeline = TosaPipelineFP[input_t1](
         Round(),
         (test_data(),),
         aten_op,
         exir_op,
+        tosa_extensions=["bf16"],
     )
     pipeline.run()
 
@@ -87,25 +92,25 @@ def test_round_u85_INT(test_data: torch.Tensor):
 
 @common.parametrize("test_data", test_data_suite)
 @common.SkipIfNoModelConverter
-def test_round_vgf_FP(test_data: torch.Tensor):
+def test_round_vgf_no_quant(test_data: torch.Tensor):
     pipeline = VgfPipeline[input_t1](
         Round(),
         (test_data(),),
         aten_op,
         exir_op,
-        tosa_version="TOSA-1.0+FP",
+        quantize=False,
     )
     pipeline.run()
 
 
 @common.parametrize("test_data", test_data_suite)
 @common.SkipIfNoModelConverter
-def test_round_vgf_INT(test_data: torch.Tensor):
+def test_round_vgf_quant(test_data: torch.Tensor):
     pipeline = VgfPipeline[input_t1](
         Round(),
         (test_data(),),
         [],
         exir_op,
-        tosa_version="TOSA-1.0+INT",
+        quantize=True,
     )
     pipeline.run()

@@ -1,4 +1,4 @@
-# Copyright 2025 Arm Limited and/or its affiliates.
+# Copyright 2025-2026 Arm Limited and/or its affiliates.
 #
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
@@ -27,7 +27,7 @@ test_data_suite = {
     "just_above_one": lambda: torch.tensor([1.0001, 1.01, 1.1, 2.0]),
     "rand_valid": lambda: torch.rand(10, 10) * 10 + 1,  # [1, 11)
     "ramp_valid": lambda: torch.linspace(1.0, 20.0, steps=160),
-    "large": lambda: torch.tensor([10.0, 100.0, 1000.0, 1e6]),
+    "large": lambda: torch.tensor([500.0, 100.0, 1000.0, 1e6]),
     "mixed_valid": lambda: torch.tensor([1.0, 2.0, 10.0, 100.0]),
 }
 
@@ -115,23 +115,23 @@ def test_acosh_u85_INT_xfail(test_data: Tuple):
 
 @common.parametrize("test_data", test_data_suite)
 @common.SkipIfNoModelConverter
-def test_acosh_vgf_FP(test_data: Tuple):
+def test_acosh_vgf_no_quant(test_data: Tuple):
     pipeline = VgfPipeline[input_t](
         Acosh(),
         (test_data(),),
         aten_op,
-        tosa_version="TOSA-1.0+FP",
+        quantize=False,
     )
     pipeline.run()
 
 
 @common.parametrize("test_data", test_data_suite)
 @common.SkipIfNoModelConverter
-def test_acosh_vgf_INT(test_data: Tuple):
+def test_acosh_vgf_quant(test_data: Tuple):
     pipeline = VgfPipeline[input_t](
         Acosh(),
         (test_data(),),
         aten_op,
-        tosa_version="TOSA-1.0+INT",
+        quantize=True,
     )
     pipeline.run()

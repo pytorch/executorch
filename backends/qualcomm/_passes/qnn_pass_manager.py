@@ -9,14 +9,16 @@ from collections import OrderedDict
 from typing import Dict
 
 from executorch.backends.qualcomm._passes import (
-    AnnotateAdaptiveAvgPool1D,
+    AnnotateAvgPool1D,
     AnnotateQuantAttrs,
     AnnotateStack,
     AnnotateUnbind,
     CanonicalizeConv,
     ConvertBmmToMatmul,
     ConvertLinearToConv2d,
+    ConvertMhaToSha,
     ConvertSquareToPow,
+    DecomposeAcos,
     DecomposeAny,
     DecomposeBinaryAlpha,
     DecomposeCDist,
@@ -26,11 +28,15 @@ from executorch.backends.qualcomm._passes import (
     DecomposeFloorDivide,
     DecomposeGlu,
     DecomposeLinalgVectorNorm,
+    DecomposeLogVariants,
+    DecomposeMaxPool3d,
     DecomposeMinMaxDim,
+    DecomposeReciprocal,
     DecomposeRoll,
     DecomposeSilu,
     DecomposeThreshold,
     DecomposeTriu,
+    DecomposeTrunc,
     DecomposeWrapWithAutocast,
     ExpandBroadcastTensorShape,
     FixedLinearKeepDim,
@@ -43,6 +49,7 @@ from executorch.backends.qualcomm._passes import (
     InsertReshapeForReduceOps,
     LayoutTransform,
     LiftConstantScalarOperands,
+    RecomposePadMaxPool2d,
     RecomposePixelUnshuffle,
     RecomposeRmsNorm,
     ReduceDynamicRange,
@@ -50,10 +57,14 @@ from executorch.backends.qualcomm._passes import (
     RemoveRedundancy,
     ReplaceArangeArgs,
     ReplaceInfValues,
+    ResolveDebugHandle,
     TagQuantIO,
 )
 from executorch.backends.qualcomm._passes.utils import (
     get_passes_dependency_for_capture_program,
+)
+from executorch.backends.qualcomm.serialization.qc_schema import (
+    QnnExecuTorchBackendType,
 )
 from executorch.backends.qualcomm.utils.constants import (
     QCOM_PASS_ACTIVATE_KEY,
@@ -84,25 +95,30 @@ def get_capture_program_passes():
     # The second value in each tuple in `default_passes_and_setting` indicates whether the corresponding pass is activated by default.
     # If a pass is activated, it will be executed by default.
     default_passes_and_setting = [
-        (AnnotateAdaptiveAvgPool1D, True),
+        (AnnotateAvgPool1D, True),
         (AnnotateQuantAttrs, True),
         (AnnotateStack, True),
         (AnnotateUnbind, True),
-        (CanonicalizeConv, True),
         (ConvertBmmToMatmul, False),
+        (DecomposeAcos, True),
         (DecomposeAny, True),
         (DecomposeColIm, True),
+        (DecomposeLogVariants, True),
+        (DecomposeMaxPool3d, True),
         (DecomposeMinMaxDim, True),
+        (DecomposeTrunc, True),
         (ExpandBroadcastTensorShape, True),
         (FixedLinearKeepDim, True),
         (FoldQDQ, True),
         (I64toI32, True),
         (LayoutTransform, True),
+        (RecomposePadMaxPool2d, True),
         (RecomposePixelUnshuffle, True),
         (RecomposeRmsNorm, True),
         (Remove0DTensor, True),
         (RemoveRedundancy, True),
         (TagQuantIO, False),
+        (ResolveDebugHandle, True),
     ]
 
     passes = OrderedDict()
@@ -138,6 +154,7 @@ class QnnPassManager(PassManager):
         exported_program: ExportedProgram,
         passes_job: OrderedDict = None,
         dep_table: Dict = None,
+        backend_type: QnnExecuTorchBackendType = QnnExecuTorchBackendType.kHtpBackend,
     ):
         # TODO: remove this workaround when target could be correctly detected
         from executorch.backends.qualcomm.builders import node_visitor
@@ -170,7 +187,12 @@ class QnnPassManager(PassManager):
             kwargs = passes_job[p][QCOM_PASS_ARGS_KWARGS_DEFAULTS_KEY]
             if "edge_program" in kwargs:
                 kwargs["edge_program"] = exported_program
+            if "backend_type" in kwargs:
+                kwargs["backend_type"] = backend_type
             self.add_pass(p(**kwargs))
+        assert isinstance(
+            self.passes[-1], ResolveDebugHandle
+        ), "Please ensure ResolveDebugHandle is the last executed edge pass."
         return self.passes
 
     def transform_for_to_edge_pipeline(
@@ -199,18 +221,26 @@ class QnnPassManager(PassManager):
         self.add_pass(RecomposePixelUnshuffle(quantization_capture=True))
         self.add_pass(RecomposeRmsNorm(quantization_capture=True))
         self.add_pass(ReplaceArangeArgs())
+        self.add_pass(DecomposeAcos())
         self.add_pass(DecomposeBinaryAlpha())
         self.add_pass(DecomposeCDist())
+        self.add_pass(DecomposeMaxPool3d(quantization_capture=True))
         self.add_pass(DecomposeScaledDotProductAttention())
         self.add_pass(DecomposeRoll())
         self.add_pass(DecomposeSilu())
         self.add_pass(DecomposeThreshold())
         self.add_pass(DecomposeTriu())
+        self.add_pass(DecomposeTrunc())
         self.add_pass(DecomposeWrapWithAutocast())
         self.add_pass(DecomposeEinsum())
         self.add_pass(DecomposeExpM1())
         self.add_pass(DecomposeGlu())
+        # HTP and GPU doesn't support ElementWiseUnary with operation=reciprocal
+        # Decompose Reciprocal into Div for these 2 backend
+        # TODO: Skip this pass for CPU backend (Dependency: Backend-aware passes manager)
+        self.add_pass(DecomposeReciprocal())
         self.add_pass(DecomposeLinalgVectorNorm(quantization_capture=True))
+        self.add_pass(DecomposeLogVariants())
         self.add_pass(ReplaceInfValues())
         self.add_pass(LiftConstantScalarOperands())
         self.add_pass(InsertReshapeForReduceOps())
@@ -233,6 +263,10 @@ class QnnPassManager(PassManager):
         # This pass is needed before to_edge pipeline to avoid mixed type for div operator with RemoveMixedTypeOperators pass.
         self.add_pass(DecomposeFloorDivide())
         self.add_pass(DecomposeWrapWithAutocast())
+        # HTP and GPU doesn't support ElementWiseUnary with operation=reciprocal
+        # Decompose Reciprocal into Div for these 2 backend
+        # TODO: Skip this pass for CPU backend (Dependency: Backend-aware passes manager)
+        self.add_pass(DecomposeReciprocal())
         # this pass will rewrite state_dict, it needs to be accomplished before
         # to_edge_transform_and_lower
         self.add_pass(CanonicalizeConv(exported_program))
@@ -245,8 +279,12 @@ class QnnPassManager(PassManager):
         ep = lift_constant_tensor_pass(exported_program)
         return ep
 
-    def transform_for_preprocess_pipeline(self, exported_program: ExportedProgram):
+    def transform_for_preprocess_pipeline(
+        self, exported_program: ExportedProgram, use_mha2sha=False
+    ):
         self.add_pass(FoldQDQ(exported_program, force_fold=True))
+        if use_mha2sha:
+            self.add_pass(ConvertMhaToSha(exported_program))
         self.add_pass(InsertRequantize())
         self.add_pass(InsertIOQDQ(exported_program))
         self.add_pass(LayoutTransform(exported_program, insert_permute=True))

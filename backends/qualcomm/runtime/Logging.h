@@ -16,6 +16,8 @@ using namespace qnn_delegate;
 
 void Log(QnnExecuTorchLogLevel log_level, const char* format, ...);
 
+#define QNN_EXECUTORCH_FARF_BUF_SIZE 128
+
 #define QNN_EXECUTORCH_LOG(log_level, format, ...) \
   do {                                             \
     Log(log_level, format, ##__VA_ARGS__);         \

@@ -1,4 +1,4 @@
-# Copyright 2025 Arm Limited and/or its affiliates.
+# Copyright 2025-2026 Arm Limited and/or its affiliates.
 #
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
@@ -123,56 +123,56 @@ def test_pixel_shuffle_tosa_INT(test_data: input_t1):
 
 @common.parametrize("test_data", PixelUnShuffle.test_data_generators)
 @common.SkipIfNoModelConverter
-def test_pixel_unshuffle_vgf_FP(test_data: input_t1):
+def test_pixel_unshuffle_vgf_no_quant(test_data: input_t1):
     pipeline = VgfPipeline[input_t1](
         PixelUnShuffle(),
         test_data(),
         aten_op_pixel_unshuffle,
         exir_op_pixel_unshuffle,
-        tosa_version="TOSA-1.0+FP",
         run_on_vulkan_runtime=True,
+        quantize=False,
     )
     pipeline.run()
 
 
 @common.parametrize("test_data", PixelUnShuffle.test_data_generators)
 @common.SkipIfNoModelConverter
-def test_pixel_unshuffle_vgf_INT(test_data: input_t1):
+def test_pixel_unshuffle_vgf_quant(test_data: input_t1):
     pipeline = VgfPipeline[input_t1](
         PixelUnShuffle(),
         test_data(),
         aten_op_pixel_unshuffle,
         exir_op_pixel_unshuffle,
-        tosa_version="TOSA-1.0+INT",
         run_on_vulkan_runtime=True,
+        quantize=True,
     )
     pipeline.run()
 
 
 @common.parametrize("test_data", PixelShuffle.test_data_generators)
 @common.SkipIfNoModelConverter
-def test_pixel_shuffle_vgf_FP(test_data: input_t1):
+def test_pixel_shuffle_vgf_no_quant(test_data: input_t1):
     pipeline = VgfPipeline[input_t1](
         PixelShuffle(),
         test_data(),
         aten_op_pixel_shuffle,
         exir_op_pixel_shuffle,
-        tosa_version="TOSA-1.0+FP",
         run_on_vulkan_runtime=True,
+        quantize=False,
     )
     pipeline.run()
 
 
 @common.parametrize("test_data", PixelShuffle.test_data_generators)
 @common.SkipIfNoModelConverter
-def test_pixel_shuffle_vgf_INT(test_data: input_t1):
+def test_pixel_shuffle_vgf_quant(test_data: input_t1):
     pipeline = VgfPipeline[input_t1](
         PixelShuffle(),
         test_data(),
         aten_op_pixel_shuffle,
         exir_op_pixel_shuffle,
-        tosa_version="TOSA-1.0+INT",
         run_on_vulkan_runtime=True,
+        quantize=True,
     )
     pipeline.run()
 
@@ -193,7 +193,6 @@ def test_pixel_unshuffle_u55_INT(test_data: input_t1):
 @common.parametrize(
     "test_data",
     PixelUnShuffle.test_data_generators,
-    xfails={"rand_4d": "MLETORCH-1424: rand test fails"},
 )
 @common.XfailIfNoCorstone320
 def test_pixel_unshuffle_u85_INT(test_data: input_t1):
@@ -223,7 +222,6 @@ def test_pixel_shuffle_u55_INT(test_data: input_t1):
 @common.parametrize(
     "test_data",
     PixelShuffle.test_data_generators,
-    xfails={"rand_4d": "MLETORCH-1424: rand test fails"},
 )
 @common.XfailIfNoCorstone320
 def test_pixel_shuffle_u85_INT(test_data: input_t1):

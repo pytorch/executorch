@@ -13,6 +13,13 @@ from executorch.backends.qualcomm.quantizer.observers.per_block_param_observer i
     PerBlockParamFakeQuantize,
     PerBlockParamObserver,
 )
+from executorch.backends.qualcomm.quantizer.observers.per_channel_param_observer import (
+    PerChannelParamObserver,
+)
+from executorch.backends.qualcomm.utils.constants import (
+    DEFAULT_EPS_16BIT,
+    DEFAULT_EPS_8BIT,
+)
 from torch import Tensor
 from torch.fx import Node
 from torchao.quantization.pt2e import (
@@ -21,7 +28,6 @@ from torchao.quantization.pt2e import (
     MinMaxObserver,
     MovingAverageMinMaxObserver,
     MovingAveragePerChannelMinMaxObserver,
-    PerChannelMinMaxObserver,
 )
 from torchao.quantization.pt2e.quantizer import (
     DerivedQuantizationSpec,
@@ -36,6 +42,7 @@ class QuantizationConfig:
     weight: Optional[QuantizationSpec]
     bias: Optional[QuantizationSpec | Callable]
     block_size: Optional[Tuple] = None
+    per_channel_embedding: bool = False
 
 
 def _derived_bias_quant_spec(node: Node) -> DerivedQuantizationSpec:
@@ -104,18 +111,28 @@ def _derived_bias_quant_spec(node: Node) -> DerivedQuantizationSpec:
 
 
 def get_8a8w_qnn_ptq_config(
-    act_symmetric: bool = False, act_observer=MovingAverageMinMaxObserver
+    act_symmetric: bool = False,
+    act_observer=MovingAverageMinMaxObserver,
+    eps: float = None,
 ) -> QuantizationConfig:
-    extra_args: Dict[str, Any] = {"eps": 2**-12}
+    # the smallest scale defaults to DEFAULT_EPS_8BIT
+    extra_args: Dict[str, Any] = {"eps": eps if eps else DEFAULT_EPS_8BIT}
 
-    act_quantization_spec = QuantizationSpec(
-        dtype=torch.uint8,
-        qscheme=(
-            torch.per_tensor_symmetric if act_symmetric else torch.per_tensor_affine
-        ),
-        ch_axis=0,
-        observer_or_fake_quant_ctr=act_observer.with_args(**extra_args),
-    )
+    if act_symmetric:
+        act_quantization_spec = QuantizationSpec(
+            dtype=torch.uint8,
+            qscheme=(torch.per_tensor_symmetric),
+            ch_axis=0,
+            observer_or_fake_quant_ctr=act_observer.with_args(**extra_args),
+        )
+    else:
+        act_quantization_spec = QuantizationSpec(
+            dtype=torch.uint8,
+            quant_min=torch.iinfo(torch.uint8).min,
+            quant_max=torch.iinfo(torch.uint8).max,
+            qscheme=(torch.per_tensor_affine),
+            observer_or_fake_quant_ctr=act_observer.with_args(**extra_args),
+        )
 
     weight_quantization_spec = QuantizationSpec(
         dtype=torch.int8,
@@ -145,9 +162,12 @@ def get_8a8w_qnn_ptq_config(
 
 
 def get_8a4w_qnn_ptq_config(
-    act_symmetric: bool = True, act_observer=MovingAverageMinMaxObserver
+    act_symmetric: bool = False,
+    act_observer=MovingAverageMinMaxObserver,
+    eps: float = None,
 ) -> QuantizationConfig:
-    extra_args: Dict[str, Any] = {"eps": 2**-12}
+    # the smallest defaults to DEFAULT_EPS_8BIT
+    extra_args: Dict[str, Any] = {"eps": eps if eps else DEFAULT_EPS_8BIT}
 
     if act_symmetric:
         # If zero_point is 128, htp can do optimizations.
@@ -201,14 +221,19 @@ def get_8a4w_qnn_ptq_config(
 
 # 4 bits quantization only supports specific ops.
 def get_16a4w_qnn_ptq_config(
+    act_symmetric: bool = False,
     act_observer=MovingAverageMinMaxObserver,
+    eps: float = None,
 ) -> QuantizationConfig:
-    extra_args: Dict[str, Any] = {"eps": 2**-20}
+    # the smallest defaults to DEFAULT_EPS_16BIT
+    extra_args: Dict[str, Any] = {"eps": eps if eps else DEFAULT_EPS_16BIT}
     act_quantization_spec = QuantizationSpec(
         dtype=torch.int32,
         quant_min=torch.iinfo(torch.uint16).min,
         quant_max=torch.iinfo(torch.uint16).max,
-        qscheme=torch.per_tensor_affine,
+        qscheme=(
+            torch.per_tensor_symmetric if act_symmetric else torch.per_tensor_affine
+        ),
         observer_or_fake_quant_ctr=act_observer.with_args(**extra_args),
     )
 
@@ -240,14 +265,19 @@ def get_16a4w_qnn_ptq_config(
 
 
 def get_16a8w_qnn_ptq_config(
+    act_symmetric: bool = False,
     act_observer=MovingAverageMinMaxObserver,
+    eps: float = None,
 ) -> QuantizationConfig:
-    extra_args: Dict[str, Any] = {"eps": 2**-20}
+    # the smallest defaults to DEFAULT_EPS_16BIT
+    extra_args: Dict[str, Any] = {"eps": eps if eps else DEFAULT_EPS_16BIT}
     act_quantization_spec = QuantizationSpec(
         dtype=torch.int32,
         quant_min=torch.iinfo(torch.uint16).min,
         quant_max=torch.iinfo(torch.uint16).max,
-        qscheme=torch.per_tensor_affine,
+        qscheme=(
+            torch.per_tensor_symmetric if act_symmetric else torch.per_tensor_affine
+        ),
         observer_or_fake_quant_ctr=act_observer.with_args(**extra_args),
     )
 
@@ -276,72 +306,20 @@ def get_16a8w_qnn_ptq_config(
     return quantization_config
 
 
-def get_16a8w_qnn_qat_config(
-    act_observer=MovingAverageMinMaxObserver,
-) -> QuantizationConfig:
-    extra_args: Dict[str, Any] = {"eps": 2**-20}
-    act_fake_quant_ctr = FusedMovingAvgObsFakeQuantize.with_args(
-        dtype=torch.int32,
-        quant_min=torch.iinfo(torch.uint16).min,
-        quant_max=torch.iinfo(torch.uint16).max,
-        qscheme=torch.per_tensor_affine,
-        observer=act_observer.with_args(**extra_args),
-    )
-    act_quantization_spec = QuantizationSpec(
-        dtype=torch.int32,
-        quant_min=torch.iinfo(torch.uint16).min,
-        quant_max=torch.iinfo(torch.uint16).max,
-        qscheme=torch.per_tensor_affine,
-        observer_or_fake_quant_ctr=act_fake_quant_ctr,
-    )
-    weight_fake_quant_ctr = FusedMovingAvgObsFakeQuantize.with_args(
-        dtype=torch.int8,
-        quant_min=torch.iinfo(torch.int8).min + 1,
-        quant_max=torch.iinfo(torch.int8).max,
-        qscheme=torch.per_tensor_symmetric,
-        observer=MovingAverageMinMaxObserver,
-    )
-    weight_quantization_spec = QuantizationSpec(
-        dtype=torch.int8,
-        quant_min=torch.iinfo(torch.int8).min + 1,
-        quant_max=torch.iinfo(torch.int8).max,
-        qscheme=torch.per_tensor_symmetric,
-        ch_axis=0,
-        observer_or_fake_quant_ctr=weight_fake_quant_ctr,
-    )
-    bias_fake_quant_ctr = FakeQuantize.with_args(
-        dtype=torch.int32,
-        quant_min=torch.iinfo(torch.int32).min,
-        quant_max=torch.iinfo(torch.int32).max,
-        qscheme=torch.per_tensor_symmetric,
-        observer=MovingAverageMinMaxObserver,
-    )
-    bias_quantization_spec = QuantizationSpec(
-        dtype=torch.int32,
-        quant_min=torch.iinfo(torch.int32).min,
-        quant_max=torch.iinfo(torch.int32).max,
-        qscheme=torch.per_tensor_symmetric,
-        observer_or_fake_quant_ctr=bias_fake_quant_ctr,
-    )
-    quantization_config = QuantizationConfig(
-        input_activation=act_quantization_spec,
-        output_activation=act_quantization_spec,
-        weight=weight_quantization_spec,
-        bias=bias_quantization_spec,
-    )
-
-    return quantization_config
-
-
 def get_16a16w_qnn_ptq_config(
+    act_symmetric: bool = False,
     act_observer=MovingAverageMinMaxObserver,
+    eps: float = None,
 ) -> QuantizationConfig:
-    extra_args: Dict[str, Any] = {"eps": 2**-20}
+    # the smallest defaults to DEFAULT_EPS_16BIT
+    extra_args: Dict[str, Any] = {"eps": eps if eps else DEFAULT_EPS_16BIT}
     act_quantization_spec = QuantizationSpec(
         dtype=torch.int32,
         quant_min=torch.iinfo(torch.uint16).min,
         quant_max=torch.iinfo(torch.uint16).max,
-        qscheme=torch.per_tensor_affine,
+        qscheme=(
+            torch.per_tensor_symmetric if act_symmetric else torch.per_tensor_affine
+        ),
         observer_or_fake_quant_ctr=act_observer.with_args(**extra_args),
     )
 
@@ -373,15 +351,84 @@ def get_16a16w_qnn_ptq_config(
     return quantization_config
 
 
+# TODO merge qat and ptq to a function, and use a bool flag to control it
+def get_16a8w_qnn_qat_config(
+    act_symmetric: bool = False,
+    act_observer=MovingAverageMinMaxObserver,
+    eps: float = None,
+) -> QuantizationConfig:
+    # the smallest defaults to DEFAULT_EPS_16BIT
+    extra_args: Dict[str, Any] = {"eps": eps if eps else DEFAULT_EPS_16BIT}
+    act_fake_quant_ctr = FusedMovingAvgObsFakeQuantize.with_args(
+        dtype=torch.int32,
+        quant_min=torch.iinfo(torch.uint16).min,
+        quant_max=torch.iinfo(torch.uint16).max,
+        qscheme=(
+            torch.per_tensor_symmetric if act_symmetric else torch.per_tensor_affine
+        ),
+        observer=act_observer.with_args(**extra_args),
+    )
+    act_quantization_spec = QuantizationSpec(
+        dtype=torch.int32,
+        quant_min=torch.iinfo(torch.uint16).min,
+        quant_max=torch.iinfo(torch.uint16).max,
+        qscheme=(
+            torch.per_tensor_symmetric if act_symmetric else torch.per_tensor_affine
+        ),
+        observer_or_fake_quant_ctr=act_fake_quant_ctr,
+    )
+
+    weight_fake_quant_ctr = FusedMovingAvgObsFakeQuantize.with_args(
+        dtype=torch.int8,
+        quant_min=torch.iinfo(torch.int8).min + 1,
+        quant_max=torch.iinfo(torch.int8).max,
+        qscheme=torch.per_tensor_symmetric,
+        observer=MovingAverageMinMaxObserver.with_args(**extra_args),
+    )
+    weight_quantization_spec = QuantizationSpec(
+        dtype=torch.int8,
+        quant_min=torch.iinfo(torch.int8).min + 1,
+        quant_max=torch.iinfo(torch.int8).max,
+        qscheme=torch.per_tensor_symmetric,
+        ch_axis=0,
+        observer_or_fake_quant_ctr=weight_fake_quant_ctr,
+    )
+
+    bias_fake_quant_ctr = FakeQuantize.with_args(
+        dtype=torch.int32,
+        quant_min=torch.iinfo(torch.int32).min,
+        quant_max=torch.iinfo(torch.int32).max,
+        qscheme=torch.per_tensor_symmetric,
+        observer=MovingAverageMinMaxObserver.with_args(**extra_args),
+    )
+    bias_quantization_spec = QuantizationSpec(
+        dtype=torch.int32,
+        quant_min=torch.iinfo(torch.int32).min,
+        quant_max=torch.iinfo(torch.int32).max,
+        qscheme=torch.per_tensor_symmetric,
+        observer_or_fake_quant_ctr=bias_fake_quant_ctr,
+    )
+
+    quantization_config = QuantizationConfig(
+        input_activation=act_quantization_spec,
+        output_activation=act_quantization_spec,
+        weight=weight_quantization_spec,
+        bias=bias_quantization_spec,
+    )
+
+    return quantization_config
+
+
 def get_ptq_per_channel_quant_config(
     act_dtype=torch.uint8,
     weight_dtype=torch.int8,
     act_observer=MovingAverageMinMaxObserver,
     act_symmetric: bool = False,
     ch_axis: int = 0,
+    eps: float = None,
 ) -> QuantizationConfig:
-    extra_args: Dict[str, Any] = {"eps": 2**-12}
-
+    # the smallest defaults to DEFAULT_EPS_16BIT
+    extra_args: Dict[str, Any] = {"eps": eps if eps else DEFAULT_EPS_16BIT}
     supported_act_types = {
         torch.uint8,
         torch.uint16,
@@ -429,7 +476,7 @@ def get_ptq_per_channel_quant_config(
         quant_max=7 if weight_dtype == torch.int4 else torch.iinfo(weight_dtype).max,
         qscheme=torch.per_channel_symmetric,
         ch_axis=ch_axis,
-        observer_or_fake_quant_ctr=PerChannelMinMaxObserver.with_args(**extra_args),
+        observer_or_fake_quant_ctr=PerChannelParamObserver.with_args(**extra_args),
     )
 
     bias_quantization_spec = _derived_bias_quant_spec
@@ -450,8 +497,10 @@ def get_ptq_per_block_quant_config(
     act_observer=MovingAverageMinMaxObserver,
     act_symmetric: bool = False,
     ch_axis: int = 0,
+    eps: float = None,
 ) -> QuantizationConfig:
-    extra_args: Dict[str, Any] = {"eps": 2**-12}
+    # the smallest defaults to DEFAULT_EPS_16BIT
+    extra_args: Dict[str, Any] = {"eps": eps if eps else DEFAULT_EPS_16BIT}
     quantization_config = get_ptq_per_channel_quant_config(
         act_dtype=act_dtype,
         weight_dtype=weight_dtype,
@@ -564,14 +613,18 @@ def get_qat_per_block_quant_config(
 
 # TODO merge qat and ptq to a function, and use a bool flag to control it
 def get_8a8w_qnn_qat_config(
-    act_symmetric: bool = False, act_observer=MovingAverageMinMaxObserver
+    act_symmetric: bool = False,
+    act_observer=MovingAverageMinMaxObserver,
+    eps: float = None,
 ) -> QuantizationConfig:
+    # the smallest scale defaults to DEFAULT_EPS_8BIT
+    extra_args: Dict[str, Any] = {"eps": eps if eps else DEFAULT_EPS_8BIT}
     act_fake_quant_ctr = FusedMovingAvgObsFakeQuantize.with_args(
         dtype=torch.uint8,
         qscheme=(
             torch.per_tensor_symmetric if act_symmetric else torch.per_tensor_affine
         ),
-        observer=act_observer,
+        observer=act_observer.with_args(**extra_args),
     )
     act_quantization_spec = QuantizationSpec(
         dtype=torch.uint8,
@@ -587,7 +640,7 @@ def get_8a8w_qnn_qat_config(
         quant_min=torch.iinfo(torch.int8).min + 1,
         quant_max=torch.iinfo(torch.int8).max,
         qscheme=torch.per_tensor_symmetric,
-        observer=MovingAverageMinMaxObserver,
+        observer=MovingAverageMinMaxObserver.with_args(**extra_args),
     )
     weight_quantization_spec = QuantizationSpec(
         dtype=torch.int8,
@@ -603,7 +656,7 @@ def get_8a8w_qnn_qat_config(
         quant_min=torch.iinfo(torch.int32).min,
         quant_max=torch.iinfo(torch.int32).max,
         qscheme=torch.per_tensor_symmetric,
-        observer=MovingAverageMinMaxObserver,
+        observer=MovingAverageMinMaxObserver.with_args(**extra_args),
     )
     bias_quantization_spec = QuantizationSpec(
         dtype=torch.int32,
@@ -624,20 +677,28 @@ def get_8a8w_qnn_qat_config(
 
 
 def get_16a4w_qnn_qat_config(
+    act_symmetric: bool = False,
     act_observer=MovingAverageMinMaxObserver,
+    eps: float = None,
 ) -> QuantizationConfig:
+    # the smallest defaults to DEFAULT_EPS_16BIT
+    extra_args: Dict[str, Any] = {"eps": eps if eps else DEFAULT_EPS_16BIT}
     act_fake_quant_ctr = FusedMovingAvgObsFakeQuantize.with_args(
         dtype=torch.int32,
         quant_min=torch.iinfo(torch.uint16).min,
         quant_max=torch.iinfo(torch.uint16).max,
-        qscheme=torch.per_tensor_affine,
-        observer=act_observer,
+        qscheme=(
+            torch.per_tensor_symmetric if act_symmetric else torch.per_tensor_affine
+        ),
+        observer=act_observer.with_args(**extra_args),
     )
     act_quantization_spec = QuantizationSpec(
         dtype=torch.int32,
         quant_min=torch.iinfo(torch.uint16).min,
         quant_max=torch.iinfo(torch.uint16).max,
-        qscheme=torch.per_tensor_affine,
+        qscheme=(
+            torch.per_tensor_symmetric if act_symmetric else torch.per_tensor_affine
+        ),
         observer_or_fake_quant_ctr=act_fake_quant_ctr,
     )
 
@@ -647,7 +708,7 @@ def get_16a4w_qnn_qat_config(
         quant_max=7,
         qscheme=torch.per_tensor_symmetric,
         ch_axis=0,
-        observer=MovingAverageMinMaxObserver,
+        observer=MovingAverageMinMaxObserver.with_args(**extra_args),
     )
     weight_quantization_spec = QuantizationSpec(
         dtype=torch.int8,
@@ -663,7 +724,7 @@ def get_16a4w_qnn_qat_config(
         quant_min=torch.iinfo(torch.int32).min,
         quant_max=torch.iinfo(torch.int32).max,
         qscheme=torch.per_tensor_symmetric,
-        observer=MovingAverageMinMaxObserver,
+        observer=MovingAverageMinMaxObserver.with_args(**extra_args),
     )
     bias_quantization_spec = QuantizationSpec(
         dtype=torch.int32,
@@ -689,7 +750,13 @@ def get_qat_per_channel_quant_config(
     act_observer=MovingAverageMinMaxObserver,
     act_symmetric=False,
     ch_axis: int = 0,
+    eps: float = None,
 ) -> QuantizationConfig:
+    # Use appropriate eps based on activation dtype
+    if act_dtype in {torch.uint8, torch.int8}:
+        extra_args: Dict[str, Any] = {"eps": eps if eps else DEFAULT_EPS_8BIT}
+    else:
+        extra_args: Dict[str, Any] = {"eps": eps if eps else DEFAULT_EPS_16BIT}
     supported_act_types = {
         torch.uint8,
         torch.uint16,
@@ -713,7 +780,7 @@ def get_qat_per_channel_quant_config(
         act_fake_quant_ctr = FusedMovingAvgObsFakeQuantize.with_args(
             dtype=torch.int32 if act_dtype == torch.uint16 else act_dtype,
             qscheme=torch.per_tensor_symmetric,
-            observer=act_observer,
+            observer=act_observer.with_args(**extra_args),
         )
         act_quantization_spec = QuantizationSpec(
             dtype=torch.int32 if act_dtype == torch.uint16 else act_dtype,
@@ -727,7 +794,7 @@ def get_qat_per_channel_quant_config(
             quant_min=torch.iinfo(act_dtype).min,
             quant_max=torch.iinfo(act_dtype).max,
             qscheme=torch.per_tensor_affine,
-            observer=act_observer,
+            observer=act_observer.with_args(**extra_args),
         )
         act_quantization_spec = QuantizationSpec(
             dtype=torch.int32 if act_dtype == torch.uint16 else act_dtype,
@@ -745,7 +812,7 @@ def get_qat_per_channel_quant_config(
         quant_max=7 if weight_dtype == torch.int4 else torch.iinfo(weight_dtype).max,
         qscheme=torch.per_channel_symmetric,
         ch_axis=ch_axis,
-        observer=MovingAveragePerChannelMinMaxObserver,
+        observer=MovingAveragePerChannelMinMaxObserver.with_args(**extra_args),
     )
     weight_quantization_spec = QuantizationSpec(
         dtype=torch.int8 if weight_dtype == torch.int4 else weight_dtype,

@@ -5,7 +5,7 @@
 # LICENSE file in the root directory of this source tree.
 from typing import cast, Dict
 
-import executorch.backends.qualcomm.python.PyQnnWrapperAdaptor as PyQnnWrapper
+import executorch.backends.qualcomm.python.PyQnnManagerAdaptor as PyQnnManager
 
 import numpy as np
 import torch
@@ -36,15 +36,15 @@ class CumulativeSum(NodeVisitor):
     def define_node(
         self,
         node: torch.fx.Node,
-        nodes_to_wrappers: Dict[torch.fx.Node, PyQnnWrapper.TensorWrapper],
-    ) -> PyQnnWrapper.PyQnnOpWrapper:
+        nodes_to_wrappers: Dict[torch.fx.Node, PyQnnManager.TensorWrapper],
+    ) -> PyQnnManager.PyQnnOpWrapper:
         input_node = self.get_node(node.args[0])
         input_tensor = self.get_tensor(input_node, node)
         input_tensor_wrapper = self.define_tensor(
             input_node,
             node,
             input_tensor,
-            PyQnnWrapper.Qnn_TensorType_t.QNN_TENSOR_TYPE_NATIVE,
+            PyQnnManager.Qnn_TensorType_t.QNN_TENSOR_TYPE_NATIVE,
             nodes_to_wrappers,
         )
 
@@ -57,11 +57,11 @@ class CumulativeSum(NodeVisitor):
             node,
             node,
             output_tensor,
-            PyQnnWrapper.Qnn_TensorType_t.QNN_TENSOR_TYPE_NATIVE,
+            PyQnnManager.Qnn_TensorType_t.QNN_TENSOR_TYPE_NATIVE,
             nodes_to_wrappers,
         )
 
-        cumsum_op = PyQnnWrapper.PyQnnOpWrapper(
+        cumsum_op = PyQnnManager.PyQnnOpWrapper(
             node.name,
             QNN_OP_PACKAGE_NAME_QTI_AISW,
             OpCumulativeSum.op_name,
@@ -70,17 +70,17 @@ class CumulativeSum(NodeVisitor):
         cumsum_op.AddOutputTensors([output_tensor_wrapper])
         cumsum_op.AddScalarParam(
             OpCumulativeSum.param_axis,
-            PyQnnWrapper.Qnn_DataType_t.QNN_DATATYPE_UINT_32,
+            PyQnnManager.Qnn_DataType_t.QNN_DATATYPE_UINT_32,
             {QCOM_DATA: dim},
         )
         cumsum_op.AddScalarParam(
             OpCumulativeSum.param_exclusive,
-            PyQnnWrapper.Qnn_DataType_t.QNN_DATATYPE_BOOL_8,
+            PyQnnManager.Qnn_DataType_t.QNN_DATATYPE_BOOL_8,
             {QCOM_DATA: False},
         )
         cumsum_op.AddScalarParam(
             OpCumulativeSum.param_reverse,
-            PyQnnWrapper.Qnn_DataType_t.QNN_DATATYPE_BOOL_8,
+            PyQnnManager.Qnn_DataType_t.QNN_DATATYPE_BOOL_8,
             {QCOM_DATA: False},
         )
 

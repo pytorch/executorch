@@ -89,6 +89,11 @@ class ExecuteNode {
   const std::vector<ArgGroup> args_;
   const std::string name_;
   bool has_data_dependent_shape_ = false;
+
+#ifdef ET_EVENT_TRACER_ENABLED
+  std::string operator_json;
+  size_t operator_count = 0;
+#endif
 };
 
 } // namespace vkcompute

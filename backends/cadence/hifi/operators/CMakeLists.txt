@@ -16,6 +16,7 @@ include(${EXECUTORCH_ROOT}/tools/cmake/Codegen.cmake)
 
 # ATen compliant ops that are needed to run this model.
 set(_aten_ops__srcs
+    "${EXECUTORCH_ROOT}/backends/cadence/hifi/operators/op_im2row_out.cpp"
     "${EXECUTORCH_ROOT}/backends/cadence/hifi/operators/op_add.cpp"
     "${EXECUTORCH_ROOT}/backends/cadence/hifi/operators/op_atan2.cpp"
     "${EXECUTORCH_ROOT}/backends/cadence/hifi/operators/op_bitwise_and.cpp"
@@ -52,11 +53,16 @@ set(_aten_ops__srcs
     "${EXECUTORCH_ROOT}/backends/cadence/hifi/operators/op_sigmoid.cpp"
     "${EXECUTORCH_ROOT}/backends/cadence/hifi/operators/op_sub.cpp"
     "${EXECUTORCH_ROOT}/backends/cadence/hifi/operators/op_tanh.cpp"
+    "${EXECUTORCH_ROOT}/backends/cadence/hifi/operators/op_transpose_copy.cpp"
     "${EXECUTORCH_ROOT}/backends/cadence/hifi/operators/op_view_copy.cpp"
     "${EXECUTORCH_ROOT}/backends/cadence/hifi/operators/op_where.cpp"
     "${EXECUTORCH_ROOT}/kernels/portable/cpu/op_clone.cpp"
+    "${EXECUTORCH_ROOT}/kernels/portable/cpu/op_exp.cpp"
     "${EXECUTORCH_ROOT}/kernels/portable/cpu/op_gelu.cpp"
     "${EXECUTORCH_ROOT}/kernels/portable/cpu/op_max_pool2d_with_indices.cpp"
+    "${EXECUTORCH_ROOT}/kernels/portable/cpu/op_native_layer_norm.cpp"
+    "${EXECUTORCH_ROOT}/kernels/portable/cpu/op_neg.cpp"
+    "${EXECUTORCH_ROOT}/kernels/portable/cpu/util/normalization_ops_util.cpp"
     "${EXECUTORCH_ROOT}/kernels/portable/cpu/op_to_copy.cpp"
     "${EXECUTORCH_ROOT}/kernels/portable/cpu/pattern/unary_ufunc_realhbbf16_to_floathbf16.cpp"
     "${EXECUTORCH_ROOT}/kernels/portable/cpu/util/activation_ops_util.cpp"
@@ -87,18 +93,64 @@ target_include_directories(
                           ${_common_include_directories}
 )
 
+# Generic kernels that the generic operators depend on. These provide
+# impl::generic::kernels functions like quantize/dequantize.
+set(_generic_kernels__srcs
+    "${EXECUTORCH_ROOT}/backends/cadence/generic/kernels/kernels.cpp"
+)
+
+# Generic custom ops that HiFi operators depend on as fallbacks. These provide
+# impl::generic::native implementations called by HiFi operators.
+set(_generic_custom_ops__srcs
+    "${EXECUTORCH_ROOT}/backends/cadence/generic/operators/op_quantized_linear.cpp"
+    "${EXECUTORCH_ROOT}/backends/cadence/generic/operators/op_quantized_conv1d_ncl.cpp"
+    "${EXECUTORCH_ROOT}/backends/cadence/generic/operators/op_quantized_conv1d_nlc.cpp"
+    "${EXECUTORCH_ROOT}/backends/cadence/generic/operators/op_quantized_conv2d.cpp"
+    "${EXECUTORCH_ROOT}/backends/cadence/generic/operators/op_quantized_max_pool2d.cpp"
+    "${EXECUTORCH_ROOT}/backends/cadence/generic/operators/op_quantized_matmul.cpp"
+)
+
 # Custom ops that are needed to run the test model.
 add_library(
   custom_ops
+  ${_generic_kernels__srcs}
+  ${_generic_custom_ops__srcs}
+  "op_quantized_add_asym8sxasym8s_asym8s_per_tensor_out.cpp"
+  "op_quantized_add_asym8uxasym8u_asym8u_per_tensor_out.cpp"
   "op_quantized_linear_out.cpp"
   "op_quantized_layer_norm.cpp"
+  "op_quantized_linear_asym8sxasym8s_asym8s_per_tensor_out.cpp"
+  "op_quantized_linear_asym8uxasym8u_asym8u_per_tensor_out.cpp"
   "op_quantized_matmul_out.cpp"
+  "op_quantized_matmul_asym8sxasym8s_asym8s_out.cpp"
+  "op_quantized_matmul_asym8uxasym8u_asym8u_out.cpp"
   "op_quantize_per_tensor.cpp"
+  "op_quantize_per_tensor_asym8s.cpp"
   "op_quantized_relu_out.cpp"
+  "op_quantized_relu_asym8s_asym8s_per_tensor_out.cpp"
+  "op_quantized_relu_asym8u_asym8u_per_tensor_out.cpp"
   "op_dequantize_per_tensor.cpp"
+  "op_dequantize_per_tensor_asym8s.cpp"
   "op_quantized_conv2d_nchw_out.cpp"
+  "op_quantized_conv1d_ncl.cpp"
+  "op_quantized_conv1d_nlc.cpp"
+  "op_quantized_conv2d_nchw_asym8sxsym8s_asym8s_per_tensor_out.cpp"
+  "op_quantized_conv2d_nchw_asym8uxsym8u_asym8u_per_tensor_out.cpp"
+  "op_quantized_conv2d_nchw_depthwise_asym8sxsym8s_asym8s_per_tensor_out.cpp"
+  "op_quantized_conv2d_nchw_depthwise_asym8uxsym8u_asym8u_per_tensor_out.cpp"
+  "op_quantized_conv2d_nchw_dilated_asym8sxsym8s_asym8s_per_tensor_out.cpp"
+  "op_quantized_conv2d_nchw_dilated_asym8uxsym8u_asym8u_per_tensor_out.cpp"
   "op_quantized_conv2d_nhwc_out.cpp"
-  "op_quantized_fully_connected_out"
+  "op_quantized_conv2d_nhwc_asym8sxsym8s_asym8s_per_tensor_out.cpp"
+  "op_quantized_conv2d_nhwc_asym8uxsym8u_asym8u_per_tensor_out.cpp"
+  "op_quantized_conv2d_nhwc_depthwise_asym8sxsym8s_asym8s_per_tensor_out.cpp"
+  "op_quantized_conv2d_nhwc_depthwise_asym8uxsym8u_asym8u_per_tensor_out.cpp"
+  "op_quantized_conv2d_nhwc_dilated_asym8sxsym8s_asym8s_per_tensor_out.cpp"
+  "op_quantized_conv2d_nhwc_dilated_asym8uxsym8u_asym8u_per_tensor_out.cpp"
+  "op_quantized_max_pool2d_nhwc.cpp"
+  "op_quantized_fully_connected_out.cpp"
+  "op_quantized_fully_connected_asym8sxasym8s_asym8s_per_tensor_out.cpp"
+  "op_quantized_fully_connected_asym8uxasym8u_asym8u_per_tensor_out.cpp"
 )
 target_include_directories(
   custom_ops PUBLIC ${ROOT_DIR}/.. ${CMAKE_BINARY_DIR}

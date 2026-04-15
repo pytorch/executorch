@@ -1,4 +1,4 @@
-# Copyright 2024-2025 Arm Limited and/or its affiliates.
+# Copyright 2024-2026 Arm Limited and/or its affiliates.
 #
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
@@ -10,7 +10,6 @@ used by the TOSA partitioner to decide if FX nodes are eligible for delegation.
 """
 
 
-import itertools
 import operator
 import typing
 from typing import final, Optional, Sequence, Type
@@ -57,7 +56,6 @@ from executorch.exir.dialects._ops import ops as exir_ops
 from torch._subclasses.fake_tensor import FakeTensor
 from torch.export.graph_signature import InputKind
 from torch.fx.passes.operator_support import any_chain, chain, OperatorSupportBase
-from torch.fx.passes.utils.source_matcher_utils import get_source_partitions
 
 
 class SupportedTOSAOperatorCheck(OperatorSupportBase):
@@ -86,7 +84,7 @@ class SupportedTOSAOperatorCheck(OperatorSupportBase):
         self.reporter = reporter
 
     # Class attributes populated by subclasses
-    tosa_specs: list[TosaSpecification] = []
+    tosa_specs: list[TosaSpecification] = TosaSpecification.all_versions_and_profiles()
     targets: list[str] = []
 
     @final
@@ -146,6 +144,10 @@ def register_tosa_support_check(checker: Type[SupportedTOSAOperatorCheck]):
     return checker
 
 
+def _is_integer_dtype(dtype: torch.dtype) -> bool:
+    return not dtype.is_floating_point and not dtype.is_complex
+
+
 def _is_quantized_constant(node: torch.fx.Node) -> bool:
     if node.target not in (
         exir_ops.edge.aten.full_like.default,
@@ -161,7 +163,7 @@ def _is_quantized_constant(node: torch.fx.Node) -> bool:
     for user in users:
         if user.target == exir_ops.edge.dim_order_ops._to_dim_order_copy.default:
             dim_order_dtype = get_first_fake_tensor(user).dtype
-            if dim_order_dtype.is_complex or dim_order_dtype.is_floating_point:
+            if not _is_integer_dtype(dim_order_dtype):
                 return False
         else:
             return False
@@ -182,12 +184,27 @@ def is_quantized(node: torch.fx.Node) -> bool:
 
     Returns:
         bool: True if the node is quantized, False otherwise.
+
     """
 
-    node_dtype = get_first_fake_tensor(node).dtype
-    # Integer-like dtype implies the node is already quantized.
-    if not node_dtype.is_complex and not node_dtype.is_floating_point:
-        return True
+    try:
+        node_dtype = get_first_fake_tensor(node).dtype
+        # Integer-like dtype implies the node is already quantized as long
+        # as inputs are not floating-point.
+        if _is_integer_dtype(node_dtype):
+            input_nodes = node.all_input_nodes
+            input_nodes_dtypes = [
+                get_first_fake_tensor(input_node).dtype for input_node in input_nodes
+            ]
+            if all(
+                _is_integer_dtype(input_node_dtype)
+                for input_node_dtype in input_nodes_dtypes
+            ):
+                return True
+
+    except TypeError:
+        # Could not determine dtype, fall back to other checks.
+        pass
 
     # Nodes introduced during lowering that exclusively feed quantized users.
     if _is_quantized_constant(node):
@@ -264,7 +281,6 @@ def tosa_support_factory(
     # Negative checks: Remove nodes from partitioning
     negative_checks: list[OperatorSupportBase] = [
         CheckInt64InputsAndOutputs(exported_program, reporter),
-        CheckFloat64Inputs(exported_program, reporter),
         RankCheck(reporter, max_rank=MAX_RANK),
         *[
             reporter.wrap_check(check, f"Rejected by {check.__class__.__name__}")
@@ -272,9 +288,22 @@ def tosa_support_factory(
         ],
     ]
 
-    if not tosa_spec.support_float():
+    if tosa_spec.support_float():
+        negative_checks.append(CheckMixedFloatingInputs(reporter))
+    else:
         negative_checks.append(CheckArmQuantized(reporter))
         negative_checks.append(CheckProperQuantization(reporter))
+
+    disallowed_dtypes = [torch.float64]
+    if not tosa_spec.support_extension("bf16"):
+        disallowed_dtypes.append(torch.bfloat16)
+    if tosa_spec.is_U55_subset:
+        disallowed_dtypes.append(torch.bool)
+    negative_checks.append(
+        CheckDtypeInputsAndOutputs(
+            exported_program, reporter, disallowed_dtypes, tosa_spec
+        )
+    )
     if tosa_spec.is_U55_subset:
         negative_checks.append(EthosU55NotSupported(reporter))
         negative_checks.append(EthosU55DtypeSupport(reporter))
@@ -347,10 +376,11 @@ class TOSAProINTFPSupportList(OperatorSupportBase):
 
 
 class CheckArmQuantized(OperatorSupportBase):
-    """
-    Check if the node was marked as quantized in the Arm backend.
-    This is used to ensure that nodes that were quantized in the Arm backend
-    are only partitioned if they are supported by the TOSA backend.
+    """Check if the node was marked as quantized in the Arm backend.
+
+    This is used to ensure that nodes that were quantized in the Arm backend are
+    only partitioned if they are supported by the TOSA backend.
+
     """
 
     def __init__(self, reporter: WhyNoPartitionReporter):
@@ -405,70 +435,6 @@ class CheckProperQuantization(OperatorSupportBase):
         """Initialize the check with a reporter."""
         self.reporter = reporter
 
-    def _is_matmul_node_supported(
-        self, submodules: typing.Mapping[str, torch.nn.Module], node: fx.Node
-    ):
-        """Check quantization for decomposed matmul partitions.
-
-        Handles an edge case where the quantized pipeline
-        `dq -> torch.matmul/operator.matmul -> q` decomposes into
-        `dq -> expand -> view -> aten.mm -> view -> q`.
-
-        Args:
-            submodules (Mapping[str, torch.nn.Module]): Map of child modules to
-                inspect for matmul partitions.
-            node (fx.Node): Node that should belong to a quantized matmul
-                partition.
-
-        Returns:
-            bool: True if the matched partition uses quantized inputs and
-                outputs.
-
-        """
-        for graph_module in submodules.values():
-            graph_module = typing.cast(fx.GraphModule, graph_module)
-            matmul_partitions_map = get_source_partitions(
-                graph_module.graph,
-                [
-                    torch.matmul,
-                    operator.matmul,
-                ],
-                None,
-            )
-            matmul_partitions = list(
-                itertools.chain.from_iterable(matmul_partitions_map.values())
-            )
-            matched_partition = None
-            for partition in matmul_partitions:
-                if node in partition.nodes:
-                    matched_partition = partition
-            if matched_partition is not None:
-                input_quantized = all(
-                    input_node.target in DQ_OPS
-                    for input_node in matched_partition.input_nodes
-                )
-                if not input_quantized:
-                    self.reporter.report_reject(
-                        node, "One or more matmul inputs were not quantized."
-                    )
-                    return False
-                output_quantized = all(
-                    output_node_user.target in Q_OPS
-                    for output_node_user in matched_partition.output_nodes[0].users
-                )
-                if not output_quantized:
-                    self.reporter.report_reject(
-                        node, "One or more matmul outputs were not quantized."
-                    )
-                    return False
-            else:
-                self.reporter.report_reject(
-                    node, "Node did not match any matmul source partition."
-                )
-                return False
-
-        return True
-
     def is_node_supported(
         self, submodules: typing.Mapping[str, torch.nn.Module], node: fx.Node
     ) -> bool:
@@ -482,14 +448,6 @@ class CheckProperQuantization(OperatorSupportBase):
         input_quantized = False
         if node.target not in self.targeted_ops:
             return True
-        elif node.target in (
-            exir_ops.edge.aten.bmm.default,
-            exir_ops.edge.aten.mm.default,
-        ):
-            source_fn_stack: tuple[typing.Any] = node.meta.get("source_fn_stack", [])
-            if len(source_fn_stack) > 0:
-                if source_fn_stack[-1][1] in (torch.matmul, operator.matmul):
-                    return self._is_matmul_node_supported(submodules, node)
 
         elif node.target in (exir_ops.edge.aten.max_pool2d_with_indices.default,):
             users = node.users
@@ -510,7 +468,7 @@ class CheckProperQuantization(OperatorSupportBase):
 
         input_quantized = input_quantized or all(
             (input_node.target in DQ_OPS)
-            or (not get_first_fake_tensor(input_node).dtype.is_floating_point)
+            or _is_integer_dtype(get_first_fake_tensor(input_node).dtype)
             for input_node in node.all_input_nodes
         )
 
@@ -519,8 +477,10 @@ class CheckProperQuantization(OperatorSupportBase):
             return False
 
         all_q_users = all((output_node.target in Q_OPS) for output_node in node.users)
-        is_floating_point = get_first_fake_tensor(node).dtype.is_floating_point
-        output_quantized = output_quantized or all_q_users or not is_floating_point
+        output_dtype = get_first_fake_tensor(node).dtype
+        output_quantized = (
+            output_quantized or all_q_users or _is_integer_dtype(output_dtype)
+        )
 
         if not output_quantized:
             self.reporter.report_reject(node, "One or more outputs were not quantized.")
@@ -637,24 +597,28 @@ class CheckInt64InputsAndOutputs(OperatorSupportBase):
         return True
 
 
-class CheckFloat64Inputs(OperatorSupportBase):
-    """Reject nodes with float64 inputs.
-
-    Useful as a negative check for specs that do not allow float64.
-
-    """
+class CheckDtypeInputsAndOutputs(OperatorSupportBase):
+    """Reject nodes with at least one disallowed dtype on inputs or outputs."""
 
     def __init__(
-        self, exported_program: ExportedProgram, reporter: WhyNoPartitionReporter
+        self,
+        exported_program: ExportedProgram,
+        reporter: WhyNoPartitionReporter,
+        disallowed_dtypes: list[torch.dtype],
+        tosa_spec: TosaSpecification,
     ):
         """Initialize the check with program context and reporter."""
         self.reporter = reporter
+        self.disallowed_dtypes = disallowed_dtypes
+        self.tosa_spec = tosa_spec
         super().__init__()
 
     def is_node_supported(
         self, submodules: typing.Mapping[str, torch.nn.Module], node: fx.Node
     ) -> bool:
-        """Return True if no float64 inputs are present."""
+        """Return True if no disallowed dtypes are present on inputs or
+        outputs.
+        """
         if is_submodule_node(node):
             return True
         for input_node in (
@@ -663,12 +627,74 @@ class CheckFloat64Inputs(OperatorSupportBase):
             if input_node.op != "get_attr"
         ):
             tensor = get_first_fake_tensor(input_node)
-            if tensor.dtype == torch.float64:
+            if tensor.dtype in self.disallowed_dtypes:
                 self.reporter.report_reject(
                     node,
-                    f"Had float64 input {input_node.name} that couldn't be handled.",
+                    f"Had {tensor.dtype} input {input_node.name} that is not supported by {self.tosa_spec}.",
                 )
                 return False
+
+        meta_val = node.meta["val"]
+        if isinstance(
+            meta_val, (Sequence, torch.fx.immutable_collections.immutable_list)
+        ):
+            outputs = meta_val
+        else:
+            outputs = (meta_val,)
+
+        for output in outputs:
+            if (
+                isinstance(output, FakeTensor)
+                and output.dtype in self.disallowed_dtypes
+            ):
+                self.reporter.report_reject(
+                    node,
+                    f"Had {output.dtype} output that is not supported by {self.tosa_spec}.",
+                )
+                return False
+        return True
+
+
+class CheckMixedFloatingInputs(OperatorSupportBase):
+    """Reject nodes with mixed floating-point input dtypes."""
+
+    def __init__(self, reporter: WhyNoPartitionReporter):
+        self.reporter = reporter
+        super().__init__()
+
+    def is_node_supported(
+        self, submodules: typing.Mapping[str, torch.nn.Module], node: fx.Node
+    ) -> bool:
+        """Return True if floating inputs are either absent or of a single
+        dtype.
+        """
+        if is_submodule_node(node):
+            return True
+
+        if node.target in (
+            torch.ops.higher_order.while_loop,
+            torch.ops.higher_order.cond,
+        ):
+            return True
+
+        floating_dtypes = set()
+        for input_node in (
+            input_node
+            for input_node in node.all_input_nodes
+            if input_node.op != "get_attr"
+        ):
+            dtype = get_first_fake_tensor(input_node).dtype
+            if dtype.is_floating_point:
+                floating_dtypes.add(dtype)
+
+        if len(floating_dtypes) > 1:
+            self.reporter.report_reject(
+                node,
+                f"Mixed floating-point input dtypes {floating_dtypes} are not supported by TOSA."
+                " Did you call model.to(dtype=...) or cast properly?",
+            )
+            return False
+
         return True
 
 

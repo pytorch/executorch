@@ -1,4 +1,4 @@
-# Copyright 2024-2025 Arm Limited and/or its affiliates.
+# Copyright 2024-2026 Arm Limited and/or its affiliates.
 #
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
@@ -26,7 +26,7 @@ from executorch.backends.arm.tosa.mapping import TosaArg
 class TableVisitor(NodeVisitor):
     target = "tosa.TABLE.default"
 
-    tosa_specs = [TosaSpecification.create_from_string("TOSA-1.0+INT")]
+    tosa_specs = TosaSpecification.all_versions_for_profile("INT")
 
     def define_node(
         self,
@@ -43,10 +43,10 @@ class TableVisitor(NodeVisitor):
             supported_output_dtypes.append(ts.DType.INT32)
 
         validate_valid_dtype(
-            self.target, inputs, supported_input_dtypes, output.tosa_spec
+            self.target, inputs, supported_input_dtypes, self.tosa_spec
         )
         validate_valid_dtype(
-            self.target, output, supported_output_dtypes, output.tosa_spec
+            self.target, output, supported_output_dtypes, self.tosa_spec
         )
 
         # The name of the table constant is a bit complex.

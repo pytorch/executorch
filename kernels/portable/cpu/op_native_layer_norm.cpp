@@ -8,7 +8,6 @@
 #include <c10/util/irange.h>
 
 #include <executorch/kernels/portable/cpu/util/normalization_ops_util.h>
-#include <executorch/kernels/portable/cpu/vec_ops.h>
 #include <executorch/runtime/kernel/kernel_includes.h>
 #include <cmath>
 #include <tuple>
@@ -54,41 +53,21 @@ void layer_norm(
   }
 
   const CTYPE* input_data = input.const_data_ptr<CTYPE>();
-  const CTYPE* weight_data;
-  if (weight.has_value()) {
-    weight_data = weight.value().const_data_ptr<CTYPE>();
-  } else {
-    weight_data = nullptr;
-  }
-  const CTYPE* bias_data;
-  if (bias.has_value()) {
-    bias_data = bias.value().const_data_ptr<CTYPE>();
-  } else {
-    bias_data = nullptr;
-  }
+  const CTYPE* weight_data =
+      weight.has_value() ? weight.value().const_data_ptr<CTYPE>() : nullptr;
+  const CTYPE* bias_data =
+      bias.has_value() ? bias.value().const_data_ptr<CTYPE>() : nullptr;
 
-  const CTYPE ct_normalized = static_cast<CTYPE>(normalized);
-  for (const auto i : c10::irange(leading)) {
-    const CTYPE* x = input_data + i * normalized;
-    CTYPE* y = out_data + i * normalized;
-
-    // compute E[X] and Var[x] = E[x^2] - E[x]^2
-    CTYPE sum = reduce_add(x, ct_normalized);
-    CTYPE sq_sum = vec_powerf(x, ct_normalized);
-    CTYPE mean_value = sum / ct_normalized;
-    CTYPE variance = sq_sum / ct_normalized - mean_value * mean_value;
-    CTYPE std = std::sqrt(variance + eps);
-
-    // Calculate the elements of output
-    for (const auto j : c10::irange(normalized)) {
-      CTYPE w = weight_data ? weight_data[j] : static_cast<CTYPE>(1);
-      CTYPE b = bias_data ? bias_data[j] : static_cast<CTYPE>(0);
-      y[j] = (x[j] - mean_value) / std * w + b;
-    }
-
-    mean_data[i] = mean_value;
-    rstd_data[i] = 1.0 / std;
-  }
+  layer_norm_scalar<CTYPE>(
+      input_data,
+      weight_data,
+      bias_data,
+      out_data,
+      mean_data,
+      rstd_data,
+      leading,
+      normalized,
+      eps);
 }
 
 } // namespace

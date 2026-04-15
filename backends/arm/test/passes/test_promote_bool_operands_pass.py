@@ -57,7 +57,7 @@ class MixedMulModule(torch.nn.Module):
 
 
 @common.parametrize("test_data", BoolBitwiseAndModule.test_data)
-def test_promote_bool_operands_all_bool(test_data: tensor_pair_t) -> None:
+def test_promote_bool_operands_tosa_FP_all_bool(test_data: tensor_pair_t) -> None:
     module = BoolBitwiseAndModule()
     ops_before_pass = {
         "executorch_exir_dialects_edge__ops_aten_bitwise_and_Tensor": 1,
@@ -81,7 +81,7 @@ def test_promote_bool_operands_all_bool(test_data: tensor_pair_t) -> None:
 
 
 @common.parametrize("test_data", MixedMulModule.test_data)
-def test_promote_bool_operands_mixed_types(test_data: tensor_pair_t) -> None:
+def test_promote_bool_operands_tosa_FP_mixed_types(test_data: tensor_pair_t) -> None:
     module = MixedMulModule()
     ops_before_pass = {
         "executorch_exir_dialects_edge__ops_aten_mul_Tensor": 1,

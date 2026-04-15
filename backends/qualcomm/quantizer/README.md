@@ -9,7 +9,7 @@ Thank you for contributing to Qualcomm AI Engine Direct delegate for ExecuTorch.
 
 ## References
 ### Qualcomm AI Engine Direct
-- [Operator Definitions for HTP](https://docs.qualcomm.com/bundle/publicresource/topics/80-63442-50/HtpOpDefSupplement.html)
+- [Operator Definitions for HTP](https://docs.qualcomm.com/bundle/publicresource/topics/80-63442-10/HtpOpDefSupplement.html)
 
 ### PyTorch
 - [ATen Operator Definitions](https://github.com/pytorch/pytorch/tree/main/aten/src/ATen/native)
@@ -40,33 +40,70 @@ In order to conduct PTQ for floating point precision graph, observers are requir
         kernel --> id6(Q_k) --> id7(DQ_k) --> id1(convolution)
         bias --> id8(Q_b) --> id9(DQ_b) --> id1(convolution)
     ```
-Qualcomm backend will consume the generated encodings and lower operators with fixed precision. This tutorial will guide you through the details of inserting observer and some useful utilies.
+Qualcomm backend will consume the generated encodings and lower operators with fixed precision. This tutorial will guide you through the details of inserting observer and some useful utilities.
 
 ### Register Annotation via Operator Type
-Let's start with hooking callback for designated operator target:
+Let's start with hooking callback for designated operator target in `annotators/{backend}_rules.py`:
 ```python
-def register_annotator(ops: List[OpOverload]):
-    def decorator(annotator: Callable):
-        for op in ops:
-            OP_ANNOTATOR[op] = annotator
+def register_annotator(aten_ops: List[OpOverload], qnn_op: Optional[str]):
+    def _wrap(op_def: GeneralOpDef):
+        for aten_op in aten_ops:
+            annotate_fn = op_def.annotate
+            validate_fn = op_def.validate
+            rule = OpQuantRule(
+                aten_op=aten_op,
+                qnn_op=qnn_op,
+                annotate_fn=annotate_fn,
+                validate_fn=validate_fn,
+            )
+            _RULES[rule.aten_op] = rule
+        return rule
 
-    return decorator
+    return _wrap
 ```
-The `register_annotator` decorator provides a convenient way to attach your own annotation logic, which requires list of operator type as its input argument.<br/> For example, the torch activation functions have `copy`, `in-place` implementation with small difference appears in naming (an extra `_` postfix), which will map to the same [Core ATen](https://pytorch.org/docs/stable/torch.compiler_ir.html) operators after `to_edge`:
+The `register_annotator` decorator provides a convenient way to attach your own annotation and validation logic, which requires list of operator type as its input argument and a QNN operation name<br/> For example, the torch activation functions have `copy`, `in-place` implementation with small difference appears in naming (an extra `_` postfix), which will map to the same [Core ATen](https://pytorch.org/docs/stable/torch.compiler_ir.html) operators after `to_edge`:
 ```python
-@register_annotator([torch.ops.aten.relu.default, torch.ops.aten.relu_.default])
+@register_annotator(
+    [torch.ops.aten.relu.default, torch.ops.aten.relu_.default],
+    QnnConstants.OpRelu.op_name,
+)
 ```
-Where `torch.ops.aten.relu.default` / `torch.ops.aten.relu_.default` map to `copy` / `in-place` version and both will be converted into `torch.ops.aten.relu.default` ultimately.<br/><br>
+Where `torch.ops.aten.relu.default` / `torch.ops.aten.relu_.default` map to `copy` / `in-place` version and both will be converted into `torch.ops.aten.relu.default` ultimately.<br/>
+The `qnn_op` is used to specify quantization constraints for validation with the `BackendOpInfo` library. If an operator doesn’t directly correspond to a QNN operator, you can set its value to `None`, which will skip validation for that operator.
+```python
+@register_annotator([operator.getitem], qnn_op=None)
+```
+The `operator.getitem` function acts as a skip operator in the QNN backend and does not correspond to any QNN operator. Therefore, we assign `qnn_op=None`.<br/><br>
 
-The function signature is defined as follow with two arguments:
+Create a base class `GeneralOpDef` that establishes the standard annotation and validation function behaviors.
 ```python
-def annotate_xxx(node: Node, quantization_config: QuantizationConfig) -> None:
+class GeneralOpDef:
+    @staticmethod
+    def annotate(node: Node, quantization_config: QuantizationConfig):
+        annotate_single_in_single_out(node, quantization_config)
+
+    @staticmethod
+    def validate(
+        node: Node, constraints_list: List[NormalizedConstraints], soc_info: SocInfo
+    ) -> bool:
+        valid = True
+        # If there's no quantization annotation, we can't validate against constraints.
+        if not _is_annotated([node]):
+            return valid
+        valid &= validate_against_backend_constraints(node, constraints_list)
+        return valid
+```
+
+The `annotate` function signature is defined as follow with two arguments:
+```python
+@staticmethod
+def annotate(node: Node, quantization_config: QuantizationConfig) -> None:
 ```
 - __node__: graph node required to be observed
 - __quantization_config__: data structure describing quantization configurations for IO activation / weight / bias
 
 ### Example of Conv2d Annotation
-Conv2d accepts up to three input tensors: `input activation`, `kernel`, `bias`. There are constraints imposed by [Qualcomm AI Engine Direct Manual](https://docs.qualcomm.com/bundle/publicresource/topics/80-63442-50/HtpOpDefSupplement.html#conv2d).<br/>
+Conv2d accepts up to three input tensors: `input activation`, `kernel`, `bias`. There are constraints imposed by [Qualcomm AI Engine Direct Manual](https://docs.qualcomm.com/bundle/publicresource/topics/80-63442-10/HtpOpDefSupplement.html#conv2d).<br/>
 Take 8-bit fixed point as example:
 - __weight__: must be symmetrically quantized if per-channel observer is applied
 - __bias__: must have `QNN_DATATYPE_SFIXED_POINT_32` and be symmetrically quantized with expected encoding `scales = weight.scales * input.scale`, `offset = 0` if per-channel observer is applied.
@@ -91,7 +128,7 @@ def ptq_per_channel_quant_config(
         quant_max=torch.iinfo(weight_dtype).max,
         qscheme=torch.per_channel_symmetric,
         ch_axis=0,
-        observer_or_fake_quant_ctr=PerChannelMinMaxObserver.with_args(**extra_args),
+        observer_or_fake_quant_ctr=PerChannelParamObserver.with_args(**extra_args),
     )
 
     bias_quantization_spec = _derived_bias_quant_spec
@@ -105,82 +142,168 @@ def ptq_per_channel_quant_config(
 
     return quantization_config
 ```
-Here we choose `torch.uint8` + `MinMaxObserver` for better converage of IO activation and apply rules to `weight` w/`PerChannelMinMaxObserver`, `bias` w/`_derived_bias_quant_spec` (a callable method to calculate encoding in desired way) to meet aforementioned constraints. The well-defined `quantizaton_config` will then be shipped to callback for annotation.<br/>
+Here we choose `torch.uint8` + `MinMaxObserver` for better coverage of IO activation and apply rules to `weight` w/`PerChannelParamObserver`, `bias` w/`_derived_bias_quant_spec` (a callable method to calculate encoding in desired way) to meet aforementioned constraints. The well-defined `quantizaton_config` will then be shipped to callback for annotation.<br/>
 
 Now, we can start to fill in the function body:
 - Register annotator
     ```python
     @register_annotator(
         [
-            torch.ops.aten.conv2d.default,
             torch.ops.aten.conv1d.default,
-            torch.ops.aten.conv_transpose2d.input,
+            torch.ops.aten.conv2d.default,
+            torch.ops.aten.conv2d.padding,
+            torch.ops.aten.convolution.default,
         ]
     )
-    def annotate_conv2d(node: Node, quantization_config: QuantizationConfig) -> None:
+    class Conv2d(GeneralOpDef):
     ```
     There are multiple targets expected to meet our annotation criteria, it's encouraged to do so for code reuse.
-
+- Define a annotation function interface
+    ```python
+        @staticmethod
+        def annotate(node: Node, quantization_config: QuantizationConfig) -> None:
+    ```
 - Define map of input quantization spec
     ```python
-        if _is_annotated([node]):
-            return
+            if _is_annotated([node]):
+                return
 
-        input_qspec_map = {}
+            # block quantization
+            if quantization_config.block_size is not None:
+                quantization_config.weight.observer_or_fake_quant_ctr.p.keywords.update(
+                    {QCOM_BLOCK_SIZE: quantization_config.block_size}
+                )
 
-        # annotate input activation
-        input_act = node.args[0]
-        input_spec = quantization_config.input_activation
-        input_qspec_map[input_act] = input_spec
+            input_qspec_map = {}
 
-        # annotate kernel
-        kernel = node.args[1]
-        input_qspec_map[kernel] = quantization_config.weight
+            # annotate input activation
+            input_act = node.args[0]
+            input_spec = quantization_config.input_activation
+            input_qspec_map[input_act] = input_spec
 
-        # annotate bias
-        if len(node.args) > 2:
-            bias = node.args[2]
-            input_qspec_map[bias] = quantization_config.bias(node)
+            # annotate kernel
+            kernel = node.args[1]
+            input_qspec_map[kernel] = quantization_config.weight
+
+            # annotate bias
+            if len(node.args) > 2:
+                bias = node.args[2]
+                input_qspec_map[bias] = quantization_config.bias(node)
     ```
     We first check if current graph node has been annotated. If not, an `input_qspec_map` dictionary required by PyTorch framework will be declared for providing mapping between graph nodes and their configurations.<br/>
     The parameters' order could be found [here](https://github.com/pytorch/pytorch/blob/main/aten/src/ATen/native/Convolution.cpp) mentioned in [ATen Operator Definitions](#pytorch). Since bias node is optional, the implementation will invoke `_derived_bias_quant_spec` to calculate the per-channel bias encoding only if it exists.
 
 - Update node's meta with framework compatible data structure
     ```python
-        node.meta[QUANT_ANNOTATION_KEY] = QuantizationAnnotation(
-            input_qspec_map=input_qspec_map,
-            output_qspec=quantization_config.output_activation,
-            _annotated=True,
-        )
+            node.meta[Q_ANNOTATION_KEY] = QuantizationAnnotation(
+                input_qspec_map=input_qspec_map,
+                output_qspec=quantization_config.output_activation,
+                _annotated=True,
+            )
     ```
-    After done processing `input_qspec_map`, it's required to have it in node's meta with special tag (`QUANT_ANNOTATION_KEY`) for `convert_pt2e` to properly insert observers.
+    After done processing `input_qspec_map`, it's required to have it in node's meta with special tag (`Q_ANNOTATION_KEY`) for `convert_pt2e` to properly insert observers.
 
+- Define a validation function interface
+    ```python
+        @staticmethod
+        def validate(
+            node: Node, constraints_list: List[NormalizedConstraints], soc_info: SocInfo
+        ) -> bool:
+    ```
+- Check if current node is annotated
+    ```python
+            valid = True
+            if not _is_annotated([node]):
+                return valid
+    ```
+- Check if current node supports LPBQ
+    ```python
+            weight_node = node.args[1]
+            weight_qspec = node.meta[Q_ANNOTATION_KEY].input_qspec_map.get(
+                weight_node, None
+            )
+            if (
+                weight_qspec
+                and weight_qspec.observer_or_fake_quant_ctr.p.keywords.get(
+                    QCOM_BLOCK_SIZE, None
+                )
+                is not None
+            ):
+                valid &= validate_lpbq_support(soc_info)
+                if not valid:
+                    logging.warning(
+                        f"LPBQ (16a4w block-wise quantization) requires V69 or newer for {node.name}"
+                    )
+    ```
+- Check if current node supports 16a16w quantization
+    ```python
+        act_node = node.args[0]
+        act_qspec = node.meta[Q_ANNOTATION_KEY].input_qspec_map.get(act_node, None)
+        if (
+            act_qspec
+            and act_qspec.dtype == torch.int32
+            and weight_qspec
+            and weight_qspec.dtype == torch.int32
+        ):
+            valid &= validate_16a16w_support(soc_info)
+            if not valid:
+                logging.warning(
+                    f"16-bit activations + 16-bit weights requires V73 or newer for {node.name}"
+                )
+    ```
+- Validate the current node against the backend constraints obtained from `BackendOpInfo` based on the `qnn_op`.
+    ```python
+        valid &= validate_against_backend_constraints(node, constraints_list)
+        return valid
+    ```
+    - Validate against the backend constraints by doing the following:
+      - Make sure that `SharedQuantizationSpec` is applied for `is_math_invariant` operator, such as view operations.
+      - Check the `scale` and `zero_point` values for specific operations. For example, sigmoid op requires `scale = 1 / (q_max - q_min + 1)` and `zero_point = 0`.
+      - Ensure that the `qscheme` satisfies symmetric constraints.
+      - Verify that the input and output `dtype` are supported.
 ### Common Annotators
 For operators without extra parameters to be observed, there are pre-defined annotation method for convenience:
 - Single in single out operators, e.g.:
     ```python
-    @register_annotator([torch.ops.aten.relu.default, torch.ops.aten.relu_.default])
-    def annotate_relu(node: Node, quantization_config: QuantizationConfig) -> None:
-        annotate_single_in_single_out(node, quantization_config)
+    @register_annotator(
+        [torch.ops.aten.relu.default, torch.ops.aten.relu_.default],
+        QnnConstants.OpRelu.op_name,
+    )
+    class Relu(GeneralOpDef):
+        pass
     ```
 
 - Binary in single out operators, e.g.:
     ```python
-    @register_annotator([torch.ops.aten.add, torch.ops.aten.add.Tensor])
-    def annotate_add(node: Node, quantization_config: QuantizationConfig) -> None:
-        annotate_binary(node, quantization_config)
+    @register_annotator(
+        [torch.ops.aten.add, torch.ops.aten.add.Tensor, torch.ops.aten.add_.Tensor],
+        QnnConstants.OpElementWiseAdd.op_name,
+    )
+    class Add(GeneralOpDef):
+        @staticmethod
+        def annotate(node: Node, quantization_config: QuantizationConfig) -> None:
+            annotate_binary(node, quantization_config)
     ```
 
 - Shared encodings between input / output, e.g.:<br/>
     ```python
     # For operators without arithmetical function, IOs are expected to own the same encodings.
-    @register_annotator([torch.ops.aten.transpose.int])
-    def annotate_transpose(node: Node, quantization_config: QuantizationConfig) -> None:
-        annotate_in_out_obs_sharing_op(node, quantization_config)
-        if not _is_annotated([node]):
-            annotate_single_in_single_out(node, quantization_config)
+   @register_annotator(
+        [
+            torch.ops.aten.permute.default,
+            torch.ops.aten.swapaxes.default,
+            torch.ops.aten.transpose.int,
+        ],
+        QnnConstants.OpTranspose.op_name,
+    )
+    class Permute(GeneralOpDef):
+        @staticmethod
+        def annotate(node: Node, quantization_config: QuantizationConfig) -> None:
+            annotate_in_out_obs_sharing_op(node, quantization_config)
+            if not _is_annotated([node]):
+                annotate_single_in_share_out(node, quantization_config)
     ```
-    This annotator only works for single-in-single-out scenario with node's input that has already been annotated. If not, we still need to invoke `annotate_single_in_single_out` again (this path should be less likely).
+    This annotator only works for single-in-single-out scenario with node's input that has already been annotated. If not, we still need to invoke `annotate_single_in_share_out` again (this path should be less likely).
 
 ## Issues
 Please refer to the [issue section](../README.md#issues) for more information.

@@ -1,7 +1,9 @@
-# Copyright 2024-2025 NXP
+# Copyright 2024-2026 NXP
 #
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
+
+import operator
 
 import executorch.backends.nxp.backend.ir.logger as logger
 import flatbuffers
@@ -13,13 +15,14 @@ from executorch.backends.nxp.backend.ir.converter.builder.aten_model_builder_dir
 from executorch.backends.nxp.backend.ir.converter.node_converter import (
     CustomDelegationOptions,
 )
+from torch._subclasses import FakeTensor
 from torch.export import ExportedProgram
 from torch.export.graph_signature import InputKind
 from torch.fx import Node
 from torch.nn.parameter import Parameter
 from executorch.backends.nxp.backend.ir.converter.node_converters.ops_converters import *  # noqa F403
+from executorch.backends.nxp.backend.data_format import DataFormat, NXP_NODE_FORMAT
 from executorch.backends.nxp.backend.neutron_target_spec import NeutronTargetSpec
-from executorch.backends.nxp.backend.node_format import NodeFormat, NXP_NODE_FORMAT
 from executorch.exir.dialects._ops import ops as exir_ops
 
 # noinspection PyProtectedMember
@@ -29,23 +32,35 @@ functions_converters = {
     exir_ops.edge.aten.addmm.default: AddMMConverter,  # noqa F405
     exir_ops.edge.aten.add.Tensor: AddTensorConverter,  # noqa F405
     exir_ops.edge.aten.avg_pool2d.default: AvgPool2dConverter,  # noqa F405
+    exir_ops.edge.aten.bmm.default: BMMConverter,  # noqa F405
     exir_ops.edge.aten.cat.default: CatConverter,  # noqa F405
+    exir_ops.edge.aten.clamp.default: ClampConverter,  # noqa F405
     exir_ops.edge.aten.clone.default: CloneConverter,  # noqa F405
     exir_ops.edge.dim_order_ops._clone_dim_order.default: CloneConverter,  # noqa F405
     exir_ops.edge.aten.constant_pad_nd.default: ConstantPadNDConverter,  # noqa F405
     exir_ops.edge.aten.convolution.default: ConvolutionConverter,  # noqa F405
     exir_ops.edge.aten.hardtanh.default: HardTanhConverter,  # noqa F405
-    exir_ops.edge.aten.max_pool2d.default: MaxPool2dConverter,  # noqa F405
+    exir_ops.edge.aten.leaky_relu.default: LeakyReluConverter,  # noqa F405
+    exir_ops.edge.aten.max_pool2d_with_indices.default: MaxPool2DWithIndicesConverter,  # noqa F405
     exir_ops.edge.aten.mean.dim: MeanDimConverter,  # noqa F405
     exir_ops.edge.aten.mm.default: MMConverter,  # noqa F405
+    exir_ops.edge.aten.mul.Tensor: MulTensorConverter,  # noqa F405
+    exir_ops.edge.aten.neg.default: NegConverter,  # noqa F405
     exir_ops.edge.aten.permute_copy.default: PermuteCopyConverter,  # noqa F405
+    exir_ops.edge.aten.prelu.default: PReLUConverter,  # noqa F405
     exir_ops.edge.aten.relu.default: ReLUConverter,  # noqa F405
+    exir_ops.edge.aten.sigmoid.default: SigmoidConverter,  # noqa F405
+    exir_ops.edge.aten.slice_copy.Tensor: SliceTensorConverter,  # noqa F405
     exir_ops.edge.aten._softmax.default: SoftmaxConverter,  # noqa F405
     exir_ops.edge.aten.sub.Tensor: SubTensorConverter,  # noqa F405
     exir_ops.edge.aten.tanh.default: TanhConverter,  # noqa F405
+    exir_ops.edge.aten.upsample_bilinear2d.vec: UpsampleBilinear2DConverter,  # noqa F405
+    exir_ops.edge.aten.upsample_nearest2d.vec: UpsampleNearest2DConverter,  # noqa F405
     exir_ops.edge.aten.view_copy.default: ViewCopyConverter,  # noqa F405
-    exir_ops.edge.aten.sigmoid.default: SigmoidConverter,  # noqa F405
 }
+
+
+NXP_PROCESSED_TAG = "NXP_PROCESSED_TAG"
 
 
 class EdgeProgramToIRConverter:
@@ -54,7 +69,7 @@ class EdgeProgramToIRConverter:
     """
 
     _default_conversion_config = ConversionConfig()
-    _default_target_spec = NeutronTargetSpec("imxrt700", "SDK_25_09")
+    _default_target_spec = NeutronTargetSpec("imxrt700")
     _default_delegation_options = CustomDelegationOptions()
 
     def convert_program(
@@ -63,7 +78,7 @@ class EdgeProgramToIRConverter:
         conversion_config: ConversionConfig = _default_conversion_config,
         neutron_target_spec: NeutronTargetSpec = _default_target_spec,
         custom_delegation_options: CustomDelegationOptions = _default_delegation_options,
-    ) -> (bytes, dict[str, NodeFormat]):
+    ) -> tuple[bytes, dict[str, DataFormat]]:
         """
         Convert ExportedProgram in Edge dialect to IR (TFLite flatbuffers) as bytes.
 
@@ -74,9 +89,11 @@ class EdgeProgramToIRConverter:
         :return: TFLite flatbuffers as bytes.
         """
         parameters_mapping = self.map_inputs_to_parameters(edge_program)
+        dim_order_map = self.map_nodes_to_dim_order(edge_program)
 
         cc = self.build_conversion_context(
             parameters_mapping,
+            dim_order_map,
             neutron_target_spec,
             conversion_config,
             custom_delegation_options,
@@ -148,6 +165,11 @@ class EdgeProgramToIRConverter:
                 if node.target in qdq_related_functions and "cluster" in node.meta:
                     # Skip (De)Quantize nodes that were already processed
                     pass
+                elif node.target == operator.getitem and node.meta.get(
+                    NXP_PROCESSED_TAG, False
+                ):
+                    # The node was already processed alongside the Q/DQ ops.
+                    pass
                 elif node.target in functions_converters:
                     functions_converters[node.target](conversion_context).convert(node)
                 else:
@@ -157,32 +179,85 @@ class EdgeProgramToIRConverter:
                     )
 
     @staticmethod
-    def map_inputs_to_parameters(edge_program: ExportedProgram) -> dict[str, Parameter]:
+    def map_inputs_to_parameters(
+        edge_program: ExportedProgram,
+        post_quantization_state_dict: dict[str, Parameter] | None = None,
+    ) -> dict[str, Parameter]:
         """
         Create mapping between program parameters (input nodes & static data nodes) and their names.
 
         :param edge_program: EdgeProgram instance.
+        :param post_quantization_state_dict: State-dict of the model right after quantization. During partitioning, the
+                                              `edge_program` only contains fake tensors without any data. In this case,
+                                              this state dict is used instead (if provided). Notice: It may potentially
+                                              contain outdated data,
         :return: Mapping from parameter name to parameter instance.
         """
         result_map = {}
 
         for input_spec in edge_program.graph_signature.input_specs:
             if input_spec.kind in [InputKind.PARAMETER, InputKind.BUFFER]:
-                result_map[input_spec.arg.name] = edge_program.state_dict[
-                    input_spec.target
-                ]
+
+                # First, try to load the static data from the model.
+                param = edge_program.state_dict[input_spec.target]
+
+                if not isinstance(param, FakeTensor):
+                    # Use the data from the model.
+                    result_map[input_spec.arg.name] = param
+
+                else:
+                    # It is the partitioning stage, which uses a FakeModel with FakeTensors (without the actual data).
+                    # Try to load the data from the post-quantization state dict.
+                    if (
+                        post_quantization_state_dict is not None
+                        and (
+                            param := post_quantization_state_dict.get(
+                                input_spec.target, None
+                            )
+                        )
+                        is not None
+                    ):
+                        result_map[input_spec.arg.name] = param
+
+                    else:
+                        logger.w(
+                            f"No real or post-quantization data found for '{input_spec.target}'. "
+                            f"Using a FakeTensor."
+                        )
+                        param = edge_program.state_dict[input_spec.target]
+                        result_map[input_spec.arg.name] = param
 
         return result_map
 
     @staticmethod
+    def map_nodes_to_dim_order(edge_program: ExportedProgram) -> dict[str, Parameter]:
+        """
+        Create mapping between node names and their dim-orders.
+
+        :param edge_program: EdgeProgram instance.
+        :return: Mapping from node name to dim-order.
+        """
+
+        return {
+            n.name: val.dim_order()
+            for n in edge_program.graph.nodes
+            if hasattr(val := n.meta.get("val", None), "dim_order")
+        }
+
+    @staticmethod
     def build_conversion_context(
         parameters_mapping: dict,
+        dim_order_map: dict[str, ...],
         neutron_target_spec: NeutronTargetSpec,
         conversion_config: ConversionConfig = _default_conversion_config,
         custom_delegation_options: CustomDelegationOptions = _default_delegation_options,
     ) -> ConversionContext:
         tflite_builder = AtenModelBuilderDirector(
-            3, "TFLite from EdgeProgram", neutron_target_spec, conversion_config
+            3,
+            "TFLite from EdgeProgram",
+            neutron_target_spec,
+            dim_order_map,
+            conversion_config,
         )
 
         # Add "sentinel" buffer (defined in schema.fbs)
@@ -200,9 +275,8 @@ class EdgeProgramToIRConverter:
     def _convert_qdq_cluster_q_dq_nodes(
         self, nodes: list[Node], conversion_context: ConversionContext
     ):
-        """
-        Go through program and convert De(Quantize) nodes that are part of the QDQ cluster into
-        tensors.
+        """Go through the program and convert [De]Quantize nodes that are part of a QDQ cluster into tensors.
+            Also convert related `GetItem` nodes to NO-OPs, which just propagate the quantization.
 
         :param nodes: Program's nodes.
         :param conversion_context: ConversionContext instance.
@@ -221,3 +295,14 @@ class EdgeProgramToIRConverter:
                 and part_of_qdq_cluster
             ):
                 qdq_q_ops_converters[node.target](conversion_context).convert(node)
+
+        # Usually, `getitem` nodes are a part of a "foreign" QDQ cluster. They consume the output of the main compute
+        #  operator, and they are followed by a `Quantize` operator, which specifies the output quantization parameters
+        #  of the cluster. So the input of the `GetItem` is float32, and the output is quantized. Due to how the Neutron
+        #  IR represents quantization, the quantization parameters must be propagated from the output to the input.
+        for node in nodes:
+            if node.target == operator.getitem:
+                # Convert the builtin function into a "NO-OP" in the IR, and propagate the quantization parameters in
+                #  reverse.
+                GetItemConverter(conversion_context).convert(node)  # noqa: F405
+                node.meta[NXP_PROCESSED_TAG] = True

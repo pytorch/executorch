@@ -1,4 +1,4 @@
-# Copyright 2025 Arm Limited and/or its affiliates.
+# Copyright 2025-2026 Arm Limited and/or its affiliates.
 #
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
@@ -9,9 +9,13 @@ import torch
 from executorch.backends.arm.test import common
 from executorch.backends.arm.test.tester.arm_tester import ArmTester
 from executorch.backends.arm.test.tester.test_pipeline import (
+    EthosU85PipelineINT,
+    OpNotSupportedPipeline,
     TosaPipelineFP,
     TosaPipelineINT,
+    VgfPipeline,
 )
+from pytest import mark
 
 aten_op = "torch.ops.higher_order.cond"
 exir_op = "torch.ops.higher_order.cond"
@@ -47,7 +51,7 @@ class CondOneArgOneOutput(torch.nn.Module):
 class CondOneArgBufferOneOutput(torch.nn.Module):
     def __init__(self, *args: common.Any, **kwargs: common.Any) -> None:
         super().__init__(*args, **kwargs)
-        self.buffer = torch.rand(2, 3)
+        self.buffer = torch.rand(1, 1, 2, 2)
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         def true_branch(arg: torch.Tensor, buffer: torch.Tensor) -> torch.Tensor:
@@ -159,7 +163,7 @@ def _single_input_case(
     module_factory: Callable[[], torch.nn.Module]
 ) -> Callable[[], tuple[torch.nn.Module, input_t1]]:
     def _create() -> tuple[torch.nn.Module, input_t1]:
-        return module_factory(), (torch.randn(2, 3),)
+        return module_factory(), (torch.randn(1, 1, 2, 2),)
 
     return _create
 
@@ -168,7 +172,7 @@ def _dual_input_case(
     module_factory: Callable[[], torch.nn.Module]
 ) -> Callable[[], tuple[torch.nn.Module, input_t2]]:
     def _create() -> tuple[torch.nn.Module, input_t2]:
-        return module_factory(), (torch.randn(2, 3), torch.randn(2, 3))
+        return module_factory(), (torch.randn(2, 3, 4, 6), torch.randn(2, 3, 4, 6))
 
     return _create
 
@@ -189,7 +193,9 @@ test_cases: dict[str, Callable[[], tuple[torch.nn.Module, tuple]]] = {
 def _make_calibration_samples(
     module: torch.nn.Module, example_inputs: tuple
 ) -> tuple[tuple[torch.Tensor, ...], ...]:
-    """Return one example input that triggers the if branch, and one that triggers the else branch."""
+    """Return one example input that triggers the if branch, and one that
+    triggers the else branch.
+    """
 
     if isinstance(module, CondTwoArgsOneOutput):
         # Predicate is sum(lhs-rhs) > 0
@@ -210,19 +216,22 @@ def _make_calibration_samples(
     return (if_example_inputs, else_example_inputs)
 
 
-@common.parametrize(
-    "case",
-    test_cases,
-    xfails={
-        "one_arg_and_scalar_one_output": "Scalars become get_attr nodes that are not supported.",
-        "nested_one_arg_one_output": "Not fully delegated.",
-    },
-)
+def _set_branch_calibration_samples(
+    pipeline, module: torch.nn.Module, example_inputs: tuple
+) -> None:
+    calibration_samples = _make_calibration_samples(module, example_inputs)
+    quant_stage_pos = pipeline.find_pos("quantize")
+    quant_stage = pipeline._stages[quant_stage_pos].args[0]
+    quant_stage.calibration_samples = calibration_samples
+
+
+@common.parametrize("case", test_cases)
 def test_cond_tosa_FP(case: Callable[[], tuple[torch.nn.Module, tuple]]):
     module, example_inputs = case()
     pipeline = TosaPipelineFP[tuple](
         module, example_inputs, aten_op, tosa_extensions=["cf"]
     )
+
     # Make sure no cond ops are left after partitioning.
     pipeline.add_stage_after(
         "to_edge_transform_and_lower",
@@ -233,26 +242,18 @@ def test_cond_tosa_FP(case: Callable[[], tuple[torch.nn.Module, tuple]]):
     pipeline.run()
 
 
-@common.parametrize(
-    "case",
-    test_cases,
-    xfails={
-        "zero_args_one_output": "Since the submodules have no input, the tracer fails finding a fake tensor mode,"
-        " and traces the graph with real tensors, which tosa.RESCALE can't handle.",
-        "one_arg_and_scalar_one_output": "Incorrect quantization on the scalar.",
-        "nested_one_arg_one_output": "Node submodule_0 target submodule_0 references nonexistent attribute submodule_0",
-    },
-)
+@common.parametrize("case", test_cases)
 def test_cond_tosa_INT(case: Callable[[], tuple[torch.nn.Module, tuple]]):
     module, example_inputs = case()
     pipeline = TosaPipelineINT[tuple](
-        module, example_inputs, aten_op, tosa_extensions=["cf"]
+        module,
+        example_inputs,
+        aten_op,
+        tosa_extensions=["cf"],
+        frobenius_threshold=0.8,
+        cosine_threshold=0.8,  # MLETORCH-1808
     )
-    calibration_samples = _make_calibration_samples(module, example_inputs)
-    quant_stage_pos = pipeline.find_pos("quantize")
-    quant_stage = pipeline._stages[quant_stage_pos].args[0]
-    quant_stage.calibration_samples = calibration_samples
-
+    _set_branch_calibration_samples(pipeline, module, example_inputs)
     # Make sure no cond ops are left after partitioning.
     pipeline.add_stage_after(
         "to_edge_transform_and_lower",
@@ -260,4 +261,55 @@ def test_cond_tosa_INT(case: Callable[[], tuple[torch.nn.Module, tuple]]):
         pipeline.tester,
         ["torch.ops.higher_order.cond"],
     )
+    pipeline.run()
+
+
+@common.parametrize("case", test_cases)
+def test_cond_u55_INT(case: Callable[[], tuple[torch.nn.Module, tuple]]):
+    module, example_inputs = case()
+    pipeline = OpNotSupportedPipeline[tuple](module, example_inputs, {aten_op: 1})
+    pipeline.pop_stage("check_count.exir")
+    pipeline.run()
+
+
+@common.parametrize("case", test_cases)
+@common.XfailIfNoCorstone320.with_args(raises=None)
+def test_cond_u85_INT(case: Callable[[], tuple[torch.nn.Module, tuple]]):
+    module, example_inputs = case()
+    pipeline = EthosU85PipelineINT[tuple](module, example_inputs, aten_op, exir_op)
+    _set_branch_calibration_samples(pipeline, module, example_inputs)
+    pipeline.run()
+
+
+@mark.skip("Cond not supported in model_converter.")
+@common.parametrize(
+    "case",
+    test_cases,
+)
+@common.SkipIfNoModelConverter
+def test_cond_vgf_FP(case: Callable[[], tuple[torch.nn.Module, tuple]]):
+    module, example_inputs = case()
+    VgfPipeline[tuple](
+        module,
+        example_inputs,
+        aten_op,
+        exir_op,
+    ).run()
+
+
+@mark.skip("Cond not supported in model_converter.")
+@common.parametrize(
+    "case",
+    test_cases,
+)
+@common.SkipIfNoModelConverter
+def test_cond_vgf_INT(case: Callable[[], tuple[torch.nn.Module, tuple]]):
+    module, example_inputs = case()
+    pipeline = VgfPipeline[tuple](
+        module,
+        example_inputs,
+        aten_op,
+        exir_op,
+    )
+    _set_branch_calibration_samples(pipeline, module, example_inputs)
     pipeline.run()

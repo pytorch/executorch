@@ -124,23 +124,27 @@ def test_clone_u85_INT(input_data):
 
 @common.parametrize("test_data", delegated_clones)
 @common.SkipIfNoModelConverter
-def test_clone_vgf_FP(test_data):
-    module, input_tensor = test_data()
-    pipeline = VgfPipeline[input_t](
-        module(), input_tensor, aten_op, exir_op, tosa_version="TOSA-1.0+FP"
-    )
-    pipeline.run()
-
-
-@common.parametrize("test_data", delegated_clones)
-@common.SkipIfNoModelConverter
-def test_clone_vgf_INT(test_data):
+def test_clone_vgf_no_quant(test_data):
     module, input_tensor = test_data()
     pipeline = VgfPipeline[input_t](
         module(),
         input_tensor,
         aten_op,
         exir_op,
-        tosa_version="TOSA-1.0+INT",
+        quantize=False,
+    )
+    pipeline.run()
+
+
+@common.parametrize("test_data", delegated_clones)
+@common.SkipIfNoModelConverter
+def test_clone_vgf_quant(test_data):
+    module, input_tensor = test_data()
+    pipeline = VgfPipeline[input_t](
+        module(),
+        input_tensor,
+        aten_op,
+        exir_op,
+        quantize=True,
     )
     pipeline.run()

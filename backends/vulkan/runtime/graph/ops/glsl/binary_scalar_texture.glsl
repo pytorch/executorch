@@ -8,6 +8,8 @@
 
 #version 450 core
 
+${define_required_extensions(STORAGE, DTYPE)}
+
 #define PRECISION ${PRECISION}
 
 #define NAME ${VARIANT_NAME}
@@ -18,7 +20,6 @@
 #define op(X, Y) ${OPERATOR}
 
 ${define_active_storage_type(STORAGE)}
-${define_required_extensions(DTYPE)}
 
 layout(std430) buffer;
 
@@ -30,7 +31,9 @@ ${layout_declare_tensor(B, "r", "t_in", DTYPE, STORAGE)}
 ${layout_declare_ubo(B, "TextureMetadata", "outp")}
 ${layout_declare_ubo(B, "TextureMetadata", "inp")}
 
-${layout_declare_ubo(B, "float", "scalar_value")}
+layout(push_constant) uniform restrict Block {
+  float scalar_value;
+};
 
 layout(local_size_x_id = 0, local_size_y_id = 1, local_size_z_id = 2) in;
 

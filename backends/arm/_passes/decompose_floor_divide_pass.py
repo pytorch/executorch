@@ -1,4 +1,4 @@
-# Copyright 2025 Arm Limited and/or its affiliates.
+# Copyright 2025-2026 Arm Limited and/or its affiliates.
 #
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
@@ -18,9 +18,8 @@ aten_floor_divide_ops = (torch.ops.aten.floor_divide.default,)
 
 
 def get_floor_divide_decomposition(op) -> tuple:
-    """
-    Returns the decomposition of the given aten.floor_div operation into
-    its equivalent TOSA-supported operations
+    """Returns the decomposition of the given aten.floor_div operation into its
+    equivalent TOSA-supported operations.
 
     This handles both edge dialect ops and core PyTorch ops. The decomposition strategy
     is:
@@ -31,6 +30,7 @@ def get_floor_divide_decomposition(op) -> tuple:
 
     Raises:
         RuntimeError: If the provided operator is not a supported floor_divide variant.
+
     """
 
     if op in edge_floor_divide_ops:
@@ -48,8 +48,8 @@ def get_floor_divide_decomposition(op) -> tuple:
 
 
 class DecomposeFloorDividePass(ArmPass):
-    """
-    Decomposes aten.floor_divide into aten.div.Tensor_mode with rounding_mode="floor".
+    """Decomposes aten.floor_divide into aten.div.Tensor_mode with
+    rounding_mode="floor".
     """
 
     _passes_required_after: Set[Type[ExportPass]] = {DecomposeDivTensorModePass}

@@ -16,15 +16,21 @@ import numpy as np
 import torch
 import torch.nn.functional as F
 import torchvision
-
-from executorch.backends.qualcomm.quantizer.quantizer import QuantDtype
-from executorch.examples.qualcomm.utils import (
+from executorch.backends.qualcomm.export_utils import (
     build_executorch_binary,
-    get_imagenet_dataset,
-    make_output_dir,
     make_quantizer,
+    QnnConfig,
     setup_common_args_and_variables,
     SimpleADB,
+)
+
+from executorch.backends.qualcomm.quantizer.quantizer import QuantDtype
+from executorch.backends.qualcomm.serialization.qc_schema import (
+    QnnExecuTorchBackendType,
+)
+from executorch.examples.qualcomm.utils import (
+    get_imagenet_dataset,
+    make_output_dir,
     topk_accuracy,
 )
 from torchvision.models.maxvit import (
@@ -123,6 +129,7 @@ def forward(self, x: torch.Tensor) -> torch.Tensor:
 
 
 def main(args):
+    qnn_config = QnnConfig.load_config(args.config_file if args.config_file else args)
     # ensure the working directory exist.
     os.makedirs(args.artifact, exist_ok=True)
 
@@ -140,7 +147,7 @@ def main(args):
             crop_size=224,
         )
 
-    pte_filename = "maxvit_t_qnn_q8"
+    pte_filename = "maxvit_t_qnn"
     instance = torchvision.models.maxvit_t(weights="IMAGENET1K_V1").eval()
     for block in instance.blocks:
         for layer in block.layers:
@@ -156,32 +163,27 @@ def main(args):
                                 forward, attn_sub_layer
                             )
 
-    build_executorch_binary(
-        instance,
-        inputs[0],
-        args.model,
-        f"{args.artifact}/{pte_filename}",
-        inputs,
-        custom_quantizer=make_quantizer(
+    quantizer = {
+        QnnExecuTorchBackendType.kGpuBackend: None,
+        QnnExecuTorchBackendType.kHtpBackend: make_quantizer(
             quant_dtype=QuantDtype.use_8a8w,
             per_channel_linear=True,
+            backend=qnn_config.backend,
+            soc_model=qnn_config.soc_model,
         ),
-        shared_buffer=args.shared_buffer,
+    }[qnn_config.backend]
+    build_executorch_binary(
+        model=instance,
+        qnn_config=qnn_config,
+        file_name=f"{args.artifact}/{pte_filename}",
+        dataset=inputs,
+        custom_quantizer=quantizer,
     )
 
-    if args.compile_only:
-        return
-
     adb = SimpleADB(
-        qnn_sdk=os.getenv("QNN_SDK_ROOT"),
-        build_path=f"{args.build_folder}",
+        qnn_config=qnn_config,
         pte_path=f"{args.artifact}/{pte_filename}.pte",
         workspace=f"/data/local/tmp/executorch/{pte_filename}",
-        device_id=args.device,
-        host_id=args.host,
-        soc_model=args.model,
-        shared_buffer=args.shared_buffer,
-        target=args.target,
     )
     adb.push(inputs=inputs)
     adb.execute()
@@ -190,7 +192,7 @@ def main(args):
     output_data_folder = f"{args.artifact}/outputs"
     make_output_dir(output_data_folder)
 
-    adb.pull(output_path=args.artifact)
+    adb.pull(host_output_path=args.artifact)
 
     # top-k analysis
     predictions = []
@@ -234,7 +236,7 @@ if __name__ == "__main__":
     )
 
     args = parser.parse_args()
-    args.validate(args)
+
     try:
         main(args)
     except Exception as e:

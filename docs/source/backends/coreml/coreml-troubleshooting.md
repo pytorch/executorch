@@ -7,11 +7,6 @@ This page describes common issues that you may encounter when using the Core ML 
 
 This happens because the model is in FP16, but Core ML interprets some of the arguments as FP32, which leads to a type mismatch.  The solution is to keep the PyTorch model in FP32.  Note that the model will be still be converted to FP16 during lowering to Core ML unless specified otherwise in the compute_precision [Core ML `CompileSpec`](coreml-partitioner.md#coreml-compilespec).  Also see the [related issue in coremltools](https://github.com/apple/coremltools/issues/2480).
 
-2. coremltools/converters/mil/backend/mil/load.py", line 499, in export
-    raise RuntimeError("BlobWriter not loaded")
-
-If you're using Python 3.13, try reducing your python version to Python 3.12.  coremltools does not support Python 3.13 per [coremltools issue #2487](https://github.com/apple/coremltools/issues/2487).
-
 ### Issues during runtime
 1. [ETCoreMLModelCompiler.mm:55] [Core ML]  Failed to compile model, error = Error Domain=com.apple.mlassetio Code=1 "Failed to parse the model specification. Error: Unable to parse ML Program: at unknown location: Unknown opset 'CoreML7'." UserInfo={NSLocalizedDescription=Failed to par$
 

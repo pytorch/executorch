@@ -1,6 +1,6 @@
 # Copyright (c) Meta Platforms, Inc. and affiliates.
 # All rights reserved.
-# Copyright 2024-2025 Arm Limited and/or its affiliates.
+# Copyright 2024-2026 Arm Limited and/or its affiliates.
 #
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
@@ -8,15 +8,21 @@
 
 import traceback
 from inspect import isclass
-from typing import Optional, Sequence
+from typing import List, Optional, Sequence, Tuple
 
 import torch
 import torch.fx
 from executorch.backends.arm.common.debug import get_node_debug_info
 from executorch.backends.arm.common.type import ensure_type
+from executorch.backends.arm.tosa.mapping import TosaSpecialDtype
 from executorch.exir import ExportedProgram
 from executorch.exir.dialects._ops import ops as exir_ops
 from executorch.exir.dialects.edge._ops import EdgeOpOverload
+from executorch.exir.graph_module import (
+    _get_control_flow_submodules,
+    get_control_flow_submodules,
+)
+from executorch.exir.pass_base import NodeMetadata
 
 from torch._export.utils import (
     get_buffer,
@@ -29,6 +35,7 @@ from torch._export.utils import (
 from torch._ops import OpOverload
 from torch._subclasses.fake_tensor import FakeTensor
 from torch.export.graph_signature import InputKind
+from torch.fx import GraphModule, Node
 
 
 def is_submodule_node(node: torch.fx.Node):
@@ -42,8 +49,8 @@ def is_submodule_node(node: torch.fx.Node):
 
 
 def is_get_attr_node(node: torch.fx.Node) -> bool:
-    """
-    Returns true if the given node is a get attr node for a tensor of the model.
+    """Returns true if the given node is a get attr node for a tensor of the
+    model.
     """
     return (
         isinstance(node, torch.fx.Node)
@@ -106,6 +113,19 @@ def get_param_tensor(
     raise RuntimeError(f"unsupported param type, {node.op}.")
 
 
+def expand_around_channel(param: Sequence[int] | int, spatial_rank: int) -> list[int]:
+    """Expand a scalar or 1-D parameter around the channel dimension into a
+    broadcastable shape while preserving the channel location.
+    """
+    if isinstance(param, int):
+        return [param] * spatial_rank
+
+    param_list = list(param)
+    if len(param_list) == 1 and spatial_rank > 1:
+        param_list = param_list * spatial_rank
+    return param_list
+
+
 def create_node(
     graph: torch.fx.Graph,
     op_target: OpOverload | EdgeOpOverload,
@@ -116,9 +136,12 @@ def create_node(
     from_node: Optional[torch.fx.Node] = None,
     inherit_qparams: bool = False,
 ):
-    """
-    Adds a node to 'graph'. graph.inserting_before/after() should be used before the call to decide where to insert the node.
-    If quantize is true and q_params is not None, a q dq pair is inserted after the newly created node.
+    """Adds a node to 'graph'.
+
+    graph.inserting_before/after() should be used before the call to decide
+    where to insert the node. If quantize is true and q_params is not None, a q
+    dq pair is inserted after the newly created node.
+
     """
 
     node = graph.create_node(
@@ -150,15 +173,37 @@ def create_node(
     return node
 
 
+def create_shape_node(
+    graph: torch.fx.Graph,
+    op_target: EdgeOpOverload,
+    args: tuple = (),
+    kwargs: Optional[dict] = None,
+    from_node: Optional[torch.fx.Node] = None,
+):
+    """Adds a shape node to 'graph'.
+
+    graph.inserting_before/after() should be used before the call to decide
+    where to insert the node.
+
+    """
+    node = create_node(
+        graph=graph,
+        op_target=op_target,
+        args=args,
+        kwargs=kwargs,
+        from_node=from_node,
+    )
+    node.meta[TosaSpecialDtype.meta_key()] = TosaSpecialDtype.SHAPE
+    return node
+
+
 def insert_q_dq_pair(
     graph: torch.fx.Graph,
     anchor: torch.fx.Node,
     q_params: tuple,
     from_node: Optional[torch.fx.Node] = None,
 ):
-    """
-    Inserts a q dq node pair after the node 'anchor'.
-    """
+    """Inserts a q dq node pair after the node 'anchor'."""
 
     with graph.inserting_after(anchor):
         q = create_node(
@@ -183,10 +228,51 @@ def insert_q_dq_pair(
     return dq
 
 
+def meta_without_qparams(meta: NodeMetadata) -> NodeMetadata:
+    """Return a copy of NodeMetadata with input/output qparams cleared."""
+    plain_meta_dict = dict(meta.data)
+    plain_meta_dict["input_qparams"] = {}
+    plain_meta_dict["output_qparams"] = {}
+    return NodeMetadata(plain_meta_dict)
+
+
+def insert_scalar(
+    graph: torch.fx.Graph,
+    value: int | float,
+    meta: NodeMetadata | dict,
+    from_node: torch.fx.Node,
+    is_tfa_pass: bool = False,
+) -> torch.fx.Node | int | float:
+    """Insert an `aten.full` scalar node for direct graph-rewrite passes."""
+
+    if is_tfa_pass:
+        return value
+
+    kwargs = {}
+    val = None
+    if "val" in meta:
+        val = meta["val"]
+        if isinstance(val, tuple):
+            val = val[0]
+        kwargs = {"device": val.device, "dtype": val.dtype}
+
+    scalar = create_node(
+        graph=graph,
+        op_target=exir_ops.edge.aten.full.default,
+        args=((1,), value),
+        kwargs=kwargs,
+        from_node=from_node,
+    )
+    if val is not None:
+        scalar.meta["val"] = torch.full((1,), value, **kwargs)
+    return scalar
+
+
 def get_first_fake_tensor(node: torch.fx.Node) -> FakeTensor:
-    """
-    Returns a FakeTensor from the meta field of 'node'.
+    """Returns a FakeTensor from the meta field of 'node'.
+
     If the node contains many fake tensors, return the first one.
+
     """
     if isinstance(
         node.meta["val"], (Sequence, torch.fx.immutable_collections.immutable_list)
@@ -206,11 +292,12 @@ def get_first_fake_tensor(node: torch.fx.Node) -> FakeTensor:
 
 
 def get_node_arg(args: list | dict, key: int | str | type, default_value=None):
-    """
-    Help-function for getting a value from node.args/ kwargs, three cases:
+    """Help-function for getting a value from node.args/ kwargs, three cases:
+
     1. By position in node.args - Returns arg at given position or default_value if index is one out of bounds
     2. By key in node.kwargs - Returns kwarg with given key or default_value if it deos not exist
     3. By type in node.args - Returns first arg of args of given type. Useful for cases where arg postions may differ but types are unique.
+
     """
     if isinstance(key, int):
         if 0 <= key < len(args):
@@ -239,8 +326,11 @@ def get_node_arg(args: list | dict, key: int | str | type, default_value=None):
 
 
 def set_node_arg(node: torch.fx.Node, i: int | str, value):
-    """
-    Help-function for setting a value in node.args/ kwargs. If the index is one larger than the list size, the value is instead appended to the list.
+    """Help-function for setting a value in node.args/ kwargs.
+
+    If the index is one larger than the list size, the value is instead appended
+    to the list.
+
     """
     if isinstance(i, int):
         if 0 <= i < len(node.args):
@@ -265,3 +355,45 @@ def set_node_arg(node: torch.fx.Node, i: int | str, value):
 def get_output_dim_orders(graph_module):
     output_node = graph_module.graph.output_node()
     return [get_first_fake_tensor(node).dim_order() for node in output_node.args[0]]
+
+
+def is_nested_control_flow_graph(graph_module: GraphModule) -> bool:
+    """Returns True if graph_module is a nested control-flow graph."""
+
+    # Find all top-level control-flow submodules
+    top_cf = get_control_flow_submodules(graph_module)
+    # For each submodule, see if it itself has control-flow inside
+    for _, submod, _ in top_cf:
+        if get_control_flow_submodules(submod):
+            return True
+    return False
+
+
+def get_cond_while_submodules_nested(
+    graph_module: GraphModule,
+    apply_quantization: bool = False,
+) -> List[Tuple[str, GraphModule, Node]]:
+    """Recursively find cond/while_loop submodules in an GraphModule.
+
+    In nested control flow graphs, FX records the submodule functions
+    (true/false or cond/body) in reverse order compared to top-level graphs. We
+    must swap the indices when nested so that cond (first) and body/true_fn
+    (second) are consistently identified across all nesting levels.
+
+    """
+
+    # Determine arg indices based on nesting and whether only cond branch is needed
+    nested = is_nested_control_flow_graph(graph_module)
+    # cond: [true_fn, false_fn] or swapped if nested
+    cond_indices = [2, 1] if nested else [1, 2]
+    # while_loop: [cond_fn, body_fn] or swapped if nested
+    while_indices = [1, 0] if nested else [0, 1]
+    if apply_quantization:
+        # only keep the cond_fn for while_loop (first index) when quantizing.
+        while_indices = [while_indices[0]]
+    mapping = {
+        torch.ops.higher_order.cond: cond_indices,
+        torch.ops.higher_order.while_loop: while_indices,
+    }
+    # collect cond/while submodules (using mapping indices)
+    return _get_control_flow_submodules(graph_module, mapping)

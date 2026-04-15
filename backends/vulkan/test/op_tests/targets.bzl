@@ -158,10 +158,7 @@ def define_common_targets(is_fbcode = False):
             "//executorch/runtime/core/exec_aten:lib",
             runtime.external_dep_location("libtorch"),
         ],
-        visibility = [
-            "//executorch/backends/vulkan/test/op_tests/...",
-            "@EXECUTORCH_CLIENTS",
-        ],
+        visibility = ["PUBLIC"],
     )
 
     define_test_targets(
@@ -181,6 +178,12 @@ def define_common_targets(is_fbcode = False):
         "quantized_linear_test",
         extra_deps = [
             ":test_utils",
+        ]
+    )
+    define_test_targets(
+        "rms_norm_test",
+        extra_deps = [
+            "//executorch/runtime/core/exec_aten/testing_util:tensor_util",
         ]
     )
     define_test_targets(

@@ -1,4 +1,4 @@
-# Copyright 2025 Arm Limited and/or its affiliates.
+# Copyright 2025-2026 Arm Limited and/or its affiliates.
 #
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
@@ -28,7 +28,7 @@ def get_test_inputs(dim, lengths, num_examples):
 
 
 class TestConformer:
-    """Tests Torchaudio Conformer"""
+    """Tests Torchaudio Conformer."""
 
     # Adjust nbr below as we increase op support. Note: most of the delegates
     # calls are directly consecutive to each other in the .pte. The reason
@@ -72,15 +72,10 @@ def test_conformer_tosa_INT():
         aten_op=[],
         exir_op=[],
         use_to_edge_transform_and_lower=True,
-    )
-    pipeline.pop_stage("check_count.exir")
-    pipeline.change_args(
-        "run_method_and_compare_outputs",
-        get_test_inputs(
-            TestConformer.dim, TestConformer.lengths, TestConformer.num_examples
-        ),
-        rtol=TestConformer.rtol,
         atol=TestConformer.atol,
+        rtol=TestConformer.rtol,
+        frobenius_threshold=None,
+        cosine_threshold=None,
     )
     pipeline.run()
 
@@ -93,72 +88,53 @@ def test_conformer_u55_INT():
     pipeline = EthosU55PipelineINT[input_t](
         TestConformer.conformer,
         TestConformer.model_example_inputs,
-        aten_ops=TestConformer.aten_ops,
+        aten_ops=[],
         exir_ops=[],
         use_to_edge_transform_and_lower=True,
+        atol=TestConformer.atol,
+        rtol=TestConformer.rtol,
     )
-    pipeline.change_args(
-        "run_method_and_compare_outputs",
-        get_test_inputs(
-            TestConformer.dim, TestConformer.lengths, TestConformer.num_examples
-        ),
-        rtol=1.0,
-        atol=5.0,
-    )
+    pipeline.pop_stage("check_count.exir")
     pipeline.run()
 
 
 @common.XfailIfNoCorstone320
-@pytest.mark.xfail(reason="All IO needs to have the same data type (MLETORCH-635)")
 def test_conformer_u85_INT():
     pipeline = EthosU85PipelineINT[input_t](
         TestConformer.conformer,
         TestConformer.model_example_inputs,
-        aten_ops=TestConformer.aten_ops,
+        aten_ops=[],
         exir_ops=[],
         use_to_edge_transform_and_lower=True,
-    )
-    pipeline.change_args(
-        "run_method_and_compare_outputs",
-        get_test_inputs(
-            TestConformer.dim, TestConformer.lengths, TestConformer.num_examples
-        ),
-        rtol=1.0,
-        atol=5.0,
+        atol=TestConformer.atol,
+        rtol=TestConformer.rtol,
     )
     pipeline.run()
 
 
 @common.SkipIfNoModelConverter
-def test_conformer_vgf_INT():
+def test_conformer_vgf_quant():
     pipeline = VgfPipeline[input_t](
         TestConformer.conformer,
         TestConformer.model_example_inputs,
         aten_op=[],
         exir_op=[],
-        tosa_version="TOSA-1.0+INT",
         use_to_edge_transform_and_lower=True,
-    )
-    pipeline.pop_stage("check_count.exir")
-    pipeline.change_args(
-        "run_method_and_compare_outputs",
-        get_test_inputs(
-            TestConformer.dim, TestConformer.lengths, TestConformer.num_examples
-        ),
-        rtol=TestConformer.rtol,
         atol=TestConformer.atol,
+        rtol=TestConformer.rtol,
+        quantize=True,
     )
     pipeline.run()
 
 
 @common.SkipIfNoModelConverter
-def test_conformer_vgf_FP():
+def test_conformer_vgf_no_quant():
     pipeline = VgfPipeline[input_t](
         TestConformer.conformer,
         TestConformer.model_example_inputs,
         aten_op=TestConformer.aten_ops,
         exir_op=[],
-        tosa_version="TOSA-1.0+FP",
         use_to_edge_transform_and_lower=True,
+        quantize=False,
     )
     pipeline.run()

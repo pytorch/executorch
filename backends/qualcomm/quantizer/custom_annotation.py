@@ -7,10 +7,6 @@
 from typing import Sequence
 
 import torch
-from executorch.backends.qualcomm.quantizer.annotators import (
-    _is_float_tensor,
-    Q_ANNOTATION_KEY,
-)
 from executorch.backends.qualcomm.quantizer.quantizer import (
     get_16a8w_qnn_ptq_config,
     get_16a8w_qnn_qat_config,
@@ -19,14 +15,17 @@ from executorch.backends.qualcomm.quantizer.quantizer import (
     get_ptq_per_channel_quant_config,
     QuantizationConfig,
 )
+from executorch.backends.qualcomm.quantizer.rules import (
+    _is_float_tensor,
+    Q_ANNOTATION_KEY,
+)
 from executorch.exir.dialects._ops import ops as exir_ops
 from torch.fx import Node
-from torchao.quantization.pt2e import FixedQParamsObserver, MinMaxObserver
+from torchao.quantization.pt2e import MinMaxObserver
 from torchao.quantization.pt2e.quantizer import (
     annotate_input_qspec_map,
     annotate_output_qspec,
     QuantizationAnnotation,
-    QuantizationSpec,
     SharedQuantizationSpec,
 )
 
@@ -90,40 +89,6 @@ def annotate_mimi_decoder(gm: torch.fx.GraphModule):
                 _annotated=True,
             )
             break
-
-
-def annotate_prefill_kv_output(gm: torch.fx.GraphModule, kv_quant_attrs: dict):
-    for node in gm.graph.nodes:
-        if node.op == "output":
-            for index, prefill_output in enumerate(node.args[0]):
-                kv_quant_attr = kv_quant_attrs[index]
-                fixed_observer = FixedQParamsObserver.with_args(
-                    scale=kv_quant_attr[0],
-                    zero_point=kv_quant_attr[1],
-                    quant_min=kv_quant_attr[2],
-                    quant_max=kv_quant_attr[3],
-                    dtype=kv_quant_attr[4],
-                    qscheme=torch.torch.per_tensor_affine,
-                )
-
-                fixed_output_spec = QuantizationSpec(
-                    quant_min=kv_quant_attr[2],
-                    quant_max=kv_quant_attr[3],
-                    dtype=kv_quant_attr[4],
-                    ch_axis=0,
-                    observer_or_fake_quant_ctr=fixed_observer,
-                )
-
-                input_qspec_map = {}
-                for input in prefill_output.args:
-                    if isinstance(input, Node):
-                        input_qspec_map[input] = fixed_output_spec
-
-                prefill_output.meta[Q_ANNOTATION_KEY] = QuantizationAnnotation(
-                    input_qspec_map=input_qspec_map,
-                    output_qspec=fixed_output_spec,
-                    _annotated=True,
-                )
 
 
 def annotate_kv_8bit(  # noqa: C901
@@ -251,20 +216,25 @@ def annotate_kv_8bit(  # noqa: C901
             )
         while isinstance(node, Node) and node.op == "call_function":
             if node.target in [
+                torch.ops.aten.select.int,
+                torch.ops.aten.slice.Tensor,
+            ]:
+                annotate_single_in_single_out(node, quantization_config_8a8w)
+                node = node.args[0]
+            elif node.target in [
                 torch.ops.aten.permute.default,
                 torch.ops.aten.squeeze.dim,
                 torch.ops.aten.transpose.int,
                 torch.ops.aten.view.default,
                 torch.ops.aten.reshape.default,
-                torch.ops.aten.slice.Tensor,
+                torch.ops.aten.expand.default,
+                torch.ops.aten.unsqueeze.default,
+                torch.ops.aten.flatten.using_ints,
             ]:
-                annotate_single_in_single_out(node, quantization_config_8a8w)
+                annotate_single_in_share_out(node, quantization_config_8a8w)
                 node = node.args[0]
             elif node.target == torch.ops.aten.stack.default:
                 annotate_stack(node, quantization_config_8a8w)
-                node = node.args[0]
-            elif node.target == torch.ops.aten.flatten.using_ints:
-                annotate_single_in_share_out(node, quantization_config_8a8w)
                 node = node.args[0]
             elif node.target == torch.ops.aten.rms_norm.default:
                 annotate_rms_norm(node, quantization_config_8a8w)

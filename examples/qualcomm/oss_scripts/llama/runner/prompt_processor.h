@@ -7,6 +7,7 @@
  */
 
 #pragma once
+#include <executorch/examples/qualcomm/oss_scripts/llama/runner/attention_sink_rope_runner.h>
 #include <executorch/examples/qualcomm/oss_scripts/llama/runner/cache_utils.h>
 #include <executorch/examples/qualcomm/oss_scripts/llama/runner/decoder_runner.h>
 #include <executorch/examples/qualcomm/oss_scripts/llama/runner/imem_alloc.h>
@@ -41,8 +42,8 @@ class PromptProcessor {
 
   /**
    * @brief Initialize I/O tensor and allocate I/O data buffer.
-   * @param buffer_manager Pointer to IMemAlloc instance which depends on
-   * kv_updater.
+   * @param buffer_manager Pointer to IMemAlloc instance; by default, it uses a
+   * shared buffer with RPC memory.
    * @param method_meta Method metadata.
    */
   void init_io(
@@ -69,7 +70,8 @@ class PromptProcessor {
   executorch::runtime::Result<uint64_t> prefill(
       std::vector<uint64_t> prompt_tokens,
       int64_t start_pos,
-      bool dump_logits);
+      bool dump_logits,
+      AttentionSinkRopeRunner* attention_sink_rope_runner);
   /**
    * @brief Get total I/O size in bytes (excluding the KV cache size)
    * @return Total I/O size in bytes.
@@ -84,7 +86,7 @@ class PromptProcessor {
     }
   }
 
- private:
+ protected:
   // If the cache length is zero, it indicates a BERT model, which does not use
   // position ids or KV cache inputs.
   bool is_bert() const {
@@ -114,19 +116,17 @@ class PromptProcessor {
   TensorStruct<uint16_t> window_attention_mask_;
   TensorStruct<uint16_t> logits_;
 
-  // layer -> head -> TensorImpl
-  std::vector<std::vector<std::unique_ptr<executorch::aten::TensorImpl>>>
-      k_cache_in_;
-  std::vector<std::vector<std::unique_ptr<executorch::aten::TensorImpl>>>
-      v_cache_in_;
-  std::vector<std::vector<std::unique_ptr<executorch::aten::TensorImpl>>>
-      k_cache_out_;
-  std::vector<std::vector<std::unique_ptr<executorch::aten::TensorImpl>>>
-      v_cache_out_;
+  // layer -> TensorImpl
+  std::vector<std::unique_ptr<executorch::aten::TensorImpl>> k_cache_in_;
+  std::vector<std::unique_ptr<executorch::aten::TensorImpl>> v_cache_in_;
+  std::vector<std::unique_ptr<executorch::aten::TensorImpl>> k_cache_out_;
+  std::vector<std::unique_ptr<executorch::aten::TensorImpl>> v_cache_out_;
 
   std::vector<executorch::runtime::EValue> inputs_;
   std::vector<executorch::aten::Tensor> input_tensors_;
   std::vector<executorch::aten::Tensor> output_tensors_;
+  // Used for attention sink to evict KV cache.
+  std::vector<executorch::runtime::EValue> cache_inputs_;
 
   // Unused by default, only used when dump_logits_path is provided.
   std::vector<uint16_t> prompt_all_logits_;

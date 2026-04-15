@@ -8,19 +8,24 @@ import logging
 from collections import defaultdict
 from typing import Any, Callable, Dict, List, Optional, Tuple
 
-import executorch.backends.qualcomm.python.PyQnnManagerAdaptor as PyQnnManager
 import torch
 from executorch.backends.qualcomm.builders import node_visitor_manager
 from executorch.backends.qualcomm.builders.qnn_constants import OpContextLoader
 from executorch.backends.qualcomm.qnn_preprocess import QnnBackend
+from executorch.backends.qualcomm.serialization.qc_schema import (
+    QnnExecuTorchBackendType,
+)
 from executorch.backends.qualcomm.serialization.qc_schema_serialize import (
     flatbuffer_to_option,
 )
 from executorch.backends.qualcomm.utils.constants import (
-    QCOM_AXIS_ORDER,
     QCOM_BYPASS_NODE,
+    QCOM_FALLBACK_NODE,
 )
 
+from executorch.backends.qualcomm.utils.qnn_manager_lifecycle import (
+    get_current_qnn_manager,
+)
 from executorch.exir.backend.backend_details import CompileSpec
 from executorch.exir.backend.canonical_partitioners.pattern_op_partitioner import (
     generate_partitions_from_list_of_nodes,
@@ -55,7 +60,8 @@ class QnnOperatorSupport(OperatorSupportBase):
         skip_node_id_set: set = None,
         skip_node_op_set: set = None,
     ):
-        python_options = flatbuffer_to_option(compiler_specs[0].value)
+        option = generate_qnn_executorch_option(compiler_specs)
+        python_options = flatbuffer_to_option(option)
         self.node_visitors = node_visitor_manager.get_node_visitors(
             edge_program,
             op_package_infos=python_options.op_package_options.op_package_infos,
@@ -64,11 +70,9 @@ class QnnOperatorSupport(OperatorSupportBase):
         self.skip_node_op_set = skip_node_op_set
         self.skip_node_id_set = skip_node_id_set
         self.nodes_to_wrappers = defaultdict(dict)
-        self.qnn_manager = PyQnnManager.QnnManager(
-            generate_qnn_executorch_option(compiler_specs)
+        self.qnn_manager = get_current_qnn_manager(
+            python_options.backend_options.backend_type, compiler_specs
         )
-
-        self.qnn_manager.Init()
 
     def is_node_supported(self, _, node: torch.fx.Node) -> bool:
         if node.op != "call_function" or node.target in not_supported_operator:
@@ -78,6 +82,9 @@ class QnnOperatorSupport(OperatorSupportBase):
             print(
                 f"[QNN Partitioner Op Support]: {node.target.__name__} | Skipped, this op can be supported, please report an issue in https://github.com/pytorch/executorch/issues"
             )
+            return False
+
+        if node.meta.get(QCOM_FALLBACK_NODE, False):
             return False
 
         if (
@@ -118,9 +125,6 @@ class QnnOperatorSupport(OperatorSupportBase):
         print(f"[QNN Partitioner Op Support]: {node.target.__name__} | {supported}")
         return supported
 
-    def __del__(self):
-        self.qnn_manager.Destroy()
-
 
 class QnnPartitioner(Partitioner):
     """
@@ -143,6 +147,9 @@ class QnnPartitioner(Partitioner):
             skip_mutable_buffer (bool, optional): If True, mutable buffers are not delegated to QNN.
         """
         self.compiler_specs_snapshot = copy.deepcopy(compiler_specs)
+        self.backend = flatbuffer_to_option(
+            generate_qnn_executorch_option(self.compiler_specs_snapshot)
+        ).backend_options.backend_type
 
         self.delegation_spec = DelegationSpec(
             QnnBackend.__name__, self.compiler_specs_snapshot
@@ -193,14 +200,28 @@ class QnnPartitioner(Partitioner):
                 # since they will all be removed in following stage
                 node.meta["delegation_tag"] = delegation_tag
 
+    @staticmethod
+    def check_partitions(
+        backend: QnnExecuTorchBackendType, partitions: List[Any]
+    ) -> bool:
+        pl = len(partitions)
+        if backend == QnnExecuTorchBackendType.kLpaiBackend:
+            assert (
+                pl == 1
+            ), "LPAI backend only supports fully delegation due to the accuracy issue of Q/DQ in the LPAI backend."
+        if pl == 0:
+            logging.warning("Nothing can be partitioned!")
+        else:
+            logging.info(f"Found {pl} subgraphs to be partitioned.")
+        return pl != 0
+
     # override
     def partition(self, edge_program: torch.export.ExportedProgram) -> PartitionResult:
         # Generate partitions by QNN op_support checker
         partitions = self.generate_partitions(edge_program)
         del self.op_support_checker
-
         # If partitions are found, handle tagging of nodes, constant data, and mutated buffers for delegation
-        if len(partitions) != 0:
+        if self.check_partitions(self.backend, partitions):
             self.tag_nodes(partitions, edge_program)
             tag_constant_data(edge_program)
             if not self.skip_mutable_buffer:
@@ -213,11 +234,6 @@ class QnnPartitioner(Partitioner):
                 )
                 tag_mutated_buffer(edge_program)
 
-        # pop certain keys in meta for not affecting the passes in compilation
-        for node in edge_program.graph_module.graph.nodes:
-            if hasattr(node, "meta"):
-                # TODO: need to put property name in common definitions
-                node.meta.pop(QCOM_AXIS_ORDER, "")
         return PartitionResult(
             tagged_exported_program=edge_program, partition_tags=self.partition_tags
         )

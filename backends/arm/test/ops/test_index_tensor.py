@@ -1,10 +1,9 @@
-# Copyright 2025 Arm Limited and/or its affiliates.
+# Copyright 2025-2026 Arm Limited and/or its affiliates.
 #
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
 
 
-from enum import IntEnum
 from typing import Tuple
 
 import torch
@@ -17,7 +16,7 @@ from executorch.backends.arm.test.tester.test_pipeline import (
 
 
 class IndexTensorTestCommon:
-    """Class containing constants common between the tests"""
+    """Class containing constants common between the tests."""
 
     aten_op = "torch.ops.aten.index.Tensor"
     exir_op = "executorch_exir_dialects_edge__ops_aten_index_Tensor"
@@ -25,42 +24,31 @@ class IndexTensorTestCommon:
     # Gathers and reshapes should result in no inaccuracies
     rtol = 0.0
     atol = 0.0
-
-    class OpPlacement(IntEnum):
-        """
-        Simple enum used to indicate where slices or ellipsis should be placed
-        in tests.
-        IntEnum so that Dynamo does not complain about unsupported types.
-        """
-
-        BEFORE = 1
-        MIDDLE = 2
-        AFTER = 3
+    BEFORE = "BEFORE"
+    MIDDLE = "MIDDLE"
+    AFTER = "AFTER"
 
 
-input_params_slice = Tuple[
-    torch.Tensor, int, int, IndexTensorTestCommon.OpPlacement, Tuple[torch.Tensor]
-]
+input_params_slice = Tuple[torch.Tensor, int, int, str, Tuple[torch.Tensor]]
 input_params = Tuple[torch.Tensor, Tuple[torch.Tensor]]
 
 
 class IndexTensor_Ellipsis(torch.nn.Module):
-    """
-    There are technical limitations with torch/export as it does not support
-    the ellipsis class and as such the forward function has been crafted
-    to circumvent that limitation.
+    """There are technical limitations with torch/export as it does not support
+    the ellipsis class and as such the forward function has been crafted to
+    circumvent that limitation.
     """
 
     # xfail - ellipsis unsupported
     test_data_ellipsis: dict[input_params] = {
         "test_4d_ellipsis_before": (
             torch.rand(size=(25, 5, 13, 7)),
-            IndexTensorTestCommon.OpPlacement.BEFORE,
+            IndexTensorTestCommon.BEFORE,
             (torch.arange(2, dtype=torch.int32),),
         ),
         "test_4d_ellipsis_middle": (
             torch.rand(size=(25, 5, 13, 7)),
-            IndexTensorTestCommon.OpPlacement.MIDDLE,
+            IndexTensorTestCommon.MIDDLE,
             (
                 torch.arange(2, dtype=torch.int32),
                 torch.arange(2, dtype=torch.int32),
@@ -72,7 +60,7 @@ class IndexTensor_Ellipsis(torch.nn.Module):
             # partitioning is difficult and unreliable, as such
             # it is not xfail as the existing logic can handle it.
             torch.rand(size=(25, 5, 13, 7)),
-            IndexTensorTestCommon.OpPlacement.AFTER,
+            IndexTensorTestCommon.AFTER,
             (torch.arange(2, dtype=torch.int32),),
         ),
     }
@@ -80,15 +68,15 @@ class IndexTensor_Ellipsis(torch.nn.Module):
     def forward(
         self,
         input_: torch.Tensor,
-        position: IndexTensorTestCommon.OpPlacement,
+        position: str,
         indices: Tuple[None | torch.Tensor],
     ):
         match position:
-            case IndexTensorTestCommon.OpPlacement.BEFORE:
+            case IndexTensorTestCommon.BEFORE:
                 return input_[..., indices[0]]
-            case IndexTensorTestCommon.OpPlacement.MIDDLE:
+            case IndexTensorTestCommon.MIDDLE:
                 return input_[indices[0], ..., indices[1]]
-            case IndexTensorTestCommon.OpPlacement.AFTER:
+            case IndexTensorTestCommon.AFTER:
                 return input_[indices[0], ...]
 
         return input_[indices]
@@ -141,10 +129,9 @@ def test_index_tensor_tosa_INT_ellipsis(test_data: input_params):
 
 
 class IndexTensor_Slice(torch.nn.Module):
-    """
-    There are technical limitations with Dynamo as it does not support the
-    slice class and as such the forward function has been crafted
-    to circumvent that limitation.
+    """There are technical limitations with Dynamo as it does not support the
+    slice class and as such the forward function has been crafted to circumvent
+    that limitation.
     """
 
     # xfail - None unsupported
@@ -154,7 +141,7 @@ class IndexTensor_Slice(torch.nn.Module):
             torch.rand(size=(5, 3, 4, 5)),
             0,
             2,
-            IndexTensorTestCommon.OpPlacement.BEFORE,
+            IndexTensorTestCommon.BEFORE,
             (torch.arange(2, dtype=torch.int32),),
         ),
         "test_3d_slice_before_2d_idx": (
@@ -164,14 +151,14 @@ class IndexTensor_Slice(torch.nn.Module):
             torch.arange(5 * 3 * 4, dtype=torch.float32).reshape(5, 3, 4),
             0,
             2,
-            IndexTensorTestCommon.OpPlacement.BEFORE,
+            IndexTensorTestCommon.BEFORE,
             (torch.arange(2, dtype=torch.int32).unsqueeze(0).tile(2, 1),),
         ),
         "test_4d_slice_middle": (
             torch.arange(5 * 3 * 2, dtype=torch.int32).reshape(5, 3, 2),
             0,
             2,
-            IndexTensorTestCommon.OpPlacement.MIDDLE,
+            IndexTensorTestCommon.MIDDLE,
             (
                 torch.arange(2, dtype=torch.int32),
                 torch.arange(2, dtype=torch.int32),
@@ -185,7 +172,7 @@ class IndexTensor_Slice(torch.nn.Module):
             torch.rand(size=(25, 5, 13, 7)),
             0,
             2,
-            IndexTensorTestCommon.OpPlacement.AFTER,
+            IndexTensorTestCommon.AFTER,
             (torch.arange(2, dtype=torch.int32),),
         ),
     }
@@ -195,15 +182,15 @@ class IndexTensor_Slice(torch.nn.Module):
         input_: torch.Tensor,
         slice_start: int,
         slice_end: int,
-        position: IndexTensorTestCommon.OpPlacement,
+        position: str,
         indices: Tuple[None | torch.Tensor],
     ):
         match position:
-            case IndexTensorTestCommon.OpPlacement.BEFORE:
+            case IndexTensorTestCommon.BEFORE:
                 return input_[slice_start:slice_end, indices[0]]
-            case IndexTensorTestCommon.OpPlacement.MIDDLE:
+            case IndexTensorTestCommon.MIDDLE:
                 return input_[indices[0], slice_start:slice_end, indices[1]]
-            case IndexTensorTestCommon.OpPlacement.AFTER:
+            case IndexTensorTestCommon.AFTER:
                 return input_[indices[0], slice_start:slice_end]
 
 
@@ -256,46 +243,52 @@ def test_index_tensor_tosa_INT_slice(test_data: input_params_slice):
 
 
 class IndexTensor(torch.nn.Module):
-    test_data: dict[input_params] = {
-        "test_2d_1_idx": (torch.rand(5, 2), (torch.arange(5, dtype=torch.int32),)),
-        "test_2d_1_less_than_max_idx": (
+    test_data_fp: dict[input_params] = {
+        "test_2d_1_idx_fp32": (
+            torch.rand(5, 2),
+            (torch.arange(5, dtype=torch.int32),),
+        ),
+        "test_2d_1_less_than_max_idx_fp32": (
             torch.rand(5, 2),
             (torch.arange(3, dtype=torch.int32),),
         ),
-        "test_2d_1_2d_idx": (
+        "test_2d_1_2d_idx_fp32": (
             torch.rand(5, 2),
             (torch.randint(5, size=(4, 3), dtype=torch.int32)),
         ),
-        "test_2d_2_idx": (
+        "test_2d_2_idx_fp32": (
             torch.rand(5, 2),
             (
                 torch.randint(5, size=(5,), dtype=torch.int32),
                 torch.randint(2, size=(5,), dtype=torch.int32),
             ),
         ),
-        "test_2d_2_2d_idx_broadcastable": (
+        "test_2d_2_2d_idx_broadcastable_fp32": (
             torch.rand(5, 2),
             (
                 torch.randint(5, size=(5, 3), dtype=torch.int32),
                 torch.randint(2, size=(1, 3), dtype=torch.int32),
             ),
         ),
-        "test_2d_2_2d_idx_broadcastable_2": (
+        "test_2d_2_2d_idx_broadcastable_2_fp32": (
             torch.rand(5, 2),
             (
                 torch.randint(5, size=(5, 1), dtype=torch.int32),
                 torch.randint(2, size=(3,), dtype=torch.int32),
             ),
         ),
-        "test_3d_1_idx": (torch.rand(12, 3, 7), (torch.arange(12, dtype=torch.int32),)),
-        "test_3d_2_idx": (
+        "test_3d_1_idx_fp32": (
+            torch.rand(12, 3, 7),
+            (torch.arange(12, dtype=torch.int32),),
+        ),
+        "test_3d_2_idx_fp32": (
             torch.rand(12, 3, 7),
             (
                 torch.arange(12, dtype=torch.int32),
                 torch.randint(3, size=(12,), dtype=torch.int32),
             ),
         ),
-        "test_3d_3_idx": (
+        "test_3d_3_idx_fp32": (
             torch.rand(12, 3, 7),
             (
                 torch.arange(12, dtype=torch.int32),
@@ -303,18 +296,18 @@ class IndexTensor(torch.nn.Module):
                 torch.randint(7, size=(12,), dtype=torch.int32),
             ),
         ),
-        "test_4d_1_idx": (
+        "test_4d_1_idx_fp32": (
             torch.rand(15, 3, 7, 2),
             (torch.arange(15, dtype=torch.int32),),
         ),
-        "test_4d_2_idx": (
+        "test_4d_2_idx_fp32": (
             torch.rand(15, 3, 7, 2),
             (
                 torch.randint(15, size=(15,), dtype=torch.int32),
                 torch.randint(3, size=(1,), dtype=torch.int32),
             ),
         ),
-        "test_4d_3_idx": (
+        "test_4d_3_idx_fp32": (
             torch.rand(15, 3, 7, 2),
             (
                 torch.arange(15, dtype=torch.int32),
@@ -322,7 +315,7 @@ class IndexTensor(torch.nn.Module):
                 torch.randint(7, size=(15,), dtype=torch.int32),
             ),
         ),
-        "test_4d_4_id_broadcastable": (
+        "test_4d_4_id_broadcastable_fp32": (
             torch.rand(15, 3, 7, 2),
             (
                 torch.arange(15, dtype=torch.int32),
@@ -330,6 +323,61 @@ class IndexTensor(torch.nn.Module):
                 torch.randint(6, size=(6, 1, 1), dtype=torch.int32),
                 torch.randint(2, size=(15,), dtype=torch.int32),
             ),
+        ),
+        "test_1d_rank4_index_fp32": (
+            torch.rand(12),
+            (torch.randint(12, size=(1, 2, 1, 3), dtype=torch.int32),),
+        ),
+        "test_2d_rank4_broadcastable_indices_fp32": (
+            torch.rand(4, 6),
+            (
+                torch.randint(4, size=(1, 2, 1, 1), dtype=torch.int32),
+                torch.randint(6, size=(1, 1, 3, 1), dtype=torch.int32),
+            ),
+        ),
+        "test_1d_high_rank_index_fp32": (
+            torch.rand(24),
+            (torch.randint(24, size=(1, 1, 2, 1, 3), dtype=torch.int32),),
+        ),
+        "test_2d_high_rank_broadcastable_indices_fp32": (
+            torch.rand(4, 5),
+            (
+                torch.randint(4, size=(1, 2, 1, 1, 1), dtype=torch.int32),
+                torch.randint(5, size=(1, 1, 3, 1, 1), dtype=torch.int32),
+            ),
+        ),
+    }
+    test_data_int: dict[input_params] = {
+        "test_2d_1_idx_int32": (
+            torch.randint(20, size=(5, 2), dtype=torch.int32),
+            (torch.arange(5, dtype=torch.int32),),
+        ),
+        "test_4d_3_idx_int32": (
+            torch.randint(20, size=(15, 3, 7, 2), dtype=torch.int32),
+            (
+                torch.arange(15, dtype=torch.int32),
+                torch.randint(3, size=(15,), dtype=torch.int32),
+                torch.randint(7, size=(15,), dtype=torch.int32),
+            ),
+        ),
+        "test_2d_rank4_broadcastable_indices_int32": (
+            torch.randint(20, size=(4, 6), dtype=torch.int32),
+            (
+                torch.randint(4, size=(1, 2, 1, 1), dtype=torch.int32),
+                torch.randint(6, size=(1, 1, 3, 1), dtype=torch.int32),
+            ),
+        ),
+    }
+    test_data_bf16: dict[input_params] = {
+        "test_2d_1_idx_bf16": (
+            torch.rand(size=(3, 4), dtype=torch.bfloat16),
+            (torch.arange(2, dtype=torch.int32),),
+        ),
+    }
+    test_data_fp16: dict[input_params] = {
+        "test_2d_1_idx_fp16": (
+            torch.rand(3, 4, dtype=torch.float16),
+            (torch.arange(2, dtype=torch.int32),),
         ),
     }
 
@@ -383,7 +431,10 @@ class IndexTensor(torch.nn.Module):
         return input_[indices]
 
 
-@common.parametrize("test_data", IndexTensor.test_data)
+@common.parametrize(
+    "test_data",
+    IndexTensor.test_data_fp | IndexTensor.test_data_bf16 | IndexTensor.test_data_fp16,
+)
 def test_index_tensor_tosa_FP(test_data: input_params):
     test_input = test_data
     with torch.no_grad():
@@ -395,11 +446,12 @@ def test_index_tensor_tosa_FP(test_data: input_params):
                 IndexTensorTestCommon.exir_op,
                 atol=IndexTensorTestCommon.atol,
                 rtol=IndexTensorTestCommon.rtol,
+                tosa_extensions=["bf16"],
             ).run()
         )
 
 
-@common.parametrize("test_data", IndexTensor.test_data)
+@common.parametrize("test_data", IndexTensor.test_data_int | IndexTensor.test_data_fp)
 def test_index_tensor_tosa_INT(test_data: input_params):
     test_input = test_data
     with torch.no_grad():
@@ -463,10 +515,10 @@ def test_index_tensor_tosa_INT_none(test_data: input_params):
         )
 
 
-@common.parametrize("test_data", IndexTensor.test_data)
+@common.parametrize("test_data", IndexTensor.test_data_int | IndexTensor.test_data_fp)
 @common.XfailIfNoCorstone300
 def test_index_tensor_u55_INT_not_delegated(test_data: input_params):
-    """Ethos-U55 backend BI pipeline test for index.Tensor"""
+    """Ethos-U55 backend BI pipeline test for index.Tensor."""
     test_input = test_data
     with torch.no_grad():
         OpNotSupportedPipeline[input_params](

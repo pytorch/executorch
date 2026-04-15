@@ -1,5 +1,5 @@
 # Copyright (c) Meta Platforms, Inc. and affiliates.
-# Copyright 2024-2025 Arm Limited and/or its affiliates.
+# Copyright 2024-2026 Arm Limited and/or its affiliates.
 #
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
@@ -32,6 +32,7 @@ test_data_suite = {
     "select1d_0_dim_1_index": lambda: (torch.randn(10) + 10, 0, 1),
     "select1d_0_dim_0_index": lambda: (torch.randn(10) - 10, 0, 2),
     "select3d_0_dim_1_index": lambda: (torch.arange(-16, 16, 0.2), 0, 1),
+    "select5d_0_dim_1_index": lambda: (torch.rand(6, 1, 64, 4, 96), 0, 1),
 }
 
 test_data_not_delegated = {
@@ -169,43 +170,51 @@ def test_select_int_u85_INT(test_data: Tuple):
 
 @common.parametrize("test_data", test_data_suite)
 @common.SkipIfNoModelConverter
-def test_select_int_vgf_FP_copy(test_data: Tuple):
-    pipeline = VgfPipeline[input_t1](
-        SelectCopy(), test_data(), aten_op_copy, [], tosa_version="TOSA-1.0+FP"
-    )
-    pipeline.run()
-
-
-@common.parametrize("test_data", test_data_suite)
-@common.SkipIfNoModelConverter
-def test_select_int_vgf_FP(test_data: Tuple):
-    pipeline = VgfPipeline[input_t1](
-        SelectInt(), test_data(), aten_op_int, [], tosa_version="TOSA-1.0+FP"
-    )
-    pipeline.run()
-
-
-@common.parametrize("test_data", test_data_suite)
-@common.SkipIfNoModelConverter
-def test_select_int_vgf_INT_copy(test_data: Tuple):
+def test_select_int_vgf_no_quant_copy(test_data: Tuple):
     pipeline = VgfPipeline[input_t1](
         SelectCopy(),
         test_data(),
         aten_op_copy,
         [],
-        tosa_version="TOSA-1.0+INT",
+        quantize=False,
     )
     pipeline.run()
 
 
 @common.parametrize("test_data", test_data_suite)
 @common.SkipIfNoModelConverter
-def test_select_int_vgf_INT(test_data: Tuple):
+def test_select_int_vgf_no_quant(test_data: Tuple):
     pipeline = VgfPipeline[input_t1](
         SelectInt(),
         test_data(),
         aten_op_int,
         [],
-        tosa_version="TOSA-1.0+INT",
+        quantize=False,
+    )
+    pipeline.run()
+
+
+@common.parametrize("test_data", test_data_suite)
+@common.SkipIfNoModelConverter
+def test_select_int_vgf_quant_copy(test_data: Tuple):
+    pipeline = VgfPipeline[input_t1](
+        SelectCopy(),
+        test_data(),
+        aten_op_copy,
+        [],
+        quantize=True,
+    )
+    pipeline.run()
+
+
+@common.parametrize("test_data", test_data_suite)
+@common.SkipIfNoModelConverter
+def test_select_int_vgf_quant(test_data: Tuple):
+    pipeline = VgfPipeline[input_t1](
+        SelectInt(),
+        test_data(),
+        aten_op_int,
+        [],
+        quantize=True,
     )
     pipeline.run()

@@ -60,28 +60,33 @@ def get_passes_dependency_for_capture_program():
         dict: A dictionary mapping each pass to its corresponding list of dependencies.
     """
     from executorch.backends.qualcomm._passes import (
-        AnnotateAdaptiveAvgPool1D,
+        AnnotateAvgPool1D,
         AnnotateQuantAttrs,
         AnnotateStack,
         AnnotateUnbind,
-        CanonicalizeConv,
         ConvertBmmToMatmul,
+        DecomposeAcos,
         DecomposeAny,
         DecomposeColIm,
         DecomposeLinalgVectorNorm,
+        DecomposeLogVariants,
+        DecomposeMaxPool3d,
+        DecomposeTrunc,
         ExpandBroadcastTensorShape,
         FixedLinearKeepDim,
         FoldQDQ,
         I64toI32,
         LayoutTransform,
+        RecomposePadMaxPool2d,
         RecomposePixelUnshuffle,
         RecomposeRmsNorm,
         RemoveRedundancy,
+        ResolveDebugHandle,
         TagQuantIO,
     )
 
     return {
-        AnnotateAdaptiveAvgPool1D: [RemoveRedundancy],
+        AnnotateAvgPool1D: [RemoveRedundancy],
         AnnotateQuantAttrs: [
             ConvertBmmToMatmul,
             RecomposePixelUnshuffle,
@@ -90,22 +95,29 @@ def get_passes_dependency_for_capture_program():
         AnnotateStack: [RemoveRedundancy],
         AnnotateUnbind: [RemoveRedundancy],
         ConvertBmmToMatmul: [RecomposePixelUnshuffle],
+        DecomposeAcos: [RemoveRedundancy],
         DecomposeAny: [RemoveRedundancy],
         DecomposeColIm: [FoldQDQ],
         DecomposeLinalgVectorNorm: [RemoveRedundancy],
+        DecomposeLogVariants: [RemoveRedundancy],
+        DecomposeMaxPool3d: [RemoveRedundancy],
+        DecomposeTrunc: [RemoveRedundancy],
         ExpandBroadcastTensorShape: [FoldQDQ],
         FixedLinearKeepDim: [FoldQDQ],
         FoldQDQ: [AnnotateQuantAttrs, AnnotateStack, AnnotateUnbind],
         I64toI32: [RemoveRedundancy],
         LayoutTransform: [
             AnnotateQuantAttrs,
-            CanonicalizeConv,
             ExpandBroadcastTensorShape,
             FixedLinearKeepDim,
         ],
+        RecomposePadMaxPool2d: [DecomposeMaxPool3d, FoldQDQ],
         RecomposePixelUnshuffle: [RemoveRedundancy],
         RecomposeRmsNorm: [RemoveRedundancy],
         TagQuantIO: [LayoutTransform],
+        ResolveDebugHandle: [
+            TagQuantIO
+        ],  # IMPORTANT: Please always ensure ResolveDebugHandle is the last executed pass.
     }
 
 
@@ -177,7 +189,7 @@ def _next(node, from_args=True):
         yield from list(node.users)
 
 
-def _find_pattern(
+def find_pattern(
     node: torch.fx.Node,
     pattern: List[Callable[[torch.fx.Node], bool] | str],
     from_args: bool = True,
@@ -190,6 +202,7 @@ def _find_pattern(
         - pattern: predicate list, can contain followings
             Callable(fx.node): predicate
             '*': wildcard
+            '?': any single node
         - from_args: if True find from node.args, otherwise from node.users
         - max_wildcard_life: max number of skips for wildcard
 
@@ -197,7 +210,7 @@ def _find_pattern(
     Otherwise, return list of matched node list, which is the same length as pattern
     """
 
-    asterisk = "*"
+    asterisk, question = "*", "?"
 
     def _probe(
         cur, hist, pat_idx, asterisk_life_count=max_wildcard_life, verbose=verbose
@@ -212,7 +225,7 @@ def _find_pattern(
             print(
                 f"cur:{cur}, idx:{pat_idx}, life={asterisk_life_count}, pattern:{pattern[pat_idx]} hist={hist}"
             )
-        if _pred(cur, pattern[pat_idx]):
+        if pattern[pat_idx] == question or _pred(cur, pattern[pat_idx]):
             hist.append(cur)
             for child in _next(cur, from_args):
                 _probe(child, hist, pat_idx + 1)
@@ -236,7 +249,8 @@ def _find_pattern(
 
     # Check if pattern is valid
     assert all(
-        isinstance(i, Callable) or (isinstance(i, str) and i == "*") for i in pattern
+        isinstance(i, Callable) or (isinstance(i, str) and (i == "*" or i == "?"))
+        for i in pattern
     ), f"Invalid pattern: {pattern}"
 
     # Start probing
@@ -249,7 +263,7 @@ def find_patterns(node, patterns, **kwargs):
     assert isinstance(patterns, list) and isinstance(patterns[0], list)
     results = []
     for pattern in patterns:
-        result = _find_pattern(node, pattern, **kwargs)
+        result = find_pattern(node, pattern, **kwargs)
         results.append(result)
     return results
 
@@ -275,3 +289,25 @@ def append_qdq(
             dq_node = graph_module.graph.create_node("call_function", dq_op, dq_args)
             dq_node.meta = copy_meta(node.meta)
     return dq_node
+
+
+def get_const_node(
+    graph: torch.fx.Graph,
+    graph_module: torch.fx.GraphModule,
+    attr_name: str,
+    value,
+    source_node: torch.fx.Node,
+) -> torch.fx.Node:
+    """
+    Register a scalar constant as a named buffer on the graph module and return a get_attr node referencing it.
+    Used in edge dialect op decomposition passes where raw scalar arguments are not accepted by QNN op builders which need the inputs to be graph nodes.
+    """
+    dtype = source_node.meta["val"].dtype
+    tensor = torch.tensor(value, dtype=dtype)
+    graph_module.register_buffer(attr_name, tensor)
+
+    fake_mode = source_node.meta["val"].fake_mode
+    with graph.inserting_before(next(iter(graph.nodes))):
+        const_node = graph.get_attr(attr_name)
+        const_node.meta["val"] = fake_mode.from_tensor(tensor)
+    return const_node

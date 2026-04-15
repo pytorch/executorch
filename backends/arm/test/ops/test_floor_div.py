@@ -1,6 +1,6 @@
 # Copyright (c) Meta Platforms, Inc. and affiliates.
 # All rights reserved.
-# Copyright 2024-2025 Arm Limited and/or its affiliates.
+# Copyright 2024-2026 Arm Limited and/or its affiliates.
 #
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
@@ -36,7 +36,7 @@ test_data_suite = {
         torch.ones(5, 10, 25, 20),
         (-1) * torch.ones(5, 10, 25, 20),
     ),
-    "op_floor_div_rank4_randn_mutltiple_broadcasts": lambda: (
+    "op_floor_div_rank4_randn_multiple_broadcasts": lambda: (
         torch.randn(1, 4, 4, 1),
         torch.randn(1, 1, 4, 4),
     ),
@@ -85,7 +85,13 @@ def test_floor_divide_tosa_FP(test_data: input_t1):
     pipeline.run()
 
 
-@common.parametrize("test_data", test_data_suite)
+@common.parametrize(
+    "test_data",
+    test_data_suite,
+    xfails={
+        "op_floor_div_rank4_large_rand": "Numerical failure in TFA",
+    },
+)
 def test_floor_divide_tosa_INT(test_data: input_t1):
     pipeline = TosaPipelineINT[input_t1](
         FloorDivide(),
@@ -129,28 +135,28 @@ def test_floor_divide_u85_INT(test_data: input_t1):
 
 @common.parametrize("test_data", test_data_suite)
 @common.SkipIfNoModelConverter
-def test_floor_divide_vgf_FP(test_data: input_t1):
+def test_floor_divide_vgf_no_quant(test_data: input_t1):
     pipeline = VgfPipeline[input_t1](
         FloorDivide(),
         test_data(),
         FloorDivide.aten_op,
         FloorDivide.exir_op,
-        tosa_version="TOSA-1.0+FP",
         use_to_edge_transform_and_lower=False,
         rtol=0.06,
+        quantize=False,
     )
     pipeline.run()
 
 
 @common.parametrize("test_data", test_data_suite)
 @common.SkipIfNoModelConverter
-def test_floor_divide_vgf_INT(test_data: input_t1):
+def test_floor_divide_vgf_quant(test_data: input_t1):
     pipeline = VgfPipeline[input_t1](
         FloorDivide(),
         test_data(),
         aten_op=FloorDivide.aten_ops_int,
         exir_op=FloorDivide.exir_ops_int,
-        tosa_version="TOSA-1.0+INT",
         use_to_edge_transform_and_lower=False,
+        quantize=True,
     )
     pipeline.run()

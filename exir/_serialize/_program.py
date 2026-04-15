@@ -1,5 +1,6 @@
 # Copyright (c) Meta Platforms, Inc. and affiliates.
 # All rights reserved.
+# Copyright 2026 Arm Limited and/or its affiliates.
 #
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
@@ -19,8 +20,8 @@ from executorch.exir._serialize._dataclass import _DataclassEncoder, _json_to_da
 from executorch.exir._serialize._flatbuffer import (
     _FlatbufferResult,
     _program_flatbuffer_to_json,
-    _program_json_to_flatbuffer,
 )
+from executorch.exir._serialize._flatbuffer_program import _program_to_flatbuffer
 from executorch.exir._serialize._named_data_store import (
     NamedDataStore,
     NamedDataStoreOutput,
@@ -523,8 +524,10 @@ def serialize_pte_binary(
         segments_data.append(segment.data)
 
     # Convert to a standard flatbuffer binary.
-    result: _FlatbufferResult = _program_json_to_flatbuffer(
-        _program_to_json(program),
+    # Prefer the direct flatbuffer path to avoid JSON+flatc roundtrip,
+    # which reduces CPU/memory and avoids temp file I/O.
+    result: _FlatbufferResult = _program_to_flatbuffer(
+        program,
         constant_tensor_alignment=constant_tensor_alignment,
         delegate_alignment=delegate_alignment,
     )
@@ -765,3 +768,70 @@ def deserialize_pte_binary(program_data: bytes) -> PTEFile:
         )
 
     return PTEFile(program=program, mutable_data=None, named_data=None)
+
+
+def _extract_delegate_payload(
+    pte_data: bytes, backend_id: str, delegate_index: int = 0
+) -> Optional[bytes]:
+    """Extract a delegate payload from a serialized PTE file.
+
+    Parses the PTE file structure, finds the delegate matching the given
+    backend ID, and returns its raw payload bytes. Handles both inline
+    delegate data and segment-based storage.
+
+    Args:
+        pte_data: Raw bytes of the PTE file.
+        backend_id: ID substring to match (case-insensitive).
+            For example, 'mlx' matches 'MLXBackend'.
+        delegate_index: Which matching delegate to extract (0-based).
+            Defaults to 0 (first match).
+
+    Returns:
+        Delegate payload bytes, or None if not found.
+    """
+    # Parse the extended header
+    extended_header = _get_extended_header(pte_data)
+
+    # Determine program size from header or use full data
+    if extended_header is not None:
+        program_size = extended_header.program_size
+    else:
+        program_size = len(pte_data)
+
+    # Parse the program flatbuffer
+    program: Program = _json_to_program(
+        _program_flatbuffer_to_json(pte_data[:program_size])
+    )
+
+    # Search for the matching delegate
+    match_count = 0
+    for plan in program.execution_plan:
+        for delegate in plan.delegates:
+            if backend_id.lower() not in delegate.id.lower():
+                continue
+            if match_count != delegate_index:
+                match_count += 1
+                continue
+
+            processed = delegate.processed
+
+            # Inline data
+            if processed.location == DataLocation.INLINE:
+                inline_data = program.backend_delegate_data[processed.index]
+                if inline_data.data:
+                    return bytes(inline_data.data)
+                return None
+
+            # Segment data
+            if processed.location == DataLocation.SEGMENT:
+                if extended_header is None:
+                    return None
+
+                segment = program.segments[processed.index]
+                offset = extended_header.segment_base_offset + segment.offset
+                size = segment.size
+                return pte_data[offset : offset + size]
+
+            return None
+
+    return None

@@ -36,6 +36,7 @@ void apply_padding_to_dim(
     IntArrayRef self_sizes,
     IntArrayRef self_strides,
     CTYPE* out_data,
+    CTYPE* out_data_end,
     IntArrayRef out_sizes,
     IntArrayRef out_strides,
     IntArrayRef pad,
@@ -50,23 +51,35 @@ void apply_padding_to_dim(
 
   size_t pad_before = 0;
   size_t pad_after = 0;
-  if (pad_i >= 0 && pad_i < pad.size() / 2) {
-    pad_before = pad[2 * pad_i];
-    pad_after = pad[2 * pad_i + 1];
+  if (pad_i < pad.size() / 2) {
+    int64_t pb = pad[2 * pad_i];
+    int64_t pa = pad[2 * pad_i + 1];
+    ET_KERNEL_CHECK_MSG(
+        ctx,
+        pb >= 0 && pa >= 0,
+        InvalidArgument,
+        /* void */,
+        "Padding values must be non-negative.");
+    pad_before = static_cast<size_t>(pb);
+    pad_after = static_cast<size_t>(pa);
   }
 
   size_t out_step_len = out_strides[dim];
   size_t in_step_len = self_strides[dim];
 
   // Do not copy padding beyond the out tensor bounds.
+  // Use division to avoid potential overflow in multiplication.
   if (pad_before > 0) {
-    size_t numel = 1;
-    for (ET_UNUSED const auto i : c10::irange(out_sizes.size())) {
-      numel *= out_sizes[i];
-    }
     ET_KERNEL_CHECK_MSG(
         ctx,
-        numel >= pad_before * out_step_len,
+        out_data <= out_data_end,
+        InvalidArgument,
+        /* void */,
+        "Out data pointer exceeds buffer bounds.");
+    size_t remaining = out_data_end - out_data;
+    ET_KERNEL_CHECK_MSG(
+        ctx,
+        out_step_len > 0 && remaining / out_step_len >= pad_before,
         InvalidArgument,
         /* void */,
         "Out tensor is too small for the requested padding.");
@@ -83,6 +96,29 @@ void apply_padding_to_dim(
     size_t copy_nbytes = copy_len * sizeof(CTYPE);
 
     if (copy_nbytes > 0) {
+      // Check that out_data and self_data do not overlap.
+      ET_KERNEL_CHECK_MSG(
+          ctx,
+          out_data != self_data &&
+              ((out_data + copy_len <= self_data) ||
+               (self_data + copy_len <= out_data)),
+          InvalidArgument,
+          /* void */,
+          "Out tensor overlaps with the input tensor. This is not supported.");
+      // Bounds check before memcpy
+      ET_KERNEL_CHECK_MSG(
+          ctx,
+          out_data <= out_data_end,
+          InvalidArgument,
+          /* void */,
+          "Out data pointer exceeds buffer bounds.");
+      size_t remaining = out_data_end - out_data;
+      ET_KERNEL_CHECK_MSG(
+          ctx,
+          remaining >= copy_len,
+          InvalidArgument,
+          /* void */,
+          "Out tensor is too small for the copy operation.");
       memcpy(out_data, self_data, copy_nbytes);
       out_data += copy_len;
       self_data += copy_len;
@@ -98,6 +134,7 @@ void apply_padding_to_dim(
           self_sizes,
           self_strides,
           out_data,
+          out_data_end,
           out_sizes,
           out_strides,
           pad,
@@ -105,20 +142,28 @@ void apply_padding_to_dim(
           last_padded_dim,
           dim + 1);
 
+      if (ctx.failure_state() != Error::Ok) {
+        return;
+      }
+
       out_data += out_step_len;
       self_data += in_step_len;
     }
   }
 
   // Do not copy padding beyond the out tensor bounds.
+  // Use division to avoid potential overflow in multiplication.
   if (pad_after > 0) {
-    size_t numel = 1;
-    for (ET_UNUSED const auto i : c10::irange(out_sizes.size())) {
-      numel *= out_sizes[i];
-    }
     ET_KERNEL_CHECK_MSG(
         ctx,
-        numel >= pad_after * out_step_len,
+        out_data <= out_data_end,
+        InvalidArgument,
+        /* void */,
+        "Out data pointer exceeds buffer bounds.");
+    size_t remaining = out_data_end - out_data;
+    ET_KERNEL_CHECK_MSG(
+        ctx,
+        out_step_len > 0 && remaining / out_step_len >= pad_after,
         InvalidArgument,
         /* void */,
         "Out tensor is too small for the requested padding.");
@@ -161,7 +206,7 @@ void constant_pad_nd_out_impl(
     out_strides[i] = getTrailingDims(out, static_cast<int64_t>(i));
 
     size_t pad_i = ndim - 1 - i;
-    if (pad_i >= 0 && pad_i < pad.size() / 2) {
+    if (pad_i < pad.size() / 2) {
       if (pad[2 * pad_i] + pad[2 * pad_i + 1] > 0) {
         last_padded_dim = i;
       }
@@ -173,6 +218,8 @@ void constant_pad_nd_out_impl(
   IntArrayRef out_sizes_ref(out_sizes, ndim);
   IntArrayRef out_strides_ref(out_strides, ndim);
 
+  CTYPE* out_data_end = out_data + out.numel();
+
   apply_padding_to_dim(
       ctx,
       ndim,
@@ -180,6 +227,7 @@ void constant_pad_nd_out_impl(
       self_sizes_ref,
       self_strides_ref,
       out_data,
+      out_data_end,
       out_sizes_ref,
       out_strides_ref,
       pad,

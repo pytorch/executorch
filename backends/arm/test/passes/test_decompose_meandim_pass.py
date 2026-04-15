@@ -1,4 +1,4 @@
-# Copyright 2025 Arm Limited and/or its affiliates.
+# Copyright 2025-2026 Arm Limited and/or its affiliates.
 #
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
@@ -27,9 +27,7 @@ class ModuleWithMeanAttrs(Protocol):
 
 
 class MeanDim(torch.nn.Module):
-    """
-    Basic mean model using torch.mean with keepdim = True
-    """
+    """Basic mean model using torch.mean with keepdim = True."""
 
     ops_after_pass = u55_ops_after_pass = {
         "torch.ops.aten.sum.dim_IntList": 2,
@@ -53,9 +51,7 @@ class MeanDim(torch.nn.Module):
 
 
 class MeanDimTensor(torch.nn.Module):
-    """
-    Basic mean model using torch.Tensor.mean with keepdim = False
-    """
+    """Basic mean model using torch.Tensor.mean with keepdim = False."""
 
     ops_after_pass = {
         "torch.ops.aten.sum.dim_IntList": 2,
@@ -96,7 +92,7 @@ modules: Dict[str, ModuleWithMeanAttrs] = {
 
 
 @common.parametrize("module", modules)
-def test_decompose_meandim_tosa_INT(module: ModuleWithMeanAttrs) -> None:
+def test_decompose_mean_dim_tosa_INT(module: ModuleWithMeanAttrs) -> None:
     # Decompose meandim_pass requires initiating the pas with args, which is not supported
     # by RunPasses in the arm_tester -> PassPipeline cannot be used.
     nn_module = cast(torch.nn.Module, module)
@@ -115,7 +111,7 @@ def test_decompose_meandim_tosa_INT(module: ModuleWithMeanAttrs) -> None:
 
 
 @common.parametrize("module", modules)
-def test_decompose_meandim_u55_INT(module: ModuleWithMeanAttrs) -> None:
+def test_decompose_mean_dim_u55_INT(module: ModuleWithMeanAttrs) -> None:
     # Decompose meandim_pass requires initiating the pas with args, which is not supported
     # by RunPasses in the arm_tester -> PassPipeline cannot be used.
     nn_module = cast(torch.nn.Module, module)

@@ -25,6 +25,7 @@ from torch.export.passes import move_to_device_pass
 
 class COMPILE_SPEC_KEYS(Enum):
     METHOD_NAME = "method_name"
+    SHARE_KV_CACHE_ACROSS_METHODS = "share_kv_cache_across_methods"
 
 
 @experimental(
@@ -73,6 +74,19 @@ class AotiBackend(ABC):
     def get_custom_passes(cls, compile_specs: List[CompileSpec]) -> List[typing.Any]:
         """Return the list of custom passes to apply after ReplaceViewCopyWithViewPass and before decomposition."""
         pass
+
+    @classmethod
+    def save_data_externally(cls) -> bool:
+        """
+        Return whether to save the named data map to an external .ptd file.
+
+        If True, the SO blob and weights blob will be saved to a separate .ptd file
+        (e.g., aoti_cuda_blob.ptd) that must be provided at runtime.
+        If False, the data will be merged into the .pte file.
+
+        Default is False (merge with .pte file). Subclasses can override this.
+        """
+        return False
 
     @classmethod
     def get_extra_aoti_compile_context_manager(cls):
@@ -156,7 +170,10 @@ class AotiBackend(ABC):
         # Apply custom backend-specific passes
         custom_passes = cls.get_custom_passes(compile_specs)
         for custom_pass in custom_passes:
-            custom_pass(device_edge_program.graph_module)
+            if getattr(custom_pass, "requires_exported_program", False):
+                custom_pass(device_edge_program)
+            else:
+                custom_pass(device_edge_program.graph_module)
 
         # Run decompositions if any
         if decomposition_table:
@@ -222,11 +239,15 @@ class AotiBackend(ABC):
         named_data_store = NamedDataStore()
         method_name = cls.method_name_from_compile_specs(compile_specs)
 
-        # Add SO and weights blob separately
         named_data_store.add_named_data(method_name + "_so_blob", so_data, 1, None)
-        weights_blob_data_type = f"aoti_{device_name}_blob"
+        # Determine whether to save named data externally based on backend setting
+        # External: save to separate .ptd file, otherwise merge with .pte file
+        external_tag = (
+            f"aoti_{device_name}_blob" if cls.save_data_externally() else None
+        )
+
         named_data_store.add_named_data(
-            method_name + "_weights_blob", blob_data, 1, weights_blob_data_type
+            method_name + "_weights_blob", blob_data, 1, external_tag
         )
 
         # Clean up the generated files
@@ -265,4 +286,14 @@ class AotiBackend(ABC):
                 return spec.value.decode("utf-8")
         raise RuntimeError(
             f"Could not find method name in compile specs: {compile_specs}"
+        )
+
+    @classmethod
+    def generate_share_kv_cache_compile_spec(cls) -> CompileSpec:
+        """
+        Generate a CompileSpec to enable cross-method KV cache sharing.
+        """
+        return CompileSpec(
+            COMPILE_SPEC_KEYS.SHARE_KV_CACHE_ACROSS_METHODS.value,
+            bytes([1]),
         )

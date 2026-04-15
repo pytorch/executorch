@@ -1,0 +1,19 @@
+load("@fbcode_macros//build_defs:build_file_migration.bzl", "fbcode_target", "non_fbcode_target")
+oncall("executorch")
+# Any targets that should be shared between fbcode and xplat must be defined in
+# targets.bzl. This file can contain xplat-only targets.
+
+load(":targets.bzl", "define_common_targets")
+
+
+non_fbcode_target(_kind = define_common_targets,)
+
+# !!!! fbcode/executorch/backends/test/TARGETS was merged into this file, see https://fburl.com/workplace/xl8l9yuo for more info !!!!
+
+# Any targets that should be shared between fbcode and xplat must be defined in
+# targets.bzl. This file can contain fbcode-only targets.
+
+load(":targets.bzl", "define_common_targets")
+
+
+fbcode_target(_kind = define_common_targets,is_fbcode = True)

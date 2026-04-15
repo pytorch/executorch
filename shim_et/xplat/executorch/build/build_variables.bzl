@@ -36,6 +36,7 @@ PROGRAM_NO_PRIM_OPS_SRCS = [
     "method.cpp",
     "method_meta.cpp",
     "program.cpp",
+    "program_validation.cpp",
     "tensor_parser_exec_aten.cpp",
 ]
 
@@ -140,7 +141,6 @@ PORTABLE_KERNELS_SRCS = [
     "kernels/portable/cpu/op_le.cpp",
     "kernels/portable/cpu/op_leaky_relu.cpp",
     "kernels/portable/cpu/op_lift_fresh_copy.cpp",
-    "kernels/portable/cpu/op_linear_scratch_example.cpp",
     "kernels/portable/cpu/op_log.cpp",
     "kernels/portable/cpu/op_log10.cpp",
     "kernels/portable/cpu/op_log1p.cpp",
@@ -474,6 +474,7 @@ XNNPACK_BACKEND_BUCK_SRCS = [
     "runtime/XNNPACKBackend.cpp",
     "runtime/XNNWeightsCache.cpp",
     "runtime/XNNWorkspaceManager.cpp",
+    "runtime/XnnpackBackendOptions.cpp",
     "runtime/profiling/XNNProfiler.cpp",
 ]
 

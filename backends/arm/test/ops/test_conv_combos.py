@@ -1,4 +1,4 @@
-# Copyright 2024-2025 Arm Limited and/or its affiliates.
+# Copyright 2024-2026 Arm Limited and/or its affiliates.
 #
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
@@ -22,9 +22,8 @@ input_t1 = Tuple[torch.Tensor]
 
 from torch.nn.parameter import Parameter
 
-
 """
-This file contain unit tests where conv are combined with other ops.
+This file contains unit tests where conv are combined with other ops.
 """
 
 
@@ -106,7 +105,7 @@ class ComboConv2dMeandim(torch.nn.Module):
         self.adaptive_avg_pool2d = torch.nn.AdaptiveAvgPool2d((1, 1))
 
     def get_inputs(self) -> Tuple[torch.Tensor]:
-        return (torch.randn(1, 3, 48, 48),)
+        return (torch.randn(1, 3, 48, 48) + 1,)
 
     def forward(self, x):
         x = self.conv2d(x)
@@ -275,27 +274,27 @@ def test_convolution_2d_u85_INT_meandim():
 
 
 @common.SkipIfNoModelConverter
-def test_convolution_2d_vgf_FP_meandim():
+def test_convolution_2d_vgf_no_quant_meandim():
     model = ComboConv2dMeandim()
     pipeline = VgfPipeline[input_t1](
         model,
         model.get_inputs(),
         aten_op=[],
         exir_op=ComboConv2dMeandim.edge_op_list,
-        tosa_version="TOSA-1.0+FP",
+        quantize=False,
     )
     pipeline.run()
 
 
 @common.SkipIfNoModelConverter
-def test_convolution_2d_vgf_INT_meandim():
+def test_convolution_2d_vgf_quant_meandim():
     model = ComboConv2dMeandim()
     pipeline = VgfPipeline[input_t1](
         model,
         model.get_inputs(),
         aten_op=[],
         exir_op=ComboConv2dMeandim.edge_op_list,
-        tosa_version="TOSA-1.0+INT",
+        quantize=True,
     )
     pipeline.run()
 
@@ -366,7 +365,7 @@ def test_convolution_2d_u85_INT_batchnorm_relu6(test_data):
 
 @common.parametrize("test_data", ComboConvBatchnormRelu6.test_data_FP)
 @common.SkipIfNoModelConverter
-def test_convolution_2d_vgf_FP_batchnorm_relu6(test_data):
+def test_convolution_2d_vgf_no_quant_batchnorm_relu6(test_data):
     affine = test_data
     model = ComboConvBatchnormRelu6(affine)
     pipeline = VgfPipeline[input_t1](
@@ -374,14 +373,14 @@ def test_convolution_2d_vgf_FP_batchnorm_relu6(test_data):
         model.get_inputs(),
         aten_op=[],
         exir_op=ComboConvBatchnormRelu6.edge_op_list,
-        tosa_version="TOSA-1.0+FP",
+        quantize=False,
     )
     pipeline.run()
 
 
 @common.parametrize("test_data", ComboConvBatchnormRelu6.test_data_INT)
 @common.SkipIfNoModelConverter
-def test_convolution_2d_vgf_INT_batchnorm_relu6(test_data):
+def test_convolution_2d_vgf_quant_batchnorm_relu6(test_data):
     affine, per_channel_quantization = test_data
     model = ComboConvBatchnormRelu6(affine)
     pipeline = VgfPipeline[input_t1](
@@ -389,8 +388,8 @@ def test_convolution_2d_vgf_INT_batchnorm_relu6(test_data):
         model.get_inputs(),
         aten_op=[],
         exir_op=ComboConvBatchnormRelu6.edge_op_list,
-        tosa_version="TOSA-1.0+INT",
         per_channel_quantization=per_channel_quantization,
+        quantize=True,
     )
     pipeline.run()
 
@@ -459,21 +458,21 @@ def test_convolution_2d_u85_INT_relu6(test_data):
 
 @common.parametrize("test_data", ComboConvRelu6.test_data_FP)
 @common.SkipIfNoModelConverter
-def test_convolution_2d_vgf_FP_relu6(test_data):
+def test_convolution_2d_vgf_no_quant_relu6(test_data):
     model = ComboConvRelu6()
     pipeline = VgfPipeline[input_t1](
         model,
         test_data(),
         aten_op=[],
         exir_op=ComboConvRelu6.edge_op_list,
-        tosa_version="TOSA-1.0+FP",
+        quantize=False,
     )
     pipeline.run()
 
 
 @common.parametrize("test_data", ComboConvRelu6.test_data_INT)
 @common.SkipIfNoModelConverter
-def test_convolution_2d_vgf_INT_relu6(test_data):
+def test_convolution_2d_vgf_quant_relu6(test_data):
     input, per_channel_quantization = test_data()
     model = ComboConvRelu6()
     pipeline = VgfPipeline[input_t1](
@@ -481,8 +480,8 @@ def test_convolution_2d_vgf_INT_relu6(test_data):
         input,
         aten_op=[],
         exir_op=ComboConvRelu6.edge_op_list,
-        tosa_version="TOSA-1.0+INT",
         per_channel_quantization=per_channel_quantization,
+        quantize=True,
     )
     pipeline.run()
 
@@ -548,21 +547,21 @@ def test_convolution_2d_u85_INT_block_bottleneck(test_data):
 
 
 @common.SkipIfNoModelConverter
-def test_convolution_2d_vgf_FP_block_bottleneck():
+def test_convolution_2d_vgf_no_quant_block_bottleneck():
     model = ComboBlockBottleneckResidual()
     pipeline = VgfPipeline[input_t1](
         model,
         model.get_inputs(),
         aten_op=[],
         exir_op=ComboBlockBottleneckResidual.edge_op_list,
-        tosa_version="TOSA-1.0+FP",
+        quantize=False,
     )
     pipeline.run()
 
 
 @common.parametrize("test_data", ComboBlockBottleneckResidual.test_data_INT)
 @common.SkipIfNoModelConverter
-def test_convolution_2d_vgf_INT_block_bottleneck(test_data):
+def test_convolution_2d_vgf_quant_block_bottleneck(test_data):
     per_channel_quantization = test_data
     model = ComboBlockBottleneckResidual()
     pipeline = VgfPipeline[input_t1](
@@ -570,8 +569,8 @@ def test_convolution_2d_vgf_INT_block_bottleneck(test_data):
         model.get_inputs(),
         aten_op=[],
         exir_op=ComboBlockBottleneckResidual.edge_op_list,
-        tosa_version="TOSA-1.0+INT",
         per_channel_quantization=per_channel_quantization,
+        quantize=True,
     )
     pipeline.run()
 
@@ -640,21 +639,21 @@ def test_convolution_2d_u85_INT_avgpool2d(test_data):
 
 @common.parametrize("test_data", ComboConvAvgPool2d.test_data_FP)
 @common.SkipIfNoModelConverter
-def test_convolution_2d_vgf_FP_avgpool2d(test_data):
+def test_convolution_2d_vgf_no_quant_avgpool2d(test_data):
     model = ComboConvAvgPool2d()
     pipeline = VgfPipeline[input_t1](
         model,
         test_data(),
         aten_op=[],
         exir_op=ComboConvAvgPool2d.edge_op_list,
-        tosa_version="TOSA-1.0+FP",
+        quantize=False,
     )
     pipeline.run()
 
 
 @common.parametrize("test_data", ComboConvAvgPool2d.test_data_INT)
 @common.SkipIfNoModelConverter
-def test_convolution_2d_vgf_INT_avgpool2d(test_data):
+def test_convolution_2d_vgf_quant_avgpool2d(test_data):
     input, per_channel_quantization = test_data()
     model = ComboConvAvgPool2d()
     pipeline = VgfPipeline[input_t1](
@@ -662,7 +661,7 @@ def test_convolution_2d_vgf_INT_avgpool2d(test_data):
         input,
         aten_op=[],
         exir_op=ComboConvAvgPool2d.edge_op_list,
-        tosa_version="TOSA-1.0+INT",
         per_channel_quantization=per_channel_quantization,
+        quantize=True,
     )
     pipeline.run()

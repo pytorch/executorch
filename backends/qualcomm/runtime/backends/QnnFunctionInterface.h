@@ -65,6 +65,7 @@ class QnnInterface {
   DEFINE_SHIM_FUNCTION_INTERFACE(graph_finalize, graphFinalize);
   DEFINE_SHIM_FUNCTION_INTERFACE(graph_execute, graphExecute);
   DEFINE_SHIM_FUNCTION_INTERFACE(graph_retrieve, graphRetrieve);
+  DEFINE_SHIM_FUNCTION_INTERFACE(graph_set_config, graphSetConfig);
   // --------- QnnLog ---------
   DEFINE_SHIM_FUNCTION_INTERFACE(log_create, logCreate);
   DEFINE_SHIM_FUNCTION_INTERFACE(log_free, logFree);
@@ -104,6 +105,9 @@ class QnnInterface {
   }
   const QNN_INTERFACE_VER_TYPE& GetInterfaceVer() const {
     return qnn_interface_->QNN_INTERFACE_VER_NAME;
+  }
+  void Unload() {
+    qnn_interface_ = nullptr;
   }
 
  private:

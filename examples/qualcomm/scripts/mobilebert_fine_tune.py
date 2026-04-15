@@ -11,21 +11,24 @@ from multiprocessing.connection import Client
 import numpy as np
 
 import torch
+from executorch.backends.qualcomm.export_utils import (
+    build_executorch_binary,
+    make_quantizer,
+    QnnConfig,
+    setup_common_args_and_variables,
+    SimpleADB,
+)
 from executorch.backends.qualcomm.quantizer.quantizer import QuantDtype
-from executorch.backends.qualcomm.serialization.qc_schema import QcomChipset
+from executorch.backends.qualcomm.serialization.qc_schema import (
+    QcomChipset,
+    QnnExecuTorchBackendType,
+)
 from executorch.backends.qualcomm.utils.utils import (
     generate_htp_compiler_spec,
     generate_qnn_executorch_compiler_spec,
     skip_annotation,
 )
-from executorch.examples.qualcomm.utils import (
-    build_executorch_binary,
-    make_output_dir,
-    make_quantizer,
-    parse_skip_delegation_node,
-    setup_common_args_and_variables,
-    SimpleADB,
-)
+from executorch.examples.qualcomm.utils import make_output_dir
 from executorch.exir import to_edge
 from transformers import BertTokenizer, MobileBertForSequenceClassification
 
@@ -131,8 +134,8 @@ def get_fine_tuned_mobilebert(artifacts_dir, pretrained_weight, batch_size):
     )
 
     # tokenize dataset
-    encoded_data_train = tokenizer.batch_encode_plus(
-        data[data.data_type == "train"].Title.values,
+    encoded_data_train = tokenizer(
+        data[data.data_type == "train"].Title.values.tolist(),
         add_special_tokens=True,
         return_attention_mask=True,
         max_length=256,
@@ -140,8 +143,8 @@ def get_fine_tuned_mobilebert(artifacts_dir, pretrained_weight, batch_size):
         truncation=True,
         return_tensors="pt",
     )
-    encoded_data_val = tokenizer.batch_encode_plus(
-        data[data.data_type == "val"].Title.values,
+    encoded_data_val = tokenizer(
+        data[data.data_type == "val"].Title.values.tolist(),
         add_special_tokens=True,
         return_attention_mask=True,
         max_length=256,
@@ -219,7 +222,7 @@ def get_fine_tuned_mobilebert(artifacts_dir, pretrained_weight, batch_size):
 
 
 def main(args):
-    skip_node_id_set, skip_node_op_set = parse_skip_delegation_node(args)
+    qnn_config = QnnConfig.load_config(args.config_file if args.config_file else args)
 
     # ensure the working directory exist.
     os.makedirs(args.artifact, exist_ok=True)
@@ -238,18 +241,12 @@ def main(args):
         )
 
     if args.use_fp16:
-        quant_dtype = None
         pte_filename = "mb_qnn"
         build_executorch_binary(
-            model,
-            inputs[0],
-            args.model,
-            f"{args.artifact}/{pte_filename}",
-            inputs,
-            skip_node_id_set=skip_node_id_set,
-            skip_node_op_set=skip_node_op_set,
-            quant_dtype=quant_dtype,
-            shared_buffer=args.shared_buffer,
+            model=model,
+            qnn_config=qnn_config,
+            file_name=f"{args.artifact}/{pte_filename}",
+            dataset=inputs,
         )
     else:
 
@@ -257,10 +254,14 @@ def main(args):
             for input in inputs:
                 gm(*input)
 
-        quantizer = make_quantizer(quant_dtype=quant_dtype)
+        quantizer = make_quantizer(
+            quant_dtype=quant_dtype,
+            backend=QnnExecuTorchBackendType.kHtpBackend,
+            soc_model=qnn_config.soc_model,
+        )
         backend_options = generate_htp_compiler_spec(quant_dtype is not None)
         compiler_specs = generate_qnn_executorch_compiler_spec(
-            soc_model=getattr(QcomChipset, args.model),
+            soc_model=getattr(QcomChipset, args.soc_model),
             backend_options=backend_options,
         )
         # skip embedding layer cause it's quantization sensitive
@@ -284,15 +285,9 @@ def main(args):
         return
 
     adb = SimpleADB(
-        qnn_sdk=os.getenv("QNN_SDK_ROOT"),
-        build_path=f"{args.build_folder}",
+        qnn_config=qnn_config,
         pte_path=f"{args.artifact}/{pte_filename}.pte",
         workspace=f"/data/local/tmp/executorch/{pte_filename}",
-        device_id=args.device,
-        host_id=args.host,
-        soc_model=args.model,
-        shared_buffer=args.shared_buffer,
-        target=args.target,
     )
     adb.push(inputs=inputs)
     adb.execute()
@@ -301,7 +296,7 @@ def main(args):
     output_data_folder = f"{args.artifact}/outputs"
     make_output_dir(output_data_folder)
 
-    adb.pull(output_path=args.artifact)
+    adb.pull(host_output_path=args.artifact)
 
     # get torch cpu result
     cpu_preds, true_vals = evaluate(model, data_val)
@@ -372,7 +367,7 @@ if __name__ == "__main__":
     )
 
     args = parser.parse_args()
-    args.validate(args)
+
     try:
         main(args)
     except Exception as e:

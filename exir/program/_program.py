@@ -42,6 +42,7 @@ from executorch.exir.pass_manager import PassType
 from executorch.exir.passes import (
     base_post_op_replace_passes,
     base_pre_op_replace_passes,
+    convert_constant_dim_order_pass,
     dead_code_elimination_pass,
     EdgeToBackendOpsPass,
     MemoryFormatOpsPass,
@@ -58,6 +59,7 @@ from executorch.exir.passes.insert_write_back_for_buffers_pass import (
 from executorch.exir.passes.normalize_view_copy_base_pass import (
     NormalizeViewCopyBasePass,
 )
+from executorch.exir.passes.propagate_device_pass import PropagateDevicePass
 from executorch.exir.passes.quant_fusion_pass import quant_fusion_and_const_prop_pass
 from executorch.exir.passes.reinplace import reinplace_pass
 from executorch.exir.passes.remove_graph_asserts_pass import (
@@ -149,9 +151,7 @@ def _get_updated_range_constraints(gm):
     if shape_env is None:
         return {}
     range_constraints = {
-        k: v
-        for k, v in shape_env.var_to_range.items()
-        if k not in shape_env.replacements
+        shape_env.replacements.get(k, k): v for k, v in shape_env.var_to_range.items()
     }
     # Only when we have an unbacked symint, and it's used as constructor inputs,
     # runtime_var_to_range will make a difference compated to var_to_range.
@@ -592,10 +592,13 @@ class ExecutorchProgram:
         self._constant_tensor_alignment: Optional[int] = constant_tensor_alignment
         self._delegate_alignment: Optional[int] = delegate_alignment
         from executorch.extension.flat_tensor.serialize.serialize import (
+            FlatTensorConfig,
             FlatTensorSerializer,
         )
 
-        self._data_serializer: DataSerializer = FlatTensorSerializer()
+        self._data_serializer: DataSerializer = FlatTensorSerializer(
+            FlatTensorConfig(self._segment_alignment)
+        )
 
     def _get_emitter_output(self) -> EmitterOutput:
         if self._emitter_output is None:
@@ -846,6 +849,7 @@ def edge_to_executorch_passes(
         # there exists an unbacked symint operation.
         *config.passes,
         SpecPropPass(),
+        PropagateDevicePass(),
         EdgeToBackendOpsPass(),
         RemoveGraphAssertsPass(),
     ] + pre_memory_planning_passes(config, name)
@@ -909,8 +913,15 @@ def _generate_edge_program(
             )
         ],
     )
+
     # Lift the tensor constants created in ScalarToTensorPass
     edge_program = lift_constant_tensor_pass(edge_program)
+
+    # Normalize constant tensor dim order on the unlifted graph
+    edge_program = convert_constant_dim_order_pass.convert_constant_dim_order_pass(
+        edge_program
+    )
+
     edge_program = _transform(edge_program, *post_op_replace_passes)
 
     return edge_program
@@ -1184,7 +1195,10 @@ def _gen_edge_manager_for_partitioners(
 
             # Decompose by default if there are no partitioners for the method
             if not partitioners_for_program:
-                program = program.run_decompositions(_default_decomposition_table())
+                table = _default_decomposition_table()
+                for op in config.preserve_ops:
+                    table.pop(op, None)
+                program = program.run_decompositions(table)
 
             # Process each partitioner individually using their specific requirements
             for curr_partitioner in partitioners_for_program:
@@ -1243,11 +1257,21 @@ def _gen_edge_manager_for_partitioners(
             preserve_ops=ops_set_to_not_decompose_by_program.get(name, []),
         )
 
+    # Merge ops_to_not_decompose into config so that downstream calls (e.g.
+    # EdgeProgramManager.transform()) carry the exception list through their
+    # verifiers automatically.
+    all_ops_not_to_decompose = list(
+        set().union(*ops_set_to_not_decompose_by_program.values())
+    )
+    config._core_aten_ops_exception_list = list(
+        set(config._core_aten_ops_exception_list) | set(all_ops_not_to_decompose)
+    )
+
     edge_manager = EdgeProgramManager(
         edge_programs,
         constant_methods,
         config,
-        list(set().union(*ops_set_to_not_decompose_by_program.values())),
+        all_ops_not_to_decompose,
     )
 
     if generate_etrecord:
@@ -1365,6 +1389,11 @@ def to_edge_transform_and_lower(  # noqa: C901
 
     if transform_passes is not None:
         edge_manager = edge_manager.transform(transform_passes)
+
+        if generate_etrecord:
+            edge_manager._etrecord.add_extra_export_modules(
+                {"edge_after_transform": copy.deepcopy(edge_manager)}
+            )
 
     max_num_partitioners = 0
     for partitioner_list in partitioner.values():
@@ -1790,8 +1819,11 @@ class EdgeProgramManager:
         )
 
         if self._etrecord is not None:
-            self._etrecord.add_executorch_program(et_pm)
-            et_pm._etrecord = self._etrecord
+            # Create a clean copy of the ETRecord for the executorch manager
+            # This preserves edge-stage data while allowing executorch data to be added
+            et_etrecord = self._etrecord.copy()
+            et_etrecord.add_executorch_program(et_pm)
+            et_pm._etrecord = et_etrecord
 
         return et_pm
 
@@ -1851,10 +1883,13 @@ class ExecutorchProgramManager:
 
         # Serialize emitter output, ready to be written to a file.
         from executorch.extension.flat_tensor.serialize.serialize import (
+            FlatTensorConfig,
             FlatTensorSerializer,
         )
 
-        self._data_serializer = FlatTensorSerializer()
+        self._data_serializer = FlatTensorSerializer(
+            FlatTensorConfig(segment_alignment=backend_config.segment_alignment)
+        )
         self._pte_data, self._tensor_data = serialize_for_executorch(
             self._emitter_output,
             backend_config,

@@ -4,10 +4,9 @@
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
 
-import copy
 from typing import Any, Dict, Tuple
 
-import executorch.backends.qualcomm.python.PyQnnWrapperAdaptor as PyQnnWrapper
+import executorch.backends.qualcomm.python.PyQnnManagerAdaptor as PyQnnManager
 
 import numpy as np
 import torch
@@ -30,6 +29,7 @@ from executorch.backends.qualcomm.utils.constants import (
     QCOM_SCALE,
     QCOM_SCALE_OFFSET,
     QCOM_SCALES,
+    QCOM_TENSOR_NAME,
     QCOM_ZERO_POINT,
     QCOM_ZERO_POINTS,
 )
@@ -48,28 +48,29 @@ from .utils import (
 
 
 QNN_QUANT_TYPE_MAP = {
-    torch.int8: PyQnnWrapper.Qnn_DataType_t.QNN_DATATYPE_SFIXED_POINT_8,
-    torch.int16: PyQnnWrapper.Qnn_DataType_t.QNN_DATATYPE_SFIXED_POINT_16,
-    torch.int32: PyQnnWrapper.Qnn_DataType_t.QNN_DATATYPE_SFIXED_POINT_32,
+    torch.int8: PyQnnManager.Qnn_DataType_t.QNN_DATATYPE_SFIXED_POINT_8,
+    torch.int16: PyQnnManager.Qnn_DataType_t.QNN_DATATYPE_SFIXED_POINT_16,
+    torch.int32: PyQnnManager.Qnn_DataType_t.QNN_DATATYPE_SFIXED_POINT_32,
     # Note that there is no int64 tensor data type in Qnn.
-    torch.int64: PyQnnWrapper.Qnn_DataType_t.QNN_DATATYPE_UNDEFINED,
-    torch.uint8: PyQnnWrapper.Qnn_DataType_t.QNN_DATATYPE_UFIXED_POINT_8,
-    torch.uint16: PyQnnWrapper.Qnn_DataType_t.QNN_DATATYPE_UFIXED_POINT_16,
+    torch.int64: PyQnnManager.Qnn_DataType_t.QNN_DATATYPE_UNDEFINED,
+    torch.uint8: PyQnnManager.Qnn_DataType_t.QNN_DATATYPE_UFIXED_POINT_8,
+    torch.uint16: PyQnnManager.Qnn_DataType_t.QNN_DATATYPE_UFIXED_POINT_16,
 }
 QNN_TENSOR_TYPE_MAP = {
-    torch.bool: PyQnnWrapper.Qnn_DataType_t.QNN_DATATYPE_BOOL_8,
-    torch.float32: PyQnnWrapper.Qnn_DataType_t.QNN_DATATYPE_FLOAT_32,
+    torch.bool: PyQnnManager.Qnn_DataType_t.QNN_DATATYPE_BOOL_8,
+    torch.float16: PyQnnManager.Qnn_DataType_t.QNN_DATATYPE_FLOAT_16,
+    torch.float32: PyQnnManager.Qnn_DataType_t.QNN_DATATYPE_FLOAT_32,
     # Note that there is no float64 tensor data type in Qnn.
-    torch.float64: PyQnnWrapper.Qnn_DataType_t.QNN_DATATYPE_FLOAT_32,
-    torch.int8: PyQnnWrapper.Qnn_DataType_t.QNN_DATATYPE_INT_8,
-    torch.int16: PyQnnWrapper.Qnn_DataType_t.QNN_DATATYPE_INT_16,
-    torch.int32: PyQnnWrapper.Qnn_DataType_t.QNN_DATATYPE_INT_32,
-    torch.int64: PyQnnWrapper.Qnn_DataType_t.QNN_DATATYPE_INT_64,
-    torch.uint8: PyQnnWrapper.Qnn_DataType_t.QNN_DATATYPE_UINT_8,
-    torch.uint16: PyQnnWrapper.Qnn_DataType_t.QNN_DATATYPE_UINT_16,
-    torch.uint32: PyQnnWrapper.Qnn_DataType_t.QNN_DATATYPE_UINT_32,
-    float: PyQnnWrapper.Qnn_DataType_t.QNN_DATATYPE_FLOAT_32,
-    int: PyQnnWrapper.Qnn_DataType_t.QNN_DATATYPE_UINT_32,
+    torch.float64: PyQnnManager.Qnn_DataType_t.QNN_DATATYPE_FLOAT_32,
+    torch.int8: PyQnnManager.Qnn_DataType_t.QNN_DATATYPE_INT_8,
+    torch.int16: PyQnnManager.Qnn_DataType_t.QNN_DATATYPE_INT_16,
+    torch.int32: PyQnnManager.Qnn_DataType_t.QNN_DATATYPE_INT_32,
+    torch.int64: PyQnnManager.Qnn_DataType_t.QNN_DATATYPE_INT_64,
+    torch.uint8: PyQnnManager.Qnn_DataType_t.QNN_DATATYPE_UINT_8,
+    torch.uint16: PyQnnManager.Qnn_DataType_t.QNN_DATATYPE_UINT_16,
+    torch.uint32: PyQnnManager.Qnn_DataType_t.QNN_DATATYPE_UINT_32,
+    float: PyQnnManager.Qnn_DataType_t.QNN_DATATYPE_FLOAT_32,
+    int: PyQnnManager.Qnn_DataType_t.QNN_DATATYPE_UINT_32,
 }
 
 PER_CHANNEL_ENCODING = {
@@ -149,8 +150,12 @@ class NodeVisitor:
     def make_qnn_per_block_config(self, node: torch.fx.Node, quant_attrs: Dict):
         import math
 
-        quant_config = copy.deepcopy(quant_attrs)
-        scales, scale_offset, quantized_scales = quant_attrs[QCOM_SCALE], [], []
+        quant_config = {
+            QCOM_DTYPE: quant_attrs[QCOM_DTYPE],
+            QCOM_QUANT_MIN: quant_attrs[QCOM_QUANT_MIN],
+            QCOM_QUANT_MAX: quant_attrs[QCOM_QUANT_MAX],
+        }
+        scales = quant_attrs[QCOM_SCALE]
         # channel in observers defaults to zero
         num_channels = node.meta["val"].shape[0]
         user_0 = self.get_first_user(node)
@@ -165,20 +170,26 @@ class NodeVisitor:
         quant_scales_dtype = torch.uint8
         num_steps = 2**bitwidth_of_scale
         scale_storage_type = (
-            PyQnnWrapper.Qnn_BlockwiseExpansionBlockScaleStorageType_t.QNN_BLOCKWISE_EXPANSION_BITWIDTH_SCALE_STORAGE_8
+            PyQnnManager.Qnn_BlockwiseExpansionBlockScaleStorageType_t.QNN_BLOCKWISE_EXPANSION_BITWIDTH_SCALE_STORAGE_8
         )
 
+        scale_offset_arr = np.empty(
+            num_channels, dtype=[("scale", np.float32), ("offset", np.int32)]
+        )
+        # move channel axis to dim 0 for transpose_conv case
+        candidates = scales if ch_axis == 0 else scales.transpose(0, 1)
+        candidates = candidates.reshape(num_channels, -1)
+        # find max scale per channel
+        max_scales = candidates.amax(dim=-1) / num_steps
+        # quantize scales per channel
+        q_scales = torch.clamp(
+            input=torch.round(input=candidates / max_scales.unsqueeze(-1)),
+            min=1,
+            max=2**bitwidth_of_scale,
+        ).to(quant_scales_dtype)
+        # symmetric quantization is required
         for ch in range(num_channels):
-            candidates = scales[ch] if ch_axis == 0 else scales[:, ch, ...]
-            max_scale = candidates.reshape(1, -1).amax(dim=-1) / num_steps
-            q_scales = torch.clamp(
-                input=torch.round(input=candidates / max_scale),
-                min=1,
-                max=2**bitwidth_of_scale,
-            ).to(quant_scales_dtype)
-            quantized_scales.append(q_scales)
-            # symmetric quantization is required
-            scale_offset.append(PyQnnWrapper.Qnn_ScaleOffset_t(max_scale, 0))
+            scale_offset_arr[ch] = (float(max_scales[ch]), 0)
 
         # skip dequantize op, e.g. frozen_param -> dq -> conv2d
         user_0 = self.get_first_user(node)
@@ -193,21 +204,25 @@ class NodeVisitor:
         else:
             raise AttributeError("undetermined axis for block quantization")
 
-        quant_config[QCOM_NUM_BLOCKS_PER_AXIS] = quantized_scales[0].shape.numel()
-        quant_config[QCOM_BLOCK_SCALE_OFFSET] = scale_offset
-        quant_config[QCOM_BLOCK_SCALES] = torch.cat(quantized_scales).detach().numpy()
+        quant_config[QCOM_NUM_BLOCKS_PER_AXIS] = q_scales.shape[1]
+        quant_config[QCOM_BLOCK_SCALE_OFFSET] = scale_offset_arr
+        quant_config[QCOM_BLOCK_SCALES] = q_scales.flatten().detach().numpy()
         # e.g. if use 16 bit for quantized scales, we need to expand 16 - 4 = 12 bits
         quant_config[QCOM_BLOCK_SCALE_BITWIDTH] = (
             int(math.log2(torch.iinfo(quant_scales_dtype).max + 1)) - bitwidth_of_scale
         )
         quant_config[QCOM_BLOCK_STORAGE_TYPE] = scale_storage_type
         return (
-            PyQnnWrapper.Qnn_QuantizationEncoding_t.QNN_QUANTIZATION_ENCODING_BLOCKWISE_EXPANSION,
+            PyQnnManager.Qnn_QuantizationEncoding_t.QNN_QUANTIZATION_ENCODING_BLOCKWISE_EXPANSION,
             quant_config,
         )
 
     def make_qnn_per_channel_config(self, node: torch.fx.Node, quant_attrs: Dict):
-        quant_config = copy.deepcopy(quant_attrs)
+        quant_config = {
+            QCOM_DTYPE: quant_attrs[QCOM_DTYPE],
+            QCOM_QUANT_MAX: quant_attrs[QCOM_QUANT_MAX],
+            QCOM_QUANT_MIN: quant_attrs[QCOM_QUANT_MIN],
+        }
 
         scales = quant_attrs[QCOM_SCALES]
         zero_points = quant_attrs[QCOM_ZERO_POINTS]
@@ -215,22 +230,23 @@ class NodeVisitor:
             zero_points
         ), f"Per channel encoding of node {node}, has different size for scales {len(scales)} and zero_points {len(zero_points)}"
 
-        scale_offset = []
+        scale_offset_arr = np.empty(
+            len(scales), dtype=[("scale", np.float32), ("offset", np.int32)]
+        )
         for i in range(len(scales)):
-            # check Qnn_ScaleOffset_t in QNN/include/QnnTypes.h
-            scale_offset.append(
-                PyQnnWrapper.Qnn_ScaleOffset_t(scales[i], -zero_points[i])
-            )
+            scale_offset_arr[i] = (float(scales[i]), int(-zero_points[i]))
 
         # skip dequantize op, e.g. frozen_param -> dq -> conv2d
         user_0 = self.get_first_user(node)
         # Memory layout of QNN conv weight always ends in Output. Like conv2d is HWIO
-        if user_0.target == exir_ops.edge.aten.convolution.default:
+        if user_0.target in {
+            exir_ops.edge.aten.convolution.default,
+        }:
             quant_config[QCOM_AXIS] = node.meta["val"].dim() - 1
         else:
             quant_config[QCOM_AXIS] = quant_attrs[QCOM_AXIS]
 
-        quant_config[QCOM_SCALE_OFFSET] = scale_offset
+        quant_config[QCOM_SCALE_OFFSET] = scale_offset_arr
         # special case for 4 bits
         if (
             quant_config[QCOM_DTYPE] == torch.int8
@@ -238,16 +254,21 @@ class NodeVisitor:
         ):
             quant_config[QCOM_BITWIDTH] = 4
             return (
-                PyQnnWrapper.Qnn_QuantizationEncoding_t.QNN_QUANTIZATION_ENCODING_BW_AXIS_SCALE_OFFSET,
+                PyQnnManager.Qnn_QuantizationEncoding_t.QNN_QUANTIZATION_ENCODING_BW_AXIS_SCALE_OFFSET,
                 quant_config,
             )
         return (
-            PyQnnWrapper.Qnn_QuantizationEncoding_t.QNN_QUANTIZATION_ENCODING_AXIS_SCALE_OFFSET,
+            PyQnnManager.Qnn_QuantizationEncoding_t.QNN_QUANTIZATION_ENCODING_AXIS_SCALE_OFFSET,
             quant_config,
         )
 
     def make_qnn_per_tensor_config(self, quant_attrs: Dict):
-        quant_config = copy.deepcopy(quant_attrs)
+        quant_config = {
+            QCOM_DTYPE: quant_attrs[QCOM_DTYPE],
+            QCOM_SCALE: quant_attrs[QCOM_SCALE],
+            QCOM_QUANT_MAX: quant_attrs[QCOM_QUANT_MAX],
+            QCOM_QUANT_MIN: quant_attrs[QCOM_QUANT_MIN],
+        }
         # check Qnn_ScaleOffset_t in QNN/include/QnnTypes.h
         quant_config[QCOM_OFFSET] = -quant_attrs[QCOM_ZERO_POINT]
         # special case for 4 bits
@@ -257,11 +278,11 @@ class NodeVisitor:
         ):
             quant_config[QCOM_BITWIDTH] = 4
             return (
-                PyQnnWrapper.Qnn_QuantizationEncoding_t.QNN_QUANTIZATION_ENCODING_BW_SCALE_OFFSET,
+                PyQnnManager.Qnn_QuantizationEncoding_t.QNN_QUANTIZATION_ENCODING_BW_SCALE_OFFSET,
                 quant_config,
             )
         return (
-            PyQnnWrapper.Qnn_QuantizationEncoding_t.QNN_QUANTIZATION_ENCODING_SCALE_OFFSET,
+            PyQnnManager.Qnn_QuantizationEncoding_t.QNN_QUANTIZATION_ENCODING_SCALE_OFFSET,
             quant_config,
         )
 
@@ -270,7 +291,7 @@ class NodeVisitor:
     ) -> Tuple[Any, Dict]:
         if not node.meta.get(QCOM_QUANT_ATTRS, None):
             return (
-                PyQnnWrapper.Qnn_QuantizationEncoding_t.QNN_QUANTIZATION_ENCODING_UNDEFINED,
+                PyQnnManager.Qnn_QuantizationEncoding_t.QNN_QUANTIZATION_ENCODING_UNDEFINED,
                 {},
             )
         is_input_tensor = node != target_node
@@ -321,8 +342,8 @@ class NodeVisitor:
     def get_tensor_type(
         self,
         node: torch.fx.Node,
-        tensor_type: PyQnnWrapper.Qnn_TensorType_t,
-    ) -> PyQnnWrapper.Qnn_TensorType_t:
+        tensor_type: PyQnnManager.Qnn_TensorType_t,
+    ) -> PyQnnManager.Qnn_TensorType_t:
         is_input = is_graph_input(node, self.edge_program) or is_mutable_buffer_input(
             node, self.edge_program
         )
@@ -333,25 +354,25 @@ class NodeVisitor:
                 node in self.external_ids
             ), f"Node {node}, is_input: {is_input}, is_output: {is_output}, ext_ids: {self.external_ids.keys()}"
             if is_input:
-                return PyQnnWrapper.Qnn_TensorType_t.QNN_TENSOR_TYPE_APP_WRITE
+                return PyQnnManager.Qnn_TensorType_t.QNN_TENSOR_TYPE_APP_WRITE
             if is_output:
-                return PyQnnWrapper.Qnn_TensorType_t.QNN_TENSOR_TYPE_APP_READ
+                return PyQnnManager.Qnn_TensorType_t.QNN_TENSOR_TYPE_APP_READ
 
         if is_parameter(node, self.edge_program):
-            return PyQnnWrapper.Qnn_TensorType_t.QNN_TENSOR_TYPE_STATIC
+            return PyQnnManager.Qnn_TensorType_t.QNN_TENSOR_TYPE_STATIC
         # dump all tensor, set to app read, and we only dump native tensors
         if (
             self.enable_tensor_dump
-            and tensor_type == PyQnnWrapper.Qnn_TensorType_t.QNN_TENSOR_TYPE_NATIVE
+            and tensor_type == PyQnnManager.Qnn_TensorType_t.QNN_TENSOR_TYPE_NATIVE
         ):
-            return PyQnnWrapper.Qnn_TensorType_t.QNN_TENSOR_TYPE_APP_READ
+            return PyQnnManager.Qnn_TensorType_t.QNN_TENSOR_TYPE_APP_READ
         return tensor_type
 
     def get_data_type(
         self,
         tensor: torch.Tensor,
         quant_config: Dict,
-    ) -> PyQnnWrapper.Qnn_TensorType_t:
+    ) -> PyQnnManager.Qnn_TensorType_t:
         if quant_config:
             quant_config[QCOM_DTYPE] = deduce_dtype(tensor, quant_config)
             return QNN_QUANT_TYPE_MAP[quant_config[QCOM_DTYPE]]
@@ -375,7 +396,7 @@ class NodeVisitor:
         node: torch.fx.Node,
         wrapper_idx: int = 0,
     ):
-        tensor_name = f"{node.name}_{wrapper_idx}"
+        tensor_name = f"{node.name}@{wrapper_idx}"
         # The `input_{id}` is utilized for sorting at runtime. Due to multiple passes in qnn_preprocess,
         # the input order between QNN and the original graph’s forward function may differ.
         # The `mutbuf_{id}` is utilized for mapping I/O of mutable buffer at runtime.
@@ -395,26 +416,33 @@ class NodeVisitor:
             tensor_name = f"output_mutbuf_{position_index}_{tensor_name}"
         elif is_graph_output(node):
             tensor_name = f"output_{tensor_name}"
+
+        # Save this for intermediate debugger
+        # Needs idx since node like topk has 2 outputs
+        if QCOM_TENSOR_NAME in node.meta:
+            node.meta[QCOM_TENSOR_NAME][wrapper_idx] = tensor_name
+        else:
+            node.meta[QCOM_TENSOR_NAME] = {wrapper_idx: tensor_name}
         return tensor_name
 
     def define_custom_tensor_wrapper(
         self,
         node_name: str,
-        tensor_type: PyQnnWrapper.Qnn_TensorType_t,
-        dtype: PyQnnWrapper.Qnn_DataType_t,
-        quant_encoding: PyQnnWrapper.Qnn_QuantizationEncoding_t,
+        tensor_type: PyQnnManager.Qnn_TensorType_t,
+        dtype: PyQnnManager.Qnn_DataType_t,
+        quant_encoding: PyQnnManager.Qnn_QuantizationEncoding_t,
         quant_configs: dict,
         dims: torch.Size,
         tensor: torch.Tensor,
         is_fake_tensor: bool,
-        nodes_to_wrappers: Dict[str, Dict[int, PyQnnWrapper.TensorWrapper]],
+        nodes_to_wrappers: Dict[str, Dict[int, PyQnnManager.TensorWrapper]],
         wrapper_idx: int = 0,
-    ) -> PyQnnWrapper.TensorWrapper:
+    ) -> PyQnnManager.TensorWrapper:
         if cached := nodes_to_wrappers[node_name].get(wrapper_idx, None):
             return cached
         if is_fake_tensor:
             dynamic_dims, nominal_dims = self.get_dynamic_dimension(dims)
-            tensor_wrapper = PyQnnWrapper.TensorWrapper(
+            tensor_wrapper = PyQnnManager.TensorWrapper(
                 node_name,
                 tensor_type,
                 dtype,
@@ -437,11 +465,11 @@ class NodeVisitor:
         tensor_source_node: torch.fx.Node,
         target_build_node: torch.fx.Node,
         tensor: torch.Tensor,
-        tensor_type: PyQnnWrapper.Qnn_TensorType_t,
-        nodes_to_wrappers: Dict[str, Dict[int, PyQnnWrapper.TensorWrapper]],
+        tensor_type: PyQnnManager.Qnn_TensorType_t,
+        nodes_to_wrappers: Dict[str, Dict[int, PyQnnManager.TensorWrapper]],
         node_name: str = None,
         wrapper_idx: int = 0,
-    ) -> PyQnnWrapper.TensorWrapper:
+    ) -> PyQnnManager.TensorWrapper:
         """
         Covert torch.Tensor to TensorWrapper
 
@@ -467,7 +495,7 @@ class NodeVisitor:
         )
         dtype = self.get_data_type(tensor, quant_configs)
         if isinstance(tensor, torch._subclasses.fake_tensor.FakeTensor):
-            tensor_wrapper = PyQnnWrapper.TensorWrapper(
+            tensor_wrapper = PyQnnManager.TensorWrapper(
                 tensor_name,
                 tensor_type,
                 dtype,
@@ -486,7 +514,7 @@ class NodeVisitor:
                     tensor_source_node.meta[QCOM_QUANT_ATTRS],
                     quant_configs,
                 )
-            tensor_wrapper = PyQnnWrapper.TensorWrapper(
+            tensor_wrapper = PyQnnManager.TensorWrapper(
                 tensor_name,
                 tensor_type,
                 dtype,
@@ -504,7 +532,7 @@ class NodeVisitor:
     def define_node(
         self,
         node: torch.fx.Node,
-        nodes_to_wrappers: Dict[str, Dict[int, PyQnnWrapper.TensorWrapper]],
-    ) -> PyQnnWrapper.PyQnnOpWrapper:
+        nodes_to_wrappers: Dict[str, Dict[int, PyQnnManager.TensorWrapper]],
+    ) -> PyQnnManager.PyQnnOpWrapper:
         """Convert torch.fx.Node to OpWrapper"""
         raise NotImplementedError("NodeVisitor must be extended!")

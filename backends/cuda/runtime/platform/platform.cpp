@@ -11,15 +11,46 @@
 #include <executorch/runtime/core/error.h>
 #include <executorch/runtime/core/result.h>
 #include <filesystem>
+#include <mutex>
 #include <string>
 
 #ifdef _WIN32
 #include <malloc.h>
 #include <windows.h>
+#include <string>
 #else // Posix
 #include <dlfcn.h>
 #include <unistd.h>
 #include <cstdlib>
+#endif
+
+#ifdef _WIN32
+namespace {
+std::string format_win_error(DWORD err) {
+  LPSTR buffer = nullptr;
+  const DWORD flags = FORMAT_MESSAGE_ALLOCATE_BUFFER |
+      FORMAT_MESSAGE_FROM_SYSTEM | FORMAT_MESSAGE_IGNORE_INSERTS;
+  const DWORD size = FormatMessageA(
+      flags,
+      nullptr,
+      err,
+      MAKELANGID(LANG_NEUTRAL, SUBLANG_DEFAULT),
+      reinterpret_cast<LPSTR>(&buffer),
+      0,
+      nullptr);
+  if (size == 0 || buffer == nullptr) {
+    return "unknown error";
+  }
+  std::string message(buffer, size);
+  LocalFree(buffer);
+  // Trim trailing newlines.
+  while (!message.empty() &&
+         (message.back() == '\n' || message.back() == '\r')) {
+    message.pop_back();
+  }
+  return message;
+}
+} // namespace
 #endif
 
 namespace executorch {
@@ -32,15 +63,39 @@ executorch::runtime::Result<void*> load_library(
   std::string utf8 = path.u8string();
   auto lib_handle = LoadLibrary(utf8.c_str());
   if (lib_handle == NULL) {
+    const DWORD err = GetLastError();
     ET_LOG(
         Error,
-        "Failed to load %s with error: %lu",
+        "Failed to load %s with error %lu: %s",
         utf8.c_str(),
-        GetLastError());
+        err,
+        format_win_error(err).c_str());
     return executorch::runtime::Error::AccessFailed;
   }
 
 #else
+  // Before loading the delegate .so, we need to ensure symbols from the current
+  // process (e.g., _portable_lib.so) are globally visible. Python loads modules
+  // with RTLD_LOCAL by default, so we re-open the current module with
+  // RTLD_GLOBAL | RTLD_NOLOAD to promote its symbols to global visibility.
+  // This allows the delegate .so to resolve symbols like aoti_torch_dtype_*.
+  static std::once_flag symbols_promoted_flag;
+  std::call_once(symbols_promoted_flag, []() {
+    Dl_info info;
+    // Get info about a symbol we know exists in _portable_lib.so
+    if (dladdr((void*)&load_library, &info) && info.dli_fname) {
+      // Re-open with RTLD_GLOBAL | RTLD_NOLOAD to promote symbols
+      void* handle =
+          dlopen(info.dli_fname, RTLD_NOW | RTLD_GLOBAL | RTLD_NOLOAD);
+      if (!handle) {
+        ET_LOG(Error, "Failed to promote symbols: %s", dlerror());
+      } else {
+        // Close the handle after successful promotion
+        dlclose(handle);
+      }
+    }
+  });
+
   std::string path_str = path.string();
   void* lib_handle = dlopen(path_str.c_str(), RTLD_LAZY | RTLD_LOCAL);
   if (lib_handle == nullptr) {

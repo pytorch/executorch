@@ -36,6 +36,12 @@ class ReplaceInfValues(ExportPass):
                     arg_list[2] = 255
                 elif arg_list[2] == torch.finfo(torch.float32).min:
                     arg_list[2] = -255
+            elif node.target == torch.ops.aten.scalar_tensor.default:
+                if arg_list[0] == torch.finfo(torch.float32).max:
+                    arg_list[0] = 255
+                elif arg_list[0] == torch.finfo(torch.float32).min:
+                    arg_list[0] = -255
+
             node.args = tuple(arg_list)
 
             if node.target in [

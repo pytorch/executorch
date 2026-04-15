@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Copyright 2025 Arm Limited and/or its affiliates.
+# Copyright 2025-2026 Arm Limited and/or its affiliates.
 #
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
@@ -10,7 +10,7 @@ script_dir=$(cd -- "$( dirname -- "${BASH_SOURCE[0]}" )" &> /dev/null && pwd)
 et_root_dir=$(cd ${script_dir}/../../.. && pwd)
 et_root_dir=$(realpath ${et_root_dir})
 toolchain=arm-none-eabi-gcc
-setup_path_script=${et_root_dir}/examples/arm/ethos-u-scratch/setup_path.sh
+setup_path_script=${et_root_dir}/examples/arm/arm-scratch/setup_path.sh
 _setup_msg="please refer to ${et_root_dir}/examples/arm/setup.sh to properly install necessary tools."
 source "${script_dir}/utils.sh"
 
@@ -25,7 +25,7 @@ extra_build_flags=""
 output_folder_set=false
 output_folder="."
 et_build_root="${et_root_dir}/arm_test"
-ethosu_tools_dir=${et_root_dir}/examples/arm/ethos-u-scratch
+ethosu_tools_dir=${et_root_dir}/examples/arm/arm-scratch
 select_ops_list=""
 
 build_bundleio_flags=" -DET_BUNDLE_IO=OFF "
@@ -50,7 +50,7 @@ help() {
     echo "  --output=<FOLDER>                    Output folder Default: <MODEL>/<MODEL>_<TARGET INFO>.pte"
     echo "  --et_build_root=<FOLDER>             Build output root folder to use, defaults to ${et_build_root}"
     echo "  --ethosu_tools_dir=<FOLDER>          Path to your Ethos-U tools dir if you not using default: ${ethosu_tools_dir}"
-    echo "  --toolchain=<TOOLCHAIN>              Toolchain can be specified (e.g. bare metal as arm-none-eabi-gcc or zephyr as arm-zephyr-eabi-gcc Default: ${toolchain}"
+    echo "  --toolchain=<TOOLCHAIN>              Toolchain can be specified (arm-none-eabi-gcc, arm-zephyr-eabi-gcc). Default: ${toolchain}"
     echo "  --select_ops_list=<OPS>              Comma separated list of portable (non delagated) kernels to include Default: ${select_ops_list}"
     echo "                                         NOTE: This is used when select_ops_model is not possible to use, e.g. for semihosting or bundleio."
     echo "                                         See https://docs.pytorch.org/executorch/stable/kernel-library-selective-build.html for more information."
@@ -59,29 +59,34 @@ help() {
 
 for arg in "$@"; do
     case $arg in
-      -h|--help) help ;;
-      --pte=*) pte_file="${arg#*=}";;
-      --target=*) target="${arg#*=}";;
-      --build_type=*) build_type="${arg#*=}";;
-      --bundleio) bundleio=true ;;
-      --system_config=*) system_config="${arg#*=}";;
-      --memory_mode=*) memory_mode="${arg#*=}";;
-      --etdump) build_with_etdump=true ;;
-      --extra_build_flags=*) extra_build_flags="${arg#*=}";;
-      --output=*) output_folder="${arg#*=}" ; output_folder_set=true ;;
-      --et_build_root=*) et_build_root="${arg#*=}";;
-      --ethosu_tools_dir=*) ethosu_tools_dir="${arg#*=}";;
-      --toolchain=*) toolchain="${arg#*=}";;
-      --select_ops_list=*) select_ops_list="${arg#*=}";;
-      *)
-      ;;
+        -h|--help) help ;;
+        --pte=*) pte_file="${arg#*=}";;
+        --target=*) target="${arg#*=}";;
+        --build_type=*) build_type="${arg#*=}";;
+        --bundleio) bundleio=true ;;
+        --system_config=*) system_config="${arg#*=}";;
+        --memory_mode=*) memory_mode="${arg#*=}";;
+        --etdump) build_with_etdump=true ;;
+        --extra_build_flags=*) extra_build_flags="${arg#*=}";;
+        --output=*) output_folder="${arg#*=}" ; output_folder_set=true ;;
+        --et_build_root=*) et_build_root="${arg#*=}";;
+        --ethosu_tools_dir=*) ethosu_tools_dir="${arg#*=}";;
+        --toolchain=*) toolchain="${arg#*=}";;
+        --select_ops_list=*) select_ops_list="${arg#*=}";;
+        *)
+        ;;
     esac
 done
 
 if [[ ${toolchain} == "arm-none-eabi-gcc" ]]; then
     toolchain_cmake=${et_root_dir}/examples/arm/ethos-u-setup/${toolchain}.cmake
-elif [[ ${toolchain} == "arm-zephyr-eabi-gcc" ]]; then 
+elif [[ ${toolchain} == "arm-zephyr-eabi-gcc" ]]; then
     toolchain_cmake=${et_root_dir}/examples/zephyr/x86_64-linux-arm-zephyr-eabi-gcc.cmake
+elif [[ ${toolchain} == "aarch64-linux-musl-gcc" ]]; then
+    echo "Error: aarch64-linux-musl-gcc is not supported for this bare-metal runner."
+    echo "       Use executorch/backends/arm/scripts/build_executorch.sh with aarch64-linux-musl-gcc"
+    echo "       or run the direct drive CMake flow to build executor_runner for Linux."
+    exit 1;
 else
     echo "Error: Invalid toolchain selection, provided: ${toolchain}"
     echo "    Valid options are {arm-none-eabi-gcc, arm-zephyr-eabi-gcc}"
@@ -99,22 +104,22 @@ source ${setup_path_script}
 if [[ ${pte_file} == "semihosting" ]]; then
     pte_data="-DSEMIHOSTING=ON"
 else
-	if [[ "$pte_file" =~ ^0x[0-9a-fA-F]{1,16}$ ]]; then
-		echo "PTE in memory at ${pte_file}, make sure to put it there on your target before starting."
-		pte_data="-DET_MODEL_PTE_ADDR=${pte_file}"
-		if [ "$output_folder_set" = false ] ; then
-		    # Not locked down to a PTE use 
-		    output_folder=${et_build_root}/${target}_${pte_file}/cmake-out
-		fi
-	else
-		echo "PTE included in elf from file ${pte_file}"
-		pte_file=$(realpath ${pte_file})
-		pte_data="-DET_PTE_FILE_PATH:PATH=${pte_file}"
-		if [ "$output_folder_set" = false ] ; then
-		    # remove file ending
-		    output_folder=${pte_file%.*}/cmake-out
-		fi
-	fi
+    if [[ "$pte_file" =~ ^0x[0-9a-fA-F]{1,16}$ ]]; then
+        echo "PTE in memory at ${pte_file}, make sure to put it there on your target before starting."
+        pte_data="-DET_MODEL_PTE_ADDR=${pte_file}"
+        if [ "$output_folder_set" = false ] ; then
+            # Not locked down to a PTE use
+            output_folder=${et_build_root}/${target}_${pte_file}/cmake-out
+        fi
+    else
+        echo "PTE included in elf from file ${pte_file}"
+        pte_file=$(realpath ${pte_file})
+        pte_data="-DET_PTE_FILE_PATH:PATH=${pte_file}"
+        if [ "$output_folder_set" = false ] ; then
+            # remove file ending
+            output_folder=${pte_file%.*}/cmake-out
+        fi
+    fi
 fi
 ethosu_tools_dir=$(realpath ${ethosu_tools_dir})
 ethos_u_root_dir="$ethosu_tools_dir/ethos-u"

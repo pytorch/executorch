@@ -1,4 +1,4 @@
-# Copyright 2024-2025 NXP
+# Copyright 2024-2026 NXP
 #
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
@@ -30,6 +30,7 @@ from executorch.backends.nxp.tests.executors import (
 from executorch.backends.nxp.tests.models import Conv1dModule, Conv2dModule
 from executorch.exir.dialects._ops import ops as exir_ops
 from torch.export import ExportedProgram
+from executorch.backends.nxp.tests.use_qat import *  # noqa F403
 
 
 @pytest.fixture(autouse=True)
@@ -42,7 +43,7 @@ def reseed_model_per_test_run():
 @pytest.mark.parametrize("stride", [1, 2])
 @pytest.mark.parametrize("dilation", [2, 1])
 @pytest.mark.parametrize("kernel_size", [(1,), (3,)])
-def test_conv1d_quant_conversion(bias, stride, dilation, kernel_size, mocker):
+def test_conv1d_quant_conversion(bias, stride, dilation, kernel_size, mocker, use_qat):
     input_shape = (1, 4, 16)
     model = Conv1dModule(
         bias=bias, stride=stride, dilation=dilation, kernel_size=kernel_size
@@ -51,7 +52,7 @@ def test_conv1d_quant_conversion(bias, stride, dilation, kernel_size, mocker):
     ops_spy = mocker.spy(ModelBuilder, "finish")
 
     # Run conversion
-    _ = to_quantized_edge_program(model, input_shape)
+    _ = to_quantized_edge_program(model, input_shape, use_qat=use_qat)
 
     # Capture generated model
     tflite_flatbuffers_model, io_formats = converter_spy.spy_return
@@ -82,21 +83,10 @@ def test_conv1d_quant_conversion(bias, stride, dilation, kernel_size, mocker):
 
 @pytest.mark.parametrize("stride", [1, 2])
 @pytest.mark.parametrize("dilation", [2, 1])
-@pytest.mark.parametrize(
-    "kernel_size",
-    [
-        pytest.param(
-            (1,),
-            marks=pytest.mark.xfail(
-                reason="Regression in Neutron SW 2.1.x (AIR-13336)", strict=True
-            ),
-        ),
-        (3,),
-    ],
-)
+@pytest.mark.parametrize("kernel_size", [(1,), (3,)])
 @pytest.mark.parametrize("padding", [(1,), 2])
 def test_conv1d_quant_conversion__padded(
-    stride, dilation, kernel_size, padding, mocker
+    stride, dilation, kernel_size, padding, mocker, use_qat
 ):
     input_shape = (1, 4, 16)
     model = Conv1dModule(
@@ -106,7 +96,7 @@ def test_conv1d_quant_conversion__padded(
     ops_spy = mocker.spy(ModelBuilder, "finish")
 
     # Run conversion
-    _ = to_quantized_edge_program(model, input_shape)
+    _ = to_quantized_edge_program(model, input_shape, use_qat=use_qat)
 
     # Capture generated model
     tflite_flatbuffers_model, io_formats = converter_spy.spy_return
@@ -153,7 +143,7 @@ def test_conv1d_quant_conversion__padded(
 @pytest.mark.parametrize("dilation", [2, 1])
 @pytest.mark.parametrize("kernel_size", [(1,), (3,)])
 def test_conv1d_quant_conversion__depthwise(
-    bias, stride, dilation, kernel_size, mocker
+    bias, stride, dilation, kernel_size, mocker, use_qat
 ):
     input_shape = (1, 4, 16)
     group = input_shape[1]
@@ -170,7 +160,7 @@ def test_conv1d_quant_conversion__depthwise(
     ops_spy = mocker.spy(ModelBuilder, "finish")
 
     # Run conversion
-    _ = to_quantized_edge_program(model, input_shape)
+    _ = to_quantized_edge_program(model, input_shape, use_qat=use_qat)
 
     # Capture generated model
     tflite_flatbuffers_model, io_formats = converter_spy.spy_return
@@ -200,21 +190,10 @@ def test_conv1d_quant_conversion__depthwise(
 
 @pytest.mark.parametrize("stride", [1, 2])
 @pytest.mark.parametrize("dilation", [2, 1])
-@pytest.mark.parametrize(
-    "kernel_size",
-    [
-        pytest.param(
-            (1,),
-            marks=pytest.mark.xfail(
-                reason="Regression in Neutron SW 2.1.x (AIR-13336)", strict=True
-            ),
-        ),
-        (3,),
-    ],
-)
+@pytest.mark.parametrize("kernel_size", [(1,), (3,)])
 @pytest.mark.parametrize("padding", [(1,), 2])
 def test_conv1d_quant_conversion__depthwise__padded(
-    stride, dilation, kernel_size, padding, mocker
+    stride, dilation, kernel_size, padding, mocker, use_qat
 ):
     input_shape = (1, 4, 16)
     group = input_shape[1]
@@ -231,7 +210,7 @@ def test_conv1d_quant_conversion__depthwise__padded(
     ops_spy = mocker.spy(ModelBuilder, "finish")
 
     # Run conversion
-    _ = to_quantized_edge_program(model, input_shape)
+    _ = to_quantized_edge_program(model, input_shape, use_qat=use_qat)
 
     # Capture generated model
     tflite_flatbuffers_model, io_formats = converter_spy.spy_return
@@ -401,12 +380,12 @@ def test_conv1d_quant_conversion__depthwise__padded(
         ),
     ],
 )
-def test_conv2d_quant_conversion(mocker, model: torch.nn.Module, input_shape):
+def test_conv2d_quant_conversion(mocker, model: torch.nn.Module, input_shape, use_qat):
     converter_spy = mocker.spy(EdgeProgramToIRConverter, "convert_program")
 
     # Run conversion
     _ = to_quantized_edge_program(
-        model, input_shape, use_neutron_for_format_conversion=False
+        model, input_shape, use_qat=use_qat, use_neutron_for_format_conversion=False
     )
 
     # Capture generated model
@@ -432,7 +411,7 @@ def test_conv2d_quant_conversion(mocker, model: torch.nn.Module, input_shape):
 @pytest.mark.parametrize("dilation", [1, 2])
 @pytest.mark.parametrize("kernel_shape", [[1, 2], [3, 3], [4, 1]])
 def test_conv2d_conversion__depthwise__quantized(
-    bias, stride, dilation, kernel_shape, mocker
+    bias, stride, dilation, kernel_shape, mocker, use_qat
 ):
     input_shape = (1, 4, 12, 12)
     group = input_shape[1]
@@ -449,6 +428,7 @@ def test_conv2d_conversion__depthwise__quantized(
             kernel_size=kernel_shape,
         ),
         tuple(input_shape),
+        use_qat=use_qat,
         use_neutron_for_format_conversion=False,
     ).exported_program()
 
@@ -497,7 +477,7 @@ def test_conv2d_conversion__depthwise__padded(padding, mocker):
 
 
 @pytest.mark.parametrize("padding", [1, 2])
-def test_conv2d_conversion__depthwise__padded__quantized(padding, mocker):
+def test_conv2d_conversion__depthwise__padded__quantized(padding, mocker, use_qat):
     input_shape = (1, 4, 12, 12)
     group = input_shape[1]
     spy = mocker.spy(ModelBuilder, "finish")
@@ -507,6 +487,7 @@ def test_conv2d_conversion__depthwise__padded__quantized(padding, mocker):
             group=group, in_channels=group, out_channels=group, padding=padding
         ),
         tuple(input_shape),
+        use_qat=use_qat,
         use_neutron_for_format_conversion=False,
     ).exported_program()
 
@@ -580,12 +561,12 @@ def test_conv2d_conversion__depthwise__padded__quantized(padding, mocker):
     ],
 )
 def test_conv_transpose2d_conversion__quantized(
-    mocker, model: torch.nn.Module, input_shape
+    mocker, model: torch.nn.Module, input_shape, use_qat
 ):
     converter_spy = mocker.spy(EdgeProgramToIRConverter, "convert_program")
 
     edge_program = to_quantized_edge_program(
-        model, input_shape, use_neutron_for_format_conversion=False
+        model, input_shape, use_qat=use_qat, use_neutron_for_format_conversion=False
     ).exported_program()
 
     # Make sure the `TransposeConv` was delegated.
@@ -664,12 +645,47 @@ def test_conv_transpose2d_conversion__quantized(
     ],
 )
 def test_conv_transpose2d_non_delegated_conversion__quantized(
-    model: torch.nn.Module, input_shape
+    model: torch.nn.Module, input_shape, use_qat
 ):
-    edge_program = to_quantized_edge_program(model, input_shape).exported_program()
+    edge_program = to_quantized_edge_program(
+        model, input_shape, use_qat=use_qat
+    ).exported_program()
 
     nodes = list(edge_program.graph.nodes)
     assert len(nodes) == 15
     assert (
         nodes[11].target.__name__ == "aten.convolution.default"
     )  # TransposeConv not delegated.
+
+
+def test_conv2d_conversion__depthwise__delegates_without_post_quantization_state_dict(
+    mocker,
+):
+    """Depthwise convolution should delegate even when post_quantization_state_dict
+    is not provided to the partitioner. Without the fallback in map_inputs_to_parameters,
+    the parameter mapping would be incomplete and the depthwise conv would fail to
+    delegate due to missing weight data.
+
+    """
+    input_shape = (1, 4, 12, 12)
+    group = input_shape[1]
+    spy = mocker.spy(ModelBuilder, "finish")
+
+    edge_program = to_quantized_edge_program(
+        Conv2dModule(
+            group=group,
+            in_channels=group,
+            out_channels=group,
+            kernel_size=3,
+        ),
+        tuple(input_shape),
+        use_neutron_for_format_conversion=False,
+        use_quant_state_dict=False,
+    ).exported_program()
+
+    ops = spy.spy_return.sub_graphs[0].operators.vector
+    assert len(ops) == 1
+    assert ops[0].builtin_options.operator_type == BuiltinOperator.DEPTHWISE_CONV_2D
+
+    nodes = list(edge_program.graph.nodes)
+    assert any(n.target == "lowered_module_0" for n in nodes)

@@ -27,6 +27,21 @@ DEFINE_BINARY_OPERATOR_TEMPLATE(bitwise_and, &)
 DEFINE_BINARY_OPERATOR_TEMPLATE(bitwise_or, |)
 DEFINE_BINARY_OPERATOR_TEMPLATE(bitwise_xor, ^)
 
+// Functor wrappers for shift operations (similar to std::bit_and, etc.)
+template <typename T = void>
+struct bit_lshift {
+  constexpr T operator()(const T& lhs, const T& rhs) const {
+    return static_cast<T>(lhs << rhs);
+  }
+};
+
+template <typename T = void>
+struct bit_rshift {
+  constexpr T operator()(const T& lhs, const T& rhs) const {
+    return static_cast<T>(lhs >> rhs);
+  }
+};
+
 template <typename T>
 using bitwise_fn = T (*)(const T, const T);
 

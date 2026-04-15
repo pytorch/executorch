@@ -12,9 +12,7 @@ def define_common_targets():
             "*.py",
             "*/*.py",
         ]),
-        visibility = [
-            "@EXECUTORCH_CLIENTS",
-        ],
+        visibility = ["PUBLIC"],
         deps = [
             "//executorch/backends/transforms:decompose_sdpa",
         ],

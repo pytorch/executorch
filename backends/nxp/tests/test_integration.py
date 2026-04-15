@@ -5,6 +5,7 @@
 
 import executorch.extension.pybindings.portable_lib
 import executorch.kernels.quantized  # noqa F401
+from executorch.backends.nxp.tests.use_qat import *  # noqa F401
 
 from executorch.backends.nxp.tests.executorch_pipeline import (
     to_quantized_executorch_program,
@@ -14,11 +15,11 @@ from executorch.devtools.backend_debug import get_delegation_info
 from executorch.examples.nxp.experimental.cifar_net.cifar_net import CifarNet
 
 
-def test_conv_fc_softmax__to_executorch_program():
+def test_conv_fc_softmax__to_executorch_program(use_qat):
     model = ConvFCSoftmaxModule()
     input_shape = (1, 4, 5, 5)
 
-    exec_prog = to_quantized_executorch_program(model, input_shape)
+    exec_prog = to_quantized_executorch_program(model, input_shape, use_qat)
 
     program = exec_prog.exported_program()
     assert (
@@ -28,7 +29,7 @@ def test_conv_fc_softmax__to_executorch_program():
     delegation_info = get_delegation_info(program.graph_module)
     assert delegation_info.num_delegated_subgraphs == 1
     assert delegation_info.num_non_delegated_nodes == 11
-    assert delegation_info.num_delegated_nodes == 13
+    assert delegation_info.num_delegated_nodes == 14
 
     for node in program.graph.nodes:
         # Make sure Convolution and AddMM are delegated
@@ -36,11 +37,11 @@ def test_conv_fc_softmax__to_executorch_program():
         assert "addmm" not in node.name
 
 
-def test_cifarnet():
+def test_cifarnet(use_qat):
     model = CifarNet().get_eager_model().eval()
     input_shape = (1, 3, 32, 32)
     exec_prog = to_quantized_executorch_program(
-        model, input_shape, use_neutron_for_format_conversion=False
+        model, input_shape, use_qat=use_qat, use_neutron_for_format_conversion=False
     )
 
     delegation_info = get_delegation_info(exec_prog.exported_program().graph_module)

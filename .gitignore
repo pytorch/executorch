@@ -18,8 +18,9 @@ cmake-out*
 cmake-out-android/
 build-android/
 build-x86/
+build-hexagon/
 dist/
-ethos-u-scratch/
+arm-scratch/
 executorch.egg-info
 pip-out/
 build-profiling/
@@ -56,12 +57,15 @@ xcuserdata/
 *.dylib
 /cmake_wrapper.sh
 /data/
-/devtools/bundled_program/serialize/
+/devtools/bundled_program/serialize/*.fbs
 /exir/_serialize/program.fbs
 /exir/_serialize/scalar_type.fbs
 /include/
 /share/
 /version.py
+/src/executorch/include/
+/src/executorch/share/
+/src/executorch/version.py
 *_etdump
 
 # Android
@@ -70,3 +74,8 @@ xcuserdata/
 # Windows
 *.dll
 *.pyd
+
+
+# Agents
+.claude/*.local.*
+extension/pybindings/mlx.metallib

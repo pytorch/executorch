@@ -7,10 +7,7 @@ runtime.python_library(
     srcs = [
         "__init__.py",
     ],
-    visibility = [
-        "//executorch/...",
-        "@EXECUTORCH_CLIENTS",
-    ],
+    visibility = ["PUBLIC"],
     deps = [
         "//executorch/export:recipe_registry",
         ":xnnpack_recipe_provider",
@@ -23,13 +20,11 @@ runtime.python_library(
     srcs = [
         "xnnpack_recipe_provider.py",
     ],
-    visibility = [
-        "//executorch/...",
-        "@EXECUTORCH_CLIENTS",
-    ],
+    visibility = ["PUBLIC"],
     deps = [
         "//caffe2:torch",
         "//executorch/export:lib",
+        "//executorch/runtime:runtime",  # @manual
         "//executorch/backends/xnnpack/quantizer:xnnpack_quantizer",
         "//executorch/backends/xnnpack/partition:xnnpack_partitioner",
         ":xnnpack_recipe_types",
@@ -41,10 +36,7 @@ runtime.python_library(
     srcs = [
         "xnnpack_recipe_types.py",
     ],
-    visibility = [
-        "//executorch/...",
-        "@EXECUTORCH_CLIENTS",
-    ],
+    visibility = ["PUBLIC"],
     deps = [
         "//executorch/export:recipe",
     ],

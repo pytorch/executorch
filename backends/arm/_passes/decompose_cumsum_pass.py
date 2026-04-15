@@ -1,4 +1,4 @@
-# Copyright 2025 Arm Limited and/or its affiliates.
+# Copyright 2025-2026 Arm Limited and/or its affiliates.
 #
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
@@ -10,7 +10,7 @@ import torch
 from executorch.backends.arm._passes import ArmPass
 from executorch.backends.arm._passes.arm_pass_utils import create_node
 from executorch.backends.arm._passes.quant_args import QuantArgs
-from executorch.backends.arm._passes.rewrite_conv2d_pass import RewriteConv2dPass
+from executorch.backends.arm._passes.rewrite_conv_pass import RewriteConvPass
 
 from executorch.backends.transforms.utils import create_constant_placeholder
 from executorch.exir import ExportedProgram
@@ -20,8 +20,7 @@ from torch.export.graph_signature import InputKind
 
 
 class DecomposeCumsumPass(ArmPass):
-    """
-    Decomposes cumsum into a 1D convolution with a kernel of ones.
+    """Decomposes cumsum into a 1D convolution with a kernel of ones.
 
     For example, the cumsum of an input tensor [1, 1] is [1, 1 + 1] = [1, 2].
     To decompose this, take the input tensor and pre-padded with len(input)-1 zeros and
@@ -40,12 +39,13 @@ class DecomposeCumsumPass(ArmPass):
        H = <cumsum dim>
        W = <dims after cumsum dim>
     And the convolution is applied over dimension H.
+
     """
 
-    _passes_required_after: Set[Type[ExportPass]] = {RewriteConv2dPass}
+    _passes_required_after: Set[Type[ExportPass]] = {RewriteConvPass}
 
-    def __init__(self, exported_program: ExportedProgram) -> None:
-        super().__init__()
+    def __init__(self, exported_program: ExportedProgram, *args, **kwargs) -> None:
+        super().__init__(*args, **kwargs)
         self.exported_program = exported_program
 
     def call(self, graph_module):

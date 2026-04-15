@@ -1,11 +1,11 @@
-# Copyright 2025 Arm Limited and/or its affiliates.
+# Copyright 2025-2026 Arm Limited and/or its affiliates.
 #
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
 
 
 import torch
-from executorch.backends.arm.test.common import parametrize
+from executorch.backends.arm.test.common import parametrize, xfail_type
 from executorch.backends.cortex_m.test.tester import (
     CortexMTester,
     McuTestCase,
@@ -73,6 +73,50 @@ class CortexMAlphaAdd(ModelAlpha):
     }
 
 
+class CortexMAddReLU(torch.nn.Module):
+    ops_before_transforms = {
+        "executorch_exir_dialects_edge__ops_aten_add_Tensor": 1,
+        "executorch_exir_dialects_edge__ops_aten_relu_default": 1,
+        "executorch_exir_dialects_edge__ops_quantized_decomposed_quantize_per_tensor_default": 3,
+        "executorch_exir_dialects_edge__ops_quantized_decomposed_dequantize_per_tensor_default": 3,
+    }
+
+    ops_after_transforms = {
+        "executorch_exir_dialects_edge__ops_cortex_m_quantized_add_default": 1,
+        "executorch_exir_dialects_edge__ops_cortex_m_quantize_per_tensor_default": 2,
+        "executorch_exir_dialects_edge__ops_cortex_m_dequantize_per_tensor_default": 1,
+    }
+
+    def __init__(self):
+        super().__init__()
+        self.relu = torch.nn.ReLU()
+
+    def forward(self, x, y):
+        return self.relu(x + y)
+
+
+class CortexMAddHardtanh(torch.nn.Module):
+    ops_before_transforms = {
+        "executorch_exir_dialects_edge__ops_aten_add_Tensor": 1,
+        "executorch_exir_dialects_edge__ops_aten_hardtanh_default": 1,
+        "executorch_exir_dialects_edge__ops_quantized_decomposed_quantize_per_tensor_default": 3,
+        "executorch_exir_dialects_edge__ops_quantized_decomposed_dequantize_per_tensor_default": 3,
+    }
+
+    ops_after_transforms = {
+        "executorch_exir_dialects_edge__ops_cortex_m_quantized_add_default": 1,
+        "executorch_exir_dialects_edge__ops_cortex_m_quantize_per_tensor_default": 2,
+        "executorch_exir_dialects_edge__ops_cortex_m_dequantize_per_tensor_default": 1,
+    }
+
+    def __init__(self, min_val=-0.5, max_val=0.5):
+        super().__init__()
+        self.act = torch.nn.Hardtanh(min_val=min_val, max_val=max_val)
+
+    def forward(self, x, y):
+        return self.act(x + y)
+
+
 test_cases = {
     "self_rank_1": McuTestCase(
         CortexMSelfAdd(),
@@ -121,6 +165,27 @@ test_cases = {
             ramp_tensor(-5, 5, (1, 2, 1, 2)),
         ),
     ),
+    "broadcast_channels_1": McuTestCase(
+        CortexMTensorAdd(),
+        (
+            ramp_tensor(-2, 2, (1, 8, 1, 1)).to(memory_format=torch.channels_last),
+            ramp_tensor(-5, 5, (1, 8, 5, 5)).to(memory_format=torch.channels_last),
+        ),
+    ),
+    "broadcast_channels_2": McuTestCase(
+        CortexMTensorAdd(),
+        (
+            ramp_tensor(-5, 5, (2, 8, 5, 5)).to(memory_format=torch.channels_last),
+            ramp_tensor(-2, 2, (1, 8, 1, 1)).to(memory_format=torch.channels_last),
+        ),
+    ),
+    "broadcast_channels_continous": McuTestCase(
+        CortexMTensorAdd(),
+        (
+            ramp_tensor(-5, 5, (2, 8, 5, 5)),
+            ramp_tensor(-2, 2, (1, 8, 1, 1)),
+        ),
+    ),
     "alpha": McuTestCase(
         CortexMAlphaAdd(0.5),
         (
@@ -128,21 +193,47 @@ test_cases = {
             ramp_tensor(-20, 20, (4, 5)),
         ),
     ),
-}
-
-
-xfails_implementation = {
-    "alpha": (
-        "Expecting kwargs for aten op IR to be empty - alpha arg not supported.",
-        AssertionError,
+    "add_relu": McuTestCase(
+        CortexMAddReLU(),
+        (
+            ramp_tensor(-5, 5, (2, 4)),
+            ramp_tensor(-3, 3, (2, 4)),
+        ),
+    ),
+    "add_relu_channels_last": McuTestCase(
+        CortexMAddReLU(),
+        (
+            ramp_tensor(-5, 5, (1, 4, 8, 8)).to(memory_format=torch.channels_last),
+            ramp_tensor(-3, 3, (1, 4, 8, 8)).to(memory_format=torch.channels_last),
+        ),
+    ),
+    "add_hardtanh": McuTestCase(
+        CortexMAddHardtanh(min_val=-0.5, max_val=0.5),
+        (
+            ramp_tensor(-2, 2, (2, 4)),
+            ramp_tensor(-1, 1, (2, 4)),
+        ),
+    ),
+    "add_hardtanh_channels_last": McuTestCase(
+        CortexMAddHardtanh(min_val=-1.0, max_val=1.0),
+        (
+            ramp_tensor(-3, 3, (1, 4, 8, 8)).to(memory_format=torch.channels_last),
+            ramp_tensor(-2, 2, (1, 4, 8, 8)).to(memory_format=torch.channels_last),
+        ),
     ),
 }
-xfails_dialect = xfails_implementation | {
+
+
+xfails_implementation: dict[str, xfail_type] = {
+    "alpha": "Expecting kwargs for aten op IR to be empty - alpha arg not supported.",
+}
+xfails_dialect: dict[str, xfail_type] = xfails_implementation | {
     # Cortex-M quantizer will not quantize additions that require broadcasting
     # leading to the add op not being replaced by a cortex-m specific implementation
     "broadcast_1": "Broadcasting is not supported in Cortex-M backend",
     "broadcast_2": "Broadcasting is not supported in Cortex-M backend",
     "broadcast_3": "Broadcasting is not supported in Cortex-M backend",
+    "broadcast_channels_continous": "Broadcasting channels is not supported in continous memory_format in Cortex-M backend.",
 }
 
 

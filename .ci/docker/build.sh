@@ -23,9 +23,14 @@ MINICONDA_VERSION=23.10.0-1
 BUCK2_VERSION=$(cat ci_commit_pins/buck2.txt)
 
 case "${IMAGE_NAME}" in
-  executorch-ubuntu-22.04-gcc9)
+  executorch-ubuntu-22.04-gcc11)
+    LINTRUNNER=""
+    GCC_VERSION=11
+    ;;
+  executorch-ubuntu-22.04-gcc9-nopytorch)
     LINTRUNNER=""
     GCC_VERSION=9
+    SKIP_PYTORCH=yes
     ;;
   executorch-ubuntu-22.04-clang12)
     LINTRUNNER=""
@@ -33,6 +38,15 @@ case "${IMAGE_NAME}" in
     ;;
   executorch-ubuntu-22.04-gcc11-aarch64)
     LINTRUNNER=""
+    GCC_VERSION=11
+    ;;
+  executorch-ubuntu-22.04-gcc11-aarch64-android)
+    LINTRUNNER=""
+    GCC_VERSION=11
+    ANDROID_NDK_VERSION=r28c
+    ;;
+  executorch-ubuntu-22.04-gcc11-aarch64-arm-sdk)
+    ARM_SDK=yes
     GCC_VERSION=11
     ;;
   executorch-ubuntu-22.04-linter)
@@ -61,6 +75,13 @@ case "${IMAGE_NAME}" in
     CLANG_VERSION=12
     # From https://developer.android.com/ndk/downloads
     ANDROID_NDK_VERSION=r28c
+    ;;
+  executorch-ubuntu-22.04-cuda-windows)
+    LINTRUNNER=""
+    GCC_VERSION=11
+    CUDA_WINDOWS_CROSS_COMPILE=yes
+    CUDA_VERSION=12.8
+    SKIP_PYTORCH=yes
     ;;
   *)
     echo "Invalid image name ${IMAGE_NAME}"
@@ -95,6 +116,9 @@ docker build \
   --build-arg "QNN_SDK=${QNN_SDK:-}" \
   --build-arg "MEDIATEK_SDK=${MEDIATEK_SDK:-}" \
   --build-arg "ANDROID_NDK_VERSION=${ANDROID_NDK_VERSION:-}" \
+  --build-arg "SKIP_PYTORCH=${SKIP_PYTORCH:-}" \
+  --build-arg "CUDA_WINDOWS_CROSS_COMPILE=${CUDA_WINDOWS_CROSS_COMPILE:-}" \
+  --build-arg "CUDA_VERSION=${CUDA_VERSION:-}" \
   -f "${OS}"/Dockerfile \
   "$@" \
   .

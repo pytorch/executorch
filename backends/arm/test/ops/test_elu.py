@@ -107,27 +107,27 @@ def test_elu_u85_INT(test_module: input_t1):
 
 @common.SkipIfNoModelConverter
 @common.parametrize("test_module", test_data_suite)
-def test_elu_vgf_FP(test_module: input_t1):
+def test_elu_vgf_no_quant(test_module: input_t1):
     alpha, test_data = test_module()
     pipeline = VgfPipeline[input_t1](
         Elu(alpha),
         (test_data,),
         aten_op=Elu.aten_op,
         exir_op=Elu.exir_op,
-        tosa_version="TOSA-1.0+FP",
+        quantize=False,
     )
     pipeline.run()
 
 
 @common.SkipIfNoModelConverter
 @common.parametrize("test_module", test_data_suite)
-def test_elu_vgf_INT(test_module: input_t1):
+def test_elu_vgf_quant(test_module: input_t1):
     alpha, test_data = test_module()
     pipeline = VgfPipeline[input_t1](
         Elu(alpha),
         (test_data,),
         aten_op=Elu.aten_op,
         exir_op=Elu.exir_op,
-        tosa_version="TOSA-1.0+INT",
+        quantize=True,
     )
     pipeline.run()

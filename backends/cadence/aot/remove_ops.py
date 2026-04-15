@@ -7,13 +7,15 @@
 # pyre-strict
 
 from dataclasses import dataclass, field
-from typing import cast, List, Optional, Set, Type
+from typing import cast, List, Optional, Sequence, Set, Type
 
 # Import these for the cadence function signatures.
 import executorch.backends.cadence.aot.ops_registrations  # noqa: F401
 
 import torch
 import torch.fx
+
+from executorch.backends.cadence.aot.fuse_ops import FuseTransposeOrPermuteOpPairsPass
 from executorch.backends.cadence.aot.pass_utils import (
     CadencePassAttribute,
     get_arg,
@@ -21,24 +23,22 @@ from executorch.backends.cadence.aot.pass_utils import (
     RemoveOrReplacePassInterface,
     set_arg,
 )
-
 from executorch.backends.cadence.aot.simplify_ops import SimplifySliceOpPass
 from executorch.backends.cadence.aot.utils import get_edge_overload_packet
 from executorch.backends.transforms.remove_clone_ops import RemoveCloneOpsTransform
 from executorch.exir.dialects._ops import ops as exir_ops
 from executorch.exir.dialects.edge._ops import EdgeOpOverload, EdgeOpOverloadPacket
-from executorch.exir.pass_base import ExportPass, NodeMetadata, PassResult, ProxyValue
+from executorch.exir.pass_base import ExportPass, PassResult
 from executorch.exir.pass_manager import PassManager, PassType
 from executorch.exir.passes import dead_code_elimination_pass
-from executorch.exir.passes.spec_prop_pass import SpecPropPass
-from torch.fx.node import Argument, Node
+from torch.fx.node import Node
 
 
 @register_cadence_pass(CadencePassAttribute(opt_level=0))
 class RemoveCloneOpsTransformImported(ExportPass):
     def call(self, graph_module: torch.fx.GraphModule) -> PassResult:
         finalize_passes: List[PassType] = [
-            RemoveCloneOpsTransform(),
+            RemoveCloneOpsTransform(eliminate_quant_dequant_pairs=False),
         ]
         result = PassManager(passes=finalize_passes)(graph_module)
         dead_code_elimination_pass(result.graph_module)
@@ -246,131 +246,6 @@ class RemoveNopLinalgVectorNormOpPass(RemoveOrReplacePassInterface):
 
 
 @register_cadence_pass(CadencePassAttribute(opt_level=1))
-class RemoveNopSelectOpPass(ExportPass):
-    """
-    A select op that selects from a dimension that is size 1 can be eliminated
-    in a few cases. For example,
-    ```
-    x = view (x, [1, 3, 16])
-    y = select(x, 0, 0)
-    z = add(m, y)
-    ```
-    The special thing about this pattern is the add op, which allows
-    broadcasting. So adding an operand with shape [3, 16] is the same as
-    adding an operand with shape [1, 3, 16]. Therefore, if m has the same
-    shape as x, then this select op is a nop, and can be eliminated:
-    ```
-    x = view (x, [1, 3, 16])
-    z = add(x, m)
-    ```
-    """
-
-    # A set of binary operators that could require broadcasting, and are
-    # critical to this transformation if their operand is select op.
-    binary_broadcast_ops: set[EdgeOpOverload] = {
-        exir_ops.edge.aten.add.Tensor,
-        exir_ops.edge.aten.mul.Tensor,
-        exir_ops.edge.aten.div.Tensor,
-    }
-
-    def __init__(self) -> None:
-        super().__init__()
-        self.op_sizes: dict[str, tuple[torch.Size, torch.Size]] = {}
-
-    # For select, view, or any op in binary_broadcast_ops, record the shapes of
-    # input and output tensors.
-    def call_operator(
-        self,
-        op,  # pyre-ignore
-        args: tuple[Argument, ...],
-        kwargs: dict[str, Argument],
-        meta: NodeMetadata,
-    ) -> ProxyValue:
-        res = super().call_operator(op, args, kwargs, meta)
-        # Unary ops: input and output
-        if op in {
-            exir_ops.edge.aten.select_copy.int,
-            exir_ops.edge.aten.view_copy.default,
-        }:
-            arg0 = cast(ProxyValue, args[0])
-            self.op_sizes[res.node.name] = (arg0.to_tensor().shape, meta["val"].shape)
-        # Binary ops: two inputs, output shape can be inferred
-        elif op in self.binary_broadcast_ops:
-            arg0 = cast(ProxyValue, args[0])
-            arg1 = cast(ProxyValue, args[1])
-            self.op_sizes[res.node.name] = (
-                arg0.to_tensor().shape,
-                arg1.to_tensor().shape,
-            )
-        return res
-
-    # Eliminate nop select ops. We begin by inspecting the binary_broadcast_ops,
-    # and check if their arg is a select op.
-    def eliminate_nop_select_op(self, graph_module: torch.fx.GraphModule) -> None:
-        for sel_node in graph_module.graph.nodes:
-            # We are only interested in select ops
-            if sel_node.target != exir_ops.edge.aten.select_copy.int:
-                continue
-            # The shape of the input/output operands for this select op should
-            # have been precomputed.
-            assert sel_node.name in self.op_sizes
-            (sel_in_shape, sel_out_shape) = self.op_sizes[sel_node.name]
-            # Get the select dimension
-            sel_dim = (
-                sel_node.args[1]
-                if sel_node.args[1] >= 0
-                else sel_node.args[1] + len(sel_in_shape)
-            )
-            # If the input size along select dimension is not 1, bail.
-            if sel_in_shape[sel_dim] != 1:
-                continue
-
-            # Get all the users of the select op that are either view, or
-            # binary_broadcast_ops.
-            users = [x for x in list(sel_node.users.keys()) if x.name in self.op_sizes]
-            sel_in = sel_node.args[0]
-
-            # Iterate over the users of select op, and remove the use of the
-            # select op in the user if feasible.
-            for node in users:
-                args = list(node.args)
-                for idx, sel_arg in enumerate(args):
-                    # Check if the arg is the select op
-                    if sel_arg != sel_node:
-                        continue
-                    # If the input of select has the same shape as the other arg
-                    # of the binary op, the select op can be bypassed.
-                    if sel_in_shape == self.op_sizes[node.name][(idx + 1) % 2]:
-                        args[idx] = sel_in
-                # update the node's args
-                node.args = tuple(args)
-
-        graph_module.recompile()
-        graph_module.graph.eliminate_dead_code()
-
-    def call(self, graph_module: torch.fx.GraphModule) -> PassResult:
-        result = SpecPropPass()(graph_module)
-        assert result is not None
-        result = super().call(result.graph_module)
-        self.eliminate_nop_select_op(result.graph_module)
-        return result
-
-
-@register_cadence_pass(CadencePassAttribute(opt_level=1))
-class RemoveCloneOpPass(RemoveOrReplacePassInterface):
-    # If the op is a clone op, return the input and eliminate the op
-    @property
-    def targets(self) -> list[EdgeOpOverload]:
-        return [exir_ops.edge.aten.clone.default]
-
-    def maybe_remove_or_replace(self, node: Node) -> bool:
-        input_node = node.args[0]
-        assert isinstance(input_node, Node)
-        node.replace_all_uses_with(input_node)
-        return True
-
-
-@register_cadence_pass(CadencePassAttribute(opt_level=1))
 class RemoveContiguousOpPass(RemoveOrReplacePassInterface):
     """
     This is based on the assumption that all tensors are contiguous in ExecuTorch
@@ -538,6 +413,9 @@ class RemovePermutesAroundElementwiseOps(ExportPass):
         exir_ops.edge.quantized_decomposed.dequantize_per_tensor.default,
         exir_ops.edge.cadence.quantize_per_tensor.default,
         exir_ops.edge.cadence.dequantize_per_tensor.default,
+        exir_ops.edge.cadence.quantized_relu.per_tensor,
+        exir_ops.edge.cadence.requantize.per_tensor,
+        exir_ops.edge.cadence.quantized_add.per_tensor,
         # Ops that require special handling.
         exir_ops.edge.aten.cat.default,
         exir_ops.edge.aten.mean.dim,
@@ -547,10 +425,9 @@ class RemovePermutesAroundElementwiseOps(ExportPass):
     def call(self, graph_module: torch.fx.GraphModule) -> PassResult:
         subgraphs_found: list[RemovePermutesAroundElementwiseOps.Subgraph] = []
         processed_nodes: set[torch.fx.Node] = set()
-        for node in graph_module.graph.nodes:
-            if node.target != exir_ops.edge.aten.permute_copy.default:
-                continue
-
+        for node in graph_module.graph.find_nodes(
+            op="call_function", target=exir_ops.edge.aten.permute_copy.default
+        ):
             start_permute = self.get_permutation(node)
             # Expected end permutation for the subgraph.
             end_permute = [start_permute.index(i) for i in range(len(start_permute))]
@@ -566,13 +443,17 @@ class RemovePermutesAroundElementwiseOps(ExportPass):
                     for node in subgraph.nodes:
                         processed_nodes.add(node)
 
+        modified = False
         for subgraph in subgraphs_found:
             self.permute_subgraph(subgraph)
+            modified = True
 
-        graph_module.graph.eliminate_dead_code()
-        graph_module.recompile()
+        if modified:
+            graph_module.graph.eliminate_dead_code()
+            graph_module.recompile()
+            return super().call(graph_module)
 
-        return super().call(graph_module)
+        return PassResult(graph_module, False)
 
     def visit(
         self,
@@ -708,7 +589,7 @@ class RemoveSqueezeViewBeforeElementwiseOps(ExportPass):
         Returns the indices of the input dimensions that are squeezed in the output if
         view node is a squeeze. Returns an empty list otherwise.
         """
-        input_node = cast(Node, get_arg(view_node, "input"))
+        input_node = get_arg(view_node, "input", Node)
         input_shape = input_node.meta["val"].shape
         output_shape = view_node.meta["val"].shape
 
@@ -768,7 +649,7 @@ class RemoveSqueezeViewBeforeElementwiseOps(ExportPass):
         # Update the intermediate slices.
         for slice_node in intermediate_slices:
             slice_rank = len(slice_node.meta["val"].shape)
-            slice_dim = cast(int, get_arg(slice_node, "dim"))
+            slice_dim = get_arg(slice_node, "dim", int)
             if slice_dim < 0:
                 slice_dim += slice_rank
             for squeeze_dim in squeeze_indices:
@@ -777,7 +658,7 @@ class RemoveSqueezeViewBeforeElementwiseOps(ExportPass):
             set_arg(slice_node, "dim", slice_dim)
 
         # Skip the initial view node.
-        input_node = cast(Node, get_arg(view_node, "input"))
+        input_node = get_arg(view_node, "input", Node)
         view_node.replace_all_uses_with(input_node)
         return True
 
@@ -878,17 +759,17 @@ class RemoveCatFromSliceCopyPass(RemoveOrReplacePassInterface):
         return [exir_ops.edge.aten.slice_copy.Tensor]
 
     def maybe_remove_or_replace(self, node: Node) -> bool:
-        cat_node = cast(Node, get_arg(node, "input"))
-        slice_dim = cast(int, get_arg(node, "dim"))
-        start_idx = cast(int, get_arg(node, "start"))
-        end_idx = cast(int, get_arg(node, "end"))
-        step = cast(int, get_arg(node, "step"))
+        cat_node = get_arg(node, "input", Node)
+        slice_dim = get_arg(node, "dim", int)
+        start_idx = get_arg(node, "start", Optional[int])
+        end_idx = get_arg(node, "end", Optional[int])
+        step = get_arg(node, "step", int)
 
         if cat_node.target != exir_ops.edge.aten.cat.default or step != 1:
             return False
 
         # Make sure cat and slice happens on the same dimension.
-        cat_dim = cast(int, get_arg(cat_node, "dim"))
+        cat_dim = get_arg(cat_node, "dim", int)
         if cat_dim != slice_dim:
             return False
 
@@ -904,7 +785,7 @@ class RemoveCatFromSliceCopyPass(RemoveOrReplacePassInterface):
             end_idx += cat_output_shape[cat_dim]
 
         offset = 0
-        for cat_input_node in cast(List[Node], get_arg(cat_node, "tensors")):
+        for cat_input_node in get_arg(cat_node, "tensors", Sequence[Node]):
             cat_input_shape = cat_input_node.meta["val"].shape
 
             # Check if the slice range overlaps with the cat input range.
@@ -921,22 +802,22 @@ class RemoveCatFromSliceCopyPass(RemoveOrReplacePassInterface):
 
 class CommonRemovePasses:
     passes: List[Type[ExportPass]] = [
-        RemoveCloneOpPass,
         RemoveAliasCopyOpPass,
         RemoveNopExpandOpPass,
         RemoveNopSliceOrViewOpPass,
         RemoveToOpsPass,
         RemoveZeroSizedCatArgsPass,
         RemovePermutesAroundElementwiseOps,
+        FuseTransposeOrPermuteOpPairsPass,
         RemoveSqueezeViewBeforeElementwiseOps,
         RemoveCatFromSliceCopyPass,
+        RemoveCloneOpsTransformImported,
     ]
 
 
 class CadenceRemoveNops:
     passes: List[Type[ExportPass]] = CommonRemovePasses.passes + [
         SimplifySliceOpPass,
-        RemoveCloneOpsTransformImported,
         RemoveNopRequantizeOpPass,
         RemoveZeroSizedConstantPadNd,
         RemoveContiguousOpPass,

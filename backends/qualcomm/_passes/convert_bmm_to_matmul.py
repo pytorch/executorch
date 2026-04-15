@@ -10,6 +10,7 @@ from typing import List
 import torch
 from executorch.exir.dialects._ops import ops as exir_ops
 from executorch.exir.pass_base import ExportPass, PassResult
+from executorch.exir.passes import dead_code_elimination_pass
 from torch.fx.passes.utils.source_matcher_utils import get_source_partitions
 
 
@@ -25,6 +26,7 @@ class ConvertBmmToMatmul(ExportPass):
     bmm = exir_ops.edge.aten.bmm.default
     matmul = exir_ops.edge.aten.matmul.default
     patterns = [
+        {view_copy: 3, bmm: 1},
         {expand_copy: 2, view_copy: 3, bmm: 1},
         {expand_copy: 2, view_copy: 3, bmm: 1, clone: 1},
         {bmm: 1},
@@ -47,7 +49,13 @@ class ConvertBmmToMatmul(ExportPass):
         graph = graph_module.graph
         partitions = get_source_partitions(
             graph,
-            [operator.matmul, torch.matmul, torch.bmm, torch.ops.aten.matmul.default],
+            [
+                "matmul",
+                operator.matmul,
+                torch.matmul,
+                torch.bmm,
+                torch.ops.aten.matmul.default,
+            ],
         )
         for _, src_partitions in partitions.items():
             for src_partition in src_partitions:
@@ -71,6 +79,5 @@ class ConvertBmmToMatmul(ExportPass):
                     for user in output.users.copy():
                         user.replace_input_with(output, matmul_node)
 
-        graph.eliminate_dead_code()
-        graph_module.recompile()
+        dead_code_elimination_pass(graph_module)
         return PassResult(graph_module, True)

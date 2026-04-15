@@ -63,7 +63,6 @@ utils::uvec3 concat_pick_global_wg_size(
     const std::vector<ArgGroup>& args,
     const std::vector<ValueRef>& extra_args) {
   (void)shader;
-  (void)extra_args;
 
   const ValueRef out = args.at(0).refs.at(0);
   const std::vector<ValueRef> inputs_in_batch = args.at(1).refs;
@@ -108,52 +107,24 @@ utils::uvec3 concat_pick_global_wg_size(
   // Calculate what the image extents would be of a tensor with the input
   // volume's sizes. This produces the number of texels that would need to be
   // written to.
-  const int32_t packed_dim = graph->packed_dim_of(out);
+
+  const int32_t packed_dim_idx = graph->packed_dim_of(out);
   std::vector<int64_t> inp_volume_texel_sizes =
-      api::calculate_padded_sizes(inp_volume_sizes, packed_dim);
+      api::flip_and_unsqueeze<int64_t>(inp_volume_sizes, api::kTensorSizes, 1);
+
   // If the concat_dim is the same as the packed dim, and the concat_offset for
   // this input batch is not a multiple of 4, then the data from an input texel
   // may be split up between two output texels. For example:
   //                I0 , I1 , I2 , I2
   // O0 , O1 , O2 , X  | X  , X  , X ,  X
   // Therefore, 1 texel is added to the packed dim to account for this.
-  inp_volume_texel_sizes.at(3 - packed_dim) =
-      utils::div_up_4(inp_volume_texel_sizes.at(3 - packed_dim)) + 1;
+  inp_volume_texel_sizes.at(packed_dim_idx) =
+      utils::div_up_4(inp_volume_texel_sizes.at(packed_dim_idx)) + 1;
 
   const uint32_t inp_volume_texel_numel =
       utils::multiply_integers(inp_volume_texel_sizes);
 
   return {inp_volume_texel_numel, 1, 1};
-
-  // The texture implementation is similar, expect each thread is responsible
-  // for writing out an entire output texel. Therefore, the overall global work
-  // group size will be the concatenation of the texture extents of the input
-  // tensors in this batch.
-
-  // One complication is when the previous concatenation batch does not write
-  // up to a texel boundary. An example is if the previous concatenation batch
-  // only wrote 7 elements along the concatenation dim. The first input element
-  // would then have to be inserted at the last element of the final texel
-  // written by the previous batch. To account for this, initialize the
-  // workgroup size at the concatenation dim to 1 (need to read N total texels
-  // along the concat dim for input tensors + up to 1 texel from the output
-  // tensor).
-
-  // The axis along which to concatenate the input texture extents
-  int64_t extent_concat_axis = nchw_dim_to_whcn_dim(concat_dim, ndim);
-  // For batch concatenation, the concat axis is the batch-concatenation axis
-  if (concat_dim == 4) {
-    extent_concat_axis = graph->concat_dim_of(out);
-  }
-
-  utils::uvec3 global_workgroup_size = graph->create_global_wg_size(out);
-  global_workgroup_size[concat_dim] = 0;
-  for (const ValueRef input : inputs_in_batch) {
-    utils::uvec3 texture_extents = graph->logical_limits_of(input);
-    global_workgroup_size[extent_concat_axis] += texture_extents[concat_dim];
-  }
-
-  return global_workgroup_size;
 }
 
 void add_concat_node(
@@ -180,7 +151,6 @@ void add_concat_node(
   }
 
   const int64_t dim_whcn = nchw_dim_to_whcn_dim(normalized_dim, ndim);
-  const ValueRef dim_whcn_ref = graph.get_or_add_value_for_int(dim_whcn);
 
   // Create a temporary tensor to hold the concat offset
   TmpTensor concat_offset(
@@ -227,31 +197,17 @@ void add_concat_node(
 
     // Add concat node for this batch
     {
-      vkapi::ParamsBindList param_buffers = {
-          graph.get_or_create_int_param_buffer(dim_whcn_ref, 0)};
+      vkapi::ParamsBindList param_buffers = {graph.meta_ubo(out)};
 
-      std::vector<PushConstantDataInfo> push_constants;
-      vkapi::SpecVarList spec_vars;
+      for (const ValueRef in_ref : batch_inputs) {
+        param_buffers.append(graph.meta_ubo(in_ref));
+      }
 
-      if (graph.is_buffer_storage(out)) {
-        param_buffers.append(graph.sizes_ubo(out));
-        param_buffers.append(graph.strides_ubo(out));
+      vkapi::SpecVarList spec_vars = {
+          static_cast<int32_t>(dim_whcn), graph.hashed_layout_of(out)};
 
+      if (!graph.is_buffer_storage(out)) {
         for (const ValueRef in_ref : batch_inputs) {
-          param_buffers.append(graph.sizes_ubo(in_ref));
-          param_buffers.append(graph.strides_ubo(in_ref));
-        }
-
-        param_buffers.append(graph.numel_ubo(out));
-
-        spec_vars = {graph.hashed_layout_of(out)};
-      } else {
-        push_constants = {graph.sizes_pc_of(out)};
-
-        spec_vars = {graph.hashed_layout_of(out)};
-
-        for (const ValueRef in_ref : batch_inputs) {
-          push_constants.push_back(graph.sizes_pc_of(in_ref));
           spec_vars.append(graph.hashed_layout_of(in_ref));
         }
       }
@@ -264,12 +220,7 @@ void add_concat_node(
       } else if (current_batch_size == 3) {
         kernel_name += "_3";
       }
-      if (graph.is_buffer_storage(out)) {
-        kernel_name += "_buffer";
-      } else {
-        kernel_name += "_texture3d";
-      }
-
+      add_storage_type_suffix(kernel_name, graph.storage_type_of(out));
       add_dtype_suffix(kernel_name, graph.dtype_of(out));
 
       DispatchNode::ResizeFunction resize_fn = nullptr;
@@ -288,7 +239,7 @@ void add_concat_node(
           // Parameter buffers
           param_buffers,
           // Push Constants
-          push_constants,
+          {},
           // Specialization Constants
           spec_vars,
           // Resize Args
@@ -299,8 +250,7 @@ void add_concat_node(
 
     // Add node to update concat_offset (except for the last batch)
     if (batch_end < in_value_refs.size()) {
-      vkapi::ParamsBindList param_buffers = {
-          graph.get_or_create_int_param_buffer(dim_whcn_ref, 0)};
+      vkapi::ParamsBindList param_buffers;
 
       for (const ValueRef in_ref : batch_inputs) {
         param_buffers.append(graph.sizes_ubo(in_ref));
@@ -316,7 +266,7 @@ void add_concat_node(
       }
       add_dtype_suffix(kernel_name, graph.dtype_of(concat_offset));
 
-      vkapi::SpecVarList spec_vars = {};
+      vkapi::SpecVarList spec_vars = {static_cast<int32_t>(dim_whcn)};
 
       graph.execute_nodes().emplace_back(new DispatchNode(
           graph,
@@ -324,7 +274,7 @@ void add_concat_node(
           {1u, 1u, 1u},
           {1u, 1u, 1u},
           // Inputs and Outputs
-          {{concat_offset, vkapi::kWrite}},
+          {{concat_offset, vkapi::kReadWrite}},
           // Parameter buffers
           param_buffers,
           // Push Constants

@@ -1,4 +1,4 @@
-# Copyright 2025 Arm Limited and/or its affiliates.
+# Copyright 2025-2026 Arm Limited and/or its affiliates.
 #
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
@@ -7,6 +7,9 @@
 from typing import Dict, Tuple
 
 import torch
+from executorch.backends.arm.quantizer.arm_quantizer import (
+    get_symmetric_a16w8_quantization_config,
+)
 from executorch.backends.arm.test import common
 from executorch.backends.arm.test.tester.test_pipeline import (
     EthosU55PipelineINT,
@@ -75,21 +78,89 @@ def test_neg_u85_INT(test_data: input_t1):
 
 @common.parametrize("test_data", Neg.test_data)
 @common.SkipIfNoModelConverter
-def test_neg_vgf_FP(test_data: input_t1):
+def test_neg_vgf_no_quant(test_data: input_t1):
     pipeline = VgfPipeline[input_t1](
-        Neg(), test_data, Neg.aten_op, Neg.exir_op, tosa_version="TOSA-1.0+FP"
+        Neg(),
+        test_data,
+        Neg.aten_op,
+        Neg.exir_op,
+        quantize=False,
     )
     pipeline.run()
 
 
 @common.parametrize("test_data", Neg.test_data)
 @common.SkipIfNoModelConverter
-def test_neg_vgf_INT(test_data: input_t1):
+def test_neg_vgf_quant(test_data: input_t1):
     pipeline = VgfPipeline[input_t1](
         Neg(),
         test_data,
         Neg.aten_op,
         Neg.exir_op,
-        tosa_version="TOSA-1.0+INT",
+        quantize=True,
+    )
+    pipeline.run()
+
+
+@common.parametrize("test_data", Neg.test_data)
+@common.SkipIfNoModelConverter
+def test_neg_vgf_quant_a16w8(test_data: input_t1):
+    pipeline = VgfPipeline[input_t1](
+        Neg(),
+        test_data,
+        Neg.aten_op,
+        Neg.exir_op,
+        quantize=True,
+        tosa_extensions=["int16"],
+    )
+    pipeline.quantizer.set_global(get_symmetric_a16w8_quantization_config())
+    pipeline.run()
+
+
+@common.parametrize("test_data", Neg.test_data)
+def test_neg_tosa_INT_a16w8(test_data: input_t1):
+    """Test neg with 16A8W quantization for TOSA INT."""
+    pipeline = TosaPipelineINT[Tuple[torch.Tensor]](
+        Neg(),
+        test_data,
+        Neg.aten_op,
+        Neg.exir_op,
+        tosa_extensions=["int16"],
+    )
+    pipeline.run()
+
+
+@common.parametrize("test_data", Neg.test_data)
+@common.XfailIfNoCorstone300
+def test_neg_u55_INT_a16w8(test_data: input_t1):
+    """Test neg with 16A8W quantization on U55 (16-bit activations, 8-bit
+    weights)
+    """
+    pipeline = EthosU55PipelineINT[Tuple[torch.Tensor]](
+        Neg(),
+        test_data,
+        Neg.aten_op,
+        Neg.exir_op,
+        per_channel_quantization=False,
+        a16w8_quantization=True,
+        use_to_edge_transform_and_lower=True,
+    )
+    pipeline.run()
+
+
+@common.parametrize("test_data", Neg.test_data)
+@common.XfailIfNoCorstone320
+def test_neg_u85_INT_a16w8(test_data: input_t1):
+    """Test neg with 16A8W quantization on U85 (16-bit activations, 8-bit
+    weights)
+    """
+    pipeline = EthosU85PipelineINT[Tuple[torch.Tensor]](
+        Neg(),
+        test_data,
+        Neg.aten_op,
+        Neg.exir_op,
+        per_channel_quantization=False,
+        a16w8_quantization=True,
+        use_to_edge_transform_and_lower=True,
     )
     pipeline.run()

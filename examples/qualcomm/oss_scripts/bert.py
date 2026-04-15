@@ -13,35 +13,43 @@ from multiprocessing.connection import Client
 import evaluate
 import numpy as np
 import torch
-from executorch.backends.qualcomm._passes.qnn_pass_manager import (
-    get_capture_program_passes,
-)
-from executorch.backends.qualcomm.quantizer.quantizer import QuantDtype
-
-from executorch.examples.qualcomm.utils import (
+from executorch.backends.qualcomm.export_utils import (
     build_executorch_binary,
-    get_masked_language_model_dataset,
-    make_output_dir,
-    parse_skip_delegation_node,
+    make_quantizer,
+    QnnConfig,
     setup_common_args_and_variables,
     SimpleADB,
 )
+from executorch.backends.qualcomm.quantizer.quantizer import QuantDtype
+from executorch.backends.qualcomm.serialization.qc_schema import (
+    QnnExecuTorchBackendType,
+)
+
+from executorch.examples.qualcomm.utils import (
+    get_masked_language_model_dataset,
+    make_output_dir,
+)
 from transformers import AutoModelForMaskedLM, AutoTokenizer
+from transformers.masking_utils import create_bidirectional_mask
 
 
 def main(args):
-    if args.compile_only and args.pre_gen_pte:
-        raise RuntimeError("Cannot set both compile_only and pre_gen_pte as true")
-
-    skip_node_id_set, skip_node_op_set = parse_skip_delegation_node(args)
+    qnn_config = QnnConfig.load_config(args.config_file if args.config_file else args)
 
     os.makedirs(args.artifact, exist_ok=True)
     data_size = 100
+    model_name = "google-bert/bert-base-uncased"
+    tokenizer = AutoTokenizer.from_pretrained(model_name)
+    module = AutoModelForMaskedLM.from_pretrained(model_name).eval()
+    pte_filename = "bert_qnn_q16"
 
-    tokenizer = AutoTokenizer.from_pretrained("google-bert/bert-base-uncased")
     if args.ci:
         random_ids = torch.randint(low=0, high=100, size=(1, 100), dtype=torch.int32)
-        attention_mask = torch.ones((1, 100), dtype=torch.float32)
+        attention_mask = create_bidirectional_mask(
+            config=module.config,
+            input_embeds=module.bert.embeddings(random_ids),
+            attention_mask=torch.zeros((1, 100), dtype=torch.float32),
+        )
         inputs = [
             (
                 random_ids,
@@ -55,48 +63,43 @@ def main(args):
         inputs, targets = get_masked_language_model_dataset(
             args.dataset, tokenizer, data_size
         )
-    module = AutoModelForMaskedLM.from_pretrained(
-        "google-bert/bert-base-uncased"
-    ).eval()
-    pte_filename = "bert_qnn_q16"
+        inputs = [
+            (
+                input_ids,
+                create_bidirectional_mask(
+                    config=module.config,
+                    input_embeds=module.bert.embeddings(input_ids),
+                    attention_mask=attention_mask,
+                ),
+            )
+            for input_ids, attention_mask in inputs
+        ]
 
-    # Skip lowering/compilation if using pre-generated PTE
-    if not args.pre_gen_pte:
-        # lower to QNN
-        passes_job = get_capture_program_passes()
-        build_executorch_binary(
-            module,
-            inputs[0],
-            args.model,
-            f"{args.artifact}/{pte_filename}",
-            dataset=inputs,
-            skip_node_id_set=skip_node_id_set,
-            skip_node_op_set=skip_node_op_set,
+    # lower to QNN
+    quantizer = {
+        QnnExecuTorchBackendType.kGpuBackend: None,
+        QnnExecuTorchBackendType.kHtpBackend: make_quantizer(
             quant_dtype=QuantDtype.use_16a8w,
-            passes_job=passes_job,
-            shared_buffer=args.shared_buffer,
-        )
-
-    if args.compile_only:
-        return
-
-    workspace = f"/data/local/tmp/{getpass.getuser()}/executorch/{pte_filename}"
-    pte_path = (
-        f"{args.pre_gen_pte}/{pte_filename}.pte"
-        if args.pre_gen_pte
-        else f"{args.artifact}/{pte_filename}.pte"
+            eps=2**-20,
+            backend=qnn_config.backend,
+            soc_model=qnn_config.soc_model,
+        ),
+    }[qnn_config.backend]
+    build_executorch_binary(
+        model=module,
+        qnn_config=qnn_config,
+        file_name=f"{args.artifact}/{pte_filename}",
+        dataset=inputs,
+        custom_quantizer=quantizer,
     )
 
+    workspace = f"/data/local/tmp/{getpass.getuser()}/executorch/{pte_filename}"
+    pte_path = f"{args.artifact}/{pte_filename}.pte"
+
     adb = SimpleADB(
-        qnn_sdk=os.getenv("QNN_SDK_ROOT"),
-        build_path=f"{args.build_folder}",
+        qnn_config=qnn_config,
         pte_path=pte_path,
         workspace=workspace,
-        device_id=args.device,
-        host_id=args.host,
-        soc_model=args.model,
-        shared_buffer=args.shared_buffer,
-        target=args.target,
     )
     output_data_folder = f"{args.artifact}/outputs"
     make_output_dir(output_data_folder)
@@ -104,7 +107,7 @@ def main(args):
     # accuracy analysis
     adb.push(inputs=inputs)
     adb.execute()
-    adb.pull(output_path=args.artifact)
+    adb.pull(host_output_path=args.artifact)
     goldens, predictions = [], []
     for i in range(len(inputs)):
         indices = [i for i, x in enumerate(targets[i]) if x != -100]
@@ -149,7 +152,6 @@ if __name__ == "__main__":
     )
 
     args = parser.parse_args()
-    args.validate(args)
 
     try:
         main(args)

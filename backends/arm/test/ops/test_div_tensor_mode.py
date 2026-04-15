@@ -1,4 +1,4 @@
-# Copyright 2025 Arm Limited and/or its affiliates.
+# Copyright 2025-2026 Arm Limited and/or its affiliates.
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
 
@@ -19,9 +19,8 @@ input_tt = Tuple[torch.Tensor, torch.Tensor]
 
 
 class DivTensorModeFloat(torch.nn.Module):
-    """
-    torch.div(x, y, rounding_mode=mode) with
-    mode from {None, "floor", "trunc"}.
+    """torch.div(x, y, rounding_mode=mode) with mode in {None, "floor",
+    "trunc"}.
     """
 
     aten_ops = ["aten.div.Tensor_mode"]
@@ -118,7 +117,7 @@ def test_div_tensor_mode_u85_INT(data):
 
 @common.SkipIfNoModelConverter
 @common.parametrize("data", test_data)
-def test_div_tensor_mode_vgf_INT(data):
+def test_div_tensor_mode_vgf_quant(data):
     mode, inputs = data()
     model = DivTensorModeFloat(mode)
 
@@ -127,8 +126,8 @@ def test_div_tensor_mode_vgf_INT(data):
         inputs,
         aten_op=model.aten_ops_int,
         exir_op=[],
-        tosa_version="TOSA-1.0+INT",
         use_to_edge_transform_and_lower=True,
+        quantize=True,
     )
     pipeline.pop_stage("check_count.exir")
     pipeline.run()
@@ -136,7 +135,7 @@ def test_div_tensor_mode_vgf_INT(data):
 
 @common.SkipIfNoModelConverter
 @common.parametrize("data", test_data)
-def test_div_tensor_mode_vgf_FP(data):
+def test_div_tensor_mode_vgf_no_quant(data):
     mode, inputs = data()
     model = DivTensorModeFloat(mode)
 
@@ -145,7 +144,7 @@ def test_div_tensor_mode_vgf_FP(data):
         inputs,
         aten_op=model.aten_ops,
         exir_op=[],
-        tosa_version="TOSA-1.0+FP",
         use_to_edge_transform_and_lower=True,
+        quantize=False,
     )
     pipeline.run()

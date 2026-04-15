@@ -14,12 +14,6 @@
 #include <iostream>
 #include <sstream>
 
-#ifdef USE_VOLK_HEADER_ONLY
-// For volk.h, define this before including volk.h in exactly one CPP file.
-#define VOLK_IMPLEMENTATION
-#include <volk.h>
-#endif /* USE_VOLK_HEADER_ONLY */
-
 namespace vkcompute {
 namespace vkapi {
 
@@ -88,7 +82,7 @@ VkInstance create_instance(const RuntimeConfig& config) {
   const VkApplicationInfo application_info{
       VK_STRUCTURE_TYPE_APPLICATION_INFO, // sType
       nullptr, // pNext
-      "PyTorch Vulkan Backend", // pApplicationName
+      "ExecuTorch Vulkan Delegate", // pApplicationName
       0, // applicationVersion
       nullptr, // pEngineName
       0, // engineVersion
@@ -177,7 +171,7 @@ std::vector<Runtime::DeviceMapping> create_physical_devices(
   std::vector<Runtime::DeviceMapping> device_mappings;
   device_mappings.reserve(device_count);
   for (VkPhysicalDevice physical_device : devices) {
-    device_mappings.emplace_back(PhysicalDevice(physical_device), -1);
+    device_mappings.emplace_back(PhysicalDevice(instance, physical_device), -1);
   }
 
   return device_mappings;

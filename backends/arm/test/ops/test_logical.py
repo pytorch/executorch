@@ -144,26 +144,26 @@ def test_logical_and_u85_INT(test_data: input_t2):
 
 @common.parametrize("test_data", And().test_data)
 @common.SkipIfNoModelConverter
-def test_logical_and_vgf_FP(test_data: input_t2):
+def test_logical_and_vgf_no_quant(test_data: input_t2):
     pipeline = VgfPipeline[input_t2](
         And(),
         test_data(),
         And().aten_op,
         And().exir_op,
-        tosa_version="TOSA-1.0+FP",
+        quantize=False,
     )
     pipeline.run()
 
 
 @common.parametrize("test_data", And().test_data)
 @common.SkipIfNoModelConverter
-def test_logical_and_vgf_INT(test_data: input_t2):
+def test_logical_and_vgf_quant(test_data: input_t2):
     pipeline = VgfPipeline[input_t2](
         And(),
         test_data(),
         And().aten_op,
         And().exir_op,
-        tosa_version="TOSA-1.0+INT",
+        quantize=True,
     )
     pipeline.run()
 
@@ -231,26 +231,26 @@ def test_logical_xor_u85_INT(test_data: input_t2):
 
 @common.parametrize("test_data", Xor().test_data)
 @common.SkipIfNoModelConverter
-def test_logical_xor_vgf_FP(test_data: input_t2):
+def test_logical_xor_vgf_no_quant(test_data: input_t2):
     pipeline = VgfPipeline[input_t2](
         Xor(),
         test_data(),
         Xor().aten_op,
         Xor().exir_op,
-        tosa_version="TOSA-1.0+FP",
+        quantize=False,
     )
     pipeline.run()
 
 
 @common.parametrize("test_data", Xor().test_data)
 @common.SkipIfNoModelConverter
-def test_logical_xor_vgf_INT(test_data: input_t2):
+def test_logical_xor_vgf_quant(test_data: input_t2):
     pipeline = VgfPipeline[input_t2](
         Xor(),
         test_data(),
         Xor().aten_op,
         Xor().exir_op,
-        tosa_version="TOSA-1.0+INT",
+        quantize=True,
     )
     pipeline.run()
 
@@ -318,26 +318,26 @@ def test_logical_or_u85_INT(test_data: input_t2):
 
 @common.parametrize("test_data", Or().test_data)
 @common.SkipIfNoModelConverter
-def test_logical_or_vgf_FP(test_data: input_t2):
+def test_logical_or_vgf_no_quant(test_data: input_t2):
     pipeline = VgfPipeline[input_t2](
         Or(),
         test_data(),
         Or().aten_op,
         Or().exir_op,
-        tosa_version="TOSA-1.0+FP",
+        quantize=False,
     )
     pipeline.run()
 
 
 @common.parametrize("test_data", Or().test_data)
 @common.SkipIfNoModelConverter
-def test_logical_or_vgf_INT(test_data: input_t2):
+def test_logical_or_vgf_quant(test_data: input_t2):
     pipeline = VgfPipeline[input_t2](
         Or(),
         test_data(),
         Or().aten_op,
         Or().exir_op,
-        tosa_version="TOSA-1.0+INT",
+        quantize=True,
     )
     pipeline.run()
 
@@ -405,25 +405,25 @@ def test_logical_not_u85_INT(test_data: input_t2):
 
 @common.parametrize("test_data", Not().test_data)
 @common.SkipIfNoModelConverter
-def test_logical_not_vgf_FP(test_data: input_t2):
+def test_logical_not_vgf_no_quant(test_data: input_t2):
     pipeline = VgfPipeline[input_t2](
         Not(),
         test_data(),
         Not().aten_op,
         Not().exir_op,
-        tosa_version="TOSA-1.0+FP",
+        quantize=False,
     )
     pipeline.run()
 
 
 @common.parametrize("test_data", Not().test_data)
 @common.SkipIfNoModelConverter
-def test_logical_not_vgf_INT(test_data: input_t2):
+def test_logical_not_vgf_quant(test_data: input_t2):
     pipeline = VgfPipeline[input_t2](
         Not(),
         test_data(),
         Not().aten_op,
         Not().exir_op,
-        tosa_version="TOSA-1.0+INT",
+        quantize=True,
     )
     pipeline.run()

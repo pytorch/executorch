@@ -34,7 +34,11 @@ void add_tan_node(ComputeGraph& graph, const ValueRef in, const ValueRef out) {
   add_storage_type_suffix(kernel_name, graph.storage_type_of(out));
 
   vkapi::ParamsBindList ubos({});
-  ubos.append({graph.logical_limits_ubo(out)});
+  if (graph.storage_type_of(out) == utils::kBuffer) {
+    ubos.append({graph.numel_ubo(out)});
+  } else {
+    ubos.append({graph.logical_limits_ubo(out)});
+  }
 
   graph.execute_nodes().emplace_back(new DynamicDispatchNode(
       graph,

@@ -1,4 +1,4 @@
-# Copyright 2024-2025 NXP
+# Copyright 2024-2026 NXP
 #
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
@@ -6,8 +6,10 @@
 import numpy as np
 import pytest
 import torch
-
 from executorch.backends.nxp.backend.ir.conversion_config import ConversionConfig
+from executorch.backends.nxp.backend.ir.converter.node_converters.ops_converters.constant_pad_nd_converter import (
+    ConstantPadNDConverter,
+)
 from executorch.backends.nxp.tests.executorch_pipeline import (
     to_edge_program,
     to_quantized_edge_program,
@@ -22,6 +24,8 @@ from executorch.backends.nxp.tests.models import (
     ConstantPadNDConvModule,
     ConstantPadNDModule,
 )
+from executorch.backends.nxp.tests.use_qat import *  # noqa F403
+from executorch.backends.nxp.tests.executors import OverrideTargetSupportCheck
 from executorch.exir.dialects._ops import ops as exir_ops
 
 
@@ -42,7 +46,14 @@ def test_constant_pad_nd_conversion__specific_constant(constant):
 
     input_data = np.random.random(input_shape).astype(np.float32)
 
-    convert_run_compare(edge_program, input_data)
+    # Ignore the target requirement, as this test is target agnostic.
+    def supported_target(*_):
+        return True
+
+    with OverrideTargetSupportCheck(
+        ConstantPadNDConverter, new_target_support_check=supported_target
+    ):
+        convert_run_compare(edge_program, input_data)
 
 
 def test_constant_pad_nd_conversion__default_constant():
@@ -55,7 +66,14 @@ def test_constant_pad_nd_conversion__default_constant():
 
     input_data = np.random.random(input_shape).astype(np.float32)
 
-    convert_run_compare(edge_program, input_data)
+    # Ignore the target requirement, as this test is target agnostic.
+    def supported_target(*_):
+        return True
+
+    with OverrideTargetSupportCheck(
+        ConstantPadNDConverter, new_target_support_check=supported_target
+    ):
+        convert_run_compare(edge_program, input_data)
 
 
 @pytest.mark.parametrize(
@@ -79,7 +97,14 @@ def test_constant_pad_nd_conversion__format_less(input_shape, paddings):
 
     input_data = np.random.random(input_shape).astype(np.float32)
 
-    convert_run_compare(edge_program, input_data)
+    # Ignore the target requirement, as this test is target agnostic.
+    def supported_target(*_):
+        return True
+
+    with OverrideTargetSupportCheck(
+        ConstantPadNDConverter, new_target_support_check=supported_target
+    ):
+        convert_run_compare(edge_program, input_data)
 
 
 @pytest.mark.parametrize(
@@ -97,15 +122,22 @@ def test_constant_pad_nd_conversion__channels_first(input_shape, paddings):
 
     input_data = np.random.random(input_shape).astype(np.float32)
 
-    convert_run_compare(
-        edge_program,
-        input_data,
-        tflite_input_preprocess=ToNHWCPreprocess(),
-        tflite_output_preprocess=ToNCHWPreprocess(),
-        conversion_config=ConversionConfig(
-            {"use_neutron_for_format_conversion": False}
-        ),
-    )
+    # Ignore the target requirement, as this test is target agnostic.
+    def supported_target(*_):
+        return True
+
+    with OverrideTargetSupportCheck(
+        ConstantPadNDConverter, new_target_support_check=supported_target
+    ):
+        convert_run_compare(
+            edge_program,
+            input_data,
+            tflite_input_preprocess=ToNHWCPreprocess(),
+            tflite_output_preprocess=ToNCHWPreprocess(),
+            conversion_config=ConversionConfig(
+                {"use_neutron_for_format_conversion": False}
+            ),
+        )
 
 
 @pytest.mark.parametrize(
@@ -120,20 +152,24 @@ def test_constant_pad_nd_conversion__channels_first(input_shape, paddings):
         pytest.param((1, 1, 6, 8), (1, 2, 3, 4, 2, 1), id="4D, padding C, H, W"),
     ],
 )
-def test_constant_pad_nd__unsupported_paddings(input_shape, paddings):
+def test_constant_pad_nd__unsupported_paddings(input_shape, paddings, use_qat):
     model = ConstantPadNDModule(paddings)
-    exec_program = to_quantized_edge_program(model, input_shape).exported_program()
+    exec_program = to_quantized_edge_program(
+        model, input_shape, use_qat=use_qat
+    ).exported_program()
 
     nodes = list(exec_program.graph.nodes)
     # There is at least one non-delegated Pad node
     assert any(node.name == "aten_constant_pad_nd_default" for node in nodes)
 
 
-def test_constant_pad_nd__delegation__formatless__supported_padding():
+def test_constant_pad_nd__delegation__formatless__supported_padding(use_qat):
     input_shape = (2, 4, 6, 8)  # Formatless -> the last dim (8) will be padded.
     paddings = [0, 0, 1, 2, 3, 4]  # The last dim is padded using the first 2 paddings.
     model = ConstantPadNDModule(paddings)
-    exec_program = to_quantized_edge_program(model, input_shape).exported_program()
+    exec_program = to_quantized_edge_program(
+        model, input_shape, use_qat=use_qat
+    ).exported_program()
 
     # Make sure the `pad` was delegated.
     assert not graph_contains_any_of_ops(
@@ -141,11 +177,13 @@ def test_constant_pad_nd__delegation__formatless__supported_padding():
     )
 
 
-def test_constant_pad_nd__delegation__formatless__unsupported_padding():
+def test_constant_pad_nd__delegation__formatless__unsupported_padding(use_qat):
     input_shape = (2, 4, 6, 8)  # Formatless -> the last dim (8) will be padded.
     paddings = [0, 1]  # The last dim is padded using the first 2 paddings.
     model = ConstantPadNDModule(paddings)
-    exec_program = to_quantized_edge_program(model, input_shape).exported_program()
+    exec_program = to_quantized_edge_program(
+        model, input_shape, use_qat=use_qat
+    ).exported_program()
 
     # Make sure the `pad` was NOT delegated.
     assert graph_contains_any_of_ops(
@@ -153,11 +191,14 @@ def test_constant_pad_nd__delegation__formatless__unsupported_padding():
     )
 
 
-def test_constant_pad_nd__delegation__channels_first__supported_padding():
+@pytest.mark.xfail(reason="Regression in Neutron SW 3.0.1 (AIR-14264)", strict=True)
+def test_constant_pad_nd__delegation__channels_first__supported_padding(use_qat):
     input_shape = (2, 4, 6, 8)  # Channels first -> the second dim (4) will be padded.
     paddings = [1, 2, 3, 4, 0, 0]  # The second dim is padded using the paddings[4:6].
     model = ConstantPadNDConvModule(paddings)
-    exec_program = to_quantized_edge_program(model, input_shape).exported_program()
+    exec_program = to_quantized_edge_program(
+        model, input_shape, use_qat=use_qat
+    ).exported_program()
 
     # Make sure the `pad` was delegated.
     assert not graph_contains_any_of_ops(
@@ -165,11 +206,13 @@ def test_constant_pad_nd__delegation__channels_first__supported_padding():
     )
 
 
-def test_constant_pad_nd__delegation__channels_first__unsupported_padding():
+def test_constant_pad_nd__delegation__channels_first__unsupported_padding(use_qat):
     input_shape = (2, 3, 6, 8)  # Channels first -> the second dim (3) will be padded.
     paddings = [0, 0, 0, 0, 1, 0]  # The second dim is padded using the paddings[4:6].
     model = ConstantPadNDConvModule(paddings)
-    exec_program = to_quantized_edge_program(model, input_shape).exported_program()
+    exec_program = to_quantized_edge_program(
+        model, input_shape, use_qat=use_qat
+    ).exported_program()
 
     # Make sure the `pad` was NOT delegated.
     assert graph_contains_any_of_ops(

@@ -12,6 +12,7 @@
 
 #include <optional>
 #include <stack>
+#include <unordered_map>
 
 #include <executorch/backends/vulkan/runtime/api/api.h>
 
@@ -24,6 +25,11 @@
 #include <executorch/backends/vulkan/runtime/graph/ops/DynamicDispatchNode.h>
 #include <executorch/backends/vulkan/runtime/graph/ops/ExecuteNode.h>
 #include <executorch/backends/vulkan/runtime/graph/ops/PrepackNode.h>
+
+#ifdef ET_EVENT_TRACER_ENABLED
+std::string& set_and_get_current_operator_json(const std::string& json);
+size_t get_current_operator_count(const bool increment = false);
+#endif
 
 namespace vkcompute {
 
@@ -199,6 +205,22 @@ class ComputeGraph final {
   // Set to track which ValueRefs were updated during inference
   std::unordered_set<ValueRef> updated_values_;
 
+  // Cache to prevent duplicate prepacking of the same weight tensor with the
+  // same kernel. Key is (inputValueRef, kernel_name).
+  struct PrepackCacheHash {
+    size_t operator()(const std::pair<ValueRef, std::string>& key) const {
+      size_t h1 = std::hash<ValueRef>{}(key.first);
+      size_t h2 = std::hash<std::string>{}(key.second);
+      // Combine hashes using a method similar to boost::hash_combine
+      return h1 ^ (h2 + 0x9e3779b9 + (h1 << 6) + (h1 >> 2));
+    }
+  };
+  std::unordered_map<
+      std::pair<ValueRef, std::string>,
+      ValueRef,
+      PrepackCacheHash>
+      prepack_cache_;
+
   // Flag to indicate if re-encoding is required
   bool requires_reencode_ = false;
 
@@ -322,6 +344,8 @@ class ComputeGraph final {
 
   std::vector<int64_t> sizes_of(const ValueRef idx) const;
 
+  std::vector<int64_t> padded_sizes_of(const ValueRef idx) const;
+
   /*
    * Returns the size of the tensor at `idx` along the specified dimension.
    * Negative indexing is allowed.
@@ -345,16 +369,28 @@ class ComputeGraph final {
 
   vkapi::ScalarType dtype_of(const ValueRef idx) const;
 
+  vkapi::ScalarType get_staging_dtype_for(const ValueRef idx) const;
+
   inline const utils::ivec3& logical_limits_of(const ValueRef idx) const {
     return values_.at(idx).toConstTensor().logical_limits();
   }
 
   inline int32_t numel_of(const ValueRef idx) const {
-    return values_.at(idx).toConstTensor().numel();
+    return utils::safe_downcast<int32_t>(
+        values_.at(idx).toConstTensor().numel());
+  }
+
+  inline int32_t padded_numel_of(const ValueRef idx) const {
+    return utils::safe_downcast<int32_t>(
+        values_.at(idx).toConstTensor().padded_numel());
   }
 
   inline size_t staging_buffer_numel_of(const ValueRef idx) const {
     return values_.at(idx).toConstTensor().staging_buffer_numel();
+  }
+
+  inline int64_t physical_numel_of(const ValueRef idx) const {
+    return values_.at(idx).toConstTensor().physical_numel();
   }
 
   inline utils::StorageType storage_type_of(const ValueRef idx) const {
@@ -435,6 +471,15 @@ class ComputeGraph final {
 
   inline int32_t packed_dim_of(const ValueRef idx) const {
     return values_.at(idx).toConstTensor().packed_dim();
+  }
+
+  inline int32_t fastest_whcn_dim_of(const ValueRef idx) const {
+    return values_.at(idx).toConstTensor().fastest_whcn_dim();
+  }
+
+  inline const api::PackedDimInfo& packed_dim_info_of(
+      const ValueRef idx) const {
+    return values_.at(idx).toConstTensor().packed_dim_info();
   }
 
   inline int32_t concat_dim_of(const ValueRef idx) const {
@@ -545,6 +590,9 @@ class ComputeGraph final {
     if (value.isBool()) {
       return static_cast<T>(value.toBool());
     }
+    if (value.isSymInt()) {
+      return utils::safe_downcast<T>(read_symint(idx));
+    }
     VK_THROW("Cannot extract scalar from Value with type ", value.type());
   }
 
@@ -633,6 +681,11 @@ class ComputeGraph final {
   inline bool device_is_adreno() {
     return context_->adapter_ptr()->device_type() == vkapi::DeviceType::ADRENO;
   }
+
+  inline bool device_is_mali() {
+    return context_->adapter_ptr()->device_type() == vkapi::DeviceType::MALI;
+  }
+
   const std::string& device_name() {
     return context()->adapter_ptr()->device_name();
   }
@@ -651,6 +704,22 @@ class ComputeGraph final {
   void check_no_active_value_ptrs();
 
  public:
+  /*
+   * Check if a prepacked tensor already exists for the given input and kernel.
+   */
+  ValueRef get_cached_prepack(
+      const ValueRef input,
+      const std::string& kernel_name) const;
+
+  /*
+   * Store a prepacked tensor in the cache, keyed by input ValueRef and kernel
+   * name.
+   */
+  void cache_prepack(
+      const ValueRef input,
+      const std::string& kernel_name,
+      const ValueRef prepacked);
+
   /*
    * Add a `api::vTensor` value to the graph with the specified properties.
    * There are various convenience overloads of this function that may be used
@@ -762,7 +831,10 @@ class ComputeGraph final {
    * use memory that is visible to both the CPU and GPU, and therefore is used
    * as a intermediary when transferring data between the CPU and GPU.
    */
-  ValueRef add_staging(const vkapi::ScalarType dtype, const size_t numel);
+  ValueRef add_staging(
+      const vkapi::ScalarType dtype,
+      const size_t numel,
+      const vkapi::CopyDirection direction);
 
   ValueRef add_none();
 
@@ -972,16 +1044,18 @@ class ComputeGraph final {
   // Input/Output
   //
 
+ private:
   void
   copy_into_staging(const ValueRef idx, const void* data, const size_t numel);
 
+  void copy_from_staging(const ValueRef idx, void* data, const size_t numel);
+
+ public:
   void maybe_cast_and_copy_into_staging(
       const ValueRef idx,
       const void* data,
       const size_t numel,
       const vkapi::ScalarType src_data_dtype);
-
-  void copy_from_staging(const ValueRef idx, void* data, const size_t numel);
 
   void maybe_cast_and_copy_from_staging(
       const ValueRef idx,
@@ -1083,6 +1157,10 @@ class ComputeGraph final {
 
   inline bool int16_shader_types_enabled() const {
     return context_->adapter_ptr()->supports_int16_shader_types();
+  }
+
+  inline bool float16_buffers_enabled() const {
+    return context_->adapter_ptr()->has_full_float16_buffers_support();
   }
 
   inline size_t execute_count() const {

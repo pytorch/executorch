@@ -1,20 +1,24 @@
-# Copyright 2024-2025 Arm Limited and/or its affiliates.
+# Copyright 2024-2026 Arm Limited and/or its affiliates.
 #
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
 
+import importlib.resources as _resources
 import json
 import logging
 import os
 import re
 import shutil
 import subprocess  # nosec B404 - invoked only for trusted toolchain binaries
+import sys
 import tempfile
-
 from pathlib import Path
 
 from types import NoneType
 from typing import Any, cast, Dict, List, Optional, Tuple
+
+import executorch.backends.arm.test as arm_test_package
+import executorch.backends.arm.tosa.schemas as tosa_schemas_package
 
 import numpy as np
 import torch
@@ -31,7 +35,10 @@ from executorch.backends.arm.ethosu import EthosUCompileSpec
 from executorch.backends.arm.tosa.compile_spec import TosaCompileSpec
 from executorch.backends.arm.tosa.specification import Tosa_1_00, TosaSpecification
 from executorch.backends.arm.vgf import VgfCompileSpec
-from executorch.backends.arm.vgf.model_converter import find_model_converter_binary
+from executorch.backends.arm.vgf.model_converter import (
+    find_model_converter_binary,
+    model_converter_env,
+)
 from executorch.exir import ExecutorchProgramManager, ExportedProgram
 from executorch.exir.lowered_backend_module import LoweredBackendModule
 from torch.fx.node import Node
@@ -57,7 +64,7 @@ _torch_to_numpy_dtype_dict = {
     torch.float16: np.float16,
     torch.float32: np.float32,
     torch.float64: np.float64,
-    torch.bfloat16: np.float32,
+    torch.bfloat16: np.uint16,
     torch.complex32: np.complex64,
     torch.complex64: np.complex64,
     torch.complex128: np.complex128,
@@ -88,13 +95,13 @@ class QuantizationParams:
 
 
 def get_input_names(program: ExportedProgram) -> list[str]:
-    """
-    Get a list[str] with the names of the inputs to this model.
+    """Get a list[str] with the names of the inputs to this model.
 
     Args:
         program (ExportedProgram): The program to get input names from.
     Returns:
         A list of strings with the names of the model input.
+
     """
     return [spec.arg.name for spec in program.graph_signature.input_specs]
 
@@ -102,12 +109,14 @@ def get_input_names(program: ExportedProgram) -> list[str]:
 def get_input_quantization_params(
     program: ExportedProgram,
 ) -> list[QuantizationParams]:
-    """
-    Get input QuantizationParams in a program, maximum one per input to the program.
+    """Get input QuantizationParams in a program, maximum one per input to the
+    program.
+
     Args:
         program (ExportedProgram): The program to get input quantization parameters from.
     Returns:
         list[QuantizationParams]: The found quantization parameters.
+
     """
 
     quant_params = []
@@ -139,8 +148,8 @@ def get_input_quantization_params(
 def get_output_quantization_params(
     output_node: Node,
 ) -> dict[Node, QuantizationParams | None]:
-    """
-    Get output QuantizationParams from a program.
+    """Get output QuantizationParams from a program.
+
     Args:
         output_nodes (list(Node)): A list of output nodes to get output quantization parameters from.
     Returns:
@@ -148,6 +157,7 @@ def get_output_quantization_params(
         If no quantization parameters were found, the entry is None.
     Raises:
         RuntimeError if no output quantization parameters are found.
+
     """
     quant_params: dict[Node, QuantizationParams | None] = {}
     for node in output_node.args[0]:  # type: ignore[union-attr]
@@ -169,16 +179,17 @@ def get_output_quantization_params(
 
 
 def torch_tensor_to_numpy(tensor: torch.Tensor) -> np.ndarray:
-    dtype = _torch_to_numpy_dtype_dict[tensor.dtype]
-    array = tensor.detach().numpy().astype(dtype)  # type: ignore[var-annotated]
     dim_order = tensor.dim_order()
     if dim_order == NHWC_ORDER:
-        a = array.transpose(NHWC_ORDER)
-        return a
+        tensor = tensor.permute(NHWC_ORDER)
     elif dim_order == NNHWC_ORDER:
-        return array.transpose(NNHWC_ORDER)
-    else:
-        return array
+        tensor = tensor.permute(NNHWC_ORDER)
+
+    tensor = tensor.detach()
+    if tensor.dtype == torch.bfloat16:
+        # Numpy doesn't support bfloat16, use, uint16 instead. Dtype is inferred from model anyways.
+        tensor = tensor.view(torch.uint16)
+    return tensor.numpy()
 
 
 def numpy_to_torch_tensor(array: np.ndarray, output_node: Node) -> torch.Tensor:
@@ -194,12 +205,18 @@ def numpy_to_torch_tensor(array: np.ndarray, output_node: Node) -> torch.Tensor:
         tensor = torch.from_numpy(array).reshape(shape_with_dim_order)
         return tensor.permute(NNHWC_INVERSE_ORDER).to(memory_format=torch.channels_last)
     else:
-        tensor = torch.from_numpy(array).reshape(shape)
-        return tensor
+        if array.dtype.type is np.void:
+            # If dtype is void, "cheat" and use the output_tensor dtype.
+            tensor = torch.frombuffer(array, dtype=output_tensor.dtype)
+        else:
+            tensor = torch.from_numpy(array)
+        return tensor.reshape(shape)
 
 
 class TosaReferenceModelDispatch(TorchFunctionMode):
-    """A context manager for executing call_delegate nodes using the reference model"""
+    """A context manager for executing call_delegate nodes using the reference
+    model.
+    """
 
     def __init__(self):
         self.ran_tosa_dispatch = False
@@ -207,7 +224,7 @@ class TosaReferenceModelDispatch(TorchFunctionMode):
 
     def _tosa_dispatch(self, lowered_backend_module: LoweredBackendModule, inputs):
         tosa_buffer = lowered_backend_module.processed_bytes
-        compile_spec = TosaCompileSpec.from_list(lowered_backend_module.compile_specs)
+        compile_spec = TosaCompileSpec._from_list(lowered_backend_module.compile_specs)
 
         output_node = lowered_backend_module.original_module.graph.output_node()
         return run_tosa_graph(tosa_buffer, compile_spec.tosa_spec, inputs, output_node)
@@ -351,9 +368,8 @@ def run_vkml_emulation_layer(
         cmd_line += input_string
     cmd_line = cmd_line.split()
 
-    result = _run_cmd(cmd_line)
+    result = _run_cmd(cmd_line, env=_get_vkml_runtime_env())
 
-    # TODO: MLETORCH-1234: Support VGF e2e tests in VgfPipeline
     # TODO: Add regex to check for error or fault messages in stdout from Emulation Layer
     result_stdout = result.stdout.decode()  # noqa: F841
 
@@ -369,6 +385,7 @@ def run_corstone(
     timeout: int = 120,  # s
 ) -> list[torch.Tensor]:
     """Executes an inference of the exported_program on FVP.
+
     Returns a list of tensors with the output.
     Args:
         `executorch_program_manager`: The executorch program to run.
@@ -385,6 +402,7 @@ def run_corstone(
         Relies on the output tensors from the exported program
         to figure out the shape and dtype of the buffer that was
         output from the FVP.
+
     """
     exported_program = executorch_program_manager.exported_program()
     intermediate_path = Path(intermediate_path)
@@ -399,14 +417,24 @@ def run_corstone(
         f.write(executorch_program_manager.buffer)
 
     input_paths = save_inputs_to_file(exported_program, inputs, intermediate_path)
+    # Keep semihosting command line short: the FVP truncates long cmd strings.
+    # Alias generated input files to compact names in the same directory.
+    aliased_input_paths = []
+    for idx, input_path in enumerate(input_paths):
+        short_name = f"i{idx}.bin"
+        short_path = os.path.join(intermediate_path, short_name)
+        if os.path.abspath(input_path) != os.path.abspath(short_path):
+            shutil.copyfile(input_path, short_path)
+        aliased_input_paths.append(short_path)
 
     output_base_name = "out"
 
     cmd_line = "executor_runner -m program.pte -o out"
-    for input_path in input_paths:
-        relative_path = os.path.relpath(
-            Path(input_path).resolve(), start=intermediate_path
-        )
+    for input_path in aliased_input_paths:
+        # Use local basenames to avoid '/var' -> '/private/var' resolve expansion
+        # on macOS, which can produce long '../../..' paths and exceed FVP's
+        # semihosting cmd_line limit.
+        relative_path = Path(input_path).name
         cmd_line += f" -i {relative_path}"
 
     if len(cmd_line) > 256:
@@ -545,7 +573,8 @@ def save_bytes(
     input_name: str,
     quant_param: Optional[QuantizationParams] = None,
 ) -> str:
-    """Serializes and saves 'data' in byte format, possibly quantizing it before.
+    """Serializes and saves 'data' in byte format, possibly quantizing it
+    before.
 
     Parameters:
         path: the directory where to save the data.
@@ -554,6 +583,7 @@ def save_bytes(
         quant_param: the parameters to use for quantization.
     Returns:
         the full file path of the output.
+
     """
     data_np = prep_data_for_save(data, input_name, quant_param)
     file_path = os.path.join(path, input_name + ".bin")
@@ -564,16 +594,89 @@ def save_bytes(
     return file_path
 
 
-def _run_cmd(cmd: List[str], check=True) -> subprocess.CompletedProcess[bytes]:
+def _prepend_env_path(existing: str | None, value: str) -> str:
+    if not existing:
+        return value
+
+    parts = [part for part in existing.split(os.path.pathsep) if part]
+    if value in parts:
+        return existing
+    return os.path.pathsep.join([value, *parts])
+
+
+def _find_local_vulkan_sdk_root() -> Path | None:
+    repo_root = Path(__file__).resolve().parents[3]
+    sdk_base_dir = repo_root / "examples/arm/arm-scratch/vulkan_sdk"
+    if not sdk_base_dir.is_dir():
+        return None
+
+    if sys.platform == "darwin":
+        candidates = sorted(
+            path for path in sdk_base_dir.glob("*/macOS") if path.is_dir()
+        )
+    else:
+        arch = os.uname().machine
+        arch_aliases = [arch]
+        if arch == "arm64":
+            arch_aliases.append("aarch64")
+        candidates = sorted(
+            path
+            for alias in arch_aliases
+            for path in sdk_base_dir.glob(f"*/{alias}")
+            if path.is_dir()
+        )
+
+    if not candidates:
+        return None
+    return candidates[-1]
+
+
+def _get_vkml_runtime_env() -> dict[str, str]:
+    """Return an environment with the Vulkan runtime variables needed for
+    VKML.
     """
-    Run a command and check for errors.
+    env = os.environ.copy()
+    sdk_root = _find_local_vulkan_sdk_root()
+    if sdk_root is None:
+        return env
+
+    env["VULKAN_SDK"] = str(sdk_root)
+    env["PATH"] = _prepend_env_path(env.get("PATH"), str(sdk_root / "bin"))
+
+    if sys.platform == "darwin":
+        env["DYLD_LIBRARY_PATH"] = _prepend_env_path(
+            env.get("DYLD_LIBRARY_PATH"), str(sdk_root / "lib")
+        )
+        moltenvk_icd = sdk_root / "share/vulkan/icd.d/MoltenVK_icd.json"
+        if moltenvk_icd.is_file():
+            env["VK_DRIVER_FILES"] = _prepend_env_path(
+                env.get("VK_DRIVER_FILES"), str(moltenvk_icd)
+            )
+        else:
+            logger.debug(
+                "MoltenVK ICD file not found at %s; leaving VK_DRIVER_FILES unset.",
+                moltenvk_icd,
+            )
+    else:
+        env["LD_LIBRARY_PATH"] = _prepend_env_path(
+            env.get("LD_LIBRARY_PATH"), str(sdk_root / "lib")
+        )
+
+    return env
+
+
+def _run_cmd(
+    cmd: List[str], check=True, env: dict[str, str] | None = None
+) -> subprocess.CompletedProcess[bytes]:
+    """Run a command and check for errors.
 
     Args:
     cmd (List[str]): The command to run as a list.
+
     """
     try:
         result = subprocess.run(  # nosec B603 - cmd constructed from trusted inputs
-            cmd, check=check, capture_output=True
+            cmd, check=check, capture_output=True, env=env
         )
         return result
     except subprocess.CalledProcessError as e:
@@ -583,10 +686,45 @@ def _run_cmd(cmd: List[str], check=True) -> subprocess.CompletedProcess[bytes]:
         )
 
 
-def dbg_tosa_fb_to_json(tosa_fb: bytes) -> Dict:
+# Name of an optional resource containing the `flatc` executable.
+_FLATC_RESOURCE_NAME: str = "flatbuffers-flatc"
+
+
+def _run_flatc(args: List[str]) -> None:
+    """Runs the `flatc` command with the provided args.
+
+    If a resource matching _FLATC_RESOURCE_NAME exists, uses that executable.
+    Otherwise, expects the `flatc` tool to be available on the system path.
+
     """
-    This function is used to dump the TOSA flatbuffer to a human readable
-    format, using flatc. It is used for debugging purposes.
+    flatc_resource = _resources.files(arm_test_package).joinpath(_FLATC_RESOURCE_NAME)
+    if flatc_resource.is_file():
+        # Use the provided flatc binary from resources.
+        with _resources.as_file(flatc_resource) as flatc_path:
+            subprocess.run(  # nosec B603 - cmd constructed from trusted inputs
+                [str(flatc_path)] + args, check=True
+            )
+    else:
+        # Expect the `flatc` tool to be on the system path or set as an env var.
+        flatc_executable: str | None = os.getenv("FLATC_EXECUTABLE")
+        if not flatc_executable:
+            flatc_executable = shutil.which("flatc")
+        if not flatc_executable:
+            raise RuntimeError(
+                "flatc not found. Either add it to PATH, set FLATC_EXECUTABLE env var, "
+                "or ensure the flatbuffers-flatc resource is available."
+            )
+        subprocess.run(  # nosec B603 - cmd constructed from trusted inputs
+            [flatc_executable] + args, check=True
+        )
+
+
+def dbg_tosa_fb_to_json(tosa_fb: bytes) -> Dict:
+    """This function is used to dump the TOSA flatbuffer to a human readable
+    format, using flatc.
+
+    It is used for debugging purposes.
+
     """
 
     tmp = tempfile.mkdtemp()
@@ -598,21 +736,19 @@ def dbg_tosa_fb_to_json(tosa_fb: bytes) -> Dict:
     major = version._Major()
     minor = version._Minor()
     patch = version._Patch()
-    if not ((major == 1 and minor == 0)):
+    if not ((major == 1 and minor <= 1)):
         raise RuntimeError(
             f"Unsupported version in TOSA flatbuffer: version={major}.{minor}.{patch}"
         )
 
-    arm_backend_path = os.path.realpath(os.path.dirname(__file__) + "/..")
-    tosa_schema_file = os.path.join(
-        arm_backend_path, f"tosa/schemas/tosa_{major}.{minor}.fbs"
-    )
-    assert os.path.exists(
-        tosa_schema_file
-    ), f"tosa_schema_file: {tosa_schema_file} does not exist"
-    assert shutil.which("flatc") is not None
-    cmd_flatc = [
-        "flatc",
+    # Write schema file to temp directory using importlib.resources
+    tosa_schema_file = os.path.join(tmp, f"tosa_{major}.{minor}.fbs")
+    with open(tosa_schema_file, "wb") as schema_file:
+        schema_file.write(
+            _resources.read_binary(tosa_schemas_package, f"tosa_{major}.{minor}.fbs")
+        )
+
+    flatc_args = [
         "--json",
         "--strict-json",
         "-o",
@@ -623,7 +759,7 @@ def dbg_tosa_fb_to_json(tosa_fb: bytes) -> Dict:
         "--",
         tosa_input_file,
     ]
-    _run_cmd(cmd_flatc)
+    _run_flatc(flatc_args)
     with open(os.path.join(tmp, "output.json"), "r") as f:
         json_out = json.load(f)
 
@@ -685,7 +821,7 @@ def model_converter_installed() -> bool:
         return False
 
     try:
-        _run_cmd([model_converter, "--version"], check=True)
+        _run_cmd([model_converter, "--version"], check=True, env=model_converter_env())
     except Exception:
         return False
 

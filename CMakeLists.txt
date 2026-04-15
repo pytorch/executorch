@@ -1,6 +1,6 @@
 # Copyright (c) Meta Platforms, Inc. and affiliates.
 # All rights reserved.
-# Copyright 2024-2025 Arm Limited and/or its affiliates.
+# Copyright 2024-2026 Arm Limited and/or its affiliates.
 #
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
@@ -45,12 +45,58 @@
 # ~~~
 #
 
-# TODO Lower to 3.24 when XNNPACK dependency is updated to include
-# https://github.com/google/XNNPACK/commit/c690daa67f883e1b627aadf7684c06797e9a0684
-cmake_minimum_required(VERSION 3.29)
+cmake_minimum_required(VERSION 3.24)
 project(executorch)
 
 set(EXECUTORCH_ROOT ${CMAKE_CURRENT_SOURCE_DIR})
+
+# Hexagon toolchain with release build complains about code in third party
+# libraries.
+if("${CMAKE_SYSTEM_PROCESSOR}" MATCHES "Hexagon" AND "${CMAKE_BUILD_TYPE}"
+                                                     STREQUAL "Release"
+)
+  add_compile_options(
+    -Wno-error=format -Wno-error=implicit-int-conversion
+    -Wno-error=unused-variable -Wno-error=unused-function
+  )
+endif()
+
+# --- ExecuTorch Version ---
+# Parse version from version.txt (single source of truth)
+file(READ "${EXECUTORCH_ROOT}/version.txt" ET_VERSION_STRING)
+string(STRIP "${ET_VERSION_STRING}" ET_VERSION_STRING)
+
+# Extract major.minor.patch (handles formats like "1.2.0a0")
+string(REGEX MATCH "^([0-9]+)\\.([0-9]+)\\.([0-9]+)" ET_VERSION_MATCH
+             "${ET_VERSION_STRING}"
+)
+set(ET_VERSION_MAJOR "${CMAKE_MATCH_1}")
+set(ET_VERSION_MINOR "${CMAKE_MATCH_2}")
+set(ET_VERSION_PATCH "${CMAKE_MATCH_3}")
+
+# Validate that version components were successfully extracted
+if("${ET_VERSION_MAJOR}" STREQUAL ""
+   OR "${ET_VERSION_MINOR}" STREQUAL ""
+   OR "${ET_VERSION_PATCH}" STREQUAL ""
+)
+  message(
+    FATAL_ERROR
+      "Failed to parse version from ${EXECUTORCH_ROOT}/version.txt. "
+      "Expected format: MAJOR.MINOR.PATCH (e.g., '1.2.0' or '1.2.0a0'), "
+      "but got: '${ET_VERSION_STRING}'"
+  )
+endif()
+
+message(
+  STATUS
+    "ExecuTorch version: ${ET_VERSION_MAJOR}.${ET_VERSION_MINOR}.${ET_VERSION_PATCH}"
+)
+
+# Generate version.h from template
+configure_file(
+  "${EXECUTORCH_ROOT}/runtime/core/version.h.in"
+  "${CMAKE_CURRENT_BINARY_DIR}/include/executorch/runtime/core/version.h" @ONLY
+)
 
 include(${PROJECT_SOURCE_DIR}/tools/cmake/common/preset.cmake)
 include(${PROJECT_SOURCE_DIR}/tools/cmake/Codegen.cmake)
@@ -73,6 +119,34 @@ if(NOT CMAKE_BUILD_TYPE)
   set(CMAKE_BUILD_TYPE Debug)
 endif()
 announce_configured_options(CMAKE_BUILD_TYPE)
+
+# Sanitizer support (ASAN + UBSAN)
+if(EXECUTORCH_USE_SANITIZER)
+  if(MSVC)
+    message(WARNING "Sanitizers are not fully supported on MSVC, skipping")
+  else()
+    set(EXECUTORCH_SANITIZER_FLAGS
+        "-fsanitize=address,undefined -fno-omit-frame-pointer"
+    )
+    # Suppress deprecation warnings on macOS (third-party code like flatcc uses
+    # deprecated sprintf)
+    if(APPLE)
+      set(EXECUTORCH_SANITIZER_FLAGS
+          "${EXECUTORCH_SANITIZER_FLAGS} -Wno-deprecated-declarations"
+      )
+    endif()
+    set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} ${EXECUTORCH_SANITIZER_FLAGS}")
+    set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} ${EXECUTORCH_SANITIZER_FLAGS}")
+    set(CMAKE_EXE_LINKER_FLAGS
+        "${CMAKE_EXE_LINKER_FLAGS} ${EXECUTORCH_SANITIZER_FLAGS}"
+    )
+    set(CMAKE_SHARED_LINKER_FLAGS
+        "${CMAKE_SHARED_LINKER_FLAGS} ${EXECUTORCH_SANITIZER_FLAGS}"
+    )
+    message(STATUS "Sanitizers enabled: address, undefined")
+  endif()
+endif()
+announce_configured_options(EXECUTORCH_USE_SANITIZER)
 
 if(NOT PYTHON_EXECUTABLE)
   resolve_python_executable()
@@ -123,6 +197,10 @@ if(EXECUTORCH_ENABLE_BUNDLE_IO)
   add_definitions(-DET_BUNDLE_IO_ENABLED)
 endif()
 
+if(EXECUTORCH_BUILD_CUDA)
+  add_definitions(-DCUDA_AVAILABLE=1)
+endif()
+
 # -ffunction-sections -fdata-sections: breaks function and data into sections so
 # they can be properly gc'd. -s: strip symbol.
 if(WIN32)
@@ -153,6 +231,23 @@ else()
 endif()
 
 add_subdirectory(third-party)
+
+# Size-optimized builds disable exceptions, RTTI, and unwind tables.
+# ExecuTorch's runtime uses Result<T>/Error instead of exceptions, so
+# -fno-exceptions is safe. Suppressing .eh_frame via -fno-unwind-tables is safe
+# because exceptions are disabled. Placed after add_subdirectory(third-party) to
+# avoid leaking into third-party configure checks (e.g. gflags).
+if(EXECUTORCH_OPTIMIZE_SIZE
+   AND NOT WIN32
+   AND NOT MSVC
+)
+  set(CMAKE_CXX_FLAGS_RELEASE
+      "${CMAKE_CXX_FLAGS_RELEASE} -fno-exceptions -fno-rtti -fno-asynchronous-unwind-tables -fno-unwind-tables"
+  )
+  set(CMAKE_C_FLAGS_RELEASE
+      "${CMAKE_C_FLAGS_RELEASE} -fno-asynchronous-unwind-tables -fno-unwind-tables"
+  )
+endif()
 
 if(NOT DEFINED FXDIV_SOURCE_DIR)
   set(ORIGINAL_CMAKE_POSITION_INDEPENDENT_CODE_FLAG
@@ -278,10 +373,16 @@ if(EXECUTORCH_BUILD_TESTS)
 endif()
 
 # TODO(dbort): Fix these warnings and remove this flag.
-set(_common_compile_options
-    $<$<CXX_COMPILER_ID:MSVC>:/wd4996>
-    $<$<NOT:$<CXX_COMPILER_ID:MSVC>>:-Wno-deprecated-declarations -fPIC>
+list(APPEND _common_compile_options $<$<CXX_COMPILER_ID:MSVC>:/wd4996>
+     $<$<NOT:$<CXX_COMPILER_ID:MSVC>>:-Wno-deprecated-declarations>
 )
+# Set default CMAKE_POSITION_INDEPENDENT_CODE behavior if ON or not set
+# (default) (and not for MSVC compiler)
+if(NOT DEFINED CMAKE_POSITION_INDEPENDENT_CODE
+   OR CMAKE_POSITION_INDEPENDENT_CODE
+)
+  list(APPEND _common_compile_options $<$<NOT:$<CXX_COMPILER_ID:MSVC>>:-fPIC>)
+endif()
 
 # Let files say "include <executorch/path/to/header.h>".
 # TODO(#6475): This requires/assumes that the repo lives in a directory named
@@ -300,6 +401,7 @@ endif()
 set(_common_include_directories
     $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/..>
     $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/runtime/core/portable_type/c10>
+    $<BUILD_INTERFACE:${CMAKE_CURRENT_BINARY_DIR}/include>
     $<INSTALL_INTERFACE:${CMAKE_INSTALL_INCLUDEDIR}>
     $<INSTALL_INTERFACE:${CMAKE_INSTALL_INCLUDEDIR}/executorch/runtime/core/portable_type/c10>
 )
@@ -403,6 +505,9 @@ target_include_directories(
 target_compile_definitions(
   executorch_core PUBLIC C10_USING_CUSTOM_GENERATED_MACROS
 )
+if(NOT EXECUTORCH_ENABLE_LOGGING)
+  target_compile_definitions(executorch_core PUBLIC ET_LOG_ENABLED=0)
+endif()
 target_compile_options(executorch_core PUBLIC ${_common_compile_options})
 if(MAX_KERNEL_NUM)
   target_compile_definitions(
@@ -451,6 +556,9 @@ add_library(executorch ${_executorch__srcs})
 target_link_libraries(executorch PRIVATE executorch_core)
 target_include_directories(executorch PUBLIC ${_common_include_directories})
 target_compile_definitions(executorch PUBLIC C10_USING_CUSTOM_GENERATED_MACROS)
+if(NOT EXECUTORCH_ENABLE_LOGGING)
+  target_compile_definitions(executorch PUBLIC ET_LOG_ENABLED=0)
+endif()
 target_compile_options(executorch PUBLIC ${_common_compile_options})
 executorch_target_link_options_shared_lib(executorch)
 
@@ -468,6 +576,13 @@ if(EXECUTORCH_BUILD_KERNELS_OPTIMIZED)
 endif()
 
 add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/kernels/portable/cpu/util)
+
+# Custom ops AOT needs Torch. Find it at root scope before processing the
+# portable subdirectory so that imported targets (e.g. MKL::MKL) are created at
+# root scope rather than in a child directory scope.
+if(EXECUTORCH_BUILD_KERNELS_CUSTOM_AOT AND EXECUTORCH_BUILD_PORTABLE_OPS)
+  find_package_torch()
+endif()
 
 if(EXECUTORCH_BUILD_PORTABLE_OPS)
   add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/kernels/portable)
@@ -487,6 +602,11 @@ install(
   FILES_MATCHING
   PATTERN "*.h"
 )
+# Install generated version.h
+install(
+  FILES "${CMAKE_CURRENT_BINARY_DIR}/include/executorch/runtime/core/version.h"
+  DESTINATION ${CMAKE_INSTALL_INCLUDEDIR}/executorch/runtime/core
+)
 install(
   DIRECTORY runtime/executor/
   DESTINATION ${CMAKE_INSTALL_INCLUDEDIR}/executorch/runtime/executor
@@ -496,6 +616,12 @@ install(
 install(
   DIRECTORY runtime/kernel/
   DESTINATION ${CMAKE_INSTALL_INCLUDEDIR}/executorch/runtime/kernel
+  FILES_MATCHING
+  PATTERN "*.h"
+)
+install(
+  DIRECTORY runtime/backend/
+  DESTINATION ${CMAKE_INSTALL_INCLUDEDIR}/executorch/runtime/backend
   FILES_MATCHING
   PATTERN "*.h"
 )
@@ -533,8 +659,14 @@ install(FILES tools/cmake/executorch-config.cmake
         DESTINATION ${CMAKE_INSTALL_LIBDIR}/cmake/ExecuTorch
 )
 
-if(EXECUTORCH_BUILD_ARM_BAREMETAL)
+if(EXECUTORCH_BUILD_ARM_BAREMETAL
+   OR EXECUTORCH_BUILD_ARM_ETHOSU_LINUX
+   OR EXECUTORCH_BUILD_VGF
+)
   add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/backends/arm)
+endif()
+
+if(EXECUTORCH_BUILD_ARM_BAREMETAL OR EXECUTORCH_BUILD_ARM_ETHOSU_LINUX)
   list(APPEND _executorch_backends executorch_delegate_ethos_u)
 endif()
 
@@ -547,6 +679,10 @@ if(EXECUTORCH_BUILD_NXP_NEUTRON)
   list(APPEND _executorch_backends executorch_delegate_neutron)
 endif()
 
+if(EXECUTORCH_BUILD_NXP_NEUTRON_RUNNER)
+  add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/examples/nxp/executor_runner)
+endif()
+
 if(EXECUTORCH_BUILD_COREML)
   add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/backends/apple/coreml)
   list(APPEND _executorch_backends coremldelegate)
@@ -555,6 +691,11 @@ endif()
 if(EXECUTORCH_BUILD_MPS)
   add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/backends/apple/mps)
   list(APPEND _executorch_backends mpsdelegate)
+endif()
+
+if(EXECUTORCH_BUILD_MLX)
+  add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/backends/mlx)
+  list(APPEND _executorch_backends mlxdelegate)
 endif()
 
 if(EXECUTORCH_BUILD_NEURON)
@@ -584,7 +725,16 @@ endif()
 
 if(EXECUTORCH_BUILD_CORTEX_M)
   add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/backends/cortex_m)
-  list(APPEND _executorch_backends coretex_m_backend)
+endif()
+
+# If CUDA, Metal, or pybind will need Torch, find it at root scope first so that
+# imported targets (e.g. MKL::MKL) aren't created in child directory scopes and
+# then duplicated when found again at root scope.
+if(EXECUTORCH_BUILD_CUDA
+   OR EXECUTORCH_BUILD_METAL
+   OR EXECUTORCH_BUILD_PYBIND
+)
+  find_package_torch()
 endif()
 
 # Build common AOTI functionality if needed by CUDA or Metal backends
@@ -712,6 +862,9 @@ if(EXECUTORCH_BUILD_KERNELS_TORCHAO)
   set(TORCHAO_ENABLE_ARM_NEON_DOT ON)
   set(TORCHAO_BUILD_KLEIDIAI ON)
 
+  # TorchAO requires find_package(Torch) for include dirs; add its cmake path.
+  add_torch_to_cmake_prefix_path()
+
   # TorchAO kernels look for EXECUTORCH_INCLUDE_DIRS
   if(DEFINED EXECUTORCH_INCLUDE_DIRS)
     message(FATAL_ERROR "EXECUTORCH_INCLUDE_DIRS is already defined")
@@ -805,6 +958,15 @@ if(EXECUTORCH_BUILD_PYBIND)
       torch
   )
 
+  # Build common AOTI functionality if needed by CUDA or Metal backends
+  if(EXECUTORCH_BUILD_CUDA)
+    # CUDA uses SlimTensor-based shims
+    list(APPEND _dep_libs aoti_cuda_backend)
+  elseif(EXECUTORCH_BUILD_METAL)
+    # Metal still uses ETensor-based shims (for now)
+    list(APPEND _dep_libs aoti_common)
+  endif()
+
   # RPATH for _portable_lib.so
   set(_portable_lib_rpath "$ORIGIN/../../../torch/lib")
 
@@ -836,8 +998,16 @@ if(EXECUTORCH_BUILD_PYBIND)
     list(APPEND _dep_libs mpsdelegate)
   endif()
 
+  if(EXECUTORCH_BUILD_MLX)
+    list(APPEND _dep_libs mlxdelegate)
+  endif()
+
   if(EXECUTORCH_BUILD_OPENVINO)
     list(APPEND _dep_libs openvino_backend)
+  endif()
+
+  if(EXECUTORCH_BUILD_CUDA)
+    string(APPEND _portable_lib_rpath ":$ORIGIN/../../backends/cuda")
   endif()
 
   if(EXECUTORCH_BUILD_QNN)
@@ -870,10 +1040,11 @@ if(EXECUTORCH_BUILD_PYBIND)
       -fexceptions>
   )
 
-  # util lib
+  # util lib PyTorch requires C++20, so util must be compiled with C++20.
   add_library(
     util ${CMAKE_CURRENT_SOURCE_DIR}/extension/aten_util/aten_bridge.cpp
   )
+  set_target_properties(util PROPERTIES CXX_STANDARD 20)
   target_include_directories(
     util PUBLIC ${_common_include_directories} ${TORCH_INCLUDE_DIRS}
   )
@@ -885,8 +1056,11 @@ if(EXECUTORCH_BUILD_PYBIND)
   # pybind portable_lib
   pybind11_add_module(portable_lib SHARED extension/pybindings/pybindings.cpp)
   # The actual output file needs a leading underscore so it can coexist with
-  # portable_lib.py in the same python package.
-  set_target_properties(portable_lib PROPERTIES OUTPUT_NAME "_portable_lib")
+  # portable_lib.py in the same python package. PyTorch requires C++20, so
+  # pybindings must be compiled with C++20.
+  set_target_properties(
+    portable_lib PROPERTIES OUTPUT_NAME "_portable_lib" CXX_STANDARD 20
+  )
   target_compile_definitions(
     portable_lib PUBLIC EXECUTORCH_PYTHON_MODULE_NAME=_portable_lib
   )
@@ -916,6 +1090,24 @@ if(EXECUTORCH_BUILD_PYBIND)
     EXPORT ExecuTorchTargets
     LIBRARY DESTINATION executorch/extension/pybindings
   )
+
+  # pybind data_loader module - provides PyDataLoader type for external
+  # pybinding extensions to create custom data loaders
+  pybind11_add_module(
+    data_loader SHARED extension/pybindings/pybindings_data_loader.cpp
+  )
+  target_include_directories(data_loader PRIVATE ${_common_include_directories})
+  target_compile_options(data_loader PUBLIC ${_pybind_compile_options})
+  target_link_libraries(data_loader PRIVATE executorch)
+  install(TARGETS data_loader
+          LIBRARY DESTINATION executorch/extension/pybindings
+  )
+
+  # Copy MLX metallib next to _portable_lib.so for editable installs. MLX uses
+  # dladdr() to find the directory containing the library with MLX code, then
+  # looks for mlx.metallib in that directory. When MLX is statically linked into
+  # _portable_lib.so, we need the metallib colocated with it.
+  executorch_target_copy_mlx_metallib(portable_lib)
 endif()
 
 if(EXECUTORCH_BUILD_WASM)
@@ -963,7 +1155,6 @@ if(EXECUTORCH_BUILD_VULKAN)
 endif()
 
 if(EXECUTORCH_BUILD_VGF)
-  add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/backends/arm)
   list(APPEND _executorch_backends vgf_backend)
 endif()
 
@@ -1095,8 +1286,22 @@ if(EXECUTORCH_BUILD_EXECUTOR_RUNNER)
   if(NOT CMAKE_BUILD_TYPE STREQUAL "Debug")
     target_link_options_gc_sections(executor_runner)
   endif()
-  target_link_libraries(executor_runner ${_executor_runner_libs})
+  target_link_libraries(executor_runner PRIVATE ${_executor_runner_libs})
   target_compile_options(executor_runner PUBLIC ${_common_compile_options})
+  if(EXECUTORCH_BUILD_ARM_ETHOSU_LINUX)
+    target_compile_definitions(
+      executor_runner PRIVATE EXECUTORCH_BUILD_ARM_ETHOSU_LINUX=1
+    )
+    target_link_libraries(
+      executor_runner
+      PRIVATE $<LINK_LIBRARY:WHOLE_ARCHIVE,executorch_delegate_ethos_u>
+    )
+    # Wrap static linking like the delegate_runner to keep images
+    # self-contained.
+    target_link_options(
+      executor_runner PRIVATE -static-libstdc++ -static-libgcc
+    )
+  endif()
 
   # Automatically set when using `emcmake cmake` for Wasm build.
   if(EMSCRIPTEN)

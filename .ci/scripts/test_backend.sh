@@ -46,7 +46,7 @@ if [[ "$FLOW" == *qnn* ]]; then
     export LD_LIBRARY_PATH"=$QNN_X86_LIB_DIR:$QNN_SDK_ROOT/lib/x86_64-linux-clang/:${LD_LIBRARY_PATH:-}"
 
     # TODO Get SDK root from install scripts
-    EXTRA_BUILD_ARGS+=" -DEXECUTORCH_BUILD_QNN=ON -DQNN_SDK_ROOT=$QNN_SDK_ROOT"
+    EXTRA_BUILD_ARGS+=" -DEXECUTORCH_BUILD_QNN=ON -DQNN_SDK_ROOT=$QNN_SDK_ROOT -DEXECUTORCH_BUILD_EXTENSION_TENSOR=ON"
 fi
 
 if [[ "$FLOW" == *vulkan* ]]; then
@@ -64,7 +64,7 @@ if [[ "$FLOW" == *arm* ]]; then
     else
         .ci/scripts/setup-arm-baremetal-tools.sh
     fi
-    source examples/arm/ethos-u-scratch/setup_path.sh
+    source examples/arm/arm-scratch/setup_path.sh
 
     if [[ "$FLOW" == *ethos_u* ]]; then
         # Prepare a test runner binary that can run on the Corstone-3x0 FVPs
@@ -78,6 +78,12 @@ if [[ "$FLOW" == *arm* ]]; then
     fi
 fi
 
+if [[ "$FLOW" == *openvino* ]]; then
+    # Setup OpenVINO environment
+    source .ci/scripts/setup-openvino.sh --nightly
+    EXTRA_BUILD_ARGS+=" -DEXECUTORCH_BUILD_OPENVINO=ON"
+fi
+
 if [[ $IS_MACOS -eq 1 ]]; then
     SETUP_SCRIPT=.ci/scripts/setup-macos.sh
 else
@@ -85,7 +91,10 @@ else
 fi
 CMAKE_ARGS="$EXTRA_BUILD_ARGS" ${CONDA_RUN_CMD} $SETUP_SCRIPT --build-tool cmake --build-mode Release --editable true
 
+GOLDEN_DIR="${ARTIFACT_DIR}/golden-artifacts"
+export GOLDEN_ARTIFACTS_DIR="${GOLDEN_DIR}"
+
 EXIT_CODE=0
-${CONDA_RUN_CMD} pytest -c /dev/nul -n auto backends/test/suite/$SUITE/ -m flow_$FLOW --json-report --json-report-file="$REPORT_FILE" || EXIT_CODE=$?
+${CONDA_RUN_CMD} pytest -c /dev/null -n auto backends/test/suite/$SUITE/ -m flow_$FLOW --json-report --json-report-file="$REPORT_FILE" || EXIT_CODE=$?
 # Generate markdown summary.
 ${CONDA_RUN_CMD} python -m executorch.backends.test.suite.generate_markdown_summary_json "$REPORT_FILE" > ${GITHUB_STEP_SUMMARY:-"step_summary.md"} --exit-code $EXIT_CODE

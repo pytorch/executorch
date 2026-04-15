@@ -1,4 +1,4 @@
-# Copyright (c) 2024-2025 NXP
+# Copyright (c) 2024-2026 NXP
 # All rights reserved.
 #
 # This source code is licensed under the BSD-style license found in the
@@ -8,7 +8,6 @@ import math
 from typing import Callable, Collection, Union
 
 import torch
-
 from torch import nn
 
 
@@ -170,6 +169,55 @@ class LinearModule(torch.nn.Module):
 
     def forward(self, x):
         return self.linear(x)
+
+
+class SliceTensorModule(torch.nn.Module):
+    def __init__(self, dims, starts, ends):
+        super().__init__()
+        self.dims = dims
+        self.starts = starts
+        self.ends = ends
+
+    def do_slice(self, x):
+        slices = [slice(None)] * x.dim()
+        for i, dim in enumerate(self.dims):
+            slices[dim] = slice(self.starts[i], self.ends[i])
+        return x[tuple(slices)]
+
+    def forward(self, x):
+        x = self.do_slice(x)
+
+        return x
+
+
+class HardTanhModule(torch.nn.Module):
+    def __init__(self, min_val, max_val, inplace=True):
+        super().__init__()
+        self.hardtanh = torch.nn.Hardtanh(
+            min_val=min_val, max_val=max_val, inplace=inplace
+        )
+
+    def forward(self, x):
+        return self.hardtanh(x)
+
+
+class SliceTensorConvModule(torch.nn.Module):
+    def __init__(self, dims, starts, ends, in_channels, out_channels):
+        super().__init__()
+        self.conv = Conv2dModule(
+            in_channels=in_channels,
+            out_channels=out_channels,
+            kernel_size=3,
+            stride=1,
+            padding=1,
+        )
+        self.slice = SliceTensorModule(dims, starts, ends)
+
+    def forward(self, x):
+        x = self.conv(x)
+        x = self.slice(x)
+
+        return x
 
 
 class AddmmModule(torch.nn.Module):
@@ -425,6 +473,144 @@ class Conv2dReLUMaxPoolModule(torch.nn.Module):
         return self.pool(x)
 
 
+class BatchNormModule(torch.nn.Module):
+    def __init__(
+        self, input_rank: int, num_features: int, affine: bool = True, eps: float = 1e-5
+    ):
+        super().__init__()
+        match input_rank - 2:
+            case 0 | 1:
+                self.batch_norm = nn.BatchNorm1d(num_features, eps, affine=affine)
+            case 2:
+                self.batch_norm = nn.BatchNorm2d(num_features, eps, affine=affine)
+            case 3:
+                self.batch_norm = nn.BatchNorm3d(num_features, eps, affine=affine)
+            case _:
+                raise ValueError(f"Unsupported rank {input_rank}")
+        self.eval()
+
+    def forward(self, x):
+        return self.batch_norm(x)
+
+
+class ConvBatchNormModule(torch.nn.Module):
+    def __init__(
+        self,
+        bias: bool,
+        input_rank: int,
+        num_features: int,
+        transposed_conv: bool = False,
+        bn_affine: bool = True,
+        eps: float = 1e-5,
+    ):
+        super().__init__()
+
+        if (input_rank == 2 or input_rank == 3) and not transposed_conv:
+            self.conv = torch.nn.Conv1d(
+                in_channels=num_features,
+                out_channels=num_features,
+                kernel_size=3,
+                bias=bias,
+            )
+        elif input_rank == 4 and not transposed_conv:
+            self.conv = torch.nn.Conv2d(
+                in_channels=num_features,
+                out_channels=num_features,
+                kernel_size=3,
+                bias=bias,
+            )
+        elif input_rank == 5 and not transposed_conv:
+            self.conv = torch.nn.Conv3d(
+                in_channels=num_features,
+                out_channels=num_features,
+                kernel_size=3,
+                bias=bias,
+            )
+        elif (input_rank == 2 or input_rank == 3) and transposed_conv:
+            self.conv = torch.nn.ConvTranspose1d(
+                in_channels=num_features,
+                out_channels=num_features,
+                kernel_size=3,
+                bias=bias,
+            )
+        elif input_rank == 4 and transposed_conv:
+            self.conv = torch.nn.ConvTranspose2d(
+                in_channels=num_features,
+                out_channels=num_features,
+                kernel_size=3,
+                bias=bias,
+            )
+        elif input_rank == 5 and transposed_conv:
+            self.conv = torch.nn.ConvTranspose3d(
+                in_channels=num_features,
+                out_channels=num_features,
+                kernel_size=3,
+                bias=bias,
+            )
+        else:
+            raise ValueError(f"Unsupported rank {input_rank}")
+
+        self.batch_norm = BatchNormModule(input_rank, num_features, bn_affine, eps)
+        self.eval()
+
+    def forward(self, x):
+        x = self.conv(x)
+        return self.batch_norm(x)
+
+
+class LinearBatchNormModule(torch.nn.Module):
+    def __init__(
+        self,
+        bias: bool,
+        input_rank: int,
+        fc_in_features: int,
+        fc_out_features: int,
+        bn_in_features: int,
+        bn_affine: bool = True,
+        eps: float = 1e-5,
+    ):
+        super().__init__()
+        self.linear = torch.nn.Linear(fc_in_features, fc_out_features, bias=bias)
+
+        if input_rank == 2:
+            bn_in_features = fc_out_features
+
+        self.batch_norm = BatchNormModule(input_rank, bn_in_features, bn_affine, eps)
+        self.eval()
+
+    def forward(self, x):
+        x = self.linear(x)
+        return self.batch_norm(x)
+
+
+class MulTensorModule(torch.nn.Module):
+    def __init__(self):
+        super().__init__()
+
+    @staticmethod
+    def forward(x, y):
+        return x * y
+
+
+class MulTensorConvModule(torch.nn.Module):
+    def __init__(self):
+        super().__init__()
+        self.conv = Conv2dModule(padding=1, stride=1)
+
+    def forward(self, x, y):
+        x = self.conv(x)
+        return x * y
+
+
+class MulTensorOneInputModule(torch.nn.Module):
+    def __init__(self):
+        super().__init__()
+
+    @staticmethod
+    def forward(x):
+        return x * x
+
+
 class AddTensorModule(torch.nn.Module):
     def __init__(self):
         super().__init__()
@@ -571,3 +757,170 @@ class ConvActivationModule(torch.nn.Module):
     def forward(self, x):
         x = self.conv(x)
         return self.activation(x)
+
+
+class GRUModel(nn.Module):
+    def __init__(self, num_layers=1):
+        super().__init__()
+        self.gru = torch.nn.GRU(8, 8, num_layers=num_layers)
+
+    def forward(self, input_):
+        # `input_` has shape [sequence_length, batch_size, input_size] ([8, 1, 8])
+        return self.gru(
+            input_, None
+        )  # The initial hidden is `None`, which will result in a `Zeros` node being added.
+
+
+class SplitWithSize(torch.nn.Module):
+    def __init__(self, split_size, dim):
+        super().__init__()
+        self.split_size = split_size
+        self.dim = dim
+
+    def forward(self, x: torch.Tensor) -> tuple[torch.Tensor]:
+        return torch.split(x, self.split_size, self.dim)
+
+
+class SplitWithSections(torch.nn.Module):
+    def __init__(self, sections, dim):
+        super().__init__()
+        self.sections = sections
+        self.dim = dim
+
+    def forward(self, x: torch.Tensor) -> tuple[torch.Tensor]:
+        return torch.split(x, self.sections, self.dim)
+
+
+class MiniConvNetWithRegressionHead(torch.nn.Module):
+    def __init__(self):
+        super().__init__()
+
+        self.conv1 = Conv2dModule(in_channels=3, out_channels=16, stride=1, padding=1)
+        self.relu = torch.nn.ReLU()
+        self.pool = torch.nn.MaxPool2d(2, 2)
+        self.conv2 = Conv2dModule(in_channels=16, out_channels=32, stride=1, padding=1)
+        self.relu2 = torch.nn.ReLU()
+        self.pool = torch.nn.MaxPool2d(2, 2)
+        self.linear = torch.nn.Linear(32 * 8 * 8, 1)
+
+    def forward(self, x):
+        x = self.conv1(x)
+        x = self.relu(x)
+        x = self.pool(x)
+        x = self.conv2(x)
+        x = self.relu2(x)
+        x = self.pool(x)
+        x = x.flatten()
+        x = self.linear(x)
+        return x
+
+
+class MLP(torch.nn.Module):
+    def __init__(self):
+        super().__init__()
+        self.sequential = torch.nn.Sequential(
+            torch.nn.Linear(1, 10),
+            torch.nn.ReLU(),
+            torch.nn.Linear(10, 10),
+            torch.nn.ReLU(),
+            torch.nn.Linear(10, 1),
+        )
+
+    def forward(self, x):
+        return self.sequential(x)
+
+
+class UnsqueezeAddModel(torch.nn.Module):
+    def __init__(self, dim):
+        super().__init__()
+        self.dim = dim
+
+    def forward(self, x, y):
+        return torch.unsqueeze(x + y, self.dim)
+
+
+class LinearPReLUModule(torch.nn.Module):
+    def __init__(self, in_features, out_features, num_parameters=1):
+        super().__init__()
+
+        self.linear = nn.Linear(in_features=in_features, out_features=out_features)
+        self.prelu = torch.nn.PReLU(num_parameters)
+
+    def forward(self, x):
+        x = self.linear(x)
+        return self.prelu(x)
+
+
+class TwoPartitionPReLUModel(torch.nn.Module):
+    def __init__(self):
+        super().__init__()
+
+        self.prelu = torch.nn.PReLU()
+
+    def forward(self, x, divisor):
+        # partition 1
+        x = self.prelu(x)
+
+        # `div` with non-static divisor is not supported in Neutron
+        x = torch.div(x, divisor)
+
+        # partition 2
+        x = self.prelu(x)
+        return x
+
+
+class SqueezeAddModel(torch.nn.Module):
+    def __init__(self, dim=None):
+        super().__init__()
+        self.dim = dim
+
+    def forward(self, x, y):
+        if self.dim is None:
+            return torch.squeeze(x + y)
+        else:
+            return torch.squeeze(x + y, self.dim)
+
+
+class StaticDivLinearModel(torch.nn.Module):
+    def __init__(self, in_channels=8, out_channels=8, divisor=1):
+        super().__init__()
+        self.linear = torch.nn.Linear(in_channels, out_channels)
+        self.divisor = divisor
+
+    def forward(self, x):
+        x = self.linear(x)
+        return x / self.divisor
+
+
+class NonstaticDivLinearModel(torch.nn.Module):
+    def __init__(self, in_channels=8, out_channels=8):
+        super().__init__()
+        self.linear = torch.nn.Linear(in_channels, out_channels)
+
+    def forward(self, x, divisor):
+        x = self.linear(x)
+        return x / divisor
+
+
+class BatchMatMulModel(torch.nn.Module):
+    def __init__(self):
+        super().__init__()
+
+    def forward(self, x, y):
+        return torch.bmm(x, y)
+
+
+class BatchMatMulConvModel(torch.nn.Module):
+    def __init__(self, in_channels, out_channels):
+        super().__init__()
+        self.conv = Conv1dModule(
+            in_channels=in_channels,
+            out_channels=out_channels,
+            stride=1,
+            padding=1,
+            kernel_size=3,
+        )
+
+    def forward(self, x, y):
+        x = self.conv(x)
+        return torch.bmm(x, y)

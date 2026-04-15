@@ -94,11 +94,12 @@ Runner<T>::Runner(
     const std::string& performance_output_path,
     const float temperature,
     const int eval_mode,
-    const std::string& kv_updater,
+    const bool shared_buffer,
     const int ngram,
     const int window,
     const int gcap,
-    std::unique_ptr<tokenizers::Tokenizer> tokenizer)
+    std::unique_ptr<tokenizers::Tokenizer> tokenizer,
+    std::unique_ptr<executorch::extension::Module> attention_sink_rope_module)
     : module_(std::move(module)),
       ngram_(ngram),
       window_(window),
@@ -108,15 +109,10 @@ Runner<T>::Runner(
       dump_logits_path_(dump_logits_path),
       temperature_(temperature),
       eval_mode_(static_cast<EvalMode>(eval_mode)),
-      tokenizer_(std::move(tokenizer)) {
+      shared_buffer_(shared_buffer),
+      tokenizer_(std::move(tokenizer)),
+      attention_sink_rope_module_(std::move(attention_sink_rope_module)) {
   stats_.reset();
-  if (kv_updater == "SmartMask") {
-    kv_updater_ = KVManagerMode::SMART_MASK;
-  } else if (kv_updater == "ShiftPointer") {
-    kv_updater_ = KVManagerMode::SHIFT_POINTER;
-  } else {
-    ET_CHECK_MSG(false, "kv updater (%s) not found", kv_updater.c_str());
-  }
 
   if (decoder_model_version == "llama2") {
     decoder_model_version_ = DecoderModelVersion::kLlama2;
@@ -124,6 +120,9 @@ Runner<T>::Runner(
     decoder_model_version_ = DecoderModelVersion::kLlama3;
   } else if (decoder_model_version == "gemma") {
     decoder_model_version_ = DecoderModelVersion::kGemma;
+  } else if (decoder_model_version == "gemma2") {
+    decoder_model_version_ = DecoderModelVersion::kGemma2;
+    cache_mode_ = CacheMode::HybridCache;
   } else if (decoder_model_version == "gemma3") {
     decoder_model_version_ = DecoderModelVersion::kGemma3;
     cache_mode_ = CacheMode::HybridCache;
@@ -150,7 +149,6 @@ Runner<T>::Runner(
   ET_LOG(Info, "creating module: model_path=%s", model_path.c_str());
   ET_LOG(Info, "creating runner: tokenizer_path=%s", tokenizer_path_.c_str());
   ET_LOG(Info, "eval mode=%d", eval_mode_);
-  ET_LOG(Info, "kv updater=%s", kv_updater.c_str());
 }
 
 template <typename T>
@@ -169,8 +167,8 @@ Error Runner<T>::load() {
   std::vector<std::string> method_names;
   switch (eval_mode_) {
     case EvalMode::kKVCached:
-      prompt_processor_method_name = "forward";
-      token_generator_method_name = "forward";
+      prompt_processor_method_name = "kv_forward";
+      token_generator_method_name = "kv_forward";
       method_names.emplace_back(token_generator_method_name);
       break;
     case EvalMode::kHybrid:
@@ -209,6 +207,7 @@ Error Runner<T>::load() {
     eos_ids->insert(tokenizer_->encode("<|im_end|>", 0, 0).get()[0]);
   } else if (
       decoder_model_version_ == DecoderModelVersion::kGemma ||
+      decoder_model_version_ == DecoderModelVersion::kGemma2 ||
       decoder_model_version_ == DecoderModelVersion::kGemma3) {
     eos_ids->insert(tokenizer_->encode("<end_of_turn>", 0, 0).get()[0]);
   } else if (decoder_model_version_ == DecoderModelVersion::kCodegen) {
@@ -217,7 +216,6 @@ Error Runner<T>::load() {
     eos_ids->insert(tokenizer_->encode("<|user|>", 0, 0).get()[0]);
   }
 
-  // Try avoid getMetadataHelper as it is time consuming.
   Result<MethodMeta> method_meta =
       module_->method_meta(token_generator_method_name);
 
@@ -235,9 +233,10 @@ Error Runner<T>::load() {
       ET_UNWRAP(module_->get("get_n_layers")).toScalar().to<int64_t>();
 
   ET_CHECK_MSG(num_layers != -1, "Could not retrieve num layers");
-  // k_cache: [1, head_dim, seq_len]
-  int64_t head_dim = method_meta->output_tensor_meta(1)->sizes()[1];
-  int64_t num_heads = (method_meta->num_outputs() - 1) / (num_layers * 2);
+  // k_cache: [1, n_heads, head_dim, seq_len]
+  auto k_cache_shape = method_meta->output_tensor_meta(1)->sizes();
+  int64_t num_heads = k_cache_shape[1];
+  int64_t head_dim = k_cache_shape[2];
   bool use_int64_token = method_meta->input_tensor_meta(0)->scalar_type() ==
       executorch::aten::ScalarType::Long;
 
@@ -275,15 +274,20 @@ Error Runner<T>::load() {
   if (module_->method_names()->count("get_sliding_window") > 0) {
     sliding_window = ET_UNWRAP(module_->get("get_sliding_window")).toInt();
   }
-  kv_manager_ = std::make_unique<KVManager<T>>(
-      kv_updater_,
-      typename KVManager<T>::Metadata{
-          context_len_,
-          head_dim,
-          max_ar_len,
-          max_cache_len,
-          num_heads,
-          num_layers});
+  kv_manager_ = std::make_unique<KVManager<T>>(typename KVManager<T>::Metadata{
+      context_len_,
+      head_dim,
+      max_ar_len,
+      max_cache_len,
+      num_heads,
+      num_layers});
+
+  if (attention_sink_rope_module_ != nullptr) {
+    attention_sink_rope_runner_ = std::make_unique<AttentionSinkRopeRunner>(
+        attention_sink_rope_module_.get());
+    ET_CHECK_OK_OR_RETURN_ERROR(
+        attention_sink_rope_runner_->load(method_names));
+  }
 
   prompt_processor_ = std::make_unique<PromptProcessor<T>>(
       decoder_runner_.get(),
@@ -338,13 +342,12 @@ Error Runner<T>::load() {
   }
 
   buffer_manager_ = std::make_unique<ClientMem>();
-  if (kv_updater_ == KVManagerMode::SMART_MASK) {
+  if (shared_buffer_) {
     buffer_manager_ = std::make_unique<RpcMem>(
         kv_manager_->total_cache_size_in_bytes(),
         prompt_processor_->total_prompt_processor_io_size_in_bytes(),
         token_generator_->total_token_generator_io_size_in_bytes());
   }
-
   ET_LOG(Info, "creating io_memory");
   // prepare io
   kv_manager_->init_cache(buffer_manager_.get(), prompt_processor_ar_len);
@@ -382,10 +385,10 @@ Error Runner<T>::generate_from_prompt_or_file(
   stats_.inference_start_ms = time_in_ms();
 
   int32_t seq_len = config.seq_len;
-  if (seq_len > context_len_) {
+  if (attention_sink_rope_runner_ == nullptr && seq_len > context_len_) {
     ET_LOG(
         Info,
-        "Warning: Requested seq_len (%d) exceeds compiled max_seq_len (%d). Clamping to %d.",
+        "Warning: Requested seq_len (%d) exceeds compiled max_context_len (%d) without attention sink. Clamping to %d.",
         seq_len,
         context_len_,
         context_len_);
@@ -393,7 +396,7 @@ Error Runner<T>::generate_from_prompt_or_file(
   } else if (seq_len <= 0) {
     ET_LOG(
         Info,
-        "Warning: Invalid seq_len (%d). Using compiled max_seq_len (%d).",
+        "Warning: Invalid seq_len (%d). Using compiled max_context_len (%d).",
         seq_len,
         context_len_);
     seq_len = context_len_;
@@ -439,8 +442,8 @@ Error Runner<T>::generate_from_prompt_or_file(
     token_callback(prompt);
   }
   bool dump_logits = dump_logits_path_.empty() ? false : true;
-  auto prefill_res =
-      prompt_processor_->prefill(prompt_tokens, cur_pos_, dump_logits);
+  auto prefill_res = prompt_processor_->prefill(
+      prompt_tokens, cur_pos_, dump_logits, attention_sink_rope_runner_.get());
   ET_CHECK_OK_OR_RETURN_ERROR(prefill_res.error());
   uint64_t cur_token = prefill_res.get();
   cur_pos_ += num_prompt_tokens;
@@ -461,7 +464,12 @@ Error Runner<T>::generate_from_prompt_or_file(
   // start the main loop
   prompt_tokens.push_back(cur_token);
   int64_t num_generated_tokens = ET_UNWRAP(token_generator_->generate(
-      prompt_tokens, cur_pos_, seq_len, token_callback, dump_logits));
+      prompt_tokens,
+      cur_pos_,
+      seq_len,
+      token_callback,
+      dump_logits,
+      attention_sink_rope_runner_.get()));
   stats_.inference_end_ms = time_in_ms();
   ET_LOG(
       Info,

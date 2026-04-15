@@ -1,3 +1,8 @@
+# Copyright 2025 NXP
+#
+# This source code is licensed under the BSD-style license found in the
+# LICENSE file in the root directory of this source tree.
+
 import numpy as np
 import pytest
 import torch
@@ -16,6 +21,7 @@ from executorch.backends.nxp.tests.models import (
     AdaptiveAvgPool2dConvModule,
 )
 from torch.export import ExportedProgram
+from executorch.backends.nxp.tests.use_qat import *  # noqa F403
 
 
 @pytest.fixture(autouse=True)
@@ -40,7 +46,7 @@ def reseed_model_per_test_run():
     ],
 )
 def test_adaptive_avg_pool_2d_delegated_quant_conversion(
-    mocker, input_shape, output_size
+    mocker, input_shape, output_size, use_qat
 ):
     model = AdaptiveAvgPool2dConvModule(output_size)
 
@@ -48,7 +54,7 @@ def test_adaptive_avg_pool_2d_delegated_quant_conversion(
 
     # Run conversion
     edge_program = to_quantized_edge_program(
-        model, input_shape, use_neutron_for_format_conversion=False
+        model, input_shape, use_qat=use_qat, use_neutron_for_format_conversion=False
     ).exported_program()
     nodes = [str(node) for node in edge_program.graph.nodes]
 
@@ -86,7 +92,7 @@ def test_adaptive_avg_pool_2d_delegated_quant_conversion(
     ],
 )
 def test_adaptive_avg_pool_2d_non_delegated_quant_conversion(
-    mocker, input_shape, output_size
+    mocker, input_shape, output_size, use_qat
 ):
     model = AdaptiveAvgPool2dConvModule(output_size)
 
@@ -94,7 +100,7 @@ def test_adaptive_avg_pool_2d_non_delegated_quant_conversion(
 
     # Run conversion
     edge_program = to_quantized_edge_program(
-        model, input_shape, use_neutron_for_format_conversion=False
+        model, input_shape, use_qat=use_qat, use_neutron_for_format_conversion=False
     ).exported_program()
     nodes = list(edge_program.graph.nodes)
 
@@ -119,7 +125,7 @@ def test_adaptive_avg_pool_2d_non_delegated_quant_conversion(
     )
 
 
-def test_adaptive_avg_pool_2d_mean_dim_quant_conversion(mocker):
+def test_adaptive_avg_pool_2d_mean_dim_quant_conversion(mocker, use_qat):
     input_shape = (1, 4, 16, 16)
     model = AdaptiveAvgPool2dConvMeanDimModule()
 
@@ -127,7 +133,7 @@ def test_adaptive_avg_pool_2d_mean_dim_quant_conversion(mocker):
 
     # Run conversion
     _ = to_quantized_edge_program(
-        model, input_shape, use_neutron_for_format_conversion=False
+        model, input_shape, use_qat=use_qat, use_neutron_for_format_conversion=False
     )
 
     # Capture generated model

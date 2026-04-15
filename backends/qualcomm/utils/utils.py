@@ -8,6 +8,7 @@ import os
 import re
 import warnings
 from collections import defaultdict, OrderedDict
+from enum import Enum
 from typing import Any, Callable, Dict, List, Optional, Tuple, Union
 
 import executorch.backends.qualcomm.python.PyQnnManagerAdaptor as PyQnnManagerAdaptor
@@ -31,13 +32,20 @@ from executorch.backends.qualcomm.partition.qnn_partitioner import (
 from executorch.backends.qualcomm.serialization.qc_schema import (
     _soc_info_table,
     HtpArch,
+    LpaiHardwareVersion,
     QcomChipset,
     QnnExecuTorchBackendOptions,
     QnnExecuTorchBackendType,
+    QnnExecuTorchGpuBackendOptions,
+    QnnExecuTorchGpuPrecision,
     QnnExecuTorchHtpBackendOptions,
     QnnExecuTorchHtpPerformanceMode,
     QnnExecuTorchHtpPrecision,
     QnnExecuTorchLogLevel,
+    QnnExecuTorchLpaiBackendOptions,
+    QnnExecuTorchLpaiClientPerf,
+    QnnExecuTorchLpaiCoreAffinity,
+    QnnExecuTorchLpaiTargetEnv,
     QnnExecuTorchOpPackageOptions,
     QnnExecuTorchOptions,
     QnnExecuTorchProfileLevel,
@@ -50,6 +58,7 @@ from executorch.backends.qualcomm.utils.constants import (
     QCOM_QNN_COMPILE_SPEC,
     QCOM_QUANTIZED_IO,
 )
+from executorch.backends.qualcomm.utils.qnn_manager_lifecycle import QnnManagerContext
 
 from executorch.exir import EdgeCompileConfig, ExirExportedProgram, to_edge
 from executorch.exir.backend.compile_spec_schema import CompileSpec
@@ -130,10 +139,6 @@ class _AnnotationSkipper(OperatorSupportBase):
         return True
 
 
-def qnn_capture_config():
-    return exir.CaptureConfig(enable_aot=True)
-
-
 def qnn_edge_config() -> exir.EdgeCompileConfig:
     return exir.EdgeCompileConfig(
         _check_ir_validity=False,
@@ -158,7 +163,7 @@ def convert_linear_to_conv2d(module: torch.nn.Module):
 
         def forward(self, x):
             rank = x.dim()
-            x = x.unsqueeze(-1) if rank == 3 else x.reshape(1, *x.shape, 1)
+            x = x.reshape(*x.shape, 1) if rank == 3 else x.reshape(1, *x.shape, 1)
             x = torch.transpose(x, 1, 2)
             res = self.conv(x)
             res = torch.transpose(res, 1, 2)
@@ -185,8 +190,9 @@ def convert_linear_to_conv2d(module: torch.nn.Module):
 def dump_context_from_pte(pte_path) -> List[str]:
     """
     Dump compiled binaries under the same directory of pte_path.
-    For partitioned graph, there will be multiple files with names f"{graph_name}_{index}".
-    Where 'graph_name' comes from the compiler_specs and 'index' represents the execution order.
+    For partitioned graph, there will be multiple files with names f"{method_name}_{index}".
+    'method_name' refers to the name of a method in the nn.Module that was traced to
+    generate this program, while 'index' indicates the order of execution.
 
     Args:
         pte_path (str): The path of generated pte.
@@ -201,14 +207,6 @@ def dump_context_from_pte(pte_path) -> List[str]:
     program = deserialize_pte_binary(program_data).program
 
     ctx_path = os.path.dirname(pte_path)
-    dummy_compiler_specs = generate_qnn_executorch_compiler_spec(
-        soc_model=QcomChipset.SM8650,
-        backend_options=generate_htp_compiler_spec(use_fp16=False),
-    )
-    qnn_mgr = PyQnnManagerAdaptor.QnnManager(
-        generate_qnn_executorch_option(dummy_compiler_specs)
-    )
-    qnn_mgr.Init()
     dumpfiles = []
     for execution_plan in program.execution_plan:
         for i, delegate in enumerate(execution_plan.delegates):
@@ -216,7 +214,7 @@ def dump_context_from_pte(pte_path) -> List[str]:
                 processed_bytes = program.backend_delegate_data[
                     delegate.processed.index
                 ].data
-                binary = qnn_mgr.StripProtocol(processed_bytes)
+                binary = PyQnnManagerAdaptor.StripProtocol(processed_bytes)
                 file_extension = ".bin"
                 if len(binary) == 0:
                     binary = processed_bytes
@@ -247,7 +245,12 @@ def update_spill_fill_size(
                     qnn_mgr = PyQnnManagerAdaptor.QnnManager(
                         m.compile_specs[0].value, m.processed_bytes
                     )
-                    assert qnn_mgr.Init().value == 0, "failed to load context binary"
+                    assert (
+                        qnn_mgr.InitBackend().value == 0
+                    ), "failed to initialize backend"
+                    assert (
+                        qnn_mgr.InitContextCache().value == 0
+                    ), "failed to init context cache"
                     max_sf_buf_size = max(
                         max_sf_buf_size, qnn_mgr.GetSpillFillBufferSize()
                     )
@@ -259,7 +262,8 @@ def update_spill_fill_size(
             qnn_mgr = PyQnnManagerAdaptor.QnnManager(
                 module.compile_specs[0].value, module.processed_bytes
             )
-            assert qnn_mgr.Init().value == 0, "failed to load context binary"
+            assert qnn_mgr.InitBackend().value == 0, "failed to initialize backend"
+            assert qnn_mgr.InitContextCache().value == 0, "failed to init context cache"
             spill_fill_size = qnn_mgr.GetSpillFillBufferSize()
             qnn_mgr.Destroy()
             return spill_fill_size, {
@@ -439,18 +443,24 @@ def to_edge_transform_and_lower_to_qnn(
         aten_programs[graph_name] = QnnPassManager().transform_for_export_pipeline(
             ep, convert_linear_to_conv2d=convert_linear_to_conv2d
         )
+        option = generate_qnn_executorch_option(compiler_specs[graph_name])
+        python_options = flatbuffer_to_option(option)
+        backend_type = python_options.backend_options.backend_type
         transform_passes[graph_name] = QnnPassManager().get_to_edge_transform_passes(
-            ep, passes_job=passes_job[graph_name], dep_table=dep_table[graph_name]
+            ep,
+            passes_job=passes_job[graph_name],
+            dep_table=dep_table[graph_name],
+            backend_type=backend_type,
         )
-
-    return to_edge_transform_and_lower(
-        aten_programs,
-        transform_passes=transform_passes,
-        partitioner=qnn_partitioners,
-        constant_methods=constant_methods,
-        compile_config=qnn_edge_config(),
-        generate_etrecord=generate_etrecord,
-    )
+    with QnnManagerContext(compiler_specs):
+        return to_edge_transform_and_lower(
+            aten_programs,
+            transform_passes=transform_passes,
+            partitioner=qnn_partitioners,
+            constant_methods=constant_methods,
+            compile_config=qnn_edge_config(),
+            generate_etrecord=generate_etrecord,
+        )
 
 
 def capture_program(
@@ -928,10 +938,65 @@ def from_context_binary(  # noqa: C901
     return bundle_prog
 
 
-def draw_graph(title, path, graph_module: torch.fx.GraphModule):
+class DrawFormat(Enum):
+    SVG = 1
+    PYDOT = 2
+
+
+def draw_graph(title, path, graph_module: torch.fx.GraphModule, format=DrawFormat.SVG):
     graph = passes.graph_drawer.FxGraphDrawer(graph_module, title)
-    with open(f"{path}/{title}.svg", "wb") as f:
-        f.write(graph.get_dot_graph().create_svg())
+    warnings.warn(
+        "For large models such as LLM, it is strongly recommended to use PYDOT format.",
+        stacklevel=1,
+    )
+    if format == DrawFormat.SVG:
+        with open(f"{path}/{title}.svg", "wb") as f:
+            f.write(graph.get_dot_graph().create_svg())
+    elif format == DrawFormat.PYDOT:
+        graph.get_dot_graph().write_raw(f"{path}/{title}.dot")
+    else:
+        raise RuntimeError(f"Unknown format {format}.")
+
+
+def generate_gpu_compiler_spec(
+    precision: QnnExecuTorchGpuPrecision = QnnExecuTorchGpuPrecision.kGpuPrecisionUserProvided,
+    use_memory_optimizations: bool = True,
+    use_node_optimizations: bool = True,
+    use_queue_recording: bool = True,
+    use_weight_sharing: bool = False,
+) -> QnnExecuTorchBackendOptions:
+    """
+    Helper function generating backend options for QNN HTP
+
+    Args:
+        precision:
+            kGpuPrecisionFp32 - Sets the precision mode to floating point 32-bit (FP32).
+            kGpuPrecisionFp16 - Sets the precision mode to floating point 16-bit (FP16).
+            kGpuPrecisionHybrid - Sets the precision mode to FP16 for storage and FP32 for calculations.
+            kGpuPrecisionUserProvided - Uses the tensor data type provided by the user.
+        use_memory_optimizations: If true, backend will share NATIVE tensor memory
+            based upon analysis of the network topology.
+        use_node_optimizations: If true, backend will fuse compatible operations into
+            one operation to improve performance.
+        use_queue_recording: If true, backend will use queue recording to improve performance.
+        use_weight_sharing: Used with multiple_graphs, where model size will be
+            reduced when operations have the same weights across multiple graphs.
+
+    Returns:
+        QnnExecuTorchGpuBackendOptions: backend options for QNN GPU.
+    """
+    # TODO: enable performance hint mechanism in runtime and make this as an option
+    gpu_options = QnnExecuTorchGpuBackendOptions()
+    gpu_options.precision = precision
+    gpu_options.use_memory_optimizations = use_memory_optimizations
+    gpu_options.use_node_optimizations = use_node_optimizations
+    gpu_options.use_queue_recording = use_queue_recording
+    gpu_options.use_weight_sharing = use_weight_sharing
+
+    return QnnExecuTorchBackendOptions(
+        backend_type=QnnExecuTorchBackendType.kGpuBackend,
+        gpu_options=gpu_options,
+    )
 
 
 def generate_htp_compiler_spec(
@@ -939,6 +1004,8 @@ def generate_htp_compiler_spec(
     use_dlbc: bool = False,
     use_multi_contexts: bool = False,
     use_weight_sharing: bool = False,
+    use_slc_allocator: bool = False,
+    htp_performance_mode: QnnExecuTorchHtpPerformanceMode = QnnExecuTorchHtpPerformanceMode.kHtpBurst,
 ) -> QnnExecuTorchBackendOptions:
     """
     Helper function generating backend options for QNN HTP
@@ -954,6 +1021,9 @@ def generate_htp_compiler_spec(
             could be re-used across all the splits.
         use_weight_sharing: Used with multiple_graphs, where model size will be
             reduced when operations have the same weights across multiple graphs.
+        use_slc_allocator: Allows user to enable the usage of the System Level Cache Allocator for a given graph.
+            It will help the by reducing overall bandwith on the use case.
+            The feature is only supported by specific SOCs.
 
     Returns:
         QnnExecuTorchHtpBackendOptions: backend options for QNN HTP.
@@ -967,13 +1037,82 @@ def generate_htp_compiler_spec(
     # This actually is not an option which can affect the compiled blob.
     # But we don't have other place to pass this option at execution stage.
     # TODO: enable voting mechanism in runtime and make this as an option
-    htp_options.performance_mode = QnnExecuTorchHtpPerformanceMode.kHtpBurst
+    htp_options.performance_mode = htp_performance_mode
     htp_options.use_multi_contexts = use_multi_contexts
     htp_options.use_weight_sharing = use_weight_sharing
     htp_options.use_dlbc = use_dlbc
+    htp_options.use_slc_allocator = use_slc_allocator
     return QnnExecuTorchBackendOptions(
         backend_type=QnnExecuTorchBackendType.kHtpBackend,
         htp_options=htp_options,
+    )
+
+
+def generate_lpai_compiler_spec(
+    fps: int = 1,
+    ftrt_ratio: int = 10,
+    client_perf_type: QnnExecuTorchLpaiClientPerf = QnnExecuTorchLpaiClientPerf.kRealTime,
+    affinity: QnnExecuTorchLpaiCoreAffinity = QnnExecuTorchLpaiCoreAffinity.kSoft,
+    core_selection: int = 0,
+    target_env: QnnExecuTorchLpaiTargetEnv = QnnExecuTorchLpaiTargetEnv.kArm,
+) -> QnnExecuTorchBackendOptions:
+    """
+    Helper function generating backend options for QNN LPAI
+
+    Args:
+        fps:
+            Specifies how frequently inference must be completed.
+            This sets the overall time budget for each frame, including pre-processing,
+            inference, and post-processing.
+        ftrt_ratio:
+            Determines the hardware configuration to meet the latency requirement for inference.
+            Setting ftrt_ratio = 50 applies a multiplication factor of 5.0 to the base clock frequency,
+            helping the eNPU meet the tighter latency constraint.
+        client_perf_type:
+            kRealtime - Indicates that the model is intended for real-time use cases,
+                where a specific performance threshold must be met.
+                If the required performance cannot be achieved, the finalize function will return an error.
+            kNonRealTime - Refers to models without strict performance requirements.
+                In these cases, LPAI will make a best-effort attempt to accommodate the workload,
+                and finalize will not fail due to performance limitations.
+        affinity:
+            kSoft - Default affinity. Scheduler will assign jobs to requested cores when feasible
+            kHard - Scheduler will honour affinity requested by the client
+        core_selection:
+            A bit mask for core selection. Each bit corresponds to a core, set the bit to use the core
+            Note that all zeros and all ones mean any core can be used for the eAI instance
+        target_env:
+            Specifies the target environment for the LPAI execution
+            kArm - Targeting ARM architecture
+            kX86 - Targeting x86 architecture
+            kAdsp - (WIP) Direcltly execute on the DSP instead of FastRPC communication
+
+        Example for 2 cores:
+        +--------+--------+---------------+-------------------------------------------------------------------------+
+        | bit 1  | bit 0  | affinity      |                 scheduler behavior                                      |
+        +--------+--------+---------------+-------------------------------------------------------------------------+
+        | 0      |      0 |      any      | Default affinity, scheduler will pick any core based on load            |
+        | 1      |      1 |      any      | Same as default affinity                                                |
+        | 0      |      1 |      hard     | All jobs will only be sent to core 0                                    |
+        | 1      |      0 |      hard     | All jobs will only be sent to core 1                                    |
+        | 0      |      1 |      soft     | Scheduler will attempt to send jobs to core 0                           |
+        | 1      |      0 |      soft     | Scheduler will attempt to send jobs to core 1                           |
+        +--------+--------+---------------+-------+-----------------------------------------------------------------+
+
+    Returns:
+        QnnExecuTorchBackendOptions: backend options for QNN LPAI.
+    """
+    lpai_options = QnnExecuTorchLpaiBackendOptions()
+    lpai_options.fps = fps
+    lpai_options.ftrt_ratio = ftrt_ratio
+    lpai_options.client_perf_type = client_perf_type
+    lpai_options.affinity = affinity
+    lpai_options.core_selection = core_selection
+    lpai_options.target_env = target_env
+
+    return QnnExecuTorchBackendOptions(
+        backend_type=QnnExecuTorchBackendType.kLpaiBackend,
+        lpai_options=lpai_options,
     )
 
 
@@ -984,12 +1123,11 @@ def generate_qnn_executorch_compiler_spec(
     saver: bool = False,
     online_prepare: bool = False,
     dump_intermediate_outputs: bool = False,
-    profile: bool = False,
-    optrace: bool = False,
+    profile_level: int = 0,
     shared_buffer: bool = False,
     is_from_context_binary: bool = False,
-    graph_name: str = "forward",
     op_package_options: QnnExecuTorchOpPackageOptions = None,
+    use_mha2sha: bool = False,
 ) -> List[CompileSpec]:
     """
     Helper function generating compiler specs for Qualcomm AI Engine Direct
@@ -1012,15 +1150,14 @@ def generate_qnn_executorch_compiler_spec(
             for debugging purpose.
         dump_intermediate_outputs: If tensor dump is enabled, all intermediate tensors output will be dumped.
             This option exists for debugging accuracy issues
-        profile: Enable profile the performance of per operator.
-            Note that for now only support kProfileDetailed to
-            profile the performance of each operator with cycle unit.
+        profile_level: Enable profiling the performance of per operator.
+            Note that for now only support kProfileDetailed and kProfileOptrace.
         shared_buffer: Enables usage of shared buffer between application
             and backend for graph I/O.
         is_from_context_binary: True if current graph comes from pre-built context binary.
-        graph_name: Assign unique graph name if lowering multiple methods.
         op_package_options: Optional structure to specify op packages
             loaded and used by the backend.
+        use_mha2sha: This experimental parameter is used to decide whether to enable multi-head attention to single-head attention pass, aiming to reduce time consumption in AOT and improve performance on HTP.
 
     Returns:
         List[CompileSpec]: Compiler specs for Qualcomm AI Engine Direct.
@@ -1033,7 +1170,7 @@ def generate_qnn_executorch_compiler_spec(
     if soc_model not in _supported_soc_models:
         raise ValueError(f"unknown SoC model for QNN: {soc_model}")
 
-    if profile and dump_intermediate_outputs:
+    if profile_level and dump_intermediate_outputs:
         warnings.warn(
             "It is not recommended to turn on both profiling and dump_intermediate_outputs the same time"
             ", because dump_intermediate_outputs will cause performance drop.",
@@ -1043,7 +1180,6 @@ def generate_qnn_executorch_compiler_spec(
     qnn_executorch_options = QnnExecuTorchOptions(
         _soc_info_table[soc_model], backend_options
     )
-    qnn_executorch_options.graph_name = [graph_name]
     qnn_executorch_options.log_level = (
         QnnExecuTorchLogLevel.kLogLevelDebug
         if debug
@@ -1057,13 +1193,19 @@ def generate_qnn_executorch_compiler_spec(
         qnn_executorch_options.saver = True
         qnn_executorch_options.saver_output_dir = "saver_output"
 
-    if optrace:
+    if profile_level == 3:
         qnn_executorch_options.profile_level = QnnExecuTorchProfileLevel.kProfileOptrace
-    elif profile:
+    elif profile_level == 2:
         qnn_executorch_options.profile_level = (
             QnnExecuTorchProfileLevel.kProfileDetailed
         )
     else:
+        if profile_level == 1:
+            warnings.warn(
+                "Profile Level 1, kProfileBasic, is not supported, turning off profiling.",
+                DeprecationWarning,
+                stacklevel=1,
+            )
         qnn_executorch_options.profile_level = QnnExecuTorchProfileLevel.kProfileOff
 
     if (
@@ -1076,6 +1218,12 @@ def generate_qnn_executorch_compiler_spec(
             "please set 'online_prepare' to False"
         )
 
+    if (
+        online_prepare
+        and backend_options.backend_type == QnnExecuTorchBackendType.kLpaiBackend
+    ):
+        raise ValueError("LPAI does not support online prepare.")
+
     qnn_executorch_options.shared_buffer = shared_buffer
     qnn_executorch_options.online_prepare = online_prepare
     qnn_executorch_options.is_from_context_binary = is_from_context_binary
@@ -1083,14 +1231,17 @@ def generate_qnn_executorch_compiler_spec(
     if op_package_options and len(op_package_options.op_package_infos) > 0:
         qnn_executorch_options.op_package_options = op_package_options
 
+    qnn_executorch_options.use_mha2sha = use_mha2sha
+
     return [
         CompileSpec(QCOM_QNN_COMPILE_SPEC, option_to_flatbuffer(qnn_executorch_options))
     ]
 
 
-def get_soc_to_arch_map():
+def get_soc_to_htp_arch_map():
     return {
         "SA8295": HtpArch.V68,
+        "SA8797": HtpArch.V81,
         "SM8350": HtpArch.V68,
         "SM8450": HtpArch.V69,
         "SM8475": HtpArch.V69,
@@ -1106,12 +1257,23 @@ def get_soc_to_arch_map():
         "SXR2330P": HtpArch.V79,
         "QCS9100": HtpArch.V73,
         "SAR2230P": HtpArch.V81,
+        "SW6100": HtpArch.V81,
+        "QCM6490": HtpArch.V68,
+        "SM8845": HtpArch.V81,
+    }
+
+
+def get_soc_to_lpai_hw_ver_map():
+    return {
+        "SM8850": LpaiHardwareVersion.V6,
+        "SAR2230P": LpaiHardwareVersion.V6,
     }
 
 
 def get_soc_to_chipset_map():
     return {
         "SA8295": QcomChipset.SA8295,
+        "SA8797": QcomChipset.SA8797,
         "SM8350": QcomChipset.SM8350,
         "SM8450": QcomChipset.SM8450,
         "SM8475": QcomChipset.SM8475,
@@ -1127,6 +1289,9 @@ def get_soc_to_chipset_map():
         "SXR2330P": QcomChipset.SXR2330P,
         "QCS9100": QcomChipset.QCS9100,
         "SAR2230P": QcomChipset.SAR2230P,
+        "SW6100": QcomChipset.SW6100,
+        "QCM6490": QcomChipset.QCM6490,
+        "SM8845": QcomChipset.SM8845,
     }
 
 
@@ -1235,9 +1400,29 @@ def is_qnn_sdk_version_less_than(target_version):
         current_major, current_minor = map(int, match.groups()[:2])
     else:
         raise ValueError(
-            f"Failed to get current major and minor version from QNN sdk Build id {current_version}"
+            f"Failed to get current major and minor version from QNN SDK Build id {current_version}"
         )
 
     target_major, target_minor = map(int, target_version.split(".")[:2])
 
     return current_major == target_major and current_minor < target_minor
+
+
+def is_qnn_sdk_version_greater_than(target_version):
+    current_version = get_sdk_build_id()
+
+    match = re.search(r"v(\d+)\.(\d+)", current_version)
+    if match:
+        current_major, current_minor = map(int, match.groups()[:2])
+    else:
+        raise ValueError(
+            f"Failed to get current major and minor version from QNN SDK Build id {current_version}"
+        )
+
+    target_major, target_minor = map(int, target_version.split(".")[:2])
+
+    return current_major == target_major and current_minor > target_minor
+
+
+def get_qnn_context_binary_alignment() -> int:
+    return PyQnnManagerAdaptor.GetQNNCtxBinAlignment()

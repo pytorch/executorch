@@ -6,6 +6,7 @@
 
 # pyre-strict
 import copy
+import itertools
 import os
 import tempfile
 import unittest
@@ -41,6 +42,7 @@ from executorch.exir.emit import emit_program
 from executorch.exir.graph_module import get_control_flow_submodules
 from executorch.exir.pass_base import ExportPass, PassResult
 from executorch.exir.passes import (
+    convert_constant_dim_order_pass,
     dead_code_elimination_pass,
     DebugPass,
     HintBasedSymShapeEvalPass,
@@ -51,6 +53,7 @@ from executorch.exir.passes import (
     ToOutVarPass,
 )
 from executorch.exir.passes.constant_prop_pass import constant_prop_pass
+from executorch.exir.passes.cse_pass import CSEPass
 from executorch.exir.passes.debug_handle_generator_pass import (
     DebugHandleGeneratorPass,
     generate_missing_debug_handles,
@@ -74,6 +77,7 @@ from executorch.exir.passes.spec_prop_pass import SpecPropPass
 from executorch.exir.passes.sym_to_tensor_pass import SymToTensorPass
 from executorch.exir.program._program import lift_constant_tensor_pass
 from executorch.exir.schema import TensorShapeDynamism
+from executorch.exir.sym_util import eval_upper_bound
 from executorch.exir.tensor import TensorSpec
 from executorch.exir.tests.common import register_additional_test_aten_ops
 from executorch.exir.tests.control_flow_models import FTCondDeadCode, FTMapBasic
@@ -82,6 +86,9 @@ from functorch.experimental import control_flow
 
 from torch import nn
 from torch._prims_common import ELEMENTWISE_TYPE_PROMOTION_KIND
+
+# Import passes
+from torch._subclasses.fake_tensor import FakeTensorMode
 from torch.export import export
 from torch.export.graph_signature import InputKind, InputSpec, TensorArgument
 from torch.fx import GraphModule, subgraph_rewriter
@@ -113,6 +120,7 @@ lib = Library("DO_NOT_USE_TEST_ONLY", "DEF")
 
 lib.define("foo(Tensor self) -> (Tensor, Tensor)")
 lib.define("add_relu(Tensor self, Tensor other) -> Tensor")
+lib.define("unbacked(Tensor self) -> Tensor")
 
 
 @impl(lib, "foo", "CompositeExplicitAutograd")
@@ -130,6 +138,29 @@ def foo_out(
     a: torch.Tensor, out1: torch.Tensor, out2: torch.Tensor
 ) -> Tuple[torch.Tensor, Optional[torch.Tensor]]:
     return a + 1, None
+
+
+@impl(lib, "unbacked", "CPU")
+def unbacked(a: torch.Tensor) -> torch.Tensor:
+    return a[: a[0]]
+
+
+@torch.library.register_fake(f"{lib.ns}::unbacked")
+def meta_unbacked(x):
+    ctx = torch._custom_ops.get_ctx()
+    out_size = ctx.create_unbacked_symint()
+    return x.new_empty(out_size)
+
+
+lib.define("unbacked.out(Tensor self, *, Tensor(a!) out) -> Tensor(a!)")
+
+
+@impl(lib, "unbacked.out", "CPU")
+def unbacked_out(
+    x: torch.Tensor,
+    out: torch.Tensor,
+) -> torch.Tensor:
+    return out.copy_(x[: x[0]])
 
 
 def simple_promote_dtype(
@@ -512,28 +543,40 @@ class TestPasses(unittest.TestCase):
             self.assertEqual(new_node.target, old_node.target)
 
     def test_export_scalar_to_tensor_pass(self) -> None:
-        class Mul(torch.nn.Module):
-            def forward(self, x: torch.Tensor) -> torch.Tensor:
-                return x * 3.14
-
-        mul = Mul()
-
-        expo_prog = to_edge(export(mul, (torch.ones(1),), strict=True))
-        new_prog = expo_prog.transform([ScalarToTensorPass()])
-        self.assertIsNotNone(new_prog.exported_program().graph_module)
-        new_graph_module = new_prog.exported_program().graph_module
-
-        inp = torch.zeros(1)
-        self.assertTrue(
-            torch.allclose(
-                expo_prog.exported_program().module()(inp),
-                new_prog.exported_program().module()(inp),
-            )
+        # Build a graph with a scalar argument where schema expects tensor
+        graph = torch.fx.Graph()
+        test_input = torch.randn(
+            1,
         )
-        for node in new_graph_module.graph.nodes:
+        with FakeTensorMode() as fake_mode:
+            fake_input = fake_mode.from_tensor(test_input)
+            x = graph.placeholder("x")
+            x.meta["val"] = fake_input
+
+        # Pass 3.14 as scalar - this should be converted to tensor by the pass
+        mul_node = graph.call_function(
+            torch.ops.aten.mul.Tensor,
+            args=(x, 3.14),
+        )
+        graph.output(mul_node)
+
+        gm = torch.fx.GraphModule(torch.nn.Module(), graph)
+        original_output = gm(test_input)
+
+        result = ScalarToTensorPass()(gm)
+        new_gm = result.graph_module
+        self.assertTrue(result.modified)
+        # All scalars should be tensors by this point, so running a second time should not modify
+        self.assertFalse(ScalarToTensorPass()(new_gm).modified)
+
+        # All scalars should be converted into nodes
+        for node in new_gm.graph.nodes:
             if node.op == "call_function":
-                for arg in node.args + tuple(node.kwargs.values()):
-                    self.assertFalse(isinstance(arg, float))
+                for arg in node.args:
+                    self.assertTrue(isinstance(arg, torch.fx.Node))
+
+        new_output = new_gm(test_input)
+        self.assertTrue(torch.equal(original_output, new_output))
 
     def test_remove_mixed_types_symfloats(self) -> None:
         class Foo(torch.nn.Module):
@@ -610,6 +653,218 @@ class TestPasses(unittest.TestCase):
             self.assertIs(node.meta["spec"][0], node.args[0][0].meta["spec"])
 
         self.assertEqual(counter, 1)
+
+    def test_spec_prop_pass_unbacked_symint(self) -> None:
+        # Verify that the spec prop pass picks up on guards for
+        # unbacked symints.
+        class Unbacked(torch.nn.Module):
+            def forward(self, x):
+                output = torch.ops.DO_NOT_USE_TEST_ONLY.unbacked(x)
+                torch._constrain_as_size(output.shape[0], max=10)
+                return output
+
+        model = Unbacked()
+        gm = (
+            to_edge(export(model, (torch.LongTensor([5, 4, 3, 2, 1, 0, 1, 2]),)))
+            .exported_program()
+            .graph_module
+        )
+        new_gm = SpecPropPass()(gm)
+        self.assertIsNotNone(new_gm)
+
+        # Check the spec for the custom op node. It should have a max size of 10.
+        op_node = next(
+            n
+            for n in new_gm.graph_module.graph.nodes
+            if n.target == exir_ops.edge.DO_NOT_USE_TEST_ONLY.unbacked.default
+        )
+        self.assertIsNotNone(op_node)
+
+        spec: TensorSpec = op_node.meta["spec"]
+        self.assertEqual(len(spec.shape), 1)  # Should be rank 1
+        upper_bound = eval_upper_bound(spec.shape[0])
+        self.assertEqual(upper_bound, 10)  # Should be a concrete value
+
+    def test_spec_prop_pass_cond(self) -> None:
+        class ModelWithCond(torch.nn.Module):
+            def true_fn(self, val):
+                return val * 2
+
+            def false_fn(self, val):
+                return val + 1
+
+            def forward(self, x):
+                return torch.cond(x[0] > 0, self.true_fn, self.false_fn, [x])
+
+        model = ModelWithCond()
+        inputs = (torch.ones(10),)
+        dynamic_shapes = {"x": {0: torch.export.Dim("x", min=1, max=20)}}
+
+        # Run the spec prop pass and sanity check the spec on the cond.
+        edge_program = to_edge(export(model, inputs, dynamic_shapes=dynamic_shapes))
+        gm = edge_program.exported_program().graph_module
+        new_gm = SpecPropPass()(gm)
+        self.assertIsNotNone(new_gm)
+
+        # Check the spec for the cond node. It should have a max size of 20 (matching the dynamic shape upper bound).
+        cond_node = next(
+            n
+            for n in new_gm.graph_module.graph.nodes
+            if hasattr(n.target, "name") and n.target.name() == "cond"
+        )
+        self.assertIsNotNone(cond_node)
+
+        # Spec for the cond node should be a single-element tuple
+        spec: tuple[TensorSpec] = cond_node.meta["spec"]
+        self.assertTrue(isinstance(spec, tuple))
+        self.assertEqual(len(spec), 1)
+
+        self.assertEqual(len(spec[0].shape), 1)  # Should be rank 1
+        upper_bound = eval_upper_bound(spec[0].shape[0])
+        self.assertEqual(upper_bound, 20)  # Should match dynamic shape bound
+
+    def test_spec_prop_pass_while(self) -> None:
+        class ModelWithWhile(torch.nn.Module):
+            def forward(self, i):
+                def loop_cond(i, acc):
+                    return i[0] > 0
+
+                def loop_body(i, acc):
+                    return i - 1, acc + i
+
+                _, acc = torch._higher_order_ops.while_loop(
+                    loop_cond, loop_body, (i, torch.zeros(10))
+                )
+                return acc
+
+        model = ModelWithWhile()
+        inputs = (torch.Tensor([5]),)
+
+        # Run the spec prop pass and sanity check the spec on the while.
+        edge_program = to_edge(export(model, inputs))
+        gm = edge_program.exported_program().graph_module
+        new_gm = SpecPropPass()(gm)
+        self.assertIsNotNone(new_gm)
+
+        # Check the spec for the while node. It should have a max size of 10 (matching the torch.zeros(10) in the model).
+        while_node = next(
+            n
+            for n in new_gm.graph_module.graph.nodes
+            if hasattr(n.target, "name") and n.target.name() == "while_loop"
+        )
+        self.assertIsNotNone(while_node)
+
+        # Spec for the while node should be a two-element tuple
+        spec: tuple[TensorSpec] = while_node.meta["spec"]
+        self.assertTrue(isinstance(spec, tuple))
+        self.assertEqual(len(spec), 2)
+
+        self.assertEqual(len(spec[1].shape), 1)  # Should be rank 1
+        upper_bound = eval_upper_bound(spec[1].shape[0])
+        self.assertEqual(upper_bound, 10)
+
+    def test_spec_prop_pass_scan(self) -> None:
+        from torch._higher_order_ops.scan import scan
+
+        class ModelWithScan(torch.nn.Module):
+            def forward(self, xs: torch.Tensor) -> Tuple[torch.Tensor, torch.Tensor]:
+                def combine_fn(carry, x):
+                    new_carry = carry + x
+                    return new_carry, new_carry.clone()
+
+                init = torch.zeros_like(xs[0])
+                return scan(combine_fn, init, xs)
+
+        model = ModelWithScan()
+        inputs = (torch.arange(15).float().reshape(5, 3),)
+
+        # Run the spec prop pass and sanity check the spec on the scan.
+        edge_program = to_edge(
+            export(model, inputs, strict=True),
+            compile_config=EdgeCompileConfig(_check_ir_validity=False),
+        )
+        gm = edge_program.exported_program().graph_module
+        new_gm = SpecPropPass()(gm)
+        self.assertIsNotNone(new_gm)
+
+        # Check the spec for the scan node.
+        scan_node = next(
+            n
+            for n in new_gm.graph_module.graph.nodes
+            if hasattr(n.target, "name") and n.target.name() == "scan"
+        )
+        self.assertIsNotNone(scan_node)
+
+        # Spec for the scan node should be a two-element tuple (carry, stacked_outputs)
+        spec: Tuple[TensorSpec, TensorSpec] = scan_node.meta["spec"]
+        self.assertTrue(isinstance(spec, tuple))
+        self.assertEqual(len(spec), 2)
+
+        # Carry should have shape [3] (same as xs[0])
+        self.assertEqual(list(spec[0].shape), [3])
+        # Stacked outputs should have shape [5, 3] (same as xs)
+        self.assertEqual(list(spec[1].shape), [5, 3])
+
+    def test_spec_prop_pass_scan_dynamic_shape(self) -> None:
+        from torch._higher_order_ops.scan import scan
+
+        class ModelWithScan(torch.nn.Module):
+            def forward(self, xs: torch.Tensor) -> Tuple[torch.Tensor, torch.Tensor]:
+                def combine_fn(carry, x):
+                    new_carry = carry + x
+                    return new_carry, new_carry.clone()
+
+                init = torch.zeros_like(xs[0])
+                return scan(combine_fn, init, xs)
+
+        model = ModelWithScan()
+        inputs = (torch.arange(15).float().reshape(5, 3),)
+        dynamic_shapes = {"xs": {0: torch.export.Dim("seq_len", min=1, max=20)}}
+
+        # First verify that export preserves symbolic shapes
+        exported = export(model, inputs, dynamic_shapes=dynamic_shapes, strict=True)
+        scan_node_after_export = next(
+            n
+            for n in exported.graph.nodes
+            if hasattr(n.target, "name") and n.target.name() == "scan"
+        )
+        val_after_export = scan_node_after_export.meta.get("val")
+        self.assertIsNotNone(val_after_export)
+        # After export, the stacked output should have a symbolic first dimension
+        self.assertIsInstance(val_after_export[1].shape[0], torch.SymInt)
+
+        # Run the spec prop pass and sanity check the spec on the scan.
+        edge_program = to_edge(
+            exported,
+            compile_config=EdgeCompileConfig(_check_ir_validity=False),
+        )
+        gm = edge_program.exported_program().graph_module
+        new_gm = SpecPropPass()(gm)
+        self.assertIsNotNone(new_gm)
+
+        # Check the spec for the scan node.
+        scan_node = next(
+            n
+            for n in new_gm.graph_module.graph.nodes
+            if hasattr(n.target, "name") and n.target.name() == "scan"
+        )
+        self.assertIsNotNone(scan_node)
+
+        # Spec for the scan node should be a two-element tuple (carry, stacked_outputs)
+        spec: Tuple[TensorSpec, TensorSpec] = scan_node.meta["spec"]
+        self.assertTrue(isinstance(spec, tuple))
+        self.assertEqual(len(spec), 2)
+
+        # Carry should have static shape [3]
+        self.assertEqual(list(spec[0].shape), [3])
+        self.assertEqual(spec[0].shape_dynamism, TensorShapeDynamism.STATIC)
+
+        # Stacked outputs should have dynamic first dimension with upper bound 20
+        self.assertEqual(len(spec[1].shape), 2)
+        upper_bound = eval_upper_bound(spec[1].shape[0])
+        self.assertEqual(upper_bound, 20)
+        self.assertEqual(spec[1].shape_dynamism, TensorShapeDynamism.DYNAMIC_BOUND)
+        self.assertEqual(spec[1].shape[1], 3)  # Second dim is static
 
     def test_compile_fix_broken_ops(self) -> None:
         class ExportableLoop(nn.Module):
@@ -2093,3 +2348,400 @@ class TestPasses(unittest.TestCase):
             prop_tensor.is_contiguous(),
             f"Propagated tensor is not contiguous: {prop_tensor.stride()}",
         )
+
+    class AddConstant(torch.nn.Module):
+        def __init__(self, constant: torch.Tensor, use_buffer: bool = False):
+            super().__init__()
+            if use_buffer:
+                self.register_buffer("constant", constant)
+            else:
+                self.constant = constant
+
+        def forward(self, x):
+            return x + self.constant
+
+    def test_convert_constant_dim_order_noop(self):
+        """
+        Verify that the convert_constant_dim_order_pass does not modify
+        constant tensors in contiguous or channels last format.
+        """
+
+        memory_formats = [
+            torch.contiguous_format,
+            torch.channels_last,
+        ]
+
+        use_buffer_options = [False, True]
+
+        for memory_format, use_buffer in itertools.product(
+            memory_formats, use_buffer_options
+        ):
+            constant = torch.randn(2, 3, 4, 5).to(memory_format=memory_format)
+            model = self.AddConstant(constant, use_buffer=use_buffer)
+            inputs = (torch.randn(2, 3, 4, 5).to(memory_format=memory_format),)
+
+            ep = torch.export.export(model, inputs)
+            modified_ep = (
+                convert_constant_dim_order_pass.convert_constant_dim_order_pass(
+                    copy.deepcopy(ep)
+                )
+            )
+
+            # Check the outputs - they should match in both data and dim order.
+            original_outputs = ep.module()(*inputs)
+            modified_outputs = modified_ep.module()(*inputs)
+
+            torch.testing.assert_close(
+                original_outputs, modified_outputs, check_stride=True
+            )
+
+            # Verify that the constant/buffer tensor is not modified. The interface for
+            # constants and buffers is just different enough to make it hard to unify the
+            # below logic.
+            if use_buffer:
+                original_buffers = dict(ep.named_buffers())
+                modified_buffers = dict(modified_ep.named_buffers())
+
+                self.assertEqual(len(original_buffers), 1)
+                self.assertEqual(len(modified_buffers), 1)
+
+                buffer_key = next(iter(original_buffers.keys()))
+                original_buffer = original_buffers[buffer_key]
+                modified_buffer = modified_buffers[buffer_key]
+
+                torch.testing.assert_close(
+                    original_buffer, modified_buffer, check_stride=True
+                )
+            else:
+                self.assertEqual(len(ep.constants), 1)
+                self.assertEqual(len(modified_ep.constants), 1)
+
+                const_key = next(iter(ep.constants.keys()))
+                original_const = ep.constants[const_key]
+                modified_const = modified_ep.constants[const_key]
+
+                torch.testing.assert_close(
+                    original_const, modified_const, check_stride=True
+                )
+
+    def test_convert_constant_dim_order_to_contiguous(self):
+        """
+        Verify that the convert_constant_dim_order_pass converts constant/buffer
+        tensors with dim orders / memory formats outside the allowed list
+        (contiguous and channels_last) to contiguous.
+        """
+
+        # Test cases using transpose/permute to create non-contiguous tensors.
+        # Each case is (base_shape, permutation, description) where we create a
+        # contiguous tensor of base_shape and then permute/transpose it.
+        test_cases = [
+            # Rank 2 - transposed matrix (non-contiguous strides)
+            ((5, 4), (1, 0), "2D transposed"),
+            # Rank 3 - permuted dimensions
+            ((4, 3, 2), (2, 0, 1), "3D permuted"),
+            # Rank 3 - another permutation
+            ((2, 4, 3), (1, 2, 0), "3D permuted v2"),
+            # Rank 4 - permuted (not contiguous, not channels_last)
+            ((5, 4, 3, 2), (3, 1, 0, 2), "4D permuted"),
+            # Rank 5 - permuted
+            ((6, 5, 4, 3, 2), (4, 2, 0, 3, 1), "5D permuted"),
+        ]
+
+        use_buffer_options = [False, True]
+
+        for (base_shape, permutation, description), use_buffer in itertools.product(
+            test_cases, use_buffer_options
+        ):
+            with self.subTest(description=description, use_buffer=use_buffer):
+                # Create a contiguous tensor and permute it to make it non-contiguous
+                base_tensor = torch.randn(base_shape)
+                constant = base_tensor.permute(permutation)
+
+                # Sanity check the tensor construction
+                self.assertFalse(
+                    constant.is_contiguous(),
+                    "Test setup error: tensor should be non-contiguous",
+                )
+
+                model = self.AddConstant(constant, use_buffer=use_buffer)
+                inputs = (torch.randn(constant.shape),)
+
+                ep = torch.export.export(model, inputs)
+                modified_ep = (
+                    convert_constant_dim_order_pass.convert_constant_dim_order_pass(
+                        copy.deepcopy(ep)
+                    )
+                )
+
+                # Check the outputs - they should match in data.
+                original_outputs = ep.module()(*inputs)
+                modified_outputs = modified_ep.module()(*inputs)
+                torch.testing.assert_close(original_outputs, modified_outputs)
+
+                # Verify that the constant/buffer tensor is now contiguous.
+                if use_buffer:
+                    modified_buffers = dict(modified_ep.named_buffers())
+                    self.assertEqual(len(modified_buffers), 1)
+
+                    buffer_key = next(iter(modified_buffers.keys()))
+                    modified_buffer = modified_buffers[buffer_key]
+
+                    self.assertTrue(
+                        modified_buffer.is_contiguous(),
+                        f"Buffer should be contiguous after pass, got strides {modified_buffer.stride()}",
+                    )
+                else:
+                    self.assertEqual(len(modified_ep.constants), 1)
+
+                    const_key = next(iter(modified_ep.constants.keys()))
+                    modified_const = modified_ep.constants[const_key]
+
+                    self.assertTrue(
+                        modified_const.is_contiguous(),
+                        f"Constant should be contiguous after pass, got strides {modified_const.stride()}",
+                    )
+
+
+class TestMemoryFormatOpsPassPreserveFormat(unittest.TestCase):
+    """
+    Tests for MemoryFormatOpsPass preserve_format semantics.
+    """
+
+    def test_clone_no_kwarg_preserves_channels_last_dim_order(self) -> None:
+        """
+        Verify that clone() on a channels-last input with no memory_format kwarg
+        produces a _clone_dim_order node with channels-last dim_order (0,2,3,1).
+        """
+
+        class ConvClone(torch.nn.Module):
+            def __init__(self):
+                super().__init__()
+                self.conv = torch.nn.Conv2d(3, 16, kernel_size=3, padding=1)
+
+            def forward(self, x):
+                return self.conv(x).clone()
+
+        model = ConvClone().to(memory_format=torch.channels_last)
+        x = torch.randn(1, 3, 8, 8).to(memory_format=torch.channels_last)
+
+        # Run the model and verify that the output tensor preserves channels-last
+        # layout when no memory_format kwarg is provided.
+        with torch.no_grad():
+            y = model(x)
+        self.assertTrue(
+            y.is_contiguous(memory_format=torch.channels_last),
+            f"clone() without memory_format kwarg should preserve channels-last layout, got strides {y.stride()}",
+        )
+
+        ep = torch.export.export(model, (x,))
+        edge = to_edge(ep, compile_config=EdgeCompileConfig(_skip_dim_order=False))
+
+        # Find the _clone_dim_order node and check its dim_order
+        found_clone = False
+        for node in edge.exported_program().graph_module.graph.nodes:
+            if node.op == "call_function" and "_clone_dim_order" in str(node.target):
+                found_clone = True
+                spec = node.meta.get("val")
+                self.assertIsNotNone(spec, "Clone node should have meta['val']")
+                dim_order = tuple(spec.dim_order())
+                self.assertEqual(
+                    dim_order,
+                    (0, 2, 3, 1),
+                    f"Clone should preserve channels-last dim_order, got {dim_order}",
+                )
+                break
+
+        self.assertTrue(found_clone, "Should find a _clone_dim_order node in the graph")
+
+    def test_clone_contiguous_format_kwarg_stays_contiguous(self) -> None:
+        """
+        Regression guard: explicit contiguous_format should produce contiguous dim_order.
+
+        Note: When clone(memory_format=contiguous_format) is called on a channels-last
+        input, this is a layout-transforming operation. After export, this typically
+        lowers to _to_dim_order_copy (not _clone_dim_order) because it changes the
+        memory layout. We check for both node types to be robust.
+        """
+
+        class CloneContiguousModel(torch.nn.Module):
+            def forward(self, x):
+                return x.clone(memory_format=torch.contiguous_format)
+
+        model = CloneContiguousModel()
+        x = torch.randn(1, 3, 8, 8).to(memory_format=torch.channels_last)
+
+        # Run the model and verify that the explicit contiguous_format kwarg
+        # produces a contiguous output layout (not channels-last).
+        with torch.no_grad():
+            y = model(x)
+        self.assertTrue(
+            y.is_contiguous(),
+            f"clone(memory_format=contiguous_format) should produce contiguous layout, got strides {y.stride()}",
+        )
+        self.assertFalse(
+            y.is_contiguous(memory_format=torch.channels_last),
+            "clone(memory_format=contiguous_format) should not preserve channels-last layout",
+        )
+
+        ep = torch.export.export(model, (x,))
+        edge = to_edge(ep, compile_config=EdgeCompileConfig(_skip_dim_order=False))
+
+        # Find the dim_order copy node and check its dim_order.
+        # This may be _to_dim_order_copy (layout transform) or _clone_dim_order.
+        found_copy = False
+        for node in edge.exported_program().graph_module.graph.nodes:
+            if node.op == "call_function" and (
+                "_clone_dim_order" in str(node.target)
+                or "_to_dim_order_copy" in str(node.target)
+            ):
+                found_copy = True
+                spec = node.meta.get("val")
+                self.assertIsNotNone(spec, "Copy node should have meta['val']")
+                dim_order = tuple(spec.dim_order())
+                self.assertEqual(
+                    dim_order,
+                    (0, 1, 2, 3),
+                    f"Explicit contiguous clone should have contiguous dim_order, got {dim_order}",
+                )
+                break
+
+        self.assertTrue(
+            found_copy, "Should find a _clone_dim_order or _to_dim_order_copy node"
+        )
+
+    def test_to_copy_no_kwarg_preserves_channels_last_dim_order(self) -> None:
+        """
+        Verify that tensor.to(dtype=...) with no memory_format kwarg preserves
+        the input's dim_order (preserve_format semantics).
+
+        This tests the _to_copy.default path in MemoryFormatOpsPass.
+        """
+
+        class ToCopyModel(torch.nn.Module):
+            def forward(self, x):
+                # .to(dtype=...) with no memory_format → preserve_format semantics
+                return x.to(dtype=torch.float32)
+
+        model = ToCopyModel()
+        x = torch.randn(1, 3, 8, 8, dtype=torch.float16).to(
+            memory_format=torch.channels_last
+        )
+
+        # Run the model and verify that tensor.to(dtype=...) with no memory_format
+        # kwarg preserves channels-last layout on the output tensor.
+        with torch.no_grad():
+            y = model(x)
+        self.assertTrue(
+            y.is_contiguous(memory_format=torch.channels_last),
+            f"to(dtype=...) without memory_format kwarg should preserve channels-last layout, got strides {y.stride()}",
+        )
+
+        ep = torch.export.export(model, (x,))
+        edge = to_edge(ep, compile_config=EdgeCompileConfig(_skip_dim_order=False))
+
+        # Find the _to_dim_order_copy node and verify it preserves channels-last
+        found_copy = False
+        for node in edge.exported_program().graph_module.graph.nodes:
+            if node.op == "call_function" and "_to_dim_order_copy" in str(node.target):
+                found_copy = True
+                spec = node.meta.get("val")
+                self.assertIsNotNone(spec, "Copy node should have meta['val']")
+                dim_order = tuple(spec.dim_order())
+                self.assertEqual(
+                    dim_order,
+                    (0, 2, 3, 1),
+                    f"to(dtype=...) should preserve channels-last dim_order, got {dim_order}",
+                )
+                break
+
+        self.assertTrue(found_copy, "Should find a _to_dim_order_copy node")
+
+
+class TestCSEPass(unittest.TestCase):
+    """Tests for Common Subexpression Elimination pass."""
+
+    @staticmethod
+    def _to_edge_gm(module, example_inputs):
+        ep = torch.export.export(module, example_inputs, strict=False)
+        edge = to_edge(ep)
+        return edge.exported_program().graph_module
+
+    @staticmethod
+    def _count_ops(gm, target):
+        return sum(
+            1 for n in gm.graph.nodes if n.op == "call_function" and n.target == target
+        )
+
+    def test_duplicate_unary_ops_deduplicated(self):
+        """Two identical neg(x) ops should be merged into one."""
+
+        class M(torch.nn.Module):
+            def forward(self, x):
+                a = torch.neg(x)
+                b = torch.neg(x)
+                return a + b
+
+        gm = self._to_edge_gm(M(), (torch.randn(4, 4),))
+        target = exir_ops.edge.aten.neg.default
+        before = self._count_ops(gm, target)
+
+        if before < 2:
+            self.skipTest("Export already deduplicated neg ops")
+
+        result = CSEPass()(gm)
+
+        self.assertTrue(result.modified)
+        self.assertEqual(self._count_ops(result.graph_module, target), 1)
+
+    def test_different_ops_not_merged(self):
+        """neg(x) and abs(x) should not be merged."""
+
+        class M(torch.nn.Module):
+            def forward(self, x):
+                return torch.neg(x) + torch.abs(x)
+
+        gm = self._to_edge_gm(M(), (torch.randn(4, 4),))
+        result = CSEPass()(gm)
+        self.assertFalse(result.modified)
+
+    def test_same_op_different_inputs_not_merged(self):
+        """neg(x) and neg(y) should not be merged."""
+
+        class M(torch.nn.Module):
+            def forward(self, x, y):
+                return torch.neg(x) + torch.neg(y)
+
+        gm = self._to_edge_gm(M(), (torch.randn(4, 4), torch.randn(4, 4)))
+        result = CSEPass()(gm)
+        self.assertFalse(result.modified)
+
+    def test_noop_when_no_duplicates(self):
+        class M(torch.nn.Module):
+            def forward(self, x):
+                return x + 1
+
+        gm = self._to_edge_gm(M(), (torch.randn(4, 4),))
+        result = CSEPass()(gm)
+        self.assertFalse(result.modified)
+
+    def test_duplicate_chains_deduplicated(self):
+        """Duplicate multi-op chains should be merged via structural hashing."""
+
+        class M(torch.nn.Module):
+            def forward(self, x):
+                a = torch.neg(torch.abs(x))
+                b = torch.neg(torch.abs(x))
+                return a + b
+
+        gm = self._to_edge_gm(M(), (torch.randn(4, 4),))
+        neg_target = exir_ops.edge.aten.neg.default
+        abs_target = exir_ops.edge.aten.abs.default
+
+        if self._count_ops(gm, neg_target) < 2:
+            self.skipTest("Export already deduplicated chains")
+
+        result = CSEPass()(gm)
+
+        self.assertTrue(result.modified)
+        self.assertEqual(self._count_ops(result.graph_module, neg_target), 1)
+        self.assertEqual(self._count_ops(result.graph_module, abs_target), 1)

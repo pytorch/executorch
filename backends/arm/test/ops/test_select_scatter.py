@@ -1,4 +1,4 @@
-# Copyright 2025 Arm Limited and/or its affiliates.
+# Copyright 2025-2026 Arm Limited and/or its affiliates.
 #
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
@@ -66,6 +66,20 @@ test_data_suite = {
         0,
     ),
 }
+test_data_suite_bf16 = {
+    "rank2_rand_bf16": lambda: (
+        torch.rand((4, 6), dtype=torch.bfloat16),
+        torch.rand((6,), dtype=torch.bfloat16),
+        0,
+        1,
+    ),
+    "rank3_ones_bf16": lambda: (
+        torch.ones((2, 3, 4), dtype=torch.bfloat16),
+        torch.rand((2, 4), dtype=torch.bfloat16),
+        1,
+        0,
+    ),
+}
 
 
 class SelectScatter(torch.nn.Module):
@@ -99,13 +113,14 @@ class SelectScatter(torch.nn.Module):
 input_t = Tuple[torch.Tensor, torch.Tensor, int, int]
 
 
-@common.parametrize("test_module", test_data_suite)
+@common.parametrize("test_module", test_data_suite | test_data_suite_bf16)
 def test_select_scatter_tosa_FP(test_module: input_t):
     pipeline = TosaPipelineFP[input_t](
         SelectScatter(),
         test_module(),
         aten_op=SelectScatter.fp_aten_op,
         exir_op=SelectScatter.fp_exir_op,
+        tosa_extensions=["bf16"],
     )
     pipeline.run()
 
@@ -149,25 +164,25 @@ def test_select_scatter_u85_INT(test_module: input_t):
 
 @common.SkipIfNoModelConverter
 @common.parametrize("test_module", test_data_suite)
-def test_select_scatter_vgf_FP(test_module: input_t):
+def test_select_scatter_vgf_no_quant(test_module: input_t):
     pipeline = VgfPipeline[input_t](
         SelectScatter(),
         test_module(),
         aten_op=SelectScatter.fp_aten_op,
         exir_op=SelectScatter.fp_exir_op,
-        tosa_version="TOSA-1.0+FP",
+        quantize=False,
     )
     pipeline.run()
 
 
 @common.SkipIfNoModelConverter
 @common.parametrize("test_module", test_data_suite)
-def test_select_scatter_vgf_INT(test_module: input_t):
+def test_select_scatter_vgf_quant(test_module: input_t):
     pipeline = VgfPipeline[input_t](
         SelectScatter(),
         test_module(),
         aten_op=SelectScatter.int_aten_ops,
         exir_op=SelectScatter.int_exir_ops,
-        tosa_version="TOSA-1.0+INT",
+        quantize=True,
     )
     pipeline.run()

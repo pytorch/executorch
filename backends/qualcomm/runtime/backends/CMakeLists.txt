@@ -43,58 +43,80 @@ target_sources(
                        ${CMAKE_CURRENT_LIST_DIR}/QnnProfiler.cpp
 )
 
-# qnn_device
-set(HOST_ARCHITECTURE
-    ${CMAKE_CURRENT_LIST_DIR}/htpbackend/${CMAKE_SYSTEM_PROCESSOR}
-)
+set(platform target)
+if(${CMAKE_SYSTEM_PROCESSOR} MATCHES x86_64)
+  set(platform host)
+endif()
 
+set(HOST_ARCHITECTURE_GPU ${CMAKE_CURRENT_LIST_DIR}/gpu/${platform})
+set(HOST_ARCHITECTURE_HTP ${CMAKE_CURRENT_LIST_DIR}/htp/${platform})
+set(HOST_ARCHITECTURE_IR ${CMAKE_CURRENT_LIST_DIR}/ir/${platform})
+set(HOST_ARCHITECTURE_LPAI ${CMAKE_CURRENT_LIST_DIR}/lpai/${platform})
+
+# qnn_device
 target_sources(
   qnn_device
   PUBLIC ${CMAKE_CURRENT_LIST_DIR}/QnnDeviceCommon.h
-         ${CMAKE_CURRENT_LIST_DIR}/htpbackend/HtpDevice.h
+         ${CMAKE_CURRENT_LIST_DIR}/gpu/GpuDevice.h
+         ${CMAKE_CURRENT_LIST_DIR}/htp/HtpDevice.h
+         ${CMAKE_CURRENT_LIST_DIR}/lpai/LpaiDevice.h
   PRIVATE ${CMAKE_CURRENT_LIST_DIR}/QnnDeviceCommon.cpp
-          ${CMAKE_CURRENT_LIST_DIR}/htpbackend/HtpDevice.cpp
-          ${CMAKE_CURRENT_LIST_DIR}/htpbackend/HtpDevicePlatformInfoConfig.h
-          ${CMAKE_CURRENT_LIST_DIR}/htpbackend/HtpDeviceCustomConfig.h
+          ${CMAKE_CURRENT_LIST_DIR}/htp/HtpDevice.cpp
+          ${CMAKE_CURRENT_LIST_DIR}/htp/HtpDevicePlatformInfoConfig.h
+          ${CMAKE_CURRENT_LIST_DIR}/htp/HtpDeviceCustomConfig.h
           # When offline prepare context cache in x86 host we have to provide
           # platform infomation and SocModel to Qnn
-          ${HOST_ARCHITECTURE}/HtpDevicePlatformInfoConfig.cpp
-          ${HOST_ARCHITECTURE}/HtpDeviceCustomConfig.cpp
+          ${HOST_ARCHITECTURE_HTP}/HtpDevicePlatformInfoConfig.cpp
+          ${HOST_ARCHITECTURE_HTP}/HtpDeviceCustomConfig.cpp
+          ${HOST_ARCHITECTURE_LPAI}/LpaiDevice.cpp
 )
 
 # qnn_context
 target_sources(
   qnn_context
   PUBLIC ${CMAKE_CURRENT_LIST_DIR}/QnnContextCommon.h
-         ${CMAKE_CURRENT_LIST_DIR}/htpbackend/HtpContext.h
-         ${CMAKE_CURRENT_LIST_DIR}/irbackend/IrContext.h
-  PRIVATE
-    ${CMAKE_CURRENT_LIST_DIR}/QnnContextCommon.cpp
-    ${CMAKE_CURRENT_LIST_DIR}/htpbackend/HtpContext.cpp
-    ${CMAKE_CURRENT_LIST_DIR}/htpbackend/HtpContextCustomConfig.h
-    ${HOST_ARCHITECTURE}/HtpContextCustomConfig.cpp
-    ${CMAKE_CURRENT_LIST_DIR}/irbackend/${CMAKE_SYSTEM_PROCESSOR}/IrContext.cpp
+         ${CMAKE_CURRENT_LIST_DIR}/htp/HtpContext.h
+         ${CMAKE_CURRENT_LIST_DIR}/ir/IrContext.h
+         ${CMAKE_CURRENT_LIST_DIR}/gpu/GpuContext.h
+         ${CMAKE_CURRENT_LIST_DIR}/lpai/LpaiContext.h
+  PRIVATE ${CMAKE_CURRENT_LIST_DIR}/QnnContextCommon.cpp
+          ${CMAKE_CURRENT_LIST_DIR}/htp/HtpContext.cpp
+          ${CMAKE_CURRENT_LIST_DIR}/htp/HtpContextCustomConfig.h
+          ${CMAKE_CURRENT_LIST_DIR}/gpu/GpuContext.cpp
+          ${CMAKE_CURRENT_LIST_DIR}/gpu/GpuContextCustomConfig.h
+          ${CMAKE_CURRENT_LIST_DIR}/lpai/LpaiContext.cpp
+          ${CMAKE_CURRENT_LIST_DIR}/lpai/LpaiContextCustomConfig.h
+          ${HOST_ARCHITECTURE_GPU}/GpuContextCustomConfig.cpp
+          ${HOST_ARCHITECTURE_HTP}/HtpContextCustomConfig.cpp
+          ${HOST_ARCHITECTURE_LPAI}/LpaiContextCustomConfig.cpp
+          ${HOST_ARCHITECTURE_IR}/IrContext.cpp
 )
 
 # qnn_backend_cache
 target_sources(
   qnn_backend_cache
   PUBLIC ${CMAKE_CURRENT_LIST_DIR}/QnnBackendCache.h
-         ${CMAKE_CURRENT_LIST_DIR}/htpbackend/HtpBackendCache.h
+         ${CMAKE_CURRENT_LIST_DIR}/htp/HtpBackendCache.h
   PRIVATE ${CMAKE_CURRENT_LIST_DIR}/QnnBackendCache.cpp
-          ${CMAKE_CURRENT_LIST_DIR}/htpbackend/HtpBackendCache.cpp
+          ${CMAKE_CURRENT_LIST_DIR}/htp/HtpBackendCache.cpp
 )
 
 # qnn_graph
 target_sources(
   qnn_graph
   PUBLIC ${CMAKE_CURRENT_LIST_DIR}/QnnGraphCommon.h
-         ${CMAKE_CURRENT_LIST_DIR}/htpbackend/HtpGraph.h
+         ${CMAKE_CURRENT_LIST_DIR}/gpu/GpuGraph.h
+         ${CMAKE_CURRENT_LIST_DIR}/htp/HtpGraph.h
+         ${CMAKE_CURRENT_LIST_DIR}/lpai/LpaiGraph.h
   PRIVATE ${CMAKE_CURRENT_LIST_DIR}/QnnGraphCommon.cpp
-          ${CMAKE_CURRENT_LIST_DIR}/htpbackend/HtpGraph.cpp
-          ${CMAKE_CURRENT_LIST_DIR}/htpbackend/HtpGraphCustomConfig.h
-          ${CMAKE_CURRENT_LIST_DIR}/htpbackend/HtpGraphCustomConfig.cpp
-          ${HOST_ARCHITECTURE}/HtpGraphCustomConfig.cpp
+          ${CMAKE_CURRENT_LIST_DIR}/gpu/GpuGraph.cpp
+          ${CMAKE_CURRENT_LIST_DIR}/gpu/GpuGraphCustomConfig.h
+          ${CMAKE_CURRENT_LIST_DIR}/gpu/GpuGraphCustomConfig.cpp
+          ${CMAKE_CURRENT_LIST_DIR}/htp/HtpGraph.cpp
+          ${CMAKE_CURRENT_LIST_DIR}/htp/HtpGraphCustomConfig.h
+          ${CMAKE_CURRENT_LIST_DIR}/htp/HtpGraphCustomConfig.cpp
+          ${HOST_ARCHITECTURE_HTP}/HtpGraphCustomConfig.cpp
+          ${CMAKE_CURRENT_LIST_DIR}/lpai/LpaiGraph.cpp
 )
 
 # qnn_op_package_manager
@@ -108,9 +130,17 @@ target_sources(
 target_sources(
   qnn_backend
   PUBLIC ${CMAKE_CURRENT_LIST_DIR}/QnnBackendCommon.h
-         ${CMAKE_CURRENT_LIST_DIR}/htpbackend/HtpBackend.h
-         ${CMAKE_CURRENT_LIST_DIR}/irbackend/IrBackend.h
+         ${CMAKE_CURRENT_LIST_DIR}/gpu/GpuBackend.h
+         ${CMAKE_CURRENT_LIST_DIR}/htp/HtpBackend.h
+         ${CMAKE_CURRENT_LIST_DIR}/ir/IrBackend.h
+         ${CMAKE_CURRENT_LIST_DIR}/lpai/LpaiBackend.h
   PRIVATE ${CMAKE_CURRENT_LIST_DIR}/QnnBackendCommon.cpp
+          ${CMAKE_CURRENT_LIST_DIR}/gpu/GpuBackend.cpp
+          ${CMAKE_CURRENT_LIST_DIR}/gpu/GpuBackendCustomConfig.h
+          ${CMAKE_CURRENT_LIST_DIR}/gpu/GpuBackendCustomConfig.cpp
+          ${CMAKE_CURRENT_LIST_DIR}/lpai/LpaiBackend.cpp
+          ${CMAKE_CURRENT_LIST_DIR}/lpai/LpaiBackendCustomConfig.h
+          ${CMAKE_CURRENT_LIST_DIR}/lpai/LpaiBackendCustomConfig.cpp
 )
 
 # qnn_mem_manager
@@ -138,6 +168,12 @@ target_sources(
 target_sources(
   qnn_dlc_manager
   PUBLIC ${CMAKE_CURRENT_LIST_DIR}/QnnDlcManager.h
-  PRIVATE
-    ${CMAKE_CURRENT_LIST_DIR}/irbackend/${CMAKE_SYSTEM_PROCESSOR}/QnnDlcManager.cpp
+  PRIVATE ${HOST_ARCHITECTURE_IR}/QnnDlcManager.cpp
+)
+
+# qnn_backend_unified_registry
+target_sources(
+  qnn_backend_unified_registry
+  PUBLIC ${CMAKE_CURRENT_LIST_DIR}/QnnBackendUnifiedRegistry.h
+  PRIVATE ${CMAKE_CURRENT_LIST_DIR}/QnnBackendUnifiedRegistry.cpp
 )

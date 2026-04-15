@@ -1,4 +1,4 @@
-# Copyright 2025 Arm Limited and/or its affiliates.
+# Copyright 2025-2026 Arm Limited and/or its affiliates.
 #
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
@@ -6,6 +6,9 @@
 from typing import Tuple
 
 import torch
+from executorch.backends.arm.quantizer.arm_quantizer import (
+    get_symmetric_a16w8_quantization_config,
+)
 from executorch.backends.arm.test import common
 
 from executorch.backends.arm.test.tester.test_pipeline import (
@@ -69,6 +72,16 @@ test_data_tensor = {
     "lt_tensor_rank3_randn": lambda: op_lt_tensor_rank3_randn,
     "lt_tensor_rank4_randn": lambda: op_lt_tensor_rank4_randn,
 }
+test_data_tensor_fp16 = {
+    "lt_tensor_rank2_rand_fp16": lambda: LessThan(
+        torch.rand(4, 5, dtype=torch.float16),
+        torch.rand(1, 5, dtype=torch.float16),
+    ),
+    "lt_tensor_rank3_randn_fp16": lambda: LessThan(
+        torch.randn(2, 3, 4, dtype=torch.float16),
+        torch.randn(2, 3, 4, dtype=torch.float16),
+    ),
+}
 
 test_data_scalar = {
     "lt_scalar_rank1_ones": lambda: op_lt_scalar_rank1_ones,
@@ -76,9 +89,17 @@ test_data_scalar = {
     "lt_scalar_rank3_randn": lambda: op_lt_scalar_rank3_randn,
     "lt_scalar_rank4_randn": lambda: op_lt_scalar_rank4_randn,
 }
+test_data_scalar_fp16 = {
+    "lt_scalar_rank2_rand_fp16": lambda: LessThan(
+        torch.rand(4, 5, dtype=torch.float16), 0.2
+    ),
+    "lt_scalar_rank3_randn_fp16": lambda: LessThan(
+        torch.randn(2, 3, 4, dtype=torch.float16), -0.1
+    ),
+}
 
 
-@common.parametrize("test_module", test_data_tensor)
+@common.parametrize("test_module", test_data_tensor | test_data_tensor_fp16)
 def test_lt_tensor_tosa_FP(test_module):
     pipeline = TosaPipelineFP[input_t](
         test_module(),
@@ -89,7 +110,7 @@ def test_lt_tensor_tosa_FP(test_module):
     pipeline.run()
 
 
-@common.parametrize("test_module", test_data_scalar)
+@common.parametrize("test_module", test_data_scalar | test_data_scalar_fp16)
 def test_lt_scalar_tosa_FP(test_module):
     pipeline = TosaPipelineFP[input_t](
         test_module(),
@@ -107,6 +128,8 @@ def test_lt_tensor_tosa_INT(test_module):
         test_module().get_inputs(),
         LessThan.aten_op_tensor,
         LessThan.exir_op,
+        frobenius_threshold=None,  # Quantized comparisons with small diffs can be inaccurate, leading to large errors in unlucky cases.
+        cosine_threshold=None,
     )
     pipeline.run()
 
@@ -118,6 +141,8 @@ def test_lt_scalar_tosa_INT(test_module):
         test_module().get_inputs(),
         LessThan.aten_op_tensor,
         LessThan.exir_op,
+        frobenius_threshold=None,  # Quantized comparisons with small diffs can be inaccurate, leading to large errors in unlucky cases.
+        cosine_threshold=None,
     )
     pipeline.run()
 
@@ -207,8 +232,10 @@ def test_lt_scalar_u85_INT(test_module):
 
 @common.parametrize("test_module", test_data_tensor)
 @common.XfailIfNoCorstone320
-def test_lt_tensor_16a8w_u85_INT16(test_module):
-    """Test lt operation with 16A8W quantization on U85 (16-bit activations, 8-bit weights)"""
+def test_lt_tensor_16a8w_u85_INT(test_module):
+    """Test lt operation with 16A8W quantization on U85 (16-bit activations,
+    8-bit weights)
+    """
     per_channel_quantization = False
 
     pipeline = EthosU85PipelineINT[input_t](
@@ -225,8 +252,10 @@ def test_lt_tensor_16a8w_u85_INT16(test_module):
 
 @common.parametrize("test_module", test_data_scalar)
 @common.XfailIfNoCorstone320
-def test_lt_scalar_16a8w_u85_INT16(test_module):
-    """Test lt operation (scalar) with 16A8W quantization on U85 (16-bit activations, 8-bit weights)"""
+def test_lt_scalar_16a8w_u85_INT(test_module):
+    """Test lt operation (scalar) with 16A8W quantization on U85 (16-bit
+    activations, 8-bit weights)
+    """
     per_channel_quantization = False
 
     pipeline = EthosU85PipelineINT[input_t](
@@ -241,53 +270,83 @@ def test_lt_scalar_16a8w_u85_INT16(test_module):
     pipeline.run()
 
 
-@common.parametrize("test_module", test_data_tensor)
+@common.parametrize("test_module", test_data_tensor | test_data_tensor_fp16)
 @common.SkipIfNoModelConverter
-def test_lt_tensor_vgf_FP(test_module):
+def test_lt_tensor_vgf_no_quant(test_module):
     pipeline = VgfPipeline[input_t](
         test_module(),
         test_module().get_inputs(),
         LessThan.aten_op_tensor,
         LessThan.exir_op,
-        tosa_version="TOSA-1.0+FP",
+        quantize=False,
     )
     pipeline.run()
 
 
-@common.parametrize("test_module", test_data_scalar)
+@common.parametrize("test_module", test_data_scalar | test_data_scalar_fp16)
 @common.SkipIfNoModelConverter
-def test_lt_scalar_vgf_FP(test_module):
+def test_lt_scalar_vgf_no_quant(test_module):
     pipeline = VgfPipeline[input_t](
         test_module(),
         test_module().get_inputs(),
         LessThan.aten_op_scalar,
         LessThan.exir_op,
-        tosa_version="TOSA-1.0+FP",
+        quantize=False,
     )
     pipeline.run()
 
 
 @common.parametrize("test_module", test_data_tensor)
 @common.SkipIfNoModelConverter
-def test_lt_tensor_vgf_INT(test_module):
+def test_lt_tensor_vgf_quant(test_module):
     pipeline = VgfPipeline[input_t](
         test_module(),
         test_module().get_inputs(),
         LessThan.aten_op_tensor,
         LessThan.exir_op,
-        tosa_version="TOSA-1.0+INT",
+        quantize=True,
     )
     pipeline.run()
 
 
 @common.parametrize("test_module", test_data_scalar)
 @common.SkipIfNoModelConverter
-def test_lt_scalar_vgf_INT(test_module):
+def test_lt_scalar_vgf_quant(test_module):
     pipeline = VgfPipeline[input_t](
         test_module(),
         test_module().get_inputs(),
         LessThan.aten_op_tensor,
         LessThan.exir_op,
-        tosa_version="TOSA-1.0+INT",
+        quantize=True,
     )
+    pipeline.run()
+
+
+@common.parametrize("test_module", test_data_tensor)
+@common.SkipIfNoModelConverter
+def test_lt_tensor_vgf_quant_a16w8(test_module):
+    pipeline = VgfPipeline[input_t](
+        test_module(),
+        test_module().get_inputs(),
+        LessThan.aten_op_tensor,
+        LessThan.exir_op,
+        quantize=True,
+        tosa_extensions=["int16"],
+    )
+    pipeline.quantizer.set_global(get_symmetric_a16w8_quantization_config())
+    pipeline.run()
+
+
+@common.parametrize("test_module", test_data_scalar)
+@common.SkipIfNoModelConverter
+def test_lt_scalar_vgf_quant_a16w8(test_module):
+    pipeline = VgfPipeline[input_t](
+        test_module(),
+        test_module().get_inputs(),
+        LessThan.aten_op_tensor,
+        LessThan.exir_op,
+        quantize=True,
+        tosa_extensions=["int16"],
+    )
+    pipeline.quantizer.set_global(get_symmetric_a16w8_quantization_config())
     pipeline.run()

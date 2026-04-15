@@ -53,7 +53,11 @@ class DecomposeBatchNormNoStatsPass(ArmPass):
         )
 
         for node in graph_module.graph.nodes:
-            if node.op != "call_function" or node.target not in bn_ops:
+            if (
+                node.op != "call_function"
+                or node.target not in bn_ops
+                or not self.allowed_to_transform(node.meta)
+            ):
                 continue
 
             if node.target in (

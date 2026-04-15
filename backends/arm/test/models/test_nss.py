@@ -1,4 +1,4 @@
-# Copyright 2025 Arm Limited and/or its affiliates.
+# Copyright 2025-2026 Arm Limited and/or its affiliates.
 #
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
@@ -72,6 +72,8 @@ def test_nss_tosa_INT():
         aten_op=[],
         exir_op=[],
         use_to_edge_transform_and_lower=True,
+        frobenius_threshold=None,
+        cosine_threshold=None,
     )
     pipeline.run()
 
@@ -116,9 +118,11 @@ def test_nss_vgf_FP():
         example_inputs(),
         aten_op=[],
         exir_op=[],
-        tosa_version="TOSA-1.0+FP",
         use_to_edge_transform_and_lower=True,
         run_on_vulkan_runtime=True,
+        quantize=False,
+        # Override tosa version to test FP-only path
+        tosa_version="TOSA-1.0+FP",
     )
     pipeline.run()
 
@@ -130,10 +134,12 @@ def test_nss_vgf_INT():
         example_inputs(),
         aten_op=[],
         exir_op=[],
-        tosa_version="TOSA-1.0+INT",
         symmetric_io_quantization=True,
         use_to_edge_transform_and_lower=True,
         run_on_vulkan_runtime=True,
+        quantize=True,
+        # Override tosa version to test INT-only path
+        tosa_version="TOSA-1.0+INT",
     )
     pipeline.run()
 

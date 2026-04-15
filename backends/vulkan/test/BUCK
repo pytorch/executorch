@@ -1,0 +1,14 @@
+load("@fbsource//tools/build_defs:fb_native_wrapper.bzl", "fb_native")
+load(":compute_api_tests.bzl", "define_compute_api_test_targets")
+
+fb_native.filegroup(
+    name = "test_shaders",
+    srcs = glob([
+        "glsl/*",
+    ]),
+    visibility = [
+        "PUBLIC",
+    ],
+)
+
+define_compute_api_test_targets()

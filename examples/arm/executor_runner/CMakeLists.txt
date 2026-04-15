@@ -1,4 +1,4 @@
-# Copyright 2023-2025 Arm Limited and/or its affiliates.
+# Copyright 2023-2026 Arm Limited and/or its affiliates.
 #
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
@@ -77,6 +77,7 @@ set(ET_DIR_PATH
     "${CMAKE_CURRENT_SOURCE_DIR}/../../.."
     CACHE PATH "Path to ExecuTorch dir"
 )
+include(${ET_DIR_PATH}/tools/cmake/Utils.cmake)
 set(ET_BUILD_DIR_PATH
     "${ET_DIR_PATH}/cmake-out-arm"
     CACHE PATH "Path to ExecuTorch build/install dir"
@@ -90,7 +91,7 @@ set(ET_PTE_FILE_PATH
     CACHE PATH "Path to ExecuTorch model pte"
 )
 set(ETHOS_SDK_PATH
-    "${ET_DIR_PATH}/examples/arm/ethos-u-scratch/ethos-u"
+    "${ET_DIR_PATH}/examples/arm/arm-scratch/ethos-u"
     CACHE PATH "Path to Ethos-U bare metal driver/env"
 )
 set(PYTHON_EXECUTABLE
@@ -122,13 +123,20 @@ message(STATUS "SYSTEM_CONFIG is ${SYSTEM_CONFIG}")
 message(STATUS "MEMORY_MODE is ${MEMORY_MODE}")
 message(STATUS "ET_NUM_INFERENCES is ${ET_NUM_INFERENCES}")
 
-# By default, use 2MB of temporary scratch buffer For Dedicated_Sram, use 64MB
-# for the temporary scratch buffer and 384KB for the fast scratch buffer(the
-# cache, applicable only for Ethos-U65 and Ethos-U85)
-set(ET_ARM_BAREMETAL_SCRATCH_TEMP_ALLOCATOR_POOL_SIZE 0x200000)
+# By default, use 2MB of temporary scratch buffer. For Dedicated_Sram, use 64MB
+# for the temporary scratch buffer and 384KB for the fast scratch buffer (the
+# cache, applicable only for Ethos-U65 and Ethos-U85). Allow -D overrides.
 if(MEMORY_MODE MATCHES "Dedicated_Sram")
-  set(ET_ARM_BAREMETAL_SCRATCH_TEMP_ALLOCATOR_POOL_SIZE 0x4000000)
-  set(ET_ARM_BAREMETAL_FAST_SCRATCH_TEMP_ALLOCATOR_POOL_SIZE 0x60000)
+  if(NOT DEFINED ET_ARM_BAREMETAL_SCRATCH_TEMP_ALLOCATOR_POOL_SIZE)
+    set(ET_ARM_BAREMETAL_SCRATCH_TEMP_ALLOCATOR_POOL_SIZE 0x4000000)
+  endif()
+  if(NOT DEFINED ET_ARM_BAREMETAL_FAST_SCRATCH_TEMP_ALLOCATOR_POOL_SIZE)
+    set(ET_ARM_BAREMETAL_FAST_SCRATCH_TEMP_ALLOCATOR_POOL_SIZE 0x60000)
+  endif()
+else()
+  if(NOT DEFINED ET_ARM_BAREMETAL_SCRATCH_TEMP_ALLOCATOR_POOL_SIZE)
+    set(ET_ARM_BAREMETAL_SCRATCH_TEMP_ALLOCATOR_POOL_SIZE 0x200000)
+  endif()
 endif()
 message(
   STATUS
@@ -216,6 +224,12 @@ execute_process(
 )
 target_link_options(arm_executor_runner PRIVATE "-T" "${LINK_FILE_OUT}")
 
+# Apply whole-archive helper where available to keep static initializers.
+executorch_target_link_options_shared_lib(executorch_delegate_ethos_u)
+executorch_target_link_options_shared_lib(quantized_kernels)
+executorch_target_link_options_shared_lib(cortex_m_kernels)
+executorch_target_link_options_shared_lib(portable_kernels)
+
 set(arm_executor_runner_link)
 list(
   APPEND
@@ -225,12 +239,10 @@ list(
   executorch
   quantized_ops_lib
   cortex_m_ops_lib
-  "-Wl,--whole-archive"
   executorch_delegate_ethos_u
   quantized_kernels
   cortex_m_kernels
   portable_kernels
-  "-Wl,--no-whole-archive"
   -Xlinker
   -Map=arm_executor_runner.map
 )

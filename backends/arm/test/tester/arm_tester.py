@@ -1,15 +1,15 @@
-# Copyright 2024-2025 Arm Limited and/or its affiliates.
+# Copyright 2024-2026 Arm Limited and/or its affiliates.
 #
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
 
 import copy
 
-import logging
-import shutil
-import tempfile
+import inspect
 
-from collections import Counter
+import logging
+
+from collections import Counter, defaultdict
 from pprint import pformat
 from typing import (
     Any,
@@ -26,7 +26,9 @@ from typing import (
     Union,
 )
 
-import executorch.backends.xnnpack.test.tester.tester as tester
+import executorch.backends.test.harness.stages as BaseStages
+
+import executorch.backends.test.harness.tester as tester
 
 import torch.fx
 import torch.utils._pytree as pytree
@@ -48,7 +50,7 @@ from executorch.backends.arm.test.tester.analyze_output_utils import (
     dump_error_output,
     print_error_diffs,
 )
-from executorch.backends.arm.test.tester.quantize import ArmQuantize as Quantize
+from executorch.backends.arm.test.tester.quantize import ArmQuantize
 from executorch.backends.arm.test.tester.serialize import Serialize
 
 from executorch.backends.arm.tosa import TosaSpecification
@@ -64,14 +66,7 @@ from executorch.backends.arm.vgf import VgfCompileSpec
 
 from executorch.backends.test.harness.error_statistics import ErrorStatistics
 from executorch.backends.test.harness.stages import Stage, StageType
-from executorch.backends.xnnpack.test.tester import (
-    Partition as XnnpackPartitionStage,
-    Quantize as XnnpackQuantize,
-    Tester,
-    ToEdge as XnnpackToEdge,
-    ToEdgeTransformAndLower as XnnpackToEdgeTransformAndLower,
-    ToExecutorch as XnnpackToExecutorch,
-)
+
 from executorch.devtools.backend_debug import get_delegation_info
 
 from executorch.exir import (
@@ -87,14 +82,25 @@ from executorch.exir.backend.partitioner import Partitioner
 from executorch.exir.lowered_backend_module import LoweredBackendModule
 from executorch.exir.pass_base import ExportPass
 from executorch.exir.pass_manager import PassType
+
 from executorch.exir.program._program import (
     _copy_module,
+    _transform,
     _update_exported_program_graph_module,
 )
 from tabulate import tabulate  # type: ignore[import-untyped]
 
-from torch.export.graph_signature import ExportGraphSignature, InputSpec, OutputSpec
+from torch.export.graph_signature import (
+    ExportGraphSignature,
+    InputKind,
+    InputSpec,
+    OutputKind,
+    OutputSpec,
+)
 from torch.fx import Graph
+
+from torchao.quantization.pt2e.quantizer import QuantizationSpec, SharedQuantizationSpec
+from torchao.quantization.pt2e.quantizer.quantizer import Q_ANNOTATION_KEY
 
 logger = logging.getLogger(__name__)
 
@@ -142,7 +148,13 @@ def _dump_lowered_modules_artifact(
     _dump_str(output, path_to_dump)
 
 
-class Partition(tester.Partition):
+def _get_default_edge_compile_config(
+    skip_dim_order: bool = False,
+) -> EdgeCompileConfig:
+    return EdgeCompileConfig(_check_ir_validity=False, _skip_dim_order=skip_dim_order)
+
+
+class Partition(BaseStages.Partition):
     def dump_artifact(self, path_to_dump: Optional[str]):
         super().dump_artifact(path_to_dump)
         artifact = cast(Optional[EdgeProgramManager], self.artifact)
@@ -155,7 +167,7 @@ class Partition(tester.Partition):
         _dump_lowered_modules_artifact(path_to_dump, artifact, graph_module)
 
 
-class ToEdgeTransformAndLower(tester.ToEdgeTransformAndLower):
+class ToEdgeTransformAndLower(BaseStages.ToEdgeTransformAndLower):
     def __init__(
         self,
         partitioners: Optional[List[Partitioner]] = None,
@@ -164,10 +176,17 @@ class ToEdgeTransformAndLower(tester.ToEdgeTransformAndLower):
         transform_passes: Optional[
             Union[Sequence[PassType], Dict[str, Sequence[PassType]]]
         ] = None,
+        compile_spec: Optional[ArmCompileSpec] = None,
     ):
-        super().__init__(partitioners, edge_compile_config)
+        super().__init__(
+            default_partitioner_cls=None,
+            partitioners=partitioners,
+            edge_compile_config=edge_compile_config
+            or _get_default_edge_compile_config(),
+        )
         self.constant_methods = constant_methods
         self.transform_passes = transform_passes
+        self.partitioners = partitioners or []
 
     def dump_artifact(self, path_to_dump: Optional[str]):
         super().dump_artifact(path_to_dump)
@@ -194,13 +213,56 @@ class ToEdgeTransformAndLower(tester.ToEdgeTransformAndLower):
         )
 
 
-class ToExecutorch(tester.ToExecutorch):
+class ToExecutorch(BaseStages.ToExecutorch):
     def run_artifact(self, inputs):
         with TosaReferenceModelDispatch():
-            return super().run_artifact(inputs)
+            # Check if the model has mutable buffers. These are not delegated to the backend
+            # and are handled by core ExecuTorch as I/O. In other words, the mutable buffer
+            # is outputted and re-inputted into the model. As we are calling the graph module
+            # directly, we need to ensure we handle these extra mutable inputs.
+            if (
+                len(self.artifact.exported_program().graph_signature.buffers_to_mutate)
+                > 0
+            ):
+                buffers = list(self.artifact.exported_program().buffers())
+                buffers.extend(inputs)
+
+                return self.artifact.exported_program().graph_module(*buffers)
+            else:
+                return super().run_artifact(inputs)
 
 
-class RunPasses(tester.RunPasses):
+class RunPasses(BaseStages.RunPasses):
+    class TesterPassManager:
+        def __init__(
+            self,
+            exported_program: ExportedProgram,
+            passes: Optional[List[Type[PassType]]] = None,
+        ) -> None:
+            self._exported_program = exported_program
+            self.passes = passes or []
+
+        @property
+        def exported_program(self) -> ExportedProgram:
+            return self._exported_program
+
+        def _instantiate_pass(self, pass_):
+            if not isinstance(pass_, type):
+                return pass_
+
+            if issubclass(pass_, ExportPass):
+                init_sig = inspect.signature(pass_.__init__)
+                if "exported_program" in init_sig.parameters:
+                    return pass_(self.exported_program)
+                return pass_()
+
+            return pass_()
+
+        def transform(self) -> ExportedProgram:
+            ep = self.exported_program
+            for pass_ in self.passes:
+                ep = _transform(ep, self._instantiate_pass(pass_))
+            return ep
 
     @no_type_check
     def __init__(
@@ -215,7 +277,11 @@ class RunPasses(tester.RunPasses):
             passes_with_exported_program
         )
 
-        super().__init__(pass_list, pass_functions)
+        super().__init__(
+            pass_manager_cls=RunPasses.TesterPassManager,
+            pass_list=pass_list,
+            pass_functions=pass_functions,
+        )
 
     def run(
         self, artifact: Union[EdgeProgramManager, ExportedProgram], inputs=None
@@ -269,7 +335,7 @@ class InitialModel(Stage):
         return self.model.forward(*inputs)
 
 
-class ArmTester(Tester):
+class ArmTester(tester.Tester):
     def __init__(
         self,
         model: torch.nn.Module,
@@ -294,7 +360,19 @@ class ArmTester(Tester):
         self.transform_passes = transform_passes
         self.constant_methods = constant_methods
         self.compile_spec = compile_spec
-        super().__init__(model, example_inputs, dynamic_shapes)
+        stage_classes = tester.Tester.default_stage_classes() | {
+            StageType.PARTITION: Partition,
+            StageType.TO_EDGE_TRANSFORM_AND_LOWER: ToEdgeTransformAndLower,
+            StageType.TO_EXECUTORCH: ToExecutorch,
+            StageType.RUN_PASSES: RunPasses,
+            StageType.SERIALIZE: Serialize,
+        }
+        super().__init__(
+            model,
+            example_inputs,
+            dynamic_shapes=dynamic_shapes,
+            stage_classes=stage_classes,
+        )
         self.pipeline[StageType.INITIAL_MODEL] = [
             StageType.QUANTIZE,
             StageType.EXPORT,
@@ -310,12 +388,12 @@ class ArmTester(Tester):
     @no_type_check
     def quantize(
         self,
-        quantize_stage: Optional[XnnpackQuantize] = None,
+        quantize_stage: Optional[BaseStages.Quantize] = None,
     ):
         # Same stage type as parent but exposed via module alias
         if quantize_stage is None:
             quantizer = create_quantizer(self.compile_spec)
-            quantize_stage = Quantize(
+            quantize_stage = ArmQuantize(
                 quantizer,
                 get_symmetric_quantization_config(),
             )
@@ -324,14 +402,16 @@ class ArmTester(Tester):
     @no_type_check
     def to_edge(
         self,
-        to_edge_stage: Optional[XnnpackToEdge] = None,
+        to_edge_stage: Optional[BaseStages.ToEdge] = None,
         # Keep config keyword-only to avoid positional clashes with legacy calls.
         *,
         config: Optional[EdgeCompileConfig] = None,
     ):
         # Allow optional config override beyond base signature
         if to_edge_stage is None:
-            to_edge_stage = tester.ToEdge(config)
+            to_edge_stage = BaseStages.ToEdge(
+                config or _get_default_edge_compile_config()
+            )
         else:
             if config is not None:
                 to_edge_stage.edge_compile_conf = config
@@ -339,7 +419,7 @@ class ArmTester(Tester):
         return super().to_edge(to_edge_stage)
 
     @no_type_check
-    def partition(self, partition_stage: Optional[XnnpackPartitionStage] = None):
+    def partition(self, partition_stage: Optional[BaseStages.Partition] = None):
         # Accept Arm-specific partition stage subclass
         if partition_stage is None:
             arm_partitioner = create_partitioner(self.compile_spec)
@@ -349,7 +429,7 @@ class ArmTester(Tester):
     @no_type_check
     def to_edge_transform_and_lower(
         self,
-        to_edge_and_lower_stage: Optional[XnnpackToEdgeTransformAndLower] = None,
+        to_edge_and_lower_stage: Optional[BaseStages.ToEdgeTransformAndLower] = None,
         generate_etrecord: bool = False,
         # Force the optional tuning knobs to be keyword-only for readability/back-compat.
         *,
@@ -378,6 +458,7 @@ class ArmTester(Tester):
                 edge_compile_config,
                 constant_methods=self.constant_methods,
                 transform_passes=self.transform_passes,
+                compile_spec=self.compile_spec,
             )
         else:
             if partitioners is not None:
@@ -389,7 +470,9 @@ class ArmTester(Tester):
         )
 
     @no_type_check
-    def to_executorch(self, to_executorch_stage: Optional[XnnpackToExecutorch] = None):
+    def to_executorch(
+        self, to_executorch_stage: Optional[BaseStages.ToExecutorch] = None
+    ):
         # Allow custom ExecuTorch stage subclass
         if to_executorch_stage is None:
             to_executorch_stage = ToExecutorch()
@@ -398,7 +481,7 @@ class ArmTester(Tester):
     @no_type_check
     def serialize(
         self,
-        serialize_stage: Optional[Serialize] = None,
+        serialize_stage: Optional[BaseStages.Serialize] = None,
         # Keep timeout keyword-only so positional usage matches the base class.
         *,
         timeout: int = 480,
@@ -410,45 +493,19 @@ class ArmTester(Tester):
                 use_portable_ops=self.use_portable_ops,
                 timeout=self.timeout,
             )
-        assert (
-            self.compile_spec.get_intermediate_path() is not None
-        ), "Can't dump serialized file when compile specs do not contain an artifact path."
-
         return super().serialize(serialize_stage)
 
     def is_quantized(self) -> bool:
         return self.stages[StageType.QUANTIZE] is not None
 
-    def run_method_and_compare_outputs(
-        self,
-        stage: Optional[StageType] = None,
-        inputs: Optional[Tuple[torch.Tensor, ...]] = None,
-        num_runs: int = 1,
-        atol: float = 1e-03,
-        rtol: float = 1e-03,
-        qtol: int = 0,
-        statistics_callback: Callable[[ErrorStatistics], None] | None = None,
-        # Preserve positional compatibility while keeping new flags keyword-only.
-        *,
-        error_callbacks: Optional[Sequence[Callable[..., None]]] = None,
-        run_eager_mode: bool = False,
+    def run_passes(self, run_passes_stage: Optional[BaseStages.RunPasses] = None):
+        if run_passes_stage is None:
+            run_passes_stage = RunPasses()
+        return super().run_passes(run_passes_stage)
+
+    def _get_input_and_stages(
+        self, inputs, stage, reference_stage_type, run_eager_mode: bool
     ):
-        """
-        Compares the run_artifact output of 'stage' with the output of a reference stage.
-        If the model is quantized, the reference stage is the Quantize stage output.
-        Otherwise, the reference stage is the initial pytorch module.
-
-        Asserts that the outputs are equal (within tolerances).
-        Returns self to allow the function to be run in a test chain.
-
-        Args:
-            stage: (Optional[str]): The name of the stage to compare.
-                The default is the latest run stage.
-            inputs (Optional[Tuple[torch.Tensor]]): Allows you to input custom input data.
-                The default is random data.
-        """
-
-        # backward-compatible ordering (accept inputs as the first positional argument)
         if inputs is None and isinstance(stage, tuple):
             if all(isinstance(arg, torch.Tensor) for arg in stage):
                 inputs = cast(Tuple[torch.Tensor, ...], stage)
@@ -476,18 +533,59 @@ class ArmTester(Tester):
         is_quantized = self.is_quantized()
 
         if is_quantized:
-            reference_stage = self.stages[StageType.QUANTIZE]
+            reference_stage_type = reference_stage_type or StageType.QUANTIZE
         else:
-            reference_stage = self.stages[StageType.INITIAL_MODEL]
+            reference_stage_type = reference_stage_type or StageType.INITIAL_MODEL
+        reference_stage = self.stages[reference_stage_type]
+
+        return inputs, reference_stage, test_stage
+
+    def run_method_and_compare_outputs(
+        self,
+        stage: Optional[StageType] = None,
+        inputs: Optional[Tuple[torch.Tensor, ...]] = None,
+        num_runs: int = 1,
+        atol: float = 1e-03,
+        rtol: float = 1e-03,
+        qtol: int = 0,
+        statistics_callback: Callable[[ErrorStatistics], None] | None = None,
+        artifact_dir: Optional[str] = None,
+        artifact_name: Optional[str] = None,
+        *,
+        reference_stage_type: StageType | None = None,
+        compare_callback: Optional[Callable[..., None]] = None,
+        error_callbacks: Optional[Sequence[Callable[..., None]]] = None,
+        run_eager_mode: bool = False,
+    ):
+        """Compares the run_artifact output of 'stage' with the output of a
+        reference stage. If the model is quantized, the reference stage is the
+        Quantize stage output. Otherwise, the reference stage is the initial
+        pytorch module.
+
+        Asserts that the outputs are equal (within tolerances).
+        Returns self to allow the function to be run in a test chain.
+
+        Args:
+            stage: (Optional[str]): The name of the stage to compare.
+                The default is the latest run stage.
+            inputs (Optional[Tuple[torch.Tensor]]): Allows you to input custom input data.
+                The default is random data.
+
+        """
+
+        # backward-compatible ordering (accept inputs as the first positional argument)
+        inputs, reference_stage, test_stage = self._get_input_and_stages(
+            inputs, stage, reference_stage_type, run_eager_mode
+        )
 
         exported_stage = self.stages[StageType.EXPORT]
         exported_program = cast(ExportedProgram, exported_stage.artifact)
         output_node = exported_program.graph_module.graph.output_node()
         output_qparams = get_output_quantization_params(output_node)
 
-        quantization_scales = []
+        quantization_params = []
         for node in output_qparams:
-            quantization_scales.append(getattr(output_qparams[node], "scale", None))
+            quantization_params.append(output_qparams[node])
 
         logger.info(
             f"Comparing Stage '{test_stage.stage_type()}' with Stage '{reference_stage.stage_type()}'"
@@ -529,9 +627,10 @@ class ArmTester(Tester):
             logger.info(f"\n Ref output: {reference_outputs}")
             logger.info(f"\nTest output: {test_outputs}")
 
-            for reference_output, test_output, quantization_scale in zip(
-                reference_outputs, test_outputs, quantization_scales
+            for reference_output, test_output, quantization_param in zip(
+                reference_outputs, test_outputs, quantization_params
             ):
+                quantization_scale = getattr(quantization_param, "scale", None)
                 self._compare_outputs(
                     reference_output,
                     test_output,
@@ -540,9 +639,197 @@ class ArmTester(Tester):
                     rtol,
                     qtol,
                     statistics_callback=statistics_callback,
+                    compare_callback=compare_callback,
                     error_callbacks=error_callbacks,
+                    quantization_parameters=quantization_param,
                 )
 
+        return self
+
+    def _get_output_qspec_from_node(
+        self, node: torch.fx.Node
+    ) -> QuantizationSpec | None:
+        if Q_ANNOTATION_KEY not in node.meta:
+            return None
+        annotation = node.meta[Q_ANNOTATION_KEY]
+        # If annotation.output_qspec is a SharedQuantizationSpec, we need to find
+        # the actual QuantizationSpec from one of the inputs.
+        if isinstance(annotation.output_qspec, SharedQuantizationSpec):
+            # First try to find a non-shared qspec from the inputs.
+            annotation_qspec = [
+                qspec
+                for qspec in annotation.input_qspec_map.values()
+                if not isinstance(qspec, SharedQuantizationSpec)
+            ]
+            # If none of the inputs have a non-shared qspec, we need to
+            # find the source node of the shared qspec.
+            if len(annotation_qspec) == 0:
+                edge_or_node = annotation.output_qspec.edge_or_node
+                if isinstance(edge_or_node, tuple):
+                    source_node = edge_or_node[0]
+                else:
+                    source_node = edge_or_node
+                annotation_qspec = [source_node.meta[Q_ANNOTATION_KEY].output_qspec]
+            annotation_qspec = annotation_qspec[0]
+        else:
+            annotation_qspec = annotation.output_qspec
+
+        return annotation_qspec
+
+    def _get_input_qspecs_from_node(
+        self, node: torch.fx.Node
+    ) -> List[QuantizationSpec | None]:
+        if Q_ANNOTATION_KEY not in node.meta:
+            return [None]
+        annotation = node.meta[Q_ANNOTATION_KEY]
+        input_qspec_map = annotation.input_qspec_map
+        found_qspecs = []
+        if len(input_qspec_map) == 0:
+            return [None]
+        for spec in input_qspec_map.values():
+            # If spec is a SharedQuantizationSpec, we need to find
+            # the actual QuantizationSpec.
+            if isinstance(spec, SharedQuantizationSpec):
+                # First try to find a non-shared qspec from the inputs.
+                annotation_qspec = [
+                    qspec
+                    for qspec in input_qspec_map.values()
+                    if not isinstance(qspec, SharedQuantizationSpec)
+                ]
+                # If none of the inputs have a non-shared qspec, we need to
+                # find the source node of the shared qspec.
+                if len(annotation_qspec) == 0:
+                    edge_or_node = annotation.output_qspec.edge_or_node
+                    if isinstance(edge_or_node, tuple):
+                        source_node = edge_or_node[0]
+                    else:
+                        source_node = edge_or_node
+                    annotation_qspec = [source_node.meta[Q_ANNOTATION_KEY].output_qspec]
+                found_qspecs.append(annotation_qspec[0])
+            else:
+                found_qspecs.append(spec)
+
+        return found_qspecs
+
+    def _check_input_qspecs(self, graph: Graph, input_qspecs):
+        if input_qspecs is None:
+            return
+        found_qspecs = []
+        for node in graph.nodes:
+            if node.op != "placeholder":
+                continue
+            annotation_qspec = self._get_output_qspec_from_node(node)
+            found_qspecs.append(annotation_qspec)
+        found_qspecs_counter = Counter(found_qspecs)
+        for qspec in input_qspecs:
+            # check that each expected qspec is found
+            if qspec not in found_qspecs_counter:
+                raise AssertionError(
+                    f"Expected to find input quantization annotation {qspec}, but it was not found. "
+                    f"Found annotations: {found_qspecs_counter}"
+                )
+            # check that number of occurrences of each qspec matches expected
+            if found_qspecs_counter[qspec] != input_qspecs[qspec]:
+                raise AssertionError(
+                    f"Expected to find {input_qspecs[qspec]} instances of input quantization annotation {qspec}, but "
+                    f"found {found_qspecs_counter[qspec]} instances."
+                )
+
+    def _check_output_qspecs(self, graph: Graph, output_qspecs):
+        if output_qspecs is None:
+            return
+        found_qspecs = []
+        output_node = graph.output_node()
+        annotation_qspec = self._get_input_qspecs_from_node(output_node)
+        found_qspecs.extend(annotation_qspec)
+        found_qspecs_counter = Counter(found_qspecs)
+        for qspec in output_qspecs:
+            # check that each expected qspec is found
+            if qspec not in found_qspecs_counter:
+                raise AssertionError(
+                    f"Expected to find output quantization annotation {qspec}, but it was not found. "
+                    f"Found annotations: {found_qspecs_counter}"
+                )
+            # check that number of occurrences of each qspec matches expected
+            if found_qspecs_counter[qspec] != output_qspecs[qspec]:
+                raise AssertionError(
+                    f"Expected to find {output_qspecs[qspec]} instances of output quantization annotation {qspec}, but "
+                    f"found {found_qspecs_counter[qspec]} instances."
+                )
+
+    def _check_qspecs(self, graph: Graph, quantization_annotations):
+        if quantization_annotations is None:
+            return self
+
+        quantization_annotations_found: List[Tuple[str, QuantizationSpec | None]] = []
+        for node in graph.nodes:
+            if node.op != "call_function":
+                continue
+            quantization_annotations_found.append(
+                (str(node.target), self._get_output_qspec_from_node(node))
+            )
+
+        # Counter: (target, qspec) -> count
+        quantization_annotations_found_counter = Counter(quantization_annotations_found)
+        # Convert counter to Dict[target, Dict[qspec, count]]
+        quantization_annotations_found_dict: Dict[
+            str, Dict[QuantizationSpec | None, int]
+        ] = defaultdict(dict)
+        for (target, qspec), count in quantization_annotations_found_counter.items():
+            quantization_annotations_found_dict[target][qspec] = count
+
+        for target, qspecs in quantization_annotations.items():
+            # check if target is in found annotations
+            if target not in quantization_annotations_found_dict:
+                raise AssertionError(
+                    f"Expected to find quantization annotation for operator {target}, but it was not found."
+                )
+            for qspec in qspecs:
+                # check if qspec is in found annotations for target
+                if qspec not in quantization_annotations_found_dict[target]:
+                    raise AssertionError(
+                        f"Expected to find quantization annotation {qspec} for operator {target}, but it was not found. "
+                        f"Found annotations: {quantization_annotations_found_dict[target]}"
+                    )
+                # check that number of occurrences of each qspec matches expected
+                if quantization_annotations_found_dict[target][qspec] != qspecs[qspec]:
+                    raise AssertionError(
+                        f"Expected to find {qspecs[qspec]} instances of quantization annotation {qspec} for operator "
+                        f"{target}, but found {quantization_annotations_found_dict[target][qspec]} instances."
+                    )
+
+    def check_quantization_annotation(
+        self,
+        quantization_annotations: Optional[
+            Dict[str, Dict[QuantizationSpec | None, int]]
+        ] = None,
+        input_qspecs: Optional[Dict[QuantizationSpec | None, int]] = None,
+        output_qspecs: Optional[Dict[QuantizationSpec | None, int]] = None,
+    ):
+        """Check the quantization annotations in the graph of a quantized model.
+
+        Args:
+            quantization_annotations: A dictionary mapping operator names to a dictionary of
+                QuantizationSpecs and their expected counts.
+                If None, the check is skipped.
+            input_qspecs: A dictionary of expected input QuantizationSpecs and their counts.
+                If None, the check is skipped.
+            output_qspecs: A dictionary of expected output QuantizationSpecs and their counts.
+                If None, the check is skipped.
+
+        Returns self for daisy-chaining.
+
+        """
+        if not self.is_quantized():
+            raise RuntimeError(
+                f"{self.check_quantization_annotation.__name__} should be called after quantization stage."
+            )
+
+        graph = self.get_graph(StageType.QUANTIZE)
+
+        self._check_input_qspecs(graph, input_qspecs)
+        self._check_output_qspecs(graph, output_qspecs)
+        self._check_qspecs(graph, quantization_annotations)
         return self
 
     def get_graph(self, stage: StageType | None = None) -> Graph:
@@ -567,48 +854,88 @@ class ArmTester(Tester):
         return graph
 
     def dump_operator_distribution(
-        self, path_to_dump: Optional[str] = None, print_table: bool = True
+        self,
+        path_to_dump: Optional[str] = None,
+        print_table: bool = True,
+        include_dtypes: bool = True,
     ):
-        """Dump the distribution of operators in the current stage.
-        In the partition stage, additional information is included such as the number of
-        delegates and the distribution of TOSA operators.
-        Set parameter print_table to False to dump in a parseable format.
-
+        """Dump the distribution of operators in the current stage. In the
+        partition stage, additional information is included such as the number
+        of delegates and the distribution of TOSA operators. Set parameter
+        print_table to False to dump in a parseable format.
 
         Returns self for daisy-chaining.
+
         """
         line = "#" * 10
-        to_print = f"{line} {self.cur} Operator Distribution {line}\n"
+        to_print = f"\n{line} {self.cur} Operator Distribution {line}\n"
 
-        if (
-            self.cur
-            in (
-                StageType.PARTITION,
-                StageType.TO_EDGE_TRANSFORM_AND_LOWER,
-            )
-            and print_table
+        if self.cur in (
+            StageType.PARTITION,
+            StageType.TO_EDGE_TRANSFORM_AND_LOWER,
         ):
             graph_module = self.get_artifact().exported_program().graph_module
             delegation_info = get_delegation_info(graph_module)
+            op_dist = _get_tosa_operator_distribution(graph_module, include_dtypes)
             if print_table:
-                op_dist = delegation_info.get_operator_delegation_dataframe()
+                aten_op_dist = delegation_info.get_operator_delegation_dataframe()
+                to_print += "Aten operators:\n" + _format_dict(
+                    dict(aten_op_dist), print_table
+                )
+
+                if include_dtypes:
+                    op_dist_dict = {
+                        "Operator": [op_type[0] for op_type, _ in op_dist],
+                        "Dtype": [op_type[1] for op_type, _ in op_dist],
+                        "Count": [count for _, count in op_dist],
+                    }
+                else:
+                    op_dist_dict = {
+                        "Operator": [op for op, _ in op_dist],
+                        "Count": [count for _, count in op_dist],
+                    }
             else:
-                op_dist = dict(_get_operator_distribution(graph_module.graph))
-            to_print += _format_dict(op_dist, print_table)
-            to_print += "\n" + _get_tosa_operator_distribution(
-                graph_module, print_table
-            )
-            to_print += "\n"
-            to_print += delegation_info.get_summary()
+                if include_dtypes:
+                    op_dtype_dist_dict: Dict[str, Dict[str, int]] = defaultdict(dict)
+                    for op_dtype, count in op_dist:
+                        op = op_dtype[0]
+                        dtype = op_dtype[1]
+                        op_dtype_dist_dict[op].update({dtype: count})
+                    op_dist_dict = dict(op_dtype_dist_dict)
+                else:
+                    op_dist_dict = dict(op_dist)  # type: ignore[arg-type]
+            to_print += "\nTOSA operators:\n" + _format_dict(op_dist_dict, print_table)
+            to_print += "\n" + delegation_info.get_summary()
         else:
             graph = self.get_graph(self.cur)
-            op_dist = dict(_get_operator_distribution(graph))
+            if include_dtypes:
+                op_dist = _get_operator_dtype_distribution(graph)
+            else:
+                op_dist = _get_operator_distribution(graph)
             if print_table:
-                op_dist = {
-                    "Operator": list(op_dist),
-                    "Count": [op_dist[key] for key in op_dist],
-                }
-            to_print += _format_dict(op_dist, print_table) + "\n"
+                if include_dtypes:
+                    op_dist_dict = {
+                        "Operator": [op_dtype[0] for op_dtype, _ in op_dist],
+                        "Dtype": [op_dtype[1] for op_dtype, _ in op_dist],
+                        "Count": [count for _, count in op_dist],
+                    }
+                else:
+                    op_dist_dict = {
+                        "Operator": [op for op, _ in op_dist],
+                        "Count": [count for _, count in op_dist],
+                    }
+            else:
+                if include_dtypes:
+                    op_dtype_dist_dict = defaultdict(dict)
+                    for op_dtype, count in op_dist:
+                        op = op_dtype[0]
+                        dtype = op_dtype[1]
+                        op_dtype_dist_dict[op].update({dtype: count})
+                    op_dist_dict = dict(op_dtype_dist_dict)
+                else:
+                    op_dist_dict = dict(op_dist)  # type: ignore[arg-type]
+
+            to_print += _format_dict(op_dist_dict, print_table) + "\n"
 
         _dump_str(to_print, path_to_dump)
 
@@ -617,10 +944,12 @@ class ArmTester(Tester):
     def dump_dtype_distribution(
         self, path_to_dump: Optional[str] = None, print_table: bool = True
     ):
-        """Dump a the distributions of dtypes of nodes and placeholders in the current stage.
-        Set parameter print_table to False to dump in a parseable format.
+        """Dump a the distributions of dtypes of nodes and placeholders in the
+        current stage. Set parameter print_table to False to dump in a parseable
+        format.
 
         Returns self for daisy-chaining.
+
         """
 
         line = "#" * 10
@@ -664,11 +993,12 @@ class ArmTester(Tester):
         """Run transform_for_annotation_pipeline on exported program to ensure
         passes do not break the initial model before quantization.
 
-        There are caveats to this however. As we register buffers to the graph modules
-        the resulting exported graph can fail. Use this only to compare numerical correctness
-        in eager mode.
+        There are caveats to this however. As we register buffers to the graph
+        modules the resulting exported graph can fail. Use this only to compare
+        numerical correctness in eager mode.
 
         Returns exported program with passes applied.
+
         """
 
         if stage is None:
@@ -679,7 +1009,7 @@ class ArmTester(Tester):
         artifact = self.get_artifact(stage)
         if self.cur == StageType.EXPORT:
             new_gm = ArmPassManager(
-                self.compile_spec.tosa_spec
+                self.compile_spec
             ).transform_for_annotation_pipeline(graph_module=artifact.graph_module)
         else:
             raise RuntimeError("Can only run passes on Export stage.")
@@ -712,19 +1042,26 @@ class ArmTester(Tester):
         statistics_callback: Callable[[ErrorStatistics], None] | None = None,
         # Extra debugging hooks are keyword-only to keep the signature stable.
         *,
+        compare_callback: Optional[Callable[..., None]] = None,
         error_callbacks: Optional[Sequence[Callable[..., None]]] = None,
+        quantization_parameters=None,
     ):
         # Accept extra error callback hook for debugging
         try:
-            super()._compare_outputs(
-                reference_output,
-                stage_output,
-                quantization_scale,
-                atol,
-                rtol,
-                qtol,
-                statistics_callback=statistics_callback,
-            )
+            if compare_callback:
+                compare_callback(
+                    reference_output, stage_output, quantization_parameters
+                )
+            else:
+                super()._compare_outputs(
+                    reference_output,
+                    stage_output,
+                    quantization_scale,
+                    atol,
+                    rtol,
+                    qtol,
+                    statistics_callback=statistics_callback,
+                )
         except AssertionError as e:
             callbacks = (
                 list(error_callbacks)
@@ -737,26 +1074,53 @@ class ArmTester(Tester):
                     stage_output,
                     reference_output,
                     quantization_scale=quantization_scale,
-                    atol=1e-03,
-                    rtol=1e-03,
-                    qtol=0,
+                    atol=atol,
+                    rtol=rtol,
+                    qtol=qtol,
                 )
             raise e
 
-    def __del__(self):
-        intermediate_path = self.compile_spec.get_intermediate_path()
-        if not intermediate_path:
-            return
-        if len(tempdir := tempfile.gettempdir()) > 0:
-            if intermediate_path.startswith(tempdir):
-                shutil.rmtree(intermediate_path, ignore_errors=True)
+    def check_dtype_count(self, dtype_dict: Dict[str, Dict[str, int]]):
+        if self.cur in (
+            StageType.PARTITION,
+            StageType.TO_EDGE_TRANSFORM_AND_LOWER,
+        ):
+            graph_module = self.get_artifact().exported_program().graph_module
+            op_dist = _get_tosa_operator_distribution(graph_module, include_dtypes=True)
+            op_dist_dict: Dict[str, Dict[str, int]] = defaultdict(dict)
+            for op_dtype, count in op_dist:
+                if isinstance(op_dtype, str):
+                    raise ValueError(
+                        f"Expected {_get_tosa_operator_distribution.__name__} to return "
+                        "Tuple[Tuple[str, str], int]."
+                    )
+                else:
+                    op, dtype = op_dtype
+
+                op_dist_dict[op].update({dtype: count})
+            for op in dtype_dict.keys():
+                if op not in op_dist_dict:
+                    raise RuntimeError(f"Could not find op {op}.")
+                for dtype, count in dtype_dict[op].items():
+                    dtype_count = op_dist_dict[op].setdefault(dtype, 0)
+                    if dtype_count != count:
+                        raise RuntimeError(
+                            f"Expected {count} occurencies of {op=}, {dtype=} but found {dtype_count}."
+                        )
+
+        else:
+
+            raise NotImplementedError(f"Cannot check dtypes for stage {self.cur}")
 
 
 def _get_dtype_distribution(
     graph: Graph, tosa_spec: TosaSpecification
 ) -> tuple[Counter[str], Counter[str]]:
     """Counts the occurences of placeholder and call_function dtypes in a graph.
-    The result is a tuple of Counters (placeholder_distribution, call_function_distribution)
+
+    The result is a tuple of Counters (placeholder_distribution,
+    call_function_distribution)
+
     """
     placeholder_dtypes: list[str] = []
     call_function_dtypes: list[str] = []
@@ -765,18 +1129,44 @@ def _get_dtype_distribution(
             placeholder_dtypes.append(str(node.meta["val"].dtype))
         if node.op == "call_function":
             if "val" in node.meta and isinstance(node.meta["val"], torch.Tensor):
-                dtype, _, _ = extract_tensor_meta(node.meta, tosa_spec)
+                dtype, _, _ = extract_tensor_meta(node.meta)
                 call_function_dtypes.append(ts.DTypeNames[dtype])
     return Counter(placeholder_dtypes), Counter(call_function_dtypes)
 
 
-def _get_operator_distribution(graph: Graph) -> dict[str, int]:
+def _get_operator_distribution(graph: Graph) -> List[Tuple[str, int]]:
     """Counts the occurences of operator names in a graph.
-    The result is a dict {'operator name':'number of nodes'}
+
+    The result is a sorted list [('operator name':'number of nodes')]
+
     """
-    return Counter(
-        [str(node.target) for node in list(graph.nodes) if node.op == "call_function"]
+    return sorted(
+        Counter(
+            [
+                str(node.target)
+                for node in list(graph.nodes)
+                if node.op == "call_function"
+            ]
+        ).items()
     )
+
+
+def _get_operator_dtype_distribution(graph: Graph) -> List[Tuple[Tuple[str, str], int]]:
+    """Counts the occurences of operator names and dtype pairs in a graph.
+
+    The result is a sorted list[(('operator name','dtype'),'number of nodes')]
+
+    """
+    target_dtype_pairs = []
+    for node in graph.nodes:
+        if node.op != "call_function":
+            continue
+        if "val" in node.meta and isinstance(node.meta["val"], torch.Tensor):
+            dtype = str(node.meta["val"].dtype)
+        else:
+            dtype = "UNKNOWN"
+        target_dtype_pairs.append((str(node.target), dtype))
+    return sorted(Counter(target_dtype_pairs).items())
 
 
 def _format_export_graph_signature(signature: ExportGraphSignature) -> str:
@@ -796,14 +1186,17 @@ def _format_export_graph_signature(signature: ExportGraphSignature) -> str:
 
 
 def _get_tosa_operator_distribution(
-    graph_module: torch.fx.GraphModule, print_table=False
-) -> str:
+    graph_module: torch.fx.GraphModule, include_dtypes=False
+) -> list[Tuple[str, int]] | list[Tuple[Tuple[str, str], int]]:
     """Counts the occurences of operator names of all lowered modules containing
     a TOSA flatbuffer.
+
     The result is a string with the operator distribution or an error message.
+
     """
-    op_list = []
     id = 0
+    unknown_dtype_str = "UNKNOWN"
+    op_list = []
     while lowered_module := getattr(graph_module, f"lowered_module_{id}", None):
         compile_spec = parse_compile_spec(lowered_module.compile_specs)
         if isinstance(compile_spec, TosaCompileSpec):
@@ -811,22 +1204,42 @@ def _get_tosa_operator_distribution(
             tosa_json = dbg_tosa_fb_to_json(tosa_fb)
             for region in tosa_json["regions"]:
                 for block in region["blocks"]:
-                    op_list.extend([operator["op"] for operator in block["operators"]])
+                    for operator in block["operators"]:
+                        op = operator["op"]
+                        if include_dtypes:
+                            outputs = operator.get("outputs", [])
+                            if outputs == []:
+                                op_list.append((op, unknown_dtype_str))
+                                continue
+                            tensor_block = block.get("tensors", {})
+                            tensors_with_matching_name = [
+                                t for t in tensor_block if t["name"] == outputs[0]
+                            ]
+                            dtype = (
+                                tensors_with_matching_name[0]["type"]
+                                if len(tensors_with_matching_name) > 0
+                                else unknown_dtype_str
+                            )
+                            op_list.append((op, dtype))
+                        else:
+                            op_list.append(op)
+
         elif isinstance(compile_spec, EthosUCompileSpec):
-            return "Can not get operator distribution for Vela command stream."
+            raise NotImplementedError(
+                "Can not get operator distribution for Vela command stream."
+            )
         elif isinstance(compile_spec, VgfCompileSpec):
-            return "Can not get operator distribution for VGF."
+            raise NotImplementedError("Can not get operator distribution for VGF.")
         else:
-            return f"Unknown output format '{compile_spec.get_output_format()}'."
+            raise NotImplementedError(
+                f"Unknown output format '{compile_spec._get_output_format()}'."
+            )
         id += 1
     if id == 0:
-        return "No delegate with name 'lowered_module_0 found in graph module."
-    op_dist = dict(Counter(op_list))
-    op_dist = {
-        "Operator": list(op_dist.keys()),
-        "Count": [item[1] for item in op_dist.items()],
-    }
-    return "TOSA operators:\n" + _format_dict(dict(op_dist), print_table)
+        raise ValueError(
+            "No delegate with name 'lowered_module_0 found in graph module."
+        )
+    return sorted(Counter(op_list).items())
 
 
 def _dump_str(to_print: str, path_to_dump: Optional[str] = None):
@@ -844,3 +1257,60 @@ def _format_dict(to_print: dict, print_table: bool = True) -> str:
         )
     else:
         return pformat(to_print, compact=True, indent=1)
+
+
+def count_tosa_ops(graph_module: torch.fx.GraphModule, expected_ops: Dict[str, int]):
+    """Asserts that the number of occurrences of TOSA operators in the graph of
+    a partitioned module matches the expected counts.
+    """
+    op_counts = dict(_get_tosa_operator_distribution(graph_module))
+    for op, expected_count in expected_ops.items():
+        actual_count = op_counts.get(op, 0)
+
+        if expected_count != actual_count:
+            if expected_count == 0:
+                raise AssertionError(
+                    f"Expected no occurrences of TOSA op {op} but found {actual_count}."
+                )
+            elif actual_count == 0:
+                raise AssertionError(f"Expected TOSA op {op} but it was not found.")
+            else:
+                raise AssertionError(
+                    f"Expected {expected_count} occurrences of TOSA op {op} but found {actual_count}."
+                )
+
+
+def count_program_io_kinds(
+    exported_program: ExportedProgram,
+    expected_input_kinds: dict[InputKind, int] | None,
+    expected_output_kinds: dict[OutputKind, int] | None,
+):
+    """Checks that the number of InputKinds and OutputKinds in the final
+    ExportedProgram are equal to those in expected_inputs and
+    expected_outputs.
+    """
+
+    def check_spec_count(
+        spec: Sequence[InputSpec] | Sequence[OutputSpec],
+        expected_counts: dict[Any, int],
+    ):
+        kind = type(spec[0].kind)
+        counts: dict[Any, int] = Counter([s.kind for s in spec])
+
+        for e in kind:
+            if counts[e] != expected_counts.get(e, 0):
+                raise AssertionError(
+                    f"Expected to find {expected_counts[e]} for input/output kind {e}, but found {counts[e]}."
+                )
+
+    if expected_input_kinds:
+        check_spec_count(
+            exported_program.graph_signature.input_specs,
+            expected_input_kinds,
+        )
+
+    if expected_output_kinds:
+        check_spec_count(
+            exported_program.graph_signature.output_specs,
+            expected_output_kinds,
+        )

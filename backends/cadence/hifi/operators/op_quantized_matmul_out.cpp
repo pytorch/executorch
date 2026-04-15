@@ -6,19 +6,18 @@
  * LICENSE file in the root directory of this source tree.
  */
 
-#include <executorch/backends/cadence/hifi/kernels/kernels.h>
-#include <executorch/runtime/kernel/kernel_includes.h>
-#include <on_device_ai/Assistant/Jarvis/min_runtime/operators/generic/op_quantized_matmul.h>
 #include <stdlib.h>
 
-using executorch::aten::ScalarType;
-using executorch::aten::Tensor;
-using executorch::runtime::getLeadingDims;
-using torch::executor::RuntimeContext;
+#include <executorch/backends/cadence/generic/operators/op_quantized_matmul.h>
+#include <executorch/backends/cadence/hifi/kernels/kernels.h>
+#include <executorch/runtime/kernel/kernel_includes.h>
 
-namespace impl {
-namespace HiFi {
-namespace native {
+namespace impl::HiFi::native {
+
+using ::executorch::aten::ScalarType;
+using ::executorch::aten::Tensor;
+using ::executorch::runtime::getLeadingDims;
+using ::torch::executor::RuntimeContext;
 
 // The quantized matmul. The quantized matmul accumulates in a wider register,
 // whose type is TA.
@@ -241,6 +240,4 @@ void quantized_matmul_out(
   }
 }
 
-} // namespace native
-} // namespace HiFi
-} // namespace impl
+} // namespace impl::HiFi::native

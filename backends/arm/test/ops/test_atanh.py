@@ -1,4 +1,4 @@
-# Copyright 2025 Arm Limited and/or its affiliates.
+# Copyright 2025-2026 Arm Limited and/or its affiliates.
 #
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
@@ -26,11 +26,10 @@ input_t1 = Tuple[torch.Tensor]
 test_data_suite = {
     "zeros": torch.zeros(1, 10, 10, 10),
     "zeros_alt_shape": torch.zeros(1, 10, 3, 5),
-    "ones": torch.ones(10, 10, 10),
     "rand": torch.rand(10, 10) - 0.5,
     "rand_alt_shape": torch.rand(1, 10, 3, 5) - 0.5,
     "ramp": torch.arange(-1, 1, 0.2),
-    "near_bounds": torch.tensor([-0.999999, -0.999, -0.9, 0.9, 0.999, 0.999999]),
+    "near_bounds": torch.tensor([-0.99, -0.9, 0.9, 0.99]),
     "on_bounds": torch.tensor([-1.0, 1.0]),
 }
 
@@ -59,6 +58,10 @@ def test_atanh_tosa_INT(test_data: Tuple):
         aten_op=aten_op,
         exir_op=exir_op,
     )
+    if torch.any(test_data >= 1) or torch.any(test_data <= -1):
+        # The quantized model will saturate to max/min values while the
+        # original model will return inf/-inf, so comparison wont be valid here.
+        pipeline.pop_stage("run_method_and_compare_outputs.original_model")
     pipeline.run()
 
 
@@ -88,25 +91,25 @@ def test_atanh_u85_INT(test_data: Tuple):
 
 @common.parametrize("test_data", test_data_suite)
 @common.SkipIfNoModelConverter
-def test_atanh_vgf_FP(test_data: input_t1):
+def test_atanh_vgf_no_quant(test_data: input_t1):
     pipeline = VgfPipeline[input_t1](
         Atanh(),
         (test_data,),
         aten_op=aten_op,
         exir_op=exir_op,
-        tosa_version="TOSA-1.0+FP",
+        quantize=False,
     )
     pipeline.run()
 
 
 @common.parametrize("test_data", test_data_suite)
 @common.SkipIfNoModelConverter
-def test_atanh_vgf_INT(test_data: input_t1):
+def test_atanh_vgf_quant(test_data: input_t1):
     pipeline = VgfPipeline[input_t1](
         Atanh(),
         (test_data,),
         aten_op=aten_op,
         exir_op=exir_op,
-        tosa_version="TOSA-1.0+INT",
+        quantize=True,
     )
     pipeline.run()

@@ -21,9 +21,7 @@ def define_common_targets():
         resources = {
             ":qc_compiler_spec_schema": "qc_compiler_spec.fbs",
         },
-        visibility = [
-            "@EXECUTORCH_CLIENTS",
-        ],
+        visibility = ["PUBLIC"],
         deps = [
             "//executorch/exir/backend:backend_details",
             "//executorch/exir/backend:compile_spec_schema",

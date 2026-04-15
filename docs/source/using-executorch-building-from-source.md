@@ -28,7 +28,7 @@ ExecuTorch is tested on the following systems, although it should also work in s
   - Otherwise, Python's built-in virtual environment manager `python venv` is a good alternative.
 * `g++` version 7 or higher, `clang++` version 5 or higher, or another
   C++17-compatible toolchain.
-* `python` version 3.10-3.12
+* `python` version 3.10-3.13
 * `ccache` (optional) - A compiler cache that speeds up recompilation
 * **macOS**
   - `Xcode Command Line Tools`
@@ -99,15 +99,6 @@ python -m executorch.examples.xnnpack.aot_compiler --model_name="mv2" --delegate
    # either via a previous invocation of `./install_executorch.sh` or by explicitly installing requirements via `./install_requirements.sh` first.
    pip install -e . --no-build-isolation
    ```
-
-> **_WARNING:_**
-> Some modules can't be imported directly in editable mode. This is a known [issue](https://github.com/pytorch/executorch/issues/9558) and we are actively working on a fix for this. To work around this:
-> ```bash
-> # This will fail
-> python -c "from executorch.exir import CaptureConfig"
-> # But this will succeed
-> python -c "from executorch.exir.capture import CaptureConfig"
-> ```
 
 > **_NOTE:_**  Cleaning the build system
 >

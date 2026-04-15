@@ -1,6 +1,6 @@
 # Copyright (c) Meta Platforms, Inc. and affiliates.
 # All rights reserved.
-# Copyright 2024-2025 Arm Limited and/or its affiliates.
+# Copyright 2024-2026 Arm Limited and/or its affiliates.
 #
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
@@ -53,8 +53,8 @@ def test_adaptive_avg_pool2d_tosa_INT(test_data):
     TosaPipelineINT[input_t](
         AdaptiveAveragePool2d(),
         test_data(),
-        AdaptiveAveragePool2d.aten_op,
-        AdaptiveAveragePool2d.exir_op,
+        [],
+        [],
         symmetric_io_quantization=True,
     ).run()
 
@@ -65,8 +65,8 @@ def test_adaptive_avg_pool2d_u55_INT(test_data):
     EthosU55PipelineINT[input_t](
         AdaptiveAveragePool2d(),
         test_data(),
-        AdaptiveAveragePool2d.aten_op,
-        AdaptiveAveragePool2d.exir_op,
+        [],
+        [],
         symmetric_io_quantization=True,
     ).run()
 
@@ -77,35 +77,35 @@ def test_adaptive_avg_pool2d_u85_INT(test_data):
     EthosU85PipelineINT[input_t](
         AdaptiveAveragePool2d(),
         test_data(),
-        AdaptiveAveragePool2d.aten_op,
-        AdaptiveAveragePool2d.exir_op,
+        [],
+        [],
         symmetric_io_quantization=True,
     ).run()
 
 
 @common.parametrize("test_data", AdaptiveAveragePool2d.test_data_suite)
 @common.SkipIfNoModelConverter
-def test_adaptive_avg_pool2d_vgf_FP(test_data):
+def test_adaptive_avg_pool2d_vgf_no_quant(test_data):
     pipeline = VgfPipeline[input_t](
         AdaptiveAveragePool2d(),
         test_data(),
         AdaptiveAveragePool2d.aten_op,
         AdaptiveAveragePool2d.exir_op,
-        tosa_version="TOSA-1.0+FP",
+        quantize=False,
     )
     pipeline.run()
 
 
 @common.parametrize("test_data", AdaptiveAveragePool2d.test_data_suite)
 @common.SkipIfNoModelConverter
-def test_adaptive_avg_pool2d_vgf_INT(test_data):
+def test_adaptive_avg_pool2d_vgf_quant(test_data):
     pipeline = VgfPipeline[input_t](
         AdaptiveAveragePool2d(),
         test_data(),
-        AdaptiveAveragePool2d.aten_op,
-        AdaptiveAveragePool2d.exir_op,
+        [],
+        [],
         symmetric_io_quantization=True,
-        tosa_version="TOSA-1.0+INT",
+        quantize=True,
     )
     pipeline.run()
 
@@ -227,6 +227,11 @@ class MeanDim(torch.nn.Module):
             (-4, -3, -2, -1),
             False,
         ),
+        "randn_large_axis": lambda: (
+            torch.randn(1, 256, 400),
+            (1, 2),
+            True,
+        ),
         "rank5_01234": lambda: (
             torch.rand(1, 1, 7, 3, 2),
             (-5, -4, -3, -2, -1),
@@ -247,6 +252,8 @@ class MeanDim(torch.nn.Module):
             (2),
             False,
         ),
+    }
+    u55_test_data_suite = {
         "u55_avg_pool_not_supported": lambda: (
             torch.rand(1, 1, 1, 257),
             (0, 1, 2, 3),
@@ -288,7 +295,9 @@ def test_mean_dim_tosa_INT(test_data):
     pipeline.run()
 
 
-@common.parametrize("test_data", MeanDim.test_data_suite)
+@common.parametrize(
+    "test_data", {**MeanDim.test_data_suite, **MeanDim.u55_test_data_suite}
+)
 @common.XfailIfNoCorstone300
 def test_mean_dim_u55_INT(test_data):
     test_data, dim, keep_dim = test_data()
@@ -322,28 +331,28 @@ def test_mean_dim_u85_INT(test_data):
 
 @common.parametrize("test_data", MeanDim.test_data_suite)
 @common.SkipIfNoModelConverter
-def test_mean_dim_vgf_FP(test_data):
+def test_mean_dim_vgf_no_quant(test_data):
     test_data_val, dim, keep_dim = test_data()
     pipeline = VgfPipeline[input_t](
         MeanDim(dim, keep_dim),
         (test_data_val,),
         MeanDim.torch_op,
         MeanDim.exir_op,
-        tosa_version="TOSA-1.0+FP",
+        quantize=False,
     )
     pipeline.run()
 
 
 @common.parametrize("test_data", MeanDim.test_data_suite)
 @common.SkipIfNoModelConverter
-def test_mean_dim_vgf_INT(test_data):
+def test_mean_dim_vgf_quant(test_data):
     test_data_val, dim, keep_dim = test_data()
     pipeline = VgfPipeline[input_t](
         MeanDim(dim, keep_dim),
         (test_data_val,),
-        [],  # Might be sum, avgpool, or both
+        [],
         symmetric_io_quantization=True,
-        tosa_version="TOSA-1.0+INT",
+        quantize=True,
     )
     pipeline.run()
 
@@ -356,14 +365,12 @@ class MeanDefault(torch.nn.Module):
         return tensor.mean()
 
     test_data_suite: dict[str, Callable[[], mean_input_t]] = {
-        "rank1": lambda: (
-            torch.rand(
-                1,
-            ),
+        "rank_2": lambda: (
+            torch.rand(1, 2),
             False,
         ),
-        "rank2": lambda: (torch.rand(5, 5), True),
-        "rank4": lambda: (torch.rand(5, 1, 10, 1), False),
+        "rank_2_keepdim": lambda: (torch.rand(5, 5), True),
+        "rank_4": lambda: (torch.rand(5, 1, 10, 1), False),
     }
 
 

@@ -7,6 +7,7 @@
 # TODO: reenable pyre after fixing the issues
 # pyre-ignore-all-errors
 
+import argparse
 import getpass
 import json
 import logging
@@ -23,15 +24,26 @@ from executorch.backends.qualcomm._passes.qnn_pass_manager import (
     get_capture_program_passes,
 )
 from executorch.backends.qualcomm.builders.utils import is_graph_output
+from executorch.backends.qualcomm.export_utils import (
+    make_quantizer,
+    QnnConfig,
+    setup_common_args_and_variables,
+    SimpleADB,
+)
 
 from executorch.backends.qualcomm.quantizer.quantizer import QuantDtype
-from executorch.backends.qualcomm.serialization.qc_schema import QcomChipset
+from executorch.backends.qualcomm.serialization.qc_schema import (
+    QcomChipset,
+    QnnExecuTorchBackendType,
+    QnnExecuTorchGpuPrecision,
+)
 from executorch.backends.qualcomm.utils.constants import (
     QCOM_PASS_ACTIVATE_KEY,
     QCOM_PASS_ARGS_KWARGS_DEFAULTS_KEY,
 )
 from executorch.backends.qualcomm.utils.utils import (
     convert_linear_to_conv2d,
+    generate_gpu_compiler_spec,
     generate_htp_compiler_spec,
     generate_qnn_executorch_compiler_spec,
     get_soc_to_chipset_map,
@@ -44,13 +56,7 @@ from executorch.examples.qualcomm.oss_scripts.whisper.whisper_model import (
     QnnSeq2SeqLMEncoderExportableModule,
 )
 
-from executorch.examples.qualcomm.utils import (
-    make_output_dir,
-    make_quantizer,
-    parse_skip_delegation_node,
-    setup_common_args_and_variables,
-    SimpleADB,
-)
+from executorch.examples.qualcomm.utils import make_output_dir
 from executorch.exir.capture._config import ExecutorchBackendConfig
 from executorch.exir.passes.memory_planning_pass import MemoryPlanningPass
 from torchao.quantization.pt2e import MinMaxObserver
@@ -212,21 +218,7 @@ class Whisper:
 
         return quant_io_type
 
-    def quantize(
-        self, calibration_inputs, quant_dtype, tokenizer, custom_annotations=()
-    ):
-        self.quant_dtype = quant_dtype
-        self.has_quant_io = True
-
-        # Need to set per_channel_linear=True for encoder to enhance accuracy
-        quantizer = make_quantizer(
-            quant_dtype=quant_dtype,
-            per_channel_conv=True,
-            per_channel_linear=True,
-            act_observer=MinMaxObserver,
-            custom_annotations=custom_annotations,
-        )
-
+    def prepare_model(self):
         with torch.no_grad():
             self.exported_whisper_encoder = torch.export.export(
                 self.whisper_encoder,
@@ -239,6 +231,31 @@ class Whisper:
                 strict=True,
             ).module()
 
+    def quantize(
+        self,
+        backend,
+        soc_model,
+        calibration_inputs,
+        quant_dtype,
+        tokenizer,
+        custom_annotations=(),
+    ):
+        self.quant_dtype = quant_dtype
+        self.has_quant_io = True
+
+        # Need to set per_channel_linear=True for encoder to enhance accuracy
+        quantizer = make_quantizer(
+            quant_dtype=quant_dtype,
+            per_channel_conv=True,
+            per_channel_linear=True,
+            act_observer=MinMaxObserver,
+            custom_annotations=custom_annotations,
+            eps=2**-20,
+            backend=qnn_config.backend,
+            soc_model=soc_model,
+        )
+
+        with torch.no_grad():
             self.exported_whisper_encoder = prepare_pt2e(
                 self.exported_whisper_encoder, quantizer
             )
@@ -277,6 +294,8 @@ class Whisper:
         skip_node_id_set=None,
         skip_node_op_set=None,
         verbose=True,
+        online_prepare=False,
+        backend=QnnExecuTorchBackendType.kHtpBackend,
     ):
         logging.info("Lowering the model...")
         executorch_config = ExecutorchBackendConfig(
@@ -288,10 +307,28 @@ class Whisper:
         )
         with torch.no_grad():
             # backend option
-            backend_options = generate_htp_compiler_spec(use_fp16=use_fp16)
+            if backend == QnnExecuTorchBackendType.kGpuBackend and not online_prepare:
+                raise RuntimeError(
+                    "Currently GPU backend only support online_prepare. "
+                )
+            backend_options = {
+                QnnExecuTorchBackendType.kGpuBackend: generate_gpu_compiler_spec(
+                    **{
+                        "precision": (
+                            QnnExecuTorchGpuPrecision.kGpuPrecisionFp16
+                            if use_fp16
+                            else QnnExecuTorchGpuPrecision.kGpuPrecisionUserProvided
+                        )
+                    }
+                ),
+                QnnExecuTorchBackendType.kHtpBackend: generate_htp_compiler_spec(
+                    use_fp16=use_fp16
+                ),
+            }[backend]
             compiler_specs = generate_qnn_executorch_compiler_spec(
                 soc_model=soc_model,
                 backend_options=backend_options,
+                online_prepare=online_prepare,
             )
 
             whisper_edge_prog_mgr = to_edge_transform_and_lower_to_qnn(
@@ -328,9 +365,7 @@ class Whisper:
                 whisper_edge_prog_mgr.write_to_file(file)
 
 
-def compile_whisper(args, inputs):
-    skip_node_id_set, skip_node_op_set = parse_skip_delegation_node(args)
-
+def compile_whisper(args: argparse.Namespace, qnn_config: QnnConfig, inputs):
     # ensure the working directory exist.
     os.makedirs(args.artifact, exist_ok=True)
 
@@ -349,18 +384,28 @@ def compile_whisper(args, inputs):
         max_cache_length=max_cache_length,
         max_seq_length=args.max_seq_len,
     )
+    quant_type = {
+        QnnExecuTorchBackendType.kGpuBackend: None,
+        QnnExecuTorchBackendType.kHtpBackend: QuantDtype.use_16a8w,
+    }[qnn_config.backend]
+    whisper.prepare_model()
+    if quant_type:
+        whisper.quantize(
+            qnn_config.backend, qnn_config.soc_model, inputs, quant_type, tokenizer
+        )
 
-    whisper.quantize(inputs, QuantDtype.use_16a8w, tokenizer)
     whisper.lowering_modules(
         args.artifact,
         use_fp16=False,
-        soc_model=get_soc_to_chipset_map()[args.model],
-        skip_node_id_set=skip_node_id_set,
-        skip_node_op_set=skip_node_op_set,
+        soc_model=get_soc_to_chipset_map()[args.soc_model],
+        skip_node_id_set=qnn_config.skip_delegate_node_ids,
+        skip_node_op_set=qnn_config.skip_delegate_node_ops,
+        backend=qnn_config.backend,
+        online_prepare=args.online_prepare,
     )
 
 
-def inference_whisper(args, inputs, target):
+def inference_whisper(args: argparse.Namespace, qnn_config: QnnConfig, inputs, target):
     workspace = f"/data/local/tmp/{getpass.getuser()}/executorch/whisper"
     tokenizer = AutoTokenizer.from_pretrained("openai/whisper-tiny")
     tokenizer_json = tokenizer.save_pretrained(args.artifact)[-1]
@@ -419,22 +464,16 @@ def inference_whisper(args, inputs, target):
         )
 
         adb = SimpleADB(
-            qnn_sdk=os.getenv("QNN_SDK_ROOT"),
-            build_path=f"{args.build_folder}",
+            qnn_config=qnn_config,
             pte_path=pte_path,
             workspace=workspace,
-            device_id=args.device,
-            host_id=args.host,
-            soc_model=args.model,
-            shared_buffer=args.shared_buffer,
-            target=args.target,
             runner="examples/qualcomm/oss_scripts/whisper/qnn_whisper_runner",
         )
         # No pregen inputs, input_list is not required
         adb.push(inputs=inputs, files=[tokenizer_json])
         adb.execute(custom_runner_cmd=runner_cmd)
 
-        adb.pull(output_path=args.artifact, callback=post_process)
+        adb.pull(host_output_path=args.artifact, callback=post_process)
     wer = eval_metric(outputs, target)
 
     if args.ip and args.port != -1:
@@ -472,10 +511,8 @@ if __name__ == "__main__":
     )
 
     args = parser.parse_args()
-    args.validate(args)
 
-    if args.compile_only and args.pre_gen_pte:
-        exit("Cannot set both compile_only and pre_gen_pte as true")
+    qnn_config = QnnConfig.load_config(args.config_file if args.config_file else args)
 
     data_num = 20
     if args.ci:
@@ -487,16 +524,16 @@ if __name__ == "__main__":
         inputs, target = get_dataset(data_num)
 
     if args.pre_gen_pte:
-        inference_whisper(args, inputs, target)
+        inference_whisper(args, qnn_config, inputs, target)
         exit(f"Finish the running pre_gen_pte from {args.pre_gen_pte}")
 
     if args.compile_only:
-        compile_whisper(args, inputs)
+        compile_whisper(args, qnn_config, inputs)
         exit(f"Finish compile_only and save to {args.artifact}")
 
     try:
-        compile_whisper(args, inputs)
-        inference_whisper(args, inputs, target)
+        compile_whisper(args, qnn_config, inputs)
+        inference_whisper(args, qnn_config, inputs, target)
     except Exception as e:
         if args.ip and args.port != -1:
             with Client((args.ip, args.port)) as conn:

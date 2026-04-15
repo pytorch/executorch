@@ -1,4 +1,4 @@
-# Copyright 2024-2025 Arm Limited and/or its affiliates.
+# Copyright 2024-2026 Arm Limited and/or its affiliates.
 #
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
@@ -24,6 +24,7 @@ from executorch.backends.arm._passes.quant_args import QuantArgs
 from executorch.backends.arm._passes.remove_noop_pass import RemoveNoopPass
 from executorch.backends.arm.common.annotation_meta import ArmAnnotationInfo
 from executorch.backends.arm.constants import DQ_OPS, Q_OPS
+from executorch.backends.arm.tosa.mapping import TosaSpecialDtype
 from executorch.exir import ExportedProgram
 
 from executorch.exir.dialects._ops import ops as exir_ops
@@ -32,10 +33,19 @@ from executorch.exir.pass_base import ExportPass, PassResult
 from torch.fx import GraphModule, Node
 
 
+def _get_special_dtype(qspec: QuantArgs) -> TosaSpecialDtype | None:
+    if qspec.dtype == torch.int8:
+        if qspec.qmax == 7 and qspec.qmin == -7:
+            return TosaSpecialDtype.INT4
+    return None
+
+
 def get_input_qparams(node: Node) -> dict[int, QuantArgs]:
-    """
-    Get the input quantization parameters from a node, set by the 'FoldAndAnnotateQParamsPass'.
+    """Get the input quantization parameters from a node, set by the
+    'FoldAndAnnotateQParamsPass'.
+
     Raises a ValueError if the node doesn't have any parameters set.
+
     """
     if "input_qparams" not in node.meta.keys():
         raise ValueError(
@@ -52,9 +62,11 @@ def get_input_qparams(node: Node) -> dict[int, QuantArgs]:
 
 
 def get_output_qparams(node: Node) -> dict[int, QuantArgs]:
-    """
-    Get the output quantization parameters from a node, set by the 'FoldAndAnnotateQParamsPass'.
+    """Get the output quantization parameters from a node, set by the
+    'FoldAndAnnotateQParamsPass'.
+
     Raises a ValueError if the node doesn't have any parameters set.
+
     """
     if "output_qparams" not in node.meta.keys():
         raise ValueError(
@@ -71,13 +83,11 @@ def get_output_qparams(node: Node) -> dict[int, QuantArgs]:
 
 
 class FoldAndAnnotateQParamsPass(ArmPass):
-    """
-    A pass that walks the graph and removes any DQ and Q nodes before and after the target
-     node.
-     The quantization parameters from the DQ/Q nodes are stored as meta values to be
-     accessible for later lowering and serialization passes.
-     The assumption is that the quantization annotation adds DQ nodes for all tensor
-     inputs to the target one Q node to the output.
+    """A pass that walks the graph and removes any DQ and Q nodes before and
+    after the target node. The quantization parameters from the DQ/Q nodes are
+    stored as meta values to be accessible for later lowering and serialization
+    passes. The assumption is that the quantization annotation adds DQ nodes for
+    all tensor inputs to the target one Q node to the output.
 
      Example ('executorch_exir_dialects_edge__ops_' prefix removed from operators for readability):
 
@@ -105,8 +115,10 @@ class FoldAndAnnotateQParamsPass(ArmPass):
         RemoveNoopPass,
     }
 
-    def __init__(self, exported_program: Optional[ExportedProgram] = None) -> None:
-        super().__init__()
+    def __init__(
+        self, exported_program: Optional[ExportedProgram] = None, *args, **kwargs
+    ) -> None:
+        super().__init__(*args, **kwargs)
         self.exported_program = exported_program
 
     def fold_and_annotate_arg(
@@ -155,13 +167,20 @@ class FoldAndAnnotateQParamsPass(ArmPass):
                 node.replace_input_with(n, cast(Node, n.args[0]))
                 if len(n.users) == 0:
                     graph_module.graph.erase_node(n)
+            special_dtype = _get_special_dtype(input_qparams)
+            if special_dtype:
+                node.all_input_nodes[i].meta[
+                    TosaSpecialDtype.meta_key()
+                ] = special_dtype
 
     def _handle_control_flow_node(self, node: Node, graph_module: GraphModule):
         """Fold outmost quant nodes inside submodule.
+
         placeholders => qs => dqs => ... => qs => dqs => output
         becomes
         placeholders => dqs => ... => qs => output,
         With output_qparams meta in the placeholders, and input_qparams meta in the output node.
+
         """
         match node.target:
             case torch.ops.higher_order.cond:
@@ -328,10 +347,12 @@ class FoldAndAnnotateQParamsPass(ArmPass):
 
 
 class QuantizeClampArgumentsPass(ArmPass):
-    """
-    This pass makes sure that the arguments to clamp.default are quantized correctly.
+    """This pass makes sure that the arguments to clamp.default are quantized
+    correctly.
+
     More specifically, this pass:
         - Makes sure the min and max values to clamp.default are quantized, if it's a quantized operator.
+
     """
 
     _passes_required_after: Set[Type[ExportPass]] = set()

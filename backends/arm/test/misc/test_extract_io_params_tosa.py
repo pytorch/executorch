@@ -1,4 +1,4 @@
-# Copyright 2025 Arm Limited and/or its affiliates.
+# Copyright 2025-2026 Arm Limited and/or its affiliates.
 #
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
@@ -40,14 +40,12 @@ class SimpleAdd(torch.nn.Module):
         ),
     ],
 )
-def test_roundtrip_extracts_io_params(
+def test_roundtrip_extracts_io_params_tosa_INT(
     compile_spec_cls: type[TosaCompileSpec] | type[VgfCompileSpec],
     quantizer_cls,
     partitioner_cls,
 ):
-    """
-    Validates that IO quantization parameters round-trip for both flows.
-    """
+    """Validates that IO quantization parameters round-trip for both flows."""
     example_inputs = (
         torch.ones(1, 5),
         torch.full((1, 5), 2.0),

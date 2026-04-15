@@ -58,25 +58,25 @@ def test_unbind_int_tosa_INT(test_data: test_data_t):
 
 @common.parametrize("test_data", Unbind.test_data)
 @common.SkipIfNoModelConverter
-def test_unbind_int_vgf_FP(test_data: test_data_t):
+def test_unbind_int_vgf_no_quant(test_data: test_data_t):
     input_data, init_data = test_data
     pipeline = VgfPipeline[input_t](
         Unbind(*init_data),
         input_data(),
         Unbind.aten_op,
-        tosa_version="TOSA-1.0+FP",
+        quantize=False,
     )
     pipeline.run()
 
 
 @common.parametrize("test_data", Unbind.test_data)
 @common.SkipIfNoModelConverter
-def test_unbind_int_vgf_INT(test_data: test_data_t):
+def test_unbind_int_vgf_quant(test_data: test_data_t):
     input_data, init_data = test_data
     pipeline = VgfPipeline[input_t](
         Unbind(*init_data),
         input_data(),
         Unbind.aten_op,
-        tosa_version="TOSA-1.0+INT",
+        quantize=True,
     )
     pipeline.run()

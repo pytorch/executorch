@@ -11,6 +11,22 @@
 namespace vkcompute {
 namespace vkapi {
 
+VmaAllocationCreateFlags test_host_cached_available(
+    VkPhysicalDevice physical_device) {
+  VkPhysicalDeviceMemoryProperties mem_props;
+  vkGetPhysicalDeviceMemoryProperties(physical_device, &mem_props);
+
+  for (uint32_t i = 0; i < mem_props.memoryTypeCount; i++) {
+    VkMemoryPropertyFlags flags = mem_props.memoryTypes[i].propertyFlags;
+    if ((flags & VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT) &&
+        (flags & VK_MEMORY_PROPERTY_HOST_CACHED_BIT)) {
+      return VMA_ALLOCATION_CREATE_HOST_ACCESS_RANDOM_BIT;
+    }
+  }
+
+  return VMA_ALLOCATION_CREATE_HOST_ACCESS_SEQUENTIAL_WRITE_BIT;
+}
+
 Allocator::Allocator(
     VkInstance instance,
     VkPhysicalDevice physical_device,
@@ -18,7 +34,9 @@ Allocator::Allocator(
     : instance_{},
       physical_device_(physical_device),
       device_(device),
-      allocator_{VK_NULL_HANDLE} {
+      allocator_{VK_NULL_HANDLE},
+      allocation_strategy_device_to_host_{
+          test_host_cached_available(physical_device_)} {
   VmaVulkanFunctions vk_functions{};
   vk_functions.vkGetInstanceProcAddr = vkGetInstanceProcAddr;
   vk_functions.vkGetDeviceProcAddr = vkGetDeviceProcAddr;
@@ -44,7 +62,9 @@ Allocator::Allocator(Allocator&& other) noexcept
     : instance_(other.instance_),
       physical_device_(other.physical_device_),
       device_(other.device_),
-      allocator_(other.allocator_) {
+      allocator_(other.allocator_),
+      allocation_strategy_device_to_host_(
+          other.allocation_strategy_device_to_host_) {
   other.allocator_ = VK_NULL_HANDLE;
   other.device_ = VK_NULL_HANDLE;
   other.physical_device_ = VK_NULL_HANDLE;
@@ -141,19 +161,25 @@ VulkanImage Allocator::create_image(
       allocate_memory);
 }
 
-VulkanBuffer Allocator::create_staging_buffer(const VkDeviceSize size) {
+VulkanBuffer Allocator::create_staging_buffer(
+    const VkDeviceSize size,
+    const CopyDirection direction) {
   const VkBufferUsageFlags buffer_usage = VK_BUFFER_USAGE_STORAGE_BUFFER_BIT;
 
   VmaAllocationCreateInfo alloc_create_info = {};
-  alloc_create_info.flags = DEFAULT_ALLOCATION_STRATEGY;
+  alloc_create_info.flags =
+      DEFAULT_ALLOCATION_STRATEGY | VMA_ALLOCATION_CREATE_MAPPED_BIT;
   alloc_create_info.usage = VMA_MEMORY_USAGE_AUTO_PREFER_DEVICE;
 
   // Staging buffers are accessed by both the CPU and GPU, so set the
   // appropriate flags to indicate that the host device will be accessing
   // the data from this buffer.
-  alloc_create_info.flags |=
-      VMA_ALLOCATION_CREATE_HOST_ACCESS_SEQUENTIAL_WRITE_BIT |
-      VMA_ALLOCATION_CREATE_MAPPED_BIT;
+  if (direction == CopyDirection::HOST_TO_DEVICE) {
+    alloc_create_info.flags |=
+        VMA_ALLOCATION_CREATE_HOST_ACCESS_SEQUENTIAL_WRITE_BIT;
+  } else {
+    alloc_create_info.flags |= allocation_strategy_device_to_host_;
+  }
   alloc_create_info.usage = VMA_MEMORY_USAGE_AUTO_PREFER_HOST;
   alloc_create_info.requiredFlags = VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT;
   alloc_create_info.preferredFlags =

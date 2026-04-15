@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Copyright 2025 Arm Limited and/or its affiliates.
+# Copyright 2025-2026 Arm Limited and/or its affiliates.
 #
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
@@ -82,16 +82,16 @@ function patch_repo() {
     local name="$(basename $repo_dir)"
     local patch_dir="${3}/$name"
 
-    echo -e "[${FUNCNAME[0]}] Patching ${name} repo_dir:${repo_dir} base_rev:${base_rev} patch_dir:${patch_dir}"
-    pushd $repo_dir
-    git fetch
-    git reset --hard ${base_rev}
+    echo -e "[${FUNCNAME[0]}] Patching ${name}. repo_dir:${repo_dir}\t base_rev:${base_rev}\t patch_dir:${patch_dir}"
+    pushd $repo_dir > /dev/null
+    git fetch --quiet
+    git reset --hard ${base_rev} --quiet
 
     [[ -e ${patch_dir} && $(ls -A ${patch_dir}) ]] && \
         git am -3 ${patch_dir}/*.patch
 
-    echo -e "[${FUNCNAME[0]}] Patched ${name} @ $(git describe --all --long 2> /dev/null) in ${repo_dir} dir.\n"
-    popd
+    echo -e "[${FUNCNAME[0]}] Patched ${name} @ $(git describe --all --long 2> /dev/null) in ${repo_dir} dir."
+    popd > /dev/null
 }
 
 function check_platform_support() {
@@ -136,6 +136,11 @@ function prepend_env_in_setup_path() {
 function append_env_in_setup_path() {
     echo "export $1=\${$1-}:$2" >> ${setup_path_script}.sh
     echo "set --path -agx $1 $2" >> ${setup_path_script}.fish
+}
+
+function set_env_in_setup_path() {
+    echo "export $1=$2" >> ${setup_path_script}.sh
+    echo "set -gx $1 $2" >> ${setup_path_script}.fish
 }
 
 function clear_setup_path() {

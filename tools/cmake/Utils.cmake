@@ -69,28 +69,11 @@ function(target_link_options_gc_sections target_name)
   endif()
 endfunction()
 
-# Sets the value of the PYTHON_EXECUTABLE variable to 'python' if in an active
-# (non-base) conda environment, and 'python3' otherwise. This maintains
-# backwards compatibility for non-conda users and avoids conda users needing to
-# explicitly set PYTHON_EXECUTABLE=python.
 function(resolve_python_executable)
-  # Counter-intuitively, CONDA_DEFAULT_ENV contains the name of the active
-  # environment.
-  if(DEFINED ENV{CONDA_DEFAULT_ENV} AND NOT $ENV{CONDA_DEFAULT_ENV} STREQUAL
-                                        "base"
-  )
+  if(NOT PYTHON_EXECUTABLE)
+    find_package(Python3 REQUIRED COMPONENTS Interpreter)
     set(PYTHON_EXECUTABLE
-        python
-        PARENT_SCOPE
-    )
-  elseif(DEFINED ENV{VIRTUAL_ENV})
-    set(PYTHON_EXECUTABLE
-        $ENV{VIRTUAL_ENV}/bin/python3
-        PARENT_SCOPE
-    )
-  else()
-    set(PYTHON_EXECUTABLE
-        python3
+        ${Python3_EXECUTABLE}
         PARENT_SCOPE
     )
   endif()
@@ -194,4 +177,37 @@ function(executorch_add_prefix_to_public_headers targetName prefix)
   set_property(
     TARGET "${targetName}" PROPERTY PUBLIC_HEADER ${FIXED_PUBLIC_HEADERS}
   )
+endfunction()
+
+# -----------------------------------------------------------------------------
+# MLX metallib distribution helper
+# -----------------------------------------------------------------------------
+# Copies mlx.metallib next to the target executable so MLX can find it at
+# runtime.
+#
+# MLX uses dladdr() to find the directory containing the binary with MLX code,
+# then looks for mlx.metallib in that directory. When MLX is statically linked
+# into an executable or shared library, this function ensures the metallib is
+# colocated with that binary.
+#
+# Usage: executorch_target_copy_mlx_metallib(my_executable)
+#
+function(executorch_target_copy_mlx_metallib target)
+  if(EXECUTORCH_BUILD_MLX)
+    if(DEFINED MLX_METALLIB_PATH AND EXISTS "${MLX_METALLIB_PATH}")
+      add_custom_command(
+        TARGET ${target}
+        POST_BUILD
+        COMMAND ${CMAKE_COMMAND} -E copy_if_different "${MLX_METALLIB_PATH}"
+                "$<TARGET_FILE_DIR:${target}>/mlx.metallib"
+        COMMENT "Copying mlx.metallib for ${target}"
+      )
+    elseif(DEFINED MLX_METALLIB_PATH)
+      message(
+        WARNING
+          "MLX_METALLIB_PATH is set to ${MLX_METALLIB_PATH} but file does not exist. "
+          "metallib will not be copied for ${target}."
+      )
+    endif()
+  endif()
 endfunction()
