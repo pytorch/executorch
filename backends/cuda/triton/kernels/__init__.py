@@ -5,12 +5,13 @@
 # LICENSE file in the root directory of this source tree.
 
 from executorch.backends.cuda.triton.kernels.fused_moe import fused_moe
-from executorch.backends.cuda.triton.kernels.sdpa import sdpa
+from executorch.backends.cuda.triton.kernels.sdpa import sdpa, sdpa_decode_splitk
 from executorch.backends.cuda.triton.kernels.topk import topk
 
 __all__ = [
     "fused_moe",
     "sdpa",
+    "sdpa_decode_splitk",
     "topk",
 ]
 
@@ -20,5 +21,12 @@ try:
     )
 
     __all__.append("chunk_gated_delta_rule")
+except ImportError:
+    pass
+
+try:
+    from executorch.backends.cuda.triton.kernels.tq4_sdpa import tq4_sdpa  # noqa: F401
+
+    __all__.append("tq4_sdpa")
 except ImportError:
     pass

@@ -15,6 +15,12 @@ from typing import Any, Callable, Dict, final, List, Optional, Union
 
 import numpy as np
 import torch
+
+from executorch.backends.qualcomm.export_utils import (
+    generate_inputs,
+    QnnConfig,
+    SimpleADB,
+)
 from executorch.examples.models.llama.evaluate.eager_eval import EagerEvalWrapper
 from executorch.examples.qualcomm.oss_scripts.llama.decoder_constants import (
     ATTENTION_SINK_EVICTOR,
@@ -29,11 +35,9 @@ from executorch.examples.qualcomm.oss_scripts.llama.decoder_utils import (
     INFERENCE_REGISTRY,
     retrieve_info_from_pte,
 )
-from executorch.examples.qualcomm.utils import (
-    generate_inputs,
-    make_output_dir,
-    SimpleADB,
-)
+
+from executorch.examples.qualcomm.utils import make_output_dir
+
 from pytorch_tokenizers.hf_tokenizer import HuggingFaceTokenizer
 from pytorch_tokenizers.llama2c import Llama2cTokenizer as SentencePieceTokenizer
 from pytorch_tokenizers.tiktoken import TiktokenTokenizer
@@ -196,17 +200,15 @@ class EvalBase(ABC):
     @final
     def _get_adb(self):
         args = self.args
+        qnn_config = QnnConfig.load_config(
+            args.config_file if args.config_file else args
+        )
         if EvalBase._adb is None:
             EvalBase._adb = SimpleADB(
-                qnn_sdk=self.qnn_sdk,
-                build_path=f"{args.build_folder}",
+                qnn_config=qnn_config,
                 pte_path=list(self.pte_paths.values()),
                 workspace=self.device_workspace,
-                device_id=args.device,
-                host_id=args.host,
-                soc_model=args.model,
                 runner=f"examples/qualcomm/oss_scripts/llama/{self.runner}",
-                target=args.target,
             )
         return EvalBase._adb
 

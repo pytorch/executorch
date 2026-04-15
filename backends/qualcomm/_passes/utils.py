@@ -60,12 +60,12 @@ def get_passes_dependency_for_capture_program():
         dict: A dictionary mapping each pass to its corresponding list of dependencies.
     """
     from executorch.backends.qualcomm._passes import (
-        AnnotateAdaptiveAvgPool1D,
+        AnnotateAvgPool1D,
         AnnotateQuantAttrs,
         AnnotateStack,
         AnnotateUnbind,
-        CanonicalizeConv,
         ConvertBmmToMatmul,
+        DecomposeAcos,
         DecomposeAny,
         DecomposeColIm,
         DecomposeLinalgVectorNorm,
@@ -86,7 +86,7 @@ def get_passes_dependency_for_capture_program():
     )
 
     return {
-        AnnotateAdaptiveAvgPool1D: [RemoveRedundancy],
+        AnnotateAvgPool1D: [RemoveRedundancy],
         AnnotateQuantAttrs: [
             ConvertBmmToMatmul,
             RecomposePixelUnshuffle,
@@ -95,6 +95,7 @@ def get_passes_dependency_for_capture_program():
         AnnotateStack: [RemoveRedundancy],
         AnnotateUnbind: [RemoveRedundancy],
         ConvertBmmToMatmul: [RecomposePixelUnshuffle],
+        DecomposeAcos: [RemoveRedundancy],
         DecomposeAny: [RemoveRedundancy],
         DecomposeColIm: [FoldQDQ],
         DecomposeLinalgVectorNorm: [RemoveRedundancy],
@@ -107,7 +108,6 @@ def get_passes_dependency_for_capture_program():
         I64toI32: [RemoveRedundancy],
         LayoutTransform: [
             AnnotateQuantAttrs,
-            CanonicalizeConv,
             ExpandBroadcastTensorShape,
             FixedLinearKeepDim,
         ],

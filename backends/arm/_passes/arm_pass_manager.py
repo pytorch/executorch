@@ -61,6 +61,7 @@ from executorch.backends.arm._passes import (
     DecomposeGluPass,
     DecomposeGroupedConvPass,
     DecomposeGroupNormPass,
+    DecomposeGruPass,
     DecomposeIndexCopyPass,
     DecomposeIndexSelectToGatherPass,
     DecomposeIndexTensorToGatherPass,
@@ -71,6 +72,7 @@ from executorch.backends.arm._passes import (
     DecomposeLinearPass,
     DecomposeLog1pPass,
     DecomposeLogitPass,
+    DecomposeLstmPass,
     DecomposeMaskedFillPass,
     DecomposeMatmulPass,
     DecomposeMaxPool2dPass,
@@ -78,6 +80,7 @@ from executorch.backends.arm._passes import (
     DecomposeNotEqualPass,
     DecomposeQuantNodesPass,
     DecomposeRemainderPass,
+    DecomposeRnnPass,
     DecomposeRoundPass,
     DecomposeScaledDotProductAttentionPass,
     DecomposeSelectPass,
@@ -86,7 +89,6 @@ from executorch.backends.arm._passes import (
     DecomposeSinhPass,
     DecomposeSliceScatterPass,
     DecomposeSoftmaxPass,
-    DecomposeSoftmaxUnstablePass,
     DecomposeSqrtPass,
     DecomposeStridedSliceCopyPass,
     DecomposeSumPass,
@@ -196,12 +198,8 @@ class ArmPassManager(PassManager):
 
         match config.softmax:
             case SoftmaxDecompositionConfig.MASKED:
-                skip_set.add(DecomposeSoftmaxUnstablePass)
-            case SoftmaxDecompositionConfig.UNSTABLE:
-                skip_set.add(DecomposeSoftmaxPass)
-                skip_set.add(DecomposeMaskedFillPass)
+                pass
             case SoftmaxDecompositionConfig.STABLE:
-                skip_set.add(DecomposeSoftmaxUnstablePass)
                 skip_set.add(DecomposeMaskedFillPass)
 
         if config.fuse_duplicate_users is FuseDuplicateUsersConfig.DISABLED:
@@ -365,6 +363,9 @@ class ArmPassManager(PassManager):
                 ConvertToClampPass(),
                 DecomposeTOSAUnsupportedClampPass(),
                 DecomposeGroupNormPass(),
+                DecomposeGruPass(),
+                DecomposeLstmPass(),
+                DecomposeRnnPass(),
                 DecomposeLayerNormPass(),
                 DecomposeVarPass(),
                 DecomposeMeanDimPass(exported_program.graph_module, self.tosa_spec),
@@ -461,9 +462,7 @@ class ArmPassManager(PassManager):
                 ConvertMmToBmmPass(),
                 DecomposeGluPass(),
                 DecomposeDivPass(),
-                # _safe_softmax results in a ReduceMax
-                # which is not currently supported by TOSA in U55
-                DecomposeSoftmaxPass(skip_safe_softmax=self.tosa_spec.is_U55_subset),
+                DecomposeSoftmaxPass(),
                 ConvertMinMaxPass(),
                 DecomposeAnyPass(),
                 DecomposeAdaptiveAvgPool2dPass(),
@@ -585,6 +584,9 @@ class ArmPassManager(PassManager):
         self.add_passes(
             [
                 NormalizeWhileInitialArgsPass(use_exir_clone=False, tfa_pass=True),
+                DecomposeGruPass(tfa_pass=True),
+                DecomposeLstmPass(tfa_pass=True),
+                DecomposeRnnPass(tfa_pass=True),
                 DecomposeNotEqualPass(tfa_pass=True),
                 DecomposeCosineSimilarityPass(tfa_pass=True),
                 DecomposeGluPass(tfa_pass=True),
@@ -593,9 +595,7 @@ class ArmPassManager(PassManager):
                 DecomposeSqrtPass(tfa_pass=True),
                 DecomposeAdaptiveAvgPool2dPass(tfa_pass=True),
                 DecomposeAvgPool2dPass(tfa_pass=True),
-                DecomposeSoftmaxUnstablePass(tfa_pass=True),
                 DecomposeSoftmaxPass(
-                    skip_safe_softmax=self.tosa_spec.is_U55_subset,
                     tfa_pass=True,
                 ),
                 ConvertMinMaxPass(tfa_pass=True),

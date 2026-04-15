@@ -27,7 +27,7 @@ backends/qualcomm/scripts/build.sh --enable_hexagon
 3. Execution
 Below is an example to execute a unit test with direct mode using qnn_executor_direct_runner.
 ```
-python backends/qualcomm/tests/test_qnn_delegate.py -k TestQNNQuantizedOperator.test_qnn_backend_adaptive_avg_pool2d --model SM8750  --device $DEVICE_ID --build_folder build-android --direct_build_folder build-hexagon/
+python backends/qualcomm/tests/test_qnn_delegate.py -k TestQNNQuantizedOperator.test_qnn_backend_adaptive_avg_pool2d --soc_model SM8750  --device $DEVICE_ID --build_folder build-android --direct_build_folder build-hexagon/
 ```
 
 ### Note

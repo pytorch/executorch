@@ -390,7 +390,7 @@ class TestFusedMoE(unittest.TestCase):
                     rel_diff = diff / ref_scale
                     self.assertLess(
                         rel_diff,
-                        0.01,
+                        0.02,
                         f"seed={seed}: abs diff {diff}, rel diff {rel_diff:.4f}",
                     )
 

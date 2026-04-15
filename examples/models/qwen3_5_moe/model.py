@@ -20,6 +20,7 @@ from dataclasses import dataclass, field
 
 import torch
 import torch.nn as nn
+
 from torch.nn import functional as F
 
 
@@ -49,6 +50,7 @@ class Qwen35MoEConfig:
     rms_norm_eps: float = 1e-6
     rope_theta: float = 10_000_000.0
     max_seq_len: int = 4096
+    use_splitk_decode: bool = True
     layer_types: list = field(default_factory=list)
 
     def __post_init__(self):
@@ -229,11 +231,13 @@ class FullAttention(nn.Module):
         )
 
         self.kv_cache = KVCache(self.n_kv_heads, self.head_dim, config.max_seq_len)
+        self.turboquant = False
+        self.use_splitk_decode = config.use_splitk_decode
 
-        mask = torch.tril(
-            torch.ones(config.max_seq_len, config.max_seq_len, dtype=torch.bool)
+        self.register_buffer(
+            "cache_positions",
+            torch.arange(config.max_seq_len, dtype=torch.long),
         )
-        self.register_buffer("mask", mask)
 
     def forward(self, x, input_pos):
         B, T, _ = x.size()
@@ -264,14 +268,39 @@ class FullAttention(nn.Module):
         k = k.to(dtype).transpose(1, 2)
         v = v.transpose(1, 2)
 
-        # KV cache
-        k, v = self.kv_cache.update(input_pos, k, v)
-
-        # SDPA with GQA — kernel maps Q heads to KV heads internally
-        attn_mask = self.mask[input_pos].unsqueeze(0).unsqueeze(0)
-        y = F.scaled_dot_product_attention(
-            q, k, v, attn_mask=attn_mask, enable_gqa=True
+        attn_mask = (
+            (self.cache_positions[None, :] <= input_pos[:, None])
+            .unsqueeze(0)
+            .unsqueeze(0)
         )
+
+        if self.turboquant:
+            k_packed, k_norms, v_packed, v_norms = self.kv_cache.update(input_pos, k, v)
+            y = torch.ops.triton.tq4_sdpa(
+                q,
+                k_packed,
+                k_norms,
+                v_packed,
+                v_norms,
+                self.kv_cache.centroids,
+                self.kv_cache.rotation,
+                attn_mask,
+            )
+        else:
+            k, v = self.kv_cache.update(input_pos, k, v)
+            # The export produces two methods — decode (T=1, static) and
+            # prefill (T>=2, dynamic). Each traces only one branch, so no
+            # torch.cond is needed and we avoid GPU→CPU sync overhead.
+            if T == 1 and self.use_splitk_decode:
+                from executorch.backends.cuda.triton.kernels.sdpa import (
+                    sdpa_decode_splitk,
+                )
+
+                y = sdpa_decode_splitk(q, k, v, attn_mask=attn_mask)
+            else:
+                from executorch.backends.cuda.triton.kernels.sdpa import sdpa
+
+                y = sdpa(q, k, v, attn_mask=attn_mask, enable_gqa=True)
 
         y = y.transpose(1, 2).contiguous().view(B, T, -1)
 
@@ -334,6 +363,12 @@ class GatedDeltaNet(nn.Module):
         )
 
     def forward(self, x, input_pos):
+        """GatedDeltaNet with trace-time dispatch.
+
+        When traced with T=1: uses native PyTorch recurrent delta rule
+        (AOTI fuses with surrounding ops for maximum decode throughput).
+        When traced with T>1: uses chunked FLA via triton_op.
+        """
         B, T, _ = x.size()
 
         # Reset state at position 0
@@ -390,13 +425,43 @@ class GatedDeltaNet(nn.Module):
         beta = b.sigmoid()
         g = -self.A_log.float().exp() * F.softplus(a.float() + self.dt_bias)
 
-        # FLA Triton kernel (returns final_state separately, does not mutate initial_state)
-        output, state = torch.ops.triton.chunk_gated_delta_rule(
-            q, k, v, g, beta, self.recurrent_state[:B]
-        )
+        if T == 1:
+            # Native recurrent delta rule — AOTI fuses with surrounding ops
+            scale = self.head_k_dim**-0.5
 
-        with torch.no_grad():
-            self.recurrent_state[:B].copy_(state)
+            q_s = q[:, 0].float()  # [B, H, K]
+            k_s = k[:, 0].float()  # [B, H, K]
+            v_s = v[:, 0].float()  # [B, H, V]
+            g_s = g[:, 0]  # [B, H]
+            beta_s = beta[:, 0]  # [B, H]
+
+            state = self.recurrent_state[:B].float()  # [B, H, K, V]
+
+            # Decay state by exp(g)
+            decay = torch.exp(g_s).unsqueeze(-1).unsqueeze(-1)  # [B, H, 1, 1]
+            state = state * decay
+
+            # Sk = state @ k (project state by key)
+            Sk = torch.einsum("bhkv,bhk->bhv", state, k_s)
+
+            # Delta rule state update
+            delta = beta_s.unsqueeze(-1) * (v_s - Sk)  # [B, H, V]
+            state = state + torch.einsum("bhk,bhv->bhkv", k_s, delta)
+
+            # Output = state @ q * scale
+            output = torch.einsum("bhkv,bhk->bhv", state, q_s) * scale
+            output = output.unsqueeze(1).to(q.dtype)  # [B, 1, H, V]
+
+            with torch.no_grad():
+                self.recurrent_state[:B].copy_(state.to(self.recurrent_state.dtype))
+        else:
+            # Chunked FLA triton_op for prefill
+            output, new_state = torch.ops.triton.chunk_gated_delta_rule(
+                q, k, v, g, beta, self.recurrent_state[:B]
+            )
+
+            with torch.no_grad():
+                self.recurrent_state[:B].copy_(new_state)
 
         # Output: RMSNorm(output) * silu(z)
         output = output.reshape(-1, self.head_v_dim)

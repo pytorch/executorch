@@ -291,6 +291,16 @@ PY
         fi
     fi
 
+    local vk_layer_line
+    vk_layer_line=$(echo "$exports" | grep 'VK_LAYER_PATH=' || true)
+    if [[ -n "${vk_layer_line}" ]]; then
+        local vk_layer_value=${vk_layer_line#export VK_LAYER_PATH=}
+        vk_layer_value=${vk_layer_value%%:\$VK_LAYER_PATH*}
+        if [[ -n "${vk_layer_value}" ]]; then
+            prepend_env_in_setup_path VK_LAYER_PATH "${vk_layer_value}"
+        fi
+    fi
+
     local vk_add_line
     vk_add_line=$(echo "$exports" | grep 'VK_ADD_LAYER_PATH=' || true)
     if [[ -n "${vk_add_line}" ]]; then
