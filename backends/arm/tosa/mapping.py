@@ -139,6 +139,11 @@ def extract_tensor_meta(meta):
     if type(val) is tuple:
         # TODO: should use first concrete representation
         val = val[0]
+    if isinstance(val, list):
+        if not val:
+            raise ValueError("Expected node.meta['val'] list to be non-empty")
+        # Use first concrete representation for multi-output ops.
+        val = val[0]
 
     if not isinstance(val, torch._subclasses.fake_tensor.FakeTensor):
         raise ValueError(

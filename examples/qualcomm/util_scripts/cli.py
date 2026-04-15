@@ -23,6 +23,12 @@ import torch
 from executorch.backends.qualcomm._passes.qnn_pass_manager import (
     get_capture_program_passes,
 )
+from executorch.backends.qualcomm.export_utils import (
+    get_backend_type,
+    make_quantizer,
+    QnnConfig,
+    SimpleADB,
+)
 from executorch.backends.qualcomm.quantizer.quantizer import QuantDtype
 from executorch.backends.qualcomm.serialization.qc_schema import QcomChipset
 from executorch.backends.qualcomm.utils.constants import QCOM_PASS_ACTIVATE_KEY
@@ -38,11 +44,6 @@ from executorch.backends.qualcomm.utils.utils import (
     to_edge_transform_and_lower_to_qnn,
 )
 from executorch.examples.qualcomm.qaihub_scripts.utils.utils import preprocess_binary
-from executorch.examples.qualcomm.utils import (
-    get_backend_type,
-    make_quantizer,
-    SimpleADB,
-)
 from executorch.exir import ExecutorchBackendConfig
 from executorch.exir.passes.memory_planning_pass import MemoryPlanningPass
 from torchao.quantization import pt2e
@@ -159,7 +160,7 @@ def quantize(args):
             per_channel_linear=args.per_row,
             act_observer=act_observer,
             backend=get_backend_type(args.backend),
-            soc_model=args.model,
+            soc_model=args.soc_model,
             eps=args.eps,
         )
     except Exception:
@@ -209,7 +210,7 @@ def compile(args):
     backend_options = generate_htp_compiler_spec(use_fp16=True)
     # setup general compiler spec for QNN
     compiler_specs = generate_qnn_executorch_compiler_spec(
-        soc_model=getattr(QcomChipset, args.model),
+        soc_model=getattr(QcomChipset, args.soc_model),
         backend_options=backend_options,
         is_from_context_binary=extension == "bin",
     )
@@ -218,7 +219,7 @@ def compile(args):
         # step 1: generate ExportedProgram with custom op as a binary loader & lower it w/QnnBackend
         logger.info(f"exporting program for {args.artifact}")
         prog_info = from_context_binary(
-            args.artifact, custom_op_name, getattr(QcomChipset, args.model)
+            args.artifact, custom_op_name, getattr(QcomChipset, args.soc_model)
         )
         # step 2: write pte files and store final graph
         logger.info(f"exporting {file_name}.pte")
@@ -308,22 +309,25 @@ def execute(args):
     backend_options = generate_htp_compiler_spec(use_fp16=True)
     # setup general compiler spec for QNN
     compiler_specs = generate_qnn_executorch_compiler_spec(
-        soc_model=getattr(QcomChipset, args.model),
+        soc_model=getattr(QcomChipset, args.soc_model),
         backend_options=backend_options,
     )
     io_info = get_io_info(args.artifact, compiler_specs)
     logger.info("preparing ADB connection")
-    # leverage SimpleADB for e2e inference
-    adb = SimpleADB(
-        qnn_sdk=os.getenv("QNN_SDK_ROOT"),
-        build_path=args.build_folder,
-        pte_path=args.artifact,
-        workspace=f"/data/local/tmp/executorch/{pte_name}",
-        device_id=args.device,
-        soc_model=args.model,
-        host_id=args.host,
+
+    qnn_config = QnnConfig(
+        build_folder=args.build_folder,
+        device=args.device,
+        soc_model=args.soc_model,
+        host=args.host,
         shared_buffer=args.shared_buffer,
         target=args.target,
+    )
+    # leverage SimpleADB for e2e inference
+    adb = SimpleADB(
+        qnn_config=qnn_config,
+        pte_path=args.artifact,
+        workspace=f"/data/local/tmp/executorch/{pte_name}",
     )
 
     logger.info("pushing QNN libraries & other artifacts")
@@ -372,7 +376,7 @@ def execute(args):
             torch.save(output, f"{output_result_folder}/output_{output_index}.pt")
 
     logger.info("collecting output data")
-    adb.pull(tmp_dir, post_process)
+    adb.pull(host_output_path=tmp_dir, callback=post_process)
     shutil.rmtree(tmp_dir)
     logger.info(f"execution finished, please check {args.output_folder} for results")
 
@@ -448,7 +452,7 @@ def main():
     )
     sub_quantize.add_argument(
         "-m",
-        "--model",
+        "--soc_model",
         type=str,
         required=True,
         help="SoC model. e.g. SM8750",
@@ -484,7 +488,7 @@ def main():
     )
     sub_compile.add_argument(
         "-m",
-        "--model",
+        "--soc_model",
         type=str,
         required=True,
         help="SoC model. e.g. SM8750",
@@ -534,7 +538,7 @@ def main():
     )
     sub_execute.add_argument(
         "-m",
-        "--model",
+        "--soc_model",
         type=str,
         required=True,
         help="SoC model. e.g. SM8750",
