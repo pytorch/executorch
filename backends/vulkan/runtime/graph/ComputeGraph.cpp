@@ -1135,8 +1135,6 @@ void ComputeGraph::prepack() {
   int i = 0;
   bool submitted = false;
   const bool reduce_peak_memory = total_constant_nbytes_ > 10 * MB;
-  // int count = 0;
-
   context_->set_cmd();
   for (std::unique_ptr<PrepackNode>& node : prepack_nodes_) {
     // Do not trigger on the first or last prepack node.
