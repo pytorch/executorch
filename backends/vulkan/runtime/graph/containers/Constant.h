@@ -33,7 +33,7 @@ struct TensorRef final {
   // this reaches 0, the buffer can be safely freed. This prevents
   // use-after-free when multiple PrepackNodes reference the same TensorRef
   // (e.g. shared/tied weights).
-  uint32_t prepack_use_count{0};
+  int32_t prepack_use_count{0};
 
   explicit TensorRef(
       const std::vector<int64_t>& t_sizes,
