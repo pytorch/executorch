@@ -31,11 +31,11 @@ from torchao.quantization.pt2e.quantizer.quantizer import Q_ANNOTATION_KEY
 @dataclass
 class NodeArgsIdx:
     """
-    Specifies indexes to args paramater of Node in node input annotation.
+    Specifies indexes to args parameter of Node in node input annotation.
 
 
     Attributes:
-        idx (int): Index to Node's args paramater (list). Selects an input Node or a list of Nodes at the index.
+        idx (int): Index to Node's args parameter (list). Selects an input Node or a list of Nodes at the index.
         inner_idx (int): If specified, index to a list pointed by 'idx' attribute. Selects an input Node at the index.
                          Default: None.
     """
