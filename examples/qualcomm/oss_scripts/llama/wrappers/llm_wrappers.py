@@ -24,6 +24,7 @@ from executorch.backends.qualcomm._passes.utils import (
     get_passes_dependency_for_capture_program,
 )
 from executorch.backends.qualcomm.builders.utils import is_graph_output
+from executorch.backends.qualcomm.export_utils import make_quantizer
 from executorch.backends.qualcomm.quantizer.quantizer import QuantDtype
 
 from executorch.backends.qualcomm.utils.constants import (
@@ -81,7 +82,6 @@ from executorch.examples.qualcomm.oss_scripts.llama.wrappers.base_component impo
     Processor,
     Request,
 )
-from executorch.examples.qualcomm.utils import make_quantizer
 from executorch.exir.backend.compile_spec_schema import CompileSpec
 from executorch.exir.capture._config import ExecutorchBackendConfig
 from executorch.exir.dialects._ops import ops as exir_ops

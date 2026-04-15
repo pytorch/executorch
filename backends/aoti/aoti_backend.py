@@ -25,6 +25,7 @@ from torch.export.passes import move_to_device_pass
 
 class COMPILE_SPEC_KEYS(Enum):
     METHOD_NAME = "method_name"
+    SHARE_KV_CACHE_ACROSS_METHODS = "share_kv_cache_across_methods"
 
 
 @experimental(
@@ -285,4 +286,14 @@ class AotiBackend(ABC):
                 return spec.value.decode("utf-8")
         raise RuntimeError(
             f"Could not find method name in compile specs: {compile_specs}"
+        )
+
+    @classmethod
+    def generate_share_kv_cache_compile_spec(cls) -> CompileSpec:
+        """
+        Generate a CompileSpec to enable cross-method KV cache sharing.
+        """
+        return CompileSpec(
+            COMPILE_SPEC_KEYS.SHARE_KV_CACHE_ACROSS_METHODS.value,
+            bytes([1]),
         )

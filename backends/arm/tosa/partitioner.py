@@ -43,9 +43,22 @@ from executorch.exir.dialects._ops import ops as exir_ops
 from torch.export.exported_program import ExportedProgram
 from torch.fx import GraphModule
 from torch.fx.passes.infra.partitioner import CapabilityBasedPartitioner, Partition
-from torch.fx.passes.operator_support import OperatorSupportBase
+from torch.fx.passes.operator_support import any_chain, OperatorSupportBase
 
 logger = logging.getLogger(__name__)
+
+
+def _is_custom_partition_op(
+    custom_ops: set[torch._ops.OpOverload], target: object
+) -> bool:
+    if target in custom_ops:
+        return True
+    if hasattr(target, "_op"):
+        try:
+            return target._op in custom_ops
+        except Exception:
+            return False
+    return False
 
 
 def _is_noop_clone(node: torch.fx.node.Node) -> bool:
@@ -149,6 +162,13 @@ class TOSAPartitioner(Partitioner):
         )
         self.tosa_spec = compile_spec.tosa_spec
         self.additional_checks = additional_checks
+        self._custom_partition_ops: set[torch._ops.OpOverload] = set()
+
+    def register_custom_partition_op(self, op: torch._ops.OpOverload) -> None:
+        """Register a custom op to be considered supported by this
+        partitioner.
+        """
+        self._custom_partition_ops.add(op)
 
     def _detag_boundary_nodes(
         self, module: GraphModule, tag: str, reporter: WhyNoPartitionReporter
@@ -233,6 +253,16 @@ class TOSAPartitioner(Partitioner):
         operator_support = tosa_support_factory(
             self.tosa_spec, containing_program, reporter, self.additional_checks
         )
+        if self._custom_partition_ops:
+            custom_ops = set(self._custom_partition_ops)
+
+            class CustomOpSupported(OperatorSupportBase):
+                def is_node_supported(self, submodules, node: torch.fx.Node) -> bool:
+                    return node.op == "call_function" and _is_custom_partition_op(
+                        custom_ops, node.target
+                    )
+
+            operator_support = any_chain(operator_support, CustomOpSupported())
         capability_partitioner = CapabilityBasedPartitioner(
             module,
             operator_support,
@@ -368,6 +398,8 @@ class TOSAPartitioner(Partitioner):
                 bool: True to keep the op intact; otherwise, False.
 
             """
+            if _is_custom_partition_op(self._custom_partition_ops, node.target):
+                return True
             if (
                 self.tosa_spec.support_float()
                 and node.target in ops_to_not_decompose_if_fp
@@ -444,6 +476,7 @@ class TOSAPartitioner(Partitioner):
             | ops_to_not_decompose_if_fp
             | ops_to_not_decompose_if_integer
         )
+        ops_to_not_decompose.extend(self._custom_partition_ops)
 
         if not self.tosa_spec.is_U55_subset:
             # Tosa operator "RESIZE" is not supported on U55. Since upsample_bilinear2d

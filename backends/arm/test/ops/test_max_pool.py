@@ -9,6 +9,9 @@
 from typing import Tuple
 
 import torch
+from executorch.backends.arm.quantizer.arm_quantizer import (
+    get_symmetric_a16w8_quantization_config,
+)
 
 from executorch.backends.arm.test import common
 
@@ -340,6 +343,22 @@ def test_max_pool2d_vgf_quant(test_data: torch.Tensor):
         exir_op,
         quantize=True,
     )
+    pipeline.run()
+
+
+@common.parametrize("test_data", test_data_suite)
+@common.SkipIfNoModelConverter
+def test_max_pool2d_vgf_quant_a16w8(test_data: torch.Tensor):
+    test_data, model_params = test_data()
+    pipeline = VgfPipeline[input_t1](
+        MaxPool2d(*model_params),
+        (test_data,),
+        aten_op,
+        exir_op,
+        quantize=True,
+        tosa_extensions=["int16"],
+    )
+    pipeline.quantizer.set_global(get_symmetric_a16w8_quantization_config())
     pipeline.run()
 
 

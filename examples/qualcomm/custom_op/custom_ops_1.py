@@ -13,6 +13,15 @@ from multiprocessing.connection import Client
 
 import numpy as np
 import torch
+from executorch.backends.qualcomm.export_utils import (
+    build_executorch_binary,
+    generate_inputs,
+    get_backend_type,
+    make_quantizer,
+    QnnConfig,
+    setup_common_args_and_variables,
+    SimpleADB,
+)
 
 from executorch.backends.qualcomm.quantizer.quantizer import QuantDtype
 from executorch.backends.qualcomm.serialization.qc_schema import (
@@ -24,15 +33,7 @@ from executorch.backends.qualcomm.serialization.qc_schema import (
     QnnExecuTorchOpPackagePlatform,
     QnnExecuTorchOpPackageTarget,
 )
-from executorch.examples.qualcomm.utils import (
-    build_executorch_binary,
-    generate_inputs,
-    get_backend_type,
-    make_output_dir,
-    make_quantizer,
-    setup_common_args_and_variables,
-    SimpleADB,
-)
+from executorch.examples.qualcomm.utils import make_output_dir
 from torch.library import impl, Library
 
 my_op_lib = Library("my_ops", "DEF")
@@ -165,6 +166,8 @@ def prepare_op_package(
 
 
 def main(args):
+    qnn_config = QnnConfig.load_config(args.config_file if args.config_file else args)
+
     if args.build_op_package:
         if "HEXAGON_SDK_ROOT" not in os.environ:
             raise RuntimeError("Environment variable HEXAGON_SDK_ROOT must be set")
@@ -182,7 +185,7 @@ def main(args):
     sample_input = (torch.ones(1, 32, 28, 28),)
     workspace = f"/data/local/tmp/executorch/{pte_filename}"
 
-    soc_info = _soc_info_table[getattr(QcomChipset, args.model)]
+    soc_info = _soc_info_table[getattr(QcomChipset, args.soc_model)]
 
     op_package_options, op_package_paths = prepare_op_package(
         workspace,
@@ -199,22 +202,18 @@ def main(args):
             quant_dtype=quant_dtype,
             custom_annotations=(annotate_custom,),
             backend=get_backend_type(args.backend),
-            soc_model=args.model,
+            soc_model=args.soc_model,
         )
 
     build_executorch_binary(
-        instance,
-        sample_input,
-        args.model,
-        f"{args.artifact}/{pte_filename}",
-        sample_input,
+        model=instance,
+        qnn_config=qnn_config,
+        file_name=f"{args.artifact}/{pte_filename}",
+        dataset=[sample_input],
         op_package_options=op_package_options,
         quant_dtype=quant_dtype,
         custom_quantizer=quantizer,
     )
-
-    if args.compile_only:
-        sys.exit(0)
 
     # collect output data
     output_data_folder = f"{args.artifact}/outputs"
@@ -245,22 +244,14 @@ def main(args):
             capture_output=True,
         )
     else:
-        # setup required paths accordingly
-        # qnn_sdk       : QNN SDK path setup in environment variable
-        # artifact_path : path where artifacts were built
-        # pte_path      : path where executorch binary was stored
+        # setup required params accordingly
+        # qnn_config    : QnnConfig that saves config info
         # device_id     : serial number of android device
         # workspace     : folder for storing artifacts on android device
         adb = SimpleADB(
-            qnn_sdk=os.getenv("QNN_SDK_ROOT"),
-            build_path=f"{args.build_folder}",
+            qnn_config=qnn_config,
             pte_path=f"{args.artifact}/{pte_filename}.pte",
             workspace=workspace,
-            device_id=args.device,
-            host_id=args.host,
-            soc_model=args.model,
-            shared_buffer=args.shared_buffer,
-            target=args.target,
         )
         adb.push(inputs=sample_input, files=op_package_paths)
         if args.debug:
@@ -345,7 +336,6 @@ if __name__ == "__main__":
     )
 
     args = parser.parse_args()
-    args.validate(args)
 
     try:
         main(args)

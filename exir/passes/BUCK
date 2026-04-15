@@ -451,3 +451,17 @@ fbcode_target(_kind = runtime.python_library,
         "//caffe2:torch",
     ],
 )
+
+fbcode_target(_kind = runtime.python_library,
+    name = "propagate_device_pass",
+    srcs = [
+        "propagate_device_pass.py",
+    ],
+    deps = [
+        "//caffe2:torch",
+        "//executorch/exir:delegate",
+        "//executorch/exir:lowered_backend_module",
+        "//executorch/exir:schema",
+        "//executorch/exir:tensor",
+    ],
+)

@@ -51,6 +51,7 @@ from . import (  # noqa
     op_to_dim_order_copy,
     op_tosa_conv2d,
     op_tosa_conv3d,
+    op_tosa_custom,
     op_tosa_depthwise_conv2d,
     op_tosa_gather,
     op_tosa_matmul,
