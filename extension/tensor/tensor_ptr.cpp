@@ -86,20 +86,21 @@ TensorPtr make_tensor_ptr(
   ET_CHECK_MSG(error == runtime::Error::Ok, "Failed to compute strides.");
 
   if (!strides.empty()) {
+    bool is_contiguous = true;
     for (size_t i = 0; i < dim; i++) {
-      ET_CHECK_MSG(
-          strides[i] == computed_strides[i] || sizes[i] == 1,
-          "invalid strides for dim %zu: %" ET_PRI_SIZES_AND_STRIDES
-          "!= %" ET_PRI_SIZES_AND_STRIDES
-          " while its size is %" ET_PRI_SIZES_AND_STRIDES " != 1",
-          i,
-          strides[i],
-          computed_strides[i],
-          sizes[i]);
+      if (strides[i] != computed_strides[i] && sizes[i] != 1) {
+        is_contiguous = false;
+        break;
+      }
     }
+    if (is_contiguous) {
+      strides = std::move(computed_strides);
+    }
+    // else: keep the caller-provided non-contiguous strides (e.g. from
+    // reinterpret_tensor views like chunk/split).
+  } else {
+    strides = std::move(computed_strides);
   }
-
-  strides = std::move(computed_strides);
 
 #ifndef USE_ATEN_LIB
   executorch::aten::TensorImpl tensor_impl(

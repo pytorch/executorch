@@ -132,9 +132,21 @@ TEST_F(TensorPtrMakerTest, CreateTensorUsingFromBlobWithLegalStrides) {
   EXPECT_EQ(tensor->const_data_ptr<float>()[0], 3);
 }
 
-TEST_F(TensorPtrMakerTest, FailedCreateTensorUsingFromBlobWithIllegalStrides) {
+TEST_F(TensorPtrMakerTest, CreateTensorUsingFromBlobWithNonContiguousStrides) {
   float data[20] = {3};
-  ET_EXPECT_DEATH(from_blob(data, {2, 2, 2}, {10, 2, 1}), "");
+  auto tensor = from_blob(data, {2, 2, 2}, {10, 2, 1});
+
+  EXPECT_EQ(tensor->dim(), 3);
+  EXPECT_EQ(tensor->size(0), 2);
+  EXPECT_EQ(tensor->size(1), 2);
+  EXPECT_EQ(tensor->size(2), 2);
+
+  // Non-contiguous strides are preserved (e.g. from reinterpret_tensor views).
+  EXPECT_EQ(tensor->strides()[0], 10);
+  EXPECT_EQ(tensor->strides()[1], 2);
+  EXPECT_EQ(tensor->strides()[2], 1);
+  EXPECT_EQ(tensor->const_data_ptr<float>(), data);
+  EXPECT_EQ(tensor->const_data_ptr<float>()[0], 3);
 }
 
 TEST_F(TensorPtrMakerTest, TensorMakerConversionOperator) {

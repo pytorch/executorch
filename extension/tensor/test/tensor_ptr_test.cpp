@@ -420,14 +420,19 @@ TEST_F(TensorPtrTest, MakeViewReuseMetadataWhenShapeSame) {
   EXPECT_EQ(view->strides()[1], 3);
 }
 
-TEST_F(TensorPtrTest, MakeViewShapeChangeWithExplicitOldStridesExpectDeath) {
+TEST_F(TensorPtrTest, MakeViewShapeChangeWithNonContiguousStrides) {
   float data[12] = {0};
   auto tensor = make_tensor_ptr({3, 4}, data);
   std::vector<executorch::aten::StridesType> old_strides(
       tensor->strides().begin(), tensor->strides().end());
 
-  ET_EXPECT_DEATH(
-      { auto _ = make_tensor_ptr(tensor, {2, 6}, {}, old_strides); }, "");
+  // Reshaping [3,4] to [2,6] with old strides [4,1] creates a non-contiguous
+  // view (stride[0]=4 != contiguous 6). This is allowed for reinterpret_tensor.
+  auto view = make_tensor_ptr(tensor, {2, 6}, {}, old_strides);
+  EXPECT_EQ(view->size(0), 2);
+  EXPECT_EQ(view->size(1), 6);
+  EXPECT_EQ(view->strides()[0], 4);
+  EXPECT_EQ(view->strides()[1], 1);
 }
 
 TEST_F(TensorPtrTest, MakeViewInvalidDimOrderExpectDeath) {
@@ -967,8 +972,11 @@ TEST_F(TensorPtrTest, TensorDefaultDimOrderAndStrides) {
 
 TEST_F(TensorPtrTest, TensorMismatchStridesAndDimOrder) {
   float data[12] = {0};
-  ET_EXPECT_DEATH(
-      { auto _ = make_tensor_ptr({3, 4}, data, {1, 0}, {1, 4}); }, "");
+  // dim_order={1,0} implies strides={1,3}, but caller provides {1,4}.
+  // Non-contiguous strides are preserved for reinterpret_tensor views.
+  auto tensor = make_tensor_ptr({3, 4}, data, {1, 0}, {1, 4});
+  EXPECT_EQ(tensor->strides()[0], 1);
+  EXPECT_EQ(tensor->strides()[1], 4);
 }
 
 TEST_F(TensorPtrTest, TensorCustomDimOrderAndStrides) {
