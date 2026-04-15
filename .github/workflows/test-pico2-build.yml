@@ -6,12 +6,14 @@ on:
     paths:
       - examples/raspberry_pi/pico2/**
       - backends/cortex_m/**
+      - .ci/scripts/**
+      - examples/arm/**
   schedule:
     # Run daily at 3 AM UTC to catch upstream breakages
     - cron: '0 3 * * *'
 
 concurrency:
-  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.sha }}
+  group: ${{ github.workflow }}-${{ github.event_name }}-${{ github.event.pull_request.number || github.sha }}
   cancel-in-progress: true
 
 jobs:
@@ -26,7 +28,7 @@ jobs:
       docker-image: ci-image:executorch-ubuntu-22.04-arm-sdk
       submodules: 'recursive'
       ref: ${{ github.sha }}
-      timeout: 60
+      timeout: 120
       script: |
         # Activate conda environment from the docker image
         CONDA_ENV=$(conda env list --json | jq -r ".envs | .[-1]")
@@ -65,25 +67,24 @@ jobs:
         echo "--- Key symbols ---"
         arm-none-eabi-nm --print-size --size-sort --radix=d "${ELF_FILE}" | tail -20
 
-        # Validate binary fits in Pico2 memory:
-        #   .text in flash (4MB = 4194304 bytes)
-        #   .bss + .data in SRAM (520KB = 532480 bytes)
-        TEXT_SIZE=$(arm-none-eabi-size -A "${ELF_FILE}" | awk '/.text/ {print $2}')
-        BSS_SIZE=$(arm-none-eabi-size -A "${ELF_FILE}" | awk '/.bss/ {print $2}')
-        DATA_SIZE=$(arm-none-eabi-size -A "${ELF_FILE}" | awk '/.data/ {print $2}')
+        # Validate binary fits in Pico2 memory using aggregated totals:
+        #   flash = text + data (4MB = 4194304 bytes)
+        #   SRAM  = data + bss  (520KB = 532480 bytes)
+        eval $(arm-none-eabi-size "${ELF_FILE}" | awk 'NR==2 {printf "TEXT_SIZE=%d DATA_SIZE=%d BSS_SIZE=%d", $1, $2, $3}')
 
-        echo "FP32 binary: .text=${TEXT_SIZE} .bss=${BSS_SIZE} .data=${DATA_SIZE}"
+        FLASH_USED=$((TEXT_SIZE + DATA_SIZE))
+        SRAM_USED=$((DATA_SIZE + BSS_SIZE))
+        echo "FP32 binary: text=${TEXT_SIZE} data=${DATA_SIZE} bss=${BSS_SIZE} => flash=${FLASH_USED} sram=${SRAM_USED}"
 
-        SRAM_USED=$((BSS_SIZE + DATA_SIZE))
-        if [ "${TEXT_SIZE}" -gt 4194304 ]; then
-          echo "FAIL: .text (${TEXT_SIZE}) exceeds 4MB flash"
+        if [ "${FLASH_USED}" -gt 4194304 ]; then
+          echo "FAIL: flash usage (${FLASH_USED}) exceeds 4MB"
           exit 1
         fi
         if [ "${SRAM_USED}" -gt 532480 ]; then
-          echo "FAIL: .bss+.data (${SRAM_USED}) exceeds 520KB SRAM"
+          echo "FAIL: SRAM usage (${SRAM_USED}) exceeds 520KB"
           exit 1
         fi
-        echo "PASS: FP32 firmware fits in Pico2 memory (SRAM: ${SRAM_USED}/532480, Flash: ${TEXT_SIZE}/4194304)"
+        echo "PASS: FP32 firmware fits in Pico2 memory (SRAM: ${SRAM_USED}/532480, Flash: ${FLASH_USED}/4194304)"
 
   test-pico2-cmsis-build:
     name: test-pico2-cmsis-nn-build
@@ -96,7 +97,7 @@ jobs:
       docker-image: ci-image:executorch-ubuntu-22.04-arm-sdk
       submodules: 'recursive'
       ref: ${{ github.sha }}
-      timeout: 60
+      timeout: 120
       script: |
         # Activate conda environment from the docker image
         CONDA_ENV=$(conda env list --json | jq -r ".envs | .[-1]")
@@ -136,26 +137,30 @@ jobs:
         arm-none-eabi-nm --print-size --size-sort --radix=d "${ELF_FILE}" | tail -20
 
         # Verify CMSIS-NN symbols are linked
-        if arm-none-eabi-nm "${ELF_FILE}" | grep -q "cmsis_nn\|arm_nn"; then
+        CMSIS_NN_SYMBOLS=$(arm-none-eabi-nm "${ELF_FILE}" | grep -E '(cmsis_nn|arm_nn)' || true)
+        if [ -n "${CMSIS_NN_SYMBOLS}" ]; then
           echo "PASS: CMSIS-NN symbols found in binary"
+          printf '%s\n' "${CMSIS_NN_SYMBOLS}" | head -20
         else
-          echo "WARNING: No CMSIS-NN symbols detected — verify cortex_m backend linked correctly"
+          echo "FAIL: No CMSIS-NN symbols detected — cortex_m backend may not be linked correctly"
+          exit 1
         fi
 
-        # Validate binary fits in Pico2 memory
-        TEXT_SIZE=$(arm-none-eabi-size -A "${ELF_FILE}" | awk '/.text/ {print $2}')
-        BSS_SIZE=$(arm-none-eabi-size -A "${ELF_FILE}" | awk '/.bss/ {print $2}')
-        DATA_SIZE=$(arm-none-eabi-size -A "${ELF_FILE}" | awk '/.data/ {print $2}')
+        # Validate binary fits in Pico2 memory using aggregated totals:
+        #   flash = text + data (4MB = 4194304 bytes)
+        #   SRAM  = data + bss  (520KB = 532480 bytes)
+        eval $(arm-none-eabi-size "${ELF_FILE}" | awk 'NR==2 {printf "TEXT_SIZE=%d DATA_SIZE=%d BSS_SIZE=%d", $1, $2, $3}')
 
-        echo "CMSIS-NN binary: .text=${TEXT_SIZE} .bss=${BSS_SIZE} .data=${DATA_SIZE}"
+        FLASH_USED=$((TEXT_SIZE + DATA_SIZE))
+        SRAM_USED=$((DATA_SIZE + BSS_SIZE))
+        echo "CMSIS-NN binary: text=${TEXT_SIZE} data=${DATA_SIZE} bss=${BSS_SIZE} => flash=${FLASH_USED} sram=${SRAM_USED}"
 
-        SRAM_USED=$((BSS_SIZE + DATA_SIZE))
-        if [ "${TEXT_SIZE}" -gt 4194304 ]; then
-          echo "FAIL: .text (${TEXT_SIZE}) exceeds 4MB flash"
+        if [ "${FLASH_USED}" -gt 4194304 ]; then
+          echo "FAIL: flash usage (${FLASH_USED}) exceeds 4MB"
           exit 1
         fi
         if [ "${SRAM_USED}" -gt 532480 ]; then
-          echo "FAIL: .bss+.data (${SRAM_USED}) exceeds 520KB SRAM"
+          echo "FAIL: SRAM usage (${SRAM_USED}) exceeds 520KB"
           exit 1
         fi
-        echo "PASS: CMSIS-NN firmware fits in Pico2 memory (SRAM: ${SRAM_USED}/532480, Flash: ${TEXT_SIZE}/4194304)"
+        echo "PASS: CMSIS-NN firmware fits in Pico2 memory (SRAM: ${SRAM_USED}/532480, Flash: ${FLASH_USED}/4194304)"
