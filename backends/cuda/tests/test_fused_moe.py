@@ -30,6 +30,8 @@ from executorch.backends.cuda.cuda_backend import CudaBackend
 from executorch.backends.cuda.cuda_partitioner import CudaPartitioner
 from executorch.backends.cuda.triton.kernels.fused_moe import (
     fused_moe as triton_fused_moe,
+    fused_moe_batched as triton_fused_moe_batched,
+    moe_align_block_size,
 )
 from executorch.exir import (
     EdgeCompileConfig,
@@ -332,6 +334,96 @@ class TestFusedMoE(unittest.TestCase):
             rel = diff / (ref.float().abs().max().item() + 1e-10)
             self.assertLess(rel, 0.05, f"token {t}: relative diff {rel:.4f}")
 
+    def test_batched_correctness(self):
+        """Batched kernel matches reference across M values."""
+        test_cases = [
+            (42, 8, 64, 32, 4, 2, 32, "8tok_small"),
+            (7, 16, 64, 32, 8, 4, 32, "16tok_8exp_top4"),
+            (13, 32, 128, 64, 8, 2, 64, "32tok_gs64"),
+            (55, 64, 64, 32, 4, 2, 32, "64tok"),
+            (99, 128, 128, 64, 8, 2, 32, "128tok"),
+        ]
+        for seed, M, hidden, intermediate, num_experts, top_k, gs, desc in test_cases:
+            with self.subTest(desc=desc):
+                torch.manual_seed(seed)
+                x = torch.randn(M, hidden, dtype=torch.bfloat16, device="cuda")
+                w1_weight = torch.randn(
+                    num_experts,
+                    2 * intermediate,
+                    hidden,
+                    dtype=torch.bfloat16,
+                    device="cuda",
+                )
+                w2_weight = torch.randn(
+                    num_experts,
+                    hidden,
+                    intermediate,
+                    dtype=torch.bfloat16,
+                    device="cuda",
+                )
+                w1, w1s = _quantize_weights_int4(w1_weight.cpu(), gs)
+                w2, w2s = _quantize_weights_int4(w2_weight.cpu(), gs)
+                w1, w1s, w2, w2s = w1.cuda(), w1s.cuda(), w2.cuda(), w2s.cuda()
+
+                scores = torch.randn(M, num_experts, device="cuda")
+                topk_weights, topk_ids = torch.topk(scores, top_k, dim=-1)
+                topk_weights = topk_weights.softmax(dim=-1).float()
+
+                out = triton_fused_moe_batched(
+                    x,
+                    w1,
+                    w1s,
+                    w2,
+                    w2s,
+                    topk_weights,
+                    topk_ids,
+                    top_k,
+                    num_experts,
+                    gs,
+                )
+
+                w1_dq = _dequantize_int4(w1.cpu(), w1s.cpu(), gs).cuda()
+                w2_dq = _dequantize_int4(w2.cpu(), w2s.cpu(), gs).cuda()
+                ref = _reference_moe(x, w1_dq, w2_dq, topk_weights, topk_ids, top_k)
+
+                diff = (out.float() - ref.float()).abs().max().item()
+                rel = diff / (ref.float().abs().max().item() + 1e-10)
+                self.assertLess(
+                    rel,
+                    0.05,
+                    f"{desc}: relative diff {rel:.4f} (abs {diff:.6f})",
+                )
+
+    def test_batched_matches_fused(self):
+        """Batched kernel matches the existing fused_moe kernel at Qwen-scale dims."""
+        E, top_k, K, inter, gs = 256, 8, 2048, 512, 128
+        torch.manual_seed(42)
+        vals = torch.randint(0, 16, (E, 2 * inter, K), dtype=torch.uint8, device="cuda")
+        w1 = ((vals[:, :, 1::2] << 4) | vals[:, :, 0::2]).to(torch.int8)
+        w1s = (
+            torch.randn(E, 2 * inter, K // gs, device="cuda", dtype=torch.bfloat16)
+            * 0.01
+        )
+        vals = torch.randint(0, 16, (E, K, inter), dtype=torch.uint8, device="cuda")
+        w2 = ((vals[:, :, 1::2] << 4) | vals[:, :, 0::2]).to(torch.int8)
+        w2s = torch.randn(E, K, inter // gs, device="cuda", dtype=torch.bfloat16) * 0.01
+
+        for M in [16, 64, 256]:
+            with self.subTest(M=M):
+                x = torch.randn(M, K, device="cuda", dtype=torch.bfloat16)
+                logits = torch.randn(M, E, device="cuda", dtype=torch.float32)
+                tw, ti = torch.topk(logits, top_k, dim=-1)
+                tw = tw.softmax(dim=-1)
+                ti = ti.to(torch.int64)
+
+                out_fused = triton_fused_moe(x, w1, w1s, w2, w2s, tw, ti, top_k, E, gs)
+                out_batched = triton_fused_moe_batched(
+                    x, w1, w1s, w2, w2s, tw, ti, top_k, E, gs
+                )
+
+                err = (out_fused.float() - out_batched.float()).abs().max().item()
+                self.assertLess(err, 0.5, f"M={M}: max abs error {err:.4e}")
+
     def test_export_cuda(self):
         """Export succeeds and produces non-empty .pte."""
         with tempfile.TemporaryDirectory() as tmpdir:
@@ -393,6 +485,144 @@ class TestFusedMoE(unittest.TestCase):
                         0.02,
                         f"seed={seed}: abs diff {diff}, rel diff {rel_diff:.4f}",
                     )
+
+
+class TestMoeAlignBlockSize(unittest.TestCase):
+    def setUp(self):
+        if not torch.cuda.is_available():
+            self.skipTest("CUDA is not available")
+
+    def test_basic_correctness(self):
+        M, top_k, num_experts, block_size = 4, 2, 4, 4
+        # Token 0 -> experts 0, 1
+        # Token 1 -> experts 2, 3
+        # Token 2 -> experts 0, 2
+        # Token 3 -> experts 1, 3
+        topk_ids = torch.tensor(
+            [[0, 1], [2, 3], [0, 2], [1, 3]], dtype=torch.int64, device="cuda"
+        )
+        num_pairs = M * top_k
+        sentinel = num_pairs
+
+        sorted_token_ids, expert_ids, num_tokens_post_padded = moe_align_block_size(
+            topk_ids, block_size, num_experts
+        )
+
+        max_num_tokens_padded = num_pairs + num_experts * block_size
+        max_num_expert_blocks = max_num_tokens_padded // block_size
+        self.assertEqual(sorted_token_ids.shape[0], max_num_tokens_padded)
+        self.assertEqual(expert_ids.shape[0], max_num_expert_blocks)
+
+        # Each expert gets exactly 2 tokens, padded to block_size=4
+        # So num_tokens_post_padded should be 4 * 4 = 16
+        self.assertEqual(num_tokens_post_padded.item(), 16)
+
+        # Verify tokens are grouped by expert within the active region
+        flat_ids = topk_ids.reshape(-1)
+        active = sorted_token_ids[: num_tokens_post_padded.item()]
+        for block_idx in range(num_tokens_post_padded.item() // block_size):
+            expert = expert_ids[block_idx].item()
+            block = active[block_idx * block_size : (block_idx + 1) * block_size]
+            for pair_id in block.tolist():
+                if pair_id == sentinel:
+                    continue
+                self.assertEqual(
+                    flat_ids[pair_id].item(),
+                    expert,
+                    f"pair {pair_id} expected expert {expert}, got {flat_ids[pair_id].item()}",
+                )
+
+    def test_all_tokens_same_expert(self):
+        M, top_k, num_experts, block_size = 4, 2, 4, 4
+        topk_ids = torch.full((M, top_k), 2, dtype=torch.int64, device="cuda")
+        num_pairs = M * top_k
+        sentinel = num_pairs
+
+        sorted_token_ids, expert_ids, num_tokens_post_padded = moe_align_block_size(
+            topk_ids, block_size, num_experts
+        )
+
+        # All 8 pairs go to expert 2, padded to block_size=4 -> 8 slots
+        self.assertEqual(num_tokens_post_padded.item(), 8)
+
+        active = sorted_token_ids[: num_tokens_post_padded.item()]
+        real_ids = active[active != sentinel]
+        self.assertEqual(real_ids.shape[0], num_pairs)
+        self.assertTrue(
+            (sorted(real_ids.tolist()) == list(range(num_pairs))),
+            "All pair indices should appear exactly once",
+        )
+
+    def test_single_token(self):
+        num_experts, block_size = 4, 4
+        topk_ids = torch.tensor([[2]], dtype=torch.int64, device="cuda")
+        num_pairs = 1
+        sentinel = num_pairs
+
+        sorted_token_ids, expert_ids, num_tokens_post_padded = moe_align_block_size(
+            topk_ids, block_size, num_experts
+        )
+
+        # 1 token to expert 2, padded to block_size=4
+        self.assertEqual(num_tokens_post_padded.item(), block_size)
+
+        active = sorted_token_ids[: num_tokens_post_padded.item()]
+        real_ids = active[active != sentinel].tolist()
+        self.assertEqual(real_ids, [0])
+        sentinel_count = (active == sentinel).sum().item()
+        self.assertEqual(sentinel_count, block_size - 1)
+
+    def test_num_pairs_less_than_block_size(self):
+        M, top_k, num_experts, block_size = 1, 2, 4, 16
+        topk_ids = torch.tensor([[0, 3]], dtype=torch.int64, device="cuda")
+        num_pairs = M * top_k
+        sentinel = num_pairs
+
+        sorted_token_ids, expert_ids, num_tokens_post_padded = moe_align_block_size(
+            topk_ids, block_size, num_experts
+        )
+
+        # 1 token per expert -> each padded to block_size=16, total=32
+        self.assertEqual(num_tokens_post_padded.item(), 2 * block_size)
+
+        active = sorted_token_ids[: num_tokens_post_padded.item()]
+        real_ids = sorted(active[active != sentinel].tolist())
+        self.assertEqual(real_ids, [0, 1])
+
+    def test_sentinel_value(self):
+        M, top_k, num_experts, block_size = 2, 2, 4, 4
+        topk_ids = torch.tensor([[0, 1], [0, 1]], dtype=torch.int64, device="cuda")
+        num_pairs = M * top_k
+        sentinel = num_pairs
+
+        sorted_token_ids, expert_ids, num_tokens_post_padded = moe_align_block_size(
+            topk_ids, block_size, num_experts
+        )
+
+        # Padding positions within the active region use sentinel = num_pairs
+        active = sorted_token_ids[: num_tokens_post_padded.item()]
+        for val in active.tolist():
+            self.assertTrue(
+                0 <= val <= sentinel,
+                f"Value {val} outside valid range [0, {sentinel}]",
+            )
+
+        # Tail beyond active region should also be sentinel
+        tail = sorted_token_ids[num_tokens_post_padded.item() :]
+        self.assertTrue((tail == sentinel).all())
+
+    def test_determinism(self):
+        M, top_k, num_experts, block_size = 8, 4, 8, 4
+        torch.manual_seed(42)
+        topk_ids = torch.randint(0, num_experts, (M, top_k), device="cuda")
+
+        results = [
+            moe_align_block_size(topk_ids, block_size, num_experts) for _ in range(5)
+        ]
+        for i in range(1, len(results)):
+            self.assertTrue(torch.equal(results[0][0], results[i][0]))
+            self.assertTrue(torch.equal(results[0][1], results[i][1]))
+            self.assertEqual(results[0][2].item(), results[i][2].item())
 
 
 def _dequantize_int4(packed, scale, group_size):
