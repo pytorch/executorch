@@ -192,7 +192,7 @@ Result<const uint8_t*> getConstantDataPtr(
       ET_CHECK_OR_RETURN_ERROR(
           buffer_idx < cb->size(),
           InvalidProgram,
-          "buffer_idx %u out of bounds for constant_buffer of size %zu",
+          "buffer_idx %u out of bounds for constant_buffer of size %u",
           buffer_idx,
           cb->size());
       auto* buffer_entry = (*cb)[buffer_idx];
@@ -209,7 +209,7 @@ Result<const uint8_t*> getConstantDataPtr(
       ET_CHECK_OR_RETURN_ERROR(
           buffer_idx < cd->size(),
           InvalidProgram,
-          "buffer_idx %u out of bounds for constant_data of size %zu",
+          "buffer_idx %u out of bounds for constant_data of size %u",
           buffer_idx,
           cd->size());
       ConstantDataOffsetPtr constant_data_offset = cd->Get(buffer_idx);
