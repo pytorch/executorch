@@ -18,7 +18,9 @@ class RunMetrics:
     """Metrics from a single run."""
 
     generated_tokens: int
+    prompt_tokens: int
     tokens_per_sec: float
+    prefill_tokens_per_sec: float
     model_load_time_ms: float
     total_inference_time_ms: float
     encoder_time_ms: float
@@ -28,7 +30,8 @@ class RunMetrics:
     def __repr__(self):
         return (
             f"Tokens: {self.generated_tokens}, "
-            f"Throughput: {self.tokens_per_sec:.2f} t/s, "
+            f"Prefill: {self.prefill_tokens_per_sec:.2f} t/s ({self.prompt_tokens} tokens), "
+            f"Decode: {self.tokens_per_sec:.2f} t/s, "
             f"Model load: {self.model_load_time_ms:.0f}ms, "
             f"Total inference: {self.total_inference_time_ms:.0f}ms, "
             f"Encoder: {self.encoder_time_ms:.0f}ms, "
@@ -49,6 +52,7 @@ def parse_pytorch_observer_log(log_line: str) -> Optional[RunMetrics]:
 
         # Extract values
         generated_tokens = data.get("generated_tokens", 0)
+        prompt_tokens = data.get("prompt_tokens", 0)
         inference_start_ms = data.get("inference_start_ms", 0)
         inference_end_ms = data.get("inference_end_ms", 0)
         prompt_eval_end_ms = data.get("prompt_eval_end_ms", 0)
@@ -72,12 +76,20 @@ def parse_pytorch_observer_log(log_line: str) -> Optional[RunMetrics]:
             if generation_time_ms > 0
             else 0
         )
+
+        # Calculate prefill throughput
+        prefill_tokens_per_sec = (
+            (prompt_tokens / encoder_time_ms * 1000) if encoder_time_ms > 0 else 0
+        )
+
         model_load_time_ms = model_load_end_ms - model_load_start_ms
         first_token_latency_ms = first_token_ms - prompt_eval_end_ms
 
         return RunMetrics(
             generated_tokens=generated_tokens,
+            prompt_tokens=prompt_tokens,
             tokens_per_sec=tokens_per_sec,
+            prefill_tokens_per_sec=prefill_tokens_per_sec,
             model_load_time_ms=model_load_time_ms,
             total_inference_time_ms=total_inference_time_ms,
             encoder_time_ms=encoder_time_ms,
@@ -505,6 +517,7 @@ class BenchmarkResults:
 
     # Metrics
     throughput: MetricStats
+    prefill_throughput: MetricStats
     model_load_time: MetricStats
     total_inference_time: MetricStats
     encoder_time: MetricStats
@@ -529,6 +542,10 @@ class BenchmarkResults:
             "throughput_min": self.throughput.min_val,
             "throughput_max": self.throughput.max_val,
             "throughput_stdev": self.throughput.stdev,
+            "prefill_throughput_mean": self.prefill_throughput.mean,
+            "prefill_throughput_min": self.prefill_throughput.min_val,
+            "prefill_throughput_max": self.prefill_throughput.max_val,
+            "prefill_throughput_stdev": self.prefill_throughput.stdev,
             "model_load_time_mean": self.model_load_time.mean,
             "model_load_time_min": self.model_load_time.min_val,
             "model_load_time_max": self.model_load_time.max_val,
@@ -595,6 +612,13 @@ class BenchmarkResults:
         # Create v3 records for all metrics
         return [
             self.throughput.create_v3_record(
+                model_name_with_quant,
+                backend,
+                runner_name,
+                runner_type,
+                base_extra_info,
+            ),
+            self.prefill_throughput.create_v3_record(
                 model_name_with_quant,
                 backend,
                 runner_name,
@@ -696,6 +720,11 @@ def compute_summary(
             "t/s",
             {"trimmed_runs": len(trimmed_throughput)},
         ),
+        prefill_throughput=create_metric_stats(
+            "prefill_throughput(tokens/sec)",
+            [r.prefill_tokens_per_sec for r in results],
+            "t/s",
+        ),
         model_load_time=create_metric_stats(
             "model_load_time(ms)",
             [r.model_load_time_ms for r in results],
@@ -740,6 +769,7 @@ def print_summary(summary: BenchmarkResults) -> None:
 
     # Print all metrics using their print_stats method
     summary.throughput.print_stats()
+    summary.prefill_throughput.print_stats()
     summary.model_load_time.print_stats()
     summary.total_inference_time.print_stats()
     summary.encoder_time.print_stats()
