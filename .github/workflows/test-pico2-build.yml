@@ -1,6 +1,11 @@
 name: Pico2 Build Validation
 
 on:
+  pull_request:
+    paths:
+      - .github/workflows/test-pico2-build.yml
+      - examples/raspberry_pi/pico2/**
+      - backends/cortex_m/**
   push:
     branches: [main, release/*]
     paths:
