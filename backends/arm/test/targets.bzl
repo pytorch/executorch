@@ -3,7 +3,7 @@ load("@fbcode_macros//build_defs:python_pytest.bzl", "python_pytest")
 load("@bazel_skylib//lib:paths.bzl", "paths")
 load("@fbsource//xplat/executorch/build:runtime_wrapper.bzl", "runtime")
 
-_ENABLE_VGF = True
+_ENABLE_VGF = False  # Disabled: memfd_create blocked by seccomp on Sandcastle causes segfaults before Python pre-flight check can run
 
 def define_arm_tests():
     # TODO [fbonly] Add more tests
@@ -72,6 +72,7 @@ def define_arm_tests():
             resources = ["conftest.py"],
             compile = "with-source",
             typing = False,
+            skip_on_mode_mac = True,
             env = {} if runtime.is_oss else ({
                 "MODEL_CONVERTER_PATH": "$(location fbsource//third-party/pypi/ai-ml-sdk-model-converter/0.8.0:model-converter-bin)",
                 "MODEL_CONVERTER_LIB_DIR": "$(location fbsource//third-party/nvidia-nsight-systems:linux-x86_64)/host-linux-x64",
@@ -81,12 +82,11 @@ def define_arm_tests():
                 "EMULATION_LAYER_TENSOR_JSON": "$(location fbsource//third-party/arm-ml-emulation-layer/v0.9.0/src:VkLayer_Tensor_json)",
                 "EMULATION_LAYER_GRAPH_JSON": "$(location fbsource//third-party/arm-ml-emulation-layer/v0.9.0/src:VkLayer_Graph_json)",
             } if _ENABLE_VGF else {}),
-            preload_deps = [
+            preload_deps = [] if runtime.is_oss or not _ENABLE_VGF else [
                 "//executorch/kernels/quantized:custom_ops_generated_lib",
-            ] + ([] if runtime.is_oss or not _ENABLE_VGF else [
                 "fbsource//third-party/khronos:vulkan",
                 "//executorch/backends/arm/runtime:vgf_backend",
-            ]),
+            ],
             deps = [
                 "//executorch/backends/arm/test:arm_tester" if runtime.is_oss else "//executorch/backends/arm/test/tester/fb:arm_tester_fb",
                 "//executorch/backends/arm/test:conftest",
