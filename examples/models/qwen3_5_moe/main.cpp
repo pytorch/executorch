@@ -197,7 +197,6 @@ int main(int argc, char** argv) {
   cur_token = llm::logits_to_token(*logits_ptr, FLAGS_temperature);
 
   stats.prompt_eval_end_ms = llm::time_in_ms();
-  stats.first_token_ms = stats.prompt_eval_end_ms;
 
   double prefill_ms =
       (double)(stats.prompt_eval_end_ms - stats.inference_start_ms);
@@ -253,6 +252,10 @@ int main(int argc, char** argv) {
     stats.on_sampling_begin();
     cur_token = llm::logits_to_token(*step_logits_ptr, FLAGS_temperature);
     stats.on_sampling_end();
+
+    if (step == 0) {
+      stats.first_token_ms = llm::time_in_ms();
+    }
 
     pos++;
 
