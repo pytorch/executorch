@@ -689,11 +689,11 @@ lib.define(
 )
 
 lib.define(
-    "quantized_w8a32_gru(Tensor inputs, Tensor hidden, Tensor weights_inputs, float w_i_scale, Tensor weights_hidden, float w_h_scale, Tensor bias_inputs, float b_i_scale, Tensor bias_hidden, float b_h_scale) -> Tensor"
+    "quantized_w8a32_gru(Tensor inputs, Tensor hidden, Tensor weights_inputs, float w_i_scale, Tensor weights_hidden, float w_h_scale, Tensor bias_inputs, float b_scale, Tensor bias_hidden) -> Tensor"
 )
 
 lib.define(
-    "quantized_w8a32_gru.out(Tensor inputs, Tensor hidden, Tensor weights_inputs, float w_i_scale, Tensor weights_hidden, float w_h_scale, Tensor bias_inputs, float b_i_scale, Tensor bias_hidden, float b_h_scale, *, Tensor(a!) out) -> Tensor(a!)"
+    "quantized_w8a32_gru.out(Tensor inputs, Tensor hidden, Tensor weights_inputs, float w_i_scale, Tensor weights_hidden, float w_h_scale, Tensor bias_inputs, float b_scale, Tensor bias_hidden, *, Tensor(a!) out) -> Tensor(a!)"
 )
 
 lib.define(
@@ -3060,11 +3060,20 @@ def quantized_w8a32_gru_meta(
     weights_hidden: torch.Tensor,
     w_h_scale: float,
     bias_inputs: torch.Tensor,
-    b_i_scale: float,
+    b_scale: float,
     bias_hidden: torch.Tensor,
-    b_h_scale: float,
 ) -> torch.Tensor:
-    return hidden.new_empty((2, *hidden.shape), dtype=torch.float32)
+    seq_len = inputs.shape[1]
+    assert seq_len == 1
+    # inputs comes in shape [batch, seq_len, input_size]
+    # hidden comes in shape [batch, seq_len, hidden_size]
+    # weights_inputs comes in shape [3 * hidden_size, input_size]
+    # weights_hidden comes in shape [3 * hidden_size, hidden_size]
+    # output comes in empty with shape [2, batch, seq_len, hidden_size]
+    # The first dimension stacks the output and the new hidden state
+    return hidden.new_empty(
+        (2, inputs.shape[0], inputs.shape[1], hidden.shape[-1]), dtype=torch.float32
+    )
 
 
 @register_fake("cadence::slice_scatter_")
