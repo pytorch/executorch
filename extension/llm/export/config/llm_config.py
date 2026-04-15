@@ -178,8 +178,8 @@ class ModelConfig:
             dim to take vectorized path in optimized kernels.
         use_attention_sink: Whether to use attention sink to support multi-round
             conversation. Structured as:
-            '<sink_size>,<window_size>,<batch_eviction_size>',
-            e.g., '4,2044,1024'.
+            '<sink_size>,<window_size>',
+            e.g., '4,2044'.
         output_prune_map: Path to the output pruning token mapping file (token_map.json).
         input_prune_map: Path to the output pruning token mapping file (token_map.json).
         use_kv_cache: Whether to use KV cache.
@@ -218,9 +218,9 @@ class ModelConfig:
     def _validate_attention_sink(self):
         if self.use_attention_sink:
             attention_sink_params = self.use_attention_sink.split(",")
-            if len(attention_sink_params) != 3:
+            if len(attention_sink_params) != 2:
                 raise ValueError(
-                    "The value of use_attention_sink must be structured like '<sink_size>,<window_size>,<batch_eviction_size>'"
+                    "The value of use_attention_sink must be structured like '<sink_size>,<window_size>'"
                 )
 
 
@@ -429,6 +429,7 @@ class QuantizationConfig:
     calibration_limit: Optional[int] = None
     calibration_seq_length: Optional[int] = None
     calibration_data: str = "Once upon a time"
+    use_hqq: bool = True
 
     def __post_init__(self):
         if self.qmode:
@@ -598,6 +599,15 @@ class VgfConfig:
 
 
 @dataclass
+class MLXConfig:
+    """
+    Configures the MLX backend for Apple Silicon.
+    """
+
+    enabled: bool = False
+
+
+@dataclass
 class BackendConfig:
     """
     Configures which backends should be used and how the backends
@@ -614,6 +624,7 @@ class BackendConfig:
     tosa: TosaConfig = field(default_factory=TosaConfig)
     ethosu: EthosUConfig = field(default_factory=EthosUConfig)
     vgf: VgfConfig = field(default_factory=VgfConfig)
+    mlx: MLXConfig = field(default_factory=MLXConfig)
 
 
 ################################################################################
@@ -783,6 +794,12 @@ class LlmConfig:
         # MPS
         if hasattr(args, "mps"):
             llm_config.backend.mps.enabled = args.mps
+
+        # MLX - auto-enable use_kv_cache when MLX is enabled
+        if hasattr(args, "mlx"):
+            llm_config.backend.mlx.enabled = args.mlx
+            if args.mlx:
+                llm_config.model.use_kv_cache = True
 
         # Openvino
         if hasattr(args, "openvino"):

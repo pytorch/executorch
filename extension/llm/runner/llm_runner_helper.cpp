@@ -123,7 +123,10 @@ get_llm_metadata(tokenizers::Tokenizer* tokenizer, Module* module) {
 
     if (method_names.count(method_name)) {
       auto get_result = module->get(method_name);
-      value = get_result.get().toScalar().to<decltype(metadata)::mapped_type>();
+      if (!get_result.ok()) {
+        return get_result.error();
+      }
+      value = get_result->toScalar().to<decltype(metadata)::mapped_type>();
     } else {
       ET_LOG(
           Info,
@@ -227,10 +230,7 @@ std::unique_ptr<TextLLMRunner> create_text_llm_runner(
   uint32_t max_cached_memory_size_bytes_ = 1024 * 1024 * 10; // 10MB
   if (data_files.size() > 0) {
     module = std::make_unique<Module>(
-        model_path,
-        data_files,
-        load_mode,
-        std::move(event_tracer),
+        model_path, data_files, load_mode, std::move(event_tracer),
         nullptr, // memory allocator
         std::make_unique<
             executorch::extension::CPUCachingAllocator>( // temp memory

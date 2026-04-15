@@ -50,6 +50,17 @@ project(executorch)
 
 set(EXECUTORCH_ROOT ${CMAKE_CURRENT_SOURCE_DIR})
 
+# Hexagon toolchain with release build complains about code in third party
+# libraries.
+if("${CMAKE_SYSTEM_PROCESSOR}" MATCHES "Hexagon" AND "${CMAKE_BUILD_TYPE}"
+                                                     STREQUAL "Release"
+)
+  add_compile_options(
+    -Wno-error=format -Wno-error=implicit-int-conversion
+    -Wno-error=unused-variable -Wno-error=unused-function
+  )
+endif()
+
 # --- ExecuTorch Version ---
 # Parse version from version.txt (single source of truth)
 file(READ "${EXECUTORCH_ROOT}/version.txt" ET_VERSION_STRING)
@@ -682,6 +693,11 @@ if(EXECUTORCH_BUILD_MPS)
   list(APPEND _executorch_backends mpsdelegate)
 endif()
 
+if(EXECUTORCH_BUILD_MLX)
+  add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/backends/mlx)
+  list(APPEND _executorch_backends mlxdelegate)
+endif()
+
 if(EXECUTORCH_BUILD_NEURON)
   add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/backends/mediatek)
   list(APPEND _executorch_backends neuron_backend)
@@ -982,6 +998,10 @@ if(EXECUTORCH_BUILD_PYBIND)
     list(APPEND _dep_libs mpsdelegate)
   endif()
 
+  if(EXECUTORCH_BUILD_MLX)
+    list(APPEND _dep_libs mlxdelegate)
+  endif()
+
   if(EXECUTORCH_BUILD_OPENVINO)
     list(APPEND _dep_libs openvino_backend)
   endif()
@@ -1082,6 +1102,12 @@ if(EXECUTORCH_BUILD_PYBIND)
   install(TARGETS data_loader
           LIBRARY DESTINATION executorch/extension/pybindings
   )
+
+  # Copy MLX metallib next to _portable_lib.so for editable installs. MLX uses
+  # dladdr() to find the directory containing the library with MLX code, then
+  # looks for mlx.metallib in that directory. When MLX is statically linked into
+  # _portable_lib.so, we need the metallib colocated with it.
+  executorch_target_copy_mlx_metallib(portable_lib)
 endif()
 
 if(EXECUTORCH_BUILD_WASM)
