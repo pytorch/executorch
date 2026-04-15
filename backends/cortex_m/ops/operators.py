@@ -985,7 +985,9 @@ lib.define(
     "Tensor requantize_multipliers, "
     "Tensor requantize_shifts, "
     "int activation_min, "
-    "int activation_max"
+    "int activation_max, "
+    "Tensor scratch, "
+    "Tensor output_scratch"
     ") -> Tensor"
 )
 
@@ -1004,6 +1006,8 @@ lib.define(
     "Tensor requantize_shifts, "
     "int activation_min, "
     "int activation_max, "
+    "Tensor scratch, "
+    "Tensor output_scratch, "
     "*, Tensor(a!) out) -> Tensor(a!)"
 )
 
@@ -1069,6 +1073,8 @@ def quantized_transpose_conv2d_meta(
     requantize_shifts: torch.Tensor,
     activation_min: int,
     activation_max: int,
+    scratch: torch.Tensor,
+    output_scratch: torch.Tensor,
 ) -> torch.Tensor:
     stride_vals = list(stride)
     padding_vals = list(padding)
@@ -1107,6 +1113,8 @@ def quantized_transpose_conv2d_impl(
     requantize_shifts: torch.Tensor,
     activation_min: int,
     activation_max: int,
+    scratch: torch.Tensor,
+    output_scratch: torch.Tensor,
 ) -> torch.Tensor:
     """
     Reference implementation of quantized transposed convolution.

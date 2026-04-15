@@ -4,7 +4,7 @@
 # LICENSE file in the root directory of this source tree.
 
 from collections.abc import Callable
-from typing import cast
+from typing import Any, cast
 
 import cmsis_nn  # type: ignore[import-not-found, import-untyped]
 import executorch.backends.cortex_m.ops.operators  # noqa
@@ -36,6 +36,10 @@ def _shape_from_node(node: torch.fx.Node) -> torch.Size:
 
 def _get_common_conv_buffer_size_inputs(
     conv_node: torch.fx.Node,
+    *,
+    stride_arg_idx: int = 3,
+    padding_arg_idx: int = 4,
+    dilation_arg_idx: int = 5,
 ) -> tuple[
     list[int],
     list[int],
@@ -46,9 +50,9 @@ def _get_common_conv_buffer_size_inputs(
 ]:
     x = cast(torch.fx.Node, conv_node.args[0])
     weight = cast(torch.fx.Node, conv_node.args[1])
-    stride = cast(list[int], conv_node.args[3])
-    padding = cast(list[int], conv_node.args[4])
-    dilation = cast(list[int], conv_node.args[5])
+    stride = cast(list[int], conv_node.args[stride_arg_idx])
+    padding = cast(list[int], conv_node.args[padding_arg_idx])
+    dilation = cast(list[int], conv_node.args[dilation_arg_idx])
 
     # Input is NCHW (PyTorch); CMSIS-NN wants NHWC dims.
     n, c_in, height, width = _shape_from_node(x)
@@ -178,17 +182,83 @@ def cmsis_nn_batch_matmul_buffer_size(
     ]
 
 
-_target_to_buffer_sizes_registry = {
+def cmsis_nn_transpose_conv_buffer_size(
+    backend: cmsis_nn.Backend,
+    conv_node: torch.fx.Node,
+) -> list[int]:
+    (
+        input_nhwc,
+        weight_shape,
+        output_nhwc,
+        stride_hw,
+        padding_hw,
+        dilation_hw,
+    ) = _get_common_conv_buffer_size_inputs(
+        conv_node=conv_node,
+        stride_arg_idx=3,
+        padding_arg_idx=4,
+        dilation_arg_idx=6,
+    )
+    output_padding = cast(list[int], conv_node.args[5])
+    input_offset = cast(int, conv_node.args[7])
+    output_offset = cast(int, conv_node.args[8])
+    output_qmin = cast(int, conv_node.args[11])
+    output_qmax = cast(int, conv_node.args[12])
+    c_out, kernel_h, kernel_w, kernel_c_in = weight_shape
+    filter_nhwc = [c_out, kernel_h, kernel_w, kernel_c_in]
+    padding_offsets_hw = [int(output_padding[0]), int(output_padding[1])]
+
+    return [
+        int(
+            cmsis_nn.transpose_conv_buffer_size(
+                backend,
+                cmsis_nn.DataType.A8W8,
+                input_nhwc=input_nhwc,
+                filter_nhwc=filter_nhwc,
+                output_nhwc=output_nhwc,
+                padding_hw=padding_hw,
+                stride_hw=stride_hw,
+                dilation_hw=dilation_hw,
+                padding_offsets_hw=padding_offsets_hw,
+                input_offset=input_offset,
+                output_offset=output_offset,
+                activation_min=output_qmin,
+                activation_max=output_qmax,
+            )
+        ),
+        int(
+            cmsis_nn.transpose_conv_reverse_conv_buffer_size(
+                backend,
+                cmsis_nn.DataType.A8W8,
+                input_nhwc=input_nhwc,
+                filter_nhwc=filter_nhwc,
+                padding_hw=padding_hw,
+                stride_hw=stride_hw,
+                dilation_hw=dilation_hw,
+                padding_offsets_hw=padding_offsets_hw,
+                input_offset=input_offset,
+                output_offset=output_offset,
+                activation_min=output_qmin,
+                activation_max=output_qmax,
+            )
+        ),
+    ]
+
+
+_target_to_buffer_sizes_registry: dict[Any, BufferSizeFunction] = {
     exir_ops.edge.cortex_m.quantized_conv2d.default: cmsis_nn_conv_buffer_size,
     exir_ops.edge.cortex_m.quantized_depthwise_conv2d.default: cmsis_nn_depthwise_conv_buffer_size,
     exir_ops.edge.cortex_m.quantized_batch_matmul.default: cmsis_nn_batch_matmul_buffer_size,
+    exir_ops.edge.cortex_m.quantized_transpose_conv2d.default: cmsis_nn_transpose_conv_buffer_size,
 }
 
 
 def required_cmsis_nn_buffer_sizes(
     node: torch.fx.Node, backend: cmsis_nn.Backend
 ) -> list[int] | None:
-    """Returns a sequence of scratch buffer sizes required by node, in bytes."""
+    """Returns a sequence of scratch buffer sizes required by node, in bytes.
+    If no function is registered to compute this for the target of the node, return None.
+    """
     if node.target not in _target_to_buffer_sizes_registry:
         return None
 

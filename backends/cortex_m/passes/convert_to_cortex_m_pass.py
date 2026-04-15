@@ -399,6 +399,18 @@ class ConvertToCortexMPass(CortexMPass):
                 torch.tensor(quantized_shifts, dtype=torch.int32),
             )
 
+        with node.graph.inserting_before(node):
+            scratch = node.graph.call_function(
+                exir.memory.alloc,
+                args=UNINITIALIZED_ALLOC_ARGS,
+                kwargs={},
+            )
+            output_scratch = node.graph.call_function(
+                exir.memory.alloc,
+                args=UNINITIALIZED_ALLOC_ARGS,
+                kwargs={},
+            )
+
         new_args = (
             x,
             weight_nhwc,
@@ -413,6 +425,8 @@ class ConvertToCortexMPass(CortexMPass):
             quantized_shift_tensor,
             output_qmin,
             output_qmax,
+            scratch,
+            output_scratch,
         )
         return exir_ops.edge.cortex_m.quantized_transpose_conv2d.default, new_args
 
