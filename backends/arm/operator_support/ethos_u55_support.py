@@ -10,6 +10,7 @@ Ethos-U55 subset of TOSA.
 
 """
 import typing
+from itertools import combinations
 
 import torch
 import torch.fx as fx
@@ -281,20 +282,37 @@ class EthosU55ViewCheck(OperatorSupportBase):
 
     _MAX_AXIS_PRODUCT = 65536
 
-    def axes_product(self, shape: shape_t) -> int:
-        """Return the product of all axes in ``shape``.
-
+    def _max_product_axis(self, shape: shape_t):
+        """
         Args:
             shape (shape_t): Shape.
 
         Returns:
-            int: Product of the axis sizes.
+            True if the TRANSPOSE can be run on the Ethos-U55
+            False if the TRANSPOSE cannot be run on the Ethos-U55
 
+            For a tensor of rank N, the product of any combination of
+            N - 2 axis needs to be less than 65536. E.g. for rank 4 tensor,
+            N*H, N*W, N*C, H*W, H*C, W*C should all be lower than 65536 to
+            be able to run the TRANSPOSE on Ethos-U55.
+            The full TRANSPOSE requirements for the Ethos-U55 are listed in
+            https://gitlab.arm.com/artificial-intelligence/ethos-u/ethos-u-vela/-/blob/main/SUPPORTED_OPS.md
         """
-        product = 1
-        for axes in shape:
-            product *= axes
-        return product
+        rank = len(shape)
+        if rank < 3:
+            product = 1
+            for idx in shape:
+                product *= idx
+            return product <= self._MAX_AXIS_PRODUCT
+
+        else:
+            for axes in combinations(range(rank), rank - 2):
+                product = 1
+                for idx in axes:
+                    product *= shape[idx]
+                if product > self._MAX_AXIS_PRODUCT:
+                    return False
+        return True
 
     def _check_rank_constraints(
         self,
@@ -322,11 +340,11 @@ class EthosU55ViewCheck(OperatorSupportBase):
         output_rank = len(output_shape)
 
         if input_rank > 4:
-            if self.axes_product(input_shape) > self._MAX_AXIS_PRODUCT:
+            if not (self._max_product_axis(input_shape)):
                 self.reporter.report_reject(
                     node,
                     f"Input may require transpose operator. No support for {input_shape=}, "
-                    f"{dtype=}. Product of axes must be <={self._MAX_AXIS_PRODUCT}",
+                    f"{dtype=}. Product of any rank - 2 axes must be <={self._MAX_AXIS_PRODUCT}",
                 )
                 return False
             if dtype == torch.int32:
@@ -337,12 +355,12 @@ class EthosU55ViewCheck(OperatorSupportBase):
                 return False
 
         if output_rank > 4:
-            if self.axes_product(output_shape) > self._MAX_AXIS_PRODUCT:
+            if not (self._max_product_axis(output_shape)):
                 shape = output_shape
                 self.reporter.report_reject(
                     node,
                     f"Operator may require transpose operator. No support for {shape=}, "
-                    f"{dtype=}. Product of axes must be <={self._MAX_AXIS_PRODUCT}",
+                    f"{dtype=}. Product of any rank - 2 axes must be <={self._MAX_AXIS_PRODUCT}",
                 )
                 return False
             if dtype == torch.int32:
@@ -450,24 +468,22 @@ class EthosU55ViewCheck(OperatorSupportBase):
             )
             return False
 
-        if (
-            needs_input_transpose
-            and self.axes_product(input_shape) > self._MAX_AXIS_PRODUCT
-        ):
+        # For TRANSPOSE originating from a VIEW, we know we will only do
+        # NHWC -> NCHW or NCHW -> NHWC permutations, hence we only need to validate
+        # these two TRANSPOSEs. For the general case of any permutation on TRANSPOSE,
+        # we reason via the checks in EthosU55TransposeCheck
+        if needs_input_transpose and not (self._max_product_axis(input_shape)):
             self.reporter.report_reject(
                 node,
                 f"Operator requires transpose operator. No support for {input_shape=}, "
-                f"{dtype=}. Product of axes must be <{self._MAX_AXIS_PRODUCT}",
+                f"{dtype=}. Product of any rank - 2 axes must be <={self._MAX_AXIS_PRODUCT}",
             )
             return False
-        if (
-            needs_output_transpose
-            and self.axes_product(output_shape) > self._MAX_AXIS_PRODUCT
-        ):
+        if needs_output_transpose and not (self._max_product_axis(output_shape)):
             self.reporter.report_reject(
                 node,
                 f"Operator requires transpose operator. No support for {output_shape=}, "
-                f"{dtype=}. Product of axes must be <{self._MAX_AXIS_PRODUCT}",
+                f"{dtype=}. Product of any rank - 2 axes must be <={self._MAX_AXIS_PRODUCT}",
             )
             return False
 

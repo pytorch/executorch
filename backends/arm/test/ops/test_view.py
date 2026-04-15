@@ -51,6 +51,8 @@ class View(torch.nn.Module):
         "rand_5d_5d": lambda: (torch.rand(1, 1, 4, 5, 6), (1, 1, 4, -1, 6)),
         "rand_5d_3d": lambda: (torch.rand(1, 1, 4, 5, 6), (2, 3, -1)),
         "rand_3d_5d": lambda: (torch.rand(4, 5, 6), (1, 1, 2, -1, 3)),
+        "rank4_rank3_large": lambda: (torch.rand(1, 256, 6, 48), (6, 48, 256)),
+        "rank5_rank4_large": lambda: (torch.rand(1, 256, 2, 3, 48), (1, 256, 6, 48)),
     }
 
     needs_transpose_tests_fp16 = {
@@ -65,8 +67,7 @@ class View(torch.nn.Module):
     }
 
     rank_product_too_large = {
-        "rand_4d_large": lambda: (torch.rand(1, 49, 16, 128), (1, 16, 49, 128)),
-        "rand_5d_large": lambda: (torch.rand(2, 25, 16, 8, 64), (2, 16, 25, 8, 64)),
+        "rand_5d_large": lambda: (torch.rand(2, 256, 512, 8, 64), (2, 512, 256, 8, 64)),
     }
 
     def __init__(self, new_shape):
@@ -115,6 +116,9 @@ def test_view_u55_INT(test_data: Tuple):
         (test_tensor,),
         aten_op,
         exir_ops=[],
+    )
+    pipeline.change_args(
+        "check_not.exir", ["executorch_exir_dialects_edge__ops_aten_view_copy_default"]
     )
     pipeline.run()
 
