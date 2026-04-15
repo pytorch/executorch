@@ -99,10 +99,19 @@ class EnnPartitioner(Partitioner):
         self, edge_program: torch.export.ExportedProgram
     ) -> List[Any]:
         self.op_support_checker = EnnOperatorSupport(edge_program, self.compile_specs)
-        return generate_partitions_from_list_of_nodes(
+        partition_list = generate_partitions_from_list_of_nodes(
             edge_program.graph_module,
             op_support=self.op_support_checker,
         )
+        if len(partition_list) == 1 and partition_list[0].size() == 1:
+            first_node = list(partition_list[0].nodes.keys())[0]
+            # If there is only one partition graph containing a single "aten.clone.default" that is a useless operation,
+            # the RemoveUselessOpPass will remove this operation and cause a graph error.
+            # Therefore, we delete this node to prevent this graph error.
+            # For example, in the test_index_put_in_place_dtype case partition_list is [{aten_clone_default: 2}]
+            if first_node.target == exir_ops.edge.aten.clone.default:
+                del partition_list[0]
+        return partition_list
 
     def tag_nodes(self, partitions: List[Partition]) -> None:
         partition_tags: Dict[str, DelegationSpec] = {}
