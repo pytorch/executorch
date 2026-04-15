@@ -718,7 +718,7 @@ class MixedW8A32ConvPattern(QuantizationPattern):
             )
 
         cnn_weights = conv_layer.args[1]
-        if hasattr(cnn_weights.meta, "tensor_meta"):
+        if "tensor_meta" in cnn_weights.meta:
             cnn_weights_shape = cnn_weights.meta["tensor_meta"].shape
             # Bail if the channels are not multiple of 4 (SIMD)
             if cnn_weights_shape[0] % 4 != 0:
@@ -743,6 +743,18 @@ class MixedW8A32ConvPattern(QuantizationPattern):
                     ),
                     conv_layer,
                 )
+
+            inputs = conv_layer.args[0]
+            if "tensor_meta" in inputs.meta:
+                inputs_shape = inputs.meta["tensor_meta"].shape
+                # Bail if length != kernel size - Not yet supported
+                if inputs_shape[-1] != cnn_weights_shape[2]:
+                    return (
+                        PartitionAnchors(
+                            empty=True,
+                        ),
+                        conv_layer,
+                    )
 
         return (
             PartitionAnchors(
