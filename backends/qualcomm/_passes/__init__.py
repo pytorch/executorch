@@ -4,7 +4,7 @@
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
 
-from .annotate_adaptive_avg_pool1d import AnnotateAdaptiveAvgPool1D
+from .annotate_avg_pool1d import AnnotateAvgPool1D
 from .annotate_quant_attrs import AnnotateQuantAttrs
 from .annotate_stack import AnnotateStack
 from .annotate_unbind import AnnotateUnbind
@@ -13,6 +13,7 @@ from .convert_bmm_to_matmul import ConvertBmmToMatmul
 from .convert_linear_to_conv2d import ConvertLinearToConv2d
 from .convert_mha_to_sha import ConvertMhaToSha
 from .convert_square_to_pow import ConvertSquareToPow
+from .decompose_acos import DecomposeAcos
 from .decompose_any import DecomposeAny
 from .decompose_binary_alpha import DecomposeBinaryAlpha
 from .decompose_cdist import DecomposeCDist
@@ -26,6 +27,7 @@ from .decompose_log_variants import DecomposeLogVariants
 from .decompose_maxpool3d import DecomposeMaxPool3d
 from .decompose_minmaxdim import DecomposeMinMaxDim
 from .decompose_reciprocal import DecomposeReciprocal
+from .decompose_remainder import DecomposeRemainder
 from .decompose_roll import DecomposeRoll
 from .decompose_silu import DecomposeSilu
 from .decompose_threshold import DecomposeThreshold
@@ -56,7 +58,7 @@ from .seq_mse import SeqMSE
 from .tag_quant_io import TagQuantIO
 
 __all__ = [
-    AnnotateAdaptiveAvgPool1D,
+    AnnotateAvgPool1D,
     AnnotateQuantAttrs,
     AnnotateStack,
     AnnotateUnbind,
@@ -65,6 +67,7 @@ __all__ = [
     ConvertLinearToConv2d,
     ConvertMhaToSha,
     ConvertSquareToPow,
+    DecomposeAcos,
     DecomposeAny,
     DecomposeBinaryAlpha,
     DecomposeCDist,
@@ -78,6 +81,7 @@ __all__ = [
     DecomposeMaxPool3d,
     DecomposeMinMaxDim,
     DecomposeReciprocal,
+    DecomposeRemainder,
     DecomposeRoll,
     DecomposeSilu,
     DecomposeThreshold,

@@ -163,6 +163,7 @@ class Atan(GeneralOpDef):
     [
         torch.ops.aten.adaptive_avg_pool1d.default,
         torch.ops.aten.adaptive_avg_pool2d.default,
+        torch.ops.aten.avg_pool1d.default,
         torch.ops.aten.avg_pool2d.default,
     ],
     QnnConstants.OpPoolAvg2d.op_name,
@@ -278,6 +279,17 @@ class Cdist(GeneralOpDef):
 )
 class Ceil(GeneralOpDef):
     pass
+
+
+@register_annotator(
+    [torch.ops.aten.channel_shuffle.default], QnnConstants.OpChannelShuffle.op_name
+)
+class ChannelShuffle(GeneralOpDef):
+    @staticmethod
+    def annotate(node: Node, quantization_config: QuantizationConfig) -> None:
+        annotate_in_out_obs_sharing_op(node, quantization_config)
+        if not _is_annotated([node]):
+            annotate_single_in_share_out(node, quantization_config)
 
 
 @register_annotator(

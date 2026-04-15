@@ -1257,9 +1257,8 @@ def quantized_w8a32_gru(
     weights_hidden: torch.Tensor,
     w_h_scale: float,
     bias_inputs: torch.Tensor,
-    b_i_scale: float,
+    b_scale: float,
     bias_hidden: torch.Tensor,
-    b_h_scale: float,
 ) -> torch.Tensor:
     assert weights_inputs.dtype == torch.int8
     assert weights_hidden.dtype == torch.int8
@@ -1288,10 +1287,8 @@ def quantized_w8a32_gru(
     dequant_weights_inputs = weights_inputs.float() * w_i_scale
     dequant_weights_hidden = weights_hidden.float() * w_h_scale
 
-    # C++ implementation averages the two bias scales
-    avg_bias_scale = (b_i_scale + b_h_scale) / 2
-    dequant_bias_inputs = bias_inputs.float() * avg_bias_scale
-    dequant_bias_hidden = bias_hidden.float() * avg_bias_scale
+    dequant_bias_inputs = bias_inputs.float() * b_scale
+    dequant_bias_hidden = bias_hidden.float() * b_scale
 
     gi = F.linear(inputs, dequant_weights_inputs, dequant_bias_inputs)
     gh = F.linear(hidden, dequant_weights_hidden, dequant_bias_hidden)
@@ -1310,8 +1307,14 @@ def quantized_w8a32_gru(
 
     assert new_hidden.shape == original_hidden_shape
 
-    new_hidden = new_hidden.view(original_hidden_shape)
-    return torch.stack([new_hidden, new_hidden], dim=0)
+    batch_size = inputs.shape[0]
+    input_dim = inputs.shape[1]
+    hidden_dim = hidden.shape[-1]
+
+    new_hidden_expanded = new_hidden.unsqueeze(1).expand(
+        batch_size, input_dim, hidden_dim
+    )
+    return torch.stack([new_hidden_expanded, new_hidden_expanded], dim=0)
 
 
 @impl_tracked(m, "quantized_conv2d_nhwc.per_tensor")
