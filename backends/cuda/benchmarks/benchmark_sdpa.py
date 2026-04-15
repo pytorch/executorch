@@ -21,7 +21,6 @@ from functools import partial
 
 import torch
 import torch.nn.functional as F
-
 from executorch.backends.cuda.triton.kernels.sdpa import (
     sdpa as triton_sdpa,
     sdpa_decode_splitk as triton_splitk,

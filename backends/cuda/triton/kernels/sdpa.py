@@ -1176,9 +1176,7 @@ def _sdpa_decode_splitk_kernel(
             )
 
         # FlashDecoding++ async softmax: subtract unified phi instead of local max
-        safe_diff = tl.where(
-            qk > -float("inf"), qk - phi, -float("inf")
-        )
+        safe_diff = tl.where(qk > -float("inf"), qk - phi, -float("inf"))
         p_f32 = tl.exp(safe_diff).to(tl.float32)
         l_ij = tl.sum(p_f32, axis=1).to(tl.float32)
 
