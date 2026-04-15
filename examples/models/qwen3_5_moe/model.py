@@ -20,6 +20,7 @@ from dataclasses import dataclass, field
 
 import torch
 import torch.nn as nn
+
 from torch.nn import functional as F
 
 
@@ -49,6 +50,7 @@ class Qwen35MoEConfig:
     rms_norm_eps: float = 1e-6
     rope_theta: float = 10_000_000.0
     max_seq_len: int = 4096
+    use_splitk_decode: bool = True
     layer_types: list = field(default_factory=list)
 
     def __post_init__(self):
@@ -230,6 +232,7 @@ class FullAttention(nn.Module):
 
         self.kv_cache = KVCache(self.n_kv_heads, self.head_dim, config.max_seq_len)
         self.turboquant = False
+        self.use_splitk_decode = config.use_splitk_decode
 
         self.register_buffer(
             "cache_positions",
@@ -285,9 +288,19 @@ class FullAttention(nn.Module):
             )
         else:
             k, v = self.kv_cache.update(input_pos, k, v)
-            y = F.scaled_dot_product_attention(
-                q, k, v, attn_mask=attn_mask, enable_gqa=True
-            )
+            # The export produces two methods — decode (T=1, static) and
+            # prefill (T>=2, dynamic). Each traces only one branch, so no
+            # torch.cond is needed and we avoid GPU→CPU sync overhead.
+            if T == 1 and self.use_splitk_decode:
+                from executorch.backends.cuda.triton.kernels.sdpa import (
+                    sdpa_decode_splitk,
+                )
+
+                y = sdpa_decode_splitk(q, k, v, attn_mask=attn_mask)
+            else:
+                from executorch.backends.cuda.triton.kernels.sdpa import sdpa
+
+                y = sdpa(q, k, v, attn_mask=attn_mask, enable_gqa=True)
 
         y = y.transpose(1, 2).contiguous().view(B, T, -1)
 
