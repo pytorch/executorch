@@ -669,8 +669,7 @@ class ET_EXPERIMENTAL CudaBackend final
       const std::string& method_name) const {
     // Check if the required APIs are available
     if (!handle->get_num_constants || !handle->get_constant_name ||
-        !handle->get_constant_original_fqn ||
-        !handle->extract_constants_map ||
+        !handle->get_constant_original_fqn || !handle->extract_constants_map ||
         !handle->update_user_managed_constant_buffer_pairs) {
       // Fall back to the legacy path
       return load_constants_legacy(handle, named_data_map, method_name);
@@ -757,7 +756,8 @@ class ET_EXPERIMENTAL CudaBackend final
         std::lock_guard<std::mutex> guard(shared_constants_mutex_);
         for (const auto& fqn : uncached_fqns) {
           auto it_name = fqn_to_name.find(fqn);
-          if (it_name == fqn_to_name.end()) continue;
+          if (it_name == fqn_to_name.end())
+            continue;
           // extract_constants_map returns entries keyed by FQN
           auto it = extracted_map.find(fqn);
           if (it != extracted_map.end()) {
@@ -771,7 +771,10 @@ class ET_EXPERIMENTAL CudaBackend final
             method_name.c_str(),
             shared_constant_tensors_.size());
       } else {
-        ET_LOG(Error, "Failed to extract constants from '%s'", method_name.c_str());
+        ET_LOG(
+            Error,
+            "Failed to extract constants from '%s'",
+            method_name.c_str());
         return Error::Internal;
       }
     } else {
@@ -835,8 +838,7 @@ class ET_EXPERIMENTAL CudaBackend final
       ET_LOG(Info, "Found %s in named data map", weights_blob_key.c_str());
       const void* weights_blob = buffer_res->data();
       auto update_err = handle->update_constants_from_blob(
-          handle->container_handle,
-          static_cast<const uint8_t*>(weights_blob));
+          handle->container_handle, static_cast<const uint8_t*>(weights_blob));
       if (update_err != Error::Ok) {
         ET_LOG(Error, "update_constants_from_blob failed");
         return update_err;
