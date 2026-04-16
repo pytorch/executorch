@@ -1,0 +1,79 @@
+{
+    "version": 6,
+    "configurePresets": [
+        {
+            "name": "voxtral-tts-base",
+            "hidden": true,
+            "binaryDir": "${sourceDir}/../../../cmake-out/examples/models/voxtral_tts",
+            "cacheVariables": {
+                "CMAKE_BUILD_TYPE": "Release",
+                "CMAKE_FIND_ROOT_PATH": "${sourceDir}/../../../cmake-out",
+                "CMAKE_PREFIX_PATH": "${sourceDir}/../../../cmake-out"
+            }
+        },
+        {
+            "name": "voxtral-tts-cpu",
+            "displayName": "Voxtral TTS runner (CPU)",
+            "inherits": [
+                "voxtral-tts-base"
+            ]
+        },
+        {
+            "name": "voxtral-tts-xnnpack",
+            "displayName": "Voxtral TTS runner (XNNPACK)",
+            "inherits": [
+                "voxtral-tts-base"
+            ]
+        }
+    ],
+    "buildPresets": [
+        {
+            "name": "voxtral-tts-cpu",
+            "displayName": "Build Voxtral TTS runner (CPU)",
+            "configurePreset": "voxtral-tts-cpu",
+            "configuration": "Release",
+            "targets": [
+                "voxtral_tts_runner"
+            ]
+        },
+        {
+            "name": "voxtral-tts-xnnpack",
+            "displayName": "Build Voxtral TTS runner (XNNPACK)",
+            "configurePreset": "voxtral-tts-xnnpack",
+            "configuration": "Release",
+            "targets": [
+                "voxtral_tts_runner"
+            ]
+        }
+    ],
+    "workflowPresets": [
+        {
+            "name": "voxtral-tts-cpu",
+            "displayName": "Voxtral TTS (CPU)",
+            "steps": [
+                {
+                    "type": "configure",
+                    "name": "voxtral-tts-cpu"
+                },
+                {
+                    "type": "build",
+                    "name": "voxtral-tts-cpu"
+                }
+            ]
+        },
+        {
+            "name": "voxtral-tts-xnnpack",
+            "displayName": "Voxtral TTS (XNNPACK)",
+            "steps": [
+                {
+                    "type": "configure",
+                    "name": "voxtral-tts-xnnpack"
+                },
+                {
+                    "type": "build",
+                    "name": "voxtral-tts-xnnpack"
+                }
+            ]
+        }
+    ]
+}
