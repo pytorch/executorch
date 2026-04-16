@@ -28,7 +28,13 @@ For each (batch, v_head):
     output = state @ (q * scale)         # [V]
 
 The kernel tiles over the V dimension in blocks of BLOCK_V.
-For each V-tile, it streams through K in blocks of BLOCK_K.
+When BLOCK_K >= K (e.g. BLOCK_K=128 for head_k_dim=128), the entire K
+dimension fits in one tile, enabling a single-pass algorithm that reads
+state only once from HBM.  Otherwise, a two-pass path is used with an
+algebraic kq_dot trick to eliminate Q loads from the second pass.
+
+State is kept in its original dtype (bf16/fp16) in HBM and converted to
+fp32 only in registers, halving state memory traffic vs. a full fp32 copy.
 
 Registered as torch.ops.triton.fused_deltanet_decode for AOTI compilation.
 """
@@ -41,11 +47,20 @@ from torch.library import triton_op, wrap_triton
 
 @triton.autotune(
     configs=[
-        triton.Config({"BLOCK_K": 32, "BLOCK_V": 32}),
-        triton.Config({"BLOCK_K": 64, "BLOCK_V": 64}),
-        triton.Config({"BLOCK_K": 128, "BLOCK_V": 128}),
-        triton.Config({"BLOCK_K": 128, "BLOCK_V": 64}),
-        triton.Config({"BLOCK_K": 64, "BLOCK_V": 128}),
+        # BLOCK_K=128 enables single-pass for K=128 (typical head_k_dim).
+        # Caches full state tile [K, BLOCK_V] in registers — only ONE state read.
+        # Smaller BLOCK_V yields more programs for better occupancy at B=1.
+        triton.Config({"BLOCK_K": 128, "BLOCK_V": 32}, num_warps=4, num_stages=1),
+        triton.Config({"BLOCK_K": 128, "BLOCK_V": 32}, num_warps=2, num_stages=1),
+        triton.Config({"BLOCK_K": 128, "BLOCK_V": 64}, num_warps=4, num_stages=1),
+        triton.Config({"BLOCK_K": 128, "BLOCK_V": 64}, num_warps=2, num_stages=1),
+        triton.Config({"BLOCK_K": 128, "BLOCK_V": 128}, num_warps=4, num_stages=1),
+        triton.Config({"BLOCK_K": 128, "BLOCK_V": 128}, num_warps=8, num_stages=1),
+        # Fallback for larger K or high register pressure.
+        triton.Config({"BLOCK_K": 64, "BLOCK_V": 64}, num_warps=4, num_stages=1),
+        triton.Config({"BLOCK_K": 64, "BLOCK_V": 64}, num_warps=2, num_stages=1),
+        triton.Config({"BLOCK_K": 64, "BLOCK_V": 128}, num_warps=4, num_stages=1),
+        triton.Config({"BLOCK_K": 32, "BLOCK_V": 32}, num_warps=2, num_stages=1),
     ],
     key=["K", "V_DIM"],
 )
@@ -55,10 +70,10 @@ def _fused_deltanet_decode_kernel(
     QKV_ptr,  # [B, conv_dim]  post-conv1d+silu output
     Alpha_ptr,  # [B, H]         raw gating input (a)
     BetaRaw_ptr,  # [B, H]         raw write strength (b, pre-sigmoid)
-    NegAExp_ptr,  # [H]            -exp(A_log), precomputed
+    ALog_ptr,  # [H]            A_log parameter (-exp computed inside)
     DtBias_ptr,  # [H]            dt_bias parameter
-    S_in_ptr,  # [B, H, K, V]   recurrent state input (read-only)
-    S_out_ptr,  # [B, H, K, V]   recurrent state output (write-only)
+    S_in_ptr,  # [B, H, K, V]   recurrent state input (original dtype)
+    S_out_ptr,  # [B, H, K, V]   recurrent state output (original dtype)
     O_ptr,  # [B, H, V]      output
     # Dimension constants
     K: tl.constexpr,  # head_k_dim (128)
@@ -83,108 +98,63 @@ def _fused_deltanet_decode_kernel(
     BLOCK_V: tl.constexpr,
 ):
     """One program per (batch, v_head, v_block)."""
-    pid_bh = tl.program_id(0)  # batch * num_v_heads index
-    pid_v = tl.program_id(1)  # V-tile index
+    pid_bh = tl.program_id(0)
+    pid_v = tl.program_id(1)
 
-    # Decompose pid_bh into batch and v_head
-    H: tl.constexpr = KEY_DIM // K * V_PER_K  # num_v_heads
+    H: tl.constexpr = KEY_DIM // K * V_PER_K
     bid = pid_bh // H
     h = pid_bh % H
-    k_head = h // V_PER_K  # corresponding K head
+    k_head = h // V_PER_K
 
-    # V-tile range
     v_start = pid_v * BLOCK_V
     v_offs = v_start + tl.arange(0, BLOCK_V)
     v_mask = v_offs < V_DIM
 
-    # ====== Phase 1: Load V slice from qkv_conv ======
-    # Layout: qkv_conv = [Q(KEY_DIM) | K(KEY_DIM) | V(H * V_DIM)]
+    # ====== Load V slice from qkv_conv ======
     qkv_base = QKV_ptr + bid * stride_qkv_b
-    v_base = qkv_base + 2 * KEY_DIM + h * V_DIM
-    v_vals = tl.load(v_base + v_offs, mask=v_mask, other=0.0).to(tl.float32)
+    v_vals = tl.load(
+        qkv_base + 2 * KEY_DIM + h * V_DIM + v_offs,
+        mask=v_mask,
+        other=0.0,
+    ).to(tl.float32)
 
-    # ====== Phase 2: Compute gating and beta ======
+    # ====== Gating (A_log → decay, fully fused) ======
     alpha_h = tl.load(Alpha_ptr + bid * stride_ab + h).to(tl.float32)
-    neg_a_exp_h = tl.load(NegAExp_ptr + h).to(tl.float32)
+    a_log_h = tl.load(ALog_ptr + h).to(tl.float32)
     dt_bias_h = tl.load(DtBias_ptr + h).to(tl.float32)
 
-    # softplus with numerical stability
     sp_input = alpha_h + dt_bias_h
     sp = tl.where(sp_input > 20.0, sp_input, tl.log(1.0 + tl.exp(sp_input)))
-    gate = neg_a_exp_h * sp  # always negative
-    decay = tl.exp(gate)
+    decay = tl.exp(-tl.exp(a_log_h) * sp)
 
-    beta_raw_h = tl.load(BetaRaw_ptr + bid * stride_bb + h).to(tl.float32)
-    beta = tl.sigmoid(beta_raw_h)
+    beta = tl.sigmoid(tl.load(BetaRaw_ptr + bid * stride_bb + h).to(tl.float32))
 
-    # ====== Phase 3: Compute K and Q L2 norms (full-vector reduction) ======
-    # Each v_block program needs the full K-vector norms, so we compute them here.
-    # This is redundant across v_blocks for the same (batch, head) but avoids
-    # a separate kernel launch or shared memory coordination.
+    # ====== Pointer bases ======
     q_base = qkv_base + k_head * K
     k_base = qkv_base + KEY_DIM + k_head * K
-
-    q_sq_sum = tl.zeros([], dtype=tl.float32)
-    k_sq_sum = tl.zeros([], dtype=tl.float32)
-    for kk in range(0, K, BLOCK_K):
-        kk_offs = kk + tl.arange(0, BLOCK_K)
-        kk_mask = kk_offs < K
-        q_chunk = tl.load(q_base + kk_offs, mask=kk_mask, other=0.0).to(tl.float32)
-        k_chunk = tl.load(k_base + kk_offs, mask=kk_mask, other=0.0).to(tl.float32)
-        q_sq_sum += tl.sum(q_chunk * q_chunk)
-        k_sq_sum += tl.sum(k_chunk * k_chunk)
-
-    q_norm = tl.maximum(tl.sqrt(q_sq_sum), L2_EPS)
-    k_norm = tl.maximum(tl.sqrt(k_sq_sum), L2_EPS)
-
-    # ====== Phase 4: Recurrent state update ======
     s_in_base = S_in_ptr + bid * stride_s_b + h * stride_s_h
     s_out_base = S_out_ptr + bid * stride_s_b + h * stride_s_h
+    o_base = O_ptr + bid * stride_ob + h * stride_oh
 
-    # --- Pass 1: Decay state, compute Sk = (decay*S)^T @ k_normalized ---
-    sk_acc = tl.zeros([BLOCK_V], dtype=tl.float32)
-    for kk in range(0, K, BLOCK_K):
-        kk_offs = kk + tl.arange(0, BLOCK_K)
+    # ====== Main computation ======
+    if BLOCK_K >= K:
+        # ---- SINGLE-PASS: full K dim fits in one register tile ----
+        # Only ONE state read from HBM.  The decayed state tile lives in
+        # registers through Sk computation, rank-1 update, and output.
+        kk_offs = tl.arange(0, BLOCK_K)
         kk_mask = kk_offs < K
 
-        # Load normalized k slice
-        k_vals = (
-            tl.load(k_base + kk_offs, mask=kk_mask, other=0.0).to(tl.float32) / k_norm
-        )
+        # Load K and Q once, compute norms in-place (no separate norm loop)
+        k_raw = tl.load(k_base + kk_offs, mask=kk_mask, other=0.0).to(tl.float32)
+        q_raw = tl.load(q_base + kk_offs, mask=kk_mask, other=0.0).to(tl.float32)
 
-        # Load state tile [BLOCK_K, BLOCK_V]
-        tile_offs = kk_offs[:, None] * stride_s_k + v_offs[None, :] * stride_s_v
-        tile_mask = kk_mask[:, None] & v_mask[None, :]
-        s_tile = tl.load(s_in_base + tile_offs, mask=tile_mask, other=0.0).to(
-            tl.float32
-        )
+        k_inv_norm = 1.0 / tl.maximum(tl.sqrt(tl.sum(k_raw * k_raw)), L2_EPS)
+        q_inv_norm = 1.0 / tl.maximum(tl.sqrt(tl.sum(q_raw * q_raw)), L2_EPS)
 
-        # Decay
-        s_tile = s_tile * decay
+        k_vals = k_raw * k_inv_norm
+        q_vals = q_raw * (q_inv_norm * SCALE)
 
-        # Sk[v] += sum_k(state[k,v] * k_normalized[k])
-        sk_acc += tl.sum(s_tile * k_vals[:, None], axis=0)
-
-    # delta = beta * (v - Sk)
-    delta_v = beta * (v_vals - sk_acc)
-
-    # --- Pass 2: Re-read input, decay + rank-1 update, write output state, compute output ---
-    out_acc = tl.zeros([BLOCK_V], dtype=tl.float32)
-    for kk in range(0, K, BLOCK_K):
-        kk_offs = kk + tl.arange(0, BLOCK_K)
-        kk_mask = kk_offs < K
-
-        # Load normalized k and q slices
-        k_vals = (
-            tl.load(k_base + kk_offs, mask=kk_mask, other=0.0).to(tl.float32) / k_norm
-        )
-        q_vals = (
-            tl.load(q_base + kk_offs, mask=kk_mask, other=0.0).to(tl.float32)
-            / q_norm
-            * SCALE
-        )
-
-        # Re-read input state and decay
+        # Load & decay state tile [BLOCK_K, BLOCK_V]
         tile_offs = kk_offs[:, None] * stride_s_k + v_offs[None, :] * stride_s_v
         tile_mask = kk_mask[:, None] & v_mask[None, :]
         s_tile = tl.load(s_in_base + tile_offs, mask=tile_mask, other=0.0).to(
@@ -192,22 +162,105 @@ def _fused_deltanet_decode_kernel(
         )
         s_tile = s_tile * decay
 
-        # Rank-1 update: S += k ⊗ delta
+        # Sk = (decayed state)^T @ k_normalized → [BLOCK_V]
+        sk = tl.sum(s_tile * k_vals[:, None], axis=0)
+
+        # delta = beta * (v - Sk)
+        delta_v = beta * (v_vals - sk)
+
+        # Rank-1 update: S_new = S_decayed + outer(k, delta)
         s_tile = s_tile + k_vals[:, None] * delta_v[None, :]
 
-        # Store updated state
+        # Output: out = S_new^T @ q_scaled → [BLOCK_V]
+        out_acc = tl.sum(s_tile * q_vals[:, None], axis=0)
+
+        # Store state and output
         tl.store(
             s_out_base + tile_offs,
             s_tile.to(S_out_ptr.dtype.element_ty),
             mask=tile_mask,
         )
+        tl.store(
+            o_base + v_offs * stride_ov,
+            out_acc.to(O_ptr.dtype.element_ty),
+            mask=v_mask,
+        )
+    else:
+        # ---- TWO-PASS with merged norm + kq_dot optimization ----
+        # Pass 1 fuses norm accumulation, Sk, unnormalized output, and kq_dot
+        # into one loop (eliminates separate norm loop + Q loads in Pass 2).
+        #
+        # Algebraic trick: output = (decayed_S @ q_norm)*SCALE + kq_dot*delta
+        #   where kq_dot = dot(k_norm, q_norm)*SCALE is a scalar.
+        # This lets Pass 2 only write state without touching Q or accumulating
+        # output.
+        sk_unnorm = tl.zeros([BLOCK_V], dtype=tl.float32)
+        out_unnorm = tl.zeros([BLOCK_V], dtype=tl.float32)
+        kq_unnorm = tl.zeros([], dtype=tl.float32)
+        k_sq_sum = tl.zeros([], dtype=tl.float32)
+        q_sq_sum = tl.zeros([], dtype=tl.float32)
 
-        # Output: out[v] += sum_k(S_new[k,v] * q_scaled[k])
-        out_acc += tl.sum(s_tile * q_vals[:, None], axis=0)
+        for kk in range(0, K, BLOCK_K):
+            kk_offs = kk + tl.arange(0, BLOCK_K)
+            kk_mask = kk_offs < K
 
-    # Store output
-    o_offs = O_ptr + bid * stride_ob + h * stride_oh + v_offs * stride_ov
-    tl.store(o_offs, out_acc.to(O_ptr.dtype.element_ty), mask=v_mask)
+            k_raw = tl.load(k_base + kk_offs, mask=kk_mask, other=0.0).to(tl.float32)
+            q_raw = tl.load(q_base + kk_offs, mask=kk_mask, other=0.0).to(tl.float32)
+
+            k_sq_sum += tl.sum(k_raw * k_raw)
+            q_sq_sum += tl.sum(q_raw * q_raw)
+            kq_unnorm += tl.sum(k_raw * q_raw)
+
+            tile_offs = kk_offs[:, None] * stride_s_k + v_offs[None, :] * stride_s_v
+            tile_mask = kk_mask[:, None] & v_mask[None, :]
+            s_tile = tl.load(s_in_base + tile_offs, mask=tile_mask, other=0.0).to(
+                tl.float32
+            )
+            s_tile = s_tile * decay
+
+            sk_unnorm += tl.sum(s_tile * k_raw[:, None], axis=0)
+            out_unnorm += tl.sum(s_tile * q_raw[:, None], axis=0)
+
+        # Normalize and compute output
+        k_inv_norm = 1.0 / tl.maximum(tl.sqrt(k_sq_sum), L2_EPS)
+        q_inv_norm = 1.0 / tl.maximum(tl.sqrt(q_sq_sum), L2_EPS)
+
+        sk = sk_unnorm * k_inv_norm
+        delta_v = beta * (v_vals - sk)
+
+        # out = (S_decayed @ q_norm)*SCALE + dot(k_norm, q_norm)*SCALE * delta
+        norm_scale = q_inv_norm * SCALE
+        kq_dot = kq_unnorm * k_inv_norm * norm_scale
+        out_acc = out_unnorm * norm_scale + kq_dot * delta_v
+
+        tl.store(
+            o_base + v_offs * stride_ov,
+            out_acc.to(O_ptr.dtype.element_ty),
+            mask=v_mask,
+        )
+
+        # Pass 2: state update only (no output, no Q loads)
+        for kk in range(0, K, BLOCK_K):
+            kk_offs = kk + tl.arange(0, BLOCK_K)
+            kk_mask = kk_offs < K
+
+            k_vals = (
+                tl.load(k_base + kk_offs, mask=kk_mask, other=0.0).to(tl.float32)
+                * k_inv_norm
+            )
+
+            tile_offs = kk_offs[:, None] * stride_s_k + v_offs[None, :] * stride_s_v
+            tile_mask = kk_mask[:, None] & v_mask[None, :]
+            s_tile = tl.load(s_in_base + tile_offs, mask=tile_mask, other=0.0).to(
+                tl.float32
+            )
+            s_tile = s_tile * decay + k_vals[:, None] * delta_v[None, :]
+
+            tl.store(
+                s_out_base + tile_offs,
+                s_tile.to(S_out_ptr.dtype.element_ty),
+                mask=tile_mask,
+            )
 
 
 @triton_op("triton::fused_deltanet_decode", mutates_args={})
@@ -241,8 +294,6 @@ def fused_deltanet_decode(
     B = qkv.shape[0]
     H, K, V_DIM = state.shape[1], state.shape[2], state.shape[3]
 
-    # Derive layout constants from tensor shapes
-    # conv_dim = 2 * KEY_DIM + H * V_DIM, KEY_DIM = num_k_heads * K
     value_dim = H * V_DIM
     KEY_DIM = (qkv.shape[1] - value_dim) // 2
     num_k_heads = KEY_DIM // K
@@ -250,13 +301,10 @@ def fused_deltanet_decode(
 
     output = torch.empty(B, H, V_DIM, dtype=state.dtype, device=qkv.device)
 
-    # Compute neg_A_exp from A_log parameter
-    neg_A_exp = -torch.exp(A_log.float())
-
-    # Separate input/output state buffers for autotuning safety
-    # (autotuner may re-run the kernel; reading from a buffer we also write
-    # would produce wrong results on the second run)
-    state_in = state.float().contiguous()
+    # State stays in original dtype (bf16/fp16/fp32). The kernel converts to
+    # fp32 in registers for computation and writes back in the original dtype.
+    # This halves HBM traffic for bf16/fp16 vs. the old .float() copy approach.
+    state_in = state.contiguous()
     state_out = torch.empty_like(state_in)
 
     def grid(meta):
@@ -266,7 +314,7 @@ def fused_deltanet_decode(
         qkv,
         alpha,
         beta_raw,
-        neg_A_exp,
+        A_log,
         dt_bias,
         state_in,
         state_out,
@@ -291,7 +339,7 @@ def fused_deltanet_decode(
         stride_ov=output.stride(2),
     )
 
-    return output, state_out.to(state.dtype)
+    return output, state_out
 
 
 @fused_deltanet_decode.register_fake
