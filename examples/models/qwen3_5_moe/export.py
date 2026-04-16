@@ -7,7 +7,7 @@ Usage:
   python export.py --model-id Qwen/Qwen3.5-35B-A3B
   python export.py --model-dir /path/to/Qwen3.5-MoE-A3B
   python export.py --model-dir /path/to/model --qlinear 4w
-  python export.py --prequantized /path/to/quantized_bundle/
+  python export.py --prequantized /path/to/prequantized_dir/
   python export.py --model-id Qwen/Qwen3.5-35B-A3B --backend mlx --qlinear 4w
 """
 
@@ -161,7 +161,9 @@ def load_and_quantize(args):  # noqa: C901
             )
 
         # CUDA: quantize experts with packed INT4 for Triton kernel
-        if args.qlinear or args.qembedding:
+        if getattr(args, "sensitive", False):
+            _quantize_sensitive(model, config, args)
+        elif args.qlinear or args.qembedding:
             _quantize(model, config, args)
         else:
             model.to(dtype=torch.bfloat16)
@@ -236,7 +238,6 @@ def load_prequantized_model(prequantized_dir, max_seq_len=4096, use_splitk_decod
         ".conv_state",
         ".recurrent_state",
         ".cache_positions",
-        ".inv_freq",
     )
     expected_missing = {k for k in missing if any(p in k for p in runtime_prefixes)}
     weight_missing = set(missing) - expected_missing
@@ -278,15 +279,15 @@ def _quantize_experts_int4(model, config, group_size=32, use_hqq=False):
       w1 [E, N, K//2] int8 packed, w1_scale [E, N, K//gs] bf16
       w2 [E, N, K//2] int8 packed, w2_scale [E, N, K//gs] bf16
     """
+    from torchao.quantization.quant_primitives import (
+        choose_qparams_affine,
+        MappingType,
+        quantize_affine,
+    )
+
     if use_hqq:
         from torchao.quantization.quant_primitives import (
             _choose_qparams_and_quantize_scale_only_hqq,
-        )
-    else:
-        from torchao.quantization.quant_primitives import (
-            choose_qparams_affine,
-            MappingType,
-            quantize_affine,
         )
 
     method = "HQQ" if use_hqq else "min/max"
@@ -431,6 +432,127 @@ def _quantize(model, config, args):
 
     if args.qlinear:
         print(f"Quantized linear layers ({args.qlinear})")
+
+
+def _quantize_sensitive(model, config, args):
+    """Sensitivity-aware quantization using mixed precision.
+
+    Based on GGUF Q4_K_M analysis and per-layer error
+    profiling of Qwen3.6. Matches GGUF Q4_K_M bit budget while using
+    HQQ to compensate where we use fewer bits.
+
+    Precision assignment (bpw shown for default group_size=32):
+      - GatedDeltaNet internals (conv1d, dt_bias, A_log, norm): bf16
+      - MoE gate routing, shared expert gate: bf16
+      - Norms: bf16
+      - Attention projections (qkv/in_proj, o/out_proj): INT8
+      - Shared expert (gate_up, down): INT8
+      - lm_head: INT8
+      - Expert gate_up (w1) and down (w2): INT4, HQQ recommended
+      - Embeddings: INT8
+
+    Group size is controlled by --qlinear-group-size (default 32, matching
+    GGUF Q4_K granularity). Smaller group sizes improve accuracy at the
+    cost of more scale storage.
+    """
+    from executorch.extension.llm.export.quantize import quantize_model_
+
+    group_size = args.qlinear_group_size
+
+    # Expert weights: INT4 gs=32 with HQQ for all layers
+    _quantize_experts_int4(model, config, group_size, use_hqq=args.hqq)
+
+    # Untie lm_head/embedding
+    if model.lm_head.weight.data_ptr() == model.embed_tokens.weight.data_ptr():
+        model.lm_head.weight = nn.Parameter(model.embed_tokens.weight.clone())
+
+    # Per-layer quantization with sensitivity-aware precision
+    for i, layer in enumerate(model.layers):
+        _to_device_skip_meta(layer, device="cuda", dtype=torch.bfloat16)
+
+        layer_type = config.layer_types[i]
+
+        # GatedDeltaNet internals stay bf16: conv1d, dt_bias, A_log, norm
+        # are already bf16 from the device move above.
+
+        # Attention projections: INT8
+        if layer_type == "full_attention":
+            attn_wrapper = nn.ModuleDict(
+                {
+                    "attn": nn.ModuleDict(
+                        {
+                            "qkv_proj": layer.attn.qkv_proj,
+                            "o_proj": layer.attn.o_proj,
+                        }
+                    )
+                }
+            )
+            quantize_model_(
+                attn_wrapper,
+                qlinear_config="8w",
+                qlinear_group_size=group_size,
+            )
+            layer.attn.qkv_proj = attn_wrapper.attn.qkv_proj
+            layer.attn.o_proj = attn_wrapper.attn.o_proj
+        else:
+            # GatedDeltaNet: quantize in_proj and out_proj to INT8,
+            # leave conv1d/dt_bias/A_log/norm at bf16
+            attn_wrapper = nn.ModuleDict(
+                {
+                    "attn": nn.ModuleDict(
+                        {
+                            "in_proj": layer.attn.in_proj,
+                            "out_proj": layer.attn.out_proj,
+                        }
+                    )
+                }
+            )
+            quantize_model_(
+                attn_wrapper,
+                qlinear_config="8w",
+                qlinear_group_size=group_size,
+            )
+            layer.attn.in_proj = attn_wrapper.attn.in_proj
+            layer.attn.out_proj = attn_wrapper.attn.out_proj
+
+        # MoE gate routing: stays bf16 (no quantization)
+        # Shared expert gate: stays bf16 (no quantization)
+
+        # Shared expert projections: INT8
+        shared_wrapper = nn.ModuleDict({"shared": layer.mlp.shared_expert})
+        quantize_model_(
+            shared_wrapper,
+            qlinear_config="8w",
+            qlinear_group_size=group_size,
+        )
+        layer.mlp.shared_expert = shared_wrapper.shared
+
+        _to_device_skip_meta(layer, device="cpu")
+        torch.cuda.empty_cache()
+        print(
+            f"  Quantized layer {i + 1}/{config.num_hidden_layers} ({layer_type})",
+            end="\r",
+        )
+    print()
+
+    # lm_head: INT8
+    print("Quantizing lm_head (INT8)...")
+    model.lm_head.to(device="cuda", dtype=torch.bfloat16)
+    wrapper = nn.ModuleDict({"lm_head": model.lm_head})
+    quantize_model_(wrapper, qlinear_config="8w", qlinear_group_size=group_size)
+    model.lm_head = wrapper.lm_head
+    model.lm_head.to(device="cpu")
+    torch.cuda.empty_cache()
+
+    # Embeddings: INT8 with same group size
+    print("Quantizing embeddings (INT8)...")
+    model.embed_tokens.to(dtype=torch.bfloat16)
+    quantize_model_(model, qembedding_config="8w", qembedding_group_size=group_size)
+
+    # Norms stay bf16
+    model.norm.to(dtype=torch.bfloat16)
+
+    print("Quantized with sensitivity-aware mixed precision")
 
 
 def _materialize_buffers(model, config):
@@ -739,6 +861,38 @@ def _export_cuda(model, config, args):
 # ---------------------------------------------------------------------------
 
 
+def _validate_args(parser, args):
+    """Validate CLI argument combinations."""
+    if args.model_id:
+        if args.model_dir is not None:
+            raise ValueError("Cannot specify model_dir when model_id is provided.")
+        from huggingface_hub import snapshot_download
+
+        args.model_dir = snapshot_download(repo_id=args.model_id)
+
+    if not args.prequantized and not args.model_dir and not args.tiny_test:
+        parser.error(
+            "--model-dir is required unless --prequantized or --tiny-test is provided."
+        )
+
+    if args.hqq and not args.qlinear and not args.sensitive:
+        parser.error("--hqq requires --qlinear or --sensitive")
+
+    if args.sensitive and (args.qlinear or args.qembedding):
+        parser.error(
+            "--sensitive manages its own precision; "
+            "do not combine with --qlinear or --qembedding"
+        )
+
+    if args.backend == "mlx":
+        if args.prequantized:
+            parser.error("--prequantized is not supported with --backend mlx")
+        if getattr(args, "sensitive", False):
+            parser.error("--sensitive is not supported with --backend mlx")
+        if args.turboquant:
+            parser.error("--turboquant is not supported with --backend mlx")
+
+
 def main():
     parser = argparse.ArgumentParser(
         description="Export Qwen3.5 MoE to ExecuTorch (CUDA or MLX)"
@@ -810,36 +964,24 @@ def main():
         "(GQA, GDN head ratio, mixed attention, MoE routing) at small scale.",
     )
     parser.add_argument(
+        "--sensitive",
+        action="store_true",
+        help="Use sensitivity-aware mixed precision quantization. "
+        "Keeps GatedDeltaNet internals and MoE gates at bf16, "
+        "uses INT8 for attention/shared experts/lm_head, and INT4 "
+        "for routed experts. Recommended for models without "
+        "quantization-aware training (e.g. Qwen3.6).",
+    )
+    parser.add_argument(
         "--no-splitk",
         action="store_true",
         help="Disable split-K (flash-decoding) SDPA for decode; use tiled SDPA instead.",
     )
     args = parser.parse_args()
-
-    if args.model_id:
-        if args.model_dir is not None:
-            raise ValueError("Cannot specify model_dir when model_id is provided.")
-        from huggingface_hub import snapshot_download
-
-        args.model_dir = snapshot_download(repo_id=args.model_id)
-
-    if not args.prequantized and not args.model_dir and not args.tiny_test:
-        parser.error(
-            "--model-dir is required unless --prequantized or --tiny-test is provided."
-        )
-
-    if args.hqq and not args.qlinear:
-        parser.error("--hqq requires --qlinear")
+    _validate_args(parser, args)
 
     if args.backend == "cuda":
-        # Register FLA Triton kernel (CUDA only)
         import executorch.backends.cuda.triton.kernels  # noqa: F401
-
-    if args.backend == "mlx":
-        if args.prequantized:
-            parser.error("--prequantized is not supported with --backend mlx")
-        if args.turboquant:
-            parser.error("--turboquant is not supported with --backend mlx")
 
     model, config = load_and_quantize(args)
 
