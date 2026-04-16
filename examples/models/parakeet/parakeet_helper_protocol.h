@@ -60,8 +60,8 @@ std::string encode_status_message(
 std::string encode_result_message(
     const std::string& request_id,
     const std::string& text,
-    const std::string& stdout,
-    const std::string& stderr,
+    const std::string& captured_stdout,
+    const std::string& captured_stderr,
     const std::optional<std::string>& runtime_profile);
 std::string encode_error_message(
     const std::optional<std::string>& request_id,

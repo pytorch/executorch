@@ -132,16 +132,16 @@ std::string encode_status_message(
 std::string encode_result_message(
     const std::string& request_id,
     const std::string& text,
-    const std::string& stdout,
-    const std::string& stderr,
+    const std::string& captured_stdout,
+    const std::string& captured_stderr,
     const std::optional<std::string>& runtime_profile) {
   json payload = {
       {"type", "result"},
       {"version", kProtocolVersion},
       {"request_id", request_id},
       {"text", text},
-      {"stdout", stdout},
-      {"stderr", stderr},
+      {"stdout", captured_stdout},
+      {"stderr", captured_stderr},
   };
   if (runtime_profile.has_value()) {
     payload["runtime_profile"] = *runtime_profile;
