@@ -100,7 +100,7 @@ class ModuleInstrumentationTest {
           module.loadMethod(NONE_METHOD)
         }
     Assert.assertEquals(
-        ExecutorchRuntimeException.ErrorCode.INVALID_ARGUMENT,
+        ExecutorchRuntimeException.INVALID_ARGUMENT,
         exception.getErrorCode(),
     )
   }
