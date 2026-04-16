@@ -778,7 +778,8 @@ def _save_bpte_program(
 
     # Generate BundledProgram
     output_dir = os.path.dirname(output_name)
-    os.makedirs(output_dir, exist_ok=True)
+    if output_dir:
+        os.makedirs(output_dir, exist_ok=True)
     _save_bundled_program(exec_prog, method_test_suites, output_name)
 
 
