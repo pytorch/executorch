@@ -30,6 +30,8 @@ def get_sqrt_decomposition(op) -> Union[Tuple, torch._ops.OpOverload]:
 class DecomposeSqrtPass(ArmPass):
     _passes_required_after: Set[Type[ExportPass]] = {InsertTableOpsPass}
 
+    targeted_ops = {*edge_sqrt_ops, *aten_sqrt_ops}
+
     def call_operator(self, op, args, kwargs, meta):
         """Decomposes `sqrt(x)` into `pow(x, 0.5)` for backend support."""
 

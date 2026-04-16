@@ -6,7 +6,6 @@
 from typing import Set, Type
 
 import torch
-
 from executorch.backends.arm._passes import ArmPass
 from executorch.backends.arm._passes.insert_table_ops import InsertTableOpsPass
 from executorch.backends.arm._passes.match_arg_dtype_pass import MatchArgDtypePass

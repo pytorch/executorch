@@ -48,6 +48,8 @@ class DecomposeLeakyReLUPass(ArmPass):
 
     _passes_required_after: Set[Type[ExportPass]] = set()
 
+    targeted_ops = {*edge_ops, *torch_ops}
+
     def call_operator(self, op, args, kwargs, meta):
         if op not in (edge_ops + torch_ops) or not self.allowed_to_transform(meta):
             return super().call_operator(op, args, kwargs, meta)

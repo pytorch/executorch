@@ -33,6 +33,8 @@ class RewriteBoolBitwiseToLogicalPass(ArmPass):
         exir_ops.edge.aten.bitwise_xor.Scalar: exir_ops.edge.aten.logical_xor.default,
     }
 
+    targeted_ops = set(_TARGET_TO_LOGICAL.keys())
+
     def call_operator(self, op, args, kwargs, meta):
         if op not in self._TARGET_TO_LOGICAL:
             return super().call_operator(op, args, kwargs, meta)

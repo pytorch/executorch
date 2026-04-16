@@ -49,6 +49,7 @@ class DecomposeRemainderPass(ArmPass):
     """
 
     _passes_required_after: Set[Type[ExportPass]] = {DecomposeDivTensorModePass}
+    targeted_ops = set(_decomposition_ops.keys())
 
     def call_operator(self, op, args, kwargs, meta, updated=False):
         supported_ops = (

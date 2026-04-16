@@ -56,6 +56,11 @@ class DecomposeVarPass(ArmPass):
         DecomposeMeanDimPass,
         DecomposeSumPass,
     }
+    targeted_ops = {
+        exir_ops.edge.aten.var.correction,
+        torch.ops.aten.var.correction,
+        torch.ops.aten.var.dim,
+    }
 
     def call_operator(self, op, args, kwargs, meta):
         if op not in (

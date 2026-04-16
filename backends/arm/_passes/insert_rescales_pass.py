@@ -14,7 +14,6 @@ from executorch.backends.arm._passes.decompose_sum_pass import DecomposeSumPass
 from executorch.backends.arm._passes.fold_qdq_with_annotated_qparams_pass import (
     get_output_qparams,
 )
-
 from executorch.backends.arm._passes.quant_args import QuantArgs
 from executorch.backends.arm.constants import DQ_OPS, Q_OPS
 from executorch.exir.dialects._ops import ops as exir_ops
@@ -33,6 +32,8 @@ class InsertRescalePass(ArmPass):
     """
 
     _passes_required_after: Set[Type[ExportPass]] = set()
+
+    targeted_ops = {*DQ_OPS}
 
     def fold_dq_q_to_rescale(self, node: Node, user: Node, graph_module: GraphModule):
         dq_args = QuantArgs.from_operator(node.target, node.args)
@@ -92,7 +93,7 @@ class InsertRescaleInt32Pass(ArmPass):
     # decomposition.
     _passes_required_after: Set[Type[ExportPass]] = {DecomposeSumPass}
 
-    included_targets = [
+    targeted_ops = {
         exir_ops.edge.aten.abs.default,
         exir_ops.edge.aten.add.Tensor,
         exir_ops.edge.aten.eq.Tensor,
@@ -105,7 +106,9 @@ class InsertRescaleInt32Pass(ArmPass):
         exir_ops.edge.aten.mul.Tensor,
         exir_ops.edge.aten.sub.Tensor,
         exir_ops.edge.aten.sum.dim_IntList,
-    ]
+    }
+
+    included_targets = list(targeted_ops)
 
     def _int32_qargs(self, s):
         """Helper creator function for INT32-based QuantArgs."""
@@ -554,8 +557,12 @@ class InsertControlFlowRescalesPass(ArmPass):
 
     def _rescale_cond_submodules(self, node: Node, graph_module: GraphModule) -> bool:
         modified = False
-        if_graph: GraphModule = cast(GraphModule, graph_module.get_submodule(node.args[1].target))  # type: ignore
-        else_graph: GraphModule = cast(GraphModule, graph_module.get_submodule(node.args[2].target))  # type: ignore
+        if_graph: GraphModule = cast(
+            GraphModule, graph_module.get_submodule(node.args[1].target)  # type: ignore[union-attr, arg-type]
+        )
+        else_graph: GraphModule = cast(
+            GraphModule, graph_module.get_submodule(node.args[2].target)  # type: ignore[union-attr, arg-type]
+        )
         input_qparams_map = self._get_input_qparams_map(node, 3)
         if input_qparams_map:
             modified |= self._rescale_submodule_inputs(if_graph, input_qparams_map)
@@ -569,8 +576,12 @@ class InsertControlFlowRescalesPass(ArmPass):
 
     def _rescale_while_submodules(self, node: Node, graph_module: GraphModule):
         modified = False
-        cond_graph: GraphModule = cast(GraphModule, graph_module.get_submodule(node.args[0].target))  # type: ignore
-        body_graph: GraphModule = cast(GraphModule, graph_module.get_submodule(node.args[1].target))  # type: ignore
+        cond_graph: GraphModule = cast(
+            GraphModule, graph_module.get_submodule(node.args[0].target)  # type: ignore[union-attr, arg-type]
+        )
+        body_graph: GraphModule = cast(
+            GraphModule, graph_module.get_submodule(node.args[1].target)  # type: ignore[union-attr, arg-type]
+        )
 
         input_qparams_map = self._get_input_qparams_map(node, 2)
         if input_qparams_map:

@@ -7,7 +7,6 @@
 from typing import Set, Type
 
 import torch
-
 from executorch.backends.arm._passes import ArmPass
 from executorch.backends.arm._passes.convert_full_like_to_full_pass import (
     ConvertFullLikeToFullPass,
@@ -43,6 +42,8 @@ class DecomposeMaskedFillPass(ArmPass):
     """
 
     _passes_required_after: Set[Type[ExportPass]] = {ConvertFullLikeToFullPass}
+
+    targeted_ops = {*edge_ops, *aten_ops}
 
     def call_operator(self, op, args, kwargs, meta, updated=False):
         if op not in (*aten_ops, *edge_ops):

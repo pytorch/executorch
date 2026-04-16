@@ -8,7 +8,6 @@ import logging
 from typing import cast, Set, Type
 
 import torch
-
 from executorch.backends.arm._passes.arm_pass import ArmPass
 from executorch.backends.arm._passes.unsqueeze_before_repeat_pass import (
     UnsqueezeBeforeRepeatPass,
@@ -57,6 +56,8 @@ class ConvertExpandCopyToRepeatPass(ArmPass):
     """
 
     _passes_required_after: Set[Type[ExportPass]] = {UnsqueezeBeforeRepeatPass}
+
+    targeted_ops = {exir_ops.edge.aten.expand_copy.default}
 
     expand_copy = exir_ops.edge.aten.expand_copy.default
     repeat = exir_ops.edge.aten.repeat.default

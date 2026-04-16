@@ -47,6 +47,8 @@ class DecomposeAtanhPass(ArmPass):
         ReplaceScalarWithTensorByProfilePass,
     }
 
+    targeted_ops = {edge_atanh}
+
     def call_operator(self, op, args, kwargs, meta):
         if op is not edge_atanh:
             return super().call_operator(op, args, kwargs, meta, updated=False)

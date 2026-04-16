@@ -89,6 +89,8 @@ class DecomposeGeluPass(ArmPass):
         MatchArgRanksPass,
     }
 
+    targeted_ops = {*torch_gelu, *edge_gelu}
+
     def call_operator(self, op, args, kwargs, meta):
         if op not in torch_gelu + edge_gelu:
             return super().call_operator(op, args, kwargs, meta)

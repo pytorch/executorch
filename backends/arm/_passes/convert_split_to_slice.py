@@ -21,6 +21,11 @@ class ConvertSplitToSlicePass(ArmPass):
 
     _passes_required_after: Set[Type[ExportPass]] = set()
 
+    targeted_ops = {
+        exir_ops.edge.aten.split_with_sizes_copy.default,
+        exir_ops.edge.aten.split_copy.Tensor,
+    }
+
     split_ops = (
         exir_ops.edge.aten.split_with_sizes_copy.default,
         exir_ops.edge.aten.split_copy.Tensor,

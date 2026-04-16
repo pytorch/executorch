@@ -44,6 +44,10 @@ class DecomposeSumPass(ArmPass):
     """
 
     _passes_required_after: Set[Type[ExportPass]] = set()
+    targeted_ops = {
+        exir_ops.edge.aten.sum.dim_IntList,
+        torch.ops.aten.sum.dim_IntList,
+    }
 
     def call_operator(self, op, args, kwargs, meta):
         if op not in [

@@ -40,6 +40,7 @@ class DecomposeLinalgVectorNormPass(ArmPass):
     }
 
     torch_linalg_vector_norm = (torch.ops.aten.linalg_vector_norm.default,)
+    targeted_ops = torch_linalg_vector_norm
 
     def call_operator(self, op, args, kwargs, meta):
         if op not in self.torch_linalg_vector_norm or not self.allowed_to_transform(

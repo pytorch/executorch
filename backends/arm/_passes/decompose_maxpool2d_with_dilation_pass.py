@@ -8,7 +8,6 @@ import operator
 from typing import Set, Type
 
 import torch
-
 from executorch.backends.arm._passes import ArmPass
 from executorch.backends.arm._passes.size_adjust_input_pass import SizeAdjustInputPass
 from executorch.exir.dialects._ops import ops as exir_ops
@@ -55,6 +54,7 @@ class DecomposeMaxPool2dPass(ArmPass):
     _passes_required_after: Set[Type[ExportPass]] = {
         SizeAdjustInputPass,
     }
+    targeted_ops = set(EDGE_MAXPOOL2D)
 
     def call_operator(self, op, args, kwargs, meta):
         # Only intercept EXIR edge max_pool2d ops

@@ -7,10 +7,8 @@
 from typing import Sequence, Set, Tuple, Type
 
 from executorch.backends.arm._passes.arm_pass import ArmPass
-
 from executorch.exir.dialects._ops import ops as exir_ops
 from executorch.exir.pass_base import ExportPass
-
 from torch._ops import OpOverload
 
 
@@ -34,6 +32,8 @@ class ConvertPermuteSingletonToViewPass(ArmPass):
     """
 
     _passes_required_after: Set[Type[ExportPass]] = set()
+
+    targeted_ops = set(_PERMUTE_TARGETS)
 
     def call_operator(self, op, args, kwargs, meta):
         if op not in _PERMUTE_TARGETS:

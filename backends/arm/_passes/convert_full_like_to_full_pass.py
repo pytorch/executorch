@@ -9,7 +9,6 @@ from executorch.backends.arm._passes.arm_pass import ArmPass
 from executorch.backends.arm._passes.fuse_constant_ops_pass import (
     ComputeConstantOpsAOTPass,
 )
-
 from executorch.exir.dialects._ops import ops as exir_ops
 from executorch.exir.pass_base import ExportPass
 
@@ -35,6 +34,8 @@ class ConvertFullLikeToFullPass(ArmPass):
     """
 
     _passes_required_after: Set[Type[ExportPass]] = {ComputeConstantOpsAOTPass}
+
+    targeted_ops = {exir_ops.edge.aten.full_like.default}
 
     def call_operator(self, op, args, kwargs, meta):
         if op not in [

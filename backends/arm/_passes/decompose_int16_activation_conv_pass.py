@@ -9,7 +9,6 @@ from typing import cast, Sequence, Set, Type
 import torch
 from executorch.backends.arm._passes import ArmPass
 from executorch.backends.arm._passes.quant_args import QuantArgs
-
 from executorch.backends.arm.tosa.specification import get_context_spec
 from executorch.exir.dialects._ops import ops as exir_ops
 from executorch.exir.pass_base import ExportPass
@@ -30,6 +29,7 @@ class DecomposeConvWithInt16ActivationPass(ArmPass):
         super().__init__()
 
     _passes_required_after: Set[Type[ExportPass]] = set()
+    targeted_ops = {exir_ops.edge.aten.convolution.default}
 
     def bias_view_shape(
         self, bias: torch.Tensor, activation_rank: int

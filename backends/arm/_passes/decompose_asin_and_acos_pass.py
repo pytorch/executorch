@@ -9,7 +9,6 @@ from math import pi
 from typing import Set, Type
 
 import torch
-
 from executorch.backends.arm._passes import ArmPass
 from executorch.backends.arm._passes.convert_full_like_to_full_pass import (
     ConvertFullLikeToFullPass,
@@ -71,6 +70,8 @@ class DecomposeAsinAndAcosPass(ArmPass):
         MatchArgDtypePass,
         ReplaceScalarWithTensorByProfilePass,
     }
+
+    targeted_ops = {*edge_asin_op, *edge_acos_op}
 
     def _build_polynomial(
         self, coefficients: list[float], variable: torch.Tensor, meta: dict[str, str]
