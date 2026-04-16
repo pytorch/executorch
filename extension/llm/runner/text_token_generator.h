@@ -9,6 +9,8 @@
 // Generate tokens in a loop.
 #pragma once
 
+#include <atomic>
+
 #include <executorch/extension/llm/runner/stats.h>
 #include <executorch/extension/llm/runner/text_decoder_runner.h>
 #include <executorch/extension/tensor/tensor.h>
@@ -95,7 +97,7 @@ class ET_EXPERIMENTAL TextTokenGenerator {
           resize_tensor_ptr(tokens_managed, token_shape));
     }
 
-    should_stop_ = false;
+    should_stop_.store(false, std::memory_order_relaxed);
 
     // Generate our tokens
     while (pos < start_pos + max_new_tokens) {
@@ -136,7 +138,7 @@ class ET_EXPERIMENTAL TextTokenGenerator {
       }
       token_callback(std::move(*decode_result));
 
-      if (should_stop_) {
+      if (should_stop_.load(std::memory_order_relaxed)) {
         break;
       }
 
@@ -154,7 +156,7 @@ class ET_EXPERIMENTAL TextTokenGenerator {
    * Stop the generation loop.
    */
   inline void stop() {
-    should_stop_ = true;
+    should_stop_.store(true, std::memory_order_relaxed);
   }
 
   /**
@@ -188,7 +190,7 @@ class ET_EXPERIMENTAL TextTokenGenerator {
   bool ignore_eos_ = false;
 
   // state machine
-  bool should_stop_ = false;
+  std::atomic<bool> should_stop_{false};
 
   // stats
   Stats* stats_;

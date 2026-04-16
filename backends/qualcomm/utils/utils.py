@@ -1123,8 +1123,7 @@ def generate_qnn_executorch_compiler_spec(
     saver: bool = False,
     online_prepare: bool = False,
     dump_intermediate_outputs: bool = False,
-    profile: bool = False,
-    optrace: bool = False,
+    profile_level: int = 0,
     shared_buffer: bool = False,
     is_from_context_binary: bool = False,
     op_package_options: QnnExecuTorchOpPackageOptions = None,
@@ -1151,9 +1150,8 @@ def generate_qnn_executorch_compiler_spec(
             for debugging purpose.
         dump_intermediate_outputs: If tensor dump is enabled, all intermediate tensors output will be dumped.
             This option exists for debugging accuracy issues
-        profile: Enable profile the performance of per operator.
-            Note that for now only support kProfileDetailed to
-            profile the performance of each operator with cycle unit.
+        profile_level: Enable profiling the performance of per operator.
+            Note that for now only support kProfileDetailed and kProfileOptrace.
         shared_buffer: Enables usage of shared buffer between application
             and backend for graph I/O.
         is_from_context_binary: True if current graph comes from pre-built context binary.
@@ -1172,7 +1170,7 @@ def generate_qnn_executorch_compiler_spec(
     if soc_model not in _supported_soc_models:
         raise ValueError(f"unknown SoC model for QNN: {soc_model}")
 
-    if profile and dump_intermediate_outputs:
+    if profile_level and dump_intermediate_outputs:
         warnings.warn(
             "It is not recommended to turn on both profiling and dump_intermediate_outputs the same time"
             ", because dump_intermediate_outputs will cause performance drop.",
@@ -1195,13 +1193,19 @@ def generate_qnn_executorch_compiler_spec(
         qnn_executorch_options.saver = True
         qnn_executorch_options.saver_output_dir = "saver_output"
 
-    if optrace:
+    if profile_level == 3:
         qnn_executorch_options.profile_level = QnnExecuTorchProfileLevel.kProfileOptrace
-    elif profile:
+    elif profile_level == 2:
         qnn_executorch_options.profile_level = (
             QnnExecuTorchProfileLevel.kProfileDetailed
         )
     else:
+        if profile_level == 1:
+            warnings.warn(
+                "Profile Level 1, kProfileBasic, is not supported, turning off profiling.",
+                DeprecationWarning,
+                stacklevel=1,
+            )
         qnn_executorch_options.profile_level = QnnExecuTorchProfileLevel.kProfileOff
 
     if (

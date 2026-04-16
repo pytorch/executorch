@@ -449,6 +449,16 @@ table QuantizedMatmulNode {
     transpose: bool = true;
 }
 
+// Scatter-add: accumulate updates into input at index positions along an axis
+// Maps to mlx::scatter_add(a, indices, updates, axis)
+table ScatterAddNode {
+    x: Tid (required);          // Input tensor to scatter into
+    indices: Tid (required);    // Index tensor
+    updates: Tid (required);    // Values to accumulate
+    out: Tid (required);
+    axis: int32;                // Dimension to scatter along
+}
+
 table ConcatenateNode {
     tensors: [Tid] (required);  // List of tensors to concatenate
     out: Tid (required);
@@ -899,6 +909,78 @@ table MedianNode {
     keepdims: bool = false;
 }
 
+table GatherMmNode {
+    a: Tid (required);          // Input activations
+    b: Tid (required);          // Weight matrix [E, out, in] or similar
+    out: Tid (required);
+    lhs_indices: Tid;           // optional - LHS gather indices
+    rhs_indices: Tid;           // optional - RHS gather indices (expert selection)
+    sorted_indices: bool = false;
+}
+
+table GatherQmmNode {
+    x: Tid (required);          // Input activations
+    w: Tid (required);          // Quantized weight matrix [E, out, in_packed]
+    scales: Tid (required);     // Quantization scales [E, out, in//gs]
+    out: Tid (required);
+    mode: string (required);    // "affine", "fp", etc.
+    biases: Tid;                // optional - for affine mode
+    lhs_indices: Tid;           // optional - LHS gather indices
+    rhs_indices: Tid;           // optional - RHS gather indices (expert selection)
+    transpose: bool = true;
+    group_size: int32;
+    bits: int32;
+    sorted_indices: bool = false;
+}
+
+table ScanNode {
+    originals: [Tid] (required);       // [B, T, ...] — read-only, not modified
+    sliced: [Tid] (required);          // runtime writes per-step slices here (same length as originals)
+    outputs: [Tid] (required);         // body writes [B, ...] per step, runtime stacks to [B, T, ...]
+    carry: [Tid] (required);           // body reads/writes in place, persists across steps
+
+    body_chain_idx: int32;             // index into MLXGraph.instruction_chains
+    scan_axis: int32 = 1;              // dimension to iterate over
+}
+
+// Custom Metal kernel execution via mlx::core::fast::metal_kernel().
+// Two-phase API:
+//   1. Factory: metal_kernel(name, input_names, output_names, source, header,
+//                            ensure_row_contiguous, atomic_outputs) -> kernel_fn
+//   2. Invocation: kernel_fn(inputs, output_shapes, output_dtypes, grid,
+//                            threadgroup, template_args, init_value)
+//
+// Output shapes are flattened: output_shapes_flat contains all shape dims
+// concatenated, output_shape_lengths gives the rank of each output.
+// E.g. shapes [[B,T,H,D], [B,H,D,K]] -> flat=[B,T,H,D,B,H,D,K], lengths=[4,4]
+//
+// Template args are parallel arrays: template_arg_names[i] paired with
+// template_arg_kinds[i] (0=int, 1=bool, 2=dtype/ScalarType) and
+// template_arg_values[i] (int value, bool as 0/1, or ScalarType enum).
+table MetalKernelNode {
+    // Required fields (no defaults) — must come first for Python dataclass ordering
+    name: string (required);
+    source: string (required);
+    inputs: [Tid] (required);
+    outputs: [Tid] (required);
+    grid: [IntOrVid] (required);
+    threadgroup: [IntOrVid] (required);
+
+    // Optional / defaulted fields
+    header: string;
+    input_names: [string];
+    output_names: [string];
+    ensure_row_contiguous: bool = true;
+    atomic_outputs: bool = false;
+    output_shapes_flat: [IntOrVid];
+    output_shape_lengths: [int32];
+    output_dtypes: [int8];
+    template_arg_names: [string];
+    template_arg_kinds: [int8];      // 0=int, 1=bool, 2=dtype (ScalarType)
+    template_arg_values: [int32];    // int value, bool as 0/1, or ScalarType enum
+    init_value: float = null;
+}
+
 // =============================================================================
 // Union of all op types
 // =============================================================================
@@ -1026,7 +1108,12 @@ union OpNode {
     ArgsortNode,
     PartitionNode,
     ArgPartitionNode,
-    QuantizedMatmulNode
+    QuantizedMatmulNode,
+    ScatterAddNode,
+    GatherMmNode,
+    GatherQmmNode,
+    ScanNode,
+    MetalKernelNode
     // BC: Add new op nodes here (append only)
 }
 
