@@ -97,26 +97,6 @@ def _should_pack_gqa(L_q: int, num_groups: int, block_m: int) -> bool:
     return nopack_eff < 0.9 * pack_eff
 
 
-def _compute_num_splits(L_kv: int, B: int, H_kv: int, device: torch.device) -> int:
-    """Compute optimal KV-split count for flash-decoding on A100 / RTX 4090.
-
-    Balances GPU occupancy against per-split work:
-    * Targets >= 2 full SM waves (2 x SM-count CTAs) so the GPU stays
-      saturated even with tail effects.
-    * Enforces a minimum of 64 KV tokens per split to amortise
-      kernel-launch and reduce overhead.
-    * Caps at 128 splits to bound reduce-kernel cost.
-
-    A100 -> 108 SMs, RTX 4090 -> 128 SMs.  The heuristic adapts to
-    whatever GPU is present via ``torch.cuda.get_device_properties``.
-    """
-    sm_count = torch.cuda.get_device_properties(device).multi_processor_count
-    ctas_per_split = max(B * H_kv, 1)
-    target = max(triton.cdiv(sm_count * 2, ctas_per_split), 1)
-    max_by_work = max(L_kv // 64, 1)
-    return min(target, max_by_work, 128)
-
-
 def _validate_qkv_shapes(
     query: torch.Tensor,
     key: torch.Tensor,
@@ -1091,8 +1071,6 @@ def _sdpa_abstract(
         triton.Config({"BLOCK_N": 128}, num_warps=8, num_stages=2),
         triton.Config({"BLOCK_N": 256}, num_warps=4, num_stages=2),
         triton.Config({"BLOCK_N": 256}, num_warps=8, num_stages=2),
-        triton.Config({"BLOCK_N": 256}, num_warps=8, num_stages=3),
-        triton.Config({"BLOCK_N": 128}, num_warps=8, num_stages=3),
     ],
     key=["Lk", "HEAD_DIM", "NUM_GROUPS", "HAS_MASK"],
 )
@@ -1129,24 +1107,19 @@ def _sdpa_decode_splitk_kernel(
     stride_mb,
     stride_mq,
     stride_mk,
-    sm_scale_log2: tl.float32,
-    phi_log2: tl.float32,
+    sm_scale: tl.float32,
+    phi: tl.float32,
     chunk_size,
     HAS_MASK: tl.constexpr,
     BLOCK_N: tl.constexpr,
     HEAD_DIM: tl.constexpr,
     NUM_GROUPS: tl.constexpr,
     BLOCK_G: tl.constexpr,
-    BATCH_ONE: tl.constexpr,
 ):
     split_id = tl.program_id(axis=0)
     pid_bh = tl.program_id(axis=1)
-    if BATCH_ONE:
-        b = 0
-        h_kv = pid_bh
-    else:
-        b = pid_bh // H_kv
-        h_kv = pid_bh % H_kv
+    b = pid_bh // H_kv
+    h_kv = pid_bh % H_kv
 
     start_n = split_id * chunk_size
     end_n = tl.minimum(start_n + chunk_size, Lk)
@@ -1163,11 +1136,9 @@ def _sdpa_decode_splitk_kernel(
         + 0 * stride_qm
         + offs_d[None, :] * stride_qd
     )
-    q = tl.load(q_ptrs, mask=g_valid[:, None], other=0.0)
-    # Pre-scale Q so the inner loop avoids a per-element multiply on [G,N] QK
-    q = (q.to(tl.float32) * sm_scale_log2).to(tl.bfloat16)
+    q = tl.load(q_ptrs, mask=g_valid[:, None], other=0.0).to(tl.bfloat16)
 
-    # FlashDecoding++ async softmax with exp2: all scores in log2 space
+    # FlashDecoding++ async softmax: use unified max phi instead of tracking m_i
     l_i = tl.zeros([BLOCK_G], dtype=tl.float32)
     acc = tl.zeros([BLOCK_G, HEAD_DIM], dtype=tl.float32)
 
@@ -1185,8 +1156,8 @@ def _sdpa_decode_splitk_kernel(
         )
         k = tl.load(k_ptrs, mask=n_valid[:, None], other=0.0).to(tl.bfloat16)
 
-        # QK: [BLOCK_G, BLOCK_N] — Q already scaled, result in log2 space
-        qk = tl.dot(q, tl.trans(k)).to(tl.float32)
+        # QK: [BLOCK_G, BLOCK_N]
+        qk = (tl.dot(q, tl.trans(k)).to(tl.float32) * sm_scale).to(tl.float32)
 
         # Mask out-of-bounds KV positions
         qk = tl.where(
@@ -1204,9 +1175,9 @@ def _sdpa_decode_splitk_kernel(
                 mask_block, qk, tl.full(qk.shape, -float("inf"), dtype=tl.float32)
             )
 
-        # FlashDecoding++ async softmax: exp2 maps to single PTX ex2 instruction
-        safe_diff = tl.where(qk > -float("inf"), qk - phi_log2, -float("inf"))
-        p_f32 = tl.math.exp2(safe_diff).to(tl.float32)
+        # FlashDecoding++ async softmax: subtract unified phi instead of local max
+        safe_diff = tl.where(qk > -float("inf"), qk - phi, -float("inf"))
+        p_f32 = tl.exp(safe_diff).to(tl.float32)
         l_ij = tl.sum(p_f32, axis=1).to(tl.float32)
 
         v_ptrs = V_ptr + (
@@ -1263,7 +1234,7 @@ def _sdpa_decode_reduce_kernel(
     acc = tl.zeros([HEAD_DIM], dtype=tl.float32)
     l_global = tl.zeros([1], dtype=tl.float32)
 
-    for s in tl.range(0, num_splits, num_stages=2):
+    for s in tl.range(0, num_splits):
         l_ptr = L_partial_ptr + s * stride_lp_s + pid * stride_lp_h
         o_ptrs = O_partial_ptr + (
             s * stride_op_s + pid * stride_op_h + offs_d * stride_op_d
@@ -1280,6 +1251,9 @@ def _sdpa_decode_reduce_kernel(
 
     o_out_ptrs = O_ptr + pid * stride_oh + offs_d * stride_od
     tl.store(o_out_ptrs, acc.to(tl.bfloat16))
+
+
+_splitk_buf_cache: dict = {}
 
 
 def _launch_decode_splitk(
@@ -1301,19 +1275,23 @@ def _launch_decode_splitk(
     num_groups: int,
     phi: float,
 ) -> None:
-    num_splits = _compute_num_splits(L_kv, B, H_kv, query.device)
+    num_splits = min(max(triton.cdiv(L_kv, 256), 1), 128)
     chunk_size = triton.cdiv(L_kv, num_splits)
 
-    _LOG2E = 1.4426950408889634
-    sm_scale_log2 = sm_scale * _LOG2E
-    phi_log2 = phi * _LOG2E
-
-    O_partial = torch.empty(
-        (num_splits, B, H_q, D), device=query.device, dtype=torch.float32
-    )
-    L_partial = torch.zeros(
-        (num_splits, B, H_q), device=query.device, dtype=torch.float32
-    )
+    # Cache partial buffers to avoid CUDA allocator overhead per call.
+    # The split kernel fully writes every entry before the reduce kernel
+    # reads, so stale data from a previous call is harmless.
+    buf_key = (num_splits, B, H_q, D, query.device.index)
+    bufs = _splitk_buf_cache.get(buf_key)
+    if bufs is None:
+        bufs = (
+            torch.empty(
+                (num_splits, B, H_q, D), device=query.device, dtype=torch.float32
+            ),
+            torch.empty((num_splits, B, H_q), device=query.device, dtype=torch.float32),
+        )
+        _splitk_buf_cache[buf_key] = bufs
+    O_partial, L_partial = bufs
 
     stride_qb, stride_qh, stride_qm, stride_qd = query.stride()
     stride_kb, stride_kh, stride_kn, stride_kd = key.stride()
@@ -1355,14 +1333,13 @@ def _launch_decode_splitk(
         stride_mb,
         stride_mq,
         stride_mk,
-        sm_scale_log2,
-        phi_log2,
+        sm_scale,
+        phi,
         chunk_size,
         HAS_MASK=HAS_MASK,
         HEAD_DIM=D,
         NUM_GROUPS=num_groups,
         BLOCK_G=_next_power_of_2_unclamped(num_groups),
-        BATCH_ONE=B == 1,
     )
 
     grid_reduce = (B * H_q,)
