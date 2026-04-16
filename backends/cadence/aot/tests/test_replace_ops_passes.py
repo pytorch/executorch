@@ -1926,8 +1926,8 @@ class TestReplaceWhereWithFullArgsWithWhereScalar(unittest.TestCase):
             2,
         )
 
-    @expand([[2], [3], [4]])
-    def test_replace_pow_with_mul(self, exponent: int) -> None:
+    @expand([[2], [3], [4], [2.0], [3.0], [4.0]])
+    def test_replace_pow_with_mul(self, exponent: int | float) -> None:
         x_input = torch.randn(2, 1, 64)
         x = x_input
         original_gm = single_op_builder(
@@ -1956,13 +1956,15 @@ class TestReplaceWhereWithFullArgsWithWhereScalar(unittest.TestCase):
                 graph_after_passes,
                 exir_ops.edge.aten.mul.Tensor,
             ),
-            exponent - 1,
+            int(exponent) - 1,
         )
 
     @expand(
         [
             [1],
             [1.5],
+            [5.0],
+            [0.5],
         ]
     )
     def test_replace_pow_with_mul_not_applied(self, exponent: float) -> None:
