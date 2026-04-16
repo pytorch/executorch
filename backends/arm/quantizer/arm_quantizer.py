@@ -105,6 +105,7 @@ __all__ = [
     "VgfQuantizer",
     "get_symmetric_a16w8_quantization_config",
     "get_symmetric_quantization_config",
+    "get_uint8_io_quantization_config",
 ]
 
 logger = logging.getLogger(__name__)
@@ -232,6 +233,53 @@ def get_symmetric_quantization_config(
             bias_quantization_spec,
         )
     return quantization_config
+
+
+@functools.lru_cache
+def get_uint8_io_quantization_config(
+    is_qat: bool = False,
+    is_dynamic: bool = False,
+    eps: float = 2**-16,
+) -> QuantizationConfig:
+    """Create a uint8 IO quantization config for TOSA backends.
+
+    This config is intended for model inputs/outputs only. Internal tensors
+    should remain int8 for TOSA INT lowering.
+
+    """
+    extra_args: Dict[str, Any] = {"eps": eps}
+    if is_qat:
+        if is_dynamic:
+            act_observer_or_fake_quant_ctr = FakeQuantize
+            dynamic_quant_observer = MovingAverageMinMaxObserver.with_args(
+                averaging_constant=1
+            )
+            extra_args["observer"] = dynamic_quant_observer
+        else:
+            act_observer_or_fake_quant_ctr = FusedMovingAvgObsFakeQuantize  # type: ignore[assignment]
+    else:
+        if is_dynamic:
+            act_observer_or_fake_quant_ctr = PlaceholderObserver  # type: ignore[assignment]
+        else:
+            act_observer_or_fake_quant_ctr = HistogramObserver  # type: ignore[assignment]
+
+    act_quantization_spec = QuantizationSpec(
+        dtype=torch.uint8,
+        quant_min=torch.iinfo(torch.uint8).min,
+        quant_max=torch.iinfo(torch.uint8).max,
+        qscheme=torch.per_tensor_affine,
+        is_dynamic=is_dynamic,
+        observer_or_fake_quant_ctr=act_observer_or_fake_quant_ctr.with_args(
+            **extra_args,
+        ),
+    )
+
+    return TOSAQuantizationConfig(
+        act_quantization_spec,
+        act_quantization_spec,
+        None,
+        None,
+    )
 
 
 def get_symmetric_a8w4_quantization_config(
