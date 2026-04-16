@@ -42,6 +42,7 @@ from executorch.backends.cadence.aot.quantizer.utils import (
     find_sequential_partitions_aten,
     quantize_tensor_multiplier,
 )
+from executorch.backends.cadence.aot.utils import is_depthwise_conv
 from executorch.exir.pass_base import ExportPass
 from torch import fx
 from torch.fx import GraphModule
@@ -765,8 +766,23 @@ class QuantFusion(ExportPass):
                             op_node,
                         )
 
+                    # Determine the replacement op, routing depthwise conv1d
+                    # to the dedicated depthwise operator.
+                    replacement_op = pattern.replacement_op()
+                    if (
+                        replacement_op
+                        == torch.ops.cadence.quantized_conv1d_ncl.per_tensor
+                    ):
+                        groups = kwargs.get("groups", 1)
+                        # NCL format: input shape is [N, C, L]
+                        in_channels = args[0].meta["val"].shape[1]
+                        if is_depthwise_conv(groups, in_channels):
+                            replacement_op = (
+                                torch.ops.cadence.quantized_depthwise_conv1d_ncl.per_tensor
+                            )
+
                     fused = graph_module.graph.call_function(
-                        pattern.replacement_op(),
+                        replacement_op,
                         args,
                         kwargs,
                     )
