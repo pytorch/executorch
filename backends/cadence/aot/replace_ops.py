@@ -1030,6 +1030,7 @@ class ReplaceConvWithChannelLastConvPass(RemoveOrReplacePassInterface):
             exir_ops.edge.cadence.conv2d.default,
             exir_ops.edge.cadence.conv3d.default,
             exir_ops.edge.cadence.quantized_conv1d_ncl.per_tensor,
+            exir_ops.edge.cadence.quantized_depthwise_conv1d_ncl.per_tensor,
             exir_ops.edge.cadence.quantized_conv2d_nchw.per_tensor,
         ]
 
@@ -1114,6 +1115,7 @@ class ReplaceConvWithChannelLastConvPass(RemoveOrReplacePassInterface):
         assert isinstance(node.target, EdgeOpOverload)
         quantized_op = node.target in {
             exir_ops.edge.cadence.quantized_conv1d_ncl.per_tensor,
+            exir_ops.edge.cadence.quantized_depthwise_conv1d_ncl.per_tensor,
             exir_ops.edge.cadence.quantized_conv2d_nchw.per_tensor,
         }
 
@@ -1132,7 +1134,15 @@ class ReplaceConvWithChannelLastConvPass(RemoveOrReplacePassInterface):
                 new_op = exir_ops.edge.cadence.quantized_conv2d_nhwc.per_tensor
             else:
                 assert len(input_shape) == 3
-                new_op = exir_ops.edge.cadence.quantized_conv1d_nlc.per_tensor
+                if (
+                    node.target
+                    == exir_ops.edge.cadence.quantized_depthwise_conv1d_ncl.per_tensor
+                ):
+                    new_op = (
+                        exir_ops.edge.cadence.quantized_depthwise_conv1d_nlc.per_tensor
+                    )
+                else:
+                    new_op = exir_ops.edge.cadence.quantized_conv1d_nlc.per_tensor
         else:
             new_op = node.target
 
