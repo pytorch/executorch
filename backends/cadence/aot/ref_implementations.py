@@ -1136,6 +1136,122 @@ def quantized_conv1d_nlc(
     )
 
 
+@impl_tracked(m, "quantized_depthwise_conv1d_ncl.per_tensor")
+def quantized_depthwise_conv1d_ncl_per_tensor(
+    input_tensor: torch.Tensor,
+    weight: torch.Tensor,
+    bias: torch.Tensor,
+    stride: tuple[int],
+    padding: tuple[int],
+    dilation: tuple[int],
+    groups: int,
+    in_zero_point: int,
+    weight_zero_point: int,
+    bias_scale: float,
+    output_scale: float,
+    output_zero_point: int,
+    out_multiplier: int,
+    out_shift: int,
+) -> torch.Tensor:
+    """
+    Quantized depthwise 1D convolution in NCL (channels-first) format.
+
+    This op only handles depthwise convolutions (groups == in_channels, groups > 1).
+    Regular convolutions must use quantized_conv1d_ncl instead.
+
+    Args:
+        - input_tensor (Tensor): [N, C, L] format
+        - weight (Tensor): [OC, 1, K] format (IC/groups == 1 for depthwise)
+        - bias (Tensor): [OC]
+        - stride, padding, dilation, groups: convolution parameters
+        - in_zero_point, weight_zero_point, bias_scale: quantization params
+        - output_scale, output_zero_point: output quantization params
+        - out_multiplier, out_shift: unused
+    """
+    assert is_depthwise_conv(
+        groups, input_tensor.shape[1]
+    ), f"quantized_depthwise_conv1d_ncl requires depthwise conv (groups == in_channels), got groups={groups}, in_channels={input_tensor.shape[1]}"
+
+    return quantized_conv_per_tensor(
+        input_tensor,
+        weight,
+        bias,
+        stride,
+        padding,
+        dilation,
+        groups,
+        in_zero_point,
+        weight_zero_point,
+        bias_scale,
+        output_scale,
+        output_zero_point,
+        out_multiplier,
+        out_shift,
+    )
+
+
+@impl_tracked(m, "quantized_depthwise_conv1d_nlc.per_tensor")
+def quantized_depthwise_conv1d_nlc_per_tensor(
+    input_tensor: torch.Tensor,
+    weight: torch.Tensor,
+    bias: torch.Tensor,
+    stride: tuple[int],
+    padding: tuple[int],
+    dilation: tuple[int],
+    groups: int,
+    in_zero_point: int,
+    weight_zero_point: int,
+    bias_scale: float,
+    output_scale: float,
+    output_zero_point: int,
+    out_multiplier: int,
+    out_shift: int,
+) -> torch.Tensor:
+    """
+    Quantized depthwise 1D convolution in NLC (channels-last) format.
+
+    This op only handles depthwise convolutions (groups == in_channels, groups > 1).
+    Regular convolutions must use quantized_conv1d_nlc instead.
+
+    Args:
+        - input_tensor (Tensor): [N, L, C] format
+        - weight (Tensor): [OC, K, 1] format (IC/groups == 1 for depthwise)
+        - bias (Tensor): [OC]
+        - stride, padding, dilation, groups: convolution parameters
+        - in_zero_point, weight_zero_point, bias_scale: quantization params
+        - output_scale, output_zero_point: output quantization params
+        - out_multiplier, out_shift: unused
+    """
+    assert is_depthwise_conv(
+        groups, input_tensor.shape[-1]
+    ), f"quantized_depthwise_conv1d_nlc requires depthwise conv (groups == in_channels), got groups={groups}, in_channels={input_tensor.shape[-1]}"
+
+    # Convert NLC to NCL for processing
+    input_ncl = input_tensor.permute(0, 2, 1).contiguous()
+    # Convert weight from [OC, K, IC/groups] to [OC, IC/groups, K]
+    weight_ncl = weight.permute(0, 2, 1).contiguous()
+
+    result_ncl = quantized_conv_per_tensor(
+        input_ncl,
+        weight_ncl,
+        bias,
+        stride,
+        padding,
+        dilation,
+        groups,
+        in_zero_point,
+        weight_zero_point,
+        bias_scale,
+        output_scale,
+        output_zero_point,
+        out_multiplier,
+        out_shift,
+    )
+
+    # Convert result back to NLC format
+    return result_ncl.permute(0, 2, 1).contiguous()
+
+
 @impl_tracked(m, "quantized_conv2d_nchw")
 def quantized_conv2d_nchw(
     input_tensor: torch.Tensor,
