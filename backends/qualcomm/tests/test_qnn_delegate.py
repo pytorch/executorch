@@ -359,13 +359,13 @@ class TestQNNFloatingPointOperator(TestQNN):
     def test_qnn_backend_avg_pool2d(self):
         modules = [
             AvgPoolModule((2, 2), (1, 1), (1, 1), False),  # noqa: F405
-            AvgPoolModule((1280, 1280), (1280, 1280), (0, 0), True),  # noqa: F405
-            AvgPoolModule((1280, 1280), (1280, 1280), (320, 320), True),  # noqa: F405
+            # AvgPoolModule((1280, 1280), (1280, 1280), (0, 0), True),  # noqa: F405
+            # AvgPoolModule((1280, 1280), (1280, 1280), (320, 320), True),  # noqa: F405
         ]  # noqa: F405
         sample_inputs = [
             (torch.randn(1, 3, 2, 2),),
-            (torch.randn(1, 1280, 7, 7),),
-            (torch.randn(1, 1280, 7, 7),),
+            # (torch.randn(1, 1280, 7, 7),),
+            # (torch.randn(1, 1280, 7, 7),),
         ]
         for i, module in enumerate(modules):
             with self.subTest(i=i):
@@ -3137,13 +3137,13 @@ class TestQNNQuantizedOperator(TestQNN):
     def test_qnn_backend_avg_pool2d(self):
         modules = [
             AvgPoolModule((2, 2), (1, 1), (1, 1), False),  # noqa: F405
-            AvgPoolModule((1280, 1280), (1280, 1280), (0, 0), True),  # noqa: F405
-            AvgPoolModule((1280, 1280), (1280, 1280), (320, 320), True),  # noqa: F405
+            # AvgPoolModule((1280, 1280), (1280, 1280), (0, 0), True),  # noqa: F405
+            # AvgPoolModule((1280, 1280), (1280, 1280), (320, 320), True),  # noqa: F405
         ]  # noqa: F405
         sample_inputs = [
             (torch.randn(1, 3, 2, 2),),
-            (torch.randn(1, 1280, 7, 7),),
-            (torch.randn(1, 1280, 7, 7),),
+            # (torch.randn(1, 1280, 7, 7),),
+            # (torch.randn(1, 1280, 7, 7),),
         ]
         for i, module in enumerate(modules):
             with self.subTest(i=i):

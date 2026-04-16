@@ -58,11 +58,9 @@ from .lpai_partition_fallback_support import LpaiPartitionFallbackSupport
 from .recompose_pad_maxpool2d import RecomposePadMaxPool2d
 from .recompose_pixel_unshuffle import RecomposePixelUnshuffle
 from .recompose_rms_norm import RecomposeRmsNorm
-from .reduce_dynamic_range import ReduceDynamicRange
 from .remove_0d_tensor import Remove0DTensor
 from .remove_redundancy import RemoveRedundancy
 from .replace_arange_args import ReplaceArangeArgs
-from .replace_inf_values import ReplaceInfValues
 from .resolve_debug_handle import ResolveDebugHandle
 from .seq_mse import SeqMSE
 from .tag_quant_io import TagQuantIO
@@ -122,11 +120,9 @@ __all__ = [
     RecomposePadMaxPool2d,
     RecomposePixelUnshuffle,
     RecomposeRmsNorm,
-    ReduceDynamicRange,
     Remove0DTensor,
     RemoveRedundancy,
     ReplaceArangeArgs,
-    ReplaceInfValues,
     ResolveDebugHandle,
     SeqMSE,
     TagQuantIO,
