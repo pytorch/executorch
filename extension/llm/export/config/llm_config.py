@@ -47,6 +47,8 @@ class ModelType(str, Enum):
     qwen3_5_0_8b = "qwen3_5_0_8b"
     qwen3_5_2b = "qwen3_5_2b"
     qwen3_5_4b = "qwen3_5_4b"
+    gemma4_e2b = "gemma4_e2b"
+    gemma4_e4b = "gemma4_e4b"
     phi_4_mini = "phi_4_mini"
     smollm2 = "smollm2"
     lfm2_350m = "lfm2_350m"

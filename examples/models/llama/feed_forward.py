@@ -1,3 +1,5 @@
+from typing import Callable
+
 import torch.nn.functional as F
 
 from executorch.examples.models.llama.lora import LoRALinear
@@ -6,14 +8,15 @@ from torch import nn
 
 
 class FeedForward(nn.Module):
-    def __init__(self, dim: int, hidden_dim: int):
+    def __init__(self, dim: int, hidden_dim: int, act_fn: Callable = F.silu):
         super().__init__()
         self.w1 = nn.Linear(dim, hidden_dim, bias=False)
         self.w2 = nn.Linear(hidden_dim, dim, bias=False)
         self.w3 = nn.Linear(dim, hidden_dim, bias=False)
+        self.act_fn = act_fn
 
     def forward(self, x):
-        return self.w2(F.silu(self.w1(x)) * self.w3(x))
+        return self.w2(self.act_fn(self.w1(x)) * self.w3(x))
 
 
 class LoRAFeedForward(nn.Module):
@@ -63,6 +66,7 @@ class LoRAFeedForward(nn.Module):
             if "up_proj" in args.target_modules
             else nn.Linear(dim, hidden_dim, bias=False)
         )
+        self.act_fn = args.act_fn.get_function()
 
     def forward(self, x):
-        return self.w2(F.silu(self.w1(x)) * self.w3(x))
+        return self.w2(self.act_fn(self.w1(x)) * self.w3(x))

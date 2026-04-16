@@ -11,6 +11,7 @@ import re
 import shutil
 import tempfile
 import unittest
+from pathlib import Path
 from typing import Dict, Optional, Sequence
 from unittest.mock import patch
 
@@ -71,6 +72,22 @@ class TestResourceFiles(unittest.TestCase):
             self.assertEqual(
                 read_file(out_dir, "resource-2"), b"resource-2 data PATCHED"
             )
+
+    def test_falls_back_to_source_schema_when_package_resource_missing(self) -> None:
+        expected = (
+            Path(_flatbuffer.__file__).resolve().parents[2] / "schema" / "program.fbs"
+        ).read_bytes()
+
+        with patch.object(
+            _flatbuffer.importlib.resources,
+            "read_binary",
+            side_effect=FileNotFoundError,
+        ):
+            rf = _ResourceFiles(("program.fbs",))
+
+        with tempfile.TemporaryDirectory() as out_dir:
+            rf.write_to(out_dir)
+            self.assertEqual(read_file(out_dir, "program.fbs"), expected)
 
 
 # Fake resource files to use when testing alignment-patching.

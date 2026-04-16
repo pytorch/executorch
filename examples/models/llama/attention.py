@@ -24,7 +24,7 @@ class ForwardOptions(TypedDict, total=False):
     # YOCO (You Only Cache Once): shared K/V from a donor layer.
     # When provided, the attention layer skips its own K/V projection
     # and reuses the donor's K/V instead.
-    shared_kv: Optional[Tuple[torch.Tensor, torch.Tensor]]
+    shared_kv: Optional[Any]
 
 
 class Attention(nn.Module, ABC):
@@ -119,12 +119,14 @@ class SDPA(nn.Module):
         head_dim: int,
         n_rep: int,
         max_context_len: int,
+        scale: Optional[float] = None,
     ):
         super().__init__()
         self.dim = dim
         self.head_dim = head_dim
         self.n_rep = n_rep
         self.max_context_len = max_context_len
+        self.scale = scale
 
     def forward(
         self,
@@ -141,7 +143,14 @@ class SDPA(nn.Module):
         # can natively support GQA now. But needs enable_gqa=True
         k = k.repeat_interleave(self.n_rep, dim=1)
         v = v.repeat_interleave(self.n_rep, dim=1)
-        y = F.scaled_dot_product_attention(q, k, v, attn_mask=mask, dropout_p=0.0)
+        y = F.scaled_dot_product_attention(
+            q,
+            k,
+            v,
+            attn_mask=mask,
+            dropout_p=0.0,
+            scale=self.scale,
+        )
 
         return y.transpose(1, 2).reshape(bsz, seqlen, self.dim)
 
@@ -154,6 +163,20 @@ def _create_causal_mask_for_ring_buffer(
     attn_mask = (cache_positions >= 0) & (delta >= 0) & (delta < window_size)
     attn_mask = torch.where(attn_mask == True, 0, float("-inf"))  # noqa E712
     return attn_mask
+
+
+def _create_sliding_window_mask(
+    seq_len: int,
+    key_len: int,
+    window_size: int,
+    device: torch.device,
+    dtype: torch.dtype,
+) -> torch.Tensor:
+    q_pos = torch.arange(seq_len, device=device, dtype=torch.long).view(-1, 1)
+    k_pos = torch.arange(key_len, device=device, dtype=torch.long).view(1, -1)
+    delta = q_pos - k_pos
+    attn_mask = (delta >= 0) & (delta < window_size)
+    return torch.where(attn_mask, 0.0, float("-inf")).to(dtype=dtype)
 
 
 class CacheUpdateStrategy(Enum):
@@ -375,6 +398,7 @@ class AttentionMHA(Attention):
         self.qk_norm_before_rope = args.qk_norm_before_rope
         self.use_q_gate = args.use_q_gate
         self.enable_dynamic_shape = args.enable_dynamic_shape
+        self.attention_scale = args.attention_multiplier
         q_out_dim = self.n_heads * self.head_dim * (2 if self.use_q_gate else 1)
 
         # YOCO: Determine if this is a KV shared layer (receives shared KV from donor).
@@ -412,6 +436,7 @@ class AttentionMHA(Attention):
                 head_dim=self.head_dim,
                 n_rep=self.n_rep,
                 max_context_len=self.max_context_len,
+                scale=self.attention_scale,
             )
 
     def _init_norms(self, args: ModelArgs) -> None:
@@ -599,7 +624,14 @@ class AttentionMHA(Attention):
 
         mask = self.mask[:seqlen, :seqlen]
 
-        output = F.scaled_dot_product_attention(q, k, v, attn_mask=mask, dropout_p=0.0)
+        output = F.scaled_dot_product_attention(
+            q,
+            k,
+            v,
+            attn_mask=mask,
+            dropout_p=0.0,
+            scale=self.attention_scale,
+        )
 
         output = output.transpose(1, 2).reshape(bsz, seqlen, -1)
         if gate is not None:
@@ -608,6 +640,305 @@ class AttentionMHA(Attention):
         output = self.wo(output)
 
         return output, None
+
+
+@register_attention("gemma4_mha")
+class AttentionGemma4MHA(Attention):
+    def __init__(
+        self,
+        args: ModelArgs,
+        layer_id: int,
+        rope: Rope,
+        **_kwargs: Any,
+    ):
+        super().__init__()
+        self.use_kv_cache = args.use_kv_cache
+        self.n_heads = args.n_heads
+        self.layer_id = layer_id
+        self.layer_type = (
+            args.layer_types[layer_id] if args.layer_types is not None else None
+        )
+        self.is_sliding = self.layer_type == "sliding_attention"
+        self.sliding_window = args.sliding_window if self.is_sliding else None
+        self.use_alternative_attention = args.attention_k_eq_v and not self.is_sliding
+        self.n_kv_heads = (
+            args.num_global_key_value_heads
+            if self.use_alternative_attention
+            else (self.n_heads if args.n_kv_heads is None else args.n_kv_heads)
+        )
+        assert self.n_heads % self.n_kv_heads == 0
+        model_parallel_size = 1
+        self.n_local_heads = self.n_heads // model_parallel_size
+        self.n_local_kv_heads = self.n_kv_heads // model_parallel_size
+        self.n_rep = self.n_local_heads // self.n_local_kv_heads
+        self.head_dim = (
+            args.global_head_dim
+            if not self.is_sliding and args.global_head_dim is not None
+            else args.head_dim
+        )
+        self.max_batch_size = args.max_batch_size
+        self.max_context_len = args.max_context_len
+        self.dim = args.dim
+        self.attention_qkv_bias = args.attention_qkv_bias
+        self.enable_dynamic_shape = args.enable_dynamic_shape
+        self.attention_scale = (
+            1.0 if args.attention_multiplier is None else args.attention_multiplier
+        )
+
+        num_kv_shared = args.num_kv_shared_layers
+        first_shared = args.n_layers - num_kv_shared
+        self.is_kv_shared_layer = layer_id >= first_shared > 0
+        self.has_kv_weights = not self.is_kv_shared_layer
+        self.store_full_length_kv = False
+        if num_kv_shared > 0 and first_shared > 0 and not self.is_kv_shared_layer:
+            if args.layer_types is None:
+                self.store_full_length_kv = layer_id == first_shared - 1
+            else:
+                target_type = args.layer_types[layer_id]
+                for donor_idx in range(first_shared - 1, -1, -1):
+                    if args.layer_types[donor_idx] == target_type:
+                        self.store_full_length_kv = donor_idx == layer_id
+                        break
+
+        q_out_dim = self.n_heads * self.head_dim
+        self.wq = _create_projection(
+            args, args.dim, q_out_dim, ("q_proj",), bias=self.attention_qkv_bias
+        )
+        if self.has_kv_weights:
+            kv_dim = self.n_kv_heads * self.head_dim
+            self.wk = _create_projection(
+                args, args.dim, kv_dim, ("k_proj",), bias=self.attention_qkv_bias
+            )
+            self.wv = (
+                _create_projection(
+                    args,
+                    args.dim,
+                    kv_dim,
+                    ("v_proj",),
+                    bias=self.attention_qkv_bias,
+                )
+                if not self.use_alternative_attention
+                else None
+            )
+        else:
+            self.wk = None
+            self.wv = None
+        self.wo = _create_projection(
+            args,
+            self.n_heads * self.head_dim,
+            args.dim,
+            ("output_proj", "o_proj"),
+            bias=False,
+        )
+
+        self.q_norm_fn = RMSNorm(
+            self.head_dim,
+            eps=args.norm_eps,
+            add_unit_offset=args.rms_norm_add_unit_offset,
+        )
+        self.k_norm_fn = RMSNorm(
+            self.head_dim,
+            eps=args.norm_eps,
+            add_unit_offset=args.rms_norm_add_unit_offset,
+        )
+        self.v_norm_fn = RMSNorm(
+            self.head_dim,
+            eps=args.norm_eps,
+            add_unit_offset=args.rms_norm_add_unit_offset,
+            with_scale=False,
+        )
+
+        self.rope = rope
+        causal_mask = torch.tril(
+            torch.ones(
+                self.max_context_len,
+                self.max_context_len,
+                dtype=torch.bool,
+                device="cpu",
+            )
+        )
+        self.register_buffer("mask", causal_mask, persistent=False)
+
+        if self.use_kv_cache:
+            if self.has_kv_weights:
+                if self.is_sliding and self.sliding_window is not None:
+                    self.kv_cache = RingKVCache(
+                        args.max_batch_size,
+                        self.sliding_window,
+                        self.n_kv_heads,
+                        self.head_dim,
+                        args.enable_dynamic_shape,
+                    )
+                else:
+                    self.kv_cache = KVCache(
+                        args.max_batch_size,
+                        args.max_context_len,
+                        self.n_kv_heads,
+                        self.head_dim,
+                        args.enable_dynamic_shape,
+                    )
+            else:
+                self.kv_cache = None
+            self.SDPA = SDPA(
+                dim=self.n_local_heads * self.head_dim,
+                head_dim=self.head_dim,
+                n_rep=self.n_rep,
+                max_context_len=self.max_context_len,
+                scale=self.attention_scale,
+            )
+
+    def _unpack_shared_kv(
+        self, shared_kv: Any
+    ) -> Tuple[torch.Tensor, torch.Tensor, Optional[torch.Tensor], Optional[int]]:
+        if isinstance(shared_kv, dict):
+            return (
+                shared_kv["k"],
+                shared_kv["v"],
+                shared_kv.get("cache_positions"),
+                shared_kv.get("window_size"),
+            )
+        k, v = shared_kv
+        return k, v, None, self.sliding_window
+
+    def _build_kv_payload(
+        self, k: torch.Tensor, v: torch.Tensor
+    ) -> Any:
+        if (
+            self.use_kv_cache
+            and self.is_sliding
+            and self.kv_cache is not None
+            and getattr(self.kv_cache, "is_ring_buffer", False)
+        ):
+            return {
+                "k": k,
+                "v": v,
+                "cache_positions": self.kv_cache.cache_positions_manager.cache_positions.clone(),
+                "window_size": self.sliding_window,
+            }
+        return (k, v)
+
+    def _build_sliding_mask(
+        self, q: torch.Tensor, k: torch.Tensor, seqlen: int
+    ) -> torch.Tensor:
+        assert self.sliding_window is not None
+        return _create_sliding_window_mask(
+            seqlen,
+            k.shape[2],
+            self.sliding_window,
+            q.device,
+            q.dtype,
+        )
+
+    def forward(
+        self,
+        x: torch.Tensor,
+        freqs_cos: torch.Tensor,
+        freqs_sin: torch.Tensor,
+        **kwargs: ForwardOptions,
+    ) -> Tuple[torch.Tensor, Optional[Any]]:
+        del freqs_cos, freqs_sin
+        input_pos = kwargs.get("input_pos")
+        shared_kv = kwargs.get("shared_kv")
+        bsz, seqlen, _ = x.shape
+        freqs_cos, freqs_sin = self.rope.get_freqs_for_layer_type(
+            self.layer_type, input_pos, seqlen
+        )
+
+        q = self.wq(x).view(bsz, seqlen, self.n_local_heads, self.head_dim)
+        q = self.q_norm_fn(q)
+        q = self.rope.forward_to_tensor(q, freqs_cos, freqs_sin)
+        q = q.transpose(1, 2)
+
+        shared_cache_positions = None
+        shared_window_size = self.sliding_window
+        if shared_kv is not None:
+            k, v, shared_cache_positions, shared_window_size = self._unpack_shared_kv(
+                shared_kv
+            )
+        else:
+            assert self.wk is not None, (
+                "wk projection is required when shared_kv is not provided. "
+                "This Gemma4 layer expects shared KV from an earlier donor layer."
+            )
+            k = self.wk(x).view(bsz, seqlen, self.n_local_kv_heads, self.head_dim)
+            value_states = (
+                self.wv(x).view(bsz, seqlen, self.n_local_kv_heads, self.head_dim)
+                if self.wv is not None
+                else k
+            )
+            k = self.k_norm_fn(k)
+            k = self.rope.forward_to_tensor(k, freqs_cos, freqs_sin)
+            k = k.transpose(1, 2)
+            v = self.v_norm_fn(value_states).transpose(1, 2)
+
+        if self.use_kv_cache:
+            assert input_pos is not None
+            if self.enable_dynamic_shape:
+                start_pos = input_pos[-1].item()
+                torch._check_is_size(start_pos)
+                torch._check(start_pos < self.max_context_len)
+                seq_length = q.size(2)
+                attn_mask = self.mask.narrow(0, start_pos, seq_length)
+            else:
+                attn_mask = self.mask[input_pos]
+
+            if shared_kv is None:
+                assert self.kv_cache is not None, (
+                    "kv_cache is required when shared_kv is not provided. "
+                    "This Gemma4 layer expects shared KV from an earlier donor layer."
+                )
+                k, v = self.kv_cache.update(input_pos, k, v)
+                if getattr(self.kv_cache, "is_ring_buffer", False):
+                    attn_mask = self.kv_cache.create_causal_mask_for_ring_buffer(
+                        input_pos[0].item(), seqlen
+                    )
+            elif (
+                self.is_sliding
+                and shared_cache_positions is not None
+                and shared_window_size is not None
+            ):
+                attn_mask = _create_causal_mask_for_ring_buffer(
+                    shared_cache_positions.to(device=q.device),
+                    shared_window_size,
+                    input_pos[0].item(),
+                    seqlen,
+                ).to(dtype=q.dtype)
+
+            output = self.SDPA(input_pos, q, k, v, bsz, seqlen, attn_mask)
+            update = None
+            if shared_kv is None and self.store_full_length_kv:
+                update = {"kv_to_share": {self.layer_id: self._build_kv_payload(k, v)}}
+            return self.wo(output), update
+
+        k_to_share = k
+        v_to_share = v
+        k = k.repeat_interleave(self.n_rep, dim=1)
+        v = v.repeat_interleave(self.n_rep, dim=1)
+
+        if self.is_sliding and self.sliding_window is not None:
+            mask = self._build_sliding_mask(q, k, seqlen)
+        else:
+            mask = self.mask[:seqlen, : k.shape[2]].to(device=q.device, dtype=q.dtype)
+
+        output = F.scaled_dot_product_attention(
+            q,
+            k,
+            v,
+            attn_mask=mask,
+            dropout_p=0.0,
+            scale=self.attention_scale,
+        )
+        output = output.transpose(1, 2).reshape(bsz, seqlen, -1)
+        output = self.wo(output)
+
+        update = None
+        if shared_kv is None and self.store_full_length_kv:
+            update = {
+                "kv_to_share": {
+                    self.layer_id: self._build_kv_payload(k_to_share, v_to_share)
+                }
+            }
+        return output, update
 
 
 def _l2norm(x: torch.Tensor, dim: int = -1, eps: float = 1e-6) -> torch.Tensor:
