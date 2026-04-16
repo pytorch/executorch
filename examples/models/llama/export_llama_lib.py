@@ -1781,16 +1781,17 @@ def _get_source_transforms(  # noqa
     use_attention_mask_for_custom_sdpa = use_custom_sdpa_with_attention_mask
 
     if use_sdpa_with_kv_cache:
-        transforms.append(replace_kv_cache_with_custom_kv_cache)
-        # todo: do this optionally
-        # if use attention mask instead of causal attention
-        # then create partial function that sets use_attention_mask=True
+        # Replace SDPA first, then KV cache. Order matters: the KV cache
+        # replacement sets SDPACustom.use_attention_mask=True for ring buffer
+        # models (attention sink, sliding window). If SDPA is replaced after,
+        # a new SDPACustom(use_attention_mask=False) would overwrite it.
         if use_attention_mask_for_custom_sdpa:
             transforms.append(
                 partial(replace_sdpa_with_custom_op, use_attention_mask=True)
             )
         else:
             transforms.append(replace_sdpa_with_custom_op)
+        transforms.append(replace_kv_cache_with_custom_kv_cache)
 
     if quantize_kv_cache:
         assert use_kv_cache, "quantize_kv_cache requires use_kv_cache=True"
