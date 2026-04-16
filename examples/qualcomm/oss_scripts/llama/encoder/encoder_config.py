@@ -31,6 +31,7 @@ class MultiModalityConfig(ABC):
 
     encoder_class: type
     quant_recipe: EncoderQuantRecipe
+    num_sharding: int = 1
 
     @abstractmethod
     def create_encoder(self, config):
@@ -88,3 +89,4 @@ class InternVL3Encoder(VisionModalityConfig):
     img_resized_w = 448
     img_url = "http://images.cocodataset.org/val2017/000000039769.jpg"
     quant_recipe = InternVL3_Encoder_QuantRecipe
+    num_sharding = 8

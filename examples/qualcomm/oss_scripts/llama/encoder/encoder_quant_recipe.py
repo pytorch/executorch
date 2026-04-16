@@ -13,6 +13,10 @@ from executorch.backends.qualcomm.quantizer.quant_recipe import (
 )
 from executorch.backends.qualcomm.quantizer.quantizer import QuantDtype
 from torchao.quantization.pt2e import MinMaxObserver
+from executorch.backends.qualcomm.quantizer.custom_annotation import (
+    custom_annotate_matmul_16a8w,
+    custom_annotation_16a4w_layer_norm,
+)
 
 
 class EncoderQuantRecipe:
@@ -52,6 +56,7 @@ class InternVL3_Encoder_QuantRecipe(EncoderQuantRecipe):
             act_observer=MinMaxObserver,
             granularity=QuantGranularity.PER_CHANNEL,
         )
+        self.recipe.custom_quant_annotations.extend([custom_annotate_matmul_16a8w, custom_annotation_16a4w_layer_norm])
 
 
 class SmolVLM_Encoder_QuantRecipe(EncoderQuantRecipe):

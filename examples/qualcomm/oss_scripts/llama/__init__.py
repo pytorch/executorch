@@ -528,7 +528,7 @@ class InternVL3_1B(LLMModelConfig):
     convert_weights = convert_internvl3_weights
     transform_weight = False
     instruct_model = True
-    num_sharding = 1
+    num_sharding = 8
     masked_softmax = True
     seq_mse_candidates = 0
     r1 = False
