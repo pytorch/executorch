@@ -302,7 +302,7 @@ class TestFusedMoE(unittest.TestCase):
                 rel = diff / (ref.float().abs().max().item() + 1e-10)
                 self.assertLess(
                     rel,
-                    0.05,
+                    0.02,
                     f"{desc}: relative diff {rel:.4f} (abs {diff:.6f})",
                 )
 
@@ -332,7 +332,7 @@ class TestFusedMoE(unittest.TestCase):
             ref = w2_dq[1] @ activated
             diff = (out[t].float() - ref.float()).abs().max().item()
             rel = diff / (ref.float().abs().max().item() + 1e-10)
-            self.assertLess(rel, 0.05, f"token {t}: relative diff {rel:.4f}")
+            self.assertLess(rel, 0.02, f"token {t}: relative diff {rel:.4f}")
 
     def test_batched_correctness(self):
         """Batched kernel matches reference across M values."""
@@ -390,7 +390,7 @@ class TestFusedMoE(unittest.TestCase):
                 rel = diff / (ref.float().abs().max().item() + 1e-10)
                 self.assertLess(
                     rel,
-                    0.05,
+                    0.02,
                     f"{desc}: relative diff {rel:.4f} (abs {diff:.6f})",
                 )
 
