@@ -78,6 +78,24 @@ class RuntimeTest(unittest.TestCase):
                 program = runtime.load_program(f.read())
                 test_add(program)
 
+    def test_execute_non_contiguous_inputs(self):
+        """Non-contiguous tensors (e.g. after permute) must produce the same
+        result as their contiguous equivalents."""
+        ep, inputs = create_program(ModuleAdd())
+        runtime = Runtime.get()
+        program = runtime.load_program(ep.buffer, verification=Verification.Minimal)
+
+        # Make a non-contiguous version of the first input via transpose.
+        x = inputs[0]  # shape (2, 2)
+        non_contig = x.unsqueeze(0).expand(3, -1, -1).permute(1, 2, 0)[:, :, 0]
+        self.assertFalse(non_contig.is_contiguous())
+        self.assertTrue(torch.equal(non_contig, x))
+
+        method = program.load_method("forward")
+        out_non_contig = method.execute([non_contig, inputs[1]])[0]
+        out_contig = method.execute([x, inputs[1]])[0]
+        self.assertTrue(torch.allclose(out_non_contig, out_contig))
+
     def test_load_program_with_file_like_objects(self):
         """Regression test: Ensure file-like objects (BytesIO, etc.) work correctly.
 
