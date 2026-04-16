@@ -86,7 +86,7 @@ This section describes how to generate an ET record for a .pte program using the
     PYTHONPATH=.. python -m examples.qualcomm.util_scripts.gen_etrecord \
       -b build-android \
       --device $DEVICE_SERIAL \
-      --model SM8750 \
+      --soc_model SM8750 \
     ```
   * This script will:
     - Quantize and compile a sample model to generate `.pte` file.

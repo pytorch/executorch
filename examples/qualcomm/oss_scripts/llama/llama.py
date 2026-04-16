@@ -15,6 +15,10 @@ from multiprocessing.connection import Client
 from typing import Dict
 
 import torch
+from executorch.backends.qualcomm.export_utils import (
+    get_backend_type,
+    setup_common_args_and_variables,
+)
 
 from executorch.backends.qualcomm.utils.utils import (
     generate_htp_compiler_spec,
@@ -53,10 +57,6 @@ from executorch.examples.qualcomm.oss_scripts.llama.wrappers import (
     is_attention_sink_config_equal,
     MultiModalManager,
     next_power_of_two,
-)
-from executorch.examples.qualcomm.utils import (
-    get_backend_type,
-    setup_common_args_and_variables,
 )
 from torchao.quantization.utils import compute_error
 
@@ -128,7 +128,7 @@ def compile(
                 use_fp16=to_skip,
             )
             encoder_compile_specs = generate_qnn_executorch_compiler_spec(
-                soc_model=get_soc_to_chipset_map()[args.model],
+                soc_model=get_soc_to_chipset_map()[args.soc_model],
                 backend_options=backend_options,
                 # x86 emulator does not support shared buffer
                 shared_buffer=not args.enable_x86_64,
@@ -143,7 +143,7 @@ def compile(
             )
             compile_specs[modality] = [
                 generate_qnn_executorch_compiler_spec(
-                    soc_model=get_soc_to_chipset_map()[args.model],
+                    soc_model=get_soc_to_chipset_map()[args.soc_model],
                     backend_options=backend_options,
                     # x86 emulator does not support shared buffer
                     shared_buffer=not args.enable_x86_64,
@@ -159,7 +159,7 @@ def compile(
             )
             compile_specs[modality] = [
                 generate_qnn_executorch_compiler_spec(
-                    soc_model=get_soc_to_chipset_map()[args.model],
+                    soc_model=get_soc_to_chipset_map()[args.soc_model],
                     backend_options=backend_options,
                     # x86 emulator does not support shared buffer
                     shared_buffer=not args.enable_x86_64,
@@ -173,7 +173,7 @@ def compile(
         skip_quantize=skip_quantize,
         tokenizer=tokenizer,
         backend=get_backend_type(args.backend),
-        soc_model=args.model,
+        soc_model=args.soc_model,
     )
 
     # perform compilation

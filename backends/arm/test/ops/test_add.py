@@ -279,6 +279,107 @@ def test_add_tensor_vgf_quant(test_data: input_t1):
 
 
 @common.parametrize("test_data", Add.test_data)
+@common.SkipIfNoModelConverter
+def test_add_tensor_vgf_quant_a16w8(test_data: input_t1):
+    pipeline = VgfPipeline[input_t1](
+        Add(),
+        test_data(),
+        aten_op,
+        exir_op,
+        run_on_vulkan_runtime=True,
+        quantize=True,
+        tosa_extensions=["int16"],
+    )
+    pipeline.quantizer.set_global(get_symmetric_a16w8_quantization_config())
+    pipeline.run()
+
+
+class AddConvResidual(torch.nn.Module):
+    """Conv(x) + x — residual block.
+
+    Creates non-unit IFM scales
+
+    """
+
+    def __init__(self):
+        super().__init__()
+        self.conv = torch.nn.Conv2d(3, 3, 1, bias=False)
+
+    def forward(self, x):
+        return self.conv(x) + x
+
+    test_data = {
+        "4d_randn": lambda: (torch.randn(1, 3, 4, 4),),
+    }
+
+
+@common.parametrize("test_data", AddConvResidual.test_data)
+def test_add_conv_residual_tosa_INT(test_data: input_t1):
+    pipeline = TosaPipelineINT[input_t1](
+        AddConvResidual(), test_data(), aten_op, exir_op
+    )
+    pipeline.run()
+
+
+@common.parametrize("test_data", AddConvResidual.test_data)
+@common.XfailIfNoCorstone300
+def test_add_conv_residual_u55_INT(test_data: input_t1):
+    pipeline = EthosU55PipelineINT[input_t1](
+        AddConvResidual(), test_data(), aten_op, exir_op
+    )
+    pipeline.run()
+
+
+@common.parametrize("test_data", AddConvResidual.test_data)
+@common.XfailIfNoCorstone320
+def test_add_conv_residual_u85_INT(test_data: input_t1):
+    pipeline = EthosU85PipelineINT[input_t1](
+        AddConvResidual(), test_data(), aten_op, exir_op
+    )
+    pipeline.run()
+
+
+class AddDualConv(torch.nn.Module):
+    """Conv1(x) + conv2(x) — both inputs have Rescale producers."""
+
+    def __init__(self):
+        super().__init__()
+        self.conv1 = torch.nn.Conv2d(3, 3, 1, bias=False)
+        self.conv2 = torch.nn.Conv2d(3, 3, 1, bias=False)
+
+    def forward(self, x):
+        return self.conv1(x) + self.conv2(x)
+
+    test_data = {
+        "4d_randn": lambda: (torch.randn(1, 3, 4, 4),),
+    }
+
+
+@common.parametrize("test_data", AddDualConv.test_data)
+def test_add_dual_conv_tosa_INT(test_data: input_t1):
+    pipeline = TosaPipelineINT[input_t1](AddDualConv(), test_data(), aten_op, exir_op)
+    pipeline.run()
+
+
+@common.parametrize("test_data", AddDualConv.test_data)
+@common.XfailIfNoCorstone300
+def test_add_dual_conv_u55_INT(test_data: input_t1):
+    pipeline = EthosU55PipelineINT[input_t1](
+        AddDualConv(), test_data(), aten_op, exir_op
+    )
+    pipeline.run()
+
+
+@common.parametrize("test_data", AddDualConv.test_data)
+@common.XfailIfNoCorstone320
+def test_add_dual_conv_u85_INT(test_data: input_t1):
+    pipeline = EthosU85PipelineINT[input_t1](
+        AddDualConv(), test_data(), aten_op, exir_op
+    )
+    pipeline.run()
+
+
+@common.parametrize("test_data", Add.test_data)
 def test_add_tensor_tosa_INT_16a8w(test_data: input_t1):
     """Test add operation with 16A8W quantization (16-bit activations, 8-bit
     weights)
