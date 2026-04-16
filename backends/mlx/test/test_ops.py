@@ -4005,14 +4005,16 @@ def _int_input_fn(low: int = -100, high: int = 100):
 
 
 def _inf_input_fn():
-    """Return a callable(shape, dtype) that generates inputs with some inf values."""
+    """Return a callable(shape, dtype) that generates inputs with some inf/nan values."""
 
     def fn(shape, dtype):
         x = torch.randn(shape, dtype=dtype)
         mask_pos = torch.rand(shape) > 0.8
         mask_neg = torch.rand(shape) > 0.9
+        mask_nan = torch.rand(shape) > 0.85
         x[mask_pos] = float("inf")
         x[mask_neg] = float("-inf")
+        x[mask_nan] = float("nan")
         return (x,)
 
     return fn
