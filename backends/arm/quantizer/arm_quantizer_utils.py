@@ -532,45 +532,61 @@ class SharedQspecQuantizer(Quantizer, _QuantizerReporterUserMixin):
     def _get_user_nodes_with_float_input(self, node: Node) -> list[Node]:
         return [n for n in node.users.keys() if has_float_output(node)]
 
+    def _skip_shared_qspec_from_io(self, node: Node, qspec: QuantizationSpec) -> bool:
+        return node.op in ("placeholder", "output") and qspec.dtype == torch.uint8
+
+    def _maybe_enqueue_shared_node(
+        self, neighbor: Node, shared_nodes: set[Node], bfs_queue: list[Node]
+    ) -> None:
+        if neighbor.target in self.targets and neighbor not in shared_nodes:
+            if not self._is_annotated(neighbor):
+                bfs_queue.append(neighbor)
+
+    def _append_output_qspec(self, node: Node, adjacent_qspecs: list[Any]) -> None:
+        if not self._is_annotated(node):
+            return
+        output_qspec = node.meta.get(  # type: ignore[union-attr]
+            Q_ANNOTATION_KEY
+        ).output_qspec
+        if output_qspec is None:
+            return
+        if self._skip_shared_qspec_from_io(node, output_qspec):
+            return
+        adjacent_qspecs.append(output_qspec)
+
+    def _append_input_qspec(
+        self, user_node: Node, input_node: Node, adjacent_qspecs: list[Any]
+    ) -> None:
+        if not self._is_annotated(user_node):
+            return
+        qspec_map = user_node.meta.get(Q_ANNOTATION_KEY)
+        if qspec_map is None:
+            return
+        if input_node not in qspec_map.input_qspec_map:
+            return
+        input_qspec = qspec_map.input_qspec_map[input_node]
+        if input_qspec is None:
+            return
+        if self._skip_shared_qspec_from_io(user_node, input_qspec):
+            return
+        adjacent_qspecs.append(input_qspec)
+
     def _get_shared_clique(self, root_node: Node) -> tuple[set[Node], list[Any]]:
         shared_nodes = set()
         bfs_queue = [root_node]
-        adjacent_qspecs = []
+        adjacent_qspecs: list[Any] = []
 
         while bfs_queue:
             node = bfs_queue.pop(0)
             shared_nodes.add(node)
 
             for input_node in node.all_input_nodes:
-                if input_node.target in self.targets and input_node not in shared_nodes:
-                    if not self._is_annotated(input_node):
-                        bfs_queue.append(input_node)
-                if self._is_annotated(input_node):
-                    output_qspec = input_node.meta.get(  # type: ignore[union-attr]
-                        Q_ANNOTATION_KEY
-                    ).output_qspec
-                    if output_qspec is not None:
-                        adjacent_qspecs.append(output_qspec)
+                self._maybe_enqueue_shared_node(input_node, shared_nodes, bfs_queue)
+                self._append_output_qspec(input_node, adjacent_qspecs)
 
             for output_node in node.users.keys():
-                if (
-                    output_node.target in self.targets
-                    and output_node not in shared_nodes
-                ):
-                    if not self._is_annotated(output_node):
-                        bfs_queue.append(output_node)
-                if (
-                    self._is_annotated(output_node)
-                    and node
-                    in output_node.meta.get(  # type: ignore[union-attr]
-                        Q_ANNOTATION_KEY
-                    ).input_qspec_map
-                ):
-                    input_qspec = output_node.meta.get(  # type: ignore[union-attr]
-                        Q_ANNOTATION_KEY
-                    ).input_qspec_map[node]
-                    if input_qspec is not None:
-                        adjacent_qspecs.append(input_qspec)
+                self._maybe_enqueue_shared_node(output_node, shared_nodes, bfs_queue)
+                self._append_input_qspec(output_node, node, adjacent_qspecs)
 
         return shared_nodes, adjacent_qspecs
 
