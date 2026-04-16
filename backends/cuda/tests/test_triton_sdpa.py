@@ -67,6 +67,11 @@ def _max_abs_error(out, ref):
     return (out.float() - ref.float()).abs().max().item()
 
 
+# bf16 kernel vs fp32 reference tolerance.
+# The benchmark cross-validates backends at 1e-2; tests use the same bar.
+MAX_ABS_TOL = 1e-2
+
+
 # ---------------------------------------------------------------------------
 # Test configurations adapted from FlashAttention
 # ---------------------------------------------------------------------------
@@ -130,7 +135,7 @@ class TestTritonSdpa(unittest.TestCase):
 
                 self.assertFalse(torch.isnan(out).any(), "NaN in output")
                 self.assertLess(
-                    _max_abs_error(out, ref), 0.05, f"D={D} Lq={Lq} Lk={Lk}"
+                    _max_abs_error(out, ref), MAX_ABS_TOL, f"D={D} Lq={Lq} Lk={Lk}"
                 )
 
     def test_mha_causal(self):
@@ -148,7 +153,7 @@ class TestTritonSdpa(unittest.TestCase):
                     ref = _reference_sdpa(q, k, v, is_causal=True)
 
                     self.assertFalse(torch.isnan(out).any())
-                    self.assertLess(_max_abs_error(out, ref), 0.05)
+                    self.assertLess(_max_abs_error(out, ref), MAX_ABS_TOL)
 
     def test_mha_bool_mask(self):
         """MHA with explicit bool attention mask."""
@@ -168,7 +173,7 @@ class TestTritonSdpa(unittest.TestCase):
                 ref = _reference_sdpa(q, k, v, attn_mask=mask)
 
                 self.assertFalse(torch.isnan(out).any())
-                self.assertLess(_max_abs_error(out, ref), 0.05)
+                self.assertLess(_max_abs_error(out, ref), MAX_ABS_TOL)
 
     def test_mha_non_pow2_head_dim(self):
         """MHA with non-power-of-2 head dimensions."""
@@ -187,7 +192,7 @@ class TestTritonSdpa(unittest.TestCase):
                     ref = _reference_sdpa(q, k, v)
 
                     self.assertFalse(torch.isnan(out).any())
-                    self.assertLess(_max_abs_error(out, ref), 0.05)
+                    self.assertLess(_max_abs_error(out, ref), MAX_ABS_TOL)
 
     def test_mha_non_pow2_causal(self):
         """MHA with non-pow2 head dim and causal masking."""
@@ -204,7 +209,7 @@ class TestTritonSdpa(unittest.TestCase):
                     ref = _reference_sdpa(q, k, v, is_causal=True)
 
                     self.assertFalse(torch.isnan(out).any())
-                    self.assertLess(_max_abs_error(out, ref), 0.05)
+                    self.assertLess(_max_abs_error(out, ref), MAX_ABS_TOL)
 
     # ------------------------------------------------------------------
     # GQA tests
@@ -230,7 +235,7 @@ class TestTritonSdpa(unittest.TestCase):
                 self.assertEqual(out.shape, (B, H_q, Lq, D))
                 self.assertFalse(torch.isnan(out).any())
                 self.assertLess(
-                    _max_abs_error(out, ref), 0.05, f"{label} D={D} Lk={Lk}"
+                    _max_abs_error(out, ref), MAX_ABS_TOL, f"{label} D={D} Lk={Lk}"
                 )
 
     def test_gqa_decode_with_mask(self):
@@ -253,7 +258,7 @@ class TestTritonSdpa(unittest.TestCase):
                 ref = _reference_sdpa(q, k, v, attn_mask=mask)
 
                 self.assertFalse(torch.isnan(out).any())
-                self.assertLess(_max_abs_error(out, ref), 0.05)
+                self.assertLess(_max_abs_error(out, ref), MAX_ABS_TOL)
 
     def test_gqa_short_seqlen(self):
         """GQA with short seqlen_q (2-8)."""
@@ -270,7 +275,7 @@ class TestTritonSdpa(unittest.TestCase):
                     ref = _reference_sdpa(q, k, v)
 
                     self.assertFalse(torch.isnan(out).any())
-                    self.assertLess(_max_abs_error(out, ref), 0.05)
+                    self.assertLess(_max_abs_error(out, ref), MAX_ABS_TOL)
 
     def test_gqa_prefill(self):
         """GQA prefill (long seqlen_q)."""
@@ -290,7 +295,7 @@ class TestTritonSdpa(unittest.TestCase):
 
                 self.assertEqual(out.shape, (B, H_q, L, D))
                 self.assertFalse(torch.isnan(out).any())
-                self.assertLess(_max_abs_error(out, ref), 0.05)
+                self.assertLess(_max_abs_error(out, ref), MAX_ABS_TOL)
 
     def test_gqa_non_pow2_head_dim(self):
         """GQA with non-power-of-2 head dimensions."""
@@ -308,7 +313,7 @@ class TestTritonSdpa(unittest.TestCase):
 
                     self.assertFalse(torch.isnan(out).any())
                     self.assertLess(
-                        _max_abs_error(out, ref), 0.05, f"D={D} Lq={Lq} Lk={Lk}"
+                        _max_abs_error(out, ref), MAX_ABS_TOL, f"D={D} Lq={Lq} Lk={Lk}"
                     )
 
     def test_gqa_causal_prefill(self):
@@ -326,7 +331,7 @@ class TestTritonSdpa(unittest.TestCase):
                     ref = _reference_sdpa(q, k, v, is_causal=True)
 
                     self.assertFalse(torch.isnan(out).any())
-                    self.assertLess(_max_abs_error(out, ref), 0.05)
+                    self.assertLess(_max_abs_error(out, ref), MAX_ABS_TOL)
 
     def test_gqa_causal_decode_with_mask(self):
         """GQA decode with causal-like bool mask (simulating KV cache)."""
@@ -352,7 +357,7 @@ class TestTritonSdpa(unittest.TestCase):
                 ref = _reference_sdpa(q, k, v, attn_mask=mask)
 
                 self.assertFalse(torch.isnan(out).any())
-                self.assertLess(_max_abs_error(out, ref), 0.05)
+                self.assertLess(_max_abs_error(out, ref), MAX_ABS_TOL)
 
     def test_gqa_batch_size(self):
         """GQA with batch_size > 1."""
@@ -368,7 +373,7 @@ class TestTritonSdpa(unittest.TestCase):
                 ref = _reference_sdpa(q, k, v)
 
                 self.assertFalse(torch.isnan(out).any())
-                self.assertLess(_max_abs_error(out, ref), 0.05)
+                self.assertLess(_max_abs_error(out, ref), MAX_ABS_TOL)
 
     # ------------------------------------------------------------------
     # Qwen 3.5 MoE configuration
@@ -393,7 +398,9 @@ class TestTritonSdpa(unittest.TestCase):
                 self.assertEqual(out.shape, (B, H_q, Lq, D))
                 self.assertFalse(torch.isnan(out).any())
                 self.assertLess(
-                    _max_abs_error(out, ref), 0.05, f"Qwen config Lq={Lq} Lk={Lk}"
+                    _max_abs_error(out, ref),
+                    MAX_ABS_TOL,
+                    f"Qwen config Lq={Lq} Lk={Lk}",
                 )
 
     # ------------------------------------------------------------------
@@ -427,7 +434,7 @@ class TestTritonSdpa(unittest.TestCase):
         ref = _reference_sdpa(q, k, v, scale=scale)
 
         self.assertFalse(torch.isnan(out).any())
-        self.assertLess(_max_abs_error(out, ref), 0.05)
+        self.assertLess(_max_abs_error(out, ref), MAX_ABS_TOL)
 
     def test_all_masked(self):
         """All-masked block should produce zeros, not NaN."""
@@ -508,7 +515,7 @@ class TestTritonSdpa(unittest.TestCase):
         ref = _reference_sdpa(q, k, v)
 
         self.assertFalse(torch.isnan(out).any())
-        self.assertLess(_max_abs_error(out, ref), 0.05)
+        self.assertLess(_max_abs_error(out, ref), MAX_ABS_TOL)
 
 
 if __name__ == "__main__":

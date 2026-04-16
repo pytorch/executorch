@@ -7,6 +7,5 @@ ml_dtypes == 0.5.1
 flatbuffers == 24.3.25
 tosa-adapter-model-explorer == 0.1.0
 ai-edge-model-explorer >= 0.1.16
-# NOTE: Will be removed when tosa-tools is installed via pypi
-pybind11 == 2.10.4
 pytest-timeout == 2.4.0
+tosa-tools == 2026.2.1

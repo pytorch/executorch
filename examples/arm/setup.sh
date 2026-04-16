@@ -335,36 +335,6 @@ if [[ $is_script_sourced -eq 0 ]]; then
     CMAKE_POLICY_VERSION_MINIMUM=3.5 \
         pip install --no-dependencies -r "$et_dir/backends/arm/requirements-arm-tosa.txt"
 
-    pushd "$root_dir"
-    if [[ ! -d "tosa-tools" ]]; then
-        git clone https://git.gitlab.arm.com/tosa/tosa-tools.git
-    fi
-
-    pushd tosa-tools
-    git checkout v2025.11.2
-
-    if [[ ! -d "reference_model" ]]; then
-        log_step "main" "[error] Missing reference_model directory in tosa-tools repo."
-        exit 1
-    fi
-    if [[ ! -d "serialization" ]]; then
-        log_step "main" "[error] Missing serialization directory in tosa-tools repo."
-        exit 1
-    fi
-
-    export CMAKE_BUILD_PARALLEL_LEVEL="$(get_parallel_jobs)"
-
-    CMAKE_POLICY_VERSION_MINIMUM=3.5 \
-        BUILD_PYBIND=1 \
-        BUILD_TOSA_REFERENCE_MODEL_TESTS=0 \
-        pip install --no-dependencies ./reference_model
-
-    CMAKE_POLICY_VERSION_MINIMUM=3.5 \
-        BUILD_PYBIND=1 \
-        pip install --no-dependencies ./serialization
-    popd
-    popd
-
     if [[ "${enable_vela}" -eq 1 ]]; then
         log_step "deps" "Installing Ethos-U Vela compiler"
         setup_ethos_u_tools
