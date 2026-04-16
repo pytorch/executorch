@@ -39,8 +39,9 @@ add_subdirectory(
   ${CMAKE_CURRENT_BINARY_DIR}/../sampler
 )
 
-set(runner_deps executorch_core extension_module extension_tensor
-                extension_llm_sampler extension_memory_allocator tokenizers::tokenizers
+set(runner_deps
+    executorch_core extension_module extension_tensor extension_llm_sampler
+    extension_memory_allocator tokenizers::tokenizers
 )
 
 # depend on arange_utils

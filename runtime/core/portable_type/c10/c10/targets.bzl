@@ -78,7 +78,13 @@ def define_common_targets():
             "fbsource//xplat/caffe2/c10:c10_headers",
         ] + select({
             "DEFAULT": ["fbsource//xplat/caffe2:generated_aten_config_header"],
-            "ovr_config//build_mode:arvr_mode[enabled]": ["fbsource//xplat/caffe2:ovrsource_aten_Config.h"],
+            "ovr_config//build_mode:arvr_mode[enabled]": select({
+                "DEFAULT": ["fbsource//xplat/caffe2:ovrsource_aten_Config.h"],
+                # ovrsource_aten_Config.h is an oxx_static_library that only
+                # works on OVR-native platforms. On Android, it produces no
+                # outputs, so use the xplat variant instead.
+                "ovr_config//os:android": ["fbsource//xplat/caffe2:generated_aten_config_header"],
+            }),
         }) + get_sleef_deps(),
         fbcode_exported_deps = ([
             "//caffe2:aten-headers-cpu",

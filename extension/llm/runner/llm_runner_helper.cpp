@@ -230,7 +230,10 @@ std::unique_ptr<TextLLMRunner> create_text_llm_runner(
   uint32_t max_cached_memory_size_bytes_ = 1024 * 1024 * 10; // 10MB
   if (data_files.size() > 0) {
     module = std::make_unique<Module>(
-        model_path, data_files, load_mode, std::move(event_tracer),
+        model_path,
+        data_files,
+        load_mode,
+        std::move(event_tracer),
         nullptr, // memory allocator
         std::make_unique<
             executorch::extension::CPUCachingAllocator>( // temp memory
