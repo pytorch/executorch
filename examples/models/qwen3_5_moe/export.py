@@ -81,65 +81,16 @@ def _prepare_and_quantize_metal(model, config, args):
     if args.qlinear:
         quantize_experts_metal(model, config, args.qlinear_group_size)
 
-    # Untie lm_head/embedding for independent quantization
-    if model.lm_head.weight.data_ptr() == model.embed_tokens.weight.data_ptr():
-        model.lm_head.weight = nn.Parameter(model.embed_tokens.weight.clone())
-
-    # Quantize non-expert layers with fpa4w (Metal-compatible, no CUDA needed).
-    # Custom filter skips shared_expert_gate (N=1) which violates fpa4w's
-    # N%4==0 constraint during prefill (M>1).
     if args.qlinear:
-        import torchao.experimental.ops.mps  # noqa: F401
-        from torchao.experimental.quant_api import UIntxWeightOnlyConfig
-        from torchao.quantization.quant_api import quantize_
-
-        fpa4w_config = UIntxWeightOnlyConfig(
-            group_size=args.qlinear_group_size,
-            bitwidth=4,
-            uintx_choose_qparams_algorithm="hqq",
-        )
-
-        def _fpa4w_filter(mod, fqn):
-            if not isinstance(mod, nn.Linear):
-                return False
-            n, k = mod.weight.shape
-            if k % args.qlinear_group_size != 0:
-                return False
-            if n < 4:
-                return False
-            return True
-
-        for i, layer in enumerate(model.layers):
-            layer.to(dtype=torch.bfloat16)
-            quantize_(layer, fpa4w_config, filter_fn=_fpa4w_filter)
-            print(
-                f"  Quantized layer {i + 1}/{config.num_hidden_layers} (fpa4w)",
-                end="\r",
-            )
-        print()
-
-        # Quantize lm_head
-        print("Quantizing lm_head (fpa4w)...")
         from executorch.extension.llm.export.quantize import quantize_model_
 
-        model.lm_head.to(dtype=torch.bfloat16)
-        wrapper = nn.ModuleDict({"lm_head": model.lm_head})
+        # skip_incompatible_shapes skips shared_expert_gate (N=1, N%4!=0)
         quantize_model_(
-            wrapper,
-            qlinear_config="fpa4w",
+            model,
+            qlinear_config=args.qlinear,
             qlinear_group_size=args.qlinear_group_size,
+            skip_incompatible_shapes=True,
         )
-        model.lm_head = wrapper.lm_head
-
-    # Quantize embedding
-    if args.qembedding:
-        from executorch.extension.llm.export.quantize import quantize_model_
-
-        print(f"Quantizing embeddings ({args.qembedding})...")
-        model.embed_tokens.to(dtype=torch.bfloat16)
-        quantize_model_(model, qembedding_config=args.qembedding)
-
-    model.norm.to(dtype=torch.bfloat16)
 
     _materialize_buffers(model, config)
     metal_source_transformations(model, config=config)
@@ -225,7 +176,7 @@ def load_and_quantize(args):  # noqa: C901
 
     elif backend == "metal":
         if args.prequantized:
-            return load_prequantized_model(args.prequantized, args.max_seq_len)
+            raise ValueError("Metal backend does not support --prequantized.")
         _prepare_and_quantize_metal(model, config, args)
 
     elif backend == "cuda":
@@ -911,7 +862,7 @@ def main():  # noqa: C901
     parser.add_argument(
         "--qlinear",
         default=None,
-        choices=["4w", "8w", "8da4w", "8da8w"],
+        choices=["4w", "8w", "8da4w", "8da8w", "fpa4w"],
         help="Quantize linear layers.",
     )
     parser.add_argument(
@@ -984,6 +935,9 @@ def main():  # noqa: C901
     if args.backend == "metal":
         if args.turboquant:
             parser.error("--turboquant is not supported with --backend metal")
+
+    if args.qlinear == "fpa4w" and args.backend != "metal":
+        parser.error("--qlinear=fpa4w can only be used with --backend=metal")
 
     model, config = load_and_quantize(args)
 
