@@ -56,6 +56,10 @@ signature = "EthosUPartitioner.ops_to_not_decompose(self, ep: torch.export.expor
 kind = "function"
 signature = "EthosUPartitioner.partition(self, exported_program: torch.export.exported_program.ExportedProgram) -> executorch.exir.backend.partitioner.PartitionResult"
 
+[python.EthosUPartitioner.register_custom_partition_op]
+kind = "function"
+signature = "EthosUPartitioner.register_custom_partition_op(self, op: torch._ops.OpOverload) -> None"
+
 [python.EthosUQuantizer]
 kind = "class"
 signature = "EthosUQuantizer(compile_spec: 'EthosUCompileSpec', use_composable_quantizer: 'bool' = False) -> 'None'"
@@ -135,6 +139,10 @@ signature = "VgfPartitioner.ops_to_not_decompose(self, ep: torch.export.exported
 [python.VgfPartitioner.partition]
 kind = "function"
 signature = "VgfPartitioner.partition(self, exported_program: torch.export.exported_program.ExportedProgram) -> executorch.exir.backend.partitioner.PartitionResult"
+
+[python.VgfPartitioner.register_custom_partition_op]
+kind = "function"
+signature = "VgfPartitioner.register_custom_partition_op(self, op: torch._ops.OpOverload) -> None"
 
 [python.VgfQuantizer]
 kind = "class"
