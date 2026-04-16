@@ -4004,6 +4004,20 @@ def _int_input_fn(low: int = -100, high: int = 100):
     return fn
 
 
+def _inf_input_fn():
+    """Return a callable(shape, dtype) that generates inputs with some inf values."""
+
+    def fn(shape, dtype):
+        x = torch.randn(shape, dtype=dtype)
+        mask_pos = torch.rand(shape) > 0.8
+        mask_neg = torch.rand(shape) > 0.9
+        x[mask_pos] = float("inf")
+        x[mask_neg] = float("-inf")
+        return (x,)
+
+    return fn
+
+
 # Standard shape and dtype configs used by unary tests.
 _SHAPES_3 = [(16,), (4, 4), (2, 3, 4)]
 _SHAPES_2 = [(16,), (4, 4)]
@@ -4103,6 +4117,7 @@ _UNARY_OP_TESTS = [
     # math
     {"op_name": "rsqrt",   "op_fn": torch.rsqrt,   "shapes": [(2, 3, 4), (10,), (4, 8), (2, 8, 16), (1, 64)],     "dtypes": [torch.float32], "input_fn": _input_fn(uniform=True, offset=0.1)},
     {"op_name": "clone",   "op_fn": torch.clone,   "shapes": [(2, 3, 4), (8, 8), (16,)], "dtypes": [torch.float32]},
+    {"op_name": "isinf",   "op_fn": torch.isinf,   "shapes": _SHAPES_3, "input_fn": _inf_input_fn()},
 ]
 # fmt: on
 
