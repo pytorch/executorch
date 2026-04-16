@@ -32,6 +32,7 @@ from executorch.backends.qualcomm._passes import (
     DecomposeMaxPool3d,
     DecomposeMinMaxDim,
     DecomposeReciprocal,
+    DecomposeRemainder,
     DecomposeRoll,
     DecomposeSilu,
     DecomposeThreshold,
@@ -106,6 +107,7 @@ def get_capture_program_passes():
         (DecomposeLogVariants, True),
         (DecomposeMaxPool3d, True),
         (DecomposeMinMaxDim, True),
+        (DecomposeRemainder, True),
         (DecomposeTrunc, True),
         (ExpandBroadcastTensorShape, True),
         (FixedLinearKeepDim, True),
@@ -239,6 +241,7 @@ class QnnPassManager(PassManager):
         # Decompose Reciprocal into Div for these 2 backend
         # TODO: Skip this pass for CPU backend (Dependency: Backend-aware passes manager)
         self.add_pass(DecomposeReciprocal())
+        self.add_pass(DecomposeRemainder())
         self.add_pass(DecomposeLinalgVectorNorm(quantization_capture=True))
         self.add_pass(DecomposeLogVariants())
         self.add_pass(ReplaceInfValues())
