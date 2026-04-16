@@ -4063,6 +4063,19 @@ def _make_unary_op_test(
     return _Test
 
 
+def _nan_input_fn():
+    """Return a callable(shape, dtype) that generates inputs with some NaN values."""
+
+    def fn(shape, dtype):
+        x = torch.randn(shape, dtype=dtype)
+        # Insert some NaN values
+        mask = torch.rand(shape) > 0.7
+        x[mask] = float("nan")
+        return (x,)
+
+    return fn
+
+
 # fmt: off
 # Each entry is a dict with required keys "op_name" and "op_fn".
 # Optional keys: "shapes" (default _SHAPES_2), "dtypes" (default _UNARY_DTYPES),
@@ -4095,6 +4108,7 @@ _UNARY_OP_TESTS = [
     {"op_name": "abs",        "op_fn": torch.abs},
     {"op_name": "neg",        "op_fn": torch.neg},
     {"op_name": "logical_not","op_fn": torch.logical_not, "shapes": [(2, 3, 4), (10,), (4, 8)], "dtypes": [torch.bool], "input_fn": _bool_input_fn()},
+    {"op_name": "isnan",     "op_fn": torch.isnan,     "shapes": _SHAPES_3, "dtypes": [torch.float32], "input_fn": _nan_input_fn()},
     # activations
     {"op_name": "relu",    "op_fn": torch.relu,    "shapes": [(2, 3, 4), (10,), (4, 8), (2, 8, 16), (1, 128, 64)], "dtypes": [torch.float32], "input_fn": _input_fn(scale=2, offset=-1)},
     {"op_name": "sigmoid", "op_fn": torch.sigmoid, "shapes": [(2, 3, 4), (10,), (4, 8), (2, 8, 16), (1, 1, 128)],  "dtypes": [torch.float32], "input_fn": _input_fn(scale=2)},

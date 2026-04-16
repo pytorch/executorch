@@ -414,6 +414,28 @@ def _make_unary_handler(node_cls: Any, op_name: str):
     return handler
 
 
+@REGISTRY.register(target=[torch.ops.aten.isnan.default])
+def _isnan_handler(P: MLXProgramBuilder, n: Node) -> Slot:
+    """Handle aten.isnan - check for NaN values element-wise.
+
+    isnan(x) is equivalent to x != x (NaN is the only value not equal to itself).
+    """
+    args = P.args(n)
+    require_args(args, 1, 1, "aten.isnan")
+    require_kwargs(P.kwargs(n), set(), "aten.isnan")
+    x = args[0]
+
+    out = P.make_or_get_slot(n)
+    P.emit(
+        NotEqualNode(
+            a=P.slot_to_tid(x),
+            b=P.slot_to_tid(x),
+            out=P.slot_to_tid(out),
+        )
+    )
+    return out
+
+
 for _target, _node_cls, _op_name in _UNARY_OPS:
     REGISTRY.register(target=[_target])(_make_unary_handler(_node_cls, _op_name))
 
