@@ -598,8 +598,10 @@ class ExecuTorchLlmJni : public facebook::jni::HybridClass<ExecuTorchLlmJni> {
           Error,
           "ExecuTorchLlmJni::load() called but runner_ is null. "
           "The model runner was not created or failed to initialize due to a "
-          "previous configuration or initialization error.");
-      return static_cast<jint>(Error::InvalidArgument);
+          "previous configuration or initialization error. "
+          "Model type category: %d.",
+          model_type_category_);
+      return static_cast<jint>(Error::InvalidState);
     }
     const auto load_result = static_cast<jint>(runner_->load());
     if (load_result != static_cast<jint>(Error::Ok)) {
