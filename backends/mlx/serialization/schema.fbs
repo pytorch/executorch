@@ -981,6 +981,12 @@ table MetalKernelNode {
     init_value: float = null;
 }
 
+table BitwiseXorNode {
+    a: Tid;
+    b: Tid;
+    out: Tid;
+}
+
 // =============================================================================
 // Union of all op types
 // =============================================================================
@@ -1113,7 +1119,8 @@ union OpNode {
     GatherMmNode,
     GatherQmmNode,
     ScanNode,
-    MetalKernelNode
+    MetalKernelNode,
+    BitwiseXorNode
     // BC: Add new op nodes here (append only)
 }
 
