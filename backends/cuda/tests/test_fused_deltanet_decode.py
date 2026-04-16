@@ -112,28 +112,35 @@ class TestFusedDeltanetDecode(unittest.TestCase):
         cls.fused_fn = _import_fused_deltanet_decode()
         torch.manual_seed(42)
 
-        cls.A_log = torch.log(
-            torch.empty(NUM_V_HEADS, device="cuda").uniform_(0.5, 8)
-        )
+        cls.A_log = torch.log(torch.empty(NUM_V_HEADS, device="cuda").uniform_(0.5, 8))
         cls.neg_A_exp = -torch.exp(cls.A_log).float()
-        cls.dt_bias = torch.ones(
-            NUM_V_HEADS, device="cuda", dtype=torch.float32
-        )
+        cls.dt_bias = torch.ones(NUM_V_HEADS, device="cuda", dtype=torch.float32)
 
     def _run_fused(self, qkv, alpha, beta_raw, state):
         """Run fused kernel and return (output, new_state)."""
         output, new_state = torch.ops.triton.fused_deltanet_decode(
-            qkv, alpha, beta_raw, self.A_log, self.dt_bias, state,
+            qkv,
+            alpha,
+            beta_raw,
+            self.A_log,
+            self.dt_bias,
+            state,
         )
         return output, new_state
 
     def _run_reference(self, qkv, alpha, beta_raw, state):
         """Run reference and return (output, new_state)."""
         return _reference_deltanet_decode(
-            qkv, alpha, beta_raw,
-            self.neg_A_exp, self.dt_bias,
+            qkv,
+            alpha,
+            beta_raw,
+            self.neg_A_exp,
+            self.dt_bias,
             state,
-            NUM_K_HEADS, NUM_V_HEADS, HEAD_K_DIM, HEAD_V_DIM,
+            NUM_K_HEADS,
+            NUM_V_HEADS,
+            HEAD_K_DIM,
+            HEAD_V_DIM,
         )
 
     # ------------------------------------------------------------------
@@ -149,17 +156,27 @@ class TestFusedDeltanetDecode(unittest.TestCase):
         beta_raw = torch.randn(B, NUM_V_HEADS, device="cuda", dtype=torch.float32)
         state = (
             torch.randn(
-                B, NUM_V_HEADS, HEAD_K_DIM, HEAD_V_DIM,
-                device="cuda", dtype=torch.bfloat16,
+                B,
+                NUM_V_HEADS,
+                HEAD_K_DIM,
+                HEAD_V_DIM,
+                device="cuda",
+                dtype=torch.bfloat16,
             )
             * 0.1
         )
 
         ref_out, ref_state = self._run_reference(
-            qkv.clone(), alpha.clone(), beta_raw.clone(), state.clone(),
+            qkv.clone(),
+            alpha.clone(),
+            beta_raw.clone(),
+            state.clone(),
         )
         fused_out, fused_state = self._run_fused(
-            qkv.clone(), alpha.clone(), beta_raw.clone(), state.clone(),
+            qkv.clone(),
+            alpha.clone(),
+            beta_raw.clone(),
+            state.clone(),
         )
 
         self.assertLess(
@@ -174,36 +191,46 @@ class TestFusedDeltanetDecode(unittest.TestCase):
         for B in [2, 4]:
             with self.subTest(B=B):
                 torch.manual_seed(42)
-                qkv = torch.randn(
-                    B, CONV_DIM, device="cuda", dtype=torch.bfloat16
-                ) * 0.1
-                alpha = torch.randn(
-                    B, NUM_V_HEADS, device="cuda", dtype=torch.float32
+                qkv = (
+                    torch.randn(B, CONV_DIM, device="cuda", dtype=torch.bfloat16) * 0.1
                 )
+                alpha = torch.randn(B, NUM_V_HEADS, device="cuda", dtype=torch.float32)
                 beta_raw = torch.randn(
                     B, NUM_V_HEADS, device="cuda", dtype=torch.float32
                 )
                 state = (
                     torch.randn(
-                        B, NUM_V_HEADS, HEAD_K_DIM, HEAD_V_DIM,
-                        device="cuda", dtype=torch.bfloat16,
+                        B,
+                        NUM_V_HEADS,
+                        HEAD_K_DIM,
+                        HEAD_V_DIM,
+                        device="cuda",
+                        dtype=torch.bfloat16,
                     )
                     * 0.1
                 )
 
                 ref_out, ref_state = self._run_reference(
-                    qkv.clone(), alpha.clone(), beta_raw.clone(), state.clone(),
+                    qkv.clone(),
+                    alpha.clone(),
+                    beta_raw.clone(),
+                    state.clone(),
                 )
                 fused_out, fused_state = self._run_fused(
-                    qkv.clone(), alpha.clone(), beta_raw.clone(), state.clone(),
+                    qkv.clone(),
+                    alpha.clone(),
+                    beta_raw.clone(),
+                    state.clone(),
                 )
 
                 self.assertLess(
-                    _max_abs_error(fused_out, ref_out), MAX_ABS_TOL,
+                    _max_abs_error(fused_out, ref_out),
+                    MAX_ABS_TOL,
                     f"B={B} output mismatch",
                 )
                 self.assertLess(
-                    _max_abs_error(fused_state, ref_state), MAX_ABS_TOL,
+                    _max_abs_error(fused_state, ref_state),
+                    MAX_ABS_TOL,
                     f"B={B} state mismatch",
                 )
 
@@ -212,37 +239,43 @@ class TestFusedDeltanetDecode(unittest.TestCase):
         torch.manual_seed(42)
         state_ref = (
             torch.randn(
-                1, NUM_V_HEADS, HEAD_K_DIM, HEAD_V_DIM,
-                device="cuda", dtype=torch.bfloat16,
+                1,
+                NUM_V_HEADS,
+                HEAD_K_DIM,
+                HEAD_V_DIM,
+                device="cuda",
+                dtype=torch.bfloat16,
             )
             * 0.01
         )
         state_fused = state_ref.clone()
 
-        for step in range(10):
-            qkv = torch.randn(
-                1, CONV_DIM, device="cuda", dtype=torch.bfloat16
-            ) * 0.1
-            alpha = torch.randn(
-                1, NUM_V_HEADS, device="cuda", dtype=torch.float32
-            )
-            beta_raw = torch.randn(
-                1, NUM_V_HEADS, device="cuda", dtype=torch.float32
-            )
+        for _ in range(10):
+            qkv = torch.randn(1, CONV_DIM, device="cuda", dtype=torch.bfloat16) * 0.1
+            alpha = torch.randn(1, NUM_V_HEADS, device="cuda", dtype=torch.float32)
+            beta_raw = torch.randn(1, NUM_V_HEADS, device="cuda", dtype=torch.float32)
 
             ref_out, state_ref = self._run_reference(
-                qkv.clone(), alpha.clone(), beta_raw.clone(), state_ref,
+                qkv.clone(),
+                alpha.clone(),
+                beta_raw.clone(),
+                state_ref,
             )
             fused_out, state_fused = self._run_fused(
-                qkv.clone(), alpha.clone(), beta_raw.clone(), state_fused,
+                qkv.clone(),
+                alpha.clone(),
+                beta_raw.clone(),
+                state_fused,
             )
 
         self.assertLess(
-            _max_abs_error(fused_out, ref_out), MULTISTEP_TOL,
+            _max_abs_error(fused_out, ref_out),
+            MULTISTEP_TOL,
             "multi-step output drift",
         )
         self.assertLess(
-            _max_abs_error(state_fused, state_ref), MULTISTEP_TOL,
+            _max_abs_error(state_fused, state_ref),
+            MULTISTEP_TOL,
             "multi-step state drift",
         )
 
@@ -255,8 +288,12 @@ class TestFusedDeltanetDecode(unittest.TestCase):
         beta_raw = torch.randn(B, NUM_V_HEADS, device="cuda", dtype=torch.float32)
         state = (
             torch.randn(
-                B, NUM_V_HEADS, HEAD_K_DIM, HEAD_V_DIM,
-                device="cuda", dtype=torch.bfloat16,
+                B,
+                NUM_V_HEADS,
+                HEAD_K_DIM,
+                HEAD_V_DIM,
+                device="cuda",
+                dtype=torch.bfloat16,
             )
             * 0.1
         )
@@ -264,9 +301,7 @@ class TestFusedDeltanetDecode(unittest.TestCase):
 
         _, _ = self._run_fused(qkv, alpha, beta_raw, state)
 
-        self.assertTrue(
-            torch.equal(state, state_copy), "input state was mutated"
-        )
+        self.assertTrue(torch.equal(state, state_copy), "input state was mutated")
 
     # ------------------------------------------------------------------
     # CUDA Graph compatibility
@@ -281,8 +316,12 @@ class TestFusedDeltanetDecode(unittest.TestCase):
         beta_raw = torch.randn(B, NUM_V_HEADS, device="cuda", dtype=torch.float32)
         state = (
             torch.randn(
-                B, NUM_V_HEADS, HEAD_K_DIM, HEAD_V_DIM,
-                device="cuda", dtype=torch.bfloat16,
+                B,
+                NUM_V_HEADS,
+                HEAD_K_DIM,
+                HEAD_V_DIM,
+                device="cuda",
+                dtype=torch.bfloat16,
             )
             * 0.1
         )
@@ -301,11 +340,15 @@ class TestFusedDeltanetDecode(unittest.TestCase):
 
         # Compare with reference
         ref_out, _ = self._run_reference(
-            qkv.clone(), alpha.clone(), beta_raw.clone(), state.clone(),
+            qkv.clone(),
+            alpha.clone(),
+            beta_raw.clone(),
+            state.clone(),
         )
         self.assertFalse(torch.isnan(out_cg).any(), "NaN in CUDA graph output")
         self.assertLess(
-            _max_abs_error(out_cg, ref_out), MAX_ABS_TOL,
+            _max_abs_error(out_cg, ref_out),
+            MAX_ABS_TOL,
             "CUDA graph output mismatch",
         )
 
