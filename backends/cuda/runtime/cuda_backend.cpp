@@ -691,13 +691,8 @@ class ET_EXPERIMENTAL CudaBackend final
         handle->cuda_graph_state.static_input_ptrs.push_back(static_ptr);
         handle->cuda_graph_state.static_input_nbytes.push_back(nbytes);
 
-        gpu_inputs[i] = new SlimTensor(slim::from_blob(
-            static_ptr,
-            slim::makeArrayRef(sizes_vec),
-            slim::makeArrayRef(strides_vec),
-            static_cast<slim::c10::ScalarType>(cpu_tensor->scalar_type()),
-            DEFAULT_CUDA_DEVICE,
-            0));
+        gpu_inputs[i] = make_slimtensor_from_blob_with_etensor_metadata(
+            static_ptr, cpu_tensor);
         continue;
       }
 
@@ -709,19 +704,8 @@ class ET_EXPERIMENTAL CudaBackend final
         cudaError_t err = cudaPointerGetAttributes(&attributes, data_ptr);
         if (err == cudaSuccess && attributes.type == cudaMemoryTypeDevice) {
           // Data is already on GPU - wrap it directly without copy
-          auto sizes = cpu_tensor->sizes();
-          auto strides = cpu_tensor->strides();
-          std::vector<int64_t> sizes_vec(sizes.begin(), sizes.end());
-          std::vector<int64_t> strides_vec(strides.begin(), strides.end());
-
-          gpu_inputs[i] = new SlimTensor(slim::from_blob(
-              const_cast<void*>(data_ptr),
-              slim::makeArrayRef(sizes_vec),
-              slim::makeArrayRef(strides_vec),
-              static_cast<slim::c10::ScalarType>(cpu_tensor->scalar_type()),
-              DEFAULT_CUDA_DEVICE,
-              0 // storage_offset
-              ));
+          gpu_inputs[i] = make_slimtensor_from_blob_with_etensor_metadata(
+              const_cast<void*>(data_ptr), cpu_tensor);
 
           continue;
         }
