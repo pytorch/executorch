@@ -26,7 +26,6 @@ UNSUPPORTED_DTYPES = (
     torch.cfloat,
     torch.complex128,
     torch.cdouble,
-    torch.uint8,
     torch.int64,
     torch.long,
 )
@@ -100,6 +99,8 @@ def map_dtype(data_type: torch.dtype) -> Any:
         torch.half: ts.DType.FP16,
         torch.bfloat16: ts.DType.BF16,
         torch.int8: ts.DType.INT8,
+        # TOSA uses signless int8; unsigned semantics are expressed via RESCALE.
+        torch.uint8: ts.DType.INT8,
         torch.int16: ts.DType.INT16,
         torch.short: ts.DType.INT16,
         torch.int32: ts.DType.INT32,
