@@ -6,6 +6,10 @@
 name: Build CMSIS Pack
 
 on:
+  schedule:
+    # Nightly at 03:00 UTC, staggered after nightly.yml (02:00) so the
+    # shared runner pool isn't hit by both at the same minute.
+    - cron: 0 3 * * *
   push:
     branches:
       - main
@@ -80,18 +84,20 @@ jobs:
         echo "::endgroup::"
 
         echo "::group::Determine pack version"
-        # Derive version from tag, input override, or version.txt
+        # Derive version from tag, input override, schedule (nightly), or version.txt
+        BASE_VER="$(cat version.txt | sed 's/a0$//')"
         if [[ -n "${{ inputs.version_override || '' }}" ]]; then
           PACK_VERSION="${{ inputs.version_override }}"
         elif [[ "${GITHUB_REF}" == refs/tags/v* ]]; then
           # Strip leading 'v' and any -rc suffix for release tags
           PACK_VERSION="${GITHUB_REF#refs/tags/v}"
+        elif [[ "${{ github.event_name }}" == "schedule" ]]; then
+          PACK_VERSION="${BASE_VER}-nightly-$(date -u +%Y%m%d)"
         else
-          # Dev version from version.txt, strip trailing a0
-          PACK_VERSION="$(cat version.txt | sed 's/a0$//')-dev"
+          PACK_VERSION="${BASE_VER}-dev"
         fi
         echo "Pack version: ${PACK_VERSION}"
-        echo "::endgroup::"++++++++++++++++++++++++++++++++++++++++++++++++++0  
+        echo "::endgroup::"
 
         echo "::group::Build CMSIS Pack"
         backends/arm/scripts/cmsis_pack/build_pack.sh \
@@ -110,24 +116,110 @@ jobs:
         echo "Pack file: ${PACK_FILE}"
         echo "Pack size: $(du -h "${PACK_FILE}" | cut -f1)"
 
-        # Basic validation: check it's a valid zip with expected files
-        python3 -c "
-        import zipfile, sys
-        with zipfile.ZipFile('${PACK_FILE}', 'r') as z:
+        python3 - <<PYEOF
+        import sys, zipfile, xml.etree.ElementTree as ET
+        pack_file = "${PACK_FILE}"
+        with zipfile.ZipFile(pack_file, 'r') as z:
             names = z.namelist()
-            assert any(n.endswith('.pdsc') for n in names), 'No PDSC file found in pack'
+            names_set = set(names)
+
+            # Presence
+            pdsc_names = [n for n in names if n.endswith('.pdsc')]
+            assert pdsc_names, 'No PDSC file found in pack'
             assert any('runtime' in n for n in names), 'No runtime sources found in pack'
             assert any('RegisterAllKernels' in n for n in names), 'No RegisterAllKernels.cpp found'
-            print(f'Pack contains {len(names)} files')
-            # Print component summary
-            pdsc = [n for n in names if n.endswith('.pdsc')][0]
+
+            # No duplicates
+            if len(names) != len(names_set):
+                dupes = sorted({n for n in names if names.count(n) > 1})
+                print(f'ERROR: duplicate entries in pack: {dupes[:5]}')
+                sys.exit(1)
+
+            # No Python source leaked in
+            py = [n for n in names if n.endswith('.py')]
+            assert not py, f'Python files leaked into pack: {py[:5]}'
+
+            # PDSC must be well-formed XML
+            pdsc = pdsc_names[0]
             content = z.read(pdsc).decode()
+            try:
+                root = ET.fromstring(content)
+            except ET.ParseError as e:
+                print(f'ERROR: PDSC is not well-formed XML: {e}')
+                sys.exit(1)
+
+            # Every <file name="..."/> in the PDSC must resolve to something
+            # present in the archive (either an exact entry or a directory
+            # prefix covering one or more entries).
+            def exists(ref):
+                if ref in names_set:
+                    return True
+                prefix = ref if ref.endswith('/') else ref + '/'
+                return any(n.startswith(prefix) for n in names)
+
+            missing = [f.attrib['name'] for f in root.iter('file')
+                       if 'name' in f.attrib and not exists(f.attrib['name'])]
+            if missing:
+                print(f'ERROR: {len(missing)} PDSC file refs missing from archive')
+                for m in missing[:10]:
+                    print(f'  {m}')
+                sys.exit(1)
+
+            size_kb = sum(i.file_size for i in z.infolist()) / 1024
             op_count = content.count('Csub="Portable')
             q_count = content.count('Csub="Quantized')
+            print(f'Pack: {len(names)} files, {size_kb:.0f} KiB uncompressed')
             print(f'Portable operator components: {op_count}')
             print(f'Quantized operator components: {q_count}')
         print('Pack validation passed')
-        "
+        PYEOF
+        echo "::endgroup::"
+
+        echo "::group::Regression: consume pack with arm-none-eabi toolchain"
+        # Extract the pack to a clean directory and smoke-build against it
+        # using the same Cortex-M toolchain the pack is meant to target. This
+        # catches pack layout / header graph / operator source regressions
+        # without depending on the in-tree ExecuTorch source layout.
+        EXTRACT_DIR="$(pwd)/pack-extracted"
+        rm -rf "${EXTRACT_DIR}"
+        mkdir -p "${EXTRACT_DIR}"
+        unzip -q "${PACK_FILE}" -d "${EXTRACT_DIR}"
+
+        SMOKE_SRC="$(pwd)/pack_smoke.cpp"
+        cat > "${SMOKE_SRC}" <<'CPPEOF'
+        #include <executorch/runtime/core/error.h>
+        #include <executorch/runtime/core/result.h>
+        #include <executorch/runtime/core/exec_aten/exec_aten.h>
+        #include <executorch/runtime/executor/method.h>
+        #include <executorch/runtime/executor/program.h>
+        #include <executorch/runtime/platform/runtime.h>
+        int main() { return 0; }
+        CPPEOF
+
+        ARM_CXXFLAGS=(
+          -mcpu=cortex-m55 -mthumb
+          -std=gnu++17
+          -fno-exceptions -fno-rtti
+          -ffreestanding
+          -Wall
+        )
+
+        echo "-- Compile test: pack public headers"
+        arm-none-eabi-g++ "${ARM_CXXFLAGS[@]}" \
+          -I "${EXTRACT_DIR}/include" \
+          -c "${SMOKE_SRC}" -o /tmp/pack_smoke.o
+
+        echo "-- Compile test: pack operator source (kernels/portable/op_add.cpp)"
+        # op_* files live under src/kernels/portable; the pack lays sources
+        # out as src/... and headers as include/... so add both as include
+        # roots (operator .cpp files may include sibling headers from src/).
+        arm-none-eabi-g++ "${ARM_CXXFLAGS[@]}" \
+          -I "${EXTRACT_DIR}/include" \
+          -I "${EXTRACT_DIR}/src" \
+          -c "${EXTRACT_DIR}/src/kernels/portable/op_add.cpp" \
+          -o /tmp/pack_op_add.o
+
+        echo "Pack consumption smoke test passed"
         echo "::endgroup::"
 
   # Publish pack as a release asset when triggered by a release tag
