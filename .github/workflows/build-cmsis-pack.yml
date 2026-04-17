@@ -10,15 +10,15 @@ on:
     # Nightly at 03:00 UTC, staggered after nightly.yml (02:00) so the
     # shared runner pool isn't hit by both at the same minute.
     - cron: 0 3 * * *
+  release:
+    # Build (and, for non-prerelease, publish) the pack when a GitHub
+    # Release is created. The tag the release points at drives the pack
+    # version via GITHUB_REF below.
+    types: [published]
   push:
     branches:
       - main
       - release/*
-    tags:
-      # Release candidate tags
-      - v[0-9]+.[0-9]+.[0-9]+-rc[0-9]+
-      # Release tags
-      - v[0-9]+.[0-9]+.[0-9]+
     paths:
       - .github/workflows/build-cmsis-pack.yml
       - backends/arm/cmsis_pack/**
@@ -222,9 +222,11 @@ jobs:
         echo "Pack consumption smoke test passed"
         echo "::endgroup::"
 
-  # Publish pack as a release asset when triggered by a release tag
+  # Attach the pack to the GitHub Release when a non-prerelease release is
+  # published. Prereleases still build + validate via the release trigger
+  # but are not published.
   publish-cmsis-pack:
-    if: startsWith(github.ref, 'refs/tags/v') && !contains(github.ref, '-rc')
+    if: github.event_name == 'release' && !github.event.release.prerelease
     needs: build-cmsis-pack
     runs-on: ubuntu-latest
     permissions:
