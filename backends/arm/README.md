@@ -162,7 +162,7 @@ scp -P 2222 arm_test/cmake-out/executor_runner root@127.0.0.1:/tmp/
 Create a PTE file:
 
 ```
-python3 -m examples.arm.aot_arm_compiler \
+python3 -m backends.arm.scripts.aot_arm_compiler \
   --model_name examples/arm/example_modules/add.py \
   --delegate \
   --quantize \
