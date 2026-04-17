@@ -27,6 +27,10 @@ pip install -e . --no-build-isolation  # subsequent installs
 
 Details: [docs/source/using-executorch-building-from-source.md](docs/source/using-executorch-building-from-source.md)
 
+## Long-running commands
+
+ExecuTorch model exports and large builds (CMake configure+build of LLM runners, AOT lowering, NeMo restore, big HF downloads) can hang silently and may not surface an exit code through pipes like `tail`. For those long jobs only, poll progress every ~120s — check the process state (`ps`, `py-spy dump`), output file growth, and network/file activity — rather than waiting indefinitely on the original Bash invocation. Avoid wrapping with `| tail` for long jobs since it buffers and hides progress; tee to a log file or run unwrapped. Normal short commands don't need this — run them directly and trust the exit code.
+
 ## Naming
 
 - Use "executorch" (lowercase) or "ExecuTorch" (camel case)
