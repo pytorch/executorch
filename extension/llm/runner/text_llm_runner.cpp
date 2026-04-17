@@ -109,6 +109,8 @@ Error TextLLMRunner::generate(
 
   stats_->inference_start_ms = time_in_ms();
 
+  // Get max_seq_len for single prefill chunk limit
+  int64_t max_seq_len = metadata_.at(kMaxSeqLen);
   int64_t max_context_len = metadata_.at(kMaxContextLen);
 
   uint64_t cur_token = 0;
@@ -137,13 +139,26 @@ Error TextLLMRunner::generate(
         InvalidArgument,
         "Expected at least 1 prompt token");
     ET_CHECK_OR_RETURN_ERROR(
-        pos_ + num_prompt_tokens < max_context_len,
+        num_prompt_tokens <= max_seq_len,
         InvalidArgument,
-        "pos_ %" PRId64 " + num_prompt_tokens %d >= max_context_len %" PRId64
-        ", Max seq length exceeded - please increase max seq len value in your export script",
-        pos_,
+        "num_prompt_tokens %d > max_seq_len %" PRId64
+        ", Single prefill chunk too large - please reduce prompt size or increase max_seq_len",
         num_prompt_tokens,
-        max_context_len);
+        max_seq_len);
+    // For non-sliding-window models, also check that we won't exceed
+    // KV cache capacity. Sliding window models (where max_seq_len <
+    // max_context_len) handle position wrapping internally.
+    if (max_seq_len >= max_context_len) {
+      ET_CHECK_OR_RETURN_ERROR(
+          pos_ + num_prompt_tokens < max_context_len,
+          InvalidArgument,
+          "pos_ %" PRId64 " + num_prompt_tokens %d >= max_context_len %" PRId64
+          ", Max seq length exceeded - please increase max seq len value in "
+          "your export script",
+          pos_,
+          num_prompt_tokens,
+          max_context_len);
+    }
 
     // print prompts
     if (config.echo) {
@@ -167,9 +182,11 @@ Error TextLLMRunner::generate(
     prefill_next_token_.reset();
   }
 
-  // Resolve max_new_tokens. pos_ now reflects all occupied positions
-  // (including prompt tokens just prefilled).
-  int max_new_tokens = config.resolve_max_new_tokens(max_context_len, pos_);
+  // For sliding window models, the ring buffer recycles space — pos_ doesn't
+  // represent consumed capacity, so pass 0 to get the full budget.
+  int64_t effective_pos = (max_seq_len < max_context_len) ? 0 : pos_;
+  int max_new_tokens =
+      config.resolve_max_new_tokens(max_context_len, effective_pos);
 
   ET_LOG(
       Info,
