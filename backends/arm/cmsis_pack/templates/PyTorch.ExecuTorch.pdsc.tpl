@@ -47,6 +47,29 @@
       <accept Dcore="Cortex-M55"/>
       <accept Dcore="Cortex-M85"/>
     </condition>
+
+    <condition id="Cortex-A">
+      <description>Cortex-A processor (Linux userspace host)</description>
+      <accept Dcore="Cortex-A5"/>
+      <accept Dcore="Cortex-A7"/>
+      <accept Dcore="Cortex-A9"/>
+      <accept Dcore="Cortex-A15"/>
+      <accept Dcore="Cortex-A17"/>
+      <accept Dcore="Cortex-A32"/>
+      <accept Dcore="Cortex-A35"/>
+      <accept Dcore="Cortex-A53"/>
+      <accept Dcore="Cortex-A55"/>
+      <accept Dcore="Cortex-A57"/>
+      <accept Dcore="Cortex-A65"/>
+      <accept Dcore="Cortex-A72"/>
+      <accept Dcore="Cortex-A73"/>
+      <accept Dcore="Cortex-A75"/>
+      <accept Dcore="Cortex-A76"/>
+      <accept Dcore="Cortex-A77"/>
+      <accept Dcore="Cortex-A78"/>
+      <accept Dcore="Cortex-A510"/>
+      <accept Dcore="Cortex-A710"/>
+    </condition>
     
     <condition id="GCC">
       <description>GNU Compiler</description>
@@ -82,9 +105,16 @@
     </condition>
     
     <condition id="Ethos-U">
-      <description>Ethos-U NPU backend</description>
+      <description>Ethos-U NPU backend (Cortex-M host, bare-metal)</description>
       <require condition="Cortex-M"/>
       <require Cclass="Machine Learning" Cgroup="NPU Support" Csub="Ethos-U Driver"/>
+    </condition>
+
+    <condition id="Ethos-U Linux">
+      <description>Ethos-U NPU backend (Cortex-A host, Linux userspace driver)</description>
+      <require condition="Cortex-A"/>
+      <!-- Linux userspace driver headers (ethosu.hpp, uapi/ethosu.h) are
+           provided by the consumer project, not by this pack. -->
     </condition>
 
     <!-- Operator conditions - each operator requires Kernel Utils -->
@@ -146,18 +176,40 @@
 
     <!-- ==================== Backends ==================== -->
     
-    <!-- Ethos-U Backend -->
+    <!-- Ethos-U Backend (Cortex-M host, bare-metal) -->
+    <!-- Ships only EthosUBackend_Cortex_M.cpp; mutually exclusive with the
+         "Backend EthosU Linux" component below via the Cortex-M/Cortex-A
+         Dcore conditions. The two host TUs define the same platform_*
+         symbols, so they cannot be linked together. -->
     <component Cclass="Machine Learning" Cgroup="ExecuTorch" Csub="Backend EthosU" Cversion="%{RELEASE_VERSION}%" condition="Ethos-U">
-      <description>ExecuTorch Ethos-U NPU Backend - Hardware acceleration for Ethos-U55/U65</description>
+      <description>ExecuTorch Ethos-U NPU Backend - Cortex-M host (bare-metal). Hardware acceleration for Ethos-U55/U65</description>
       <RTE_Components_h>
-        #define RTE_ML_EXECUTORCH_BACKEND_ETHOS_U     /* ExecuTorch Ethos-U Backend */
+        #define RTE_ML_EXECUTORCH_BACKEND_ETHOS_U     /* ExecuTorch Ethos-U Backend (Cortex-M host) */
       </RTE_Components_h>
       <Pre_Include_Global_h>
         #define EXECUTORCH_BUILD_ARM_BAREMETAL 1
         #define ET_USE_ETHOS_U_BACKEND 1
       </Pre_Include_Global_h>
       <files>
-%{ETHOS_U_BACKEND_FILES}%
+%{ETHOS_U_BACKEND_CORTEX_M_FILES}%
+      </files>
+    </component>
+
+    <!-- Ethos-U Backend (Cortex-A host, Linux userspace driver) -->
+    <!-- Ships only EthosUBackend_Cortex_A.cpp. This TU #includes
+         <ethosu.hpp> and <uapi/ethosu.h> from the Linux userspace driver
+         stack, which must be supplied by the consumer project. Selectable
+         only on Cortex-A targets. -->
+    <component Cclass="Machine Learning" Cgroup="ExecuTorch" Csub="Backend EthosU Linux" Cversion="%{RELEASE_VERSION}%" condition="Ethos-U Linux">
+      <description>ExecuTorch Ethos-U NPU Backend - Cortex-A host via Linux userspace driver. Requires ethosu.hpp / uapi/ethosu.h from the consumer project.</description>
+      <RTE_Components_h>
+        #define RTE_ML_EXECUTORCH_BACKEND_ETHOS_U_LINUX     /* ExecuTorch Ethos-U Backend (Cortex-A/Linux host) */
+      </RTE_Components_h>
+      <Pre_Include_Global_h>
+        #define ET_USE_ETHOS_U_BACKEND 1
+      </Pre_Include_Global_h>
+      <files>
+%{ETHOS_U_BACKEND_CORTEX_A_FILES}%
       </files>
     </component>
     

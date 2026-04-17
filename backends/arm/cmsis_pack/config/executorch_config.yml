@@ -135,8 +135,19 @@ source_mapping:
     
   backends_ethos_u:
     path: "backends/arm/runtime/"
-    component: "Backend EthosU"
-    
+    # Ships as two mutually-exclusive components because
+    # EthosUBackend_Cortex_M.cpp and EthosUBackend_Cortex_A.cpp define the
+    # same platform_* symbols and would cause multiple-definition link
+    # errors if selected together. Generator logic in
+    # generate_components.py filters Cortex_A.cpp from the Cortex-M variant
+    # and vice versa; target Dcore conditions make the two mutually
+    # exclusive at project level.
+    components:
+      - name: "Backend EthosU"         # Cortex-M host (bare-metal)
+        exclude_patterns: ["VGF", "Cortex_A"]
+      - name: "Backend EthosU Linux"   # Cortex-A host (Linux userspace driver)
+        exclude_patterns: ["VGF", "Cortex_M"]
+
   backends_cortex_m:
     path: "backends/cortex_m/"
     component: "Backend CortexM"

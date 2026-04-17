@@ -225,16 +225,28 @@ def generate_kernel_utils_files(source_dir: Path) -> str:
     return '\n'.join(files)
 
 
-def generate_backend_files(source_dir: Path, backend: str) -> str:
-    """Generate file list for backend component."""
+def generate_backend_files(
+    source_dir: Path,
+    backend: str,
+    extra_exclude: list = None,
+) -> str:
+    """Generate file list for backend component.
+
+    `extra_exclude` is a list of filename substrings to exclude in addition
+    to the backend's built-in exclusions. Used by the ethos_u backend to
+    produce host-specific component variants (Cortex-M host vs Cortex-A
+    host) — the two host TUs define the same symbols and cannot be shipped
+    together in a single component.
+    """
     files = []
-    
+    extra_exclude = extra_exclude or []
+
     # Try new structure first (src/backends/...), fall back to old (backends/...)
     if (source_dir / "src" / "backends").exists():
         backends_base = source_dir / "src" / "backends"
     else:
         backends_base = source_dir / "backends"
-    
+
     if backend == "ethos_u":
         backend_dir = backends_base / "arm" / "runtime"
         # Exclude VGF* files (Vulkan Graphics Framework) - not supported on bare metal
@@ -244,7 +256,9 @@ def generate_backend_files(source_dir: Path, backend: str) -> str:
         exclude_patterns = []
     else:
         return ""
-        
+
+    exclude_patterns = exclude_patterns + list(extra_exclude)
+
     if backend_dir.exists():
         for cpp_file in sorted(backend_dir.rglob("*.cpp")):
             # Skip excluded patterns
@@ -252,7 +266,7 @@ def generate_backend_files(source_dir: Path, backend: str) -> str:
                 continue
             rel_path = cpp_file.relative_to(source_dir)
             files.append(f'        <file category="sourceCpp" name="{rel_path}"/>')
-    
+
     return '\n'.join(files)
 
 
@@ -284,8 +298,16 @@ def main():
     # Generate kernel utils files
     kernel_utils_files = generate_kernel_utils_files(source_dir)
     
-    # Generate backend files
-    ethos_u_files = generate_backend_files(source_dir, "ethos_u")
+    # Generate backend files.
+    # EthosUBackend_Cortex_M.cpp and EthosUBackend_Cortex_A.cpp define the
+    # same platform_* symbols, so each host variant ships in its own
+    # component and the other host's TU is filtered out.
+    ethos_u_cortex_m_files = generate_backend_files(
+        source_dir, "ethos_u", extra_exclude=["Cortex_A"]
+    )
+    ethos_u_cortex_a_files = generate_backend_files(
+        source_dir, "ethos_u", extra_exclude=["Cortex_M"]
+    )
     cortex_m_files = generate_backend_files(source_dir, "cortex_m")
     
     # Output summary
@@ -322,7 +344,12 @@ def main():
         pdsc = pdsc.replace("%{KERNEL_UTILS_FILES}%", kernel_utils_files)
         pdsc = pdsc.replace("%{PORTABLE_OPERATOR_COMPONENTS}%", result['portable_components'])
         pdsc = pdsc.replace("%{QUANTIZED_OPERATOR_COMPONENTS}%", result['quantized_components'])
-        pdsc = pdsc.replace("%{ETHOS_U_BACKEND_FILES}%", ethos_u_files)
+        pdsc = pdsc.replace(
+            "%{ETHOS_U_BACKEND_CORTEX_M_FILES}%", ethos_u_cortex_m_files
+        )
+        pdsc = pdsc.replace(
+            "%{ETHOS_U_BACKEND_CORTEX_A_FILES}%", ethos_u_cortex_a_files
+        )
         pdsc = pdsc.replace("%{CORTEX_M_BACKEND_FILES}%", cortex_m_files)
         
         with open(args.pdsc_output, 'w') as f:

@@ -40,7 +40,8 @@ backends/arm/
 - **Machine Learning::ExecuTorch::Kernel Utils** — Kernel registration utilities
 - **Machine Learning::ExecuTorch Operators::Portable \*** — Individual portable operators
 - **Machine Learning::ExecuTorch Operators::Quantized \*** — Quantized operators
-- **Machine Learning::ExecuTorch::Backend EthosU** — Ethos-U NPU backend
+- **Machine Learning::ExecuTorch::Backend EthosU** — Ethos-U NPU backend for Cortex-M host (bare-metal)
+- **Machine Learning::ExecuTorch::Backend EthosU Linux** — Ethos-U NPU backend for Cortex-A host (requires Linux userspace ethosu driver headers, supplied by the consumer project; mutually exclusive with the bare-metal variant)
 - **Machine Learning::ExecuTorch::Backend CortexM** — CMSIS-NN optimized backend
 
 ## Building locally
