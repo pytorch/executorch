@@ -15,7 +15,7 @@ import logging
 import math
 import operator
 from operator import neg
-from typing import cast, Dict, Optional, Sequence
+from typing import cast, Dict, Hashable, Optional, Sequence
 
 import torch
 import torch.fx
@@ -26,6 +26,7 @@ from executorch.backends.cadence.aot.pass_utils import (
     get_arg,
     register_cadence_pass,
     RemoveOrReplacePassInterface,
+    SwapOnCostModelPassInterface,
 )
 from executorch.backends.cadence.aot.utils import is_depthwise_conv
 from executorch.backends.transforms.replace_scalar_with_tensor import (
@@ -2613,6 +2614,115 @@ class ReplaceTorchQuantizedEmbeddingWithCadenceQuantizedEmbedding(
         return True
 
 
+@register_cadence_pass(CadencePassAttribute(opt_level=1))
+class SwapDequantQuantAroundVolumePreservingDataMovementOps(SwapOnCostModelPassInterface):
+    """
+    For volume-preserving data movement ops surrounded by dequant inputs and
+    quant outputs with matching quantization parameters, swap the wrappers to
+    the minority side to reduce total quant/dequant op count.
+    """
+
+    @property
+    def targets(self) -> list[EdgeOpOverload]:
+        return [
+            exir_ops.edge.aten.cat.default,
+            exir_ops.edge.aten.clone.default,
+            exir_ops.edge.aten.permute_copy.default,
+            exir_ops.edge.aten.squeeze_copy.dim,
+            exir_ops.edge.aten.squeeze_copy.dims,
+            exir_ops.edge.aten.stack.default,
+            exir_ops.edge.aten.t_copy.default,
+            exir_ops.edge.aten.transpose_copy.int,
+            exir_ops.edge.aten.unsqueeze_copy.default,
+            exir_ops.edge.aten.view_copy.default,
+        ]
+
+    @property
+    def input_to_swap(self) -> EdgeOpOverload:
+        return exir_ops.edge.cadence.dequantize_per_tensor.default
+
+    @property
+    def output_to_swap(self) -> EdgeOpOverload:
+        return exir_ops.edge.cadence.quantize_per_tensor.default
+
+    @property
+    def lossy_inverse(self) -> bool:
+        return True
+
+    def input_wrapper_cost(self, data_node: torch.fx.Node) -> int:
+        """Cost of dequantizing data_node: read quantized + write float."""
+        t = data_node.meta["val"]
+        return t.element_size() * t.numel() + 4 * t.numel()
+
+    def output_wrapper_cost(self, data_node: torch.fx.Node) -> int:
+        """Cost of quantizing data_node: read float + write quantized."""
+        t = data_node.meta["val"]
+        return 4 * t.numel() + t.element_size() * t.numel()
+
+    def subgraph_cost(self, target_node: torch.fx.Node) -> int:
+        """Total bytes moved through the target and its immediate wrappers.
+
+        Checks for both input_to_swap and output_to_swap on both sides,
+        since after a swap the wrapper types on each side are reversed.
+        """
+        input_cost = 0
+        for inp in target_node.all_input_nodes:
+            if inp.target == self.input_to_swap:
+                # Pre-swapped cost comes from this logic
+                input_cost += self.input_wrapper_cost(cast(torch.fx.Node, inp.args[0]))
+            elif inp.target == self.output_to_swap:
+                # Post-swapped cost comes from this logic
+                input_cost += self.output_wrapper_cost(cast(torch.fx.Node, inp.args[0]))
+        # Target op: read all inputs + write output
+        target_cost = 0
+        for inp in target_node.all_input_nodes:
+            t = inp.meta["val"]
+            target_cost += t.element_size() * t.numel()
+        out = target_node.meta["val"]
+        target_cost += out.element_size() * out.numel()
+        # Output wrappers
+        output_cost = 0
+        for user in target_node.users:
+            if user.target == self.output_to_swap:
+                # Pre-swapped cost comes from this logic
+                output_cost += self.output_wrapper_cost(target_node)
+            elif user.target == self.input_to_swap:
+                # Post-swapped cost comes from this logic
+                output_cost += self.input_wrapper_cost(target_node)
+        return input_cost + target_cost + output_cost
+
+    def _quant_key(self, node: torch.fx.Node) -> Hashable:
+        return (
+            get_arg(node, "scale", float),
+            get_arg(node, "zero_point", int),
+            get_arg(node, "quant_min", int),
+            get_arg(node, "quant_max", int),
+            get_arg(node, "dtype", torch.dtype),
+        )
+
+    def input_hash(self, node: torch.fx.Node) -> Hashable:
+        return self._quant_key(node)
+
+    def output_hash(self, node: torch.fx.Node) -> Hashable:
+        return self._quant_key(node)
+
+    def hashes_are_compatible(
+        self, input_hash: Hashable, output_hash: Hashable
+    ) -> bool:
+        return input_hash == output_hash
+
+    def create_inverse_wrapper_args(
+        self,
+        template: torch.fx.Node,
+    ) -> tuple[EdgeOpOverload, tuple, dict]:
+        # dequant template → need a quant; quant template → need a dequant.
+        if template.target == self.input_to_swap:
+            target = self.output_to_swap
+        else:
+            target = self.input_to_swap
+        return (target, template.args[1:], dict(template.kwargs))
+
+
 class CommonReplacePasses:
     passes = [
         ReplaceScalarWithTensorArgPass,
@@ -2682,4 +2792,5 @@ class CadenceReplaceOpsInGraph:
         ReplaceAtenAvgPoolWithCadenceAvgPoolPass,
         ReplaceWhereWithFullArgsWithWhereScalar,
         ReplaceMulTensorWithMulAndFullOpsPass,
+        SwapDequantQuantAroundVolumePreservingDataMovementOps,
     ]
