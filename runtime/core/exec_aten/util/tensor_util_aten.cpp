@@ -120,7 +120,20 @@ bool tensors_have_same_dim_order(
 
 namespace internal {
 
-Error share_tensor_data(const at::Tensor& t_dst, const at::Tensor& t_src) {
+Error check_tensor_data_layout(
+    const at::Tensor& t_src,
+    executorch::runtime::Span<const uint8_t> expected_dim_order) {
+  // Theres some annoyance on teams doing weird stuff today thats hard to
+  // migrate. ATen mode isnt supported in the CMake build and its really only
+  // used for testing. So we can just skip this check for now.
+  (void)t_src;
+  (void)expected_dim_order;
+  return Error::Ok;
+}
+
+Error share_tensor_data(
+    const at::Tensor& t_dst,
+    const at::Tensor& t_src) {
   at::StorageImpl* storage =
       t_dst.unsafeGetTensorImpl()->unsafe_storage().unsafeGetStorageImpl();
 
@@ -143,7 +156,9 @@ Error share_tensor_data(const at::Tensor& t_dst, const at::Tensor& t_src) {
   return Error::Ok;
 }
 
-Error copy_tensor_data(const at::Tensor& t_dst, const at::Tensor& t_src) {
+Error copy_tensor_data(
+    const at::Tensor& t_dst,
+    const at::Tensor& t_src) {
   void* dst_data_ptr = t_dst.unsafeGetTensorImpl()
                            ->unsafe_storage()
                            .unsafeGetStorageImpl()
