@@ -85,7 +85,8 @@ class VoxtralTTSRunner {
   std::unique_ptr<::executorch::extension::Module> model_;
   std::unique_ptr<::executorch::extension::Module> codec_;
   std::unique_ptr<tokenizers::Tokenizer> tokenizer_;
-  std::mt19937 rng_;
+  std::mt19937 rng_;          // used for semantic sampling (temperature > 0)
+  uint64_t flow_rng_state_;   // xorshift64 state for flow-matching x0 noise (matches voxtral-tts.c)
   uint32_t seed_ = 42;
 
   // Voice embedding loaded from .pt or raw .bin assets.

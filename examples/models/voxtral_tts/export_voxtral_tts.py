@@ -289,6 +289,14 @@ def export_codec_decoder(
     sample_codes = torch.zeros(
         1, config.n_codebooks, max_codec_frames, dtype=torch.long
     )
+    # Static export: the codec's transformer/conv stages introduce tight
+    # divisibility constraints under dynamic_shapes (upsample stride/kernel
+    # math). Keeping the input static at max_codec_frames avoids those
+    # constraint violations. The runner pads to max_codec_frames, but the
+    # codec's transformer is only locally bidirectional (window<=16) so the
+    # ALiBi-windowed attention contaminates a small boundary region; choose
+    # max_codec_frames close to the expected per-utterance frame count to
+    # minimize how many trailing zero codes the model attends to.
     programs = {"forward": export(codec_dec, (sample_codes,), strict=True)}
     print(
         f"  codec_decoder exported (codes: {sample_codes.shape}, "

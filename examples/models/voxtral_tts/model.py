@@ -791,7 +791,7 @@ class CodecCausalConvTranspose1d(nn.Module):
 def _get_alibi_slopes(n_heads: int) -> torch.Tensor:
     def _slopes_power_of_2(n: int) -> torch.Tensor:
         r = 2.0 ** (-8.0 / n)
-        return torch.tensor([r**i for i in range(n)], dtype=torch.float32)
+        return torch.tensor([r ** (i + 1) for i in range(n)], dtype=torch.float32)
 
     if math.log2(n_heads).is_integer():
         return _slopes_power_of_2(n_heads)
@@ -1142,9 +1142,12 @@ class CodecDecoder(nn.Module):
             else:
                 x = block(x)  # Conv1d / ConvTranspose1d: stays (B, D, T)
 
-        waveform = self.output_proj(x)  # (B, patch_size, T')
+        waveform = self.output_proj(x)  # (B, patch_size=240, T')
         B, P, T = waveform.shape
-        return waveform.reshape(B, 1, P * T)
+        # Audio samples are produced frame-by-frame: for each frame t we emit
+        # P contiguous samples. Interleave time-outer / patch-inner to match
+        # the reference C codec (`samples[t*P + h] = out_proj[h*T + t]`).
+        return waveform.transpose(1, 2).reshape(B, 1, T * P)
 
 
 # ---------------------------------------------------------------------------

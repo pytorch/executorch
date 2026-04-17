@@ -40,6 +40,11 @@ DEFINE_int32(seed, 42, "Random seed for semantic sampling and flow noise");
 DEFINE_double(temperature, 0.0, "Sampling temperature (0 = greedy)");
 DEFINE_int32(max_new_tokens, 2048, "Max audio frames to generate");
 DEFINE_bool(streaming, false, "Use streaming mode with chunked codec decoding");
+DEFINE_bool(
+    speaker,
+    false,
+    "Write raw f32le PCM to stdout for live playback. "
+    "Pipe to: aplay -f FLOAT_LE -r 24000 -c 1, or ffplay -f f32le -ar 24000");
 
 static volatile bool g_interrupted = false;
 static void signal_handler(int) {
@@ -56,15 +61,19 @@ int main(int argc, char** argv) {
 
   std::signal(SIGINT, signal_handler);
 
-  std::cout << "Voxtral TTS" << std::endl;
-  std::cout << "  Model: " << FLAGS_model << std::endl;
-  std::cout << "  Codec: " << FLAGS_codec << std::endl;
-  std::cout << "  Tokenizer: " << FLAGS_tokenizer << std::endl;
-  std::cout << "  Text: \"" << FLAGS_text << "\"" << std::endl;
-  std::cout << "  Output: " << FLAGS_output << std::endl;
-  std::cout << "  Seed: " << FLAGS_seed << std::endl;
-  std::cout << "  Mode: " << (FLAGS_streaming ? "streaming" : "offline")
-            << std::endl;
+  // When --speaker is active, keep stdout clean for PCM — log to stderr.
+  auto& log = FLAGS_speaker ? std::cerr : std::cout;
+
+  log << "Voxtral TTS" << std::endl;
+  log << "  Model: " << FLAGS_model << std::endl;
+  log << "  Codec: " << FLAGS_codec << std::endl;
+  log << "  Tokenizer: " << FLAGS_tokenizer << std::endl;
+  log << "  Text: \"" << FLAGS_text << "\"" << std::endl;
+  log << "  Output: " << FLAGS_output << std::endl;
+  log << "  Seed: " << FLAGS_seed << std::endl;
+  log << "  Mode: "
+      << (FLAGS_speaker ? "streaming+speaker" : FLAGS_streaming ? "streaming" : "offline")
+      << std::endl;
 
   auto load_start = std::chrono::high_resolution_clock::now();
 
@@ -77,16 +86,24 @@ int main(int argc, char** argv) {
   auto load_ms = std::chrono::duration_cast<std::chrono::milliseconds>(
                      load_end - load_start)
                      .count();
-  std::cout << "Model loaded in " << load_ms << "ms" << std::endl;
+  log << "Model loaded in " << load_ms << "ms" << std::endl;
 
-  if (FLAGS_streaming) {
+  if (FLAGS_streaming || FLAGS_speaker) {
+    auto callback = [&](const float* samples, std::size_t count) {
+      if (FLAGS_speaker) {
+        // Write raw f32le PCM to stdout for live playback.
+        std::cout.write(
+            reinterpret_cast<const char*>(samples), count * sizeof(float));
+        std::cout.flush();
+      }
+      log << "  Chunk: " << count << " samples ("
+          << static_cast<float>(count) / 24000.0f << "s)" << std::endl;
+    };
     runner.synthesize_streaming(
         FLAGS_text,
         FLAGS_voice,
         FLAGS_output,
-        [](const float* samples, std::size_t count) {
-          std::cout << "  Chunk: " << count << " samples" << std::endl;
-        },
+        callback,
         static_cast<float>(FLAGS_temperature),
         FLAGS_max_new_tokens);
   } else {

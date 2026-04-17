@@ -294,6 +294,7 @@ VoxtralTTSRunner::VoxtralTTSRunner(
     const std::string& codec_path,
     const std::string& tokenizer_path)
     : rng_(42),
+      flow_rng_state_(42),
       asset_root_dir_(std::filesystem::path(tokenizer_path).parent_path()),
       model_path_(model_path) {
   model_ = std::make_unique<Module>(model_path, Module::LoadMode::Mmap);
@@ -317,7 +318,36 @@ void VoxtralTTSRunner::set_trace_output_path(
 void VoxtralTTSRunner::set_seed(uint32_t seed) {
   seed_ = seed;
   rng_.seed(seed_);
+  // xorshift64 needs a non-zero state; matches voxtral-tts.c tts_rng_seed.
+  flow_rng_state_ =
+      seed_ ? static_cast<uint64_t>(seed_) : 0x12345678ABCDEF01ULL;
 }
+
+namespace {
+// xorshift64 + Box-Muller, matching voxtral-tts.c voxtral_tts_kernels.c:644-668
+// so flow-matching x0 noise is bit-identical to the C reference under same seed.
+inline uint64_t xorshift64(uint64_t* state) {
+  uint64_t x = *state;
+  x ^= x << 13;
+  x ^= x >> 7;
+  x ^= x << 17;
+  *state = x;
+  return x;
+}
+inline float uniform01_xs(uint64_t* state) {
+  return static_cast<float>(xorshift64(state) >> 11) *
+      (1.0f / 9007199254740992.0f);
+}
+inline float randn_xs(uint64_t* state) {
+  float u1, u2;
+  do {
+    u1 = uniform01_xs(state);
+  } while (u1 < 1e-30f);
+  u2 = uniform01_xs(state);
+  return std::sqrt(-2.0f * std::log(u1)) *
+      std::cos(6.2831853071795864f * u2);
+}
+} // namespace
 
 void VoxtralTTSRunner::reload_stateful_model() {
   model_ = std::make_unique<Module>(model_path_, Module::LoadMode::Mmap);
@@ -362,7 +392,7 @@ void VoxtralTTSRunner::load_metadata() {
       ? (read_metadata_int(*codec_, "codec_supports_exact_frames", 0) != 0)
       : false;
 
-  std::cout << "Model config: dim=" << dim_ << " voice_embed_len="
+  std::cerr << "Model config: dim=" << dim_ << " voice_embed_len="
             << voice_embed_len_ << " audio_tok=" << audio_token_id_
             << " begin_audio=" << begin_audio_token_id_
             << " max_seq=" << max_seq_len_ << " codec_frames="
@@ -403,7 +433,7 @@ void VoxtralTTSRunner::load_voice_embedding(const std::string& voice_path) {
   const auto resolved_path = resolve_voice_path(voice_path);
   if (!std::filesystem::exists(resolved_path)) {
     if (voice_path.empty()) {
-      std::cout << "No default voice embedding found at " << resolved_path
+      std::cerr << "No default voice embedding found at " << resolved_path
                 << ", continuing without voice conditioning." << std::endl;
       return;
     }
@@ -438,7 +468,7 @@ void VoxtralTTSRunner::load_voice_embedding(const std::string& voice_path) {
       "Failed to load voice embedding from %s",
       resolved_path.string().c_str());
 
-  std::cout << "Loaded voice embedding: " << runtime_voice_embed_len_ << " x "
+  std::cerr << "Loaded voice embedding: " << runtime_voice_embed_len_ << " x "
             << dim_ << " from " << resolved_path << std::endl;
 }
 
@@ -471,7 +501,7 @@ int64_t VoxtralTTSRunner::sample_semantic_code(
 }
 
 void VoxtralTTSRunner::warmup() {
-  std::cout << "Warming up..." << std::endl;
+  std::cerr << "Warming up..." << std::endl;
   int dim = static_cast<int>(dim_);
   int n_aco = static_cast<int>(n_acoustic_codebook_);
   int n_cb = static_cast<int>(n_codebooks_);
@@ -512,7 +542,7 @@ void VoxtralTTSRunner::warmup() {
   auto codec_result = codec_->execute("forward", std::vector<EValue>{*codes_t});
   ET_CHECK_MSG(codec_result.ok(), "codec warmup failed");
 
-  std::cout << "Warmup complete." << std::endl;
+  std::cerr << "Warmup complete." << std::endl;
 }
 
 std::vector<int64_t> VoxtralTTSRunner::tokenize(const std::string& text) {
@@ -553,7 +583,7 @@ void VoxtralTTSRunner::build_prompt(
   token_ids.push_back(repeat_audio_text_token_id_); // [REPEAT_AUDIO_TEXT]
   token_ids.push_back(begin_audio_token_id_); // [BEGIN_AUDIO]
 
-  std::cout << "Prompt: " << token_ids.size() << " tokens (voice_start="
+  std::cerr << "Prompt: " << token_ids.size() << " tokens (voice_start="
             << voice_start << " voice_len=" << voice_len << " text_tokens="
             << text_tokens.size() << ")" << std::endl;
 }
@@ -615,7 +645,7 @@ void VoxtralTTSRunner::synthesize_offline(
           voice_embed_data_.data() + i * dim,
           dim * sizeof(float));
     }
-    std::cout << "Voice embedding spliced at positions " << voice_start
+    std::cerr << "Voice embedding spliced at positions " << voice_start
               << ".." << (voice_start + voice_len - 1) << std::endl;
   }
 
@@ -668,7 +698,6 @@ void VoxtralTTSRunner::synthesize_offline(
   // Autoregressive decode
   std::vector<std::vector<int64_t>> frame_codes;
   int64_t cur_pos = prompt_len + 1;
-  std::normal_distribution<float> normal_dist(0.0f, 1.0f);
 
   std::vector<float> timesteps(n_decoding_steps_ + 1);
   for (int i = 0; i <= n_decoding_steps_; ++i) {
@@ -711,14 +740,16 @@ void VoxtralTTSRunner::synthesize_offline(
       if (capture_trace) {
         trace["end_audio_at_frame"] = frame;
       }
-      std::cout << "END_AUDIO at frame " << frame << std::endl;
+      std::cerr << "END_AUDIO at frame " << frame << std::endl;
       break;
     }
 
     // Flow matching ODE (7 steps with CFG)
+    // Use xorshift64 + Box-Muller (matches voxtral-tts.c) so x0 noise is
+    // bit-identical to the C reference under the same seed.
     std::vector<float> x(n_aco);
     for (auto& v : x) {
-      v = normal_dist(rng_);
+      v = randn_xs(&flow_rng_state_);
     }
     std::vector<float> zeros(dim, 0.0f);
 
@@ -768,6 +799,19 @@ void VoxtralTTSRunner::synthesize_offline(
           static_cast<int64_t>(std::round(scaled)) + n_special_tokens_;
     }
     frame_codes.push_back(codes);
+    // Optional per-frame code dump for parity vs voxtral-tts.c reference.
+    if (const char* dump_path = std::getenv("VOXTRAL_DUMP_CODES")) {
+      std::ofstream dump(
+          dump_path, frame == 0 ? std::ios::trunc : std::ios::app);
+      if (dump) {
+        dump << "frame=" << frame << " sem=" << semantic_code << " codes=";
+        for (size_t k = 0; k < codes.size(); ++k) {
+          if (k) dump << ",";
+          dump << codes[k];
+        }
+        dump << "\n";
+      }
+    }
     if (capture_trace && frame == 0) {
       trace["frame0_full_codes"] = codes;
     }
@@ -826,7 +870,7 @@ void VoxtralTTSRunner::synthesize_offline(
     if ((frame + 1) % 25 == 0) {
       float audio_sec = static_cast<float>((frame + 1) * downsample_factor_) /
                         static_cast<float>(sample_rate_);
-      std::cout << "  Frame " << (frame + 1) << " (" << audio_sec
+      std::cerr << "  Frame " << (frame + 1) << " (" << audio_sec
                 << "s audio)" << std::endl;
     }
   }
@@ -838,7 +882,7 @@ void VoxtralTTSRunner::synthesize_offline(
       trace["generated_frames"] = 0;
       trace["waveform"] = waveform_stats({});
       write_trace_json(trace_output_path_, trace);
-      std::cout << "Wrote trace JSON: " << trace_output_path_ << std::endl;
+      std::cerr << "Wrote trace JSON: " << trace_output_path_ << std::endl;
     }
     std::cerr << "No audio frames generated." << std::endl;
     return;
@@ -851,9 +895,9 @@ void VoxtralTTSRunner::synthesize_offline(
                     gen_end - start)
                     .count();
 
-  std::cout << "Generated " << total_frames << " frames (" << audio_duration
+  std::cerr << "Generated " << total_frames << " frames (" << audio_duration
             << "s audio) in " << gen_ms << "ms" << std::endl;
-  std::cout << "RTF: "
+  std::cerr << "RTF: "
             << (static_cast<float>(gen_ms) / 1000.0f) / audio_duration
             << std::endl;
 
@@ -866,14 +910,14 @@ void VoxtralTTSRunner::synthesize_offline(
     trace["generated_frames"] = total_frames;
     trace["waveform"] = waveform_stats(decoded_samples);
     write_trace_json(trace_output_path_, trace);
-    std::cout << "Wrote trace JSON: " << trace_output_path_ << std::endl;
+    std::cerr << "Wrote trace JSON: " << trace_output_path_ << std::endl;
   }
 
   auto total_end = std::chrono::high_resolution_clock::now();
   auto total_ms = std::chrono::duration_cast<std::chrono::milliseconds>(
                       total_end - start)
                       .count();
-  std::cout << "Total time: " << total_ms << "ms" << std::endl;
+  std::cerr << "Total time: " << total_ms << "ms" << std::endl;
 }
 
 void VoxtralTTSRunner::decode_codes_to_wav(
@@ -901,7 +945,7 @@ void VoxtralTTSRunner::decode_codes_to_wav(
   if (out_samples != nullptr) {
     *out_samples = all_samples;
   }
-  std::cout << "Wrote " << all_samples.size() << " samples to " << output_path
+  std::cerr << "Wrote " << all_samples.size() << " samples to " << output_path
             << std::endl;
 }
 
@@ -921,9 +965,14 @@ void VoxtralTTSRunner::decode_code_window(
   auto build_code_tensor = [&](int64_t target_frames) {
     std::vector<int64_t> code_data(
         static_cast<size_t>(n_cb) * static_cast<size_t>(target_frames), 0);
-    for (int64_t f = 0; f < window_frames; ++f) {
+    for (int64_t f = 0; f < target_frames; ++f) {
+      // Pad beyond window_frames by repeating the last valid frame so the
+      // codec's transformer attention sees a smooth extension instead of the
+      // FSQ=-1.0 cliff that zero-padding produces.
+      int64_t src = f < window_frames ? (start_frame + f)
+                                      : (start_frame + window_frames - 1);
       for (int64_t c = 0; c < n_codebooks_; ++c) {
-        code_data[c * target_frames + f] = frame_codes[start_frame + f][c];
+        code_data[c * target_frames + f] = frame_codes[src][c];
       }
     }
     return code_data;
@@ -1044,7 +1093,9 @@ void VoxtralTTSRunner::synthesize_streaming(
   std::vector<std::vector<int64_t>> frame_codes;
   int64_t cur_pos = prompt_len + 1;
   int64_t emitted_frames = 0;
-  std::normal_distribution<float> normal_dist(0.0f, 1.0f);
+  // Re-seed xorshift64 RNG for flow-matching noise (matches C reference).
+  flow_rng_state_ =
+      seed_ ? static_cast<uint64_t>(seed_) : 0x12345678ABCDEF01ULL;
 
   std::vector<float> timesteps(n_decoding_steps_ + 1);
   for (int i = 0; i <= n_decoding_steps_; ++i) {
@@ -1095,13 +1146,15 @@ void VoxtralTTSRunner::synthesize_streaming(
         sem_t.data_ptr<float>(), sem_vocab, temperature);
 
     if (semantic_code == end_audio_code_) {
-      std::cout << "END_AUDIO at frame " << frame << std::endl;
+      std::cerr << "END_AUDIO at frame " << frame << std::endl;
       break;
     }
 
+    // Use xorshift64 + Box-Muller RNG matching voxtral-tts.c
     std::vector<float> x(n_aco);
-    for (auto& v : x)
-      v = normal_dist(rng_);
+    for (auto& v : x) {
+      v = randn_xs(&flow_rng_state_);
+    }
     std::vector<float> zeros(dim, 0.0f);
 
     for (int step = 0; step < n_decoding_steps_; ++step) {
@@ -1199,7 +1252,7 @@ void VoxtralTTSRunner::synthesize_streaming(
   int64_t total_frames = static_cast<int64_t>(frame_codes.size());
   float audio_duration = static_cast<float>(total_frames * downsample_factor_) /
                          static_cast<float>(sample_rate_);
-  std::cout << "Streaming: " << total_frames << " frames (" << audio_duration
+  std::cerr << "Streaming: " << total_frames << " frames (" << audio_duration
             << "s) in " << total_ms << "ms, RTF="
             << (static_cast<float>(total_ms) / 1000.0f) / audio_duration
             << std::endl;
