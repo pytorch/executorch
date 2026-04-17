@@ -171,10 +171,10 @@ def build_export_command(
         "--output-dir",
         str(export_dir),
     ]
-    if qlinear is not None:
+    if qlinear is not None and qlinear != "none":
         command.extend(["--qlinear", qlinear])
         command.extend(["--decoder-qlinear-scope", decoder_qlinear_scope])
-    if qembedding is not None:
+    if qembedding is not None and qembedding != "none":
         command.extend(["--qembedding", qembedding])
     return command
 
@@ -220,13 +220,30 @@ def build_stt_command(
     output_wav: str | Path,
     locale: str,
 ) -> list[str]:
+    """Build STT command using parakeet runner (cross-platform, replaces Apple STT).
+
+    The parakeet runner expects 16 kHz input. This function returns a shell
+    command that resamples the 24 kHz Voxtral WAV to 16 kHz and transcribes it.
+    """
     repo_root = Path(repo_root)
-    speech_script = repo_root / "examples/models/voxtral_tts/transcribe_apple_speech.swift"
+    parakeet_runner = (
+        repo_root / "cmake-out/examples/models/parakeet/parakeet_runner"
+    )
+    parakeet_model = (
+        repo_root / "examples/models/parakeet/parakeet_tdt_exports/model.pte"
+    )
+    parakeet_tokenizer = (
+        repo_root / "examples/models/parakeet/parakeet_tdt_exports/tokenizer.model"
+    )
+    # We use a helper Python script to resample + run + extract transcript.
+    resample_and_transcribe = repo_root / "examples/models/voxtral_tts/transcribe_parakeet.py"
     return [
-        "swift",
-        str(speech_script),
-        str(output_wav),
-        locale,
+        sys.executable,
+        str(resample_and_transcribe),
+        "--audio", str(output_wav),
+        "--parakeet-runner", str(parakeet_runner),
+        "--parakeet-model", str(parakeet_model),
+        "--parakeet-tokenizer", str(parakeet_tokenizer),
     ]
 
 
@@ -318,7 +335,7 @@ def main() -> int:
     parser = argparse.ArgumentParser(
         description=(
             "Export Voxtral TTS for XNNPACK, generate a WAV, and hard-fail on "
-            "Apple STT mismatch."
+            "STT transcript mismatch (uses parakeet runner)."
         )
     )
     parser.add_argument("--repo-root", default=str(Path(__file__).resolve().parents[3]))
@@ -335,7 +352,8 @@ def main() -> int:
     parser.add_argument("--max-seq-len", type=int, default=512)
     parser.add_argument("--max-codec-frames", type=int, default=64)
     parser.add_argument("--max-new-tokens", type=int, default=20)
-    parser.add_argument("--qlinear", default=DEFAULT_ACCEPTANCE_QLINEAR)
+    parser.add_argument("--qlinear", default=DEFAULT_ACCEPTANCE_QLINEAR,
+                        help="Quantization config, or 'none' for FP32.")
     parser.add_argument(
         "--decoder-qlinear-scope",
         default=DEFAULT_ACCEPTANCE_DECODER_QLINEAR_SCOPE,
@@ -530,7 +548,7 @@ def main() -> int:
 
     if not transcript_gate["ok"]:
         print(
-            f"Apple STT gate failed: {transcript_gate['reason']} "
+            f"STT gate failed: {transcript_gate['reason']} "
             f"(score={transcript_gate['score']:.6f})",
             file=sys.stderr,
         )
