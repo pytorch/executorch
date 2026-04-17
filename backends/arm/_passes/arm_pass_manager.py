@@ -10,7 +10,6 @@ from collections import defaultdict
 from collections.abc import Sequence
 from dataclasses import dataclass, field
 
-import executorch.backends.arm.tosa.dialect  # noqa: unused
 from executorch.backends.arm._passes import (
     AccumulateIndexPutPass,
     AnnotateOutputDimOrderPass,
@@ -126,6 +125,7 @@ from executorch.backends.arm._passes import (
     RemoveNoopPass,
     ReplaceInfAndLimitValuesPass,
     ReplaceScalarWithTensorByProfilePass,
+    RewriteAvgPool2dPass,
     RewriteBoolBitwiseToLogicalPass,
     RewriteBoolToFp32CastViaInt8Pass,
     RewriteConvPass,
@@ -144,7 +144,6 @@ from executorch.backends.arm._passes import (
     UnsqueezeBeforeRepeatPass,
     UnsqueezeScalarPlaceholdersPass,
 )
-
 from executorch.backends.arm._passes.arm_pass import ArmPass
 from executorch.backends.arm.common.arm_compile_spec import ArmCompileSpec
 from executorch.backends.arm.common.pipeline_config import (
@@ -463,6 +462,8 @@ class ArmPassManager(PassManager):
                 DecomposeSliceScatterPass(),
                 AccumulateIndexPutPass(),
                 DecomposeIndexTensorToGatherPass(),
+                DecomposeAdaptiveAvgPool2dPass(),
+                DecomposeAvgPool2dPass(),
                 Conv1dUnsqueezePass(),
             ]
         )
@@ -499,17 +500,16 @@ class ArmPassManager(PassManager):
                 DecomposeSoftmaxPass(),
                 ConvertMinMaxPass(),
                 DecomposeAnyPass(),
-                DecomposeAdaptiveAvgPool2dPass(),
-                DecomposeAvgPool2dPass(),
                 DecorateFp32toInt32CastingPass(),
-                ComputeConstantOpsAOTPass(exported_program),
-                FuseConstantArgsPass(exported_program),
                 ConvertExpandCopyToRepeatPass(),
                 UnsqueezeBeforeRepeatPass(),
                 DecomposeCumsumPass(exported_program),
                 DecomposeAsStridedCopyPass(),
                 DecomposeMaxPool2dPass(),
                 SizeAdjustInputPass(),
+                RewriteAvgPool2dPass(),
+                ComputeConstantOpsAOTPass(exported_program),
+                FuseConstantArgsPass(exported_program),
                 DecomposeSelectPass(),
                 ConvertSqueezesToViewPass(),
                 CastToInt32Pass(),
@@ -605,6 +605,8 @@ class ArmPassManager(PassManager):
                     DecomposeLayerNormPass(tfa_pass=True),
                     DecomposeVarPass(tfa_pass=True),
                     DecomposeMeanDimPass(graph_module, self.tosa_spec, tfa_pass=True),
+                    DecomposeAdaptiveAvgPool2dPass(tfa_pass=True),
+                    DecomposeAvgPool2dPass(tfa_pass=True),
                 ]
             )
 
@@ -630,8 +632,6 @@ class ArmPassManager(PassManager):
                     DecomposeDivPass(tfa_pass=True),
                     DecomposeLinalgVectorNormPass(tfa_pass=True),
                     DecomposeSqrtPass(tfa_pass=True),
-                    DecomposeAdaptiveAvgPool2dPass(tfa_pass=True),
-                    DecomposeAvgPool2dPass(tfa_pass=True),
                     DecomposeSoftmaxPass(
                         tfa_pass=True,
                     ),

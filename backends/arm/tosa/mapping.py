@@ -269,7 +269,8 @@ class TosaArg:
             self.__process_number(argument)
             return
         if isinstance(argument, torch.dtype):
-            # Dtype is parsed from fake tensor
+            # Capture a dtype scalar argument
+            self.dtype = map_dtype(argument)
             return
 
         if argument is None:
