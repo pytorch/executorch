@@ -2697,6 +2697,41 @@ def _relu_handler(P: MLXProgramBuilder, n: Node) -> Slot:
     return out
 
 
+@REGISTRY.register(target=[torch.ops.aten.isinf.default])
+def _isinf_handler(P: MLXProgramBuilder, n: Node) -> Slot:
+    """Handle aten.isinf - check for infinite values element-wise.
+
+    isinf(x) is equivalent to abs(x) == inf.
+    """
+    args = P.args(n)
+    require_args(args, 1, 1, "aten.isinf")
+    require_kwargs(P.kwargs(n), set(), "aten.isinf")
+    x = args[0]
+
+    # abs(x)
+    _, abs_tmp = P.make_tmp_slot()
+    P.emit(
+        AbsNode(
+            x=P.slot_to_tid(x),
+            out=P.slot_to_tid(abs_tmp),
+        )
+    )
+
+    # inf constant
+    inf_slot = emit_lifted_constant(P, float("inf"), torch.float32)
+
+    # abs(x) == inf
+    out = P.make_or_get_slot(n)
+    P.emit(
+        EqualNode(
+            a=P.slot_to_tid(abs_tmp),
+            b=P.slot_to_tid(inf_slot),
+            out=P.slot_to_tid(out),
+        )
+    )
+    return out
+
+
 @REGISTRY.register(target=[torch.ops.aten._log_softmax.default])
 def _log_softmax_handler(P: MLXProgramBuilder, n: Node) -> Slot:
     """Handle aten._log_softmax.default - log of softmax.
