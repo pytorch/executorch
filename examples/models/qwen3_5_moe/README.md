@@ -30,24 +30,6 @@ Export produces a `model.pte` and `aoti_cuda_blob.ptd` containing the
 compiled CUDA kernels and quantized weights. Int4 quantization is
 recommended — the model is too large to fit in VRAM at bf16.
 
-### Quick start: prequantized weights
-
-The fastest path is to export from prequantized weights, which skips
-the slow quantization step entirely.
-
-Prequantized checkpoints are available for download:
-- [SocialLocalMobile/Qwen3.5-35B-A3B-HQQ-INT4](https://huggingface.co/SocialLocalMobile/Qwen3.5-35B-A3B-HQQ-INT4)
-- [SocialLocalMobile/Qwen3.6-35B-A3B-HQQ-INT4](https://huggingface.co/SocialLocalMobile/Qwen3.6-35B-A3B-HQQ-INT4)
-
-```bash
-python export.py --prequantized <path-to-bundle>
-```
-
-See [Generating Prequantized Weights](#generating-prequantized-weights)
-to create your own.
-
-### Quantize and Export
-
 ```bash
 python export.py \
     --model-id Qwen/Qwen3.5-35B-A3B \
@@ -78,7 +60,7 @@ python export.py \
 | `--qlinear-group-size` | `32` | Group size for linear quantization |
 | `--qembedding` | (none) | Embedding quantization: `8w` |
 | `--hqq` | off | Use HQQ scale-only optimization for expert quantization (slower, better accuracy) |
-| `--prequantized` | (none) | Path to prequantized checkpoint directory (skips quantization) |
+| `--prequantized` | (none) | Path to prequantized bundle directory (skips quantization) |
 | `--turboquant` | off | Enable TurboQuant TQ4 KV cache compression (3.8x cache savings) |
 
 ### TurboQuant KV Cache Compression
@@ -90,11 +72,11 @@ KV cache compression (3.8x savings) on the 10 full-attention layers.
 python export.py --prequantized qwen35_moe_int4_hqq --turboquant
 ```
 
-### Generating Prequantized Weights
+### Prequantized Export
 
 Quantization is slow (~30 min with HQQ). To avoid re-quantizing on every
-export, use `quantize_and_save.py` to create a prequantized checkpoint
-directory, then export from it:
+export, use `quantize_and_save.py` to create a self-contained bundle, then
+export from it:
 
 ```bash
 # Step 1: Quantize once (slow)
@@ -106,13 +88,13 @@ python quantize_and_save.py \
     --hqq \
     --output qwen35_moe_int4_hqq
 
-# Step 2: Export from prequantized checkpoint (fast, no --model-dir needed)
+# Step 2: Export from bundle (fast, no --model-dir needed)
 python export.py \
     --prequantized qwen35_moe_int4_hqq
 ```
 
-The output directory contains `model.safetensors`, `config.json`, and
-tokenizer files. It can be uploaded to HuggingFace Hub for easy sharing.
+The bundle contains `model.safetensors`, `config.json`, and tokenizer files.
+It can be uploaded to HuggingFace Hub for easy sharing.
 
 ## Build
 
