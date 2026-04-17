@@ -134,6 +134,7 @@ from executorch.backends.arm._passes import (
     RewriteInplaceArithmeticPass,
     RewriteLeLtToGeGtPass,
     RewriteMatmulPass,
+    RewriteMaxPool2dPass,
     RewritePadPass,
     RewriteSlicePass,
     RewriteUpsamplePass,
@@ -526,6 +527,7 @@ class ArmPassManager(PassManager):
         self.add_passes(
             [
                 RewriteUpsamplePass(),
+                RewriteMaxPool2dPass(),
                 RewriteConvPass(exported_program),
                 RewriteMatmulPass(),
                 RewritePadPass(),

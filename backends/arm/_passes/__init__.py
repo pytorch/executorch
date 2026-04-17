@@ -157,6 +157,7 @@ from .rewrite_index_put_pass import RewriteIndexPutPass  # noqa
 from .rewrite_inplace_arithmetic_pass import RewriteInplaceArithmeticPass  # noqa
 from .rewrite_le_lt_to_ge_gt_pass import RewriteLeLtToGeGtPass  # noqa
 from .rewrite_matmul import RewriteMatmulPass  # noqa
+from .rewrite_max_pool2d_pass import RewriteMaxPool2dPass  # noqa
 from .rewrite_pad import RewritePadPass  # noqa
 from .rewrite_slice import RewriteSlicePass  # noqa
 from .rewrite_upsample import RewriteUpsamplePass  # noqa
