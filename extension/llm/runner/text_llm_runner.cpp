@@ -249,7 +249,7 @@ Error TextLLMRunner::generate(
       "RSS after finishing text generation: %f MiB (0 if unsupported)",
       get_rss_bytes() / 1024.0 / 1024.0);
 
-  if (num_generated_tokens == max_new_tokens) {
+  if (num_generated_tokens == max_new_tokens - 1) {
     RUNNER_ET_LOG(config.warming, "Max new tokens %i reached!", max_new_tokens);
   }
 
