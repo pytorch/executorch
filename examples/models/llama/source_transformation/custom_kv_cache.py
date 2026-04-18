@@ -521,7 +521,6 @@ class CustomKVCacheWithAttentionSink(CustomKVCache):
         total_cache_size = sink_size + window_size * 2
         super().__init__(max_batch_size, total_cache_size, n_heads, head_dim, dtype)
         from executorch.examples.models.llama.source_transformation.attention_sink import (
-            _create_causal_mask_for_attention_sink,
             CachePositionsManagerWithSink,
         )
 
@@ -531,14 +530,15 @@ class CustomKVCacheWithAttentionSink(CustomKVCache):
         self.is_ring_buffer = True
         self.window_size = window_size
         self.sink_size = sink_size
-        self._create_causal_mask_for_attention_sink = (
-            _create_causal_mask_for_attention_sink
-        )
 
     def create_causal_mask_for_ring_buffer(self, start_pos, seq_len):
         cache_positions = self.cache_positions_manager.cache_positions
         if self.sink_size > 0:
-            return self._create_causal_mask_for_attention_sink(
+            from executorch.examples.models.llama.source_transformation.attention_sink import (
+                _create_causal_mask_for_attention_sink,
+            )
+
+            return _create_causal_mask_for_attention_sink(
                 cache_positions, self.window_size, self.sink_size, start_pos, seq_len
             )
         else:
