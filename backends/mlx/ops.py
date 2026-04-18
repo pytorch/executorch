@@ -2851,6 +2851,64 @@ def _clamp_handler(P: MLXProgramBuilder, n: Node) -> Slot:
     return out
 
 
+@REGISTRY.register(target=[torch.ops.aten.trunc.default])
+def _trunc_handler(P: MLXProgramBuilder, n: Node) -> Slot:
+    """Handle aten.trunc - truncate toward zero.
+
+    trunc(x) = where(x >= 0, floor(x), ceil(x))
+    """
+    args = P.args(n)
+    require_args(args, 1, 1, "aten.trunc")
+    require_kwargs(P.kwargs(n), set(), "aten.trunc")
+    x = args[0]
+
+    x_meta = n.args[0].meta.get("val")
+    dtype = x_meta.dtype if x_meta is not None else torch.float32
+
+    # Create zero constant for comparison
+    zero_slot = emit_lifted_constant(P, 0.0, dtype)
+
+    # x >= 0
+    _, ge_zero = P.make_tmp_slot()
+    P.emit(
+        GreaterEqualNode(
+            a=P.slot_to_tid(x),
+            b=P.slot_to_tid(zero_slot),
+            out=P.slot_to_tid(ge_zero),
+        )
+    )
+
+    # floor(x)
+    _, floor_x = P.make_tmp_slot()
+    P.emit(
+        FloorNode(
+            x=P.slot_to_tid(x),
+            out=P.slot_to_tid(floor_x),
+        )
+    )
+
+    # ceil(x)
+    _, ceil_x = P.make_tmp_slot()
+    P.emit(
+        CeilNode(
+            x=P.slot_to_tid(x),
+            out=P.slot_to_tid(ceil_x),
+        )
+    )
+
+    # where(x >= 0, floor(x), ceil(x))
+    out = P.make_or_get_slot(n)
+    P.emit(
+        WhereNode(
+            condition=P.slot_to_tid(ge_zero),
+            x=P.slot_to_tid(floor_x),
+            y=P.slot_to_tid(ceil_x),
+            out=P.slot_to_tid(out),
+        )
+    )
+    return out
+
+
 @REGISTRY.register(
     target=[torch.ops.aten.expand.default, torch.ops.aten.expand_copy.default]
 )

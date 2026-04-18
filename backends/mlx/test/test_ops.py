@@ -4090,6 +4090,7 @@ _UNARY_OP_TESTS = [
     {"op_name": "erf",        "op_fn": torch.erf},
     {"op_name": "expm1",      "op_fn": torch.expm1},
     {"op_name": "round",      "op_fn": torch.round,      "input_fn": _input_fn(scale=10)},
+    {"op_name": "trunc",      "op_fn": torch.trunc,      "shapes": _SHAPES_3, "input_fn": _input_fn(scale=10)},
     {"op_name": "reciprocal", "op_fn": torch.reciprocal, "input_fn": _input_fn(offset=1.0)},
     {"op_name": "sqrt",       "op_fn": torch.sqrt,       "input_fn": _input_fn(uniform=True, offset=0.1)},
     {"op_name": "abs",        "op_fn": torch.abs},
