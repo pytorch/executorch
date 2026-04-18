@@ -815,6 +815,12 @@ table LogAddExpNode {
     out: Tid (required);
 }
 
+table BitwiseOrNode {
+    a: Tid (required);
+    b: Tid (required);
+    out: Tid (required);
+}
+
 table FloorDivideNode {
     a: Tid (required);
     b: Tid (required);
@@ -1114,6 +1120,7 @@ union OpNode {
     GatherQmmNode,
     ScanNode,
     MetalKernelNode
+    BitwiseOrNode,
     // BC: Add new op nodes here (append only)
 }
 
