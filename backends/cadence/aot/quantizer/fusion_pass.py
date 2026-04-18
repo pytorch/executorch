@@ -686,10 +686,13 @@ class QuantFusion(ExportPass):
                             quant_node,
                         )
                     elif isinstance(pattern, AddmmPattern):
-                        # Transpose the weight tensor
+                        # Transpose the weight tensor using permute
+                        weight_ndim = len(weights_inputs[0].meta["val"].shape)
+                        perm = list(range(weight_ndim))
+                        perm[0], perm[1] = perm[1], perm[0]
                         transposed_weights = graph_module.graph.call_function(
-                            torch.ops.aten.transpose.int,
-                            (weights_inputs[0], 0, 1),
+                            torch.ops.aten.permute.default,
+                            (weights_inputs[0], perm),
                         )
                         assert (
                             "val" in weights_inputs[0].meta
@@ -700,7 +703,7 @@ class QuantFusion(ExportPass):
                         ), "fake_mode is None on weight node"
                         with original_val.fake_mode:
                             transposed_weights.meta["val"] = (
-                                torch.ops.aten.transpose.int(original_val, 0, 1)
+                                torch.ops.aten.permute.default(original_val, perm)
                             )
                         copy_node_metadata(transposed_weights, weights_inputs[0])
 
