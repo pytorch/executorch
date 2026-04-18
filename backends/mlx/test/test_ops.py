@@ -4205,6 +4205,9 @@ _BINARY_OP_TESTS = [
     # logical
     {"op_name": "logical_and",   "op_fn": torch.logical_and, "shapes": [(2, 3, 4), (10,), (4, 8)], "dtypes": [torch.bool], "input_fn_a": _bool_input_fn(), "input_fn_b": _bool_input_fn()},
     {"op_name": "logical_or",    "op_fn": torch.logical_or,  "shapes": [(2, 3, 4), (10,), (4, 8)], "dtypes": [torch.bool], "input_fn_a": _bool_input_fn(), "input_fn_b": _bool_input_fn()},
+    # bitwise
+    {"op_name": "bitwise_xor_bool", "op_fn": torch.bitwise_xor, "shapes": [(2, 3, 4), (10,), (4, 8)], "dtypes": [torch.bool], "input_fn_a": _bool_input_fn(), "input_fn_b": _bool_input_fn()},
+    {"op_name": "bitwise_xor_int",  "op_fn": torch.bitwise_xor, "shapes": [(2, 3, 4), (10,), (4, 8)], "dtypes": [torch.int32, torch.int64], "input_fn_a": _int_input_fn(0, 256), "input_fn_b": _int_input_fn(0, 256)},
 ]
 # fmt: on
 

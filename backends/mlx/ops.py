@@ -490,6 +490,12 @@ _BINARY_OPS: List[Tuple[List[Any], Any, str, bool]] = [
         "aten.ne",
         True,
     ),
+    (
+        [torch.ops.aten.bitwise_xor.Tensor, torch.ops.aten.bitwise_xor.Scalar],
+        BitwiseXorNode,
+        "aten.bitwise_xor",
+        True,
+    ),
 ]
 
 
