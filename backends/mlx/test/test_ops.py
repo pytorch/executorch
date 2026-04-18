@@ -4100,6 +4100,7 @@ _UNARY_OP_TESTS = [
     {"op_name": "sigmoid", "op_fn": torch.sigmoid, "shapes": [(2, 3, 4), (10,), (4, 8), (2, 8, 16), (1, 1, 128)],  "dtypes": [torch.float32], "input_fn": _input_fn(scale=2)},
     {"op_name": "tanh",    "op_fn": torch.tanh,    "shapes": [(2, 3, 4), (10,), (4, 8), (2, 8, 16), (1, 1, 128)],  "dtypes": [torch.float32], "input_fn": _input_fn(scale=3)},
     {"op_name": "silu",    "op_fn": nn.SiLU(),     "shapes": [(2, 16, 64), (4, 32, 128)], "dtypes": [torch.float32]},
+    {"op_name": "hardtanh", "op_fn": torch.nn.functional.hardtanh, "shapes": [(2, 3, 4), (10,), (4, 8), (2, 8, 16)], "dtypes": [torch.float32], "input_fn": _input_fn(scale=3)},
     # math
     {"op_name": "rsqrt",   "op_fn": torch.rsqrt,   "shapes": [(2, 3, 4), (10,), (4, 8), (2, 8, 16), (1, 64)],     "dtypes": [torch.float32], "input_fn": _input_fn(uniform=True, offset=0.1)},
     {"op_name": "clone",   "op_fn": torch.clone,   "shapes": [(2, 3, 4), (8, 8), (16,)], "dtypes": [torch.float32]},

@@ -454,6 +454,7 @@ _BINARY_OPS: List[Tuple[List[Any], Any, str, bool]] = [
     ([torch.ops.aten.atan2.default], Atan2Node, "aten.atan2", False),
     ([torch.ops.aten.logaddexp.default], LogAddExpNode, "aten.logaddexp", False),
     ([torch.ops.aten.logical_or.default], LogicalOrNode, "aten.logical_or", False),
+    ([torch.ops.aten.bitwise_or.default], BitwiseOrNode, "aten.bitwise_or", False),
     (
         [torch.ops.aten.lt.Tensor, torch.ops.aten.lt.Scalar],
         LessNode,
@@ -2840,6 +2841,39 @@ def _clamp_handler(P: MLXProgramBuilder, n: Node) -> Slot:
         else:
             a_max_tid = P.slot_to_tid(emit_lifted_constant(P, float(max_val), dtype))
 
+    P.emit(
+        ClipNode(
+            x=P.slot_to_tid(x),
+            out=P.slot_to_tid(out),
+            a_min=a_min_tid,
+            a_max=a_max_tid,
+        )
+    )
+    return out
+
+
+@REGISTRY.register(target=[torch.ops.aten.hardtanh.default])
+def _hardtanh_handler(P: MLXProgramBuilder, n: Node) -> Slot:
+    """Handle aten.hardtanh - bounded activation function.
+
+    hardtanh(x, min_val, max_val) = clamp(x, min_val, max_val)
+    Default: min_val=-1, max_val=1
+    """
+    args = P.args(n)
+    require_args(args, 1, 3, "aten.hardtanh")
+    require_kwargs(P.kwargs(n), set(), "aten.hardtanh")
+    x = args[0]
+    min_val = args[1] if len(args) > 1 else -1.0
+    max_val = args[2] if len(args) > 2 else 1.0
+
+    x_meta = n.args[0].meta.get("val")
+    dtype = x_meta.dtype if x_meta is not None else torch.float32
+
+    # Lift scalar bounds to 0-D constant tensors
+    a_min_tid = P.slot_to_tid(emit_lifted_constant(P, float(min_val), dtype))
+    a_max_tid = P.slot_to_tid(emit_lifted_constant(P, float(max_val), dtype))
+
+    out = P.make_or_get_slot(n)
     P.emit(
         ClipNode(
             x=P.slot_to_tid(x),
