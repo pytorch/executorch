@@ -79,3 +79,6 @@ xcuserdata/
 # Agents
 .claude/*.local.*
 extension/pybindings/mlx.metallib
+
+# Auto-generated flatbuffers
+backends/mlx/serialization/mlx_graph_schema.py
