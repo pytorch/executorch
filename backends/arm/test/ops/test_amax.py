@@ -8,6 +8,9 @@ from typing import Dict, Tuple
 
 import pytest
 import torch
+from executorch.backends.arm.quantizer.arm_quantizer import (
+    get_symmetric_a16w8_quantization_config,
+)
 from executorch.backends.arm.test import common
 from executorch.backends.arm.test.tester.test_pipeline import (
     EthosU55PipelineINT,
@@ -264,6 +267,23 @@ def test_max_dim_vgf_quant_to_amax(test_data: Max.input_t):
 
 
 @common.parametrize("test_data", Amax.test_data)
+@common.SkipIfNoModelConverter
+def test_amax_vgf_quant_a16w8(test_data: Amax.input_t):
+    data, dim, keep_dims = test_data()
+    module = Amax(dim, keep_dims)
+    pipeline = VgfPipeline[Max.input_t](
+        module,
+        data,
+        amax_aten_op,
+        amax_exir_op,
+        quantize=True,
+        tosa_extensions=["int16"],
+    )
+    pipeline.quantizer.set_global(get_symmetric_a16w8_quantization_config())
+    pipeline.run()
+
+
+@common.parametrize("test_data", Amax.test_data)
 def test_amax_tosa_INT_a16w8(test_data: Amax.input_t):
     """Test amax with 16A8W quantization for TOSA INT."""
     data, dim, keep_dims = test_data()
@@ -280,7 +300,9 @@ def test_amax_tosa_INT_a16w8(test_data: Amax.input_t):
 @common.parametrize("test_data", Amax.test_data)
 @common.XfailIfNoCorstone320
 def test_amax_u85_INT_a16w8(test_data: Amax.input_t):
-    """Test amax with 16A8W quantization on U85 (16-bit activations, 8-bit weights)"""
+    """Test amax with 16A8W quantization on U85 (16-bit activations, 8-bit
+    weights)
+    """
     data, dim, keep_dims = test_data()
     module = Amax(dim, keep_dims)
     pipeline = EthosU85PipelineINT[Max.input_t](

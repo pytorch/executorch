@@ -26,9 +26,10 @@ input_t = Tuple[torch.Tensor]
 
 
 class Conv1d(torch.nn.Module):
-    """
-    Creates one or many chained 1D-convolutions. For multiple convolutions, the
-    respective parameteres are provided as lists.
+    """Creates one or many chained 1D-convolutions.
+
+    For multiple convolutions, the respective parameters are provided as lists.
+
     """
 
     def __init__(
@@ -146,6 +147,29 @@ conv1d_3_1x3x12_st2_pd1 = Conv1d(
     padding=1,
     length=12,
     batches=1,
+    padding_mode="circular",
+)
+
+conv1d_3_1x3x12_st1_pd1_reflect = Conv1d(
+    in_channels=3,
+    out_channels=4,
+    kernel_size=3,
+    stride=1,
+    padding=1,
+    length=12,
+    batches=1,
+    padding_mode="reflect",
+)
+
+conv1d_3_1x3x12_st1_pd1_replicate = Conv1d(
+    in_channels=3,
+    out_channels=4,
+    kernel_size=3,
+    stride=1,
+    padding=1,
+    length=12,
+    batches=1,
+    padding_mode="replicate",
 )
 
 conv1d_1_1x2x128_st1 = Conv1d(
@@ -256,7 +280,9 @@ two_conv1d = Conv1d(
 test_data_FP = {
     "2_3x2x40_nobias": lambda: conv1d_2_3x2x40_nobias,
     "3_1x3x256_st1": lambda: conv1d_3_1x3x256_st1,
-    "3_1x3x12_st2_pd1": lambda: conv1d_3_1x3x12_st2_pd1,
+    "3_1x3x12_st2_pd1_circular": lambda: conv1d_3_1x3x12_st2_pd1,
+    "3_1x3x12_st1_pd1_reflect": lambda: conv1d_3_1x3x12_st1_pd1_reflect,
+    "3_1x3x12_st1_pd1_replicate": lambda: conv1d_3_1x3x12_st1_pd1_replicate,
     "1_1x2x128_st1": lambda: conv1d_1_1x2x128_st1,
     "2_1x2x14_st2": lambda: conv1d_2_1x2x14_st2,
     "5_3x2x128_st1": lambda: conv1d_5_3x2x128_st1,

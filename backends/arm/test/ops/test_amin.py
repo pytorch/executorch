@@ -9,8 +9,12 @@ from typing import Dict, Tuple
 import pytest
 
 import torch
+from executorch.backends.arm.quantizer.arm_quantizer import (
+    get_symmetric_a16w8_quantization_config,
+)
 from executorch.backends.arm.test import common
 from executorch.backends.arm.test.tester.test_pipeline import (
+    EthosU55PipelineINT,
     EthosU85PipelineINT,
     OpNotSupportedPipeline,
     TosaPipelineFP,
@@ -139,12 +143,25 @@ def test_amin_tosa_INT(test_data: Amin.input_t):
         Amin(dim, keep_dims),
         data,
         amin_aten_op,
+        frobenius_threshold=0.5,  # Single output value -> frobenius test sensitive to quantization.
     )
     pipeline.run()
 
 
-def test_amin_u55_INT_not_delegated():
-    data, dim, keep_dims = Amin.test_data["rank_4_all_dim"]()
+@common.parametrize("test_data", Amin.test_data)
+@common.XfailIfNoCorstone300
+def test_amin_u55_INT(test_data: Amin.input_t):
+    data, dim, keep_dims = test_data()
+    pipeline = EthosU55PipelineINT[Amin.input_t](
+        Amin(dim, keep_dims),
+        data,
+        amin_aten_op,
+    )
+    pipeline.run()
+
+
+def test_amin_u55_INT_int32_not_delegated():
+    data, dim, keep_dims = ((torch.ones([2, 2], dtype=torch.int32),), 1, False)
     pipeline = OpNotSupportedPipeline[Amin.input_t](
         Amin(dim, keep_dims),
         data,
@@ -260,6 +277,21 @@ def test_min_dim_vgf_quant_to_amin(test_data: Min.input_t):
 
 
 @common.parametrize("test_data", Amin.test_data)
+@common.SkipIfNoModelConverter
+def test_amin_vgf_quant_a16w8(test_data: Amin.input_t):
+    data, dim, keep_dims = test_data()
+    pipeline = VgfPipeline[Amin.input_t](
+        Amin(dim, keep_dims),
+        data,
+        amin_aten_op,
+        quantize=True,
+        tosa_extensions=["int16"],
+    )
+    pipeline.quantizer.set_global(get_symmetric_a16w8_quantization_config())
+    pipeline.run()
+
+
+@common.parametrize("test_data", Amin.test_data)
 def test_amin_tosa_INT_a16w8(test_data: Amin.input_t):
     """Test amin with 16A8W quantization for TOSA INT."""
     data, dim, keep_dims = test_data()
@@ -275,7 +307,9 @@ def test_amin_tosa_INT_a16w8(test_data: Amin.input_t):
 @common.parametrize("test_data", Amin.test_data)
 @common.XfailIfNoCorstone320
 def test_amin_u85_INT_a16w8(test_data: Min.input_t):
-    """Test amin with 16A8W quantization on U85 (16-bit activations, 8-bit weights)"""
+    """Test amin with 16A8W quantization on U85 (16-bit activations, 8-bit
+    weights)
+    """
     data, dim, keep_dims = test_data()
     pipeline = EthosU85PipelineINT[Amin.input_t](
         Amin(dim, keep_dims),

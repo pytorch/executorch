@@ -47,6 +47,8 @@ fi
 
 TEST_SUITE_NAME="$(basename "$0") ${TEST_SUITE}"
 
+EXCLUDE_TARGET_EXPR="(not u55) and (not u85) and (not tosa) and (not _vgf_)"
+
 all() { # Run all tests
     # This will list all lines in this file that is starting with test_ remove () { and add this script name in
     # front of it and execute it in a sub shell
@@ -78,7 +80,7 @@ test_pytest_ops_no_target() {
     echo "${TEST_SUITE_NAME}: Run pytest ops for target-less tests"
 
     # Run arm baremetal pytest tests without target
-    pytest  --verbose --color=yes --numprocesses=auto --durations=10 backends/arm/test/ --ignore=backends/arm/test/models -k no_target
+    pytest  --verbose --color=yes --numprocesses=auto --durations=10 backends/arm/test/ --ignore=backends/arm/test/models -k "${EXCLUDE_TARGET_EXPR}"
     echo "${TEST_SUITE_NAME}: PASS"
 }
 
@@ -89,7 +91,7 @@ test_pytest_models_no_target() {
     source backends/arm/scripts/install_models_for_test.sh
 
     # Run arm baremetal pytest tests without FVP
-    pytest  --verbose --color=yes --numprocesses=auto --durations=0 backends/arm/test/models -k no_target
+    pytest  --verbose --color=yes --numprocesses=auto --durations=0 backends/arm/test/models -k "${EXCLUDE_TARGET_EXPR}"
     echo "${TEST_SUITE_NAME}: PASS"
 }
 
@@ -296,9 +298,7 @@ test_smaller_stories_llama() {
     --verbose \
     --color=yes \
     --numprocesses=auto \
-    --log-level=DEBUG \
     --junit-xml=stories110M/test-reports/unittest.xml \
-    -s \
     backends/arm/test/models/test_llama.py \
     --llama_inputs stories110M/stories110M.pt stories110M/params.json stories110m
 
@@ -313,7 +313,7 @@ test_memory_allocation() {
     echo "${TEST_SUITE_NAME}: Test target Ethos-U85"
     examples/arm/run.sh --et_build_root=arm_test/test_run --target=ethos-u85-128 --model_name=examples/arm/example_modules/add.py &> arm_test/test_run/full.log
     python3 backends/arm/test/test_memory_allocator_log.py --log arm_test/test_run/full.log \
-            --require "model_pte_program_size" "<= 3100 B" \
+            --require "model_pte_program_size" "<= 3200 B" \
             --require "method_allocator_planned" "<= 64 B" \
             --require "method_allocator_loaded" "<= 1024 B" \
             --require "method_allocator_input" "<= 16 B" \

@@ -3,10 +3,14 @@
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
 
+from typing import cast
+
 import torch
 from executorch.backends.arm._passes.arm_pass_utils import get_first_fake_tensor
+from executorch.backends.arm.quantizer.arm_quantizer_utils import PatternCheck
 from executorch.backends.arm.quantizer.quantization_config import QuantizationConfig
 from executorch.backends.cortex_m.passes.passes_utils import (
+    coerce_int_pair,
     is_channel_broadcast,
     is_channels_last,
 )
@@ -15,57 +19,11 @@ from executorch.backends.cortex_m.quantizer.quantization_configs import (
     CMSIS_SOFTMAX_ZERO_POINT,
 )
 from torch.fx import Node
-from torchao.quantization.pt2e.quantizer import QuantizationSpec
-
-
-class PatternCheck:
-    """
-    Base class for pattern checks.
-
-    PatternChecks are used to define which which patterns are supported for quantization.
-    For example, ADD in the Cortex-M backend does not support general broadcasting, so
-    a PatternCheck can be used to filter out such patterns. They also only support per
-    tensor quantization, so the PatternCheck filters out quantization configs that use
-    per channel quantization.
-    """
-
-    @classmethod
-    def is_per_tensor(cls, qspec: QuantizationSpec) -> bool:
-        """
-        Returns true if the given quantization spec is per-tensor, otherwise false.
-        """
-        return qspec.qscheme in (torch.per_tensor_affine, torch.per_tensor_symmetric)
-
-    @classmethod
-    def is_per_channel(cls, qspec: QuantizationSpec) -> bool:
-        """
-        Returns true if the given quantization spec is per-channel, otherwise false.
-        """
-        return qspec.qscheme in (torch.per_channel_affine, torch.per_channel_symmetric)
-
-    @classmethod
-    def is_int8_activations(cls, qconfig: QuantizationConfig) -> bool:
-        """
-        Returns true if the given quantization spec uses int8 quantization, otherwise false.
-        """
-        return (
-            qconfig.input_activation.dtype == torch.int8
-            and qconfig.output_activation.dtype == torch.int8
-        )
-
-    @classmethod
-    def check_pattern(cls, pattern: list[Node]) -> bool:
-        """
-        Returns true if the given pattern is supported, otherwise false.
-        """
-        return True
-
-    @classmethod
-    def check_quantization_config(cls, quantization_config: QuantizationConfig) -> bool:
-        """
-        Returns true if the given quantization config is supported, otherwise false.
-        """
-        return True
+from torchao.quantization.pt2e.quantizer import (
+    FixedQParamsQuantizationSpec,
+    QuantizationSpec,
+    SharedQuantizationSpec,
+)
 
 
 class CortexMAddMulCheck(PatternCheck):
@@ -87,13 +45,15 @@ class CortexMAddMulCheck(PatternCheck):
         return True
 
     @classmethod
-    def check_quantization_config(cls, quantization_config):
+    def check_quantization_config(
+        cls, pattern: list[Node], quantization_config: QuantizationConfig
+    ) -> bool:
         """
         Checks that the quantization config uses per-tensor int8 quantization.
         """
         is_per_tensor = PatternCheck.is_per_tensor(
-            quantization_config.input_activation
-        ) and PatternCheck.is_per_tensor(quantization_config.output_activation)
+            quantization_config.get_input_act_qspec()
+        ) and PatternCheck.is_per_tensor(quantization_config.get_output_act_qspec())
         is_int8 = cls.is_int8_activations(quantization_config)
         return is_per_tensor and is_int8
 
@@ -112,16 +72,26 @@ class CortexMConv2DCheck(PatternCheck):
         return True
 
     @classmethod
-    def check_quantization_config(cls, quantization_config):
+    def check_quantization_config(
+        cls, pattern: list[Node], quantization_config: QuantizationConfig
+    ) -> bool:
         """
         Checks that the quantization config uses per-tensor int8 quantization.
         """
-        return cls.is_int8_activations(quantization_config)
+        is_int8 = cls.is_int8_activations(quantization_config)
+        conv_node = pattern[0] if pattern else None
+        weight_qspec = quantization_config.get_weight_qspec(conv_node)
+        if not isinstance(weight_qspec, QuantizationSpec):
+            return False
+        is_ch_axis_0 = weight_qspec.ch_axis == 0 or weight_qspec.ch_axis is None
+        return is_int8 and is_ch_axis_0
 
 
 class CortexMLinearCheck(PatternCheck):
     @classmethod
-    def check_quantization_config(cls, quantization_config):
+    def check_quantization_config(
+        cls, pattern: list[Node], quantization_config: QuantizationConfig
+    ) -> bool:
         """
         Checks that the quantization config uses per-tensor int8 quantization.
         """
@@ -157,20 +127,24 @@ class CortexMSoftmaxCheck(PatternCheck):
         return True
 
     @classmethod
-    def check_quantization_config(cls, quantization_config):
+    def check_quantization_config(
+        cls, pattern: list[Node], quantization_config: QuantizationConfig
+    ) -> bool:
         """
         Checks that the quantization config uses a valid configuration for CMSIS-NN softmax.
         """
-        is_int8 = cls.is_int8_activations(quantization_config)
-        is_per_tensor = cls.is_per_tensor(
-            quantization_config.input_activation
-        ) and cls.is_per_tensor(quantization_config.output_activation)
-        correct_output_scale = (
-            quantization_config.output_activation.scale == CMSIS_SOFTMAX_SCALE
+        output_node = pattern[-1] if pattern else None
+        input_qspec = quantization_config.get_input_act_qspec()
+        output_qspec = quantization_config.get_output_act_qspec(output_node)
+
+        is_int8 = cls.is_int8_activations(quantization_config, output_node)
+        is_per_tensor = cls.is_per_tensor(input_qspec) and cls.is_per_tensor(
+            output_qspec
         )
-        correct_output_zero_point = (
-            quantization_config.output_activation.zero_point == CMSIS_SOFTMAX_ZERO_POINT
-        )
+        if not isinstance(output_qspec, FixedQParamsQuantizationSpec):
+            return False
+        correct_output_scale = output_qspec.scale == CMSIS_SOFTMAX_SCALE
+        correct_output_zero_point = output_qspec.zero_point == CMSIS_SOFTMAX_ZERO_POINT
 
         return (
             is_int8
@@ -234,11 +208,122 @@ class CortexMConvTranspose2DCheck(PatternCheck):
         return True  # ACCEPT channels_last transpose conv
 
     @classmethod
-    def check_quantization_config(cls, quantization_config):
+    def check_quantization_config(
+        cls, pattern: list[Node], quantization_config: QuantizationConfig
+    ) -> bool:
         """
         Checks that the quantization config uses per-tensor int8 quantization.
         """
         is_int8 = cls.is_int8_activations(quantization_config)
-        is_ch_axis_1 = quantization_config.weight.ch_axis == 1
+
+        transpose_conv_node = pattern[0] if pattern else None
+        weight_qspec = quantization_config.get_weight_qspec(transpose_conv_node)
+        if not isinstance(weight_qspec, QuantizationSpec):
+            return False
+        is_ch_axis_1 = weight_qspec.ch_axis == 1 or weight_qspec.ch_axis is None
 
         return is_int8 and is_ch_axis_1
+
+
+class CortexMAvgPool2DCheck(PatternCheck):
+    @classmethod
+    def check_pattern(cls, pattern):
+        if not pattern:
+            return False
+        node = pattern[0]
+        ceil_mode = cast(bool, node.args[4]) if len(node.args) > 4 else False
+        return not ceil_mode
+
+    @classmethod
+    def check_quantization_config(
+        cls, pattern: list[Node], quantization_config: QuantizationConfig
+    ) -> bool:
+        output_node = pattern[-1] if pattern else None
+        input_qspec = quantization_config.get_input_act_qspec()
+        output_qspec = quantization_config.get_output_act_qspec(output_node)
+        if isinstance(output_qspec, SharedQuantizationSpec):
+            output_qspec = input_qspec
+        if input_qspec is None or output_qspec is None:
+            return False
+        if not isinstance(
+            input_qspec, (QuantizationSpec, FixedQParamsQuantizationSpec)
+        ):
+            return False
+        if not isinstance(
+            output_qspec, (QuantizationSpec, FixedQParamsQuantizationSpec)
+        ):
+            return False
+        is_int8 = input_qspec.dtype == torch.int8 and output_qspec.dtype == torch.int8
+        is_per_tensor = cls.is_per_tensor(input_qspec) and cls.is_per_tensor(
+            output_qspec
+        )
+        return is_int8 and is_per_tensor
+
+
+class CortexMBmmCheck(PatternCheck):
+
+    @classmethod
+    def check_pattern(cls, pattern):
+        for node in pattern:
+            if len(node.all_input_nodes) == 2:
+                t1 = get_first_fake_tensor(node.all_input_nodes[0])
+                t2 = get_first_fake_tensor(node.all_input_nodes[1])
+                if t1.dim() != 3 or t2.dim() != 3:
+                    return False
+                if t1.shape[0] != t2.shape[0]:
+                    return False
+                if t1.shape[2] != t2.shape[1]:
+                    return False
+        return True
+
+    @classmethod
+    def check_quantization_config(
+        cls, pattern: list[Node], quantization_config: QuantizationConfig
+    ) -> bool:
+        is_per_tensor = PatternCheck.is_per_tensor(
+            quantization_config.get_input_act_qspec()
+        ) and PatternCheck.is_per_tensor(quantization_config.get_output_act_qspec())
+        is_int8 = cls.is_int8_activations(quantization_config)
+        return is_per_tensor and is_int8
+
+
+class CortexMMaxPool2DCheck(PatternCheck):
+    @classmethod
+    def _pool_arg_as_bool(cls, node: Node, index: int, default: bool) -> bool:
+        raw = node.args[index] if len(node.args) > index else default
+        if raw is None:
+            return default
+        return bool(raw)
+
+    @classmethod
+    def check_pattern(cls, pattern):
+        if not pattern:
+            return False
+        node = pattern[0]
+        raw_dilation = node.args[4] if len(node.args) > 4 else (1, 1)
+        dilation = coerce_int_pair(raw_dilation, (1, 1))
+        ceil_mode = cls._pool_arg_as_bool(node, 5, False)
+        if dilation != (1, 1) or ceil_mode:
+            meta_custom = node.meta.get("custom", {})
+            cortex_m_meta = meta_custom.get("cortex_m", {})
+            cortex_m_meta["skip_quantized_max_pool2d"] = True
+            meta_custom["cortex_m"] = cortex_m_meta
+            node.meta["custom"] = meta_custom
+        return True
+
+    @classmethod
+    def check_quantization_config(
+        cls, pattern: list[Node], quantization_config: QuantizationConfig
+    ) -> bool:
+        maxpool_node = pattern[0]
+        input_qspec = quantization_config.get_input_act_qspec()
+        output_qspec = quantization_config.get_output_act_qspec(maxpool_node)
+        if not isinstance(output_qspec, SharedQuantizationSpec):
+            return False
+        if not isinstance(
+            input_qspec, (QuantizationSpec, FixedQParamsQuantizationSpec)
+        ):
+            return False
+        is_int8 = input_qspec.dtype == torch.int8
+        is_per_tensor = cls.is_per_tensor(input_qspec)
+        return is_int8 and is_per_tensor

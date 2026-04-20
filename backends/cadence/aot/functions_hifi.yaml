@@ -102,6 +102,11 @@
     - arg_meta: null
       kernel_name: impl::HiFi::eq_Tensor_out
 
+- op: exp.out
+  kernels:
+    - arg_meta: null
+      kernel_name: torch::executor::exp_out
+
 - op: fmod.Tensor_out
   kernels:
     - arg_meta: null
@@ -192,6 +197,11 @@
     - arg_meta: null
       kernel_name: impl::HiFi::minimum_out
 
+- op: native_layer_norm.out
+  kernels:
+    - arg_meta: null
+      kernel_name: torch::executor::native_layer_norm_out
+
 - op: mm.out
   kernels:
     - arg_meta: null
@@ -201,6 +211,11 @@
   kernels:
     - arg_meta: null
       kernel_name: impl::HiFi::mul_out
+
+- op: neg.out
+  kernels:
+    - arg_meta: null
+      kernel_name: torch::executor::neg_out
 
 - op: ne.Tensor_out
   kernels:
@@ -286,12 +301,12 @@
 - func: cadence::im2row.out(Tensor input, int[2] kernel_size, int[2] dilation, int[2] padding, int[2] stride, Tensor in_zero_point, bool channel_last=False, *, Tensor(a!) out) -> Tensor(a!)
   kernels:
     - arg_meta: null
-      kernel_name: impl::HiFi::native::im2row_out
+      kernel_name: impl::HiFi::im2row_out
 
 - func: cadence::im2row.per_tensor_out(Tensor input, int[2] kernel_size, int[2] dilation, int[2] padding, int[2] stride, int in_zero_point, bool channel_last=False, *, Tensor(a!) out) -> Tensor(a!)
   kernels:
     - arg_meta: null
-      kernel_name: impl::HiFi::native::im2row_per_tensor_out
+      kernel_name: impl::HiFi::im2row_per_tensor_out
 
 - func: cadence::quantize_per_tensor.out(Tensor input, float scale, int zero_point, int quant_min, int quant_max, ScalarType dtype, *, Tensor(a!) out) -> Tensor(a!)
   variants: function
@@ -445,26 +460,6 @@
     - arg_meta: null
       kernel_name: impl::HiFi::quantized_conv2d_nhwc_depthwise_asym8uxsym8u_asym8u_per_tensor_out
 
-- func: cadence::quantized_conv1d_ncl_asym8sxsym8s_asym8s.per_tensor_out(Tensor input, Tensor weight, Tensor bias, int[] stride, SymInt[] padding, int[] dilation, int groups, int input_zero_point, int weight_zero_point, float bias_scale, float out_scale, int out_zero_point, int out_multiplier, int out_shift, *, Tensor(a!) out) -> Tensor(a!)
-  kernels:
-    - arg_meta: null
-      kernel_name: impl::HiFi::quantized_conv1d_ncl_asym8sxsym8s_asym8s_per_tensor_out
-
-- func: cadence::quantized_conv1d_ncl_asym8uxsym8u_asym8u.per_tensor_out(Tensor input, Tensor weight, Tensor bias, int[] stride, SymInt[] padding, int[] dilation, int groups, int input_zero_point, int weight_zero_point, float bias_scale, float out_scale, int out_zero_point, int out_multiplier, int out_shift, *, Tensor(a!) out) -> Tensor(a!)
-  kernels:
-    - arg_meta: null
-      kernel_name: impl::HiFi::quantized_conv1d_ncl_asym8uxsym8u_asym8u_per_tensor_out
-
-- func: cadence::quantized_conv1d_nlc_asym8sxsym8s_asym8s.per_tensor_out(Tensor input, Tensor weight, Tensor bias, int[] stride, SymInt[] padding, int[] dilation, int groups, int input_zero_point, int weight_zero_point, float bias_scale, float out_scale, int out_zero_point, int out_multiplier, int out_shift, *, Tensor(a!) out) -> Tensor(a!)
-  kernels:
-    - arg_meta: null
-      kernel_name: impl::HiFi::quantized_conv1d_nlc_asym8sxsym8s_asym8s_per_tensor_out
-
-- func: cadence::quantized_conv1d_nlc_asym8uxsym8u_asym8u.per_tensor_out(Tensor input, Tensor weight, Tensor bias, int[] stride, SymInt[] padding, int[] dilation, int groups, int input_zero_point, int weight_zero_point, float bias_scale, float out_scale, int out_zero_point, int out_multiplier, int out_shift, *, Tensor(a!) out) -> Tensor(a!)
-  kernels:
-    - arg_meta: null
-      kernel_name: impl::HiFi::quantized_conv1d_nlc_asym8uxsym8u_asym8u_per_tensor_out
-
 - func: cadence::quantized_layer_norm.out(Tensor input, Tensor in_scale, Tensor in_zero_point, int[] normalized_shape, Tensor weight, Tensor bias, float eps, float output_scale, int output_zero_point, *, Tensor(a!) out) -> Tensor(a!)
   kernels:
     - arg_meta: null
@@ -519,6 +514,16 @@
     - arg_meta: null
       kernel_name: impl::HiFi::quantized_relu_asym8u_asym8u_per_tensor_out
 
+- func: cadence::quantized_max_pool2d_nchw.out(Tensor input, int[] kernel_size, int[] stride, int[] padding, int[] dilation, bool ceil_mode, *, Tensor(a!) out) -> Tensor(a!)
+  kernels:
+    - arg_meta: null
+      kernel_name: impl::generic::quantized_max_pool2d_nchw_out
+
+- func: cadence::quantized_max_pool2d_nhwc.out(Tensor input, int[] kernel_size, int[] stride, int[] padding, int[] dilation, bool ceil_mode, *, Tensor(a!) out) -> Tensor(a!)
+  kernels:
+    - arg_meta: null
+      kernel_name: impl::HiFi::quantized_max_pool2d_nhwc_out
+
 - func: cadence::quantized_add_asym8sxasym8s_asym8s.per_tensor_out(Tensor X, float X_scale, int X_zero_point, Tensor Y, float Y_scale, int Y_zero_point, float out_scale, int out_zero_point, *, Tensor(a!) out) -> Tensor(a!)
   kernels:
     - arg_meta: null
@@ -563,3 +568,23 @@
   kernels:
     - arg_meta: null
       kernel_name: impl::HiFi::quantized_fully_connected_asym8uxasym8u_asym8u_per_tensor_out
+
+- func: cadence::quantized_conv1d_ncl.per_tensor_out(Tensor input, Tensor weight, Tensor bias, int[] stride, SymInt[] padding, int[] dilation, int groups, int input_zero_point, int weight_zero_point, float bias_scale, float out_scale, int out_zero_point, int out_multiplier, int out_shift, *, Tensor(a!) out) -> Tensor(a!)
+  kernels:
+    - arg_meta: null
+      kernel_name: impl::HiFi::quantized_conv1d_ncl_per_tensor_out
+
+- func: cadence::quantized_conv1d_nlc.per_tensor_out(Tensor input, Tensor weight, Tensor bias, int[] stride, SymInt[] padding, int[] dilation, int groups, int input_zero_point, int weight_zero_point, float bias_scale, float out_scale, int out_zero_point, int out_multiplier, int out_shift, *, Tensor(a!) out) -> Tensor(a!)
+  kernels:
+    - arg_meta: null
+      kernel_name: impl::HiFi::quantized_conv1d_nlc_per_tensor_out
+
+- func: cadence::quantized_depthwise_conv1d_ncl.per_tensor_out(Tensor input, Tensor weight, Tensor bias, int[] stride, SymInt[] padding, int[] dilation, int groups, int input_zero_point, int weight_zero_point, float bias_scale, float out_scale, int out_zero_point, int out_multiplier, int out_shift, *, Tensor(a!) out) -> Tensor(a!)
+  kernels:
+    - arg_meta: null
+      kernel_name: impl::HiFi::quantized_depthwise_conv1d_ncl_per_tensor_out
+
+- func: cadence::quantized_depthwise_conv1d_nlc.per_tensor_out(Tensor input, Tensor weight, Tensor bias, int[] stride, SymInt[] padding, int[] dilation, int groups, int input_zero_point, int weight_zero_point, float bias_scale, float out_scale, int out_zero_point, int out_multiplier, int out_shift, *, Tensor(a!) out) -> Tensor(a!)
+  kernels:
+    - arg_meta: null
+      kernel_name: impl::HiFi::quantized_depthwise_conv1d_nlc_per_tensor_out

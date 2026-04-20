@@ -21,7 +21,9 @@ class RescaleNetwork(torch.nn.Module):
         "randn": (torch.randn(5, 2), torch.randn(5, 1)),
         "ones": (torch.ones(1, 10, 4, 6), torch.ones(1, 10, 4, 6)),
         "randn_ones": (torch.randn(1, 1, 4, 4), torch.ones(1, 1, 4, 1)),
-        "randn_large": (10000 * torch.randn(1, 1, 4, 4), torch.randn(1, 1, 4, 1)),
+        # Ensure 'uniformly' large values in range [1000, 2000], otherwise small values become zero, leading to diff
+        # between quantized and unquantized graph
+        "randn_large": (1000 * (torch.rand(1, 1, 4, 4) + 1), torch.randn(1, 1, 4, 1)),
     }
 
     def forward(self, x: torch.Tensor, y: torch.Tensor):

@@ -6,6 +6,9 @@
 from typing import Tuple
 
 import torch
+from executorch.backends.arm.quantizer.arm_quantizer import (
+    get_symmetric_a16w8_quantization_config,
+)
 from executorch.backends.arm.test import common
 
 from executorch.backends.arm.test.tester.test_pipeline import (
@@ -146,6 +149,8 @@ def test_eq_scalar_tosa_INT_tensor(test_module):
         test_module().get_inputs(),
         Equal.aten_op_Tensor,
         Equal.exir_op,
+        frobenius_threshold=None,  # Quantized comparisons with small diffs can be inaccurate, leading to large errors in unlucky cases.
+        cosine_threshold=None,
     )
     pipeline.run()
 
@@ -157,6 +162,8 @@ def test_eq_scalar_tosa_INT(test_module):
         test_module().get_inputs(),
         Equal.aten_op_Tensor,
         Equal.exir_op,
+        frobenius_threshold=None,  # Quantized comparisons with small diffs can be inaccurate, leading to large errors in unlucky cases.
+        cosine_threshold=None,
     )
     pipeline.run()
 
@@ -241,7 +248,9 @@ def test_eq_scalar_u85_INT(test_module):
 @common.parametrize("test_module", test_data_tensor)
 @common.XfailIfNoCorstone320
 def test_eq_scalar_u85_INT_tensor_16a8w(test_module):
-    """Test eq operation with 16A8W quantization on U85 (16-bit activations, 8-bit weights)"""
+    """Test eq operation with 16A8W quantization on U85 (16-bit activations,
+    8-bit weights)
+    """
     per_channel_quantization = False
 
     pipeline = EthosU85PipelineINT[input_t](
@@ -259,7 +268,9 @@ def test_eq_scalar_u85_INT_tensor_16a8w(test_module):
 @common.parametrize("test_module", test_data_scalar)
 @common.XfailIfNoCorstone320
 def test_eq_scalar_u85_INT_16a8w(test_module):
-    """Test eq operation (scalar) with 16A8W quantization on U85 (16-bit activations, 8-bit weights)"""
+    """Test eq operation (scalar) with 16A8W quantization on U85 (16-bit
+    activations, 8-bit weights)
+    """
     per_channel_quantization = False
 
     pipeline = EthosU85PipelineINT[input_t](
@@ -323,4 +334,34 @@ def test_eq_scalar_vgf_quant(test_module):
         Equal.exir_op,
         quantize=True,
     )
+    pipeline.run()
+
+
+@common.parametrize("test_module", test_data_tensor)
+@common.SkipIfNoModelConverter
+def test_eq_scalar_vgf_quant_tensor_a16w8(test_module):
+    pipeline = VgfPipeline[input_t](
+        test_module(),
+        test_module().get_inputs(),
+        Equal.aten_op_Tensor,
+        Equal.exir_op,
+        quantize=True,
+        tosa_extensions=["int16"],
+    )
+    pipeline.quantizer.set_global(get_symmetric_a16w8_quantization_config())
+    pipeline.run()
+
+
+@common.parametrize("test_module", test_data_scalar)
+@common.SkipIfNoModelConverter
+def test_eq_scalar_vgf_quant_a16w8(test_module):
+    pipeline = VgfPipeline[input_t](
+        test_module(),
+        test_module().get_inputs(),
+        Equal.aten_op_Tensor,
+        Equal.exir_op,
+        quantize=True,
+        tosa_extensions=["int16"],
+    )
+    pipeline.quantizer.set_global(get_symmetric_a16w8_quantization_config())
     pipeline.run()

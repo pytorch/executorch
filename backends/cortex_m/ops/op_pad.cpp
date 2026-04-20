@@ -8,10 +8,6 @@
 
 #include "cortex_m_ops_common.h"
 
-extern "C" {
-#include "arm_nnfunctions.h"
-}
-
 namespace cortex_m {
 namespace native {
 
@@ -52,14 +48,19 @@ Tensor& pad_out(
     return out;
   }
 
+  // Permute logical sizes to physical memory order.
+  // Padding is already in physical order from the AOT pass.
+  constexpr size_t kNhwcDimOrder[] = {0, 2, 3, 1};
   const size_t offset = kMaxSupportedDims - rank;
+  const bool nhwc = is_channels_last_tensor(input);
 
-  cmsis_nn_dims input_dims = {1, 1, 1, 1};
-  int32_t* d = &input_dims.n;
+  int32_t dims[kMaxSupportedDims] = {1, 1, 1, 1};
   for (size_t i = 0; i < rank; ++i) {
-    d[offset + i] = static_cast<int32_t>(input.size(i));
+    const size_t src = nhwc ? kNhwcDimOrder[offset + i] : i;
+    dims[offset + i] = static_cast<int32_t>(input.size(src));
   }
 
+  cmsis_nn_dims input_dims = {dims[0], dims[1], dims[2], dims[3]};
   cmsis_nn_dims cmsis_pre_pad = {
       static_cast<int32_t>(pre_pad[0]),
       static_cast<int32_t>(pre_pad[1]),

@@ -267,7 +267,7 @@ class Conv1dPattern(QuantizationPattern):
         )
 
     def replacement_op(self) -> OpOverload:
-        return torch.ops.cadence.quantized_conv2d_nchw.per_tensor
+        return torch.ops.cadence.quantized_conv1d_ncl.per_tensor
 
 
 class Conv2dPattern(QuantizationPattern):
@@ -417,6 +417,93 @@ class MatmulPattern(QuantizationPattern):
         return torch.ops.cadence.quantized_matmul.default
 
 
+class MaxPool2dPattern(QuantizationPattern):
+    """
+    Pattern for quantized max pooling (with indices variant).
+
+    Max pooling is order-preserving, so max(a, b) in the quantized domain gives
+    the same result as quantizing max(dequant(a), dequant(b)) when using the same
+    scale/zero_point. This means we can perform max pooling directly on quantized
+    values without any requantization.
+
+    The input and output share quantization parameters.
+    """
+
+    def partition_types(self) -> List[OpOverload]:
+        return [torch.ops.aten.max_pool2d_with_indices.default]
+
+    def get_anchors(
+        self, gm: fx.GraphModule, fused_partition: List[fx.GraphModule]
+    ) -> Tuple[PartitionAnchors, fx.Node]:
+        # pyre-fixme[29]: `Union[BoundMethod[typing.Callable(torch._C.TensorBase.__ge...
+        max_pool_node = fused_partition[0].nodes[-1]
+
+        # Input and output share quantization parameters since max is order-preserving
+        return (
+            PartitionAnchors(
+                inputs=[(max_pool_node, 0)],
+                weights=[],
+                biases=[],
+                # kernel_size, stride, padding, dilation, ceil_mode are literals
+                literals=[
+                    (max_pool_node, i) for i in range(1, len(max_pool_node.args))
+                ],
+                output=[
+                    (
+                        max_pool_node,
+                        SharedQuantizationSpec((max_pool_node.args[0], max_pool_node)),
+                    )
+                ],
+            ),
+            max_pool_node,
+        )
+
+    def replacement_op(self) -> OpOverload:
+        return torch.ops.cadence.quantized_max_pool2d_nchw.default
+
+
+class MaxPool2dWithoutIndicesPattern(QuantizationPattern):
+    """
+    Pattern for quantized max pooling (without indices variant).
+
+    Same as MaxPool2dPattern but matches aten.max_pool2d.default which returns
+    a single tensor instead of a tuple (values, indices).
+    """
+
+    def partition_types(self) -> List[OpOverload]:
+        return [torch.ops.aten.max_pool2d.default]
+
+    def get_anchors(
+        self, gm: fx.GraphModule, fused_partition: List[fx.GraphModule]
+    ) -> Tuple[PartitionAnchors, fx.Node]:
+        # pyre-fixme[29]: `Union[BoundMethod[typing.Callable(torch._C.TensorBase.__ge...
+        max_pool_node = fused_partition[0].nodes[-1]
+
+        return (
+            PartitionAnchors(
+                inputs=[(max_pool_node, 0)],
+                weights=[],
+                biases=[],
+                literals=[
+                    (max_pool_node, i) for i in range(1, len(max_pool_node.args))
+                ],
+                output=[
+                    (
+                        max_pool_node,
+                        SharedQuantizationSpec((max_pool_node.args[0], max_pool_node)),
+                    )
+                ],
+            ),
+            max_pool_node,
+        )
+
+    def replacement_op(self) -> OpOverload:
+        return torch.ops.cadence.quantized_max_pool2d_nchw.default
+
+
+# This is a base class for ReLU
+
+
 # This is a base class for ReLU, since it can be used with two different aten ops
 class ReluBasePattern(QuantizationPattern):
     @abstractmethod
@@ -507,11 +594,17 @@ class Conv1dReluPattern0(ConvReluBasePattern):
     def partition_types(self) -> List[OpOverload]:
         return [torch.ops.aten.conv1d.default, torch.ops.aten.relu.default]
 
+    def replacement_op(self) -> OpOverload:
+        return torch.ops.cadence.quantized_conv1d_ncl.per_tensor
+
 
 # Conv1d + alternate relu op fusion
 class Conv1dReluPattern1(ConvReluBasePattern):
     def partition_types(self) -> List[OpOverload]:
         return [torch.ops.aten.conv1d.default, torch.ops.aten.relu_.default]
+
+    def replacement_op(self) -> OpOverload:
+        return torch.ops.cadence.quantized_conv1d_ncl.per_tensor
 
 
 # Conv2d + regular relu op fusion
@@ -625,7 +718,7 @@ class MixedW8A32ConvPattern(QuantizationPattern):
             )
 
         cnn_weights = conv_layer.args[1]
-        if hasattr(cnn_weights.meta, "tensor_meta"):
+        if "tensor_meta" in cnn_weights.meta:
             cnn_weights_shape = cnn_weights.meta["tensor_meta"].shape
             # Bail if the channels are not multiple of 4 (SIMD)
             if cnn_weights_shape[0] % 4 != 0:
@@ -650,6 +743,18 @@ class MixedW8A32ConvPattern(QuantizationPattern):
                     ),
                     conv_layer,
                 )
+
+            inputs = conv_layer.args[0]
+            if "tensor_meta" in inputs.meta:
+                inputs_shape = inputs.meta["tensor_meta"].shape
+                # Bail if length != kernel size - Not yet supported
+                if inputs_shape[-1] != cnn_weights_shape[2]:
+                    return (
+                        PartitionAnchors(
+                            empty=True,
+                        ),
+                        conv_layer,
+                    )
 
         return (
             PartitionAnchors(
@@ -684,14 +789,16 @@ class MixedW8A32GruPattern(QuantizationPattern):
             )
 
         # Bail if input or states are not multiple of 4 (SIMD)
-        if gru_layer.args[0].meta["tensor_meta"].shape[-1] % 4 != 0:
+        tensor_meta_0 = gru_layer.args[0].meta.get("tensor_meta", None)
+        if tensor_meta_0 is None or tensor_meta_0.shape[-1] % 4 != 0:
             return (
                 PartitionAnchors(
                     empty=True,
                 ),
                 gru_layer,
             )
-        if gru_layer.args[1].meta["tensor_meta"].shape[-1] % 4 != 0:
+        tensor_meta_1 = gru_layer.args[1].meta.get("tensor_meta", None)
+        if tensor_meta_1 is None or tensor_meta_1.shape[-1] % 4 != 0:
             return (
                 PartitionAnchors(
                     empty=True,
@@ -706,13 +813,26 @@ class MixedW8A32GruPattern(QuantizationPattern):
 
         wrapper = Wrapper(tuple(gru_layer.args[2]), gru_layer.meta)
 
+        # Using SharedQuantizationSpec so that bias_hh has the same observer as bias_ih
+        # Both biases get the same quantization scale to match the cpp operator
+        bias_ih_node = wrapper.args[2]
+        bias_ih_edge = (bias_ih_node, gru_layer)
+        shared_bias_qspec = SharedQuantizationSpec(edge_or_node=bias_ih_edge)
+
         return (
             PartitionAnchors(
                 inputs=[],
                 # pyre-fixme[6]: Expected `List[Tuple[Node, int]]` but got `List[Tuple[Wrapper, int]]`.
                 weights=[(wrapper, 0), (wrapper, 1)],
                 # pyre-fixme[6]: Expected `List[Union[Tuple[Node, int], Tuple[Node, int, DerivedQuantizationSpec]]]` but got `List[Tuple[Wrapper, int]]`.
-                biases=[(wrapper, 2), (wrapper, 3)],
+                biases=[
+                    (wrapper, 2),  # bias_ih gets normal qspec
+                    (
+                        wrapper,
+                        3,
+                        shared_bias_qspec,
+                    ),  # bias_hh shares observer with bias_ih
+                ],
                 output=[],
                 others=[(gru_layer, 0), (gru_layer, 1)],
             ),

@@ -1,6 +1,6 @@
 # Test ExecuTorch CUDA Build Compatibility
 # This workflow tests whether ExecuTorch can be successfully built with CUDA support
-# across different CUDA versions (12.6, 12.8, 12.9) using the command:
+# across different CUDA versions (12.6, 12.8, 12.9, 13.0) using the command:
 #   ./install_executorch.sh
 #
 # Note: ExecuTorch automatically detects the system CUDA version using nvcc and
@@ -9,11 +9,18 @@
 name: Test CUDA Builds
 
 on:
-  pull_request:
   push:
     branches:
       - main
       - release/*
+    tags:
+      - ciflow/cuda/*
+  pull_request:
+    paths:
+      - .github/workflows/cuda.yml
+      - backends/cuda/**
+      - backends/aoti/**
+  workflow_dispatch:
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.sha }}-${{ github.event_name == 'workflow_dispatch' }}-${{ github.event_name == 'schedule' }}
@@ -59,7 +66,7 @@ jobs:
             echo "CUDA build results: ${{ needs.test-cuda-builds.result }}"
             exit 1
           else
-            echo "SUCCESS: All ExecuTorch CUDA builds (12.6, 12.8, 12.9) completed successfully!"
+            echo "SUCCESS: All ExecuTorch CUDA builds (12.6, 12.8, 12.9, 13.0) completed successfully!"
           fi
 
   test-models-cuda:
@@ -68,10 +75,6 @@ jobs:
     permissions:
       id-token: write
       contents: read
-    strategy:
-      fail-fast: false
-      matrix:
-        model: [linear, add, add_mul, resnet18, conv1d, sdpa, mv2, mv3]
     with:
       timeout: 90
       runner: linux.g5.4xlarge.nvidia.gpu
@@ -85,7 +88,21 @@ jobs:
 
         PYTHON_EXECUTABLE=python ./install_executorch.sh
         export LD_LIBRARY_PATH=/opt/conda/lib:$LD_LIBRARY_PATH
-        PYTHON_EXECUTABLE=python source .ci/scripts/test_model.sh "${{ matrix.model }}" cmake cuda
+
+        # Build executor_runner with CUDA support once, then reuse for all models.
+        # test_model.sh's build_cmake_executor_runner does rm -rf cmake-out on each
+        # invocation, so we build separately and run models directly.
+        cmake -DCMAKE_BUILD_TYPE=Release \
+            -DEXECUTORCH_BUILD_CUDA=ON \
+            -DEXECUTORCH_BUILD_EXTENSION_TENSOR=ON \
+            -DPYTHON_EXECUTABLE=python \
+            -Bcmake-out .
+        cmake --build cmake-out -j4
+
+        for model in linear add add_mul resnet18 conv1d sdpa mv2 mv3; do
+          python -m examples.cuda.scripts.export --model_name="$model" --output_dir "./"
+          ./cmake-out/executor_runner --model_path "./${model}.pte" --data_path "./aoti_cuda_blob.ptd"
+        done
 
   unittest-cuda:
     name: unittest-cuda
@@ -106,6 +123,11 @@ jobs:
         # Install executorch in editable mode so custom op libs land in-tree
         bash ./install_executorch.sh
 
+        # The Triton-compiled .so files in the CUDA backend require GLIBCXX_3.4.29
+        # which the default system libstdc++ doesn't have. Install a newer one.
+        conda install -y -c conda-forge 'libstdcxx-ng>=12'
+        export LD_LIBRARY_PATH=/opt/conda/lib:$LD_LIBRARY_PATH
+
         # Build ExecuTorch with CUDA support
         cmake --workflow --preset llm-release-cuda
 
@@ -114,8 +136,17 @@ jobs:
         cmake --workflow --preset default
         popd
 
-        # Run CUDA backend Python tests, overrides addopts so that we don't run all tests in pytest.ini
+        # Install flash-linear-attention for chunk_gated_delta_rule triton kernel tests
+        pip install "flash-linear-attention==0.4.2"
+
+        # Build executor_runner (needed by CUDA backend e2e tests)
+        cmake --build cmake-out --target executor_runner
+
+        # Run CUDA backend Python tests
         python -m pytest backends/cuda/tests backends/cuda/passes/tests -v -o "addopts="
+
+        # Run Qwen 3.5 MoE tests (quantize roundtrip + TurboQuant KV cache)
+        python -m pytest examples/models/qwen3_5_moe/test_quantize_roundtrip.py examples/models/qwen3_5_moe/test_turboquant.py -v -o "addopts="
 
   export-model-cuda-artifact:
     name: export-model-cuda-artifact
@@ -132,14 +163,24 @@ jobs:
         model:
           - repo: "mistralai"
             name: "Voxtral-Mini-3B-2507"
+          - repo: "mistralai"
+            name: "Voxtral-Mini-4B-Realtime-2602"
+          - repo: "nvidia"
+            name: "diar_streaming_sortformer_4spk-v2"
           - repo: "openai"
             name: "whisper-small"
           - repo: "openai"
             name: "whisper-large-v3-turbo"
           - repo: "google"
             name: "gemma-3-4b-it"
+          - repo: "Qwen"
+            name: "Qwen3-0.6B"
           - repo: "nvidia"
             name: "parakeet-tdt"
+          - repo: "facebook"
+            name: "dinov2-small-imagenet1k-1-layer"
+          - repo: "SocialLocalMobile"
+            name: "Qwen3.5-35B-A3B-HQQ-INT4"
         quant:
           - "non-quantized"
           - "quantized-int4-tile-packed"
@@ -150,10 +191,70 @@ jobs:
               repo: "google"
               name: "gemma-3-4b-it"
             quant: "quantized-int4-weight-only"
+          # Qwen3.5 MoE uses a prequantized checkpoint, only tile-packed
+          - model:
+              repo: "SocialLocalMobile"
+              name: "Qwen3.5-35B-A3B-HQQ-INT4"
+            quant: "non-quantized"
+          - model:
+              repo: "SocialLocalMobile"
+              name: "Qwen3.5-35B-A3B-HQQ-INT4"
+            quant: "quantized-int4-weight-only"
+          # Voxtral Realtime only supports int4-tile-packed on CUDA
+          - model:
+              repo: "mistralai"
+              name: "Voxtral-Mini-4B-Realtime-2602"
+            quant: "non-quantized"
+          - model:
+              repo: "mistralai"
+              name: "Voxtral-Mini-4B-Realtime-2602"
+            quant: "quantized-int4-weight-only"
+          # Sortformer currently supports only non-quantized export
+          - model:
+              repo: "nvidia"
+              name: "diar_streaming_sortformer_4spk-v2"
+            quant: "quantized-int4-tile-packed"
+          - model:
+              repo: "nvidia"
+              name: "diar_streaming_sortformer_4spk-v2"
+            quant: "quantized-int4-weight-only"
+          # DINOv2 currently supports only non-quantized export
+          - model:
+              repo: "facebook"
+              name: "dinov2-small-imagenet1k-1-layer"
+            quant: "quantized-int4-tile-packed"
+          - model:
+              repo: "facebook"
+              name: "dinov2-small-imagenet1k-1-layer"
+            quant: "quantized-int4-weight-only"
+          # Qwen3 int4-weight-only: no downstream job consumes this artifact
+          - model:
+              repo: "Qwen"
+              name: "Qwen3-0.6B"
+            quant: "quantized-int4-weight-only"
+          - model:
+              repo: "nvidia"
+              name: "parakeet-tdt"
+            quant: "quantized-int4-weight-only"
+          # Whisper: cover all quant types and both sizes with minimal combos
+          # whisper-small: non-quantized only
+          # whisper-large-v3-turbo: int4-tile-packed + int4-weight-only
+          - model:
+              repo: "openai"
+              name: "whisper-small"
+            quant: "quantized-int4-tile-packed"
+          - model:
+              repo: "openai"
+              name: "whisper-small"
+            quant: "quantized-int4-weight-only"
+          - model:
+              repo: "openai"
+              name: "whisper-large-v3-turbo"
+            quant: "non-quantized"
     with:
       timeout: 90
       secrets-env: EXECUTORCH_HF_TOKEN
-      runner: linux.g5.4xlarge.nvidia.gpu
+      runner: ${{ matrix.model.name == 'Qwen3.5-35B-A3B-HQQ-INT4' && 'linux.aws.a100' || 'linux.g5.4xlarge.nvidia.gpu' }}
       gpu-arch-type: cuda
       gpu-arch-version: 12.6
       use-custom-docker-registry: false
@@ -169,8 +270,8 @@ jobs:
         ./install_executorch.sh
         echo "::endgroup::"
 
-        # Setup Huggingface only for models that need it (not parakeet)
-        if [ "${{ matrix.model.name }}" != "parakeet-tdt" ]; then
+        # Setup Huggingface only for models that need it (not parakeet or dinov2)
+        if [ "${{ matrix.model.name }}" != "parakeet-tdt" ] && [ "${{ matrix.model.name }}" != "dinov2-small-imagenet1k-1-layer" ]; then
           echo "::group::Setup Huggingface"
           pip install -U "huggingface_hub[cli]<1.0" accelerate
           huggingface-cli login --token $SECRET_EXECUTORCH_HF_TOKEN
@@ -194,6 +295,10 @@ jobs:
         model:
           - repo: "mistralai"
             name: "Voxtral-Mini-3B-2507"
+          - repo: "mistralai"
+            name: "Voxtral-Mini-4B-Realtime-2602"
+          - repo: "nvidia"
+            name: "diar_streaming_sortformer_4spk-v2"
           - repo: "openai"
             name: "whisper-small"
           - repo: "openai"
@@ -202,6 +307,10 @@ jobs:
             name: "gemma-3-4b-it"
           - repo: "nvidia"
             name: "parakeet-tdt"
+          - repo: "facebook"
+            name: "dinov2-small-imagenet1k-1-layer"
+          - repo: "SocialLocalMobile"
+            name: "Qwen3.5-35B-A3B-HQQ-INT4"
         quant:
           - "non-quantized"
           - "quantized-int4-tile-packed"
@@ -212,9 +321,64 @@ jobs:
               repo: "google"
               name: "gemma-3-4b-it"
             quant: "quantized-int4-weight-only"
+          # Qwen3.5 MoE uses a prequantized checkpoint, only tile-packed
+          - model:
+              repo: "SocialLocalMobile"
+              name: "Qwen3.5-35B-A3B-HQQ-INT4"
+            quant: "non-quantized"
+          - model:
+              repo: "SocialLocalMobile"
+              name: "Qwen3.5-35B-A3B-HQQ-INT4"
+            quant: "quantized-int4-weight-only"
+          # Voxtral Realtime only supports int4-tile-packed on CUDA
+          - model:
+              repo: "mistralai"
+              name: "Voxtral-Mini-4B-Realtime-2602"
+            quant: "non-quantized"
+          - model:
+              repo: "mistralai"
+              name: "Voxtral-Mini-4B-Realtime-2602"
+            quant: "quantized-int4-weight-only"
+          # Sortformer currently supports only non-quantized export
+          - model:
+              repo: "nvidia"
+              name: "diar_streaming_sortformer_4spk-v2"
+            quant: "quantized-int4-tile-packed"
+          - model:
+              repo: "nvidia"
+              name: "diar_streaming_sortformer_4spk-v2"
+            quant: "quantized-int4-weight-only"
+          # DINOv2 currently supports only non-quantized export
+          - model:
+              repo: "facebook"
+              name: "dinov2-small-imagenet1k-1-layer"
+            quant: "quantized-int4-tile-packed"
+          - model:
+              repo: "facebook"
+              name: "dinov2-small-imagenet1k-1-layer"
+            quant: "quantized-int4-weight-only"
+          - model:
+              repo: "nvidia"
+              name: "parakeet-tdt"
+            quant: "quantized-int4-weight-only"
+          # Whisper: cover all quant types and both sizes with minimal combos
+          # whisper-small: non-quantized only
+          # whisper-large-v3-turbo: int4-tile-packed + int4-weight-only
+          - model:
+              repo: "openai"
+              name: "whisper-small"
+            quant: "quantized-int4-tile-packed"
+          - model:
+              repo: "openai"
+              name: "whisper-small"
+            quant: "quantized-int4-weight-only"
+          - model:
+              repo: "openai"
+              name: "whisper-large-v3-turbo"
+            quant: "non-quantized"
     with:
       timeout: 90
-      runner: linux.g5.4xlarge.nvidia.gpu
+      runner: ${{ matrix.model.name == 'Qwen3.5-35B-A3B-HQQ-INT4' && 'linux.aws.a100' || 'linux.g5.4xlarge.nvidia.gpu' }}
       gpu-arch-type: cuda
       gpu-arch-version: 12.6
       use-custom-docker-registry: false
@@ -236,12 +400,20 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        model: ["gemma3-4b"]
-        quantize: ["", "--quantize"]
+        include:
+          - model: "gemma3-4b"
+            quantize: "--quantize"
+            artifact: "google-gemma-3-4b-it-cuda-quantized-int4-tile-packed"
+          - model: "qwen3-0.6b"
+            quantize: ""
+            artifact: "Qwen-Qwen3-0.6B-cuda-non-quantized"
+          - model: "qwen3-0.6b"
+            quantize: "--quantize"
+            artifact: "Qwen-Qwen3-0.6B-cuda-quantized-int4-tile-packed"
     with:
       timeout: 120
       secrets-env: EXECUTORCH_HF_TOKEN
-      download-artifact: google-gemma-3-4b-it-cuda-${{ matrix.quantize && 'quantized-int4-tile-packed' || 'non-quantized' }}
+      download-artifact: ${{ matrix.artifact }}
       runner: linux.g5.4xlarge.nvidia.gpu
       gpu-arch-type: cuda
       gpu-arch-version: 12.6
@@ -280,7 +452,7 @@ jobs:
         pip install git+https://github.com/huggingface/optimum-executorch.git@${OPTIMUM_ET_VERSION}
         echo "::endgroup::"
 
-        echo "::group::Test CUDA Multimodal: ${{ matrix.model }} ${{ matrix.quantize }}"
+        echo "::group::Test CUDA Model: ${{ matrix.model }} ${{ matrix.quantize }}"
         python .ci/scripts/test_huggingface_optimum_model.py \
           --model ${{ matrix.model }} \
           --recipe cuda \

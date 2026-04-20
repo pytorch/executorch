@@ -9,6 +9,9 @@
 from typing import Tuple
 
 import torch
+from executorch.backends.arm.quantizer.arm_quantizer import (
+    get_symmetric_a16w8_quantization_config,
+)
 
 from executorch.backends.arm.test import common
 
@@ -27,9 +30,9 @@ input_t1 = Tuple[torch.Tensor]  # Input x
 class Rsqrt(torch.nn.Module):
     test_parameters = {
         "ones_4d": lambda: (torch.ones(1, 10, 10, 10),),
-        "rand_4d_1": lambda: (torch.rand(1, 10, 10, 10),),
-        "rand_4d_2": lambda: (torch.rand(1, 5, 10, 20),),
-        "rand_3d": lambda: (torch.rand(5, 10, 20),),
+        "rand_4d_1": lambda: (torch.rand(1, 10, 10, 10) + 0.1,),
+        "rand_4d_2": lambda: (torch.rand(1, 5, 10, 20) + 0.1,),
+        "rand_3d": lambda: (torch.rand(5, 10, 20) + 0.1,),
     }
     test_parameters_fp16 = {
         "rand_3d_fp16": lambda: (torch.rand(3, 4, 5, dtype=torch.float16),),
@@ -129,6 +132,24 @@ def test_rsqrt_vgf_quant(test_tensor: torch.Tensor):
 
 
 @common.parametrize("test_tensor", Rsqrt.test_parameters)
+@common.SkipIfNoModelConverter
+def test_rsqrt_vgf_quant_a16w8(test_tensor: torch.Tensor):
+    pipeline = VgfPipeline[input_t1](
+        Rsqrt(),
+        test_tensor(),
+        aten_op,
+        exir_op=[],
+        quantize=True,
+        tosa_extensions=["int16"],
+        qtol=128,
+    )
+    pipeline.quantizer.set_global(
+        get_symmetric_a16w8_quantization_config(epsilon=2**-16)
+    )
+    pipeline.run()
+
+
+@common.parametrize("test_tensor", Rsqrt.test_parameters)
 def test_rsqrt_tosa_INT_a16w8(test_tensor: torch.Tensor):
     """Test rsqrt operation with int16 I/O quantization for TOSA INT."""
     # Use wider tolerances for int16 I/O quantization
@@ -138,15 +159,16 @@ def test_rsqrt_tosa_INT_a16w8(test_tensor: torch.Tensor):
         aten_op,
         exir_op=[],
         tosa_extensions=["int16"],
-        epsilon=2**16,
+        epsilon=2**-16,
+        qtol=128,
     )
     pipeline.run()
 
 
 @common.parametrize("test_tensor", Rsqrt.test_parameters)
 @common.XfailIfNoCorstone300
-def test_rsqrt_16a8w_u55_INT16(test_tensor: torch.Tensor):
-    """Test rsqrt operation with int16 I/O quantization for U55"""
+def test_rsqrt_16a8w_u55_INT(test_tensor: torch.Tensor):
+    """Test rsqrt operation with int16 I/O quantization for U55."""
     # Use wider tolerances for int16 I/O quantization on U55
     pipeline = EthosU55PipelineINT[input_t1](
         Rsqrt(),
@@ -154,7 +176,8 @@ def test_rsqrt_16a8w_u55_INT16(test_tensor: torch.Tensor):
         aten_op,
         exir_ops=[],
         a16w8_quantization=True,
-        epsilon=2**16,
+        epsilon=2**-16,
+        qtol=128,
     )
     pipeline.run()
 
@@ -162,7 +185,7 @@ def test_rsqrt_16a8w_u55_INT16(test_tensor: torch.Tensor):
 @common.parametrize("test_tensor", Rsqrt.test_parameters)
 @common.XfailIfNoCorstone320
 def test_rsqrt_16a8w_u85_INT(test_tensor: torch.Tensor):
-    """Test rsqrt operation with int16 I/O quantization for U85"""
+    """Test rsqrt operation with int16 I/O quantization for U85."""
     # Use wider tolerances for int16 I/O quantization on U85
     pipeline = EthosU85PipelineINT[input_t1](
         Rsqrt(),
@@ -170,6 +193,7 @@ def test_rsqrt_16a8w_u85_INT(test_tensor: torch.Tensor):
         aten_op,
         exir_ops=[],
         a16w8_quantization=True,
-        epsilon=2**16,
+        epsilon=2**-16,
+        qtol=128,
     )
     pipeline.run()

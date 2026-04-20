@@ -820,7 +820,9 @@ class PostponePermuteOpBelowSqueezeOrUnsqueezeLikeView(RemoveOrReplacePassInterf
         return PassResult(graph_module, overall_modified)
 
 
-class CommonReorderPasses:
+# The following class consolidates functions to reoder ops (i.e., either hoist
+# or sink some ops in the graph).
+class CadenceReorderOpsInGraph:
     passes = [
         # Hoist/sink nodes closer to their SSA def/use
         HoistOpsCloserToDefPass,
@@ -830,13 +832,6 @@ class CommonReorderPasses:
         # nodes closer to their def/use.
         AdvanceQuantizeOpAboveDefChainPass,
         PostponeDequantizeOpBelowUseChainPass,
-    ]
-
-
-# The following class consolidates functions to reoder ops (i.e., either hoist
-# or sink some ops in the graph).
-class CadenceReorderOpsInGraph:
-    passes = CommonReorderPasses.passes + [
         # These passes work on branches instead of linear chains to advance
         # quantize op beyond their def.
         AdvanceQuantizeOpAboveDefInBranchPass,

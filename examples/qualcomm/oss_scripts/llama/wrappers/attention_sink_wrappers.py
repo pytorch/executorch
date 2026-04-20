@@ -17,7 +17,7 @@ from executorch.backends.qualcomm._passes.qnn_pass_manager import (
     get_capture_program_passes,
 )
 from executorch.backends.qualcomm.builders.utils import is_graph_output
-from executorch.backends.qualcomm.quantizer.annotators import Q_ANNOTATION_KEY
+from executorch.backends.qualcomm.export_utils import make_quantizer
 from executorch.backends.qualcomm.quantizer.quantizer import QuantDtype
 from executorch.backends.qualcomm.utils.constants import (
     QCOM_DTYPE,
@@ -58,7 +58,6 @@ from executorch.examples.qualcomm.oss_scripts.llama.wrappers.base_component impo
     Processor,
     Request,
 )
-from executorch.examples.qualcomm.utils import make_quantizer
 from executorch.exir._serialize._program import deserialize_pte_binary
 from executorch.exir.capture._config import ExecutorchBackendConfig
 from executorch.exir.passes.memory_planning_pass import MemoryPlanningPass
@@ -66,6 +65,7 @@ from torch.fx import Node
 from torchao.quantization.pt2e import FixedQParamsObserver, MinMaxObserver
 from torchao.quantization.pt2e.quantize_pt2e import convert_pt2e, prepare_pt2e
 from torchao.quantization.pt2e.quantizer import QuantizationAnnotation, QuantizationSpec
+from torchao.quantization.pt2e.quantizer.quantizer import Q_ANNOTATION_KEY
 
 dtype_map = {
     "torch.uint8": torch.uint8,
@@ -436,7 +436,7 @@ class HybridAttentionSinkEvictor(Component):
         backend_options = generate_htp_compiler_spec(use_fp16=False)
         compiler_specs = [
             generate_qnn_executorch_compiler_spec(
-                soc_model=get_soc_to_chipset_map()[self.control_args.model],
+                soc_model=get_soc_to_chipset_map()[self.control_args.soc_model],
                 backend_options=backend_options,
                 shared_buffer=not self.control_args.enable_x86_64,
             )

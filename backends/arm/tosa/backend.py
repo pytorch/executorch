@@ -22,6 +22,10 @@ from typing import cast, Dict, final, List
 import torch
 
 import tosa_serializer as ts
+
+from executorch.backends.arm._passes.arm_pass_utils import (
+    get_cond_while_submodules_nested,
+)
 from executorch.backends.arm.common.arm_compile_spec import ArmCompileSpec
 from executorch.backends.arm.common.debug import debug_fail, debug_tosa_dump
 from executorch.backends.arm.debug.schema import DebugHook
@@ -35,7 +39,6 @@ from executorch.backends.arm.tosa.mapping import TOSA_TENSOR_NAME_META
 from executorch.exir.backend.backend_details import BackendDetails, PreprocessResult
 from executorch.exir.backend.compile_spec_schema import CompileSpec
 from executorch.exir.dim_order_utils import get_memory_format
-from executorch.exir.graph_module import get_cond_while_submodules
 from torch.export.exported_program import ExportedProgram
 from torch.fx import Graph, GraphModule, Node
 
@@ -167,7 +170,7 @@ class TOSABackend(BackendDetails):
 
         """
         return TOSABackend._preprocess(
-            edge_program, TosaCompileSpec.from_list(compile_specs)
+            edge_program, TosaCompileSpec._from_list(compile_specs)
         )
 
     @staticmethod
@@ -201,7 +204,7 @@ class TOSABackend(BackendDetails):
 
         """
         # if a debug/test build capture output files from TOSA stage
-        artifact_path = compile_spec.get_intermediate_path()
+        artifact_path = compile_spec._get_intermediate_path()
         tosa_spec = compile_spec.tosa_spec
         dump_debug_info = compile_spec.tosa_debug_mode
         debug_hook = None
@@ -329,7 +332,7 @@ class TOSABackend(BackendDetails):
         """
         tosa_spec = compile_spec.tosa_spec
         node_to_id_map = _annotate_external_ids(graph_module.graph)
-        artifact_path = compile_spec.get_intermediate_path()
+        artifact_path = compile_spec._get_intermediate_path()
         output_order_workaround = compile_spec.get_output_order_workaround()
 
         # TODO: Fix the need to lazily import this.
@@ -398,7 +401,7 @@ class TOSABackend(BackendDetails):
                 raise
 
         # Recursively preprocess controlflow submodules.
-        for name, submodule, control_flow_node in get_cond_while_submodules(
+        for name, submodule, control_flow_node in get_cond_while_submodules_nested(
             graph_module
         ):
             TOSABackend._regularize_submodule(submodule, control_flow_node)
@@ -428,12 +431,12 @@ class TOSABackend(BackendDetails):
 
         """
 
-        pipeline_config = compile_spec.get_pass_pipeline_config()
+        pipeline_config = compile_spec._get_pass_pipeline_config()
         tosa_compile_spec = TosaCompileSpec(compile_spec.tosa_spec)
         tosa_compile_spec.set_pass_pipeline_config(pipeline_config)
         return (
             tosa_compile_spec.dump_intermediate_artifacts_to(
-                compile_spec.get_intermediate_path()
+                compile_spec._get_intermediate_path()
             )
             .dump_debug_info(compile_spec.tosa_debug_mode)
             .set_output_order_workaround(compile_spec.output_order_workaround)

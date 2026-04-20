@@ -20,7 +20,7 @@ In this tutorial you will learn how to export a simple PyTorch model for the Exe
 ```{tip}
 If you are already familiar with this delegate, you may want to jump directly to the examples:
 * [Examples in the ExecuTorch repository](https://github.com/pytorch/executorch/tree/main/examples/arm)
-* [A commandline compiler for example models](https://github.com/pytorch/executorch/blob/main/examples/arm/aot_arm_compiler.py)
+* [A commandline compiler for example models](https://github.com/pytorch/executorch/blob/main/backends/arm/scripts/aot_arm_compiler.py)
 ```
 
 This tutorial serves as an introduction to using ExecuTorch to deploy PyTorch models on Arm&reg; Ethos&trade;-U targets. It is based on `ethos_u_minimal_example.ipynb`, provided in Arm’s examples folder.
@@ -95,7 +95,6 @@ compile_spec = EthosUCompileSpec(
             target="ethos-u55-128",
             system_config="Ethos_U55_High_End_Embedded",
             memory_mode="Shared_Sram",
-            extra_flags=["--output-format=raw", "--debug-force-regor"]
         )
 
 # Create and configure quantizer to use a symmetric quantization config globally on all nodes
@@ -143,9 +142,9 @@ save_pte_program(executorch_program_manager, "ethos_u_minimal_example.pte")
 
 
 ```{tip}
-For a quick start, you can use the script `examples/arm/aot_arm_compiler.py` to produce the pte.
+For a quick start, you can use the script `backends/arm/scripts/aot_arm_compiler.py` to produce the pte.
 To produce a pte file equivalent to the one above, run
-`python -m examples.arm.aot_arm_compiler --model_name=add --delegate --quantize --output=ethos_u_minimal_example.pte`
+`python -m backends.arm.scripts.aot_arm_compiler --model_name=add --delegate --quantize --output=ethos_u_minimal_example.pte`
 ```
 
 ### Runtime:

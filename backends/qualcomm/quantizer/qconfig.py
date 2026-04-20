@@ -13,6 +13,13 @@ from executorch.backends.qualcomm.quantizer.observers.per_block_param_observer i
     PerBlockParamFakeQuantize,
     PerBlockParamObserver,
 )
+from executorch.backends.qualcomm.quantizer.observers.per_channel_param_observer import (
+    PerChannelParamObserver,
+)
+from executorch.backends.qualcomm.utils.constants import (
+    DEFAULT_EPS_16BIT,
+    DEFAULT_EPS_8BIT,
+)
 from torch import Tensor
 from torch.fx import Node
 from torchao.quantization.pt2e import (
@@ -21,15 +28,11 @@ from torchao.quantization.pt2e import (
     MinMaxObserver,
     MovingAverageMinMaxObserver,
     MovingAveragePerChannelMinMaxObserver,
-    PerChannelMinMaxObserver,
 )
 from torchao.quantization.pt2e.quantizer import (
     DerivedQuantizationSpec,
     QuantizationSpec,
 )
-
-DEFAULT_EPS_8BIT = 0.0001 / 255
-DEFAULT_EPS_16BIT = 0.0001 / 65535
 
 
 @dataclass(eq=True)
@@ -39,6 +42,7 @@ class QuantizationConfig:
     weight: Optional[QuantizationSpec]
     bias: Optional[QuantizationSpec | Callable]
     block_size: Optional[Tuple] = None
+    per_channel_embedding: bool = False
 
 
 def _derived_bias_quant_spec(node: Node) -> DerivedQuantizationSpec:
@@ -114,14 +118,21 @@ def get_8a8w_qnn_ptq_config(
     # the smallest scale defaults to DEFAULT_EPS_8BIT
     extra_args: Dict[str, Any] = {"eps": eps if eps else DEFAULT_EPS_8BIT}
 
-    act_quantization_spec = QuantizationSpec(
-        dtype=torch.uint8,
-        qscheme=(
-            torch.per_tensor_symmetric if act_symmetric else torch.per_tensor_affine
-        ),
-        ch_axis=0,
-        observer_or_fake_quant_ctr=act_observer.with_args(**extra_args),
-    )
+    if act_symmetric:
+        act_quantization_spec = QuantizationSpec(
+            dtype=torch.uint8,
+            qscheme=(torch.per_tensor_symmetric),
+            ch_axis=0,
+            observer_or_fake_quant_ctr=act_observer.with_args(**extra_args),
+        )
+    else:
+        act_quantization_spec = QuantizationSpec(
+            dtype=torch.uint8,
+            quant_min=torch.iinfo(torch.uint8).min,
+            quant_max=torch.iinfo(torch.uint8).max,
+            qscheme=(torch.per_tensor_affine),
+            observer_or_fake_quant_ctr=act_observer.with_args(**extra_args),
+        )
 
     weight_quantization_spec = QuantizationSpec(
         dtype=torch.int8,
@@ -465,7 +476,7 @@ def get_ptq_per_channel_quant_config(
         quant_max=7 if weight_dtype == torch.int4 else torch.iinfo(weight_dtype).max,
         qscheme=torch.per_channel_symmetric,
         ch_axis=ch_axis,
-        observer_or_fake_quant_ctr=PerChannelMinMaxObserver.with_args(**extra_args),
+        observer_or_fake_quant_ctr=PerChannelParamObserver.with_args(**extra_args),
     )
 
     bias_quantization_spec = _derived_bias_quant_spec

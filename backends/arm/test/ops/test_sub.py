@@ -47,8 +47,10 @@ sub2_test_data = {
     "rand_2D_4x4": lambda: (torch.rand(4, 4), torch.rand(4, 4)),
     "rand_3D_4x4x4": lambda: (torch.rand(4, 2, 2), torch.rand(4, 2, 2)),
     "rand_4D_2x2x4x4": lambda: (torch.rand(2, 2, 4, 4), torch.rand(2, 2, 4, 4)),
+    # Ensure 'uniformly' large values in range [1*10e30, 2*10e30], otherwise small values become zero, leading to diff
+    # between quantized and unquantized graph
     "rand_4D_big_small": lambda: (
-        (10e30) * torch.randn(1, 20, 30, 40),
+        (10e30) * (torch.rand(1, 20, 30, 40) + 1),
         torch.randn(1, 20, 30, 40),
     ),
     "zeros": lambda: (torch.rand(4, 4), torch.zeros(4, 4)),
@@ -159,7 +161,22 @@ def test_sub_tensor_tosa_INT(test_data):
 @common.parametrize("test_data", sub2_test_data)
 def test_sub_tensor_tosa_INT_2(test_data: Tuple[torch.Tensor, torch.Tensor]):
     """Test Two-Operand Subtraction (TOSA INT)"""
-    pipeline = TosaPipelineINT[input_t2](Sub2(), test_data(), aten_op, exir_op, qtol=0)
+    test_data = test_data()
+    if test_data[0].flatten()[0].item() > 10e30:
+        # Even though diffs are relatively small for large values they are still big in absolute terms, triggering the
+        # cosine threshold check.
+        cosine_threshold = None
+    else:
+        cosine_threshold = 0.9
+
+    pipeline = TosaPipelineINT[input_t2](
+        Sub2(),
+        test_data,
+        aten_op,
+        exir_op,
+        qtol=0,
+        cosine_threshold=cosine_threshold,
+    )
     pipeline.run()
 
 
@@ -168,7 +185,13 @@ def test_sub_tensor_tosa_INT_3(test_data: Tuple[torch.Tensor, torch.Tensor]):
     """Test Two-Operand Subtraction (TOSA INT)"""
     # This test has only been added to the tosa INT profile in order to catch quantization-induced errors.
     pipeline = TosaPipelineINT[input_t2](
-        SubTan(), test_data(), aten_op, exir_op, qtol=0
+        SubTan(),
+        test_data(),
+        aten_op,
+        exir_op,
+        qtol=0,
+        frobenius_threshold=None,  # Outputs from this tests are unbounded due to tan(), so checking quantization errors doesn't make sense
+        cosine_threshold=None,
     )
     pipeline.run()
 
@@ -290,9 +313,92 @@ def test_sub_tensor_vgf_quant_2(test_data: Tuple[torch.Tensor, torch.Tensor]):
     pipeline.run()
 
 
+class SubConvResidual(torch.nn.Module):
+    """conv(x) - x — residual block. Creates non-unit IFM scales"""
+
+    def __init__(self):
+        super().__init__()
+        self.conv = torch.nn.Conv2d(3, 3, 1, bias=False)
+
+    def forward(self, x):
+        return self.conv(x) - x
+
+    test_data = {
+        "4d_randn": lambda: (torch.randn(1, 3, 4, 4),),
+    }
+
+
+@common.parametrize("test_data", SubConvResidual.test_data)
+def test_sub_conv_residual_tosa_INT(test_data: input_t1):
+    pipeline = TosaPipelineINT[input_t1](
+        SubConvResidual(), test_data(), aten_op, exir_op
+    )
+    pipeline.run()
+
+
+@common.parametrize("test_data", SubConvResidual.test_data)
+@common.XfailIfNoCorstone300
+def test_sub_conv_residual_u55_INT(test_data: input_t1):
+    pipeline = EthosU55PipelineINT[input_t1](
+        SubConvResidual(), test_data(), aten_op, exir_op
+    )
+    pipeline.run()
+
+
+@common.parametrize("test_data", SubConvResidual.test_data)
+@common.XfailIfNoCorstone320
+def test_sub_conv_residual_u85_INT(test_data: input_t1):
+    pipeline = EthosU85PipelineINT[input_t1](
+        SubConvResidual(), test_data(), aten_op, exir_op
+    )
+    pipeline.run()
+
+
+class SubDualConv(torch.nn.Module):
+    """conv1(x) - conv2(x) — both inputs have Rescale producers."""
+
+    def __init__(self):
+        super().__init__()
+        self.conv1 = torch.nn.Conv2d(3, 3, 1, bias=False)
+        self.conv2 = torch.nn.Conv2d(3, 3, 1, bias=False)
+
+    def forward(self, x):
+        return self.conv1(x) - self.conv2(x)
+
+    test_data = {
+        "4d_randn": lambda: (torch.randn(1, 3, 4, 4),),
+    }
+
+
+@common.parametrize("test_data", SubDualConv.test_data)
+def test_sub_dual_conv_tosa_INT(test_data: input_t1):
+    pipeline = TosaPipelineINT[input_t1](SubDualConv(), test_data(), aten_op, exir_op)
+    pipeline.run()
+
+
+@common.parametrize("test_data", SubDualConv.test_data)
+@common.XfailIfNoCorstone300
+def test_sub_dual_conv_u55_INT(test_data: input_t1):
+    pipeline = EthosU55PipelineINT[input_t1](
+        SubDualConv(), test_data(), aten_op, exir_op
+    )
+    pipeline.run()
+
+
+@common.parametrize("test_data", SubDualConv.test_data)
+@common.XfailIfNoCorstone320
+def test_sub_dual_conv_u85_INT(test_data: input_t1):
+    pipeline = EthosU85PipelineINT[input_t1](
+        SubDualConv(), test_data(), aten_op, exir_op
+    )
+    pipeline.run()
+
+
 @common.parametrize("test_data", sub_test_data)
 def test_sub_tensor_16a8w_tosa_INT(test_data: input_t1):
-    """Test sub operation with 16A8W quantization (16-bit activations, 8-bit weights)"""
+    """Test sub operation with 16A8W quantization (16-bit activations, 8-bit
+    weights)
+    """
     per_channel_quantization = False
 
     pipeline = TosaPipelineINT[input_t1](
@@ -310,7 +416,9 @@ def test_sub_tensor_16a8w_tosa_INT(test_data: input_t1):
 @common.parametrize("test_data", sub_test_data)
 @common.XfailIfNoCorstone300
 def test_sub_tensor_16a8w_u55_INT(test_data: input_t1):
-    """Test sub operation with 16A8W quantization on U55 (16-bit activations, 8-bit weights)"""
+    """Test sub operation with 16A8W quantization on U55 (16-bit activations,
+    8-bit weights)
+    """
     per_channel_quantization = False
 
     pipeline = EthosU55PipelineINT[input_t1](
@@ -329,7 +437,9 @@ def test_sub_tensor_16a8w_u55_INT(test_data: input_t1):
 @common.parametrize("test_data", sub_test_data)
 @common.XfailIfNoCorstone320
 def test_sub_tensor_16a8w_u85_INT(test_data: input_t1):
-    """Test sub operation with 16A8W quantization on U85 (16-bit activations, 8-bit weights)"""
+    """Test sub operation with 16A8W quantization on U85 (16-bit activations,
+    8-bit weights)
+    """
     per_channel_quantization = False
 
     pipeline = EthosU85PipelineINT[input_t1](

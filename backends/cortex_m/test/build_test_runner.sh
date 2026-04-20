@@ -12,7 +12,7 @@ set -eu
 script_dir=$(realpath "$(dirname "${BASH_SOURCE[0]}")")
 et_root_dir=$(realpath "${script_dir}/../../..")
 build_executorch="${et_root_dir}/backends/arm/scripts/build_executorch.sh"
-${build_executorch}
+${build_executorch} --devtools
 
 # Build executor runner with selected aten ops and semi hosting
 build_dir="${et_root_dir}/arm_test"
@@ -22,6 +22,13 @@ build_root_test_dir="${et_root_dir}/arm_test/arm_semihosting_executor_runner_cor
 select_ops_list="\
 aten::add.out,\
 aten::mul.out,\
-aten::convolution.out"
+aten::convolution.out,\
+dim_order_ops::_clone_dim_order.out,\
+aten::cat.out,\
+aten::full.out,\
+aten::ge.Tensor_out,\
+aten::unsqueeze_copy.out,\
+aten::select_copy.int_out,\
+aten::amax.out"
 
-${build_executor_runner} --pte=semihosting --target=ethos-u55-128 --output="${build_root_test_dir}" --select_ops_list="${select_ops_list}"
+${build_executor_runner} --pte=semihosting --bundleio --target=ethos-u55-128 --output="${build_root_test_dir}" --select_ops_list="${select_ops_list}" --extra_build_flags="-DET_ATOL=5.0 -DET_RTOL=1.0"

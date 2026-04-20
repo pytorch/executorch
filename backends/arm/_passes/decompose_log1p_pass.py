@@ -66,11 +66,7 @@ class DecomposeLog1pPass(ArmPass):
         if op not in self._supported_ops:
             return super().call_operator(op, args, kwargs, meta, updated=False)
 
-        is_quantized = (
-            len(meta.data.get("input_qparams", {})) > 0
-            and len(meta.data.get("output_qparams", {})) > 0
-        )
-        if is_quantized:
+        if self._is_quantized_meta(meta):
             # Quantized log1p should be handled by LUT/table instead of decomposition.
             return super().call_operator(op, args, kwargs, meta)
 

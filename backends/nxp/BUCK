@@ -13,6 +13,7 @@ fbcode_target(_kind = runtime.python_library,
     name = "aten_passes",
     srcs = glob([
         "aten_passes/*.py",
+        "aten_passes/**/*.py",
     ]),
     deps = [
         "//caffe2:torch",
@@ -55,6 +56,7 @@ fbcode_target(_kind = runtime.python_library,
     deps = [
         ":aten_passes",
         "//caffe2:torch",
+        "//executorch/backends/transforms:quantize_fused_convbn_bias_pass",
         "//pytorch/ao:torchao",  # @manual
     ],
 )
@@ -73,7 +75,6 @@ fbcode_target(_kind = runtime.python_library,
         "nxp_backend.py",
         "neutron_partitioner.py",
         "neutron_node_extraction.py",
-        "neutron_pass_manager.py",
     ],
     deps = [
         ":neutron_sdk",

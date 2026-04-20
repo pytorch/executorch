@@ -9,11 +9,6 @@
 
 #include "cortex_m_ops_common.h"
 
-// Include CMSIS-NN headers with C linkage
-extern "C" {
-#include "arm_nnfunctions.h"
-}
-
 namespace cortex_m {
 namespace native {
 using KernelRuntimeContext = torch::executor::KernelRuntimeContext;
@@ -31,6 +26,8 @@ Tensor& quantized_add_out(
     const int64_t output_zero_point,
     const int64_t output_multiplier,
     const int64_t output_shift,
+    const int64_t activation_min,
+    const int64_t activation_max,
     Tensor& out) {
   // Validate tensor types and dim order
   bool channel_broadcast = is_channel_broadcast(input1_int8, input2_int8);
@@ -56,29 +53,29 @@ Tensor& quantized_add_out(
       out);
 
   ET_LOG(
-      Info,
+      Debug,
       "quantized_add_out: input1_int8.sizes() = %zu",
       input1_int8.sizes().size());
 
-  int32_t zp1 = extractScalarToInt32(input1_zero_point);
-  int32_t input1_mult = extractScalarToInt32(input1_multiplier);
-  int input1_shift_val = extractScalarToInt(input1_shift);
-  int32_t zp2 = extractScalarToInt32(input2_zero_point);
-  int32_t input2_mult = extractScalarToInt32(input2_multiplier);
-  int input2_shift_val = extractScalarToInt(input2_shift);
-  int32_t out_zp = extractScalarToInt32(output_zero_point);
-  int32_t output_mult = extractScalarToInt32(output_multiplier);
-  int output_shift_val = extractScalarToInt(output_shift);
+  int32_t zp1 = static_cast<int32_t>(input1_zero_point);
+  int32_t input1_mult = static_cast<int32_t>(input1_multiplier);
+  int input1_shift_val = static_cast<int>(input1_shift);
+  int32_t zp2 = static_cast<int32_t>(input2_zero_point);
+  int32_t input2_mult = static_cast<int32_t>(input2_multiplier);
+  int input2_shift_val = static_cast<int>(input2_shift);
+  int32_t out_zp = static_cast<int32_t>(output_zero_point);
+  int32_t output_mult = static_cast<int32_t>(output_multiplier);
+  int output_shift_val = static_cast<int>(output_shift);
   int8_t* input1_ptr = input1_int8.data_ptr<int8_t>();
   int8_t* input2_ptr = input2_int8.data_ptr<int8_t>();
 
   // Left shift to maximize precision
   const int32_t left_shift = 20;
-  const int32_t activation_min = std::numeric_limits<int8_t>::min();
-  const int32_t activation_max = std::numeric_limits<int8_t>::max();
+  const int32_t act_min = static_cast<int32_t>(activation_min);
+  const int32_t act_max = static_cast<int32_t>(activation_max);
 
   ET_LOG(
-      Info,
+      Debug,
       "Using AoT-computed parameters: input1[mult=%d, shift=%d], input2[mult=%d, shift=%d], output[mult=%d, shift=%d]",
       input1_mult,
       input1_shift_val,
@@ -126,8 +123,8 @@ Tensor& quantized_add_out(
         static_cast<int32_t>(out_zp),
         output_mult,
         output_shift_val,
-        activation_min,
-        activation_max,
+        act_min,
+        act_max,
         adds_per_loop);
 
     if (status != ARM_CMSIS_NN_SUCCESS) {
@@ -141,7 +138,7 @@ Tensor& quantized_add_out(
     }
   }
   ET_LOG(
-      Info,
+      Debug,
       "quantized_add_out: Successfully completed with AoT-computed parameters!");
 
   return out;

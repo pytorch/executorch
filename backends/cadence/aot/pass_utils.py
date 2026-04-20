@@ -6,18 +6,21 @@
 
 # pyre-strict
 
+import dataclasses
 from abc import abstractmethod
 from dataclasses import dataclass
-from typing import Callable, List, Optional, Set, Type, Union
+from typing import Callable, List, Optional, override, Set, Type, TypeVar, Union
 
 import torch
+from beartype.door import die_if_unbearable
 from executorch.backends.cadence.aot.utils import get_edge_overload_packet
-
 from executorch.exir.dialects.edge._ops import EdgeOpOverload, EdgeOpOverloadPacket
 from executorch.exir.pass_base import ExportPass, PassBase, PassResult
-
 from torch._ops import OpOverloadPacket
 from torch.fx import Node
+from torch.fx.node import Argument
+
+T = TypeVar("T")
 
 
 # Is an overlap in tensor lifetime and storage allowed at the current opt level?
@@ -26,11 +29,20 @@ def allow_lifetime_and_storage_overlap(opt_level: int) -> bool:
     return opt_level >= 2
 
 
+# A dataclass that bundles feature flags for edge passes.
+# When adding a new flag, add a matching bool field to both this class and
+# CadencePassAttribute; the pass filter will pick it up automatically.
+@dataclass(frozen=True)
+class EdgePassesConfig:
+    use_im2row_transform: bool = False
+
+
 # A dataclass that stores the attributes of an ExportPass.
 @dataclass(frozen=True)
 class CadencePassAttribute:
     opt_level: Optional[int] = None
     debug_pass: bool = False
+    use_im2row_transform: bool = False
 
 
 # A dictionary that maps an ExportPass to its attributes.
@@ -56,10 +68,30 @@ def get_all_available_cadence_passes() -> Set[Type[PassBase]]:
     return set(ALL_CADENCE_PASSES.keys())
 
 
+def _check_feature_flags(
+    pass_attribute: CadencePassAttribute,
+    config: EdgePassesConfig,
+) -> bool:
+    """Check all feature flags: a pass is included only if every feature it
+    requires is enabled in the config. Iterates over EdgePassesConfig fields
+    so new flags are handled automatically."""
+    for field in dataclasses.fields(EdgePassesConfig):
+        if getattr(pass_attribute, field.name, False) and not getattr(
+            config, field.name
+        ):
+            return False
+    return True
+
+
 # Create a new filter to filter out relevant passes from all passes.
 def create_cadence_pass_filter(
-    opt_level: int, debug: bool = False
+    opt_level: int,
+    debug: bool = False,
+    edge_passes_config: Optional[EdgePassesConfig] = None,
 ) -> Callable[[Type[PassBase]], bool]:
+    if edge_passes_config is None:
+        edge_passes_config = EdgePassesConfig()
+
     def _filter(p: Type[PassBase]) -> bool:
         pass_attribute = get_cadence_pass_attribute(p)
         return (
@@ -67,6 +99,7 @@ def create_cadence_pass_filter(
             and pass_attribute.opt_level is not None
             and pass_attribute.opt_level <= opt_level
             and (not pass_attribute.debug_pass or debug)
+            and _check_feature_flags(pass_attribute, edge_passes_config)
         )
 
     return _filter
@@ -177,24 +210,50 @@ def nodes_not_adjacent_in_gm(
 def get_arg(
     node: torch.fx.Node,
     kwarg_name: str,
-) -> torch.fx.node.Argument:
+    expected_type: Type[T] = Argument,
+) -> T:
     """
     Get the arg with arg_name of the node, returns default value if not set.
+
+    Args:
+        node: The FX node to extract the argument from
+        kwarg_name: The name of the argument to extract
+        expected_type: Optional type to validate and cast the argument to.
+                      If provided, asserts the argument is an instance of this type.
+
+    Returns:
+        The argument value, optionally type-checked and cast to expected_type
+
+    Example:
+        # Get a node argument with type checking
+        conv_weight_node = get_arg(node, "weight", torch.fx.Node)
+
+        # Get a float argument with type checking
+        eps = get_arg(node, "eps", float)
+
+        # Get an argument without type checking (returns Argument)
+        value = get_arg(node, "some_arg")
     """
     # Try to get the arg from kwargs first since this is faster
     if kwarg_name in node.kwargs:
-        return node.kwargs[kwarg_name]
-
-    # If it's not found in kwargs, try to normalize the args
-    normalized_args = node.normalized_arguments(
-        node.graph.owning_module, normalize_to_only_use_kwargs=True
-    )
-    if not normalized_args:
-        raise RuntimeError(
-            f"get_arg: Node {node} does not support normalization of arguments"
+        value = node.kwargs[kwarg_name]
+    else:
+        # If it's not found in kwargs, try to normalize the args
+        normalized_args = node.normalized_arguments(
+            node.graph.owning_module, normalize_to_only_use_kwargs=True
         )
+        if not normalized_args:
+            raise RuntimeError(
+                f"get_arg: Node {node} does not support normalization of arguments"
+            )
+        value = normalized_args.kwargs[kwarg_name]
 
-    return normalized_args.kwargs[kwarg_name]
+    # Validate type using beartype's runtime type checker when a specific
+    # type is requested (not the default Argument type alias, which contains
+    # recursive forward references that beartype cannot resolve).
+    if expected_type is not Argument:
+        die_if_unbearable(value, expected_type)
+    return value  # type: ignore[return-value]
 
 
 def set_arg(
@@ -233,7 +292,39 @@ def none_throws(x: Optional[PassResult]) -> PassResult:
     return x
 
 
-class RemoveOrReplacePassInterface(ExportPass):
+class HierarchicalInplacePassInterface(ExportPass):
+    """A base class for passes that apply in-place modification to the graph module and its submodules.
+    Also calls ExportPass.call() in case the graph module is modified to ensure all nodes have valid `meta['val']`.
+    """
+
+    @abstractmethod
+    def _apply_flat_inplace(self, graph_module) -> bool:
+        """Apply in-place modification to the graph module."""
+        raise NotImplementedError("`_apply_flat_inplace` must be implemented")
+
+    def _apply_hierarchical_inplace(self, graph_module: torch.fx.GraphModule) -> bool:
+        """Apply in-place modification recursively to the graph module and its submodules."""
+
+        modified: bool = False
+        for module in filter(
+            lambda m: isinstance(m, torch.fx.GraphModule), graph_module.modules()
+        ):
+            modified |= self._apply_flat_inplace(module)
+
+        return modified
+
+    def call(self, graph_module: torch.fx.GraphModule) -> PassResult:
+        modified = self._apply_hierarchical_inplace(graph_module)
+
+        if modified:
+            graph_module.graph.eliminate_dead_code()
+            graph_module.recompile()
+            return super().call(graph_module)
+
+        return PassResult(graph_module, False)
+
+
+class RemoveOrReplacePassInterface(HierarchicalInplacePassInterface):
     @property
     @abstractmethod
     def targets(self) -> list[EdgeOpOverload]:
@@ -250,31 +341,18 @@ class RemoveOrReplacePassInterface(ExportPass):
         """
         raise NotImplementedError("`maybe_remove_or_replace` must be implemented")
 
-    def call(self, graph_module: torch.fx.GraphModule) -> PassResult:
-        """
-        For each node in targets, if the node should be removed/replaced,
-        removes/replaces from the graph and returns the modified graph and modified
-        set to True.
-        If no node should be removed/replaced, returns a pass result with the original
-        graph module and False for modified.
-        """
+    @override
+    def _apply_flat_inplace(self, graph_module: torch.fx.GraphModule) -> bool:
         changed = False
         for target in self.targets:
-            for module in filter(
-                lambda m: isinstance(m, torch.fx.GraphModule), graph_module.modules()
+            for node in graph_module.graph.find_nodes(
+                op="call_function", target=target
             ):
-                for node in module.graph.find_nodes(op="call_function", target=target):
-                    if len(node.users) == 0:
-                        # It is possible that maybe_remove_or_replace would have removed
-                        # this target by starting from a different target. In this case,
-                        # we should ignore it. If it wasn't erased, it will be handled
-                        # in eliminate_dead_code.
-                        continue
-                    changed |= self.maybe_remove_or_replace(node)
-
-        if changed:
-            graph_module.graph.eliminate_dead_code()
-            graph_module.recompile()
-            return super().call(graph_module)
-
-        return PassResult(graph_module, False)
+                if len(node.users) == 0:
+                    # It is possible that maybe_remove_or_replace would have removed
+                    # this target by starting from a different target. In this case,
+                    # we should ignore it. If it wasn't erased, it will be handled
+                    # in eliminate_dead_code.
+                    continue
+                changed |= self.maybe_remove_or_replace(node)
+        return changed

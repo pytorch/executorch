@@ -11,9 +11,12 @@
 #include <executorch/runtime/core/error.h>
 #include <executorch/runtime/core/evalue.h>
 #include <executorch/runtime/core/exec_aten/util/tensor_util.h>
+#include <sys/mman.h>
 #include <unistd.h>
+#include <cerrno>
 #include <chrono>
 #include <cstdio>
+#include <cstdlib>
 
 #include <filesystem>
 #include <fstream>
@@ -246,7 +249,41 @@ class ET_EXPERIMENTAL MetalBackend final
     ET_LOG(Info, "MetalBackend::init - so_blob_key: %s", so_blob_key.c_str());
 
     const NamedDataMap* named_data_map = context.get_named_data_map();
-    ET_LOG(Info, "MetalBackend::init - Got named data map: %p", named_data_map);
+    ET_CHECK_OR_RETURN_ERROR(
+        named_data_map != nullptr,
+        Internal,
+        "MetalBackend requires a NamedDataMap for weight loading");
+
+    // Prefetch the weights blob — trigger async readahead so pages are
+    // resident by the time update_constants_from_blob memcpy's them.
+    // This overlaps disk I/O with the .so write + dlopen (~200ms).
+    std::string weights_blob_key =
+        method_name.empty() ? "weights_blob" : method_name + "_weights_blob";
+    {
+      auto prefetch_buf = named_data_map->get_data(weights_blob_key.c_str());
+      if (prefetch_buf.ok() && prefetch_buf->data() != nullptr) {
+        // Align address down to page boundary (madvise requires it).
+        uintptr_t addr = reinterpret_cast<uintptr_t>(prefetch_buf->data());
+        size_t page_size = getpagesize();
+        uintptr_t aligned_addr = addr & ~(page_size - 1);
+        size_t aligned_size = prefetch_buf->size() + (addr - aligned_addr);
+        int ret = madvise(
+            reinterpret_cast<void*>(aligned_addr), aligned_size, MADV_WILLNEED);
+        if (ret != 0) {
+          ET_LOG(
+              Info,
+              "MetalBackend::init - madvise(MADV_WILLNEED) failed for %s: %s",
+              weights_blob_key.c_str(),
+              strerror(errno));
+        } else {
+          ET_LOG(
+              Info,
+              "MetalBackend::init - Prefetching %s (%.1f MB)",
+              weights_blob_key.c_str(),
+              prefetch_buf->size() / (1024.0 * 1024.0));
+        }
+      }
+    }
 
     ET_LOG(
         Info,
@@ -343,9 +380,8 @@ class ET_EXPERIMENTAL MetalBackend final
 
     handle->container_handle = container_handle;
 
-    // Look into named data map for constant data
-    std::string weights_blob_key =
-        method_name.empty() ? "weights_blob" : method_name + "_weights_blob";
+    // Look into named data map for constant data (key computed above for
+    // prefetch)
     auto buffer_res = named_data_map->get_data(weights_blob_key.c_str());
     if (buffer_res.ok() && handle->update_constants_from_blob != nullptr) {
       ET_LOG(Info, "Found %s in named data map", weights_blob_key.c_str());
@@ -394,6 +430,23 @@ class ET_EXPERIMENTAL MetalBackend final
 #endif
     ET_LOG(Debug, "MetalBackend execute");
 
+    // Allow overriding the default flush interval (set in ETMetalStream
+    // constructor)
+    static std::once_flag flush_interval_flag;
+    std::call_once(flush_interval_flag, [] {
+      const char* env = std::getenv("ET_METAL_FLUSH_INTERVAL");
+      if (env) {
+        try {
+          int val = std::stoi(env);
+          if (val >= 0) {
+            getCurrentMetalStream()->setFlushInterval(val);
+          }
+        } catch (const std::exception&) {
+          ET_LOG(Error, "Invalid ET_METAL_FLUSH_INTERVAL value: '%s'", env);
+        }
+      }
+    });
+
     AOTIDelegateHandle* handle = (AOTIDelegateHandle*)handle_;
 
     ET_LOG(Debug, "MetalBackend Handle generated");
@@ -423,164 +476,103 @@ class ET_EXPERIMENTAL MetalBackend final
 
     int32_t mps_device_type = aoti_torch_device_type_mps(); // Returns 13
 
-    // NOTE: ExecuTorch tensors are always on CPU/host memory
-    // We need to create GPU copies for Metal kernel execution
-    std::vector<AOTITensorHandle> gpu_inputs(
-        n_inputs); // GPU copies for kernel execution
-    std::vector<AOTITensorHandle> gpu_outputs(
-        n_outputs); // GPU tensors for kernel output
+    // NOTE: ExecuTorch tensors are always on CPU/host memory.
+    // We create GPU copies for Metal kernel execution.
+    std::vector<AOTITensorHandle> gpu_inputs(n_inputs, nullptr);
+    std::vector<AOTITensorHandle> gpu_outputs(n_outputs, nullptr);
+    // Saved pre-run output handles so we can detect (and clean up)
+    // outputs that run() replaces with its own tensors.
+    std::vector<AOTITensorHandle> pre_run_outputs(n_outputs, nullptr);
 
-    ET_LOG(Debug, "MetalBackend input/output vectors generated");
+    // Track whether run() has been called. Before run(), we own the
+    // inputs and must clean them up on error. After run(), inputs are
+    // stolen (RAII inside run_impl deletes them).
+    bool run_called = false;
 
-    // Process input tensors: ExecuTorch provides CPU tensors, create GPU
-    // copies
-    for (int i = 0; i < n_inputs; i++) {
-      ET_LOG(Debug, "Processing input %d from args to inputs vector", i);
-      ET_LOG(
-          Debug, "is %d input a tensor input? %d", i, int(args[i]->isTensor()));
+    // Scope guard: ensures all GPU tensors are cleaned up on any exit path.
+    executorch::backends::aoti::ScopeGuard cleanup([&]() noexcept {
+      // Clean up inputs only if run() was never called (it steals them).
+      if (!run_called) {
+        for (size_t i = 0; i < gpu_inputs.size(); i++) {
+          if (gpu_inputs[i]) {
+            aoti_torch_delete_tensor_object(gpu_inputs[i]);
+          }
+        }
+      }
+      // Clean up outputs: delete orphaned pre-created tensors that run()
+      // replaced, and delete the current output handles.
+      for (size_t i = 0; i < gpu_outputs.size(); i++) {
+        if (pre_run_outputs[i] && pre_run_outputs[i] != gpu_outputs[i]) {
+          aoti_torch_delete_tensor_object(pre_run_outputs[i]);
+        }
+        if (gpu_outputs[i]) {
+          aoti_torch_delete_tensor_object(gpu_outputs[i]);
+        }
+      }
+    });
 
-      // Get tensor dimensions and properties from ExecuTorch CPU tensor
+    // Create GPU input tensors and copy CPU data to them.
+    for (size_t i = 0; i < n_inputs; i++) {
       auto cpu_tensor = &(args[i]->toTensor());
       auto sizes = cpu_tensor->sizes();
-      auto scalar_type = cpu_tensor->scalar_type();
-      ET_LOG(
-          Debug,
-          "MetalBackend input %d scalar_type=%d",
-          i,
-          static_cast<int32_t>(scalar_type));
-
-      // Create GPU tensor with same shape
       std::vector<int64_t> sizes_vec(sizes.begin(), sizes.end());
 
-      AOTITensorHandle gpu_input_handle;
-      Error create_err = aoti_torch_empty_strided(
-          sizes_vec.size(),
-          sizes_vec.data(),
-          nullptr, // use default strides
-          static_cast<int32_t>(scalar_type),
-          mps_device_type, // device_type = mps
-          0, // device_index = 0
-          &gpu_input_handle);
+      ET_CHECK_OK_OR_RETURN_ERROR(
+          aoti_torch_empty_strided(
+              sizes_vec.size(),
+              sizes_vec.data(),
+              nullptr,
+              static_cast<int32_t>(cpu_tensor->scalar_type()),
+              mps_device_type,
+              0,
+              &gpu_inputs[i]),
+          "Failed to create GPU tensor for input %d",
+          i);
 
-      if (create_err != Error::Ok) {
-        ET_LOG(Error, "Failed to create GPU tensor for input %d", i);
-        return Error::Internal;
-      }
-
-      // Log the created GPU tensor scalar type
-      auto gpu_tensor = reinterpret_cast<executorch::runtime::etensor::Tensor*>(
-          gpu_input_handle);
-      ET_LOG(
-          Debug,
-          "MetalBackend created GPU tensor %d scalar_type=%d",
-          i,
-          static_cast<int32_t>(gpu_tensor->scalar_type()));
-
-      gpu_inputs[i] = gpu_input_handle;
-
-      // Log the CPU tensor data before copying to GPU
-      void* cpu_data = cpu_tensor->mutable_data_ptr();
-      if (cpu_data && cpu_tensor->numel() > 0) {
-        float* cpu_float_data = (float*)cpu_data;
-        ET_LOG(
-            Debug,
-            "CPU input %d data before copy: [%.3f, %.3f, %.3f, ...] (numel=%zd)",
-            i,
-            cpu_float_data[0],
-            cpu_float_data[1],
-            cpu_float_data[2],
-            cpu_tensor->numel());
-      }
-
-      // Copy data from CPU to GPU
-      Error copy_err = aoti_torch_copy_(gpu_inputs[i], cpu_tensor, 0);
-      if (copy_err != Error::Ok) {
-        ET_LOG(Error, "Failed to copy input %d from CPU to GPU", i);
-        return Error::Internal;
-      }
-
-      // Log the GPU tensor scalar type after copy
-      auto gpu_tensor_after =
-          reinterpret_cast<executorch::runtime::etensor::Tensor*>(
-              gpu_inputs[i]);
-      ET_LOG(
-          Debug,
-          "MetalBackend GPU tensor %d scalar_type after copy=%d",
-          i,
-          static_cast<int32_t>(gpu_tensor_after->scalar_type()));
-
-      ET_LOG(Debug, "Successfully copied input %d from CPU to GPU", i);
+      ET_CHECK_OK_OR_RETURN_ERROR(
+          aoti_torch_copy_(gpu_inputs[i], cpu_tensor, 0),
+          "Failed to copy input %d from CPU to GPU",
+          i);
     }
 
-    ET_LOG(Debug, "MetalBackend GPU inputs generated");
-
-    // Process output tensors: create GPU counterparts for ExecuTorch CPU
-    // tensors
-    for (int i = 0; i < n_outputs; i++) {
-      // Get output tensor dimensions from ExecuTorch CPU tensor
+    // Create GPU output tensors. run() may replace these with its own
+    // handles — pre_run_outputs lets us detect and clean up orphans.
+    for (size_t i = 0; i < n_outputs; i++) {
       auto cpu_output_tensor = &(args[i + n_inputs]->toTensor());
       auto sizes = cpu_output_tensor->sizes();
-      auto scalar_type = cpu_output_tensor->scalar_type();
-      ET_LOG(
-          Debug,
-          "MetalBackend output %d scalar_type=%d",
-          i,
-          static_cast<int32_t>(scalar_type));
-
-      // Create GPU tensor with same shape for kernel output
       std::vector<int64_t> sizes_vec(sizes.begin(), sizes.end());
 
-      AOTITensorHandle gpu_output_handle;
-      Error create_err = aoti_torch_empty_strided(
-          sizes_vec.size(),
-          sizes_vec.data(),
-          nullptr, // use default strides
-          static_cast<int32_t>(scalar_type),
-          mps_device_type, // device_type = mps
-          0, // device_index = 0
-          &gpu_output_handle);
+      ET_CHECK_OK_OR_RETURN_ERROR(
+          aoti_torch_empty_strided(
+              sizes_vec.size(),
+              sizes_vec.data(),
+              nullptr,
+              static_cast<int32_t>(cpu_output_tensor->scalar_type()),
+              mps_device_type,
+              0,
+              &gpu_outputs[i]),
+          "Failed to create GPU tensor for output %d",
+          i);
 
-      if (create_err != Error::Ok) {
-        ET_LOG(Error, "Failed to create GPU tensor for output %d", i);
-        return Error::Internal;
-      }
-
-      gpu_outputs[i] = gpu_output_handle;
-      ET_LOG(Debug, "Created GPU output tensor %d", i);
+      pre_run_outputs[i] = gpu_outputs[i];
     }
 
-    ET_LOG(Debug, "MetalBackend output generated");
-
-    // Log tensor handles before passing to AOTI container
-    ET_LOG(Debug, "Passing to AOTInductorModelContainerRun:");
-    for (int i = 0; i < n_inputs; i++) {
-      void* gpu_input_data = gpu_inputs[i]->mutable_data_ptr();
-      ET_LOG(
-          Debug,
-          "  gpu_inputs[%d] = %p, data_ptr = %p",
-          i,
-          gpu_inputs[i],
-          gpu_input_data);
-    }
-    for (int i = 0; i < n_outputs; i++) {
-      void* gpu_output_data = gpu_outputs[i]->mutable_data_ptr();
-      ET_LOG(
-          Debug,
-          "  gpu_outputs[%d] = %p, data_ptr = %p",
-          i,
-          gpu_outputs[i],
-          gpu_output_data);
-    }
-
-    // Run AOTI container with GPU tensors
+    // Run AOTI container. Per the AOTI contract:
+    //   - input handles are "stolen" (run() takes ownership via RAII)
+    //   - output handles are written by run() (may replace pre-created ones)
+    // NOTE: We assume run() steals all inputs upfront (RAII wraps them at
+    // the start of run_impl). If run() fails partway, un-stolen inputs
+    // would leak — but the AOTI contract guarantees all-or-nothing
+    // ownership transfer.
     AOTIRuntimeError error = handle->run(
         handle->container_handle,
-        gpu_inputs.data(), // Use GPU input tensors
+        gpu_inputs.data(),
         n_inputs,
-        gpu_outputs.data(), // Use GPU output tensors
+        gpu_outputs.data(),
         n_outputs,
-        nullptr, // Pass the actual Metal stream!
-        nullptr); // proxy_executor_handle can remain nullptr
+        nullptr,
+        nullptr);
+    run_called = true;
 
     if (error != Error::Ok) {
       ET_LOG(
@@ -606,12 +598,9 @@ class ET_EXPERIMENTAL MetalBackend final
       return Error::Internal;
     }
 
-    ET_LOG(Debug, "MetalBackend running done and synchronized");
-
     // Copy GPU output results back to CPU output tensors
-    for (int i = 0; i < n_outputs; i++) {
+    for (size_t i = 0; i < n_outputs; i++) {
       auto cpu_output_tensor = &(args[i + n_inputs]->toTensor());
-      // For DYNAMIC_BOUND tensors we try to resize
       ET_CHECK_OK_OR_RETURN_ERROR(
           resize_tensor(*cpu_output_tensor, gpu_outputs[i]->sizes()),
           "Error resizing tensor at output index %d",
@@ -620,20 +609,10 @@ class ET_EXPERIMENTAL MetalBackend final
           aoti_torch_copy_(cpu_output_tensor, gpu_outputs[i], 0),
           "Failed to copy GPU output %d back to CPU",
           i);
-      ET_LOG(Debug, "Copied GPU output %d back to CPU", i);
     }
 
-    // Clean up GPU tensors that we created (ExecuTorch tensors are always
-    // CPU, so all GPU tensors are our copies)
-    for (int i = 0; i < n_inputs; i++) {
-      // All GPU input tensors were created by us, delete them
-      aoti_torch_delete_tensor_object(gpu_inputs[i]);
-    }
-
-    for (int i = 0; i < n_outputs; i++) {
-      // All GPU output tensors were created by us, delete them
-      aoti_torch_delete_tensor_object(gpu_outputs[i]);
-    }
+    // ScopeGuard destructor cleans up all output tensors (both
+    // orphaned pre-created ones and run()'s replacements).
 
     ET_LOG(Debug, "MetalBackend execution completed successfully");
 

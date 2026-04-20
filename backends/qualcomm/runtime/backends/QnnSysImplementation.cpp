@@ -16,7 +16,6 @@ using executorch::runtime::Error;
 
 Error QnnSystemImplementation::Load() {
   Qnn_ErrorHandle_t error = QNN_SUCCESS;
-
   void* lib_handle_ = dlopen(lib_path_.c_str(), RTLD_NOW | RTLD_LOCAL);
   if (lib_handle_ == nullptr) {
     QNN_EXECUTORCH_LOG_ERROR(
@@ -48,7 +47,6 @@ Error QnnSystemImplementation::Load() {
         QNN_GET_ERROR_CODE(error));
     return Error::Internal;
   }
-
   if (num_providers != required_num_providers_) {
     QNN_EXECUTORCH_LOG_ERROR(
         "QnnSystemInterface Num "

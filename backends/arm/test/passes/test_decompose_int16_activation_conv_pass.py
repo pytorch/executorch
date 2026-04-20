@@ -1,16 +1,15 @@
-# Copyright 2025 Arm Limited and/or its affiliates.
+# Copyright 2025-2026 Arm Limited and/or its affiliates.
 #
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
-
-"""
-Tests for DecomposeConvWithInt16ActivationPass.
+"""Tests for DecomposeConvWithInt16ActivationPass.
 
 This pass decomposes convolution with int16 activation and bias into:
 - A convolution without bias
 - A rescale to int32
 - An add with the reshaped bias
 - A rescale back to the output dtype
+
 """
 
 from typing import Tuple
@@ -107,9 +106,8 @@ class Conv2dMultipleConvs(torch.nn.Module):
         return x
 
 
-def test_decompose_int16_conv_pass_fp32_no_decomposition() -> None:
-    """
-    Test that DecomposeConvWithInt16ActivationPass does NOT decompose
+def test_decompose_conv_with_int16_activation_fp32_no_decomposition() -> None:
+    """Test that DecomposeConvWithInt16ActivationPass does NOT decompose
     convolution when using FP32 (no quantization).
     """
     module = Conv2dWithBias()
@@ -137,11 +135,12 @@ aten_op = "torch.ops.aten.conv2d.default"
 exir_op = "executorch_exir_dialects_edge__ops_aten_convolution_default"
 
 
-def test_conv2d_int16_e2e_tosa_single_conv() -> None:
-    """
-    End-to-end test for conv2d with INT16 quantization using TOSA pipeline.
-    This validates the full lowering path including the decomposition pass
-    for a single convolution with bias.
+def test_decompose_conv_with_int16_activation_tosa_INT_single_conv() -> None:
+    """End-to-end test for conv2d with INT16 quantization using TOSA pipeline.
+
+    This validates the full lowering path including the decomposition pass for a
+    single convolution with bias.
+
     """
     module = Conv2dWithBias()
     pipeline = TosaPipelineINT[input_t](
@@ -154,11 +153,12 @@ def test_conv2d_int16_e2e_tosa_single_conv() -> None:
     pipeline.run()
 
 
-def test_conv2d_int16_e2e_tosa_multiple_convs() -> None:
-    """
-    End-to-end test for conv2d with INT16 quantization using TOSA pipeline.
-    This validates the full lowering path including the decomposition pass
-    for multiple convolutions with bias.
+def test_decompose_conv_with_int16_activation_tosa_INT_multiple_convs() -> None:
+    """End-to-end test for conv2d with INT16 quantization using TOSA pipeline.
+
+    This validates the full lowering path including the decomposition pass for
+    multiple convolutions with bias.
+
     """
     module = Conv2dMultipleConvs()
     pipeline = TosaPipelineINT[input_t](
@@ -171,10 +171,11 @@ def test_conv2d_int16_e2e_tosa_multiple_convs() -> None:
     pipeline.run()
 
 
-def test_conv2d_int16_e2e_tosa_without_bias() -> None:
-    """
-    End-to-end test for conv2d without bias with INT16 quantization.
+def test_decompose_conv_with_int16_activation_tosa_INT_without_bias() -> None:
+    """End-to-end test for conv2d without bias with INT16 quantization.
+
     This validates that convolutions without bias don't get decomposed.
+
     """
     module = Conv2dWithoutBias()
     pipeline = TosaPipelineINT[input_t](
@@ -187,10 +188,11 @@ def test_conv2d_int16_e2e_tosa_without_bias() -> None:
     pipeline.run()
 
 
-def test_conv2d_int8_e2e_tosa() -> None:
-    """
-    End-to-end test for conv2d with INT8 quantization using TOSA pipeline.
+def test_decompose_conv_with_int16_activation_tosa_INT_int8() -> None:
+    """End-to-end test for conv2d with INT8 quantization using TOSA pipeline.
+
     This validates that INT8 activations don't trigger the decomposition.
+
     """
     module = Conv2dWithBias()
     pipeline = TosaPipelineINT[input_t](

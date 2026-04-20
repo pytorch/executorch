@@ -20,10 +20,13 @@
 #include <executorch/extension/tensor/tensor_ptr_maker.h>
 #include <executorch/runtime/platform/log.h>
 
+#include <executorch/extension/android/jni/jni_helper.h>
+
 namespace asr = ::executorch::extension::asr;
 using ::executorch::extension::from_blob;
 using ::executorch::extension::Module;
 using ::executorch::extension::TensorPtr;
+using ::executorch::jni_helper::utf8_check_validity;
 using ::executorch::runtime::Error;
 
 namespace {
@@ -43,37 +46,6 @@ std::string jstringToString(JNIEnv* env, jstring jstr) {
   std::string result(chars);
   env->ReleaseStringUTFChars(jstr, chars);
   return result;
-}
-
-// Helper for UTF-8 validity checking (for streaming tokens)
-bool utf8_check_validity(const char* str, size_t length) {
-  for (size_t i = 0; i < length; ++i) {
-    uint8_t byte = static_cast<uint8_t>(str[i]);
-    if (byte >= 0x80) {
-      if (i + 1 >= length) {
-        return false;
-      }
-      uint8_t next_byte = static_cast<uint8_t>(str[i + 1]);
-      if ((byte & 0xE0) == 0xC0 && (next_byte & 0xC0) == 0x80) {
-        i += 1;
-      } else if (
-          (byte & 0xF0) == 0xE0 && (next_byte & 0xC0) == 0x80 &&
-          (i + 2 < length) &&
-          (static_cast<uint8_t>(str[i + 2]) & 0xC0) == 0x80) {
-        i += 2;
-      } else if (
-          (byte & 0xF8) == 0xF0 && (next_byte & 0xC0) == 0x80 &&
-          (i + 2 < length) &&
-          (static_cast<uint8_t>(str[i + 2]) & 0xC0) == 0x80 &&
-          (i + 3 < length) &&
-          (static_cast<uint8_t>(str[i + 3]) & 0xC0) == 0x80) {
-        i += 3;
-      } else {
-        return false;
-      }
-    }
-  }
-  return true;
 }
 
 // Global cached JNI references for callback (shared across threads)
@@ -156,8 +128,9 @@ Java_org_pytorch_executorch_extension_asr_AsrModule_nativeCreate(
       auto load_error = handle->preprocessor->load();
       if (load_error != Error::Ok) {
         ET_LOG(Error, "Failed to load preprocessor module");
-        env->ThrowNew(
-            env->FindClass("java/lang/RuntimeException"),
+        executorch::jni_helper::setExecutorchPendingException(
+            env,
+            static_cast<uint32_t>(load_error),
             "Failed to load preprocessor module");
         return 0;
       }
@@ -166,9 +139,10 @@ Java_org_pytorch_executorch_extension_asr_AsrModule_nativeCreate(
     return reinterpret_cast<jlong>(handle.release());
   } catch (const std::exception& e) {
     ET_LOG(Error, "Failed to create AsrModule: %s", e.what());
-    env->ThrowNew(
-        env->FindClass("java/lang/RuntimeException"),
-        ("Failed to create AsrModule: " + std::string(e.what())).c_str());
+    executorch::jni_helper::setExecutorchPendingException(
+        env,
+        static_cast<uint32_t>(Error::Internal),
+        "Failed to create AsrModule: " + std::string(e.what()));
     return 0;
   }
 }
@@ -200,8 +174,9 @@ Java_org_pytorch_executorch_extension_asr_AsrModule_nativeLoad(
     jobject /* this */,
     jlong nativeHandle) {
   if (nativeHandle == 0) {
-    env->ThrowNew(
-        env->FindClass("java/lang/IllegalStateException"),
+    executorch::jni_helper::setExecutorchPendingException(
+        env,
+        static_cast<uint32_t>(Error::InvalidState),
         "Module has been destroyed");
     return -1;
   }
@@ -246,15 +221,17 @@ Java_org_pytorch_executorch_extension_asr_AsrModule_nativeTranscribe(
     jlong decoderStartTokenId,
     jobject callback) {
   if (nativeHandle == 0) {
-    env->ThrowNew(
-        env->FindClass("java/lang/IllegalStateException"),
+    executorch::jni_helper::setExecutorchPendingException(
+        env,
+        static_cast<uint32_t>(Error::InvalidState),
         "Module has been destroyed");
     return -1;
   }
 
   if (wavPath == nullptr) {
-    env->ThrowNew(
-        env->FindClass("java/lang/IllegalArgumentException"),
+    executorch::jni_helper::setExecutorchPendingException(
+        env,
+        static_cast<uint32_t>(Error::InvalidArgument),
         "WAV path cannot be null");
     return -1;
   }
@@ -267,15 +244,17 @@ Java_org_pytorch_executorch_extension_asr_AsrModule_nativeTranscribe(
   try {
     audioData = ::executorch::extension::llm::load_wav_audio_data(wavPathStr);
   } catch (const std::exception& e) {
-    env->ThrowNew(
-        env->FindClass("java/lang/RuntimeException"),
-        ("Failed to load WAV file: " + std::string(e.what())).c_str());
+    executorch::jni_helper::setExecutorchPendingException(
+        env,
+        static_cast<uint32_t>(Error::AccessFailed),
+        "Failed to load WAV file: " + std::string(e.what()));
     return -1;
   }
 
   if (audioData.empty()) {
-    env->ThrowNew(
-        env->FindClass("java/lang/IllegalArgumentException"),
+    executorch::jni_helper::setExecutorchPendingException(
+        env,
+        static_cast<uint32_t>(Error::InvalidArgument),
         "WAV file contains no audio data");
     return -1;
   }
@@ -295,16 +274,18 @@ Java_org_pytorch_executorch_extension_asr_AsrModule_nativeTranscribe(
     auto processedResult =
         handle->preprocessor->execute("forward", audioTensor);
     if (processedResult.error() != Error::Ok) {
-      env->ThrowNew(
-          env->FindClass("java/lang/RuntimeException"),
+      executorch::jni_helper::setExecutorchPendingException(
+          env,
+          static_cast<uint32_t>(processedResult.error()),
           "Audio preprocessing failed");
       return -1;
     }
 
     auto outputs = std::move(processedResult.get());
     if (outputs.empty() || !outputs[0].isTensor()) {
-      env->ThrowNew(
-          env->FindClass("java/lang/RuntimeException"),
+      executorch::jni_helper::setExecutorchPendingException(
+          env,
+          static_cast<uint32_t>(Error::Internal),
           "Preprocessor returned unexpected output");
       return -1;
     }

@@ -8,9 +8,10 @@
 
 from typing import Tuple
 
-import conftest
-
 import torch
+from executorch.backends.arm.quantizer.arm_quantizer import (
+    get_symmetric_a16w8_quantization_config,
+)
 
 from executorch.backends.arm.test import common
 
@@ -35,8 +36,11 @@ class AvgPool2d(torch.nn.modules.AvgPool2d):
 
 
 class BecomesMeanInToEdge(torch.nn.Module):
-    """This averagepool will be converted to mean when lowering to edge. This causes the decompose_meandim  pass to not
-    trigger until the backend pipeline, which requires extra care.
+    """This averagepool will be converted to mean when lowering to edge.
+
+    This causes the decompose_meandim pass to not trigger until the backend
+    pipeline, which requires extra care.
+
     """
 
     def forward(self, x: torch.Tensor):
@@ -107,21 +111,23 @@ test_modules = {
         AvgPool2d(3, 2, 0),
         (torch.rand(1, 16, 56, 56),),
     ),
-    "non_divibile_window_adjust_padding+input": lambda: (
+    "non_divisible_window_adjust_padding+input": lambda: (
         AvgPool2d(3, 3, 1, count_include_pad=False),
         (torch.rand(1, 16, 54, 54),),
     ),
-    "non_divibile_window_height_adjust_padding+input": lambda: (
+    "non_divisible_window_height_adjust_padding+input": lambda: (
         AvgPool2d(3, (3, 1), 1),
         (torch.rand(1, 16, 54, 54),),
     ),
-    "non_divibile_window_width_adjust_padding+input": lambda: (
+    "non_divisible_window_width_adjust_padding+input": lambda: (
         AvgPool2d(3, (1, 3), 1, count_include_pad=False),
         (torch.rand(1, 16, 54, 54),),
     ),
-    "becomes_mean_rank3": lambda: (BecomesMeanInToEdge(), (torch.rand(2, 8, 8),)),
-    "becomes_mean_rank4": lambda: (BecomesMeanInToEdge(), (torch.rand(2, 2, 8, 8),)),
-    "becomes_mean_rank5": lambda: (BecomesMeanInToEdge(), (torch.rand(2, 2, 8, 8),)),
+    "becomes_mean_rank4": lambda: (BecomesMeanInToEdge(), (torch.rand(1, 2, 8, 8),)),
+    "channels_last_adaptive_avg_pool": lambda: (
+        BecomesMeanInToEdge(),
+        (torch.randn(1, 1280, 7, 7).to(memory_format=torch.channels_last),),
+    ),
 }
 
 test_modules_bf16 = {
@@ -156,7 +162,6 @@ def test_avg_pool2d_tosa_FP(test_module):
         aten_op,
         exir_op,
         tosa_extensions=["bf16"],
-        run_on_tosa_ref_model=conftest.is_option_enabled("tosa_ref_model"),
     )
     pipeline.run()
 
@@ -170,7 +175,6 @@ def test_avg_pool2d_tosa_INT(test_module):
         input_tensor,
         aten_op,
         exir_op,
-        run_on_tosa_ref_model=conftest.is_option_enabled("tosa_ref_model"),
     )
     pipeline.run()
 
@@ -185,7 +189,6 @@ def test_avg_pool2d_tosa_INT_a16w8(test_module):
         aten_op,
         exir_op,
         tosa_extensions=["int16"],
-        run_on_tosa_ref_model=conftest.is_option_enabled("tosa_ref_model"),
     )
     pipeline.run()
 
@@ -207,7 +210,9 @@ def test_avg_pool2d_u55_INT(test_module):
 @common.parametrize("test_module", test_modules)
 @common.XfailIfNoCorstone300
 def test_avg_pool2d_16a8w_u55_INT(test_module):
-    """Test avg_pool2d with 16A8W quantization on U55 (16-bit activations, 8-bit weights)"""
+    """Test avg_pool2d with 16A8W quantization on U55 (16-bit activations, 8-bit
+    weights)
+    """
     model, input_tensor = test_module()
     pipeline = EthosU55PipelineINT[input_t](
         model,
@@ -238,7 +243,9 @@ def test_avg_pool2d_u85_INT(test_module):
 @common.parametrize("test_module", test_modules)
 @common.XfailIfNoCorstone320
 def test_avg_pool2d_16a8w_u85_INT(test_module):
-    """Test avg_pool2d with 16A8W quantization on U85 (16-bit activations, 8-bit weights)"""
+    """Test avg_pool2d with 16A8W quantization on U85 (16-bit activations, 8-bit
+    weights)
+    """
     model, input_tensor = test_module()
     pipeline = EthosU85PipelineINT[input_t](
         model,
@@ -277,6 +284,22 @@ def test_avg_pool2d_vgf_quant(test_module):
         exir_op,
         quantize=True,
     )
+    pipeline.run()
+
+
+@common.parametrize("test_module", test_modules)
+@common.SkipIfNoModelConverter
+def test_avg_pool2d_vgf_quant_a16w8(test_module):
+    model, input_tensor = test_module()
+    pipeline = VgfPipeline[input_t](
+        model,
+        input_tensor,
+        aten_op,
+        exir_op,
+        quantize=True,
+        tosa_extensions=["int16"],
+    )
+    pipeline.quantizer.set_global(get_symmetric_a16w8_quantization_config())
     pipeline.run()
 
 

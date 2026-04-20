@@ -54,7 +54,7 @@ class SDPACustom(torch.nn.Module):
                 q,
                 k,
                 v,
-                input_pos[0].item(),
+                0,  # start_pos: unused when mask is provided (is_causal=False)
                 mask,  # Attention mask
                 0,  # dropout probability. Ignored by the code
                 False,  # is_causal
@@ -168,7 +168,7 @@ class QuantizedSDPA(torch.nn.Module):
                 q_quantized,
                 k_quantized,
                 v_quantized,
-                start_pos,
+                0,  # start_pos: unused when mask is provided (is_causal=False)
                 mask,
                 0,
                 False,
@@ -271,7 +271,7 @@ class SDPASimple(torch.nn.Module):
         attn_weight = torch.softmax(attn_weight, dim=-1)
         y = attn_weight @ v
 
-        return y.transpose(1, 2).contiguous().view(bsz, seqlen, self.dim)
+        return y.transpose(1, 2).reshape(bsz, seqlen, self.dim)
 
 
 def repeat_kv(hidden_states: torch.Tensor, n_rep: int) -> torch.Tensor:
@@ -326,7 +326,7 @@ class SDPAFlex(torch.nn.Module):
         attn_weight = torch.softmax(attn_weight, dim=-1)
         y = attn_weight @ v
 
-        return y.transpose(1, 2).contiguous().view(bsz, seqlen, self.dim)
+        return y.transpose(1, 2).reshape(bsz, seqlen, self.dim)
 
 
 def replace_sdpa_with_simple_sdpa(module: torch.nn.Module):
@@ -408,7 +408,7 @@ class SDPACoreML(torch.nn.Module):
 
         y = torch.ops.coreml.sdpa(q, k, v, attn_mask)
 
-        return y.transpose(1, 2).contiguous().view(bsz, seqlen, self.dim)
+        return y.transpose(1, 2).reshape(bsz, seqlen, self.dim)
 
 
 def replace_sdpa_with_coreml_sdpa(module: torch.nn.Module):

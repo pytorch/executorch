@@ -1,15 +1,22 @@
 name: Test Metal Backend
 
 on:
-  pull_request:
   push:
     branches:
       - main
       - release/*
+    tags:
+      - ciflow/metal/*
+  pull_request:
+    paths:
+      - .github/workflows/metal.yml
+      - backends/apple/metal/**
+      - backends/aoti/**
+  workflow_dispatch:
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.sha }}-${{ github.event_name == 'workflow_dispatch' }}-${{ github.event_name == 'schedule' }}
-  cancel-in-progress: false
+  cancel-in-progress: true
 
 jobs:
   test-metal-builds:
@@ -64,6 +71,8 @@ jobs:
         model:
           - repo: "mistralai"
             name: "Voxtral-Mini-3B-2507"
+          - repo: "mistralai"
+            name: "Voxtral-Mini-4B-Realtime-2602"
           - repo: "openai"
             name: "whisper-small"
           - repo: "openai"
@@ -73,6 +82,12 @@ jobs:
         quant:
           - "non-quantized"
           - "quantized-int4-metal"
+        exclude:
+          # Exclude non-quantized for Voxtral Realtime (too large)
+          - model:
+              repo: "mistralai"
+              name: "Voxtral-Mini-4B-Realtime-2602"
+            quant: "non-quantized"
     with:
       runner: macos-m2-stable
       python-version: '3.11'
@@ -103,6 +118,12 @@ jobs:
         ${CONDA_RUN} pip list
         echo "::endgroup::"
 
+        # Isolate Inductor cache and precompiled headers (PCH) per job to prevent
+        # PCH mtime conflicts between parallel matrix jobs on the same runner.
+        # TORCHINDUCTOR_CACHE_DIR isolates the code cache; setting TMPDIR isolates
+        # the PCH dir, which PyTorch derives from tempfile.gettempdir() independently.
+        export TMPDIR=$(mktemp -d "${RUNNER_TEMP}/tmpdir_XXXXXX")
+        export TORCHINDUCTOR_CACHE_DIR=$(mktemp -d "${RUNNER_TEMP}/inductor_cache_XXXXXX")
         ${CONDA_RUN} bash .ci/scripts/export_model_artifact.sh metal "${{ matrix.model.repo }}/${{ matrix.model.name }}" "${{ matrix.quant }}" "${RUNNER_ARTIFACT_DIR}"
 
   test-model-metal-e2e:
@@ -115,6 +136,8 @@ jobs:
         model:
           - repo: "mistralai"
             name: "Voxtral-Mini-3B-2507"
+          - repo: "mistralai"
+            name: "Voxtral-Mini-4B-Realtime-2602"
           - repo: "openai"
             name: "whisper-small"
           - repo: "openai"
@@ -124,6 +147,12 @@ jobs:
         quant:
           - "non-quantized"
           - "quantized-int4-metal"
+        exclude:
+          # Exclude non-quantized for Voxtral Realtime (too large)
+          - model:
+              repo: "mistralai"
+              name: "Voxtral-Mini-4B-Realtime-2602"
+            quant: "non-quantized"
     with:
       runner: macos-m2-stable
       python-version: '3.11'

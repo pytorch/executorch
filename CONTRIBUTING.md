@@ -206,6 +206,18 @@ lintrunner init
 Then run `lintrunner` from the root of the repo to see its suggestions, or run
 `lintrunner -a` to automatically apply the suggestions.
 
+### Git Hooks
+
+A pre-commit hook runs lintrunner automatically on every commit. Install it with:
+
+```
+git config core.hooksPath .githooks
+```
+
+This is also done automatically by `./install_executorch.sh`. If lintrunner
+auto-fixes files, the commit will be blocked so you can review the changes with
+`git diff` before re-committing.
+
 ### Python Style
 
 ExecuTorch Python code follows the style used by the PyTorch core project.
@@ -384,7 +396,7 @@ for basics.
      - `Release notes: quantization`: changes to quantization.
      - `Release notes: ops & kernels`: changes to the opset and any new / changed kernel implementations.
      - `Release notes: api`: changes to public facing apis (any interfaces, pybinded runtime methods, etc.).
-     - `Release notes: backends`: changes to any of the backend delegates.
+     - `Release notes: <backend>`: changes to any of the backend delegates (e.g: `Release notes: apple`, `Release notes: arm`, etc).
      - `Release notes: build`: changes related to the build system, including major dependency upgrades, notable build flags, optimizations, etc.
      - `Release notes: devtools`: changes to any of ExecuTorch's developer tools, for example the debugger & profiler.
      - `Release notes: examples`: changes to any code under `examples/`.

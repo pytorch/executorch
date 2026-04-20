@@ -78,35 +78,6 @@ endif()
 include(${EXECUTORCH_ROOT}/tools/cmake/Utils.cmake)
 find_package_torch()
 
-# CUDA tensor maker for backends that support incontiguous tensors
-set(_tensor_maker_sources runtime/tensor/tensor_maker.cpp)
-add_library(cuda_tensor_maker STATIC ${_tensor_maker_sources})
-target_include_directories(
-  cuda_tensor_maker
-  PUBLIC $<BUILD_INTERFACE:${EXECUTORCH_ROOT}> $<INSTALL_INTERFACE:include>
-         $<BUILD_INTERFACE:${EXECUTORCH_ROOT}/..>
-)
-target_compile_options(
-  cuda_tensor_maker
-  PUBLIC "$<$<COMPILE_LANGUAGE:CXX>:${_cuda_cxx_compile_options}>"
-)
-# Ensure symbols are exported properly
-if(_cuda_export_dynamic_option)
-  target_link_options(cuda_tensor_maker PUBLIC ${_cuda_export_dynamic_option})
-endif()
-
-# Link against ExecuTorch core libraries
-target_link_libraries(
-  cuda_tensor_maker PRIVATE executorch_core ${CMAKE_DL_LIBS}
-)
-executorch_target_link_options_shared_lib(cuda_tensor_maker)
-
-install(
-  TARGETS cuda_tensor_maker
-  EXPORT ExecuTorchTargets
-  DESTINATION lib
-)
-
 # Platform utilities (load_library, close_library, etc.)
 set(_cuda_platform_sources runtime/platform/platform.cpp)
 add_library(cuda_platform STATIC ${_cuda_platform_sources})
@@ -138,7 +109,9 @@ set(_aoti_cuda_shim_sources runtime/shims/memory.cpp
 
 # Only build int4mm shim when CUDA language/toolchain is available.
 if(CMAKE_CUDA_COMPILER)
-  list(APPEND _aoti_cuda_shim_sources runtime/shims/int4mm.cu)
+  list(APPEND _aoti_cuda_shim_sources runtime/shims/int4mm.cu
+       runtime/shims/sort.cu
+  )
 endif()
 
 add_library(aoti_cuda_shims SHARED ${_aoti_cuda_shim_sources})
@@ -174,13 +147,12 @@ if(_cuda_export_dynamic_option)
   target_link_options(aoti_cuda_shims PUBLIC ${_cuda_export_dynamic_option})
 endif()
 
-# Link against CUDA::cudart, common AOTI library, cuda_tensor_maker, and
-# platform utilities. On non-MSVC, use --whole-archive for
-# aoti_common_shims_slim to force shim symbol retention.
+# Link against CUDA::cudart, common AOTI library, and platform utilities. On
+# non-MSVC, use --whole-archive for aoti_common_shims_slim to force shim symbol
+# retention.
 if(_cuda_is_msvc_toolchain)
   target_link_libraries(
-    aoti_cuda_shims PRIVATE cuda_platform cuda_tensor_maker CUDA::cudart
-                            ${CMAKE_DL_LIBS}
+    aoti_cuda_shims PRIVATE cuda_platform CUDA::cudart ${CMAKE_DL_LIBS}
   )
   # Link object library directly so symbols are pulled exactly once while
   # avoiding duplicate static/object inclusion and interface leakage.
@@ -190,7 +162,7 @@ else()
     aoti_cuda_shims
     PRIVATE cuda_platform
     PUBLIC -Wl,--whole-archive aoti_common_shims_slim -Wl,--no-whole-archive
-           cuda_tensor_maker CUDA::cudart ${CMAKE_DL_LIBS}
+           CUDA::cudart ${CMAKE_DL_LIBS}
   )
 endif()
 
@@ -229,8 +201,8 @@ endif()
 # directory. On other platforms, use PUBLIC so the dependency propagates to
 # consumers.
 target_link_libraries(
-  aoti_cuda_backend PUBLIC cuda_platform extension_tensor cuda_tensor_maker
-                           CUDA::cudart ${CMAKE_DL_LIBS}
+  aoti_cuda_backend PUBLIC cuda_platform extension_tensor CUDA::cudart
+                           ${CMAKE_DL_LIBS}
 )
 
 if(_cuda_is_msvc_toolchain)

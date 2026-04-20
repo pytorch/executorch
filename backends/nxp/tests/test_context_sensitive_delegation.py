@@ -18,7 +18,7 @@ from executorch.backends.nxp.tests.executors import graph_contains_any_of_ops
 from executorch.exir.dialects._ops import ops as exir_ops
 
 # noinspection PyProtectedMember
-ExecutorchDelegateCall = torch._higher_order_ops.executorch_call_delegate
+ExecutorchDelegateCall = torch.ops.higher_order.executorch_call_delegate
 
 
 class SingleViewCopyModule(torch.nn.Module):
@@ -116,10 +116,7 @@ def test_noop_partitions__concatenate_one_tensor_and_add_zeros():
     ).exported_program()
 
     # Make sure neither the `cat` nor the `add` was delegated
-    assert not any(
-        n.target == torch._higher_order_ops.executorch_call_delegate
-        for n in ep.graph.nodes
-    )
+    assert not any(n.target == ExecutorchDelegateCall for n in ep.graph.nodes)
     assert graph_contains_any_of_ops(
         ep.graph,
         [
@@ -155,10 +152,7 @@ def test_noop_partitions__add_mul_sub_div():
     ).exported_program()
 
     # Make sure nothing was delegated.
-    assert not any(
-        n.target == torch._higher_order_ops.executorch_call_delegate
-        for n in ep.graph.nodes
-    )
+    assert not any(n.target == ExecutorchDelegateCall for n in ep.graph.nodes)
     assert graph_contains_any_of_ops(
         ep.graph,
         [

@@ -15,7 +15,6 @@ from pathlib import Path
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
-
 from executorch.extension.llm.custom_ops import custom_ops as _custom_ops  # noqa: F401
 
 
@@ -50,6 +49,9 @@ class VoxtralRealtimeConfig:
     downsample_factor: int = 4
     # Runtime
     max_seq_len: int = 4096
+    sliding_window: int = 8192
+    streaming: bool = False
+    backend: str = "xnnpack"  # "xnnpack", "mlx", "metal", "cuda", or "portable"
 
     @staticmethod
     def from_params_json(path: str) -> "VoxtralRealtimeConfig":
@@ -78,6 +80,7 @@ class VoxtralRealtimeConfig:
             enc_norm_eps=enc["norm_eps"],
             num_mel_bins=audio.get("num_mel_bins", 128),
             downsample_factor=ds["downsample_factor"],
+            sliding_window=p.get("sliding_window", 8192),
         )
 
 
@@ -152,12 +155,14 @@ class EncoderAttention(nn.Module):
     """Multi-head attention with RoPE for the causal whisper encoder.
 
     Biases: wq yes, wk no, wv yes, wo yes.
+    Supports MLX backend for Apple Silicon GPU acceleration.
     """
 
-    def __init__(self, dim: int, n_heads: int, head_dim: int):
+    def __init__(self, dim: int, n_heads: int, head_dim: int, backend: str = "xnnpack"):
         super().__init__()
         self.n_heads = n_heads
         self.head_dim = head_dim
+        self.backend = backend
         attn_dim = n_heads * head_dim
         self.wq = nn.Linear(dim, attn_dim, bias=True)
         self.wk = nn.Linear(dim, attn_dim, bias=False)
@@ -176,7 +181,15 @@ class EncoderAttention(nn.Module):
         v = self.wv(x).view(B, T, self.n_heads, self.head_dim)
         q, k = apply_rotary_emb(q, k, freqs_cos, freqs_sin)
         q, k, v = (t.transpose(1, 2) for t in (q, k, v))
-        y = F.scaled_dot_product_attention(q, k, v, is_causal=True)
+        if self.backend == "mlx":
+            # Use MLX custom SDPA for Apple Silicon GPU
+            start_pos = 0  # Offline encoder always starts at 0
+            scale = self.head_dim**-0.5
+            y = torch.ops.mlx.custom_sdpa(
+                q, k, v, start_pos=start_pos, is_causal=True, scale=scale
+            )
+        else:
+            y = F.scaled_dot_product_attention(q, k, v, is_causal=True)
         return self.wo(y.transpose(1, 2).contiguous().view(B, T, -1))
 
 
@@ -198,7 +211,10 @@ class CausalEncoderLayer(nn.Module):
         super().__init__()
         self.attention_norm = RMSNorm(config.enc_dim, config.enc_norm_eps)
         self.attention = EncoderAttention(
-            config.enc_dim, config.enc_n_heads, config.enc_head_dim
+            config.enc_dim,
+            config.enc_n_heads,
+            config.enc_head_dim,
+            backend=config.backend,
         )
         self.ffn_norm = RMSNorm(config.enc_dim, config.enc_norm_eps)
         self.feed_forward = EncoderSwiGLU(config.enc_dim, config.enc_hidden_dim)
@@ -293,7 +309,10 @@ def compute_time_embedding(
 
 
 class KVCache(nn.Module):
-    """KV cache in [B, S, H, D] layout for torch.ops.llama.update_cache."""
+    """KV cache in [B, S, H, D] layout for torch.ops.llama.update_cache.
+
+    Used for offline (non-streaming) mode with a fixed max_seq_len.
+    """
 
     def __init__(self, max_seq_len: int, n_kv_heads: int, head_dim: int):
         super().__init__()
@@ -307,17 +326,37 @@ class KVCache(nn.Module):
     def update(
         self, input_pos: torch.Tensor, k_val: torch.Tensor, v_val: torch.Tensor
     ) -> tuple[torch.Tensor, torch.Tensor]:
-        """Write k_val/v_val into cache and return full cache.
-
-        Args:
-            input_pos: (seq_len,) position indices.
-            k_val, v_val: (B, seq_len, n_kv_heads, head_dim).
-        Returns:
-            k_cache, v_cache: (B, max_seq_len, n_kv_heads, head_dim).
-        """
         start_pos = input_pos[0].item()
+        torch._check_is_size(start_pos)
+        torch._check(start_pos < self.max_seq_len)
         torch.ops.llama.update_cache(k_val, self.k_cache, start_pos)
         torch.ops.llama.update_cache(v_val, self.v_cache, start_pos)
+        return self.k_cache, self.v_cache
+
+
+class StaticKVCache(nn.Module):
+    """Export-friendly KV cache using index_copy_ for updates.
+
+    Uses [B, H, S, D] layout. Used for offline (non-streaming) mode with
+    a fixed max_seq_len on Metal/CUDA backends.
+    """
+
+    def __init__(self, max_seq_len: int, n_kv_heads: int, head_dim: int):
+        super().__init__()
+        self.max_seq_len = max_seq_len
+        self.n_kv_heads = n_kv_heads
+        self.head_dim = head_dim
+        cache_shape = (1, n_kv_heads, max_seq_len, head_dim)
+        self.register_buffer("k_cache", torch.zeros(cache_shape))
+        self.register_buffer("v_cache", torch.zeros(cache_shape))
+
+    def update(
+        self, input_pos: torch.Tensor, k_val: torch.Tensor, v_val: torch.Tensor
+    ) -> tuple[torch.Tensor, torch.Tensor]:
+        k_val = k_val.transpose(1, 2)
+        v_val = v_val.transpose(1, 2)
+        self.k_cache.index_copy_(2, input_pos, k_val)
+        self.v_cache.index_copy_(2, input_pos, v_val)
         return self.k_cache, self.v_cache
 
 
@@ -340,13 +379,15 @@ class SDPA(nn.Module):
         v: torch.Tensor,
         bsz: int,
         seqlen: int,
+        mask: torch.Tensor | None = None,
     ) -> torch.Tensor:
         """
         Args:
             input_pos: (seq_len,) position indices.
             q: (B, seq_len, n_heads, head_dim).
-            k, v: (B, max_seq_len, n_kv_heads, head_dim) — full KV cache.
+            k, v: (B, cache_len, n_kv_heads, head_dim) — full KV cache.
             bsz, seqlen: batch size and query sequence length.
+            mask: optional attention mask (sliding window or causal).
         Returns:
             output: (B, seq_len, n_heads * head_dim).
         """
@@ -355,40 +396,362 @@ class SDPA(nn.Module):
         k = k.to(dtype=torch.float32)
         v = v.to(dtype=torch.float32)
         start_pos = input_pos[0].item()
-        y = torch.ops.llama.custom_sdpa(
-            q,
-            k,
-            v,
-            start_pos,
-            None,
-            0,
-            True,
-        )
+        torch._check_is_size(start_pos)
+        if mask is not None:
+            y = torch.ops.llama.custom_sdpa(
+                q,
+                k,
+                v,
+                start_pos,
+                mask.to(dtype=torch.float32),
+                0,
+                False,
+            )
+        else:
+            y = torch.ops.llama.custom_sdpa(
+                q,
+                k,
+                v,
+                start_pos,
+                None,
+                0,
+                True,
+            )
         return y.view(bsz, seqlen, self.dim).to(dtype=input_dtype)
 
 
-class LMAttention(nn.Module):
-    """GQA with RoPE, KV cache, and fused SDPA. No biases.
+def _build_attn_mask(
+    input_pos: torch.Tensor,
+    max_seq_len: int,
+    device: torch.device,
+    dtype: torch.dtype = torch.float32,
+) -> torch.Tensor:
+    """Build additive causal attention mask for offline (non-streaming) mode.
 
-    Data flows in [B, T, H, D] throughout — no transposes in the hot path.
-    GQA expansion is handled inside the custom_sdpa kernel.
-    Causal masking is handled via start_pos — no pre-built mask buffer.
+    Metal AOTI doesn't support bool tensor allocation on MPS, so we use
+    integer arithmetic to build the mask in the model dtype.
+    """
+    seqlen = input_pos.shape[0]
+    k_pos = torch.arange(max_seq_len, device=device)
+    if seqlen > 1:
+        diff = input_pos.unsqueeze(1) - k_pos.unsqueeze(0) + 1
+    else:
+        diff = (input_pos[0] - k_pos + 1).unsqueeze(0)
+    valid = torch.clamp(diff, min=0, max=1)
+    return (valid.to(dtype) - 1.0) * 1e9
+
+
+def _build_causal_mask_bool(
+    input_pos: torch.Tensor, max_seq_len: int, device: torch.device
+) -> torch.Tensor:
+    """Build boolean causal attention mask for offline (non-streaming) mode.
+
+    Returns [1, 1, seqlen, max_seq_len] for Triton SDPA compatibility.
+    """
+    k_pos = torch.arange(max_seq_len, device=device)
+    mask = input_pos.unsqueeze(1) >= k_pos.unsqueeze(0)
+    return mask.unsqueeze(0).unsqueeze(0)
+
+
+class MetalSDPA(nn.Module):
+    """Scaled dot-product attention using the native MPS kernel.
+
+    Supports GQA (n_heads != n_kv_heads) and bf16 without requiring
+    repeat_interleave or manual fp32 upcast. Expects Q in [B, S, H, D]
+    layout; K/V in [B, H, S, D] by default (set transpose_kv=True if
+    K/V arrive in [B, S, H, D]).
     """
 
-    def __init__(self, config: VoxtralRealtimeConfig, max_seq_len: int):
+    def __init__(
+        self, n_heads: int, n_kv_heads: int, head_dim: int, transpose_kv: bool = False
+    ):
+        super().__init__()
+        self.n_heads = n_heads
+        self.n_kv_heads = n_kv_heads
+        self.head_dim = head_dim
+        self.dim = n_heads * head_dim
+        self.transpose_kv = transpose_kv
+
+    def forward(
+        self,
+        input_pos: torch.Tensor,
+        q: torch.Tensor,
+        k: torch.Tensor,
+        v: torch.Tensor,
+        bsz: int,
+        seqlen: int,
+        attn_mask: torch.Tensor | None = None,
+    ) -> torch.Tensor:
+        q = q.transpose(1, 2)
+        if self.transpose_kv:
+            k = k.transpose(1, 2)
+            v = v.transpose(1, 2)
+
+        y, _ = torch.ops.aten._scaled_dot_product_attention_math_for_mps(
+            q, k, v, attn_mask, 0.0, False, None
+        )
+
+        y = y.transpose(1, 2).contiguous()
+        return y.view(bsz, seqlen, self.dim)
+
+
+class StandardSDPA(nn.Module):
+    """Scaled dot-product attention using F.scaled_dot_product_attention.
+
+    Supports GQA via enable_gqa=True — the kernel maps Q heads to KV heads
+    internally, avoiding redundant K/V memory expansion.
+    Expects Q in [B, S, H_q, D]; K/V in [B, H_kv, S, D] by default
+    (set transpose_kv=True if K/V arrive in [B, S, H_kv, D]).
+    """
+
+    def __init__(
+        self, n_heads: int, n_kv_heads: int, head_dim: int, transpose_kv: bool = False
+    ):
+        super().__init__()
+        self.n_heads = n_heads
+        self.n_kv_heads = n_kv_heads
+        self.enable_gqa = n_heads != n_kv_heads
+        self.head_dim = head_dim
+        self.dim = n_heads * head_dim
+        self.transpose_kv = transpose_kv
+
+    def forward(
+        self,
+        input_pos: torch.Tensor,
+        q: torch.Tensor,
+        k: torch.Tensor,
+        v: torch.Tensor,
+        bsz: int,
+        seqlen: int,
+        attn_mask: torch.Tensor | None = None,
+    ) -> torch.Tensor:
+        q = q.transpose(1, 2)
+        if self.transpose_kv:
+            k = k.transpose(1, 2)
+            v = v.transpose(1, 2)
+
+        y = F.scaled_dot_product_attention(
+            q, k, v, attn_mask=attn_mask, is_causal=False, enable_gqa=self.enable_gqa
+        )
+
+        y = y.transpose(1, 2).contiguous()
+        return y.view(bsz, seqlen, self.dim)
+
+
+class MLXStaticKVCache(nn.Module):
+    """Wrapper that adapts MLX static KV cache for model's BSHD convention.
+
+    For offline (non-streaming) mode. The model's QKV projections produce
+    [B, S, H, D] tensors, but MLX's KVCache expects [B, H, S, D].
+    This wrapper transposes on the way in.
+    """
+
+    def __init__(
+        self, max_seq_len: int, n_kv_heads: int, head_dim: int, dtype: torch.dtype
+    ):
+        super().__init__()
+        from executorch.backends.mlx.llm.cache import KVCache as MLXKVCacheImpl
+
+        self.cache = MLXKVCacheImpl(
+            max_batch_size=1,
+            max_context_length=max_seq_len,
+            n_heads=n_kv_heads,
+            head_dim=head_dim,
+            enable_dynamic_shape=True,
+            dtype=dtype,
+        )
+
+    def update(
+        self, input_pos: torch.Tensor, k_val: torch.Tensor, v_val: torch.Tensor
+    ) -> tuple[torch.Tensor, torch.Tensor]:
+        # Transpose BSHD -> BHSD for MLX cache
+        k_val = k_val.transpose(1, 2)
+        v_val = v_val.transpose(1, 2)
+        return self.cache.update(input_pos, k_val, v_val)
+
+
+class MLXRingKVCache(nn.Module):
+    """Wrapper that adapts MLX RingBufferKVCache for model's BSHD convention.
+
+    For streaming mode (both encoder and decoder). The model's QKV projections
+    produce [B, S, H, D] tensors, but MLX's RingBufferKVCache expects
+    [B, H, S, D]. This wrapper transposes on the way in and delegates
+    ring buffer semantics to the MLX implementation.
+    """
+
+    def __init__(
+        self,
+        window_size: int,
+        n_heads: int,
+        head_dim: int,
+        dtype: torch.dtype,
+    ):
+        super().__init__()
+        from executorch.backends.mlx.llm.cache import RingBufferKVCache
+
+        self.ring_cache = RingBufferKVCache(
+            max_batch_size=1,
+            max_context_length=window_size,
+            n_heads=n_heads,
+            head_dim=head_dim,
+            dtype=dtype,
+        )
+
+    def update(
+        self, input_pos: torch.Tensor, k_val: torch.Tensor, v_val: torch.Tensor
+    ) -> tuple[torch.Tensor, torch.Tensor]:
+        # Transpose BSHD -> BHSD for MLX ring buffer
+        k_val = k_val.transpose(1, 2)
+        v_val = v_val.transpose(1, 2)
+        return self.ring_cache.update(input_pos, k_val, v_val)
+
+    def create_causal_mask(
+        self, start_pos, seq_len, bool_mask=False, **kwargs
+    ) -> torch.Tensor:
+        return self.ring_cache.create_sliding_window_mask(start_pos, seq_len)
+
+
+class MLXSDPA(nn.Module):
+    """SDPA using MLX custom op for Apple Silicon GPU acceleration.
+
+    Uses torch.ops.mlx.custom_sdpa which handles GQA expansion and causal
+    masking internally. KV cache is in BHSD layout, queries are in BSHD.
+    """
+
+    def __init__(self, n_heads: int, head_dim: int):
+        super().__init__()
+        self.dim = n_heads * head_dim
+        self.scale = head_dim**-0.5
+
+    def forward(
+        self,
+        input_pos: torch.Tensor,
+        q: torch.Tensor,
+        k: torch.Tensor,
+        v: torch.Tensor,
+        bsz: int,
+        seqlen: int,
+        mask: torch.Tensor | None = None,
+    ) -> torch.Tensor:
+        start_pos = input_pos[0].item()
+        q = q.transpose(1, 2)  # BSHD -> BHSD
+        y = torch.ops.mlx.custom_sdpa(
+            q, k, v, start_pos=start_pos, is_causal=True, scale=self.scale
+        )
+        return y.transpose(1, 2).contiguous().view(bsz, seqlen, self.dim)
+
+
+class MLXMaskedSDPA(nn.Module):
+    """SDPA with explicit mask for MLX ring buffer KV cache.
+
+    Used with MLXRingKVCache for streaming mode (both encoder and decoder).
+    Uses F.scaled_dot_product_attention with explicit attn_mask from the
+    ring buffer. KV cache is in BHSD layout, queries are in BSHD.
+    """
+
+    def __init__(self, n_heads: int, head_dim: int):
+        super().__init__()
+        self.dim = n_heads * head_dim
+
+    def forward(
+        self,
+        input_pos: torch.Tensor,
+        q: torch.Tensor,
+        k: torch.Tensor,
+        v: torch.Tensor,
+        bsz: int,
+        seqlen: int,
+        mask: torch.Tensor | None = None,
+    ) -> torch.Tensor:
+        """
+        Args:
+            input_pos: (seq_len,) position indices (unused, kept for interface).
+            q: (B, seq_len, n_heads, head_dim) in BSHD layout.
+            k, v: (B, n_heads, buf_size, head_dim) in BHSD from MLXRingKVCache.
+            bsz, seqlen: batch size and query length.
+            mask: (1, 1, seq_len, buf_size) additive attention mask from ring buffer.
+        """
+        q = q.transpose(1, 2)  # BSHD -> BHSD
+
+        y = F.scaled_dot_product_attention(q, k, v, attn_mask=mask, is_causal=False)
+
+        return y.transpose(1, 2).contiguous().view(bsz, seqlen, self.dim)
+
+
+class LMAttention(nn.Module):
+    """GQA with RoPE, KV cache, and SDPA. No biases.
+
+    Supports custom ops (for XNNPACK), standard PyTorch ops (for Metal/AOTI),
+    and MLX backend ops (for Apple Silicon GPU acceleration via MLX delegate).
+    """
+
+    def __init__(self, config: VoxtralRealtimeConfig):
         super().__init__()
         self.n_heads = config.n_heads
         self.n_kv_heads = config.n_kv_heads
         self.head_dim = config.head_dim
         self.dim = config.dim
+        self.backend = config.backend
+        self.rope_theta = config.rope_theta
 
         self.wq = nn.Linear(config.dim, self.n_heads * self.head_dim, bias=False)
         self.wk = nn.Linear(config.dim, self.n_kv_heads * self.head_dim, bias=False)
         self.wv = nn.Linear(config.dim, self.n_kv_heads * self.head_dim, bias=False)
         self.wo = nn.Linear(self.n_heads * self.head_dim, config.dim, bias=False)
 
-        self.kv_cache = KVCache(max_seq_len, self.n_kv_heads, self.head_dim)
-        self.sdpa = SDPA(self.n_heads, self.head_dim)
+        # Choose KV cache and SDPA based on backend and streaming mode
+        if config.streaming:
+            # Ring buffer KV cache for unlimited streaming.
+            if self.backend == "mlx":
+                cache_dtype = self.wq.weight.dtype
+                self.kv_cache = MLXRingKVCache(
+                    config.sliding_window,
+                    self.n_kv_heads,
+                    self.head_dim,
+                    dtype=cache_dtype,
+                )
+                self.sdpa = MLXSDPA(self.n_heads, self.head_dim)
+            elif self.backend == "metal":
+                self.kv_cache = StandardRingKVCache(
+                    config.sliding_window, self.n_kv_heads, self.head_dim
+                )
+                self.sdpa = MetalSDPA(self.n_heads, self.n_kv_heads, self.head_dim)
+            elif self.backend == "cuda":
+                self.kv_cache = StandardRingKVCache(
+                    config.sliding_window, self.n_kv_heads, self.head_dim
+                )
+                self.sdpa = StandardSDPA(self.n_heads, self.n_kv_heads, self.head_dim)
+            else:
+                self.kv_cache = RingKVCache(
+                    config.sliding_window, self.n_kv_heads, self.head_dim
+                )
+                self.sdpa = SDPA(self.n_heads, self.head_dim)
+        else:
+            # Flat KV cache for offline mode (capped at max_seq_len).
+            if self.backend == "mlx":
+                cache_dtype = self.wq.weight.dtype
+                self.kv_cache = MLXStaticKVCache(
+                    config.max_seq_len,
+                    self.n_kv_heads,
+                    self.head_dim,
+                    dtype=cache_dtype,
+                )
+                self.sdpa = MLXSDPA(self.n_heads, self.head_dim)
+            elif self.backend == "metal":
+                self.kv_cache = StaticKVCache(
+                    config.max_seq_len, self.n_kv_heads, self.head_dim
+                )
+                self.sdpa = MetalSDPA(self.n_heads, self.n_kv_heads, self.head_dim)
+            elif self.backend == "cuda":
+                self.kv_cache = StaticKVCache(
+                    config.max_seq_len, self.n_kv_heads, self.head_dim
+                )
+                self.sdpa = StandardSDPA(self.n_heads, self.n_kv_heads, self.head_dim)
+            else:
+                self.kv_cache = KVCache(
+                    config.max_seq_len, self.n_kv_heads, self.head_dim
+                )
+                self.sdpa = SDPA(self.n_heads, self.head_dim)
 
     def forward(
         self,
@@ -396,17 +759,35 @@ class LMAttention(nn.Module):
         freqs_cos: torch.Tensor,
         freqs_sin: torch.Tensor,
         input_pos: torch.Tensor,
+        attn_mask: torch.Tensor | None = None,
     ) -> torch.Tensor:
         B, T, _ = x.shape
         q = self.wq(x).view(B, T, self.n_heads, self.head_dim)
         k = self.wk(x).view(B, T, self.n_kv_heads, self.head_dim)
         v = self.wv(x).view(B, T, self.n_kv_heads, self.head_dim)
 
-        q, k = apply_rotary_emb(q, k, freqs_cos, freqs_sin)
+        if self.backend == "mlx":
+            start_pos = input_pos[0].item()
+            q = torch.ops.mlx.rope(
+                q.transpose(1, 2),
+                self.head_dim,
+                start_pos,
+                traditional=True,
+                base=self.rope_theta,
+            ).transpose(1, 2)
+            k = torch.ops.mlx.rope(
+                k.transpose(1, 2),
+                self.head_dim,
+                start_pos,
+                traditional=True,
+                base=self.rope_theta,
+            ).transpose(1, 2)
+        else:
+            q, k = apply_rotary_emb(q, k, freqs_cos, freqs_sin)
 
         k, v = self.kv_cache.update(input_pos, k, v)
 
-        y = self.sdpa(input_pos, q, k, v, B, T)
+        y = self.sdpa(input_pos, q, k, v, B, T, attn_mask)
 
         return self.wo(y)
 
@@ -432,10 +813,10 @@ class MistralDecoderLayer(nn.Module):
       scale = 1 + Sequential(Linear, GELU, Linear)(t_cond)
     """
 
-    def __init__(self, config: VoxtralRealtimeConfig, max_seq_len: int):
+    def __init__(self, config: VoxtralRealtimeConfig):
         super().__init__()
         self.attention_norm = RMSNorm(config.dim, config.norm_eps)
-        self.attention = LMAttention(config, max_seq_len)
+        self.attention = LMAttention(config)
         self.ffn_norm = RMSNorm(config.dim, config.norm_eps)
         # nn.Sequential indices 0, 1, 2 match checkpoint keys .0.weight, .2.weight
         self.ada_rms_norm_t_cond = nn.Sequential(
@@ -452,8 +833,11 @@ class MistralDecoderLayer(nn.Module):
         freqs_sin: torch.Tensor,
         input_pos: torch.Tensor,
         t_cond: torch.Tensor,
+        attn_mask: torch.Tensor | None = None,
     ) -> torch.Tensor:
-        x = x + self.attention(self.attention_norm(x), freqs_cos, freqs_sin, input_pos)
+        x = x + self.attention(
+            self.attention_norm(x), freqs_cos, freqs_sin, input_pos, attn_mask
+        )
         normed = self.ffn_norm(x)
         scale = 1.0 + self.ada_rms_norm_t_cond(t_cond)
         x = x + self.feed_forward(normed * scale)
@@ -463,21 +847,32 @@ class MistralDecoderLayer(nn.Module):
 class MistralDecoder(nn.Module):
     """Mistral LM decoder with tied embeddings."""
 
-    def __init__(self, config: VoxtralRealtimeConfig, max_seq_len: int):
+    def __init__(self, config: VoxtralRealtimeConfig):
         super().__init__()
         self.config = config
+        self.streaming = config.streaming
+        self.bool_mask = config.backend == "cuda"
         self.tok_embeddings = nn.Embedding(config.vocab_size, config.dim)
         self.layers = nn.ModuleList(
-            [MistralDecoderLayer(config, max_seq_len) for _ in range(config.n_layers)]
+            [MistralDecoderLayer(config) for _ in range(config.n_layers)]
         )
         self.norm = RMSNorm(config.dim, config.norm_eps)
         self.output = nn.Linear(config.dim, config.vocab_size, bias=False)
 
-        freqs_cos, freqs_sin = precompute_freqs_cis(
-            config.head_dim, max_seq_len, config.rope_theta
-        )
-        self.register_buffer("freqs_cos", freqs_cos)
-        self.register_buffer("freqs_sin", freqs_sin)
+        if config.streaming:
+            # On-the-fly RoPE for unlimited streaming positions.
+            inv_freq = 1.0 / (
+                config.rope_theta
+                ** (torch.arange(0, config.head_dim, 2).float() / config.head_dim)
+            )
+            self.register_buffer("inv_freq", inv_freq)
+        else:
+            # Precomputed RoPE table for offline mode (bounded by max_seq_len).
+            freqs_cos, freqs_sin = precompute_freqs_cis(
+                config.head_dim, config.max_seq_len, config.rope_theta
+            )
+            self.register_buffer("freqs_cos", freqs_cos)
+            self.register_buffer("freqs_sin", freqs_sin)
 
     def forward(
         self,
@@ -485,12 +880,42 @@ class MistralDecoder(nn.Module):
         input_pos: torch.Tensor,
         t_cond: torch.Tensor,
     ) -> torch.Tensor:
-        freqs_cos = self.freqs_cos[input_pos]
-        freqs_sin = self.freqs_sin[input_pos]
+        if self.streaming:
+            # On-the-fly RoPE (no position limit).
+            freqs = torch.outer(input_pos.float(), self.inv_freq)
+            freqs_cos = freqs.cos()
+            freqs_sin = freqs.sin()
+
+            # Sliding window mask from the ring buffer, computed once for
+            # all 26 layers.
+            seqlen = input_pos.shape[0]
+            attn_mask = self.layers[0].attention.kv_cache.create_causal_mask(
+                input_pos[0],
+                seqlen,
+                bool_mask=self.bool_mask,
+                dtype=input_embeds.dtype,
+            )
+        else:
+            # Precomputed RoPE table lookup.
+            freqs_cos = self.freqs_cos[input_pos]
+            freqs_sin = self.freqs_sin[input_pos]
+
+            # Full causal mask for offline mode.
+            attn_mask: torch.Tensor | None = None
+            if self.config.backend == "metal":
+                max_seq_len = self.freqs_cos.shape[0]
+                attn_mask = _build_attn_mask(
+                    input_pos, max_seq_len, input_embeds.device, input_embeds.dtype
+                )
+            elif self.config.backend == "cuda":
+                max_seq_len = self.freqs_cos.shape[0]
+                attn_mask = _build_causal_mask_bool(
+                    input_pos, max_seq_len, input_embeds.device
+                )
 
         x = input_embeds
         for layer in self.layers:
-            x = layer(x, freqs_cos, freqs_sin, input_pos, t_cond)
+            x = layer(x, freqs_cos, freqs_sin, input_pos, t_cond, attn_mask)
 
         return self.output(self.norm(x))
 
@@ -501,17 +926,15 @@ class MistralDecoder(nn.Module):
 
 
 class VoxtralRealtimeModel(nn.Module):
-    def __init__(self, config: VoxtralRealtimeConfig, max_seq_len: int | None = None):
+    def __init__(self, config: VoxtralRealtimeConfig):
         super().__init__()
-        if max_seq_len is None:
-            max_seq_len = config.max_seq_len
         self.config = config
 
         self.encoder = CausalWhisperEncoder(config)
         self.adapter = AudioLanguageAdapter(
             config.enc_dim * config.downsample_factor, config.dim
         )
-        self.decoder = MistralDecoder(config, max_seq_len)
+        self.decoder = MistralDecoder(config)
 
         # Tie output and embedding weights
         self.decoder.output.weight = self.decoder.tok_embeddings.weight
@@ -558,6 +981,354 @@ class VoxtralRealtimeModel(nn.Module):
             embeds: (B, seq_len, dim).
         """
         return self.decoder.tok_embeddings(token_ids)
+
+
+# ---------------------------------------------------------------------------
+# Streaming encoder
+# ---------------------------------------------------------------------------
+
+
+class RingKVCache(nn.Module):
+    """Ring buffer KV cache for continuous streaming.
+
+    Uses [B, S, H, D] layout.
+    Buffer is 2x the window size for safe wraparound. Old entries
+    are overwritten when the buffer wraps, enabling unlimited streaming.
+
+    Position tracking is analytic (no mutable state buffer). For buffer
+    slot j after total_written frames:
+        abs_pos[j] = j + ((total_written - 1 - j) // buf_size) * buf_size
+    Negative results indicate unwritten slots.
+    """
+
+    def __init__(self, window_size: int, n_heads: int, head_dim: int):
+        super().__init__()
+        self.window_size = window_size
+        self.buf_size = window_size * 2
+        cache_shape = (1, self.buf_size, n_heads, head_dim)
+        self.register_buffer("k_cache", torch.zeros(cache_shape))
+        self.register_buffer("v_cache", torch.zeros(cache_shape))
+
+    def update(
+        self, input_pos: torch.Tensor, k_val: torch.Tensor, v_val: torch.Tensor
+    ) -> tuple[torch.Tensor, torch.Tensor]:
+        start_pos = input_pos[0].item()
+        torch._check_is_size(start_pos)
+        seq_len = k_val.size(1)
+        indices = (torch.arange(seq_len, dtype=torch.long) + start_pos) % self.buf_size
+        indices = indices.unsqueeze(0)
+        torch.ops.llama.update_cache_with_indices(k_val, self.k_cache, 0, indices)
+        torch.ops.llama.update_cache_with_indices(v_val, self.v_cache, 0, indices)
+        return self.k_cache, self.v_cache
+
+    def create_causal_mask(
+        self,
+        start_pos: torch.Tensor | int,
+        seq_len: int,
+        bool_mask: bool = False,
+        dtype: torch.dtype = torch.float32,
+    ) -> torch.Tensor:
+        """Create sliding window attention mask for ring buffer.
+
+        Args:
+            start_pos: Starting position (scalar tensor or int).
+            seq_len: Number of query positions.
+            bool_mask: If True, return boolean mask (True=attend). If False,
+                return additive mask (0.0=attend, -inf=masked) in the given dtype.
+            dtype: Mask dtype for additive masks. Must match Q/K/V dtype for
+                the Metal SDPA kernel.
+        """
+        device = (
+            start_pos.device
+            if isinstance(start_pos, torch.Tensor)
+            else self.k_cache.device
+        )
+        total_written = start_pos + seq_len
+        j = torch.arange(self.buf_size, dtype=torch.long, device=device)
+        cache_pos = j + ((total_written - 1 - j) // self.buf_size) * self.buf_size
+        pos_q = (
+            start_pos + torch.arange(seq_len, dtype=torch.long, device=device)
+        ).view(-1, 1)
+        delta = pos_q - cache_pos.unsqueeze(0)
+        valid = (cache_pos >= 0) & (delta >= 0) & (delta < self.window_size)
+        if bool_mask:
+            return valid.unsqueeze(0).unsqueeze(0)
+        return torch.where(
+            valid,
+            torch.zeros(1, dtype=dtype, device=device),
+            torch.tensor(float("-inf"), dtype=dtype, device=device),
+        )
+
+
+class StandardRingKVCache(nn.Module):
+    """Export-friendly ring buffer KV cache using index_copy_ for updates.
+
+    Compatible with torch.export and AOTI. Uses [B, H, S, D] layout
+    (same as StaticKVCache) for fast index_copy_ on dim=2, which scatters
+    into contiguous memory on MPS. Ring buffer enables unlimited streaming.
+    """
+
+    def __init__(self, window_size: int, n_heads: int, head_dim: int):
+        super().__init__()
+        self.window_size = window_size
+        self.buf_size = window_size * 2
+        cache_shape = (1, n_heads, self.buf_size, head_dim)
+        self.register_buffer("k_cache", torch.zeros(cache_shape))
+        self.register_buffer("v_cache", torch.zeros(cache_shape))
+
+    def update(
+        self, input_pos: torch.Tensor, k_val: torch.Tensor, v_val: torch.Tensor
+    ) -> tuple[torch.Tensor, torch.Tensor]:
+        """Write k_val/v_val into ring buffer using index_copy_ with modulo wraparound.
+
+        Args:
+            input_pos: (seq_len,) position indices.
+            k_val, v_val: (B, seq_len, n_heads, head_dim) in [B, S, H, D] layout.
+        Returns:
+            k_cache, v_cache: (B, n_heads, buf_size, head_dim) in [B, H, S, D] layout.
+        """
+        wrapped_indices = input_pos % self.buf_size
+        # Transpose to [B, H, S, D] for index_copy_ on dim=2 (contiguous on MPS)
+        k_val = k_val.transpose(1, 2)
+        v_val = v_val.transpose(1, 2)
+        self.k_cache.index_copy_(2, wrapped_indices, k_val)
+        self.v_cache.index_copy_(2, wrapped_indices, v_val)
+        return self.k_cache, self.v_cache
+
+    def create_causal_mask(
+        self,
+        start_pos: torch.Tensor,
+        seq_len: int,
+        bool_mask: bool = False,
+        dtype: torch.dtype = torch.float32,
+    ) -> torch.Tensor:
+        """Create sliding window attention mask for ring buffer.
+
+        Args:
+            start_pos: Tensor containing the starting position (scalar tensor)
+            seq_len: Number of query positions
+            bool_mask: If True, return boolean mask (True=attend). If False,
+                return additive mask (0.0=attend, -inf=masked) in the given dtype.
+            dtype: Mask dtype for additive masks. Must match Q/K/V dtype for
+                the Metal SDPA kernel.
+        """
+        total_written = start_pos + seq_len
+        j = torch.arange(self.buf_size, dtype=torch.long, device=start_pos.device)
+        cache_pos = j + ((total_written - 1 - j) // self.buf_size) * self.buf_size
+
+        # Query positions using tensor operations
+        q_offsets = torch.arange(seq_len, dtype=torch.long, device=start_pos.device)
+        pos_q = (start_pos + q_offsets).view(-1, 1)
+
+        delta = pos_q - cache_pos.unsqueeze(0)
+        valid = (cache_pos >= 0) & (delta >= 0) & (delta < self.window_size)
+        if bool_mask:
+            return valid.unsqueeze(0).unsqueeze(
+                0
+            )  # [1, 1, seq_len, buf_size] for Triton
+        return torch.where(
+            valid,
+            torch.zeros(1, dtype=dtype, device=start_pos.device),
+            torch.tensor(float("-inf"), dtype=dtype, device=start_pos.device),
+        )
+
+
+class StreamingAudioEncoderExport(nn.Module):
+    """Streaming encoder: processes one 8-mel-frame chunk at a time.
+
+    Shares conv/transformer/adapter weights with the offline encoder.
+    Owns separate KV caches and SDPA for incremental KV-cached attention.
+    Conv states are maintained as internal buffers.
+
+    Forward:
+        mel_chunk(1,128,8) + enc_input_pos(4,) -> audio_embeds(1,1,3072)
+    """
+
+    def __init__(self, model: VoxtralRealtimeModel, max_enc_len: int = 750):
+        super().__init__()
+        config = model.config
+
+        # Shared encoder weights (read-only references, never mutated)
+        self.conv1 = model.encoder.conv_layers[0].conv
+        self.conv2 = model.encoder.conv_layers[1].conv
+        self.layers = model.encoder.layers
+        self.enc_norm = model.encoder.norm
+        self.adapter = model.adapter
+
+        self.downsample_factor = config.downsample_factor
+        self.n_heads = config.enc_n_heads
+        self.head_dim = config.enc_head_dim
+        self.bool_mask = config.backend == "cuda"
+        self.enc_rope_theta = config.enc_rope_theta
+
+        # Register conv states as buffers (mutable state for streaming)
+        self.register_buffer("conv1_state", torch.zeros(1, config.num_mel_bins, 2))
+        self.register_buffer("conv2_state", torch.zeros(1, config.enc_dim, 2))
+
+        # Ring buffer KV caches for unlimited streaming.
+        # Window size = max_enc_len (encoder sliding window from params.json).
+        # Buffer is 2x internally for safe wraparound.
+        # Choose cache and SDPA implementation based on backend
+        self.backend = config.backend
+        if config.backend == "mlx":
+            cache_dtype = self.layers[0].attention.wq.weight.dtype
+            self.kv_caches = nn.ModuleList(
+                [
+                    MLXRingKVCache(
+                        max_enc_len,
+                        config.enc_n_heads,
+                        config.enc_head_dim,
+                        dtype=cache_dtype,
+                    )
+                    for _ in range(config.enc_n_layers)
+                ]
+            )
+            self.sdpa = MLXMaskedSDPA(config.enc_n_heads, config.enc_head_dim)
+        elif config.backend == "metal":
+            self.kv_caches = nn.ModuleList(
+                [
+                    StandardRingKVCache(
+                        max_enc_len, config.enc_n_heads, config.enc_head_dim
+                    )
+                    for _ in range(config.enc_n_layers)
+                ]
+            )
+            self.sdpa = MetalSDPA(
+                config.enc_n_heads,
+                config.enc_n_heads,
+                config.enc_head_dim,
+            )
+        elif config.backend == "cuda":
+            self.kv_caches = nn.ModuleList(
+                [
+                    StandardRingKVCache(
+                        max_enc_len, config.enc_n_heads, config.enc_head_dim
+                    )
+                    for _ in range(config.enc_n_layers)
+                ]
+            )
+            self.sdpa = StandardSDPA(
+                config.enc_n_heads,
+                config.enc_n_heads,
+                config.enc_head_dim,
+            )
+        else:
+            self.kv_caches = nn.ModuleList(
+                [
+                    RingKVCache(max_enc_len, config.enc_n_heads, config.enc_head_dim)
+                    for _ in range(config.enc_n_layers)
+                ]
+            )
+            self.sdpa = SDPA(config.enc_n_heads, config.enc_head_dim)
+
+        # RoPE inverse frequencies for on-the-fly computation.
+        # No pre-computed buffer — supports unlimited streaming positions.
+        inv_freq = 1.0 / (
+            config.enc_rope_theta
+            ** (torch.arange(0, config.enc_head_dim, 2).float() / config.enc_head_dim)
+        )
+        self.register_buffer("inv_freq", inv_freq)
+
+    def _streaming_encoder_layer(
+        self,
+        x: torch.Tensor,
+        freqs_cos: torch.Tensor,
+        freqs_sin: torch.Tensor,
+        input_pos: torch.Tensor,
+        mask: torch.Tensor,
+        layer: CausalEncoderLayer,
+        layer_idx: int,
+    ) -> torch.Tensor:
+        """One encoder layer with streaming attention (ring buffer KV cache)."""
+        h = layer.attention_norm(x)
+
+        B, T, _ = h.shape
+        attn = layer.attention
+        q = attn.wq(h).view(B, T, self.n_heads, self.head_dim)
+        k = attn.wk(h).view(B, T, self.n_heads, self.head_dim)
+        v = attn.wv(h).view(B, T, self.n_heads, self.head_dim)
+
+        if self.backend == "mlx":
+            start_pos = input_pos[0].item()
+            q = torch.ops.mlx.rope(
+                q.transpose(1, 2),
+                self.head_dim,
+                start_pos,
+                traditional=True,
+                base=self.enc_rope_theta,
+            ).transpose(1, 2)
+            k = torch.ops.mlx.rope(
+                k.transpose(1, 2),
+                self.head_dim,
+                start_pos,
+                traditional=True,
+                base=self.enc_rope_theta,
+            ).transpose(1, 2)
+        else:
+            q, k = apply_rotary_emb(q, k, freqs_cos, freqs_sin)
+
+        k, v = self.kv_caches[layer_idx].update(input_pos, k, v)
+
+        y = self.sdpa(input_pos, q, k, v, B, T, mask)
+        y = attn.wo(y)
+
+        x = x + y
+        x = x + layer.feed_forward(layer.ffn_norm(x))
+        return x
+
+    def forward(
+        self,
+        mel_chunk: torch.Tensor,
+        enc_input_pos: torch.Tensor,
+    ) -> torch.Tensor:
+        # Auto-reset conv states at the start of each new session (enc_input_pos[0] == 0).
+        # Using tensor ops (not .item()) avoids constant-folding during export.
+        is_start = (enc_input_pos[:1] == 0).view(1, 1, 1).to(self.conv1_state.dtype)
+        self.conv1_state.mul_(1.0 - is_start)
+        self.conv2_state.mul_(1.0 - is_start)
+
+        # Conv1: cat state + chunk, raw Conv1d (no CausalConv1d padding)
+        # (1, 128, 2+8=10) -> conv1(k=3, s=1) -> (1, 1280, 8)
+        conv1_input = torch.cat([self.conv1_state, mel_chunk], dim=2)
+        conv1_out = F.gelu(self.conv1(conv1_input))
+        # Update conv1 state with last 2 frames from mel_chunk
+        self.conv1_state.copy_(mel_chunk[:, :, -2:])
+
+        # Conv2: cat state + conv1_out, raw Conv1d
+        # (1, 1280, 2+8=10) -> conv2(k=3, s=2) -> (1, 1280, 4)
+        conv2_input = torch.cat([self.conv2_state, conv1_out], dim=2)
+        conv2_out = F.gelu(self.conv2(conv2_input))
+        # Update conv2 state with last 2 frames from conv1_out
+        self.conv2_state.copy_(conv1_out[:, :, -2:])
+
+        x = conv2_out.transpose(1, 2)  # (1, 4, 1280)
+
+        # Compute RoPE on-the-fly (no buffer size limit)
+        freqs = torch.outer(enc_input_pos.float(), self.inv_freq)
+        freqs_cos = freqs.cos()
+        freqs_sin = freqs.sin()
+
+        # Sliding window mask — identical for all layers, compute once.
+        T = x.size(1)
+        # Pass start position as tensor (not .item()) to avoid unbacked symbols in AOTI
+        mask = self.kv_caches[0].create_causal_mask(
+            enc_input_pos[0], T, bool_mask=self.bool_mask, dtype=x.dtype
+        )
+
+        for i, layer in enumerate(self.layers):
+            x = self._streaming_encoder_layer(
+                x, freqs_cos, freqs_sin, enc_input_pos, mask, layer, i
+            )
+
+        x = self.enc_norm(x)  # (1, 4, 1280)
+
+        # Downsample: concat 4 consecutive frames -> (1, 1, 5120)
+        B, T, D = x.shape
+        x = x.reshape(B, T // self.downsample_factor, D * self.downsample_factor)
+
+        audio_embeds = self.adapter(x)  # (1, 1, 3072)
+
+        return audio_embeds
 
 
 # ---------------------------------------------------------------------------
@@ -612,6 +1383,9 @@ def load_model(
     max_seq_len: int = 4096,
     n_delay_tokens: int = 6,
     dtype: torch.dtype = torch.float32,
+    backend: str = "xnnpack",
+    streaming: bool = False,
+    sliding_window: int | None = None,
 ) -> VoxtralRealtimeModel:
     """Load VoxtralRealtimeModel from a Mistral consolidated checkpoint.
 
@@ -621,22 +1395,42 @@ def load_model(
 
     Args:
         model_path: Directory containing params.json and consolidated.safetensors.
-        max_seq_len: Maximum sequence length for KV cache.
+        max_seq_len: Maximum sequence length for KV cache (offline mode).
         n_delay_tokens: Transcription delay in tokens (default 6 = 480ms).
         dtype: Weight dtype (default: float32).
+        backend: Backend for acceleration ("xnnpack", "mlx", "metal", "cuda", or "portable").
+        streaming: If True, use ring buffer KV cache for unlimited streaming.
+        sliding_window: Override decoder sliding window size (default: from params.json).
     """
+    _VALID_BACKENDS = ("xnnpack", "mlx", "metal", "cuda", "portable")
+
+    if backend not in _VALID_BACKENDS:
+        raise ValueError(
+            f"Unknown backend '{backend}'. Must be one of {_VALID_BACKENDS}."
+        )
+
+    # Import MLX custom ops for mlx backend
+    if backend == "mlx":
+        import executorch.backends.mlx.custom_ops as _mlx_custom_ops  # noqa: F401
+
     from safetensors import safe_open
 
     model_dir = Path(model_path)
     config = VoxtralRealtimeConfig.from_params_json(str(model_dir / "params.json"))
     config.max_seq_len = max_seq_len
+    config.streaming = streaming
+    config.backend = backend
+    if sliding_window is not None:
+        config.sliding_window = sliding_window
 
     print(
         f"Building model on meta device (dim={config.dim}, enc_dim={config.enc_dim}, "
-        f"layers={config.n_layers}, enc_layers={config.enc_n_layers})..."
+        f"layers={config.n_layers}, enc_layers={config.enc_n_layers}, "
+        f"{'streaming, sliding_window=' + str(config.sliding_window) if streaming else 'offline, max_seq_len=' + str(max_seq_len)}, "
+        f"backend={backend})..."
     )
     with torch.device("meta"):
-        model = VoxtralRealtimeModel(config, max_seq_len)
+        model = VoxtralRealtimeModel(config)
 
     print(f"Loading weights from {model_dir / 'consolidated.safetensors'}...")
     ckpt_path = str(model_dir / "consolidated.safetensors")
@@ -656,10 +1450,9 @@ def load_model(
     # Re-tie output weights (assign=True breaks the tie established in __init__)
     model.decoder.output.weight = model.decoder.tok_embeddings.weight
 
-    # Materialize remaining meta-device buffers (KV caches, RoPE freqs)
+    # Materialize remaining meta-device buffers (KV caches, RoPE inv_freq)
     # that weren't in the checkpoint. Use model dtype for KV caches so they
     # match the K/V values from the model (update_cache requires same dtype).
-    # RoPE freqs are overwritten below so their dtype here doesn't matter.
     for fqn, buf in list(model.named_buffers()):
         if buf.device.type == "meta":
             parts = fqn.rsplit(".", 1)
@@ -669,22 +1462,33 @@ def load_model(
                 torch.zeros(buf.shape, dtype=dtype, device="cpu"),
             )
 
-    # Recompute RoPE frequency tables (the zero-fill above is wrong for these)
+    # Recompute RoPE (the zero-fill above is wrong for frequency buffers).
     enc_cos, enc_sin = precompute_freqs_cis(
         config.enc_head_dim, 16384, config.enc_rope_theta
     )
     model.encoder.register_buffer("freqs_cos", enc_cos)
     model.encoder.register_buffer("freqs_sin", enc_sin)
-    dec_cos, dec_sin = precompute_freqs_cis(
-        config.head_dim, max_seq_len, config.rope_theta
-    )
-    model.decoder.register_buffer("freqs_cos", dec_cos)
-    model.decoder.register_buffer("freqs_sin", dec_sin)
+
+    if streaming:
+        # Streaming: recompute decoder inv_freq for on-the-fly RoPE.
+        dec_inv_freq = 1.0 / (
+            config.rope_theta
+            ** (torch.arange(0, config.head_dim, 2).float() / config.head_dim)
+        )
+        model.decoder.register_buffer("inv_freq", dec_inv_freq)
+    else:
+        # Offline: recompute decoder RoPE frequency table.
+        dec_cos, dec_sin = precompute_freqs_cis(
+            config.head_dim, max_seq_len, config.rope_theta
+        )
+        model.decoder.register_buffer("freqs_cos", dec_cos)
+        model.decoder.register_buffer("freqs_sin", dec_sin)
 
     # Validate
     runtime_prefixes = (
         "decoder.output.weight",
         "decoder.freqs_",
+        "decoder.inv_freq",
         "encoder.freqs_",
         ".kv_cache.",
     )

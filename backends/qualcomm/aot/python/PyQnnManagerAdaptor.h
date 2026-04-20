@@ -236,6 +236,10 @@ class PyQnnManager {
     return qnn_manager_->InitContext(std::optional{graph_names});
   }
 
+  executorch::runtime::Error InitContextCache() {
+    return qnn_manager_->InitContextCache();
+  }
+
   bool IsNodeSupportedByBackend(
       std::vector<std::shared_ptr<OpWrapper>>& op_wrappers) {
     return qnn_manager_->IsNodeSupportedByBackend(op_wrappers);
@@ -246,7 +250,7 @@ class PyQnnManager {
       std::vector<std::vector<std::shared_ptr<OpWrapper>>>& op_wrappers) {
     QnnExecuTorchContextBinary binary_info;
 
-    for (int i = 0; i < graph_names.size(); ++i) {
+    for (uint32_t i = 0; i < graph_names.size(); ++i) {
       if (qnn_manager_->Compile(graph_names[i], op_wrappers[i]) !=
           executorch::runtime::Error::Ok) {
         QNN_EXECUTORCH_LOG_ERROR("Fail to compile QNN graph");

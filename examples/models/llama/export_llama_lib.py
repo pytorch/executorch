@@ -34,20 +34,24 @@ from executorch.extension.llm.export.builder import DType, LLMEdgeManager
 from executorch.extension.llm.export.config.llm_config import LlmConfig
 from executorch.extension.llm.export.partitioner_lib import (
     get_coreml_partitioner,
+    get_ethosu_partitioner,
     get_mps_partitioner,
     get_openvino_partitioner,
     get_qnn_partitioner,
     get_tosa_partitioner,
+    get_vgf_partitioner,
     get_vulkan_partitioner,
     get_xnnpack_partitioner,
 )
 from executorch.extension.llm.export.quantizer_lib import (
     get_coreml_quantizer,
+    get_ethosu_quantizer,
     get_ov_quantizer,
     get_pt2e_quantization_params,
     get_pt2e_quantizers,
     get_qnn_quantizer,
     get_tosa_quantizer,
+    get_vgf_quantizer,
     get_vulkan_quantizer,
 )
 from executorch.util.activation_memory_profiler import generate_memory_trace
@@ -99,27 +103,37 @@ EXECUTORCH_DEFINED_MODELS = [
     "static_llama",
     "qwen2_5_0_5b",
     "qwen2_5_1_5b",
+    "qwen2_5_coder_32b",
     "qwen3_0_6b",
     "qwen3_1_7b",
     "qwen3_4b",
+    "qwen3_5_0_8b",
+    "qwen3_5_2b",
+    "qwen3_5_4b",
     "phi_4_mini",
     "smollm2",
     "lfm2_350m",  # hybrid
     "lfm2_700m",  # hybrid
     "lfm2_1_2b",  # hybrid
+    "lfm2_5_1_2b",  # hybrid
 ]
 TORCHTUNE_DEFINED_MODELS = ["llama3_2_vision"]
 HUGGING_FACE_REPO_IDS = {
     "qwen2_5_0_5b": "Qwen/Qwen2.5-0.5B",
     "qwen2_5_1_5b": "Qwen/Qwen2.5-1.5B",
+    "qwen2_5_coder_32b": "Qwen/Qwen2.5-Coder-32B-Instruct",
     "phi_4_mini": "microsoft/Phi-4-mini-instruct",
     "smollm2": "HuggingFaceTB/SmolLM-135M",
     "qwen3_0_6b": "Qwen/Qwen3-0.6B",
     "qwen3_1_7b": "Qwen/Qwen3-1.7B",
     "qwen3_4b": "Qwen/Qwen3-4B",
+    "qwen3_5_0_8b": "Qwen/Qwen3.5-0.8B",
+    "qwen3_5_2b": "Qwen/Qwen3.5-2B",
+    "qwen3_5_4b": "Qwen/Qwen3.5-4B",
     "lfm2_350m": "LiquidAI/LFM2-350M",
     "lfm2_700m": "LiquidAI/LFM2-700M",
     "lfm2_1_2b": "LiquidAI/LFM2-1.2B",
+    "lfm2_5_1_2b": "LiquidAI/LFM2.5-1.2B-Instruct",
 }
 
 
@@ -182,7 +196,7 @@ def build_args_parser() -> argparse.ArgumentParser:
         "--model",
         default="llama3",
         choices=EXECUTORCH_DEFINED_MODELS + TORCHTUNE_DEFINED_MODELS,
-        help="The Lllama model to export. stories110M, llama2, llama3, llama3_1, and llama3_2 use the same underlying LlamaTransformer architecture defined in ExecuTorch. All other models use TorchTune model definitions.",
+        help="The Llama model to export. stories110M, llama2, llama3, llama3_1, and llama3_2 use the same underlying LlamaTransformer architecture defined in ExecuTorch. All other models use TorchTune model definitions.",
     )
     parser.add_argument(
         "-E",
@@ -214,6 +228,7 @@ def build_args_parser() -> argparse.ArgumentParser:
             "coreml_baseline_8a_c4w",
             "vulkan_8w",
             "tosa_8a8w",
+            "ethosu_8a8w",
         ],
         help="Use PT2E quantization. Comma separated options. e.g. xnnpack_dynamic (for per channel 8 bit weight), xnnpack_dynamic_qc4 (for per channel 4 bit weight), embedding.",
     )
@@ -243,6 +258,18 @@ def build_args_parser() -> argparse.ArgumentParser:
         "--adapter_config",
         required=False,
         help="Path to the adapter_config.json file. Used if the model has trained LoRA adapters. Must provide adapter_checkpoint.",
+    )
+
+    parser.add_argument(
+        "--openvino_awq",
+        action="store_true",
+        help="Whether to use AWQ from NNCF. Applicable only for the OpenVINO backend.",
+    )
+
+    parser.add_argument(
+        "--openvino_scale_estimation",
+        action="store_true",
+        help="Whether to use Scale Estimation algorithm from NNCF. Applicable only for the OpenVINO backend",
     )
 
     parser.add_argument(
@@ -396,7 +423,7 @@ def build_args_parser() -> argparse.ArgumentParser:
         type=parse_list_of_ints,
         default=None,
         help="List of integers specifying local and global attention pattern, e.g., [0, 16, 0, 16] to specify that every other layer is sliding window of 16."
-        " [0, 16, 32] pattern specifes 2nd and 3rd layer has sliding window of 16 and 32 respecitvely. "
+        " [0, 16, 32] pattern specifes 2nd and 3rd layer has sliding window of 16 and 32 respectively."
         " [16] pattern specifies all layers have sliding window of 16.",
     )
 
@@ -473,6 +500,12 @@ def build_args_parser() -> argparse.ArgumentParser:
         default="CPU",
         choices=["CPU", "GPU", "NPU"],
         help="Specify the device for Openvino (CPU, GPU or NPU).",
+    )
+
+    parser.add_argument(
+        "--mlx",
+        action="store_true",
+        help="Delegate to MLX backend (Apple Silicon). Use with --use_kv_cache=True.",
     )
 
     parser.add_argument(
@@ -558,7 +591,7 @@ def build_args_parser() -> argparse.ArgumentParser:
         "--use_attention_sink",
         default=None,
         type=str,
-        help="Use attention sink to have fluent multi-round conversation. '<sink_size>,<window_size>,<batch_eviction_size>', e.g., '4,2044,1024'.",
+        help="Use attention sink to have fluent multi-round conversation. '<sink_size>,<window_size>', e.g., '4,2044'.",
     )
 
     parser.add_argument(
@@ -601,7 +634,7 @@ def canonical_path(path: Union[str, Path], *, dir: bool = False) -> str:
         return return_val
 
 
-def export_llama(
+def export_llama(  # noqa: C901
     export_options: Union[argparse.Namespace, LlmConfig, DictConfig],
 ) -> str:
     if isinstance(export_options, argparse.Namespace):
@@ -624,6 +657,8 @@ def export_llama(
         repo_id = HUGGING_FACE_REPO_IDS[model_name]
         if model_name.startswith("qwen2_5"):
             from executorch.examples.models.qwen2_5 import convert_weights
+        elif model_name.startswith("qwen3_5"):
+            from executorch.examples.models.qwen3_5 import convert_weights
         elif model_name.startswith("qwen3"):
             from executorch.examples.models.qwen3 import convert_weights
         elif model_name == "phi_4_mini":
@@ -708,10 +743,9 @@ def _prepare_for_llama_export(llm_config: LlmConfig) -> LLMEdgeManager:
             f"Checkpoint dtype {checkpoint_dtype} precision is higher than dtype override {dtype_override.to_torch_dtype()}."
         )
 
-    edge_manager.model = edge_manager.model.to(dtype=dtype_override.to_torch_dtype())
-
-    # We want to quantize (in the source transforms) the weights of the model
-    # in the checkpoint dtype.
+    # Quantize weights in checkpoint dtype for accuracy, then cast to
+    # dtype_override afterward. IntxUnpackedToInt8Tensor.to() properly
+    # propagates the dtype change to scale/zero_point/output dtype.
     logging.info(f"Checkpoint dtype: {edge_manager.model.checkpoint_dtype}")
     edge_manager = edge_manager.set_output_dir(output_dir_path).source_transform(
         _get_source_transforms(
@@ -734,7 +768,8 @@ def _prepare_for_llama_export(llm_config: LlmConfig) -> LLMEdgeManager:
             expand_rope_table=llm_config.model.expand_rope_table,
             use_custom_sdpa_with_attention_mask=getattr(
                 llm_config.model, "use_custom_sdpa_with_attention_mask", False
-            ),
+            )
+            or bool(llm_config.model.use_attention_sink),
             use_sdpa_with_kv_cache=llm_config.model.use_sdpa_with_kv_cache,
             quantize_kv_cache=llm_config.model.quantize_kv_cache,
             use_kv_cache=llm_config.model.use_kv_cache,
@@ -745,6 +780,7 @@ def _prepare_for_llama_export(llm_config: LlmConfig) -> LLMEdgeManager:
             coreml=llm_config.backend.coreml.enabled,
             coreml_ios=llm_config.backend.coreml.ios,
             vulkan=llm_config.backend.vulkan.enabled,
+            mlx=llm_config.backend.mlx.enabled,
             use_qat=llm_config.quantization.use_qat,
             use_lora=llm_config.base.use_lora,
             preq_mode=(
@@ -755,6 +791,7 @@ def _prepare_for_llama_export(llm_config: LlmConfig) -> LLMEdgeManager:
             local_global_attention=llm_config.model.local_global_attention,
             use_torchao_kernels_linear=llm_config.backend.torchao.use_torchao_kernels_linear,
             use_torchao_kernels_tied_embedding=llm_config.backend.torchao.use_torchao_kernels_tied_embedding,
+            quantize_with_hqq=llm_config.quantization.use_hqq,
         )
     )
 
@@ -779,7 +816,7 @@ def get_quantizer_and_quant_params(llm_config):
         )
         quantizers.append(qnn_quantizer)
     if llm_config.backend.openvino.enabled and llm_config.quantization.pt2e_quantize:
-        assert not quantizers, "Should not enable both xnnpack and openvino"
+        assert not quantizers, "Should not enable openvino and other quantizers"
         group_size = llm_config.quantization.group_size
         group_size = group_size if group_size else 128
         ov_quantizer = get_ov_quantizer(
@@ -797,6 +834,21 @@ def get_quantizer_and_quant_params(llm_config):
             llm_config.backend.tosa.version, llm_config.quantization.pt2e_quantize.value
         )
         quantizers.append(tosa_quantizer)
+    if llm_config.backend.ethosu.enabled and llm_config.quantization.pt2e_quantize:
+        ethosu_quantizer = get_ethosu_quantizer(
+            llm_config.backend.ethosu.target,
+            llm_config.backend.ethosu.system_config,
+            llm_config.backend.ethosu.memory_mode,
+            llm_config.quantization.pt2e_quantize.value,
+        )
+        quantizers.append(ethosu_quantizer)
+    if llm_config.backend.vgf.enabled and llm_config.quantization.pt2e_quantize:
+        vgf_quantizer = get_vgf_quantizer(
+            llm_config.backend.vgf.compile_spec,
+            llm_config.backend.vgf.compiler_flags,
+            llm_config.quantization.pt2e_quantize.value,
+        )
+        quantizers.append(vgf_quantizer)
     if llm_config.backend.vulkan.enabled and llm_config.quantization.pt2e_quantize:
         assert (
             len(quantizers) == 0
@@ -853,15 +905,15 @@ def _validate_args(llm_config):
                 "Shared embedding is only supported with torchao quantization."
             )
 
-    if llm_config.multimethod_lora.enabled:
+    if llm_config.multimethod.enabled:
         if llm_config.base.lora_config is not None:
             raise ValueError(
-                "Cannot use both base.lora_config and multimethod_lora.methods. "
-                "Use multimethod_lora.methods for all LoRA variants."
+                "Cannot use both base.lora_config and multimethod.methods. "
+                "Use multimethod.methods for all LoRA variants."
             )
         if llm_config.quantization.pt2e_quantize is not None:
             raise ValueError(
-                "PT2E quantization is not supported with multimethod_lora export."
+                "PT2E quantization is not supported with multimethod export."
             )
         if (
             llm_config.backend.coreml.enabled
@@ -871,7 +923,7 @@ def _validate_args(llm_config):
             or llm_config.backend.openvino.enabled
         ):
             raise ValueError(
-                "multimethod_lora export only supports XNNPACK backend or portable ops"
+                "multimethod export only supports XNNPACK backend or portable ops. "
                 "Please disable other backends (coreml, vulkan, qnn, mps, openvino)."
             )
 
@@ -938,6 +990,8 @@ def _to_edge_and_lower_llama_openvino(
     modelname,
     quantizers,
     additional_passes,
+    awq,
+    scale_estimation,
     openvino_device: str = "CPU",
     verbose: bool = False,
 ) -> LLMEdgeManager:  # noqa: C901
@@ -951,6 +1005,51 @@ def _to_edge_and_lower_llama_openvino(
     for partitioner in partitioners:
         logging.info(f"--> {partitioner.__class__.__name__}")
 
+    from executorch.backends.openvino.quantizer import apply_nncf_data_aware_compression
+
+    logging.info(f"Applying AWQ = {awq}, Scale Estimation = {scale_estimation}")
+    builder = apply_nncf_data_aware_compression(
+        builder_exported, quantizers[0], awq, scale_estimation
+    )
+
+    builder = builder.to_edge_transform_and_lower(partitioners)
+
+    if verbose:
+        print_delegation_info(builder.edge_manager.exported_program().graph_module)
+
+    return builder.to_executorch(passes=additional_passes)
+
+
+def _to_edge_and_lower_llama_arm(
+    builder_exported,
+    modelname,
+    quantizers,
+    additional_passes,
+    llm_config: LlmConfig,
+    verbose: bool = False,
+) -> LLMEdgeManager:
+    logging.info("Lowering model using TOSA partitioner")
+
+    partitioners = []
+    if llm_config.backend.ethosu.enabled:
+        partitioners.append(
+            get_ethosu_partitioner(
+                llm_config.backend.ethosu.target,
+            )
+        )
+        modelname = f"ethosu_{modelname}"
+    elif llm_config.backend.vgf.enabled:
+        partitioners.append(
+            get_vgf_partitioner(
+                llm_config.backend.vgf.compile_spec,
+                llm_config.backend.vgf.compiler_flags,
+            )
+        )
+        modelname = f"vgf_{modelname}"
+    elif llm_config.backend.tosa.enabled:
+        partitioners.append(get_tosa_partitioner(llm_config.backend.tosa.version))
+        modelname = f"tosa_{modelname}"
+
     builder = builder_exported.pt2e_quantize(quantizers).to_edge_transform_and_lower(
         partitioners
     )
@@ -961,23 +1060,26 @@ def _to_edge_and_lower_llama_openvino(
     return builder.to_executorch(passes=additional_passes)
 
 
-def _to_edge_and_lower_llama_tosa(
+def _to_edge_and_lower_llama_mlx(
     builder_exported,
     modelname,
     quantizers,
     additional_passes,
-    tosa_spec,
     verbose: bool = False,
 ) -> LLMEdgeManager:
-    logging.info("Lowering model using TOSA partitioner")
+    """
+    Lower Llama model to MLX backend using to_edge_transform_and_lower.
+    """
+    logging.info("Lowering model using MLX partitioner")
 
-    partitioners = []
-    partitioners.append(get_tosa_partitioner(tosa_spec))
+    from executorch.backends.mlx.partitioner import MLXPartitioner
+    from executorch.backends.mlx.passes import get_default_passes
 
-    modelname = f"tosa_{modelname}"
+    partitioners = [MLXPartitioner()]
 
     builder = builder_exported.pt2e_quantize(quantizers).to_edge_transform_and_lower(
-        partitioners
+        partitioners,
+        transform_passes=get_default_passes(),
     )
 
     if verbose:
@@ -1164,9 +1266,11 @@ def _to_edge_and_lower_llama(  # noqa: C901
 
 
 def _get_xnnpack_partitioners(llm_config: LlmConfig) -> Optional[List[Partitioner]]:
-    """Get XNNPACK partitioners for multimethod_lora export."""
+    """Get XNNPACK partitioners for multimethod export."""
     partitioners = []
 
+    # Order matters here, dynamic quantization should be applied first when
+    # both xnnpack and xnnpack_extended_ops are enabled.
     if llm_config.backend.xnnpack.enabled:
         partitioners.append(
             get_xnnpack_partitioner(dynamic_quant_only_partitioner=True)
@@ -1200,20 +1304,20 @@ def _export_llama_multimethod(llm_config: LlmConfig) -> LLMEdgeManager:
     """
     Export multiple methods (base + LoRA variants) to a single .pte file.
 
-    For each method in llm_config.multimethod_lora.methods:
+    For each method in llm_config.multimethod.methods:
     - If LoraConfig is None: use base model
     - If LoraConfig is provided: create model with LoRA weights
 
     Limitations:
-    - Only XNNPACK backend is supported for multimethod_lora export.
+    - Only XNNPACK backend is supported for multimethod export.
     - PT2E quantization is not supported.
     - Each method is exported separately; export time scales linearly
       with the number of methods.
     - The final .pte file deduplicates shared weights automatically.
     """
-    num_methods = len(llm_config.multimethod_lora.methods)
+    num_methods = len(llm_config.multimethod.methods)
     logging.info(
-        f"multimethod_lora export: exporting {num_methods} method(s). "
+        f"multimethod export: exporting {num_methods} method(s). "
         "Each method requires separate model instantiation and export."
     )
 
@@ -1221,18 +1325,25 @@ def _export_llama_multimethod(llm_config: LlmConfig) -> LLMEdgeManager:
     if llm_config.base.model_class.value in TORCHTUNE_DEFINED_MODELS:
         additional_passes = [InitializedMutableBufferPass(["kv_cache_pos"])]
 
+    # For attention sink models, cache_positions must be initialized to -1
+    # (sentinel for "empty slot"). Without this pass, ExecuTorch only serializes
+    # shape+dtype for mutable buffers, leaving them zero-initialized at runtime,
+    # which corrupts the causal mask computation.
+    if llm_config.model.use_attention_sink:
+        additional_passes.append(InitializedMutableBufferPass(["cache_positions"]))
+
     # Build dict of exported programs
     method_to_program: Dict[str, ExportedProgram] = {}
     first_builder = None
 
-    for method_name, lora_config in llm_config.multimethod_lora.methods.items():
-        logging.info(f"Exporting method: {method_name}")
+    for method in llm_config.multimethod.methods:
+        logging.info(f"Exporting method: {method.method_name}")
 
         # Create a copy of config with this method's LoRA setting
         method_config = copy.deepcopy(llm_config)
-        method_config.base.lora_config = lora_config
-        # Disable multimethod_lora to avoid infinite recursion
-        method_config.multimethod_lora.methods = {}
+        method_config.base.lora_config = method.lora_config
+        # Disable multimethod to avoid infinite recursion
+        method_config.multimethod.methods = []
 
         # Load and prepare model for this method
         builder = _prepare_for_llama_export(method_config)
@@ -1241,7 +1352,7 @@ def _export_llama_multimethod(llm_config: LlmConfig) -> LLMEdgeManager:
 
         # Get the exported program
         exported_program = builder._export(builder.pre_autograd_graph_module)
-        method_to_program[method_name] = exported_program
+        method_to_program[method.method_name] = exported_program
 
         if first_builder is None:
             first_builder = builder
@@ -1251,7 +1362,7 @@ def _export_llama_multimethod(llm_config: LlmConfig) -> LLMEdgeManager:
     # Get partitioners based on backend config
     partitioners = _get_xnnpack_partitioners(llm_config)
 
-    # Lower all methods together using multimethod_lora API
+    # Lower all methods together using multimethod API
     edge_config = first_builder._get_edge_config()
     edge_manager = to_edge_transform_and_lower(
         method_to_program,
@@ -1263,7 +1374,10 @@ def _export_llama_multimethod(llm_config: LlmConfig) -> LLMEdgeManager:
 
     # Convert to executorch and save
     first_builder.edge_manager = edge_manager
-    first_builder = first_builder.to_executorch(passes=additional_passes)
+    first_builder = first_builder.to_executorch(
+        passes=additional_passes,
+        share_mutable_buffers=llm_config.multimethod.share_mutable_buffers,
+    )
 
     output_file = _get_output_filename(
         llm_config,
@@ -1279,8 +1393,8 @@ def _export_llama_multimethod(llm_config: LlmConfig) -> LLMEdgeManager:
 def _export_llama(llm_config: LlmConfig) -> LLMEdgeManager:  # noqa: C901
     _validate_args(llm_config)
 
-    # Check for multimethod_lora export
-    if llm_config.multimethod_lora.enabled:
+    # Check for multimethod export
+    if llm_config.multimethod.enabled:
         return _export_llama_multimethod(llm_config)
 
     pt2e_quant_params, quantizers, quant_dtype = get_quantizer_and_quant_params(
@@ -1291,9 +1405,20 @@ def _export_llama(llm_config: LlmConfig) -> LLMEdgeManager:  # noqa: C901
     if llm_config.base.model_class.value in TORCHTUNE_DEFINED_MODELS:
         additional_passes = [InitializedMutableBufferPass(["kv_cache_pos"])]
 
+    # For attention sink models, cache_positions must be initialized to -1
+    # (sentinel for "empty slot"). Without this pass, ExecuTorch only serializes
+    # shape+dtype for mutable buffers, leaving them zero-initialized at runtime,
+    # which corrupts the causal mask computation.
+    if llm_config.model.use_attention_sink:
+        additional_passes.append(InitializedMutableBufferPass(["cache_positions"]))
+
     # export_to_edge
     builder_manager = _prepare_for_llama_export(llm_config)
-    if llm_config.backend.tosa.enabled:
+    if (
+        llm_config.backend.tosa.enabled
+        or llm_config.backend.vgf.enabled
+        or llm_config.backend.ethosu.enabled
+    ):
         builder_manager.skip_dim_order = False
     builder_exported = builder_manager.export()
     builder_exported.run_canonical_optimizations()
@@ -1335,16 +1460,30 @@ def _export_llama(llm_config: LlmConfig) -> LLMEdgeManager:  # noqa: C901
             modelname,
             quantizers,
             additional_passes,
+            awq=llm_config.backend.openvino.openvino_awq,
+            scale_estimation=llm_config.backend.openvino.openvino_scale_estimation,
             openvino_device=llm_config.backend.openvino.device,
             verbose=llm_config.debug.verbose,
         )
-    elif llm_config.backend.tosa.enabled:
-        builder = _to_edge_and_lower_llama_tosa(
+    elif (
+        llm_config.backend.tosa.enabled
+        or llm_config.backend.ethosu.enabled
+        or llm_config.backend.vgf.enabled
+    ):
+        builder = _to_edge_and_lower_llama_arm(
             builder_exported,
             modelname,
             quantizers,
             additional_passes,
-            llm_config.backend.tosa.version,
+            llm_config,
+            verbose=llm_config.debug.verbose,
+        )
+    elif llm_config.backend.mlx.enabled:
+        builder = _to_edge_and_lower_llama_mlx(
+            builder_exported,
+            modelname,
+            quantizers,
+            additional_passes,
             verbose=llm_config.debug.verbose,
         )
     else:
@@ -1405,6 +1544,7 @@ def _load_llama_model_metadata(
     n_layers: int,
     vocab_size: int,
     metadata_str: Optional[str] = None,
+    num_kv_shared_layers: int = 0,
 ):
     metadata = {
         "get_max_seq_len": max_seq_len,
@@ -1415,6 +1555,9 @@ def _load_llama_model_metadata(
         "use_sdpa_with_kv_cache": use_sdpa_with_kv_cache,
         "enable_dynamic_shape": enable_dynamic_shape,
     }
+    # YOCO (You Only Cache Once) KV sharing metadata
+    if num_kv_shared_layers > 0:
+        metadata["get_num_kv_shared_layers"] = num_kv_shared_layers
     if metadata_str:
         try:
             extra = json.loads(metadata_str)
@@ -1494,6 +1637,9 @@ def _load_llama_model(llm_config: LlmConfig) -> "LLMEdgeManager":
             #  Module]`.
             model.vocab_size,
             llm_config.base.metadata,
+            # pyre-fixme[6]: For 10th argument expected `int` but got `Union[Tensor,
+            #  Module]`.
+            num_kv_shared_layers=getattr(model, "num_kv_shared_layers", 0),
         ),
     )
 
@@ -1524,6 +1670,7 @@ def _get_source_transforms(  # noqa
     coreml: bool = False,
     coreml_ios: int = 15,
     vulkan: bool = False,
+    mlx: bool = False,
     use_qat: bool = False,
     use_lora: int = 0,
     preq_mode: Optional[str] = None,
@@ -1604,8 +1751,7 @@ def _get_source_transforms(  # noqa
             get_quant_embedding_transform(
                 embedding_quantize,
                 use_shared_embedding,
-                checkpoint_dtype,
-                quantize_with_hqq,
+                quantize_with_hqq=quantize_with_hqq,
             )
         )
 
@@ -1646,16 +1792,17 @@ def _get_source_transforms(  # noqa
     use_attention_mask_for_custom_sdpa = use_custom_sdpa_with_attention_mask
 
     if use_sdpa_with_kv_cache:
-        transforms.append(replace_kv_cache_with_custom_kv_cache)
-        # todo: do this optionally
-        # if use attention mask instead of causal attention
-        # then create partial function that sets use_attention_mask=True
+        # Replace SDPA first, then KV cache. Order matters: the KV cache
+        # replacement sets SDPACustom.use_attention_mask=True for ring buffer
+        # models (attention sink, sliding window). If SDPA is replaced after,
+        # a new SDPACustom(use_attention_mask=False) would overwrite it.
         if use_attention_mask_for_custom_sdpa:
             transforms.append(
                 partial(replace_sdpa_with_custom_op, use_attention_mask=True)
             )
         else:
             transforms.append(replace_sdpa_with_custom_op)
+        transforms.append(replace_kv_cache_with_custom_kv_cache)
 
     if quantize_kv_cache:
         assert use_kv_cache, "quantize_kv_cache requires use_kv_cache=True"
@@ -1701,6 +1848,19 @@ def _get_source_transforms(  # noqa
                 transforms.append(replace_sdpa_with_simple_sdpa)
             transforms.append(replace_kv_cache_with_coreml_kv_cache)
 
+        elif mlx:
+            from executorch.backends.mlx.llm.source_transformation import (
+                replace_et_kv_cache_with_mlx,
+                transform_attention_mha_to_mlx,
+            )
+            from executorch.examples.models.llama.source_transformation.rms_norm import (
+                replace_rms_norm_with_native_rms_norm,
+            )
+
+            transforms.append(transform_attention_mha_to_mlx)
+            transforms.append(replace_et_kv_cache_with_mlx)
+            transforms.append(replace_rms_norm_with_native_rms_norm)
+
     if local_global_attention:
         transforms.append(
             partial(
@@ -1708,6 +1868,12 @@ def _get_source_transforms(  # noqa
                 layer_sizes=local_global_attention,
             )
         )
+
+    # Cast to dtype_override after quantization transforms, so non-quantized
+    # components use the desired computation dtype. This must happen before
+    # _convert_model_for_aarch64 which converts IntxUnpackedToInt8Tensor to
+    # IntxOpaqueTensor (which doesn't support .to()).
+    transforms.append(lambda m: m.to(dtype=dtype_override.to_torch_dtype()))
 
     if any([use_torchao_kernels_linear, use_torchao_kernels_tied_embedding]):
         from torchao.prototype.tensor_conversion.api import _convert_model_for_aarch64

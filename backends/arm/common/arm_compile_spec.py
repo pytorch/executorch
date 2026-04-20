@@ -11,12 +11,17 @@
 #
 
 import json
+import warnings
 from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
 from enum import Enum
 
-from executorch.backends.arm.common.pipeline_config import ArmPassPipelineConfig
+from executorch.backends.arm.common.pipeline_config import (
+    ArmPassPipelineConfig,
+    SoftmaxDecompositionConfig,
+)
 from executorch.backends.arm.tosa import TosaSpecification
+from executorch.exir._warnings import deprecated
 
 from executorch.exir.backend.compile_spec_schema import CompileSpec
 
@@ -31,6 +36,7 @@ class ArmCompileSpec(ABC):
     compiler_flags: list[str] = field(default_factory=list)
     path_for_intermediates: str | None = None
     tosa_debug_mode: DebugMode | None = None
+    preserve_io_quantization: bool = False
 
     _TOSA_SPEC_KEY = "tosa_spec"
     _COMPILE_FLAGS_KEY = "compile_flags"
@@ -39,6 +45,7 @@ class ArmCompileSpec(ABC):
     _DEBUG_MODE_KEY = "dump_debug_info"
     _OUTPUT_REORDER_KEY = "ouput_reorder_workaround"
     _TRANSFORM_PIPELINE_CONFIG_KEY = "transform_pipeline_config"
+    _PRESERVE_IO_QUANT_KEY = "preserve_io_quantization"
 
     def _set_compile_specs(
         self,
@@ -46,26 +53,37 @@ class ArmCompileSpec(ABC):
         compiler_flags: list[str],
         path_for_intermediates: str | None = None,
         tosa_debug_mode: DebugMode | None = None,
-        output_order_workaround: bool = True,
+        output_order_workaround: bool = False,
         pipeline_config: ArmPassPipelineConfig | None = None,
+        preserve_io_quantization: bool = False,
     ):
         """Set all values of dataclass directly."""
         self.tosa_spec = tosa_spec
         self.compiler_flags = compiler_flags
         self.path_for_intermediates = path_for_intermediates
         self.tosa_debug_mode = tosa_debug_mode
-        self.output_order_workaround = output_order_workaround
         self._pipeline_config = pipeline_config
+        self.output_order_workaround = output_order_workaround
+        self.preserve_io_quantization = preserve_io_quantization
+        self._warn_if_redundant_preserve_io_quantization()
+        if output_order_workaround:
+            warnings.warn(
+                "ArmCompileSpec(output_order_workaround=True) is deprecated and will be "
+                "removed in v1.5; please remove this flag.",
+                DeprecationWarning,
+                stacklevel=2,
+            )
 
     @classmethod
-    def from_list(cls, compile_specs: list[CompileSpec]):  # noqa: C901
+    def _from_list(cls, compile_specs: list[CompileSpec]):  # noqa: C901
         tosa_spec: TosaSpecification | None = None
         output_format: str | None = None
         compiler_flags: list[str] | None = None
         path_for_intermediates: str | None = None
         tosa_debug_mode: ArmCompileSpec.DebugMode | None = None
-        output_order_workaround: bool = True
+        output_order_workaround: bool = False
         pipeline_config: ArmPassPipelineConfig | None = None
+        preserve_io_quantization: bool = False
         unknown_specs: dict[str, str] = {}
         for spec in compile_specs:
             key = spec.key
@@ -104,12 +122,20 @@ class ArmCompileSpec(ABC):
                 tosa_debug_mode = ArmCompileSpec.DebugMode[val]
             elif key == ArmCompileSpec._OUTPUT_REORDER_KEY:
                 output_order_workaround = val  # type: ignore[assignment]
+                if output_order_workaround:
+                    warnings.warn(
+                        "The 'output_order_workaround' compile spec entry is deprecated and will be removed in v1.5; please remove this entry.",
+                        DeprecationWarning,
+                        stacklevel=2,
+                    )
             elif key == ArmCompileSpec._TRANSFORM_PIPELINE_CONFIG_KEY:
                 if pipeline_config is not None:
                     raise ValueError(
                         "More than one transform pipeline entry in compile spec."
                     )
                 pipeline_config = ArmPassPipelineConfig.from_dict(json.loads(val))
+            elif key == ArmCompileSpec._PRESERVE_IO_QUANT_KEY:
+                preserve_io_quantization = str(val).lower() in ("1", "true", "yes")
             else:
                 unknown_specs[key] = val
 
@@ -117,9 +143,9 @@ class ArmCompileSpec(ABC):
             raise ValueError("No tosa_spec in compile spec.")
         if output_format is None:
             raise ValueError("No output_format in compile spec.")
-        if output_format != cls.get_output_format():
+        if output_format != cls._get_output_format():
             raise ValueError(
-                f"Incorrect output format '{output_format}' for {cls.__name__}, expected '{cls.get_output_format()}'"
+                f"Incorrect output format '{output_format}' for {cls.__name__}, expected '{cls._get_output_format()}'"
             )
         if compiler_flags is None:
             compiler_flags = []
@@ -133,24 +159,25 @@ class ArmCompileSpec(ABC):
             tosa_debug_mode=tosa_debug_mode,
             output_order_workaround=output_order_workaround,
             pipeline_config=pipeline_config,
+            preserve_io_quantization=preserve_io_quantization,
         )
-        cls.from_list_hook(compile_spec, unknown_specs)
-        compile_spec.validate()
+        cls._from_list_hook(compile_spec, unknown_specs)
+        compile_spec._validate()
         return compile_spec
 
     @classmethod
-    def from_list_hook(cls, compile_spec, specs: dict[str, str]):  # noqa: B027
+    def _from_list_hook(cls, compile_spec, specs: dict[str, str]):  # noqa: B027
         """Allows subclasses to hook into parsing compile spec lists."""
         pass
 
     @abstractmethod
-    def validate(self):
+    def _validate(self):
         """Throws an error if the compile spec is not valid."""
 
-    def to_list(self):
+    def _to_list(self):
         """Get the ArmCompileSpec in list form."""
         if not self.tosa_spec:
-            raise ValueError("tosa_spec must be set before calling to_list()")
+            raise ValueError("tosa_spec must be set before calling _to_list()")
 
         # Always supply a TOSA version
         compile_spec = [
@@ -170,7 +197,7 @@ class ArmCompileSpec(ABC):
         # Add output format to identify kind of compile spec.
         compile_spec.append(
             CompileSpec(
-                ArmCompileSpec._OUTPUT_FORMAT_KEY, self.get_output_format().encode()
+                ArmCompileSpec._OUTPUT_FORMAT_KEY, self._get_output_format().encode()
             )
         )
 
@@ -198,7 +225,7 @@ class ArmCompileSpec(ABC):
             compile_spec.append(
                 CompileSpec(
                     ArmCompileSpec._OUTPUT_REORDER_KEY,
-                    self.output_order_workaround,
+                    bytes(self.output_order_workaround),
                 )
             )
 
@@ -209,9 +236,36 @@ class ArmCompileSpec(ABC):
                     self._pipeline_config.serialize(),
                 )
             )
+        compile_spec.append(
+            CompileSpec(
+                ArmCompileSpec._PRESERVE_IO_QUANT_KEY,
+                str(bool(self.preserve_io_quantization)).encode(),
+            )
+        )
         return compile_spec
 
-    def get_pass_pipeline_config(self) -> ArmPassPipelineConfig:
+    def _set_preserve_io_quantization(self, enabled: bool) -> "ArmCompileSpec":
+        """Preserve Q/DQ nodes at IO boundaries when lowering."""
+        self.preserve_io_quantization = enabled
+        self._warn_if_redundant_preserve_io_quantization()
+        return self
+
+    def _warn_if_redundant_preserve_io_quantization(self) -> None:
+        """Warn when preserve_io_quantization has no effect for INT-only
+        specs.
+        """
+        if (
+            self.preserve_io_quantization
+            and self.tosa_spec.support_integer()
+            and not self.tosa_spec.support_float()
+        ):
+            warnings.warn(
+                "preserve_io_quantization=True is redundant for INT-only TOSA "
+                "specifications because boundary Q/DQ are already de-tagged.",
+                stacklevel=3,
+            )
+
+    def _get_pass_pipeline_config(self) -> ArmPassPipelineConfig:
         """Returns configuration that controls how the Arm pass pipeline should
         behave.
 
@@ -235,10 +289,13 @@ class ArmCompileSpec(ABC):
     def _create_default_pipeline_config(self) -> ArmPassPipelineConfig:
         config = ArmPassPipelineConfig()
         if self.tosa_spec.is_U55_subset:
-            config.disable_masked_softmax()
+            # Keep U55 on STABLE instead of the generic MASKED default:
+            # MASKED also enables masked_fill decomposition, which lowers to
+            # where/full_like and is not a good default fit for U55.
+            config.softmax = SoftmaxDecompositionConfig.STABLE
         return config
 
-    def get_intermediate_path(self) -> str | None:
+    def _get_intermediate_path(self) -> str | None:
         """Gets the path used for dumping intermediate results such as tosa and
         pte.
 
@@ -269,6 +326,9 @@ class ArmCompileSpec(ABC):
         self.tosa_debug_mode = debug_mode
         return self
 
+    @deprecated(
+        "set_output_order_workaround() is deprecated and will be removed in v1.5; please remove this call."
+    )
     def set_output_order_workaround(self, output_order_workaround: bool):
         """Sets whether to apply the output order workaround.
 
@@ -279,11 +339,14 @@ class ArmCompileSpec(ABC):
         self.output_order_workaround = output_order_workaround
         return self
 
+    @deprecated(
+        "get_output_order_workaround() is deprecated and will be removed in v1.5; please remove this call."
+    )
     def get_output_order_workaround(self) -> bool:
         """Gets whether the output order workaround is being applied."""
         return self.output_order_workaround
 
     @classmethod
     @abstractmethod
-    def get_output_format(cls) -> str:
+    def _get_output_format(cls) -> str:
         """Returns a constant string that is the output format of the class."""

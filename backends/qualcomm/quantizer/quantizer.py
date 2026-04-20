@@ -8,15 +8,39 @@ from enum import IntEnum, unique
 from functools import partial
 from typing import Callable, Dict, List, Optional, Sequence, Set, Tuple
 
+# To support quantize op lowering in AOT
+try:
+    import executorch.kernels.quantized  # noqa[F401]
+except:
+    import logging
+
+    logging.info(
+        "Failed to load quantized_aot_lib. To run on LPAI backend, please make sure that quantized_aot_lib is accessible."
+    )
+    del logging
 import torch
 from executorch.backends.qualcomm._passes.qnn_pass_manager import QnnPassManager
 
+from executorch.backends.qualcomm.quantizer.backend_opinfo_adapter import (
+    constraints_loader,
+    get_backend_opinfo,
+)
+
+from executorch.backends.qualcomm.quantizer.registry_loader import (
+    load_backend_rules_and_constraints,
+)
+from executorch.backends.qualcomm.quantizer.validators import NormalizedConstraints
+
+from executorch.backends.qualcomm.serialization.qc_schema import (
+    _soc_info_table,
+    QcomChipset,
+    QnnExecuTorchBackendType,
+)
 from torch._ops import OpOverload
+
 from torch.fx import GraphModule
 from torchao.quantization.pt2e import UniformQuantizationObserverBase
 from torchao.quantization.pt2e.quantizer import Quantizer
-
-from .annotators import OP_ANNOTATOR
 
 from .qconfig import (
     get_16a16w_qnn_ptq_config,
@@ -33,6 +57,7 @@ from .qconfig import (
     get_qat_per_channel_quant_config,
     QuantizationConfig,
 )
+
 
 # To bypass the meta internal test error
 get_default_16bit_qnn_ptq_config = get_16a16w_qnn_ptq_config
@@ -159,6 +184,7 @@ class ModuleQConfig:
     is_qat: bool = False
     is_conv_per_channel: bool = False
     is_linear_per_channel: bool = False
+    is_embedding_per_channel: bool = False
     act_observer: Optional[UniformQuantizationObserverBase] = None
     act_symmetric: bool = False
     eps: Optional[float] = None
@@ -211,6 +237,7 @@ class ModuleQConfig:
             torch.ops.aten.conv_transpose2d.input: 1,
             torch.ops.aten.conv_transpose3d.input: 1,
             torch.ops.aten.linear.default: 0,
+            torch.ops.aten.embedding.default: 0,
         }
 
         self.use_per_channel_weight_quant_ops = {}
@@ -230,6 +257,17 @@ class ModuleQConfig:
             self.use_per_channel_weight_quant_ops.update(
                 {k: self.op_axis_dict[k] for k in linear_ops if k in self.op_axis_dict}
             )
+        if self.is_embedding_per_channel:
+            embedding_ops = [torch.ops.aten.embedding.default]
+            self.use_per_channel_weight_quant_ops.update(
+                {
+                    k: self.op_axis_dict[k]
+                    for k in embedding_ops
+                    if k in self.op_axis_dict
+                }
+            )
+            for pcq_config in self.per_channel_quant_config_list:
+                pcq_config.per_channel_embedding = True
 
         if per_block_quant_config_func:
             self.per_block_quant_config_list = []
@@ -252,11 +290,28 @@ class ModuleQConfig:
 class QnnQuantizer(Quantizer):
     """
     QnnQuantizer is a quantization annotator designed for QNN backends.
-    It uses OP_ANNOTATOR, a dictionary mapping OpOverload to annotator functions,
-    to determine how each node should be annotated for quantization.
+    It utilizes the rules_map found in the respective {backend}_rules.py file,
+    which is a dictionary that links OpOverload to both annotator and validation functions.
+    This mapping guides how each node is annotated and validated for quantization.
+
+    During validation, the backend_opinfo pybind library containing operation details
+    from the QNN SDK is used to verify quantization constraints and maintain backend compatibility.
+    This library is available with QNN SDK version 2.41 or later.
+    If the library is unavailable, QnnQuantizer will not validate quantization constraints for operations.
+
+    Args:
+        backend: QnnQuantizer uses the backend_type to dynamically load the appropriate backend rules as needed.
+        soc_model: QnnQuantizer checks each operation according to the soc_model. For example, LPBQ requires V69 or a newer version.
+        strict:
+          When enabled (default), the validation stage raises a ValueError if quantization constraints are not met.
+          In this mode, all quantization constraints must be satisfied to fully delegate to the QNN Backend.
+          When disabled, only warnings will be logged.
 
     Example usage:
-        quantizer = QnnQuantizer()
+        quantizer = QnnQuantizer(
+            backend=QnnExecuTorchBackendType.kHtpBackend,
+            soc_model=QcomChipset.SM8750
+        )
         quantizer.set_default_quant_config(
             quant_dtype=QuantDtype.use_8a8w,
             is_qat=False,
@@ -271,13 +326,29 @@ class QnnQuantizer(Quantizer):
         quantizer.add_custom_quant_annotations(...)
         quantizer.add_discard_nodes([node.name to skip annotation])
         quantizer.add_discard_ops([node.target to skip annotation])
+
     """
 
-    SUPPORTED_OPS: Set = set(OP_ANNOTATOR.keys())
-
-    def __init__(self):
+    def __init__(
+        self,
+        backend: QnnExecuTorchBackendType = QnnExecuTorchBackendType.kHtpBackend,
+        soc_model: QcomChipset = QcomChipset.SM8750,
+        strict: bool = True,
+    ):
         super().__init__()
-        self.quant_ops: Set[OpOverload] = self.SUPPORTED_OPS.copy()
+        self.strict = strict
+        self.backend = str(backend)
+        self.soc_info = _soc_info_table[soc_model]
+
+        # Lazy load rules and constraints of current backend
+        self._rules_map, self._constraint_cache = load_backend_rules_and_constraints(
+            self.backend
+        )
+        self.supported_ops: Set[OpOverload] = set(self._rules_map.keys())
+        self.quant_ops: Set[OpOverload] = self.supported_ops.copy()
+
+        # Load backend_opinfo of current backend and soc_model
+        self.backend_opinfo = get_backend_opinfo(self.backend, soc_model)
 
         self.default_quant_config = ModuleQConfig()
         self.submodule_qconfig_list: List[
@@ -285,10 +356,62 @@ class QnnQuantizer(Quantizer):
         ] = []
 
         self.block_size_map = {}
-
         self.custom_quant_annotations: Sequence[Callable] = []
         self.discard_nodes: Set[str] = set()
-        self.recipe = None
+        self._recipe = None
+
+    @property
+    def recipe(self):
+        return self._recipe
+
+    def annotate(self, model: GraphModule) -> GraphModule:
+        """
+        Annotates GraphModule during prepare_pt2e.
+
+        If a recipe is provided, it will be used to annotate the model.
+        Otherwise, fallback to the default annotation flow.
+
+        Args:
+            model (GraphModule): The FX GraphModule to annotate.
+
+        Returns:
+            GraphModule: The annotated model.
+        """
+        if self._recipe:
+            self._recipe.annotate(model, self._rules_map)
+        else:
+            self._annotate(model)
+            self._annotate_custom_annotation(model)
+
+        return model
+
+    def transform_for_annotation(self, model: GraphModule) -> GraphModule:
+        """
+        Applies QNN-specific transformation before annotation during prepare_pt2e.
+
+        Args:
+            model (GraphModule): The FX GraphModule to transform.
+
+        Returns:
+            GraphModule: The transformed model.
+        """
+        return QnnPassManager().transform_for_annotation_pipeline(model)
+
+    def validate(self, model: GraphModule) -> None:
+        # Validate: only for mapped nodes (qnn_op present); unmapped → skip validation
+        for node in model.graph.nodes:
+            if node.name in self.discard_nodes:
+                continue
+
+            normalized_constraints_list = self._get_normalized_quant_constraints(node)
+            if normalized_constraints_list:
+                valid = self._rules_map[node.target].validate_fn(
+                    node, normalized_constraints_list, self.soc_info
+                )
+                if self.strict and not valid:
+                    raise ValueError(
+                        f"Validation failed for node {node.name} with target {node.target}"
+                    )
 
     def _annotate(self, gm: GraphModule) -> None:
         """
@@ -302,27 +425,11 @@ class QnnQuantizer(Quantizer):
 
             quant_config = self._get_quant_config(node)
             if quant_config:
-                OP_ANNOTATOR[node.target](node, quant_config)
+                self._rules_map[node.target].annotate_fn(node, quant_config)
 
     def _annotate_custom_annotation(self, gm: GraphModule) -> None:
         for annotation_func in self.custom_quant_annotations:
             annotation_func(gm)
-
-    def _get_submodule_qconfig(self, node: torch.fx.Node):
-        """
-        Retrieves the `ModuleQConfig` for a given node by matching the first applicable callable function in the `submodule_qconfig_list`.
-        You can add submodule-specific quant config using the `set_submodule_qconfig_list` method.
-
-        Args:
-            node (torch.fx.Node): The node for which to retrieve the quant config.
-
-        Returns:
-            ModuleQConfig: The matched submodule config, or the default config if no match is found.
-        """
-        for func, qconfig in self.submodule_qconfig_list:
-            if func(node):
-                return qconfig
-        return self.default_quant_config
 
     def _get_quant_config(self, node: torch.fx.Node) -> Optional[QuantizationConfig]:
         """
@@ -363,6 +470,44 @@ class QnnQuantizer(Quantizer):
 
         print(f"No quant config is implemented for op, {op}")
 
+    def _get_normalized_quant_constraints(
+        self, node: torch.fx.Node
+    ) -> Optional[List[NormalizedConstraints]]:
+        op = node.target
+        if isinstance(op, str):
+            return None
+
+        normalized_constraints_list = None
+        if (
+            op in self.quant_ops
+            and (qnn_op := self._rules_map.get(op).qnn_op)
+            in self.backend_opinfo.get_all_supported_ops()
+        ):
+            normalized_constraints_list = self._constraint_cache.get(qnn_op)
+            if normalized_constraints_list is None:
+                normalized_constraints_list = constraints_loader(
+                    self.backend_opinfo, qnn_op
+                )
+                self._constraint_cache.put(qnn_op, normalized_constraints_list)
+
+        return normalized_constraints_list
+
+    def _get_submodule_qconfig(self, node: torch.fx.Node):
+        """
+        Retrieves the `ModuleQConfig` for a given node by matching the first applicable callable function in the `submodule_qconfig_list`.
+        You can add submodule-specific quant config using the `set_submodule_qconfig_list` method.
+
+        Args:
+            node (torch.fx.Node): The node for which to retrieve the quant config.
+
+        Returns:
+            ModuleQConfig: The matched submodule config, or the default config if no match is found.
+        """
+        for func, qconfig in self.submodule_qconfig_list:
+            if func(node):
+                return qconfig
+        return self.default_quant_config
+
     def add_custom_quant_annotations(
         self, custom_quant_annotations: Sequence[Callable]
     ) -> None:
@@ -387,27 +532,6 @@ class QnnQuantizer(Quantizer):
         for op in ops:
             self.quant_ops.remove(op)
 
-    def annotate(self, model: GraphModule) -> GraphModule:
-        """
-        Annotates GraphModule during prepare_pt2e.
-
-        If a recipe is provided, it will be used to annotate the model.
-        Otherwise, fallback to the default annotation flow.
-
-        Args:
-            model (GraphModule): The FX GraphModule to annotate.
-
-        Returns:
-            GraphModule: The annotated model.
-        """
-        if self.recipe:
-            self.recipe.annotate(model)
-        else:
-            self._annotate(model)
-            self._annotate_custom_annotation(model)
-
-        return model
-
     def get_supported_ops(self) -> Set[OpOverload]:
         """
         Returns the set of supported OpOverloads for quantization.
@@ -415,7 +539,16 @@ class QnnQuantizer(Quantizer):
         Returns:
             Set[OpOverload]: Supported ops.
         """
-        return self.SUPPORTED_OPS
+        return self.supported_ops
+
+    def set_block_size_map(self, block_size_map: Dict[str, Tuple]) -> None:
+        """
+        Set the mapping from node names to block sizes for per-block quantization.
+
+        Args:
+            block_size_map (Dict[str, Tuple]): Mapping from node name to block size.
+        """
+        self.block_size_map = block_size_map
 
     def set_default_quant_config(
         self,
@@ -423,6 +556,7 @@ class QnnQuantizer(Quantizer):
         is_qat=False,
         is_conv_per_channel=False,
         is_linear_per_channel=False,
+        is_embedding_per_channel=False,
         act_observer=None,
         act_symmetric=False,
         eps=None,
@@ -435,8 +569,8 @@ class QnnQuantizer(Quantizer):
             is_qat (bool, optional): Enables Quantization-Aware Training (QAT) mode. Defaults to Post-Training Quantization (PTQ) mode.
             is_conv_per_channel (bool, optional): Enables per-channel quantization for convolution operations.
             is_linear_per_channel (bool, optional): Enables per-channel quantization for linear (fully connected) operations.
+            is_embedding_per_channel (bool, optional): Enables per-channel quantization for embedding operations.
             act_observer (Optional[UniformQuantizationObserverBase], optional): Custom observer for activation quantization. If not specified, the default observer is determined by `QUANT_CONFIG_DICT`.
-            eps (float): Minimum scale for quantization.
 
         """
         self.default_quant_config = ModuleQConfig(
@@ -444,19 +578,15 @@ class QnnQuantizer(Quantizer):
             is_qat=is_qat,
             is_conv_per_channel=is_conv_per_channel,
             is_linear_per_channel=is_linear_per_channel,
+            is_embedding_per_channel=is_embedding_per_channel,
             act_observer=act_observer,
             act_symmetric=act_symmetric,
             eps=eps,
         )
 
-    def set_block_size_map(self, block_size_map: Dict[str, Tuple]) -> None:
-        """
-        Set the mapping from node names to block sizes for per-block quantization.
-
-        Args:
-            block_size_map (Dict[str, Tuple]): Mapping from node name to block size.
-        """
-        self.block_size_map = block_size_map
+    def set_recipe(self, recipe):
+        self._recipe = recipe
+        self._recipe.initialize_default_strategy_ops(self.supported_ops)
 
     def set_submodule_qconfig_list(
         self, submodule_qconfig_list: List[Tuple[Callable, ModuleQConfig]]
@@ -466,21 +596,6 @@ class QnnQuantizer(Quantizer):
         If a node fits more than one callback, only apply the first one.
         """
         self.submodule_qconfig_list = submodule_qconfig_list
-
-    def transform_for_annotation(self, model: GraphModule) -> GraphModule:
-        """
-        Applies QNN-specific transformation before annotation during prepare_pt2e.
-
-        Args:
-            model (GraphModule): The FX GraphModule to transform.
-
-        Returns:
-            GraphModule: The transformed model.
-        """
-        return QnnPassManager().transform_for_annotation_pipeline(model)
-
-    def validate(self, model: GraphModule) -> None:
-        pass
 
 
 def get_submodule_type_predicate(module_type_str):

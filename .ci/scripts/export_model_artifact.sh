@@ -9,7 +9,7 @@
 
 show_help() {
   cat << EOF
-Usage: export_model_artifact.sh <device> <hf_model> [quant_name] [output_dir]
+Usage: export_model_artifact.sh <device> <hf_model> [quant_name] [output_dir] [mode]
 
 Export a HuggingFace model to CUDA/Metal/XNNPACK format with optional quantization.
 
@@ -22,7 +22,9 @@ Arguments:
                  - mistralai/Voxtral-Mini-4B-Realtime-2602
                  - openai/whisper series (whisper-{small, medium, large, large-v2, large-v3, large-v3-turbo})
                  - google/gemma-3-4b-it
+                 - nvidia/diar_streaming_sortformer_4spk-v2
                  - nvidia/parakeet-tdt
+                 - facebook/dinov2-small-imagenet1k-1-layer
 
   quant_name   Quantization type (optional, default: non-quantized)
                Options:
@@ -34,13 +36,23 @@ Arguments:
 
   output_dir   Output directory for artifacts (optional, default: current directory)
 
+  mode         Export mode (optional, default: vr-streaming)
+               Supported modes:
+                 - vr-streaming: Voxtral Realtime streaming mode
+                 - vr-offline: Voxtral Realtime offline mode
+
 Examples:
   export_model_artifact.sh metal "openai/whisper-small"
   export_model_artifact.sh metal "nvidia/parakeet-tdt" "quantized-int4-metal"
+  export_model_artifact.sh metal "mistralai/Voxtral-Mini-4B-Realtime-2602" "quantized-int4-metal"
+  export_model_artifact.sh metal "mistralai/Voxtral-Mini-4B-Realtime-2602" "non-quantized" "." "vr-streaming"
   export_model_artifact.sh cuda "mistralai/Voxtral-Mini-3B-2507" "quantized-int4-tile-packed"
+  export_model_artifact.sh cuda-windows "nvidia/diar_streaming_sortformer_4spk-v2" "non-quantized" "./output"
   export_model_artifact.sh cuda "google/gemma-3-4b-it" "non-quantized" "./output"
   export_model_artifact.sh cuda "nvidia/parakeet-tdt" "non-quantized" "./output"
   export_model_artifact.sh xnnpack "nvidia/parakeet-tdt" "quantized-8da4w" "./output"
+  export_model_artifact.sh xnnpack "mistralai/Voxtral-Mini-4B-Realtime-2602" "quantized-8da4w" "./output"
+  export_model_artifact.sh xnnpack "mistralai/Voxtral-Mini-4B-Realtime-2602" "non-quantized" "./output" "vr-offline"
 EOF
 }
 
@@ -61,6 +73,26 @@ DEVICE="$1"
 HF_MODEL="$2"
 QUANT_NAME="${3:-non-quantized}"
 OUTPUT_DIR="${4:-.}"
+MODE="${5:-}"
+
+# Validate mode if specified
+if [ -n "$MODE" ]; then
+  case "$MODE" in
+    vr-streaming|vr-offline)
+      # Voxtral Realtime modes require Voxtral Realtime model
+      if [ "$HF_MODEL" != "mistralai/Voxtral-Mini-4B-Realtime-2602" ]; then
+        echo "Error: Mode '$MODE' can only be used with Voxtral Realtime model"
+        echo "Provided model: $HF_MODEL"
+        exit 1
+      fi
+      ;;
+    *)
+      echo "Error: Unsupported mode '$MODE'"
+      echo "Supported modes: vr-streaming, vr-offline"
+      exit 1
+      ;;
+  esac
+fi
 
 case "$DEVICE" in
   cuda)
@@ -112,8 +144,32 @@ case "$HF_MODEL" in
     PREPROCESSOR_FEATURE_SIZE=""
     PREPROCESSOR_OUTPUT=""
     ;;
+  Qwen/Qwen3-0.6B)
+    MODEL_NAME="qwen3"
+    TASK="text-generation"
+    MAX_SEQ_LEN="64"
+    EXTRA_PIP=""
+    PREPROCESSOR_FEATURE_SIZE=""
+    PREPROCESSOR_OUTPUT=""
+    ;;
   nvidia/parakeet-tdt)
     MODEL_NAME="parakeet"
+    TASK=""
+    MAX_SEQ_LEN=""
+    EXTRA_PIP=""
+    PREPROCESSOR_FEATURE_SIZE=""
+    PREPROCESSOR_OUTPUT=""
+    ;;
+  nvidia/diar_streaming_sortformer_4spk-v2)
+    MODEL_NAME="sortformer"
+    TASK=""
+    MAX_SEQ_LEN=""
+    EXTRA_PIP=""
+    PREPROCESSOR_FEATURE_SIZE=""
+    PREPROCESSOR_OUTPUT=""
+    ;;
+  facebook/dinov2-small-imagenet1k-1-layer)
+    MODEL_NAME="dinov2"
     TASK=""
     MAX_SEQ_LEN=""
     EXTRA_PIP=""
@@ -128,9 +184,17 @@ case "$HF_MODEL" in
     PREPROCESSOR_FEATURE_SIZE=""
     PREPROCESSOR_OUTPUT=""
     ;;
+  SocialLocalMobile/Qwen3.5-35B-A3B-HQQ-INT4)
+    MODEL_NAME="qwen3_5_moe"
+    TASK=""
+    MAX_SEQ_LEN=""
+    EXTRA_PIP=""
+    PREPROCESSOR_FEATURE_SIZE=""
+    PREPROCESSOR_OUTPUT=""
+    ;;
   *)
     echo "Error: Unsupported model '$HF_MODEL'"
-    echo "Supported models: mistralai/Voxtral-Mini-3B-2507, mistralai/Voxtral-Mini-4B-Realtime-2602, openai/whisper-{small, medium, large, large-v2, large-v3, large-v3-turbo}, google/gemma-3-4b-it, nvidia/parakeet-tdt"
+    echo "Supported models: mistralai/Voxtral-Mini-3B-2507, mistralai/Voxtral-Mini-4B-Realtime-2602, openai/whisper-{small, medium, large, large-v2, large-v3, large-v3-turbo}, google/gemma-3-4b-it, Qwen/Qwen3-0.6B, nvidia/diar_streaming_sortformer_4spk-v2, nvidia/parakeet-tdt, facebook/dinov2-small-imagenet1k-1-layer, SocialLocalMobile/Qwen3.5-35B-A3B-HQQ-INT4"
     exit 1
     ;;
 esac
@@ -210,6 +274,59 @@ if [ "$MODEL_NAME" = "parakeet" ]; then
   exit 0
 fi
 
+# Sortformer uses a custom export script
+if [ "$MODEL_NAME" = "sortformer" ]; then
+  if [ "$QUANT_NAME" != "non-quantized" ]; then
+    echo "Error: Sortformer currently supports only non-quantized export"
+    exit 1
+  fi
+
+  pip install -r examples/models/sortformer/install_requirements.txt
+
+  SORTFORMER_BACKEND="$DEVICE"
+  if [ "$DEVICE" = "cuda-windows" ]; then
+    SORTFORMER_BACKEND="cuda-windows"
+  elif [ "$DEVICE" = "cuda" ]; then
+    SORTFORMER_BACKEND="cuda"
+  elif [ "$DEVICE" = "xnnpack" ]; then
+    SORTFORMER_BACKEND="xnnpack"
+  else
+    SORTFORMER_BACKEND="portable"
+  fi
+
+  python -m executorch.examples.models.sortformer.export_sortformer \
+      --hf-model "${HF_MODEL}" \
+      --backend "${SORTFORMER_BACKEND}" \
+      --output-dir "${OUTPUT_DIR}"
+
+  test -f "${OUTPUT_DIR}/sortformer.pte"
+  mv "${OUTPUT_DIR}/sortformer.pte" "${OUTPUT_DIR}/model.pte"
+  # CUDA saves named data to separate .ptd file, XNNPACK/portable do not.
+  if [ "$DEVICE" = "cuda" ] || [ "$DEVICE" = "cuda-windows" ]; then
+    test -f "${OUTPUT_DIR}/aoti_cuda_blob.ptd"
+  fi
+  ls -al "${OUTPUT_DIR}"
+  echo "::endgroup::"
+  exit 0
+fi
+
+# DINOv2 uses a custom export script
+if [ "$MODEL_NAME" = "dinov2" ]; then
+  pip install -r examples/models/dinov2/install_requirements.txt
+
+  python -m executorch.examples.models.dinov2.export_dinov2 \
+      --backend "$DEVICE" \
+      --output-dir "${OUTPUT_DIR}"
+
+  test -f "${OUTPUT_DIR}/model.pte"
+  if [ "$DEVICE" = "cuda" ] || [ "$DEVICE" = "cuda-windows" ]; then
+    test -f "${OUTPUT_DIR}/aoti_cuda_blob.ptd"
+  fi
+  ls -al "${OUTPUT_DIR}"
+  echo "::endgroup::"
+  exit 0
+fi
+
 # Voxtral Realtime uses a custom export script
 if [ "$MODEL_NAME" = "voxtral_realtime" ]; then
   pip install safetensors huggingface_hub
@@ -218,30 +335,96 @@ if [ "$MODEL_NAME" = "voxtral_realtime" ]; then
   LOCAL_MODEL_DIR="${OUTPUT_DIR}/model_weights"
   python -c "from huggingface_hub import snapshot_download; snapshot_download('${HF_MODEL}', local_dir='${LOCAL_MODEL_DIR}')"
 
-  # Voxtral Realtime has its own quantization flags (no --qlinear_encoder)
+  # Per-component quantization flags
   VR_QUANT_ARGS=""
+  VR_DTYPE_ARGS=""
   if [ "$QUANT_NAME" = "quantized-8da4w" ]; then
-    VR_QUANT_ARGS="--qlinear 8da4w --qlinear-group-size 32 --qembedding 8w"
+    VR_QUANT_ARGS="--qlinear-encoder 8da4w --qlinear 8da4w --qlinear-group-size 32 --qembedding 8w"
+  elif [ "$QUANT_NAME" = "quantized-int4-metal" ]; then
+    VR_QUANT_ARGS="--qlinear-encoder fpa4w --qlinear fpa4w"
+    VR_DTYPE_ARGS="--dtype bf16"
+  elif [ "$QUANT_NAME" = "quantized-int4-tile-packed" ]; then
+    VR_QUANT_ARGS="--qlinear-encoder 4w --qlinear-encoder-packing-format tile_packed_to_4d --qlinear 4w --qlinear-packing-format tile_packed_to_4d --qembedding 8w"
+    VR_DTYPE_ARGS="--dtype bf16"
+  fi
+
+  # Determine streaming mode based on MODE parameter
+  USE_STREAMING="true"
+  if [ "$MODE" = "vr-offline" ]; then
+    USE_STREAMING="false"
+  fi
+
+  # Configure export and preprocessor based on streaming mode
+  STREAMING_ARG=""
+  PREPROCESSOR_ARGS="--feature_size 128 --output_file ${OUTPUT_DIR}/preprocessor.pte"
+  if [ "$USE_STREAMING" = "true" ]; then
+    STREAMING_ARG="--streaming --sliding-window 2048"
+    PREPROCESSOR_ARGS="$PREPROCESSOR_ARGS --streaming"
+  else
+    PREPROCESSOR_ARGS="$PREPROCESSOR_ARGS --stack_output --max_audio_len 300"
   fi
 
   python -m executorch.examples.models.voxtral_realtime.export_voxtral_rt \
       --model-path "$LOCAL_MODEL_DIR" \
-      --backend xnnpack \
+      --backend "$DEVICE" \
+      ${STREAMING_ARG} \
       --output-dir "${OUTPUT_DIR}" \
-      ${VR_QUANT_ARGS}
+      ${VR_QUANT_ARGS} \
+      ${VR_DTYPE_ARGS}
 
   # Export preprocessor
-  python -m executorch.extension.audio.mel_spectrogram \
-      --feature_size 128 \
-      --max_audio_len 300 \
-      --output_file "${OUTPUT_DIR}/preprocessor.pte"
+  python -m executorch.extension.audio.mel_spectrogram ${PREPROCESSOR_ARGS}
 
   test -f "${OUTPUT_DIR}/model.pte"
   test -f "${OUTPUT_DIR}/preprocessor.pte"
+  if [ "$DEVICE" = "cuda" ] || [ "$DEVICE" = "cuda-windows" ]; then
+    test -f "${OUTPUT_DIR}/aoti_cuda_blob.ptd"
+  fi
   # Copy tokenizer from downloaded model weights
   cp "$LOCAL_MODEL_DIR/tekken.json" "${OUTPUT_DIR}/tekken.json"
+  rm -rf "$LOCAL_MODEL_DIR"
   ls -al "${OUTPUT_DIR}"
   echo "::endgroup::"
+  exit 0
+fi
+
+# Qwen 3.5 MoE uses a prequantized checkpoint and custom export script
+if [ "$MODEL_NAME" = "qwen3_5_moe" ]; then
+  pip install safetensors huggingface_hub
+  pip install -r examples/models/qwen3_5_moe/requirements.txt
+
+  # Download prequantized model outside OUTPUT_DIR to avoid uploading on failure
+  LOCAL_MODEL_DIR=$(mktemp -d)
+  INDUCTOR_CACHE=$(mktemp -d)
+  trap 'rm -rf "$LOCAL_MODEL_DIR" "$INDUCTOR_CACHE"' EXIT
+
+  python -c "from huggingface_hub import snapshot_download; snapshot_download('${HF_MODEL}', local_dir='${LOCAL_MODEL_DIR}')"
+
+  # Sanity check: run inference on the prequantized model
+  echo "::group::Inference sanity check"
+  python -m executorch.examples.models.qwen3_5_moe.inference \
+      --prequantized "$LOCAL_MODEL_DIR" \
+      --prompt "What is the capital of France?" \
+      --max-new-tokens 32 \
+      --temperature 0 \
+      --no-compile
+  echo "::endgroup::"
+
+  # Copy tokenizer for the runner
+  cp "$LOCAL_MODEL_DIR/tokenizer.json" "${OUTPUT_DIR}/tokenizer.json"
+
+  # Export to .pte/.ptd (short cache dir avoids objcopy symbol length issues)
+  echo "::group::Export"
+  TORCHINDUCTOR_CACHE_DIR="$INDUCTOR_CACHE" \
+  python -m executorch.examples.models.qwen3_5_moe.export \
+      --prequantized "$LOCAL_MODEL_DIR" \
+      --output-dir "${OUTPUT_DIR}"
+  echo "::endgroup::"
+
+  test -f "${OUTPUT_DIR}/model.pte"
+  test -f "${OUTPUT_DIR}/aoti_cuda_blob.ptd"
+  ls -al "${OUTPUT_DIR}"
+
   exit 0
 fi
 

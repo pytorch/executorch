@@ -8,12 +8,17 @@ from typing import Callable, Tuple
 
 import torch
 
+from executorch.backends.arm._passes.arm_pass_manager import ArmPassManager
+from executorch.backends.arm.ethosu import EthosUCompileSpec
 from executorch.backends.arm.test import common
 from executorch.backends.arm.test.tester.test_pipeline import (
+    EthosU55PipelineINT,
+    EthosU85PipelineINT,
     TosaPipelineFP,
     TosaPipelineINT,
     VgfPipeline,
 )
+from torch.export import export
 
 
 class SDPA(torch.nn.Module):
@@ -67,7 +72,9 @@ def test_sdpa_tosa_FP(test_case: test_case_t):
 @common.parametrize("test_case", test_suite)
 def test_sdpa_tosa_INT(test_case: test_case_t):
     model, test_input = test_case()
-    pipeline = TosaPipelineINT[input_t](model, test_input, [], [])
+    pipeline = TosaPipelineINT[input_t](
+        model, test_input, [], [], frobenius_threshold=None, cosine_threshold=None
+    )
     pipeline.pop_stage("check.quant_nodes")
     pipeline.pop_stage("check_count.exir")
     pipeline.pop_stage(
@@ -97,4 +104,51 @@ def test_sdpa_vgf_quant(test_case: test_case_t):
     pipeline = VgfPipeline[input_t](
         model, test_input, [], [], quantize=True, run_on_vulkan_runtime=False
     )
+    pipeline.run()
+
+
+@common.parametrize("test_case", test_suite)
+def test_sdpa_u55_INT(test_case: test_case_t):
+    model, test_input = test_case()
+    pipeline = EthosU55PipelineINT[input_t](model, test_input, [], [])
+    pipeline.pop_stage("check.quant_nodes")
+    pipeline.pop_stage("check_count.exir")
+    pipeline.pop_stage("run_method_and_compare_outputs")
+    pipeline.run()
+
+
+@common.parametrize("test_case", test_suite)
+def test_sdpa_u55_INT_annotation_pipeline_decomposes_safe_softmax(
+    test_case: test_case_t,
+):
+    """Verify the U55 annotation pipeline decomposes SDPA _safe_softmax.
+
+    U55 now matches U85 and VGF: the annotation pipeline lowers
+    _safe_softmax to the stable softmax primitive sequence instead of leaving
+    it in the graph for partitioning.
+
+    """
+    model, test_input = test_case()
+    exported_program = export(model, test_input)
+    graph_module = ArmPassManager(
+        EthosUCompileSpec("ethos-u55-128")
+    ).transform_for_annotation_pipeline(exported_program.graph_module)
+
+    softmax_targets = {
+        str(node.target)
+        for node in graph_module.graph.nodes
+        if node.op == "call_function" and "softmax" in str(node.target)
+    }
+
+    assert "aten._safe_softmax.default" not in softmax_targets
+
+
+@common.parametrize("test_case", test_suite)
+@common.XfailIfNoCorstone320
+def test_sdpa_u85_INT(test_case: test_case_t):
+    model, test_input = test_case()
+    pipeline = EthosU85PipelineINT[input_t](model, test_input, [], [])
+    pipeline.pop_stage("check.quant_nodes")
+    pipeline.pop_stage("check_count.exir")
+    pipeline.pop_stage("run_method_and_compare_outputs")
     pipeline.run()

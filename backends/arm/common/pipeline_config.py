@@ -8,12 +8,10 @@ from dataclasses import dataclass, fields
 from enum import auto, Enum
 from typing import Any
 
-from executorch.exir._warnings import deprecated
-
 
 class SoftmaxDecompositionConfig(Enum):
-    MASKED = auto()
-    UNSTABLE = auto()
+    MASKED = auto()  # Stable softmax + masked fill decomposition
+    STABLE = auto()  # Stable softmax, no masked fill decomposition
 
 
 class FuseDuplicateUsersConfig(Enum):
@@ -25,18 +23,6 @@ class FuseDuplicateUsersConfig(Enum):
 class ArmPassPipelineConfig:
     softmax: SoftmaxDecompositionConfig = SoftmaxDecompositionConfig.MASKED
     fuse_duplicate_users: FuseDuplicateUsersConfig = FuseDuplicateUsersConfig.ENABLED
-
-    @deprecated(
-        "The stable softmax decomposition is now supported by all arm targets and will be made default in a future release. Overwrite the default config using `compile_spec.set_pass_pipeline_config(ArmPassPipelineConfig())` to use the stable algorithm and avoid this error."
-    )
-    def disable_masked_softmax(self) -> None:
-        """
-            .. warning::
-
-        The stable softmax decomposition is now supported by all arm targets and will be made default in a future release. Overwrite the default config using `compile_spec.set_pass_pipeline_config(ArmPassPipelineConfig())` to use the stable algorithm and avoid this error."
-        """
-
-        self.softmax = SoftmaxDecompositionConfig.UNSTABLE
 
     def disable_fuse_duplicate_users(self) -> None:
         self.fuse_duplicate_users = FuseDuplicateUsersConfig.DISABLED

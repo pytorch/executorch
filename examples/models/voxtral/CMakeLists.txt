@@ -45,9 +45,14 @@ executorch_target_link_options_shared_lib(optimized_native_cpu_ops_lib)
 
 # CPU-only builds need quantized and custom ops
 if(NOT EXECUTORCH_BUILD_CUDA)
-  list(APPEND link_libraries quantized_ops_lib custom_ops)
-  executorch_target_link_options_shared_lib(quantized_ops_lib)
-  executorch_target_link_options_shared_lib(custom_ops)
+  if(TARGET quantized_ops_lib)
+    list(APPEND link_libraries quantized_ops_lib)
+    executorch_target_link_options_shared_lib(quantized_ops_lib)
+  endif()
+  if(TARGET custom_ops)
+    list(APPEND link_libraries custom_ops)
+    executorch_target_link_options_shared_lib(custom_ops)
+  endif()
 endif()
 
 # XNNPACK
@@ -99,6 +104,12 @@ if(EXECUTORCH_BUILD_METAL)
   executorch_target_link_options_shared_lib(metal_backend)
 endif()
 
+# Link MLX delegate
+if(TARGET mlxdelegate)
+  list(APPEND link_libraries mlxdelegate mlx)
+  executorch_target_link_options_shared_lib(mlxdelegate)
+endif()
+
 # Add tokenizers
 list(APPEND link_libraries tokenizers::tokenizers)
 
@@ -113,6 +124,17 @@ endif()
 target_include_directories(voxtral_runner PUBLIC ${_common_include_directories})
 target_link_libraries(voxtral_runner PUBLIC ${link_libraries})
 target_compile_options(voxtral_runner PUBLIC ${_common_compile_options})
+
+# AOTI-generated CUDA code can use significant stack depth; the Windows default
+# of 1 MB is not enough for large multimodal models.
+if(WIN32)
+  target_link_options(voxtral_runner PRIVATE "/STACK:8388608")
+endif()
+
+# Copy MLX metallib for runtime if MLX delegate is enabled
+if(TARGET mlxdelegate)
+  executorch_target_copy_mlx_metallib(voxtral_runner)
+endif()
 
 # On Windows, copy required DLLs to the executable directory
 if(MSVC AND EXECUTORCH_BUILD_CUDA)
