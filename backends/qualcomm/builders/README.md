@@ -41,12 +41,11 @@ class MyModel(torch.nn.Module):
 ```
 At the time we try to lower it with Qualcomm backend:
 ```python
-from executorch.examples.qualcomm.utils import build_executorch_binary
+from executorch.backends.qualcomm.export_utils import build_executorch_binary
 
 build_executorch_binary(
     model=MyModel(),
-    inputs=(torch.randn(200, 768),),
-    soc_model="SM8650"
+    qnn_config=qnn_config,
     file_name="my_model",
     dataset=None,
 )
@@ -369,14 +368,14 @@ Please help update following table if you are contributing new operators:
 + &#128683; = Deprecated, supported with other QNN Ops
 
 
-| Operators | HTP - 94/116 Enabled |
+| Operators | HTP - 98/119 Enabled |
 |-----------|---------|
 | Argmax | &check; |
 | Argmin | &check; |
 | BatchNorm | &check; |
 | BatchToSpace | &cross; |
 | Cast | &check; |
-| ChannelShuffle | &cross; |
+| ChannelShuffle | &check; |
 | Concat | &check; |
 | Conv2d | &check; |
 | Conv3d | &check; |
@@ -430,7 +429,7 @@ Please help update following table if you are contributing new operators:
 | ExtractPatches | &cross; |
 | FullyConnected | &check; |
 | Gather | &check; |
-| GatherElements | &cross; |
+| GatherElements | &check; |
 | GatherNd | &check; |
 | Gelu | &check; |
 | GetSparseIndices | &cross; |

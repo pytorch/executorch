@@ -105,6 +105,7 @@ def load_and_quantize(args):  # noqa: C901
     Returns (model, config) ready for export.
     """
     backend = getattr(args, "backend", "cuda")
+    use_splitk = not getattr(args, "no_splitk", False)
 
     if not args.prequantized:
         if getattr(args, "tiny_test", False):
@@ -139,6 +140,7 @@ def load_and_quantize(args):  # noqa: C901
                 rms_norm_eps=1e-6,
                 rope_theta=10_000.0,
                 max_seq_len=64,
+                use_splitk_decode=use_splitk,
             )
             print("Building tiny model with random weights...")
             torch.manual_seed(42)
@@ -161,6 +163,10 @@ def load_and_quantize(args):  # noqa: C901
             model, config = Qwen35MoE.from_hf_checkpoint(
                 args.model_dir, max_seq_len=args.max_seq_len
             )
+            config.use_splitk_decode = use_splitk
+            for layer in model.layers:
+                if hasattr(layer.attn, "use_splitk_decode"):
+                    layer.attn.use_splitk_decode = use_splitk
             model.eval()
             print(
                 f"Model: {config.num_hidden_layers} layers, {config.hidden_size}d, "
@@ -181,7 +187,11 @@ def load_and_quantize(args):  # noqa: C901
 
     elif backend == "cuda":
         if args.prequantized:
-            return load_prequantized_model(args.prequantized, args.max_seq_len)
+            return load_prequantized_model(
+                args.prequantized,
+                args.max_seq_len,
+                use_splitk_decode=use_splitk,
+            )
 
         # CUDA: quantize experts with packed INT4 for Triton kernel
         if args.qlinear or args.qembedding:
@@ -195,12 +205,13 @@ def load_and_quantize(args):  # noqa: C901
     return model, config
 
 
-def load_prequantized_model(prequantized_dir, max_seq_len=4096):
+def load_prequantized_model(prequantized_dir, max_seq_len=4096, use_splitk_decode=True):
     """Load a prequantized safetensors bundle into a model.
 
     Args:
         prequantized_dir: Directory containing model.safetensors and config.json.
         max_seq_len: Maximum sequence length for KV cache.
+        use_splitk_decode: Use split-K SDPA for decode instead of tiled SDPA.
 
     Returns:
         (model, config) ready for export.
@@ -214,6 +225,7 @@ def load_prequantized_model(prequantized_dir, max_seq_len=4096):
 
     config = Qwen35MoEConfig.from_hf_config(config_path)
     config.max_seq_len = max_seq_len
+    config.use_splitk_decode = use_splitk_decode
 
     print(f"Loading prequantized weights from {safetensors_path}...")
     state_dict = load_quantized_state_dict(safetensors_path)
@@ -524,6 +536,13 @@ def _apply_turboquant(model, config):
 # ---------------------------------------------------------------------------
 
 
+def _set_batched_moe(model, enabled):
+    """Toggle batched tensor-core MoE kernel for all MoE layers."""
+    for layer in model.layers:
+        if hasattr(layer, "mlp") and hasattr(layer.mlp, "experts"):
+            layer.mlp.experts.use_batched_moe = enabled
+
+
 def export_and_lower(model, config, args):
     """Export model to .pte via torch.export + backend-specific lowering."""
     backend = getattr(args, "backend", "cuda")
@@ -714,10 +733,9 @@ def _export_cuda(model, config, args):
     """Export model to .pte via torch.export + CUDA backend.
 
     Exports two methods:
-      - "decode": decode path (T=1), uses native PyTorch recurrent FLA
-        so AOTI can fuse with surrounding ops for maximum decode throughput.
-      - "prefill": prefill path (T>=2), uses chunked FLA triton_op with
-        dynamic sequence length.
+      - "decode": decode path (T=1), vec-mat MoE kernel via fused_moe.
+      - "prefill": prefill path (T>=2), batched tensor-core MoE kernel
+        via fused_moe_batched_gemm, with dynamic sequence length.
 
     Both methods share mutable state buffers (KV cache, conv_state,
     recurrent_state) via share_mutable_buffers=True. The model uses
@@ -742,7 +760,8 @@ def _export_cuda(model, config, args):
     # -O0 compiles ~8x faster than -O1 with no measurable runtime impact.
     inductor_config.aot_inductor.compile_wrapper_opt_level = "O0"
 
-    # --- Decode method (T=1, static shape) ---
+    # --- Decode method (T=1, static shape, vec-mat MoE kernel) ---
+    _set_batched_moe(model, False)
     print("Exporting decode method...")
     decode_tokens = torch.tensor([[0]], dtype=torch.long)
     decode_pos = torch.tensor([0], dtype=torch.long)
@@ -754,10 +773,16 @@ def _export_cuda(model, config, args):
         )
     print("Decode export successful!")
 
-    # --- Prefill method (T>=2, dynamic shape) ---
+    # --- Prefill method (T>=2, dynamic shape, batched tensor-core MoE kernel) ---
+    # Example T must equal max_seq_len-1 so AOTI compiles kernels (especially
+    # chunk_gated_delta_rule with CHUNK_SIZE=64) for the full range of sequence
+    # lengths. Smaller examples cause AOTI to bake in intermediate buffer sizes
+    # that reject longer prompts at runtime.
+    _set_batched_moe(model, True)
     print("Exporting prefill method...")
-    prefill_tokens = torch.tensor([[0, 1]], dtype=torch.long)
-    prefill_pos = torch.tensor([0, 1], dtype=torch.long)
+    example_prefill_len = config.max_seq_len - 1
+    prefill_tokens = torch.zeros((1, example_prefill_len), dtype=torch.long)
+    prefill_pos = torch.arange(example_prefill_len, dtype=torch.long)
     seq_dim = Dim("seq_len", min=2, max=config.max_seq_len - 1)
     prefill_dynamic_shapes = (
         {1: seq_dim},  # tokens
@@ -788,12 +813,18 @@ def _export_cuda(model, config, args):
         partitioner={
             "decode": [
                 CudaPartitioner(
-                    [CudaBackend.generate_method_name_compile_spec("decode")]
+                    [
+                        CudaBackend.generate_method_name_compile_spec("decode"),
+                        CudaBackend.generate_share_kv_cache_compile_spec(),
+                    ]
                 )
             ],
             "prefill": [
                 CudaPartitioner(
-                    [CudaBackend.generate_method_name_compile_spec("prefill")]
+                    [
+                        CudaBackend.generate_method_name_compile_spec("prefill"),
+                        CudaBackend.generate_share_kv_cache_compile_spec(),
+                    ]
                 )
             ],
         },
@@ -904,6 +935,11 @@ def main():  # noqa: C901
         help="Build a tiny model with random weights for CI pipeline testing. "
         "No checkpoint download needed. Tests all architectural features "
         "(GQA, GDN head ratio, mixed attention, MoE routing) at small scale.",
+    )
+    parser.add_argument(
+        "--no-splitk",
+        action="store_true",
+        help="Disable split-K (flash-decoding) SDPA for decode; use tiled SDPA instead.",
     )
     args = parser.parse_args()
 
