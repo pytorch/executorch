@@ -7597,6 +7597,11 @@ class TestExampleLLMScript(TestQNN):
             case "sqnr":
                 cmds.extend(
                     [
+                        "--skip_user_prompt_calibration",
+                        "--tasks",
+                        "wikitext",
+                        "--limit",
+                        "1",
                         "--eval_methods",
                         "sqnr_eval",
                     ]
