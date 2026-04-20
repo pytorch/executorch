@@ -52,7 +52,7 @@ To build the documentation locally:
    Or a Conda environment:
 
    ```bash
-   conda create -yn executorch python=3.10.0 && conda activate executorch
+   conda create -yn executorch python=3.12.0 && conda activate executorch
    ```
 
 1. Install dependencies:
