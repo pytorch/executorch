@@ -27,37 +27,36 @@ class MV2Model(EagerModelBase):
 
     def get_example_inputs(self):
         tensor_size = (1, 3, 224, 224)
-        input_batch = (torch.randn(tensor_size),)
         if self.use_real_input:
-            logging.info("Loaded real input image dog.jpg")
-            import urllib
-
-            url, filename = (
-                "https://github.com/pytorch/hub/raw/master/images/dog.jpg",
-                "dog.jpg",
-            )
             try:
-                urllib.URLopener().retrieve(url, filename)
-            except:
-                urllib.request.urlretrieve(url, filename)
-            from PIL import Image
-            from torchvision import transforms
+                import urllib.request
 
-            input_image = Image.open(filename)
-            preprocess = transforms.Compose(
-                [
-                    transforms.Resize(256),
-                    transforms.CenterCrop(224),
-                    transforms.ToTensor(),
-                    transforms.Normalize(
-                        mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225]
-                    ),
-                ]
-            )
-            input_tensor = preprocess(input_image)
-            input_batch = input_tensor.unsqueeze(0)
-            input_batch = (input_batch,)
-        return input_batch
+                url, filename = (
+                    "https://github.com/pytorch/hub/raw/master/images/dog.jpg",
+                    "dog.jpg",
+                )
+                urllib.request.urlretrieve(url, filename)
+                from PIL import Image
+                from torchvision import transforms
+
+                input_image = Image.open(filename)
+                preprocess = transforms.Compose(
+                    [
+                        transforms.Resize(256),
+                        transforms.CenterCrop(224),
+                        transforms.ToTensor(),
+                        transforms.Normalize(
+                            mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225]
+                        ),
+                    ]
+                )
+                input_tensor = preprocess(input_image)
+                return (input_tensor.unsqueeze(0),)
+            except Exception:
+                logging.warning(
+                    "Failed to download real input image, using random input"
+                )
+        return (torch.randn(tensor_size),)
 
 
 class MV2UntrainedModel(EagerModelBase):
