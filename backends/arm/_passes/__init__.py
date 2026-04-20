@@ -114,6 +114,7 @@ from .fuse_constant_ops_pass import (  # noqa
 from .fuse_duplicate_users_pass import FuseDuplicateUsersPass  # noqa
 from .fuse_equal_placeholders_pass import FuseEqualPlaceholdersPass  # noqa
 from .fuse_quantized_activation_pass import FuseQuantizedActivationPass  # noqa
+from .fuse_tosa_transposes_pass import FuseTosaTransposesPass  # noqa
 from .fuse_view_copy_transform_pass import FuseViewCopyTransformPass  # noqa
 from .insert_const_shapes import InsertConstShapesPass  # noqa
 from .insert_data_layout_casts_pass import InsertDataLayoutCastsPass  # noqa
