@@ -19,6 +19,95 @@
 
 namespace vkcompute {
 
+// Forward declaration
+void resize_matmul_tiled_node(
+    ComputeGraph* graph,
+    const std::vector<ArgGroup>& args,
+    const std::vector<ValueRef>& resize_args);
+
+// ── Cooperative matrix tile configuration (must match matmul_coopmat.glsl) ──
+
+static constexpr uint32_t kCoopMatTileM = 64;
+static constexpr uint32_t kCoopMatTileN = 64;
+static constexpr uint32_t kCoopMatInvocations = 256; // 4 subgroups × 64
+
+vkapi::ShaderInfo pick_matmul_coopmat_shader(
+    ComputeGraph* graph,
+    const std::vector<ArgGroup>& args,
+    const std::vector<ValueRef>& resize_args) {
+  (void)resize_args;
+  const ValueRef out = args.at(0).refs.at(0);
+  std::string kernel_name = "matmul_coopmat";
+  kernel_name.reserve(kShaderNameReserve);
+  add_dtype_suffix(kernel_name, graph->dtype_of(out));
+  return VK_KERNEL_FROM_STR(kernel_name);
+}
+
+utils::uvec3 pick_matmul_coopmat_global_wg_size(
+    ComputeGraph* graph,
+    const vkapi::ShaderInfo& shader,
+    const std::vector<ArgGroup>& args,
+    const std::vector<ValueRef>& resize_args) {
+  (void)shader;
+  (void)resize_args;
+  const ValueRef out = args.at(0).refs.at(0);
+  const auto out_sizes = graph->sizes_of(out);
+  uint32_t M = out_sizes.at(out_sizes.size() - 2);
+  uint32_t N = out_sizes.at(out_sizes.size() - 1);
+  uint32_t num_tiles_n = utils::div_up(N, kCoopMatTileN);
+  uint32_t num_tiles_m = utils::div_up(M, kCoopMatTileM);
+  return {num_tiles_n * kCoopMatInvocations, num_tiles_m, 1};
+}
+
+utils::uvec3 pick_matmul_coopmat_local_wg_size(
+    ComputeGraph* graph,
+    const vkapi::ShaderInfo& shader,
+    const utils::uvec3& global_workgroup_size,
+    const std::vector<ArgGroup>& args,
+    const std::vector<ValueRef>& resize_args) {
+  (void)graph;
+  (void)shader;
+  (void)global_workgroup_size;
+  (void)args;
+  (void)resize_args;
+  return {kCoopMatInvocations, 1, 1};
+}
+
+void add_matmul_coopmat_node(
+    ComputeGraph& graph,
+    const ValueRef mat1,
+    const ValueRef mat2,
+    const ValueRef out) {
+  VK_CHECK_COND(graph.packed_dim_of(mat1) == WHCN::kWidthDim);
+  VK_CHECK_COND(graph.packed_dim_of(mat2) == WHCN::kWidthDim);
+  VK_CHECK_COND(graph.packed_dim_of(out) == WHCN::kWidthDim);
+  VK_CHECK_COND(
+      graph.storage_type_of(out) == utils::kBuffer,
+      "matmul_coopmat requires buffer storage");
+
+  ValueRef has_bias_ref = graph.add_scalar(false);
+
+  graph.execute_nodes().emplace_back(new DynamicDispatchNode(
+      graph,
+      pick_matmul_coopmat_shader,
+      pick_matmul_coopmat_global_wg_size,
+      pick_matmul_coopmat_local_wg_size,
+      // Inputs and Outputs — same binding order as matmul_vec
+      {{out, vkapi::kWrite}, {{mat1, mat2}, vkapi::kRead}},
+      // Shader params buffers — same UBOs as matmul_vec
+      {graph.sizes_ubo(mat1), graph.sizes_ubo(mat2)},
+      // Push Constants
+      {},
+      // Specialization Constants (tile config hardcoded in shader)
+      {},
+      // Resize Args
+      {has_bias_ref},
+      // Resizing Logic
+      resize_matmul_tiled_node));
+}
+
+// ── End cooperative matrix section ──
+
 void resize_matmul_tiled_node(
     ComputeGraph* graph,
     const std::vector<ArgGroup>& args,
@@ -189,16 +278,30 @@ void matmul_tiled(ComputeGraph& graph, const std::vector<ValueRef>& args) {
   if (graph.val_is_tref(mat2)) {
     auto mat2_sizes = graph.sizes_of(mat2);
     int64_t B = mat2_sizes.size() >= 3 ? mat2_sizes.at(0) : 1;
-    ValueRef packed =
-        prepack_fp_linear_weight(graph, mat2, /*is_transposed=*/false, B);
-    add_linear_tiled_node(
-        graph,
-        mat1,
-        packed,
-        kDummyValueRef,
-        false,
-        out,
-        utils::safe_downcast<int32_t>(B));
+    bool use_coopmat =
+        graph.context()->adapter_ptr()->supports_cooperative_matrix() &&
+        graph.storage_type_of(out) == utils::kBuffer;
+    ValueRef packed = prepack_fp_linear_weight(
+        graph, mat2, /*is_transposed=*/false, B,
+        /*force_buffer=*/use_coopmat);
+    if (use_coopmat) {
+      add_linear_coopmat_node(
+          graph, mat1, packed, kDummyValueRef, false, out,
+          utils::safe_downcast<int32_t>(B));
+    } else {
+      add_linear_tiled_node(
+          graph,
+          mat1,
+          packed,
+          kDummyValueRef,
+          false,
+          out,
+          utils::safe_downcast<int32_t>(B));
+    }
+  } else if (
+      graph.context()->adapter_ptr()->supports_cooperative_matrix() &&
+      graph.storage_type_of(out) == utils::kBuffer) {
+    add_matmul_coopmat_node(graph, mat1, mat2, out);
   } else {
     add_matmul_tiled_node(graph, mat1, mat2, out);
   }
