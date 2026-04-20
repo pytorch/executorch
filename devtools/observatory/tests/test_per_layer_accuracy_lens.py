@@ -11,10 +11,7 @@ from typing import List
 
 import torch
 
-from executorch.devtools.observatory.interfaces import (
-    ObservationContext,
-    RecordDigest,
-)
+from executorch.devtools.observatory.interfaces import ObservationContext, RecordDigest
 from executorch.devtools.observatory.lenses.accuracy import AccuracyLens
 from executorch.devtools.observatory.lenses.per_layer_accuracy import (
     PerLayerAccuracyLens,
@@ -34,7 +31,9 @@ class _ToyModel(torch.nn.Module):
 
 
 def _non_io_nodes(graph_module: torch.fx.GraphModule) -> List[torch.fx.Node]:
-    return [n for n in graph_module.graph.nodes if n.op not in ("placeholder", "output")]
+    return [
+        n for n in graph_module.graph.nodes if n.op not in ("placeholder", "output")
+    ]
 
 
 def _attach_same_root(graph_module: torch.fx.GraphModule, root_name: str) -> None:
@@ -62,6 +61,85 @@ def test_sparse_index_fallback_uses_node_id_when_from_node_missing() -> None:
     sparse = PerLayerAccuracyLens._build_sparse_node_index(gm)
     node_names = [n.name for n in _non_io_nodes(gm)]
     assert all(f"id:{name}" in sparse for name in node_names)
+
+
+def test_analyze_produces_unified_metric_ranges_across_records() -> None:
+    def _digest(rows):
+        return {
+            "rows": rows,
+            "match_count": len(rows),
+            "sample_index": 0,
+            "sample_source": "test",
+        }
+
+    rec_a = RecordDigest(
+        name="record_a",
+        timestamp=0.0,
+        data={
+            "per_layer_accuracy": _digest(
+                [
+                    {
+                        "target_node": "n1",
+                        "cosine_sim": 0.90,
+                        "psnr": 20.0,
+                        "mse": 1e-3,
+                        "abs_err": 1e-2,
+                    },
+                    {
+                        "target_node": "n2",
+                        "cosine_sim": 0.95,
+                        "psnr": 25.0,
+                        "mse": 5e-4,
+                        "abs_err": 5e-3,
+                    },
+                ]
+            )
+        },
+    )
+    rec_b = RecordDigest(
+        name="record_b",
+        timestamp=1.0,
+        data={
+            "per_layer_accuracy": _digest(
+                [
+                    {
+                        "target_node": "n1",
+                        "cosine_sim": 0.90,
+                        "psnr": 30.0,
+                        "mse": 2e-3,
+                        "abs_err": 1e-2,
+                    },
+                    {
+                        "target_node": "n3",
+                        "cosine_sim": 0.70,
+                        "psnr": 18.0,
+                        "mse": 8e-3,
+                        "abs_err": 4e-2,
+                    },
+                ]
+            )
+        },
+    )
+
+    result = PerLayerAccuracyLens.analyze([rec_a, rec_b], {})
+
+    # Global ranges span the union across both records.
+    ranges = result.global_data["metric_ranges"]
+    assert ranges["cosine_sim"] == [0.70, 0.95]
+    assert ranges["psnr"] == [18.0, 30.0]
+    assert ranges["mse"] == [5e-4, 8e-3]
+    assert ranges["abs_err"] == [5e-3, 4e-2]
+
+    # A node with the same metric value in both records gets the same color.
+    payload_a = (
+        result.per_record_data["record_a"].graph_layers["cosine_sim"].to_payload()
+    )
+    payload_b = (
+        result.per_record_data["record_b"].graph_layers["cosine_sim"].to_payload()
+    )
+    assert payload_a.nodes["n1"].fill_color == payload_b.nodes["n1"].fill_color
+    # And the two endpoints of the unified scale map to distinct colors.
+    assert payload_a.nodes["n2"].fill_color != payload_b.nodes["n3"].fill_color
 
 
 def test_per_layer_accuracy_observe_analyze_and_frontend_defaults() -> None:
@@ -118,8 +196,16 @@ def test_per_layer_accuracy_observe_analyze_and_frontend_defaults() -> None:
         assert "abs_err" in first_row
 
         records = [
-            RecordDigest(name="Exported Float", timestamp=0.0, data={"per_layer_accuracy": anchor_digest}),
-            RecordDigest(name="Quantized Model", timestamp=1.0, data={"per_layer_accuracy": target_digest}),
+            RecordDigest(
+                name="Exported Float",
+                timestamp=0.0,
+                data={"per_layer_accuracy": anchor_digest},
+            ),
+            RecordDigest(
+                name="Quantized Model",
+                timestamp=1.0,
+                data={"per_layer_accuracy": target_digest},
+            ),
         ]
         analysis = PerLayerAccuracyLens.analyze(records, {})
         assert "Quantized Model" in analysis.per_record_data
@@ -134,7 +220,9 @@ def test_per_layer_accuracy_observe_analyze_and_frontend_defaults() -> None:
         assert "sparse_match_key" in mse_payload.sync_keys
 
         frontend = PerLayerAccuracyLens.get_frontend_spec()
-        view = frontend.record(target_digest, {"record": {}}, {"name": "Quantized Model", "index": 1})
+        view = frontend.record(
+            target_digest, {"record": {}}, {"name": "Quantized Model", "index": 1}
+        )
         assert view is not None
         graph_blocks = [b for b in view.blocks if getattr(b, "type", "") == "graph"]
         assert graph_blocks
