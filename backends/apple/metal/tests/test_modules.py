@@ -689,6 +689,57 @@ MODULE_REGISTRY["topk"] = {
 }
 
 
+# -------------------------------------------------------------------------
+# Gather QMV (MoE expert-indexed quantized matmul)
+# -------------------------------------------------------------------------
+
+
+class GatherQMV(nn.Module):
+    """Wrapper around metal::gather_qmv for testing the expert-indexed
+    quantized matmul kernel. Expert weights are embedded as buffers;
+    expert indices are generated deterministically inside the model so
+    the test harness only needs to provide a float activation tensor."""
+
+    def __init__(self):
+        super().__init__()
+        from executorch.backends.apple.metal.ops.gather_qmv import _quantize_int4_affine
+
+        E, N, K, gs = 4, 64, 128, 32
+        torch.manual_seed(0)
+        w_float = torch.randn(E, N, K)
+        packed, scales, biases = _quantize_int4_affine(w_float, gs)
+        self.register_buffer("w", packed)
+        self.register_buffer("scales", scales)
+        self.register_buffer("biases", biases)
+        self.group_size = gs
+        self.num_experts = E
+
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        import executorch.backends.apple.metal.ops.gather_qmv  # noqa: F401
+
+        P = x.shape[0]
+        indices = torch.arange(P, dtype=torch.int32, device=x.device) % self.num_experts
+        return torch.ops.metal.gather_qmv(
+            x,
+            self.w,
+            self.scales.to(x.dtype),
+            self.biases.to(x.dtype),
+            indices,
+            self.group_size,
+        )
+
+
+MODULE_REGISTRY["gather_qmv"] = {
+    "model_class": GatherQMV,
+    "input_shapes": [(4, 128)],
+    "description": "Expert-indexed quantized matmul for MoE (metal::gather_qmv)",
+    "atol_float32": 5e-2,
+    "rtol_float32": 5e-2,
+    "atol_bfloat16": 1e-1,
+    "rtol_bfloat16": 1e-1,
+}
+
+
 # =============================================================================
 # Helper Functions
 # =============================================================================
