@@ -48,6 +48,7 @@ set(_aoti_metal_sources
     runtime/ops/op_linear_4bit.mm
     runtime/ops/op_mm.mm
     runtime/ops/op_sdpa.mm
+    runtime/ops/op_topk.mm
 )
 
 add_library(metal_backend STATIC ${_aoti_metal_sources})

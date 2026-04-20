@@ -76,6 +76,7 @@ fbcode_target(_kind = runtime.python_test,
         "//executorch/backends/qualcomm/utils:utils",
         "//executorch/backends/qualcomm/builders:builders",
     ] + ([] if runtime.is_oss else [
+        # These deps fail in OSS: keep_gpu_sections kwarg breaks TARGETS evaluation
         "//executorch/examples/models/llama:transformer_modules",
         "//executorch/examples/qualcomm/oss_scripts/llama:masking_utils",
         "//executorch/examples/qualcomm/oss_scripts/llama:static_llama",

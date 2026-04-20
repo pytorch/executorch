@@ -1916,9 +1916,17 @@ ET_NODISCARD Error XNNCompiler::compileModel(
       xnn_status_to_string(status));
 
   // create xnnpack subgraph
+  uint32_t num_externs = flatbuffer_graph->num_externs();
+  ET_CHECK_OR_RETURN_ERROR(
+      num_externs <= 4096,
+      InvalidProgram,
+      "XNNPACK flatbuffer blob has num_externs (%u) which exceeds maximum (4096)."
+      " This likely indicates a corrupted or invalid serialized graph",
+      num_externs);
+
   xnn_subgraph_t subgraph_ptr = nullptr;
   status = xnn_create_subgraph(
-      /*external_value_ids=*/flatbuffer_graph->num_externs(),
+      /*external_value_ids=*/num_externs,
       /*flags=*/0,
       &subgraph_ptr);
   ET_CHECK_OR_RETURN_ERROR(
