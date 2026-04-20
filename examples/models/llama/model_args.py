@@ -158,6 +158,24 @@ class ModelArgs:
     # gemma2 attn and output soft capping
     final_logit_softcapping: Optional[float] = None
     attn_logit_softcapping: Optional[float] = None
+    # Gemma4 per-layer input (PLI): bottleneck gate that modulates each layer's
+    # output with the token embedding.  0 = disabled.
+    hidden_size_per_layer_input: int = 0
+    # Gemma4 uses a larger head_dim for full-attention layers.
+    global_head_dim: Optional[int] = None
+    # Gemma4 doubles the MLP intermediate size on KV-shared layers.
+    use_double_wide_mlp: bool = False
+    # Gemma4 applies RMSNorm (without learnable scale) to value projections.
+    use_v_norm: bool = False
+    # Gemma4 has a per-layer learnable scalar that multiplies the layer output.
+    use_layer_scalar: bool = False
+    # Gemma4 dual RoPE: full-attention layers use a separate theta + partial.
+    global_rope_theta: Optional[float] = None
+    global_partial_rotary_factor: float = 1.0
+    # Rope formula for full-attention layers when global_rope_theta is set.
+    # 'default' = standard partial-rotary; 'proportional' = HF Gemma4 style
+    # (zero-pads inv_freq to full head_dim).
+    global_rope_type: str = "default"
 
     def __post_init__(self):  # noqa: C901
         if self.n_kv_heads is None:

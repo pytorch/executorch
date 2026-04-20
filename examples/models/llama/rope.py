@@ -143,15 +143,37 @@ def hf_precompute_freqs_cis(
     theta: float,
     partial_rotary_factor: float = 1.0,
     device: Union[str, torch.device] = "cpu",
+    rope_type: str = "default",
 ):
     # Partial rotary embeddings.
-    dim = int(dim * partial_rotary_factor)
-
-    # Short factor scaling.
-    freqs = 1.0 / (
-        theta
-        ** (torch.arange(0, dim, 2, device=device, dtype=torch.int64).float() / dim)
-    )
+    if rope_type == "proportional":
+        # Gemma4 "proportional" RoPE: keep the FULL head_dim, but only the first
+        # `int(partial * head_dim // 2)` frequencies are non-zero (denominator
+        # stays at full head_dim, NOT partial*head_dim). Trailing freqs are
+        # zero (cos=1, sin=0), so those dims pass through unchanged.
+        rope_angles = int(partial_rotary_factor * dim // 2)
+        inv_freq_rotated = 1.0 / (
+            theta
+            ** (
+                torch.arange(0, 2 * rope_angles, 2, device=device, dtype=torch.int64).float()
+                / dim
+            )
+        )
+        nope_angles = dim // 2 - rope_angles
+        if nope_angles > 0:
+            freqs = torch.cat(
+                (inv_freq_rotated, torch.zeros(nope_angles, device=device, dtype=torch.float32)),
+                dim=0,
+            )
+        else:
+            freqs = inv_freq_rotated
+    else:
+        # Standard partial RoPE: truncate dim early.
+        dim = int(dim * partial_rotary_factor)
+        freqs = 1.0 / (
+            theta
+            ** (torch.arange(0, dim, 2, device=device, dtype=torch.int64).float() / dim)
+        )
     # TODO: support long factor scaling.
 
     # pyre-ignore Undefined attribute [16]: `float` has no attribute `device`.
@@ -266,6 +288,29 @@ class Rope(torch.nn.Module):
         self.register_buffer("freqs_cos", freqs_cos, persistent=False)
         self.register_buffer("freqs_sin", freqs_sin, persistent=False)
 
+        # Gemma4-style dual RoPE: a second set of frequencies for full-attention
+        # layers using a different theta + partial_rotary_factor + rope_type.
+        if (
+            getattr(self.params, "global_rope_theta", None) is not None
+            and getattr(self.params, "use_hf_rope", False)
+        ):
+            global_head_dim = (
+                getattr(self.params, "global_head_dim", None) or self.params.head_dim
+            )
+            global_freqs_cos, global_freqs_sin = hf_precompute_freqs_cis(
+                global_head_dim,
+                self.params.max_context_len,
+                self.params.global_rope_theta,
+                partial_rotary_factor=self.params.global_partial_rotary_factor,
+                device=getattr(self.params, "device", "cpu"),
+                rope_type=getattr(self.params, "global_rope_type", "default"),
+            )
+            self.register_buffer("freqs_cos_global", global_freqs_cos, persistent=False)
+            self.register_buffer("freqs_sin_global", global_freqs_sin, persistent=False)
+            self._has_global_rope = True
+        else:
+            self._has_global_rope = False
+
     def forward(
         self,
         q: torch.Tensor,
@@ -313,6 +358,35 @@ class Rope(torch.nn.Module):
             freqs_cos = self.freqs_cos[:seq_len]
             freqs_sin = self.freqs_sin[:seq_len]
         return freqs_cos, freqs_sin
+
+    def get_freqs_for_layer_type(
+        self,
+        input_pos: Optional[torch.Tensor],
+        seq_len: int,
+        layer_type: Optional[str] = None,
+    ):
+        """Return per-layer-type freqs (Gemma4 dual RoPE).
+
+        Falls back to default freqs when the global buffers aren't registered
+        (i.e., for non-Gemma4 models).
+        """
+        # When use_kv_cache is on, input_pos must be provided; otherwise pass None.
+        if self._has_global_rope and layer_type == "full_attention":
+            cos_buf, sin_buf = self.freqs_cos_global, self.freqs_sin_global
+        else:
+            cos_buf, sin_buf = self.freqs_cos, self.freqs_sin
+
+        if self.params.use_kv_cache and input_pos is not None:
+            if self.params.enable_dynamic_shape:
+                input_pos_item = input_pos[-1].item()
+                torch._check_is_size(input_pos_item)
+                torch._check(input_pos_item < self.params.max_context_len)
+                return (
+                    cos_buf.narrow(0, input_pos_item, seq_len),
+                    sin_buf.narrow(0, input_pos_item, seq_len),
+                )
+            return cos_buf[input_pos], sin_buf[input_pos]
+        return cos_buf[:seq_len], sin_buf[:seq_len]
 
     def get_freqs_using_indices(self, indices: torch.Tensor):
         """

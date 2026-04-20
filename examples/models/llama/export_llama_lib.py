@@ -116,6 +116,7 @@ EXECUTORCH_DEFINED_MODELS = [
     "lfm2_700m",  # hybrid
     "lfm2_1_2b",  # hybrid
     "lfm2_5_1_2b",  # hybrid
+    "gemma4",
 ]
 TORCHTUNE_DEFINED_MODELS = ["llama3_2_vision"]
 HUGGING_FACE_REPO_IDS = {
@@ -134,6 +135,7 @@ HUGGING_FACE_REPO_IDS = {
     "lfm2_700m": "LiquidAI/LFM2-700M",
     "lfm2_1_2b": "LiquidAI/LFM2-1.2B",
     "lfm2_5_1_2b": "LiquidAI/LFM2.5-1.2B-Instruct",
+    "gemma4": "google/gemma-4-E2B",
 }
 
 
@@ -723,6 +725,32 @@ def _prepare_for_llama_export(llm_config: LlmConfig) -> LLMEdgeManager:
     dtype_override = DType[llm_config.model.dtype_override.value]
 
     edge_manager = _load_llama_model(llm_config)
+
+    # Auto-derive local_global_attention from layer_types/sliding_window when
+    # the user didn't specify it (e.g., Gemma4 has a fixed sliding/full pattern
+    # baked into its config).  Without this, sliding layers run as full causal
+    # attention which produces garbled output.
+    if not llm_config.model.local_global_attention:
+        # Llama2Model wraps the Transformer in `model_`; Transformer has `.params`.
+        transformer = getattr(edge_manager.model, "model_", edge_manager.model)
+        params = getattr(transformer, "params", None)
+        layer_types = getattr(params, "layer_types", None) if params else None
+        sliding_window = getattr(params, "sliding_window", None) if params else None
+        if layer_types and sliding_window:
+            # Find the smallest repeating pattern.
+            n = len(layer_types)
+            for k in range(1, n + 1):
+                if n % k == 0 and layer_types[:k] * (n // k) == layer_types:
+                    pattern = layer_types[:k]
+                    break
+            derived = [
+                sliding_window if t == "sliding_attention" else 0 for t in pattern
+            ]
+            logging.info(
+                "Auto-derived local_global_attention=%s from layer_types pattern.",
+                derived,
+            )
+            llm_config.model.local_global_attention = derived
 
     # At this point, the model is loaded in the default fp32.
 
@@ -1567,8 +1595,12 @@ def _load_llama_model(llm_config: LlmConfig) -> "LLMEdgeManager":
 
     modelname = llm_config.base.model_class.value
     if modelname in EXECUTORCH_DEFINED_MODELS:
-        module_name = "llama"
-        model_class_name = "Llama2Model"  # TODO: Change to "LlamaModel" in examples/models/llama/model.py.
+        if modelname == "gemma4":
+            module_name = "gemma4"
+            model_class_name = "Gemma4Model"
+        else:
+            module_name = "llama"
+            model_class_name = "Llama2Model"  # TODO: Change to "LlamaModel" in examples/models/llama/model.py.
     elif modelname in TORCHTUNE_DEFINED_MODELS:
         if modelname == "llama3_2_vision":
             module_name = "llama3_2_vision"

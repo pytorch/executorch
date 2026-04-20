@@ -1,0 +1,65 @@
+{
+    "version": 6,
+    "configurePresets": [
+        {
+            "name": "gemma4-base",
+            "hidden": true,
+            "binaryDir": "${sourceDir}/../../../cmake-out/examples/models/gemma4",
+            "cacheVariables": {
+                "CMAKE_BUILD_TYPE": "Release",
+                "CMAKE_FIND_ROOT_PATH": "${sourceDir}/../../../cmake-out",
+                "CMAKE_PREFIX_PATH": "${sourceDir}/../../../cmake-out"
+            }
+        },
+        {
+            "name": "gemma4-cpu",
+            "displayName": "Gemma4 runner (CPU)",
+            "inherits": ["gemma4-base"]
+        },
+        {
+            "name": "gemma4-cuda",
+            "displayName": "Gemma4 runner (CUDA)",
+            "inherits": ["gemma4-base"],
+            "cacheVariables": {
+                "EXECUTORCH_BUILD_CUDA": "ON"
+            },
+            "condition": {
+                "lhs": "${hostSystemName}",
+                "type": "equals",
+                "rhs": "Linux"
+            }
+        }
+    ],
+    "buildPresets": [
+        {
+            "name": "gemma4-cpu",
+            "displayName": "Build Gemma4 runner (CPU)",
+            "configurePreset": "gemma4-cpu",
+            "targets": ["gemma4_runner"]
+        },
+        {
+            "name": "gemma4-cuda",
+            "displayName": "Build Gemma4 runner (CUDA)",
+            "configurePreset": "gemma4-cuda",
+            "targets": ["gemma4_runner"]
+        }
+    ],
+    "workflowPresets": [
+        {
+            "name": "gemma4-cpu",
+            "displayName": "Configure and build Gemma4 runner (CPU)",
+            "steps": [
+                { "type": "configure", "name": "gemma4-cpu" },
+                { "type": "build", "name": "gemma4-cpu" }
+            ]
+        },
+        {
+            "name": "gemma4-cuda",
+            "displayName": "Configure and build Gemma4 runner (CUDA)",
+            "steps": [
+                { "type": "configure", "name": "gemma4-cuda" },
+                { "type": "build", "name": "gemma4-cuda" }
+            ]
+        }
+    ]
+}

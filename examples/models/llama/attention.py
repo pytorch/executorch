@@ -119,12 +119,15 @@ class SDPA(nn.Module):
         head_dim: int,
         n_rep: int,
         max_context_len: int,
+        attention_multiplier: Optional[float] = None,
     ):
         super().__init__()
         self.dim = dim
         self.head_dim = head_dim
         self.n_rep = n_rep
         self.max_context_len = max_context_len
+        # Override default 1/sqrt(head_dim) scale (e.g., Gemma4 uses 1.0).
+        self.attention_multiplier = attention_multiplier
 
     def forward(
         self,
@@ -141,7 +144,10 @@ class SDPA(nn.Module):
         # can natively support GQA now. But needs enable_gqa=True
         k = k.repeat_interleave(self.n_rep, dim=1)
         v = v.repeat_interleave(self.n_rep, dim=1)
-        y = F.scaled_dot_product_attention(q, k, v, attn_mask=mask, dropout_p=0.0)
+        sdpa_kwargs = {"attn_mask": mask, "dropout_p": 0.0}
+        if self.attention_multiplier is not None:
+            sdpa_kwargs["scale"] = self.attention_multiplier
+        y = F.scaled_dot_product_attention(q, k, v, **sdpa_kwargs)
 
         return y.transpose(1, 2).reshape(bsz, seqlen, self.dim)
 
@@ -366,7 +372,16 @@ class AttentionMHA(Attention):
         self.n_local_heads = self.n_heads // model_parallel_size
         self.n_local_kv_heads = self.n_kv_heads // model_parallel_size
         self.n_rep = self.n_local_heads // self.n_local_kv_heads
-        self.head_dim = args.head_dim
+        # Gemma4: full-attention layers use global_head_dim if set.
+        is_full_attn = (
+            args.layer_types is not None
+            and layer_id < len(args.layer_types)
+            and args.layer_types[layer_id] == "full_attention"
+        )
+        if is_full_attn and args.global_head_dim is not None:
+            self.head_dim = args.global_head_dim
+        else:
+            self.head_dim = args.head_dim
         self.max_batch_size = args.max_batch_size
         self.max_context_len = args.max_context_len
         self.dim = args.dim
@@ -375,7 +390,9 @@ class AttentionMHA(Attention):
         self.qk_norm_before_rope = args.qk_norm_before_rope
         self.use_q_gate = args.use_q_gate
         self.enable_dynamic_shape = args.enable_dynamic_shape
-        q_out_dim = self.n_heads * self.head_dim * (2 if self.use_q_gate else 1)
+        # Custom attention scaling. Gemma4 sets this to 1.0 (no implicit scale).
+        # If None, F.scaled_dot_product_attention uses default 1/sqrt(head_dim).
+        self.attention_multiplier = args.attention_multiplier
 
         # YOCO: Determine if this is a KV shared layer (receives shared KV from donor).
         num_kv_shared = args.num_kv_shared_layers
@@ -390,7 +407,7 @@ class AttentionMHA(Attention):
         self.has_kv_weights = not self.is_kv_shared_layer
 
         self._init_norms(args)
-        self._init_projections(args, q_out_dim)
+        self._init_projections(args, 0)  # q_out_dim computed inside
 
         self.layer_id = layer_id
         self.rope = rope
@@ -412,6 +429,7 @@ class AttentionMHA(Attention):
                 head_dim=self.head_dim,
                 n_rep=self.n_rep,
                 max_context_len=self.max_context_len,
+                attention_multiplier=self.attention_multiplier,
             )
 
     def _init_norms(self, args: ModelArgs) -> None:
@@ -428,11 +446,18 @@ class AttentionMHA(Attention):
                     eps=args.norm_eps,
                     add_unit_offset=args.rms_norm_add_unit_offset,
                 )
+        # Gemma4 value normalization (RMS normalization without learnable scale).
+        self.use_v_norm = args.use_v_norm
+        if self.use_v_norm and self.has_kv_weights:
+            self.v_norm_eps = args.norm_eps
 
     def _init_projections(self, args: ModelArgs, q_out_dim: int) -> None:
         """Initialize Q/K/V/O projection layers."""
+        # Use self.head_dim (may differ from args.head_dim for full-attn layers
+        # when global_head_dim is set).
+        q_out = self.n_heads * self.head_dim * (2 if self.use_q_gate else 1)
         self.wq = _create_projection(
-            args, args.dim, q_out_dim, ("q_proj",), bias=self.attention_qkv_bias
+            args, args.dim, q_out, ("q_proj",), bias=self.attention_qkv_bias
         )
         if self.has_kv_weights:
             kv_dim = self.n_kv_heads * self.head_dim
@@ -447,7 +472,7 @@ class AttentionMHA(Attention):
             self.wv = None
         self.wo = _create_projection(
             args,
-            args.n_heads * args.head_dim,
+            self.n_heads * self.head_dim,
             args.dim,
             ("output_proj", "o_proj"),
             bias=False,
@@ -519,6 +544,13 @@ class AttentionMHA(Attention):
         if self.use_qk_norm and not self.qk_norm_before_rope:
             q = self.q_norm_fn(q)
             k = self.k_norm_fn(k)
+
+        if self.use_v_norm:
+            v_f = v.float()
+            v = v_f * torch.rsqrt(v_f.pow(2).mean(-1, keepdim=True) + self.v_norm_eps)
+        # Match v dtype to q (RoPE may have promoted q/k to float).
+        if v.dtype != q.dtype:
+            v = v.to(q.dtype)
 
         return q, k, v
 
@@ -599,7 +631,15 @@ class AttentionMHA(Attention):
 
         mask = self.mask[:seqlen, :seqlen]
 
-        output = F.scaled_dot_product_attention(q, k, v, attn_mask=mask, dropout_p=0.0)
+        sdpa_kwargs = {"attn_mask": mask, "dropout_p": 0.0}
+        if self.attention_multiplier is not None:
+            sdpa_kwargs["scale"] = self.attention_multiplier
+        # If we received donor KV (YOCO non-cache path), use those keys/values.
+        if shared_kv is not None:
+            sk, sv = shared_kv
+            output = F.scaled_dot_product_attention(q, sk, sv, **sdpa_kwargs)
+        else:
+            output = F.scaled_dot_product_attention(q, k, v, **sdpa_kwargs)
 
         output = output.transpose(1, 2).reshape(bsz, seqlen, -1)
         if gate is not None:
@@ -607,7 +647,11 @@ class AttentionMHA(Attention):
 
         output = self.wo(output)
 
-        return output, None
+        # Emit kv_to_share for donor layers (eager non-cache path also needs this).
+        update = None
+        if shared_kv is None and self.num_kv_shared_layers > 0:
+            update = {"kv_to_share": (k, v)}
+        return output, update
 
 
 def _l2norm(x: torch.Tensor, dim: int = -1, eps: float = 1e-6) -> torch.Tensor:

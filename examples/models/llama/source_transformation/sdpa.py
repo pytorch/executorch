@@ -23,10 +23,13 @@ class SDPACustom(torch.nn.Module):
         self,
         dim: int,
         use_attention_mask: bool = False,
+        attention_multiplier: float | None = None,
     ):
         super().__init__()
         self.dim = dim
         self.use_attention_mask = use_attention_mask
+        # Override default 1/sqrt(head_dim) scale (e.g., Gemma4 uses 1.0).
+        self.attention_multiplier = attention_multiplier
 
     def forward(
         self,
@@ -58,6 +61,7 @@ class SDPACustom(torch.nn.Module):
                 mask,  # Attention mask
                 0,  # dropout probability. Ignored by the code
                 False,  # is_causal
+                self.attention_multiplier,  # scale
             )
         else:
             output = torch.ops.llama.custom_sdpa(
@@ -68,6 +72,7 @@ class SDPACustom(torch.nn.Module):
                 None,  # Attention mask
                 0,  # dropout probability. Ignored by the code
                 True,  # is_causal
+                self.attention_multiplier,  # scale
             )
         return output.view(bsz, seqlen, self.dim).to(dtype=input_dtype)
 
@@ -83,6 +88,7 @@ def _replace_sdpa_with_custom_op(
                 SDPACustom(
                     child.dim,
                     use_attention_mask=use_attention_mask,
+                    attention_multiplier=getattr(child, "attention_multiplier", None),
                 ),
             )
         else:

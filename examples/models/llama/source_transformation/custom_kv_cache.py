@@ -582,6 +582,10 @@ def replace_kv_cache_with_ring_kv_cache(module, layer_sizes):
             getattr(transformer_block, "attention", None) is not None
         ), f"Transfomer block must have attention module. Transformer block {transformer_block}"
         attention = transformer_block.attention
+        # Skip YOCO-shared layers: they reuse the donor's KV cache and have no
+        # `kv_cache` of their own (Gemma4 last 20 layers).
+        if getattr(attention, "kv_cache", None) is None:
+            continue
         _replace_kv_cache_with_ring_kv_cache(attention, sliding_window_size)
         # if attention's sdpa is custom sdpa then we have to make sure
         # it is not doing causal attention
