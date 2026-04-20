@@ -480,6 +480,7 @@ _BINARY_OPS: List[Tuple[List[Any], Any, str, bool]] = [
     ([torch.ops.aten.minimum.default], MinimumNode, "aten.minimum", False),
     ([torch.ops.aten.atan2.default], Atan2Node, "aten.atan2", False),
     ([torch.ops.aten.logaddexp.default], LogAddExpNode, "aten.logaddexp", False),
+    ([torch.ops.aten.logical_and.default], LogicalAndNode, "aten.logical_and", False),
     ([torch.ops.aten.logical_or.default], LogicalOrNode, "aten.logical_or", False),
     (
         [torch.ops.aten.bitwise_and.Tensor, torch.ops.aten.bitwise_and.Scalar],
@@ -3094,23 +3095,6 @@ def _bitwise_not_handler(P: MLXProgramBuilder, n: Node) -> Slot:
             f"aten.bitwise_not is only supported for boolean tensors. "
             f"Got dtype={x_meta.dtype if x_meta else 'unknown'}"
         )
-
-
-@REGISTRY.register(target=[torch.ops.aten.logical_and.default])
-def _logical_and_handler(P: MLXProgramBuilder, n: Node) -> Slot:
-    """Handle aten.logical_and on bool tensors."""
-    args = P.args(n)
-    require_args(args, 2, 2, "aten.logical_and")
-    require_kwargs(P.kwargs(n), set(), "aten.logical_and")
-    out = P.make_or_get_slot(n)
-    P.emit(
-        LogicalAndNode(
-            a=P.slot_to_tid(args[0]),
-            b=P.slot_to_tid(args[1]),
-            out=P.slot_to_tid(out),
-        )
-    )
-    return out
 
 
 @REGISTRY.register(target=[torch.ops.aten.scalar_tensor.default])
