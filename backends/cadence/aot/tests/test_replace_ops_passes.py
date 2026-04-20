@@ -49,12 +49,15 @@ from executorch.backends.cadence.aot.replace_ops import (
     ReplaceTransposedConvWithLinearPass,
     ReplaceTrivialConvWithLinear,
     ReplaceWhereWithFullArgsWithWhereScalar,
+    SwapDequantQuantAroundVolumePreservingDataMovementOps,
 )
 
 from executorch.backends.cadence.aot.typing_stubs import expand
 from executorch.backends.test.graph_builder import GraphBuilder, single_op_builder
 from executorch.exir.dialects._ops import ops as exir_ops
+from executorch.exir.dialects.edge._ops import EdgeOpOverload
 from executorch.exir.pass_base import ExportPass, ProxyValue
+from parameterized import parameterized
 from torch.fx.passes.infra.pass_base import PassResult
 from torch.utils import _pytree as pytree
 
@@ -3596,3 +3599,389 @@ class TestReplaceLogicalNotBooleanWhereWithWherePass(unittest.TestCase):
             self.assertEqual(node.args[0].name, "bool_cond")
             self.assertEqual(node.args[1].name, "x")
             self.assertEqual(node.args[2].name, "y")
+
+
+class SwapDequantQuantAroundVolumePreservingDataMovementOpsTest(unittest.TestCase):
+    """Tests for SwapDequantQuantAroundVolumePreservingDataMovementOps pass.
+
+    Subclass and override _PASS_CLS, _INPUT_WRAPPER, _OUTPUT_WRAPPER to
+    test the reverse direction (quant inputs / dequant outputs).
+    """
+
+    SCALE = 0.01
+    ZERO_POINT = 128
+    QUANT_MIN = 0
+    QUANT_MAX = 255
+    DTYPE: torch.dtype = torch.uint8
+
+    # Override in subclass to test the reverse direction.
+    _PASS_CLS = SwapDequantQuantAroundVolumePreservingDataMovementOps
+    _INPUT_WRAPPER: EdgeOpOverload = exir_ops.edge.cadence.dequantize_per_tensor.default
+    _OUTPUT_WRAPPER: EdgeOpOverload = exir_ops.edge.cadence.quantize_per_tensor.default
+
+    # All testable data movement ops from SwapDequantQuantAroundVolumePreservingDataMovementOps.
+    # index_select excluded: second input is an integer index tensor, not data.
+    # pixel_shuffle excluded: requires 4D input with C divisible by r^2.
+    # fmt: off
+    _ALL_OPS: list[tuple[str, EdgeOpOverload, bool]] = [
+        ("cat",                exir_ops.edge.aten.cat.default,             True),
+        ("clone",              exir_ops.edge.aten.clone.default,           False),
+        ("permute_copy",       exir_ops.edge.aten.permute_copy.default,    False),
+        ("squeeze_copy_dim",   exir_ops.edge.aten.squeeze_copy.dim,        False),
+        ("squeeze_copy_dims",  exir_ops.edge.aten.squeeze_copy.dims,       False),
+        ("stack",              exir_ops.edge.aten.stack.default,            True),
+        ("t_copy",             exir_ops.edge.aten.t_copy.default,           False),
+        ("transpose_copy_int", exir_ops.edge.aten.transpose_copy.int,      False),
+        ("unsqueeze_copy",     exir_ops.edge.aten.unsqueeze_copy.default,   False),
+        ("view_copy",          exir_ops.edge.aten.view_copy.default,        False),
+    ]
+    # fmt: on
+
+    _MULTI_INPUT_OPS: list[tuple[str, EdgeOpOverload, bool]] = [
+        (n, t, m) for n, t, m in _ALL_OPS if m
+    ]
+
+    def _quant_args(
+        self,
+        scale: Optional[float] = None,
+        zero_point: Optional[int] = None,
+    ) -> tuple[float, int, int, int, torch.dtype]:
+        return (
+            scale if scale is not None else self.SCALE,
+            zero_point if zero_point is not None else self.ZERO_POINT,
+            self.QUANT_MIN,
+            self.QUANT_MAX,
+            self.DTYPE,
+        )
+
+    def _wrapped_val(self, shape: tuple[int, ...]) -> torch.Tensor:
+        """Create a tensor value appropriate for the wrapped (input wrapper) domain."""
+        if self._INPUT_WRAPPER == exir_ops.edge.cadence.dequantize_per_tensor.default:
+            return torch.randint(0, 255, shape, dtype=torch.uint8)
+        return torch.randn(shape)
+
+    def _unwrapped_val(self, shape: tuple[int, ...]) -> torch.Tensor:
+        """Create a tensor value appropriate for the unwrapped domain."""
+        if self._INPUT_WRAPPER == exir_ops.edge.cadence.dequantize_per_tensor.default:
+            return torch.randn(shape)
+        return torch.randint(0, 255, shape, dtype=torch.uint8)
+
+    def _build_op(
+        self,
+        builder: GraphBuilder,
+        target: EdgeOpOverload,
+        inputs: list[ProxyValue],
+    ) -> ProxyValue:
+        """Build a data movement op node with appropriate args for the target."""
+        if target == exir_ops.edge.aten.cat.default:
+            return builder.call_operator(op=target, args=(inputs, 0))
+        if target == exir_ops.edge.aten.stack.default:
+            return builder.call_operator(op=target, args=(inputs, 0))
+        if target == exir_ops.edge.aten.clone.default:
+            return builder.call_operator(op=target, args=(inputs[0],))
+        if target == exir_ops.edge.aten.expand_copy.default:
+            shape = list(inputs[0].node.meta["val"].shape)
+            return builder.call_operator(op=target, args=(inputs[0], shape))
+        if target == exir_ops.edge.aten.permute_copy.default:
+            dims = list(reversed(range(len(inputs[0].node.meta["val"].shape))))
+            return builder.call_operator(op=target, args=(inputs[0], dims))
+        if target == exir_ops.edge.aten.repeat.default:
+            n = len(inputs[0].node.meta["val"].shape)
+            return builder.call_operator(op=target, args=(inputs[0], [1] * n))
+        if target == exir_ops.edge.aten.select_copy.int:
+            return builder.call_operator(op=target, args=(inputs[0], 0, 0))
+        if target == exir_ops.edge.aten.slice_copy.Tensor:
+            return builder.call_operator(op=target, args=(inputs[0], 0, 0, 2))
+        if target == exir_ops.edge.aten.squeeze_copy.dim:
+            return builder.call_operator(op=target, args=(inputs[0], 0))
+        if target == exir_ops.edge.aten.squeeze_copy.dims:
+            return builder.call_operator(op=target, args=(inputs[0], [0]))
+        if target == exir_ops.edge.aten.t_copy.default:
+            return builder.call_operator(op=target, args=(inputs[0],))
+        if target == exir_ops.edge.aten.transpose_copy.int:
+            return builder.call_operator(op=target, args=(inputs[0], 0, 1))
+        if target == exir_ops.edge.aten.unsqueeze_copy.default:
+            return builder.call_operator(op=target, args=(inputs[0], 0))
+        if target == exir_ops.edge.aten.view_copy.default:
+            shape = list(inputs[0].node.meta["val"].shape)
+            return builder.call_operator(op=target, args=(inputs[0], shape))
+        raise ValueError(f"Unknown data movement op: {target}")
+
+    # ── Hash-mismatch tests (cat-only, testing hash validation logic) ────
+
+    def test_no_swap_input_hashes_mismatch(self) -> None:
+        """Two input wrappers with different scales → swap is illegal."""
+        builder = GraphBuilder()
+        a = builder.placeholder("a", self._wrapped_val((4, 8)))
+        b = builder.placeholder("b", self._wrapped_val((4, 8)))
+
+        w_a = builder.call_operator(
+            op=self._INPUT_WRAPPER,
+            args=(a,) + self._quant_args(scale=0.01),
+        )
+        w_b = builder.call_operator(
+            op=self._INPUT_WRAPPER,
+            args=(b,) + self._quant_args(scale=0.02),
+        )
+        cat = builder.call_operator(
+            op=exir_ops.edge.aten.cat.default,
+            args=([w_a, w_b], 1),
+        )
+        w_out = builder.call_operator(
+            op=self._OUTPUT_WRAPPER,
+            args=(cat,) + self._quant_args(scale=0.01),
+        )
+        builder.output([w_out])
+        gm = builder.get_graph_module()
+
+        result = cast(PassResult, self._PASS_CLS()(gm))
+        self.assertFalse(result.modified)
+
+    def test_no_swap_output_hashes_mismatch(self) -> None:
+        """Two output wrappers with different zero_points → swap is illegal."""
+        builder = GraphBuilder()
+        a = builder.placeholder("a", self._wrapped_val((4, 8)))
+
+        w_a = builder.call_operator(
+            op=self._INPUT_WRAPPER,
+            args=(a,) + self._quant_args(),
+        )
+        cat = builder.call_operator(
+            op=exir_ops.edge.aten.cat.default,
+            args=([w_a], 0),
+        )
+        w_out1 = builder.call_operator(
+            op=self._OUTPUT_WRAPPER,
+            args=(cat,) + self._quant_args(zero_point=128),
+        )
+        w_out2 = builder.call_operator(
+            op=self._OUTPUT_WRAPPER,
+            args=(cat,) + self._quant_args(zero_point=64),
+        )
+        builder.output([w_out1, w_out2])
+        gm = builder.get_graph_module()
+
+        result = cast(PassResult, self._PASS_CLS()(gm))
+        self.assertFalse(result.modified)
+
+    def test_no_swap_input_output_hashes_incompatible(self) -> None:
+        """Input wrappers all match, output wrappers all match, but input != output → illegal."""
+        builder = GraphBuilder()
+        a = builder.placeholder("a", self._wrapped_val((4, 8)))
+        b = builder.placeholder("b", self._wrapped_val((4, 8)))
+
+        w_a = builder.call_operator(
+            op=self._INPUT_WRAPPER,
+            args=(a,) + self._quant_args(scale=0.01),
+        )
+        w_b = builder.call_operator(
+            op=self._INPUT_WRAPPER,
+            args=(b,) + self._quant_args(scale=0.01),
+        )
+        cat = builder.call_operator(
+            op=exir_ops.edge.aten.cat.default,
+            args=([w_a, w_b], 1),
+        )
+        w_out = builder.call_operator(
+            op=self._OUTPUT_WRAPPER,
+            args=(cat,) + self._quant_args(scale=0.05),
+        )
+        builder.output([w_out])
+        gm = builder.get_graph_module()
+
+        result = cast(PassResult, self._PASS_CLS()(gm))
+        self.assertFalse(result.modified)
+
+    # ── Parameterized tests over all data movement ops ───────────────────
+
+    @parameterized.expand(_ALL_OPS)
+    def test_swap_all_matched_eliminates_all(
+        self, _name: str, target: EdgeOpOverload, multi_input: bool
+    ) -> None:
+        """All inputs wrapped, all outputs wrapped, same params → eliminate everything."""
+        builder = GraphBuilder()
+        quant_shape = (4, 8)
+
+        if multi_input:
+            a_val = self._wrapped_val(quant_shape)
+            b_val = self._wrapped_val(quant_shape)
+            a = builder.placeholder("a", a_val)
+            b = builder.placeholder("b", b_val)
+            w_a = builder.call_operator(
+                op=self._INPUT_WRAPPER,
+                args=(a,) + self._quant_args(),
+            )
+            w_b = builder.call_operator(
+                op=self._INPUT_WRAPPER,
+                args=(b,) + self._quant_args(),
+            )
+            op_node = self._build_op(builder, target, [w_a, w_b])
+            inputs = (a_val, b_val)
+        else:
+            a_val = self._wrapped_val(quant_shape)
+            a = builder.placeholder("a", a_val)
+            w_a = builder.call_operator(
+                op=self._INPUT_WRAPPER,
+                args=(a,) + self._quant_args(),
+            )
+            op_node = self._build_op(builder, target, [w_a])
+            inputs = (a_val,)
+
+        w_out = builder.call_operator(
+            op=self._OUTPUT_WRAPPER,
+            args=(op_node,) + self._quant_args(),
+        )
+        builder.output([w_out])
+        gm = builder.get_graph_module()
+        original = copy.deepcopy(gm)
+
+        result = cast(PassResult, self._PASS_CLS()(gm))
+
+        self.assertTrue(result.modified)
+        self.assertEqual(
+            count_node(result.graph_module, self._INPUT_WRAPPER), 0,
+        )
+        self.assertEqual(
+            count_node(result.graph_module, self._OUTPUT_WRAPPER), 0,
+        )
+        validate(original, result.graph_module, inputs, f"swap_all_matched_{_name}")
+
+    @parameterized.expand(_ALL_OPS)
+    def test_swap_output_only_wrappers(
+        self, _name: str, target: EdgeOpOverload, multi_input: bool
+    ) -> None:
+        """No input wrappers, all outputs wrapped → push wrappers to inputs."""
+        builder = GraphBuilder()
+        shape = (4, 8)
+
+        if multi_input:
+            a_val = self._unwrapped_val(shape)
+            b_val = self._unwrapped_val(shape)
+            a = builder.placeholder("a", a_val)
+            b = builder.placeholder("b", b_val)
+            op_node = self._build_op(builder, target, [a, b])
+            inputs = (a_val, b_val)
+            num_inputs = 2
+        else:
+            a_val = self._unwrapped_val(shape)
+            a = builder.placeholder("a", a_val)
+            op_node = self._build_op(builder, target, [a])
+            inputs = (a_val,)
+            num_inputs = 1
+
+        w_outs = [
+            builder.call_operator(
+                op=self._OUTPUT_WRAPPER,
+                args=(op_node,) + self._quant_args(),
+            )
+            for _ in range(4)
+        ]
+        builder.output(w_outs)
+        gm = builder.get_graph_module()
+        original = copy.deepcopy(gm)
+
+        result = cast(PassResult, self._PASS_CLS()(gm))
+
+        self.assertTrue(result.modified)
+        self.assertEqual(
+            count_node(result.graph_module, self._OUTPUT_WRAPPER), num_inputs,
+        )
+        self.assertEqual(
+            count_node(result.graph_module, self._INPUT_WRAPPER), 0,
+        )
+        validate(
+            original, result.graph_module, inputs,
+            f"swap_output_only_{_name}", atol=self.SCALE,
+        )
+
+    def test_no_swap_lossy_inverse_with_unwrapped_output(self) -> None:
+        """Cat with 3 output wrappers + 1 unwrapped output: skip swap because
+        inverse wrapper is lossy."""
+        builder = GraphBuilder()
+        shape = (4, 8)
+        a_val = self._unwrapped_val(shape)
+        b_val = self._unwrapped_val(shape)
+
+        a = builder.placeholder("a", a_val)
+        b = builder.placeholder("b", b_val)
+
+        cat = builder.call_operator(
+            op=exir_ops.edge.aten.cat.default,
+            args=([a, b], 0),
+        )
+        w_outs = [
+            builder.call_operator(
+                op=self._OUTPUT_WRAPPER,
+                args=(cat,) + self._quant_args(),
+            )
+            for _ in range(3)
+        ]
+        builder.output([*w_outs, cat])
+        gm = builder.get_graph_module()
+
+        result = cast(PassResult, self._PASS_CLS()(gm))
+        self.assertFalse(result.modified)
+
+    @parameterized.expand(_MULTI_INPUT_OPS)
+    def test_swap_input_only_wrappers(
+        self, _name: str, target: EdgeOpOverload, _multi: bool
+    ) -> None:
+        """Many wrapped inputs, one output → swap moves wrappers to output side."""
+        builder = GraphBuilder()
+        shape = (4, 8)
+
+        vals = [self._wrapped_val(shape) for _ in range(4)]
+        placeholders = [builder.placeholder(f"inp_{i}", v) for i, v in enumerate(vals)]
+        wrapped = [
+            builder.call_operator(
+                op=self._INPUT_WRAPPER, args=(p,) + self._quant_args(),
+            )
+            for p in placeholders
+        ]
+        op_node = self._build_op(builder, target, wrapped)
+        builder.output([op_node])
+        gm = builder.get_graph_module()
+        original = copy.deepcopy(gm)
+
+        result = cast(PassResult, self._PASS_CLS()(gm))
+
+        self.assertTrue(result.modified)
+        self.assertEqual(
+            count_node(result.graph_module, self._INPUT_WRAPPER), 1,
+        )
+        self.assertEqual(
+            count_node(result.graph_module, self._OUTPUT_WRAPPER), 0
+        )
+        validate(
+            original, result.graph_module, tuple(vals),
+            f"swap_input_only_{_name}", atol=self.SCALE,
+        )
+
+    def test_no_swap_lossy_inverse_with_mixed_inputs(self) -> None:
+        """Cat with 2 wrapped inputs + 1 unwrapped input: skip swap because
+        inverse wrapper is lossy."""
+        builder = GraphBuilder()
+        shape = (4, 8)
+        a_val = self._wrapped_val(shape)
+        b_val = self._wrapped_val(shape)
+        c_val = self._unwrapped_val(shape)
+
+        a = builder.placeholder("a", a_val)
+        b = builder.placeholder("b", b_val)
+        c = builder.placeholder("c", c_val)
+
+        w_a = builder.call_operator(
+            op=self._INPUT_WRAPPER, args=(a,) + self._quant_args(),
+        )
+        w_b = builder.call_operator(
+            op=self._INPUT_WRAPPER, args=(b,) + self._quant_args(),
+        )
+        cat = builder.call_operator(
+            op=exir_ops.edge.aten.cat.default,
+            args=([w_a, w_b, c], 0),
+        )
+        builder.output([cat])
+        gm = builder.get_graph_module()
+
+        result = cast(PassResult, self._PASS_CLS()(gm))
+        self.assertFalse(result.modified)
