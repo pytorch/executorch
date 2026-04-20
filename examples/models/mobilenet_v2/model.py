@@ -38,7 +38,7 @@ class MV2Model(EagerModelBase):
             )
             try:
                 urllib.URLopener().retrieve(url, filename)
-            except:
+            except Exception:
                 urllib.request.urlretrieve(url, filename)
             from PIL import Image
             from torchvision import transforms

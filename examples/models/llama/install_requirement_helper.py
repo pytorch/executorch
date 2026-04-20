@@ -16,7 +16,7 @@ try:
     try:
         # If the import succeeds, this means it isn't using lm_eval's module
         import examples.models
-    except:
+    except Exception:
         print(
             "Failed to import examples.models due to lm_eval conflict. Removing lm_eval examples module"
         )
@@ -25,5 +25,5 @@ try:
         examples_path = examples.__path__[0]
         shutil.rmtree(examples_path)
 
-except:
+except Exception:
     pass
