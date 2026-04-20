@@ -349,8 +349,8 @@ This single extension produces: colored nodes in the graph view, PSNR labels on 
 devtools/
   fx_viewer/                              # Shared graph visualization
     __init__.py, exporter.py, models.py, extension.py, color_rules.py
-    grandalf/                             # Vendored layout engine
     templates/                            # JS runtime
+                                           # Layout engine: pip install 'fast-sugiyama[all]'
 
   observatory/                            # Shared debugging framework
     __init__.py, __main__.py

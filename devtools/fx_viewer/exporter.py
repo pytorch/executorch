@@ -7,7 +7,6 @@ import warnings
 from dataclasses import asdict
 from typing import Callable, List, Optional, Any, Dict, Sequence
 
-import networkx as nx
 import torch
 import torch.fx
 
@@ -18,9 +17,6 @@ try:
     from executorch.exir.dialects.edge._ops import EdgeOpOverload
 except ImportError:
     EdgeOpOverload = None
-from .grandalf.layouts import SugiyamaLayout
-from .grandalf.routing import route_with_lines
-from .grandalf.utils.nx import convert_nextworkx_graph_to_grandalf
 from .models import (
     BaseGraphPayload,
     GraphEdge,
@@ -57,9 +53,14 @@ class FXGraphExporter:
     _NODE_X_PADDING = 20
     _NODE_LINE_HEIGHT = 16
     _NODE_Y_PADDING = 20
-    _LAYOUT_XSPACE = 20
-    _LAYOUT_YSPACE = 40
-    _LAYOUT_DRAW_ITER = 5.5
+    _LAYOUT_XSPACE = 50
+    _LAYOUT_YSPACE = 30
+    _DUMMY_SIZE = 30  # dummy nodes (from fast-sugiyama) occupy no real width/height
+    _CHAIN_MIN_LENGTH = 2
+    _SPINE_COHESION_ALPHA = 0.7
+    _SPINE_COHESION_ITER = 3
+    _SPINE_CONTINUITY_EPSILON = 0.3
+    _EDGE_CLIP_MARGIN = 2.0
 
     def _default_base_label(self, node: GraphNode) -> str:
         target = str(node.info.get("target") or node.info.get("op") or "")
@@ -265,63 +266,319 @@ class FXGraphExporter:
         ext_label_lines_by_node: dict[str, list[str]],
         base_label_getter: Callable[[GraphNode], str],
     ) -> None:
-        print("Converting to Grandalf graph and computing layout...")
-        graph_nx = nx.DiGraph()
-        for node_id in nodes:
-            graph_nx.add_node(node_id)
-        for edge in edges:
-            if edge.v in nodes and edge.w in nodes:
-                graph_nx.add_edge(edge.v, edge.w)
-
-        g_grandalf = convert_nextworkx_graph_to_grandalf(graph_nx)
-
-        edge_map = {(edge.v, edge.w): edge for edge in edges}
-
-        class NodeView:
-            def __init__(self, w, h):
-                self.w = w
-                self.h = h
-                self.xy = (0, 0)
-
-        class EdgeView:
-            def __init__(self):
-                self.points = []
-
-            def setpath(self, points):
-                self.points = points
-
-        for vertex in g_grandalf.V():
-            node = nodes[vertex.data]
+        for node_id, node in nodes.items():
             base_label = base_label_getter(node)
             ext_lines = ext_label_lines_by_node.get(node.id, [])
             node.width, node.height = cls._compute_node_box_size(base_label, ext_lines)
-            vertex.view = NodeView(node.width, node.height)
 
-        for edge in g_grandalf.E():
-            edge.view = EdgeView()
+        if not nodes:
+            return
 
-        print("Running Sugiyama Layout...")
-        for component in g_grandalf.C:
-            sug = SugiyamaLayout(component)
-            sug.route_edge = route_with_lines
-            sug.xspace = cls._LAYOUT_XSPACE
-            sug.yspace = cls._LAYOUT_YSPACE
-            sug.init_all(optimize=True)
-            sug.draw(N=cls._LAYOUT_DRAW_ITER)
+        try:
+            from fast_sugiyama import from_edges
+        except ImportError as exc:
+            raise ImportError(
+                "fx_viewer layout requires 'fast-sugiyama' (and rectangle-packer "
+                "for multi-component packing). Install with: "
+                "pip install 'fast-sugiyama[all]'  (requires Python >= 3.11)"
+            ) from exc
 
-        for vertex in g_grandalf.V():
-            node = nodes[vertex.data]
-            node.x = float(vertex.view.xy[0])
-            node.y = float(vertex.view.xy[1])
+        print("Running fast-sugiyama layout...")
+        edge_list = [(e.v, e.w) for e in edges if e.v in nodes and e.w in nodes]
+        widths = [n.width for n in nodes.values()]
+        # Median width as vertex_spacing keeps the layout tight for typical
+        # nodes; wide outliers are handled by the per-layer compaction below.
+        from statistics import median
+        baseline_w = median(widths)
+        max_w = max(widths)
+        expected_gap = baseline_w + cls._LAYOUT_XSPACE
 
-        for edge in g_grandalf.E():
-            key = (edge.v[0].data, edge.v[1].data)
-            if key not in edge_map:
+        raw_layouts = from_edges(
+            edge_list,
+            vertex_spacing=expected_gap,
+            minimum_length=1,
+            dummy_vertices=True,
+            crossing_minimization="median",
+        )
+
+        # Adaptive per-layer x-spacing + y-row compaction using actual node
+        # sizes. Preserves fast-sugiyama's within-layer ordering (so crossings
+        # are preserved) while tightening gaps for narrow nodes and widening
+        # them for long labels.
+        adjusted = cls._compact_components(raw_layouts, nodes, expected_gap)
+
+        # Isolated nodes (zero edges in the edge_list) are invisible to
+        # from_edges; synthesize a one-node component for each so rect_pack
+        # tiles them into the layout instead of leaving them stacked at 0,0.
+        referenced: set = set()
+        for a, b in edge_list:
+            referenced.add(a)
+            referenced.add(b)
+        for nid, node in nodes.items():
+            if nid not in referenced:
+                adjusted.append(
+                    ([(nid, (0.0, 0.0))], float(node.width), float(node.height), [])
+                )
+
+        # Pack components. fast-sugiyama's bbox is center-to-center only, so
+        # pad spacing by max_w + xspace to prevent edge-level overlap between
+        # adjacent components.
+        from fast_sugiyama.layout import Layouts
+        pack_spacing = max_w + cls._LAYOUT_XSPACE
+        widest_component = max((w for _pos, w, _h, _e in adjusted), default=0.0)
+        pack_width = int(max(widest_component + pack_spacing, 2000.0))
+        layouts = Layouts(adjusted).rect_pack_layouts(
+            max_width=pack_width,
+            spacing=pack_spacing,
+        )
+
+        positions: dict[Any, tuple[float, float]] = {}
+        expanded_edges: list[tuple[Any, Any]] = []
+        for positions_list, _w, _h, edges_with_dummies in layouts:
+            positions.update(dict(positions_list))
+            if edges_with_dummies:
+                expanded_edges.extend(edges_with_dummies)
+
+        for node_id, node in nodes.items():
+            if node_id in positions:
+                x, y = positions[node_id]
+                node.x = float(x)
+                node.y = float(y)
+
+        edge_map = {(e.v, e.w): e for e in edges}
+        for (u, v), pts in cls._polylines_from_dummy_chain(
+            expanded_edges, nodes, positions
+        ).items():
+            if (u, v) not in edge_map:
                 continue
-            points = []
-            if hasattr(edge, "view") and hasattr(edge.view, "points"):
-                points = [{"x": float(p[0]), "y": float(p[1])} for p in edge.view.points]
-            edge_map[key].points = points
+            clipped = cls._clip_edge_polyline(pts, nodes[u], nodes[v])
+            edge_map[(u, v)].points = [
+                {"x": float(x), "y": float(y)} for (x, y) in clipped
+            ]
+
+    @classmethod
+    def _compact_components(cls, layouts, nodes, expected_gap):
+        from collections import defaultdict
+
+        def _w(nid):
+            n = nodes.get(nid)
+            return n.width if n is not None else cls._DUMMY_SIZE
+
+        def _h(nid):
+            n = nodes.get(nid)
+            return n.height if n is not None else cls._DUMMY_SIZE
+
+        xspace = cls._LAYOUT_XSPACE
+        yspace = cls._LAYOUT_YSPACE
+        expected = max(float(expected_gap), 1.0)
+
+        new_layouts = []
+        for pos, w, h, el in layouts:
+            x_orig: dict = {nid: px for nid, (px, _) in pos}
+            x: dict = dict(x_orig)
+
+            by_y: dict = defaultdict(list)
+            for nid, (_, py) in pos:
+                by_y[py].append(nid)
+
+            def _sweep_min_gap(nids):
+                nids.sort(key=lambda n: x[n])
+                for i in range(1, len(nids)):
+                    prev, cur = nids[i - 1], nids[i]
+                    min_gap = (_w(prev) + _w(cur)) / 2 + xspace
+                    if x[cur] - x[prev] < min_gap:
+                        x[cur] = x[prev] + min_gap
+
+            # Phase 1: chain detection (real + dummy members)
+            chains = cls._detect_chains(el or [])
+
+            # Phase 2: iterative spine cohesion + pure-A overlap fix
+            for _ in range(cls._SPINE_COHESION_ITER):
+                for ch in chains:
+                    if not ch:
+                        continue
+                    target = sum(x[v] for v in ch) / len(ch)
+                    for v in ch:
+                        x[v] += cls._SPINE_COHESION_ALPHA * (target - x[v])
+                for nids in by_y.values():
+                    _sweep_min_gap(nids)
+
+
+            # Phase 3: vertical compaction with flipped y so inputs land
+            # at the top of the canvas and outputs at the bottom. The
+            # iteration runs largest-original-y first so that rank
+            # receives new_y = 0 (top of canvas) and deeper ranks get
+            # monotonically larger new_y values.
+            distinct_ys = sorted(by_y.keys(), reverse=True)
+            layer_h = {
+                y: max((_h(n) for n in by_y[y]), default=0.0)
+                for y in distinct_ys
+            }
+            new_y: dict = {}
+            cursor = 0.0
+            for i, y in enumerate(distinct_ys):
+                if i == 0:
+                    new_y[y] = cursor
+                else:
+                    cursor += (
+                        layer_h[distinct_ys[i - 1]] + layer_h[y]
+                    ) / 2 + yspace
+                    new_y[y] = cursor
+
+            new_positions = [(nid, (x[nid], new_y[py])) for nid, (_, py) in pos]
+            xs = [xy[0] for _, xy in new_positions]
+            ys = [xy[1] for _, xy in new_positions]
+            new_w = (max(xs) - min(xs)) if xs else w
+            new_h = (max(ys) - min(ys)) if ys else h
+            new_layouts.append((new_positions, new_w, new_h, el))
+        return new_layouts
+
+    @classmethod
+    def _detect_chains(cls, edge_list):
+        from collections import defaultdict
+
+        if not edge_list:
+            return []
+
+        in_deg: dict = defaultdict(int)
+        out_deg: dict = defaultdict(int)
+        succ: dict = {}
+        for u, v in edge_list:
+            out_deg[u] += 1
+            in_deg[v] += 1
+            # Record unique successor only when out_deg == 1 so we avoid
+            # ambiguity; overwritten on branching but we'll reject branching
+            # nodes from chain interiors via the in==1 and out==1 test.
+            succ[u] = v
+
+        all_nodes = set(in_deg) | set(out_deg)
+
+        def is_interior(n):
+            return out_deg.get(n, 0) == 1
+
+        visited: set = set()
+        chains: list = []
+        for start in all_nodes:
+            if is_interior(start):
+                continue
+            # Walk from each successor of `start` forward while interior
+            # Collect successors from the edge list since `succ` only stores
+            # one (fine for branch starts, but may miss other branches)
+            start_succs = [v for (u, v) in edge_list if u == start]
+            for w in start_succs:
+                if w in visited:
+                    continue
+                walk = [start, w]
+                cur = w
+                while is_interior(cur) and succ.get(cur) is not None:
+                    nxt = succ[cur]
+                    if nxt in walk:
+                        break
+                    walk.append(nxt)
+                    visited.add(cur)
+                    cur = nxt
+                if len(walk) >= cls._CHAIN_MIN_LENGTH:
+                    chains.append(walk)
+        return chains
+
+    @staticmethod
+    def _polylines_from_dummy_chain(
+        expanded_edges: list[tuple[Any, Any]],
+        nodes: dict[str, GraphNode],
+        positions: dict[Any, tuple[float, float]],
+    ) -> dict[tuple[Any, Any], list[tuple[float, float]]]:
+        forward: dict[Any, Any] = {}
+        for u, v in expanded_edges:
+            forward[u] = v
+
+        polylines: dict[tuple[Any, Any], list[tuple[float, float]]] = {}
+        for u, v in expanded_edges:
+            if u not in nodes:
+                continue
+            chain: list[tuple[float, float]] = []
+            cur = v
+            while cur not in nodes:
+                if cur not in positions:
+                    break
+                chain.append(positions[cur])
+                if cur not in forward:
+                    break
+                cur = forward[cur]
+            if cur in nodes and u in positions and cur in positions:
+                polylines[(u, cur)] = [positions[u], *chain, positions[cur]]
+        return polylines
+
+    @staticmethod
+    def _clip_point_to_aabb(
+        center: tuple[float, float],
+        half: tuple[float, float],
+        toward: tuple[float, float],
+    ) -> tuple[float, float]:
+        cx, cy = center
+        hw, hh = half
+        dx = toward[0] - cx
+        dy = toward[1] - cy
+        if dx == 0.0 and dy == 0.0:
+            return center
+        tx = hw / abs(dx) if dx != 0.0 else float("inf")
+        ty = hh / abs(dy) if dy != 0.0 else float("inf")
+        t = min(tx, ty, 1.0)
+        return (cx + t * dx, cy + t * dy)
+
+    @classmethod
+    def _clip_edge_polyline(
+        cls,
+        points: list[tuple[float, float]],
+        src_node: GraphNode,
+        tgt_node: GraphNode,
+    ) -> list[tuple[float, float]]:
+        if len(points) < 2:
+            return points
+        clipped = list(points)
+        # Edges exit the source from its bottom-midpoint and enter the
+        # target at its top-midpoint. Predictable anchors keep parallel
+        # edges docked together and avoid endpoint/box intersections.
+        clipped[0] = (
+            float(src_node.x),
+            float(src_node.y) + float(src_node.height) / 2.0,
+        )
+        clipped[-1] = (
+            float(tgt_node.x),
+            float(tgt_node.y) - float(tgt_node.height) / 2.0,
+        )
+        return clipped
+
+    @staticmethod
+    def _segment_crosses_aabb(
+        p1: tuple[float, float],
+        p2: tuple[float, float],
+        aabb_center: tuple[float, float],
+        aabb_half: tuple[float, float],
+    ) -> bool:
+        # Liang-Barsky style parametric slab test in the AABB's local frame.
+        cx, cy = aabb_center
+        hx, hy = aabb_half
+        x1, y1 = p1[0] - cx, p1[1] - cy
+        x2, y2 = p2[0] - cx, p2[1] - cy
+        dx, dy = x2 - x1, y2 - y1
+        t_enter, t_exit = 0.0, 1.0
+        for p, q in ((-dx, x1 + hx), (dx, hx - x1), (-dy, y1 + hy), (dy, hy - y1)):
+            if p == 0.0:
+                if q < 0.0:
+                    return False
+                continue
+            t = q / p
+            if p < 0.0:
+                if t > t_exit:
+                    return False
+                if t > t_enter:
+                    t_enter = t
+            else:
+                if t < t_enter:
+                    return False
+                if t < t_exit:
+                    t_exit = t
+        return t_enter < t_exit
 
     def _compute_layout(self, nodes: dict[str, GraphNode], edges: list[GraphEdge]) -> None:
         ext_label_lines_by_node: dict[str, list[str]] = {}

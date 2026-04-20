@@ -6,7 +6,7 @@
 
 Python side:
 1. Extract FX graph (`torch.export` / `torch.fx`).
-2. Compute layout (Grandalf/Sugiyama).
+2. Compute layout (fast-sugiyama — Rust-backed Sugiyama).
 3. Build payload (`base` + `extensions`).
 4. Export JSON / JS snippet / standalone HTML.
 
@@ -14,6 +14,25 @@ JS side:
 1. Canvas graph + minimap + info panel + search.
 2. Layer toggles and color-by controls.
 3. State-driven API for embedding, compare mode, fullscreen, and runtime layer mutation.
+
+## Dependencies
+
+Layout computation is delegated to the external
+[`fast-sugiyama`](https://github.com/austinorr/fast-sugiyama) package
+(Rust-backed, drop-in replacement for the previously vendored `grandalf`
+fork). Install with the `[all]` extra so that `rectangle-packer` is pulled
+in — it is required to pack disconnected graph components into a single
+non-overlapping layout:
+
+```bash
+pip install 'fast-sugiyama[all]'
+```
+
+- Python ≥ 3.11 is required by `fast-sugiyama`. Users still on Python 3.10
+  cannot use `FXGraphExporter`'s HTML/JSON output until they upgrade.
+- The package is **not** declared in executorch's `pyproject.toml`: it is
+  imported lazily on the first layout call. If it is missing, the exporter
+  raises an `ImportError` with install instructions.
 
 ## Quick Start
 
@@ -37,18 +56,21 @@ from executorch.backends.qualcomm.utils.fx_viewer import (
     CategoricalColorRule,
 )
 
-exporter = FXGraphExporter(graph_module)
+# Step 1 instantiate exporter
+f = FXGraphExporter(graph_module)
 
+# Optional (define graph extension Layer)
 ext = GraphExtension(id="backend", name="Backend Assignment")
 ext.add_node_data("node_0", {"backend": "cpu"})
 ext.set_color_rule(CategoricalColorRule(attribute="backend"))
+f.add_extension(ext)
 
-exporter.add_extension(ext)
-exporter.export_html("graph.html")
+# Step 2 save standalone html
+f.export_html("graph.html")
 ```
 
 Main exporter methods:
-1. `generate_json_payload()`
+1. [ ] `generate_json_payload()`
 2. `export_json(path)`
 3. `export_js(container_id)`
 4. `export_html(path)`
