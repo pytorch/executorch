@@ -639,6 +639,31 @@ MODULE_REGISTRY["sdpa_strided_causal"] = {
 }
 
 
+# -------------------------------------------------------------------------
+# SDPA with head_dim=256 (Qwen 3.5 MoE)
+# -------------------------------------------------------------------------
+
+
+class SDPAHeadDim256(nn.Module):
+    """SDPA with head_dim=256, required by Qwen 3.5 MoE full attention layers."""
+
+    def forward(
+        self, query: torch.Tensor, key: torch.Tensor, value: torch.Tensor
+    ) -> torch.Tensor:
+        return torch.nn.functional.scaled_dot_product_attention(
+            query, key, value, dropout_p=0.0, is_causal=False
+        )
+
+
+MODULE_REGISTRY["sdpa_head_dim_256"] = {
+    "model_class": SDPAHeadDim256,
+    "input_shapes": [(1, 4, 8, 256), (1, 4, 8, 256), (1, 4, 8, 256)],
+    "description": "SDPA with head_dim=256 (Qwen 3.5 MoE)",
+    "atol_float32": 1e-4,
+    "atol_bfloat16": 5e-2,
+}
+
+
 # =============================================================================
 # Helper Functions
 # =============================================================================
