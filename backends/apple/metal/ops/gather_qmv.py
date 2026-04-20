@@ -42,9 +42,7 @@ def gather_qmv(
     return y
 
 
-def _quantize_int4_affine(
-    w: Tensor, group_size: int
-) -> tuple[Tensor, Tensor, Tensor]:
+def _quantize_int4_affine(w: Tensor, group_size: int) -> tuple[Tensor, Tensor, Tensor]:
     """Quantize float weights to packed INT4 using MLX affine format.
 
     Args:
@@ -67,8 +65,12 @@ def _quantize_int4_affine(
     scales = ((g_max - g_min) / 15.0).clamp(min=1e-8)
     biases = g_min
     w_int = (
-        (w_groups - biases.unsqueeze(-1)) / scales.unsqueeze(-1)
-    ).round().clamp(0, 15).to(torch.uint8).reshape(*leading, K)
+        ((w_groups - biases.unsqueeze(-1)) / scales.unsqueeze(-1))
+        .round()
+        .clamp(0, 15)
+        .to(torch.uint8)
+        .reshape(*leading, K)
+    )
     packed = w_int[..., 0::2] | (w_int[..., 1::2] << 4)
     return packed, scales, biases
 

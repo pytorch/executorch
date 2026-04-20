@@ -702,9 +702,7 @@ class GatherQMV(nn.Module):
 
     def __init__(self):
         super().__init__()
-        from executorch.backends.apple.metal.ops.gather_qmv import (
-            _quantize_int4_affine,
-        )
+        from executorch.backends.apple.metal.ops.gather_qmv import _quantize_int4_affine
 
         E, N, K, gs = 4, 64, 128, 32
         torch.manual_seed(0)
