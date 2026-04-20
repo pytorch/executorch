@@ -181,4 +181,8 @@ class FuseBatchNormWithLinearPass(PassBase):
 
             made_changes = True
 
+        if made_changes:
+            graph_module.graph.eliminate_dead_code()
+            graph_module.recompile()
+
         return PassResult(graph_module, made_changes)
