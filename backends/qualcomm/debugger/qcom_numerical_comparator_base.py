@@ -142,9 +142,9 @@ class QcomNumericalComparatorBase(NumericalComparatorBase):
                 # Multi-output op's getitem node shares the same debug handle.
                 if node.target == operator.getitem:
                     output_idx = node.args[1]
-                    debug_handle_to_meta.setdefault(
-                        debug_handle, {output_idx: node_meta_info}
-                    )
+                    debug_handle_to_meta.setdefault(debug_handle, {})[
+                        output_idx
+                    ] = node_meta_info
                 else:
                     assert (
                         debug_handle not in debug_handle_to_meta

@@ -53,7 +53,6 @@ from executorch.backends.qualcomm.utils.utils import (
     is_qnn_sdk_version_less_than,
     to_edge_transform_and_lower_to_qnn,
 )
-from executorch.exir.backend.utils import get_delegates
 from executorch.exir.capture._config import ExecutorchBackendConfig
 from executorch.exir.passes.memory_planning_pass import MemoryPlanningPass
 from torchao.quantization.pt2e import MovingAverageMinMaxObserver
@@ -605,12 +604,12 @@ def build_executorch_binary(
     exec_prog_mgr = edge_prog_mgr.to_executorch(config=executorch_config)
     with open(pte_name, "wb") as file:
         exec_prog_mgr.write_to_file(file)
-    
+
     if qnn_intermediate_debugger:
         etrecord = exec_prog_mgr.get_etrecord()
         etrecord.update_representative_inputs(qnn_intermediate_debugger.sample_input)
         edge_ep = etrecord.graph_map[qnn_intermediate_debugger.reference_graph_name]
-        # Use this edge_ep since edge_ep after etrecord serialize/deserialize will lost quant_attrs info.
+        # Use this edge_ep since edge_ep after etrecord serialize/deserialize will lose quant_attrs info.
         qnn_intermediate_debugger.set_edge_ep(edge_ep=edge_ep)
         etrecord_file_path = f"{os.path.dirname(pte_name)}/debug.etrecord"
         qnn_intermediate_debugger.set_etrecord_file_path(etrecord_file_path)

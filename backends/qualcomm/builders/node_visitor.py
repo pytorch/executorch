@@ -417,10 +417,10 @@ class NodeVisitor:
         elif is_graph_output(node):
             tensor_name = f"output_{tensor_name}"
 
-        # Only add qcom_tensor_name is tensor dump.
+        # Only add qcom_tensor_name when enable tensor dump.
         # Only do this in qnn_preprocess since thats the final naming. enable_tensor_dump is set to true only in qnn_preprocess and not op validation.
         if self.enable_tensor_dump:
-            node.meta.setdefault(QCOM_TENSOR_NAME, {wrapper_idx: tensor_name})
+            node.meta.setdefault(QCOM_TENSOR_NAME, {})[wrapper_idx] = tensor_name
 
         return tensor_name
 

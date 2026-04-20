@@ -50,7 +50,7 @@ Generate optrace and QHAS files using QNN tools under $QNN_SDK_ROOT. After finis
 adb = SimpleADB(
     qnn_config=qnn_config,
     pte_path=f"{args.artifact}/{pte_filename}.pte",
-    workspace=f"/data/local/tmp/executorch/{pte_filename},
+    workspace=f"/data/local/tmp/executorch/{pte_filename}",
 )
 binaries_trace = generate_optrace(
     args, adb, f"{args.artifact}/{pte_filename}.pte", example_input
@@ -154,7 +154,7 @@ After `build_executorch_binary()`, the debugger holds:
 
 ### 2. Execute on device
 
-Pass `dump_intermediate_outputs` to `SimpleADB` as well. Only run **one inference** for debugging — multiple executions are not supported.
+Ensure `dump_intermediate_outputs` is enabled in your `QnnConfig` (or pass `--dump_intermediate_outputs` via CLI). Only run **one inference** for debugging — multiple executions are not supported.
 
 ```python
 from executorch.examples.qualcomm.utils import SimpleADB
