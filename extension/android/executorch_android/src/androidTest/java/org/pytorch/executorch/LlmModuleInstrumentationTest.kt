@@ -271,6 +271,28 @@ class LlmModuleInstrumentationTest : LlmCallback {
     }
   }
 
+  // --- Lifecycle tests ---
+
+  @Test
+  fun testUseAfterCloseThrows() {
+    llmModule.close()
+    assertThrows(IllegalStateException::class.java) {
+      llmModule.generate(TEST_PROMPT, SEQ_LEN, this@LlmModuleInstrumentationTest)
+    }
+  }
+
+  @Test
+  fun testStopAfterCloseIsNoOp() {
+    llmModule.close()
+    llmModule.stop()
+  }
+
+  @Test
+  fun testCloseIsIdempotent() {
+    llmModule.close()
+    llmModule.close()
+  }
+
   companion object {
     private const val TEST_FILE_NAME = "/stories.pte"
     private const val TOKENIZER_FILE_NAME = "/tokenizer.bin"

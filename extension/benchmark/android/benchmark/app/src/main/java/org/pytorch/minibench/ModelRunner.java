@@ -46,6 +46,7 @@ public class ModelRunner {
           new BenchmarkMetric(
               benchmarkModel, "model_load_time(ms)", (loadEnd - loadStart) * 1e-6, 0.0f));
       results.add(new BenchmarkMetric(benchmarkModel, "load_status", errorCode, 0));
+      module.destroy();
       return;
     }
 
@@ -90,5 +91,6 @@ public class ModelRunner {
     results.add(
         new BenchmarkMetric(
             benchmarkModel, "ram_pss_usage(mb)", (Debug.getPss() - pssIdle) / 1024, 0));
+    module.destroy();
   }
 }
