@@ -29,7 +29,9 @@ def is_parameter(
 
 def get_parameter(
     node: torch.fx.Node, edge_program: torch.export.ExportedProgram
-) -> torch.Tensor:
+) -> Optional[torch.Tensor]:
+    if node is None:
+        return None
     param = None
     if is_param(edge_program, node):
         param = get_param(edge_program, node)

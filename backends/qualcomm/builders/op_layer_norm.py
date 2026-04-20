@@ -55,16 +55,22 @@ class LayerNormVisitor(NodeVisitor):
         axis_shape = [len(axis)]
 
         weight_node = self.get_node(node.args[2])
-        weight_tensor = get_parameter(weight_node, self.edge_program)
-        weight_tensor_wrapper = self.define_tensor(
-            weight_node,
-            node,
-            weight_tensor,
-            PyQnnManager.Qnn_TensorType_t.QNN_TENSOR_TYPE_STATIC,
-            nodes_to_wrappers,
-        )
-
-        layer_norm_input_tensors = [input_tensor_wrapper, weight_tensor_wrapper]
+        if weight_node is not None:
+            weight_tensor = get_parameter(weight_node, self.edge_program)
+            weight_tensor_wrapper = self.define_tensor(
+                weight_node,
+                node,
+                weight_tensor,
+                PyQnnManager.Qnn_TensorType_t.QNN_TENSOR_TYPE_STATIC,
+                nodes_to_wrappers,
+            )
+            layer_norm_input_tensors = [input_tensor_wrapper, weight_tensor_wrapper]
+        else:
+            warnings.warn(
+                "[QNN Delegate Op Builder]: LayerNorm weight is None, skipping",
+                stacklevel=1,
+            )
+            layer_norm_input_tensors = [input_tensor_wrapper]
 
         bias_node = self.get_node(node.args[3])
         if bias_node is not None:
