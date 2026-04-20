@@ -201,27 +201,36 @@ def generate_runtime_files(source_dir: Path) -> str:
 
 def generate_kernel_utils_files(source_dir: Path) -> str:
     """Generate file list for kernel utils component.
-    
-    Includes all .cpp files under kernels/portable/cpu/util/ which provide
-    shared helper functions (reduce_util, broadcast_util, copy_ops_util, etc.)
-    needed by both portable and quantized operators.
+
+    Includes shared implementation helpers transitively required by
+    operator components via the "Kernel Utils" condition:
+
+    - kernels/portable/cpu/util/*.cpp — broadcast/reduce/copy helpers
+      shared by both portable and quantized operators.
+    - kernels/portable/cpu/pattern/*.cpp — unary-ufunc pattern helpers
+      used by many op_*.cpp via DEFINE_UNARY_UFUNC_* macros in
+      pattern/pattern.h. Without these, consumers that select unary ops
+      (acos, tanh, bitwise_*, logical_*, eq, le, etc.) get undefined
+      references to `internal::unary_ufunc_*`.
     """
     files = []
-    
+
     # Try new structure first (src/kernels/...), fall back to old (kernels/...)
     if (source_dir / "src" / "kernels").exists():
-        util_dir = source_dir / "src" / "kernels" / "portable" / "cpu" / "util"
+        cpu_dir = source_dir / "src" / "kernels" / "portable" / "cpu"
     else:
-        util_dir = source_dir / "kernels" / "portable" / "cpu" / "util"
-    
-    if util_dir.exists():
-        for cpp_file in sorted(util_dir.glob("*.cpp")):
-            # Skip test files
+        cpu_dir = source_dir / "kernels" / "portable" / "cpu"
+
+    for subdir_name in ("util", "pattern"):
+        subdir = cpu_dir / subdir_name
+        if not subdir.exists():
+            continue
+        for cpp_file in sorted(subdir.glob("*.cpp")):
             if '_test.cpp' in cpp_file.name:
                 continue
             rel_path = cpp_file.relative_to(source_dir)
             files.append(f'        <file category="sourceCpp" name="{rel_path}"/>')
-    
+
     return '\n'.join(files)
 
 
