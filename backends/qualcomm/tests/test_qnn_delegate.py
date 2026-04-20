@@ -8746,6 +8746,9 @@ class TestUtilsScript(TestQNN):
         )
 
     def test_cli(self):
+        # TODO: Add gpu support in cli.py
+        if get_backend_type(self.backend) == QnnExecuTorchBackendType.kGpuBackend:
+            self.skipTest("Currently, the GPU does not support CLI.")
         with tempfile.TemporaryDirectory() as tmp_dir:
             sample_input = torch.randn(1, 2, 3, 4)
             ep = torch.export.export(Relu(), (sample_input,))  # noqa: F405
@@ -8768,6 +8771,8 @@ class TestUtilsScript(TestQNN):
                 f"{tmp_dir}/input_list",
                 "--soc_model",
                 self.soc_model,
+                "--backend",
+                self.backend,
             ]
             subprocess.run(cmds, stdout=subprocess.DEVNULL)
             self.assertTrue(os.path.isfile(f"{tmp_dir}/q_out/relu_quantized.pt2"))
@@ -8783,6 +8788,8 @@ class TestUtilsScript(TestQNN):
                 f"{tmp_dir}/c_out",
                 "--soc_model",
                 self.soc_model,
+                "--backend",
+                self.backend,
             ]
             subprocess.run(cmds, stdout=subprocess.DEVNULL)
             self.assertTrue(os.path.isfile(f"{tmp_dir}/c_out/relu_quantized.pte"))
@@ -8807,6 +8814,8 @@ class TestUtilsScript(TestQNN):
                 self.target,
                 "--device",
                 self.device,
+                "--backend",
+                self.backend,
             ]
             if self.host:
                 cmds.extend(["--host", self.host])
@@ -8814,6 +8823,9 @@ class TestUtilsScript(TestQNN):
             self.assertTrue(os.path.isfile(f"{tmp_dir}/e_out/Result_0/output_0.pt"))
 
     def test_cli_with_input_list_assignment(self):
+        # TODO: Add gpu support in cli.py
+        if get_backend_type(self.backend) == QnnExecuTorchBackendType.kGpuBackend:
+            self.skipTest("Currently, the GPU does not support CLI.")
         with tempfile.TemporaryDirectory() as tmp_dir:
             sample_input = torch.randn(1, 2, 3, 4)
             sample_input2 = torch.randn(1, 2, 3, 4)
@@ -8840,6 +8852,8 @@ class TestUtilsScript(TestQNN):
                 f"{tmp_dir}/input_list",
                 "--soc_model",
                 self.soc_model,
+                "--backend",
+                self.backend,
             ]
             subprocess.run(cmds, stdout=subprocess.DEVNULL)
             self.assertTrue(os.path.isfile(f"{tmp_dir}/q_out/sub_quantized.pt2"))
@@ -8855,6 +8869,8 @@ class TestUtilsScript(TestQNN):
                 f"{tmp_dir}/c_out",
                 "--soc_model",
                 self.soc_model,
+                "--backend",
+                self.backend,
             ]
             subprocess.run(cmds, stdout=subprocess.DEVNULL)
             self.assertTrue(os.path.isfile(f"{tmp_dir}/c_out/sub_quantized.pte"))
@@ -8879,6 +8895,8 @@ class TestUtilsScript(TestQNN):
                 self.build_folder,
                 "--input_list",
                 f"{tmp_dir}/input_list",
+                "--backend",
+                self.backend,
             ]
             if self.host:
                 cmds.extend(["--host", self.host])
@@ -9038,6 +9056,66 @@ class TestUtilsScript(TestQNN):
                 print(
                     f"CSV valid count: {csv_valid_count}. SVG valid count: {svg_valid_count}"
                 )
+
+    def test_analyzer_to_file_generation(self):
+        """
+        End-to-end test for PerLayerSqnrAnalyzer → SqnrReport → file generation.
+        """
+        from executorch.examples.qualcomm.oss_scripts.llama.mix_precision_analyzer import (
+            PerLayerSqnrAnalyzer,
+            save_suggest_recipes,
+        )
+
+        module = SimpleModel()  # noqa: F405
+        sample_input = (torch.ones(1, 32, 28, 28), torch.ones(1, 32, 28, 28))
+        fp32_gm = torch.export.export(module, sample_input, strict=True).module()
+        qdq_gm = self.get_qdq_module(
+            module, sample_input, quant_dtype=QuantDtype.use_8a4w
+        )
+
+        report = PerLayerSqnrAnalyzer(
+            model_name="simple_conv",
+            num_layers=4,
+            fp32_gm=fp32_gm,
+            qdq_gm=qdq_gm,
+        ).analyze([sample_input], num_sharding=4)
+
+        overrides = report.suggest_recipe_overrides(sqnr_threshold=22.0)
+
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            report.save_analysis_summary(output_dir=tmp_dir)
+            save_suggest_recipes(report, overrides, output_dir=tmp_dir)
+
+            # --- save_analysis_summary csv file ---
+            with open(f"{tmp_dir}/simple_conv_quantization_error.csv") as f:
+                csv_content = f.read()
+            rows = list(csv.reader(csv_content.splitlines()))
+            self.assertEqual(len(rows), 5)  # 1 header + 4 group rows
+            self.assertEqual(
+                rows[0],
+                [
+                    "group_name",
+                    "avg_sqnr",
+                    "median_sqnr",
+                    "min_sqnr",
+                    "max_sqnr",
+                    "count",
+                ],
+            )
+            print(f"Sensitivity analysis:\n{csv_content}")
+
+            # --- save_suggest_recipes .py file (only written when sensitive layers exist) ---
+            if overrides:
+                with open(f"{tmp_dir}/simple_conv_suggest_recipe.py") as f:
+                    py_content = f.read()
+                # generated file must be valid Python
+                try:
+                    compile(py_content, "simple_conv_suggest_recipe.py", "exec")
+                except SyntaxError as e:
+                    self.fail(
+                        f"Generated recipe file has syntax error: {e}\n{py_content}"
+                    )
+                self.assertIn("HOW TO USE THESE RECIPES", py_content)
 
 
 def setup_environment():
