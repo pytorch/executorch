@@ -86,14 +86,17 @@ class BackendDelegate final {
     }
 
     // Parse compilation specs from program
-    CompileSpec* compile_specs;
-    Error err = PopulateCompileSpecs(
-        delegate.compile_specs(), backend_init_context, &compile_specs);
-    if (err != Error::Ok) {
-      ET_LOG(Error, "Failed to get compile specs for backend %s", backend_id);
-      return err;
+    CompileSpec* compile_specs = nullptr;
+    size_t num_compile_specs = 0;
+    if (delegate.compile_specs() != nullptr) {
+      Error err = PopulateCompileSpecs(
+          delegate.compile_specs(), backend_init_context, &compile_specs);
+      if (err != Error::Ok) {
+        ET_LOG(Error, "Failed to get compile specs for backend %s", backend_id);
+        return err;
+      }
+      num_compile_specs = delegate.compile_specs()->size();
     }
-    size_t num_compile_specs = delegate.compile_specs()->size();
 
     out->backend_ = backend;
     out->handle_ = nullptr;
