@@ -194,19 +194,23 @@ class EthosUBackend final : public ::executorch::runtime::BackendInterface {
       bool supported = 0;
       // 32 bit int (simple non-quantised test cases)
       supported |=
-          (tensor_in.scalar_type() == ScalarType::Int and
+          (tensor_in.scalar_type() == ScalarType::Int &&
            handles.inputs->io[i].elem_size == 4);
       // 8 bit int (IOQDQ pass prepared networks)
       supported |=
-          (tensor_in.scalar_type() == ScalarType::Char and
+          (tensor_in.scalar_type() == ScalarType::Char &&
+           handles.inputs->io[i].elem_size == 1);
+      // 8 bit uint8 (IOQDQ pass prepared networks)
+      supported |=
+          (tensor_in.scalar_type() == ScalarType::Byte &&
            handles.inputs->io[i].elem_size == 1);
       // 16 bit int (IOQDQ pass prepared networks)
       supported |=
-          (tensor_in.scalar_type() == ScalarType::Short and
+          (tensor_in.scalar_type() == ScalarType::Short &&
            handles.inputs->io[i].elem_size == 2);
       // bool (IOQDQ pass prepared networks)
       supported |=
-          (tensor_in.scalar_type() == ScalarType::Bool and
+          (tensor_in.scalar_type() == ScalarType::Bool &&
            handles.inputs->io[i].elem_size == 1);
       if (!supported) {
         ET_LOG(
@@ -222,7 +226,8 @@ class EthosUBackend final : public ::executorch::runtime::BackendInterface {
       // which require permutation.
       bool both_int = tensor_in.scalar_type() == ScalarType::Int &&
           handles.inputs->io[i].elem_size == 4;
-      bool both_char = tensor_in.scalar_type() == ScalarType::Char &&
+      bool both_char = (tensor_in.scalar_type() == ScalarType::Char ||
+                        tensor_in.scalar_type() == ScalarType::Byte) &&
           handles.inputs->io[i].elem_size == 1;
       bool both_short = tensor_in.scalar_type() == ScalarType::Short &&
           handles.inputs->io[i].elem_size == 2;

@@ -465,6 +465,7 @@ class ToTosaMemoryFormatPass(ArmPass):
         Entry point for the pass: annotate spatial ranks, compute dim orders,
         insert bridging transposes, and forward to child passes.
         """
+        graph_module.graph.eliminate_dead_code()
         nodes = list(graph_module.graph.nodes)
         for node in nodes:
             if not self._is_ok_for_annotation(node):

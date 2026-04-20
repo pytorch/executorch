@@ -196,7 +196,7 @@ def build_args_parser() -> argparse.ArgumentParser:
         "--model",
         default="llama3",
         choices=EXECUTORCH_DEFINED_MODELS + TORCHTUNE_DEFINED_MODELS,
-        help="The Lllama model to export. stories110M, llama2, llama3, llama3_1, and llama3_2 use the same underlying LlamaTransformer architecture defined in ExecuTorch. All other models use TorchTune model definitions.",
+        help="The Llama model to export. stories110M, llama2, llama3, llama3_1, and llama3_2 use the same underlying LlamaTransformer architecture defined in ExecuTorch. All other models use TorchTune model definitions.",
     )
     parser.add_argument(
         "-E",
@@ -423,7 +423,7 @@ def build_args_parser() -> argparse.ArgumentParser:
         type=parse_list_of_ints,
         default=None,
         help="List of integers specifying local and global attention pattern, e.g., [0, 16, 0, 16] to specify that every other layer is sliding window of 16."
-        " [0, 16, 32] pattern specifes 2nd and 3rd layer has sliding window of 16 and 32 respecitvely. "
+        " [0, 16, 32] pattern specifes 2nd and 3rd layer has sliding window of 16 and 32 respectively."
         " [16] pattern specifies all layers have sliding window of 16.",
     )
 
@@ -768,7 +768,8 @@ def _prepare_for_llama_export(llm_config: LlmConfig) -> LLMEdgeManager:
             expand_rope_table=llm_config.model.expand_rope_table,
             use_custom_sdpa_with_attention_mask=getattr(
                 llm_config.model, "use_custom_sdpa_with_attention_mask", False
-            ),
+            )
+            or bool(llm_config.model.use_attention_sink),
             use_sdpa_with_kv_cache=llm_config.model.use_sdpa_with_kv_cache,
             quantize_kv_cache=llm_config.model.quantize_kv_cache,
             use_kv_cache=llm_config.model.use_kv_cache,
@@ -793,10 +794,6 @@ def _prepare_for_llama_export(llm_config: LlmConfig) -> LLMEdgeManager:
             quantize_with_hqq=llm_config.quantization.use_hqq,
         )
     )
-
-    # Now cast to the dtype override after quantization, so non-quantized
-    # components use the desired computation dtype.
-    edge_manager.model = edge_manager.model.to(dtype=dtype_override.to_torch_dtype())
 
     return edge_manager
 
@@ -1328,6 +1325,13 @@ def _export_llama_multimethod(llm_config: LlmConfig) -> LLMEdgeManager:
     if llm_config.base.model_class.value in TORCHTUNE_DEFINED_MODELS:
         additional_passes = [InitializedMutableBufferPass(["kv_cache_pos"])]
 
+    # For attention sink models, cache_positions must be initialized to -1
+    # (sentinel for "empty slot"). Without this pass, ExecuTorch only serializes
+    # shape+dtype for mutable buffers, leaving them zero-initialized at runtime,
+    # which corrupts the causal mask computation.
+    if llm_config.model.use_attention_sink:
+        additional_passes.append(InitializedMutableBufferPass(["cache_positions"]))
+
     # Build dict of exported programs
     method_to_program: Dict[str, ExportedProgram] = {}
     first_builder = None
@@ -1400,6 +1404,13 @@ def _export_llama(llm_config: LlmConfig) -> LLMEdgeManager:  # noqa: C901
     additional_passes = []
     if llm_config.base.model_class.value in TORCHTUNE_DEFINED_MODELS:
         additional_passes = [InitializedMutableBufferPass(["kv_cache_pos"])]
+
+    # For attention sink models, cache_positions must be initialized to -1
+    # (sentinel for "empty slot"). Without this pass, ExecuTorch only serializes
+    # shape+dtype for mutable buffers, leaving them zero-initialized at runtime,
+    # which corrupts the causal mask computation.
+    if llm_config.model.use_attention_sink:
+        additional_passes.append(InitializedMutableBufferPass(["cache_positions"]))
 
     # export_to_edge
     builder_manager = _prepare_for_llama_export(llm_config)
@@ -1781,16 +1792,17 @@ def _get_source_transforms(  # noqa
     use_attention_mask_for_custom_sdpa = use_custom_sdpa_with_attention_mask
 
     if use_sdpa_with_kv_cache:
-        transforms.append(replace_kv_cache_with_custom_kv_cache)
-        # todo: do this optionally
-        # if use attention mask instead of causal attention
-        # then create partial function that sets use_attention_mask=True
+        # Replace SDPA first, then KV cache. Order matters: the KV cache
+        # replacement sets SDPACustom.use_attention_mask=True for ring buffer
+        # models (attention sink, sliding window). If SDPA is replaced after,
+        # a new SDPACustom(use_attention_mask=False) would overwrite it.
         if use_attention_mask_for_custom_sdpa:
             transforms.append(
                 partial(replace_sdpa_with_custom_op, use_attention_mask=True)
             )
         else:
             transforms.append(replace_sdpa_with_custom_op)
+        transforms.append(replace_kv_cache_with_custom_kv_cache)
 
     if quantize_kv_cache:
         assert use_kv_cache, "quantize_kv_cache requires use_kv_cache=True"
@@ -1856,6 +1868,12 @@ def _get_source_transforms(  # noqa
                 layer_sizes=local_global_attention,
             )
         )
+
+    # Cast to dtype_override after quantization transforms, so non-quantized
+    # components use the desired computation dtype. This must happen before
+    # _convert_model_for_aarch64 which converts IntxUnpackedToInt8Tensor to
+    # IntxOpaqueTensor (which doesn't support .to()).
+    transforms.append(lambda m: m.to(dtype=dtype_override.to_torch_dtype()))
 
     if any([use_torchao_kernels_linear, use_torchao_kernels_tied_embedding]):
         from torchao.prototype.tensor_conversion.api import _convert_model_for_aarch64

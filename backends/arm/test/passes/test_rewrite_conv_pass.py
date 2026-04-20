@@ -3,6 +3,7 @@
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
 
+import pytest
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
@@ -21,10 +22,15 @@ from executorch.backends.arm.test.misc.test_dw_convs_with_shared_weights import 
     DWConvsModule,
 )
 from executorch.backends.arm.test.tester.test_pipeline import PassPipeline
-from executorch.backends.arm.tosa.specification import TosaLoweringContext
+from executorch.backends.arm.tosa.specification import (
+    TosaLoweringContext,
+    TosaSpecification,
+)
 from executorch.backends.arm.vgf import VgfCompileSpec, VgfPartitioner
 from executorch.exir import EdgeCompileConfig, to_edge, to_edge_transform_and_lower
 from executorch.exir.dialects._ops import ops as exir_ops
+from torch.export import Dim, export
+from torch.export.exported_program import _get_shape_env
 
 
 class TinyConvReluCat(nn.Module):
@@ -95,12 +101,45 @@ def _get_call_function_node(gm: torch.fx.GraphModule, target):
     raise AssertionError(f"Node with target {target} not found")
 
 
+class ConvModule(torch.nn.Module):
+    def __init__(self):
+        super().__init__()
+        self.conv = torch.nn.Conv2d(3, 16, kernel_size=3, stride=3, padding=0)
+
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        return self.conv(x)
+
+
+def _make_rewrite_pass(
+    example_inputs: tuple[torch.Tensor, ...],
+    dynamic_shapes: dict[int, object] | None = None,
+) -> tuple[RewriteConvPass, object, int | torch.SymInt]:
+    if dynamic_shapes is None:
+        ep = export(ConvModule(), example_inputs)
+    else:
+        ep = export(ConvModule(), example_inputs, dynamic_shapes={"x": dynamic_shapes})
+    edge_model = to_edge(ep)
+    gm = edge_model.exported_program().graph_module
+    conv_node = next(
+        n for n in gm.graph.nodes if n.target == exir_ops.edge.aten.convolution.default
+    )
+    input_len = conv_node.args[0].meta["val"].shape[2]
+    return RewriteConvPass(edge_model.exported_program()), _get_shape_env(gm), input_len
+
+
+def _multiples_of_three_dynamic_shapes() -> dict[int, object]:
+    return {
+        2: Dim("height", min=2, max=6) * 3,
+        3: Dim("width", min=2, max=6) * 3,
+    }
+
+
 def test_rewrite_conv_tosa_FP():
     module = DWConvsModule()
     pipeline = PassPipeline(
         module, module.get_inputs(), passes_with_exported_program=[RewriteConvPass]
     )
-    # We can't run TOSA backend dialect operators in eager mode
+    # We cannot run TOSA backend dialect operators in eager mode.
     pipeline.pop_stage("run_method_and_compare_outputs")
     pipeline.run()
 
@@ -149,3 +188,152 @@ def test_rewrite_conv_vgf_quant_infers_quantized_bias_dtype_from_inputs() -> Non
 
     assert len(bias_nodes) == 1
     assert bias_nodes[0].meta["val"].dtype == torch.int32
+
+
+def test_rewrite_conv_dynamic_keeps_static_padding_when_symbolic_remainder_is_zero():
+    model = ConvModule()
+    example_inputs = (torch.randn(1, 3, 9, 12),)
+    ep = export(
+        model,
+        example_inputs,
+        dynamic_shapes={"x": _multiples_of_three_dynamic_shapes()},
+    )
+    edge_model = to_edge(ep)
+    shape_env = _get_shape_env(edge_model.exported_program().graph_module)
+    with TosaLoweringContext(
+        TosaSpecification.create_from_string("TOSA-1.1+FP+shape"), shape_env=shape_env
+    ):
+        edge_model = edge_model.transform(
+            [RewriteConvPass(edge_model.exported_program())]
+        )
+
+    conv_node = next(
+        n
+        for n in edge_model.exported_program().graph.nodes
+        if n.target == exir_ops.backend.tosa.CONV2D.default
+    )
+    padding = conv_node.args[4]
+    assert padding == [0, 0, 0, 0]
+    assert all(not isinstance(p, torch.SymInt) for p in padding)
+
+
+def test_rewrite_conv_adjust_pad_if_needed_static_raises_before_negative_padding():
+    rewrite_pass, _, _ = _make_rewrite_pass((torch.randn(1, 3, 9, 12),))
+
+    with pytest.raises(RuntimeError, match="SizeAdjustInputPass"):
+        rewrite_pass._adjust_pad_if_needed(6, 2, 3, 0, 1)
+
+
+def test_rewrite_conv_adjust_pad_if_needed_static_positive_padding_stays_non_negative():
+    rewrite_pass, _, _ = _make_rewrite_pass((torch.randn(1, 3, 9, 12),))
+
+    adjusted_pad = rewrite_pass._adjust_pad_if_needed(8, 2, 3, 2, 1)
+
+    assert adjusted_pad == 1
+
+
+def test_rewrite_conv_adjust_pad_if_needed_static_exact_remainder_matches_pad():
+    rewrite_pass, _, _ = _make_rewrite_pass((torch.randn(1, 3, 9, 12),))
+
+    adjusted_pad = rewrite_pass._adjust_pad_if_needed(6, 1, 3, 1, 1)
+
+    assert adjusted_pad == 0
+
+
+def test_rewrite_conv_adjust_pad_if_needed_symbolic_exact_zero_keeps_zero_pad():
+    rewrite_pass, shape_env, input_len = _make_rewrite_pass(
+        (torch.randn(1, 3, 9, 12),),
+        dynamic_shapes=_multiples_of_three_dynamic_shapes(),
+    )
+
+    with TosaLoweringContext(
+        TosaSpecification.create_from_string("TOSA-1.1+FP+shape"), shape_env=shape_env
+    ):
+        adjusted_pad = rewrite_pass._adjust_pad_if_needed(input_len, 3, 3, 0, 1)
+
+    assert adjusted_pad == 0
+
+
+def test_rewrite_conv_adjust_pad_if_needed_symbolic_exact_zero_keeps_positive_pad():
+    rewrite_pass, shape_env, input_len = _make_rewrite_pass(
+        (torch.randn(1, 3, 9, 12),),
+        dynamic_shapes=_multiples_of_three_dynamic_shapes(),
+    )
+
+    with TosaLoweringContext(
+        TosaSpecification.create_from_string("TOSA-1.1+FP+shape"), shape_env=shape_env
+    ):
+        adjusted_pad = rewrite_pass._adjust_pad_if_needed(input_len, 2, 3, 1, 1)
+
+    assert adjusted_pad == 1
+
+
+def test_rewrite_conv_adjust_pad_if_needed_symbolic_positive_padding_range_raises_before_negative_padding():
+    rewrite_pass, shape_env, input_len = _make_rewrite_pass(
+        (torch.randn(1, 3, 8, 8),),
+        dynamic_shapes={
+            2: Dim("height", min=6, max=10),
+            3: Dim("width", min=6, max=10),
+        },
+    )
+
+    with TosaLoweringContext(
+        TosaSpecification.create_from_string("TOSA-1.1+FP+shape"), shape_env=shape_env
+    ):
+        with pytest.raises(RuntimeError, match="SizeAdjustInputPass"):
+            rewrite_pass._adjust_pad_if_needed(input_len, 2, 3, 1, 1)
+
+
+def test_rewrite_conv_symbolic_comparison_with_int_specializes_to_hint():
+    rewrite_pass, shape_env, input_len = _make_rewrite_pass(
+        (torch.randn(1, 3, 8, 8),),
+        dynamic_shapes={
+            2: Dim("height", min=6, max=10),
+            3: Dim("width", min=6, max=10),
+        },
+    )
+
+    def unsafe_adjust(input_len, input_weight, stride, pad, dilation):
+        mod_remainder = (
+            input_len + 2 * pad - dilation * (input_weight - 1) - 1
+        ) % stride
+        if mod_remainder == 0:
+            return pad
+        if mod_remainder > pad:
+            raise RuntimeError("SizeAdjustInputPass")
+        return pad - mod_remainder
+
+    mod_remainder = (input_len - 2) % 3
+    value_ranges = shape_env.bound_sympy(mod_remainder.node.expr)
+
+    assert value_ranges.lower == 0
+    assert value_ranges.upper == 2
+    assert len(shape_env.guards) == 0
+    assert unsafe_adjust(input_len, 2, 3, 0, 1) == 0
+    assert len(shape_env.guards) == 1
+    assert shape_env.guards[-1].expr in {
+        (mod_remainder == 0).node.expr,
+        (mod_remainder <= 0).node.expr,
+    }
+
+    with TosaLoweringContext(
+        TosaSpecification.create_from_string("TOSA-1.1+FP+shape"), shape_env=shape_env
+    ):
+        with pytest.raises(RuntimeError, match="SizeAdjustInputPass"):
+            rewrite_pass._adjust_pad_if_needed(input_len, 2, 3, 0, 1)
+
+
+def test_rewrite_conv_adjust_pad_if_needed_symbolic_zero_padding_range_raises_before_negative_padding():
+    rewrite_pass, shape_env, input_len = _make_rewrite_pass(
+        (torch.randn(1, 3, 8, 8),),
+        dynamic_shapes={
+            2: Dim("height", min=6, max=10),
+            3: Dim("width", min=6, max=10),
+        },
+    )
+
+    with TosaLoweringContext(
+        TosaSpecification.create_from_string("TOSA-1.1+FP+shape"), shape_env=shape_env
+    ):
+        with pytest.raises(RuntimeError, match="SizeAdjustInputPass"):
+            rewrite_pass._adjust_pad_if_needed(input_len, 2, 3, 0, 1)
