@@ -702,13 +702,17 @@ class GatherQMV(nn.Module):
 
     def __init__(self):
         super().__init__()
+        from executorch.backends.apple.metal.ops.gather_qmv import (
+            _quantize_int4_affine,
+        )
+
         E, N, K, gs = 4, 64, 128, 32
         torch.manual_seed(0)
-        self.register_buffer(
-            "w", torch.randint(0, 255, (E, N, K // 2), dtype=torch.uint8)
-        )
-        self.register_buffer("scales", torch.randn(E, N, K // gs))
-        self.register_buffer("biases", torch.randn(E, N, K // gs))
+        w_float = torch.randn(E, N, K)
+        packed, scales, biases = _quantize_int4_affine(w_float, gs)
+        self.register_buffer("w", packed)
+        self.register_buffer("scales", scales)
+        self.register_buffer("biases", biases)
         self.group_size = gs
         self.num_experts = E
 
@@ -733,8 +737,8 @@ MODULE_REGISTRY["gather_qmv"] = {
     "description": "Expert-indexed quantized matmul for MoE (metal::gather_qmv)",
     "atol_float32": 5e-2,
     "rtol_float32": 5e-2,
-    "atol_bfloat16": 5.0,
-    "rtol_bfloat16": 2e-1,
+    "atol_bfloat16": 1e-1,
+    "rtol_bfloat16": 1e-1,
 }
 
 
