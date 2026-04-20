@@ -219,6 +219,8 @@ def calibrate_and_quantize(
 
     m = convert_pt2e(m)
 
-    m = QuantizeFusedConvBnBiasAtenPass(default_zero_bias=True)(m).graph_module
+    m = QuantizeFusedConvBnBiasAtenPass(default_zero_bias=False, symmetric_quant=True)(
+        m
+    ).graph_module
 
     return m
