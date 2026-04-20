@@ -1,3 +1,5 @@
+#!/usr/bin/env python3
+
 # Copyright (c) Meta Platforms, Inc. and affiliates.
 # All rights reserved.
 # Copyright 2023-2026 Arm Limited and/or its affiliates.
@@ -452,6 +454,8 @@ TARGETS = [
     "ethos-u55-64",
     "ethos-u55-128",
     "ethos-u55-256",
+    "ethos-u65-256",
+    "ethos-u65-512",
     "ethos-u85-128",
     "ethos-u85-256",
     "ethos-u85-512",
@@ -628,13 +632,13 @@ def _get_args():
         "--system_config",
         required=False,
         default=None,
-        help="System configuration to select from the Vela configuration file (see vela.ini). This option must match the selected target, default is for an optimal system 'Ethos_U55_High_End_Embedded'/'Ethos_U85_SYS_DRAM_High'",
+        help="System configuration to select from the Vela configuration file (see vela.ini). This option must match the selected target, default is for an optimal system 'Ethos_U55_High_End_Embedded'/ 'Ethos_U65_High_End' / 'Ethos_U85_SYS_DRAM_Mid'",
     )
     parser.add_argument(
         "--memory_mode",
         required=False,
         default=None,
-        help="Memory mode to select from the Vela configuration file (see vela.ini). Default is 'Shared_Sram' for Ethos-U55 targets and 'Sram_Only' for Ethos-U85 targets",
+        help="Memory mode to select from the Vela configuration file (see vela.ini). Default is 'Shared_Sram' for Ethos-U55 targets and 'Sram_Only' for Ethos-U65 and Ethos-U85 targets",
     )
     parser.add_argument(
         "--config",
@@ -691,7 +695,7 @@ def _get_args():
     if args.evaluate is not None or args.evaluate_config is not None:
         logging.error(
             "Model evaluation is no longer supported in this script."
-            " Ignore and continue."
+            " Use evaluate_model.py instead. Ignore and continue."
         )
 
     return args
@@ -778,7 +782,8 @@ def _save_bpte_program(
 
     # Generate BundledProgram
     output_dir = os.path.dirname(output_name)
-    os.makedirs(output_dir, exist_ok=True)
+    if output_dir:
+        os.makedirs(output_dir, exist_ok=True)
     _save_bundled_program(exec_prog, method_test_suites, output_name)
 
 
