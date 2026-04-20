@@ -8,6 +8,7 @@
 
 // Top-k operator using MPSGraph.
 // Used by MoE routing (torch.topk in SparseMoE.forward).
+// Note: sorted parameter is accepted but MPSGraph always returns sorted results.
 
 #include <executorch/backends/apple/metal/runtime/ops/common.h>
 
@@ -40,6 +41,9 @@ AOTITorchError aoti_torch_mps_topk(
     return Error::Internal;
   }
 
+  void* values_ptr = nullptr;
+  void* indices_ptr = nullptr;
+
   try {
     @autoreleasepool {
       auto* self_tensor = reinterpret_cast<Tensor*>(self);
@@ -55,7 +59,7 @@ AOTITorchError aoti_torch_mps_topk(
 
       int64_t dim_size = self_tensor->sizes()[dim];
       if (k > dim_size) {
-        ET_LOG(Error, "aoti_torch_mps_topk: k=%lld > dim_size=%lld\n", k, dim_size);
+        ET_LOG(Error, "aoti_torch_mps_topk: k=%lld > dim_size=%lld", k, dim_size);
         return Error::InvalidArgument;
       }
 
@@ -96,16 +100,18 @@ AOTITorchError aoti_torch_mps_topk(
       size_t values_bytes = num_elements * element_size;
       size_t indices_bytes = num_elements * sizeof(int32_t);
 
-      void* values_ptr = nullptr;
-      void* indices_ptr = nullptr;
       allocate_mtl_buffer(&values_ptr, values_bytes);
       allocate_mtl_buffer(&indices_ptr, indices_bytes);
 
-      // Build MPSGraph
       // Convert input shape to NSArray<NSNumber*>
       NSMutableArray<NSNumber*>* input_shape = [NSMutableArray arrayWithCapacity:ndim];
       for (int64_t i = 0; i < ndim; i++) {
         [input_shape addObject:@(self_tensor->sizes()[i])];
+      }
+
+      NSMutableArray<NSNumber*>* out_ns_shape = [NSMutableArray arrayWithCapacity:ndim];
+      for (int64_t i = 0; i < ndim; i++) {
+        [out_ns_shape addObject:@(out_sizes[i])];
       }
 
       // Check graph cache
@@ -120,101 +126,103 @@ AOTITorchError aoti_torch_mps_topk(
       cache_key.dtype = dtype;
       cache_key.transpose_flag = false;
 
+      stream->endKernelCoalescing();
+
+      id<MTLBuffer> self_buffer = get_mtl_buffer(self_tensor, "topk", "self");
+      id<MTLBuffer> values_buffer = ptr_to_mtl_buffer[values_ptr];
+      id<MTLBuffer> indices_buffer = ptr_to_mtl_buffer[indices_ptr];
+
       auto cache_it = graph_cache.find(cache_key);
       if (cache_it != graph_cache.end()) {
         cache_stats.hits++;
+        cache_stats.logStats();
         auto& cached = cache_it->second;
 
-        id<MTLBuffer> self_buffer = get_mtl_buffer(self_tensor, "topk", "self");
-        id<MTLBuffer> values_buffer = ptr_to_mtl_buffer[values_ptr];
-        id<MTLBuffer> indices_buffer = ptr_to_mtl_buffer[indices_ptr];
+        MPSGraphTensorData* selfData = [[MPSGraphTensorData alloc] initWithMTLBuffer:self_buffer shape:input_shape dataType:mps_dtype];
+        MPSGraphTensorData* valuesData = [[MPSGraphTensorData alloc] initWithMTLBuffer:values_buffer shape:out_ns_shape dataType:mps_dtype];
+        MPSGraphTensorData* indicesData = [[MPSGraphTensorData alloc] initWithMTLBuffer:indices_buffer shape:out_ns_shape dataType:MPSDataTypeInt32];
 
         NSDictionary<MPSGraphTensor*, MPSGraphTensorData*>* feeds = @{
-          cached.input1: [[MPSGraphTensorData alloc] initWithMTLBuffer:self_buffer shape:input_shape dataType:mps_dtype],
+          cached.input1: selfData,
+        };
+        NSDictionary<MPSGraphTensor*, MPSGraphTensorData*>* results = @{
+          cached.output: valuesData,
+          cached.input2: indicesData,
         };
 
-        NSMutableArray<NSNumber*>* out_ns_shape = [NSMutableArray arrayWithCapacity:ndim];
-        for (int64_t i = 0; i < ndim; i++) {
-          [out_ns_shape addObject:@(out_sizes[i])];
+        @try {
+          stream->executeMPSGraph(cached.graph, feeds, results, SyncType::COMMIT);
+        } @catch (NSException* e) {
+          ET_LOG(Error, "aoti_torch_mps_topk: ObjC exception: %s - %s",
+                  e.name.UTF8String, e.reason.UTF8String);
+          throw std::runtime_error(std::string("MPSGraph topk failed: ") + e.reason.UTF8String);
         }
 
-        NSDictionary<MPSGraphTensor*, MPSGraphTensorData*>* results = @{
-          cached.output: [[MPSGraphTensorData alloc] initWithMTLBuffer:values_buffer shape:out_ns_shape dataType:mps_dtype],
-          cached.input2: [[MPSGraphTensorData alloc] initWithMTLBuffer:indices_buffer shape:out_ns_shape dataType:MPSDataTypeInt32],
-        };
-
-        stream->executeMPSGraph(cached.graph, feeds, results, SyncType::COMMIT);
+        [selfData release];
+        [valuesData release];
+        [indicesData release];
       } else {
         cache_stats.misses++;
+        cache_stats.logStats();
         ET_LOG(Debug, "aoti_torch_mps_topk: cache miss, building graph");
 
         @try {
-        MPSGraph* graph = [[MPSGraph alloc] init];
-        MPSGraphTensor* input = [graph placeholderWithShape:input_shape
-                                                   dataType:mps_dtype
-                                                       name:@"self"];
+          MPSGraph* graph = [[MPSGraph alloc] init];
+          MPSGraphTensor* input = [graph placeholderWithShape:input_shape
+                                                     dataType:mps_dtype
+                                                         name:@"self"];
 
-        // MPSGraph topK: returns (values, indices) along the last dimension.
-        // If dim != -1, we need to transpose dim to last, topk, then transpose back.
-        MPSGraphTensor* work = input;
-        bool need_transpose = (dim != ndim - 1);
+          MPSGraphTensor* work = input;
+          bool need_transpose = (dim != ndim - 1);
 
-        if (need_transpose) {
-          work = [graph transposeTensor:work dimension:dim withDimension:ndim - 1 name:nil];
-        }
+          if (need_transpose) {
+            work = [graph transposeTensor:work dimension:dim withDimension:ndim - 1 name:nil];
+          }
 
-        // MPSGraph topKWithTensor returns along the last axis
-        NSArray<MPSGraphTensor*>* topk_results;
-        if (largest) {
-          topk_results = [graph topKWithSourceTensor:work k:(NSUInteger)k name:nil];
-        } else {
-          // For smallest: negate, topk, negate back
-          MPSGraphTensor* neg = [graph negativeWithTensor:work name:nil];
-          topk_results = [graph topKWithSourceTensor:neg k:(NSUInteger)k name:nil];
-          topk_results = @[
-            [graph negativeWithTensor:topk_results[0] name:nil],
-            topk_results[1]
-          ];
-        }
+          NSArray<MPSGraphTensor*>* topk_results;
+          if (largest) {
+            topk_results = [graph topKWithSourceTensor:work k:(NSUInteger)k name:nil];
+          } else {
+            MPSGraphTensor* neg = [graph negativeWithTensor:work name:nil];
+            topk_results = [graph topKWithSourceTensor:neg k:(NSUInteger)k name:nil];
+            topk_results = @[
+              [graph negativeWithTensor:topk_results[0] name:nil],
+              topk_results[1]
+            ];
+          }
 
-        MPSGraphTensor* values_out = topk_results[0];
-        MPSGraphTensor* indices_out = topk_results[1];
+          MPSGraphTensor* values_out = topk_results[0];
+          MPSGraphTensor* indices_out = topk_results[1];
 
-        if (need_transpose) {
-          values_out = [graph transposeTensor:values_out dimension:dim withDimension:ndim - 1 name:nil];
-          indices_out = [graph transposeTensor:indices_out dimension:dim withDimension:ndim - 1 name:nil];
-        }
+          if (need_transpose) {
+            values_out = [graph transposeTensor:values_out dimension:dim withDimension:ndim - 1 name:nil];
+            indices_out = [graph transposeTensor:indices_out dimension:dim withDimension:ndim - 1 name:nil];
+          }
 
-        // Cache the graph
-        CachedGraph cached_graph;
-        cached_graph.graph = graph;
-        cached_graph.input1 = input;
-        cached_graph.input2 = indices_out;  // reuse input2 slot for indices output
-        cached_graph.output = values_out;
-        graph_cache[cache_key] = cached_graph;
+          CachedGraph cached_graph;
+          cached_graph.graph = graph;
+          cached_graph.input1 = input;
+          cached_graph.input2 = indices_out;
+          cached_graph.output = values_out;
+          graph_cache[cache_key] = cached_graph;
 
-        // Execute
-        id<MTLBuffer> self_buffer = get_mtl_buffer(self_tensor, "topk", "self");
-        id<MTLBuffer> values_buffer = ptr_to_mtl_buffer[values_ptr];
-        id<MTLBuffer> indices_buffer = ptr_to_mtl_buffer[indices_ptr];
+          MPSGraphTensorData* selfData = [[MPSGraphTensorData alloc] initWithMTLBuffer:self_buffer shape:input_shape dataType:mps_dtype];
+          MPSGraphTensorData* valuesData = [[MPSGraphTensorData alloc] initWithMTLBuffer:values_buffer shape:out_ns_shape dataType:mps_dtype];
+          MPSGraphTensorData* indicesData = [[MPSGraphTensorData alloc] initWithMTLBuffer:indices_buffer shape:out_ns_shape dataType:MPSDataTypeInt32];
 
-        NSDictionary<MPSGraphTensor*, MPSGraphTensorData*>* feeds = @{
-          input: [[MPSGraphTensorData alloc] initWithMTLBuffer:self_buffer shape:input_shape dataType:mps_dtype],
-        };
+          NSDictionary<MPSGraphTensor*, MPSGraphTensorData*>* feeds = @{
+            input: selfData,
+          };
+          NSDictionary<MPSGraphTensor*, MPSGraphTensorData*>* results = @{
+            values_out: valuesData,
+            indices_out: indicesData,
+          };
 
-        NSMutableArray<NSNumber*>* out_ns_shape = [NSMutableArray arrayWithCapacity:ndim];
-        for (int64_t i = 0; i < ndim; i++) {
-          [out_ns_shape addObject:@(out_sizes[i])];
-        }
+          stream->executeMPSGraph(graph, feeds, results, SyncType::COMMIT);
 
-        NSDictionary<MPSGraphTensor*, MPSGraphTensorData*>* results = @{
-          values_out: [[MPSGraphTensorData alloc] initWithMTLBuffer:values_buffer shape:out_ns_shape dataType:mps_dtype],
-          indices_out: [[MPSGraphTensorData alloc] initWithMTLBuffer:indices_buffer shape:out_ns_shape dataType:MPSDataTypeInt32],
-        };
-
-        ET_LOG(Debug, "aoti_torch_mps_topk: executing MPSGraph");
-        stream->executeMPSGraph(graph, feeds, results, SyncType::COMMIT);
-        ET_LOG(Debug, "aoti_torch_mps_topk: MPSGraph done");
+          [selfData release];
+          [valuesData release];
+          [indicesData release];
         } @catch (NSException* e) {
           ET_LOG(Error, "aoti_torch_mps_topk: ObjC exception: %s - %s",
                   e.name.UTF8String, e.reason.UTF8String);
@@ -223,7 +231,6 @@ AOTITorchError aoti_torch_mps_topk(
       }
 
       // Create output tensor handles
-      // Values tensor
       AOTITensorHandle values_handle = nullptr;
       aoti_torch_create_tensor_from_blob_v2(
           values_ptr, ndim, out_sizes.data(), out_strides.data(),
@@ -235,22 +242,17 @@ AOTITorchError aoti_torch_mps_topk(
         aoti_torch_mps_free(indices_ptr);
         return Error::Internal;
       }
-      ET_LOG(Debug, "aoti_torch_mps_topk: values tensor created");
 
-      extern std::unordered_map<void*, int32_t> memory_to_n_tensor;
       memory_to_n_tensor[values_ptr] = 1;
 
       // Indices tensor — MPSGraph outputs int32, AOTInductor expects int64.
-      // Allocate a new int64 buffer and convert.
       size_t indices_i64_bytes = num_elements * sizeof(int64_t);
       void* indices_i64_ptr = nullptr;
       allocate_mtl_buffer(&indices_i64_ptr, indices_i64_bytes);
 
       // Copy int32 → int64 on CPU (small tensor, fast)
+      stream->synchronize(SyncType::COMMIT_AND_WAIT);
       {
-        auto* stream_sync = getCurrentMetalStream();
-        stream_sync->synchronize(SyncType::COMMIT_AND_WAIT);
-
         int32_t* src = reinterpret_cast<int32_t*>(indices_ptr);
         int64_t* dst = reinterpret_cast<int64_t*>(indices_i64_ptr);
         for (size_t i = 0; i < num_elements; i++) {
@@ -258,6 +260,7 @@ AOTITorchError aoti_torch_mps_topk(
         }
       }
       aoti_torch_mps_free(indices_ptr);
+      indices_ptr = nullptr;
 
       int32_t indices_dtype = static_cast<int32_t>(exec_aten::ScalarType::Long);
       std::vector<int64_t> indices_strides(ndim);
@@ -281,17 +284,19 @@ AOTITorchError aoti_torch_mps_topk(
       *ret0 = values_handle;
       *ret1 = indices_handle;
 
-      ET_LOG(Debug, "aoti_torch_mps_topk: Completed successfully");
-
     } // @autoreleasepool
 
     return Error::Ok;
 
   } catch (const std::exception& e) {
     ET_LOG(Error, "aoti_torch_mps_topk exception: %s", e.what());
+    if (values_ptr) aoti_torch_mps_free(values_ptr);
+    if (indices_ptr) aoti_torch_mps_free(indices_ptr);
     return Error::Internal;
   } catch (...) {
     ET_LOG(Error, "aoti_torch_mps_topk: unknown exception");
+    if (values_ptr) aoti_torch_mps_free(values_ptr);
+    if (indices_ptr) aoti_torch_mps_free(indices_ptr);
     return Error::Internal;
   }
 }

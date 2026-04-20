@@ -121,7 +121,7 @@ static std::string get_gated_delta_rule_metal_source() {
       }
     }
 
-    // Instantiate for Qwen 3.5 MoE dimensions: Dk=128, Dv=128, Hk=16, Hv=32
+    // Hk and Hv are post-repeat_interleave values (i.e. Hk == Hv).
     #define INSTANTIATE_GDR(DTYPE, Dk, Dv, Hk, Hv)                            \
       template [[host_name("gated_delta_step_" #DTYPE                          \
                            "_dk" #Dk "_dv" #Dv "_hk" #Hk "_hv" #Hv)]]         \
@@ -258,15 +258,15 @@ AOTITorchError aoti_torch_mps_gated_delta_rule(
       std::vector<int64_t> y_strides = {T * Hv * Dv, Hv * Dv, Dv, 1};
 
       AOTITensorHandle y_handle = nullptr;
-      aoti_torch_create_tensor_from_blob_v2(
+      AOTITorchError create_err = aoti_torch_create_tensor_from_blob_v2(
           y_ptr, 4, y_sizes.data(), y_strides.data(),
           0, dtype, 13, 0, &y_handle, 0, nullptr, 0);
 
-      if (!y_handle) {
+      if (create_err != Error::Ok || !y_handle) {
+        ET_LOG(Error, "aoti_torch_mps_gated_delta_rule: Failed to create output tensor");
         aoti_torch_mps_free(y_ptr);
         return Error::Internal;
       }
-      extern std::unordered_map<void*, int32_t> memory_to_n_tensor;
       memory_to_n_tensor[y_ptr] = 1;
 
       auto* y_tensor = reinterpret_cast<Tensor*>(y_handle);
