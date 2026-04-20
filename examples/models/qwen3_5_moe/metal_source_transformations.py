@@ -277,7 +277,10 @@ def quantize_experts_metal(model, config, group_size=32):
         parts = f"layers.{i}.mlp.experts".rsplit(".", 1)
         parent = model.get_submodule(parts[0])
         setattr(parent, parts[1], metal_experts)
-        print(f"  Quantized experts (Metal INT4) layer {i + 1}/{config.num_hidden_layers}", end="\r")
+        print(
+            f"  Quantized experts (Metal INT4) layer {i + 1}/{config.num_hidden_layers}",
+            end="\r",
+        )
     print()
 
 
@@ -316,9 +319,7 @@ def metal_source_transformations(model, config=None):
                 B, T, C = x.size()
                 x_flat = x.view(-1, C)
                 scores = self.gate(x_flat)
-                expert_weights, expert_indices = torch.topk(
-                    scores, self.top_k, dim=-1
-                )
+                expert_weights, expert_indices = torch.topk(scores, self.top_k, dim=-1)
                 expert_weights = expert_weights.softmax(dim=-1)
                 routed_out = self.experts(
                     x_flat, expert_weights, expert_indices, self.top_k

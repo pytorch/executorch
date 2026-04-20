@@ -32,12 +32,20 @@ def gated_delta_rule(
     s = state.clone().float()
     ys = []
 
+    assert Hv % Hk == 0, f"Hv ({Hv}) must be divisible by Hk ({Hk})"
+    hk_repeat = Hv // Hk
+
     for t in range(T_len):
         q_t = q[:, t].float()  # [B, Hk, Dk]
         k_t = k[:, t].float()  # [B, Hk, Dk]
         v_t = v[:, t].float()  # [B, Hv, Dv]
         g_t = g[:, t].float()  # [B, Hv]
         beta_t = beta[:, t].float()  # [B, Hv]
+
+        # Expand keys to match value heads (GQA: Hk -> Hv)
+        if hk_repeat > 1:
+            q_t = q_t.repeat_interleave(hk_repeat, dim=1)  # [B, Hv, Dk]
+            k_t = k_t.repeat_interleave(hk_repeat, dim=1)  # [B, Hv, Dk]
 
         # Decay
         s = s * g_t[:, :, None, None]
