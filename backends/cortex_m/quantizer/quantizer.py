@@ -4,10 +4,11 @@
 # LICENSE file in the root directory of this source tree.
 
 
-from typing import cast, List, Optional
+from typing import Callable, cast, Iterator, List, Optional
 
 from executorch.backends.arm.quantizer.arm_quantizer_utils import (
     _mark_node_as_quantized,
+    NodeFinder,
     PatternCheck,
     PatternQuantizer,
     SharedQspecQuantizer,
@@ -30,7 +31,7 @@ from executorch.backends.cortex_m.quantizer.quantizer_support import (
     CORTEX_M_QUANTIZER_SUPPORT_DICT,
 )
 from torch._ops import OpOverload
-from torch.fx import GraphModule
+from torch.fx import GraphModule, Node
 from torchao.quantization.pt2e.quantizer import ComposableQuantizer, Quantizer
 
 
@@ -43,9 +44,27 @@ def mark_node_as_annotated(
     _mark_node_as_quantized(node, input_qspec_map, output_qspec, is_quantized)
 
 
+class FilteredNodeFinder(NodeFinder):
+    """Wrapper that filters out nodes from another NodeFinder."""
+
+    def __init__(
+        self, base_finder: NodeFinder, filter_fn: Callable[[Node], bool] | None = None
+    ) -> None:
+        self.base_finder = base_finder
+        self.filter_fn = filter_fn
+
+    def find_nodes(self, model: GraphModule) -> Iterator[Node]:
+        nested_generator = self.base_finder.find_nodes(model)
+
+        if self.filter_fn is None:
+            return nested_generator
+
+        return filter(self.filter_fn, nested_generator)
+
+
 class CortexMQuantizer(ComposableQuantizer):
 
-    def __init__(self) -> None:
+    def __init__(self, filter_fn: Callable[[Node], bool] | None = None) -> None:
         conv_targets: set[OpOverload] = set()
         for key in CONV_OP_PATTERNS.keys() | CONV_TRANSPOSE_OP_PATTERNS.keys():
             conv_targets.update(key)
@@ -63,12 +82,14 @@ class CortexMQuantizer(ComposableQuantizer):
         quantizers: List[Quantizer] = [
             PatternQuantizer(
                 INT8_PER_CHANNEL_CONFIG,
-                node_finder=NodeTargetNodeFinder(list(conv_targets)),
+                node_finder=FilteredNodeFinder(
+                    NodeTargetNodeFinder(list(conv_targets)), filter_fn
+                ),
                 pattern_matcher=pattern_matcher,
             ),
             PatternQuantizer(
                 INT8_PER_TENSOR_CONFIG,
-                node_finder=GlobalNodeFinder(),
+                node_finder=FilteredNodeFinder(GlobalNodeFinder(), filter_fn),
                 pattern_matcher=pattern_matcher,
             ),
             SharedQspecQuantizer(),

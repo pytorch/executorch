@@ -1,5 +1,5 @@
 # Copyright (c) Meta Platforms, Inc. and affiliates.
-# Copyright 2024-2025 NXP
+# Copyright 2024-2026 NXP
 # All rights reserved.
 #
 # This source code is licensed under the BSD-style license found in the
@@ -166,7 +166,7 @@ def find_sequential_partitions_aten(
     fusion_candidates = itertools.product(*typed_partitions_list)
     fused_partitions = []
     for candidate in fusion_candidates:
-        if _partitions_sequential(candidate):
+        if _partitions_sequential(candidate) and candidate != ():
             fused_partitions.append(candidate)
     return fused_partitions
 

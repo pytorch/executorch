@@ -431,5 +431,5 @@ class QuantizedOpFusionPass(ExportPass):
             case _:
                 pass
 
-        result = super().call_operator(op, args, {}, meta)
+        result = super().call_operator(op, args, kwargs, meta)
         return result

@@ -5,6 +5,8 @@
 # LICENSE file in the root directory of this source tree.
 
 import torch
+
+from executorch.backends.nxp import NXP_NEUTRON_BACKEND_IGNORE
 from executorch.backends.nxp.aten_passes.neutron_aten_pass_manager import (
     _get_default_passes,
     NeutronAtenPassManager,
@@ -112,6 +114,13 @@ class NeutronAtenQuantizer(Quantizer):
             if not no_outside_users(fused_partition):
                 continue
 
+            if len(fused_partition) == 1 and all(
+                n.meta.get(NXP_NEUTRON_BACKEND_IGNORE, False)
+                for n in fused_partition[0].nodes
+            ):
+                # This node was selected to be ignored by the NeutronQuantizer.
+                continue
+
             anchors = self.pattern.get_anchors(model, fused_partition)
             if not anchors or anchors.empty:
                 continue
@@ -188,8 +197,6 @@ def act_qspec(is_qat: bool):
 
     return QuantizationSpec(
         dtype=torch.int8,
-        quant_min=-128,
-        quant_max=127,
         qscheme=torch.per_tensor_affine,
         is_dynamic=False,
         observer_or_fake_quant_ctr=observer_or_fake_quant_ctr,
