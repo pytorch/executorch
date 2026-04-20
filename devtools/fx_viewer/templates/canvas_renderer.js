@@ -361,17 +361,23 @@ class CanvasRenderer {
             }
 
             // Apply interaction state coloring dynamically instead of overriding with theme defaults
+            let renderedFill;
             if (isSelected || isPreview || isEdgeEndpoint) {
-                ctx.fillStyle = shadeColor(baseColor, state.themeName === 'dark' ? 30 : 20);
+                renderedFill = shadeColor(baseColor, state.themeName === 'dark' ? 30 : 20);
+                ctx.fillStyle = renderedFill;
                 ctx.globalAlpha = Math.max(opacity, 0.8);
             } else if (isHovered) {
-                ctx.fillStyle = shadeColor(baseColor, state.themeName === 'dark' ? 20 : 20);
+                renderedFill = shadeColor(baseColor, state.themeName === 'dark' ? 20 : 20);
+                ctx.fillStyle = renderedFill;
             } else if (isInput) {
-                ctx.fillStyle = shadeColor(baseColor, state.themeName === 'dark' ? 10 : 10);
+                renderedFill = shadeColor(baseColor, state.themeName === 'dark' ? 10 : 10);
+                ctx.fillStyle = renderedFill;
             } else if (isOutput) {
-                ctx.fillStyle = shadeColor(baseColor, state.themeName === 'dark' ? 10 : 10);
+                renderedFill = shadeColor(baseColor, state.themeName === 'dark' ? 10 : 10);
+                ctx.fillStyle = renderedFill;
             } else {
-                ctx.fillStyle = baseColor;
+                renderedFill = baseColor;
+                ctx.fillStyle = renderedFill;
             }
 
             ctx.fillRect(node.x - node.width/2, node.y - node.height/2, node.width, node.height);
@@ -392,7 +398,9 @@ class CanvasRenderer {
                 ctx.setLineDash([]);
             }
             
-            ctx.fillStyle = theme.text;
+            ctx.fillStyle = node.fill_color
+                ? (fxReadableTextColor(renderedFill) || theme.text)
+                : theme.text;
             let allLines = [node.label || node.id];
             if (node.label_append && node.label_append.length > 0) {
                 allLines = allLines.concat(node.label_append);

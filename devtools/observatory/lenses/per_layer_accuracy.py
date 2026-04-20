@@ -68,7 +68,12 @@ class _NodeOutputCapturer(torch.fx.Interpreter):
 
 
 class _MetricNumericColorRule(ColorRule):
-    """Numeric color rule with optional inverse severity direction."""
+    """Numeric color rule with optional inverse severity direction.
+
+    When ``fixed_range`` is supplied, the given ``(vmin, vmax)`` is used for
+    normalization instead of computing it from ``nodes_data``. This lets the
+    caller share a single color scale across multiple records.
+    """
 
     def __init__(
         self,
@@ -77,11 +82,13 @@ class _MetricNumericColorRule(ColorRule):
         low_rgb: Tuple[int, int, int],
         high_rgb: Tuple[int, int, int],
         inverse: bool = False,
+        fixed_range: Optional[Tuple[float, float]] = None,
     ) -> None:
         super().__init__(attribute)
         self.low_rgb = low_rgb
         self.high_rgb = high_rgb
         self.inverse = inverse
+        self.fixed_range = fixed_range
 
     @staticmethod
     def _interp(low: int, high: int, ratio: float) -> int:
@@ -96,6 +103,21 @@ class _MetricNumericColorRule(ColorRule):
         b = self._interp(lb, hb, ratio)
         return f"#{r:02x}{g:02x}{b:02x}"
 
+    def _resolve_range(self, vals: List[float]) -> Optional[Tuple[float, float]]:
+        if self.fixed_range is not None:
+            rmin, rmax = self.fixed_range
+            if math.isfinite(rmin) and math.isfinite(rmax):
+                vmin, vmax = float(rmin), float(rmax)
+                if vmin == vmax:
+                    vmax = vmin + 1e-12
+                return vmin, vmax
+        if not vals:
+            return None
+        vmin, vmax = min(vals), max(vals)
+        if vmin == vmax:
+            vmax = vmin + 1e-12
+        return vmin, vmax
+
     def apply(self, nodes_data: dict) -> tuple[dict, list]:
         vals = []
         for data in nodes_data.values():
@@ -104,12 +126,11 @@ class _MetricNumericColorRule(ColorRule):
                 fv = float(v)
                 if math.isfinite(fv):
                     vals.append(fv)
-        if not vals:
-            return {}, []
 
-        vmin, vmax = min(vals), max(vals)
-        if vmin == vmax:
-            vmax = vmin + 1e-12
+        resolved = self._resolve_range(vals)
+        if resolved is None:
+            return {}, []
+        vmin, vmax = resolved
 
         node_colors = {}
         for node_id, data in nodes_data.items():
@@ -236,7 +257,10 @@ class PerLayerAccuracyLens(Lens):
 
     @staticmethod
     def _resolve_dataset() -> Optional[List[Any]]:
-        if isinstance(AccuracyLens._captured_dataset, list) and AccuracyLens._captured_dataset:
+        if (
+            isinstance(AccuracyLens._captured_dataset, list)
+            and AccuracyLens._captured_dataset
+        ):
             return AccuracyLens._captured_dataset
         if (
             isinstance(PipelineGraphCollectorLens._last_calibration_dataset, list)
@@ -268,7 +292,10 @@ class PerLayerAccuracyLens(Lens):
         for metric_name in priority:
             idx = AccuracyLens._worst_indices.get(str(metric_name))
             if isinstance(idx, int):
-                return min(max(idx, 0), len(dataset) - 1), f"accuracy.worst[{metric_name}]"
+                return (
+                    min(max(idx, 0), len(dataset) - 1),
+                    f"accuracy.worst[{metric_name}]",
+                )
 
         return 0, "default(0)"
 
@@ -302,7 +329,9 @@ class PerLayerAccuracyLens(Lens):
     @staticmethod
     def _flatten_for_metric(value: Any) -> Tuple[Optional[torch.Tensor], str]:
         if isinstance(value, torch.Tensor):
-            return value.detach().cpu().to(torch.float64).reshape(-1), str(tuple(value.shape))
+            return value.detach().cpu().to(torch.float64).reshape(-1), str(
+                tuple(value.shape)
+            )
 
         if isinstance(value, (tuple, list)):
             tensors = [
@@ -311,13 +340,22 @@ class PerLayerAccuracyLens(Lens):
                 if isinstance(v, torch.Tensor)
             ]
             if tensors:
-                shape = "[" + ", ".join(
-                    str(tuple(v.shape)) for v in value if isinstance(v, torch.Tensor)
-                ) + "]"
+                shape = (
+                    "["
+                    + ", ".join(
+                        str(tuple(v.shape))
+                        for v in value
+                        if isinstance(v, torch.Tensor)
+                    )
+                    + "]"
+                )
                 return torch.cat(tensors), shape
             scalars = [float(v) for v in value if isinstance(v, (int, float, bool))]
             if scalars:
-                return torch.tensor(scalars, dtype=torch.float64), f"list(len={len(scalars)})"
+                return (
+                    torch.tensor(scalars, dtype=torch.float64),
+                    f"list(len={len(scalars)})",
+                )
             return None, "unsupported_sequence"
 
         if isinstance(value, (int, float, bool)):
@@ -455,7 +493,10 @@ class PerLayerAccuracyLens(Lens):
         for key in matched_keys:
             anchor_ref = cls._anchor_sparse_index[key]
             target_ref = sparse_index[key]
-            if anchor_ref.node_id not in anchor_outputs or target_ref.node_id not in target_outputs:
+            if (
+                anchor_ref.node_id not in anchor_outputs
+                or target_ref.node_id not in target_outputs
+            ):
                 continue
 
             metrics = cls._compute_pair_metrics(
@@ -526,6 +567,8 @@ class PerLayerAccuracyLens(Lens):
         cls,
         rows: List[Dict[str, Any]],
         metric_name: str,
+        *,
+        fixed_range: Optional[Tuple[float, float]] = None,
     ) -> GraphExtension:
         spec = cls._metric_specs().get(metric_name)
         if not spec:
@@ -583,13 +626,51 @@ class PerLayerAccuracyLens(Lens):
                 low_rgb=(254, 224, 210),
                 high_rgb=(165, 15, 21),
                 inverse=bool(spec["inverse"]),
+                fixed_range=fixed_range,
             )
         )
         return ext
 
     @staticmethod
+    def _aggregate_metric_ranges(
+        records: List[RecordDigest],
+    ) -> Dict[str, List[float]]:
+        """Union (min, max) per metric across every record's rows.
+
+        Returned as list-of-floats for clean JSON round-tripping through
+        ``AnalysisResult.global_data``.
+        """
+        pools: Dict[str, List[float]] = {
+            metric: [] for metric in PerLayerAccuracyLens._metric_specs().keys()
+        }
+        for record in records:
+            digest = record.data.get("per_layer_accuracy")
+            if not isinstance(digest, dict):
+                continue
+            rows = digest.get("rows")
+            if not isinstance(rows, list):
+                continue
+            for row in rows:
+                for metric in pools:
+                    v = row.get(metric)
+                    if isinstance(v, (int, float)):
+                        fv = float(v)
+                        if math.isfinite(fv):
+                            pools[metric].append(fv)
+
+        ranges: Dict[str, List[float]] = {}
+        for metric, vals in pools.items():
+            if vals:
+                ranges[metric] = [min(vals), max(vals)]
+        return ranges
+
+    @staticmethod
     def analyze(records: List[RecordDigest], config: Dict[str, Any]) -> AnalysisResult:
         result = AnalysisResult()
+        metric_ranges = PerLayerAccuracyLens._aggregate_metric_ranges(records)
+        if metric_ranges:
+            result.global_data["metric_ranges"] = metric_ranges
+
         for record in records:
             digest = record.data.get("per_layer_accuracy")
             if not isinstance(digest, dict):
@@ -608,8 +689,10 @@ class PerLayerAccuracyLens(Lens):
 
             for metric_name in ("cosine_sim",):
                 # TODO other options "psnr"  "mse", "abs_err"
+                r = metric_ranges.get(metric_name)
+                fixed_range = (r[0], r[1]) if r else None
                 metric_ext = PerLayerAccuracyLens._build_metric_extension(
-                    rows, metric_name
+                    rows, metric_name, fixed_range=fixed_range
                 )
                 analysis.add_graph_layer(metric_name, metric_ext)
 
@@ -672,7 +755,9 @@ class PerLayerAccuracyLens(Lens):
 
         @classmethod
         def _merged_metrics_table_html(
-            cls, rows: Iterable[Dict[str, Any]]
+            cls,
+            rows: Iterable[Dict[str, Any]],
+            metric_ranges: Optional[Dict[str, List[float]]] = None,
         ) -> str:
             row_list = list(rows)
             if not row_list:
@@ -688,14 +773,20 @@ class PerLayerAccuracyLens(Lens):
                 )
             )
 
-            def _minmax(k: str) -> Tuple[float, float]:
-                vals = [PerLayerAccuracyLens._safe_float(r.get(k, 0.0)) for r in row_list]
+            def _range(k: str) -> Tuple[float, float]:
+                if metric_ranges and k in metric_ranges:
+                    r = metric_ranges[k]
+                    if len(r) == 2:
+                        return (float(r[0]), float(r[1]))
+                vals = [
+                    PerLayerAccuracyLens._safe_float(r.get(k, 0.0)) for r in row_list
+                ]
                 return (min(vals), max(vals)) if vals else (0.0, 0.0)
 
-            psnr_min, psnr_max = _minmax("psnr")
-            cos_min, cos_max = _minmax("cosine_sim")
-            mse_min, mse_max = _minmax("mse")
-            abs_min, abs_max = _minmax("abs_err")
+            psnr_min, psnr_max = _range("psnr")
+            cos_min, cos_max = _range("cosine_sim")
+            mse_min, mse_max = _range("mse")
+            abs_min, abs_max = _range("abs_err")
 
             parts = [
                 "<table class='pla-metric-table'>",
@@ -794,9 +885,20 @@ class PerLayerAccuracyLens(Lens):
                 return None
 
             rows = digest.get("rows") if isinstance(digest.get("rows"), list) else []
-            summary = digest.get("summary", {}) if isinstance(digest.get("summary"), dict) else {}
+            summary = (
+                digest.get("summary", {})
+                if isinstance(digest.get("summary"), dict)
+                else {}
+            )
             graph_ref = str(digest.get("graph_ref") or context.get("name") or "")
             lens_name = PerLayerAccuracyLens.get_name()
+            metric_ranges = None
+            if isinstance(analysis, dict):
+                raw = analysis.get("global")
+                if isinstance(raw, dict):
+                    mr = raw.get("metric_ranges")
+                    if isinstance(mr, dict):
+                        metric_ranges = mr
 
             summary_data = {
                 "anchor_record": digest.get("anchor_record", "n/a"),
@@ -834,7 +936,7 @@ class PerLayerAccuracyLens(Lens):
                     id="per_layer_accuracy_metrics_table",
                     title="Per-layer Metrics (Worst → Best)",
                     record=HtmlRecordSpec(
-                        content=self._merged_metrics_table_html(rows)
+                        content=self._merged_metrics_table_html(rows, metric_ranges)
                     ),
                     order=22,
                 ),
@@ -845,7 +947,9 @@ class PerLayerAccuracyLens(Lens):
             self, digest: Any, analysis: Dict[str, Any]
         ) -> List[Dict[str, str]]:
             if isinstance(digest, dict) and int(digest.get("match_count", 0)) > 0:
-                return [{"label": "PLA", "class": "badge", "title": "Per-layer accuracy"}]
+                return [
+                    {"label": "PLA", "class": "badge", "title": "Per-layer accuracy"}
+                ]
             return []
 
     @staticmethod
