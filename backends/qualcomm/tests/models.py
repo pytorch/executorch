@@ -1829,6 +1829,15 @@ class PowTensorScalar(torch.nn.Module):
         return torch.pow(x, self.exponent)
 
 
+class PowScalar(torch.nn.Module):
+    def __init__(self, base=2.0):
+        super().__init__()
+        self._base = base
+
+    def forward(self, x):
+        return torch.ops.aten.pow.Scalar(self._base, x)
+
+
 class PReLUDefault(torch.nn.Module):
     def __init__(self):
         super().__init__()
