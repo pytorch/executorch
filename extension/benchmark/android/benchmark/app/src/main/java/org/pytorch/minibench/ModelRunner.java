@@ -38,6 +38,17 @@ public class ModelRunner {
     }
     long loadEnd = System.nanoTime();
 
+    final BenchmarkMetric.BenchmarkModel benchmarkModel =
+        BenchmarkMetric.extractBackendAndQuantization(model.getName().replace(".pte", ""));
+
+    if (errorCode != 0) {
+      results.add(
+          new BenchmarkMetric(
+              benchmarkModel, "model_load_time(ms)", (loadEnd - loadStart) * 1e-6, 0.0f));
+      results.add(new BenchmarkMetric(benchmarkModel, "load_status", errorCode, 0));
+      return;
+    }
+
     for (int i = 0; i < numWarmupIter; i++) {
       module.forward();
     }
@@ -51,10 +62,6 @@ public class ModelRunner {
 
     module.etdump();
 
-    final BenchmarkMetric.BenchmarkModel benchmarkModel =
-        BenchmarkMetric.extractBackendAndQuantization(model.getName().replace(".pte", ""));
-    // The list of metrics we have atm includes:
-    // Avg inference latency after N iterations
     // Currently the result has large variance from outliers, so only use
     // 80% samples in the middle (trimmean 0.2)
     Collections.sort(latency);
