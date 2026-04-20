@@ -55,12 +55,9 @@ class FXGraphExporter:
     _NODE_Y_PADDING = 20
     _LAYOUT_XSPACE = 50
     _LAYOUT_YSPACE = 30
-    _DUMMY_SIZE = 30  # dummy nodes (from fast-sugiyama) occupy no real width/height
-    _CHAIN_MIN_LENGTH = 2
-    _SPINE_COHESION_ALPHA = 0.7
-    _SPINE_COHESION_ITER = 3
-    _SPINE_CONTINUITY_EPSILON = 0.3
-    _EDGE_CLIP_MARGIN = 2.0
+    _DUMMY_SIZE_X = 100  # dummy nodes (from fast-sugiyama) occupy no real width/height
+    _DUMMY_SIZE_Y = 30  # dummy nodes (from fast-sugiyama) occupy no real width/height
+    _SPINE_COHESION_ITER = 20
 
     def _default_base_label(self, node: GraphNode) -> str:
         target = str(node.info.get("target") or node.info.get("op") or "")
@@ -326,7 +323,7 @@ class FXGraphExporter:
         from fast_sugiyama.layout import Layouts
         pack_spacing = max_w + cls._LAYOUT_XSPACE
         widest_component = max((w for _pos, w, _h, _e in adjusted), default=0.0)
-        pack_width = int(max(widest_component + pack_spacing, 2000.0))
+        pack_width = int(max(widest_component*3 + pack_spacing, 2000.0))
         layouts = Layouts(adjusted).rect_pack_layouts(
             max_width=pack_width,
             spacing=pack_spacing,
@@ -362,11 +359,11 @@ class FXGraphExporter:
 
         def _w(nid):
             n = nodes.get(nid)
-            return n.width if n is not None else cls._DUMMY_SIZE
+            return n.width if n is not None else cls._DUMMY_SIZE_X
 
         def _h(nid):
             n = nodes.get(nid)
-            return n.height if n is not None else cls._DUMMY_SIZE
+            return n.height if n is not None else cls._DUMMY_SIZE_Y
 
         xspace = cls._LAYOUT_XSPACE
         yspace = cls._LAYOUT_YSPACE
@@ -390,16 +387,31 @@ class FXGraphExporter:
                         x[cur] = x[prev] + min_gap
 
             # Phase 1: chain detection (real + dummy members)
-            chains = cls._detect_chains(el or [])
+            chains = cls._detect_chains(el or [], nodes)
 
             # Phase 2: iterative spine cohesion + pure-A overlap fix
-            for _ in range(cls._SPINE_COHESION_ITER):
+            for i in range(cls._SPINE_COHESION_ITER + 2):
+                
+                # delta for each node
+                # We record the relative weight (chain length) and their base delta
+                node_delta: dict = defaultdict(list)
                 for ch in chains:
                     if not ch:
                         continue
-                    target = sum(x[v] for v in ch) / len(ch)
+                    mean_x = sum(x[v] for v in ch) / len(ch)
+                    # emphasize end point
+                    if i < cls._SPINE_COHESION_ITER:
+                        # we use common start and end node of chain to attract chain close together
+                        mean_x = (mean_x + x[ch[0]] + x[ch[-1]]) / 3.0
                     for v in ch:
-                        x[v] += cls._SPINE_COHESION_ALPHA * (target - x[v])
+                        # weight: len(ch)
+                        # delta: mean_x - x[v]
+                        node_delta[v].append((len(ch), (mean_x - x[v])))
+                # move the node x
+                for n, deltas in node_delta.items():
+                    total_weight = sum(w for w, _ in deltas)
+                    x[n] += sum(w / total_weight * d for w, d in deltas)
+                # adjust node overlapping
                 for nids in by_y.values():
                     _sweep_min_gap(nids)
 
@@ -434,51 +446,74 @@ class FXGraphExporter:
         return new_layouts
 
     @classmethod
-    def _detect_chains(cls, edge_list):
+    def _detect_chains(cls, edge_list, nodes):
+        # Here we break the graph into chains (connected node list)
+        # The longer the chain the better (aligned visual vertical axis)
+        # We achieve long chain by calculating best_prev and best_succ with rank
+        # We must let the chain start and end node to be shared
+        # The shared end points (common nodes) will be used to pull chains near in later iterative loop
         from collections import defaultdict
 
         if not edge_list:
             return []
 
-        in_deg: dict = defaultdict(int)
-        out_deg: dict = defaultdict(int)
-        succ: dict = {}
+        succ: dict = defaultdict(set)
+        prev: dict = defaultdict(set)
         for u, v in edge_list:
-            out_deg[u] += 1
-            in_deg[v] += 1
-            # Record unique successor only when out_deg == 1 so we avoid
-            # ambiguity; overwritten on branching but we'll reject branching
-            # nodes from chain interiors via the in==1 and out==1 test.
-            succ[u] = v
+            succ[u].add(v)
+            prev[v].add(u)
 
-        all_nodes = set(in_deg) | set(out_deg)
+        all_nodes = set(succ) | set(prev)
 
-        def is_interior(n):
-            return out_deg.get(n, 0) == 1
+        # max depth a node's output can reach
+        node_out_rank: dict = defaultdict(int)
+        # the succer node that have maximal node_out_rank
+        best_succ: dict = {}
+        graph_output_nodes = [n for n in all_nodes if len(succ[n]) == 0]
+        stack = graph_output_nodes
+        while stack:
+            n = stack.pop()
+            for pn in prev[n]:
+                score = 2 if pn in nodes else 1
+                if node_out_rank[pn] < node_out_rank[n] + score:
+                    node_out_rank[pn] = node_out_rank[n] + score
+                    stack.append(pn)
+                    best_succ[pn] = n
+
+        # max depth a node's input can reach
+        node_in_rank: dict = defaultdict(int)
+        # the prev node that have maximal node_in_rank
+        best_prev: dict = {}
+        graph_input_nodes = [n for n in all_nodes if len(prev[n]) == 0]
+        stack = graph_input_nodes
+        while stack:
+            n = stack.pop()
+            for nn in succ[n]:
+                score = 2 if nn in nodes else 1
+                if node_in_rank[nn] < node_in_rank[n] + score:
+                    node_in_rank[nn] = node_in_rank[n] + score
+                    stack.append(nn)
+                    best_prev[nn] = n
+
 
         visited: set = set()
         chains: list = []
-        for start in all_nodes:
-            if is_interior(start):
+        for start in sorted(all_nodes, key=lambda n:node_out_rank[n], reverse=True):
+            if start in visited:
                 continue
-            # Walk from each successor of `start` forward while interior
-            # Collect successors from the edge list since `succ` only stores
-            # one (fine for branch starts, but may miss other branches)
-            start_succs = [v for (u, v) in edge_list if u == start]
-            for w in start_succs:
-                if w in visited:
-                    continue
-                walk = [start, w]
-                cur = w
-                while is_interior(cur) and succ.get(cur) is not None:
-                    nxt = succ[cur]
-                    if nxt in walk:
-                        break
-                    walk.append(nxt)
-                    visited.add(cur)
-                    cur = nxt
-                if len(walk) >= cls._CHAIN_MIN_LENGTH:
-                    chains.append(walk)
+            cur = start
+            walk = [start]
+            if start in best_prev:
+                walk.insert(0, best_prev[start])
+            while cur not in visited:
+                visited.add(cur)
+                if cur not in best_succ:
+                    break
+                nxt = best_succ[cur]
+                walk.append(nxt)
+                cur = nxt
+            if len(walk) >= 2: # always true
+                chains.append(walk)
         return chains
 
     @staticmethod
