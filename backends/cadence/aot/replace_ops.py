@@ -1030,6 +1030,7 @@ class ReplaceConvWithChannelLastConvPass(RemoveOrReplacePassInterface):
             exir_ops.edge.cadence.conv2d.default,
             exir_ops.edge.cadence.conv3d.default,
             exir_ops.edge.cadence.quantized_conv1d_ncl.per_tensor,
+            exir_ops.edge.cadence.quantized_depthwise_conv1d_ncl.per_tensor,
             exir_ops.edge.cadence.quantized_conv2d_nchw.per_tensor,
         ]
 
@@ -1114,6 +1115,7 @@ class ReplaceConvWithChannelLastConvPass(RemoveOrReplacePassInterface):
         assert isinstance(node.target, EdgeOpOverload)
         quantized_op = node.target in {
             exir_ops.edge.cadence.quantized_conv1d_ncl.per_tensor,
+            exir_ops.edge.cadence.quantized_depthwise_conv1d_ncl.per_tensor,
             exir_ops.edge.cadence.quantized_conv2d_nchw.per_tensor,
         }
 
@@ -1132,7 +1134,15 @@ class ReplaceConvWithChannelLastConvPass(RemoveOrReplacePassInterface):
                 new_op = exir_ops.edge.cadence.quantized_conv2d_nhwc.per_tensor
             else:
                 assert len(input_shape) == 3
-                new_op = exir_ops.edge.cadence.quantized_conv1d_nlc.per_tensor
+                if (
+                    node.target
+                    == exir_ops.edge.cadence.quantized_depthwise_conv1d_ncl.per_tensor
+                ):
+                    new_op = (
+                        exir_ops.edge.cadence.quantized_depthwise_conv1d_nlc.per_tensor
+                    )
+                else:
+                    new_op = exir_ops.edge.cadence.quantized_conv1d_nlc.per_tensor
         else:
             new_op = node.target
 
@@ -2266,7 +2276,8 @@ class ReplaceSplitWithSlicePass(RemoveOrReplacePassInterface):
 class ReplacePowWithMulPass(RemoveOrReplacePassInterface):
     """
     Replace the pow op with successive mul ops when the exponent is an
-    integer between 2 and 4 (inclusive).
+    integer between 2 and 4 (inclusive). Float exponents that are whole
+    numbers (e.g., 2.0, 3.0, 4.0) are also accepted.
     """
 
     @property
@@ -2274,11 +2285,16 @@ class ReplacePowWithMulPass(RemoveOrReplacePassInterface):
         return [exir_ops.edge.aten.pow.Tensor_Scalar]
 
     def maybe_remove_or_replace(self, node: torch.fx.Node) -> bool:
-        # Check if we have at least 2 args and the exponent is an int
-        if len(node.args) < 2 or not isinstance(node.args[1], int):
+        # Check if we have at least 2 args and the exponent is an int or float
+        if len(node.args) < 2 or not isinstance(node.args[1], (int, float)):
             return False
 
-        exponent = cast(int, node.args[1])
+        exponent_val = node.args[1]
+        if isinstance(exponent_val, float):
+            if not exponent_val.is_integer():
+                return False
+            exponent_val = int(exponent_val)
+        exponent = cast(int, exponent_val)
 
         # Only replace if exponent is between 2 and 4 (inclusive)
         if exponent < 2 or exponent > 4:
