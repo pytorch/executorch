@@ -592,6 +592,30 @@ class RewriteConvPass(ArmPass):
                 node_replacement_fake_tensor = output_rescale_fake
 
                 tosa_op.meta[TosaSpecialDtype.meta_key()] = TosaSpecialDtype.INT48
+            elif (
+                input_fake_tensor.dtype in (torch.float8_e4m3fn, torch.float8_e5m2)
+                and tosa_node_fake_tensor.dtype != get_first_fake_tensor(node).dtype
+            ):
+                node_output_fake_tensor = get_first_fake_tensor(node)
+                # TOSA FP8 conv widens the output. Cast back to the exported
+                # graph dtype before the post-layout permute.
+                cast_fake_tensor = (
+                    exir_ops.edge.dim_order_ops._to_dim_order_copy.default(
+                        tosa_node_fake_tensor,
+                        dtype=node_output_fake_tensor.dtype,
+                    )
+                )
+                with graph_module.graph.inserting_after(tosa_op):
+                    cast_node = create_node(
+                        graph=graph_module.graph,
+                        op_target=exir_ops.edge.dim_order_ops._to_dim_order_copy.default,
+                        args=(tosa_op,),
+                        kwargs={"dtype": node_output_fake_tensor.dtype},
+                        from_node=tosa_op,
+                    )
+                cast_node.meta["val"] = cast_fake_tensor
+                node_replacement = cast_node
+                node_replacement_fake_tensor = cast_fake_tensor
 
             if post_permute_dims is None:
                 raise RuntimeError("Expected post permute dims for explicit layout")
