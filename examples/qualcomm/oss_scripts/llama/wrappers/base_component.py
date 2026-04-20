@@ -40,6 +40,7 @@ from transformers import AutoConfig
 class Mode(Enum):
     PREFILL = 1
     DECODE = 2
+    CALIBRATE = 3
 
 
 def log_info(func):
@@ -83,7 +84,7 @@ def process_model_args(
         model_args: ModelArgs object to be modified.
         quant_recipe: Quantization recipe to be used.
         config: LLMModelConfig object to be used.
-        mode: Mode of operation (PREFILL or DECODE).
+        mode: Mode of operation (PREFILL, DECODE, or CALIBRATE).
     """
     # TODO: support batch inputs if necessary
     if mode == Mode.DECODE:
@@ -95,13 +96,19 @@ def process_model_args(
             if control_args.model_mode == "lookahead"
             else 1
         )
-    else:
+    elif mode == Mode.PREFILL:
         ar_len = control_args.prefill_ar_len
+    elif mode == Mode.CALIBRATE:
+        ar_len = control_args.max_context_len
+    else:
+        raise ValueError(f"Unsupported mode: {mode}")
 
     model_args.max_batch_size = 1
     model_args.max_seq_len = control_args.max_seq_len
     model_args.max_context_len = control_args.max_context_len
-    model_args.use_kv_cache = control_args.max_context_len != ar_len
+    model_args.use_kv_cache = (
+        control_args.max_context_len != ar_len or mode == Mode.CALIBRATE
+    )
     model_args.enable_r3 = config.r3
     model_args.ar_len = ar_len
     model_args.kv_io_bit_width = quant_recipe.get_kv_io_bit_width()
