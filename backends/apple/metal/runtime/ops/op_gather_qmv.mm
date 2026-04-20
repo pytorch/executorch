@@ -429,6 +429,18 @@ AOTITorchError aoti_torch_mps_gather_qmv(
         ET_LOG(Error, "aoti_torch_mps_gather_qmv: w must be 3D [E, N, K_packed], got %d", (int)w_tensor->dim());
         return Error::InvalidArgument;
       }
+      if (s_tensor->dim() != 3) {
+        ET_LOG(Error, "aoti_torch_mps_gather_qmv: scales must be 3D [E, N, K/gs], got %d", (int)s_tensor->dim());
+        return Error::InvalidArgument;
+      }
+      if (z_tensor->dim() != 3) {
+        ET_LOG(Error, "aoti_torch_mps_gather_qmv: biases must be 3D [E, N, K/gs], got %d", (int)z_tensor->dim());
+        return Error::InvalidArgument;
+      }
+      if (idx_tensor->dim() != 1) {
+        ET_LOG(Error, "aoti_torch_mps_gather_qmv: expert_indices must be 1D [P], got %d", (int)idx_tensor->dim());
+        return Error::InvalidArgument;
+      }
 
       int32_t P = static_cast<int32_t>(x_tensor->sizes()[0]);
       int32_t K = static_cast<int32_t>(x_tensor->sizes()[1]);
@@ -441,6 +453,13 @@ AOTITorchError aoti_torch_mps_gather_qmv(
       // Validate K packing: K_packed should be K/2 for 4-bit
       if (K_packed != K / 2) {
         ET_LOG(Error, "aoti_torch_mps_gather_qmv: K_packed=%d != K/2=%d", K_packed, K / 2);
+        return Error::InvalidArgument;
+      }
+
+      // Validate expert_indices size matches P
+      if (idx_tensor->sizes()[0] != P) {
+        ET_LOG(Error, "aoti_torch_mps_gather_qmv: expert_indices size %d != P=%d",
+               (int)idx_tensor->sizes()[0], P);
         return Error::InvalidArgument;
       }
 
