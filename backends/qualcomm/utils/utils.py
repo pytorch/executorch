@@ -550,6 +550,12 @@ def _partition_graph_into_submodules(gm, subgm_tag, subgm_cb, ptn):
 def _canonicalize_graph_with_lowered_module(gm, subgm_tag, compiler_specs):
     # return lowered program for user to debug
     edge_prog_mgrs = []
+
+    def _unwrap_compiler_spec(spec_or_list):
+        if isinstance(spec_or_list, list) and len(spec_or_list) == 1:
+            return spec_or_list[0]
+        return spec_or_list
+
     # partition each submodule which went through convert_pt2e
     for node in gm.graph.nodes:
         if node.op == "call_module" and subgm_tag in node.name:
@@ -558,10 +564,12 @@ def _canonicalize_graph_with_lowered_module(gm, subgm_tag, compiler_specs):
                 torch.ones(arg.meta["val"].shape, dtype=arg.meta["val"].dtype)
                 for arg in node.args
             ]
+            # Unwrap single-element list before passing to inner function
+            unwrapped_spec = _unwrap_compiler_spec(compiler_specs)
             # start lowering with given partitioner
             edge_prog_mgrs.append(
                 to_edge_transform_and_lower_to_qnn(
-                    gm.get_submodule(node.name), tuple(subgm_input), compiler_specs
+                    gm.get_submodule(node.name), tuple(subgm_input), unwrapped_spec
                 )
             )
             # replace submodule with lowered module
