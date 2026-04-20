@@ -4,6 +4,7 @@
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
 import argparse
+import copy
 import inspect
 import json
 import logging
@@ -24,6 +25,7 @@ from executorch.backends.qualcomm._passes.utils import (
     get_passes_dependency_for_capture_program,
 )
 from executorch.backends.qualcomm.builders.utils import is_graph_output
+from executorch.backends.qualcomm.export_utils import make_quantizer
 from executorch.backends.qualcomm.quantizer.quantizer import QuantDtype
 
 from executorch.backends.qualcomm.utils.constants import (
@@ -62,6 +64,10 @@ from executorch.examples.qualcomm.oss_scripts.llama.decoder_utils import (
 from executorch.examples.qualcomm.oss_scripts.llama.encoder.encoder_quant_recipe import (
     EncoderQuantRecipe,
 )
+from executorch.examples.qualcomm.oss_scripts.llama.mix_precision_analyzer import (
+    PerLayerSqnrAnalyzer,
+    save_suggest_recipes,
+)
 from executorch.examples.qualcomm.oss_scripts.llama.model.embedding import (
     TokenEmbedding,
 )
@@ -81,7 +87,6 @@ from executorch.examples.qualcomm.oss_scripts.llama.wrappers.base_component impo
     Processor,
     Request,
 )
-from executorch.examples.qualcomm.utils import make_quantizer
 from executorch.exir.backend.compile_spec_schema import CompileSpec
 from executorch.exir.capture._config import ExecutorchBackendConfig
 from executorch.exir.dialects._ops import ops as exir_ops
@@ -415,6 +420,36 @@ class TextDecoder(Component):
 
         return quant_io_type
 
+    def _quant_recipe_suggestion(
+        self,
+        fp32_gm: torch.fx.GraphModule,
+        qdq_gm: torch.fx.GraphModule,
+        input_sample: tuple,
+        recipe: StaticLLMQuantRecipe,
+    ):
+        """
+        Compare fp32 vs QDQ intermediate outputs and write SQNR reports.
+
+        fp32_gm: Fp32 exported GraphModule (before prepare_pt2e).
+        qdq_gm: QDQ GraphModule (after convert_pt2e).
+
+        Output files:
+          ``{model_name}_quantization_error.csv``: per-group statistics
+          ``{model_name}_suggest_recipe.py``: Python script containing quantization recipe classes
+        based on the suggested quant recipe overrides.
+        """
+        model_name = self.control_args.decoder_model
+        report = PerLayerSqnrAnalyzer(
+            model_name=model_name,
+            num_layers=self.meta["get_n_layers"],
+            fp32_gm=fp32_gm,
+            qdq_gm=qdq_gm,
+            analysis_recipe=recipe,
+        ).analyze(input_sample)
+        report.save_analysis_summary()
+        suggest_recipe_overrides = report.suggest_recipe_overrides()
+        save_suggest_recipes(report, suggest_recipe_overrides)
+
     def _auto_tune_calibration_threads(self):
         """Find the optimal thread count for calibration via quick microbenchmark.
 
@@ -505,8 +540,9 @@ class TextDecoder(Component):
 
         # Task-based calibration: Only for text-only LLMs
         # Multimodal models (VLMs) cannot use task-based evaluation currently.
+        input_samples = []
         if has_task_calibration and not is_multimodal:
-            graph_module_inference(
+            input_sample = graph_module_inference(
                 use_kv_cache=self.meta["get_use_kv_cache"],
                 get_example_inputs=self.get_example_inputs,
                 module=model,
@@ -520,6 +556,7 @@ class TextDecoder(Component):
                 event_name=f"{event}_tasks",
                 seq_mse_candidates=self.config.seq_mse_candidates,
             )
+            input_samples.extend(input_sample)
 
         # prepare lookahead config if applicable
         lookahead_config = (
@@ -532,7 +569,7 @@ class TextDecoder(Component):
         # check user's prompt which helps calibrate special token
         for turn in zip(intermediate_outputs, user_calibration_data):
             hidden_states, prompt = turn
-            graph_module_inference(
+            input_sample = graph_module_inference(
                 use_kv_cache=self.meta["get_use_kv_cache"],
                 get_example_inputs=self.get_example_inputs,
                 hidden_states=hidden_states,  # hidden_states for multimodal
@@ -547,6 +584,8 @@ class TextDecoder(Component):
                 event_name=f"{event}_prompt",
                 lookahead_config=lookahead_config,
             )
+            input_samples.extend(input_sample)
+        return input_samples
 
     @log_info
     def quantize(self, request: Request):  # noqa: C901
@@ -617,6 +656,8 @@ class TextDecoder(Component):
             self.decoder = torch.export.export(
                 self.decoder, self.export_input, strict=True
             ).module()
+            if self.control_args.quant_recipe_suggestion:
+                graph_module = copy.deepcopy(self.decoder)
 
             # Auto-tune thread count BEFORE prepare_pt2e so the benchmark
             # runs on the exported model without observers — no risk of
@@ -642,7 +683,7 @@ class TextDecoder(Component):
                     original_threads,
                 )
                 try:
-                    self._calibrate(
+                    input_samples = self._calibrate(
                         model=self.decoder,
                         tokenizer=data.tokenizer,
                         event="prepare_pt2e",
@@ -658,6 +699,14 @@ class TextDecoder(Component):
                 self.decoder(*self.export_input)
 
             self.decoder = convert_pt2e(self.decoder)
+
+            if self.control_args.quant_recipe_suggestion:
+                self._quant_recipe_suggestion(
+                    graph_module,
+                    self.decoder,
+                    input_samples,
+                    self.quant_recipe.recipe,
+                )
 
             # Saving Decode QDQ Model EP for SQNR evaluation
             if self.mode == Mode.DECODE:
