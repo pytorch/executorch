@@ -8,6 +8,7 @@
 
 #pragma once
 #include <executorch/runtime/core/exec_aten/exec_aten.h>
+#include <executorch/runtime/core/result.h>
 #include <executorch/runtime/core/tag.h>
 #include <executorch/runtime/platform/assert.h>
 
@@ -193,6 +194,13 @@ struct EValue {
     return payload.copyable_union.as_int;
   }
 
+  Result<int64_t> tryToInt() const {
+    if (!isInt()) {
+      return Error::InvalidType;
+    }
+    return payload.copyable_union.as_int;
+  }
+
   /****** Double Type ******/
   /*implicit*/ EValue(double d) : tag(Tag::Double) {
     payload.copyable_union.as_double = d;
@@ -207,6 +215,13 @@ struct EValue {
     return payload.copyable_union.as_double;
   }
 
+  Result<double> tryToDouble() const {
+    if (!isDouble()) {
+      return Error::InvalidType;
+    }
+    return payload.copyable_union.as_double;
+  }
+
   /****** Bool Type ******/
   /*implicit*/ EValue(bool b) : tag(Tag::Bool) {
     payload.copyable_union.as_bool = b;
@@ -218,6 +233,13 @@ struct EValue {
 
   bool toBool() const {
     ET_CHECK_MSG(isBool(), "EValue is not a Bool.");
+    return payload.copyable_union.as_bool;
+  }
+
+  Result<bool> tryToBool() const {
+    if (!isBool()) {
+      return Error::InvalidType;
+    }
     return payload.copyable_union.as_bool;
   }
 
@@ -254,6 +276,19 @@ struct EValue {
     } else {
       ET_CHECK_MSG(false, "EValue is not a Scalar.");
     }
+  }
+
+  Result<executorch::aten::Scalar> tryToScalar() const {
+    if (isDouble()) {
+      return executorch::aten::Scalar(payload.copyable_union.as_double);
+    }
+    if (isInt()) {
+      return executorch::aten::Scalar(payload.copyable_union.as_int);
+    }
+    if (isBool()) {
+      return executorch::aten::Scalar(payload.copyable_union.as_bool);
+    }
+    return Error::InvalidType;
   }
 
   /****** Tensor Type ******/
@@ -305,6 +340,13 @@ struct EValue {
     return payload.as_tensor;
   }
 
+  Result<executorch::aten::Tensor> tryToTensor() const {
+    if (!isTensor()) {
+      return Error::InvalidType;
+    }
+    return payload.as_tensor;
+  }
+
   /****** String Type ******/
   /*implicit*/ EValue(executorch::aten::ArrayRef<char>* s) : tag(Tag::String) {
     ET_CHECK_MSG(s != nullptr, "ArrayRef<char> pointer cannot be null");
@@ -320,6 +362,18 @@ struct EValue {
     ET_CHECK_MSG(
         payload.copyable_union.as_string_ptr != nullptr,
         "EValue string pointer is null.");
+    return std::string_view(
+        payload.copyable_union.as_string_ptr->data(),
+        payload.copyable_union.as_string_ptr->size());
+  }
+
+  Result<std::string_view> tryToString() const {
+    if (!isString()) {
+      return Error::InvalidType;
+    }
+    if (payload.copyable_union.as_string_ptr == nullptr) {
+      return Error::InvalidState;
+    }
     return std::string_view(
         payload.copyable_union.as_string_ptr->data(),
         payload.copyable_union.as_string_ptr->size());
@@ -344,6 +398,16 @@ struct EValue {
     return (payload.copyable_union.as_int_list_ptr)->get();
   }
 
+  Result<executorch::aten::ArrayRef<int64_t>> tryToIntList() const {
+    if (!isIntList()) {
+      return Error::InvalidType;
+    }
+    if (payload.copyable_union.as_int_list_ptr == nullptr) {
+      return Error::InvalidState;
+    }
+    return (payload.copyable_union.as_int_list_ptr)->get();
+  }
+
   /****** Bool List Type ******/
   /*implicit*/ EValue(executorch::aten::ArrayRef<bool>* b)
       : tag(Tag::ListBool) {
@@ -360,6 +424,16 @@ struct EValue {
     ET_CHECK_MSG(
         payload.copyable_union.as_bool_list_ptr != nullptr,
         "EValue bool list pointer is null.");
+    return *(payload.copyable_union.as_bool_list_ptr);
+  }
+
+  Result<executorch::aten::ArrayRef<bool>> tryToBoolList() const {
+    if (!isBoolList()) {
+      return Error::InvalidType;
+    }
+    if (payload.copyable_union.as_bool_list_ptr == nullptr) {
+      return Error::InvalidState;
+    }
     return *(payload.copyable_union.as_bool_list_ptr);
   }
 
@@ -382,6 +456,16 @@ struct EValue {
     return *(payload.copyable_union.as_double_list_ptr);
   }
 
+  Result<executorch::aten::ArrayRef<double>> tryToDoubleList() const {
+    if (!isDoubleList()) {
+      return Error::InvalidType;
+    }
+    if (payload.copyable_union.as_double_list_ptr == nullptr) {
+      return Error::InvalidState;
+    }
+    return *(payload.copyable_union.as_double_list_ptr);
+  }
+
   /****** Tensor List Type ******/
   /*implicit*/ EValue(BoxedEvalueList<executorch::aten::Tensor>* t)
       : tag(Tag::ListTensor) {
@@ -399,6 +483,17 @@ struct EValue {
     ET_CHECK_MSG(
         payload.copyable_union.as_tensor_list_ptr != nullptr,
         "EValue tensor list pointer is null.");
+    return payload.copyable_union.as_tensor_list_ptr->get();
+  }
+
+  Result<executorch::aten::ArrayRef<executorch::aten::Tensor>> tryToTensorList()
+      const {
+    if (!isTensorList()) {
+      return Error::InvalidType;
+    }
+    if (payload.copyable_union.as_tensor_list_ptr == nullptr) {
+      return Error::InvalidState;
+    }
     return payload.copyable_union.as_tensor_list_ptr->get();
   }
 
@@ -426,9 +521,28 @@ struct EValue {
     return payload.copyable_union.as_list_optional_tensor_ptr->get();
   }
 
+  Result<executorch::aten::ArrayRef<std::optional<executorch::aten::Tensor>>>
+  tryToListOptionalTensor() const {
+    if (!isListOptionalTensor()) {
+      return Error::InvalidType;
+    }
+    if (payload.copyable_union.as_list_optional_tensor_ptr == nullptr) {
+      return Error::InvalidState;
+    }
+    return payload.copyable_union.as_list_optional_tensor_ptr->get();
+  }
+
   /****** ScalarType Type ******/
   executorch::aten::ScalarType toScalarType() const {
     ET_CHECK_MSG(isInt(), "EValue is not a ScalarType.");
+    return static_cast<executorch::aten::ScalarType>(
+        payload.copyable_union.as_int);
+  }
+
+  Result<executorch::aten::ScalarType> tryToScalarType() const {
+    if (!isInt()) {
+      return Error::InvalidType;
+    }
     return static_cast<executorch::aten::ScalarType>(
         payload.copyable_union.as_int);
   }
@@ -440,15 +554,40 @@ struct EValue {
         payload.copyable_union.as_int);
   }
 
+  Result<executorch::aten::MemoryFormat> tryToMemoryFormat() const {
+    if (!isInt()) {
+      return Error::InvalidType;
+    }
+    return static_cast<executorch::aten::MemoryFormat>(
+        payload.copyable_union.as_int);
+  }
+
   /****** Layout Type ******/
   executorch::aten::Layout toLayout() const {
     ET_CHECK_MSG(isInt(), "EValue is not a Layout.");
     return static_cast<executorch::aten::Layout>(payload.copyable_union.as_int);
   }
 
+  Result<executorch::aten::Layout> tryToLayout() const {
+    if (!isInt()) {
+      return Error::InvalidType;
+    }
+    return static_cast<executorch::aten::Layout>(payload.copyable_union.as_int);
+  }
+
   /****** Device Type ******/
   executorch::aten::Device toDevice() const {
     ET_CHECK_MSG(isInt(), "EValue is not a Device.");
+    return executorch::aten::Device(
+        static_cast<executorch::aten::DeviceType>(
+            payload.copyable_union.as_int),
+        -1);
+  }
+
+  Result<executorch::aten::Device> tryToDevice() const {
+    if (!isInt()) {
+      return Error::InvalidType;
+    }
     return executorch::aten::Device(
         static_cast<executorch::aten::DeviceType>(
             payload.copyable_union.as_int),
@@ -463,6 +602,15 @@ struct EValue {
   typename internal::evalue_to_ref_overload_return<T>::type to() &;
 
   /**
+   * Result-returning equivalent of `to<T>()`. Returns `Error::InvalidType` on
+   * tag mismatch instead of aborting, so callers processing untrusted EValues
+   * (e.g., from a `.pte`) can surface the error rather than terminate.
+   * Specializations are defined below via `EVALUE_DEFINE_TRY_TO`.
+   */
+  template <typename T>
+  Result<T> tryTo() const;
+
+  /**
    * Converts the EValue to an optional object that can represent both T and
    * an uninitialized state.
    */
@@ -472,6 +620,23 @@ struct EValue {
       return executorch::aten::nullopt;
     }
     return this->to<T>();
+  }
+
+  /**
+   * Result-returning equivalent of `toOptional<T>()`. None maps to an empty
+   * optional; any other tag that doesn't match T propagates `tryTo<T>()`'s
+   * error (`Error::InvalidType`).
+   */
+  template <typename T>
+  inline Result<std::optional<T>> tryToOptional() const {
+    if (this->isNone()) {
+      return std::optional<T>(executorch::aten::nullopt);
+    }
+    auto r = this->tryTo<T>();
+    if (!r.ok()) {
+      return r.error();
+    }
+    return std::optional<T>(std::move(r.get()));
   }
 
  private:
@@ -524,7 +689,7 @@ struct EValue {
 
 #define EVALUE_DEFINE_TO(T, method_name)                                       \
   template <>                                                                  \
-  inline T EValue::to<T>()&& {                                                 \
+  inline T EValue::to<T>() && {                                                \
     return static_cast<T>(std::move(*this).method_name());                     \
   }                                                                            \
   template <>                                                                  \
@@ -538,7 +703,7 @@ struct EValue {
   template <>                                                                  \
   inline ::executorch::runtime::internal::evalue_to_ref_overload_return<       \
       T>::type                                                                 \
-  EValue::to<T>()& {                                                           \
+  EValue::to<T>() & {                                                          \
     typedef ::executorch::runtime::internal::evalue_to_ref_overload_return<    \
         T>::type return_type;                                                  \
     return static_cast<return_type>(this->method_name());                      \
@@ -590,6 +755,33 @@ EVALUE_DEFINE_TO(
     executorch::aten::ArrayRef<std::optional<executorch::aten::Tensor>>,
     toListOptionalTensor)
 #undef EVALUE_DEFINE_TO
+
+#define EVALUE_DEFINE_TRY_TO(T, method_name)  \
+  template <>                                 \
+  inline Result<T> EValue::tryTo<T>() const { \
+    return this->method_name();               \
+  }
+
+EVALUE_DEFINE_TRY_TO(executorch::aten::Scalar, tryToScalar)
+EVALUE_DEFINE_TRY_TO(int64_t, tryToInt)
+EVALUE_DEFINE_TRY_TO(bool, tryToBool)
+EVALUE_DEFINE_TRY_TO(double, tryToDouble)
+EVALUE_DEFINE_TRY_TO(std::string_view, tryToString)
+EVALUE_DEFINE_TRY_TO(executorch::aten::ScalarType, tryToScalarType)
+EVALUE_DEFINE_TRY_TO(executorch::aten::MemoryFormat, tryToMemoryFormat)
+EVALUE_DEFINE_TRY_TO(executorch::aten::Layout, tryToLayout)
+EVALUE_DEFINE_TRY_TO(executorch::aten::Device, tryToDevice)
+EVALUE_DEFINE_TRY_TO(executorch::aten::Tensor, tryToTensor)
+EVALUE_DEFINE_TRY_TO(executorch::aten::ArrayRef<int64_t>, tryToIntList)
+EVALUE_DEFINE_TRY_TO(executorch::aten::ArrayRef<double>, tryToDoubleList)
+EVALUE_DEFINE_TRY_TO(executorch::aten::ArrayRef<bool>, tryToBoolList)
+EVALUE_DEFINE_TRY_TO(
+    executorch::aten::ArrayRef<executorch::aten::Tensor>,
+    tryToTensorList)
+EVALUE_DEFINE_TRY_TO(
+    executorch::aten::ArrayRef<std::optional<executorch::aten::Tensor>>,
+    tryToListOptionalTensor)
+#undef EVALUE_DEFINE_TRY_TO
 
 template <typename T>
 executorch::aten::ArrayRef<T> BoxedEvalueList<T>::get() const {
