@@ -6,6 +6,7 @@
 # LICENSE file in the root directory of this source tree.
 
 set -ex
+
 # shellcheck source=/dev/null
 source "$(dirname "${BASH_SOURCE[0]}")/utils.sh"
 
@@ -50,18 +51,18 @@ PT2E_QUANTIZE="${PT2E_QUANTIZE:-}"
 # Default CMake Build Type to release mode
 CMAKE_BUILD_TYPE=${CMAKE_BUILD_TYPE:-Release}
 
-if [[ $# -lt 5 ]]; then # Assuming 4 mandatory args
-    echo "Expecting atleast 5 positional arguments"
-    echo "Usage: [...]"
-fi
 if [[ -z "${MODEL_NAME:-}" ]]; then
   echo "Missing model name, exiting..."
   exit 1
 fi
 
-
 if [[ -z "${MODE:-}" ]]; then
   echo "Missing mode, choose openvino or xnnpack, exiting..."
+  exit 1
+fi
+
+if [[ -z "${VIDEO_PATH:-}" ]]; then
+  echo "Missing video path, exiting..."
   exit 1
 fi
 
@@ -75,21 +76,13 @@ if [[ "${MODE}" =~ .*openvino.* ]]; then
   OPENVINO=ON
   TARGET_LIBS="$TARGET_LIBS openvino_backend "
 
-  git clone https://github.com/openvinotoolkit/openvino.git
-  cd openvino && git b16b776ac119dafda51f69a80f1e6b7376d02c3b
-  git submodule update --init --recursive
-  sudo ./install_build_dependencies.sh
-  mkdir build && cd build
-  cmake .. -DCMAKE_BUILD_TYPE=Release -DENABLE_PYTHON=ON
-  make -j$(nproc)
+  # Install specific OpenVINO runtime from pip.
+  $PYTHON_EXECUTABLE -m pip install --pre openvino==2026.1.0.dev20260131 --extra-index-url https://storage.openvinotoolkit.org/simple/wheels/nightly
+  $PYTHON_EXECUTABLE -m pip install -r backends/openvino/requirements.txt
 
-  cd ..
-  cmake --install build --prefix dist
-
-  source dist/setupvars.sh
-  cd ../backends/openvino
-  pip install -r requirements.txt
-  cd ../../
+  # Set OPENVINO_LIB_PATH so the C++ demo runner can also find libopenvino_c.so.
+  OPENVINO_LIB_PATH=$($PYTHON_EXECUTABLE -c "import openvino, os, glob; print(sorted(glob.glob(os.path.join(os.path.dirname(openvino.__file__), 'libs', 'libopenvino_c.so*')))[-1])")
+  export OPENVINO_LIB_PATH
 else
   OPENVINO=OFF
 fi
@@ -103,9 +96,10 @@ fi
 
 which "${PYTHON_EXECUTABLE}"
 
+TORCH_URL=https://download.pytorch.org/whl/cpu
 
-DIR="examples/models/yolo12"
-$PYTHON_EXECUTABLE -m pip install -r ${DIR}/requirements.txt
+DIR="examples/models/yolo26"
+$PYTHON_EXECUTABLE -m pip install --upgrade-strategy only-if-needed --extra-index-url "$TORCH_URL" -r ${DIR}/requirements.txt
 
 cmake_install_executorch_libraries() {
     rm -rf cmake-out
@@ -142,11 +136,11 @@ cmake_install_executorch_libraries() {
 
     echo $TARGET_LIBS
     export CMAKE_BUILD_ARGS="--target $TARGET_LIBS"
-    pip install . --no-build-isolation
+    $PYTHON_EXECUTABLE -m pip install . --no-build-isolation
 }
 
 cmake_build_demo() {
-    echo "Building yolo12 runner"
+    echo "Building yolo26 runner"
     retry cmake \
         -DCMAKE_BUILD_TYPE="$CMAKE_BUILD_TYPE" \
         -DUSE_OPENVINO_BACKEND="$OPENVINO" \
@@ -174,24 +168,29 @@ prepare_artifacts_upload() {
 
 
 # Export model.
-EXPORTED_MODEL_NAME="${MODEL_NAME}_fp32_${MODE}.pte"
-echo "Exporting ${EXPORTED_MODEL_NAME}"
 EXPORT_ARGS="--model_name=${MODEL_NAME} --backend=${MODE}"
+if [[ -n "${PT2E_QUANTIZE}" ]]; then
+  EXPORTED_MODEL_NAME="${MODEL_NAME}_int8_${MODE}.pte"
+  EXPORT_ARGS="${EXPORT_ARGS} --quantize --video_path=${VIDEO_PATH}"
+else
+  EXPORTED_MODEL_NAME="${MODEL_NAME}_fp32_${MODE}.pte"
+fi
+echo "Exporting ${EXPORTED_MODEL_NAME}"
 
 # Add dynamically linked library location
 cmake_install_executorch_libraries
 
-$PYTHON_EXECUTABLE -m examples.models.yolo12.export_and_validate ${EXPORT_ARGS}
+$PYTHON_EXECUTABLE -m examples.models.yolo26.export_and_validate ${EXPORT_ARGS}
 
 
 RUNTIME_ARGS="--model_path=${EXPORTED_MODEL_NAME} --input_path=${VIDEO_PATH}"
 # Check build tool.
 cmake_build_demo
-# Run yolo12 runner
+# Run yolo26 runner
 NOW=$(date +"%H:%M:%S")
-echo "Starting to run yolo12 runner at ${NOW}"
+echo "Starting to run yolo26 runner at ${NOW}"
 # shellcheck source=/dev/null
-cmake-out/examples/models/yolo12/Yolo12DetectionDemo ${RUNTIME_ARGS} > result.txt
+cmake-out/examples/models/yolo26/Yolo26DetectionDemo ${RUNTIME_ARGS} > result.txt
 NOW=$(date +"%H:%M:%S")
 echo "Finished at ${NOW}"
 
