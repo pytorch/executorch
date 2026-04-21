@@ -13,7 +13,6 @@ import com.facebook.jni.annotations.DoNotStrip;
 import java.io.Closeable;
 import java.nio.ByteBuffer;
 import java.util.List;
-import java.util.concurrent.locks.ReentrantReadWriteLock;
 import org.pytorch.executorch.ExecuTorchRuntime;
 import org.pytorch.executorch.ExecutorchRuntimeException;
 import org.pytorch.executorch.annotations.Experimental;
@@ -32,8 +31,7 @@ public class LlmModule implements Closeable {
   public static final int MODEL_TYPE_MULTIMODAL = 2;
 
   private final HybridData mHybridData;
-  private final ReentrantReadWriteLock mLock = new ReentrantReadWriteLock(true);
-  private volatile boolean mClosed = false;
+  private boolean mDestroyed = false;
   private static final int DEFAULT_SEQ_LEN = 128;
   private static final boolean DEFAULT_ECHO = true;
   private static final float DEFAULT_TEMPERATURE = -1.0f;
@@ -190,24 +188,24 @@ public class LlmModule implements Closeable {
         config.getLoadMode());
   }
 
-  private void checkNotClosed() {
-    if (mClosed) throw new IllegalStateException("LlmModule has been closed");
+  private void checkNotDestroyed() {
+    if (mDestroyed) throw new IllegalStateException("LlmModule has been destroyed");
   }
 
+  /**
+   * Releases native resources. Callers must ensure no other methods are in-flight. Call {@link
+   * #stop()} and wait for {@link #generate} to return before calling this method.
+   */
   @Override
   public void close() {
-    stopNative();
-    mLock.writeLock().lock();
-    try {
-      if (mClosed) return;
-      mClosed = true;
-      mHybridData.resetNative();
-    } finally {
-      mLock.writeLock().unlock();
-    }
+    if (mDestroyed) return;
+    mDestroyed = true;
+    mHybridData.resetNative();
   }
 
-  /** @deprecated Use {@link #close()} instead. */
+  /**
+   * @deprecated Use {@link #close()} instead.
+   */
   @Deprecated
   public void resetNative() {
     close();
@@ -305,15 +303,10 @@ public class LlmModule implements Closeable {
       float temperature,
       int numBos,
       int numEos) {
-    mLock.readLock().lock();
-    try {
-      checkNotClosed();
-      int err = generateNative(prompt, seqLen, llmCallback, echo, temperature, numBos, numEos);
-      if (err != 0) {
-        throw ExecutorchRuntimeException.makeExecutorchException(err, "Failed to generate");
-      }
-    } finally {
-      mLock.readLock().unlock();
+    checkNotDestroyed();
+    int err = generateNative(prompt, seqLen, llmCallback, echo, temperature, numBos, numEos);
+    if (err != 0) {
+      throw ExecutorchRuntimeException.makeExecutorchException(err, "Failed to generate");
     }
   }
 
@@ -442,22 +435,11 @@ public class LlmModule implements Closeable {
       float temperature,
       int numBos,
       int numEos) {
-    mLock.readLock().lock();
-    try {
-      checkNotClosed();
-      if (image != null) {
-        int nativeResult = prefillImagesInput(image, width, height, channels);
-        if (nativeResult != 0) {
-          throw ExecutorchRuntimeException.makeExecutorchException(nativeResult, "Prefill failed");
-        }
-      }
-      int err = generateNative(prompt, seqLen, llmCallback, echo, temperature, numBos, numEos);
-      if (err != 0) {
-        throw ExecutorchRuntimeException.makeExecutorchException(err, "Failed to generate");
-      }
-    } finally {
-      mLock.readLock().unlock();
+    checkNotDestroyed();
+    if (image != null) {
+      prefillImages(image, width, height, channels);
     }
+    generate(prompt, seqLen, llmCallback, echo, temperature, numBos, numEos);
   }
 
   /**
@@ -471,15 +453,10 @@ public class LlmModule implements Closeable {
    */
   @Experimental
   public void prefillImages(int[] image, int width, int height, int channels) {
-    mLock.readLock().lock();
-    try {
-      checkNotClosed();
-      int nativeResult = prefillImagesInput(image, width, height, channels);
-      if (nativeResult != 0) {
-        throw ExecutorchRuntimeException.makeExecutorchException(nativeResult, "Prefill failed");
-      }
-    } finally {
-      mLock.readLock().unlock();
+    checkNotDestroyed();
+    int nativeResult = prefillImagesInput(image, width, height, channels);
+    if (nativeResult != 0) {
+      throw ExecutorchRuntimeException.makeExecutorchException(nativeResult, "Prefill failed");
     }
   }
 
@@ -500,9 +477,7 @@ public class LlmModule implements Closeable {
    */
   @Experimental
   public void prefillImages(ByteBuffer image, int width, int height, int channels) {
-    mLock.readLock().lock();
-    try {
-      checkNotClosed();
+    checkNotDestroyed();
     if (!image.isDirect()) {
       throw new IllegalArgumentException("Input ByteBuffer must be direct.");
     }
@@ -532,9 +507,6 @@ public class LlmModule implements Closeable {
     if (nativeResult != 0) {
       throw ExecutorchRuntimeException.makeExecutorchException(nativeResult, "Prefill failed");
     }
-    } finally {
-      mLock.readLock().unlock();
-    }
   }
 
   /**
@@ -557,9 +529,7 @@ public class LlmModule implements Closeable {
    */
   @Experimental
   public void prefillNormalizedImage(ByteBuffer image, int width, int height, int channels) {
-    mLock.readLock().lock();
-    try {
-      checkNotClosed();
+    checkNotDestroyed();
     if (!image.isDirect()) {
       throw new IllegalArgumentException("Input ByteBuffer must be direct.");
     }
@@ -604,9 +574,6 @@ public class LlmModule implements Closeable {
     if (nativeResult != 0) {
       throw ExecutorchRuntimeException.makeExecutorchException(nativeResult, "Prefill failed");
     }
-    } finally {
-      mLock.readLock().unlock();
-    }
   }
 
   private native int prefillImagesInput(int[] image, int width, int height, int channels);
@@ -628,15 +595,10 @@ public class LlmModule implements Closeable {
    */
   @Experimental
   public void prefillImages(float[] image, int width, int height, int channels) {
-    mLock.readLock().lock();
-    try {
-      checkNotClosed();
-      int nativeResult = prefillNormalizedImagesInput(image, width, height, channels);
-      if (nativeResult != 0) {
-        throw ExecutorchRuntimeException.makeExecutorchException(nativeResult, "Prefill failed");
-      }
-    } finally {
-      mLock.readLock().unlock();
+    checkNotDestroyed();
+    int nativeResult = prefillNormalizedImagesInput(image, width, height, channels);
+    if (nativeResult != 0) {
+      throw ExecutorchRuntimeException.makeExecutorchException(nativeResult, "Prefill failed");
     }
   }
 
@@ -654,15 +616,10 @@ public class LlmModule implements Closeable {
    */
   @Experimental
   public void prefillAudio(byte[] audio, int batch_size, int n_bins, int n_frames) {
-    mLock.readLock().lock();
-    try {
-      checkNotClosed();
-      int nativeResult = prefillAudioInput(audio, batch_size, n_bins, n_frames);
-      if (nativeResult != 0) {
-        throw ExecutorchRuntimeException.makeExecutorchException(nativeResult, "Prefill failed");
-      }
-    } finally {
-      mLock.readLock().unlock();
+    checkNotDestroyed();
+    int nativeResult = prefillAudioInput(audio, batch_size, n_bins, n_frames);
+    if (nativeResult != 0) {
+      throw ExecutorchRuntimeException.makeExecutorchException(nativeResult, "Prefill failed");
     }
   }
 
@@ -679,15 +636,10 @@ public class LlmModule implements Closeable {
    */
   @Experimental
   public void prefillAudio(float[] audio, int batch_size, int n_bins, int n_frames) {
-    mLock.readLock().lock();
-    try {
-      checkNotClosed();
-      int nativeResult = prefillAudioInputFloat(audio, batch_size, n_bins, n_frames);
-      if (nativeResult != 0) {
-        throw ExecutorchRuntimeException.makeExecutorchException(nativeResult, "Prefill failed");
-      }
-    } finally {
-      mLock.readLock().unlock();
+    checkNotDestroyed();
+    int nativeResult = prefillAudioInputFloat(audio, batch_size, n_bins, n_frames);
+    if (nativeResult != 0) {
+      throw ExecutorchRuntimeException.makeExecutorchException(nativeResult, "Prefill failed");
     }
   }
 
@@ -705,15 +657,10 @@ public class LlmModule implements Closeable {
    */
   @Experimental
   public void prefillRawAudio(byte[] audio, int batch_size, int n_channels, int n_samples) {
-    mLock.readLock().lock();
-    try {
-      checkNotClosed();
-      int nativeResult = prefillRawAudioInput(audio, batch_size, n_channels, n_samples);
-      if (nativeResult != 0) {
-        throw ExecutorchRuntimeException.makeExecutorchException(nativeResult, "Prefill failed");
-      }
-    } finally {
-      mLock.readLock().unlock();
+    checkNotDestroyed();
+    int nativeResult = prefillRawAudioInput(audio, batch_size, n_channels, n_samples);
+    if (nativeResult != 0) {
+      throw ExecutorchRuntimeException.makeExecutorchException(nativeResult, "Prefill failed");
     }
   }
 
@@ -728,15 +675,10 @@ public class LlmModule implements Closeable {
    */
   @Experimental
   public void prefillPrompt(String prompt) {
-    mLock.readLock().lock();
-    try {
-      checkNotClosed();
-      int nativeResult = prefillTextInput(prompt);
-      if (nativeResult != 0) {
-        throw ExecutorchRuntimeException.makeExecutorchException(nativeResult, "Prefill failed");
-      }
-    } finally {
-      mLock.readLock().unlock();
+    checkNotDestroyed();
+    int nativeResult = prefillTextInput(prompt);
+    if (nativeResult != 0) {
+      throw ExecutorchRuntimeException.makeExecutorchException(nativeResult, "Prefill failed");
     }
   }
 
@@ -749,24 +691,19 @@ public class LlmModule implements Closeable {
    * <p>The startPos will be reset to 0.
    */
   public void resetContext() {
-    mLock.readLock().lock();
-    try {
-      checkNotClosed();
-      resetContextNative();
-    } finally {
-      mLock.readLock().unlock();
-    }
+    checkNotDestroyed();
+    resetContextNative();
   }
 
   @DoNotStrip
   private native void resetContextNative();
 
   /**
-   * Stop current generate() before it finishes. Safe to call from any thread. Does not acquire any
-   * lock. After close(), this is a no-op.
+   * Stop current generate() before it finishes. Safe to call from any thread via a native atomic
+   * flag. After close(), this is a no-op.
    */
   public void stop() {
-    if (mClosed) return;
+    if (mDestroyed) return;
     stopNative();
   }
 
@@ -776,15 +713,10 @@ public class LlmModule implements Closeable {
   /** Force loading the module. Otherwise the model is loaded during first generate(). */
   @DoNotStrip
   public void load() {
-    mLock.readLock().lock();
-    try {
-      checkNotClosed();
-      int err = loadNative();
-      if (err != 0) {
-        throw ExecutorchRuntimeException.makeExecutorchException(err, "Failed to load model");
-      }
-    } finally {
-      mLock.readLock().unlock();
+    checkNotDestroyed();
+    int err = loadNative();
+    if (err != 0) {
+      throw ExecutorchRuntimeException.makeExecutorchException(err, "Failed to load model");
     }
   }
 
