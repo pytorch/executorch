@@ -1,0 +1,116 @@
+name: Pin Bump CI Handler
+
+on:
+  workflow_run:
+    workflows: ["trunk"]
+    types: [completed]
+
+jobs:
+  handle-ci-result:
+    if: github.repository_owner == 'pytorch'
+    runs-on: ubuntu-latest
+    environment: update-commit-hash
+    permissions:
+      pull-requests: write
+      issues: write
+    steps:
+      - uses: actions/github-script@v7
+        with:
+          github-token: ${{ secrets.UPDATEBOT_TOKEN }}
+          script: |
+            const { owner, repo } = context.repo;
+            const workflowRun = context.payload.workflow_run;
+            const conclusion = workflowRun.conclusion;
+            const runUrl = workflowRun.html_url;
+
+            const prs = workflowRun.pull_requests;
+            if (!prs || prs.length === 0) {
+              console.log('No PRs associated with this workflow run. Skipping.');
+              return;
+            }
+
+            const prNumber = prs[0].number;
+            const pr = await github.rest.pulls.get({ owner, repo, pull_number: prNumber });
+
+            const isPinBump = pr.data.labels.some(l => l.name === 'ci/pytorch-pin-bump');
+            if (!isPinBump) {
+              console.log(`PR #${prNumber} is not a pin bump PR. Skipping.`);
+              return;
+            }
+
+            if (pr.data.user.login !== 'pytorchbot') {
+              console.log(`PR #${prNumber} was created by ${pr.data.user.login}, not pytorchbot. Skipping.`);
+              return;
+            }
+
+            console.log(`Pin bump PR #${prNumber}, trunk concluded: ${conclusion}`);
+
+            const comments = await github.rest.issues.listComments({
+              owner, repo, issue_number: prNumber, per_page: 100
+            });
+            const fixAttempts = comments.data.filter(
+              c => c.body && c.body.includes('[ci-fix-attempt')
+            ).length;
+
+            if (conclusion === 'success') {
+              const note = fixAttempts > 0
+                ? `Claude fixed CI failures in ${fixAttempts} attempt(s).`
+                : 'CI passed on the first try.';
+
+              await github.rest.issues.createComment({
+                owner, repo, issue_number: prNumber,
+                body: `## CI Passed\n\nAll trunk CI checks have passed on this pin bump PR. ${note}\n\n**This PR is ready for human review and merge.**\n\ncc @jakeszwe`
+              });
+              return;
+            }
+
+            if (conclusion !== 'failure') {
+              console.log(`Trunk concluded with "${conclusion}" (not failure). Skipping.`);
+              return;
+            }
+
+            if (fixAttempts >= 3) {
+              await github.rest.issues.createComment({
+                owner, repo, issue_number: prNumber,
+                body: [
+                  '## Automated Fix Attempts Exhausted',
+                  '',
+                  `CI is still failing after ${fixAttempts} automated fix attempt(s).`,
+                  `Failed trunk run: ${runUrl}`,
+                  '',
+                  'This pin bump likely requires human intervention. Common causes:',
+                  '- BC-breaking API changes in PyTorch that need design discussion',
+                  '- New dependencies or build system changes',
+                  '- Test infrastructure issues unrelated to the pin bump',
+                  '',
+                  'cc @jakeszwe'
+                ].join('\n')
+              });
+              return;
+            }
+
+            const attemptNum = fixAttempts + 1;
+            await github.rest.issues.createComment({
+              owner, repo, issue_number: prNumber,
+              body: [
+                `@claude [ci-fix-attempt ${attemptNum}/3]`,
+                '',
+                `The \`trunk\` CI workflow has failed on this automated PyTorch pin bump PR.`,
+                `Failed run: ${runUrl}`,
+                '',
+                'Please:',
+                '1. Read the Dr. CI comment on this PR for a summary of which jobs failed and whether they are flaky. Ignore failures marked as FLAKY.',
+                '2. Use your CI tools to download the failure logs for the non-flaky failing jobs',
+                '3. Identify the root cause of the failure',
+                '4. If this is a build or test failure caused by PyTorch API changes, fix the ExecuTorch code to be compatible with the new PyTorch version',
+                '5. If this is a c10 header sync issue, the headers have already been synced by the pin bump script — the issue is likely in ExecuTorch code that uses those headers',
+                '6. Run `lintrunner -a` on any files you change',
+                '7. Push your fix as a new commit to this PR branch',
+                '',
+                'Important constraints:',
+                '- Do NOT modify torch_pin.py or .ci/docker/ci_commit_pins/pytorch.txt — the pin itself is correct',
+                '- Do NOT modify files under runtime/core/portable_type/c10/ unless the sync introduced a new API that ExecuTorch code needs to adapt to',
+                '- Focus on fixing ExecuTorch code to be compatible with the new PyTorch APIs',
+                '- If this is a major BC-breaking change that requires architectural discussion, say so clearly and stop — do not attempt a fix'
+              ].join('\n')
+            });
