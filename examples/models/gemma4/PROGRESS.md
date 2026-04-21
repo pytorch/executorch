@@ -16,8 +16,8 @@ Last updated: 2026-04-21 (v7 standard-ABI refactor)
 | Multimodal generation XNNPACK (audio+text) | ✅ Runs, generates tokens |
 | Multimodal image color recognition | ✅ Correctly identifies red, blue (HWC fix) |
 | Multimodal generation quality (v6 PLI) | ✅ PLI enabled; colors correct; audio TBD |
-| Single .pte for text/image+text/audio+text (v7) | ⏳ XNNPACK export in progress |
-| Standard MultimodalRunner ABI compliance (v7) | ⏳ Refactored, awaiting test |
+| Single .pte for text/image+text/audio+text (v7) | ✅ Verified end-to-end |
+| Standard MultimodalRunner ABI compliance (v7) | ✅ Uses create_multimodal_runner |
 
 ## Text generation — WORKING
 
@@ -218,15 +218,28 @@ Image resize target: **960×672** (not 448×448) — 60 columns × 16px × 42 ro
 KV cache metadata: `use_kv_cache=True, use_sdpa_with_kv_cache=True`.
 Text prefill: token-by-token (static-shape KV-cache text_decoder).
 
-**Verified E2E results on V6 XNNPACK pte (14 tok/s decode):**
+**Verified E2E results on V7 XNNPACK pte (single .pte, all 3 modes, ~13 tok/s decode):**
 ```
-Text:  "What is capital of France?" → "The capital of France is **Paris**."
-Image: "What color?" (blue PNG) → "The color of this image is blue blue."
-Image: "What color?" (red PNG)  → "The color of the image is **red**."
-Audio: "Describe this." (440Hz) → "Please Describe this sound."
+Text:  "What is capital of France?"          → "The capital of France is **Paris**..."
+Image: "What color?" (blue PNG)              → "The color of this image is blue blue.<turn|>"
+Audio: "What sound is this?" (440Hz sine)    → "I don can hear any sound...<turn|>"
 ```
 
-Use `/tmp/gemma4_multimodal_v6.pte` (12 GB, XNNPACK, max_seq=512) for production.
+V7 uses standard `MultimodalRunner` (`create_multimodal_runner`) — no custom orchestration.
+Single `/tmp/gemma4_multimodal_v7.pte` (12 GB, XNNPACK, max_seq=512) serves all 3 modes.
+
+**V7 standard ABI signatures (matches MultimodalPrefiller):**
+- `token_embedding(tokens[1,S])`        → `(1,S,1536)` scaled
+- `text_decoder(embeds[1,S,1536], cache_pos[1])` → `(1,vocab)` dynamic S
+- `vision_encoder(image[1,3,672,960])`  → `(1,280,1536)` (patchify in graph)
+- `audio_encoder(mel[1,128,200])`       → `(1,50,1536)` (channels-first)
+- `audio_preprocessor(wav[1,N])`        → `(1,T,128)` (helper, not in standard ABI)
+
+**Known quality issue:** PLI's `pli_emb` (token-ID-derived) component is zero in
+multimodal mode (Approach C dropped). `pli_proj(h)` still works. Net: text-only
+shows mild drift after ~5 tokens (e.g., "Paris-Nicolas-..."), image/audio
+generally produce coherent short responses. To restore full PLI quality, extend
+the MultimodalPrefiller ABI to carry token IDs (Approach C) — deferred.
 
 ### Re-export commands
 
