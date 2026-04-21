@@ -14,7 +14,7 @@ Last updated: 2026-04-21
 | Multimodal .pte (5 methods, KV cache) | ✅ Exports and runs end-to-end |
 | Multimodal generation XNNPACK (image+text) | ✅ Runs, generates tokens |
 | Multimodal generation XNNPACK (audio+text) | ✅ Runs, generates tokens |
-| Multimodal generation quality | ⚠️ Limited: PLI=0 causes drift after ~5 tokens |
+| Multimodal generation quality | ⚠️ v1 pte: PLI=0 causes drift; v6 export (PLI) in progress |
 
 ## Text generation — WORKING
 
@@ -251,10 +251,11 @@ cd /tmp && python /path/to/export_gemma4_multimodal.py \
 
 - **EOS handling**: ✅ Fixed. Embedded via `base.metadata`.
 - **Chat template**: ✅ `chat_template.jinja` + `render_chat.py`.
-- **PLI fix (P1 priority)**: Re-export text_decoder to accept token_ids for PLI computation.
-  Without PLI, multimodal generation degenerates after ~5 tokens.
-- **Audio encoder dynamic T**: Current export has fixed T=200 frames; needs re-export with
-  `dynamic_shapes={"input_features": {1: T_mel_dim}}` for arbitrary audio lengths.
+- **V6 XNNPACK export**: In progress (`gemma4_mm_export_v6.log`). Includes PLI-enabled
+  text_decoder (3-input: embeds, pos, pli_token_ids). Full PLI = pli_projection(h) +
+  pli_embeddings(token_id) — matches HF exactly. Runner auto-detects v1/v2 pte.
+- **Audio encoder**: Fixed T=200 frames; dynamic T needs 48k-40 constraint (stride-48 conv).
+- **Image color accuracy**: Confirm after v6 (PLI may affect color perception).
 - **Quantization**: not yet validated for Gemma4 (8da4w / 4w paths exist).
 - **Per-layer-type partial_rotary**: works but only needed for full layers
   in Gemma4 E2B; other Gemma4 sizes may differ.
