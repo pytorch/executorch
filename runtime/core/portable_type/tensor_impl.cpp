@@ -10,6 +10,7 @@
 
 #include <algorithm>
 #include <cstdint>
+#include <limits>
 
 #include <c10/util/irange.h>
 
@@ -38,6 +39,14 @@ ssize_t compute_numel(const TensorImpl::SizesType* sizes, ssize_t dim) {
         "Size must be non-negative, got %zd at dimension %zd",
         static_cast<ssize_t>(sizes[i]),
         i);
+    ET_CHECK_MSG(
+        numel <=
+            std::numeric_limits<ssize_t>::max() /
+                std::max(sizes[i], (TensorImpl::SizesType)1),
+        "Integer overflow computing numel at dimension %zd: numel=%zd, size=%zd",
+        i,
+        numel,
+        static_cast<ssize_t>(sizes[i]));
     numel *= sizes[i];
   }
   return numel;
@@ -69,7 +78,15 @@ TensorImpl::TensorImpl(
 }
 
 size_t TensorImpl::nbytes() const {
-  return numel_ * elementSize(type_);
+  ET_CHECK_MSG(
+      numel_ == 0 ||
+          static_cast<size_t>(elementSize(type_)) <=
+              std::numeric_limits<size_t>::max() /
+                  static_cast<size_t>(numel_),
+      "Integer overflow computing nbytes for numel=%zd, element_size=%zd",
+      numel_,
+      elementSize(type_));
+  return static_cast<size_t>(numel_) * static_cast<size_t>(elementSize(type_));
 }
 
 // Return the size of one element of the tensor
@@ -116,10 +133,7 @@ Error TensorImpl::internal_resize_contiguous(ArrayRef<SizesType> new_sizes) {
       }
 
       break;
-    case TensorShapeDynamism::DYNAMIC_BOUND:
-      // TODO(T175194371): Unbounded dynamic tensor resizing is not yet
-      // supported: treat them as upper-bounded.
-    case TensorShapeDynamism::DYNAMIC_UNBOUND: {
+    case TensorShapeDynamism::DYNAMIC_BOUND: {
       const auto new_numel = compute_numel(new_sizes.data(), dim_);
 
       ET_CHECK_OR_RETURN_ERROR(
@@ -138,7 +152,13 @@ Error TensorImpl::internal_resize_contiguous(ArrayRef<SizesType> new_sizes) {
       }
       numel_ = new_numel;
       std::copy(new_sizes.begin(), new_sizes.end(), sizes_);
+      break;
     }
+    case TensorShapeDynamism::DYNAMIC_UNBOUND:
+      ET_CHECK_OR_RETURN_ERROR(
+          false,
+          NotSupported,
+          "DYNAMIC_UNBOUND tensors are not supported; ExecuTorch does not have a general allocator for unbounded resizing.");
   }
   return Error::Ok;
 }

@@ -8,6 +8,7 @@
 
 #pragma once
 #include <executorch/runtime/core/exec_aten/exec_aten.h>
+#include <executorch/runtime/core/exec_aten/util/scalar_type_util.h>
 #include <executorch/runtime/core/tag.h>
 #include <executorch/runtime/platform/assert.h>
 
@@ -415,30 +416,47 @@ struct EValue {
   /****** ScalarType Type ******/
   executorch::aten::ScalarType toScalarType() const {
     ET_CHECK_MSG(isInt(), "EValue is not a ScalarType.");
-    return static_cast<executorch::aten::ScalarType>(
+    auto val = static_cast<executorch::aten::ScalarType>(
         payload.copyable_union.as_int);
+    ET_CHECK_MSG(
+        isValid(val),
+        "EValue integer %" PRId64 " is not a valid ScalarType",
+        payload.copyable_union.as_int);
+    return val;
   }
 
   /****** MemoryFormat Type ******/
   executorch::aten::MemoryFormat toMemoryFormat() const {
     ET_CHECK_MSG(isInt(), "EValue is not a MemoryFormat.");
-    return static_cast<executorch::aten::MemoryFormat>(
-        payload.copyable_union.as_int);
+    auto as_int = payload.copyable_union.as_int;
+    ET_CHECK_MSG(
+        as_int >= 0 && as_int <= static_cast<int64_t>(INT8_MAX),
+        "EValue integer %" PRId64 " is not a valid MemoryFormat",
+        as_int);
+    return static_cast<executorch::aten::MemoryFormat>(as_int);
   }
 
   /****** Layout Type ******/
   executorch::aten::Layout toLayout() const {
     ET_CHECK_MSG(isInt(), "EValue is not a Layout.");
-    return static_cast<executorch::aten::Layout>(payload.copyable_union.as_int);
+    auto as_int = payload.copyable_union.as_int;
+    ET_CHECK_MSG(
+        as_int >= 0 && as_int <= static_cast<int64_t>(INT8_MAX),
+        "EValue integer %" PRId64 " is not a valid Layout",
+        as_int);
+    return static_cast<executorch::aten::Layout>(as_int);
   }
 
   /****** Device Type ******/
   executorch::aten::Device toDevice() const {
     ET_CHECK_MSG(isInt(), "EValue is not a Device.");
+    auto as_int = payload.copyable_union.as_int;
+    ET_CHECK_MSG(
+        as_int >= 0 && as_int <= static_cast<int64_t>(INT8_MAX),
+        "EValue integer %" PRId64 " cannot be converted to a valid DeviceType",
+        as_int);
     return executorch::aten::Device(
-        static_cast<executorch::aten::DeviceType>(
-            payload.copyable_union.as_int),
-        -1);
+        static_cast<executorch::aten::DeviceType>(as_int), -1);
   }
 
   template <typename T>
