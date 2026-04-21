@@ -661,10 +661,14 @@ def _export_metal(model, config, args):
     print("Decode export successful!")
 
     # --- Prefill method (T>=2, dynamic shape) ---
+    # Use max-sized example so the serialized numel_bound_ is large enough
+    # for any runtime input (Metal/AOTI pattern: alloc_graph_input=False
+    # means numel_bound_ comes from the export example size).
     print("Exporting prefill method...")
-    prefill_tokens = torch.tensor([[0, 1]], dtype=torch.long)
-    prefill_pos = torch.tensor([0, 1], dtype=torch.long)
-    seq_dim = Dim("seq_len", min=2, max=config.max_seq_len - 1)
+    max_prefill = config.max_seq_len - 1
+    prefill_tokens = torch.zeros((1, max_prefill), dtype=torch.long)
+    prefill_pos = torch.arange(max_prefill, dtype=torch.long)
+    seq_dim = Dim("seq_len", min=2, max=max_prefill)
     prefill_dynamic_shapes = ({1: seq_dim}, {0: seq_dim})
     with torch.no_grad():
         prefill_ep = export(
