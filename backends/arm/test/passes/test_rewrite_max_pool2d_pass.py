@@ -10,8 +10,15 @@ from executorch.backends.arm._passes.remove_getitem_pass import RemoveGetItemPas
 from executorch.backends.arm._passes.rewrite_max_pool2d_pass import RewriteMaxPool2dPass
 from executorch.backends.arm.test import common
 from executorch.backends.arm.test.tester.test_pipeline import PassPipeline
+from executorch.backends.arm.tosa.specification import (
+    TosaLoweringContext,
+    TosaSpecification,
+)
 from executorch.backends.test.harness.stages import StageType
+from executorch.exir import to_edge
 from executorch.exir.dialects._ops import ops as exir_ops
+from torch._export.utils import _get_shape_env_from_gm
+from torch.export import Dim, export
 
 input_t = Tuple[torch.Tensor]
 
@@ -50,6 +57,20 @@ class MaxPool2dWithEmptyStride(torch.nn.Module):
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         return torch.nn.functional.max_pool2d(x, kernel_size=[2, 3], stride=[])
+
+
+class MaxPool2dDynamic(torch.nn.Module):
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        return torch.nn.functional.max_pool2d(
+            x, kernel_size=3, stride=2, padding=1, ceil_mode=True
+        )
+
+
+class MaxPool2dDynamicAdaptive(torch.nn.Module):
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        return torch.nn.functional.max_pool2d(
+            x, kernel_size=3, stride=2, padding=1, ceil_mode=False
+        )
 
 
 modules: Dict[str, ModuleWithInputs] = {
@@ -115,3 +136,67 @@ def test_rewrite_max_pool2d_tosa_empty_stride_uses_kernel_size() -> None:
 
     tosa_node = _get_tosa_max_pool2d_node(pipeline)
     assert tosa_node.args[2] == [2, 3]
+
+
+def test_rewrite_max_pool2d_tosa_dynamic_shape() -> None:
+    module = MaxPool2dDynamic()
+    example_inputs = (torch.rand(1, 3, 8, 8),)
+    ep = export(
+        module,
+        example_inputs,
+        dynamic_shapes={
+            "x": {
+                2: Dim("height", min=2, max=8) * 2,
+                3: Dim("width", min=2, max=8) * 2,
+            }
+        },
+    )
+    edge_model = to_edge(ep)
+    shape_env = _get_shape_env_from_gm(edge_model.exported_program().graph_module)
+
+    with TosaLoweringContext(
+        TosaSpecification.create_from_string("TOSA-1.1+FP+shape"), shape_env=shape_env
+    ):
+        edge_model = edge_model.transform([RemoveGetItemPass(), RewriteMaxPool2dPass()])
+
+    nodes = list(edge_model.exported_program().graph.nodes)
+    assert not any(n.target == exir_ops.edge.aten.max_pool2d.default for n in nodes)
+    assert any(n.target == exir_ops.backend.tosa.MAX_POOL2D.default for n in nodes)
+
+
+def test_rewrite_max_pool2d_tosa_dynamic_shape_adjusts_adaptive_trailing_pad() -> None:
+    module = MaxPool2dDynamicAdaptive()
+    example_inputs = (torch.rand(1, 3, 8, 8),)
+    ep = export(
+        module,
+        example_inputs,
+        dynamic_shapes={
+            "x": {
+                2: Dim("height", min=2, max=8) * 2,
+                3: Dim("width", min=2, max=8) * 2,
+            }
+        },
+    )
+    edge_model = to_edge(ep)
+    shape_env = _get_shape_env_from_gm(edge_model.exported_program().graph_module)
+
+    with TosaLoweringContext(
+        TosaSpecification.create_from_string("TOSA-1.1+FP+shape"), shape_env=shape_env
+    ):
+        edge_model = edge_model.transform([RemoveGetItemPass(), RewriteMaxPool2dPass()])
+
+    nodes = list(edge_model.exported_program().graph.nodes)
+    adaptive_nodes = [
+        n
+        for n in nodes
+        if n.target == exir_ops.backend.tosa.MAX_POOL2D_ADAPTIVE.default
+    ]
+    assert len(adaptive_nodes) == 1
+    assert not any(n.target == exir_ops.backend.tosa.MAX_POOL2D.default for n in nodes)
+
+    pad_node = adaptive_nodes[0].args[3]
+    if isinstance(pad_node, torch.fx.Node):
+        assert pad_node.target == exir_ops.backend.tosa.CONST_SHAPE.default
+        assert pad_node.args == ([1, 0, 1, 0],)
+    else:
+        assert list(pad_node) == [1, 0, 1, 0]
