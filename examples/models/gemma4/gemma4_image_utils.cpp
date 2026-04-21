@@ -35,13 +35,15 @@ void patchify(
       float* pv = pixel_values_out.data() + patch_idx * kPatchDim;
       int dim_offset = 0;
 
-      // Extract patch in CHW order. Pass raw [0,1] values — the vision
-      // model's Gemma4VisionPatchEmbedder applies 2*(v-0.5) internally.
-      for (int c = 0; c < C; ++c) {
-        for (int ph = 0; ph < kPatchSize; ++ph) {
-          for (int pw2 = 0; pw2 < kPatchSize; ++pw2) {
-            int h = py * kPatchSize + ph;
-            int w = px * kPatchSize + pw2;
+      // Extract patch in HWC (pixel-major) order: (pixel_0_R,G,B), (pixel_1_R,G,B)...
+      // This matches Gemma4ImageProcessor.preprocess() which produces patches
+      // with shape (N_patches, 3*patch_size^2) in HWC order per patch.
+      // Pass raw [0,1] values — Gemma4VisionPatchEmbedder applies 2*(v-0.5) internally.
+      for (int ph = 0; ph < kPatchSize; ++ph) {
+        for (int pw2 = 0; pw2 < kPatchSize; ++pw2) {
+          int h = py * kPatchSize + ph;
+          int w = px * kPatchSize + pw2;
+          for (int c = 0; c < C; ++c) {
             pv[dim_offset++] = image_chw[c * H * W + h * W + w];  // [0,1]
           }
         }
