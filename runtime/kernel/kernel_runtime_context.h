@@ -12,6 +12,7 @@
 #include <executorch/runtime/core/event_tracer_hooks.h>
 #include <executorch/runtime/core/memory_allocator.h>
 #include <executorch/runtime/core/result.h>
+#include <executorch/runtime/executor/dynamic_allocator.h>
 #include <executorch/runtime/platform/compiler.h>
 
 namespace executorch {
@@ -39,8 +40,11 @@ class KernelRuntimeContext {
    */
   KernelRuntimeContext(
       EventTracer* event_tracer = nullptr,
-      MemoryAllocator* temp_allocator = nullptr)
-      : event_tracer_(event_tracer), temp_allocator_(temp_allocator) {}
+      MemoryAllocator* temp_allocator = nullptr,
+      DynamicAllocator* dynamic_allocator = nullptr)
+      : event_tracer_(event_tracer),
+        temp_allocator_(temp_allocator),
+        dynamic_allocator_(dynamic_allocator) {}
   /**
    * Tells the runtime that the kernel call has failed. Prefer this over
    * ET_CHECK_*(), which fatally panics the process/system.
@@ -99,11 +103,14 @@ class KernelRuntimeContext {
     return temp_memory;
   }
 
-  // TODO(T147221312): Add a way to resize a tensor.
+  DynamicAllocator* dynamic_allocator() const {
+    return dynamic_allocator_;
+  }
 
  private:
   EventTracer* event_tracer_ = nullptr;
   MemoryAllocator* temp_allocator_ = nullptr;
+  DynamicAllocator* dynamic_allocator_ = nullptr;
   Error failure_state_ = Error::Ok;
 };
 

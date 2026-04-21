@@ -13,13 +13,10 @@
 #include <executorch/runtime/core/portable_type/device.h>
 #include <executorch/runtime/core/portable_type/scalar_type.h>
 #include <executorch/runtime/core/tensor_shape_dynamism.h>
-#include <executorch/runtime/executor/dynamic_allocator.h>
 
-// Forward declaration of a helper that provides access to internal resizing
-// methods of TensorImpl. Real definition is in
-// executorch/runtime/core/exec_aten/tensor_util.h.
 namespace executorch {
 namespace runtime {
+class DynamicAllocator;
 namespace internal {
 class TensorResizerFriend;
 } // namespace internal
@@ -224,22 +221,6 @@ class TensorImpl {
     data_ = ptr;
   }
 
-  DynamicAllocator* dynamic_allocator() const {
-    return dynamic_allocator_;
-  }
-
-  void set_dynamic_allocator(DynamicAllocator* allocator) {
-    dynamic_allocator_ = allocator;
-  }
-
-  size_t capacity_bytes() const {
-    return capacity_bytes_;
-  }
-
-  void set_capacity_bytes(size_t capacity) {
-    capacity_bytes_ = capacity;
-  }
-
   /*
    * DEPRECATED: Use torch::executor::resize_tensor() or
    * torch::executor::resize_tensor_impl().
@@ -266,7 +247,9 @@ class TensorImpl {
    * error instead of panicking on failure. This is not part of the at::Tensor
    * API, and can only be used in lean mode.
    */
-  ET_NODISCARD Error internal_resize_contiguous(ArrayRef<SizesType> new_sizes);
+  ET_NODISCARD Error internal_resize_contiguous(
+      ArrayRef<SizesType> new_sizes,
+      ::executorch::runtime::DynamicAllocator* allocator = nullptr);
 
  private:
   // Keep fields arranged to avoid unnecessary alignment holes.
@@ -298,9 +281,6 @@ class TensorImpl {
 
   /// Specifies the mutability of the shape of the tensor.
   const TensorShapeDynamism shape_dynamism_;
-
-  DynamicAllocator* dynamic_allocator_ = nullptr;
-  size_t capacity_bytes_ = 0;
 
   /// Device where tensor data resides (CPU, CUDA, etc.)
   Device device_;

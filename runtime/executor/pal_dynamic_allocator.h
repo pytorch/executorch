@@ -25,15 +25,13 @@ namespace runtime {
 class PalDynamicAllocator : public DynamicAllocator {
  public:
   void* allocate(size_t size, size_t alignment, size_t* actual_size) override {
-    // Over-allocate to accommodate alignment and the raw-pointer bookkeeping.
-    size_t alloc_size = size + sizeof(void*) + alignment;
+    size_t alloc_size = size + kHeaderSize + alignment;
     void* raw = pal_allocate(alloc_size);
     if (raw == nullptr) {
       return nullptr;
     }
     void* aligned = align_pointer(raw, alignment);
-    // Store the raw pointer just before the aligned pointer so we can free it.
-    store_raw_pointer(aligned, raw);
+    store_header(aligned, raw, size);
     if (actual_size) {
       *actual_size = size;
     }
@@ -49,21 +47,26 @@ class PalDynamicAllocator : public DynamicAllocator {
     if (ptr == nullptr) {
       return allocate(new_size, alignment, actual_size);
     }
-    // Growth policy: at least 2x old_size to amortize repeated resizes.
-    size_t target = std::max(new_size, old_size * 2);
-    size_t alloc_size = target + sizeof(void*) + alignment;
+    size_t current_capacity = load_capacity(ptr);
+    if (new_size <= current_capacity) {
+      if (actual_size) {
+        *actual_size = current_capacity;
+      }
+      return ptr;
+    }
+    // Growth policy: at least 2x current capacity to amortize repeated resizes.
+    size_t target = std::max(new_size, current_capacity * 2);
+    size_t alloc_size = target + kHeaderSize + alignment;
     void* raw = pal_allocate(alloc_size);
     if (raw == nullptr) {
       return nullptr;
     }
     void* aligned = align_pointer(raw, alignment);
-    store_raw_pointer(aligned, raw);
-    // Copy old data.
+    store_header(aligned, raw, target);
     size_t copy_size = std::min(old_size, new_size);
     if (copy_size > 0) {
       std::memcpy(aligned, ptr, copy_size);
     }
-    // Free old allocation.
     free(ptr);
     if (actual_size) {
       *actual_size = target;
@@ -79,22 +82,37 @@ class PalDynamicAllocator : public DynamicAllocator {
     pal_free(raw);
   }
 
+  size_t allocated_size(void* ptr) const override {
+    if (ptr == nullptr) {
+      return 0;
+    }
+    return load_capacity(ptr);
+  }
+
  private:
+  static constexpr size_t kHeaderSize = sizeof(void*) + sizeof(size_t);
+
   static void* align_pointer(void* ptr, size_t alignment) {
     uintptr_t addr = reinterpret_cast<uintptr_t>(ptr);
-    // Reserve space for the raw pointer bookkeeping.
-    addr += sizeof(void*);
+    addr += kHeaderSize;
     uintptr_t aligned = (addr + alignment - 1) & ~(alignment - 1);
     return reinterpret_cast<void*>(aligned);
   }
 
-  static void store_raw_pointer(void* aligned, void* raw) {
-    // Store the raw (unaligned) pointer immediately before the aligned pointer.
+  static void store_header(void* aligned, void* raw, size_t capacity) {
     reinterpret_cast<void**>(aligned)[-1] = raw;
+    reinterpret_cast<size_t*>(
+        static_cast<char*>(aligned) - sizeof(void*) - sizeof(size_t))[0] =
+        capacity;
   }
 
   static void* load_raw_pointer(void* aligned) {
     return reinterpret_cast<void**>(aligned)[-1];
+  }
+
+  static size_t load_capacity(void* aligned) {
+    return reinterpret_cast<size_t*>(
+        static_cast<char*>(aligned) - sizeof(void*) - sizeof(size_t))[0];
   }
 };
 

@@ -28,6 +28,12 @@
 #include <executorch/runtime/platform/assert.h>
 #include <executorch/runtime/platform/compiler.h>
 
+namespace executorch {
+namespace runtime {
+class DynamicAllocator;
+} // namespace runtime
+} // namespace executorch
+
 /// All assertion messages should begin with this prefix.
 #define ET_TENSOR_CHECK_PREFIX__ "Tensors do not match"
 #define ET_MIN2(a, b) (std::min(a, b))
@@ -1172,33 +1178,28 @@ void reset_data_ptr(const executorch::aten::Tensor& tensor);
  */
 ET_NODISCARD Error resize_tensor_impl(
     executorch::aten::TensorImpl* impl,
-    executorch::aten::ArrayRef<executorch::aten::SizesType> new_sizes);
+    executorch::aten::ArrayRef<executorch::aten::SizesType> new_sizes,
+    ::executorch::runtime::DynamicAllocator* allocator = nullptr);
 
 } // namespace internal
 
 /**
- * Resize a tensor to new_sizes, rank must stay the same. Currently does not
- * expand the tensor if new size exceeds the current capacity. Currently
- * fails an ET_CHECK if the tensor cannot be resized.
+ * Resize a tensor to new_sizes, rank must stay the same.
  *
- * WARNING: Placeholder API until discussion around runtime context is
- * settled, will likely move to be a class method on a TensorResizer object
- * passed in through runtimeContext.
+ * For DYNAMIC_UNBOUND tensors that need reallocation, pass a non-null
+ * DynamicAllocator (typically from KernelRuntimeContext).
  */
 ET_NODISCARD inline Error resize_tensor(
     executorch::aten::Tensor t,
-    executorch::aten::ArrayRef<executorch::aten::SizesType> new_sizes) {
-  return internal::resize_tensor_impl(t.unsafeGetTensorImpl(), new_sizes);
+    executorch::aten::ArrayRef<executorch::aten::SizesType> new_sizes,
+    ::executorch::runtime::DynamicAllocator* allocator = nullptr) {
+  return internal::resize_tensor_impl(
+      t.unsafeGetTensorImpl(), new_sizes, allocator);
 }
 
 /**
- * Resize a tensor to new_sizes, rank must stay the same. Currently does not
- * expand the tensor if new size exceeds the current capacity. Currently
- * fails an ET_CHECK if the tensor cannot be resized.
- *
- * WARNING: Placeholder API until discussion around runtime context is
- * settled, will likely move to be a class method on a TensorResizer object
- * passed in through runtimeContext.
+ * Resize a tensor to new_sizes, rank must stay the same.
+ * Overload for non-SizesType arrays (casts to SizesType internally).
  */
 template <
     typename T,
@@ -1207,8 +1208,8 @@ template <
         int>::type = 0>
 ET_NODISCARD inline Error resize_tensor(
     executorch::aten::Tensor t,
-    executorch::aten::ArrayRef<T> new_sizes) {
-  // Need to cast the input array to an array of Tensor::SizesType
+    executorch::aten::ArrayRef<T> new_sizes,
+    ::executorch::runtime::DynamicAllocator* allocator = nullptr) {
   std::array<executorch::aten::SizesType, kTensorDimensionLimit>
       new_sizes_casted{};
   size_t new_sizes_ndim = new_sizes.size();
@@ -1224,7 +1225,9 @@ ET_NODISCARD inline Error resize_tensor(
   }
 
   return internal::resize_tensor_impl(
-      t.unsafeGetTensorImpl(), {new_sizes_casted.data(), new_sizes_ndim});
+      t.unsafeGetTensorImpl(),
+      {new_sizes_casted.data(), new_sizes_ndim},
+      allocator);
 }
 
 /// DEPRECATED: Use `resize_tensor()` instead, which can fail non-fatally.

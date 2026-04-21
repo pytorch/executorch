@@ -67,6 +67,15 @@ class DynamicAllocator {
    * @param[in] ptr Pointer to free. May be nullptr (no-op).
    */
   virtual void free(void* ptr) = 0;
+
+  /**
+   * Returns the usable capacity of a live allocation.
+   *
+   * @param[in] ptr Pointer previously returned by allocate() or reallocate(),
+   *     or nullptr (returns 0).
+   * @returns The number of usable bytes at ptr.
+   */
+  virtual size_t allocated_size(void* ptr) const = 0;
 };
 
 } // namespace runtime

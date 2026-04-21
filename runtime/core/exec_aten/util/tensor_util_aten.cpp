@@ -197,7 +197,8 @@ void reset_data_ptr(const at::Tensor& tensor) {
 /// Most callers should use resize_tensor() instead.
 Error resize_tensor_impl(
     c10::TensorImpl* impl,
-    c10::ArrayRef<executorch::aten::SizesType> new_sizes) {
+    c10::ArrayRef<executorch::aten::SizesType> new_sizes,
+    ::executorch::runtime::DynamicAllocator* /*allocator*/) {
   // The lean-mode Tensor will perform this check, but at::Tensor won't.
   // Although at::Tensor can be resized in this case, it's not allowed by the
   // higher-level constraints of the runtime.

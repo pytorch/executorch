@@ -17,6 +17,7 @@
 #include <executorch/runtime/backend/interface.h>
 #include <executorch/runtime/core/event_tracer_hooks.h>
 #include <executorch/runtime/core/exec_aten/util/tensor_util.h>
+#include <executorch/runtime/core/tensor_shape_dynamism.h>
 #include <executorch/runtime/core/named_data_map.h>
 #include <executorch/runtime/core/span.h>
 #include <executorch/runtime/executor/memory_manager.h>
@@ -1425,8 +1426,9 @@ Error Method::execute_instruction() {
       EXECUTORCH_SCOPE_PROF("OPERATOR_CALL");
       internal::EventTracerProfileOpScope event_tracer_op_scope =
           internal::EventTracerProfileOpScope(event_tracer_, "OPERATOR_CALL");
-      // TODO(T147221312): Also expose tensor resizer via the context.
-      KernelRuntimeContext context(event_tracer_, temp_allocator_);
+      KernelRuntimeContext context(
+          event_tracer_, temp_allocator_,
+          memory_manager_->dynamic_allocator());
       auto args = chain.argument_lists_[step_state_.instr_idx];
       chain.kernels_[step_state_.instr_idx](context, args);
       // We reset the temp_allocator after the switch statement
@@ -1542,10 +1544,11 @@ Error Method::execute_instruction() {
       if (val.isTensor()) {
         auto& t = val.toTensor();
         auto* impl = t.unsafeGetTensorImpl();
-        if (impl->dynamic_allocator() != nullptr &&
-            impl->mutable_data() != nullptr) {
-          impl->dynamic_allocator()->free(impl->mutable_data());
-          impl->set_capacity_bytes(0);
+        auto* dyn_alloc = memory_manager_->dynamic_allocator();
+        if (impl->shape_dynamism() ==
+                TensorShapeDynamism::DYNAMIC_UNBOUND &&
+            dyn_alloc != nullptr && impl->mutable_data() != nullptr) {
+          dyn_alloc->free(impl->mutable_data());
         }
         internal::reset_data_ptr(t);
       } else {

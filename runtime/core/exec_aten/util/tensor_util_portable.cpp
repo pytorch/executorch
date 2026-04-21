@@ -207,15 +207,17 @@ class TensorResizerFriend final {
  public:
   ET_NODISCARD static Error resize_tensor_impl(
       executorch::aten::TensorImpl* impl,
-      executorch::aten::ArrayRef<executorch::aten::SizesType> new_sizes) {
-    return impl->internal_resize_contiguous(new_sizes);
+      executorch::aten::ArrayRef<executorch::aten::SizesType> new_sizes,
+      ::executorch::runtime::DynamicAllocator* allocator = nullptr) {
+    return impl->internal_resize_contiguous(new_sizes, allocator);
   }
 };
 
 Error resize_tensor_impl(
     torch::executor::TensorImpl* impl,
-    torch::executor::ArrayRef<executorch::aten::SizesType> new_sizes) {
-  return TensorResizerFriend::resize_tensor_impl(impl, new_sizes);
+    torch::executor::ArrayRef<executorch::aten::SizesType> new_sizes,
+    ::executorch::runtime::DynamicAllocator* allocator) {
+  return TensorResizerFriend::resize_tensor_impl(impl, new_sizes, allocator);
 }
 } // namespace internal
 
