@@ -24,7 +24,7 @@ find_package(executorch CONFIG REQUIRED FIND_ROOT_PATH_BOTH)
 executorch_target_link_options_shared_lib(executorch)
 
 set(link_libraries executorch gflags)
-set(_srcs main.cpp gemma4_image_utils.cpp)
+set(_srcs main.cpp)
 
 list(
   APPEND link_libraries

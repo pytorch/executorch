@@ -6,34 +6,28 @@
  * LICENSE file in the root directory of this source tree.
  */
 
-// Gemma4 runner — supports text-only and multimodal (image + audio).
+// Gemma4 unified runner — single .pte serves text-only, image+text, and
+// audio+text via ExecuTorch's standard MultimodalRunner.
 //
-// TEXT-ONLY (gemma4.pte with forward method):
-//   gemma4_runner --model_path gemma4.pte --prompt "..."
-//
-// MULTIMODAL (gemma4_multimodal.pte with 5 methods):
-//   gemma4_runner --model_path gemma4_multimodal.pte \
-//                 --image_path photo.jpg --prompt "Describe this."
-//   gemma4_runner --model_path gemma4_multimodal.pte \
-//                 --audio_path clip.wav --prompt "Transcribe the audio."
-//
-// The multimodal path bypasses MultimodalRunner and orchestrates the
-// methods directly (vision_encoder takes two tensors; audio_preprocessor
-// converts PCM to mel features before audio_encoder).
+// Examples:
+//   gemma4_runner --model_path gemma4_multimodal.pte --prompt "..."
+//   gemma4_runner --model_path gemma4_multimodal.pte --image_path photo.jpg --prompt "..."
+//   gemma4_runner --model_path gemma4_multimodal.pte --audio_path clip.wav --prompt "..."
 
+#include <algorithm>
 #include <cmath>
 #include <cstdint>
 #include <cstring>
 #include <fstream>
-#include <numeric>
 #include <vector>
 
 #include <gflags/gflags.h>
 
-#include "gemma4_image_utils.h"
-
+#include <executorch/extension/llm/runner/audio.h>
+#include <executorch/extension/llm/runner/image.h>
 #include <executorch/extension/llm/runner/llm_runner_helper.h>
-#include <executorch/extension/llm/runner/text_llm_runner.h>
+#include <executorch/extension/llm/runner/multimodal_input.h>
+#include <executorch/extension/llm/runner/multimodal_runner.h>
 #include <executorch/extension/module/module.h>
 #include <executorch/extension/tensor/tensor_ptr_maker.h>
 #include <executorch/runtime/core/evalue.h>
@@ -42,9 +36,42 @@
 #define STB_IMAGE_IMPLEMENTATION
 #include <stb_image.h>
 
-// Simple bilinear resize (avoids stb_image_resize.h dependency).
-static void gemma4_bilinear_resize(
-    const unsigned char* src, int sw, int sh, int sc,
+#if defined(ET_USE_THREADPOOL)
+#include <executorch/extension/threadpool/cpuinfo_utils.h>
+#include <executorch/extension/threadpool/threadpool.h>
+#endif
+
+DEFINE_string(model_path, "gemma4.pte", "Path to .pte (text-only or multimodal).");
+DEFINE_string(data_path, "", "Optional CUDA delegate data file (.ptd).");
+DEFINE_string(tokenizer_path, "tokenizer.json", "Tokenizer file.");
+DEFINE_string(prompt, "Hello!", "Text prompt.");
+DEFINE_string(image_path, "", "Image file for vision+text generation.");
+DEFINE_string(audio_path, "", "WAV file for audio+text generation.");
+DEFINE_double(temperature, 0.0, "Sampling temperature (0 = greedy).");
+DEFINE_int32(cpu_threads, -1, "CPU threads (-1 = auto).");
+DEFINE_int32(seq_len, 512, "Max new tokens to generate.");
+DEFINE_bool(warmup, false, "Run warmup before generation.");
+
+using executorch::extension::from_blob;
+using executorch::extension::Module;
+using executorch::extension::llm::Audio;
+using executorch::extension::llm::Image;
+using executorch::extension::llm::MultimodalInput;
+using executorch::runtime::EValue;
+using executorch::aten::ScalarType;
+
+// Gemma4 vision input dims (must match VisionEncoderExport in encoders.py).
+constexpr int kImageH = 672;
+constexpr int kImageW = 960;
+// Gemma4 audio encoder input dims (channels-first mel; T_mel=200 = 48*5-40).
+constexpr int kMelBins = 128;
+constexpr int kMelFrames = 200;
+
+// ---------------------------------------------------------------------------
+// Bilinear resize (avoids stb_image_resize.h dependency)
+// ---------------------------------------------------------------------------
+static void bilinear_resize_rgb(
+    const unsigned char* src, int sw, int sh,
     unsigned char* dst, int dw, int dh) {
   for (int y = 0; y < dh; ++y) {
     float fy = (y + 0.5f) * sh / dh - 0.5f;
@@ -56,48 +83,37 @@ static void gemma4_bilinear_resize(
       int x0 = (int)fx; int x1 = x0 + 1;
       float wx = fx - x0;
       if (x0 < 0) x0 = 0; if (x1 >= sw) x1 = sw - 1;
-      for (int c = 0; c < sc; ++c) {
-        float v = (1-wx)*(1-wy)*src[(y0*sw+x0)*sc+c]
-                + (  wx)*(1-wy)*src[(y0*sw+x1)*sc+c]
-                + (1-wx)*(  wy)*src[(y1*sw+x0)*sc+c]
-                + (  wx)*(  wy)*src[(y1*sw+x1)*sc+c];
-        dst[(y*dw+x)*sc+c] = (unsigned char)(v + 0.5f);
+      for (int c = 0; c < 3; ++c) {
+        float v = (1-wx)*(1-wy)*src[(y0*sw+x0)*3+c]
+                + (  wx)*(1-wy)*src[(y0*sw+x1)*3+c]
+                + (1-wx)*(  wy)*src[(y1*sw+x0)*3+c]
+                + (  wx)*(  wy)*src[(y1*sw+x1)*3+c];
+        dst[(y*dw+x)*3+c] = (unsigned char)(v + 0.5f);
       }
     }
   }
 }
 
-#if defined(ET_USE_THREADPOOL)
-#include <executorch/extension/threadpool/cpuinfo_utils.h>
-#include <executorch/extension/threadpool/threadpool.h>
-#endif
+// ---------------------------------------------------------------------------
+// Load image → CHW float [0, 1] at the model's expected resolution
+// ---------------------------------------------------------------------------
+static std::vector<float> load_image_chw(const std::string& path) {
+  int w, h, c;
+  unsigned char* img = stbi_load(path.c_str(), &w, &h, &c, 3);
+  if (!img) { ET_LOG(Error, "Failed to load image: %s", path.c_str()); return {}; }
 
-DEFINE_string(model_path, "gemma4.pte", "Model .pte (text-only or multimodal).");
-DEFINE_string(data_path, "", "CUDA delegate data file (.ptd).");
-DEFINE_string(tokenizer_path, "tokenizer.json", "Tokenizer file.");
-DEFINE_string(prompt, "Hello!", "Text prompt.");
-DEFINE_string(image_path, "", "Image file for vision+text generation.");
-DEFINE_string(audio_path, "", "WAV file for audio+text generation.");
-DEFINE_double(temperature, 0.0, "Sampling temperature (0 = greedy).");
-DEFINE_int32(cpu_threads, -1, "CPU threads (-1 = auto).");
-DEFINE_int32(seq_len, 512, "Max new tokens to generate.");
-// Image is resized to kImageW × kImageH = 960 × 672 to produce exactly kMaxPatches=2520
-// patches in a 60×42 grid, yielding 280 visual soft tokens after 3×3 spatial pooling.
-DEFINE_bool(warmup, false, "Run warmup before generation.");
-DEFINE_bool(raw_prompt, false,
-    "Pass --prompt verbatim. Use with render_chat.py for system prompts.");
+  std::vector<uint8_t> resized(kImageW * kImageH * 3);
+  bilinear_resize_rgb(img, w, h, resized.data(), kImageW, kImageH);
+  stbi_image_free(img);
 
-using executorch::extension::from_blob;
-using executorch::extension::Module;
-using executorch::runtime::EValue;
-using executorch::aten::ScalarType;
-
-// Helper: run a method with an initializer-list of EValue inputs.
-static inline auto run(
-    Module& m,
-    const char* method,
-    std::initializer_list<EValue> inputs) {
-  return m.execute(method, std::vector<EValue>(inputs));
+  // HWC uint8 → CHW float [0, 1]. Vision encoder applies 2*(v-0.5) internally.
+  std::vector<float> chw(3 * kImageH * kImageW);
+  for (int hh = 0; hh < kImageH; ++hh)
+    for (int ww = 0; ww < kImageW; ++ww)
+      for (int cc = 0; cc < 3; ++cc)
+        chw[cc * kImageH * kImageW + hh * kImageW + ww] =
+            resized[hh * kImageW * 3 + ww * 3 + cc] / 255.0f;
+  return chw;
 }
 
 // ---------------------------------------------------------------------------
@@ -106,16 +122,12 @@ static inline auto run(
 static std::vector<float> load_wav_pcm(const std::string& path) {
   std::ifstream f(path, std::ios::binary);
   if (!f) { ET_LOG(Error, "Cannot open: %s", path.c_str()); return {}; }
-
-  // Parse RIFF header
   char riff[4]; f.read(riff, 4);
   if (std::strncmp(riff, "RIFF", 4) != 0) {
     ET_LOG(Error, "Not a RIFF file: %s", path.c_str()); return {};
   }
   uint32_t chunk_size; f.read(reinterpret_cast<char*>(&chunk_size), 4);
   char wave[4]; f.read(wave, 4);
-
-  // Find fmt + data chunks
   uint16_t audio_format = 0, n_channels = 0, bits_per_sample = 0;
   uint32_t sample_rate = 0, data_size = 0;
   bool found_data = false;
@@ -138,28 +150,57 @@ static std::vector<float> load_wav_pcm(const std::string& path) {
       f.seekg(sz, std::ios::cur);
     }
   }
-
   if (!found_data || bits_per_sample != 16) {
     ET_LOG(Error, "WAV must be 16-bit PCM: %s", path.c_str()); return {};
   }
-
   size_t n_samples = data_size / sizeof(int16_t);
   std::vector<int16_t> raw(n_samples);
   f.read(reinterpret_cast<char*>(raw.data()), data_size);
-
-  // Mono mix-down if stereo; convert to float
   size_t n_out = (n_channels > 1) ? n_samples / n_channels : n_samples;
   std::vector<float> pcm(n_out);
   for (size_t i = 0; i < n_out; ++i) {
-    if (n_channels == 2) {
-      pcm[i] = (raw[i * 2] + raw[i * 2 + 1]) * 0.5f / 32768.0f;
-    } else {
-      pcm[i] = raw[i] / 32768.0f;
-    }
+    pcm[i] = (n_channels == 2)
+        ? (raw[i*2] + raw[i*2+1]) * 0.5f / 32768.0f
+        : raw[i] / 32768.0f;
   }
   ET_LOG(Info, "Loaded WAV %s: %zu samples @ %u Hz (%u ch)",
          path.c_str(), n_out, sample_rate, n_channels);
   return pcm;
+}
+
+// ---------------------------------------------------------------------------
+// Compute mel features via the .pte's audio_preprocessor method, then transpose
+// and pad/truncate to channels-first (1, 128, 200) for the audio encoder.
+// ---------------------------------------------------------------------------
+static std::vector<float> compute_mel_chw(
+    const std::string& model_path, const std::vector<float>& pcm) {
+  // Load just the audio_preprocessor method from a separate Module instance.
+  // mmap is shared with the main runner's Module so this is cheap.
+  auto prep = std::make_unique<Module>(
+      model_path, Module::LoadMode::MmapUseMlockIgnoreErrors);
+  if (prep->load_method("audio_preprocessor") != ::executorch::runtime::Error::Ok) {
+    ET_LOG(Error, "audio_preprocessor not found in pte");
+    return {};
+  }
+  auto wav_t = from_blob(
+      const_cast<float*>(pcm.data()),
+      {1, static_cast<int>(pcm.size())}, ScalarType::Float);
+  auto res = prep->execute("audio_preprocessor", std::vector<EValue>{*wav_t});
+  if (!res.ok()) { ET_LOG(Error, "audio_preprocessor execute failed"); return {}; }
+  auto mel = res.get()[0].toTensor();  // (1, T, 128) time-first
+  int64_t T = mel.size(1), B = mel.size(2);
+  if (B != kMelBins) {
+    ET_LOG(Error, "Unexpected mel bin count: got %lld, expected %d", (long long)B, kMelBins);
+    return {};
+  }
+  // Transpose (1, T, 128) → (1, 128, 200), zero-padding/truncating T to kMelFrames.
+  std::vector<float> mel_chw(kMelBins * kMelFrames, 0.0f);
+  int64_t T_use = std::min<int64_t>(T, kMelFrames);
+  const float* src = mel.const_data_ptr<float>();
+  for (int b = 0; b < kMelBins; ++b)
+    for (int t = 0; t < T_use; ++t)
+      mel_chw[b * kMelFrames + t] = src[t * kMelBins + b];
+  return mel_chw;
 }
 
 // ---------------------------------------------------------------------------
@@ -179,320 +220,66 @@ int32_t main(int32_t argc, char** argv) {
 #endif
 
   const std::string model_path = FLAGS_model_path;
-  const std::string tokenizer_path = FLAGS_tokenizer_path;
   bool has_image = !FLAGS_image_path.empty();
   bool has_audio = !FLAGS_audio_path.empty();
-  bool is_multimodal = has_image || has_audio;
   std::optional<const std::string> data_path =
       FLAGS_data_path.empty() ? std::nullopt
                               : std::optional<const std::string>(FLAGS_data_path);
 
-  auto tokenizer = ::executorch::extension::llm::load_tokenizer(tokenizer_path.c_str());
+  auto tokenizer = ::executorch::extension::llm::load_tokenizer(FLAGS_tokenizer_path.c_str());
   if (!tokenizer) {
-    ET_LOG(Error, "Failed to load tokenizer: %s", tokenizer_path.c_str());
+    ET_LOG(Error, "Failed to load tokenizer: %s", FLAGS_tokenizer_path.c_str());
     return 1;
   }
+
+  // Single code path for all modes — standard MultimodalRunner.
+  fprintf(stderr, "Loading model %s...\n", model_path.c_str());
+  auto runner = ::executorch::extension::llm::create_multimodal_runner(
+      model_path, std::move(tokenizer), data_path);
+  if (!runner) { ET_LOG(Error, "Failed to create multimodal runner"); return 1; }
+  if (runner->load() != ::executorch::runtime::Error::Ok) {
+    ET_LOG(Error, "Failed to load model"); return 1;
+  }
+  fprintf(stderr, "Model loaded.\n");
 
   ::executorch::extension::llm::GenerationConfig config;
   config.max_new_tokens = FLAGS_seq_len;
   config.temperature = static_cast<float>(FLAGS_temperature);
 
-  // -----------------------------------------------------------------------
-  // TEXT-ONLY PATH — uses TextLLMRunner (gemma4.pte, `forward` method)
-  // -----------------------------------------------------------------------
-  if (!is_multimodal) {
-    fprintf(stderr, "Creating text runner...\n");
-    auto runner = ::executorch::extension::llm::create_text_llm_runner(
-        model_path, std::move(tokenizer), data_path);
-    if (!runner) { ET_LOG(Error, "Failed to create text runner"); return 1; }
-    fprintf(stderr, "Loading model...\n");
-    if (runner->load() != ::executorch::runtime::Error::Ok) {
-      ET_LOG(Error, "Failed to load model"); return 1;
-    }
-    fprintf(stderr, "Model loaded.\n");
-    std::string prompt = FLAGS_raw_prompt
-        ? FLAGS_prompt
-        : "<|turn>user\n" + FLAGS_prompt + "<turn|>\n<|turn>model\n";
-    if (runner->generate(prompt, config) != ::executorch::runtime::Error::Ok) {
-      ET_LOG(Error, "Generation failed"); return 1;
-    }
-    printf("\n");
-    return 0;
-  }
-
-  // -----------------------------------------------------------------------
-  // MULTIMODAL PATH — directly orchestrates Module methods
-  // (gemma4_multimodal.pte: vision_encoder, audio_preprocessor,
-  //  audio_encoder, token_embedding, text_decoder)
-  // -----------------------------------------------------------------------
-  fprintf(stderr, "Loading multimodal model %s...\n", model_path.c_str());
-  auto module = std::make_unique<Module>(
-      model_path, Module::LoadMode::MmapUseMlockIgnoreErrors);
-  if (module->load() != ::executorch::runtime::Error::Ok) {
-    ET_LOG(Error, "Failed to load model"); return 1;
-  }
-  fprintf(stderr, "Model loaded.\n");
-
-  // ---- 1. Encode modality into soft tokens ----
-  std::vector<float> soft_tokens_data;
-  int64_t n_soft_tokens = 0;
-  int64_t soft_hidden = 1536;
+  // Build the input sequence following the Gemma4 chat template:
+  //   <bos><|turn>user\n[<|image>\n][<|audio>\n][prompt]<turn|>\n<|turn>model\n
+  // We split the template around the modality placeholders so each modality is
+  // represented as its own MultimodalInput (image/audio tensor) and the
+  // surrounding text remains text inputs. The MultimodalPrefiller iterates the
+  // vector and calls the right encoder for each.
+  std::vector<MultimodalInput> inputs;
 
   if (has_image) {
-    // Load + resize image
-    int w, h, c;
-    unsigned char* img = stbi_load(FLAGS_image_path.c_str(), &w, &h, &c, 3);
-    if (!img) {
-      ET_LOG(Error, "Failed to load image: %s", FLAGS_image_path.c_str()); return 1;
-    }
-    c = 3; // forced RGB
-    // Resize to exactly kImageW × kImageH = 960 × 672 for a 60×42 patch grid.
-    const int iw = gemma4::kImageW, ih = gemma4::kImageH;
-    std::vector<uint8_t> resized(iw * ih * 3);
-    gemma4_bilinear_resize(img, w, h, 3, resized.data(), iw, ih);
-    stbi_image_free(img);
-
-    // HWC → CHW, rescale to [0,1] (do_rescale=True, factor=1/255; do_normalize=False)
-    std::vector<float> chw(3 * ih * iw);
-    for (int hh = 0; hh < ih; ++hh)
-      for (int ww = 0; ww < iw; ++ww)
-        for (int cc = 0; cc < 3; ++cc)
-          chw[cc * ih * iw + hh * iw + ww] = resized[hh * iw * 3 + ww * 3 + cc] / 255.0f;
-
-    // Patchify
-    std::vector<float> pv;
-    std::vector<int64_t> pp;
-    gemma4::patchify(chw.data(), 3, ih, iw, pv, pp);
-
-    // vision_encoder(pixel_values, pixel_position_ids)
-    auto pv_t = from_blob(pv.data(),
-                          {1, gemma4::kMaxPatches, gemma4::kPatchDim},
-                          ScalarType::Float);
-    auto pp_t = from_blob(pp.data(),
-                          {1, gemma4::kMaxPatches, 2},
-                          ScalarType::Long);
-    auto vis_res = run(*module, "vision_encoder", {*pv_t, *pp_t});
-    if (!vis_res.ok()) { ET_LOG(Error, "vision_encoder failed"); return 1; }
-    auto vis_out = vis_res.get()[0].toTensor();
-    // vis_out: (N_soft, 1536) — copy to soft_tokens_data
-    n_soft_tokens = vis_out.numel() / soft_hidden;
-    soft_tokens_data.assign(
-        vis_out.data_ptr<float>(),
-        vis_out.data_ptr<float>() + vis_out.numel());
-    ET_LOG(Info, "Vision encoded: %lld soft tokens", (long long)n_soft_tokens);
-
+    auto chw = load_image_chw(FLAGS_image_path);
+    if (chw.empty()) return 1;
+    inputs.emplace_back(std::string("<bos><|turn>user\n<|image>\n"));
+    inputs.emplace_back(Image(std::move(chw), kImageW, kImageH, 3));
+    inputs.emplace_back(FLAGS_prompt + std::string("<turn|>\n<|turn>model\n"));
   } else if (has_audio) {
-    // Load WAV PCM
     auto pcm = load_wav_pcm(FLAGS_audio_path);
-    if (pcm.empty()) { ET_LOG(Error, "Failed to load audio"); return 1; }
-
-    // audio_preprocessor: (1, N_samples) → (1, T, 128)
-    auto wav_t = from_blob(
-        pcm.data(), {1, static_cast<int>(pcm.size())}, ScalarType::Float);
-    auto pre_res = run(*module, "audio_preprocessor", {*wav_t});
-    if (!pre_res.ok()) { ET_LOG(Error, "audio_preprocessor failed"); return 1; }
-    auto mel = pre_res.get()[0].toTensor();
-    ET_LOG(Info, "Mel features: (%lld, %lld, %lld)",
-           (long long)mel.size(0), (long long)mel.size(1), (long long)mel.size(2));
-
-    // audio_encoder: (1, T, 128) → (1, T', 1536)
-    // The encoder is exported with a fixed T=kAudioFrames (200). Truncate if longer,
-    // zero-pad if shorter, so shape always matches the exported model.
-    constexpr int64_t kAudioFrames = 200;
-    std::vector<float> mel_fixed(kAudioFrames * 128, 0.0f);
-    int64_t src_frames = std::min(mel.size(1), kAudioFrames);
-    std::memcpy(mel_fixed.data(), mel.data_ptr<float>(), src_frames * 128 * sizeof(float));
-    auto mel_t = from_blob(mel_fixed.data(), {1, kAudioFrames, 128}, ScalarType::Float);
-    auto aud_res = run(*module, "audio_encoder", {*mel_t});
-    if (!aud_res.ok()) { ET_LOG(Error, "audio_encoder failed"); return 1; }
-    auto aud_out = aud_res.get()[0].toTensor();
-    // aud_out: (1, T', 1536) → flatten to (T', 1536)
-    n_soft_tokens = aud_out.size(1);
-    soft_tokens_data.assign(
-        aud_out.data_ptr<float>(),
-        aud_out.data_ptr<float>() + aud_out.numel());
-    ET_LOG(Info, "Audio encoded: %lld soft tokens", (long long)n_soft_tokens);
-  }
-
-  // ---- 2. Build full prompt and tokenize ----
-  std::string prefix_text, suffix_text;
-  if (!FLAGS_raw_prompt) {
-    if (has_image)
-      prefix_text = "<bos><|turn>user\n<|image>\n";
-    else if (has_audio)
-      prefix_text = "<bos><|turn>user\n<|audio>\n";
-    else
-      prefix_text = "<bos><|turn>user\n";
-    suffix_text = FLAGS_prompt + "<turn|>\n<|turn>model\n";
+    if (pcm.empty()) return 1;
+    auto mel_chw = compute_mel_chw(model_path, pcm);
+    if (mel_chw.empty()) return 1;
+    inputs.emplace_back(std::string("<bos><|turn>user\n<|audio>\n"));
+    inputs.emplace_back(Audio(std::move(mel_chw), 1, kMelBins, kMelFrames));
+    inputs.emplace_back(FLAGS_prompt + std::string("<turn|>\n<|turn>model\n"));
   } else {
-    prefix_text = FLAGS_prompt;
-    suffix_text = "";
+    // Text-only: a single text input wrapping the chat template.
+    inputs.emplace_back(
+        std::string("<bos><|turn>user\n") + FLAGS_prompt +
+        std::string("<turn|>\n<|turn>model\n"));
   }
 
-  // Tokenize prefix + suffix (without BOS added by tokenizer; we handle it in text)
-  auto encode = [&](const std::string& s) -> std::vector<int64_t> {
-    if (s.empty()) return {};
-    auto ids_res = tokenizer->encode(s, /*bos=*/0, /*eos=*/0);
-    if (!ids_res.ok()) return {};
-    const auto& ids_u = ids_res.get();
-    return std::vector<int64_t>(ids_u.begin(), ids_u.end());
-  };
-  auto prefix_ids = encode(prefix_text);
-  auto suffix_ids = encode(suffix_text);
-
-  // ---- 3. Embed prefix + suffix ----
-  auto embed_tokens = [&](const std::vector<int64_t>& ids) -> std::vector<float> {
-    if (ids.empty()) return {};
-    auto id_t = from_blob(
-        const_cast<int64_t*>(ids.data()),
-        {1, static_cast<int64_t>(ids.size())},
-        ScalarType::Long);
-    auto emb_res = run(*module, "token_embedding", {*id_t});
-    if (!emb_res.ok()) return {};
-    auto t = emb_res.get()[0].toTensor();
-    return std::vector<float>(t.data_ptr<float>(), t.data_ptr<float>() + t.numel());
-  };
-
-  auto prefix_emb = embed_tokens(prefix_ids);
-  auto suffix_emb = embed_tokens(suffix_ids);
-
-  // Apply embedding scale (sqrt(hidden_size) ≈ 39.19) to text token embeddings.
-  // HF Gemma4TextScaledWordEmbedding scales inside embed_tokens(); our exported
-  // token_embedding wraps the underlying nn.Embedding directly. The scale is
-  // baked into token_embedding in the export script (TokenEmbeddingExport), but
-  // older ptes may lack it — applying here is correct for all pte versions.
-  // Vision/audio soft tokens from embed_vision/embed_audio must NOT be scaled.
-  const float emb_scale = std::sqrt(static_cast<float>(soft_hidden));
-  for (float& v : prefix_emb) v *= emb_scale;
-  for (float& v : suffix_emb) v *= emb_scale;
-
-  // ---- 4. Build combined embeddings and PLI token IDs ----
-  int64_t prefix_len = static_cast<int64_t>(prefix_ids.size());
-  int64_t suffix_len = static_cast<int64_t>(suffix_ids.size());
-  int64_t total_len = prefix_len + n_soft_tokens + suffix_len;
-
-  // PLI (Per-Layer Input) token IDs: real IDs for text, modality placeholder for soft tokens.
-  // <|image>=255999, <|audio>=256000 — same IDs HF Gemma4 uses in unified input_ids.
-  // Used in v2 text_decoder (pte includes pli_token_ids as 3rd input).
-  const int64_t modality_pli_id = has_image ? 255999LL : 256000LL;
-  std::vector<int64_t> pli_ids;
-  pli_ids.insert(pli_ids.end(), prefix_ids.begin(), prefix_ids.end());
-  for (int64_t k = 0; k < n_soft_tokens; ++k) pli_ids.push_back(modality_pli_id);
-  pli_ids.insert(pli_ids.end(), suffix_ids.begin(), suffix_ids.end());
-
-  // Detect if this pte is a v2 export (text_decoder takes 3 inputs including pli_token_ids).
-  // v1 pte: text_decoder(embeds[1,1,1536], pos[1]) — PLI=0 inside model
-  // v2 pte: text_decoder(embeds[1,1,1536], pos[1], pli_token_ids[1,1]) — PLI from token IDs
-  // Heuristic: check if the first decoded method call with 3 inputs succeeds.
-  // We'll attempt a dry-run call and fall back to 2-input if it fails.
-  bool has_pli = false;  // filled in below during first decode step
-
-  std::vector<float> combined(total_len * soft_hidden);
-  {
-    float* dst = combined.data();
-    if (!prefix_emb.empty())
-      std::memcpy(dst, prefix_emb.data(), prefix_emb.size() * sizeof(float));
-    dst += prefix_len * soft_hidden;
-    if (!soft_tokens_data.empty())
-      std::memcpy(dst, soft_tokens_data.data(), soft_tokens_data.size() * sizeof(float));
-    dst += n_soft_tokens * soft_hidden;
-    if (!suffix_emb.empty())
-      std::memcpy(dst, suffix_emb.data(), suffix_emb.size() * sizeof(float));
-  }
-
-  // ---- 5. Prefill: feed one token at a time into the KV-cache text_decoder ----
-  // v2 pte: 3-input decoder (embeds, pos, pli_token_ids)
-  // v1 pte: 2-input decoder (embeds, pos) — PLI is zero inside model
-  std::vector<float> logits_data;
-  int64_t vocab_size = 0;
-  for (int64_t i = 0; i < total_len; ++i) {
-    auto emb_slice = from_blob(
-        combined.data() + i * soft_hidden, {1, 1, (int)soft_hidden}, ScalarType::Float);
-    int64_t pos_val = i;
-    auto pos1 = from_blob(&pos_val, {1}, ScalarType::Long);
-
-    auto call_decoder = [&]() {
-      if (has_pli || i == 0) {
-        // Try 3-input call (v2 pte with PLI token IDs)
-        auto pli3 = run(*module, "text_decoder", {*emb_slice, *pos1,
-            *from_blob(&pli_ids[i], {1, 1}, ScalarType::Long)});
-        if (pli3.ok()) { has_pli = true; return pli3; }
-        has_pli = false;  // fall back to v1 on first failure
-      }
-      return run(*module, "text_decoder", {*emb_slice, *pos1});
-    };
-    auto dec_res = call_decoder();
-    if (!dec_res.ok()) { ET_LOG(Error, "text_decoder prefill failed at pos %lld", (long long)i); return 1; }
-    if (i == total_len - 1) {
-      auto logits_t = dec_res.get()[0].toTensor();
-      vocab_size = logits_t.numel();
-      logits_data.assign(logits_t.data_ptr<float>(), logits_t.data_ptr<float>() + vocab_size);
-    }
-  }
-  if (vocab_size == 0) { ET_LOG(Error, "Prefill produced no logits"); return 1; }
-  ET_LOG(Info, "Prefill done: PLI %s", has_pli ? "enabled (v2)" : "disabled (v1)");
-
-  // ---- 6. Sample first token ----
-  auto argmax = [](const float* data, int64_t n) -> int64_t {
-    int64_t best = 0;
-    for (int64_t i = 1; i < n; ++i)
-      if (data[i] > data[best]) best = i;
-    return best;
-  };
-
-  // EOS token IDs (from model metadata or defaults)
-  const std::vector<int64_t> eos_ids = {1, 106, 50};
-  auto is_eos = [&](int64_t tok) {
-    for (auto e : eos_ids) if (tok == e) return true;
-    return false;
-  };
-
-  int64_t cur_pos = total_len;
-  int64_t next_token = argmax(logits_data.data(), vocab_size);
-  // prev_token: last token of the input context (for BPE piece boundary detection).
-  int64_t prev_token = suffix_ids.empty()
-      ? (prefix_ids.empty() ? 0 : prefix_ids.back())
-      : suffix_ids.back();
-
-  // ---- 7. Decode loop ----
-  int generated = 0;
-  while (!is_eos(next_token) && generated < FLAGS_seq_len) {
-    // Decode token string and print
-    auto piece = tokenizer->decode(
-        static_cast<uint64_t>(prev_token),
-        static_cast<uint64_t>(next_token));
-    if (piece.ok()) {
-      printf("%s", piece.get().c_str());
-      fflush(stdout);
-    }
-    prev_token = next_token;
-
-    // Embed and decode next position — apply embedding scale
-    int64_t tok_arr[1] = {next_token};
-    auto tok_t = from_blob(tok_arr, {1, 1}, ScalarType::Long);
-    auto emb_res = run(*module, "token_embedding", {*tok_t});
-    if (!emb_res.ok()) break;
-    auto tok_emb_t = emb_res.get()[0].toTensor();  // (1, 1, 1536)
-    std::vector<float> tok_emb_data(
-        tok_emb_t.data_ptr<float>(),
-        tok_emb_t.data_ptr<float>() + tok_emb_t.numel());
-    for (float& v : tok_emb_data) v *= emb_scale;
-    auto tok_emb = from_blob(tok_emb_data.data(), {1, 1, (int)soft_hidden}, ScalarType::Float);
-
-    int64_t pos_arr[1] = {cur_pos};
-    auto pos1_t = from_blob(pos_arr, {1}, ScalarType::Long);
-    auto call_decoder_decode = [&]() {
-      if (has_pli)
-        return run(*module, "text_decoder", {*tok_emb, *pos1_t,
-            *from_blob(&next_token, {1, 1}, ScalarType::Long)});
-      return run(*module, "text_decoder", {*tok_emb, *pos1_t});
-    };
-    auto dec2 = call_decoder_decode();
-    if (!dec2.ok()) break;
-    auto logits2 = dec2.get()[0].toTensor();
-    next_token = argmax(logits2.data_ptr<float>(), vocab_size);
-    ++cur_pos;
-    ++generated;
+  auto err = runner->generate(inputs, config,
+      [](const std::string& token) { printf("%s", token.c_str()); fflush(stdout); });
+  if (err != ::executorch::runtime::Error::Ok) {
+    ET_LOG(Error, "Generation failed");
+    return 1;
   }
   printf("\n");
   return 0;

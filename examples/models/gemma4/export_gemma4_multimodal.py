@@ -1,17 +1,21 @@
 """Export Gemma4 E2B multimodal model to a single ExecuTorch .pte.
 
-Produces gemma4_multimodal.pte with five methods:
+Conforms to the standard MultimodalPrefiller ABI so a single .pte serves
+text-only, image+text, and audio+text via ExecuTorch's MultimodalRunner.
 
-  vision_encoder:     (pixel_values[1,2520,768], pixel_position_ids[1,2520,2]) -> (256,1536)
-  audio_preprocessor: (waveform[1,N_samples]) -> mel_features[1,T,128]
-  audio_encoder:      (mel_features[1,T,128]) -> (1,T//4,1536)
-  token_embedding:    (token_ids[1,S]) -> (1,S,1536)
-  text_decoder:       (inputs_embeds[1,S,1536], input_pos[S]) -> (1,vocab_size)
-                        ↑ stateful with mutable KV-cache buffers (use_kv_cache=True)
+Methods (all match extension/llm/runner/constants.h):
+  token_embedding: (token_ids[1,S]) -> (1,S,1536)         scaled by sqrt(hidden)
+  text_decoder:    (embeds[1,S,1536], cache_position[S])  -> logits[1,vocab]
+                       ↑ dynamic S, stateful KV cache, batched prefill
+  vision_encoder:  (image[1,3,672,960] float [0,1]) -> (1,280,1536)
+                       ↑ patchification + position_ids baked into the graph
+  audio_encoder:   (mel[1,128,200] float)            -> (1,50,1536)
+                       ↑ channels-first mel (matches Voxtral convention)
+  audio_preprocessor: (waveform[1,N_pcm]) -> (1,T,128)
+                       ↑ helper for the C++ runner to convert WAV to mel
 
-MultimodalRunner expects exactly these method names. The text_decoder is
-exported via the LLM export pipeline with proper KV-cache source transforms
-so that decode can run step-by-step after prefill.
+Calling convention matches MultimodalRunner::generate(prompt) for text-only
+and MultimodalRunner::generate(vector<MultimodalInput>) for image/audio+text.
 
 Usage:
   python export_gemma4_multimodal.py \\
@@ -53,19 +57,24 @@ from executorch.extension.llm.export.config.llm_config import LlmConfig, ModelTy
 
 
 class TokenEmbeddingExport(nn.Module):
-    """Wraps tok_embeddings from the KV-cache-prepared Gemma4 transformer.
+    """Returns scaled token embeddings ready for text_decoder.
 
-    Returns raw (unscaled) embeddings. The C++ runner applies the embedding
-    scale (sqrt(hidden_size) ≈ 39.19) after calling this method. Vision/audio
-    soft tokens from their respective encoders must NOT be scaled.
+    Bakes in sqrt(hidden_size) scale to match HF Gemma4TextScaledWordEmbedding,
+    so the output is in the same space as vision_encoder / audio_encoder soft
+    tokens. The standard MultimodalPrefiller passes our output directly into
+    text_decoder without further scaling.
     """
 
     def __init__(self, transformer):
         super().__init__()
         self.tok_embeddings = transformer.tok_embeddings
+        self.scale = transformer.params.embedding_scale_factor
 
     def forward(self, token_ids: torch.Tensor) -> torch.Tensor:
-        return self.tok_embeddings(token_ids)
+        h = self.tok_embeddings(token_ids)
+        if self.scale != 1.0:
+            h = h * self.scale
+        return h
 
 
 # ---------------------------------------------------------------------------
@@ -74,19 +83,20 @@ class TokenEmbeddingExport(nn.Module):
 
 
 class TextDecoderExport(nn.Module):
-    """Wraps the KV-cache-prepared Gemma4 Transformer for stateful decode.
+    """Standard MultimodalPrefiller-compatible text decoder.
 
     Inputs:
-      inputs_embeds (1, 1, hidden): single-token embedding (scaled by sqrt(hidden))
-      input_pos     (1,) long:      KV cache position index
-      pli_token_ids (1, 1) long:    token ID for PLI computation
-                                    (<|image>=255999, <|audio>=256000 for soft tokens)
+      inputs_embeds  (1, S, hidden): full embedded sequence (scaled).
+                                     S is dynamic (1..max_seq_len).
+                                     Used for both batched prefill and single-token decode.
+      cache_position (S,) long:      KV cache position indices [start_pos..start_pos+S-1].
 
     Returns logits (1, vocab_size) for the last position.
 
-    PLI (Per-Layer Input) is computed inside the transformer from both the
-    input embeddings (pli_projection of h) and the pli_token_ids. This matches
-    HF Gemma4's unified multimodal forward pass exactly.
+    Note: PLI's pli_emb (token-ID-derived) component is ZERO in this path
+    because token IDs are not exposed at the multimodal ABI boundary. The
+    pli_proj(h) component still works since it depends only on the input
+    embeddings. This is a known quality tradeoff for ABI compatibility.
     """
 
     def __init__(self, transformer):
@@ -95,16 +105,12 @@ class TextDecoderExport(nn.Module):
 
     def forward(
         self,
-        inputs_embeds: torch.Tensor,   # (1, 1, hidden)
-        input_pos: torch.Tensor,        # (1,) long
-        pli_token_ids: torch.Tensor,    # (1, 1) long
+        inputs_embeds: torch.Tensor,   # (1, S, hidden)
+        cache_position: torch.Tensor,  # (S,) long
     ) -> torch.Tensor:
         return self.transformer(
             h=inputs_embeds,
-            attn_options={
-                "input_pos": input_pos,
-                "pli_token_ids": pli_token_ids,
-            },
+            attn_options={"input_pos": cache_position},
         )
 
 
@@ -177,7 +183,7 @@ def export_text_programs(
     cfg.base.checkpoint = et_checkpoint
     cfg.model.use_kv_cache = True
     cfg.model.use_sdpa_with_kv_cache = True
-    cfg.model.enable_dynamic_shape = False
+    cfg.model.enable_dynamic_shape = True
     cfg.export.max_seq_length = max_seq_len
     cfg.export.max_context_length = max_seq_len
 
@@ -201,24 +207,29 @@ def export_text_programs(
         )
     print(f"  token_embedding: (1,S) -> (1,S,{transformer.params.dim})")
 
-    # -- text_decoder (stateful KV cache) with PLI via pli_token_ids --
-    # Takes 3 inputs: inputs_embeds, input_pos, pli_token_ids.
-    # PLI is computed inside the transformer from both h (projection path) and
-    # pli_token_ids (embedding path), combining them as in HF Gemma4.
-    print("  Exporting text_decoder (KV cache, single-token decode, with PLI)...")
+    # -- text_decoder (stateful KV cache, standard MultimodalPrefiller ABI) --
+    # Standard LLMEdgeManager pattern: input_pos is static size 1 (the START
+    # position); the model internally indexes positions [start_pos..start_pos+S].
+    # `inputs_embeds` is dynamic-S to serve both batched prefill and single-token decode.
+    # `populate_start_pos_or_cache_position` detects size==1 and passes [start_pos].
+    print("  Exporting text_decoder (KV cache, dynamic S, standard ABI)...")
     txt_dec = TextDecoderExport(transformer).eval()
     dim = transformer.params.dim
+    S_dec = Dim("S_dec", min=1, max=max_seq_len - 1)
     with torch.no_grad():
         programs["text_decoder"] = export(
             txt_dec,
             (
-                torch.zeros(1, 1, dim),                      # inputs_embeds: (1, 1, dim)
-                torch.zeros(1, dtype=torch.long),            # input_pos:     (1,)
-                torch.zeros(1, 1, dtype=torch.long),         # pli_token_ids: (1, 1)
+                torch.zeros(1, 4, dim),            # inputs_embeds: (1, S=4, dim)  trace with S>1
+                torch.zeros(1, dtype=torch.long),  # cache_position: (1,) start_pos
+            ),
+            dynamic_shapes=(
+                {1: S_dec},        # inputs_embeds
+                {0: 1},            # cache_position is static size 1
             ),
             strict=True,
         )
-    print(f"  text_decoder: (1,1,{dim}) + (1,) + (1,1) -> (1,{transformer.vocab_size})  [PLI enabled]")
+    print(f"  text_decoder: (1,S,{dim}) + (1,) -> (1,{transformer.vocab_size})  [dynamic S]")
 
     # Carry metadata from the builder
     text_metadata = builder.metadata or {}
@@ -257,23 +268,14 @@ def export_gemma4_multimodal(
     ).eval()
     cfg = AutoConfig.from_pretrained(str(hf_model_dir), trust_remote_code=True)
 
-    n_patches = 2520   # HF image processor fixed output size
-    patch_dim = 768    # 3 * 16^2
     n_mels = 128       # mel spectrogram bins
     text_hidden = cfg.text_config.hidden_size   # 1536
     vocab_size = cfg.text_config.vocab_size     # 262144
-
-    # Build realistic position_ids for a 60×42 patch grid (60*42=2520).
-    # All-zero position_ids collapse to 1 pooled token; realistic grid → 280 tokens.
-    # pooling_kernel_size=3: pool_positions = 60//3 × 42//3 = 20×14 = 280 tokens.
-    _grid_w, _grid_h = 60, 42  # 60*42 = 2520
-    _pos_ids = [[x, y] for y in range(_grid_h) for x in range(_grid_w)]
-    _vis_pos_ids = torch.tensor([_pos_ids], dtype=torch.long)  # (1, 2520, 2)
-    n_vis_soft_tokens = (_grid_w // 3) * (_grid_h // 3)  # 20*14 = 280
+    img_h, img_w = 672, 960  # HF image processor target resolution → 2520 patches → 280 soft tokens
 
     programs: Dict[str, torch.export.ExportedProgram] = {}
 
-    # ---- 1. Vision encoder ----
+    # ---- 1. Vision encoder (standard ABI: raw image in, soft tokens out) ----
     print("\nExporting vision_encoder...")
     vis_enc = VisionEncoderExport(
         hf_model.model.vision_tower, hf_model.model.embed_vision
@@ -281,13 +283,10 @@ def export_gemma4_multimodal(
     with torch.no_grad():
         programs["vision_encoder"] = export(
             vis_enc,
-            (
-                torch.zeros(1, n_patches, patch_dim),
-                _vis_pos_ids,
-            ),
+            (torch.zeros(1, 3, img_h, img_w),),  # raw image in [0, 1]
             strict=True,
         )
-    print(f"  vision_encoder: (1,{n_patches},{patch_dim}) -> ({n_vis_soft_tokens},{text_hidden})")
+    print(f"  vision_encoder: (1,3,{img_h},{img_w}) -> (1,280,{text_hidden})")
 
     # ---- 2. Audio preprocessor (PCM → mel spectrogram) ----
     print("\nExporting audio_preprocessor...")
@@ -302,10 +301,9 @@ def export_gemma4_multimodal(
         )
     print(f"  audio_preprocessor: (1,N_pcm) -> (1,T,{n_mels})")
 
-    # ---- 3. Audio encoder (mel → soft tokens) ----
-    # Export audio_encoder with static shape matching audio_frames (default 200).
-    # The audio tower has stride-48 convolutions requiring T = 48*k - 40 (200 for k=5).
-    # The C++ runner truncates/pads mel features to audio_frames before calling.
+    # ---- 3. Audio encoder (channels-first mel → soft tokens) ----
+    # Static T_mel=200 (stride-48 conv constraint: T = 48*k - 40 with k=5).
+    # Channels-first input matches Voxtral convention; encoder transposes internally.
     print("\nExporting audio_encoder...")
     aud_enc = AudioEncoderExport(
         hf_model.model.audio_tower, hf_model.model.embed_audio
@@ -313,10 +311,10 @@ def export_gemma4_multimodal(
     with torch.no_grad():
         programs["audio_encoder"] = export(
             aud_enc,
-            (torch.zeros(1, audio_frames, n_mels),),
+            (torch.zeros(1, n_mels, audio_frames),),  # (1, 128, 200) channels-first
             strict=True,
         )
-    print(f"  audio_encoder: (1,{audio_frames},{n_mels}) -> (1,{audio_frames//4},{text_hidden})")
+    print(f"  audio_encoder: (1,{n_mels},{audio_frames}) -> (1,{audio_frames//4},{text_hidden})")
 
     # Free HF model before loading LLM pipeline (saves ~20 GB RAM)
     del hf_model
