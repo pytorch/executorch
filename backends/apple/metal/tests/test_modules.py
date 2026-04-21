@@ -639,6 +639,56 @@ MODULE_REGISTRY["sdpa_strided_causal"] = {
 }
 
 
+# -------------------------------------------------------------------------
+# SDPA with head_dim=256 (Qwen 3.5 MoE)
+# -------------------------------------------------------------------------
+
+
+class SDPAHeadDim256(nn.Module):
+    """SDPA with head_dim=256, required by Qwen 3.5 MoE full attention layers."""
+
+    def forward(
+        self, query: torch.Tensor, key: torch.Tensor, value: torch.Tensor
+    ) -> torch.Tensor:
+        return torch.nn.functional.scaled_dot_product_attention(
+            query, key, value, dropout_p=0.0, is_causal=False
+        )
+
+
+MODULE_REGISTRY["sdpa_head_dim_256"] = {
+    "model_class": SDPAHeadDim256,
+    "input_shapes": [(1, 4, 8, 256), (1, 4, 8, 256), (1, 4, 8, 256)],
+    "description": "SDPA with head_dim=256 (Qwen 3.5 MoE)",
+    "atol_float32": 1e-4,
+    "atol_bfloat16": 5e-2,
+}
+
+
+# -------------------------------------------------------------------------
+# Top-k (MoE expert routing)
+# -------------------------------------------------------------------------
+
+
+class TopK(nn.Module):
+    """Top-k routing used by MoE expert selection."""
+
+    def __init__(self):
+        super().__init__()
+        self.linear = nn.Linear(64, 8, bias=False)
+
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        scores = self.linear(x)
+        values, indices = torch.topk(scores, 2, dim=-1)
+        return values
+
+
+MODULE_REGISTRY["topk"] = {
+    "model_class": TopK,
+    "input_shapes": [(4, 64)],
+    "description": "Top-k routing for MoE expert selection",
+}
+
+
 # =============================================================================
 # Helper Functions
 # =============================================================================

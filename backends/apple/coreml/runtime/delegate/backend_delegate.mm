@@ -127,6 +127,7 @@ ETCoreMLAssetManager * _Nullable create_asset_manager(NSString *assets_directory
 @property (assign, readonly, nonatomic) BackendDelegate::Config config;
 @property (strong, readonly, nonatomic) dispatch_queue_t syncQueue;
 @property (strong, nonatomic, nullable) ETCoreMLModelManager *impl;
+@property (strong, nonatomic, nullable) ETCoreMLModelCache *defaultCache;
 @property (assign, readonly, nonatomic) BOOL isAvailable;
 
 @end
@@ -165,6 +166,16 @@ ETCoreMLAssetManager * _Nullable create_asset_manager(NSString *assets_directory
 
     self.impl = modelManager;
 
+    // Create default filesystem cache at the same location as assets
+    NSURL *defaultCacheURL = [NSURL fileURLWithPath:ETCoreMLStrings.assetsDirectoryPath isDirectory:YES];
+    ETCoreMLModelCache *defaultCache = [[ETCoreMLModelCache alloc] initWithCacheRootDirectory:defaultCacheURL];
+    if (defaultCache.isReady) {
+        self.defaultCache = defaultCache;
+    } else {
+        ETCoreMLLogError(defaultCache.initializationError,
+                         "Default cache initialization failed, will use asset manager as fallback");
+    }
+
     if (self.config.should_prewarm_asset) {
         [modelManager prewarmRecentlyUsedAssetsWithMaxCount:1];
     }
@@ -199,6 +210,7 @@ ETCoreMLAssetManager * _Nullable create_asset_manager(NSString *assets_directory
                         configuration:configuration
                            methodName:nil
                          functionName:nil
+                            cachePath:nil
                                 error:error];
 }
 
@@ -221,6 +233,23 @@ ETCoreMLAssetManager * _Nullable create_asset_manager(NSString *assets_directory
                         functionName:(nullable NSString*)functionName
                            cachePath:(nullable NSString*)cachePath
                                error:(NSError* __autoreleasing*)error {
+    // Default to using the old cache (useNewCache = NO)
+    return [self loadModelFromAOTData:data
+                        configuration:configuration
+                           methodName:methodName
+                         functionName:functionName
+                            cachePath:cachePath
+                          useNewCache:NO
+                                error:error];
+}
+
+- (ModelHandle*)loadModelFromAOTData:(NSData*)data
+                       configuration:(MLModelConfiguration*)configuration
+                          methodName:(nullable NSString*)methodName
+                        functionName:(nullable NSString*)functionName
+                           cachePath:(nullable NSString*)cachePath
+                         useNewCache:(BOOL)useNewCache
+                               error:(NSError* __autoreleasing*)error {
     if (![self loadAndReturnError:error]) {
         return nil;
     }
@@ -240,8 +269,21 @@ ETCoreMLAssetManager * _Nullable create_asset_manager(NSString *assets_directory
             return nil;
         }
         cache = modelCache;
+    } else if (useNewCache) {
+        if (self.defaultCache != nil) {
+            // Use default filesystem cache
+            cache = self.defaultCache;
+} else {
+            // Fallback: useNewCache requested but default cache unavailable
+            NSError *fallbackError = [NSError errorWithDomain:ETCoreMLErrorDomain
+                                                         code:ETCoreMLErrorInternalError
+                                                     userInfo:@{NSLocalizedDescriptionKey: @"Default cache unavailable"}];
+            ETCoreMLLogError(fallbackError,
+                             "useNewCache=YES but default cache is unavailable, falling back to asset manager");
+        }
     }
-    // cache == nil means loadModelFromAOTData will use self.cache (default cache)
+    // If useNewCache is false or defaultCache is nil, cache remains nil
+    // and loadModelFromAOTData will use the asset manager path
 
     auto handle = [self.impl loadModelFromAOTData:data
                                     configuration:configuration
@@ -346,15 +388,19 @@ Handle *init(Buffer processed,
         NSString *methodNameStr = method_name ? @(method_name) : nil;
         NSString *functionNameStr = function_name ? @(function_name) : nil;
 
-        // Parse cache_dir from runtime_specs
+        // Parse cache_dir and _use_new_cache from runtime_specs
         NSString *cachePath = nil;
+        BOOL useNewCache = NO; // Default to using the old cache (asset manager)
         for (size_t i = 0; i < runtime_specs.size(); ++i) {
             const auto& opt = runtime_specs[i];
             if (std::strcmp(opt.key, "cache_dir") == 0) {
                 if (auto* arr = std::get_if<std::array<char, executorch::runtime::kMaxOptionValueLength>>(&opt.value)) {
                     cachePath = @(arr->data());
                 }
-                break;
+            } else if (std::strcmp(opt.key, "_use_new_cache") == 0) {
+                if (auto* val = std::get_if<bool>(&opt.value)) {
+                    useNewCache = *val ? YES : NO;
+                }
             }
         }
 
@@ -366,6 +412,7 @@ Handle *init(Buffer processed,
                                                              methodName:methodNameStr
                                                            functionName:functionNameStr
                                                               cachePath:cachePath
+                                                            useNewCache:useNewCache
                                                                   error:&localError];
         if (localError != nil) {
             ETCoreMLLogError(localError, "Model init failed");

@@ -69,12 +69,15 @@ DEFINE_string(
     "",
     "Base name of output file. If not empty output will be written to the file(s).");
 
-DEFINE_bool(
-    print_all_output,
-    false,
-    "Prints all output. By default only first and last 100 elements are printed.");
-
+DEFINE_string(
+    print_output,
+    "summary",
+    "Output printing mode: 'none' to suppress, 'summary' for first/last 100 elements, 'all' for everything.");
 DEFINE_uint32(num_executions, 1, "Number of times to run the model.");
+DEFINE_string(
+    method_name,
+    "",
+    "Name of the method to run. If empty, uses the first method in the program.");
 #ifdef ET_EVENT_TRACER_ENABLED
 DEFINE_string(etdump_path, "model.etdump", "Write ETDump data to this path.");
 #endif // ET_EVENT_TRACER_ENABLED
@@ -112,6 +115,8 @@ using executorch::runtime::Result;
 using executorch::runtime::Span;
 using executorch::runtime::Tag;
 using executorch::runtime::TensorInfo;
+
+enum class PrintOutputMode { None, Summary, All };
 
 /// Helper to manage resources for ETDump generation
 class EventTraceManager {
@@ -192,6 +197,21 @@ int main(int argc, char** argv) {
       msg += std::string(" ") + argv[i];
     }
     ET_LOG(Error, "%s", msg.c_str());
+    return 1;
+  }
+
+  PrintOutputMode print_output_mode;
+  if (FLAGS_print_output == "none") {
+    print_output_mode = PrintOutputMode::None;
+  } else if (FLAGS_print_output == "summary") {
+    print_output_mode = PrintOutputMode::Summary;
+  } else if (FLAGS_print_output == "all") {
+    print_output_mode = PrintOutputMode::All;
+  } else {
+    ET_LOG(
+        Error,
+        "Unknown --print_output mode '%s'. Expected 'none', 'summary', or 'all'.",
+        FLAGS_print_output.c_str());
     return 1;
   }
 
@@ -345,6 +365,7 @@ int main(int argc, char** argv) {
 
   // Parse the program file. This is immutable, and can also be reused between
   // multiple execution invocations across multiple threads.
+  const et_timestamp_t before_load = executorch::runtime::pal_current_ticks();
   Result<Program> program = Program::load(loader.get());
   if (!program.ok()) {
     ET_LOG(Error, "Failed to parse model file %s", FLAGS_model_path.c_str());
@@ -352,9 +373,10 @@ int main(int argc, char** argv) {
   }
   ET_LOG(Info, "Model file %s is loaded.", FLAGS_model_path.c_str());
 
-  // Use the first method in the program.
   const char* method_name = nullptr;
-  {
+  if (!FLAGS_method_name.empty()) {
+    method_name = FLAGS_method_name.c_str();
+  } else {
     const auto method_name_result = program->get_method_name(0);
     ET_CHECK_MSG(method_name_result.ok(), "Program has no methods");
     method_name = *method_name_result;
@@ -433,12 +455,21 @@ int main(int argc, char** argv) {
       &memory_manager,
       tracer.get_event_tracer(),
       ptd_data_map.get());
+  const et_timestamp_t after_load = executorch::runtime::pal_current_ticks();
   ET_CHECK_MSG(
       method.ok(),
       "Loading of method %s failed with status 0x%" PRIx32,
       method_name,
       (uint32_t)method.error());
-  ET_LOG(Info, "Method loaded.");
+  {
+    const auto load_tick_ratio = et_pal_ticks_to_ns_multiplier();
+    ET_LOG(
+        Info,
+        "Model loaded in %f ms.",
+        static_cast<double>(after_load - before_load) *
+            load_tick_ratio.numerator / load_tick_ratio.denominator /
+            1000000.0);
+  }
 
   // Print operator names
   size_t num_ops = method_meta->num_operators();
@@ -492,12 +523,21 @@ int main(int argc, char** argv) {
     Error status = method->execute();
     const et_timestamp_t after_execute =
         executorch::runtime::pal_current_ticks();
-    time_spent_executing += after_execute - before_execute;
+    const et_timestamp_t iter_elapsed = after_execute - before_execute;
+    time_spent_executing += iter_elapsed;
     ET_CHECK_MSG(
         status == Error::Ok,
         "Execution of method %s failed with status 0x%" PRIx32,
         method_name,
         static_cast<uint32_t>(status));
+    const auto iter_tick_ratio = et_pal_ticks_to_ns_multiplier();
+    ET_LOG(
+        Info,
+        "Iteration %" PRIu32 " of %" PRIu32 ": %f ms",
+        i + 1,
+        FLAGS_num_executions,
+        static_cast<double>(iter_elapsed) * iter_tick_ratio.numerator /
+            iter_tick_ratio.denominator / 1000000.0);
   }
   const auto tick_ratio = et_pal_ticks_to_ns_multiplier();
   constexpr auto NANOSECONDS_PER_MILLISECOND = 1000000;
@@ -529,7 +569,7 @@ int main(int argc, char** argv) {
     }
   }
 
-  if (FLAGS_print_all_output) {
+  if (print_output_mode == PrintOutputMode::All) {
     for (int i = 0; i < outputs.size(); ++i) {
       if (outputs[i].isTensor()) {
         Tensor tensor = outputs[i].toTensor();
@@ -566,7 +606,7 @@ int main(int argc, char** argv) {
         printf("Output[%d]: Not Tensor\n", i);
       }
     }
-  } else {
+  } else if (print_output_mode == PrintOutputMode::Summary) {
     // Print the first and last 100 elements of long lists of scalars.
     std::cout << executorch::extension::evalue_edge_items(10000000);
 
