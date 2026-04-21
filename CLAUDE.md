@@ -8,8 +8,12 @@
 - `/cortex-m` - Build, test, or develop the Cortex-M backend
 - `/binary-size` - Analyze and reduce binary size
 - `/qualcomm` - Build, test, or develop the QNN (Qualcomm AI Engine Direct) backend
+- `/executorch-kb` - Search tribal knowledge base (known issues, quant recipes, debugging guides)
 
 Reference docs in `.claude/`: backends, runtime-api, quantization, llm-export, faq, tokenizers
+Tribal knowledge wiki in `.wiki/`: synthesized from 2,200+ GitHub issues
+
+For error messages, SoC compatibility questions, quantization recipes, and backend-specific debugging, consult the `/executorch-kb` skill (or read `.wiki/index.md` and navigate to the relevant article). The wiki contains tribal knowledge synthesized from 2,200+ GitHub issues with source citations. For build, test, profile, setup, or general API questions, use the dedicated skills above instead — the wiki is scoped to debugging and compatibility knowledge.
 
 ## Quick Reference
 
