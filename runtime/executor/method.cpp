@@ -1541,6 +1541,12 @@ Error Method::execute_instruction() {
       auto& val = mutable_value(free_call->value_index());
       if (val.isTensor()) {
         auto& t = val.toTensor();
+        auto* impl = t.unsafeGetTensorImpl();
+        if (impl->dynamic_allocator() != nullptr &&
+            impl->mutable_data() != nullptr) {
+          impl->dynamic_allocator()->free(impl->mutable_data());
+          impl->set_capacity_bytes(0);
+        }
         internal::reset_data_ptr(t);
       } else {
         ET_LOG(
