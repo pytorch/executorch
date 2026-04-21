@@ -613,8 +613,7 @@ public class LlmModule implements Closeable {
       }
       // slice() so that getDirectBufferAddress on the native side returns a pointer
       // starting at the current position, not the base address.
-      int nativeResult =
-          prefillNormalizedImagesInputBuffer(image.slice(), width, height, channels);
+      int nativeResult = prefillNormalizedImagesInputBuffer(image.slice(), width, height, channels);
       if (nativeResult != 0) {
         throw ExecutorchRuntimeException.makeExecutorchException(nativeResult, "Prefill failed");
       }
