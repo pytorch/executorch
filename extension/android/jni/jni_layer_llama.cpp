@@ -617,7 +617,7 @@ class ExecuTorchLlmJni : public facebook::jni::HybridClass<ExecuTorchLlmJni> {
     registerHybrid({
         makeNativeMethod("initHybrid", ExecuTorchLlmJni::initHybrid),
         makeNativeMethod("generateNative", ExecuTorchLlmJni::generate),
-        makeNativeMethod("stopNative", ExecuTorchLlmJni::stop),
+        makeNativeMethod("stop", ExecuTorchLlmJni::stop),
         makeNativeMethod("loadNative", ExecuTorchLlmJni::load),
         makeNativeMethod(
             "prefillImagesInput", ExecuTorchLlmJni::prefill_images_input),

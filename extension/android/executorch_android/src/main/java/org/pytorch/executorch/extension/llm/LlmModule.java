@@ -699,17 +699,9 @@ public class LlmModule implements Closeable {
   @DoNotStrip
   private native void resetContextNative();
 
-  /**
-   * Stop current generate() before it finishes. Safe to call from any thread via a native atomic
-   * flag. After close(), this is a no-op.
-   */
-  public void stop() {
-    if (mDestroyed) return;
-    stopNative();
-  }
-
+  /** Stop current generate() before it finishes. */
   @DoNotStrip
-  private native void stopNative();
+  public native void stop();
 
   /** Force loading the module. Otherwise the model is loaded during first generate(). */
   @DoNotStrip

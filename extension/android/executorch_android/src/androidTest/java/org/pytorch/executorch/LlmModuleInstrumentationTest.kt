@@ -282,12 +282,6 @@ class LlmModuleInstrumentationTest : LlmCallback {
   }
 
   @Test
-  fun testStopAfterCloseIsNoOp() {
-    llmModule.close()
-    llmModule.stop()
-  }
-
-  @Test
   fun testCloseIsIdempotent() {
     llmModule.close()
     llmModule.close()
