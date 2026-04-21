@@ -163,8 +163,8 @@ class ModuleInstrumentationTest {
     private const val NON_PTE_FILE_NAME = "/test.txt"
     private const val FORWARD_METHOD = "forward"
     private const val NONE_METHOD = "none"
-    private val INPUT_SHAPE = longArrayOf(1, 3, 224, 224)
+    private val inputShape = longArrayOf(1, 3, 224, 224)
 
-    private fun dummyInput(): Tensor = Tensor.ones(INPUT_SHAPE, DType.FLOAT)
+    private fun dummyInput(): Tensor = Tensor.ones(inputShape, DType.FLOAT)
   }
 }
