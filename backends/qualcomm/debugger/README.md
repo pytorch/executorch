@@ -90,28 +90,27 @@ Note: Files ending with `.bin ` do not support graph visualization in qairt_visu
 For more details, visit the [QAIRT Visualizer](https://pypi.org/project/qairt-visualizer/).
 
 
-# Observatory (GraphView Minimal, RFC-aligned)
-
+# Observatory 
 A new, review-focused Observatory implementation is available under:
 
 `backends/qualcomm/debugger/observatory`
 
-Key properties:
-1. Uses RFC-style view contracts: `ViewBlock`, `ViewList`, and `GraphView`.
-2. Keeps UI behavior close to legacy observatory while splitting JS into topic files.
-3. Supports ETRecord auto-collection through context-managed monkey patching.
-4. Migrates minimal built-in lenses for v1: metadata and stack trace (plus canonical graph lens).
-
-Quick demo:
+Use observaotry.cli to invoke ordinary aot script. Use `--lens_recipe=accuracy` to enable accuracy Lenses.
 
 ```bash
-source ~/executorch/.venv/bin/activate
-source ~/executorch/qairt/2.37.0.250724/bin/envsetup.sh
-export PYTHONPATH=~/
-python backends/qualcomm/debugger/observatory/examples/demo_graphview_accuracy_compare.py \
-    --model toy --output-dir /tmp/observatory_graphview_demo
+ python -m executorch.backends.qualcomm.debugger.observatory.cli \
+        --output-html obs_report.html \
+        --lens_recipe=accuracy \
+        {original script and args}
 ```
+For example
 
+```bash
+python -m executorch.backends.qualcomm.debugger.observatory.cli \
+    --output-html obs_report.html \
+    --lens_recipe=accuracy \
+    examples/qualcomm/oss_scripts/mobilevit_v2.py --backend htp --model SM8650 -d ./imagenet-mini-val/ -b build-android/ --compile_only
+```
 
 # ExecuTorch QNN Intermediate Output Debugger
 
