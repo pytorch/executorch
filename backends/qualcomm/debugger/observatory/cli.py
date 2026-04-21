@@ -12,7 +12,7 @@ Collection mode (default):
 
 With accuracy debugging:
     python -m executorch.backends.qualcomm.debugger.observatory \\
-        --lense_recipe=accuracy SCRIPT [SCRIPT_ARGS...]
+        --lens_recipe=accuracy SCRIPT [SCRIPT_ARGS...]
 
 Visualize mode (JSON -> HTML):
     python -m executorch.backends.qualcomm.debugger.observatory visualize \\
@@ -42,7 +42,7 @@ def main():
         prog="python -m executorch.backends.qualcomm.debugger.observatory"
     )
     parser.add_argument(
-        "--lense_recipe",
+        "--lens_recipe",
         choices=["accuracy"],
         default=None,
         help="Lens recipe to enable (e.g. accuracy)",
@@ -59,7 +59,7 @@ def main():
     PipelineGraphCollectorLens.register_backend_patches(install_qnn_patches)
     Observatory.register_lens(PipelineGraphCollectorLens)
 
-    if args.lense_recipe == "accuracy":
+    if args.lens_recipe == "accuracy":
         from executorch.devtools.observatory.lenses.accuracy import AccuracyLens
         from .lenses.qnn_dataset_patches import install_qnn_dataset_patches
 
