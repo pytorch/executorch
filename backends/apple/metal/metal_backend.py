@@ -38,6 +38,7 @@ class MetalBackend(AotiBackend, BackendDetails):
             "torchao::_linear_fp_act_4bit_weight": None,
             "at::_ops::topk::call": None,
             "metal::gather_qmv": None,
+            "metal::gated_delta_rule": None,
         }
 
     @classmethod
@@ -85,6 +86,15 @@ class MetalBackend(AotiBackend, BackendDetails):
             )
 
             custom_c_shims.update(metal_gather_qmv_c_shim)
+        except ImportError:
+            pass
+
+        try:
+            from executorch.backends.apple.metal.ops.gated_delta_rule import (
+                metal_gated_delta_rule_c_shim,
+            )
+
+            custom_c_shims.update(metal_gated_delta_rule_c_shim)
         except ImportError:
             pass
 

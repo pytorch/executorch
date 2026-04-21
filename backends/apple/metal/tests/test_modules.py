@@ -740,6 +740,53 @@ MODULE_REGISTRY["gather_qmv"] = {
 }
 
 
+# -------------------------------------------------------------------------
+# Gated Delta Rule (linear attention recurrence)
+# -------------------------------------------------------------------------
+
+
+class GatedDeltaRule(nn.Module):
+    """Wrapper around metal::gated_delta_rule for testing the linear
+    attention recurrence kernel.
+
+    Resets state to zero on each forward call so that the output is
+    deterministic regardless of prior calls (e.g., during export tracing).
+    """
+
+    def __init__(self):
+        super().__init__()
+        B, Hv, Dv, Dk = 1, 4, 64, 64
+        self.register_buffer("state", torch.zeros(B, Hv, Dv, Dk))
+
+    def forward(
+        self,
+        q: torch.Tensor,
+        k: torch.Tensor,
+        v: torch.Tensor,
+        g: torch.Tensor,
+        beta: torch.Tensor,
+    ) -> torch.Tensor:
+        import executorch.backends.apple.metal.ops.gated_delta_rule  # noqa: F401
+
+        self.state.zero_()
+        return torch.ops.metal.gated_delta_rule(q, k, v, g, beta, self.state)
+
+
+MODULE_REGISTRY["gated_delta_rule"] = {
+    "model_class": GatedDeltaRule,
+    "input_shapes": [
+        (1, 2, 4, 64),  # q: [B, T, Hk, Dk]
+        (1, 2, 4, 64),  # k
+        (1, 2, 4, 64),  # v: [B, T, Hv, Dv]
+        (1, 2, 4),  # g: [B, T, Hv]
+        (1, 2, 4),  # beta: [B, T, Hv]
+    ],
+    "description": "Gated delta rule recurrence for linear attention (metal::gated_delta_rule)",
+    "atol_float32": 1e-4,
+    "atol_bfloat16": 5e-2,
+}
+
+
 # =============================================================================
 # Helper Functions
 # =============================================================================
