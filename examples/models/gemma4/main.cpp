@@ -317,8 +317,12 @@ int32_t main(int32_t argc, char** argv) {
   // ---- 2. Build full prompt and tokenize ----
   std::string prefix_text, suffix_text;
   if (!FLAGS_raw_prompt) {
-    const char* modal_tok = has_image ? "<|image>" : "<|audio>";
-    prefix_text = std::string("<bos><|turn>user\n") + modal_tok + "\n";
+    if (has_image)
+      prefix_text = "<bos><|turn>user\n<|image>\n";
+    else if (has_audio)
+      prefix_text = "<bos><|turn>user\n<|audio>\n";
+    else
+      prefix_text = "<bos><|turn>user\n";
     suffix_text = FLAGS_prompt + "<turn|>\n<|turn>model\n";
   } else {
     prefix_text = FLAGS_prompt;
