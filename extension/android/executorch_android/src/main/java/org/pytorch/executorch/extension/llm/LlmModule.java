@@ -31,7 +31,7 @@ public class LlmModule implements Closeable {
   public static final int MODEL_TYPE_MULTIMODAL = 2;
 
   private final HybridData mHybridData;
-  private boolean mDestroyed = false;
+  private volatile boolean mDestroyed = false;
   private static final int DEFAULT_SEQ_LEN = 128;
   private static final boolean DEFAULT_ECHO = true;
   private static final float DEFAULT_TEMPERATURE = -1.0f;
@@ -194,7 +194,8 @@ public class LlmModule implements Closeable {
 
   /**
    * Releases native resources. Callers must ensure no other methods are in-flight. Call {@link
-   * #stop()} and wait for {@link #generate} to return before calling this method.
+   * #stop()} and wait for {@link #generate(String, LlmCallback)} to return before calling this
+   * method.
    */
   @Override
   public void close() {
