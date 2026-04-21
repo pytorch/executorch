@@ -13,7 +13,6 @@ import com.facebook.jni.annotations.DoNotStrip;
 import java.io.Closeable;
 import java.nio.ByteBuffer;
 import java.util.List;
-import java.util.concurrent.locks.Lock;
 import java.util.concurrent.locks.ReentrantLock;
 import org.pytorch.executorch.ExecuTorchRuntime;
 import org.pytorch.executorch.ExecutorchRuntimeException;
@@ -33,7 +32,7 @@ public class LlmModule implements Closeable {
   public static final int MODEL_TYPE_MULTIMODAL = 2;
 
   private final HybridData mHybridData;
-  private final Lock mLock = new ReentrantLock();
+  private final ReentrantLock mLock = new ReentrantLock();
   private boolean mDestroyed = false;
   private static final int DEFAULT_SEQ_LEN = 128;
   private static final boolean DEFAULT_ECHO = true;
@@ -204,6 +203,10 @@ public class LlmModule implements Closeable {
   public void close() {
     if (mLock.tryLock()) {
       try {
+        if (mLock.getHoldCount() > 1) {
+          throw new IllegalStateException(
+              "Cannot close module from within a callback during execution");
+        }
         if (!mDestroyed) {
           mDestroyed = true;
           mHybridData.resetNative();
