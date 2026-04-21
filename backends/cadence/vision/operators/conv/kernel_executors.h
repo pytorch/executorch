@@ -15,7 +15,7 @@
 #ifndef KERNEL_EXECUTORS_H_
 #define KERNEL_EXECUTORS_H_
 
-#include "conv_layer_configs.h"
+#include "../layer_configs.h"
 
 /* 
  * XAI error type: Use actual library type if available, otherwise define locally.

@@ -2,19 +2,70 @@
 
 Python tools for extracting convolution layer parameters from neural network models and generating optimized C header configurations for DMA-tiled execution on the Xtensa XRC Vision DSP (XAI CNN runtime).
 
+## Prerequisites
+
+The script requires the Python venv in the executorch tree and must be run from a **bash** terminal (not csh):
+
+```bash
+# The venv is at <executorch>/.venv/
+# All paths below are relative to the executorch root.
+
+# Option 1: call the venv python directly (works from any shell)
+.venv/bin/python3 backends/cadence/vision/config_generator/generate_layer_configs.py ...
+
+# Option 2: activate the venv in a bash shell
+bash
+source .venv/bin/activate
+python3 backends/cadence/vision/config_generator/generate_layer_configs.py ...
+```
+
+> **Note:** The default terminal on this machine is `csh`. Inline python commands
+> and `source ... && ...` chains will fail in csh. Always use `bash` or invoke
+> the venv python by its full path.
+
 ## Quick Start
 
 ```bash
-# From an ExecuTorch .pte binary (no pip install required)
-python generate_layer_configs.py --pte resnet18_quantized.pte \
-    --output conv_layer_configs_62k5.h --dram0 31250 --dram1 31250
-    
-# working cmd
-# python3 backends/cadence/vision/config_generator/generate_layer_configs.py   --pte /home/sraut/ext_test/executorch/operator_and_model_testing/resnet50/pte/resnet50_quantized.pte   --output backends/cadence/vision/config_generator/test_32k.h --dram0 31250 --dram1 31250 
+# Run from the executorch root directory: cd <executorch>
 
-# From a torchvision model
-python generate_layer_configs.py --model resnet18 --input-size 1,3,64,64 \
-    --output conv_layer_configs.h --dram0 32768 --dram1 32768
+# From a single ExecuTorch .pte binary
+.venv/bin/python3 backends/cadence/vision/config_generator/generate_layer_configs.py \
+    --pte operator_and_model_testing/resnet18/pte/resnet18_quantized.pte \
+    --output backends/cadence/vision/config_generator/conv_layer_configs.h \
+    --dram0 62976 --dram1 62976
+
+# From multiple .pte files (layers are deduplicated automatically)
+.venv/bin/python3 backends/cadence/vision/config_generator/generate_layer_configs.py \
+    --pte operator_and_model_testing/resnet18/pte/resnet18_quantized.pte \
+         operator_and_model_testing/resnet50/pte/resnet50_quantized.pte \
+    --output backends/cadence/vision/config_generator/conv_layer_configs_combined.h \
+    --dram0 62976 --dram1 62976
+
+# From a torchvision model (requires torchvision installed in venv)
+.venv/bin/python3 backends/cadence/vision/config_generator/generate_layer_configs.py \
+    --model resnet18 --input-size 1,3,64,64 \
+    --output backends/cadence/vision/config_generator/conv_layer_configs.h \
+    --dram0 32768 --dram1 32768
+```
+
+### Full working commands
+
+```bash
+# cd to the executorch root first
+cd <path-to-executorch>
+
+# ResNet18 with 62976 bytes per DRAM bank
+.venv/bin/python3 backends/cadence/vision/config_generator/generate_layer_configs.py \
+    --pte operator_and_model_testing/resnet18/pte/resnet18_quantized.pte \
+    --output backends/cadence/vision/config_generator/conv_layer_configs_62k_pte.h \
+    --dram0 62976 --dram1 62976
+
+# ResNet18 + ResNet50 combined
+.venv/bin/python3 backends/cadence/vision/config_generator/generate_layer_configs.py \
+    --pte operator_and_model_testing/resnet18/pte/resnet18_quantized.pte \
+         operator_and_model_testing/resnet50/pte/resnet50_quantized.pte \
+    --output backends/cadence/vision/config_generator/conv_layer_configs_62k_combined.h \
+    --dram0 62976 --dram1 62976
 ```
 
 ---

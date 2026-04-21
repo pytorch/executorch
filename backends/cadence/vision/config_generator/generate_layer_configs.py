@@ -21,8 +21,8 @@ Usage:
     # From .pte extraction JSON
     python generate_layer_configs.py layers_config.json --dram0 32768 --dram1 32768
 
-    # Generate all configs in cache mode (appends _cache to every kernel name)
-    python generate_layer_configs.py resnet_conv_list.csv --output conv_layer_configs_cache.h --dram0 64000 --dram1 64000 --cache-mode
+    # Generate all configs in no-DMA mode (changes _dma suffix to _no_dma for every kernel name)
+    python generate_layer_configs.py resnet_conv_list.csv --output conv_layer_configs_no_dma.h --dram0 64000 --dram1 64000 --no-dma-mode
 """
 
 import os
@@ -296,7 +296,13 @@ def load_layers_from_pte(pte_file, flatc_path=None):
     print(f"Loading PTE: {pte_path} ...")
 
     with open(pte_path, 'rb') as f:
-        program = deserialize_pte_binary(f.read())
+        pte_file_obj = deserialize_pte_binary(f.read())
+
+    # deserialize_pte_binary returns a PTEFile wrapper; unwrap to get Program
+    if hasattr(pte_file_obj, 'program'):
+        program = pte_file_obj.program
+    else:
+        program = pte_file_obj  # older API returned Program directly
 
     plan   = program.execution_plan[0]
     values = plan.values
@@ -527,7 +533,7 @@ def calculate_layer_config(layer, dram0_size, dram1_size):
         return {
             'layer_id': layer['layer_id'],
             'layer_name': layer['name'],
-            'kernel_name': kernel_name + "_cache",
+            'kernel_name': kernel_name + "_no_dma",
             'src_dim1_size': input_w, 'src_dim2_size': input_h, 'src_dim3_size': input_c,
             'src_dim1_pitch': input_w, 'src_dim2_pitch': input_w * input_h,
             'dst_dim1_size': output_w, 'dst_dim2_size': output_h, 'dst_dim3_size': output_c,
@@ -569,7 +575,7 @@ def calculate_layer_config(layer, dram0_size, dram1_size):
     config = {
         'layer_id': layer['layer_id'],
         'layer_name': layer['name'],
-        'kernel_name': kernel_name,
+        'kernel_name': kernel_name + "_dma",
         
         # Source dimensions
         'src_dim1_size': buffer_sizes['SRC_DIM1_SIZE'],
@@ -670,7 +676,7 @@ def calculate_layer_config(layer, dram0_size, dram1_size):
     
     return config
 
-def generate_c_header(configs, output_file, dram0_size=32768, dram1_size=32768, cache_mode=False):
+def generate_c_header(configs, output_file, dram0_size=32768, dram1_size=32768, no_dma_mode=False):
     """
     Generate C header file with lookup table
     
@@ -809,8 +815,8 @@ typedef struct {
         f.write(f"#define NUM_CONV_LAYERS {len(configs)}\n\n")
         
         # Generate IDMA buffer size macros
-        _dram0_macro = 0 if cache_mode else dram0_size
-        _dram1_macro = 0 if cache_mode else dram1_size
+        _dram0_macro = 0 if no_dma_mode else dram0_size
+        _dram1_macro = 0 if no_dma_mode else dram1_size
         f.write(f" #define IDMA_BUFFER_SIZE_DRAM0 ({_dram0_macro}) // {_dram0_macro // 1024} KB for DRAM0\n")
         f.write(f" #define IDMA_BUFFER_SIZE_DRAM1 ({_dram1_macro}) // {_dram1_macro // 1024} KB for DRAM1\n\n")
         
@@ -1045,9 +1051,9 @@ def main():
                             'Comma or + separated list. '
                             f'Supported: {", ".join(SUPPORTED_MODELS)}. '
                             'Example: --model resnet18+resnet50')
-    parser.add_argument('--pte', default=None,
-                       help='Extract layers directly from an ExecuTorch .pte binary. '
-                            'Example: --pte resnet18_quantized.pte')
+    parser.add_argument('--pte', nargs='+', default=None,
+                       help='Extract layers from one or more ExecuTorch .pte binaries. '
+                            'Example: --pte resnet18.pte resnet50.pte')
     parser.add_argument('--flatc', default=None,
                        help='Path to flatc binary (default: cmake-out/third-party/flatc_ep/bin/flatc)')
     parser.add_argument('--input-size', default='1,3,64,64',
@@ -1058,19 +1064,33 @@ def main():
                        help=f'DRAM0 size in bytes (default: {DRAM_SIZE_0})')
     parser.add_argument('--dram1', type=int, default=DRAM_SIZE_1,
                        help=f'DRAM1 size in bytes (default: {DRAM_SIZE_1})')
-    parser.add_argument('--cache-mode', action='store_true', default=False,
-                       help='Force all configs to cache mode: appends _cache to every kernel name')
+    parser.add_argument('--no-dma-mode', action='store_true', default=False,
+                       help='Force all configs to no-DMA mode: changes _dma suffix to _no_dma for every kernel name')
     
     args = parser.parse_args()
     
     # ---- Load layers: --model, --pte, or input_file ----
     if args.pte:
-        pte_path = Path(args.pte)
-        if not pte_path.exists():
-            print(f"ERROR: PTE file not found: {pte_path}")
-            return 1
-        print(f"Extracting layers from PTE: {pte_path}")
-        layers = load_layers_from_pte(pte_path, flatc_path=args.flatc)
+        all_layers = []
+        seen_keys = set()
+        for pte_arg in args.pte:
+            pte_path = Path(pte_arg)
+            if not pte_path.exists():
+                print(f"ERROR: PTE file not found: {pte_path}")
+                return 1
+            print(f"Extracting layers from PTE: {pte_path}")
+            pte_layers = load_layers_from_pte(pte_path, flatc_path=args.flatc)
+            for l in pte_layers:
+                key = (l['input'], l['output'], l['kernel'],
+                       l['stride'], l['padding'], l['dilation'])
+                if key not in seen_keys:
+                    seen_keys.add(key)
+                    l['layer_id'] = len(all_layers)
+                    all_layers.append(l)
+                else:
+                    print(f"  [skip duplicate] {l['name']}")
+        layers = all_layers
+        print(f"Total unique layers from {len(args.pte)} PTE file(s): {len(layers)}")
     elif args.model:
         # Parse model names (accept comma or + as separator)
         model_names = [n.strip() for n in args.model.replace('+', ',').split(',') if n.strip()]
@@ -1116,15 +1136,15 @@ def main():
     
     print(f"\nGenerated {len(configs)} valid configurations")
     
-    # Apply cache mode: append _cache to every kernel name
-    if args.cache_mode:
+    # Apply no-DMA mode: change _dma suffix to _no_dma for every kernel name
+    if args.no_dma_mode:
         for config in configs:
-            if not config['kernel_name'].endswith('_cache'):
-                config['kernel_name'] += '_cache'
-        print(f"Cache mode enabled: all kernel names suffixed with _cache")
+            if config['kernel_name'].endswith('_dma'):
+                config['kernel_name'] = config['kernel_name'][:-4] + '_no_dma'
+        print(f"No-DMA mode enabled: all kernel names suffixed with _no_dma")
     
     # Generate C header
-    generate_c_header(configs, args.output, args.dram0, args.dram1, args.cache_mode)
+    generate_c_header(configs, args.output, args.dram0, args.dram1, args.no_dma_mode)
     
     print(f"\nSuccess! Generated {args.output}")
     print(f"Use in C code:")

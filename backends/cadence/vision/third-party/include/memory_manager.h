@@ -14,7 +14,7 @@
 #include <stddef.h>
 #include <stdint.h>
 #include <stdio.h>
-#include "../../operators/conv/conv_layer_configs.h"  // For IDMA_BUFFER_SIZE_DRAM0/DRAM1
+#include "../../operators/layer_configs.h"  // For IDMA_BUFFER_SIZE_DRAM0/DRAM1
 
 // ============================================================================
 // Memory Configuration

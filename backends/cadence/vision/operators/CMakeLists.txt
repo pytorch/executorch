@@ -22,6 +22,7 @@ endif()
 set(_aten_ops__srcs
     "${CMAKE_CURRENT_SOURCE_DIR}/op_softmax.cpp"
     "${CMAKE_CURRENT_SOURCE_DIR}/op_max_pool2d_with_indices.cpp"
+    "${CMAKE_CURRENT_SOURCE_DIR}/maxpool/maxpool_exec_2x2j2.c"
     "${CMAKE_CURRENT_SOURCE_DIR}/op_add.cpp"
     "${CMAKE_CURRENT_SOURCE_DIR}/op_mean.cpp"
     "${CMAKE_CURRENT_SOURCE_DIR}/quantized_relu.cpp"

@@ -12,6 +12,14 @@
 
 #include <executorch/kernels/portable/cpu/util/kernel_ops_util.h>
 #include <executorch/runtime/kernel/kernel_includes.h>
+#include <executorch/backends/cadence/vision/operators/layer_configs.h>
+
+/* DMA-tiled maxpool executor (defined in maxpool_exec_2x2j2.c) */
+extern "C" {
+typedef int XAI_ERR_TYPE;
+XAI_ERR_TYPE maxpool_exec_2x2j2(
+    float* src, float* dst, const maxpool_layer_config_t* config);
+}
 
 using executorch::aten::Tensor;
 using executorch::aten::ScalarType;
@@ -93,7 +101,36 @@ std::tuple<Tensor&, Tensor&> max_pool2d_with_indices_out(
     uint8_t kernel_height = kernel_size[0];
     uint8_t kernel_width = kernel_size[1];
 
-    // Allocate padded buffer
+    // Invalidate input cache: previous op may have written via DMA
+    xthal_dcache_region_invalidate((void*)ptr_inp, sizeof(float) * in.numel());
+
+    // ── DMA-tiled path: look up pre-computed config ──────────────────
+    const maxpool_layer_config_t* mp_cfg = get_maxpool_config_by_params(
+        channels, inp_height, inp_width,
+        kernel_height, kernel_width,
+        stride[0], stride[1],
+        padding[0], padding[1]);
+
+    if (mp_cfg != NULL) {
+      // Process each batch independently through the DMA executor
+      for (int b = 0; b < batch; b++) {
+        float* batch_inp = (float*)ptr_inp + b * channels * inp_height * inp_width;
+        float* batch_out = (float*)ptr_out + b * channels * out_height * out_width;
+
+        XAI_ERR_TYPE status = maxpool_exec_2x2j2(batch_inp, batch_out, mp_cfg);
+        ET_KERNEL_CHECK(ctx, status == 0, InvalidArgument, ret_val);
+      }
+
+      // Invalidate output cache: DMA wrote to system memory, CPU must not
+      // see stale cache lines
+      xthal_dcache_region_invalidate(ptr_out, sizeof(float) * out.numel());
+
+      TIME_END(maxpool);
+      TIME_DISPLAY(maxpool, in.numel(), "floats");
+      return ret_val;
+    }
+
+    // ── Fallback: cache-based path (original implementation) ─────────
     size_t padded_size = batch * channels * padded_height * padded_width;
     executorch::runtime::Result<void*> temp_mem_res = 
         ctx.allocate_temp(padded_size * sizeof(float));
