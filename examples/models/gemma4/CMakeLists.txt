@@ -24,7 +24,7 @@ find_package(executorch CONFIG REQUIRED FIND_ROOT_PATH_BOTH)
 executorch_target_link_options_shared_lib(executorch)
 
 set(link_libraries executorch gflags)
-set(_srcs main.cpp)
+set(_srcs main.cpp gemma4_image_utils.cpp)
 
 list(
   APPEND link_libraries
@@ -57,9 +57,22 @@ if(ANDROID)
   list(APPEND link_libraries log)
 endif()
 
-# Multimodal support: stb_image for vision input (optional)
-option(GEMMA4_ENABLE_VISION "Enable vision/image support (requires stb_image)" OFF)
-if(GEMMA4_ENABLE_VISION)
+# stb_image: required for vision input preprocessing.
+# Use the copy bundled in llama.cpp/vendor/stb (already on this system).
+set(STB_SEARCH_PATHS
+    "$ENV{HOME}/llama.cpp/vendor/stb"
+    "${EXECUTORCH_ROOT}/../llama.cpp/vendor/stb"
+)
+set(stb_FOUND FALSE)
+foreach(stb_path ${STB_SEARCH_PATHS})
+  if(EXISTS "${stb_path}/stb_image.h")
+    set(stb_SOURCE_DIR "${stb_path}")
+    set(stb_FOUND TRUE)
+    message(STATUS "Using stb_image from ${stb_SOURCE_DIR}")
+    break()
+  endif()
+endforeach()
+if(NOT stb_FOUND)
   include(FetchContent)
   FetchContent_Declare(
     stb
@@ -67,10 +80,8 @@ if(GEMMA4_ENABLE_VISION)
     GIT_TAG f0569113c93ad095470c54bf34a17b36646bbbb5
   )
   FetchContent_MakeAvailable(stb)
-  list(APPEND _common_include_directories ${stb_SOURCE_DIR}
-       ${stb_SOURCE_DIR}/deprecated)
-  add_definitions(-DGEMMA4_ENABLE_VISION)
 endif()
+list(APPEND _common_include_directories ${stb_SOURCE_DIR})
 
 list(
   APPEND link_libraries

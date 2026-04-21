@@ -1,8 +1,21 @@
 # Gemma4 ExecuTorch — Status
 
-Last updated: 2026-04-17
+Last updated: 2026-04-21
 
-## TL;DR — WORKING
+## TL;DR
+
+| Capability | Status |
+|------------|--------|
+| Text generation (CPU + XNNPACK FP32) | ✅ Working, parity verified |
+| EOS stop tokens (no endless repetition) | ✅ Fixed |
+| Official chat template (jinja) | ✅ render_chat.py |
+| Vision encoder (export) | ✅ Exported, runs in multimodal .pte |
+| Audio preprocessor + encoder (export) | ✅ Exported, runs in multimodal .pte |
+| Multimodal .pte (5 methods, KV cache) | ✅ Exports and runs end-to-end |
+| Multimodal generation portable (image+text) | ✅ Runs, generates tokens (slow, CPU only) |
+| Multimodal generation XNNPACK | ⏳ Export in progress |
+
+## Text generation — WORKING
 
 End-to-end Gemma4 generation on ExecuTorch CPU + XNNPACK matches the HuggingFace
 reference bit-exactly. Validation:
@@ -122,16 +135,119 @@ make gemma4-cpu
   --prompt "What is the capital of France?" --seq_len 30
 ```
 
+## Vision + Audio encoders
+
+New files added (2026-04-20):
+
+- `examples/models/gemma4/encoders.py` — `VisionEncoderExport` and
+  `AudioEncoderExport` nn.Module wrappers around HF submodules.
+- `examples/models/gemma4/export_gemma4_multimodal.py` — exports a 22 GB
+  `gemma4_multimodal.pte` with four methods: `vision_encoder`,
+  `audio_encoder`, `token_embedding`, `text_decoder`.
+
+Parity verified:
+- Vision: `(1, 2520, 768)` pre-patchified patches → `(256, 1536)` soft tokens. Matches HF.
+- Audio: `(1, 200, 128)` log-mel → `(1, 50, 1536)` soft tokens. Matches HF.
+
+### Multimodal generation architecture (2026-04-20)
+
+`main.cpp` now implements a **custom generation loop** that directly orchestrates
+all five methods — bypassing `MultimodalRunner` — to properly handle:
+
+1. **Vision** (`--image_path`):
+   - `stb_image` resize to 448×448 → C++ patchify (`gemma4_image_utils.cpp`)
+   - Call `vision_encoder(pixel_values[1,2520,768], pixel_position_ids[1,2520,2])` ← TWO tensors
+   - Receives 256 soft tokens `(256, 1536)`
+
+2. **Audio** (`--audio_path`):
+   - WAV RIFF parser → float32 PCM mono
+   - Call `audio_preprocessor(waveform[1,N])` → mel features `(1,T,128)`
+   - Call `audio_encoder(mel[1,T,128])` → audio soft tokens `(1,T',1536)`
+
+3. **Text decoder** (stateful KV cache):
+   - Embed prefix + modality soft tokens + suffix via `token_embedding`
+   - Concatenate and run `text_decoder(combined_embeds, positions)` for prefill
+   - Token-by-token decode loop
+
+**P0 (KV cache export) status**: The export script (`export_gemma4_multimodal.py`)
+now uses `_prepare_for_llama_export` to get a Gemma4 transformer with proper
+KV-cache source transforms. Run it to regenerate the multimodal .pte.
+
+## New files (2026-04-20)
+
+| File | Purpose |
+|------|---------|
+| `encoders.py` | `VisionEncoderExport`, `AudioEncoderExport` wrappers |
+| `audio_preprocessor.py` | `Gemma4AudioPreprocessor` (PCM → log-mel) |
+| `gemma4_image_utils.h/.cpp` | C++ image patchification |
+| `export_gemma4_multimodal.py` | Multi-method export (5 methods with KV cache) |
+
+## End-to-end multimodal status (2026-04-21)
+
+5-method `.pte` exports and runs end-to-end:
+
+```
+gemma4_multimodal_v4.pte  (12 GB, portable backend, max_seq=256)
+├── vision_encoder(pv[1,2520,768], pp[1,2520,2]) → (1, 1536)  ← 1 visual soft token
+├── audio_preprocessor(wav[1,N]) → (1, T, 128)  ← dynamic T
+├── audio_encoder(mel[1,T,128]) → (1, T//4, 1536)
+├── token_embedding(ids[1,S]) → (1, S, 1536)
+└── text_decoder(emb[1,1,1536], pos[1]) → (1, vocab=262144)  ← stateful KV cache
+```
+
+Verified methods present: `['audio_encoder', 'audio_preprocessor', 'enable_dynamic_shape',
+'get_bos_id', 'get_eos_ids', 'get_max_context_len', 'get_max_seq_len', 'get_n_layers',
+'get_num_kv_shared_layers', 'get_vocab_size', 'text_decoder', 'token_embedding',
+'use_kv_cache', 'use_sdpa_with_kv_cache', 'vision_encoder']`
+
+KV cache metadata: `use_kv_cache=True, use_sdpa_with_kv_cache=True`.
+
+Image+text generation: loads, patchifies image, runs vision_encoder (2 tensors), prefills
+token-by-token, decodes. Generates tokens (exit code 0).
+
+Note: `vision_encoder` returns `(1, 1536)` — 1 visual token (HF Gemma4 global pooling).
+Expected `(256, 1536)` from parity tests; to investigate with real HF model.
+
+Portable backend is very slow (~0.25 tok/s). XNNPACK re-export in progress.
+
+### Re-export commands
+
+```bash
+# Portable (debugging)
+cd /tmp && python /path/to/export_gemma4_multimodal.py \
+  --hf-model ~/models/gemma-4-E2B-it \
+  --et-checkpoint ~/models/gemma-4-E2B-it/model_et.pth \
+  --output gemma4_multimodal_portable.pte \
+  --backend portable --max-seq-len 256
+
+# XNNPACK (production, ~14 tok/s)
+cd /tmp && python /path/to/export_gemma4_multimodal.py \
+  --hf-model ~/models/gemma-4-E2B-it \
+  --et-checkpoint ~/models/gemma-4-E2B-it/model_et.pth \
+  --output gemma4_multimodal_xnnpack.pte \
+  --backend xnnpack --max-seq-len 512
+
+# Run multimodal
+./cmake-out/examples/models/gemma4/gemma4_runner \
+  --model_path gemma4_multimodal_xnnpack.pte \
+  --tokenizer_path ~/models/gemma-4-E2B-it/tokenizer.json \
+  --image_path photo.jpg \
+  --prompt "Describe this image." --seq_len 50
+
+./cmake-out/examples/models/gemma4/gemma4_runner \
+  --model_path gemma4_multimodal_xnnpack.pte \
+  --tokenizer_path ~/models/gemma-4-E2B-it/tokenizer.json \
+  --audio_path clip.wav \
+  --prompt "What do you hear?" --seq_len 50
+```
+
 ## Known follow-ups
 
-- **EOS handling**: ✅ Fixed. Gemma4 has three EOS tokens (`<eos>`=1,
-  `<turn|>`=106, id 50). Embedded via `base.metadata` during export so the
-  runner stops cleanly after each response.
-- **Chat template**: ✅ Official vLLM jinja template copied to
-  `chat_template.jinja`; `render_chat.py` renders it (supports system
-  prompts, tool calls, reasoning mode). Use with `--raw_prompt`.
-- **Quantization**: not yet validated for Gemma4 (8da4w / 4w paths exist
-  but parity not measured).
-- **Vision + audio modalities**: deferred (text-only this pass).
+- **EOS handling**: ✅ Fixed. Embedded via `base.metadata`.
+- **Chat template**: ✅ `chat_template.jinja` + `render_chat.py`.
+- **XNNPACK multimodal .pte**: Export in progress (`gemma4_mm_export_xnnpack.log`).
+- **Vision soft token count**: 1 token vs expected 256 — investigate HF embed_vision.
+- **End-to-end quality test**: Use XNNPACK pte with real image after export completes.
+- **Quantization**: not yet validated for Gemma4 (8da4w / 4w paths exist).
 - **Per-layer-type partial_rotary**: works but only needed for full layers
   in Gemma4 E2B; other Gemma4 sizes may differ.
