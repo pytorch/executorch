@@ -27,6 +27,7 @@ import torch
 from executorch.examples.models.qwen3_5_moe.export import (
     _materialize_buffers,
     _quantize,
+    _quantize_sensitive,
     load_prequantized_model,
 )
 from executorch.examples.models.qwen3_5_moe.model import Qwen35MoE, Qwen35MoEConfig
@@ -59,8 +60,8 @@ TINY_CONFIG = Qwen35MoEConfig(
 )
 
 
-def _make_quantized_model(qlinear, qembedding, group_size, hqq=False):
-    """Create a tiny model with random weights and quantize it."""
+def _make_tiny_model():
+    """Create a tiny model with deterministic random weights."""
     torch.manual_seed(42)
     model = Qwen35MoE(TINY_CONFIG)
     model.to(dtype=torch.bfloat16)
@@ -68,6 +69,12 @@ def _make_quantized_model(qlinear, qembedding, group_size, hqq=False):
         if p.device.type != "meta":
             p.data.normal_(0, 0.02)
     model.eval()
+    return model
+
+
+def _make_quantized_model(qlinear, qembedding, group_size, hqq=False):
+    """Create a tiny model and quantize with _quantize."""
+    model = _make_tiny_model()
 
     class Args:
         pass
@@ -77,15 +84,29 @@ def _make_quantized_model(qlinear, qembedding, group_size, hqq=False):
     args.qembedding = qembedding
     args.qlinear_group_size = group_size
     args.qlinear_packing_format = "tile_packed_to_4d"
-
     args.hqq = hqq
     _quantize(model, TINY_CONFIG, args)
 
     return model
 
 
+def _make_sensitive_model(group_size, hqq=False):
+    """Create a tiny model and quantize with _quantize_sensitive."""
+    model = _make_tiny_model()
+
+    class Args:
+        pass
+
+    args = Args()
+    args.qlinear_group_size = group_size
+    args.hqq = hqq
+    _quantize_sensitive(model, TINY_CONFIG, args)
+
+    return model
+
+
 def _save_bundle(model, output_dir):
-    """Save a quantized model as a bundle (model.safetensors + config.json).
+    """Save a quantized model (model.safetensors + config.json).
 
     Uses the production save_quantized_model for weights, and writes a
     config.json from TINY_CONFIG so load_prequantized_model can read it.
@@ -178,6 +199,50 @@ class TestQuantizeRoundtrip(unittest.TestCase):
     def test_4w_8w_gs128_hqq(self):
         """Roundtrip: 4w linear + 8w embedding, group_size=128, HQQ experts."""
         self._test_roundtrip("4w", "8w", 128, hqq=True)
+
+    def _test_sensitive_roundtrip(self, group_size, hqq=False):
+        """Test: sensitive quantize -> save -> load -> forward
+        produces same output as sensitive quantize -> forward.
+        """
+        import executorch.backends.cuda.triton.kernels  # noqa: F401
+
+        model_a = _make_sensitive_model(group_size, hqq)
+        with tempfile.TemporaryDirectory() as tmpdir:
+            _save_bundle(model_a, tmpdir)
+
+            _materialize_buffers(model_a, TINY_CONFIG)
+            model_a.to(device="cuda")
+
+            torch.manual_seed(99)
+            tokens = torch.randint(0, TINY_CONFIG.vocab_size, (1, 4), device="cuda")
+            input_pos = torch.arange(4, device="cuda")
+
+            with torch.no_grad():
+                output_a = model_a(tokens, input_pos)
+            del model_a
+
+            model_b, _ = load_prequantized_model(
+                tmpdir, max_seq_len=TINY_CONFIG.max_seq_len
+            )
+
+        _materialize_buffers(model_b, TINY_CONFIG)
+        model_b.to(device="cuda")
+
+        with torch.no_grad():
+            output_b = model_b(tokens, input_pos)
+
+        self.assertTrue(
+            torch.equal(output_a, output_b),
+            f"Outputs differ: max diff = {(output_a - output_b).abs().max().item()}",
+        )
+
+    def test_sensitive_gs32(self):
+        """Roundtrip: sensitive quantization, group_size=32."""
+        self._test_sensitive_roundtrip(32)
+
+    def test_sensitive_gs32_hqq(self):
+        """Roundtrip: sensitive quantization, group_size=32, HQQ experts."""
+        self._test_sensitive_roundtrip(32, hqq=True)
 
     def test_load_rejects_corrupted_checkpoint(self):
         """load_prequantized_model raises on corrupted/mismatched checkpoint.

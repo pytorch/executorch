@@ -1,4 +1,4 @@
-"""Quantize Qwen 3.5 MoE and save as a self-contained safetensors bundle.
+"""Quantize Qwen 3.5 MoE and save as a self-contained safetensors checkpoint.
 
 Runs quantization once and saves the result so export.py can skip
 re-quantizing via --prequantized. The output directory contains everything
@@ -16,6 +16,7 @@ Output:
 Usage:
   python quantize_and_save.py --model-dir /path/to/Qwen3.5-MoE-A3B --qlinear 4w
   python quantize_and_save.py --model-dir /path/to/model --qlinear 4w --hqq
+  python quantize_and_save.py --model-dir /path/to/model --sensitive --hqq
 """
 
 import argparse
@@ -25,7 +26,7 @@ import shutil
 
 import torch
 
-from executorch.examples.models.qwen3_5_moe.export import _quantize
+from executorch.examples.models.qwen3_5_moe.export import _quantize, _quantize_sensitive
 from executorch.examples.models.qwen3_5_moe.model import Qwen35MoE
 from safetensors.torch import save_file
 
@@ -197,10 +198,27 @@ def main():
         action="store_true",
         help="Use HQQ scale-only optimization for expert quantization.",
     )
+    parser.add_argument(
+        "--sensitive",
+        action="store_true",
+        help="Use sensitivity-aware mixed precision quantization. "
+        "Recommended for models without quantization-aware training.",
+    )
     args = parser.parse_args()
 
-    if not args.qlinear and not args.qembedding:
-        parser.error("At least one of --qlinear or --qembedding is required.")
+    if not args.qlinear and not args.qembedding and not args.sensitive:
+        parser.error(
+            "At least one of --qlinear, --qembedding, or --sensitive is required."
+        )
+
+    if args.sensitive and (args.qlinear or args.qembedding):
+        parser.error(
+            "--sensitive manages its own precision; "
+            "do not combine with --qlinear or --qembedding"
+        )
+
+    if args.hqq and not args.qlinear and not args.sensitive:
+        parser.error("--hqq requires --qlinear or --sensitive")
 
     # Load model
     print("Loading model...")
@@ -214,7 +232,10 @@ def main():
     )
 
     # Quantize (includes expert INT4 + linear + embedding quantization)
-    _quantize(model, config, args)
+    if args.sensitive:
+        _quantize_sensitive(model, config, args)
+    else:
+        _quantize(model, config, args)
 
     # Save bundle
     os.makedirs(args.output, exist_ok=True)
@@ -230,6 +251,7 @@ def main():
         "tokenizer_config.json",
         "merges.txt",
         "vocab.json",
+        "LICENSE",
     ]:
         src = os.path.join(args.model_dir, filename)
         if os.path.exists(src):
