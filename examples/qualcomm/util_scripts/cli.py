@@ -48,7 +48,6 @@ from executorch.backends.qualcomm.utils.utils import (
     QNN_TENSOR_TYPE_MAP,
     to_edge_transform_and_lower_to_qnn,
 )
-from executorch.examples.qualcomm.qaihub_scripts.utils.utils import preprocess_binary
 from executorch.exir import ExecutorchBackendConfig
 from executorch.exir.passes.memory_planning_pass import MemoryPlanningPass
 from torchao.quantization import pt2e
@@ -70,6 +69,13 @@ def get_logger():
     logger.setLevel(logging.INFO)
     logger.propagate = False
     return logging.LoggerAdapter(logger, extra={"prefix": "QNN_BACKEND"})
+
+
+def preprocess_binary(ctx_bin, compiler_specs):
+    qnn_mgr = PyQnnManagerAdaptor.QnnManager(
+        generate_qnn_executorch_option(compiler_specs),
+    )
+    return bytes(qnn_mgr.MakeBinaryInfo(ctx_bin))
 
 
 def get_io_info(pte_path, compiler_specs):
