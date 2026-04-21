@@ -1756,6 +1756,38 @@ class TestQNNFloatingPointOperator(TestQNN):
         sample_input = (torch.randn([2, 2, 2, 2]),)
         self.lower_module_and_test_output(module, sample_input)
 
+    def test_qnn_backend_reflection_pad1d(self):
+        module = ReflectionPad1d()  # noqa: F405
+        sample_inputs = [
+            (torch.randn(1, 3, 8),),
+            (torch.randn(1, 3, 8, dtype=torch.float16),),
+        ]
+        for i, sample_input in enumerate(sample_inputs):
+            with self.subTest(i=i):
+                self.lower_module_and_test_output(module, sample_input)
+
+    def test_qnn_backend_reflection_pad2d(self):
+        test_comb = [
+            {
+                QCOM_MODULE: [
+                    ReflectionPad2d(),  # noqa: F405
+                    ReflectionPad2dAsymmetric(),  # noqa: F405
+                ],
+                QCOM_SAMPLE_INPUTS: [
+                    (torch.randn(1, 3, 8, 8),),
+                    (torch.randn(1, 3, 8, 8, dtype=torch.float16),),
+                ],
+            },
+        ]
+
+        index = 0
+        for comb in test_comb:
+            for module in comb[QCOM_MODULE]:
+                for sample_input in comb[QCOM_SAMPLE_INPUTS]:
+                    with self.subTest(i=index):
+                        index += 1
+                        self.lower_module_and_test_output(module, sample_input)
+
     def test_qnn_backend_relu(self):
         module = Relu()  # noqa: F405
         sample_input = (torch.randn([2, 5, 1, 3]),)
@@ -4242,6 +4274,32 @@ class TestQNNQuantizedOperator(TestQNN):
         sample_input = (torch.randn([2, 5, 1, 3]),)
         module = self.get_qdq_module(module, sample_input)
         self.lower_module_and_test_output(module, sample_input)
+
+    def test_qnn_backend_reflection_pad1d(self):
+        module = ReflectionPad1d()  # noqa: F405
+        sample_input = (torch.randn(1, 3, 8),)
+        module = self.get_qdq_module(module, sample_input)
+        self.lower_module_and_test_output(module, sample_input)
+
+    def test_qnn_backend_reflection_pad2d(self):
+        test_comb = [
+            {
+                QCOM_MODULE: [
+                    ReflectionPad2d(),  # noqa: F405
+                    ReflectionPad2dAsymmetric(),  # noqa: F405
+                ],
+                QCOM_SAMPLE_INPUTS: [(torch.randn(1, 3, 8, 8),)],
+            },
+        ]
+
+        index = 0
+        for comb in test_comb:
+            for module in comb[QCOM_MODULE]:
+                for sample_input in comb[QCOM_SAMPLE_INPUTS]:
+                    with self.subTest(i=index):
+                        index += 1
+                        qdq_module = self.get_qdq_module(module, sample_input)
+                        self.lower_module_and_test_output(qdq_module, sample_input)
 
     def test_qnn_backend_relu(self):
         module = Relu()  # noqa: F405
