@@ -245,6 +245,10 @@ int32_t main(int32_t argc, char** argv) {
   ::executorch::extension::llm::GenerationConfig config;
   config.max_new_tokens = FLAGS_seq_len;
   config.temperature = static_cast<float>(FLAGS_temperature);
+  // The runner's wrapped_callback already prints generated tokens via safe_printf.
+  // We don't add our own printing callback to avoid double output. echo=false
+  // suppresses re-printing the prompt before generation.
+  config.echo = false;
 
   // Build the input sequence following the Gemma4 chat template:
   //   <bos><|turn>user\n[<|image>\n][<|audio>\n][prompt]<turn|>\n<|turn>model\n
@@ -275,8 +279,7 @@ int32_t main(int32_t argc, char** argv) {
         std::string("<turn|>\n<|turn>model\n"));
   }
 
-  auto err = runner->generate(inputs, config,
-      [](const std::string& token) { printf("%s", token.c_str()); fflush(stdout); });
+  auto err = runner->generate(inputs, config);
   if (err != ::executorch::runtime::Error::Ok) {
     ET_LOG(Error, "Generation failed");
     return 1;
