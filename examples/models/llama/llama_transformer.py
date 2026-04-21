@@ -437,8 +437,17 @@ class Transformer(nn.Module):
 
         # Gemma4 PLI: compute per-layer input from token ids + main embedding.
         if self.hidden_size_per_layer_input > 0 and "per_layer_inputs" not in attn_options_:
-            if tokens is not None:
-                pli_emb = self.pli_embeddings(tokens) * self.pli_embed_scale
+            # Accept pli_token_ids from attn_options so the multimodal h= path can
+            # provide token IDs (real IDs for text; <|image>/  <|audio> placeholders
+            # for soft-token positions). Approach C: MultimodalPrefiller passes this
+            # when the pte has a 3-input text_decoder.
+            pli_ids = (
+                tokens
+                if tokens is not None
+                else attn_options_.get("pli_token_ids")
+            )
+            if pli_ids is not None:
+                pli_emb = self.pli_embeddings(pli_ids) * self.pli_embed_scale
             else:
                 pli_emb = torch.zeros(
                     h.shape[0], h.shape[1],

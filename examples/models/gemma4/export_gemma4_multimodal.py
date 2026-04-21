@@ -83,20 +83,22 @@ class TokenEmbeddingExport(nn.Module):
 
 
 class TextDecoderExport(nn.Module):
-    """Standard MultimodalPrefiller-compatible text decoder.
+    """Standard MultimodalPrefiller-compatible text decoder with Approach C PLI.
 
     Inputs:
       inputs_embeds  (1, S, hidden): full embedded sequence (scaled).
                                      S is dynamic (1..max_seq_len).
-                                     Used for both batched prefill and single-token decode.
-      cache_position (S,) long:      KV cache position indices [start_pos..start_pos+S-1].
+      cache_position (1,) long:      start position for KV cache (static size 1).
+      pli_token_ids  (1, S) long:    token IDs for PLI embedding component.
+                                     Text positions: real token IDs.
+                                     Image positions: <|image> = 255999.
+                                     Audio positions: <|audio> = 256000.
 
     Returns logits (1, vocab_size) for the last position.
 
-    Note: PLI's pli_emb (token-ID-derived) component is ZERO in this path
-    because token IDs are not exposed at the multimodal ABI boundary. The
-    pli_proj(h) component still works since it depends only on the input
-    embeddings. This is a known quality tradeoff for ABI compatibility.
+    MultimodalPrefiller detects the 3-input signature via method_meta and passes
+    pli_token_ids automatically. Older ptes (2-input) continue to work — the
+    prefiller falls back to the 2-input call which gives PLI from projection only.
     """
 
     def __init__(self, transformer):
@@ -106,11 +108,15 @@ class TextDecoderExport(nn.Module):
     def forward(
         self,
         inputs_embeds: torch.Tensor,   # (1, S, hidden)
-        cache_position: torch.Tensor,  # (S,) long
+        cache_position: torch.Tensor,  # (1,) long — start_pos
+        pli_token_ids: torch.Tensor,   # (1, S) long
     ) -> torch.Tensor:
         return self.transformer(
             h=inputs_embeds,
-            attn_options={"input_pos": cache_position},
+            attn_options={
+                "input_pos": cache_position,
+                "pli_token_ids": pli_token_ids,
+            },
         )
 
 
@@ -212,7 +218,7 @@ def export_text_programs(
     # position); the model internally indexes positions [start_pos..start_pos+S].
     # `inputs_embeds` is dynamic-S to serve both batched prefill and single-token decode.
     # `populate_start_pos_or_cache_position` detects size==1 and passes [start_pos].
-    print("  Exporting text_decoder (KV cache, dynamic S, standard ABI)...")
+    print("  Exporting text_decoder (KV cache, dynamic S, Approach C PLI)...")
     txt_dec = TextDecoderExport(transformer).eval()
     dim = transformer.params.dim
     S_dec = Dim("S_dec", min=1, max=max_seq_len - 1)
@@ -220,16 +226,18 @@ def export_text_programs(
         programs["text_decoder"] = export(
             txt_dec,
             (
-                torch.zeros(1, 4, dim),            # inputs_embeds: (1, S=4, dim)  trace with S>1
-                torch.zeros(1, dtype=torch.long),  # cache_position: (1,) start_pos
+                torch.zeros(1, 4, dim),              # inputs_embeds: trace with S=4 > 1
+                torch.zeros(1, dtype=torch.long),    # cache_position: (1,) static
+                torch.zeros(1, 4, dtype=torch.long), # pli_token_ids: (1, S)
             ),
             dynamic_shapes=(
-                {1: S_dec},        # inputs_embeds
-                {0: 1},            # cache_position is static size 1
+                {1: S_dec},   # inputs_embeds dynamic S
+                {0: 1},       # cache_position static size 1
+                {1: S_dec},   # pli_token_ids same dynamic S
             ),
             strict=True,
         )
-    print(f"  text_decoder: (1,S,{dim}) + (1,) -> (1,{transformer.vocab_size})  [dynamic S]")
+    print(f"  text_decoder: (1,S,{dim}) + (1,) + (1,S) -> (1,{transformer.vocab_size})  [Approach C PLI]")
 
     # Carry metadata from the builder
     text_metadata = builder.metadata or {}

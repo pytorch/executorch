@@ -40,6 +40,10 @@ Result<uint64_t> MultimodalPrefiller::prefill(
     int32_t bos,
     int32_t eos) {
   // 1. Run encoder model.
+  // pli_ids is populated per-branch and passed to text_decoder as the 3rd
+  // input (Approach C PLI). Image/audio use modality placeholder IDs;
+  // text uses real token IDs. Ignored when the pte has only 2 inputs.
+  std::vector<int64_t> pli_ids;
   ::executorch::runtime::EValue encoder_output;
   if (input.is_image()) {
     const Image& image = input.get_image();
@@ -114,6 +118,9 @@ Result<uint64_t> MultimodalPrefiller::prefill(
     auto image_encoder_outputs = image_encoder_result.get();
 
     encoder_output = image_encoder_outputs[0];
+    // PLI placeholder: <|image> token ID = 255999 for all visual soft-token positions.
+    int64_t n_soft = encoder_output.toTensor().size(1);
+    pli_ids.assign(n_soft, 255999LL);
   } else if (input.is_audio()) {
     const Audio& audio = input.get_audio();
 
@@ -174,6 +181,9 @@ Result<uint64_t> MultimodalPrefiller::prefill(
     auto audio_encoder_outputs = audio_encoder_result.get();
 
     encoder_output = audio_encoder_outputs[0];
+    // PLI placeholder: <|audio> token ID = 256000 for all audio soft-token positions.
+    int64_t n_soft = encoder_output.toTensor().size(1);
+    pli_ids.assign(n_soft, 256000LL);
   } else if (input.is_text() || input.is_tokens()) {
     std::vector<uint64_t> tokens;
     if (input.is_text()) {
@@ -203,6 +213,9 @@ Result<uint64_t> MultimodalPrefiller::prefill(
     auto token_embedding_outputs = token_embedding_result.get();
 
     encoder_output = token_embedding_outputs[0];
+    // PLI for text: use the actual token IDs (cast uint64_t → int64_t).
+    pli_ids.reserve(tokens.size());
+    for (uint64_t tok : tokens) pli_ids.push_back(static_cast<int64_t>(tok));
   } else {
     ET_LOG(Error, "Unsupported input type");
     // For any other input types, return error
@@ -226,8 +239,30 @@ Result<uint64_t> MultimodalPrefiller::prefill(
   ET_CHECK_OK_OR_RETURN_ERROR(cache_position_result.error());
   auto cache_position_tensor = cache_position_result.get();
 
-  auto prefill_result = module_->execute(
-      kTextModelMethod, {encoder_output, cache_position_tensor});
+  // Approach C: detect 3-input text_decoder (Gemma4 PLI).
+  // The 3rd input carries pli_token_ids (1, S) long so the transformer can
+  // compute the pli_emb component. Text uses real token IDs; image/audio use
+  // modality placeholder IDs (<|image>=255999, <|audio>=256000).
+  // Falls back to 2-input silently for ptes without PLI (num_inputs < 3).
+  auto dec_meta = module_->method_meta(kTextModelMethod);
+  bool has_pli_input =
+      dec_meta.ok() && (*dec_meta).num_inputs() >= 3;
+
+  auto run_text_decoder = [&]() {
+    if (has_pli_input && !pli_ids.empty()) {
+      // Pass real/placeholder token IDs as the 3rd input for Approach C PLI.
+      auto pli_t = ::executorch::extension::from_blob(
+          pli_ids.data(),
+          {1, static_cast<int>(pli_ids.size())},
+          ::executorch::aten::ScalarType::Long);
+      return module_->execute(
+          kTextModelMethod,
+          {encoder_output, cache_position_tensor, *pli_t});
+    }
+    return module_->execute(
+        kTextModelMethod, {encoder_output, cache_position_tensor});
+  };
+  auto prefill_result = run_text_decoder();
   if (prefill_result.error() != ::executorch::runtime::Error::Ok) {
     return prefill_result.error();
   }
