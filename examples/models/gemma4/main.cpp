@@ -63,9 +63,12 @@ using executorch::aten::ScalarType;
 // Gemma4 vision input dims (must match VisionEncoderExport in encoders.py).
 constexpr int kImageH = 672;
 constexpr int kImageW = 960;
-// Gemma4 audio encoder input dims (channels-first mel; T_mel=200 = 48*5-40).
+// Gemma4 audio encoder input dims (channels-first mel).
+// T_mel must satisfy T = 48*k - 40 (stride-48 conv constraint).
+// 1976 = 48*42 - 40 supports ~20s audio at 16kHz/hop=160.
+// Must match the --audio-frames value used during export.
 constexpr int kMelBins = 128;
-constexpr int kMelFrames = 200;
+constexpr int kMelFrames = 1976;
 
 // ---------------------------------------------------------------------------
 // Bilinear resize (avoids stb_image_resize.h dependency)
