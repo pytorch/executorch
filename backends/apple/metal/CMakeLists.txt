@@ -46,6 +46,7 @@ set(_aoti_metal_sources
     runtime/ops/op_bmm.mm
     runtime/ops/op_convolution.mm
     runtime/ops/op_gather_qmv.mm
+    runtime/ops/op_gated_delta_rule.mm
     runtime/ops/op_linear_4bit.mm
     runtime/ops/op_mm.mm
     runtime/ops/op_sdpa.mm
