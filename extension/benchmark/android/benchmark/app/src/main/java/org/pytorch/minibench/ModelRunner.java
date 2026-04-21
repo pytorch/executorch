@@ -27,7 +27,15 @@ public class ModelRunner {
 
     long loadStart = System.nanoTime();
     Module module = Module.load(model.getPath());
-    int errorCode = module.loadMethod("forward");
+    int errorCode = 0;
+    try {
+      module.loadMethod("forward");
+    } catch (Exception e) {
+      errorCode =
+          (e instanceof org.pytorch.executorch.ExecutorchRuntimeException)
+              ? ((org.pytorch.executorch.ExecutorchRuntimeException) e).getErrorCode()
+              : -1;
+    }
     long loadEnd = System.nanoTime();
 
     for (int i = 0; i < numWarmupIter; i++) {

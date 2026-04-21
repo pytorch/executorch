@@ -397,3 +397,48 @@ class AttentionSinkE2ETest(unittest.TestCase):
             self.assertTrue(
                 torch.isfinite(out).all(), "Output contains non-finite values"
             )
+
+    def test_beyond_context_window_custom_sdpa(self):
+        """Generate tokens beyond context window with custom SDPA + custom KV cache."""
+        sink_size = 4
+        window_size = 16
+        args = self._make_args(max_context_len=128)
+        model = self._build_model(args, sink_size, window_size, use_custom_sdpa=True)
+
+        # Verify KV caches were replaced with CustomKVCacheWithAttentionSink
+        from executorch.examples.models.llama.source_transformation.custom_kv_cache import (
+            CustomKVCacheWithAttentionSink,
+        )
+
+        found_custom_cache = False
+        for m in model.modules():
+            if isinstance(m, CustomKVCacheWithAttentionSink):
+                found_custom_cache = True
+                break
+        self.assertTrue(
+            found_custom_cache, "Expected CustomKVCacheWithAttentionSink in model"
+        )
+
+        # Generate 80 tokens — well beyond KV cache size of 36
+        outputs = self._run_generation(model, args, num_tokens=80)
+
+        self.assertEqual(len(outputs), 77)
+        for out in outputs:
+            self.assertTrue(
+                torch.isfinite(out).all(), "Output contains non-finite values"
+            )
+
+    def test_sink_zero_custom_sdpa(self):
+        """Degenerate case: sink_size=0 with custom SDPA (pure ring buffer)."""
+        sink_size = 0
+        window_size = 16
+        args = self._make_args(max_context_len=128)
+        model = self._build_model(args, sink_size, window_size, use_custom_sdpa=True)
+
+        outputs = self._run_generation(model, args, num_tokens=60)
+
+        self.assertEqual(len(outputs), 57)
+        for out in outputs:
+            self.assertTrue(
+                torch.isfinite(out).all(), "Output contains non-finite values"
+            )

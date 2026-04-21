@@ -404,11 +404,16 @@ class RemovePermutesAroundElementwiseOps(ExportPass):
         edges_in: set[tuple[torch.fx.Node, torch.fx.Node]] = field(default_factory=set)
         # Outgoing edges of the subgraph to permute nodes.
         edges_out: set[tuple[torch.fx.Node, torch.fx.Node]] = field(default_factory=set)
+        # Incoming edges from constant nodes that need a compensating permute.
+        constant_edges_in: set[tuple[torch.fx.Node, torch.fx.Node]] = field(
+            default_factory=set
+        )
 
     permutable_ops: set[EdgeOpOverload] = {
         exir_ops.edge.aten.add.Tensor,
         exir_ops.edge.aten.mul.Tensor,
         exir_ops.edge.aten.hardtanh.default,
+        exir_ops.edge.aten.clamp.default,
         exir_ops.edge.quantized_decomposed.quantize_per_tensor.default,
         exir_ops.edge.quantized_decomposed.dequantize_per_tensor.default,
         exir_ops.edge.cadence.quantize_per_tensor.default,
@@ -455,7 +460,7 @@ class RemovePermutesAroundElementwiseOps(ExportPass):
 
         return PassResult(graph_module, False)
 
-    def visit(
+    def visit(  # noqa: C901
         self,
         node: torch.fx.Node,
         subgraph: Subgraph,
@@ -474,6 +479,11 @@ class RemovePermutesAroundElementwiseOps(ExportPass):
                 if self.get_permutation(user) != subgraph.end_permute:
                     return False
                 subgraph.edges_out.add((node, user))
+            elif user.op == "output":
+                # Graph output requires the data in its original layout.
+                # Removing permutes here would silently change the output
+                # format, so treat this as an invalid subgraph boundary.
+                return False
             elif not self.visit(user, subgraph, processed_nodes):
                 return False
 
@@ -484,10 +494,43 @@ class RemovePermutesAroundElementwiseOps(ExportPass):
                 if self.get_permutation(inp) != subgraph.start_permute:
                     return False
                 subgraph.edges_in.add((inp, node))
+            elif self._is_constant(inp):
+                # Only accept the constant if we can compensate it with a
+                # permute or view. Otherwise reject the subgraph.
+                const_rank = self._get_node_rank(inp)
+                if const_rank is None:
+                    return False
+                if const_rank > len(subgraph.end_permute):
+                    return False
+                if (
+                    const_rank < len(subgraph.end_permute)
+                    and inp.meta.get("val") is None
+                ):
+                    return False
+                subgraph.constant_edges_in.add((inp, node))
             elif not self.visit(inp, subgraph, processed_nodes):
                 return False
 
         return True
+
+    def _is_constant(self, node: torch.fx.Node) -> bool:
+        """Check if a node's value is available at compile time.
+        Only considers direct constants (get_attr, parameter/buffer/constant
+        placeholders) — does not recurse into call_function chains to avoid
+        stack overflow on deep graphs."""
+        if node.op == "get_attr":
+            return True
+        if node.op == "placeholder":
+            target = str(node.target)
+            return target.startswith(("b_", "p_", "c_"))
+        return False
+
+    def _get_node_rank(self, node: torch.fx.Node) -> int | None:
+        """Return the tensor rank of a node's output, or None if unknown."""
+        val = node.meta.get("val")
+        if val is not None and hasattr(val, "shape"):
+            return len(val.shape)
+        return None
 
     def is_node_permutable(self, node: torch.fx.Node) -> bool:
         if node.target not in self.permutable_ops:
@@ -513,6 +556,50 @@ class RemovePermutesAroundElementwiseOps(ExportPass):
                 out.replace_input_with(inp, cast(torch.fx.Node, inp.args[0]))
             else:
                 out.replace_input_with(inp, cast(torch.fx.Node, inp.kwargs["input"]))
+
+        # Insert compensating permute on constant inputs.
+        # Since the subgraph's start permutes are being removed, the subgraph
+        # will operate in the un-permuted (original) layout. Constants that
+        # were in the permuted layout need end_permute (the inverse of
+        # start_permute) to convert back to the original layout.
+        for const_node, user_node in subgraph.constant_edges_in:
+            graph = const_node.graph
+            const_rank = self._get_node_rank(const_node)
+            permute_rank = len(subgraph.end_permute)
+
+            with graph.inserting_after(const_node):
+                if const_rank is not None and const_rank == permute_rank:
+                    new_node = graph.create_node(
+                        "call_function",
+                        exir_ops.edge.aten.permute_copy.default,
+                        args=(const_node, subgraph.end_permute),
+                    )
+                elif (
+                    const_rank is not None
+                    and const_rank < permute_rank
+                    and const_node.meta.get("val") is not None
+                ):
+                    # Rank mismatch (e.g. rank-1 bias with rank-4 permute).
+                    # The constant is broadcastable and its shape is smaller
+                    # than the permute rank, so we can't apply the permute
+                    # directly. Instead, use view_copy to rearrange the
+                    # shape according to the end_permute restricted to
+                    # the trailing dimensions.
+                    original_shape = list(const_node.meta["val"].shape)
+                    # Pad shape to match permute rank for reordering
+                    padded = [1] * (permute_rank - const_rank) + original_shape
+                    target_shape = [padded[d] for d in subgraph.end_permute]
+                    # Strip leading 1s back to original rank
+                    target_shape = target_shape[permute_rank - const_rank :]
+                    new_node = graph.create_node(
+                        "call_function",
+                        exir_ops.edge.aten.view_copy.default,
+                        args=(const_node, target_shape),
+                    )
+                else:
+                    # Cannot determine rank or handle this case; skip.
+                    continue
+            user_node.replace_input_with(const_node, new_node)
 
         # Skip outgoing permutes.
         for inp, out in subgraph.edges_out:
