@@ -187,27 +187,23 @@ KV-cache source transforms. Run it to regenerate the multimodal .pte.
 5-method `.pte` exports and runs end-to-end:
 
 ```
-gemma4_multimodal_v4.pte  (12 GB, portable backend, max_seq=256)
-├── vision_encoder(pv[1,2520,768], pp[1,2520,2]) → (1, 1536)  ← 1 visual soft token
+gemma4_multimodal_v5.pte  (12 GB, portable backend, max_seq=256)
+├── vision_encoder(pv[1,2520,768], pp[1,2520,2]) → (280, 1536) ← 280 visual soft tokens
 ├── audio_preprocessor(wav[1,N]) → (1, T, 128)  ← dynamic T
 ├── audio_encoder(mel[1,T,128]) → (1, T//4, 1536)
 ├── token_embedding(ids[1,S]) → (1, S, 1536)
 └── text_decoder(emb[1,1,1536], pos[1]) → (1, vocab=262144)  ← stateful KV cache
 ```
 
-Verified methods present: `['audio_encoder', 'audio_preprocessor', 'enable_dynamic_shape',
-'get_bos_id', 'get_eos_ids', 'get_max_context_len', 'get_max_seq_len', 'get_n_layers',
-'get_num_kv_shared_layers', 'get_vocab_size', 'text_decoder', 'token_embedding',
-'use_kv_cache', 'use_sdpa_with_kv_cache', 'vision_encoder']`
+Vision soft token count: 280 (not 256). HF config confirms `image_seq_length: 280,
+max_soft_tokens: 280`. Computed via 60×42 patch grid with pooling_kernel_size=3
+→ (60//3) × (42//3) = 20×14 = 280. Earlier exports were wrong (used all-zero
+position_ids that collapsed to 1 token via boolean spatial pooling mask).
+
+Image resize target: **960×672** (not 448×448) — 60 columns × 16px × 42 rows × 16px.
 
 KV cache metadata: `use_kv_cache=True, use_sdpa_with_kv_cache=True`.
-
-Image+text generation: loads, patchifies image, runs vision_encoder (2 tensors), prefills
-token-by-token, decodes. Generates tokens (exit code 0).
-
-Note: `vision_encoder` returns `(1, 1536)` — 1 visual token (HF Gemma4 global pooling).
-Expected `(256, 1536)` from parity tests; to investigate with real HF model.
-
+Text prefill: token-by-token (static-shape KV-cache text_decoder).
 Portable backend is very slow (~0.25 tok/s). XNNPACK re-export in progress.
 
 ### Re-export commands
@@ -245,8 +241,7 @@ cd /tmp && python /path/to/export_gemma4_multimodal.py \
 
 - **EOS handling**: ✅ Fixed. Embedded via `base.metadata`.
 - **Chat template**: ✅ `chat_template.jinja` + `render_chat.py`.
-- **XNNPACK multimodal .pte**: Export in progress (`gemma4_mm_export_xnnpack.log`).
-- **Vision soft token count**: 1 token vs expected 256 — investigate HF embed_vision.
+- **XNNPACK multimodal .pte**: Export in progress (`gemma4_mm_export_xnnpack3.log`).
 - **End-to-end quality test**: Use XNNPACK pte with real image after export completes.
 - **Quantization**: not yet validated for Gemma4 (8da4w / 4w paths exist).
 - **Per-layer-type partial_rotary**: works but only needed for full layers
