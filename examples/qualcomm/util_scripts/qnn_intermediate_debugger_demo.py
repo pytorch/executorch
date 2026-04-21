@@ -21,16 +21,19 @@ from executorch.backends.qualcomm.debugger.qnn_intermediate_debugger import (
     OutputFormat,
     QNNIntermediateDebugger,
 )
+
+from executorch.backends.qualcomm.export_utils import (
+    build_executorch_binary,
+    QnnConfig,
+    setup_common_args_and_variables,
+    SimpleADB,
+)
 from executorch.backends.qualcomm.quantizer.quantizer import QuantDtype
 from executorch.devtools import Inspector
 from executorch.examples.models.inception_v3.model import InceptionV3Model
 from executorch.examples.qualcomm.utils import (
-    build_executorch_binary,
     get_imagenet_dataset,
     make_output_dir,
-    parse_skip_delegation_node,
-    setup_common_args_and_variables,
-    SimpleADB,
     topk_accuracy,
 )
 
@@ -41,7 +44,7 @@ QNN Intermediate Debugger to verify accuracy for each layer within the graph.
 
 
 def main(args):
-    skip_node_id_set, skip_node_op_set = parse_skip_delegation_node(args)
+    qnn_config = QnnConfig.load_config(args.config_file if args.config_file else args)
 
     # ensure the working directory exist.
     os.makedirs(args.artifact, exist_ok=True)
@@ -66,16 +69,11 @@ def main(args):
     # Init our QNNIntermediateDebugger and pass it in to build_executorch_binary().
     qnn_intermediate_debugger = QNNIntermediateDebugger()
     build_executorch_binary(
-        source_model,
-        instance.get_example_inputs(),
-        args.model,
-        f"{args.artifact}/{pte_filename}",
-        inputs,
-        skip_node_id_set=skip_node_id_set,
-        skip_node_op_set=skip_node_op_set,
+        model=source_model,
+        qnn_config=qnn_config,
+        file_name=f"{args.artifact}/{pte_filename}",
+        dataset=inputs,
         quant_dtype=QuantDtype.use_8a8w,
-        shared_buffer=args.shared_buffer,
-        dump_intermediate_outputs=args.dump_intermediate_outputs,
         qnn_intermediate_debugger=qnn_intermediate_debugger,
     )
 
@@ -89,15 +87,9 @@ def main(args):
 
     # Please ensure that dump_intermediate_outputs are set to true when creating SimpleADB
     adb = SimpleADB(
-        qnn_sdk=os.getenv("QNN_SDK_ROOT"),
-        build_path=f"{args.build_folder}",
+        qnn_config=qnn_config,
         pte_path=f"{args.artifact}/{pte_filename}.pte",
         workspace=f"/data/local/tmp/executorch/{pte_filename}",
-        device_id=args.device,
-        host_id=args.host,
-        soc_model=args.model,
-        shared_buffer=args.shared_buffer,
-        dump_intermediate_outputs=args.dump_intermediate_outputs,
     )
     adb.push(inputs=inputs)
     adb.execute()
