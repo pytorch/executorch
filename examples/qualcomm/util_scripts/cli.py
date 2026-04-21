@@ -30,13 +30,18 @@ from executorch.backends.qualcomm.export_utils import (
     SimpleADB,
 )
 from executorch.backends.qualcomm.quantizer.quantizer import QuantDtype
-from executorch.backends.qualcomm.serialization.qc_schema import QcomChipset
+from executorch.backends.qualcomm.serialization.qc_schema import (
+    QcomChipset,
+    QnnExecuTorchBackendType,
+    QnnExecuTorchLpaiTargetEnv,
+)
 from executorch.backends.qualcomm.utils.constants import QCOM_PASS_ACTIVATE_KEY
 from executorch.backends.qualcomm.utils.utils import (
     draw_graph,
     dump_context_from_pte,
     from_context_binary,
     generate_htp_compiler_spec,
+    generate_lpai_compiler_spec,
     generate_qnn_executorch_compiler_spec,
     generate_qnn_executorch_option,
     QNN_QUANT_TYPE_MAP,
@@ -104,7 +109,7 @@ def get_io_info(pte_path, compiler_specs):
         qnn_mgr = PyQnnManagerAdaptor.QnnManager(
             generate_qnn_executorch_option(compiler_specs), ctx_bin
         )
-        assert qnn_mgr.Init().value == 0, "failed to load context binary"
+        assert qnn_mgr.Init().value == 0, "failed to initialize backend"
         graph_name = qnn_mgr.GetGraphNames()[0]
         qnn_mgr.AllocateTensor(graph_name)
         fill_tensor_info(tensor_info, qnn_mgr.GetGraphInputs(graph_name), in_key)
@@ -206,8 +211,17 @@ def compile(args):
 
     file_name, extension = Path(args.artifact).stem, Path(args.artifact).suffix
     os.makedirs(args.output_folder, exist_ok=True)
-    # setup compiler spec dedicated to QNN HTP backend
-    backend_options = generate_htp_compiler_spec(use_fp16=True)
+    # setup compiler spec
+    backend_type = get_backend_type(args.backend)
+    match backend_type:
+        case QnnExecuTorchBackendType.kHtpBackend:
+            backend_options = generate_htp_compiler_spec(use_fp16=True)
+        case QnnExecuTorchBackendType.kLpaiBackend:
+            backend_options = generate_lpai_compiler_spec(
+                target_env=QnnExecuTorchLpaiTargetEnv.kArm
+            )
+        case _:
+            raise ValueError("Backend is not implemented yet")
     # setup general compiler spec for QNN
     compiler_specs = generate_qnn_executorch_compiler_spec(
         soc_model=getattr(QcomChipset, args.soc_model),
@@ -305,8 +319,17 @@ def execute(args):
             user_inputs.append(inputs)
 
     logger.info("retrieving graph I/O")
-    # setup compiler spec dedicated to QNN HTP backend
-    backend_options = generate_htp_compiler_spec(use_fp16=True)
+    # setup compiler spec
+    backend_type = get_backend_type(args.backend)
+    match backend_type:
+        case QnnExecuTorchBackendType.kHtpBackend:
+            backend_options = generate_htp_compiler_spec(use_fp16=True)
+        case QnnExecuTorchBackendType.kLpaiBackend:
+            backend_options = generate_lpai_compiler_spec(
+                target_env=QnnExecuTorchLpaiTargetEnv.kArm
+            )
+        case _:
+            raise ValueError("Backend is not implemented yet")
     # setup general compiler spec for QNN
     compiler_specs = generate_qnn_executorch_compiler_spec(
         soc_model=getattr(QcomChipset, args.soc_model),
@@ -332,7 +355,7 @@ def execute(args):
 
     logger.info("pushing QNN libraries & other artifacts")
 
-    adb.push(inputs=user_inputs)
+    adb.push(inputs=user_inputs, backends=[backend_type])
 
     logger.info("starting inference")
     adb.execute()
@@ -364,10 +387,16 @@ def execute(args):
 
             output_result_folder = f"{args.output_folder}/Result_{data_index}"
             os.makedirs(output_result_folder, exist_ok=True)
+            # For the LPAI backend, a dequantize node will be retained for the output, ensuring that the output remains in float32 format.
+            # TODO: add support for other dtypes for LPAI backend
             output = np.fromfile(
                 filename,
-                dtype=eval(
-                    f"np.{torch_to_numpy_dtype_dict[output_info[output_index]['dtype']]}"
+                dtype=(
+                    eval(
+                        f"np.{torch_to_numpy_dtype_dict[output_info[output_index]['dtype']]}"
+                    )
+                    if backend_type != QnnExecuTorchBackendType.kLpaiBackend
+                    else np.float32
                 ),
             )
             output = torch.from_numpy(
@@ -460,9 +489,9 @@ def main():
     sub_quantize.add_argument(
         "--backend",
         type=str,
-        choices=["htp", "gpu"],
+        choices=["htp", "lpai"],
         default="htp",
-        help="Backend to be deployed ('htp'/'gpu' are currently supported).",
+        help="Backend to be deployed ('htp'/'lpai' are currently supported).",
     )
     sub_quantize.add_argument(
         "--eps",
@@ -513,6 +542,13 @@ def main():
             "Enable usage of shared buffer between application and backend for graph I/O."
         ),
         action="store_true",
+    )
+    sub_compile.add_argument(
+        "--backend",
+        type=str,
+        choices=["htp", "lpai"],
+        default="htp",
+        help="Backend to be deployed ('htp'/'lpai' are currently supported).",
     )
     sub_compile.set_defaults(callback=compile)
 
@@ -589,6 +625,13 @@ def main():
             " Please use with `--shared_buffer` in compile command."
         ),
         action="store_true",
+    )
+    sub_execute.add_argument(
+        "--backend",
+        type=str,
+        choices=["htp", "lpai"],
+        default="htp",
+        help="Backend to be deployed ('htp'/'lpai' are currently supported).",
     )
     sub_execute.set_defaults(callback=execute)
 

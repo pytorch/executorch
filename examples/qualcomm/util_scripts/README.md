@@ -36,14 +36,14 @@ This tool aims for users who want to deploy models with ExecuTorch runtime. It's
           current_input += f"{file_name} "
       input_list += f"{current_input.strip()}\n"
 
-  with open(f"{ws}/input_list", 'w') as f:
+  with open(f"{ws}/input_list.txt", 'w') as f:
       f.write(input_list)
   ```
 
 * Quantize
   ```bash 
   # user could get more information via: PYTHONPATH=.. python -m examples.qualcomm.util_scripts.cli quantize -h
-  PYTHONPATH=.. python -m examples.qualcomm.util_scripts.cli quantize -a cli_example/simple_model.pt2 -o cli_example/quantize_output -c use_8a8w -i cli_example/input_list.txt --per_channel
+  PYTHONPATH=.. python -m examples.qualcomm.util_scripts.cli quantize -a cli_example/simple_model.pt2 -o cli_example/quantize_output -c use_8a8w -i cli_example/input_list.txt --per_channel -m SM8750 --backend htp
   ```
 * Artifacts for quantized .pt2 file
   - `cli_example/quantize_output/simple_model_quantized.pt2`
@@ -61,7 +61,7 @@ This tool aims for users who want to deploy models with ExecuTorch runtime. It's
   ```bash
   # `pip install pydot` if package is missing
   # user could get more information via: PYTHONPATH=.. python -m examples.qualcomm.util_scripts.cli compile -h
-  PYTHONPATH=.. python -m examples.qualcomm.util_scripts.cli compile -a model.bin -o path/to/model/output -m SM8750
+  PYTHONPATH=.. python -m examples.qualcomm.util_scripts.cli compile -a model.bin -o path/to/model/output -m SM8750 --backend htp
   ```
 * Artifacts for .pte file and figure of graph information
   - `cli_example/compile_output/simple_model_quantized.pte`
@@ -72,7 +72,7 @@ This tool aims for users who want to deploy models with ExecuTorch runtime. It's
 * Execute .pte program
   ```bash
   # user could get more information via: PYTHONPATH=.. python -m examples.qualcomm.util_scripts.cli execute -h
-  PYTHONPATH=.. python -m examples.qualcomm.util_scripts.cli execute -a cli_example/compile_output/simple_model_quantized.pte -o cli_example/execute_output -i cli_example/input_list.txt -H $HOST_NAME -s $DEVICE_SERIAL -b build-android -m SM8750
+  PYTHONPATH=.. python -m examples.qualcomm.util_scripts.cli execute -a cli_example/compile_output/simple_model_quantized.pte -o cli_example/execute_output -i cli_example/input_list.txt -H $HOST_NAME -s $DEVICE_SERIAL -b build-android -m SM8750 --backend htp
   ```
 * Artifacts for .pte file and figure of graph information
   - `cli_example/execute_output/output_{data_index}_{output_index}.pt`.<br/>
