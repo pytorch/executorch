@@ -76,51 +76,49 @@ def lower_to_openvino(
     subset_size: int,
     quantize: bool,
 ) -> ExecutorchProgramManager:
-    # Import openvino locally to avoid nncf side-effects
-    import nncf.torch
+    import nncf
     from executorch.backends.openvino.partitioner import OpenvinoPartitioner
     from executorch.backends.openvino.quantizer import OpenVINOQuantizer
     from executorch.backends.openvino.quantizer.quantizer import QuantizationMode
     from nncf.experimental.torch.fx import quantize_pt2e
 
-    with nncf.torch.disable_patching():
-        if quantize:
-            target_input_dims = tuple(example_args[0].shape[2:])
+    if quantize:
+        target_input_dims = tuple(example_args[0].shape[2:])
 
-            def ext_transform_fn(sample):
-                sample = transform_fn(sample)
-                return pad_to_target(sample, target_input_dims)
+        def ext_transform_fn(sample):
+            sample = transform_fn(sample)
+            return pad_to_target(sample, target_input_dims)
 
-            quantizer = OpenVINOQuantizer(mode=QuantizationMode.INT8_TRANSFORMER)
-            quantizer.set_ignored_scope(
-                types=["mul", "sub", "sigmoid", "__getitem__"],
-            )
-            quantized_model = quantize_pt2e(
-                aten_dialect.module(),
-                quantizer,
-                nncf.Dataset(calibration_dataset, ext_transform_fn),
-                subset_size=subset_size,
-                smooth_quant=True,
-                fold_quantize=False,
-            )
-
-            aten_dialect = torch.export.export(quantized_model, example_args)
-            # Convert to edge dialect and lower the module to the backend with a custom partitioner
-        compile_spec = [CompileSpec("device", device.encode())]
-        lowered_module: EdgeProgramManager = to_edge_transform_and_lower(
-            aten_dialect,
-            partitioner=[
-                OpenvinoPartitioner(compile_spec),
-            ],
-            compile_config=EdgeCompileConfig(
-                _skip_dim_order=True,
-            ),
+        quantizer = OpenVINOQuantizer(mode=QuantizationMode.INT8_MIXED)
+        quantizer.set_ignored_scope(
+            subgraphs=[(["detach", "detach_1", "detach_2"], ["output"])]
+        )
+        quantized_model = quantize_pt2e(
+            aten_dialect.module(),
+            quantizer,
+            nncf.Dataset(calibration_dataset, ext_transform_fn),
+            subset_size=subset_size,
+            fast_bias_correction=True,
+            fold_quantize=False,
         )
 
-        # Apply backend-specific passes
-        return lowered_module.to_executorch(
-            config=executorch.exir.ExecutorchBackendConfig()
-        )
+        aten_dialect = torch.export.export(quantized_model, example_args)
+        # Convert to edge dialect and lower the module to the backend with a custom partitioner
+    compile_spec = [CompileSpec("device", device.encode())]
+    lowered_module: EdgeProgramManager = to_edge_transform_and_lower(
+        aten_dialect,
+        partitioner=[
+            OpenvinoPartitioner(compile_spec),
+        ],
+        compile_config=EdgeCompileConfig(
+            _skip_dim_order=True,
+        ),
+    )
+
+    # Apply backend-specific passes
+    return lowered_module.to_executorch(
+        config=executorch.exir.ExecutorchBackendConfig()
+    )
 
 
 def lower_to_xnnpack(
@@ -208,7 +206,7 @@ def main(
     Main function to load, quantize, and export an Yolo model model.
 
     :param model_name: The name of the YOLO model to load.
-    :param input_dims: Input dims to use for the export of a YOLO12 model.
+    :param input_dims: Input dims to use for the export of a YOLO26 model.
     :param quantize: Whether to quantize the model.
     :param video_path: Path to the video to use for the calibration
     :param subset_size: Subset size for the quantized model calibration. The default value is 300.
@@ -271,8 +269,8 @@ def main(
     if val_dataset_yaml_path is not None:
         if input_dims != [640, 640]:
             raise NotImplementedError(
-                f"Validation with the custom input shape {input_dims} is not implmenented."
-                " Please use the default --input_dims=[640, 640] for the validation."
+                f"Validation with the custom input shape {input_dims} is not implemented."
+                " Please use the default --input_dims=[640,640] for the validation."
             )
         stats = validate_yolo(model, exec_prog, val_dataset_yaml_path)
         for stat, value in stats.items():
@@ -294,6 +292,8 @@ def _prepare_validation(
     validator.stride = stride  # used in get_dataloader() for padding
     validator.data = check_det_dataset(dataset_yaml_path)
     validator.init_metrics(unwrap_model(model))
+    validator.device = torch.device("cpu")
+    validator.end2end = False
 
     data_loader = validator.get_dataloader(
         validator.data.get(validator.args.split), validator.args.batch
@@ -337,9 +337,9 @@ if __name__ == "__main__":
     parser.add_argument(
         "--model_name",
         type=str,
-        default="yolo12s",
-        choices=["yolo12n", "yolo12s", "yolo12m", "yolo12l", "yolo12x"],
-        help="Ultralytics yolo12 model name.",
+        default="yolo26s",
+        choices=["yolo26n", "yolo26s", "yolo26m", "yolo26l", "yolo26x"],
+        help="Ultralytics yolo26 model name.",
     )
     parser.add_argument(
         "--input_dims",
