@@ -50,7 +50,7 @@ jobs:
               owner, repo, issue_number: prNumber, per_page: 100
             });
             const fixAttempts = comments.data.filter(
-              c => c.body && c.body.includes('[ci-fix-attempt')
+              c => c.body && c.body.startsWith('@claude [ci-fix-attempt')
             ).length;
 
             if (conclusion === 'success') {

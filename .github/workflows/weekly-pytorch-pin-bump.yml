@@ -72,7 +72,8 @@ jobs:
           fi
 
           NIGHTLY="${{ steps.nightly.outputs.version }}"
-          PR_BODY="## Summary
+          read -r -d '' PR_BODY <<EOF || true
+          ## Summary
 
           Automated weekly PyTorch pin bump.
 
@@ -82,7 +83,9 @@ jobs:
 
           This PR was created automatically. If CI fails, Claude will attempt to fix issues (up to 3 attempts). If CI still fails, human review will be requested.
 
-          cc @jakeszwe"
+          cc @jakeszwe
+          EOF
+          PR_BODY=$(echo "${PR_BODY}" | sed 's/^          //')
 
           gh pr create \
             --title "Bump PyTorch pin to nightly ${NIGHTLY}" \
