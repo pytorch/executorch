@@ -1,6 +1,6 @@
 # Gemma4 ExecuTorch — Status
 
-Last updated: 2026-04-21
+Last updated: 2026-04-21 (v7 standard-ABI refactor)
 
 ## TL;DR
 
@@ -16,6 +16,8 @@ Last updated: 2026-04-21
 | Multimodal generation XNNPACK (audio+text) | ✅ Runs, generates tokens |
 | Multimodal image color recognition | ✅ Correctly identifies red, blue (HWC fix) |
 | Multimodal generation quality (v6 PLI) | ✅ PLI enabled; colors correct; audio TBD |
+| Single .pte for text/image+text/audio+text (v7) | ⏳ XNNPACK export in progress |
+| Standard MultimodalRunner ABI compliance (v7) | ⏳ Refactored, awaiting test |
 
 ## Text generation — WORKING
 
