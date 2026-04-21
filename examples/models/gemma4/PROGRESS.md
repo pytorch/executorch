@@ -12,8 +12,9 @@ Last updated: 2026-04-21
 | Vision encoder (export) | ✅ Exported, runs in multimodal .pte |
 | Audio preprocessor + encoder (export) | ✅ Exported, runs in multimodal .pte |
 | Multimodal .pte (5 methods, KV cache) | ✅ Exports and runs end-to-end |
-| Multimodal generation portable (image+text) | ✅ Runs, generates tokens (slow, CPU only) |
-| Multimodal generation XNNPACK | ⏳ Export in progress |
+| Multimodal generation XNNPACK (image+text) | ✅ Runs, generates tokens |
+| Multimodal generation XNNPACK (audio+text) | ✅ Runs, generates tokens |
+| Multimodal generation quality | ⚠️ Limited: PLI=0 causes drift after ~5 tokens |
 
 ## Text generation — WORKING
 
@@ -169,9 +170,18 @@ all five methods — bypassing `MultimodalRunner` — to properly handle:
    - Concatenate and run `text_decoder(combined_embeds, positions)` for prefill
    - Token-by-token decode loop
 
-**P0 (KV cache export) status**: The export script (`export_gemma4_multimodal.py`)
-now uses `_prepare_for_llama_export` to get a Gemma4 transformer with proper
-KV-cache source transforms. Run it to regenerate the multimodal .pte.
+**Status (2026-04-21)**: All 5 methods export and run in C++. Fixes applied:
+- Vision encoder: realistic 60×42 position grid → 280 soft tokens (not 1)
+- Pixel normalization: [0,1] input (Gemma4VisionPatchEmbedder applies 2*(v-0.5) internally)
+- Embedding scale: `sqrt(1536) ≈ 39.19` applied to token embeddings in C++ runner
+- Audio encoder: mel frames truncated to 200 to match static export shape
+- Text decoder: token-by-token prefill for KV-cache static-shape compatibility
+
+**Known limitation**: PLI (Per-Layer Input) is zero in multimodal mode since the text_decoder
+receives `h=inputs_embeds` without token IDs. In HF, PLI is computed from token IDs for
+each position (including `<|image>` placeholder ID for image positions). Without PLI,
+generation degenerates after 5-10 tokens. Fix requires re-exporting text_decoder with
+token IDs for PLI computation, or embedding PLI into token_embedding for decode phase.
 
 ## New files (2026-04-20)
 
@@ -241,8 +251,10 @@ cd /tmp && python /path/to/export_gemma4_multimodal.py \
 
 - **EOS handling**: ✅ Fixed. Embedded via `base.metadata`.
 - **Chat template**: ✅ `chat_template.jinja` + `render_chat.py`.
-- **XNNPACK multimodal .pte**: Export in progress (`gemma4_mm_export_xnnpack3.log`).
-- **End-to-end quality test**: Use XNNPACK pte with real image after export completes.
+- **PLI fix (P1 priority)**: Re-export text_decoder to accept token_ids for PLI computation.
+  Without PLI, multimodal generation degenerates after ~5 tokens.
+- **Audio encoder dynamic T**: Current export has fixed T=200 frames; needs re-export with
+  `dynamic_shapes={"input_features": {1: T_mel_dim}}` for arbitrary audio lengths.
 - **Quantization**: not yet validated for Gemma4 (8da4w / 4w paths exist).
 - **Per-layer-type partial_rotary**: works but only needed for full layers
   in Gemma4 E2B; other Gemma4 sizes may differ.

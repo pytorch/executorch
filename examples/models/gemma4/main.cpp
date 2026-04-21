@@ -296,7 +296,15 @@ int32_t main(int32_t argc, char** argv) {
            (long long)mel.size(0), (long long)mel.size(1), (long long)mel.size(2));
 
     // audio_encoder: (1, T, 128) → (1, T', 1536)
-    auto aud_res = run(*module, "audio_encoder", {mel});
+    // The encoder is exported with a fixed T=kAudioFrames (200). Truncate if longer,
+    // zero-pad if shorter, so shape always matches the exported model.
+    constexpr int64_t kAudioFrames = 200;
+    std::vector<float> mel_fixed(kAudioFrames * 128, 0.0f);
+    int64_t src_frames = std::min(mel.size(1), kAudioFrames);
+    std::memcpy(mel_fixed.data(), mel.data_ptr<float>(), src_frames * 128 * sizeof(float));
+    auto mel_t = from_blob(mel_fixed.data(), {1, kAudioFrames, 128}, ScalarType::Float);
+    auto aud_res = run(*module, "audio_encoder", {*mel_t});
+    fprintf(stderr, "[audio] audio_encoder done: ok=%d\n", (int)aud_res.ok());
     if (!aud_res.ok()) { ET_LOG(Error, "audio_encoder failed"); return 1; }
     auto aud_out = aud_res.get()[0].toTensor();
     // aud_out: (1, T', 1536) → flatten to (T', 1536)
@@ -344,6 +352,16 @@ int32_t main(int32_t argc, char** argv) {
 
   auto prefix_emb = embed_tokens(prefix_ids);
   auto suffix_emb = embed_tokens(suffix_ids);
+
+  // Apply embedding scale (sqrt(hidden_size) ≈ 39.19) to text token embeddings.
+  // HF Gemma4TextScaledWordEmbedding scales inside embed_tokens(); our exported
+  // token_embedding wraps the underlying nn.Embedding directly. The scale is
+  // baked into token_embedding in the export script (TokenEmbeddingExport), but
+  // older ptes may lack it — applying here is correct for all pte versions.
+  // Vision/audio soft tokens from embed_vision/embed_audio must NOT be scaled.
+  const float emb_scale = std::sqrt(static_cast<float>(soft_hidden));
+  for (float& v : prefix_emb) v *= emb_scale;
+  for (float& v : suffix_emb) v *= emb_scale;
 
   // ---- 4. Concatenate [prefix_emb | soft_tokens | suffix_emb] ----
   // Shape: (1, total_seq, 1536)
@@ -401,7 +419,10 @@ int32_t main(int32_t argc, char** argv) {
 
   int64_t cur_pos = total_len;
   int64_t next_token = argmax(logits_data.data(), vocab_size);
-  int64_t prev_token = next_token;  // for decode(prev, cur) API
+  // prev_token: last token of the input context (for BPE piece boundary detection).
+  int64_t prev_token = suffix_ids.empty()
+      ? (prefix_ids.empty() ? 0 : prefix_ids.back())
+      : suffix_ids.back();
 
   // ---- 7. Decode loop ----
   int generated = 0;
@@ -416,16 +437,21 @@ int32_t main(int32_t argc, char** argv) {
     }
     prev_token = next_token;
 
-    // Embed and decode next position
+    // Embed and decode next position — apply embedding scale
     int64_t tok_arr[1] = {next_token};
     auto tok_t = from_blob(tok_arr, {1, 1}, ScalarType::Long);
     auto emb_res = run(*module, "token_embedding", {*tok_t});
     if (!emb_res.ok()) break;
-    auto tok_emb = emb_res.get()[0].toTensor();  // (1, 1, 1536)
+    auto tok_emb_t = emb_res.get()[0].toTensor();  // (1, 1, 1536)
+    std::vector<float> tok_emb_data(
+        tok_emb_t.data_ptr<float>(),
+        tok_emb_t.data_ptr<float>() + tok_emb_t.numel());
+    for (float& v : tok_emb_data) v *= emb_scale;
+    auto tok_emb = from_blob(tok_emb_data.data(), {1, 1, (int)soft_hidden}, ScalarType::Float);
 
     int64_t pos_arr[1] = {cur_pos};
     auto pos1_t = from_blob(pos_arr, {1}, ScalarType::Long);
-    auto dec2 = run(*module, "text_decoder", {tok_emb, *pos1_t});
+    auto dec2 = run(*module, "text_decoder", {*tok_emb, *pos1_t});
     if (!dec2.ok()) break;
     auto logits2 = dec2.get()[0].toTensor();
     next_token = argmax(logits2.data_ptr<float>(), vocab_size);

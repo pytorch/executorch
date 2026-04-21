@@ -35,14 +35,14 @@ void patchify(
       float* pv = pixel_values_out.data() + patch_idx * kPatchDim;
       int dim_offset = 0;
 
-      // Extract patch in CHW order and normalize to [-1, 1] via 2*(v-0.5)
+      // Extract patch in CHW order. Pass raw [0,1] values — the vision
+      // model's Gemma4VisionPatchEmbedder applies 2*(v-0.5) internally.
       for (int c = 0; c < C; ++c) {
         for (int ph = 0; ph < kPatchSize; ++ph) {
           for (int pw2 = 0; pw2 < kPatchSize; ++pw2) {
             int h = py * kPatchSize + ph;
             int w = px * kPatchSize + pw2;
-            float raw = image_chw[c * H * W + h * W + w];  // [0,1] after rescale
-            pv[dim_offset++] = 2.0f * (raw - 0.5f);        // → [-1,1]
+            pv[dim_offset++] = image_chw[c * H * W + h * W + w];  // [0,1]
           }
         }
       }

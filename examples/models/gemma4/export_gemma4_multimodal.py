@@ -53,7 +53,12 @@ from executorch.extension.llm.export.config.llm_config import LlmConfig, ModelTy
 
 
 class TokenEmbeddingExport(nn.Module):
-    """Wraps tok_embeddings from the KV-cache-prepared Gemma4 transformer."""
+    """Wraps tok_embeddings from the KV-cache-prepared Gemma4 transformer.
+
+    Returns raw (unscaled) embeddings. The C++ runner applies the embedding
+    scale (sqrt(hidden_size) ≈ 39.19) after calling this method. Vision/audio
+    soft tokens from their respective encoders must NOT be scaled.
+    """
 
     def __init__(self, transformer):
         super().__init__()
@@ -293,17 +298,21 @@ def export_gemma4_multimodal(
     print(f"  audio_preprocessor: (1,N_pcm) -> (1,T,{n_mels})")
 
     # ---- 3. Audio encoder (mel → soft tokens) ----
+    # Export with dynamic T dimension so any mel length from audio_preprocessor works.
+    # T_mel bounds: 50 frames (~0.5s) to 750 frames (~30s at 16kHz, hop=160).
     print("\nExporting audio_encoder...")
     aud_enc = AudioEncoderExport(
         hf_model.model.audio_tower, hf_model.model.embed_audio
     ).eval()
+    T_mel_dim = Dim("T_mel", min=50, max=750)
     with torch.no_grad():
         programs["audio_encoder"] = export(
             aud_enc,
             (torch.zeros(1, audio_frames, n_mels),),
+            dynamic_shapes={"input_features": {1: T_mel_dim}},
             strict=True,
         )
-    print(f"  audio_encoder: (1,{audio_frames},{n_mels}) -> (1,{audio_frames//4},{text_hidden})")
+    print(f"  audio_encoder: (1,T,{n_mels}) -> (1,T//4,{text_hidden})  [T dynamic 50..750]")
 
     # Free HF model before loading LLM pipeline (saves ~20 GB RAM)
     del hf_model
