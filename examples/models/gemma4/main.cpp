@@ -304,7 +304,6 @@ int32_t main(int32_t argc, char** argv) {
     std::memcpy(mel_fixed.data(), mel.data_ptr<float>(), src_frames * 128 * sizeof(float));
     auto mel_t = from_blob(mel_fixed.data(), {1, kAudioFrames, 128}, ScalarType::Float);
     auto aud_res = run(*module, "audio_encoder", {*mel_t});
-    fprintf(stderr, "[audio] audio_encoder done: ok=%d\n", (int)aud_res.ok());
     if (!aud_res.ok()) { ET_LOG(Error, "audio_encoder failed"); return 1; }
     auto aud_out = aud_res.get()[0].toTensor();
     // aud_out: (1, T', 1536) → flatten to (T', 1536)
@@ -363,11 +362,26 @@ int32_t main(int32_t argc, char** argv) {
   for (float& v : prefix_emb) v *= emb_scale;
   for (float& v : suffix_emb) v *= emb_scale;
 
-  // ---- 4. Concatenate [prefix_emb | soft_tokens | suffix_emb] ----
-  // Shape: (1, total_seq, 1536)
+  // ---- 4. Build combined embeddings and PLI token IDs ----
   int64_t prefix_len = static_cast<int64_t>(prefix_ids.size());
   int64_t suffix_len = static_cast<int64_t>(suffix_ids.size());
   int64_t total_len = prefix_len + n_soft_tokens + suffix_len;
+
+  // PLI (Per-Layer Input) token IDs: real IDs for text, modality placeholder for soft tokens.
+  // <|image>=255999, <|audio>=256000 — same IDs HF Gemma4 uses in unified input_ids.
+  // Used in v2 text_decoder (pte includes pli_token_ids as 3rd input).
+  const int64_t modality_pli_id = has_image ? 255999LL : 256000LL;
+  std::vector<int64_t> pli_ids;
+  pli_ids.insert(pli_ids.end(), prefix_ids.begin(), prefix_ids.end());
+  for (int64_t k = 0; k < n_soft_tokens; ++k) pli_ids.push_back(modality_pli_id);
+  pli_ids.insert(pli_ids.end(), suffix_ids.begin(), suffix_ids.end());
+
+  // Detect if this pte is a v2 export (text_decoder takes 3 inputs including pli_token_ids).
+  // v1 pte: text_decoder(embeds[1,1,1536], pos[1]) — PLI=0 inside model
+  // v2 pte: text_decoder(embeds[1,1,1536], pos[1], pli_token_ids[1,1]) — PLI from token IDs
+  // Heuristic: check if the first decoded method call with 3 inputs succeeds.
+  // We'll attempt a dry-run call and fall back to 2-input if it fails.
+  bool has_pli = false;  // filled in below during first decode step
 
   std::vector<float> combined(total_len * soft_hidden);
   {
@@ -383,8 +397,8 @@ int32_t main(int32_t argc, char** argv) {
   }
 
   // ---- 5. Prefill: feed one token at a time into the KV-cache text_decoder ----
-  // The text_decoder was exported with static shape (1, 1, hidden) + (1,) for
-  // single-step decode. Prefill processes the full context token by token.
+  // v2 pte: 3-input decoder (embeds, pos, pli_token_ids)
+  // v1 pte: 2-input decoder (embeds, pos) — PLI is zero inside model
   std::vector<float> logits_data;
   int64_t vocab_size = 0;
   for (int64_t i = 0; i < total_len; ++i) {
@@ -392,7 +406,18 @@ int32_t main(int32_t argc, char** argv) {
         combined.data() + i * soft_hidden, {1, 1, (int)soft_hidden}, ScalarType::Float);
     int64_t pos_val = i;
     auto pos1 = from_blob(&pos_val, {1}, ScalarType::Long);
-    auto dec_res = run(*module, "text_decoder", {*emb_slice, *pos1});
+
+    auto call_decoder = [&]() {
+      if (has_pli || i == 0) {
+        // Try 3-input call (v2 pte with PLI token IDs)
+        auto pli3 = run(*module, "text_decoder", {*emb_slice, *pos1,
+            *from_blob(&pli_ids[i], {1, 1}, ScalarType::Long)});
+        if (pli3.ok()) { has_pli = true; return pli3; }
+        has_pli = false;  // fall back to v1 on first failure
+      }
+      return run(*module, "text_decoder", {*emb_slice, *pos1});
+    };
+    auto dec_res = call_decoder();
     if (!dec_res.ok()) { ET_LOG(Error, "text_decoder prefill failed at pos %lld", (long long)i); return 1; }
     if (i == total_len - 1) {
       auto logits_t = dec_res.get()[0].toTensor();
@@ -401,6 +426,7 @@ int32_t main(int32_t argc, char** argv) {
     }
   }
   if (vocab_size == 0) { ET_LOG(Error, "Prefill produced no logits"); return 1; }
+  ET_LOG(Info, "Prefill done: PLI %s", has_pli ? "enabled (v2)" : "disabled (v1)");
 
   // ---- 6. Sample first token ----
   auto argmax = [](const float* data, int64_t n) -> int64_t {
@@ -451,7 +477,13 @@ int32_t main(int32_t argc, char** argv) {
 
     int64_t pos_arr[1] = {cur_pos};
     auto pos1_t = from_blob(pos_arr, {1}, ScalarType::Long);
-    auto dec2 = run(*module, "text_decoder", {*tok_emb, *pos1_t});
+    auto call_decoder_decode = [&]() {
+      if (has_pli)
+        return run(*module, "text_decoder", {*tok_emb, *pos1_t,
+            *from_blob(&next_token, {1, 1}, ScalarType::Long)});
+      return run(*module, "text_decoder", {*tok_emb, *pos1_t});
+    };
+    auto dec2 = call_decoder_decode();
     if (!dec2.ok()) break;
     auto logits2 = dec2.get()[0].toTensor();
     next_token = argmax(logits2.data_ptr<float>(), vocab_size);
