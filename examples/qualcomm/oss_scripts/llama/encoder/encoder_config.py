@@ -53,10 +53,11 @@ class AudioModalityConfig(MultiModalityConfig):
     """
 
     audio_seq_len: int
+    n_bins: int
     audio_url: str
 
     def create_encoder(self, config):
-        return self.encoder_class(config)
+        return self.encoder_class(config, n_bins=self.n_bins)
 
 
 @dataclass(init=False, frozen=True)
@@ -92,6 +93,7 @@ class GraniteSpeechEncoder(AudioModalityConfig):
 
     encoder_class = GraniteSpeechCTCEncoderWrapper
     audio_seq_len = 171
+    n_bins = 844
     audio_url = "https://huggingface.co/ibm-granite/granite-speech-3.3-2b/resolve/main/10226_10111_000000.wav?download=true"
     quant_recipe = GraniteSpeechEncoderQuantRecipe
     num_sharding = 8

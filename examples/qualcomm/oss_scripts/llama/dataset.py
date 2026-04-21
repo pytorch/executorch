@@ -90,6 +90,19 @@ class DatasetBuilder:
                 wav, sr = soundfile.read(audio_path, always_2d=False)
             wav = torch.from_numpy(wav).float().unsqueeze(0)  # [1, T]
 
+            # Pad to fixed length so input_features has shape [1, n_bins, input_dim]
+            hop_length = processor.audio_processor.melspec_kwargs["hop_length"]
+            target_raw_length = (config.n_bins * 2 - 1) * hop_length
+            pad_size = target_raw_length - wav.shape[-1]
+            if pad_size > 0:
+                wav = torch.nn.functional.pad(wav, (0, pad_size))
+            elif pad_size < 0:
+                suggested_n_bins = (wav.shape[-1] // hop_length + 1) // 2
+                raise ValueError(
+                    f"Audio length ({wav.shape[-1]} samples) exceeds target ({target_raw_length} samples) "
+                    f"derived from n_bins={config.n_bins}. Set n_bins >= {suggested_n_bins} in the config to avoid information loss."
+                )
+
             # Process audio with text prompt using HuggingFace processor
             input_features = processor(prompt, wav, return_tensors="pt").input_features
             dataset.append((input_features,))

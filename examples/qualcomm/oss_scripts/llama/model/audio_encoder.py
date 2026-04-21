@@ -123,7 +123,7 @@ class CustomBlip2QFormerSelfOutput(Blip2QFormerSelfOutput):
 
 
 class GraniteSpeechCTCEncoderWrapper(nn.Module):
-    def __init__(self, config: GraniteSpeechConfig):
+    def __init__(self, config: GraniteSpeechConfig, n_bins: int):
         super().__init__()
         self.encoder = GraniteSpeechCTCEncoder(config.encoder_config)
         self.projector = GraniteSpeechEncoderProjector(config)
@@ -145,9 +145,11 @@ class GraniteSpeechCTCEncoderWrapper(nn.Module):
         )
 
         self.config = config
+        self.n_bins = n_bins
 
     def get_example_inputs(self):
-        return (torch.randn((1, 844, 160), dtype=torch.float32),)
+        input_dim = self.config.encoder_config.input_dim
+        return (torch.randn((1, self.n_bins, input_dim), dtype=torch.float32),)
 
     def forward(self, hidden_states: torch.Tensor):
         encoder_embeds = self.encoder(hidden_states)

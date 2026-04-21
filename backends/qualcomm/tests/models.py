@@ -535,6 +535,7 @@ class Conv1dBn(torch.nn.Module):
             bias=bias,
         )
         self.batch_norm = torch.nn.BatchNorm1d(2048)
+        self.eval()
 
     def forward(self, x):
         x = self.conv(x)

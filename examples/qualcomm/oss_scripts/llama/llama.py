@@ -635,7 +635,7 @@ def export_llama(args) -> None:
     )
     # TODO: Implement attention sink support for multimodal models (vision/audio).
     assert (
-        is_multimodal or args.use_attention_sink is None
+        not is_multimodal or args.use_attention_sink is None
     ), "Multimodal models currently do not support attention sink feature."
 
     if args.pre_gen_pte:

@@ -45,7 +45,7 @@ class MultimodalEmbeddingMerger {
   int32_t embedding_dim_;
   int32_t total_tokens_{0};
 
-  // merged embeddings are holded in this vector.
+  // merged embeddings are held in this vector.
   std::vector<float> embeddings_;
   std::array<executorch::aten::TensorImpl::SizesType, 3> sizes_{};
 };

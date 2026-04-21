@@ -184,8 +184,8 @@ class TokenizerWrapper:
 
         audio_paths = self.control_args.audio_path
         if hasattr(self.config, AUDIO_ENCODER):
-            # Load image from user-specified path (URL or local file)
-            # fall back to the default image URL if no image is provided.
+            # Load audio from user-specified path (URL or local file)
+            # fall back to the default audio URL if no audio is provided.
             if not audio_paths:
                 audio_paths = [getattr(self.config, AUDIO_ENCODER).audio_url]
                 warnings.warn(
