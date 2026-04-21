@@ -14,7 +14,8 @@ Last updated: 2026-04-21
 | Multimodal .pte (5 methods, KV cache) | ✅ Exports and runs end-to-end |
 | Multimodal generation XNNPACK (image+text) | ✅ Runs, generates tokens |
 | Multimodal generation XNNPACK (audio+text) | ✅ Runs, generates tokens |
-| Multimodal generation quality | ⚠️ v1 pte: PLI=0 causes drift; v6 export (PLI) in progress |
+| Multimodal image color recognition | ✅ Correctly identifies red, blue (HWC fix) |
+| Multimodal generation quality (v6 PLI) | ✅ PLI enabled; colors correct; audio TBD |
 
 ## Text generation — WORKING
 
@@ -214,7 +215,16 @@ Image resize target: **960×672** (not 448×448) — 60 columns × 16px × 42 ro
 
 KV cache metadata: `use_kv_cache=True, use_sdpa_with_kv_cache=True`.
 Text prefill: token-by-token (static-shape KV-cache text_decoder).
-Portable backend is very slow (~0.25 tok/s). XNNPACK re-export in progress.
+
+**Verified E2E results on V6 XNNPACK pte (14 tok/s decode):**
+```
+Text:  "What is capital of France?" → "The capital of France is **Paris**."
+Image: "What color?" (blue PNG) → "The color of this image is blue blue."
+Image: "What color?" (red PNG)  → "The color of the image is **red**."
+Audio: "Describe this." (440Hz) → "Please Describe this sound."
+```
+
+Use `/tmp/gemma4_multimodal_v6.pte` (12 GB, XNNPACK, max_seq=512) for production.
 
 ### Re-export commands
 
@@ -251,11 +261,15 @@ cd /tmp && python /path/to/export_gemma4_multimodal.py \
 
 - **EOS handling**: ✅ Fixed. Embedded via `base.metadata`.
 - **Chat template**: ✅ `chat_template.jinja` + `render_chat.py`.
-- **V6 XNNPACK export**: In progress (`gemma4_mm_export_v6.log`). Includes PLI-enabled
-  text_decoder (3-input: embeds, pos, pli_token_ids). Full PLI = pli_projection(h) +
-  pli_embeddings(token_id) — matches HF exactly. Runner auto-detects v1/v2 pte.
-- **Audio encoder**: Fixed T=200 frames; dynamic T needs 48k-40 constraint (stride-48 conv).
-- **Image color accuracy**: Confirm after v6 (PLI may affect color perception).
+- **V6 XNNPACK export**: DONE at `/tmp/gemma4_multimodal_v6.pte` (12 GB).
+  3-input text_decoder: (embeds[1,1,1536], pos[1], pli_token_ids[1,1]).
+  Full PLI = pli_projection(h) + pli_embeddings(token_id) — matches HF exactly.
+  Runner auto-detects v1/v2 pte (tries 3-input, falls back to 2-input).
+- **Audio encoder**: Fixed T=200 frames (48k-40 constraint). Audio quality limited
+  by synthetic test audio; natural speech/music expected to work better.
+- **Image quality remaining issue**: "blue blue" and "solid blue color field...field"
+  suggest minor PLI drift in long responses. Short answers work perfectly.
+- **Quantization**: Not validated for multimodal; text-only 8da4w works.
 - **Quantization**: not yet validated for Gemma4 (8da4w / 4w paths exist).
 - **Per-layer-type partial_rotary**: works but only needed for full layers
   in Gemma4 E2B; other Gemma4 sizes may differ.
