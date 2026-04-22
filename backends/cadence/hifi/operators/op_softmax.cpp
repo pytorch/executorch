@@ -68,6 +68,9 @@ Tensor& _softmax_out(
   if (in.dim() > kNnlibMaxDim)
     optimized = false;
 
+  if (dim < in.dim() - 1)
+    optimized = false;
+
   if (optimized) {
     int* p_inp = (int*)in.const_data_ptr<float>();
     int* out_data = (int*)out.mutable_data_ptr<float>();

@@ -108,10 +108,10 @@ Error TextLLMRunner::generate(
   // return a response token.
 
   stats_->inference_start_ms = time_in_ms();
-  shouldStop_ = false;
 
-  // Capture remaining KV cache capacity before prefill (pos_ will change)
-  int64_t max_context_len = metadata_.at(kMaxContextLen) - pos_;
+  // Get max_seq_len for single prefill chunk limit
+  int64_t max_seq_len = metadata_.at(kMaxSeqLen);
+  int64_t max_context_len = metadata_.at(kMaxContextLen);
 
   uint64_t cur_token = 0;
   int num_prompt_tokens = 0;
@@ -139,12 +139,26 @@ Error TextLLMRunner::generate(
         InvalidArgument,
         "Expected at least 1 prompt token");
     ET_CHECK_OR_RETURN_ERROR(
-        num_prompt_tokens < max_context_len,
+        num_prompt_tokens <= max_seq_len,
         InvalidArgument,
-        "num_prompt_tokens %d >= max_context_len %" PRId64
-        ", Max seq length exceeded - please increase max seq len value in your export script",
+        "num_prompt_tokens %d > max_seq_len %" PRId64
+        ", Single prefill chunk too large - please reduce prompt size or increase max_seq_len",
         num_prompt_tokens,
-        max_context_len);
+        max_seq_len);
+    // For non-sliding-window models, also check that we won't exceed
+    // KV cache capacity. Sliding window models (where max_seq_len <
+    // max_context_len) handle position wrapping internally.
+    if (max_seq_len >= max_context_len) {
+      ET_CHECK_OR_RETURN_ERROR(
+          pos_ + num_prompt_tokens < max_context_len,
+          InvalidArgument,
+          "pos_ %" PRId64 " + num_prompt_tokens %d >= max_context_len %" PRId64
+          ", Max seq length exceeded - please increase max seq len value in "
+          "your export script",
+          pos_,
+          num_prompt_tokens,
+          max_context_len);
+    }
 
     // print prompts
     if (config.echo) {
@@ -168,10 +182,11 @@ Error TextLLMRunner::generate(
     prefill_next_token_.reset();
   }
 
-  // Determine max_new_tokens using the GenerationConfig's resolve method,
-  // then subtract pos_ for max_new_tokens.
+  // For sliding window models, the ring buffer recycles space — pos_ doesn't
+  // represent consumed capacity, so pass 0 to get the full budget.
+  int64_t effective_pos = (max_seq_len < max_context_len) ? 0 : pos_;
   int max_new_tokens =
-      config.resolve_max_new_tokens(max_context_len, num_prompt_tokens);
+      config.resolve_max_new_tokens(max_context_len, effective_pos);
 
   ET_LOG(
       Info,

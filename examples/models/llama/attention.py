@@ -550,7 +550,14 @@ class AttentionMHA(Attention):
 
         if self.use_kv_cache:
             assert input_pos is not None
-            if self.enable_dynamic_shape:
+            is_ring_buffer = getattr(self.kv_cache, "is_ring_buffer", False)
+
+            if is_ring_buffer:
+                # Ring buffer models compute their own mask after KV cache
+                # update; skip start_pos bounds check since start_pos can
+                # exceed max_context_len for sliding window / attention sink.
+                attn_mask = None
+            elif self.enable_dynamic_shape:
                 start_pos = input_pos[-1].item()
                 torch._check_is_size(start_pos)
                 torch._check(start_pos < self.max_context_len)
@@ -569,7 +576,7 @@ class AttentionMHA(Attention):
                 )
                 k, v = self.kv_cache.update(input_pos, k, v)
 
-            if getattr(self.kv_cache, "is_ring_buffer", False):
+            if is_ring_buffer:
                 attn_mask = self.kv_cache.create_causal_mask_for_ring_buffer(
                     input_pos[0].item(), seqlen
                 )

@@ -11,6 +11,7 @@ from executorch.backends.arm._passes.arm_pass_utils import (
     expand_around_channel,
 )
 from executorch.backends.arm._passes.rewrite_conv_pass import RewriteConvPass
+from executorch.backends.arm._passes.rewrite_max_pool2d_pass import RewriteMaxPool2dPass
 from executorch.backends.arm.tosa.specification import get_context_shape_env
 from executorch.exir.dialects._ops import ops as exir_ops
 from executorch.exir.pass_base import ExportPass, PassResult
@@ -201,6 +202,7 @@ class SizeAdjustInputPass(ArmPass):
 
     _passes_required_after: Set[Type[ExportPass]] = {
         RewriteConvPass,
+        RewriteMaxPool2dPass,
     }
 
     def call(self, graph_module: torch.fx.GraphModule) -> PassResult:

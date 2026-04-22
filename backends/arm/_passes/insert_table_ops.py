@@ -39,6 +39,7 @@ class TableOps:
         exir_ops.edge.aten.floor.default: torch.floor,
         exir_ops.edge.aten.log.default: torch.log,
         exir_ops.edge.aten.log1p.default: torch.log1p,
+        exir_ops.edge.aten.log10.default: torch.log10,
         exir_ops.edge.aten.reciprocal.default: torch.reciprocal,
         exir_ops.edge.aten.rsqrt.default: torch.rsqrt,
         exir_ops.edge.aten.sigmoid.default: torch.sigmoid,

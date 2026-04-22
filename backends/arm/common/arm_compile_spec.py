@@ -16,7 +16,10 @@ from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
 from enum import Enum
 
-from executorch.backends.arm.common.pipeline_config import ArmPassPipelineConfig
+from executorch.backends.arm.common.pipeline_config import (
+    ArmPassPipelineConfig,
+    SoftmaxDecompositionConfig,
+)
 from executorch.backends.arm.tosa import TosaSpecification
 from executorch.exir._warnings import deprecated
 
@@ -33,6 +36,7 @@ class ArmCompileSpec(ABC):
     compiler_flags: list[str] = field(default_factory=list)
     path_for_intermediates: str | None = None
     tosa_debug_mode: DebugMode | None = None
+    preserve_io_quantization: bool = False
 
     _TOSA_SPEC_KEY = "tosa_spec"
     _COMPILE_FLAGS_KEY = "compile_flags"
@@ -41,6 +45,7 @@ class ArmCompileSpec(ABC):
     _DEBUG_MODE_KEY = "dump_debug_info"
     _OUTPUT_REORDER_KEY = "ouput_reorder_workaround"
     _TRANSFORM_PIPELINE_CONFIG_KEY = "transform_pipeline_config"
+    _PRESERVE_IO_QUANT_KEY = "preserve_io_quantization"
 
     def _set_compile_specs(
         self,
@@ -50,6 +55,7 @@ class ArmCompileSpec(ABC):
         tosa_debug_mode: DebugMode | None = None,
         output_order_workaround: bool = False,
         pipeline_config: ArmPassPipelineConfig | None = None,
+        preserve_io_quantization: bool = False,
     ):
         """Set all values of dataclass directly."""
         self.tosa_spec = tosa_spec
@@ -58,6 +64,8 @@ class ArmCompileSpec(ABC):
         self.tosa_debug_mode = tosa_debug_mode
         self._pipeline_config = pipeline_config
         self.output_order_workaround = output_order_workaround
+        self.preserve_io_quantization = preserve_io_quantization
+        self._warn_if_redundant_preserve_io_quantization()
         if output_order_workaround:
             warnings.warn(
                 "ArmCompileSpec(output_order_workaround=True) is deprecated and will be "
@@ -75,6 +83,7 @@ class ArmCompileSpec(ABC):
         tosa_debug_mode: ArmCompileSpec.DebugMode | None = None
         output_order_workaround: bool = False
         pipeline_config: ArmPassPipelineConfig | None = None
+        preserve_io_quantization: bool = False
         unknown_specs: dict[str, str] = {}
         for spec in compile_specs:
             key = spec.key
@@ -125,6 +134,8 @@ class ArmCompileSpec(ABC):
                         "More than one transform pipeline entry in compile spec."
                     )
                 pipeline_config = ArmPassPipelineConfig.from_dict(json.loads(val))
+            elif key == ArmCompileSpec._PRESERVE_IO_QUANT_KEY:
+                preserve_io_quantization = str(val).lower() in ("1", "true", "yes")
             else:
                 unknown_specs[key] = val
 
@@ -148,6 +159,7 @@ class ArmCompileSpec(ABC):
             tosa_debug_mode=tosa_debug_mode,
             output_order_workaround=output_order_workaround,
             pipeline_config=pipeline_config,
+            preserve_io_quantization=preserve_io_quantization,
         )
         cls._from_list_hook(compile_spec, unknown_specs)
         compile_spec._validate()
@@ -224,7 +236,34 @@ class ArmCompileSpec(ABC):
                     self._pipeline_config.serialize(),
                 )
             )
+        compile_spec.append(
+            CompileSpec(
+                ArmCompileSpec._PRESERVE_IO_QUANT_KEY,
+                str(bool(self.preserve_io_quantization)).encode(),
+            )
+        )
         return compile_spec
+
+    def _set_preserve_io_quantization(self, enabled: bool) -> "ArmCompileSpec":
+        """Preserve Q/DQ nodes at IO boundaries when lowering."""
+        self.preserve_io_quantization = enabled
+        self._warn_if_redundant_preserve_io_quantization()
+        return self
+
+    def _warn_if_redundant_preserve_io_quantization(self) -> None:
+        """Warn when preserve_io_quantization has no effect for INT-only
+        specs.
+        """
+        if (
+            self.preserve_io_quantization
+            and self.tosa_spec.support_integer()
+            and not self.tosa_spec.support_float()
+        ):
+            warnings.warn(
+                "preserve_io_quantization=True is redundant for INT-only TOSA "
+                "specifications because boundary Q/DQ are already de-tagged.",
+                stacklevel=3,
+            )
 
     def _get_pass_pipeline_config(self) -> ArmPassPipelineConfig:
         """Returns configuration that controls how the Arm pass pipeline should
@@ -250,7 +289,10 @@ class ArmCompileSpec(ABC):
     def _create_default_pipeline_config(self) -> ArmPassPipelineConfig:
         config = ArmPassPipelineConfig()
         if self.tosa_spec.is_U55_subset:
-            config.disable_masked_softmax()
+            # Keep U55 on STABLE instead of the generic MASKED default:
+            # MASKED also enables masked_fill decomposition, which lowers to
+            # where/full_like and is not a good default fit for U55.
+            config.softmax = SoftmaxDecompositionConfig.STABLE
         return config
 
     def _get_intermediate_path(self) -> str | None:
