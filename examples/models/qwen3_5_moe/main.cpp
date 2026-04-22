@@ -133,8 +133,8 @@ int main(int argc, char** argv) {
 
   // Use prefill method for T>=2, decode method for T=1
   // (prefill was exported with min seq_len=2)
-  std::string run_method = prefill_method;
-  if (dual_method && num_prompt_tokens == 1) {
+  std::string run_method = "prefill";
+  if (num_prompt_tokens == 1) {
     run_method = "decode";
   }
 

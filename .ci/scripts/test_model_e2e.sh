@@ -355,8 +355,6 @@ EOF
     ;;
   qwen3_5_moe)
     RUNNER_ARGS="$RUNNER_ARGS --tokenizer_path ${MODEL_DIR}/$TOKENIZER_FILE --prompt 'What is the capital of France?' --max_new_tokens 128 --temperature 0 --cuda_graph"
-    # CUDA graph capture requires cudaMallocAsync backend for stream-ordered allocations
-    export PYTORCH_CUDA_ALLOC_CONF=backend:cudaMallocAsync
     ;;
   voxtral_realtime)
     RUNNER_ARGS="--model_path ${MODEL_DIR}/model.pte --tokenizer_path ${MODEL_DIR}/$TOKENIZER_FILE --preprocessor_path ${MODEL_DIR}/$PREPROCESSOR --audio_path ${MODEL_DIR}/$AUDIO_FILE --temperature 0"
