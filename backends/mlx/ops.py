@@ -116,6 +116,7 @@ from executorch.backends.mlx.serialization.mlx_graph_schema import (
     RepeatNode,
     ReshapeNode,
     RMSNormNode,
+    RollNode,
     RopeNode,
     RoundNode,
     RsqrtNode,
@@ -1672,6 +1673,45 @@ def _repeat_handler(P: MLXProgramBuilder, n: Node) -> Slot:
             x=P.slot_to_tid(x),
             out=P.slot_to_tid(out),
             reps=reps_int_or_vid,
+        )
+    )
+    return out
+
+
+@REGISTRY.register(target=[torch.ops.aten.roll.default])
+def _roll_handler(P: MLXProgramBuilder, n: Node) -> Slot:
+    args = P.args(n)
+    require_args(args, 2, 3, "aten.roll")
+    require_kwargs(P.kwargs(n), set(), "aten.roll")
+    x = args[0]
+    shifts_arg = args[1]
+    dims_arg = args[2] if len(args) > 2 else []
+
+    shifts = [shifts_arg] if isinstance(shifts_arg, int) else list(shifts_arg)
+    dims: List[int] = [dims_arg] if isinstance(dims_arg, int) else list(dims_arg)
+
+    # Flat roll (torch.roll with dims=[]) would require reshape + roll +
+    # reshape at the graph level. Not yet supported; Swin-style usage always
+    # passes explicit dims.
+    if not dims:
+        raise NotImplementedError(
+            "aten.roll without dims (flat roll) is not supported by the MLX "
+            "delegate yet."
+        )
+    if len(shifts) != len(dims):
+        raise ValueError(
+            f"aten.roll: shifts and dims must have the same length, got "
+            f"shifts={shifts} (len={len(shifts)}) dims={dims} (len={len(dims)})"
+        )
+    require_static_ints(dims, "dims", "aten.roll")
+
+    out = P.make_or_get_slot(n)
+    P.emit(
+        RollNode(
+            x=P.slot_to_tid(x),
+            out=P.slot_to_tid(out),
+            shift=[P.to_int_or_vid(s) for s in shifts],
+            axes=dims,
         )
     )
     return out
