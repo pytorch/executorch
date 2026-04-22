@@ -26,8 +26,11 @@
 #include <executorch/extension/llm/runner/audio.h>
 #include <executorch/extension/llm/runner/image.h>
 #include <executorch/extension/llm/runner/llm_runner_helper.h>
+#include <executorch/extension/llm/runner/multimodal_decoder_runner.h>
 #include <executorch/extension/llm/runner/multimodal_input.h>
+#include <executorch/extension/llm/runner/multimodal_prefiller.h>
 #include <executorch/extension/llm/runner/multimodal_runner.h>
+#include <executorch/extension/llm/runner/text_token_generator.h>
 #include <executorch/extension/module/module.h>
 #include <executorch/extension/tensor/tensor_ptr_maker.h>
 #include <executorch/runtime/core/evalue.h>
@@ -40,6 +43,112 @@
 #include <executorch/extension/threadpool/cpuinfo_utils.h>
 #include <executorch/extension/threadpool/threadpool.h>
 #endif
+
+// ---------------------------------------------------------------------------
+// Gemma4 PLI-aware decoder runner (Approach C)
+//
+// Overrides step() to pass pli_token_ids as the 3rd input to text_decoder
+// when the pte supports it (3-input signature). PLI = pli_proj(h) + pli_emb(id)
+// where id is the current decode token — this is what HF Gemma4 does internally.
+// Falls back to standard 2-input call for older ptes transparently.
+// ---------------------------------------------------------------------------
+class Gemma4DecoderRunner
+    : public ::executorch::extension::llm::MultimodalDecoderRunner {
+ public:
+  explicit Gemma4DecoderRunner(
+      ::executorch::extension::Module* module,
+      ::executorch::extension::llm::IOManager* io_manager)
+      : MultimodalDecoderRunner(module, io_manager) {
+    // Detect 3-input text_decoder once at construction time.
+    auto meta = module->method_meta(
+        ::executorch::extension::llm::kTextModelMethod);
+    has_pli_ = meta.ok() && (*meta).num_inputs() >= 3;
+    ET_LOG(
+        Info,
+        "Gemma4DecoderRunner: PLI %s",
+        has_pli_ ? "enabled (v2 pte, 3-input text_decoder)"
+                 : "disabled (v1 pte, 2-input text_decoder)");
+  }
+
+  ::executorch::runtime::Result<::executorch::aten::Tensor> step(
+      ::executorch::extension::TensorPtr& tokens,
+      int64_t start_pos) override {
+    namespace et = ::executorch;
+    namespace ext = ::executorch::extension;
+    namespace etllm = ::executorch::extension::llm;
+
+    // Embed the current decode token.
+    auto emb_res = module_->execute(etllm::kTokenEmbeddingMethod, tokens);
+    if (!emb_res.ok()) return emb_res.error();
+    auto emb = (*emb_res)[0];
+
+    // Build start_pos tensor.
+    auto pos_t = ext::from_blob(
+        &start_pos, {1}, et::aten::ScalarType::Long);
+
+    if (has_pli_) {
+      // Pass current decode token as PLI ID — matches HF Gemma4 where each
+      // position's PLI embedding is conditioned on that position's token ID.
+      int64_t pli_id = tokens->const_data_ptr<int64_t>()[0];
+      auto pli_t = ext::from_blob(
+          &pli_id, {1, 1}, et::aten::ScalarType::Long);
+      auto out = module_->execute(
+          etllm::kTextModelMethod, {emb, *pos_t, *pli_t});
+      if (!out.ok()) return out.error();
+      return (*out)[0].toTensor();
+    }
+
+    auto out = module_->execute(etllm::kTextModelMethod, {emb, *pos_t});
+    if (!out.ok()) return out.error();
+    return (*out)[0].toTensor();
+  }
+
+ private:
+  bool has_pli_ = false;
+};
+
+// ---------------------------------------------------------------------------
+// Gemma4-specific multimodal runner factory
+// Identical to create_multimodal_runner but injects Gemma4DecoderRunner.
+// ---------------------------------------------------------------------------
+static std::unique_ptr<::executorch::extension::llm::MultimodalRunner>
+create_gemma4_runner(
+    const std::string& model_path,
+    std::unique_ptr<::tokenizers::Tokenizer> tokenizer,
+    std::optional<const std::string> data_path) {
+  namespace ext = ::executorch::extension;
+  namespace etllm = ::executorch::extension::llm;
+
+  auto module = data_path.has_value()
+      ? std::make_unique<ext::Module>(
+            model_path, data_path.value(),
+            ext::Module::LoadMode::MmapUseMlockIgnoreErrors)
+      : std::make_unique<ext::Module>(
+            model_path, ext::Module::LoadMode::MmapUseMlockIgnoreErrors);
+
+  auto metadata_res = etllm::get_llm_metadata(tokenizer.get(), module.get());
+  if (!metadata_res.ok()) {
+    ET_LOG(Error, "Failed to get metadata"); return nullptr;
+  }
+  auto metadata = metadata_res.get();
+  auto eos_ids = std::make_unique<std::unordered_set<uint64_t>>(
+      etllm::get_eos_ids(tokenizer.get(), module.get()));
+
+  auto io_manager = std::make_unique<etllm::IOManager>(*module);
+  auto decoder = std::make_unique<Gemma4DecoderRunner>(
+      module.get(), io_manager.get());
+  auto prefiller = std::make_unique<etllm::MultimodalPrefiller>(
+      module.get(), decoder.get(), tokenizer.get(), io_manager.get());
+  auto stats = std::make_unique<etllm::Stats>();
+  auto generator = std::make_unique<etllm::TextTokenGenerator>(
+      tokenizer.get(), decoder.get(),
+      metadata.at(etllm::kUseKVCache), std::move(eos_ids), stats.get());
+
+  return std::make_unique<etllm::MultimodalRunner>(
+      std::move(metadata), std::move(tokenizer), std::move(module),
+      std::move(decoder), std::move(prefiller),
+      std::move(io_manager), std::move(generator), std::move(stats));
+}
 
 DEFINE_string(model_path, "gemma4.pte", "Path to .pte (text-only or multimodal).");
 DEFINE_string(data_path, "", "Optional CUDA delegate data file (.ptd).");
@@ -237,8 +346,7 @@ int32_t main(int32_t argc, char** argv) {
 
   // Single code path for all modes — standard MultimodalRunner.
   fprintf(stderr, "Loading model %s...\n", model_path.c_str());
-  auto runner = ::executorch::extension::llm::create_multimodal_runner(
-      model_path, std::move(tokenizer), data_path);
+  auto runner = create_gemma4_runner(model_path, std::move(tokenizer), data_path);
   if (!runner) { ET_LOG(Error, "Failed to create multimodal runner"); return 1; }
   if (runner->load() != ::executorch::runtime::Error::Ok) {
     ET_LOG(Error, "Failed to load model"); return 1;
