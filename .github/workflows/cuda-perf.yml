@@ -6,16 +6,12 @@ on:
       - main
       - release/*
     tags:
-      - ciflow/cuda/*
+      - ciflow/cuda-perf/*
   pull_request:
     paths:
       - .github/workflows/cuda-perf.yml
-      - .github/workflows/cuda.yml
       - .ci/scripts/cuda_benchmark.py
-      - .ci/scripts/export_model_artifact.sh
-      - .ci/scripts/test_model_e2e.sh
-      - backends/cuda/**
-      - backends/aoti/**
+      - .ci/scripts/cuda_perf_prompts/**
   workflow_dispatch:
     inputs:
       models:
@@ -264,14 +260,12 @@ jobs:
           SocialLocalMobile/Qwen3.5-35B-A3B-HQQ-INT4)
             RUNNER="cmake-out/examples/models/qwen3_5_moe/qwen3_5_moe_runner"
             TOKENIZER="model_artifacts/tokenizer.json"
-            # Generate a >1000 token prompt for benchmarking
-            python3 -c "
-        text = 'The quick brown fox jumps over the lazy dog. ' * 200
-        prompt = '<|im_start|>user\nPlease analyze and summarize the following text in detail:\n\n' + text + '\n<|im_end|>\n<|im_start|>assistant\n'
-        with open('model_artifacts/long_prompt.txt', 'w') as f:
-            f.write(prompt)
-        "
-            RUNNER_CMD="$RUNNER --model_path model_artifacts/model.pte --data_path model_artifacts/aoti_cuda_blob.ptd --tokenizer_path $TOKENIZER --prompt_file model_artifacts/long_prompt.txt --max_new_tokens 512 --temperature 0"
+            # Use a checked-in long prompt (>1000 tokens) for benchmarking. A
+            # static, meaningful prompt avoids the degenerate / repetitive
+            # outputs that can result from synthetic prompts built by
+            # repeating the same sentence.
+            PROMPT_FILE=".ci/scripts/cuda_perf_prompts/qwen3_5_moe_long_prompt.txt"
+            RUNNER_CMD="$RUNNER --model_path model_artifacts/model.pte --data_path model_artifacts/aoti_cuda_blob.ptd --tokenizer_path $TOKENIZER --prompt_file $PROMPT_FILE --max_new_tokens 512 --temperature 0"
             MODEL_NAME="qwen3_5_moe_${{ matrix.quant }}"
             ;;
           *)
