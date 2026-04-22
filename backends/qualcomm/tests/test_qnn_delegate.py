@@ -1713,6 +1713,26 @@ class TestQNNFloatingPointOperator(TestQNN):
                         index += 1
                         self.lower_module_and_test_output(module, sample_input)
 
+    def test_qnn_backend_pow_scalar(self):
+        test_comb = [
+            {
+                QCOM_MODULE: [
+                    PowScalar(),  # base=2.0, default  # noqa: F405
+                    PowScalar(3.0),  # base=3.0, common case  # noqa: F405
+                    PowScalar(9),  # base=9, integer exp case  # noqa: F405
+                    PowScalar(0.5),  # base=0.5, fractional case  # noqa: F405
+                ],
+                QCOM_SAMPLE_INPUTS: [(torch.rand(10, 10) + 0.1,)],
+            },
+        ]
+        index = 0
+        for comb in test_comb:
+            for module in comb[QCOM_MODULE]:
+                for sample_input in comb[QCOM_SAMPLE_INPUTS]:
+                    with self.subTest(i=index):
+                        index += 1
+                        self.lower_module_and_test_output(module, sample_input)
+
     def test_qnn_backend_prelu(self):
         test_comb = [
             {
@@ -4218,6 +4238,27 @@ class TestQNNQuantizedOperator(TestQNN):
             {
                 QCOM_MODULE: [PowTensorScalar(10)],  # noqa: F405
                 QCOM_SAMPLE_INPUTS: [(torch.rand(10, 10) * 0.5 + 0.5,)],
+            },
+        ]
+        index = 0
+        for comb in test_comb:
+            for module in comb[QCOM_MODULE]:
+                for sample_input in comb[QCOM_SAMPLE_INPUTS]:
+                    with self.subTest(i=index):
+                        index += 1
+                        qdq_module = self.get_qdq_module(module, sample_input)
+                        self.lower_module_and_test_output(qdq_module, sample_input)
+
+    def test_qnn_backend_pow_scalar(self):
+        test_comb = [
+            {
+                QCOM_MODULE: [
+                    PowScalar(),  # base=2.0, default  # noqa: F405
+                    PowScalar(3.0),  # base=3.0, common case  # noqa: F405
+                    PowScalar(9),  # base=9, integer exp case  # noqa: F405
+                    PowScalar(0.5),  # base=0.5, fractional case  # noqa: F405
+                ],
+                QCOM_SAMPLE_INPUTS: [(torch.rand(10, 10) + 0.1,)],
             },
         ]
         index = 0
