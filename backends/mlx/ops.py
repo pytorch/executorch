@@ -50,6 +50,7 @@ from executorch.backends.mlx.serialization.mlx_graph_schema import (
     AsStridedNode,
     AsTypeNode,
     Atan2Node,
+    BitwiseInvertNode,
     BroadcastToNode,
     CeilNode,
     ClipNode,
@@ -3066,27 +3067,28 @@ def _where_handler(P: MLXProgramBuilder, n: Node) -> Slot:
 
 @REGISTRY.register(target=[torch.ops.aten.bitwise_not.default])
 def _bitwise_not_handler(P: MLXProgramBuilder, n: Node) -> Slot:
-    """Handle aten.bitwise_not - for boolean tensors, dispatch to logical_not."""
+    """Handle aten.bitwise_not - logical_not for bool, bitwise_invert for integers."""
     args = P.args(n)
     require_args(args, 1, 1, "aten.bitwise_not")
     require_kwargs(P.kwargs(n), set(), "aten.bitwise_not")
     x_meta = n.args[0].meta.get("val")
+    out = P.make_or_get_slot(n)
 
     if x_meta is not None and x_meta.dtype == torch.bool:
-        # For boolean tensors, bitwise_not is equivalent to logical_not
-        out = P.make_or_get_slot(n)
         P.emit(
             LogicalNotNode(
                 x=P.slot_to_tid(args[0]),
                 out=P.slot_to_tid(out),
             )
         )
-        return out
     else:
-        raise NotImplementedError(
-            f"aten.bitwise_not is only supported for boolean tensors. "
-            f"Got dtype={x_meta.dtype if x_meta else 'unknown'}"
+        P.emit(
+            BitwiseInvertNode(
+                x=P.slot_to_tid(args[0]),
+                out=P.slot_to_tid(out),
+            )
         )
+    return out
 
 
 @REGISTRY.register(
