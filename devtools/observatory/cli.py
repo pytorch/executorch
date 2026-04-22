@@ -83,6 +83,41 @@ def run_visualize(input_json: str, output_html: str) -> None:
     )
 
 
+def _resolve_run_mode(script: str) -> tuple[str, str, str | None]:
+    """Return (mode, target, pkg_root).
+
+    mode='module': target is a dotted module name; pkg_root is prepended to sys.path.
+    mode='script':  target is an absolute file path; pkg_root is None.
+
+    Detection rules (in order):
+    1. No '.py' suffix and no path separator → explicit dotted module name → 'module'
+    2. File path whose directory has __init__.py → walk up to find package root → 'module'
+    3. Everything else → 'script'
+    """
+    if not script.endswith(".py") and os.sep not in script and "/" not in script:
+        return "module", script, None
+
+    abs_path = os.path.abspath(script)
+    script_dir = os.path.dirname(abs_path)
+
+    if not os.path.isfile(os.path.join(script_dir, "__init__.py")):
+        return "script", abs_path, None
+
+    parts = [os.path.splitext(os.path.basename(abs_path))[0]]
+    current = script_dir
+    while True:
+        parts.insert(0, os.path.basename(current))
+        parent = os.path.dirname(current)
+        if parent == current or not os.path.isfile(
+            os.path.join(parent, "__init__.py")
+        ):
+            pkg_root = parent
+            break
+        current = parent
+
+    return "module", ".".join(parts), pkg_root
+
+
 def run_observatory(
     script_path: str,
     script_argv: list[str],
@@ -102,14 +137,46 @@ def run_observatory(
             output_json = "observatory_report.json"
 
     title = f"Observatory: {os.path.basename(script_path)}"
+    mode, target, pkg_root = _resolve_run_mode(script_path)
 
     try:
         with Observatory.enable_context(config={}):
-            runpy.run_path(script_path, run_name="__main__")
+            if mode == "module":
+                if pkg_root is not None and pkg_root not in sys.path:
+                    sys.path.insert(0, pkg_root)
+                logging.info("[Observatory CLI] Running as module: %s", target)
+                runpy.run_module(target, run_name="__main__", alter_sys=True)
+            else:
+                logging.info("[Observatory CLI] Running as script: %s", target)
+                runpy.run_path(target, run_name="__main__")
     except SystemExit:
         pass
+    except ImportError as exc:
+        logging.error("[Observatory CLI] Import error in '%s': %s", script_path, exc)
+        if "relative import" in str(exc) or "attempted relative import" in str(exc):
+            logging.error(
+                "  Hint: this script uses relative imports and must run as a Python module.\n"
+                "  Option A — ensure the script's directory contains __init__.py so it is\n"
+                "             auto-detected as a package member.\n"
+                "  Option B — pass a dotted module name instead of a file path:\n"
+                "             python -m executorch.devtools.observatory"
+                " <package>.<subpackage>.<module> [args...]"
+            )
+        elif mode == "module":
+            logging.error(
+                "  Hint: module '%s' could not be imported.\n"
+                "  Ensure the package root '%s' is on PYTHONPATH or the package is installed.",
+                target,
+                pkg_root or "unknown",
+            )
     except Exception as exc:
-        logging.error("[Observatory CLI] Script raised: %s", exc)
+        logging.error(
+            "[Observatory CLI] '%s' raised: %s  (run mode: %s, target: %s)",
+            os.path.basename(script_path),
+            exc,
+            mode,
+            target,
+        )
     finally:
         os.makedirs(os.path.dirname(output_html) or ".", exist_ok=True)
         os.makedirs(os.path.dirname(output_json) or ".", exist_ok=True)

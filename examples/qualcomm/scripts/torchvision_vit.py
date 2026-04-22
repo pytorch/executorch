@@ -87,7 +87,7 @@ def main(args):
     # ensure the working directory exist.
     os.makedirs(args.artifact, exist_ok=True)
 
-    data_num = 5
+    data_num = 100
     if args.ci:
         inputs = [(torch.rand(1, 3, 224, 224),)]
         logging.warning(
