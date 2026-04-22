@@ -126,6 +126,12 @@ if [ "$perf_overlay" = true ] && [ "$model_explorer" != true ]; then
     exit 1
 fi
 
+# Cortex-M backend is an operator-library, not a delegate; force-disable
+# --delegate when targeting cortex-m so users don't need --no_delegate.
+if [[ ${target} == cortex-m* ]]; then
+    aot_arm_compiler_flag_delegate=""
+fi
+
 if ! [[ ${pte_placement} == "elf" ]]; then
     if ! [[ "$pte_placement" =~ ^0x[0-9a-fA-F]{1,16}$ ]]; then
         echo "ERROR: Placing the PTE in memory failed, address is larger then 64bit $pte_placement"
@@ -347,6 +353,25 @@ for i in "${!test_model[@]}"; do
 
     if [[ ${target} == *"TOSA"*  ]]; then
         echo "Build for ${target} skip generating a .elf and running it"
+    elif [[ ${target} == cortex-m*  ]]; then
+        # Cortex-M backend uses a shared semihosting executor_runner (built
+        # by build_test_runner.sh) that loads the .bpte at runtime, rather
+        # than per-model runners with the PTE baked in.
+        if [ "$bundleio" != true ]; then
+            echo "Error: --target=${target} requires --bundleio (the cortex-m runner loads bundled inputs via semihosting)"
+            exit 1
+        fi
+        set -x
+        backends/cortex_m/test/build_test_runner.sh
+        cortex_m_elf="${et_root_dir}/arm_test/arm_semihosting_executor_runner_corstone-300/arm_executor_runner"
+        # The bundled-IO runner requires its -i argument to point at a real file
+        # even though inputs come from the bundle; write a placeholder next to
+        # the .bpte for run_fvp.sh to pass along.
+        dd if=/dev/zero of="$(dirname "${pte_file}")/fvp_dummy_input.bin" bs=4 count=1 2>/dev/null
+        if [ "$build_only" = false ] ; then
+            backends/arm/scripts/run_fvp.sh --elf="${cortex_m_elf}" --target="${target}" --bundle="${pte_file}"
+        fi
+        set +x
     elif [[ ${target} == *"vgf"*  ]]; then
         echo "Build and run for VKML, (target: ${target})"
         set -x
