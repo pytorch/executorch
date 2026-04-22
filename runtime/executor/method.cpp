@@ -210,10 +210,11 @@ class BackendDelegate final {
       }
       case executorch_flatbuffer::DataLocation::SEGMENT: {
         const char* backend_id = delegate.id()->c_str();
-        return program->LoadSegment(DataLoader::SegmentInfo(
-            DataLoader::SegmentInfo::Type::Backend,
-            processed->index(),
-            backend_id));
+        return program->LoadSegment(
+            DataLoader::SegmentInfo(
+                DataLoader::SegmentInfo::Type::Backend,
+                processed->index(),
+                backend_id));
       }
       default:
         ET_LOG(
@@ -492,9 +493,9 @@ Error Method::parse_values(const NamedDataMap* external_data_map) {
             static_cast<const executorch_flatbuffer::Int*>(val)->int_val());
       } break;
       case executorch_flatbuffer::KernelTypes::Double: {
-        new (&values_[i])
-            EValue(static_cast<const executorch_flatbuffer::Double*>(val)
-                       ->double_val());
+        new (&values_[i]) EValue(
+            static_cast<const executorch_flatbuffer::Double*>(val)
+                ->double_val());
       } break;
       case executorch_flatbuffer::KernelTypes::Bool: {
         new (&values_[i]) EValue(
@@ -1538,17 +1539,16 @@ Error Method::execute_instruction() {
       // We know that instr_args_as_FreeCall is non-null because it was checked
       // at init time.
       auto free_call = instruction->instr_args_as_FreeCall();
-      auto& val = mutable_value(free_call->value_index());
-      if (val.isTensor()) {
-        auto& t = val.toTensor();
-        internal::reset_data_ptr(t);
-      } else {
+      auto t = mutable_value(free_call->value_index()).tryToTensor();
+      if (!t.ok()) {
         ET_LOG(
             Error,
             "FreeCall target at index %u is not a Tensor",
             static_cast<unsigned int>(free_call->value_index()));
-        err = Error::InvalidProgram;
+        err = t.error();
+        break;
       }
+      internal::reset_data_ptr(t.get());
     } break;
     default:
       ET_LOG(
