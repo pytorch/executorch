@@ -258,11 +258,14 @@ class PatternQuantizer(Quantizer, QuantizerReporterUser):
     def get_quantizer_info(self):
         name = self.__class__.__name__
         targeted_nodes_description = str(self.node_finder)
-        qconfig_label = (
-            self.quantization_config.label
-            if self.quantization_config.label is not None
-            else self.quantization_config.__class__.__name__  # no label, fallback to class name
-        )
+        if self.quantization_config is None:
+            qconfig_label = "NO_QCONFIG"
+        else:
+            qconfig_label = (
+                self.quantization_config.label
+                if self.quantization_config.label is not None
+                else self.quantization_config.__class__.__name__  # no label, fallback to class name
+            )
         support_config_path = self.pattern_matcher.support_dict_name
 
         return QuantizerInfo(
