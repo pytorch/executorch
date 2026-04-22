@@ -22,7 +22,9 @@
 #include <string>
 #include <vector>
 
+#ifdef EXECUTORCH_BUILD_CUDA
 #include <cuda_runtime.h>
+#endif
 
 DEFINE_string(model_path, "", "Model .pte file path.");
 DEFINE_string(data_path, "", "Data file (.ptd) for CUDA backend.");
@@ -129,7 +131,13 @@ int main(int argc, char** argv) {
   uint64_t cur_token = 0;
   auto prefill_start = std::chrono::steady_clock::now();
 
-  // Chunked prefill
+  // Use prefill method for T>=2, decode method for T=1
+  // (prefill was exported with min seq_len=2)
+  std::string run_method = prefill_method;
+  if (dual_method && num_prompt_tokens == 1) {
+    run_method = "decode";
+  }
+
   std::vector<int64_t> pos_data(num_prompt_tokens);
   for (int64_t i = 0; i < num_prompt_tokens; i++) {
     pos_data[i] = i;
@@ -148,7 +156,7 @@ int main(int argc, char** argv) {
   prefill_inputs.push_back(tokens_tensor);
   prefill_inputs.push_back(pos_tensor);
 
-  auto prefill_result = module->execute("prefill", prefill_inputs);
+  auto prefill_result = module->execute(run_method, prefill_inputs);
   if (prefill_result.error() != Error::Ok) {
     ET_LOG(Error, "Prefill failed");
     return 1;
@@ -170,10 +178,12 @@ int main(int argc, char** argv) {
       prefill_ms,
       num_prompt_tokens * 1000.0 / prefill_ms);
 
+#ifdef EXECUTORCH_BUILD_CUDA
   // Synchronize CUDA device to ensure prefill's writes to shared mutable
   // buffers (KV cache, conv_state, recurrent_state) are visible to the
   // decode method, which may run on a different CUDA stream.
   cudaDeviceSynchronize();
+#endif
 
   // ---------------------------------------------------------------
   // Decode — generate tokens one at a time
