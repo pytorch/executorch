@@ -353,7 +353,7 @@ class TestTargetRecipes(unittest.TestCase):
             },
             "mv2": {
                 "ios-arm64-coreml-fp16": (5e-2, 5e-2, 20),
-                "ios-arm64-coreml-int8": (2e-1, 2e-1, 20),
+                "ios-arm64-coreml-int8": (2e-1, 2e-1, 15),
                 "android-arm64-snapdragon-fp16": (1e-2, 5e-2, None),
             },
             "mv3": {

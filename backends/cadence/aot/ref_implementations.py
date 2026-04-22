@@ -1449,6 +1449,7 @@ def quantized_conv2d_nhwc_per_tensor(
     output_zero_point: int,
     out_multiplier: int,
     out_shift: int,
+    offset: torch.Tensor | None = None,
 ) -> torch.Tensor:
     """
     Quantized convolution operation.
