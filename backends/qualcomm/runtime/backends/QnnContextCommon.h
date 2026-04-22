@@ -25,12 +25,14 @@ class QnnContext {
  public:
   explicit QnnContext(
       QnnImplementation* implementation,
+      QnnSystemImplementation* system_implementation,
       QnnBackend* backend,
       QnnDevice* device,
       QnnBackendCache* cache,
       QnnDlcManager* qnn_dlc_manager)
       : handle_(nullptr),
         implementation_(implementation),
+        system_implementation_(system_implementation),
         backend_(backend),
         device_(device),
         cache_(cache),
@@ -75,6 +77,7 @@ class QnnContext {
  private:
   Qnn_ContextHandle_t handle_;
   QnnImplementation* implementation_;
+  QnnSystemImplementation* system_implementation_;
   QnnBackend* backend_;
   QnnDevice* device_;
   QnnBackendCache* cache_;

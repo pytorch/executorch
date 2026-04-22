@@ -17,6 +17,7 @@ using executorch::runtime::Error;
 
 std::unique_ptr<BackendConfigParameters> QnnBackendFactory::Create(
     QnnImplementation* implementation_ptr,
+    QnnSystemImplementation* system_implementation_ptr,
     QnnBackend* qnn_backend_ptr,
     QnnDevice* qnn_device_ptr,
     const QnnExecuTorchContextBinary& qnn_context_blob,
@@ -67,6 +68,7 @@ std::unique_ptr<BackendConfigParameters> QnnBackendFactory::Create(
 
       backend_params->qnn_context_ptr_ = std::make_unique<HtpContext>(
           implementation_ptr,
+          system_implementation_ptr,
           qnn_backend_ptr,
           qnn_device_ptr,
           backend_params->qnn_backend_cache_ptr_.get(),
@@ -110,6 +112,7 @@ std::unique_ptr<BackendConfigParameters> QnnBackendFactory::Create(
 
       backend_params->qnn_context_ptr_ = std::make_unique<GpuContext>(
           implementation_ptr,
+          system_implementation_ptr,
           qnn_backend_ptr,
           qnn_device_ptr,
           backend_params->qnn_backend_cache_ptr_.get(),
@@ -154,6 +157,7 @@ std::unique_ptr<BackendConfigParameters> QnnBackendFactory::Create(
 
       backend_params->qnn_context_ptr_ = std::make_unique<LpaiContext>(
           implementation_ptr,
+          system_implementation_ptr,
           qnn_backend_ptr,
           qnn_device_ptr,
           backend_params->qnn_backend_cache_ptr_.get(),

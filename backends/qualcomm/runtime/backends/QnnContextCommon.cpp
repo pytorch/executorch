@@ -86,9 +86,9 @@ Error QnnContext::Configure() {
     return Error::Internal;
   }
   if (cache_->GetCacheState() == QnnBackendCache::ONLINE_PREPARE) {
-    // Register graphs from DLC during online prepare for HTP/GPU/DSP backends
+    // The place is used for runtime
     return qnn_dlc_manager_->RegisterGraphsFromDLC(
-        implementation_, backend_, this, cache_);
+        implementation_, system_implementation_, backend_, this, cache_);
   }
   return Error::Ok;
 }

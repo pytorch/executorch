@@ -306,7 +306,6 @@ class SimpleADB:
             traditional_general_artifacts = [
                 f"{self.qnn_sdk}/lib/{self.target}/libQnnSystem.so",
                 f"{self.build_path}/backends/qualcomm/libqnn_executorch_backend.so",
-                f"{self.qnn_sdk}/lib/{self.target}/libQnnModelDlc.so",
             ]
             self.backend_library_paths.update(
                 {
@@ -352,9 +351,11 @@ class SimpleADB:
             )
             output_callback(result)
         else:
-            subprocess.run(
+            result = subprocess.run(
                 cmds, stdout=subprocess.DEVNULL if self.error_only else sys.stdout
             )
+        if result.returncode != 0:
+            raise RuntimeError(f"adb command failed: {cmds}")
 
     def push(  # noqa: C901
         self,

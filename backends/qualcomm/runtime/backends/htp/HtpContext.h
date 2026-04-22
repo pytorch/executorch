@@ -21,12 +21,19 @@ class HtpContext : public QnnContext {
  public:
   HtpContext(
       QnnImplementation* implementation,
+      QnnSystemImplementation* system_implementation,
       QnnBackend* backend,
       QnnDevice* device,
       QnnBackendCache* cache,
       const QnnExecuTorchHtpBackendOptions* htp_options,
       QnnDlcManager* qnn_dlc_manager)
-      : QnnContext(implementation, backend, device, cache, qnn_dlc_manager) {
+      : QnnContext(
+            implementation,
+            system_implementation,
+            backend,
+            device,
+            cache,
+            qnn_dlc_manager) {
     htp_context_custom_config_ =
         std::make_unique<HtpContextCustomConfig>(this, htp_options);
   }

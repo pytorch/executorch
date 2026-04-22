@@ -152,8 +152,15 @@ Error QnnBackendUnifiedRegistry::GetOrCreateBackendBundle(
   if (backend->VerifyQNNSDKVersion() != Error::Ok) {
     return Error::Internal;
   }
+  // 5. Create QnnSystemImplementation and load qnn library
+  std::unique_ptr<QnnSystemImplementation> system_implementation =
+      std::make_unique<QnnSystemImplementation>("libQnnSystem.so");
+  ret = system_implementation->Load();
+  ET_CHECK_OR_RETURN_ERROR(
+      ret == Error::Ok, Internal, "Fail to load Qnn system library");
 
   bundle->implementation = std::move(implementation);
+  bundle->system_implementation = std::move(system_implementation);
   bundle->qnn_logger_ptr = std::move(logger);
   bundle->qnn_backend_ptr = std::move(backend);
   bundle->qnn_device_ptr = std::move(device);
