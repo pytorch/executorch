@@ -91,7 +91,7 @@ def broadcast_tensors(tosa_fb, nodes: list[Node]) -> list[Any]:
 
     broadcast_tensors = []
     for node in nodes:
-        tens_dtype, tens_shape, _ = extract_tensor_meta(node.meta)
+        tens_dtype, tens_shape = extract_tensor_meta(node.meta)
         list_tens_shape = list(tens_shape)
         # Already in the right shape we can just add it to the list.
         if list_tens_shape == common_shape:
@@ -163,24 +163,6 @@ def build_reshape_tosa(
     )
 
 
-def tosa_shape(shape, dim_order):
-    """Reorder a shape tuple into TOSA layout while resolving symints.
-
-    Args:
-        shape (Sequence[int | torch.SymInt]): Original tensor shape,
-            possibly containing ``torch.SymInt``.
-        dim_order (Sequence[int]): Desired dimension order for the output
-            shape.
-
-    Returns:
-        list[int]: List containing the reordered dimensions where symbolic
-            values become ``-1``.
-
-    """
-    reordered = tuple([shape[dim] for dim in dim_order])
-    # Dynamic shapes in executorch are represented with torch.SymInt objects in the shapes,
-    # in TOSA we do not have this concept and instead use -1.
-    removed_symints = tuple(
-        [-1 if isinstance(d, torch.SymInt) else d for d in reordered]
-    )
-    return list(removed_symints)
+def tosa_shape(shape):
+    """Convert a shape tuple to a TOSA-compatible list, resolving symints."""
+    return list([-1 if isinstance(d, torch.SymInt) else d for d in shape])

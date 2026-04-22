@@ -116,14 +116,13 @@ def map_dtype(data_type: torch.dtype) -> Any:
 # TODO: other types, can be
 # SymInt, FakeTensor, a List[Union[FakeTensor, SymInt]], or None
 def extract_tensor_meta(meta):
-    """Extract dtype, shape, and dimension order from FX metadata.
+    """Extract dtype and shape from FX metadata.
 
     Args:
         meta (dict): FX node ``meta`` containing a ``val`` FakeTensor (or tuple).
 
     Returns:
-        tuple[ts.DType, tuple[int, ...], tuple[int, ...]]: Tuple containing
-        tensor dtype, shape, and dimension order.
+        tuple[ts.DType, tuple[int, ...]]: Tuple containing tensor dtype and shape.
 
     Raises:
         ValueError: If ``meta['val']`` is not a ``FakeTensor``.
@@ -132,7 +131,7 @@ def extract_tensor_meta(meta):
     special_dtype = meta.get(TosaSpecialDtype.meta_key())
     if special_dtype == TosaSpecialDtype.SHAPE:
         shape_len = len(meta["val"])
-        return (ts.DType.SHAPE, (shape_len,), meta["tosa_dim_order"])
+        return (ts.DType.SHAPE, (shape_len,))
 
     if meta.get("val") is None:
         raise ValueError("Expected node.meta['val'] to be set to a FakeTensor")
@@ -153,11 +152,7 @@ def extract_tensor_meta(meta):
     dtype = map_dtype(val.dtype)
     shape = tuple(val.size())
 
-    if meta.get("tosa_dim_order") is not None:
-        dim_order = meta["tosa_dim_order"]
-    else:
-        dim_order = tuple(range(len(shape)))
-    return (dtype, shape, dim_order)
+    return (dtype, shape)
 
 
 class TosaArg:
@@ -171,8 +166,6 @@ class TosaArg:
             otherwise.
         dtype (ts.DType | None): Inferred dtype when available.
         shape (tuple[int, ...] | None): Inferred shape when available.
-        dim_order (tuple[int, ...] | None): Dimension order, defaulting to
-            ``range(len(shape))``.
         special (list | None): Captured list when the argument is a sequence.
         number (float | int | None): Captured numeric value when provided.
         multiple_output_name (list[str]): Output node names when node has multiple outputs; empty otherwise.
@@ -190,7 +183,7 @@ class TosaArg:
         self.name = argument.name + suffix
 
         if "val" in argument.meta:
-            output_dtype, self.shape, self.dim_order = extract_tensor_meta(
+            output_dtype, self.shape = extract_tensor_meta(
                 argument.meta
             )  # Handle special case of types not representable in torch (i.e. i48_t)
             if special_type := argument.meta.get(TosaSpecialDtype.meta_key(), None):
@@ -277,7 +270,6 @@ class TosaArg:
             self.name = ""
             self.dtype = None
             self.shape = None
-            self.dim_order = None
             return
 
         raise RuntimeError(
@@ -299,8 +291,6 @@ class TosaArg:
                 attrs.append(f"dtype={ts.DTypeNames[self.dtype]}")
             if self.shape is not None:
                 attrs.append(f"shape={self.shape!r}")
-            if self.dim_order is not None:
-                attrs.append(f"dim_order={self.dim_order!r}")
         if hasattr(self, "special") and self.special is not None:
             attrs.append(f"special={self.special!r}")
         if hasattr(self, "number") and self.number is not None:

@@ -19,11 +19,6 @@ from executorch.backends.arm._passes.convert_permute_singleton_to_view_pass impo
     is_singleton_permutation,
 )
 from executorch.backends.arm._passes.insert_table_ops import TableOps
-from executorch.backends.arm._passes.to_tosa_memory_format_pass import (
-    ToTosaMemoryFormatPass,
-)
-from executorch.backends.arm.operators.op_permute import transform_permutation_vector
-from executorch.backends.arm.tosa.utils import tosa_shape
 from executorch.exir.backend.utils import WhyNoPartitionReporter
 from executorch.exir.dialects._ops import ops as exir_ops
 from torch.fx.passes.operator_support import OperatorSupportBase
@@ -354,125 +349,6 @@ class EthosU55ViewCheck(OperatorSupportBase):
 
         return True
 
-    @staticmethod
-    def _spatial_rank(rank: int) -> int:
-        assert rank < 5, "Spatial rank determination only valid for rank <5."
-        if rank == 4:
-            return 2
-        if rank == 3:
-            return 1
-        return 0
-
-    def _transpose_requirements(
-        self, input_shape: shape_t, output_shape: shape_t
-    ) -> tuple[bool, bool]:
-        """Determine if reshaping requires input or output transposes. For ranks
-        >4, assume transpose is needed as we cannot determine the spatial rank
-        reliably which is needed to determine if a transpose is needed.
-
-        Args:
-            input_shape (shape_t): Original tensor shape.
-            output_shape (shape_t): Reshaped tensor shape.
-
-        Returns:
-            tuple[bool, bool]: ``(needs_input_transpose, needs_output_transpose)``.
-
-        """
-        input_rank = len(input_shape)
-        output_rank = len(output_shape)
-        if input_rank > 4 and output_rank <= 4:
-            # Assume input needs transpose if going from high-rank to low-rank
-            return (
-                True,
-                output_rank == 4
-                and ToTosaMemoryFormatPass.memory_format_differs(
-                    output_shape, self._spatial_rank(output_rank)
-                ),
-            )
-        elif input_rank <= 4 and output_rank > 4:
-            # Assume output needs transpose if going from low-rank to high-rank
-            return (
-                input_rank == 4
-                and ToTosaMemoryFormatPass.memory_format_differs(
-                    input_shape, self._spatial_rank(input_rank)
-                ),
-                True,
-            )
-
-        input_sr = self._spatial_rank(input_rank)
-        output_sr = self._spatial_rank(output_rank)
-        nhwc_to_nchw = input_rank >= 4 and output_rank < 4
-        nchw_to_nhwc = input_rank < 4 and output_rank >= 4
-        channel_reshape = ToTosaMemoryFormatPass.is_channel_reshape(
-            input_shape, output_shape, input_sr, output_sr
-        )
-
-        needs_input_transpose = (
-            channel_reshape or nhwc_to_nchw
-        ) and ToTosaMemoryFormatPass.memory_format_differs(input_shape, input_sr)
-        needs_output_transpose = (
-            channel_reshape or nchw_to_nhwc
-        ) and ToTosaMemoryFormatPass.memory_format_differs(output_shape, output_sr)
-        return needs_input_transpose, needs_output_transpose
-
-    def _check_transpose_constraints(
-        self,
-        node: fx.Node,
-        dtype: torch.dtype | None,
-        input_shape: shape_t,
-        output_shape: shape_t,
-        needs_input_transpose: bool,
-        needs_output_transpose: bool,
-    ) -> bool:
-        """Apply dtype- and size-based constraints for transpose insertions.
-
-        based on:
-            - NCHW -> NHWC or NHWC -> NCHW transposes are not supported in int32.
-            - Transposes with product of axes >65536 are not supported.
-
-        Args:
-            node (fx.Node): Node requiring validation.
-            dtype (torch.dtype | None): Resolved dtype of the reshape.
-            input_shape (shape_t): Source tensor shape.
-            output_shape (shape_t): Destination tensor shape.
-            needs_input_transpose (bool): Whether an input transpose is expected.
-            needs_output_transpose (bool): Whether an output transpose is expected.
-
-        Returns:
-            bool: ``True`` if any implied transpose satisfies U55 limits.
-
-        """
-        if dtype == torch.int32 and (needs_input_transpose or needs_output_transpose):
-            self.reporter.report_reject(
-                node,
-                "Operator requires transpose operator. No support for transpose with "
-                "rank >= 4 in int32, got rank=4.",
-            )
-            return False
-
-        if (
-            needs_input_transpose
-            and self.axes_product(input_shape) > self._MAX_AXIS_PRODUCT
-        ):
-            self.reporter.report_reject(
-                node,
-                f"Operator requires transpose operator. No support for {input_shape=}, "
-                f"{dtype=}. Product of axes must be <{self._MAX_AXIS_PRODUCT}",
-            )
-            return False
-        if (
-            needs_output_transpose
-            and self.axes_product(output_shape) > self._MAX_AXIS_PRODUCT
-        ):
-            self.reporter.report_reject(
-                node,
-                f"Operator requires transpose operator. No support for {output_shape=}, "
-                f"{dtype=}. Product of axes must be <{self._MAX_AXIS_PRODUCT}",
-            )
-            return False
-
-        return True
-
     # TODO: Extend this check to comply with u55 restrictions
     def is_node_supported(
         self, submodules: typing.Mapping[str, torch.nn.Module], node: fx.Node
@@ -480,16 +356,6 @@ class EthosU55ViewCheck(OperatorSupportBase):
         """Check whether a given view/select node is U55-supported.
 
         Currently only checks dtypes and product of axes.
-
-        It is not the view operator itself that is not supported on U55. In
-        order for the view operator to be compatible with the channels-last
-        format of TosaBackend, transposes may need to be inserted before and
-        after the view op. If that happens and that transpose operator does not
-        adhere to the limitations then it will result in the following error:
-
-            CPU performance estimation for "Transpose" not implemented.
-            ...
-            CPU operations are not supported for GraphAPI input
 
         Args:
             submodules (typing.Mapping[str, torch.nn.Module]): Exported modules.
@@ -511,40 +377,22 @@ class EthosU55ViewCheck(OperatorSupportBase):
             return True
 
         shape = list(get_first_fake_tensor(node).shape)
-        output_rank = len(shape)
         dtype = _try_determine_dtype(node)
 
         if node.target in (
             exir_ops.edge.aten.select.int,
             exir_ops.edge.aten.select_copy.int,
         ):
-            # For select, the transpose condition should be applied on the output of the slice
-            # which has the same shape as the input except the selected dimension is 1.
             input_shape = list(get_first_fake_tensor(node.all_input_nodes[0]).shape)
             dim = typing.cast(int, node.args[1])
             input_shape[dim] = 1
         else:
             input_shape = list(get_first_fake_tensor(node.all_input_nodes[0]).shape)
-        input_rank = len(input_shape)
 
         if not self._check_rank_constraints(node, input_shape, shape, dtype):
             return False
-        if input_rank > 4 and output_rank > 4:
-            # If both input and output have rank >4, and passed the above checks, we can accept
-            # the node
-            return True
 
-        needs_input_transpose, needs_output_transpose = self._transpose_requirements(
-            input_shape, shape
-        )
-        return self._check_transpose_constraints(
-            node,
-            dtype,
-            input_shape,
-            shape,
-            needs_input_transpose,
-            needs_output_transpose,
-        )
+        return True
 
 
 class EthosU55TransposeCheck(OperatorSupportBase):
@@ -688,24 +536,12 @@ class EthosU55TransposeCheck(OperatorSupportBase):
 
         shape, permutation = self._pad_to_rank_4(shape, permutation)
         if rank == 3 or rank == 4:
-            # For rank 3 and 4, we can have channels first or channels last dim order.
-            # Since we don't know which at partition-time, test both.
-
-            nhwc_shape = tosa_shape(shape, [0, 2, 3, 1])
-            nhwc_permutation = transform_permutation_vector(permutation, [0, 2, 3, 1])
-
-            if not self._permute_constraint(nhwc_shape, nhwc_permutation, dtype):
+            if not self._permute_constraint(shape, permutation, dtype):
                 self.reporter.report_reject(
                     node,
-                    f"Unsupported NHWC {nhwc_shape=} for {nhwc_permutation=}, {dtype=}",
+                    f"Unsupported {shape=} for {permutation=}, {dtype=}",
                 )
                 return False
-
-        if not self._permute_constraint(shape, permutation, dtype):
-            self.reporter.report_reject(
-                node, f"Unsupported NCHW {shape=} for {permutation=}, {dtype=}"
-            )
-            return False
 
         return True
 

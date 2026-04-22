@@ -149,15 +149,13 @@ def test_view_vgf_quant(test_data: Tuple):
 
 @common.parametrize("test_data", View.rank_product_too_large)
 @common.XfailIfNoCorstone300
-def test_view_u55_INT_not_delegated(test_data: Tuple):
+def test_view_u55_INT_large(test_data: Tuple):
     test_tensor, new_shape = test_data()
-    pipeline = OpNotSupportedPipeline[input_t1](
+    pipeline = EthosU55PipelineINT[input_t1](
         View(new_shape),
         (test_tensor,),
-        {"executorch_exir_dialects_edge__ops_aten_view_copy": 1},
-        n_expected_delegates=1,
-        quantize=True,
-        u55_subset=True,
+        aten_op,
+        exir_ops=[],
     )
     pipeline.run()
 

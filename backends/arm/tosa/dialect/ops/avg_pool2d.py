@@ -3,6 +3,7 @@
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
 
+import math
 from typing import List, Union
 
 import torch
@@ -27,66 +28,33 @@ def AVG_POOL2D(
     pad: List[Union[int, torch.SymInt]],
     acc_type: torch.dtype,
 ) -> torch.Tensor:
-    """Compute output meta for a TOSA AVG_POOL2D operation."""
     tosa_spec = get_context_spec()
 
-    # Validate dtype support
-    supported_int_types = [torch.int8]
-    supported_float_types = [
-        torch.float16,
-        torch.float32,
-    ]
+    supported_dtypes = []
+    if tosa_spec.support_integer():
+        supported_dtypes.extend([torch.int8])
+    if tosa_spec.support_float():
+        supported_dtypes.extend([torch.float16, torch.float32])
     if tosa_spec.support_extension("bf16"):
-        supported_float_types.append(torch.bfloat16)
+        supported_dtypes.append(torch.bfloat16)
     if tosa_spec.support_extension("int16"):
-        supported_int_types.append(torch.int16)
+        supported_dtypes.append(torch.int16)
 
-    if x.dtype in supported_int_types:
-        if not tosa_spec.support_integer():
-            raise TosaValueError(
-                f"TOSA spec {tosa_spec} doesn't support integer pools", op="AVG_POOL2D"
-            )
-    elif x.dtype in supported_float_types:
-        if not tosa_spec.support_float():
-            raise TosaValueError(
-                f"TOSA spec {tosa_spec} doesn't support float pools", op="AVG_POOL2D"
-            )
-    else:
+    if x.dtype not in supported_dtypes:
         raise TosaValueError(
-            f"Unsupported input dtype {x.dtype} for TOSA AVG_POOL2D", op="AVG_POOL2D"
-        )
-
-    # Validate input dimensions
-    if x.dim() != 4:
-        raise TosaValueError(
-            f"AVG_POOL2D requires a 4D tensor, got {x.dim()}D", op="AVG_POOL2D"
-        )
-
-    # Validate kernel, stride, pad lengths
-    if len(kernel) != 2 or len(stride) != 2 or len(pad) != 4:
-        raise TosaValueError(
-            f"AVG_POOL2D expects kernel of length 2, stride of length 2, pad of length 4; got "
-            f"kernel={kernel}, stride={stride}, pad={pad}",
+            f"Unsupported input dtype {x.dtype}, supported types are {supported_dtypes}",
             op="AVG_POOL2D",
         )
 
-    # Validate and determine accumulator (output) dtype: only FP32 or INT32
-    acc_allowed = [torch.float32, torch.int32]
-    if acc_type not in acc_allowed:
-        raise TosaValueError(
-            f"Unsupported acc_type {acc_type} for TOSA AVG_POOL2D; "
-            f"must be one of {acc_allowed}",
-            op="AVG_POOL2D",
-        )
-    # Unpack dimensions and parameters; zero-points are not used for shape
-    n, c, h, w = x.shape
+    # Input is NHWC: [N, H, W, C]
+    N = x.shape[0]
+    H_in = x.shape[1]
+    W_in = x.shape[2]
+    C = x.shape[3]
 
-    k_h, k_w = kernel
-    s_h, s_w = stride
-    p_top, p_left, p_bot, p_right = pad
-    # Compute output spatial dimensions (floor division)
-    h_out = (h + p_top + p_left - k_h) // s_h + 1
-    w_out = (w + p_bot + p_right - k_w) // s_w + 1
+    # pad is [top, bottom, left, right]
+    H_out = math.floor((H_in + pad[0] + pad[1] - kernel[0]) / stride[0]) + 1
+    W_out = math.floor((W_in + pad[2] + pad[3] - kernel[1]) / stride[1]) + 1
 
-    # Return a tensor with the computed shape and dtype
-    return torch.empty(size=[n, c, h_out, w_out], dtype=x.dtype)
+    output_shape = [N, H_out, W_out, C]
+    return x.new_empty(output_shape, dtype=x.dtype)

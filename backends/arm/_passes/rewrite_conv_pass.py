@@ -5,7 +5,7 @@
 
 
 import itertools
-from typing import Any, Set, Type
+from typing import Any, cast, Set, Type
 
 import torch
 from executorch.backends.arm._passes import ArmPass
@@ -21,6 +21,7 @@ from executorch.backends.arm._passes.fold_qdq_with_annotated_qparams_pass import
     get_input_qparams,
     get_output_qparams,
 )
+from executorch.backends.arm._passes.quant_args import QuantArgs
 from executorch.backends.arm.constants import HWCM_ORDER, NHWC_INVERSE_ORDER
 from executorch.backends.arm.tosa.mapping import TosaSpecialDtype
 from executorch.backends.arm.tosa.specification import get_context_shape_env
@@ -41,6 +42,22 @@ class RewriteConvPass(ArmPass):
         self.exported_program = exported_program
 
     _passes_required_after: Set[Type[ExportPass]] = set()
+
+    @staticmethod
+    def _nchw_to_nhwc_perm(rank: int) -> list[int]:
+        if rank == 4:
+            return [0, 2, 3, 1]
+        if rank == 5:
+            return [0, 2, 3, 4, 1]
+        return list(range(rank))
+
+    @staticmethod
+    def _nhwc_to_nchw_perm(rank: int) -> list[int]:
+        if rank == 4:
+            return [0, 3, 1, 2]
+        if rank == 5:
+            return [0, 4, 1, 2, 3]
+        return list(range(rank))
 
     # torch.nn.Conv2d does not require the result of
     # `(input + 2 * pad - dilation * (weight - 1) - 1) / stride`
@@ -264,6 +281,372 @@ class RewriteConvPass(ArmPass):
             )
         return rescale_node
 
+    def _insert_permute(self, graph_module, anchor_node, input_node, perm, before=True):
+        ctx = (
+            graph_module.graph.inserting_before(anchor_node)
+            if before
+            else graph_module.graph.inserting_after(anchor_node)
+        )
+        with ctx:
+            return create_node(
+                graph=graph_module.graph,
+                op_target=exir_ops.edge.aten.permute_copy.default,
+                args=(input_node, perm),
+                from_node=input_node,
+            )
+
+    def _is_grouped_conv(self, node: torch.fx.Node) -> bool:
+        """Return True for grouped convolutions that need decomposition.
+
+        Depthwise convolutions (groups == in_channels) are handled natively
+        by TOSA and are *not* considered grouped here.
+        """
+        groups = node.args[-1]
+        if groups <= 1:
+            return False
+        input_tensor = get_first_fake_tensor(node.all_input_nodes[0])
+        if len(input_tensor.shape) != 4:
+            return False
+        return not self._is_depthwise_conv2d(node)
+
+    def _handle_grouped_conv(  # noqa: C901
+        self,
+        graph_module: torch.fx.GraphModule,
+        node: torch.fx.Node,
+        x: torch.fx.Node,
+        weight: torch.fx.Node,
+        bias: torch.fx.Node | None,
+        stride_list: list[int],
+        pad_list: list[int],
+        dilation_list: list[int],
+        group: int,
+        input_shape: torch.Size,
+        weight_shape: torch.Size,
+        spatial_rank: int,
+        rank: int,
+    ) -> torch.fx.Node:
+        """Decompose a grouped conv into per-group TOSA.CONV2D ops in NHWC.
+
+        Produces a single input permute (NCHW→NHWC) and a single output
+        permute (NHWC→NCHW), with the per-group slice / conv / cat operating
+        entirely in NHWC.  This avoids the problematic pattern of one permute
+        pair per sub-conv that downstream optimisation passes can mishandle.
+        """
+        nchw_to_nhwc = self._nchw_to_nhwc_perm(rank)
+        nhwc_to_nchw = self._nhwc_to_nchw_perm(rank)
+        nhwc_channel_dim = rank - 1
+
+        in_channels = input_shape[1]
+        out_channels = get_first_fake_tensor(node).shape[1]
+        input_slice_size = in_channels // group
+        output_slice_size = out_channels // group
+
+        # Compute TOSA pad attribute (same logic as the non-grouped path).
+        pad_attr: list[int] = []
+        for value in pad_list:
+            pad_attr.extend([value, value])
+        for axis_index in range(spatial_rank):
+            pad_index = axis_index * 2 + 1
+            pad_attr[pad_index] = self._adjust_pad_if_needed(
+                input_shape[axis_index + 2],
+                weight_shape[axis_index + 2],
+                stride_list[axis_index],
+                pad_attr[pad_index],
+                dilation_list[axis_index],
+            )
+        stride_tuple = tuple(stride_list)
+        dilation_tuple = tuple(dilation_list)
+
+        weight_perm = self._nchw_to_nhwc_perm(len(weight_shape))
+
+        # ---- Quantisation info ------------------------------------------
+        input_dtype = get_first_fake_tensor(x).dtype
+        is_quantized = self._is_quantized_conv(node)
+        has_qparam_bias = (
+            is_quantized and len(node.meta.get("input_qparams", {})) > 2
+        )
+        is_int8 = is_quantized and input_dtype == torch.int8
+        is_int16_with_bias = (
+            is_quantized and input_dtype == torch.int16 and has_qparam_bias
+        )
+        is_int16_no_bias = (
+            is_quantized and input_dtype == torch.int16 and not has_qparam_bias
+        )
+
+        original_bias = bias  # Keep for INT16+bias decomposition
+
+        # Pre-compute rescale factors for INT8 / INT16-no-bias paths.
+        full_weight_scale: list[float] = []
+        input_scale = 0.0
+        output_scale = 0.0
+        output_zp = 0
+        rescale_dtype = torch.int8
+        if is_int8 or is_int16_no_bias:
+            iq = get_input_qparams(node)
+            oq = self._get_effective_output_qparams(node)[0]
+            wq = iq[1]
+            if wq.per_channel:
+                full_weight_scale = wq.get_scale_per_channel()
+            else:
+                full_weight_scale = [wq.get_scale_per_tensor()]
+            input_scale = iq[0].get_scale_per_tensor()
+            output_scale = oq.get_scale_per_tensor()
+            output_zp = oq.get_zp_per_tensor()
+            rescale_dtype = oq.dtype
+
+        # ---- ONE input permute NCHW→NHWC --------------------------------
+        x_permuted = self._insert_permute(
+            graph_module, node, x, nchw_to_nhwc, before=True
+        )
+
+        group_outputs: list[torch.fx.Node] = []
+        cursor = node
+
+        for g in range(group):
+            # Slice NHWC input along channel dim
+            with graph_module.graph.inserting_before(node):
+                sliced_input = create_node(
+                    graph=graph_module.graph,
+                    op_target=exir_ops.edge.aten.slice_copy.Tensor,
+                    args=(
+                        x_permuted,
+                        nhwc_channel_dim,
+                        g * input_slice_size,
+                        (g + 1) * input_slice_size,
+                    ),
+                    from_node=x,
+                )
+
+            # Slice weight along output-channel dim (dim 0 in OIHW)
+            with graph_module.graph.inserting_before(node):
+                sliced_weight = create_node(
+                    graph=graph_module.graph,
+                    op_target=exir_ops.edge.aten.slice_copy.Tensor,
+                    args=(
+                        weight,
+                        0,
+                        g * output_slice_size,
+                        (g + 1) * output_slice_size,
+                    ),
+                    from_node=weight,
+                )
+
+            # Permute weight OIHW→OHWI
+            sliced_weight_permuted = self._insert_permute(
+                graph_module, node, sliced_weight, weight_perm, before=True
+            )
+
+            # ---- Per-group bias -----------------------------------------
+            if is_int16_with_bias or is_int16_no_bias:
+                # INT16: TOSA conv always needs an INT48-tagged zero bias.
+                # Create a fresh per-group constant so the tag survives
+                # constant-folding passes.
+                zb = torch.zeros(size=(output_slice_size,), dtype=torch.int32)
+                with graph_module.graph.inserting_after(weight):
+                    group_bias = create_constant_placeholder(
+                        self.exported_program,
+                        graph=graph_module.graph,
+                        kind=InputKind.PARAMETER,
+                        data=zb,
+                        persistent_buffer=True,
+                        name=f"{node.name}_g{g}_zero_bias",
+                    )
+                    group_bias.meta[
+                        TosaSpecialDtype.meta_key()
+                    ] = TosaSpecialDtype.INT48
+            elif bias is not None:
+                with graph_module.graph.inserting_before(node):
+                    group_bias = create_node(
+                        graph=graph_module.graph,
+                        op_target=exir_ops.edge.aten.slice_copy.Tensor,
+                        args=(
+                            bias,
+                            0,
+                            g * output_slice_size,
+                            (g + 1) * output_slice_size,
+                        ),
+                        from_node=bias,
+                    )
+                # Propagate INT48 tag from parent bias if present.
+                if bias.meta.get(TosaSpecialDtype.meta_key()) == TosaSpecialDtype.INT48:
+                    group_bias.meta[
+                        TosaSpecialDtype.meta_key()
+                    ] = TosaSpecialDtype.INT48
+            else:
+                dtype = torch.int32 if is_quantized else node.meta["val"].dtype
+                zb = torch.zeros(size=(output_slice_size,), dtype=dtype)
+                with graph_module.graph.inserting_after(weight):
+                    group_bias = create_constant_placeholder(
+                        self.exported_program,
+                        graph=graph_module.graph,
+                        kind=InputKind.PARAMETER,
+                        data=zb,
+                        persistent_buffer=True,
+                        name=f"{node.name}_g{g}_bias",
+                    )
+                    if input_dtype == torch.int16:
+                        group_bias.meta[
+                            TosaSpecialDtype.meta_key()
+                        ] = TosaSpecialDtype.INT48
+
+            # ---- TOSA.CONV2D --------------------------------------------
+            conv_args = (
+                sliced_input,
+                sliced_weight_permuted,
+                group_bias,
+                stride_tuple,
+                pad_attr,
+                dilation_tuple,
+            )
+            with graph_module.graph.inserting_after(cursor):
+                tosa_op = create_node(
+                    graph=graph_module.graph,
+                    op_target=exir_ops.backend.tosa.CONV2D.default,
+                    args=conv_args,
+                    from_node=node,
+                    inherit_qparams=True,
+                )
+            cursor = tosa_op
+
+            # ---- Per-group quantised output -----------------------------
+            if is_int8 or is_int16_no_bias:
+                if len(full_weight_scale) > 1:  # per-channel
+                    gws = full_weight_scale[
+                        g * output_slice_size : (g + 1) * output_slice_size
+                    ]
+                else:
+                    gws = full_weight_scale
+                gscale = [(input_scale * w) / output_scale for w in gws]
+                with graph_module.graph.inserting_after(cursor):
+                    rescale = create_node(
+                        graph=graph_module.graph,
+                        op_target=exir_ops.backend.tosa.RESCALE.default,
+                        args=(tosa_op, rescale_dtype, gscale, 0, output_zp),
+                        from_node=node,
+                    )
+                if is_int16_no_bias:
+                    tosa_op.meta[
+                        TosaSpecialDtype.meta_key()
+                    ] = TosaSpecialDtype.INT48
+                cursor = rescale
+                group_outputs.append(rescale)
+            elif is_int16_with_bias:
+                # Full per-group INT16+bias decomposition so that each
+                # group is self-contained (required by U55 Vela).
+                output_qparams = cast(
+                    QuantArgs, node.meta["output_qparams"][0]
+                )
+                bias_qparams = cast(
+                    QuantArgs, node.meta["input_qparams"][2]
+                )
+                if bias_qparams.per_channel:
+                    full_bias_scale = bias_qparams.get_scale_per_channel()
+                else:
+                    full_bias_scale = [bias_qparams.get_scale_per_tensor()]
+
+                tosa_op.meta[
+                    TosaSpecialDtype.meta_key()
+                ] = TosaSpecialDtype.INT48
+
+                # 1. RESCALE INT48 → INT32 (identity)
+                with graph_module.graph.inserting_after(cursor):
+                    int48_rescale = create_node(
+                        graph=graph_module.graph,
+                        op_target=exir_ops.backend.tosa.RESCALE.default,
+                        args=(
+                            tosa_op,
+                            torch.int32,
+                            [1.0] * output_slice_size,
+                            0,
+                            0,
+                        ),
+                        from_node=node,
+                    )
+                cursor = int48_rescale
+
+                # 2. Slice original bias for this group
+                with graph_module.graph.inserting_before(node):
+                    group_bias_slice = create_node(
+                        graph=graph_module.graph,
+                        op_target=exir_ops.edge.aten.slice_copy.Tensor,
+                        args=(
+                            original_bias,
+                            0,
+                            g * output_slice_size,
+                            (g + 1) * output_slice_size,
+                        ),
+                        from_node=original_bias,
+                    )
+
+                # 3. Reshape sliced bias to NHWC: [1, 1, ..., 1, C_group]
+                group_bias_view_shape = [
+                    1,
+                    *([1] * (rank - 2)),
+                    output_slice_size,
+                ]
+                with graph_module.graph.inserting_after(cursor):
+                    group_bias_view = create_node(
+                        graph=graph_module.graph,
+                        op_target=exir_ops.edge.aten.view_copy.default,
+                        args=(group_bias_slice, group_bias_view_shape),
+                        from_node=original_bias,
+                    )
+                cursor = group_bias_view
+
+                # 4. ADD bias (INT32, NHWC)
+                with graph_module.graph.inserting_after(cursor):
+                    group_bias_add = create_node(
+                        graph=graph_module.graph,
+                        op_target=exir_ops.edge.aten.add.Tensor,
+                        args=(int48_rescale, group_bias_view),
+                        from_node=node,
+                    )
+                cursor = group_bias_add
+
+                # 5. RESCALE INT32 → INT16 with group-specific scale
+                if len(full_bias_scale) > 1:  # per-channel
+                    gbs = full_bias_scale[
+                        g * output_slice_size : (g + 1) * output_slice_size
+                    ]
+                else:
+                    gbs = full_bias_scale
+                group_final_scale = [
+                    b / output_qparams.scale for b in gbs
+                ]
+                with graph_module.graph.inserting_after(cursor):
+                    group_final_rescale = create_node(
+                        graph=graph_module.graph,
+                        op_target=exir_ops.backend.tosa.RESCALE.default,
+                        args=(
+                            group_bias_add,
+                            output_qparams.dtype,
+                            group_final_scale,
+                            0,
+                            0,
+                        ),
+                        from_node=node,
+                    )
+                cursor = group_final_rescale
+                group_outputs.append(group_final_rescale)
+            else:
+                group_outputs.append(tosa_op)
+
+        # ---- Cat along NHWC channel dim ---------------------------------
+        with graph_module.graph.inserting_after(cursor):
+            cat_node = create_node(
+                graph=graph_module.graph,
+                op_target=exir_ops.edge.aten.cat.default,
+                args=(group_outputs, nhwc_channel_dim),
+                from_node=node,
+            )
+        cursor = cat_node
+
+        # ---- ONE output permute NHWC→NCHW -------------------------------
+        output_permute = self._insert_permute(
+            graph_module, cursor, cursor, nhwc_to_nchw, before=False
+        )
+        return output_permute
+
     def call(self, graph_module: torch.fx.GraphModule) -> PassResult:  # noqa: C901
         modified = False
         for node in graph_module.graph.nodes:
@@ -302,6 +685,28 @@ class RewriteConvPass(ArmPass):
             if not has_bias:
                 bias = self._add_bias(graph_module, node, weight)
 
+            # Insert activation permute: NCHW → NHWC
+            rank = len(input_shape)
+            nchw_to_nhwc = self._nchw_to_nhwc_perm(rank)
+            nhwc_to_nchw = self._nhwc_to_nchw_perm(rank)
+
+            # Grouped conv (not depthwise): decompose in NHWC with a single
+            # input/output permute pair so downstream permute-optimisation
+            # passes cannot break the output layout.
+            if not transposed and self._is_grouped_conv(node):
+                result = self._handle_grouped_conv(
+                    graph_module, node, x, weight, bias,
+                    stride_list, pad_list, dilation_list,
+                    group, input_shape, weight_shape, spatial_rank, rank,
+                )
+                node.replace_all_uses_with(result)
+                graph_module.graph.erase_node(node)
+                continue
+
+            x_permuted = self._insert_permute(
+                graph_module, node, x, nchw_to_nhwc, before=True
+            )
+
             conv_args: tuple[Any, ...]
             if transposed:
                 if spatial_rank != 2:
@@ -322,9 +727,14 @@ class RewriteConvPass(ArmPass):
                     -pad_list[1] + output_padding_list[1],
                 ]
                 target_op = exir_ops.backend.tosa.TRANSPOSE_CONV2D.default
+                # Weight permute: IOHW → OHWI
+                weight_perm = [1, 2, 3, 0]
+                weight_permuted = self._insert_permute(
+                    graph_module, node, weight, weight_perm, before=True
+                )
                 conv_args = (
-                    x,
-                    weight,
+                    x_permuted,
+                    weight_permuted,
                     bias,
                     out_pad,
                     stride,
@@ -353,16 +763,36 @@ class RewriteConvPass(ArmPass):
                     target_op = exir_ops.backend.tosa.CONV3D.default
                 elif self._is_depthwise_conv2d(node):
                     target_op = exir_ops.backend.tosa.DEPTHWISE_CONV2D.default
-                    # If there are any TOSA.DEPTHWISE_CONV2D nodes using the weights, we've already reshaped them.
-                    if all(user.target != target_op for user in weight.users):
+                    # If there are any TOSA.DEPTHWISE_CONV2D nodes using
+                    # the weights (possibly via a permute_copy), we've
+                    # already reshaped them.
+                    already_reshaped = any(
+                        user.target == target_op
+                        or (
+                            user.target
+                            == exir_ops.edge.aten.permute_copy.default
+                            and any(
+                                u2.target == target_op for u2 in user.users
+                            )
+                        )
+                        for user in weight.users
+                    )
+                    if not already_reshaped:
                         self._reshape_weights(weight, input_fake_tensor.shape[1])
                     weight_fake_tensor = get_first_fake_tensor(weight)
                 else:
                     target_op = exir_ops.backend.tosa.CONV2D.default
 
+                # Weight permute: OIHW → OHWI (or reshaped depthwise equivalent)
+                weight_perm = self._nchw_to_nhwc_perm(
+                    len(weight_fake_tensor.shape)
+                )
+                weight_permuted = self._insert_permute(
+                    graph_module, node, weight, weight_perm, before=True
+                )
                 conv_args = (
-                    x,
-                    weight,
+                    x_permuted,
+                    weight_permuted,
                     bias,
                     stride,
                     pad,
@@ -378,11 +808,19 @@ class RewriteConvPass(ArmPass):
                     inherit_qparams=True,
                 )
             bias_fake_tensor = get_first_fake_tensor(bias) if bias else None
+            input_fake_nhwc = input_fake_tensor.permute(nchw_to_nhwc)
+            weight_fake_permuted = weight_fake_tensor.permute(weight_perm)
+
             tosa_node_fake_tensor = target_op(
-                input_fake_tensor,
-                weight_fake_tensor,
+                input_fake_nhwc,
+                weight_fake_permuted,
                 bias_fake_tensor,
                 *conv_args[3:],
+            )
+
+            # Insert output permute: NHWC → NCHW
+            output_permute = self._insert_permute(
+                graph_module, tosa_op, tosa_op, nhwc_to_nchw, before=False
             )
 
             if (
@@ -390,7 +828,12 @@ class RewriteConvPass(ArmPass):
                 and input_fake_tensor.dtype == torch.int8
             ):
                 output_rescale = self.insert_output_rescale(graph_module, node, tosa_op)
-                node.replace_all_uses_with(output_rescale)
+                output_permute_after_rescale = self._insert_permute(
+                    graph_module, output_rescale, output_rescale, nhwc_to_nchw, before=False
+                )
+                output_permute.replace_all_uses_with(tosa_op)
+                graph_module.graph.erase_node(output_permute)
+                node.replace_all_uses_with(output_permute_after_rescale)
             elif (
                 tosa_node_fake_tensor.dtype == torch.int32
                 and input_fake_tensor.dtype == torch.int16
@@ -400,12 +843,126 @@ class RewriteConvPass(ArmPass):
                     output_rescale = self.insert_output_rescale(
                         graph_module, node, tosa_op
                     )
-                    node.replace_all_uses_with(output_rescale)
+                    output_permute_after_rescale = self._insert_permute(
+                        graph_module, output_rescale, output_rescale, nhwc_to_nchw, before=False
+                    )
+                    output_permute.replace_all_uses_with(tosa_op)
+                    graph_module.graph.erase_node(output_permute)
+                    node.replace_all_uses_with(output_permute_after_rescale)
                 else:
-                    node.replace_all_uses_with(tosa_op)
+                    # INT16 conv with bias: the TOSA conv produces INT48
+                    # output. We handle the full bias decomposition here
+                    # entirely in NHWC layout, with the output permute placed
+                    # AFTER the final RESCALE.
+                    #
+                    # Graph produced:
+                    #   tosa.CONV2D(input, weight, zero_bias_INT48) → INT48, NHWC
+                    #   → RESCALE(INT48 → INT32, scale=1.0, NHWC)
+                    #   → ADD(bias reshaped to [1,1,...,1,C] for NHWC broadcast)
+                    #   → RESCALE(INT32 → INT16, final_scale, NHWC)
+                    #   → permute(NHWC → NCHW)
+
+                    # Save original bias before replacing with zero bias
+                    original_bias_node = node.args[2]
+
+                    # Create a zero bias tagged INT48 for the TOSA conv
+                    output_channels = get_first_fake_tensor(node).shape[1]
+                    zero_bias_data = torch.zeros(
+                        size=(output_channels,), dtype=torch.int32
+                    )
+                    with graph_module.graph.inserting_after(weight):
+                        zero_bias_node = create_constant_placeholder(
+                            self.exported_program,
+                            graph=graph_module.graph,
+                            kind=InputKind.PARAMETER,
+                            data=zero_bias_data,
+                            persistent_buffer=True,
+                            name=f"{node.name}_zero_bias",
+                        )
+                        zero_bias_node.meta[
+                            TosaSpecialDtype.meta_key()
+                        ] = TosaSpecialDtype.INT48
+                    # Replace original bias with zero bias in tosa conv
+                    bias_arg_index = list(tosa_op.args).index(bias)
+                    tosa_op.update_arg(bias_arg_index, zero_bias_node)
+
+                    output_qparams = cast(
+                        QuantArgs, node.meta["output_qparams"][0]
+                    )
+                    bias_qparams = cast(
+                        QuantArgs, node.meta["input_qparams"][2]
+                    )
+                    if bias_qparams.per_channel:
+                        bias_scale = bias_qparams.get_scale_per_channel()
+                    else:
+                        bias_scale = [bias_qparams.get_scale_per_tensor()]
+
+                    # Remove the original output permute first — we'll add
+                    # a new one at the very end of the chain.
+                    output_permute.replace_all_uses_with(tosa_op)
+                    graph_module.graph.erase_node(output_permute)
+
+                    # Build the chain sequentially, each node after the
+                    # previous, so graph ordering matches logical ordering.
+                    # Use a cursor variable to track insertion point.
+                    cursor = tosa_op
+
+                    # 1. RESCALE INT48 → INT32 (NHWC)
+                    conv_rescale_factors = [1.0] * len(bias_scale)
+                    with graph_module.graph.inserting_after(cursor):
+                        int48_rescale = create_node(
+                            graph=graph_module.graph,
+                            op_target=exir_ops.backend.tosa.RESCALE.default,
+                            args=(tosa_op, torch.int32, conv_rescale_factors, 0, 0),
+                            from_node=node,
+                        )
+                    cursor = int48_rescale
+
+                    # 2. Reshape bias to NHWC: [1, 1, ..., 1, C]
+                    bias_data = get_first_fake_tensor(original_bias_node)
+                    bias_view_shape = [1, *([1] * (rank - 2)), bias_data.shape[0]]
+                    with graph_module.graph.inserting_after(cursor):
+                        bias_view = create_node(
+                            graph=graph_module.graph,
+                            op_target=exir_ops.edge.aten.view_copy.default,
+                            args=(original_bias_node, bias_view_shape),
+                            from_node=original_bias_node,
+                        )
+                    cursor = bias_view
+
+                    # 3. ADD bias (NHWC)
+                    with graph_module.graph.inserting_after(cursor):
+                        bias_add = create_node(
+                            graph=graph_module.graph,
+                            op_target=exir_ops.edge.aten.add.Tensor,
+                            args=(int48_rescale, bias_view),
+                            from_node=node,
+                        )
+                    cursor = bias_add
+
+                    # 4. RESCALE INT32 → output dtype (NHWC)
+                    final_output_scale = [
+                        b / output_qparams.scale for b in bias_scale
+                    ]
+                    with graph_module.graph.inserting_after(cursor):
+                        final_rescale = create_node(
+                            graph=graph_module.graph,
+                            op_target=exir_ops.backend.tosa.RESCALE.default,
+                            args=(bias_add, output_qparams.dtype, final_output_scale, 0, 0),
+                            from_node=node,
+                        )
+                    cursor = final_rescale
+
+                    # 5. Output permute NHWC → NCHW (LAST in chain)
+                    output_permute_after_bias = self._insert_permute(
+                        graph_module, cursor, cursor, nhwc_to_nchw, before=False
+                    )
+
+                    node.replace_all_uses_with(output_permute_after_bias)
+
                 tosa_op.meta[TosaSpecialDtype.meta_key()] = TosaSpecialDtype.INT48
             else:
-                node.replace_all_uses_with(tosa_op)
+                node.replace_all_uses_with(output_permute)
 
             graph_module.graph.erase_node(node)
 

@@ -69,7 +69,7 @@ class MinVisitor(NodeVisitor):
 
         attr = ts.TosaSerializerAttribute()
         attr.ReduceMinAttribute(
-            axis=input.dim_order.index(dim), nan_mode=ts.NanPropagationMode.PROPAGATE
+            axis=dim, nan_mode=ts.NanPropagationMode.PROPAGATE
         )
         self._serialize_operator(
             node,

@@ -54,18 +54,18 @@ def CONV3D(
     torch_pad = [pad[0], pad[2], pad[4]]
     N = x.shape[0]
     C_out = weight.shape[0]
-    D_in, H_in, W_in = x.shape[2:]
+    D_in, H_in, W_in = x.shape[1], x.shape[2], x.shape[3]
     D_out = math.floor(
-        (D_in + 2 * torch_pad[0] - dilation[0] * (weight.shape[2] - 1) - 1) / stride[0]
+        (D_in + 2 * torch_pad[0] - dilation[0] * (weight.shape[1] - 1) - 1) / stride[0]
         + 1
     )
     H_out = math.floor(
-        (H_in + 2 * torch_pad[1] - dilation[1] * (weight.shape[3] - 1) - 1) / stride[1]
+        (H_in + 2 * torch_pad[1] - dilation[1] * (weight.shape[2] - 1) - 1) / stride[1]
         + 1
     )
     W_out = math.floor(
-        (W_in + 2 * torch_pad[2] - dilation[2] * (weight.shape[4] - 1) - 1) / stride[2]
+        (W_in + 2 * torch_pad[2] - dilation[2] * (weight.shape[3] - 1) - 1) / stride[2]
         + 1
     )
-    output_shape = [N, C_out, D_out, H_out, W_out]
-    return torch.empty(size=output_shape, dtype=output_dtype)
+    output_shape = [N, D_out, H_out, W_out, C_out]
+    return x.new_empty(output_shape, dtype=output_dtype)

@@ -12,7 +12,6 @@ from dataclasses import dataclass, field
 
 from executorch.backends.arm._passes import (
     AccumulateIndexPutPass,
-    AnnotateOutputDimOrderPass,
     BroadcastArgsPass,
     CanonicalizeGatherPass,
     CastInt64BuffersToInt32Pass,
@@ -44,7 +43,6 @@ from executorch.backends.arm._passes import (
     DecomposeAtanPass,
     DecomposeAvgPool2dPass,
     DecomposeBatchNormNoStatsPass,
-    DecomposeConvWithInt16ActivationPass,
     DecomposeCoshPass,
     DecomposeCosineSimilarityPass,
     DecomposeCumsumPass,
@@ -58,7 +56,6 @@ from executorch.backends.arm._passes import (
     DecomposeFloorDividePass,
     DecomposeGeluPass,
     DecomposeGluPass,
-    DecomposeGroupedConvPass,
     DecomposeGroupNormPass,
     DecomposeGruPass,
     DecomposeIndexCopyPass,
@@ -141,7 +138,6 @@ from executorch.backends.arm._passes import (
     RewriteUpsamplePass,
     ScalarsToAttributePass,
     SizeAdjustInputPass,
-    ToTosaMemoryFormatPass,
     UnsqueezeBeforeRepeatPass,
     UnsqueezeScalarPlaceholdersPass,
 )
@@ -157,7 +153,26 @@ from executorch.backends.arm.tosa.specification import (
     TosaLoweringContext,
     TosaSpecification,
 )
+from executorch.backends.transforms.fuse_cascaded_transpose_or_permute_ops import (
+    FuseCascadedTransposeOrPermuteOps,
+)
+from executorch.backends.transforms.fuse_cascaded_view_ops import (
+    FuseCascadedViewOps,
+)
+from executorch.backends.transforms.fuse_transpose_or_permute_op_pairs_pass import (
+    FuseTransposeOrPermuteOpPairsPass,
+)
+from executorch.backends.transforms.postpone_permute_below_squeeze_view import (
+    PostponePermuteOpBelowSqueezeOrUnsqueezeLikeView,
+)
+from executorch.backends.transforms.remove_permutes_around_elementwise_ops import (
+    RemovePermutesAroundElementwiseOps,
+)
+from executorch.backends.transforms.replace_nop_transpose_or_permute_with_view import (
+    ReplaceNopTransposeOrPermuteWithViewPass,
+)
 from executorch.exir import ExportedProgram
+from executorch.exir.dialects._ops import ops as exir_ops
 from executorch.exir.pass_base import ExportPass
 from executorch.exir.pass_manager import PassManager
 from torch._export.utils import _get_shape_env_from_gm
@@ -385,9 +400,6 @@ class ArmPassManager(PassManager):
         # Allow subclasses to configure pass insertions before building pipeline
         self._configure_pass_insertions(exported_program)
 
-        # Preprocessing passes
-        self.add_pass(AnnotateOutputDimOrderPass())
-
         # Node transformation passes (pre q/dq folding)
         self.add_passes(
             [
@@ -455,7 +467,6 @@ class ArmPassManager(PassManager):
                 DecomposeFloorDividePass(),
                 DecomposeGeluPass(),
                 DecomposeAddSubAlphaPass(),
-                DecomposeGroupedConvPass(),
                 DecomposeUnfoldToGatherPass(),
                 DecomposeEmbeddingPass(),
                 DecomposeIndexSelectToGatherPass(),
@@ -518,7 +529,6 @@ class ArmPassManager(PassManager):
                 ConvertPermuteSingletonToViewPass(),
                 RewriteHighRankSingletonPermutePass(),
                 FuseViewCopyTransformPass(),
-                DecomposeConvWithInt16ActivationPass(),
                 DecomposeSumPass(),
                 InsertTableOpsPass(exported_program),
             ]
@@ -532,7 +542,6 @@ class ArmPassManager(PassManager):
                 RewriteConvPass(exported_program),
                 RewriteMatmulPass(),
                 RewritePadPass(),
-                RewriteSlicePass(),
                 InsertConstShapesPass(),
             ]
         )
@@ -542,11 +551,37 @@ class ArmPassManager(PassManager):
             [
                 CastInt64BuffersToInt32Pass(exported_program),
                 FuseEqualPlaceholdersPass(exported_program),
+                FuseConstantArgsPass(exported_program),
                 FuseConsecutiveConcatShapesPass(),
-                ToTosaMemoryFormatPass(exported_program),
                 RemoveNoopPass(),
                 InsertRescalePass(),
                 InsertDataLayoutCastsPass(),
+            ]
+        )
+
+        # Additional optimization passes for permutes
+        # Fuse identity permute pairs across RESCALE ops
+        fuse_pairs = FuseTransposeOrPermuteOpPairsPass()
+        fuse_pairs.bypass_ops = fuse_pairs.bypass_ops | {
+            exir_ops.backend.tosa.RESCALE.default,
+        }
+
+        # Remove permutes around elementwise ops including RESCALE
+        remove_around = RemovePermutesAroundElementwiseOps()
+        remove_around.permutable_ops = remove_around.permutable_ops | {
+            exir_ops.backend.tosa.RESCALE.default,
+        }
+
+        self.add_passes(
+            [
+                remove_around,
+                RewriteSlicePass(),
+                fuse_pairs,
+                ReplaceNopTransposeOrPermuteWithViewPass(),
+                PostponePermuteOpBelowSqueezeOrUnsqueezeLikeView(),
+                FuseCascadedTransposeOrPermuteOps(),
+                FuseCascadedViewOps(),
+                InsertConstShapesPass(),
             ]
         )
 

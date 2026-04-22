@@ -6,13 +6,9 @@
 from typing import Set, Type
 
 import executorch.backends.arm.tosa.dialect  # noqa: F401
-import pytest
 import torch
 import tosa_serializer as ts
 from executorch.backends.arm._passes.arm_pass import ArmPass
-from executorch.backends.arm._passes.to_tosa_memory_format_pass import (
-    ToTosaMemoryFormatPass,
-)
 from executorch.backends.arm.operators.node_visitor import get_node_visitors
 from executorch.backends.arm.process_node import process_call_function
 from executorch.backends.arm.tosa.mapping import TosaSpecialDtype
@@ -84,14 +80,6 @@ def _graph_module_with_unused_const_shape():
         return graph_module
 
 
-def _propagate_shape_dim_orders_from_users(graph_module: torch.fx.GraphModule) -> None:
-    output_node = next(node for node in graph_module.graph.nodes if node.op == "output")
-    output_node.meta["tosa_dim_order"] = (0,)
-    dummy_exported = torch.export.export(torch.nn.Identity(), (torch.randn(1),))
-    tosa_memory_format_pass = ToTosaMemoryFormatPass(dummy_exported)
-    tosa_memory_format_pass._propagate_dim_order_to_shape_args(output_node)
-
-
 def _serialize_graph_module_to_tosa(graph_module: torch.fx.GraphModule):
     tosa_spec = TosaSpecification.create_from_string("TOSA-1.1+FP+shape")
     node_visitors = get_node_visitors(None, tosa_spec)
@@ -110,33 +98,18 @@ def _serialize_graph_module_to_tosa(graph_module: torch.fx.GraphModule):
     return tosa_graph
 
 
-def test_unused_shape_ops_miss_tosa_dim_order_and_must_be_removed_before_tosa_serialization():
+def test_dead_shape_ops_must_be_removed_before_tosa_serialization():
     graph_module = _graph_module_with_unused_const_shape()
-    _propagate_shape_dim_orders_from_users(graph_module)
 
-    const_shape_nodes = [
+    # After eliminating dead code, only the live const shape should remain.
+    graph_module.graph.eliminate_dead_code()
+    graph_module.recompile()
+
+    remaining_const_shapes = [
         node
         for node in graph_module.graph.nodes
         if node.op == "call_function"
         and node.target == exir_ops.backend.tosa.CONST_SHAPE.default
     ]
-    dead_const_shape, live_const_shape = const_shape_nodes
-
-    assert dead_const_shape.users == {}
-    assert "tosa_dim_order" not in dead_const_shape.meta
-    assert live_const_shape.meta["tosa_dim_order"] == (0,)
-
-    with pytest.raises(KeyError, match="tosa_dim_order"):
-        _serialize_graph_module_to_tosa(graph_module)
-
-    graph_module.graph.eliminate_dead_code()
-    graph_module.recompile()
-
-    remaining_const_shape = next(
-        node
-        for node in graph_module.graph.nodes
-        if node.op == "call_function"
-        and node.target == exir_ops.backend.tosa.CONST_SHAPE.default
-    )
-    assert remaining_const_shape.meta["tosa_dim_order"] == (0,)
+    assert len(remaining_const_shapes) == 1
     assert _serialize_graph_module_to_tosa(graph_module)

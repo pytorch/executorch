@@ -18,8 +18,7 @@ def TRANSPOSE(a, perms):
     # The TOSA TRANSPOSE only do the transpose in the TOSA serialized world,
     # so just return the same shape and type.
 
-    # For certain operators we need the data in a specific data format. Changing tosa_dim_order
-    # is not sufficient as we also need transpose the data.
+    # For certain operators we need the data in a specific data format.
     # By utilizing an edge IR passthrough operator we can keep the edge program in
     # channels-first/contiguous and get the desired behavior in the TOSA lowering.
 
