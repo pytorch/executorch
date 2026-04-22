@@ -31,26 +31,22 @@ def name(f: NativeFunction) -> str:
 class Unboxing:
     """
     Takes a sequence of Bindings and unbox EValues to these Bindings. Return generated code that performs correct unboxing.
-    A sample generated code:
+    A sample generated code (abbreviated to one arg for readability):
     // aten::mul.out(Tensor self, Tensor other, *, Tensor(a!) out) -> Tensor(a!)
     void mul_out(KernelRuntimeContext& context, Span<EValue*> stack) {
         EValue& self = *stack[0];
-        EValue& other = *stack[1];
-        EValue& out = *stack[2];
+        // ... other args ...
         auto self_base_res = self.tryTo<torch::executor::Tensor>();
-        if (!self_base_res.ok()) { context.fail(self_base_res.error()); return; }
-        const torch::executor::Tensor & self_base = self_base_res.get();
-        auto other_base_res = other.tryTo<torch::executor::Tensor>();
-        if (!other_base_res.ok()) { context.fail(other_base_res.error()); return; }
-        const torch::executor::Tensor & other_base = other_base_res.get();
-        auto out_base_res = out.tryTo<torch::executor::Tensor>();
-        if (!out_base_res.ok()) { context.fail(out_base_res.error()); return; }
-        torch::executor::Tensor & out_base = out_base_res.get();
-
+        if (!self_base_res.ok()) {
+          ::executorch::runtime::internal::kernel_arg_fail(
+              context, self_base_res.error(), __func__, "self",
+              static_cast<uint8_t>(self.tag));
+          return;
+        }
+        const torch::executor::Tensor& self_base = self_base_res.get();
+        // ... other unpacks ...
         EXECUTORCH_SCOPE_PROF("native_call_mul.out");
         torch::executor::mul_outf(self_base, other_base, out_base);
-
-
     }
     """
 
@@ -120,14 +116,18 @@ class Unboxing:
     def _gen_code_base_type(
         self, arg_name: str, out_name: str, ctype: CType
     ) -> tuple[list[str], list[str]]:
-        # Use the Result-returning tryTo<T>() instead of to<T>() so that a
-        # malformed PTE with a mismatched EValue tag returns an error to the
-        # caller via KernelRuntimeContext::fail() rather than aborting the
-        # process.
+        # Use tryTo<T>() with a shared cold fail helper so every wrapper
+        # logs a consistent diagnostic and propagates the error via
+        # KernelRuntimeContext::fail() rather than aborting.
         res_name = f"{out_name}_res"
         return [
             f"auto {res_name} = {arg_name}.tryTo<{ctype.cpp_type(strip_ref=True)}>();",
-            f"if (!{res_name}.ok()) {{ context.fail({res_name}.error()); return; }}",
+            f"if (!{res_name}.ok()) {{",
+            "  ::executorch::runtime::internal::kernel_arg_fail(",
+            f'      context, {res_name}.error(), __func__, "{arg_name}",',
+            f"      static_cast<uint8_t>({arg_name}.tag));",
+            "  return;",
+            "}",
             f"{ctype.cpp_type()} {out_name} = {res_name}.get();",
         ], []
 
@@ -138,12 +138,18 @@ class Unboxing:
         res_name, base_type, res_code, decl = self.argumenttype_evalue_convert(
             t.elem, in_name
         )
-        # Use tryToOptional<T>() to propagate tag mismatches as errors.
+        # Use tryToOptional<T>() with the shared fail helper (see
+        # _gen_code_base_type).
         opt_res_name = f"{out_name}_res"
         return (
             f"""
     auto {opt_res_name} = {arg_name}.tryToOptional<{base_type.cpp_type(strip_ref=True)}>();
-    if (!{opt_res_name}.ok()) {{ context.fail({opt_res_name}.error()); return; }}
+    if (!{opt_res_name}.ok()) {{
+      ::executorch::runtime::internal::kernel_arg_fail(
+          context, {opt_res_name}.error(), __func__, "{arg_name}",
+          static_cast<uint8_t>({arg_name}.tag));
+      return;
+    }}
     auto {out_name} = std::move({opt_res_name}.get());
             """.split("\n"),
             decl,
@@ -160,13 +166,25 @@ class Unboxing:
         )
 
         # Each branch uses the Result-returning tryToXList() accessor and
-        # propagates errors via context.fail(); see _gen_code_base_type for
-        # the rationale.
+        # routes errors through the shared kernel_arg_fail helper; see
+        # _gen_code_base_type for the rationale.
         res_name_list = f"{out_name}_res"
+
+        def _fail_block(res: str) -> str:
+            # Cold fail path: log + context.fail() via the shared helper.
+            return (
+                f"if (!{res}.ok()) {{\n"
+                f"      ::executorch::runtime::internal::kernel_arg_fail(\n"
+                f'          context, {res}.error(), __func__, "{arg_name}",\n'
+                f"          static_cast<uint8_t>({arg_name}.tag));\n"
+                f"      return;\n"
+                f"    }}"
+            )
+
         if isinstance(t.elem, BaseType) and t.elem.name == BaseTy.Tensor:
             code.extend(f"""
     auto {res_name_list} = {arg_name}.tryToTensorList();
-    if (!{res_name_list}.ok()) {{ context.fail({res_name_list}.error()); return; }}
+    {_fail_block(res_name_list)}
     auto {out_name} = {res_name_list}.get();
                 """.split("\n"))
         elif isinstance(t.elem, BaseType) and (
@@ -174,13 +192,13 @@ class Unboxing:
         ):
             code.extend(f"""
     auto {res_name_list} = {arg_name}.tryToIntList();
-    if (!{res_name_list}.ok()) {{ context.fail({res_name_list}.error()); return; }}
+    {_fail_block(res_name_list)}
     auto {out_name} = {res_name_list}.get();
                 """.split("\n"))
         elif isinstance(t.elem, BaseType) and t.elem.name == BaseTy.float:
             code.extend(f"""
     auto {res_name_list} = {arg_name}.tryToDoubleList();
-    if (!{res_name_list}.ok()) {{ context.fail({res_name_list}.error()); return; }}
+    {_fail_block(res_name_list)}
     auto {out_name} = {res_name_list}.get();
                 """.split("\n"))
         elif isinstance(t.elem, BaseType) and t.elem.name == BaseTy.bool:
@@ -189,7 +207,7 @@ class Unboxing:
 #ifdef USE_ATEN_LIB
 std::array<bool, {t.size}> {out_name};
 auto {in_name}_res = {arg_name}.tryToBoolList();
-if (!{in_name}_res.ok()) {{ context.fail({in_name}_res.error()); return; }}
+{_fail_block(in_name + "_res")}
 auto {in_name} = {in_name}_res.get();
 size_t _i = 0;
 for (auto {elem_name}: {in_name}) {{
@@ -197,7 +215,7 @@ for (auto {elem_name}: {in_name}) {{
 }}
 #else
 auto {res_name_list} = {arg_name}.tryToBoolList();
-if (!{res_name_list}.ok()) {{ context.fail({res_name_list}.error()); return; }}
+{_fail_block(res_name_list)}
 auto {out_name} = {res_name_list}.get();
 #endif
                 """.split("\n"))
@@ -211,7 +229,7 @@ auto {out_name} = {res_name_list}.get();
             code.extend(f"""
 #ifdef USE_ATEN_LIB
 auto {in_name}_res = {arg_name}.tryToListOptionalTensor();
-if (!{in_name}_res.ok()) {{ context.fail({in_name}_res.error()); return; }}
+{_fail_block(in_name + "_res")}
 auto {in_name} = {in_name}_res.get();
 c10::List<::std::optional<at::Tensor>> {out_name};
 for (auto {elem_name}: {in_name}) {{
@@ -219,7 +237,7 @@ for (auto {elem_name}: {in_name}) {{
 }}
 #else
 auto {res_name_list} = {arg_name}.tryToListOptionalTensor();
-if (!{res_name_list}.ok()) {{ context.fail({res_name_list}.error()); return; }}
+{_fail_block(res_name_list)}
 auto {out_name} = {res_name_list}.get();
 #endif
                 """.split("\n"))

@@ -354,6 +354,9 @@ struct EValue {
     return payload.as_tensor;
   }
 
+  // Returns a copy of the Tensor handle (one intrusive_ptr refcount bump in
+  // ATen mode; free in lean mode). Unlike toTensor()'s const& / & overloads,
+  // tryToTensor() cannot return a reference — Result<T> wraps by value.
   Result<executorch::aten::Tensor> tryToTensor() const {
     if (!isTensor()) {
       return Error::InvalidType;
@@ -616,10 +619,10 @@ struct EValue {
   typename internal::evalue_to_ref_overload_return<T>::type to() &;
 
   /**
-   * Result-returning equivalent of `to<T>()`. Returns `Error::InvalidType` on
-   * tag mismatch instead of aborting, so callers processing untrusted EValues
-   * (e.g., from a `.pte`) can surface the error rather than terminate.
-   * Specializations are defined below via `EVALUE_DEFINE_TRY_TO`.
+   * Result-returning equivalent of `to<T>()`. Tag mismatch returns
+   * `Error::InvalidType`; a null list/string payload returns
+   * `Error::InvalidState`. Unsynchronized — caller must serialize concurrent
+   * tag mutation. Specializations are defined below via `EVALUE_DEFINE_TRY_TO`.
    */
   template <typename T>
   Result<T> tryTo() const;
