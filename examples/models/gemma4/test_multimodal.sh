@@ -1,12 +1,14 @@
 #!/usr/bin/env bash
 # Gemma4 multimodal runner — end-to-end test script
 #
-# Tests all input modality combinations:
-#   1. Text-only          (gemma4.pte, forward method)
-#   2. Text-only          (gemma4_multimodal.pte, token_embedding + text_decoder)
-#   3. Image + text       (gemma4_multimodal.pte)
-#   4. Audio + text       (gemma4_multimodal.pte, ~20s clip)
-#   5. Short audio        (gemma4_multimodal.pte, 2s clip from obama_short20.wav)
+# Single .pte (gemma4_multimodal_v9.pte) serves all 3 modalities via
+# ExecuTorch's standard MultimodalRunner (create_multimodal_runner).
+#
+# Tests:
+#   1. Text-only   — prompt only, no image/audio
+#   2. Image+text  — image.jpg + prompt
+#   3. Audio+text  — obama_short20.wav (20s speech) + prompt
+#   4. Short audio — 2s clip (tests model behavior on minimal audio context)
 #
 # Usage:
 #   ./test_multimodal.sh                      # run all tests
@@ -21,8 +23,7 @@ set -euo pipefail
 # ---------------------------------------------------------------------------
 EXECUTORCH_ROOT="$(cd "$(dirname "$0")/../../.." && pwd)"
 RUNNER="$EXECUTORCH_ROOT/cmake-out/examples/models/gemma4/gemma4_runner"
-TEXT_MODEL="$EXECUTORCH_ROOT/gemma4.pte"
-MM_MODEL="/tmp/gemma4_multimodal_v9.pte"
+MODEL="/tmp/gemma4_multimodal_v9.pte"   # single .pte for all 3 modalities
 TOKENIZER="$HOME/models/gemma-4-E2B-it/tokenizer.json"
 IMAGE="$EXECUTORCH_ROOT/image.jpg"
 AUDIO_20S="$EXECUTORCH_ROOT/obama_short20.wav"
@@ -102,8 +103,7 @@ check_file() {
 # ---------------------------------------------------------------------------
 printf "\n\033[1mGemma4 multimodal test suite\033[0m\n"
 printf "Runner : %s\n" "$RUNNER"
-printf "Text   : %s\n" "$TEXT_MODEL"
-printf "MM     : %s\n" "$MM_MODEL"
+printf "Model  : %s\n" "$MODEL"
 printf "Tokens : %s\n" "$TOKENIZER"
 
 check_file "$RUNNER"  || { echo "Build the runner first: cmake --build cmake-out/examples/models/gemma4"; exit 1; }
@@ -130,24 +130,24 @@ fi
 if $RUN_TEXT; then
   printf "\n\033[1m== TEXT-ONLY ==\033[0m\n"
 
-  if check_file "$MM_MODEL" 2>/dev/null; then
+  if check_file "$MODEL" 2>/dev/null; then
     run_test "Text: capital of France" 120 \
-      "$RUNNER" --model_path "$MM_MODEL" --tokenizer_path "$TOKENIZER" \
+      "$RUNNER" --model_path "$MODEL" --tokenizer_path "$TOKENIZER" \
       --prompt "What is the capital of France?" --seq_len $SEQ_TEXT
 
     run_test "Text: math" 120 \
-      "$RUNNER" --model_path "$MM_MODEL" --tokenizer_path "$TOKENIZER" \
+      "$RUNNER" --model_path "$MODEL" --tokenizer_path "$TOKENIZER" \
       --prompt "What is 12 multiplied by 8?" --seq_len $SEQ_TEXT
 
     $QUICK || run_test "Text: code generation" 120 \
-      "$RUNNER" --model_path "$MM_MODEL" --tokenizer_path "$TOKENIZER" \
+      "$RUNNER" --model_path "$MODEL" --tokenizer_path "$TOKENIZER" \
       --prompt "Write a Python function to reverse a string." --seq_len 40
 
     $QUICK || run_test "Text: general knowledge" 120 \
-      "$RUNNER" --model_path "$MM_MODEL" --tokenizer_path "$TOKENIZER" \
+      "$RUNNER" --model_path "$MODEL" --tokenizer_path "$TOKENIZER" \
       --prompt "Explain what a neural network is in one sentence." --seq_len 30
   else
-    skip_test "Text tests" "MM pte not found at $MM_MODEL"
+    skip_test "Text tests" "MM pte not found at $MODEL"
   fi
 fi
 
@@ -157,19 +157,19 @@ fi
 if $RUN_MM; then
   printf "\n\033[1m== IMAGE + TEXT ==\033[0m\n"
 
-  if check_file "$MM_MODEL" 2>/dev/null && check_file "$IMAGE" 2>/dev/null; then
+  if check_file "$MODEL" 2>/dev/null && check_file "$IMAGE" 2>/dev/null; then
     run_test "Image: describe" 120 \
-      "$RUNNER" --model_path "$MM_MODEL" --tokenizer_path "$TOKENIZER" \
+      "$RUNNER" --model_path "$MODEL" --tokenizer_path "$TOKENIZER" \
       --image_path "$IMAGE" \
       --prompt "Describe this image." --seq_len $SEQ_IMG
 
     $QUICK || run_test "Image: what color" 120 \
-      "$RUNNER" --model_path "$MM_MODEL" --tokenizer_path "$TOKENIZER" \
+      "$RUNNER" --model_path "$MODEL" --tokenizer_path "$TOKENIZER" \
       --image_path "$IMAGE" \
       --prompt "What are the dominant colors in this image?" --seq_len $SEQ_IMG
 
     $QUICK || run_test "Image: type of scene" 120 \
-      "$RUNNER" --model_path "$MM_MODEL" --tokenizer_path "$TOKENIZER" \
+      "$RUNNER" --model_path "$MODEL" --tokenizer_path "$TOKENIZER" \
       --image_path "$IMAGE" \
       --prompt "Is this a portrait, landscape, or something else?" --seq_len $SEQ_IMG
   else
@@ -178,10 +178,10 @@ if $RUN_MM; then
 
   printf "\n\033[1m== AUDIO + TEXT ==\033[0m\n"
 
-  if check_file "$MM_MODEL" 2>/dev/null; then
+  if check_file "$MODEL" 2>/dev/null; then
     if check_file "$AUDIO_2S" 2>/dev/null; then
       run_test "Audio: 2s clip — what sound" 60 \
-        "$RUNNER" --model_path "$MM_MODEL" --tokenizer_path "$TOKENIZER" \
+        "$RUNNER" --model_path "$MODEL" --tokenizer_path "$TOKENIZER" \
         --audio_path "$AUDIO_2S" \
         --prompt "What do you hear?" --seq_len $SEQ_AUDIO
     else
@@ -190,24 +190,24 @@ if $RUN_MM; then
 
     if check_file "$AUDIO_20S" 2>/dev/null; then
       run_test "Audio: 20s speech — what is being said" 180 \
-        "$RUNNER" --model_path "$MM_MODEL" --tokenizer_path "$TOKENIZER" \
+        "$RUNNER" --model_path "$MODEL" --tokenizer_path "$TOKENIZER" \
         --audio_path "$AUDIO_20S" \
         --prompt "What is being said?" --seq_len $SEQ_AUDIO
 
       $QUICK || run_test "Audio: 20s speech — transcribe" 180 \
-        "$RUNNER" --model_path "$MM_MODEL" --tokenizer_path "$TOKENIZER" \
+        "$RUNNER" --model_path "$MODEL" --tokenizer_path "$TOKENIZER" \
         --audio_path "$AUDIO_20S" \
         --prompt "Transcribe this audio." --seq_len 120
 
       $QUICK || run_test "Audio: 20s speech — music or speech" 180 \
-        "$RUNNER" --model_path "$MM_MODEL" --tokenizer_path "$TOKENIZER" \
+        "$RUNNER" --model_path "$MODEL" --tokenizer_path "$TOKENIZER" \
         --audio_path "$AUDIO_20S" \
         --prompt "Is this music or speech? Explain." --seq_len $SEQ_AUDIO
     else
       skip_test "Audio 20s tests" "$AUDIO_20S not found"
     fi
   else
-    skip_test "Audio+text tests" "MM pte not found at $MM_MODEL"
+    skip_test "Audio+text tests" "MM pte not found at $MODEL"
   fi
 fi
 
