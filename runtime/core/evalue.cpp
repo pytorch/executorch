@@ -27,5 +27,30 @@ BoxedEvalueList<std::optional<executorch::aten::Tensor>>::get() const {
   return executorch::aten::ArrayRef<std::optional<executorch::aten::Tensor>>{
       unwrapped_vals_, wrapped_vals_.size()};
 }
+
+// Specialization note: unlike the generic tryGet, a null wrapped_vals_[i]
+// here is a valid encoding of None (matching the get() specialization above,
+// which mirrors parseListOptionalType's "absent index" convention). Only an
+// element whose tag is neither None nor Tensor is treated as an error.
+template <>
+Result<executorch::aten::ArrayRef<std::optional<executorch::aten::Tensor>>>
+BoxedEvalueList<std::optional<executorch::aten::Tensor>>::tryGet() const {
+  for (typename executorch::aten::ArrayRef<
+           std::optional<executorch::aten::Tensor>>::size_type i = 0;
+       i < wrapped_vals_.size();
+       i++) {
+    if (wrapped_vals_[i] == nullptr) {
+      unwrapped_vals_[i] = std::nullopt;
+      continue;
+    }
+    auto r = wrapped_vals_[i]->tryToOptional<executorch::aten::Tensor>();
+    if (!r.ok()) {
+      return r.error();
+    }
+    unwrapped_vals_[i] = std::move(r.get());
+  }
+  return executorch::aten::ArrayRef<std::optional<executorch::aten::Tensor>>{
+      unwrapped_vals_, wrapped_vals_.size()};
+}
 } // namespace runtime
 } // namespace executorch
