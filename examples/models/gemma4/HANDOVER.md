@@ -1,8 +1,19 @@
 # Gemma4 ExecuTorch — Handover Document
 
 **Branch:** `younghan/gemma4-xnnpack-fp32`  
-**Last updated:** 2026-04-22  
-**Working model:** `/tmp/gemma4_multimodal_v10.pte` (13 GB, XNNPACK FP32)
+**Last updated:** 2026-04-22 (v11 — PLI bug fixed, all 3 modalities working)
+**Working model:** `/tmp/gemma4_multimodal_v11.pte` (21 GB, XNNPACK FP32, max_seq=1024, audio_frames=1976)
+
+## What changed in v11
+
+The "degenerates after 5-10 tokens" bug was **NOT** caused by sequential KV-cache prefill (the prefiller was already batched). It was caused by `examples/models/llama/llama_transformer.py` in the **installed conda-env package** being out-of-sync with the local source tree. The local source had the fix (read `pli_token_ids` from `attn_options` when `tokens` is None); the installed package didn't, so PLI silently fell back to **zeros** for every position during multimodal prefill+decode.
+
+Fix: `cp /home/younghan/executorch/examples/models/llama/llama_transformer.py /home/younghan/miniconda3/envs/executorch/lib/python3.13/site-packages/executorch/examples/models/llama/llama_transformer.py`, then re-export. Verified bit-exact via `examples/models/gemma4/tests/test_textdec_wrapper.py` (max_diff 19.95 → 0.0).
+
+After re-export to v11:
+- Text:  "What is the capital of France?" → "The capital of France is **Paris**.<turn|>" (clean EOS)
+- Image: "Describe this image in one sentence." (strawberry photo) → "A bright red strawberry is positioned on a light gray surface against a blurred green background.<turn|>"
+- Audio: "Transcribe this audio." (20s Obama farewell) → "This week I traveled to Chicago to deliver my final farewell address to the nation, following in the tradition of presidents before me. ..."
 
 ---
 

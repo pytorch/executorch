@@ -1,6 +1,6 @@
 # Gemma4 ExecuTorch — Status
 
-Last updated: 2026-04-22 (v9 final — full 20s audio, max_seq=1024)
+Last updated: 2026-04-22 (v11 — PLI bug fixed, all 3 modalities clean)
 
 ## TL;DR
 
@@ -12,13 +12,66 @@ Last updated: 2026-04-22 (v9 final — full 20s audio, max_seq=1024)
 | Vision encoder (export) | ✅ Exported, runs in multimodal .pte |
 | Audio preprocessor + encoder (export) | ✅ Exported, runs in multimodal .pte |
 | Multimodal .pte (5 methods, KV cache) | ✅ Exports and runs end-to-end |
-| Multimodal generation XNNPACK (image+text) | ✅ Runs, generates tokens |
-| Multimodal generation XNNPACK (audio+text) | ✅ Runs, generates tokens |
+| Multimodal generation XNNPACK (image+text) | ✅ Coherent long descriptions, accurate |
+| Multimodal generation XNNPACK (audio+text) | ✅ Real transcription of 20s speech |
 | Multimodal image color recognition | ✅ Correctly identifies red, blue (HWC fix) |
-| Multimodal generation quality (v6 PLI) | ✅ PLI enabled; colors correct; audio TBD |
-| Single .pte for text/image+text/audio+text (v9) | ✅ Verified end-to-end |
-| Standard MultimodalRunner ABI compliance (v9) | ✅ Uses create_multimodal_runner |
-| Full 20s audio support (1976 mel frames, 494 tokens) | ✅ V9 verified |
+| Multimodal generation quality (v11) | ✅ No drift; full PLI working end-to-end |
+| Single .pte for text/image+text/audio+text (v11) | ✅ Verified end-to-end, 9/10 tests pass |
+| Standard MultimodalRunner ABI compliance | ✅ Uses create_multimodal_runner |
+| Full 20s audio support (1976 mel frames, 494 tokens) | ✅ V11 verified |
+
+## v11 result (2026-04-22) — PLI bug fixed
+
+**Working model:** `/tmp/gemma4_multimodal_v11.pte` (21 GB, XNNPACK FP32, max_seq=1024, audio_frames=1976).
+
+**Root cause of v6–v10 degeneration:** `examples/models/llama/llama_transformer.py` in the **installed** conda-env package (`~/miniconda3/envs/executorch/lib/python3.13/site-packages/executorch/...`) was out-of-sync with the local source tree. The installed PLI block computed `pli_emb` only from `tokens`; when the multimodal `text_decoder` is traced with `h=embeds` (tokens=None), it silently fell back to `pli_emb = zeros`, breaking PLI for every position. The earlier "sequential KV-cache prefill" diagnosis was wrong — the prefiller was already batched. Fix: sync local → installed package and re-export. Verified via `examples/models/gemma4/tests/test_textdec_wrapper.py` (max_diff 19.95 → 0.0).
+
+**Sample v11 outputs (all bit-clean, EOS-terminated where seq_len allowed):**
+```
+Text:  "What is 12 multiplied by 8?"          → "12 multiplied by 8 is **96**.<turn|>"
+Text:  "Explain what a neural network is..."  → "A neural network is a computational
+                                                 model inspired by the structure of the
+                                                 human brain, designed to recognize
+                                                 patterns in data..."
+Image: "Describe this image in detail."        → "This is a close-up photograph featuring
+                                                 a single, vibrant red strawberry...
+                                                 **Subject (Strawberry):** ...plump, ripe
+                                                 strawberry... **Background:** ...bokeh
+                                                 effect..." (150 tokens, structured)
+Audio: "What is being said?" (20s Obama)       → "This week I traveled to Chicago to
+                                                 deliver my final farewell address to
+                                                 the nation, following in the tradition
+                                                 of presidents before me..."
+```
+Full results table in `TEST_RESULTS.md`. 9/10 tests pass; the 1 failure is the 2s audio clip which lacks the required ≥5s mel context (encoder design constraint, not a model bug).
+
+**Operational gotcha:** Edits to `examples/models/llama/*.py` must be mirrored to the installed package. After any local edit, run:
+```
+diff -q examples/models/llama/llama_transformer.py \
+        ~/miniconda3/envs/executorch/lib/python3.13/site-packages/executorch/examples/models/llama/llama_transformer.py
+```
+If they differ, `cp` the local file over the installed one (or `pip install -e . --no-build-isolation`) before re-exporting.
+
+## Quantized v11_q (2026-04-22) — 8da4w XNNPACK
+
+**Working model:** `/tmp/gemma4_multimodal_v11_q.pte` (13.5 GB — 35% smaller than FP32 21 GB).
+Text backbone is 8da4w (8-bit dynamic activations, 4-bit weights, group_size=32). Vision and audio encoders kept FP32. Export script gained `--qmode 8da4w --group-size 32` flags.
+
+| Modality | FP32 decode | 8da4w decode | Speedup |
+|----------|-------------|--------------|---------|
+| Text     | 12.6–13.1 tok/s | 15.9–16.5 tok/s | +25% |
+| Image    | 12.0–13.0 tok/s | 14.1–14.6 tok/s | +15% |
+| Audio    | 11.3 tok/s | 13.7 tok/s | +21% |
+
+Quality: all text/image tests pass. Audio transcription is faithful — actually resolves "we've seen eye-to-eye" cleanly where FP32 emitted "seen it-to-it". 9/10 tests pass; same A2 short-audio limitation as FP32 (encoder design). Full table in `TEST_RESULTS.md`.
+
+Re-export command (~30 min):
+```
+python examples/models/gemma4/export_gemma4_multimodal.py \
+  --hf-model ~/models/gemma-4-E2B-it --et-checkpoint ~/models/gemma-4-E2B-it/model_et.pth \
+  --output /tmp/gemma4_multimodal_v11_q.pte --backend xnnpack \
+  --max-seq-len 1024 --audio-frames 1976 --qmode 8da4w --group-size 32
+```
 
 ## Text generation — WORKING
 

@@ -173,6 +173,9 @@ def export_text_programs(
     et_checkpoint: str,
     et_params: str,
     max_seq_len: int,
+    qmode: str | None = None,
+    group_size: int = 32,
+    embedding_quantize: str | None = None,
 ) -> Dict[str, torch.export.ExportedProgram]:
     """Export token_embedding + text_decoder with proper KV cache.
 
@@ -190,8 +193,13 @@ def export_text_programs(
     cfg.model.enable_dynamic_shape = True
     cfg.export.max_seq_length = max_seq_len
     cfg.export.max_context_length = max_seq_len
+    if qmode is not None:
+        cfg.quantization.qmode = qmode
+        cfg.quantization.group_size = group_size
+    if embedding_quantize is not None:
+        cfg.quantization.embedding_quantize = embedding_quantize
 
-    print("  Preparing Gemma4 text backbone with KV-cache transforms...")
+    print(f"  Preparing Gemma4 text backbone with KV-cache transforms (qmode={qmode}, group_size={group_size}, emb_q={embedding_quantize})...")
     builder = _prepare_for_llama_export(cfg)
     # builder.model is the Transformer with custom KV cache ops applied.
     transformer = builder.model
@@ -254,6 +262,9 @@ def export_gemma4_multimodal(
     backend: str = "xnnpack",
     max_seq_len: int = 512,
     audio_frames: int = 200,
+    qmode: str | None = None,
+    group_size: int = 32,
+    embedding_quantize: str | None = None,
 ) -> None:
     hf_model_dir = Path(hf_model_dir)
     output_path = Path(output_path)
@@ -332,6 +343,9 @@ def export_gemma4_multimodal(
         et_checkpoint=et_checkpoint,
         et_params=et_params,
         max_seq_len=max_seq_len,
+        qmode=qmode,
+        group_size=group_size,
+        embedding_quantize=embedding_quantize,
     )
     programs.update(text_programs)
 
@@ -378,6 +392,13 @@ def main():
     parser.add_argument("--max-seq-len", type=int, default=512)
     parser.add_argument("--audio-frames", type=int, default=200,
                         help="Mel frames for fixed-shape audio encoder export (~2s)")
+    parser.add_argument("--qmode", default=None,
+                        choices=[None, "8da4w", "4w", "int8"],
+                        help="Quantization mode for text backbone (default: FP32)")
+    parser.add_argument("--group-size", type=int, default=32,
+                        help="Group size for weight quantization (default: 32)")
+    parser.add_argument("--embedding-quantize", default=None,
+                        help="Embedding quantization, format '<bits>,<groupsize>' e.g. '8,1024'")
     args = parser.parse_args()
 
     export_gemma4_multimodal(
@@ -387,6 +408,9 @@ def main():
         backend=args.backend,
         max_seq_len=args.max_seq_len,
         audio_frames=args.audio_frames,
+        qmode=args.qmode,
+        group_size=args.group_size,
+        embedding_quantize=args.embedding_quantize,
     )
 
 
