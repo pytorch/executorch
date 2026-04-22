@@ -30,14 +30,15 @@ Key features:
 
 ## Desktop & Laptop Platforms
 
-Deploy ExecuTorch on Linux, macOS, and Windows with optimized backends.
+Deploy ExecuTorch natively on macOS, Linux, and Windows with platform-specific hardware acceleration.
 
-**→ {doc}`desktop-section` — Complete desktop deployment guide**
+**→ {doc}`desktop-section` — Desktop deployment guide**
 
 Key features:
-- Cross-platform C++ runtime
-- Platform-specific optimization (OpenVINO, CoreML, MPS)
-- CPU and GPU acceleration options
+
+- Platform-specific guides for macOS (Core ML, MPS, XNNPACK), Linux (XNNPACK, OpenVINO), and Windows (XNNPACK, OpenVINO)
+- Cross-platform C++ runtime with CMake build presets for each OS
+- CPU and GPU acceleration, including Apple Neural Engine and Intel NPU support
 
 ## Embedded Systems
 
