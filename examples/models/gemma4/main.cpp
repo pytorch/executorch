@@ -91,9 +91,11 @@ class Gemma4DecoderRunner
     if (has_pli_) {
       // Pass current decode token as PLI ID — matches HF Gemma4 where each
       // position's PLI embedding is conditioned on that position's token ID.
-      int64_t pli_id = tokens->const_data_ptr<int64_t>()[0];
+      // Hold the id in a member so the from_blob tensor's data pointer remains
+      // valid through module_->execute (which may queue/defer work).
+      pli_id_buf_ = tokens->const_data_ptr<int64_t>()[0];
       auto pli_t = ext::from_blob(
-          &pli_id, {1, 1}, et::aten::ScalarType::Long);
+          &pli_id_buf_, {1, 1}, et::aten::ScalarType::Long);
       auto out = module_->execute(
           etllm::kTextModelMethod, {emb, *pos_t, *pli_t});
       if (!out.ok()) return out.error();
@@ -108,6 +110,7 @@ class Gemma4DecoderRunner
  private:
   bool has_pli_ = false;
   bool pli_detected_ = false;
+  int64_t pli_id_buf_ = 0;  // backing storage for PLI from_blob in step()
 };
 
 // ---------------------------------------------------------------------------

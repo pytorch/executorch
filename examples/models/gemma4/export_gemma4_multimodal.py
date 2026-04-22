@@ -237,9 +237,9 @@ def export_text_programs(
                 torch.zeros(1, 4, dtype=torch.long), # pli_token_ids: (1, S)
             ),
             dynamic_shapes=(
-                {1: S_dec},   # inputs_embeds
-                {0: 1},       # cache_position static
-                {1: S_dec},   # pli_token_ids same S
+                {1: S_dec},   # inputs_embeds: dim 1 (S) dynamic
+                {},           # cache_position: all dims static (size-1)
+                {1: S_dec},   # pli_token_ids: dim 1 (S) dynamic, matches embeds
             ),
             strict=True,
         )

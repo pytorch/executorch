@@ -58,6 +58,12 @@ class ET_EXPERIMENTAL MultimodalPrefiller {
   MultimodalDecoderRunner* text_decoder_runner_;
   Tokenizer* tokenizer_;
   IOManager* io_manager_;
+
+  // Cache of whether the loaded text_decoder method has the 3-input PLI
+  // signature (Gemma4) vs the standard 2-input one. Detected lazily on the
+  // first prefill() call after the module is loaded.
+  bool has_pli_input_ = false;
+  bool pli_detected_ = false;
 };
 
 } // namespace executorch::extension::llm

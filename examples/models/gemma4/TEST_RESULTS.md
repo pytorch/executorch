@@ -40,14 +40,14 @@ PLI implemented via `Gemma4DecoderRunner` (Approach C):
 
 ### T1: Capital of France
 **Prompt:** "What is the capital of France?"  **seq_len:** 30
-**Output:** `The capital of France is **Paris**.<turn|>`
+**Output:** `The capital of France is **Paris**.`
 **Result:** ✅ PASS — Correct, stops cleanly at EOS.
 
 ---
 
 ### T2: Math
 **Prompt:** "What is 12 multiplied by 8?"  **seq_len:** 50
-**Output:** `12 multiplied by 8 is **96**.<turn|>`
+**Output:** `12 multiplied by 8 is **96**.`
 **Result:** ✅ PASS — Correct answer (96), clean EOS.
 
 ---
@@ -72,7 +72,7 @@ def reverse_string_slicing(s: str) -> str:
 
 ### T4: General knowledge
 **Prompt:** "Explain what a neural network is in one sentence."  **seq_len:** 80
-**Output:** `A neural network is a computational model inspired by the structure of the human brain, designed to recognize patterns in data by processing information through interconnected nodes.<turn|>`
+**Output:** `A neural network is a computational model inspired by the structure of the human brain, designed to recognize patterns in data by processing information through interconnected nodes.`
 **Result:** ✅ PASS — Single coherent sentence, clean EOS.
 
 ---
@@ -104,21 +104,21 @@ The strawberry is resting on a light-
 
 ### I2: What color
 **Prompt:** "What color is the object in this image?"  **seq_len:** 30
-**Output:** `The object in the image is **red**. It is a strawberry.<turn|>`
+**Output:** `The object in the image is **red**. It is a strawberry.`
 **Result:** ✅ PASS — Correct color, also identifies the object spontaneously, clean EOS.
 
 ---
 
 ### I3: What is the main subject
 **Prompt:** "What is the main subject of this image?"  **seq_len:** 25
-**Output:** `The main subject of this image is a **strawberry**.<turn|>`
+**Output:** `The main subject of this image is a **strawberry**.`
 **Result:** ✅ PASS — Correct, clean EOS.
 
 ---
 
 ### I4: What object is shown
 **Prompt:** "What object or subject is shown in this image?"  **seq_len:** 20
-**Output:** `The object shown in this image is a **strawberry**.<turn|>`
+**Output:** `The object shown in this image is a **strawberry**.`
 **Result:** ✅ PASS — Correct, clean EOS.
 
 ---
@@ -130,7 +130,7 @@ The strawberry is resting on a light-
 This week I traveled to Chicago to deliver my final farewell address to the nation,
 following in the tradition of presidents before me. It was an opportunity to say
 thank you. Whether we've seen it-to-it or rarely agreed at all, my conversations
-with you, the American people, in living rooms and...<turn|>
+with you, the American people, in living rooms and...
 ```
 **Result:** ✅ PASS — Real transcription/paraphrase of Obama's farewell address. Minor word-fusion artifact ("seen it-to-it" instead of "seen eye-to-eye") but content is faithful. Truncated by `seq_len`.
 
@@ -191,14 +191,14 @@ python examples/models/gemma4/export_gemma4_multimodal.py \
 
 | Test | Result | Output excerpt |
 |------|--------|----------------|
-| T1 capital | ✅ PASS | "The capital of France is **Paris**.<turn\|>" |
-| T2 math    | ✅ PASS | "Let's calculate $12 \times 8$: $$12 \times 8 = 96$$ ... **96.**<turn\|>" |
+| T1 capital | ✅ PASS | "The capital of France is **Paris**." |
+| T2 math    | ✅ PASS | "Let's calculate $12 \times 8$: $$12 \times 8 = 96$$ ... **96.**" |
 | T3 code    | ✅ PASS | Pythonic slicing, structured markdown |
 | T4 NN      | ✅ PASS | "A neural network is a computational model inspired by the human brain..." |
 | I1 describe | ✅ PASS | Multi-paragraph: subject (color, texture, condition), setting, composition |
-| I2 color   | ✅ PASS | "...is **red**. It is a strawberry.<turn\|>" |
-| I3 subject | ✅ PASS | "...is a **strawberry**.<turn\|>" |
-| I4 object  | ✅ PASS | "The main object shown in this image is a **strawberry**.<turn\|>" |
+| I2 color   | ✅ PASS | "...is **red**. It is a strawberry." |
+| I3 subject | ✅ PASS | "...is a **strawberry**." |
+| I4 object  | ✅ PASS | "The main object shown in this image is a **strawberry**." |
 | A1 audio (transcribe) | ✅ PASS | "This week I traveled to Chicago to deliver my final farewell address to the nation... whether we've seen eye-to-eye or rarely agreed at all..." (correctly resolves "eye-to-eye" — better than FP32's "it-to-it") |
 | A1 audio (summary)    | ✅ PASS | Coherent summary; structured analysis with prompt "What is the speaker saying?" |
 | A2 short audio | ❌ FAIL (by design) | Same encoder limitation as FP32 |

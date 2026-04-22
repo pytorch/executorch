@@ -248,14 +248,20 @@ Result<uint64_t> MultimodalPrefiller::prefill(
   //   image → 0 (pad_token_id, matches HF line 2215)
   //   audio → 0 (pad_token_id, same convention)
   // Falls back to 2-input silently for ptes without PLI (num_inputs < 3).
-  auto dec_meta = module_->method_meta(kTextModelMethod);
-  size_t n_inputs = dec_meta.ok() ? (*dec_meta).num_inputs() : 0;
-  bool has_pli_input = n_inputs >= 3;
-  ET_LOG(Debug, "text_decoder num_inputs=%zu has_pli=%d pli_ids=%zu",
-         n_inputs, (int)has_pli_input, pli_ids.size());
+  // Cache the detection so we only query method_meta once per runner.
+  if (!pli_detected_) {
+    auto dec_meta = module_->method_meta(kTextModelMethod);
+    size_t n_inputs = dec_meta.ok() ? (*dec_meta).num_inputs() : 0;
+    has_pli_input_ = n_inputs >= 3;
+    pli_detected_ = true;
+    ET_LOG(Info, "MultimodalPrefiller: PLI %s (text_decoder num_inputs=%zu)",
+           has_pli_input_ ? "enabled" : "disabled", n_inputs);
+  }
+  ET_LOG(Debug, "text_decoder has_pli=%d pli_ids=%zu",
+         (int)has_pli_input_, pli_ids.size());
 
   auto run_text_decoder = [&]() {
-    if (has_pli_input && !pli_ids.empty()) {
+    if (has_pli_input_ && !pli_ids.empty()) {
       // Pass real/placeholder token IDs as the 3rd input for Approach C PLI.
       auto pli_t = ::executorch::extension::from_blob(
           pli_ids.data(),

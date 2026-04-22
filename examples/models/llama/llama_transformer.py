@@ -324,6 +324,9 @@ class Transformer(nn.Module):
         self._kv_donor_map = _build_kv_donor_map(
             params.n_layers, params.num_kv_shared_layers, params.layer_types
         )
+        # Cache the set of donor indices to avoid rebuilding it per layer
+        # in _forward_layers (called once per token during decode).
+        self._kv_donor_set = set(self._kv_donor_map.values())
 
         # Gemma4 Per-Layer Input (PLI): separate embedding + projection per layer.
         self.hidden_size_per_layer_input = params.hidden_size_per_layer_input
@@ -390,7 +393,7 @@ class Transformer(nn.Module):
             attn_options_.pop("per_layer_input", None)
 
             # Capture KV from donor layers for later sharing.
-            if layer_idx in set(self._kv_donor_map.values()):
+            if layer_idx in self._kv_donor_set:
                 assert (
                     attn_options_update is not None
                     and "kv_to_share" in attn_options_update
