@@ -665,6 +665,30 @@ MODULE_REGISTRY["sdpa_head_dim_256"] = {
 
 
 # -------------------------------------------------------------------------
+# Narrow (non-packed reinterpret_tensor materialization)
+# -------------------------------------------------------------------------
+
+
+class NarrowLastDim(nn.Module):
+    """Splits the last dimension into two halves via narrow, producing
+    non-packed strided views that the Metal backend must materialize
+    into contiguous buffers."""
+
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        half = x.shape[-1] // 2
+        a = x.narrow(-1, 0, half)
+        b = x.narrow(-1, half, half)
+        return a * 2.0 + b
+
+
+MODULE_REGISTRY["narrow_last_dim"] = {
+    "model_class": NarrowLastDim,
+    "input_shapes": [(2, 4, 16)],
+    "description": "Non-packed reinterpret_tensor views from last-dim split",
+}
+
+
+# -------------------------------------------------------------------------
 # Top-k (MoE expert routing)
 # -------------------------------------------------------------------------
 

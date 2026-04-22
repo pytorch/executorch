@@ -228,6 +228,7 @@ TEST_F(EValueTest, BoxedEvalueListTryGetSuccess) {
   EXPECT_TRUE(result.ok());
   EXPECT_EQ(result->size(), 3);
   EXPECT_EQ((*result)[0], 1);
+  EXPECT_EQ((*result)[1], 2);
   EXPECT_EQ((*result)[2], 3);
 }
 
