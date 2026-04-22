@@ -22,14 +22,24 @@ jobs:
             const workflowRun = context.payload.workflow_run;
             const conclusion = workflowRun.conclusion;
             const runUrl = workflowRun.html_url;
+            const headBranch = workflowRun.head_branch;
 
+            // Find PR by branch name (workflow_run.pull_requests is unreliable)
+            let prNumber;
             const prs = workflowRun.pull_requests;
-            if (!prs || prs.length === 0) {
-              console.log('No PRs associated with this workflow run. Skipping.');
-              return;
+            if (prs && prs.length > 0) {
+              prNumber = prs[0].number;
+            } else {
+              const { data: branchPrs } = await github.rest.pulls.list({
+                owner, repo, head: `${owner}:${headBranch}`, state: 'open', per_page: 1
+              });
+              if (branchPrs.length === 0) {
+                console.log(`No open PRs for branch ${headBranch}. Skipping.`);
+                return;
+              }
+              prNumber = branchPrs[0].number;
             }
 
-            const prNumber = prs[0].number;
             const pr = await github.rest.pulls.get({ owner, repo, pull_number: prNumber });
 
             const isPinBump = pr.data.labels.some(l => l.name === 'ci/pytorch-pin-bump');
@@ -65,8 +75,8 @@ jobs:
               return;
             }
 
-            if (conclusion !== 'failure') {
-              console.log(`Trunk concluded with "${conclusion}" (not failure). Skipping.`);
+            if (conclusion !== 'failure' && conclusion !== 'cancelled') {
+              console.log(`Trunk concluded with "${conclusion}" (not failure/cancelled). Skipping.`);
               return;
             }
 
