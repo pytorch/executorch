@@ -214,6 +214,57 @@ TEST_F(EValueTest, BoxedEvalueList) {
   EXPECT_EQ(unwrapped[2], 3);
 }
 
+TEST_F(EValueTest, BoxedEvalueListTryGetSuccess) {
+  EValue values[3] = {
+      EValue((int64_t)1), EValue((int64_t)2), EValue((int64_t)3)};
+  EValue* values_p[3] = {&values[0], &values[1], &values[2]};
+  int64_t storage[3] = {0, 0, 0};
+  BoxedEvalueList<int64_t> x{values_p, storage, 3};
+  auto result = x.tryGet();
+  EXPECT_TRUE(result.ok());
+  EXPECT_EQ(result->size(), 3);
+  EXPECT_EQ((*result)[0], 1);
+  EXPECT_EQ((*result)[2], 3);
+}
+
+TEST_F(EValueTest, BoxedEvalueListTryGetWrongElementTag) {
+  // Second element is a Double, not an Int; tryGet should reject it rather
+  // than abort inside to<int64_t>().
+  EValue values[3] = {EValue((int64_t)1), EValue(3.14), EValue((int64_t)3)};
+  EValue* values_p[3] = {&values[0], &values[1], &values[2]};
+  int64_t storage[3] = {0, 0, 0};
+  BoxedEvalueList<int64_t> x{values_p, storage, 3};
+  auto result = x.tryGet();
+  EXPECT_EQ(result.error(), executorch::runtime::Error::InvalidType);
+}
+
+TEST_F(EValueTest, BoxedEvalueListTryGetNullElement) {
+  // A null wrapped pointer is a malformed program for non-optional lists;
+  // tryGet reports InvalidState rather than aborting inside ET_CHECK.
+  EValue a((int64_t)1);
+  EValue c((int64_t)3);
+  EValue* values_p[3] = {&a, nullptr, &c};
+  int64_t storage[3] = {0, 0, 0};
+  BoxedEvalueList<int64_t> x{values_p, storage, 3};
+  auto result = x.tryGet();
+  EXPECT_EQ(result.error(), executorch::runtime::Error::InvalidState);
+}
+
+TEST_F(EValueTest, BoxedEvalueListTryGetOptionalTensorNullIsNone) {
+  // For the optional<Tensor> specialization, a null wrapped pointer is a
+  // valid None encoding (matches parseListOptionalType), not an error.
+  EValue a;
+  EValue* values_p[2] = {&a, nullptr};
+  std::optional<executorch::aten::Tensor> storage[2];
+  BoxedEvalueList<std::optional<executorch::aten::Tensor>> x{
+      values_p, storage, 2};
+  auto result = x.tryGet();
+  EXPECT_TRUE(result.ok());
+  EXPECT_EQ(result->size(), 2);
+  EXPECT_FALSE((*result)[0].has_value());
+  EXPECT_FALSE((*result)[1].has_value());
+}
+
 TEST_F(EValueTest, toOptionalTensorList) {
   // create list, empty evalue ctor gets tag::None
   EValue values[2] = {EValue(), EValue()};
@@ -601,4 +652,21 @@ TEST_F(EValueTest, TryToOptionalIntTypeMismatch) {
   EValue e(3.14);
   auto result = e.tryToOptional<int64_t>();
   EXPECT_EQ(result.error(), executorch::runtime::Error::InvalidType);
+}
+
+// Verify tryTo<std::optional<T>>() specializations match tryToOptional<T>()
+// semantics, mirroring the to<std::optional<T>>() specializations of to<T>().
+TEST_F(EValueTest, TryToTemplateOptionalIntSuccess) {
+  EValue e(static_cast<int64_t>(42));
+  auto result = e.tryTo<std::optional<int64_t>>();
+  EXPECT_TRUE(result.ok());
+  EXPECT_TRUE(result->has_value());
+  EXPECT_EQ(result->value(), 42);
+}
+
+TEST_F(EValueTest, TryToTemplateOptionalTensorNone) {
+  EValue e;
+  auto result = e.tryTo<std::optional<executorch::aten::Tensor>>();
+  EXPECT_TRUE(result.ok());
+  EXPECT_FALSE(result->has_value());
 }
