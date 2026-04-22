@@ -1388,6 +1388,26 @@ class LayerNorm(torch.nn.Module):
         return self.linear(self.layer_norm(x))
 
 
+class NativeLayerNorm(torch.nn.Module):
+    def __init__(self, affine=True):
+        super().__init__()
+        self.affine = affine
+        self.weight = torch.nn.Parameter(torch.ones(768))
+        self.bias = torch.nn.Parameter(torch.zeros(768))
+        self.normalized_shape = [768]
+        self.eps = 1e-6
+
+    def forward(self, x):
+        if self.affine:
+            return torch.native_layer_norm(
+                x, self.normalized_shape, self.weight, self.bias, self.eps
+            )[0]
+        else:
+            return torch.native_layer_norm(
+                x, self.normalized_shape, self.weight, self.bias, self.eps
+            )[0]
+
+
 class LayerNormAdd(torch.nn.Module):
     def __init__(self):
         super().__init__()

@@ -617,6 +617,7 @@ def build_executorch_binary(
     with open(pte_name, "wb") as file:
         exec_prog_mgr.write_to_file(file)
 
+    print(f"Successfully generated {pte_name}.")
     if qnn_config.compile_only:
         sys.exit(0)
 
