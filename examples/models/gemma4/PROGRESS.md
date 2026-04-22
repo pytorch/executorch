@@ -1,6 +1,6 @@
 # Gemma4 ExecuTorch — Status
 
-Last updated: 2026-04-21 (v7 standard-ABI refactor)
+Last updated: 2026-04-22 (v9 final — full 20s audio, max_seq=1024)
 
 ## TL;DR
 
@@ -16,8 +16,9 @@ Last updated: 2026-04-21 (v7 standard-ABI refactor)
 | Multimodal generation XNNPACK (audio+text) | ✅ Runs, generates tokens |
 | Multimodal image color recognition | ✅ Correctly identifies red, blue (HWC fix) |
 | Multimodal generation quality (v6 PLI) | ✅ PLI enabled; colors correct; audio TBD |
-| Single .pte for text/image+text/audio+text (v7) | ✅ Verified end-to-end |
-| Standard MultimodalRunner ABI compliance (v7) | ✅ Uses create_multimodal_runner |
+| Single .pte for text/image+text/audio+text (v9) | ✅ Verified end-to-end |
+| Standard MultimodalRunner ABI compliance (v9) | ✅ Uses create_multimodal_runner |
+| Full 20s audio support (1976 mel frames, 494 tokens) | ✅ V9 verified |
 
 ## Text generation — WORKING
 
@@ -218,15 +219,18 @@ Image resize target: **960×672** (not 448×448) — 60 columns × 16px × 42 ro
 KV cache metadata: `use_kv_cache=True, use_sdpa_with_kv_cache=True`.
 Text prefill: token-by-token (static-shape KV-cache text_decoder).
 
-**Verified E2E results on V7 XNNPACK pte (single .pte, all 3 modes, ~13 tok/s decode):**
+**Verified E2E results on V9 XNNPACK pte (single .pte, all 3 modes):**
 ```
-Text:  "What is capital of France?"          → "The capital of France is **Paris**..."
-Image: "What color?" (blue PNG)              → "The color of this image is blue blue.<turn|>"
-Audio: "What sound is this?" (440Hz sine)    → "I don can hear any sound...<turn|>"
+Text:  "What is capital of France?"        → "The capital of France is **Paris**..."  90/14 tok/s
+Image: "Describe this image." (image.jpg) → "This image is a close-up shot of..."   91/13 tok/s
+Audio: "What is being said?"  (20s Obama) → "The text is a speech excerpt, set      260/11 tok/s
+                                              in a modern-day setting..." <turn|>
 ```
 
-V7 uses standard `MultimodalRunner` (`create_multimodal_runner`) — no custom orchestration.
-Single `/tmp/gemma4_multimodal_v7.pte` (12 GB, XNNPACK, max_seq=512) serves all 3 modes.
+V9 uses standard `MultimodalRunner` (`create_multimodal_runner`).
+Single `/tmp/gemma4_multimodal_v9.pte` (13 GB, XNNPACK, max_seq=1024) serves all 3 modes.
+- 512 prefill tokens for 20s audio (494 audio soft tokens + 18 text)
+- Audio recognition: identifies speech, generates description, stops at EOS
 
 **V7 standard ABI signatures (matches MultimodalPrefiller):**
 - `token_embedding(tokens[1,S])`        → `(1,S,1536)` scaled
