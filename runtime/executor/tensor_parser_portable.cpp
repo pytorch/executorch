@@ -8,8 +8,6 @@
 
 #include <executorch/runtime/executor/tensor_parser.h>
 
-#include <climits>
-
 #include <c10/util/safe_numerics.h>
 
 #include <executorch/runtime/core/exec_aten/exec_aten.h>
