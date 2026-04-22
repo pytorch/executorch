@@ -118,9 +118,12 @@ Result<uint64_t> MultimodalPrefiller::prefill(
     auto image_encoder_outputs = image_encoder_result.get();
 
     encoder_output = image_encoder_outputs[0];
-    // PLI placeholder: <|image> token ID = 255999 for all visual soft-token positions.
+    // HF Gemma4Model.forward sets image positions to pad_token_id (0) before PLI
+    // lookup — NOT the image sentinel. Per HF line 2215:
+    //   llm_input_ids[multimodal_mask] = self.config.text_config.pad_token_id
+    //   per_layer_inputs = get_per_layer_inputs(llm_input_ids, llm_inputs_embeds)
     int64_t n_soft = encoder_output.toTensor().size(1);
-    pli_ids.assign(n_soft, 255999LL);
+    pli_ids.assign(n_soft, 0LL);  // pad_token_id = 0
   } else if (input.is_audio()) {
     const Audio& audio = input.get_audio();
 
@@ -181,9 +184,9 @@ Result<uint64_t> MultimodalPrefiller::prefill(
     auto audio_encoder_outputs = audio_encoder_result.get();
 
     encoder_output = audio_encoder_outputs[0];
-    // PLI placeholder: <|audio> token ID = 256000 for all audio soft-token positions.
+    // Same as image: HF uses pad_token_id (0) for all soft-token positions in PLI.
     int64_t n_soft = encoder_output.toTensor().size(1);
-    pli_ids.assign(n_soft, 256000LL);
+    pli_ids.assign(n_soft, 0LL);  // pad_token_id = 0
   } else if (input.is_text() || input.is_tokens()) {
     std::vector<uint64_t> tokens;
     if (input.is_text()) {
@@ -240,13 +243,16 @@ Result<uint64_t> MultimodalPrefiller::prefill(
   auto cache_position_tensor = cache_position_result.get();
 
   // Approach C: detect 3-input text_decoder (Gemma4 PLI).
-  // The 3rd input carries pli_token_ids (1, S) long so the transformer can
-  // compute the pli_emb component. Text uses real token IDs; image/audio use
-  // modality placeholder IDs (<|image>=255999, <|audio>=256000).
+  // pli_ids are built per-branch above:
+  //   text  → real token IDs (matches HF: PLI uses actual token IDs for text)
+  //   image → 0 (pad_token_id, matches HF line 2215)
+  //   audio → 0 (pad_token_id, same convention)
   // Falls back to 2-input silently for ptes without PLI (num_inputs < 3).
   auto dec_meta = module_->method_meta(kTextModelMethod);
-  bool has_pli_input =
-      dec_meta.ok() && (*dec_meta).num_inputs() >= 3;
+  size_t n_inputs = dec_meta.ok() ? (*dec_meta).num_inputs() : 0;
+  bool has_pli_input = n_inputs >= 3;
+  ET_LOG(Debug, "text_decoder num_inputs=%zu has_pli=%d pli_ids=%zu",
+         n_inputs, (int)has_pli_input, pli_ids.size());
 
   auto run_text_decoder = [&]() {
     if (has_pli_input && !pli_ids.empty()) {

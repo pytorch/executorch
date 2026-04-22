@@ -59,15 +59,7 @@ class Gemma4DecoderRunner
       ::executorch::extension::Module* module,
       ::executorch::extension::llm::IOManager* io_manager)
       : MultimodalDecoderRunner(module, io_manager) {
-    // Detect 3-input text_decoder once at construction time.
-    auto meta = module->method_meta(
-        ::executorch::extension::llm::kTextModelMethod);
-    has_pli_ = meta.ok() && (*meta).num_inputs() >= 3;
-    ET_LOG(
-        Info,
-        "Gemma4DecoderRunner: PLI %s",
-        has_pli_ ? "enabled (v2 pte, 3-input text_decoder)"
-                 : "disabled (v1 pte, 2-input text_decoder)");
+    // PLI detection deferred to first step() call — module must be loaded first.
   }
 
   ::executorch::runtime::Result<::executorch::aten::Tensor> step(
@@ -85,6 +77,16 @@ class Gemma4DecoderRunner
     // Build start_pos tensor.
     auto pos_t = ext::from_blob(
         &start_pos, {1}, et::aten::ScalarType::Long);
+
+    // Lazy PLI detection — runs after module is loaded (not at construction time).
+    if (!pli_detected_) {
+      auto meta = module_->method_meta(etllm::kTextModelMethod);
+      has_pli_ = meta.ok() && (*meta).num_inputs() >= 3;
+      pli_detected_ = true;
+      ET_LOG(Info, "Gemma4DecoderRunner: PLI %s",
+             has_pli_ ? "enabled (3-input text_decoder)"
+                      : "disabled (2-input text_decoder)");
+    }
 
     if (has_pli_) {
       // Pass current decode token as PLI ID — matches HF Gemma4 where each
@@ -105,6 +107,7 @@ class Gemma4DecoderRunner
 
  private:
   bool has_pli_ = false;
+  bool pli_detected_ = false;
 };
 
 // ---------------------------------------------------------------------------
@@ -119,12 +122,12 @@ create_gemma4_runner(
   namespace ext = ::executorch::extension;
   namespace etllm = ::executorch::extension::llm;
 
+  // Use File mode (same as create_multimodal_runner default) so that program
+  // metadata is immediately available for get_llm_metadata and method_meta.
   auto module = data_path.has_value()
       ? std::make_unique<ext::Module>(
-            model_path, data_path.value(),
-            ext::Module::LoadMode::MmapUseMlockIgnoreErrors)
-      : std::make_unique<ext::Module>(
-            model_path, ext::Module::LoadMode::MmapUseMlockIgnoreErrors);
+            model_path, data_path.value(), ext::Module::LoadMode::File)
+      : std::make_unique<ext::Module>(model_path, ext::Module::LoadMode::File);
 
   auto metadata_res = etllm::get_llm_metadata(tokenizer.get(), module.get());
   if (!metadata_res.ok()) {
