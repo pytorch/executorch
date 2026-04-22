@@ -16,8 +16,12 @@
 
 using namespace ::testing;
 
+using executorch::aten::DeviceType;
+using executorch::aten::Layout;
+using executorch::aten::MemoryFormat;
 using executorch::aten::ScalarType;
 using executorch::runtime::BoxedEvalueList;
+using executorch::runtime::Error;
 using executorch::runtime::EValue;
 using executorch::runtime::Tag;
 using executorch::runtime::testing::TensorFactory;
@@ -239,8 +243,7 @@ TEST_F(EValueTest, BoxedEvalueListTryGetWrongElementTag) {
 }
 
 TEST_F(EValueTest, BoxedEvalueListTryGetNullElement) {
-  // A null wrapped pointer is a malformed program for non-optional lists;
-  // tryGet reports InvalidState rather than aborting inside ET_CHECK.
+  // A null value is a malformed program for non-optional lists.
   EValue a((int64_t)1);
   EValue c((int64_t)3);
   EValue* values_p[3] = {&a, nullptr, &c};
@@ -251,8 +254,7 @@ TEST_F(EValueTest, BoxedEvalueListTryGetNullElement) {
 }
 
 TEST_F(EValueTest, BoxedEvalueListTryGetOptionalTensorNullIsNone) {
-  // For the optional<Tensor> specialization, a null wrapped pointer is a
-  // valid None encoding (matches parseListOptionalType), not an error.
+  // For optional<Tensor>, null value is valid.
   EValue a;
   EValue* values_p[2] = {&a, nullptr};
   std::optional<executorch::aten::Tensor> storage[2];
@@ -469,204 +471,115 @@ TEST_F(EValueTest, toListOptionalTensorNullPointerCheck) {
   ET_EXPECT_DEATH({ e.toListOptionalTensor(); }, "pointer is null");
 }
 
-TEST_F(EValueTest, TryToTensorSuccess) {
+// Per-type tryTo* coverage.
+// For each type:
+//   - success and failure for named method tryTo[Int/Double/Bool/Tensor/..]
+//   - success and failure for templated tryTo<T>() specialization
+
+TEST_F(EValueTest, TryToInt) {
+  EValue e_int(static_cast<int64_t>(42));
+  EValue e_mismatch(3.14);
+  EXPECT_EQ(e_int.tryToInt().get(), 42);
+  EXPECT_EQ(e_mismatch.tryToInt().error(), Error::InvalidType);
+  EXPECT_EQ(e_int.tryTo<int64_t>().get(), 42);
+  EXPECT_EQ(e_mismatch.tryTo<int64_t>().error(), Error::InvalidType);
+}
+
+TEST_F(EValueTest, TryToDouble) {
+  EValue e_double(3.14);
+  EValue e_mismatch(static_cast<int64_t>(42));
+  EXPECT_DOUBLE_EQ(e_double.tryToDouble().get(), 3.14);
+  EXPECT_EQ(e_mismatch.tryToDouble().error(), Error::InvalidType);
+  EXPECT_DOUBLE_EQ(e_double.tryTo<double>().get(), 3.14);
+  EXPECT_EQ(e_mismatch.tryTo<double>().error(), Error::InvalidType);
+}
+
+TEST_F(EValueTest, TryToBool) {
+  EValue e_bool(true);
+  EValue e_mismatch(static_cast<int64_t>(42));
+  EXPECT_EQ(e_bool.tryToBool().get(), true);
+  EXPECT_EQ(e_mismatch.tryToBool().error(), Error::InvalidType);
+  EXPECT_EQ(e_bool.tryTo<bool>().get(), true);
+  EXPECT_EQ(e_mismatch.tryTo<bool>().error(), Error::InvalidType);
+}
+
+TEST_F(EValueTest, TryToTensor) {
   TensorFactory<ScalarType::Float> tf;
-  EValue e(tf.ones({3, 2}));
-  auto result = e.tryToTensor();
-  EXPECT_TRUE(result.ok());
-  EXPECT_EQ(result->dim(), 2);
-  EXPECT_EQ(result->numel(), 6);
+  EValue e_tensor(tf.ones({3, 2}));
+  EValue e_mismatch(static_cast<int64_t>(42));
+  EXPECT_EQ(e_tensor.tryToTensor()->numel(), 6);
+  EXPECT_EQ(e_mismatch.tryToTensor().error(), Error::InvalidType);
+  EXPECT_EQ(e_tensor.tryTo<executorch::aten::Tensor>()->numel(), 6);
+  EXPECT_EQ(
+      e_mismatch.tryTo<executorch::aten::Tensor>().error(), Error::InvalidType);
 }
 
-TEST_F(EValueTest, TryToTensorTypeMismatch) {
-  EValue e(static_cast<int64_t>(42));
-  auto result = e.tryToTensor();
-  EXPECT_FALSE(result.ok());
-  EXPECT_EQ(result.error(), executorch::runtime::Error::InvalidType);
-}
-
-TEST_F(EValueTest, TryToOptionalTensorSuccess) {
+TEST_F(EValueTest, TryToOptionalTensor) {
   TensorFactory<ScalarType::Float> tf;
-  EValue e(tf.ones({3, 2}));
-  auto result = e.tryToOptional<executorch::aten::Tensor>();
-  EXPECT_TRUE(result.ok());
-  EXPECT_TRUE(result->has_value());
-  EXPECT_EQ(result->value().dim(), 2);
+  EValue e_tensor(tf.ones({3, 2}));
+  EValue e_none;
+  EValue e_mismatch(static_cast<int64_t>(42));
+  // Named tryToOptional<Tensor>: value, None, mismatch.
+  auto r_val = e_tensor.tryToOptional<executorch::aten::Tensor>();
+  EXPECT_TRUE(r_val->has_value());
+  EXPECT_EQ(r_val->value().numel(), 6);
+  EXPECT_FALSE(e_none.tryToOptional<executorch::aten::Tensor>()->has_value());
+  EXPECT_EQ(
+      e_mismatch.tryToOptional<executorch::aten::Tensor>().error(),
+      Error::InvalidType);
+  // Templated tryTo<std::optional<Tensor>>: None path.
+  EXPECT_FALSE(
+      e_none.tryTo<std::optional<executorch::aten::Tensor>>()->has_value());
 }
 
-TEST_F(EValueTest, TryToOptionalTensorNone) {
-  EValue e;
-  auto result = e.tryToOptional<executorch::aten::Tensor>();
-  EXPECT_TRUE(result.ok());
-  EXPECT_FALSE(result->has_value());
+TEST_F(EValueTest, TryToScalar) {
+  EValue e_int(static_cast<int64_t>(7));
+  EValue e_double(2.5);
+  EValue e_bool(true);
+  EValue e_none;
+  EXPECT_EQ(e_int.tryToScalar()->to<int64_t>(), 7);
+  EXPECT_DOUBLE_EQ(e_double.tryToScalar()->to<double>(), 2.5);
+  EXPECT_EQ(e_bool.tryToScalar()->to<bool>(), true);
+  // None is neither Int/Double/Bool.
+  EXPECT_EQ(e_none.tryToScalar().error(), Error::InvalidType);
 }
 
-TEST_F(EValueTest, TryToOptionalTensorTypeMismatch) {
+TEST_F(EValueTest, TryToScalarType) {
+  EValue e(static_cast<int64_t>(ScalarType::Float));
+  EValue e_mismatch(3.14);
+  EXPECT_EQ(e.tryToScalarType().get(), ScalarType::Float);
+  EXPECT_EQ(e_mismatch.tryToScalarType().error(), Error::InvalidType);
+  EXPECT_EQ(e.tryTo<ScalarType>().get(), ScalarType::Float);
+  EXPECT_EQ(e_mismatch.tryTo<ScalarType>().error(), Error::InvalidType);
+}
+
+TEST_F(EValueTest, TryToMemoryFormat) {
+  EValue e(static_cast<int64_t>(MemoryFormat::Contiguous));
+  EValue e_mismatch(3.14);
+  EXPECT_EQ(e.tryToMemoryFormat().get(), MemoryFormat::Contiguous);
+  EXPECT_EQ(e_mismatch.tryToMemoryFormat().error(), Error::InvalidType);
+}
+
+TEST_F(EValueTest, TryToLayout) {
+  EValue e(static_cast<int64_t>(Layout::Strided));
+  EValue e_mismatch(3.14);
+  EXPECT_EQ(e.tryToLayout().get(), Layout::Strided);
+  EXPECT_EQ(e_mismatch.tryToLayout().error(), Error::InvalidType);
+}
+
+TEST_F(EValueTest, TryToDevice) {
+  EValue e(static_cast<int64_t>(DeviceType::CPU));
+  EValue e_mismatch(3.14);
+  EXPECT_EQ(e.tryToDevice().get().type(), DeviceType::CPU);
+  EXPECT_EQ(e_mismatch.tryToDevice().error(), Error::InvalidType);
+}
+
+TEST_F(EValueTest, TryToTensorList) {
   EValue e(static_cast<int64_t>(42));
-  auto result = e.tryToOptional<executorch::aten::Tensor>();
-  EXPECT_FALSE(result.ok());
-  EXPECT_EQ(result.error(), executorch::runtime::Error::InvalidType);
+  EXPECT_EQ(e.tryToTensorList().error(), Error::InvalidType);
 }
 
-// Scalar/primitive tryTo* coverage. The Success+TypeMismatch pair is
-// identical per-type modulo the method name, so the macro below generates
-// both tests. `match_value` should satisfy the isX() tag check; `mismatch_ev`
-// must construct an EValue whose tag differs.
-#define TRY_TO_PRIMITIVE_TEST(Name, Type, match_value, mismatch_ev)     \
-  TEST_F(EValueTest, TryTo##Name##Success) {                            \
-    EValue e(static_cast<Type>(match_value));                           \
-    auto result = e.tryTo##Name();                                      \
-    EXPECT_TRUE(result.ok());                                           \
-    EXPECT_EQ(result.get(), static_cast<Type>(match_value));            \
-  }                                                                     \
-  TEST_F(EValueTest, TryTo##Name##TypeMismatch) {                       \
-    EValue e(mismatch_ev);                                              \
-    auto result = e.tryTo##Name();                                      \
-    EXPECT_EQ(result.error(), executorch::runtime::Error::InvalidType); \
-  }
-
-TRY_TO_PRIMITIVE_TEST(Int, int64_t, 42, 3.14)
-TRY_TO_PRIMITIVE_TEST(Double, double, 3.14, static_cast<int64_t>(42))
-TRY_TO_PRIMITIVE_TEST(Bool, bool, true, static_cast<int64_t>(42))
-
-#undef TRY_TO_PRIMITIVE_TEST
-
-TEST_F(EValueTest, TryToScalarFromInt) {
-  EValue e(static_cast<int64_t>(7));
-  auto result = e.tryToScalar();
-  EXPECT_TRUE(result.ok());
-  EXPECT_EQ(result->to<int64_t>(), 7);
-}
-
-TEST_F(EValueTest, TryToScalarFromDouble) {
-  EValue e(2.5);
-  auto result = e.tryToScalar();
-  EXPECT_TRUE(result.ok());
-  EXPECT_DOUBLE_EQ(result->to<double>(), 2.5);
-}
-
-TEST_F(EValueTest, TryToScalarFromBool) {
-  EValue e(true);
-  auto result = e.tryToScalar();
-  EXPECT_TRUE(result.ok());
-  EXPECT_EQ(result->to<bool>(), true);
-}
-
-TEST_F(EValueTest, TryToScalarNoneTag) {
-  // None is neither Int/Double/Bool, so tryToScalar must reject it.
-  EValue e;
-  auto result = e.tryToScalar();
-  EXPECT_EQ(result.error(), executorch::runtime::Error::InvalidType);
-}
-
-TEST_F(EValueTest, TryToScalarTypeTagReturnsScalarType) {
-  // ScalarType/MemoryFormat/Layout/Device share the Int tag; exercise each.
-  EValue e(static_cast<int64_t>(static_cast<int>(ScalarType::Float)));
-  auto st = e.tryToScalarType();
-  EXPECT_TRUE(st.ok());
-  EXPECT_EQ(st.get(), ScalarType::Float);
-}
-
-TEST_F(EValueTest, TryToScalarTypeTypeMismatch) {
-  EValue e(3.14);
-  auto result = e.tryToScalarType();
-  EXPECT_EQ(result.error(), executorch::runtime::Error::InvalidType);
-}
-
-TEST_F(EValueTest, TryToMemoryFormatTypeMismatch) {
-  EValue e(3.14);
-  auto result = e.tryToMemoryFormat();
-  EXPECT_EQ(result.error(), executorch::runtime::Error::InvalidType);
-}
-
-TEST_F(EValueTest, TryToLayoutTypeMismatch) {
-  EValue e(3.14);
-  auto result = e.tryToLayout();
-  EXPECT_EQ(result.error(), executorch::runtime::Error::InvalidType);
-}
-
-TEST_F(EValueTest, TryToDeviceTypeMismatch) {
-  EValue e(3.14);
-  auto result = e.tryToDevice();
-  EXPECT_EQ(result.error(), executorch::runtime::Error::InvalidType);
-}
-
-// List tryTo* — only cover TensorList and ListOptionalTensor. The other
-// list/string variants share the same `if (!isX()) return Error::InvalidType`
-// pattern exercised by the primitive mismatch tests above. Tensor-family
-// lists are the highest-risk attack surface (pointer-holding), so keep
-// explicit coverage.
-
-TEST_F(EValueTest, TryToTensorListTypeMismatch) {
+TEST_F(EValueTest, TryToListOptionalTensor) {
   EValue e(static_cast<int64_t>(42));
-  auto result = e.tryToTensorList();
-  EXPECT_EQ(result.error(), executorch::runtime::Error::InvalidType);
-}
-
-TEST_F(EValueTest, TryToListOptionalTensorTypeMismatch) {
-  EValue e(static_cast<int64_t>(42));
-  auto result = e.tryToListOptionalTensor();
-  EXPECT_EQ(result.error(), executorch::runtime::Error::InvalidType);
-}
-
-// Templated tryTo<T>() dispatcher. Matches and mismatches should behave
-// identically to the named tryToX methods.
-
-TEST_F(EValueTest, TryToTemplateIntSuccess) {
-  EValue e(static_cast<int64_t>(42));
-  auto result = e.tryTo<int64_t>();
-  EXPECT_TRUE(result.ok());
-  EXPECT_EQ(result.get(), 42);
-}
-
-TEST_F(EValueTest, TryToTemplateIntMismatch) {
-  EValue e(3.14);
-  auto result = e.tryTo<int64_t>();
-  EXPECT_EQ(result.error(), executorch::runtime::Error::InvalidType);
-}
-
-TEST_F(EValueTest, TryToTemplateTensorSuccess) {
-  TensorFactory<ScalarType::Float> tf;
-  EValue e(tf.ones({3, 2}));
-  auto result = e.tryTo<executorch::aten::Tensor>();
-  EXPECT_TRUE(result.ok());
-  EXPECT_EQ(result->numel(), 6);
-}
-
-TEST_F(EValueTest, TryToOptionalIntSuccess) {
-  EValue e(static_cast<int64_t>(42));
-  auto result = e.tryToOptional<int64_t>();
-  EXPECT_TRUE(result.ok());
-  EXPECT_TRUE(result->has_value());
-  EXPECT_EQ(result->value(), 42);
-}
-
-TEST_F(EValueTest, TryToOptionalIntNone) {
-  EValue e;
-  auto result = e.tryToOptional<int64_t>();
-  EXPECT_TRUE(result.ok());
-  EXPECT_FALSE(result->has_value());
-}
-
-TEST_F(EValueTest, TryToOptionalIntTypeMismatch) {
-  EValue e(3.14);
-  auto result = e.tryToOptional<int64_t>();
-  EXPECT_EQ(result.error(), executorch::runtime::Error::InvalidType);
-}
-
-// Verify tryTo<std::optional<T>>() specializations match tryToOptional<T>()
-// semantics, mirroring the to<std::optional<T>>() specializations of to<T>().
-TEST_F(EValueTest, TryToTemplateOptionalIntSuccess) {
-  EValue e(static_cast<int64_t>(42));
-  auto result = e.tryTo<std::optional<int64_t>>();
-  EXPECT_TRUE(result.ok());
-  EXPECT_TRUE(result->has_value());
-  EXPECT_EQ(result->value(), 42);
-}
-
-TEST_F(EValueTest, TryToTemplateOptionalTensorNone) {
-  EValue e;
-  auto result = e.tryTo<std::optional<executorch::aten::Tensor>>();
-  EXPECT_TRUE(result.ok());
-  EXPECT_FALSE(result->has_value());
+  EXPECT_EQ(e.tryToListOptionalTensor().error(), Error::InvalidType);
 }
