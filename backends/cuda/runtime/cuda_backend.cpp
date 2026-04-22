@@ -17,6 +17,7 @@
 #include <cstdio>
 
 #include <array>
+#include <atomic>
 #include <filesystem>
 #include <fstream>
 #include <mutex>
@@ -314,10 +315,14 @@ class ET_EXPERIMENTAL CudaBackend final
         so_blob_key.c_str(),
         static_cast<uint32_t>(aoti_dso_buffer.error()));
 
-    // Generate dynamic temporary file path
+    // Generate dynamic temporary file path with unique counter to support
+    // multiple CUDA delegates in the same process. Atomic to avoid races
+    // when multiple delegates are loaded concurrently.
+    static std::atomic<int> delegate_counter{0};
+    int delegate_id = delegate_counter.fetch_add(1, std::memory_order_relaxed);
     filesystem::path temp_dir = filesystem::temp_directory_path();
     filesystem::path so_path =
-        temp_dir / (so_blob_key + to_string(get_process_id()) + ".so");
+        temp_dir / (so_blob_key + to_string(get_process_id()) + "_" + to_string(delegate_id) + ".so");
 
     // Create a temporary file
     ofstream outfile(so_path, ios::binary);
