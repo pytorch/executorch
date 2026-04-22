@@ -403,7 +403,7 @@ class SqnrEval(EvalBase):
                 self.max_seq_length = pte_max_context_len
 
     def run(self, prompt):
-        golden_logits = INFERENCE_REGISTRY[True](
+        golden_logits, _ = INFERENCE_REGISTRY[True](
             get_example_inputs=self.get_example_inputs,
             prompt=prompt,
             module=self.source_model,
