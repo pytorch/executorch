@@ -6,6 +6,9 @@
 from typing import Optional, Tuple
 
 import torch
+from executorch.backends.arm.quantizer.arm_quantizer import (
+    get_symmetric_a16w8_quantization_config,
+)
 from executorch.backends.arm.test import common
 from executorch.backends.arm.test.tester.test_pipeline import (
     EthosU85PipelineINT,
@@ -520,6 +523,66 @@ def test_upsample_bilinear2d_vec_vgf_quant_Interpolate(test_data: torch.Tensor):
         exir_op,
         quantize=True,
     )
+    if not compare:
+        pipeline.pop_stage(-1)
+    pipeline.run()
+
+
+@common.parametrize("test_data", test_data_suite_tosa)
+@common.SkipIfNoModelConverter
+def test_upsample_bilinear2d_vec_vgf_quant_a16w8_UpsamplingBilinear2d(
+    test_data: torch.Tensor,
+):
+    data, size, scale_factor, compare = test_data
+    pipeline = VgfPipeline[input_t1](
+        UpsamplingBilinear2d(size, scale_factor),
+        (data,),
+        aten_op,
+        exir_op,
+        quantize=True,
+        tosa_extensions=["int16"],
+    )
+    pipeline.quantizer.set_global(get_symmetric_a16w8_quantization_config())
+    if not compare:
+        pipeline.pop_stage(-1)
+    pipeline.run()
+
+
+@common.parametrize("test_data", test_data_suite_tosa)
+@common.SkipIfNoModelConverter
+def test_upsample_bilinear2d_vec_vgf_quant_a16w8_Upsample(
+    test_data: torch.Tensor,
+):
+    data, size, scale_factor, compare = test_data
+    pipeline = VgfPipeline[input_t1](
+        Upsample(size, scale_factor),
+        (data,),
+        aten_op,
+        exir_op,
+        quantize=True,
+        tosa_extensions=["int16"],
+    )
+    pipeline.quantizer.set_global(get_symmetric_a16w8_quantization_config())
+    if not compare:
+        pipeline.pop_stage(-1)
+    pipeline.run()
+
+
+@common.parametrize("test_data", test_data_suite_tosa)
+@common.SkipIfNoModelConverter
+def test_upsample_bilinear2d_vec_vgf_quant_a16w8_Interpolate(
+    test_data: torch.Tensor,
+):
+    data, size, scale_factor, compare = test_data
+    pipeline = VgfPipeline[input_t1](
+        Interpolate(size, scale_factor),
+        (data,),
+        aten_op,
+        exir_op,
+        quantize=True,
+        tosa_extensions=["int16"],
+    )
+    pipeline.quantizer.set_global(get_symmetric_a16w8_quantization_config())
     if not compare:
         pipeline.pop_stage(-1)
     pipeline.run()

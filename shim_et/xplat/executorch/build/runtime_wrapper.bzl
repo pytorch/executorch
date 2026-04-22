@@ -377,6 +377,21 @@ def _python_library(*args, **kwargs):
 
 def _python_binary(*args, **kwargs):
     _patch_kwargs_common(kwargs)
+
+    # In OSS, native.python_binary doesn't support fbcode-specific params.
+    # Convert main_src -> main, and move srcs entries into main if needed.
+    if env.is_oss:
+        main_src = kwargs.pop("main_src", None)
+        srcs = kwargs.pop("srcs", None)
+        if main_src:
+            kwargs.setdefault("main", main_src)
+        elif srcs:
+            # If srcs provided but no main/main_src, use first src as main
+            if "main" not in kwargs:
+                kwargs["main"] = srcs[0]
+        if srcs != None:
+            kwargs["srcs"] = srcs
+
     env.python_binary(*args, **kwargs)
 
 def _python_test(*args, **kwargs):

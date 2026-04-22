@@ -41,7 +41,12 @@ from executorch.backends.cadence.aot.quantizer.utils import (
     no_outside_users,
 )
 from torch import fx
-from torchao.quantization.pt2e import HistogramObserver, MinMaxObserver
+from torchao.quantization.pt2e import (
+    FakeQuantize,
+    FusedMovingAvgObsFakeQuantize,
+    HistogramObserver,
+    MinMaxObserver,
+)
 from torchao.quantization.pt2e.quantizer import (
     ComposableQuantizer,
     DerivedQuantizationSpec,
@@ -103,6 +108,47 @@ qconfig_A8W8sym = QuantizationConfig(
     act_qspec_asym8s,
     act_qspec_asym8s,
     wgt_qspec_sym8s,
+    None,
+)
+
+act_qat_qspec_asym8s = QuantizationSpec(
+    dtype=torch.int8,
+    quant_min=-128,
+    quant_max=127,
+    qscheme=torch.per_tensor_affine,
+    is_dynamic=False,
+    observer_or_fake_quant_ctr=FusedMovingAvgObsFakeQuantize,
+)
+
+wgt_qat_qspec_asym8s = QuantizationSpec(
+    dtype=torch.int8,
+    quant_min=-128,
+    quant_max=127,
+    qscheme=torch.per_tensor_affine,
+    is_dynamic=False,
+    observer_or_fake_quant_ctr=FakeQuantize.with_args(observer=MinMaxObserver),
+)
+
+wgt_qat_qspec_sym8s = QuantizationSpec(
+    dtype=torch.int8,
+    quant_min=-128,
+    quant_max=127,
+    qscheme=torch.per_tensor_symmetric,
+    is_dynamic=False,
+    observer_or_fake_quant_ctr=FakeQuantize.with_args(observer=MinMaxObserver),
+)
+
+qconfig_A8W8_qat = QuantizationConfig(
+    act_qat_qspec_asym8s,
+    act_qat_qspec_asym8s,
+    wgt_qat_qspec_asym8s,
+    None,
+)
+
+qconfig_A8W8sym_qat = QuantizationConfig(
+    act_qat_qspec_asym8s,
+    act_qat_qspec_asym8s,
+    wgt_qat_qspec_sym8s,
     None,
 )
 
@@ -221,18 +267,20 @@ class CadenceAtenQuantizer(Quantizer):
         return []
 
 
-def get_cadence_default_quantizers() -> List[Quantizer]:
+def get_cadence_default_quantizers(is_qat: bool = False) -> List[Quantizer]:
+    A8W8 = qconfig_A8W8_qat if is_qat else qconfig_A8W8
+    A8W8sym = qconfig_A8W8sym_qat if is_qat else qconfig_A8W8sym
     return [
-        CadenceAtenQuantizer(AddmmPattern(), qconfig_A8W8),
-        CadenceAtenQuantizer(BmmPattern(), qconfig_A8W8),
-        CadenceAtenQuantizer(Conv1dPattern(), qconfig_A8W8sym),
-        CadenceAtenQuantizer(Conv2dPattern(), qconfig_A8W8sym),
-        CadenceAtenQuantizer(LinearPattern(), qconfig_A8W8),
-        CadenceAtenQuantizer(MatmulPattern(), qconfig_A8W8),
-        CadenceAtenQuantizer(MaxPool2dPattern(), qconfig_A8W8),
-        CadenceAtenQuantizer(MaxPool2dWithoutIndicesPattern(), qconfig_A8W8),
-        CadenceAtenQuantizer(ReluPattern0(), qconfig_A8W8),
-        CadenceAtenQuantizer(ReluPattern1(), qconfig_A8W8),
+        CadenceAtenQuantizer(AddmmPattern(), A8W8),
+        CadenceAtenQuantizer(BmmPattern(), A8W8),
+        CadenceAtenQuantizer(Conv1dPattern(), A8W8sym),
+        CadenceAtenQuantizer(Conv2dPattern(), A8W8sym),
+        CadenceAtenQuantizer(LinearPattern(), A8W8),
+        CadenceAtenQuantizer(MatmulPattern(), A8W8),
+        CadenceAtenQuantizer(MaxPool2dPattern(), A8W8),
+        CadenceAtenQuantizer(MaxPool2dWithoutIndicesPattern(), A8W8),
+        CadenceAtenQuantizer(ReluPattern0(), A8W8),
+        CadenceAtenQuantizer(ReluPattern1(), A8W8),
     ]
 
 
@@ -270,9 +318,13 @@ class CadenceDefaultQuantizer(CadenceQuantizer):
     Default quantizer for Cadence backend.
     """
 
-    def __init__(self, quantizers: Optional[list[Quantizer]] = None) -> None:
+    def __init__(
+        self,
+        quantizers: Optional[list[Quantizer]] = None,
+        is_qat: bool = False,
+    ) -> None:
         if quantizers is None:
-            quantizers = get_cadence_default_quantizers()
+            quantizers = get_cadence_default_quantizers(is_qat=is_qat)
         super().__init__(quantizers)
 
 
@@ -314,11 +366,16 @@ class CadenceWakeWordQuantizer(CadenceQuantizer):
     Quantizer for WakeWord, including add and cat
     """
 
-    def __init__(self, quantizers: Optional[list[Quantizer]] = None) -> None:
+    def __init__(
+        self,
+        quantizers: Optional[list[Quantizer]] = None,
+        is_qat: bool = False,
+    ) -> None:
         if quantizers is None:
-            quantizers = get_cadence_default_quantizers()
-        quantizers.append(CadenceAtenQuantizer(AddPattern(), qconfig_A8W8))
-        quantizers.append(CadenceAtenQuantizer(CatPattern(), qconfig_A8W8))
+            quantizers = get_cadence_default_quantizers(is_qat=is_qat)
+        a8w8 = qconfig_A8W8_qat if is_qat else qconfig_A8W8
+        quantizers.append(CadenceAtenQuantizer(AddPattern(), a8w8))
+        quantizers.append(CadenceAtenQuantizer(CatPattern(), a8w8))
         super().__init__(quantizers)
 
 
@@ -327,17 +384,23 @@ class CadenceFusedConvReluQuantizer(CadenceQuantizer):
     Quantizer using fused conv+relu patterns, and including add and cat
     """
 
-    def __init__(self, quantizers: Optional[list[Quantizer]] = None) -> None:
+    def __init__(
+        self,
+        quantizers: Optional[list[Quantizer]] = None,
+        is_qat: bool = False,
+    ) -> None:
         if quantizers is None:
             quantizers = []
+        a8w8 = qconfig_A8W8_qat if is_qat else qconfig_A8W8
+        a8w8sym = qconfig_A8W8sym_qat if is_qat else qconfig_A8W8sym
         # Order matters here, perform the "fused" patterns first
-        quantizers.append(CadenceAtenQuantizer(Conv1dReluPattern0(), qconfig_A8W8sym))
-        quantizers.append(CadenceAtenQuantizer(Conv1dReluPattern1(), qconfig_A8W8sym))
-        quantizers.append(CadenceAtenQuantizer(Conv2dReluPattern0(), qconfig_A8W8sym))
-        quantizers.append(CadenceAtenQuantizer(Conv2dReluPattern1(), qconfig_A8W8sym))
-        quantizers = quantizers + get_cadence_default_quantizers()
-        quantizers.append(CadenceAtenQuantizer(AddPattern(), qconfig_A8W8))
-        quantizers.append(CadenceAtenQuantizer(CatPattern(), qconfig_A8W8))
+        quantizers.append(CadenceAtenQuantizer(Conv1dReluPattern0(), a8w8sym))
+        quantizers.append(CadenceAtenQuantizer(Conv1dReluPattern1(), a8w8sym))
+        quantizers.append(CadenceAtenQuantizer(Conv2dReluPattern0(), a8w8sym))
+        quantizers.append(CadenceAtenQuantizer(Conv2dReluPattern1(), a8w8sym))
+        quantizers = quantizers + get_cadence_default_quantizers(is_qat=is_qat)
+        quantizers.append(CadenceAtenQuantizer(AddPattern(), a8w8))
+        quantizers.append(CadenceAtenQuantizer(CatPattern(), a8w8))
         super().__init__(quantizers)
 
 

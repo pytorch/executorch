@@ -82,16 +82,16 @@ function patch_repo() {
     local name="$(basename $repo_dir)"
     local patch_dir="${3}/$name"
 
-    echo -e "[${FUNCNAME[0]}] Patching ${name} repo_dir:${repo_dir} base_rev:${base_rev} patch_dir:${patch_dir}"
-    pushd $repo_dir
-    git fetch
-    git reset --hard ${base_rev}
+    echo -e "[${FUNCNAME[0]}] Patching ${name}. repo_dir:${repo_dir}\t base_rev:${base_rev}\t patch_dir:${patch_dir}"
+    pushd $repo_dir > /dev/null
+    git fetch --quiet
+    git reset --hard ${base_rev} --quiet
 
     [[ -e ${patch_dir} && $(ls -A ${patch_dir}) ]] && \
         git am -3 ${patch_dir}/*.patch
 
-    echo -e "[${FUNCNAME[0]}] Patched ${name} @ $(git describe --all --long 2> /dev/null) in ${repo_dir} dir.\n"
-    popd
+    echo -e "[${FUNCNAME[0]}] Patched ${name} @ $(git describe --all --long 2> /dev/null) in ${repo_dir} dir."
+    popd > /dev/null
 }
 
 function check_platform_support() {

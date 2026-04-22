@@ -14,8 +14,9 @@ be delegated to the TOSA backend. Use this module to:
 """
 
 import logging
+import operator
 from itertools import count
-from typing import Callable, List, Optional, Sequence, Tuple
+from typing import Callable, cast, List, Optional, Sequence, Tuple
 
 import torch
 from executorch.backends.arm._passes.arm_pass_utils import (
@@ -43,9 +44,22 @@ from executorch.exir.dialects._ops import ops as exir_ops
 from torch.export.exported_program import ExportedProgram
 from torch.fx import GraphModule
 from torch.fx.passes.infra.partitioner import CapabilityBasedPartitioner, Partition
-from torch.fx.passes.operator_support import OperatorSupportBase
+from torch.fx.passes.operator_support import any_chain, OperatorSupportBase
 
 logger = logging.getLogger(__name__)
+
+
+def _is_custom_partition_op(
+    custom_ops: set[torch._ops.OpOverload], target: object
+) -> bool:
+    if target in custom_ops:
+        return True
+    if hasattr(target, "_op"):
+        try:
+            return target._op in custom_ops
+        except Exception:
+            return False
+    return False
 
 
 def _is_noop_clone(node: torch.fx.node.Node) -> bool:
@@ -162,9 +176,20 @@ class TOSAPartitioner(Partitioner):
         )
         self.tosa_spec = compile_spec.tosa_spec
         self.additional_checks = additional_checks
+        self._custom_partition_ops: set[torch._ops.OpOverload] = set()
+
+    def register_custom_partition_op(self, op: torch._ops.OpOverload) -> None:
+        """Register a custom op to be considered supported by this
+        partitioner.
+        """
+        self._custom_partition_ops.add(op)
 
     def _detag_boundary_nodes(
-        self, module: GraphModule, tag: str, reporter: WhyNoPartitionReporter
+        self,
+        module: GraphModule,
+        tag: str,
+        reporter: WhyNoPartitionReporter,
+        detag_first_fp_node: bool = True,
     ) -> None:
         """De-tag nodes at the partition boundary.
 
@@ -200,7 +225,7 @@ class TOSAPartitioner(Partitioner):
                 # Remove tag from quantize node with input outside partition,
                 # or dequantize node with any output outside partition
                 del node.meta["delegation_tag"]
-            elif not is_q_node and not is_dq_node:
+            elif detag_first_fp_node and not is_q_node and not is_dq_node:
                 # For non Q/DQ nodes, remove tag from first node in partition if any input has fp dtype
                 for input in node.all_input_nodes:
                     if is_partitioned(input, tag):
@@ -212,6 +237,64 @@ class TOSAPartitioner(Partitioner):
                         )
                         del node.meta["delegation_tag"]
                         break
+
+    def _preserve_io_quantization_enabled(self) -> bool:
+        """Return True if IO quantization should be preserved from compile
+        specs.
+        """
+        for spec in self.delegation_spec.compile_specs:
+            if spec.key != "preserve_io_quantization":
+                continue
+            raw = (
+                spec.value.decode()
+                if isinstance(spec.value, (bytes, bytearray))
+                else str(spec.value)
+            )
+            return raw.lower() in ("1", "true", "yes")
+        return False
+
+    def _partition_has_invalid_uint8(self, partition: Partition, tag: str) -> bool:
+        """Return True if any uint8 appears outside allowed IO nodes.
+
+        TOSA does not have a true uint8 tensor type. Unsigned semantics are only
+        allowed at IO boundaries and are carried via RESCALE flags. If a
+        partition contains uint8 in any other node, it will fail later in
+        lowering, so reject the partition here.
+
+        """
+        for node in partition.nodes:
+            if not is_partitioned(node, tag):
+                # Ignore nodes that were de-tagged after boundary processing.
+                continue
+            dtype: Optional[torch.dtype] = None
+            meta_val = node.meta.get("val")
+            if isinstance(meta_val, torch.Tensor):
+                dtype = meta_val.dtype
+            else:
+                dtype = cast(Optional[torch.dtype], node.meta.get("dtype"))
+                if dtype is None:
+                    try:
+                        dtype = get_first_fake_tensor(node).dtype
+                    except (AttributeError, KeyError, RuntimeError, ValueError):
+                        dtype = None
+            if dtype is None:
+                continue
+            if dtype != torch.uint8:
+                continue
+
+            is_allowed = node.op in ("placeholder", "output")
+            is_output_only_getitem = (
+                node.op == "call_function"
+                and node.target == operator.getitem
+                and len(node.users) > 0
+                and all(user.op == "output" for user in node.users)
+            )
+            # Allow uint8 on Q/DQ nodes that mediate IO quantization.
+            is_allowed = is_allowed or is_output_only_getitem
+            is_allowed = is_allowed or node.target in Q_OPS or node.target in DQ_OPS
+            if not is_allowed:
+                return True
+        return False
 
     def _tag_module(  # noqa
         self,
@@ -246,6 +329,16 @@ class TOSAPartitioner(Partitioner):
         operator_support = tosa_support_factory(
             self.tosa_spec, containing_program, reporter, self.additional_checks
         )
+        if self._custom_partition_ops:
+            custom_ops = set(self._custom_partition_ops)
+
+            class CustomOpSupported(OperatorSupportBase):
+                def is_node_supported(self, submodules, node: torch.fx.Node) -> bool:
+                    return node.op == "call_function" and _is_custom_partition_op(
+                        custom_ops, node.target
+                    )
+
+            operator_support = any_chain(operator_support, CustomOpSupported())
         capability_partitioner = CapabilityBasedPartitioner(
             module,
             operator_support,
@@ -267,6 +360,24 @@ class TOSAPartitioner(Partitioner):
                     tag,
                     reporter,
                 )
+
+            if self._preserve_io_quantization_enabled():
+                # Detag boundary Q/DQ to keep IO quantization outside delegate.
+                self._detag_boundary_nodes(
+                    module,
+                    tag,
+                    reporter,
+                    detag_first_fp_node=False,
+                )
+
+            if self._partition_has_invalid_uint8(partition, tag):
+                reject_partition(
+                    "Partition contained internal uint8 tensors. Uint8 is only supported at IO boundaries for TOSA backends.",
+                    partition,
+                    reporter,
+                )
+                tags.remove(tag)
+                continue
 
             # Check whether the partition contains only no-op or non-computational ops. Such partitions don't make sense to delegate, and in the worst case may be optimized away during lowering, which can break compilation."
             is_nocompute_partition = all(
@@ -382,6 +493,8 @@ class TOSAPartitioner(Partitioner):
                 bool: True to keep the op intact; otherwise, False.
 
             """
+            if _is_custom_partition_op(self._custom_partition_ops, node.target):
+                return True
             if (
                 self.tosa_spec.support_float()
                 and node.target in ops_to_not_decompose_if_fp
@@ -458,6 +571,7 @@ class TOSAPartitioner(Partitioner):
             | ops_to_not_decompose_if_fp
             | ops_to_not_decompose_if_integer
         )
+        ops_to_not_decompose.extend(self._custom_partition_ops)
 
         if not self.tosa_spec.is_U55_subset:
             # Tosa operator "RESIZE" is not supported on U55. Since upsample_bilinear2d
