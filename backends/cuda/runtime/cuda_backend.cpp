@@ -17,6 +17,7 @@
 #include <cstdio>
 
 #include <array>
+#include <atomic>
 #include <filesystem>
 #include <fstream>
 #include <mutex>
@@ -80,6 +81,7 @@ namespace {
 constexpr char kSkipCopyOutputToCpuForMethod[] =
     "skip_copy_output_to_cpu_for_method";
 constexpr char kUseSharedCudaStream[] = "use_shared_cuda_stream";
+constexpr char kWeightSharingAcrossMethods[] = "weight_sharing_across_methods";
 } // anonymous namespace
 
 class ET_EXPERIMENTAL CudaBackend final
@@ -173,6 +175,16 @@ class ET_EXPERIMENTAL CudaBackend final
     return shared_cuda_stream_ != nullptr;
   }
 
+  // Enable cross-method per-FQN weight caching. Set via the
+  // kWeightSharingAcrossMethods runtime backend option.
+  void set_weight_sharing_across_methods(bool enabled) {
+    weight_sharing_across_methods_.store(enabled, std::memory_order_relaxed);
+  }
+
+  bool is_weight_sharing_across_methods_enabled() const {
+    return weight_sharing_across_methods_.load(std::memory_order_relaxed);
+  }
+
   Error load_function_pointers_into_handle(
       void* so_handle,
       AOTIDelegateHandle* handle) const {
@@ -262,6 +274,16 @@ class ET_EXPERIMENTAL CudaBackend final
           }
         } else {
           ET_LOG(Error, "Option %s must be a boolean.", kUseSharedCudaStream);
+          return Error::InvalidArgument;
+        }
+      } else if (std::strcmp(option.key, kWeightSharingAcrossMethods) == 0) {
+        if (auto* val = std::get_if<bool>(&option.value)) {
+          set_weight_sharing_across_methods(*val);
+        } else {
+          ET_LOG(
+              Error,
+              "Option %s must be a boolean.",
+              kWeightSharingAcrossMethods);
           return Error::InvalidArgument;
         }
       }
@@ -362,11 +384,20 @@ class ET_EXPERIMENTAL CudaBackend final
 
     handle->container_handle = container_handle;
 
-    // Load constants with per-weight caching.
-    // This replaces the old update_constants_from_blob + cross-method sharing
-    // with a unified approach that avoids duplicate GPU allocations.
-    ET_CHECK_OK_OR_RETURN_ERROR(
-        load_constants_with_cache(handle, named_data_map, method_name));
+    // Load constants. When weight_sharing_across_methods is enabled (opt-in
+    // via the kWeightSharingAcrossMethods runtime backend option set by the
+    // runner), use the per-weight FQN cache so methods that share weights
+    // (e.g. prefill/decode) avoid duplicate GPU allocations. Otherwise fall
+    // back to the legacy per-method blob load — required for models whose
+    // methods are independent sub-graphs that may have FQN collisions
+    // (e.g. parakeet).
+    if (is_weight_sharing_across_methods_enabled()) {
+      ET_CHECK_OK_OR_RETURN_ERROR(
+          load_constants_with_cache(handle, named_data_map, method_name));
+    } else {
+      ET_CHECK_OK_OR_RETURN_ERROR(
+          load_constants_legacy(handle, named_data_map, method_name));
+    }
 
     // Use shared CUDA stream if enabled via options, otherwise create one.
     // A shared stream ensures proper ordering across multiple methods
@@ -629,6 +660,11 @@ class ET_EXPERIMENTAL CudaBackend final
   // is destroyed.
   mutable std::mutex cuda_stream_mutex_;
   std::shared_ptr<cudaStream_t> shared_cuda_stream_ = nullptr;
+
+  // Whether to enable cross-method per-FQN weight caching at init time.
+  // Toggled by the kWeightSharingAcrossMethods runtime backend option. Default
+  // OFF — see set_weight_sharing_across_methods() for safety constraints.
+  std::atomic<bool> weight_sharing_across_methods_{false};
 
   // Cached output tensors for skip-copy optimization.
   // When skip-copy is enabled, output SlimTensors are cached here to keep
