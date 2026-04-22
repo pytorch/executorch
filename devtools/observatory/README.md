@@ -59,6 +59,10 @@ python -m executorch.backends.xnnpack.debugger.observatory \
     --model_name=mv2 --delegate --quantize --output_dir /tmp/mv2
 ```
 
+> **XNNPack note**: `aot_compiler.py` uses relative imports so it must run as a Python module.
+> The CLI auto-detects this from `__init__.py` presence. You can also pass the dotted module
+> name directly: `examples.xnnpack.aot_compiler`
+
 This produces:
 - `/tmp/obs/report.html` (interactive report)
 - `/tmp/obs/report.json` (raw data, path auto-derived from HTML path)
@@ -232,7 +236,6 @@ return AnalysisResult(per_record_data={"step_1": record_analysis})
 | [USAGE.md](USAGE.md) | CLI usage guide, workflow examples, demo script modes |
 | [lenses/LENSES.md](lenses/LENSES.md) | Built-in lens details, accuracy lens internals, custom lens patterns |
 | [REFERENCE.md](REFERENCE.md) | Contract tables, API reference, JS callbacks, performance notes |
-| [lenses/DEBUG_HANDLE_SYNC_ANALYSIS.md](lenses/DEBUG_HANDLE_SYNC_ANALYSIS.md) | Technical analysis of debug_handle consistency across pipeline stages |
 
 ## Tests
 

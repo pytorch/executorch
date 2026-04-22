@@ -38,7 +38,7 @@ def main(args):
     qnn_config = QnnConfig.load_config(args.config_file if args.config_file else args)
 
     os.makedirs(args.artifact, exist_ok=True)
-    data_size = 10
+    data_size = 100
     model_name = "xlm-roberta-base"
     tokenizer = AutoTokenizer.from_pretrained(model_name)
     module = AutoModelForMaskedLM.from_pretrained(model_name).eval()

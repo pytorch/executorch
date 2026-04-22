@@ -389,8 +389,9 @@ class FXGraphExporter:
             # Phase 1: chain detection (real + dummy members)
             chains = cls._detect_chains(el or [], nodes)
 
+            FAIR_RUNS=5
             # Phase 2: iterative spine cohesion + pure-A overlap fix
-            for i in range(cls._SPINE_COHESION_ITER + 2):
+            for i in range(cls._SPINE_COHESION_ITER + FAIR_RUNS):
                 
                 # delta for each node
                 # We record the relative weight (chain length) and their base delta
@@ -399,7 +400,7 @@ class FXGraphExporter:
                     if not ch:
                         continue
                     mean_x = sum(x[v] for v in ch) / len(ch)
-                    # emphasize end point
+                    # emphasize end point (disable for last FAIR_RUNS iters)
                     if i < cls._SPINE_COHESION_ITER:
                         # we use common start and end node of chain to attract chain close together
                         mean_x = (mean_x + x[ch[0]] + x[ch[-1]]) / 3.0

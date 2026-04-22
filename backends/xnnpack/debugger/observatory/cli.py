@@ -25,7 +25,7 @@ import sys
 
 
 def main():
-    from devtools.observatory.cli import (
+    from executorch.devtools.observatory.cli import (
         make_collect_parser,
         make_visualize_parser,
         run_observatory,
@@ -49,8 +49,8 @@ def main():
     )
     args = parser.parse_args(sys.argv[1:])
 
-    from devtools.observatory.observatory import Observatory
-    from devtools.observatory.lenses.pipeline_graph_collector import (
+    from executorch.devtools.observatory.observatory import Observatory
+    from executorch.devtools.observatory.lenses.pipeline_graph_collector import (
         PipelineGraphCollectorLens,
     )
     from .lenses.xnnpack_patches import install_xnnpack_patches
@@ -60,11 +60,11 @@ def main():
     Observatory.register_lens(PipelineGraphCollectorLens)
 
     if args.lens_recipe == "accuracy":
-        from devtools.observatory.lenses.accuracy import AccuracyLens
+        from executorch.devtools.observatory.lenses.accuracy import AccuracyLens
 
         Observatory.register_lens(AccuracyLens)
 
-        from devtools.observatory.lenses.per_layer_accuracy import (
+        from executorch.devtools.observatory.lenses.per_layer_accuracy import (
             PerLayerAccuracyLens,
         )
 

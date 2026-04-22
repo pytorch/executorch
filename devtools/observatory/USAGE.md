@@ -32,6 +32,11 @@ python -m executorch.backends.xnnpack.debugger.observatory \
     --model_name=mv2 --delegate --quantize --output_dir /tmp/mv2
 ```
 
+> **XNNPack note**: `examples/xnnpack/aot_compiler.py` uses relative imports (`from . import ...`).
+> The CLI auto-detects this: when a `.py` path is given and its directory contains `__init__.py`,
+> it runs via `runpy.run_module` instead of `runpy.run_path`. You can also pass a dotted module
+> name directly (e.g. `examples.xnnpack.aot_compiler`) to force module mode explicitly.
+
 ## 2. Convert JSON to HTML (Visualize Mode)
 
 Use the `visualize` subcommand to convert an existing JSON file to HTML without
