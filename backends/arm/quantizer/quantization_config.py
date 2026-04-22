@@ -46,6 +46,7 @@ class QuantizationConfig:
     output_activation: Optional[QuantizationSpecBase]
     weight: Optional[QuantizationSpecBase]
     bias: Optional[QuantizationSpecBase] | Callable[[Any], Any]
+    label: Optional[str] = None  # Optional label for debugging/visualization purposes
 
     def get_input_act_qspec(
         self, node: Optional[Node] = None, input_node: Optional[Node] = None

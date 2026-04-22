@@ -14,6 +14,13 @@ import executorch.exir as exir
 import numpy as np
 import torch
 
+from executorch.backends.nxp.aten_passes.fuse_batch_norm_with_linear_pass import (
+    FuseBatchNormWithLinearPass,
+)
+from executorch.backends.nxp.aten_passes.simulated_linear_bn_fusion_passes import (
+    AddSimulatedLinearBatchNormFusionQATPass,
+    RemoveSimulatedLinearBatchNormFusionQATPass,
+)
 from executorch.backends.nxp.backend.neutron_target_spec import NeutronTargetSpec
 from executorch.backends.nxp.edge_passes.neutron_edge_pass_manager import (
     NeutronEdgePassManager,
@@ -92,12 +99,15 @@ def to_quantized_edge_program(
     )
     if use_qat:
         m = prepare_qat_pt2e(module, quantizer)
+        m = AddSimulatedLinearBatchNormFusionQATPass()(m).graph_module
 
         if train_fn:
             m = move_exported_model_to_train(m)
             train_fn(m)
 
         m = move_exported_model_to_eval(m)
+        m = RemoveSimulatedLinearBatchNormFusionQATPass()(m).graph_module
+        m = FuseBatchNormWithLinearPass()(m).graph_module
     else:
         m = prepare_pt2e(module, quantizer)
 
