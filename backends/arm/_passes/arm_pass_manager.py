@@ -110,6 +110,7 @@ from executorch.backends.arm._passes import (
     FuseViewCopyTransformPass,
     InsertConstShapesPass,
     InsertControlFlowRescalesPass,
+    InsertDataLayoutCastsPass,
     InsertInt32CastsAfterInt64PlaceholdersPass,
     InsertRescaleInt32Pass,
     InsertRescalePass,
@@ -547,6 +548,7 @@ class ArmPassManager(PassManager):
                 EnsureUniqueOutputNodesPass(),
                 RemoveNoopPass(),
                 InsertRescalePass(),
+                InsertDataLayoutCastsPass(),
             ]
         )
 
