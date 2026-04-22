@@ -16,6 +16,7 @@ namespace impl {
 namespace generic {
 namespace native {
 
+using ::executorch::aten::optional;
 using ::executorch::aten::ScalarType;
 using ::executorch::aten::Tensor;
 using ::executorch::runtime::KernelRuntimeContext;
@@ -935,6 +936,7 @@ Tensor& quantized_conv2d_nhwc_per_tensor_out(
     int64_t output_zero_point,
     ET_UNUSED int64_t out_multiplier,
     ET_UNUSED int64_t out_shift,
+    ET_UNUSED const ::executorch::aten::optional<Tensor>& offset,
     Tensor& out) {
   quantized_conv2d_nhwc(
       input,
