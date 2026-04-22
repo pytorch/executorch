@@ -51,6 +51,7 @@ class IdentityVisitor(NodeVisitor):
         )
 
         attr = ts.TosaSerializerAttribute()
+        attr.IdentityAttribute()
         self._serialize_operator(
             node,
             tosa_graph,
