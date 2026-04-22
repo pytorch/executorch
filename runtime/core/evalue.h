@@ -621,8 +621,8 @@ struct EValue {
   /**
    * Result-returning equivalent of `to<T>()`. Tag mismatch returns
    * `Error::InvalidType`; a null list/string payload returns
-   * `Error::InvalidState`. Unsynchronized — caller must serialize concurrent
-   * tag mutation. Specializations are defined below via `EVALUE_DEFINE_TRY_TO`.
+   * `Error::InvalidState`. Specializations are defined below via
+   * `EVALUE_DEFINE_TRY_TO`.
    */
   template <typename T>
   Result<T> tryTo() const;
