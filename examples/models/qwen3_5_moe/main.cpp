@@ -9,6 +9,8 @@
 #include <gflags/gflags.h>
 
 #include <executorch/extension/llm/runner/llm_runner_helper.h>
+#include <executorch/extension/llm/runner/stats.h>
+#include <executorch/extension/llm/runner/util.h>
 #include <executorch/extension/module/module.h>
 #include <executorch/extension/tensor/tensor.h>
 #include <executorch/runtime/backend/interface.h>
