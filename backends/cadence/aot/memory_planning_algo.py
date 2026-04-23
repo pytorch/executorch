@@ -21,6 +21,12 @@ from executorch.exir.tensor import TensorSpec
 from torch.export.exported_program import ExportGraphSignature
 
 
+class InvalidPinnedMemId(ValueError):
+    """Raised when a spec has a pre-set mem_id outside the valid range [1, num_memories)."""
+
+    pass
+
+
 def get_aligned_offset(pre_aligned_offset: int, alignment: int) -> int:
     return int(math.ceil(pre_aligned_offset / alignment) * alignment)
 
@@ -282,6 +288,38 @@ class MemoryPlanningAlgo(ABC):
         extra_padding: int = 0,
     ) -> None:
         """Callable interface for ET memory planning."""
+
+        # Promote specs with a pre-set mem_id to AbsolutePlacementConstraint so
+        # the planner honours the pinned memory tier and only assigns the offset.
+        # This is used by planned-temporary alloc nodes whose spec.mem_id is set
+        # by the AOT pass before planning runs.
+        #
+        # mem_id semantics:
+        #   None  — not yet assigned (default); planner picks freely
+        #   [1, num_memories) — valid tier; promoted to constraint below
+        #
+        # Materialize to list because collect_specs_from_nodes returns a
+        # generator and we iterate twice (promotion here, constraint
+        # collection in spec_and_abs_constraints below).
+        specs = list(specs)
+        for spec in specs:
+            if (
+                spec.mem_id is not None
+                and isinstance(spec.mem_id, int)
+                and placement_constraints.get_absolute_placement_constraint(spec)
+                is None
+            ):
+                num_memories = self.get_num_memories()
+                if not (1 <= spec.mem_id < num_memories):
+                    raise InvalidPinnedMemId(
+                        f"Pre-set spec.mem_id={spec.mem_id} is invalid. "
+                        f"Memory IDs must be in range [1, {num_memories}). "
+                        f"mem_id=0 is reserved by ExecuTorch."
+                    )
+                placement_constraints.set_absolute_placement_constraint(
+                    spec,
+                    AbsolutePlacementConstraint(pinned_memory_id=spec.mem_id),
+                )
 
         spec_and_abs_constraints = {
             spec: placement_constraints.get_absolute_placement_constraint(spec)

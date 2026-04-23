@@ -324,6 +324,17 @@ class MemConstraints:
             )
         )
 
+    def set_absolute_placement_constraint(
+        self, spec: TensorSpec, constraint: AbsolutePlacementConstraint
+    ) -> None:
+        """Set an absolute placement constraint for `spec` by spec identity.
+
+        Overwrites any existing constraint for the same spec. Range validation
+        of pinned_memory_id is the caller's responsibility (depends on the
+        planner's MemoryConfig).
+        """
+        self._absolute_placement_constraints[id(spec)] = constraint
+
     def get_absolute_placement_constraint(
         self, spec: TensorSpec
     ) -> Optional[AbsolutePlacementConstraint]:
