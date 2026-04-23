@@ -787,6 +787,16 @@ exec_gather(const GatherNode& n, ExecutionState& st, StreamOrDevice s) {
   st.set_tensor(n.out, gather(x, indices, n.axes, slice_sizes, s));
 }
 
+inline void exec_scatter_add(
+    const ScatterAddNode& n,
+    ExecutionState& st,
+    StreamOrDevice s) {
+  const auto& x = st.const_tensor_ref(n.x);
+  const auto& indices = st.const_tensor_ref(n.indices);
+  const auto& updates = st.const_tensor_ref(n.updates);
+  st.set_tensor(n.out, scatter_add_axis(x, indices, updates, n.axis, s));
+}
+
 inline void
 exec_slice(const SliceNode& n, ExecutionState& st, StreamOrDevice s) {
   const array& x = st.const_tensor_ref(n.x);
@@ -841,6 +851,221 @@ inline void exec_quantized_matmul(
       X, Wq, Sc, Qb, n.transpose, n.group_size, n.bits, n.mode, s);
 
   st.set_tensor(n.out, std::move(Y));
+}
+
+inline void
+exec_gather_mm(const GatherMmNode& n, ExecutionState& st, StreamOrDevice s) {
+  array A = st.const_tensor_ref(n.a);
+  array B = st.const_tensor_ref(n.b);
+
+  std::optional<array> lhs_idx = std::nullopt;
+  if (n.lhs_indices.has_value()) {
+    lhs_idx = st.const_tensor_ref(*n.lhs_indices);
+  }
+  std::optional<array> rhs_idx = std::nullopt;
+  if (n.rhs_indices.has_value()) {
+    rhs_idx = st.const_tensor_ref(*n.rhs_indices);
+  }
+
+  array Y = gather_mm(A, B, lhs_idx, rhs_idx, n.sorted_indices, s);
+  st.set_tensor(n.out, std::move(Y));
+}
+
+inline void
+exec_gather_qmm(const GatherQmmNode& n, ExecutionState& st, StreamOrDevice s) {
+  array X = st.const_tensor_ref(n.x);
+  array Wq = st.const_tensor_ref(n.w);
+  array Sc = st.const_tensor_ref(n.scales);
+
+  std::optional<array> Qb = std::nullopt;
+  if (n.biases.has_value()) {
+    Qb = st.const_tensor_ref(*n.biases);
+  }
+  std::optional<array> lhs_idx = std::nullopt;
+  if (n.lhs_indices.has_value()) {
+    lhs_idx = st.const_tensor_ref(*n.lhs_indices);
+  }
+  std::optional<array> rhs_idx = std::nullopt;
+  if (n.rhs_indices.has_value()) {
+    rhs_idx = st.const_tensor_ref(*n.rhs_indices);
+  }
+
+  array Y = gather_qmm(
+      X,
+      Wq,
+      Sc,
+      Qb,
+      lhs_idx,
+      rhs_idx,
+      n.transpose,
+      n.group_size,
+      n.bits,
+      n.mode,
+      n.sorted_indices,
+      s);
+  st.set_tensor(n.out, std::move(Y));
+}
+
+inline void exec_metal_kernel(
+    const MetalKernelNode& n,
+    ExecutionState& st,
+    StreamOrDevice s) {
+#ifndef ET_MLX_ALLOW_CUSTOM_KERNEL_EXECUTION
+  throw std::runtime_error(
+      "MetalKernelNode: custom kernel execution is disabled. "
+      "Rebuild with -DET_MLX_ALLOW_CUSTOM_KERNEL_EXECUTION to enable. "
+      "WARNING: enabling this allows .pte files to execute arbitrary GPU code.");
+#else
+
+  // Validate parallel array lengths
+  if (n.input_names.size() != n.inputs.size()) {
+    throw std::runtime_error(
+        "MetalKernelNode: input_names length (" +
+        std::to_string(n.input_names.size()) + ") must match inputs length (" +
+        std::to_string(n.inputs.size()) + ")");
+  }
+  if (n.output_names.size() != n.outputs.size()) {
+    throw std::runtime_error(
+        "MetalKernelNode: output_names length (" +
+        std::to_string(n.output_names.size()) +
+        ") must match outputs length (" + std::to_string(n.outputs.size()) +
+        ")");
+  }
+  if (n.outputs.empty()) {
+    throw std::runtime_error("MetalKernelNode: outputs must not be empty");
+  }
+  if (n.inputs.empty()) {
+    throw std::runtime_error("MetalKernelNode: inputs must not be empty");
+  }
+  if (n.output_shape_lengths.size() != n.outputs.size()) {
+    throw std::runtime_error(
+        "MetalKernelNode: output_shape_lengths length (" +
+        std::to_string(n.output_shape_lengths.size()) +
+        ") must match outputs length (" + std::to_string(n.outputs.size()) +
+        ")");
+  }
+  if (n.output_dtypes.size() != n.outputs.size()) {
+    throw std::runtime_error(
+        "MetalKernelNode: output_dtypes length (" +
+        std::to_string(n.output_dtypes.size()) +
+        ") must match outputs length (" + std::to_string(n.outputs.size()) +
+        ")");
+  }
+
+  // Validate output_shapes_flat length matches sum of output_shape_lengths
+  size_t expected_flat_len = 0;
+  for (int32_t len : n.output_shape_lengths) {
+    if (len < 0) {
+      throw std::runtime_error(
+          "MetalKernelNode: output_shape_lengths contains negative value " +
+          std::to_string(len));
+    }
+    expected_flat_len += static_cast<size_t>(len);
+  }
+  if (n.output_shapes_flat.size() != expected_flat_len) {
+    throw std::runtime_error(
+        "MetalKernelNode: output_shapes_flat length (" +
+        std::to_string(n.output_shapes_flat.size()) +
+        ") must equal sum of output_shape_lengths (" +
+        std::to_string(expected_flat_len) + ")");
+  }
+
+  // Validate template arg parallel arrays
+  if (n.template_arg_kinds.size() != n.template_arg_names.size() ||
+      n.template_arg_values.size() != n.template_arg_names.size()) {
+    throw std::runtime_error(
+        "MetalKernelNode: template_arg_names/kinds/values must have same length (" +
+        std::to_string(n.template_arg_names.size()) + "/" +
+        std::to_string(n.template_arg_kinds.size()) + "/" +
+        std::to_string(n.template_arg_values.size()) + ")");
+  }
+
+  // Build the kernel function (cached internally by MLX based on name+source)
+  auto kernel_fn = ::mlx::core::fast::metal_kernel(
+      n.name,
+      n.input_names,
+      n.output_names,
+      n.source,
+      n.header,
+      n.ensure_row_contiguous,
+      n.atomic_outputs);
+
+  // Resolve inputs
+  std::vector<array> inputs;
+  inputs.reserve(n.inputs.size());
+  for (const auto& tid : n.inputs) {
+    inputs.push_back(st.const_tensor_ref(tid));
+  }
+
+  // Resolve grid and threadgroup (IntOrVid → int)
+  auto grid_ints = resolve_ints(n.grid, st);
+  auto tg_ints = resolve_ints(n.threadgroup, st);
+  if (grid_ints.size() != 3) {
+    throw std::runtime_error(
+        "MetalKernelNode: grid must have exactly 3 elements, got " +
+        std::to_string(grid_ints.size()));
+  }
+  if (tg_ints.size() != 3) {
+    throw std::runtime_error(
+        "MetalKernelNode: threadgroup must have exactly 3 elements, got " +
+        std::to_string(tg_ints.size()));
+  }
+  std::tuple<int, int, int> grid{grid_ints[0], grid_ints[1], grid_ints[2]};
+  std::tuple<int, int, int> threadgroup{tg_ints[0], tg_ints[1], tg_ints[2]};
+
+  // Resolve output shapes from flattened representation (lengths already
+  // validated)
+  std::vector<::mlx::core::Shape> output_shapes;
+  size_t flat_offset = 0;
+  for (int32_t len : n.output_shape_lengths) {
+    ::mlx::core::Shape shape;
+    for (int32_t j = 0; j < len; ++j) {
+      shape.push_back(resolve_int(n.output_shapes_flat[flat_offset++], st));
+    }
+    output_shapes.push_back(std::move(shape));
+  }
+
+  // Resolve output dtypes
+  std::vector<::mlx::core::Dtype> output_dtypes;
+  for (int32_t d : n.output_dtypes) {
+    output_dtypes.push_back(resolve_dtype(static_cast<int8_t>(d)));
+  }
+
+  // Resolve template args from parallel arrays (lengths already validated)
+  std::vector<std::pair<std::string, ::mlx::core::fast::TemplateArg>>
+      template_args;
+  for (size_t i = 0; i < n.template_arg_names.size(); ++i) {
+    int32_t kind = n.template_arg_kinds[i];
+    int32_t value = n.template_arg_values[i];
+    ::mlx::core::fast::TemplateArg arg;
+    if (kind == 0) {
+      arg = value; // int
+    } else if (kind == 1) {
+      arg = static_cast<bool>(value); // bool
+    } else {
+      arg = resolve_dtype(static_cast<int8_t>(value)); // Dtype
+    }
+    template_args.push_back({n.template_arg_names[i], std::move(arg)});
+  }
+
+  // Invoke the kernel
+  auto results = kernel_fn(
+      inputs,
+      output_shapes,
+      output_dtypes,
+      grid,
+      threadgroup,
+      template_args,
+      n.init_value,
+      /*verbose=*/false,
+      s);
+
+  // Store outputs
+  for (size_t i = 0; i < results.size() && i < n.outputs.size(); ++i) {
+    st.set_tensor(n.outputs[i], std::move(results[i]));
+  }
+
+#endif // ET_MLX_ALLOW_CUSTOM_KERNEL_EXECUTION
 }
 
 inline void exec_concatenate(
@@ -1567,13 +1792,54 @@ class Interpreter {
     size_t idx = 0;
     for (const auto& instr : chain) {
       st.begin_op(idx, op_name(instr.op));
-      dispatch(instr, st, stream);
+      if (instr.op == OpCode::SCAN) {
+        exec_scan(prog, std::get<ScanNode>(instr.node), st, stream);
+      } else {
+        dispatch(instr, st, stream);
+      }
       st.end_op();
       ++idx;
     }
   }
 
  private:
+  void exec_scan(
+      const MLXProgram& prog,
+      const ScanNode& n,
+      ExecutionState& st,
+      StreamOrDevice s) const {
+    int axis = n.scan_axis;
+    int T_int = st.const_tensor_ref(n.originals[0]).shape(axis);
+    size_t T = static_cast<size_t>(T_int);
+    size_t num_outputs = n.outputs.size();
+
+    std::vector<std::vector<::mlx::core::array>> collected(num_outputs);
+    for (size_t i = 0; i < num_outputs; ++i) {
+      collected[i].reserve(T);
+    }
+
+    for (size_t t = 0; t < T; ++t) {
+      for (size_t i = 0; i < n.originals.size(); ++i) {
+        st.set_tensor(
+            n.sliced[i],
+            ::mlx::core::take(
+                st.const_tensor_ref(n.originals[i]),
+                static_cast<int>(t),
+                axis,
+                s));
+      }
+
+      run_chain(prog, static_cast<uint32_t>(n.body_chain_idx), st, s);
+
+      for (size_t i = 0; i < num_outputs; ++i) {
+        collected[i].push_back(st.const_tensor_ref(n.outputs[i]));
+      }
+    }
+
+    for (size_t i = 0; i < num_outputs; ++i) {
+      st.set_tensor(n.outputs[i], ::mlx::core::stack(collected[i], axis, s));
+    }
+  }
   void dispatch(const Instruction& instr, ExecutionState& st, StreamOrDevice s)
       const {
     switch (instr.op) {
@@ -1948,6 +2214,18 @@ class Interpreter {
       case OpCode::QUANTIZED_MATMUL:
         ops::exec_quantized_matmul(
             std::get<QuantizedMatmulNode>(instr.node), st, s);
+        break;
+      case OpCode::SCATTER_ADD:
+        ops::exec_scatter_add(std::get<ScatterAddNode>(instr.node), st, s);
+        break;
+      case OpCode::GATHER_MM:
+        ops::exec_gather_mm(std::get<GatherMmNode>(instr.node), st, s);
+        break;
+      case OpCode::GATHER_QMM:
+        ops::exec_gather_qmm(std::get<GatherQmmNode>(instr.node), st, s);
+        break;
+      case OpCode::METAL_KERNEL:
+        ops::exec_metal_kernel(std::get<MetalKernelNode>(instr.node), st, s);
         break;
       default:
         throw std::runtime_error(
