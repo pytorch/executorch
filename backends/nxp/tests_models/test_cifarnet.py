@@ -7,6 +7,7 @@ import os.path
 
 import pytest
 import torch
+from executorch.backends.nxp.tests.executorch_pipeline import ModelInputSpec
 
 from executorch.backends.nxp.tests_models.config_importer import test_config
 from executorch.backends.nxp.tests_models.dataset_creator import CopyDatasetCreator
@@ -19,7 +20,6 @@ from executorch.backends.nxp.tests_models.graph_verifier import (
     BaseGraphVerifier,
     NonDelegatedNode,
 )
-from executorch.backends.nxp.tests_models.model_input_spec import ModelInputSpec
 from executorch.backends.nxp.tests_models.model_output_comparator import (
     NumericalStatsOutputComparator,
 )

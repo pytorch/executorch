@@ -18,20 +18,24 @@ import numpy as np
 import torch
 from executorch.backends.nxp.backend.edge_helper import is_channels_last_dim_order
 from executorch.backends.nxp.backend.ir.converter.conversion import translator
+from executorch.backends.nxp.backend.ir.converter.conversion.translator import (
+    torch_type_to_numpy_type,
+)
 from executorch.backends.nxp.neutron_partitioner import NeutronPartitioner
+from executorch.backends.nxp.tests.executorch_pipeline import (
+    get_calibration_inputs_fn_from_dataset_dir,
+    ModelInputSpec,
+    to_quantized_edge_program,
+    to_quantized_executorch_program,
+)
 from executorch.backends.nxp.tests_models.config_importer import test_config
 from executorch.backends.nxp.tests_models.dataset_creator import RandomDatasetCreator
 from executorch.backends.nxp.tests_models.graph_verifier import GraphVerifier
-from executorch.backends.nxp.tests_models.model_input_spec import ModelInputSpec
 from executorch.backends.nxp.tests_models.model_output_comparator import (
     AllCloseOutputComparator,
 )
 from executorch.backends.nxp.tests_models.outputs_dir_importer import outputs_dir
-from executorch.backends.nxp.tests_models.utils import (
-    save_pte_program,
-    to_quantized_edge_program,
-    to_quantized_executorch_program,
-)
+from executorch.backends.nxp.tests_models.utils import save_pte_program
 from executorch.devtools.visualization.visualization_utils import (
     visualize_with_clusters,
 )
@@ -113,7 +117,7 @@ def _run_delegated_executorch_program(
         delegated_program = to_quantized_executorch_program(
             model,
             input_spec,
-            calibration_dataset_dir,
+            dataset_dir=calibration_dataset_dir,
             delegate_to_npu=True,
             use_qat=use_qat,
             train_fn=train_fn,
@@ -175,7 +179,7 @@ def _run_non_delegated_executorch_program(
     non_delegated_program = to_quantized_executorch_program(
         model,
         input_spec,
-        calibration_dataset_dir,
+        dataset_dir=calibration_dataset_dir,
         delegate_to_npu=False,
         use_qat=use_qat,
         train_fn=train_fn,
@@ -236,7 +240,7 @@ def read_prepared_samples(
         for bin_file in bin_files:
             bin_file_path = os.path.join(dataset_dir, bin_file)
             sample_vector = np.fromfile(
-                bin_file_path, dtype=input_spec[0].type
+                bin_file_path, dtype=torch_type_to_numpy_type(input_spec[0].dtype)
             ).reshape(input_spec[0].shape)
             all_samples.append((sample_vector,))
 
@@ -463,7 +467,9 @@ def convert_run_compare(
                 to_quantized_edge_program(
                     model_to_not_delegate,
                     input_spec,
-                    calibration_dataset_dir,
+                    get_calibration_inputs_fn=get_calibration_inputs_fn_from_dataset_dir(
+                        calibration_dataset_dir
+                    ),
                     delegate_to_npu=False,
                     use_qat=use_qat,
                     train_fn=train_fn,
