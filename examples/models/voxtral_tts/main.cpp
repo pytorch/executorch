@@ -25,6 +25,14 @@
 DEFINE_string(model, "model.pte", "Path to model.pte (LLM + acoustic head)");
 DEFINE_string(codec, "codec_decoder.pte", "Path to codec_decoder.pte");
 DEFINE_string(tokenizer, "tekken.json", "Path to tokenizer JSON");
+DEFINE_string(
+    data_path,
+    "",
+    "Optional path to model.ptd (CUDA backend; AOTI .so + weights).");
+DEFINE_string(
+    codec_data_path,
+    "",
+    "Optional path to codec_decoder.ptd (CUDA backend).");
 DEFINE_string(text, "", "Text to synthesize");
 DEFINE_string(
     voice,
@@ -72,13 +80,19 @@ int main(int argc, char** argv) {
   log << "  Output: " << FLAGS_output << std::endl;
   log << "  Seed: " << FLAGS_seed << std::endl;
   log << "  Mode: "
-      << (FLAGS_speaker ? "streaming+speaker" : FLAGS_streaming ? "streaming" : "offline")
+      << (FLAGS_speaker         ? "streaming+speaker"
+              : FLAGS_streaming ? "streaming"
+                                : "offline")
       << std::endl;
 
   auto load_start = std::chrono::high_resolution_clock::now();
 
   voxtral_tts::VoxtralTTSRunner runner(
-      FLAGS_model, FLAGS_codec, FLAGS_tokenizer);
+      FLAGS_model,
+      FLAGS_codec,
+      FLAGS_tokenizer,
+      FLAGS_data_path,
+      FLAGS_codec_data_path);
   runner.set_trace_output_path(FLAGS_trace_json);
   runner.set_seed(static_cast<uint32_t>(FLAGS_seed));
 

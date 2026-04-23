@@ -14,7 +14,6 @@ See the plan document for architecture details.
 
 import json
 import math
-from copy import deepcopy
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -253,6 +252,55 @@ class KVCache(nn.Module):
         return self.k_cache, self.v_cache
 
 
+def _build_causal_mask_bool(
+    input_pos: torch.Tensor, max_seq_len: int, device: torch.device
+) -> torch.Tensor:
+    """Bool causal mask for the CUDA Triton SDPA kernel.
+
+    Shape: [1, 1, T_q, max_seq_len]. Position i in the query attends to cache
+    positions [0, input_pos[i]] inclusive — every other slot is masked. This
+    is critical for the CUDA path because StaticKVCache is preallocated to
+    max_seq_len with zeros at unwritten positions; without the mask, queries
+    would attend to those zeros and corrupt the hidden state.
+
+    The XNNPACK path uses torch.ops.llama.custom_sdpa, which infers the prefix
+    length from start_pos internally and doesn't need this mask.
+    """
+    k_pos = torch.arange(max_seq_len, device=device)
+    mask = input_pos.unsqueeze(1) >= k_pos.unsqueeze(0)
+    return mask.unsqueeze(0).unsqueeze(0)
+
+
+class StaticKVCache(nn.Module):
+    """KV cache in [B, H, S, D] layout, stored bf16 for the CUDA Triton SDPA.
+
+    The buffer is bf16 because torch.ops.triton.sdpa only accepts bf16 K/V.
+    The model's weights and activations stay in their native dtype (fp32 by
+    default); inputs to update() get cast to bf16 at write time. This isolates
+    the bf16 requirement to the SDPA path so semantic_head, predict_velocity,
+    and the LM MLPs keep fp32 precision.
+    """
+
+    def __init__(self, max_seq_len: int, n_kv_heads: int, head_dim: int):
+        super().__init__()
+        self.max_seq_len = max_seq_len
+        self.n_kv_heads = n_kv_heads
+        self.head_dim = head_dim
+        cache_shape = (1, n_kv_heads, max_seq_len, head_dim)
+        # Cache buffers are always bf16 — required by the Triton SDPA kernel.
+        self.register_buffer("k_cache", torch.zeros(cache_shape, dtype=torch.bfloat16))
+        self.register_buffer("v_cache", torch.zeros(cache_shape, dtype=torch.bfloat16))
+
+    def update(
+        self, input_pos: torch.Tensor, k_val: torch.Tensor, v_val: torch.Tensor
+    ) -> tuple[torch.Tensor, torch.Tensor]:
+        k_val = k_val.to(torch.bfloat16).transpose(1, 2)
+        v_val = v_val.to(torch.bfloat16).transpose(1, 2)
+        self.k_cache.index_copy_(2, input_pos, k_val)
+        self.v_cache.index_copy_(2, input_pos, v_val)
+        return self.k_cache, self.v_cache
+
+
 class SDPA(nn.Module):
     """Scaled dot-product attention using torch.ops.llama.custom_sdpa."""
 
@@ -278,15 +326,83 @@ class SDPA(nn.Module):
         torch._check_is_size(start_pos)
         if mask is not None:
             y = torch.ops.llama.custom_sdpa(
-                q, k, v, start_pos, mask.to(dtype=torch.float32), 0, False,
+                q,
+                k,
+                v,
+                start_pos,
+                mask.to(dtype=torch.float32),
+                0,
+                False,
             )
         else:
             y = torch.ops.llama.custom_sdpa(q, k, v, start_pos, None, 0, True)
         return y.view(bsz, seqlen, self.dim).to(dtype=input_dtype)
 
 
+class StandardSDPA(nn.Module):
+    """Scaled dot-product attention using ExecuTorch's Triton SDPA kernel.
+
+    Used for the CUDA (AOTI) backend. Q arrives in [B, S, H_q, D] in the
+    model's native dtype (typically fp32); K/V arrive in [B, H_kv, S, D] bf16
+    (StaticKVCache stores bf16 because the Triton SDPA kernel demands it).
+
+    Q is cast to bf16 just before the kernel and the output is cast back to
+    Q's original dtype, so the rest of the LM stays in fp32. The mask is
+    a [1, 1, T_q, max_seq_len] bool — without it, queries would attend to
+    the unwritten (zero) cache slots beyond input_pos and corrupt the hidden
+    state from frame 0.
+
+    F.scaled_dot_product_attention is avoided because its decomposition leaks
+    unbacked symbols during AOTI's re-trace pass.
+    """
+
+    def __init__(self, n_heads: int, n_kv_heads: int, head_dim: int):
+        super().__init__()
+        self.n_heads = n_heads
+        self.n_kv_heads = n_kv_heads
+        self.head_dim = head_dim
+        self.dim = n_heads * head_dim
+        self.enable_gqa = n_heads != n_kv_heads
+        # Trigger triton::sdpa op registration. The kernel is invoked via the
+        # registered op below so we don't pay an import cost in non-CUDA builds.
+        import executorch.backends.cuda.triton.kernels  # noqa: F401
+
+    def forward(
+        self,
+        input_pos: torch.Tensor,
+        q: torch.Tensor,
+        k: torch.Tensor,
+        v: torch.Tensor,
+        bsz: int,
+        seqlen: int,
+        mask: torch.Tensor | None = None,
+    ) -> torch.Tensor:
+        in_dtype = q.dtype
+        q = q.transpose(1, 2).to(
+            torch.bfloat16
+        )  # [B, S, H_q, D] -> [B, H_q, S, D] bf16
+        y = torch.ops.triton.sdpa(
+            q,
+            k,
+            v,
+            mask,
+            0.0,
+            False,
+            0.0,
+            self.enable_gqa,
+        )
+        y = y.to(in_dtype).transpose(1, 2).contiguous()
+        return y.view(bsz, seqlen, self.dim)
+
+
 class LMAttention(nn.Module):
-    """GQA with RoPE, KV cache, and SDPA. No biases."""
+    """GQA with RoPE, KV cache, and SDPA. No biases.
+
+    Backend selection:
+      - "xnnpack"/"portable" (default): KVCache (BSHD) + custom SDPA op.
+      - "cuda": StaticKVCache (BHSD) + StandardSDPA (F.scaled_dot_product_attention).
+        The custom_sdpa op cannot lower through AOTInductor.
+    """
 
     def __init__(self, config: VoxtralTTSConfig):
         super().__init__()
@@ -294,14 +410,21 @@ class LMAttention(nn.Module):
         self.n_kv_heads = config.n_kv_heads
         self.head_dim = config.head_dim
         self.dim = config.dim
+        self.backend = config.backend
 
         self.wq = nn.Linear(config.dim, self.n_heads * self.head_dim, bias=False)
         self.wk = nn.Linear(config.dim, self.n_kv_heads * self.head_dim, bias=False)
         self.wv = nn.Linear(config.dim, self.n_kv_heads * self.head_dim, bias=False)
         self.wo = nn.Linear(self.n_heads * self.head_dim, config.dim, bias=False)
 
-        self.kv_cache = KVCache(config.max_seq_len, self.n_kv_heads, self.head_dim)
-        self.sdpa = SDPA(self.n_heads, self.head_dim)
+        if self.backend == "cuda":
+            self.kv_cache = StaticKVCache(
+                config.max_seq_len, self.n_kv_heads, self.head_dim
+            )
+            self.sdpa = StandardSDPA(self.n_heads, self.n_kv_heads, self.head_dim)
+        else:
+            self.kv_cache = KVCache(config.max_seq_len, self.n_kv_heads, self.head_dim)
+            self.sdpa = SDPA(self.n_heads, self.head_dim)
 
     def forward(
         self,
@@ -385,9 +508,17 @@ class MistralDecoder(nn.Module):
         freqs_cos = self.freqs_cos[input_pos]
         freqs_sin = self.freqs_sin[input_pos]
 
+        # CUDA: must explicitly mask unwritten cache slots — see _build_causal_mask_bool.
+        # XNNPACK / portable: custom_sdpa handles the prefix internally.
+        attn_mask = None
+        if self.config.backend == "cuda":
+            attn_mask = _build_causal_mask_bool(
+                input_pos, self.config.max_seq_len, input_embeds.device
+            )
+
         x = input_embeds
         for layer in self.layers:
-            x = layer(x, freqs_cos, freqs_sin, input_pos)
+            x = layer(x, freqs_cos, freqs_sin, input_pos, attn_mask)
 
         return self.norm(x)
 
@@ -409,7 +540,10 @@ class AudioTokenEmbedding(nn.Module):
         super().__init__()
         self.codebook_sizes = [
             config.semantic_codebook_size + N_SPECIAL_TOKENS,
-            *[config.acoustic_levels + N_SPECIAL_TOKENS for _ in range(config.acoustic_dim)],
+            *[
+                config.acoustic_levels + N_SPECIAL_TOKENS
+                for _ in range(config.acoustic_dim)
+            ],
         ]
         total_vocab_size = sum(self.codebook_sizes)
         padded_vocab_size = 128 * ((total_vocab_size + 127) // 128)
@@ -663,9 +797,7 @@ class FlowMatchingHead(nn.Module):
             t = timesteps[i]
             dt = timesteps[i + 1] - timesteps[i]
 
-            t_emb = self.time_embedding(
-                t.view(-1, 1).repeat(B, 1)
-            ).to(llm_hidden.dtype)
+            t_emb = self.time_embedding(t.view(-1, 1).repeat(B, 1)).to(llm_hidden.dtype)
             t_emb = self.time_projection(t_emb)
 
             # CFG: batch cond + uncond
@@ -702,6 +834,85 @@ class FlowMatchingHead(nn.Module):
 # ---------------------------------------------------------------------------
 
 
+def _conv1d_as_matmul(
+    x: torch.Tensor,
+    weight: torch.Tensor,
+    bias: torch.Tensor | None,
+    stride: int,
+    dilation: int,
+) -> torch.Tensor:
+    """Math-identical replacement for F.conv1d, expressed as unfold + matmul.
+
+    AOTI's CUDA backend has Triton matmul kernels and aoti_torch_cuda_mm
+    runtime shims, but no kernels for aten.convolution.default at the codec's
+    ConvTranspose shapes (and no aoti_torch_cuda_convolution shim). This
+    reformulation lets the codec lower onto the same fast Triton path the LM
+    already uses.
+
+    x:      (B, C_in, L_in)
+    weight: (C_out, C_in, K)
+    bias:   (C_out,) or None
+    Returns (B, C_out, L_out) where L_out = (L_in - K_eff) // stride + 1
+    """
+    b, c_in, l_in = x.shape
+    c_out, _, k = weight.shape
+    x4 = x.unsqueeze(-1)  # (B, C_in, L_in, 1)
+    unf = F.unfold(
+        x4,
+        kernel_size=(k, 1),
+        dilation=(dilation, 1),
+        stride=(stride, 1),
+    )
+    # F.unfold returns (B, C_in * K, L_out); each column flattens a window in
+    # (channel-major, then kernel) order, matching weight.reshape(C_out, -1).
+    unf = unf.transpose(1, 2)  # (B, L_out, C_in*K)
+    w_flat = weight.reshape(c_out, -1)
+    y = unf @ w_flat.t()  # (B, L_out, C_out)
+    if bias is not None:
+        y = y + bias
+    return y.transpose(1, 2).contiguous()  # (B, C_out, L_out)
+
+
+def _conv_transpose1d_as_matmul(
+    x: torch.Tensor,
+    weight: torch.Tensor,
+    bias: torch.Tensor | None,
+    stride: int,
+) -> torch.Tensor:
+    """Math-identical replacement for F.conv_transpose1d, via matmul + Fold.
+
+    Same motivation as _conv1d_as_matmul — moves the codec off aten.convolution
+    onto the matmul path that AOTI's CUDA backend handles cleanly.
+
+    x:      (B, C_in, L_in)
+    weight: (C_in, C_out, K)         (PyTorch ConvTranspose1d layout)
+    bias:   (C_out,) or None
+    Returns (B, C_out, L_out) where L_out = (L_in - 1) * stride + K
+    """
+    b, c_in, l_in = x.shape
+    _, c_out, k = weight.shape
+    # Reshape weight to (C_in, C_out * K). For each input position l_in we want
+    # to produce a (C_out * K) vector that fold then scatters into the right
+    # output positions with stride-based overlap-add.
+    w_flat = weight.reshape(c_in, c_out * k)
+    # (B, C_in, L_in) -> (B, L_in, C_in) for batched matmul.
+    y = x.transpose(1, 2) @ w_flat  # (B, L_in, C_out * K)
+    y = y.transpose(1, 2)  # (B, C_out * K, L_in) — F.fold's expected order
+    l_out = (l_in - 1) * stride + k
+    # F.fold scatters each column's K values into output positions
+    # [l_in * stride .. l_in * stride + K) and accumulates overlaps.
+    y4 = F.fold(
+        y,
+        output_size=(l_out, 1),
+        kernel_size=(k, 1),
+        stride=(stride, 1),
+    )  # (B, C_out, L_out, 1)
+    out = y4.squeeze(-1)  # (B, C_out, L_out)
+    if bias is not None:
+        out = out + bias[None, :, None]
+    return out
+
+
 def _pad1d(
     x: torch.Tensor,
     paddings: tuple[int, int],
@@ -736,8 +947,13 @@ class CodecCausalConv1d(nn.Module):
     ):
         super().__init__()
         self.conv = nn.Conv1d(
-            in_channels, out_channels, kernel_size,
-            stride=stride, padding=0, dilation=dilation, bias=use_bias,
+            in_channels,
+            out_channels,
+            kernel_size,
+            stride=stride,
+            padding=0,
+            dilation=dilation,
+            bias=use_bias,
         )
         if use_weight_norm:
             self.conv = torch.nn.utils.parametrizations.weight_norm(self.conv)
@@ -750,13 +966,19 @@ class CodecCausalConv1d(nn.Module):
         n_frames = (
             x.shape[-1] - self._effective_kernel_size + self._padding_total
         ) / self._stride + 1
-        target_length = (
-            (math.ceil(n_frames) - 1) * self._stride
-            + (self._effective_kernel_size - self._padding_total)
+        target_length = (math.ceil(n_frames) - 1) * self._stride + (
+            self._effective_kernel_size - self._padding_total
         )
         extra_padding = target_length - x.shape[-1]
         x = _pad1d(x, (self._padding_total, extra_padding), mode=self.pad_mode)
-        return self.conv(x)
+        # Use unfold + matmul instead of F.conv1d so AOTI CUDA can lower this.
+        return _conv1d_as_matmul(
+            x,
+            self.conv.weight,
+            self.conv.bias,
+            stride=self._stride,
+            dilation=self.conv.dilation[0],
+        )
 
 
 class CodecCausalConvTranspose1d(nn.Module):
@@ -772,7 +994,11 @@ class CodecCausalConvTranspose1d(nn.Module):
     ):
         super().__init__()
         self.conv = nn.ConvTranspose1d(
-            in_channels, out_channels, kernel_size, stride=stride, bias=use_bias,
+            in_channels,
+            out_channels,
+            kernel_size,
+            stride=stride,
+            bias=use_bias,
         )
         if use_weight_norm:
             self.conv = torch.nn.utils.parametrizations.weight_norm(self.conv)
@@ -782,7 +1008,10 @@ class CodecCausalConvTranspose1d(nn.Module):
         kernel_size = self.conv.kernel_size[0]
         stride = self.conv.stride[0]
         total_padding = kernel_size - stride
-        out = self.conv(x)
+        # matmul + Fold replacement for F.conv_transpose1d (AOTI CUDA path).
+        out = _conv_transpose1d_as_matmul(
+            x, self.conv.weight, self.conv.bias, stride=stride
+        )
         right_padding = math.ceil(total_padding * self.trim_ratio)
         left_padding = total_padding - right_padding
         return out[..., left_padding : out.shape[-1] - right_padding]
@@ -796,7 +1025,9 @@ def _get_alibi_slopes(n_heads: int) -> torch.Tensor:
     if math.log2(n_heads).is_integer():
         return _slopes_power_of_2(n_heads)
     m = 2 ** math.floor(math.log2(n_heads))
-    return torch.cat([_slopes_power_of_2(m), _slopes_power_of_2(2 * m)[::2][: n_heads - m]])
+    return torch.cat(
+        [_slopes_power_of_2(m), _slopes_power_of_2(2 * m)[::2][: n_heads - m]]
+    )
 
 
 class CodecAttention(nn.Module):
@@ -878,9 +1109,7 @@ class CodecAttention(nn.Module):
         outside_window = (rel_pos < -self.sliding_window) | (rel_pos > window_right)
         attn_bias = attn_bias.masked_fill(outside_window.unsqueeze(0), float("-inf"))
 
-        y = F.scaled_dot_product_attention(
-            q, k, v, attn_mask=attn_bias.unsqueeze(0)
-        )
+        y = F.scaled_dot_product_attention(q, k, v, attn_mask=attn_bias.unsqueeze(0))
         y = y.transpose(1, 2).contiguous().view(bsz, seqlen, -1)
         return self.wo(y)
 
@@ -917,8 +1146,15 @@ class CodecTransformerBlock(nn.Module):
     ):
         super().__init__()
         self.attention = CodecAttention(
-            dim, n_heads, n_kv_heads, head_dim, sliding_window,
-            qk_norm, qk_norm_eps, use_biases, causal,
+            dim,
+            n_heads,
+            n_kv_heads,
+            head_dim,
+            sliding_window,
+            qk_norm,
+            qk_norm_eps,
+            use_biases,
+            causal,
         )
         self.feed_forward = CodecFeedForward(dim, hidden_dim, use_biases)
         self.attention_norm = RMSNorm(dim, norm_eps)
@@ -1012,9 +1248,11 @@ class AcousticCodebook(nn.Module):
         self.n_levels = n_levels
         self.dim = dim
 
-    def decode(self, codes: torch.Tensor, dtype: torch.dtype = torch.float32) -> torch.Tensor:
+    def decode(
+        self, codes: torch.Tensor, dtype: torch.dtype = torch.float32
+    ) -> torch.Tensor:
         """codes: (B, dim, T) long -> (B, dim, T) float in [-1, 1]"""
-        return ((codes.to(dtype) * 2) / (self.n_levels - 1) - 1)
+        return (codes.to(dtype) * 2) / (self.n_levels - 1) - 1
 
 
 class AudioCodebook(nn.Module):
@@ -1025,11 +1263,15 @@ class AudioCodebook(nn.Module):
         self.semantic_codebook = SemanticCodebook(
             config.semantic_codebook_size, config.semantic_dim
         )
-        self.acoustic_codebook = AcousticCodebook(config.acoustic_levels, config.acoustic_dim)
+        self.acoustic_codebook = AcousticCodebook(
+            config.acoustic_levels, config.acoustic_dim
+        )
         self.semantic_dim = config.semantic_dim
         self.acoustic_dim = config.acoustic_dim
 
-    def decode(self, codes: torch.Tensor, dtype: torch.dtype = torch.float32) -> torch.Tensor:
+    def decode(
+        self, codes: torch.Tensor, dtype: torch.dtype = torch.float32
+    ) -> torch.Tensor:
         """codes: (B, 1+acoustic_dim, T) -> (B, semantic_dim+acoustic_dim, T)"""
         semantic_codes = codes[:, :1, :]
         acoustic_codes = codes[:, 1:, :]
@@ -1056,11 +1298,9 @@ class CodecDecoder(nn.Module):
         # The encoder starts at codec_sliding_window and halves at each
         # downsample.  The decoder mirrors this: start at the most-compressed
         # window and double at each upsample.
-        n_upsample = sum(
-            1 for s in config.codec_decoder_convs_strides if s > 1
-        )
+        n_upsample = sum(1 for s in config.codec_decoder_convs_strides if s > 1)
         if config.codec_half_attn_window_upon_downsampling and n_upsample > 0:
-            cur_window_size = config.codec_sliding_window // (2 ** n_upsample)
+            cur_window_size = config.codec_sliding_window // (2**n_upsample)
         else:
             cur_window_size = config.codec_sliding_window
 
@@ -1083,10 +1323,8 @@ class CodecDecoder(nn.Module):
             cur_window_size *= 2
 
         for idx, n_layers in enumerate(config.codec_decoder_transformer_lengths):
-            decoder_blocks.append(
-                CodecTransformer(config, n_layers, cur_window_size)
-            )
-            if (idx + 1 < len(config.codec_decoder_transformer_lengths)):
+            decoder_blocks.append(CodecTransformer(config, n_layers, cur_window_size))
+            if idx + 1 < len(config.codec_decoder_transformer_lengths):
                 next_k = config.codec_decoder_convs_kernels[idx + 1]
                 next_s = config.codec_decoder_convs_strides[idx + 1]
                 if next_k != 1 or next_s != 1:
@@ -1131,7 +1369,14 @@ class CodecDecoder(nn.Module):
             torch.zeros_like(codes),
         )
 
-        latent = self.quantizer.decode(codes_stripped, dtype=codes.dtype if codes.is_floating_point() else torch.float32)
+        # Match the dtype of the codec's first conv weight so downstream
+        # bf16/fp32 paths see consistent dtypes.
+        latent_dtype = (
+            codes.dtype
+            if codes.is_floating_point()
+            else self.output_proj.conv.weight.dtype
+        )
+        latent = self.quantizer.decode(codes_stripped, dtype=latent_dtype)
 
         x = latent  # (B, D, T) channels-first
         for block in self.decoder_blocks:
@@ -1198,12 +1443,12 @@ def _map_checkpoint_key(ckpt_key: str) -> str | None:
 
     # Flow matching head (acoustic transformer)
     if ckpt_key.startswith("acoustic_transformer."):
-        suffix = ckpt_key[len("acoustic_transformer."):]
+        suffix = ckpt_key[len("acoustic_transformer.") :]
         return "flow_head." + suffix
 
     # Codec decoder
     if ckpt_key.startswith("audio_tokenizer."):
-        suffix = ckpt_key[len("audio_tokenizer."):]
+        suffix = ckpt_key[len("audio_tokenizer.") :]
         return "codec_decoder." + suffix
 
     # Skip voice embeddings (loaded separately)
@@ -1215,12 +1460,33 @@ def _map_checkpoint_key(ckpt_key: str) -> str | None:
 
 def _fold_weight_norm(model: nn.Module) -> None:
     """Remove weight_norm parametrizations, fusing weight_v + weight_g into weight."""
-    for name, module in model.named_modules():
+    for _name, module in model.named_modules():
         if isinstance(module, (nn.Conv1d, nn.ConvTranspose1d)):
             if hasattr(module, "parametrizations"):
-                torch.nn.utils.parametrize.remove_parametrizations(
-                    module, "weight"
-                )
+                torch.nn.utils.parametrize.remove_parametrizations(module, "weight")
+
+
+def _materialize_meta_buffers(model: nn.Module, dtype: torch.dtype) -> None:
+    """Replace meta-device buffers with zero tensors on CPU.
+
+    Preserves each buffer's declared dtype — StaticKVCache asks for bf16 for
+    the CUDA Triton SDPA path even when the rest of the model is fp32.
+    """
+    for fqn, buf in list(model.named_buffers()):
+        if buf.device.type != "meta":
+            continue
+        parts = fqn.rsplit(".", 1)
+        parent = model.get_submodule(parts[0]) if len(parts) > 1 else model
+        if buf.dtype == torch.bfloat16:
+            buf_dtype = torch.bfloat16
+        elif buf.dtype.is_floating_point:
+            buf_dtype = dtype
+        else:
+            buf_dtype = buf.dtype
+        parent.register_buffer(
+            parts[-1],
+            torch.zeros(buf.shape, dtype=buf_dtype, device="cpu"),
+        )
 
 
 def load_model(
@@ -1261,15 +1527,7 @@ def load_model(
 
     missing, unexpected = model.load_state_dict(state_dict, strict=False, assign=True)
 
-    # Materialize meta-device buffers (KV caches, RoPE, timesteps, etc.)
-    for fqn, buf in list(model.named_buffers()):
-        if buf.device.type == "meta":
-            parts = fqn.rsplit(".", 1)
-            parent = model.get_submodule(parts[0]) if len(parts) > 1 else model
-            parent.register_buffer(
-                parts[-1],
-                torch.zeros(buf.shape, dtype=dtype, device="cpu"),
-            )
+    _materialize_meta_buffers(model, dtype)
 
     # Recompute RoPE
     dec_cos, dec_sin = precompute_freqs_cis(

@@ -8,8 +8,8 @@
 
 #pragma once
 
-#include <filesystem>
 #include <cstdint>
+#include <filesystem>
 #include <functional>
 #include <memory>
 #include <random>
@@ -30,7 +30,9 @@ class VoxtralTTSRunner {
   VoxtralTTSRunner(
       const std::string& model_path,
       const std::string& codec_path,
-      const std::string& tokenizer_path);
+      const std::string& tokenizer_path,
+      const std::string& model_data_path = "",
+      const std::string& codec_data_path = "");
 
   void set_trace_output_path(const std::string& trace_output_path);
   void set_seed(uint32_t seed);
@@ -85,8 +87,9 @@ class VoxtralTTSRunner {
   std::unique_ptr<::executorch::extension::Module> model_;
   std::unique_ptr<::executorch::extension::Module> codec_;
   std::unique_ptr<tokenizers::Tokenizer> tokenizer_;
-  std::mt19937 rng_;          // used for semantic sampling (temperature > 0)
-  uint64_t flow_rng_state_;   // xorshift64 state for flow-matching x0 noise (matches voxtral-tts.c)
+  std::mt19937 rng_; // used for semantic sampling (temperature > 0)
+  uint64_t flow_rng_state_; // xorshift64 state for flow-matching x0 noise
+                            // (matches voxtral-tts.c)
   uint32_t seed_ = 42;
 
   // Voice embedding loaded from .pt or raw .bin assets.
@@ -124,6 +127,11 @@ class VoxtralTTSRunner {
   std::string trace_output_path_;
   std::filesystem::path asset_root_dir_;
   std::string model_path_;
+  std::string model_data_path_; // .ptd alongside model.pte (CUDA backend)
+  std::string
+      codec_data_path_; // .ptd alongside codec_decoder.pte (CUDA backend)
+  bool lm_use_bf16_ =
+      false; // True when CUDA AOTI .ptd is loaded — LM methods need bf16 IO.
 };
 
 } // namespace voxtral_tts
