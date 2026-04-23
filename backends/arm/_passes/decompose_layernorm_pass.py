@@ -1,4 +1,4 @@
-# Copyright 2024-2025 Arm Limited and/or its affiliates.
+# Copyright 2024-2026 Arm Limited and/or its affiliates.
 #
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
@@ -9,7 +9,7 @@ from typing import Set, Type
 
 import torch
 from executorch.backends.arm._passes import ArmPass
-from executorch.backends.arm._passes.arm_pass_utils import create_node
+from executorch.backends.arm._passes.arm_pass_utils import create_node, insert_scalar
 from executorch.backends.arm._passes.decompose_meandim_pass import DecomposeMeanDimPass
 from executorch.backends.arm._passes.decompose_var_pass import DecomposeVarPass
 from executorch.backends.arm._passes.fuse_constant_ops_pass import (
@@ -90,6 +90,11 @@ class DecomposeLayerNormPass(ArmPass):
             args = node.args
             meta = node.meta
             match len(args):
+                case 6:
+                    # torch.ops.aten.layer_norm.default has 6 args:
+                    # (input, normalized_shape, weight, bias, eps, cudnn_enable)
+                    # cudnn_enable is not used in the decomposition
+                    x, normalized_shape, weights, bias, epsilon, _cudnn_enable = args
                 case 5:
                     x, normalized_shape, weights, bias, epsilon = args
                 case 4:
@@ -102,15 +107,12 @@ class DecomposeLayerNormPass(ArmPass):
             n_dims = len(normalized_shape)
             if isinstance(meta["val"], tuple):
                 shape = meta["val"][0].size()
-                dtype = meta["val"][0].dtype
             else:
                 shape = meta["val"].size()
-                dtype = meta["val"].dtype
             rank = len(shape)
             dims = list(range(-1, -1 * (n_dims + 1), -1))
             dims = [dim % rank for dim in dims]
             weights_reshaped_shape = [shape[i] if i in dims else 1 for i in range(rank)]
-            epsilon_reshaped_shape = [1] * rank
 
             (
                 mean_op,
@@ -133,15 +135,16 @@ class DecomposeLayerNormPass(ArmPass):
                     kwargs={"correction": 0, "keepdim": keepdim},
                     from_node=node,
                 )
-                full = create_node(
-                    graph_module.graph,
-                    full_op,
-                    args=(epsilon_reshaped_shape, epsilon),
-                    kwargs={"dtype": dtype},
-                    from_node=node,
-                )
                 add0 = create_node(
-                    graph_module.graph, add_op, args=(var, full), from_node=node
+                    graph_module.graph,
+                    add_op,
+                    args=(
+                        var,
+                        insert_scalar(
+                            graph_module.graph, epsilon, meta, node, self.is_tfa_pass
+                        ),
+                    ),
+                    from_node=node,
                 )
                 rsqrt = create_node(
                     graph_module.graph, rsqrt_op, args=(add0,), from_node=node

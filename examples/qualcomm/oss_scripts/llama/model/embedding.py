@@ -8,7 +8,7 @@ import torch
 from torch import nn
 
 
-class TextEmbedding(nn.Module):
+class TokenEmbedding(nn.Module):
     def __init__(
         self,
         input_embedding_module,
@@ -35,5 +35,5 @@ class TextEmbedding(nn.Module):
             ),
         )
 
-    def forward(self, input_ids):
-        return self.input_embedding_module(input_ids)
+    def forward(self, tokens):
+        return self.input_embedding_module(tokens)

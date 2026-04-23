@@ -105,9 +105,9 @@ def _patch_build_mode_flags(kwargs):
         # @oss-disable: "ovr_config//build_mode:opt": ["-D__ET_BUILD_MODE_OPT=1"],
     }) + select({
         "DEFAULT": [],
-        # @oss-disable: "ovr_config//build_mode:asan": ["-D__ET_BUILD_MODE_ASAN=1"],
-        # @oss-disable: "ovr_config//build_mode:tsan": ["-D__ET_BUILD_MODE_TSAN=1"],
-        # @oss-disable: "ovr_config//build_mode:ubsan": ["-D__ET_BUILD_MODE_UBSAN=1"],
+        # @oss-disable: "ovr_config//build_mode:sanitizer_type[asan]": ["-D__ET_BUILD_MODE_ASAN=1"],
+        # @oss-disable: "ovr_config//build_mode:sanitizer_type[tsan]": ["-D__ET_BUILD_MODE_TSAN=1"],
+        # @oss-disable: "ovr_config//build_mode:sanitizer_type[ubsan]": ["-D__ET_BUILD_MODE_UBSAN=1"],
         # @oss-disable: "ovr_config//build_mode:lto-fat": ["-D__ET_BUILD_MODE_LTO=1"],
         # @oss-disable: "ovr_config//build_mode:code-coverage": ["-D__ET_BUILD_MODE_COV=1"],
     })
@@ -123,16 +123,55 @@ def _patch_build_mode_flags(kwargs):
         # @oss-disable: "fbsource//xplat/assistant/oacr/native/scripts:compiler_flag_O2": ["-O2"],
     })
 
+    # Add pthread flags for Emscripten/WASM builds with threading support.
+    # Required when linking into WASM binaries that use -sUSE_PTHREADS=1.
+    # Without these flags, wasm-ld fails with:
+    #   "error: --shared-memory is disallowed by <file>.o because it was not
+    #    compiled with 'atomics' or 'bulk-memory' features."
+    kwargs["compiler_flags"] = kwargs["compiler_flags"] + select({
+        "DEFAULT": [],
+        # @oss-disable: "ovr_config//runtime:wasm-emscripten": ["-pthread", "-matomics", "-mbulk-memory"],
+    })
+
     return kwargs
+
+def _has_pytorch_dep(dep_list):
+    """Check if a dependency list contains PyTorch/ATen dependencies."""
+    if not dep_list:
+        return False
+    for dep in dep_list:
+        if type(dep) == "string":
+            if "torch" in dep or "libtorch" in dep or "caffe2" in dep:
+                return True
+    return False
 
 def _patch_test_compiler_flags(kwargs):
     if "compiler_flags" not in kwargs:
         kwargs["compiler_flags"] = []
 
-    # Required globally by all c++ tests.
-    kwargs["compiler_flags"] += [
-        "-std=c++17",
-    ]
+    # Determine C++ standard based on whether this is an aten test.
+    # Aten tests require at least C++20 to compile against PyTorch, while
+    # non-aten tests are pinned to C++17 for embedded.
+    name = kwargs.get("name", "")
+    external_deps = kwargs.get("external_deps", [])
+    deps = kwargs.get("deps", [])
+    xplat_deps = kwargs.get("xplat_deps", [])
+    fbcode_deps = kwargs.get("fbcode_deps", [])
+    is_aten_test = (
+        "_aten" in name or
+        "aten_" in name or
+        "libtorch" in external_deps or
+        "gtest_aten" in external_deps or
+        "gmock_aten" in external_deps or
+        _has_pytorch_dep(deps) or
+        _has_pytorch_dep(xplat_deps) or
+        _has_pytorch_dep(fbcode_deps)
+    )
+
+    if not is_aten_test:
+        kwargs["compiler_flags"] += [
+            "-std=c++17",
+        ]
 
     # Relaxing some constraints for tests
     kwargs["compiler_flags"] += [
@@ -184,17 +223,7 @@ def _patch_kwargs_common(kwargs):
     """
     env.remove_unsupported_kwargs(kwargs)
 
-    # Be careful about dependencies on executorch targets for now, so that we
-    # don't pick up unexpected clients while things are still in flux.
-    if not kwargs.pop("_is_external_target", False):
-        for target in kwargs.get("visibility", []):
-            if not (target == "PUBLIC" or target.startswith("//executorch") or target.startswith("//pytorch/tokenizers") or target.startswith("@")):
-                fail("Please manage all external visibility using the " +
-                     "EXECUTORCH_CLIENTS list in " +
-                     "//executorch/build/fb/clients.bzl. " +
-                     "Found external visibility target \"{}\".".format(target))
-    else:
-        kwargs.pop("_is_external_target", None)
+    kwargs.pop("_is_external_target", False)
 
     # Convert `[exported_]external_deps` entries into real deps if necessary.
     _resolve_external_deps(kwargs)
@@ -348,6 +377,21 @@ def _python_library(*args, **kwargs):
 
 def _python_binary(*args, **kwargs):
     _patch_kwargs_common(kwargs)
+
+    # In OSS, native.python_binary doesn't support fbcode-specific params.
+    # Convert main_src -> main, and move srcs entries into main if needed.
+    if env.is_oss:
+        main_src = kwargs.pop("main_src", None)
+        srcs = kwargs.pop("srcs", None)
+        if main_src:
+            kwargs.setdefault("main", main_src)
+        elif srcs:
+            # If srcs provided but no main/main_src, use first src as main
+            if "main" not in kwargs:
+                kwargs["main"] = srcs[0]
+        if srcs != None:
+            kwargs["srcs"] = srcs
+
     env.python_binary(*args, **kwargs)
 
 def _python_test(*args, **kwargs):

@@ -3,7 +3,7 @@ load(
     "CXX",
 )
 load("@fbsource//xplat/executorch/build:runtime_wrapper.bzl", "runtime")
-load("@fbsource//xplat/executorch/backends/qualcomm/qnn_version.bzl", "get_qnn_library_version")
+load("@fbsource//xplat/executorch/backends/qualcomm/third-party:third_party_libs.bzl", "qnn_third_party_dep")
 
 PYTHON_MODULE_NAME = "PyQnnManagerAdaptor"
 
@@ -32,17 +32,15 @@ def define_common_targets():
             "//executorch/backends/qualcomm/runtime:logging",
             "//executorch/backends/qualcomm:schema",
             "//executorch/backends/qualcomm/runtime:runtime",
-            "fbsource//third-party/pybind11:pybind11",
-            "fbsource//third-party/qualcomm/qnn/qnn-{0}:api".format(get_qnn_library_version()),
-            "fbsource//third-party/qualcomm/qnn/qnn-{0}:app_sources".format(get_qnn_library_version()),
+            qnn_third_party_dep("api"),
+            qnn_third_party_dep("app_sources"),
+            qnn_third_party_dep("pybind11"),
         ],
         external_deps = [
             "libtorch_python",
         ],
         use_static_deps = True,
-        visibility = [
-            "//executorch/backends/qualcomm/...",
-        ],
+        visibility = ["PUBLIC"],
     )
 
 
@@ -55,14 +53,14 @@ def define_common_targets():
             "*.h",
         ]),
         platforms = (CXX),
-        visibility = ["@EXECUTORCH_CLIENTS"],
+        visibility = ["PUBLIC"],
         deps = [
             "//executorch/backends/qualcomm/aot/wrappers:wrappers",
             "//executorch/backends/qualcomm/runtime:logging",
             "//executorch/backends/qualcomm:schema",
             "//executorch/backends/qualcomm/runtime:runtime",
-            "fbsource//third-party/pybind11:pybind11",
-            "fbsource//third-party/qualcomm/qnn/qnn-{0}:api".format(get_qnn_library_version()),
-            "fbsource//third-party/qualcomm/qnn/qnn-{0}:app_sources".format(get_qnn_library_version()),
+            qnn_third_party_dep("api"),
+            qnn_third_party_dep("app_sources"),
+            qnn_third_party_dep("pybind11"),
         ],
     )

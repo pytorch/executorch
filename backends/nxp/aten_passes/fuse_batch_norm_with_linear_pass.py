@@ -2,14 +2,30 @@
 #
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
-from typing import Optional
 
 import torch
+
+from executorch.backends.nxp.backend.graph_utils import get_output_shape
 from torch.export.unflatten import _assign_attr, _AttrKind
 from torch.fx import GraphModule, Node
 from torch.fx.passes.infra.pass_base import PassBase, PassResult
 from torch.nn.parameter import Parameter
 from torch.nn.utils import fuse_linear_bn_weights
+from torchao.quantization.pt2e.prepare import _is_activation_post_process_node
+
+
+def _unwrap_if_fq(node: Node, named_modules: dict):
+    target_node = node
+
+    if _is_activation_post_process_node(node, named_modules):
+        if len(node.args) >= 1:
+            target_node = node.args[0]
+        else:
+            raise ValueError(
+                f"FakeQuantize node '{node}' should have at least one argument, but has {len(node.args)}."
+            )
+
+    return target_node
 
 
 class FuseBatchNormWithLinearPass(PassBase):
@@ -53,7 +69,7 @@ class FuseBatchNormWithLinearPass(PassBase):
             attr_itr = getattr(attr_itr, atom)
         return attr_itr
 
-    def call(self, graph_module: GraphModule) -> Optional[PassResult]:
+    def call(self, graph_module: GraphModule) -> PassResult | None:
         def _is_batch_norm(node_: Node) -> bool:
             return (
                 node_.op == "call_function"
@@ -76,6 +92,8 @@ class FuseBatchNormWithLinearPass(PassBase):
                 graph_module, made_changes
             )  # No batch norm nodes in the model.
 
+        named_modules = dict(graph_module.named_modules(remove_duplicate=False))
+
         for node in graph_module.graph.nodes:
             if not _is_batch_norm(node):
                 continue  # Not BatchNorm.
@@ -86,9 +104,24 @@ class FuseBatchNormWithLinearPass(PassBase):
                 continue  # Something other than a Linear node comes before the BatchNorm.
 
             linear_node = bn_node.args[0]
-            linear_weight_node = linear_node.args[1]
-            linear_bias_node = (
+            linear_out_shape = get_output_shape(linear_node)
+
+            # Skip cases where batch norm does not operate on the same dim as linear.
+            # Linear operates on the last dim while batch norm works with the first dim right after batch.
+            # The only case where this occurs is when input shape is (B, C).
+            if not linear_out_shape or len(linear_out_shape) != 2:
+                continue
+
+            linear_weight_node_or_fq = linear_node.args[1]
+            linear_bias_node_or_fq = (
                 linear_node.args[2] if len(linear_node.args) > 2 else None
+            )
+
+            linear_weight_node = _unwrap_if_fq(
+                linear_weight_node_or_fq, named_modules=named_modules
+            )
+            linear_bias_node = _unwrap_if_fq(
+                linear_bias_node_or_fq, named_modules=named_modules
             )
 
             linear_w = self._get_tensor_constant_from_node(
@@ -144,7 +177,12 @@ class FuseBatchNormWithLinearPass(PassBase):
 
             # Replace the uses of the BatchNorm with the Linear.
             bn_node.replace_all_uses_with(linear_node)
+            graph_module.graph.erase_node(bn_node)
 
             made_changes = True
+
+        if made_changes:
+            graph_module.graph.eliminate_dead_code()
+            graph_module.recompile()
 
         return PassResult(graph_module, made_changes)

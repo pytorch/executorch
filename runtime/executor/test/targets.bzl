@@ -81,11 +81,7 @@ def define_common_targets(is_fbcode = False):
         exported_headers = [
             "managed_memory_manager.h",
         ],
-        visibility = [
-            "//executorch/runtime/executor/test/...",
-            "//executorch/test/...",
-            "@EXECUTORCH_CLIENTS",
-        ],
+        visibility = ["PUBLIC"],
         deps = [
             "//executorch/runtime/core:memory_allocator",
             "//executorch/runtime/executor:memory_manager",
@@ -200,6 +196,20 @@ def define_common_targets(is_fbcode = False):
         )
 
         runtime.cxx_test(
+            name = "program_validation_test",
+            srcs = [
+                "program_validation_test.cpp",
+            ],
+            deps = [
+                "//executorch/runtime/executor:program",
+                "//executorch/extension/data_loader:buffer_data_loader",
+                "//executorch/extension/data_loader:file_data_loader",
+                "//executorch/schema:program",
+            ],
+            env = modules_env,
+        )
+
+        runtime.cxx_test(
             name = "kernel_resolution_test",
             srcs = [
                 "kernel_resolution_test.cpp",
@@ -301,4 +311,20 @@ def define_common_targets(is_fbcode = False):
                 "//executorch/schema:program",
             ],
             env = modules_env,
+        )
+
+        runtime.cxx_test(
+            name = "tensor_parser_device_test",
+            srcs = [
+                "tensor_parser_device_test.cpp",
+            ],
+            deps = [
+                ":managed_memory_manager",
+                "//executorch/runtime/executor:program",
+                "//executorch/extension/data_loader:file_data_loader",
+                "//executorch/schema:program",
+            ],
+            env = {
+                "ET_MODULE_ADD_WITH_DEVICE_PATH": "$(location fbcode//executorch/test/models:exported_program_with_device_info[ModuleAddWithDevice.pte])",
+            },
         )

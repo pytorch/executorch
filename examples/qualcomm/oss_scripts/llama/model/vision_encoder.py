@@ -4,8 +4,6 @@
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
 
-from typing import Optional, Tuple
-
 import torch
 
 from executorch.examples.qualcomm.utils import replace_module_with_custom_class
@@ -27,7 +25,7 @@ from transformers.models.internvl.modeling_internvl import (
 )
 
 
-# Custom implementation based on `transformers/models/idefics3/modeling_idefics3/Idefics3VisionEmbeddings.py` (Transformers v4.56.1)
+# Custom implementation based on `transformers/models/idefics3/modeling_idefics3/Idefics3VisionEmbeddings.py` (Transformers v5.0.0rc1)
 #
 # Qualcomm optimization:
 # Precompute and register positional IDs as a buffer to avoid computation during forward passes.
@@ -119,61 +117,29 @@ class CustomIdefics3VisionEmbeddings(Idefics3VisionEmbeddings):
         return embeddings
 
 
-# Custom implementation based on `transformers/models/idefics3/modeling_idefics3/Idefics3VisionTransformer.py` (Transformers v4.56.1)
+# Custom implementation based on `transformers/models/idefics3/modeling_idefics3/Idefics3VisionTransformer.py` (Transformers v5.0.0rc1)
 #
 # Qualcomm changes:
 # Assume the image is non-empty and skip attention mask propagation to the encoder
 class CustomIdefics3VisionTransformer(Idefics3PreTrainedModel):
     config: Idefics3VisionConfig
-    _supports_sdpa = True
-    _supports_flash_attn = True
-    _supports_flex_attn = True
 
     def __init__(self, config: Idefics3VisionConfig):
         super().__init__(config)
-        embed_dim = config.hidden_size
-
         self.embeddings = Idefics3VisionEmbeddings(config)
         self.encoder = Idefics3Encoder(config)
-        self.patch_size = config.patch_size
-        self.post_layernorm = nn.LayerNorm(embed_dim, eps=config.layer_norm_eps)
-        self._use_flash_attention_2 = config._attn_implementation == "flash_attention_2"
-
-    def forward(
-        self,
-        pixel_values,
-        patch_attention_mask: Optional[torch.BoolTensor] = None,
-        output_attentions: Optional[bool] = None,
-        output_hidden_states: Optional[bool] = None,
-        return_dict: Optional[bool] = None,
-    ):
-        output_attentions = (
-            output_attentions
-            if output_attentions is not None
-            else self.config.output_attentions
-        )
-        output_hidden_states = (
-            output_hidden_states
-            if output_hidden_states is not None
-            else self.config.output_hidden_states
-        )
-        return_dict = (
-            return_dict if return_dict is not None else self.config.use_return_dict
+        self.post_layernorm = nn.LayerNorm(
+            config.hidden_size, eps=config.layer_norm_eps
         )
 
+    def forward(self, pixel_values):
         hidden_states = self.embeddings(pixel_values=pixel_values)
         encoder_outputs = self.encoder(
             inputs_embeds=hidden_states,
-            output_attentions=output_attentions,
-            output_hidden_states=output_hidden_states,
-            return_dict=return_dict,
         )
 
         last_hidden_state = encoder_outputs[0]
         last_hidden_state = self.post_layernorm(last_hidden_state)
-
-        if not return_dict:
-            return (last_hidden_state,) + encoder_outputs[1:]
 
         return BaseModelOutput(
             last_hidden_state=last_hidden_state,
@@ -182,7 +148,7 @@ class CustomIdefics3VisionTransformer(Idefics3PreTrainedModel):
         )
 
 
-# Custom implementation based on `transformers/models/idefics3/modeling_idefics3.py` (Transformers v4.56.1).
+# Custom implementation based on `transformers/models/idefics3/modeling_idefics3.py` (Transformers v5.0.0rc1).
 #
 # Qualcomm optimization:
 # - Dynamic shape support is removed; computations are now static for efficiency.
@@ -208,11 +174,6 @@ class Idefics3VisionEncoder(Idefics3PreTrainedModel):
             strict=True,
             extra_custom_kwargs={"config": config.vision_config},
         )
-
-    def preprocess(self, pixel_values: Tuple[torch.FloatTensor]) -> Tuple[torch.Tensor]:
-        # HTP Prepare failed when pixel_values has 5D dimension, so we squeeze the batch dimension here.
-        pixel_values = pixel_values[0]
-        return (pixel_values.squeeze(0),)
 
     def get_example_inputs(self):
         # pixel values - use config dimensions instead of hardcoded values
@@ -277,7 +238,7 @@ class Idefics3VisionEncoder(Idefics3PreTrainedModel):
         return image_hidden_states
 
 
-# Copy from transformers/models/internvl/modeling_internvl.py (Transformers v4.56.1).
+# Copy from transformers/models/internvl/modeling_internvl.py (Transformers v5.0.0rc1).
 class InternVL3VisionEncoder(torch.nn.Module):
     def __init__(
         self, config: InternVLConfig, img_resized_h: int = 448, img_resized_w: int = 448
@@ -288,9 +249,6 @@ class InternVL3VisionEncoder(torch.nn.Module):
         self.config = config
         self.img_resized_h = img_resized_h
         self.img_resized_w = img_resized_w
-
-    def preprocess(self, pixel_values: Tuple[torch.FloatTensor]) -> Tuple[torch.Tensor]:
-        return pixel_values
 
     def get_example_inputs(self):
         # pixel values - use config dimensions instead of hardcoded values

@@ -116,13 +116,7 @@ def define_op_library(name, deps, android_deps, aten_target, _allow_third_party_
         srcs = [
             "{}.cpp".format(name),
         ],
-        visibility = [
-            "//executorch/kernels/portable/test/...",
-            "//executorch/kernels/quantized/...",
-            "//executorch/kernels/optimized/test/...",
-            "//executorch/kernels/test/...",
-            "@EXECUTORCH_CLIENTS",
-        ],
+        visibility = ["PUBLIC"],
         # kernels often have helpers with no prototypes just disabling the warning here as the headers
         # are codegend and linked in later
         compiler_flags = select({
@@ -1339,6 +1333,15 @@ ATEN_OPS = (
         ],
     ),
     op_target(
+        name = "op_var_mean",
+        deps = [
+            ":scalar_utils",
+            "//executorch/runtime/core/exec_aten/util:scalar_type_util",
+            "//executorch/runtime/core/exec_aten/util:tensor_util",
+            "//executorch/kernels/portable/cpu/util:reduce_util",
+        ],
+    ),
+    op_target(
         name = "op_view_as_real_copy",
         deps = [
             "//executorch/kernels/portable/cpu/util:copy_ops_util",
@@ -1362,6 +1365,25 @@ ATEN_OPS = (
         name = "op_zeros",
     ),
     op_target(
+        name = "op__clone_dim_order",
+        deps = [
+            ":scalar_utils",
+            "//executorch/kernels/portable/cpu/util:copy_ops_util",
+        ],
+    ),
+    op_target(
+        name = "op__adaptive_avg_pool2d",
+        deps = [
+            "//executorch/kernels/portable/cpu/util:kernel_ops_util",
+        ],
+    ),
+    op_target(
+        name = "op__conj_physical",
+        deps = [
+            "//executorch/kernels/portable/cpu/util:functional_util",
+        ],
+    ),
+    op_target(
         name = "op__empty_dim_order",
         deps = [
             ":scalar_utils",
@@ -1369,13 +1391,6 @@ ATEN_OPS = (
     ),
     op_target(
         name = "op__to_dim_order_copy",
-        deps = [
-            ":scalar_utils",
-            "//executorch/kernels/portable/cpu/util:copy_ops_util",
-        ],
-    ),
-    op_target(
-        name = "op__clone_dim_order",
         deps = [
             ":scalar_utils",
             "//executorch/kernels/portable/cpu/util:copy_ops_util",

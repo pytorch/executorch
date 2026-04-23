@@ -1,5 +1,5 @@
 # Copyright (c) Qualcomm Innovation Center, Inc.
-# Copyright 2025 Arm Limited and/or its affiliates.
+# Copyright 2025-2026 Arm Limited and/or its affiliates.
 #
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
@@ -15,10 +15,9 @@ from executorch.exir.pass_base import ExportPass, NodeMetadata, PassResult
 
 
 class ReplaceInfAndLimitValuesPass(ArmPass):
-    """
-    Rewrites +inf/-inf and floating-point limit values (e.g., torch.finfo(...).min/max)
-    to quantization-friendly values (±255 by default), improving quantizer stability
-    (notably for attention mask paths).
+    """Rewrites +inf/-inf and floating-point limit values (e.g.,
+    torch.finfo(...).min/max) to quantization-friendly values (±255 by default),
+    improving quantizer stability (notably for attention mask paths).
     """
 
     _passes_required_after: Set[Type[ExportPass]] = set()
@@ -53,9 +52,8 @@ class ReplaceInfAndLimitValuesPass(ArmPass):
 
             modified = True
             # 255 here is mainly for attention_mask in Llama for reasonable quant scale
-            tensor[tensor == float("inf")] = 255
-            tensor[tensor == float("-inf")] = -255
-            setattr(graph_module, buf_name, tensor)
+            t = torch.nan_to_num(tensor, posinf=255, neginf=-255)
+            setattr(graph_module, buf_name, t)
 
         for node in graph_module.graph.nodes:
             arg_list = list(node.args)

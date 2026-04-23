@@ -2,17 +2,106 @@ import unittest
 
 import torch
 from executorch.backends.qualcomm._passes import (
+    AnnotateQuantAttrs,
     ConvertBmmToMatmul,
     ConvertMhaToSha,
+    FoldQDQ,
+    InsertIOQDQ,
     InsertReshapeForReduceOps,
     RemoveRedundancy,
 )
-
+from executorch.backends.qualcomm.quantizer.quantizer import QnnQuantizer, QuantDtype
+from executorch.backends.qualcomm.serialization.qc_schema import QcomChipset
+from executorch.backends.qualcomm.tests.models import TopKandIndex
+from executorch.backends.qualcomm.utils.utils import (
+    generate_htp_compiler_spec,
+    generate_qnn_executorch_compiler_spec,
+    to_edge_transform_and_lower_to_qnn,
+)
 from executorch.exir import to_edge
+from executorch.exir.debug_handle_utils import DEBUG_HANDLE_KEY
 from executorch.exir.dialects._ops import ops as exir_ops
+from torchao.quantization.pt2e.quantize_pt2e import convert_pt2e, prepare_pt2e
 
 
 class TestPasses(unittest.TestCase):
+    def _build_quantized_graph(self):
+        """Build a quantized graph through AnnotateQuantAttrs + FoldQDQ."""
+
+        class AddModule(torch.nn.Module):
+            def forward(self, x):
+                return x + 1
+
+        module = AddModule().eval()
+        sample_input = (torch.randn(1, 4),)
+
+        exported = torch.export.export(module, sample_input, strict=True).module()
+        quantizer = QnnQuantizer()
+        quantizer.set_default_quant_config(quant_dtype=QuantDtype.use_8a8w)
+        prepared = prepare_pt2e(exported, quantizer)
+        prepared(*sample_input)
+        qdq_module = convert_pt2e(prepared)
+
+        edge_program = to_edge(
+            torch.export.export(qdq_module, sample_input, strict=True)
+        )
+        ep = edge_program.exported_program()
+        gm = ep.graph_module
+
+        gm = AnnotateQuantAttrs(ep)(gm).graph_module
+        gm = FoldQDQ(ep)(gm).graph_module
+        return gm, ep
+
+    def test_insert_io_qdq_handles_dequant_encoding(self):
+        """InsertIOQDQ should not KeyError when a node with a dequantize
+        encoding feeds the output node (e.g. pre-quantized LLM parameters)."""
+        gm, ep = self._build_quantized_graph()
+
+        # Wire b__frozen_param0 (which has dequantize encoding) to output,
+        # simulating the LLM topology from github issue #17732.
+        param_node = None
+        output_node = None
+        for n in gm.graph.nodes:
+            if n.name == "b__frozen_param0":
+                param_node = n
+            if n.op == "output":
+                output_node = n
+
+        self.assertIsNotNone(param_node)
+        old_args = output_node.args[0]
+        output_node.args = (
+            ((old_args,) if not isinstance(old_args, tuple) else old_args)
+            + (param_node,),
+        )
+        gm.graph.lint()
+        gm.recompile()
+
+        pass_instance = InsertIOQDQ(ep)
+        pass_instance._insert(gm)
+
+        dq_nodes = [
+            n
+            for n in gm.graph.nodes
+            if n.op == "call_function"
+            and hasattr(n.target, "__name__")
+            and "dequantize" in n.target.__name__
+            and any(u.op == "output" for u in n.users.keys())
+        ]
+        self.assertGreaterEqual(len(dq_nodes), 1)
+
+    def test_insert_io_qdq_no_revisit(self):
+        """InsertIOQDQ must not revisit newly inserted nodes."""
+        gm, ep = self._build_quantized_graph()
+
+        node_count_before = len(list(gm.graph.nodes))
+        pass_instance = InsertIOQDQ(ep)
+        pass_instance._insert(gm)
+        node_count_after = len(list(gm.graph.nodes))
+
+        # AddModule with one input and one output should insert exactly
+        # one quantize (input) and one dequantize (output) = +2 nodes.
+        self.assertEqual(node_count_after, node_count_before + 2)
+
     def test_insert_reshape_for_argmax(self):
         class ArgmaxModule(torch.nn.Module):
             def forward(self, x):
@@ -70,6 +159,7 @@ class TestPasses(unittest.TestCase):
         # Initailize model config
         args = ModelArgs()
         args.max_seq_len = 128
+        args.max_context_len = 128
         args.ar_len = 32
         args.use_kv_cache = True
         args.dim = 32
@@ -148,6 +238,61 @@ class TestPasses(unittest.TestCase):
                 torch.allclose(out, *ref, rtol=1e-6, atol=1e-6),
                 f"Output {i} mismatch: got {out}, expected {ref}",
             )
+
+    def test_resolve_debug_handle(self):
+        name_handle_map = {
+            "aten_topk_default": 1,
+            "getitem": 1,
+            "getitem_1": 1,
+            "aten_view_copy_default": 2,
+            "aten_index_tensor": 3,
+            "aten_add_tensor": 4,
+        }
+        module = TopKandIndex()  # noqa: F405
+        sample_input = (torch.randn(3, 10),)
+
+        backend_options = generate_htp_compiler_spec(use_fp16=False)
+        compiler_spec = generate_qnn_executorch_compiler_spec(
+            soc_model=QcomChipset.SM8650,  # Random soc_model
+            backend_options=backend_options,
+            dump_intermediate_outputs=True,
+        )
+
+        try:
+            edge_prog_mgr = to_edge_transform_and_lower_to_qnn(
+                module,
+                sample_input,
+                compiler_spec,
+                generate_etrecord=True,
+            )
+        except RuntimeError as e:
+            if "QNN" in str(e) or "qnn" in str(e):
+                self.skipTest(f"QNN SDK not available: {e}")
+            raise
+        exec_prog_mgr = edge_prog_mgr.to_executorch()
+        etrecord = exec_prog_mgr.get_etrecord()
+        debug_handle_size = len(etrecord._debug_handle_map["forward"][0])
+        self.assertEqual(
+            len(name_handle_map),
+            debug_handle_size,
+            f"Number of handles does not match, expecting: {len(name_handle_map)}, but get: {debug_handle_size}",
+        )
+        after_edge_pass_ep = etrecord.graph_map["edge_after_transform/forward"]
+
+        for node in after_edge_pass_ep.graph.nodes:
+            if node.name in name_handle_map:
+                expected_handle = name_handle_map.pop(node.name)
+                node_handle = node.meta[DEBUG_HANDLE_KEY]
+                self.assertEqual(
+                    expected_handle,
+                    node_handle,
+                    f"{node.name} is expecting a handle id {expected_handle}, but got {node_handle}.",
+                )
+        self.assertEqual(
+            len(name_handle_map),
+            0,
+            f"Following nodes did not find a match in the graph: {name_handle_map.keys()}",
+        )
 
 
 if __name__ == "__main__":

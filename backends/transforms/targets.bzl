@@ -36,10 +36,7 @@ def define_common_targets():
     runtime.python_library(
         name = "decompose_sdpa",
         srcs = ["decompose_sdpa.py"],
-        visibility = [
-            "//executorch/backends/...",
-            "@EXECUTORCH_CLIENTS",
-        ],
+        visibility = ["PUBLIC"],
         deps = [
             "//caffe2:torch",
             "//executorch/exir:pass_base",
@@ -107,10 +104,7 @@ def define_common_targets():
     runtime.python_library(
         name = "remove_clone_ops",
         srcs = ["remove_clone_ops.py"],
-        visibility = [
-            "//executorch/backends/...",
-            "@EXECUTORCH_CLIENTS",
-        ],
+        visibility = ["PUBLIC"],
         deps = [
             "//caffe2:torch",
             "//executorch/exir:pass_base",
@@ -164,12 +158,7 @@ def define_common_targets():
     runtime.python_library(
         name = "duplicate_dynamic_quant_chain",
         srcs = ["duplicate_dynamic_quant_chain.py"],
-        visibility = [
-            "//executorch/backends/...",
-            "//executorch/examples/...",
-            "//executorch/extension/llm/...",
-            "@EXECUTORCH_CLIENTS",
-        ],
+        visibility = ["PUBLIC"],
         deps = [
             "//caffe2:torch",
         ],
@@ -180,10 +169,7 @@ def define_common_targets():
         srcs = [
             "convert_dtype_pass.py",
         ],
-        visibility = [
-            "//executorch/backends/...",
-            "@EXECUTORCH_CLIENTS",
-        ],
+        visibility = ["PUBLIC"],
         deps = [
             "//caffe2:torch",
             "//executorch/exir:pass_base",
@@ -215,6 +201,31 @@ def define_common_targets():
         deps = [
             "//caffe2:torch",
             "//executorch/exir:pass_base",
+        ],
+    )
+
+    runtime.python_library(
+        name = "quantize_fused_convbn_bias_pass",
+        srcs = ["quantize_fused_convbn_bias_pass.py"],
+        visibility = ["PUBLIC"],
+        deps = [
+            "//caffe2:torch",
+        ],
+    )
+
+    runtime.python_test(
+        name = "test_quantize_fused_convbn_bias_pass",
+        srcs = [
+            "test/test_quantize_fused_convbn_bias_pass.py",
+        ],
+        deps = [
+            "//caffe2:torch",
+            ":quantize_fused_convbn_bias_pass",
+            "//executorch/backends/arm/quantizer:lib",
+            "//executorch/backends/arm/test:common",
+            "//executorch/backends/arm/tosa:tosa",
+            "//executorch/kernels/quantized:custom_ops_generated_lib",
+            "fbsource//third-party/pypi/pytest:pytest",
         ],
     )
 
@@ -255,5 +266,116 @@ def define_common_targets():
             "//executorch/exir:lib",
             ":remove_clone_ops",
             "//executorch/exir/tests:test_memory_format_ops_pass_utils",
+        ],
+    )
+
+    # Shared permute optimization passes (used by both Cadence and Arm backends)
+    runtime.python_library(
+        name = "permute_pass_utils",
+        srcs = ["permute_pass_utils.py"],
+        visibility = [
+            "//executorch/backends/...",
+        ],
+        deps = [
+            "//caffe2:torch",
+            "//executorch/exir:pass_base",
+            "//executorch/exir/dialects:lib",
+        ],
+    )
+
+    runtime.python_library(
+        name = "fuse_cascaded_transpose_or_permute_ops",
+        srcs = ["fuse_cascaded_transpose_or_permute_ops.py"],
+        visibility = [
+            "//executorch/backends/...",
+        ],
+        deps = [
+            "//caffe2:torch",
+            "//executorch/exir/dialects:lib",
+            ":permute_pass_utils",
+        ],
+    )
+
+    runtime.python_library(
+        name = "fuse_cascaded_view_ops",
+        srcs = ["fuse_cascaded_view_ops.py"],
+        visibility = [
+            "//executorch/backends/...",
+        ],
+        deps = [
+            "//caffe2:torch",
+            "//executorch/exir/dialects:lib",
+            ":permute_pass_utils",
+        ],
+    )
+
+    runtime.python_library(
+        name = "fuse_transpose_or_permute_op_pairs_pass",
+        srcs = ["fuse_transpose_or_permute_op_pairs_pass.py"],
+        visibility = [
+            "//executorch/backends/...",
+        ],
+        deps = [
+            "//caffe2:torch",
+            "//executorch/exir:pass_base",
+            "//executorch/exir/dialects:lib",
+            ":permute_pass_utils",
+        ],
+    )
+
+    runtime.python_library(
+        name = "remove_permutes_around_elementwise_ops",
+        srcs = ["remove_permutes_around_elementwise_ops.py"],
+        visibility = [
+            "//executorch/backends/...",
+        ],
+        deps = [
+            "//caffe2:torch",
+            "//executorch/exir:pass_base",
+            "//executorch/exir/dialects:lib",
+        ],
+    )
+
+    runtime.python_library(
+        name = "postpone_permute_below_squeeze_view",
+        srcs = ["postpone_permute_below_squeeze_view.py"],
+        visibility = [
+            "//executorch/backends/...",
+        ],
+        deps = [
+            "//caffe2:torch",
+            "//executorch/exir:pass_base",
+            "//executorch/exir/dialects:lib",
+            ":permute_pass_utils",
+        ],
+    )
+
+    runtime.python_library(
+        name = "replace_nop_transpose_or_permute_with_view",
+        srcs = ["replace_nop_transpose_or_permute_with_view.py"],
+        visibility = [
+            "//executorch/backends/...",
+        ],
+        deps = [
+            "//caffe2:torch",
+            "//executorch/exir/dialects:lib",
+            ":permute_pass_utils",
+        ],
+    )
+
+    runtime.python_test(
+        name = "test_permute_optimization_passes",
+        srcs = [
+            "test/test_permute_optimization_passes.py",
+        ],
+        deps = [
+            "//caffe2:torch",
+            "//executorch/backends/test:graph_builder",
+            "//executorch/exir:pass_base",
+            "//executorch/exir/dialects:lib",
+            ":fuse_cascaded_transpose_or_permute_ops",
+            ":fuse_cascaded_view_ops",
+            ":postpone_permute_below_squeeze_view",
+            ":replace_nop_transpose_or_permute_with_view",
         ],
     )

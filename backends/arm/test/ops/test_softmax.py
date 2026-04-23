@@ -1,6 +1,6 @@
 # Copyright (c) Meta Platforms, Inc. and affiliates.
 # All rights reserved.
-# Copyright 2024-2025 Arm Limited and/or its affiliates.
+# Copyright 2024-2026 Arm Limited and/or its affiliates.
 #
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
@@ -33,6 +33,7 @@ class Softmax(torch.nn.Module):
     test_data = {
         "ones": lambda: ((torch.ones(10, 10),), 1),
         "ones_neg_dim": lambda: ((torch.ones(1, 3, 4),), -1),
+        "bigger_numbers": lambda: ((1000 * torch.rand(1, 16, 64, 64),), -1),
         "randn_neg_dim": lambda: ((torch.randn(1, 5, 8, 7),), -3),
         "zeros": lambda: ((torch.zeros(1, 8, 5, 2),), 0),
         "zeros_neg_dim": lambda: ((torch.zeros(1, 7, 8, 9),), -4),

@@ -92,13 +92,7 @@ def define_op_library(name, compiler_flags, deps):
         srcs = [
             "{}.cpp".format(name),
         ],
-        visibility = [
-            "//executorch/kernels/portable/test/...",
-            "//executorch/kernels/quantized/test/...",
-            "//executorch/kernels/optimized/test/...",
-            "//executorch/kernels/test/...",
-            "@EXECUTORCH_CLIENTS",
-        ],
+        visibility = ["PUBLIC"],
         compiler_flags = [
             # kernels often have helpers with no prototypes just disabling the warning here as the headers
             # are codegend and linked in later

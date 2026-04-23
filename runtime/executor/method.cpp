@@ -37,6 +37,20 @@ namespace ET_RUNTIME_NAMESPACE {
 
 using internal::PlatformMemoryAllocator;
 
+// Maximum number of instructions that Method::execute() will run before
+// returning an error. Prevents infinite loops caused by malformed programs
+// (e.g., JumpFalseCall instructions whose destination_instruction points to
+// themselves). Override at compile time via -DET_MAX_INSTRUCTIONS=<value>.
+#ifndef ET_MAX_INSTRUCTIONS
+#define ET_MAX_INSTRUCTIONS 10000000
+#endif
+static_assert(
+    (ET_MAX_INSTRUCTIONS) > 0,
+    "ET_MAX_INSTRUCTIONS must be positive. 0 would reject every program on "
+    "its first instruction; negative values wrap to SIZE_MAX when assigned "
+    "to size_t, silently disabling the infinite-loop guard.");
+static constexpr size_t kMaxInstructions = ET_MAX_INSTRUCTIONS;
+
 /**
  * Runtime state for a backend delegate.
  */
@@ -86,14 +100,17 @@ class BackendDelegate final {
     }
 
     // Parse compilation specs from program
-    CompileSpec* compile_specs;
-    Error err = PopulateCompileSpecs(
-        delegate.compile_specs(), backend_init_context, &compile_specs);
-    if (err != Error::Ok) {
-      ET_LOG(Error, "Failed to get compile specs for backend %s", backend_id);
-      return err;
+    CompileSpec* compile_specs = nullptr;
+    size_t num_compile_specs = 0;
+    if (delegate.compile_specs() != nullptr) {
+      Error err = PopulateCompileSpecs(
+          delegate.compile_specs(), backend_init_context, &compile_specs);
+      if (err != Error::Ok) {
+        ET_LOG(Error, "Failed to get compile specs for backend %s", backend_id);
+        return err;
+      }
+      num_compile_specs = delegate.compile_specs()->size();
     }
-    size_t num_compile_specs = delegate.compile_specs()->size();
 
     out->backend_ = backend;
     out->handle_ = nullptr;
@@ -410,6 +427,7 @@ Error Method::parse_values(const NamedDataMap* external_data_map) {
   const size_t n_value = flatbuffer_values->size();
   values_ = memory_manager_->method_allocator()->allocateList<EValue>(n_value);
   if (values_ == nullptr) {
+    ET_LOG(Error, "Failed to allocate values array of size %zu", n_value);
     return Error::MemoryAllocationFailed;
   }
   const size_t n_input = inputs_size();
@@ -417,6 +435,7 @@ Error Method::parse_values(const NamedDataMap* external_data_map) {
     input_set_ =
         memory_manager_->method_allocator()->allocateList<bool>(n_input);
     if (input_set_ == nullptr) {
+      ET_LOG(Error, "Failed to allocate input_set array of size %zu", n_input);
       return Error::MemoryAllocationFailed;
     }
     for (size_t i = 0; i < n_input; ++i) {
@@ -440,6 +459,10 @@ Error Method::parse_values(const NamedDataMap* external_data_map) {
         memory_manager_->method_allocator()->allocateList<NamedData>(
             max_external_constants.get());
     if (external_constants_ == nullptr) {
+      ET_LOG(
+          Error,
+          "Failed to allocate external_constants array of size %zu",
+          max_external_constants.get());
       return Error::MemoryAllocationFailed;
     }
     Error err = parse_external_constants(external_data_map);
@@ -806,13 +829,15 @@ Result<Method> Method::load(
     const Program* program,
     MemoryManager* memory_manager,
     EventTracer* event_tracer,
-    const NamedDataMap* external_data_map) {
+    const NamedDataMap* external_data_map,
+    const LoadBackendOptionsMap* backend_options) {
   MemoryAllocator* temp_allocator = memory_manager->temp_allocator();
   if (temp_allocator == nullptr) {
     PlatformMemoryAllocator* platform_allocator =
         memory_manager->method_allocator()
             ->allocateInstance<PlatformMemoryAllocator>();
     if (platform_allocator == nullptr) {
+      ET_LOG(Error, "Failed to allocate PlatformMemoryAllocator");
       return Error::MemoryAllocationFailed;
     }
     new (platform_allocator) PlatformMemoryAllocator();
@@ -820,7 +845,7 @@ Result<Method> Method::load(
   }
   Method method(program, memory_manager, event_tracer, temp_allocator);
   ET_LOG(Debug, "Loading method: %s.", s_plan->name()->c_str());
-  Error err = method.init(s_plan, external_data_map);
+  Error err = method.init(s_plan, external_data_map, backend_options);
   if (err != Error::Ok) {
     return err;
   } else {
@@ -829,11 +854,20 @@ Result<Method> Method::load(
   }
 }
 
+/// Validate that a value index from a FlatBuffer instruction is in bounds.
+#define ET_CHECK_VALID_VALUE_INDEX(index, n_value)            \
+  ET_CHECK_OR_RETURN_ERROR(                                   \
+      (index) >= 0 && static_cast<size_t>(index) < (n_value), \
+      InvalidProgram,                                         \
+      "Index %zd negative or >= %" ET_PRIsize_t,              \
+      static_cast<ssize_t>(index),                            \
+      (n_value))
+
 Error Method::init(
     executorch_flatbuffer::ExecutionPlan* s_plan,
-    const NamedDataMap* external_data_map) {
-  EXECUTORCH_SCOPE_PROF("Method::init");
-  internal::EventTracerProfileMethodScope event_tracer_profile_scope =
+    const NamedDataMap* external_data_map,
+    const LoadBackendOptionsMap* backend_options) {
+  internal::EventTracerProfileMethodScope event_tracer_scope =
       internal::EventTracerProfileMethodScope(event_tracer_, "Method::init");
   ET_CHECK_OR_RETURN_ERROR(
       // Don't use !initialized() here because we also want to fail on the
@@ -862,6 +896,8 @@ Error Method::init(
     size_t n_delegate = delegates->size();
     delegates_ = method_allocator->allocateList<BackendDelegate>(n_delegate);
     if (delegates_ == nullptr) {
+      ET_LOG(
+          Error, "Failed to allocate delegates array of size %zu", n_delegate);
       return Error::MemoryAllocationFailed;
     }
 
@@ -885,6 +921,7 @@ Error Method::init(
       merged_data_map_ =
           method_allocator->allocateInstance<internal::MergedDataMap>();
       if (merged_data_map_ == nullptr) {
+        ET_LOG(Error, "Failed to allocate MergedDataMap");
         return Error::MemoryAllocationFailed;
       }
       new (merged_data_map_) internal::MergedDataMap(std::move(merged.get()));
@@ -902,11 +939,21 @@ Error Method::init(
 
     for (size_t i = 0; i < n_delegate; ++i) {
       const auto& delegate = *delegates->Get(i);
+
+      // Get per-delegate runtime specs from the LoadBackendOptionsMap if
+      // provided
+      Span<const BackendOption> delegate_runtime_specs;
+      if (backend_options != nullptr && delegate.id() != nullptr) {
+        delegate_runtime_specs =
+            backend_options->get_options(delegate.id()->c_str());
+      }
+
       BackendInitContext backend_init_context(
           method_allocator,
           /*event_tracer=*/event_tracer_,
           /*method_name=*/serialization_plan_->name()->c_str(),
-          /*named_data_map=*/named_data_map);
+          /*named_data_map=*/named_data_map,
+          /*runtime_specs=*/delegate_runtime_specs);
       Error err = BackendDelegate::Init(
           delegate, program_, backend_init_context, &delegates_[i]);
       if (err != Error::Ok) {
@@ -927,6 +974,7 @@ Error Method::init(
     n_chains_ = chains->size();
     chains_ = method_allocator->allocateList<Chain>(n_chains_);
     if (chains_ == nullptr) {
+      ET_LOG(Error, "Failed to allocate chains array of size %zu", n_chains_);
       return Error::MemoryAllocationFailed;
     }
 
@@ -946,11 +994,15 @@ Error Method::init(
       auto chain_instruction_kernels =
           method_allocator->allocateList<OpFunction>(num_instructions);
       if (chain_instruction_kernels == nullptr) {
+        ET_LOG(
+            Error, "Failed to allocate instruction kernels for chain %zu", i);
         return Error::MemoryAllocationFailed;
       }
       auto chain_instruction_arg_lists =
           method_allocator->allocateList<InstructionArgs>(num_instructions);
       if (chain_instruction_arg_lists == nullptr) {
+        ET_LOG(
+            Error, "Failed to allocate instruction arg lists for chain %zu", i);
         return Error::MemoryAllocationFailed;
       }
 
@@ -1020,23 +1072,34 @@ Error Method::init(
             chain_instruction_arg_lists[instr_idx] = res.get();
           } break;
           case executorch_flatbuffer::InstructionArguments::JumpFalseCall: {
-            // Validate the index at load time so we can trust it during
-            // execution.
             auto index =
                 static_cast<const executorch_flatbuffer::JumpFalseCall*>(
                     instr_args)
                     ->cond_value_index();
-            ET_CHECK_OR_RETURN_ERROR(
-                index >= 0 && static_cast<size_t>(index) < n_value_,
-                InvalidProgram,
-                "Index %zd negative or >= %" ET_PRIsize_t,
-                static_cast<ssize_t>(index),
-                n_value_);
+            ET_CHECK_VALID_VALUE_INDEX(index, n_value_);
+            chain_instruction_arg_lists[instr_idx] = InstructionArgs();
+          } break;
+          case executorch_flatbuffer::InstructionArguments::MoveCall: {
+            auto move_call =
+                static_cast<const executorch_flatbuffer::MoveCall*>(instr_args);
+            ET_CHECK_VALID_VALUE_INDEX(move_call->move_from(), n_value_);
+            ET_CHECK_VALID_VALUE_INDEX(move_call->move_to(), n_value_);
+            chain_instruction_arg_lists[instr_idx] = InstructionArgs();
+          } break;
+          case executorch_flatbuffer::InstructionArguments::FreeCall: {
+            auto index =
+                static_cast<const executorch_flatbuffer::FreeCall*>(instr_args)
+                    ->value_index();
+            ET_CHECK_VALID_VALUE_INDEX(index, n_value_);
             chain_instruction_arg_lists[instr_idx] = InstructionArgs();
           } break;
           default: {
-            chain_instruction_arg_lists[instr_idx] = InstructionArgs();
-          } break;
+            ET_LOG(
+                Error,
+                "Invalid instruction type %hhu",
+                static_cast<uint8_t>(instruction->instr_args_type()));
+            return Error::InvalidProgram;
+          }
         }
       }
       chains_[i] = Chain{
@@ -1475,8 +1538,17 @@ Error Method::execute_instruction() {
       // We know that instr_args_as_FreeCall is non-null because it was checked
       // at init time.
       auto free_call = instruction->instr_args_as_FreeCall();
-      auto t = values_[free_call->value_index()].toTensor();
-      internal::reset_data_ptr(t);
+      auto& val = mutable_value(free_call->value_index());
+      if (val.isTensor()) {
+        auto& t = val.toTensor();
+        internal::reset_data_ptr(t);
+      } else {
+        ET_LOG(
+            Error,
+            "FreeCall target at index %u is not a Tensor",
+            static_cast<unsigned int>(free_call->value_index()));
+        err = Error::InvalidProgram;
+      }
     } break;
     default:
       ET_LOG(
@@ -1574,6 +1646,11 @@ Error Method::experimental_step() {
   return step();
 }
 
+bool Method::in_progress() const {
+  return (step_state_.chain_idx != 0 || step_state_.instr_idx != 0) &&
+      step_state_.chain_idx < n_chains_;
+}
+
 Error Method::execute() {
   internal::event_tracer_create_event_block(event_tracer_, "Execute");
   EventTracerEntry event_tracer_entry =
@@ -1584,6 +1661,8 @@ Error Method::execute() {
       initialized(),
       NotSupported,
       "Cannot execute until method has been initialized.");
+  ET_CHECK_OR_RETURN_ERROR(
+      !in_progress(), InvalidState, "Method execution is in progress");
   const size_t n_input = inputs_size();
   for (size_t i = 0; i < n_input; ++i) {
     ET_CHECK_OR_RETURN_ERROR(
@@ -1599,6 +1678,7 @@ Error Method::execute() {
 
   // Chains are executed sequentially today, but future async designs may
   // branch and run many in parallel or out of order.
+  size_t instruction_count = 0;
   for (step_state_.chain_idx = 0; step_state_.chain_idx < n_chains_;
        ++step_state_.chain_idx) {
     Chain& chain = chains_[step_state_.chain_idx];
@@ -1612,6 +1692,21 @@ Error Method::execute() {
     // Loop over instructions
     step_state_.instr_idx = 0;
     while (step_state_.instr_idx < chain.s_chain_->instructions()->size()) {
+      if (instruction_count >= kMaxInstructions) {
+        ET_LOG(
+            Error,
+            "Instruction execution limit (%" ET_PRIsize_t
+            ") exceeded at chain %" ET_PRIsize_t ", instruction %" ET_PRIsize_t
+            ". Possible infinite loop detected. If this is a legitimate "
+            "large model, raise the limit by rebuilding with "
+            "-DET_MAX_INSTRUCTIONS=<value>.",
+            kMaxInstructions,
+            step_state_.chain_idx,
+            step_state_.instr_idx);
+        step_state_ = StepState{0, 0};
+        return Error::InvalidProgram;
+      }
+      ++instruction_count;
       EXECUTORCH_PROFILE_INSTRUCTION_SCOPE(
           static_cast<int32_t>(step_state_.chain_idx),
           static_cast<uint32_t>(step_state_.instr_idx));
@@ -1622,6 +1717,7 @@ Error Method::execute() {
               static_cast<DebugHandle>(step_state_.instr_idx));
       auto status = execute_instruction();
       if (status != Error::Ok) {
+        step_state_ = StepState{0, 0};
         return status;
       }
     }

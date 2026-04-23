@@ -1,4 +1,4 @@
-# Copyright 2024-2025 Arm Limited and/or its affiliates.
+# Copyright 2024-2026 Arm Limited and/or its affiliates.
 # All rights reserved.
 #
 # This source code is licensed under the BSD-style license found in the
@@ -26,7 +26,6 @@ def get_var_decomposition(op) -> tuple:
             exir_ops.edge.aten.sub.Tensor,
             exir_ops.edge.aten.mul.Tensor,
             exir_ops.edge.aten.sum.dim_IntList,
-            exir_ops.edge.aten.full.default,
         )
     if op in (torch.ops.aten.var.correction, torch.ops.aten.var.dim):
         return (
@@ -34,7 +33,6 @@ def get_var_decomposition(op) -> tuple:
             torch.ops.aten.sub.Tensor,
             torch.ops.aten.mul.Tensor,
             torch.ops.aten.sum.dim_IntList,
-            torch.ops.aten.full,
         )
     raise RuntimeError(f"Can't get var decomposition for op {op}")
 
@@ -73,13 +71,16 @@ class DecomposeVarPass(ArmPass):
         if shape == []:
             shape = [1 for _ in input_shape]
 
-        dtype = meta["val"].dtype
         # Get dim from args based on argument type
         dim = get_node_arg(args, key=list, default_value=list(range(len(shape))))
 
         if op == torch.ops.aten.var.dim:
-            keepdim = get_node_arg(args, bool, False)
-            correction = get_node_arg(args, int, 1)
+            keepdim = False
+            correction = 1
+            if len(args) > 2:
+                correction = int(get_node_arg(args, 2, True))
+            if len(args) > 3:
+                keepdim = get_node_arg(args, 3, False)
         else:
             correction = get_node_arg(kwargs, "correction", 1)
             keepdim = get_node_arg(kwargs, "keepdim", False)
@@ -88,18 +89,17 @@ class DecomposeVarPass(ArmPass):
         for d in dim:
             N *= input_shape[d]
 
-        mean_op, diff_op, mul_op, sum_op, full_op = get_var_decomposition(op)
+        mean_op, diff_op, mul_op, sum_op = get_var_decomposition(op)
         mean = super().call_operator(mean_op, (x, dim, True), {}, meta, True)
         diff = super().call_operator(diff_op, (x, mean), {}, meta, True)
         squared_diff = super().call_operator(mul_op, (diff, diff), {}, meta, True)
         sum = super().call_operator(
             sum_op, (squared_diff, dim, keepdim), {}, meta, True
         )
-        full = super().call_operator(
-            full_op,
-            ([], 1 / max(0, N - correction)),
-            {"dtype": dtype},
+        return super().call_operator(
+            mul_op,
+            (sum, super().call_scalar(1 / max(0, N - correction), meta)),
+            {},
             meta,
             True,
         )
-        return super().call_operator(mul_op, (sum, full), {}, meta, True)

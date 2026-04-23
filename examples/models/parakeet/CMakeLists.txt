@@ -23,20 +23,34 @@ find_package(gflags REQUIRED)
 
 # Find executorch libraries
 list(APPEND CMAKE_FIND_ROOT_PATH ${CMAKE_CURRENT_BINARY_DIR}/../../..)
+
 find_package(executorch CONFIG REQUIRED FIND_ROOT_PATH_BOTH)
-executorch_target_link_options_shared_lib(executorch)
+get_target_property(_executorch_imported executorch IMPORTED)
+if(NOT _executorch_imported)
+  executorch_target_link_options_shared_lib(executorch)
+endif()
 
 set(link_libraries executorch gflags)
 
 # Common ops for all builds
-list(APPEND link_libraries optimized_native_cpu_ops_lib cpublas eigen_blas)
-executorch_target_link_options_shared_lib(optimized_native_cpu_ops_lib)
+if(TARGET optimized_native_cpu_ops_lib)
+  list(APPEND link_libraries optimized_native_cpu_ops_lib cpublas eigen_blas)
+  get_target_property(_is_imported optimized_native_cpu_ops_lib IMPORTED)
+  if(NOT _is_imported)
+    executorch_target_link_options_shared_lib(optimized_native_cpu_ops_lib)
+  endif()
+endif()
 
 # CPU-only builds need quantized and custom ops
-if(NOT EXECUTORCH_BUILD_CUDA AND MSVC)
-  list(APPEND link_libraries quantized_ops_lib custom_ops)
-  executorch_target_link_options_shared_lib(quantized_ops_lib)
-  executorch_target_link_options_shared_lib(custom_ops)
+if(NOT EXECUTORCH_BUILD_CUDA)
+  if(TARGET quantized_ops_lib)
+    list(APPEND link_libraries quantized_ops_lib)
+    executorch_target_link_options_shared_lib(quantized_ops_lib)
+  endif()
+  if(TARGET custom_ops)
+    list(APPEND link_libraries custom_ops)
+    executorch_target_link_options_shared_lib(custom_ops)
+  endif()
 endif()
 
 # XNNPACK
@@ -46,7 +60,10 @@ if(TARGET xnnpack_backend)
     list(APPEND xnnpack_backend_libs kleidiai)
   endif()
   list(APPEND link_libraries ${xnnpack_backend_libs})
-  executorch_target_link_options_shared_lib(xnnpack_backend)
+  get_target_property(_xnnpack_imported xnnpack_backend IMPORTED)
+  if(NOT _xnnpack_imported)
+    executorch_target_link_options_shared_lib(xnnpack_backend)
+  endif()
 endif()
 
 # Needed for cpuinfo where it uses android specific log lib
@@ -80,12 +97,28 @@ if(EXECUTORCH_BUILD_METAL)
   executorch_target_link_options_shared_lib(metal_backend)
 endif()
 
-add_executable(parakeet_runner main.cpp)
+# Link MLX delegate
+if(TARGET mlxdelegate)
+  list(APPEND link_libraries mlxdelegate mlx)
+  executorch_target_link_options_shared_lib(mlxdelegate)
+endif()
+
+if(EXECUTORCH_BUILD_VULKAN)
+  list(APPEND link_libraries vulkan_backend)
+  executorch_target_link_options_shared_lib(vulkan_backend)
+endif()
+
+add_executable(parakeet_runner main.cpp timestamp_utils.cpp tokenizer_utils.cpp)
 if(NOT CMAKE_BUILD_TYPE STREQUAL "Debug")
   target_link_options_gc_sections(parakeet_runner)
   if(NOT APPLE AND NOT MSVC)
     target_link_options(parakeet_runner PRIVATE "LINKER:-s")
   endif()
+endif()
+
+# Copy MLX metallib for runtime if MLX delegate is enabled
+if(TARGET mlxdelegate)
+  executorch_target_copy_mlx_metallib(parakeet_runner)
 endif()
 
 target_include_directories(

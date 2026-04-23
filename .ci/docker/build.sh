@@ -40,6 +40,15 @@ case "${IMAGE_NAME}" in
     LINTRUNNER=""
     GCC_VERSION=11
     ;;
+  executorch-ubuntu-22.04-gcc11-aarch64-android)
+    LINTRUNNER=""
+    GCC_VERSION=11
+    ANDROID_NDK_VERSION=r28c
+    ;;
+  executorch-ubuntu-22.04-gcc11-aarch64-arm-sdk)
+    ARM_SDK=yes
+    GCC_VERSION=11
+    ;;
   executorch-ubuntu-22.04-linter)
     LINTRUNNER=yes
     CLANG_VERSION=12
@@ -66,6 +75,13 @@ case "${IMAGE_NAME}" in
     CLANG_VERSION=12
     # From https://developer.android.com/ndk/downloads
     ANDROID_NDK_VERSION=r28c
+    ;;
+  executorch-ubuntu-22.04-cuda-windows)
+    LINTRUNNER=""
+    GCC_VERSION=11
+    CUDA_WINDOWS_CROSS_COMPILE=yes
+    CUDA_VERSION=12.8
+    SKIP_PYTORCH=yes
     ;;
   *)
     echo "Invalid image name ${IMAGE_NAME}"
@@ -101,6 +117,8 @@ docker build \
   --build-arg "MEDIATEK_SDK=${MEDIATEK_SDK:-}" \
   --build-arg "ANDROID_NDK_VERSION=${ANDROID_NDK_VERSION:-}" \
   --build-arg "SKIP_PYTORCH=${SKIP_PYTORCH:-}" \
+  --build-arg "CUDA_WINDOWS_CROSS_COMPILE=${CUDA_WINDOWS_CROSS_COMPILE:-}" \
+  --build-arg "CUDA_VERSION=${CUDA_VERSION:-}" \
   -f "${OS}"/Dockerfile \
   "$@" \
   .

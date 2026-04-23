@@ -14,8 +14,10 @@ import types
 
 import torch
 
+from datasets import load_dataset
+
 from executorch.backends.qualcomm.quantizer.observers.per_channel_param_observer import (
-    PerChannelParamObserver,
+    PerChannelParamObserverWithLossEvaluation,
 )
 from executorch.backends.qualcomm.quantizer.qconfig import (
     _derived_bias_quant_spec,
@@ -23,6 +25,10 @@ from executorch.backends.qualcomm.quantizer.qconfig import (
 )
 
 from executorch.backends.qualcomm.quantizer.quantizer import QuantDtype
+
+from executorch.backends.qualcomm.serialization.qc_schema import (
+    QnnExecuTorchBackendType,
+)
 from executorch.backends.qualcomm.utils.utils import convert_linear_to_conv2d
 
 from executorch.examples.models.llama.eval_llama_lib import build_args_parser
@@ -36,10 +42,13 @@ from executorch.examples.models.llama.source_transformation.quantize import (
 from executorch.examples.qualcomm.oss_scripts.llama import SUPPORTED_LLM_MODELS
 
 from executorch.examples.qualcomm.oss_scripts.llama.decoder_utils import (
+    evict_tokens,
     graph_module_inference,
+    smart_mask_updater,
 )
 
 from executorch.examples.qualcomm.oss_scripts.llama.model.static_llama import (
+    AttentionSinkRope,
     LlamaModel,
     ModelArgs,
 )
@@ -53,6 +62,7 @@ from executorch.examples.qualcomm.oss_scripts.llama.range_setting_pt2e import (
 from lm_eval.evaluator import simple_evaluate
 from pytorch_tokenizers import get_tokenizer, TiktokenTokenizer
 from pytorch_tokenizers.llama2c import Llama2cTokenizer as SentencePieceTokenizer
+from torch.nn import CrossEntropyLoss
 from torchao.prototype.quantization.module_swap.module_swap import (
     QuantizationRecipe,
     quantize_module_swap,
@@ -61,6 +71,7 @@ from torchao.prototype.spinquant import apply_spinquant
 
 from torchao.quantization.pt2e.quantize_pt2e import convert_pt2e, prepare_pt2e
 from torchao.quantization.pt2e.quantizer import QuantizationSpec
+from tqdm import tqdm
 from transformers import AutoTokenizer
 
 
@@ -85,7 +96,7 @@ def add_mse_weight_observer(quant_dtype, quantizer):
         quant_max=(7 if weight_dtype == torch.int4 else torch.iinfo(weight_dtype).max),
         qscheme=torch.per_channel_symmetric,
         ch_axis=0,
-        observer_or_fake_quant_ctr=PerChannelParamObserver.with_args(
+        observer_or_fake_quant_ctr=PerChannelParamObserverWithLossEvaluation.with_args(
             **{"steps": 200, "use_mse": True}
         ),
     )
@@ -147,14 +158,15 @@ def prepare_model(args):
     # TODO: support batch inputs if necessary
     prefill_config.max_batch_size = 1
     prefill_config.max_seq_len = args.max_seq_length
-    prefill_config.use_kv_cache = False
+    prefill_config.max_context_len = args.max_seq_length
+    prefill_config.use_kv_cache = args.use_kv_cache
     prefill_config.enable_r3 = args.r3
     use_i64_token = args.embedding_quantize is not None
     model = LlamaModel(
         prefill_config,
         ar_len=args.prefill_ar_len,
         output_new_cache_only=True,
-        output_cache=False,
+        output_cache=args.use_kv_cache,
         use_i64_token=use_i64_token,
     )
     if args.checkpoint is None:  # HF models
@@ -212,7 +224,7 @@ def prepare_model(args):
 def prequant_algorithm(model, prefill_config, args):
     # TODO: use dtype of model checkpoint
     model = model.to(device=args.device, dtype=torch.float)
-    inputs = model.get_example_inputs(use_kv_cache=False)
+    inputs = model.get_example_inputs()
     tokens, atten_mask = inputs
     tokens.to(args.device)
     for mask in atten_mask.masks:
@@ -319,7 +331,11 @@ def eval_llm(args):
         )
 
         quantizer = make_custom_quantizer(
-            quant_dtype, args.range_setting, custom_annotations, args.quant_linear_only
+            quant_dtype,
+            custom_annotations,
+            args.quant_linear_only,
+            backend=QnnExecuTorchBackendType.kHtpBackend,
+            soc_model=args.soc_model,
         )
 
         with torch.no_grad():
@@ -337,7 +353,7 @@ def eval_llm(args):
         logging.info("Observers added, starting calibration...")
         graph_module_inference(
             use_kv_cache=False,
-            get_example_inputs=lambda use_kv_cache=False: inputs,
+            get_example_inputs=lambda: inputs,
             module=model,
             tokenizer=tokenizer,
             ar_len=args.max_seq_len,
@@ -358,7 +374,7 @@ def eval_llm(args):
 
         # graph_module_inference(
         #     use_kv_cache=False,
-        #     get_example_inputs=lambda use_kv_cache=False: inputs,
+        #     get_example_inputs=lambda: inputs,
         #     module=model,
         #     tokenizer=tokenizer,
         #     ar_len=args.max_seq_len,
@@ -381,6 +397,128 @@ def eval_llm(args):
         use_i64_token=use_i64_token,
         event_name="convert_pt2e_prompt",
     )
+
+
+def eval_llama_with_attention_sink(args):
+    """
+    Evaluate the model's perplexity when AttentionSink is enabled in Static Llama.
+    """
+    assert args.use_attention_sink is not None
+    assert args.attention_sink_eval_tokens > 0
+    attention_sink_params = args.use_attention_sink.split(",")
+    # In the QNN backend, we are not using window arguments because currently, only static shape Llama is supported.
+    assert len(attention_sink_params) == 3
+    sink_size = int(attention_sink_params[0])
+    eviction_batch_size = int(attention_sink_params[2])
+    # Make sure there is sufficient space available for storing the new kv cache.
+    assert eviction_batch_size > args.prefill_ar_len
+
+    tokenizer = prepare_tokenizer(args)
+    model, kv_config = prepare_model(args)
+    ar_len = args.prefill_ar_len
+    rope_module = AttentionSinkRope(
+        kv_config, sink_size, eviction_batch_size, args.prefill_ar_len
+    )
+
+    # source transform for the model
+    for layer in model.layers:
+        if getattr(layer.feed_forward, "prepare_feedfoward_conv", None):
+            layer.feed_forward.prepare_feedfoward_conv()
+    model = convert_linear_to_conv2d(model)
+
+    _, atten_mask, _, k_caches, v_caches = model.get_example_inputs()
+    eval_data = load_dataset("wikitext", "wikitext-2-raw-v1", split="test")
+
+    neg_log_likelihoods = []
+    loss_function = CrossEntropyLoss(reduction="none")
+    progress_bar = tqdm(total=args.attention_sink_eval_tokens)
+    input_pos = 0
+    all_pos = torch.arange(0, args.max_seq_len, 1, dtype=torch.int32).unsqueeze(0)
+    position_shift = 0
+    while input_pos < args.attention_sink_eval_tokens:
+        for text in eval_data["text"]:
+            tokens = tokenizer.encode(text, bos=False, eos=False)
+            if len(tokens) <= 0:
+                continue
+            with torch.no_grad():
+                num_tokens = min(
+                    len(tokens) - 1, args.attention_sink_eval_tokens - input_pos
+                )
+                pos = 0
+                result_logits = []
+                while pos < num_tokens:
+                    chunk_start_idx = pos
+                    # Take a chunk of prompt tokens, up to ar_len length.
+                    chunk_end_idx = min(num_tokens, pos + ar_len)
+                    actual_chunk_tokens = tokens[chunk_start_idx:chunk_end_idx]
+                    num_tokens_in_chunk = len(actual_chunk_tokens)
+
+                    # Prepare tmp_token_list (padded with zeros).
+                    tmp_token_list = torch.zeros((1, ar_len), dtype=torch.int32)
+                    tmp_token_list[0, :num_tokens_in_chunk] = torch.tensor(
+                        actual_chunk_tokens, dtype=torch.int32
+                    )
+                    k_caches, v_caches, position_shift = evict_tokens(
+                        ar_len,
+                        atten_mask,
+                        input_pos,
+                        k_caches,
+                        v_caches,
+                        rope_module,
+                        position_shift,
+                    )
+
+                    # Prepare tmp_pos (padded with zeros).
+                    tmp_pos = torch.zeros((1, ar_len), dtype=torch.int32)
+                    tmp_pos[0, :num_tokens_in_chunk] = all_pos[
+                        0,
+                        input_pos
+                        + position_shift : input_pos
+                        + position_shift
+                        + num_tokens_in_chunk,
+                    ]
+
+                    # Run inference.
+                    logits, new_k_caches, new_v_caches = model(
+                        tmp_token_list,
+                        *atten_mask,
+                        tmp_pos,
+                        *k_caches,
+                        *v_caches,
+                    )
+
+                    result_logits.append(logits[:, :num_tokens_in_chunk])
+
+                    # Update the pos, KV cache and attention mask.
+                    input_pos, k_caches, v_caches = smart_mask_updater(
+                        num_tokens_in_chunk,
+                        atten_mask,
+                        input_pos,
+                        k_caches,
+                        v_caches,
+                        new_k_caches,
+                        new_v_caches,
+                        position_shift=position_shift,
+                    )
+
+                    pos += num_tokens_in_chunk
+                logits = torch.cat(result_logits, dim=1).squeeze(dim=0)
+
+                neg_log_likelihood = loss_function(
+                    logits,
+                    torch.tensor(
+                        [tokens[1 : num_tokens + 1]],
+                        dtype=torch.int64,
+                        device=args.device,
+                    ).view(-1),
+                )
+                neg_log_likelihoods.append(neg_log_likelihood)
+                progress_bar.update(num_tokens)
+            if input_pos >= args.attention_sink_eval_tokens:
+                break
+    perplexity = torch.exp(torch.cat(neg_log_likelihoods).mean())
+    print(f"Perplexity: {perplexity.item()}")
+    return perplexity.item()
 
 
 def main() -> None:
@@ -446,14 +584,17 @@ def main() -> None:
     args.max_seq_len = args.max_seq_length
     args.calibration_seq_length = args.max_seq_length
 
-    # Prefill mode
-    args.use_kv_cache = False
-    args.prefill_ar_len = args.max_seq_length
-
     args.device = "cuda:0" if torch.cuda.is_available() else "cpu"
     torch.set_default_device(args.device)
-
-    eval_llm(args)
+    if args.use_attention_sink:
+        args.use_kv_cache = True
+        args.prefill_ar_len = 1
+        eval_llama_with_attention_sink(args)
+    else:
+        # Prefill mode
+        args.use_kv_cache = False
+        args.prefill_ar_len = args.max_seq_length
+        eval_llm(args)
 
 
 if __name__ == "__main__":

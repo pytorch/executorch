@@ -1,6 +1,6 @@
 # Copyright (c) Meta Platforms, Inc. and affiliates.
 # All rights reserved.
-# Copyright 2025 Arm Limited and/or its affiliates.
+# Copyright 2025-2026 Arm Limited and/or its affiliates.
 #
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
@@ -18,7 +18,7 @@ SHIFT_INT8 = 20
 
 
 def quantize_val(val, scale, zp, qmin, qmax):
-    return min(max(round(val / scale + zp), qmin), qmax)
+    return float(min(max(torch.round(torch.Tensor([val / scale + zp])), qmin), qmax))
 
 
 def dequantize_per_tensor_cmsis(
@@ -105,6 +105,24 @@ def extract_scalar_value(node_arg) -> float:
         )
 
 
+def coerce_int_pair(raw, default: tuple[int, int]) -> tuple[int, int]:
+    if hasattr(raw, "meta"):
+        raw = raw.meta.get("val", raw)  # type: ignore[attr-defined]
+    if raw is None:
+        return default
+    if isinstance(raw, torch.Tensor):
+        raw = raw.flatten().tolist()
+    if isinstance(raw, (list, tuple, torch.Size)):
+        items = [int(v) for v in raw]
+    else:
+        items = [int(raw)]
+    if not items:
+        return default
+    if len(items) == 1:
+        return (items[0], items[0])
+    return (items[0], items[1])
+
+
 def is_qualified_int8_node(args) -> bool:
     try:
         if len(args) < 6:
@@ -138,23 +156,6 @@ def quantize_multiplier_aot(scale: float) -> tuple[int, int]:
 def cleanup_erased_nodes(graph_module: torch.fx.GraphModule):
     # Placeholder for any additional cleanup if needed
     pass
-
-
-def transfer_metadata(
-    new_node: Node, source_node: Node, pass_name: str = "QuantizedPass"
-) -> None:
-    """Transfer metadata with proper provenance tracking."""
-    if hasattr(source_node, "meta") and source_node.meta:
-        new_node.meta = source_node.meta.copy()
-        if "from_node" in new_node.meta:
-            from_node_list = new_node.meta.get("from_node", []).copy()
-            from_node_list.append(
-                {"source": source_node.name, "pass": pass_name, "op": "fuse"}
-            )
-            new_node.meta["from_node"] = from_node_list
-        for field in ["tensor_meta", "stack_trace"]:
-            if field in source_node.meta:
-                new_node.meta[field] = source_node.meta[field]
 
 
 def is_dequant_node(node: Node) -> bool:

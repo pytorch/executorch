@@ -116,8 +116,8 @@ ETDumpGen::ETDumpGen(Span<uint8_t> buffer) {
   if (buffer.data() != nullptr) {
     builder_ =
         (struct flatcc_builder*)internal::align_pointer(buffer.data(), 64);
-    uintptr_t buffer_with_builder = (uintptr_t)internal::align_pointer(
-        builder_ + sizeof(struct flatcc_builder), 64);
+    uintptr_t buffer_with_builder =
+        (uintptr_t)internal::align_pointer(builder_ + 1, 64);
     size_t builder_size =
         (size_t)(buffer_with_builder - (uintptr_t)buffer.data());
     size_t min_buf_size = max_alloc_buf_size + builder_size;
@@ -713,6 +713,14 @@ Result<long> ETDumpGen::write_tensor_or_return_error(Tensor tensor) {
   if (tensor.nbytes() == 0) {
     return static_cast<size_t>(-1);
   }
+
+  // A tensor with nbytes > 0 but null data pointer indicates a corrupt PTE
+  // or a bug in the system. This should not happen in normal operation.
+  ET_CHECK_OR_RETURN_ERROR(
+      tensor.const_data_ptr() != nullptr,
+      InvalidState,
+      "Tensor has nbytes=%zu but null data pointer. This indicates a corrupt program or internal error.",
+      tensor.nbytes());
 
   if (!data_sink_) {
     return Error::InvalidArgument;

@@ -1,4 +1,4 @@
-# Copyright 2025 Arm Limited and/or its affiliates.
+# Copyright 2025-2026 Arm Limited and/or its affiliates.
 #
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
@@ -59,13 +59,6 @@ test_cases = {
         CortexMAvgPool2d(kernel_size=3, stride=2, padding=1),
         (ramp_tensor(0, 15, (1, 1, 4, 4)),),
     ),
-}
-
-test_cases_fp = {
-    "avgpool_3x3_s2_pad1_ceil": McuTestCase(
-        CortexMAvgPool2d(kernel_size=3, stride=2, padding=1, ceil_mode=True),
-        (ramp_tensor(0, 15, (1, 1, 4, 4)),),
-    ),
     "avgpool_3x3_s2_pad1_countinc": McuTestCase(
         CortexMAvgPool2d(kernel_size=3, stride=2, padding=1, count_include_pad=True),
         (ramp_tensor(0, 15, (1, 1, 4, 4)),),
@@ -76,19 +69,12 @@ test_cases_fp = {
 @parametrize("test_case", test_cases)
 def test_dialect_avg_pool2d(test_case):
     tester = CortexMTester(test_case.model, test_case.example_inputs)
+    ops_after = dict(test_case.model.ops_after_transforms)
+    if test_case.model.pool.count_include_pad:
+        ops_after["executorch_exir_dialects_edge__ops_cortex_m_pad_default"] = 1
     tester.test_dialect(
         test_case.model.ops_before_transforms,
-        test_case.model.ops_after_transforms,
-        qtol=1,
-    )
-
-
-@parametrize("test_case", test_cases_fp)
-def test_dialect_avg_pool2d_fp(test_case):
-    tester = CortexMTester(test_case.model, test_case.example_inputs)
-    tester.test_dialect(
-        {"executorch_exir_dialects_edge__ops_aten_avg_pool2d_default": 1},
-        {"executorch_exir_dialects_edge__ops_aten_avg_pool2d_default": 1},
+        ops_after,
         qtol=1,
     )
 

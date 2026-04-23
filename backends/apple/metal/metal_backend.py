@@ -31,10 +31,14 @@ class MetalBackend(AotiBackend, BackendDetails):
     @classmethod
     def get_supported_fallback_kernels(cls) -> Dict[str, Any]:
         return {
-            "aoti_torch_mps_addmm_out": None,
+            "aoti_torch_mps_bmm_out": None,
             "aoti_torch_mps_convolution": None,
             "aoti_torch_mps_mm_out": None,
             "at::_ops::_scaled_dot_product_attention_math_for_mps::call": None,
+            "torchao::_linear_fp_act_4bit_weight": None,
+            "at::_ops::topk::call": None,
+            "metal::gather_qmv": None,
+            "metal::gated_delta_rule": None,
         }
 
     @classmethod
@@ -43,8 +47,12 @@ class MetalBackend(AotiBackend, BackendDetails):
 
     @classmethod
     def get_custom_passes(cls, compile_specs: List[CompileSpec]) -> List[typing.Any]:
-        """Return Metal-specific passes (currently none)"""
-        return []
+        """Return Metal-specific passes"""
+        from executorch.backends.apple.metal.passes.decompose_linear_pass import (
+            DecomposeLinearPass,
+        )
+
+        return [DecomposeLinearPass()]
 
     @classmethod
     def get_aoti_compile_options(
@@ -52,7 +60,8 @@ class MetalBackend(AotiBackend, BackendDetails):
     ) -> Dict[str, typing.Any]:
         """Get AOTI compile options for Metal backend."""
         _ = compile_specs  # Unused, but required by interface
-        return {
+
+        inductor_configs = {
             # Do not link against the full PyTorch/libtorch library
             "aot_inductor.link_libtorch": False,
             # Separate weight constants from the .so file
@@ -64,4 +73,31 @@ class MetalBackend(AotiBackend, BackendDetails):
             "max_autotune": True,
             # "aot_inductor.debug_compile": True,
             # "aot_inductor.force_mmap_weights": False,
+            "padding_stride_threshold": float("inf"),  # avoid padding stride
         }
+
+        from torchao.experimental.ops.mps.cshim import torchao_op_c_shim
+
+        custom_c_shims = {**torchao_op_c_shim}
+
+        try:
+            from executorch.backends.apple.metal.ops.gather_qmv import (
+                metal_gather_qmv_c_shim,
+            )
+
+            custom_c_shims.update(metal_gather_qmv_c_shim)
+        except ImportError:
+            pass
+
+        try:
+            from executorch.backends.apple.metal.ops.gated_delta_rule import (
+                metal_gated_delta_rule_c_shim,
+            )
+
+            custom_c_shims.update(metal_gated_delta_rule_c_shim)
+        except ImportError:
+            pass
+
+        inductor_configs["aot_inductor.custom_ops_to_c_shims"] = custom_c_shims
+
+        return inductor_configs

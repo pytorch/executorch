@@ -6,6 +6,7 @@
 
 
 import re
+import textwrap
 from abc import ABC, abstractmethod
 from enum import IntEnum, unique
 from typing import Callable, Dict, List, Optional, Sequence, Set, Tuple
@@ -13,15 +14,13 @@ from typing import Callable, Dict, List, Optional, Sequence, Set, Tuple
 import torch
 from executorch.backends.qualcomm.quantizer.quantizer import (
     ModuleQConfig,
-    QnnQuantizer,
     QuantDtype,
     QuantizationConfig,
 )
+from executorch.backends.qualcomm.quantizer.rules import OpQuantRule
 from tabulate import tabulate
 from torch._ops import OpOverload
 from torchao.quantization.pt2e import UniformQuantizationObserverBase
-
-from .annotators import OP_ANNOTATOR
 
 
 def extract_node_metadata_mapping(node: torch.fx.Node):
@@ -73,6 +72,7 @@ class QuantizationStrategy(ABC):
         is_qat: bool,
         granularity: QuantGranularity,
         act_observer: UniformQuantizationObserverBase,
+        act_symmetric: bool,
         extra_kwargs: Dict,
         note: str,
         priority: int,
@@ -81,6 +81,7 @@ class QuantizationStrategy(ABC):
         self.is_qat = is_qat
         self.granularity = granularity
         self.act_observer = act_observer
+        self.act_symmetric = act_symmetric
         self.extra_kwargs = extra_kwargs
         self.note = note
         self.priority = priority
@@ -91,6 +92,7 @@ class QuantizationStrategy(ABC):
             is_conv_per_channel=True,
             is_linear_per_channel=True,
             act_observer=self.act_observer,
+            act_symmetric=self.act_symmetric,
         )
 
     @abstractmethod
@@ -143,6 +145,7 @@ class ByNodeTarget(QuantizationStrategy):
         is_qat,
         granularity,
         act_observer,
+        act_symmetric,
         extra_kwargs,
         note,
         priority,
@@ -153,6 +156,7 @@ class ByNodeTarget(QuantizationStrategy):
             is_qat,
             granularity,
             act_observer,
+            act_symmetric,
             extra_kwargs,
             note,
             priority,
@@ -179,6 +183,7 @@ class ByNameRegex(QuantizationStrategy):
         is_qat,
         granularity,
         act_observer,
+        act_symmetric,
         extra_kwargs,
         note,
         priority,
@@ -189,6 +194,7 @@ class ByNameRegex(QuantizationStrategy):
             is_qat,
             granularity,
             act_observer,
+            act_symmetric,
             extra_kwargs,
             note,
             priority,
@@ -228,6 +234,7 @@ class QuantRecipe:
         is_qat,
         act_observer: UniformQuantizationObserverBase,
         granularity: QuantGranularity,
+        act_symmetric: bool = False,
         note: str = "",
         extra_kwargs: Optional[dict] = None,
         verbose: bool = False,
@@ -252,22 +259,21 @@ class QuantRecipe:
         self._pending_annotate_nodes: Dict[
             torch.fx.Node, Tuple[QuantizationConfig, QuantizationStrategy]
         ] = {}
-        self._default_strategy = ByNodeTarget(
-            quant_dtype,
-            is_qat,
-            granularity,
-            act_observer,
-            extra_kwargs or {},
-            note,
-            priority=1,
-            targets=QnnQuantizer.SUPPORTED_OPS,
-        )
+        self._default_quant_dtype = quant_dtype
+        self._default_is_qat = is_qat
+        self._default_granularity = granularity
+        self._default_act_observer = act_observer
+        self._default_act_symmetric = act_symmetric
+        self._default_extra_kwargs = extra_kwargs or {}
+        self._default_note = note
 
     def _annotate_custom_annotation(self, gm: torch.fx.GraphModule) -> None:
         for annotation_func in self.custom_quant_annotations:
             annotation_func(gm)
 
-    def annotate(self, graph_module: torch.fx.GraphModule):
+    def annotate(
+        self, graph_module: torch.fx.GraphModule, rules_map: List[OpQuantRule]
+    ):
         # Sort node level strategies by (priority, insertion index).
         # Higher priority value comes first; if priorities are equal, original insertion order is preserved.
         strategies: List[QuantizationStrategy] = [
@@ -299,7 +305,9 @@ class QuantRecipe:
                 print(f"No quant config is implemented for op, {node.target}")
                 continue
 
-            OP_ANNOTATOR[node.target](node, self._pending_annotate_nodes[node][0])
+            rules_map[node.target].annotate_fn(
+                node, self._pending_annotate_nodes[node][0]
+            )
 
         # custom annotation
         self._annotate_custom_annotation(graph_module)
@@ -311,6 +319,7 @@ class QuantRecipe:
         is_qat,
         act_observer: UniformQuantizationObserverBase,
         granularity: QuantGranularity,
+        act_symmetric: bool = False,
         note: str = "",
         priority: int = 1,
         extra_kwargs: Optional[dict] = None,
@@ -321,6 +330,7 @@ class QuantRecipe:
                 is_qat,
                 granularity,
                 act_observer,
+                act_symmetric,
                 extra_kwargs or {},
                 note,
                 priority,
@@ -336,6 +346,7 @@ class QuantRecipe:
         is_qat,
         act_observer: UniformQuantizationObserverBase,
         granularity: QuantGranularity,
+        act_symmetric: bool = False,
         note: str = "",
         priority: int = 1,
         extra_kwargs: Optional[dict] = None,
@@ -359,6 +370,7 @@ class QuantRecipe:
                 is_qat,
                 granularity,
                 act_observer,
+                act_symmetric,
                 extra_kwargs or {},
                 note,
                 priority,
@@ -366,6 +378,19 @@ class QuantRecipe:
             ),
         )
         return self
+
+    def initialize_default_strategy_ops(self, supported_ops: List[OpOverload]):
+        self._default_strategy = ByNodeTarget(
+            self._default_quant_dtype,
+            self._default_is_qat,
+            self._default_granularity,
+            self._default_act_observer,
+            self._default_act_symmetric,
+            self._default_extra_kwargs,
+            self._default_note,
+            priority=1,
+            targets=supported_ops,
+        )
 
     def summary(self, max_rows: int = -1):
         if not self._pending_annotate_nodes:
@@ -400,3 +425,76 @@ class QuantRecipe:
             rows.append(["..."] * len(headers))
 
         return tabulate(rows, headers=headers, tablefmt="grid")
+
+    def to_source(self) -> str:
+        """
+        Serializes this QuantRecipe into a Python source string at zero indentation.
+        """
+
+        def _dtype(d: QuantDtype) -> str:
+            return f"QuantDtype.{d.name}"
+
+        def _granularity(g: QuantGranularity) -> str:
+            return f"QuantGranularity.{g.name}"
+
+        def _comments(note: str) -> str:
+            lines = note.strip().splitlines() if note.strip() else []
+            return "".join(f"# {ln}\n" for ln in lines)
+
+        indent = "\t"
+
+        def _args(*lines: str) -> str:
+            return "".join(f"{indent}{ln},\n" for ln in lines)
+
+        strategy_blocks: List[str] = []
+        for strategy in self._strategies:
+            extra_kwargs_flag = (
+                [f"extra_kwargs={strategy.extra_kwargs!r}"]
+                if strategy.extra_kwargs
+                else []
+            )
+            if isinstance(strategy, ByNodeTarget):
+                targets_repr = ", ".join(
+                    f"torch.ops.{t._overloadpacket._qualified_op_name.replace('::', '.')}.{t._overloadname}"
+                    for t in sorted(strategy.targets, key=lambda t: str(t))
+                )
+                args = _args(
+                    f"{{{targets_repr}}}",
+                    _dtype(strategy.quant_dtype),
+                    str(strategy.is_qat),
+                    "act_observer=MinMaxObserver",
+                    f"granularity={_granularity(strategy.granularity)}",
+                    *extra_kwargs_flag,
+                    f"act_symmetric={strategy.act_symmetric}",
+                    f"note={strategy.note!r}",
+                )
+                call = f".add_node_target(\n{args})"
+            elif isinstance(strategy, ByNameRegex):
+                patterns_repr = ", ".join(f'r"{p}"' for p in sorted(strategy.patterns))
+                args = _args(
+                    f"{{{patterns_repr}}}",
+                    _dtype(strategy.quant_dtype),
+                    str(strategy.is_qat),
+                    "act_observer=MinMaxObserver",
+                    f"granularity={_granularity(strategy.granularity)}",
+                    *extra_kwargs_flag,
+                    f"act_symmetric={strategy.act_symmetric}",
+                    f"note={strategy.note!r}",
+                )
+                call = f".add_regex(\n{args})"
+            else:
+                continue
+
+            strategy_blocks.append(_comments(strategy.note) + call)
+
+        header_args = _args(
+            "self.default_quant_dtype",
+            str(self._default_is_qat),
+            "act_observer=MinMaxObserver",
+            f"granularity={_granularity(self._default_granularity)}",
+            "verbose=verbose",
+        )
+        header = f"QuantRecipe(\n{header_args})"
+        chained = "\n".join(strategy_blocks)
+        body = header + "\n" + chained
+        return "(\n" + textwrap.indent(body, indent) + "\n)"

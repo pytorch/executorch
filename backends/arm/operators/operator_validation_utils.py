@@ -1,4 +1,4 @@
-# Copyright 2025 Arm Limited and/or its affiliates.
+# Copyright 2025-2026 Arm Limited and/or its affiliates.
 #
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
@@ -127,7 +127,7 @@ def validate_valid_dtype(
             self.target,
             [*inputs, output],
             [ts.DType.INT8, ts.DType.INT32],
-            output.tosa_spec,
+            self.tosa_spec,
         )
 
     """
@@ -153,7 +153,9 @@ def validate_valid_dtype(
 
 
 def validate_cf_extension(op_name: str, tosa_spec: TosaSpecification) -> None:
-    """Ensure that the requested control-flow operator is supported by the active TOSA spec."""
+    """Ensure that the requested control-flow operator is supported by the
+    active TOSA spec.
+    """
     if not isinstance(tosa_spec, Tosa_1_00):
         raise ValueError(
             f"Got TOSA version {tosa_spec.version}, that does not support extensions."

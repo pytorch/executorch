@@ -16,7 +16,7 @@
 
 ${define_active_storage_type(STORAGE)}
 
-${define_required_extensions(DTYPE)}
+${define_required_extensions(STORAGE, DTYPE)}
 
 #extension GL_EXT_control_flow_attributes : require
 
@@ -32,7 +32,8 @@ ${layout_declare_ubo(B, "int", "input_pos")}
 
 layout(local_size_x_id = 0, local_size_y_id = 1, local_size_z_id = 2) in;
 
-// Shared memory for cooperative exp sum finding
+// Shared memory for cooperative max finding and exp sum reduction
+shared T shared_max[NUM_WORKERS_PER_WG];
 shared T shared_exp_sum[NUM_WORKERS_PER_WG];
 
 VEC4_T load_attn_weights_c4(
@@ -87,24 +88,24 @@ void main() {
     return;
   }
 
-  // Initialize thread-local min/max
-  T local_exp_sum = T(0);
-
   const int context_len_aligned_down = context_len - mod_4(context_len);
   const int C4_limit = div_4(context_len_aligned_down);
 
-  // Each thread processes elements along a context_len row with a stride of the
-  // number of threads in the work group.
+  // =========================================================================
+  // Pass 1: Find the maximum value across the row for numerical stability.
+  // Without this, exp(x) can overflow float32 when x > ~88.7.
+  // =========================================================================
+
+  T local_max = T(-1.0 / 0.0); // -infinity
+
   for (int c4 = worker_id; c4 < C4_limit; c4 += NUM_WORKERS_PER_WG) {
     VEC4_T in_texel = load_attn_weights_c4(
         c4, s, q_h, context_texel_len, S_aligned, Q_H);
 
     for (int comp = 0; comp < 4; comp++) {
-      local_exp_sum += exp(in_texel[comp]);
+      local_max = max(local_max, in_texel[comp]);
     }
   }
-  // First thread in the work group responsible for handling last texel if it
-  // contains any padded elements
   if (worker_id == 0) {
     for (int c4 = C4_limit; c4 < context_texel_len; ++c4) {
       const int c_base = mul_4(c4);
@@ -113,19 +114,63 @@ void main() {
 
       [[unroll]] for (int comp = 0; comp < 4; comp++) {
         if (c_base + comp < context_len) {
-          local_exp_sum += exp(in_texel[comp]);
+          local_max = max(local_max, in_texel[comp]);
         }
       }
     }
   }
 
-  // Store thread-local results in shared memory
+  shared_max[worker_id] = local_max;
+
+  memoryBarrierShared();
+  barrier();
+
+  // Tree reduction to find the global max
+  for (int i = NUM_WORKERS_PER_WG / 2; i > 0; i >>= 1) {
+    if (worker_id < i) {
+      shared_max[worker_id] = max(
+          shared_max[worker_id], shared_max[worker_id + i]);
+    }
+    memoryBarrierShared();
+    barrier();
+  }
+
+  const T global_max = shared_max[0];
+
+  // =========================================================================
+  // Pass 2: Compute sum(exp(x - max)) using the global max for stability
+  // =========================================================================
+
+  T local_exp_sum = T(0);
+
+  for (int c4 = worker_id; c4 < C4_limit; c4 += NUM_WORKERS_PER_WG) {
+    VEC4_T in_texel = load_attn_weights_c4(
+        c4, s, q_h, context_texel_len, S_aligned, Q_H);
+
+    for (int comp = 0; comp < 4; comp++) {
+      local_exp_sum += exp(in_texel[comp] - global_max);
+    }
+  }
+  if (worker_id == 0) {
+    for (int c4 = C4_limit; c4 < context_texel_len; ++c4) {
+      const int c_base = mul_4(c4);
+      VEC4_T in_texel = load_attn_weights_c4(
+          c4, s, q_h, context_texel_len, S_aligned, Q_H);
+
+      [[unroll]] for (int comp = 0; comp < 4; comp++) {
+        if (c_base + comp < context_len) {
+          local_exp_sum += exp(in_texel[comp] - global_max);
+        }
+      }
+    }
+  }
+
   shared_exp_sum[worker_id] = local_exp_sum;
 
   memoryBarrierShared();
   barrier();
 
-  // Tree reduction to compute the overall result
+  // Tree reduction to compute the overall exp sum
   for (int i = NUM_WORKERS_PER_WG / 2; i > 0; i >>= 1) {
     if (worker_id < i) {
       shared_exp_sum[worker_id] = shared_exp_sum[worker_id] +
@@ -136,28 +181,29 @@ void main() {
   }
 
   local_exp_sum = shared_exp_sum[0];
-  // Now go back through each element in the row and normalize
+
+  // =========================================================================
+  // Pass 3: Normalize each element: out = exp(x - max) / sum(exp(x - max))
+  // =========================================================================
+
   for (int c4 = worker_id; c4 < C4_limit; c4 += NUM_WORKERS_PER_WG) {
     VEC4_T in_texel = load_attn_weights_c4(
         c4, s, q_h, context_texel_len, S_aligned, Q_H);
 
-    VEC4_T out_texel = exp(in_texel) / local_exp_sum;
+    VEC4_T out_texel = exp(in_texel - global_max) / local_exp_sum;
     store_attn_weights_softmax_c4(
         out_texel, c4, s, q_h, context_texel_len, S_aligned, Q_H);
   }
-  // First thread in the work group responsible for handling last texel if it
-  // contains any padded elements
   if (worker_id == 0) {
     for (int c4 = C4_limit; c4 < context_texel_len; ++c4) {
       const int c_base = mul_4(c4);
       VEC4_T in_texel = load_attn_weights_c4(
           c4, s, q_h, context_texel_len, S_aligned, Q_H);
 
-      // Ensure that padding elements are set to 0.
       VEC4_T out_texel = VEC4_T(0);
       [[unroll]] for (int comp = 0; comp < 4; comp++) {
         if (c_base + comp < context_len) {
-          out_texel[comp] = exp(in_texel[comp]) / local_exp_sum;
+          out_texel[comp] = exp(in_texel[comp] - global_max) / local_exp_sum;
         }
       }
       store_attn_weights_softmax_c4(

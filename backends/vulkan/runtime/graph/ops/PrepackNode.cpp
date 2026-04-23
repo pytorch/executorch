@@ -44,6 +44,9 @@ PrepackNode::PrepackNode(
       push_constants_(push_constants) {
   graph.update_descriptor_counts(shader, /*execute = */ false);
   graph.update_descriptor_counts(noop_shader_, /*execute = */ false);
+  if (!graph.val_is_none(tref)) {
+    graph.get_tref(tref)->prepack_use_count++;
+  }
 }
 
 api::StagingBuffer PrepackNode::create_staging_buffer(ComputeGraph* graph) {
@@ -70,10 +73,40 @@ api::StagingBuffer PrepackNode::create_staging_buffer(ComputeGraph* graph) {
       vkapi::CopyDirection::HOST_TO_DEVICE);
   graph->update_staging_nbytes_in_cmd(staging.buffer().mem_size_as_size_t());
   size_t nbytes = numel * vkapi::element_size(tref->dtype);
-  staging.copy_from(tref->data, nbytes);
-  // Once the staging buffer is copied, if the TensorRef owns a FreeableBuffer,
-  // it can be freed.
-  tref->free_buffer();
+
+  // In some cases the staging dtype will diverge from the TensorRef dtype. The
+  // most common case for this is when the tensor data is float16, but the GPU
+  // does not support 16-bit storage buffers. In these cases, the tensor data
+  // is manually casted to the staging dtype.
+  vkapi::ScalarType staging_dtype = staging.dtype();
+  vkapi::ScalarType tref_dtype = tref->dtype;
+  if (staging_dtype == tref_dtype) {
+    staging.copy_from(tref->data, nbytes);
+  } else {
+    // Hard-coded type conversion cases
+    if (tref_dtype == vkapi::kHalf && staging_dtype == vkapi::kFloat) {
+      const uint16_t* casted_data =
+          reinterpret_cast<const uint16_t*>(tref->data);
+      staging.cast_half_to_float_and_copy_from(casted_data, numel);
+    } else if (tref_dtype == vkapi::kLong && staging_dtype == vkapi::kInt) {
+      const int64_t* casted_data = reinterpret_cast<const int64_t*>(tref->data);
+      staging.cast_and_copy_from<int64_t, int32_t>(casted_data, numel);
+    } else if (tref_dtype == vkapi::kDouble && staging_dtype == vkapi::kFloat) {
+      const double* casted_data = reinterpret_cast<const double*>(tref->data);
+      staging.cast_and_copy_from<double, float>(casted_data, numel);
+    } else {
+      VK_THROW(
+          "Unsupported type conversion from ",
+          tref_dtype,
+          " to staging dtype ",
+          staging_dtype);
+    }
+  }
+
+  if (--tref->prepack_use_count == 0) {
+    tref->free_buffer();
+  }
+
   return staging;
 }
 

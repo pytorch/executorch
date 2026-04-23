@@ -2,7 +2,7 @@
 
 **ExecuTorch** is PyTorch's unified solution for deploying AI models on-device—from smartphones to microcontrollers—built for privacy, performance, and portability. It powers Meta's on-device AI across **Instagram, WhatsApp, Quest 3, Ray-Ban Meta Smart Glasses**, and [more](https://docs.pytorch.org/executorch/main/success-stories.html).
 
-This folder adds ExecuTorch so it can be build and run in the Zephyr project as a external module. This includes an example under examples/arm/zephyr of running executor runners with Arm&reg; Ethos&trade;-U backend on a Corstone&trade; FVP, targeting the Zephyr RTOS.
+This folder adds ExecuTorch so it can be build and run in the Zephyr project as a external module. This includes an example under zephyr/samples/hello-executorch of running executor runners with Arm&reg; Ethos&trade;-U backend on a Corstone&trade; FVP, targeting the Zephyr RTOS.
 
 # Requirements
 
@@ -15,11 +15,13 @@ source .zephyr_venv/bin/activate
 ```
 
 Install requirements
+<!-- RUN install_reqs -->
 ```
-pip install west cmake==3.29 pyelftools ninja jsonschema
+pip install west "cmake<4.0.0" pyelftools ninja jsonschema
 ```
 
 Setup zephyr repo
+<!-- RUN west_init -->
 ```
 west init --manifest-rev v4.3.0
 ```
@@ -50,102 +52,42 @@ manifest:
 
 ## Run west config and update:
 
-Add ExecuTorch to Zephyr
+Add ExecuTorch and Ethos-U driver to Zephyr
+<!-- RUN west_config -->
 ```
-west config manifest.project-filter -- "-.*,+zephyr,+executorch,+cmsis,+cmsis_6,+cmsis-nn,+hal_ethos_u"
+west config manifest.project-filter -- -.*,+zephyr,+executorch,+cmsis,+cmsis_6,+cmsis-nn,+hal_ethos_u
 west update
 ```
 
 ## Setup and install ExecuTorch
 
-Run this:
-
+Setup ExecuTorch
+<!-- RUN install_executorch -->
 ```
 cd modules/lib/executorch/
 git submodule sync
 git submodule update --init --recursive
 ./install_executorch.sh
+cd ../../..
 ```
 
-## Prepare Ethos&trade;-U tools like Vela compiler and Corstone&trade; 300/320 FVP
+## Prepare Ethos-U tools like Vela compiler and Corstone 300/320 FVP
 
-This is needed to convert python models to PTE files for Ethos&trade;-Ux5 and also installs Corstone&trade; 300/320 FVP so you can run and test.
+This is needed to convert python models to PTE files for Ethos-Ux5 and also installs Corstone 300/320 FVP so you can run and test.
 
-Make sure to read and agree to the Corstone&trade; eula
+Make sure to read and agree to the Corstone eula
 
+Install TOSA, vela and FVPs
+<!-- RUN install_arm_tools -->
 ```
-examples/arm/setup.sh --i-agree-to-the-contained-eula
-```
-
-
-# Running a sample application
-
-To run you need to point of the path to the installed Corstone&trade; FVP and you can then use west to build and run. You point out the model PTE file you want to run with -DET_PTE_FILE_PATH= see below.
-
-
-## Corstone&trade; 300 FVP (Ethos&trade;-U55)
-
-### Prepare a PTE model file
-
-Prepare a Corstone300 PTE model
-```
-cd <zephyr_build_root>/modules/lib/executorch
-source examples/arm/arm-scratch/setup_path.sh
-python -m examples.arm.aot_arm_compiler --model_name=examples/arm/example_modules/add.py --quantize --delegate -t ethos-u55-128 --output="add_u55_128.pte"
+modules/lib/executorch/examples/arm/setup.sh --i-agree-to-the-contained-eula
+. modules/lib/executorch/examples/arm/arm-scratch/setup_path.sh
 ```
 
-'--delegate' tells the aot_arm_compiler to use Ethos-U backend and '-t ethos-u55-128' specify the used Ethos-U variant and numbers of macs used, this must match you hardware or FVP config.
+# Running sample applications
 
-### Setup FVP paths
-
-
-Set up FVP paths and macs used, this will also set shutdown_on_eot so the FVP auto stops after it has run the example.
-```
-cd <zephyr_build_root>
-export FVP_ROOT=$PWD/modules/lib/executorch/examples/arm/arm-scratch/FVP-corstone300
-export ARMFVP_BIN_PATH=${FVP_ROOT}/models/Linux64_GCC-9.3
-export ARMFVP_EXTRA_FLAGS='-C mps3_board.uart0.shutdown_on_eot=1 -C ethosu.num_macs=128' 
-```
-
-### Build and run
-
-```
-west build -b mps3/corstone300/fvp modules/lib/executorch/examples/arm/zephyr -t run -- -DET_PTE_FILE_PATH=modules/lib/executorch/add_u55_128.pte
-```
-
-Press CTRL-C to stop the FVP
-
-## Corstone&trade; 320 FVP (Ethos&trade;-U85)
-
-### Prepare a PTE model file
-
-Prepare a Corstone320 PTE model
-
-```
-cd <zephyr_build_root>/modules/lib/executorch
-source examples/arm/arm-scratch/setup_path.sh
-python -m examples.arm.aot_arm_compiler --model_name=examples/arm/example_modules/add.py --quantize --delegate -t ethos-u85-256 --output="add_u85_256.pte"
-```
-'--delegate' tells the aot_arm_compiler to use Ethos-U backend and '-t ethos-u85-256' specify the used Ethos-U variant and numbers of macs used, this must match you hardware or FVP config.
-
-### Setup FVP paths
-
-Set up FVP paths, libs and macs used, this will also set shutdown_on_eot so the FVP auto stops after it has run the example.
-```
-cd <zephyr_build_root>
-export FVP_ROOT=$PWD/modules/lib/executorch/examples/arm/arm-scratch/FVP-corstone320
-export LD_LIBRARY_PATH=${FVP_ROOT}/python/lib:${ARMFVP_BIN_PATH}:${LD_LIBRARY_PATH}
-export ARMFVP_BIN_PATH=${FVP_ROOT}/models/Linux64_GCC-9.3
-export ARMFVP_EXTRA_FLAGS='-C mps4_board.uart0.shutdown_on_eot=1 -C mps4_board.subsystem.ethosu.num_macs=256' 
-```
-
-### Build and run
-
-```
-west build -b mps4/corstone320/fvp modules/lib/executorch/examples/arm/zephyr -t run -- -DET_PTE_FILE_PATH=modules/lib/executorch/add_u85_256.pte
-```
-
-Press CTRL-C to stop the FVP
+Build and run instructions for simple Zephyr minimal example setup is documented in
+[`zephyr/samples/hello-executorch/README.md`](samples/hello-executorch/README.md).
 
 ## Notable files
 
@@ -160,3 +102,7 @@ Do not remove this file. As mentioned in the official Zephyr [documenation](http
 # Reference
 
 <a href="https://docs.pytorch.org/executorch">Documentation</a>
+
+## Related Projects
+
+- [ExecuTorch on Zephyr RTOS with CMSIS](https://github.com/Arm-Examples/cmsis-zephyr-executorch) — An alternative project structure demonstrating ExecuTorch on Zephyr using CMSIS Toolbox for build management.

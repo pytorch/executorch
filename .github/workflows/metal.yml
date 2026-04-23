@@ -1,15 +1,24 @@
 name: Test Metal Backend
 
 on:
-  pull_request:
   push:
     branches:
       - main
       - release/*
+    tags:
+      - ciflow/metal/*
+  pull_request:
+    paths:
+      - .github/workflows/metal.yml
+      - backends/apple/metal/**
+      - backends/aoti/**
+      - examples/models/qwen3_5_moe/**
+      - extension/llm/export/**
+  workflow_dispatch:
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.sha }}-${{ github.event_name == 'workflow_dispatch' }}-${{ github.event_name == 'schedule' }}
-  cancel-in-progress: false
+  cancel-in-progress: true
 
 jobs:
   test-metal-builds:
@@ -28,9 +37,129 @@ jobs:
         PYTHON_EXECUTABLE=python CMAKE_ARGS="-DEXECUTORCH_BUILD_METAL=ON" ${CONDA_RUN} --no-capture-output ./install_executorch.sh
         echo "::endgroup::"
 
+  test-metal-modules:
+    name: test-metal-backend-modules
+    uses: pytorch/test-infra/.github/workflows/macos_job.yml@main
+    with:
+      runner: macos-m2-stable
+      python-version: '3.11'
+      submodules: 'recursive'
+      ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
+      timeout: 120
+      script: |
+        set -eux
+
+        echo "::group::Setup ExecuTorch"
+        PYTHON_EXECUTABLE=python ${CONDA_RUN} EXECUTORCH_BUILD_KERNELS_TORCHAO=1 TORCHAO_BUILD_EXPERIMENTAL_MPS=1 ./install_executorch.sh
+        echo "::endgroup::"
+
+        echo "::group::Build Metal Runtime"
+        ${CONDA_RUN} backends/apple/metal/tests/run_metal_test.sh --build
+        echo "::endgroup::"
+
+        echo "::group::Run Metal Backend Module Tests"
+        ${CONDA_RUN} python -m unittest backends.apple.metal.tests.test_modules.TestMetalBackendModules
+        echo "::endgroup::"
+
+  test-metal-qwen35-moe-tiny:
+    name: test-metal-qwen35-moe-tiny
+    uses: pytorch/test-infra/.github/workflows/macos_job.yml@main
+    with:
+      runner: macos-m2-stable
+      python-version: '3.11'
+      submodules: 'recursive'
+      ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
+      timeout: 120
+      script: |
+        set -eux
+
+        echo "::group::Setup ExecuTorch"
+        PYTHON_EXECUTABLE=python ${CONDA_RUN} EXECUTORCH_BUILD_KERNELS_TORCHAO=1 TORCHAO_BUILD_EXPERIMENTAL_MPS=1 ./install_executorch.sh
+        echo "::endgroup::"
+
+        # Isolate Inductor cache per job to prevent PCH conflicts
+        export TMPDIR=$(mktemp -d "${RUNNER_TEMP}/tmpdir_XXXXXX")
+        export TORCHINDUCTOR_CACHE_DIR=$(mktemp -d "${RUNNER_TEMP}/inductor_cache_XXXXXX")
+
+        echo "::group::Export Qwen 3.5 MoE (tiny model, Metal)"
+        ${CONDA_RUN} python -m executorch.examples.models.qwen3_5_moe.export \
+          --tiny-test \
+          --backend metal \
+          --qlinear fpa4w \
+          --output-dir /tmp/qwen35_moe_metal_tiny
+        echo "::endgroup::"
+
+        echo "::group::Build Metal runtime and Qwen 3.5 MoE runner"
+        ${CONDA_RUN} cmake --workflow --preset llm-release-metal
+        cd examples/models/qwen3_5_moe
+        ${CONDA_RUN} cmake --workflow --preset qwen3-5-moe-metal
+        cd -
+        echo "::endgroup::"
+
+        # Create a byte-level tokenizer for the tiny model (vocab_size=256).
+        # Maps each byte value to its own token ID so any prompt produces valid IDs.
+        ${CONDA_RUN} python - <<'PY'
+        import json
+        vocab = {chr(i) if 32 <= i < 127 else f'<0x{i:02X}>': i for i in range(256)}
+        tokenizer = {
+          'version': '1.0',
+          'model': {'type': 'BPE', 'vocab': vocab, 'merges': []},
+          'added_tokens': [{'id': i, 'content': chr(i) if 32 <= i < 127 else f'<0x{i:02X}>', 'single_word': False, 'lstrip': False, 'rstrip': False, 'normalized': False, 'special': False} for i in range(256)],
+        }
+        with open('/tmp/qwen35_moe_metal_tiny/tokenizer.json', 'w') as f:
+          json.dump(tokenizer, f)
+        print('Created byte-level tokenizer.json')
+        PY
+
+        RUNNER=./cmake-out/examples/models/qwen3_5_moe/qwen3_5_moe_runner
+        # Patch absolute libomp install name to rpath-based lookup (same as test_model_e2e.sh)
+        if otool -L "$RUNNER" | grep -q "/opt/llvm-openmp/lib/libomp.dylib"; then
+          install_name_tool -change /opt/llvm-openmp/lib/libomp.dylib @rpath/libomp.dylib "$RUNNER"
+        fi
+        MODEL=/tmp/qwen35_moe_metal_tiny/model.pte
+        TOKENIZER=/tmp/qwen35_moe_metal_tiny/tokenizer.json
+
+        echo "::group::Run Qwen 3.5 MoE inference (T=1 decode)"
+        # Single-char prompt → 1 token → exercises decode-only path
+        set +e
+        OUTPUT=$($RUNNER --model_path $MODEL --tokenizer_path $TOKENIZER \
+          --prompt "A" --temperature 0 --max_new_tokens 4 2>&1)
+        RC=$?
+        set -e
+        echo "$OUTPUT"
+        if [ $RC -ne 0 ]; then
+          echo "Failed: runner exited with code $RC"
+          exit 1
+        fi
+        echo "$OUTPUT" | grep -q "Prompt tokens: 1" || { echo "Failed: expected 1 prompt token for decode path"; exit 1; }
+        echo "$OUTPUT" | grep -q "Decode:" || { echo "Failed: decode did not complete"; exit 1; }
+        echo "Success: decode completed"
+        echo "::endgroup::"
+
+        echo "::group::Run Qwen 3.5 MoE inference (T>2 prefill + decode)"
+        set +e
+        OUTPUT=$($RUNNER --model_path $MODEL --tokenizer_path $TOKENIZER \
+          --prompt "one two three" --temperature 0 --max_new_tokens 4 2>&1)
+        RC=$?
+        set -e
+        echo "$OUTPUT"
+        if [ $RC -ne 0 ]; then
+          echo "Failed: runner exited with code $RC"
+          exit 1
+        fi
+        # Byte-level tokenizer: "one two three" = 13 tokens (13 bytes)
+        PROMPT_TOKENS=$(echo "$OUTPUT" | grep -o "Prompt tokens: [0-9]*" | head -1 | grep -o "[0-9]*")
+        if [ "$PROMPT_TOKENS" -le 2 ]; then
+          echo "Failed: expected >2 prompt tokens for prefill path, got $PROMPT_TOKENS"
+          exit 1
+        fi
+        echo "$OUTPUT" | grep -q "Decode:" || { echo "Failed: prefill + decode did not complete"; exit 1; }
+        echo "Success: prefill ($PROMPT_TOKENS tokens) + decode completed"
+        echo "::endgroup::"
+
   export-model-metal-artifact:
     name: export-model-metal-artifact
-      # Skip this job if the pull request is from a fork (HuggingFace secrets are not available)
+    # Skip this job if the pull request is from a fork (HuggingFace secrets are not available)
     if: github.event.pull_request.head.repo.full_name == github.repository || github.event_name != 'pull_request'
     uses: pytorch/test-infra/.github/workflows/macos_job.yml@main
     secrets: inherit
@@ -40,12 +169,23 @@ jobs:
         model:
           - repo: "mistralai"
             name: "Voxtral-Mini-3B-2507"
+          - repo: "mistralai"
+            name: "Voxtral-Mini-4B-Realtime-2602"
           - repo: "openai"
             name: "whisper-small"
           - repo: "openai"
             name: "whisper-large-v3-turbo"
+          - repo: "nvidia"
+            name: "parakeet-tdt"
         quant:
           - "non-quantized"
+          - "quantized-int4-metal"
+        exclude:
+          # Exclude non-quantized for Voxtral Realtime (too large)
+          - model:
+              repo: "mistralai"
+              name: "Voxtral-Mini-4B-Realtime-2602"
+            quant: "non-quantized"
     with:
       runner: macos-m2-stable
       python-version: '3.11'
@@ -69,13 +209,19 @@ jobs:
         echo "::endgroup::"
 
         echo "::group::Setup ExecuTorch"
-        PYTHON_EXECUTABLE=python ${CONDA_RUN} ./install_executorch.sh
+        PYTHON_EXECUTABLE=python ${CONDA_RUN} EXECUTORCH_BUILD_KERNELS_TORCHAO=1 TORCHAO_BUILD_EXPERIMENTAL_MPS=1 ./install_executorch.sh
         echo "::endgroup::"
 
         echo "::group::Pip List"
         ${CONDA_RUN} pip list
         echo "::endgroup::"
 
+        # Isolate Inductor cache and precompiled headers (PCH) per job to prevent
+        # PCH mtime conflicts between parallel matrix jobs on the same runner.
+        # TORCHINDUCTOR_CACHE_DIR isolates the code cache; setting TMPDIR isolates
+        # the PCH dir, which PyTorch derives from tempfile.gettempdir() independently.
+        export TMPDIR=$(mktemp -d "${RUNNER_TEMP}/tmpdir_XXXXXX")
+        export TORCHINDUCTOR_CACHE_DIR=$(mktemp -d "${RUNNER_TEMP}/inductor_cache_XXXXXX")
         ${CONDA_RUN} bash .ci/scripts/export_model_artifact.sh metal "${{ matrix.model.repo }}/${{ matrix.model.name }}" "${{ matrix.quant }}" "${RUNNER_ARTIFACT_DIR}"
 
   test-model-metal-e2e:
@@ -88,12 +234,23 @@ jobs:
         model:
           - repo: "mistralai"
             name: "Voxtral-Mini-3B-2507"
+          - repo: "mistralai"
+            name: "Voxtral-Mini-4B-Realtime-2602"
           - repo: "openai"
             name: "whisper-small"
           - repo: "openai"
             name: "whisper-large-v3-turbo"
+          - repo: "nvidia"
+            name: "parakeet-tdt"
         quant:
           - "non-quantized"
+          - "quantized-int4-metal"
+        exclude:
+          # Exclude non-quantized for Voxtral Realtime (too large)
+          - model:
+              repo: "mistralai"
+              name: "Voxtral-Mini-4B-Realtime-2602"
+            quant: "non-quantized"
     with:
       runner: macos-m2-stable
       python-version: '3.11'

@@ -107,6 +107,18 @@ TEST_F(XNNWorkspaceManagerTest, DisabledMode) {
       workspace2->unsafe_get_workspace(), workspace3->unsafe_get_workspace());
 }
 
+TEST_F(XNNWorkspaceManagerTest, DisabledModeAcquireDoesNotLock) {
+  workspace_manager_->set_sharing_mode(WorkspaceSharingMode::Disabled);
+
+  auto workspace_result = workspace_manager_->get_or_create_workspace(12345);
+  ASSERT_TRUE(workspace_result.ok());
+  auto workspace = workspace_result.get();
+
+  auto [lock, ptr] = workspace->acquire();
+  ASSERT_NE(ptr, nullptr);
+  EXPECT_FALSE(lock.owns_lock());
+}
+
 TEST_F(XNNWorkspaceManagerTest, PerModelMode) {
   // In PerModel mode, calls with the same program_id should return the same
   // workspace.
@@ -139,6 +151,18 @@ TEST_F(XNNWorkspaceManagerTest, PerModelMode) {
       workspace1->unsafe_get_workspace(), workspace3->unsafe_get_workspace());
 }
 
+TEST_F(XNNWorkspaceManagerTest, PerModelAcquireStillLocks) {
+  workspace_manager_->set_sharing_mode(WorkspaceSharingMode::PerModel);
+
+  auto workspace_result = workspace_manager_->get_or_create_workspace(12345);
+  ASSERT_TRUE(workspace_result.ok());
+  auto workspace = workspace_result.get();
+
+  auto [lock, ptr] = workspace->acquire();
+  ASSERT_NE(ptr, nullptr);
+  EXPECT_TRUE(lock.owns_lock());
+}
+
 TEST_F(XNNWorkspaceManagerTest, GlobalMode) {
   // In Global mode, all calls should return the same workspace.
   workspace_manager_->set_sharing_mode(WorkspaceSharingMode::Global);
@@ -166,7 +190,7 @@ TEST_F(XNNWorkspaceManagerTest, PerModelModeCleanup) {
   workspace_manager_->set_sharing_mode(WorkspaceSharingMode::PerModel);
 
   uintptr_t program_id = 12345;
-  xnn_workspace_t raw_workspace1 = nullptr;
+  uint64_t workspace1_id = 0;
 
   // Create a scope to control the lifetime of workspace1
   {
@@ -175,8 +199,8 @@ TEST_F(XNNWorkspaceManagerTest, PerModelModeCleanup) {
     ASSERT_TRUE(workspace1_result.ok());
     auto workspace1 = workspace1_result.get();
 
-    // Store the raw pointer for later comparison
-    raw_workspace1 = workspace1->unsafe_get_workspace();
+    // Store the unique ID for later comparison
+    workspace1_id = workspace1->id();
 
     // Let workspace1 go out of scope and be destroyed
   }
@@ -188,7 +212,9 @@ TEST_F(XNNWorkspaceManagerTest, PerModelModeCleanup) {
   auto workspace2 = workspace2_result.get();
 
   // Since the previous workspace was destroyed, we should get a new one.
-  EXPECT_NE(workspace2->unsafe_get_workspace(), raw_workspace1);
+  // We compare IDs instead of raw pointers because memory allocators may
+  // reuse addresses after deallocation.
+  EXPECT_NE(workspace2->id(), workspace1_id);
 }
 
 TEST_F(XNNWorkspaceManagerTest, GlobalModeCleanup) {
@@ -197,7 +223,7 @@ TEST_F(XNNWorkspaceManagerTest, GlobalModeCleanup) {
   workspace_manager_->set_sharing_mode(WorkspaceSharingMode::Global);
 
   uintptr_t program_id = 12345;
-  xnn_workspace_t raw_workspace1 = nullptr;
+  uint64_t workspace1_id = 0;
 
   // Create a scope to control the lifetime of workspace1
   {
@@ -206,8 +232,8 @@ TEST_F(XNNWorkspaceManagerTest, GlobalModeCleanup) {
     ASSERT_TRUE(workspace1_result.ok());
     auto workspace1 = workspace1_result.get();
 
-    // Store the raw pointer for later comparison
-    raw_workspace1 = workspace1->unsafe_get_workspace();
+    // Store the unique ID for later comparison
+    workspace1_id = workspace1->id();
 
     // Let workspace1 go out of scope and be destroyed
   }
@@ -219,7 +245,9 @@ TEST_F(XNNWorkspaceManagerTest, GlobalModeCleanup) {
   auto workspace2 = workspace2_result.get();
 
   // Since the previous workspace was destroyed, we should get a new one.
-  EXPECT_NE(workspace2->unsafe_get_workspace(), raw_workspace1);
+  // We compare IDs instead of raw pointers because memory allocators may
+  // reuse addresses after deallocation.
+  EXPECT_NE(workspace2->id(), workspace1_id);
 }
 
 TEST_F(XNNWorkspaceManagerTest, SwitchingModes) {

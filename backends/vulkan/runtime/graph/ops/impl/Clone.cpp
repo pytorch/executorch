@@ -11,6 +11,7 @@
 #include <executorch/backends/vulkan/runtime/graph/Logging.h>
 
 #include <executorch/backends/vulkan/runtime/graph/ops/impl/Common.h>
+#include <executorch/backends/vulkan/runtime/graph/ops/impl/Q8taClone.h>
 #include <executorch/backends/vulkan/runtime/graph/ops/impl/View.h>
 
 #include <executorch/backends/vulkan/runtime/graph/ops/impl/utils/KernelUtils.h>
@@ -86,12 +87,12 @@ void add_image_to_buffer_node(
       default_pick_local_wg_size,
       // Input and Outputs
       {{buffer, vkapi::kWrite}, {image, vkapi::kRead}},
-      // Parameter Buffers
+      // Parameter Buffers: TextureMetadata for image, BufferMetadata for buffer
+      {graph.texture_meta_ubo(image), graph.buffer_meta_ubo(buffer)},
+      // Push Constants: none
       {},
-      // Push Constants
-      {graph.sizes_pc_of(image), graph.strides_pc_of(buffer)},
-      // Specialization Constants
-      {graph.hashed_layout_of(image)},
+      // Specialization Constants: image layout + buffer layout
+      {graph.hashed_layout_of(image), graph.hashed_layout_of(buffer)},
       // Resize Args
       {},
       // Resizing Logic
@@ -114,12 +115,14 @@ void add_buffer_to_image_node(
       default_pick_local_wg_size,
       // Input and Outputs
       {{image, vkapi::kWrite}, {buffer, vkapi::kRead}},
-      // Parameter Buffers
+      // Parameter Buffers: TextureMetadata for image, BufferMetadata for buffer
+      {graph.texture_meta_ubo(image), graph.buffer_meta_ubo(buffer)},
+      // Push Constants: none
       {},
-      // Push Constants
-      {graph.sizes_pc_of(image), graph.strides_pc_of(buffer)},
-      // Specialization Constants
-      {graph.hashed_layout_of(image)},
+      // Specialization Constants: image layout, transpose_hw=0, buffer layout
+      {graph.hashed_layout_of(image),
+       int32_t(0),
+       graph.hashed_layout_of(buffer)},
       // Resize Args
       {},
       // Resizing Logic
@@ -132,11 +135,18 @@ void clone(ComputeGraph& graph, const std::vector<ValueRef>& args) {
 
   const utils::StorageType src_storage = graph.storage_type_of(src);
   const utils::StorageType dst_storage = graph.storage_type_of(dst);
+
+  // Handle int8x4 (quantized) tensors with block-based clone
+  if (graph.dtype_of(src) == vkapi::kInt8x4 &&
+      graph.dtype_of(dst) == vkapi::kInt8x4) {
+    return add_q8ta_clone_node(graph, src, dst);
+  }
+
   if (src_storage == utils::kTexture3D && dst_storage == utils::kTexture3D) {
     if (graph.hashed_layout_of(src) == graph.hashed_layout_of(dst)) {
       return add_clone_node(graph, src, dst);
     } else {
-      return add_view_node(graph, src, kDummyValueRef, dst);
+      return add_view_copy_node(graph, src, dst, {}, resize_clone_node);
     }
   }
   if (src_storage == utils::kTexture3D && dst_storage == utils::kBuffer) {
@@ -148,8 +158,7 @@ void clone(ComputeGraph& graph, const std::vector<ValueRef>& args) {
 
   std::vector<ValueRef> extra_args = {};
   // Buffer to buffer copy
-  return add_view_copy_buffer_node(
-      graph, src, dst, extra_args, resize_clone_node);
+  return add_view_copy_node(graph, src, dst, extra_args, resize_clone_node);
 }
 
 // Clone node is not the most efficient implementation for the aten.clone

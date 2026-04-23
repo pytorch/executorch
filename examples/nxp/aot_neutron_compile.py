@@ -1,4 +1,4 @@
-# Copyright 2024-2025 NXP
+# Copyright 2024-2026 NXP
 #
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
@@ -25,7 +25,10 @@ from executorch.backends.nxp.edge_passes.remove_io_quant_ops_pass import (
     RemoveIOQuantOpsPass,
 )
 from executorch.backends.nxp.neutron_partitioner import NeutronPartitioner
-from executorch.backends.nxp.nxp_backend import generate_neutron_compile_spec
+from executorch.backends.nxp.nxp_backend import (
+    core_aten_ops_exception_list,
+    generate_neutron_compile_spec,
+)
 from executorch.backends.nxp.quantizer.neutron_quantizer import NeutronQuantizer
 from executorch.backends.nxp.quantizer.utils import calibrate_and_quantize
 from executorch.devtools.visualization.visualization_utils import (
@@ -40,8 +43,17 @@ from executorch.exir import (
 )
 from executorch.extension.export_util import save_pte_program
 from torch.export import export
+from torchao.quantization.pt2e import (
+    move_exported_model_to_eval,
+    move_exported_model_to_train,
+)
+from torchao.quantization.pt2e.quantize_pt2e import convert_pt2e, prepare_qat_pt2e
 
-from .experimental.cifar_net.cifar_net import CifarNet, test_cifarnet_model
+from .experimental.cifar_net.cifar_net import (
+    CifarNet,
+    train_cifarnet_model,
+    verify_cifarnet_model,
+)
 from .models.mobilenet_v2 import MobilenetV2
 
 FORMAT = "[%(levelname)s %(asctime)s %(filename)s:%(lineno)s] %(message)s"
@@ -76,7 +88,7 @@ def print_ops_in_edge_program(edge_program):
         print(f"{op: <50} {count}x")
 
 
-def get_model_and_inputs_from_name(model_name: str):
+def get_model_and_inputs_from_name(model_name: str, use_random_dataset: bool):
     """Given the name of an example pytorch model, return it, example inputs and calibration inputs (can be None)
 
     Raises RuntimeError if there is no example model corresponding to the given name.
@@ -85,7 +97,15 @@ def get_model_and_inputs_from_name(model_name: str):
     calibration_inputs = None
     # Case 1: Model is defined in this file
     if model_name in models.keys():
-        m = models[model_name]()
+        if use_random_dataset:
+            if model_name != "mobilenetv2":
+                raise NotImplementedError(
+                    f"Random dataset for model {model_name} is not implemented."
+                )
+            m = models[model_name](use_random_dataset=use_random_dataset)
+        else:
+            m = models[model_name]()
+
         model = m.get_eager_model()
         example_inputs = m.get_example_inputs()
         calibration_inputs = m.get_calibration_inputs(64)
@@ -134,20 +154,19 @@ if __name__ == "__main__":  # noqa C901
         help="Platform for running the delegated model",
     )
     parser.add_argument(
-        "-c",
-        "--neutron_converter_flavor",
-        required=False,
-        default="SDK_25_09",
-        help="Flavor of installed neutron-converter module. Neutron-converter module named "
-        "'neutron_converter_SDK_25_09' has flavor 'SDK_25_09'.",
-    )
-    parser.add_argument(
         "-q",
         "--quantize",
         action="store_true",
         required=False,
         default=False,
         help="Produce a quantized model",
+    )
+    parser.add_argument(
+        "--use_qat",
+        action="store_true",
+        required=False,
+        default=False,
+        help="Use QAT mode for quantization (performs two QAT training epochs)",
     )
     parser.add_argument(
         "-s",
@@ -195,8 +214,31 @@ if __name__ == "__main__":  # noqa C901
         required=False,
         default=False,
         action="store_true",
-        help="The model (including the Neutron backend) will use the channels last dim order, which can result in faster "
-        "inference. The inputs must also be provided in the channels last dim order.",
+        help="The model (including the Neutron backend) will use the channels last dim order, which can result in "
+        "faster inference. The inputs must also be provided in the channels last dim order.",
+    )
+    parser.add_argument(
+        "--dump_kernel_selection_code",
+        required=False,
+        default=False,
+        action="store_true",
+        help="During conversion to Neutron microcode by Neutron Converter, a kernel selection file will be dumped in "
+        "the working directory. This file can be used for reduction of Neutron Firmware size in the built app."
+        "See `docs/source/backends/nxp/nxp-kernel-selection.md` for details.",
+    )
+    parser.add_argument(
+        "--use_random_dataset",
+        required=False,
+        default=False,
+        action="store_true",
+        help="The calibration and testing datasets will be generated randomly instead of being downloaded.",
+    )
+    parser.add_argument(
+        "--fetch_constants_to_sram",
+        required=False,
+        default=False,
+        action="store_true",
+        help="This feature allows running models which do not fit into SRAM by offloading them to an external memory.",
     )
 
     args = parser.parse_args()
@@ -204,13 +246,11 @@ if __name__ == "__main__":  # noqa C901
     if args.debug:
         logging.basicConfig(level=logging.DEBUG, format=FORMAT, force=True)
 
-    neutron_target_spec = NeutronTargetSpec(
-        target=args.target, neutron_converter_flavor=args.neutron_converter_flavor
-    )
+    neutron_target_spec = NeutronTargetSpec(target=args.target)
 
     # 1. pick model from one of the supported lists
     model, example_inputs, calibration_inputs = get_model_and_inputs_from_name(
-        args.model_name
+        args.model_name, args.use_random_dataset
     )
     model = model.eval()
 
@@ -223,6 +263,13 @@ if __name__ == "__main__":  # noqa C901
             i.to(memory_format=torch.channels_last) for i in example_inputs
         )
 
+    else:
+        # Notify the user of this option.
+        print(
+            "HINT: Converting your model to channels last may significantly improve inference speed. You can use the "
+            "flag `--use_channels_last_dim_order`. See `docs/source/backends/nxp/nxp-dim-order.md` for more information."
+        )
+
     # 2. Export the model to ATEN
     exported_program = torch.export.export(model, example_inputs, strict=True)
 
@@ -230,13 +277,27 @@ if __name__ == "__main__":  # noqa C901
 
     # 3. Quantize if required
     if args.quantize:
-        if calibration_inputs is None:
-            logging.warning(
-                "No calibration inputs available, using the example inputs instead"
-            )
-            calibration_inputs = example_inputs
-        quantizer = NeutronQuantizer(neutron_target_spec)
-        module = calibrate_and_quantize(module, calibration_inputs, quantizer)
+        quantizer = NeutronQuantizer(neutron_target_spec, is_qat=args.use_qat)
+        if args.use_qat:
+            match args.model_name:
+                case "cifar10":
+                    print("Starting two epochs of QAT training with CifarNet model...")
+                    module = prepare_qat_pt2e(module, quantizer)
+                    module = move_exported_model_to_train(module)
+                    module = train_cifarnet_model(module, num_epochs=2)
+                    module = move_exported_model_to_eval(module)
+                    module = convert_pt2e(module)
+                case _:
+                    raise ValueError(
+                        f"QAT training is not supported for model '{args.model_name}'"
+                    )
+        else:
+            if calibration_inputs is None:
+                logging.warning(
+                    "No calibration inputs available, using the example inputs instead"
+                )
+                calibration_inputs = example_inputs
+            module = calibrate_and_quantize(module, calibration_inputs, quantizer)
 
     if args.so_library is not None:
         logging.debug(f"Loading libraries: {args.so_library}")
@@ -245,7 +306,7 @@ if __name__ == "__main__":  # noqa C901
     if args.test:
         match args.model_name:
             case "cifar10":
-                accuracy = test_cifarnet_model(module)
+                accuracy = verify_cifarnet_model(module)
 
             case _:
                 raise NotImplementedError(
@@ -260,17 +321,28 @@ if __name__ == "__main__":  # noqa C901
     compile_spec = generate_neutron_compile_spec(
         args.target,
         operators_not_to_delegate=args.operators_not_to_delegate,
-        neutron_converter_flavor=args.neutron_converter_flavor,
+        fetch_constants_to_sram=args.fetch_constants_to_sram,
+        dump_kernel_selection_code=args.dump_kernel_selection_code,
     )
     partitioners = (
-        [NeutronPartitioner(compile_spec, neutron_target_spec)] if args.delegate else []
+        [
+            NeutronPartitioner(
+                compile_spec,
+                neutron_target_spec,
+                post_quantization_state_dict=module.state_dict(),
+            )
+        ]
+        if args.delegate
+        else []
     )
 
     edge_program_manager = to_edge_transform_and_lower(
         export(module, example_inputs, strict=True),
         transform_passes=NeutronEdgePassManager(),
         partitioner=partitioners,
-        compile_config=EdgeCompileConfig(),
+        compile_config=EdgeCompileConfig(
+            _core_aten_ops_exception_list=core_aten_ops_exception_list,
+        ),
     )
 
     if args.remove_quant_io_ops:

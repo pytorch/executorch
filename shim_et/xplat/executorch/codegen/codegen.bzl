@@ -573,7 +573,7 @@ def build_portable_lib(
         portable_header_lib = None,
         feature = None,
         expose_operator_symbols = False,
-        visibility = ["@EXECUTORCH_CLIENTS"],
+        visibility = ["PUBLIC"],
         platforms = get_default_executorch_platforms()):
     """
     WARNING: Before using this, please consider using executorch_generated_lib instead. This
@@ -820,6 +820,7 @@ def executorch_generated_lib(
         kernel_deps = [],
         dtype_selective_build = False,
         feature = None,
+        compatible_with = None,
         expose_operator_symbols = False,
         support_exceptions = True,
         include_all_prim_ops = True):
@@ -883,10 +884,19 @@ def executorch_generated_lib(
         support_exceptions: enable try/catch wrapper around operator implementations
             to make sure exceptions thrown will not bring down the process. Disable if your
             use case disables exceptions in the build.
+        compatible_with: An optional list of platform constraints (e.g.
+            ["ovr_config//cpu:arm32-embedded"]). When set, the constraint is
+            applied to the compiled registration library (`<name>`) but NOT to
+            the header-only library (`<name>_headers`), so that host-side
+            consumers such as unit tests can still depend on the headers.
         include_all_prim_ops: If true, include all prim ops in the generated library. This option
             allows for selecting only some prim ops to reduce code size for extremely constrained
             environments. For selecting only some prim ops, see examples in //executorch/examples/selective_build
     """
+    _compat_kwargs = {}
+    if compatible_with != None:
+        _compat_kwargs["compatible_with"] = compatible_with
+
     if functions_yaml_target and aten_mode:
         fail("{} is providing functions_yaml_target in ATen mode, it will be ignored. `native_functions.yaml` will be the source of truth.".format(name))
 
@@ -1046,6 +1056,9 @@ def executorch_generated_lib(
                 "//executorch/runtime/core/exec_aten/util:tensor_util" + aten_suffix,
             ],
             feature = feature,
+            # Note: compatible_with is intentionally NOT applied to the
+            # headers-only target so that host-side consumers (e.g. unit tests
+            # on x86_64) can still depend on the generated headers.
         )
 
     if name in libs:
@@ -1098,6 +1111,7 @@ def executorch_generated_lib(
             _is_external_target = True,
             platforms = platforms,
             feature = feature,
+            **_compat_kwargs
         )
 
     if custom_ops_yaml_target and custom_ops_requires_aot_registration:

@@ -1,4 +1,4 @@
-# Copyright 2024-2025 Arm Limited and/or its affiliates.
+# Copyright 2024-2026 Arm Limited and/or its affiliates.
 #
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
@@ -18,7 +18,6 @@ from executorch.backends.arm.operators.operator_validation_utils import (
     validate_num_inputs,
 )
 
-from executorch.backends.arm.tosa import TosaSpecification
 from executorch.backends.arm.tosa.mapping import map_dtype, TosaArg
 from torch.fx import Node
 
@@ -162,6 +161,8 @@ def _build_rescale(
     rounding_mode: ts.RoundingMode,
     per_channel: bool = False,
     is_scale32: bool = True,
+    input_unsigned: bool = False,
+    output_unsigned: bool = False,
 ):
     """Insert a TOSA RESCALE operator configured for the quantized path.
 
@@ -199,8 +200,8 @@ def _build_rescale(
         scale32=is_scale32,
         rounding_mode=rounding_mode,
         per_channel=per_channel,
-        input_unsigned=False,
-        output_unsigned=False,
+        input_unsigned=input_unsigned,
+        output_unsigned=output_unsigned,
     )
 
     tosa_fb.addOperator(
@@ -214,8 +215,6 @@ def _build_rescale(
 @register_node_visitor
 class RescaleVisitor(NodeVisitor):
     target = "tosa.RESCALE.default"
-
-    tosa_specs = [TosaSpecification.create_from_string("TOSA-1.0+INT")]
 
     def define_node(
         self,
@@ -231,12 +230,20 @@ class RescaleVisitor(NodeVisitor):
         scales = cast(list[float], node.args[2])
         input_zp = cast(int, node.args[3])
         output_zp = cast(int, node.args[4])
+        if "input_unsigned" in node.kwargs:
+            input_unsigned = cast(bool, node.kwargs.get("input_unsigned", False))
+        else:
+            input_unsigned = cast(bool, node.args[5]) if len(node.args) > 5 else False
+        if "output_unsigned" in node.kwargs:
+            output_unsigned = cast(bool, node.kwargs.get("output_unsigned", False))
+        else:
+            output_unsigned = cast(bool, node.args[6]) if len(node.args) > 6 else False
 
         if (
             input_dtype
             not in [
-                map_dtype(torch.int8, self.tosa_spec),
-                map_dtype(torch.int16, self.tosa_spec),
+                map_dtype(torch.int8),
+                map_dtype(torch.int16),
             ]
             and input_zp != 0
         ):
@@ -247,7 +254,6 @@ class RescaleVisitor(NodeVisitor):
             raise ValueError(
                 f"If output dtype is not int8 or int16, output_zp must be 0. Got {ts.DTypeNames[output_dtype]}, {output_zp=}"
             )
-
         _build_rescale(
             tosa_graph,
             scale=scales,
@@ -258,4 +264,6 @@ class RescaleVisitor(NodeVisitor):
             output_zp=[output_zp],
             rounding_mode=ts.RoundingMode.SINGLE_ROUND,
             per_channel=len(scales) > 1,
+            input_unsigned=input_unsigned,
+            output_unsigned=output_unsigned,
         )

@@ -8,12 +8,13 @@
 
 #version 450 core
 
+${define_required_extensions("buffer", DTYPE)}
+
 #define PRECISION ${PRECISION}
 
 #define T ${buffer_scalar_type(DTYPE)}
 
 ${define_active_storage_type("buffer")}
-${define_required_extensions(DTYPE)}
 
 #extension GL_EXT_control_flow_attributes : require
 
@@ -31,7 +32,7 @@ ${layout_declare_ubo(B, "BufferMetadata", "index")}
 
 layout(local_size_x_id = 0, local_size_y_id = 1, local_size_z_id = 2) in;
 
-layout(constant_id = 3) const int gather_dim = 0;
+${layout_declare_spec_const(C, "int", "gather_dim", "0")}
 
 void main() {
   const uint out_bufi = gl_GlobalInvocationID.x;

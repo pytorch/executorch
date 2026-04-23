@@ -1,0 +1,12 @@
+# Copyright (c) Meta Platforms, Inc. and affiliates.
+# All rights reserved.
+#
+# This source code is licensed under the BSD-style license found in the
+# LICENSE file in the root directory of this source tree.
+
+q8ta_binary:
+  parameter_names_with_default_values:
+    OPERATOR: X + Y
+  shader_variants:
+    - NAME: q8ta_add_buffer
+      OPERATOR: X + Y

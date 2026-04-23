@@ -1,4 +1,4 @@
-# Copyright 2025 Arm Limited and/or its affiliates.
+# Copyright 2025-2026 Arm Limited and/or its affiliates.
 #
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
@@ -7,6 +7,9 @@ from numbers import Number
 from typing import Tuple, Union
 
 import torch
+from executorch.backends.arm.quantizer.arm_quantizer import (
+    get_symmetric_a16w8_quantization_config,
+)
 
 from executorch.backends.arm.test import common
 
@@ -33,6 +36,31 @@ test_data_suite = {
     "rank_4_mixed_min_max_dtype": lambda: (torch.rand(1, 10, 10, 5) + 10, 8.0, 10),
     "rank_4_no_min": lambda: (torch.rand(1, 10, 10, 1) * 10, None, 5),
     "rank_4_no_max": lambda: (torch.rand(1, 10, 10, 1) - 3, -3.3, None),
+}
+
+test_data_suite_bf16 = {
+    "rank_2_bf16": lambda: (
+        torch.rand(1, 35, dtype=torch.bfloat16),
+        0.5,
+        0.8,
+    ),
+    "rank_4_no_max_bf16": lambda: (
+        torch.rand(1, 10, 10, 1, dtype=torch.bfloat16) - 3,
+        -3.3,
+        None,
+    ),
+}
+test_data_suite_fp16 = {
+    "rank_2_fp16": lambda: (
+        torch.rand(1, 35, dtype=torch.float16),
+        0.5,
+        0.8,
+    ),
+    "rank_4_no_max_fp16": lambda: (
+        torch.rand(1, 10, 10, 1, dtype=torch.float16) - 3,
+        -3.3,
+        None,
+    ),
 }
 
 test_data_suite_int32 = {
@@ -70,7 +98,9 @@ class Clamp(torch.nn.Module):
         return torch.clamp(x, self.clamp_min, self.clamp_max)
 
 
-@common.parametrize("test_data", test_data_suite)
+@common.parametrize(
+    "test_data", test_data_suite | test_data_suite_bf16 | test_data_suite_fp16
+)
 def test_clamp_tosa_FP(test_data):
     input_tensor, min_val, max_val = test_data()
     model = Clamp(min_val, max_val)
@@ -80,6 +110,7 @@ def test_clamp_tosa_FP(test_data):
         (input_tensor,),
         aten_op,
         exir_op,
+        tosa_extensions=["bf16"],
     )
 
     pipeline.run()
@@ -147,7 +178,9 @@ def test_clamp_u55_INT(test_data):
 @common.parametrize("test_data", test_data_suite)
 @common.XfailIfNoCorstone300
 def test_clamp_u55_INT_16a8w(test_data):
-    """Test clamp operation with 16A8W quantization on U55 (16-bit activations, 8-bit weights)"""
+    """Test clamp operation with 16A8W quantization on U55 (16-bit activations,
+    8-bit weights)
+    """
     input_tensor, min_val, max_val = test_data()
     model = Clamp(min_val, max_val)
     pipeline = EthosU55PipelineINT[input_t](
@@ -180,7 +213,9 @@ def test_clamp_u85_INT(test_data):
 @common.parametrize("test_data", test_data_suite)
 @common.XfailIfNoCorstone320
 def test_clamp_u85_INT_16a8w(test_data):
-    """Test clamp operation with 16A8W quantization on U85 (16-bit activations, 8-bit weights)"""
+    """Test clamp operation with 16A8W quantization on U85 (16-bit activations,
+    8-bit weights)
+    """
     input_tensor, min_val, max_val = test_data()
     model = Clamp(min_val, max_val)
     pipeline = EthosU85PipelineINT[input_t](
@@ -195,7 +230,7 @@ def test_clamp_u85_INT_16a8w(test_data):
     pipeline.run()
 
 
-@common.parametrize("test_data", test_data_suite)
+@common.parametrize("test_data", test_data_suite | test_data_suite_fp16)
 @common.SkipIfNoModelConverter
 def test_clamp_vgf_no_quant(test_data):
     input_tensor, min_val, max_val = test_data()
@@ -225,7 +260,28 @@ def test_clamp_vgf_quant(test_data):
     pipeline.run()
 
 
-aten_op_tensor = "torch.ops.aten.clamp.Tensor"
+aten_op_tensor = [
+    "torch.ops.aten.clamp.Tensor",
+]
+
+
+@common.parametrize("test_data", test_data_suite)
+@common.SkipIfNoModelConverter
+def test_clamp_vgf_quant_a16w8(test_data):
+    input_tensor, min_val, max_val = test_data()
+    model = Clamp(min_val, max_val)
+    pipeline = VgfPipeline[input_t](
+        model,
+        (input_tensor,),
+        aten_op,
+        exir_op,
+        quantize=True,
+        tosa_extensions=["int16"],
+    )
+    pipeline.quantizer.set_global(get_symmetric_a16w8_quantization_config())
+    pipeline.run()
+
+
 exir_op_tensor = "executorch_exir_dialects_edge__ops_aten_clamp_Tensor"
 
 test_data_suite_tensor_FP = {
@@ -251,6 +307,31 @@ test_data_suite_tensor_FP = {
         torch.rand(10, 20, 30, 40) * 10,
         None,
         torch.rand(10, 20, 30, 40) * 5.0,
+    ),
+}
+
+test_data_suite_tensor_bf16 = {
+    "rank_2_bf16": lambda: (
+        torch.rand(1, 35, dtype=torch.bfloat16),
+        torch.tensor(0.5, dtype=torch.bfloat16),
+        torch.tensor(0.8, dtype=torch.bfloat16),
+    ),
+    "rank_4_no_max_bf16": lambda: (
+        torch.rand(10, 20, 30, 40, dtype=torch.bfloat16) - 3,
+        torch.tensor(-0.1, dtype=torch.bfloat16),
+        None,
+    ),
+}
+test_data_suite_tensor_fp16 = {
+    "rank_2_fp16": lambda: (
+        torch.rand(1, 35, dtype=torch.float16),
+        torch.tensor(0.5, dtype=torch.float16),
+        torch.tensor(0.8, dtype=torch.float16),
+    ),
+    "rank_4_no_max_fp16": lambda: (
+        torch.rand(10, 20, 30, 40, dtype=torch.float16) - 3,
+        torch.tensor(-0.1, dtype=torch.float16),
+        None,
     ),
 }
 
@@ -328,7 +409,12 @@ test_data_suite_tensor_INT64 = {
 }
 
 
-@common.parametrize("test_data", test_data_suite_tensor_FP)
+@common.parametrize(
+    "test_data",
+    test_data_suite_tensor_FP
+    | test_data_suite_tensor_bf16
+    | test_data_suite_tensor_fp16,
+)
 def test_clamp_tosa_FP_tensor(test_data):
     input_tensor, min_val, max_val = test_data()
     model = Clamp(min_val, max_val)
@@ -338,6 +424,7 @@ def test_clamp_tosa_FP_tensor(test_data):
         (input_tensor,),
         aten_op_tensor,
         exir_op_tensor,
+        tosa_extensions=["bf16"],
     )
 
     pipeline.run()
@@ -350,10 +437,22 @@ def test_clamp_tosa_INT_tensor(test_data):
     input_tensor, min_val, max_val = test_data()
     model = Clamp(min_val, max_val)
 
+    # Check that int64 inputs are cast to int32 in the tfa pipeline
+    if any(
+        t.dtype == torch.int64
+        for t in (input_tensor, min_val, max_val)
+        if isinstance(t, torch.Tensor)
+    ):
+        aten_op = aten_op_tensor + [
+            "torch.ops.dim_order_ops._to_dim_order_copy.default"
+        ]
+    else:
+        aten_op = aten_op_tensor
+
     pipeline = TosaPipelineINT[input_t](
         model,
         (input_tensor,),
-        aten_op_tensor,
+        aten_op,
         exir_op_tensor,
     )
     pipeline.run()
@@ -394,7 +493,9 @@ def test_clamp_u55_INT_tensor(test_data):
 @common.parametrize("test_data", test_data_suite_tensor_INT32)
 @common.XfailIfNoCorstone300
 def test_clamp_u55_INT_16a8w_tensor(test_data):
-    """Test clamp operation with 16A8W quantization on U55 (16-bit activations, 8-bit weights)"""
+    """Test clamp operation with 16A8W quantization on U55 (16-bit activations,
+    8-bit weights)
+    """
     input_tensor, min_val, max_val = test_data()
     model = Clamp(min_val, max_val)
     pipeline = EthosU55PipelineINT[input_t](
@@ -427,7 +528,9 @@ def test_clamp_u85_INT_tensor(test_data):
 @common.parametrize("test_data", test_data_suite_tensor_INT32)
 @common.XfailIfNoCorstone320
 def test_clamp_u85_INT_16a8w_tensor(test_data):
-    """Test clamp operation with 16A8W quantization on U85 (16-bit activations, 8-bit weights)"""
+    """Test clamp operation with 16A8W quantization on U85 (16-bit activations,
+    8-bit weights)
+    """
     input_tensor, min_val, max_val = test_data()
     model = Clamp(min_val, max_val)
     pipeline = EthosU85PipelineINT[input_t](
@@ -442,7 +545,9 @@ def test_clamp_u85_INT_16a8w_tensor(test_data):
     pipeline.run()
 
 
-@common.parametrize("test_data", test_data_suite_tensor_FP)
+@common.parametrize(
+    "test_data", test_data_suite_tensor_FP | test_data_suite_tensor_fp16
+)
 @common.SkipIfNoModelConverter
 def test_clamp_vgf_no_quant_tensor(test_data):
     input_tensor, min_val, max_val = test_data()

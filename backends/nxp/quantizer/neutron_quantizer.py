@@ -1,11 +1,12 @@
 # Copyright (c) Meta Platforms, Inc. and affiliates.
-# Copyright 2024-2025 NXP
+# Copyright 2024-2026 NXP
 #
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
 
 import torch
 from executorch.backends.nxp.aten_passes.neutron_aten_pass_manager import (
+    _get_default_passes,
     NeutronAtenPassManager,
 )
 
@@ -16,8 +17,12 @@ from executorch.backends.nxp.quantizer.patterns import (
     AdaptiveAvgPoolPattern,
     AddmmPattern,
     AddTensorPattern,
-    AvgPoolPattern,
+    AvgPool1DPattern,
+    AvgPool2DPattern,
+    BatchNormPattern,
+    BMMPattern,
     CatPattern,
+    ClampPattern,
     Conv1dPattern,
     Conv2dPattern,
     ConvTranspose2dPattern,
@@ -25,14 +30,19 @@ from executorch.backends.nxp.quantizer.patterns import (
     FlattenPattern,
     HardTanhInPlacePattern,
     HardTanhPattern,
+    LeakyReluInPlacePattern,
+    LeakyReluPattern,
     LinearPattern,
-    MaxPoolPattern,
+    MaxPool1DPattern,
+    MaxPool2DPattern,
     MeanDimPattern,
     MmPattern,
     MulTensorPattern,
+    NegPattern,
     NodeArgsIdx,
     PadPattern,
     PermutePattern,
+    PReLUPattern,
     QuantizationPattern,
     ReluInPlacePattern,
     ReluPattern,
@@ -41,10 +51,16 @@ from executorch.backends.nxp.quantizer.patterns import (
     SigmoidPattern,
     SliceTensorPattern,
     SoftMaxPattern,
+    SqueezeDimPattern,
+    SqueezeDimsPattern,
+    SqueezePattern,
     SubTensorPattern,
     TanhInPlacePattern,
     TanhPattern,
     TransposeIntPattern,
+    UnsqueezePattern,
+    UpsampleBilinear2DPattern,
+    UpsampleNearest2DPattern,
     ViewPattern,
 )
 from executorch.backends.nxp.quantizer.utils import (
@@ -244,8 +260,12 @@ class NeutronQuantizer(ComposableQuantizer):
                 OpQuantizer(AdaptiveAvgPoolPattern(is_qat=is_qat), static_qconfig),
                 OpQuantizer(AddTensorPattern(is_qat=is_qat), static_qconfig),
                 OpQuantizer(AddmmPattern(self, is_qat=is_qat), static_fc_qconfig),
-                OpQuantizer(AvgPoolPattern(is_qat=is_qat), static_qconfig),
+                OpQuantizer(AvgPool1DPattern(is_qat=is_qat), static_qconfig),
+                OpQuantizer(AvgPool2DPattern(is_qat=is_qat), static_qconfig),
+                OpQuantizer(BatchNormPattern(is_qat=is_qat), static_qconfig),
+                OpQuantizer(BMMPattern(is_qat=is_qat), static_qconfig),
                 OpQuantizer(CatPattern(is_qat=is_qat), static_qconfig),
+                OpQuantizer(ClampPattern(is_qat=is_qat), static_qconfig),
                 OpQuantizer(Conv1dPattern(is_qat=is_qat), static_qconfig),
                 OpQuantizer(Conv2dPattern(self, is_qat=is_qat), static_qconfig),
                 OpQuantizer(ConvTranspose2dPattern(is_qat=is_qat), static_qconfig),
@@ -253,23 +273,34 @@ class NeutronQuantizer(ComposableQuantizer):
                 OpQuantizer(FlattenPattern(is_qat=is_qat), static_qconfig),
                 OpQuantizer(HardTanhPattern(is_qat=is_qat), static_qconfig),
                 OpQuantizer(HardTanhInPlacePattern(is_qat=is_qat), static_qconfig),
+                OpQuantizer(LeakyReluPattern(is_qat=is_qat), static_fc_qconfig),
+                OpQuantizer(LeakyReluInPlacePattern(is_qat=is_qat), static_fc_qconfig),
                 OpQuantizer(LinearPattern(self, is_qat=is_qat), static_fc_qconfig),
-                OpQuantizer(MaxPoolPattern(is_qat=is_qat), static_qconfig),
+                OpQuantizer(MaxPool1DPattern(is_qat=is_qat), static_qconfig),
+                OpQuantizer(MaxPool2DPattern(is_qat=is_qat), static_qconfig),
                 OpQuantizer(MeanDimPattern(is_qat=is_qat), static_qconfig),
                 OpQuantizer(MmPattern(self, is_qat=is_qat), static_qconfig),
                 OpQuantizer(MulTensorPattern(is_qat=is_qat), static_qconfig),
+                OpQuantizer(NegPattern(is_qat=is_qat), static_qconfig),
                 OpQuantizer(PadPattern(is_qat=is_qat), static_qconfig),
                 OpQuantizer(PermutePattern(is_qat=is_qat), static_qconfig),
+                OpQuantizer(PReLUPattern(is_qat=is_qat), static_qconfig),
                 OpQuantizer(ReluPattern(is_qat=is_qat), static_qconfig),
                 OpQuantizer(ReluInPlacePattern(is_qat=is_qat), static_qconfig),
                 OpQuantizer(ReshapePattern(is_qat=is_qat), static_qconfig),
                 OpQuantizer(SigmoidPattern(is_qat=is_qat), static_qconfig),
                 OpQuantizer(SliceTensorPattern(is_qat=is_qat), static_qconfig),
                 OpQuantizer(SoftMaxPattern(is_qat=is_qat), static_qconfig),
+                OpQuantizer(SqueezeDimPattern(is_qat=is_qat), static_qconfig),
+                OpQuantizer(SqueezeDimsPattern(is_qat=is_qat), static_qconfig),
+                OpQuantizer(SqueezePattern(is_qat=is_qat), static_qconfig),
                 OpQuantizer(SubTensorPattern(is_qat=is_qat), static_qconfig),
                 OpQuantizer(TanhPattern(is_qat=is_qat), static_qconfig),
                 OpQuantizer(TanhInPlacePattern(is_qat=is_qat), static_qconfig),
                 OpQuantizer(TransposeIntPattern(is_qat=is_qat), static_qconfig),
+                OpQuantizer(UnsqueezePattern(is_qat=is_qat), static_qconfig),
+                OpQuantizer(UpsampleBilinear2DPattern(is_qat=is_qat), static_qconfig),
+                OpQuantizer(UpsampleNearest2DPattern(is_qat=is_qat), static_qconfig),
                 OpQuantizer(ViewPattern(is_qat=is_qat), static_qconfig),
             ]
         )
@@ -293,7 +324,12 @@ class NeutronQuantizer(ComposableQuantizer):
     ) -> torch.fx.GraphModule:
         model.graph.eliminate_dead_code()  # Remove dead code to simplify the graph for the passes.
 
-        model = NeutronAtenPassManager(self.neutron_target_spec)(model).graph_module
+        pass_manager = NeutronAtenPassManager(
+            self.neutron_target_spec,
+            _get_default_passes(self.neutron_target_spec, self.is_qat),
+        )
+
+        model = pass_manager(model).graph_module
 
         model.graph.eliminate_dead_code()  # Remove dead code again, in case it was created by the passes.
 

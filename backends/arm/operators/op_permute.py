@@ -1,4 +1,4 @@
-# Copyright 2023-2025 Arm Limited and/or its affiliates.
+# Copyright 2023-2026 Arm Limited and/or its affiliates.
 #
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
@@ -23,14 +23,14 @@ from executorch.backends.arm.tosa.mapping import TosaArg
 
 
 def permutation_vector_to_matrix(permutation_vector: list[int]) -> torch.Tensor:
-    """
-    Converts a permutation vector of length N to a NxN matrix that describes the same permutation.
-    for example:
-    (1,0,2)
-    ->
-    [0 1 0]
-    |1 0 0|
-    [0 0 1]
+    """Convert a permutation vector of length N to an N x N matrix.
+
+    Example:
+        (1, 0, 2) ->
+        [0 1 0]
+        [1 0 0]
+        [0 0 1]
+
     """
     N = len(permutation_vector)
     P = torch.zeros(N, N)
@@ -40,13 +40,14 @@ def permutation_vector_to_matrix(permutation_vector: list[int]) -> torch.Tensor:
 
 
 def permutation_matrix_to_vector(permutation_matrix: torch.Tensor) -> list[int]:
-    """
-    Converts a NxN permutation matrix to a permutation vector of length N that describes the same permutation.
-    [0 1 0]
-    |1 0 0|
-    [0 0 1]
-    ->
-    (1,0,2)
+    """Convert an N x N permutation matrix to a permutation vector of length N.
+
+    Example:
+        [0 1 0]
+        [1 0 0]
+        [0 0 1]
+        -> (1, 0, 2)
+
     """
     N = len(permutation_matrix)
     if N != len(permutation_matrix[0]):
@@ -99,8 +100,6 @@ def transform_permutation_vector(permutation_vector: list[int], dim_order: list[
 class PermuteVisitor(NodeVisitor):
     target = "aten.permute_copy.default"
 
-    tosa_specs = NodeVisitor.tosa_specs
-
     def __init__(self, *args):
         super().__init__(*args)
 
@@ -111,19 +110,21 @@ class PermuteVisitor(NodeVisitor):
         inputs: List[TosaArg],
         output: TosaArg,
     ) -> None:
+        supported_dtypes = [ts.DType.BOOL]
+        if self.tosa_spec.support_integer():
+            supported_dtypes.extend([ts.DType.INT8, ts.DType.INT16, ts.DType.INT32])
+        if self.tosa_spec.support_float():
+            supported_dtypes.extend([ts.DType.FP16, ts.DType.FP32])
+        if self.tosa_spec.support_extension("bf16"):
+            supported_dtypes.append(ts.DType.BF16)
+
         validate_num_inputs(self.target, inputs, 2)
         validate_same_dtype(self.target, [inputs[0], output], ts)
         validate_valid_dtype(
             self.target,
             [inputs[0], output],
-            [
-                ts.DType.BOOL,
-                ts.DType.INT8,
-                ts.DType.INT16,
-                ts.DType.INT32,
-                ts.DType.FP32,
-            ],
-            output.tosa_spec,
+            supported_dtypes,
+            self.tosa_spec,
         )
 
         # The permutation vector describes a permutation P in default Pytorch dim_order.

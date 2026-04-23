@@ -38,10 +38,7 @@ def define_common_targets():
             "//executorch/runtime/kernel:kernel_includes",
             "//executorch/backends/cadence/generic/kernels:cadence_kernels",
         ],
-        visibility = [
-            "//executorch/backends/cadence/...",
-            "@EXECUTORCH_CLIENTS",
-        ],
+        visibility = ["PUBLIC"],
     )
 
     runtime.cxx_library(
@@ -53,10 +50,7 @@ def define_common_targets():
             "//executorch/runtime/kernel:kernel_includes",
             "//executorch/backends/cadence/generic/kernels:cadence_kernels",
         ],
-        visibility = [
-            "//executorch/backends/cadence/...",
-            "@EXECUTORCH_CLIENTS",
-        ],
+        visibility = ["PUBLIC"],
     )
 
     runtime.cxx_library(
@@ -69,10 +63,7 @@ def define_common_targets():
             "//executorch/runtime/core/exec_aten:lib",
             "//executorch/runtime/kernel:kernel_runtime_context",
         ],
-        visibility = [
-            "//executorch/backends/cadence/...",
-            "@EXECUTORCH_CLIENTS",
-        ],
+        visibility = ["PUBLIC"],
     )
 
     runtime.cxx_library(
@@ -85,10 +76,7 @@ def define_common_targets():
             "//executorch/runtime/core/exec_aten:lib",
             "//executorch/runtime/kernel:kernel_runtime_context",
         ],
-        visibility = [
-            "//executorch/backends/cadence/...",
-            "@EXECUTORCH_CLIENTS",
-        ],
+        visibility = ["PUBLIC"],
     )
 
     runtime.cxx_library(
@@ -102,10 +90,7 @@ def define_common_targets():
             "//executorch/runtime/core/exec_aten/util:tensor_util",
             "//executorch/runtime/kernel:kernel_runtime_context",
         ],
-        visibility = [
-            "//executorch/backends/cadence/...",
-            "@EXECUTORCH_CLIENTS",
-        ],
+        visibility = ["PUBLIC"],
     )
 
     runtime.cxx_library(
@@ -118,10 +103,7 @@ def define_common_targets():
             "//executorch/runtime/core/exec_aten:lib",
             "//executorch/runtime/kernel:kernel_runtime_context",
         ],
-        visibility = [
-            "//executorch/backends/cadence/...",
-            "@EXECUTORCH_CLIENTS",
-        ],
+        visibility = ["PUBLIC"],
     )
 
     runtime.cxx_library(
@@ -135,26 +117,55 @@ def define_common_targets():
             "//executorch/runtime/kernel:kernel_includes",
             ":quantized_op_macros",
         ],
-        visibility = [
-            "//executorch/backends/cadence/...",
-            "@EXECUTORCH_CLIENTS",
-        ],
+        visibility = ["PUBLIC"],
     )
 
     runtime.cxx_library(
-        name = "op_quantized_conv1d",
-        srcs = ["op_quantized_conv1d.cpp"],
-        exported_headers = ["op_quantized_conv1d.h"],
+        name = "op_quantized_conv1d_ncl",
+        srcs = ["op_quantized_conv1d_ncl.cpp"],
+        exported_headers = ["op_quantized_conv1d_ncl.h"],
         platforms = CXX,
         deps = [
             ":cadence_type_util",
             "//executorch/backends/cadence/generic/kernels:cadence_kernels",
             "//executorch/runtime/kernel:kernel_includes",
         ],
-        visibility = [
-            "//executorch/backends/cadence/...",
-            "@EXECUTORCH_CLIENTS",
+        visibility = ["PUBLIC"],
+    )
+
+    runtime.cxx_library(
+        name = "op_quantized_conv1d_nlc",
+        srcs = ["op_quantized_conv1d_nlc.cpp"],
+        exported_headers = ["op_quantized_conv1d_nlc.h"],
+        platforms = CXX,
+        deps = [
+            ":cadence_type_util",
+            "//executorch/backends/cadence/generic/kernels:cadence_kernels",
+            "//executorch/runtime/kernel:kernel_includes",
         ],
+        visibility = ["PUBLIC"],
+    )
+
+    runtime.cxx_library(
+        name = "op_quantized_depthwise_conv1d_ncl",
+        srcs = ["op_quantized_depthwise_conv1d_ncl.cpp"],
+        platforms = CXX,
+        deps = [
+            ":op_quantized_conv1d_ncl",
+            "//executorch/runtime/kernel:kernel_includes",
+        ],
+        visibility = ["PUBLIC"],
+    )
+
+    runtime.cxx_library(
+        name = "op_quantized_depthwise_conv1d_nlc",
+        srcs = ["op_quantized_depthwise_conv1d_nlc.cpp"],
+        platforms = CXX,
+        deps = [
+            ":op_quantized_conv1d_nlc",
+            "//executorch/runtime/kernel:kernel_includes",
+        ],
+        visibility = ["PUBLIC"],
     )
 
     runtime.cxx_library(
@@ -167,10 +178,7 @@ def define_common_targets():
             "//executorch/backends/cadence/generic/kernels:cadence_kernels",
             "//executorch/runtime/kernel:kernel_includes",
         ],
-        visibility = [
-            "//executorch/backends/cadence/...",
-            "@EXECUTORCH_CLIENTS",
-        ],
+        visibility = ["PUBLIC"],
     )
 
     runtime.cxx_library(
@@ -184,10 +192,7 @@ def define_common_targets():
             ":quantized_linear",
             ":quantized_op_macros",
         ],
-        visibility = [
-            "//executorch/backends/cadence/...",
-            "@EXECUTORCH_CLIENTS",
-        ],
+        visibility = ["PUBLIC"],
     )
 
     runtime.cxx_library(
@@ -200,10 +205,7 @@ def define_common_targets():
             "//executorch/runtime/kernel:kernel_includes",
             ":quantized_op_macros",
         ],
-        visibility = [
-            "//executorch/backends/cadence/...",
-            "@EXECUTORCH_CLIENTS",
-        ],
+        visibility = ["PUBLIC"],
     )
 
     runtime.cxx_library(
@@ -217,10 +219,7 @@ def define_common_targets():
             ":quantized_op_macros",
             ":quantized_linear",
         ],
-        visibility = [
-            "//executorch/backends/cadence/...",
-            "@EXECUTORCH_CLIENTS",
-        ],
+        visibility = ["PUBLIC"],
     )
 
     runtime.cxx_library(
@@ -233,10 +232,31 @@ def define_common_targets():
             "//executorch/runtime/kernel:kernel_includes",
             ":quantized_op_macros",
         ],
-        visibility = [
-            "//executorch/backends/cadence/...",
-            "@EXECUTORCH_CLIENTS",
+        visibility = ["PUBLIC"],
+    )
+
+    runtime.cxx_library(
+        name = "op_quantized_max_pool2d",
+        srcs = ["op_quantized_max_pool2d.cpp"],
+        exported_headers = ["op_quantized_max_pool2d.h"],
+        platforms = CXX,
+        deps = [
+            "//executorch/runtime/kernel:kernel_includes",
+            ":cadence_type_util",
         ],
+        visibility = ["PUBLIC"],
+    )
+
+    runtime.cxx_library(
+        name = "op_quantized_max_pool2d_nhwc",
+        srcs = ["op_quantized_max_pool2d_nhwc.cpp"],
+        exported_headers = ["op_quantized_max_pool2d_nhwc.h"],
+        platforms = CXX,
+        deps = [
+            "//executorch/runtime/kernel:kernel_includes",
+            ":cadence_type_util",
+        ],
+        visibility = ["PUBLIC"],
     )
 
     runtime.cxx_library(
@@ -249,10 +269,7 @@ def define_common_targets():
             "//executorch/runtime/kernel:kernel_includes",
             ":quantized_op_macros",
         ],
-        visibility = [
-            "//executorch/backends/cadence/...",
-            "@EXECUTORCH_CLIENTS",
-        ],
+        visibility = ["PUBLIC"],
     )
 
     runtime.cxx_library(
@@ -266,10 +283,7 @@ def define_common_targets():
             "//executorch/kernels/portable/cpu:scalar_utils",
             ":quantized_op_macros",
         ],
-        visibility = [
-            "//executorch/backends/cadence/...",
-            "@EXECUTORCH_CLIENTS",
-        ],
+        visibility = ["PUBLIC"],
     )
 
     runtime.cxx_library(
@@ -284,10 +298,7 @@ def define_common_targets():
             "//executorch/runtime/kernel:kernel_includes",
             ":quantized_op_macros",
         ],
-        visibility = [
-            "//executorch/backends/cadence/...",
-            "@EXECUTORCH_CLIENTS",
-        ],
+        visibility = ["PUBLIC"],
     )
 
     runtime.cxx_library(
@@ -299,10 +310,7 @@ def define_common_targets():
             "//executorch/runtime/kernel:kernel_includes",
             ":quantized_op_macros",
         ],
-        visibility = [
-            "//executorch/backends/cadence/...",
-            "@EXECUTORCH_CLIENTS",
-        ],
+        visibility = ["PUBLIC"],
     )
 
     runtime.cxx_library(
@@ -315,10 +323,7 @@ def define_common_targets():
             "//executorch/runtime/kernel:kernel_includes",
             ":quantized_op_macros",
         ],
-        visibility = [
-            "//executorch/backends/cadence/...",
-            "@EXECUTORCH_CLIENTS",
-        ],
+        visibility = ["PUBLIC"],
     )
 
 
@@ -334,10 +339,7 @@ def define_common_targets():
             "//executorch/runtime/core/exec_aten:lib",
             "//executorch/runtime/kernel:kernel_runtime_context",
         ],
-        visibility = [
-            "//executorch/backends/cadence/...",
-            "@EXECUTORCH_CLIENTS",
-        ],
+        visibility = ["PUBLIC"],
     )
 
     runtime.cxx_library(
@@ -348,10 +350,7 @@ def define_common_targets():
         deps = [
             "//executorch/runtime/kernel:kernel_includes",
         ],
-        visibility = [
-            "//executorch/backends/cadence/...",
-            "@EXECUTORCH_CLIENTS",
-        ],
+        visibility = ["PUBLIC"],
     )
 
     runtime.cxx_library(
@@ -362,10 +361,7 @@ def define_common_targets():
         deps = [
             "//executorch/runtime/kernel:kernel_includes",
         ],
-        visibility = [
-            "//executorch/backends/cadence/...",
-            "@EXECUTORCH_CLIENTS",
-        ],
+        visibility = ["PUBLIC"],
     )
 
     runtime.cxx_library(
@@ -376,10 +372,7 @@ def define_common_targets():
         deps = [
             "//executorch/runtime/kernel:kernel_includes",
         ],
-        visibility = [
-            "//executorch/backends/cadence/...",
-            "@EXECUTORCH_CLIENTS",
-        ],
+        visibility = ["PUBLIC"],
     )
 
     runtime.cxx_library(
@@ -392,10 +385,7 @@ def define_common_targets():
             "//executorch/runtime/core/exec_aten:lib",
             "//executorch/runtime/kernel:kernel_runtime_context",
         ],
-        visibility = [
-            "//executorch/backends/cadence/...",
-            "@EXECUTORCH_CLIENTS",
-        ],
+        visibility = ["PUBLIC"],
     )
 
     runtime.cxx_library(
@@ -406,10 +396,7 @@ def define_common_targets():
         deps = [
             "//executorch/runtime/kernel:kernel_includes",
         ],
-        visibility = [
-            "//executorch/backends/cadence/...",
-            "@EXECUTORCH_CLIENTS",
-        ],
+        visibility = ["PUBLIC"],
     )
 
     runtime.cxx_library(
@@ -422,10 +409,7 @@ def define_common_targets():
             "//executorch/runtime/core/exec_aten:lib",
             "//executorch/runtime/kernel:kernel_runtime_context",
         ],
-        visibility = [
-            "//executorch/backends/cadence/...",
-            "@EXECUTORCH_CLIENTS",
-        ],
+        visibility = ["PUBLIC"],
     )
 
     runtime.cxx_library(
@@ -438,10 +422,7 @@ def define_common_targets():
             "//executorch/runtime/core/exec_aten:lib",
             "//executorch/runtime/kernel:kernel_runtime_context",
         ],
-        visibility = [
-            "//executorch/backends/cadence/...",
-            "@EXECUTORCH_CLIENTS",
-        ],
+        visibility = ["PUBLIC"],
     )
 
     runtime.cxx_library(
@@ -457,10 +438,7 @@ def define_common_targets():
         exported_deps = [
             "//executorch/runtime/kernel:kernel_includes",
         ],
-        visibility = [
-            "//executorch/backends/cadence/...",
-            "@EXECUTORCH_CLIENTS",
-        ],
+        visibility = ["PUBLIC"],
     )
 
     runtime.cxx_library(
@@ -476,10 +454,7 @@ def define_common_targets():
         exported_deps = [
             "//executorch/runtime/kernel:kernel_includes",
         ],
-        visibility = [
-            "//executorch/backends/cadence/...",
-            "@EXECUTORCH_CLIENTS",
-        ],
+        visibility = ["PUBLIC"],
     )
 
     runtime.cxx_library(
@@ -493,8 +468,18 @@ def define_common_targets():
         exported_deps = [
             "//executorch/runtime/kernel:kernel_includes",
         ],
-        visibility = [
-            "//executorch/backends/cadence/...",
-            "@EXECUTORCH_CLIENTS",
+        visibility = ["PUBLIC"],
+    )
+
+    runtime.cxx_library(
+        name = "op_sdpa_bitwise_mask_gen",
+        srcs = ["op_sdpa_bitwise_mask_gen.cpp"],
+        exported_headers = ["op_sdpa_bitwise_mask_gen.h"],
+        platforms = CXX,
+        deps = [
+            "//executorch/runtime/kernel:kernel_includes",
+            "//executorch/runtime/core/exec_aten:lib",
+            "//executorch/runtime/kernel:kernel_runtime_context",
         ],
+        visibility = ["PUBLIC"],
     )

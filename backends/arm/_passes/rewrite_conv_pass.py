@@ -1,15 +1,14 @@
-# Copyright 2025 Arm Limited and/or its affiliates.
+# Copyright 2025-2026 Arm Limited and/or its affiliates.
 #
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
 
 
 import itertools
-from typing import Set, Type
+from typing import Any, Set, Type
 
 import torch
 from executorch.backends.arm._passes import ArmPass
-
 from executorch.backends.arm._passes.arm_pass_utils import (
     create_node,
     expand_around_channel,
@@ -24,14 +23,18 @@ from executorch.backends.arm._passes.fold_qdq_with_annotated_qparams_pass import
 )
 from executorch.backends.arm.constants import HWCM_ORDER, NHWC_INVERSE_ORDER
 from executorch.backends.arm.tosa.mapping import TosaSpecialDtype
+from executorch.backends.arm.tosa.specification import get_context_shape_env
 from executorch.backends.transforms.utils import create_constant_placeholder
 from executorch.exir.dialects._ops import ops as exir_ops
 from executorch.exir.pass_base import ExportPass, PassResult
+
 from torch.export.graph_signature import InputKind
 
 
 class RewriteConvPass(ArmPass):
-    """Rewrites aten.convolution to tosa.CONV2D or tosa.DEPTHWISE_CONV2D."""
+    """Rewrites aten.convolution to TOSA conv ops
+    (CONV2D/DEPTHWISE/TRANSPOSE/CONV3D).
+    """
 
     def __init__(self, exported_program: torch.export.ExportedProgram, *args, **kwargs):
         super().__init__(*args, **kwargs)
@@ -44,8 +47,13 @@ class RewriteConvPass(ArmPass):
     # to be an integer, but tosa currently strictly require this property.
     # This function adjusts the pad value to meet the requirement.
     def _adjust_pad_if_needed(
-        self, input_len: int, input_weight: int, stride: int, pad: int, dilation: int
-    ) -> int:
+        self,
+        input_len: int | torch.SymInt,
+        input_weight: int,
+        stride: int,
+        pad: int | torch.SymInt,
+        dilation: int,
+    ) -> int | torch.SymInt:
         """Adjust padding to satisfy TOSA's integer output-size requirement.
 
         Torch ``Conv2d`` does not require the result of
@@ -73,11 +81,16 @@ class RewriteConvPass(ArmPass):
             input_len + 2 * pad - dilation * (input_weight - 1) - 1
         ) % stride
 
-        # No need to adjust
-        if mod_remainder == 0:
-            return pad
+        if isinstance(mod_remainder, torch.SymInt):
+            shape_env = get_context_shape_env()
+            value_ranges = shape_env.bound_sympy(mod_remainder.node.expr)
+            mod_remainder_upper = int(value_ranges.upper)
+            if mod_remainder_upper == 0:
+                mod_remainder = 0
+        else:
+            mod_remainder_upper = mod_remainder
 
-        if mod_remainder > pad:
+        if mod_remainder_upper > pad:
             raise RuntimeError(
                 "This case should be handled by the SizeAdjustInputPass, is it enabled?"
             )
@@ -111,9 +124,10 @@ class RewriteConvPass(ArmPass):
         return False
 
     def _reshape_weights(self, weight_node: torch.fx.Node, in_channels: int) -> None:
-        """Reshape the weights for depthwise convolution such that when serialized to TOSA,
-        the weights are in the format [H, W, in_channels, m_length] where
-        m_length is the number of output channels per input channel.
+        """Reshape the weights for depthwise convolution such that when
+        serialized to TOSA, the weights are in the format [H, W, in_channels,
+        m_length] where m_length is the number of output channels per input
+        channel.
         """
         weight_tensor = get_param_tensor(self.exported_program, weight_node)  # type: ignore[arg-type]
         if weight_tensor is None:
@@ -164,11 +178,12 @@ class RewriteConvPass(ArmPass):
         weight_node: torch.fx.Node,
     ) -> torch.fx.Node:
         output_channels = get_first_fake_tensor(node).shape[1]
-        # add a node containging zeros if quantized, use int32, otherwise use float32
-        if "output_qparams" in node.meta and len(node.meta["output_qparams"]) > 0:
+        # add a node containing zeros if quantized, use int32, otherwise use float32
+        if self._is_quantized_conv(node):
             bias_data = torch.zeros(size=(output_channels,), dtype=torch.int32)
         else:
-            bias_data = torch.zeros(size=(output_channels,), dtype=torch.float32)
+            output_dtype = node.meta["val"].dtype
+            bias_data = torch.zeros(size=(output_channels,), dtype=output_dtype)
 
         with graph_module.graph.inserting_after(weight_node):
             bias_node = create_constant_placeholder(
@@ -184,9 +199,40 @@ class RewriteConvPass(ArmPass):
         node.update_arg(2, bias_node)
         return bias_node
 
-    def insert_output_rescale(self, graph_module, node):
-        input_qparams = get_input_qparams(node)
-        output_qparams = get_output_qparams(node)[0]
+    def _is_quantized_conv(self, node: torch.fx.Node) -> bool:
+        return bool(node.meta.get("input_qparams", {}))
+
+    def _get_effective_output_qparams(self, node: torch.fx.Node):
+        """Return the quantized output domain for a conv node.
+
+        Quantization annotation may place output qparams on a following
+        activation instead of on the conv itself. If that activation is not
+        fuseable, it survives as a quantized ``clamp`` and still owns the
+        branch output qparams needed for the conv output rescale.
+
+        """
+        output_qparams = node.meta.get("output_qparams", {})
+        if output_qparams:
+            return output_qparams
+
+        users = list(node.users)
+        if len(users) != 1:
+            raise ValueError(
+                f"RewriteConvPass: No output quantization parameter found in node {node}\n"
+                f"original_aten={node.meta.get('original_aten', 'None')}"
+            )
+
+        activation = users[0]
+        if activation.target == exir_ops.edge.aten.clamp.default:
+            activation_output_qparams = activation.meta.get("output_qparams", {})
+            if activation_output_qparams:
+                return activation_output_qparams
+
+        return get_output_qparams(node)
+
+    def insert_output_rescale(self, graph_module, source_node, conv_node):
+        input_qparams = get_input_qparams(source_node)
+        output_qparams = self._get_effective_output_qparams(source_node)[0]
         weight_qparams = input_qparams[1]
         input_qparams = input_qparams[0]
         is_per_channel = weight_qparams.per_channel
@@ -203,18 +249,18 @@ class RewriteConvPass(ArmPass):
                 itertools.cycle([output_qparams.get_scale_per_tensor()]),
             )
         ]
-        with graph_module.graph.inserting_after(node):
+        with graph_module.graph.inserting_after(conv_node):
             rescale_node = create_node(
                 graph=graph_module.graph,
                 op_target=exir_ops.backend.tosa.RESCALE.default,
                 args=(
-                    node,
+                    conv_node,
                     output_qparams.dtype,
                     post_conv2d_scale,
                     0,
                     output_qparams.get_zp_per_tensor(),
                 ),
-                from_node=node,
+                from_node=source_node,
             )
         return rescale_node
 
@@ -236,8 +282,8 @@ class RewriteConvPass(ArmPass):
                 stride,
                 pad,
                 dilation,
-                _,
-                _,
+                transposed,
+                output_padding,
                 group,
             ) = node.args
 
@@ -250,47 +296,78 @@ class RewriteConvPass(ArmPass):
             dilation_list = expand_around_channel(dilation, spatial_rank)
             pad_list = expand_around_channel(pad, spatial_rank)
 
-            pad_attr: list[int] = []
-            for value in pad_list:
-                pad_attr.extend([value, value])  # duplicate pad before/after per axis
-
-            for axis_index in range(spatial_rank):
-                pad_index = axis_index * 2 + 1  # adjust trailing pad entry
-                pad_attr[pad_index] = self._adjust_pad_if_needed(
-                    input_shape[axis_index + 2],
-                    weight_shape[axis_index + 2],
-                    stride_list[axis_index],
-                    pad_attr[pad_index],
-                    dilation_list[axis_index],
-                )
-
             stride = tuple(stride_list)
-            dilation = tuple(dilation_list)
-            pad = pad_attr
 
             has_bias = bias is not None
             if not has_bias:
                 bias = self._add_bias(graph_module, node, weight)
 
-            if self._is_conv3d(len(input_shape), group):
-                target_op = exir_ops.backend.tosa.CONV3D.default
-            elif self._is_depthwise_conv2d(node):
-                target_op = exir_ops.backend.tosa.DEPTHWISE_CONV2D.default
-                # If there are any TOSA.DEPTHWISE_CONV2D nodes using the weights, we've already reshaped them.
-                if all(user.target != target_op for user in weight.users):
-                    self._reshape_weights(weight, input_fake_tensor.shape[1])
-                weight_fake_tensor = get_first_fake_tensor(weight)
+            conv_args: tuple[Any, ...]
+            if transposed:
+                if spatial_rank != 2:
+                    raise RuntimeError(
+                        "Only 2D transpose convolutions are supported in the Arm backend."
+                    )
+                if any(d != 1 for d in dilation_list):
+                    raise RuntimeError(
+                        "Transpose convolutions with dilation are not supported in the Arm backend."
+                    )
+                output_padding_list = expand_around_channel(
+                    output_padding, spatial_rank
+                )
+                out_pad = [
+                    -pad_list[0],
+                    -pad_list[0] + output_padding_list[0],
+                    -pad_list[1],
+                    -pad_list[1] + output_padding_list[1],
+                ]
+                target_op = exir_ops.backend.tosa.TRANSPOSE_CONV2D.default
+                conv_args = (
+                    x,
+                    weight,
+                    bias,
+                    out_pad,
+                    stride,
+                )
             else:
-                target_op = exir_ops.backend.tosa.CONV2D.default
+                pad_attr: list[int | torch.SymInt] = []
+                for value in pad_list:
+                    pad_attr.extend(
+                        [value, value]
+                    )  # duplicate pad before/after per axis
 
-            conv_args = (
-                x,
-                weight,
-                bias,
-                stride,
-                pad,
-                dilation,
-            )
+                for axis_index in range(spatial_rank):
+                    pad_index = axis_index * 2 + 1  # adjust trailing pad entry
+                    pad_attr[pad_index] = self._adjust_pad_if_needed(
+                        input_shape[axis_index + 2],
+                        weight_shape[axis_index + 2],
+                        stride_list[axis_index],
+                        pad_attr[pad_index],
+                        dilation_list[axis_index],
+                    )
+
+                dilation = tuple(dilation_list)
+                pad = pad_attr
+
+                if self._is_conv3d(len(input_shape), group):
+                    target_op = exir_ops.backend.tosa.CONV3D.default
+                elif self._is_depthwise_conv2d(node):
+                    target_op = exir_ops.backend.tosa.DEPTHWISE_CONV2D.default
+                    # If there are any TOSA.DEPTHWISE_CONV2D nodes using the weights, we've already reshaped them.
+                    if all(user.target != target_op for user in weight.users):
+                        self._reshape_weights(weight, input_fake_tensor.shape[1])
+                    weight_fake_tensor = get_first_fake_tensor(weight)
+                else:
+                    target_op = exir_ops.backend.tosa.CONV2D.default
+
+                conv_args = (
+                    x,
+                    weight,
+                    bias,
+                    stride,
+                    pad,
+                    dilation,
+                )
 
             with graph_module.graph.inserting_after(node):
                 tosa_op = create_node(
@@ -312,7 +389,7 @@ class RewriteConvPass(ArmPass):
                 tosa_node_fake_tensor.dtype == torch.int32
                 and input_fake_tensor.dtype == torch.int8
             ):
-                output_rescale = self.insert_output_rescale(graph_module, tosa_op)
+                output_rescale = self.insert_output_rescale(graph_module, node, tosa_op)
                 node.replace_all_uses_with(output_rescale)
             elif (
                 tosa_node_fake_tensor.dtype == torch.int32
@@ -320,7 +397,9 @@ class RewriteConvPass(ArmPass):
             ):
                 has_bias = len(node.meta["input_qparams"]) > 2
                 if not has_bias:
-                    output_rescale = self.insert_output_rescale(graph_module, tosa_op)
+                    output_rescale = self.insert_output_rescale(
+                        graph_module, node, tosa_op
+                    )
                     node.replace_all_uses_with(output_rescale)
                 else:
                     node.replace_all_uses_with(tosa_op)

@@ -68,13 +68,12 @@ Tensor& permute_copy_out(
       InvalidArgument,
       out);
 
-  const auto in_type = out.scalar_type();
-  constexpr int kNnlibMaxDim = 16;
+  const auto in_type = in.scalar_type();
+  constexpr int kNnlibMaxDim = 5;
 
   bool optimized = false;
 
-  if (out.scalar_type() == ScalarType::Float ||
-      out.scalar_type() == ScalarType::Char ||
+  if (out.scalar_type() == ScalarType::Char ||
       out.scalar_type() == ScalarType::Byte)
     optimized = true;
 
@@ -91,26 +90,17 @@ Tensor& permute_copy_out(
 
     for (int i = 0; i < num_inp_dims; i++) {
       p_inp_shape[i] = in.size(i);
-      p_out_shape[i] = in.size(dims[i]);
+    }
+
+    for (int i = 0; i < num_out_dims; i++) {
+      p_out_shape[i] = out.size(i);
+    }
+
+    for (int i = 0; i < num_inp_dims; i++) {
       p_permute_vec[i] = dims[i];
     }
 
-    if (in_type == ScalarType::Float) {
-      WORD32* p_inp = (WORD32*)in.const_data_ptr<float>();
-      WORD32* p_out = (WORD32*)out.mutable_data_ptr<float>();
-
-      WORD32 ret_val = xa_nn_transpose_32_32(
-          p_out,
-          p_out_shape,
-          p_inp,
-          p_inp_shape,
-          p_permute_vec,
-          num_out_dims,
-          num_inp_dims);
-
-      ET_KERNEL_CHECK(ctx, ret_val == 0, Internal, out);
-
-    } else if (in_type == ScalarType::Char) {
+    if (in_type == ScalarType::Char) {
       WORD8* p_inp = (WORD8*)in.const_data_ptr<char>();
       WORD8* p_out = (WORD8*)out.mutable_data_ptr<char>();
 

@@ -26,7 +26,7 @@ You may encounter some rough edges and features which may be documented or plann
 ```{tip}
 If you are already familiar with this delegate, you may want to jump directly to the examples:
 * [Examples in the ExecuTorch repository](https://github.com/pytorch/executorch/tree/main/examples/arm)
-* [A commandline compiler for example models](https://github.com/pytorch/executorch/blob/main/examples/arm/aot_arm_compiler.py)
+* [A commandline compiler for example models](https://github.com/pytorch/executorch/blob/main/backends/arm/scripts/aot_arm_compiler.py)
 ```
 
 This tutorial serves as an introduction to using ExecuTorch to deploy PyTorch models on VGF targets. The tutorial is based on `vgf_minimal_example.ipyb`, provided in Arm's example folder.
@@ -73,7 +73,7 @@ Make sure the executable is located where you expect, in the `examples/arm` tree
 
 The ExecuTorch Ahead-of-Time (AOT) pipeline takes a PyTorch Model (a `torch.nn.Module`) and produces a `.pte` binary file, which is then typically consumed by the ExecuTorch Runtime. This [document](https://github.com/pytorch/executorch/blob/main/docs/source/getting-started-architecture.md) goes in much more depth about the ExecuTorch software stack for both AoT as well as Runtime.
 
-The example below shows how to quantize a model consisting of a single addition, and export it it through the AOT flow using the VGF backend. For more details, se `examples/arm/vgf_minimal_example.ipynb`.
+The example below shows how to quantize a model consisting of a single addition, and export it through the AOT flow using the VGF backend. For more details, see `examples/arm/vgf_minimal_example.ipynb`.
 
 ```python
 import torch
@@ -91,7 +91,7 @@ example_inputs = (torch.ones(1,1,1,1),torch.ones(1,1,1,1))
 model = AddSigmoid()
 model = model.eval()
 exported_program = torch.export.export(model, example_inputs)
-graph_module = exported_program.graph_module
+graph_module = exported_program.module(check_guards=False)
 
 
 from executorch.backends.arm.quantizer import (
@@ -108,11 +108,13 @@ compile_spec = VgfCompileSpec()
 quantizer = VgfQuantizer(compile_spec)
 operator_config = get_symmetric_quantization_config(is_per_channel=False)
 
-# Set default quantization config for the layers in the models.
+# Set global (default) quantization config for the layers in the models.
 # Can also be set to `None` to let layers run in FP as default.
 quantizer.set_global(operator_config)
 
-# OPTIONAL: skip quantizing all sigmoid ops (only one for this model); let it run in FP
+# Skip quantizing all sigmoid ops (only one for this model); let it run in FP.
+# This step is optional; selecting which layers to include/exclude for
+# quantization is part of optimizing the model's performance.
 quantizer.set_module_type(torch.nn.Sigmoid, None)
 
 # Post training quantization
@@ -161,9 +163,9 @@ assert os.path.exists(pte_path), "Build failed; no .pte-file found"
 
 
 ```{tip}
-For a quick start, you can use the script `examples/arm/aot_arm_compiler.py` to produce the pte.
+For a quick start, you can use the script `backends/arm/scripts/aot_arm_compiler.py` to produce the pte.
 To produce a pte file equivalent to the one above, run
-`python -m examples.arm.aot_arm_compiler --model_name=add --delegate --quantize --output=simple_example.pte --target=vgf` 
+`python -m backends.arm.scripts.aot_arm_compiler --model_name=add --delegate --quantize --output=simple_example.pte --target=vgf`
 ```
 
 ### Runtime:
@@ -189,7 +191,7 @@ cmake \
   -DPYTHON_EXECUTABLE=python \
   -Bcmake-out .
 
-cmake --build cmake-out --target executor_runner`
+cmake --build cmake-out --target executor_runner
 ```
 
 

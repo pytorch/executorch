@@ -5,13 +5,11 @@ on:
     - cron: 0 2 * * *
   push:
     branches:
+      - main
       - release/*
     tags:
       - ciflow/nightly/*
   pull_request:
-    paths:
-      - .github/workflows/test-backend-xnnpack.yml
-      - .github/workflows/_test_backend.yml
   workflow_dispatch:
 
 concurrency:
@@ -23,7 +21,10 @@ jobs:
     uses: ./.github/workflows/_test_backend.yml
     with:
       backend: xnnpack
-      flows: '["xnnpack", "xnnpack_dynamic_int8_per_channel", "xnnpack_static_int8_per_channel", "xnnpack_static_int8_per_tensor"]'
+      flows: >-
+        ${{ github.event_name == 'pull_request'
+            && '["xnnpack"]'
+            || '["xnnpack", "xnnpack_dynamic_int8_per_channel", "xnnpack_static_int8_per_channel", "xnnpack_static_int8_per_tensor"]' }}
       ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
       timeout: 120
       run-linux: true

@@ -1,4 +1,4 @@
-# Copyright 2025 Arm Limited and/or its affiliates.
+# Copyright 2025-2026 Arm Limited and/or its affiliates.
 #
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
@@ -30,24 +30,20 @@ def _get_ops(op):
         if op is exir_ops.edge.aten.add.Tensor:
             return (
                 exir_ops.edge.aten.mul.Tensor,
-                exir_ops.edge.aten.full.default,
                 exir_ops.edge.aten.add.Tensor,
             )
         return (
             torch.ops.aten.mul.Tensor,
-            torch.ops.aten.full.default,
             torch.ops.aten.add.Tensor,
         )
     if op in _SUB_OPS:
         if op is exir_ops.edge.aten.sub.Tensor:
             return (
                 exir_ops.edge.aten.mul.Tensor,
-                exir_ops.edge.aten.full.default,
                 exir_ops.edge.aten.sub.Tensor,
             )
         return (
             torch.ops.aten.mul.Tensor,
-            torch.ops.aten.full.default,
             torch.ops.aten.sub.Tensor,
         )
     raise RuntimeError(f"Unsupported operator {op}")
@@ -72,15 +68,12 @@ class DecomposeAddSubAlphaPass(ArmPass):
         if not _should_decompose(alpha):
             return super().call_operator(op, args, kwargs, meta, updated)
 
-        mul_op, full_op, binary_op = _get_ops(op)
+        mul_op, binary_op = _get_ops(op)
         lhs, rhs = args
 
-        alpha_full = super().call_operator(
-            full_op, ((1,), float(alpha)), {}, meta, updated=True
-        )
         scaled_rhs = super().call_operator(
             mul_op,
-            (rhs, alpha_full),
+            (rhs, super().call_scalar(alpha, meta)),
             {},
             meta,
             updated=True,

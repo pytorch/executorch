@@ -10,10 +10,7 @@ runtime.python_library(
     srcs = [
         "xnnpack_graph_schema.py",
     ],
-    visibility = [
-        "//executorch/...",
-        "@EXECUTORCH_CLIENTS",
-    ],
+    visibility = ["PUBLIC"],
 )
 
 runtime.python_library(
@@ -24,10 +21,7 @@ runtime.python_library(
     resources = [
         "schema.fbs",
     ],
-    visibility = [
-        "//executorch/...",
-        "@EXECUTORCH_CLIENTS",
-    ],
+    visibility = ["PUBLIC"],
     deps = [
         ":xnnpack_schema",
         "//executorch/exir/_serialize:lib",

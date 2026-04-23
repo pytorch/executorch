@@ -1,4 +1,4 @@
-# Copyright 2025 Arm Limited and/or its affiliates.
+# Copyright 2025-2026 Arm Limited and/or its affiliates.
 #
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
@@ -10,8 +10,8 @@ from typing import Any
 
 
 class SoftmaxDecompositionConfig(Enum):
-    MASKED = auto()
-    UNSTABLE = auto()
+    MASKED = auto()  # Stable softmax + masked fill decomposition
+    STABLE = auto()  # Stable softmax, no masked fill decomposition
 
 
 class FuseDuplicateUsersConfig(Enum):
@@ -23,9 +23,6 @@ class FuseDuplicateUsersConfig(Enum):
 class ArmPassPipelineConfig:
     softmax: SoftmaxDecompositionConfig = SoftmaxDecompositionConfig.MASKED
     fuse_duplicate_users: FuseDuplicateUsersConfig = FuseDuplicateUsersConfig.ENABLED
-
-    def disable_masked_softmax(self) -> None:
-        self.softmax = SoftmaxDecompositionConfig.UNSTABLE
 
     def disable_fuse_duplicate_users(self) -> None:
         self.fuse_duplicate_users = FuseDuplicateUsersConfig.DISABLED

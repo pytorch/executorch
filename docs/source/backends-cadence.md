@@ -197,7 +197,7 @@ In all cases the generated file is called `CadenceDemoModel.pte`.
 
 ***Speech/Audio Models***:
 
-The torchaudio [RNNT-emformer](https://pytorch.org/audio/stable/tutorials/online_asr_tutorial.html) model is an Automatic Speech Recognition (ASR) model, comprised of three different submodels:
+The torchaudio [RNNT-emformer](https://docs.pytorch.org/audio/stable/generated/torchaudio.pipelines.EMFORMER_RNNT_BASE_LIBRISPEECH.html) model is an Automatic Speech Recognition (ASR) model, comprised of three different submodels:
 
 - **RNNT Predictor**: Sequence of basic ops (embedding, ReLU, linear, layer norm)
   ```bash

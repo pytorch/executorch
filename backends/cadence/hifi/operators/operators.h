@@ -158,6 +158,7 @@ void quantized_conv2d_nhwc_per_tensor_out(
     int64_t output_zero_point,
     int64_t out_multiplier,
     int64_t out_shift,
+    const ::executorch::aten::optional<::executorch::aten::Tensor>& offset,
     ::executorch::aten::Tensor& out);
 
 ::executorch::aten::Tensor& cat_out(
@@ -194,6 +195,35 @@ void quantized_add_asym8uxasym8u_asym8u_per_tensor_out(
     int64_t Y_zero_point,
     double out_scale,
     int64_t out_zero_point,
+    ::executorch::aten::Tensor& out);
+
+void im2row_out(
+    ::executorch::runtime::KernelRuntimeContext& ctx,
+    const ::executorch::aten::Tensor& input,
+    ::executorch::aten::IntArrayRef kernel_size,
+    ::executorch::aten::IntArrayRef dilation,
+    ::executorch::aten::IntArrayRef padding,
+    ::executorch::aten::IntArrayRef stride,
+    const ::executorch::aten::Tensor& in_zero_point,
+    bool channel_last,
+    ::executorch::aten::Tensor& out);
+
+void im2row_per_tensor_out(
+    ::executorch::runtime::KernelRuntimeContext& ctx,
+    const ::executorch::aten::Tensor& input,
+    ::executorch::aten::IntArrayRef kernel_size,
+    ::executorch::aten::IntArrayRef dilation,
+    ::executorch::aten::IntArrayRef padding,
+    ::executorch::aten::IntArrayRef stride,
+    int64_t in_zero_point,
+    bool channel_last,
+    ::executorch::aten::Tensor& out);
+
+::executorch::aten::Tensor& transpose_copy_int_out(
+    ::executorch::runtime::KernelRuntimeContext& ctx,
+    const ::executorch::aten::Tensor& in,
+    int64_t dim0,
+    int64_t dim1,
     ::executorch::aten::Tensor& out);
 
 } // namespace native

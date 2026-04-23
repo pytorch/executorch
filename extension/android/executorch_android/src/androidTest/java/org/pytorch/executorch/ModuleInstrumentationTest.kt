@@ -7,9 +7,7 @@
  */
 package org.pytorch.executorch
 
-import android.Manifest
 import androidx.test.ext.junit.runners.AndroidJUnit4
-import androidx.test.rule.GrantPermissionRule
 import java.io.File
 import java.io.IOException
 import java.net.URISyntaxException
@@ -20,7 +18,6 @@ import org.apache.commons.io.FileUtils
 import org.junit.Assert
 import org.junit.Before
 import org.junit.Ignore
-import org.junit.Rule
 import org.junit.Test
 import org.junit.runner.RunWith
 import org.pytorch.executorch.TestFileUtils.getTestFilePath
@@ -42,10 +39,6 @@ class ModuleInstrumentationTest {
     FileUtils.copyInputStreamToFile(inputStream, nonPteFile)
     inputStream.close()
   }
-
-  @get:Rule
-  var runtimePermissionRule: GrantPermissionRule =
-      GrantPermissionRule.grant(Manifest.permission.READ_EXTERNAL_STORAGE)
 
   @Ignore(
       "The forward has failure that needs to be fixed before enabling this test: [Executorch Error 0x12] Invalid argument: Execution failed for method: forward "
@@ -73,8 +66,7 @@ class ModuleInstrumentationTest {
   fun testModuleLoadMethodAndForward() {
     val module = Module.load(getTestFilePath(TEST_FILE_NAME))
 
-    val loadMethod = module.loadMethod(FORWARD_METHOD)
-    Assert.assertEquals(loadMethod.toLong(), OK.toLong())
+    module.loadMethod(FORWARD_METHOD)
 
     val results = module.forward()
     Assert.assertTrue(results[0].isTensor)
@@ -103,8 +95,14 @@ class ModuleInstrumentationTest {
   fun testModuleLoadMethodNonExistantMethod() {
     val module = Module.load(getTestFilePath(TEST_FILE_NAME))
 
-    val loadMethod = module.loadMethod(NONE_METHOD)
-    Assert.assertEquals(loadMethod.toLong(), INVALID_ARGUMENT.toLong())
+    val exception =
+        Assert.assertThrows(ExecutorchRuntimeException::class.java) {
+          module.loadMethod(NONE_METHOD)
+        }
+    Assert.assertEquals(
+        ExecutorchRuntimeException.INVALID_ARGUMENT,
+        exception.getErrorCode(),
+    )
   }
 
   @Test(expected = RuntimeException::class)
@@ -112,8 +110,7 @@ class ModuleInstrumentationTest {
   fun testNonPteFile() {
     val module = Module.load(getTestFilePath(NON_PTE_FILE_NAME))
 
-    val loadMethod = module.loadMethod(FORWARD_METHOD)
-    Assert.assertEquals(loadMethod.toLong(), INVALID_ARGUMENT.toLong())
+    module.loadMethod(FORWARD_METHOD)
   }
 
   @Test
@@ -123,8 +120,7 @@ class ModuleInstrumentationTest {
 
     module.destroy()
 
-    val loadMethod = module.loadMethod(FORWARD_METHOD)
-    Assert.assertEquals(loadMethod.toLong(), INVALID_STATE.toLong())
+    Assert.assertThrows(IllegalStateException::class.java) { module.loadMethod(FORWARD_METHOD) }
   }
 
   @Test
@@ -132,13 +128,11 @@ class ModuleInstrumentationTest {
   fun testForwardOnDestroyedModule() {
     val module = Module.load(getTestFilePath(TEST_FILE_NAME))
 
-    val loadMethod = module.loadMethod(FORWARD_METHOD)
-    Assert.assertEquals(loadMethod.toLong(), OK.toLong())
+    module.loadMethod(FORWARD_METHOD)
 
     module.destroy()
 
-    val results = module.forward()
-    Assert.assertEquals(0, results.size.toLong())
+    Assert.assertThrows(IllegalStateException::class.java) { module.forward() }
   }
 
   @Ignore(
@@ -177,14 +171,10 @@ class ModuleInstrumentationTest {
   }
 
   companion object {
-    private const val TEST_FILE_NAME = "/ModuleAdd.pte"
+    private const val TEST_FILE_NAME = "/mobilenet_v2.pte"
     private const val MISSING_FILE_NAME = "/missing.pte"
     private const val NON_PTE_FILE_NAME = "/test.txt"
     private const val FORWARD_METHOD = "forward"
     private const val NONE_METHOD = "none"
-    private const val OK = 0x00
-    private const val INVALID_STATE = 0x2
-    private const val INVALID_ARGUMENT = 0x12
-    private const val ACCESS_FAILED = 0x22
   }
 }

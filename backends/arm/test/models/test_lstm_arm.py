@@ -1,4 +1,4 @@
-# Copyright 2025 Arm Limited and/or its affiliates.
+# Copyright 2025-2026 Arm Limited and/or its affiliates.
 #
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
@@ -68,6 +68,8 @@ def test_lstm_tosa_INT():
         aten_op=[],
         exir_op=[],
         use_to_edge_transform_and_lower=True,
+        frobenius_threshold=None,
+        cosine_threshold=None,
     )
     pipeline.change_args(
         "run_method_and_compare_outputs",
@@ -141,7 +143,7 @@ def test_lstm_vgf_no_quant():
 
 
 def test_lstm_tosa_INT_16a8w():
-    """Test LSTM model with 16A8W quantization (16-bit activations, 8-bit weights)"""
+    """Test LSTM 16A8W quantization (16-bit activations, 8-bit weights)."""
 
     pipeline = TosaPipelineINT[input_t](
         TestLSTM.lstm,
@@ -151,6 +153,8 @@ def test_lstm_tosa_INT_16a8w():
         per_channel_quantization=False,
         use_to_edge_transform_and_lower=True,
         tosa_extensions=["int16"],
+        frobenius_threshold=None,
+        cosine_threshold=None,
     )
     pipeline.quantizer.set_global(
         get_symmetric_a16w8_quantization_config(is_per_channel=False, epsilon=2**-16)

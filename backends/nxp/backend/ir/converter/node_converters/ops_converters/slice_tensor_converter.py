@@ -1,9 +1,10 @@
-# Copyright 2025 NXP
+# Copyright 2025-2026 NXP
 #
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
 
 import numpy as np
+from executorch.backends.nxp.backend.data_format import NXP_NODE_FORMAT
 from executorch.backends.nxp.backend.edge_helper import input_tensor
 from executorch.backends.nxp.backend.ir.converter.conversion import translator
 from executorch.backends.nxp.backend.ir.converter.conversion.common import OpsList
@@ -18,7 +19,6 @@ from executorch.backends.nxp.backend.neutron_operator_support import (
     transposition_is_supported_on_neutron,
 )
 from executorch.backends.nxp.backend.neutron_target_spec import NeutronTargetSpec
-from executorch.backends.nxp.backend.node_format import NXP_NODE_FORMAT
 from torch.fx import Node
 from torch.nn import Parameter
 
@@ -31,11 +31,6 @@ class SliceTensorConverter(NodeConverter):
         parameters_mapping: dict[str, Parameter],
         custom_delegation_options: CustomDelegationOptions,
     ) -> bool:
-        # Provisional solution - slice conversion works for neutron software 2.2.1+
-        neutron_flavor = neutron_target_spec.neutron_target.__module__.split(".")[0]
-        if neutron_flavor != "neutron_converter_SDK_25_12":
-            return False
-
         input_shape = input_tensor(node, 0).shape
         dim = node.args[1]
         if node.args[0].meta[NXP_NODE_FORMAT].is_channels_first():

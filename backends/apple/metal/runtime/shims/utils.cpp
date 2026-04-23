@@ -19,8 +19,11 @@ extern "C" {
 // Helper function to check if a dtype is supported in Metal backend
 bool is_dtype_supported_in_et_metal(int32_t dtype) {
   switch (dtype) {
+    case static_cast<int32_t>(SupportedDTypes::UINT8):
+    case static_cast<int32_t>(SupportedDTypes::INT32):
     case static_cast<int32_t>(SupportedDTypes::INT64):
     case static_cast<int32_t>(SupportedDTypes::FLOAT32):
+    case static_cast<int32_t>(SupportedDTypes::BOOL):
     case static_cast<int32_t>(SupportedDTypes::BFLOAT16):
       return true;
     default:
@@ -34,13 +37,7 @@ AOTITorchError validate_dtype(int32_t dtype) {
     return Error::Ok;
   }
 
-  ET_LOG(
-      Error,
-      "Unsupported dtype: %d. Supported dtypes: %d (int64), %d (float32), %d (bfloat16)",
-      dtype,
-      static_cast<int32_t>(SupportedDTypes::INT64),
-      static_cast<int32_t>(SupportedDTypes::FLOAT32),
-      static_cast<int32_t>(SupportedDTypes::BFLOAT16));
+  ET_LOG(Error, "Unsupported dtype: %d", dtype);
   return Error::InvalidArgument;
 }
 

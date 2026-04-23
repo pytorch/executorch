@@ -42,6 +42,8 @@ set(XNNPACK_ENABLE_AVX512VNNIGFNI
     OFF
     CACHE BOOL ""
 )
+# Enable ARM SME2 by default. Can be disabled with -DXNNPACK_ENABLE_ARM_SME2=OFF
+# for Android emulator compatibility, which may crash with SME2 kernels.
 set(XNNPACK_ENABLE_ARM_SME2
     ON
     CACHE BOOL ""

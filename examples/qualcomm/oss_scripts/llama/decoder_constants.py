@@ -4,19 +4,29 @@
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
 
-# filenames for vision model
-VISION_ENCODER_INPUT_FILENAME = "vision_encoder_input"
+# decode qdq file name
+DECODE_QDQ_FILENAME = "decode_qdq.pt2"
 
+# eval methods
+PROMPT_EVAL = "prompt_eval"
+TASKS_EVAL = "tasks_eval"
+SQNR_EVAL = "sqnr_eval"
 
 # Component identifiers
 AUDIO_ENCODER = "audio_encoder"
 VISION_ENCODER = "vision_encoder"
 TEXT_ENCODER = "text_encoder"
-TEXT_EMBEDDING = "text_embedding"
+TOK_EMBEDDING = "tok_embedding"
 TEXT_DECODER = "text_decoder"
+ATTENTION_SINK_EVICTOR = "attention_sink_evictor"
+
+# Mapping of input flags for the runner
+MODALITY_INPUT_FLAG_MAP = {
+    VISION_ENCODER: "image_path",
+}
 
 # Text embedding graph names
-TEXT_EMBEDDING_GRAPH_NAMES = [
+TOK_EMBEDDING_GRAPH_NAMES = [
     "tok_embedding_kv_forward",
     "tok_embedding_prefill_forward",
 ]
@@ -38,6 +48,7 @@ DECODER_MODEL_VERSION = {
     "llama3_2-3b_instruct": "llama3",
     "codegen2_1b": "codegen",
     "gemma-2b": "gemma",
+    "gemma2-2b": "gemma2",
     "gemma3-1b": "gemma3",
     "granite_3_3-2b_instruct": "granite",
     "phi_4_mini": "phi_4_mini",
