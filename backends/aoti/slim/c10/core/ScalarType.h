@@ -23,7 +23,7 @@ using BFloat16 = ::executorch::runtime::etensor::BFloat16;
 /// Enum representing the scalar type (dtype) of tensor elements.
 /// Note: Enum values must match PyTorch's c10::ScalarType for compatibility.
 enum class ScalarType : int8_t {
-  // Byte = 0,     // uint8_t - not currently needed
+  Byte = 0, // uint8_t
   Char = 1, // int8_t
   Short = 2, // int16_t
   Int = 3, // int32_t
@@ -43,6 +43,7 @@ enum class ScalarType : int8_t {
 };
 
 // Type alias constants for convenience
+constexpr ScalarType kByte = ScalarType::Byte;
 constexpr ScalarType kChar = ScalarType::Char;
 constexpr ScalarType kShort = ScalarType::Short;
 constexpr ScalarType kInt = ScalarType::Int;
@@ -56,6 +57,8 @@ constexpr ScalarType kBFloat16 = ScalarType::BFloat16;
 /// @return The size in bytes of a single element.
 inline size_t elementSize(ScalarType t) {
   switch (t) {
+    case ScalarType::Byte:
+      return sizeof(uint8_t);
     case ScalarType::Char:
       return sizeof(int8_t);
     case ScalarType::Short:
@@ -80,6 +83,8 @@ inline size_t elementSize(ScalarType t) {
 /// @return The name of the scalar type.
 inline const char* toString(ScalarType t) {
   switch (t) {
+    case ScalarType::Byte:
+      return "Byte";
     case ScalarType::Char:
       return "Char";
     case ScalarType::Short:
@@ -114,6 +119,7 @@ inline bool isFloatingType(ScalarType t) {
 /// @return true if the scalar type is integral, false otherwise.
 inline bool isIntegralType(ScalarType t, bool includeBool) {
   switch (t) {
+    case ScalarType::Byte:
     case ScalarType::Char:
     case ScalarType::Short:
     case ScalarType::Int:
@@ -138,6 +144,7 @@ inline bool isBoolType(ScalarType t) {
 /// @return true if the scalar type is valid, false otherwise.
 inline bool isValidScalarType(ScalarType t) {
   switch (t) {
+    case ScalarType::Byte:
     case ScalarType::Char:
     case ScalarType::Short:
     case ScalarType::Int:

@@ -71,6 +71,20 @@ class BoxedEvalueList {
    */
   executorch::aten::ArrayRef<T> get() const;
 
+  /**
+   * Destroys the unwrapped elements without re-dereferencing wrapped_vals_.
+   * This is safe to call during EValue destruction because it does not
+   * dereference wrapped_vals_, which may point to EValues mutated by
+   * MoveCall instructions.
+   */
+  void destroy_elements() {
+    for (typename executorch::aten::ArrayRef<T>::size_type i = 0;
+         i < wrapped_vals_.size();
+         i++) {
+      unwrapped_vals_[i].~T();
+    }
+  }
+
  private:
   static EValue** checkWrappedVals(EValue** wrapped_vals, int size) {
     ET_CHECK_MSG(wrapped_vals != nullptr, "wrapped_vals cannot be null");
@@ -491,18 +505,11 @@ struct EValue {
     } else if (
         isTensorList() &&
         payload.copyable_union.as_tensor_list_ptr != nullptr) {
-      // for (auto& tensor : toTensorList()) {
-      for (auto& tensor : payload.copyable_union.as_tensor_list_ptr->get()) {
-        tensor.~Tensor();
-      }
+      payload.copyable_union.as_tensor_list_ptr->destroy_elements();
     } else if (
         isListOptionalTensor() &&
         payload.copyable_union.as_list_optional_tensor_ptr != nullptr) {
-      // for (auto& optional_tensor : toListOptionalTensor()) {
-      for (auto& optional_tensor :
-           payload.copyable_union.as_list_optional_tensor_ptr->get()) {
-        optional_tensor.~optional();
-      }
+      payload.copyable_union.as_list_optional_tensor_ptr->destroy_elements();
     }
   }
 
