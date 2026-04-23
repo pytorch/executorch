@@ -111,7 +111,8 @@ inline TensorPtr make_tensor_ptr(
         executorch::aten::TensorShapeDynamism::DYNAMIC_BOUND) {
   ET_CHECK_MSG(
       data.size() ==
-          executorch::aten::compute_numel(sizes.data(), sizes.size()),
+          static_cast<size_t>(executorch::aten::compute_numel_overflow(
+              sizes.data(), sizes.size())),
       "Data size does not match tensor size.");
   if (type != deduced_type) {
     ET_CHECK_MSG(
@@ -359,7 +360,7 @@ inline TensorPtr make_tensor_ptr(
   const auto same_shape = same_rank &&
       std::equal(sizes.begin(), sizes.end(), tensor.sizes().begin());
   const auto element_count =
-      executorch::aten::compute_numel(sizes.data(), sizes.size());
+      executorch::aten::compute_numel_overflow(sizes.data(), sizes.size());
   const auto parent_element_count = tensor.numel();
   ET_CHECK_MSG(
       element_count <= parent_element_count,

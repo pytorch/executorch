@@ -10,6 +10,8 @@
 
 #include <numeric>
 
+#include <c10/util/safe_numerics.h>
+
 #include <executorch/runtime/core/exec_aten/util/tensor_util.h>
 
 namespace executorch {
@@ -147,11 +149,22 @@ TensorPtr make_tensor_ptr(
     std::vector<executorch::aten::StridesType> strides,
     executorch::aten::ScalarType type,
     executorch::aten::TensorShapeDynamism dynamism) {
+  const ssize_t numel =
+      executorch::aten::compute_numel_overflow(sizes.data(), sizes.size());
+  size_t nbytes;
   ET_CHECK_MSG(
-      data.size() ==
-          executorch::aten::compute_numel(sizes.data(), sizes.size()) *
-              executorch::aten::elementSize(type),
-      "Data size does not match tensor size.");
+      !c10::mul_overflows(
+          static_cast<size_t>(numel),
+          executorch::aten::elementSize(type),
+          &nbytes),
+      "Overflow computing nbytes: numel=%zd element_size=%zu",
+      numel,
+      executorch::aten::elementSize(type));
+  ET_CHECK_MSG(
+      data.size() == nbytes,
+      "Data size (%zu) does not match tensor size (%zu).",
+      data.size(),
+      nbytes);
   auto data_ptr = data.data();
   return make_tensor_ptr(
       std::move(sizes),
@@ -205,7 +218,14 @@ TensorPtr clone_tensor_ptr(
       runtime::canCast(tensor_type, type),
       "Cannot cast tensor type to desired type.");
   const auto tensor_numel = static_cast<size_t>(tensor.numel());
-  std::vector<uint8_t> data(tensor_numel * aten::elementSize(type));
+  size_t clone_nbytes;
+  ET_CHECK_MSG(
+      !c10::mul_overflows(
+          tensor_numel, aten::elementSize(type), &clone_nbytes),
+      "Overflow computing clone nbytes: numel=%zu element_size=%zu",
+      tensor_numel,
+      aten::elementSize(type));
+  std::vector<uint8_t> data(clone_nbytes);
 
   // Create a minimal context for error handling in ET_SWITCH
   struct {
