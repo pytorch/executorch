@@ -187,7 +187,6 @@ struct CudaDelegateHandle : public aoti::AOTIDelegateHandle {
         cudaFree(ptr);
     }
   }
->>>>>>> 028894ef8e (lintrunner)
 };
 
 } // namespace cuda
