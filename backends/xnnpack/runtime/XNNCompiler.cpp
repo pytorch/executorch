@@ -6,6 +6,7 @@
  * LICENSE file in the root directory of this source tree.
  */
 
+#include <c10/util/safe_numerics.h>
 #include <executorch/backends/xnnpack/runtime/XNNCompiler.h>
 #include <executorch/backends/xnnpack/runtime/XNNHeader.h>
 #include <executorch/backends/xnnpack/serialization/schema_generated.h>
@@ -325,6 +326,31 @@ Error defineTensor(
   std::vector<size_t> dims_data;
   if (tensor_value->dims() != nullptr) {
     dims_data = flatbufferDimsToVector(tensor_value->dims());
+  }
+
+  // Validate the declared dims. XNNPACK's compile-time memory plan and
+  // operator strides are derived from these values, so attacker-controlled
+  // outsized dims lead to out-of-bounds reads/writes even when runtime
+  // reshape later shrinks the external tensors. TOB-EXECUTORCH-45 declares
+  // an external input with dims=[1048577, 4], and the Multiply operator
+  // reads past the host runtime's planned buffer (valgrind: "Invalid read
+  // ... Address 0x... is 0 bytes after a block of size 112").
+  //
+  // Reject overflow in the dim product and cap total numel at 2^20 (~1M).
+  // That threshold is comfortably above any real on-device tensor extent
+  // (typical conv activations, embedding vocab, attention sequence length)
+  // yet small enough that the declared shape cannot produce a
+  // multi-megabyte OOB.
+  constexpr size_t kMaxNumel = size_t{1} << 20;
+  size_t numel = 1;
+  for (size_t dim_value : dims_data) {
+    bool overflow = c10::mul_overflows(numel, dim_value, &numel);
+    ET_CHECK_OR_RETURN_ERROR(
+        !overflow && numel <= kMaxNumel,
+        InvalidProgram,
+        "Tensor numel exceeds maximum supported %zu (dim %zu)",
+        kMaxNumel,
+        dim_value);
   }
 
   // XNNPACK Id
