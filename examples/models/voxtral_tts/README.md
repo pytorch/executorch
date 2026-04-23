@@ -31,6 +31,72 @@ python export_voxtral_tts.py \
     --output-dir ./voxtral_tts_exports
 ```
 
+### CUDA backend (NVIDIA GPU)
+
+Sub-real-time TTS on A100. The full pipeline (LM + codec) runs on GPU via
+ExecuTorch's AOTI CUDA backend. End-to-end ~3.7 s wall clock for
+`"Hello, how are you today?"` with `--qlinear 4w`.
+
+```bash
+# Pre-flight (one-time per shell):
+unset CPATH                                   # critical, see "CUDA gotchas" below
+export LD_LIBRARY_PATH=$CONDA_PREFIX/lib:$LD_LIBRARY_PATH
+
+# Export FP32 (best quality, 15.8 GB .ptd)
+python export_voxtral_tts.py \
+    --model-path ~/models/Voxtral-4B-TTS-2603 \
+    --backend cuda --dtype fp32 \
+    --output-dir ./voxtral_tts_exports_cuda
+
+# Export 4w-quantized (RECOMMENDED — 4.6× smaller .ptd, sub-real-time)
+# --dtype is auto-promoted to bf16; --qlinear-packing-format auto-set to tile_packed_to_4d.
+python export_voxtral_tts.py \
+    --model-path ~/models/Voxtral-4B-TTS-2603 \
+    --backend cuda --qlinear 4w \
+    --output-dir ./voxtral_tts_exports_cuda_4w
+
+# Build (parent ExecuTorch needs CUDA enabled — use llm-release-cuda, not llm-release)
+cmake --workflow --preset llm-release-cuda
+cd examples/models/voxtral_tts && cmake --workflow --preset voxtral-tts-cuda && cd ../../..
+
+# Run (full CUDA pipeline)
+./cmake-out/examples/models/voxtral_tts/voxtral_tts_runner \
+    --model ./voxtral_tts_exports_cuda_4w/model.pte \
+    --data_path ./voxtral_tts_exports_cuda_4w/aoti_cuda_blob.ptd \
+    --codec ./voxtral_tts_exports_cuda_4w/codec_decoder.pte \
+    --codec_data_path ./voxtral_tts_exports_cuda_4w/codec_aoti_cuda_blob.ptd \
+    --tokenizer ~/models/Voxtral-4B-TTS-2603/tekken.json \
+    --voice ~/models/Voxtral-4B-TTS-2603/voice_embedding/neutral_female.pt \
+    --text "Hello, how are you today?" \
+    --output output.wav --seed 42 --max_new_tokens 100
+```
+
+Or use the one-shot script:
+
+```bash
+bash examples/models/voxtral_tts/run_cuda_e2e.sh ~/models/Voxtral-4B-TTS-2603
+```
+
+#### CUDA performance vs other backends
+
+See `BENCHMARK.md` for full numbers. Headlines:
+
+| Backend | model.ptd | LM time | Total | E2E RTF |
+|---|---|---|---|---|
+| XNNPACK fp32 (CPU) | — | 3.2 s | 15.3 s | 4.8x |
+| CUDA fp32 | 15.8 GB | 11.5 s | 178 s* | 51x* |
+| **CUDA 4w + CUDA codec** | **3.4 GB** | **2.1 s** | **3.7 s** | **0.88x** ⚡ |
+
+\* Pre conv-as-matmul codec rewrite; codec ran on portable CPU.
+
+#### CUDA gotchas
+
+1. **`unset CPATH` is mandatory.** If `CPATH` contains `/usr/local/cuda-13.0/...`, gcc picks CUDA 13's `crt/host_runtime.h` which has a 2-arg `__cudaLaunch` macro incompatible with nvcc 12.8's stub generation. Manifests as `__cudaLaunch was not declared` during the build. Verify with `echo $CPATH` (should be empty or only contain cuda-12.8).
+2. **Use CUDA 12.8, not 13.0.** ExecuTorch's CUDA backend (`backends/cuda/runtime/shims/sort.cu`) was written against CUB 2.x; CUDA 13's CUB 3.0 breaks it.
+3. **Set `LD_LIBRARY_PATH=$CONDA_PREFIX/lib`** before launching the runner. The AOTI `.so` files require GLIBCXX 3.4.30+ which conda's libstdc++ provides but `/lib64/libstdc++.so.6` does not.
+4. **`pip install -e . --no-build-isolation`** after pulling source changes. The default `install_executorch.sh` does `pip install .` — repo edits to `examples/models/voxtral_tts/` won't take effect until you reinstall as editable.
+5. **Use `llm-release-cuda` preset** for the parent build (not `llm-release`). The default preset doesn't enable `EXECUTORCH_BUILD_CUDA`, so `aoti_cuda_backend` won't exist when the runner CMake tries to link it.
+
 ### Quantization (XNNPACK)
 
 Dynamic quantization reduces model size with minimal quality loss.

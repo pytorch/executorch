@@ -31,15 +31,51 @@ namespace voxtral_tts {
 
 using ::executorch::aten::ScalarType;
 using ::executorch::aten::Tensor;
+using ::executorch::extension::from_blob;
 using ::executorch::extension::Module;
 using ::executorch::extension::TensorPtr;
-using ::executorch::extension::from_blob;
-using ::executorch::runtime::EValue;
 using ::executorch::runtime::Error;
+using ::executorch::runtime::EValue;
 
 namespace {
 
 using json = nlohmann::json;
+
+// fp32 ↔ bf16 conversion helpers. Used when feeding the bf16 AOTI methods
+// (CUDA backend) from the runner's fp32 buffers, and reading their outputs
+// back into fp32. The CPU/portable path keeps everything fp32 and these are
+// not invoked.
+inline uint16_t fp32_to_bf16(float f) {
+  uint32_t bits;
+  std::memcpy(&bits, &f, sizeof(float));
+  // Round-to-nearest-even (truncation with rounding bias).
+  uint32_t rounding_bias = 0x00007FFFu + ((bits >> 16) & 1u);
+  return static_cast<uint16_t>((bits + rounding_bias) >> 16);
+}
+
+inline float bf16_to_fp32(uint16_t b) {
+  uint32_t bits = static_cast<uint32_t>(b) << 16;
+  float f;
+  std::memcpy(&f, &bits, sizeof(float));
+  return f;
+}
+
+void read_float_tensor(const Tensor& t, float* dst, size_t n) {
+  if (t.scalar_type() == ScalarType::BFloat16) {
+    const uint16_t* src = t.const_data_ptr<uint16_t>();
+    for (size_t i = 0; i < n; ++i) {
+      dst[i] = bf16_to_fp32(src[i]);
+    }
+  } else {
+    std::memcpy(dst, t.const_data_ptr<float>(), n * sizeof(float));
+  }
+}
+
+void write_float_to_bf16(uint16_t* dst, const float* src, size_t n) {
+  for (size_t i = 0; i < n; ++i) {
+    dst[i] = fp32_to_bf16(src[i]);
+  }
+}
 
 int64_t read_metadata_int(Module& m, const char* name, int64_t fallback) {
   std::vector<EValue> empty;
@@ -65,7 +101,8 @@ json topk_logits(const float* logits, int64_t vocab_size, int k = 5) {
     return logits[lhs] > logits[rhs];
   };
   const int64_t topk = std::min<int64_t>(k, vocab_size);
-  std::partial_sort(indices.begin(), indices.begin() + topk, indices.end(), cmp);
+  std::partial_sort(
+      indices.begin(), indices.begin() + topk, indices.end(), cmp);
 
   json result = json::array();
   for (int64_t i = 0; i < topk; ++i) {
@@ -163,14 +200,18 @@ bool find_zip_entry(
     const uint16_t comment_len = read_u16(file_data.data() + pos + 32);
     const uint32_t local_offset = read_u32(file_data.data() + pos + 42);
 
-    const char* fname = reinterpret_cast<const char*>(file_data.data() + pos + 46);
+    const char* fname =
+        reinterpret_cast<const char*>(file_data.data() + pos + 46);
     if (std::string(fname, fname_len) == target_name) {
       if (compression != 0) {
         return false;
       }
-      const uint16_t local_fname_len = read_u16(file_data.data() + local_offset + 26);
-      const uint16_t local_extra_len = read_u16(file_data.data() + local_offset + 28);
-      const size_t data_start = local_offset + 30 + local_fname_len + local_extra_len;
+      const uint16_t local_fname_len =
+          read_u16(file_data.data() + local_offset + 26);
+      const uint16_t local_extra_len =
+          read_u16(file_data.data() + local_offset + 28);
+      const size_t data_start =
+          local_offset + 30 + local_fname_len + local_extra_len;
       const size_t entry_size = uncomp_size > 0 ? uncomp_size : comp_size;
       if (data_start + entry_size > file_data.size()) {
         return false;
@@ -216,7 +257,8 @@ bool load_pt_voice_tensor(
   std::vector<unsigned char> file_data(file_size);
   file.read(reinterpret_cast<char*>(file_data.data()), file_data.size());
 
-  const char* candidate_paths[] = {"voice_embed/data/0", "archive/data/0", "data/0"};
+  const char* candidate_paths[] = {
+      "voice_embed/data/0", "archive/data/0", "data/0"};
   const unsigned char* tensor_data = nullptr;
   size_t tensor_size = 0;
   bool found = false;
@@ -226,11 +268,13 @@ bool load_pt_voice_tensor(
       break;
     }
   }
-  if (!found || tensor_size % (static_cast<size_t>(dim) * sizeof(uint16_t)) != 0) {
+  if (!found ||
+      tensor_size % (static_cast<size_t>(dim) * sizeof(uint16_t)) != 0) {
     return false;
   }
 
-  out_frames = static_cast<int64_t>(tensor_size / (static_cast<size_t>(dim) * sizeof(uint16_t)));
+  out_frames = static_cast<int64_t>(
+      tensor_size / (static_cast<size_t>(dim) * sizeof(uint16_t)));
   load_bf16_tensor_data(
       reinterpret_cast<const uint16_t*>(tensor_data),
       static_cast<size_t>(out_frames) * static_cast<size_t>(dim),
@@ -255,11 +299,9 @@ bool load_bin_voice_tensor(
 
   const size_t bf16_row_bytes = static_cast<size_t>(dim) * sizeof(uint16_t);
   const size_t f32_row_bytes = static_cast<size_t>(dim) * sizeof(float);
-  const bool matches_hint_bf16 =
-      expected_frames_hint > 0 &&
+  const bool matches_hint_bf16 = expected_frames_hint > 0 &&
       file_size == static_cast<size_t>(expected_frames_hint) * bf16_row_bytes;
-  const bool matches_hint_f32 =
-      expected_frames_hint > 0 &&
+  const bool matches_hint_f32 = expected_frames_hint > 0 &&
       file_size == static_cast<size_t>(expected_frames_hint) * f32_row_bytes;
 
   if (matches_hint_f32) {
@@ -292,15 +334,35 @@ bool load_bin_voice_tensor(
 VoxtralTTSRunner::VoxtralTTSRunner(
     const std::string& model_path,
     const std::string& codec_path,
-    const std::string& tokenizer_path)
+    const std::string& tokenizer_path,
+    const std::string& model_data_path,
+    const std::string& codec_data_path)
     : rng_(42),
       flow_rng_state_(42),
       asset_root_dir_(std::filesystem::path(tokenizer_path).parent_path()),
-      model_path_(model_path) {
-  model_ = std::make_unique<Module>(model_path, Module::LoadMode::Mmap);
+      model_path_(model_path),
+      model_data_path_(model_data_path),
+      codec_data_path_(codec_data_path),
+      // Mixed-precision CUDA exports keep weights/IO in fp32 — only the SDPA
+      // path is bf16 internally. Runner can stay fp32-native for all methods.
+      // Flip to true if a future export ships fully-bf16 methods.
+      lm_use_bf16_(
+          false) { // Updated from model.pte metadata in load_metadata()
+  // For CUDA backend, the .ptd file holds the AOTI .so and weights.
+  if (!model_data_path_.empty()) {
+    model_ = std::make_unique<Module>(
+        model_path, model_data_path_, Module::LoadMode::Mmap);
+  } else {
+    model_ = std::make_unique<Module>(model_path, Module::LoadMode::Mmap);
+  }
   ET_CHECK_MSG(model_->load() == Error::Ok, "Failed to load model.");
 
-  codec_ = std::make_unique<Module>(codec_path, Module::LoadMode::Mmap);
+  if (!codec_data_path_.empty()) {
+    codec_ = std::make_unique<Module>(
+        codec_path, codec_data_path_, Module::LoadMode::Mmap);
+  } else {
+    codec_ = std::make_unique<Module>(codec_path, Module::LoadMode::Mmap);
+  }
   ET_CHECK_MSG(codec_->load() == Error::Ok, "Failed to load codec decoder.");
 
   tokenizer_ = ::executorch::extension::llm::load_tokenizer(tokenizer_path);
@@ -325,7 +387,8 @@ void VoxtralTTSRunner::set_seed(uint32_t seed) {
 
 namespace {
 // xorshift64 + Box-Muller, matching voxtral-tts.c voxtral_tts_kernels.c:644-668
-// so flow-matching x0 noise is bit-identical to the C reference under same seed.
+// so flow-matching x0 noise is bit-identical to the C reference under same
+// seed.
 inline uint64_t xorshift64(uint64_t* state) {
   uint64_t x = *state;
   x ^= x << 13;
@@ -344,13 +407,17 @@ inline float randn_xs(uint64_t* state) {
     u1 = uniform01_xs(state);
   } while (u1 < 1e-30f);
   u2 = uniform01_xs(state);
-  return std::sqrt(-2.0f * std::log(u1)) *
-      std::cos(6.2831853071795864f * u2);
+  return std::sqrt(-2.0f * std::log(u1)) * std::cos(6.2831853071795864f * u2);
 }
 } // namespace
 
 void VoxtralTTSRunner::reload_stateful_model() {
-  model_ = std::make_unique<Module>(model_path_, Module::LoadMode::Mmap);
+  if (!model_data_path_.empty()) {
+    model_ = std::make_unique<Module>(
+        model_path_, model_data_path_, Module::LoadMode::Mmap);
+  } else {
+    model_ = std::make_unique<Module>(model_path_, Module::LoadMode::Mmap);
+  }
   ET_CHECK_MSG(model_->load() == Error::Ok, "Failed to reload model.");
   load_metadata();
 }
@@ -378,6 +445,11 @@ void VoxtralTTSRunner::load_metadata() {
   repeat_audio_text_token_id_ =
       read_metadata_int(*model_, "repeat_audio_text_token_id", 35);
   voice_embed_len_ = read_metadata_int(*model_, "voice_embed_len", 147);
+  // Whether the LM methods (text_decoder, semantic_head, predict_velocity,
+  // audio_token_embedding, token_embedding) take/return bf16. Set by the
+  // export script — fp32 mixed-precision exports report 0; quantized exports
+  // (--qlinear …) promote to bf16 and report 1.
+  lm_use_bf16_ = read_metadata_int(*model_, "lm_input_is_bf16", 0) != 0;
 
   is_streaming_ = read_metadata_int(*model_, "streaming", 0) != 0;
   streaming_chunk_frames_ =
@@ -388,20 +460,23 @@ void VoxtralTTSRunner::load_metadata() {
       read_metadata_int(*model_, "streaming_left_context", 25);
 
   max_codec_frames_ = read_metadata_int(*codec_, "max_codec_frames", 256);
-  codec_supports_exact_frames_ = has_method(*codec_, "codec_supports_exact_frames")
+  codec_supports_exact_frames_ =
+      has_method(*codec_, "codec_supports_exact_frames")
       ? (read_metadata_int(*codec_, "codec_supports_exact_frames", 0) != 0)
       : false;
 
-  std::cerr << "Model config: dim=" << dim_ << " voice_embed_len="
-            << voice_embed_len_ << " audio_tok=" << audio_token_id_
+  std::cerr << "Model config: dim=" << dim_
+            << " voice_embed_len=" << voice_embed_len_
+            << " audio_tok=" << audio_token_id_
             << " begin_audio=" << begin_audio_token_id_
-            << " max_seq=" << max_seq_len_ << " codec_frames="
-            << max_codec_frames_ << std::endl;
+            << " max_seq=" << max_seq_len_
+            << " codec_frames=" << max_codec_frames_ << std::endl;
 }
 
 std::filesystem::path VoxtralTTSRunner::resolve_voice_path(
     const std::string& voice_path) const {
-  const std::string requested = voice_path.empty() ? "neutral_female" : voice_path;
+  const std::string requested =
+      voice_path.empty() ? "neutral_female" : voice_path;
   std::filesystem::path candidate(requested);
   if (std::filesystem::exists(candidate)) {
     return candidate;
@@ -437,8 +512,10 @@ void VoxtralTTSRunner::load_voice_embedding(const std::string& voice_path) {
                 << ", continuing without voice conditioning." << std::endl;
       return;
     }
-    ET_CHECK_MSG(false, "Failed to open voice embedding: %s",
-                 resolved_path.string().c_str());
+    ET_CHECK_MSG(
+        false,
+        "Failed to open voice embedding: %s",
+        resolved_path.string().c_str());
   }
 
   bool ok = false;
@@ -494,7 +571,8 @@ int64_t VoxtralTTSRunner::sample_semantic_code(
     probs[i] = std::exp((logits[i] - max_val) / temperature);
     sum += probs[i];
   }
-  for (auto& p : probs) p /= sum;
+  for (auto& p : probs)
+    p /= sum;
 
   std::discrete_distribution<int64_t> dist(probs.begin(), probs.end());
   return dist(rng_);
@@ -516,31 +594,52 @@ void VoxtralTTSRunner::warmup() {
   std::vector<int64_t> audio_code_data(n_cb, 0);
   auto audio_codes_t =
       from_blob(audio_code_data.data(), {1, n_cb, 1}, ScalarType::Long);
-  auto audio_embed_result =
-      model_->execute("audio_token_embedding", std::vector<EValue>{*audio_codes_t});
+  auto audio_embed_result = model_->execute(
+      "audio_token_embedding", std::vector<EValue>{*audio_codes_t});
   ET_CHECK_MSG(audio_embed_result.ok(), "audio_token_embedding warmup failed");
 
-  std::vector<float> embed_data(dim, 0.0f);
+  // For bf16 LMs (CUDA quantized exports), allocate bf16 zero buffers and
+  // call with ScalarType::BFloat16. fp32 LMs (default mixed-precision and
+  // CPU backends) take the simple fp32 path.
+  std::vector<float> embed_data_fp32;
+  std::vector<uint16_t> embed_data_bf16;
+  std::vector<float> xt_data_fp32;
+  std::vector<uint16_t> xt_data_bf16;
+  TensorPtr hid_t, hv_t, xt_t;
+  ScalarType float_type =
+      lm_use_bf16_ ? ScalarType::BFloat16 : ScalarType::Float;
+  if (lm_use_bf16_) {
+    embed_data_bf16.assign(dim, fp32_to_bf16(0.0f));
+    xt_data_bf16.assign(n_aco, fp32_to_bf16(0.0f));
+    hid_t = from_blob(embed_data_bf16.data(), {1, dim}, float_type);
+    hv_t = from_blob(embed_data_bf16.data(), {1, dim}, float_type);
+    xt_t = from_blob(xt_data_bf16.data(), {1, n_aco}, float_type);
+  } else {
+    embed_data_fp32.assign(dim, 0.0f);
+    xt_data_fp32.assign(n_aco, 0.0f);
+    hid_t = from_blob(embed_data_fp32.data(), {1, dim}, float_type);
+    hv_t = from_blob(embed_data_fp32.data(), {1, dim}, float_type);
+    xt_t = from_blob(xt_data_fp32.data(), {1, n_aco}, float_type);
+  }
+
   // Avoid warming the stateful decoder because the Module API does not expose
   // a cache reset; a dummy prefill would pollute the first real synthesis.
-  auto hid_t = from_blob(embed_data.data(), {1, dim}, ScalarType::Float);
   auto semantic_result =
       model_->execute("semantic_head", std::vector<EValue>{*hid_t});
   ET_CHECK_MSG(semantic_result.ok(), "semantic_head warmup failed");
 
-  std::vector<float> xt_data(n_aco, 0.0f);
-  auto xt_t = from_blob(xt_data.data(), {1, n_aco}, ScalarType::Float);
   int64_t tidx_data = 0;
   auto ti_t = from_blob(&tidx_data, {1}, ScalarType::Long);
-  auto hv_t = from_blob(embed_data.data(), {1, dim}, ScalarType::Float);
   auto velocity_result = model_->execute(
       "predict_velocity", std::vector<EValue>{*xt_t, *ti_t, *hv_t});
   ET_CHECK_MSG(velocity_result.ok(), "predict_velocity warmup failed");
 
-  std::vector<int64_t> code_data(n_cb * mcf, 0);
-  auto codes_t = from_blob(code_data.data(), {1, n_cb, mcf}, ScalarType::Long);
-  auto codec_result = codec_->execute("forward", std::vector<EValue>{*codes_t});
-  ET_CHECK_MSG(codec_result.ok(), "codec warmup failed");
+  // Codec is on the portable (CPU) backend — there's no Triton autotune to
+  // amortize, and one forward over max_codec_frames=256 takes ~60-120s on CPU.
+  // Skipping it cuts startup wait substantially; the first real codec call
+  // at end-of-synth pays the same cost it always would.
+  (void)mcf;
+  (void)n_cb;
 
   std::cerr << "Warmup complete." << std::endl;
 }
@@ -583,9 +682,10 @@ void VoxtralTTSRunner::build_prompt(
   token_ids.push_back(repeat_audio_text_token_id_); // [REPEAT_AUDIO_TEXT]
   token_ids.push_back(begin_audio_token_id_); // [BEGIN_AUDIO]
 
-  std::cerr << "Prompt: " << token_ids.size() << " tokens (voice_start="
-            << voice_start << " voice_len=" << voice_len << " text_tokens="
-            << text_tokens.size() << ")" << std::endl;
+  std::cerr << "Prompt: " << token_ids.size()
+            << " tokens (voice_start=" << voice_start
+            << " voice_len=" << voice_len
+            << " text_tokens=" << text_tokens.size() << ")" << std::endl;
 }
 
 void VoxtralTTSRunner::synthesize_offline(
@@ -634,37 +734,64 @@ void VoxtralTTSRunner::synthesize_offline(
       model_->execute("token_embedding", std::vector<EValue>{*tok_t});
   ET_CHECK_MSG(embed_result.ok(), "token_embedding failed");
   auto embeds = embed_result.get()[0].toTensor();
-  float* embed_ptr = embeds.mutable_data_ptr<float>();
+
+  // Read prompt embeddings as fp32 (the LM output is bf16 on CUDA, fp32 on CPU)
+  // so the voice-embedding splice (always fp32) lands in a known dtype.
+  std::vector<float> prompt_embeds_fp32(static_cast<size_t>(prompt_len) * dim);
+  read_float_tensor(
+      embeds, prompt_embeds_fp32.data(), prompt_embeds_fp32.size());
 
   // Splice voice embedding into [AUDIO] positions
   if (!voice_embed_data_.empty()) {
     for (int i = 0; i < voice_len; ++i) {
       int pos = voice_start + i;
       std::memcpy(
-          embed_ptr + pos * dim,
+          prompt_embeds_fp32.data() + pos * dim,
           voice_embed_data_.data() + i * dim,
           dim * sizeof(float));
     }
-    std::cerr << "Voice embedding spliced at positions " << voice_start
-              << ".." << (voice_start + voice_len - 1) << std::endl;
+    std::cerr << "Voice embedding spliced at positions " << voice_start << ".."
+              << (voice_start + voice_len - 1) << std::endl;
   }
 
-  // Prefill decoder with combined embeddings
+  // Prefill decoder with combined embeddings. For CUDA, stage the fp32 buffer
+  // through a bf16 buffer that survives until execute() returns.
   std::vector<int64_t> pos_vec(prompt_len);
   std::iota(pos_vec.begin(), pos_vec.end(), 0);
   auto pos_t = from_blob(pos_vec.data(), {prompt_len}, ScalarType::Long);
 
-  auto emb_t = from_blob(embed_ptr, {1, prompt_len, dim}, ScalarType::Float);
+  std::vector<uint16_t> prompt_embeds_bf16;
+  TensorPtr emb_t;
+  if (lm_use_bf16_) {
+    prompt_embeds_bf16.resize(prompt_embeds_fp32.size());
+    write_float_to_bf16(
+        prompt_embeds_bf16.data(),
+        prompt_embeds_fp32.data(),
+        prompt_embeds_fp32.size());
+    emb_t = from_blob(
+        prompt_embeds_bf16.data(), {1, prompt_len, dim}, ScalarType::BFloat16);
+  } else {
+    emb_t = from_blob(
+        prompt_embeds_fp32.data(), {1, prompt_len, dim}, ScalarType::Float);
+  }
   auto dec_result =
       model_->execute("text_decoder", std::vector<EValue>{*emb_t, *pos_t});
   ET_CHECK_MSG(dec_result.ok(), "text_decoder prefill failed");
 
   auto hidden_out = dec_result.get()[0].toTensor();
+  // Read final-position hidden state into fp32 (handles bf16 → fp32 if needed).
   std::vector<float> hidden_state(dim);
-  std::memcpy(
-      hidden_state.data(),
-      hidden_out.mutable_data_ptr<float>() + (prompt_len - 1) * dim,
-      static_cast<size_t>(dim) * sizeof(float));
+  if (hidden_out.scalar_type() == ScalarType::BFloat16) {
+    const uint16_t* h =
+        hidden_out.const_data_ptr<uint16_t>() + (prompt_len - 1) * dim;
+    for (int i = 0; i < dim; ++i)
+      hidden_state[i] = bf16_to_fp32(h[i]);
+  } else {
+    std::memcpy(
+        hidden_state.data(),
+        hidden_out.const_data_ptr<float>() + (prompt_len - 1) * dim,
+        static_cast<size_t>(dim) * sizeof(float));
+  }
 
   std::vector<float> prefill_hidden(hidden_state);
 
@@ -677,15 +804,15 @@ void VoxtralTTSRunner::synthesize_offline(
 
   int64_t seed_pos_val = prompt_len;
   auto seed_pos_t = from_blob(&seed_pos_val, {1}, ScalarType::Long);
+  // seed_embed is already in the model's native dtype (bf16 on CUDA, fp32 on
+  // CPU); pass it through directly.
   auto seed_emb_t = from_blob(
-      seed_embed.mutable_data_ptr<float>(), {1, 1, dim}, ScalarType::Float);
-  auto seed_decode_result =
-      model_->execute("text_decoder", std::vector<EValue>{*seed_emb_t, *seed_pos_t});
+      seed_embed.mutable_data_ptr(), {1, 1, dim}, seed_embed.scalar_type());
+  auto seed_decode_result = model_->execute(
+      "text_decoder", std::vector<EValue>{*seed_emb_t, *seed_pos_t});
   ET_CHECK_MSG(seed_decode_result.ok(), "text_decoder seed step failed");
-  std::memcpy(
-      hidden_state.data(),
-      seed_decode_result.get()[0].toTensor().mutable_data_ptr<float>(),
-      static_cast<size_t>(dim) * sizeof(float));
+  read_float_tensor(
+      seed_decode_result.get()[0].toTensor(), hidden_state.data(), dim);
   if (capture_trace) {
     trace["prefill_hidden"] = prefill_hidden;
     trace["frame0_hidden"] = hidden_state;
@@ -705,21 +832,33 @@ void VoxtralTTSRunner::synthesize_offline(
         static_cast<float>(i) / static_cast<float>(n_decoding_steps_);
   }
 
+  // Per-frame staging buffers for bf16 conversion (alloc once, reuse).
+  std::vector<uint16_t> h_bf16;
+  std::vector<float> sem_logits_fp32;
+
   for (int frame = 0; frame < max_new_tokens && cur_pos < max_seq_len_;
        ++frame) {
-    auto h_t = from_blob(hidden_state.data(), {1, dim}, ScalarType::Float);
-    auto sem_r =
-        model_->execute("semantic_head", std::vector<EValue>{*h_t});
+    TensorPtr h_t;
+    if (lm_use_bf16_) {
+      h_bf16.resize(dim);
+      write_float_to_bf16(h_bf16.data(), hidden_state.data(), dim);
+      h_t = from_blob(h_bf16.data(), {1, dim}, ScalarType::BFloat16);
+    } else {
+      h_t = from_blob(hidden_state.data(), {1, dim}, ScalarType::Float);
+    }
+    auto sem_r = model_->execute("semantic_head", std::vector<EValue>{*h_t});
     ET_CHECK_MSG(sem_r.ok(), "semantic_head failed");
 
     auto sem_t = sem_r.get()[0].toTensor();
     int64_t sem_vocab = sem_t.numel();
+    sem_logits_fp32.resize(sem_vocab);
+    read_float_tensor(sem_t, sem_logits_fp32.data(), sem_vocab);
     json semantic_topk = json::array();
     if (capture_trace && frame < 3) {
-      semantic_topk = topk_logits(sem_t.data_ptr<float>(), sem_vocab);
+      semantic_topk = topk_logits(sem_logits_fp32.data(), sem_vocab);
     }
-    int64_t semantic_code = sample_semantic_code(
-        sem_t.data_ptr<float>(), sem_vocab, temperature);
+    int64_t semantic_code =
+        sample_semantic_code(sem_logits_fp32.data(), sem_vocab, temperature);
 
     if (semantic_code == end_audio_code_) {
       if (capture_trace && frame < 3) {
@@ -753,34 +892,58 @@ void VoxtralTTSRunner::synthesize_offline(
     }
     std::vector<float> zeros(dim, 0.0f);
 
-    for (int step = 0; step < n_decoding_steps_; ++step) {
-      float dt = timesteps[step + 1] - timesteps[step];
-      int64_t tidx_val = step;
-
-      auto xt1 = from_blob(x.data(), {1, n_aco}, ScalarType::Float);
-      auto ti1 = from_blob(&tidx_val, {1}, ScalarType::Long);
-      auto hc = from_blob(hidden_state.data(), {1, dim}, ScalarType::Float);
-      auto vc = model_->execute(
-          "predict_velocity", std::vector<EValue>{*xt1, *ti1, *hc});
-      ET_CHECK_MSG(vc.ok(), "predict_velocity (cond) failed");
+    {
+      // Pre-stage hidden_state (and zeros for uncond) into bf16 once per frame
+      // so the n_decoding_steps × 2 inner velocity calls reuse the buffers.
+      std::vector<uint16_t> step_h_bf16, step_zeros_bf16, step_x_bf16;
+      if (lm_use_bf16_) {
+        step_h_bf16.resize(dim);
+        write_float_to_bf16(step_h_bf16.data(), hidden_state.data(), dim);
+        step_zeros_bf16.assign(dim, fp32_to_bf16(0.0f));
+        step_x_bf16.resize(n_aco);
+      }
       std::vector<float> v_cond(n_aco);
-      std::memcpy(
-          v_cond.data(),
-          vc.get()[0].toTensor().mutable_data_ptr<float>(),
-          static_cast<size_t>(n_aco) * sizeof(float));
+      std::vector<float> v_uncond(n_aco);
 
-      auto xt2 = from_blob(x.data(), {1, n_aco}, ScalarType::Float);
-      auto ti2 = from_blob(&tidx_val, {1}, ScalarType::Long);
-      auto hu = from_blob(zeros.data(), {1, dim}, ScalarType::Float);
-      auto vu = model_->execute(
-          "predict_velocity", std::vector<EValue>{*xt2, *ti2, *hu});
-      ET_CHECK_MSG(vu.ok(), "predict_velocity (uncond) failed");
-      float* v_uncond = vu.get()[0].toTensor().mutable_data_ptr<float>();
+      for (int step = 0; step < n_decoding_steps_; ++step) {
+        float dt = timesteps[step + 1] - timesteps[step];
+        int64_t tidx_val = step;
 
-      for (int j = 0; j < n_aco; ++j) {
-        float v =
-            cfg_alpha_ * v_cond[j] + (1.0f - cfg_alpha_) * v_uncond[j];
-        x[j] += v * dt;
+        TensorPtr xt1, hc;
+        if (lm_use_bf16_) {
+          write_float_to_bf16(step_x_bf16.data(), x.data(), n_aco);
+          xt1 = from_blob(step_x_bf16.data(), {1, n_aco}, ScalarType::BFloat16);
+          hc = from_blob(step_h_bf16.data(), {1, dim}, ScalarType::BFloat16);
+        } else {
+          xt1 = from_blob(x.data(), {1, n_aco}, ScalarType::Float);
+          hc = from_blob(hidden_state.data(), {1, dim}, ScalarType::Float);
+        }
+        auto ti1 = from_blob(&tidx_val, {1}, ScalarType::Long);
+        auto vc = model_->execute(
+            "predict_velocity", std::vector<EValue>{*xt1, *ti1, *hc});
+        ET_CHECK_MSG(vc.ok(), "predict_velocity (cond) failed");
+        read_float_tensor(vc.get()[0].toTensor(), v_cond.data(), n_aco);
+
+        TensorPtr xt2, hu;
+        if (lm_use_bf16_) {
+          // step_x_bf16 already holds x; reuse.
+          xt2 = from_blob(step_x_bf16.data(), {1, n_aco}, ScalarType::BFloat16);
+          hu =
+              from_blob(step_zeros_bf16.data(), {1, dim}, ScalarType::BFloat16);
+        } else {
+          xt2 = from_blob(x.data(), {1, n_aco}, ScalarType::Float);
+          hu = from_blob(zeros.data(), {1, dim}, ScalarType::Float);
+        }
+        auto ti2 = from_blob(&tidx_val, {1}, ScalarType::Long);
+        auto vu = model_->execute(
+            "predict_velocity", std::vector<EValue>{*xt2, *ti2, *hu});
+        ET_CHECK_MSG(vu.ok(), "predict_velocity (uncond) failed");
+        read_float_tensor(vu.get()[0].toTensor(), v_uncond.data(), n_aco);
+
+        for (int j = 0; j < n_aco; ++j) {
+          float v = cfg_alpha_ * v_cond[j] + (1.0f - cfg_alpha_) * v_uncond[j];
+          x[j] += v * dt;
+        }
       }
     }
 
@@ -793,8 +956,8 @@ void VoxtralTTSRunner::synthesize_offline(
       float clamped = std::clamp(x[j], -1.0f, 1.0f);
       x_min = std::min(x_min, clamped);
       x_max = std::max(x_max, clamped);
-      float scaled = ((clamped + 1.0f) / 2.0f) *
-                     static_cast<float>(acoustic_levels_ - 1);
+      float scaled =
+          ((clamped + 1.0f) / 2.0f) * static_cast<float>(acoustic_levels_ - 1);
       codes[j + 1] =
           static_cast<int64_t>(std::round(scaled)) + n_special_tokens_;
     }
@@ -806,7 +969,8 @@ void VoxtralTTSRunner::synthesize_offline(
       if (dump) {
         dump << "frame=" << frame << " sem=" << semantic_code << " codes=";
         for (size_t k = 0; k < codes.size(); ++k) {
-          if (k) dump << ",";
+          if (k)
+            dump << ",";
           dump << codes[k];
         }
         dump << "\n";
@@ -834,33 +998,27 @@ void VoxtralTTSRunner::synthesize_offline(
 
     // Feed the generated multi-codebook frame back through the learned
     // audio-token embedding path instead of the generic [AUDIO] placeholder.
-    auto next_codes =
-        from_blob(codes.data(), {1, n_cb, 1}, ScalarType::Long);
-    auto ne =
-        model_->execute("audio_token_embedding", std::vector<EValue>{*next_codes});
+    auto next_codes = from_blob(codes.data(), {1, n_cb, 1}, ScalarType::Long);
+    auto ne = model_->execute(
+        "audio_token_embedding", std::vector<EValue>{*next_codes});
     ET_CHECK_MSG(ne.ok(), "audio_token_embedding (next) failed");
     auto next_embeds = ne.get()[0].toTensor();
     if (capture_trace && frame == 0) {
       std::vector<float> first_audio_embed(dim);
-      std::memcpy(
-          first_audio_embed.data(),
-          next_embeds.mutable_data_ptr<float>(),
-          static_cast<size_t>(dim) * sizeof(float));
+      read_float_tensor(next_embeds, first_audio_embed.data(), dim);
       trace["frame0_audio_embed"] = first_audio_embed;
     }
 
+    // Pass next_embeds through directly — its dtype already matches the
+    // text_decoder's expected input dtype (bf16 for CUDA, fp32 for CPU).
     int64_t next_pos_val = cur_pos;
     auto np = from_blob(&next_pos_val, {1}, ScalarType::Long);
     auto next_emb = from_blob(
-        next_embeds.mutable_data_ptr<float>(), {1, 1, dim},
-        ScalarType::Float);
+        next_embeds.mutable_data_ptr(), {1, 1, dim}, next_embeds.scalar_type());
     auto nd =
         model_->execute("text_decoder", std::vector<EValue>{*next_emb, *np});
     ET_CHECK_MSG(nd.ok(), "text_decoder (next) failed");
-    std::memcpy(
-        hidden_state.data(),
-        nd.get()[0].toTensor().mutable_data_ptr<float>(),
-        static_cast<size_t>(dim) * sizeof(float));
+    read_float_tensor(nd.get()[0].toTensor(), hidden_state.data(), dim);
     if (capture_trace && frame == 0) {
       trace["frame1_position"] = cur_pos;
       trace["frame1_hidden"] = hidden_state;
@@ -869,9 +1027,9 @@ void VoxtralTTSRunner::synthesize_offline(
 
     if ((frame + 1) % 25 == 0) {
       float audio_sec = static_cast<float>((frame + 1) * downsample_factor_) /
-                        static_cast<float>(sample_rate_);
-      std::cerr << "  Frame " << (frame + 1) << " (" << audio_sec
-                << "s audio)" << std::endl;
+          static_cast<float>(sample_rate_);
+      std::cerr << "  Frame " << (frame + 1) << " (" << audio_sec << "s audio)"
+                << std::endl;
     }
   }
 
@@ -890,10 +1048,10 @@ void VoxtralTTSRunner::synthesize_offline(
 
   int64_t total_frames = static_cast<int64_t>(frame_codes.size());
   float audio_duration = static_cast<float>(total_frames * downsample_factor_) /
-                         static_cast<float>(sample_rate_);
-  auto gen_ms = std::chrono::duration_cast<std::chrono::milliseconds>(
-                    gen_end - start)
-                    .count();
+      static_cast<float>(sample_rate_);
+  auto gen_ms =
+      std::chrono::duration_cast<std::chrono::milliseconds>(gen_end - start)
+          .count();
 
   std::cerr << "Generated " << total_frames << " frames (" << audio_duration
             << "s audio) in " << gen_ms << "ms" << std::endl;
@@ -903,9 +1061,7 @@ void VoxtralTTSRunner::synthesize_offline(
 
   std::vector<float> decoded_samples;
   decode_codes_to_wav(
-      frame_codes,
-      output_path,
-      capture_trace ? &decoded_samples : nullptr);
+      frame_codes, output_path, capture_trace ? &decoded_samples : nullptr);
   if (capture_trace) {
     trace["generated_frames"] = total_frames;
     trace["waveform"] = waveform_stats(decoded_samples);
@@ -914,9 +1070,9 @@ void VoxtralTTSRunner::synthesize_offline(
   }
 
   auto total_end = std::chrono::high_resolution_clock::now();
-  auto total_ms = std::chrono::duration_cast<std::chrono::milliseconds>(
-                      total_end - start)
-                      .count();
+  auto total_ms =
+      std::chrono::duration_cast<std::chrono::milliseconds>(total_end - start)
+          .count();
   std::cerr << "Total time: " << total_ms << "ms" << std::endl;
 }
 
@@ -980,22 +1136,22 @@ void VoxtralTTSRunner::decode_code_window(
 
   auto copy_waveform = [&](const auto& exec_result) {
     auto waveform = exec_result.get()[0].toTensor();
-    float* wav_ptr = waveform.template mutable_data_ptr<float>();
     int64_t valid_samples = window_frames * downsample_factor_;
     int64_t total_samples = waveform.numel();
     valid_samples = std::min(valid_samples, total_samples);
-    out_samples.assign(wav_ptr, wav_ptr + valid_samples);
+    out_samples.resize(static_cast<size_t>(valid_samples));
+    // Codec output is fp32 on portable, bf16 on CUDA — handle both.
+    read_float_tensor(waveform, out_samples.data(), out_samples.size());
   };
 
   const bool try_exact =
       codec_supports_exact_frames_ || window_frames == max_codec_frames_;
   if (try_exact) {
     auto code_data = build_code_tensor(window_frames);
-    auto codes_t =
-        from_blob(
-            code_data.data(),
-            {1, n_cb, static_cast<int>(window_frames)},
-            ScalarType::Long);
+    auto codes_t = from_blob(
+        code_data.data(),
+        {1, n_cb, static_cast<int>(window_frames)},
+        ScalarType::Long);
     auto exact_result =
         codec_->execute("forward", std::vector<EValue>{*codes_t});
     if (exact_result.ok()) {
@@ -1044,12 +1200,17 @@ void VoxtralTTSRunner::synthesize_streaming(
       model_->execute("token_embedding", std::vector<EValue>{*tok_t});
   ET_CHECK_MSG(embed_result.ok(), "token_embedding failed");
   auto embeds = embed_result.get()[0].toTensor();
-  float* embed_ptr = embeds.mutable_data_ptr<float>();
+
+  // Read prompt embeddings into fp32 so the (always fp32) voice splice lands
+  // in a known dtype even when the model emits bf16.
+  std::vector<float> prompt_embeds_fp32(static_cast<size_t>(prompt_len) * dim);
+  read_float_tensor(
+      embeds, prompt_embeds_fp32.data(), prompt_embeds_fp32.size());
 
   if (!voice_embed_data_.empty()) {
     for (int i = 0; i < voice_len; ++i) {
       std::memcpy(
-          embed_ptr + (voice_start + i) * dim,
+          prompt_embeds_fp32.data() + (voice_start + i) * dim,
           voice_embed_data_.data() + i * dim,
           dim * sizeof(float));
     }
@@ -1059,17 +1220,38 @@ void VoxtralTTSRunner::synthesize_streaming(
   std::vector<int64_t> pos_vec(prompt_len);
   std::iota(pos_vec.begin(), pos_vec.end(), 0);
   auto pos_t = from_blob(pos_vec.data(), {prompt_len}, ScalarType::Long);
-  auto emb_t = from_blob(embed_ptr, {1, prompt_len, dim}, ScalarType::Float);
+
+  std::vector<uint16_t> prompt_embeds_bf16;
+  TensorPtr emb_t;
+  if (lm_use_bf16_) {
+    prompt_embeds_bf16.resize(prompt_embeds_fp32.size());
+    write_float_to_bf16(
+        prompt_embeds_bf16.data(),
+        prompt_embeds_fp32.data(),
+        prompt_embeds_fp32.size());
+    emb_t = from_blob(
+        prompt_embeds_bf16.data(), {1, prompt_len, dim}, ScalarType::BFloat16);
+  } else {
+    emb_t = from_blob(
+        prompt_embeds_fp32.data(), {1, prompt_len, dim}, ScalarType::Float);
+  }
   auto dec_result =
       model_->execute("text_decoder", std::vector<EValue>{*emb_t, *pos_t});
   ET_CHECK_MSG(dec_result.ok(), "text_decoder prefill failed");
 
   auto hidden_out = dec_result.get()[0].toTensor();
   std::vector<float> hidden_state(dim);
-  std::memcpy(
-      hidden_state.data(),
-      hidden_out.mutable_data_ptr<float>() + (prompt_len - 1) * dim,
-      static_cast<size_t>(dim) * sizeof(float));
+  if (hidden_out.scalar_type() == ScalarType::BFloat16) {
+    const uint16_t* h =
+        hidden_out.const_data_ptr<uint16_t>() + (prompt_len - 1) * dim;
+    for (int i = 0; i < dim; ++i)
+      hidden_state[i] = bf16_to_fp32(h[i]);
+  } else {
+    std::memcpy(
+        hidden_state.data(),
+        hidden_out.const_data_ptr<float>() + (prompt_len - 1) * dim,
+        static_cast<size_t>(dim) * sizeof(float));
+  }
 
   std::vector<int64_t> seed_token{audio_token_id_};
   auto seed_tok_t = from_blob(seed_token.data(), {1, 1}, ScalarType::Long);
@@ -1081,14 +1263,12 @@ void VoxtralTTSRunner::synthesize_streaming(
   int64_t seed_pos_val = prompt_len;
   auto seed_pos_t = from_blob(&seed_pos_val, {1}, ScalarType::Long);
   auto seed_emb_t = from_blob(
-      seed_embed.mutable_data_ptr<float>(), {1, 1, dim}, ScalarType::Float);
-  auto seed_decode_result =
-      model_->execute("text_decoder", std::vector<EValue>{*seed_emb_t, *seed_pos_t});
+      seed_embed.mutable_data_ptr(), {1, 1, dim}, seed_embed.scalar_type());
+  auto seed_decode_result = model_->execute(
+      "text_decoder", std::vector<EValue>{*seed_emb_t, *seed_pos_t});
   ET_CHECK_MSG(seed_decode_result.ok(), "text_decoder seed step failed");
-  std::memcpy(
-      hidden_state.data(),
-      seed_decode_result.get()[0].toTensor().mutable_data_ptr<float>(),
-      static_cast<size_t>(dim) * sizeof(float));
+  read_float_tensor(
+      seed_decode_result.get()[0].toTensor(), hidden_state.data(), dim);
 
   std::vector<std::vector<int64_t>> frame_codes;
   int64_t cur_pos = prompt_len + 1;
@@ -1109,9 +1289,8 @@ void VoxtralTTSRunner::synthesize_streaming(
   auto emit_ready_audio = [&]() {
     int64_t total = static_cast<int64_t>(frame_codes.size());
     int64_t pending = total - emitted_frames;
-    int64_t chunk_threshold = (emitted_frames == 0)
-                                  ? streaming_initial_chunk_
-                                  : streaming_chunk_frames_;
+    int64_t chunk_threshold = (emitted_frames == 0) ? streaming_initial_chunk_
+                                                    : streaming_chunk_frames_;
     if (pending < chunk_threshold)
       return;
 
@@ -1133,17 +1312,28 @@ void VoxtralTTSRunner::synthesize_streaming(
     emitted_frames = total;
   };
 
+  std::vector<uint16_t> stream_h_bf16;
+  std::vector<float> stream_sem_fp32;
+
   for (int frame = 0; frame < max_new_tokens && cur_pos < max_seq_len_;
        ++frame) {
-    auto h_t = from_blob(hidden_state.data(), {1, dim}, ScalarType::Float);
-    auto sem_r =
-        model_->execute("semantic_head", std::vector<EValue>{*h_t});
+    TensorPtr h_t;
+    if (lm_use_bf16_) {
+      stream_h_bf16.resize(dim);
+      write_float_to_bf16(stream_h_bf16.data(), hidden_state.data(), dim);
+      h_t = from_blob(stream_h_bf16.data(), {1, dim}, ScalarType::BFloat16);
+    } else {
+      h_t = from_blob(hidden_state.data(), {1, dim}, ScalarType::Float);
+    }
+    auto sem_r = model_->execute("semantic_head", std::vector<EValue>{*h_t});
     ET_CHECK_MSG(sem_r.ok(), "semantic_head failed");
 
     auto sem_t = sem_r.get()[0].toTensor();
     int64_t sem_vocab = sem_t.numel();
-    int64_t semantic_code = sample_semantic_code(
-        sem_t.data_ptr<float>(), sem_vocab, temperature);
+    stream_sem_fp32.resize(sem_vocab);
+    read_float_tensor(sem_t, stream_sem_fp32.data(), sem_vocab);
+    int64_t semantic_code =
+        sample_semantic_code(stream_sem_fp32.data(), sem_vocab, temperature);
 
     if (semantic_code == end_audio_code_) {
       std::cerr << "END_AUDIO at frame " << frame << std::endl;
@@ -1157,34 +1347,58 @@ void VoxtralTTSRunner::synthesize_streaming(
     }
     std::vector<float> zeros(dim, 0.0f);
 
-    for (int step = 0; step < n_decoding_steps_; ++step) {
-      float dt = timesteps[step + 1] - timesteps[step];
-      int64_t tidx_val = step;
-
-      auto xt1 = from_blob(x.data(), {1, n_aco}, ScalarType::Float);
-      auto ti1 = from_blob(&tidx_val, {1}, ScalarType::Long);
-      auto hc = from_blob(hidden_state.data(), {1, dim}, ScalarType::Float);
-      auto vc = model_->execute(
-          "predict_velocity", std::vector<EValue>{*xt1, *ti1, *hc});
-      ET_CHECK_MSG(vc.ok(), "predict_velocity (cond) failed");
+    {
+      // Pre-stage hidden_state (and zeros for uncond) into bf16 once per frame
+      // so the n_decoding_steps × 2 inner velocity calls reuse the buffers.
+      std::vector<uint16_t> step_h_bf16, step_zeros_bf16, step_x_bf16;
+      if (lm_use_bf16_) {
+        step_h_bf16.resize(dim);
+        write_float_to_bf16(step_h_bf16.data(), hidden_state.data(), dim);
+        step_zeros_bf16.assign(dim, fp32_to_bf16(0.0f));
+        step_x_bf16.resize(n_aco);
+      }
       std::vector<float> v_cond(n_aco);
-      std::memcpy(
-          v_cond.data(),
-          vc.get()[0].toTensor().mutable_data_ptr<float>(),
-          static_cast<size_t>(n_aco) * sizeof(float));
+      std::vector<float> v_uncond(n_aco);
 
-      auto xt2 = from_blob(x.data(), {1, n_aco}, ScalarType::Float);
-      auto ti2 = from_blob(&tidx_val, {1}, ScalarType::Long);
-      auto hu = from_blob(zeros.data(), {1, dim}, ScalarType::Float);
-      auto vu = model_->execute(
-          "predict_velocity", std::vector<EValue>{*xt2, *ti2, *hu});
-      ET_CHECK_MSG(vu.ok(), "predict_velocity (uncond) failed");
-      float* v_uncond = vu.get()[0].toTensor().mutable_data_ptr<float>();
+      for (int step = 0; step < n_decoding_steps_; ++step) {
+        float dt = timesteps[step + 1] - timesteps[step];
+        int64_t tidx_val = step;
 
-      for (int j = 0; j < n_aco; ++j) {
-        float v =
-            cfg_alpha_ * v_cond[j] + (1.0f - cfg_alpha_) * v_uncond[j];
-        x[j] += v * dt;
+        TensorPtr xt1, hc;
+        if (lm_use_bf16_) {
+          write_float_to_bf16(step_x_bf16.data(), x.data(), n_aco);
+          xt1 = from_blob(step_x_bf16.data(), {1, n_aco}, ScalarType::BFloat16);
+          hc = from_blob(step_h_bf16.data(), {1, dim}, ScalarType::BFloat16);
+        } else {
+          xt1 = from_blob(x.data(), {1, n_aco}, ScalarType::Float);
+          hc = from_blob(hidden_state.data(), {1, dim}, ScalarType::Float);
+        }
+        auto ti1 = from_blob(&tidx_val, {1}, ScalarType::Long);
+        auto vc = model_->execute(
+            "predict_velocity", std::vector<EValue>{*xt1, *ti1, *hc});
+        ET_CHECK_MSG(vc.ok(), "predict_velocity (cond) failed");
+        read_float_tensor(vc.get()[0].toTensor(), v_cond.data(), n_aco);
+
+        TensorPtr xt2, hu;
+        if (lm_use_bf16_) {
+          // step_x_bf16 already holds x; reuse.
+          xt2 = from_blob(step_x_bf16.data(), {1, n_aco}, ScalarType::BFloat16);
+          hu =
+              from_blob(step_zeros_bf16.data(), {1, dim}, ScalarType::BFloat16);
+        } else {
+          xt2 = from_blob(x.data(), {1, n_aco}, ScalarType::Float);
+          hu = from_blob(zeros.data(), {1, dim}, ScalarType::Float);
+        }
+        auto ti2 = from_blob(&tidx_val, {1}, ScalarType::Long);
+        auto vu = model_->execute(
+            "predict_velocity", std::vector<EValue>{*xt2, *ti2, *hu});
+        ET_CHECK_MSG(vu.ok(), "predict_velocity (uncond) failed");
+        read_float_tensor(vu.get()[0].toTensor(), v_uncond.data(), n_aco);
+
+        for (int j = 0; j < n_aco; ++j) {
+          float v = cfg_alpha_ * v_cond[j] + (1.0f - cfg_alpha_) * v_uncond[j];
+          x[j] += v * dt;
+        }
       }
     }
 
@@ -1192,33 +1406,28 @@ void VoxtralTTSRunner::synthesize_streaming(
     codes[0] = semantic_code;
     for (int j = 0; j < n_aco; ++j) {
       float clamped = std::clamp(x[j], -1.0f, 1.0f);
-      float scaled = ((clamped + 1.0f) / 2.0f) *
-                     static_cast<float>(acoustic_levels_ - 1);
+      float scaled =
+          ((clamped + 1.0f) / 2.0f) * static_cast<float>(acoustic_levels_ - 1);
       codes[j + 1] =
           static_cast<int64_t>(std::round(scaled)) + n_special_tokens_;
     }
     frame_codes.push_back(codes);
     emit_ready_audio();
 
-    auto next_codes =
-        from_blob(codes.data(), {1, n_cb, 1}, ScalarType::Long);
-    auto ne =
-        model_->execute("audio_token_embedding", std::vector<EValue>{*next_codes});
+    auto next_codes = from_blob(codes.data(), {1, n_cb, 1}, ScalarType::Long);
+    auto ne = model_->execute(
+        "audio_token_embedding", std::vector<EValue>{*next_codes});
     ET_CHECK_MSG(ne.ok(), "audio_token_embedding (next) failed");
     auto next_embeds = ne.get()[0].toTensor();
 
     int64_t next_pos_val = cur_pos;
     auto np = from_blob(&next_pos_val, {1}, ScalarType::Long);
     auto next_emb = from_blob(
-        next_embeds.mutable_data_ptr<float>(), {1, 1, dim},
-        ScalarType::Float);
+        next_embeds.mutable_data_ptr(), {1, 1, dim}, next_embeds.scalar_type());
     auto nd =
         model_->execute("text_decoder", std::vector<EValue>{*next_emb, *np});
     ET_CHECK_MSG(nd.ok(), "text_decoder (next) failed");
-    std::memcpy(
-        hidden_state.data(),
-        nd.get()[0].toTensor().mutable_data_ptr<float>(),
-        static_cast<size_t>(dim) * sizeof(float));
+    read_float_tensor(nd.get()[0].toTensor(), hidden_state.data(), dim);
     cur_pos++;
   }
 
@@ -1245,13 +1454,12 @@ void VoxtralTTSRunner::synthesize_streaming(
   wav.Close();
 
   auto end_time = std::chrono::high_resolution_clock::now();
-  auto total_ms =
-      std::chrono::duration_cast<std::chrono::milliseconds>(
-          end_time - start_time)
-          .count();
+  auto total_ms = std::chrono::duration_cast<std::chrono::milliseconds>(
+                      end_time - start_time)
+                      .count();
   int64_t total_frames = static_cast<int64_t>(frame_codes.size());
   float audio_duration = static_cast<float>(total_frames * downsample_factor_) /
-                         static_cast<float>(sample_rate_);
+      static_cast<float>(sample_rate_);
   std::cerr << "Streaming: " << total_frames << " frames (" << audio_duration
             << "s) in " << total_ms << "ms, RTF="
             << (static_cast<float>(total_ms) / 1000.0f) / audio_duration

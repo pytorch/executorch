@@ -29,17 +29,15 @@ from pathlib import Path
 import torch
 import torch.nn as nn
 from executorch.examples.models.voxtral_tts.model import load_model
-from executorch.examples.models.voxtral_tts.voice import (
-    load_voice_from_model_dir,
-)
-from executorch.extension.llm.export.quantize import quantize_model_
+from executorch.examples.models.voxtral_tts.voice import load_voice_from_model_dir
 from executorch.exir import (
     EdgeCompileConfig,
     ExecutorchBackendConfig,
     to_edge_transform_and_lower,
 )
-from executorch.exir.passes.init_mutable_pass import InitializedMutableBufferPass
 from executorch.exir.passes import MemoryPlanningPass
+from executorch.exir.passes.init_mutable_pass import InitializedMutableBufferPass
+from executorch.extension.llm.export.quantize import quantize_model_
 from torch.export import Dim, export
 
 
@@ -92,7 +90,10 @@ class PredictVelocityExport(nn.Module):
         self.flow_head = model.flow_head
 
     def forward(
-        self, x_t: torch.Tensor, t_idx: torch.Tensor, hidden: torch.Tensor,
+        self,
+        x_t: torch.Tensor,
+        t_idx: torch.Tensor,
+        hidden: torch.Tensor,
     ) -> torch.Tensor:
         return self.flow_head.predict_velocity(x_t, t_idx, hidden)
 
@@ -109,6 +110,105 @@ class CodecDecoderExport(nn.Module):
 # ---------------------------------------------------------------------------
 # Quantization policy
 # ---------------------------------------------------------------------------
+
+
+def _export_lm_pte(model, args, device: str) -> None:
+    """Export model.pte (LM + flow head, 5 methods)."""
+    print("\n" + "=" * 60)
+    print("Exporting model.pte (5 methods)")
+    print("=" * 60)
+    programs, metadata = export_model(
+        model,
+        args.max_seq_len,
+        streaming=args.streaming,
+        device=device,
+    )
+    et_model = lower_to_executorch(programs, metadata, backend=args.backend)
+
+    model_pte = os.path.join(args.output_dir, "model.pte")
+    print(f"\nSaving to {model_pte}...")
+    with open(model_pte, "wb") as f:
+        et_model.write_to_file(f)
+    size_mb = os.path.getsize(model_pte) / (1024 * 1024)
+    print(f"Saved model.pte ({size_mb:.1f} MB)")
+
+    # CUDA backend emits a .ptd containing the AOTI .so + weights.
+    if et_model._tensor_data:
+        et_model.write_tensor_data_to_file(args.output_dir)
+        print(f"Saved model tensor data to {args.output_dir}/")
+
+
+def _export_codec_pte(model, args, device: str) -> None:
+    """Export codec_decoder.pte (single forward method).
+
+    Codec convs are expressed as unfold + matmul / matmul + Fold
+    (model.py:_conv1d_as_matmul / _conv_transpose1d_as_matmul) so AOTI's CUDA
+    backend can lower them via Triton mm kernels. CodecAttention uses an
+    additive ALiBi mask which is fine for ATen SDPA when triton_kernel_mode=OFF.
+    """
+    print("\n" + "=" * 60)
+    print("Exporting codec_decoder.pte")
+    print("=" * 60)
+    codec_programs, codec_metadata = export_codec_decoder(
+        model,
+        max_codec_frames=args.max_codec_frames,
+        qlinear_codec=args.qlinear_codec,
+        qlinear_codec_group_size=args.qlinear_codec_group_size,
+        device=device,
+    )
+    codec_triton_mode = "OFF" if args.backend in ("cuda", "cuda-windows") else "ON"
+    et_codec = lower_to_executorch(
+        codec_programs,
+        codec_metadata,
+        backend=args.backend,
+        triton_kernel_mode=codec_triton_mode,
+    )
+
+    codec_pte = os.path.join(args.output_dir, "codec_decoder.pte")
+    print(f"\nSaving to {codec_pte}...")
+    with open(codec_pte, "wb") as f:
+        et_codec.write_to_file(f)
+    size_mb = os.path.getsize(codec_pte) / (1024 * 1024)
+    print(f"Saved codec_decoder.pte ({size_mb:.1f} MB)")
+
+    if et_codec._tensor_data:
+        # Rename the codec's data blob so it doesn't collide with the LM's
+        # `aoti_cuda_blob.ptd` (both default to the same filename).
+        renamed = {}
+        for k, v in et_codec._tensor_data.items():
+            new_key = "codec_" + k if ("aoti_cuda" in k or k.startswith("model")) else k
+            renamed[new_key] = v
+        et_codec._tensor_data = renamed
+        et_codec.write_tensor_data_to_file(args.output_dir)
+        print(f"Saved codec tensor data to {args.output_dir}/")
+
+
+def _apply_cuda_arg_defaults(parser, args, backend_for_export: str) -> None:
+    """Auto-set CUDA-specific defaults: tile_packed_to_4d packing + bf16 dtype.
+
+    Both are required for the AOTI _weight_int4pack_mm kernel path. Promoted
+    automatically (with a print) so users don't have to remember the rule;
+    explicit incompatible values are rejected via parser.error().
+    """
+    if backend_for_export == "cuda" and args.qlinear == "4w":
+        if args.qlinear_packing_format is None:
+            args.qlinear_packing_format = "tile_packed_to_4d"
+            print(
+                "Auto-selected --qlinear-packing-format=tile_packed_to_4d "
+                "(required by _weight_int4pack_mm on CUDA)."
+            )
+        elif args.qlinear_packing_format != "tile_packed_to_4d":
+            parser.error(
+                "--qlinear=4w on CUDA requires "
+                "--qlinear-packing-format=tile_packed_to_4d"
+            )
+
+    if backend_for_export == "cuda" and args.qlinear and args.dtype == "fp32":
+        print(
+            f"Auto-promoting --dtype to bf16 (CUDA --qlinear={args.qlinear} "
+            "needs bf16 weights for the int-pack kernels)."
+        )
+        args.dtype = "bf16"
 
 
 def resolve_effective_quantization(
@@ -141,6 +241,7 @@ def export_model(
     model,
     max_seq_len,
     streaming=False,
+    device="cpu",
 ):
     """Export LLM + acoustic head as a single multi-method model.pte.
 
@@ -155,8 +256,8 @@ def export_model(
     text_decoder = TextDecoderExport(model)
     text_decoder.eval()
     seq_dim = Dim("seq_len", min=1, max=max_seq_len)
-    sample_embeds = torch.randn(1, 4, config.dim, dtype=param_dtype)
-    sample_pos = torch.arange(4, dtype=torch.long)
+    sample_embeds = torch.randn(1, 4, config.dim, dtype=param_dtype, device=device)
+    sample_pos = torch.arange(4, dtype=torch.long, device=device)
     programs["text_decoder"] = export(
         text_decoder,
         (sample_embeds, sample_pos),
@@ -173,7 +274,7 @@ def export_model(
     tok_emb = TokenEmbeddingExport(model)
     tok_emb.eval()
     tok_seq_dim = Dim("tok_seq_len", min=1, max=max_seq_len)
-    sample_ids = torch.tensor([[0, 1, 2, 3]], dtype=torch.long)
+    sample_ids = torch.tensor([[0, 1, 2, 3]], dtype=torch.long, device=device)
     programs["token_embedding"] = export(
         tok_emb,
         (sample_ids,),
@@ -186,24 +287,25 @@ def export_model(
     print("\nExporting audio_token_embedding...")
     audio_tok_emb = AudioTokenEmbeddingExport(model)
     audio_tok_emb.eval()
-    sample_audio_codes = torch.zeros(1, config.n_codebooks, 1, dtype=torch.long)
+    sample_audio_codes = torch.zeros(
+        1, config.n_codebooks, 1, dtype=torch.long, device=device
+    )
     programs["audio_token_embedding"] = export(
         audio_tok_emb,
         (sample_audio_codes,),
         strict=True,
     )
-    print(
-        "  audio_token_embedding exported "
-        f"(sample: {sample_audio_codes.shape})"
-    )
+    print("  audio_token_embedding exported " f"(sample: {sample_audio_codes.shape})")
 
     # 4. Semantic head
     print("\nExporting semantic_head...")
     sem_head = SemanticHeadExport(model)
     sem_head.eval()
-    sample_hidden = torch.randn(1, config.dim, dtype=param_dtype)
+    sample_hidden = torch.randn(1, config.dim, dtype=param_dtype, device=device)
     programs["semantic_head"] = export(
-        sem_head, (sample_hidden,), strict=True,
+        sem_head,
+        (sample_hidden,),
+        strict=True,
     )
     print(f"  semantic_head exported (sample: {sample_hidden.shape})")
 
@@ -211,13 +313,20 @@ def export_model(
     print("\nExporting predict_velocity...")
     vel_pred = PredictVelocityExport(model)
     vel_pred.eval()
-    sample_xt = torch.randn(1, config.acoustic_dim, dtype=param_dtype)
-    sample_tidx = torch.tensor([0], dtype=torch.long)
-    sample_hv = torch.randn(1, config.dim, dtype=param_dtype)
+    sample_xt = torch.randn(1, config.acoustic_dim, dtype=param_dtype, device=device)
+    sample_tidx = torch.tensor([0], dtype=torch.long, device=device)
+    sample_hv = torch.randn(1, config.dim, dtype=param_dtype, device=device)
     programs["predict_velocity"] = export(
-        vel_pred, (sample_xt, sample_tidx, sample_hv), strict=True,
+        vel_pred,
+        (sample_xt, sample_tidx, sample_hv),
+        strict=True,
     )
     print("  predict_velocity exported")
+
+    # Tells the runner whether to stage fp32 buffers as bf16 before each
+    # AOTI execute (1 = bf16 model, 0 = fp32 model). bf16 happens for
+    # quantized exports (--qlinear); fp32 is the default mixed-precision path.
+    lm_input_is_bf16 = 1 if param_dtype == torch.bfloat16 else 0
 
     # Determine the default voice embedding length from the real voice asset
     # instead of baking in casual_male-specific metadata.
@@ -258,6 +367,7 @@ def export_model(
         "text_to_audio_token_id": config.text_to_audio_token_id,
         "repeat_audio_text_token_id": config.repeat_audio_text_token_id,
         "voice_embed_len": voice_embed_len,
+        "lm_input_is_bf16": lm_input_is_bf16,
     }
 
     return programs, metadata
@@ -268,6 +378,7 @@ def export_codec_decoder(
     max_codec_frames=256,
     qlinear_codec=None,
     qlinear_codec_group_size=None,
+    device="cpu",
 ):
     """Export codec decoder as a separate .pte."""
     from executorch.extension.llm.export.quantize import quantize_model_
@@ -287,7 +398,7 @@ def export_codec_decoder(
         )
 
     sample_codes = torch.zeros(
-        1, config.n_codebooks, max_codec_frames, dtype=torch.long
+        1, config.n_codebooks, max_codec_frames, dtype=torch.long, device=device
     )
     # Static export: the codec's transformer/conv stages introduce tight
     # divisibility constraints under dynamic_shapes (upsample stride/kernel
@@ -365,8 +476,15 @@ def apply_model_quantization(
         )
 
 
-def lower_to_executorch(programs, metadata, backend="xnnpack"):
-    """Lower exported programs to ExecuTorch."""
+def lower_to_executorch(programs, metadata, backend="xnnpack", triton_kernel_mode="ON"):
+    """Lower exported programs to ExecuTorch.
+
+    Args:
+        triton_kernel_mode: For CUDA backend only. "ON" replaces ATen SDPA with
+            Triton sdpa kernel (required for the LM decoder). "OFF" disables
+            replacement so the codec's additive ALiBi mask SDPA can lower
+            (Triton sdpa kernel only accepts bool masks).
+    """
     mutable_buffer_passes = [InitializedMutableBufferPass(["k_cache", "v_cache"])]
     if backend == "xnnpack":
         from executorch.backends.xnnpack.partition.xnnpack_partitioner import (
@@ -379,6 +497,29 @@ def lower_to_executorch(programs, metadata, backend="xnnpack"):
             key: [XnnpackDynamicallyQuantizedPartitioner(), XnnpackPartitioner()]
             for key in programs
         }
+    elif backend in ("cuda", "cuda-windows"):
+        from executorch.backends.cuda.cuda_backend import CudaBackend
+        from executorch.backends.cuda.cuda_partitioner import CudaPartitioner
+        from executorch.exir.backend.compile_spec_schema import CompileSpec
+
+        print(
+            f"\nLowering to ExecuTorch with CUDA "
+            f"{'(Windows) ' if backend == 'cuda-windows' else ''}"
+            f"({len(programs)} methods, triton_kernel_mode={triton_kernel_mode})..."
+        )
+        # NB: conv1d_to_conv2d is applied inside CudaBackend.preprocess via its
+        # decomposition_table. Doing it here too triggers an extra run_decompositions
+        # pass that leaks unbacked symbols on the 26-layer Mistral text_decoder.
+
+        partitioner = {}
+        for key in programs:
+            compile_specs = [CudaBackend.generate_method_name_compile_spec(key)]
+            compile_specs.append(
+                CompileSpec("triton_kernel_mode", triton_kernel_mode.encode("utf-8"))
+            )
+            if backend == "cuda-windows":
+                compile_specs.append(CompileSpec("platform", b"windows"))
+            partitioner[key] = [CudaPartitioner(compile_specs)]
     else:
         print(f"\nLowering to ExecuTorch (portable, {len(programs)} methods)...")
         partitioner = []
@@ -415,46 +556,57 @@ def lower_to_executorch(programs, metadata, backend="xnnpack"):
 def main():
     import sys
 
-    parser = argparse.ArgumentParser(
-        description="Export Voxtral TTS to ExecuTorch"
-    )
+    parser = argparse.ArgumentParser(description="Export Voxtral TTS to ExecuTorch")
     parser.add_argument(
-        "--model-path", required=True,
+        "--model-path",
+        required=True,
         help="Directory with params.json + consolidated.safetensors",
     )
     parser.add_argument(
-        "--backend", default="xnnpack",
-        choices=["portable", "xnnpack"],
-        help="Backend (default: xnnpack)",
+        "--backend",
+        default="xnnpack",
+        choices=["portable", "xnnpack", "cuda", "cuda-windows"],
+        help="Backend (default: xnnpack). cuda/cuda-windows compile via "
+        "AOTInductor and emit model.pte + model.ptd.",
     )
     parser.add_argument(
-        "--output-dir", default="./voxtral_tts_exports",
+        "--output-dir",
+        default="./voxtral_tts_exports",
         help="Output directory (default: ./voxtral_tts_exports)",
     )
     parser.add_argument(
-        "--export-target", default="all",
+        "--export-target",
+        default="all",
         choices=["all", "model", "codec"],
         help="Which artifacts to export (default: all).",
     )
     parser.add_argument(
-        "--max-seq-len", type=int, default=4096,
+        "--max-seq-len",
+        type=int,
+        default=4096,
         help="KV cache length (default: 4096)",
     )
     parser.add_argument(
-        "--max-codec-frames", type=int, default=256,
+        "--max-codec-frames",
+        type=int,
+        default=256,
         help="Max codec frames for decoder (default: 256 = ~20s audio)",
     )
     parser.add_argument(
-        "--qlinear", default=None,
+        "--qlinear",
+        default=None,
         choices=["4w", "8w", "8da4w", "8da8w"],
         help="Quantize ALL linear layers (LLM + acoustic head).",
     )
     parser.add_argument(
-        "--qlinear-group-size", type=int, default=None,
+        "--qlinear-group-size",
+        type=int,
+        default=None,
         help="Group size for linear quantization.",
     )
     parser.add_argument(
-        "--qlinear-packing-format", default=None,
+        "--qlinear-packing-format",
+        default=None,
         help="Packing format for 4w quantization.",
     )
     parser.add_argument(
@@ -464,36 +616,48 @@ def main():
         help="Limit decoder linear quantization to a specific decoder sub-scope.",
     )
     parser.add_argument(
-        "--qlinear-codec", default=None,
+        "--qlinear-codec",
+        default=None,
         choices=["4w", "8w"],
         help="Quantize codec decoder linear layers.",
     )
     parser.add_argument(
-        "--qlinear-codec-group-size", type=int, default=None,
+        "--qlinear-codec-group-size",
+        type=int,
+        default=None,
         help="Group size for codec linear quantization.",
     )
     parser.add_argument(
-        "--qembedding", default=None,
+        "--qembedding",
+        default=None,
         choices=["4w", "8w"],
         help="Quantize embedding layers.",
     )
     parser.add_argument(
-        "--qembedding-group-size", type=int, default=None,
+        "--qembedding-group-size",
+        type=int,
+        default=None,
         help="Group size for embedding quantization.",
     )
     parser.add_argument(
-        "--streaming", action="store_true",
+        "--streaming",
+        action="store_true",
         help="Enable streaming codec chunking metadata.",
     )
     parser.add_argument(
-        "--dtype", default="fp32",
+        "--dtype",
+        default="fp32",
         choices=["fp32", "bf16"],
         help="Model dtype (default: fp32).",
     )
     args = parser.parse_args()
 
+    backend_for_export = "cuda" if args.backend == "cuda-windows" else args.backend
+    _apply_cuda_arg_defaults(parser, args, backend_for_export)
+
     os.makedirs(args.output_dir, exist_ok=True)
     model_dtype = {"fp32": torch.float32, "bf16": torch.bfloat16}[args.dtype]
+    device = "cuda" if backend_for_export == "cuda" else "cpu"
 
     sys.stdout.reconfigure(line_buffering=True)
 
@@ -502,12 +666,16 @@ def main():
         args.model_path,
         max_seq_len=args.max_seq_len,
         dtype=model_dtype,
-        backend=args.backend,
+        backend=backend_for_export,
     )
     model.config_path = Path(args.model_path)
 
+    if device == "cuda":
+        print("Moving model to CUDA...")
+        model.cuda()
+
     quant_plan = resolve_effective_quantization(
-        backend=args.backend,
+        backend=backend_for_export,
         qlinear=args.qlinear,
         qembedding=args.qembedding,
     )
@@ -535,47 +703,10 @@ def main():
         )
 
     if args.export_target in ("all", "model"):
-        # Export model.pte (quantization already applied above)
-        print("\n" + "=" * 60)
-        print("Exporting model.pte (5 methods)")
-        print("=" * 60)
-        programs, metadata = export_model(
-            model,
-            args.max_seq_len,
-            streaming=args.streaming,
-        )
-
-        et_model = lower_to_executorch(programs, metadata, backend=args.backend)
-
-        model_pte = os.path.join(args.output_dir, "model.pte")
-        print(f"\nSaving to {model_pte}...")
-        with open(model_pte, "wb") as f:
-            et_model.write_to_file(f)
-        size_mb = os.path.getsize(model_pte) / (1024 * 1024)
-        print(f"Saved model.pte ({size_mb:.1f} MB)")
+        _export_lm_pte(model, args, device)
 
     if args.export_target in ("all", "codec"):
-        # Export codec_decoder.pte (separate quantization)
-        print("\n" + "=" * 60)
-        print("Exporting codec_decoder.pte")
-        print("=" * 60)
-        codec_programs, codec_metadata = export_codec_decoder(
-            model,
-            max_codec_frames=args.max_codec_frames,
-            qlinear_codec=args.qlinear_codec,
-            qlinear_codec_group_size=args.qlinear_codec_group_size,
-        )
-
-        et_codec = lower_to_executorch(
-            codec_programs, codec_metadata, backend=args.backend
-        )
-
-        codec_pte = os.path.join(args.output_dir, "codec_decoder.pte")
-        print(f"\nSaving to {codec_pte}...")
-        with open(codec_pte, "wb") as f:
-            et_codec.write_to_file(f)
-        size_mb = os.path.getsize(codec_pte) / (1024 * 1024)
-        print(f"Saved codec_decoder.pte ({size_mb:.1f} MB)")
+        _export_codec_pte(model, args, device)
 
     print("\n" + "=" * 60)
     print("DONE")
