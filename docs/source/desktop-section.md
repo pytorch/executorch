@@ -62,7 +62,4 @@ Regardless of the target desktop platform, integrating ExecuTorch into a native 
 desktop-macos
 desktop-linux
 desktop-windows
-using-executorch-cpp
-using-executorch-building-from-source
-raspberry_pi_llama_tutorial
 ```
