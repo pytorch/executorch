@@ -1253,9 +1253,6 @@ def _sdpa_decode_reduce_kernel(
     tl.store(o_out_ptrs, acc.to(tl.bfloat16))
 
 
-_splitk_buf_cache: dict = {}
-
-
 def _launch_decode_splitk(
     query: torch.Tensor,
     key: torch.Tensor,
@@ -1278,20 +1275,12 @@ def _launch_decode_splitk(
     num_splits = min(max(triton.cdiv(L_kv, 256), 1), 128)
     chunk_size = triton.cdiv(L_kv, num_splits)
 
-    # Cache partial buffers to avoid CUDA allocator overhead per call.
-    # The split kernel fully writes every entry before the reduce kernel
-    # reads, so stale data from a previous call is harmless.
-    buf_key = (num_splits, B, H_q, D, query.device.index)
-    bufs = _splitk_buf_cache.get(buf_key)
-    if bufs is None:
-        bufs = (
-            torch.empty(
-                (num_splits, B, H_q, D), device=query.device, dtype=torch.float32
-            ),
-            torch.empty((num_splits, B, H_q), device=query.device, dtype=torch.float32),
-        )
-        _splitk_buf_cache[buf_key] = bufs
-    O_partial, L_partial = bufs
+    O_partial = torch.empty(
+        (num_splits, B, H_q, D), device=query.device, dtype=torch.float32
+    )
+    L_partial = torch.zeros(
+        (num_splits, B, H_q), device=query.device, dtype=torch.float32
+    )
 
     stride_qb, stride_qh, stride_qm, stride_qd = query.stride()
     stride_kb, stride_kh, stride_kn, stride_kd = key.stride()
