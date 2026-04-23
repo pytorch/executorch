@@ -329,7 +329,7 @@ for i in "${!test_model[@]}"; do
         model_compiler_flags="${model_compiler_flags} --model_input=${model_input}"
     fi
 
-    ARM_AOT_CMD="python3 -m examples.arm.aot_arm_compiler --model_name=${model} --target=${target} ${model_compiler_flags} --intermediate=${output_folder} --output=${pte_file} --system_config=${system_config} --memory_mode=${memory_mode} $bundleio_flag ${etrecord_flag} --config=${config} $qdq_fusion_op_flag"
+    ARM_AOT_CMD="python3 -m backends.arm.scripts.aot_arm_compiler --model_name=${model} --target=${target} ${model_compiler_flags} --intermediate=${output_folder} --output=${pte_file} --system_config=${system_config} --memory_mode=${memory_mode} $bundleio_flag ${etrecord_flag} --config=${config} $qdq_fusion_op_flag"
     echo "CALL ${ARM_AOT_CMD}" >&2
     ${ARM_AOT_CMD} 1>&2
 
