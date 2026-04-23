@@ -37,6 +37,20 @@ namespace ET_RUNTIME_NAMESPACE {
 
 using internal::PlatformMemoryAllocator;
 
+// Maximum number of instructions that Method::execute() will run before
+// returning an error. Prevents infinite loops caused by malformed programs
+// (e.g., JumpFalseCall instructions whose destination_instruction points to
+// themselves). Override at compile time via -DET_MAX_INSTRUCTIONS=<value>.
+#ifndef ET_MAX_INSTRUCTIONS
+#define ET_MAX_INSTRUCTIONS 10000000
+#endif
+static_assert(
+    (ET_MAX_INSTRUCTIONS) > 0,
+    "ET_MAX_INSTRUCTIONS must be positive. 0 would reject every program on "
+    "its first instruction; negative values wrap to SIZE_MAX when assigned "
+    "to size_t, silently disabling the infinite-loop guard.");
+static constexpr size_t kMaxInstructions = ET_MAX_INSTRUCTIONS;
+
 /**
  * Runtime state for a backend delegate.
  */
@@ -86,14 +100,17 @@ class BackendDelegate final {
     }
 
     // Parse compilation specs from program
-    CompileSpec* compile_specs;
-    Error err = PopulateCompileSpecs(
-        delegate.compile_specs(), backend_init_context, &compile_specs);
-    if (err != Error::Ok) {
-      ET_LOG(Error, "Failed to get compile specs for backend %s", backend_id);
-      return err;
+    CompileSpec* compile_specs = nullptr;
+    size_t num_compile_specs = 0;
+    if (delegate.compile_specs() != nullptr) {
+      Error err = PopulateCompileSpecs(
+          delegate.compile_specs(), backend_init_context, &compile_specs);
+      if (err != Error::Ok) {
+        ET_LOG(Error, "Failed to get compile specs for backend %s", backend_id);
+        return err;
+      }
+      num_compile_specs = delegate.compile_specs()->size();
     }
-    size_t num_compile_specs = delegate.compile_specs()->size();
 
     out->backend_ = backend;
     out->handle_ = nullptr;
@@ -1521,8 +1538,17 @@ Error Method::execute_instruction() {
       // We know that instr_args_as_FreeCall is non-null because it was checked
       // at init time.
       auto free_call = instruction->instr_args_as_FreeCall();
-      auto t = mutable_value(free_call->value_index()).toTensor();
-      internal::reset_data_ptr(t);
+      auto& val = mutable_value(free_call->value_index());
+      if (val.isTensor()) {
+        auto& t = val.toTensor();
+        internal::reset_data_ptr(t);
+      } else {
+        ET_LOG(
+            Error,
+            "FreeCall target at index %u is not a Tensor",
+            static_cast<unsigned int>(free_call->value_index()));
+        err = Error::InvalidProgram;
+      }
     } break;
     default:
       ET_LOG(
@@ -1652,6 +1678,7 @@ Error Method::execute() {
 
   // Chains are executed sequentially today, but future async designs may
   // branch and run many in parallel or out of order.
+  size_t instruction_count = 0;
   for (step_state_.chain_idx = 0; step_state_.chain_idx < n_chains_;
        ++step_state_.chain_idx) {
     Chain& chain = chains_[step_state_.chain_idx];
@@ -1665,6 +1692,21 @@ Error Method::execute() {
     // Loop over instructions
     step_state_.instr_idx = 0;
     while (step_state_.instr_idx < chain.s_chain_->instructions()->size()) {
+      if (instruction_count >= kMaxInstructions) {
+        ET_LOG(
+            Error,
+            "Instruction execution limit (%" ET_PRIsize_t
+            ") exceeded at chain %" ET_PRIsize_t ", instruction %" ET_PRIsize_t
+            ". Possible infinite loop detected. If this is a legitimate "
+            "large model, raise the limit by rebuilding with "
+            "-DET_MAX_INSTRUCTIONS=<value>.",
+            kMaxInstructions,
+            step_state_.chain_idx,
+            step_state_.instr_idx);
+        step_state_ = StepState{0, 0};
+        return Error::InvalidProgram;
+      }
+      ++instruction_count;
       EXECUTORCH_PROFILE_INSTRUCTION_SCOPE(
           static_cast<int32_t>(step_state_.chain_idx),
           static_cast<uint32_t>(step_state_.instr_idx));
