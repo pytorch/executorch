@@ -7,6 +7,7 @@
  */
 
 #pragma once
+#include <executorch/runtime/backend/backend_cache.h>
 #include <executorch/runtime/backend/options.h>
 #include <executorch/runtime/core/error.h>
 #include <executorch/runtime/core/event_tracer.h>
@@ -36,7 +37,8 @@ class BackendInitContext final {
       EventTracer* event_tracer = nullptr,
       const char* method_name = nullptr,
       const NamedDataMap* named_data_map = nullptr,
-      Span<const BackendOption> runtime_specs = {})
+      Span<const BackendOption> runtime_specs = {},
+      DelegateBackendCache* backend_cache = nullptr)
       : runtime_allocator_(runtime_allocator),
 #ifdef ET_EVENT_TRACER_ENABLED
         event_tracer_(event_tracer),
@@ -45,7 +47,8 @@ class BackendInitContext final {
 #endif
         method_name_(method_name),
         named_data_map_(named_data_map),
-        runtime_specs_(runtime_specs) {
+        runtime_specs_(runtime_specs),
+        backend_cache_(backend_cache) {
   }
 
   /** Get the runtime allocator passed from Method. It's the same runtime
@@ -95,6 +98,14 @@ class BackendInitContext final {
   }
 
   /**
+   * Get the backend cache for this delegate, if one was provided.
+   * Returns nullptr if no cache is available.
+   */
+  DelegateBackendCache* get_cache() const {
+    return backend_cache_;
+  }
+
+  /**
    * Get a runtime spec value by key and type.
    *
    * @tparam T The expected type (bool, int, or const char*)
@@ -135,6 +146,7 @@ class BackendInitContext final {
   const char* method_name_ = nullptr;
   const NamedDataMap* named_data_map_ = nullptr;
   Span<const BackendOption> runtime_specs_;
+  DelegateBackendCache* backend_cache_ = nullptr;
 };
 
 } // namespace ET_RUNTIME_NAMESPACE

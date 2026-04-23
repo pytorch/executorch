@@ -253,7 +253,8 @@ class Module {
       const std::string& method_name,
       runtime::HierarchicalAllocator* planned_memory = nullptr,
       torch::executor::EventTracer* event_tracer = nullptr,
-      const LoadBackendOptionsMap* backend_options = nullptr);
+      const LoadBackendOptionsMap* backend_options = nullptr,
+      runtime::BackendCache* backend_cache = nullptr);
 
   ET_DEPRECATED ET_NODISCARD runtime::Error inline load_method(
       const std::string& method_name,
@@ -301,9 +302,14 @@ class Module {
   ET_NODISCARD inline runtime::Error load_forward(
       runtime::HierarchicalAllocator* planned_memory = nullptr,
       torch::executor::EventTracer* event_tracer = nullptr,
-      const LoadBackendOptionsMap* backend_options = nullptr) {
+      const LoadBackendOptionsMap* backend_options = nullptr,
+      runtime::BackendCache* backend_cache = nullptr) {
     return load_method(
-        "forward", planned_memory, event_tracer, backend_options);
+        "forward",
+        planned_memory,
+        event_tracer,
+        backend_options,
+        backend_cache);
   }
 
   ET_DEPRECATED ET_NODISCARD inline runtime::Error load_forward(
