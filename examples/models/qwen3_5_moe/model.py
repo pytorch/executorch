@@ -20,6 +20,7 @@ from dataclasses import dataclass, field
 
 import torch
 import torch.nn as nn
+
 from torch.nn import functional as F
 
 
@@ -49,6 +50,7 @@ class Qwen35MoEConfig:
     rms_norm_eps: float = 1e-6
     rope_theta: float = 10_000_000.0
     max_seq_len: int = 4096
+    use_splitk_decode: bool = True
     layer_types: list = field(default_factory=list)
 
     def __post_init__(self):
@@ -230,6 +232,7 @@ class FullAttention(nn.Module):
 
         self.kv_cache = KVCache(self.n_kv_heads, self.head_dim, config.max_seq_len)
         self.turboquant = False
+        self.use_splitk_decode = config.use_splitk_decode
 
         self.register_buffer(
             "cache_positions",
@@ -285,9 +288,19 @@ class FullAttention(nn.Module):
             )
         else:
             k, v = self.kv_cache.update(input_pos, k, v)
-            y = F.scaled_dot_product_attention(
-                q, k, v, attn_mask=attn_mask, enable_gqa=True
-            )
+            # The export produces two methods — decode (T=1, static) and
+            # prefill (T>=2, dynamic). Each traces only one branch, so no
+            # torch.cond is needed and we avoid GPU→CPU sync overhead.
+            if T == 1 and self.use_splitk_decode:
+                from executorch.backends.cuda.triton.kernels.sdpa import (
+                    sdpa_decode_splitk,
+                )
+
+                y = sdpa_decode_splitk(q, k, v, attn_mask=attn_mask)
+            else:
+                from executorch.backends.cuda.triton.kernels.sdpa import sdpa
+
+                y = sdpa(q, k, v, attn_mask=attn_mask, enable_gqa=True)
 
         y = y.transpose(1, 2).contiguous().view(B, T, -1)
 
@@ -463,6 +476,7 @@ class FusedMoEExperts(nn.Module):
         self.intermediate_size = config.moe_intermediate_size
         self.hidden_size = config.hidden_size
         self.group_size = 32
+        self.use_batched_moe = False
 
         self.w1_weight = nn.Parameter(
             torch.empty(
@@ -480,6 +494,19 @@ class FusedMoEExperts(nn.Module):
         )
 
     def forward(self, x, expert_weights, expert_indices, top_k):
+        if self.use_batched_moe:
+            return torch.ops.triton.fused_moe_batched_gemm(
+                x,
+                self.w1,
+                self.w1_scale,
+                self.w2,
+                self.w2_scale,
+                expert_weights,
+                expert_indices,
+                top_k,
+                self.num_experts,
+                self.group_size,
+            )
         return torch.ops.triton.fused_moe(
             x,
             self.w1,
@@ -578,13 +605,24 @@ class Qwen35MoE(nn.Module):
         self.lm_head = nn.Linear(config.hidden_size, config.vocab_size, bias=False)
 
     def forward(
-        self, tokens: torch.LongTensor, input_pos: torch.LongTensor
+        self,
+        tokens: torch.LongTensor,
+        input_pos: torch.LongTensor,
+        temperature: torch.Tensor,
     ) -> torch.Tensor:
         x = self.embed_tokens(tokens)
         for layer in self.layers:
             x = layer(x, input_pos)
         x = self.norm(x)
-        return self.lm_head(x)
+        # Only compute logits for the last token position — avoids
+        # materializing the full [B, T, V] tensor during prefill.
+        logits = self.lm_head(x[:, -1, :]).float()  # [B, V] float32
+        # GPU-side Gumbel-max sampling: argmax(logits/T + gumbel_noise)
+        # Equivalent to sampling from softmax(logits/T) but fully on-device.
+        logits = logits / temperature.clamp(min=1e-6)
+        noise = torch.rand_like(logits)
+        gumbel = -torch.log(-torch.log(noise + 1e-20) + 1e-20)
+        return (logits + gumbel).argmax(dim=-1, keepdim=True).float()  # [B, 1]
 
     @staticmethod
     def from_hf_checkpoint(model_dir, max_seq_len=4096):

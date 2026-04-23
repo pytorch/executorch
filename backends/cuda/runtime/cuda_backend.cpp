@@ -83,6 +83,7 @@ constexpr char kSkipCopyOutputToCpuForMethod[] =
 constexpr char kUseSharedCudaStream[] = "use_shared_cuda_stream";
 constexpr char kEnableCudaGraphForMethod[] = "enable_cuda_graph_for_method";
 constexpr int kCudaGraphWarmupSteps = 3;
+constexpr char kShareKvCacheAcrossMethods[] = "share_kv_cache_across_methods";
 } // anonymous namespace
 
 class ET_EXPERIMENTAL CudaBackend final
@@ -315,12 +316,17 @@ class ET_EXPERIMENTAL CudaBackend final
       ArrayRef<CompileSpec> compile_specs // This will be my empty list
   ) const override {
     std::string method_name;
+    bool share_kv_cache = false;
     for (const CompileSpec& spec : compile_specs) {
       if (std::strcmp(spec.key, "method_name") == 0) {
         method_name.assign(
             static_cast<const char*>(spec.value.buffer),
             spec.value.nbytes); // no nullptr guarantee, so pass size
-        break;
+      } else if (std::strcmp(spec.key, kShareKvCacheAcrossMethods) == 0) {
+        if (spec.value.nbytes >= 1) {
+          share_kv_cache =
+              static_cast<const uint8_t*>(spec.value.buffer)[0] != 0;
+        }
       }
     }
 
@@ -444,14 +450,16 @@ class ET_EXPERIMENTAL CudaBackend final
     // ---------------------------------------------------------------
     // Cross-method constant sharing (e.g., KV cache between prefill/decode).
     //
+    // Only enabled when share_kv_cache_across_methods compile spec is set.
     // The first container to initialize extracts its constants (keyed by
     // original FQN) and stores the AtenTensorHandle's. Subsequent containers
     // with matching FQNs are updated to point to the same GPU tensors via
     // UpdateUserManagedConstantBufferPairs (user_managed = true → no copy,
     // the source container retains ownership).
     // ---------------------------------------------------------------
-    if (handle->get_num_constants && handle->get_constant_name &&
-        handle->get_constant_original_fqn && handle->extract_constants_map &&
+    if (share_kv_cache && handle->get_num_constants &&
+        handle->get_constant_name && handle->get_constant_original_fqn &&
+        handle->extract_constants_map &&
         handle->update_user_managed_constant_buffer_pairs) {
       size_t num_constants = 0;
       handle->get_num_constants(handle->container_handle, &num_constants);
@@ -497,6 +505,8 @@ class ET_EXPERIMENTAL CudaBackend final
                 Error,
                 "Failed to extract constants from '%s'",
                 method_name.c_str());
+            delete handle;
+            return Error::Internal;
           }
         } else {
           // Subsequent container: share matching constants from the first.
@@ -529,14 +539,24 @@ class ET_EXPERIMENTAL CudaBackend final
                   Error,
                   "Failed to share constants into '%s'",
                   method_name.c_str());
+              delete handle;
+              return Error::Internal;
             }
           }
         }
       }
+    } else if (share_kv_cache) {
+      ET_LOG(
+          Error,
+          "share_kv_cache_across_methods requested but constant sharing APIs "
+          "not available for method '%s'",
+          method_name.c_str());
+      delete handle;
+      return Error::Internal;
     } else {
       ET_LOG(
           Info,
-          "Constant sharing APIs not available for method '%s'",
+          "Constant sharing not requested for method '%s'",
           method_name.c_str());
     }
 
@@ -582,18 +602,26 @@ class ET_EXPERIMENTAL CudaBackend final
     // ---------------------------------------------------------------
     if (handle->cuda_graph_state.phase == CudaGraphPhase::Replay) {
       Result<cudaStream_t> csr = getCurrentCUDAStream(0);
-      cudaStream_t cs = csr.get();
       ET_CHECK_OK_OR_RETURN_ERROR(csr.error());
+      cudaStream_t cs = csr.get();
 
       // Copy new input data into static input buffers
       for (size_t i = 0; i < n_inputs; i++) {
         auto* cpu_tensor = &(args[i]->toTensor());
-        cudaMemcpyAsync(
+        ET_CHECK_OR_RETURN_ERROR(
+            cpu_tensor->nbytes() ==
+                handle->cuda_graph_state.static_input_nbytes[i],
+            InvalidArgument,
+            "CUDA graph replay: input %zu size mismatch (expected %zu, got %zu)",
+            i,
+            handle->cuda_graph_state.static_input_nbytes[i],
+            cpu_tensor->nbytes());
+        ET_CUDA_CHECK_OR_RETURN_ERROR(cudaMemcpyAsync(
             handle->cuda_graph_state.static_input_ptrs[i],
             cpu_tensor->const_data_ptr(),
             handle->cuda_graph_state.static_input_nbytes[i],
             cudaMemcpyHostToDevice,
-            cs);
+            cs));
       }
 
       // Replay the captured graph
@@ -611,12 +639,12 @@ class ET_EXPERIMENTAL CudaBackend final
       if (copy_outputs) {
         for (size_t i = 0; i < n_outputs; i++) {
           auto* cpu_out = &(args[i + n_inputs]->toTensor());
-          cudaMemcpyAsync(
+          ET_CUDA_CHECK_OR_RETURN_ERROR(cudaMemcpyAsync(
               cpu_out->mutable_data_ptr(),
               handle->cuda_graph_state.static_output_ptrs[i],
               handle->cuda_graph_state.static_output_nbytes[i],
               cudaMemcpyDeviceToHost,
-              cs);
+              cs));
         }
         cudaStreamSynchronize(cs);
       }
@@ -643,10 +671,6 @@ class ET_EXPERIMENTAL CudaBackend final
 
       // CAPTURE step: allocate persistent static GPU buffers
       if (is_capture_step) {
-        auto sizes = cpu_tensor->sizes();
-        auto strides = cpu_tensor->strides();
-        std::vector<int64_t> sizes_vec(sizes.begin(), sizes.end());
-        std::vector<int64_t> strides_vec(strides.begin(), strides.end());
         size_t nbytes = cpu_tensor->nbytes();
 
         void* static_ptr = nullptr;
@@ -665,19 +689,11 @@ class ET_EXPERIMENTAL CudaBackend final
             cudaMemcpyHostToDevice);
 
         handle->cuda_graph_state.static_input_ptrs.push_back(static_ptr);
-        handle->cuda_graph_state.static_input_sizes.push_back(sizes_vec);
-        handle->cuda_graph_state.static_input_strides.push_back(strides_vec);
-        handle->cuda_graph_state.static_input_scalar_types.push_back(
-            static_cast<int>(cpu_tensor->scalar_type()));
         handle->cuda_graph_state.static_input_nbytes.push_back(nbytes);
 
-        gpu_inputs[i] = new SlimTensor(slim::from_blob(
-            static_ptr,
-            slim::makeArrayRef(sizes_vec),
-            slim::makeArrayRef(strides_vec),
-            static_cast<slim::c10::ScalarType>(cpu_tensor->scalar_type()),
-            DEFAULT_CUDA_DEVICE,
-            0));
+        gpu_inputs[i] = make_slimtensor_from_blob_with_etensor_metadata(
+            static_ptr, cpu_tensor);
+
         continue;
       }
 
@@ -689,19 +705,8 @@ class ET_EXPERIMENTAL CudaBackend final
         cudaError_t err = cudaPointerGetAttributes(&attributes, data_ptr);
         if (err == cudaSuccess && attributes.type == cudaMemoryTypeDevice) {
           // Data is already on GPU - wrap it directly without copy
-          auto sizes = cpu_tensor->sizes();
-          auto strides = cpu_tensor->strides();
-          std::vector<int64_t> sizes_vec(sizes.begin(), sizes.end());
-          std::vector<int64_t> strides_vec(strides.begin(), strides.end());
-
-          gpu_inputs[i] = new SlimTensor(slim::from_blob(
-              const_cast<void*>(data_ptr),
-              slim::makeArrayRef(sizes_vec),
-              slim::makeArrayRef(strides_vec),
-              static_cast<slim::c10::ScalarType>(cpu_tensor->scalar_type()),
-              DEFAULT_CUDA_DEVICE,
-              0 // storage_offset
-              ));
+          gpu_inputs[i] = make_slimtensor_from_blob_with_etensor_metadata(
+              const_cast<void*>(data_ptr), cpu_tensor);
 
           continue;
         }
@@ -753,8 +758,8 @@ class ET_EXPERIMENTAL CudaBackend final
     // NOTE: run() steals input handles (RAII wraps them at the start of
     // run_impl) and may replace output handles with its own.
     Result<cudaStream_t> cuda_stream_ret = getCurrentCUDAStream(0);
-    cudaStream_t cuda_stream = cuda_stream_ret.get();
     ET_CHECK_OK_OR_RETURN_ERROR(cuda_stream_ret.error());
+    cudaStream_t cuda_stream = cuda_stream_ret.get();
 
     if (is_capture_step) {
       // ----- CUDA graph CAPTURE -----
@@ -801,6 +806,7 @@ class ET_EXPERIMENTAL CudaBackend final
       // End capture → instantiate graph
       cudaError_t gerr =
           cudaStreamEndCapture(cuda_stream, &handle->cuda_graph_state.graph);
+
       ET_CHECK_OR_RETURN_ERROR(
           gerr == cudaSuccess,
           Internal,
@@ -810,6 +816,7 @@ class ET_EXPERIMENTAL CudaBackend final
       gerr = cudaGraphInstantiate(
           &handle->cuda_graph_state.graph_exec,
           handle->cuda_graph_state.graph,
+
           cudaGraphInstantiateFlagAutoFreeOnLaunch);
       ET_CHECK_OR_RETURN_ERROR(
           gerr == cudaSuccess,
@@ -821,15 +828,6 @@ class ET_EXPERIMENTAL CudaBackend final
       for (size_t i = 0; i < n_outputs; i++) {
         SlimTensor* out = gpu_outputs[i];
         handle->cuda_graph_state.static_output_ptrs.push_back(out->data_ptr());
-
-        auto out_sizes = out->sizes();
-        auto out_strides = out->strides();
-        handle->cuda_graph_state.static_output_sizes.push_back(
-            std::vector<int64_t>(out_sizes.begin(), out_sizes.end()));
-        handle->cuda_graph_state.static_output_strides.push_back(
-            std::vector<int64_t>(out_strides.begin(), out_strides.end()));
-        handle->cuda_graph_state.static_output_scalar_types.push_back(
-            static_cast<int>(out->dtype()));
         handle->cuda_graph_state.static_output_nbytes.push_back(out->nbytes());
       }
 
@@ -853,13 +851,20 @@ class ET_EXPERIMENTAL CudaBackend final
       if (copy_outputs) {
         for (size_t i = 0; i < n_outputs; i++) {
           auto* cpu_out = &(args[i + n_inputs]->toTensor());
-          cudaMemcpyAsync(
+          ET_CUDA_CHECK_OR_RETURN_ERROR(cudaMemcpyAsync(
               cpu_out->mutable_data_ptr(),
               handle->cuda_graph_state.static_output_ptrs[i],
               handle->cuda_graph_state.static_output_nbytes[i],
               cudaMemcpyDeviceToHost,
-              cuda_stream);
+              cuda_stream));
           // Don't delete — static buffers are owned by the handle
+          gpu_outputs[i] = nullptr;
+        }
+        cudaStreamSynchronize(cuda_stream);
+      } else {
+        // Even when skipping copy, null out gpu_outputs to prevent
+        // the ScopeGuard from deleting static output buffers.
+        for (size_t i = 0; i < n_outputs; i++) {
           gpu_outputs[i] = nullptr;
         }
       }

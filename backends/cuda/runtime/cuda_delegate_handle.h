@@ -60,14 +60,10 @@ struct CudaGraphState {
   // addresses that CUDA graph replay will write to / read from.
   std::vector<void*> static_input_ptrs;
   std::vector<void*> static_output_ptrs;
-  std::vector<std::vector<int64_t>> static_input_sizes;
-  std::vector<std::vector<int64_t>> static_input_strides;
-  std::vector<std::vector<int64_t>> static_output_sizes;
-  std::vector<std::vector<int64_t>> static_output_strides;
-  std::vector<int> static_input_scalar_types;
-  std::vector<int> static_output_scalar_types;
   std::vector<size_t> static_input_nbytes;
   std::vector<size_t> static_output_nbytes;
+
+  CudaGraphState() = default;
 
   ~CudaGraphState() {
     if (graph_exec) {
@@ -82,6 +78,51 @@ struct CudaGraphState {
       if (ptr)
         cudaFree(ptr);
     }
+  }
+
+  // Non-copyable: prevent double-free of CUDA resources
+  CudaGraphState(const CudaGraphState&) = delete;
+  CudaGraphState& operator=(const CudaGraphState&) = delete;
+
+  // Movable
+  CudaGraphState(CudaGraphState&& other) noexcept
+      : phase(other.phase),
+        warmup_remaining(other.warmup_remaining),
+        graph(other.graph),
+        graph_exec(other.graph_exec),
+        static_input_ptrs(std::move(other.static_input_ptrs)),
+        static_output_ptrs(std::move(other.static_output_ptrs)),
+        static_input_nbytes(std::move(other.static_input_nbytes)),
+        static_output_nbytes(std::move(other.static_output_nbytes)) {
+    other.graph = nullptr;
+    other.graph_exec = nullptr;
+  }
+
+  CudaGraphState& operator=(CudaGraphState&& other) noexcept {
+    if (this != &other) {
+      // Clean up existing resources
+      if (graph_exec)
+        cudaGraphExecDestroy(graph_exec);
+      if (graph)
+        cudaGraphDestroy(graph);
+      for (auto* ptr : static_input_ptrs) {
+        if (ptr)
+          cudaFree(ptr);
+      }
+
+      phase = other.phase;
+      warmup_remaining = other.warmup_remaining;
+      graph = other.graph;
+      graph_exec = other.graph_exec;
+      static_input_ptrs = std::move(other.static_input_ptrs);
+      static_output_ptrs = std::move(other.static_output_ptrs);
+      static_input_nbytes = std::move(other.static_input_nbytes);
+      static_output_nbytes = std::move(other.static_output_nbytes);
+
+      other.graph = nullptr;
+      other.graph_exec = nullptr;
+    }
+    return *this;
   }
 };
 
@@ -108,6 +149,44 @@ struct CudaDelegateHandle : public aoti::AOTIDelegateHandle {
 
   // CUDA graph state (warmup, capture, replay, static buffers)
   CudaGraphState cuda_graph_state;
+  // --- CUDA graph state ---
+  // Phase: 0=disabled, 1=warmup, 2=captured (replay mode)
+  int cuda_graph_phase = 0;
+  int cuda_graph_warmup_remaining = 0;
+
+  // Captured graph and executable instance
+  cudaGraph_t cuda_graph = nullptr;
+  cudaGraphExec_t cuda_graph_exec = nullptr;
+
+  // Static input/output GPU buffers pinned during capture.
+  // These hold the tensor metadata; the underlying data pointers are fixed
+  // addresses that CUDA graph replay will write to / read from.
+  // SlimTensor pointers — owned by this handle.
+  std::vector<void*> static_input_ptrs; // raw GPU data pointers for inputs
+  std::vector<void*> static_output_ptrs; // raw GPU data pointers for outputs
+  std::vector<std::vector<int64_t>> static_input_sizes;
+  std::vector<std::vector<int64_t>> static_input_strides;
+  std::vector<std::vector<int64_t>> static_output_sizes;
+  std::vector<std::vector<int64_t>> static_output_strides;
+  std::vector<int> static_input_scalar_types;
+  std::vector<int> static_output_scalar_types;
+  std::vector<size_t> static_input_nbytes;
+  std::vector<size_t> static_output_nbytes;
+
+  ~CudaDelegateHandle() {
+    if (cuda_graph_exec) {
+      cudaGraphExecDestroy(cuda_graph_exec);
+    }
+    if (cuda_graph) {
+      cudaGraphDestroy(cuda_graph);
+    }
+    // Only free input buffers — output buffers are owned by the AOTI runtime
+    // (allocated during graph capture via the caching allocator).
+    for (auto* ptr : static_input_ptrs) {
+      if (ptr)
+        cudaFree(ptr);
+    }
+  }
 };
 
 } // namespace cuda

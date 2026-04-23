@@ -12,19 +12,22 @@
 # [E, N, K//group_size], INT4 unpack via (b >> (k%2)*4) & 0xF, symmetric
 # dequant (uint4 - 8) * scale, K-loop pointer advancement (BLOCK_SIZE_K // 2).
 #
-# Differences from vLLM: no token sorting (moe_align_block_size) — each
-# program handles one (token-expert pair, N-block) directly via pair_idx.
-# Uses vector-matrix multiply instead of tl.dot (no tensor cores). This is
-# optimal for decode (M=1, memory-bandwidth-bound) but suboptimal for
-# prefill (M >> 1, compute-bound). vLLM also supports INT8, asymmetric
-# quantization, expert parallelism, and SPLIT_K — omitted here.
+# Differences from vLLM: two kernel variants —
+# 1. Decode (fused_moe): no token sorting, vector-matrix multiply (no tensor
+#    cores). Each program handles one (token-expert pair, N-block). Optimal
+#    for M=1, memory-bandwidth-bound.
+# 2. Prefill (fused_moe_batched_gemm): token sorting via moe_align_block_size,
+#    tl.dot tensor-core GEMMs. Optimal for M >> 1, compute-bound.
+# vLLM also supports INT8, asymmetric quantization, expert parallelism,
+# and SPLIT_K — omitted here.
 
 """
-Fused MoE Triton Kernel for ExecuTorch CUDA Backend.
+Fused MoE Triton Kernels for ExecuTorch CUDA Backend.
 
 Performs grouped GEMM for Mixture-of-Experts with INT4 weight-only
-quantization (W4A16). Each Triton program handles one (token-expert pair,
-N-block) — only active experts' weights are loaded from HBM.
+quantization (W4A16). Two kernel variants:
+  - fused_moe: vec-mat per-pair kernel for decode (M=1).
+  - fused_moe_batched_gemm: token-sorted tensor-core kernel for prefill (M>>1).
 
 Weight layout:
   B:       [E, N, K//2] int8 — two INT4 values packed per byte along K
@@ -148,16 +151,29 @@ def _fused_moe_kernel(
         b = tl.load(b_ptrs, mask=k_mask[:, None] & n_mask[None, :], other=0)
         b = (b >> b_shifter) & 0xF
 
-        # Load per-group scales [BLOCK_SIZE_K, BLOCK_SIZE_N]
-        scale_ptrs = (
-            B_scale
-            + expert_id * stride_bse
-            + offs_n[None, :] * stride_bsn
-            + ((offs_k[:, None] + BLOCK_SIZE_K * k_step) // group_size) * stride_bsk
-        )
-        b_scale = tl.load(
-            scale_ptrs, mask=k_mask[:, None] & n_mask[None, :], other=0.0
-        ).to(tl.float32)
+        # Load per-group scales and dequantize
+        if BLOCK_SIZE_K <= group_size:
+            # All K values in this tile share one scale group — load [1, N]
+            group_idx = (BLOCK_SIZE_K * k_step) // group_size
+            scale_ptrs = (
+                B_scale
+                + expert_id * stride_bse
+                + offs_n[None, :] * stride_bsn
+                + group_idx * stride_bsk
+            )
+            b_scale = tl.load(scale_ptrs, mask=n_mask[None, :], other=0.0).to(
+                tl.float32
+            )
+        else:
+            scale_ptrs = (
+                B_scale
+                + expert_id * stride_bse
+                + offs_n[None, :] * stride_bsn
+                + ((offs_k[:, None] + BLOCK_SIZE_K * k_step) // group_size) * stride_bsk
+            )
+            b_scale = tl.load(
+                scale_ptrs, mask=k_mask[:, None] & n_mask[None, :], other=0.0
+            ).to(tl.float32)
 
         # Dequantize and accumulate in float32: vector-matrix multiply
         b_dequant = (b.to(tl.float32) - 8.0) * b_scale
@@ -256,15 +272,27 @@ def _fused_moe_silu_kernel(
         b = tl.load(b_ptrs, mask=k_mask[:, None] & n_mask[None, :], other=0)
         b = (b >> b_shifter) & 0xF
 
-        scale_ptrs = (
-            B_scale
-            + expert_id * stride_bse
-            + offs_n[None, :] * stride_bsn
-            + ((offs_k[:, None] + BLOCK_SIZE_K * k_step) // group_size) * stride_bsk
-        )
-        b_scale = tl.load(
-            scale_ptrs, mask=k_mask[:, None] & n_mask[None, :], other=0.0
-        ).to(tl.float32)
+        if BLOCK_SIZE_K <= group_size:
+            group_idx = (BLOCK_SIZE_K * k_step) // group_size
+            scale_ptrs = (
+                B_scale
+                + expert_id * stride_bse
+                + offs_n[None, :] * stride_bsn
+                + group_idx * stride_bsk
+            )
+            b_scale = tl.load(scale_ptrs, mask=n_mask[None, :], other=0.0).to(
+                tl.float32
+            )
+        else:
+            scale_ptrs = (
+                B_scale
+                + expert_id * stride_bse
+                + offs_n[None, :] * stride_bsn
+                + ((offs_k[:, None] + BLOCK_SIZE_K * k_step) // group_size) * stride_bsk
+            )
+            b_scale = tl.load(
+                scale_ptrs, mask=k_mask[:, None] & n_mask[None, :], other=0.0
+            ).to(tl.float32)
 
         b_dequant = (b.to(tl.float32) - 8.0) * b_scale
         acc += tl.sum(a[:, None] * b_dequant, axis=0)
@@ -338,6 +366,7 @@ def fused_moe(
     def grid1(meta):
         return (num_pairs * triton.cdiv(N1, meta["BLOCK_SIZE_N"]),)
 
+    # Weight layout: [E, N, K//2].
     wrap_triton(_fused_moe_kernel)[grid1](
         hidden_states,
         w1,

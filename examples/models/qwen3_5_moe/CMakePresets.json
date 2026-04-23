@@ -23,6 +23,19 @@
                 "string": "${hostSystemName}",
                 "list": ["Linux", "Windows"]
             }
+        },
+        {
+            "name": "qwen3-5-moe-metal",
+            "displayName": "Qwen3.5 MoE runner (Metal)",
+            "inherits": ["qwen3-5-moe-base"],
+            "cacheVariables": {
+                "EXECUTORCH_BUILD_METAL": "ON"
+            },
+            "condition": {
+                "lhs": "${hostSystemName}",
+                "type": "equals",
+                "rhs": "Darwin"
+            }
         }
     ],
     "buildPresets": [
@@ -30,6 +43,12 @@
             "name": "qwen3-5-moe-cuda",
             "displayName": "Build Qwen3.5 MoE runner (CUDA)",
             "configurePreset": "qwen3-5-moe-cuda",
+            "targets": ["qwen3_5_moe_runner"]
+        },
+        {
+            "name": "qwen3-5-moe-metal",
+            "displayName": "Build Qwen3.5 MoE runner (Metal)",
+            "configurePreset": "qwen3-5-moe-metal",
             "targets": ["qwen3_5_moe_runner"]
         }
     ],
@@ -45,6 +64,20 @@
                 {
                     "type": "build",
                     "name": "qwen3-5-moe-cuda"
+                }
+            ]
+        },
+        {
+            "name": "qwen3-5-moe-metal",
+            "displayName": "Configure and build Qwen3.5 MoE runner (Metal)",
+            "steps": [
+                {
+                    "type": "configure",
+                    "name": "qwen3-5-moe-metal"
+                },
+                {
+                    "type": "build",
+                    "name": "qwen3-5-moe-metal"
                 }
             ]
         }
