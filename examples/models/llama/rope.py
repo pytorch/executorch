@@ -147,10 +147,18 @@ def hf_precompute_freqs_cis(
 ):
     # Partial rotary embeddings.
     if rope_type == "proportional":
-        # Gemma4 "proportional" RoPE: keep the FULL head_dim, but only the first
-        # `int(partial * head_dim // 2)` frequencies are non-zero (denominator
-        # stays at full head_dim, NOT partial*head_dim). Trailing freqs are
-        # zero (cos=1, sin=0), so those dims pass through unchanged.
+        # Gemma 4 "proportional" RoPE — keep the FULL head_dim, but only the
+        # first `int(partial * head_dim // 2)` frequencies are non-zero. The
+        # denominator in the inv-freq formula stays at full head_dim (NOT
+        # partial * head_dim). Trailing freqs are zero (cos=1, sin=0), so
+        # those dims pass through unchanged.
+        #
+        # Source of truth: HF transformers
+        # `_compute_proportional_rope_parameters` in
+        # `transformers/modeling_rope_utils.py`. For Gemma 4 E2B/E4B this is
+        # used by the *full*-attention layers (theta=1e6, partial=0.25),
+        # while sliding-attention layers use the standard branch
+        # (theta=10k, partial=1.0).
         rope_angles = int(partial_rotary_factor * dim // 2)
         inv_freq_rotated = 1.0 / (
             theta

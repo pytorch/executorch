@@ -425,7 +425,10 @@ class Transformer(nn.Module):
             )
         if self.apply_embedding and tokens is not None and h is None:
             h = self.tok_embeddings(tokens)
-            # Gemma-style scaled embedding (sqrt(d) ~ 39.19 for Gemma4 E2B).
+            # Gemma scaled-embedding: multiply by sqrt(hidden_size) after
+            # lookup. Mirrors gemma_pytorch/gemma/model.py:273
+            #   hidden_states = hidden_states * (self.config.hidden_size**0.5)
+            # ~39.19 for Gemma 4 E2B (hidden=1536), ~50.59 for E4B (hidden=2560).
             if self.params.embedding_scale_factor != 1.0:
                 h = h * self.params.embedding_scale_factor
 
@@ -438,12 +441,26 @@ class Transformer(nn.Module):
 
         attn_options_ = attn_options.copy() if attn_options is not None else {}
 
-        # Gemma4 PLI: compute per-layer input from token ids + main embedding.
+        # Gemma 4 PLE (Per-Layer Embedding) — compute per-layer input from
+        # token ids + main embedding. Each transformer layer receives an
+        # additional 256-dim conditioning vector derived from (a) a per-layer
+        # slice of pli_embeddings(token_id) and (b) a learned projection of h.
+        # The two are summed and scaled. Inside each layer the bottleneck is
+        # `act_fn(per_layer_input_gate(h)) * per_layer_projection(per_layer_input)`
+        # added to the residual.
+        #
+        # Source of truth: HF transformers `Gemma4Model.forward` and
+        # `Gemma4DecoderLayer.forward`. For multimodal positions HF replaces
+        # the token id with `pad_token_id` (=0) before the PLE lookup
+        # (HF modeling_gemma4.py around line 2215:
+        #   llm_input_ids[multimodal_mask] = self.config.text_config.pad_token_id
+        #   per_layer_inputs = get_per_layer_inputs(llm_input_ids, llm_inputs_embeds)
+        # ). Our `MultimodalPrefiller` performs the same substitution before
+        # passing pli_token_ids in.
         if self.hidden_size_per_layer_input > 0 and "per_layer_inputs" not in attn_options_:
             # Accept pli_token_ids from attn_options so the multimodal h= path can
-            # provide token IDs (real IDs for text; <|image>/  <|audio> placeholders
-            # for soft-token positions). Approach C: MultimodalPrefiller passes this
-            # when the pte has a 3-input text_decoder.
+            # provide token IDs (real IDs for text; pad_token_id=0 for
+            # image/audio soft-token positions per HF Gemma4Model.forward).
             pli_ids = (
                 tokens
                 if tokens is not None
@@ -480,7 +497,10 @@ class Transformer(nn.Module):
         if self.apply_output:
             logits = self.output(h)
 
-            # Gemma2/Gemma4 final logit softcapping: cap = c * tanh(logits / c).
+            # Gemma 2/4 final logit softcapping: cap = c * tanh(logits / c).
+            # c=30.0 for Gemma 4. See Gemma 2 paper section 3.4. Mirrors
+            # gemma_pytorch (Gemma2DecoderLayer-era) and HF
+            # Gemma4ForCausalLM final-layer logit clip.
             cap = self.params.final_logit_softcapping
             if cap is not None:
                 logits = cap * torch.tanh(logits / cap)

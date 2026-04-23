@@ -173,7 +173,7 @@ Text backbone is 8da4w (8-bit dynamic activations, 4-bit weights, group=32 chann
 
 Export:
 ```
-python examples/models/gemma4/export_gemma4_multimodal.py \
+python -m executorch.examples.models.gemma4.export \
   --hf-model ~/models/gemma-4-E2B-it --et-checkpoint ~/models/gemma-4-E2B-it/model_et.pth \
   --output /tmp/gemma4_multimodal_v11_q.pte --backend xnnpack \
   --max-seq-len 1024 --audio-frames 1976 --qmode 8da4w --group-size 32

@@ -17,7 +17,7 @@ def main():
     from transformers import AutoTokenizer
     from executorch.examples.models.llama.export_llama_lib import _prepare_for_llama_export
     from executorch.extension.llm.export.config.llm_config import LlmConfig, ModelType
-    from executorch.examples.models.gemma4.export_gemma4_multimodal import (
+    from executorch.examples.models.gemma4.export import (
         TokenEmbeddingExport, TextDecoderExport
     )
 

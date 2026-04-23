@@ -18,11 +18,14 @@ Calling convention matches MultimodalRunner::generate(prompt) for text-only
 and MultimodalRunner::generate(vector<MultimodalInput>) for image/audio+text.
 
 Usage:
-  python export_gemma4_multimodal.py \\
+  python -m executorch.examples.models.gemma4.export \\
     --hf-model ~/models/gemma-4-E2B-it \\
     --et-checkpoint ~/models/gemma-4-E2B-it/model_et.pth \\
     --output ./gemma4_multimodal.pte \\
-    --backend portable
+    --backend xnnpack \\
+    --variant e2b \\
+    --max-seq-len 1024 --audio-frames 1976 \\
+    --qmode 8da4w --group-size 32
 """
 
 from __future__ import annotations
@@ -197,6 +200,24 @@ def export_text_programs(
         cfg.quantization.qmode = qmode
         cfg.quantization.group_size = group_size
     if embedding_quantize is not None:
+        # Validate: format is "<bits>,<groupsize>"; groupsize must divide
+        # the model's hidden dim or be 0 (no grouping). Common bug: passing
+        # "8,1024" against E2B (hidden=1536) fails because 1536 % 1024 != 0.
+        try:
+            bits_s, group_s = embedding_quantize.split(",")
+            bits = int(bits_s); group = int(group_s)
+        except ValueError:
+            raise ValueError(
+                f"--embedding-quantize must be '<bits>,<groupsize>', got {embedding_quantize!r}"
+            )
+        if group != 0 and group < 0:
+            raise ValueError(
+                f"--embedding-quantize groupsize must be >= 0 (0 = no grouping), got {group}"
+            )
+        if bits not in (4, 8):
+            raise ValueError(
+                f"--embedding-quantize bits must be 4 or 8, got {bits}"
+            )
         cfg.quantization.embedding_quantize = embedding_quantize
 
     print(f"  Preparing Gemma4 text backbone with KV-cache transforms (qmode={qmode}, group_size={group_size}, emb_q={embedding_quantize})...")
@@ -255,6 +276,17 @@ def export_text_programs(
 # ---------------------------------------------------------------------------
 
 
+_VARIANT_CONFIGS = {
+    "e2b": "e2b_config.json",
+    "e4b": "e4b_config.json",
+}
+
+
+def _params_for_variant(variant: str) -> str:
+    cfg_name = _VARIANT_CONFIGS[variant]
+    return str(Path(__file__).parent / "config" / cfg_name)
+
+
 def export_gemma4_multimodal(
     hf_model_dir: str,
     et_checkpoint: str,
@@ -265,14 +297,18 @@ def export_gemma4_multimodal(
     qmode: str | None = None,
     group_size: int = 32,
     embedding_quantize: str | None = None,
+    variant: str = "e2b",
 ) -> None:
     hf_model_dir = Path(hf_model_dir)
     output_path = Path(output_path)
-    et_params = str(
-        Path(__file__).parent / "config" / "e2b_config.json"
-    )
+    if variant not in _VARIANT_CONFIGS:
+        raise ValueError(
+            f"--variant must be one of {sorted(_VARIANT_CONFIGS)}, got {variant!r}"
+        )
+    et_params = _params_for_variant(variant)
 
     print(f"Exporting Gemma4 multimodal to {output_path}")
+    print(f"  variant: {variant} (params: {et_params})")
     print(f"  hf_model_dir: {hf_model_dir}")
     print(f"  et_checkpoint: {et_checkpoint}")
     print(f"  backend: {backend}")
@@ -398,7 +434,13 @@ def main():
     parser.add_argument("--group-size", type=int, default=32,
                         help="Group size for weight quantization (default: 32)")
     parser.add_argument("--embedding-quantize", default=None,
-                        help="Embedding quantization, format '<bits>,<groupsize>' e.g. '8,1024'")
+                        help="Embedding quantization, format '<bits>,<groupsize>'. "
+                             "Recommended: '8,0' (per-channel, works for any hidden size). "
+                             "If you set a non-zero groupsize, it must divide the model's "
+                             "hidden_size (E2B=1536, E4B=2560).")
+    parser.add_argument("--variant", default="e2b",
+                        choices=sorted(_VARIANT_CONFIGS.keys()),
+                        help="Model variant to export (selects config file).")
     args = parser.parse_args()
 
     export_gemma4_multimodal(
@@ -411,6 +453,7 @@ def main():
         qmode=args.qmode,
         group_size=args.group_size,
         embedding_quantize=args.embedding_quantize,
+        variant=args.variant,
     )
 
 

@@ -12,6 +12,10 @@ class FeedForward(nn.Module):
         self.w2 = nn.Linear(hidden_dim, dim, bias=False)
         self.w3 = nn.Linear(dim, hidden_dim, bias=False)
         # Default to SiLU for backward compatibility with Llama-family models.
+        # Gemma 4 uses `gelu_approx` ("Gelu approximate tanh"), threaded through
+        # `args.act_fn` -> `ActFn.GELU_APPROX.get_function()`. See
+        # gemma.cpp/gemma/activations.h and HF
+        # `Gemma4Config.hidden_activation = "gelu_pytorch_tanh"`.
         if act_fn is None:
             self.act_fn = F.silu
         elif isinstance(act_fn, ActFn):

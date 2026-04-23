@@ -390,8 +390,11 @@ class AttentionMHA(Attention):
         self.qk_norm_before_rope = args.qk_norm_before_rope
         self.use_q_gate = args.use_q_gate
         self.enable_dynamic_shape = args.enable_dynamic_shape
-        # Custom attention scaling. Gemma4 sets this to 1.0 (no implicit scale).
-        # If None, F.scaled_dot_product_attention uses default 1/sqrt(head_dim).
+        # Custom attention scaling. Gemma 4 sets `self.scaling = 1.0` (HF
+        # `Gemma4Attention.__init__`), i.e. NO implicit `1/sqrt(head_dim)` —
+        # the QK softmax temperature is folded into the trained weights.
+        # When None, `F.scaled_dot_product_attention` falls back to its
+        # default 1/sqrt(head_dim) (standard Llama / Llama 2 / Llama 3).
         self.attention_multiplier = args.attention_multiplier
 
         # YOCO: Determine if this is a KV shared layer (receives shared KV from donor).
@@ -546,6 +549,11 @@ class AttentionMHA(Attention):
             k = self.k_norm_fn(k)
 
         if self.use_v_norm:
+            # Gemma 4 inline RMS normalization on V before attention. Unlike
+            # `q_norm` / `k_norm` there is no learnable weight — it's a
+            # plain RMSNorm of V. Mirrors HF `Gemma4Attention.forward`. We
+            # promote to fp32 for numerical stability so this composes with
+            # bf16 weights, then cast back below.
             v_f = v.float()
             v = v_f * torch.rsqrt(v_f.pow(2).mean(-1, keepdim=True) + self.v_norm_eps)
         # Match v dtype to q (RoPE may have promoted q/k to float).
