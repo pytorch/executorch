@@ -6,7 +6,7 @@
 #
 # Usage:
 #   conda activate et-cuda
-#   unset CPATH                  # critical — see PROGRESS.md
+#   unset CPATH                  # critical — see README.md "CUDA gotchas"
 #   export LD_LIBRARY_PATH=$CONDA_PREFIX/lib:$LD_LIBRARY_PATH
 #   bash examples/models/voxtral_tts/run_cuda_e2e.sh \
 #     <voxtral-model-dir> [<output-dir>]
