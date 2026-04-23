@@ -66,9 +66,3 @@ class VgfCompileSpec(ArmCompileSpec):
     def _get_output_format(cls) -> str:
         """Return the artifact format emitted by this compile spec."""
         return "vgf"
-
-    def _create_default_pipeline_config(self) -> ArmPassPipelineConfig:
-        config = super()._create_default_pipeline_config()
-        # GRPHCOMP-3140 / MLETORCH-1529
-        config.disable_fuse_duplicate_users()
-        return config

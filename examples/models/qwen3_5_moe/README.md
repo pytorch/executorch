@@ -4,7 +4,7 @@ Self-contained ExecuTorch implementation of
 [Qwen3.5-35B-A3B](https://huggingface.co/Qwen/Qwen3.5-35B-A3B),
 a ~35B total / ~3B active parameter Mixture-of-Experts language model.
 Weights are loaded directly from the HuggingFace safetensors checkpoint.
-CUDA backend only. See [model.md](model.md) for architecture and
+Supports CUDA and MLX backends. See [model.md](model.md) for architecture and
 implementation details.
 
 ## Overview
@@ -32,6 +32,16 @@ recommended — the model is too large to fit in VRAM at bf16.
 
 ```bash
 python export.py \
+    --model-id Qwen/Qwen3.5-35B-A3B \
+    --output-dir ./qwen35_moe_exports \
+    --qlinear 4w \
+    --qembedding 8w
+```
+
+Or with a local directory:
+
+```bash
+python export.py \
     --model-dir ~/models/Qwen3.5-35B-A3B \
     --output-dir ./qwen35_moe_exports \
     --qlinear 4w \
@@ -42,7 +52,8 @@ python export.py \
 
 | Flag | Default | Description |
 |------|---------|-------------|
-| `--model-dir` | (required) | HuggingFace model directory with `config.json` + safetensors |
+| `--model-id` | (none) | HuggingFace model ID (e.g. `Qwen/Qwen3.5-35B-A3B`). Downloads automatically. |
+| `--model-dir` | (none) | Local HuggingFace model directory with `config.json` + safetensors |
 | `--output-dir` | `./qwen35_moe_exports` | Output directory |
 | `--max-seq-len` | `4096` | KV cache length |
 | `--qlinear` | (none) | Linear layer quantization: `4w`, `8w`, `8da4w`, `8da8w` |
@@ -135,3 +146,73 @@ cmake-out/examples/models/qwen3_5_moe/qwen3_5_moe_runner \
   memory.
 - **Missing `aoti_cuda_blob.ptd`**: This file is produced during export
   alongside the `.pte`. Both files are required for inference.
+
+## MLX Backend (Apple Silicon)
+
+The MLX backend enables running Qwen 3.5 MoE on Apple Silicon GPUs.
+It replaces the Triton-dependent modules (FusedMoEExperts, GatedDeltaNet)
+with MLX custom ops (`mlx::gather_qmm`, `mlx::gated_delta_rule`, `mlx::rope`).
+
+### Export (MLX)
+
+```bash
+python export.py \
+    --model-id Qwen/Qwen3.5-35B-A3B \
+    --backend mlx \
+    --qlinear 4w \
+    --qlinear-group-size 64 \
+    --output-dir ./qwen35_moe_mlx
+```
+
+Or with a local directory:
+
+```bash
+python export.py \
+    --model-dir ~/models/Qwen3.5-35B-A3B \
+    --backend mlx \
+    --qlinear 4w \
+    --qlinear-group-size 64 \
+    --output-dir ./qwen35_moe_mlx
+```
+
+### MLX Options
+
+| Flag | Default | Description |
+|------|---------|-------------|
+| `--backend mlx` | `cuda` | Use MLX backend for Apple Silicon |
+| `--model-id` | (none) | HuggingFace model ID (downloads automatically) |
+| `--model-dir` | (none) | Local model directory |
+| `--qlinear` | (none) | Linear layer quantization: `4w`, `8w` |
+| `--qlinear-group-size` | `32` | Group size (64 recommended for MLX) |
+| `--qembedding` | (none) | Embedding quantization: `8w` |
+| `--tiny-test` | off | Build tiny model with random weights for CI testing |
+
+### Run (MLX)
+
+```bash
+python -m executorch.examples.models.qwen3_5_moe.run \
+    --pte ./qwen35_moe_mlx/model.pte \
+    --tokenizer Qwen/Qwen3.5-35B-A3B \
+    --prompt "What is the capital of France?" \
+    --max-new-tokens 50
+```
+
+### Tiny Model Test
+
+For CI or quick pipeline validation (no model download needed):
+
+```bash
+# Export tiny model (~1 MB, random weights)
+python export.py \
+    --tiny-test \
+    --backend mlx \
+    --qlinear 4w \
+    --qlinear-group-size 32 \
+    --output-dir /tmp/qwen35_moe_mlx_tiny
+
+# Run inference (random tokens, no tokenizer needed)
+python -m executorch.examples.models.qwen3_5_moe.run \
+    --pte /tmp/qwen35_moe_mlx_tiny/model.pte \
+    --prompt-len 4 \
+    --max-new-tokens 5
+```
