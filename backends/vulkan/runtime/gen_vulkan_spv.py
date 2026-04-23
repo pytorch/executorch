@@ -663,6 +663,7 @@ class SPVGenerator:
         glslc_path: Optional[str],
         glslc_flags: str = "",
         replace_u16vecn: bool = False,
+        fp16_precision: str = "highp",
     ) -> None:
         if isinstance(src_dir_paths, str):
             self.src_dir_paths = [src_dir_paths]
@@ -678,6 +679,7 @@ class SPVGenerator:
         if "-Os" in self.glslc_flags_no_opt:
             self.glslc_flags_no_opt.remove("-Os")
         self.replace_u16vecn = replace_u16vecn
+        self.fp16_precision = fp16_precision
 
         self.src_files: Dict[str, str] = {}
         self.template_yaml_files: List[str] = []
@@ -856,6 +858,17 @@ class SPVGenerator:
         shader_params = copy.deepcopy(self.env)
         for key, value in variant_params.items():
             shader_params[key] = value
+
+        # Optionally override PRECISION for half-precision variants. GLSL
+        # `mediump` is a hint the driver may use fp16 ALUs for arithmetic.
+        # On Mali GPUs it's typically honored; on Adreno it's typically
+        # ignored (harmless). Default is `highp` to match upstream behavior.
+        if (
+            self.fp16_precision != "highp"
+            and shader_params.get("DTYPE") == "half"
+            and shader_params.get("PRECISION") == "highp"
+        ):
+            shader_params["PRECISION"] = self.fp16_precision
 
         return shader_params
 
@@ -1488,6 +1501,16 @@ def main(argv: List[str]) -> int:
         default=-1,
         help="Number of threads for shader compilation. -1 (default) uses all available CPU cores, 1 uses sequential compilation.",
     )
+    parser.add_argument(
+        "--fp16-precision",
+        choices=["highp", "mediump", "lowp"],
+        default="highp",
+        help=(
+            "GLSL PRECISION qualifier for DTYPE=half shader variants. "
+            "`mediump` lets drivers (notably Mali) use fp16 ALUs for arithmetic. "
+            "Default `highp` matches upstream behavior. Ignored on fp32 variants."
+        ),
+    )
     options = parser.parse_args()
 
     env = DEFAULT_ENV
@@ -1520,6 +1543,7 @@ def main(argv: List[str]) -> int:
         options.glslc_path,
         glslc_flags=glslc_flags_str,
         replace_u16vecn=options.replace_u16vecn,
+        fp16_precision=options.fp16_precision,
     )
     output_spv_files = shader_generator.generateSPV(
         options.output_path,
