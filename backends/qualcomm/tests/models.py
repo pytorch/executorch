@@ -524,6 +524,25 @@ class ContextBinaryExample(torch.nn.Module):
         }
 
 
+class Conv1dBn(torch.nn.Module):
+    def __init__(self, bias=True):
+        super().__init__()
+        self.conv = torch.nn.Conv1d(
+            in_channels=2048,
+            out_channels=2048,
+            kernel_size=15,
+            groups=2048,
+            bias=bias,
+        )
+        self.batch_norm = torch.nn.BatchNorm1d(2048)
+        self.eval()
+
+    def forward(self, x):
+        x = self.conv(x)
+        x = self.batch_norm(x)
+        return x
+
+
 class Conv1dSequential(torch.nn.Module):
     def __init__(self, bias=True):
         super().__init__()
