@@ -33,6 +33,26 @@ def alloc(spec: AllocSpec) -> pytree.PyTree:
     return torch.empty(shape, dtype=dtype)
 
 
+def alloc_inplace(base: torch.Tensor, spec: AllocSpec) -> torch.Tensor:
+    """
+    Allocate output tensor in the same memory as base tensor.
+
+    This is used by InPlaceElemWiseLikeOpsPass to signal to the memory planner
+    that the output should share the same memory offset as the base (input)
+    tensor. The base tensor must have allocated_memory >= output's
+    allocated_memory, and the base must be dead after the consuming op.
+
+    At runtime this behaves identically to alloc() — the in-place semantics
+    are resolved at planning time.
+    """
+    if isinstance(spec, list):
+        return [alloc_inplace(base, s) for s in spec]
+
+    shape, dtype = spec
+    shape = eval_shape(shape)
+    return torch.empty(shape, dtype=dtype)
+
+
 def free(spec: TensorSpec) -> None:
     """
     The function is nop. The major purpose is to put it in the Fx IR.
