@@ -46,7 +46,7 @@ class NodeVisitor:
     """
 
     # Add the currently supported node_visitor specs as default.
-    # This should be overriden in the NodeVisitor subclasses to target
+    # This should be overridden in the NodeVisitor subclasses to target
     # a specific TOSA version.
     # When all node_visitors has been refactored to target a specific
     # version, this list should be removed.
