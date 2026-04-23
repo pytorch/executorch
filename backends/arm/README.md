@@ -106,6 +106,13 @@ Setup:
 ./examples/arm/setup.sh --disable-ethos-u-deps --enable-mlsdk-deps
 ```
 
+This is the default setup path and installs the MLSDK components from pip.
+Developers who need local source builds can use:
+
+```
+./backends/arm/scripts/setup-mlsdk-from-source.sh
+```
+
 The current flow lowers to TOSA and converts to VGF for use in external projects,
 so the `executor_runner` is not typically used here.
 
@@ -155,7 +162,7 @@ scp -P 2222 arm_test/cmake-out/executor_runner root@127.0.0.1:/tmp/
 Create a PTE file:
 
 ```
-python3 -m examples.arm.aot_arm_compiler \
+python3 -m backends.arm.scripts.aot_arm_compiler \
   --model_name examples/arm/example_modules/add.py \
   --delegate \
   --quantize \

@@ -467,6 +467,20 @@ Example:
 python examples/qualcomm/oss_scripts/llama/llama.py -b build-android -s ${SERIAL_NUM} -m ${SOC_MODEL} --prompt "I would like to learn python, could you teach me with a simple example?" --temperature 0 --model_mode kv --max_seq_len 1024 --decoder_model qwen2_5-0_5b --eval_methods sqnr_eval
 ```
 
+#### Quantization Guidance
+
+To automatically identify sensitive layers and generate a mixed-precision recipe suggestion, add the `--quant_recipe_suggestion` flag. During calibration, the analyzer compares FP32 and QDQ intermediate outputs layer-by-layer using SQNR, then writes two files to the working directory:
+
+- `{model_name}_quantization_error.csv` — per-group SQNR statistics sorted by sensitivity (most sensitive first)
+- `{model_name}_suggest_recipe.py` — ready-to-use `StaticLLMQuantRecipe` subclasses optimized to apply higher-precision quantization to the most sensitive groups.
+
+Example:
+```bash
+python examples/qualcomm/oss_scripts/llama/llama.py -b build-android -s ${SERIAL_NUM} -m ${SOC_MODEL} --prompt "I would like to learn python, could you teach me with a simple example?" --temperature 0 --model_mode kv --max_seq_len 1024 --decoder_model qwen3-1_7b --tasks wikitext --limit 1 --quant_recipe_suggestion --compile_only
+```
+
+After the run, pick one of the generated classes from `qwen3-1_7b_suggest_recipe.py` as your new recipe. For a full walkthrough, see [quantization_guidance.md](quantization_guidance.md).
+
 #### Use attention sink for multi-turn conversations
 Attention sink is a way to evict cache when maximum context length be reached.
 There are two mainly concept for attention sink:

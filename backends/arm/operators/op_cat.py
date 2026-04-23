@@ -35,16 +35,15 @@ class CatVisitor(NodeVisitor):
         inputs: List[TosaArg],
         output: TosaArg,
     ) -> None:
-        supported_dtypes = [
-            ts.DType.BOOL,
-            ts.DType.INT8,
-            ts.DType.INT32,
-            ts.DType.FP16,
-            ts.DType.FP32,
-            ts.DType.BF16,
-        ]
-        if self.tosa_spec.support_extension("int16"):
-            supported_dtypes.append(ts.DType.INT16)
+        supported_dtypes = [ts.DType.BOOL]
+        if self.tosa_spec.support_integer():
+            supported_dtypes.extend([ts.DType.INT8, ts.DType.INT32])
+            if self.tosa_spec.support_extension("int16"):
+                supported_dtypes.append(ts.DType.INT16)
+        if self.tosa_spec.support_float():
+            supported_dtypes.extend([ts.DType.FP16, ts.DType.FP32])
+        if self.tosa_spec.support_extension("bf16"):
+            supported_dtypes.append(ts.DType.BF16)
         validate_num_inputs(self.target, inputs, [1, 2])
         input_tosa_args = [TosaArg(arg, self.tosa_spec) for arg in inputs[0].special]
         validate_same_dtype(self.target, [*input_tosa_args, output], ts)

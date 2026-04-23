@@ -6,7 +6,6 @@
 
 # pyre-strict
 
-from dataclasses import dataclass, field
 from typing import cast, List, Optional, Sequence, Set, Type
 
 # Import these for the cadence function signatures.
@@ -26,6 +25,9 @@ from executorch.backends.cadence.aot.pass_utils import (
 from executorch.backends.cadence.aot.simplify_ops import SimplifySliceOpPass
 from executorch.backends.cadence.aot.utils import get_edge_overload_packet
 from executorch.backends.transforms.remove_clone_ops import RemoveCloneOpsTransform
+from executorch.backends.transforms.remove_permutes_around_elementwise_ops import (
+    RemovePermutesAroundElementwiseOps as _SharedRemovePermutesAroundElementwiseOps,
+)
 from executorch.exir.dialects._ops import ops as exir_ops
 from executorch.exir.dialects.edge._ops import EdgeOpOverload, EdgeOpOverloadPacket
 from executorch.exir.pass_base import ExportPass, PassResult
@@ -386,180 +388,17 @@ class RemoveNopAddOpPass(RemoveOrReplacePassInterface):
 
 
 @register_cadence_pass(CadencePassAttribute(opt_level=2))
-class RemovePermutesAroundElementwiseOps(ExportPass):
-    """
-    Looks for subgraphs of elementwise ops sandwiched between permutes and removes those
-    permutes if possible.
-    Allows special handling for certain non-elementwise ops that can be easily updated
-    based on the permute's parameter such as mean, cat, and slice.
-    """
-
-    @dataclass()
-    class Subgraph:
-        start_permute: list[int]
-        end_permute: list[int]
-        # Nodes in the subgraph, does not include permutes.
-        nodes: set[torch.fx.Node] = field(default_factory=set)
-        # Incoming edges to the subgraph from permute nodes.
-        edges_in: set[tuple[torch.fx.Node, torch.fx.Node]] = field(default_factory=set)
-        # Outgoing edges of the subgraph to permute nodes.
-        edges_out: set[tuple[torch.fx.Node, torch.fx.Node]] = field(default_factory=set)
-
-    permutable_ops: set[EdgeOpOverload] = {
-        exir_ops.edge.aten.add.Tensor,
-        exir_ops.edge.aten.mul.Tensor,
-        exir_ops.edge.aten.hardtanh.default,
-        exir_ops.edge.quantized_decomposed.quantize_per_tensor.default,
-        exir_ops.edge.quantized_decomposed.dequantize_per_tensor.default,
-        exir_ops.edge.cadence.quantize_per_tensor.default,
-        exir_ops.edge.cadence.dequantize_per_tensor.default,
-        exir_ops.edge.cadence.quantized_relu.per_tensor,
-        exir_ops.edge.cadence.requantize.per_tensor,
-        exir_ops.edge.cadence.quantized_add.per_tensor,
-        # Ops that require special handling.
-        exir_ops.edge.aten.cat.default,
-        exir_ops.edge.aten.mean.dim,
-        exir_ops.edge.aten.slice_copy.Tensor,
-    }
-
-    def call(self, graph_module: torch.fx.GraphModule) -> PassResult:
-        subgraphs_found: list[RemovePermutesAroundElementwiseOps.Subgraph] = []
-        processed_nodes: set[torch.fx.Node] = set()
-        for node in graph_module.graph.find_nodes(
-            op="call_function", target=exir_ops.edge.aten.permute_copy.default
-        ):
-            start_permute = self.get_permutation(node)
-            # Expected end permutation for the subgraph.
-            end_permute = [start_permute.index(i) for i in range(len(start_permute))]
-
-            for user in node.users:
-                if user.target not in self.permutable_ops:
-                    continue
-                # Create a separate subgraph for each user since there may be cases
-                # where only a portion of the users are permutable.
-                subgraph = self.Subgraph(start_permute, end_permute)
-                if self.visit(user, subgraph, processed_nodes):
-                    subgraphs_found.append(subgraph)
-                    for node in subgraph.nodes:
-                        processed_nodes.add(node)
-
-        modified = False
-        for subgraph in subgraphs_found:
-            self.permute_subgraph(subgraph)
-            modified = True
-
-        if modified:
-            graph_module.graph.eliminate_dead_code()
-            graph_module.recompile()
-            return super().call(graph_module)
-
-        return PassResult(graph_module, False)
-
-    def visit(
-        self,
-        node: torch.fx.Node,
-        subgraph: Subgraph,
-        processed_nodes: set[torch.fx.Node],
-    ) -> bool:
-        if node in subgraph.nodes:
-            return True
-        if node in processed_nodes or not self.is_node_permutable(node):
-            return False
-        subgraph.nodes.add(node)
-
-        # Traverse downstream:
-        for user in node.users:
-            # Output should either go to a matching permute or another permutable op.
-            if user.target == exir_ops.edge.aten.permute_copy.default:
-                if self.get_permutation(user) != subgraph.end_permute:
-                    return False
-                subgraph.edges_out.add((node, user))
-            elif not self.visit(user, subgraph, processed_nodes):
-                return False
-
-        # Traverse upstream:
-        for inp in node.all_input_nodes:
-            # Input should either come from a matching permute or another permutable op.
-            if inp.target == exir_ops.edge.aten.permute_copy.default:
-                if self.get_permutation(inp) != subgraph.start_permute:
-                    return False
-                subgraph.edges_in.add((inp, node))
-            elif not self.visit(inp, subgraph, processed_nodes):
-                return False
-
-        return True
-
-    def is_node_permutable(self, node: torch.fx.Node) -> bool:
-        if node.target not in self.permutable_ops:
-            return False
-        if node.target == exir_ops.edge.aten.mean.dim:
-            # keepdim should be True.
-            if len(node.args) >= 3:
-                if not node.args[2]:
-                    return False
-            elif "keepdim" in node.kwargs:
-                if not node.kwargs["keepdim"]:
-                    return False
-            else:
-                # Default keepdim is False.
-                return False
-        return True
-
-    def permute_subgraph(self, subgraph: Subgraph) -> None:
-        # Skip incoming permutes.
-        for inp, out in subgraph.edges_in:
-            assert inp.target == exir_ops.edge.aten.permute_copy.default
-            if len(inp.args) >= 1:
-                out.replace_input_with(inp, cast(torch.fx.Node, inp.args[0]))
-            else:
-                out.replace_input_with(inp, cast(torch.fx.Node, inp.kwargs["input"]))
-
-        # Skip outgoing permutes.
-        for inp, out in subgraph.edges_out:
-            assert out.target == exir_ops.edge.aten.permute_copy.default
-            out.replace_all_uses_with(inp)
-
-        # Handle dimension related node arguments.
-        for node in subgraph.nodes:
-            if node.target == exir_ops.edge.aten.cat.default:
-                self.update_cat(node, subgraph.start_permute)
-            elif node.target == exir_ops.edge.aten.mean.dim:
-                self.update_mean_dim(node, subgraph.start_permute)
-            elif node.target == exir_ops.edge.aten.slice_copy.Tensor:
-                self.update_slice_copy(node, subgraph.start_permute)
-
-    def update_cat(self, node: torch.fx.Node, start_permute: list[int]) -> None:
-        if len(node.args) >= 2:
-            node.update_arg(1, start_permute[cast(int, node.args[1])])
-        elif "dim" in node.kwargs:
-            node.update_kwarg("dim", start_permute[cast(int, node.kwargs["dim"])])
-        else:
-            # Default cat dim is 0.
-            node.update_kwarg("dim", start_permute[0])
-
-    def update_mean_dim(self, node: torch.fx.Node, start_permute: list[int]) -> None:
-        if len(node.args) >= 2:
-            node.update_arg(
-                1, [start_permute[dim] for dim in cast(list[int], node.args[1])]
-            )
-        else:
-            node.update_kwarg(
-                "dim",
-                [start_permute[dim] for dim in cast(list[int], node.kwargs["dim"])],
-            )
-
-    def update_slice_copy(self, node: torch.fx.Node, start_permute: list[int]) -> None:
-        if len(node.args) >= 2:
-            node.update_arg(1, start_permute[cast(int, node.args[1])])
-        else:
-            node.update_kwarg("dim", start_permute[cast(int, node.kwargs["dim"])])
-
-    def get_permutation(self, permute_node: torch.fx.Node) -> list[int]:
-        assert permute_node.target == exir_ops.edge.aten.permute_copy.default
-        if len(permute_node.args) >= 2:
-            return cast(list[int], permute_node.args[1])
-        assert "dim" in permute_node.kwargs
-        return cast(list[int], permute_node.kwargs["dim"])
+class RemovePermutesAroundElementwiseOps(_SharedRemovePermutesAroundElementwiseOps):
+    permutable_ops: set[EdgeOpOverload] = (
+        _SharedRemovePermutesAroundElementwiseOps.permutable_ops
+        | {
+            exir_ops.edge.cadence.quantize_per_tensor.default,
+            exir_ops.edge.cadence.dequantize_per_tensor.default,
+            exir_ops.edge.cadence.quantized_relu.per_tensor,
+            exir_ops.edge.cadence.requantize.per_tensor,
+            exir_ops.edge.cadence.quantized_add.per_tensor,
+        }
+    )
 
 
 @register_cadence_pass(CadencePassAttribute(opt_level=2))
