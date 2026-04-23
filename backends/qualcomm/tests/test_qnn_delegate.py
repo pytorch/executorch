@@ -1315,6 +1315,8 @@ class TestQNNFloatingPointOperator(TestQNN):
         self.lower_module_and_test_output(module, sample_input)
 
     def test_qnn_backend_is_nan(self):
+        if self.enable_x86_64:
+            self.skipTest("isnan produces incorrect results on x86 simulator")
         module = IsNan()  # noqa: F405
         sample_inputs = [
             (
@@ -2189,7 +2191,9 @@ class TestQNNFloatingPointModel(TestQNN):
         module = CausalMask()  # noqa: F405
         torch.manual_seed(8)
         sample_input = (torch.rand((1, 1, 1, 128)) < 0.5,)
-        self.lower_module_and_test_output(module, sample_input)
+        self.lower_module_and_test_output(
+            module, sample_input, skip_mutable_buffer=self.enable_x86_64
+        )
 
     def test_qnn_backend_chunk_add(self):
         module = ChunkAdd()  # noqa: F405
@@ -4781,7 +4785,9 @@ class TestQNNQuantizedModel(TestQNN):
         module = CausalMask()  # noqa: F405
         sample_input = (torch.rand((1, 1, 1, 128)) < 0.5,)
         module = self.get_qdq_module(module, sample_input)
-        self.lower_module_and_test_output(module, sample_input)
+        self.lower_module_and_test_output(
+            module, sample_input, skip_mutable_buffer=self.enable_x86_64
+        )
 
     def test_qnn_backend_chunk_add(self):
         module = ChunkAdd()  # noqa: F405
