@@ -53,7 +53,9 @@ class AsrModule(
 
     val handle = nativeCreate(modelPath, tokenizerPath, dataPath, preprocessorPath)
     if (handle == 0L) {
-      throw RuntimeException("Failed to create native AsrModule")
+      throw org.pytorch.executorch.ExecutorchRuntimeException(
+          org.pytorch.executorch.ExecutorchRuntimeException.INTERNAL,
+          "Failed to create native AsrModule")
     }
     nativeHandle.set(handle)
   }
