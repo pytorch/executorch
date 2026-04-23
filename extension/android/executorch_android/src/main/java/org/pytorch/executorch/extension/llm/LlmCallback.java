@@ -46,5 +46,11 @@ public interface LlmCallback {
    * @param message Human-readable error description
    */
   @DoNotStrip
-  default void onError(int errorCode, String message) {}
+  default void onError(int errorCode, String message) {
+    try {
+      android.util.Log.e("ExecuTorch", "LLM error " + errorCode + ": " + message);
+    } catch (Throwable t) {
+      System.err.println("ExecuTorch LLM error " + errorCode + ": " + message);
+    }
+  }
 }
