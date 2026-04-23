@@ -662,12 +662,6 @@ OP_CASES = {
 
 xfails: dict[str, xfail_type] = {
     "contiguous": "MLETORCH-1863: Contiguos no-op is removed in to-edge, leading to unnecessary Q-DQ-Q-DQ chain.",
-    "clamp": "MLETORCH-1864: Support non-fused clamp-type activations.",
-    "clamp_tensor": "MLETORCH-1864: Support non-fused clamp-type activations.",
-    "hardtanh": "MLETORCH-1864: Support non-fused clamp-type activations.",
-    "hardtanh_": "MLETORCH-1864: Support non-fused clamp-type activations.",
-    "relu": "MLETORCH-1864: Support non-fused clamp-type activations.",
-    "relu_": "MLETORCH-1864: Support non-fused clamp-type activations.",
     "eq_scalar": "MLETORCH-1865: Properly support flaky scalar comparison ops.",
     "ne_scalar": "MLETORCH-1865: Properly support flaky scalar comparison ops.",
     "ge_scalar": "MLETORCH-1865: Properly support flaky scalar comparison ops.",

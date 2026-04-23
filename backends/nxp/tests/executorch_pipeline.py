@@ -130,6 +130,7 @@ def to_quantized_edge_program(
     use_quant_state_dict: bool = True,
     fetch_constants_to_sram: bool = False,
     dump_kernel_selection_code: bool = False,
+    use_new_flow_neutron_c: bool = False,
 ) -> EdgeProgramManager:
     _neutron_target_spec = NeutronTargetSpec(target)
     if get_quantizer_fn is None:
@@ -160,6 +161,7 @@ def to_quantized_edge_program(
         use_neutron_for_format_conversion=use_neutron_for_format_conversion,
         fetch_constants_to_sram=fetch_constants_to_sram,
         dump_kernel_selection_code=dump_kernel_selection_code,
+        use_new_flow_neutron_c=use_new_flow_neutron_c,
     )
     post_quant_state_dict = (
         exir_program_aten__module_quant.state_dict() if use_quant_state_dict else None

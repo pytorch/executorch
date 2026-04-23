@@ -50,6 +50,7 @@ def filter_fn(node: torch.fx.Node) -> bool:
 def get_skip_decomp_table() -> List[torch._ops.OperatorBase]:
     do_not_decompose = [
         torch.ops.aten.adaptive_avg_pool2d.default,
+        torch.ops.aten.channel_shuffle.default,
         torch.ops.aten.col2im.default,
         torch.ops.aten.elu.default,
         torch.ops.aten.floor_divide.default,
@@ -63,6 +64,8 @@ def get_skip_decomp_table() -> List[torch._ops.OperatorBase]:
         torch.ops.aten.pixel_shuffle.default,
         torch.ops.aten.pixel_unshuffle.default,
         torch.ops.aten.prelu.default,
+        torch.ops.aten.reflection_pad1d.default,
+        torch.ops.aten.reflection_pad2d.default,
         torch.ops.aten.rms_norm.default,
         torch.ops.aten._safe_softmax.default,
         torch.ops.aten.stack.default,
