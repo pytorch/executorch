@@ -3087,11 +3087,8 @@ def _bitwise_not_handler(P: MLXProgramBuilder, n: Node) -> Slot:
             )
         )
     elif x_meta.dtype in {
-        torch.int8,
-        torch.int16,
         torch.int32,
         torch.int64,
-        torch.uint8,
     }:
         P.emit(
             BitwiseInvertNode(
