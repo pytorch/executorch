@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
 # Copyright (c) Meta Platforms, Inc. and affiliates.
+# Copyright 2026 Arm Limited and/or its affiliates.
 # All rights reserved.
 #
 # This source code is licensed under the BSD-style license found in the
@@ -18,7 +19,7 @@ mkdir -p "./cortex_m_e2e/${MODEL}"
 WORK_DIR=$(realpath "./cortex_m_e2e/${MODEL}")
 
 echo "=== Exporting ${MODEL} with cortex-m55+int8 ==="
-python -m examples.arm.aot_arm_compiler \
+python -m backends.arm.scripts.aot_arm_compiler \
     -m "${MODEL}" \
     --target=cortex-m55+int8 \
     --quantize \

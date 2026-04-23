@@ -92,7 +92,8 @@ TensorStruct<float> MultimodalEmbeddingMerger::merge(
       "No text embeddings added. Call add_text_embeddings() first.");
 
   // Final merged embeddings
-  std::vector<float> merged_buffer;
+  std::shared_ptr<std::vector<float>> merged_buffer =
+      std::make_shared<std::vector<float>>();
   std::vector<executorch::aten::TensorImpl::SizesType> sizes;
   TensorStruct<float> merged_embeddings;
 
@@ -121,7 +122,7 @@ TensorStruct<float> MultimodalEmbeddingMerger::merge(
   total_tokens_ = total_tokens_ - num_placeholder_tokens;
 
   size_t total_elements = total_tokens_ * embedding_dim_;
-  merged_buffer.resize(total_elements);
+  merged_buffer->resize(total_elements);
 
   // Merge embeddings based on input_ids
   size_t text_emb_idx = 0; // Which text embedding chunk in current turn
@@ -144,7 +145,7 @@ TensorStruct<float> MultimodalEmbeddingMerger::merge(
 
       size_t num_elements = num_image_tokens * embedding_dim_;
       std::memcpy(
-          merged_buffer.data() + output_offset,
+          merged_buffer->data() + output_offset,
           image_buffer.data(),
           num_elements * sizeof(float));
 
@@ -160,7 +161,7 @@ TensorStruct<float> MultimodalEmbeddingMerger::merge(
       const std::vector<float>& text_buffer =
           text_embedding_buffers_[text_emb_idx];
       std::memcpy(
-          merged_buffer.data() + output_offset,
+          merged_buffer->data() + output_offset,
           text_buffer.data() + text_token_idx * embedding_dim_,
           embedding_dim_ * sizeof(float));
 
@@ -176,7 +177,8 @@ TensorStruct<float> MultimodalEmbeddingMerger::merge(
       image_embedding_buffers_.size());
 
   // Setup tensor metadata
-  merged_embeddings.data = merged_buffer.data();
+  merged_embeddings.buffer = merged_buffer;
+  merged_embeddings.data = merged_buffer->data();
   merged_embeddings.size = total_elements * sizeof(float);
 
   // Setup sizes and dim_order: [1, total_tokens, embedding_dim]

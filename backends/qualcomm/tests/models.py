@@ -400,6 +400,15 @@ class Ceil(torch.nn.Module):
         return torch.ceil(x)
 
 
+class ChannelShuffle(torch.nn.Module):
+    def __init__(self, groups):
+        super().__init__()
+        self.channel_shuffle = torch.nn.ChannelShuffle(groups)
+
+    def forward(self, x):
+        return self.channel_shuffle(x)
+
+
 class Chunk(torch.nn.Module):
     def __init__(self):
         super().__init__()
@@ -1854,6 +1863,33 @@ class Reciprocal(torch.nn.Module):
         return torch.reciprocal(x)
 
 
+class ReflectionPad1d(torch.nn.Module):
+    def __init__(self):
+        super().__init__()
+        self.pad = torch.nn.ReflectionPad1d(2)
+
+    def forward(self, x):
+        return self.pad(x)
+
+
+class ReflectionPad2d(torch.nn.Module):
+    def __init__(self):
+        super().__init__()
+        self.pad = torch.nn.ReflectionPad2d(2)
+
+    def forward(self, x):
+        return self.pad(x)
+
+
+class ReflectionPad2dAsymmetric(torch.nn.Module):
+    def __init__(self):
+        super().__init__()
+        self.pad = torch.nn.ReflectionPad2d((1, 2, 3, 1))
+
+    def forward(self, x):
+        return self.pad(x)
+
+
 class Relu(torch.nn.Module):
     def __init__(self):
         super().__init__()
@@ -1878,6 +1914,30 @@ class Repeat(torch.nn.Module):
 
     def forward(self, x):
         return x.repeat(1, 2, 3, 4)
+
+
+class RemainderScalar(torch.nn.Module):
+    def __init__(self):
+        super().__init__()
+
+    def forward(self, x):
+        return torch.remainder(x, 3.0)
+
+
+class RemainderTensor(torch.nn.Module):
+    def __init__(self):
+        super().__init__()
+
+    def forward(self, x, y):
+        return torch.remainder(x, y)
+
+
+class RemainderMultiNode(torch.nn.Module):
+    def __init__(self):
+        super().__init__()
+
+    def forward(self, x, y):
+        return torch.remainder(x, 3.0), torch.remainder(x, y)
 
 
 class ReWriteObs(torch.nn.Module):
