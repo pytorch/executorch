@@ -79,7 +79,7 @@ bash examples/models/voxtral_tts/run_cuda_e2e.sh ~/models/Voxtral-4B-TTS-2603
 
 #### CUDA performance vs other backends
 
-See `BENCHMARK.md` for full numbers. Headlines:
+Headlines on A100 80 GB for `"Hello, how are you today?"` (`seed=42`):
 
 | Backend | model.ptd | LM time | Total | E2E RTF |
 |---|---|---|---|---|
