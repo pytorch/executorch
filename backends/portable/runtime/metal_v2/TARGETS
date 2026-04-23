@@ -1,0 +1,69 @@
+# Copyright (c) Meta Platforms, Inc. and affiliates.
+# All rights reserved.
+#
+# This source code is licensed under the BSD-style license found in the
+# LICENSE file in the root directory of this source tree.
+
+# Metal v2 Runtime - Unified GPU runtime with automatic command replay
+# Features: ICB replay, ResidencySet, Binary Archives, MTLHeap, Buffer Pool
+
+load("@fbsource//xplat/executorch/build:runtime_wrapper.bzl", "runtime")
+
+oncall("executorch")
+
+runtime.cxx_library(
+    name = "gpu_stream",
+    srcs = ["MetalStream.mm"],
+    exported_headers = [
+        "GpuStream.h",
+        "MetalStream.h",
+    ],
+    compiler_flags = [
+        "-fobjc-arc",
+    ],
+    frameworks = [
+        "Foundation",
+        "Metal",
+    ],
+    preprocessor_flags = [
+        "-DPORTABLE_HAS_METAL_V2=1",
+    ],
+    visibility = ["//executorch/..."],
+    deps = [
+        "//executorch/runtime/platform:platform",
+    ],
+)
+
+runtime.cxx_library(
+    name = "gpu_op",
+    srcs = ["MetalOp.mm"],
+    exported_headers = ["MetalOp.h"],
+    compiler_flags = [
+        "-fobjc-arc",
+    ],
+    visibility = ["//executorch/..."],
+    deps = [
+        ":gpu_stream",
+        "//executorch/runtime/core:core",
+        "//executorch/runtime/core/exec_aten:lib",
+    ],
+)
+
+runtime.cxx_library(
+    name = "metal_runtime_v2",
+    srcs = ["MetalRuntime.mm"],
+    exported_headers = ["MetalRuntime.h"],
+    compiler_flags = [
+        "-fobjc-arc",
+    ],
+    preprocessor_flags = [
+        "-DPORTABLE_HAS_METAL_V2=1",
+    ],
+    visibility = ["//executorch/..."],
+    deps = [
+        ":gpu_stream",
+        ":gpu_op",
+        "//executorch/backends/portable/runtime:graph_runtime",
+        "//executorch/runtime/platform:platform",
+    ],
+)
