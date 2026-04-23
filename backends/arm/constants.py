@@ -1,4 +1,4 @@
-# Copyright 2025 Arm Limited and/or its affiliates.
+# Copyright 2025-2026 Arm Limited and/or its affiliates.
 #
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
@@ -41,6 +41,8 @@ NCHW_ORDER: Final = (0, 1, 2, 3)
 NNCHW_ORDER: Final = (0, 1, 2, 3, 4)
 NNNCHW_ORDER: Final = (0, 1, 2, 3, 4, 5)
 
+OHWI_ORDER: Final = (1, 2, 3, 0)
+ODHWI_ORDER: Final = (0, 2, 3, 4, 1)
 HWCM_ORDER: Final = (2, 3, 0, 1)
 
 MAX_RANK: Final = 6

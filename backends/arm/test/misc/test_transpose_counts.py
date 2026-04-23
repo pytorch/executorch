@@ -169,7 +169,7 @@ class CumsumModule(torch.nn.Module):
         return torch.cumsum(x, dim)
 
 
-class ConvMaxPoolResidualLinear(torch.nn.Module):
+class Model1ConvMaxPoolResidualLinear(torch.nn.Module):
     def __init__(self):
         super().__init__()
         self.conv = torch.nn.Conv1d(8, 8, kernel_size=3, padding=1)
@@ -427,7 +427,7 @@ cases = {
         0,
     ),
     "model_1_conv_maxpool_residual_linear": TransposeCountCase(
-        ConvMaxPoolResidualLinear(), (torch.randn(2, 8, 64),), 5
+        Model1ConvMaxPoolResidualLinear(), (torch.randn(2, 8, 64),), 5
     ),
     "model_2_conv_mha_linear_layernorm": TransposeCountCase(
         Model2ConvMhaLinearLayerNorm(), (torch.randn(2, 8, 32),), 11
@@ -486,7 +486,7 @@ cases_channels_last = {
             torch.randn(2, 2, 2, 3).to(memory_format=torch.channels_last),
             torch.randn(2, 2, 3, 4).to(memory_format=torch.channels_last),
         ),
-        2,  # The test crashes before reaching the transpose count
+        2,
     ),
     "pixel_shuffle_channels_last": TransposeCountCase(
         PixelShuffleModule(),
@@ -526,7 +526,7 @@ cases_channels_last = {
     "cumsum_rank4_dim3_channels_last": TransposeCountCase(
         CumsumModule(),
         (torch.randn(1, 2, 3, 4).to(memory_format=torch.channels_last), 3),
-        1,  # The test crashes before reaching the transpose count
+        1,
     ),
 }
 
