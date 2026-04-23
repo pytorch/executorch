@@ -2004,6 +2004,19 @@ ET_NODISCARD Error XNNCompiler::compileModel(
   // Verify the FlatBuffer data integrity before accessing it. Without this,
   // malformed data could cause out-of-bounds reads when traversing the
   // FlatBuffer's internal offset tables.
+  //
+  // flatbuffers::Verifier asserts size < opts.max_size
+  // (FLATBUFFERS_MAX_BUFFER_SIZE, i.e. soffset_t::max()) in its constructor. A
+  // PTE with a bogus segment size (e.g. 2^64) can reach here when no XNNHeader
+  // is present; that would assert in debug builds and std::bad_alloc out of
+  // Verifier's internal bookkeeping in release. Reject oversized buffers
+  // explicitly before constructing the Verifier (TOB-EXECUTORCH-43).
+  ET_CHECK_OR_RETURN_ERROR(
+      flatbuffer_size < FLATBUFFERS_MAX_BUFFER_SIZE,
+      DelegateInvalidCompatibility,
+      "XNNPACK flatbuffer size %zu is too large (max %d)",
+      flatbuffer_size,
+      FLATBUFFERS_MAX_BUFFER_SIZE);
   flatbuffers::Verifier verifier(flatbuffer_data, flatbuffer_size);
   ET_CHECK_OR_RETURN_ERROR(
       verifier.VerifyBuffer<fb_xnnpack::XNNGraph>(nullptr),
