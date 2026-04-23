@@ -6,7 +6,7 @@
 # Example of an external model for the Arm AOT Compiler
 #
 # Example of an external Python file to be used as a module by the `run.sh`
-# (and the `aot_arm_compiler.py`) scripts in `examples/arm` directory.
+# (and the `backends/arm/scripts/aot_arm_compiler.py`) script.
 #
 # Just pass the path of the `add.py` file as `--model_name`
 #

@@ -55,6 +55,7 @@ def trace(
     inputs: tuple[object, ...],
     dump_graphs: bool = False,
     ops_to_keep: Optional[list[torch._ops.OpOverload]] = None,
+    is_qat: bool = False,
 ) -> ExportedProgram:
     """
     Trace the model with export and return an ExportedProgram.
@@ -62,7 +63,7 @@ def trace(
     if ops_to_keep is None:
         ops_to_keep = []
     program = trace_fn(
-        model, inputs, is_qat=False, strict=True, ops_to_keep=ops_to_keep
+        model, inputs, is_qat=is_qat, strict=True, ops_to_keep=ops_to_keep
     )
 
     if dump_graphs:
@@ -77,6 +78,7 @@ def prepare_pt2(
     inputs: tuple[object, ...],
     quantizer: CadenceQuantizer,
     dump_graphs: bool = False,
+    is_qat: bool = False,
 ) -> torch.fx.GraphModule:
     """
     Trace and Prepare a model using the given quantizer.
@@ -89,10 +91,10 @@ def prepare_pt2(
 
     ops_to_keep = quantizer.get_ops_to_preserve_from_decomposition()
     traced_program = trace(
-        model, inputs, dump_graphs=dump_graphs, ops_to_keep=ops_to_keep
+        model, inputs, dump_graphs=dump_graphs, ops_to_keep=ops_to_keep, is_qat=is_qat
     )
     prepared_program = prepare_traced_pt2(
-        traced_program, quantizer, dump_graphs=dump_graphs
+        traced_program, quantizer, dump_graphs=dump_graphs, is_qat=is_qat
     )
 
     return prepared_program
@@ -102,6 +104,7 @@ def prepare_traced_pt2(
     program: ExportedProgram,
     quantizer: CadenceQuantizer,
     dump_graphs: bool = False,
+    is_qat: bool = False,
 ) -> torch.fx.GraphModule:
     """
     Prepare a model using the given quantizer.
@@ -112,7 +115,7 @@ def prepare_traced_pt2(
     Returns a GraphModule with the prepared model.
     """
 
-    prepared_model = prepare_fn(program, quantizer, is_qat=False)
+    prepared_model = prepare_fn(program, quantizer, is_qat=is_qat)
 
     if dump_graphs:
         logging.info("Graph after preparation:")
