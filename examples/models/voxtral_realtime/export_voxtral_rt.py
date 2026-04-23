@@ -402,10 +402,10 @@ def lower_to_executorch(programs, metadata, backend="xnnpack"):
 
         # Run decompositions for Metal backend
         updated_programs = {}
+        decomp_table = torch.export.default_decompositions()
+        decomp_table[torch.ops.aten.linear.default] = _linear_bias_decomposition
         for key, ep in programs.items():
-            updated_programs[key] = ep.run_decompositions(
-                {torch.ops.aten.linear.default: _linear_bias_decomposition}
-            )
+            updated_programs[key] = ep.run_decompositions(decomp_table)
         programs = updated_programs
 
         partitioner = {}

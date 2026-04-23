@@ -119,7 +119,7 @@ def install_optional_example_requirements(use_pytorch_nightly):
     print("Installing torch domain libraries")
     DOMAIN_LIBRARIES = [
         (
-            f"torchvision==0.26.0.{NIGHTLY_VERSION}"
+            f"torchvision==0.27.0.{NIGHTLY_VERSION}"
             if use_pytorch_nightly
             else "torchvision"
         ),
