@@ -16,7 +16,7 @@ class ClampHardswishPass(ExportPass):
     """
     Adds a clamp operation before hardswish to ensure input is in the range [-3, inf).
 
-    By doing this before quantization the output range of the preceeding op is minimized,
+    By doing this before quantization the output range of the preceding op is minimized,
     potentially improving accuracy.
     """
 
