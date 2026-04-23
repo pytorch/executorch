@@ -693,6 +693,7 @@ class ET_EXPERIMENTAL CudaBackend final
 
         gpu_inputs[i] = make_slimtensor_from_blob_with_etensor_metadata(
             static_ptr, cpu_tensor);
+
         continue;
       }
 
@@ -805,6 +806,7 @@ class ET_EXPERIMENTAL CudaBackend final
       // End capture → instantiate graph
       cudaError_t gerr =
           cudaStreamEndCapture(cuda_stream, &handle->cuda_graph_state.graph);
+
       ET_CHECK_OR_RETURN_ERROR(
           gerr == cudaSuccess,
           Internal,
@@ -814,6 +816,7 @@ class ET_EXPERIMENTAL CudaBackend final
       gerr = cudaGraphInstantiate(
           &handle->cuda_graph_state.graph_exec,
           handle->cuda_graph_state.graph,
+
           cudaGraphInstantiateFlagAutoFreeOnLaunch);
       ET_CHECK_OR_RETURN_ERROR(
           gerr == cudaSuccess,
