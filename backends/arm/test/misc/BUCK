@@ -15,3 +15,15 @@ fbcode_target(_kind = runtime.python_library,
         "//executorch/backends/arm/test:arm_tester_lib",
     ],
 )
+
+fbcode_target(_kind = runtime.python_binary,
+    name = "test_conv_to_fc_cycles",
+    srcs = ["test_conv_to_fc_cycles.py"],
+    main_function = "executorch.backends.arm.test.misc.test_conv_to_fc_cycles.main",
+    deps = [
+        "//executorch/backends/arm:ethosu",
+        "//executorch/backends/arm:_factory",
+        "//executorch/backends/arm/quantizer:lib",
+        "//executorch/exir:lib",
+    ],
+)
