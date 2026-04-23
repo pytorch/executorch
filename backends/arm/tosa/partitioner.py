@@ -16,7 +16,7 @@ be delegated to the TOSA backend. Use this module to:
 import logging
 from collections import deque
 from itertools import count
-from typing import Callable, List, Optional, Sequence, Tuple
+from typing import Callable, Iterable, List, Optional, Sequence, Tuple
 
 import torch
 from executorch.backends.arm._passes.arm_pass_utils import (
@@ -112,18 +112,19 @@ def is_partitioned(
 
 
 def reject_partition(
-    reason: str, partition: Partition, reporter: WhyNoPartitionReporter
+    reason: str,
+    nodes: Iterable[torch.fx.Node],
+    reporter: WhyNoPartitionReporter,
 ) -> None:
     """Remove a proposed partition and record the rejection reason.
 
     Args:
         reason (str): Human-readable explanation for rejection.
-        partition (object): Proposed partition object from the
-            capability partitioner.
+        nodes: The nodes to de-tag.
         reporter (WhyNoPartitionReporter): used to report why nodes were rejected.
 
     """
-    for node in partition.nodes:
+    for node in nodes:
         if "delegation_tag" in node.meta:
             del node.meta["delegation_tag"]
             reporter.report_reject(
@@ -381,26 +382,36 @@ class TOSAPartitioner(Partitioner):
                         for node in component:
                             node.meta["delegation_tag"] = new_tag
 
-            # Check whether the partition contains only no-op or non-computational ops. Such partitions don't make sense to delegate, and in the worst case may be optimized away during lowering, which can break compilation."
-            is_nocompute_partition = all(
-                _is_noop_clone(node)
-                or _is_noop_alias_copy(node)
-                or _is_noop_expand(node)
-                or _is_noop_detach_copy(node)
-                or _is_noop_to_dim_order_copy(node)
-                or _is_view_copy(node)
-                or node.target in Q_OPS
-                or node.target in DQ_OPS
-                for node in partition.nodes
-            )
-            if is_nocompute_partition:
-                reject_partition(
-                    "Partition contained only ops which are removed in the TOSA lowering, leading to an empty partition.",
-                    partition,
-                    reporter,
+            # Check whether the partition contains only no-op or non-computational
+            # ops.  Such partitions don't make sense to delegate, and in the worst
+            # case may be optimized away during lowering, which can break
+            # compilation.  After a cycle split the nodes may belong to multiple
+            # sub-partitions, so collect every active tag and check each group.
+            active_tags: dict[str, list[torch.fx.Node]] = {}
+            for node in partition.nodes:
+                node_tag = node.meta.get("delegation_tag")
+                if node_tag is not None and node_tag in tags:
+                    active_tags.setdefault(node_tag, []).append(node)
+
+            for active_tag, nodes in active_tags.items():
+                is_nocompute_partition = all(
+                    _is_noop_clone(node)
+                    or _is_noop_alias_copy(node)
+                    or _is_noop_expand(node)
+                    or _is_noop_detach_copy(node)
+                    or _is_noop_to_dim_order_copy(node)
+                    or _is_view_copy(node)
+                    or node.target in Q_OPS
+                    or node.target in DQ_OPS
+                    for node in nodes
                 )
-                if tag in tags:
-                    tags.remove(tag)
+                if is_nocompute_partition:
+                    reject_partition(
+                        "Partition contained only ops which are removed in the TOSA lowering, leading to an empty partition.",
+                        nodes,
+                        reporter,
+                    )
+                    tags.remove(active_tag)
         return tags
 
     def partition(self, exported_program: ExportedProgram) -> PartitionResult:
