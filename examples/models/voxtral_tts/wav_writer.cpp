@@ -53,7 +53,8 @@ bool WavWriter::Write(const float* samples, std::size_t frame_count) {
     file_.write(reinterpret_cast<const char*>(&pcm), sizeof(pcm));
   }
 
-  data_bytes_ += static_cast<std::uint32_t>(sample_count * sizeof(std::int16_t));
+  data_bytes_ +=
+      static_cast<std::uint32_t>(sample_count * sizeof(std::int16_t));
   return file_.good();
 }
 

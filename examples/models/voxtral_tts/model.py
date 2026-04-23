@@ -22,7 +22,6 @@ import torch.nn as nn
 import torch.nn.functional as F
 from executorch.extension.llm.custom_ops import custom_ops as _custom_ops  # noqa: F401
 
-
 # ---------------------------------------------------------------------------
 # Config
 # ---------------------------------------------------------------------------
