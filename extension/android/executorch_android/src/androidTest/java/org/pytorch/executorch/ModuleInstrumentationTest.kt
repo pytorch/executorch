@@ -43,35 +43,45 @@ class ModuleInstrumentationTest {
   @Throws(IOException::class, URISyntaxException::class)
   fun testModuleLoadAndForward() {
     val module = Module.load(getTestFilePath(TEST_FILE_NAME))
-
-    val results = module.forward(EValue.from(dummyInput()))
-    Assert.assertTrue(results[0].isTensor)
+    try {
+      val results = module.forward(EValue.from(dummyInput()))
+      Assert.assertTrue(results[0].isTensor)
+    } finally {
+      module.destroy()
+    }
   }
 
   @Test
   @Throws(IOException::class, URISyntaxException::class)
   fun testMethodMetadata() {
     val module = Module.load(getTestFilePath(TEST_FILE_NAME))
+    module.destroy()
   }
 
   @Test
   @Throws(IOException::class)
   fun testModuleLoadMethodAndForward() {
     val module = Module.load(getTestFilePath(TEST_FILE_NAME))
+    try {
+      module.loadMethod(FORWARD_METHOD)
 
-    module.loadMethod(FORWARD_METHOD)
-
-    val results = module.forward(EValue.from(dummyInput()))
-    Assert.assertTrue(results[0].isTensor)
+      val results = module.forward(EValue.from(dummyInput()))
+      Assert.assertTrue(results[0].isTensor)
+    } finally {
+      module.destroy()
+    }
   }
 
   @Test
   @Throws(IOException::class)
   fun testModuleLoadForwardExplicit() {
     val module = Module.load(getTestFilePath(TEST_FILE_NAME))
-
-    val results = module.execute(FORWARD_METHOD, EValue.from(dummyInput()))
-    Assert.assertTrue(results[0].isTensor)
+    try {
+      val results = module.execute(FORWARD_METHOD, EValue.from(dummyInput()))
+      Assert.assertTrue(results[0].isTensor)
+    } finally {
+      module.destroy()
+    }
   }
 
   @Test(expected = RuntimeException::class)
@@ -84,15 +94,18 @@ class ModuleInstrumentationTest {
   @Throws(IOException::class)
   fun testModuleLoadMethodNonExistantMethod() {
     val module = Module.load(getTestFilePath(TEST_FILE_NAME))
-
-    val exception =
-        Assert.assertThrows(ExecutorchRuntimeException::class.java) {
-          module.loadMethod(NONE_METHOD)
-        }
-    Assert.assertEquals(
-        ExecutorchRuntimeException.INVALID_ARGUMENT,
-        exception.getErrorCode(),
-    )
+    try {
+      val exception =
+          Assert.assertThrows(ExecutorchRuntimeException::class.java) {
+            module.loadMethod(NONE_METHOD)
+          }
+      Assert.assertEquals(
+          ExecutorchRuntimeException.INVALID_ARGUMENT,
+          exception.getErrorCode(),
+      )
+    } finally {
+      module.destroy()
+    }
   }
 
   @Test(expected = RuntimeException::class)
@@ -155,6 +168,7 @@ class ModuleInstrumentationTest {
     }
 
     Assert.assertEquals(numThreads.toLong(), completed.get().toLong())
+    module.destroy()
   }
 
   companion object {
