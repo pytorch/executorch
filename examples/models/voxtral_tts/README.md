@@ -1,252 +1,201 @@
-# Voxtral-4B-TTS-2603 on ExecuTorch
+# Voxtral TTS
 
-Text-to-speech with [Voxtral-4B-TTS-2603](https://huggingface.co/mistralai/Voxtral-4B-TTS-2603) running on ExecuTorch.
+Self-contained ExecuTorch implementation of
+[Voxtral-4B-TTS-2603](https://huggingface.co/mistralai/Voxtral-4B-TTS-2603),
+a ~4B parameter text-to-speech model that produces 24 kHz mono audio from
+text. Weights are loaded directly from the HuggingFace safetensors
+checkpoint. Supports CPU (portable + XNNPACK) and CUDA backends.
 
-## Architecture
+## Overview
 
-Three-component pipeline generating 24kHz audio from text:
+The pipeline has two stages: **export** (Python, once) and **inference**
+(C++ runner, repeated). Export converts the HuggingFace checkpoint into a
+`model.pte` (LM + flow head, 5 methods) plus a `codec_decoder.pte`. At
+inference time, the C++ runner loads both `.pte` files, the tokenizer, and a
+voice embedding, then synthesizes a `.wav` file.
 
-1. **Mistral LLM** (~4B params) — autoregressive text-to-hidden-states
-2. **Flow Matching Head** (3-layer transformer) — hidden states to 37 audio codebook tokens per frame via 7-step Euler ODE
-3. **Codec Decoder** (Conv1d/ConvTranspose1d + 8 transformer layers) — codebook tokens to waveform
+The model has three components:
+1. **Mistral 4B LLM decoder** — autoregressive text-to-hidden-states
+2. **Flow Matching Head** (3-layer transformer) — hidden states to 37
+   audio codebook tokens per frame via a 7-step Euler ODE
+3. **Codec Decoder** (Conv1d / ConvTranspose1d stack + 8 transformer
+   layers) — codebook tokens to 24 kHz waveform
 
-## Quick Start
+## Prerequisites
 
-### 1. Export
+- ExecuTorch installed from source (see [building from source](../../../docs/source/using-executorch-building-from-source.md))
+- Model weights downloaded from HuggingFace. The directory should contain
+  `params.json`, `consolidated.safetensors`, `tekken.json`, and
+  `voice_embedding/` with one or more `.pt` voice files.
+  ```bash
+  huggingface-cli download mistralai/Voxtral-4B-TTS-2603 \
+      --local-dir ~/models/Voxtral-4B-TTS-2603
+  ```
+- For CUDA: NVIDIA GPU with CUDA 12.8 toolkit (tested on A100 80GB).
+  Note: CUDA 13 is not supported (CUB 3.0 incompatibility in
+  `backends/cuda/runtime/shims/sort.cu`).
+
+## Export
+
+Export produces `model.pte` and `codec_decoder.pte`. For CUDA, it also
+produces `aoti_cuda_blob.ptd` and `codec_aoti_cuda_blob.ptd` containing
+the compiled CUDA kernels and weights.
 
 ```bash
-# Download model
-huggingface-cli download mistralai/Voxtral-4B-TTS-2603 --local-dir ~/models/Voxtral-4B-TTS-2603
-
-# FP32 XNNPACK (best quality)
+# CPU (XNNPACK, FP32)
 python export_voxtral_tts.py \
     --model-path ~/models/Voxtral-4B-TTS-2603 \
     --backend xnnpack \
     --output-dir ./voxtral_tts_exports
 
-# FP32 portable (CPU only)
+# CUDA, 4-bit weight-only quant (recommended — sub-real-time on A100)
 python export_voxtral_tts.py \
     --model-path ~/models/Voxtral-4B-TTS-2603 \
-    --backend portable \
-    --output-dir ./voxtral_tts_exports
+    --backend cuda \
+    --qlinear 4w \
+    --output-dir ./voxtral_tts_exports_cuda_4w
 ```
 
-### CUDA backend (NVIDIA GPU)
+`--dtype` is auto-promoted to `bf16` and `--qlinear-packing-format` is
+auto-set to `tile_packed_to_4d` when `--backend cuda --qlinear 4w` is
+selected (required by AOTI's `_weight_int4pack_mm` kernel).
 
-Sub-real-time TTS on A100. The full pipeline (LM + codec) runs on GPU via
-ExecuTorch's AOTI CUDA backend. End-to-end ~3.7 s wall clock for
-`"Hello, how are you today?"` with `--qlinear 4w`.
+### Options
+
+| Flag | Default | Description |
+|------|---------|-------------|
+| `--model-path` | (required) | Local directory with `params.json` + `consolidated.safetensors` |
+| `--backend` | `xnnpack` | `portable`, `xnnpack`, `cuda`, `cuda-windows` |
+| `--dtype` | `fp32` | Model dtype: `fp32` or `bf16` (auto-promoted to bf16 when CUDA + `--qlinear`) |
+| `--output-dir` | `./voxtral_tts_exports` | Output directory |
+| `--max-seq-len` | `4096` | KV cache length |
+| `--qlinear` | (none) | Linear layer quantization: `4w`, `8w`, `8da4w`, `8da8w` |
+| `--qlinear-group-size` | `32` | Group size for linear quantization |
+| `--qlinear-packing-format` | (auto) | `tile_packed_to_4d` (auto-set for CUDA + 4w) |
+| `--decoder-qlinear-scope` | `all` | Scope decoder quant to `all`, `attention`, `feed_forward`, or `none` |
+| `--qlinear-codec` | (none) | Quantize codec decoder linears: `4w`, `8w` |
+| `--qembedding` | (none) | Embedding quantization: `4w`, `8w` (XNNPACK: not yet supported) |
+| `--streaming` | off | Enable streaming codec chunking metadata |
+
+### CUDA quantization configs
+
+Validated on A100, `seed=42`, `"Hello, how are you today?"`:
+
+| Config | model.ptd | LM time | Total wall | E2E RTF | Notes |
+|---|---|---|---|---|---|
+| `--backend cuda` | 15.8 GB | 11.5 s | 178 s | 51x | FP32 weights, codec on portable CPU |
+| **`--backend cuda --qlinear 4w`** | **3.4 GB** | **2.1 s** | **3.7 s** | **0.88x** ⚡ | int4 weights, codec on CUDA |
+
+### XNNPACK quantization configs
+
+| Config | Scope | model.pte | RTF (long prompt) |
+|---|---|---|---|
+| `--qlinear 8da4w --decoder-qlinear-scope feed_forward` | FFN only | 7.0 GB | 2.6x |
+| `--qlinear 8da8w` | all decoder | 5.7 GB | 1.9x |
+| `--qlinear 8da4w` | all decoder | 4.3 GB | 2.0x |
+
+## Build
+
+ExecuTorch must be installed from source first (see
+[Prerequisites](#prerequisites)). The `make` target handles building the
+core libraries and the runner binary.
 
 ```bash
-# Pre-flight (one-time per shell):
-unset CPATH                                   # critical, see "CUDA gotchas" below
+# CUDA (recommended)
+make voxtral_tts-cuda
+
+# CPU
+make voxtral_tts-cpu
+```
+
+This builds ExecuTorch with the requested backend, then the runner binary
+at `cmake-out/examples/models/voxtral_tts/voxtral_tts_runner`.
+
+## Run
+
+The runner requires:
+- `model.pte` — exported LM + flow head (see [Export](#export))
+- `codec_decoder.pte` — exported codec
+- `tekken.json` — tokenizer from the model weights directory
+- A `.pt` voice embedding from the model's `voice_embedding/` directory
+
+For CUDA also pass `--data_path` and `--codec_data_path` for the AOTI
+delegate `.ptd` files.
+
+```bash
+# CUDA, full pipeline
+unset CPATH                                       # see Troubleshooting
 export LD_LIBRARY_PATH=$CONDA_PREFIX/lib:$LD_LIBRARY_PATH
 
-# Export FP32 (best quality, 15.8 GB .ptd)
-python export_voxtral_tts.py \
-    --model-path ~/models/Voxtral-4B-TTS-2603 \
-    --backend cuda --dtype fp32 \
-    --output-dir ./voxtral_tts_exports_cuda
-
-# Export 4w-quantized (RECOMMENDED — 4.6× smaller .ptd, sub-real-time)
-# --dtype is auto-promoted to bf16; --qlinear-packing-format auto-set to tile_packed_to_4d.
-python export_voxtral_tts.py \
-    --model-path ~/models/Voxtral-4B-TTS-2603 \
-    --backend cuda --qlinear 4w \
-    --output-dir ./voxtral_tts_exports_cuda_4w
-
-# Build (parent ExecuTorch needs CUDA enabled — use llm-release-cuda, not llm-release)
-cmake --workflow --preset llm-release-cuda
-cd examples/models/voxtral_tts && cmake --workflow --preset voxtral-tts-cuda && cd ../../..
-
-# Run (full CUDA pipeline)
-./cmake-out/examples/models/voxtral_tts/voxtral_tts_runner \
-    --model ./voxtral_tts_exports_cuda_4w/model.pte \
-    --data_path ./voxtral_tts_exports_cuda_4w/aoti_cuda_blob.ptd \
-    --codec ./voxtral_tts_exports_cuda_4w/codec_decoder.pte \
-    --codec_data_path ./voxtral_tts_exports_cuda_4w/codec_aoti_cuda_blob.ptd \
+cmake-out/examples/models/voxtral_tts/voxtral_tts_runner \
+    --model voxtral_tts_exports_cuda_4w/model.pte \
+    --data_path voxtral_tts_exports_cuda_4w/aoti_cuda_blob.ptd \
+    --codec voxtral_tts_exports_cuda_4w/codec_decoder.pte \
+    --codec_data_path voxtral_tts_exports_cuda_4w/codec_aoti_cuda_blob.ptd \
     --tokenizer ~/models/Voxtral-4B-TTS-2603/tekken.json \
     --voice ~/models/Voxtral-4B-TTS-2603/voice_embedding/neutral_female.pt \
     --text "Hello, how are you today?" \
-    --output output.wav --seed 42 --max_new_tokens 100
+    --output output.wav \
+    --seed 42 \
+    --max_new_tokens 200
 ```
 
-Or use the one-shot script:
+Output is **24 kHz mono 16-bit PCM**. Listen with `ffplay output.wav` or
+`aplay output.wav`.
+
+Or use the one-shot script that does export + build + run end to end:
 
 ```bash
 bash examples/models/voxtral_tts/run_cuda_e2e.sh ~/models/Voxtral-4B-TTS-2603
 ```
 
-#### CUDA performance vs other backends
-
-Headlines on A100 80 GB for `"Hello, how are you today?"` (`seed=42`):
-
-| Backend | model.ptd | LM time | Total | E2E RTF |
-|---|---|---|---|---|
-| XNNPACK fp32 (CPU) | — | 3.2 s | 15.3 s | 4.8x |
-| CUDA fp32 | 15.8 GB | 11.5 s | 178 s* | 51x* |
-| **CUDA 4w + CUDA codec** | **3.4 GB** | **2.1 s** | **3.7 s** | **0.88x** ⚡ |
-
-\* Pre conv-as-matmul codec rewrite; codec ran on portable CPU.
-
-#### CUDA gotchas
-
-1. **`unset CPATH` is mandatory.** If `CPATH` contains `/usr/local/cuda-13.0/...`, gcc picks CUDA 13's `crt/host_runtime.h` which has a 2-arg `__cudaLaunch` macro incompatible with nvcc 12.8's stub generation. Manifests as `__cudaLaunch was not declared` during the build. Verify with `echo $CPATH` (should be empty or only contain cuda-12.8).
-2. **Use CUDA 12.8, not 13.0.** ExecuTorch's CUDA backend (`backends/cuda/runtime/shims/sort.cu`) was written against CUB 2.x; CUDA 13's CUB 3.0 breaks it.
-3. **Set `LD_LIBRARY_PATH=$CONDA_PREFIX/lib`** before launching the runner. The AOTI `.so` files require GLIBCXX 3.4.30+ which conda's libstdc++ provides but `/lib64/libstdc++.so.6` does not.
-4. **`pip install -e . --no-build-isolation`** after pulling source changes. The default `install_executorch.sh` does `pip install .` — repo edits to `examples/models/voxtral_tts/` won't take effect until you reinstall as editable.
-5. **Use `llm-release-cuda` preset** for the parent build (not `llm-release`). The default preset doesn't enable `EXECUTORCH_BUILD_CUDA`, so `aoti_cuda_backend` won't exist when the runner CMake tries to link it.
-
-### Quantization (XNNPACK)
-
-Dynamic quantization reduces model size with minimal quality loss.
-
-```bash
-# 8da4w: feed_forward only (recommended — best quality/size tradeoff)
-python export_voxtral_tts.py \
-    --model-path ~/models/Voxtral-4B-TTS-2603 \
-    --backend xnnpack \
-    --qlinear 8da4w \
-    --decoder-qlinear-scope feed_forward \
-    --output-dir ./voxtral_tts_8da4w_ff
-
-# 8da8w: all decoder layers
-python export_voxtral_tts.py \
-    --model-path ~/models/Voxtral-4B-TTS-2603 \
-    --backend xnnpack \
-    --qlinear 8da8w \
-    --output-dir ./voxtral_tts_8da8w
-
-# 8da4w: all decoder layers (most aggressive, smaller model)
-python export_voxtral_tts.py \
-    --model-path ~/models/Voxtral-4B-TTS-2603 \
-    --backend xnnpack \
-    --qlinear 8da4w \
-    --output-dir ./voxtral_tts_8da4w
-```
-
-#### Quantization configs
-
-| Config | Scope | model.pte | Quality |
-|--------|-------|-----------|---------|
-| fp32 | — | 15.5 GB | Best (reference) |
-| `8da4w` | `feed_forward` | 7.0 GB | Excellent |
-| `8da8w` | `all` | 5.7 GB | Excellent |
-| `8da4w` | `all` | 4.3 GB | Good |
-
-#### Quantization options
-
-| Flag | Description |
-|------|-------------|
-| `--qlinear` | Quantize LLM decoder + flow head linear layers: `4w`, `8w`, `8da4w`, `8da8w` |
-| `--qlinear-group-size` | Group size for linear quantization (default: auto) |
-| `--decoder-qlinear-scope` | Scope decoder quantization: `all`, `attention`, `feed_forward`, `none` (default: `all`) |
-| `--qlinear-codec` | Quantize codec decoder linear layers: `4w`, `8w` |
-| `--qembedding` | Quantize embedding layers: `4w`, `8w` (XNNPACK: not yet supported) |
-
-### 2. Build
-
-```bash
-# Build ExecuTorch core + XNNPACK
-cmake --workflow --preset llm-release
-
-# Build the runner (XNNPACK)
-cd examples/models/voxtral_tts
-cmake --workflow --preset voxtral-tts-xnnpack
-cd ../../..
-
-# Or portable (CPU only)
-cd examples/models/voxtral_tts
-cmake --workflow --preset voxtral-tts-cpu
-cd ../../..
-```
-
-### 3. Run
-
-```bash
-# Offline (full generation then decode)
-./cmake-out/examples/models/voxtral_tts/voxtral_tts_runner \
-    --model voxtral_tts_exports/model.pte \
-    --codec voxtral_tts_exports/codec_decoder.pte \
-    --tokenizer ~/models/Voxtral-4B-TTS-2603/tekken.json \
-    --voice ~/models/Voxtral-4B-TTS-2603/voice_embedding/neutral_female.pt \
-    --text "Hello, how are you today?" \
-    --output output.wav \
-    --seed 42
-
-# Streaming (incremental codec decoding, emits audio chunks as frames are generated)
-./cmake-out/examples/models/voxtral_tts/voxtral_tts_runner \
-    --model voxtral_tts_exports/model.pte \
-    --codec voxtral_tts_exports/codec_decoder.pte \
-    --tokenizer ~/models/Voxtral-4B-TTS-2603/tekken.json \
-    --voice ~/models/Voxtral-4B-TTS-2603/voice_embedding/neutral_female.pt \
-    --text "Hello, how are you today?" \
-    --output output.wav \
-    --streaming --seed 42
-```
-
-### Live playback
-
-Use `--speaker` to write raw f32le PCM to stdout for real-time playback.
-All log messages go to stderr so stdout is pure audio data.
-
-```bash
-# Linux: pipe to aplay
-./cmake-out/examples/models/voxtral_tts/voxtral_tts_runner \
-    --model voxtral_tts_exports/model.pte \
-    --codec voxtral_tts_exports/codec_decoder.pte \
-    --tokenizer ~/models/Voxtral-4B-TTS-2603/tekken.json \
-    --voice ~/models/Voxtral-4B-TTS-2603/voice_embedding/neutral_female.pt \
-    --text "Hello, how are you today?" \
-    --output output.wav \
-    --speaker --seed 42 | aplay -f FLOAT_LE -r 24000 -c 1
-
-# macOS: pipe to ffplay
-./cmake-out/examples/models/voxtral_tts/voxtral_tts_runner \
-    ... --speaker | ffplay -f f32le -ar 24000 -nodisp -autoexit -
-
-# Save raw PCM to file (convert later with ffmpeg)
-./cmake-out/examples/models/voxtral_tts/voxtral_tts_runner \
-    ... --speaker > output.raw 2>log.txt
-ffmpeg -f f32le -ar 24000 -ac 1 -i output.raw output.wav
-```
-
-Streaming emits audio in chunks (first chunk ~0.4s, subsequent ~2s) as frames
-are generated, enabling low-latency playback while generation continues.
-
-### Runner options
+### Options
 
 | Flag | Default | Description |
 |------|---------|-------------|
-| `--model` | `model.pte` | Path to LLM + acoustic head `.pte` |
-| `--codec` | `codec_decoder.pte` | Path to codec decoder `.pte` |
-| `--tokenizer` | `tekken.json` | Path to Tekken tokenizer |
-| `--voice` | (neutral_female) | Voice preset name or path to `.pt` embedding |
-| `--text` | (required) | Text to synthesize |
+| `--model` | `model.pte` | Path to exported `model.pte` (LM + flow head) |
+| `--data_path` | (none) | Path to LM `.ptd` (required for CUDA) |
+| `--codec` | `codec_decoder.pte` | Path to exported codec `.pte` |
+| `--codec_data_path` | (none) | Path to codec `.ptd` (required for CUDA codec export) |
+| `--tokenizer` | `tekken.json` | Path to tokenizer JSON from the base model |
+| `--voice` | (required) | Path to voice embedding `.pt` |
+| `--text` | (required) | Prompt text to synthesize |
 | `--output` | `output.wav` | Output WAV file path |
-| `--seed` | `42` | Random seed for flow-matching noise |
-| `--temperature` | `0.0` | Semantic sampling temperature (0 = greedy) |
-| `--max_new_tokens` | `2048` | Max audio frames to generate |
-| `--streaming` | off | Streaming mode with chunked codec decoding |
-| `--speaker` | off | Write raw f32le PCM to stdout for live playback |
+| `--seed` | `42` | RNG seed (semantic sampling + flow noise) |
+| `--temperature` | `0.0` | Sampling temperature (0 = greedy) |
+| `--max_new_tokens` | `2048` | Max audio frames to generate (~12.5 frames/sec) |
+| `--streaming` | off | Chunked codec emission for lower per-chunk latency |
+| `--speaker` | off | Pipe raw f32le PCM to stdout (e.g. `... --speaker \| aplay -f FLOAT_LE -r 24000 -c 1`) |
 
-## Backend Support
+### Available voices
 
-| Backend | Status | Quantization |
-|---------|--------|-------------|
-| CPU (portable) | Supported | fp32 |
-| XNNPACK | Supported | fp32, 8da4w, 8da8w, 4w, 8w |
+`neutral_female`, `neutral_male`, `casual_female`, `casual_male`,
+`cheerful_female`, `ar_male`, `de_female`, `de_male`, `es_female`,
+`es_male`, `fr_female`, `fr_male` (under `voice_embedding/` in the model
+directory).
 
-## Exported Artifacts
+## Troubleshooting
 
-Two `.pte` files:
+- **`__cudaLaunch was not declared` during build**: `CPATH` is polluted with
+  CUDA 13's include path. `unset CPATH` and rebuild. CUDA 13's
+  `crt/host_runtime.h` has a 2-arg `__cudaLaunch` macro incompatible with
+  nvcc 12.8's stub generation.
+- **`GLIBCXX_3.4.30 not found` at runner load time**: AOTI `.so` files
+  require a newer libstdc++ than `/lib64/libstdc++.so.6`. Set
+  `LD_LIBRARY_PATH=$CONDA_PREFIX/lib` before launching the runner.
+- **`aoti_cuda_backend` target not found at link time**: the parent
+  ExecuTorch was built without CUDA. Use `make voxtral_tts-cuda` (which
+  builds with `EXECUTORCH_BUILD_CUDA=ON`) instead of running cmake by hand.
+- **First call takes ~30–50 s**: Triton autotunes the LM matmul kernels on
+  first run, then caches per-process. The runner's `warmup()` amortizes
+  this so the first user-visible synth pays the cost once.
+- **`pip install -e .` after pulling source changes**: the default
+  `install_executorch.sh` does `pip install .`. Repo edits to
+  `examples/models/voxtral_tts/` won't take effect until you reinstall as
+  editable.
 
-- **model.pte** — Multi-method: `token_embedding`, `text_decoder`, `semantic_head`, `predict_velocity`, `audio_token_embedding`
-- **codec_decoder.pte** — Audio codec decoder (Conv1d/ConvTranspose1d + transformers)
+## Pre-exported artifacts
 
-## Audio Parameters
-
-- Sample rate: 24,000 Hz
-- Frame rate: 12.5 Hz (1 codebook frame = 80ms audio)
-- Codebooks: 37 per frame (1 semantic VQ-8192 + 36 acoustic FSQ-21)
-- Flow matching: 7-step Euler ODE with classifier-free guidance (alpha=1.2)
+For users who want to skip the export step, ready-to-run CUDA artifacts
+are available on the HuggingFace hub:
+[`younghan-meta/Voxtral-4B-TTS-2603-ExecuTorch-CUDA`](https://huggingface.co/younghan-meta/Voxtral-4B-TTS-2603-ExecuTorch-CUDA).
