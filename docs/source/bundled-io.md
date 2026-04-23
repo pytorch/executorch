@@ -12,7 +12,7 @@ Overall, the procedure can be broken into two stages, and in each stage we are s
 This stage mainly focuses on the creation of a `BundledProgram` and dumping it out to the disk as a flatbuffer file. The main procedure is as follow:
 1. Create a model and emit its ExecuTorch program.
 2. Construct a `List[MethodTestSuite]` to record all test cases that needs to be bundled.
-3. Generate `BundledProgram` by using the emited model and `List[MethodTestSuite]`.
+3. Generate `BundledProgram` by using the emitted model and `List[MethodTestSuite]`.
 4. Serialize the `BundledProgram` and dump it out to the disk.
 
 ### Step 1: Create a Model and Emit its ExecuTorch Program.
@@ -59,9 +59,9 @@ We provide `BundledProgram` class under `executorch/devtools/bundled_program/cor
 ```
 :::
 
-Construtor of `BundledProgram `will do sannity check internally to see if the given `List[MethodTestSuite]` matches the given Program's requirements. Specifically:
+Constructor of `BundledProgram` will do sanity check internally to see if the given `List[MethodTestSuite]` matches the given Program's requirements. Specifically:
 1. The method_names of each `MethodTestSuite` in `List[MethodTestSuite]` for should be also in program. Please notice that it is no need to set testcases for every method in the Program.
-2. The metadata of each testcase should meet the requirement of the coresponding inference methods input.
+2. The metadata of each testcase should meet the requirement of the corresponding inference methods input.
 
 ### Step 4: Serialize `BundledProgram` to Flatbuffer.
 
