@@ -12,6 +12,7 @@
 #include <cstdint>
 
 #include <c10/util/irange.h>
+#include <c10/util/safe_numerics.h>
 
 #include <executorch/runtime/core/exec_aten/util/dim_order_util.h>
 #include <executorch/runtime/core/exec_aten/util/scalar_type_util.h>
@@ -39,6 +40,57 @@ ssize_t compute_numel(const TensorImpl::SizesType* sizes, ssize_t dim) {
         static_cast<ssize_t>(sizes[i]),
         i);
     numel *= sizes[i];
+  }
+  return numel;
+}
+
+ssize_t compute_numel_overflow(
+    const TensorImpl::SizesType* sizes,
+    ssize_t dim) {
+  ET_CHECK_MSG(
+      dim == 0 || sizes != nullptr,
+      "Sizes must be provided for non-scalar tensors");
+  ssize_t numel = 1;
+  for (const auto i : c10::irange(dim)) {
+    ET_CHECK_MSG(
+        sizes[i] >= 0,
+        "Size must be non-negative, got %zd at dimension %zd",
+        static_cast<ssize_t>(sizes[i]),
+        i);
+    ssize_t next_numel;
+    ET_CHECK_MSG(
+        !c10::mul_overflows(
+            numel, static_cast<ssize_t>(sizes[i]), &next_numel),
+        "Overflow computing numel at dimension %zd",
+        i);
+    numel = next_numel;
+  }
+  return numel;
+}
+
+::executorch::runtime::Result<ssize_t> safe_numel(
+    const TensorImpl::SizesType* sizes,
+    ssize_t dim) {
+  ET_CHECK_OR_RETURN_ERROR(
+      dim == 0 || sizes != nullptr,
+      InvalidArgument,
+      "Sizes must be provided for non-scalar tensors");
+  ssize_t numel = 1;
+  for (const auto i : c10::irange(dim)) {
+    ET_CHECK_OR_RETURN_ERROR(
+        sizes[i] >= 0,
+        InvalidArgument,
+        "Size must be non-negative, got %zd at dimension %zd",
+        static_cast<ssize_t>(sizes[i]),
+        i);
+    ssize_t next_numel;
+    ET_CHECK_OR_RETURN_ERROR(
+        !c10::mul_overflows(
+            numel, static_cast<ssize_t>(sizes[i]), &next_numel),
+        InvalidArgument,
+        "Overflow computing numel at dimension %zd",
+        i);
+    numel = next_numel;
   }
   return numel;
 }
