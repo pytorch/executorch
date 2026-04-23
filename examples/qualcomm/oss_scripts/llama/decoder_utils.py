@@ -107,6 +107,10 @@ class GraphModuleCalibrationWrapper(EagerEvalWrapper):
         self.max_seq_length = max_seq_length
         self.use_i64_token = use_i64_token
         self.seq_mse_candidates = seq_mse_candidates
+        self._input_samples = None
+
+    def get_input_samples(self):
+        return self._input_samples
 
     def _model_call(self, inps):
         all_logits = None
@@ -115,7 +119,7 @@ class GraphModuleCalibrationWrapper(EagerEvalWrapper):
             kwargs["ar_len"] = self.ar_len
             kwargs["seq_mse_candidates"] = self.seq_mse_candidates
 
-        all_logits = INFERENCE_REGISTRY[self._use_kv_cache](
+        all_logits, self._input_samples = INFERENCE_REGISTRY[self._use_kv_cache](
             self.get_example_inputs,
             inps,
             self._model,
@@ -403,6 +407,7 @@ def _prefill_chunking(
     k_caches,
     v_caches,
     total_token_list,
+    last_input_sample=None,
 ):
     with torch.no_grad():
         num_prompt_tokens = len(total_token_list)
@@ -446,8 +451,22 @@ def _prefill_chunking(
                     *k_caches,
                     *v_caches,
                 )
+                last_input_sample = (
+                    tmp_token_list,
+                    *inputs.atten_mask,
+                    tmp_pos,
+                    *k_caches,
+                    *v_caches,
+                )
             else:
                 logits, new_k_caches, new_v_caches = module(
+                    tmp_embedding,
+                    *inputs.atten_mask,
+                    tmp_pos,
+                    *k_caches,
+                    *v_caches,
+                )
+                last_input_sample = (
                     tmp_embedding,
                     *inputs.atten_mask,
                     tmp_pos,
@@ -493,7 +512,7 @@ def _prefill_chunking(
             torch.argmax(logits[:, num_tokens_in_chunk - 1], dim=-1).item()
         )
 
-        return pos
+        return pos, last_input_sample
 
 
 def _generate(
@@ -508,6 +527,7 @@ def _generate(
     v_caches,
     total_token_list,
     lookahead_config,
+    last_input_sample=None,
 ):
     max_cache_len = max_seq_len - ar_len
     num_tokens = len(total_token_list)
@@ -543,8 +563,22 @@ def _generate(
                     *k_caches,
                     *v_caches,
                 )
+                last_input_sample = (
+                    tmp_token_list,
+                    *inputs.atten_mask,
+                    tmp_pos,
+                    *k_caches,
+                    *v_caches,
+                )
             else:
                 logits, new_k_caches, new_v_caches = module(
+                    embedding,
+                    *inputs.atten_mask,
+                    tmp_pos,
+                    *k_caches,
+                    *v_caches,
+                )
+                last_input_sample = (
                     embedding,
                     *inputs.atten_mask,
                     tmp_pos,
@@ -604,8 +638,28 @@ def _generate(
                     *k_caches,
                     *v_caches,
                 )
+                last_input_sample = (
+                    torch.tensor(input_tokens, dtype=inputs.input_ids_dtype).unsqueeze(
+                        0
+                    ),
+                    *inputs.atten_mask,
+                    pos_offsets + pos,
+                    *k_caches,
+                    *v_caches,
+                )
             else:
                 logits, new_k_caches, new_v_caches = module(
+                    tok_embedding(
+                        torch.tensor(
+                            input_tokens, dtype=inputs.input_ids_dtype
+                        ).unsqueeze(0)
+                    ),
+                    *inputs.atten_mask,
+                    pos_offsets + pos,
+                    *k_caches,
+                    *v_caches,
+                )
+                last_input_sample = (
                     tok_embedding(
                         torch.tensor(
                             input_tokens, dtype=inputs.input_ids_dtype
@@ -658,6 +712,7 @@ def _generate(
         logging.info(
             f"lookahead accepted / total generated: {accepted_tokens} / {generated_tokens}"
         )
+    return last_input_sample
 
 
 @register_inference(use_kv_cache=True)
@@ -676,6 +731,7 @@ def kv_inference(  # noqa: C901
     seq_mse_candidates=0,
     lookahead_config=None,
 ):
+    input_samples = []  # Record input sample for quantization error analysis
     is_multimodal = all(
         [
             tok_embedding is not None,
@@ -774,7 +830,7 @@ def kv_inference(  # noqa: C901
     # 4. decoder forward
     with torch.no_grad():
         # Phase 1: Prefill the prompt in ar_len chunks.
-        cur_pos = _prefill_chunking(
+        cur_pos, prefill_input_sample = _prefill_chunking(
             inputs,
             module,
             ar_len,
@@ -788,7 +844,7 @@ def kv_inference(  # noqa: C901
 
         # Phase 2: Generate tokens until the EOS token is generated or max_seq_len is reached.
         # When run on wikitext for ppl evaluation, this while-loop is not expected to run.
-        _generate(
+        generate_input_sample = _generate(
             inputs,
             cur_pos,
             module,
@@ -801,11 +857,15 @@ def kv_inference(  # noqa: C901
             total_token_list,
             lookahead_config,
         )
+        if generate_input_sample is not None:
+            input_samples.append(generate_input_sample)
+        else:
+            input_samples.append(prefill_input_sample)
 
     logging.info(f"kv inference result:\n{tokenizer.decode(total_token_list)}")
     if collect_logits:
         result_logits = torch.cat(result_logits, dim=1)
-    return result_logits
+    return result_logits, input_samples
 
 
 @register_inference(use_kv_cache=False)
@@ -821,6 +881,7 @@ def prefill_inference(
     use_i64_token=False,
     collect_logits=False,
 ):
+    input_samples = None  # Record input sample for quantization error analysis
     is_multimodal = all(
         [
             tok_embedding is not None,
@@ -873,8 +934,10 @@ def prefill_inference(
                     image_token_id,
                 )
                 results = module(multimodal_embedding, *atten_mask)
+                input_samples = (multimodal_embedding, *atten_mask)
             else:
                 results = module(tmp_token_list, *atten_mask)
+                input_samples = (tmp_token_list, *atten_mask)
             if len(results) == 3:
                 logits, _, _ = results
             elif len(results) == 1:
@@ -886,7 +949,7 @@ def prefill_inference(
             pos += 1
     if isinstance(prompt, str):
         logging.info(f"prefill inference result:\n{tokenizer.decode(token_list)}")
-    return result_logits
+    return result_logits, [input_samples]
 
 
 def graph_module_inference(
@@ -923,7 +986,7 @@ def graph_module_inference(
             kwargs["ar_len"] = ar_len
             kwargs["lookahead_config"] = lookahead_config
 
-        INFERENCE_REGISTRY[use_kv_cache](
+        _, input_samples = INFERENCE_REGISTRY[use_kv_cache](
             get_example_inputs,
             prompt,
             module,
@@ -937,6 +1000,7 @@ def graph_module_inference(
             **kwargs,
         )
         logging.info(f"Prompt summary for {event_name}")
+        return input_samples
     else:
         calibration_wrapper = GraphModuleCalibrationWrapper(
             model=module,
@@ -958,3 +1022,5 @@ def graph_module_inference(
         logging.info(f"Evaluation summary for {event_name}")
         for task, res in eval_results["results"].items():
             logging.info(f"{task}: {res}")
+
+        return calibration_wrapper.get_input_samples()

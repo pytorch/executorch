@@ -3,11 +3,16 @@
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
 
-from executorch.backends.arm.common.pipeline_config import SoftmaxDecompositionConfig
+import warnings
+
+from executorch.backends.arm.common.pipeline_config import (
+    FuseDuplicateUsersConfig,
+    SoftmaxDecompositionConfig,
+)
 from executorch.backends.arm.ethosu import EthosUCompileSpec
 from executorch.backends.arm.tosa.compile_spec import TosaCompileSpec
 from executorch.backends.arm.vgf import VgfCompileSpec
-from pytest import raises
+from pytest import raises, warns
 
 
 def test_compile_spec_u55_INT():
@@ -61,6 +66,13 @@ def test_compile_spec_vgf_no_quant():
         EthosUCompileSpec._from_list(spec_list)
 
 
+def test_compile_spec_vgf_defaults_to_enabled_fuse_duplicate_users():
+    compile_spec = VgfCompileSpec()
+    pipeline_config = compile_spec._get_pass_pipeline_config()
+
+    assert pipeline_config.fuse_duplicate_users == FuseDuplicateUsersConfig.ENABLED
+
+
 def test_compile_spec_tosa_INT():
     compile_spec = TosaCompileSpec("TOSA-1.0+INT")
     spec_list = compile_spec._to_list()
@@ -68,3 +80,24 @@ def test_compile_spec_tosa_INT():
     assert TosaCompileSpec._from_list(spec_list) == compile_spec
     with raises(ValueError, match="Incorrect output format"):
         VgfCompileSpec._from_list(spec_list)
+
+
+def test_preserve_io_quantization_roundtrip_vgf_FP_INT():
+    compile_spec = VgfCompileSpec()._set_preserve_io_quantization(True)
+    roundtripped = VgfCompileSpec._from_list(compile_spec._to_list())
+    assert roundtripped.preserve_io_quantization is True
+
+
+def test_preserve_io_quantization_warns_for_u55_INT():
+    with warns(
+        UserWarning,
+        match="preserve_io_quantization=True is redundant for INT-only TOSA",
+    ):
+        EthosUCompileSpec("ethos-u55-128")._set_preserve_io_quantization(True)
+
+
+def test_preserve_io_quantization_no_warn_for_vgf_FP_INT():
+    with warnings.catch_warnings(record=True) as recorded_warnings:
+        warnings.simplefilter("always")
+        VgfCompileSpec()._set_preserve_io_quantization(True)
+    assert len(recorded_warnings) == 0
