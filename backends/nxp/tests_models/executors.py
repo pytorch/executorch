@@ -11,7 +11,7 @@ import shutil
 import subprocess
 from copy import deepcopy
 from enum import Enum
-from os import mkdir
+from os import environ, mkdir
 from typing import Callable
 
 import numpy as np
@@ -593,7 +593,8 @@ def _get_caller_name():
 
 
 def execute_cmd(cmd, cwd="."):
-    env = {"LD_LIBRARY_PATH": NSYS_PATH.parent}
+    env = environ.copy()  # Copy the current environment
+    env["LD_LIBRARY_PATH"] = str(NSYS_PATH.parent)
 
     with subprocess.Popen(
         cmd,
