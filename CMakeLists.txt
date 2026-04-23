@@ -46,7 +46,6 @@
 #
 
 cmake_minimum_required(VERSION 3.24)
-project(executorch)
 
 set(EXECUTORCH_ROOT ${CMAKE_CURRENT_SOURCE_DIR})
 
@@ -86,6 +85,10 @@ if("${ET_VERSION_MAJOR}" STREQUAL ""
       "but got: '${ET_VERSION_STRING}'"
   )
 endif()
+
+project(executorch
+        VERSION "${ET_VERSION_MAJOR}.${ET_VERSION_MINOR}.${ET_VERSION_PATCH}"
+)
 
 message(
   STATUS
@@ -159,6 +162,10 @@ announce_configured_options(BUILD_TESTING)
 
 load_build_preset()
 include(${PROJECT_SOURCE_DIR}/tools/cmake/preset/default.cmake)
+
+if(EXECUTORCH_BUILD_SHARED)
+  set(CMAKE_POSITION_INDEPENDENT_CODE ON)
+endif()
 
 # Enable ccache if available
 find_program(CCACHE_PROGRAM ccache)
@@ -1156,6 +1163,48 @@ endif()
 
 if(EXECUTORCH_BUILD_VGF)
   list(APPEND _executorch_backends vgf_backend)
+endif()
+
+# Consolidated shared library: bundles executorch_core plus commonly used
+# extensions into a single libexecutorch.so.
+if(EXECUTORCH_BUILD_SHARED)
+  executorch_add_shared_library(executorch_shared)
+  set_target_properties(
+    executorch_shared
+    PROPERTIES OUTPUT_NAME executorch
+               EXPORT_NAME executorch
+  )
+  target_include_directories(
+    executorch_shared PUBLIC ${_common_include_directories}
+  )
+  target_compile_definitions(
+    executorch_shared PUBLIC C10_USING_CUSTOM_GENERATED_MACROS
+  )
+  # Link executorch without WHOLE_ARCHIVE because its INTERFACE link options
+  # (from executorch_target_link_options_shared_lib) already force
+  # whole-archive. Link executorch_core explicitly since executorch only has a
+  # PRIVATE dep on it (symbols wouldn't propagate otherwise).
+  target_link_libraries(
+    executorch_shared PRIVATE executorch
+                              $<LINK_LIBRARY:WHOLE_ARCHIVE,executorch_core>
+  )
+  foreach(_ext_target
+          extension_data_loader extension_flat_tensor extension_named_data_map
+          extension_module_static extension_tensor
+  )
+    if(TARGET ${_ext_target})
+      target_link_libraries(
+        executorch_shared PRIVATE $<LINK_LIBRARY:WHOLE_ARCHIVE,${_ext_target}>
+      )
+    endif()
+  endforeach()
+  configure_file(
+    tools/cmake/executorch.pc.in ${CMAKE_CURRENT_BINARY_DIR}/executorch.pc
+    @ONLY
+  )
+  install(FILES ${CMAKE_CURRENT_BINARY_DIR}/executorch.pc
+          DESTINATION ${CMAKE_INSTALL_LIBDIR}/pkgconfig
+  )
 endif()
 
 # Top-level interface targets.

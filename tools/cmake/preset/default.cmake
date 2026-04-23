@@ -218,6 +218,10 @@ define_overridable_option(
   EXECUTORCH_BUILD_CPUINFO "Build cpuinfo library." BOOL
   ${_default_executorch_build_cpuinfo}
 )
+define_overridable_option(
+  EXECUTORCH_BUILD_SHARED "Build a consolidated ExecuTorch shared library" BOOL
+  OFF
+)
 
 # Threadpool size options. At most one can be specified. Note that the default
 # is managed in threadpool.cpp to allow the user to specify an alternate mode

@@ -91,6 +91,7 @@ ExternalProject_Add(
              -DFLATCC_TEST=OFF
              -DFLATCC_REFLECTION=OFF
              -DFLATCC_DEBUG_CLANG_SANITIZE=OFF
+             -DFLATCC_ALLOW_WERROR=OFF
              -DFLATCC_INSTALL=ON
              -DCMAKE_POLICY_VERSION_MINIMUM=3.5
              -DCMAKE_INSTALL_PREFIX:PATH=<INSTALL_DIR>
@@ -100,7 +101,7 @@ ExternalProject_Add(
              -DCMAKE_OSX_DEPLOYMENT_TARGET:STRING=${CMAKE_OSX_DEPLOYMENT_TARGET}
              ${_flatcc_extra_cmake_args}
   BUILD_BYPRODUCTS <INSTALL_DIR>/bin/flatcc
-  {_executorch_external_project_additional_args}
+  ${_executorch_external_project_additional_args}
 )
 file(REMOVE_RECURSE ${PROJECT_SOURCE_DIR}/third-party/flatcc/lib)
 ExternalProject_Get_Property(flatcc_ep INSTALL_DIR)
@@ -117,6 +118,7 @@ set(FLATCC_TEST OFF CACHE BOOL "")
 set(FLATCC_REFLECTION OFF CACHE BOOL "")
 set(FLATCC_DEBUG_CLANG_SANITIZE OFF CACHE BOOL "")
 set(FLATCC_INSTALL OFF CACHE BOOL "")
+set(FLATCC_ALLOW_WERROR OFF CACHE BOOL "" FORCE)
 add_subdirectory(flatcc)
 # Unfortunately flatcc writes libs directly in to the source tree [1]. So to
 # ensure the target lib is created last, force flatcc_cli to build first.

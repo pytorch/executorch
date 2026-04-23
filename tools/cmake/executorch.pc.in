@@ -1,0 +1,10 @@
+prefix=@CMAKE_INSTALL_PREFIX@
+exec_prefix=${prefix}
+libdir=@CMAKE_INSTALL_FULL_LIBDIR@
+includedir=@CMAKE_INSTALL_FULL_INCLUDEDIR@
+
+Name: ExecuTorch
+Description: On-device AI framework for PyTorch models
+Version: @PROJECT_VERSION@
+Cflags: -I${includedir} -I${includedir}/executorch/runtime/core/portable_type -I${includedir}/executorch/runtime/core/portable_type/c10 -DC10_USING_CUSTOM_GENERATED_MACROS
+Libs: -L${libdir} -lexecutorch
