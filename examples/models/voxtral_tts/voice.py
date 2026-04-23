@@ -3,7 +3,6 @@ from pathlib import Path
 import numpy as np
 import torch
 
-
 DEFAULT_VOICE_NAME = "neutral_female"
 
 

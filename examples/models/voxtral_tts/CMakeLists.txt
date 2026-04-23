@@ -89,10 +89,7 @@ endif()
 list(APPEND link_libraries tokenizers::tokenizers)
 
 add_executable(
-  voxtral_tts_runner
-  main.cpp
-  voxtral_tts_runner.cpp
-  wav_writer.cpp
+  voxtral_tts_runner main.cpp voxtral_tts_runner.cpp wav_writer.cpp
 )
 if(NOT CMAKE_BUILD_TYPE STREQUAL "Debug")
   target_link_options_gc_sections(voxtral_tts_runner)
@@ -102,11 +99,8 @@ if(NOT CMAKE_BUILD_TYPE STREQUAL "Debug")
 endif()
 
 target_include_directories(
-  voxtral_tts_runner PUBLIC
-  ${_common_include_directories}
-  ${EXECUTORCH_ROOT}/third-party/json/include
+  voxtral_tts_runner PUBLIC ${_common_include_directories}
+                            ${EXECUTORCH_ROOT}/third-party/json/include
 )
 target_link_libraries(voxtral_tts_runner PUBLIC ${link_libraries})
-target_compile_options(
-  voxtral_tts_runner PUBLIC ${_common_compile_options}
-)
+target_compile_options(voxtral_tts_runner PUBLIC ${_common_compile_options})
