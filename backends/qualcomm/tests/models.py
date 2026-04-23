@@ -674,6 +674,16 @@ class Conv2dFlip(torch.nn.Module):
         return torch.flip(x, self.dims)
 
 
+class Conv2dLeakyReLU(torch.nn.Module):
+    def __init__(self, negative_slope=0.01):
+        super().__init__()
+        self.conv = torch.nn.Conv2d(32, 32, kernel_size=3, padding=1)
+        self.leaky_relu = torch.nn.LeakyReLU(negative_slope)
+
+    def forward(self, x):
+        return self.leaky_relu(self.conv(x))
+
+
 class Conv2dMaxPool2d(torch.nn.Module):
     def __init__(self):
         super().__init__()
@@ -688,6 +698,16 @@ class Conv2dMaxPool2d(torch.nn.Module):
 
     def forward(self, x):
         return self.pool(self.conv(x))
+
+
+class Conv2dReLU(torch.nn.Module):
+    def __init__(self):
+        super().__init__()
+        self.conv = torch.nn.Conv2d(3, 32, kernel_size=3, padding=1)
+        self.relu = torch.nn.ReLU()
+
+    def forward(self, x):
+        return self.relu(self.conv(x))
 
 
 class Conv2dSequential(torch.nn.Module):
@@ -1480,6 +1500,16 @@ class Linear(torch.nn.Module):
         return self.linear(x)
 
 
+class LinearLeakyReLU(torch.nn.Module):
+    def __init__(self, negative_slope=0.01):
+        super().__init__()
+        self.linear = torch.nn.Linear(32, 32)
+        self.leaky_relu = torch.nn.LeakyReLU(negative_slope)
+
+    def forward(self, x):
+        return self.leaky_relu(self.linear(x))
+
+
 class LinearNonConstantWeight(torch.nn.Module):
     def __init__(self):
         super().__init__()
@@ -1829,6 +1859,15 @@ class PowTensorScalar(torch.nn.Module):
         return torch.pow(x, self.exponent)
 
 
+class PowScalar(torch.nn.Module):
+    def __init__(self, base=2.0):
+        super().__init__()
+        self._base = base
+
+    def forward(self, x):
+        return torch.ops.aten.pow.Scalar(self._base, x)
+
+
 class PReLUDefault(torch.nn.Module):
     def __init__(self):
         super().__init__()
@@ -1861,6 +1900,33 @@ class Reciprocal(torch.nn.Module):
 
     def forward(self, x):
         return torch.reciprocal(x)
+
+
+class ReflectionPad1d(torch.nn.Module):
+    def __init__(self):
+        super().__init__()
+        self.pad = torch.nn.ReflectionPad1d(2)
+
+    def forward(self, x):
+        return self.pad(x)
+
+
+class ReflectionPad2d(torch.nn.Module):
+    def __init__(self):
+        super().__init__()
+        self.pad = torch.nn.ReflectionPad2d(2)
+
+    def forward(self, x):
+        return self.pad(x)
+
+
+class ReflectionPad2dAsymmetric(torch.nn.Module):
+    def __init__(self):
+        super().__init__()
+        self.pad = torch.nn.ReflectionPad2d((1, 2, 3, 1))
+
+    def forward(self, x):
+        return self.pad(x)
 
 
 class Relu(torch.nn.Module):

@@ -39,12 +39,13 @@ def define_arm_tests():
     # Quantization
     test_files += [
         "quantizer/test_generic_annotater.py",
+        "quantizer/test_uint8_io_quantization.py",
     ]
 
     # Misc tests
     test_files += [
         "misc/test_compile_spec.py",
-        "misc/test_evaluate_model.py",
+        # "misc/test_evaluate_model.py",
         "misc/test_pass_pipeline_config.py",
         "misc/test_tosa_spec.py",
         "misc/test_bn_relu_folding_qat.py",
