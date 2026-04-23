@@ -598,19 +598,16 @@ class ExecuTorchLlmJni : public facebook::jni::HybridClass<ExecuTorchLlmJni> {
       std::stringstream ss;
       ss << "Model runner was not created. model_type_category="
          << model_type_category_
-         << ". Valid values: " << MODEL_TYPE_CATEGORY_LLM
-         << " (LLM), " << MODEL_TYPE_CATEGORY_MULTIMODAL << " (Multimodal)";
+         << ". Valid values: " << MODEL_TYPE_CATEGORY_LLM << " (LLM), "
+         << MODEL_TYPE_CATEGORY_MULTIMODAL << " (Multimodal)";
       executorch::jni_helper::throwExecutorchException(
           static_cast<uint32_t>(Error::InvalidState), ss.str().c_str());
       return static_cast<jint>(Error::InvalidState);
     }
     const auto load_result = static_cast<jint>(runner_->load());
     if (load_result != static_cast<jint>(Error::Ok)) {
-      std::stringstream ss;
-      ss << "Failed to load model runner [error code: 0x"
-         << std::hex << load_result << "]";
       executorch::jni_helper::throwExecutorchException(
-          static_cast<uint32_t>(load_result), ss.str().c_str());
+          static_cast<uint32_t>(load_result), "Failed to load model runner");
     }
     return load_result;
   }
