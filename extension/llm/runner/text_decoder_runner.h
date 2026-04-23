@@ -69,10 +69,6 @@ class ET_EXPERIMENTAL TextDecoderRunner {
     return method_name_;
   }
 
-  inline void stop() {
-    should_stop_ = true;
-  }
-
   /**
    * Sample the next token from the logits tensor.
    * @param logits_tensor The logits tensor.
@@ -98,7 +94,6 @@ class ET_EXPERIMENTAL TextDecoderRunner {
   Module* module_;
   IOManager* io_manager_;
   std::string method_name_;
-  bool should_stop_{false};
 };
 
 } // namespace llm
