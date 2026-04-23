@@ -18,7 +18,7 @@
 #include <executorch/runtime/platform/log.h>
 #include <pytorch/tokenizers/hf_tokenizer.h>
 
-#include <chrono>
+#include <fstream>
 #include <string>
 #include <vector>
 
@@ -30,6 +30,10 @@ DEFINE_string(model_path, "", "Model .pte file path.");
 DEFINE_string(data_path, "", "Data file (.ptd) for CUDA backend.");
 DEFINE_string(tokenizer_path, "", "HuggingFace tokenizer.json path.");
 DEFINE_string(prompt, "Hello", "Prompt text.");
+DEFINE_string(
+    prompt_file,
+    "",
+    "Path to file containing prompt text (overrides --prompt).");
 DEFINE_double(temperature, 0.8, "Sampling temperature (0 = greedy).");
 DEFINE_int32(max_new_tokens, 128, "Maximum tokens to generate.");
 DEFINE_bool(cuda_graph, false, "Enable CUDA graph for decode method.");
@@ -54,6 +58,16 @@ int main(int argc, char** argv) {
     ET_LOG(Error, "Must specify --tokenizer_path");
     return 1;
   }
+
+  llm::Stats stats;
+
+  // GPU memory before load
+  size_t gpu_free_bytes, gpu_total_bytes;
+  cudaMemGetInfo(&gpu_free_bytes, &gpu_total_bytes);
+  stats.gpu_total_bytes = gpu_total_bytes;
+  stats.gpu_free_before_load_bytes = gpu_free_bytes;
+
+  stats.model_load_start_ms = llm::time_in_ms();
 
   // Load tokenizer
   auto tokenizer = std::make_unique<tokenizers::HFTokenizer>();
@@ -110,11 +124,30 @@ int main(int argc, char** argv) {
     return 1;
   }
 
+  stats.model_load_end_ms = llm::time_in_ms();
+
+  // GPU memory after load
+  cudaMemGetInfo(&gpu_free_bytes, &gpu_total_bytes);
+  stats.gpu_free_after_load_bytes = gpu_free_bytes;
+
   // Get EOS ids
   auto eos_ids = llm::get_eos_ids(tokenizer.get(), module.get());
 
+  // Read prompt from file or flag
+  std::string prompt_text = FLAGS_prompt;
+  if (!FLAGS_prompt_file.empty()) {
+    std::ifstream f(FLAGS_prompt_file);
+    if (!f.is_open()) {
+      ET_LOG(
+          Error, "Failed to open prompt file: %s", FLAGS_prompt_file.c_str());
+      return 1;
+    }
+    prompt_text = std::string(
+        (std::istreambuf_iterator<char>(f)), std::istreambuf_iterator<char>());
+  }
+
   // Encode prompt
-  auto encode_result = tokenizer->encode(FLAGS_prompt);
+  auto encode_result = tokenizer->encode(prompt_text);
   if (!encode_result.ok()) {
     ET_LOG(Error, "Failed to encode prompt");
     return 1;
@@ -123,13 +156,15 @@ int main(int argc, char** argv) {
   int64_t num_prompt_tokens = prompt_tokens.size();
   printf("Prompt tokens: %ld\n", num_prompt_tokens);
 
+  stats.num_prompt_tokens = num_prompt_tokens;
+  stats.inference_start_ms = llm::time_in_ms();
+
   // ---------------------------------------------------------------
   // Prefill or decode-only
   // ---------------------------------------------------------------
   auto S = [](int64_t v) -> SizesType { return static_cast<SizesType>(v); };
 
   uint64_t cur_token = 0;
-  auto prefill_start = std::chrono::steady_clock::now();
 
   // Use prefill method for T>=2, decode method for T=1
   // (prefill was exported with min seq_len=2)
@@ -168,10 +203,10 @@ int main(int argc, char** argv) {
       std::make_shared<executorch::aten::Tensor>(std::move(logits_tensor));
   cur_token = llm::logits_to_token(*logits_ptr, FLAGS_temperature);
 
-  auto prefill_end = std::chrono::steady_clock::now();
+  stats.prompt_eval_end_ms = llm::time_in_ms();
+
   double prefill_ms =
-      std::chrono::duration<double, std::milli>(prefill_end - prefill_start)
-          .count();
+      (double)(stats.prompt_eval_end_ms - stats.inference_start_ms);
   printf(
       "Prefill: %ld tokens in %.1f ms (%.1f tok/s)\n",
       num_prompt_tokens,
@@ -188,7 +223,6 @@ int main(int argc, char** argv) {
   // ---------------------------------------------------------------
   // Decode — generate tokens one at a time
   // ---------------------------------------------------------------
-  llm::Stats stats;
   int64_t pos = num_prompt_tokens;
   uint64_t prev_token;
 
@@ -198,8 +232,6 @@ int main(int argc, char** argv) {
       decode_token_data.data(), {1, 1}, executorch::aten::ScalarType::Long);
   auto decode_pos = from_blob(
       decode_pos_data.data(), {1}, executorch::aten::ScalarType::Long);
-
-  auto decode_start = std::chrono::steady_clock::now();
 
   for (int32_t step = 0; step < FLAGS_max_new_tokens; step++) {
     decode_token_data[0] = static_cast<int64_t>(cur_token);
@@ -225,6 +257,10 @@ int main(int argc, char** argv) {
     cur_token = llm::logits_to_token(*step_logits_ptr, FLAGS_temperature);
     stats.on_sampling_end();
 
+    if (step == 0) {
+      stats.first_token_ms = llm::time_in_ms();
+    }
+
     pos++;
 
     auto decode_str = tokenizer->decode(prev_token, cur_token);
@@ -239,19 +275,28 @@ int main(int argc, char** argv) {
     }
   }
 
-  auto decode_end = std::chrono::steady_clock::now();
+  stats.inference_end_ms = llm::time_in_ms();
 
   printf("\n");
   int64_t num_generated = pos - num_prompt_tokens;
+  stats.num_generated_tokens = num_generated;
+
   double decode_ms =
-      std::chrono::duration<double, std::milli>(decode_end - decode_start)
-          .count();
+      (double)(stats.inference_end_ms - stats.prompt_eval_end_ms);
   printf(
       "Decode: %ld tokens in %.1f ms (%.1f tok/s)\n",
       num_generated,
       decode_ms,
       num_generated * 1000.0 / decode_ms);
   printf("Prompt tokens: %ld\n", num_prompt_tokens);
+
+  // GPU memory after generation
+  cudaMemGetInfo(&gpu_free_bytes, &gpu_total_bytes);
+  stats.gpu_free_after_generate_bytes = gpu_free_bytes;
+  stats.gpu_peak_usage_mb =
+      (stats.gpu_total_bytes - gpu_free_bytes) / 1024.0 / 1024.0;
+
+  llm::print_report(stats);
 
   return 0;
 }

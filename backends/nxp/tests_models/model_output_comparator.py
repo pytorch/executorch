@@ -7,6 +7,7 @@ import abc
 import os
 from abc import abstractmethod
 from pathlib import Path
+from typing import Callable
 
 import numpy as np
 import polars as pl
@@ -57,13 +58,11 @@ class BaseOutputComparator(abc.ABC):
                 cpu_tensor = np.fromfile(
                     cpu_tensor_path, dtype=torch_type_to_numpy_type(tensor_spec.dtype)
                 )
-                np.reshape(cpu_tensor, tensor_spec.shape)
                 cpu_output_tensors.append((output_tensor_name, cpu_tensor))
 
                 npu_tensor = np.fromfile(
                     npu_tensor_path, dtype=torch_type_to_numpy_type(tensor_spec.dtype)
                 )
-                np.reshape(npu_tensor, tensor_spec.shape)
                 npu_output_tensors.append((output_tensor_name, npu_tensor))
 
             self.compare_sample(sample_dir, cpu_output_tensors, npu_output_tensors)
@@ -95,17 +94,30 @@ class AllCloseOutputComparator(BaseOutputComparator):
             assert np.allclose(cpu_tensor, npu_tensor, atol=self.atol)
 
 
+def _default_postprocess_fn(outputs: np.ndarray, _: str):
+    return np.argmax(outputs, axis=-1)
+
+
 class ClassificationAccuracyOutputComparator(BaseOutputComparator):
 
-    def __init__(self, class_dict: dict[int, str], tolerance=0.0):
+    def __init__(
+        self,
+        class_dict: dict[int, str],
+        postprocess_fn: Callable[
+            [np.ndarray, str], np.ndarray
+        ] = _default_postprocess_fn,
+        tolerance=0.0,
+    ):
         """
         Comparator for comparing model prediction accuracies based on a ground-truth annotations.
         The comparator passes if finetuned model results have higher accuracy than baseline (accounting for a tolerance).
 
-        :param class_dict: Dictionary mapping class names to class indices.
+        :param class_dict: Dictionary mapping class indices to class names.
+        :param postprocess_fn: An optional callback for postprocessing model output into classification predictions.
         :param tolerance: Tolerance threshold for accuracy comparison.
                             Used for checking `baseline_acc + tolerance < finetuned_acc`.
         """
+        self.postprocess_fn = postprocess_fn
         self.tolerance = tolerance
         self.inv_class_dict = {v: k for k, v in class_dict.items()}
 
@@ -141,6 +153,9 @@ class ClassificationAccuracyOutputComparator(BaseOutputComparator):
         total_samples = 0
 
         for sample_dir in sample_dirs:
+            finetuned_sample_paths = []
+            baseline_sample_paths = []
+
             finetuned_output_tensors = []
             baseline_output_tensors = []
 
@@ -157,18 +172,24 @@ class ClassificationAccuracyOutputComparator(BaseOutputComparator):
                     baseline_tensor_path,
                     dtype=torch_type_to_numpy_type(tensor_spec.dtype),
                 )
-                np.reshape(baseline_tensor, tensor_spec.shape)
+                baseline_tensor = np.reshape(baseline_tensor, tensor_spec.shape)
+                baseline_sample_paths.append(baseline_tensor_path)
                 baseline_output_tensors.append((output_tensor_name, baseline_tensor))
 
                 finetuned_tensor = np.fromfile(
                     finetuned_tensor_path,
                     dtype=torch_type_to_numpy_type(tensor_spec.dtype),
                 )
-                np.reshape(finetuned_tensor, tensor_spec.shape)
+                finetuned_tensor = np.reshape(finetuned_tensor, tensor_spec.shape)
+                finetuned_sample_paths.append(finetuned_tensor_path)
                 finetuned_output_tensors.append((output_tensor_name, finetuned_tensor))
 
             finetuned_correct, baseline_correct, total = self.compare_sample(
-                sample_dir, baseline_output_tensors, finetuned_output_tensors
+                sample_dir,
+                baseline_sample_paths,
+                baseline_output_tensors,
+                finetuned_sample_paths,
+                finetuned_output_tensors,
             )
 
             finetuned_total_correct += finetuned_correct
@@ -187,17 +208,33 @@ class ClassificationAccuracyOutputComparator(BaseOutputComparator):
             )
 
     def compare_sample(
-        self, sample_dir, baseline_output_tensors, finetuned_output_tensors
+        self,
+        sample_dir,
+        baseline_filepaths,
+        baseline_output_tensors,
+        finetuned_filepaths,
+        finetuned_output_tensors,
     ) -> tuple[int, int, int]:
-        baseline_correct = 0
-        finetuned_correct = 0
+        baseline_correct_total = 0
+        finetuned_correct_total = 0
+        total_samples = 0
 
-        if not isinstance(sample_dir, str) or len(sample_dir.split("_")) < 2:
+        if not isinstance(sample_dir, str) or len(sample_dir.split("_")) < 3:
             raise ValueError(
                 f"Sample dir format invalid. Expected format: 'example_classname_0', got {sample_dir}"
             )
 
-        class_name = sample_dir.split("_")[1]
+        dir_parts = sample_dir.split("_")
+        first_numerical_index = next(
+            (i for i, s in enumerate(dir_parts) if s.isdigit()), -1
+        )
+
+        if first_numerical_index < 2:
+            raise ValueError(
+                f"Sample dir format invalid. Expected format: 'example_classname_0', got {sample_dir}"
+            )
+
+        class_name = "_".join(dir_parts[1:first_numerical_index])
         class_id = self.inv_class_dict[class_name]
 
         for idx in range(len(baseline_output_tensors)):
@@ -205,17 +242,36 @@ class ClassificationAccuracyOutputComparator(BaseOutputComparator):
             (finetuned_output_name, finetuned_tensor) = finetuned_output_tensors[idx]
 
             assert baseline_output_name == finetuned_output_name
+            assert baseline_tensor.shape == finetuned_tensor.shape
             assert np.any(
                 baseline_tensor
             ), "Output tensor contains only zeros. This is suspicious."
 
-            finetuned_class = np.argmax(finetuned_tensor, axis=-1)
-            baseline_class = np.argmax(baseline_tensor, axis=-1)
+            finetuned_class = self.postprocess_fn(
+                finetuned_tensor, finetuned_filepaths[idx]
+            )
+            baseline_class = self.postprocess_fn(
+                baseline_tensor, baseline_filepaths[idx]
+            )
 
-            baseline_correct += baseline_class == class_id
-            finetuned_correct += finetuned_class == class_id
+            baseline_correct = baseline_class == class_id
+            finetuned_correct = finetuned_class == class_id
 
-        return finetuned_correct, baseline_correct, len(baseline_output_tensors)
+            baseline_correct_total += (
+                baseline_correct
+                if np.isscalar(baseline_correct)
+                else sum(baseline_correct)
+            )
+            finetuned_correct_total += (
+                finetuned_correct
+                if np.isscalar(finetuned_correct)
+                else sum(finetuned_correct)
+            )
+            total_samples += (
+                1 if np.isscalar(finetuned_correct) else len(baseline_correct)
+            )
+
+        return finetuned_correct_total, baseline_correct_total, total_samples
 
 
 class NumericalStatsOutputComparator(BaseOutputComparator):

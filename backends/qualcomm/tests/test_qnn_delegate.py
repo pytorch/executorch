@@ -1713,6 +1713,26 @@ class TestQNNFloatingPointOperator(TestQNN):
                         index += 1
                         self.lower_module_and_test_output(module, sample_input)
 
+    def test_qnn_backend_pow_scalar(self):
+        test_comb = [
+            {
+                QCOM_MODULE: [
+                    PowScalar(),  # base=2.0, default  # noqa: F405
+                    PowScalar(3.0),  # base=3.0, common case  # noqa: F405
+                    PowScalar(9),  # base=9, integer exp case  # noqa: F405
+                    PowScalar(0.5),  # base=0.5, fractional case  # noqa: F405
+                ],
+                QCOM_SAMPLE_INPUTS: [(torch.rand(10, 10) + 0.1,)],
+            },
+        ]
+        index = 0
+        for comb in test_comb:
+            for module in comb[QCOM_MODULE]:
+                for sample_input in comb[QCOM_SAMPLE_INPUTS]:
+                    with self.subTest(i=index):
+                        index += 1
+                        self.lower_module_and_test_output(module, sample_input)
+
     def test_qnn_backend_prelu(self):
         test_comb = [
             {
@@ -4229,6 +4249,27 @@ class TestQNNQuantizedOperator(TestQNN):
                         qdq_module = self.get_qdq_module(module, sample_input)
                         self.lower_module_and_test_output(qdq_module, sample_input)
 
+    def test_qnn_backend_pow_scalar(self):
+        test_comb = [
+            {
+                QCOM_MODULE: [
+                    PowScalar(),  # base=2.0, default  # noqa: F405
+                    PowScalar(3.0),  # base=3.0, common case  # noqa: F405
+                    PowScalar(9),  # base=9, integer exp case  # noqa: F405
+                    PowScalar(0.5),  # base=0.5, fractional case  # noqa: F405
+                ],
+                QCOM_SAMPLE_INPUTS: [(torch.rand(10, 10) + 0.1,)],
+            },
+        ]
+        index = 0
+        for comb in test_comb:
+            for module in comb[QCOM_MODULE]:
+                for sample_input in comb[QCOM_SAMPLE_INPUTS]:
+                    with self.subTest(i=index):
+                        index += 1
+                        qdq_module = self.get_qdq_module(module, sample_input)
+                        self.lower_module_and_test_output(qdq_module, sample_input)
+
     def test_qnn_backend_prelu(self):
         test_comb = [
             {
@@ -4831,6 +4872,82 @@ class TestQNNQuantizedModel(TestQNN):
         sample_input = (torch.rand(1, 2, 14, 14),)
         module = self.get_qdq_module(module, sample_input)
         self.lower_module_and_test_output(module, sample_input)
+
+    def test_qnn_backend_activation_fusion(self):
+        if self.enable_x86_64:
+            self.skipTest(
+                "At the moment, testing is only being conducted on the device."
+            )
+        test_cases = [
+            {
+                "name": "conv2d_leaky_relu",
+                QCOM_MODULE: Conv2dLeakyReLU(),  # noqa: F405
+                QCOM_SAMPLE_INPUTS: (torch.randn(1, 32, 6, 2),),
+                "unfused_check": lambda ops: any(
+                    "prelu.opt" in op.lower() for op in ops
+                ),
+                "unfused_msg": "Unexpected PReLU op in HTP ops (LeakyReLU lowered to PReLU)",
+            },
+            {
+                "name": "conv2d_relu",
+                QCOM_MODULE: Conv2dReLU(),  # noqa: F405
+                QCOM_SAMPLE_INPUTS: (torch.randn(1, 3, 28, 28),),
+                "unfused_check": lambda ops: any(
+                    op.lower() in ("q::relu", "q::relu.opt")
+                    or (("relu" in op.lower()) and ("conv" not in op.lower()))
+                    for op in ops
+                ),
+                "unfused_msg": "Unexpected standalone ReLU op in HTP ops",
+            },
+            {
+                "name": "linear_leaky_relu",
+                QCOM_MODULE: LinearLeakyReLU(),  # noqa: F405
+                QCOM_SAMPLE_INPUTS: (torch.randn(1, 6, 2, 32),),
+                "unfused_check": lambda ops: any(
+                    "prelu.opt" in op.lower() for op in ops
+                ),
+                "unfused_msg": "Unexpected PReLU op in HTP ops (LeakyReLU lowered to PReLU)",
+            },
+        ]
+        for tc in test_cases:
+            with self.subTest(tc["name"]):
+                torch.manual_seed(8)
+                module = self.get_qdq_module(tc[QCOM_MODULE], tc[QCOM_SAMPLE_INPUTS])
+                backend_options = generate_htp_compiler_spec(use_fp16=False)
+                compiler_spec = generate_qnn_executorch_compiler_spec(
+                    soc_model=self.chipset_table[TestQNN.soc_model],
+                    backend_options=backend_options,
+                    profile_level=3,
+                )
+                with tempfile.TemporaryDirectory() as tmp_dir:
+                    edge_prog_mgr = to_edge_transform_and_lower_to_qnn(
+                        module, tc[QCOM_SAMPLE_INPUTS], compiler_spec
+                    ).to_executorch()
+                    pte_path = f"{tmp_dir}/model.pte"
+                    with open(pte_path, "wb") as f:
+                        edge_prog_mgr.write_to_file(f)
+                    adb = self.get_adb_tool(pte_path)
+                    binaries_trace = generate_optrace(
+                        tmp_dir,
+                        self.chipset_table[TestQNN.soc_model],
+                        adb,
+                        pte_path,
+                        [tc[QCOM_SAMPLE_INPUTS]],
+                    )
+                    htp_ops = []
+                    for _, (_, qhas) in binaries_trace.items():
+                        with open(qhas, "r") as qhas_file:
+                            qhas_data = json.load(qhas_file)
+                            for row in qhas_data["data"]["htp_op_types"]["data"]:
+                                htp_ops.append(row["op"])
+                    has_conv = any("ConvLayer" in op for op in htp_ops)
+                    self.assertTrue(
+                        has_conv, f"Expected Conv op in HTP ops, got: {htp_ops}"
+                    )
+                    self.assertFalse(
+                        tc["unfused_check"](htp_ops),
+                        f"{tc['unfused_msg']}, got: {htp_ops}",
+                    )
 
     def test_qnn_backend_conv2d_slice_copy(self):
         module = Conv2dSliceCopy()  # noqa: F405
