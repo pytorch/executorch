@@ -35,7 +35,8 @@ class TestValidatePartition(unittest.TestCase):
     def test_non_contiguous_partition_has_cycle(self):
         """Nodes {a, c} with b in between create a cycle: extracting a and c
         would force b to depend on a (inside) and c to depend on b (outside),
-        while c is also inside."""
+        while c is also inside.
+        """
         _, (_, a, _, c, _) = _build_linear_graph()
         self.assertFalse(_validate_partition({a, c}))
 
