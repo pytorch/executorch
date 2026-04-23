@@ -526,6 +526,7 @@ class ArmPassManager(PassManager):
                 DecomposeSumPass(),
                 InsertTableOpsPass(exported_program),
                 RemoveNoopPass(),
+                InsertDataLayoutCastsPass(),
             ]
         )
 
@@ -558,7 +559,6 @@ class ArmPassManager(PassManager):
                 EnsureUniqueOutputNodesPass(),
                 RemoveNoopPass(),
                 InsertRescalePass(),
-                InsertDataLayoutCastsPass(),
             ]
         )
 
