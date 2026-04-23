@@ -160,7 +160,7 @@ class SizeAdjustInputPass(ArmPass):
     following is performed to meet the specification:
 
       1) The padding is truncated (done in the node visitor)
-      2) (if neccessary) The input is truncated (done in this pass)."
+      2) (if necessary) The input is truncated (done in this pass)."
 
     A simple example would be a 2x2 kernel (no padding, stride=2) and a 5x5
     input:
