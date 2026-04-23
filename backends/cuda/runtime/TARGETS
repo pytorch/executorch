@@ -33,6 +33,7 @@ runtime.cxx_library(
         "shims/cuda_guard.cpp",
         "shims/int4mm.cu",
         "shims/memory.cpp",
+        "shims/sort.cu",
         "shims/tensor_attribute.cpp",
     ],
     headers = [
@@ -40,6 +41,7 @@ runtime.cxx_library(
         "shims/int4mm.cuh",
         "shims/int4mm.h",
         "shims/memory.h",
+        "shims/sort.h",
         "shims/tensor_attribute.h",
         "utils.h",
     ],

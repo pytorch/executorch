@@ -13,6 +13,7 @@ on:
       - extension/audio/**
       - examples/models/parakeet/**
       - examples/models/voxtral_realtime/**
+      - examples/models/qwen3_5_moe/**
   workflow_dispatch:
 
 permissions: {}
@@ -61,6 +62,61 @@ jobs:
           ET_TESTING_NUM_THREADS=50 \
           ET_PREDICTIONS_PER_THREAD=100 \
           ./cmake-out/backends/mlx/test/multi_thread_test_runner
+        echo "::endgroup::"
+
+        echo "::group::Run gated_delta_rule op tests"
+        ${CONDA_RUN} python -m executorch.backends.mlx.model_ops.test_gated_delta_rule run -v
+        echo "::endgroup::"
+
+  test-mlx-qwen35-moe:
+    uses: pytorch/test-infra/.github/workflows/macos_job.yml@main
+    with:
+      job-name: test-mlx-qwen35-moe
+      runner: macos-14-xlarge
+      python-version: "3.12"
+      submodules: recursive
+      ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
+      timeout: 90
+      script: |
+        set -eux
+
+        echo "::group::Install ExecuTorch"
+        ${CONDA_RUN} python install_executorch.py > /dev/null
+        echo "::endgroup::"
+
+        ${CONDA_RUN} pip list
+
+        echo "::group::Export Qwen 3.5 MoE (tiny model)"
+        ${CONDA_RUN} python -m executorch.examples.models.qwen3_5_moe.export \
+          --tiny-test \
+          --backend mlx \
+          --qlinear 4w \
+          --qlinear-group-size 32 \
+          --output-dir /tmp/qwen35_moe_mlx_tiny
+        echo "::endgroup::"
+
+        echo "::group::Check AsType node count"
+        ASTYPE_COUNT=$(${CONDA_RUN} python -m executorch.backends.mlx.pte_inspector \
+          /tmp/qwen35_moe_mlx_tiny/model.pte --mlx-instructions 2>&1 | grep -c "AsTypeNode" || true)
+        echo "AsType nodes: ${ASTYPE_COUNT}"
+        if [ "$ASTYPE_COUNT" -gt 23 ]; then
+          echo "Failed: expected no more than 23 AsType nodes, got ${ASTYPE_COUNT}"
+          exit 1
+        fi
+        echo "::endgroup::"
+
+        echo "::group::Run Qwen 3.5 MoE inference"
+        OUTPUT=$(${CONDA_RUN} python -m executorch.examples.models.qwen3_5_moe.run \
+          --pte /tmp/qwen35_moe_mlx_tiny/model.pte \
+          --prompt-len 4 \
+          --max-new-tokens 5 2>&1)
+        echo "$OUTPUT"
+        if echo "$OUTPUT" | grep -q "Generated token ids: \[167, 167, 81, 167, 81\]"; then
+          echo "Success: Qwen 3.5 MoE MLX export + inference completed with expected output"
+        else
+          echo "Failed: unexpected output (expected [167, 167, 81, 167, 81])"
+          exit 1
+        fi
         echo "::endgroup::"
 
   backend-tester:

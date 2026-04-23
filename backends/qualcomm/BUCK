@@ -24,3 +24,20 @@ fbcode_target(_kind = runtime.python_library,
         "//executorch/backends/qualcomm/_passes:passes",
     ],
 )
+
+fbcode_target(_kind = runtime.python_library,
+    name = "export_utils",
+    srcs = ["export_utils.py"],
+    visibility = ["PUBLIC"],
+    deps = [
+        "//caffe2:torch",
+        "//executorch/backends/qualcomm/debugger:qnn_intermediate_debugger",
+        "//executorch/backends/qualcomm/quantizer:quantizer",
+        "//executorch/backends/qualcomm/serialization:serialization",
+        "//executorch/backends/qualcomm/utils:utils",
+        "//executorch/exir/backend:utils",
+        "//executorch/exir/capture:config",
+        "//executorch/exir/passes:memory_planning_pass",
+        "//pytorch/ao:torchao",
+    ],
+)

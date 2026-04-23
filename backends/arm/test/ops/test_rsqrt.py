@@ -9,6 +9,9 @@
 from typing import Tuple
 
 import torch
+from executorch.backends.arm.quantizer.arm_quantizer import (
+    get_symmetric_a16w8_quantization_config,
+)
 
 from executorch.backends.arm.test import common
 
@@ -124,6 +127,24 @@ def test_rsqrt_vgf_quant(test_tensor: torch.Tensor):
         test_tensor(),
         aten_op,
         quantize=True,
+    )
+    pipeline.run()
+
+
+@common.parametrize("test_tensor", Rsqrt.test_parameters)
+@common.SkipIfNoModelConverter
+def test_rsqrt_vgf_quant_a16w8(test_tensor: torch.Tensor):
+    pipeline = VgfPipeline[input_t1](
+        Rsqrt(),
+        test_tensor(),
+        aten_op,
+        exir_op=[],
+        quantize=True,
+        tosa_extensions=["int16"],
+        qtol=128,
+    )
+    pipeline.quantizer.set_global(
+        get_symmetric_a16w8_quantization_config(epsilon=2**-16)
     )
     pipeline.run()
 
