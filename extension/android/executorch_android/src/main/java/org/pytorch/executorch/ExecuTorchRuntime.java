@@ -41,7 +41,8 @@ public class ExecuTorchRuntime {
   public static void validateFilePath(String path, String description) {
     File file = new File(path);
     if (!file.canRead() || !file.isFile()) {
-      throw new RuntimeException("Cannot load " + description + " " + path);
+      throw new IllegalArgumentException(
+          "Cannot load " + description + ": " + path + " does not exist or is not readable");
     }
   }
 

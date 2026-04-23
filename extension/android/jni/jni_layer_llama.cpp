@@ -148,6 +148,7 @@ class ExecuTorchLlmJni : public facebook::jni::HybridClass<ExecuTorchLlmJni> {
       jint num_bos = 0,
       jint num_eos = 0,
       jint load_mode = 1) {
+    try {
     temperature_ = temperature;
     num_bos_ = num_bos;
     num_eos_ = num_eos;
@@ -245,6 +246,11 @@ class ExecuTorchLlmJni : public facebook::jni::HybridClass<ExecuTorchLlmJni> {
       // Interpret the model type as LLM
       model_type_category_ = MODEL_TYPE_CATEGORY_LLM;
 #endif
+    }
+    } catch (const std::exception& e) {
+      executorch::jni_helper::throwExecutorchException(
+          static_cast<uint32_t>(Error::Internal),
+          std::string("Failed to create LlmModule: ") + e.what());
     }
   }
 

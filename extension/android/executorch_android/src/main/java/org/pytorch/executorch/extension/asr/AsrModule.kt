@@ -160,7 +160,7 @@ class AsrModule(
         )
 
     if (status != 0) {
-      throw RuntimeException("Transcription failed with error code: $status")
+      throw org.pytorch.executorch.ExecutorchRuntimeException(status, "Transcription failed")
     }
 
     return result.toString()
