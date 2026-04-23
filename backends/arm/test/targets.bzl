@@ -47,12 +47,20 @@ def define_arm_tests():
         "misc/test_compile_spec.py",
         # "misc/test_evaluate_model.py",
         "misc/test_pass_pipeline_config.py",
+        "misc/test_public_api_manifest.py",
         "misc/test_tosa_spec.py",
         "misc/test_bn_relu_folding_qat.py",
         "misc/test_custom_partition.py",
         "misc/test_debug_hook.py",
         "misc/test_post_quant_device_switch.py",
         # "misc/test_dim_order.py", (TODO - T238390249)
+    ]
+
+    # Public API backward-compatibility scenarios
+    test_files += [
+        "public_api_bc/ethosu_flow.py",
+        "public_api_bc/vgf_fp_flow.py",
+        "public_api_bc/vgf_int_flow.py",
     ]
 
     # Deprecation tests
