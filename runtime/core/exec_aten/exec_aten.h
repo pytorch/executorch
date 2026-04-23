@@ -8,7 +8,10 @@
 
 #pragma once
 
+#include <executorch/runtime/core/error.h> // @manual
+#include <executorch/runtime/core/result.h> // @manual
 #include <executorch/runtime/core/tensor_shape_dynamism.h> // @manual
+#include <executorch/runtime/platform/assert.h> // @manual
 #include <executorch/runtime/platform/compiler.h>
 #ifdef USE_ATEN_LIB
 #include <ATen/Tensor.h> // @manual
@@ -28,6 +31,7 @@
 #include <c10/util/quint2x4.h> // @manual
 #include <c10/util/quint4x2.h> // @manual
 #include <c10/util/quint8.h> // @manual
+#include <c10/util/safe_numerics.h> // @manual
 #include <c10/util/string_view.h> // @manual
 #include <torch/torch.h>
 #else // use executor
@@ -110,6 +114,50 @@ inline ssize_t compute_numel(const SizesType* sizes, ssize_t dim) {
       c10::multiply_integers(c10::ArrayRef<SizesType>(sizes, dim)));
 }
 
+ET_EXPERIMENTAL inline ::executorch::runtime::Result<ssize_t> safe_numel(
+    const SizesType* sizes,
+    ssize_t dim) {
+  ssize_t numel = 1;
+  for (ssize_t i = 0; i < dim; i++) {
+    ET_CHECK_OR_RETURN_ERROR(
+        sizes[i] >= 0,
+        InvalidArgument,
+        "Size must be non-negative, got %zd at dimension %zd",
+        static_cast<ssize_t>(sizes[i]),
+        i);
+    ssize_t next_numel;
+    ET_CHECK_OR_RETURN_ERROR(
+        !c10::mul_overflows(
+            numel, static_cast<ssize_t>(sizes[i]), &next_numel),
+        InvalidArgument,
+        "Overflow computing numel at dimension %zd",
+        i);
+    numel = next_numel;
+  }
+  return numel;
+}
+
+ET_EXPERIMENTAL inline ssize_t compute_numel_overflow(
+    const SizesType* sizes,
+    ssize_t dim) {
+  ssize_t numel = 1;
+  for (ssize_t i = 0; i < dim; i++) {
+    ET_CHECK_MSG(
+        sizes[i] >= 0,
+        "Size must be non-negative, got %zd at dimension %zd",
+        static_cast<ssize_t>(sizes[i]),
+        i);
+    ssize_t next_numel;
+    ET_CHECK_MSG(
+        !c10::mul_overflows(
+            numel, static_cast<ssize_t>(sizes[i]), &next_numel),
+        "Overflow computing numel at dimension %zd",
+        i);
+    numel = next_numel;
+  }
+  return numel;
+}
+
 #undef ET_PRI_TENSOR_SIZE
 #define ET_PRI_TENSOR_SIZE PRId64
 
@@ -158,6 +206,8 @@ using OptionalArrayRef =
 using OptionalIntArrayRef = OptionalArrayRef<int64_t>;
 
 using torch::executor::compute_numel;
+using torch::executor::compute_numel_overflow;
+using torch::executor::safe_numel;
 
 #endif // Use ExecuTorch types
 
