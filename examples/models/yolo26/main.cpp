@@ -82,7 +82,7 @@ int main(int argc, char** argv) {
   }
   const auto frame_width = cap.get(cv::CAP_PROP_FRAME_WIDTH);
   const auto frame_height = cap.get(cv::CAP_PROP_FRAME_HEIGHT);
-  const auto video_lenght = cap.get(cv::CAP_PROP_FRAME_COUNT);
+  const auto video_length = cap.get(cv::CAP_PROP_FRAME_COUNT);
   std::cout << "Input video shape: [3, " << frame_width << ", " << frame_height
             << ", ]" << std::endl;
 
@@ -96,7 +96,7 @@ int main(int argc, char** argv) {
   et_timestamp_t time_spent_executing = 0;
   unsigned long long iters = 0;
   // Show progress every 10%
-  unsigned long long progress_bar_tick = std::round(video_lenght / 10);
+  unsigned long long progress_bar_tick = std::round(video_length / 10);
   while (true) {
     cv::Mat frame;
     cap >> frame;
@@ -116,8 +116,8 @@ int main(int argc, char** argv) {
     iters++;
 
     if (!(iters % progress_bar_tick)) {
-      const int precent_ready = (100 * iters) / video_lenght;
-      std::cout << iters << " out of " << video_lenght
+      const int precent_ready = (100 * iters) / video_length;
+      std::cout << iters << " out of " << video_length
                 << " frames are are processed (" << precent_ready << "\%)"
                 << std::endl;
     }
