@@ -81,6 +81,9 @@ Tensor& where_self_out(
   if ((broadcast == 1) && (max_dim > kNnlibMaxDim))
     optimized = 0;
 
+  if (cond_is_broadcasted)
+    optimized = 0;
+
   if (optimized) {
     const float* a_data = a.const_data_ptr<float>();
     const float* b_data = b.const_data_ptr<float>();
