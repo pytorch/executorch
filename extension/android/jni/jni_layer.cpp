@@ -291,7 +291,7 @@ class ExecuTorchJni : public facebook::jni::HybridClass<ExecuTorchJni> {
       executorch::jni_helper::throwExecutorchException(
           static_cast<uint32_t>(Error::Internal),
           std::string("Failed to create Module: ") + e.what());
-      return;
+      throw;
     }
 
 #ifdef ET_USE_THREADPOOL

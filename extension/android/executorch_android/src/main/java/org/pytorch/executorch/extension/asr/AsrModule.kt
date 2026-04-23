@@ -11,6 +11,7 @@ package org.pytorch.executorch.extension.asr
 import java.io.Closeable
 import java.io.File
 import java.util.concurrent.atomic.AtomicLong
+import org.pytorch.executorch.ExecutorchRuntimeException
 import org.pytorch.executorch.annotations.Experimental
 
 /**
@@ -53,7 +54,7 @@ class AsrModule(
 
     val handle = nativeCreate(modelPath, tokenizerPath, dataPath, preprocessorPath)
     if (handle == 0L) {
-      throw org.pytorch.executorch.ExecutorchRuntimeException(
+      throw ExecutorchRuntimeException(
           org.pytorch.executorch.ExecutorchRuntimeException.INTERNAL,
           "Failed to create native AsrModule")
     }
@@ -162,7 +163,7 @@ class AsrModule(
         )
 
     if (status != 0) {
-      throw org.pytorch.executorch.ExecutorchRuntimeException(status, "Transcription failed")
+      throw ExecutorchRuntimeException(status, "Transcription failed")
     }
 
     return result.toString()

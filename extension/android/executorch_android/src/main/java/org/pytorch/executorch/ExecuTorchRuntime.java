@@ -36,13 +36,21 @@ public class ExecuTorchRuntime {
   /**
    * Validates that the given path points to a readable file.
    *
-   * @throws RuntimeException if the file does not exist or is not readable.
+   * @throws IllegalArgumentException if the path does not exist, is not a file, or is not readable.
    */
   public static void validateFilePath(String path, String description) {
     File file = new File(path);
-    if (!file.canRead() || !file.isFile()) {
+    if (!file.exists()) {
       throw new IllegalArgumentException(
-          "Cannot load " + description + ": " + path + " does not exist or is not readable");
+          "Cannot load " + description + ": " + path + " does not exist");
+    }
+    if (!file.isFile()) {
+      throw new IllegalArgumentException(
+          "Cannot load " + description + ": " + path + " is not a file");
+    }
+    if (!file.canRead()) {
+      throw new IllegalArgumentException(
+          "Cannot load " + description + ": " + path + " is not readable");
     }
   }
 
