@@ -24,6 +24,24 @@
             "inherits": [
                 "voxtral-tts-base"
             ]
+        },
+        {
+            "name": "voxtral-tts-cuda",
+            "displayName": "Voxtral TTS runner (CUDA)",
+            "inherits": [
+                "voxtral-tts-base"
+            ],
+            "cacheVariables": {
+                "EXECUTORCH_BUILD_CUDA": "ON"
+            },
+            "condition": {
+                "type": "inList",
+                "string": "${hostSystemName}",
+                "list": [
+                    "Linux",
+                    "Windows"
+                ]
+            }
         }
     ],
     "buildPresets": [
@@ -40,6 +58,15 @@
             "name": "voxtral-tts-xnnpack",
             "displayName": "Build Voxtral TTS runner (XNNPACK)",
             "configurePreset": "voxtral-tts-xnnpack",
+            "configuration": "Release",
+            "targets": [
+                "voxtral_tts_runner"
+            ]
+        },
+        {
+            "name": "voxtral-tts-cuda",
+            "displayName": "Build Voxtral TTS runner (CUDA)",
+            "configurePreset": "voxtral-tts-cuda",
             "configuration": "Release",
             "targets": [
                 "voxtral_tts_runner"
@@ -72,6 +99,20 @@
                 {
                     "type": "build",
                     "name": "voxtral-tts-xnnpack"
+                }
+            ]
+        },
+        {
+            "name": "voxtral-tts-cuda",
+            "displayName": "Voxtral TTS (CUDA)",
+            "steps": [
+                {
+                    "type": "configure",
+                    "name": "voxtral-tts-cuda"
+                },
+                {
+                    "type": "build",
+                    "name": "voxtral-tts-cuda"
                 }
             ]
         }
