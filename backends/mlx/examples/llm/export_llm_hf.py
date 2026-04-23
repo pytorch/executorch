@@ -166,9 +166,6 @@ def _export_with_custom_components(
 
     attn_implementation = "mlx" if use_custom_sdpa else None
 
-    # Detect sliding window models (e.g., gemma)
-    sliding_window = None
-
     logger.info(f"Loading HuggingFace model: {model_id}")
     load_kwargs = {
         "torch_dtype": torch_dtype,
@@ -178,8 +175,10 @@ def _export_with_custom_components(
         load_kwargs["attn_implementation"] = attn_implementation
     model = AutoModelForCausalLM.from_pretrained(model_id, **load_kwargs)
 
-    # Check if model uses sliding window attention
-    sliding_window = getattr(model.config, "sliding_window", None)
+    # Check if model uses sliding window attention. Multimodal configs like
+    # Gemma 4 keep transformer attributes under text_config.
+    text_config = model.config.get_text_config()
+    sliding_window = getattr(text_config, "sliding_window", None)
     if sliding_window is not None:
         logger.info(f"Model has sliding_window={sliding_window}")
         # Cap max_seq_len to sliding window size for cache allocation
@@ -188,11 +187,16 @@ def _export_with_custom_components(
     else:
         effective_cache_len = max_seq_len
 
+    # The HF ExecuTorch cache wrappers validate both generation_config.use_cache
+    # and the text config's use_cache flag before constructing static caches.
+    model.generation_config.use_cache = True
     model.generation_config.cache_implementation = "static"
     model.generation_config.cache_config = {
         "batch_size": 1,
         "max_cache_len": effective_cache_len,
     }
+    text_config = model.config.get_text_config()
+    text_config.use_cache = True
     model.eval()
 
     # Use HybridCache wrapper for sliding window models (stores cache as .cache),

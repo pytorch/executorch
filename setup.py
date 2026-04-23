@@ -173,7 +173,20 @@ class Version:
 # set to a non-empty value, the build type is Debug. Otherwise, the build type
 # is Release.
 def get_build_type(is_debug=None) -> str:
-    debug = int(os.environ.get("DEBUG", 0) or 0) if is_debug is None else is_debug
+    if is_debug is None:
+        raw_debug = os.environ.get("DEBUG", 0)
+        if isinstance(raw_debug, str):
+            normalized = raw_debug.strip().lower()
+            if normalized in ("", "0", "false", "off", "release"):
+                debug = 0
+            elif normalized in ("1", "true", "on", "debug"):
+                debug = 1
+            else:
+                debug = int(normalized)
+        else:
+            debug = int(raw_debug or 0)
+    else:
+        debug = is_debug
     return "Debug" if debug else "Release"
 
 
@@ -191,6 +204,30 @@ def get_executable_name(name: str) -> str:
         return name + ".exe"
     else:
         return name
+
+
+def get_cmake_command() -> str:
+    """
+    Resolve the CMake executable to use for wheel builds.
+
+    Prefer an explicit `CMAKE_COMMAND`, then a CMake binary colocated with the
+    current Python interpreter (common for virtualenv installs), and finally
+    fall back to PATH lookup.
+    """
+    env_cmake = os.environ.get("CMAKE_COMMAND", "").strip()
+    if env_cmake:
+        return env_cmake
+
+    python_bin_dir = os.path.dirname(sys.executable)
+    venv_cmake = os.path.join(python_bin_dir, get_executable_name("cmake"))
+    if os.path.exists(venv_cmake):
+        return venv_cmake
+
+    cmake_on_path = shutil.which("cmake")
+    if cmake_on_path:
+        return cmake_on_path
+
+    return "cmake"
 
 
 class _BaseExtension(Extension):
@@ -753,9 +790,10 @@ class CustomBuild(build):
                 log.info(f"clearing {cmake_cache_dir}")
                 shutil.rmtree(cmake_cache_dir)
 
+            cmake_command = get_cmake_command()
             subprocess.run(
                 [
-                    "cmake",
+                    cmake_command,
                     *cmake_configuration_args,
                     "--preset",
                     "pybind",
@@ -831,10 +869,12 @@ class CustomBuild(build):
 
         # Set PYTHONPATH to the location of the pip package.
         os.environ["PYTHONPATH"] = (
-            site.getsitepackages()[0] + ";" + os.environ.get("PYTHONPATH", "")
+            site.getsitepackages()[0]
+            + os.pathsep
+            + os.environ.get("PYTHONPATH", "")
         )
         # Build the system.
-        self.spawn(["cmake", "--build", cmake_cache_dir, *cmake_build_args])
+        self.spawn([get_cmake_command(), "--build", cmake_cache_dir, *cmake_build_args])
         # Share the cmake-out location with _BaseExtension.
         self.cmake_cache_dir = cmake_cache_dir
         # Finally, run the underlying subcommands like build_py, build_ext.

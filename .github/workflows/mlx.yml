@@ -470,6 +470,12 @@ jobs:
             name: "gemma3-1b"
         use-custom: [false, true]
         qconfig: ["4w", "nvfp4"]
+        include:
+          - model:
+              id: "google/gemma-4-E2B-it"
+              name: "gemma4-e2b"
+            use-custom: true
+            qconfig: "4w"
     uses: pytorch/test-infra/.github/workflows/macos_job.yml@main
     secrets: inherit
     with:
@@ -493,6 +499,11 @@ jobs:
           CUSTOM_ARGS="--use-custom-sdpa --use-custom-kv-cache"
         fi
 
+        QEMBEDDING_ARGS="--qembedding ${QCONFIG}"
+        if [ "${MODEL_ID}" = "google/gemma-4-E2B-it" ]; then
+          QEMBEDDING_ARGS=""
+        fi
+
         echo "::group::Install ExecuTorch and configure MLX build"
         ${CONDA_RUN} python install_executorch.py > /dev/null
         ${CONDA_RUN} cmake --preset mlx-release
@@ -512,7 +523,7 @@ jobs:
           --model-id "${MODEL_ID}" \
           --output /tmp/${MODEL_NAME}.pte \
           --qlinear ${QCONFIG} \
-          --qembedding ${QCONFIG} \
+          ${QEMBEDDING_ARGS} \
           ${CUSTOM_ARGS}
         echo "::endgroup::"
 
