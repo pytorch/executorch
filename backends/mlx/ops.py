@@ -3074,19 +3074,34 @@ def _bitwise_not_handler(P: MLXProgramBuilder, n: Node) -> Slot:
     x_meta = n.args[0].meta.get("val")
     out = P.make_or_get_slot(n)
 
-    if x_meta is not None and x_meta.dtype == torch.bool:
+    if x_meta is None or not hasattr(x_meta, "dtype"):
+        raise NotImplementedError(
+            "aten.bitwise_not requires known input dtype metadata for MLX lowering"
+        )
+
+    if x_meta.dtype == torch.bool:
         P.emit(
             LogicalNotNode(
                 x=P.slot_to_tid(args[0]),
                 out=P.slot_to_tid(out),
             )
         )
-    else:
+    elif x_meta.dtype in {
+        torch.int8,
+        torch.int16,
+        torch.int32,
+        torch.int64,
+        torch.uint8,
+    }:
         P.emit(
             BitwiseInvertNode(
                 x=P.slot_to_tid(args[0]),
                 out=P.slot_to_tid(out),
             )
+        )
+    else:
+        raise NotImplementedError(
+            f"aten.bitwise_not on dtype {x_meta.dtype} is not supported for MLX lowering"
         )
     return out
 
