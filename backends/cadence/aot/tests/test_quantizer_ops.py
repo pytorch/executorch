@@ -216,6 +216,15 @@ QUANTIZER_ANNOTATION_TEST_CASES: list[
     ),
     # CadenceFusedConvReluQuantizer test cases
     (
+        "fused_add_relu_A8W8",
+        lambda self: self._build_add_relu_graph(),
+        CadenceFusedConvReluQuantizer(),
+        torch.ops.aten.relu.default,
+        qconfig_A8W8.output_activation,
+        # For fused add+relu: both inputs are activations from add node
+        [qconfig_A8W8.input_activation, qconfig_A8W8.input_activation],
+    ),
+    (
         "fused_conv1d_relu_A8W8sym",
         lambda self: self._build_conv1d_relu_graph(),
         CadenceFusedConvReluQuantizer(),
@@ -507,6 +516,50 @@ class QuantizerAnnotationTest(unittest.TestCase):
             "Should find exactly one max_pool2d_with_indices node",
         )
         return gm, max_pool_nodes[0]
+
+    def _build_add_relu_graph(
+        self,
+    ) -> tuple[torch.fx.GraphModule, torch.fx.Node, torch.fx.Node]:
+        """Build a graph with an add followed by relu (fused pattern).
+
+        Returns:
+            A tuple of (graph_module, relu_node, add_node).
+            The relu_node is the target node where the annotation is placed.
+            The add_node is the input source node whose args contain the quantized inputs.
+        """
+        builder = GraphBuilder()
+        x = builder.placeholder("x", torch.randn(1, 10))
+        y = builder.placeholder("y", torch.randn(1, 10))
+        add = builder.call_operator(
+            op=torch.ops.aten.add.Tensor,
+            args=(x, y),
+            meta=NodeMetadata(
+                {"source_fn_stack": [("add", torch.ops.aten.add.Tensor)]}
+            ),
+        )
+        relu = builder.call_operator(
+            op=torch.ops.aten.relu.default,
+            args=(add,),
+            meta=NodeMetadata(
+                {"source_fn_stack": [("relu", torch.ops.aten.relu.default)]}
+            ),
+        )
+        builder.output([relu])
+        gm = builder.get_graph_module()
+
+        relu_nodes = gm.graph.find_nodes(
+            op="call_function",
+            target=torch.ops.aten.relu.default,
+        )
+        self.assertEqual(len(relu_nodes), 1, "Should find exactly one relu node")
+
+        add_nodes = gm.graph.find_nodes(
+            op="call_function",
+            target=torch.ops.aten.add.Tensor,
+        )
+        self.assertEqual(len(add_nodes), 1, "Should find exactly one add node")
+
+        return gm, relu_nodes[0], add_nodes[0]
 
     def _build_conv2d_relu_graph(
         self,

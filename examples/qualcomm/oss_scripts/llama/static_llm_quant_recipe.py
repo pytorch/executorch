@@ -407,6 +407,45 @@ class Granite_3_3_2B_InstructQuantRecipe(StaticLLMQuantRecipe):
         self.recipe.custom_quant_annotations.append(annotate_kv_8bit)
 
 
+class GraniteSpeech_3_3_2B_InstructQuantRecipe(StaticLLMQuantRecipe):
+    default_quant_dtype = QuantDtype.use_16a4w
+
+    def __init__(self, verbose: bool = False):
+        super().__init__()
+
+        self.recipe = (
+            QuantRecipe(
+                self.default_quant_dtype,
+                False,
+                act_observer=MinMaxObserver,
+                granularity=QuantGranularity.PER_TENSOR,
+                verbose=verbose,
+            )
+            .add_node_target(
+                {
+                    torch.ops.aten.conv2d.default,
+                },
+                QuantDtype.use_16a4w_block,
+                False,
+                act_observer=MinMaxObserver,
+                granularity=QuantGranularity.PER_BLOCK,
+                extra_kwargs={"block_size": (1, 64, 1, 1)},
+            )
+            .add_regex(
+                {
+                    r"layers\..*\.attention\.wv.*",
+                    r"layers\..*\.feed_forward\.w3_conv",
+                    r"layers\..*\.feed_forward\.w2_conv",
+                    r"output\.conv",
+                },
+                QuantDtype.use_16a8w,
+                False,
+                act_observer=MinMaxObserver,
+                granularity=QuantGranularity.PER_CHANNEL,
+            )
+        )
+
+
 class InternVL3_1B_QuantRecipe(StaticLLMQuantRecipe):
     default_quant_dtype = QuantDtype.use_16a8w
 
