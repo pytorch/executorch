@@ -1003,6 +1003,108 @@ class FuseFullThenReshapePass(RemoveOrReplacePassInterface):
         return True
 
 
+@register_cadence_pass(CadencePassAttribute(opt_level=1))
+class FuseMeanKeepDimWithViewPass(RemoveOrReplacePassInterface):
+    """Fuse mean + view_copy when the view toggles keepdim behavior.
+
+    Case 1: mean(keepdim=True) + view that squeezes reduction dims
+            → mean(keepdim=False), view removed.
+    Case 2: mean(keepdim=False) + view that unsqueezes at reduction dims
+            → mean(keepdim=True), view removed.
+    """
+
+    @property
+    def targets(self) -> list[EdgeOpOverload]:
+        return [exir_ops.edge.aten.mean.dim]
+
+    @staticmethod
+    def _get_keepdim(node: torch.fx.Node) -> bool:
+        if len(node.args) >= 3:
+            return bool(node.args[2])
+        return bool(node.kwargs.get("keepdim", False))
+
+    @staticmethod
+    def _set_keepdim(node: torch.fx.Node, keepdim: bool) -> None:
+        if "keepdim" in node.kwargs:
+            new_kwargs = dict(node.kwargs)
+            new_kwargs["keepdim"] = keepdim
+            node.kwargs = new_kwargs
+        elif len(node.args) > 2:
+            new_args = list(node.args)
+            new_args[2] = keepdim
+            node.args = tuple(new_args)
+        else:
+            node.args = tuple(node.args) + (keepdim,)
+
+    @staticmethod
+    def _is_squeeze_of_reduction_dims(
+        mean_shape: list[int],
+        view_shape: list[int],
+        reduction_dims: list[int],
+        ndim: int,
+    ) -> bool:
+        canonical_reduction = {d % ndim for d in reduction_dims}
+        expected = [s for i, s in enumerate(mean_shape) if i not in canonical_reduction]
+        return list(view_shape) == expected
+
+    @staticmethod
+    def _is_unsqueeze_at_reduction_dims(
+        mean_output_shape: list[int],
+        view_shape: list[int],
+        reduction_dims: list[int],
+        input_ndim: int,
+    ) -> bool:
+        canonical_reduction = {d % input_ndim for d in reduction_dims}
+        if len(view_shape) != input_ndim:
+            return False
+        non_reduced_idx = 0
+        for i in range(input_ndim):
+            if i in canonical_reduction:
+                if view_shape[i] != 1:
+                    return False
+            else:
+                if (
+                    non_reduced_idx >= len(mean_output_shape)
+                    or view_shape[i] != mean_output_shape[non_reduced_idx]
+                ):
+                    return False
+                non_reduced_idx += 1
+        return non_reduced_idx == len(mean_output_shape)
+
+    def maybe_remove_or_replace(self, node: torch.fx.Node) -> bool:
+        if len(node.users) != 1:
+            return False
+
+        view_node = next(iter(node.users))
+        if view_node.target != exir_ops.edge.aten.view_copy.default:
+            return False
+
+        reduction_dims = cast(list[int], node.args[1])
+        keepdim = self._get_keepdim(node)
+        mean_output_shape = list(node.meta["val"].shape)
+        view_output_shape = list(view_node.meta["val"].shape)
+
+        if keepdim:
+            ndim = len(mean_output_shape)
+            if not self._is_squeeze_of_reduction_dims(
+                mean_output_shape, view_output_shape, reduction_dims, ndim
+            ):
+                return False
+            self._set_keepdim(node, False)
+        else:
+            input_node = node.args[0]
+            assert isinstance(input_node, torch.fx.Node)
+            input_ndim = len(input_node.meta["val"].shape)
+            if not self._is_unsqueeze_at_reduction_dims(
+                mean_output_shape, view_output_shape, reduction_dims, input_ndim
+            ):
+                return False
+            self._set_keepdim(node, True)
+
+        view_node.replace_all_uses_with(node)
+        return True
+
+
 class HierarchicalCSEPass(HierarchicalInplacePassInterface):
     """
     A hierarchical Common Subexpression Elimination (CSE) pass that recursively
@@ -1035,4 +1137,5 @@ class CadenceFuseOpsInGraph:
         FuseMulScalarIntoDequantPass,
         FuseFullThenReshapePass,
         FuseTransposeOrPermuteOpPairsPass,
+        FuseMeanKeepDimWithViewPass,
     ]
