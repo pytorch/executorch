@@ -127,19 +127,15 @@ def get_model_specific_kwargs(control_args: argparse.Namespace, config: LLMModel
 
     """
     kwargs = {}
-    # Vision-Language Model (VLM)
-    # For multimodal models, we need the special token ID that represents image placeholders
-    # in the input sequence. This token is used to mark positions where image embeddings
+    # For multimodal models, we need the special token ID that represents modality placeholders
+    # in the input sequence. This token is used to mark positions where modality embeddings
     # should be inserted during inference.
+    if hasattr(config, AUDIO_ENCODER):
+        hf_config = AutoConfig.from_pretrained(config.repo_id)
+        kwargs["audio_token_id"] = hf_config.audio_token_index
     if hasattr(config, VISION_ENCODER):
         hf_config = AutoConfig.from_pretrained(config.repo_id)
         kwargs["image_token_id"] = hf_config.image_token_id
-    # TODO: Support Audio modality
-    if hasattr(config, AUDIO_ENCODER):
-        raise NotImplementedError(
-            "Audio encoder modality is not currently supported. "
-            "Please provide a valid audio_token_id in kwargs."
-        )
     return kwargs
 
 
