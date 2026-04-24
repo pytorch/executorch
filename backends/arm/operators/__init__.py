@@ -52,6 +52,7 @@ from . import (  # noqa
     op_tosa_custom,
     op_tosa_depthwise_conv2d,
     op_tosa_gather,
+    op_tosa_identity,
     op_tosa_matmul,
     op_tosa_max_pool2d,
     op_tosa_pad,

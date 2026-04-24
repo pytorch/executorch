@@ -317,13 +317,24 @@ Error defineTensor(
   }
 
   ET_CHECK_OR_RETURN_ERROR(
-      tensor_value != nullptr,
-      Internal,
-      "Deserialized Tensor is Null, this should never happen");
+      tensor_value != nullptr, InvalidProgram, "Deserialized tensor is null");
 
-  // Get tensor dims, here we need to use a vector in order
-  // to properly convert the uint32_t* to size_t*
-  std::vector<size_t> dims_data = flatbufferDimsToVector(tensor_value->dims());
+  // Validate that tensor_value->flags() is a subset of the allowed flags.
+  constexpr uint32_t kAllowedFlagsMask =
+      XNN_VALUE_FLAG_EXTERNAL_INPUT | XNN_VALUE_FLAG_EXTERNAL_OUTPUT;
+  ET_CHECK_OR_RETURN_ERROR(
+      (tensor_value->flags() & ~kAllowedFlagsMask) == 0,
+      InvalidProgram,
+      "Tensor value has unsupported flag bits 0x%x",
+      tensor_value->flags());
+
+  // Get tensor dims, here we need to use a vector in order to properly
+  // convert the uint32_t* to size_t*. Scalar tensors (rank 0) are permitted
+  // to have a null dims vector; in that case dims_data is empty.
+  std::vector<size_t> dims_data;
+  if (tensor_value->dims() != nullptr) {
+    dims_data = flatbufferDimsToVector(tensor_value->dims());
+  }
 
   // XNNPACK Id
   uint32_t id = XNN_INVALID_VALUE_ID;
@@ -369,7 +380,7 @@ Error defineTensor(
       status = xnn_define_tensor_value(
           /*subgraph=*/subgraph_ptr,
           /*datatype=*/getDataType(tensor_value->datatype()),
-          /*num_dims=*/tensor_value->num_dims(),
+          /*num_dims=*/dims_data.size(),
           /*dims=*/dims_data.data(),
           /*data=*/buffer_ptr,
           /*external_id=*/tensor_value->external_id(),
@@ -404,7 +415,7 @@ Error defineTensor(
           status = xnn_define_dynamically_quantized_tensor_value(
               /*subgraph=*/subgraph_ptr,
               /*datatype=*/xnn_datatype_qdint8,
-              /*num_dims=*/tensor_value->num_dims(),
+              /*num_dims=*/dims_data.size(),
               /*num_nonbatch_dims=*/1, // always do per token quantization
               /*dims=*/dims_data.data(),
               /*external_id=*/XNN_INVALID_VALUE_ID, // always internal value id
@@ -418,7 +429,7 @@ Error defineTensor(
           status = xnn_define_tensor_value(
               /*subgraph=*/subgraph_ptr,
               /*datatype=*/fp_datatype,
-              /*num_dims=*/tensor_value->num_dims(),
+              /*num_dims=*/dims_data.size(),
               /*dims=*/dims_data.data(),
               /*data=*/buffer_ptr,
               /*external_id=*/tensor_value->external_id(),
@@ -459,7 +470,7 @@ Error defineTensor(
             /*datatype=*/getDataType(tensor_value->datatype()),
             /*zero_point=*/qparams->zero_point(),
             /*scale=*/qparams->scale(),
-            /*num_dims=*/tensor_value->num_dims(),
+            /*num_dims=*/dims_data.size(),
             /*dims=*/dims_data.data(),
             /*data=*/buffer_ptr,
             /*external_id=*/tensor_value->external_id(),
@@ -504,7 +515,7 @@ Error defineTensor(
             /*datatype=*/dtype,
             /*zero_point=*/zero_point,
             /*scale=*/scale,
-            /*num_dims=*/tensor_value->num_dims(),
+            /*num_dims=*/dims_data.size(),
             /*channel_dim*/ qparams->channel_dim(),
             /*dims=*/dims_data.data(),
             /*data=*/buffer_ptr,
@@ -582,7 +593,7 @@ Error defineTensor(
             /*datatype=*/datatype,
             /*zero_point=*/zero_point,
             /*scale=*/scale_data,
-            /*num_dims=*/tensor_value->num_dims(),
+            /*num_dims=*/dims_data.size(),
             /*channel_dim=*/qparams->channel_dim(),
             /*block_size=*/qparams->group_size(),
             /*dims=*/dims_data.data(),
@@ -596,8 +607,8 @@ Error defineTensor(
         auto qparams = qtensor_value->quant_params_as_PerTokenDynamicQuant();
         ET_LOG(
             Debug,
-            "define quant tensor (dynamic): num_dims: %i, num_nonbatch_dims: %i\n",
-            tensor_value->num_dims(),
+            "define quant tensor (dynamic): num_dims: %zu, num_nonbatch_dims: %i\n",
+            dims_data.size(),
             qparams->num_nonbatch_dims());
         ET_CHECK_OR_RETURN_ERROR(
             buffer_ptr == nullptr,
@@ -606,7 +617,7 @@ Error defineTensor(
         status = xnn_define_dynamically_quantized_tensor_value(
             /*subgraph=*/subgraph_ptr,
             /*datatype=*/getDataType(tensor_value->datatype()),
-            /*num_dims=*/tensor_value->num_dims(),
+            /*num_dims=*/dims_data.size(),
             /*num_nonbatch_dims*/ qparams->num_nonbatch_dims(),
             /*dims=*/dims_data.data(),
             /*external_id=*/tensor_value->external_id(),
@@ -1052,6 +1063,10 @@ Error defineStaticTransposeNode(
   auto graph_node = node->xnode_union_as_XNNStaticTranspose();
 
   // Get tensor dims, we need to convert the uint32_t* to size_t*
+  ET_CHECK_OR_RETURN_ERROR(
+      graph_node->perm() != nullptr,
+      InvalidProgram,
+      "StaticTranspose: perm is null");
   std::vector<size_t> dims_data = flatbufferDimsToVector(graph_node->perm());
 
   REMAP_ID(remapped_ids, graph_node->input_id(), st_input);
@@ -1059,7 +1074,7 @@ Error defineStaticTransposeNode(
 
   xnn_status status = xnn_define_static_transpose(
       subgraph_ptr,
-      graph_node->num_dims(),
+      dims_data.size(),
       dims_data.data(),
       st_input,
       st_output,
@@ -1123,6 +1138,11 @@ Error defineStaticConstantPadNode(
   const fb_xnnpack::XNNStaticConstantPad* graph_node =
       node->xnode_union_as_XNNStaticConstantPad();
 
+  ET_CHECK_OR_RETURN_ERROR(
+      graph_node->pre_paddings() != nullptr &&
+          graph_node->post_paddings() != nullptr,
+      InvalidProgram,
+      "StaticConstantPad: pre_paddings or post_paddings is null");
   std::vector<size_t> pre_paddings_dims =
       flatbufferDimsToVector(graph_node->pre_paddings());
   std::vector<size_t> post_paddings_dims =
@@ -1211,6 +1231,10 @@ Error defineStaticReshapeNode(
   auto graph_node = node->xnode_union_as_XNNStaticReshape();
 
   // Get tensor dims, we need to convert the uint32_t* to size_t*
+  ET_CHECK_OR_RETURN_ERROR(
+      graph_node->new_shape() != nullptr,
+      InvalidProgram,
+      "StaticReshape: new_shape is null");
   std::vector<size_t> dims_data =
       flatbufferDimsToVector(graph_node->new_shape());
 
@@ -1219,7 +1243,7 @@ Error defineStaticReshapeNode(
 
   xnn_status status = xnn_define_static_reshape(
       subgraph_ptr,
-      graph_node->num_dims(),
+      dims_data.size(),
       dims_data.data(),
       sr_input,
       sr_output,
@@ -1532,15 +1556,26 @@ Error defineStaticSliceNode(
 
   auto graph_node = node->xnode_union_as_XNNStaticSlice();
 
+  ET_CHECK_OR_RETURN_ERROR(
+      graph_node->offsets() != nullptr && graph_node->sizes() != nullptr,
+      InvalidProgram,
+      "StaticSlice: offsets or sizes is null");
   std::vector<size_t> offsets = flatbufferDimsToVector(graph_node->offsets());
   std::vector<size_t> sizes = flatbufferDimsToVector(graph_node->sizes());
+
+  ET_CHECK_OR_RETURN_ERROR(
+      offsets.size() == sizes.size(),
+      InvalidProgram,
+      "StaticSlice: offsets size %zu does not match sizes size %zu",
+      offsets.size(),
+      sizes.size());
 
   REMAP_ID(remapped_ids, graph_node->input_id(), ss_input);
   REMAP_ID(remapped_ids, graph_node->output_id(), ss_output);
 
   xnn_status status = xnn_define_static_slice(
       subgraph_ptr,
-      graph_node->num_dims(),
+      offsets.size(),
       offsets.data(),
       sizes.data(),
       ss_input,
