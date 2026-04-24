@@ -7,5 +7,8 @@
 q8ta_im2col:
   parameter_names_with_default_values:
     DTYPE: float
+    USE_SPEC_CONST: 0
   shader_variants:
     - NAME: q8ta_im2col
+    - NAME: q8ta_im2col_spec_const
+      USE_SPEC_CONST: 1

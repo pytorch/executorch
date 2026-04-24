@@ -26,7 +26,6 @@ layout(std430) buffer;
 
 #include "indexing.glslh"
 #include "common.glslh"
-#include "conv2d_common.glslh"
 
 ${layout_declare_tensor(B, "w", "t_packed_int8_output", "int", "buffer", is_scalar_array=True)}
 ${layout_declare_tensor(B, "r", "t_packed_int8_input", "int", "buffer", is_scalar_array=True)}
@@ -38,7 +37,6 @@ ${layout_declare_tensor(B, "r", "t_bias", DTYPE, "buffer", is_scalar_array=False
 // Metadata for input/output tensors (memory layout agnostic)
 ${layout_declare_ubo(B, "BufferMetadata", "outp")}
 ${layout_declare_ubo(B, "BufferMetadata", "inp")}
-${layout_declare_ubo(B, "Conv2DParams", "conv2d_params")}
 
 layout(push_constant) uniform restrict Block {
   float input_scale;
@@ -55,6 +53,30 @@ ${layout_declare_spec_const(C, "int", "activation_type", "0")}
 // Layout specialization constants
 ${layout_declare_spec_const(C, "int", "inp_layout", "CONTIG_LAYOUT_INT")}
 ${layout_declare_spec_const(C, "int", "outp_layout", "CONTIG_LAYOUT_INT")}
+
+$if USE_SPEC_CONST:
+  // Conv2D parameter specialization constants
+  ${layout_declare_spec_const(C, "int", "kernel_size_x", "1")}
+  ${layout_declare_spec_const(C, "int", "kernel_size_y", "1")}
+  ${layout_declare_spec_const(C, "int", "stride_x", "1")}
+  ${layout_declare_spec_const(C, "int", "stride_y", "1")}
+  ${layout_declare_spec_const(C, "int", "padding_x", "0")}
+  ${layout_declare_spec_const(C, "int", "padding_y", "0")}
+  ${layout_declare_spec_const(C, "int", "dilation_x", "1")}
+  ${layout_declare_spec_const(C, "int", "dilation_y", "1")}
+  ${layout_declare_spec_const(C, "int", "groups", "1")}
+$else:
+  #include "conv2d_common.glslh"
+  ${layout_declare_ubo(B, "Conv2DParams", "conv2d_params")}
+  #define kernel_size_x conv2d_params.kernel_size.x
+  #define kernel_size_y conv2d_params.kernel_size.y
+  #define stride_x conv2d_params.stride.x
+  #define stride_y conv2d_params.stride.y
+  #define padding_x conv2d_params.padding.x
+  #define padding_y conv2d_params.padding.y
+  #define dilation_x conv2d_params.dilation.x
+  #define dilation_y conv2d_params.dilation.y
+  #define groups conv2d_params.groups
 
 // Load weight block for a given (ic4, kx, ky, oc4) position.
 // Weight texture layout (from pack_q8_conv2d_weights.glsl):
@@ -101,8 +123,8 @@ void main() {
   const int IC = int(inp.sizes[0][2]);
 
   // Compute channels per group
-  const int OC_per_group = OC / conv2d_params.groups;
-  const int IC_per_group = IC / conv2d_params.groups;
+  const int OC_per_group = OC / groups;
+  const int IC_per_group = IC / groups;
   const int IC4_per_group = div_up_4(IC_per_group);
 
   // Determine which group this output channel block belongs to
@@ -113,14 +135,14 @@ void main() {
   const int inp_w_stride = int(inp.strides[0][0]);
   const int inp_h_stride = int(inp.strides[0][1]);
   const int inp_c_stride = int(inp.strides[0][2]);
-  const int w_texel_step = conv2d_params.dilation.x * inp_w_stride;
-  const int h_texel_step = conv2d_params.dilation.y * inp_h_stride;
-  const int subtile_w_step = conv2d_params.stride.x * inp_w_stride;
+  const int w_texel_step = dilation_x * inp_w_stride;
+  const int h_texel_step = dilation_y * inp_h_stride;
+  const int subtile_w_step = stride_x * inp_w_stride;
 
   // Compute base input position (for subtile_w=0, ic4=0)
   TensorIndex4D inp_tidx;
-  inp_tidx.data[0] = outp_tidx.data[0] * conv2d_params.stride.x - conv2d_params.padding.x;
-  inp_tidx.data[1] = outp_tidx.data[1] * conv2d_params.stride.y - conv2d_params.padding.y;
+  inp_tidx.data[0] = outp_tidx.data[0] * stride_x - padding_x;
+  inp_tidx.data[1] = outp_tidx.data[1] * stride_y - padding_y;
   inp_tidx.data[2] = ic_group_start;
   inp_tidx.data[3] = 0;
 
@@ -142,7 +164,7 @@ void main() {
   }
 
   // Perform convolution using packed int8 dot products
-  for (int ky = 0; ky < conv2d_params.kernel_size.y; ky++) {
+  for (int ky = 0; ky < kernel_size_y; ky++) {
     const bool h_in_bounds = (inp_tidx.data[1] >= 0 && inp_tidx.data[1] < inp_H);
 
     // Process input channels in blocks of 4
@@ -153,10 +175,10 @@ void main() {
       // Reset width coordinate at start of each ic4 iteration
       inp_tidx.data[0] = base_inp_w;
 
-      for (int kx = 0; kx < conv2d_params.kernel_size.x; kx++) {
+      for (int kx = 0; kx < kernel_size_x; kx++) {
         // Load weight block: 4 output channels × 4 input channels
         // weight_block[oc] contains packed weights for ic4*4 to ic4*4+3 -> oc
-        const ivec4 weight_block = load_weight_block(ic4, kx, ky, oc4, IC4_per_group, conv2d_params.kernel_size.x);
+        const ivec4 weight_block = load_weight_block(ic4, kx, ky, oc4, IC4_per_group, kernel_size_x);
 
         // Process 4 adjacent width positions
         [[unroll]] for (int subtile_w = 0; subtile_w < 4; ++subtile_w) {
@@ -187,16 +209,16 @@ void main() {
           }
 
           // Advance to next output position's input coordinate
-          inp_tidx.data[0] += conv2d_params.stride.x;
+          inp_tidx.data[0] += stride_x;
         }
 
         // Adjust for net dilation step
-        inp_tidx.data[0] += conv2d_params.dilation.x - 4 * conv2d_params.stride.x;
+        inp_tidx.data[0] += dilation_x - 4 * stride_x;
       }
     }
 
     // Advance height by dilation for next kernel row
-    inp_tidx.data[1] += conv2d_params.dilation.y;
+    inp_tidx.data[1] += dilation_y;
 
     if (get_outer_packed_dim_block_size(inp_layout) == 1) {
       // Advance base index by height step for next kernel row

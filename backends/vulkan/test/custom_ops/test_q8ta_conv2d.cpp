@@ -236,6 +236,9 @@ std::vector<TestCase> generate_quantized_conv2d_easy_cases() {
           make_test_case_name(config, false, fp_storage_type, utils::kBuffer);
       test_cases.push_back(create_test_case_from_config(
           config, vkapi::kFloat, fp_storage_type, int8_memory_layout));
+      test_cases.push_back(create_test_case_from_config(
+          config, vkapi::kFloat, fp_storage_type, int8_memory_layout,
+          /*impl_selector=*/"spec_const"));
 
       // Test im2col implementation when input channels per group is a
       // multiple of 4
@@ -440,6 +443,12 @@ static std::vector<TestCase> generate_quantized_conv2d_test_cases() {
             fp_storage_type,
             int8_memory_layout,
             /*impl_selector=*/"general"));
+        test_cases.push_back(create_test_case_from_config(
+            config,
+            vkapi::kFloat,
+            fp_storage_type,
+            int8_memory_layout,
+            /*impl_selector=*/"general_spec_const"));
 
         // Test im2col implementation when input channels per group is a
         // multiple of 4
@@ -452,6 +461,12 @@ static std::vector<TestCase> generate_quantized_conv2d_test_cases() {
               fp_storage_type,
               int8_memory_layout,
               /*impl_selector=*/"im2col"));
+          test_cases.push_back(create_test_case_from_config(
+              config,
+              vkapi::kFloat,
+              fp_storage_type,
+              int8_memory_layout,
+              /*impl_selector=*/"im2col_spec_const"));
         }
 
         // For 4W4C layout, also test the legacy implementation

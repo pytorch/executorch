@@ -20,7 +20,6 @@ layout(std430) buffer;
 
 #include "indexing.glslh"
 #include "common.glslh"
-#include "conv2d_common.glslh"
 
 ${layout_declare_tensor(B, "w", "t_packed_int8_output", "int", "buffer", is_scalar_array=True)}
 ${layout_declare_tensor(B, "r", "t_packed_int8_input", "int", "buffer", is_scalar_array=True)}
@@ -32,7 +31,6 @@ ${layout_declare_tensor(B, "r", "t_bias", DTYPE, "buffer", is_scalar_array=False
 // Metadata for input/output tensors (memory layout agnostic)
 ${layout_declare_ubo(B, "BufferMetadata", "outp")}
 ${layout_declare_ubo(B, "BufferMetadata", "inp")}
-${layout_declare_ubo(B, "Conv2DParams", "conv2d_params")}
 
 layout(push_constant) uniform restrict Block {
   float input_scale;
@@ -49,6 +47,28 @@ ${layout_declare_spec_const(C, "int", "activation_type", "0")}
 // Layout specialization constants
 ${layout_declare_spec_const(C, "int", "inp_layout", "CONTIG_LAYOUT_INT")}
 ${layout_declare_spec_const(C, "int", "outp_layout", "CONTIG_LAYOUT_INT")}
+
+$if USE_SPEC_CONST:
+  // Conv2D parameter specialization constants
+  ${layout_declare_spec_const(C, "int", "kernel_size_x", "1")}
+  ${layout_declare_spec_const(C, "int", "kernel_size_y", "1")}
+  ${layout_declare_spec_const(C, "int", "stride_x", "1")}
+  ${layout_declare_spec_const(C, "int", "stride_y", "1")}
+  ${layout_declare_spec_const(C, "int", "padding_x", "0")}
+  ${layout_declare_spec_const(C, "int", "padding_y", "0")}
+  ${layout_declare_spec_const(C, "int", "dilation_x", "1")}
+  ${layout_declare_spec_const(C, "int", "dilation_y", "1")}
+$else:
+  #include "conv2d_common.glslh"
+  ${layout_declare_ubo(B, "Conv2DParams", "conv2d_params")}
+  #define kernel_size_x conv2d_params.kernel_size.x
+  #define kernel_size_y conv2d_params.kernel_size.y
+  #define stride_x conv2d_params.stride.x
+  #define stride_y conv2d_params.stride.y
+  #define padding_x conv2d_params.padding.x
+  #define padding_y conv2d_params.padding.y
+  #define dilation_x conv2d_params.dilation.x
+  #define dilation_y conv2d_params.dilation.y
 
 #include "block_indexing.glslh"
 
@@ -89,22 +109,22 @@ void main() {
   }
 
   // Compute weight addressing constants
-  const int KW4 = int(div_up_4(conv2d_params.kernel_size.x));
+  const int KW4 = int(div_up_4(kernel_size_x));
 
   // Get strides for width and height dimensions (in texel space)
   const int w_stride = int(inp.strides[0][0]);
   const int h_stride = int(inp.strides[0][1]);
 
   // Pre-compute step sizes for efficient indexing
-  const int w_texel_step = conv2d_params.dilation.x * w_stride;
-  const int h_texel_step = conv2d_params.dilation.y * h_stride;
+  const int w_texel_step = dilation_x * w_stride;
+  const int h_texel_step = dilation_y * h_stride;
   // Step between adjacent output width positions in input texel space
-  const int subtile_w_step = conv2d_params.stride.x * w_stride;
+  const int subtile_w_step = stride_x * w_stride;
 
   // Compute base input position for subtile_w=0
   TensorIndex4D inp_tidx;
-  inp_tidx.data[0] = outp_tidx.data[0] * conv2d_params.stride.x - conv2d_params.padding.x;
-  inp_tidx.data[1] = outp_tidx.data[1] * conv2d_params.stride.y - conv2d_params.padding.y;
+  inp_tidx.data[0] = outp_tidx.data[0] * stride_x - padding_x;
+  inp_tidx.data[1] = outp_tidx.data[1] * stride_y - padding_y;
   inp_tidx.data[2] = outp_tidx.data[2];
   inp_tidx.data[3] = 0;  // batch = 0 since N == 1
 
@@ -128,13 +148,13 @@ void main() {
   const int inp_H = int(inp.sizes[0][1]);
 
   // Perform depthwise convolution
-  for (int ky = 0; ky < conv2d_params.kernel_size.y; ky++) {
+  for (int ky = 0; ky < kernel_size_y; ky++) {
     const bool h_in_bounds = (inp_tidx.data[1] >= 0 && inp_tidx.data[1] < inp_H);
 
     // Reset width coordinate at start of each kernel row
     inp_tidx.data[0] = base_inp_w;
 
-    for (int kx = 0; kx < conv2d_params.kernel_size.x; kx++) {
+    for (int kx = 0; kx < kernel_size_x; kx++) {
       // Load weight once, reuse for all 4 width positions
       const int packed_weight = load_weight(kx, ky, c4, KW4, C4);
       const ivec4 weight_4c = unpack_int8x4(packed_weight);
@@ -148,7 +168,7 @@ void main() {
           if (get_outer_packed_dim_block_size(inp_layout) == 1) {
             inp_texel_idx = base_inp_texel_idx + kx * w_texel_step + subtile_w * subtile_w_step;
           } else {
-            // const int w_offset = kx * conv2d_params.dilation.x + subtile_w * conv2d_params.stride.x;
+            // const int w_offset = kx * dilation_x + subtile_w * stride_x;
             // inp_texel_idx = base_inp_texel_idx + div_4(w_offset) * w_stride + mod_4(w_offset);
             // inp_texel_idx = tensor4d_idx_to_texel_idx(inp, inp_tidx, inp_layout);
             const int w4 = div_4(inp_tidx.data[0]);
@@ -162,15 +182,15 @@ void main() {
         acc[subtile_w] += weight_4c * input_4c;
 
         // Advance to next output position's input coordinate
-        inp_tidx.data[0] += conv2d_params.stride.x;
+        inp_tidx.data[0] += stride_x;
       }
 
       // We advanced by 4*stride.x during subtile loop; adjust for net dilation step
-      inp_tidx.data[0] += conv2d_params.dilation.x - 4 * conv2d_params.stride.x;
+      inp_tidx.data[0] += dilation_x - 4 * stride_x;
     }
 
     // Advance height by dilation for next kernel row
-    inp_tidx.data[1] += conv2d_params.dilation.y;
+    inp_tidx.data[1] += dilation_y;
 
     if (get_outer_packed_dim_block_size(inp_layout) == 1) {
       // Advance base index by height step for next kernel row
