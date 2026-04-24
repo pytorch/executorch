@@ -26,10 +26,11 @@ from executorch.backends.cadence.aot.fuse_ops import (
     FuseMulTensorIntoQuantPass,
     FuseQuantDequantToRequantizePass,
     FuseQuantizedBatchNormWithConv,
+    FuseSliceSameDimPass,
     FuseTransposeOrPermuteOpPairsPass,
     HierarchicalCSEPass,
 )
-from executorch.backends.cadence.aot.pass_utils import count_node, op_counts_match
+from executorch.backends.cadence.aot.pass_utils import count_node, get_arg, op_counts_match
 from executorch.backends.cadence.aot.typing_stubs import expand
 from executorch.backends.test.graph_builder import GraphBuilder
 from executorch.exir.dialects._ops import ops as exir_ops
@@ -1861,4 +1862,257 @@ class TestFuseMeanKeepDimWithViewPass(TestFusionPassesBase):
             result.graph_module,
             (torch.randn(3, 4, 5),),
             "FuseMeanKeepDimWithViewPass",
+        )
+
+
+class TestFuseSliceSameDimPass(TestFusionPassesBase):
+    def _get_single_slice(
+        self, gm: torch.fx.GraphModule
+    ) -> torch.fx.Node:
+        slices = gm.graph.find_nodes(
+            op="call_function", target=exir_ops.edge.aten.slice_copy.Tensor
+        )
+        self.assertEqual(len(slices), 1)
+        return slices[0]
+
+    def test_basic_chain_bypass(self) -> None:
+        """slice(dim=3, 0:78) → slice(dim=3, 0:60) → direct slice(dim=3, 0:60)."""
+        builder = GraphBuilder()
+        x = builder.placeholder("x", torch.randn(2, 3, 4, 80))
+        parent = builder.call_operator(
+            op=exir_ops.edge.aten.slice_copy.Tensor,
+            args=(x, 3, 0, 78, 1),
+        )
+        child = builder.call_operator(
+            op=exir_ops.edge.aten.slice_copy.Tensor,
+            args=(parent, 3, 0, 60, 1),
+        )
+        builder.output([child])
+        original = builder.get_graph_module()
+        gm_before = copy.deepcopy(original)
+
+        result = cast(PassResult, FuseSliceSameDimPass()(original))
+        self.assertTrue(result.modified)
+        self.assertEqual(
+            count_node(result.graph_module, exir_ops.edge.aten.slice_copy.Tensor), 1
+        )
+        merged = self._get_single_slice(result.graph_module)
+        self.assertEqual(get_arg(merged, "start"), 0)
+        self.assertEqual(get_arg(merged, "end"), 60)
+        validate_numerics(
+            gm_before,
+            result.graph_module,
+            (torch.randn(2, 3, 4, 80),),
+            "FuseSliceSameDimPass",
+        )
+
+    def test_chain_with_offset(self) -> None:
+        """slice(dim=1, 10:50) → slice(dim=1, 5:20) → direct slice(dim=1, 15:30)."""
+        builder = GraphBuilder()
+        x = builder.placeholder("x", torch.randn(4, 64))
+        parent = builder.call_operator(
+            op=exir_ops.edge.aten.slice_copy.Tensor,
+            args=(x, 1, 10, 50, 1),
+        )
+        child = builder.call_operator(
+            op=exir_ops.edge.aten.slice_copy.Tensor,
+            args=(parent, 1, 5, 20, 1),
+        )
+        builder.output([child])
+        original = builder.get_graph_module()
+        gm_before = copy.deepcopy(original)
+
+        result = cast(PassResult, FuseSliceSameDimPass()(original))
+        self.assertTrue(result.modified)
+        self.assertEqual(
+            count_node(result.graph_module, exir_ops.edge.aten.slice_copy.Tensor), 1
+        )
+        merged = self._get_single_slice(result.graph_module)
+        self.assertEqual(get_arg(merged, "start"), 15)
+        self.assertEqual(get_arg(merged, "end"), 30)
+        validate_numerics(
+            gm_before,
+            result.graph_module,
+            (torch.randn(4, 64),),
+            "FuseSliceSameDimPass",
+        )
+
+    def test_parent_kept_with_other_users(self) -> None:
+        """Parent slice has another user besides the child → parent stays."""
+        builder = GraphBuilder()
+        x = builder.placeholder("x", torch.randn(2, 3, 4, 80))
+        parent = builder.call_operator(
+            op=exir_ops.edge.aten.slice_copy.Tensor,
+            args=(x, 3, 0, 78, 1),
+        )
+        child = builder.call_operator(
+            op=exir_ops.edge.aten.slice_copy.Tensor,
+            args=(parent, 3, 0, 60, 1),
+        )
+        neg = builder.call_operator(op=exir_ops.edge.aten.neg.default, args=(parent,))
+        builder.output([child, neg])
+        original = builder.get_graph_module()
+        gm_before = copy.deepcopy(original)
+
+        result = cast(PassResult, FuseSliceSameDimPass()(original))
+        self.assertTrue(result.modified)
+        self.assertEqual(
+            count_node(result.graph_module, exir_ops.edge.aten.slice_copy.Tensor), 2
+        )
+        slices = result.graph_module.graph.find_nodes(
+            op="call_function", target=exir_ops.edge.aten.slice_copy.Tensor
+        )
+        ends = sorted(get_arg(s, "end") for s in slices)
+        self.assertEqual(ends, [60, 78])
+        validate_numerics(
+            gm_before,
+            result.graph_module,
+            (torch.randn(2, 3, 4, 80),),
+            "FuseSliceSameDimPass",
+        )
+
+    def test_different_dims_no_change(self) -> None:
+        """Chained slices on different dims → no change."""
+        builder = GraphBuilder()
+        x = builder.placeholder("x", torch.randn(8, 16, 32))
+        parent = builder.call_operator(
+            op=exir_ops.edge.aten.slice_copy.Tensor,
+            args=(x, 1, 0, 10, 1),
+        )
+        child = builder.call_operator(
+            op=exir_ops.edge.aten.slice_copy.Tensor,
+            args=(parent, 2, 0, 5, 1),
+        )
+        builder.output([child])
+        original = builder.get_graph_module()
+
+        result = cast(PassResult, FuseSliceSameDimPass()(original))
+        self.assertFalse(result.modified)
+
+    def test_step_not_one_no_change(self) -> None:
+        """Parent has step != 1 → no change."""
+        builder = GraphBuilder()
+        x = builder.placeholder("x", torch.randn(4, 64))
+        parent = builder.call_operator(
+            op=exir_ops.edge.aten.slice_copy.Tensor,
+            args=(x, 1, 0, 60, 2),
+        )
+        child = builder.call_operator(
+            op=exir_ops.edge.aten.slice_copy.Tensor,
+            args=(parent, 1, 0, 10, 1),
+        )
+        builder.output([child])
+        original = builder.get_graph_module()
+
+        result = cast(PassResult, FuseSliceSameDimPass()(original))
+        self.assertFalse(result.modified)
+
+    def test_no_chain_no_change(self) -> None:
+        """Single slice with no slice user → no change."""
+        builder = GraphBuilder()
+        x = builder.placeholder("x", torch.randn(4, 64))
+        sliced = builder.call_operator(
+            op=exir_ops.edge.aten.slice_copy.Tensor,
+            args=(x, 1, 0, 32, 1),
+        )
+        builder.output([sliced])
+        original = builder.get_graph_module()
+
+        result = cast(PassResult, FuseSliceSameDimPass()(original))
+        self.assertFalse(result.modified)
+
+    def test_child_end_clamped_to_parent_range(self) -> None:
+        """Child end exceeds parent output size → clamped to parent_end."""
+        builder = GraphBuilder()
+        x = builder.placeholder("x", torch.randn(1, 100))
+        parent = builder.call_operator(
+            op=exir_ops.edge.aten.slice_copy.Tensor,
+            args=(x, 1, 10, 50, 1),
+        )
+        child = builder.call_operator(
+            op=exir_ops.edge.aten.slice_copy.Tensor,
+            args=(parent, 1, 5, 45, 1),
+        )
+        builder.output([child])
+        original = builder.get_graph_module()
+        gm_before = copy.deepcopy(original)
+
+        result = cast(PassResult, FuseSliceSameDimPass()(original))
+        self.assertTrue(result.modified)
+        self.assertEqual(
+            count_node(result.graph_module, exir_ops.edge.aten.slice_copy.Tensor), 1
+        )
+        merged = self._get_single_slice(result.graph_module)
+        self.assertEqual(get_arg(merged, "start"), 15)
+        self.assertEqual(get_arg(merged, "end"), 50)
+        validate_numerics(
+            gm_before,
+            result.graph_module,
+            (torch.randn(1, 100),),
+            "FuseSliceSameDimPass",
+        )
+
+    def test_negative_indices(self) -> None:
+        """Negative start/end are canonicalized before merging."""
+        # Parent: slice(dim=1, 10:-10) on size 100 → [10:90], output size 80.
+        # Child: slice(dim=1, 5:-5) on size 80 → [5:75], output size 70.
+        # Merged: [15:85].
+        builder = GraphBuilder()
+        x = builder.placeholder("x", torch.randn(1, 100))
+        parent = builder.call_operator(
+            op=exir_ops.edge.aten.slice_copy.Tensor,
+            args=(x, 1, 10, -10, 1),
+        )
+        child = builder.call_operator(
+            op=exir_ops.edge.aten.slice_copy.Tensor,
+            args=(parent, 1, 5, -5, 1),
+        )
+        builder.output([child])
+        original = builder.get_graph_module()
+        gm_before = copy.deepcopy(original)
+
+        result = cast(PassResult, FuseSliceSameDimPass()(original))
+        self.assertTrue(result.modified)
+        self.assertEqual(
+            count_node(result.graph_module, exir_ops.edge.aten.slice_copy.Tensor), 1
+        )
+        merged = self._get_single_slice(result.graph_module)
+        self.assertEqual(get_arg(merged, "start"), 15)
+        self.assertEqual(get_arg(merged, "end"), 85)
+        validate_numerics(
+            gm_before,
+            result.graph_module,
+            (torch.randn(1, 100),),
+            "FuseSliceSameDimPass",
+        )
+
+    def test_negative_dim(self) -> None:
+        """Negative dim is canonicalized so matching works across conventions."""
+        builder = GraphBuilder()
+        x = builder.placeholder("x", torch.randn(2, 3, 4, 5))
+        parent = builder.call_operator(
+            op=exir_ops.edge.aten.slice_copy.Tensor,
+            args=(x, -1, 0, 4, 1),
+        )
+        child = builder.call_operator(
+            op=exir_ops.edge.aten.slice_copy.Tensor,
+            args=(parent, 3, 0, 2, 1),
+        )
+        builder.output([child])
+        original = builder.get_graph_module()
+        gm_before = copy.deepcopy(original)
+
+        result = cast(PassResult, FuseSliceSameDimPass()(original))
+        self.assertTrue(result.modified)
+        self.assertEqual(
+            count_node(result.graph_module, exir_ops.edge.aten.slice_copy.Tensor), 1
+        )
+        merged = self._get_single_slice(result.graph_module)
+        self.assertEqual(get_arg(merged, "start"), 0)
+        self.assertEqual(get_arg(merged, "end"), 2)
+        validate_numerics(
+            gm_before,
+            result.graph_module,
+            (torch.randn(2, 3, 4, 5),),
+            "FuseSliceSameDimPass",
         )
