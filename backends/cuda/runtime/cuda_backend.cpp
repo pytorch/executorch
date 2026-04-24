@@ -6,6 +6,7 @@
  * LICENSE file in the root directory of this source tree.
  */
 
+#include <c10/util/safe_numerics.h>
 #include <cuda_runtime.h>
 #include <executorch/runtime/backend/interface.h>
 #include <executorch/runtime/backend/options.h>
@@ -80,6 +81,7 @@ namespace {
 constexpr char kSkipCopyOutputToCpuForMethod[] =
     "skip_copy_output_to_cpu_for_method";
 constexpr char kUseSharedCudaStream[] = "use_shared_cuda_stream";
+constexpr char kShareKvCacheAcrossMethods[] = "share_kv_cache_across_methods";
 } // anonymous namespace
 
 class ET_EXPERIMENTAL CudaBackend final
@@ -287,12 +289,17 @@ class ET_EXPERIMENTAL CudaBackend final
       ArrayRef<CompileSpec> compile_specs // This will be my empty list
   ) const override {
     std::string method_name;
+    bool share_kv_cache = false;
     for (const CompileSpec& spec : compile_specs) {
       if (std::strcmp(spec.key, "method_name") == 0) {
         method_name.assign(
             static_cast<const char*>(spec.value.buffer),
             spec.value.nbytes); // no nullptr guarantee, so pass size
-        break;
+      } else if (std::strcmp(spec.key, kShareKvCacheAcrossMethods) == 0) {
+        if (spec.value.nbytes >= 1) {
+          share_kv_cache =
+              static_cast<const uint8_t*>(spec.value.buffer)[0] != 0;
+        }
       }
     }
 
@@ -416,14 +423,16 @@ class ET_EXPERIMENTAL CudaBackend final
     // ---------------------------------------------------------------
     // Cross-method constant sharing (e.g., KV cache between prefill/decode).
     //
+    // Only enabled when share_kv_cache_across_methods compile spec is set.
     // The first container to initialize extracts its constants (keyed by
     // original FQN) and stores the AtenTensorHandle's. Subsequent containers
     // with matching FQNs are updated to point to the same GPU tensors via
     // UpdateUserManagedConstantBufferPairs (user_managed = true → no copy,
     // the source container retains ownership).
     // ---------------------------------------------------------------
-    if (handle->get_num_constants && handle->get_constant_name &&
-        handle->get_constant_original_fqn && handle->extract_constants_map &&
+    if (share_kv_cache && handle->get_num_constants &&
+        handle->get_constant_name && handle->get_constant_original_fqn &&
+        handle->extract_constants_map &&
         handle->update_user_managed_constant_buffer_pairs) {
       size_t num_constants = 0;
       handle->get_num_constants(handle->container_handle, &num_constants);
@@ -469,6 +478,8 @@ class ET_EXPERIMENTAL CudaBackend final
                 Error,
                 "Failed to extract constants from '%s'",
                 method_name.c_str());
+            delete handle;
+            return Error::Internal;
           }
         } else {
           // Subsequent container: share matching constants from the first.
@@ -501,14 +512,24 @@ class ET_EXPERIMENTAL CudaBackend final
                   Error,
                   "Failed to share constants into '%s'",
                   method_name.c_str());
+              delete handle;
+              return Error::Internal;
             }
           }
         }
       }
+    } else if (share_kv_cache) {
+      ET_LOG(
+          Error,
+          "share_kv_cache_across_methods requested but constant sharing APIs "
+          "not available for method '%s'",
+          method_name.c_str());
+      delete handle;
+      return Error::Internal;
     } else {
       ET_LOG(
           Info,
-          "Constant sharing APIs not available for method '%s'",
+          "Constant sharing not requested for method '%s'",
           method_name.c_str());
     }
 
@@ -530,8 +551,10 @@ class ET_EXPERIMENTAL CudaBackend final
 
     setCurrentCUDAStream(handle->get_cuda_stream(), 0);
 
+    size_t n_io_sum = 0;
     ET_CHECK_OR_RETURN_ERROR(
-        n_inputs + n_outputs == args.size(),
+        !c10::add_overflows(n_inputs, n_outputs, &n_io_sum) &&
+            n_io_sum == args.size(),
         InvalidArgument,
         "number of user input %zd and output %zd generated from AOT Inductor does not match ET runner's %zd. Exit.",
         n_inputs,

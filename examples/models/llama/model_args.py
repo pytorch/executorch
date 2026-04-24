@@ -145,6 +145,9 @@ class ModelArgs:
     attention_kwargs: Dict[str, Any] = dataclasses.field(default_factory=dict)
     # Hybrid models can have layer types different from attention
     layer_types: Optional[list] = None
+    # Per-layer MLP type: "default" for standard FFN, "skip" for no FFN block.
+    # Indexed by layer id (e.g. mlp_type[0] applies to layer 0).
+    mlp_type: Optional[list] = None
     model_architecture: Optional[str] = (
         None  # Architecture of model. For HF models, please refer to the HF model.config.architectures. This is used in QNN backend only for now.
     )
