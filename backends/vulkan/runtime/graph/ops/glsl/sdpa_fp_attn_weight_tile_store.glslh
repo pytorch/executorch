@@ -7,24 +7,39 @@
  */
 
 /*
- * Assume the following variables are defined in the shader layout:
- * - t_attn_weights
+ * Shared attention weight tile store for both LLM SDPA and fused SDPA.
  *
- * Macro Settings:
- * - OUTPUT_BUFFER
+ * The attn_weights tensor layout is [head, S, L] in both cases:
+ *   index = (head * S * L4) + (s * L4) + l4
+ *
+ * Tile precision is controlled by the caller via LINEAR_FP_OUTPUT_TILE_VEC4_T
+ * (fused SDPA sets it to vec4 for fp32 accumulation; LLM SDPA leaves it as
+ * VEC4_T for input-dtype accumulation). All helper functions below are
+ * available at all times and compile correctly in both modes. The only
+ * gated helper is apply_bias, which requires t_bias/bias_sizes and is
+ * therefore guarded by HAS_BIAS.
+ *
+ * Required macros/variables:
+ *   t_attn_weights  — output buffer/texture
+ *   OUTPUT_BUFFER   — buffer mode (otherwise texture). Set at the shader
+ *                     level when IO_STORAGE == "buffer" and applies to all
+ *                     IO tensors uniformly (attn_weights now follows the
+ *                     output's storage type).
  */
 
-#ifndef SDPA_FP_ATTN_WEIGHT_TILE_LOAD_GLSLH
-#define SDPA_FP_ATTN_WEIGHT_TILE_LOAD_GLSLH
+#ifndef SDPA_FP_ATTN_WEIGHT_TILE_STORE_GLSLH
+#define SDPA_FP_ATTN_WEIGHT_TILE_STORE_GLSLH
 
 #extension GL_EXT_control_flow_attributes : require
 
 #include "linear_fp_output_tile.glslh"
 
-T negative_infinity_val = T(-1.0 / 0.0);
+// ============================================================
+// Shared store helpers (buffer or texture; fp32 or input-dtype)
+// ============================================================
 
 void store_attn_weight_c4(
-    const VEC4_T out_texel,
+    const LINEAR_FP_OUTPUT_TILE_VEC4_T out_texel,
     const int c4,
     const int s,
     const int q_h,
@@ -72,7 +87,60 @@ void store_attn_weight_tile_with_checks(
   }
 }
 
-void set_out_tile_to_vec(out FPOutTile tile, const VEC4_T vec) {
+// ============================================================
+// Tile transform helpers (scale, bias, mask, set)
+// ============================================================
+
+T negative_infinity_val = T(-1.0 / 0.0);
+
+void apply_scale(inout FPOutTile tile, const float scale) {
+  const LINEAR_FP_OUTPUT_TILE_VEC4_T scale_vec =
+      LINEAR_FP_OUTPUT_TILE_VEC4_T(scale);
+  [[unroll]] for (int m = 0; m < TILE_M; ++m) {
+    [[unroll]] for (int n4 = 0; n4 < TILE_N4; ++n4) {
+      tile.data[m][n4] = tile.data[m][n4] * scale_vec;
+    }
+  }
+}
+
+#ifdef HAS_BIAS
+void apply_bias(
+    inout FPOutTile tile,
+    const int c4_start,
+    const int s_start,
+    const int bh,
+    const int C4,
+    const int S) {
+  const int bias_C4 = div_up_4(bias_sizes.x);
+  const int bias_S = bias_sizes.y;
+  const int bias_BH = bias_sizes.z * bias_sizes.w;
+
+  [[unroll]] for (int s = 0; s < TILE_M; ++s) {
+    [[unroll]] for (int c4 = 0; c4 < TILE_N4; ++c4) {
+      if (c4_start + c4 < C4 && s_start + s < S) {
+        const int bias_bh = bh < bias_BH ? bh : 0;
+        const int bias_s = (s_start + s) < bias_S ? (s_start + s) : 0;
+        const int bias_c4 = c4_start + c4;
+        if (bias_c4 < bias_C4) {
+#ifdef INPUT_BUFFER
+          const LINEAR_FP_OUTPUT_TILE_VEC4_T bias_val =
+              LINEAR_FP_OUTPUT_TILE_VEC4_T(VEC4_T(
+                  t_bias[(bias_bh * bias_S * bias_C4) + (bias_s * bias_C4) +
+                         bias_c4]));
+#else
+          const LINEAR_FP_OUTPUT_TILE_VEC4_T bias_val =
+              LINEAR_FP_OUTPUT_TILE_VEC4_T(VEC4_T(
+                  texelFetch(t_bias, ivec3(bias_c4, bias_s, bias_bh), 0)));
+#endif
+          tile.data[s][c4] = tile.data[s][c4] + bias_val;
+        }
+      }
+    }
+  }
+}
+#endif // HAS_BIAS
+
+void set_out_tile_to_vec(out FPOutTile tile, const LINEAR_FP_OUTPUT_TILE_VEC4_T vec) {
   [[unroll]] for (int s = 0; s < TILE_M; ++s) {
     [[unroll]] for (int c4 = 0; c4 < TILE_N4; ++c4) { tile.data[s][c4] = vec; }
   }
@@ -80,7 +148,7 @@ void set_out_tile_to_vec(out FPOutTile tile, const VEC4_T vec) {
 
 void apply_scale_and_mask(
     inout FPOutTile tile,
-    const VEC4_T inv_scale_vec,
+    const LINEAR_FP_OUTPUT_TILE_VEC4_T inv_scale_vec,
     const int input_pos,
     const int c_idx_start,
     const int s_idx_start) {
@@ -102,4 +170,4 @@ void apply_scale_and_mask(
   }
 }
 
-#endif // SDPA_FP_ATTN_WEIGHT_TILE_LOAD_GLSLH
+#endif // SDPA_FP_ATTN_WEIGHT_TILE_STORE_GLSLH
