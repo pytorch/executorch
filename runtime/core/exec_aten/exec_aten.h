@@ -114,7 +114,7 @@ inline ssize_t compute_numel(const SizesType* sizes, ssize_t dim) {
       c10::multiply_integers(c10::ArrayRef<SizesType>(sizes, dim)));
 }
 
-ET_EXPERIMENTAL inline ::executorch::runtime::Result<ssize_t> safe_numel(
+inline ::executorch::runtime::Result<ssize_t> safe_numel(
     const SizesType* sizes,
     ssize_t dim) {
   ET_CHECK_OR_RETURN_ERROR(

@@ -296,12 +296,12 @@ ssize_t compute_numel(
     ssize_t dim);
 
 /**
- * EXPERIMENTAL. Compute the number of elements based on the sizes of a tensor.
+ * Compute the number of elements based on the sizes of a tensor.
  * Returns Error::InvalidArgument if any intermediate multiplication would
  * overflow ssize_t, or if a size is negative. Prefer this over compute_numel()
  * for paths that can propagate an Error upward.
  */
-ET_EXPERIMENTAL ::executorch::runtime::Result<ssize_t> safe_numel(
+::executorch::runtime::Result<ssize_t> safe_numel(
     const ::executorch::runtime::etensor::TensorImpl::SizesType* sizes,
     ssize_t dim);
 
