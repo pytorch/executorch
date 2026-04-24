@@ -37,6 +37,14 @@ DEFINE_string(
 DEFINE_double(temperature, 0.8, "Sampling temperature (0 = greedy).");
 DEFINE_int32(max_new_tokens, 128, "Maximum tokens to generate.");
 DEFINE_bool(cuda_graph, false, "Enable CUDA graph for decode method.");
+DEFINE_int64(
+    top_k,
+    -1,
+    "Top-k sampling cutoff (<=0 = no-op default of vocab_size, keeps all tokens).");
+DEFINE_double(
+    top_p,
+    1.0,
+    "Top-p (nucleus) sampling threshold. 1.0 = no-op (keeps full nucleus).");
 
 namespace llm = ::executorch::extension::llm;
 using ::executorch::extension::from_blob;
@@ -187,7 +195,7 @@ int main(int argc, char** argv) {
   stats.inference_start_ms = llm::time_in_ms();
 
   // ---------------------------------------------------------------
-  // Temperature tensor (shared between prefill and decode)
+  // Sampling tensors (shared between prefill and decode)
   // ---------------------------------------------------------------
   auto S = [](int64_t v) -> SizesType { return static_cast<SizesType>(v); };
 
@@ -197,6 +205,22 @@ int main(int argc, char** argv) {
       FLAGS_temperature <= 0.0 ? 1e-6f : static_cast<float>(FLAGS_temperature);
   auto temp_tensor =
       from_blob(&temp_val, {1}, executorch::aten::ScalarType::Float);
+
+  // top_k / top_p are 0-D scalar tensors matching the export-time signature
+  // (see examples/models/qwen3_5_moe/export.py). The default flag values
+  // (top_k = vocab_size, top_p = 1.0) are mathematical no-ops: the sort+
+  // scatter subgraph still runs (it was traced into the graph at export
+  // time), but produces all-False filter masks so logits pass through
+  // unchanged. Override at runtime to enable real filtering.
+  int64_t vocab_size = metadata.count(llm::kVocabSize)
+      ? metadata[llm::kVocabSize]
+      : static_cast<int64_t>(tokenizer->vocab_size());
+  int64_t top_k_val = (FLAGS_top_k <= 0) ? vocab_size : FLAGS_top_k;
+  float top_p_val = static_cast<float>(FLAGS_top_p);
+  auto top_k_tensor =
+      from_blob(&top_k_val, {}, executorch::aten::ScalarType::Long);
+  auto top_p_tensor =
+      from_blob(&top_p_val, {}, executorch::aten::ScalarType::Float);
 
   // ---------------------------------------------------------------
   // Prefill
@@ -228,6 +252,8 @@ int main(int argc, char** argv) {
   prefill_inputs.push_back(tokens_tensor);
   prefill_inputs.push_back(pos_tensor);
   prefill_inputs.push_back(temp_tensor);
+  prefill_inputs.push_back(top_k_tensor);
+  prefill_inputs.push_back(top_p_tensor);
 
   auto prefill_result = module->execute(run_method, prefill_inputs);
   if (prefill_result.error() != Error::Ok) {
@@ -276,6 +302,8 @@ int main(int argc, char** argv) {
     decode_inputs.push_back(EValue(decode_tokens));
     decode_inputs.push_back(EValue(decode_pos));
     decode_inputs.push_back(EValue(temp_tensor));
+    decode_inputs.push_back(EValue(top_k_tensor));
+    decode_inputs.push_back(EValue(top_p_tensor));
 
     auto decode_result = module->execute("decode", decode_inputs);
     if (decode_result.error() != Error::Ok) {
