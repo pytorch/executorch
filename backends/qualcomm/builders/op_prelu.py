@@ -8,7 +8,6 @@ from typing import Dict
 import executorch.backends.qualcomm.python.PyQnnManagerAdaptor as PyQnnManager
 
 import torch
-from executorch.backends.qualcomm.utils.constants import QCOM_AXIS_ORDER
 
 from .node_visitor import get_parameter, NodeVisitor
 from .node_visitor_manager import register_node_visitor
@@ -38,19 +37,8 @@ class PReLU(NodeVisitor):
         )
 
         coeff_node = self.get_node(node.args[1])
-        coeff = get_parameter(coeff_node, self.edge_program)
-        coeff_tensor = torch.zeros(input_node.meta["val"].shape, dtype=coeff.dtype)
-        # per-channel activation
-        coeff_node_shape = coeff_node.meta["val"].shape
-        if len(coeff_node_shape) and coeff_node_shape[0] > 1:
-            for i in range(input_node.meta["val"].shape[1]):
-                coeff_tensor = coeff_tensor.index_fill(1, torch.tensor([i]), coeff[i])
-        else:
-            coeff_tensor.fill_(coeff[0] if coeff.dim() else coeff)
-
-        if axis_order := input_node.meta.get(QCOM_AXIS_ORDER, None):
-            coeff_tensor = coeff_tensor.permute(dims=axis_order).contiguous()
-
+        coeff_tensor = get_parameter(coeff_node, self.edge_program)
+        # The coeff_tensor would be broadcasted to match the input shape by QNN
         coeff_tensor_wrapper = self.define_tensor(
             coeff_node,
             node,
