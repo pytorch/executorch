@@ -76,13 +76,13 @@ target_link_libraries(
 )
 target_compile_options(optimized_kernels PUBLIC ${_common_compile_options})
 
-# op_grid_sampler_2d.cpp uses ARMv8.2-a+fp16 NEON intrinsics
-# (vcvt_f32_f16 / vld1_f16) when compiled for aarch64. Scope the extra
-# `-march` flag to just that source so non-arm64 targets (e.g. x86_64 on
-# Android) are unaffected — the kernel itself has `#ifdef __aarch64__`
-# guards and falls through to the portable kernel otherwise.
-if(CMAKE_SYSTEM_PROCESSOR MATCHES "aarch64|arm64"
-   OR ANDROID_ABI STREQUAL "arm64-v8a"
+# op_grid_sampler_2d.cpp uses ARMv8.2-a+fp16 NEON intrinsics (vcvt_f32_f16 /
+# vld1_f16) when compiled for aarch64. Scope the extra `-march` flag to just
+# that source so non-arm64 targets (e.g. x86_64 on Android) are unaffected — the
+# kernel itself has `#ifdef __aarch64__` guards and falls through to the
+# portable kernel otherwise.
+if(CMAKE_SYSTEM_PROCESSOR MATCHES "aarch64|arm64" OR ANDROID_ABI STREQUAL
+                                                     "arm64-v8a"
 )
   set_source_files_properties(
     ${EXECUTORCH_ROOT}/kernels/optimized/cpu/op_grid_sampler_2d.cpp

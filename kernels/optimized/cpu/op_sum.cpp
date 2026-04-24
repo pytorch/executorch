@@ -66,8 +66,8 @@ inline void sum_innermost(
         acc = acc + Vec::loadu(tmp);
       }
     }
-    float sum = at::vec::vec_reduce_all<float>(
-        [](Vec a, Vec b) { return a + b; }, acc);
+    float sum =
+        at::vec::vec_reduce_all<float>([](Vec a, Vec b) { return a + b; }, acc);
     for (; j < reduce_size; ++j) {
       sum += static_cast<float>(row[j]);
     }
@@ -160,8 +160,7 @@ Tensor& opt_sum_dim_out(
   // Fast path: single reduction dim, matching dtype, non-complex, contiguous.
   // Anything else falls through to the portable kernel.
   const bool fast_eligible = dim_list.has_value() &&
-      dim_list.value().size() == 1 &&
-      in.scalar_type() == out.scalar_type() &&
+      dim_list.value().size() == 1 && in.scalar_type() == out.scalar_type() &&
       !executorch::runtime::isComplexType(in.scalar_type()) &&
       tensor_is_contiguous(in);
 

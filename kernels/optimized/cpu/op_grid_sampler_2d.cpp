@@ -95,20 +95,28 @@ inline void bilinear_all_channels_f32(
 
     float tl[4] = {0}, tr[4] = {0}, bl[4] = {0}, br[4] = {0};
     if (tl_v) {
-      tl[0] = p0[off_tl]; tl[1] = p1[off_tl];
-      tl[2] = p2[off_tl]; tl[3] = p3[off_tl];
+      tl[0] = p0[off_tl];
+      tl[1] = p1[off_tl];
+      tl[2] = p2[off_tl];
+      tl[3] = p3[off_tl];
     }
     if (tr_v) {
-      tr[0] = p0[off_tr]; tr[1] = p1[off_tr];
-      tr[2] = p2[off_tr]; tr[3] = p3[off_tr];
+      tr[0] = p0[off_tr];
+      tr[1] = p1[off_tr];
+      tr[2] = p2[off_tr];
+      tr[3] = p3[off_tr];
     }
     if (bl_v) {
-      bl[0] = p0[off_bl]; bl[1] = p1[off_bl];
-      bl[2] = p2[off_bl]; bl[3] = p3[off_bl];
+      bl[0] = p0[off_bl];
+      bl[1] = p1[off_bl];
+      bl[2] = p2[off_bl];
+      bl[3] = p3[off_bl];
     }
     if (br_v) {
-      br[0] = p0[off_br]; br[1] = p1[off_br];
-      br[2] = p2[off_br]; br[3] = p3[off_br];
+      br[0] = p0[off_br];
+      br[1] = p1[off_br];
+      br[2] = p2[off_br];
+      br[3] = p3[off_br];
     }
 
     float32x4_t result = vmulq_f32(vw_tl, vld1q_f32(tl));
@@ -132,10 +140,14 @@ inline void bilinear_all_channels_f32(
   for (; c < C; ++c) {
     const float* p = input_n + c * spatial_in;
     float v = 0.0f;
-    if (tl_v) v += w_tl * p[off_tl];
-    if (tr_v) v += w_tr * p[off_tr];
-    if (bl_v) v += w_bl * p[off_bl];
-    if (br_v) v += w_br * p[off_br];
+    if (tl_v)
+      v += w_tl * p[off_tl];
+    if (tr_v)
+      v += w_tr * p[off_tr];
+    if (bl_v)
+      v += w_bl * p[off_bl];
+    if (br_v)
+      v += w_br * p[off_br];
     output_n[c * spatial_out + out_off] = v;
   }
 }
@@ -191,20 +203,28 @@ inline void bilinear_all_channels_f16(
 
     __fp16 tl[4] = {0}, tr[4] = {0}, bl[4] = {0}, br[4] = {0};
     if (tl_v) {
-      tl[0] = p0[off_tl]; tl[1] = p1[off_tl];
-      tl[2] = p2[off_tl]; tl[3] = p3[off_tl];
+      tl[0] = p0[off_tl];
+      tl[1] = p1[off_tl];
+      tl[2] = p2[off_tl];
+      tl[3] = p3[off_tl];
     }
     if (tr_v) {
-      tr[0] = p0[off_tr]; tr[1] = p1[off_tr];
-      tr[2] = p2[off_tr]; tr[3] = p3[off_tr];
+      tr[0] = p0[off_tr];
+      tr[1] = p1[off_tr];
+      tr[2] = p2[off_tr];
+      tr[3] = p3[off_tr];
     }
     if (bl_v) {
-      bl[0] = p0[off_bl]; bl[1] = p1[off_bl];
-      bl[2] = p2[off_bl]; bl[3] = p3[off_bl];
+      bl[0] = p0[off_bl];
+      bl[1] = p1[off_bl];
+      bl[2] = p2[off_bl];
+      bl[3] = p3[off_bl];
     }
     if (br_v) {
-      br[0] = p0[off_br]; br[1] = p1[off_br];
-      br[2] = p2[off_br]; br[3] = p3[off_br];
+      br[0] = p0[off_br];
+      br[1] = p1[off_br];
+      br[2] = p2[off_br];
+      br[3] = p3[off_br];
     }
 
     const float32x4_t v_tl = vcvt_f32_f16(vld1_f16(tl));
@@ -232,10 +252,14 @@ inline void bilinear_all_channels_f16(
   for (; c < C; ++c) {
     const __fp16* p = input_n + c * spatial_in;
     float v = 0.0f;
-    if (tl_v) v += w_tl * static_cast<float>(p[off_tl]);
-    if (tr_v) v += w_tr * static_cast<float>(p[off_tr]);
-    if (bl_v) v += w_bl * static_cast<float>(p[off_bl]);
-    if (br_v) v += w_br * static_cast<float>(p[off_br]);
+    if (tl_v)
+      v += w_tl * static_cast<float>(p[off_tl]);
+    if (tr_v)
+      v += w_tr * static_cast<float>(p[off_tr]);
+    if (bl_v)
+      v += w_bl * static_cast<float>(p[off_bl]);
+    if (br_v)
+      v += w_br * static_cast<float>(p[off_br]);
     output_n[c * spatial_out + out_off] = static_cast<__fp16>(v);
   }
 }
@@ -276,8 +300,7 @@ void grid_sampler_2d_neon(
           gx = (gx + 1.0f) * W_in * 0.5f - 0.5f;
           gy = (gy + 1.0f) * H_in * 0.5f - 0.5f;
         }
-        sample_fn(
-            input_n, output_n, C, H_in, W_in, H_out, W_out, h, w, gx, gy);
+        sample_fn(input_n, output_n, C, H_in, W_in, H_out, W_out, h, w, gx, gy);
       }
     }
   }
@@ -299,10 +322,8 @@ Tensor& opt_grid_sampler_2d_out(
   // caller passes anything else, fall back to portable (which does handle
   // arbitrary strides and dim orders correctly). These are cheap checks.
   const bool fast_eligible = tensor_is_default_dim_order(input) &&
-      tensor_is_default_dim_order(grid) &&
-      tensor_is_default_dim_order(out) &&
-      tensor_is_contiguous(input) &&
-      tensor_is_contiguous(grid) &&
+      tensor_is_default_dim_order(grid) && tensor_is_default_dim_order(out) &&
+      tensor_is_contiguous(input) && tensor_is_contiguous(grid) &&
       tensor_is_contiguous(out);
 
   // Only the bilinear + zeros-padding combination is accelerated. Everything
@@ -327,7 +348,12 @@ Tensor& opt_grid_sampler_2d_out(
         input.const_data_ptr<float>(),
         grid.const_data_ptr<float>(),
         out.mutable_data_ptr<float>(),
-        N, C, H_in, W_in, H_out, W_out,
+        N,
+        C,
+        H_in,
+        W_in,
+        H_out,
+        W_out,
         align_corners,
         bilinear_all_channels_f32);
     return out;
@@ -338,7 +364,12 @@ Tensor& opt_grid_sampler_2d_out(
         reinterpret_cast<const __fp16*>(input.const_data_ptr<uint16_t>()),
         reinterpret_cast<const __fp16*>(grid.const_data_ptr<uint16_t>()),
         reinterpret_cast<__fp16*>(out.mutable_data_ptr<uint16_t>()),
-        N, C, H_in, W_in, H_out, W_out,
+        N,
+        C,
+        H_in,
+        W_in,
+        H_out,
+        W_out,
         align_corners,
         bilinear_all_channels_f16);
     return out;
