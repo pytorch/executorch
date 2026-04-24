@@ -175,6 +175,26 @@ bash examples/models/voxtral_tts/run_cuda_e2e.sh ~/models/Voxtral-4B-TTS-2603
 `es_male`, `fr_female`, `fr_male` (under `voice_embedding/` in the model
 directory).
 
+## License
+
+The ExecuTorch example code in this directory is licensed under the
+BSD-style license found in the repository root.
+
+The [Voxtral-4B-TTS-2603](https://huggingface.co/mistralai/Voxtral-4B-TTS-2603)
+model weights and bundled voice embeddings are licensed by Mistral AI under
+[CC BY-NC 4.0](https://creativecommons.org/licenses/by-nc/4.0/)
+(Creative Commons Attribution-NonCommercial 4.0 International). This means:
+
+- **Attribution required**: credit Mistral AI and the voice data sources
+  (EARS, CML-TTS, IndicVoices-R, Arabic Natural Audio datasets).
+- **NonCommercial only**: the model weights may not be used for commercial
+  purposes.
+
+The NC restriction originates from the voice reference datasets used to train
+the model. See the
+[model card](https://huggingface.co/mistralai/Voxtral-4B-TTS-2603) for
+full details.
+
 ## Troubleshooting
 
 - **`__cudaLaunch was not declared` during build**: `CPATH` is polluted with
