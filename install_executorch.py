@@ -195,7 +195,7 @@ def _parse_args() -> argparse.Namespace:
         help="Only installs necessary dependencies for core executorch and skips "
         " packages necessary for running example scripts.",
     )
-    allowed_optional_dependencies = ["ethos_u", "vgf", "openvino"]
+    allowed_optional_dependencies = ["cortex_m", "ethos_u", "vgf", "openvino"]
     parser.add_argument(
         "--optional-dependency",
         action="append",
@@ -230,7 +230,20 @@ def main(args):
     # Step 1: Install core dependencies first
     install_requirements(install_pinned_version)
 
-    # Step 2: Install core package
+    # Step 2: Install build dependencies for optional dependencies
+    # They need to be installed before optional dependencies due to --no-build-isolation
+    optional_build_dependencies: list[str] = []
+    for optional_dep in args.optional_dependency:
+        match optional_dep:
+            case "cortex_m":
+                optional_build_dependencies.extend(
+                    ["pybind11>=2.10", "scikit-build-core>=0.7"]
+                )
+    if len(optional_build_dependencies) > 0:
+        cmd = [sys.executable, "-m", "pip", "install", *optional_build_dependencies]
+        subprocess.run(cmd, check=True)
+
+    # Step 3: Install core package
     package_spec = "."
     if args.optional_dependency:
         extras = ",".join(dict.fromkeys(args.optional_dependency))
@@ -251,7 +264,7 @@ def main(args):
     )
     subprocess.run(cmd, check=True)
 
-    # Step 3: Extra (optional) packages that is only useful for running examples.
+    # Step 4: Extra (optional) packages that is only useful for running examples.
     if not args.minimal:
         install_optional_example_requirements(install_pinned_version)
 

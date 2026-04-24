@@ -1,0 +1,8 @@
+# Copyright 2026 Arm Limited and/or its affiliates.
+#
+# This source code is licensed under the BSD-style license found in the
+# LICENSE file in the root directory of this source tree.
+
+# These dependencies need to match pyproject.toml
+
+cmsis_nn @ git+https://github.com/ARM-software/CMSIS-NN.git@ba16fde665262d2ca3cc5074e1b4894461e06a2f
