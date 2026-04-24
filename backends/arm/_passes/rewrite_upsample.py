@@ -208,6 +208,7 @@ class RewriteUpsamplePass(ArmPass):
                     rescale_node = create_node(
                         graph_module.graph,
                         exir_ops.backend.tosa.RESCALE.default,
+                        from_node=node,
                     )
                     tosa_resize_node.replace_all_uses_with(rescale_node)
                     if input_dtype == torch.int16:
