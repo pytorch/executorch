@@ -31,6 +31,7 @@ from executorch.backends.cadence.aot.pass_utils import (
     HierarchicalInplacePassInterface,
     register_cadence_pass,
     RemoveOrReplacePassInterface,
+    set_arg,
 )
 from executorch.backends.cadence.aot.utils import get_edge_overload_packet
 from executorch.backends.transforms.fuse_cascaded_transpose_or_permute_ops import (
@@ -1105,6 +1106,64 @@ class FuseMeanKeepDimWithViewPass(RemoveOrReplacePassInterface):
         return True
 
 
+@register_cadence_pass(CadencePassAttribute(opt_level=0))
+class FuseSliceSameDimPass(RemoveOrReplacePassInterface):
+    """Bypass chained slices on the same dim by slicing directly from the source.
+
+    When a slice_copy is followed by another slice_copy on the same dimension
+    with step=1, the child can read directly from the parent's input with
+    merged indices, eliminating the intermediate slice.
+
+    Expects start/end values to be non-negative, which is guaranteed when
+    SimplifySliceOpPass runs first (as in CadenceSimplifyOpsInGraph).
+    """
+
+    @property
+    def targets(self) -> list[EdgeOpOverload]:
+        return [exir_ops.edge.aten.slice_copy.Tensor]
+
+    def maybe_remove_or_replace(self, node: torch.fx.Node) -> bool:
+        parent_input = get_arg(node, "input", torch.fx.Node)
+        parent_dim = get_arg(node, "dim", int)
+        parent_start = get_arg(node, "start", Optional[int])
+        parent_end = get_arg(node, "end", Optional[int])
+        parent_step = get_arg(node, "step", int)
+
+        if parent_step != 1 or parent_start is None or parent_end is None:
+            return False
+
+        input_shape = parent_input.meta["val"].shape
+
+        modified = False
+        for child in list(node.users):
+            if child.target != exir_ops.edge.aten.slice_copy.Tensor:
+                continue
+
+            child_dim = get_arg(child, "dim", int)
+            if child_dim != parent_dim:
+                continue
+
+            child_start = get_arg(child, "start", Optional[int])
+            child_end = get_arg(child, "end", Optional[int])
+            child_step = get_arg(child, "step", int)
+
+            if child_step != 1 or child_start is None or child_end is None:
+                continue
+
+            new_start = parent_start + child_start
+            new_end = min(parent_start + child_end, parent_end)
+
+            if new_end > input_shape[parent_dim]:
+                continue
+
+            child.replace_input_with(node, parent_input)
+            set_arg(child, "start", new_start)
+            set_arg(child, "end", new_end)
+            modified = True
+
+        return modified
+
+
 class HierarchicalCSEPass(HierarchicalInplacePassInterface):
     """
     A hierarchical Common Subexpression Elimination (CSE) pass that recursively
@@ -1138,4 +1197,5 @@ class CadenceFuseOpsInGraph:
         FuseFullThenReshapePass,
         FuseTransposeOrPermuteOpPairsPass,
         FuseMeanKeepDimWithViewPass,
+        FuseSliceSameDimPass,
     ]
