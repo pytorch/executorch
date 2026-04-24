@@ -631,8 +631,6 @@ class Qwen35MoE(nn.Module):
         tokens: torch.LongTensor,
         input_pos: torch.LongTensor,
         temperature: Optional[torch.Tensor] = None,
-        top_k: Optional[torch.Tensor] = None,
-        top_p: Optional[torch.Tensor] = None,
     ) -> torch.Tensor:
         x = self.embed_tokens(tokens)
         for layer in self.layers:
@@ -642,16 +640,17 @@ class Qwen35MoE(nn.Module):
         # logits so callers (eval, custom samplers) can inspect every
         # position. Otherwise apply the prefill optimization and only
         # materialize ``[B, V]`` for the last token.
-        if temperature is None and top_k is None and top_p is None:
-            return self.lm_head(x)
+        if temperature is None:
+            return self.lm_head(x).float()  # [B, T, V] float32
         logits = self.lm_head(x[:, -1, :]).float()  # [B, V] float32
         # GPU-side Gumbel-max sampling: argmax(logits/T + gumbel_noise) is
         # equivalent to drawing from softmax(logits/T) but stays entirely
-        # on-device.
+        # on-device. Algorithm reference:
+        # https://huggingface.co/blog/cxdu/fastsampling
         # TODO(gasoonjia): once the on-device sampling stack lands, promote
         # ``sample`` into a shared CUDA sampling utility reusable by other
-        # models.
-        return sample(logits, temperature, top_k, top_p)  # [B, 1]
+        # models, and add top-k / top-p filtering support.
+        return sample(logits, temperature)  # [B, 1]
 
     @staticmethod
     def from_hf_checkpoint(model_dir, max_seq_len=4096):
