@@ -40,29 +40,39 @@ class GroupNorm(torch.nn.Module):
 
 input_t = tuple[torch.Tensor]
 test_data_suite = {
-    "rand_4_6_groups_1": ((torch.rand(4, 6),), GroupNorm(1, 6)),
-    "rand_4_6_groups_2": ((torch.rand(4, 6),), GroupNorm(2, 6)),
-    "rand_4_6_groups_6": ((torch.rand(4, 6),), GroupNorm(6, 6)),
-    "rand_4_6_8_groups_2_eps_no_affine": (
+    "rand_4_6_groups_1": lambda: ((torch.rand(4, 6),), GroupNorm(1, 6)),
+    "rand_4_6_groups_2": lambda: ((torch.rand(4, 6),), GroupNorm(2, 6)),
+    "rand_4_6_groups_6": lambda: ((torch.rand(4, 6),), GroupNorm(6, 6)),
+    "rand_4_6_8_groups_2_eps_no_affine": lambda: (
         (torch.rand(4, 6, 8),),
         GroupNorm(2, 6, eps=1e-3, affine=False),
     ),
-    "randn_1_12_8_6_groups_6_eps": (
+    "randn_1_12_8_6_groups_6_eps": lambda: (
         (torch.randn(1, 12, 8, 6),),
         GroupNorm(6, 12, eps=1e-2),
     ),
-    "randn_1_12_8_6_groups_12": ((torch.randn(1, 12, 8, 6),), GroupNorm(12, 12)),
-    "rand_6_8_10_12_groups_1": ((torch.rand(6, 8, 10, 12),), GroupNorm(1, 8)),
-    "rand_6_8_10_12_groups_4_no_affine": (
+    "randn_1_12_8_6_groups_12": lambda: (
+        (torch.randn(1, 12, 8, 6),),
+        GroupNorm(12, 12),
+    ),
+    "rand_6_8_10_12_groups_1": lambda: (
+        (torch.rand(6, 8, 10, 12),),
+        GroupNorm(1, 8),
+    ),
+    "rand_6_8_10_12_groups_4_no_affine": lambda: (
         (torch.rand(6, 8, 10, 12),),
         GroupNorm(4, 8, affine=False),
     ),
-    "rand_6_8_10_12_groups_8": ((torch.rand(6, 8, 10, 12),), GroupNorm(8, 8)),
+    "rand_6_8_10_12_groups_8": lambda: (
+        (torch.rand(6, 8, 10, 12),),
+        GroupNorm(8, 8),
+    ),
 }
 
 
 @common.parametrize("test_data", test_data_suite)
 def test_native_group_norm_tosa_FP(test_data):
+    test_data = test_data()
     aten_op = "torch.ops.aten.group_norm.default"
     exir_op = "executorch_exir_dialects_edge__ops_aten_native_group_norm_default"
     pipeline = TosaPipelineFP[input_t](
@@ -79,6 +89,7 @@ def test_native_group_norm_tosa_FP(test_data):
     test_data_suite,
 )
 def test_native_group_norm_tosa_INT(test_data):
+    test_data = test_data()
     aten_op = "torch.ops.aten.sub.Tensor"  # 'sub' op arbitrarily chosen to confirm groupnorm was decomposed
     exir_op = "executorch_exir_dialects_edge__ops_aten_native_group_norm_default"
     pipeline = TosaPipelineINT[input_t](
@@ -97,6 +108,7 @@ def test_native_group_norm_tosa_INT(test_data):
 )
 @common.XfailIfNoCorstone300
 def test_native_group_norm_u55_INT(test_data):
+    test_data = test_data()
     pipeline = EthosU55PipelineINT[input_t](
         test_data[1],
         test_data[0],
@@ -113,6 +125,7 @@ def test_native_group_norm_u55_INT(test_data):
 )
 @common.XfailIfNoCorstone320
 def test_native_group_norm_u85_INT(test_data):
+    test_data = test_data()
     pipeline = EthosU85PipelineINT[input_t](
         test_data[1],
         test_data[0],
@@ -131,7 +144,7 @@ def test_native_group_norm_u85_INT(test_data):
 def test_native_group_norm_vgf_no_quant(test_data):
     aten_op = "torch.ops.aten.group_norm.default"
     exir_op = "executorch_exir_dialects_edge__ops_aten_native_group_norm_default"
-    model, inp = test_data
+    model, inp = test_data()
     pipeline = VgfPipeline[input_t](
         inp,
         model,
@@ -150,7 +163,7 @@ def test_native_group_norm_vgf_no_quant(test_data):
 def test_native_group_norm_vgf_quant(test_data):
     aten_op = "torch.ops.aten.sub.Tensor"
     exir_op = "executorch_exir_dialects_edge__ops_aten_native_group_norm_default"
-    model, inp = test_data
+    model, inp = test_data()
     pipeline = VgfPipeline[input_t](
         inp,
         model,
