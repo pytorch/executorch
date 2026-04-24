@@ -218,6 +218,12 @@ OPTIMIZED_ATEN_OPS = (
         ],
     ),
     op_target(
+        name = "op_grid_sampler_2d",
+        deps = [
+            "//executorch/kernels/portable/cpu:op_grid_sampler_2d",
+        ],
+    ),
+    op_target(
         name = "op_le",
         deps = [
             ":binary_ops",
@@ -280,6 +286,13 @@ OPTIMIZED_ATEN_OPS = (
             "//executorch/kernels/portable/cpu/util:dtype_util",
             "//executorch/kernels/portable/cpu/util:elementwise_util",
             "//executorch/runtime/core/portable_type/c10/c10:aten_headers_for_executorch",
+        ],
+    ),
+    op_target(
+        name = "op_sum",
+        deps = [
+            "//executorch/kernels/portable/cpu:op_sum",
+            "//executorch/kernels/portable/cpu/util:reduce_util",
         ],
     ),
     op_target(
