@@ -770,10 +770,23 @@ def _export_cuda(model, config, args):
     decode_tokens = torch.tensor([[0]], dtype=torch.long)
     decode_pos = torch.tensor([0], dtype=torch.long)
     decode_temperature = torch.tensor([1.0], dtype=torch.float32)
+    # top_k / top_p are runtime scalar tensors (parallel to temperature) so
+    # the same .pte can be re-driven with different sampling configurations
+    # without re-export. Default examples are no-op values: top_k=V (keep
+    # all tokens), top_p=1.0 (keep full nucleus). Callers override them at
+    # runtime by binding different scalar tensors.
+    decode_top_k = torch.tensor(config.vocab_size, dtype=torch.int64)
+    decode_top_p = torch.tensor(1.0, dtype=torch.float32)
     with torch.no_grad():
         decode_ep = export(
             model,
-            (decode_tokens, decode_pos, decode_temperature),
+            (
+                decode_tokens,
+                decode_pos,
+                decode_temperature,
+                decode_top_k,
+                decode_top_p,
+            ),
             strict=True,
         )
     print("Decode export successful!")
@@ -790,16 +803,26 @@ def _export_cuda(model, config, args):
     prefill_tokens = torch.zeros((1, example_prefill_len), dtype=torch.long)
     prefill_pos = torch.arange(example_prefill_len, dtype=torch.long)
     prefill_temperature = torch.tensor([1.0], dtype=torch.float32)
+    prefill_top_k = torch.tensor(config.vocab_size, dtype=torch.int64)
+    prefill_top_p = torch.tensor(1.0, dtype=torch.float32)
     seq_dim = Dim("seq_len", min=2, max=config.max_seq_len - 1)
     prefill_dynamic_shapes = (
         {1: seq_dim},  # tokens
         {0: seq_dim},  # input_pos
-        None,  # temperature (static scalar)
+        None,  # temperature (static scalar tensor)
+        None,  # top_k (static scalar tensor — runtime-bindable)
+        None,  # top_p (static scalar tensor — runtime-bindable)
     )
     with torch.no_grad():
         prefill_ep = export(
             model,
-            (prefill_tokens, prefill_pos, prefill_temperature),
+            (
+                prefill_tokens,
+                prefill_pos,
+                prefill_temperature,
+                prefill_top_k,
+                prefill_top_p,
+            ),
             dynamic_shapes=prefill_dynamic_shapes,
             strict=True,
         )

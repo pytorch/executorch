@@ -59,7 +59,15 @@ static uint64_t read_token(const executorch::aten::Tensor& output) {
 
   float val;
   if (on_device) {
-    cudaMemcpy(&val, ptr, sizeof(float), cudaMemcpyDeviceToHost);
+    cudaError_t err =
+        cudaMemcpy(&val, ptr, sizeof(float), cudaMemcpyDeviceToHost);
+    if (err != cudaSuccess) {
+      ET_LOG(
+          Error,
+          "read_token: cudaMemcpy D2H failed: %s",
+          cudaGetErrorString(err));
+      return 0;
+    }
   } else {
     memcpy(&val, ptr, sizeof(float));
   }

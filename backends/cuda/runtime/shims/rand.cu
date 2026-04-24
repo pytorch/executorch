@@ -19,6 +19,7 @@
 
 #include <cstdint>
 #include <ctime>
+#include <mutex>
 #include <vector>
 
 namespace executorch::backends::cuda {
@@ -43,51 +44,49 @@ namespace {
 struct RngState {
   unsigned long long seed;
   unsigned long long counter;
+  // Per-launch scratch — written by advance_counter_kernel and read by
+  // the main RNG kernels. Single-threaded host driver is assumed
+  // (typical inference / CUDA-graph replay use case).
+  unsigned long long base_scratch;
 };
 
 static RngState* d_rng = nullptr;
-static bool g_rng_init_done = false;
+// std::call_once guarantees one-shot initialization even when shims are
+// invoked from multiple host threads (e.g. concurrent models / streams).
+static std::once_flag g_rng_init_flag;
 
 // Initialize RNG state on the given stream.
-// Must be called during warmup (before graph capture).
+// Must be called during warmup (before graph capture). Subsequent calls
+// from any thread are no-ops thanks to std::call_once.
 void ensure_rng_init(cudaStream_t stream) {
-  if (!g_rng_init_done) {
+  std::call_once(g_rng_init_flag, [&]() {
     cudaMallocAsync(&d_rng, sizeof(RngState), stream);
     RngState h;
     h.seed = static_cast<unsigned long long>(time(nullptr));
     h.counter = 0;
+    h.base_scratch = 0;
     cudaMemcpyAsync(
         d_rng, &h, sizeof(RngState), cudaMemcpyHostToDevice, stream);
     // Synchronize to ensure the copy completes before we return
     // (the host-side RngState `h` is on the stack).
     cudaStreamSynchronize(stream);
-    g_rng_init_done = true;
-  }
+  });
 }
 
-// Philox-based randint kernel that reads seed from device-resident state
-// and atomically advances the counter. The counter pointer survives CUDA
-// graph replay, so each replay produces different values.
+// Philox-based randint kernel. Reads its base offset from `rng->base_scratch`
+// (populated by `advance_counter_kernel` immediately before this launch).
+// This replaces the previous per-element atomicAdd contention with a single
+// atomic per kernel launch.
 __global__ void philox_randint_graph_kernel(
     int64_t* __restrict__ out,
     int64_t numel,
     int64_t low,
     int64_t range,
     RngState* __restrict__ rng) {
-  // Each thread reads the seed and computes its unique offset.
-  // The "base offset" is read from rng->counter. We can't atomicAdd per
-  // thread, so we use a two-pass approach: first a single-thread kernel
-  // advances the counter, then the main kernel uses the old value.
-  // But that requires two kernel launches...
-  //
-  // Simpler: since numel=1 for randint seed generation, just one thread.
   int64_t idx = static_cast<int64_t>(blockIdx.x) * blockDim.x + threadIdx.x;
   if (idx < numel) {
-    // Each invocation atomically grabs `numel` slots from the counter.
-    // For numel=1, this is just one atomicAdd.
-    unsigned long long my_offset = atomicAdd(&rng->counter, 1ULL);
     curandStatePhilox4_32_10_t state;
-    curand_init(rng->seed, idx, my_offset, &state);
+    curand_init(rng->seed, idx, rng->base_scratch, &state);
     double val = curand_uniform_double(&state);
     int64_t ival = static_cast<int64_t>(val * range);
     out[idx] = low + (ival >= range ? range - 1 : ival);
@@ -101,9 +100,8 @@ __global__ void philox_rand_float_graph_kernel(
     RngState* __restrict__ rng) {
   int64_t idx = static_cast<int64_t>(blockIdx.x) * blockDim.x + threadIdx.x;
   if (idx < numel) {
-    unsigned long long my_offset = atomicAdd(&rng->counter, 1ULL);
     curandStatePhilox4_32_10_t state;
-    curand_init(rng->seed, idx, my_offset, &state);
+    curand_init(rng->seed, idx, rng->base_scratch, &state);
     out[idx] = curand_uniform(&state);
   }
 }
@@ -115,15 +113,26 @@ __global__ void philox_rand_bf16_graph_kernel(
     RngState* __restrict__ rng) {
   int64_t idx = static_cast<int64_t>(blockIdx.x) * blockDim.x + threadIdx.x;
   if (idx < numel) {
-    unsigned long long my_offset = atomicAdd(&rng->counter, 1ULL);
     curandStatePhilox4_32_10_t state;
-    curand_init(rng->seed, idx, my_offset, &state);
+    curand_init(rng->seed, idx, rng->base_scratch, &state);
     float val = curand_uniform(&state);
     uint32_t bits;
     memcpy(&bits, &val, sizeof(uint32_t));
     uint32_t lsb = (bits >> 16) & 1;
     bits += 0x7FFFu + lsb;
     out[idx] = static_cast<uint16_t>(bits >> 16);
+  }
+}
+
+// Single-thread helper that grabs a contiguous range of `numel` offsets
+// from the on-device counter and writes the base into `rng->base_scratch`.
+// Replaces `numel` per-element atomics with a single atomic per launch
+// while staying graph-capturable.
+__global__ void advance_counter_kernel(
+    RngState* __restrict__ rng,
+    unsigned long long numel) {
+  if (blockIdx.x == 0 && threadIdx.x == 0) {
+    rng->base_scratch = atomicAdd(&rng->counter, numel);
   }
 }
 
@@ -188,6 +197,12 @@ AOTITorchError aoti_torch_cuda_rand(
   constexpr int kThreads = 256;
   int blocks = static_cast<int>((numel + kThreads - 1) / kThreads);
 
+  // Single atomicAdd per launch — grabs `numel` consecutive counter slots
+  // for the kernel below, eliminating per-element contention on the GPU
+  // counter.
+  advance_counter_kernel<<<1, 1, 0, stream>>>(
+      d_rng, static_cast<unsigned long long>(numel));
+
   if (scalar_type == ScalarType::Float) {
     philox_rand_float_graph_kernel<<<blocks, kThreads, 0, stream>>>(
         static_cast<float*>((*ret0)->data_ptr()), numel, d_rng);
@@ -244,6 +259,9 @@ AOTITorchError aoti_torch_cuda_randint_low_out(
 
   constexpr int kThreads = 256;
   int blocks = static_cast<int>((numel + kThreads - 1) / kThreads);
+  // One atomicAdd per launch; subsequent kernel reads `rng->base_scratch`.
+  advance_counter_kernel<<<1, 1, 0, stream>>>(
+      d_rng, static_cast<unsigned long long>(numel));
   philox_randint_graph_kernel<<<blocks, kThreads, 0, stream>>>(
       out_data, numel, low, range, d_rng);
 

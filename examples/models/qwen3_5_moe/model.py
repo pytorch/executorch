@@ -17,10 +17,12 @@ import json
 import os
 import re
 from dataclasses import dataclass, field
+from typing import Optional
 
 import torch
 import torch.nn as nn
 
+from executorch.examples.models.qwen3_5_moe.sampler import sample
 from torch.nn import functional as F
 
 
@@ -608,6 +610,10 @@ class Block(nn.Module):
         return x
 
 
+# ---------------------------------------------------------------------------
+# Top-level model
+
+
 class Qwen35MoE(nn.Module):
 
     def __init__(self, config):
@@ -624,21 +630,28 @@ class Qwen35MoE(nn.Module):
         self,
         tokens: torch.LongTensor,
         input_pos: torch.LongTensor,
-        temperature: torch.Tensor,
+        temperature: Optional[torch.Tensor] = None,
+        top_k: Optional[torch.Tensor] = None,
+        top_p: Optional[torch.Tensor] = None,
     ) -> torch.Tensor:
         x = self.embed_tokens(tokens)
         for layer in self.layers:
             x = layer(x, input_pos)
         x = self.norm(x)
-        # Only compute logits for the last token position — avoids
-        # materializing the full [B, T, V] tensor during prefill.
+        # When no sampling is requested, return the full ``[B, T, V]``
+        # logits so callers (eval, custom samplers) can inspect every
+        # position. Otherwise apply the prefill optimization and only
+        # materialize ``[B, V]`` for the last token.
+        if temperature is None and top_k is None and top_p is None:
+            return self.lm_head(x)
         logits = self.lm_head(x[:, -1, :]).float()  # [B, V] float32
-        # GPU-side Gumbel-max sampling: argmax(logits/T + gumbel_noise)
-        # Equivalent to sampling from softmax(logits/T) but fully on-device.
-        logits = logits / temperature.clamp(min=1e-6)
-        noise = torch.rand_like(logits)
-        gumbel = -torch.log(-torch.log(noise + 1e-20) + 1e-20)
-        return (logits + gumbel).argmax(dim=-1, keepdim=True).float()  # [B, 1]
+        # GPU-side Gumbel-max sampling: argmax(logits/T + gumbel_noise) is
+        # equivalent to drawing from softmax(logits/T) but stays entirely
+        # on-device.
+        # TODO(gasoonjia): once the on-device sampling stack lands, promote
+        # ``sample`` into a shared CUDA sampling utility reusable by other
+        # models.
+        return sample(logits, temperature, top_k, top_p)  # [B, 1]
 
     @staticmethod
     def from_hf_checkpoint(model_dir, max_seq_len=4096):
