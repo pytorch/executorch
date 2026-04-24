@@ -11,7 +11,6 @@
 #include <executorch/runtime/core/exec_aten/util/scalar_type_util.h>
 #include <executorch/runtime/kernel/kernel_includes.h>
 #include <executorch/backends/cadence/vision/operators/layer_configs.h>
-#include <stdio.h>
 
 // Forward declaration of conv_execute_kernel (defined in conv_kernel_dispatcher.c)
 extern "C" {
@@ -240,27 +239,6 @@ void quantized_conv2d_nchw(
   ScalarType dtype = out.scalar_type();
   switch (dtype) {
     case ScalarType::Char: {
-#if CADENCE_CONV2D_GENERIC
-      conv2d_nchw_core_generic<int8_t, int8_t, int32_t, int8_t, true>(
-          input.const_data_ptr<int8_t>(),
-          weight.const_data_ptr<int8_t>(),
-          bias.const_data_ptr<int32_t>(),
-          out.mutable_data_ptr<int8_t>(),
-          n, c, h, w,
-          oc, wc, wh, ww,
-          oh, ow,
-          stride[0], stride[1],
-          padding[0], padding[1],
-          dilation[0], dilation[1],
-          groups,
-          in_zero_point,
-          weight_zero_point,
-          bias_scale,
-          output_scale,
-          (int8_t)output_zero_point);
-      break;
-#endif
-
       const conv_layer_config_t* config_const = get_layer_config_by_params(
           c, h, w,              // ic, ih, iw
           oc, wh, ww,           // oc, kh, kw
@@ -287,9 +265,6 @@ void quantized_conv2d_nchw(
       }
 
       if(config != NULL) {
-        printf("CONV_PATH : HW-OPT : ic=%d ih=%d iw=%d oc=%d kh=%d kw=%d oh=%d ow=%d s=%d,%d p=%d d=%d : %s\n",
-               c, h, w, oc, wh, ww, oh, ow, stride[0], stride[1], padding[0], dilation[0],
-               config->layer_name ? config->layer_name : "?");
         config->input_zero_point = static_cast<int>(in_zero_point);
 
         // Disable in-kernel ReLU — ExecuTorch applies ReLU as a separate op.
@@ -418,10 +393,7 @@ void quantized_conv2d_nchw(
             const_cast<int8_t*>(weight.const_data_ptr<int8_t>()),
             reinterpret_cast<int8_t*>(kernel_bias),
             config);
-        if (kern_status != 0) {
-          printf("*** conv_execute_kernel FAILED for %s: status=%d ***\n",
-                 config->layer_name ? config->layer_name : "?", (int)kern_status);
-        }
+        (void)kern_status;
 
         // Invalidate cache for DMA-written output so post-correction
         // and next operator see fresh data instead of stale cache lines
@@ -446,8 +418,6 @@ void quantized_conv2d_nchw(
         break;
       }
       // Fall through to generic implementation
-      printf("CONV_PATH : GENERIC : ic=%d ih=%d iw=%d oc=%d kh=%d kw=%d oh=%d ow=%d s=%d,%d p=%d d=%d\n",
-             c, h, w, oc, wh, ww, oh, ow, stride[0], stride[1], padding[0], dilation[0]);
       conv2d_nchw_core_generic<int8_t, int8_t, int32_t, int8_t, true>(
           input.const_data_ptr<int8_t>(),
           weight.const_data_ptr<int8_t>(),

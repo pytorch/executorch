@@ -1,0 +1,383 @@
+PERF_LOG : quantize_asym8s : 12288 : elements (HW-optimized, no DMA) : 3910 : cycles : 3.14 : elements (HW-optimized, no DMA)/cycle : 0.32 : cycles/elements (HW-optimized, no DMA)
+CONV_PATH : HW-OPT : ic=3 ih=64 iw=64 oc=64 kh=7 kw=7 oh=32 ow=32 s=-387389208,2 p=0 d=2 : 
+CONV_DISPATCH : No-DMA : 7x7j2d1_no_dma
+PERF_LOG : conv2d : 12288 : elements : 218404 : cycles : 0.06 : elements/cycle : 17.77 : cycles/elements
+PERF_LOG : quantized_relu : 65536 : elements (HW-optimized, no DMA) : 20299 : cycles : 3.23 : elements (HW-optimized, no DMA)/cycle : 0.31 : cycles/elements (HW-optimized, no DMA)
+PERF_LOG : dequantize_asym8s : 65536 : elements (HW-optimized, no DMA) : 16008 : cycles : 4.09 : elements (HW-optimized, no DMA)/cycle : 0.24 : cycles/elements (HW-optimized, no DMA)
+PERF_LOG : maxpool : 65536 : floats : 143662 : cycles : 0.46 : floats/cycle : 2.19 : cycles/floats
+PERF_LOG : quantize_asym8s : 16384 : elements (HW-optimized, no DMA) : 5158 : cycles : 3.18 : elements (HW-optimized, no DMA)/cycle : 0.31 : cycles/elements (HW-optimized, no DMA)
+CONV_PATH : HW-OPT : ic=64 ih=16 iw=16 oc=256 kh=1 kw=1 oh=16 ow=16 s=-387389208,1 p=0 d=1 : 
+CONV_DISPATCH : No-DMA : 1x1j1d1_no_dma
+PERF_LOG : conv2d : 16384 : elements : 317756 : cycles : 0.05 : elements/cycle : 19.39 : cycles/elements
+CONV_PATH : HW-OPT : ic=64 ih=16 iw=16 oc=64 kh=1 kw=1 oh=16 ow=16 s=-387389208,1 p=0 d=1 : 
+CONV_DISPATCH : No-DMA : 1x1j1d1_no_dma
+PERF_LOG : conv2d : 16384 : elements : 135471 : cycles : 0.12 : elements/cycle : 8.27 : cycles/elements
+PERF_LOG : quantized_relu : 16384 : elements (HW-optimized, no DMA) : 5323 : cycles : 3.08 : elements (HW-optimized, no DMA)/cycle : 0.32 : cycles/elements (HW-optimized, no DMA)
+CONV_PATH : HW-OPT : ic=64 ih=16 iw=16 oc=64 kh=3 kw=3 oh=16 ow=16 s=-387389208,1 p=0 d=1 : 
+CONV_DISPATCH : No-DMA : 3x3j1d1_no_dma
+PERF_LOG : conv2d : 16384 : elements : 406872 : cycles : 0.04 : elements/cycle : 24.83 : cycles/elements
+PERF_LOG : quantized_relu : 16384 : elements (HW-optimized, no DMA) : 5323 : cycles : 3.08 : elements (HW-optimized, no DMA)/cycle : 0.32 : cycles/elements (HW-optimized, no DMA)
+CONV_PATH : HW-OPT : ic=64 ih=16 iw=16 oc=256 kh=1 kw=1 oh=16 ow=16 s=-387389208,1 p=0 d=1 : 
+CONV_DISPATCH : No-DMA : 1x1j1d1_no_dma
+PERF_LOG : conv2d : 16384 : elements : 317741 : cycles : 0.05 : elements/cycle : 19.39 : cycles/elements
+PERF_LOG : dequantize_asym8s : 65536 : elements (HW-optimized, no DMA) : 16008 : cycles : 4.09 : elements (HW-optimized, no DMA)/cycle : 0.24 : cycles/elements (HW-optimized, no DMA)
+PERF_LOG : dequantize_asym8s : 65536 : elements (HW-optimized, no DMA) : 16008 : cycles : 4.09 : elements (HW-optimized, no DMA)/cycle : 0.24 : cycles/elements (HW-optimized, no DMA)
+PERF_LOG : add_float : 65536 : elements (HW-optimized, no DMA) : 28767 : cycles : 2.28 : elements (HW-optimized, no DMA)/cycle : 0.44 : cycles/elements (HW-optimized, no DMA)
+PERF_LOG : quantize_asym8s : 65536 : elements (HW-optimized, no DMA) : 20134 : cycles : 3.25 : elements (HW-optimized, no DMA)/cycle : 0.31 : cycles/elements (HW-optimized, no DMA)
+PERF_LOG : quantized_relu : 65536 : elements (HW-optimized, no DMA) : 20299 : cycles : 3.23 : elements (HW-optimized, no DMA)/cycle : 0.31 : cycles/elements (HW-optimized, no DMA)
+CONV_PATH : HW-OPT : ic=256 ih=16 iw=16 oc=64 kh=1 kw=1 oh=16 ow=16 s=-387389208,1 p=0 d=1 : 
+CONV_DISPATCH : No-DMA : 1x1j1d1_no_dma
+PERF_LOG : conv2d : 65536 : elements : 327826 : cycles : 0.20 : elements/cycle : 5.00 : cycles/elements
+PERF_LOG : quantized_relu : 16384 : elements (HW-optimized, no DMA) : 5323 : cycles : 3.08 : elements (HW-optimized, no DMA)/cycle : 0.32 : cycles/elements (HW-optimized, no DMA)
+CONV_PATH : HW-OPT : ic=64 ih=16 iw=16 oc=64 kh=3 kw=3 oh=16 ow=16 s=-387389208,1 p=0 d=1 : 
+CONV_DISPATCH : No-DMA : 3x3j1d1_no_dma
+PERF_LOG : conv2d : 16384 : elements : 406876 : cycles : 0.04 : elements/cycle : 24.83 : cycles/elements
+PERF_LOG : quantized_relu : 16384 : elements (HW-optimized, no DMA) : 5323 : cycles : 3.08 : elements (HW-optimized, no DMA)/cycle : 0.32 : cycles/elements (HW-optimized, no DMA)
+CONV_PATH : HW-OPT : ic=64 ih=16 iw=16 oc=256 kh=1 kw=1 oh=16 ow=16 s=-387389208,1 p=0 d=1 : 
+CONV_DISPATCH : No-DMA : 1x1j1d1_no_dma
+PERF_LOG : conv2d : 16384 : elements : 317673 : cycles : 0.05 : elements/cycle : 19.39 : cycles/elements
+PERF_LOG : dequantize_asym8s : 65536 : elements (HW-optimized, no DMA) : 16008 : cycles : 4.09 : elements (HW-optimized, no DMA)/cycle : 0.24 : cycles/elements (HW-optimized, no DMA)
+PERF_LOG : dequantize_asym8s : 65536 : elements (HW-optimized, no DMA) : 16008 : cycles : 4.09 : elements (HW-optimized, no DMA)/cycle : 0.24 : cycles/elements (HW-optimized, no DMA)
+PERF_LOG : add_float : 65536 : elements (HW-optimized, no DMA) : 28767 : cycles : 2.28 : elements (HW-optimized, no DMA)/cycle : 0.44 : cycles/elements (HW-optimized, no DMA)
+PERF_LOG : quantize_asym8s : 65536 : elements (HW-optimized, no DMA) : 20134 : cycles : 3.25 : elements (HW-optimized, no DMA)/cycle : 0.31 : cycles/elements (HW-optimized, no DMA)
+PERF_LOG : quantized_relu : 65536 : elements (HW-optimized, no DMA) : 20299 : cycles : 3.23 : elements (HW-optimized, no DMA)/cycle : 0.31 : cycles/elements (HW-optimized, no DMA)
+CONV_PATH : HW-OPT : ic=256 ih=16 iw=16 oc=64 kh=1 kw=1 oh=16 ow=16 s=-387389208,1 p=0 d=1 : 
+CONV_DISPATCH : No-DMA : 1x1j1d1_no_dma
+PERF_LOG : conv2d : 65536 : elements : 327831 : cycles : 0.20 : elements/cycle : 5.00 : cycles/elements
+PERF_LOG : quantized_relu : 16384 : elements (HW-optimized, no DMA) : 5323 : cycles : 3.08 : elements (HW-optimized, no DMA)/cycle : 0.32 : cycles/elements (HW-optimized, no DMA)
+CONV_PATH : HW-OPT : ic=64 ih=16 iw=16 oc=64 kh=3 kw=3 oh=16 ow=16 s=-387389208,1 p=0 d=1 : 
+CONV_DISPATCH : No-DMA : 3x3j1d1_no_dma
+PERF_LOG : conv2d : 16384 : elements : 406873 : cycles : 0.04 : elements/cycle : 24.83 : cycles/elements
+PERF_LOG : quantized_relu : 16384 : elements (HW-optimized, no DMA) : 5323 : cycles : 3.08 : elements (HW-optimized, no DMA)/cycle : 0.32 : cycles/elements (HW-optimized, no DMA)
+CONV_PATH : HW-OPT : ic=64 ih=16 iw=16 oc=256 kh=1 kw=1 oh=16 ow=16 s=-387389208,1 p=0 d=1 : 
+CONV_DISPATCH : No-DMA : 1x1j1d1_no_dma
+PERF_LOG : conv2d : 16384 : elements : 317743 : cycles : 0.05 : elements/cycle : 19.39 : cycles/elements
+PERF_LOG : dequantize_asym8s : 65536 : elements (HW-optimized, no DMA) : 16008 : cycles : 4.09 : elements (HW-optimized, no DMA)/cycle : 0.24 : cycles/elements (HW-optimized, no DMA)
+PERF_LOG : dequantize_asym8s : 65536 : elements (HW-optimized, no DMA) : 16008 : cycles : 4.09 : elements (HW-optimized, no DMA)/cycle : 0.24 : cycles/elements (HW-optimized, no DMA)
+PERF_LOG : add_float : 65536 : elements (HW-optimized, no DMA) : 28767 : cycles : 2.28 : elements (HW-optimized, no DMA)/cycle : 0.44 : cycles/elements (HW-optimized, no DMA)
+PERF_LOG : quantize_asym8s : 65536 : elements (HW-optimized, no DMA) : 20134 : cycles : 3.25 : elements (HW-optimized, no DMA)/cycle : 0.31 : cycles/elements (HW-optimized, no DMA)
+PERF_LOG : quantized_relu : 65536 : elements (HW-optimized, no DMA) : 20299 : cycles : 3.23 : elements (HW-optimized, no DMA)/cycle : 0.31 : cycles/elements (HW-optimized, no DMA)
+CONV_PATH : HW-OPT : ic=256 ih=16 iw=16 oc=512 kh=1 kw=1 oh=8 ow=8 s=-387389208,2 p=0 d=2 : 
+CONV_DISPATCH : No-DMA : 1x1j2d1_no_dma
+PERF_LOG : conv2d : 65536 : elements : 964722 : cycles : 0.07 : elements/cycle : 14.72 : cycles/elements
+CONV_PATH : HW-OPT : ic=256 ih=16 iw=16 oc=128 kh=1 kw=1 oh=16 ow=16 s=-387389208,1 p=0 d=1 : 
+CONV_DISPATCH : No-DMA : 1x1j1d1_no_dma
+PERF_LOG : conv2d : 65536 : elements : 477656 : cycles : 0.14 : elements/cycle : 7.29 : cycles/elements
+PERF_LOG : quantized_relu : 32768 : elements (HW-optimized, no DMA) : 10315 : cycles : 3.18 : elements (HW-optimized, no DMA)/cycle : 0.31 : cycles/elements (HW-optimized, no DMA)
+CONV_PATH : HW-OPT : ic=128 ih=16 iw=16 oc=128 kh=3 kw=3 oh=8 ow=8 s=-387389208,2 p=0 d=2 : 
+CONV_DISPATCH : No-DMA : 3x3j2d1_no_dma
+PERF_LOG : conv2d : 32768 : elements : 853274 : cycles : 0.04 : elements/cycle : 26.04 : cycles/elements
+PERF_LOG : quantized_relu : 8192 : elements (HW-optimized, no DMA) : 2827 : cycles : 2.90 : elements (HW-optimized, no DMA)/cycle : 0.35 : cycles/elements (HW-optimized, no DMA)
+CONV_PATH : HW-OPT : ic=128 ih=8 iw=8 oc=512 kh=1 kw=1 oh=8 ow=8 s=-387389208,1 p=0 d=1 : 
+CONV_DISPATCH : No-DMA : 1x1j1d1_no_dma
+PERF_LOG : conv2d : 8192 : elements : 552664 : cycles : 0.01 : elements/cycle : 67.46 : cycles/elements
+PERF_LOG : dequantize_asym8s : 32768 : elements (HW-optimized, no DMA) : 8072 : cycles : 4.06 : elements (HW-optimized, no DMA)/cycle : 0.25 : cycles/elements (HW-optimized, no DMA)
+PERF_LOG : dequantize_asym8s : 32768 : elements (HW-optimized, no DMA) : 8072 : cycles : 4.06 : elements (HW-optimized, no DMA)/cycle : 0.25 : cycles/elements (HW-optimized, no DMA)
+PERF_LOG : add_float : 32768 : elements (HW-optimized, no DMA) : 14431 : cycles : 2.27 : elements (HW-optimized, no DMA)/cycle : 0.44 : cycles/elements (HW-optimized, no DMA)
+PERF_LOG : quantize_asym8s : 32768 : elements (HW-optimized, no DMA) : 10150 : cycles : 3.23 : elements (HW-optimized, no DMA)/cycle : 0.31 : cycles/elements (HW-optimized, no DMA)
+PERF_LOG : quantized_relu : 32768 : elements (HW-optimized, no DMA) : 10315 : cycles : 3.18 : elements (HW-optimized, no DMA)/cycle : 0.31 : cycles/elements (HW-optimized, no DMA)
+CONV_PATH : HW-OPT : ic=512 ih=8 iw=8 oc=128 kh=1 kw=1 oh=8 ow=8 s=-387389208,1 p=0 d=1 : 
+CONV_DISPATCH : No-DMA : 1x1j1d1_no_dma
+PERF_LOG : conv2d : 32768 : elements : 559450 : cycles : 0.06 : elements/cycle : 17.07 : cycles/elements
+PERF_LOG : quantized_relu : 8192 : elements (HW-optimized, no DMA) : 2827 : cycles : 2.90 : elements (HW-optimized, no DMA)/cycle : 0.35 : cycles/elements (HW-optimized, no DMA)
+CONV_PATH : HW-OPT : ic=128 ih=8 iw=8 oc=128 kh=3 kw=3 oh=8 ow=8 s=-387389208,1 p=0 d=1 : 
+CONV_DISPATCH : No-DMA : 3x3j1d1_no_dma
+PERF_LOG : conv2d : 8192 : elements : 943862 : cycles : 0.01 : elements/cycle : 115.22 : cycles/elements
+PERF_LOG : quantized_relu : 8192 : elements (HW-optimized, no DMA) : 2827 : cycles : 2.90 : elements (HW-optimized, no DMA)/cycle : 0.35 : cycles/elements (HW-optimized, no DMA)
+CONV_PATH : HW-OPT : ic=128 ih=8 iw=8 oc=512 kh=1 kw=1 oh=8 ow=8 s=-387389208,1 p=0 d=1 : 
+CONV_DISPATCH : No-DMA : 1x1j1d1_no_dma
+PERF_LOG : conv2d : 8192 : elements : 552807 : cycles : 0.01 : elements/cycle : 67.48 : cycles/elements
+PERF_LOG : dequantize_asym8s : 32768 : elements (HW-optimized, no DMA) : 8072 : cycles : 4.06 : elements (HW-optimized, no DMA)/cycle : 0.25 : cycles/elements (HW-optimized, no DMA)
+PERF_LOG : dequantize_asym8s : 32768 : elements (HW-optimized, no DMA) : 8072 : cycles : 4.06 : elements (HW-optimized, no DMA)/cycle : 0.25 : cycles/elements (HW-optimized, no DMA)
+PERF_LOG : add_float : 32768 : elements (HW-optimized, no DMA) : 14431 : cycles : 2.27 : elements (HW-optimized, no DMA)/cycle : 0.44 : cycles/elements (HW-optimized, no DMA)
+PERF_LOG : quantize_asym8s : 32768 : elements (HW-optimized, no DMA) : 10150 : cycles : 3.23 : elements (HW-optimized, no DMA)/cycle : 0.31 : cycles/elements (HW-optimized, no DMA)
+PERF_LOG : quantized_relu : 32768 : elements (HW-optimized, no DMA) : 10315 : cycles : 3.18 : elements (HW-optimized, no DMA)/cycle : 0.31 : cycles/elements (HW-optimized, no DMA)
+CONV_PATH : HW-OPT : ic=512 ih=8 iw=8 oc=128 kh=1 kw=1 oh=8 ow=8 s=-387389208,1 p=0 d=1 : 
+CONV_DISPATCH : No-DMA : 1x1j1d1_no_dma
+PERF_LOG : conv2d : 32768 : elements : 559285 : cycles : 0.06 : elements/cycle : 17.07 : cycles/elements
+PERF_LOG : quantized_relu : 8192 : elements (HW-optimized, no DMA) : 2827 : cycles : 2.90 : elements (HW-optimized, no DMA)/cycle : 0.35 : cycles/elements (HW-optimized, no DMA)
+CONV_PATH : HW-OPT : ic=128 ih=8 iw=8 oc=128 kh=3 kw=3 oh=8 ow=8 s=-387389208,1 p=0 d=1 : 
+CONV_DISPATCH : No-DMA : 3x3j1d1_no_dma
+PERF_LOG : conv2d : 8192 : elements : 943693 : cycles : 0.01 : elements/cycle : 115.20 : cycles/elements
+PERF_LOG : quantized_relu : 8192 : elements (HW-optimized, no DMA) : 2827 : cycles : 2.90 : elements (HW-optimized, no DMA)/cycle : 0.35 : cycles/elements (HW-optimized, no DMA)
+CONV_PATH : HW-OPT : ic=128 ih=8 iw=8 oc=512 kh=1 kw=1 oh=8 ow=8 s=-387389208,1 p=0 d=1 : 
+CONV_DISPATCH : No-DMA : 1x1j1d1_no_dma
+PERF_LOG : conv2d : 8192 : elements : 552719 : cycles : 0.01 : elements/cycle : 67.47 : cycles/elements
+PERF_LOG : dequantize_asym8s : 32768 : elements (HW-optimized, no DMA) : 8072 : cycles : 4.06 : elements (HW-optimized, no DMA)/cycle : 0.25 : cycles/elements (HW-optimized, no DMA)
+PERF_LOG : dequantize_asym8s : 32768 : elements (HW-optimized, no DMA) : 8072 : cycles : 4.06 : elements (HW-optimized, no DMA)/cycle : 0.25 : cycles/elements (HW-optimized, no DMA)
+PERF_LOG : add_float : 32768 : elements (HW-optimized, no DMA) : 14431 : cycles : 2.27 : elements (HW-optimized, no DMA)/cycle : 0.44 : cycles/elements (HW-optimized, no DMA)
+PERF_LOG : quantize_asym8s : 32768 : elements (HW-optimized, no DMA) : 10150 : cycles : 3.23 : elements (HW-optimized, no DMA)/cycle : 0.31 : cycles/elements (HW-optimized, no DMA)
+PERF_LOG : quantized_relu : 32768 : elements (HW-optimized, no DMA) : 10315 : cycles : 3.18 : elements (HW-optimized, no DMA)/cycle : 0.31 : cycles/elements (HW-optimized, no DMA)
+CONV_PATH : HW-OPT : ic=512 ih=8 iw=8 oc=128 kh=1 kw=1 oh=8 ow=8 s=-387389208,1 p=0 d=1 : 
+CONV_DISPATCH : No-DMA : 1x1j1d1_no_dma
+PERF_LOG : conv2d : 32768 : elements : 559452 : cycles : 0.06 : elements/cycle : 17.07 : cycles/elements
+PERF_LOG : quantized_relu : 8192 : elements (HW-optimized, no DMA) : 2827 : cycles : 2.90 : elements (HW-optimized, no DMA)/cycle : 0.35 : cycles/elements (HW-optimized, no DMA)
+CONV_PATH : HW-OPT : ic=128 ih=8 iw=8 oc=128 kh=3 kw=3 oh=8 ow=8 s=-387389208,1 p=0 d=1 : 
+CONV_DISPATCH : No-DMA : 3x3j1d1_no_dma
+PERF_LOG : conv2d : 8192 : elements : 943780 : cycles : 0.01 : elements/cycle : 115.21 : cycles/elements
+PERF_LOG : quantized_relu : 8192 : elements (HW-optimized, no DMA) : 2827 : cycles : 2.90 : elements (HW-optimized, no DMA)/cycle : 0.35 : cycles/elements (HW-optimized, no DMA)
+CONV_PATH : HW-OPT : ic=128 ih=8 iw=8 oc=512 kh=1 kw=1 oh=8 ow=8 s=-387389208,1 p=0 d=1 : 
+CONV_DISPATCH : No-DMA : 1x1j1d1_no_dma
+PERF_LOG : conv2d : 8192 : elements : 552644 : cycles : 0.01 : elements/cycle : 67.46 : cycles/elements
+PERF_LOG : dequantize_asym8s : 32768 : elements (HW-optimized, no DMA) : 8072 : cycles : 4.06 : elements (HW-optimized, no DMA)/cycle : 0.25 : cycles/elements (HW-optimized, no DMA)
+PERF_LOG : dequantize_asym8s : 32768 : elements (HW-optimized, no DMA) : 8072 : cycles : 4.06 : elements (HW-optimized, no DMA)/cycle : 0.25 : cycles/elements (HW-optimized, no DMA)
+PERF_LOG : add_float : 32768 : elements (HW-optimized, no DMA) : 14431 : cycles : 2.27 : elements (HW-optimized, no DMA)/cycle : 0.44 : cycles/elements (HW-optimized, no DMA)
+PERF_LOG : quantize_asym8s : 32768 : elements (HW-optimized, no DMA) : 10150 : cycles : 3.23 : elements (HW-optimized, no DMA)/cycle : 0.31 : cycles/elements (HW-optimized, no DMA)
+PERF_LOG : quantized_relu : 32768 : elements (HW-optimized, no DMA) : 10315 : cycles : 3.18 : elements (HW-optimized, no DMA)/cycle : 0.31 : cycles/elements (HW-optimized, no DMA)
+CONV_PATH : HW-OPT : ic=512 ih=8 iw=8 oc=1024 kh=1 kw=1 oh=4 ow=4 s=-387389208,2 p=0 d=2 : 
+CONV_DISPATCH : No-DMA : 1x1j2d1_no_dma
+PERF_LOG : conv2d : 32768 : elements : 2480937 : cycles : 0.01 : elements/cycle : 75.71 : cycles/elements
+CONV_PATH : HW-OPT : ic=512 ih=8 iw=8 oc=256 kh=1 kw=1 oh=8 ow=8 s=-387389208,1 p=0 d=1 : 
+CONV_DISPATCH : No-DMA : 1x1j1d1_no_dma
+PERF_LOG : conv2d : 32768 : elements : 933621 : cycles : 0.04 : elements/cycle : 28.49 : cycles/elements
+PERF_LOG : quantized_relu : 16384 : elements (HW-optimized, no DMA) : 5323 : cycles : 3.08 : elements (HW-optimized, no DMA)/cycle : 0.32 : cycles/elements (HW-optimized, no DMA)
+CONV_PATH : HW-OPT : ic=256 ih=8 iw=8 oc=256 kh=3 kw=3 oh=4 ow=4 s=-387389208,2 p=0 d=2 : 
+CONV_DISPATCH : No-DMA : 3x3j2d1_no_dma
+PERF_LOG : conv2d : 16384 : elements : 2462830 : cycles : 0.01 : elements/cycle : 150.32 : cycles/elements
+PERF_LOG : quantized_relu : 4096 : elements (HW-optimized, no DMA) : 1579 : cycles : 2.59 : elements (HW-optimized, no DMA)/cycle : 0.39 : cycles/elements (HW-optimized, no DMA)
+CONV_PATH : HW-OPT : ic=256 ih=4 iw=4 oc=1024 kh=1 kw=1 oh=4 ow=4 s=-387389208,1 p=0 d=1 : 
+CONV_DISPATCH : No-DMA : 1x1j1d1_no_dma
+PERF_LOG : conv2d : 4096 : elements : 1335978 : cycles : 0.00 : elements/cycle : 326.17 : cycles/elements
+PERF_LOG : dequantize_asym8s : 16384 : elements (HW-optimized, no DMA) : 4104 : cycles : 3.99 : elements (HW-optimized, no DMA)/cycle : 0.25 : cycles/elements (HW-optimized, no DMA)
+PERF_LOG : dequantize_asym8s : 16384 : elements (HW-optimized, no DMA) : 4104 : cycles : 3.99 : elements (HW-optimized, no DMA)/cycle : 0.25 : cycles/elements (HW-optimized, no DMA)
+PERF_LOG : add_float : 16384 : elements (HW-optimized, no DMA) : 7263 : cycles : 2.26 : elements (HW-optimized, no DMA)/cycle : 0.44 : cycles/elements (HW-optimized, no DMA)
+PERF_LOG : quantize_asym8s : 16384 : elements (HW-optimized, no DMA) : 5158 : cycles : 3.18 : elements (HW-optimized, no DMA)/cycle : 0.31 : cycles/elements (HW-optimized, no DMA)
+PERF_LOG : quantized_relu : 16384 : elements (HW-optimized, no DMA) : 5323 : cycles : 3.08 : elements (HW-optimized, no DMA)/cycle : 0.32 : cycles/elements (HW-optimized, no DMA)
+CONV_PATH : HW-OPT : ic=1024 ih=4 iw=4 oc=256 kh=1 kw=1 oh=4 ow=4 s=-387389208,1 p=0 d=1 : 
+CONV_DISPATCH : No-DMA : 1x1j1d1_no_dma
+PERF_LOG : conv2d : 16384 : elements : 1318914 : cycles : 0.01 : elements/cycle : 80.50 : cycles/elements
+PERF_LOG : quantized_relu : 4096 : elements (HW-optimized, no DMA) : 1579 : cycles : 2.59 : elements (HW-optimized, no DMA)/cycle : 0.39 : cycles/elements (HW-optimized, no DMA)
+CONV_PATH : HW-OPT : ic=256 ih=4 iw=4 oc=256 kh=3 kw=3 oh=4 ow=4 s=-387389208,1 p=0 d=1 : 
+CONV_DISPATCH : No-DMA : 3x3j1d1_no_dma
+PERF_LOG : conv2d : 4096 : elements : 2682006 : cycles : 0.00 : elements/cycle : 654.79 : cycles/elements
+PERF_LOG : quantized_relu : 4096 : elements (HW-optimized, no DMA) : 1579 : cycles : 2.59 : elements (HW-optimized, no DMA)/cycle : 0.39 : cycles/elements (HW-optimized, no DMA)
+CONV_PATH : HW-OPT : ic=256 ih=4 iw=4 oc=1024 kh=1 kw=1 oh=4 ow=4 s=-387389208,1 p=0 d=1 : 
+CONV_DISPATCH : No-DMA : 1x1j1d1_no_dma
+PERF_LOG : conv2d : 4096 : elements : 1335968 : cycles : 0.00 : elements/cycle : 326.16 : cycles/elements
+PERF_LOG : dequantize_asym8s : 16384 : elements (HW-optimized, no DMA) : 4104 : cycles : 3.99 : elements (HW-optimized, no DMA)/cycle : 0.25 : cycles/elements (HW-optimized, no DMA)
+PERF_LOG : dequantize_asym8s : 16384 : elements (HW-optimized, no DMA) : 4104 : cycles : 3.99 : elements (HW-optimized, no DMA)/cycle : 0.25 : cycles/elements (HW-optimized, no DMA)
+PERF_LOG : add_float : 16384 : elements (HW-optimized, no DMA) : 7263 : cycles : 2.26 : elements (HW-optimized, no DMA)/cycle : 0.44 : cycles/elements (HW-optimized, no DMA)
+PERF_LOG : quantize_asym8s : 16384 : elements (HW-optimized, no DMA) : 5158 : cycles : 3.18 : elements (HW-optimized, no DMA)/cycle : 0.31 : cycles/elements (HW-optimized, no DMA)
+PERF_LOG : quantized_relu : 16384 : elements (HW-optimized, no DMA) : 5323 : cycles : 3.08 : elements (HW-optimized, no DMA)/cycle : 0.32 : cycles/elements (HW-optimized, no DMA)
+CONV_PATH : HW-OPT : ic=1024 ih=4 iw=4 oc=256 kh=1 kw=1 oh=4 ow=4 s=-387389208,1 p=0 d=1 : 
+CONV_DISPATCH : No-DMA : 1x1j1d1_no_dma
+PERF_LOG : conv2d : 16384 : elements : 1318834 : cycles : 0.01 : elements/cycle : 80.50 : cycles/elements
+PERF_LOG : quantized_relu : 4096 : elements (HW-optimized, no DMA) : 1579 : cycles : 2.59 : elements (HW-optimized, no DMA)/cycle : 0.39 : cycles/elements (HW-optimized, no DMA)
+CONV_PATH : HW-OPT : ic=256 ih=4 iw=4 oc=256 kh=3 kw=3 oh=4 ow=4 s=-387389208,1 p=0 d=1 : 
+CONV_DISPATCH : No-DMA : 3x3j1d1_no_dma
+PERF_LOG : conv2d : 4096 : elements : 2682572 : cycles : 0.00 : elements/cycle : 654.92 : cycles/elements
+PERF_LOG : quantized_relu : 4096 : elements (HW-optimized, no DMA) : 1579 : cycles : 2.59 : elements (HW-optimized, no DMA)/cycle : 0.39 : cycles/elements (HW-optimized, no DMA)
+CONV_PATH : HW-OPT : ic=256 ih=4 iw=4 oc=1024 kh=1 kw=1 oh=4 ow=4 s=-387389208,1 p=0 d=1 : 
+CONV_DISPATCH : No-DMA : 1x1j1d1_no_dma
+PERF_LOG : conv2d : 4096 : elements : 1335804 : cycles : 0.00 : elements/cycle : 326.12 : cycles/elements
+PERF_LOG : dequantize_asym8s : 16384 : elements (HW-optimized, no DMA) : 4104 : cycles : 3.99 : elements (HW-optimized, no DMA)/cycle : 0.25 : cycles/elements (HW-optimized, no DMA)
+PERF_LOG : dequantize_asym8s : 16384 : elements (HW-optimized, no DMA) : 4104 : cycles : 3.99 : elements (HW-optimized, no DMA)/cycle : 0.25 : cycles/elements (HW-optimized, no DMA)
+PERF_LOG : add_float : 16384 : elements (HW-optimized, no DMA) : 7263 : cycles : 2.26 : elements (HW-optimized, no DMA)/cycle : 0.44 : cycles/elements (HW-optimized, no DMA)
+PERF_LOG : quantize_asym8s : 16384 : elements (HW-optimized, no DMA) : 5158 : cycles : 3.18 : elements (HW-optimized, no DMA)/cycle : 0.31 : cycles/elements (HW-optimized, no DMA)
+PERF_LOG : quantized_relu : 16384 : elements (HW-optimized, no DMA) : 5323 : cycles : 3.08 : elements (HW-optimized, no DMA)/cycle : 0.32 : cycles/elements (HW-optimized, no DMA)
+CONV_PATH : HW-OPT : ic=1024 ih=4 iw=4 oc=256 kh=1 kw=1 oh=4 ow=4 s=-387389208,1 p=0 d=1 : 
+CONV_DISPATCH : No-DMA : 1x1j1d1_no_dma
+PERF_LOG : conv2d : 16384 : elements : 1319003 : cycles : 0.01 : elements/cycle : 80.51 : cycles/elements
+PERF_LOG : quantized_relu : 4096 : elements (HW-optimized, no DMA) : 1579 : cycles : 2.59 : elements (HW-optimized, no DMA)/cycle : 0.39 : cycles/elements (HW-optimized, no DMA)
+CONV_PATH : HW-OPT : ic=256 ih=4 iw=4 oc=256 kh=3 kw=3 oh=4 ow=4 s=-387389208,1 p=0 d=1 : 
+CONV_DISPATCH : No-DMA : 3x3j1d1_no_dma
+PERF_LOG : conv2d : 4096 : elements : 2682414 : cycles : 0.00 : elements/cycle : 654.89 : cycles/elements
+PERF_LOG : quantized_relu : 4096 : elements (HW-optimized, no DMA) : 1579 : cycles : 2.59 : elements (HW-optimized, no DMA)/cycle : 0.39 : cycles/elements (HW-optimized, no DMA)
+CONV_PATH : HW-OPT : ic=256 ih=4 iw=4 oc=1024 kh=1 kw=1 oh=4 ow=4 s=-387389208,1 p=0 d=1 : 
+CONV_DISPATCH : No-DMA : 1x1j1d1_no_dma
+PERF_LOG : conv2d : 4096 : elements : 1335968 : cycles : 0.00 : elements/cycle : 326.16 : cycles/elements
+PERF_LOG : dequantize_asym8s : 16384 : elements (HW-optimized, no DMA) : 4104 : cycles : 3.99 : elements (HW-optimized, no DMA)/cycle : 0.25 : cycles/elements (HW-optimized, no DMA)
+PERF_LOG : dequantize_asym8s : 16384 : elements (HW-optimized, no DMA) : 4104 : cycles : 3.99 : elements (HW-optimized, no DMA)/cycle : 0.25 : cycles/elements (HW-optimized, no DMA)
+PERF_LOG : add_float : 16384 : elements (HW-optimized, no DMA) : 7263 : cycles : 2.26 : elements (HW-optimized, no DMA)/cycle : 0.44 : cycles/elements (HW-optimized, no DMA)
+PERF_LOG : quantize_asym8s : 16384 : elements (HW-optimized, no DMA) : 5158 : cycles : 3.18 : elements (HW-optimized, no DMA)/cycle : 0.31 : cycles/elements (HW-optimized, no DMA)
+PERF_LOG : quantized_relu : 16384 : elements (HW-optimized, no DMA) : 5323 : cycles : 3.08 : elements (HW-optimized, no DMA)/cycle : 0.32 : cycles/elements (HW-optimized, no DMA)
+CONV_PATH : HW-OPT : ic=1024 ih=4 iw=4 oc=256 kh=1 kw=1 oh=4 ow=4 s=-387389208,1 p=0 d=1 : 
+CONV_DISPATCH : No-DMA : 1x1j1d1_no_dma
+PERF_LOG : conv2d : 16384 : elements : 1318841 : cycles : 0.01 : elements/cycle : 80.50 : cycles/elements
+PERF_LOG : quantized_relu : 4096 : elements (HW-optimized, no DMA) : 1579 : cycles : 2.59 : elements (HW-optimized, no DMA)/cycle : 0.39 : cycles/elements (HW-optimized, no DMA)
+CONV_PATH : HW-OPT : ic=256 ih=4 iw=4 oc=256 kh=3 kw=3 oh=4 ow=4 s=-387389208,1 p=0 d=1 : 
+CONV_DISPATCH : No-DMA : 3x3j1d1_no_dma
+PERF_LOG : conv2d : 4096 : elements : 2682007 : cycles : 0.00 : elements/cycle : 654.79 : cycles/elements
+PERF_LOG : quantized_relu : 4096 : elements (HW-optimized, no DMA) : 1579 : cycles : 2.59 : elements (HW-optimized, no DMA)/cycle : 0.39 : cycles/elements (HW-optimized, no DMA)
+CONV_PATH : HW-OPT : ic=256 ih=4 iw=4 oc=1024 kh=1 kw=1 oh=4 ow=4 s=-387389208,1 p=0 d=1 : 
+CONV_DISPATCH : No-DMA : 1x1j1d1_no_dma
+PERF_LOG : conv2d : 4096 : elements : 1335972 : cycles : 0.00 : elements/cycle : 326.17 : cycles/elements
+PERF_LOG : dequantize_asym8s : 16384 : elements (HW-optimized, no DMA) : 4104 : cycles : 3.99 : elements (HW-optimized, no DMA)/cycle : 0.25 : cycles/elements (HW-optimized, no DMA)
+PERF_LOG : dequantize_asym8s : 16384 : elements (HW-optimized, no DMA) : 4104 : cycles : 3.99 : elements (HW-optimized, no DMA)/cycle : 0.25 : cycles/elements (HW-optimized, no DMA)
+PERF_LOG : add_float : 16384 : elements (HW-optimized, no DMA) : 7263 : cycles : 2.26 : elements (HW-optimized, no DMA)/cycle : 0.44 : cycles/elements (HW-optimized, no DMA)
+PERF_LOG : quantize_asym8s : 16384 : elements (HW-optimized, no DMA) : 5158 : cycles : 3.18 : elements (HW-optimized, no DMA)/cycle : 0.31 : cycles/elements (HW-optimized, no DMA)
+PERF_LOG : quantized_relu : 16384 : elements (HW-optimized, no DMA) : 5323 : cycles : 3.08 : elements (HW-optimized, no DMA)/cycle : 0.32 : cycles/elements (HW-optimized, no DMA)
+CONV_PATH : HW-OPT : ic=1024 ih=4 iw=4 oc=256 kh=1 kw=1 oh=4 ow=4 s=-387389208,1 p=0 d=1 : 
+CONV_DISPATCH : No-DMA : 1x1j1d1_no_dma
+PERF_LOG : conv2d : 16384 : elements : 1318926 : cycles : 0.01 : elements/cycle : 80.50 : cycles/elements
+PERF_LOG : quantized_relu : 4096 : elements (HW-optimized, no DMA) : 1579 : cycles : 2.59 : elements (HW-optimized, no DMA)/cycle : 0.39 : cycles/elements (HW-optimized, no DMA)
+CONV_PATH : HW-OPT : ic=256 ih=4 iw=4 oc=256 kh=3 kw=3 oh=4 ow=4 s=-387389208,1 p=0 d=1 : 
+CONV_DISPATCH : No-DMA : 3x3j1d1_no_dma
+PERF_LOG : conv2d : 4096 : elements : 2682498 : cycles : 0.00 : elements/cycle : 654.91 : cycles/elements
+PERF_LOG : quantized_relu : 4096 : elements (HW-optimized, no DMA) : 1579 : cycles : 2.59 : elements (HW-optimized, no DMA)/cycle : 0.39 : cycles/elements (HW-optimized, no DMA)
+CONV_PATH : HW-OPT : ic=256 ih=4 iw=4 oc=1024 kh=1 kw=1 oh=4 ow=4 s=-387389208,1 p=0 d=1 : 
+CONV_DISPATCH : No-DMA : 1x1j1d1_no_dma
+PERF_LOG : conv2d : 4096 : elements : 1335894 : cycles : 0.00 : elements/cycle : 326.15 : cycles/elements
+PERF_LOG : dequantize_asym8s : 16384 : elements (HW-optimized, no DMA) : 4104 : cycles : 3.99 : elements (HW-optimized, no DMA)/cycle : 0.25 : cycles/elements (HW-optimized, no DMA)
+PERF_LOG : dequantize_asym8s : 16384 : elements (HW-optimized, no DMA) : 4104 : cycles : 3.99 : elements (HW-optimized, no DMA)/cycle : 0.25 : cycles/elements (HW-optimized, no DMA)
+PERF_LOG : add_float : 16384 : elements (HW-optimized, no DMA) : 7263 : cycles : 2.26 : elements (HW-optimized, no DMA)/cycle : 0.44 : cycles/elements (HW-optimized, no DMA)
+PERF_LOG : quantize_asym8s : 16384 : elements (HW-optimized, no DMA) : 5158 : cycles : 3.18 : elements (HW-optimized, no DMA)/cycle : 0.31 : cycles/elements (HW-optimized, no DMA)
+PERF_LOG : quantized_relu : 16384 : elements (HW-optimized, no DMA) : 5323 : cycles : 3.08 : elements (HW-optimized, no DMA)/cycle : 0.32 : cycles/elements (HW-optimized, no DMA)
+CONV_PATH : HW-OPT : ic=1024 ih=4 iw=4 oc=2048 kh=1 kw=1 oh=2 ow=2 s=-387389208,2 p=0 d=2 : 
+CONV_DISPATCH : No-DMA : 1x1j2d1_no_dma
+PERF_LOG : conv2d : 16384 : elements : 7898165 : cycles : 0.00 : elements/cycle : 482.07 : cycles/elements
+CONV_PATH : HW-OPT : ic=1024 ih=4 iw=4 oc=512 kh=1 kw=1 oh=4 ow=4 s=-387389208,1 p=0 d=1 : 
+CONV_DISPATCH : No-DMA : 1x1j1d1_no_dma
+PERF_LOG : conv2d : 16384 : elements : 2437851 : cycles : 0.01 : elements/cycle : 148.79 : cycles/elements
+PERF_LOG : quantized_relu : 8192 : elements (HW-optimized, no DMA) : 2827 : cycles : 2.90 : elements (HW-optimized, no DMA)/cycle : 0.35 : cycles/elements (HW-optimized, no DMA)
+CONV_PATH : HW-OPT : ic=512 ih=4 iw=4 oc=512 kh=3 kw=3 oh=2 ow=2 s=-387389208,2 p=0 d=2 : 
+CONV_DISPATCH : No-DMA : 3x3j2d1_no_dma
+PERF_LOG : conv2d : 8192 : elements : 8331006 : cycles : 0.00 : elements/cycle : 1016.97 : cycles/elements
+PERF_LOG : quantized_relu : 2048 : elements (HW-optimized, no DMA) : 955 : cycles : 2.14 : elements (HW-optimized, no DMA)/cycle : 0.47 : cycles/elements (HW-optimized, no DMA)
+CONV_PATH : HW-OPT : ic=512 ih=2 iw=2 oc=2048 kh=1 kw=1 oh=2 ow=2 s=-387389208,1 p=0 d=1 : 
+CONV_DISPATCH : No-DMA : 1x1j1d1_no_dma
+PERF_LOG : conv2d : 2048 : elements : 4083725 : cycles : 0.00 : elements/cycle : 1994.01 : cycles/elements
+PERF_LOG : dequantize_asym8s : 8192 : elements (HW-optimized, no DMA) : 2120 : cycles : 3.86 : elements (HW-optimized, no DMA)/cycle : 0.26 : cycles/elements (HW-optimized, no DMA)
+PERF_LOG : dequantize_asym8s : 8192 : elements (HW-optimized, no DMA) : 2120 : cycles : 3.86 : elements (HW-optimized, no DMA)/cycle : 0.26 : cycles/elements (HW-optimized, no DMA)
+PERF_LOG : add_float : 8192 : elements (HW-optimized, no DMA) : 3679 : cycles : 2.23 : elements (HW-optimized, no DMA)/cycle : 0.45 : cycles/elements (HW-optimized, no DMA)
+PERF_LOG : quantize_asym8s : 8192 : elements (HW-optimized, no DMA) : 2662 : cycles : 3.08 : elements (HW-optimized, no DMA)/cycle : 0.32 : cycles/elements (HW-optimized, no DMA)
+PERF_LOG : quantized_relu : 8192 : elements (HW-optimized, no DMA) : 2827 : cycles : 2.90 : elements (HW-optimized, no DMA)/cycle : 0.35 : cycles/elements (HW-optimized, no DMA)
+CONV_PATH : HW-OPT : ic=2048 ih=2 iw=2 oc=512 kh=1 kw=1 oh=2 ow=2 s=-387389208,1 p=0 d=1 : 
+CONV_DISPATCH : No-DMA : 1x1j1d1_no_dma
+PERF_LOG : conv2d : 8192 : elements : 4019620 : cycles : 0.00 : elements/cycle : 490.68 : cycles/elements
+PERF_LOG : quantized_relu : 2048 : elements (HW-optimized, no DMA) : 955 : cycles : 2.14 : elements (HW-optimized, no DMA)/cycle : 0.47 : cycles/elements (HW-optimized, no DMA)
+CONV_PATH : HW-OPT : ic=512 ih=2 iw=2 oc=512 kh=3 kw=3 oh=2 ow=2 s=-387389208,1 p=0 d=1 : 
+CONV_DISPATCH : No-DMA : 3x3j1d1_no_dma
+PERF_LOG : conv2d : 2048 : elements : 8814981 : cycles : 0.00 : elements/cycle : 4304.19 : cycles/elements
+PERF_LOG : quantized_relu : 2048 : elements (HW-optimized, no DMA) : 955 : cycles : 2.14 : elements (HW-optimized, no DMA)/cycle : 0.47 : cycles/elements (HW-optimized, no DMA)
+CONV_PATH : HW-OPT : ic=512 ih=2 iw=2 oc=2048 kh=1 kw=1 oh=2 ow=2 s=-387389208,1 p=0 d=1 : 
+CONV_DISPATCH : No-DMA : 1x1j1d1_no_dma
+PERF_LOG : conv2d : 2048 : elements : 4083644 : cycles : 0.00 : elements/cycle : 1993.97 : cycles/elements
+PERF_LOG : dequantize_asym8s : 8192 : elements (HW-optimized, no DMA) : 2120 : cycles : 3.86 : elements (HW-optimized, no DMA)/cycle : 0.26 : cycles/elements (HW-optimized, no DMA)
+PERF_LOG : dequantize_asym8s : 8192 : elements (HW-optimized, no DMA) : 2120 : cycles : 3.86 : elements (HW-optimized, no DMA)/cycle : 0.26 : cycles/elements (HW-optimized, no DMA)
+PERF_LOG : add_float : 8192 : elements (HW-optimized, no DMA) : 3679 : cycles : 2.23 : elements (HW-optimized, no DMA)/cycle : 0.45 : cycles/elements (HW-optimized, no DMA)
+PERF_LOG : quantize_asym8s : 8192 : elements (HW-optimized, no DMA) : 2662 : cycles : 3.08 : elements (HW-optimized, no DMA)/cycle : 0.32 : cycles/elements (HW-optimized, no DMA)
+PERF_LOG : quantized_relu : 8192 : elements (HW-optimized, no DMA) : 2827 : cycles : 2.90 : elements (HW-optimized, no DMA)/cycle : 0.35 : cycles/elements (HW-optimized, no DMA)
+CONV_PATH : HW-OPT : ic=2048 ih=2 iw=2 oc=512 kh=1 kw=1 oh=2 ow=2 s=-387389208,1 p=0 d=1 : 
+CONV_DISPATCH : No-DMA : 1x1j1d1_no_dma
+PERF_LOG : conv2d : 8192 : elements : 4019624 : cycles : 0.00 : elements/cycle : 490.68 : cycles/elements
+PERF_LOG : quantized_relu : 2048 : elements (HW-optimized, no DMA) : 955 : cycles : 2.14 : elements (HW-optimized, no DMA)/cycle : 0.47 : cycles/elements (HW-optimized, no DMA)
+CONV_PATH : HW-OPT : ic=512 ih=2 iw=2 oc=512 kh=3 kw=3 oh=2 ow=2 s=-387389208,1 p=0 d=1 : 
+CONV_DISPATCH : No-DMA : 3x3j1d1_no_dma
+PERF_LOG : conv2d : 2048 : elements : 8814978 : cycles : 0.00 : elements/cycle : 4304.19 : cycles/elements
+PERF_LOG : quantized_relu : 2048 : elements (HW-optimized, no DMA) : 955 : cycles : 2.14 : elements (HW-optimized, no DMA)/cycle : 0.47 : cycles/elements (HW-optimized, no DMA)
+CONV_PATH : HW-OPT : ic=512 ih=2 iw=2 oc=2048 kh=1 kw=1 oh=2 ow=2 s=-387389208,1 p=0 d=1 : 
+CONV_DISPATCH : No-DMA : 1x1j1d1_no_dma
+PERF_LOG : conv2d : 2048 : elements : 4083467 : cycles : 0.00 : elements/cycle : 1993.88 : cycles/elements
+PERF_LOG : dequantize_asym8s : 8192 : elements (HW-optimized, no DMA) : 2120 : cycles : 3.86 : elements (HW-optimized, no DMA)/cycle : 0.26 : cycles/elements (HW-optimized, no DMA)
+PERF_LOG : dequantize_asym8s : 8192 : elements (HW-optimized, no DMA) : 2120 : cycles : 3.86 : elements (HW-optimized, no DMA)/cycle : 0.26 : cycles/elements (HW-optimized, no DMA)
+PERF_LOG : add_float : 8192 : elements (HW-optimized, no DMA) : 3679 : cycles : 2.23 : elements (HW-optimized, no DMA)/cycle : 0.45 : cycles/elements (HW-optimized, no DMA)
+PERF_LOG : quantize_asym8s : 8192 : elements (HW-optimized, no DMA) : 2662 : cycles : 3.08 : elements (HW-optimized, no DMA)/cycle : 0.32 : cycles/elements (HW-optimized, no DMA)
+PERF_LOG : quantized_relu : 8192 : elements (HW-optimized, no DMA) : 2827 : cycles : 2.90 : elements (HW-optimized, no DMA)/cycle : 0.35 : cycles/elements (HW-optimized, no DMA)
+PERF_LOG : dequantize_asym8s : 8192 : elements (HW-optimized, no DMA) : 2120 : cycles : 3.86 : elements (HW-optimized, no DMA)/cycle : 0.26 : cycles/elements (HW-optimized, no DMA)
+PERF_LOG : mean_simd_optimized : 2048 : channels (SIMD no-DMA) : 2119 : cycles : 0.97 : channels (SIMD no-DMA)/cycle : 1.03 : cycles/channels (SIMD no-DMA)
+PERF_LOG : quantize_asym8s : 2048 : elements (HW-optimized, no DMA) : 790 : cycles : 2.59 : elements (HW-optimized, no DMA)/cycle : 0.39 : cycles/elements (HW-optimized, no DMA)
+PERF_LOG : quantized_linear : 1000 : SIMD elements (no DMA) : 248566 : cycles : 0.00 : SIMD elements (no DMA)/cycle : 248.57 : cycles/SIMD elements (no DMA)
+PERF_LOG : dequantize_asym8s : 1000 : elements (HW-optimized, no DMA) : 435 : cycles : 2.30 : elements (HW-optimized, no DMA)/cycle : 0.43 : cycles/elements (HW-optimized, no DMA)
+Output 0: tensor(sizes=[1, 1000], [
+  -0.91418, -0.609454, 0., 0.853235, 0.548508, -0.609454, -0.121891, -0.853235, 0.365672, -0.0609454, 
+  2.0112, 3.04727, 3.10821, 2.13309, 2.49876, 2.43781, 4.20523, 1.21891, 3.47389, 2.37687, 
+  0.91418, 5.48508, 3.35199, 3.71767, 2.62065, -0.670399, -0.79229, -1.09702, -1.3408, -0.304727, 
+  -0.243781, -0.670399, -0.91418, 0.243781, 0.731344, -1.03607, -0.670399, -1.64552, 0.182836, -0.91418, 
+  -0.243781, -0.121891, 0.609454, 0., -0.487563, -0.121891, -0.0609454, 0., -0.426617, -1.3408, 
+  -0.243781, -0.0609454, -0.548508, -0.243781, 0.79229, -0.609454, 0.487563, -0.487563, 1.15796, 0.548508, 
+  -0.609454, 0.121891, -0.243781, 0.91418, 0., 0.670399, 0.487563, 0.609454, 1.58458, 1.09702, 
+  -0.670399, -0.365672, -0.121891, 0.670399, 0.0609454, 0., -0.426617, -0.304727, 1.21891, 1.03607, 
+  1.15796, 1.95025, 1.88931, 2.31592, 0.426617, 4.26617, 1.64552, 3.59578, 0.487563, 2.80349, 
+  0.548508, 2.07214, 4.50996, 1.58458, 3.71767, 0.426617, 1.27985, 0.975126, 0.365672, 1.76742, 
+  0.365672, -0.548508, 0.670399, 1.40174, 0., 0.182836, -0.609454, 1.58458, -0.853235, -0.304727, 
+  -0.0609454, 7.13061, 0.79229, -0.487563, 0.426617, -1.15796, 0., 0.365672, -0.91418, -0.0609454, 
+  0.365672, -0.91418, -1.09702, -1.27985, -1.15796, 0.548508, 0.609454, 3.53483, 2.6816, 2.37687, 
+  -0.975126, 1.40174, 1.82836, 2.0112, 2.13309, 1.58458, -0.121891, 0.853235, 1.95025, 1.64552, 
+  2.07214, 2.19403, 1.3408, 1.52363, 2.62065, 0.548508, 3.2301, 0.182836, -0.121891, -1.21891, 
+  -0.182836, 0.243781, -0.79229, 0.548508, 0., 0.182836, 0.487563, -0.121891, 0.304727, 0.182836, 
+  -1.15796, 0.975126, 2.80349, -0.731344, -0.243781, -1.3408, -0.182836, 0., 0.365672, 0.426617, 
+  0.121891, 2.37687, 1.40174, 0.487563, -0.426617, -0.487563, -0.79229, -0.487563, 1.46269, 0., 
+  1.76742, -0.487563, 0.548508, -1.03607, -0.426617, -0.304727, -0.243781, 0., -0.121891, 0.731344, 
+  -0.548508, -1.52363, 0.121891, 0.0609454, -0.426617, 0.304727, 0., -1.52363, -0.79229, 0.243781, 
+  0.0609454, -1.21891, 0.548508, 2.74254, 0.365672, -1.52363, -1.09702, 0.609454, 0.548508, 0.0609454, 
+  0., -1.70647, 0.91418, -0.609454, -1.40174, 1.46269, -0.121891, 0.91418, 0.304727, 0.121891, 
+  -1.58458, -0.548508, -0.426617, -1.15796, -1.88931, -0.975126, -1.03607, -0.853235, -0.670399, -0.853235, 
+  0.426617, -0.304727, -0.670399, -1.46269, -2.37687, -0.91418, 0.182836, -0.365672, 0.426617, -1.76742, 
+  0.365672, -0.853235, 0.243781, -0.853235, -2.25498, 1.27985, -0.182836, -0.365672, 0.487563, 0.609454, 
+  0.121891, 1.76742, -0.548508, 0.548508, 0.975126, -2.6816, -0.365672, 0.121891, 0.243781, 0.182836, 
+  -0.670399, -0.548508, -1.52363, 0.731344, 0.79229, 0.0609454, -0.121891, -0.670399, -1.58458, -0.975126, 
+  -0.670399, -0.975126, -1.03607, 0., -1.52363, 0., 0.853235, -0.731344, -0.79229, -0.426617, 
+  -0.365672, 0.182836, -0.670399, -0.182836, 1.88931, 1.88931, -0.487563, -0.243781, 1.52363, -1.64552, 
+  -0.0609454, -0.853235, -1.52363, 1.40174, -0.426617, -1.09702, -1.15796, -1.21891, 2.0112, 2.86443, 
+  -0.548508, 0.91418, -0.426617, 0., -0.304727, 0.487563, 0.426617, 1.03607, -0.182836, -0.91418, 
+  -0.121891, -0.304727, -0.548508, 0.609454, -0.0609454, 0.304727, 0.0609454, 0.182836, 0.975126, 1.03607, 
+  0.426617, -0.609454, -0.853235, 0.182836, -0.731344, -0.79229, -0.0609454, 1.88931, 0.182836, -0.182836, 
+  -0.365672, 0.487563, -0.975126, -0.304727, 0.365672, -0.0609454, -0.121891, 0.365672, 0.548508, -1.40174, 
+  -0.609454, -0.79229, -0.304727, -1.21891, -0.91418, -1.70647, -0.670399, -1.40174, 0.0609454, 0.670399, 
+  2.19403, -0.182836, -0.731344, -0.0609454, 0.182836, -0.79229, 0.243781, -0.853235, 0.121891, 0.243781, 
+  -0.182836, -0.182836, 0.548508, 2.31592, 1.58458, -0.975126, -0.365672, -1.46269, -0.121891, -0.853235, 
+  1.03607, -0.79229, -0.426617, -0.182836, 0.365672, -0.426617, -0.365672, 0., -1.15796, -0.731344, 
+  0.182836, -0.670399, 0.182836, 0.365672, -0.487563, -1.09702, -0.91418, -0.670399, -1.03607, -0.670399, 
+  0.121891, -0.670399, -1.15796, -0.487563, -0.670399, -0.548508, -1.03607, 0.609454, -0.670399, 0.243781, 
+  -1.21891, -1.09702, 0.365672, -0.365672, 1.46269, 2.0112, -0.487563, -0.426617, -1.40174, 0.426617, 
+  -0.853235, 0.975126, 0.548508, -0.0609454, -0.243781, -1.27985, -0.975126, 0.731344, 2.07214, 0.487563, 
+  0.79229, 0.304727, -1.27985, -1.40174, -2.07214, -0.243781, 0., -0.487563, -0.79229, -0.0609454, 
+  0.304727, -0.670399, 0.121891, -0.365672, -0.365672, -1.82836, -0.853235, 0.91418, 0.121891, -1.03607, 
+  0.304727, -1.27985, 1.21891, 3.2301, -0.609454, -1.21891, 3.2301, 0.121891, 0.853235, -1.46269, 
+  -1.09702, 0.731344, 1.21891, -1.21891, -0.426617, 1.27985, -0.365672, 0.121891, 1.15796, 0.365672, 
+  0.487563, -0.243781, -0.975126, -0.731344, -0.0609454, -1.3408, -0.79229, -1.70647, -0.487563, -0.243781, 
+  0., -0.91418, -0.79229, 0.609454, 2.37687, -0.609454, -1.09702, 0.0609454, 0., -1.03607, 
+  0.121891, 0.79229, -0.91418, -0.670399, 0.487563, -0.304727, 0., -0.0609454, 2.98632, -0.975126, 
+  5.2413, -1.27985, -0.365672, -1.21891, 0.609454, -1.3408, 0.670399, 0.243781, 0.487563, -0.365672, 
+  -1.46269, -1.03607, -0.426617, -0.0609454, -0.426617, -0.79229, 0.182836, 0.548508, 0.304727, -1.09702, 
+  -0.121891, -0.91418, 1.64552, 0.304727, -0.609454, 0.0609454, -1.09702, 1.46269, -0.975126, -1.46269, 
+  -0.609454, -0.609454, -0.79229, -0.0609454, -1.03607, -0.975126, 0., -0.182836, 0.182836, -0.365672, 
+  0.548508, -0.731344, -1.21891, 0.670399, -0.487563, -0.548508, -1.3408, -0.487563, 0.609454, 1.64552, 
+  1.03607, 0., 0.121891, 0.182836, -1.09702, 2.43781, 0.121891, -0.79229, -0.548508, 2.5597, 
+  -0.609454, 0.182836, -0.79229, 0.79229, -0.365672, -0.426617, 1.64552, 1.70647, -0.243781, -0.731344, 
+  -0.0609454, -1.3408, -0.426617, 2.43781, -0.79229, -0.548508, -0.426617, -0.487563, -1.46269, -0.853235, 
+  0., -0.548508, 0.853235, -0.304727, 1.21891, -1.15796, -0.670399, -0.79229, -0.731344, -0.670399, 
+  -0.548508, -1.15796, -0.79229, -0.487563, 1.27985, -0.79229, -0.426617, 1.03607, 0.243781, 0.243781, 
+  -1.58458, -0.121891, 1.88931, -0.548508, -0.79229, -0.609454, -0.426617, 0.182836, 0., 0.487563, 
+  2.5597, -0.304727, -0.304727, -1.27985, -0.304727, 0.548508, 0.487563, 0., 0., -0.121891, 
+  0.304727, 1.09702, -1.21891, 0.975126, -1.46269, -0.365672, 1.64552, -0.91418, 0.79229, 0.365672, 
+  0.426617, -1.21891, 1.64552, 1.27985, -0.975126, -0.243781, 0.670399, -0.670399, 0.548508, 0.91418, 
+  0.304727, 0.304727, 2.49876, 0.670399, -1.40174, -0.121891, 0.853235, -0.853235, 0.243781, -0.487563, 
+  0.731344, -0.365672, -0.182836, 0.548508, 1.09702, -0.304727, -0.91418, -0.182836, -0.121891, -0.731344, 
+  4.08334, -1.09702, -0.975126, -0.670399, -1.3408, 0.426617, -0.79229, 1.76742, 0.975126, -0.121891, 
+  -0.609454, -1.27985, 1.09702, -0.731344, -0.487563, -0.731344, -0.91418, -0.79229, 2.25498, -0.79229, 
+  -1.21891, -0.853235, -1.15796, 0.243781, 0.243781, -1.15796, -0.731344, 0.426617, -0.548508, 3.9005, 
+  -0.487563, 0.426617, 2.80349, 0.121891, -0.0609454, 0.304727, -1.03607, -1.40174, 0.121891, -1.40174, 
+  -1.15796, -1.15796, 0.243781, 0.609454, -0.853235, -0.731344, 1.09702, 0.426617, -0.548508, -1.27985, 
+  0.670399, 2.62065, 0.121891, -0.0609454, -1.15796, -0.853235, -0.426617, -1.3408, 0.365672, 1.40174, 
+  0.91418, 0.609454, 0.609454, -0.79229, 1.15796, -0.975126, -0.304727, -0.91418, 0.548508, 0.121891, 
+  0.609454, 2.62065, 1.03607, 0.121891, 0., -0.670399, -0.731344, 0.609454, -0.731344, -0.365672, 
+  -0.731344, -0.0609454, 0.670399, 0.731344, -0.365672, 2.19403, -0.609454, 0.426617, 0.304727, -1.27985, 
+  0., 0.426617, 0.182836, -1.3408, 1.3408, 0.243781, -0.731344, -1.21891, 0.91418, 0.609454, 
+  -0.609454, -1.21891, -0.548508, -0.426617, 0.91418, 1.03607, -0.365672, -0.853235, 0., 0.853235, 
+  0.426617, 0.79229, -1.15796, 1.09702, 0.121891, 0.487563, -1.95025, 0.975126, -0.609454, 2.37687, 
+  1.09702, 0.853235, 1.58458, -0.0609454, 1.09702, -0.609454, 0.975126, 1.40174, -0.304727, -0.731344, 
+  -0.0609454, -0.365672, -0.731344, 1.88931, 1.40174, -0.670399, 0., -0.79229, 0.182836, -1.03607, 
+  -0.79229, -0.975126, -0.304727, 0.548508, 0.182836, 0.853235, 2.13309, 0.304727, -0.243781, -0.365672, 
+  -1.52363, -0.91418, -0.365672, -0.365672, 1.27985, 0.0609454, 0.182836, -0.304727, -0.426617, -1.09702, 
+  -0.243781, 1.15796, 2.62065, 0.365672, -0.670399, 0.670399, 0.609454, -1.27985, 1.09702, -1.27985, 
+  -0.670399, -0.731344, -0.670399, 0.609454, 0.365672, -1.82836, -1.09702, -0.121891, 0.609454, -0.670399, 
+  -0.243781, -1.09702, 0.731344, -0.731344, -0.243781, -0.853235, -0.121891, -0.304727, -0.487563, -0.365672, 
+  -0.609454, -0.670399, -0.853235, -0.548508, 2.98632, 1.40174, 0.304727, -0.79229, -0.182836, 0.243781, 
+  0.731344, -0.609454, 0.670399, -0.426617, -1.27985, 1.03607, -0.548508, -1.03607, -0.0609454, -0.243781, 
+  -1.58458, 0.365672, 1.27985, 0.609454, -1.09702, -1.58458, -1.46269, -0.79229, 0.853235, -1.46269, 
+  -0.365672, -0.121891, 0.548508, -0.243781, -1.64552, -0.670399, -0.426617, -1.27985, -0.365672, 0.121891, 
+  0.121891, -1.03607, 0.365672, -0.731344, -0.487563, -1.64552, -1.3408, -1.27985, -1.15796, -0.487563, 
+  -0.487563, -0.487563, 2.07214, 3.2301, -0.975126, 2.43781, 0.243781, -0.182836, 0.365672, 0., 
+  1.70647, -1.03607, 0.487563, -0.548508, 1.52363, -0.365672, -0.121891, 0.182836, 1.58458, -0.853235, 
+  1.27985, -0.670399, -1.03607, 0.609454, -0.487563, -0.975126, -0.121891, -0.121891, -0.0609454, 0.670399, 
+  0.426617, 1.03607, 0.365672, -0.487563, -0.91418, 0.0609454, -1.21891, -0.426617, -0.182836, 0.0609454, 
+  -1.09702, -1.09702, -0.426617, -1.15796, -1.09702, -0.91418, -1.03607, -0.426617, -0.853235, -0.243781, 
+  -0.91418, -0.670399, -0.609454, -1.03607, -1.27985, -0.548508, -0.548508, -0.79229, -0.79229, -0.548508, 
+  -0.91418, 0.365672, -0.79229, -0.487563, 0.304727, -0.548508, -0.975126, -0.731344, 0.426617, -0.670399, 
+  -0.548508, -0.487563, -0.731344, -0.79229, -0.853235, -1.3408, -0.975126, -0.0609454, -0.487563, -0.609454, 
+  -1.3408, -1.03607, -0.79229, -1.52363, -0.365672, -0.121891, -0.243781, 0.79229, -0.548508, -1.40174, 
+  -0.365672, -0.731344, -2.13309, -0.670399, -0.304727, -0.731344, -1.3408, -1.3408, -0.121891, 0.243781, 
+  -1.03607, -0.79229, -0.853235, -0.91418, -0.853235, -0.426617, -0.853235, -0.79229, -1.27985, 2.0112, 
+])

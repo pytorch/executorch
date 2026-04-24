@@ -14,10 +14,12 @@
 #include <executorch/runtime/kernel/kernel_includes.h>
 #include <executorch/backends/cadence/vision/operators/layer_configs.h>
 
-/* DMA-tiled maxpool executor (defined in maxpool_exec_2x2j2.c) */
+/* DMA-tiled and no-DMA maxpool executors (defined in maxpool_exec_mxnj2.c) */
 extern "C" {
 typedef int XAI_ERR_TYPE;
-XAI_ERR_TYPE maxpool_exec_2x2j2(
+XAI_ERR_TYPE maxpool_exec_mxnj2(
+    float* src, float* dst, const maxpool_layer_config_t* config);
+XAI_ERR_TYPE maxpool_exec_mxnj2_no_dma(
     float* src, float* dst, const maxpool_layer_config_t* config);
 }
 
@@ -83,28 +85,21 @@ std::tuple<Tensor&, Tensor&> max_pool2d_with_indices_out(
       InvalidArgument,
       ret_val);
 
-  bool optimized = false;
-
-  if (stride[0] == 2 && stride[1] == 2)
-    optimized = true;
-
-  if (optimized){
+  // ── HW-optimized path: stride == 2 ──────────────────────────────
+  if (stride[0] == 2 && stride[1] == 2) {
     float32_t *ptr_out = (float32_t *) out.const_data_ptr<float>();
     const float32_t *ptr_inp = (float32_t *) in.const_data_ptr<float>();
     int batch = in.size(0);
     int channels = in.size(1);
     int inp_height = in.size(2); int inp_width = in.size(3);
     int out_height = out.size(2); int out_width = out.size(3);
-    int padded_height = inp_height + 2 * padding[0];
-    int padded_width = inp_width + 2 * padding[1];
-    int out_pitch_height = out_height; int out_pitch_width = out_width;
     uint8_t kernel_height = kernel_size[0];
     uint8_t kernel_width = kernel_size[1];
 
     // Invalidate input cache: previous op may have written via DMA
     xthal_dcache_region_invalidate((void*)ptr_inp, sizeof(float) * in.numel());
 
-    // ── DMA-tiled path: look up pre-computed config ──────────────────
+    // Look up pre-computed config for this layer
     const maxpool_layer_config_t* mp_cfg = get_maxpool_config_by_params(
         channels, inp_height, inp_width,
         kernel_height, kernel_width,
@@ -112,75 +107,33 @@ std::tuple<Tensor&, Tensor&> max_pool2d_with_indices_out(
         padding[0], padding[1]);
 
     if (mp_cfg != NULL) {
-      // Process each batch independently through the DMA executor
+      // Check if DRAM buffers are available for DMA tiling
+      bool dram_available = (ptr_dram0 != nullptr) && (IDMA_BUFFER_SIZE_DRAM0 > 0)
+                         && (ptr_dram1 != nullptr) && (IDMA_BUFFER_SIZE_DRAM1 > 0);
+
       for (int b = 0; b < batch; b++) {
         float* batch_inp = (float*)ptr_inp + b * channels * inp_height * inp_width;
         float* batch_out = (float*)ptr_out + b * channels * out_height * out_width;
 
-        XAI_ERR_TYPE status = maxpool_exec_2x2j2(batch_inp, batch_out, mp_cfg);
+        XAI_ERR_TYPE status;
+        if (dram_available) {
+          status = maxpool_exec_mxnj2(batch_inp, batch_out, mp_cfg);
+        } else {
+          status = maxpool_exec_mxnj2_no_dma(batch_inp, batch_out, mp_cfg);
+        }
         ET_KERNEL_CHECK(ctx, status == 0, InvalidArgument, ret_val);
       }
 
-      // Invalidate output cache: DMA wrote to system memory, CPU must not
-      // see stale cache lines
+      // Invalidate output cache: executor wrote to system memory
       xthal_dcache_region_invalidate(ptr_out, sizeof(float) * out.numel());
 
       TIME_END(maxpool);
       TIME_DISPLAY(maxpool, in.numel(), "floats");
       return ret_val;
     }
-
-    // ── Fallback: cache-based path (original implementation) ─────────
-    size_t padded_size = batch * channels * padded_height * padded_width;
-    executorch::runtime::Result<void*> temp_mem_res = 
-        ctx.allocate_temp(padded_size * sizeof(float));
-    float* padded_data = (float*)(temp_mem_res.ok() ? temp_mem_res.get() : nullptr);
-
-    
-    ET_KERNEL_CHECK(ctx, padded_data != nullptr, MemoryAllocationFailed, ret_val);
-    
-    // Invalidate input cache: previous op (dequantize) may have written via DMA,
-    // bypassing cache. CPU memcpy below would read stale cache lines.
-    xthal_dcache_region_invalidate((void*)ptr_inp, sizeof(float) * in.numel());
-    
-    // Initialize entire buffer with MIN_FLT32
-    std::fill_n(padded_data, padded_size, MIN_FLT32);
-    
-    // Copy input data with padding
-    for (int bc = 0; bc < batch * channels; bc++) {
-      const float* src = ptr_inp + bc * inp_height * inp_width;
-      float* dst = padded_data + bc * padded_height * padded_width + padding[0] * padded_width + padding[1];
-      
-      for (int h = 0; h < inp_height; h++) {
-        std::memcpy(dst, src, inp_width * sizeof(float));
-        src += inp_width;
-        dst += padded_width;
-      }
-    }
-
-    // Writeback padded buffer from cache to system memory so HW kernel sees it
-    xthal_dcache_region_writeback(padded_data, sizeof(float) * padded_size);
-
-    // Process each batch*channel plane independently
-    for (int bc = 0; bc < batch * channels; bc++) {
-      float32_t* plane_out = ptr_out + bc * out_height * out_width;
-      const float32_t* plane_inp = padded_data + bc * padded_height * padded_width;
-
-      maxpool2d_j2x2_f32(plane_out, plane_inp, inp_height, inp_width,
-          out_height, out_width, padded_width, padded_height,
-          out_pitch_width, out_pitch_height, kernel_height, kernel_width);
-    }
-
-    // Invalidate output cache lines: HW kernel wrote to system memory,
-    // CPU/next-op must not see stale cache
-    xthal_dcache_region_invalidate(ptr_out, sizeof(float) * out.numel());
-
-    TIME_END(maxpool);
-    TIME_DISPLAY(maxpool, in.numel(), "floats");
-
-    return ret_val;
   }
 
+  // ── Generic fallback: stride != 2 or no config found ──────────────
   ScalarType in_type = in.scalar_type();
   ET_SWITCH_REALHBF16_TYPES(
       in_type, ctx, "max_pool2d_with_indices.out", CTYPE, [&]() {

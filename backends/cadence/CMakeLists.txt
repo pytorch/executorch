@@ -90,12 +90,6 @@ elseif(EXECUTORCH_FUSION_G3_OPT)
   )
 elseif(EXECUTORCH_VISION_OPT)
   set(TARGET_DIR vision)
-  if(CADENCE_CONV2D_GENERIC)
-    set(_CADENCE_CONV2D_GENERIC_VAL 1)
-  else()
-    set(_CADENCE_CONV2D_GENERIC_VAL 0)
-  endif()
-  add_compile_definitions(CADENCE_CONV2D_GENERIC=${_CADENCE_CONV2D_GENERIC_VAL})
   add_subdirectory(
     ${CMAKE_CURRENT_SOURCE_DIR}/${TARGET_DIR}/third-party
     ${EXECUTORCH_ROOT}/runtime/core/portable_type/c10

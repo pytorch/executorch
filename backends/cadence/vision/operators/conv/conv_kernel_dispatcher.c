@@ -24,34 +24,24 @@ XAI_ERR_TYPE conv_execute_kernel(
 {
     // Dispatch to kernel-specific executor
     if (strcmp(config->kernel_name, "7x7j2d1_dma") == 0) {
-        printf("CONV_DISPATCH : DMA : 7x7j2d1_dma\n");
         return conv_exec_7x7j2d1(src, dst, coeff_ptr, bias_ptr, config);
     } else if (strcmp(config->kernel_name, "7x7j2d1_no_dma") == 0) {
-        printf("CONV_DISPATCH : No-DMA : 7x7j2d1_no_dma\n");
         return conv_exec_7x7j2d1_cache(src, dst, coeff_ptr, bias_ptr, config);
     } else if (strcmp(config->kernel_name, "3x3j1d1_dma") == 0) {
-        printf("CONV_DISPATCH : DMA : 3x3j1d1_dma\n");
         return conv_exec_3x3j1d1(src, dst, coeff_ptr, bias_ptr, config);
     } else if (strcmp(config->kernel_name, "3x3j1d1_no_dma") == 0) {
-        printf("CONV_DISPATCH : No-DMA : 3x3j1d1_no_dma\n");
         return conv_exec_3x3j1d1_cache(src, dst, coeff_ptr, bias_ptr, config);
     } else if (strcmp(config->kernel_name, "3x3j2d1_dma") == 0) {
-        printf("CONV_DISPATCH : DMA : 3x3j2d1_dma\n");
         return conv_exec_3x3j2d1(src, dst, coeff_ptr, bias_ptr, config);
     } else if (strcmp(config->kernel_name, "3x3j2d1_no_dma") == 0) {
-        printf("CONV_DISPATCH : No-DMA : 3x3j2d1_no_dma\n");
         return conv_exec_3x3j2d1_cache(src, dst, coeff_ptr, bias_ptr, config);
     } else if (strcmp(config->kernel_name, "1x1j2d1_dma") == 0) {
-        printf("CONV_DISPATCH : DMA : 1x1j2d1_dma\n");
         return conv_exec_1x1j2d1(src, dst, coeff_ptr, bias_ptr, config);
     } else if (strcmp(config->kernel_name, "1x1j2d1_no_dma") == 0) {
-        printf("CONV_DISPATCH : No-DMA : 1x1j2d1_no_dma\n");
         return conv_exec_1x1j2d1_cache(src, dst, coeff_ptr, bias_ptr, config);
     } else if (strcmp(config->kernel_name, "1x1j1d1_dma") == 0) {
-        printf("CONV_DISPATCH : DMA : 1x1j1d1_dma\n");
         return conv_exec_1x1j1d1(src, dst, coeff_ptr, bias_ptr, config);
     } else if (strcmp(config->kernel_name, "1x1j1d1_no_dma") == 0) {
-        printf("CONV_DISPATCH : No-DMA : 1x1j1d1_no_dma\n");
         return conv_exec_1x1j1d1_cache(src, dst, coeff_ptr, bias_ptr, config);
     } else {
         return XAI_ERR_BADARG;

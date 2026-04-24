@@ -12,6 +12,14 @@
 #include <executorch/runtime/kernel/kernel_includes.h>
 #include <executorch/runtime/platform/assert.h>
 
+/* DMA-tiled mean executor (defined in mean/mean_exec_dma.c) */
+extern "C" {
+typedef int XAI_ERR_TYPE;
+XAI_ERR_TYPE mean_exec_dma(
+    const float* src, float* dst,
+    int channels, int spatial_h, int spatial_w);
+}
+
 using executorch::aten::RuntimeContext;
 using executorch::aten::ScalarType;
 using executorch::aten::Tensor;
@@ -98,36 +106,34 @@ Tensor& mean_out(
     size_t inp_bytes = total_channels * 4 * FLT32_SIZE;  // 4 floats per channel
     size_t out_bytes = total_channels * FLT32_SIZE;       // 1 float per channel
     
-    // Use DMA with separate DRAM banks: DRAM0 for input, DRAM1 for output
-    // This avoids same-bank buffer sharing issues
-    bool use_dma = dram0_available && dram1_available &&
-                   (inp_bytes <= IDMA_BUFFER_SIZE_DRAM0) &&
-                   (out_bytes <= IDMA_BUFFER_SIZE_DRAM1);
+    // Use DMA ping-pong tiled executor when both DRAM banks are available
+    bool use_dma = dram0_available && dram1_available;
     
     if (use_dma) {
-      float32_t* inp_local = (float32_t*)ptr_dram0;
-      float32_t* out_local = (float32_t*)ptr_dram1;
-      
-      dma_2dm_init(0);
-      dma_2dm_init(1);
-      
-      // DMA load input via channel 0: system memory -> DRAM0
-      dma_1dm(0, (void*)input_data, inp_local, inp_bytes);
-      idma_hw_wait_all(0);
-      
-      // SIMD process: DRAM0 input -> DRAM1 output
-      simd_mean_pool_2x2_to_1x1_float32(out_local, inp_local, total_channels * 4);
-      
-      // DMA store output via channel 1: DRAM1 -> system memory
-      dma_1dm(0, out_local, (void*)out_data, out_bytes);
-      idma_hw_wait_all(0);
-      
-      // // Invalidate output cache so next operator sees DMA-written data
-      // xthal_dcache_region_invalidate(out_data, sizeof(float) * out.numel());
-      
-      TIME_END(mean_simd_optimized);
-      TIME_DISPLAY(mean_simd_optimized, total_channels, "channels (DMA)");
-      return out;
+      // Invalidate input cache: previous op may have written via DMA
+      xthal_dcache_region_invalidate((void*)input_data, sizeof(float) * in.numel());
+
+      // Process each batch independently through the DMA executor
+      for (int b = 0; b < batch_size; b++) {
+        const float* batch_inp = input_data + b * channels * 4;
+        float* batch_out = out_data + b * channels;
+
+        XAI_ERR_TYPE status = mean_exec_dma(batch_inp, batch_out, channels, 2, 2);
+        if (status != 0) {
+          // DMA executor failed (buffer too small?), fall through to SIMD path
+          use_dma = false;
+          break;
+        }
+      }
+
+      if (use_dma) {
+        // Invalidate output cache: DMA wrote to system memory
+        xthal_dcache_region_invalidate(out_data, sizeof(float) * out.numel());
+        
+        TIME_END(mean_simd_optimized);
+        TIME_DISPLAY(mean_simd_optimized, total_channels, "channels (DMA)");
+        return out;
+      }
     }
     
     // Fallback: Direct SIMD without DMA (data fits or no DRAM)
