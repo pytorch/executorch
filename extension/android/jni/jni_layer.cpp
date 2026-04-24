@@ -288,15 +288,17 @@ class ExecuTorchJni : public facebook::jni::HybridClass<ExecuTorchJni> {
       module_ = std::make_unique<Module>(
           modelPath->toStdString(), load_mode, std::move(etdump_gen));
     } catch (const std::exception& e) {
+      const std::string error_message =
+          std::string("Failed to create Module: ") + e.what();
       executorch::jni_helper::throwExecutorchException(
-          static_cast<uint32_t>(Error::Internal),
-          std::string("Failed to create Module: ") + e.what());
-      throw;
+          static_cast<uint32_t>(Error::Internal), error_message);
+      throw facebook::jni::JniException(error_message);
     } catch (...) {
+      constexpr const char* error_message =
+          "Failed to create Module: unknown native error";
       executorch::jni_helper::throwExecutorchException(
-          static_cast<uint32_t>(Error::Internal),
-          "Failed to create Module: unknown native error");
-      throw;
+          static_cast<uint32_t>(Error::Internal), error_message);
+      throw facebook::jni::JniException(error_message);
     }
 
 #ifdef ET_USE_THREADPOOL

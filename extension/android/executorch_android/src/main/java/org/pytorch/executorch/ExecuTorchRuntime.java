@@ -45,16 +45,13 @@ public class ExecuTorchRuntime {
     }
     File file = new File(path);
     if (!file.exists()) {
-      throw new IllegalArgumentException(
-          "Cannot load " + description + ": " + path + " does not exist");
+      throw new IllegalArgumentException("Cannot load " + description + "!! " + path);
     }
     if (!file.isFile()) {
-      throw new IllegalArgumentException(
-          "Cannot load " + description + ": " + path + " is not a file");
+      throw new IllegalArgumentException("Cannot load " + description + "!! " + path);
     }
     if (!file.canRead()) {
-      throw new IllegalArgumentException(
-          "Cannot load " + description + ": " + path + " is not readable");
+      throw new IllegalArgumentException("Cannot load " + description + "!! " + path);
     }
   }
 
