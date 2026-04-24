@@ -264,7 +264,6 @@ class ToTosaMemoryFormatPass(ArmPass):
         """Convert a producer's output to channels-last by appending a backend
         `TRANSPOSE` node and rewiring its users.
         """
-
         rank = len(get_first_fake_tensor(node).size())
         spatial_rank = node.meta["tosa_spatial_rank"]
         mem_format = ToTosaMemoryFormatPass._channels_last_order(rank, spatial_rank)
@@ -383,17 +382,18 @@ class ToTosaMemoryFormatPass(ArmPass):
         if output_dim_orders is None:
             raise RuntimeError(f"{output_dim_orders=} is not supported.")
 
+        transposed_output_inputs: set[torch.fx.Node] = set()
         for output_node_input, output_dim_order in zip(
             outputs, output_dim_orders, strict=True
         ):
-            if output_dim_order in (
-                NCHW_ORDER,
-                NNCHW_ORDER,
-                NNNCHW_ORDER,
+            if (
+                output_dim_order in (NCHW_ORDER, NNCHW_ORDER, NNNCHW_ORDER)
+                and output_node_input not in transposed_output_inputs
             ):
                 self.insert_input_transpose(
                     output_node, output_node_input, graph_module
                 )
+                transposed_output_inputs.add(output_node_input)
 
     def remove_dim_order_kwargs(
         self, graph_module: torch.fx.GraphModule, node: torch.fx.Node
@@ -436,6 +436,9 @@ class ToTosaMemoryFormatPass(ArmPass):
                     raise RuntimeError(
                         f"Conflicting dim orders {arg.meta['tosa_dim_order']} and {dim_order} for shape node {arg.name}"
                     )
+                if node.target == exir_ops.backend.tosa.RESIZE.default:
+                    # RESIZE's shape input is expected to be in HW order, so we need to override the dim order to be the identity for it regardless of the user node's dim order.
+                    dim_order = tuple(range(len(arg.meta["val"])))
                 arg.meta["tosa_dim_order"] = dim_order
                 self._propagate_dim_order_to_shape_args(arg)
 
@@ -462,6 +465,7 @@ class ToTosaMemoryFormatPass(ArmPass):
         Entry point for the pass: annotate spatial ranks, compute dim orders,
         insert bridging transposes, and forward to child passes.
         """
+        graph_module.graph.eliminate_dead_code()
         nodes = list(graph_module.graph.nodes)
         for node in nodes:
             if not self._is_ok_for_annotation(node):

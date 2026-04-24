@@ -13,6 +13,11 @@ import piq
 import torch
 from diffusers import EulerDiscreteScheduler, UNet2DConditionModel
 from diffusers.models.embeddings import get_timestep_embedding
+from executorch.backends.qualcomm.export_utils import (
+    QnnConfig,
+    setup_common_args_and_variables,
+    SimpleADB,
+)
 
 from executorch.backends.qualcomm.utils.utils import (
     ExecutorchBackendConfig,
@@ -29,10 +34,6 @@ from executorch.examples.qualcomm.qaihub_scripts.stable_diffusion.stable_diffusi
 from executorch.examples.qualcomm.qaihub_scripts.utils.utils import (
     gen_pte_from_ctx_bin,
     get_encoding,
-)
-from executorch.examples.qualcomm.utils import (
-    setup_common_args_and_variables,
-    SimpleADB,
 )
 from executorch.exir.passes.memory_planning_pass import MemoryPlanningPass
 from PIL import Image
@@ -205,7 +206,7 @@ def save_result(output_image):
     print(f"Output image saved at {save_path}")
 
 
-def inference(args, compiler_specs, pte_files):
+def inference(args, qnn_config, compiler_specs, pte_files):
     # Loading a pretrained EulerDiscreteScheduler from the https://huggingface.co/stabilityai/stable-diffusion-2-1-base.  # @lint-ignore
     scheduler = EulerDiscreteScheduler.from_pretrained(
         "stabilityai/stable-diffusion-2-1-base", subfolder="scheduler", revision="main"
@@ -240,15 +241,10 @@ def inference(args, compiler_specs, pte_files):
     }
 
     adb = SimpleADB(
-        qnn_sdk=os.getenv("QNN_SDK_ROOT"),
-        build_path=args.build_folder,
+        qnn_config=qnn_config,
         pte_path=pte_files,
         workspace=f"/data/local/tmp/executorch/{args.pte_prefix}",
-        device_id=args.device,
-        host_id=args.host,
-        soc_model=args.model,
         runner="examples/qualcomm/qaihub_scripts/stable_diffusion/qaihub_stable_diffusion_runner",
-        target=args.target,
     )
 
     input_unet = ()
@@ -324,8 +320,7 @@ def inference(args, compiler_specs, pte_files):
             file.write(flattened_tensor.numpy().tobytes())
         files.append(os.path.join(args.artifact, "latents.raw"))
 
-    if not args.skip_push:
-        adb.push(inputs=input_unet, files=files)
+    adb.push(inputs=input_unet, files=files)
     adb.execute(custom_runner_cmd=qnn_executor_runner_args)
 
     output_image = []
@@ -345,6 +340,7 @@ def inference(args, compiler_specs, pte_files):
 
 
 def main(args):
+    qnn_config = QnnConfig.load_config(args.config_file if args.config_file else args)
     os.makedirs(args.artifact, exist_ok=True)
     # common part for compile & inference
     backend_options = generate_htp_compiler_spec(
@@ -352,14 +348,14 @@ def main(args):
         use_multi_contexts=True,
     )
     compiler_specs = generate_qnn_executorch_compiler_spec(
-        soc_model=getattr(QcomChipset, args.model),
+        soc_model=getattr(QcomChipset, args.soc_model),
         backend_options=backend_options,
         is_from_context_binary=True,
     )
 
     if args.pre_gen_pte is None:
         # Create custom operators as context loader
-        soc_model = get_soc_to_chipset_map()[args.model]
+        soc_model = get_soc_to_chipset_map()[args.soc_model]
         bundle_programs = [
             from_context_binary(args.text_encoder_bin, "ctx_loader_0", soc_model),
             from_context_binary(args.unet_bin, "ctx_loader_1", soc_model),
@@ -390,7 +386,7 @@ def main(args):
     if args.compile_only:
         return
 
-    inference(args, compiler_specs, pte_files)
+    inference(args, qnn_config, compiler_specs, pte_files)
 
 
 if __name__ == "__main__":  # noqa: C901

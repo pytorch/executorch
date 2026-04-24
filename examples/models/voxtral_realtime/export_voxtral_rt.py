@@ -30,7 +30,7 @@ Backend support:
 Usage:
     python export_voxtral_rt.py --model-path ~/models/Voxtral-Mini-4B-Realtime-2602
     python export_voxtral_rt.py --model-path ~/models/Voxtral-Mini-4B-Realtime-2602 --streaming
-    python export_voxtral_rt.py --model-path ~/models/Voxtral-Mini-4B-Realtime-2602 --backend metal
+    python export_voxtral_rt.py --model-path ~/models/Voxtral-Mini-4B-Realtime-2602 --backend metal --dtype bf16 --qlinear-encoder fpa4w --qlinear fpa4w
     python export_voxtral_rt.py --model-path ~/models/Voxtral-Mini-4B-Realtime-2602 --backend cuda --qlinear 4w
 """
 
@@ -39,9 +39,7 @@ import os
 
 import torch
 import torch.nn as nn
-
 from executorch.examples.models.voxtral_realtime.model import load_model
-
 from executorch.exir import (
     EdgeCompileConfig,
     ExecutorchBackendConfig,
@@ -112,6 +110,7 @@ def _export_decoder_and_embedding(
     qlinear_group_size,
     qlinear_packing_format,
     qembedding,
+    qembedding_group_size,
     device="cpu",
 ):
     """Export text_decoder and token_embedding into programs dict."""
@@ -157,6 +156,7 @@ def _export_decoder_and_embedding(
         quantize_model_(
             tok_emb,
             qembedding_config=qembedding,
+            qembedding_group_size=qembedding_group_size,
         )
 
     tok_seq_dim = Dim("tok_seq_len", min=1, max=max_seq_len)
@@ -174,12 +174,13 @@ def export_all(
     model,
     max_seq_len,
     qlinear_encoder=None,
-    qlinear_encoder_group_size=32,
+    qlinear_encoder_group_size=None,
     qlinear_encoder_packing_format=None,
     qlinear=None,
-    qlinear_group_size=32,
+    qlinear_group_size=None,
     qlinear_packing_format=None,
     qembedding=None,
+    qembedding_group_size=None,
     backend="xnnpack",
 ):
     """Export all three model components with per-component quantization."""
@@ -236,6 +237,7 @@ def export_all(
         qlinear_group_size,
         qlinear_packing_format,
         qembedding,
+        qembedding_group_size,
         device,
     )
 
@@ -248,6 +250,7 @@ def export_all(
         "dim": model.config.dim,
         "vocab_size": model.config.vocab_size,
         "max_seq_len": max_seq_len,
+        "sliding_window": model.config.sliding_window,
     }
 
     return programs, metadata
@@ -258,12 +261,13 @@ def export_streaming(
     max_seq_len,
     max_enc_len=750,
     qlinear_encoder=None,
-    qlinear_encoder_group_size=32,
+    qlinear_encoder_group_size=None,
     qlinear_encoder_packing_format=None,
     qlinear=None,
-    qlinear_group_size=32,
+    qlinear_group_size=None,
     qlinear_packing_format=None,
     qembedding=None,
+    qembedding_group_size=None,
     backend="xnnpack",
 ):
     """Export streaming model components with per-component quantization."""
@@ -316,6 +320,7 @@ def export_streaming(
         qlinear_group_size,
         qlinear_packing_format,
         qembedding,
+        qembedding_group_size,
         device,
     )
 
@@ -346,6 +351,7 @@ def export_streaming(
         "enc_dim": model.config.enc_dim,
         "vocab_size": model.config.vocab_size,
         "max_seq_len": max_seq_len,
+        "sliding_window": model.config.sliding_window,
         "streaming": 1,
         "step_samples": step_samples,
         "chunk_mel_len": chunk_mel_len,
@@ -375,6 +381,8 @@ def _linear_bias_decomposition(input, weight, bias=None):
 
 def lower_to_executorch(programs, metadata, backend="xnnpack"):
     """Lower exported programs to ExecuTorch."""
+    transform_passes = None
+
     if backend == "xnnpack":
         from executorch.backends.xnnpack.partition.xnnpack_partitioner import (
             XnnpackDynamicallyQuantizedPartitioner,
@@ -394,10 +402,10 @@ def lower_to_executorch(programs, metadata, backend="xnnpack"):
 
         # Run decompositions for Metal backend
         updated_programs = {}
+        decomp_table = torch.export.default_decompositions()
+        decomp_table[torch.ops.aten.linear.default] = _linear_bias_decomposition
         for key, ep in programs.items():
-            updated_programs[key] = ep.run_decompositions(
-                {torch.ops.aten.linear.default: _linear_bias_decomposition}
-            )
+            updated_programs[key] = ep.run_decompositions(decomp_table)
         programs = updated_programs
 
         partitioner = {}
@@ -428,12 +436,20 @@ def lower_to_executorch(programs, metadata, backend="xnnpack"):
             if backend == "cuda-windows":
                 compile_specs.append(CompileSpec("platform", b"windows"))
             partitioner[key] = [CudaPartitioner(compile_specs)]
+    elif backend == "mlx":
+        from executorch.backends.mlx.partitioner import MLXPartitioner
+        from executorch.backends.mlx.passes import get_default_passes
+
+        print("\nLowering to ExecuTorch with MLX...")
+        partitioner = {key: [MLXPartitioner()] for key in programs}
+        transform_passes = get_default_passes()
     else:
         print("\nLowering to ExecuTorch (portable)...")
         partitioner = []
 
     et_prog = to_edge_transform_and_lower(
         programs,
+        transform_passes=transform_passes,
         partitioner=partitioner,
         compile_config=EdgeCompileConfig(
             _check_ir_validity=False,
@@ -468,7 +484,7 @@ def main():
     parser.add_argument(
         "--backend",
         default="xnnpack",
-        choices=["portable", "xnnpack", "metal", "cuda", "cuda-windows"],
+        choices=["portable", "xnnpack", "mlx", "metal", "cuda", "cuda-windows"],
         help="Backend for acceleration (default: xnnpack)",
     )
     parser.add_argument(
@@ -491,13 +507,13 @@ def main():
     parser.add_argument(
         "--qlinear",
         default=None,
-        choices=["4w", "8w", "8da4w", "8da8w", "fpa4w"],
+        choices=["4w", "8w", "8da4w", "8da8w", "fpa4w", "nvfp4"],
         help="Quantize decoder linear layers.",
     )
     parser.add_argument(
         "--qlinear-group-size",
         type=int,
-        default=32,
+        default=None,
         help="Group size for decoder linear quantization (default: 32).",
     )
     parser.add_argument(
@@ -509,13 +525,13 @@ def main():
     parser.add_argument(
         "--qlinear-encoder",
         default=None,
-        choices=["4w", "8w", "8da4w", "8da8w", "fpa4w"],
+        choices=["4w", "8w", "8da4w", "8da8w", "fpa4w", "nvfp4"],
         help="Quantize encoder linear layers (separate from decoder).",
     )
     parser.add_argument(
         "--qlinear-encoder-group-size",
         type=int,
-        default=32,
+        default=None,
         help="Group size for encoder linear quantization (default: 32).",
     )
     parser.add_argument(
@@ -527,8 +543,14 @@ def main():
     parser.add_argument(
         "--qembedding",
         default=None,
-        choices=["8w"],
-        help="Quantize embedding layers (8-bit weight-only).",
+        choices=["4w", "8w", "nvfp4"],
+        help="Quantize embedding layers.",
+    )
+    parser.add_argument(
+        "--qembedding-group-size",
+        type=int,
+        default=None,
+        help="Group size for embedding quantization (default: 0 = per-channel).",
     )
     parser.add_argument(
         "--streaming",
@@ -540,6 +562,14 @@ def main():
         type=int,
         default=750,
         help="Encoder sliding window size for streaming (default: 750).",
+    )
+    parser.add_argument(
+        "--sliding-window",
+        type=int,
+        default=None,
+        help="Decoder sliding window size for streaming (default: from params.json, "
+        "typically 8192). Smaller values reduce memory and improve decode speed "
+        "but limit how far back the decoder can attend. Only used with --streaming.",
     )
     parser.add_argument(
         "--dtype",
@@ -555,6 +585,8 @@ def main():
         parser.error("--qlinear=fpa4w can only be used with --backend=metal")
     if args.qlinear_encoder == "fpa4w" and backend_for_export != "metal":
         parser.error("--qlinear-encoder=fpa4w can only be used with --backend=metal")
+    if args.sliding_window is not None and not args.streaming:
+        parser.error("--sliding-window only applies to --streaming mode")
 
     os.makedirs(args.output_dir, exist_ok=True)
 
@@ -567,6 +599,8 @@ def main():
         n_delay_tokens=args.delay_tokens,
         dtype=model_dtype,
         backend=backend_for_export,
+        streaming=args.streaming,
+        sliding_window=args.sliding_window,
     )
 
     # Move to CUDA for CUDA backend export (AOTInductor needs CUDA tensors)
@@ -591,6 +625,7 @@ def main():
         "qlinear_group_size": args.qlinear_group_size,
         "qlinear_packing_format": args.qlinear_packing_format,
         "qembedding": args.qembedding,
+        "qembedding_group_size": args.qembedding_group_size,
         "backend": backend_for_export,
     }
     if args.streaming:
@@ -599,6 +634,8 @@ def main():
         )
     else:
         programs, metadata = export_all(model, args.max_seq_len, **quant_args)
+
+    metadata["delay_tokens"] = args.delay_tokens
 
     # Lower
     et = lower_to_executorch(programs, metadata, backend=args.backend)

@@ -18,6 +18,13 @@ from executorch.backends.qualcomm.builders.node_visitor import dq_ops
 from executorch.backends.qualcomm.debugger.qnn_intermediate_debugger import (
     QNNIntermediateDebugger,
 )
+from executorch.backends.qualcomm.export_utils import (
+    generate_inputs,
+    get_backend_type,
+    make_quantizer,
+    QnnConfig,
+    SimpleADB,
+)
 from executorch.backends.qualcomm.qnn_preprocess import QnnBackend
 from executorch.backends.qualcomm.quantizer.quantizer import ModuleQConfig, QuantDtype
 from executorch.backends.qualcomm.serialization.qc_schema import QcomChipset
@@ -35,13 +42,7 @@ from executorch.backends.qualcomm.utils.utils import (
 )
 from executorch.devtools import Inspector
 from executorch.devtools.inspector._inspector_utils import TimeScale
-from executorch.examples.qualcomm.utils import (
-    generate_inputs,
-    get_backend_type,
-    make_output_dir,
-    make_quantizer,
-    SimpleADB,
-)
+from executorch.examples.qualcomm.utils import make_output_dir
 
 from executorch.exir.backend.compile_spec_schema import CompileSpec
 from executorch.exir.backend.utils import get_delegates
@@ -155,7 +156,7 @@ class TestQNN(unittest.TestCase):
     host: str = ""
     device: str = ""
     build_folder: str = ""
-    model: QcomChipset = None
+    soc_model: QcomChipset = None
     compiler_specs: List[CompileSpec] = None
     chipset_table = get_soc_to_chipset_map()
     error_only = False
@@ -167,7 +168,7 @@ class TestQNN(unittest.TestCase):
     qa_dataset: str = ""
     sentence_dataset: str = ""
     pretrained_weight: str = ""
-    enable_profile: bool = False
+    profile_level: int = 0
     op_package_dir: str = ""
     target: str = ""
     model_name: str = ""
@@ -191,19 +192,24 @@ class TestQNN(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
         if not cls.enable_x86_64 and not cls.compile_only:
+            qnn_config = QnnConfig(
+                backend=cls.backend,
+                target=cls.target,
+                build_folder=cls.build_folder,
+                device=cls.device,
+                host=cls.host,
+                soc_model=cls.soc_model,
+                direct_build_folder=cls.direct_build_folder,
+            )
+
             # init device once
             adb = SimpleADB(
-                qnn_sdk=os.getenv("QNN_SDK_ROOT"),
-                build_path=cls.build_folder,
-                direct_mode_build_path=cls.direct_build_folder,
+                qnn_config=qnn_config,
                 pte_path=[],
                 workspace="/data/local/tmp/qnn_executorch_test",
-                device_id=cls.device,
-                host_id=cls.host,
-                soc_model=cls.model,
                 error_only=cls.error_only,
-                target=cls.target,
             )
+
             adb.push(
                 backends={get_backend_type(cls.backend)},
                 init_env=True,
@@ -212,12 +218,27 @@ class TestQNN(unittest.TestCase):
     def _assert_outputs_equal(self, model_output, ref_output):
         self.assertTrue(len(ref_output) == len(model_output))
         for i in range(len(ref_output)):
-            self.assertTrue(
-                torch.allclose(
-                    model_output[i], ref_output[i], atol=self.atol, rtol=self.rtol
-                ),
-                msg=f"ref_output:\n{ref_output[i]}\n\nmodel_output:\n{model_output[i]}",
-            )
+            if model_output[i].dtype == torch.bool or ref_output[i].dtype == torch.bool:
+                model_bool = model_output[i].to(torch.bool)
+                ref_bool = ref_output[i].to(torch.bool)
+                model_bool, ref_bool = torch.broadcast_tensors(model_bool, ref_bool)
+                self.assertTrue(
+                    torch.equal(model_bool, ref_bool),
+                    msg=f"Output {i} does not match reference output.\n"
+                    f"\tOutput tensor shape: {model_output[i].shape}, dtype: {model_output[i].dtype}\n"
+                    f"\tReference tensor shape: {ref_output[i].shape}, dtype: {ref_output[i].dtype}\n"
+                    f"\tMismatch count: {torch.count_nonzero(model_bool ^ ref_bool).item()} / {model_bool.numel()}\n",
+                )
+            else:
+                self.assertTrue(
+                    torch.allclose(
+                        model_output[i],
+                        ref_output[i],
+                        atol=self.atol,
+                        rtol=self.rtol,
+                    ),
+                    msg=f"ref_output:\n{ref_output[i]}\n\nmodel_output:\n{model_output[i]}",
+                )
 
     def _save_model_and_expected_output(
         self,
@@ -257,8 +278,8 @@ class TestQNN(unittest.TestCase):
     def add_default_cmds(self, cmds):
         cmds.extend(
             [
-                "--model",
-                self.model,
+                "--soc_model",
+                self.soc_model,
                 "--target",
                 self.target,
                 "--ip",
@@ -485,17 +506,22 @@ class TestQNN(unittest.TestCase):
                         self.inference_speed = float(f.read())
 
             else:
+                qnn_config = QnnConfig(
+                    backend=self.backend,
+                    target=self.target,
+                    build_folder=self.build_folder,
+                    device=self.device,
+                    host=self.host,
+                    soc_model=self.soc_model,
+                    dump_intermediate_outputs=expected_intermediate_events != -1,
+                    direct_build_folder=self.direct_build_folder,
+                )
+
                 adb = SimpleADB(
-                    qnn_sdk=os.getenv("QNN_SDK_ROOT"),
-                    build_path=self.build_folder,
-                    direct_mode_build_path=self.direct_build_folder,
+                    qnn_config=qnn_config,
                     pte_path=pte_fname,
                     workspace="/data/local/tmp/qnn_executorch_test",
-                    device_id=self.device,
-                    host_id=self.host,
-                    soc_model=self.model,
                     error_only=self.error_only,
-                    dump_intermediate_outputs=self.dump_intermediate_outputs,
                     expected_input_shape=(
                         (tensor.shape for tensor in processed_inputs)
                         if check_io_shape
@@ -506,7 +532,6 @@ class TestQNN(unittest.TestCase):
                         if check_io_shape
                         else None
                     ),
-                    target=self.target,
                 )
                 adb.push(
                     inputs=[processed_inputs],
@@ -519,6 +544,7 @@ class TestQNN(unittest.TestCase):
                     adb.extra_cmds += (
                         f" --performance_output_path {self.inference_speed_output_path}"
                     )
+                adb.execute(custom_runner_cmd=f"rm -rf {adb.output_folder}")
                 adb.execute(method_index=method_index, output_callback=output_callback)
                 adb.pull(host_output_path=tmp_dir, callback=post_process)
                 self._assert_outputs_equal(outputs, ref_outputs)
@@ -565,7 +591,8 @@ class TestQNN(unittest.TestCase):
             skip_node_id_set=skip_node_id_set,
             skip_node_op_set=skip_node_op_set,
             skip_mutable_buffer=skip_mutable_buffer,
-            generate_etrecord=self.enable_profile,
+            generate_etrecord=self.profile_level != 0
+            or expected_intermediate_events != -1,
         )
 
         qnn_intermediate_debugger = None
@@ -614,7 +641,7 @@ class TestQNN(unittest.TestCase):
             )
 
         etrecord_path = "etrecord.bin"
-        if self.enable_profile:
+        if self.profile_level:
             exec_prog.get_etrecord().save(etrecord_path)
         # Check numerics
         if (
@@ -642,6 +669,7 @@ class TestQNN(unittest.TestCase):
         inputs: Tuple[torch.Tensor],
         is_conv_per_channel: Optional[bool] = True,
         is_linear_per_channel: Optional[bool] = False,
+        is_embedding_per_channel: Optional[bool] = False,
         custom_quant_annotations: Tuple[Callable] = (),
         quant_dtype: QuantDtype = QuantDtype.use_8a8w,
         dynamic_shapes: Dict = None,
@@ -658,9 +686,10 @@ class TestQNN(unittest.TestCase):
             custom_annotations=custom_quant_annotations,
             per_channel_conv=is_conv_per_channel,
             per_channel_linear=is_linear_per_channel,
+            per_channel_embedding=is_embedding_per_channel,
             submodule_qconfig_list=submodule_qconfig_list,
             backend=get_backend_type(self.backend),
-            soc_model=self.model,
+            soc_model=self.soc_model,
         )
         if block_size_map is not None:
             quantizer.set_block_size_map(block_size_map)
@@ -702,7 +731,7 @@ class TestQNN(unittest.TestCase):
             is_qat=True,
             submodule_qconfig_list=submodule_qconfig_list,
             backend=get_backend_type(self.backend),
-            soc_model=self.model,
+            soc_model=self.soc_model,
         )
         if block_size_map is not None:
             quantizer.set_block_size_map(block_size_map)
@@ -729,17 +758,20 @@ class TestQNN(unittest.TestCase):
         return convert_pt2e(prepared)
 
     def get_adb_tool(self, pte_fname):
+        qnn_config = QnnConfig(
+            backend=self.backend,
+            build_folder=self.build_folder,
+            device=self.device,
+            host=self.host,
+            soc_model=self.soc_model,
+            direct_build_folder=self.direct_build_folder,
+        )
+
         adb = SimpleADB(
-            qnn_sdk=os.getenv("QNN_SDK_ROOT"),
-            build_path=self.build_folder,
-            direct_mode_build_path=self.direct_build_folder,
+            qnn_config=qnn_config,
             pte_path=pte_fname,
             workspace="/data/local/tmp/qnn_executorch_test",
-            device_id=self.device,
-            host_id=self.host,
-            soc_model=self.model,
             error_only=self.error_only,
-            target=self.target,
         )
         return adb
 

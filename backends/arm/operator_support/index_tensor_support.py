@@ -127,11 +127,44 @@ class IndexTensorSupported(SupportedTOSAOperatorCheck):
 
         # Usage 2 guard
         input_node = ensure_type(torch.fx.Node, node.args[0])
-        total_vals = math.prod(get_first_fake_tensor(input_node).shape)
+        input_val = get_first_fake_tensor(input_node)
+        total_vals = math.prod(input_val.shape)
         if total_vals > torch.iinfo(torch.int32).max:
             self.reporter.report_reject(
                 node,
                 ("Value size exceeds int32 range; would overflow flattened indexing."),
+            )
+            return False
+
+        values_dtype = input_val.dtype
+        if values_dtype in (torch.bool, torch.int8, torch.int16, torch.int32):
+            if not tosa_spec.support_integer():
+                self.reporter.report_reject(
+                    node,
+                    f"{node.target}: dtype {values_dtype} requires INT profile.",
+                )
+                return False
+        elif values_dtype in (torch.float16, torch.float32, torch.bfloat16):
+            if values_dtype == torch.bfloat16 and not tosa_spec.support_extension(
+                "bf16"
+            ):
+                self.reporter.report_reject(
+                    node,
+                    f"{node.target}: dtype {values_dtype} requires bf16 extension.",
+                )
+                return False
+            if not (tosa_spec.support_float() or tosa_spec.support_integer()):
+                self.reporter.report_reject(
+                    node,
+                    f"{node.target}: dtype {values_dtype} requires FP profile or "
+                    "INT profile (with quantization).",
+                )
+                return False
+        else:
+            self.reporter.report_reject(
+                node,
+                f"{node.target}: unsupported values dtype {values_dtype}; "
+                "expected bool/int8/int16/int32/float16/bfloat16/float32.",
             )
             return False
 

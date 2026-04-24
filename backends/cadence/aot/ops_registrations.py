@@ -6,7 +6,7 @@
 
 # pyre-strict
 
-from math import prod
+from math import ceil, prod
 from typing import Callable, Optional, Tuple
 
 import torch
@@ -214,16 +214,29 @@ lib.define(
 )
 
 lib.define(
+    "quantized_max_pool2d_nchw(Tensor input, int[] kernel_size, int[] stride, int[] padding, int[] dilation, bool ceil_mode) -> Tensor"
+)
+lib.define(
+    "quantized_max_pool2d_nchw.out(Tensor input, int[] kernel_size, int[] stride, int[] padding, int[] dilation, bool ceil_mode, *, Tensor(a!) out) -> Tensor(a!)"
+)
+lib.define(
+    "quantized_max_pool2d_nhwc(Tensor input, int[] kernel_size, int[] stride, int[] padding, int[] dilation, bool ceil_mode) -> Tensor"
+)
+lib.define(
+    "quantized_max_pool2d_nhwc.out(Tensor input, int[] kernel_size, int[] stride, int[] padding, int[] dilation, bool ceil_mode, *, Tensor(a!) out) -> Tensor(a!)"
+)
+
+lib.define(
     "quantized_conv2d_nhwc(Tensor input, Tensor weight, Tensor bias, int[] stride, SymInt[] padding, int[] dilation, int groups, int input_zero_point, Tensor weight_zero_point, Tensor bias_scale, float out_scale, int out_zero_point, Tensor out_multiplier, Tensor out_shift) -> (Tensor Z)"
 )
 lib.define(
     "quantized_conv2d_nhwc.out(Tensor input, Tensor weight, Tensor bias, int[] stride, SymInt[] padding, int[] dilation, int groups, int input_zero_point, Tensor weight_zero_point, Tensor bias_scale, float out_scale, int out_zero_point, Tensor out_multiplier, Tensor out_shift, *, Tensor(a!) out) -> Tensor(a!)"
 )
 lib.define(
-    "quantized_conv2d_nhwc.per_tensor(Tensor input, Tensor weight, Tensor bias, int[] stride, SymInt[] padding, int[] dilation, int groups, int input_zero_point, int weight_zero_point, float bias_scale, float out_scale, int out_zero_point, int out_multiplier, int out_shift) -> (Tensor Z)"
+    "quantized_conv2d_nhwc.per_tensor(Tensor input, Tensor weight, Tensor bias, int[] stride, SymInt[] padding, int[] dilation, int groups, int input_zero_point, int weight_zero_point, float bias_scale, float out_scale, int out_zero_point, int out_multiplier, int out_shift, Tensor? offset=None) -> (Tensor Z)"
 )
 lib.define(
-    "quantized_conv2d_nhwc.per_tensor_out(Tensor input, Tensor weight, Tensor bias, int[] stride, SymInt[] padding, int[] dilation, int groups, int input_zero_point, int weight_zero_point, float bias_scale, float out_scale, int out_zero_point, int out_multiplier, int out_shift, *, Tensor(a!) out) -> Tensor(a!)"
+    "quantized_conv2d_nhwc.per_tensor_out(Tensor input, Tensor weight, Tensor bias, int[] stride, SymInt[] padding, int[] dilation, int groups, int input_zero_point, int weight_zero_point, float bias_scale, float out_scale, int out_zero_point, int out_multiplier, int out_shift, Tensor? offset=None, *, Tensor(a!) out) -> Tensor(a!)"
 )
 lib.define(
     "quantized_conv1d_ncl(Tensor input, Tensor weight, Tensor bias, int[] stride, SymInt[] padding, int[] dilation, int groups, int input_zero_point, Tensor weight_zero_point, Tensor bias_scale, float out_scale, int out_zero_point, Tensor out_multiplier, Tensor out_shift) -> (Tensor Z)"
@@ -248,6 +261,18 @@ lib.define(
 )
 lib.define(
     "quantized_conv1d_nlc.per_tensor_out(Tensor input, Tensor weight, Tensor bias, int[] stride, SymInt[] padding, int[] dilation, int groups, int input_zero_point, int weight_zero_point, float bias_scale, float out_scale, int out_zero_point, int out_multiplier, int out_shift, *, Tensor(a!) out) -> Tensor(a!)"
+)
+lib.define(
+    "quantized_depthwise_conv1d_ncl.per_tensor(Tensor input, Tensor weight, Tensor bias, int[] stride, SymInt[] padding, int[] dilation, int groups, int input_zero_point, int weight_zero_point, float bias_scale, float out_scale, int out_zero_point, int out_multiplier, int out_shift) -> (Tensor Z)"
+)
+lib.define(
+    "quantized_depthwise_conv1d_ncl.per_tensor_out(Tensor input, Tensor weight, Tensor bias, int[] stride, SymInt[] padding, int[] dilation, int groups, int input_zero_point, int weight_zero_point, float bias_scale, float out_scale, int out_zero_point, int out_multiplier, int out_shift, *, Tensor(a!) out) -> Tensor(a!)"
+)
+lib.define(
+    "quantized_depthwise_conv1d_nlc.per_tensor(Tensor input, Tensor weight, Tensor bias, int[] stride, SymInt[] padding, int[] dilation, int groups, int input_zero_point, int weight_zero_point, float bias_scale, float out_scale, int out_zero_point, int out_multiplier, int out_shift) -> (Tensor Z)"
+)
+lib.define(
+    "quantized_depthwise_conv1d_nlc.per_tensor_out(Tensor input, Tensor weight, Tensor bias, int[] stride, SymInt[] padding, int[] dilation, int groups, int input_zero_point, int weight_zero_point, float bias_scale, float out_scale, int out_zero_point, int out_multiplier, int out_shift, *, Tensor(a!) out) -> Tensor(a!)"
 )
 lib.define(
     "quantized_conv2d_nchw(Tensor input, Tensor weight, Tensor bias, int[] stride, SymInt[] padding, int[] dilation, int groups, int input_zero_point, Tensor weight_zero_point, Tensor bias_scale, float out_scale, int out_zero_point, Tensor out_multiplier, Tensor out_shift) -> (Tensor Z)"
@@ -370,6 +395,10 @@ lib.define(
     "Tensor Y_zero_point, float out_scale, int out_zero_point) -> (Tensor Z)"
 )
 lib.define(
+    "quantized_mul.per_tensor(Tensor X, float X_scale, int X_zero_point, Tensor Y, float Y_scale, "
+    "int Y_zero_point, float out_scale, int out_zero_point) -> (Tensor Z)"
+)
+lib.define(
     "quantized_add_Scalar(Tensor X, Tensor X_scale, Tensor X_zero_point, Scalar Y, "
     "float out_scale, int out_zero_point) -> (Tensor Z)"
 )
@@ -455,16 +484,16 @@ lib.define(
 )
 
 lib.define(
-    "quantized_softmax(Tensor input, Tensor mask, int dim, Tensor in_scale, Tensor in_zero_point, Tensor out_scale, Tensor out_zero_point) -> (Tensor out)"
+    "quantized_softmax(Tensor input, Tensor mask, int dim, int mask_type, Tensor pos, Tensor in_scale, Tensor in_zero_point, Tensor out_scale, Tensor out_zero_point) -> (Tensor out)"
 )
 lib.define(
-    "quantized_softmax.per_tensor(Tensor input, Tensor mask, int dim, float in_scale, int in_zero_point, float out_scale, int out_zero_point) -> (Tensor out)"
+    "quantized_softmax.per_tensor(Tensor input, Tensor mask, int dim, int mask_type, Tensor pos, float in_scale, int in_zero_point, float out_scale, int out_zero_point) -> (Tensor out)"
 )
 lib.define(
-    "quantized_softmax.out(Tensor input, Tensor mask, int dim, Tensor in_scale, Tensor in_zero_point, Tensor out_scale, Tensor out_zero_point, *, Tensor(a!) out) -> Tensor (a!)"
+    "quantized_softmax.out(Tensor input, Tensor mask, int dim, int mask_type, Tensor pos, Tensor in_scale, Tensor in_zero_point, Tensor out_scale, Tensor out_zero_point, *, Tensor(a!) out) -> Tensor (a!)"
 )
 lib.define(
-    "quantized_softmax.per_tensor_out(Tensor input, Tensor mask, int dim, float in_scale, int in_zero_point, float out_scale, int out_zero_point, *, Tensor(a!) out) -> Tensor (a!)"
+    "quantized_softmax.per_tensor_out(Tensor input, Tensor mask, int dim, int mask_type, Tensor pos, float in_scale, int in_zero_point, float out_scale, int out_zero_point, *, Tensor(a!) out) -> Tensor (a!)"
 )
 
 # pack float/bool mask tensor into a bitmask of type uint8 (each element holding 8 bool mask elements)
@@ -576,6 +605,10 @@ lib.define(
     "Tensor Y_zero_point, float out_scale, int out_zero_point, *, Tensor(a!) out) -> Tensor(a!)"
 )
 lib.define(
+    "quantized_mul.per_tensor_out(Tensor X, float X_scale, int X_zero_point, Tensor Y, float Y_scale, "
+    "int Y_zero_point, float out_scale, int out_zero_point, *, Tensor(a!) out) -> Tensor(a!)"
+)
+lib.define(
     "quantized_add_Scalar.out(Tensor X, Tensor X_scale, Tensor X_zero_point, Scalar Y, "
     "float out_scale, int out_zero_point, *, Tensor(a!) out) -> Tensor(a!)"
 )
@@ -668,11 +701,11 @@ lib.define(
 )
 
 lib.define(
-    "quantized_w8a32_gru(Tensor inputs, Tensor hidden, Tensor weights_inputs, float w_i_scale, Tensor weights_hidden, float w_h_scale, Tensor bias_inputs, float b_i_scale, Tensor bias_hidden, float b_h_scale) -> Tensor"
+    "quantized_w8a32_gru(Tensor inputs, Tensor hidden, Tensor weights_inputs, float w_i_scale, Tensor weights_hidden, float w_h_scale, Tensor bias_inputs, float b_scale, Tensor bias_hidden) -> Tensor"
 )
 
 lib.define(
-    "quantized_w8a32_gru.out(Tensor inputs, Tensor hidden, Tensor weights_inputs, float w_i_scale, Tensor weights_hidden, float w_h_scale, Tensor bias_inputs, float b_i_scale, Tensor bias_hidden, float b_h_scale, *, Tensor(a!) out) -> Tensor(a!)"
+    "quantized_w8a32_gru.out(Tensor inputs, Tensor hidden, Tensor weights_inputs, float w_i_scale, Tensor weights_hidden, float w_h_scale, Tensor bias_inputs, float b_scale, Tensor bias_hidden, *, Tensor(a!) out) -> Tensor(a!)"
 )
 
 lib.define(
@@ -881,6 +914,22 @@ def quantized_add_meta(
 ) -> torch.Tensor:
 
     # Determine output shape by broadcasting X and Y
+    out_size = torch.broadcast_shapes(X.size(), Y.size())
+    return X.new_empty(out_size, dtype=X.dtype)
+
+
+@register_fake("cadence::quantized_mul.per_tensor")
+def quantized_mul_per_tensor_meta(
+    X: torch.Tensor,
+    X_scale: float,
+    X_zero_point: int,
+    Y: torch.Tensor,
+    Y_scale: float,
+    Y_zero_point: int,
+    out_scale: float,
+    out_zero_point: int,
+) -> torch.Tensor:
+
     out_size = torch.broadcast_shapes(X.size(), Y.size())
     return X.new_empty(out_size, dtype=X.dtype)
 
@@ -1219,6 +1268,78 @@ def quantized_conv1d_nlc_per_tensor_meta(
     return input.new_empty(output_size, dtype=input.dtype)
 
 
+@register_fake("cadence::quantized_depthwise_conv1d_ncl.per_tensor")
+def quantized_depthwise_conv1d_ncl_per_tensor_meta(
+    input: torch.Tensor,
+    weight: torch.Tensor,
+    bias: torch.Tensor,
+    stride: Tuple[int],
+    padding: Tuple[int],
+    dilation: Tuple[int],
+    groups: int,
+    in_zero_point: int,
+    weight_zero_point: int,
+    bias_scale: float,
+    output_scale: float,
+    output_zero_point: int,
+    out_multiplier: int,
+    out_shift: int,
+) -> torch.Tensor:
+    # NCL format: input is [N, C, L], weight is [OC, IC/groups, K]
+    out_channels, _, kernel_size = weight.shape
+
+    in_size = input.shape
+    assert len(in_size) == 3
+
+    output_size = get_conv1d_output_size(
+        in_size,
+        out_channels,
+        stride[-1],
+        padding[-1],
+        dilation[-1],
+        kernel_size,
+        False,
+    )
+
+    return input.new_empty(output_size, dtype=input.dtype)
+
+
+@register_fake("cadence::quantized_depthwise_conv1d_nlc.per_tensor")
+def quantized_depthwise_conv1d_nlc_per_tensor_meta(
+    input: torch.Tensor,
+    weight: torch.Tensor,
+    bias: torch.Tensor,
+    stride: Tuple[int],
+    padding: Tuple[int],
+    dilation: Tuple[int],
+    groups: int,
+    in_zero_point: int,
+    weight_zero_point: int,
+    bias_scale: float,
+    output_scale: float,
+    output_zero_point: int,
+    out_multiplier: int,
+    out_shift: int,
+) -> torch.Tensor:
+    # NLC format: input is [N, L, C], weight is [OC, K, IC/groups]
+    out_channels, kernel_size, _ = weight.shape
+
+    in_size = input.shape
+    assert len(in_size) == 3
+
+    output_size = get_conv1d_output_size(
+        in_size,
+        out_channels,
+        stride[-1],
+        padding[-1],
+        dilation[-1],
+        kernel_size,
+        True,
+    )
+
+    return input.new_empty(output_size, dtype=input.dtype)
+
+
 @register_fake("cadence::quantized_conv2d_nchw")
 def quantized_conv2d_nchw_meta(
     input: torch.Tensor,
@@ -1323,6 +1444,7 @@ def quantized_conv2d_nhwc_per_tensor_meta(
     output_zero_point: int,
     out_multiplier: int,
     out_shift: int,
+    offset: Optional[torch.Tensor] = None,
 ) -> torch.Tensor:
     in_size = input.shape
     # Assert that the input tensor has at least 3 dimensions, and at most 6
@@ -2270,6 +2392,88 @@ def quantized_relu_asym8u_asym8u_per_tensor_meta(
     return input.new_empty(input.size(), dtype=input.dtype)
 
 
+@register_fake("cadence::quantized_max_pool2d_nchw")
+def quantized_max_pool2d_nchw_meta(
+    input: torch.Tensor,
+    kernel_size: list[int],
+    stride: list[int],
+    padding: list[int],
+    dilation: list[int],
+    ceil_mode: bool,
+) -> torch.Tensor:
+    assert (
+        len(kernel_size) == 2
+    ), f"kernel_size must have 2 elements, got {len(kernel_size)}"
+    assert len(stride) == 2, f"stride must have 2 elements, got {len(stride)}"
+    assert len(padding) == 2, f"padding must have 2 elements, got {len(padding)}"
+    assert len(dilation) == 2, f"dilation must have 2 elements, got {len(dilation)}"
+    assert (
+        len(input.size()) == 4
+    ), f"input must be 4D (N, C, H, W), got {len(input.size())}D"
+
+    batch = input.size(0)
+    channels = input.size(1)
+    height_in = input.size(2)
+    width_in = input.size(3)
+
+    height_out_raw = (
+        height_in + 2 * padding[0] - dilation[0] * (kernel_size[0] - 1) - 1
+    ) / stride[0] + 1
+    width_out_raw = (
+        width_in + 2 * padding[1] - dilation[1] * (kernel_size[1] - 1) - 1
+    ) / stride[1] + 1
+
+    if ceil_mode:
+        height_out = ceil(height_out_raw)
+        width_out = ceil(width_out_raw)
+    else:
+        height_out = int(height_out_raw)
+        width_out = int(width_out_raw)
+
+    return input.new_empty([batch, channels, height_out, width_out], dtype=input.dtype)
+
+
+@register_fake("cadence::quantized_max_pool2d_nhwc")
+def quantized_max_pool2d_nhwc_meta(
+    input: torch.Tensor,
+    kernel_size: list[int],
+    stride: list[int],
+    padding: list[int],
+    dilation: list[int],
+    ceil_mode: bool,
+) -> torch.Tensor:
+    assert (
+        len(kernel_size) == 2
+    ), f"kernel_size must have 2 elements, got {len(kernel_size)}"
+    assert len(stride) == 2, f"stride must have 2 elements, got {len(stride)}"
+    assert len(padding) == 2, f"padding must have 2 elements, got {len(padding)}"
+    assert len(dilation) == 2, f"dilation must have 2 elements, got {len(dilation)}"
+    assert (
+        len(input.size()) == 4
+    ), f"input must be 4D (N, H, W, C), got {len(input.size())}D"
+
+    batch = input.size(0)
+    height_in = input.size(1)
+    width_in = input.size(2)
+    channels = input.size(3)
+
+    height_out_raw = (
+        height_in + 2 * padding[0] - dilation[0] * (kernel_size[0] - 1) - 1
+    ) / stride[0] + 1
+    width_out_raw = (
+        width_in + 2 * padding[1] - dilation[1] * (kernel_size[1] - 1) - 1
+    ) / stride[1] + 1
+
+    if ceil_mode:
+        height_out = ceil(height_out_raw)
+        width_out = ceil(width_out_raw)
+    else:
+        height_out = int(height_out_raw)
+        width_out = int(width_out_raw)
+
+    return input.new_empty([batch, height_out, width_out, channels], dtype=input.dtype)
+
+
 @register_fake("cadence::fully_connected")
 def fully_connected_meta(
     src: torch.Tensor,
@@ -2838,6 +3042,8 @@ def quantized_softmax_meta(
     input: torch.Tensor,
     mask: torch.Tensor,
     dim: int,
+    mask_type: int,
+    pos: torch.Tensor,
     in_scale: torch.Tensor,
     in_zero_point: torch.Tensor,
     out_scale: torch.Tensor,
@@ -2851,6 +3057,8 @@ def quantized_softmax_per_tensor_meta(
     input: torch.Tensor,
     mask: torch.Tensor,
     dim: int,
+    mask_type: int,
+    pos: torch.Tensor,
     in_scale: float,
     in_zero_point: int,
     out_scale: float,
@@ -2937,11 +3145,20 @@ def quantized_w8a32_gru_meta(
     weights_hidden: torch.Tensor,
     w_h_scale: float,
     bias_inputs: torch.Tensor,
-    b_i_scale: float,
+    b_scale: float,
     bias_hidden: torch.Tensor,
-    b_h_scale: float,
 ) -> torch.Tensor:
-    return hidden.new_empty((2, *hidden.shape), dtype=torch.float32)
+    seq_len = inputs.shape[1]
+    assert seq_len == 1
+    # inputs comes in shape [batch, seq_len, input_size]
+    # hidden comes in shape [batch, seq_len, hidden_size]
+    # weights_inputs comes in shape [3 * hidden_size, input_size]
+    # weights_hidden comes in shape [3 * hidden_size, hidden_size]
+    # output comes in empty with shape [2, batch, seq_len, hidden_size]
+    # The first dimension stacks the output and the new hidden state
+    return hidden.new_empty(
+        (2, inputs.shape[0], inputs.shape[1], hidden.shape[-1]), dtype=torch.float32
+    )
 
 
 @register_fake("cadence::slice_scatter_")

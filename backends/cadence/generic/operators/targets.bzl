@@ -147,6 +147,28 @@ def define_common_targets():
     )
 
     runtime.cxx_library(
+        name = "op_quantized_depthwise_conv1d_ncl",
+        srcs = ["op_quantized_depthwise_conv1d_ncl.cpp"],
+        platforms = CXX,
+        deps = [
+            ":op_quantized_conv1d_ncl",
+            "//executorch/runtime/kernel:kernel_includes",
+        ],
+        visibility = ["PUBLIC"],
+    )
+
+    runtime.cxx_library(
+        name = "op_quantized_depthwise_conv1d_nlc",
+        srcs = ["op_quantized_depthwise_conv1d_nlc.cpp"],
+        platforms = CXX,
+        deps = [
+            ":op_quantized_conv1d_nlc",
+            "//executorch/runtime/kernel:kernel_includes",
+        ],
+        visibility = ["PUBLIC"],
+    )
+
+    runtime.cxx_library(
         name = "op_quantized_conv2d",
         srcs = ["op_quantized_conv2d.cpp"],
         exported_headers = ["op_quantized_conv2d.h"],
@@ -209,6 +231,30 @@ def define_common_targets():
             "//executorch/backends/cadence/generic/kernels:cadence_kernels",
             "//executorch/runtime/kernel:kernel_includes",
             ":quantized_op_macros",
+        ],
+        visibility = ["PUBLIC"],
+    )
+
+    runtime.cxx_library(
+        name = "op_quantized_max_pool2d",
+        srcs = ["op_quantized_max_pool2d.cpp"],
+        exported_headers = ["op_quantized_max_pool2d.h"],
+        platforms = CXX,
+        deps = [
+            "//executorch/runtime/kernel:kernel_includes",
+            ":cadence_type_util",
+        ],
+        visibility = ["PUBLIC"],
+    )
+
+    runtime.cxx_library(
+        name = "op_quantized_max_pool2d_nhwc",
+        srcs = ["op_quantized_max_pool2d_nhwc.cpp"],
+        exported_headers = ["op_quantized_max_pool2d_nhwc.h"],
+        platforms = CXX,
+        deps = [
+            "//executorch/runtime/kernel:kernel_includes",
+            ":cadence_type_util",
         ],
         visibility = ["PUBLIC"],
     )

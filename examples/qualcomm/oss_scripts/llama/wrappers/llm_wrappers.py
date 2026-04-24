@@ -4,9 +4,13 @@
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
 import argparse
+import copy
 import inspect
 import json
 import logging
+import os
+import re
+import time
 import types
 
 from functools import partial
@@ -22,6 +26,7 @@ from executorch.backends.qualcomm._passes.utils import (
     get_passes_dependency_for_capture_program,
 )
 from executorch.backends.qualcomm.builders.utils import is_graph_output
+from executorch.backends.qualcomm.export_utils import make_quantizer
 from executorch.backends.qualcomm.quantizer.quantizer import QuantDtype
 
 from executorch.backends.qualcomm.utils.constants import (
@@ -49,18 +54,27 @@ from executorch.examples.qualcomm.oss_scripts.llama.decoder_constants import (
     DECODE_QDQ_FILENAME,
     DECODER_GRAPH_NAMES,
     TEXT_DECODER,
-    TEXT_EMBEDDING,
-    TEXT_EMBEDDING_GRAPH_NAMES,
     TEXT_ENCODER,
+    TOK_EMBEDDING,
+    TOK_EMBEDDING_GRAPH_NAMES,
     VISION_ENCODER,
 )
 from executorch.examples.qualcomm.oss_scripts.llama.decoder_utils import (
     graph_module_inference,
 )
+from executorch.examples.qualcomm.oss_scripts.llama.encoder.encoder_config import (
+    GraniteSpeechEncoder,
+)
 from executorch.examples.qualcomm.oss_scripts.llama.encoder.encoder_quant_recipe import (
     EncoderQuantRecipe,
 )
-from executorch.examples.qualcomm.oss_scripts.llama.model.embedding import TextEmbedding
+from executorch.examples.qualcomm.oss_scripts.llama.mix_precision_analyzer import (
+    PerLayerSqnrAnalyzer,
+    save_suggest_recipes,
+)
+from executorch.examples.qualcomm.oss_scripts.llama.model.embedding import (
+    TokenEmbedding,
+)
 from executorch.examples.qualcomm.oss_scripts.llama.model.static_llama import (
     LlamaModel,
     ModelArgs,
@@ -77,7 +91,6 @@ from executorch.examples.qualcomm.oss_scripts.llama.wrappers.base_component impo
     Processor,
     Request,
 )
-from executorch.examples.qualcomm.utils import make_quantizer
 from executorch.exir.backend.compile_spec_schema import CompileSpec
 from executorch.exir.capture._config import ExecutorchBackendConfig
 from executorch.exir.dialects._ops import ops as exir_ops
@@ -87,7 +100,7 @@ from executorch.extension.llm.export.builder import DType
 from torchao.prototype.spinquant import apply_spinquant
 from torchao.quantization.pt2e import MinMaxObserver
 from torchao.quantization.pt2e.quantize_pt2e import convert_pt2e, prepare_pt2e
-from transformers import AutoModel
+from transformers import AutoModel, AutoModelForSpeechSeq2Seq
 
 
 class TextDecoder(Component):
@@ -110,7 +123,6 @@ class TextDecoder(Component):
         )
 
         # For multimodal embedding
-        self._modality_placeholder_token_id = None
         self.apply_embedding = apply_embedding
         self.tok_embedding_passes_job = (
             get_capture_program_passes() if apply_embedding else None
@@ -270,10 +282,15 @@ class TextDecoder(Component):
         # get embedding model
         tok_embedding = None
         if self.apply_embedding:
-            auto_model = AutoModel.from_pretrained(
-                self.config.repo_id, _attn_implementation="eager"
-            )
-            tok_embedding = TextEmbedding(
+            if hasattr(self.config, AUDIO_ENCODER):
+                auto_model = AutoModelForSpeechSeq2Seq.from_pretrained(
+                    self.config.repo_id, _attn_implementation="eager"
+                )
+            elif hasattr(self.config, VISION_ENCODER):
+                auto_model = AutoModel.from_pretrained(
+                    self.config.repo_id, _attn_implementation="eager"
+                )
+            tok_embedding = TokenEmbedding(
                 auto_model.get_input_embeddings().to(torch.float32),
                 self.model_args.max_batch_size,
                 self.model_args.ar_len,
@@ -412,6 +429,93 @@ class TextDecoder(Component):
 
         return quant_io_type
 
+    def _quant_recipe_suggestion(
+        self,
+        fp32_gm: torch.fx.GraphModule,
+        qdq_gm: torch.fx.GraphModule,
+        input_sample: tuple,
+        recipe: StaticLLMQuantRecipe,
+    ):
+        """
+        Compare fp32 vs QDQ intermediate outputs and write SQNR reports.
+
+        fp32_gm: Fp32 exported GraphModule (before prepare_pt2e).
+        qdq_gm: QDQ GraphModule (after convert_pt2e).
+
+        Output files:
+          ``{model_name}_quantization_error.csv``: per-group statistics
+          ``{model_name}_suggest_recipe.py``: Python script containing quantization recipe classes
+        based on the suggested quant recipe overrides.
+        """
+        model_name = self.control_args.decoder_model
+        report = PerLayerSqnrAnalyzer(
+            model_name=model_name,
+            num_layers=self.meta["get_n_layers"],
+            fp32_gm=fp32_gm,
+            qdq_gm=qdq_gm,
+            analysis_recipe=recipe,
+        ).analyze(input_sample)
+        report.save_analysis_summary()
+        suggest_recipe_overrides = report.suggest_recipe_overrides()
+        save_suggest_recipes(report, suggest_recipe_overrides)
+
+    def _auto_tune_calibration_threads(self):
+        """Find the optimal thread count for calibration via quick microbenchmark.
+
+        AR1 decode calibration is SGEMV-dominated (memory-bandwidth-bound).
+        The default thread count (os.cpu_count()) is typically far too high,
+        causing massive OpenMP sync overhead. This runs a few forward passes
+        at candidate thread counts and picks the fastest.
+        """
+        # Use sched_getaffinity when available — it respects cgroup/taskset
+        # constraints (e.g. containers), unlike os.cpu_count() which returns
+        # the host total regardless of pinning.
+        available = (
+            len(os.sched_getaffinity(0))
+            if hasattr(os, "sched_getaffinity")
+            else (os.cpu_count() or 1)
+        )
+        baseline = min(torch.get_num_threads(), available)
+        # Sample fractions of the thread ceiling from low through the
+        # bandwidth-saturation knee up to the current default.
+        fractions = (1 / 8, 1 / 4, 3 / 8, 1 / 2, 2 / 3, 3 / 4, 1.0)
+        candidates = sorted(
+            {1, baseline} | {max(1, round(baseline * f)) for f in fractions}
+        )
+        original = torch.get_num_threads()
+        best_threads, best_time = original, float("inf")
+        try:
+            for n_threads in candidates:
+                torch.set_num_threads(n_threads)
+                try:
+                    with torch.no_grad():
+                        self.decoder(*self.export_input)  # warmup
+                        t0 = time.perf_counter()
+                        for _ in range(3):
+                            self.decoder(*self.export_input)
+                        elapsed = time.perf_counter() - t0
+                    if elapsed < best_time:
+                        best_threads, best_time = n_threads, elapsed
+                except Exception:
+                    logging.debug("Auto-tune: threads=%d failed, skipping", n_threads)
+                    continue
+        finally:
+            torch.set_num_threads(original)
+        if best_time == float("inf"):
+            logging.warning(
+                "Auto-tune: all candidates %s failed, falling back to %d threads",
+                candidates,
+                baseline,
+            )
+            return baseline
+        logging.info(
+            "Auto-tune calibration threads: tested %s, best=%d (%.1fms/fwd)",
+            candidates,
+            best_threads,
+            best_time / 3 * 1000,
+        )
+        return best_threads
+
     def _calibrate(
         self,
         model,
@@ -445,8 +549,9 @@ class TextDecoder(Component):
 
         # Task-based calibration: Only for text-only LLMs
         # Multimodal models (VLMs) cannot use task-based evaluation currently.
+        input_samples = []
         if has_task_calibration and not is_multimodal:
-            graph_module_inference(
+            input_sample = graph_module_inference(
                 use_kv_cache=self.meta["get_use_kv_cache"],
                 get_example_inputs=self.get_example_inputs,
                 module=model,
@@ -460,6 +565,7 @@ class TextDecoder(Component):
                 event_name=f"{event}_tasks",
                 seq_mse_candidates=self.config.seq_mse_candidates,
             )
+            input_samples.extend(input_sample)
 
         # prepare lookahead config if applicable
         lookahead_config = (
@@ -470,16 +576,16 @@ class TextDecoder(Component):
             else None
         )
         # check user's prompt which helps calibrate special token
-        for prompt in user_calibration_data:
-            graph_module_inference(
+        for turn in zip(intermediate_outputs, user_calibration_data):
+            hidden_states, prompt = turn
+            input_sample = graph_module_inference(
                 use_kv_cache=self.meta["get_use_kv_cache"],
                 get_example_inputs=self.get_example_inputs,
-                hidden_states=intermediate_outputs,  # hidden_states for multimodal
+                hidden_states=hidden_states,  # hidden_states for multimodal
                 module=model,
                 tok_embedding=tok_embedding,
-                modality_placeholder_token_id=self.meta.get(
-                    "modality_placeholder_token_id", None
-                ),
+                audio_token_id=self.meta.get("audio_token_id", None),
+                image_token_id=self.meta.get("image_token_id", None),
                 tokenizer=tokenizer,
                 ar_len=self.meta["get_ar_len"],
                 max_seq_len=self.meta["get_max_context_len"],
@@ -488,6 +594,8 @@ class TextDecoder(Component):
                 event_name=f"{event}_prompt",
                 lookahead_config=lookahead_config,
             )
+            input_samples.extend(input_sample)
+        return input_samples
 
     @log_info
     def quantize(self, request: Request):  # noqa: C901
@@ -518,18 +626,25 @@ class TextDecoder(Component):
             )
 
         data = request.method_data[TEXT_DECODER]
-
-        image_embedding = None
-        if self.apply_embedding:
-            # For demo: get first data now
-            image_embedding = request.method_data[
-                VISION_ENCODER
-            ].calibration_data.intermediate_outputs[0]
+        audio_turns = request.method_data[
+            AUDIO_ENCODER
+        ].calibration_data.intermediate_outputs
+        vision_turns = request.method_data[
+            VISION_ENCODER
+        ].calibration_data.intermediate_outputs
+        if audio_turns is None:
+            audio_turns = [[] for _ in range(len(data.calibration_data.datasets))]
+        if vision_turns is None:
+            vision_turns = [[] for _ in range(len(data.calibration_data.datasets))]
+        intermediate_outputs = [
+            [*audio_turn, *vision_turn]
+            for audio_turn, vision_turn in zip(audio_turns, vision_turns)
+        ]
 
         quantizer = make_quantizer(backend=data.backend, soc_model=data.soc_model)
         quantizer.set_recipe(self.quant_recipe.recipe)
 
-        text_embedding_quantizer = make_quantizer(
+        tok_embedding_quantizer = make_quantizer(
             quant_dtype=QuantDtype.use_16a8w,
             per_channel_conv=True,
             per_channel_linear=True,
@@ -551,29 +666,57 @@ class TextDecoder(Component):
             self.decoder = torch.export.export(
                 self.decoder, self.export_input, strict=True
             ).module()
+            if self.control_args.quant_recipe_suggestion:
+                graph_module = copy.deepcopy(self.decoder)
+
+            # Auto-tune thread count BEFORE prepare_pt2e so the benchmark
+            # runs on the exported model without observers — no risk of
+            # polluting observer state with synthetic inputs.
+            if self.mode == Mode.DECODE or not self.model_args.use_kv_cache:
+                calib_threads = getattr(self.control_args, "calibration_num_threads", 0)
+                if calib_threads <= 0:
+                    calib_threads = self._auto_tune_calibration_threads()
 
             self.decoder = prepare_pt2e(self.decoder, quantizer)
             if self.apply_embedding:
                 self.tok_embedding = prepare_pt2e(
-                    self.tok_embedding, text_embedding_quantizer
+                    self.tok_embedding, tok_embedding_quantizer
                 )
 
             # start calibration (only for kv mode or prefill mode without kv cache)
             if self.mode == Mode.DECODE or not self.model_args.use_kv_cache:
-                self._calibrate(
-                    model=self.decoder,
-                    tokenizer=data.tokenizer,
-                    event="prepare_pt2e",
-                    user_calibration_data=data.calibration_data.datasets,
-                    tok_embedding=self.tok_embedding,
-                    intermediate_outputs=image_embedding,
+                original_threads = torch.get_num_threads()
+                torch.set_num_threads(calib_threads)
+                logging.info(
+                    "Calibration using %d threads (was %d)",
+                    calib_threads,
+                    original_threads,
                 )
+                try:
+                    input_samples = self._calibrate(
+                        model=self.decoder,
+                        tokenizer=data.tokenizer,
+                        event="prepare_pt2e",
+                        user_calibration_data=data.calibration_data.datasets,
+                        tok_embedding=self.tok_embedding,
+                        intermediate_outputs=intermediate_outputs,
+                    )
+                finally:
+                    torch.set_num_threads(original_threads)
             else:
                 # one dummy inference to remove affine observer
                 # error happened in convert_pt2e
                 self.decoder(*self.export_input)
 
             self.decoder = convert_pt2e(self.decoder)
+
+            if self.control_args.quant_recipe_suggestion:
+                self._quant_recipe_suggestion(
+                    graph_module,
+                    self.decoder,
+                    input_samples,
+                    self.quant_recipe.recipe,
+                )
 
             # Saving Decode QDQ Model EP for SQNR evaluation
             if self.mode == Mode.DECODE:
@@ -588,17 +731,31 @@ class TextDecoder(Component):
                 self.tok_embedding = convert_pt2e(self.tok_embedding)
 
             if self.control_args.verbose and self.mode == Mode.DECODE:
-                if self.apply_embedding:
-                    image_embedding = request.method_data[
-                        VISION_ENCODER
-                    ].calibration_data.qdq_intermediate_outputs[0]
+                audio_turns = request.method_data[
+                    AUDIO_ENCODER
+                ].calibration_data.qdq_intermediate_outputs
+                vision_turns = request.method_data[
+                    VISION_ENCODER
+                ].calibration_data.qdq_intermediate_outputs
+                if audio_turns is None:
+                    audio_turns = [
+                        [] for _ in range(len(data.calibration_data.datasets))
+                    ]
+                if vision_turns is None:
+                    vision_turns = [
+                        [] for _ in range(len(data.calibration_data.datasets))
+                    ]
+                qdq_intermediate_outputs = [
+                    [*audio_turn, *vision_turn]
+                    for audio_turn, vision_turn in zip(audio_turns, vision_turns)
+                ]
                 self._calibrate(
                     model=self.decoder,
                     tokenizer=data.tokenizer,
                     event="convert_pt2e",
                     user_calibration_data=data.calibration_data.datasets,
                     tok_embedding=self.tok_embedding,
-                    intermediate_outputs=image_embedding,
+                    intermediate_outputs=qdq_intermediate_outputs,
                 )
 
         # save logit's quantization attributes to meta
@@ -762,14 +919,14 @@ class HybridTextDecoder(Component):
 
         # prepare lowering tok_embedding if applicable
         if self.apply_embedding:
-            tok_embedding_data = request.method_data[TEXT_EMBEDDING]
+            tok_embedding_data = request.method_data[TOK_EMBEDDING]
             models = [
                 d for d in [self.decode, self.prefill] if d.tok_embedding is not None
             ]
             tok_embedding_example_inputs = [
                 m.tok_embedding_export_input for m in models if m is not None
             ]  # tokens
-            tok_embedding_graph_names = TEXT_EMBEDDING_GRAPH_NAMES[: len(models)]
+            tok_embedding_graph_names = TOK_EMBEDDING_GRAPH_NAMES[: len(models)]
 
         # prepare lowering decoder
         data = request.method_data[TEXT_DECODER]
@@ -820,7 +977,7 @@ class HybridTextDecoder(Component):
             tok_embedding_exec_prog_mgr = tok_embedding_edge_prog_mgr.to_executorch(
                 executorch_config
             )
-            data = request.method_data[TEXT_EMBEDDING]
+            data = request.method_data[TOK_EMBEDDING]
             with open(
                 f"{self.control_args.artifact}/{data.pte_filename}.pte", "wb"
             ) as file:
@@ -871,36 +1028,102 @@ class Modality(Component):
         repo_id = config.repo_id
 
         if config := getattr(config, modality, None):
-            if modality == TEXT_ENCODER or modality == AUDIO_ENCODER:
+            if modality == AUDIO_ENCODER:
+                auto_model = AutoModelForSpeechSeq2Seq.from_pretrained(repo_id)
+                self.num_layers = auto_model.config.encoder_config.num_layers
+                self.ctx_size = auto_model.config.encoder_config.context_size
+            elif modality == TEXT_ENCODER:
                 raise NotImplementedError(f"{modality} is under development")
+            elif modality == VISION_ENCODER:
+                auto_model = AutoModel.from_pretrained(
+                    repo_id, _attn_implementation="eager"
+                )
+                self.num_layers = auto_model.config.vision_config.num_hidden_layers
+            else:
+                raise NotImplementedError(f"Find no {modality}")
 
-            auto_model = AutoModel.from_pretrained(
-                repo_id, _attn_implementation="eager"
-            )
-            # Create an instance of the config class since it has init=False
-            self.model = config().create_encoder(auto_model.config)
-            # set strict to false to simplify parameter loading for non-text models
-            auto_model = auto_model.eval()
-            self.model = self.model.eval()
-            self.model.load_state_dict(auto_model.state_dict(), strict=False)
+            auto_model = auto_model.to(torch.float32).eval()
+            self.model = config().create_encoder(auto_model.config).eval()
+            self.model.load_state_dict(
+                auto_model.state_dict(), strict=False
+            )  # set strict to false to simplify parameter loading for non-text models
             self.example_input = self.model.get_example_inputs()
-            self.preprocess = self.model.preprocess
 
             # set quant recipe
             self.quant_recipe: EncoderQuantRecipe = (
                 config.quant_recipe(True) if config.quant_recipe else None
             )
 
+            # metadata
+            self.config = config
+
+        self.passes_job = get_capture_program_passes()
+        self.dep_table = get_passes_dependency_for_capture_program()
+
+    def _tag_ios(self, node, fixed_point_type):
+        quant_io_type = None
+
+        # tag sharding io
+        if exir_ops.edge.llama.fallback.default in [
+            u.target for u in list(node.users.keys())
+        ] + [node.target]:
+            quant_io_type = fixed_point_type["io_type"]
+
+        # GraniteSpeech: tag _to_copy op as quantized tensors for attn dist. It is caused by sharding
+        if (
+            issubclass(self.config, GraniteSpeechEncoder)
+            and node.target == exir_ops.edge.aten._to_copy.default
+            and node.meta["val"].size() == (self.ctx_size, self.ctx_size)
+        ):
+            quant_io_type = torch.int32
+
+        return quant_io_type
+
+    def _get_sharding_get_pattern(self):
+        prefixes = [
+            "encoder.layers",
+            "vision_tower.encoder.layer",
+            "vision_model.encoder.layers",
+        ]
+        prefix_alt = "|".join(re.escape(p) for p in prefixes)
+        return rf"^(?:{prefix_alt})\.(\d+)"
+
     def compile(self, request: Request):
         if self.model is None:
             return
 
         request_data = request.method_data[self.modality]
+        # check if sharding required
+        if self.config.num_sharding > 1:
+            SplitGraph, setting = model_sharding.get_split_graph_pass(
+                self.num_layers,
+                shares=self.config.num_sharding,
+                pattern=self._get_sharding_get_pattern(),
+            )
+            self.passes_job[SplitGraph] = setting
+            self.dep_table[SplitGraph] = [FoldQDQ]
+            self.dep_table[TagQuantIO] = [SplitGraph]
+
+            if not request_data.skip_quantize:
+                fixed_point_type = {"io_type": torch.uint16}
+
+                # setup quantized IO
+                self.passes_job[TagQuantIO][QCOM_PASS_ACTIVATE_KEY] = True
+                self.passes_job[TagQuantIO][QCOM_PASS_ARGS_KWARGS_DEFAULTS_KEY][
+                    "get_quant_io_dtype_fn"
+                ] = partial(self._tag_ios, fixed_point_type=fixed_point_type)
+
         edge_prog_mgr = to_edge_transform_and_lower_to_qnn(
             module=self.model,
             inputs=self.example_input,
             compiler_specs=request_data.compile_spec,
+            dep_table=self.dep_table,
+            passes_job=self.passes_job,
+            skip_node_op_set={"llama.fallback.default"},
         )
+
+        if self.config.num_sharding > 1:
+            update_spill_fill_size(edge_prog_mgr.exported_program())
         if self.control_args.verbose:
             print_delegation_info(edge_prog_mgr.exported_program().graph_module)
 
@@ -911,13 +1134,30 @@ class Modality(Component):
         ) as file:
             exec_prog_mgr.write_to_file(file)
 
+    def _calibrate(self, model, calibration_datasets):
+        outputs = []
+        for turn in calibration_datasets:
+            outputs_each_turn = [model(*data) for data in turn]
+            outputs.append(outputs_each_turn)
+        return outputs
+
     def quantize(self, request: Request):
-        if self.model is None or self.quant_recipe is None:
+        if self.model is None:
             return
 
         request_data = request.method_data[self.modality]
+        calibration_datasets = request_data.calibration_data.datasets
+
         with torch.no_grad():
             self.model = torch.export.export(self.model, self.example_input).module()
+
+            if request_data.skip_quantize:
+                logging.info(f"skipping encoder quantization for {self.modality}")
+                intermediate_outputs = self._calibrate(self.model, calibration_datasets)
+                request_data.calibration_data.intermediate_outputs = (
+                    intermediate_outputs
+                )
+                return
 
             quantizer = make_quantizer(
                 backend=request_data.backend, soc_model=request_data.soc_model
@@ -925,26 +1165,17 @@ class Modality(Component):
             quantizer.set_recipe(self.quant_recipe.recipe)
             self.model = prepare_pt2e(self.model, quantizer)
 
-            # calibration
-            intermediate_outputs = []
-            for data in request_data.calibration_data.datasets:
-                output = self.model(*self.preprocess(data))
-                intermediate_outputs.append(
-                    (output,) if isinstance(output, torch.Tensor) else output
-                )
-            # update intermediate outputs for next modality
+            # start calibration
+            intermediate_outputs = self._calibrate(self.model, calibration_datasets)
             request_data.calibration_data.intermediate_outputs = intermediate_outputs
 
             self.model = convert_pt2e(self.model)
 
-            qdq_intermediate_outputs = []
+            # QDQ inference
             if self.control_args.verbose:
-                for data in request_data.calibration_data.datasets:
-                    output = self.model(*self.preprocess(data))
-                    qdq_intermediate_outputs.append(
-                        (output,) if isinstance(output, torch.Tensor) else output
-                    )
-                # update qdq intermediate outputs for next modality
+                qdq_intermediate_outputs = self._calibrate(
+                    self.model, calibration_datasets
+                )
                 request_data.calibration_data.qdq_intermediate_outputs = (
                     qdq_intermediate_outputs
                 )
@@ -976,7 +1207,7 @@ class MultiModalManager(Component):
             AUDIO_ENCODER,
             TEXT_ENCODER,
             VISION_ENCODER,
-            TEXT_EMBEDDING,
+            TOK_EMBEDDING,
             TEXT_DECODER,
         ]
         # build dependency chain
@@ -1009,6 +1240,7 @@ class MultiModalManager(Component):
     def quantize(
         self,
         calibration_data: Dict[str, List[Any]],
+        skip_quantize: Dict[str, bool],
         tokenizer,
         backend,
         soc_model,
@@ -1020,6 +1252,7 @@ class MultiModalManager(Component):
                     calibration_data=Request.CalibrationData(
                         datasets=calibration_data[m]
                     ),
+                    skip_quantize=skip_quantize.get(m, False),
                     tokenizer=tokenizer,
                     backend=backend,
                     soc_model=soc_model,
