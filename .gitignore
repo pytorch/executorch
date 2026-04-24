@@ -76,6 +76,8 @@ xcuserdata/
 *.dll
 *.pyd
 
+# Zephyr
+zephyr_scratch/*
 
 # Agents
 .claude/*.local.*
