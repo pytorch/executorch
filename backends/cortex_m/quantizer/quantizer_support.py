@@ -122,7 +122,31 @@ SOFTMAX_OP_PATTERNS = {
 POOL_OP_PATTERNS = {
     (torch.ops.aten.avg_pool2d.default,): CortexMAvgPool2DCheck,
     (torch.ops.aten.max_pool2d.default,): CortexMMaxPool2DCheck,
+    (
+        torch.ops.aten.max_pool2d.default,
+        torch.ops.aten.relu.default,
+    ): CortexMMaxPool2DCheck,
+    (
+        torch.ops.aten.max_pool2d.default,
+        torch.ops.aten.hardtanh.default,
+    ): CortexMMaxPool2DCheck,
+    (
+        torch.ops.aten.max_pool2d.default,
+        torch.ops.aten.clamp.default,
+    ): CortexMMaxPool2DCheck,
     (torch.ops.aten.max_pool2d_with_indices.default,): CortexMMaxPool2DCheck,
+    (
+        torch.ops.aten.max_pool2d_with_indices.default,
+        torch.ops.aten.relu.default,
+    ): CortexMMaxPool2DCheck,
+    (
+        torch.ops.aten.max_pool2d_with_indices.default,
+        torch.ops.aten.hardtanh.default,
+    ): CortexMMaxPool2DCheck,
+    (
+        torch.ops.aten.max_pool2d_with_indices.default,
+        torch.ops.aten.clamp.default,
+    ): CortexMMaxPool2DCheck,
 }
 
 BMM_OP_PATTERNS = {
