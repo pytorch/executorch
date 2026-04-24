@@ -138,41 +138,23 @@ def _partitioners(programs: dict, backend: str):
 
 
 def _apply_encoder_quantization(model: nn.Module, mode: str, group_size: int = 128) -> nn.Module:
-    """Quantize Linear layers in a vision/audio encoder via TorchAO source transform.
+    """Quantize Linear layers in a vision/audio encoder via the upstream
+    `extension/llm/export/quantize.py:quantize_model_` entry point.
 
-    Mode is one of "8da4w" (int4 weights, group=group_size) or "8da8w" (int8
-    weights, per-channel). Activations are int8 dynamic in both cases. Skips
-    Linears whose hidden dim is not divisible by group_size to avoid TorchAO
-    assertion failures.
+    Same entry point used by `examples/models/qwen3_5_moe/export.py`; the
+    reviewer feedback on D99603811 (mnachin) was specifically that
+    encoder/model quantization should reuse this rather than build a
+    parallel helper. `skip_incompatible_shapes=True` makes the walker
+    silently skip Linears whose hidden dim doesn't divide `group_size`
+    (typical for the per-head projection inside ViT/Conformer blocks).
     """
-    from torchao.quantization.granularity import PerAxis, PerGroup
-    from torchao.quantization.quant_api import (
-        Int8DynamicActivationIntxWeightConfig,
-        quantize_,
+    from executorch.extension.llm.export.quantize import quantize_model_
+    quantize_model_(
+        model,
+        qlinear_config=mode,
+        qlinear_group_size=group_size,
+        skip_incompatible_shapes=True,
     )
-    if mode == "8da8w":
-        config = Int8DynamicActivationIntxWeightConfig(
-            weight_dtype=torch.int8,
-            weight_granularity=PerAxis(0),
-        )
-    elif mode == "8da4w":
-        config = Int8DynamicActivationIntxWeightConfig(
-            weight_dtype=torch.int4,
-            weight_granularity=PerGroup(group_size),
-            intx_choose_qparams_algorithm="hqq_scale_only",
-        )
-    else:
-        raise ValueError(f"Unsupported encoder quantization mode: {mode!r}")
-
-    def _filter(m, fqn):
-        if not isinstance(m, nn.Linear):
-            return False
-        if mode == "8da4w" and m.weight.shape[-1] % group_size != 0:
-            print(f"  skip quant (group_size={group_size} doesn't divide {m.weight.shape[-1]}): {fqn}")
-            return False
-        return True
-
-    quantize_(model, config, filter_fn=_filter)
     return model
 
 

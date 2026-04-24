@@ -204,3 +204,51 @@ python -m executorch.examples.models.gemma4.export \
 | A2 short audio | ❌ FAIL (by design) | Same encoder limitation as FP32 |
 
 **Verdict:** 8da4w quantization preserves quality across all modalities while shrinking the .pte by 7 GB and giving 15–25 % decode speedup. No additional bugs surfaced.
+
+---
+
+## Mobile-target variant — v12 (8da4w + emb8)
+
+**Model:** `/tmp/gemma4_v12_emb.pte` (5.78 GB — 72 % smaller than FP32 v11 21 GB; 56 % smaller than v11_q 13 GB)
+
+Text Linear weights are 8da4w group=32; **all `nn.Embedding` modules** (`tok_embeddings` AND `pli_embeddings` — the latter is the PLE table, 2.35B params at 9.4 GB FP32) are 8w per-channel. Vision and audio encoders left FP32 in this round (`--vision-quantize 8da8w` hit a TorchAO data-dependent guard inside the embedding_projection — follow-up). Embedding quant is the headline win — see BENCHMARK.md for the size-budget analysis showing PLE was the elephant.
+
+Export:
+```
+python -m executorch.examples.models.gemma4.export \
+  --hf-model ~/models/gemma-4-E2B-it --et-checkpoint ~/models/gemma-4-E2B-it/model_et.pth \
+  --output /tmp/gemma4_v12_emb.pte --backend xnnpack \
+  --max-seq-len 1024 --audio-frames 1976 \
+  --qmode 8da4w --group-size 32 \
+  --embedding-quantize 8,0
+```
+
+### Quality results (5/5 quick tests pass; perf table in BENCHMARK.md)
+
+| Test | Result | Output |
+|---|---|---|
+| Text capital  | ✅ PASS | "The capital of France is **Paris**." |
+| Text math     | ✅ PASS | "Here are a few ways to think about..." (continues, truncated by seq cap) |
+| Image describe | ✅ PASS | "This is a still life photograph featuring a single, vibrant red strawberry." |
+| Audio 2s clip | ✅ PASS | "I hear some music." (qualitatively coherent; 2s is sub-encoder-context but it didn't hang or garble) |
+| Audio 20s     | ✅ PASS | "This week I traveled to Chicago to deliver my final farewell address to the nation, following in the tradition..." (faithful transcription) |
+
+### Performance vs other variants
+
+| Modality | v11 FP32 (21 GB) | v11_q 8da4w (13 GB) | **v12 8da4w+emb8 (5.8 GB)** |
+|---|---|---|---|
+| text decode tok/s   | 13.4 | 16.1 | **16.1** |
+| image decode tok/s  | 12.1 | 14.5 | **15.2** |
+| audio decode tok/s  | 11.6 | 13.4 | **13.6** |
+| audio prefill tok/s | 254  | 301  | **312**  |
+| text TTFT (ms)      | 217  | 176  | **177**  |
+
+v12 matches or beats v11_q on every metric **and** is 7.2 GB smaller. The embedding quantization is pure win — quantizing PLE (the largest tensor in Gemma 4 by ~2×) costs nothing measurable in latency.
+
+**Remaining gap to Leixin's D99603811 mobile defaults (4.1 GB untied / 2.7 GB tied, 4-bit + emb8):**
+- `--tied-embedding` (drop duplicate `lm_head`) → predicted ~4.6 GB.
+- `--vision-quantize` (currently blocked on TorchAO guard inside embedding_projection) → predicted ~4.55 GB.
+- `--audio-quantize 8da4w` → predicted ~4.5 GB.
+- `--embedding-quantize 4,0` (int4 emb instead of int8) → predicted ~3 GB.
+
+Each is a flag on `export.py`; closing the gap is just bandwidth (each export takes ~30 min) plus working around the vision-encoder guard issue.

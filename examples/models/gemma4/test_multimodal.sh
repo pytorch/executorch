@@ -23,7 +23,7 @@ set -euo pipefail
 # ---------------------------------------------------------------------------
 EXECUTORCH_ROOT="$(cd "$(dirname "$0")/../../.." && pwd)"
 RUNNER="$EXECUTORCH_ROOT/cmake-out/examples/models/gemma4/gemma4_runner"
-MODEL="/tmp/gemma4_multimodal_v11.pte"   # single .pte for all 3 modalities
+MODEL="/tmp/gemma4_v12_emb.pte"   # single .pte for all 3 modalities
 TOKENIZER="$HOME/models/gemma-4-E2B-it/tokenizer.json"
 IMAGE="$EXECUTORCH_ROOT/image.jpg"
 AUDIO_20S="$EXECUTORCH_ROOT/obama_short20.wav"
