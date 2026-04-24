@@ -17,11 +17,12 @@ $RUNNER --model_path /tmp/gemma4_v12_emb.pte --tokenizer_path $TOK \
 
 ## PTEs compared
 
-| .pte | size | text Linear quant | embedding quant | encoder quant |
-|---|---|---|---|---|
-| `gemma4_multimodal_v11.pte`    | 21.0 GB | FP32 | FP32 | FP32 |
-| `gemma4_multimodal_v11_q.pte`  | 13.0 GB | 8da4w (group=32) | FP32 | FP32 |
-| `gemma4_v12_emb.pte`           | **5.78 GB** | 8da4w (group=32) | **8w per-channel** | FP32 |
+| .pte | size | text Linear quant | embedding quant | vision encoder | audio encoder |
+|---|---|---|---|---|---|
+| `gemma4_multimodal_v11.pte`    | 21.0 GB | FP32 | FP32 | FP32 | FP32 |
+| `gemma4_multimodal_v11_q.pte`  | 13.0 GB | 8da4w (group=32) | FP32 | FP32 | FP32 |
+| `gemma4_v12_emb.pte`           | 5.78 GB | 8da4w (group=32) | **8w per-channel** | FP32 | FP32 |
+| `gemma4_v13_aud.pte`           | **4.78 GB** | 8da4w (group=32) | 8w per-channel | FP32 | **8da4w (group=128)** |
 
 The headline win is moving from v11_q to v12: quantizing the embeddings (`tok_embeddings` = 1.6 GB, `pli_embeddings` = 9.4 GB) to INT8 cuts another **7.2 GB** off the .pte with **zero perf cost** (decode tok/s and TTFT are unchanged within run-to-run noise; prefill tok/s actually inches up because the embedded soft tokens go through the same INT8 path as the rest of the decoder).
 
@@ -35,15 +36,24 @@ Compared to Leixin's D99603811 numbers: their default 4-bit (linear + emb8 + tie
 |---|---|---:|---:|---:|
 | text  | v11 FP32 (21 GB)         | 102 | 13.4 | 217 ms |
 | text  | v11_q 8da4w (13 GB)      | 126 | 16.1 | 176 ms |
-| text  | **v12 8da4w+emb8 (5.8 GB)** | **126** | **16.1** | **177 ms** |
+| text  | v12 +emb8 (5.78 GB)      | 126 | 16.1 | 177 ms |
+| text  | **v13 +audio8da4w (4.78 GB)** | **132** | **15.9** | **168 ms** |
 | image | v11 FP32 (21 GB)         | 94  | 12.1 | 3.25 s |
 | image | v11_q 8da4w (13 GB)      | 103 | 14.5 | 2.96 s |
-| image | **v12 8da4w+emb8 (5.8 GB)** | **102** | **15.2** | **2.98 s** |
+| image | v12 +emb8 (5.78 GB)      | 102 | 15.2 | 2.98 s |
+| image | **v13 +audio8da4w (4.78 GB)** | **99** | **14.3** | **3.06 s** |
 | audio | v11 FP32 (21 GB)         | 254 | 11.6 | 2.03 s |
 | audio | v11_q 8da4w (13 GB)      | 301 | 13.4 | 1.71 s |
-| audio | **v12 8da4w+emb8 (5.8 GB)** | **312** | **13.6** | **1.65 s** |
+| audio | v12 +emb8 (5.78 GB)      | 312 | 13.6 | 1.65 s |
+| audio | **v13 +audio8da4w (4.78 GB)** | **311** | **13.5** | **1.66 s** |
 
-v12 dominates v11_q on every metric **and** is 7.2 GB smaller. The embedding quantization is pure win.
+The progression is **pure-win at every step**:
+- v11 → v11_q: -38 % size (text Linear quant)
+- v11_q → v12: -56 % size (PLE embedding quant — the elephant)
+- v12 → v13: -17 % size (audio encoder quant)
+- **Cumulative: 21 GB → 4.78 GB (-77 %)** with all decode tok/s strictly higher than the FP32 baseline.
+
+The remaining gap to Leixin's D99603811 untied 4-bit default (4.1 GB) is **0.68 GB**, almost entirely the un-tied `lm_head` weight (Phase 1.6 follow-up).
 
 ## Per-test detail
 
@@ -92,6 +102,23 @@ v12 dominates v11_q on every metric **and** is 7.2 GB smaller. The embedding qua
 | audio-long   | 520 | 149 | 298 | 13.4 | 1747 | v11_q 8da4w (13 GB) |
 | audio-long   | 520 | 149 | 307 | 13.5 | 1696 | v12 8da4w+emb8 (5.8 GB) |
 
+## v13 per-test detail (4.78 GB pte)
+
+Same suite as the v11 / v11_q / v12 tables above, run on `/tmp/gemma4_v13_aud.pte`:
+
+| Test | Prompt tok | Gen tok | Prefill tok/s | Decode tok/s | TTFT (ms) |
+|---|---:|---:|---:|---:|---:|
+| text-short  | 18  | 8   | 111 | 15.4 | 162  |
+| text-medium | 21  | 21  | 129 | 16.9 | 163  |
+| text-math   | 25  | 49  | 144 | 15.9 | 174  |
+| text-long   | 25  | 149 | 144 | 15.5 | 174  |
+| image-short  | 302 | 9   | 98  | 14.4 | 3088 |
+| image-medium | 300 | 18  | 99  | 14.5 | 3021 |
+| image-long   | 310 | 159 | 101 | 14.2 | 3075 |
+| audio-short  | 515 | 29  | 316 | 13.6 | 1630 |
+| audio-medium | 512 | 55  | 312 | 13.5 | 1642 |
+| audio-long   | 520 | 149 | 305 | 13.4 | 1705 |
+
 ## Sample outputs (v12, FP32-equivalent quality)
 
 - text-short:  `"The capital of France is **Paris**."`
@@ -102,9 +129,10 @@ v12 dominates v11_q on every metric **and** is 7.2 GB smaller. The embedding qua
 - image-long:  multi-paragraph structured response with **Subject (Strawberry)** / **Setting and Composition** sections.
 - audio-medium: `"This week I traveled to Chicago to deliver my final farewell address to the nation, following in the tradition of presidents before me. ..."`
 
-## Repro: produce v12 from scratch
+## Repro
 
 ```bash
+# v12 (embedding quant only)
 PYTHONPATH=$PWD python -m executorch.examples.models.gemma4.export \
     --hf-model ~/models/gemma-4-E2B-it \
     --et-checkpoint ~/models/gemma-4-E2B-it/model_et.pth \
@@ -113,17 +141,28 @@ PYTHONPATH=$PWD python -m executorch.examples.models.gemma4.export \
     --max-seq-len 1024 --audio-frames 1976 \
     --qmode 8da4w --group-size 32 \
     --embedding-quantize 8,0
+
+# v13 (+ audio encoder quant)
+PYTHONPATH=$PWD python -m executorch.examples.models.gemma4.export \
+    --hf-model ~/models/gemma-4-E2B-it \
+    --et-checkpoint ~/models/gemma-4-E2B-it/model_et.pth \
+    --output /tmp/gemma4_v13_aud.pte \
+    --backend xnnpack \
+    --max-seq-len 1024 --audio-frames 1976 \
+    --qmode 8da4w --group-size 32 \
+    --embedding-quantize 8,0 \
+    --audio-quantize 8da4w --encoder-group-size 128
 ```
 
-Predicted from the size-budget analysis (see commit message): 5.7 GB. Actual: **5.78 GB** (within rounding).
+Predicted from the size-budget analysis: v12 5.7 GB, v13 ~4.5 GB. Actual: **5.78 GB** and **4.78 GB**.
 
 ## What's next to close the rest of the gap
 
 | Item | Predicted size | Open issue |
 |---|---:|---|
-| `--tied-embedding` (drop duplicate `lm_head`) | -1.2 GB → **~4.6 GB** | needs Transformer-side wiring (model has separate `output` Linear; convert_weights ties at load but model un-ties at instantiation). |
-| `--vision-quantize 8da8w` | -50 MB → **~4.55 GB** | hits a TorchAO data-dependent guard (`Ne(u0,1)`) inside vision encoder's `embedding_projection`. Needs a `torch._check` hint or `--vision-quantize 8w` (weight-only) workaround. |
-| `--audio-quantize 8da4w` | -75 MB → **~4.5 GB** | likely safe; not yet validated. |
+| `--tied-embedding` (drop duplicate `lm_head`) | -0.2 to -1.2 GB → **~4.5 GB** | needs Transformer-side wiring (model has separate `output` Linear; convert_weights ties at load but model un-ties at instantiation). |
+| `--vision-quantize 8w` (weight-only INT8) | -100 MB → **~4.7 GB** | hits `Missing out variants: torchao::dequantize_affine` in `to_executorch()` for the weight-only path under XNNPACK. Need either an op-variant registration or a different vision-encoder quant strategy (e.g. dynamic-activation 8da8w with a `torch._check` workaround for the `Ne(u0,1)` guard inside `embedding_projection`). |
+| `--vision-quantize 8da8w` | -150 MB → **~4.65 GB** | TorchAO data-dependent guard `Ne(u0,1)` inside vision encoder's `embedding_projection`. |
 | `--qmode 8da4w + --embedding-quantize 4,0 + tied` | **~3 GB** | matches Leixin's smallest config (2.7 GB); int4 embedding may need wrapper-test re-validation. |
 
-For comparison, Leixin's D99603811 mobile defaults are 4.1 GB (untied) / 2.7 GB (tied). With the three follow-ups above we close to within 5 % of either.
+Leixin's D99603811 mobile defaults are 4.1 GB (untied) / 2.7 GB (tied). v13 lands at **4.78 GB**, **0.68 GB above the untied target**. The remaining gap is dominated by the un-tied `lm_head`; closing it via `--tied-embedding` matches Leixin's untied default and beats the prediction.

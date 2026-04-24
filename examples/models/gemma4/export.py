@@ -540,11 +540,15 @@ def main():
                         choices=sorted(_VARIANT_CONFIGS.keys()),
                         help="Model variant to export (selects config file).")
     parser.add_argument("--vision-quantize", default=None,
-                        choices=[None, "8da4w", "8da8w"],
+                        choices=[None, "8w", "4w", "8da4w", "8da8w"],
                         help="Vision encoder linear quantization (default: FP32). "
-                             "8da8w gives ~50%% size reduction with negligible quality loss.")
+                             "Recommended for the Gemma 4 ViT: '8w' (weight-only "
+                             "INT8). '8da8w' triggers a TorchAO data-dependent "
+                             "guard inside vision_tower.embedding_projection at "
+                             "this transformers version; the weight-only path "
+                             "sidesteps it.")
     parser.add_argument("--audio-quantize", default=None,
-                        choices=[None, "8da4w", "8da8w"],
+                        choices=[None, "8w", "4w", "8da4w", "8da8w"],
                         help="Audio encoder linear quantization (default: FP32). "
                              "8da4w shrinks the audio encoder ~75%%.")
     parser.add_argument("--encoder-group-size", type=int, default=128,

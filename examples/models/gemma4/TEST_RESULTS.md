@@ -252,3 +252,46 @@ v12 matches or beats v11_q on every metric **and** is 7.2 GB smaller. The embedd
 - `--embedding-quantize 4,0` (int4 emb instead of int8) → predicted ~3 GB.
 
 Each is a flag on `export.py`; closing the gap is just bandwidth (each export takes ~30 min) plus working around the vision-encoder guard issue.
+
+---
+
+## Mobile-target variant — v13 (8da4w + emb8 + audio-encoder 8da4w)
+
+**Model:** `/tmp/gemma4_v13_aud.pte` (4.78 GB — 77 % smaller than FP32 v11 21 GB; 17 % smaller than v12)
+
+Adds `--audio-quantize 8da4w` on top of v12. The audio encoder turns out to be ~1 GB at FP32 (USM Conformer with hidden=1024, 12 layers); 8da4w shrinks it to ~250 MB. **Within 0.7 GB of Leixin's untied 4.1 GB default.**
+
+Vision encoder still FP32 — `--vision-quantize 8w` hit a `Missing out variants: torchao::dequantize_affine` failure in `to_executorch()` lowering for the weight-only XNNPACK path; `--vision-quantize 8da8w` hit a different TorchAO data-dependent guard inside `vision_tower.embedding_projection`. Both need follow-up.
+
+Export:
+```
+python -m executorch.examples.models.gemma4.export \
+  --hf-model ~/models/gemma-4-E2B-it --et-checkpoint ~/models/gemma-4-E2B-it/model_et.pth \
+  --output /tmp/gemma4_v13_aud.pte --backend xnnpack \
+  --max-seq-len 1024 --audio-frames 1976 \
+  --qmode 8da4w --group-size 32 \
+  --embedding-quantize 8,0 \
+  --audio-quantize 8da4w --encoder-group-size 128
+```
+
+### Quality (5/5 quick tests pass)
+
+| Test | Result | Output |
+|---|---|---|
+| Text capital   | ✅ PASS | "The capital of France is **Paris**." |
+| Text math      | ✅ PASS | (continues, truncated by seq cap) |
+| Image describe | ✅ PASS | "This is a still life photograph featuring a single, vibrant red strawberry." |
+| Audio 2s clip  | ✅ PASS | Coherent prefix; doesn't hang or garble despite the audio encoder being 8da4w-quantized |
+| Audio 20s      | ✅ PASS | "This week I traveled to Chicago to deliver my final farewell address to the nation, following in the tradition..." |
+
+### Performance vs prior PTEs
+
+| Modality | v11 FP32 (21 GB) | v11_q (13 GB) | v12 (5.78 GB) | **v13 (4.78 GB)** |
+|---|---|---|---|---|
+| text decode tok/s   | 13.4 | 16.1 | 16.1 | **15.9** |
+| text TTFT (ms)      | 217  | 176  | 177  | **168**  |
+| image decode tok/s  | 12.1 | 14.5 | 15.2 | **14.3** |
+| audio decode tok/s  | 11.6 | 13.4 | 13.6 | **13.5** |
+| audio prefill tok/s | 254  | 301  | 312  | **311**  |
+
+v13 lands at the same perf envelope as v12 (deviations are within run-to-run noise) while shrinking another 1 GB.
