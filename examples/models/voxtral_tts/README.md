@@ -4,7 +4,7 @@ Self-contained ExecuTorch implementation of
 [Voxtral-4B-TTS-2603](https://huggingface.co/mistralai/Voxtral-4B-TTS-2603),
 a ~4B parameter text-to-speech model that produces 24 kHz mono audio from
 text. Weights are loaded directly from the HuggingFace safetensors
-checkpoint. Supports CPU (portable + XNNPACK) and CUDA backends.
+checkpoint. Supports CPU (portable + XNNPACK) and CUDA backends. With `--streaming`, the CUDA 4w export runs at **RTF 0.31x on RTX 5080 — 3× faster than real-time** with 2.6 s time-to-first-audio.
 
 ## Overview
 
@@ -86,6 +86,40 @@ Validated on A100, `seed=42`, `"Hello, how are you today?"`:
 |---|---|---|---|---|---|
 | `--backend cuda` | 15.8 GB | 11.5 s | 178 s | 51x | FP32 weights, codec on portable CPU |
 | **`--backend cuda --qlinear 4w`** | **3.4 GB** | **2.1 s** | **3.7 s** | **0.88x** ⚡ | int4 weights, codec on CUDA |
+
+
+### Streaming
+
+`--streaming` emits codec chunks as they are decoded rather than batching the
+full audio at the end. The first chunk arrives in ~0.4 s of audio (short
+prefill delay), then 2 s chunks follow continuously. This decouples
+time-to-first-audio from total synthesis length and enables live piped playback.
+
+Measured on RTX 5080 (sm_120, warm Triton autotune cache):
+
+| Prompt | Audio | Wall clock | **RTF** | Time-to-first |
+|---|---|---|---|---|
+| 24 tokens | 10.3 s | 3.85 s | **0.31x** ⚡⚡ (~3.2× real-time) | ~2.6 s |
+
+Live playback (pipe raw f32le PCM to `ffplay` or `aplay`):
+
+```bash
+unset CPATH
+export LD_LIBRARY_PATH=$CONDA_PREFIX/lib:$LD_LIBRARY_PATH
+
+cmake-out/examples/models/voxtral_tts/voxtral_tts_runner \
+    --model voxtral_tts_exports_cuda_4w/model.pte \
+    --data_path voxtral_tts_exports_cuda_4w/aoti_cuda_blob.ptd \
+    --codec voxtral_tts_exports_cuda_4w/codec_decoder.pte \
+    --codec_data_path voxtral_tts_exports_cuda_4w/codec_aoti_cuda_blob.ptd \
+    --tokenizer ~/models/Voxtral-4B-TTS-2603/tekken.json \
+    --voice ~/models/Voxtral-4B-TTS-2603/voice_embedding/neutral_female.pt \
+    --text "Hello, how are you today?" \
+    --streaming --speaker \
+  | ffplay -f f32le -ar 24000 -ac 1 -nodisp -autoexit -
+```
+
+Or `aplay`: replace `| ffplay ...` with `| aplay -f FLOAT_LE -r 24000 -c 1`.
 
 ### XNNPACK quantization configs
 
