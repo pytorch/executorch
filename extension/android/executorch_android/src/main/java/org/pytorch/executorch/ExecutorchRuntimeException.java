@@ -161,6 +161,11 @@ public class ExecutorchRuntimeException extends RuntimeException {
     this.errorCode = errorCode;
   }
 
+  public ExecutorchRuntimeException(int errorCode, String details, Throwable cause) {
+    super(ErrorHelper.formatMessage(errorCode, details), cause);
+    this.errorCode = errorCode;
+  }
+
   /** Returns the numeric error code from {@code runtime/core/error.h}. */
   public int getErrorCode() {
     return errorCode;
