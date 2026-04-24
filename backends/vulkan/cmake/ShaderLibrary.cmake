@@ -60,6 +60,14 @@ function(gen_vulkan_shader_lib_cpp shaders_path)
     )
   endif()
 
+  # Allow overriding GLSL PRECISION for fp16 shader variants. Empty / unset
+  # keeps upstream default (`highp`). Accepted values: highp, mediump, lowp.
+  if(EXECUTORCH_VULKAN_FP16_PRECISION)
+    list(APPEND GEN_SPV_ARGS "--fp16-precision"
+         "${EXECUTORCH_VULKAN_FP16_PRECISION}"
+    )
+  endif()
+
   # Ninja cannot expand wildcards (*) in DEPENDS lists.
   file(GLOB VULKAN_SHADERS "${shaders_path}/*.glsl" "${shaders_path}/*.glslh"
        "${shaders_path}/*.yaml" "${shaders_path}/*.h"
