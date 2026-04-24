@@ -9,6 +9,8 @@
 #include <gflags/gflags.h>
 
 #include <executorch/extension/llm/runner/llm_runner_helper.h>
+#include <executorch/extension/llm/runner/stats.h>
+#include <executorch/extension/llm/runner/util.h>
 #include <executorch/extension/module/module.h>
 #include <executorch/extension/tensor/tensor.h>
 #include <executorch/runtime/backend/interface.h>
@@ -57,7 +59,15 @@ static uint64_t read_token(const executorch::aten::Tensor& output) {
 
   float val;
   if (on_device) {
-    cudaMemcpy(&val, ptr, sizeof(float), cudaMemcpyDeviceToHost);
+    cudaError_t err =
+        cudaMemcpy(&val, ptr, sizeof(float), cudaMemcpyDeviceToHost);
+    if (err != cudaSuccess) {
+      ET_LOG(
+          Error,
+          "read_token: cudaMemcpy D2H failed: %s",
+          cudaGetErrorString(err));
+      return 0;
+    }
   } else {
     memcpy(&val, ptr, sizeof(float));
   }
@@ -177,7 +187,7 @@ int main(int argc, char** argv) {
   stats.inference_start_ms = llm::time_in_ms();
 
   // ---------------------------------------------------------------
-  // Temperature tensor (shared between prefill and decode)
+  // Sampling tensors (shared between prefill and decode)
   // ---------------------------------------------------------------
   auto S = [](int64_t v) -> SizesType { return static_cast<SizesType>(v); };
 
