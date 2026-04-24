@@ -19,7 +19,6 @@
 #include <mlx/mlx.h>
 
 #include <cstring>
-#include <iostream>
 #include <limits>
 #include <memory>
 #include <mutex>
@@ -209,18 +208,14 @@ class MLXBackend final : public ::executorch::runtime::BackendInterface {
     }
 
     try {
-      std::cerr << "MLX init: constructing handle" << std::endl;
       new (handle) MLXHandle();
-      std::cerr << "MLX init: handle constructed" << std::endl;
 
       if (!processed || !processed->data() || processed->size() == 0) {
         throw std::runtime_error("init: null or empty delegate payload");
       }
 
-      std::cerr << "MLX init: parsing delegate payload" << std::endl;
       handle->program = loader::load_program(
           static_cast<const uint8_t*>(processed->data()), processed->size());
-      std::cerr << "MLX init: delegate payload parsed" << std::endl;
 
       // Validate schema version
       int schema_version = 1;
@@ -248,34 +243,27 @@ class MLXBackend final : public ::executorch::runtime::BackendInterface {
       // runtime
       const runtime::NamedDataMap* named_data_map =
           context.get_named_data_map();
-      std::cerr << "MLX init: loading constants" << std::endl;
       load_constants(
           handle->program,
           named_data_map,
           handle->constants,
           handle->constant_buffers);
-      std::cerr << "MLX init: constants loaded" << std::endl;
 
       // Delegate payload no longer needed after constants are loaded
       processed->Free();
       processed = nullptr;
 
       // Load mutable buffers (e.g., KV cache)
-      std::cerr << "MLX init: loading mutable buffers" << std::endl;
       load_mutable_buffers(handle->program, handle->mutable_buffers);
-      std::cerr << "MLX init: mutable buffers loaded" << std::endl;
 
       // Bind execution state (reused across execute() calls)
-      std::cerr << "MLX init: binding execution state" << std::endl;
       handle->state.bind(
           handle->program, handle->constants, handle->mutable_buffers);
-      std::cerr << "MLX init: execution state bound" << std::endl;
 
       // Run init chain if present.
       // SAFETY: The >= 0 check ensures init_chain_idx is non-negative, so the
       // static_cast<uint32_t> cannot produce UINT32_MAX from a -1 sentinel.
       if (handle->program.init_chain_idx >= 0) {
-        std::cerr << "MLX init: running init chain" << std::endl;
         handle->state.is_init_chain = true;
         handle->interpreter.run_chain(
             handle->program,
@@ -287,12 +275,10 @@ class MLXBackend final : public ::executorch::runtime::BackendInterface {
         // Evaluate any constants written by the init chain so the first
         // execute() doesn't pay the cost of materializing them.
         eval(handle->constants.tensors);
-        std::cerr << "MLX init: init chain complete" << std::endl;
       }
 
     } catch (const std::exception& e) {
       ET_LOG(Error, "Failed to load MLX program: %s", e.what());
-      std::cerr << "Failed to load MLX program: " << e.what() << std::endl;
       handle->~MLXHandle();
       if (processed != nullptr) {
         processed->Free();
@@ -300,8 +286,6 @@ class MLXBackend final : public ::executorch::runtime::BackendInterface {
       return Error::InvalidProgram;
     } catch (...) {
       ET_LOG(Error, "Failed to load MLX program: unknown non-std exception");
-      std::cerr << "Failed to load MLX program: unknown non-std exception"
-                << std::endl;
       handle->~MLXHandle();
       if (processed != nullptr) {
         processed->Free();
@@ -437,12 +421,9 @@ class MLXBackend final : public ::executorch::runtime::BackendInterface {
       return Error::Ok;
     } catch (const std::exception& e) {
       ET_LOG(Error, "MLX execute failed: %s", e.what());
-      std::cerr << "MLX execute failed: " << e.what() << std::endl;
       return Error::Internal;
     } catch (...) {
       ET_LOG(Error, "MLX execute failed: unknown non-std exception");
-      std::cerr << "MLX execute failed: unknown non-std exception"
-                << std::endl;
       return Error::Internal;
     }
   }

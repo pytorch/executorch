@@ -21,12 +21,8 @@ Usage:
 """
 
 import argparse
-import ctypes
 import logging
-import os
-import shutil
 import time
-from pathlib import Path
 
 import torch
 from executorch.runtime import Runtime, Verification
@@ -35,73 +31,6 @@ from transformers import AutoProcessor, AutoTokenizer
 FORMAT = "[%(levelname)s %(asctime)s %(filename)s:%(lineno)s] %(message)s"
 logging.basicConfig(level=logging.INFO, format=FORMAT)
 logger = logging.getLogger(__name__)
-
-
-def _iter_mlx_backend_candidates():
-    env_path = os.environ.get("ET_MLX_BACKEND_DYLIB")
-    if env_path:
-        yield Path(env_path)
-
-    for parent in Path(__file__).resolve().parents:
-        pip_out = parent / "pip-out"
-        if pip_out.exists():
-            yield from sorted(
-                pip_out.glob(
-                    "temp.*/cmake-out/backends/mlx/libmlxdelegate_runtime.dylib"
-                )
-            )
-            yield from sorted(
-                pip_out.glob("temp.*/cmake-out/backends/mlx/libmlxdelegate.dylib")
-            )
-            break
-
-
-def _ensure_mlx_metallib(dylib_path: Path) -> None:
-    metallib_path = dylib_path.with_name("mlx.metallib")
-    if metallib_path.exists():
-        return
-
-    for parent in Path(__file__).resolve().parents:
-        pip_out = parent / "pip-out"
-        if not pip_out.exists():
-            continue
-        matches = sorted(
-            pip_out.glob(
-                "temp.*/cmake-out/backends/mlx/mlx/mlx/backend/metal/kernels/mlx.metallib"
-            )
-        )
-        if not matches:
-            continue
-        shutil.copyfile(matches[0], metallib_path)
-        logger.info(f"Copied MLX metallib next to runtime library: {metallib_path}")
-        return
-
-
-def _ensure_mlx_backend_registered() -> Runtime:
-    runtime = Runtime.get()
-    if runtime.backend_registry.is_available("MLXBackend"):
-        return runtime
-
-    for candidate in _iter_mlx_backend_candidates():
-        if not candidate.is_file():
-            continue
-        try:
-            _ensure_mlx_metallib(candidate)
-            ctypes.CDLL(str(candidate), mode=ctypes.RTLD_GLOBAL)
-        except OSError as exc:
-            logger.info(f"Failed to load MLX backend library {candidate}: {exc}")
-            continue
-
-        runtime = Runtime.get()
-        if runtime.backend_registry.is_available("MLXBackend"):
-            logger.info(f"Loaded MLX backend runtime library: {candidate}")
-            return runtime
-
-    logger.warning(
-        "MLXBackend is not registered. If you built mlxdelegate locally, "
-        "set ET_MLX_BACKEND_DYLIB to the path of libmlxdelegate_runtime.dylib."
-    )
-    return runtime
 
 
 def _get_max_input_seq_len(program) -> int:
@@ -172,7 +101,7 @@ def run_inference(
     text_processor, uses_processor = _load_text_processor(model_id)
 
     logger.info(f"Loading model from {pte_path}...")
-    et_runtime = _ensure_mlx_backend_registered()
+    et_runtime = Runtime.get()
     program = et_runtime.load_program(pte_path, verification=Verification.Minimal)
 
     max_seq_len = _get_max_input_seq_len(program)
