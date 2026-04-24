@@ -10,6 +10,7 @@
 #include <cstdint>
 #include <cstring>
 #include <memory>
+#include <sstream>
 #include <string>
 #include <unordered_map>
 #include <vector>
@@ -594,21 +595,19 @@ class ExecuTorchLlmJni : public facebook::jni::HybridClass<ExecuTorchLlmJni> {
 
   jint load() {
     if (!runner_) {
-      ET_LOG(
-          Error,
-          "ExecuTorchLlmJni::load() called but runner_ is null. "
-          "The model runner was not created or failed to initialize due to a "
-          "previous configuration or initialization error. "
-          "Model type category: %d.",
-          model_type_category_);
+      std::stringstream ss;
+      ss << "Model runner was not created. model_type_category="
+         << model_type_category_
+         << ". Valid values: " << MODEL_TYPE_CATEGORY_LLM << " (LLM), "
+         << MODEL_TYPE_CATEGORY_MULTIMODAL << " (Multimodal)";
+      executorch::jni_helper::throwExecutorchException(
+          static_cast<uint32_t>(Error::InvalidState), ss.str().c_str());
       return static_cast<jint>(Error::InvalidState);
     }
     const auto load_result = static_cast<jint>(runner_->load());
     if (load_result != static_cast<jint>(Error::Ok)) {
-      ET_LOG(
-          Error,
-          "ExecuTorchLlmJni::load() failed in runner_->load() with error code %d.",
-          static_cast<int>(load_result));
+      executorch::jni_helper::throwExecutorchException(
+          static_cast<uint32_t>(load_result), "Failed to load model runner");
     }
     return load_result;
   }

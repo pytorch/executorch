@@ -10,6 +10,10 @@
 
 namespace executorch {
 namespace runtime {
+
+// Specialize for list of optional tensors, as nullptr is a valid std::nullopt.
+// For non-optional types, nullptr is invalid.
+
 template <>
 executorch::aten::ArrayRef<std::optional<executorch::aten::Tensor>>
 BoxedEvalueList<std::optional<executorch::aten::Tensor>>::get() const {
@@ -23,6 +27,27 @@ BoxedEvalueList<std::optional<executorch::aten::Tensor>>::get() const {
       unwrapped_vals_[i] =
           wrapped_vals_[i]->to<std::optional<executorch::aten::Tensor>>();
     }
+  }
+  return executorch::aten::ArrayRef<std::optional<executorch::aten::Tensor>>{
+      unwrapped_vals_, wrapped_vals_.size()};
+}
+
+template <>
+Result<executorch::aten::ArrayRef<std::optional<executorch::aten::Tensor>>>
+BoxedEvalueList<std::optional<executorch::aten::Tensor>>::tryGet() const {
+  for (typename executorch::aten::ArrayRef<
+           std::optional<executorch::aten::Tensor>>::size_type i = 0;
+       i < wrapped_vals_.size();
+       i++) {
+    if (wrapped_vals_[i] == nullptr) {
+      unwrapped_vals_[i] = std::nullopt;
+      continue;
+    }
+    auto r = wrapped_vals_[i]->tryToOptional<executorch::aten::Tensor>();
+    if (!r.ok()) {
+      return r.error();
+    }
+    unwrapped_vals_[i] = std::move(r.get());
   }
   return executorch::aten::ArrayRef<std::optional<executorch::aten::Tensor>>{
       unwrapped_vals_, wrapped_vals_.size()};

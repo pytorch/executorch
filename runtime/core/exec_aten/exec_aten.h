@@ -127,30 +127,8 @@ ET_EXPERIMENTAL inline ::executorch::runtime::Result<ssize_t> safe_numel(
         i);
     ssize_t next_numel;
     ET_CHECK_OR_RETURN_ERROR(
-        !c10::mul_overflows(
-            numel, static_cast<ssize_t>(sizes[i]), &next_numel),
+        !c10::mul_overflows(numel, static_cast<ssize_t>(sizes[i]), &next_numel),
         InvalidArgument,
-        "Overflow computing numel at dimension %zd",
-        i);
-    numel = next_numel;
-  }
-  return numel;
-}
-
-ET_EXPERIMENTAL inline ssize_t compute_numel_overflow(
-    const SizesType* sizes,
-    ssize_t dim) {
-  ssize_t numel = 1;
-  for (ssize_t i = 0; i < dim; i++) {
-    ET_CHECK_MSG(
-        sizes[i] >= 0,
-        "Size must be non-negative, got %zd at dimension %zd",
-        static_cast<ssize_t>(sizes[i]),
-        i);
-    ssize_t next_numel;
-    ET_CHECK_MSG(
-        !c10::mul_overflows(
-            numel, static_cast<ssize_t>(sizes[i]), &next_numel),
         "Overflow computing numel at dimension %zd",
         i);
     numel = next_numel;
@@ -206,7 +184,6 @@ using OptionalArrayRef =
 using OptionalIntArrayRef = OptionalArrayRef<int64_t>;
 
 using torch::executor::compute_numel;
-using torch::executor::compute_numel_overflow;
 using torch::executor::safe_numel;
 
 #endif // Use ExecuTorch types

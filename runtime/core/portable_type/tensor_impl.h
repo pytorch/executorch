@@ -305,15 +305,6 @@ ET_EXPERIMENTAL ::executorch::runtime::Result<ssize_t> safe_numel(
     const ::executorch::runtime::etensor::TensorImpl::SizesType* sizes,
     ssize_t dim);
 
-/**
- * EXPERIMENTAL. Like safe_numel() but aborts on overflow or invalid sizes.
- * Prefer safe_numel() where possible; use this only in paths that cannot
- * propagate an Error (e.g., constructors returning a value directly).
- */
-ET_EXPERIMENTAL ssize_t compute_numel_overflow(
-    const ::executorch::runtime::etensor::TensorImpl::SizesType* sizes,
-    ssize_t dim);
-
 /// Appropriate format specifier for the result of calling
 /// size(). Must be used instead of using zd directly to support ATen
 /// mode.
@@ -343,7 +334,6 @@ namespace executor {
 // TODO(T197294990): Remove these deprecated aliases once all users have moved
 // to the new `::executorch` namespaces.
 using ::executorch::runtime::etensor::compute_numel;
-using ::executorch::runtime::etensor::compute_numel_overflow;
 using ::executorch::runtime::etensor::safe_numel;
 using ::executorch::runtime::etensor::TensorImpl;
 } // namespace executor

@@ -240,6 +240,13 @@ if __name__ == "__main__":  # noqa C901
         action="store_true",
         help="This feature allows running models which do not fit into SRAM by offloading them to an external memory.",
     )
+    parser.add_argument(
+        "--use_new_flow_neutron_c",
+        required=False,
+        default=False,
+        action="store_true",
+        help="Enable experimental MLIR-based flow for Neutron-C with improves INT8 operator support.",
+    )
 
     args = parser.parse_args()
 
@@ -323,6 +330,7 @@ if __name__ == "__main__":  # noqa C901
         operators_not_to_delegate=args.operators_not_to_delegate,
         fetch_constants_to_sram=args.fetch_constants_to_sram,
         dump_kernel_selection_code=args.dump_kernel_selection_code,
+        use_new_flow_neutron_c=args.use_new_flow_neutron_c,
     )
     partitioners = (
         [
