@@ -14,6 +14,7 @@
 #include <vector>
 
 #include <c10/macros/Macros.h>
+#include <c10/util/safe_numerics.h>
 #include <executorch/runtime/core/error.h>
 #include <executorch/runtime/core/exec_aten/exec_aten.h>
 #include <executorch/runtime/core/exec_aten/util/scalar_type_util.h>
@@ -117,7 +118,16 @@ inline TensorPtr make_tensor_ptr(
     ET_CHECK_MSG(
         runtime::canCast(deduced_type, type),
         "Cannot cast deduced type to specified type.");
-    std::vector<uint8_t> casted_data(data.size() * aten::elementSize(type));
+    size_t casted_bytes = 0;
+    ET_CHECK_MSG(
+        !c10::mul_overflows(
+            data.size(),
+            static_cast<size_t>(aten::elementSize(type)),
+            &casted_bytes),
+        "casted_data size overflow: %zu elements * %zu bytes/element",
+        data.size(),
+        static_cast<size_t>(aten::elementSize(type)));
+    std::vector<uint8_t> casted_data(casted_bytes);
 
     // Create a minimal context for error handling in ET_SWITCH
     struct {
