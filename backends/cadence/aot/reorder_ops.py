@@ -18,6 +18,7 @@ import torch.fx
 from executorch.backends.cadence.aot.compiler_utils import get_placeholders, get_shape
 from executorch.backends.cadence.aot.pass_utils import (
     CadencePassAttribute,
+    get_arg,
     get_overload_packet,
     register_cadence_pass,
     RemoveOrReplacePassInterface,
@@ -639,6 +640,63 @@ class PostponePermuteOpBelowSqueezeOrUnsqueezeLikeView(
     _SharedPostponePermuteOpBelowSqueezeOrUnsqueezeLikeView
 ):
     pass
+
+
+@register_cadence_pass(CadencePassAttribute(opt_level=1))
+class MoveSliceBeforePermutePass(RemoveOrReplacePassInterface):
+    """Move slice_copy ops before permute_copy to reduce permute data volume.
+
+    Rewrites permute(input, perm) -> slice(dim=D) into
+    slice(input, dim=perm[D]) -> permute(sliced, perm), so the permute
+    operates on a smaller tensor.
+    """
+
+    @property
+    def targets(self) -> list[EdgeOpOverload]:
+        return [exir_ops.edge.aten.permute_copy.default]
+
+    def maybe_remove_or_replace(self, node: torch.fx.Node) -> bool:
+        perm = cast(list[int], node.args[1])
+        permute_input = node.args[0]
+        assert isinstance(permute_input, torch.fx.Node)
+
+        if len(node.users) != 1:
+            return False
+
+        user = next(iter(node.users))
+        if user.target != exir_ops.edge.aten.slice_copy.Tensor:
+            return False
+
+        slice_users = [user]
+
+        graph = node.graph
+        modified = False
+        for slice_node in slice_users:
+            slice_dim = get_arg(slice_node, "dim", int)
+            new_dim = perm[slice_dim]
+
+            with graph.inserting_before(node):
+                new_slice = graph.create_node(
+                    "call_function",
+                    exir_ops.edge.aten.slice_copy.Tensor,
+                    args=(
+                        permute_input,
+                        new_dim,
+                        get_arg(slice_node, "start"),
+                        get_arg(slice_node, "end"),
+                        get_arg(slice_node, "step", int),
+                    ),
+                )
+                new_permute = graph.create_node(
+                    "call_function",
+                    exir_ops.edge.aten.permute_copy.default,
+                    args=(new_slice, perm),
+                )
+
+            slice_node.replace_all_uses_with(new_permute)
+            modified = True
+
+        return modified
 
 
 # The following class consolidates functions to reoder ops (i.e., either hoist

@@ -23,6 +23,7 @@ from executorch.backends.cadence.aot.pass_utils import (
 from executorch.backends.cadence.aot.reorder_ops import (
     AdvanceQuantizeOpAboveDefChainPass,
     AdvanceQuantizeOpAboveDefInBranchPass,
+    MoveSliceBeforePermutePass,
     PostponeDequantizeOpBelowUseChainPass,
     PostponePermuteOpBelowSqueezeOrUnsqueezeLikeView,
     SinkOpsCloserToUsePass,
@@ -633,3 +634,85 @@ class TestReorderPasses(unittest.TestCase):
         self.assertTrue(nodes[1] == exir_ops.edge.aten.permute_copy)
         self.assertTrue(nodes[2] == exir_ops.edge.aten.view_copy)
         self.assertTrue(nodes[3] == exir_ops.edge.aten.permute_copy)
+
+
+class TestMoveSliceBeforePermutePass(unittest.TestCase):
+    def test_basic_move(self) -> None:
+        """permute → slice becomes slice → permute."""
+        builder = GraphBuilder()
+        x = builder.placeholder("x", torch.randn(2, 3, 4, 5))
+        permuted = builder.call_operator(
+            op=exir_ops.edge.aten.permute_copy.default, args=(x, [0, 2, 3, 1])
+        )
+        sliced = builder.call_operator(
+            op=exir_ops.edge.aten.slice_copy.Tensor,
+            args=(permuted, 1, 0, 2, 1),
+        )
+        builder.output([sliced])
+        original = builder.get_graph_module()
+
+        result = transform_and_check_numerics(
+            original,
+            (torch.randn(2, 3, 4, 5),),
+            MoveSliceBeforePermutePass(),
+        )
+        self.assertTrue(result.modified)
+
+        # The slice should come before the permute now.
+        nodes = get_compute_nodes_in_gm(result.graph_module)
+        self.assertEqual(len(nodes), 2)
+        self.assertEqual(nodes[0], exir_ops.edge.aten.slice_copy)
+        self.assertEqual(nodes[1], exir_ops.edge.aten.permute_copy)
+
+    def test_multi_user_permute_no_change(self) -> None:
+        """Permute with multiple users → no change (only single-user supported)."""
+        builder = GraphBuilder()
+        x = builder.placeholder("x", torch.randn(2, 3, 4, 5))
+        permuted = builder.call_operator(
+            op=exir_ops.edge.aten.permute_copy.default, args=(x, [0, 2, 3, 1])
+        )
+        slice1 = builder.call_operator(
+            op=exir_ops.edge.aten.slice_copy.Tensor,
+            args=(permuted, 1, 0, 2, 1),
+        )
+        slice2 = builder.call_operator(
+            op=exir_ops.edge.aten.slice_copy.Tensor,
+            args=(permuted, 2, 1, 3, 1),
+        )
+        builder.output([slice1, slice2])
+        original = builder.get_graph_module()
+
+        result = cast(PassResult, MoveSliceBeforePermutePass()(original))
+        self.assertFalse(result.modified)
+
+    def test_mixed_users_no_change(self) -> None:
+        """Permute with one slice user and one non-slice user → no change."""
+        builder = GraphBuilder()
+        x = builder.placeholder("x", torch.randn(2, 3, 4, 5))
+        permuted = builder.call_operator(
+            op=exir_ops.edge.aten.permute_copy.default, args=(x, [0, 2, 3, 1])
+        )
+        sliced = builder.call_operator(
+            op=exir_ops.edge.aten.slice_copy.Tensor,
+            args=(permuted, 1, 0, 2, 1),
+        )
+        neg = builder.call_operator(op=exir_ops.edge.aten.neg.default, args=(permuted,))
+        builder.output([sliced, neg])
+        original = builder.get_graph_module()
+
+        result = cast(PassResult, MoveSliceBeforePermutePass()(original))
+        self.assertFalse(result.modified)
+
+    def test_no_slice_users_no_change(self) -> None:
+        """Permute with no slice users → no change."""
+        builder = GraphBuilder()
+        x = builder.placeholder("x", torch.randn(2, 3, 4, 5))
+        permuted = builder.call_operator(
+            op=exir_ops.edge.aten.permute_copy.default, args=(x, [0, 2, 3, 1])
+        )
+        neg = builder.call_operator(op=exir_ops.edge.aten.neg.default, args=(permuted,))
+        builder.output([neg])
+        original = builder.get_graph_module()
+
+        result = cast(PassResult, MoveSliceBeforePermutePass()(original))
+        self.assertFalse(result.modified)
