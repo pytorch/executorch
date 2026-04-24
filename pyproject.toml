@@ -77,6 +77,31 @@ dependencies=[
 ]
 
 [project.optional-dependencies]
+ethos_u = [
+  # These dependencies need to match backends/arm/requirements-arm-ethos-u.txt
+  "ethos-u-vela == 5.0.0",
+  "pte-adapter-model-explorer == 0.0.2",
+
+  # These dependencies need to match backends/arm/requirements-arm-tosa.txt
+  "flatbuffers == 24.3.25",
+  "tosa-adapter-model-explorer == 0.1.0",
+  "ai-edge-model-explorer >= 0.1.16",
+  "pytest-timeout == 2.4.0",
+  "tosa-tools == 2026.2.1",
+]
+vgf = [
+  # These dependencies need to match backends/arm/requirements-arm-vgf.txt
+  "ai_ml_emulation_layer_for_vulkan == 0.9.0",
+  "ai_ml_sdk_model_converter == 0.9.0",
+  "ai_ml_sdk_vgf_library == 0.9.0",
+
+  # These dependencies need to match backends/arm/requirements-arm-tosa.txt
+  "flatbuffers == 24.3.25",
+  "tosa-adapter-model-explorer == 0.1.0",
+  "ai-edge-model-explorer >= 0.1.16",
+  "pytest-timeout == 2.4.0",
+  "tosa-tools == 2026.2.1",
+]
 openvino = [
   "openvino>=2025.1.0,<2026.0.0; platform_system == 'Linux'",
 ]
