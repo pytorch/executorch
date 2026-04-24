@@ -98,6 +98,30 @@ gen_operators_lib(
   executorch_core
 )
 
+# On-device verifier for optimized grid_sampler_2d / sum.IntList_out.
+# Opt-in via -DEXECUTORCH_BUILD_OPTIMIZED_VERIFY=ON so it doesn't affect
+# default AAR / library builds. Cross-checks both ops against an fp32
+# reference derived from the portable kernel; non-zero exit on divergence.
+if(EXECUTORCH_BUILD_OPTIMIZED_VERIFY)
+  add_executable(
+    verify_optimized_kernels ${EXECUTORCH_ROOT}/kernels/optimized/verify.cpp
+  )
+  target_link_libraries(
+    verify_optimized_kernels
+    PRIVATE optimized_kernels portable_kernels executorch_core
+  )
+  target_compile_options(
+    verify_optimized_kernels PRIVATE ${_common_compile_options}
+  )
+  if(CMAKE_SYSTEM_PROCESSOR MATCHES "aarch64|arm64"
+     OR ANDROID_ABI STREQUAL "arm64-v8a"
+  )
+    target_compile_options(
+      verify_optimized_kernels PRIVATE -march=armv8.2-a+fp16
+    )
+  endif()
+endif()
+
 install(
   # eigen_blas doesn't export itself, so we have to do our own install to export
   # it.
