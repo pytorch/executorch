@@ -297,7 +297,7 @@ PYBIND11_MODULE(_llm_runner, m) {
           "resolve_max_new_tokens",
           &GenerationConfig::resolve_max_new_tokens,
           py::arg("max_context_len"),
-          py::arg("num_prompt_tokens"),
+          py::arg("num_tokens_occupied"),
           "Resolve the maximum number of new tokens to generate based on constraints")
       .def("__repr__", [](const GenerationConfig& config) {
         return "<GenerationConfig max_new_tokens=" +
