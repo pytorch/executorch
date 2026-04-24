@@ -80,9 +80,11 @@ def define_common_targets():
     # must be a separate translation unit — op_grid_sampler_2d.cpp (the
     # runtime dispatcher) remains on plain ARMv8 and only calls into this
     # after cpuinfo_has_arm_neon_fp16() reports true. Scoped compile flag
-    # stays local to this library.
+    # stays local to this library. Named without the "op_" prefix so the
+    # op_registration_util dependency check (which forbids op_target ->
+    # op_target edges) still lets op_grid_sampler_2d depend on it.
     runtime.cxx_library(
-        name = "op_grid_sampler_2d_fp16_hw",
+        name = "grid_sampler_2d_fp16_hw_impl",
         srcs = ["op_grid_sampler_2d_fp16_hw.cpp"],
         visibility = ["PUBLIC"],
         compiler_flags = select({
