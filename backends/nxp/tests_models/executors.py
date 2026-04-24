@@ -11,7 +11,7 @@ import shutil
 import subprocess
 from copy import deepcopy
 from enum import Enum
-from os import mkdir
+from os import environ, mkdir
 from typing import Callable
 
 import numpy as np
@@ -68,6 +68,7 @@ def _run_delegated_executorch_program(
     mocker,
     use_qat: bool = False,
     train_fn: Callable[[torch.fx.GraphModule], None] | None = None,
+    use_new_flow_neutron_c: bool = False,
 ) -> ExportedProgram:
     if len(input_spec) == 1:
         # Single input, use --dataset
@@ -116,6 +117,7 @@ def _run_delegated_executorch_program(
             delegate_to_npu=True,
             use_qat=use_qat,
             train_fn=train_fn,
+            use_new_flow_neutron_c=use_new_flow_neutron_c,
         )
     except RuntimeError as e:
         if "Model converted with neutron-converter has" in str(e):
@@ -375,6 +377,7 @@ def convert_run_compare(
     reference_model: ReferenceModel = ReferenceModel.QUANTIZED_EXECUTORCH_CPP,
     use_qat: bool = False,
     train_fn: Callable[[torch.fx.GraphModule], None] | None = None,
+    use_new_flow_neutron_c: bool = False,
 ):
     """
     Run provided program twice with neutron-test and check if results correspond. At first,
@@ -391,6 +394,7 @@ def convert_run_compare(
     :param mocker: Mocker instance used by visualizer.
     :param use_qat: If True, applies quantization-aware training before conversion (without the QAT training).
     :param train_fn: Train/finetune function for QAT training. Is used only when `use_qat=True`.
+    :param use_new_flow_neutron_c: Enable experimental MLIR-based flow for Neutron-C with improved INT8 operator support.
     """
     assert_NSYS()
 
@@ -432,6 +436,7 @@ def convert_run_compare(
         mocker,
         use_qat=use_qat,
         train_fn=train_fn,
+        use_new_flow_neutron_c=use_new_flow_neutron_c,
     )
 
     output_spec = _get_program_output_spec(delegated_program)
@@ -593,7 +598,8 @@ def _get_caller_name():
 
 
 def execute_cmd(cmd, cwd="."):
-    env = {"LD_LIBRARY_PATH": NSYS_PATH.parent}
+    env = environ.copy()  # Copy the current environment
+    env["LD_LIBRARY_PATH"] = str(NSYS_PATH.parent)
 
     with subprocess.Popen(
         cmd,
