@@ -248,18 +248,39 @@ Result<uint64_t> MultimodalPrefiller::prefill(
   //   image → 0 (pad_token_id, matches HF line 2215)
   //   audio → 0 (pad_token_id, same convention)
   // Falls back to 2-input silently for ptes without PLI (num_inputs < 3).
+  //
+  // Also detect optional specialized "prefill" method (qwen3_5_moe pattern,
+  // exported via gemma4 export.py --split-text-decoder). When present we
+  // call it for the batched prompt instead of the unified text_decoder so
+  // backends can specialize the prefill graph (tensor-core matmuls, etc.).
+  //
   // Cache the detection so we only query method_meta once per runner.
   if (!pli_detected_) {
     auto dec_meta = module_->method_meta(kTextModelMethod);
     size_t n_inputs = dec_meta.ok() ? (*dec_meta).num_inputs() : 0;
     has_pli_input_ = n_inputs >= 3;
+    // Probe for the specialized prefill method. method_names() returns the
+    // set of registered method names; check membership rather than calling
+    // load_method (which would error-log on a miss).
+    auto names_res = module_->method_names();
+    if (names_res.ok() && names_res.get().count("prefill")) {
+      auto pre_load = module_->load_method("prefill");
+      if (pre_load == ::executorch::runtime::Error::Ok) {
+        has_prefill_method_ = true;
+      }
+    }
     pli_detected_ = true;
-    ET_LOG(Info, "MultimodalPrefiller: PLI %s (text_decoder num_inputs=%zu)",
-           has_pli_input_ ? "enabled" : "disabled", n_inputs);
+    ET_LOG(Info, "MultimodalPrefiller: PLI %s, prefill method %s "
+                 "(text_decoder num_inputs=%zu)",
+           has_pli_input_ ? "enabled" : "disabled",
+           has_prefill_method_ ? "present" : "absent",
+           n_inputs);
   }
   ET_LOG(Debug, "text_decoder has_pli=%d pli_ids=%zu",
          (int)has_pli_input_, pli_ids.size());
 
+  const char* method_name =
+      has_prefill_method_ ? "prefill" : kTextModelMethod;
   auto run_text_decoder = [&]() {
     if (has_pli_input_ && !pli_ids.empty()) {
       // Pass real/placeholder token IDs as the 3rd input for Approach C PLI.
@@ -268,11 +289,11 @@ Result<uint64_t> MultimodalPrefiller::prefill(
           {1, static_cast<int>(pli_ids.size())},
           ::executorch::aten::ScalarType::Long);
       return module_->execute(
-          kTextModelMethod,
+          method_name,
           {encoder_output, cache_position_tensor, *pli_t});
     }
     return module_->execute(
-        kTextModelMethod, {encoder_output, cache_position_tensor});
+        method_name, {encoder_output, cache_position_tensor});
   };
   auto prefill_result = run_text_decoder();
   if (prefill_result.error() != ::executorch::runtime::Error::Ok) {

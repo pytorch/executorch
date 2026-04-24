@@ -64,6 +64,11 @@ class ET_EXPERIMENTAL MultimodalPrefiller {
   // first prefill() call after the module is loaded.
   bool has_pli_input_ = false;
   bool pli_detected_ = false;
+  // Cache of whether the pte exposes a specialized "prefill" method
+  // (qwen3_5_moe pattern). When true we use it for batched prefill instead
+  // of falling back to the unified text_decoder method. Detected together
+  // with has_pli_input_.
+  bool has_prefill_method_ = false;
 };
 
 } // namespace executorch::extension::llm

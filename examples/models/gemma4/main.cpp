@@ -78,15 +78,29 @@ class Gemma4DecoderRunner
     auto pos_t = ext::from_blob(
         &start_pos, {1}, et::aten::ScalarType::Long);
 
-    // Lazy PLI detection — runs after module is loaded (not at construction time).
+    // Lazy detection — runs after module is loaded (not at construction time).
+    // Detects (a) PLI 3-input text_decoder, and (b) optional specialized
+    // "decode" method (qwen3_5_moe pattern, exported via gemma4 export.py
+    // --split-text-decoder). When the specialized decode method is present
+    // we call it instead of text_decoder for each step.
     if (!pli_detected_) {
       auto meta = module_->method_meta(etllm::kTextModelMethod);
       has_pli_ = meta.ok() && (*meta).num_inputs() >= 3;
+      auto names_res = module_->method_names();
+      if (names_res.ok() && names_res.get().count("decode")) {
+        if (module_->load_method("decode") == ::executorch::runtime::Error::Ok) {
+          has_decode_method_ = true;
+        }
+      }
       pli_detected_ = true;
-      ET_LOG(Info, "Gemma4DecoderRunner: PLI %s",
+      ET_LOG(Info, "Gemma4DecoderRunner: PLI %s, decode method %s",
              has_pli_ ? "enabled (3-input text_decoder)"
-                      : "disabled (2-input text_decoder)");
+                      : "disabled (2-input text_decoder)",
+             has_decode_method_ ? "present" : "absent");
     }
+
+    const char* method_name =
+        has_decode_method_ ? "decode" : etllm::kTextModelMethod;
 
     if (has_pli_) {
       // Pass current decode token as PLI ID — matches HF Gemma4 where each
@@ -97,12 +111,12 @@ class Gemma4DecoderRunner
       auto pli_t = ext::from_blob(
           &pli_id_buf_, {1, 1}, et::aten::ScalarType::Long);
       auto out = module_->execute(
-          etllm::kTextModelMethod, {emb, *pos_t, *pli_t});
+          method_name, {emb, *pos_t, *pli_t});
       if (!out.ok()) return out.error();
       return (*out)[0].toTensor();
     }
 
-    auto out = module_->execute(etllm::kTextModelMethod, {emb, *pos_t});
+    auto out = module_->execute(method_name, {emb, *pos_t});
     if (!out.ok()) return out.error();
     return (*out)[0].toTensor();
   }
@@ -110,6 +124,7 @@ class Gemma4DecoderRunner
  private:
   bool has_pli_ = false;
   bool pli_detected_ = false;
+  bool has_decode_method_ = false;  // qwen3_5_moe-style split decode method
   int64_t pli_id_buf_ = 0;  // backing storage for PLI from_blob in step()
 };
 

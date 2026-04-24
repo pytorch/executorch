@@ -137,6 +137,45 @@ def _partitioners(programs: dict, backend: str):
     return []
 
 
+def _apply_encoder_quantization(model: nn.Module, mode: str, group_size: int = 128) -> nn.Module:
+    """Quantize Linear layers in a vision/audio encoder via TorchAO source transform.
+
+    Mode is one of "8da4w" (int4 weights, group=group_size) or "8da8w" (int8
+    weights, per-channel). Activations are int8 dynamic in both cases. Skips
+    Linears whose hidden dim is not divisible by group_size to avoid TorchAO
+    assertion failures.
+    """
+    from torchao.quantization.granularity import PerAxis, PerGroup
+    from torchao.quantization.quant_api import (
+        Int8DynamicActivationIntxWeightConfig,
+        quantize_,
+    )
+    if mode == "8da8w":
+        config = Int8DynamicActivationIntxWeightConfig(
+            weight_dtype=torch.int8,
+            weight_granularity=PerAxis(0),
+        )
+    elif mode == "8da4w":
+        config = Int8DynamicActivationIntxWeightConfig(
+            weight_dtype=torch.int4,
+            weight_granularity=PerGroup(group_size),
+            intx_choose_qparams_algorithm="hqq_scale_only",
+        )
+    else:
+        raise ValueError(f"Unsupported encoder quantization mode: {mode!r}")
+
+    def _filter(m, fqn):
+        if not isinstance(m, nn.Linear):
+            return False
+        if mode == "8da4w" and m.weight.shape[-1] % group_size != 0:
+            print(f"  skip quant (group_size={group_size} doesn't divide {m.weight.shape[-1]}): {fqn}")
+            return False
+        return True
+
+    quantize_(model, config, filter_fn=_filter)
+    return model
+
+
 def lower_all(
     programs: Dict[str, torch.export.ExportedProgram],
     metadata: dict,
@@ -179,6 +218,9 @@ def export_text_programs(
     qmode: str | None = None,
     group_size: int = 32,
     embedding_quantize: str | None = None,
+    quantize_kv_cache: bool = False,
+    tied_embedding: bool = False,
+    split_text_decoder: bool = False,
 ) -> Dict[str, torch.export.ExportedProgram]:
     """Export token_embedding + text_decoder with proper KV cache.
 
@@ -196,6 +238,14 @@ def export_text_programs(
     cfg.model.enable_dynamic_shape = True
     cfg.export.max_seq_length = max_seq_len
     cfg.export.max_context_length = max_seq_len
+    if quantize_kv_cache:
+        cfg.model.quantize_kv_cache = True
+    if tied_embedding:
+        # When the checkpoint has tied embed_tokens<->lm_head, this directs
+        # the LLM-export pipeline to use TorchAO's shared embedding kernel.
+        # The runtime needs the C++ runner with shared-embedding kernels
+        # linked (which is what `make gemma4-cpu` provides today).
+        cfg.backend.torchao.use_torchao_kernels_tied_embedding = True
     if qmode is not None:
         cfg.quantization.qmode = qmode
         cfg.quantization.group_size = group_size
@@ -220,7 +270,11 @@ def export_text_programs(
             )
         cfg.quantization.embedding_quantize = embedding_quantize
 
-    print(f"  Preparing Gemma4 text backbone with KV-cache transforms (qmode={qmode}, group_size={group_size}, emb_q={embedding_quantize})...")
+    print(
+        f"  Preparing Gemma4 text backbone (qmode={qmode}, group_size={group_size}, "
+        f"emb_q={embedding_quantize}, kv_quant={quantize_kv_cache}, "
+        f"tied_emb={tied_embedding})..."
+    )
     builder = _prepare_for_llama_export(cfg)
     # builder.model is the Transformer with custom KV cache ops applied.
     transformer = builder.model
@@ -266,6 +320,47 @@ def export_text_programs(
         )
     print(f"  text_decoder: (1,S,{dim}) + (1,) + (1,S) -> (1,{transformer.vocab_size})  [PLI]")
 
+    # Optionally also export specialized prefill (S>=2, dynamic) and decode
+    # (S=1, static) methods alongside text_decoder. Mirrors the qwen3_5_moe
+    # pattern (examples/models/qwen3_5_moe/export.py:634-669): the runner
+    # calls `prefill` for the batched prompt and `decode` for each step,
+    # giving downstream backends (XNNPACK, CUDA AOTI) a chance to specialize
+    # per call site (e.g. tensor-core matmul vs vec-mat). The unified
+    # text_decoder method is preserved for backward compatibility with v11
+    # ptes (the runner falls back to it when prefill/decode are absent).
+    if split_text_decoder:
+        S_prefill = Dim("S_prefill", min=2, max=max_seq_len - 1)
+        print("  Exporting prefill (batched, dynamic S>=2)...")
+        with torch.no_grad():
+            programs["prefill"] = export(
+                txt_dec,
+                (
+                    torch.zeros(1, 4, dim),
+                    torch.zeros(1, dtype=torch.long),
+                    torch.zeros(1, 4, dtype=torch.long),
+                ),
+                dynamic_shapes=(
+                    {1: S_prefill},
+                    {},
+                    {1: S_prefill},
+                ),
+                strict=True,
+            )
+        print(f"  prefill: (1,S>=2,{dim}) + (1,) + (1,S>=2) -> (1,{transformer.vocab_size})")
+
+        print("  Exporting decode (single-token, static S=1)...")
+        with torch.no_grad():
+            programs["decode"] = export(
+                txt_dec,
+                (
+                    torch.zeros(1, 1, dim),
+                    torch.zeros(1, dtype=torch.long),
+                    torch.zeros(1, 1, dtype=torch.long),
+                ),
+                strict=True,
+            )
+        print(f"  decode: (1,1,{dim}) + (1,) + (1,1) -> (1,{transformer.vocab_size})")
+
     # Carry metadata from the builder
     text_metadata = builder.metadata or {}
     return programs, text_metadata
@@ -298,6 +393,12 @@ def export_gemma4_multimodal(
     group_size: int = 32,
     embedding_quantize: str | None = None,
     variant: str = "e2b",
+    vision_quantize: str | None = None,
+    audio_quantize: str | None = None,
+    encoder_group_size: int = 128,
+    quantize_kv_cache: bool = False,
+    tied_embedding: bool = False,
+    split_text_decoder: bool = False,
 ) -> None:
     hf_model_dir = Path(hf_model_dir)
     output_path = Path(output_path)
@@ -333,6 +434,12 @@ def export_gemma4_multimodal(
     vis_enc = VisionEncoderExport(
         hf_model.model.vision_tower, hf_model.model.embed_vision
     ).eval()
+    if vision_quantize:
+        print(f"  applying linear quantization: {vision_quantize}")
+        vis_enc = _apply_encoder_quantization(
+            vis_enc, vision_quantize, group_size=encoder_group_size
+        )
+        vis_enc.eval()
     with torch.no_grad():
         programs["vision_encoder"] = export(
             vis_enc,
@@ -361,6 +468,12 @@ def export_gemma4_multimodal(
     aud_enc = AudioEncoderExport(
         hf_model.model.audio_tower, hf_model.model.embed_audio
     ).eval()
+    if audio_quantize:
+        print(f"  applying linear quantization: {audio_quantize}")
+        aud_enc = _apply_encoder_quantization(
+            aud_enc, audio_quantize, group_size=encoder_group_size
+        )
+        aud_enc.eval()
     with torch.no_grad():
         programs["audio_encoder"] = export(
             aud_enc,
@@ -382,6 +495,9 @@ def export_gemma4_multimodal(
         qmode=qmode,
         group_size=group_size,
         embedding_quantize=embedding_quantize,
+        quantize_kv_cache=quantize_kv_cache,
+        tied_embedding=tied_embedding,
+        split_text_decoder=split_text_decoder,
     )
     programs.update(text_programs)
 
@@ -441,6 +557,30 @@ def main():
     parser.add_argument("--variant", default="e2b",
                         choices=sorted(_VARIANT_CONFIGS.keys()),
                         help="Model variant to export (selects config file).")
+    parser.add_argument("--vision-quantize", default=None,
+                        choices=[None, "8da4w", "8da8w"],
+                        help="Vision encoder linear quantization (default: FP32). "
+                             "8da8w gives ~50%% size reduction with negligible quality loss.")
+    parser.add_argument("--audio-quantize", default=None,
+                        choices=[None, "8da4w", "8da8w"],
+                        help="Audio encoder linear quantization (default: FP32). "
+                             "8da4w shrinks the audio encoder ~75%%.")
+    parser.add_argument("--encoder-group-size", type=int, default=128,
+                        help="Group size for 8da4w encoder weight quantization "
+                             "(default: 128; must divide encoder hidden dims).")
+    parser.add_argument("--quantize-kv-cache", action="store_true", default=False,
+                        help="Quantize the KV cache to INT8 per-token. "
+                             "Reduces decode-time memory for long sequences.")
+    parser.add_argument("--tied-embedding", action="store_true", default=False,
+                        help="Use TorchAO shared-embedding kernel (assumes the "
+                             "checkpoint has tied embed_tokens<->lm_head; the "
+                             "C++ runner must be built with shared-embedding kernels).")
+    parser.add_argument("--split-text-decoder", action="store_true", default=False,
+                        help="Also export specialized 'prefill' (dynamic S>=2) "
+                             "and 'decode' (static S=1) methods alongside "
+                             "text_decoder. Mirrors qwen3_5_moe's pattern; the "
+                             "runner uses these when present. Default off for "
+                             "backward compatibility with v11 ptes.")
     args = parser.parse_args()
 
     export_gemma4_multimodal(
@@ -454,6 +594,12 @@ def main():
         group_size=args.group_size,
         embedding_quantize=args.embedding_quantize,
         variant=args.variant,
+        vision_quantize=args.vision_quantize,
+        audio_quantize=args.audio_quantize,
+        encoder_group_size=args.encoder_group_size,
+        quantize_kv_cache=args.quantize_kv_cache,
+        tied_embedding=args.tied_embedding,
+        split_text_decoder=args.split_text_decoder,
     )
 
 
