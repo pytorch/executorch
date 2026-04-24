@@ -257,6 +257,11 @@ class ExecuTorchLlmJni : public facebook::jni::HybridClass<ExecuTorchLlmJni> {
           static_cast<uint32_t>(Error::Internal),
           std::string("Failed to create LlmModule: ") + e.what());
       throw;
+    } catch (...) {
+      executorch::jni_helper::throwExecutorchException(
+          static_cast<uint32_t>(Error::Internal),
+          "Failed to create LlmModule: unknown native error");
+      throw;
     }
   }
 

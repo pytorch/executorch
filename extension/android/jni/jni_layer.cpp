@@ -292,6 +292,11 @@ class ExecuTorchJni : public facebook::jni::HybridClass<ExecuTorchJni> {
           static_cast<uint32_t>(Error::Internal),
           std::string("Failed to create Module: ") + e.what());
       throw;
+    } catch (...) {
+      executorch::jni_helper::throwExecutorchException(
+          static_cast<uint32_t>(Error::Internal),
+          "Failed to create Module: unknown native error");
+      throw;
     }
 
 #ifdef ET_USE_THREADPOOL
