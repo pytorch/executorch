@@ -56,7 +56,8 @@ class AsrModule(
     if (handle == 0L) {
       throw ExecutorchRuntimeException(
           ExecutorchRuntimeException.INTERNAL,
-          "Failed to create native AsrModule")
+          "Failed to create native AsrModule",
+      )
     }
     nativeHandle.set(handle)
   }
