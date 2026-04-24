@@ -7,20 +7,35 @@
  */
 
 // Optimized grid_sampler_2d.out for CPU. On aarch64 this is a NEON-vectorized
-// implementation for the common (bilinear + zeros padding) case, processing
-// 4 channels at a time. Other modes — and non-aarch64 targets — fall through
-// to the portable kernel.
+// implementation for the common (bilinear + zeros padding) case. fp16 inputs
+// are promoted to fp32 for weight computation and accumulation and cast back
+// on store — this avoids fp16 catastrophic cancellation on `ix_se - ix`-style
+// weight subtractions in the portable kernel.
 //
-// fp16 inputs: all interior math (interpolation weights and corner
-// accumulation) is done in fp32. Loads/stores stay in the tensor's dtype.
-// Avoids catastrophic cancellation on `ix_se - ix`-style subtractions that
-// would otherwise make fp16 weights meaningless.
+// fp16 comes in two flavors to avoid SIGILL on ARMv8 chips without the
+// +fp16 extension:
+//
+//   * Hardware path (op_grid_sampler_2d_fp16_hw.cpp) — compiled with
+//     `-march=armv8.2-a+fp16`. Uses hardware fp16 NEON instructions
+//     (vld1_f16 / vcvt_f32_f16 / ...). Fast on capable chips; illegal
+//     instructions on older ones.
+//
+//   * Software path (below) — plain ARMv8 NEON. Converts fp16<->fp32 in
+//     software via `c10::Half`'s portable conversion. Slower per
+//     conversion but safe on any ARMv8 CPU.
+//
+// A runtime cpuinfo_has_arm_neon_fp16() check picks the right one. Non-aarch64
+// targets, and any unsupported interpolation/padding/layout combination,
+// delegate to the portable kernel.
 
 #include <executorch/runtime/kernel/kernel_includes.h>
 
 #ifdef __aarch64__
 #include <arm_neon.h>
+#include <cpuinfo.h>
 #endif
+
+#include <c10/util/Half.h>
 
 #include <cmath>
 
@@ -42,9 +57,29 @@ Tensor& grid_sampler_2d_out(
     Tensor& out);
 
 #ifdef __aarch64__
+namespace opt_grid_sampler_2d_internal {
+// Declared in op_grid_sampler_2d_fp16_hw.cpp, compiled separately with
+// `-march=armv8.2-a+fp16`. Only safe to call when
+// cpuinfo_has_arm_neon_fp16() is true.
+void grid_sampler_2d_bilinear_fp16_hw(
+    const void* input,
+    const void* grid,
+    void* output,
+    int N,
+    int C,
+    int H_in,
+    int W_in,
+    int H_out,
+    int W_out,
+    bool align_corners);
+} // namespace opt_grid_sampler_2d_internal
+#endif
+
+#ifdef __aarch64__
 namespace {
 
-// One output spatial location, all channels. fp32 path.
+// -------------------- fp32 (plain ARMv8 NEON) --------------------
+
 inline void bilinear_all_channels_f32(
     const float* input_n,
     float* output_n,
@@ -132,7 +167,6 @@ inline void bilinear_all_channels_f32(
     output_n[(c + 3) * spatial_out + out_off] = res[3];
   }
 
-  // Scalar tail
   const float w_tl = (1.0f - fx) * (1.0f - fy);
   const float w_tr = fx * (1.0f - fy);
   const float w_bl = (1.0f - fx) * fy;
@@ -152,10 +186,15 @@ inline void bilinear_all_channels_f32(
   }
 }
 
-// fp16 path: loads/stores fp16, math in fp32.
-inline void bilinear_all_channels_f16(
-    const __fp16* input_n,
-    __fp16* output_n,
+// -------------------- fp16 software-convert path --------------------
+//
+// Uses only plain ARMv8 NEON. fp16 <-> fp32 conversion goes through
+// c10::Half's portable `operator float()` / constructor, which is a
+// software conversion on chips that lack the +fp16 extension.
+
+inline void bilinear_all_channels_f16_sw(
+    const c10::Half* input_n,
+    c10::Half* output_n,
     int C,
     int H_in,
     int W_in,
@@ -196,53 +235,50 @@ inline void bilinear_all_channels_f16(
 
   int c = 0;
   for (; c + 3 < C; c += 4) {
-    const __fp16* p0 = input_n + (c + 0) * spatial_in;
-    const __fp16* p1 = input_n + (c + 1) * spatial_in;
-    const __fp16* p2 = input_n + (c + 2) * spatial_in;
-    const __fp16* p3 = input_n + (c + 3) * spatial_in;
+    const c10::Half* p0 = input_n + (c + 0) * spatial_in;
+    const c10::Half* p1 = input_n + (c + 1) * spatial_in;
+    const c10::Half* p2 = input_n + (c + 2) * spatial_in;
+    const c10::Half* p3 = input_n + (c + 3) * spatial_in;
 
-    __fp16 tl[4] = {0}, tr[4] = {0}, bl[4] = {0}, br[4] = {0};
+    // SW fp16 -> fp32: use c10::Half's portable conversion on each lane.
+    float tl[4] = {0}, tr[4] = {0}, bl[4] = {0}, br[4] = {0};
     if (tl_v) {
-      tl[0] = p0[off_tl];
-      tl[1] = p1[off_tl];
-      tl[2] = p2[off_tl];
-      tl[3] = p3[off_tl];
+      tl[0] = static_cast<float>(p0[off_tl]);
+      tl[1] = static_cast<float>(p1[off_tl]);
+      tl[2] = static_cast<float>(p2[off_tl]);
+      tl[3] = static_cast<float>(p3[off_tl]);
     }
     if (tr_v) {
-      tr[0] = p0[off_tr];
-      tr[1] = p1[off_tr];
-      tr[2] = p2[off_tr];
-      tr[3] = p3[off_tr];
+      tr[0] = static_cast<float>(p0[off_tr]);
+      tr[1] = static_cast<float>(p1[off_tr]);
+      tr[2] = static_cast<float>(p2[off_tr]);
+      tr[3] = static_cast<float>(p3[off_tr]);
     }
     if (bl_v) {
-      bl[0] = p0[off_bl];
-      bl[1] = p1[off_bl];
-      bl[2] = p2[off_bl];
-      bl[3] = p3[off_bl];
+      bl[0] = static_cast<float>(p0[off_bl]);
+      bl[1] = static_cast<float>(p1[off_bl]);
+      bl[2] = static_cast<float>(p2[off_bl]);
+      bl[3] = static_cast<float>(p3[off_bl]);
     }
     if (br_v) {
-      br[0] = p0[off_br];
-      br[1] = p1[off_br];
-      br[2] = p2[off_br];
-      br[3] = p3[off_br];
+      br[0] = static_cast<float>(p0[off_br]);
+      br[1] = static_cast<float>(p1[off_br]);
+      br[2] = static_cast<float>(p2[off_br]);
+      br[3] = static_cast<float>(p3[off_br]);
     }
 
-    const float32x4_t v_tl = vcvt_f32_f16(vld1_f16(tl));
-    const float32x4_t v_tr = vcvt_f32_f16(vld1_f16(tr));
-    const float32x4_t v_bl = vcvt_f32_f16(vld1_f16(bl));
-    const float32x4_t v_br = vcvt_f32_f16(vld1_f16(br));
+    float32x4_t result = vmulq_f32(vw_tl, vld1q_f32(tl));
+    result = vfmaq_f32(result, vw_tr, vld1q_f32(tr));
+    result = vfmaq_f32(result, vw_bl, vld1q_f32(bl));
+    result = vfmaq_f32(result, vw_br, vld1q_f32(br));
 
-    float32x4_t result = vmulq_f32(vw_tl, v_tl);
-    result = vfmaq_f32(result, vw_tr, v_tr);
-    result = vfmaq_f32(result, vw_bl, v_bl);
-    result = vfmaq_f32(result, vw_br, v_br);
-
-    __fp16 res[4];
-    vst1_f16(res, vcvt_f16_f32(result));
-    output_n[(c + 0) * spatial_out + out_off] = res[0];
-    output_n[(c + 1) * spatial_out + out_off] = res[1];
-    output_n[(c + 2) * spatial_out + out_off] = res[2];
-    output_n[(c + 3) * spatial_out + out_off] = res[3];
+    float res[4];
+    vst1q_f32(res, result);
+    // SW fp32 -> fp16 on store.
+    output_n[(c + 0) * spatial_out + out_off] = c10::Half(res[0]);
+    output_n[(c + 1) * spatial_out + out_off] = c10::Half(res[1]);
+    output_n[(c + 2) * spatial_out + out_off] = c10::Half(res[2]);
+    output_n[(c + 3) * spatial_out + out_off] = c10::Half(res[3]);
   }
 
   const float w_tl = (1.0f - fx) * (1.0f - fy);
@@ -250,7 +286,7 @@ inline void bilinear_all_channels_f16(
   const float w_bl = (1.0f - fx) * fy;
   const float w_br = fx * fy;
   for (; c < C; ++c) {
-    const __fp16* p = input_n + c * spatial_in;
+    const c10::Half* p = input_n + c * spatial_in;
     float v = 0.0f;
     if (tl_v)
       v += w_tl * static_cast<float>(p[off_tl]);
@@ -260,7 +296,7 @@ inline void bilinear_all_channels_f16(
       v += w_bl * static_cast<float>(p[off_bl]);
     if (br_v)
       v += w_br * static_cast<float>(p[off_br]);
-    output_n[c * spatial_out + out_off] = static_cast<__fp16>(v);
+    output_n[c * spatial_out + out_off] = c10::Half(v);
   }
 }
 
@@ -317,17 +353,14 @@ Tensor& opt_grid_sampler_2d_out(
     int64_t padding_mode,
     bool align_corners,
     Tensor& out) {
-  // The NEON path indexes input/grid/out directly assuming a contiguous NCHW
-  // default-dim-order layout — no use of .strides() or .dim_order(). If the
-  // caller passes anything else, fall back to portable (which does handle
-  // arbitrary strides and dim orders correctly). These are cheap checks.
+  // The NEON paths index input/grid/out directly assuming a contiguous NCHW
+  // default-dim-order layout — no use of .strides() or .dim_order(). Fall
+  // back to portable for anything else.
   const bool fast_eligible = tensor_is_default_dim_order(input) &&
       tensor_is_default_dim_order(grid) && tensor_is_default_dim_order(out) &&
       tensor_is_contiguous(input) && tensor_is_contiguous(grid) &&
       tensor_is_contiguous(out);
 
-  // Only the bilinear + zeros-padding combination is accelerated. Everything
-  // else — non-default layout, any non-aarch64 target — delegates to portable.
   if (interpolation_mode != 0 || padding_mode != 0 || !fast_eligible) {
     return grid_sampler_2d_out(
         ctx, input, grid, interpolation_mode, padding_mode, align_corners, out);
@@ -359,11 +392,27 @@ Tensor& opt_grid_sampler_2d_out(
     return out;
   }
   if (input.scalar_type() == ScalarType::Half) {
-    static_assert(sizeof(__fp16) == 2, "expected __fp16 == 2 bytes");
-    grid_sampler_2d_neon<__fp16>(
-        reinterpret_cast<const __fp16*>(input.const_data_ptr<uint16_t>()),
-        reinterpret_cast<const __fp16*>(grid.const_data_ptr<uint16_t>()),
-        reinterpret_cast<__fp16*>(out.mutable_data_ptr<uint16_t>()),
+    if (cpuinfo_initialize() && cpuinfo_has_arm_neon_fp16()) {
+      // Hardware fp16 path — safe because the CPU supports the +fp16
+      // extension. Declared in op_grid_sampler_2d_fp16_hw.cpp.
+      opt_grid_sampler_2d_internal::grid_sampler_2d_bilinear_fp16_hw(
+          input.const_data_ptr(),
+          grid.const_data_ptr(),
+          out.mutable_data_ptr(),
+          N,
+          C,
+          H_in,
+          W_in,
+          H_out,
+          W_out,
+          align_corners);
+      return out;
+    }
+    // Software fp16<->fp32 conversion path. Works on any ARMv8.
+    grid_sampler_2d_neon<c10::Half>(
+        input.const_data_ptr<c10::Half>(),
+        grid.const_data_ptr<c10::Half>(),
+        out.mutable_data_ptr<c10::Half>(),
         N,
         C,
         H_in,
@@ -371,10 +420,10 @@ Tensor& opt_grid_sampler_2d_out(
         H_out,
         W_out,
         align_corners,
-        bilinear_all_channels_f16);
+        bilinear_all_channels_f16_sw);
     return out;
   }
-  // Any other dtype (e.g. Double, BFloat16): let portable handle it.
+  // Any other dtype: let portable handle it.
   return grid_sampler_2d_out(
       ctx, input, grid, interpolation_mode, padding_mode, align_corners, out);
 #endif

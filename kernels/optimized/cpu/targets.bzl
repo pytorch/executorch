@@ -76,6 +76,24 @@ def define_common_targets():
         ],
     )
 
+    # Hardware fp16 variant of grid_sampler_2d. Needs ARMv8.2-a+fp16 so it
+    # must be a separate translation unit — op_grid_sampler_2d.cpp (the
+    # runtime dispatcher) remains on plain ARMv8 and only calls into this
+    # after cpuinfo_has_arm_neon_fp16() reports true. Scoped compile flag
+    # stays local to this library.
+    runtime.cxx_library(
+        name = "op_grid_sampler_2d_fp16_hw",
+        srcs = ["op_grid_sampler_2d_fp16_hw.cpp"],
+        visibility = ["PUBLIC"],
+        compiler_flags = select({
+            "DEFAULT": [],
+            "ovr_config//cpu:arm64": ["-march=armv8.2-a+fp16"],
+        }),
+        exported_deps = [
+            "//executorch/runtime/kernel:kernel_includes",
+        ],
+    )
+
     # Used for dtype selective build. Collect source and header files.
     runtime.filegroup(
         name = "optimized_source_files",
