@@ -27,6 +27,11 @@ install_pytorch_and_domains() {
   chown -R ci-user .
 
   export _GLIBCXX_USE_CXX11_ABI=1
+  # PyTorch's FindARM.cmake hard-fails when the SVE+BF16 compile probe
+  # doesn't pass — gcc-11 in this image is too old to accept the combined
+  # NEON/SVE/bfloat16 intrinsics the probe exercises. Executorch's aarch64
+  # runtime targets (phones, embedded) don't use SVE, so bypass the check.
+  export BUILD_IGNORE_SVE_UNAVAILABLE=1
   # Then build and install PyTorch
   conda_run python setup.py bdist_wheel
   pip_install "$(echo dist/*.whl)"
