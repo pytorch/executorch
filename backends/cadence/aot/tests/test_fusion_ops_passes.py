@@ -19,6 +19,7 @@ from executorch.backends.cadence.aot.fuse_ops import (
     FuseCascadedTransposeOrPermuteOps,
     FuseCascadedViewOps,
     FuseFullThenReshapePass,
+    FuseMeanKeepDimWithViewPass,
     FuseMMWithAdd,
     FuseMulScalarIntoDequantPass,
     FuseMulTensorIntoDequantPass,
@@ -1696,3 +1697,168 @@ class TestFuseQuantizedBatchNormWithConv(unittest.TestCase):
         # Verify fusion occurred: bn should be removed, conv remains
         self.assertEqual(count_node(gm, conv_op), 1)
         self.assertEqual(count_node(gm, bn_op), 0)
+
+
+class TestFuseMeanKeepDimWithViewPass(TestFusionPassesBase):
+    def test_keepdim_true_to_false(self) -> None:
+        """mean(keepdim=True) + view that squeezes reduction dims → mean(keepdim=False)."""
+        builder = GraphBuilder()
+        x = builder.placeholder("x", torch.randn(2, 62, 4, 4))
+        mean = builder.call_operator(
+            op=exir_ops.edge.aten.mean.dim, args=(x, [-1, -2], True)
+        )
+        view = builder.call_operator(
+            op=exir_ops.edge.aten.view_copy.default, args=(mean, [2, 62])
+        )
+        builder.output([view])
+        original = builder.get_graph_module()
+        gm_before = copy.deepcopy(original)
+
+        result = cast(PassResult, FuseMeanKeepDimWithViewPass()(original))
+        gm = result.graph_module
+        self.assertTrue(result.modified)
+
+        self.assertEqual(count_node(gm, exir_ops.edge.aten.view_copy.default), 0)
+        mean_nodes = gm.graph.find_nodes(
+            op="call_function", target=exir_ops.edge.aten.mean.dim
+        )
+        self.assertEqual(len(mean_nodes), 1)
+        self.assertFalse(mean_nodes[0].args[2])
+
+        validate_numerics(
+            gm_before, gm, (torch.randn(2, 62, 4, 4),), "FuseMeanKeepDimWithViewPass"
+        )
+
+    def test_keepdim_false_to_true(self) -> None:
+        """mean(keepdim=False) + view that unsqueezes at reduction dims → mean(keepdim=True)."""
+        builder = GraphBuilder()
+        x = builder.placeholder("x", torch.randn(2, 62, 4, 4))
+        mean = builder.call_operator(
+            op=exir_ops.edge.aten.mean.dim, args=(x, [-1, -2], False)
+        )
+        view = builder.call_operator(
+            op=exir_ops.edge.aten.view_copy.default, args=(mean, [2, 62, 1, 1])
+        )
+        builder.output([view])
+        original = builder.get_graph_module()
+        gm_before = copy.deepcopy(original)
+
+        result = cast(PassResult, FuseMeanKeepDimWithViewPass()(original))
+        gm = result.graph_module
+        self.assertTrue(result.modified)
+
+        self.assertEqual(count_node(gm, exir_ops.edge.aten.view_copy.default), 0)
+        mean_nodes = gm.graph.find_nodes(
+            op="call_function", target=exir_ops.edge.aten.mean.dim
+        )
+        self.assertEqual(len(mean_nodes), 1)
+        self.assertTrue(mean_nodes[0].args[2])
+
+        validate_numerics(
+            gm_before, gm, (torch.randn(2, 62, 4, 4),), "FuseMeanKeepDimWithViewPass"
+        )
+
+    def test_keepdim_true_view_does_not_match(self) -> None:
+        """View reshapes to something other than squeezing reduction dims → no change."""
+        builder = GraphBuilder()
+        x = builder.placeholder("x", torch.randn(2, 62, 4, 4))
+        mean = builder.call_operator(
+            op=exir_ops.edge.aten.mean.dim, args=(x, [-1, -2], True)
+        )
+        # Reshape to a different layout, not a simple squeeze of reduction dims.
+        view = builder.call_operator(
+            op=exir_ops.edge.aten.view_copy.default, args=(mean, [1, 2, 62])
+        )
+        builder.output([view])
+        original = builder.get_graph_module()
+
+        result = cast(PassResult, FuseMeanKeepDimWithViewPass()(original))
+        self.assertFalse(result.modified)
+
+    def test_keepdim_false_view_wrong_unsqueeze(self) -> None:
+        """View inserts 1s at wrong positions → no change."""
+        builder = GraphBuilder()
+        x = builder.placeholder("x", torch.randn(2, 62, 4, 4))
+        mean = builder.call_operator(
+            op=exir_ops.edge.aten.mean.dim, args=(x, [-1, -2], False)
+        )
+        # 1s at positions 0 and 1 instead of 2 and 3.
+        view = builder.call_operator(
+            op=exir_ops.edge.aten.view_copy.default, args=(mean, [1, 1, 2, 62])
+        )
+        builder.output([view])
+        original = builder.get_graph_module()
+
+        result = cast(PassResult, FuseMeanKeepDimWithViewPass()(original))
+        self.assertFalse(result.modified)
+
+    def test_mean_multiple_users_no_change(self) -> None:
+        """Mean has multiple users → no change."""
+        builder = GraphBuilder()
+        x = builder.placeholder("x", torch.randn(2, 62, 4, 4))
+        mean = builder.call_operator(
+            op=exir_ops.edge.aten.mean.dim, args=(x, [-1, -2], True)
+        )
+        view = builder.call_operator(
+            op=exir_ops.edge.aten.view_copy.default, args=(mean, [2, 62])
+        )
+        neg = builder.call_operator(op=exir_ops.edge.aten.neg.default, args=(mean,))
+        builder.output([view, neg])
+        original = builder.get_graph_module()
+
+        result = cast(PassResult, FuseMeanKeepDimWithViewPass()(original))
+        self.assertFalse(result.modified)
+
+    def test_reduce_single_dim(self) -> None:
+        """Reduction over a single dim, both directions."""
+        # keepdim=True → False
+        builder = GraphBuilder()
+        x = builder.placeholder("x", torch.randn(3, 4, 5))
+        mean = builder.call_operator(
+            op=exir_ops.edge.aten.mean.dim, args=(x, [1], True)
+        )
+        view = builder.call_operator(
+            op=exir_ops.edge.aten.view_copy.default, args=(mean, [3, 5])
+        )
+        builder.output([view])
+        original = builder.get_graph_module()
+        gm_before = copy.deepcopy(original)
+
+        result = cast(PassResult, FuseMeanKeepDimWithViewPass()(original))
+        self.assertTrue(result.modified)
+        self.assertEqual(
+            count_node(result.graph_module, exir_ops.edge.aten.view_copy.default), 0
+        )
+
+        validate_numerics(
+            gm_before,
+            result.graph_module,
+            (torch.randn(3, 4, 5),),
+            "FuseMeanKeepDimWithViewPass",
+        )
+
+        # keepdim=False → True
+        builder = GraphBuilder()
+        x = builder.placeholder("x", torch.randn(3, 4, 5))
+        mean = builder.call_operator(
+            op=exir_ops.edge.aten.mean.dim, args=(x, [1], False)
+        )
+        view = builder.call_operator(
+            op=exir_ops.edge.aten.view_copy.default, args=(mean, [3, 1, 5])
+        )
+        builder.output([view])
+        original = builder.get_graph_module()
+        gm_before = copy.deepcopy(original)
+
+        result = cast(PassResult, FuseMeanKeepDimWithViewPass()(original))
+        self.assertTrue(result.modified)
+        self.assertEqual(
+            count_node(result.graph_module, exir_ops.edge.aten.view_copy.default), 0
+        )
+
+        validate_numerics(
+            gm_before,
+            result.graph_module,
+            (torch.randn(3, 4, 5),),
+            "FuseMeanKeepDimWithViewPass",
+        )
