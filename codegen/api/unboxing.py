@@ -31,7 +31,7 @@ def name(f: NativeFunction) -> str:
 class Unboxing:
     """
     Takes a sequence of Bindings and unbox EValues to these Bindings. Return generated code that performs correct unboxing.
-    A sample generated code (abbreviated to one arg for readability):
+    A sample generated code:
     // aten::mul.out(Tensor self, Tensor other, *, Tensor(a!) out) -> Tensor(a!)
     void mul_out(KernelRuntimeContext& context, Span<EValue*> stack) {
         EValue& self = *stack[0];
@@ -116,9 +116,8 @@ class Unboxing:
     def _gen_code_base_type(
         self, arg_name: str, out_name: str, ctype: CType
     ) -> tuple[list[str], list[str]]:
-        # Use tryTo<T>() with a shared cold fail helper so every wrapper
-        # logs a consistent diagnostic and propagates the error via
-        # KernelRuntimeContext::fail() rather than aborting.
+        # Use tryTo<T>(). On error, call the kernel_arg_fail(..), which
+        # logs the error and sets context.fail(). Then return.
         res_name = f"{out_name}_res"
         return [
             f"auto {res_name} = {arg_name}.tryTo<{ctype.cpp_type(strip_ref=True)}>();",
@@ -138,8 +137,8 @@ class Unboxing:
         res_name, base_type, res_code, decl = self.argumenttype_evalue_convert(
             t.elem, in_name
         )
-        # Use tryToOptional<T>() with the shared fail helper (see
-        # _gen_code_base_type).
+        # Use tryToOptional<T>(). On error, call the kernel_arg_fail(..), which
+        # logs the error and sets context.fail(). Then return.
         opt_res_name = f"{out_name}_res"
         return (
             f"""
@@ -166,12 +165,10 @@ class Unboxing:
         )
 
         # Each branch uses the Result-returning tryToXList() accessor and
-        # routes errors through the shared kernel_arg_fail helper; see
-        # _gen_code_base_type for the rationale.
+        # routes errors through kernel_arg_fail.
         res_name_list = f"{out_name}_res"
 
         def _fail_block(res: str) -> str:
-            # Cold fail path: log + context.fail() via the shared helper.
             return (
                 f"if (!{res}.ok()) {{\n"
                 f"      ::executorch::runtime::internal::kernel_arg_fail(\n"

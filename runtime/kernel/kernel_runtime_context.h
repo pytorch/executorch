@@ -112,7 +112,7 @@ class KernelRuntimeContext {
 
 namespace internal {
 
-// Cold path for codegen-emitted boxed kernel wrappers. Logs a diagnostic and
+// Cold path for codegen-emitted boxed kernel wrappers. Logs the error and
 // sets the kernel's failure state when an EValue arg unpack fails. The
 // wrapper must still `return` after calling this.
 #if defined(__GNUC__) || defined(__clang__)
