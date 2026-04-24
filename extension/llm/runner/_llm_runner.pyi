@@ -47,14 +47,15 @@ class GenerationConfig:
         ...
 
     def resolve_max_new_tokens(
-        self, max_context_len: int, num_prompt_tokens: int
+        self, max_context_len: int, num_tokens_occupied: int
     ) -> int:
         """
         Resolve the maximum number of new tokens to generate based on constraints.
 
         Args:
             max_context_len: The maximum context length supported by the model
-            num_prompt_tokens: The number of tokens in the input prompt
+            num_tokens_occupied: The number of token positions already occupied
+                in the context window (e.g. pos after prefill)
 
         Returns:
             The resolved maximum number of new tokens to generate
