@@ -133,7 +133,7 @@ class AsrModule(
    * @param callback Optional callback to receive tokens as they are generated (can be null)
    * @return The complete transcribed text
    * @throws IllegalStateException if the module has been destroyed
-   * @throws RuntimeException if transcription fails (non-zero result code)
+   * @throws ExecutorchRuntimeException if transcription fails (error code carried in exception)
    */
   @JvmOverloads
   fun transcribe(
