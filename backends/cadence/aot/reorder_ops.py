@@ -18,6 +18,7 @@ import torch.fx
 from executorch.backends.cadence.aot.compiler_utils import get_placeholders, get_shape
 from executorch.backends.cadence.aot.pass_utils import (
     CadencePassAttribute,
+    get_arg,
     get_overload_packet,
     register_cadence_pass,
     RemoveOrReplacePassInterface,
@@ -639,6 +640,82 @@ class PostponePermuteOpBelowSqueezeOrUnsqueezeLikeView(
     _SharedPostponePermuteOpBelowSqueezeOrUnsqueezeLikeView
 ):
     pass
+
+
+@register_cadence_pass(CadencePassAttribute(opt_level=1))
+class MoveSliceBeforePermutePass(RemoveOrReplacePassInterface):
+    """Move slice_copy ops before permute_copy to reduce permute data volume.
+
+    Rewrites permute(input, perm) -> slice(dim=D) into
+    slice(input, dim=perm[D]) -> permute(sliced, perm), so the permute
+    operates on a smaller tensor.
+
+    Cost model: dim-0 slices are nop-eligible (zero-copy pointer offset
+    after MakeSliceAndCatDimOutermostPass).  Moving such a slice loses the
+    nop, so we only move it when the permute savings outweigh the nop loss,
+    i.e. when the slice removes more than half the data (full > 2 * sliced).
+    Non-dim-0 slices have no nop opportunity, so any permute savings is
+    pure win.
+    """
+
+    @property
+    def targets(self) -> list[EdgeOpOverload]:
+        return [exir_ops.edge.aten.permute_copy.default]
+
+    @staticmethod
+    def _is_profitable(
+        slice_dim: int, full_shape: torch.Size, sliced_shape: torch.Size
+    ) -> bool:
+        full_size = prod(full_shape)
+        sliced_size = prod(sliced_shape)
+        if slice_dim == 0:
+            return full_size > 2 * sliced_size
+        return True
+
+    def maybe_remove_or_replace(self, node: torch.fx.Node) -> bool:
+        perm = cast(list[int], node.args[1])
+        permute_input = node.args[0]
+        assert isinstance(permute_input, torch.fx.Node)
+
+        if len(node.users) != 1:
+            return False
+
+        slice_node = next(iter(node.users))
+        if slice_node.target != exir_ops.edge.aten.slice_copy.Tensor:
+            return False
+
+        slice_dim = get_arg(slice_node, "dim", int)
+
+        if not self._is_profitable(
+            slice_dim,
+            node.meta["val"].shape,
+            slice_node.meta["val"].shape,
+        ):
+            return False
+
+        new_dim = perm[slice_dim]
+        graph = node.graph
+
+        with graph.inserting_before(node):
+            new_slice = graph.create_node(
+                "call_function",
+                exir_ops.edge.aten.slice_copy.Tensor,
+                args=(
+                    permute_input,
+                    new_dim,
+                    get_arg(slice_node, "start"),
+                    get_arg(slice_node, "end"),
+                    get_arg(slice_node, "step", int),
+                ),
+            )
+            new_permute = graph.create_node(
+                "call_function",
+                exir_ops.edge.aten.permute_copy.default,
+                args=(new_slice, perm),
+            )
+
+        slice_node.replace_all_uses_with(new_permute)
+        return True
 
 
 # The following class consolidates functions to reoder ops (i.e., either hoist
