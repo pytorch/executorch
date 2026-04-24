@@ -31,7 +31,8 @@ The model has three components:
   huggingface-cli download mistralai/Voxtral-4B-TTS-2603 \
       --local-dir ~/models/Voxtral-4B-TTS-2603
   ```
-- For CUDA: NVIDIA GPU with CUDA 12.8 toolkit (tested on A100 80GB).
+- For CUDA: NVIDIA GPU with CUDA 12.8 or 12.9 toolkit (tested on A100 80GB
+  / sm_80 and RTX 5080 / sm_120).
   Note: CUDA 13 is not supported (CUB 3.0 incompatibility in
   `backends/cuda/runtime/shims/sort.cu`).
 
@@ -186,6 +187,10 @@ directory).
 - **`aoti_cuda_backend` target not found at link time**: the parent
   ExecuTorch was built without CUDA. Use `make voxtral_tts-cuda` (which
   builds with `EXECUTORCH_BUILD_CUDA=ON`) instead of running cmake by hand.
+- **`cannot find -lcuda` during `pip install -e .` or export (WSL2)**: the
+  CUDA toolkit doesn't ship `libcuda.so` — on WSL2 the driver lib lives at
+  `/usr/lib/wsl/lib/`. Prepend it (or `/usr/local/cuda/lib64/stubs`) to
+  `LIBRARY_PATH` before invoking pip / the export script.
 - **First call takes ~30–50 s**: Triton autotunes the LM matmul kernels on
   first run, then caches per-process. The runner's `warmup()` amortizes
   this so the first user-visible synth pays the cost once.
@@ -197,5 +202,20 @@ directory).
 ## Pre-exported artifacts
 
 For users who want to skip the export step, ready-to-run CUDA artifacts
-are available on the HuggingFace hub:
+are available on the HuggingFace hub at
 [`younghan-meta/Voxtral-4B-TTS-2603-ExecuTorch-CUDA`](https://huggingface.co/younghan-meta/Voxtral-4B-TTS-2603-ExecuTorch-CUDA).
+
+ExecuTorch's CUDA backend uses AOTInductor, which bakes pre-compiled
+cubins for the export-time GPU's compute capability into `*.ptd`. Cubins
+are not compatible across architectures, so the repo ships per-arch
+subfolders:
+
+| Folder | Compute capability | Example GPUs |
+|---|---|---|
+| `sm80/` | `sm_80` (Ampere) | A100, A30 |
+| `sm120/` | `sm_120` (Blackwell) | RTX 5080, RTX 5090 |
+
+Find your GPU's arch with `nvidia-smi --query-gpu=compute_cap --format=csv`,
+then `hf download ... --include 'sm80/*'` (or `sm120`). If your arch isn't
+shipped, re-export on the target GPU with the command above — the AOTI
+compile step writes cubins for the local arch.
