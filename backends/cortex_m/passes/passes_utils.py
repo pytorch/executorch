@@ -6,6 +6,7 @@
 # LICENSE file in the root directory of this source tree.
 
 import math
+from typing import Any
 
 import torch
 
@@ -19,6 +20,56 @@ SHIFT_INT8 = 20
 
 def quantize_val(val, scale, zp, qmin, qmax):
     return float(min(max(torch.round(torch.Tensor([val / scale + zp])), qmin), qmax))
+
+
+def extract_constant_scalar(arg: Any) -> float | None:
+    if arg is None:
+        return None
+    if isinstance(arg, (int, float)):
+        return float(arg)
+    if isinstance(arg, Node):
+        if arg.op == "call_function" and arg.target in {
+            exir_ops.edge.aten.full_like.default,
+            exir_ops.edge.aten.full.default,
+            torch.ops.aten.full_like.default,
+            torch.ops.aten.full.default,
+        }:
+            fill_arg = arg.args[1] if len(arg.args) > 1 else None
+            return extract_constant_scalar(fill_arg)
+        val = arg.meta.get("val")
+        if val is None:
+            return None
+        return extract_constant_scalar(val)
+    return None
+
+
+def get_activation_bounds(node: Node) -> tuple[float | None, float | None] | None:
+    bounds: tuple[float | None, float | None]
+    match node.target:
+        case exir_ops.edge.aten.relu.default | exir_ops.edge.aten.relu_.default:
+            bounds = (0.0, None)
+        case exir_ops.edge.aten.hardsigmoid.default:
+            bounds = (0.0, 1.0)
+        case exir_ops.edge.aten.hardtanh.default | exir_ops.edge.aten.hardtanh_.default:
+            bounds = (
+                extract_constant_scalar(node.args[1]),
+                extract_constant_scalar(node.args[2]),
+            )
+        case exir_ops.edge.aten.clamp.default | exir_ops.edge.aten.clamp.Tensor:
+            bounds = (
+                extract_constant_scalar(node.args[1]) if len(node.args) > 1 else None,
+                extract_constant_scalar(node.args[2]) if len(node.args) > 2 else None,
+            )
+        case _:
+            return None
+
+    min_val, max_val = bounds
+    if len(node.args) > 1 and min_val is None and node.args[1] is not None:
+        return None
+    if len(node.args) > 2 and max_val is None and node.args[2] is not None:
+        return None
+
+    return bounds
 
 
 def dequantize_per_tensor_cmsis(
