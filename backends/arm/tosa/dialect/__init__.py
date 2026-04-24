@@ -10,6 +10,7 @@ from executorch.backends.arm.tosa.dialect.ops import (  # noqa F401
     custom,
     depthwise_conv2d,
     gather,
+    identity,
     matmul,
     max_pool2d,
     pad,

@@ -11,8 +11,12 @@ from executorch.backends.arm._passes.fuse_constant_ops_pass import (
     ComputeConstantOpsAOTPass,
     FuseConstantArgsPass,
 )
+from executorch.backends.arm._passes.quant_args import QuantArgs
 from executorch.backends.arm.test import common
+from executorch.backends.arm.test.tester.arm_tester import ArmTester
 from executorch.backends.arm.test.tester.test_pipeline import PassPipeline
+from executorch.backends.arm.tosa import TosaSpecification
+from executorch.backends.test.harness.stages import StageType
 
 input_t = Tuple[torch.Tensor]  # Input x
 input_t2 = Tuple[torch.Tensor, torch.Tensor]
@@ -116,6 +120,52 @@ class CatConst(torch.nn.Module):
         return torch.cat((a, b), dim=0)
 
 
+class QuantizedCatConstantBuffers(torch.nn.Module):
+    def __init__(self) -> None:
+        super().__init__()
+        self.register_buffer(
+            "horizontal_ramp",
+            torch.tensor(
+                [
+                    [
+                        [
+                            [-95, -32, 32, 95, 0],
+                            [-95, -32, 32, 95, 0],
+                            [-95, -32, 32, 95, 0],
+                            [-95, -32, 32, 95, 0],
+                        ]
+                    ]
+                ],
+                dtype=torch.int8,
+            ),
+        )
+        self.register_buffer(
+            "vertical_ramp",
+            torch.tensor(
+                [
+                    [
+                        [
+                            [-95, -95, -95, -95, -95],
+                            [-32, -32, -32, -32, -32],
+                            [32, 32, 32, 32, 32],
+                            [95, 95, 95, 95, 95],
+                        ]
+                    ]
+                ],
+                dtype=torch.int8,
+            ),
+        )
+
+    def forward(self) -> torch.Tensor:
+        return torch.cat(
+            (
+                cast(torch.Tensor, self.horizontal_ramp),
+                cast(torch.Tensor, self.vertical_ramp),
+            ),
+            dim=1,
+        )
+
+
 modules: Dict[str, ModuleWithFuseAttrs] = {
     "fuse_parameter": cast(ModuleWithFuseAttrs, FuseParameter()),
     "fuse_buffer": cast(ModuleWithFuseAttrs, FuseBuffer()),
@@ -174,3 +224,49 @@ def test_fuse_constant_args_tosa_INT_cat(module: ModuleWithFuseAttrs) -> None:
         ],
     )
     pipeline.run()
+
+
+def test_fuse_constant_args_tosa_INT_cat_uses_top_level_arg_qparams() -> None:
+    qargs = QuantArgs(
+        scale=1.0 / 127.0,
+        zp=0,
+        qmin=-127,
+        qmax=127,
+        dtype=torch.int8,
+    )
+    module = QuantizedCatConstantBuffers()
+    compile_spec = common.get_tosa_compile_spec(
+        TosaSpecification.create_from_string("TOSA-1.0+FP")
+    )
+    tester = ArmTester(module, example_inputs=(), compile_spec=compile_spec)
+    tester.export().to_edge()
+    exported_program = tester.get_artifact(StageType.TO_EDGE).exported_program()
+
+    cat_node = next(
+        node
+        for node in exported_program.graph_module.graph.nodes
+        if node.op == "call_function"
+    )
+    cat_node.meta["input_qparams"] = {0: qargs}
+    cat_node.meta["output_qparams"] = {0: qargs}
+
+    pass_result = FuseConstantArgsPass(exported_program).call(
+        exported_program.graph_module
+    )
+
+    assert list(exported_program.state_dict) == ["aten_cat_default_fused_const"]
+    torch.testing.assert_close(
+        exported_program.state_dict["aten_cat_default_fused_const"],
+        torch.cat(
+            (
+                cast(torch.Tensor, module.horizontal_ramp),
+                cast(torch.Tensor, module.vertical_ramp),
+            ),
+            dim=1,
+        ),
+    )
+    assert [
+        node.name
+        for node in pass_result.graph_module.graph.nodes
+        if node.op == "placeholder"
+    ] == ["aten_cat_default_fused_const"]
