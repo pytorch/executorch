@@ -123,7 +123,7 @@ HUGGING_FACE_REPO_IDS = {
     "qwen2_5_1_5b": "Qwen/Qwen2.5-1.5B",
     "qwen2_5_coder_32b": "Qwen/Qwen2.5-Coder-32B-Instruct",
     "phi_4_mini": "microsoft/Phi-4-mini-instruct",
-    "smollm2": "HuggingFaceTB/SmolLM-135M",
+    "smollm2": "HuggingFaceTB/SmolLM2-135M",
     "qwen3_0_6b": "Qwen/Qwen3-0.6B",
     "qwen3_1_7b": "Qwen/Qwen3-1.7B",
     "qwen3_4b": "Qwen/Qwen3-4B",
