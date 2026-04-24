@@ -15,13 +15,15 @@ import eiq_neutron_sdk
 # TODO(Robert Kalmar) In accordance with the "TODO(dbort): Prune /test[s]/ dirs, /third-party/ dirs" in pyproject.toml,
 #  once the test folders are not installed we can derive the path from current file location: `pathlib.Path(__file__)`
 PROJECT_DIR = os.environ.get("PROJECT_DIR")
-assert PROJECT_DIR and os.path.exists(PROJECT_DIR)
+assert PROJECT_DIR and os.path.exists(
+    PROJECT_DIR
+), f"Invalid PROJECT_DIR env variable: `{PROJECT_DIR}`."
 
 OUTPUTS_DIR = pathlib.Path(os.getcwd()) / ".outputs"
 
 NSYS_PATH = pathlib.Path(shutil.which("nsys"))
 NSYS_CONFIG_PATH = os.path.join(
-    PROJECT_DIR, "backends", "nxp", "tests_models", "neutron-imxrt700.ini"
+    PROJECT_DIR, "backends", "nxp", "tests", "neutron-imxrt700.ini"
 )
 NSYS_FIRMWARE_PATH = os.path.join(
     os.path.dirname(eiq_neutron_sdk.__file__),

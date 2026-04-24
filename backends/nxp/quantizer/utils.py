@@ -1,5 +1,5 @@
 # Copyright (c) Meta Platforms, Inc. and affiliates.
-# Copyright 2024-2025 NXP
+# Copyright 2024-2026 NXP
 # All rights reserved.
 #
 # This source code is licensed under the BSD-style license found in the

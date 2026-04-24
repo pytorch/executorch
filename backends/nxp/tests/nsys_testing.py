@@ -12,7 +12,7 @@ import subprocess
 from copy import deepcopy
 from enum import Enum
 from os import environ, mkdir
-from typing import Callable
+from typing import Callable, Iterable
 
 import numpy as np
 import torch
@@ -22,20 +22,21 @@ from executorch.backends.nxp.backend.ir.converter.conversion.translator import (
     torch_type_to_numpy_type,
 )
 from executorch.backends.nxp.neutron_partitioner import NeutronPartitioner
+from executorch.backends.nxp.tests.config_importer import test_config
+from executorch.backends.nxp.tests.dataset_creator import RandomDatasetCreator
 from executorch.backends.nxp.tests.executorch_pipeline import (
     get_calibration_inputs_fn_from_dataset_dir,
     ModelInputSpec,
+    to_model_input_spec,
     to_quantized_edge_program,
     to_quantized_executorch_program,
 )
-from executorch.backends.nxp.tests_models.config_importer import test_config
-from executorch.backends.nxp.tests_models.dataset_creator import RandomDatasetCreator
-from executorch.backends.nxp.tests_models.graph_verifier import GraphVerifier
-from executorch.backends.nxp.tests_models.model_output_comparator import (
+from executorch.backends.nxp.tests.graph_verifier import GraphVerifier
+from executorch.backends.nxp.tests.model_output_comparator import (
     AllCloseOutputComparator,
 )
-from executorch.backends.nxp.tests_models.outputs_dir_importer import outputs_dir
-from executorch.backends.nxp.tests_models.utils import save_pte_program
+from executorch.backends.nxp.tests.outputs_dir_importer import outputs_dir
+from executorch.backends.nxp.tests.utils import save_pte_program
 from executorch.devtools.visualization.visualization_utils import (
     visualize_with_clusters,
 )
@@ -371,9 +372,9 @@ def assert_NSYS():
     assert os.path.exists(NSYS_FIRMWARE_PATH)
 
 
-def convert_run_compare(
+def lower_run_compare(
     model: torch.nn.Module,
-    input_spec: list[ModelInputSpec] | tuple,
+    input_spec: Iterable[ModelInputSpec] | tuple[int, ...],
     dlg_model_verifier: GraphVerifier,
     dataset_creator=None,
     output_comparator=None,
@@ -389,7 +390,7 @@ def convert_run_compare(
     (some nodes run on Neutron NPU).
 
     :param model: Executed PyTorch model.
-    :param input_spec: Model input specification. Can be either tuple - single float32 input model - or list
+    :param input_spec: Model input specification. Can be either tuple of ints - single float32 input model - or Iterable
         of ModelInputSpec.
     :param dataset_creator: Creator that should fill provided `dataset_dir` with model input samples.
     :param output_comparator: Comparator of results produced by NPU and CPU runs of the program.
@@ -418,11 +419,10 @@ def convert_run_compare(
 
     dataset_dir = os.path.join(test_dir, "dataset")
     mkdir(dataset_dir)
-    if isinstance(input_spec, tuple):
-        input_spec = [ModelInputSpec(input_spec)]
+    input_spec = to_model_input_spec(input_spec)
 
     calibration_dataset_dir, testing_dataset_dir = dataset_creator.generate_samples(
-        dataset_dir, input_spec
+        dataset_dir, list(input_spec)
     )
 
     cpu_results_dir = os.path.join(test_dir, "results_cpu")
@@ -509,7 +509,7 @@ def convert_run_compare(
     )
 
 
-def convert_run_compare_ptq_qat(
+def lower_run_compare_ptq_qat(
     model: torch.nn.Module,
     input_spec: list[ModelInputSpec] | tuple,
     dlg_model_verifier: GraphVerifier,
@@ -596,7 +596,7 @@ def convert_run_compare_ptq_qat(
 
 
 def _get_caller_name():
-    test_function_names = ["convert_run_compare", "convert_run_compare_ptq_qat"]
+    test_function_names = ["lower_run_compare", "lower_run_compare_ptq_qat"]
     for idx, frame in enumerate(inspect.stack()):
         if frame.function in test_function_names:
             # Look one index above to get caller

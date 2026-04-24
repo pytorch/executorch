@@ -110,7 +110,7 @@ def to_model_input_spec(
         case list() if all(
             isinstance(input_shape, tuple) for input_shape in input_spec
         ):
-            return tuple([ModelInputSpec(spec) for spec in input_spec])
+            return tuple(ModelInputSpec(spec) for spec in input_spec)
         case _:
             raise TypeError(f"Unsupported type {type(input_spec)}")
 
@@ -304,7 +304,7 @@ def to_quantized_executorch_program(
 
 def to_edge_program(
     model: nn.Module,
-    input_spec: tuple[ModelInputSpec, ...] | tuple[int, ...] | list[tuple[int, ...]],
+    input_spec: Iterable[ModelInputSpec] | tuple[int, ...] | list[tuple[int, ...]],
 ) -> EdgeProgramManager:
     example_input = _get_example_input(to_model_input_spec(input_spec))
 

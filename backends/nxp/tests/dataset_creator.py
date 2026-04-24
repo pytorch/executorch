@@ -17,8 +17,8 @@ from executorch.backends.nxp.backend.ir.converter.conversion import translator
 from executorch.backends.nxp.backend.ir.converter.conversion.translator import (
     torch_type_to_numpy_type,
 )
+from executorch.backends.nxp.tests.calibration_dataset import CalibrationDataset
 from executorch.backends.nxp.tests.executorch_pipeline import ModelInputSpec
-from executorch.backends.nxp.tests_models.calibration_dataset import CalibrationDataset
 from torch import Tensor
 
 
