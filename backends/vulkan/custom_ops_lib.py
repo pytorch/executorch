@@ -828,6 +828,55 @@ lib.define(
 lib.impl(name, apply_rotary_emb_hf_impl, "CompositeExplicitAutograd")
 apply_rotary_emb_hf_op = getattr(getattr(torch.ops, namespace), name)
 
+##################################
+## apply_rotary_emb_interleaved ##
+##################################
+
+
+def apply_rotary_emb_interleaved_impl(
+    x: torch.Tensor, freqs_cis: torch.Tensor
+) -> torch.Tensor:
+    # EdgeTAM's pair-interleaved complex-number RoPE.
+    #   x:         [B, N, C] with (real, imag) pairs interleaved along C
+    #   freqs_cis: any rank whose flattened layout is [N, C]. Commonly 2D
+    #              [N, C] or 4D [1, N, C/2, 2] from
+    #              `torch.view_as_real(...).unsqueeze(0)`. The (cos, sin)
+    #              pairs are interleaved along the innermost axis in the
+    #              flattened view.
+    # Semantically equivalent to:
+    #   freqs_cis.reshape(N, C // 2, 2) -> (cos, sin)
+    #   out[2k]   = x[2k] * cos[k] - x[2k+1] * sin[k]
+    #   out[2k+1] = x[2k] * sin[k] + x[2k+1] * cos[k]
+    B, N, C = x.shape
+    a_real, a_imag = x.view(B, N, C // 2, 2).unbind(-1)
+    # Use reshape so callers may pass freqs_cis at any rank.
+    cs = freqs_cis.reshape(N, C // 2, 2)
+    b_real, b_imag = cs[..., 0], cs[..., 1]
+    out = torch.stack(
+        (a_real * b_real - a_imag * b_imag, a_real * b_imag + a_imag * b_real),
+        dim=-1,
+    )
+    return out.view(B, N, C)
+
+
+def apply_rotary_emb_interleaved_meta(
+    x: torch.Tensor, freqs_cis: torch.Tensor
+) -> torch.Tensor:
+    # Meta kernel: shape-only. Keeps the op opaque during torch.export (no
+    # inlining of view/reshape calls into the exported graph) and does not
+    # constrain the rank of freqs_cis — any shape with N * C elements is
+    # accepted by the Vulkan dispatcher.
+    return torch.empty_like(x)
+
+
+name = "apply_rotary_emb_interleaved"
+lib.define(f"{name}(Tensor x, Tensor freqs_cis) -> Tensor")
+# CPU kernel preserves eager-mode reference semantics.
+lib.impl(name, apply_rotary_emb_interleaved_impl, "CPU")
+# Meta kernel keeps the op opaque in the exported graph.
+lib.impl(name, apply_rotary_emb_interleaved_meta, "Meta")
+apply_rotary_emb_interleaved_op = getattr(getattr(torch.ops, namespace), name)
+
 ########################
 ## q8ta_add ##
 ########################
