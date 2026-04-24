@@ -113,27 +113,31 @@ void grid_sample_2d_bilinear_kernel_impl_nchw(
           if (padding_mode == GridSamplerPadding::Zeros) {
             // For zeros padding, only sample if within bounds
             if (within_bounds_2d(iy_nw, ix_nw, inp_H, inp_W)) {
-              out_val += static_cast<ACC>(in_data
-                             [in_channel_offset + iy_nw * in.strides()[2] +
-                              ix_nw * in.strides()[3]]) *
+              out_val += static_cast<ACC>(
+                             in_data
+                                 [in_channel_offset + iy_nw * in.strides()[2] +
+                                  ix_nw * in.strides()[3]]) *
                   nw_weight;
             }
             if (within_bounds_2d(iy_ne, ix_ne, inp_H, inp_W)) {
-              out_val += static_cast<ACC>(in_data
-                             [in_channel_offset + iy_ne * in.strides()[2] +
-                              ix_ne * in.strides()[3]]) *
+              out_val += static_cast<ACC>(
+                             in_data
+                                 [in_channel_offset + iy_ne * in.strides()[2] +
+                                  ix_ne * in.strides()[3]]) *
                   ne_weight;
             }
             if (within_bounds_2d(iy_sw, ix_sw, inp_H, inp_W)) {
-              out_val += static_cast<ACC>(in_data
-                             [in_channel_offset + iy_sw * in.strides()[2] +
-                              ix_sw * in.strides()[3]]) *
+              out_val += static_cast<ACC>(
+                             in_data
+                                 [in_channel_offset + iy_sw * in.strides()[2] +
+                                  ix_sw * in.strides()[3]]) *
                   sw_weight;
             }
             if (within_bounds_2d(iy_se, ix_se, inp_H, inp_W)) {
-              out_val += static_cast<ACC>(in_data
-                             [in_channel_offset + iy_se * in.strides()[2] +
-                              ix_se * in.strides()[3]]) *
+              out_val += static_cast<ACC>(
+                             in_data
+                                 [in_channel_offset + iy_se * in.strides()[2] +
+                                  ix_se * in.strides()[3]]) *
                   se_weight;
             }
           } else {
@@ -148,19 +152,24 @@ void grid_sample_2d_bilinear_kernel_impl_nchw(
             const int64_t iy_sw_safe = clip_coordinates(iy_sw, inp_H);
             const int64_t ix_se_safe = clip_coordinates(ix_se, inp_W);
             const int64_t iy_se_safe = clip_coordinates(iy_se, inp_H);
-            out_val = static_cast<ACC>(in_data
-                          [in_channel_offset + iy_nw_safe * in.strides()[2] +
-                           ix_nw_safe * in.strides()[3]]) *
+            out_val =
+                static_cast<ACC>(
+                    in_data
+                        [in_channel_offset + iy_nw_safe * in.strides()[2] +
+                         ix_nw_safe * in.strides()[3]]) *
                     nw_weight +
-                static_cast<ACC>(in_data
+                static_cast<ACC>(
+                    in_data
                         [in_channel_offset + iy_ne_safe * in.strides()[2] +
                          ix_ne_safe * in.strides()[3]]) *
                     ne_weight +
-                static_cast<ACC>(in_data
+                static_cast<ACC>(
+                    in_data
                         [in_channel_offset + iy_sw_safe * in.strides()[2] +
                          ix_sw_safe * in.strides()[3]]) *
                     sw_weight +
-                static_cast<ACC>(in_data
+                static_cast<ACC>(
+                    in_data
                         [in_channel_offset + iy_se_safe * in.strides()[2] +
                          ix_se_safe * in.strides()[3]]) *
                     se_weight;
