@@ -117,6 +117,10 @@ inline ssize_t compute_numel(const SizesType* sizes, ssize_t dim) {
 ET_EXPERIMENTAL inline ::executorch::runtime::Result<ssize_t> safe_numel(
     const SizesType* sizes,
     ssize_t dim) {
+  ET_CHECK_OR_RETURN_ERROR(
+      dim == 0 || sizes != nullptr,
+      InvalidArgument,
+      "Sizes must be provided for non-scalar tensors");
   ssize_t numel = 1;
   for (ssize_t i = 0; i < dim; i++) {
     ET_CHECK_OR_RETURN_ERROR(
