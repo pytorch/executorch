@@ -42,6 +42,8 @@ def _tensor_to_numpy_with_dim_order(
         np_tensor = tensor.view(torch.uint16).numpy().view(ml_dtypes.bfloat16)
     else:
         np_tensor = tensor.numpy()
+    if dim_order == tuple(range(len(dim_order))):
+        return np_tensor
     return np.transpose(np_tensor, dim_order)
 
 

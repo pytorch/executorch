@@ -264,7 +264,6 @@ class ToTosaMemoryFormatPass(ArmPass):
         """Convert a producer's output to channels-last by appending a backend
         `TRANSPOSE` node and rewiring its users.
         """
-
         rank = len(get_first_fake_tensor(node).size())
         spatial_rank = node.meta["tosa_spatial_rank"]
         mem_format = ToTosaMemoryFormatPass._channels_last_order(rank, spatial_rank)
@@ -383,17 +382,18 @@ class ToTosaMemoryFormatPass(ArmPass):
         if output_dim_orders is None:
             raise RuntimeError(f"{output_dim_orders=} is not supported.")
 
+        transposed_output_inputs: set[torch.fx.Node] = set()
         for output_node_input, output_dim_order in zip(
             outputs, output_dim_orders, strict=True
         ):
-            if output_dim_order in (
-                NCHW_ORDER,
-                NNCHW_ORDER,
-                NNNCHW_ORDER,
+            if (
+                output_dim_order in (NCHW_ORDER, NNCHW_ORDER, NNNCHW_ORDER)
+                and output_node_input not in transposed_output_inputs
             ):
                 self.insert_input_transpose(
                     output_node, output_node_input, graph_module
                 )
+                transposed_output_inputs.add(output_node_input)
 
     def remove_dim_order_kwargs(
         self, graph_module: torch.fx.GraphModule, node: torch.fx.Node

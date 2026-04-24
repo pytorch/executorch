@@ -83,21 +83,24 @@ class FuseConstantArgsPass(ArmPass):
         input_nodes = list(node.all_input_nodes)
         qparams = node.meta.get("input_qparams", None)
 
-        def resolve_arg(arg):
+        def resolve_arg(arg, arg_index=None):
+            qparam = (
+                qparams.get(arg_index) if qparams and arg_index is not None else None
+            )
             if isinstance(arg, torch.fx.Node) and arg in input_nodes:
-                idx = input_nodes.index(arg)
                 t = get_param_tensor(self.exported_program, arg)
-                # Check if qparams exist for this arg
-                if qparams and idx in qparams.keys():
-                    t = qparams[idx].dequantize_value(t)
+                if qparam is not None:
+                    t = qparam.dequantize_value(t)
                 return t
             if isinstance(arg, tuple):
-                return tuple(resolve_arg(x) for x in arg)
+                return tuple(resolve_arg(x, arg_index) for x in arg)
             if isinstance(arg, list):
-                return [resolve_arg(x) for x in arg]
+                return [resolve_arg(x, arg_index) for x in arg]
             return arg
 
-        new_args = tuple(resolve_arg(a) for a in node.args)
+        new_args = tuple(
+            resolve_arg(arg, arg_index) for arg_index, arg in enumerate(node.args)
+        )
         new_kwargs = {k: resolve_arg(v) for k, v in node.kwargs.items()}
 
         data = node.target(*new_args, **new_kwargs)

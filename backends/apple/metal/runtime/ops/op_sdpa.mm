@@ -226,7 +226,8 @@ template <typename T, int D, int V = D>
 #define INSTANTIATE_SDPA_VECTOR_HEADS(DTYPE)        \
   INSTANTIATE_SDPA_VECTOR(DTYPE, 64, 64);           \
   INSTANTIATE_SDPA_VECTOR(DTYPE, 96, 96);           \
-  INSTANTIATE_SDPA_VECTOR(DTYPE, 128, 128);
+  INSTANTIATE_SDPA_VECTOR(DTYPE, 128, 128);         \
+  INSTANTIATE_SDPA_VECTOR(DTYPE, 256, 256);
 
 INSTANTIATE_SDPA_VECTOR_HEADS(float);
 INSTANTIATE_SDPA_VECTOR_HEADS(bfloat);
@@ -430,11 +431,11 @@ AOTITorchError aoti_torch_mps__scaled_dot_product_attention_math_for_mps(
         throw std::runtime_error("Unsupported dtype for Metal SDPA kernel");
       }
 
-      // Select head_dim - must match exactly one of the supported sizes (64, 96, 128)
+      // Select head_dim - must match exactly one of the supported sizes (64, 96, 128, 256)
       int64_t head_dim = headSize;
-      if (head_dim != 64 && head_dim != 96 && head_dim != 128) {
-        ET_LOG(Error, "aoti_torch_mps__scaled_dot_product_attention_math_for_mps: Unsupported head_dim %lld (must be 64, 96, or 128)", head_dim);
-        throw std::runtime_error("Unsupported head_dim for Metal SDPA kernel - must be exactly 64, 96, or 128");
+      if (head_dim != 64 && head_dim != 96 && head_dim != 128 && head_dim != 256) {
+        ET_LOG(Error, "aoti_torch_mps__scaled_dot_product_attention_math_for_mps: Unsupported head_dim %lld (must be 64, 96, 128, or 256)", head_dim);
+        throw std::runtime_error("Unsupported head_dim for Metal SDPA kernel - must be exactly 64, 96, 128, or 256");
       }
 
       std::string kernel_name = "sdpa_vector_" + type_name + "_" + std::to_string(head_dim) + "_" + std::to_string(head_dim);
