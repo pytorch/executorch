@@ -716,3 +716,70 @@ class TestMoveSliceBeforePermutePass(unittest.TestCase):
 
         result = cast(PassResult, MoveSliceBeforePermutePass()(original))
         self.assertFalse(result.modified)
+
+    def test_dim0_slice_large_reduction_moved(self) -> None:
+        """Dim-0 slice removing >50% of data → profitable, moved."""
+        # Shape [10, 3, 4, 5], slice dim=0 keeping 2 of 10 → 80% removed.
+        builder = GraphBuilder()
+        x = builder.placeholder("x", torch.randn(10, 3, 4, 5))
+        permuted = builder.call_operator(
+            op=exir_ops.edge.aten.permute_copy.default, args=(x, [0, 2, 3, 1])
+        )
+        sliced = builder.call_operator(
+            op=exir_ops.edge.aten.slice_copy.Tensor,
+            args=(permuted, 0, 0, 2, 1),
+        )
+        builder.output([sliced])
+        original = builder.get_graph_module()
+
+        result = transform_and_check_numerics(
+            original,
+            (torch.randn(10, 3, 4, 5),),
+            MoveSliceBeforePermutePass(),
+        )
+        self.assertTrue(result.modified)
+
+        nodes = get_compute_nodes_in_gm(result.graph_module)
+        self.assertEqual(len(nodes), 2)
+        self.assertEqual(nodes[0], exir_ops.edge.aten.slice_copy)
+        self.assertEqual(nodes[1], exir_ops.edge.aten.permute_copy)
+
+    def test_dim0_slice_small_reduction_not_moved(self) -> None:
+        """Dim-0 slice removing <50% of data → not profitable, kept."""
+        # Shape [10, 3, 4, 5], slice dim=0 keeping 8 of 10 → 20% removed.
+        builder = GraphBuilder()
+        x = builder.placeholder("x", torch.randn(10, 3, 4, 5))
+        permuted = builder.call_operator(
+            op=exir_ops.edge.aten.permute_copy.default, args=(x, [0, 2, 3, 1])
+        )
+        sliced = builder.call_operator(
+            op=exir_ops.edge.aten.slice_copy.Tensor,
+            args=(permuted, 0, 0, 8, 1),
+        )
+        builder.output([sliced])
+        original = builder.get_graph_module()
+
+        result = cast(PassResult, MoveSliceBeforePermutePass()(original))
+        self.assertFalse(result.modified)
+
+    def test_non_dim0_slice_always_moved(self) -> None:
+        """Non-dim-0 slice → always profitable, moved regardless of reduction."""
+        # Shape [10, 3, 4, 5], slice dim=2 keeping 3 of 4 → only 25% removed.
+        builder = GraphBuilder()
+        x = builder.placeholder("x", torch.randn(10, 3, 4, 5))
+        permuted = builder.call_operator(
+            op=exir_ops.edge.aten.permute_copy.default, args=(x, [0, 2, 3, 1])
+        )
+        sliced = builder.call_operator(
+            op=exir_ops.edge.aten.slice_copy.Tensor,
+            args=(permuted, 2, 0, 3, 1),
+        )
+        builder.output([sliced])
+        original = builder.get_graph_module()
+
+        result = transform_and_check_numerics(
+            original,
+            (torch.randn(10, 3, 4, 5),),
+            MoveSliceBeforePermutePass(),
+        )
+        self.assertTrue(result.modified)
