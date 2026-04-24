@@ -163,6 +163,7 @@ def test_constant_pad_nd__unsupported_paddings(input_shape, paddings, use_qat):
     assert any(node.name == "aten_constant_pad_nd_default" for node in nodes)
 
 
+@pytest.mark.xfail(reason="EIEX=855")
 def test_constant_pad_nd__delegation__formatless__supported_padding(use_qat):
     input_shape = (2, 4, 6, 8)  # Formatless -> the last dim (8) will be padded.
     paddings = [0, 0, 1, 2, 3, 4]  # The last dim is padded using the first 2 paddings.

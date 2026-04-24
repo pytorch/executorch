@@ -1,6 +1,6 @@
 cmake_minimum_required(VERSION 3.5)
 
-project(Yolo12DetectionDemo VERSION 0.1)
+project(Yolo26DetectionDemo VERSION 0.1)
 
 option(USE_OPENVINO_BACKEND "Build the tutorial with the OPENVINO backend" OFF)
 option(USE_XNNPACK_BACKEND "Build the tutorial with the XNNPACK backend" OFF)
@@ -44,7 +44,8 @@ if(USE_XNNPACK_BACKEND)
 endif()
 
 if(USE_OPENVINO_BACKEND)
-  find_package(OpenVINO REQUIRED)
+  # The OpenVINO backend resolves symbols via dlopen at runtime, so there is no
+  # build-time dependency on the OpenVINO SDK (no find_package needed).
   list(APPEND link_libraries openvino_backend)
   executorch_target_link_options_shared_lib(openvino_backend)
 endif()
@@ -63,14 +64,14 @@ set(PROJECT_SOURCES
     ${EXECUTORCH_ROOT}/extension/runner_util/inputs_portable.cpp
 )
 
-add_executable(Yolo12DetectionDemo ${PROJECT_SOURCES})
+add_executable(Yolo26DetectionDemo ${PROJECT_SOURCES})
 target_link_libraries(
-  Yolo12DetectionDemo PUBLIC ${link_libraries} ${OpenCV_LIBS} executorch_core
+  Yolo26DetectionDemo PUBLIC ${link_libraries} ${OpenCV_LIBS} executorch_core
                              extension_module extension_tensor
 )
 
 find_package(Threads REQUIRED)
-target_link_libraries(Yolo12DetectionDemo PRIVATE Threads::Threads)
+target_link_libraries(Yolo26DetectionDemo PRIVATE Threads::Threads)
 target_include_directories(
-  Yolo12DetectionDemo PUBLIC ${_common_include_directories}
+  Yolo26DetectionDemo PUBLIC ${_common_include_directories}
 )

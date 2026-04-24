@@ -1,0 +1,118 @@
+load("@fbsource//xplat/executorch/build:runtime_wrapper.bzl", "runtime")
+
+# OSS prebuilt targets for Qualcomm QNN SDK.
+# These wrap the externally-downloaded SDK (via QNN_SDK_ROOT env var or
+# backends/qualcomm/scripts/download_qnn_sdk.py) so that Buck builds
+# in OSS CI can compile the QNN backend without fbsource third-party targets.
+#
+# Set QNN_SDK_ROOT before running buck2 build, or use .buckconfig:
+#   [qualcomm]
+#   qnn_sdk_root = /path/to/qnn/sdk
+
+oncall("executorch")
+
+_QNN_SDK_ROOT = native.read_config("qualcomm", "qnn_sdk_root", "")
+_QNN_APP_SDK_FILES = [
+    ("QnnModel.cpp", "share/QNN/converter/jni/QnnModel.cpp"),
+    ("QnnWrapperUtils.cpp", "share/QNN/converter/jni/QnnWrapperUtils.cpp"),
+    ("linux_QnnModelPal.cpp", "share/QNN/converter/jni/linux/QnnModelPal.cpp"),
+    ("windows_QnnModelPal.cpp", "share/QNN/converter/jni/windows/QnnModelPal.cpp"),
+    ("QnnModel.hpp", "share/QNN/converter/jni/QnnModel.hpp"),
+    ("QnnModelPal.hpp", "share/QNN/converter/jni/QnnModelPal.hpp"),
+    ("QnnTypeMacros.hpp", "share/QNN/converter/jni/QnnTypeMacros.hpp"),
+    ("QnnWrapperUtils.hpp", "share/QNN/converter/jni/QnnWrapperUtils.hpp"),
+]
+
+_QNN_APP_SRCS = [
+    ":qnn_app_sources_files[QnnModel.cpp]",
+    ":qnn_app_sources_files[QnnWrapperUtils.cpp]",
+] + select({
+    "DEFAULT": [":qnn_app_sources_files[linux_QnnModelPal.cpp]"],
+    "ovr_config//os:linux": [":qnn_app_sources_files[linux_QnnModelPal.cpp]"],
+    "ovr_config//os:windows": [":qnn_app_sources_files[windows_QnnModelPal.cpp]"],
+})
+
+_QNN_APP_HEADERS = [
+    ":qnn_app_sources_files[QnnModel.hpp]",
+    ":qnn_app_sources_files[QnnModelPal.hpp]",
+    ":qnn_app_sources_files[QnnTypeMacros.hpp]",
+    ":qnn_app_sources_files[QnnWrapperUtils.hpp]",
+]
+
+_QNN_APP_EXPORTED_HEADERS = {
+    name: ":qnn_app_sources_files[{}]".format(name)
+    for name in [
+        "QnnModel.hpp",
+        "QnnModelPal.hpp",
+        "QnnTypeMacros.hpp",
+        "QnnWrapperUtils.hpp",
+    ]
+}
+
+# Mirror QNN SDK API headers into declared outputs so that Buck2's sandbox
+# can access them (raw -I to an absolute SDK path is not sandbox-safe).
+runtime.genrule(
+    name = "qnn_api_headers",
+    out = "include",
+    cmd = (
+        "cp -rLf \"{root}/include/QNN/.\" \"$OUT/\"".format(root = _QNN_SDK_ROOT)
+        if _QNN_SDK_ROOT else "mkdir -p \"$OUT\""
+    ),
+    visibility = [],
+)
+
+# QNN API headers (include/QNN/)
+runtime.cxx_library(
+    name = "qnn_api",
+    exported_preprocessor_flags = [
+        "-I$(location :qnn_api_headers)",
+    ],
+    exported_headers = {},
+    visibility = ["PUBLIC"],
+)
+
+# Mirror the fixed JNI SDK files into declared outputs instead of globbing an
+# absolute SDK path, which Buck rejects during package evaluation.
+runtime.genrule(
+    name = "qnn_app_sources_files",
+    outs = {name: [path] for name, path in _QNN_APP_SDK_FILES},
+    default_outs = ["."],
+    cmd = " && ".join(
+        [
+            "mkdir -p $OUT/share/QNN/converter/jni/linux $OUT/share/QNN/converter/jni/windows",
+        ] + (
+            [
+                "cp -f \"{root}/{path}\" \"$OUT/{path}\"".format(root = _QNN_SDK_ROOT, path = path)
+                for _, path in _QNN_APP_SDK_FILES
+            ] if _QNN_SDK_ROOT else [
+                "touch \"$OUT/{path}\"".format(path = path)
+                for _, path in _QNN_APP_SDK_FILES
+            ]
+        ),
+    ),
+)
+
+# QNN app utility sources (converter/jni/)
+runtime.cxx_library(
+    name = "qnn_app_sources",
+    srcs = _QNN_APP_SRCS if _QNN_SDK_ROOT else [],
+    headers = _QNN_APP_HEADERS if _QNN_SDK_ROOT else [],
+    header_namespace = "",
+    exported_headers = _QNN_APP_EXPORTED_HEADERS if _QNN_SDK_ROOT else {},
+    visibility = ["PUBLIC"],
+    deps = [":qnn_api"],
+)
+
+# QNN offline compile libs (placeholder — only needed for AOT resources)
+runtime.filegroup(
+    name = "qnn_offline_compile_libs",
+    srcs = [],
+    visibility = ["PUBLIC"],
+)
+
+# Android log stub (noop on non-Android)
+runtime.cxx_library(
+    name = "log",
+    exported_headers = {},
+    visibility = ["PUBLIC"],
+)
