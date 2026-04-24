@@ -294,9 +294,20 @@ Tensor& opt_grid_sampler_2d_out(
     int64_t padding_mode,
     bool align_corners,
     Tensor& out) {
+  // The NEON path indexes input/grid/out directly assuming a contiguous NCHW
+  // default-dim-order layout — no use of .strides() or .dim_order(). If the
+  // caller passes anything else, fall back to portable (which does handle
+  // arbitrary strides and dim orders correctly). These are cheap checks.
+  const bool fast_eligible = tensor_is_default_dim_order(input) &&
+      tensor_is_default_dim_order(grid) &&
+      tensor_is_default_dim_order(out) &&
+      tensor_is_contiguous(input) &&
+      tensor_is_contiguous(grid) &&
+      tensor_is_contiguous(out);
+
   // Only the bilinear + zeros-padding combination is accelerated. Everything
-  // else — and any non-aarch64 target — delegates to the portable kernel.
-  if (interpolation_mode != 0 || padding_mode != 0) {
+  // else — non-default layout, any non-aarch64 target — delegates to portable.
+  if (interpolation_mode != 0 || padding_mode != 0 || !fast_eligible) {
     return grid_sampler_2d_out(
         ctx, input, grid, interpolation_mode, padding_mode, align_corners, out);
   }
