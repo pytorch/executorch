@@ -1,3 +1,0 @@
-Total: 11
-Success: 11
-Failed: 0

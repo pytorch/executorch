@@ -97,7 +97,7 @@ add_library(
   "${CMAKE_CURRENT_SOURCE_DIR}/../../generic/operators/op_quantized_conv1d.cpp"
   "${CMAKE_CURRENT_SOURCE_DIR}/../../generic/operators/op_quantized_conv1d_ncl.cpp"
   "${CMAKE_CURRENT_SOURCE_DIR}/../../generic/operators/op_quantized_conv1d_nlc.cpp"
-  "${CMAKE_CURRENT_SOURCE_DIR}/quantized_conv2d_nchw_out_per_tensor.cpp"
+  "${CMAKE_CURRENT_SOURCE_DIR}/op_quantized_conv_out.cpp"
   "${CMAKE_CURRENT_SOURCE_DIR}/conv/conv_kernel_dispatcher.c"
   "${CMAKE_CURRENT_SOURCE_DIR}/conv/conv_exec_7x7j2d1.c"
   "${CMAKE_CURRENT_SOURCE_DIR}/conv/conv_exec_1x1j1d1.c"
