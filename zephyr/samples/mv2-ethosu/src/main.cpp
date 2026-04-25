@@ -284,7 +284,7 @@ int main(void) {
   Result<Program> program = Program::load(&loader);
   if (!program.ok()) {
     ET_LOG(
-        Info,
+        Error,
         "Program loading failed @ 0x%p: 0x%" PRIx32,
         program_data,
         static_cast<uint32_t>(program.error()));
@@ -307,7 +307,7 @@ int main(void) {
   Result<MethodMeta> method_meta = program->method_meta(method_name);
   if (!method_meta.ok()) {
     ET_LOG(
-        Info,
+        Error,
         "Failed to get method_meta for %s: 0x%x",
         method_name,
         (unsigned int)method_meta.error());
@@ -362,7 +362,7 @@ int main(void) {
 
   if (!method.ok()) {
     ET_LOG(
-        Info,
+        Error,
         "Loading of method %s failed with status 0x%" PRIx32,
         method_name,
         static_cast<uint32_t>(method.error()));
@@ -381,7 +381,7 @@ int main(void) {
 
     if (!prepared_inputs.ok()) {
       ET_LOG(
-          Info,
+          Error,
           "Preparing input failed: 0x%" PRIx32,
           static_cast<uint32_t>(prepared_inputs.error()));
       return 1;
@@ -397,27 +397,24 @@ int main(void) {
   uint32_t inference_time = end_time - start_time;
 
   if (status != Error::Ok) {
-    ET_LOG(
-        Info,
-        "Execution failed: 0x%" PRIx32,
-        static_cast<uint32_t>(status));
+    ET_LOG(Error, "Execution failed: 0x%" PRIx32, static_cast<uint32_t>(status));
     return 1;
   }
   ET_LOG(Info, "Inference completed in %u ms", inference_time);
 
   std::vector<EValue> outputs(method->outputs_size());
   status = method->get_outputs(outputs.data(), outputs.size());
-  ET_CHECK(status == Error::Ok);
+  if (status != Error::Ok) {
+    ET_LOG(Error, "get_outputs failed: 0x%" PRIx32, static_cast<uint32_t>(status));
+    return 1;
+  }
 
   ET_LOG(Info, "\n--- Classification Results ---");
   print_top_k(outputs);
 
   ET_LOG(Info, "\n========================================");
   ET_LOG(Info, "MobileNetV2 Demo Complete");
-  ET_LOG(
-      Info,
-      "Model size: %lu bytes",
-      static_cast<unsigned long>(pte_size));
+  ET_LOG(Info, "Model size: %lu bytes", static_cast<unsigned long>(pte_size));
   ET_LOG(
       Info,
       "Input: 224x224x3 RGB image (%lu bytes)",

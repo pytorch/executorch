@@ -47,13 +47,29 @@ set(ET_PTE_FILE_PATH
           FORCE
 )
 
+find_package(
+  Python3
+  COMPONENTS Interpreter
+  REQUIRED
+)
+
 execute_process(
   COMMAND
-    python "${CMAKE_CURRENT_LIST_DIR}/../../../codegen/tools/gen_oplist.py"
+    ${Python3_EXECUTABLE}
+    "${CMAKE_CURRENT_LIST_DIR}/../../../codegen/tools/gen_oplist.py"
     --model_file_path=${ET_PTE_FILE_PATH}
     --output_path=${CMAKE_CURRENT_BINARY_DIR}/temp.yaml
+  RESULT_VARIABLE GEN_OPLIST_RESULT
   OUTPUT_VARIABLE CMD_RESULT
+  ERROR_VARIABLE GEN_OPLIST_ERROR
 )
+
+if(NOT GEN_OPLIST_RESULT EQUAL 0)
+  message(
+    FATAL_ERROR
+      "gen_oplist.py failed with exit code ${GEN_OPLIST_RESULT}: ${GEN_OPLIST_ERROR}"
+  )
+endif()
 
 if(CMD_RESULT MATCHES "aten::" OR CMD_RESULT MATCHES "dim_order_ops::")
   set(FOUND_OPS_IN_FILE "true")
@@ -76,18 +92,12 @@ else()
   set(EXECUTORCH_SELECT_OPS_MODEL "")
   set(_EXECUTORCH_GEN_ZEPHYR_PORTABLE_OPS OFF)
   message(
-    "gen_oplist: No non delegated ops was found in ${ET_PTE_FILE_PATH} no ops added to build"
+    "gen_oplist: No non-delegated ops were found in ${ET_PTE_FILE_PATH}; no ops added to build"
   )
 endif()
 
 find_package(Zephyr REQUIRED HINTS $ENV{ZEPHYR_BASE})
 project(executorch_mv2_ethosu)
-
-find_package(
-  Python3
-  COMPONENTS Interpreter
-  REQUIRED
-)
 
 set(CMAKE_CXX_FLAGS
     "${CMAKE_CXX_FLAGS} -Wall -Wno-switch -Wno-float-conversion -Wno-double-promotion -ffunction-sections -fdata-sections"
