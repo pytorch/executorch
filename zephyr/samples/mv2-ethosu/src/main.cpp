@@ -10,7 +10,6 @@
 
 #include <executorch/examples/arm/executor_runner/arm_memory_allocator.h>
 #include <executorch/extension/data_loader/buffer_data_loader.h>
-#include <executorch/runtime/core/memory_allocator.h>
 #include <executorch/runtime/executor/program.h>
 #include <executorch/runtime/platform/log.h>
 #include <executorch/runtime/platform/platform.h>
@@ -34,7 +33,6 @@ static bool model_pte_runtime_initialized = false;
 using executorch::aten::ScalarType;
 using executorch::aten::Tensor;
 using executorch::aten::TensorImpl;
-using executorch::extension::BufferCleanup;
 using executorch::extension::BufferDataLoader;
 using executorch::runtime::Error;
 using executorch::runtime::EValue;
@@ -85,41 +83,35 @@ unsigned char* ethosu_fast_scratch = dedicated_sram;
 
 namespace {
 
-Result<BufferCleanup> prepare_input_tensors(
+Error prepare_input_tensors(
     Method& method,
     MemoryAllocator& allocator,
     const uint8_t* input_data,
     size_t input_size) {
   MethodMeta method_meta = method.method_meta();
   size_t num_inputs = method_meta.num_inputs();
-  size_t num_allocated = 0;
-
-  void** inputs =
-      static_cast<void**>(allocator.allocate(num_inputs * sizeof(void*)));
-  ET_CHECK_OR_RETURN_ERROR(
-      inputs != nullptr,
-      MemoryAllocationFailed,
-      "Could not allocate memory for pointers to input buffers.");
 
   for (size_t i = 0; i < num_inputs; i++) {
     auto tag = method_meta.input_tag(i);
-    ET_CHECK_OK_OR_RETURN_ERROR(tag.error());
+    if (!tag.ok()) {
+      return tag.error();
+    }
 
     if (tag.get() != Tag::Tensor) {
       ET_LOG(Debug, "Skipping non-tensor input %zu", i);
       continue;
     }
     Result<TensorInfo> tensor_meta = method_meta.input_tensor_meta(i);
-    ET_CHECK_OK_OR_RETURN_ERROR(tensor_meta.error());
+    if (!tensor_meta.ok()) {
+      return tensor_meta.error();
+    }
 
     void* data_ptr = allocator.allocate(tensor_meta->nbytes());
-    ET_CHECK_OR_RETURN_ERROR(
-        data_ptr != nullptr,
-        MemoryAllocationFailed,
-        "Could not allocate memory for input buffers.");
-    inputs[num_allocated++] = data_ptr;
+    if (data_ptr == nullptr) {
+      ET_LOG(Error, "Could not allocate memory for input buffer");
+      return Error::MemoryAllocationFailed;
+    }
 
-    Error err = Error::Ok;
     ScalarType scalar_type = tensor_meta->scalar_type();
     size_t num_elements = 1;
     auto sizes = tensor_meta->sizes();
@@ -156,7 +148,7 @@ Result<BufferCleanup> prepare_input_tensors(
           static_cast<unsigned long>(input_size),
           static_cast<unsigned long>(num_elements),
           static_cast<unsigned long>(tensor_meta->nbytes()));
-      err = Error::InvalidArgument;
+      return Error::InvalidArgument;
     }
 
     TensorImpl impl = TensorImpl(
@@ -168,18 +160,14 @@ Result<BufferCleanup> prepare_input_tensors(
             tensor_meta.get().dim_order().data()));
     Tensor t(&impl);
 
-    if (err == Error::Ok) {
-      err = method.set_input(t, i);
-    }
-
+    Error err = method.set_input(t, i);
     if (err != Error::Ok) {
       ET_LOG(
           Error, "Failed to prepare input %zu: 0x%" PRIx32, i, (uint32_t)err);
-      BufferCleanup cleanup({inputs, num_allocated});
       return err;
     }
   }
-  return BufferCleanup({inputs, num_allocated});
+  return Error::Ok;
 }
 
 void print_top_k(const std::vector<EValue>& outputs) {
@@ -376,14 +364,14 @@ int main(void) {
       static_cast<unsigned long>(sizeof(mv2_input_data)));
 
   {
-    static auto prepared_inputs = ::prepare_input_tensors(
+    Error input_err = ::prepare_input_tensors(
         *method, method_allocator, mv2_input_data, sizeof(mv2_input_data));
 
-    if (!prepared_inputs.ok()) {
+    if (input_err != Error::Ok) {
       ET_LOG(
           Error,
           "Preparing input failed: 0x%" PRIx32,
-          static_cast<uint32_t>(prepared_inputs.error()));
+          static_cast<uint32_t>(input_err));
       return 1;
     }
   }

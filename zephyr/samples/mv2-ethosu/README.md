@@ -17,7 +17,7 @@ ImageNet classes and prints the top-5 predictions.
 Export a quantized INT8 MobileNetV2 model with Ethos-U delegation:
 
 ```bash
-python -m executorch.backends.arm.scripts.aot_arm_compiler \
+python -m modules.lib.executorch.backends.arm.scripts.aot_arm_compiler \
     --model_name=mv2_untrained \
     --quantize \
     --delegate \
