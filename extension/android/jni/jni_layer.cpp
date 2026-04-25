@@ -284,18 +284,8 @@ class ExecuTorchJni : public facebook::jni::HybridClass<ExecuTorchJni> {
 #else
     auto etdump_gen = nullptr;
 #endif
-    try {
-      module_ = std::make_unique<Module>(
-          modelPath->toStdString(), load_mode, std::move(etdump_gen));
-    } catch (const std::exception& e) {
-      executorch::jni_helper::throwExecutorchException(
-          static_cast<uint32_t>(Error::Internal),
-          std::string("Failed to create Module: ") + e.what());
-    } catch (...) {
-      executorch::jni_helper::throwExecutorchException(
-          static_cast<uint32_t>(Error::Internal),
-          "Failed to create Module: unknown native error");
-    }
+    module_ = std::make_unique<Module>(
+        modelPath->toStdString(), load_mode, std::move(etdump_gen));
 
 #ifdef ET_USE_THREADPOOL
     // Default to using cores/2 threadpool threads. The long-term plan is to
