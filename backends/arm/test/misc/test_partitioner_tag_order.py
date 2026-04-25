@@ -1,8 +1,3 @@
-# Copyright 2026 Arm Limited and/or its affiliates.
-#
-# This source code is licensed under the BSD-style license found in the
-# LICENSE file in the root directory of this source tree.
-
 from types import SimpleNamespace
 
 from executorch.backends.arm.tosa import partitioner as tosa_partitioner
@@ -71,9 +66,7 @@ def test_partition_preserves_tag_discovery_order(monkeypatch):
         lambda *args, **kwargs: ["tag2", "tag10"],
     )
     monkeypatch.setattr(tosa_partitioner, "tag_constant_data", lambda program: None)
-    monkeypatch.setattr(
-        tosa_partitioner, "WhyNoPartitionReporter", _make_reporter
-    )
+    monkeypatch.setattr(tosa_partitioner, "WhyNoPartitionReporter", _make_reporter)
 
     result = partitioner.partition(SimpleNamespace(graph_module=SimpleNamespace()))
 
