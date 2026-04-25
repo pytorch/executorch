@@ -397,7 +397,8 @@ int main(void) {
   uint32_t inference_time = end_time - start_time;
 
   if (status != Error::Ok) {
-    ET_LOG(Error, "Execution failed: 0x%" PRIx32, static_cast<uint32_t>(status));
+    ET_LOG(
+        Error, "Execution failed: 0x%" PRIx32, static_cast<uint32_t>(status));
     return 1;
   }
   ET_LOG(Info, "Inference completed in %u ms", inference_time);
@@ -405,7 +406,8 @@ int main(void) {
   std::vector<EValue> outputs(method->outputs_size());
   status = method->get_outputs(outputs.data(), outputs.size());
   if (status != Error::Ok) {
-    ET_LOG(Error, "get_outputs failed: 0x%" PRIx32, static_cast<uint32_t>(status));
+    ET_LOG(
+        Error, "get_outputs failed: 0x%" PRIx32, static_cast<uint32_t>(status));
     return 1;
   }
 
