@@ -10,7 +10,6 @@
 
 #include <executorch/examples/arm/executor_runner/arm_memory_allocator.h>
 #include <executorch/extension/data_loader/buffer_data_loader.h>
-#include <executorch/extension/runner_util/inputs.h>
 #include <executorch/runtime/core/memory_allocator.h>
 #include <executorch/runtime/executor/program.h>
 #include <executorch/runtime/platform/log.h>
