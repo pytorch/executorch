@@ -25,6 +25,13 @@
 #include "model_pte.h"
 #include "mv2_input.h"
 
+// Runtime copy of the model blob so that the Ethos-U DMA can access command
+// stream and weights. On Corstone FVP the original model_pte[] lives in flash
+// which is not DMA-accessible. On boards where MRAM is DMA-accessible (e.g.
+// Alif Ensemble), this copy can be bypassed via board-specific linker config.
+alignas(16) static unsigned char model_pte_runtime[sizeof(model_pte)];
+static bool model_pte_runtime_initialized = false;
+
 using executorch::aten::ScalarType;
 using executorch::aten::Tensor;
 using executorch::aten::TensorImpl;
@@ -42,11 +49,6 @@ using executorch::runtime::Result;
 using executorch::runtime::Span;
 using executorch::runtime::Tag;
 using executorch::runtime::TensorInfo;
-
-#if defined(CONFIG_ARM_ETHOS_U)
-extern "C" executorch::runtime::Error
-executorch_delegate_EthosUBackend_registered(void);
-#endif
 
 #if !defined(ET_ARM_METHOD_ALLOCATOR_POOL_SIZE)
 #define ET_ARM_METHOD_ALLOCATOR_POOL_SIZE (1572864)
@@ -126,21 +128,27 @@ Result<BufferCleanup> prepare_input_tensors(
       num_elements *= sizes[k];
     }
 
-    ET_LOG(Info, "Input tensor: scalar_type=%s, numel=%lu, nbytes=%lu",
-           executorch::runtime::toString(scalar_type),
-           static_cast<unsigned long>(num_elements),
-           static_cast<unsigned long>(tensor_meta->nbytes()));
+    ET_LOG(
+        Info,
+        "Input tensor: scalar_type=%s, numel=%lu, nbytes=%lu",
+        executorch::runtime::toString(scalar_type),
+        static_cast<unsigned long>(num_elements),
+        static_cast<unsigned long>(tensor_meta->nbytes()));
 
     if (scalar_type == ScalarType::Float && input_size == num_elements) {
-      ET_LOG(Info, "Converting uint8 input (%lu elements) to float32",
-             static_cast<unsigned long>(input_size));
+      ET_LOG(
+          Info,
+          "Converting uint8 input (%lu elements) to float32",
+          static_cast<unsigned long>(input_size));
       float* float_data = static_cast<float*>(data_ptr);
       for (size_t j = 0; j < input_size; j++) {
         float_data[j] = (static_cast<float>(input_data[j]) - 128.0f) / 128.0f;
       }
     } else if (input_size == tensor_meta->nbytes()) {
-      ET_LOG(Info, "Copying input data to tensor (%lu bytes)",
-             static_cast<unsigned long>(input_size));
+      ET_LOG(
+          Info,
+          "Copying input data to tensor (%lu bytes)",
+          static_cast<unsigned long>(input_size));
       std::memcpy(data_ptr, input_data, input_size);
     } else {
       ET_LOG(
@@ -185,9 +193,11 @@ void print_top_k(const std::vector<EValue>& outputs) {
   ScalarType scalar_type = output_tensor.scalar_type();
   size_t num_classes = output_tensor.numel();
 
-  ET_LOG(Info, "Output tensor: scalar_type=%s, numel=%lu",
-         executorch::runtime::toString(scalar_type),
-         static_cast<unsigned long>(num_classes));
+  ET_LOG(
+      Info,
+      "Output tensor: scalar_type=%s, numel=%lu",
+      executorch::runtime::toString(scalar_type),
+      static_cast<unsigned long>(num_classes));
 
   int top_indices[MV2_TOP_K] = {0};
   float top_values[MV2_TOP_K];
@@ -208,9 +218,15 @@ void print_top_k(const std::vector<EValue>& outputs) {
       case ScalarType::Char:
         val = static_cast<float>(output_tensor.const_data_ptr<int8_t>()[i]);
         break;
-      default:
+      case ScalarType::Byte:
         val = static_cast<float>(output_tensor.const_data_ptr<uint8_t>()[i]);
         break;
+      default:
+        ET_LOG(
+            Error,
+            "Unsupported output scalar type: %s",
+            executorch::runtime::toString(scalar_type));
+        return;
     }
 
     for (int j = 0; j < MV2_TOP_K; j++) {
@@ -228,8 +244,12 @@ void print_top_k(const std::vector<EValue>& outputs) {
 
   ET_LOG(Info, "\nTop-%d predictions:", MV2_TOP_K);
   for (int j = 0; j < MV2_TOP_K; j++) {
-    ET_LOG(Info, "  [%d] class %d: %.4f",
-           j + 1, top_indices[j], static_cast<double>(top_values[j]));
+    ET_LOG(
+        Info,
+        "  [%d] class %d: %.4f",
+        j + 1,
+        top_indices[j],
+        static_cast<double>(top_values[j]));
   }
 }
 
@@ -240,26 +260,27 @@ int main(void) {
   printk("ExecuTorch MobileNetV2 Classification Demo\n");
   printk("========================================\n\n");
 
-#if defined(CONFIG_ARM_ETHOS_U)
-  if (executorch_delegate_EthosUBackend_registered() != Error::Ok) {
-    ET_LOG(Error, "Ethos-U backend registration failed");
-    return 1;
-  }
-  ET_LOG(Info, "Ethos-U backend registered successfully");
-#endif
-
   executorch::runtime::runtime_init();
 
   size_t pte_size = sizeof(model_pte);
-  ET_LOG(Info, "Model PTE at %p, Size: %lu bytes",
-         model_pte, static_cast<unsigned long>(pte_size));
+  ET_LOG(
+      Info,
+      "Model PTE at %p, Size: %lu bytes",
+      model_pte,
+      static_cast<unsigned long>(pte_size));
 
-  const void* program_data = model_pte;
+  if (!model_pte_runtime_initialized) {
+    std::memcpy(model_pte_runtime, model_pte, sizeof(model_pte));
+    model_pte_runtime_initialized = true;
+  }
+  const void* program_data = model_pte_runtime;
   size_t program_data_len = pte_size;
 
   auto loader = BufferDataLoader(program_data, program_data_len);
-  ET_LOG(Info, "Model data loaded. Size: %lu bytes.",
-         static_cast<unsigned long>(program_data_len));
+  ET_LOG(
+      Info,
+      "Model data loaded. Size: %lu bytes.",
+      static_cast<unsigned long>(program_data_len));
 
   Result<Program> program = Program::load(&loader);
   if (!program.ok()) {
@@ -271,8 +292,10 @@ int main(void) {
     return 1;
   }
 
-  ET_LOG(Info, "Model loaded, has %lu methods",
-         static_cast<unsigned long>(program->num_methods()));
+  ET_LOG(
+      Info,
+      "Model loaded, has %lu methods",
+      static_cast<unsigned long>(program->num_methods()));
 
   const char* method_name = nullptr;
   {
@@ -292,8 +315,10 @@ int main(void) {
     return 1;
   }
 
-  ET_LOG(Info, "Method allocator pool size: %lu bytes.",
-         static_cast<unsigned long>(method_allocation_pool_size));
+  ET_LOG(
+      Info,
+      "Method allocator pool size: %lu bytes.",
+      static_cast<unsigned long>(method_allocation_pool_size));
 
   ArmMemoryAllocator method_allocator(
       method_allocation_pool_size, method_allocation_pool);
@@ -305,9 +330,11 @@ int main(void) {
   for (size_t id = 0; id < num_memory_planned_buffers; ++id) {
     size_t buffer_size =
         static_cast<size_t>(method_meta->memory_planned_buffer_size(id).get());
-    ET_LOG(Info, "Setting up planned buffer %lu, size %lu.",
-           static_cast<unsigned long>(id),
-           static_cast<unsigned long>(buffer_size));
+    ET_LOG(
+        Info,
+        "Setting up planned buffer %lu, size %lu.",
+        static_cast<unsigned long>(id),
+        static_cast<unsigned long>(buffer_size));
 
     uint8_t* buffer =
         reinterpret_cast<uint8_t*>(method_allocator.allocate(buffer_size));
@@ -344,8 +371,10 @@ int main(void) {
   }
   ET_LOG(Info, "Method '%s' loaded successfully", method_name);
 
-  ET_LOG(Info, "Preparing input: static RGB image (%lu bytes)",
-         static_cast<unsigned long>(sizeof(mv2_input_data)));
+  ET_LOG(
+      Info,
+      "Preparing input: static RGB image (%lu bytes)",
+      static_cast<unsigned long>(sizeof(mv2_input_data)));
 
   {
     static auto prepared_inputs = ::prepare_input_tensors(
@@ -386,11 +415,19 @@ int main(void) {
 
   ET_LOG(Info, "\n========================================");
   ET_LOG(Info, "MobileNetV2 Demo Complete");
-  ET_LOG(Info, "Model size: %lu bytes", static_cast<unsigned long>(pte_size));
-  ET_LOG(Info, "Input: 224x224x3 RGB image (%lu bytes)",
-         static_cast<unsigned long>(sizeof(mv2_input_data)));
-  ET_LOG(Info, "Output: %d ImageNet classes (top-%d shown)",
-         MV2_NUM_OUTPUT_CLASSES, MV2_TOP_K);
+  ET_LOG(
+      Info,
+      "Model size: %lu bytes",
+      static_cast<unsigned long>(pte_size));
+  ET_LOG(
+      Info,
+      "Input: 224x224x3 RGB image (%lu bytes)",
+      static_cast<unsigned long>(sizeof(mv2_input_data)));
+  ET_LOG(
+      Info,
+      "Output: %d ImageNet classes (top-%d shown)",
+      MV2_NUM_OUTPUT_CLASSES,
+      MV2_TOP_K);
   ET_LOG(Info, "Inference time: %u ms", inference_time);
   ET_LOG(Info, "========================================\n");
 
