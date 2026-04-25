@@ -12,6 +12,7 @@ import com.facebook.jni.HybridData;
 import com.facebook.jni.annotations.DoNotStrip;
 import com.facebook.soloader.nativeloader.NativeLoader;
 import com.facebook.soloader.nativeloader.SystemDelegate;
+import java.io.Closeable;
 import java.util.HashMap;
 import java.util.Map;
 import java.util.concurrent.locks.Lock;
@@ -24,7 +25,7 @@ import org.pytorch.executorch.annotations.Experimental;
  * <p>Warning: These APIs are experimental and subject to change without notice
  */
 @Experimental
-public class Module {
+public class Module implements Closeable {
 
   static {
     if (!NativeLoader.isInitialized()) {
@@ -274,12 +275,19 @@ public class Module {
   public void destroy() {
     if (mLock.tryLock()) {
       try {
-        mHybridData.resetNative();
+        if (mHybridData.isValid()) {
+          mHybridData.resetNative();
+        }
       } finally {
         mLock.unlock();
       }
     } else {
       throw new IllegalStateException("Cannot destroy module while method is executing");
     }
+  }
+
+  @Override
+  public void close() {
+    destroy();
   }
 }
