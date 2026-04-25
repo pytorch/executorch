@@ -9,6 +9,7 @@
 #include <executorch/runtime/executor/method.h>
 
 #include <c10/util/irange.h>
+#include <c10/util/safe_numerics.h>
 #include <array>
 #include <cinttypes> // @donotremove
 #include <cstdint>
@@ -1194,6 +1195,33 @@ Method::set_input(const EValue& input_evalue, size_t input_idx) {
         input_idx,
         executorch::runtime::toString(t_dst.scalar_type()),
         executorch::runtime::toString(t_src.scalar_type()));
+
+    ssize_t numel = 1;
+    for (ssize_t i = 0; i < t_src.dim(); i++) {
+      bool overflow = c10::mul_overflows(
+          numel, static_cast<ssize_t>(t_src.size(i)), &numel);
+      ET_CHECK_OR_RETURN_ERROR(
+          !overflow,
+          InvalidArgument,
+          "Input %" ET_PRIsize_t
+          ": numel overflowed at dimension %zd with size %zd",
+          input_idx,
+          (size_t)i,
+          (size_t)t_src.size(i));
+    }
+    size_t nbytes;
+    bool nbytes_overflow = c10::mul_overflows(
+        static_cast<size_t>(numel),
+        executorch::runtime::elementSize(t_src.scalar_type()),
+        &nbytes);
+    ET_CHECK_OR_RETURN_ERROR(
+        !nbytes_overflow,
+        InvalidArgument,
+        "Input %" ET_PRIsize_t
+        ": nbytes overflowed: numel %zd with element size %zu",
+        input_idx,
+        numel,
+        executorch::runtime::elementSize(t_src.scalar_type()));
     // Reset the shape for the Method's input as the size of forwarded input
     // tensor for shape dynamism. Also is a safety check if need memcpy.
     ET_CHECK_OK_OR_RETURN_ERROR(
