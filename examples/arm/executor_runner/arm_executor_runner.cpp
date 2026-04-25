@@ -31,9 +31,12 @@
  *                      use bpte with bundled input and output refdata to
  *                      compare output.
  *                      See also ET_ATOL and ET_RTOL
- *   ET_ATOL              - The atol used to compare the output and ref data
- * when using ET_BUNDLE_IO ET_RTOL              - The rtol used to compare the
- * output and ref data when using ET_BUNDLE_IO
+ *   ET_ATOL              - The absolute tolerance used to compare output and
+ *                          ref data when using ET_BUNDLE_IO.
+ *                          Can be overridden at runtime with -atol <value>.
+ *   ET_RTOL              - The relative tolerance used to compare output and
+ *                          ref data when using ET_BUNDLE_IO.
+ *                          Can be overridden at runtime with -rtol <value>.
  *
  * Devtools ETDump: Speed and dumping output
  *
@@ -221,15 +224,15 @@ unsigned char __attribute__((
 const size_t testset_idx = 0; // BundleIO test indexes to test if used
 
 #if defined(ET_ATOL)
-const float et_atol = ET_ATOL;
+float et_atol = ET_ATOL;
 #else
-const float et_atol = 0.01;
+float et_atol = 1e-3f;
 #endif
 
 #if defined(ET_RTOL)
-const float et_rtol = ET_RTOL;
+float et_rtol = ET_RTOL;
 #else
-const float et_rtol = 0.01;
+float et_rtol = 1e-3f;
 #endif
 
 #endif
@@ -1192,13 +1195,16 @@ int main(int argc, const char* argv[]) {
     ET_LOG(Fatal, "Not right number of parameters!");
     ET_LOG(
         Fatal,
+#if defined(ET_BUNDLE_IO)
+        "app -m model.pte -i input.bin [-i input2.bin] -o output_basename [-atol 0.001] [-rtol 0.001]");
+#else
         "app -m model.pte -i input.bin [-i input2.bin] -o output_basename");
+#endif
     ET_LOG(Fatal, "Exiting!");
     _exit(1);
   }
-  ET_LOG(Info, "   %s", argv[0]);
-  for (int i = 1; i < argc; i++) {
-    ET_LOG(Info, "   %s %s", argv[i], argv[++i]);
+  for (int i = 0; i < argc; i++) {
+    ET_LOG(Info, "   %s", argv[i]);
   }
 #else
   (void)argc;
@@ -1265,6 +1271,22 @@ int main(int argc, const char* argv[]) {
     } else if (std::strcmp(argv[i], "-o") == 0) {
       // store the base filename to write output to.
       ctx.output_basename = argv[++i];
+#if defined(ET_BUNDLE_IO)
+    } else if (std::strcmp(argv[i], "-atol") == 0) {
+      if (i + 1 < argc && sscanf(argv[++i], "%f", &et_atol) == 1) {
+        ET_LOG(Info, "Setting atol to %f", et_atol);
+      } else {
+        ET_LOG(Fatal, "Invalid or missing value for -atol");
+        _exit(1);
+      }
+    } else if (std::strcmp(argv[i], "-rtol") == 0) {
+      if (i + 1 < argc && sscanf(argv[++i], "%f", &et_rtol) == 1) {
+        ET_LOG(Info, "Setting rtol to %f", et_rtol);
+      } else {
+        ET_LOG(Fatal, "Invalid or missing value for -rtol");
+        _exit(1);
+      }
+#endif
     }
   }
 #endif

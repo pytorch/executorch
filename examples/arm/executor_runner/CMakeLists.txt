@@ -22,12 +22,12 @@ option(ET_LOG_DUMP_OUTPUT "Dump output in log" ON)
 
 option(ET_BUNDLE_IO "Set to compile in BundleIO support" OFF)
 set(ET_ATOL
-    "0.01"
+    "1e-3"
     CACHE STRING "Set atol to use for BundleIO testing (Requires ET_BUNDLE_IO)"
 )
 set(ET_RTOL
-    "0.01"
-    CACHE STRING "Set atol to use for BundleIO testing (Requires ET_BUNDLE_IO)"
+    "1e-3"
+    CACHE STRING "Set rtol to use for BundleIO testing (Requires ET_BUNDLE_IO)"
 )
 
 option(
@@ -415,14 +415,12 @@ endif()
 
 if(ET_BUNDLE_IO)
   target_compile_definitions(arm_executor_runner PUBLIC -DET_BUNDLE_IO)
-endif()
-
-if(ET_ATOL)
-  target_compile_definitions(arm_executor_runner PUBLIC ET_ATOL=${ET_ATOL})
-endif()
-
-if(ET_RTOL)
-  target_compile_definitions(arm_executor_runner PUBLIC ET_RTOL=${ET_RTOL})
+  if(DEFINED ET_ATOL)
+    target_compile_definitions(arm_executor_runner PUBLIC ET_ATOL=${ET_ATOL})
+  endif()
+  if(DEFINED ET_RTOL)
+    target_compile_definitions(arm_executor_runner PUBLIC ET_RTOL=${ET_RTOL})
+  endif()
 endif()
 
 # Devtools ETDump: Speed and dumping output
