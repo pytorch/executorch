@@ -213,7 +213,7 @@ void main() {
     // Fused: scalar scale, optional bias
     apply_scale(out_tile, inv_scale);
   #ifdef HAS_BIAS
-    apply_bias(out_tile, c4, s, q_h, context_texel_len, attn_S);
+    apply_bias(out_tile, c4, s, q_h, Q_H, context_texel_len, attn_S);
   #endif
 #endif
   }

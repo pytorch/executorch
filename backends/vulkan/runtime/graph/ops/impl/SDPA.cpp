@@ -25,6 +25,8 @@
 
 namespace vkcompute {
 
+namespace {
+
 //
 // SDPA mode: distinguishes the two dispatch families sharing this file.
 //   LLM   — Llama-style KV-cache SDPA. Q layout [B=1, S, H,    D] (DHSB).
@@ -51,6 +53,8 @@ struct SDPADims {
   int64_t context_len = 0; // LLM: S + input_pos_val; FUSED: size_at(-2, k)
   int64_t max_context_len = 0; // LLM: size_at(-3, k); FUSED: size_at(-2, k)
 };
+
+} // namespace
 
 SDPADims compute_sdpa_dims(
     ComputeGraph& graph,
@@ -211,6 +215,7 @@ utils::uvec3 pick_sdpa_qk_global_wg_size(
     const std::vector<ArgGroup>& args,
     const std::vector<ValueRef>& resize_args) {
   (void)shader;
+  (void)args;
   const SDPAMode mode = mode_of(resize_args);
   const ValueRef q = resize_args.at(0);
   const ValueRef k = resize_args.at(1);
@@ -501,7 +506,7 @@ void add_sdpa_compute_out_node(
         graph.sizes_ubo(v),
         graph.get_or_create_int_param_buffer(input_pos_symint)};
   } else {
-    param_ubos = {graph.sizes_ubo(q), graph.sizes_ubo(k)};
+    param_ubos = {graph.sizes_ubo(q), graph.sizes_ubo(v)};
   }
 
   const ValueRef mode_ref = static_cast<ValueRef>(mode);
@@ -683,7 +688,7 @@ void sdpa_with_kv_cache_impl(
   const ValueRef scale = args[arg_idx++];
 
   // Output tensors
-  const ValueRef out = args[arg_idx++];
+  const ValueRef out = args[arg_idx];
 
   (void)sequence_len;
 
@@ -771,7 +776,7 @@ void fused_sdpa_impl(ComputeGraph& graph, const std::vector<ValueRef>& args) {
   const ValueRef v = args[arg_idx++];
   const ValueRef attn_mask = args[arg_idx++];
   const ValueRef scale_ref = args[arg_idx++];
-  const ValueRef out = args[arg_idx++];
+  const ValueRef out = args[arg_idx];
 
   // Validate inputs
   VK_CHECK_COND(graph.dim_of(q) == 4);

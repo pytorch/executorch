@@ -109,16 +109,27 @@ void apply_bias(
     const int c4_start,
     const int s_start,
     const int bh,
+    const int Q_H,
     const int C4,
     const int S) {
   const int bias_C4 = div_up_4(bias_sizes.x);
   const int bias_S = bias_sizes.y;
-  const int bias_BH = bias_sizes.z * bias_sizes.w;
+  // bias WHCN sizes map to logical shape [B, H, ?, L]:
+  //   sizes.x = L, sizes.y = ?, sizes.z = H, sizes.w = B
+  // Decompose bh (= q_batch * Q_H + q_head) into Q's batch/head, then
+  // broadcast each dim independently. This matches standard broadcast
+  // semantics when bias_H or bias_B is 1.
+  const int bias_H = bias_sizes.z;
+  const int bias_B = bias_sizes.w;
+  const int q_batch = bh / Q_H;
+  const int q_head = bh - q_batch * Q_H;
+  const int bias_batch = (bias_B == 1) ? 0 : q_batch;
+  const int bias_head = (bias_H == 1) ? 0 : q_head;
 
   [[unroll]] for (int s = 0; s < TILE_M; ++s) {
     [[unroll]] for (int c4 = 0; c4 < TILE_N4; ++c4) {
       if (c4_start + c4 < C4 && s_start + s < S) {
-        const int bias_bh = bh < bias_BH ? bh : 0;
+        const int bias_bh = bias_batch * bias_H + bias_head;
         const int bias_s = (s_start + s) < bias_S ? (s_start + s) : 0;
         const int bias_c4 = c4_start + c4;
         if (bias_c4 < bias_C4) {
