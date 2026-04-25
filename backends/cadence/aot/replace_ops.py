@@ -19,7 +19,10 @@ from typing import cast, Dict, Optional, Sequence
 
 import torch
 import torch.fx
-from executorch.backends.cadence.aot.compiler_utils import quantize_tensor_multiplier
+from executorch.backends.cadence.aot.compiler_utils import (
+    quantize_tensor_multiplier,
+    transpose_dims_to_permute_order,
+)
 from executorch.backends.cadence.aot.fuse_ops import FuseCascadedTransposeOrPermuteOps
 from executorch.backends.cadence.aot.pass_utils import (
     CadencePassAttribute,
@@ -358,9 +361,9 @@ class ReplaceAddMMWithLinearPass(RemoveOrReplacePassInterface):
 
         # Handle transpose: if mat2 is a transpose op, extract the original tensor
         transposed_mat2 = False
-        if (
-            mat2.op == "call_function"
-            and mat2.target == exir_ops.edge.aten.transpose_copy.int
+        if mat2.op == "call_function" and (
+            mat2.target == exir_ops.edge.aten.transpose_copy.int
+            or mat2.target == exir_ops.edge.aten.permute_copy.default
         ):
             # mat2 is already transposed, so we use the input to the transpose
             mat2 = cast(torch.fx.Node, mat2.args[0])
@@ -408,9 +411,11 @@ class ReplaceAddMMWithLinearPass(RemoveOrReplacePassInterface):
         # Transpose mat2 if it wasn't already transposed
         if not transposed_mat2:
             with graph.inserting_before(node):
+                ndim = len(mat2.meta["val"].shape)
+                perm = transpose_dims_to_permute_order(ndim, -1, -2)
                 mat2 = graph.call_function(
-                    exir_ops.edge.aten.transpose_copy.int,
-                    args=(mat2, -1, -2),
+                    exir_ops.edge.aten.permute_copy.default,
+                    args=(mat2, perm),
                 )
 
                 # Metadata copy important
@@ -430,6 +435,35 @@ class ReplaceAddMMWithLinearPass(RemoveOrReplacePassInterface):
 
         # Replace all uses of the addmm op with linear op
         node.replace_all_uses_with(linear_node)
+        return True
+
+
+@register_cadence_pass(CadencePassAttribute(opt_level=1))
+class ReplaceTransposeWithPermutePass(RemoveOrReplacePassInterface):
+    """
+    Replace transpose_copy.int ops with equivalent permute_copy.default ops
+    to canonicalize on permute as the single layout-change op.
+    """
+
+    @property
+    def targets(self) -> list[EdgeOpOverload]:
+        return [exir_ops.edge.aten.transpose_copy.int]
+
+    def maybe_remove_or_replace(self, node: torch.fx.Node) -> bool:
+        in_tensor = node.args[0]
+        assert isinstance(in_tensor, torch.fx.Node)
+        ndim = len(in_tensor.meta["val"].shape)
+        dim0 = cast(int, node.args[1])
+        dim1 = cast(int, node.args[2])
+        perm = transpose_dims_to_permute_order(ndim, dim0, dim1)
+
+        with node.graph.inserting_before(node):
+            new_node = node.graph.call_function(
+                exir_ops.edge.aten.permute_copy.default,
+                args=(in_tensor, perm),
+            )
+            new_node.meta = node.meta
+        node.replace_all_uses_with(new_node)
         return True
 
 
@@ -801,9 +835,11 @@ class ReplaceAtenConvolutionWithCadenceConvolutionPass(RemoveOrReplacePassInterf
                 # gather stencil. Also, the first two dimensions of weight must be
                 # transposed/interchanged.
                 assert isinstance(weight, torch.fx.Node)
+                weight_ndim = len(weight.meta["val"].shape)
+                perm = transpose_dims_to_permute_order(weight_ndim, 0, 1)
                 transposed_weight = node.graph.call_function(
-                    exir_ops.edge.aten.transpose_copy.int,
-                    args=(weight, 0, 1),
+                    exir_ops.edge.aten.permute_copy.default,
+                    args=(weight, perm),
                 )
                 transposed_weight.meta = weight.meta
 
@@ -1040,18 +1076,19 @@ class ReplaceConvWithChannelLastConvPass(RemoveOrReplacePassInterface):
     def _transpose_dims(
         self, graph: torch.fx.Graph, node: torch.fx.Node, dim0: int, dim1: int
     ) -> torch.fx.Node:
-        """Helper function to transpose dims of a node."""
+        """Helper function to transpose dims of a node using permute."""
         shape = node.meta["val"].shape
         dim0, dim1 = (
             canonicalize_transposed_dim(dim0, shape),
             canonicalize_transposed_dim(dim1, shape),
         )
         dim0, dim1 = min(dim0, dim1), max(dim0, dim1)
-        transpose_node = graph.call_function(
-            exir_ops.edge.aten.transpose_copy.int, (node, dim0, dim1), {}
+        perm = transpose_dims_to_permute_order(len(shape), dim0, dim1)
+        permute_node = graph.call_function(
+            exir_ops.edge.aten.permute_copy.default, (node, perm), {}
         )
-        transpose_node.meta = node.meta
-        return transpose_node
+        permute_node.meta = node.meta
+        return permute_node
 
     def _change_nchw_to_nhwc(
         self, graph: torch.fx.Graph, node: torch.fx.Node
@@ -1276,18 +1313,19 @@ class MakeSliceAndCatDimOutermostPass(RemoveOrReplacePassInterface):
     def _transpose_dims(
         self, graph: torch.fx.Graph, node: torch.fx.Node, dim0: int, dim1: int
     ) -> torch.fx.Node:
-        """Helper function to transpose dims of a node."""
+        """Helper function to transpose dims of a node using permute."""
         shape = node.meta["val"].shape
         dim0, dim1 = (
             canonicalize_transposed_dim(dim0, shape),
             canonicalize_transposed_dim(dim1, shape),
         )
         dim0, dim1 = min(dim0, dim1), max(dim0, dim1)
-        transpose_node = graph.call_function(
-            exir_ops.edge.aten.transpose_copy.int, (node, dim0, dim1), {}
+        perm = transpose_dims_to_permute_order(len(shape), dim0, dim1)
+        permute_node = graph.call_function(
+            exir_ops.edge.aten.permute_copy.default, (node, perm), {}
         )
-        transpose_node.meta = node.meta
-        return transpose_node
+        permute_node.meta = node.meta
+        return permute_node
 
     def maybe_remove_or_replace(self, node: torch.fx.Node) -> bool:
         # Get the dimension argument
@@ -1539,8 +1577,8 @@ class ReplaceConvWithIm2RowAndLinear(RemoveOrReplacePassInterface):
         if not channel_last:
             with graph.inserting_before(node):
                 linear_res = graph.call_function(
-                    exir_ops.edge.aten.transpose_copy.int,
-                    args=(linear_res, 1, 2),
+                    exir_ops.edge.aten.permute_copy.default,
+                    args=(linear_res, [0, 2, 1]),
                 )
                 linear_res.meta = node.meta
 
@@ -1730,8 +1768,8 @@ class ReplaceTransposedConvWithLinearPass(RemoveOrReplacePassInterface):
         if not channel_last:
             with graph.inserting_before(node):
                 linear_res = graph.call_function(
-                    exir_ops.edge.aten.transpose_copy.int,
-                    args=(linear_res, 1, 2),
+                    exir_ops.edge.aten.permute_copy.default,
+                    args=(linear_res, [0, 2, 1]),
                 )
                 linear_res.meta = node.meta
 
@@ -2327,9 +2365,11 @@ class ReplaceMatmulWithTransposedMatmulPass(RemoveOrReplacePassInterface):
 
         # Transpose Y_arg
         with graph.inserting_before(node):
+            Y_ndim = len(Y_tensor_val.shape)
+            perm = transpose_dims_to_permute_order(Y_ndim, -1, -2)
             Y_arg_t = graph.call_function(
-                exir_ops.edge.aten.transpose_copy.int,
-                args=(Y_arg, -1, -2),
+                exir_ops.edge.aten.permute_copy.default,
+                args=(Y_arg, perm),
             )
             Y_arg_t.meta = node.meta
 
@@ -2362,12 +2402,9 @@ class ReplaceMatmulWithTransposedMatmulPass(RemoveOrReplacePassInterface):
         result = super().call(graph_module)
         modified = modified or result.modified
         if modified:
-            # Fuse any inserted transpose node with transpose/permute nodes
+            # Fuse any inserted permute node with transpose/permute nodes
             # surrounding it.
             result = FuseCascadedTransposeOrPermuteOps().call(result.graph_module)
-            modified = modified or result.modified
-            # Replace permute with transpose.
-            result = ReplacePermuteWithTransposePass().call(result.graph_module)
             modified = modified or result.modified
 
         return PassResult(result.graph_module, modified)
@@ -2592,10 +2629,10 @@ class ReplaceAtenLinalgSvdWithCadenceLinalgSvdPass(RemoveOrReplacePassInterface)
 # graph with another.
 class CadenceReplaceOpsInGraph:
     passes = CommonReplacePasses.passes + [
+        ReplaceTransposeWithPermutePass,
         ReplaceAtenLinalgSvdWithCadenceLinalgSvdPass,
         ReplaceEmptyTensorsWithFullPass,
         ReplaceFunctionallyEquivalentOpTargets,
-        ReplacePermuteWithTransposePass,
         ReplaceConvolutionOptionalArgsWithConcreteArgsPass,
         ReplaceAddMMWithLinearPass,
         ReplacePadWithCatPass,
@@ -2609,6 +2646,8 @@ class CadenceReplaceOpsInGraph:
         ReplaceIm2RowWithViewPass,
         MakeSliceAndCatDimOutermostPass,
         ReplaceMatmulWithTransposedMatmulPass,
+        # Convert permutes back to transposes after all passes that create them.
+        ReplacePermuteWithTransposePass,
         ReplaceNopTransposeOrPermuteWithViewPass,
         ReplaceLinearWithFullyConnectedOpPass,
         ReplaceScalarTensorWithFullPass,

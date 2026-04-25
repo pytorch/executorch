@@ -37,7 +37,6 @@ from executorch.backends.cadence.aot.replace_ops import (
     ReplaceMulTensorWithMulAndFullOpsPass,
     ReplaceNopTransposeOrPermuteWithViewPass,
     ReplacePadWithCatPass,
-    ReplacePermuteWithTransposePass,
     ReplacePowWithMulPass,
     ReplaceRepeatWithCatPass,
     ReplaceScalarTensorWithFullPass,
@@ -172,7 +171,7 @@ class TestReplaceOpsPasses(unittest.TestCase):
         graph_after_passes = result.graph_module
 
         self.assertEqual(
-            count_node(graph_after_passes, exir_ops.edge.aten.transpose_copy.int),
+            count_node(graph_after_passes, exir_ops.edge.aten.permute_copy.default),
             1,
         )
         self.assertEqual(
@@ -647,7 +646,7 @@ class TestReplaceOpsPasses(unittest.TestCase):
         weights = builder.placeholder("weights", weights_tensor)
 
         transposed_weights = builder.call_operator(
-            op=exir_ops.edge.aten.transpose_copy.int, args=(weights, 0, 1)
+            op=exir_ops.edge.aten.permute_copy.default, args=(weights, [1, 0, 2])
         )
         flipped_weights = builder.call_operator(
             exir_ops.edge.aten.flip.default,
@@ -965,10 +964,7 @@ class TestReplaceOpsPasses(unittest.TestCase):
         builder.output([mm])
         original_gm = builder.get_graph_module()
 
-        gm = cast(
-            PassResult, ReplacePermuteWithTransposePass()(original_gm)
-        ).graph_module
-        gm = cast(PassResult, ReplaceMMWithAddMMPass()(gm)).graph_module
+        gm = cast(PassResult, ReplaceMMWithAddMMPass()(original_gm)).graph_module
 
         gm_before_linear = copy.deepcopy(gm)
         pass_result = cast(PassResult, ReplaceAddMMWithLinearPass()(gm))
@@ -1029,12 +1025,8 @@ class TestReplaceOpsPasses(unittest.TestCase):
         builder.output([addmm])
         original_gm = builder.get_graph_module()
 
-        gm = cast(
-            PassResult, ReplacePermuteWithTransposePass()(original_gm)
-        ).graph_module
-
-        gm_before_linear = copy.deepcopy(gm)
-        pass_result = cast(PassResult, ReplaceAddMMWithLinearPass()(gm))
+        gm_before_linear = copy.deepcopy(original_gm)
+        pass_result = cast(PassResult, ReplaceAddMMWithLinearPass()(original_gm))
         self.assertTrue(pass_result.modified)
         graph_after_passes = pass_result.graph_module
 
@@ -1077,11 +1069,7 @@ class TestReplaceOpsPasses(unittest.TestCase):
         builder.output([addmm])
         original_gm = builder.get_graph_module()
 
-        gm = cast(
-            PassResult, ReplacePermuteWithTransposePass()(original_gm)
-        ).graph_module
-
-        pass_result = cast(PassResult, ReplaceAddMMWithLinearPass()(gm))
+        pass_result = cast(PassResult, ReplaceAddMMWithLinearPass()(original_gm))
         self.assertFalse(pass_result.modified)
 
     @torch.no_grad()
@@ -1713,63 +1701,6 @@ class TestReplaceOpsPasses(unittest.TestCase):
         )
         self.assertEqual(
             count_node(graph_after_passes, exir_ops.edge.aten.view_copy.default), 1
-        )
-
-    @expand(
-        [
-            # permutations replaced by transpose
-            [(3, 4), (1, 0)],
-            [(3, 4, 6), (0, 2, 1)],
-        ]
-    )
-    @torch.no_grad()
-    def test_replace_permute_with_transpose(
-        self, shape: Tuple[int], dims: Tuple[int]
-    ) -> None:
-        x = torch.randn(shape)
-        original_gm = single_op_builder(
-            placeholders=(x,),
-            op=exir_ops.edge.aten.permute_copy.default,
-            args=(x, dims),
-        )
-
-        gm_before = copy.deepcopy(original_gm)
-        p = ReplacePermuteWithTransposePass()
-        result = cast(PassResult, p(original_gm))
-        self.assertTrue(result.modified)
-        graph_after_passes = result.graph_module
-        inputs = [x]
-        validate(
-            gm_before, graph_after_passes, inputs, "ReplacePermuteWithTransposePass"
-        )
-
-        # Assert that permute op was replaced by a transpose op
-        self.assertEqual(
-            count_node(graph_after_passes, exir_ops.edge.aten.permute_copy.default), 0
-        )
-        self.assertEqual(
-            count_node(graph_after_passes, exir_ops.edge.aten.transpose_copy.int), 1
-        )
-
-    @torch.no_grad()
-    def test_replace_permute_with_transpose_nop(
-        self,
-    ) -> None:
-        x = torch.randn(3, 4)
-        original_gm = single_op_builder(
-            placeholders=(x,),
-            op=exir_ops.edge.aten.permute_copy.default,
-            args=(x, [0, 1]),
-        )
-        p = ReplacePermuteWithTransposePass()
-        graph_after_passes = cast(PassResult, p(original_gm)).graph_module
-
-        # Assert that permute op was replaced by a transpose op
-        self.assertEqual(
-            count_node(graph_after_passes, exir_ops.edge.aten.permute_copy.default), 0
-        )
-        self.assertEqual(
-            count_node(graph_after_passes, exir_ops.edge.aten.transpose_copy.int), 0
         )
 
 
@@ -2729,7 +2660,7 @@ class TestReplaceConvWithChannelLastConvPass(unittest.TestCase):
         """Test that 1D depthwise conv weight is transformed to [OC, K, 1] format.
 
         For 1D depthwise conv with groups == in_channels > 1, the weight should be
-        transformed from [OC, 1, K] to [OC, K, 1] (3D) via transpose_copy.int,
+        transformed from [OC, 1, K] to [OC, K, 1] (3D) via permute_copy.default,
         matching the standard NLC weight format expected by C++ kernels.
         """
         placeholders, gm = self.create_1d_depthwise_convolution_graph_module()
@@ -2751,15 +2682,11 @@ class TestReplaceConvWithChannelLastConvPass(unittest.TestCase):
 
         # For 1D depthwise:
         # - Input/output use permute_copy (2 ops)
-        # - Weight uses transpose_copy.int (1 op) via _transpose_dims
+        # - Weight uses permute_copy (1 op) via _transpose_dims
         # - No squeeze_copy needed
         self.assertEqual(
             count_node(gm_after_replacement, exir_ops.edge.aten.permute_copy.default),
-            2,
-        )
-        self.assertEqual(
-            count_node(gm_after_replacement, exir_ops.edge.aten.transpose_copy.int),
-            1,
+            3,
         )
         self.assertEqual(
             count_node(gm_after_replacement, exir_ops.edge.aten.squeeze_copy.dim),
@@ -2849,10 +2776,40 @@ class TestReplaceConvWithChannelLastConvPass(unittest.TestCase):
         # Validate numerical accuracy
         validate(original, gm_after_pass, [x], "MakeSliceAndCatDimOutermostPass")
 
-        # Assert that no transpose ops were added. The slice is on the second
+        # Assert that no permute ops were added. The slice is on the second
         # outermost dimension, but the outermost dimension is already 1.
         self.assertEqual(
-            count_node(gm_after_pass, exir_ops.edge.aten.transpose_copy.int),
+            count_node(gm_after_pass, exir_ops.edge.aten.permute_copy.default),
+            0,
+        )
+
+    def test_cat_no_transpose_if_outermost_dimensions_are_one(self) -> None:
+        # Create a graph with a single slice node on second outermost dimension.
+        input1 = torch.randn(1, 1, 3, 5)
+        input2 = torch.randn(1, 2, 3, 5)
+        gm = self.create_cat_graph(input_shapes=((1, 1, 3, 5), (1, 2, 3, 5)), cat_dim=1)
+        # Check if graph module is valid by running exportpass on it.
+        gm = ExportPass().call(gm).graph_module
+        self.assertEqual(count_node(gm, exir_ops.edge.aten.cat.default), 1)
+
+        # Deepcopy before the pass
+        original = copy.deepcopy(gm)
+
+        # Apply replacement pass.
+        p = MakeSliceAndCatDimOutermostPass()
+        result = cast(PassResult, p(gm))
+        self.assertFalse(result.modified)
+        gm_after_pass = result.graph_module
+
+        # Validate numerical accuracy
+        validate(
+            original, gm_after_pass, [input1, input2], "MakeSliceAndCatDimOutermostPass"
+        )
+
+        # Assert that no permute ops were added. The slice is on the second
+        # outermost dimension, but the outermost dimension is already 1.
+        self.assertEqual(
+            count_node(gm_after_pass, exir_ops.edge.aten.permute_copy.default),
             0,
         )
 
@@ -2876,9 +2833,9 @@ class TestReplaceConvWithChannelLastConvPass(unittest.TestCase):
         # Validate numerical accuracy
         validate(original, gm_after_pass, [x], "MakeSliceAndCatDimOutermostPass")
 
-        # Assert that there are two transpose ops added.
+        # Assert that there are two permute ops added.
         self.assertEqual(
-            count_node(gm_after_pass, exir_ops.edge.aten.transpose_copy.int),
+            count_node(gm_after_pass, exir_ops.edge.aten.permute_copy.default),
             2,
         )
 
@@ -2917,40 +2874,10 @@ class TestReplaceConvWithChannelLastConvPass(unittest.TestCase):
             original, gm_after_pass, [input1, input2], "MakeSliceAndCatDimOutermostPass"
         )
 
-        # Assert that no transpose ops were added. The slice is on the second
+        # Assert that no permute ops were added. The slice is on the second
         # outermost dimension, but the outermost dimension is already 1.
         self.assertEqual(
-            count_node(gm_after_pass, exir_ops.edge.aten.transpose_copy.int),
-            0,
-        )
-
-    def test_cat_no_transpose_if_outermost_dimensions_are_one(self) -> None:
-        # Create a graph with a single slice node on second outermost dimension.
-        input1 = torch.randn(1, 1, 3, 5)
-        input2 = torch.randn(1, 2, 3, 5)
-        gm = self.create_cat_graph(input_shapes=((1, 1, 3, 5), (1, 2, 3, 5)), cat_dim=1)
-        # Check if graph module is valid by running exportpass on it.
-        gm = ExportPass().call(gm).graph_module
-        self.assertEqual(count_node(gm, exir_ops.edge.aten.cat.default), 1)
-
-        # Deepcopy before the pass
-        original = copy.deepcopy(gm)
-
-        # Apply replacement pass.
-        p = MakeSliceAndCatDimOutermostPass()
-        result = cast(PassResult, p(gm))
-        self.assertFalse(result.modified)
-        gm_after_pass = result.graph_module
-
-        # Validate numerical accuracy
-        validate(
-            original, gm_after_pass, [input1, input2], "MakeSliceAndCatDimOutermostPass"
-        )
-
-        # Assert that no transpose ops were added. The slice is on the second
-        # outermost dimension, but the outermost dimension is already 1.
-        self.assertEqual(
-            count_node(gm_after_pass, exir_ops.edge.aten.transpose_copy.int),
+            count_node(gm_after_pass, exir_ops.edge.aten.permute_copy.default),
             0,
         )
 
@@ -2979,9 +2906,9 @@ class TestReplaceConvWithChannelLastConvPass(unittest.TestCase):
             original, gm_after_pass, [input1, input2], "MakeSliceAndCatDimOutermostPass"
         )
 
-        # Assert that transpose ops were added to make cat on outermost dimension.
+        # Assert that permute ops were added to make cat on outermost dimension.
         self.assertEqual(
-            count_node(gm_after_pass, exir_ops.edge.aten.transpose_copy.int),
+            count_node(gm_after_pass, exir_ops.edge.aten.permute_copy.default),
             3,
         )
 
