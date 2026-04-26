@@ -107,7 +107,7 @@ class TestExportSessionCoreFlow(unittest.TestCase):
         self.assertEqual(len(session._stage_to_artifacts), 5)
         self.assertEqual(set(session._stage_to_artifacts.keys()), set(stage_types))
 
-    def test_overriden_pipeline_execution_order(self) -> None:
+    def test_overridden_pipeline_execution_order(self) -> None:
         # Test when pipeline stages that are passed through recipe
         stage_types = [
             StageType.SOURCE_TRANSFORM,
