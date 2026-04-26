@@ -93,7 +93,7 @@ public class SGD {
    */
   public void step(Map<String, Tensor> namedGradients) {
     if (!mHybridData.isValid()) {
-      throw new IllegalStateException("SGD optimizer has been destroyed");
+      throw new RuntimeException("Attempt to use a destroyed SGD optimizer");
     }
     stepNative(namedGradients);
   }

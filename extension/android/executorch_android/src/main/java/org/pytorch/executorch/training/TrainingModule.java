@@ -8,11 +8,12 @@
 
 package org.pytorch.executorch.training;
 
+import android.util.Log;
 import com.facebook.jni.HybridData;
 import com.facebook.jni.annotations.DoNotStrip;
 import com.facebook.soloader.nativeloader.NativeLoader;
 import com.facebook.soloader.nativeloader.SystemDelegate;
-import java.io.Closeable;
+import java.util.HashMap;
 import java.util.Map;
 import org.pytorch.executorch.EValue;
 import org.pytorch.executorch.ExecuTorchRuntime;
@@ -25,7 +26,7 @@ import org.pytorch.executorch.annotations.Experimental;
  * <p>Warning: These APIs are experimental and subject to change without notice
  */
 @Experimental
-public class TrainingModule implements Closeable {
+public class TrainingModule {
 
   static {
     if (!NativeLoader.isInitialized()) {
@@ -36,17 +37,12 @@ public class TrainingModule implements Closeable {
   }
 
   private final HybridData mHybridData;
-  private boolean mDestroyed = false;
 
   @DoNotStrip
   private static native HybridData initHybrid(String moduleAbsolutePath, String dataAbsolutePath);
 
   private TrainingModule(String moduleAbsolutePath, String dataAbsolutePath) {
     mHybridData = initHybrid(moduleAbsolutePath, dataAbsolutePath);
-  }
-
-  private void checkNotDestroyed() {
-    if (mDestroyed) throw new IllegalStateException("TrainingModule has been destroyed");
   }
 
   /**
@@ -82,7 +78,10 @@ public class TrainingModule implements Closeable {
    * @return return value(s) from the method.
    */
   public EValue[] executeForwardBackward(String methodName, EValue... inputs) {
-    checkNotDestroyed();
+    if (!mHybridData.isValid()) {
+      Log.e("ExecuTorch", "Attempt to use a destroyed module");
+      return new EValue[0];
+    }
     return executeForwardBackwardNative(methodName, inputs);
   }
 
@@ -90,7 +89,10 @@ public class TrainingModule implements Closeable {
   private native EValue[] executeForwardBackwardNative(String methodName, EValue... inputs);
 
   public Map<String, Tensor> namedParameters(String methodName) {
-    checkNotDestroyed();
+    if (!mHybridData.isValid()) {
+      Log.e("ExecuTorch", "Attempt to use a destroyed module");
+      return new HashMap<String, Tensor>();
+    }
     return namedParametersNative(methodName);
   }
 
@@ -98,17 +100,13 @@ public class TrainingModule implements Closeable {
   private native Map<String, Tensor> namedParametersNative(String methodName);
 
   public Map<String, Tensor> namedGradients(String methodName) {
-    checkNotDestroyed();
+    if (!mHybridData.isValid()) {
+      Log.e("ExecuTorch", "Attempt to use a destroyed module");
+      return new HashMap<String, Tensor>();
+    }
     return namedGradientsNative(methodName);
   }
 
   @DoNotStrip
   private native Map<String, Tensor> namedGradientsNative(String methodName);
-
-  @Override
-  public void close() {
-    if (mDestroyed) return;
-    mDestroyed = true;
-    mHybridData.resetNative();
-  }
 }
