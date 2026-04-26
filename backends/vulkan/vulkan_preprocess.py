@@ -133,7 +133,7 @@ class VulkanBackend(BackendDetails):
         default_texture_limits = copy.deepcopy(utils.DEFAULT_TEXTURE_LIMITS)
         # 2048 is the typical limit value for 3D textures, but mobile GPUs often support
         # 16384. Since the Vulkan delegate primarily targets mobile GPUs at the moment,
-        # 16394 is the default texture limit used. This option is provided as a
+        # 16384 is the default texture limit used. This option is provided as a
         # convenient way to switch to using a limit of 2048 for image textures which
         # will be compatible with most GPUs.
         if compile_options.get("small_texture_limits", False):
