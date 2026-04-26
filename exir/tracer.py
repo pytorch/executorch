@@ -155,7 +155,7 @@ def get_stacktrace() -> List[Dict[str, str]]:
             contexts.append("<unknown file: unknown line>")
 
     # torch.fx stack preservation logic expects strings to
-    # be passed around. Working with dictionary is lot easier
+    # be passed around. Working with a dictionary is a lot easier
     # to convert to string and vice versa.
     frames: List[Dict[str, str]] = []
     for i, frame in enumerate(stacktrace):
