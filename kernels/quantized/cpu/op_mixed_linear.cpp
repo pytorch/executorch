@@ -79,8 +79,8 @@ Tensor& quantized_mixed_linear_out(
 
   size_t output_ndim = 2;
   executorch::aten::SizesType output_sizes[kTensorDimensionLimit];
-  output_sizes[0] = in.size(0);
-  output_sizes[1] = weight.size(0);
+  output_sizes[0] = static_cast<executorch::aten::SizesType>(in.size(0));
+  output_sizes[1] = static_cast<executorch::aten::SizesType>(weight.size(0));
 
   ET_KERNEL_CHECK(
       ctx,

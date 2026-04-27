@@ -139,7 +139,7 @@ inline void dim_order_to_stride_nocheck(
   // dim_order = [0, 2, 3, 1]
   // strides = [60, 1, 15, 3]
   strides[dim_order[dims - 1]] = 1;
-  for (int32_t i = dims - 2; i >= 0; --i) {
+  for (ssize_t i = static_cast<ssize_t>(dims) - 2; i >= 0; --i) {
     if (sizes[dim_order[i + 1]] == 0) {
       strides[dim_order[i]] = strides[dim_order[i + 1]];
     } else {

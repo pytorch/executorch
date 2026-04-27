@@ -431,7 +431,8 @@ Tensor& quantize_per_channel_out(
 
   ET_CHECK_MSG(
       scale.numel() == input.size(axis),
-      "scale.numel() %zd != input.size(axis) %zd",
+      "scale.numel() %" ET_PRI_TENSOR_DIM
+      " != input.size(axis) %" ET_PRI_TENSOR_DIM,
       scale.numel(),
       input.size(axis));
 
@@ -442,7 +443,8 @@ Tensor& quantize_per_channel_out(
 
   ET_CHECK_MSG(
       zero_point.numel() == input.size(axis),
-      "zero_point.numel() %zd != input.size(axis) %zd",
+      "zero_point.numel() %" ET_PRI_TENSOR_DIM
+      " != input.size(axis) %" ET_PRI_TENSOR_DIM,
       zero_point.numel(),
       input.size(axis));
 
@@ -656,8 +658,9 @@ Tensor& quantize_per_token_out(
 #else
   std::array<executorch::aten::DimOrderType, 2> input_dim_order{0, 1};
   std::array<executorch::aten::SizesType, 2> input_sizes;
-  input_sizes[0] = num_tokens;
-  input_sizes[1] = input.size(input.dim() - 1);
+  input_sizes[0] = static_cast<executorch::aten::SizesType>(num_tokens);
+  input_sizes[1] =
+      static_cast<executorch::aten::SizesType>(input.size(input.dim() - 1));
   std::array<executorch::aten::StridesType, 2> input_strides;
   dim_order_to_stride_nocheck(
       input_sizes.data(), input_dim_order.data(), 2, input_strides.data());
