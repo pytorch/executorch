@@ -14,6 +14,7 @@ import torch
 import torch.fx
 from executorch.backends.arm.common.debug import get_node_debug_info
 from executorch.backends.arm.common.type import ensure_type
+from executorch.backends.arm.tosa.mapping import TosaSpecialDtype
 from executorch.exir import ExportedProgram
 from executorch.exir.dialects._ops import ops as exir_ops
 from executorch.exir.dialects.edge._ops import EdgeOpOverload
@@ -21,6 +22,7 @@ from executorch.exir.graph_module import (
     _get_control_flow_submodules,
     get_control_flow_submodules,
 )
+from executorch.exir.pass_base import NodeMetadata
 
 from torch._export.utils import (
     get_buffer,
@@ -171,6 +173,30 @@ def create_node(
     return node
 
 
+def create_shape_node(
+    graph: torch.fx.Graph,
+    op_target: EdgeOpOverload,
+    args: tuple = (),
+    kwargs: Optional[dict] = None,
+    from_node: Optional[torch.fx.Node] = None,
+):
+    """Adds a shape node to 'graph'.
+
+    graph.inserting_before/after() should be used before the call to decide
+    where to insert the node.
+
+    """
+    node = create_node(
+        graph=graph,
+        op_target=op_target,
+        args=args,
+        kwargs=kwargs,
+        from_node=from_node,
+    )
+    node.meta[TosaSpecialDtype.meta_key()] = TosaSpecialDtype.SHAPE
+    return node
+
+
 def insert_q_dq_pair(
     graph: torch.fx.Graph,
     anchor: torch.fx.Node,
@@ -200,6 +226,46 @@ def insert_q_dq_pair(
     # node's first use
     q.args = (anchor,) + q_params
     return dq
+
+
+def meta_without_qparams(meta: NodeMetadata) -> NodeMetadata:
+    """Return a copy of NodeMetadata with input/output qparams cleared."""
+    plain_meta_dict = dict(meta.data)
+    plain_meta_dict["input_qparams"] = {}
+    plain_meta_dict["output_qparams"] = {}
+    return NodeMetadata(plain_meta_dict)
+
+
+def insert_scalar(
+    graph: torch.fx.Graph,
+    value: int | float,
+    meta: NodeMetadata | dict,
+    from_node: torch.fx.Node,
+    is_tfa_pass: bool = False,
+) -> torch.fx.Node | int | float:
+    """Insert an `aten.full` scalar node for direct graph-rewrite passes."""
+
+    if is_tfa_pass:
+        return value
+
+    kwargs = {}
+    val = None
+    if "val" in meta:
+        val = meta["val"]
+        if isinstance(val, tuple):
+            val = val[0]
+        kwargs = {"device": val.device, "dtype": val.dtype}
+
+    scalar = create_node(
+        graph=graph,
+        op_target=exir_ops.edge.aten.full.default,
+        args=((1,), value),
+        kwargs=kwargs,
+        from_node=from_node,
+    )
+    if val is not None:
+        scalar.meta["val"] = torch.full((1,), value, **kwargs)
+    return scalar
 
 
 def get_first_fake_tensor(node: torch.fx.Node) -> FakeTensor:

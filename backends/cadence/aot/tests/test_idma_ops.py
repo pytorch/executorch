@@ -5,7 +5,7 @@
 import executorch.backends.cadence.aot.ops_registrations  # noqa
 import torch
 
-from executorch.backends.cadence.aot.graph_builder import GraphBuilder
+from executorch.backends.test.graph_builder import GraphBuilder
 from executorch.exir.dialects._ops import ops as exir_ops
 
 from later.unittest import TestCase

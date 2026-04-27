@@ -15,6 +15,7 @@ from executorch.backends.qualcomm._passes.qnn_pass_manager import (
     get_capture_program_passes,
 )
 from executorch.backends.qualcomm.builders.utils import is_graph_output
+from executorch.backends.qualcomm.export_utils import make_quantizer
 from executorch.backends.qualcomm.quantizer.quantizer import QuantDtype
 from executorch.backends.qualcomm.utils.constants import (
     QCOM_PASS_ACTIVATE_KEY,
@@ -31,7 +32,6 @@ from executorch.devtools.backend_debug import print_delegation_info
 from executorch.examples.qualcomm.oss_scripts.llm_utils.decoder_model_wrapper import (
     QnnCausalLMExportableModule,
 )
-from executorch.examples.qualcomm.utils import make_quantizer
 from executorch.exir.capture._config import ExecutorchBackendConfig
 from executorch.exir.passes.memory_planning_pass import MemoryPlanningPass
 from pytorch_tokenizers import get_tokenizer

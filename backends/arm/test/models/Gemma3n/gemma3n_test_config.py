@@ -23,7 +23,7 @@ def get_gemma3n_text_test_config() -> Gemma3nTextConfig:
         altup_num_inputs=4,
         altup_active_idx=0,
         altup_correct_scale=True,
-    )
+    )  # type: ignore[call-arg]
     # Force eager attention path to keep the module exportable in tests.
     config._attn_implementation = "eager"
     return config
@@ -34,4 +34,4 @@ def get_gemma3n_audio_test_config() -> Gemma3nAudioConfig:
         input_feat_size=128,
         hidden_size=256,
         rms_norm_eps=1e-6,
-    )
+    )  # type: ignore[call-arg]
