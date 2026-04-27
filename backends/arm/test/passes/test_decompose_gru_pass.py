@@ -8,7 +8,9 @@
 from typing import Tuple
 
 import torch
+from executorch.backends.arm._passes import DecomposeGruPass
 from executorch.backends.arm.test.tester.test_pipeline import (
+    PassPipeline,
     TosaPipelineFP,
     TosaPipelineINT,
 )
@@ -60,6 +62,30 @@ class GRU(torch.nn.Module):
             self.num_layers * self.num_directions, batch_size, self.hidden_size
         )
         return (x, h)
+
+
+chain_input_t = Tuple[torch.Tensor, torch.Tensor, torch.Tensor]
+
+
+class SequentialGRU(torch.nn.Module):
+    def __init__(self) -> None:
+        super().__init__()
+        self.gru1 = torch.nn.GRU(10, 12, batch_first=True)
+        self.gru2 = torch.nn.GRU(12, 8, batch_first=True)
+
+    def forward(
+        self, x: torch.Tensor, h1: torch.Tensor, h2: torch.Tensor
+    ) -> Tuple[torch.Tensor, torch.Tensor]:
+        y, _ = self.gru1(x, h1)
+        z, h_n = self.gru2(y, h2)
+        return z, h_n
+
+    def get_inputs(self) -> chain_input_t:
+        return (
+            torch.randn(2, 5, 10),
+            torch.randn(1, 2, 12),
+            torch.randn(1, 2, 8),
+        )
 
 
 def _make_gru_fp_pipeline(module: GRU) -> TosaPipelineFP:
@@ -139,3 +165,14 @@ def test_decompose_gru_tosa_FP_multilayer():
 def test_decompose_gru_tosa_INT_multilayer():
     """Test multi-layer GRU through quantized pipeline."""
     _make_gru_int_pipeline(GRU(num_layers=2)).run()
+
+
+def test_decompose_gru_pass_handles_chained_grus() -> None:
+    module = SequentialGRU()
+    pipeline = PassPipeline(
+        module,
+        module.get_inputs(),
+        quantize=True,
+        pass_list=[DecomposeGruPass],
+    )
+    pipeline.run()
