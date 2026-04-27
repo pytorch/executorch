@@ -21,6 +21,9 @@ from executorch.backends.arm._passes.fold_qdq_with_annotated_qparams_pass import
     get_input_qparams,
     get_output_qparams,
 )
+from executorch.backends.arm._passes.symbolic_value_range import (
+    evaluate_symbolic_expr_values,
+)
 from executorch.backends.arm.constants import HWCM_ORDER, NHWC_INVERSE_ORDER
 from executorch.backends.arm.tosa.mapping import TosaSpecialDtype
 from executorch.backends.arm.tosa.specification import get_context_shape_env
@@ -83,8 +86,14 @@ class RewriteConvPass(ArmPass):
 
         if isinstance(mod_remainder, torch.SymInt):
             shape_env = get_context_shape_env()
-            value_ranges = shape_env.bound_sympy(mod_remainder.node.expr)
-            mod_remainder_upper = int(value_ranges.upper)
+            exact_values = evaluate_symbolic_expr_values(
+                mod_remainder.node.expr, shape_env
+            )
+            if exact_values is not None:
+                mod_remainder_upper = max(exact_values)
+            else:
+                value_ranges = shape_env.bound_sympy(mod_remainder.node.expr)
+                mod_remainder_upper = int(value_ranges.upper)
             if mod_remainder_upper == 0:
                 mod_remainder = 0
         else:
@@ -92,7 +101,7 @@ class RewriteConvPass(ArmPass):
 
         if mod_remainder_upper > pad:
             raise RuntimeError(
-                "This case should be handled by the SizeAdjustInputPass, is it enabled?"
+                "This case should be handled by the SizeAdjustInputPass, is it enabled?\n"
             )
         return pad - mod_remainder
 
