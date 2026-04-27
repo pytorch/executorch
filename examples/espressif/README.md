@@ -270,4 +270,3 @@ For larger models, load from the filesystem at runtime:
 - Long inference times may trigger the task watchdog
 - Disable with `CONFIG_ESP_TASK_WDT_EN=n` in sdkconfig
 - Or increase the timeout: `CONFIG_ESP_TASK_WDT_TIMEOUT_S=30`
-
