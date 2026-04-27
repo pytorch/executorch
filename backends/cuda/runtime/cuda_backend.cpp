@@ -303,6 +303,8 @@ class ET_EXPERIMENTAL CudaBackend final
               Error,
               "Option %s must be a boolean.",
               kWeightSharingAcrossMethods);
+          return Error::InvalidArgument;
+        }
       } else if (std::strcmp(option.key, kEnableCudaGraphForMethod) == 0) {
         if (auto* val = std::get_if<std::array<char, kMaxOptionValueLength>>(
                 &option.value)) {
