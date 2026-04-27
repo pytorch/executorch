@@ -203,13 +203,38 @@ class ExecuTorchLlmJni : public facebook::jni::HybridClass<ExecuTorchLlmJni> {
               data_files_vector,
               cpp_load_mode);
       std::string decoder_model = "llama3"; // use llama3 for now
-      runner_ = std::make_unique<example::Runner<uint16_t>>( // QNN runner
-          std::move(module),
-          decoder_model.c_str(),
-          model_path->toStdString().c_str(),
-          tokenizer_path->toStdString().c_str(),
-          "",
-          "");
+      // Using 8bit as default since this meta is introduced with 16bit kv io
+      // support and older models only have 8bit kv io.
+      example::KvBitWidth kv_bitwidth = example::KvBitWidth::kWidth8;
+      if (module->method_names()->count("get_kv_io_bit_width") > 0) {
+        kv_bitwidth = static_cast<example::KvBitWidth>(
+            module->get("get_kv_io_bit_width").get().toScalar().to<int64_t>());
+      }
+
+      if (kv_bitwidth == example::KvBitWidth::kWidth8) {
+        runner_ = std::make_unique<example::Runner<uint8_t>>(
+            std::move(module),
+            decoder_model.c_str(),
+            model_path->toStdString().c_str(),
+            tokenizer_path->toStdString().c_str(),
+            "",
+            "",
+            temperature_);
+      } else if (kv_bitwidth == example::KvBitWidth::kWidth16) {
+        runner_ = std::make_unique<example::Runner<uint16_t>>(
+            std::move(module),
+            decoder_model.c_str(),
+            model_path->toStdString().c_str(),
+            tokenizer_path->toStdString().c_str(),
+            "",
+            "",
+            temperature_);
+      } else {
+        ET_CHECK_MSG(
+            false,
+            "Unsupported kv bitwidth: %ld",
+            static_cast<int64_t>(kv_bitwidth));
+      }
       model_type_category_ = MODEL_TYPE_CATEGORY_LLM;
 #endif
 #if defined(EXECUTORCH_BUILD_MEDIATEK)
@@ -569,30 +594,31 @@ class ExecuTorchLlmJni : public facebook::jni::HybridClass<ExecuTorchLlmJni> {
 
   jint load() {
     if (!runner_) {
-      std::stringstream ss;
-      ss << "Invalid model type category: " << model_type_category_
-         << ". Valid values are: " << MODEL_TYPE_CATEGORY_LLM << " or "
-         << MODEL_TYPE_CATEGORY_MULTIMODAL;
-      executorch::jni_helper::throwExecutorchException(
-          static_cast<uint32_t>(Error::InvalidArgument), ss.str().c_str());
-      return -1;
+      ET_LOG(
+          Error,
+          "ExecuTorchLlmJni::load() called but runner_ is null. "
+          "The model runner was not created or failed to initialize due to a "
+          "previous configuration or initialization error. "
+          "Model type category: %d.",
+          model_type_category_);
+      return static_cast<jint>(Error::InvalidState);
     }
-    int result = static_cast<jint>(runner_->load());
-    if (result != 0) {
-      std::stringstream ss;
-      ss << "Failed to load runner: [" << result << "]";
-      executorch::jni_helper::throwExecutorchException(
-          static_cast<uint32_t>(result), ss.str().c_str());
+    const auto load_result = static_cast<jint>(runner_->load());
+    if (load_result != static_cast<jint>(Error::Ok)) {
+      ET_LOG(
+          Error,
+          "ExecuTorchLlmJni::load() failed in runner_->load() with error code %d.",
+          static_cast<int>(load_result));
     }
-    return result;
+    return load_result;
   }
 
   static void registerNatives() {
     registerHybrid({
         makeNativeMethod("initHybrid", ExecuTorchLlmJni::initHybrid),
-        makeNativeMethod("generate", ExecuTorchLlmJni::generate),
+        makeNativeMethod("generateNative", ExecuTorchLlmJni::generate),
         makeNativeMethod("stop", ExecuTorchLlmJni::stop),
-        makeNativeMethod("load", ExecuTorchLlmJni::load),
+        makeNativeMethod("loadNative", ExecuTorchLlmJni::load),
         makeNativeMethod(
             "prefillImagesInput", ExecuTorchLlmJni::prefill_images_input),
         makeNativeMethod(
@@ -613,7 +639,7 @@ class ExecuTorchLlmJni : public facebook::jni::HybridClass<ExecuTorchLlmJni> {
             "prefillRawAudioInput", ExecuTorchLlmJni::prefill_raw_audio_input),
         makeNativeMethod(
             "prefillTextInput", ExecuTorchLlmJni::prefill_text_input),
-        makeNativeMethod("resetContext", ExecuTorchLlmJni::reset_context),
+        makeNativeMethod("resetContextNative", ExecuTorchLlmJni::reset_context),
     });
   }
 };

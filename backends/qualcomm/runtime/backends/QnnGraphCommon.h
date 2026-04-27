@@ -77,14 +77,22 @@ class QnnGraph {
   }
 
  protected:
+  virtual executorch::runtime::Error AfterRetrieveGraph(
+      const std::string& graph_name) {
+    return executorch::runtime::Error::Ok;
+  };
+  virtual executorch::runtime::Error AfterCreateGraph(
+      const std::string& graph_name) {
+    return executorch::runtime::Error::Ok;
+  };
   virtual executorch::runtime::Error MakeConfig(
       std::vector<const QnnGraph_Config_t*>& config) {
     return executorch::runtime::Error::Ok;
   };
-
- private:
   std::unordered_map<std::string, Qnn_GraphHandle_t> handle_;
   QnnImplementation* implementation_;
+
+ private:
   QnnBackend* backend_;
   QnnContext* context_;
   QnnExecuTorchProfileLevel profile_level_;

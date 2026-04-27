@@ -15,7 +15,8 @@
 #pragma once
 #include <type_traits>
 #include <vector>
-#if __cplusplus < 201703L
+#if (defined(_MSC_VER) && (!defined(_MSVC_LANG) || _MSVC_LANG < 201703L)) || \
+    (!defined(_MSC_VER) && __cplusplus < 201703L)
 #error "This header requires C++17"
 #endif
 #include <ATen/native/Resize.h>

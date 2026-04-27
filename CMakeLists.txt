@@ -50,6 +50,17 @@ project(executorch)
 
 set(EXECUTORCH_ROOT ${CMAKE_CURRENT_SOURCE_DIR})
 
+# Hexagon toolchain with release build complains about code in third party
+# libraries.
+if("${CMAKE_SYSTEM_PROCESSOR}" MATCHES "Hexagon" AND "${CMAKE_BUILD_TYPE}"
+                                                     STREQUAL "Release"
+)
+  add_compile_options(
+    -Wno-error=format -Wno-error=implicit-int-conversion
+    -Wno-error=unused-variable -Wno-error=unused-function
+  )
+endif()
+
 # --- ExecuTorch Version ---
 # Parse version from version.txt (single source of truth)
 file(READ "${EXECUTORCH_ROOT}/version.txt" ET_VERSION_STRING)
@@ -1216,6 +1227,32 @@ if(NOT EXECUTORCH_SELECT_OPS_YAML STREQUAL ""
     "${EXECUTORCH_ENABLE_DTYPE_SELECTIVE_BUILD}"
   )
   list(APPEND _executorch_kernels executorch_selected_kernels)
+
+  # Auto-right-size the kernel registry unless the user has pinned
+  # MAX_KERNEL_NUM.
+  if(NOT DEFINED CACHE{MAX_KERNEL_NUM} AND NOT DEFINED MAX_KERNEL_NUM)
+    gen_selected_max_kernel_num(
+      LIB_NAME "executorch_selected_kernels" OPLIST_YAMLS
+      ${gen_selected_ops_output_yaml}
+    )
+    target_include_directories(
+      executorch_core
+      PRIVATE ${executorch_selected_kernels_max_kernel_num_include_dir}
+    )
+    add_dependencies(
+      executorch_core executorch_selected_kernels_max_kernel_num_header
+    )
+    if(TARGET executorch_core_shared)
+      target_include_directories(
+        executorch_core_shared
+        PRIVATE ${executorch_selected_kernels_max_kernel_num_include_dir}
+      )
+      add_dependencies(
+        executorch_core_shared
+        executorch_selected_kernels_max_kernel_num_header
+      )
+    endif()
+  endif()
 
   install(
     TARGETS executorch_selected_kernels
