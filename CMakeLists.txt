@@ -1228,6 +1228,32 @@ if(NOT EXECUTORCH_SELECT_OPS_YAML STREQUAL ""
   )
   list(APPEND _executorch_kernels executorch_selected_kernels)
 
+  # Auto-right-size the kernel registry unless the user has pinned
+  # MAX_KERNEL_NUM.
+  if(NOT DEFINED CACHE{MAX_KERNEL_NUM} AND NOT DEFINED MAX_KERNEL_NUM)
+    gen_selected_max_kernel_num(
+      LIB_NAME "executorch_selected_kernels" OPLIST_YAMLS
+      ${gen_selected_ops_output_yaml}
+    )
+    target_include_directories(
+      executorch_core
+      PRIVATE ${executorch_selected_kernels_max_kernel_num_include_dir}
+    )
+    add_dependencies(
+      executorch_core executorch_selected_kernels_max_kernel_num_header
+    )
+    if(TARGET executorch_core_shared)
+      target_include_directories(
+        executorch_core_shared
+        PRIVATE ${executorch_selected_kernels_max_kernel_num_include_dir}
+      )
+      add_dependencies(
+        executorch_core_shared
+        executorch_selected_kernels_max_kernel_num_header
+      )
+    endif()
+  endif()
+
   install(
     TARGETS executorch_selected_kernels
     EXPORT ExecuTorchTargets

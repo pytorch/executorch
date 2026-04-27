@@ -158,17 +158,17 @@ print(module_vars["TORCH_VERSION"])
 PY
 )
 
-  NIGHTLY_VERSION=$(
-  "$PYBIN" - <<'PY'
-import runpy
-module_vars = runpy.run_path("torch_pin.py")
-print(module_vars["NIGHTLY_VERSION"])
-PY
-)
-  echo "=== [$LABEL] Install torch==${TORCH_VERSION}.${NIGHTLY_VERSION} ==="
+#   NIGHTLY_VERSION=$(
+#   "$PYBIN" - <<'PY'
+# import runpy
+# module_vars = runpy.run_path("torch_pin.py")
+# print(module_vars["NIGHTLY_VERSION"])
+# PY
+# )
+  echo "=== [$LABEL] Install torch==${TORCH_VERSION} ==="
 
-  # Install torchao based on the pinned PyTorch version
-  "$PIPBIN" install torch=="${TORCH_VERSION}.${NIGHTLY_VERSION}" --index-url "https://download.pytorch.org/whl/nightly/cpu"
+  # Install torch based on the pinned PyTorch version, preferring the PyTorch test index
+  "$PIPBIN" install torch=="${TORCH_VERSION}" --extra-index-url "https://download.pytorch.org/whl/test"
   "$PIPBIN" install wheel
 
   # Install torchao based on the pinned commit from third-party/ao submodule
