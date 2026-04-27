@@ -33,7 +33,10 @@ class TestBase(unittest.TestCase):
 
     def tearDown(self) -> None:
         # Restore _all_passes to original state before test.
-        pass_utils.ALL_CADENCE_PASSES = self._all_passes_original
+        # Use clear()+update() instead of rebinding to keep the same dict object
+        # that the module-level ALL_CADENCE_PASSES import references.
+        pass_utils.ALL_CADENCE_PASSES.clear()
+        pass_utils.ALL_CADENCE_PASSES.update(self._all_passes_original)
 
     def get_filtered_passes(
         self, filter_: Callable[[Type[PassBase]], bool]

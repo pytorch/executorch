@@ -244,16 +244,11 @@ def _insert_lowered_submodule(
         call_submodule_node.replace_all_uses_with(call_delegate_node)
         owning_graph_module.graph.erase_node(call_submodule_node)
     if is_submodule:
-        assert len(toplevel_input_specs_to_delete) == 0
         assert len(toplevel_output_specs_to_delete) == 0
-    elif (
-        len(toplevel_input_specs_to_delete) > 0
-        or len(toplevel_output_specs_to_delete) > 0
-    ):
+    elif len(toplevel_output_specs_to_delete) > 0:
         _unsafe_adjust_original_program(
             owning_program,
             call_delegate_node,
-            {},
             toplevel_output_specs_to_delete,
         )
 

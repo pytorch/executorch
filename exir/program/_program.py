@@ -59,6 +59,7 @@ from executorch.exir.passes.insert_write_back_for_buffers_pass import (
 from executorch.exir.passes.normalize_view_copy_base_pass import (
     NormalizeViewCopyBasePass,
 )
+from executorch.exir.passes.propagate_device_pass import PropagateDevicePass
 from executorch.exir.passes.propagate_input_spec import propagate_input_spec
 from executorch.exir.passes.quant_fusion_pass import quant_fusion_and_const_prop_pass
 from executorch.exir.passes.reinplace import reinplace_pass
@@ -176,7 +177,7 @@ def _get_updated_graph_signature(
             continue
 
         assert i < len(
-           old_signature.input_specs
+            old_signature.input_specs
         ), "Number of inputs changed after transformation"
         old_input_spec = old_signature.input_specs[i]
         arg = (
@@ -849,6 +850,7 @@ def edge_to_executorch_passes(
         # there exists an unbacked symint operation.
         *config.passes,
         SpecPropPass(),
+        PropagateDevicePass(),
         EdgeToBackendOpsPass(),
         RemoveGraphAssertsPass(),
     ] + pre_memory_planning_passes(config, name)

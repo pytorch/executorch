@@ -36,8 +36,6 @@ class InsertInt32CastsAfterInt64PlaceholdersPass(ArmPass):
     # Key: op overload; Value: zero-based indices of positional args that must be i64.
     I64_INPUT_ARG_POSITIONS = {
         torch.ops.aten.one_hot.default: (0,),
-        torch.ops.aten.index_copy_.default: (2,),
-        torch.ops.aten.index_copy.default: (2,),
     }
 
     def _insert_callsite_i32_to_i64_casts(self, graph_module: torch.fx.GraphModule):
@@ -91,8 +89,10 @@ class InsertInt32CastsAfterInt64PlaceholdersPass(ArmPass):
         modified = False
         graph = graph_module.graph
         for node in graph.nodes:
-            if node.op != "placeholder":
+            if node.op not in ("placeholder", "get_attr"):
                 continue
+            if "val" not in node.meta:
+                continue  # Ignore submodule get_attrs
             node_val = node.meta["val"]
             if not self._is_tensor_of_dtype(node_val, torch.int64):
                 continue

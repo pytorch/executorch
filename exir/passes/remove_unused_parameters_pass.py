@@ -167,31 +167,31 @@ def _remove_params_recursive(
 
     # Recurse into submodules first, then filter operands at this level.
     for _, submodule, node in get_control_flow_submodules(module):
-        _remove_params_recursive(submodule, targets_to_remove)
+        _remove_params_recursive(submodule, names_to_remove)
 
     # Filter out removed placeholders from HOP operands
     for _, _submodule, node in get_control_flow_submodules(module):
         if node.target == torch.ops.higher_order.cond:
             # cond(pred, true_fn, false_fn, operands)
-            new_operands = list(
+            new_operands = [
                 x for x in node.args[3] if x not in placeholders_to_remove_set
-            )
+            ]
             node.args = (node.args[0], node.args[1], node.args[2], new_operands)
         elif node.target == torch.ops.higher_order.map_impl:
             # map(f, mapped_args, operands)
-            new_operands = list(
+            new_operands = [
                 x for x in node.args[2] if x not in placeholders_to_remove_set
-            )
+            ]
             node.args = (node.args[0], node.args[1], new_operands)
         elif node.target == torch.ops.higher_order.scan:
             # scan(combine_fn, init, xs, additional_args)
-            new_operands = list(
+            new_operands = [
                 x for x in node.args[3] if x not in placeholders_to_remove_set
-            )
+            ]
             node.args = (node.args[0], node.args[1], node.args[2], new_operands)
         elif node.target == torch.ops.higher_order.while_loop:
             # while_loop(cond, body, carried_inputs, additional_inputs)
-            new_operands = list(
+            new_operands = tuple(
                 x for x in node.args[3] if x not in placeholders_to_remove_set
             )
             node.args = (node.args[0], node.args[1], node.args[2], new_operands)

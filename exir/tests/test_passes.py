@@ -2751,6 +2751,77 @@ class TestPasses(unittest.TestCase):
                 input_spec = node.meta.get("input_spec", None)
                 self.assertIsNotNone(input_spec)
 
+    def test_input_spec_prop_while_loop(self) -> None:
+        """
+        Verify that placeholder node provenance is propagated to while_loop
+        cond_fn and body_fn submodules.
+        """
+        from torch._higher_order_ops.while_loop import while_loop
+
+        class WhileLoopModel(torch.nn.Module):
+            def __init__(self):
+                super().__init__()
+                self.linear = torch.nn.Linear(10, 10, bias=False)
+
+            def cond_fn(self, x):
+                return x.sum() < 100
+
+            def body_fn(self, x):
+                return (self.linear(x),)
+
+            def forward(self, x):
+                result = while_loop(self.cond_fn, self.body_fn, (x,))
+                return result[0]
+
+        model = WhileLoopModel()
+        inputs = (torch.zeros(10),)
+        ep = torch.export.export(model, inputs)
+
+        propagate_input_spec(ep)
+
+        x_input_spec = next(
+            spec
+            for spec in ep.graph_signature.input_specs
+            if spec.kind == InputKind.USER_INPUT and spec.arg.name == "x"
+        )
+        weight_input_spec = next(
+            spec
+            for spec in ep.graph_signature.input_specs
+            if spec.kind == InputKind.PARAMETER
+            and spec.arg.name == "p_linear_weight"
+        )
+
+        cond_submodule = None
+        body_submodule = None
+
+        for node in ep.graph.nodes:
+            input_spec = node.meta.get("input_spec", None)
+            if node.op == "placeholder":
+                if node.target == x_input_spec.arg.name:
+                    self.assertEqual(input_spec, x_input_spec)
+                elif node.target == weight_input_spec.arg.name:
+                    self.assertEqual(input_spec, weight_input_spec)
+            else:
+                self.assertIsNone(input_spec)
+
+            if node.target == torch.ops.higher_order.while_loop:
+                cond_node, body_node, _, _ = node.args
+                cond_submodule = getattr(ep.graph_module, cond_node.target)
+                body_submodule = getattr(ep.graph_module, body_node.target)
+
+        self.assertIsNotNone(cond_submodule)
+        self.assertIsNotNone(body_submodule)
+
+        for node in cond_submodule.graph.nodes:
+            if node.op == "placeholder":
+                input_spec = node.meta.get("input_spec", None)
+                self.assertIsNotNone(input_spec)
+
+        for node in body_submodule.graph.nodes:
+            if node.op == "placeholder":
+                input_spec = node.meta.get("input_spec", None)
+                self.assertIsNotNone(input_spec)
+
 
 class TestMemoryFormatOpsPassPreserveFormat(unittest.TestCase):
     """

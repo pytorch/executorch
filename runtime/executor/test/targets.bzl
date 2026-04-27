@@ -17,6 +17,7 @@ def define_common_targets(is_fbcode = False):
             ],
             visibility = [
                 "//executorch/exir/backend/test/...",
+                "//executorch/exir/tests/...",
                 "//executorch/runtime/backend/...",
                 "//executorch/extension/pybindings/...",
                 "//executorch/devtools/fb/runners/...",
@@ -41,6 +42,7 @@ def define_common_targets(is_fbcode = False):
             ],
             visibility = [
                 "//executorch/exir/backend/test/...",
+                "//executorch/exir/tests/...",
                 "//executorch/runtime/backend/...",
                 "//executorch/extension/pybindings/...",
                 "//executorch/devtools/fb/runners/...",
@@ -311,4 +313,20 @@ def define_common_targets(is_fbcode = False):
                 "//executorch/schema:program",
             ],
             env = modules_env,
+        )
+
+        runtime.cxx_test(
+            name = "tensor_parser_device_test",
+            srcs = [
+                "tensor_parser_device_test.cpp",
+            ],
+            deps = [
+                ":managed_memory_manager",
+                "//executorch/runtime/executor:program",
+                "//executorch/extension/data_loader:file_data_loader",
+                "//executorch/schema:program",
+            ],
+            env = {
+                "ET_MODULE_ADD_WITH_DEVICE_PATH": "$(location fbcode//executorch/test/models:exported_program_with_device_info[ModuleAddWithDevice.pte])",
+            },
         )

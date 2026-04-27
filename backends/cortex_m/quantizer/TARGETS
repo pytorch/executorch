@@ -12,16 +12,26 @@ python_library(
     name = "quantizer",
     srcs = [
         "__init__.py",
-        "operator_configs.py",
+        "node_finders.py",
+        "pattern_checkers.py",
+        "pattern_matcher.py",
         "quantization_configs.py",
         "quantizer.py",
+        "quantizer_support.py",
     ],
     deps = [
         "//caffe2:torch",
+        "//executorch/backends/arm:common",
+        "//executorch/backends/arm:constants",
+        "//executorch/backends/arm/quantizer:arm_quantizer_utils",
+        "//executorch/backends/arm/quantizer:quantization_annotator",
         "//executorch/backends/arm/quantizer:quantization_config",
+        "//executorch/backends/cortex_m:quantizer_reporter",
         "//pytorch/ao:torchao",
+        "fbsource//third-party/pypi/tabulate:tabulate",
     ],
 )
+
 
 python_library(
     name = "quantization_configs",
@@ -30,7 +40,9 @@ python_library(
     ],
     deps = [
         "//caffe2:torch",
+        "//executorch/backends/arm/quantizer:arm_quantizer_utils",
         "//executorch/backends/arm/quantizer:quantization_config",
+        "//executorch/backends/cortex_m:quantizer_reporter",
         "//pytorch/ao:torchao",
     ],
 )

@@ -2715,6 +2715,48 @@ class TestRefImplementations(unittest.TestCase):
             out_zero_point,
         )
 
+    @expand(
+        [
+            # X=5, zp=4 → dequant=0.8*(5-4)=0.8; Y=5, zp=4 → dequant=0.8
+            # mul=0.64; quantize: round(0.64/0.8)+4=1+4=5
+            ("int8", 5, 0.8, 4, 5, 0.8, 4, 0.8, 4, 5, torch.int8),
+            ("uint8", 5, 0.8, 4, 5, 0.8, 4, 0.8, 4, 5, torch.uint8),
+        ]
+    )
+    def test_quantized_mul(
+        self,
+        name: str,
+        X: int,
+        X_scale: float,
+        X_zero_point: int,
+        Y: int,
+        Y_scale: float,
+        Y_zero_point: int,
+        out_scale: float,
+        out_zero_point: int,
+        expected_value: int,
+        dtype: torch.dtype,
+    ) -> None:
+        X_tensor = torch.tensor([X], dtype=dtype)
+        Y_tensor = torch.tensor([Y], dtype=dtype)
+        expected_output = torch.tensor([expected_value], dtype=dtype)
+
+        output = torch.ops.cadence.quantized_mul.per_tensor(
+            X_tensor,
+            X_scale,
+            X_zero_point,
+            Y_tensor,
+            Y_scale,
+            Y_zero_point,
+            out_scale,
+            out_zero_point,
+        )
+
+        self.assertTrue(
+            torch.equal(output, expected_output),
+            f"Values don't match in {name}: got {output}, expected {expected_output}",
+        )
+
     def test_requantize(self) -> None:
         # Test requantize (default variant), just to make sure it runs since wrapper around per_tensor variant
         input_tensor = torch.tensor([[1, 2], [3, 4]], dtype=torch.int8)
@@ -2859,9 +2901,8 @@ class TestRefImplementations(unittest.TestCase):
                 torch.ones((12, 4), dtype=torch.int8),  # weights_hidden: 12x4 (3*4 x 4)
                 0.1,  # w_h_scale
                 torch.zeros(12, dtype=torch.int8),  # bias_inputs: 12
-                0.1,  # b_i_scale
+                0.1,  # b_scale
                 torch.zeros(12, dtype=torch.int8),  # bias_hidden: 12
-                0.1,  # b_h_scale
             ),
             (
                 "invalid_batch_size_2",
@@ -2876,9 +2917,8 @@ class TestRefImplementations(unittest.TestCase):
                 torch.ones((12, 4), dtype=torch.int8),  # weights_hidden: 12x4
                 0.1,  # w_h_scale
                 torch.zeros(12, dtype=torch.int8),  # bias_inputs: 12
-                0.1,  # b_i_scale
+                0.1,  # b_scale
                 torch.zeros(12, dtype=torch.int8),  # bias_hidden: 12
-                0.1,  # b_h_scale
             ),
             (
                 "non_zero_biases",
@@ -2891,11 +2931,10 @@ class TestRefImplementations(unittest.TestCase):
                 torch.tensor(
                     [1, 1, 1, 1, 2, 2, 2, 2, 3, 3, 3, 3], dtype=torch.int8
                 ),  # bias_inputs: 12
-                0.1,  # b_i_scale
+                0.1,  # b_scale
                 torch.tensor(
                     [1, 1, 1, 1, 2, 2, 2, 2, 3, 3, 3, 3], dtype=torch.int8
                 ),  # bias_hidden: 12
-                0.1,  # b_h_scale
             ),
             (
                 "negative_weights",
@@ -2912,9 +2951,8 @@ class TestRefImplementations(unittest.TestCase):
                 ),  # weights_hidden: 12x4 (alternating pattern)
                 0.1,  # w_h_scale
                 torch.zeros(12, dtype=torch.int8),  # bias_inputs: 12
-                0.1,  # b_i_scale
+                0.1,  # b_scale
                 torch.zeros(12, dtype=torch.int8),  # bias_hidden: 12
-                0.1,  # b_h_scale
             ),
             (
                 "hidden_dim_8",
@@ -2927,9 +2965,8 @@ class TestRefImplementations(unittest.TestCase):
                 torch.ones((24, 8), dtype=torch.int8),  # weights_hidden: 24x8 (3*8 x 8)
                 0.1,  # w_h_scale
                 torch.zeros(24, dtype=torch.int8),  # bias_inputs: 24
-                0.1,  # b_i_scale
+                0.1,  # b_scale
                 torch.zeros(24, dtype=torch.int8),  # bias_hidden: 24
-                0.1,  # b_h_scale
             ),
         ]
     )
@@ -2943,9 +2980,8 @@ class TestRefImplementations(unittest.TestCase):
         weights_hidden: torch.Tensor,
         w_h_scale: float,
         bias_inputs: torch.Tensor,
-        b_i_scale: float,
+        b_scale: float,
         bias_hidden: torch.Tensor,
-        b_h_scale: float,
     ) -> None:
 
         if name == "invalid_batch_size_2":
@@ -2958,9 +2994,8 @@ class TestRefImplementations(unittest.TestCase):
                     weights_hidden,
                     w_h_scale,
                     bias_inputs,
-                    b_i_scale,
+                    b_scale,
                     bias_hidden,
-                    b_h_scale,
                 )
             self.assertIn(
                 "Leading dimension 0 of hidden state must be 1", str(context.exception)
@@ -2975,9 +3010,8 @@ class TestRefImplementations(unittest.TestCase):
             weights_hidden,
             w_h_scale,
             bias_inputs,
-            b_i_scale,
+            b_scale,
             bias_hidden,
-            b_h_scale,
         )
 
         # Verify output properties
@@ -2986,10 +3020,11 @@ class TestRefImplementations(unittest.TestCase):
             torch.float32,
             f"Output dtype should be float32 in {name}",
         )
+        expected_shape = (2, inputs.shape[0], inputs.shape[1], hidden.shape[-1])
         self.assertEqual(
             output.shape,
-            (2, *hidden.shape),
-            f"Output shape should match {(2, *hidden.shape)} in {name}",
+            expected_shape,
+            f"Output shape should match {expected_shape} in {name}",
         )
         assert isinstance(output, torch.Tensor)
 
@@ -3022,7 +3057,6 @@ class TestRefImplementations(unittest.TestCase):
                 bias_inputs,
                 0.1,
                 bias_hidden,
-                0.1,
             )
 
         self.assertIn(
@@ -3110,6 +3144,8 @@ class TestRefImplementations(unittest.TestCase):
             input_tensor,
             mask,
             dim,
+            0,  # mask_type (no masking)
+            torch.zeros(1, dtype=torch.int64),  # pos
             in_scale,
             in_zero_point,
             out_scale,
@@ -3147,6 +3183,8 @@ class TestRefImplementations(unittest.TestCase):
             input_tensor,
             None,  # mask
             1,  # dim
+            0,  # mask_type (no masking)
+            torch.zeros(1, dtype=torch.int64),  # pos
             in_scale,
             in_zero_point,
             0.004,  # out_scale
@@ -3237,3 +3275,275 @@ class TestRefImplementations(unittest.TestCase):
             torch.equal(self_tensor, expected),
             f"Values don't match: got {self_tensor}, expected {expected}",
         )
+
+    def test_quantized_conv1d_ncl_per_tensor_basic(self) -> None:
+        """Test quantized_conv1d_ncl.per_tensor with basic NCL format input."""
+        # NCL format: input is [N, C, L]
+        # Create simple 1D convolution input
+        batch_size = 1
+        length = 4
+        out_channels = 1
+        kernel_size = 2
+
+        input_tensor = torch.tensor([[[1, 2, 3, 4], [5, 6, 7, 8]]], dtype=torch.int8)
+        # Weight shape: [OC, IC/groups, K]
+        weight = torch.tensor([[[1, 1], [1, 1]]], dtype=torch.int8)
+        bias = torch.tensor([0], dtype=torch.int32)
+
+        stride = (1,)
+        padding = (0,)
+        dilation = (1,)
+        groups = 1
+        in_zero_point = 0
+        weight_zero_point = 0
+        bias_scale = 1.0
+        output_scale = 1.0
+        output_zero_point = 0
+        out_multiplier = 0
+        out_shift = 0
+
+        output = torch.ops.cadence.quantized_conv1d_ncl.per_tensor(
+            input_tensor,
+            weight,
+            bias,
+            stride,
+            padding,
+            dilation,
+            groups,
+            in_zero_point,
+            weight_zero_point,
+            bias_scale,
+            output_scale,
+            output_zero_point,
+            out_multiplier,
+            out_shift,
+        )
+
+        # Verify output shape: [N, OC, OL] where OL = (L + 2*padding - kernel) / stride + 1
+        expected_length = (length + 2 * padding[0] - kernel_size) // stride[0] + 1
+        self.assertEqual(output.shape, (batch_size, out_channels, expected_length))
+        self.assertEqual(output.dtype, torch.int8)
+
+    def test_quantized_conv1d_ncl_default_variant(self) -> None:
+        """Test quantized_conv1d_ncl (default variant with tensor params)."""
+        input_tensor = torch.tensor([[[1, 2, 3, 4]]], dtype=torch.int8)
+        weight = torch.tensor([[[1, 1]]], dtype=torch.int8)
+        bias = torch.tensor([0], dtype=torch.int32)
+
+        stride = (1,)
+        padding = (0,)
+        dilation = (1,)
+        groups = 1
+        in_zero_point = 0
+        weight_zero_point = torch.tensor([0], dtype=torch.int32)
+        bias_scale = torch.tensor([1.0], dtype=torch.float32)
+        output_scale = 1.0
+        output_zero_point = 0
+        out_multiplier = torch.tensor([1073741824], dtype=torch.int32)
+        out_shift = torch.tensor([0], dtype=torch.int32)
+
+        output = torch.ops.cadence.quantized_conv1d_ncl(
+            input_tensor,
+            weight,
+            bias,
+            stride,
+            padding,
+            dilation,
+            groups,
+            in_zero_point,
+            weight_zero_point,
+            bias_scale,
+            output_scale,
+            output_zero_point,
+            out_multiplier,
+            out_shift,
+        )
+
+        self.assertEqual(output.shape, (1, 1, 3))
+        self.assertEqual(output.dtype, torch.int8)
+
+    def test_quantized_conv1d_nlc_per_tensor_basic(self) -> None:
+        """Test quantized_conv1d_nlc.per_tensor with basic NLC format input."""
+        # NLC format: input is [N, L, C]
+        batch_size = 1
+        length = 4
+        out_channels = 1
+        kernel_size = 2
+
+        # Input in NLC format
+        input_tensor = torch.tensor(
+            [[[1, 5], [2, 6], [3, 7], [4, 8]]], dtype=torch.int8
+        )
+        # Weight shape: [OC, K, IC/groups]
+        weight = torch.tensor([[[1, 1], [1, 1]]], dtype=torch.int8)
+        bias = torch.tensor([0], dtype=torch.int32)
+
+        stride = (1,)
+        padding = (0,)
+        dilation = (1,)
+        groups = 1
+        in_zero_point = 0
+        weight_zero_point = 0
+        bias_scale = 1.0
+        output_scale = 1.0
+        output_zero_point = 0
+        out_multiplier = 0
+        out_shift = 0
+
+        output = torch.ops.cadence.quantized_conv1d_nlc.per_tensor(
+            input_tensor,
+            weight,
+            bias,
+            stride,
+            padding,
+            dilation,
+            groups,
+            in_zero_point,
+            weight_zero_point,
+            bias_scale,
+            output_scale,
+            output_zero_point,
+            out_multiplier,
+            out_shift,
+        )
+
+        # Verify output shape: [N, OL, OC]
+        expected_length = (length + 2 * padding[0] - kernel_size) // stride[0] + 1
+        self.assertEqual(output.shape, (batch_size, expected_length, out_channels))
+        self.assertEqual(output.dtype, torch.int8)
+
+    def test_quantized_conv1d_nlc_default_variant(self) -> None:
+        """Test quantized_conv1d_nlc (default variant with tensor params)."""
+        # Input in NLC format: [N, L, C]
+        input_tensor = torch.tensor([[[1], [2], [3], [4]]], dtype=torch.int8)
+        # Weight shape: [OC, K, IC/groups]
+        weight = torch.tensor([[[1], [1]]], dtype=torch.int8)
+        bias = torch.tensor([0], dtype=torch.int32)
+
+        stride = (1,)
+        padding = (0,)
+        dilation = (1,)
+        groups = 1
+        in_zero_point = 0
+        weight_zero_point = torch.tensor([0], dtype=torch.int32)
+        bias_scale = torch.tensor([1.0], dtype=torch.float32)
+        output_scale = 1.0
+        output_zero_point = 0
+        out_multiplier = torch.tensor([1073741824], dtype=torch.int32)
+        out_shift = torch.tensor([0], dtype=torch.int32)
+
+        output = torch.ops.cadence.quantized_conv1d_nlc(
+            input_tensor,
+            weight,
+            bias,
+            stride,
+            padding,
+            dilation,
+            groups,
+            in_zero_point,
+            weight_zero_point,
+            bias_scale,
+            output_scale,
+            output_zero_point,
+            out_multiplier,
+            out_shift,
+        )
+
+        # Output should be [N, OL, OC] = [1, 3, 1]
+        self.assertEqual(output.shape, (1, 3, 1))
+        self.assertEqual(output.dtype, torch.int8)
+
+    def test_quantized_conv1d_ncl_with_groups(self) -> None:
+        """Test quantized_conv1d_ncl.per_tensor with groups > 1."""
+        batch_size = 1
+        in_channels = 4
+        length = 4
+        out_channels = 4
+        kernel_size = 2
+        groups = 2
+
+        input_tensor = torch.randint(
+            -5, 5, (batch_size, in_channels, length), dtype=torch.int8
+        )
+        # Weight shape: [OC, IC/groups, K]
+        weight = torch.randint(
+            -2, 2, (out_channels, in_channels // groups, kernel_size), dtype=torch.int8
+        )
+        bias = torch.zeros(out_channels, dtype=torch.int32)
+
+        stride = (1,)
+        padding = (0,)
+        dilation = (1,)
+        in_zero_point = 0
+        weight_zero_point = 0
+        bias_scale = 1.0
+        output_scale = 0.1
+        output_zero_point = 0
+        out_multiplier = 0
+        out_shift = 0
+
+        output = torch.ops.cadence.quantized_conv1d_ncl.per_tensor(
+            input_tensor,
+            weight,
+            bias,
+            stride,
+            padding,
+            dilation,
+            groups,
+            in_zero_point,
+            weight_zero_point,
+            bias_scale,
+            output_scale,
+            output_zero_point,
+            out_multiplier,
+            out_shift,
+        )
+
+        expected_length = (length + 2 * padding[0] - kernel_size) // stride[0] + 1
+        self.assertEqual(output.shape, (batch_size, out_channels, expected_length))
+        self.assertEqual(output.dtype, torch.int8)
+
+    def test_quantized_conv1d_nlc_with_padding(self) -> None:
+        """Test quantized_conv1d_nlc.per_tensor with padding."""
+        batch_size = 1
+        length = 3
+        out_channels = 1
+
+        # Input in NLC format: [N, L, C]
+        input_tensor = torch.tensor([[[1], [2], [3]]], dtype=torch.int8)
+        # Weight shape: [OC, K, IC/groups]
+        weight = torch.tensor([[[1], [1], [1]]], dtype=torch.int8)
+        bias = torch.tensor([0], dtype=torch.int32)
+
+        stride = (1,)
+        padding = (1,)  # Add padding
+        dilation = (1,)
+        groups = 1
+        in_zero_point = 0
+        weight_zero_point = 0
+        bias_scale = 1.0
+        output_scale = 1.0
+        output_zero_point = 0
+        out_multiplier = 0
+        out_shift = 0
+
+        output = torch.ops.cadence.quantized_conv1d_nlc.per_tensor(
+            input_tensor,
+            weight,
+            bias,
+            stride,
+            padding,
+            dilation,
+            groups,
+            in_zero_point,
+            weight_zero_point,
+            bias_scale,
+            output_scale,
+            output_zero_point,
+            out_multiplier,
+            out_shift,
+        )
+
+        # With padding=1, output length = (3 + 2*1 - 3) / 1 + 1 = 3
+        self.assertEqual(output.shape, (batch_size, length, out_channels))
+        self.assertEqual(output.dtype, torch.int8)
