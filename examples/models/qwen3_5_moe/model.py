@@ -21,7 +21,6 @@ from typing import Optional
 
 import torch
 import torch.nn as nn
-
 from executorch.examples.models.qwen3_5_moe.sampler import sample
 from torch.nn import functional as F
 
@@ -186,7 +185,6 @@ class RotaryEmbedding(nn.Module):
 
 
 class KVCache(nn.Module):
-
     def __init__(self, n_kv_heads, head_dim, max_seq_len):
         super().__init__()
         self.register_buffer(
@@ -207,7 +205,6 @@ class KVCache(nn.Module):
 
 
 class FullAttention(nn.Module):
-
     def __init__(self, config):
         super().__init__()
         self.n_heads = config.num_attention_heads
@@ -318,7 +315,6 @@ class FullAttention(nn.Module):
 
 
 class GatedDeltaNet(nn.Module):
-
     def __init__(self, config):
         super().__init__()
         self.num_k_heads = config.linear_num_key_heads
@@ -540,7 +536,6 @@ class SwiGLU(nn.Module):
 
 
 class SparseMoE(nn.Module):
-
     def __init__(self, config):
         super().__init__()
         self.top_k = config.num_experts_per_tok
@@ -574,7 +569,6 @@ class SparseMoE(nn.Module):
 
 
 class Block(nn.Module):
-
     def __init__(self, config, layer_idx):
         super().__init__()
         self.layer_type = config.layer_types[layer_idx]
@@ -599,7 +593,6 @@ class Block(nn.Module):
 
 
 class Qwen35MoE(nn.Module):
-
     def __init__(self, config):
         super().__init__()
         self.config = config
@@ -625,7 +618,7 @@ class Qwen35MoE(nn.Module):
         # position. Otherwise apply the prefill optimization and only
         # materialize ``[B, V]`` for the last token.
         if temperature is None:
-            return self.lm_head(x).float()  # [B, T, V] float32
+            return self.lm_head(x)  # [B, T, V] in model dtype
         logits = self.lm_head(x[:, -1, :]).float()  # [B, V] float32
         # GPU-side Gumbel-max sampling: argmax(logits/T + gumbel_noise) is
         # equivalent to drawing from softmax(logits/T) but stays entirely
