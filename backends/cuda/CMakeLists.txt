@@ -107,10 +107,10 @@ set(_aoti_cuda_shim_sources runtime/shims/memory.cpp
                             runtime/shims/cuda_guard.cpp
 )
 
-# Only build CUDA shims when CUDA language/toolchain is available.
+# Only build int4mm shim when CUDA language/toolchain is available.
 if(CMAKE_CUDA_COMPILER)
   list(APPEND _aoti_cuda_shim_sources runtime/shims/int4mm.cu
-       runtime/shims/sort.cu runtime/shims/rand.cu
+       runtime/shims/sort.cu
   )
 endif()
 
@@ -152,8 +152,7 @@ endif()
 # retention.
 if(_cuda_is_msvc_toolchain)
   target_link_libraries(
-    aoti_cuda_shims PRIVATE cuda_platform CUDA::cudart CUDA::curand
-                            ${CMAKE_DL_LIBS}
+    aoti_cuda_shims PRIVATE cuda_platform CUDA::cudart ${CMAKE_DL_LIBS}
   )
   # Link object library directly so symbols are pulled exactly once while
   # avoiding duplicate static/object inclusion and interface leakage.
@@ -163,7 +162,7 @@ else()
     aoti_cuda_shims
     PRIVATE cuda_platform
     PUBLIC -Wl,--whole-archive aoti_common_shims_slim -Wl,--no-whole-archive
-           CUDA::cudart CUDA::curand ${CMAKE_DL_LIBS}
+           CUDA::cudart ${CMAKE_DL_LIBS}
   )
 endif()
 

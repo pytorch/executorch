@@ -42,7 +42,6 @@ set(CUDA_SHIM_TESTS
     test_aoti_torch_delete_tensor_object
     test_aoti_torch__reinterpret_tensor
     test_aoti_torch_copy_
-    test_aoti_torch_cuda_rand
     test_aoti_torch_new_tensor_handle
     test_aoti_torch_item_bool
     test_aoti_torch_assign_tensors_out

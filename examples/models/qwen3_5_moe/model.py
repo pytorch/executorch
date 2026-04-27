@@ -17,12 +17,10 @@ import json
 import os
 import re
 from dataclasses import dataclass, field
-from typing import Optional
 
 import torch
 import torch.nn as nn
 
-from executorch.examples.models.qwen3_5_moe.sampler import sample
 from torch.nn import functional as F
 
 
@@ -594,10 +592,6 @@ class Block(nn.Module):
         return x
 
 
-# ---------------------------------------------------------------------------
-# Top-level model
-
-
 class Qwen35MoE(nn.Module):
 
     def __init__(self, config):
@@ -611,30 +605,13 @@ class Qwen35MoE(nn.Module):
         self.lm_head = nn.Linear(config.hidden_size, config.vocab_size, bias=False)
 
     def forward(
-        self,
-        tokens: torch.LongTensor,
-        input_pos: torch.LongTensor,
-        temperature: Optional[torch.Tensor] = None,
+        self, tokens: torch.LongTensor, input_pos: torch.LongTensor
     ) -> torch.Tensor:
         x = self.embed_tokens(tokens)
         for layer in self.layers:
             x = layer(x, input_pos)
         x = self.norm(x)
-        # When no sampling is requested, return the full ``[B, T, V]``
-        # logits so callers (eval, custom samplers) can inspect every
-        # position. Otherwise apply the prefill optimization and only
-        # materialize ``[B, V]`` for the last token.
-        if temperature is None:
-            return self.lm_head(x).float()  # [B, T, V] float32
-        logits = self.lm_head(x[:, -1, :]).float()  # [B, V] float32
-        # GPU-side Gumbel-max sampling: argmax(logits/T + gumbel_noise) is
-        # equivalent to drawing from softmax(logits/T) but stays entirely
-        # on-device. Algorithm reference:
-        # https://huggingface.co/blog/cxdu/fastsampling
-        # TODO(gasoonjia): once the on-device sampling stack lands, promote
-        # ``sample`` into a shared CUDA sampling utility reusable by other
-        # models, and add top-k / top-p filtering support.
-        return sample(logits, temperature)  # [B, 1]
+        return self.lm_head(x)
 
     @staticmethod
     def from_hf_checkpoint(model_dir, max_seq_len=4096):
