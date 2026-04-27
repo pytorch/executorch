@@ -208,6 +208,24 @@ quantized_conv2d_nchw_dilated_asym8uxsym8u_asym8u_per_tensor_out(
     const ::executorch::aten::optional<Tensor>& offset,
     Tensor& out);
 
+::executorch::aten::Tensor& quantized_conv2d_depthwise_nhwc_out(
+    KernelRuntimeContext& ctx,
+    const Tensor& input,
+    const Tensor& weight,
+    const Tensor& bias,
+    IntArrayRef stride,
+    IntArrayRef padding,
+    IntArrayRef dilation,
+    int64_t groups,
+    int64_t in_zero_point,
+    int64_t weight_zero_point,
+    double bias_scale,
+    double output_scale,
+    int64_t output_zero_point,
+    int64_t out_multiplier,
+    int64_t out_shift,
+    Tensor& out);
+
 ::executorch::aten::Tensor&
 quantized_conv2d_nhwc_asym8sxsym8s_asym8s_per_tensor_out(
     KernelRuntimeContext& ctx,
