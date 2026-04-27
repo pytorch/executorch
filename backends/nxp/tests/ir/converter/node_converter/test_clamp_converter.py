@@ -100,21 +100,28 @@ def test_convert_clamp__supported(mocker, min, max):
 
 # noinspection PyShadowingBuiltins
 @pytest.mark.parametrize(
-    "min, max",
+    "input_shape, min, max",
     [
-        pytest.param(0, 6, id="min = 0, max = 6 (Relu6)"),
-        pytest.param(0, None, id="min = 0, max = None (Relu)"),
+        pytest.param(
+            (1, 7, 9, 11),
+            0,
+            6,
+            id="min = 0, max = 6 (Relu6), num_channels not divisible by NUM_MACS, alone in partition",
+        ),
+        pytest.param(
+            (1, 7, 9, 11),
+            0,
+            None,
+            id="min = 0, max = None (Relu), num_channels not divisible by NUM_MACS, alone in partition",
+        ),
     ],
 )
-def test_convert_clamp__single_op__not_delegated_variants(min, max):
-    # Test that Clamp representable as Relu6 or Relu is NOT delegated, because it is a single op model which is not
-    #  supported by Neutron.
-    input_shape = (23,)
+def test_convert_clamp__unsupported_shape(input_shape, min, max):
     model = ClampModule(min, max)
 
     delegated_ep = to_quantized_edge_program(model, input_shape).exported_program()
 
-    # Make sure the `clamp` was NOT delegated (single op model).
+    # Make sure the `clamp` was NOT delegated.
     assert not graph_contains_any_of_ops(delegated_ep.graph, [ExecutorchDelegateCall])
     assert graph_contains_any_of_ops(delegated_ep.graph, [Clamp])
 

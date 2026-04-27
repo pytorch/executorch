@@ -1,7 +1,7 @@
 # Cortex-M Backend
 
 > [!NOTE]
-> WIP. This is a temporary/placeholder backend for Cortex-M CPUs. It is not intended to be used in production, but rather as a proof of concept. Things will change without notice.
+> Beta. This backend has been validated with a set of small models (e.g. MLPerf Tiny, MobileNetV2) and provides broad operator coverage through CMSIS-NN accelerated kernels with portable-ops fallback.
 
 ## Overview
 

@@ -14,7 +14,7 @@ class AddModule(torch.nn.Module):
         return x + y
 
 
-def test_count_tosa_ops_add_no_target():
+def test_count_tosa_ops_add():
     model = AddModule()
     test_data = (torch.randn(1, 8, 8, 8), torch.randn(1, 8, 8, 8))
     pipeline = TosaPipelineFP[type(test_data)](
@@ -27,7 +27,7 @@ def test_count_tosa_ops_add_no_target():
     pipeline.run()
 
 
-def test_count_tosa_ops_2_adds_no_target():
+def test_count_tosa_ops_2_adds():
     model = AddModule()
     test_data = (torch.randn(1, 8, 8, 8), torch.randn(1, 8, 8, 8))
     pipeline = TosaPipelineFP[type(test_data)](
