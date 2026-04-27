@@ -275,6 +275,87 @@ class TensorTest {
   }
 
   @Test
+  fun testCopyDataIntoFloat32() {
+    val data = floatArrayOf(Float.MIN_VALUE, 0f, 0.1f, Float.MAX_VALUE)
+    val shape = longArrayOf(2, 2)
+    val tensor = Tensor.fromBlob(data, shape)
+
+    val dst = Tensor.allocateFloatBuffer(4)
+    tensor.copyDataInto(dst)
+    assertEquals(4, dst.position())
+    dst.rewind()
+    for (i in data.indices) {
+      assertEquals(data[i].toDouble(), dst.get().toDouble(), 1e-5)
+    }
+
+    // Verify reuse: a second call refills the same buffer in place.
+    dst.rewind()
+    tensor.copyDataInto(dst)
+    assertEquals(4, dst.position())
+    dst.rewind()
+    for (i in data.indices) {
+      assertEquals(data[i].toDouble(), dst.get().toDouble(), 1e-5)
+    }
+  }
+
+  @Test
+  fun testCopyDataIntoFloat32_writesAtDstPosition() {
+    val data = floatArrayOf(1f, 2f, 3f, 4f)
+    val shape = longArrayOf(4)
+    val tensor = Tensor.fromBlob(data, shape)
+
+    // Pre-fill a larger buffer; copyDataInto should write at the current
+    // position and advance it, not overwrite from index 0.
+    val dst = Tensor.allocateFloatBuffer(8)
+    dst.put(floatArrayOf(-1f, -1f))
+    assertEquals(2, dst.position())
+    tensor.copyDataInto(dst)
+    assertEquals(6, dst.position())
+    dst.rewind()
+    assertEquals(-1f.toDouble(), dst.get().toDouble(), 0.0)
+    assertEquals(-1f.toDouble(), dst.get().toDouble(), 0.0)
+    for (i in data.indices) {
+      assertEquals(data[i].toDouble(), dst.get().toDouble(), 1e-5)
+    }
+  }
+
+  @Test
+  fun testCopyDataIntoFloat32_overflow() {
+    val data = floatArrayOf(1f, 2f, 3f, 4f)
+    val tensor = Tensor.fromBlob(data, longArrayOf(4))
+    val dst = Tensor.allocateFloatBuffer(2)
+    assertThatThrownBy { tensor.copyDataInto(dst) }
+        .isInstanceOf(java.nio.BufferOverflowException::class.java)
+  }
+
+  @Test
+  fun testCopyDataIntoFloat16() {
+    // 0x0000=+0, 0x3C00=1.0, 0x4000=2.0, 0xC000=-2.0
+    val halfBits =
+        shortArrayOf(0x0000.toShort(), 0x3C00.toShort(), 0x4000.toShort(), 0xC000.toShort())
+    val tensor = Tensor.fromBlob(halfBits, longArrayOf(4))
+    assertEquals(DType.HALF, tensor.dtype())
+
+    val dst = Tensor.allocateFloatBuffer(4)
+    tensor.copyDataInto(dst)
+    assertEquals(4, dst.position())
+    dst.rewind()
+    assertEquals(0.0, dst.get().toDouble(), 0.0)
+    assertEquals(1.0, dst.get().toDouble(), 0.0)
+    assertEquals(2.0, dst.get().toDouble(), 0.0)
+    assertEquals(-2.0, dst.get().toDouble(), 0.0)
+  }
+
+  @Test
+  fun testCopyDataIntoFloat_unsupportedDtype() {
+    val tensor = Tensor.fromBlob(intArrayOf(1, 2, 3, 4), longArrayOf(4))
+    val dst = Tensor.allocateFloatBuffer(4)
+    assertThatThrownBy { tensor.copyDataInto(dst) }
+        .isInstanceOf(IllegalStateException::class.java)
+        .hasMessage("Tensor of type Tensor_int32 cannot copy data into FloatBuffer.")
+  }
+
+  @Test
   fun testIllegalArguments() {
     val data = floatArrayOf(Float.MIN_VALUE, 0f, 0.1f, Float.MAX_VALUE)
     val shapeWithNegativeValues = longArrayOf(-1, 2)
