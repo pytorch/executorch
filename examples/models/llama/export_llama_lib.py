@@ -123,7 +123,7 @@ HUGGING_FACE_REPO_IDS = {
     "qwen2_5_1_5b": "Qwen/Qwen2.5-1.5B",
     "qwen2_5_coder_32b": "Qwen/Qwen2.5-Coder-32B-Instruct",
     "phi_4_mini": "microsoft/Phi-4-mini-instruct",
-    "smollm2": "HuggingFaceTB/SmolLM-135M",
+    "smollm2": "HuggingFaceTB/SmolLM2-135M",
     "qwen3_0_6b": "Qwen/Qwen3-0.6B",
     "qwen3_1_7b": "Qwen/Qwen3-1.7B",
     "qwen3_4b": "Qwen/Qwen3-4B",
@@ -196,7 +196,7 @@ def build_args_parser() -> argparse.ArgumentParser:
         "--model",
         default="llama3",
         choices=EXECUTORCH_DEFINED_MODELS + TORCHTUNE_DEFINED_MODELS,
-        help="The Lllama model to export. stories110M, llama2, llama3, llama3_1, and llama3_2 use the same underlying LlamaTransformer architecture defined in ExecuTorch. All other models use TorchTune model definitions.",
+        help="The Llama model to export. stories110M, llama2, llama3, llama3_1, and llama3_2 use the same underlying LlamaTransformer architecture defined in ExecuTorch. All other models use TorchTune model definitions.",
     )
     parser.add_argument(
         "-E",
@@ -423,7 +423,7 @@ def build_args_parser() -> argparse.ArgumentParser:
         type=parse_list_of_ints,
         default=None,
         help="List of integers specifying local and global attention pattern, e.g., [0, 16, 0, 16] to specify that every other layer is sliding window of 16."
-        " [0, 16, 32] pattern specifes 2nd and 3rd layer has sliding window of 16 and 32 respecitvely. "
+        " [0, 16, 32] pattern specifes 2nd and 3rd layer has sliding window of 16 and 32 respectively."
         " [16] pattern specifies all layers have sliding window of 16.",
     )
 
@@ -500,6 +500,12 @@ def build_args_parser() -> argparse.ArgumentParser:
         default="CPU",
         choices=["CPU", "GPU", "NPU"],
         help="Specify the device for Openvino (CPU, GPU or NPU).",
+    )
+
+    parser.add_argument(
+        "--mlx",
+        action="store_true",
+        help="Delegate to MLX backend (Apple Silicon). Use with --use_kv_cache=True.",
     )
 
     parser.add_argument(
@@ -585,7 +591,7 @@ def build_args_parser() -> argparse.ArgumentParser:
         "--use_attention_sink",
         default=None,
         type=str,
-        help="Use attention sink to have fluent multi-round conversation. '<sink_size>,<window_size>,<batch_eviction_size>', e.g., '4,2044,1024'.",
+        help="Use attention sink to have fluent multi-round conversation. '<sink_size>,<window_size>', e.g., '4,2044'.",
     )
 
     parser.add_argument(
@@ -737,10 +743,9 @@ def _prepare_for_llama_export(llm_config: LlmConfig) -> LLMEdgeManager:
             f"Checkpoint dtype {checkpoint_dtype} precision is higher than dtype override {dtype_override.to_torch_dtype()}."
         )
 
-    edge_manager.model = edge_manager.model.to(dtype=dtype_override.to_torch_dtype())
-
-    # We want to quantize (in the source transforms) the weights of the model
-    # in the checkpoint dtype.
+    # Quantize weights in checkpoint dtype for accuracy, then cast to
+    # dtype_override afterward. IntxUnpackedToInt8Tensor.to() properly
+    # propagates the dtype change to scale/zero_point/output dtype.
     logging.info(f"Checkpoint dtype: {edge_manager.model.checkpoint_dtype}")
     edge_manager = edge_manager.set_output_dir(output_dir_path).source_transform(
         _get_source_transforms(
@@ -763,7 +768,8 @@ def _prepare_for_llama_export(llm_config: LlmConfig) -> LLMEdgeManager:
             expand_rope_table=llm_config.model.expand_rope_table,
             use_custom_sdpa_with_attention_mask=getattr(
                 llm_config.model, "use_custom_sdpa_with_attention_mask", False
-            ),
+            )
+            or bool(llm_config.model.use_attention_sink),
             use_sdpa_with_kv_cache=llm_config.model.use_sdpa_with_kv_cache,
             quantize_kv_cache=llm_config.model.quantize_kv_cache,
             use_kv_cache=llm_config.model.use_kv_cache,
@@ -774,6 +780,7 @@ def _prepare_for_llama_export(llm_config: LlmConfig) -> LLMEdgeManager:
             coreml=llm_config.backend.coreml.enabled,
             coreml_ios=llm_config.backend.coreml.ios,
             vulkan=llm_config.backend.vulkan.enabled,
+            mlx=llm_config.backend.mlx.enabled,
             use_qat=llm_config.quantization.use_qat,
             use_lora=llm_config.base.use_lora,
             preq_mode=(
@@ -784,6 +791,7 @@ def _prepare_for_llama_export(llm_config: LlmConfig) -> LLMEdgeManager:
             local_global_attention=llm_config.model.local_global_attention,
             use_torchao_kernels_linear=llm_config.backend.torchao.use_torchao_kernels_linear,
             use_torchao_kernels_tied_embedding=llm_config.backend.torchao.use_torchao_kernels_tied_embedding,
+            quantize_with_hqq=llm_config.quantization.use_hqq,
         )
     )
 
@@ -1052,6 +1060,34 @@ def _to_edge_and_lower_llama_arm(
     return builder.to_executorch(passes=additional_passes)
 
 
+def _to_edge_and_lower_llama_mlx(
+    builder_exported,
+    modelname,
+    quantizers,
+    additional_passes,
+    verbose: bool = False,
+) -> LLMEdgeManager:
+    """
+    Lower Llama model to MLX backend using to_edge_transform_and_lower.
+    """
+    logging.info("Lowering model using MLX partitioner")
+
+    from executorch.backends.mlx.partitioner import MLXPartitioner
+    from executorch.backends.mlx.passes import get_default_passes
+
+    partitioners = [MLXPartitioner()]
+
+    builder = builder_exported.pt2e_quantize(quantizers).to_edge_transform_and_lower(
+        partitioners,
+        transform_passes=get_default_passes(),
+    )
+
+    if verbose:
+        print_delegation_info(builder.edge_manager.exported_program().graph_module)
+
+    return builder.to_executorch(passes=additional_passes)
+
+
 def _to_edge_and_lower_llama(  # noqa: C901
     builder_exported,
     modelname,
@@ -1289,6 +1325,13 @@ def _export_llama_multimethod(llm_config: LlmConfig) -> LLMEdgeManager:
     if llm_config.base.model_class.value in TORCHTUNE_DEFINED_MODELS:
         additional_passes = [InitializedMutableBufferPass(["kv_cache_pos"])]
 
+    # For attention sink models, cache_positions must be initialized to -1
+    # (sentinel for "empty slot"). Without this pass, ExecuTorch only serializes
+    # shape+dtype for mutable buffers, leaving them zero-initialized at runtime,
+    # which corrupts the causal mask computation.
+    if llm_config.model.use_attention_sink:
+        additional_passes.append(InitializedMutableBufferPass(["cache_positions"]))
+
     # Build dict of exported programs
     method_to_program: Dict[str, ExportedProgram] = {}
     first_builder = None
@@ -1362,6 +1405,13 @@ def _export_llama(llm_config: LlmConfig) -> LLMEdgeManager:  # noqa: C901
     if llm_config.base.model_class.value in TORCHTUNE_DEFINED_MODELS:
         additional_passes = [InitializedMutableBufferPass(["kv_cache_pos"])]
 
+    # For attention sink models, cache_positions must be initialized to -1
+    # (sentinel for "empty slot"). Without this pass, ExecuTorch only serializes
+    # shape+dtype for mutable buffers, leaving them zero-initialized at runtime,
+    # which corrupts the causal mask computation.
+    if llm_config.model.use_attention_sink:
+        additional_passes.append(InitializedMutableBufferPass(["cache_positions"]))
+
     # export_to_edge
     builder_manager = _prepare_for_llama_export(llm_config)
     if (
@@ -1426,6 +1476,14 @@ def _export_llama(llm_config: LlmConfig) -> LLMEdgeManager:  # noqa: C901
             quantizers,
             additional_passes,
             llm_config,
+            verbose=llm_config.debug.verbose,
+        )
+    elif llm_config.backend.mlx.enabled:
+        builder = _to_edge_and_lower_llama_mlx(
+            builder_exported,
+            modelname,
+            quantizers,
+            additional_passes,
             verbose=llm_config.debug.verbose,
         )
     else:
@@ -1612,6 +1670,7 @@ def _get_source_transforms(  # noqa
     coreml: bool = False,
     coreml_ios: int = 15,
     vulkan: bool = False,
+    mlx: bool = False,
     use_qat: bool = False,
     use_lora: int = 0,
     preq_mode: Optional[str] = None,
@@ -1692,8 +1751,7 @@ def _get_source_transforms(  # noqa
             get_quant_embedding_transform(
                 embedding_quantize,
                 use_shared_embedding,
-                checkpoint_dtype,
-                quantize_with_hqq,
+                quantize_with_hqq=quantize_with_hqq,
             )
         )
 
@@ -1734,16 +1792,17 @@ def _get_source_transforms(  # noqa
     use_attention_mask_for_custom_sdpa = use_custom_sdpa_with_attention_mask
 
     if use_sdpa_with_kv_cache:
-        transforms.append(replace_kv_cache_with_custom_kv_cache)
-        # todo: do this optionally
-        # if use attention mask instead of causal attention
-        # then create partial function that sets use_attention_mask=True
+        # Replace SDPA first, then KV cache. Order matters: the KV cache
+        # replacement sets SDPACustom.use_attention_mask=True for ring buffer
+        # models (attention sink, sliding window). If SDPA is replaced after,
+        # a new SDPACustom(use_attention_mask=False) would overwrite it.
         if use_attention_mask_for_custom_sdpa:
             transforms.append(
                 partial(replace_sdpa_with_custom_op, use_attention_mask=True)
             )
         else:
             transforms.append(replace_sdpa_with_custom_op)
+        transforms.append(replace_kv_cache_with_custom_kv_cache)
 
     if quantize_kv_cache:
         assert use_kv_cache, "quantize_kv_cache requires use_kv_cache=True"
@@ -1789,6 +1848,19 @@ def _get_source_transforms(  # noqa
                 transforms.append(replace_sdpa_with_simple_sdpa)
             transforms.append(replace_kv_cache_with_coreml_kv_cache)
 
+        elif mlx:
+            from executorch.backends.mlx.llm.source_transformation import (
+                replace_et_kv_cache_with_mlx,
+                transform_attention_mha_to_mlx,
+            )
+            from executorch.examples.models.llama.source_transformation.rms_norm import (
+                replace_rms_norm_with_native_rms_norm,
+            )
+
+            transforms.append(transform_attention_mha_to_mlx)
+            transforms.append(replace_et_kv_cache_with_mlx)
+            transforms.append(replace_rms_norm_with_native_rms_norm)
+
     if local_global_attention:
         transforms.append(
             partial(
@@ -1796,6 +1868,12 @@ def _get_source_transforms(  # noqa
                 layer_sizes=local_global_attention,
             )
         )
+
+    # Cast to dtype_override after quantization transforms, so non-quantized
+    # components use the desired computation dtype. This must happen before
+    # _convert_model_for_aarch64 which converts IntxUnpackedToInt8Tensor to
+    # IntxOpaqueTensor (which doesn't support .to()).
+    transforms.append(lambda m: m.to(dtype=dtype_override.to_torch_dtype()))
 
     if any([use_torchao_kernels_linear, use_torchao_kernels_tied_embedding]):
         from torchao.prototype.tensor_conversion.api import _convert_model_for_aarch64
