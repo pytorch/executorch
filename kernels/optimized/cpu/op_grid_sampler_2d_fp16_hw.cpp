@@ -22,6 +22,8 @@
 
 #ifdef __aarch64__
 
+#include <executorch/kernels/optimized/cpu/op_grid_sampler_2d_fp16_hw.h>
+
 #include <arm_neon.h>
 #include <cmath>
 

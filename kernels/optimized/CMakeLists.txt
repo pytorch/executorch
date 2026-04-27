@@ -78,16 +78,32 @@ target_compile_options(optimized_kernels PUBLIC ${_common_compile_options})
 
 # op_grid_sampler_2d_fp16_hw.cpp uses hardware fp16 NEON intrinsics
 # (vcvt_f32_f16 / vld1_f16). Those are part of the ARMv8.2-a+fp16 extension and
-# raise SIGILL on chips without it. Scope the `-march` flag to just that
-# translation unit. The main op_grid_sampler_2d.cpp (which hosts the runtime
-# dispatcher via cpuinfo_has_arm_neon_fp16) and the fp16 software-convert path
-# stay on plain ARMv8 so they can run on any chip.
+# raise SIGILL on chips without it. Build it as a separate OBJECT library so the
+# `-march=armv8.2-a+fp16` flag stays strictly scoped to that translation unit
+# and never reaches the dispatcher / fallback code in op_grid_sampler_2d.cpp
+# (which would otherwise risk auto-vectorizing into fp16 NEON instructions). The
+# dispatcher chooses between this entry point and the fp16 software-convert path
+# at runtime via cpuinfo_has_arm_neon_fp16(). Mirrors the buck
+# `grid_sampler_2d_fp16_hw_impl` library.
 if(CMAKE_SYSTEM_PROCESSOR MATCHES "aarch64|arm64" OR ANDROID_ABI STREQUAL
                                                      "arm64-v8a"
 )
-  set_source_files_properties(
+  add_library(
+    grid_sampler_2d_fp16_hw_impl OBJECT
     ${EXECUTORCH_ROOT}/kernels/optimized/cpu/op_grid_sampler_2d_fp16_hw.cpp
-    PROPERTIES COMPILE_OPTIONS "-march=armv8.2-a+fp16"
+  )
+  target_compile_options(
+    grid_sampler_2d_fp16_hw_impl PRIVATE -march=armv8.2-a+fp16
+                                         ${_common_compile_options}
+  )
+  target_link_libraries(grid_sampler_2d_fp16_hw_impl PRIVATE executorch_core)
+  # BUILD_LOCAL_INTERFACE: object files are baked into optimized_kernels.a at
+  # archive time, so this OBJECT target stays out of the install EXPORT set and
+  # downstream consumers of the installed optimized_kernels need no separate
+  # link entry.
+  target_link_libraries(
+    optimized_kernels
+    PRIVATE $<BUILD_LOCAL_INTERFACE:grid_sampler_2d_fp16_hw_impl>
   )
 endif()
 

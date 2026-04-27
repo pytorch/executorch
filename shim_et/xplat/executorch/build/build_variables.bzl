@@ -268,7 +268,6 @@ OPTIMIZED_KERNELS_SRCS = [
     "kernels/optimized/cpu/op_fft_r2c.cpp",
     "kernels/optimized/cpu/op_gelu.cpp",
     "kernels/optimized/cpu/op_grid_sampler_2d.cpp",
-    "kernels/optimized/cpu/op_grid_sampler_2d_fp16_hw.cpp",
     "kernels/optimized/cpu/op_le.cpp",
     "kernels/optimized/cpu/op_linear.cpp",
     "kernels/optimized/cpu/op_log_softmax.cpp",

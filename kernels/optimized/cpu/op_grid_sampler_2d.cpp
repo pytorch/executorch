@@ -33,6 +33,7 @@
 #ifdef __aarch64__
 #include <arm_neon.h>
 #include <cpuinfo.h>
+#include <executorch/kernels/optimized/cpu/op_grid_sampler_2d_fp16_hw.h>
 #endif
 
 #include <c10/util/Half.h>
@@ -55,25 +56,6 @@ Tensor& grid_sampler_2d_out(
     int64_t padding_mode,
     bool align_corners,
     Tensor& out);
-
-#ifdef __aarch64__
-namespace opt_grid_sampler_2d_internal {
-// Declared in op_grid_sampler_2d_fp16_hw.cpp, compiled separately with
-// `-march=armv8.2-a+fp16`. Only safe to call when
-// cpuinfo_has_arm_neon_fp16() is true.
-void grid_sampler_2d_bilinear_fp16_hw(
-    const void* input,
-    const void* grid,
-    void* output,
-    int N,
-    int C,
-    int H_in,
-    int W_in,
-    int H_out,
-    int W_out,
-    bool align_corners);
-} // namespace opt_grid_sampler_2d_internal
-#endif
 
 #ifdef __aarch64__
 namespace {
@@ -361,7 +343,17 @@ Tensor& opt_grid_sampler_2d_out(
       tensor_is_contiguous(input) && tensor_is_contiguous(grid) &&
       tensor_is_contiguous(out);
 
-  if (interpolation_mode != 0 || padding_mode != 0 || !fast_eligible) {
+  // The fast paths read input/grid and write out as a single dtype: float for
+  // the fp32 NEON path, fp16 for both the fp16 HW path (which raw-casts the
+  // void* pointers to __fp16*) and the SW fp16 NEON path (which uses
+  // data_ptr<c10::Half>(), whose runtime dtype check is not guaranteed in
+  // release builds). Reject any mixed-dtype call up front so none of those
+  // unchecked casts can be reached with a mismatched buffer.
+  const bool dtypes_match = input.scalar_type() == grid.scalar_type() &&
+      input.scalar_type() == out.scalar_type();
+
+  if (interpolation_mode != 0 || padding_mode != 0 || !fast_eligible ||
+      !dtypes_match) {
     return grid_sampler_2d_out(
         ctx, input, grid, interpolation_mode, padding_mode, align_corners, out);
   }
