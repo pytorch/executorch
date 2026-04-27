@@ -4,15 +4,17 @@
 # ExecuTorch AAR. They prevent R8/ProGuard from stripping classes and
 # methods that are called from native (JNI) code.
 
-# Keep all classes and members annotated with @DoNotStrip.
-# These are explicitly marked as JNI entry points.
--keep @com.facebook.jni.annotations.DoNotStrip class * { *; }
--keepclassmembers class * {
+# Keep ExecuTorch classes and members annotated with @DoNotStrip.
+# Scoped to org.pytorch.executorch to avoid affecting unrelated libraries.
+-keep @com.facebook.jni.annotations.DoNotStrip class org.pytorch.executorch.** { *; }
+-keepclassmembers class org.pytorch.executorch.** {
     @com.facebook.jni.annotations.DoNotStrip *;
 }
 
 # Keep all native methods across ExecuTorch packages.
--keepclasseswithmembernames class org.pytorch.executorch.** {
+# Use -keepclasseswithmembers (not -keepclasseswithmembernames) to prevent
+# both shrinking and obfuscation of JNI entry points.
+-keepclasseswithmembers class org.pytorch.executorch.** {
     native <methods>;
 }
 
