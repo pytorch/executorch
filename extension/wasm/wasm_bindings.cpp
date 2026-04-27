@@ -84,9 +84,9 @@ inline void js_array_push(val_array<T>& array, const T& value) {
   _(float, Float)                           \
   _(int64_t, Long)
 
-inline ssize_t compute_expected_numel(
+inline ::executorch::runtime::Result<ssize_t> compute_expected_numel(
     const std::vector<torch::executor::Tensor::SizesType>& sizes) {
-  return executorch::aten::compute_numel(sizes.data(), sizes.size());
+  return executorch::aten::safe_numel(sizes.data(), sizes.size());
 }
 
 template <typename T>
@@ -94,10 +94,12 @@ inline void assert_valid_numel(
     const std::vector<T>& data,
     const std::vector<torch::executor::Tensor::SizesType>& sizes) {
   auto computed_numel = compute_expected_numel(sizes);
+  THROW_IF_ERROR(
+      computed_numel.error(), "Invalid tensor sizes: numel computation failed");
   THROW_IF_FALSE(
-      data.size() >= computed_numel,
+      data.size() >= static_cast<size_t>(computed_numel.get()),
       "Required %ld elements, given %ld",
-      computed_numel,
+      computed_numel.get(),
       data.size());
 }
 

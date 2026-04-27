@@ -8,7 +8,6 @@ from typing import Optional
 
 import executorch.backends.vulkan.patterns as vk_patterns
 import torch.library
-
 from torch._subclasses.fake_tensor import FakeTensor
 
 namespace = "et_vk"
@@ -259,7 +258,7 @@ def linear_q4gsw(
         weights, [1, group_size], weight_scales, weight_zeros, torch.int8, -8, 7
     )
 
-    out = torch.nn.functional.linear(x, weights)
+    out = torch.nn.functional.linear(x, weights, bias)
     return out
 
 
@@ -273,7 +272,7 @@ def linear_dq8ca_q4gsw(
     group_size: int,
     bias: Optional[torch.Tensor] = None,
 ):
-    return linear_q4gsw(x, weights, weight_scales, group_size)
+    return linear_q4gsw(x, weights, weight_scales, group_size, bias)
 
 
 name = "linear_q4gsw"
@@ -803,6 +802,81 @@ lib.define(
 lib.impl(name, apply_rotary_emb_impl, "CompositeExplicitAutograd")
 apply_rotary_emb_op = getattr(getattr(torch.ops, namespace), name)
 
+#########################
+## apply_rotary_emb_hf ##
+#########################
+
+
+def apply_rotary_emb_hf_impl(
+    xq: torch.Tensor,
+    xk: torch.Tensor,
+    freqs_cos: torch.Tensor,
+    freqs_sin: torch.Tensor,
+    start_pos: int,
+):
+    seq_len = xq.shape[1]
+    freqs_cos = freqs_cos[start_pos : start_pos + seq_len]
+    freqs_sin = freqs_sin[start_pos : start_pos + seq_len]
+    pattern = vk_patterns.HfRotaryEmbeddingPattern()
+    return pattern.forward(xq, xk, freqs_cos, freqs_sin)
+
+
+name = "apply_rotary_emb_hf"
+lib.define(
+    f"{name}(Tensor xq, Tensor xk, Tensor freqs_cos, Tensor freqs_sin, SymInt start_pos) -> (Tensor, Tensor)"
+)
+lib.impl(name, apply_rotary_emb_hf_impl, "CompositeExplicitAutograd")
+apply_rotary_emb_hf_op = getattr(getattr(torch.ops, namespace), name)
+
+##################################
+## apply_rotary_emb_interleaved ##
+##################################
+
+
+def apply_rotary_emb_interleaved_impl(
+    x: torch.Tensor, freqs_cis: torch.Tensor
+) -> torch.Tensor:
+    # EdgeTAM's pair-interleaved complex-number RoPE.
+    #   x:         [B, N, C] with (real, imag) pairs interleaved along C
+    #   freqs_cis: any rank whose flattened layout is [N, C]. Commonly 2D
+    #              [N, C] or 4D [1, N, C/2, 2] from
+    #              `torch.view_as_real(...).unsqueeze(0)`. The (cos, sin)
+    #              pairs are interleaved along the innermost axis in the
+    #              flattened view.
+    # Semantically equivalent to:
+    #   freqs_cis.reshape(N, C // 2, 2) -> (cos, sin)
+    #   out[2k]   = x[2k] * cos[k] - x[2k+1] * sin[k]
+    #   out[2k+1] = x[2k] * sin[k] + x[2k+1] * cos[k]
+    B, N, C = x.shape
+    a_real, a_imag = x.view(B, N, C // 2, 2).unbind(-1)
+    # Use reshape so callers may pass freqs_cis at any rank.
+    cs = freqs_cis.reshape(N, C // 2, 2)
+    b_real, b_imag = cs[..., 0], cs[..., 1]
+    out = torch.stack(
+        (a_real * b_real - a_imag * b_imag, a_real * b_imag + a_imag * b_real),
+        dim=-1,
+    )
+    return out.view(B, N, C)
+
+
+def apply_rotary_emb_interleaved_meta(
+    x: torch.Tensor, freqs_cis: torch.Tensor
+) -> torch.Tensor:
+    # Meta kernel: shape-only. Keeps the op opaque during torch.export (no
+    # inlining of view/reshape calls into the exported graph) and does not
+    # constrain the rank of freqs_cis — any shape with N * C elements is
+    # accepted by the Vulkan dispatcher.
+    return torch.empty_like(x)
+
+
+name = "apply_rotary_emb_interleaved"
+lib.define(f"{name}(Tensor x, Tensor freqs_cis) -> Tensor")
+# CPU kernel preserves eager-mode reference semantics.
+lib.impl(name, apply_rotary_emb_interleaved_impl, "CPU")
+# Meta kernel keeps the op opaque in the exported graph.
+lib.impl(name, apply_rotary_emb_interleaved_meta, "Meta")
+apply_rotary_emb_interleaved_op = getattr(getattr(torch.ops, namespace), name)
+
 ########################
 ## q8ta_add ##
 ########################
@@ -880,6 +954,46 @@ lib.define(
 lib.impl(name, q8ta_relu_impl, "CompositeExplicitAutograd")
 q8ta_relu_op = getattr(getattr(torch.ops, namespace), name)
 
+########################
+## embedding_q4gsw ##
+########################
+
+
+def embedding_q4gsw_impl(
+    weight: torch.Tensor,
+    weight_scales: torch.Tensor,
+    group_size: int,
+    indices: torch.Tensor,
+    is_linear_weight: bool = False,
+) -> torch.Tensor:
+    # Unpack 4-bit values from packed uint8 tensor
+    # Packing convention: packed_byte = (even_val + 8) << 4 | (odd_val + 8)
+    high = (weight >> 4).to(torch.int8) - 8
+    low = (weight & 0xF).to(torch.int8) - 8
+    if is_linear_weight:
+        unpacked = torch.stack([low, high], dim=-1).reshape(weight.shape[0], -1)
+    else:
+        unpacked = torch.stack([high, low], dim=-1).reshape(weight.shape[0], -1)
+    # Dequantize using per-group scales
+    num_groups = weight_scales.shape[1] if weight_scales.dim() > 1 else 1
+    unpacked_groups = unpacked.reshape(weight.shape[0], num_groups, group_size)
+    scales = (
+        weight_scales.unsqueeze(-1)
+        if weight_scales.dim() > 1
+        else weight_scales.reshape(1, 1, 1)
+    )
+    dequantized = unpacked_groups.float() * scales.float()
+    dequantized = dequantized.reshape(weight.shape[0], -1)
+    return torch.nn.functional.embedding(indices, dequantized)
+
+
+name = "embedding_q4gsw"
+lib.define(
+    f"{name}(Tensor weight, Tensor weight_scales, int group_size, Tensor indices, bool is_linear_weight = False) -> Tensor"
+)
+lib.impl(name, embedding_q4gsw_impl, "CompositeExplicitAutograd")
+embedding_q4gsw_op = getattr(getattr(torch.ops, namespace), name)
+
 #############################
 ## select_as_symint ##
 #############################
@@ -894,3 +1008,52 @@ name = "select_as_symint"
 lib.define(f"{name}(Tensor x, int dim, int index) -> SymInt")
 lib.impl(name, select_as_symint_impl, "Meta")
 select_as_symint_op = getattr(getattr(torch.ops, namespace), name)
+
+##########
+## sdpa ##
+##########
+
+
+def sdpa_impl(
+    q: torch.Tensor,
+    k: torch.Tensor,
+    v: torch.Tensor,
+    attn_mask: Optional[torch.Tensor] = None,
+    scale: Optional[float] = None,
+):
+    if scale is None:
+        scale = 1.0 / (q.size(-1) ** 0.5)
+    attn = torch.matmul(q, k.transpose(-2, -1)) * scale
+    if attn_mask is not None:
+        attn = attn + attn_mask
+    attn = torch.softmax(attn, dim=-1)
+    return torch.matmul(attn, v)
+
+
+name = "sdpa"
+lib.define(
+    f"{name}(Tensor q, Tensor k, Tensor v, Tensor? attn_mask = None, float? scale = None) -> Tensor"
+)
+lib.impl(name, sdpa_impl, "CompositeExplicitAutograd")
+sdpa_op = getattr(getattr(torch.ops, namespace), name)
+
+################
+## rms_norm ##
+################
+
+
+def rms_norm_impl(
+    x: torch.Tensor,
+    weight: torch.Tensor,
+    eps: float,
+) -> torch.Tensor:
+    input_dtype = x.dtype
+    variance = x.float().pow(2).mean(-1, keepdim=True)
+    x_normed = x.float() * torch.rsqrt(variance + eps)
+    return (x_normed * weight.float()).to(input_dtype)
+
+
+name = "rms_norm"
+lib.define(f"{name}(Tensor x, Tensor weight, float eps) -> Tensor")
+lib.impl(name, rms_norm_impl, "CompositeExplicitAutograd")
+rms_norm_op = getattr(getattr(torch.ops, namespace), name)

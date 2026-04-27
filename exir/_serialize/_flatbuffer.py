@@ -10,6 +10,7 @@
 import importlib.resources
 import os
 import re
+import stat
 import subprocess
 
 from dataclasses import dataclass
@@ -249,6 +250,15 @@ def _run_flatc(args: Sequence[str]) -> None:
     if flatc_resource.is_file():
         # Use the provided flatc binary.
         with importlib.resources.as_file(flatc_resource) as flatc_path:
+            # Ensure the binary has execute permissions (needed for PAR files)
+            try:
+                current_mode = flatc_path.stat().st_mode
+                if not (current_mode & stat.S_IXUSR):
+                    flatc_path.chmod(
+                        current_mode | stat.S_IXUSR | stat.S_IXGRP | stat.S_IXOTH
+                    )
+            except OSError:
+                pass
             subprocess.run([flatc_path] + list(args), check=True)
     else:
         # Expect the `flatc` tool to be on the system path or set as an env var.

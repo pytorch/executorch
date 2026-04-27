@@ -26,7 +26,6 @@ UNSUPPORTED_DTYPES = (
     torch.cfloat,
     torch.complex128,
     torch.cdouble,
-    torch.uint8,
     torch.int64,
     torch.long,
 )
@@ -100,6 +99,8 @@ def map_dtype(data_type: torch.dtype) -> Any:
         torch.half: ts.DType.FP16,
         torch.bfloat16: ts.DType.BF16,
         torch.int8: ts.DType.INT8,
+        # TOSA uses signless int8; unsigned semantics are expressed via RESCALE.
+        torch.uint8: ts.DType.INT8,
         torch.int16: ts.DType.INT16,
         torch.short: ts.DType.INT16,
         torch.int32: ts.DType.INT32,
@@ -131,13 +132,19 @@ def extract_tensor_meta(meta):
     special_dtype = meta.get(TosaSpecialDtype.meta_key())
     if special_dtype == TosaSpecialDtype.SHAPE:
         shape_len = len(meta["val"])
-        return (ts.DType.SHAPE, (shape_len,), meta["tosa_dim_order"])
+        dim_order = tuple(range(shape_len))
+        return (ts.DType.SHAPE, (shape_len,), dim_order)
 
     if meta.get("val") is None:
         raise ValueError("Expected node.meta['val'] to be set to a FakeTensor")
     val = meta["val"]
     if type(val) is tuple:
         # TODO: should use first concrete representation
+        val = val[0]
+    if isinstance(val, list):
+        if not val:
+            raise ValueError("Expected node.meta['val'] list to be non-empty")
+        # Use first concrete representation for multi-output ops.
         val = val[0]
 
     if not isinstance(val, torch._subclasses.fake_tensor.FakeTensor):
@@ -147,10 +154,7 @@ def extract_tensor_meta(meta):
     dtype = map_dtype(val.dtype)
     shape = tuple(val.size())
 
-    if meta.get("tosa_dim_order") is not None:
-        dim_order = meta["tosa_dim_order"]
-    else:
-        dim_order = tuple(range(len(shape)))
+    dim_order = tuple(range(len(shape)))
     return (dtype, shape, dim_order)
 
 
@@ -263,7 +267,8 @@ class TosaArg:
             self.__process_number(argument)
             return
         if isinstance(argument, torch.dtype):
-            # Dtype is parsed from fake tensor
+            # Capture a dtype scalar argument
+            self.dtype = map_dtype(argument)
             return
 
         if argument is None:

@@ -8,6 +8,16 @@ from enum import IntEnum, unique
 from functools import partial
 from typing import Callable, Dict, List, Optional, Sequence, Set, Tuple
 
+# To support quantize op lowering in AOT
+try:
+    import executorch.kernels.quantized  # noqa[F401]
+except:
+    import logging
+
+    logging.info(
+        "Failed to load quantized_aot_lib. To run on LPAI backend, please make sure that quantized_aot_lib is accessible."
+    )
+    del logging
 import torch
 from executorch.backends.qualcomm._passes.qnn_pass_manager import QnnPassManager
 
@@ -174,6 +184,7 @@ class ModuleQConfig:
     is_qat: bool = False
     is_conv_per_channel: bool = False
     is_linear_per_channel: bool = False
+    is_embedding_per_channel: bool = False
     act_observer: Optional[UniformQuantizationObserverBase] = None
     act_symmetric: bool = False
     eps: Optional[float] = None
@@ -226,6 +237,7 @@ class ModuleQConfig:
             torch.ops.aten.conv_transpose2d.input: 1,
             torch.ops.aten.conv_transpose3d.input: 1,
             torch.ops.aten.linear.default: 0,
+            torch.ops.aten.embedding.default: 0,
         }
 
         self.use_per_channel_weight_quant_ops = {}
@@ -245,6 +257,17 @@ class ModuleQConfig:
             self.use_per_channel_weight_quant_ops.update(
                 {k: self.op_axis_dict[k] for k in linear_ops if k in self.op_axis_dict}
             )
+        if self.is_embedding_per_channel:
+            embedding_ops = [torch.ops.aten.embedding.default]
+            self.use_per_channel_weight_quant_ops.update(
+                {
+                    k: self.op_axis_dict[k]
+                    for k in embedding_ops
+                    if k in self.op_axis_dict
+                }
+            )
+            for pcq_config in self.per_channel_quant_config_list:
+                pcq_config.per_channel_embedding = True
 
         if per_block_quant_config_func:
             self.per_block_quant_config_list = []
@@ -533,6 +556,7 @@ class QnnQuantizer(Quantizer):
         is_qat=False,
         is_conv_per_channel=False,
         is_linear_per_channel=False,
+        is_embedding_per_channel=False,
         act_observer=None,
         act_symmetric=False,
         eps=None,
@@ -545,6 +569,7 @@ class QnnQuantizer(Quantizer):
             is_qat (bool, optional): Enables Quantization-Aware Training (QAT) mode. Defaults to Post-Training Quantization (PTQ) mode.
             is_conv_per_channel (bool, optional): Enables per-channel quantization for convolution operations.
             is_linear_per_channel (bool, optional): Enables per-channel quantization for linear (fully connected) operations.
+            is_embedding_per_channel (bool, optional): Enables per-channel quantization for embedding operations.
             act_observer (Optional[UniformQuantizationObserverBase], optional): Custom observer for activation quantization. If not specified, the default observer is determined by `QUANT_CONFIG_DICT`.
 
         """
@@ -553,6 +578,7 @@ class QnnQuantizer(Quantizer):
             is_qat=is_qat,
             is_conv_per_channel=is_conv_per_channel,
             is_linear_per_channel=is_linear_per_channel,
+            is_embedding_per_channel=is_embedding_per_channel,
             act_observer=act_observer,
             act_symmetric=act_symmetric,
             eps=eps,

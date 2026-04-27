@@ -179,3 +179,868 @@ TEST(VulkanRotaryEmbeddingTest, rotary_embedding_llama3_params_test_seq_len_3) {
       /*dim=*/2048,
       /*seq_len=*/3);
 }
+
+//
+// HuggingFace RoPE reference and tests
+//
+
+std::pair<at::Tensor, at::Tensor> rotary_embedding_hf_impl(
+    const at::Tensor& xq,
+    const at::Tensor& xk,
+    const at::Tensor& freqs_cos,
+    const at::Tensor& freqs_sin) {
+  const int64_t head_dim = xq.size(3);
+  const int64_t half_dim = head_dim / 2;
+
+  // Split into first half and second half along head_dim
+  at::Tensor xq_first = xq.slice(/*dim=*/3, /*start=*/0, /*end=*/half_dim);
+  at::Tensor xq_second = xq.slice(/*dim=*/3, /*start=*/half_dim);
+  at::Tensor xk_first = xk.slice(/*dim=*/3, /*start=*/0, /*end=*/half_dim);
+  at::Tensor xk_second = xk.slice(/*dim=*/3, /*start=*/half_dim);
+
+  // freqs are (seq_len, head_dim) but duplicated; use first half only
+  at::Tensor cos_half =
+      freqs_cos.slice(/*dim=*/1, /*start=*/0, /*end=*/half_dim);
+  at::Tensor sin_half =
+      freqs_sin.slice(/*dim=*/1, /*start=*/0, /*end=*/half_dim);
+
+  at::Tensor cos_reshape =
+      cos_half.reshape({1, cos_half.size(0), 1, cos_half.size(1)});
+  at::Tensor sin_reshape =
+      sin_half.reshape({1, sin_half.size(0), 1, sin_half.size(1)});
+
+  // out[i]     = x[i] * cos[i] - x[i+D/2] * sin[i]
+  // out[i+D/2] = x[i+D/2] * cos[i] + x[i] * sin[i]
+  at::Tensor xq_out_first = xq_first * cos_reshape - xq_second * sin_reshape;
+  at::Tensor xq_out_second = xq_second * cos_reshape + xq_first * sin_reshape;
+  at::Tensor xk_out_first = xk_first * cos_reshape - xk_second * sin_reshape;
+  at::Tensor xk_out_second = xk_second * cos_reshape + xk_first * sin_reshape;
+
+  at::Tensor xq_out = at::cat({xq_out_first, xq_out_second}, /*dim=*/3);
+  at::Tensor xk_out = at::cat({xk_out_first, xk_out_second}, /*dim=*/3);
+
+  return std::make_pair(xq_out, xk_out);
+}
+
+void test_reference_hf(
+    const int n_heads = 4,
+    const int n_kv_heads = 2,
+    const int dim = 32,
+    const int seq_len = 1) {
+  const int head_dim = dim / n_heads;
+
+  at::Tensor xq = at::rand(
+      {1, seq_len, n_heads, head_dim}, at::device(at::kCPU).dtype(at::kFloat));
+  at::Tensor xk = at::rand(
+      {1, seq_len, n_kv_heads, head_dim},
+      at::device(at::kCPU).dtype(at::kFloat));
+  // HF convention: freqs are full head_dim (duplicated)
+  at::Tensor freqs_cos =
+      at::rand({seq_len, head_dim}, at::device(at::kCPU).dtype(at::kFloat));
+  at::Tensor freqs_sin =
+      at::rand({seq_len, head_dim}, at::device(at::kCPU).dtype(at::kFloat));
+
+  std::pair<at::Tensor, at::Tensor> outs =
+      rotary_embedding_hf_impl(xq, xk, freqs_cos, freqs_sin);
+  at::Tensor& xq_out = outs.first;
+  at::Tensor& xk_out = outs.second;
+
+  using namespace vkcompute;
+
+  GraphConfig config;
+  config.set_storage_type_override(utils::kTexture3D);
+  ComputeGraph graph(config);
+
+  IOValueRef r_xq = graph.add_input_tensor(
+      xq.sizes().vec(), from_at_scalartype(xq.scalar_type()));
+  IOValueRef r_xk = graph.add_input_tensor(
+      xk.sizes().vec(), from_at_scalartype(xk.scalar_type()));
+  IOValueRef r_freqs_cos = graph.add_input_tensor(
+      freqs_cos.sizes().vec(), from_at_scalartype(freqs_cos.scalar_type()));
+  IOValueRef r_freqs_sin = graph.add_input_tensor(
+      freqs_sin.sizes().vec(), from_at_scalartype(freqs_sin.scalar_type()));
+
+  const ValueRef r_xq_out = graph.add_tensor(
+      xq_out.sizes().vec(), from_at_scalartype(xq_out.scalar_type()));
+  const ValueRef r_xk_out = graph.add_tensor(
+      xk_out.sizes().vec(), from_at_scalartype(xk_out.scalar_type()));
+
+  const ValueRef r_start_pos = graph.add_scalar<int64_t>(0);
+
+  VK_GET_OP_FN("et_vk.apply_rotary_emb_hf.default")
+  (graph,
+   {r_xq.value,
+    r_xk.value,
+    r_freqs_cos.value,
+    r_freqs_sin.value,
+    r_start_pos,
+    graph.add_value_list({r_xq_out, r_xk_out})});
+
+  ValueRef staging_xq_out = graph.set_output_tensor(r_xq_out);
+  ValueRef staging_xk_out = graph.set_output_tensor(r_xk_out);
+
+  graph.prepare();
+  graph.prepack();
+
+  graph.propagate_resize();
+  graph.maybe_cast_and_copy_into_staging(
+      r_xq.staging,
+      xq.const_data_ptr(),
+      xq.numel(),
+      from_at_scalartype(xq.scalar_type()));
+  graph.maybe_cast_and_copy_into_staging(
+      r_xk.staging,
+      xk.const_data_ptr(),
+      xk.numel(),
+      from_at_scalartype(xk.scalar_type()));
+  graph.maybe_cast_and_copy_into_staging(
+      r_freqs_cos.staging,
+      freqs_cos.const_data_ptr(),
+      freqs_cos.numel(),
+      from_at_scalartype(freqs_cos.scalar_type()));
+  graph.maybe_cast_and_copy_into_staging(
+      r_freqs_sin.staging,
+      freqs_sin.const_data_ptr(),
+      freqs_sin.numel(),
+      from_at_scalartype(freqs_sin.scalar_type()));
+
+  graph.execute();
+
+  at::Tensor vk_xq_out = at::empty_like(xq_out);
+  graph.maybe_cast_and_copy_from_staging(
+      staging_xq_out,
+      vk_xq_out.mutable_data_ptr(),
+      vk_xq_out.numel(),
+      from_at_scalartype(vk_xq_out.scalar_type()));
+
+  at::Tensor vk_xk_out = at::empty_like(xk_out);
+  graph.maybe_cast_and_copy_from_staging(
+      staging_xk_out,
+      vk_xk_out.mutable_data_ptr(),
+      vk_xk_out.numel(),
+      from_at_scalartype(vk_xk_out.scalar_type()));
+
+  EXPECT_TRUE(at::allclose(xq_out, vk_xq_out, 1e-4, 1e-4));
+  EXPECT_TRUE(at::allclose(xk_out, vk_xk_out, 1e-4, 1e-4));
+}
+
+TEST(VulkanRotaryEmbeddingHFTest, rotary_embedding_hf_test) {
+  test_reference_hf();
+}
+
+TEST(VulkanRotaryEmbeddingHFTest, rotary_embedding_hf_llama3_params_test) {
+  test_reference_hf(
+      /*n_heads=*/32,
+      /*n_kv_heads=*/8,
+      /*dim=*/2048);
+}
+
+TEST(
+    VulkanRotaryEmbeddingHFTest,
+    rotary_embedding_hf_llama3_params_test_seq_len_3) {
+  test_reference_hf(
+      /*n_heads=*/32,
+      /*n_kv_heads=*/8,
+      /*dim=*/2048,
+      /*seq_len=*/3);
+}
+
+TEST(VulkanRotaryEmbeddingHFTest, rotary_embedding_hf_head_dim_128) {
+  test_reference_hf(
+      /*n_heads=*/8,
+      /*n_kv_heads=*/4,
+      /*dim=*/1024,
+      /*seq_len=*/5);
+}
+
+// Tests dynamic resize from prefill (seq_len=N) to decode (seq_len=1),
+// simulating the actual LLM inference pattern that was previously broken.
+TEST(VulkanRotaryEmbeddingHFTest, rotary_embedding_hf_dynamic_resize_qwen3) {
+  const int n_heads = 16;
+  const int n_kv_heads = 8;
+  const int head_dim = 128;
+  const int prefill_seq_len = 7;
+
+  using namespace vkcompute;
+
+  GraphConfig config;
+  config.set_storage_type_override(utils::kTexture3D);
+  ComputeGraph graph(config);
+
+  // Build graph with prefill shapes (max size)
+  IOValueRef r_xq = graph.add_input_tensor(
+      {1, prefill_seq_len, n_heads, head_dim}, vkapi::kFloat);
+  IOValueRef r_xk = graph.add_input_tensor(
+      {1, prefill_seq_len, n_kv_heads, head_dim}, vkapi::kFloat);
+  IOValueRef r_freqs_cos =
+      graph.add_input_tensor({prefill_seq_len, head_dim}, vkapi::kFloat);
+  IOValueRef r_freqs_sin =
+      graph.add_input_tensor({prefill_seq_len, head_dim}, vkapi::kFloat);
+
+  const ValueRef r_xq_out =
+      graph.add_tensor({1, prefill_seq_len, n_heads, head_dim}, vkapi::kFloat);
+  const ValueRef r_xk_out = graph.add_tensor(
+      {1, prefill_seq_len, n_kv_heads, head_dim}, vkapi::kFloat);
+
+  const ValueRef r_start_pos = graph.add_scalar<int64_t>(0);
+
+  VK_GET_OP_FN("et_vk.apply_rotary_emb_hf.default")
+  (graph,
+   {r_xq.value,
+    r_xk.value,
+    r_freqs_cos.value,
+    r_freqs_sin.value,
+    r_start_pos,
+    graph.add_value_list({r_xq_out, r_xk_out})});
+
+  ValueRef staging_xq_out = graph.set_output_tensor(r_xq_out);
+  ValueRef staging_xk_out = graph.set_output_tensor(r_xk_out);
+
+  graph.prepare();
+  graph.prepack();
+
+  // --- Prefill run (seq_len = 7) ---
+  {
+    at::Tensor xq = at::rand(
+        {1, prefill_seq_len, n_heads, head_dim},
+        at::device(at::kCPU).dtype(at::kFloat));
+    at::Tensor xk = at::rand(
+        {1, prefill_seq_len, n_kv_heads, head_dim},
+        at::device(at::kCPU).dtype(at::kFloat));
+    at::Tensor freqs_cos = at::rand(
+        {prefill_seq_len, head_dim}, at::device(at::kCPU).dtype(at::kFloat));
+    at::Tensor freqs_sin = at::rand(
+        {prefill_seq_len, head_dim}, at::device(at::kCPU).dtype(at::kFloat));
+
+    auto ref = rotary_embedding_hf_impl(xq, xk, freqs_cos, freqs_sin);
+
+    graph.resize_input(0, xq.sizes().vec());
+    graph.resize_input(1, xk.sizes().vec());
+    graph.resize_input(2, freqs_cos.sizes().vec());
+    graph.resize_input(3, freqs_sin.sizes().vec());
+    graph.propagate_resize();
+
+    graph.maybe_cast_and_copy_into_staging(
+        r_xq.staging, xq.const_data_ptr(), xq.numel(), vkapi::kFloat);
+    graph.maybe_cast_and_copy_into_staging(
+        r_xk.staging, xk.const_data_ptr(), xk.numel(), vkapi::kFloat);
+    graph.maybe_cast_and_copy_into_staging(
+        r_freqs_cos.staging,
+        freqs_cos.const_data_ptr(),
+        freqs_cos.numel(),
+        vkapi::kFloat);
+    graph.maybe_cast_and_copy_into_staging(
+        r_freqs_sin.staging,
+        freqs_sin.const_data_ptr(),
+        freqs_sin.numel(),
+        vkapi::kFloat);
+
+    graph.execute();
+
+    at::Tensor vk_xq_out = at::empty_like(ref.first);
+    graph.maybe_cast_and_copy_from_staging(
+        staging_xq_out,
+        vk_xq_out.mutable_data_ptr(),
+        vk_xq_out.numel(),
+        vkapi::kFloat);
+    at::Tensor vk_xk_out = at::empty_like(ref.second);
+    graph.maybe_cast_and_copy_from_staging(
+        staging_xk_out,
+        vk_xk_out.mutable_data_ptr(),
+        vk_xk_out.numel(),
+        vkapi::kFloat);
+
+    EXPECT_TRUE(at::allclose(ref.first, vk_xq_out, 1e-4, 1e-4))
+        << "Prefill xq_out mismatch";
+    EXPECT_TRUE(at::allclose(ref.second, vk_xk_out, 1e-4, 1e-4))
+        << "Prefill xk_out mismatch";
+  }
+
+  // --- Decode run (seq_len = 1) ---
+  {
+    at::Tensor xq = at::rand(
+        {1, 1, n_heads, head_dim}, at::device(at::kCPU).dtype(at::kFloat));
+    at::Tensor xk = at::rand(
+        {1, 1, n_kv_heads, head_dim}, at::device(at::kCPU).dtype(at::kFloat));
+    at::Tensor freqs_cos =
+        at::rand({1, head_dim}, at::device(at::kCPU).dtype(at::kFloat));
+    at::Tensor freqs_sin =
+        at::rand({1, head_dim}, at::device(at::kCPU).dtype(at::kFloat));
+
+    auto ref = rotary_embedding_hf_impl(xq, xk, freqs_cos, freqs_sin);
+
+    graph.resize_input(0, xq.sizes().vec());
+    graph.resize_input(1, xk.sizes().vec());
+    graph.resize_input(2, freqs_cos.sizes().vec());
+    graph.resize_input(3, freqs_sin.sizes().vec());
+    graph.propagate_resize();
+
+    graph.maybe_cast_and_copy_into_staging(
+        r_xq.staging, xq.const_data_ptr(), xq.numel(), vkapi::kFloat);
+    graph.maybe_cast_and_copy_into_staging(
+        r_xk.staging, xk.const_data_ptr(), xk.numel(), vkapi::kFloat);
+    graph.maybe_cast_and_copy_into_staging(
+        r_freqs_cos.staging,
+        freqs_cos.const_data_ptr(),
+        freqs_cos.numel(),
+        vkapi::kFloat);
+    graph.maybe_cast_and_copy_into_staging(
+        r_freqs_sin.staging,
+        freqs_sin.const_data_ptr(),
+        freqs_sin.numel(),
+        vkapi::kFloat);
+
+    graph.execute();
+
+    at::Tensor vk_xq_out = at::empty_like(ref.first);
+    graph.maybe_cast_and_copy_from_staging(
+        staging_xq_out,
+        vk_xq_out.mutable_data_ptr(),
+        vk_xq_out.numel(),
+        vkapi::kFloat);
+    at::Tensor vk_xk_out = at::empty_like(ref.second);
+    graph.maybe_cast_and_copy_from_staging(
+        staging_xk_out,
+        vk_xk_out.mutable_data_ptr(),
+        vk_xk_out.numel(),
+        vkapi::kFloat);
+
+    EXPECT_TRUE(at::allclose(ref.first, vk_xq_out, 1e-4, 1e-4))
+        << "Decode xq_out mismatch";
+    EXPECT_TRUE(at::allclose(ref.second, vk_xk_out, 1e-4, 1e-4))
+        << "Decode xk_out mismatch";
+  }
+}
+
+// Tests that start_pos correctly offsets into the full freqs table.
+// The Vulkan op receives the full [max_seq_len, head_dim] freqs table plus a
+// start_pos offset, while the reference impl receives pre-sliced freqs.
+void test_reference_hf_with_start_pos(
+    const int n_heads = 8,
+    const int n_kv_heads = 4,
+    const int head_dim = 128,
+    const int seq_len = 3,
+    const int start_pos = 7,
+    const int max_seq_len = 32) {
+  at::Tensor xq = at::rand(
+      {1, seq_len, n_heads, head_dim}, at::device(at::kCPU).dtype(at::kFloat));
+  at::Tensor xk = at::rand(
+      {1, seq_len, n_kv_heads, head_dim},
+      at::device(at::kCPU).dtype(at::kFloat));
+
+  // Full freqs table of size [max_seq_len, head_dim]
+  at::Tensor freqs_cos_full =
+      at::rand({max_seq_len, head_dim}, at::device(at::kCPU).dtype(at::kFloat));
+  at::Tensor freqs_sin_full =
+      at::rand({max_seq_len, head_dim}, at::device(at::kCPU).dtype(at::kFloat));
+
+  // Slice freqs for the reference implementation
+  at::Tensor freqs_cos_sliced =
+      freqs_cos_full.slice(/*dim=*/0, start_pos, start_pos + seq_len);
+  at::Tensor freqs_sin_sliced =
+      freqs_sin_full.slice(/*dim=*/0, start_pos, start_pos + seq_len);
+
+  // Reference uses pre-sliced freqs
+  std::pair<at::Tensor, at::Tensor> ref =
+      rotary_embedding_hf_impl(xq, xk, freqs_cos_sliced, freqs_sin_sliced);
+
+  using namespace vkcompute;
+
+  GraphConfig config;
+  config.set_storage_type_override(utils::kTexture3D);
+  ComputeGraph graph(config);
+
+  IOValueRef r_xq = graph.add_input_tensor(
+      xq.sizes().vec(), from_at_scalartype(xq.scalar_type()));
+  IOValueRef r_xk = graph.add_input_tensor(
+      xk.sizes().vec(), from_at_scalartype(xk.scalar_type()));
+  // Vulkan op receives full freqs table
+  IOValueRef r_freqs_cos = graph.add_input_tensor(
+      freqs_cos_full.sizes().vec(),
+      from_at_scalartype(freqs_cos_full.scalar_type()));
+  IOValueRef r_freqs_sin = graph.add_input_tensor(
+      freqs_sin_full.sizes().vec(),
+      from_at_scalartype(freqs_sin_full.scalar_type()));
+
+  const ValueRef r_xq_out = graph.add_tensor(
+      ref.first.sizes().vec(), from_at_scalartype(ref.first.scalar_type()));
+  const ValueRef r_xk_out = graph.add_tensor(
+      ref.second.sizes().vec(), from_at_scalartype(ref.second.scalar_type()));
+
+  const ValueRef r_start_pos = graph.add_scalar<int64_t>(start_pos);
+
+  VK_GET_OP_FN("et_vk.apply_rotary_emb_hf.default")
+  (graph,
+   {r_xq.value,
+    r_xk.value,
+    r_freqs_cos.value,
+    r_freqs_sin.value,
+    r_start_pos,
+    graph.add_value_list({r_xq_out, r_xk_out})});
+
+  ValueRef staging_xq_out = graph.set_output_tensor(r_xq_out);
+  ValueRef staging_xk_out = graph.set_output_tensor(r_xk_out);
+
+  graph.prepare();
+  graph.prepack();
+
+  graph.propagate_resize();
+  graph.maybe_cast_and_copy_into_staging(
+      r_xq.staging,
+      xq.const_data_ptr(),
+      xq.numel(),
+      from_at_scalartype(xq.scalar_type()));
+  graph.maybe_cast_and_copy_into_staging(
+      r_xk.staging,
+      xk.const_data_ptr(),
+      xk.numel(),
+      from_at_scalartype(xk.scalar_type()));
+  graph.maybe_cast_and_copy_into_staging(
+      r_freqs_cos.staging,
+      freqs_cos_full.const_data_ptr(),
+      freqs_cos_full.numel(),
+      from_at_scalartype(freqs_cos_full.scalar_type()));
+  graph.maybe_cast_and_copy_into_staging(
+      r_freqs_sin.staging,
+      freqs_sin_full.const_data_ptr(),
+      freqs_sin_full.numel(),
+      from_at_scalartype(freqs_sin_full.scalar_type()));
+
+  graph.execute();
+
+  at::Tensor vk_xq_out = at::empty_like(ref.first);
+  graph.maybe_cast_and_copy_from_staging(
+      staging_xq_out,
+      vk_xq_out.mutable_data_ptr(),
+      vk_xq_out.numel(),
+      from_at_scalartype(vk_xq_out.scalar_type()));
+
+  at::Tensor vk_xk_out = at::empty_like(ref.second);
+  graph.maybe_cast_and_copy_from_staging(
+      staging_xk_out,
+      vk_xk_out.mutable_data_ptr(),
+      vk_xk_out.numel(),
+      from_at_scalartype(vk_xk_out.scalar_type()));
+
+  EXPECT_TRUE(at::allclose(ref.first, vk_xq_out, 1e-4, 1e-4));
+  EXPECT_TRUE(at::allclose(ref.second, vk_xk_out, 1e-4, 1e-4));
+}
+
+TEST(VulkanRotaryEmbeddingHFTest, rotary_embedding_hf_start_pos_offset) {
+  test_reference_hf_with_start_pos();
+}
+
+TEST(VulkanRotaryEmbeddingHFTest, rotary_embedding_hf_start_pos_decode) {
+  test_reference_hf_with_start_pos(
+      /*n_heads=*/16,
+      /*n_kv_heads=*/8,
+      /*head_dim=*/128,
+      /*seq_len=*/1,
+      /*start_pos=*/15,
+      /*max_seq_len=*/64);
+}
+
+//
+// Partial rotary tests (partial_rotary_factor < 1.0)
+//
+
+// Reference impl for partial rotary: only first rotary_dim elements are
+// rotated, the rest pass through unchanged.
+std::pair<at::Tensor, at::Tensor> rotary_embedding_hf_partial_impl(
+    const at::Tensor& xq,
+    const at::Tensor& xk,
+    const at::Tensor& freqs_cos,
+    const at::Tensor& freqs_sin) {
+  const int64_t rotary_dim = freqs_cos.size(1);
+  const int64_t rotary_half = rotary_dim / 2;
+
+  // Split into rotary and passthrough regions
+  at::Tensor xq_rot = xq.slice(/*dim=*/3, /*start=*/0, /*end=*/rotary_dim);
+  at::Tensor xq_pass = xq.slice(/*dim=*/3, /*start=*/rotary_dim);
+  at::Tensor xk_rot = xk.slice(/*dim=*/3, /*start=*/0, /*end=*/rotary_dim);
+  at::Tensor xk_pass = xk.slice(/*dim=*/3, /*start=*/rotary_dim);
+
+  // Split rotary region into first and second halves
+  at::Tensor xq_first =
+      xq_rot.slice(/*dim=*/3, /*start=*/0, /*end=*/rotary_half);
+  at::Tensor xq_second = xq_rot.slice(/*dim=*/3, /*start=*/rotary_half);
+  at::Tensor xk_first =
+      xk_rot.slice(/*dim=*/3, /*start=*/0, /*end=*/rotary_half);
+  at::Tensor xk_second = xk_rot.slice(/*dim=*/3, /*start=*/rotary_half);
+
+  // freqs are (seq_len, rotary_dim); use first half only
+  at::Tensor cos_half =
+      freqs_cos.slice(/*dim=*/1, /*start=*/0, /*end=*/rotary_half);
+  at::Tensor sin_half =
+      freqs_sin.slice(/*dim=*/1, /*start=*/0, /*end=*/rotary_half);
+
+  at::Tensor cos_reshape =
+      cos_half.reshape({1, cos_half.size(0), 1, cos_half.size(1)});
+  at::Tensor sin_reshape =
+      sin_half.reshape({1, sin_half.size(0), 1, sin_half.size(1)});
+
+  at::Tensor xq_out_first = xq_first * cos_reshape - xq_second * sin_reshape;
+  at::Tensor xq_out_second = xq_second * cos_reshape + xq_first * sin_reshape;
+  at::Tensor xk_out_first = xk_first * cos_reshape - xk_second * sin_reshape;
+  at::Tensor xk_out_second = xk_second * cos_reshape + xk_first * sin_reshape;
+
+  at::Tensor xq_out =
+      at::cat({xq_out_first, xq_out_second, xq_pass}, /*dim=*/3);
+  at::Tensor xk_out =
+      at::cat({xk_out_first, xk_out_second, xk_pass}, /*dim=*/3);
+
+  return std::make_pair(xq_out, xk_out);
+}
+
+void test_reference_hf_partial_rotary(
+    const int n_heads = 8,
+    const int n_kv_heads = 4,
+    const int head_dim = 128,
+    const int rotary_dim = 96,
+    const int seq_len = 3,
+    const int start_pos = 0,
+    const int max_seq_len = 32) {
+  at::Tensor xq = at::rand(
+      {1, seq_len, n_heads, head_dim}, at::device(at::kCPU).dtype(at::kFloat));
+  at::Tensor xk = at::rand(
+      {1, seq_len, n_kv_heads, head_dim},
+      at::device(at::kCPU).dtype(at::kFloat));
+
+  // Full freqs table with rotary_dim < head_dim
+  at::Tensor freqs_cos_full = at::rand(
+      {max_seq_len, rotary_dim}, at::device(at::kCPU).dtype(at::kFloat));
+  at::Tensor freqs_sin_full = at::rand(
+      {max_seq_len, rotary_dim}, at::device(at::kCPU).dtype(at::kFloat));
+
+  // Slice freqs for reference
+  at::Tensor freqs_cos_sliced =
+      freqs_cos_full.slice(/*dim=*/0, start_pos, start_pos + seq_len);
+  at::Tensor freqs_sin_sliced =
+      freqs_sin_full.slice(/*dim=*/0, start_pos, start_pos + seq_len);
+
+  auto ref = rotary_embedding_hf_partial_impl(
+      xq, xk, freqs_cos_sliced, freqs_sin_sliced);
+
+  using namespace vkcompute;
+
+  GraphConfig config;
+  config.set_storage_type_override(utils::kTexture3D);
+  ComputeGraph graph(config);
+
+  IOValueRef r_xq = graph.add_input_tensor(
+      xq.sizes().vec(), from_at_scalartype(xq.scalar_type()));
+  IOValueRef r_xk = graph.add_input_tensor(
+      xk.sizes().vec(), from_at_scalartype(xk.scalar_type()));
+  IOValueRef r_freqs_cos = graph.add_input_tensor(
+      freqs_cos_full.sizes().vec(),
+      from_at_scalartype(freqs_cos_full.scalar_type()));
+  IOValueRef r_freqs_sin = graph.add_input_tensor(
+      freqs_sin_full.sizes().vec(),
+      from_at_scalartype(freqs_sin_full.scalar_type()));
+
+  const ValueRef r_xq_out = graph.add_tensor(
+      ref.first.sizes().vec(), from_at_scalartype(ref.first.scalar_type()));
+  const ValueRef r_xk_out = graph.add_tensor(
+      ref.second.sizes().vec(), from_at_scalartype(ref.second.scalar_type()));
+
+  const ValueRef r_start_pos = graph.add_scalar<int64_t>(start_pos);
+
+  VK_GET_OP_FN("et_vk.apply_rotary_emb_hf.default")
+  (graph,
+   {r_xq.value,
+    r_xk.value,
+    r_freqs_cos.value,
+    r_freqs_sin.value,
+    r_start_pos,
+    graph.add_value_list({r_xq_out, r_xk_out})});
+
+  ValueRef staging_xq_out = graph.set_output_tensor(r_xq_out);
+  ValueRef staging_xk_out = graph.set_output_tensor(r_xk_out);
+
+  graph.prepare();
+  graph.prepack();
+
+  graph.propagate_resize();
+  graph.maybe_cast_and_copy_into_staging(
+      r_xq.staging,
+      xq.const_data_ptr(),
+      xq.numel(),
+      from_at_scalartype(xq.scalar_type()));
+  graph.maybe_cast_and_copy_into_staging(
+      r_xk.staging,
+      xk.const_data_ptr(),
+      xk.numel(),
+      from_at_scalartype(xk.scalar_type()));
+  graph.maybe_cast_and_copy_into_staging(
+      r_freqs_cos.staging,
+      freqs_cos_full.const_data_ptr(),
+      freqs_cos_full.numel(),
+      from_at_scalartype(freqs_cos_full.scalar_type()));
+  graph.maybe_cast_and_copy_into_staging(
+      r_freqs_sin.staging,
+      freqs_sin_full.const_data_ptr(),
+      freqs_sin_full.numel(),
+      from_at_scalartype(freqs_sin_full.scalar_type()));
+
+  graph.execute();
+
+  at::Tensor vk_xq_out = at::empty_like(ref.first);
+  graph.maybe_cast_and_copy_from_staging(
+      staging_xq_out,
+      vk_xq_out.mutable_data_ptr(),
+      vk_xq_out.numel(),
+      from_at_scalartype(vk_xq_out.scalar_type()));
+
+  at::Tensor vk_xk_out = at::empty_like(ref.second);
+  graph.maybe_cast_and_copy_from_staging(
+      staging_xk_out,
+      vk_xk_out.mutable_data_ptr(),
+      vk_xk_out.numel(),
+      from_at_scalartype(vk_xk_out.scalar_type()));
+
+  EXPECT_TRUE(at::allclose(ref.first, vk_xq_out, 1e-4, 1e-4));
+  EXPECT_TRUE(at::allclose(ref.second, vk_xk_out, 1e-4, 1e-4));
+}
+
+// Phi4 Mini-like: head_dim=128, rotary_dim=96 (partial_rotary_factor=0.75)
+TEST(VulkanRotaryEmbeddingHFTest, rotary_embedding_hf_partial_rotary) {
+  test_reference_hf_partial_rotary();
+}
+
+// Partial rotary with non-zero start_pos
+TEST(
+    VulkanRotaryEmbeddingHFTest,
+    rotary_embedding_hf_partial_rotary_start_pos) {
+  test_reference_hf_partial_rotary(
+      /*n_heads=*/16,
+      /*n_kv_heads=*/8,
+      /*head_dim=*/128,
+      /*rotary_dim=*/96,
+      /*seq_len=*/1,
+      /*start_pos=*/10,
+      /*max_seq_len=*/64);
+}
+
+//
+// Interleaved (EdgeTAM) RoPE reference and tests
+//
+// x:         [B, N, C] with (real, imag) pairs interleaved along C
+// freqs_cis: any rank with N * C elements. Commonly 2D [N, C] or 4D
+//            [1, N, C/2, 2] from torch.view_as_real(...).unsqueeze(0). The
+//            (cos, sin) pairs are interleaved along the innermost axis in
+//            the flattened view.
+//
+
+at::Tensor rotary_embedding_interleaved_impl(
+    const at::Tensor& x,
+    const at::Tensor& freqs_cis) {
+  const int64_t B = x.size(0);
+  const int64_t N = x.size(1);
+  const int64_t C = x.size(2);
+
+  std::vector<at::Tensor> x_pairs = at::unbind(x.reshape({B, N, C / 2, 2}), -1);
+  at::Tensor& a_real = x_pairs[0];
+  at::Tensor& a_imag = x_pairs[1];
+
+  at::Tensor freqs_3d = freqs_cis.reshape({N, C / 2, 2});
+  std::vector<at::Tensor> freq_pairs = at::unbind(freqs_3d, -1);
+  at::Tensor& b_real = freq_pairs[0];
+  at::Tensor& b_imag = freq_pairs[1];
+
+  at::Tensor out_real = a_real * b_real - a_imag * b_imag;
+  at::Tensor out_imag = a_real * b_imag + a_imag * b_real;
+
+  return at::stack({out_real, out_imag}, -1).reshape({B, N, C});
+}
+
+void test_reference_interleaved(
+    const int B = 1,
+    const int N = 256,
+    const int C = 256,
+    const at::ScalarType dtype = at::kFloat,
+    const std::vector<int64_t>& freqs_shape = {}) {
+  at::Tensor x = at::rand({B, N, C}, at::device(at::kCPU).dtype(dtype));
+  std::vector<int64_t> fshape =
+      freqs_shape.empty() ? std::vector<int64_t>{N, C} : freqs_shape;
+  at::Tensor freqs_cis = at::rand(fshape, at::device(at::kCPU).dtype(dtype));
+
+  at::Tensor ref = rotary_embedding_interleaved_impl(x, freqs_cis);
+
+  using namespace vkcompute;
+
+  GraphConfig config;
+  config.set_storage_type_override(utils::kTexture3D);
+  ComputeGraph graph(config);
+
+  IOValueRef r_x = graph.add_input_tensor(
+      x.sizes().vec(), from_at_scalartype(x.scalar_type()));
+  // freqs_cis is always buffer-backed: the shader flat-indexes it so it is
+  // insensitive to the tensor's declared rank (matches op_registry pinning).
+  IOValueRef r_freqs_cis = graph.add_input_tensor(
+      freqs_cis.sizes().vec(),
+      from_at_scalartype(freqs_cis.scalar_type()),
+      utils::kBuffer);
+
+  const ValueRef r_out = graph.add_tensor(
+      ref.sizes().vec(), from_at_scalartype(ref.scalar_type()));
+
+  VK_GET_OP_FN("et_vk.apply_rotary_emb_interleaved.default")
+  (graph, {r_x.value, r_freqs_cis.value, r_out});
+
+  ValueRef staging_out = graph.set_output_tensor(r_out);
+
+  graph.prepare();
+  graph.prepack();
+
+  graph.propagate_resize();
+  graph.maybe_cast_and_copy_into_staging(
+      r_x.staging,
+      x.const_data_ptr(),
+      x.numel(),
+      from_at_scalartype(x.scalar_type()));
+  graph.maybe_cast_and_copy_into_staging(
+      r_freqs_cis.staging,
+      freqs_cis.const_data_ptr(),
+      freqs_cis.numel(),
+      from_at_scalartype(freqs_cis.scalar_type()));
+
+  graph.execute();
+
+  at::Tensor vk_out = at::empty_like(ref);
+  graph.maybe_cast_and_copy_from_staging(
+      staging_out,
+      vk_out.mutable_data_ptr(),
+      vk_out.numel(),
+      from_at_scalartype(vk_out.scalar_type()));
+
+  const double tol = (dtype == at::kHalf) ? 5e-3 : 1e-4;
+  EXPECT_TRUE(at::allclose(ref, vk_out, tol, tol));
+}
+
+// EdgeTAM self-attention shape
+TEST(VulkanRotaryEmbeddingInterleavedTest, edgetam_self_attn_fp32) {
+  test_reference_interleaved(/*B=*/1, /*N=*/256, /*C=*/256, at::kFloat);
+}
+
+TEST(VulkanRotaryEmbeddingInterleavedTest, edgetam_self_attn_fp16) {
+  test_reference_interleaved(/*B=*/1, /*N=*/256, /*C=*/256, at::kHalf);
+}
+
+// EdgeTAM cross-attention memory-bank shape
+TEST(VulkanRotaryEmbeddingInterleavedTest, edgetam_cross_attn_fp32) {
+  test_reference_interleaved(/*B=*/1, /*N=*/1792, /*C=*/256, at::kFloat);
+}
+
+TEST(VulkanRotaryEmbeddingInterleavedTest, edgetam_cross_attn_fp16) {
+  test_reference_interleaved(/*B=*/1, /*N=*/1792, /*C=*/256, at::kHalf);
+}
+
+// Buffer storage path
+void test_reference_interleaved_buffer(
+    const int B = 1,
+    const int N = 256,
+    const int C = 256,
+    const at::ScalarType dtype = at::kFloat,
+    const std::vector<int64_t>& freqs_shape = {}) {
+  at::Tensor x = at::rand({B, N, C}, at::device(at::kCPU).dtype(dtype));
+  std::vector<int64_t> fshape =
+      freqs_shape.empty() ? std::vector<int64_t>{N, C} : freqs_shape;
+  at::Tensor freqs_cis = at::rand(fshape, at::device(at::kCPU).dtype(dtype));
+
+  at::Tensor ref = rotary_embedding_interleaved_impl(x, freqs_cis);
+
+  using namespace vkcompute;
+
+  GraphConfig config;
+  config.set_storage_type_override(utils::kBuffer);
+  ComputeGraph graph(config);
+
+  IOValueRef r_x = graph.add_input_tensor(
+      x.sizes().vec(), from_at_scalartype(x.scalar_type()));
+  IOValueRef r_freqs_cis = graph.add_input_tensor(
+      freqs_cis.sizes().vec(), from_at_scalartype(freqs_cis.scalar_type()));
+
+  const ValueRef r_out = graph.add_tensor(
+      ref.sizes().vec(), from_at_scalartype(ref.scalar_type()));
+
+  VK_GET_OP_FN("et_vk.apply_rotary_emb_interleaved.default")
+  (graph, {r_x.value, r_freqs_cis.value, r_out});
+
+  ValueRef staging_out = graph.set_output_tensor(r_out);
+
+  graph.prepare();
+  graph.prepack();
+
+  graph.propagate_resize();
+  graph.maybe_cast_and_copy_into_staging(
+      r_x.staging,
+      x.const_data_ptr(),
+      x.numel(),
+      from_at_scalartype(x.scalar_type()));
+  graph.maybe_cast_and_copy_into_staging(
+      r_freqs_cis.staging,
+      freqs_cis.const_data_ptr(),
+      freqs_cis.numel(),
+      from_at_scalartype(freqs_cis.scalar_type()));
+
+  graph.execute();
+
+  at::Tensor vk_out = at::empty_like(ref);
+  graph.maybe_cast_and_copy_from_staging(
+      staging_out,
+      vk_out.mutable_data_ptr(),
+      vk_out.numel(),
+      from_at_scalartype(vk_out.scalar_type()));
+
+  const double tol = (dtype == at::kHalf) ? 5e-3 : 1e-4;
+  EXPECT_TRUE(at::allclose(ref, vk_out, tol, tol));
+}
+
+TEST(VulkanRotaryEmbeddingInterleavedTest, edgetam_self_attn_buffer_fp32) {
+  test_reference_interleaved_buffer(
+      /*B=*/1, /*N=*/256, /*C=*/256, at::kFloat);
+}
+
+TEST(VulkanRotaryEmbeddingInterleavedTest, edgetam_cross_attn_buffer_fp32) {
+  test_reference_interleaved_buffer(
+      /*B=*/1, /*N=*/1792, /*C=*/256, at::kFloat);
+}
+
+// 4D freqs_cis [1, N, C/2, 2] — EdgeTAM exporter emits this shape directly
+// from torch.view_as_real(...).unsqueeze(0), so this case must work without
+// the caller inserting a view_copy.
+TEST(VulkanRotaryEmbeddingInterleavedTest, edgetam_self_attn_buffer_4d_freqs) {
+  test_reference_interleaved_buffer(
+      /*B=*/1,
+      /*N=*/256,
+      /*C=*/256,
+      at::kFloat,
+      /*freqs_shape=*/{1, 256, 128, 2});
+}
+
+TEST(VulkanRotaryEmbeddingInterleavedTest, edgetam_cross_attn_buffer_4d_freqs) {
+  test_reference_interleaved_buffer(
+      /*B=*/1,
+      /*N=*/1792,
+      /*C=*/256,
+      at::kFloat,
+      /*freqs_shape=*/{1, 1792, 128, 2});
+}
+
+TEST(VulkanRotaryEmbeddingInterleavedTest, edgetam_self_attn_4d_freqs_fp16) {
+  test_reference_interleaved(
+      /*B=*/1,
+      /*N=*/256,
+      /*C=*/256,
+      at::kHalf,
+      /*freqs_shape=*/{1, 256, 128, 2});
+}
+
+TEST(VulkanRotaryEmbeddingInterleavedTest, edgetam_cross_attn_4d_freqs_fp16) {
+  test_reference_interleaved(
+      /*B=*/1,
+      /*N=*/1792,
+      /*C=*/256,
+      at::kHalf,
+      /*freqs_shape=*/{1, 1792, 128, 2});
+}

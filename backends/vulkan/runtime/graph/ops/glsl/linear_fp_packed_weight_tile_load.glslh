@@ -1,0 +1,75 @@
+/*
+ * Copyright (c) Meta Platforms, Inc. and affiliates.
+ * All rights reserved.
+ *
+ * This source code is licensed under the BSD-style license found in the
+ * LICENSE file in the root directory of this source tree.
+ */
+
+/*
+ * Tile loader for prepacked fp linear weights in 4OC x 4IC blocked layout.
+ *
+ * Assume the following variables are defined in the shader layout:
+ * - t_weight_packed
+ *
+ * Macro Settings:
+ * - WEIGHT_BUFFER
+ */
+
+#ifndef LINEAR_FP_PACKED_WEIGHT_TILE_LOAD_GLSLH
+#define LINEAR_FP_PACKED_WEIGHT_TILE_LOAD_GLSLH
+
+#extension GL_EXT_control_flow_attributes : require
+
+#include "linear_fp_weight_tile.glslh"
+
+LINEAR_FP_WEIGHT_TILE_VEC4_T load_packed_weight_x4(
+    const int n4, const int dk, const int k4, const int b, const int K4, const int N4) {
+#ifdef WEIGHT_BUFFER
+  return LINEAR_FP_WEIGHT_TILE_VEC4_T(t_weight_packed[((b * K4 + k4) * N4 + n4) * 4 + dk]);
+#else
+  return LINEAR_FP_WEIGHT_TILE_VEC4_T(texelFetch(t_weight_packed, ivec2(n4 * 4 + dk, b * K4 + k4), 0));
+#endif
+}
+
+void load_packed_weight_tile_no_checks(
+    out FPWeightTile tile,
+    const int n4_start,
+    const int k4_start,
+    const int b,
+    const int N4,
+    const int K4) {
+  [[unroll]] for (int dk4 = 0; dk4 < TILE_K4; dk4++) {
+    const int k4 = k4_start + dk4;
+    [[unroll]] for (int dk = 0; dk < 4; dk++) {
+      const int k = dk4 * 4 + dk;
+      [[unroll]] for (int n4 = 0; n4 < TILE_N4; n4++) {
+        tile.data[k][n4] = load_packed_weight_x4(n4_start + n4, dk, k4, b, K4, N4);
+      }
+    }
+  }
+}
+
+void load_packed_weight_tile_with_checks(
+    out FPWeightTile tile,
+    const int n4_start,
+    const int k4_start,
+    const int b,
+    const int N4,
+    const int K4) {
+  [[unroll]] for (int dk4 = 0; dk4 < TILE_K4; dk4++) {
+    const int k4 = k4_start + dk4;
+    [[unroll]] for (int dk = 0; dk < 4; dk++) {
+      const int k = dk4 * 4 + dk;
+      [[unroll]] for (int n4 = 0; n4 < TILE_N4; n4++) {
+        if (k4 < K4 && n4_start + n4 < N4) {
+          tile.data[k][n4] = load_packed_weight_x4(n4_start + n4, dk, k4, b, K4, N4);
+        } else {
+          tile.data[k][n4] = LINEAR_FP_WEIGHT_TILE_VEC4_T(0);
+        }
+      }
+    }
+  }
+}
+
+#endif // LINEAR_FP_PACKED_WEIGHT_TILE_LOAD_GLSLH

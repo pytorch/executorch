@@ -93,8 +93,10 @@ IValue constructTuple(const std::vector<IValue>& ivalues) {
       return create_tuple<11>(ivalues);
     case 12:
       return create_tuple<12>(ivalues);
+    case 13:
+      return create_tuple<13>(ivalues);
   }
-  ET_ASSERT_UNREACHABLE_MSG("Supports at most 12 inputs");
+  ET_ASSERT_UNREACHABLE_MSG("Supports at most 13 inputs");
   return {};
 }
 

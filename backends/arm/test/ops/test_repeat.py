@@ -11,6 +11,9 @@
 from typing import Sequence, Tuple
 
 import torch
+from executorch.backends.arm.quantizer.arm_quantizer import (
+    get_symmetric_a16w8_quantization_config,
+)
 
 from executorch.backends.arm.test import common
 from executorch.backends.arm.test.tester.test_pipeline import (
@@ -174,6 +177,21 @@ def test_repeat_vgf_quant(test_data: Tuple):
         module.aten_op,
         quantize=True,
     )
+    pipeline.run()
+
+
+@common.parametrize("test_data", test_data_suite)
+@common.SkipIfNoModelConverter
+def test_repeat_vgf_quant_a16w8(test_data: Tuple):
+    module, args = test_data()
+    pipeline = VgfPipeline[input_t1](
+        module,
+        args,
+        module.aten_op,
+        quantize=True,
+        tosa_extensions=["int16"],
+    )
+    pipeline.quantizer.set_global(get_symmetric_a16w8_quantization_config())
     pipeline.run()
 
 

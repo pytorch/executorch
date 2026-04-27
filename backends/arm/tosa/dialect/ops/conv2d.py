@@ -82,7 +82,7 @@ def validate_conv2d_args_dtypes(
     "Tensor weight, "
     "Tensor bias, "
     "int[2] stride, "
-    "int[4] pad, "
+    "SymInt[4] pad, "
     "int[2] dilation) -> Tensor",  # schema
     TosaSpecification.all_versions_and_profiles(),  # target TOSA specifications
 )
@@ -91,7 +91,7 @@ def CONV2D(
     weight: torch.Tensor,
     bias: torch.Tensor,
     stride: list[int],
-    pad: list[int],
+    pad: list[int | torch.SymInt],
     dilation: list[int],
 ) -> torch.Tensor:
     tosa_spec = get_context_spec()
@@ -101,14 +101,14 @@ def CONV2D(
     torch_pad = [pad[0], pad[2]]
     N = x.shape[0]
     C_out = weight.shape[0]
-    H_in, W_in = x.shape[2:]
+    H_in, W_in = x.shape[1], x.shape[2]
     H_out = math.floor(
-        (H_in + 2 * torch_pad[0] - dilation[0] * (weight.shape[2] - 1) - 1) / stride[0]
+        (H_in + 2 * torch_pad[0] - dilation[0] * (weight.shape[1] - 1) - 1) / stride[0]
         + 1
     )
     W_out = math.floor(
-        (W_in + 2 * torch_pad[1] - dilation[1] * (weight.shape[3] - 1) - 1) / stride[1]
+        (W_in + 2 * torch_pad[1] - dilation[1] * (weight.shape[2] - 1) - 1) / stride[1]
         + 1
     )
-    output_shape = [N, C_out, H_out, W_out]
+    output_shape = [N, H_out, W_out, C_out]
     return torch.empty(size=output_shape, dtype=output_dtype)

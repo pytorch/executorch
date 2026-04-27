@@ -26,6 +26,33 @@ test_data_fp_step1 = {
         7,
         1,
     ),
+    # Covers empty-prefix slice in DecomposeSliceScatter fast path (start_i == 0)
+    "rank2_prefix_empty": lambda: (
+        torch.rand((5, 9), dtype=torch.float32),
+        torch.rand((5, 5), dtype=torch.float32),
+        1,
+        0,
+        5,
+        1,
+    ),
+    # Covers empty-suffix slice in DecomposeSliceScatter fast path (end_i == dim_size via end=None)
+    "rank2_suffix_empty_end_none": lambda: (
+        torch.rand((5, 9), dtype=torch.float32),
+        torch.rand((5, 5), dtype=torch.float32),
+        1,
+        4,
+        None,
+        1,
+    ),
+    # Covers “big negative start” correctness: start < -dim_size should clamp to 0 (not modulo wrap)
+    "rank3_big_negative_start": lambda: (
+        torch.rand((2, 8, 4), dtype=torch.float32),
+        torch.rand((2, 5, 4), dtype=torch.float32),
+        1,
+        -999,
+        5,
+        1,
+    ),
     "rank4_negative": lambda: (
         torch.rand((1, 2, 4, 5), dtype=torch.float32),
         torch.rand((1, 2, 2, 5), dtype=torch.float32),
@@ -62,6 +89,24 @@ test_data_int_step1 = {
         1,
         2,
         7,
+        1,
+    ),
+    # Empty-prefix fast path for int8 (start_i == 0)
+    "rank2_prefix_empty_int8": lambda: (
+        torch.randint(-5, 5, (5, 9), dtype=torch.int8),
+        torch.randint(-5, 5, (5, 5), dtype=torch.int8),
+        1,
+        0,
+        5,
+        1,
+    ),
+    # Empty-suffix fast path for int8 (end=None => end_i == dim_size)
+    "rank2_suffix_empty_end_none_int8": lambda: (
+        torch.randint(-5, 5, (5, 9), dtype=torch.int8),
+        torch.randint(-5, 5, (5, 5), dtype=torch.int8),
+        1,
+        4,
+        None,
         1,
     ),
 }
@@ -221,6 +266,8 @@ def test_slice_scatter_u85_INT_stepN(test_module: input_t):
     test_data_int_step1 | test_data_int_stepN | test_data_fp_step1 | test_data_fp_stepN,
     xfails={
         "rank2_step1_int8": "MLETORCH-1823: Fix quantized-node detection",
+        "rank2_prefix_empty_int8": "MLETORCH-1823: Fix quantized-node detection",
+        "rank2_suffix_empty_end_none_int8": "MLETORCH-1823: Fix quantized-node detection",
         "rank3_step2_int32": "MLETORCH-1823: Fix quantized-node detection",
     },
 )
