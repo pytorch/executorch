@@ -18,6 +18,7 @@
 #include <executorch/runtime/platform/log.h>
 #include <pytorch/tokenizers/hf_tokenizer.h>
 
+#include <cinttypes>
 #include <fstream>
 #include <string>
 #include <vector>
@@ -88,11 +89,13 @@ int main(int argc, char** argv) {
 
   llm::Stats stats;
 
+#ifdef EXECUTORCH_BUILD_CUDA
   // GPU memory before load
-  size_t gpu_free_bytes, gpu_total_bytes;
+  size_t gpu_free_bytes = 0, gpu_total_bytes = 0;
   cudaMemGetInfo(&gpu_free_bytes, &gpu_total_bytes);
   stats.gpu_total_bytes = gpu_total_bytes;
   stats.gpu_free_before_load_bytes = gpu_free_bytes;
+#endif
 
   stats.model_load_start_ms = llm::time_in_ms();
 
@@ -153,9 +156,11 @@ int main(int argc, char** argv) {
 
   stats.model_load_end_ms = llm::time_in_ms();
 
+#ifdef EXECUTORCH_BUILD_CUDA
   // GPU memory after load
   cudaMemGetInfo(&gpu_free_bytes, &gpu_total_bytes);
   stats.gpu_free_after_load_bytes = gpu_free_bytes;
+#endif
 
   // Get EOS ids
   auto eos_ids = llm::get_eos_ids(tokenizer.get(), module.get());
@@ -181,7 +186,7 @@ int main(int argc, char** argv) {
   }
   auto prompt_tokens = std::move(*encode_result);
   int64_t num_prompt_tokens = prompt_tokens.size();
-  printf("Prompt tokens: %ld\n", num_prompt_tokens);
+  printf("Prompt tokens: %" PRId64 "\n", num_prompt_tokens);
 
   stats.num_prompt_tokens = num_prompt_tokens;
   stats.inference_start_ms = llm::time_in_ms();
@@ -243,7 +248,7 @@ int main(int argc, char** argv) {
   double prefill_ms =
       (double)(stats.prompt_eval_end_ms - stats.inference_start_ms);
   printf(
-      "Prefill: %ld tokens in %.1f ms (%.1f tok/s)\n",
+      "Prefill: %" PRId64 " tokens in %.1f ms (%.1f tok/s)\n",
       num_prompt_tokens,
       prefill_ms,
       num_prompt_tokens * 1000.0 / prefill_ms);
@@ -314,17 +319,19 @@ int main(int argc, char** argv) {
   double decode_ms =
       (double)(stats.inference_end_ms - stats.prompt_eval_end_ms);
   printf(
-      "Decode: %ld tokens in %.1f ms (%.1f tok/s)\n",
+      "Decode: %" PRId64 " tokens in %.1f ms (%.1f tok/s)\n",
       num_generated,
       decode_ms,
       num_generated * 1000.0 / decode_ms);
-  printf("Prompt tokens: %ld\n", num_prompt_tokens);
+  printf("Prompt tokens: %" PRId64 "\n", num_prompt_tokens);
 
+#ifdef EXECUTORCH_BUILD_CUDA
   // GPU memory after generation
   cudaMemGetInfo(&gpu_free_bytes, &gpu_total_bytes);
   stats.gpu_free_after_generate_bytes = gpu_free_bytes;
   stats.gpu_peak_usage_mb =
       (stats.gpu_total_bytes - gpu_free_bytes) / 1024.0 / 1024.0;
+#endif
 
   llm::print_report(stats);
 
