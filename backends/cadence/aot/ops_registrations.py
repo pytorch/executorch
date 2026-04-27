@@ -476,10 +476,10 @@ lib.define(
 )
 
 lib.define(
-    "rope(Tensor input, Tensor sin_tensor, Tensor cos_tensor, Tensor? pos) -> (Tensor out)"
+    "rope(Tensor input, Tensor sin_tensor, Tensor cos_tensor, Tensor? pos, int rope_type) -> (Tensor out)"
 )
 lib.define(
-    "rope.out(Tensor input, Tensor sin_tensor, Tensor cos_tensor, Tensor? pos, *, Tensor(a!) out) -> Tensor(a!)"
+    "rope.out(Tensor input, Tensor sin_tensor, Tensor cos_tensor, Tensor? pos, int rope_type, *, Tensor(a!) out) -> Tensor(a!)"
 )
 
 lib.define(
@@ -2977,6 +2977,7 @@ def rope_meta(
     sin_tensor: torch.Tensor,
     cos_tensor: torch.Tensor,
     pos: Optional[torch.Tensor],
+    rope_type: int,
 ) -> torch.Tensor:
     input_shape = list(input.shape)
     assert (
