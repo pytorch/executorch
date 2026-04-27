@@ -12,7 +12,9 @@
 #include <executorch/runtime/core/error.h>
 #include <executorch/runtime/core/portable_type/device.h>
 #include <executorch/runtime/core/portable_type/scalar_type.h>
+#include <executorch/runtime/core/result.h>
 #include <executorch/runtime/core/tensor_shape_dynamism.h>
+#include <executorch/runtime/platform/compiler.h>
 
 // Forward declaration of a helper that provides access to internal resizing
 // methods of TensorImpl. Real definition is in
@@ -293,6 +295,16 @@ ssize_t compute_numel(
     const ::executorch::runtime::etensor::TensorImpl::SizesType* sizes,
     ssize_t dim);
 
+/**
+ * Compute the number of elements based on the sizes of a tensor.
+ * Returns Error::InvalidArgument if any intermediate multiplication would
+ * overflow ssize_t, or if a size is negative. Prefer this over compute_numel()
+ * for paths that can propagate an Error upward.
+ */
+::executorch::runtime::Result<ssize_t> safe_numel(
+    const ::executorch::runtime::etensor::TensorImpl::SizesType* sizes,
+    ssize_t dim);
+
 /// Appropriate format specifier for the result of calling
 /// size(). Must be used instead of using zd directly to support ATen
 /// mode.
@@ -322,6 +334,7 @@ namespace executor {
 // TODO(T197294990): Remove these deprecated aliases once all users have moved
 // to the new `::executorch` namespaces.
 using ::executorch::runtime::etensor::compute_numel;
+using ::executorch::runtime::etensor::safe_numel;
 using ::executorch::runtime::etensor::TensorImpl;
 } // namespace executor
 } // namespace torch
