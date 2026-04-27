@@ -6,8 +6,7 @@
 from typing import cast, Dict, Protocol, Tuple
 
 import torch
-from executorch.backends.arm._passes.remove_getitem_pass import RemoveGetItemPass
-from executorch.backends.arm._passes.rewrite_max_pool2d_pass import RewriteMaxPool2dPass
+from executorch.backends.arm._passes.rewrite_avg_pool2d_pass import RewriteAvgPool2dPass
 from executorch.backends.arm.test import common
 from executorch.backends.arm.test.tester.test_pipeline import PassPipeline
 from executorch.backends.test.harness.stages import StageType
@@ -20,66 +19,75 @@ class ModuleWithInputs(Protocol):
     def get_inputs(self) -> input_t: ...
 
 
-class MaxPool2dWithStride(torch.nn.Module):
+class AvgPool2dWithStride(torch.nn.Module):
     def get_inputs(self) -> input_t:
         return (torch.rand(1, 3, 8, 8),)
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
-        return torch.nn.functional.max_pool2d(x, kernel_size=2, stride=2)
+        return torch.nn.functional.avg_pool2d(x, kernel_size=2, stride=2)
 
 
-class MaxPool2dWithoutStride(torch.nn.Module):
+class AvgPool2dWithoutStride(torch.nn.Module):
     def get_inputs(self) -> input_t:
         return (torch.rand(1, 3, 8, 8),)
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
-        return torch.nn.functional.max_pool2d(x, kernel_size=3)
+        return torch.nn.functional.avg_pool2d(x, kernel_size=3)
 
 
-class MaxPool2dListKernel(torch.nn.Module):
+class AvgPool2dListKernel(torch.nn.Module):
     def get_inputs(self) -> input_t:
         return (torch.rand(1, 3, 8, 8),)
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
-        return torch.nn.functional.max_pool2d(x, kernel_size=[2, 3])
+        return torch.nn.functional.avg_pool2d(x, kernel_size=[2, 3])
 
 
-class MaxPool2dWithEmptyStride(torch.nn.Module):
+class AvgPool2dScalarPadding(torch.nn.Module):
     def get_inputs(self) -> input_t:
         return (torch.rand(1, 3, 8, 8),)
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
-        return torch.nn.functional.max_pool2d(x, kernel_size=[2, 3], stride=[])
+        return torch.nn.functional.avg_pool2d(x, kernel_size=3, stride=2, padding=1)
+
+
+class AvgPool2dWithEmptyStride(torch.nn.Module):
+    def get_inputs(self) -> input_t:
+        return (torch.rand(1, 3, 8, 8),)
+
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        return torch.nn.functional.avg_pool2d(x, kernel_size=[2, 3], stride=[])
 
 
 modules: Dict[str, ModuleWithInputs] = {
-    "max_pool2d_with_stride": MaxPool2dWithStride(),
-    "max_pool2d_without_stride": MaxPool2dWithoutStride(),
-    "max_pool2d_list_kernel": MaxPool2dListKernel(),
+    "avg_pool2d_with_stride": AvgPool2dWithStride(),
+    "avg_pool2d_without_stride": AvgPool2dWithoutStride(),
+    "avg_pool2d_list_kernel": AvgPool2dListKernel(),
 }
 
 
 @common.parametrize("module", modules)
-def test_rewrite_max_pool2d_tosa(module: ModuleWithInputs) -> None:
+def test_rewrite_avg_pool2d_tosa(module: ModuleWithInputs) -> None:
     nn_module = cast(torch.nn.Module, module)
     pipeline = PassPipeline[input_t](
         nn_module,
         module.get_inputs(),
         ops_before_pass={
-            "executorch_exir_dialects_edge__ops_aten_max_pool2d_with_indices_default": 1,
+            "executorch_exir_dialects_edge__ops_aten_avg_pool2d_default": 1,
         },
         ops_after_pass={
-            "executorch_exir_dialects_backend__ops_tosa_MAX_POOL2D_default": 1,
+            "executorch_exir_dialects_backend__ops_tosa_AVG_POOL2D_default": 1,
+            "executorch_exir_dialects_edge__ops_aten_permute_copy_default": 2,
         },
-        pass_list=[RemoveGetItemPass, RewriteMaxPool2dPass],
+        pass_list=[RewriteAvgPool2dPass],
     )
     pipeline.pop_stage(
         "run_method_and_compare_outputs"
-    )  # Cannnot run aten graph with tosa dialect ops
+    )  # Cannot run aten graph with tosa dialect ops
     pipeline.run()
 
 
-def _get_tosa_max_pool2d_node(
+def _get_tosa_avg_pool2d_node(
     pipeline: PassPipeline[input_t],
 ) -> torch.fx.Node:
     exported_program = pipeline.tester.get_artifact(
@@ -91,27 +99,28 @@ def _get_tosa_max_pool2d_node(
         node
         for node in graph_module.graph.nodes
         if node.op == "call_function"
-        and node.target == exir_ops.backend.tosa.MAX_POOL2D.default
+        and node.target == exir_ops.backend.tosa.AVG_POOL2D.default
     ]
     assert len(tosa_nodes) == 1
     return tosa_nodes[0]
 
 
-def test_rewrite_max_pool2d_tosa_empty_stride_uses_kernel_size() -> None:
-    module = MaxPool2dWithEmptyStride()
+def test_rewrite_avg_pool2d_tosa_empty_stride_uses_kernel_size() -> None:
+    module = AvgPool2dWithEmptyStride()
     pipeline = PassPipeline[input_t](
         module,
         module.get_inputs(),
         ops_before_pass={
-            "executorch_exir_dialects_edge__ops_aten_max_pool2d_with_indices_default": 1,
+            "executorch_exir_dialects_edge__ops_aten_avg_pool2d_default": 1,
         },
         ops_after_pass={
-            "executorch_exir_dialects_backend__ops_tosa_MAX_POOL2D_default": 1,
+            "executorch_exir_dialects_backend__ops_tosa_AVG_POOL2D_default": 1,
+            "executorch_exir_dialects_edge__ops_aten_permute_copy_default": 2,
         },
-        pass_list=[RemoveGetItemPass, RewriteMaxPool2dPass],
+        pass_list=[RewriteAvgPool2dPass],
     )
     pipeline.pop_stage("run_method_and_compare_outputs")
     pipeline.run()
 
-    tosa_node = _get_tosa_max_pool2d_node(pipeline)
-    assert tosa_node.args[2] == [2, 3]
+    tosa_node = _get_tosa_avg_pool2d_node(pipeline)
+    assert tosa_node.args[4] == [2, 3]
