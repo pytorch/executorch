@@ -68,7 +68,35 @@ def _prepare_and_quantize_mlx(model, config, args):
     pack_all_switch_linears(model)
 
 
-def load_and_quantize(args):
+def _prepare_and_quantize_metal(model, config, args):
+    """Metal: apply source transforms, quantize experts + non-expert layers."""
+    import executorch.backends.apple.metal.ops.gated_delta_rule  # noqa: F401
+    import executorch.backends.apple.metal.ops.gather_qmv  # noqa: F401
+    from executorch.examples.models.qwen3_5_moe.metal_source_transformations import (
+        metal_source_transformations,
+        quantize_experts_metal,
+    )
+
+    # Quantize expert weights to Metal-compatible INT4 format
+    if args.qlinear:
+        quantize_experts_metal(model, config, args.qlinear_group_size)
+
+    if args.qlinear:
+        from executorch.extension.llm.export.quantize import quantize_model_
+
+        # skip_incompatible_shapes skips shared_expert_gate (N=1, N%4!=0)
+        quantize_model_(
+            model,
+            qlinear_config=args.qlinear,
+            qlinear_group_size=args.qlinear_group_size,
+            skip_incompatible_shapes=True,
+        )
+
+    _materialize_buffers(model, config)
+    metal_source_transformations(model, config=config)
+
+
+def load_and_quantize(args):  # noqa: C901
     """Load model from checkpoint, optionally quantize.
 
     For CUDA: quantizes experts with packed INT4, then transformer layers on CUDA.
@@ -77,6 +105,7 @@ def load_and_quantize(args):
     Returns (model, config) ready for export.
     """
     backend = getattr(args, "backend", "cuda")
+    use_splitk = not getattr(args, "no_splitk", False)
 
     if not args.prequantized:
         if getattr(args, "tiny_test", False):
@@ -111,6 +140,7 @@ def load_and_quantize(args):
                 rms_norm_eps=1e-6,
                 rope_theta=10_000.0,
                 max_seq_len=64,
+                use_splitk_decode=use_splitk,
             )
             print("Building tiny model with random weights...")
             torch.manual_seed(42)
@@ -133,6 +163,10 @@ def load_and_quantize(args):
             model, config = Qwen35MoE.from_hf_checkpoint(
                 args.model_dir, max_seq_len=args.max_seq_len
             )
+            config.use_splitk_decode = use_splitk
+            for layer in model.layers:
+                if hasattr(layer.attn, "use_splitk_decode"):
+                    layer.attn.use_splitk_decode = use_splitk
             model.eval()
             print(
                 f"Model: {config.num_hidden_layers} layers, {config.hidden_size}d, "
@@ -146,9 +180,18 @@ def load_and_quantize(args):
             )
         _prepare_and_quantize_mlx(model, config, args)
 
+    elif backend == "metal":
+        if args.prequantized:
+            raise ValueError("Metal backend does not support --prequantized.")
+        _prepare_and_quantize_metal(model, config, args)
+
     elif backend == "cuda":
         if args.prequantized:
-            return load_prequantized_model(args.prequantized, args.max_seq_len)
+            return load_prequantized_model(
+                args.prequantized,
+                args.max_seq_len,
+                use_splitk_decode=use_splitk,
+            )
 
         # CUDA: quantize experts with packed INT4 for Triton kernel
         if args.qlinear or args.qembedding:
@@ -162,12 +205,13 @@ def load_and_quantize(args):
     return model, config
 
 
-def load_prequantized_model(prequantized_dir, max_seq_len=4096):
+def load_prequantized_model(prequantized_dir, max_seq_len=4096, use_splitk_decode=True):
     """Load a prequantized safetensors bundle into a model.
 
     Args:
         prequantized_dir: Directory containing model.safetensors and config.json.
         max_seq_len: Maximum sequence length for KV cache.
+        use_splitk_decode: Use split-K SDPA for decode instead of tiled SDPA.
 
     Returns:
         (model, config) ready for export.
@@ -181,6 +225,7 @@ def load_prequantized_model(prequantized_dir, max_seq_len=4096):
 
     config = Qwen35MoEConfig.from_hf_config(config_path)
     config.max_seq_len = max_seq_len
+    config.use_splitk_decode = use_splitk_decode
 
     print(f"Loading prequantized weights from {safetensors_path}...")
     state_dict = load_quantized_state_dict(safetensors_path)
@@ -224,7 +269,6 @@ def load_prequantized_model(prequantized_dir, max_seq_len=4096):
         ".conv_state",
         ".recurrent_state",
         ".cache_positions",
-        ".inv_freq",
     )
     expected_missing = {k for k in missing if any(p in k for p in runtime_prefixes)}
     weight_missing = set(missing) - expected_missing
@@ -491,12 +535,21 @@ def _apply_turboquant(model, config):
 # ---------------------------------------------------------------------------
 
 
+def _set_batched_moe(model, enabled):
+    """Toggle batched tensor-core MoE kernel for all MoE layers."""
+    for layer in model.layers:
+        if hasattr(layer, "mlp") and hasattr(layer.mlp, "experts"):
+            layer.mlp.experts.use_batched_moe = enabled
+
+
 def export_and_lower(model, config, args):
     """Export model to .pte via torch.export + backend-specific lowering."""
     backend = getattr(args, "backend", "cuda")
 
     if backend == "mlx":
         _export_mlx(model, config, args)
+    elif backend == "metal":
+        _export_metal(model, config, args)
     else:
         _export_cuda(model, config, args)
 
@@ -581,14 +634,111 @@ def _export_mlx(model, config, args):
     print("Done!")
 
 
+def _export_metal(model, config, args):
+    """Export model to .pte via torch.export + Metal backend."""
+    import torch._inductor.config as inductor_config
+
+    from executorch.backends.apple.metal.metal_backend import MetalBackend
+    from executorch.backends.apple.metal.metal_partitioner import MetalPartitioner
+    from executorch.exir import (
+        EdgeCompileConfig,
+        ExecutorchBackendConfig,
+        to_edge_transform_and_lower,
+    )
+    from executorch.exir.passes import MemoryPlanningPass
+    from torch.export import Dim, export
+
+    inductor_config.coordinate_descent_tuning = False
+    inductor_config.aot_inductor.compile_wrapper_opt_level = "O0"
+
+    # --- Decode method (T=1, static shape) ---
+    print("Exporting decode method...")
+    decode_tokens = torch.tensor([[0]], dtype=torch.long)
+    decode_pos = torch.tensor([0], dtype=torch.long)
+    with torch.no_grad():
+        decode_ep = export(model, (decode_tokens, decode_pos), strict=True)
+    print("Decode export successful!")
+
+    # --- Prefill method (T>=2, dynamic shape) ---
+    # Use max-sized example so the serialized numel_bound_ is large enough
+    # for any runtime input (Metal/AOTI pattern: alloc_graph_input=False
+    # means numel_bound_ comes from the export example size).
+    print("Exporting prefill method...")
+    max_prefill = config.max_seq_len - 1
+    prefill_tokens = torch.zeros((1, max_prefill), dtype=torch.long)
+    prefill_pos = torch.arange(max_prefill, dtype=torch.long)
+    seq_dim = Dim("seq_len", min=2, max=max_prefill)
+    prefill_dynamic_shapes = ({1: seq_dim}, {0: seq_dim})
+    with torch.no_grad():
+        prefill_ep = export(
+            model,
+            (prefill_tokens, prefill_pos),
+            dynamic_shapes=prefill_dynamic_shapes,
+            strict=True,
+        )
+    print("Prefill export successful!")
+
+    # Lower with Metal backend
+    print("Lowering to ExecuTorch with Metal...")
+    metadata = {
+        "get_max_seq_len": config.max_seq_len,
+        "get_vocab_size": config.vocab_size,
+        "get_n_layers": config.num_hidden_layers,
+        "use_kv_cache": True,
+        "use_sdpa_with_kv_cache": False,
+        "enable_dynamic_shape": True,
+    }
+    et_prog = to_edge_transform_and_lower(
+        {"decode": decode_ep, "prefill": prefill_ep},
+        partitioner={
+            "decode": [
+                MetalPartitioner(
+                    [MetalBackend.generate_method_name_compile_spec("decode")]
+                )
+            ],
+            "prefill": [
+                MetalPartitioner(
+                    [MetalBackend.generate_method_name_compile_spec("prefill")]
+                )
+            ],
+        },
+        compile_config=EdgeCompileConfig(
+            _check_ir_validity=False,
+            _skip_dim_order=True,
+        ),
+        constant_methods=metadata,
+    )
+    et_program = et_prog.to_executorch(
+        config=ExecutorchBackendConfig(
+            extract_delegate_segments=True,
+            do_quant_fusion_and_const_prop=True,
+            memory_planning_pass=MemoryPlanningPass(alloc_graph_input=False),
+        ),
+    )
+
+    # Save .pte
+    os.makedirs(args.output_dir, exist_ok=True)
+    pte_path = os.path.join(args.output_dir, "model.pte")
+    print(f"Saving to {pte_path}...")
+    with open(pte_path, "wb") as f:
+        et_program.write_to_file(f)
+    size_mb = os.path.getsize(pte_path) / (1024 * 1024)
+    print(f"Saved {size_mb:.1f} MB")
+
+    if et_program._tensor_data:
+        et_program.write_tensor_data_to_file(args.output_dir)
+        print(f"Saved tensor data to {args.output_dir}/")
+
+    print("Done!")
+
+
 def _export_cuda(model, config, args):
     """Export model to .pte via torch.export + CUDA backend.
 
     Exports two methods:
-      - "decode": decode path (T=1), uses native PyTorch recurrent FLA
-        so AOTI can fuse with surrounding ops for maximum decode throughput.
-      - "prefill": prefill path (T>=2), uses chunked FLA triton_op with
-        dynamic sequence length.
+      - "decode": decode path (T=1), vec-mat MoE kernel via fused_moe.
+      - "prefill": prefill path (T>=2), batched tensor-core MoE kernel
+        via fused_moe_batched_gemm, with dynamic sequence length.
 
     Both methods share mutable state buffers (KV cache, conv_state,
     recurrent_state) via share_mutable_buffers=True. The model uses
@@ -613,31 +763,42 @@ def _export_cuda(model, config, args):
     # -O0 compiles ~8x faster than -O1 with no measurable runtime impact.
     inductor_config.aot_inductor.compile_wrapper_opt_level = "O0"
 
-    # --- Decode method (T=1, static shape) ---
+    # --- Decode method (T=1, static shape, vec-mat MoE kernel) ---
+    _set_batched_moe(model, False)
     print("Exporting decode method...")
     decode_tokens = torch.tensor([[0]], dtype=torch.long)
     decode_pos = torch.tensor([0], dtype=torch.long)
+    decode_temperature = torch.tensor([1.0], dtype=torch.float32)
     with torch.no_grad():
         decode_ep = export(
             model,
-            (decode_tokens, decode_pos),
+            (decode_tokens, decode_pos, decode_temperature),
             strict=True,
         )
     print("Decode export successful!")
 
-    # --- Prefill method (T>=2, dynamic shape) ---
+    # --- Prefill method (T>=2, dynamic shape, batched tensor-core MoE kernel) ---
+    # Example T must equal max_seq_len-1 so AOTI compiles kernels (especially
+    # chunk_gated_delta_rule with CHUNK_SIZE=64) for the full range of sequence
+    # lengths. Smaller examples cause AOTI to bake in intermediate buffer sizes
+    # that reject longer prompts at runtime.
+    _set_batched_moe(model, True)
     print("Exporting prefill method...")
-    prefill_tokens = torch.tensor([[0, 1]], dtype=torch.long)
-    prefill_pos = torch.tensor([0, 1], dtype=torch.long)
+
+    example_prefill_len = config.max_seq_len - 1
+    prefill_tokens = torch.zeros((1, example_prefill_len), dtype=torch.long)
+    prefill_pos = torch.arange(example_prefill_len, dtype=torch.long)
+    prefill_temperature = torch.tensor([1.0], dtype=torch.float32)
     seq_dim = Dim("seq_len", min=2, max=config.max_seq_len - 1)
     prefill_dynamic_shapes = (
         {1: seq_dim},  # tokens
         {0: seq_dim},  # input_pos
+        None,  # temperature (static scalar tensor)
     )
     with torch.no_grad():
         prefill_ep = export(
             model,
-            (prefill_tokens, prefill_pos),
+            (prefill_tokens, prefill_pos, prefill_temperature),
             dynamic_shapes=prefill_dynamic_shapes,
             strict=True,
         )
@@ -659,12 +820,18 @@ def _export_cuda(model, config, args):
         partitioner={
             "decode": [
                 CudaPartitioner(
-                    [CudaBackend.generate_method_name_compile_spec("decode")]
+                    [
+                        CudaBackend.generate_method_name_compile_spec("decode"),
+                        CudaBackend.generate_share_kv_cache_compile_spec(),
+                    ]
                 )
             ],
             "prefill": [
                 CudaPartitioner(
-                    [CudaBackend.generate_method_name_compile_spec("prefill")]
+                    [
+                        CudaBackend.generate_method_name_compile_spec("prefill"),
+                        CudaBackend.generate_share_kv_cache_compile_spec(),
+                    ]
                 )
             ],
         },
@@ -708,10 +875,8 @@ def _export_cuda(model, config, args):
 # ---------------------------------------------------------------------------
 
 
-def main():
-    parser = argparse.ArgumentParser(
-        description="Export Qwen3.5 MoE to ExecuTorch (CUDA or MLX)"
-    )
+def main():  # noqa: C901
+    parser = argparse.ArgumentParser(description="Export Qwen3.5 MoE to ExecuTorch")
     parser.add_argument(
         "--model-dir",
         default=None,
@@ -729,13 +894,13 @@ def main():
     parser.add_argument(
         "--backend",
         default="cuda",
-        choices=["cuda", "mlx"],
-        help="Backend for export: cuda (default) or mlx.",
+        choices=["cuda", "mlx", "metal"],
+        help="Backend for export: cuda (default), mlx, or metal.",
     )
     parser.add_argument(
         "--qlinear",
         default=None,
-        choices=["4w", "8w", "8da4w", "8da8w"],
+        choices=["4w", "8w", "8da4w", "8da8w", "fpa4w"],
         help="Quantize linear layers.",
     )
     parser.add_argument(
@@ -778,6 +943,11 @@ def main():
         "No checkpoint download needed. Tests all architectural features "
         "(GQA, GDN head ratio, mixed attention, MoE routing) at small scale.",
     )
+    parser.add_argument(
+        "--no-splitk",
+        action="store_true",
+        help="Disable split-K (flash-decoding) SDPA for decode; use tiled SDPA instead.",
+    )
     args = parser.parse_args()
 
     if args.model_id:
@@ -804,6 +974,13 @@ def main():
             parser.error("--prequantized is not supported with --backend mlx")
         if args.turboquant:
             parser.error("--turboquant is not supported with --backend mlx")
+
+    if args.backend == "metal":
+        if args.turboquant:
+            parser.error("--turboquant is not supported with --backend metal")
+
+    if args.qlinear == "fpa4w" and args.backend != "metal":
+        parser.error("--qlinear=fpa4w can only be used with --backend=metal")
 
     model, config = load_and_quantize(args)
 

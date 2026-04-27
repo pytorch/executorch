@@ -185,7 +185,9 @@
       ],
       "cacheVariables": {
         "CMAKE_BUILD_TYPE": "Debug",
-        "CMAKE_INSTALL_PREFIX": "${sourceDir}/cmake-out"
+        "CMAKE_INSTALL_PREFIX": "${sourceDir}/cmake-out",
+        "EXECUTORCH_ENABLE_LOGGING": "ON",
+        "EXECUTORCH_LOG_LEVEL": "Debug"
       }
     },
     {

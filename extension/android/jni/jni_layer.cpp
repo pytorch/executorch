@@ -385,6 +385,12 @@ class ExecuTorchJni : public facebook::jni::HybridClass<ExecuTorchJni> {
         static const auto toBoolMethod =
             JEValue::javaClassStatic()->getMethod<jboolean()>("toBool");
         evalues.emplace_back(static_cast<bool>(toBoolMethod(jevalue)));
+      } else {
+        std::stringstream ss;
+        ss << "Unsupported input EValue type code: " << typeCode;
+        jni_helper::throwExecutorchException(
+            static_cast<uint32_t>(Error::InvalidArgument), ss.str());
+        return {};
       }
     }
 
@@ -564,8 +570,8 @@ class ExecuTorchJni : public facebook::jni::HybridClass<ExecuTorchJni> {
         makeNativeMethod("readLogBufferNative", ExecuTorchJni::readLogBuffer),
         makeNativeMethod(
             "readLogBufferStaticNative", ExecuTorchJni::readLogBufferStatic),
-        makeNativeMethod("etdump", ExecuTorchJni::etdump),
-        makeNativeMethod("getMethods", ExecuTorchJni::getMethods),
+        makeNativeMethod("etdumpNative", ExecuTorchJni::etdump),
+        makeNativeMethod("getMethodsNative", ExecuTorchJni::getMethods),
         makeNativeMethod("getUsedBackends", ExecuTorchJni::getUsedBackends),
     });
   }

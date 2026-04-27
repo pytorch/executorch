@@ -9,7 +9,6 @@ from typing import Any, Set, Type
 
 import torch
 from executorch.backends.arm._passes import ArmPass
-
 from executorch.backends.arm._passes.arm_pass_utils import (
     create_node,
     expand_around_channel,
@@ -22,11 +21,16 @@ from executorch.backends.arm._passes.fold_qdq_with_annotated_qparams_pass import
     get_input_qparams,
     get_output_qparams,
 )
+from executorch.backends.arm._passes.symbolic_value_range import (
+    evaluate_symbolic_expr_values,
+)
 from executorch.backends.arm.constants import HWCM_ORDER, NHWC_INVERSE_ORDER
 from executorch.backends.arm.tosa.mapping import TosaSpecialDtype
+from executorch.backends.arm.tosa.specification import get_context_shape_env
 from executorch.backends.transforms.utils import create_constant_placeholder
 from executorch.exir.dialects._ops import ops as exir_ops
 from executorch.exir.pass_base import ExportPass, PassResult
+
 from torch.export.graph_signature import InputKind
 
 
@@ -46,8 +50,13 @@ class RewriteConvPass(ArmPass):
     # to be an integer, but tosa currently strictly require this property.
     # This function adjusts the pad value to meet the requirement.
     def _adjust_pad_if_needed(
-        self, input_len: int, input_weight: int, stride: int, pad: int, dilation: int
-    ) -> int:
+        self,
+        input_len: int | torch.SymInt,
+        input_weight: int,
+        stride: int,
+        pad: int | torch.SymInt,
+        dilation: int,
+    ) -> int | torch.SymInt:
         """Adjust padding to satisfy TOSA's integer output-size requirement.
 
         Torch ``Conv2d`` does not require the result of
@@ -75,13 +84,24 @@ class RewriteConvPass(ArmPass):
             input_len + 2 * pad - dilation * (input_weight - 1) - 1
         ) % stride
 
-        # No need to adjust
-        if mod_remainder == 0:
-            return pad
+        if isinstance(mod_remainder, torch.SymInt):
+            shape_env = get_context_shape_env()
+            exact_values = evaluate_symbolic_expr_values(
+                mod_remainder.node.expr, shape_env
+            )
+            if exact_values is not None:
+                mod_remainder_upper = max(exact_values)
+            else:
+                value_ranges = shape_env.bound_sympy(mod_remainder.node.expr)
+                mod_remainder_upper = int(value_ranges.upper)
+            if mod_remainder_upper == 0:
+                mod_remainder = 0
+        else:
+            mod_remainder_upper = mod_remainder
 
-        if mod_remainder > pad:
+        if mod_remainder_upper > pad:
             raise RuntimeError(
-                "This case should be handled by the SizeAdjustInputPass, is it enabled?"
+                "This case should be handled by the SizeAdjustInputPass, is it enabled?\n"
             )
         return pad - mod_remainder
 
@@ -319,7 +339,7 @@ class RewriteConvPass(ArmPass):
                     stride,
                 )
             else:
-                pad_attr: list[int] = []
+                pad_attr: list[int | torch.SymInt] = []
                 for value in pad_list:
                     pad_attr.extend(
                         [value, value]

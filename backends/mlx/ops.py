@@ -50,6 +50,7 @@ from executorch.backends.mlx.serialization.mlx_graph_schema import (
     AsStridedNode,
     AsTypeNode,
     Atan2Node,
+    BitwiseInvertNode,
     BroadcastToNode,
     CeilNode,
     ClipNode,
@@ -416,6 +417,32 @@ def _make_unary_handler(node_cls: Any, op_name: str):
 
 for _target, _node_cls, _op_name in _UNARY_OPS:
     REGISTRY.register(target=[_target])(_make_unary_handler(_node_cls, _op_name))
+
+
+# ---------------------------------------------------------------------------
+# Numerical checks
+# ---------------------------------------------------------------------------
+
+
+@REGISTRY.register(target=[torch.ops.aten.isnan.default])
+def _isnan_handler(P: MLXProgramBuilder, n: Node) -> Slot:
+    """Handle aten.isnan - check for NaN values element-wise.
+
+    isnan(x) is equivalent to x != x (NaN is the only value not equal to itself).
+    """
+    args = P.args(n)
+    require_args(args, 1, 1, "aten.isnan")
+    require_kwargs(P.kwargs(n), set(), "aten.isnan")
+    x = args[0]
+    out = P.make_or_get_slot(n)
+    P.emit(
+        NotEqualNode(
+            a=P.slot_to_tid(x),
+            b=P.slot_to_tid(x),
+            out=P.slot_to_tid(out),
+        )
+    )
+    return out
 
 
 _BINARY_OPS: List[Tuple[List[Any], Any, str, bool]] = [
@@ -3040,27 +3067,40 @@ def _where_handler(P: MLXProgramBuilder, n: Node) -> Slot:
 
 @REGISTRY.register(target=[torch.ops.aten.bitwise_not.default])
 def _bitwise_not_handler(P: MLXProgramBuilder, n: Node) -> Slot:
-    """Handle aten.bitwise_not - for boolean tensors, dispatch to logical_not."""
+    """Handle aten.bitwise_not - logical_not for bool, bitwise_invert for integers."""
     args = P.args(n)
     require_args(args, 1, 1, "aten.bitwise_not")
     require_kwargs(P.kwargs(n), set(), "aten.bitwise_not")
     x_meta = n.args[0].meta.get("val")
+    out = P.make_or_get_slot(n)
 
-    if x_meta is not None and x_meta.dtype == torch.bool:
-        # For boolean tensors, bitwise_not is equivalent to logical_not
-        out = P.make_or_get_slot(n)
+    if x_meta is None or not hasattr(x_meta, "dtype"):
+        raise NotImplementedError(
+            "aten.bitwise_not requires known input dtype metadata for MLX lowering"
+        )
+
+    if x_meta.dtype == torch.bool:
         P.emit(
             LogicalNotNode(
                 x=P.slot_to_tid(args[0]),
                 out=P.slot_to_tid(out),
             )
         )
-        return out
+    elif x_meta.dtype in {
+        torch.int32,
+        torch.int64,
+    }:
+        P.emit(
+            BitwiseInvertNode(
+                x=P.slot_to_tid(args[0]),
+                out=P.slot_to_tid(out),
+            )
+        )
     else:
         raise NotImplementedError(
-            f"aten.bitwise_not is only supported for boolean tensors. "
-            f"Got dtype={x_meta.dtype if x_meta else 'unknown'}"
+            f"aten.bitwise_not on dtype {x_meta.dtype} is not supported for MLX lowering"
         )
+    return out
 
 
 @REGISTRY.register(

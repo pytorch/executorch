@@ -16,8 +16,12 @@
 
 using namespace ::testing;
 
+using executorch::aten::DeviceType;
+using executorch::aten::Layout;
+using executorch::aten::MemoryFormat;
 using executorch::aten::ScalarType;
 using executorch::runtime::BoxedEvalueList;
+using executorch::runtime::Error;
 using executorch::runtime::EValue;
 using executorch::runtime::Tag;
 using executorch::runtime::testing::TensorFactory;
@@ -212,6 +216,56 @@ TEST_F(EValueTest, BoxedEvalueList) {
   EXPECT_EQ(unwrapped[0], 1);
   EXPECT_EQ(unwrapped[1], 2);
   EXPECT_EQ(unwrapped[2], 3);
+}
+
+TEST_F(EValueTest, BoxedEvalueListTryGetSuccess) {
+  EValue values[3] = {
+      EValue((int64_t)1), EValue((int64_t)2), EValue((int64_t)3)};
+  EValue* values_p[3] = {&values[0], &values[1], &values[2]};
+  int64_t storage[3] = {0, 0, 0};
+  BoxedEvalueList<int64_t> x{values_p, storage, 3};
+  auto result = x.tryGet();
+  EXPECT_TRUE(result.ok());
+  EXPECT_EQ(result->size(), 3);
+  EXPECT_EQ((*result)[0], 1);
+  EXPECT_EQ((*result)[1], 2);
+  EXPECT_EQ((*result)[2], 3);
+}
+
+TEST_F(EValueTest, BoxedEvalueListTryGetWrongElementTag) {
+  // Second element is a Double, not an Int; tryGet should reject it rather
+  // than abort inside to<int64_t>().
+  EValue values[3] = {EValue((int64_t)1), EValue(3.14), EValue((int64_t)3)};
+  EValue* values_p[3] = {&values[0], &values[1], &values[2]};
+  int64_t storage[3] = {0, 0, 0};
+  BoxedEvalueList<int64_t> x{values_p, storage, 3};
+  auto result = x.tryGet();
+  EXPECT_EQ(result.error(), executorch::runtime::Error::InvalidType);
+}
+
+TEST_F(EValueTest, BoxedEvalueListTryGetNullElement) {
+  // A null value is a malformed program for non-optional lists.
+  EValue a((int64_t)1);
+  EValue c((int64_t)3);
+  EValue* values_p[3] = {&a, nullptr, &c};
+  int64_t storage[3] = {0, 0, 0};
+  BoxedEvalueList<int64_t> x{values_p, storage, 3};
+  auto result = x.tryGet();
+  EXPECT_EQ(result.error(), executorch::runtime::Error::InvalidState);
+}
+
+TEST_F(EValueTest, BoxedEvalueListTryGetOptionalTensorNullIsNone) {
+  // For optional<Tensor>, null value is valid.
+  EValue a;
+  EValue* values_p[2] = {&a, nullptr};
+  std::optional<executorch::aten::Tensor> storage[2];
+  BoxedEvalueList<std::optional<executorch::aten::Tensor>> x{
+      values_p, storage, 2};
+  auto result = x.tryGet();
+  EXPECT_TRUE(result.ok());
+  EXPECT_EQ(result->size(), 2);
+  EXPECT_FALSE((*result)[0].has_value());
+  EXPECT_FALSE((*result)[1].has_value());
 }
 
 TEST_F(EValueTest, toOptionalTensorList) {
@@ -416,4 +470,117 @@ TEST_F(EValueTest, toListOptionalTensorNullPointerCheck) {
   // Should pass isListOptionalTensor() check but fail null pointer check
   EXPECT_TRUE(e.isListOptionalTensor());
   ET_EXPECT_DEATH({ e.toListOptionalTensor(); }, "pointer is null");
+}
+
+// Per-type tryTo* coverage.
+// For each type:
+//   - success and failure for named method tryTo[Int/Double/Bool/Tensor/..]
+//   - success and failure for templated tryTo<T>() specialization
+
+TEST_F(EValueTest, TryToInt) {
+  EValue e_int(static_cast<int64_t>(42));
+  EValue e_mismatch(3.14);
+  EXPECT_EQ(e_int.tryToInt().get(), 42);
+  EXPECT_EQ(e_mismatch.tryToInt().error(), Error::InvalidType);
+  EXPECT_EQ(e_int.tryTo<int64_t>().get(), 42);
+  EXPECT_EQ(e_mismatch.tryTo<int64_t>().error(), Error::InvalidType);
+}
+
+TEST_F(EValueTest, TryToDouble) {
+  EValue e_double(3.14);
+  EValue e_mismatch(static_cast<int64_t>(42));
+  EXPECT_DOUBLE_EQ(e_double.tryToDouble().get(), 3.14);
+  EXPECT_EQ(e_mismatch.tryToDouble().error(), Error::InvalidType);
+  EXPECT_DOUBLE_EQ(e_double.tryTo<double>().get(), 3.14);
+  EXPECT_EQ(e_mismatch.tryTo<double>().error(), Error::InvalidType);
+}
+
+TEST_F(EValueTest, TryToBool) {
+  EValue e_bool(true);
+  EValue e_mismatch(static_cast<int64_t>(42));
+  EXPECT_EQ(e_bool.tryToBool().get(), true);
+  EXPECT_EQ(e_mismatch.tryToBool().error(), Error::InvalidType);
+  EXPECT_EQ(e_bool.tryTo<bool>().get(), true);
+  EXPECT_EQ(e_mismatch.tryTo<bool>().error(), Error::InvalidType);
+}
+
+TEST_F(EValueTest, TryToTensor) {
+  TensorFactory<ScalarType::Float> tf;
+  EValue e_tensor(tf.ones({3, 2}));
+  EValue e_mismatch(static_cast<int64_t>(42));
+  EXPECT_EQ(e_tensor.tryToTensor()->numel(), 6);
+  EXPECT_EQ(e_mismatch.tryToTensor().error(), Error::InvalidType);
+  EXPECT_EQ(e_tensor.tryTo<executorch::aten::Tensor>()->numel(), 6);
+  EXPECT_EQ(
+      e_mismatch.tryTo<executorch::aten::Tensor>().error(), Error::InvalidType);
+}
+
+TEST_F(EValueTest, TryToOptionalTensor) {
+  TensorFactory<ScalarType::Float> tf;
+  EValue e_tensor(tf.ones({3, 2}));
+  EValue e_none;
+  EValue e_mismatch(static_cast<int64_t>(42));
+  // Named tryToOptional<Tensor>: value, None, mismatch.
+  auto r_val = e_tensor.tryToOptional<executorch::aten::Tensor>();
+  EXPECT_TRUE(r_val->has_value());
+  EXPECT_EQ(r_val->value().numel(), 6);
+  EXPECT_FALSE(e_none.tryToOptional<executorch::aten::Tensor>()->has_value());
+  EXPECT_EQ(
+      e_mismatch.tryToOptional<executorch::aten::Tensor>().error(),
+      Error::InvalidType);
+  // Templated tryTo<std::optional<Tensor>>: None path.
+  EXPECT_FALSE(
+      e_none.tryTo<std::optional<executorch::aten::Tensor>>()->has_value());
+}
+
+TEST_F(EValueTest, TryToScalar) {
+  EValue e_int(static_cast<int64_t>(7));
+  EValue e_double(2.5);
+  EValue e_bool(true);
+  EValue e_none;
+  EXPECT_EQ(e_int.tryToScalar()->to<int64_t>(), 7);
+  EXPECT_DOUBLE_EQ(e_double.tryToScalar()->to<double>(), 2.5);
+  EXPECT_EQ(e_bool.tryToScalar()->to<bool>(), true);
+  // None is neither Int/Double/Bool.
+  EXPECT_EQ(e_none.tryToScalar().error(), Error::InvalidType);
+}
+
+TEST_F(EValueTest, TryToScalarType) {
+  EValue e(static_cast<int64_t>(ScalarType::Float));
+  EValue e_mismatch(3.14);
+  EXPECT_EQ(e.tryToScalarType().get(), ScalarType::Float);
+  EXPECT_EQ(e_mismatch.tryToScalarType().error(), Error::InvalidType);
+  EXPECT_EQ(e.tryTo<ScalarType>().get(), ScalarType::Float);
+  EXPECT_EQ(e_mismatch.tryTo<ScalarType>().error(), Error::InvalidType);
+}
+
+TEST_F(EValueTest, TryToMemoryFormat) {
+  EValue e(static_cast<int64_t>(MemoryFormat::Contiguous));
+  EValue e_mismatch(3.14);
+  EXPECT_EQ(e.tryToMemoryFormat().get(), MemoryFormat::Contiguous);
+  EXPECT_EQ(e_mismatch.tryToMemoryFormat().error(), Error::InvalidType);
+}
+
+TEST_F(EValueTest, TryToLayout) {
+  EValue e(static_cast<int64_t>(Layout::Strided));
+  EValue e_mismatch(3.14);
+  EXPECT_EQ(e.tryToLayout().get(), Layout::Strided);
+  EXPECT_EQ(e_mismatch.tryToLayout().error(), Error::InvalidType);
+}
+
+TEST_F(EValueTest, TryToDevice) {
+  EValue e(static_cast<int64_t>(DeviceType::CPU));
+  EValue e_mismatch(3.14);
+  EXPECT_EQ(e.tryToDevice().get().type(), DeviceType::CPU);
+  EXPECT_EQ(e_mismatch.tryToDevice().error(), Error::InvalidType);
+}
+
+TEST_F(EValueTest, TryToTensorList) {
+  EValue e(static_cast<int64_t>(42));
+  EXPECT_EQ(e.tryToTensorList().error(), Error::InvalidType);
+}
+
+TEST_F(EValueTest, TryToListOptionalTensor) {
+  EValue e(static_cast<int64_t>(42));
+  EXPECT_EQ(e.tryToListOptionalTensor().error(), Error::InvalidType);
 }

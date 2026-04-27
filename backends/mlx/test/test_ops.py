@@ -4004,6 +4004,22 @@ def _int_input_fn(low: int = -100, high: int = 100):
     return fn
 
 
+def _nan_input_fn(nan_frac: float = 0.3):
+    """Return a callable(shape, dtype) that generates inputs with some NaN values.
+
+    Args:
+        nan_frac: Fraction of elements to set to NaN (default 0.3 = 30%).
+    """
+
+    def fn(shape, dtype):
+        x = torch.randn(shape, dtype=dtype)
+        mask = torch.rand(shape) > (1.0 - nan_frac)
+        x[mask] = float("nan")
+        return (x,)
+
+    return fn
+
+
 # Standard shape and dtype configs used by unary tests.
 _SHAPES_3 = [(16,), (4, 4), (2, 3, 4)]
 _SHAPES_2 = [(16,), (4, 4)]
@@ -4095,6 +4111,8 @@ _UNARY_OP_TESTS = [
     {"op_name": "abs",        "op_fn": torch.abs},
     {"op_name": "neg",        "op_fn": torch.neg},
     {"op_name": "logical_not","op_fn": torch.logical_not, "shapes": [(2, 3, 4), (10,), (4, 8)], "dtypes": [torch.bool], "input_fn": _bool_input_fn()},
+    {"op_name": "bitwise_not_int", "op_fn": torch.bitwise_not, "shapes": _SHAPES_3, "dtypes": [torch.int32, torch.int64], "input_fn": _int_input_fn()},
+    {"op_name": "isnan",      "op_fn": torch.isnan,      "shapes": _SHAPES_3, "dtypes": [torch.float32, torch.float16, torch.bfloat16], "input_fn": _nan_input_fn()},
     # activations
     {"op_name": "relu",    "op_fn": torch.relu,    "shapes": [(2, 3, 4), (10,), (4, 8), (2, 8, 16), (1, 128, 64)], "dtypes": [torch.float32], "input_fn": _input_fn(scale=2, offset=-1)},
     {"op_name": "sigmoid", "op_fn": torch.sigmoid, "shapes": [(2, 3, 4), (10,), (4, 8), (2, 8, 16), (1, 1, 128)],  "dtypes": [torch.float32], "input_fn": _input_fn(scale=2)},
