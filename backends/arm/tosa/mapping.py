@@ -132,7 +132,8 @@ def extract_tensor_meta(meta):
     special_dtype = meta.get(TosaSpecialDtype.meta_key())
     if special_dtype == TosaSpecialDtype.SHAPE:
         shape_len = len(meta["val"])
-        return (ts.DType.SHAPE, (shape_len,), meta["tosa_dim_order"])
+        dim_order = tuple(range(shape_len))
+        return (ts.DType.SHAPE, (shape_len,), dim_order)
 
     if meta.get("val") is None:
         raise ValueError("Expected node.meta['val'] to be set to a FakeTensor")
@@ -153,10 +154,7 @@ def extract_tensor_meta(meta):
     dtype = map_dtype(val.dtype)
     shape = tuple(val.size())
 
-    if meta.get("tosa_dim_order") is not None:
-        dim_order = meta["tosa_dim_order"]
-    else:
-        dim_order = tuple(range(len(shape)))
+    dim_order = tuple(range(len(shape)))
     return (dtype, shape, dim_order)
 
 
@@ -269,7 +267,8 @@ class TosaArg:
             self.__process_number(argument)
             return
         if isinstance(argument, torch.dtype):
-            # Dtype is parsed from fake tensor
+            # Capture a dtype scalar argument
+            self.dtype = map_dtype(argument)
             return
 
         if argument is None:

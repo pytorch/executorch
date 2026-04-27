@@ -1,0 +1,16 @@
+load("@fbcode_macros//build_defs:build_file_migration.bzl", "non_fbcode_target")
+
+oncall("executorch")
+
+non_fbcode_target(
+    _kind = native.sh_binary,
+    name = "_benchmark_android_sh",
+    main = "benchmark_android.sh",
+)
+
+non_fbcode_target(
+    _kind = native.command_alias,
+    name = "benchmark_android",
+    exe = ":_benchmark_android_sh",
+    args = ["--build-tool", "buck"],
+)
