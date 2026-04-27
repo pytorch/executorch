@@ -14,6 +14,13 @@ import executorch.exir as exir
 import numpy as np
 import torch
 
+from executorch.backends.nxp.aten_passes.fuse_batch_norm_with_linear_pass import (
+    FuseBatchNormWithLinearPass,
+)
+from executorch.backends.nxp.aten_passes.simulated_linear_bn_fusion_passes import (
+    AddSimulatedLinearBatchNormFusionQATPass,
+    RemoveSimulatedLinearBatchNormFusionQATPass,
+)
 from executorch.backends.nxp.backend.neutron_target_spec import NeutronTargetSpec
 from executorch.backends.nxp.edge_passes.neutron_edge_pass_manager import (
     NeutronEdgePassManager,
@@ -60,6 +67,7 @@ def to_quantized_edge_program(
     delegate_to_npu=True,
     use_qat: bool = False,
     train_fn: Callable[[torch.fx.GraphModule], None] | None = None,
+    use_new_flow_neutron_c: bool = False,
 ) -> EdgeProgramManager:
     assert isinstance(input_spec, list) and all(
         isinstance(spec, ModelInputSpec) for spec in input_spec
@@ -92,12 +100,15 @@ def to_quantized_edge_program(
     )
     if use_qat:
         m = prepare_qat_pt2e(module, quantizer)
+        m = AddSimulatedLinearBatchNormFusionQATPass()(m).graph_module
 
         if train_fn:
             m = move_exported_model_to_train(m)
             train_fn(m)
 
         m = move_exported_model_to_eval(m)
+        m = RemoveSimulatedLinearBatchNormFusionQATPass()(m).graph_module
+        m = FuseBatchNormWithLinearPass()(m).graph_module
     else:
         m = prepare_pt2e(module, quantizer)
 
@@ -147,7 +158,9 @@ def to_quantized_edge_program(
         (
             [
                 NeutronPartitioner(
-                    generate_neutron_compile_spec("imxrt700"),
+                    generate_neutron_compile_spec(
+                        "imxrt700", use_new_flow_neutron_c=use_new_flow_neutron_c
+                    ),
                     neutron_target_spec=neutron_target_spec,
                     post_quantization_state_dict=exir_program_aten_quant.state_dict(),
                 )
@@ -176,6 +189,7 @@ def to_quantized_executorch_program(
     delegate_to_npu=True,
     use_qat: bool = False,
     train_fn: Callable[[torch.fx.GraphModule], None] | None = None,
+    use_new_flow_neutron_c: bool = False,
 ) -> ExecutorchProgramManager:
     edge_program_manager = to_quantized_edge_program(
         model,
@@ -184,6 +198,7 @@ def to_quantized_executorch_program(
         delegate_to_npu,
         use_qat=use_qat,
         train_fn=train_fn,
+        use_new_flow_neutron_c=use_new_flow_neutron_c,
     )
 
     return edge_program_manager.to_executorch(

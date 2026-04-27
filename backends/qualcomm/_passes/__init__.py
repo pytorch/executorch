@@ -4,7 +4,7 @@
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
 
-from .annotate_adaptive_avg_pool1d import AnnotateAdaptiveAvgPool1D
+from .annotate_avg_pool1d import AnnotateAvgPool1D
 from .annotate_quant_attrs import AnnotateQuantAttrs
 from .annotate_stack import AnnotateStack
 from .annotate_unbind import AnnotateUnbind
@@ -26,7 +26,9 @@ from .decompose_linalg_vector_norm import DecomposeLinalgVectorNorm
 from .decompose_log_variants import DecomposeLogVariants
 from .decompose_maxpool3d import DecomposeMaxPool3d
 from .decompose_minmaxdim import DecomposeMinMaxDim
+from .decompose_pad import DecomposePad
 from .decompose_reciprocal import DecomposeReciprocal
+from .decompose_remainder import DecomposeRemainder
 from .decompose_roll import DecomposeRoll
 from .decompose_silu import DecomposeSilu
 from .decompose_threshold import DecomposeThreshold
@@ -57,7 +59,7 @@ from .seq_mse import SeqMSE
 from .tag_quant_io import TagQuantIO
 
 __all__ = [
-    AnnotateAdaptiveAvgPool1D,
+    AnnotateAvgPool1D,
     AnnotateQuantAttrs,
     AnnotateStack,
     AnnotateUnbind,
@@ -79,7 +81,9 @@ __all__ = [
     DecomposeLogVariants,
     DecomposeMaxPool3d,
     DecomposeMinMaxDim,
+    DecomposePad,
     DecomposeReciprocal,
+    DecomposeRemainder,
     DecomposeRoll,
     DecomposeSilu,
     DecomposeThreshold,

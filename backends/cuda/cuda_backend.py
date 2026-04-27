@@ -145,6 +145,8 @@ class CudaBackend(AotiBackend, BackendDetails):
     def get_supported_fallback_kernels(cls) -> Dict[str, Any]:
         return {
             "at::_ops::_weight_int4pack_mm::call": None,
+            "at::_ops::sort_stable::call": None,
+            "aoti_torch_cuda_randint_low_out": None,
         }
 
     @classmethod

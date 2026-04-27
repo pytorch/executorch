@@ -75,47 +75,45 @@ def generate(
 ):
     """Generate text autoregressively with KV cache.
 
-    Prefills one token at a time (the chunk_gated_delta_rule kernel's chunked
-    path has numerical issues with T>1 in eager mode; token-by-token uses the
-    stable recurrent path).
+    Prefills one token at a time (the recurrent path; chunked FLA via
+    @triton_op is used for T>1 prefill in the exported PTE).
+
+    The model performs Gumbel-max sampling on-device: forward() returns
+    a sampled token ID [B, 1] instead of logits [B, T, V].
     """
     if eos_token_ids is None:
         eos_token_ids = set()
 
     input_ids = tokenizer.encode(prompt).ids
 
+    # Temperature tensor (use small epsilon for greedy to avoid div-by-zero)
+    temp_val = max(temperature, 1e-6)
+    temp_tensor = torch.tensor([temp_val], dtype=torch.float32, device="cuda")
+
     # Prefill: one token at a time
     with torch.no_grad():
         for i, tok_id in enumerate(input_ids):
             tok = torch.tensor([[tok_id]], dtype=torch.long, device="cuda")
             pos = torch.tensor([i], dtype=torch.long, device="cuda")
-            logits = model(tok, pos)
+            sampled = model(tok, pos, temp_tensor)
 
-    # Sample first generated token
-    next_token = _sample(logits[:, -1, :], temperature)
-    generated = [next_token.item()]
+    # First generated token (model returns [B, 1] float token ID)
+    next_token_id = int(sampled.item())
+    generated = [next_token_id]
 
     # Decode: one token at a time
     seq_len = len(input_ids)
     with torch.no_grad():
         for i in range(max_new_tokens - 1):
-            pos = torch.tensor([seq_len + i], device="cuda")
-            logits = model(next_token.unsqueeze(0), pos)
-            next_token = _sample(logits[:, -1, :], temperature)
-            tok_id = next_token.item()
-            generated.append(tok_id)
-            if tok_id in eos_token_ids:
+            tok = torch.tensor([[next_token_id]], dtype=torch.long, device="cuda")
+            pos = torch.tensor([seq_len + i], dtype=torch.long, device="cuda")
+            sampled = model(tok, pos, temp_tensor)
+            next_token_id = int(sampled.item())
+            generated.append(next_token_id)
+            if next_token_id in eos_token_ids:
                 break
 
     return tokenizer.decode(generated)
-
-
-def _sample(logits, temperature):
-    """Sample from logits with temperature."""
-    if temperature <= 0:
-        return logits.argmax(dim=-1)
-    probs = torch.softmax(logits / temperature, dim=-1)
-    return torch.multinomial(probs, num_samples=1).squeeze(-1)
 
 
 def main():

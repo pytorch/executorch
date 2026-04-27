@@ -153,6 +153,61 @@ class AddPattern(QuantizationPattern):
         return torch.ops.cadence.quantized_add.per_tensor
 
 
+# This is a base class for Add+ReLU fusion, since it can be used with two different relu aten ops
+class AddReluBasePattern(QuantizationPattern):
+    @abstractmethod
+    def partition_types(self) -> List[OpOverload]:
+        pass
+
+    def get_anchors(
+        self, gm: fx.GraphModule, fused_partition: List[fx.GraphModule]
+    ) -> Tuple[PartitionAnchors, fx.Node]:
+        # The first node should be add, the second should be relu
+        # pyre-fixme[29]: `Union[BoundMethod[typing.Callable(torch._C.TensorBase.__ge...
+        add_node = fused_partition[0].nodes[-1]
+        # pyre-fixme[29]: `Union[BoundMethod[typing.Callable(torch._C.TensorBase.__ge...
+        relu_node = fused_partition[1].nodes[-1]
+
+        # Bail if:
+        #   - the add node is not a tensor add
+        #   - the add node has kwargs (e.g. alpha)
+        is_tensor_add = isinstance(add_node.args[0], fx.Node) and isinstance(
+            add_node.args[1], fx.Node
+        )
+        if not is_tensor_add or len(add_node.kwargs) > 0:
+            return (
+                PartitionAnchors(
+                    empty=True,
+                ),
+                add_node,
+            )
+
+        return (
+            PartitionAnchors(
+                inputs=[(add_node, 0), (add_node, 1)],
+                weights=[],
+                biases=[],
+                output=[(relu_node,)],  # Output is from the relu node
+            ),
+            relu_node,
+        )
+
+    def replacement_op(self) -> OpOverload:
+        return torch.ops.cadence.quantized_add.per_tensor
+
+
+# Add + regular relu op fusion
+class AddReluPattern0(AddReluBasePattern):
+    def partition_types(self) -> List[OpOverload]:
+        return [torch.ops.aten.add.Tensor, torch.ops.aten.relu.default]
+
+
+# Add + alternate relu op fusion
+class AddReluPattern1(AddReluBasePattern):
+    def partition_types(self) -> List[OpOverload]:
+        return [torch.ops.aten.add.Tensor, torch.ops.aten.relu_.default]
+
+
 class BmmPattern(QuantizationPattern):
     def partition_types(self) -> List[OpOverload]:
         return [torch.ops.aten.bmm.default]
@@ -718,7 +773,7 @@ class MixedW8A32ConvPattern(QuantizationPattern):
             )
 
         cnn_weights = conv_layer.args[1]
-        if hasattr(cnn_weights.meta, "tensor_meta"):
+        if "tensor_meta" in cnn_weights.meta:
             cnn_weights_shape = cnn_weights.meta["tensor_meta"].shape
             # Bail if the channels are not multiple of 4 (SIMD)
             if cnn_weights_shape[0] % 4 != 0:
@@ -743,6 +798,18 @@ class MixedW8A32ConvPattern(QuantizationPattern):
                     ),
                     conv_layer,
                 )
+
+            inputs = conv_layer.args[0]
+            if "tensor_meta" in inputs.meta:
+                inputs_shape = inputs.meta["tensor_meta"].shape
+                # Bail if length != kernel size - Not yet supported
+                if inputs_shape[-1] != cnn_weights_shape[2]:
+                    return (
+                        PartitionAnchors(
+                            empty=True,
+                        ),
+                        conv_layer,
+                    )
 
         return (
             PartitionAnchors(
@@ -777,14 +844,16 @@ class MixedW8A32GruPattern(QuantizationPattern):
             )
 
         # Bail if input or states are not multiple of 4 (SIMD)
-        if gru_layer.args[0].meta["tensor_meta"].shape[-1] % 4 != 0:
+        tensor_meta_0 = gru_layer.args[0].meta.get("tensor_meta", None)
+        if tensor_meta_0 is None or tensor_meta_0.shape[-1] % 4 != 0:
             return (
                 PartitionAnchors(
                     empty=True,
                 ),
                 gru_layer,
             )
-        if gru_layer.args[1].meta["tensor_meta"].shape[-1] % 4 != 0:
+        tensor_meta_1 = gru_layer.args[1].meta.get("tensor_meta", None)
+        if tensor_meta_1 is None or tensor_meta_1.shape[-1] % 4 != 0:
             return (
                 PartitionAnchors(
                     empty=True,
@@ -799,13 +868,26 @@ class MixedW8A32GruPattern(QuantizationPattern):
 
         wrapper = Wrapper(tuple(gru_layer.args[2]), gru_layer.meta)
 
+        # Using SharedQuantizationSpec so that bias_hh has the same observer as bias_ih
+        # Both biases get the same quantization scale to match the cpp operator
+        bias_ih_node = wrapper.args[2]
+        bias_ih_edge = (bias_ih_node, gru_layer)
+        shared_bias_qspec = SharedQuantizationSpec(edge_or_node=bias_ih_edge)
+
         return (
             PartitionAnchors(
                 inputs=[],
                 # pyre-fixme[6]: Expected `List[Tuple[Node, int]]` but got `List[Tuple[Wrapper, int]]`.
                 weights=[(wrapper, 0), (wrapper, 1)],
                 # pyre-fixme[6]: Expected `List[Union[Tuple[Node, int], Tuple[Node, int, DerivedQuantizationSpec]]]` but got `List[Tuple[Wrapper, int]]`.
-                biases=[(wrapper, 2), (wrapper, 3)],
+                biases=[
+                    (wrapper, 2),  # bias_ih gets normal qspec
+                    (
+                        wrapper,
+                        3,
+                        shared_bias_qspec,
+                    ),  # bias_hh shares observer with bias_ih
+                ],
                 output=[],
                 others=[(gru_layer, 0), (gru_layer, 1)],
             ),

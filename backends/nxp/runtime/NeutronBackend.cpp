@@ -42,27 +42,27 @@ namespace neutron {
      +-----------------------------------------------------------------------------------+
 */
 // clang-format on
-#define ITEM_SIZE 1 // 1 Byte
-#define INPUT_TENSOR_FORMAT_LEN_POS 0
-#define OUTPUT_TENSOR_FORMAT_LEN_POS 1
-#define INPUT_ARGS_LEN_POS 2
-#define INPUT_TENSOR_FORMAT_ARRAY_ADDR(base) (base + 3 * ITEM_SIZE)
+#define ITEM_SIZE 1U // 1 Byte
+#define INPUT_TENSOR_FORMAT_LEN_POS 0U
+#define OUTPUT_TENSOR_FORMAT_LEN_POS 1U
+#define INPUT_ARGS_LEN_POS 2U
+#define INPUT_TENSOR_FORMAT_ARRAY_ADDR(base) (base + 3U * ITEM_SIZE)
 #define OUTPUT_TENSOR_FORMAT_ARRAY_ADDR(base) \
-  (base + 3 * ITEM_SIZE + base[INPUT_TENSOR_FORMAT_LEN_POS])
-#define INPUT_TENSOR_MAP_ARRAY_ADDR(base)                         \
-  (base + 3 * ITEM_SIZE + 1 * base[INPUT_TENSOR_FORMAT_LEN_POS] + \
-   1 * base[OUTPUT_TENSOR_FORMAT_LEN_POS])
-#define OUTPUT_TENSOR_MAP_ARRAY_ADDR(base)                        \
-  (base + 3 * ITEM_SIZE + 2 * base[INPUT_TENSOR_FORMAT_LEN_POS] + \
-   1 * base[OUTPUT_TENSOR_FORMAT_LEN_POS])
-#define PAYLOAD_VERSION_ADDR(base)                                \
-  (base + 3 * ITEM_SIZE + 2 * base[INPUT_TENSOR_FORMAT_LEN_POS] + \
-   2 * base[OUTPUT_TENSOR_FORMAT_LEN_POS])
-#define PAYLOAD_ADDR(base)                                     \
-  (base +                                                      \
-   ALIGN_SIZE(                                                 \
-       4 * ITEM_SIZE + 2 * base[INPUT_TENSOR_FORMAT_LEN_POS] + \
-       2 * base[OUTPUT_TENSOR_FORMAT_LEN_POS]))
+  (base + 3U * ITEM_SIZE + base[INPUT_TENSOR_FORMAT_LEN_POS])
+#define INPUT_TENSOR_MAP_ARRAY_ADDR(base)                           \
+  (base + 3U * ITEM_SIZE + 1U * base[INPUT_TENSOR_FORMAT_LEN_POS] + \
+   1U * base[OUTPUT_TENSOR_FORMAT_LEN_POS])
+#define OUTPUT_TENSOR_MAP_ARRAY_ADDR(base)                          \
+  (base + 3U * ITEM_SIZE + 2U * base[INPUT_TENSOR_FORMAT_LEN_POS] + \
+   1U * base[OUTPUT_TENSOR_FORMAT_LEN_POS])
+#define PAYLOAD_VERSION_ADDR(base)                                  \
+  (base + 3U * ITEM_SIZE + 2U * base[INPUT_TENSOR_FORMAT_LEN_POS] + \
+   2U * base[OUTPUT_TENSOR_FORMAT_LEN_POS])
+#define PAYLOAD_ADDR(base)                                       \
+  (base +                                                        \
+   ALIGN_SIZE(                                                   \
+       4U * ITEM_SIZE + 2U * base[INPUT_TENSOR_FORMAT_LEN_POS] + \
+       2U * base[OUTPUT_TENSOR_FORMAT_LEN_POS]))
 
 // Aggregate neutron model handle and data structures into one.
 typedef struct {
@@ -252,7 +252,7 @@ bool multipleChannelsPresent(const ArrayRef<exec_aten::SizesType>& sizes) {
   if (length < 3) {
     return true;
   }
-  size_t C = sizes[length - 3];
+  exec_aten::SizesType C = sizes[length - 3];
   return C != 1;
 }
 
@@ -433,12 +433,12 @@ class NeutronBackend final : public PyTorchBackendInterface {
 
         if (is_channels_last_dim_order(dim_order, arg.dim())) {
           // The tensor is already permuted.
-          ET_LOG(Info, "Using channels last dim order for input %d.\n", i);
+          ET_LOG(Debug, "Using channels last dim order for input %d.\n", i);
           cfg->dcfg.inputs[i] = arg.const_data_ptr();
         } else if (is_contiguous_dim_order(dim_order, arg.dim())) {
           // Transpose the data to channels last.
 
-          ET_LOG(Info, "Transposing input %d to channels last.\n", i);
+          ET_LOG(Debug, "Transposing input %d to channels last.\n", i);
 
           // Allocate buffer, the allocator is reset after each PTE instruction.
           void* buffer = context.allocate(arg.nbytes(), 16);
@@ -542,10 +542,10 @@ class NeutronBackend final : public PyTorchBackendInterface {
         if (is_channels_last_dim_order(dim_order, arg.dim())) {
           // The rest of the model expects the `channels_last` dim order, which
           //  the data already matches.
-          ET_LOG(Info, "Using channels last dim order for output %d.\n", i);
+          ET_LOG(Debug, "Using channels last dim order for output %d.\n", i);
         } else if (is_contiguous_dim_order(dim_order, arg.dim())) {
           // Transpose the data to channels first.
-          ET_LOG(Info, "Transposing output %d to channels first.\n", i);
+          ET_LOG(Debug, "Transposing output %d to channels first.\n", i);
           transposeOutput(
               cfg->dcfg.outputs[i],
               arg.mutable_data_ptr(),
