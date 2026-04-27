@@ -63,6 +63,7 @@ class LayerNormVisitor(NodeVisitor):
         has_weight = len(node.args) > 2 and node.args[2] is not None
         if has_weight:
             weight_node = self.get_node(node.args[2])
+            assert weight_node is not None
             weight_tensor = get_parameter(weight_node, self.edge_program)
         else:
             # elementwise_affine=False: use all-ones weight as identity
@@ -87,32 +88,21 @@ class LayerNormVisitor(NodeVisitor):
             nodes_to_wrappers,
         )
 
-        # Fake node: even when original bias is absent, QNN still needs it
+        layer_norm_input_tensors = [input_tensor_wrapper, weight_tensor_wrapper]
+
         has_bias = len(node.args) > 3 and node.args[3] is not None
         if has_bias:
             bias_node = self.get_node(node.args[3])
+            assert bias_node is not None
             bias_tensor = get_parameter(bias_node, self.edge_program)
-        else:
-            bias_tensor = torch.zeros(normalized_shapes, dtype=torch.float32)
-            bias_node = torch.fx.Node(
-                node.graph,
-                node.name + "_runtime_bias",
-                "call_function",
-                exir_ops.edge.aten.tensor.default,
-                (),
-                {},
+            bias_tensor_wrapper = self.define_tensor(
+                bias_node,
+                node,
+                bias_tensor,
+                PyQnnManager.Qnn_TensorType_t.QNN_TENSOR_TYPE_STATIC,
+                nodes_to_wrappers,
             )
-            if quant_attrs := node.meta.get(QCOM_QUANT_ATTRS):
-                quant_attrs = quant_attrs.copy()
-                quant_attrs[QCOM_ZERO_POINT] = 0
-                bias_node.meta[QCOM_QUANT_ATTRS] = quant_attrs
-        bias_tensor_wrapper = self.define_tensor(
-            bias_node,
-            node,
-            bias_tensor,
-            PyQnnManager.Qnn_TensorType_t.QNN_TENSOR_TYPE_STATIC,
-            nodes_to_wrappers,
-        )
+            layer_norm_input_tensors.append(bias_tensor_wrapper)
 
         epsilon = node.args[4] if len(node.args) > 4 else 1e-05
 
@@ -130,9 +120,7 @@ class LayerNormVisitor(NodeVisitor):
             QNN_OP_PACKAGE_NAME_QTI_AISW,
             OpLayerNorm.op_name,
         )
-        layer_norm_op.AddInputTensors(
-            [input_tensor_wrapper, weight_tensor_wrapper, bias_tensor_wrapper]
-        )
+        layer_norm_op.AddInputTensors(layer_norm_input_tensors)
         layer_norm_op.AddOutputTensors([output_tensor_wrapper])
         layer_norm_op.AddScalarParam(
             OpLayerNorm.param_epsilon,

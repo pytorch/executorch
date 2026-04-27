@@ -1379,33 +1379,18 @@ class LargeTensorLinear(torch.nn.Module):
 
 
 class LayerNorm(torch.nn.Module):
-    def __init__(self, bias=True):
+    def __init__(self, elementwise_affine=True, bias=True):
         super().__init__()
-        self.layer_norm = torch.nn.LayerNorm([768], eps=1e-6, bias=bias)
+        self.layer_norm = torch.nn.LayerNorm(
+            [768],
+            eps=1e-6,
+            elementwise_affine=elementwise_affine,
+            bias=bias,
+        )
         self.linear = torch.nn.Linear(768, 196)
 
     def forward(self, x):
         return self.linear(self.layer_norm(x))
-
-
-class NativeLayerNorm(torch.nn.Module):
-    def __init__(self, affine=True):
-        super().__init__()
-        self.affine = affine
-        self.weight = torch.nn.Parameter(torch.ones(768))
-        self.bias = torch.nn.Parameter(torch.zeros(768))
-        self.normalized_shape = [768]
-        self.eps = 1e-6
-
-    def forward(self, x):
-        if self.affine:
-            return torch.native_layer_norm(
-                x, self.normalized_shape, self.weight, self.bias, self.eps
-            )[0]
-        else:
-            return torch.native_layer_norm(
-                x, self.normalized_shape, self.weight, self.bias, self.eps
-            )[0]
 
 
 class LayerNormAdd(torch.nn.Module):

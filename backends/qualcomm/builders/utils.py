@@ -29,9 +29,7 @@ def is_parameter(
 
 def get_parameter(
     node: torch.fx.Node, edge_program: torch.export.ExportedProgram
-) -> Optional[torch.Tensor]:
-    if node is None:
-        return None
+) -> torch.Tensor:
     param = None
     if is_param(edge_program, node):
         param = get_param(edge_program, node)
@@ -39,10 +37,12 @@ def get_parameter(
         param = get_buffer(edge_program, node)
     if is_lifted_tensor_constant(edge_program, node):
         param = get_lifted_tensor_constant(edge_program, node)
-    if param is not None:
-        # update node.meta["val"] to qualified QNN datatype (e.g. i64 to i32)
-        assert isinstance(param, torch.Tensor), "Expect parameter to be tensor"
-        param = param.type(node.meta["val"].dtype)
+    assert param is not None, (
+        f"Expect {node.name} to be parameter, buffer, or lifted tensor constant"
+    )
+    # update node.meta["val"] to qualified QNN datatype (e.g. i64 to i32)
+    assert isinstance(param, torch.Tensor), "Expect parameter to be tensor"
+    param = param.type(node.meta["val"].dtype)
     return param
 
 

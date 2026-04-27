@@ -29,8 +29,6 @@ from .qconfig import QuantizationConfig
 
 def _mark_nodes_as_annotated(nodes: List[Node]):
     for node in nodes:
-        if node is None:
-            continue
         if Q_ANNOTATION_KEY not in node.meta:
             node.meta[Q_ANNOTATION_KEY] = QuantizationAnnotation()
         node.meta[Q_ANNOTATION_KEY]._annotated = True
