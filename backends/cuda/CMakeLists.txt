@@ -147,13 +147,21 @@ if(_cuda_export_dynamic_option)
   target_link_options(aoti_cuda_shims PUBLIC ${_cuda_export_dynamic_option})
 endif()
 
+# curand is only needed by rand.cu, which is gated on CMAKE_CUDA_COMPILER above.
+# Some Windows cross-compile environments stage cudart but not curand, so
+# linking it unconditionally breaks configure there.
+set(_aoti_cuda_shim_extra_libs "")
+if(CMAKE_CUDA_COMPILER)
+  list(APPEND _aoti_cuda_shim_extra_libs CUDA::curand)
+endif()
+
 # Link against CUDA::cudart, common AOTI library, and platform utilities. On
 # non-MSVC, use --whole-archive for aoti_common_shims_slim to force shim symbol
 # retention.
 if(_cuda_is_msvc_toolchain)
   target_link_libraries(
-    aoti_cuda_shims PRIVATE cuda_platform CUDA::cudart CUDA::curand
-                            ${CMAKE_DL_LIBS}
+    aoti_cuda_shims PRIVATE cuda_platform CUDA::cudart
+                            ${_aoti_cuda_shim_extra_libs} ${CMAKE_DL_LIBS}
   )
   # Link object library directly so symbols are pulled exactly once while
   # avoiding duplicate static/object inclusion and interface leakage.
@@ -163,7 +171,7 @@ else()
     aoti_cuda_shims
     PRIVATE cuda_platform
     PUBLIC -Wl,--whole-archive aoti_common_shims_slim -Wl,--no-whole-archive
-           CUDA::cudart CUDA::curand ${CMAKE_DL_LIBS}
+           CUDA::cudart ${_aoti_cuda_shim_extra_libs} ${CMAKE_DL_LIBS}
   )
 endif()
 
