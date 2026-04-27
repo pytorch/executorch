@@ -99,7 +99,7 @@ void unsqueeze(ComputeGraph& graph, const std::vector<ValueRef>& args) {
 
   std::vector<ValueRef> resize_args = {dims};
   if (graph.is_buffer_storage(in)) {
-    return add_view_copy_buffer_node(
+    return add_view_copy_node(
         graph, in, out, resize_args, resize_unsqueeze_node);
   }
   return add_unsqueeze_node(graph, in, dims, out);

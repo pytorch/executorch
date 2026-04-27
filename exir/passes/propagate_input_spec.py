@@ -1,7 +1,9 @@
+# pyre-strict
+
 # This pass exists to propagate input spec metadata down through nested
 # submodules. Specifically, metadata for the type of tensor - USER_INPUT, PARAM,
 # BUFFER, corresponding to torch.export.graph_signature.InputKind. If the tensor
-# is not a direct input in all paths, it's left left as None.
+# is not a direct input in all paths, it's left as None.
 #
 # Metadata is stored in the node meta["input_spec"] with a type of
 # torch.export.graph_signature.InputSpec or None. It corresponds to the output
@@ -22,7 +24,7 @@ from torch.fx import GraphModule, Node
 INPUT_SPEC_KEY = "input_spec"
 
 
-def propagate_input_spec(ep: ExportedProgram) -> ExportedProgram:
+def propagate_input_spec(ep: ExportedProgram) -> None:
     """
     Assign the meta["input_spec"] value for placeholders in the graph, including
     placeholder nodes in control flow submodules.

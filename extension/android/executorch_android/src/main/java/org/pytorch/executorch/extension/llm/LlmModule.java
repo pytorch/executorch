@@ -13,6 +13,7 @@ import com.facebook.jni.annotations.DoNotStrip;
 import java.nio.ByteBuffer;
 import java.util.List;
 import org.pytorch.executorch.ExecuTorchRuntime;
+import org.pytorch.executorch.ExecutorchRuntimeException;
 import org.pytorch.executorch.annotations.Experimental;
 
 /**
@@ -29,11 +30,13 @@ public class LlmModule {
   public static final int MODEL_TYPE_MULTIMODAL = 2;
 
   private final HybridData mHybridData;
+  private volatile boolean mDestroyed = false;
   private static final int DEFAULT_SEQ_LEN = 128;
   private static final boolean DEFAULT_ECHO = true;
   private static final float DEFAULT_TEMPERATURE = -1.0f;
   private static final int DEFAULT_BOS = 0;
   private static final int DEFAULT_EOS = 0;
+  private static final int DEFAULT_LOAD_MODE = LlmModuleConfig.LOAD_MODE_MMAP;
 
   @DoNotStrip
   private static native HybridData initHybrid(
@@ -43,7 +46,26 @@ public class LlmModule {
       float temperature,
       List<String> dataFiles,
       int numBos,
-      int numEos);
+      int numEos,
+      int loadMode);
+
+  private LlmModule(
+      int modelType,
+      String modulePath,
+      String tokenizerPath,
+      float temperature,
+      List<String> dataFiles,
+      int numBos,
+      int numEos,
+      int loadMode) {
+    ExecuTorchRuntime.getRuntime();
+    ExecuTorchRuntime.validateFilePath(modulePath, "model path");
+    ExecuTorchRuntime.validateFilePath(tokenizerPath, "tokenizer path");
+
+    mHybridData =
+        initHybrid(
+            modelType, modulePath, tokenizerPath, temperature, dataFiles, numBos, numEos, loadMode);
+  }
 
   /**
    * Constructs a LLM Module for a model with given type, model path, tokenizer, temperature, and
@@ -57,12 +79,15 @@ public class LlmModule {
       List<String> dataFiles,
       int numBos,
       int numEos) {
-    ExecuTorchRuntime.getRuntime();
-    ExecuTorchRuntime.validateFilePath(modulePath, "model path");
-    ExecuTorchRuntime.validateFilePath(tokenizerPath, "tokenizer path");
-
-    mHybridData =
-        initHybrid(modelType, modulePath, tokenizerPath, temperature, dataFiles, numBos, numEos);
+    this(
+        modelType,
+        modulePath,
+        tokenizerPath,
+        temperature,
+        dataFiles,
+        numBos,
+        numEos,
+        DEFAULT_LOAD_MODE);
   }
 
   /**
@@ -75,7 +100,15 @@ public class LlmModule {
       String tokenizerPath,
       float temperature,
       List<String> dataFiles) {
-    this(modelType, modulePath, tokenizerPath, temperature, dataFiles, DEFAULT_BOS, DEFAULT_EOS);
+    this(
+        modelType,
+        modulePath,
+        tokenizerPath,
+        temperature,
+        dataFiles,
+        DEFAULT_BOS,
+        DEFAULT_EOS,
+        DEFAULT_LOAD_MODE);
   }
 
   /**
@@ -148,12 +181,20 @@ public class LlmModule {
         config.getModulePath(),
         config.getTokenizerPath(),
         config.getTemperature(),
-        config.getDataPath(),
+        config.getDataPath() != null ? List.of(config.getDataPath()) : List.of(),
         config.getNumBos(),
-        config.getNumEos());
+        config.getNumEos(),
+        config.getLoadMode());
   }
 
+  private void checkNotDestroyed() {
+    if (mDestroyed) throw new IllegalStateException("LlmModule has been destroyed");
+  }
+
+  @Deprecated
   public void resetNative() {
+    if (mDestroyed) return;
+    mDestroyed = true;
     mHybridData.resetNative();
   }
 
@@ -163,8 +204,9 @@ public class LlmModule {
    * @param prompt Input prompt
    * @param llmCallback callback object to receive results.
    */
-  public int generate(String prompt, LlmCallback llmCallback) {
-    return generate(
+  public void generate(String prompt, LlmCallback llmCallback) {
+    checkNotDestroyed();
+    generate(
         prompt,
         DEFAULT_SEQ_LEN,
         llmCallback,
@@ -181,8 +223,9 @@ public class LlmModule {
    * @param seqLen sequence length
    * @param llmCallback callback object to receive results.
    */
-  public int generate(String prompt, int seqLen, LlmCallback llmCallback) {
-    return generate(
+  public void generate(String prompt, int seqLen, LlmCallback llmCallback) {
+    checkNotDestroyed();
+    generate(
         null,
         0,
         0,
@@ -203,8 +246,9 @@ public class LlmModule {
    * @param llmCallback callback object to receive results
    * @param echo indicate whether to echo the input prompt or not (text completion vs chat)
    */
-  public int generate(String prompt, LlmCallback llmCallback, boolean echo) {
-    return generate(
+  public void generate(String prompt, LlmCallback llmCallback, boolean echo) {
+    checkNotDestroyed();
+    generate(
         null,
         0,
         0,
@@ -226,9 +270,9 @@ public class LlmModule {
    * @param llmCallback callback object to receive results
    * @param echo indicate whether to echo the input prompt or not (text completion vs chat)
    */
-  public int generate(String prompt, int seqLen, LlmCallback llmCallback, boolean echo) {
-    return generate(
-        prompt, seqLen, llmCallback, echo, DEFAULT_TEMPERATURE, DEFAULT_BOS, DEFAULT_EOS);
+  public void generate(String prompt, int seqLen, LlmCallback llmCallback, boolean echo) {
+    checkNotDestroyed();
+    generate(prompt, seqLen, llmCallback, echo, DEFAULT_TEMPERATURE, DEFAULT_BOS, DEFAULT_EOS);
   }
 
   /**
@@ -242,7 +286,23 @@ public class LlmModule {
    * @param numBos number of BOS tokens to prepend
    * @param numEos number of EOS tokens to append
    */
-  public native int generate(
+  public void generate(
+      String prompt,
+      int seqLen,
+      LlmCallback llmCallback,
+      boolean echo,
+      float temperature,
+      int numBos,
+      int numEos) {
+    checkNotDestroyed();
+    int err = generateNative(prompt, seqLen, llmCallback, echo, temperature, numBos, numEos);
+    if (err != 0) {
+      throw ExecutorchRuntimeException.makeExecutorchException(err, "Failed to generate");
+    }
+  }
+
+  @DoNotStrip
+  private native int generateNative(
       String prompt,
       int seqLen,
       LlmCallback llmCallback,
@@ -258,13 +318,14 @@ public class LlmModule {
    * @param config the config for generation
    * @param llmCallback callback object to receive results
    */
-  public int generate(String prompt, LlmGenerationConfig config, LlmCallback llmCallback) {
+  public void generate(String prompt, LlmGenerationConfig config, LlmCallback llmCallback) {
+    checkNotDestroyed();
     int seqLen = config.getSeqLen();
     boolean echo = config.isEcho();
     float temperature = config.getTemperature();
     int numBos = config.getNumBos();
     int numEos = config.getNumEos();
-    return generate(null, 0, 0, 0, prompt, seqLen, llmCallback, echo, temperature, numBos, numEos);
+    generate(null, 0, 0, 0, prompt, seqLen, llmCallback, echo, temperature, numBos, numEos);
   }
 
   /**
@@ -279,7 +340,7 @@ public class LlmModule {
    * @param llmCallback callback object to receive results.
    * @param echo indicate whether to echo the input prompt or not (text completion vs chat)
    */
-  public int generate(
+  public void generate(
       int[] image,
       int width,
       int height,
@@ -288,7 +349,8 @@ public class LlmModule {
       int seqLen,
       LlmCallback llmCallback,
       boolean echo) {
-    return generate(
+    checkNotDestroyed();
+    generate(
         image,
         width,
         height,
@@ -315,7 +377,7 @@ public class LlmModule {
    * @param echo indicate whether to echo the input prompt or not (text completion vs chat)
    * @param temperature temperature for sampling (use negative value to use module default)
    */
-  public int generate(
+  public void generate(
       int[] image,
       int width,
       int height,
@@ -325,7 +387,8 @@ public class LlmModule {
       LlmCallback llmCallback,
       boolean echo,
       float temperature) {
-    return generate(
+    checkNotDestroyed();
+    generate(
         image,
         width,
         height,
@@ -354,7 +417,7 @@ public class LlmModule {
    * @param numBos number of BOS tokens to prepend
    * @param numEos number of EOS tokens to append
    */
-  public int generate(
+  public void generate(
       int[] image,
       int width,
       int height,
@@ -366,30 +429,29 @@ public class LlmModule {
       float temperature,
       int numBos,
       int numEos) {
+    checkNotDestroyed();
     if (image != null) {
       prefillImages(image, width, height, channels);
     }
-    return generate(prompt, seqLen, llmCallback, echo, temperature, numBos, numEos);
+    generate(prompt, seqLen, llmCallback, echo, temperature, numBos, numEos);
   }
 
   /**
-   * Prefill a multimodal Module with the given images input.
+   * Prefill the KV cache with the given image input.
    *
    * @param image Input image as a byte array
    * @param width Input image width
    * @param height Input image height
    * @param channels Input image number of channels
-   * @return 0, as the updated starting position in KV cache of the input in the LLM is no longer
-   *     exposed to user.
-   * @throws RuntimeException if the prefill failed
+   * @throws ExecutorchRuntimeException if the prefill failed
    */
   @Experimental
-  public long prefillImages(int[] image, int width, int height, int channels) {
-    int nativeResult = appendImagesInput(image, width, height, channels);
+  public void prefillImages(int[] image, int width, int height, int channels) {
+    checkNotDestroyed();
+    int nativeResult = prefillImagesInput(image, width, height, channels);
     if (nativeResult != 0) {
-      throw new RuntimeException("Prefill failed with error code: " + nativeResult);
+      throw ExecutorchRuntimeException.makeExecutorchException(nativeResult, "Prefill failed");
     }
-    return 0;
   }
 
   /**
@@ -409,6 +471,7 @@ public class LlmModule {
    */
   @Experimental
   public void prefillImages(ByteBuffer image, int width, int height, int channels) {
+    checkNotDestroyed();
     if (!image.isDirect()) {
       throw new IllegalArgumentException("Input ByteBuffer must be direct.");
     }
@@ -434,9 +497,9 @@ public class LlmModule {
     }
     // slice() so that getDirectBufferAddress on the native side returns a pointer
     // starting at the current position, not the base address.
-    int nativeResult = appendImagesInputBuffer(image.slice(), width, height, channels);
+    int nativeResult = prefillImagesInputBuffer(image.slice(), width, height, channels);
     if (nativeResult != 0) {
-      throw new RuntimeException("Prefill failed with error code: " + nativeResult);
+      throw ExecutorchRuntimeException.makeExecutorchException(nativeResult, "Prefill failed");
     }
   }
 
@@ -460,6 +523,7 @@ public class LlmModule {
    */
   @Experimental
   public void prefillNormalizedImage(ByteBuffer image, int width, int height, int channels) {
+    checkNotDestroyed();
     if (!image.isDirect()) {
       throw new IllegalArgumentException("Input ByteBuffer must be direct.");
     }
@@ -500,135 +564,133 @@ public class LlmModule {
     }
     // slice() so that getDirectBufferAddress on the native side returns a pointer
     // starting at the current position, not the base address.
-    int nativeResult = appendNormalizedImagesInputBuffer(image.slice(), width, height, channels);
+    int nativeResult = prefillNormalizedImagesInputBuffer(image.slice(), width, height, channels);
     if (nativeResult != 0) {
-      throw new RuntimeException("Prefill failed with error code: " + nativeResult);
+      throw ExecutorchRuntimeException.makeExecutorchException(nativeResult, "Prefill failed");
     }
   }
 
-  private native int appendImagesInput(int[] image, int width, int height, int channels);
+  private native int prefillImagesInput(int[] image, int width, int height, int channels);
 
-  private native int appendImagesInputBuffer(ByteBuffer image, int width, int height, int channels);
+  private native int prefillImagesInputBuffer(
+      ByteBuffer image, int width, int height, int channels);
 
-  private native int appendNormalizedImagesInputBuffer(
+  private native int prefillNormalizedImagesInputBuffer(
       ByteBuffer image, int width, int height, int channels);
 
   /**
-   * Prefill a multimodal Module with the given images input.
+   * Prefill the KV cache with the given normalized image input.
    *
    * @param image Input normalized image as a float array
    * @param width Input image width
    * @param height Input image height
    * @param channels Input image number of channels
-   * @return 0, as the updated starting position in KV cache of the input in the LLM is no longer
-   *     exposed to user.
-   * @throws RuntimeException if the prefill failed
+   * @throws ExecutorchRuntimeException if the prefill failed
    */
   @Experimental
-  public long prefillImages(float[] image, int width, int height, int channels) {
-    int nativeResult = appendNormalizedImagesInput(image, width, height, channels);
+  public void prefillImages(float[] image, int width, int height, int channels) {
+    checkNotDestroyed();
+    int nativeResult = prefillNormalizedImagesInput(image, width, height, channels);
     if (nativeResult != 0) {
-      throw new RuntimeException("Prefill failed with error code: " + nativeResult);
+      throw ExecutorchRuntimeException.makeExecutorchException(nativeResult, "Prefill failed");
     }
-    return 0;
   }
 
-  private native int appendNormalizedImagesInput(
+  private native int prefillNormalizedImagesInput(
       float[] image, int width, int height, int channels);
 
   /**
-   * Prefill a multimodal Module with the given audio input.
+   * Prefill the KV cache with the given preprocessed audio input.
    *
    * @param audio Input preprocessed audio as a byte array
    * @param batch_size Input batch size
    * @param n_bins Input number of bins
    * @param n_frames Input number of frames
-   * @return 0, as the updated starting position in KV cache of the input in the LLM is no longer
-   *     exposed to user.
-   * @throws RuntimeException if the prefill failed
+   * @throws ExecutorchRuntimeException if the prefill failed
    */
   @Experimental
-  public long prefillAudio(byte[] audio, int batch_size, int n_bins, int n_frames) {
-    int nativeResult = appendAudioInput(audio, batch_size, n_bins, n_frames);
+  public void prefillAudio(byte[] audio, int batch_size, int n_bins, int n_frames) {
+    checkNotDestroyed();
+    int nativeResult = prefillAudioInput(audio, batch_size, n_bins, n_frames);
     if (nativeResult != 0) {
-      throw new RuntimeException("Prefill failed with error code: " + nativeResult);
+      throw ExecutorchRuntimeException.makeExecutorchException(nativeResult, "Prefill failed");
     }
-    return 0;
   }
 
-  private native int appendAudioInput(byte[] audio, int batch_size, int n_bins, int n_frames);
+  private native int prefillAudioInput(byte[] audio, int batch_size, int n_bins, int n_frames);
 
   /**
-   * Prefill a multimodal Module with the given audio input.
+   * Prefill the KV cache with the given preprocessed audio input.
    *
    * @param audio Input preprocessed audio as a float array
    * @param batch_size Input batch size
    * @param n_bins Input number of bins
    * @param n_frames Input number of frames
-   * @return 0, as the updated starting position in KV cache of the input in the LLM is no longer
-   *     exposed to user.
-   * @throws RuntimeException if the prefill failed
+   * @throws ExecutorchRuntimeException if the prefill failed
    */
   @Experimental
-  public long prefillAudio(float[] audio, int batch_size, int n_bins, int n_frames) {
-    int nativeResult = appendAudioInputFloat(audio, batch_size, n_bins, n_frames);
+  public void prefillAudio(float[] audio, int batch_size, int n_bins, int n_frames) {
+    checkNotDestroyed();
+    int nativeResult = prefillAudioInputFloat(audio, batch_size, n_bins, n_frames);
     if (nativeResult != 0) {
-      throw new RuntimeException("Prefill failed with error code: " + nativeResult);
+      throw ExecutorchRuntimeException.makeExecutorchException(nativeResult, "Prefill failed");
     }
-    return 0;
   }
 
-  private native int appendAudioInputFloat(float[] audio, int batch_size, int n_bins, int n_frames);
+  private native int prefillAudioInputFloat(
+      float[] audio, int batch_size, int n_bins, int n_frames);
 
   /**
-   * Prefill a multimodal Module with the given raw audio input.
+   * Prefill the KV cache with the given raw audio input.
    *
    * @param audio Input raw audio as a byte array
    * @param batch_size Input batch size
    * @param n_channels Input number of channels
    * @param n_samples Input number of samples
-   * @return 0, as the updated starting position in KV cache of the input in the LLM is no longer
-   *     exposed to user.
-   * @throws RuntimeException if the prefill failed
+   * @throws ExecutorchRuntimeException if the prefill failed
    */
   @Experimental
-  public long prefillRawAudio(byte[] audio, int batch_size, int n_channels, int n_samples) {
-    int nativeResult = appendRawAudioInput(audio, batch_size, n_channels, n_samples);
+  public void prefillRawAudio(byte[] audio, int batch_size, int n_channels, int n_samples) {
+    checkNotDestroyed();
+    int nativeResult = prefillRawAudioInput(audio, batch_size, n_channels, n_samples);
     if (nativeResult != 0) {
-      throw new RuntimeException("Prefill failed with error code: " + nativeResult);
+      throw ExecutorchRuntimeException.makeExecutorchException(nativeResult, "Prefill failed");
     }
-    return 0;
   }
 
-  private native int appendRawAudioInput(
+  private native int prefillRawAudioInput(
       byte[] audio, int batch_size, int n_channels, int n_samples);
 
   /**
-   * Prefill a multimodal Module with the given text input.
+   * Prefill the KV cache with the given text prompt.
    *
    * @param prompt The text prompt to prefill.
-   * @return 0, as the updated starting position in KV cache of the input in the LLM is no longer
-   *     exposed to user.
-   * @throws RuntimeException if the prefill failed
+   * @throws ExecutorchRuntimeException if the prefill failed
    */
   @Experimental
-  public long prefillPrompt(String prompt) {
-    int nativeResult = appendTextInput(prompt);
+  public void prefillPrompt(String prompt) {
+    checkNotDestroyed();
+    int nativeResult = prefillTextInput(prompt);
     if (nativeResult != 0) {
-      throw new RuntimeException("Prefill failed with error code: " + nativeResult);
+      throw ExecutorchRuntimeException.makeExecutorchException(nativeResult, "Prefill failed");
     }
-    return 0;
   }
 
   // returns status
-  private native int appendTextInput(String prompt);
+  private native int prefillTextInput(String prompt);
 
   /**
    * Reset the context of the LLM. This will clear the KV cache and reset the state of the LLM.
    *
    * <p>The startPos will be reset to 0.
    */
-  public native void resetContext();
+  public void resetContext() {
+    checkNotDestroyed();
+    resetContextNative();
+  }
+
+  @DoNotStrip
+  private native void resetContextNative();
 
   /** Stop current generate() before it finishes. */
   @DoNotStrip
@@ -636,5 +698,14 @@ public class LlmModule {
 
   /** Force loading the module. Otherwise the model is loaded during first generate(). */
   @DoNotStrip
-  public native int load();
+  public void load() {
+    checkNotDestroyed();
+    int err = loadNative();
+    if (err != 0) {
+      throw ExecutorchRuntimeException.makeExecutorchException(err, "Failed to load model");
+    }
+  }
+
+  @DoNotStrip
+  private native int loadNative();
 }

@@ -8,7 +8,7 @@ import os
 import tempfile
 from typing import Optional
 
-import executorch.backends.xnnpack.test.tester.tester as tester
+import executorch.backends.test.harness.stages as BaseStages
 
 import torch.fx
 
@@ -27,7 +27,7 @@ from torch.utils._pytree import tree_flatten
 logger = logging.getLogger(__name__)
 
 
-class Serialize(tester.Serialize):
+class Serialize(BaseStages.Serialize):
     def __init__(
         self,
         compile_spec: ArmCompileSpec,
@@ -60,7 +60,7 @@ class Serialize(tester.Serialize):
                 "Tried running artifact from Serialize stage without running the stage."
             )
         inputs_flattened, _ = tree_flatten(inputs)
-        intermediate_path = self.compile_spec.get_intermediate_path()
+        intermediate_path = self.compile_spec._get_intermediate_path()
         target_board = get_target_board(self.compile_spec)
         elf_path = get_elf_path(target_board, self.use_portable_ops)
 
