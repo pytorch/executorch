@@ -239,6 +239,12 @@ lib.define(
     "quantized_conv2d_nhwc.per_tensor_out(Tensor input, Tensor weight, Tensor bias, int[] stride, SymInt[] padding, int[] dilation, int groups, int input_zero_point, int weight_zero_point, float bias_scale, float out_scale, int out_zero_point, int out_multiplier, int out_shift, Tensor? offset=None, *, Tensor(a!) out) -> Tensor(a!)"
 )
 lib.define(
+    "quantized_conv2d_depthwise_nhwc(Tensor input, Tensor weight, Tensor bias, int[] stride, SymInt[] padding, int[] dilation, int groups, int input_zero_point, int weight_zero_point, float bias_scale, float out_scale, int out_zero_point, int out_multiplier, int out_shift) -> (Tensor Z)"
+)
+lib.define(
+    "quantized_conv2d_depthwise_nhwc.out(Tensor input, Tensor weight, Tensor bias, int[] stride, SymInt[] padding, int[] dilation, int groups, int input_zero_point, int weight_zero_point, float bias_scale, float out_scale, int out_zero_point, int out_multiplier, int out_shift, *, Tensor(a!) out) -> Tensor(a!)"
+)
+lib.define(
     "quantized_conv1d_ncl(Tensor input, Tensor weight, Tensor bias, int[] stride, SymInt[] padding, int[] dilation, int groups, int input_zero_point, Tensor weight_zero_point, Tensor bias_scale, float out_scale, int out_zero_point, Tensor out_multiplier, Tensor out_shift) -> (Tensor Z)"
 )
 lib.define(
@@ -2086,6 +2092,49 @@ def quantized_conv2d_nhwc_depthwise_asym8uxsym8u_asym8u_per_tensor_meta(
     *kernel_size, out_channels = weight.shape
 
     # Compute the output tensor size
+    output_size = (
+        get_conv1d_output_size(
+            in_size,
+            out_channels,
+            stride[-1],
+            padding[-1],
+            dilation[-1],
+            kernel_size[0],
+            True,
+        )
+        if len(in_size) == 3
+        else get_conv2d_output_size(
+            in_size, out_channels, stride, padding, dilation, kernel_size, True
+        )
+    )
+
+    return input.new_empty(output_size, dtype=input.dtype)
+
+
+@register_fake("cadence::quantized_conv2d_depthwise_nhwc")
+def quantized_conv2d_depthwise_nhwc_meta(
+    input: torch.Tensor,
+    weight: torch.Tensor,
+    bias: torch.Tensor,
+    stride: Tuple[int],
+    padding: Tuple[int],
+    dilation: Tuple[int],
+    groups: int,
+    in_zero_point: int,
+    weight_zero_point: int,
+    bias_scale: float,
+    output_scale: float,
+    output_zero_point: int,
+    out_multiplier: int,
+    out_shift: int,
+) -> torch.Tensor:
+    in_size = input.shape
+    assert len(in_size) > 2
+    assert len(in_size) < 6
+    # Depthwise weight is always [*kernel_size, OC]:
+    # 2D: [KH, KW, OC], 1D: [K, OC]
+    *kernel_size, out_channels = weight.shape
+
     output_size = (
         get_conv1d_output_size(
             in_size,

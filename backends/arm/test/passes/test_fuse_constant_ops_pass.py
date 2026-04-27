@@ -6,6 +6,7 @@
 import operator
 from typing import cast, ClassVar, Dict, Protocol, Tuple
 
+import executorch.backends.arm.tosa.dialect  # noqa: F401
 import torch
 from executorch.backends.arm._passes.fuse_constant_ops_pass import (
     ComputeConstantOpsAOTPass,
@@ -15,8 +16,15 @@ from executorch.backends.arm._passes.quant_args import QuantArgs
 from executorch.backends.arm.test import common
 from executorch.backends.arm.test.tester.arm_tester import ArmTester
 from executorch.backends.arm.test.tester.test_pipeline import PassPipeline
-from executorch.backends.arm.tosa import TosaSpecification
+from executorch.backends.arm.tosa.mapping import TosaSpecialDtype
+from executorch.backends.arm.tosa.specification import (
+    TosaLoweringContext,
+    TosaSpecification,
+)
 from executorch.backends.test.harness.stages import StageType
+from executorch.backends.test.program_builder import ProgramBuilder
+from executorch.exir.dialects._ops import ops as exir_ops
+from torch.export.graph_signature import InputKind
 
 input_t = Tuple[torch.Tensor]  # Input x
 input_t2 = Tuple[torch.Tensor, torch.Tensor]
@@ -270,3 +278,70 @@ def test_fuse_constant_args_tosa_INT_cat_uses_top_level_arg_qparams() -> None:
         for node in pass_result.graph_module.graph.nodes
         if node.op == "placeholder"
     ] == ["aten_cat_default_fused_const"]
+
+
+def test_fuse_constant_args_identifies_tosa_dialect_targets() -> None:
+    class FakeTosaTarget:
+        def __str__(self) -> str:
+            return "executorch.exir.dialects.backend._ops.tosa.MAX_POOL2D.default"
+
+    assert FuseConstantArgsPass._is_tosa_dialect_op(FakeTosaTarget())
+    assert FuseConstantArgsPass._is_tosa_dialect_op(
+        exir_ops.backend.tosa.GATHER.default
+    )
+    assert not FuseConstantArgsPass._is_tosa_dialect_op(torch.ops.aten.add.Tensor)
+
+
+def test_fuse_constant_args_identifies_symbolic_shape_args() -> None:
+    graph = torch.fx.Graph()
+    shape_node = graph.placeholder("shape")
+    shape_node.meta[TosaSpecialDtype.meta_key()] = TosaSpecialDtype.SHAPE
+
+    assert FuseConstantArgsPass._arg_contains_symbolic_shape((shape_node, [1, 2]))
+    assert not FuseConstantArgsPass._arg_contains_symbolic_shape(
+        ([1, 2], {"pad": (0, 0)})
+    )
+
+
+def test_fuse_constant_args_skips_backend_tosa_gather(caplog) -> None:
+    with TosaLoweringContext(TosaSpecification.create_from_string("TOSA-1.1+FP+shape")):
+        builder = ProgramBuilder()
+        values = builder.placeholder(
+            "values",
+            torch.randn(1, 4, 3),
+            input_kind=InputKind.CONSTANT_TENSOR,
+        )
+        indices = builder.placeholder(
+            "indices",
+            torch.tensor([[0, 2]], dtype=torch.int32),
+            input_kind=InputKind.CONSTANT_TENSOR,
+        )
+        gather = builder.call_operator(
+            exir_ops.backend.tosa.GATHER.default,
+            (values, indices),
+        )
+        builder.output([gather])
+
+        exported_program = builder.get_program()
+        graph_module = exported_program.graph_module
+
+        with caplog.at_level("WARNING"):
+            FuseConstantArgsPass(exported_program)(graph_module)
+
+    warning_messages = [
+        record.getMessage()
+        for record in caplog.records
+        if record.name == "executorch.backends.arm._passes.fuse_constant_ops_pass"
+    ]
+    assert not any(
+        "Failed to fuse constant op" in message and "GATHER" in message
+        for message in warning_messages
+    )
+    assert (
+        sum(
+            node.op == "call_function"
+            and node.target == exir_ops.backend.tosa.GATHER.default
+            for node in graph_module.graph.nodes
+        )
+        == 1
+    )
