@@ -19,6 +19,7 @@ from typing import Any, Dict, List
 import torch
 
 from executorch.backends.qualcomm._passes import FoldQDQ, I64toI32, TagQuantIO
+from executorch.backends.qualcomm._passes.build_quant_io import BuildQuantIo
 from executorch.backends.qualcomm._passes.qnn_pass_manager import (
     get_capture_program_passes,
 )
@@ -269,10 +270,18 @@ class TextDecoder(Component):
                     QCOM_PASS_ARGS_KWARGS_DEFAULTS_KEY
                 ]["skip_node"] = {"tokens"}
 
-        if tok_embedding is not None:
-            tok_embedding = tok_embedding.eval()
+        with torch.no_grad():
+            if self.apply_embedding:
+                tok_embedding = torch.export.export(
+                    tok_embedding.eval(),
+                    tok_embedding.get_example_input(),
+                    strict=True,
+                ).module()
 
-        return tok_embedding, decoder.eval()
+            decoder = torch.export.export(
+                decoder.eval(), self.export_input, strict=True
+            ).module()
+        return tok_embedding, decoder
 
     def _get_model_instance(self) -> LlamaModel:
         if self.mode == Mode.PREFILL and self.control_args.model_mode == "kv":
@@ -607,23 +616,28 @@ class TextDecoder(Component):
         ):
             return
 
+        data = request.method_data[TEXT_DECODER]
         # check bit width graph io
         fixed_point_type = {"kv_type": torch.float32, "io_type": torch.float32}
-        if self.quant_recipe.get_kv_io_bit_width() == 8:
-            fixed_point_type["kv_type"] = torch.uint8
-        elif self.quant_recipe.get_kv_io_bit_width() == 16:
-            fixed_point_type["kv_type"] = torch.uint16
+        if data.skip_quantize:
+            # already init as float32
+            return
         else:
-            raise RuntimeError(
-                f"unknown kv io bit width {self.quant_recipe.get_kv_io_bit_width()}"
-            )
+            if self.quant_recipe.get_kv_io_bit_width() == 8:
+                fixed_point_type["kv_type"] = torch.uint8
+            elif self.quant_recipe.get_kv_io_bit_width() == 16:
+                fixed_point_type["kv_type"] = torch.uint16
+            else:
+                raise RuntimeError(
+                    f"unknown kv io bit width {self.quant_recipe.get_kv_io_bit_width()}"
+                )
 
-        if self.quant_recipe.get_logits_output_bit_width() == 16:
-            fixed_point_type["io_type"] = torch.uint16
-        else:
-            raise RuntimeError(
-                f"unknown logits io bit width {self.quant_recipe.get_logits_output_bit_width()}"
-            )
+            if self.quant_recipe.get_logits_output_bit_width() == 16:
+                fixed_point_type["io_type"] = torch.uint16
+            else:
+                raise RuntimeError(
+                    f"unknown logits io bit width {self.quant_recipe.get_logits_output_bit_width()}"
+                )
 
         data = request.method_data[TEXT_DECODER]
         audio_turns = request.method_data[
@@ -654,18 +668,6 @@ class TextDecoder(Component):
         )
 
         with torch.no_grad():
-            # prepare tok embedding model for ptq
-            if self.apply_embedding:
-                self.tok_embedding = torch.export.export(
-                    self.tok_embedding,
-                    self.tok_embedding.get_example_input(),
-                    strict=True,
-                ).module()
-
-            # prepare decoder model for ptq
-            self.decoder = torch.export.export(
-                self.decoder, self.export_input, strict=True
-            ).module()
             if self.control_args.quant_recipe_suggestion:
                 graph_module = copy.deepcopy(self.decoder)
 
@@ -973,6 +975,7 @@ class HybridTextDecoder(Component):
                     alloc_graph_input=False,
                     alloc_graph_output=False,
                 ),
+                passes=[BuildQuantIo()],
             )
             tok_embedding_exec_prog_mgr = tok_embedding_edge_prog_mgr.to_executorch(
                 executorch_config
@@ -1009,6 +1012,7 @@ class HybridTextDecoder(Component):
                 alloc_graph_input=False,
                 alloc_graph_output=False,
             ),
+            passes=[BuildQuantIo()],
         )
         exec_prog_mgr = edge_prog_mgr.to_executorch(executorch_config)
         data = request.method_data[TEXT_DECODER]
@@ -1127,7 +1131,9 @@ class Modality(Component):
         if self.control_args.verbose:
             print_delegation_info(edge_prog_mgr.exported_program().graph_module)
 
-        exec_prog_mgr = edge_prog_mgr.to_executorch(ExecutorchBackendConfig())
+        exec_prog_mgr = edge_prog_mgr.to_executorch(
+            ExecutorchBackendConfig(passes=[BuildQuantIo()])
+        )
         data = request.method_data[self.modality]
         with open(
             f"{self.control_args.artifact}/{data.pte_filename}.pte", "wb"
