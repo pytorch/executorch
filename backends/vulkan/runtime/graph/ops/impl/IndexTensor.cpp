@@ -51,7 +51,7 @@ void add_index_tensor_node(
       // Push Constants
       {},
       // Specialization Constants
-      {},
+      {graph.hashed_layout_of(out), graph.hashed_layout_of(self)},
       // Resize Args
       {},
       // Resizing Logic

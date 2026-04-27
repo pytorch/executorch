@@ -192,6 +192,58 @@ class TestRemoveCloneOpsTransform(TestCase):
             assert torch.allclose(actual, expected)
             assert is_channel_last_dim_order(actual)
 
+    def test_output_aliasing_preserved(self):
+        """Verify that clones preventing output aliasing are preserved when
+        preserve_input_output_copies is set."""
+
+        graph = torch.fx.Graph()
+        x = graph.placeholder("x")
+        clone = graph.create_node(
+            "call_function",
+            exir_ops.edge.aten.clone.default,
+            args=(x,),
+        )
+        graph.output((x, clone))
+
+        gm = GraphModule(torch.nn.Module(), graph)
+
+        result = RemoveCloneOpsTransform(preserve_input_output_copies=True)(gm)
+        self.assertFalse(result.modified)
+
+        clone_count = sum(
+            1
+            for n in result.graph_module.graph.nodes
+            if n.target == exir_ops.edge.aten.clone.default
+        )
+        self.assertEqual(
+            clone_count, 1, "Clone preventing output aliasing should be preserved"
+        )
+
+    def test_output_aliasing_removed_without_flag(self):
+        """Verify that clones are removed when preserve_input_output_copies is not set,
+        even if it would cause output aliasing."""
+
+        graph = torch.fx.Graph()
+        x = graph.placeholder("x")
+        clone = graph.create_node(
+            "call_function",
+            exir_ops.edge.aten.clone.default,
+            args=(x,),
+        )
+        graph.output((x, clone))
+
+        gm = GraphModule(torch.nn.Module(), graph)
+
+        result = RemoveCloneOpsTransform(preserve_input_output_copies=False)(gm)
+        self.assertTrue(result.modified)
+
+        clone_count = sum(
+            1
+            for n in result.graph_module.graph.nodes
+            if n.target == exir_ops.edge.aten.clone.default
+        )
+        self.assertEqual(clone_count, 0, "Clone should be removed without the flag")
+
 
 if __name__ == "__main__":
     unittest.main()

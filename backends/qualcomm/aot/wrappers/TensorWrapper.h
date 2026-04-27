@@ -76,7 +76,7 @@ class TensorWrapper {
           rank);
       return;
     }
-    for (int i = 0; i < rank; ++i) {
+    for (size_t i = 0; i < rank; ++i) {
       QNN_TENSOR_VER_PTR(tensor_)->dimensions[i] = dims[i];
     }
   }

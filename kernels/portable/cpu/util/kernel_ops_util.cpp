@@ -262,6 +262,53 @@ bool check_arange_args(double start, double end, double step, Tensor& out) {
   return true;
 }
 
+bool check_adaptive_avg_pool2d_args(
+    const Tensor& in,
+    const IntArrayRef output_size,
+    const Tensor& out) {
+  ET_LOG_AND_RETURN_IF_FALSE(tensors_have_same_dtype(in, out));
+
+  ET_LOG_AND_RETURN_IF_FALSE(tensor_is_default_or_channels_last_dim_order(in));
+  ET_LOG_AND_RETURN_IF_FALSE(tensor_is_default_or_channels_last_dim_order(out));
+
+  ET_CHECK_OR_RETURN_FALSE(
+      (in.dim() == 3 && in.size(0) > 0 && in.size(1) > 0 && in.size(2) > 0) ||
+          (in.dim() == 4 && in.size(1) > 0 && in.size(2) > 0 && in.size(3) > 0),
+      "Expected 3D or 4D (batch mode) tensor with optional 0 dim batch size for input; in.dim() = %" ET_PRI_TENSOR_DIM,
+      in.dim());
+
+  ET_CHECK_OR_RETURN_FALSE(
+      output_size.size() == 2,
+      "output_size must have exactly 2 elements, but got %zu",
+      output_size.size());
+
+  ET_CHECK_OR_RETURN_FALSE(
+      output_size[0] > 0 && output_size[1] > 0,
+      "output_size must be positive, but got (%" PRId64 ", %" PRId64 ")",
+      output_size[0],
+      output_size[1]);
+
+  return true;
+}
+
+void get_adaptive_avg_pool2d_out_target_size(
+    const Tensor& in,
+    const IntArrayRef output_size,
+    executorch::aten::SizesType* const out_sizes,
+    size_t* const out_ndim) {
+  *out_ndim = in.dim();
+
+  if (in.dim() == 4) {
+    out_sizes[0] = in.size(0);
+    out_sizes[1] = in.size(1);
+  } else {
+    out_sizes[0] = in.size(0);
+  }
+
+  out_sizes[*out_ndim - 2] = output_size[0];
+  out_sizes[*out_ndim - 1] = output_size[1];
+}
+
 bool check_avg_pool2d_args(
     const Tensor& in,
     const IntArrayRef kernel_size,

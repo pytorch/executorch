@@ -8,6 +8,7 @@ from typing import Dict
 
 import torch
 from executorch.exir.pass_base import ExportPass, PassResult
+from executorch.exir.passes import dead_code_elimination_pass
 from torch._decomp import get_decompositions
 from torch.fx.experimental.proxy_tensor import make_fx
 
@@ -66,6 +67,5 @@ class DecomposeTriu(ExportPass):
                     )
                     graph.erase_node(node)
 
-        graph.eliminate_dead_code()
-        graph_module.recompile()
+        dead_code_elimination_pass(graph_module)
         return PassResult(graph_module, True)

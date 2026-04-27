@@ -67,24 +67,6 @@ runtime.python_library(
     ],
 )
 
-runtime.python_test(
-    name = "tracer",
-    srcs = [
-        "test_tracer.py",
-    ],
-    # Static listing does not support tests generated in runtime.
-    supports_static_listing = False,
-    deps = [
-        "fbsource//third-party/pypi/parameterized:parameterized",
-        ":lib",
-        ":models",
-        "//caffe2:torch",
-        "//caffe2/functorch:functorch_src",
-        "//executorch/exir:lib",
-        "//executorch/exir:tracer",
-        "//executorch/exir/dialects:lib",
-    ],
-)
 
 python_unittest(
     name = "serde",
@@ -339,20 +321,6 @@ python_unittest(
     ],
 )
 
-runtime.python_test(
-    name = "capture",
-    srcs = [
-        "test_capture.py",
-    ],
-    # Static listing does not support tests generated in runtime.
-    supports_static_listing = False,
-    deps = [
-        "fbsource//third-party/pypi/parameterized:parameterized",
-        ":models",
-        "//caffe2:torch",
-        "//executorch/exir:lib",
-    ],
-)
 
 python_unittest(
     name = "dynamic_shape_propagation",
@@ -455,11 +423,14 @@ python_unittest(
     srcs = [
         "test_remove_unused_parameters_pass.py",
     ],
+    preload_deps = [
+        "//executorch/runtime/executor/test:test_backend_compiler_lib",
+    ],
     deps = [
         "//caffe2:torch",
-        "//executorch/backends/xnnpack:xnnpack_delegate",
         "//executorch/exir:lib",
         "//executorch/exir:memory",
+        "//executorch/exir/backend/test:op_partitioner_demo",
         "//executorch/exir/capture:config",
         "//executorch/exir/passes:lib",
         "//executorch/runtime:runtime",
@@ -514,5 +485,25 @@ python_unittest(
         "//executorch/exir:lib",
         "//executorch/exir/passes:quantize_io_pass",
         "//executorch/backends/xnnpack/quantizer:xnnpack_quantizer",
+    ],
+)
+
+python_unittest(
+    name = "propagate_device_pass",
+    srcs = [
+        "test_propagate_device_pass.py",
+    ],
+    deps = [
+        "//caffe2:torch",
+        "//executorch/exir:lib",
+        "//executorch/exir:schema",
+        "//executorch/exir:tensor",
+        "//executorch/exir/backend:backend_api",
+        "//executorch/exir/backend:compile_spec_schema",
+        "//executorch/exir/backend:partitioner",
+        "//executorch/exir/backend/canonical_partitioners:canonical_partitioner_lib",
+        "//executorch/exir/backend/test:backend_with_compiler_demo",
+        "//executorch/exir/dialects:lib",
+        "//executorch/exir/passes:propagate_device_pass",
     ],
 )

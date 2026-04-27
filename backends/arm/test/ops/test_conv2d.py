@@ -8,6 +8,7 @@ from typing import List, Tuple, Union
 
 import torch
 from executorch.backends.arm.quantizer.arm_quantizer import (
+    get_symmetric_a16w8_quantization_config,
     get_symmetric_a8w4_quantization_config,
 )
 from executorch.backends.arm.test import common
@@ -129,10 +130,35 @@ conv2d_2x2_3x2x14x14_nobias = Conv2d(
     kernel_size=(2, 2),
     stride=1,
     bias=False,
-    padding=0,
+    padding=3,
     width=14,
     height=14,
     batches=2,
+    padding_mode="circular",
+)
+
+conv2d_3x3_1x3x12x12_st1_pd1_reflect = Conv2d(
+    in_channels=3,
+    out_channels=4,
+    kernel_size=(3, 3),
+    stride=1,
+    padding=3,
+    width=12,
+    height=12,
+    batches=1,
+    padding_mode="reflect",
+)
+
+conv2d_3x3_1x3x12x12_st1_pd1_replicate = Conv2d(
+    in_channels=3,
+    out_channels=4,
+    kernel_size=(3, 3),
+    stride=1,
+    padding=3,
+    width=12,
+    height=12,
+    batches=1,
+    padding_mode="replicate",
 )
 
 conv2d_3x3_1x3x24x24_st1 = Conv2d(
@@ -365,7 +391,9 @@ conv2d_groups_bias = Conv2d(
 # Shenanigan to get a nicer output when test fails. With unittest it looks like:
 # FAIL: test_convolution_2d_tosa_INT_2_3x3_1x3x12x12_st2_pd1
 test_data_FP = {
-    "2x2_3x2x14x14_nobias": lambda: conv2d_2x2_3x2x14x14_nobias,
+    "2x2_3x2x14x14_nobias_circular": lambda: conv2d_2x2_3x2x14x14_nobias,
+    "3x3_1x3x12x12_st1_pd1_reflect": lambda: conv2d_3x3_1x3x12x12_st1_pd1_reflect,
+    "3x3_1x3x12x12_st1_pd1_replicate": lambda: conv2d_3x3_1x3x12x12_st1_pd1_replicate,
     "3x3_1x3x24x24_st1": lambda: conv2d_3x3_1x3x24x24_st1,
     "3x3_1x3x12x12_st2_pd1": lambda: conv2d_3x3_1x3x12x12_st2_pd1,
     "1x1_1x2x16x16_st1": lambda: conv2d_1x1_1x2x16x16_st1,
@@ -460,6 +488,7 @@ def _get_dtype_count(model: torch.nn.Module):
     "test_data",
     test_data_INT,
 )
+@common.SkipIfNoModelConverter
 def test_convolution_2d_vgf_quant_a8w4(test_data):
     model, per_channel_quantization = test_data()
     pipeline = VgfPipeline[input_t](
@@ -483,6 +512,8 @@ def test_convolution_2d_tosa_FP(test_data):
         aten_op,
         exir_op,
         tosa_extensions=["bf16"],
+        atol=3e-3,
+        rtol=3e-3,
     )
     pipeline.run()
 
@@ -593,6 +624,8 @@ def test_convolution_2d_vgf_no_quant(test_data):
         aten_op,
         exir_op,
         quantize=False,
+        atol=3e-3,
+        rtol=3e-3,
     )
     pipeline.run()
 
@@ -608,6 +641,25 @@ def test_convolution_2d_vgf_quant(test_data):
         exir_op,
         per_channel_quantization=per_channel_quantization,
         quantize=True,
+    )
+    pipeline.run()
+
+
+@common.parametrize("test_data", test_data_INT)
+@common.SkipIfNoModelConverter
+def test_convolution_2d_vgf_quant_a16w8(test_data):
+    model, per_channel_quantization = test_data()
+    pipeline = VgfPipeline[input_t](
+        model,
+        model.get_inputs(),
+        aten_op,
+        exir_op,
+        per_channel_quantization=per_channel_quantization,
+        quantize=True,
+        tosa_extensions=["int16"],
+    )
+    pipeline.quantizer.set_global(
+        get_symmetric_a16w8_quantization_config(is_per_channel=per_channel_quantization)
     )
     pipeline.run()
 

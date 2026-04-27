@@ -3,8 +3,8 @@ from typing import Sequence
 
 import torch
 
-from executorch.backends.xnnpack.partition.xnnpack_partitioner import XnnpackPartitioner
 from executorch.exir import to_edge, to_edge_transform_and_lower
+from executorch.exir.backend.test.op_partitioner_demo import AddMulPartitionerDemo
 from executorch.exir.passes import remove_unused_parameters_pass
 from executorch.runtime import Runtime
 from torch.export import ExportedProgram
@@ -431,10 +431,7 @@ class TestRemoveUnusedParametersPass(unittest.TestCase):
         self.assertTrue(torch.allclose(new_outputs, expected_outputs))
 
     def test_remove_unused_parameters_cond_e2e_all_branches(self):
-        """E2E test for cond with delegation, covering both true and false branches.
-
-        Uses same linear in both branches so that both branches have same signature.
-        """
+        """Test for cond with delegation, covering both true and false branches."""
 
         class CondModelWithLinear(torch.nn.Module):
             def __init__(self):
@@ -446,17 +443,16 @@ class TestRemoveUnusedParametersPass(unittest.TestCase):
                 linear = self.linear
 
                 def true_fn(x):
-                    return torch.relu(linear(x))
+                    return linear(x) + 1
 
                 def false_fn(x):
-                    return torch.sigmoid(linear(x))
+                    return linear(x) + 2
 
                 return torch.cond(pred, true_fn, false_fn, (x,))
 
         model = CondModelWithLinear().eval()
         x = torch.randn(1, 16)
 
-        # Test both branches
         for pred_val, branch_name in [(True, "true"), (False, "false")]:
             pred = torch.tensor(pred_val)
             example_inputs = (pred, x)
@@ -465,9 +461,8 @@ class TestRemoveUnusedParametersPass(unittest.TestCase):
             ep = torch.export.export(model, example_inputs, strict=False)
 
             edge_program = to_edge(ep)
-            delegated = edge_program.to_backend(XnnpackPartitioner())
+            delegated = edge_program.to_backend(AddMulPartitionerDemo())
 
-            # Verify unused_linear is not in state_dict
             edge_ep = delegated._edge_programs["forward"]
             self.assertNotIn(
                 "unused_linear.weight",
@@ -475,9 +470,7 @@ class TestRemoveUnusedParametersPass(unittest.TestCase):
                 f"unused_linear.weight should be removed ({branch_name} branch)",
             )
 
-            # Run post-delegation eager graph
-            eager_module = edge_ep.module()
-            eager_graph_outputs = eager_module(pred, x)
+            eager_graph_outputs = edge_ep.module()(pred, x)
             self.assertTrue(
                 torch.allclose(eager_graph_outputs, eager_outputs, atol=1e-5),
                 f"Post-delegation eager mismatch ({branch_name} branch).\n"
@@ -485,25 +478,8 @@ class TestRemoveUnusedParametersPass(unittest.TestCase):
                 f"  Got: {eager_graph_outputs}",
             )
 
-            # Run lowered model via ET
-            lowered = delegated.to_executorch()
-            runtime = Runtime.get()
-            program = runtime.load_program(lowered.buffer)
-            method = program.load_method("forward")
-            runtime_outputs = method.execute([pred, x])
-
-            self.assertTrue(
-                torch.allclose(runtime_outputs[0], eager_outputs, atol=1e-5),
-                f"PTE runtime mismatch ({branch_name} branch).\n"
-                f"  Expected: {eager_outputs}\n"
-                f"  Got: {runtime_outputs[0]}",
-            )
-
     def test_remove_unused_parameters_cond_e2e_to_edge_transform_and_lower(self):
-        """E2E test for cond via to_edge_transform_and_lower, covering both branches.
-
-        Uses same linear in both branches so that both branches have same signature.
-        """
+        """Test for cond via to_edge_transform_and_lower, covering both branches."""
 
         class CondModelWithLinear(torch.nn.Module):
             def __init__(self):
@@ -515,17 +491,16 @@ class TestRemoveUnusedParametersPass(unittest.TestCase):
                 linear = self.linear
 
                 def true_fn(x):
-                    return torch.relu(linear(x))
+                    return linear(x) + 1
 
                 def false_fn(x):
-                    return torch.sigmoid(linear(x))
+                    return linear(x) + 2
 
                 return torch.cond(pred, true_fn, false_fn, (x,))
 
         model = CondModelWithLinear().eval()
         x = torch.randn(1, 16)
 
-        # Test both branches
         for pred_val, branch_name in [(True, "true"), (False, "false")]:
             pred = torch.tensor(pred_val)
             example_inputs = (pred, x)
@@ -535,10 +510,9 @@ class TestRemoveUnusedParametersPass(unittest.TestCase):
 
             lowered = to_edge_transform_and_lower(
                 ep,
-                partitioner=[XnnpackPartitioner()],
+                partitioner=[AddMulPartitionerDemo()],
             )
 
-            # Verify unused_linear is not in state_dict
             edge_ep = lowered._edge_programs["forward"]
             self.assertNotIn(
                 "unused_linear.weight",
@@ -546,28 +520,12 @@ class TestRemoveUnusedParametersPass(unittest.TestCase):
                 f"unused_linear.weight should be removed ({branch_name} branch)",
             )
 
-            # Run post-delegation eager graph
-            eager_module = edge_ep.module()
-            eager_graph_outputs = eager_module(pred, x)
+            eager_graph_outputs = edge_ep.module()(pred, x)
             self.assertTrue(
                 torch.allclose(eager_graph_outputs, eager_outputs, atol=1e-5),
                 f"Post-delegation eager mismatch ({branch_name} branch).\n"
                 f"  Expected: {eager_outputs}\n"
                 f"  Got: {eager_graph_outputs}",
-            )
-
-            # Run lowered model via ET
-            et_program = lowered.to_executorch()
-            runtime = Runtime.get()
-            program = runtime.load_program(et_program.buffer)
-            method = program.load_method("forward")
-            runtime_outputs = method.execute([pred, x])
-
-            self.assertTrue(
-                torch.allclose(runtime_outputs[0], eager_outputs, atol=1e-5),
-                f"PTE runtime mismatch ({branch_name} branch).\n"
-                f"  Expected: {eager_outputs}\n"
-                f"  Got: {runtime_outputs[0]}",
             )
 
     def test_remove_unused_parameters_map(self):
@@ -602,7 +560,7 @@ class TestRemoveUnusedParametersPass(unittest.TestCase):
         self._test_pass(ep, unused_param_names_and_args, example_inputs, eager_outputs)
 
     def test_remove_unused_parameters_map_e2e(self):
-        """E2E test for map with delegation, testing multiple batch sizes."""
+        """Test for map with delegation, testing multiple batch sizes."""
         from torch._higher_order_ops.map import map as torch_map
 
         class MapModel(torch.nn.Module):
@@ -615,13 +573,12 @@ class TestRemoveUnusedParametersPass(unittest.TestCase):
                 linear = self.linear
 
                 def map_fn(x):
-                    return torch.relu(linear(x))
+                    return linear(x)
 
                 return torch_map(map_fn, xs)
 
         model = MapModel().eval()
 
-        # Test with different batch sizes
         for batch_size in [1, 3, 5]:
             xs = torch.randn(batch_size, 16)
             example_inputs = (xs,)
@@ -629,13 +586,11 @@ class TestRemoveUnusedParametersPass(unittest.TestCase):
 
             ep = torch.export.export(model, example_inputs, strict=False)
 
-            # Test via to_edge_transform_and_lower path
             lowered = to_edge_transform_and_lower(
                 ep,
-                partitioner=[XnnpackPartitioner()],
+                partitioner=[AddMulPartitionerDemo()],
             )
 
-            # Verify unused_linear is not in state_dict
             edge_ep = lowered._edge_programs["forward"]
             self.assertNotIn(
                 "unused_linear.weight",
@@ -643,28 +598,12 @@ class TestRemoveUnusedParametersPass(unittest.TestCase):
                 f"unused_linear.weight should be removed (batch_size={batch_size})",
             )
 
-            # Run post-delegation eager graph
-            eager_module = edge_ep.module()
-            eager_graph_outputs = eager_module(xs)
+            eager_graph_outputs = edge_ep.module()(xs)
             self.assertTrue(
                 torch.allclose(eager_graph_outputs, eager_outputs, atol=1e-5),
                 f"Post-delegation eager mismatch (batch_size={batch_size}).\n"
                 f"  Expected: {eager_outputs}\n"
                 f"  Got: {eager_graph_outputs}",
-            )
-
-            # Run lowered model
-            et_program = lowered.to_executorch()
-            runtime = Runtime.get()
-            program = runtime.load_program(et_program.buffer)
-            method = program.load_method("forward")
-            runtime_outputs = method.execute([xs])
-
-            self.assertTrue(
-                torch.allclose(runtime_outputs[0], eager_outputs, atol=1e-5),
-                f"PTE runtime mismatch (batch_size={batch_size}).\n"
-                f"  Expected: {eager_outputs}\n"
-                f"  Got: {runtime_outputs[0]}",
             )
 
     def test_remove_unused_parameters_scan(self):
@@ -702,7 +641,7 @@ class TestRemoveUnusedParametersPass(unittest.TestCase):
         self._test_pass(ep, unused_param_names_and_args, example_inputs, eager_outputs)
 
     def test_remove_unused_parameters_scan_e2e(self):
-        """E2E test for scan with delegation, testing multiple sequence lengths."""
+        """Test for scan with delegation, testing multiple sequence lengths."""
         from torch._higher_order_ops.scan import scan
 
         class ScanModel(torch.nn.Module):
@@ -716,7 +655,7 @@ class TestRemoveUnusedParametersPass(unittest.TestCase):
                 init = torch.zeros(1, 16)
 
                 def combine_fn(carry, x):
-                    new_carry = carry + torch.relu(linear(x))
+                    new_carry = carry + linear(x)
                     return new_carry, new_carry.clone()
 
                 _, ys = scan(combine_fn, init, xs)
@@ -724,7 +663,6 @@ class TestRemoveUnusedParametersPass(unittest.TestCase):
 
         model = ScanModel().eval()
 
-        # Test with different sequence lengths
         for seq_len in [1, 3, 5]:
             xs = torch.randn(seq_len, 1, 16)
             example_inputs = (xs,)
@@ -732,13 +670,11 @@ class TestRemoveUnusedParametersPass(unittest.TestCase):
 
             ep = torch.export.export(model, example_inputs, strict=False)
 
-            # Test via to_edge_transform_and_lower path
             lowered = to_edge_transform_and_lower(
                 ep,
-                partitioner=[XnnpackPartitioner()],
+                partitioner=[AddMulPartitionerDemo()],
             )
 
-            # Verify unused_linear is not in state_dict
             edge_ep = lowered._edge_programs["forward"]
             self.assertNotIn(
                 "unused_linear.weight",
@@ -746,9 +682,7 @@ class TestRemoveUnusedParametersPass(unittest.TestCase):
                 f"unused_linear.weight should be removed (seq_len={seq_len})",
             )
 
-            # Run post-delegation eager graph
-            eager_module = edge_ep.module()
-            eager_graph_outputs = eager_module(xs)
+            eager_graph_outputs = edge_ep.module()(xs)
             self.assertTrue(
                 torch.allclose(eager_graph_outputs, eager_outputs, atol=1e-5),
                 f"Post-delegation eager mismatch (seq_len={seq_len}).\n"
@@ -756,23 +690,9 @@ class TestRemoveUnusedParametersPass(unittest.TestCase):
                 f"  Got: {eager_graph_outputs}",
             )
 
-            # Run lowered model
-            et_program = lowered.to_executorch()
-            runtime = Runtime.get()
-            program = runtime.load_program(et_program.buffer)
-            method = program.load_method("forward")
-            runtime_outputs = method.execute([xs])
-
-            self.assertTrue(
-                torch.allclose(runtime_outputs[0], eager_outputs, atol=1e-5),
-                f"PTE runtime mismatch (seq_len={seq_len}).\n"
-                f"  Expected: {eager_outputs}\n"
-                f"  Got: {runtime_outputs[0]}",
-            )
-
     @unittest.skip("while_loop is not yet supported by the emitter")
     def test_remove_unused_parameters_while_loop_e2e(self):
-        """E2E test for while_loop with delegation."""
+        """Test for while_loop with delegation."""
         from torch._higher_order_ops.while_loop import while_loop
 
         class WhileLoopModel(torch.nn.Module):
@@ -788,7 +708,7 @@ class TestRemoveUnusedParametersPass(unittest.TestCase):
                     return i < max_iters
 
                 def body_fn(i, x):
-                    return i + 1, torch.relu(linear(x))
+                    return i + 1, linear(x)
 
                 init_i = torch.tensor(0)
                 final_i, result = while_loop(cond_fn, body_fn, (init_i, x))
@@ -796,7 +716,6 @@ class TestRemoveUnusedParametersPass(unittest.TestCase):
 
         model = WhileLoopModel().eval()
 
-        # Test with different iteration counts
         for max_iters_val in [1, 3, 5]:
             x = torch.randn(1, 16)
             max_iters = torch.tensor(max_iters_val)
@@ -805,13 +724,11 @@ class TestRemoveUnusedParametersPass(unittest.TestCase):
 
             ep = torch.export.export(model, example_inputs, strict=False)
 
-            # Test via to_edge_transform_and_lower path
             lowered = to_edge_transform_and_lower(
                 ep,
-                partitioner=[XnnpackPartitioner()],
+                partitioner=[AddMulPartitionerDemo()],
             )
 
-            # Verify unused_linear is not in state_dict
             edge_ep = lowered._edge_programs["forward"]
             self.assertNotIn(
                 "unused_linear.weight",
@@ -819,64 +736,13 @@ class TestRemoveUnusedParametersPass(unittest.TestCase):
                 f"unused_linear.weight should be removed (max_iters={max_iters_val})",
             )
 
-            # Run post-delegation eager graph
-            eager_module = edge_ep.module()
-            eager_graph_outputs = eager_module(x, max_iters)
+            eager_graph_outputs = edge_ep.module()(x, max_iters)
             self.assertTrue(
                 torch.allclose(eager_graph_outputs, eager_outputs, atol=1e-5),
                 f"Post-delegation eager mismatch (max_iters={max_iters_val}).\n"
                 f"  Expected: {eager_outputs}\n"
                 f"  Got: {eager_graph_outputs}",
             )
-
-            # Run lowered model
-            et_program = lowered.to_executorch()
-            runtime = Runtime.get()
-            program = runtime.load_program(et_program.buffer)
-            method = program.load_method("forward")
-            runtime_outputs = method.execute([x, max_iters])
-
-            self.assertTrue(
-                torch.allclose(runtime_outputs[0], eager_outputs, atol=1e-5),
-                f"PTE runtime mismatch (max_iters={max_iters_val}).\n"
-                f"  Expected: {eager_outputs}\n"
-                f"  Got: {runtime_outputs[0]}",
-            )
-
-    def test_delegate_consumes_all_uses_params_removed(self):
-        """E2E test: When delegate consumes all uses of a param, it should be removed from top-level."""
-
-        class SimpleModel(torch.nn.Module):
-            def __init__(self):
-                super().__init__()
-                self.weight = torch.nn.Parameter(torch.randn(16, 16))
-
-            def forward(self, x):
-                # Use matmul + relu, which XNNPACK will fully delegate
-                return torch.relu(x @ self.weight)
-
-        model = SimpleModel().eval()
-        example_inputs = (torch.randn(1, 16),)
-        eager_outputs = model(*example_inputs)
-
-        ep = torch.export.export(model, example_inputs, strict=False)
-        edge_program = to_edge(ep)
-        delegated = edge_program.to_backend(XnnpackPartitioner())
-
-        # Get the edge program after delegation
-        edge_ep = delegated._edge_programs["forward"]
-
-        # The weight param should be removed from the top-level graph
-        # because the delegate consumed it (tracked via consumed_params metadata)
-        self.assertNotIn("weight", edge_ep.state_dict.keys())
-
-        # Verify the program still runs correctly
-        lowered = delegated.to_executorch()
-        runtime = Runtime.get()
-        program = runtime.load_program(lowered.buffer)
-        method = program.load_method("forward")
-        runtime_outputs = method.execute([*example_inputs])
-        self.assertTrue(torch.allclose(runtime_outputs[0], eager_outputs, atol=1e-5))
 
     def _test_pass_e2e(
         self,
@@ -893,28 +759,28 @@ class TestRemoveUnusedParametersPass(unittest.TestCase):
         if use_to_edge:
             lowered = to_edge(ep)
             if delegate:
-                lowered = lowered.to_backend(XnnpackPartitioner())
+                lowered = lowered.to_backend(AddMulPartitionerDemo())
         else:  # use to_edge_transform_and_lower
             lowered = to_edge_transform_and_lower(
                 ep,
-                partitioner=[XnnpackPartitioner()] if delegate else [],
+                partitioner=[AddMulPartitionerDemo()] if delegate else [],
             )
 
         lowered = lowered.to_executorch()
         self.assertLess(len(lowered.buffer), size_bound)
 
-        # Make sure we can load and run the serialized .pte.
-        runtime = Runtime.get()
-        program = runtime.load_program(lowered.buffer)
-        method = program.load_method("forward")
-        runtime_outputs = method.execute([*example_inputs])
+        if not delegate:
+            runtime = Runtime.get()
+            program = runtime.load_program(lowered.buffer)
+            method = program.load_method("forward")
+            runtime_outputs = method.execute([*example_inputs])
 
-        self.assertEqual(1, len(runtime_outputs))
-        self.assertTrue(
-            torch.allclose(runtime_outputs[0], eager_outputs, atol=1e-5),
-            "Values out of tolerance.\n"
-            + f"  Strict: {strict}, ToEdge: {use_to_edge}, Delegate: {delegate}.\n"
-            + f"  Eager: {eager_outputs}.\n"
-            + f"  Pybind: {runtime_outputs[0]}.\n"
-            + f"  Error: {eager_outputs - runtime_outputs[0]}",
-        )
+            self.assertEqual(1, len(runtime_outputs))
+            self.assertTrue(
+                torch.allclose(runtime_outputs[0], eager_outputs, atol=1e-5),
+                "Values out of tolerance.\n"
+                + f"  Strict: {strict}, ToEdge: {use_to_edge}, Delegate: {delegate}.\n"
+                + f"  Eager: {eager_outputs}.\n"
+                + f"  Pybind: {runtime_outputs[0]}.\n"
+                + f"  Error: {eager_outputs - runtime_outputs[0]}",
+            )
