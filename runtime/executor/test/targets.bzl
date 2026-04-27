@@ -17,6 +17,7 @@ def define_common_targets(is_fbcode = False):
             ],
             visibility = [
                 "//executorch/exir/backend/test/...",
+                "//executorch/exir/tests/...",
                 "//executorch/runtime/backend/...",
                 "//executorch/extension/pybindings/...",
                 "//executorch/devtools/fb/runners/...",
@@ -41,6 +42,7 @@ def define_common_targets(is_fbcode = False):
             ],
             visibility = [
                 "//executorch/exir/backend/test/...",
+                "//executorch/exir/tests/...",
                 "//executorch/runtime/backend/...",
                 "//executorch/extension/pybindings/...",
                 "//executorch/devtools/fb/runners/...",
