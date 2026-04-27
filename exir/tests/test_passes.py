@@ -66,6 +66,7 @@ from executorch.exir.passes.memory_format_ops_pass import DimOrderOpsRevertPass
 from executorch.exir.passes.normalize_view_copy_base_pass import (
     NormalizeViewCopyBasePass,
 )
+from executorch.exir.passes.propagate_input_spec import propagate_input_spec
 from executorch.exir.passes.remove_graph_asserts_pass import RemoveGraphAssertsPass
 from executorch.exir.passes.remove_mixed_type_operators import RemoveMixedTypeOperators
 from executorch.exir.passes.replace_edge_with_backend_pass import EdgeToBackendOpsPass
@@ -2500,6 +2501,326 @@ class TestPasses(unittest.TestCase):
                         modified_const.is_contiguous(),
                         f"Constant should be contiguous after pass, got strides {modified_const.stride()}",
                     )
+
+    def test_input_spec_prop_cond(self) -> None:  # noqa: C901
+        """
+        Verify that placeholder node provenance is propagated to torch.cond
+        # true_fn and false_fn submodules.
+        """
+
+        class CondModel(torch.nn.Module):
+            def __init__(self):
+                super().__init__()
+                self.linear = torch.nn.Linear(10, 10, bias=False)
+
+            def true_fn(self, x):
+                return self.linear(x)
+
+            def false_fn(self, x):
+                return self.linear(x * 2)
+
+            def forward(self, x):
+                return torch.cond(x[0] > 0, self.true_fn, self.false_fn, [x])
+
+        model = CondModel()
+        inputs = (torch.zeros(10),)
+        ep = torch.export.export(model, inputs)
+
+        propagate_input_spec(ep)
+
+        x_input_spec = next(
+            spec
+            for spec in ep.graph_signature.input_specs
+            if spec.kind == InputKind.USER_INPUT and spec.arg.name == "x"
+        )
+        weight_input_spec = next(
+            spec
+            for spec in ep.graph_signature.input_specs
+            if spec.kind == InputKind.PARAMETER and spec.arg.name == "p_linear_weight"
+        )
+
+        true_submodule = None
+        false_submodule = None
+
+        for node in ep.graph.nodes:
+            input_spec = node.meta.get("input_spec", None)
+            if node.op == "placeholder":
+                if node.target == x_input_spec.arg.name:
+                    self.assertEqual(input_spec, x_input_spec)
+                elif node.target == weight_input_spec.arg.name:
+                    self.assertEqual(input_spec, weight_input_spec)
+            else:  # Non placeholder nodes should not have an input spec.
+                self.assertIsNone(input_spec)
+
+            if node.target == torch.ops.higher_order.cond:
+                _, true_node, false_node, _ = node.args
+                true_submodule = getattr(ep.graph_module, true_node.target)
+                false_submodule = getattr(ep.graph_module, false_node.target)
+
+        self.assertIsNotNone(true_submodule)
+        self.assertIsNotNone(false_submodule)
+
+        for node in true_submodule.graph.nodes:
+            if node.op == "placeholder":
+                input_spec = node.meta.get("input_spec", None)
+                self.assertIsNotNone(input_spec)
+
+        for node in false_submodule.graph.nodes:
+            if node.op == "placeholder":
+                input_spec = node.meta.get("input_spec", None)
+                self.assertIsNotNone(input_spec)
+
+    def test_input_spec_prop_cond_e2e(self) -> None:
+        """
+        Verify that input spec propagation works end-to-end through
+        to_edge_transform_and_lower for torch.cond.
+        """
+
+        class CondModel(torch.nn.Module):
+            def __init__(self):
+                super().__init__()
+                self.linear = torch.nn.Linear(10, 10, bias=False)
+
+            def true_fn(self, x):
+                return self.linear(x)
+
+            def false_fn(self, x):
+                return self.linear(x * 2)
+
+            def forward(self, x):
+                return torch.cond(x[0] > 0, self.true_fn, self.false_fn, [x])
+
+        model = CondModel()
+        inputs = (torch.zeros(10),)
+
+        edge_program = to_edge_transform_and_lower(
+            torch.export.export(model, inputs),
+        )
+
+        ep = edge_program.exported_program()
+
+        true_submodule = None
+        false_submodule = None
+
+        for node in ep.graph.nodes:
+            if node.target == torch.ops.higher_order.cond:
+                _, true_node, false_node, _ = node.args
+                true_submodule = getattr(ep.graph_module, true_node.target)
+                false_submodule = getattr(ep.graph_module, false_node.target)
+
+        self.assertIsNotNone(true_submodule)
+        self.assertIsNotNone(false_submodule)
+
+        for node in true_submodule.graph.nodes:
+            if node.op == "placeholder":
+                input_spec = node.meta.get("input_spec", None)
+                self.assertIsNotNone(
+                    input_spec,
+                    f"Missing input_spec on true_submodule placeholder: {node.target}",
+                )
+
+        for node in false_submodule.graph.nodes:
+            if node.op == "placeholder":
+                input_spec = node.meta.get("input_spec", None)
+                self.assertIsNotNone(
+                    input_spec,
+                    f"Missing input_spec on false_submodule placeholder: {node.target}",
+                )
+
+    def test_input_spec_prop_map(self) -> None:
+        """
+        Verify that placeholder node provenance is propagated to torch.map
+        submodule.
+        """
+        from torch._higher_order_ops.map import map as torch_map
+
+        class MapModel(torch.nn.Module):
+            def __init__(self):
+                super().__init__()
+                self.linear = torch.nn.Linear(10, 10, bias=False)
+
+            def map_fn(self, x):
+                return self.linear(x)
+
+            def forward(self, x):
+                return torch_map(self.map_fn, x)
+
+        model = MapModel()
+        inputs = (torch.zeros(3, 10),)
+        ep = torch.export.export(model, inputs)
+
+        propagate_input_spec(ep)
+
+        x_input_spec = next(
+            spec
+            for spec in ep.graph_signature.input_specs
+            if spec.kind == InputKind.USER_INPUT and spec.arg.name == "x"
+        )
+        weight_input_spec = next(
+            spec
+            for spec in ep.graph_signature.input_specs
+            if spec.kind == InputKind.PARAMETER and spec.arg.name == "p_linear_weight"
+        )
+
+        map_submodule = None
+
+        for node in ep.graph.nodes:
+            input_spec = node.meta.get("input_spec", None)
+            if node.op == "placeholder":
+                if node.target == x_input_spec.arg.name:
+                    self.assertEqual(input_spec, x_input_spec)
+                elif node.target == weight_input_spec.arg.name:
+                    self.assertEqual(input_spec, weight_input_spec)
+            else:
+                self.assertIsNone(input_spec)
+
+            if node.target == torch.ops.higher_order.map_impl:
+                map_submodule_node = node.args[0]
+                map_submodule = getattr(ep.graph_module, map_submodule_node.target)
+
+        self.assertIsNotNone(map_submodule)
+
+        for node in map_submodule.graph.nodes:
+            if node.op == "placeholder":
+                input_spec = node.meta.get("input_spec", None)
+                self.assertIsNotNone(input_spec)
+
+    def test_input_spec_prop_scan(self) -> None:
+        """
+        Verify that placeholder node provenance is propagated to torch.scan
+        combine_fn submodule.
+        """
+        from torch._higher_order_ops.scan import scan
+
+        class ScanModel(torch.nn.Module):
+            def __init__(self):
+                super().__init__()
+                self.linear = torch.nn.Linear(10, 10, bias=False)
+
+            def combine_fn(self, carry, x):
+                new_carry = carry + self.linear(x)
+                return new_carry, new_carry.clone()
+
+            def forward(self, init, xs):
+                return scan(self.combine_fn, init, xs)
+
+        model = ScanModel()
+        inputs = (torch.zeros(10), torch.zeros(3, 10))
+        ep = torch.export.export(model, inputs)
+
+        propagate_input_spec(ep)
+
+        init_input_spec = next(
+            spec
+            for spec in ep.graph_signature.input_specs
+            if spec.kind == InputKind.USER_INPUT and spec.arg.name == "init"
+        )
+        xs_input_spec = next(
+            spec
+            for spec in ep.graph_signature.input_specs
+            if spec.kind == InputKind.USER_INPUT and spec.arg.name == "xs"
+        )
+        weight_input_spec = next(
+            spec
+            for spec in ep.graph_signature.input_specs
+            if spec.kind == InputKind.PARAMETER and spec.arg.name == "p_linear_weight"
+        )
+
+        scan_submodule = None
+
+        for node in ep.graph.nodes:
+            input_spec = node.meta.get("input_spec", None)
+            if node.op == "placeholder":
+                if node.target == init_input_spec.arg.name:
+                    self.assertEqual(input_spec, init_input_spec)
+                elif node.target == xs_input_spec.arg.name:
+                    self.assertEqual(input_spec, xs_input_spec)
+                elif node.target == weight_input_spec.arg.name:
+                    self.assertEqual(input_spec, weight_input_spec)
+            else:
+                self.assertIsNone(input_spec)
+
+            if node.target == torch.ops.higher_order.scan:
+                scan_submodule_node = node.args[0]
+                scan_submodule = getattr(ep.graph_module, scan_submodule_node.target)
+
+        self.assertIsNotNone(scan_submodule)
+
+        for node in scan_submodule.graph.nodes:
+            if node.op == "placeholder":
+                input_spec = node.meta.get("input_spec", None)
+                self.assertIsNotNone(input_spec)
+
+    def test_input_spec_prop_while_loop(self) -> None:
+        """
+        Verify that placeholder node provenance is propagated to while_loop
+        cond_fn and body_fn submodules.
+        """
+        from torch._higher_order_ops.while_loop import while_loop
+
+        class WhileLoopModel(torch.nn.Module):
+            def __init__(self):
+                super().__init__()
+                self.linear = torch.nn.Linear(10, 10, bias=False)
+
+            def cond_fn(self, x):
+                return x.sum() < 100
+
+            def body_fn(self, x):
+                return (self.linear(x),)
+
+            def forward(self, x):
+                result = while_loop(self.cond_fn, self.body_fn, (x,))
+                return result[0]
+
+        model = WhileLoopModel()
+        inputs = (torch.zeros(10),)
+        ep = torch.export.export(model, inputs)
+
+        propagate_input_spec(ep)
+
+        x_input_spec = next(
+            spec
+            for spec in ep.graph_signature.input_specs
+            if spec.kind == InputKind.USER_INPUT and spec.arg.name == "x"
+        )
+        weight_input_spec = next(
+            spec
+            for spec in ep.graph_signature.input_specs
+            if spec.kind == InputKind.PARAMETER
+            and spec.arg.name == "p_linear_weight"
+        )
+
+        cond_submodule = None
+        body_submodule = None
+
+        for node in ep.graph.nodes:
+            input_spec = node.meta.get("input_spec", None)
+            if node.op == "placeholder":
+                if node.target == x_input_spec.arg.name:
+                    self.assertEqual(input_spec, x_input_spec)
+                elif node.target == weight_input_spec.arg.name:
+                    self.assertEqual(input_spec, weight_input_spec)
+            else:
+                self.assertIsNone(input_spec)
+
+            if node.target == torch.ops.higher_order.while_loop:
+                cond_node, body_node, _, _ = node.args
+                cond_submodule = getattr(ep.graph_module, cond_node.target)
+                body_submodule = getattr(ep.graph_module, body_node.target)
+
+        self.assertIsNotNone(cond_submodule)
+        self.assertIsNotNone(body_submodule)
+
+        for node in cond_submodule.graph.nodes:
+            if node.op == "placeholder":
+                input_spec = node.meta.get("input_spec", None)
+                self.assertIsNotNone(input_spec)
+
+        for node in body_submodule.graph.nodes:
+            if node.op == "placeholder":
+                input_spec = node.meta.get("input_spec", None)
+                self.assertIsNotNone(input_spec)
 
 
 class TestMemoryFormatOpsPassPreserveFormat(unittest.TestCase):
