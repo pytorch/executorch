@@ -49,7 +49,11 @@ DEFINE_string(tokenizer_path, "tekken.json", "Path to Tekken tokenizer file.");
 DEFINE_string(preprocessor_path, "", "Path to mel preprocessor (.pte).");
 DEFINE_string(audio_path, "", "Path to input audio file (.wav).");
 DEFINE_double(temperature, 0.0, "Sampling temperature (0 = greedy).");
-DEFINE_int32(max_new_tokens, 500, "Maximum number of tokens to generate.");
+DEFINE_int32(
+    offline_max_new_tokens,
+    500,
+    "Offline-only: maximum extra tokens to generate after audio embeddings "
+    "are exhausted.");
 DEFINE_bool(streaming, false, "Use streaming transcription mode.");
 DEFINE_bool(
     mic,
@@ -74,6 +78,12 @@ volatile sig_atomic_t g_interrupted = 0;
 void sigint_handler(int) {
   g_interrupted = 1;
 }
+
+voxtral_realtime::StreamingTranscribeConfig make_streaming_config() {
+  voxtral_realtime::StreamingTranscribeConfig config;
+  config.temperature = static_cast<float>(FLAGS_temperature);
+  return config;
+}
 } // namespace
 
 int main(int argc, char** argv) {
@@ -86,6 +96,16 @@ int main(int argc, char** argv) {
 
   if (!FLAGS_audio_path.empty() && FLAGS_mic) {
     ET_LOG(Error, "--mic and --audio_path are mutually exclusive.");
+    return 1;
+  }
+
+  if ((FLAGS_streaming || FLAGS_mic) &&
+      !gflags::GetCommandLineFlagInfoOrDie("offline_max_new_tokens")
+           .is_default) {
+    ET_LOG(
+        Error,
+        "--offline_max_new_tokens only applies to offline transcription. "
+        "Streaming mode drains until EOS or the padded audio tail is exhausted.");
     return 1;
   }
 
@@ -108,10 +128,6 @@ int main(int argc, char** argv) {
 
   stats.model_load_end_ms = ::executorch::extension::llm::time_in_ms();
   stats.inference_start_ms = ::executorch::extension::llm::time_in_ms();
-
-  voxtral_realtime::TranscribeConfig config;
-  config.temperature = static_cast<float>(FLAGS_temperature);
-  config.max_new_tokens = FLAGS_max_new_tokens;
 
   stats.num_prompt_tokens = 0;
   bool first_token = true;
@@ -156,7 +172,8 @@ int main(int argc, char** argv) {
     ET_CHECK_MSG(
         runner.is_streaming(),
         "Model was not exported with --streaming. Re-export with --streaming flag.");
-    auto session = runner.create_streaming_session(config, token_cb);
+    auto session =
+        runner.create_streaming_session(make_streaming_config(), token_cb);
 
     // Drain any audio that buffered in stdin during model loading/warmup.
     // Without this, piped audio (e.g., from ffmpeg) accumulates while the
@@ -207,7 +224,8 @@ int main(int argc, char** argv) {
     ET_LOG(Info, "Loading audio from: %s", FLAGS_audio_path.c_str());
     auto audio_data =
         ::executorch::extension::llm::load_wav_audio_data(FLAGS_audio_path);
-    auto session = runner.create_streaming_session(config, token_cb);
+    auto session =
+        runner.create_streaming_session(make_streaming_config(), token_cb);
 
     const int64_t chunk_size = 1280;
     for (int64_t offset = 0; offset < static_cast<int64_t>(audio_data.size());
@@ -221,10 +239,13 @@ int main(int argc, char** argv) {
     ET_LOG(Info, "Loading audio from: %s", FLAGS_audio_path.c_str());
     auto audio_data =
         ::executorch::extension::llm::load_wav_audio_data(FLAGS_audio_path);
+    voxtral_realtime::OfflineTranscribeConfig offline_config;
+    offline_config.temperature = static_cast<float>(FLAGS_temperature);
+    offline_config.max_new_tokens = FLAGS_offline_max_new_tokens;
     num_generated = runner.transcribe(
         audio_data.data(),
         static_cast<int64_t>(audio_data.size()),
-        config,
+        offline_config,
         token_cb);
   }
 

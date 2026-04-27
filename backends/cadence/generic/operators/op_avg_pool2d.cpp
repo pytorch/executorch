@@ -37,7 +37,7 @@ void avg_pool2d_nchw(
     IntArrayRef stride,
     IntArrayRef padding,
     bool count_include_pad,
-    int64_t divisor,
+    optional<int64_t> divisor_override,
     int leading_dims,
     int ih,
     int iw,
@@ -49,6 +49,10 @@ void avg_pool2d_nchw(
   int s1 = stride[1];
   int p0 = padding[0];
   int p1 = padding[1];
+
+  bool is_fixed_divisor = divisor_override.has_value() || count_include_pad;
+  float fixed_inv_divisor =
+      1.f / (divisor_override.has_value() ? divisor_override.value() : kh * kw);
 
   for (int _n = 0; _n < leading_dims; ++_n) {
     for (int _ih = 0, _oh = 0; _oh < oh; ++_oh, _ih += s0) {
@@ -70,9 +74,7 @@ void avg_pool2d_nchw(
             acc += in_data[input_addr];
           }
         }
-        // The divisor changes depending on whether the count includes
-        // padded cells or not.
-        float inv_divisor = 1. / (count_include_pad ? divisor : count);
+        float inv_divisor = is_fixed_divisor ? fixed_inv_divisor : 1.f / count;
         float val = acc * inv_divisor;
         if (quantized) {
           int32_t min_val =
@@ -105,10 +107,6 @@ Tensor& avg_pool2d_out(
   const int32_t in_zero_point = in_zero_point_t.has_value()
       ? in_zero_point_t.value().const_data_ptr<int32_t>()[0]
       : 0;
-  const int64_t divisor = divisor_override.has_value()
-      ? divisor_override.value()
-      : kernel_size[0] * kernel_size[1];
-
   const int odim = out.dim();
   const int on = getLeadingDims(out, odim - 2);
   const int oh = out.size(odim - 2);
@@ -128,7 +126,7 @@ Tensor& avg_pool2d_out(
         stride,                                          \
         padding,                                         \
         count_include_pad,                               \
-        divisor,                                         \
+        divisor_override,                                \
         on,                                              \
         ih,                                              \
         iw,                                              \

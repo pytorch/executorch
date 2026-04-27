@@ -5,6 +5,7 @@
 # LICENSE file in the root directory of this source tree.
 
 import torch
+from executorch.backends.qualcomm.utils.constants import DEFAULT_EPS_FP32
 from torchao.quantization.pt2e import UniformQuantizationObserverBase
 
 
@@ -23,7 +24,7 @@ class ConcatObserver(UniformQuantizationObserverBase):
         quant_min=None,
         quant_max=None,
         factory_kwargs=None,
-        eps=torch.finfo(torch.float32).eps,  # noqa: B008
+        eps=DEFAULT_EPS_FP32,
         is_dynamic=False,
         **kwargs,
     ) -> None:
@@ -49,8 +50,9 @@ class ConcatObserver(UniformQuantizationObserverBase):
 
     def forward(self, x_orig):
         # calculate the min / max first
-        self.min_val = min(self.min_val, x_orig.min())
-        self.max_val = max(self.max_val, x_orig.max())
+        min_val, max_val = torch.aminmax(x_orig.detach())
+        self.min_val = min(self.min_val, min_val)
+        self.max_val = max(self.max_val, max_val)
 
         if len(self.input_observers) == 0:
             # collect observers first if they are not cached

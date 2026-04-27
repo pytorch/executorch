@@ -297,6 +297,23 @@ bool ComputeGraph::is_valid_value_idx(const ValueRef idx) const noexcept {
   return idx >= 0 && idx < static_cast<int>(values_.size());
 }
 
+ValueRef ComputeGraph::get_cached_prepack(
+    const ValueRef input,
+    const std::string& kernel_name) const {
+  auto it = prepack_cache_.find({input, kernel_name});
+  if (it != prepack_cache_.end()) {
+    return it->second;
+  }
+  return kDummyValueRef;
+}
+
+void ComputeGraph::cache_prepack(
+    const ValueRef input,
+    const std::string& kernel_name,
+    const ValueRef prepacked) {
+  prepack_cache_.emplace(std::make_pair(input, kernel_name), prepacked);
+}
+
 std::vector<int64_t> ComputeGraph::sizes_of(const ValueRef idx) const {
   const Value& val = values_.at(idx);
   if (val.isTensor()) {
@@ -725,6 +742,9 @@ void ComputeGraph::set_symint(const ValueRef idx, const int32_t val) {
 }
 
 int32_t ComputeGraph::read_symint(const ValueRef idx) {
+  if (values_.at(idx).isInt()) {
+    return static_cast<int32_t>(values_.at(idx).toInt());
+  }
   return get_symint(idx)->get();
 }
 
@@ -1114,8 +1134,7 @@ void ComputeGraph::clear_deferred_cmds() {
 void ComputeGraph::prepack() {
   int i = 0;
   bool submitted = false;
-  const bool reduce_peak_memory = total_constant_nbytes_ > 500 * MB;
-  // int count = 0;
+  const bool reduce_peak_memory = total_constant_nbytes_ > 10 * MB;
   context_->set_cmd();
   for (std::unique_ptr<PrepackNode>& node : prepack_nodes_) {
     // Do not trigger on the first or last prepack node.

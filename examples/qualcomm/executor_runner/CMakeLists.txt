@@ -25,6 +25,7 @@ target_link_libraries(
   extension_evalue_util
   extension_runner_util
   full_portable_ops_lib
+  quantized_ops_lib
   etdump
   flatccrt
   gflags

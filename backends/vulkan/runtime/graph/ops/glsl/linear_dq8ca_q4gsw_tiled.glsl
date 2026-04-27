@@ -144,5 +144,11 @@ void main() {
         group_size);
   }
 
+  if (apply_bias > 0) {
+    FPPerOutChannelParams bias_tile;
+    load_bias_tile(bias_tile, n4);
+    add_bias_to_out_tile(out_tile, bias_tile);
+  }
+
   write_output_tile_with_checks(out_tile, n4, m, N4, M);
 }

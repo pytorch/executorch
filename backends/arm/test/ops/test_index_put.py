@@ -3,8 +3,6 @@
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
 
-from typing import Tuple
-
 import torch
 from executorch.backends.arm._passes import InsertInt32CastsAfterInt64PlaceholdersPass
 
@@ -17,19 +15,7 @@ from executorch.backends.arm.test.tester.test_pipeline import (
     VgfPipeline,
 )
 
-test_data_suite = {
-    "rank3_zeros_int8": (
-        lambda: (
-            torch.zeros((1, 3, 2), dtype=torch.int8),
-            (
-                torch.tensor([0, 0], dtype=torch.int64),
-                torch.tensor([2, 1], dtype=torch.int64),
-            ),
-            torch.randint(-5, 5, (2, 2), dtype=torch.int8),
-            False,
-        ),
-        0,  # used for u55 tests to config n_expected_delgates, only 1 when accumulate is True
-    ),
+test_data_suite_fp = {
     "rank3_accumulate": (
         lambda: (
             torch.rand((5, 9, 3), dtype=torch.float32),
@@ -54,32 +40,6 @@ test_data_suite = {
             False,
         ),
         0,  # used for u55 tests to config n_expected_delgates, only 1 when accumulate is True
-    ),
-    "rank4_accumulate_int32": (
-        lambda: (
-            torch.ones((3, 4, 20, 9), dtype=torch.int32),
-            (
-                torch.tensor(
-                    [0, 2, 2],
-                    dtype=torch.int64,
-                ),
-                torch.tensor(
-                    [1, 1, 1],
-                    dtype=torch.int64,
-                ),
-                torch.tensor(
-                    [4, 8, 5],
-                    dtype=torch.int64,
-                ),
-                torch.tensor(
-                    [1, 2, 3],
-                    dtype=torch.int64,
-                ),
-            ),
-            torch.zeros((3), dtype=torch.int32),
-            True,
-        ),
-        1,  # used for u55 tests to config n_expected_delgates, only 1 when accumulate is True
     ),
     "rank5_ones": (
         lambda: (
@@ -160,6 +120,204 @@ test_data_suite = {
         ),
         0,
     ),
+    "broadcast_values_scalar": (
+        lambda: (
+            torch.zeros((3, 4), dtype=torch.float32),
+            (torch.tensor([0, 2], dtype=torch.int64),),
+            torch.tensor([5.0], dtype=torch.float32),
+            False,
+        ),
+        0,
+    ),
+    "broadcast_values_scalar_0d": (
+        lambda: (
+            torch.zeros((3, 4), dtype=torch.float32),
+            (torch.tensor([0, 2], dtype=torch.int64),),
+            torch.tensor(5.0, dtype=torch.float32),
+            False,
+        ),
+        0,
+    ),
+    "broadcast_values_vector": (
+        lambda: (
+            torch.zeros((3, 4), dtype=torch.float32),
+            (torch.tensor([0, 2], dtype=torch.int64),),
+            torch.tensor([1.0, 2.0, 3.0, 4.0], dtype=torch.float32),
+            False,
+        ),
+        0,
+    ),
+    "broadcast_values_with_implicit_w_and_c": (
+        lambda: (
+            torch.zeros((5, 2), dtype=torch.float32),
+            (torch.tensor([0, 2], dtype=torch.int64),),
+            torch.tensor([10.0, 20.0], dtype=torch.float32),
+            False,
+        ),
+        0,
+    ),
+    "bool_mask_scalar": (
+        lambda: (
+            torch.randn((2, 3, 4), dtype=torch.float32),
+            (
+                torch.arange(3).expand(2, 3)
+                >= torch.tensor([3, 2], dtype=torch.int64)[:, None],
+            ),
+            torch.tensor(0.0, dtype=torch.float32),
+            False,
+        ),
+        0,
+    ),
+    "none_indices": (
+        lambda: (
+            torch.ones((5, 3, 2, 2), dtype=torch.float32),
+            (torch.IntTensor([2, 3, 0]), None),
+            torch.zeros(1),
+            False,
+        ),
+        0,
+    ),
+    "none_indices_2": (
+        lambda: (
+            torch.ones((5, 3, 2, 2), dtype=torch.float32),
+            (None, torch.IntTensor([2, 0]), None),
+            torch.rand(2, 2, 2),
+            False,
+        ),
+        0,
+    ),
+    "none_indices_3": (
+        lambda: (
+            torch.ones((5, 3, 2, 2), dtype=torch.float32),
+            (None, torch.IntTensor([2, 1, 0]), None, None),
+            torch.zeros(1),
+            False,
+        ),
+        0,
+    ),
+    "none_indices_4": (
+        lambda: (
+            torch.ones((5, 3, 2, 2), dtype=torch.float32),
+            (
+                None,
+                torch.IntTensor(
+                    [
+                        2,
+                    ]
+                ),
+                None,
+                torch.IntTensor([0]),
+            ),
+            torch.zeros(1, 5, 2),
+            False,
+        ),
+        0,
+    ),
+    "none_indices_5": (
+        lambda: (
+            torch.ones((5, 3, 2, 2), dtype=torch.float32),
+            (None, torch.IntTensor([2, 0]), None, torch.IntTensor([0])),
+            torch.zeros(2, 1, 2),
+            False,
+        ),
+        0,
+    ),
+    "none_and_bool_indices_scalar": (
+        lambda: (
+            torch.randn((2, 3, 4), dtype=torch.float32),
+            (None, torch.tensor([True, False, True]), None),
+            torch.tensor(0.0, dtype=torch.float32),
+            False,
+        ),
+        0,
+    ),
+}
+mixed_indices_not_supported = {
+    "bool_and_tensor_indices_scalar": (
+        lambda: (
+            torch.randn((2, 3, 4), dtype=torch.float32),
+            (
+                torch.tensor([True, False]),
+                torch.tensor([1, 2], dtype=torch.int64),
+            ),
+            torch.tensor(0.0, dtype=torch.float32),
+            False,
+        ),
+        0,
+    ),
+    "bool_mask_tensor": (
+        lambda: (
+            torch.randn((2, 3, 4), dtype=torch.float32),
+            (torch.tensor([True, False]),),
+            torch.rand((1, 3, 4), dtype=torch.float32),
+            False,
+        ),
+        0,
+    ),
+    "two_bool_mask_scalar": (
+        lambda: (
+            torch.randn((2, 3, 4), dtype=torch.float32),
+            (
+                torch.tensor([False, True]),
+                torch.tensor([True, False, False]),
+            ),
+            torch.tensor(0.0, dtype=torch.float32),
+            False,
+        ),
+        0,
+    ),
+    "two_bool_mask_tensor": (
+        lambda: (
+            torch.randn((2, 3, 4), dtype=torch.float32),
+            (
+                torch.tensor([False, True]),
+                torch.tensor([True, False, False]),
+            ),
+            torch.rand((1, 4), dtype=torch.float32),
+            False,
+        ),
+        0,
+    ),
+}
+test_data_int = {
+    "rank3_zeros_int8": (
+        lambda: (
+            torch.zeros((1, 3, 2), dtype=torch.int8),
+            (
+                torch.tensor([0, 0], dtype=torch.int64),
+                torch.tensor([2, 1], dtype=torch.int64),
+            ),
+            torch.randint(-5, 5, (2, 2), dtype=torch.int8),
+            False,
+        ),
+        0,  # used for u55 tests to config n_expected_delgates, only 1 when accumulate is True
+    ),
+    "rank4_accumulate_int32": (
+        lambda: (
+            torch.ones((3, 4, 20, 9), dtype=torch.int32),
+            (
+                torch.tensor(
+                    [0, 2, 2],
+                    dtype=torch.int64,
+                ),
+                torch.tensor(
+                    [1, 1, 1],
+                    dtype=torch.int64,
+                ),
+                torch.tensor(
+                    [4, 8, 5],
+                    dtype=torch.int64,
+                ),
+                torch.tensor(
+                    [1, 2, 3],
+                    dtype=torch.int64,
+                ),
+            ),
+            torch.zeros((3), dtype=torch.int32),
+            True,
+        ),
+        1,  # used for u55 tests to config n_expected_delgates, only 1 when accumulate is True
+    ),
 }
 test_data_suite_bf16 = {
     "rank3_rand_bf16": (
@@ -188,10 +346,12 @@ class IndexPut(torch.nn.Module):
         z: torch.Tensor,
         acc: bool,
     ):
-        return torch.index_put(x, indices=y, values=z, accumulate=acc)
+        # Needs to use aten op directly to allow None indices.
+        return torch.ops.aten.index_put.default(x, indices=y, values=z, accumulate=acc)
 
 
-input_t = Tuple[Tuple[torch.Tensor, torch.Tensor, torch.Tensor, bool], int]
+input_t = tuple[tuple[torch.Tensor, torch.Tensor, torch.Tensor, bool], int]
+input_no_indices_t = tuple[torch.Tensor, torch.Tensor]
 
 xfails = {
     "same_index": "MLETORCH-1596: index_put with repeated indices not supported",
@@ -199,7 +359,7 @@ xfails = {
 
 
 @common.parametrize(
-    "test_module", test_data_suite | test_data_suite_bf16, xfails=xfails
+    "test_module", test_data_suite_fp | test_data_suite_bf16, xfails=xfails
 )
 def test_index_put_tosa_FP(test_module: input_t):
     pipeline = TosaPipelineFP[input_t](
@@ -215,7 +375,7 @@ def test_index_put_tosa_FP(test_module: input_t):
     pipeline.run()
 
 
-@common.parametrize("test_module", test_data_suite, xfails=xfails)
+@common.parametrize("test_module", test_data_suite_fp | test_data_int, xfails=xfails)
 def test_index_put_tosa_INT(test_module: input_t):
     pipeline = TosaPipelineINT[input_t](
         IndexPut(),
@@ -226,7 +386,7 @@ def test_index_put_tosa_INT(test_module: input_t):
     pipeline.run()
 
 
-@common.parametrize("test_module", test_data_suite)
+@common.parametrize("test_module", test_data_suite_fp | test_data_int)
 def test_index_put_u55_INT(test_module: input_t):
     # SCATTER op is not supported on U55
     pipeline = OpNotSupportedPipeline[input_t](
@@ -241,7 +401,11 @@ def test_index_put_u55_INT(test_module: input_t):
 
 
 @common.XfailIfNoCorstone320
-@common.parametrize("test_module", test_data_suite)
+@common.parametrize(
+    "test_module",
+    test_data_suite_fp | test_data_int,
+    xfails={"none_indices_4": "Incorrect numerical behavior: MLBEDSW-11589"},
+)
 def test_index_put_u85_INT(test_module: input_t):
     """same_index test case already supported on u85 even though it is not
     supported by TOSA spec.
@@ -264,7 +428,7 @@ def test_index_put_u85_INT(test_module: input_t):
 
 
 @common.SkipIfNoModelConverter
-@common.parametrize("test_module", test_data_suite, xfails=xfails)
+@common.parametrize("test_module", test_data_suite_fp | test_data_int, xfails=xfails)
 def test_index_put_vgf_no_quant(test_module: input_t):
     pipeline = VgfPipeline[input_t](
         IndexPut(),
@@ -280,12 +444,37 @@ def test_index_put_vgf_no_quant(test_module: input_t):
 
 
 @common.SkipIfNoModelConverter
-@common.parametrize("test_module", test_data_suite, xfails=xfails)
+@common.parametrize("test_module", test_data_suite_fp | test_data_int, xfails=xfails)
 def test_index_put_vgf_quant(test_module: input_t):
     pipeline = VgfPipeline[input_t](
         IndexPut(),
         test_module[0](),
         aten_op=IndexPut.aten_op,
         exir_op=IndexPut.exir_op,
+    )
+    pipeline.run()
+
+
+@common.parametrize("test_module", mixed_indices_not_supported)
+def test_index_put_tosa_FP_not_delegated(test_module: input_t):
+    pipeline = OpNotSupportedPipeline[input_t](
+        IndexPut(),
+        test_module[0](),
+        {IndexPut.exir_op: 1},
+        quantize=False,
+        u55_subset=False,
+        n_expected_delegates=0,
+    )
+    pipeline.run()
+
+
+@common.parametrize("test_module", mixed_indices_not_supported)
+def test_index_put_tosa_INT_not_delegated(test_module: input_t):
+    pipeline = OpNotSupportedPipeline[input_t](
+        IndexPut(),
+        test_module[0](),
+        {IndexPut.exir_op: 1},
+        quantize=True,
+        n_expected_delegates=0,
     )
     pipeline.run()

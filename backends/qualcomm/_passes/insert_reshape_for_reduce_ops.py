@@ -53,7 +53,6 @@ class InsertReshapeForReduceOps(ExportPass):
                 modified = True
 
         if modified:
-            graph_module.recompile()
             dead_code_elimination_pass(graph_module)
 
         return PassResult(graph_module, modified)
