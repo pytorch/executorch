@@ -12,6 +12,7 @@ fbcode_target(_kind = runtime.python_library,
         "//executorch/exir:pass_manager",
         "//executorch/exir/backend/canonical_partitioners:config_partitioner_lib",
         "//executorch/exir/dialects:lib",
+        "//executorch/exir/passes:propagate_input_spec",
         "//pytorch/ao:torchao",  # @manual
     ],
 )
