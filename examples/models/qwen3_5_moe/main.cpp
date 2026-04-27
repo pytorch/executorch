@@ -13,6 +13,8 @@
 #include <executorch/extension/llm/sampler/util.h>
 #include <executorch/extension/module/module.h>
 #include <executorch/extension/tensor/tensor.h>
+#include <executorch/runtime/backend/interface.h>
+#include <executorch/runtime/backend/options.h>
 #include <executorch/runtime/platform/log.h>
 #include <pytorch/tokenizers/hf_tokenizer.h>
 
@@ -35,6 +37,7 @@ DEFINE_string(
     "Path to file containing prompt text (overrides --prompt).");
 DEFINE_double(temperature, 0.8, "Sampling temperature (0 = greedy).");
 DEFINE_int32(max_new_tokens, 128, "Maximum tokens to generate.");
+DEFINE_bool(cuda_graph, false, "Enable CUDA graph for decode method.");
 
 namespace llm = ::executorch::extension::llm;
 using ::executorch::extension::from_blob;
@@ -103,29 +106,25 @@ int main(int argc, char** argv) {
   }
   auto metadata = metadata_result.get();
 
+  // Set CUDA graph option if requested (must be before load_method)
+  if (FLAGS_cuda_graph) {
+    executorch::runtime::BackendOptions<2> cuda_opts;
+    cuda_opts.set_option("enable_cuda_graph_for_method", "decode");
+    executorch::runtime::set_option("CudaBackend", cuda_opts.view());
+    printf("CUDA graph enabled for decode method\n");
+  }
+
   printf("Loading methods...\n");
 
-  // Try loading both methods; fall back to single "forward" method
-  bool dual_method = true;
-  std::string prefill_method = "prefill";
   auto err = module->load_method("prefill");
   if (err != Error::Ok) {
-    // Try "forward" for single-method export
-    err = module->load_method("forward");
-    if (err != Error::Ok) {
-      ET_LOG(Error, "Failed to load prefill/forward method");
-      return 1;
-    }
-    prefill_method = "forward";
-    dual_method = false;
-    printf("Using single-method mode (forward)\n");
+    ET_LOG(Error, "Failed to load prefill method");
+    return 1;
   }
-  if (dual_method) {
-    err = module->load_method("decode");
-    if (err != Error::Ok) {
-      ET_LOG(Error, "Failed to load decode method");
-      return 1;
-    }
+  err = module->load_method("decode");
+  if (err != Error::Ok) {
+    ET_LOG(Error, "Failed to load decode method");
+    return 1;
   }
 
   stats.model_load_end_ms = llm::time_in_ms();
@@ -174,8 +173,8 @@ int main(int argc, char** argv) {
 
   // Use prefill method for T>=2, decode method for T=1
   // (prefill was exported with min seq_len=2)
-  std::string run_method = prefill_method;
-  if (dual_method && num_prompt_tokens == 1) {
+  std::string run_method = "prefill";
+  if (num_prompt_tokens == 1) {
     run_method = "decode";
   }
 
@@ -225,11 +224,6 @@ int main(int argc, char** argv) {
   // decode method, which may run on a different CUDA stream.
   cudaDeviceSynchronize();
 #endif
-
-  if (!dual_method) {
-    printf("Single-method mode: skipping decode\n");
-    return 0;
-  }
 
   // ---------------------------------------------------------------
   // Decode — generate tokens one at a time
