@@ -27,14 +27,19 @@ install_pytorch_and_domains() {
   chown -R ci-user .
 
   export _GLIBCXX_USE_CXX11_ABI=1
+  # PyTorch's FindARM.cmake hard-fails when the SVE+BF16 compile probe
+  # doesn't pass — gcc-11 in this image is too old to accept the combined
+  # NEON/SVE/bfloat16 intrinsics the probe exercises. Executorch's aarch64
+  # runtime targets (phones, embedded) don't use SVE, so bypass the check.
+  export BUILD_IGNORE_SVE_UNAVAILABLE=1
   # Then build and install PyTorch
   conda_run python setup.py bdist_wheel
   pip_install "$(echo dist/*.whl)"
 
   # Grab the pinned audio and vision commits from PyTorch
-  TORCHAUDIO_VERSION=release/2.11
+  TORCHAUDIO_VERSION=$(cat .github/ci_commit_pins/audio.txt)
   export TORCHAUDIO_VERSION
-  TORCHVISION_VERSION=release/0.26
+  TORCHVISION_VERSION=$(cat .github/ci_commit_pins/vision.txt)
   export TORCHVISION_VERSION
 
   install_domains
