@@ -435,8 +435,9 @@ fbcode_target(_kind = runtime.python_library,
         "remove_unused_parameters_pass.py",
     ],
     deps = [
+        ":propagate_input_spec",
         "//caffe2:torch",
-        "//executorch/exir/dialects:lib",
+        "//executorch/exir:graph_module",
     ],
 )
 

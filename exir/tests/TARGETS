@@ -423,11 +423,14 @@ python_unittest(
     srcs = [
         "test_remove_unused_parameters_pass.py",
     ],
+    preload_deps = [
+        "//executorch/runtime/executor/test:test_backend_compiler_lib",
+    ],
     deps = [
         "//caffe2:torch",
-        "//executorch/backends/xnnpack:xnnpack_delegate",
         "//executorch/exir:lib",
         "//executorch/exir:memory",
+        "//executorch/exir/backend/test:op_partitioner_demo",
         "//executorch/exir/capture:config",
         "//executorch/exir/passes:lib",
         "//executorch/runtime:runtime",
