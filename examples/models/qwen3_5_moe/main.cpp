@@ -39,7 +39,10 @@ DEFINE_string(
     "Path to file containing prompt text (overrides --prompt).");
 DEFINE_double(temperature, 0.8, "Sampling temperature (0 = greedy).");
 DEFINE_int32(max_new_tokens, 128, "Maximum tokens to generate.");
-DEFINE_bool(cuda_graph, false, "Enable CUDA graph for decode method. CUDA only.");
+DEFINE_bool(
+    cuda_graph,
+    false,
+    "Enable CUDA graph for decode method. CUDA only.");
 
 namespace llm = ::executorch::extension::llm;
 using ::executorch::extension::from_blob;
@@ -86,9 +89,8 @@ static uint64_t read_token(const executorch::aten::Tensor& output) {
 #else
   // logits_to_token handles 2D / 3D logits and Float / Half / BFloat16 /
   // UInt16 dtypes. Negative temperatures are clamped to 0 (greedy).
-  const float temp = FLAGS_temperature <= 0.0
-      ? 0.0f
-      : static_cast<float>(FLAGS_temperature);
+  const float temp =
+      FLAGS_temperature <= 0.0 ? 0.0f : static_cast<float>(FLAGS_temperature);
   return static_cast<uint64_t>(llm::logits_to_token(output, temp));
 #endif
 }
