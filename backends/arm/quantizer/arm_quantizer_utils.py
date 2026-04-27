@@ -21,6 +21,10 @@ import torch
 from executorch.backends.arm.common.annotation_meta import ArmAnnotationInfo
 from executorch.backends.arm.constants import DISALLOW_TFA_META_KEY
 from executorch.backends.arm.quantizer.quantization_config import QuantizationConfig
+from executorch.backends.cortex_m.quantizer_reporter import (
+    QuantizerInfo,
+    QuantizerReporterUser,
+)
 from torch.fx import Node
 
 from torchao.quantization.pt2e.quantizer import (
@@ -160,25 +164,6 @@ def _get_int32_per_channel_bias_qspec(node):
     )
 
 
-class _QuantizerReporterUserMixin:
-    def __init__(self):
-        self.reporter = None
-
-    def register_reporter(self, reporter) -> None:
-        self.reporter = reporter
-
-    def report_reject(self, pattern: list[Node], reason: str) -> None:
-        if self.reporter is not None:
-            self.reporter.report_reject(self, pattern, reason)
-
-    def report_accept(self, pattern: list[Node]) -> None:
-        if self.reporter is not None:
-            self.reporter.report_accept(self, pattern)
-
-    def get_quantizer_info(self):
-        raise NotImplementedError("Quantizer must implement get_quantizer_info method.")
-
-
 class PatternCheck:
     """Base class for pattern checks.
 
@@ -248,7 +233,7 @@ class NodeFinder(ABC):
         pass
 
 
-class PatternQuantizer(Quantizer, _QuantizerReporterUserMixin):
+class PatternQuantizer(Quantizer, QuantizerReporterUser):
     """Quantizes a graph according to an OperatorConfig.
 
     Args:
@@ -265,28 +250,28 @@ class PatternQuantizer(Quantizer, _QuantizerReporterUserMixin):
         pattern_matcher: "PatternMatcher",
     ) -> None:
         super().__init__()
-        _QuantizerReporterUserMixin.__init__(self)
+        QuantizerReporterUser.__init__(self)
         self.quantization_config: QuantizationConfig | None = quantization_config
         self.node_finder: "NodeFinder" = node_finder
         self.pattern_matcher: "PatternMatcher" = pattern_matcher
 
     def get_quantizer_info(self):
-        from executorch.backends.cortex_m.quantizer.quantizer_reporter import (
-            QuantizerInfo,
-            SUPPORTED_QCONFIGS,
-        )
-
         name = self.__class__.__name__
         targeted_nodes_description = str(self.node_finder)
-        quantization_config_path = SUPPORTED_QCONFIGS.get(
-            self.quantization_config, "UNREGISTERED_QCONFIG"
-        )
+        if self.quantization_config is None:
+            qconfig_label = "NO_QCONFIG"
+        else:
+            qconfig_label = (
+                self.quantization_config.label
+                if self.quantization_config.label is not None
+                else self.quantization_config.__class__.__name__  # no label, fallback to class name
+            )
         support_config_path = self.pattern_matcher.support_dict_name
 
         return QuantizerInfo(
             name,
             targeted_nodes_description,
-            quantization_config_path,
+            qconfig_label,
             support_config_path,
         )
 
@@ -397,7 +382,7 @@ class PatternQuantizer(Quantizer, _QuantizerReporterUserMixin):
         return True
 
 
-class SharedQspecQuantizer(Quantizer, _QuantizerReporterUserMixin):
+class SharedQspecQuantizer(Quantizer, QuantizerReporterUser):
     """Assures that specific ops share quantization parameters on all
     inputs/outputs.
     """
@@ -495,7 +480,7 @@ class SharedQspecQuantizer(Quantizer, _QuantizerReporterUserMixin):
 
     def __init__(self, targets: Optional[list[Callable[..., object]]] = None) -> None:
         super().__init__()
-        _QuantizerReporterUserMixin.__init__(self)
+        QuantizerReporterUser.__init__(self)
         if targets is None:
             self.targets = self.SHARED_QSPEC_OPS_DEFAULT
             self.support_config_path = (
@@ -508,18 +493,14 @@ class SharedQspecQuantizer(Quantizer, _QuantizerReporterUserMixin):
             )
 
     def get_quantizer_info(self):
-        from executorch.backends.cortex_m.quantizer.quantizer_reporter import (
-            QuantizerInfo,
-        )
-
         name = self.__class__.__name__
         targeted_nodes_description = ""
-        quantization_config_path = "SHARED_QCONFIG"
+        qconfig_label = "shared qparams for connected targeted nodes"
         support_config_path = self.support_config_path
         return QuantizerInfo(
             name,
             targeted_nodes_description,
-            quantization_config_path,
+            qconfig_label,
             support_config_path,
         )
 
@@ -532,45 +513,61 @@ class SharedQspecQuantizer(Quantizer, _QuantizerReporterUserMixin):
     def _get_user_nodes_with_float_input(self, node: Node) -> list[Node]:
         return [n for n in node.users.keys() if has_float_output(node)]
 
+    def _skip_shared_qspec_from_io(self, node: Node, qspec: QuantizationSpec) -> bool:
+        return node.op in ("placeholder", "output") and qspec.dtype == torch.uint8
+
+    def _maybe_enqueue_shared_node(
+        self, neighbor: Node, shared_nodes: set[Node], bfs_queue: list[Node]
+    ) -> None:
+        if neighbor.target in self.targets and neighbor not in shared_nodes:
+            if not self._is_annotated(neighbor):
+                bfs_queue.append(neighbor)
+
+    def _append_output_qspec(self, node: Node, adjacent_qspecs: list[Any]) -> None:
+        if not self._is_annotated(node):
+            return
+        output_qspec = node.meta.get(  # type: ignore[union-attr]
+            Q_ANNOTATION_KEY
+        ).output_qspec
+        if output_qspec is None:
+            return
+        if self._skip_shared_qspec_from_io(node, output_qspec):
+            return
+        adjacent_qspecs.append(output_qspec)
+
+    def _append_input_qspec(
+        self, user_node: Node, input_node: Node, adjacent_qspecs: list[Any]
+    ) -> None:
+        if not self._is_annotated(user_node):
+            return
+        qspec_map = user_node.meta.get(Q_ANNOTATION_KEY)
+        if qspec_map is None:
+            return
+        if input_node not in qspec_map.input_qspec_map:
+            return
+        input_qspec = qspec_map.input_qspec_map[input_node]
+        if input_qspec is None:
+            return
+        if self._skip_shared_qspec_from_io(user_node, input_qspec):
+            return
+        adjacent_qspecs.append(input_qspec)
+
     def _get_shared_clique(self, root_node: Node) -> tuple[set[Node], list[Any]]:
         shared_nodes = set()
         bfs_queue = [root_node]
-        adjacent_qspecs = []
+        adjacent_qspecs: list[Any] = []
 
         while bfs_queue:
             node = bfs_queue.pop(0)
             shared_nodes.add(node)
 
             for input_node in node.all_input_nodes:
-                if input_node.target in self.targets and input_node not in shared_nodes:
-                    if not self._is_annotated(input_node):
-                        bfs_queue.append(input_node)
-                if self._is_annotated(input_node):
-                    output_qspec = input_node.meta.get(  # type: ignore[union-attr]
-                        Q_ANNOTATION_KEY
-                    ).output_qspec
-                    if output_qspec is not None:
-                        adjacent_qspecs.append(output_qspec)
+                self._maybe_enqueue_shared_node(input_node, shared_nodes, bfs_queue)
+                self._append_output_qspec(input_node, adjacent_qspecs)
 
             for output_node in node.users.keys():
-                if (
-                    output_node.target in self.targets
-                    and output_node not in shared_nodes
-                ):
-                    if not self._is_annotated(output_node):
-                        bfs_queue.append(output_node)
-                if (
-                    self._is_annotated(output_node)
-                    and node
-                    in output_node.meta.get(  # type: ignore[union-attr]
-                        Q_ANNOTATION_KEY
-                    ).input_qspec_map
-                ):
-                    input_qspec = output_node.meta.get(  # type: ignore[union-attr]
-                        Q_ANNOTATION_KEY
-                    ).input_qspec_map[node]
-                    if input_qspec is not None:
-                        adjacent_qspecs.append(input_qspec)
+                self._maybe_enqueue_shared_node(output_node, shared_nodes, bfs_queue)
+                self._append_input_qspec(output_node, node, adjacent_qspecs)
 
         return shared_nodes, adjacent_qspecs
 

@@ -42,7 +42,7 @@ Or, you could put QNN libraries to default search path of the dynamic linker.
 Please connect an Android phone to the workstation. We use `adb` to communicate with the device.
 
 If the device is in a remote host, you might want to add `-H` to the `adb`
-commands in the `SimpleADB` class inside [utils.py](utils.py).
+commands in the `SimpleADB` class inside [export_utils.py](../../backends/qualcomm/export_utils.py).
 
 ## Please use python xxx.py --help for information of each examples.
 
@@ -86,31 +86,31 @@ If you run into the following error, that means the ${QNN_SDK_ROOT} that you are
 Error: Failed to get context binary info.
 ```
 ## Model Structure
-This section outlines the essential APIs and utilities provided to streamline the process of model conversion, deployment, and evaluation on Qualcomm hardware using ExecuTorch.
+This section outlines the essential APIs and utilities provided to streamline the process of model conversion, deployment, and evaluation on Qualcomm hardware using ExecuTorch. The official APIs can be found under [export_utils.py](../../backends/qualcomm/export_utils.py)
 
-1. `build_executorch_binary()`:
+1. `setup_common_args_and_variables()`:
 
-   build_executorch_binary is a high-level API used to convert a PyTorch model into a Qualcomm-compatible .pte binary format. This function streamlines the process of quantization, transformation, optimization, and export, enabling users to efficiently deploy models on Qualcomm hardware.
+   `setup_common_args_and_variables()` returns an `argparse.ArgumentParser`. This parser defines both required and optional arguments, which can later be passed into the ExecuTorch QNN API, `QnnConfig.load_config()`.
 
-2. `SimpleADB`:
+2. `QnnConfig.load_config()`:
 
-   SimpleADB is a Python class that provides a simplified interface for interacting with Android devices. It allows users to execute ADB commands, retrieve device information, and manage files on the device.
+   `QnnConfig.load_config` accepts either:
+      1. An `argparse.ArgumentParser` created by `setup_common_args_and_variables()`
+      2. A `.json` configuration file. A sample file is provided under [sample_config.json](./sample_config.json) for reference.
 
-3. `get_imagenet_dataset`:
-   
-   If the model requires ImageNet, this function can be used to load the dataset and apply the necessary preprocessing steps to prepare it for inference or quantization calibration.
+   This function returns a `QnnConfig`, which serves as an input to some of the key APIs that will be covered below: `build_executorch_binary()`, `SimpleADB`.
 
-4. `topk_accuracy`:
+3. `build_executorch_binary()`:
 
-   Calculates the Top-K accuracy for classification models, used to evaluate model performance.
+   `build_executorch_binary` is a high-level API used to convert a PyTorch model into a Qualcomm-compatible .pte binary format. This function streamlines the process of quantization, transformation, optimization, and export, enabling users to efficiently deploy models on Qualcomm hardware.
 
-5. `parse_skip_delegation_node`:
+4. `SimpleADB`:
 
-   Parses command-line arguments to identify node IDs or operation types that should be skipped during model conversion.
+   `SimpleADB` provides a simplified interface for interacting with Android devices. It allows users to execute ADB commands such as:     
+      1. Push necessary artifacts to device
+      2. Execute the runner
+      3. Pull the execution outputs/results
 
-6. `make_output_dir`:
-
-   Creates a clean directory for storing model outputs or intermediate results. If the directory already exists, it will be deleted and recreated to ensure a consistent environment for each run.
 
 ## Run Inference Using Shared Buffer
 This section shows how to use shared buffer for input/output tensors in QNN ExecuTorch, usually graph inputs and outputs on shared memory to reduce huge tensor copying time from CPU to HTP. This feature can accelerate inference speed. Users need to do shared memory resource management by themselves. The key idea is to use `QnnExecuTorchAllocCustomMem` to allocate a large chunk of memory on the device, then use `QnnExecuTorchFreeCustomMem` to free it after inference.
@@ -146,8 +146,7 @@ pip install scikit-learn pandas graphviz
 
 ## Limitation
 
-1. QNN 2.28 is used for all examples. Newer or older QNN might work,
-but the performance and accuracy number can differ.
+1. QNN 2.37 is used for all examples. Newer or older QNN might work, but the performance and accuracy number can differ.
 
 2. The mobilebert example is on QNN HTP fp16, which is only supported by a limited
 set of SoCs. Please check QNN documents for details.

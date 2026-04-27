@@ -56,6 +56,7 @@ TOSA_PRO_INT_SupportList: Final[Set] = {
     exir_ops.edge.aten.expm1.default,
     exir_ops.edge.aten.log.default,
     exir_ops.edge.aten.log1p.default,
+    exir_ops.edge.aten.log10.default,
     exir_ops.edge.aten.linear.default,
     exir_ops.edge.aten.split_with_sizes_copy.default,
     exir_ops.edge.aten.split_copy.Tensor,

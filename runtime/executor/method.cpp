@@ -9,6 +9,7 @@
 #include <executorch/runtime/executor/method.h>
 
 #include <c10/util/irange.h>
+#include <c10/util/safe_numerics.h>
 #include <array>
 #include <cinttypes> // @donotremove
 #include <cstdint>
@@ -36,6 +37,20 @@ namespace executorch {
 namespace ET_RUNTIME_NAMESPACE {
 
 using internal::PlatformMemoryAllocator;
+
+// Maximum number of instructions that Method::execute() will run before
+// returning an error. Prevents infinite loops caused by malformed programs
+// (e.g., JumpFalseCall instructions whose destination_instruction points to
+// themselves). Override at compile time via -DET_MAX_INSTRUCTIONS=<value>.
+#ifndef ET_MAX_INSTRUCTIONS
+#define ET_MAX_INSTRUCTIONS 10000000
+#endif
+static_assert(
+    (ET_MAX_INSTRUCTIONS) > 0,
+    "ET_MAX_INSTRUCTIONS must be positive. 0 would reject every program on "
+    "its first instruction; negative values wrap to SIZE_MAX when assigned "
+    "to size_t, silently disabling the infinite-loop guard.");
+static constexpr size_t kMaxInstructions = ET_MAX_INSTRUCTIONS;
 
 /**
  * Runtime state for a backend delegate.
@@ -86,14 +101,17 @@ class BackendDelegate final {
     }
 
     // Parse compilation specs from program
-    CompileSpec* compile_specs;
-    Error err = PopulateCompileSpecs(
-        delegate.compile_specs(), backend_init_context, &compile_specs);
-    if (err != Error::Ok) {
-      ET_LOG(Error, "Failed to get compile specs for backend %s", backend_id);
-      return err;
+    CompileSpec* compile_specs = nullptr;
+    size_t num_compile_specs = 0;
+    if (delegate.compile_specs() != nullptr) {
+      Error err = PopulateCompileSpecs(
+          delegate.compile_specs(), backend_init_context, &compile_specs);
+      if (err != Error::Ok) {
+        ET_LOG(Error, "Failed to get compile specs for backend %s", backend_id);
+        return err;
+      }
+      num_compile_specs = delegate.compile_specs()->size();
     }
-    size_t num_compile_specs = delegate.compile_specs()->size();
 
     out->backend_ = backend;
     out->handle_ = nullptr;
@@ -1177,6 +1195,33 @@ Method::set_input(const EValue& input_evalue, size_t input_idx) {
         input_idx,
         executorch::runtime::toString(t_dst.scalar_type()),
         executorch::runtime::toString(t_src.scalar_type()));
+
+    ssize_t numel = 1;
+    for (ssize_t i = 0; i < t_src.dim(); i++) {
+      bool overflow = c10::mul_overflows(
+          numel, static_cast<ssize_t>(t_src.size(i)), &numel);
+      ET_CHECK_OR_RETURN_ERROR(
+          !overflow,
+          InvalidArgument,
+          "Input %" ET_PRIsize_t
+          ": numel overflowed at dimension %zd with size %zd",
+          input_idx,
+          (size_t)i,
+          (size_t)t_src.size(i));
+    }
+    size_t nbytes;
+    bool nbytes_overflow = c10::mul_overflows(
+        static_cast<size_t>(numel),
+        executorch::runtime::elementSize(t_src.scalar_type()),
+        &nbytes);
+    ET_CHECK_OR_RETURN_ERROR(
+        !nbytes_overflow,
+        InvalidArgument,
+        "Input %" ET_PRIsize_t
+        ": nbytes overflowed: numel %zd with element size %zu",
+        input_idx,
+        numel,
+        executorch::runtime::elementSize(t_src.scalar_type()));
     // Reset the shape for the Method's input as the size of forwarded input
     // tensor for shape dynamism. Also is a safety check if need memcpy.
     ET_CHECK_OK_OR_RETURN_ERROR(
@@ -1521,8 +1566,16 @@ Error Method::execute_instruction() {
       // We know that instr_args_as_FreeCall is non-null because it was checked
       // at init time.
       auto free_call = instruction->instr_args_as_FreeCall();
-      auto t = mutable_value(free_call->value_index()).toTensor();
-      internal::reset_data_ptr(t);
+      auto t = mutable_value(free_call->value_index()).tryToTensor();
+      if (!t.ok()) {
+        ET_LOG(
+            Error,
+            "FreeCall target at index %u is not a Tensor",
+            static_cast<unsigned int>(free_call->value_index()));
+        err = t.error();
+        break;
+      }
+      internal::reset_data_ptr(t.get());
     } break;
     default:
       ET_LOG(
@@ -1652,6 +1705,7 @@ Error Method::execute() {
 
   // Chains are executed sequentially today, but future async designs may
   // branch and run many in parallel or out of order.
+  size_t instruction_count = 0;
   for (step_state_.chain_idx = 0; step_state_.chain_idx < n_chains_;
        ++step_state_.chain_idx) {
     Chain& chain = chains_[step_state_.chain_idx];
@@ -1665,6 +1719,21 @@ Error Method::execute() {
     // Loop over instructions
     step_state_.instr_idx = 0;
     while (step_state_.instr_idx < chain.s_chain_->instructions()->size()) {
+      if (instruction_count >= kMaxInstructions) {
+        ET_LOG(
+            Error,
+            "Instruction execution limit (%" ET_PRIsize_t
+            ") exceeded at chain %" ET_PRIsize_t ", instruction %" ET_PRIsize_t
+            ". Possible infinite loop detected. If this is a legitimate "
+            "large model, raise the limit by rebuilding with "
+            "-DET_MAX_INSTRUCTIONS=<value>.",
+            kMaxInstructions,
+            step_state_.chain_idx,
+            step_state_.instr_idx);
+        step_state_ = StepState{0, 0};
+        return Error::InvalidProgram;
+      }
+      ++instruction_count;
       EXECUTORCH_PROFILE_INSTRUCTION_SCOPE(
           static_cast<int32_t>(step_state_.chain_idx),
           static_cast<uint32_t>(step_state_.instr_idx));

@@ -17,7 +17,7 @@ from executorch.backends.transforms.replace_scalar_with_tensor import (
 )
 from executorch.exir.pass_base import ExportPass
 from executorch.exir.pass_manager import PassManager
-from executorch.exir.program._program import _transform
+from executorch.exir.program._program import _transform, lift_constant_tensor_pass
 from torch.export import ExportedProgram
 from torch.fx.passes.infra.pass_base import PassResult
 
@@ -28,6 +28,7 @@ from .clamp_hardswish_pass import ClampHardswishPass
 from .convert_to_cortex_m_pass import ConvertToCortexMPass
 from .decompose_hardswish_pass import DecomposeHardswishPass
 from .decompose_mean_pass import DecomposeMeanPass
+from .quantized_clamp_activation_pass import QuantizedClampActivationPass
 from .quantized_op_fusion_pass import QuantizedOpFusionPass
 from .replace_quant_nodes_pass import ReplaceQuantNodesPass
 
@@ -42,6 +43,7 @@ class CortexMPassManager(PassManager):
         ReplaceScalarWithTensorArgPass,
         ReplaceQuantNodesPass,
         ActivationFusionPass,
+        QuantizedClampActivationPass,
         DecomposeHardswishPass,
         QuantizedOpFusionPass,
         ConvertToCortexMPass,
@@ -81,4 +83,8 @@ class CortexMPassManager(PassManager):
                 transform_pass = pass_cls()
             pass_callable = cast(Callable[[Module], PassResult], transform_pass)
             ep = _transform(ep, pass_callable)
+
+        # All constant tensors should be lifted to buffers at this point, re-run
+        # lift_constant_tensor_pass in case new ones have been introduced by the passes above.
+        ep = lift_constant_tensor_pass(ep)
         return ep

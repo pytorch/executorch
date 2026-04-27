@@ -80,8 +80,8 @@ class StaticCacheModule(torch.nn.Module):
         )
 
         for i in range(len(self.cache.layers)):
-            self.register_buffer(f"cache_layer_keys_{i}", self.cache.layers[i].keys)
-            self.register_buffer(f"cache_layer_values_{i}", self.cache.layers[i].values)
+            self.register_buffer(f"cache_layer_keys_{i}", self.cache.layers[i].keys)  # type: ignore[union-attr]
+            self.register_buffer(f"cache_layer_values_{i}", self.cache.layers[i].values)  # type: ignore[union-attr]
 
     def forward(
         self,
