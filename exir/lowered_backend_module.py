@@ -403,29 +403,25 @@ def arrange_graph_placeholders(
     graph_sign = owning_program.graph_signature
 
     # Add all placeholders into the graph first:
-    # Cache these properties — each call rebuilds the dict from input_specs.
-    params_map = graph_sign.inputs_to_parameters
-    buffers_map = graph_sign.inputs_to_buffers
-    param_nodes = []
-    buffer_nodes = []
+    constant_names = set()
+    constant_names.update(graph_sign.inputs_to_parameters.keys())
+    constant_names.update(graph_sign.inputs_to_buffers.keys())
+    constant_names.update(graph_sign.inputs_to_lifted_tensor_constants.keys())
+
+    constant_nodes = []
     input_nodes = []
     for node in gm.graph.nodes:
         if node.op != "placeholder":
             continue
 
-        if node.name in params_map and node.meta.get("delegation_tag", None) == tag:
-            param_nodes.append(node)
-        elif node.name in buffers_map and node.meta.get("delegation_tag", None) == tag:
-            buffer_nodes.append(node)
+        if node.name in constant_names and node.meta.get("delegation_tag", None) == tag:
+            constant_nodes.append(node)
         else:
             input_nodes.append(node)
 
-    for param_node in param_nodes:
-        new_node = new_graph.node_copy(param_node, lambda x: node_map[x])
-        node_map[param_node] = new_node
-    for buffer_node in buffer_nodes:
-        new_node = new_graph.node_copy(buffer_node, lambda x: node_map[x])
-        node_map[buffer_node] = new_node
+    for constant_node in constant_nodes:
+        new_node = new_graph.node_copy(constant_node, lambda x: node_map[x])
+        node_map[constant_node] = new_node
     for input_node in input_nodes:
         new_node = new_graph.node_copy(input_node, lambda x: node_map[x])
         node_map[input_node] = new_node
@@ -792,8 +788,11 @@ def create_exported_program_from_submodule(
             been consumed by the delegate (buffer mutation nodes) and should be
             removed from the toplevel ExportedProgram.
     """
-    # Arrange the submodule's placeholders in order
-    submodule = arrange_graph_placeholders(submodule, owning_program, tag)
+    # Arrange the submodule's placeholders so constants come before user inputs.
+    # Skip for HOP submodule delegations — the call site inside the branch
+    # passes arguments in a fixed order that must match placeholder order.
+    if not is_submodule:
+        submodule = arrange_graph_placeholders(submodule, owning_program, tag)
 
     # Get updated graph signature
     (
@@ -856,12 +855,28 @@ def create_submodule_from_nodes(
         The submodule that has been partitioned, the call_module node in the
         toplevel graph module calling the submodule
     """
-    sorted_nodes = topo_sort(node_list)
+
+    # Exclude placeholders from the node list so fuse_as_graphmodule recreates
+    # them as external inputs. After fusion, propagate metadata (delegation_tag,
+    # input_spec) from the original tagged constant placeholders so that
+    # _get_new_signature, arrange_graph_placeholders, and backend preprocessing
+    # passes can identify them correctly.
+    filtered_node_list = [n for n in node_list if n.op != "placeholder"]
+    tagged_placeholders = {n.name: n for n in node_list if n.op == "placeholder"}
+
+    sorted_nodes = topo_sort(filtered_node_list)
 
     submodule_name = "fused_" + tag
     sub_gm, orig_inputs, orig_outputs = fuse_as_graphmodule(
         gm, sorted_nodes, submodule_name
     )
+
+    for sub_node in sub_gm.graph.nodes:
+        if sub_node.op == "placeholder" and sub_node.name in tagged_placeholders:
+            orig_node = tagged_placeholders[sub_node.name]
+            sub_node.meta["delegation_tag"] = tag
+            if "input_spec" in orig_node.meta:
+                sub_node.meta["input_spec"] = orig_node.meta["input_spec"]
 
     _fixup_output_node(sub_gm)
 
@@ -959,62 +974,20 @@ def get_lowered_backend_modules(
     return lowered_programs
 
 
-def _unsafe_adjust_original_program(  # noqa: C901
+def _unsafe_adjust_original_program(
     original_program: ExportedProgram,
     call_delegate_node: torch.fx.Node,
-    input_specs_to_delete: Dict[str, InputSpec],
     output_specs_to_delete: Dict[str, OutputSpec],
 ) -> None:
     """
-    Directly modify the original exported program's signature and state dict
-    based on the consumed params/buffers in the delegate.
+    Directly modify the original exported program's signature to remove
+    buffer mutation outputs consumed by the delegate.
     """
-    original_program._graph_signature.input_specs = [
-        input_spec
-        for input_spec in original_program.graph_signature.input_specs
-        if input_spec.arg.name not in input_specs_to_delete
-    ]
-
-    currently_used_targets: Set[str] = {
-        input_spec.target
-        for input_spec in original_program._graph_signature.input_specs
-        if input_spec.target is not None
-    }
-
     original_program._graph_signature.output_specs = [
         output_spec
         for output_spec in original_program.graph_signature.output_specs
         if output_spec.arg.name not in output_specs_to_delete
     ]
-
-    # Delete all parameters/buffers consumed by the created exported program
-    # from the graph signature, state dict, constants table
-    for node in original_program.graph.nodes:
-        if node.op == "placeholder":
-            if node.name in input_specs_to_delete:
-                assert len(node.users) == 0
-                original_program.graph.erase_node(node)
-        else:
-            break
-
-    for input_spec in input_specs_to_delete.values():
-        input_target = input_spec.target
-        assert input_target is not None
-
-        if input_target in currently_used_targets:
-            continue
-
-        if input_spec.kind == InputKind.PARAMETER:
-            del original_program._state_dict[input_target]
-        elif input_spec.kind == InputKind.BUFFER:
-            if input_spec.persistent:
-                original_program._state_dict.pop(input_target, None)
-            else:
-                del original_program._constants[input_spec.target]
-        elif input_spec.kind == InputKind.CONSTANT_TENSOR:
-            del original_program._constants[input_spec.target]
-        else:
-            raise RuntimeError(f"Invalid input spec {input_spec} received")
 
     # Delete buffer mutations from the output which were consumed by the delegate
     toplevel_output_node = original_program.graph.output_node()
