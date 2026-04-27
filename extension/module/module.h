@@ -180,7 +180,7 @@ class Module {
    */
   ET_NODISCARD virtual runtime::Error load(
       const Program::Verification verification =
-          Program::Verification::Minimal);
+          Program::Verification::InternalConsistency);
 
   /**
    * Loads the program with per-delegate runtime options.
@@ -196,7 +196,7 @@ class Module {
   ET_NODISCARD virtual runtime::Error load(
       const LoadBackendOptionsMap& backend_options,
       const Program::Verification verification =
-          Program::Verification::Minimal);
+          Program::Verification::InternalConsistency);
 
   /**
    * Checks if the program is loaded.
