@@ -7,32 +7,74 @@
  */
 
 /*
- * Assume the following variables are defined in the shader layout:
- * - t_k_cache
+ * Shared K transposed tile load for both LLM SDPA and fused SDPA.
+ * Loads K[head, l, d4] and transposes in-place so the tile represents K^T.
  *
- * Macro Settings:
- * - K_CACHE_BUFFER
+ * Layout selection (caller must #define K_LAYOUT before including):
+ *   DSHB (0) — fused SDPA: [B, H, L, D] → WHCN {D, L, H, B}
+ *              index = (head * L + l) * D4 + d4
+ *   DHSB (1) — LLM SDPA:  [B, L, H, D] → WHCN {D, H, L, B}
+ *              index = (l * H + head) * D4 + d4
+ *
+ * Optional macros:
+ *   K_CACHE_BUFFER / K_BUFFER — use buffer path; otherwise texture
+ *   SDPA_PAD_D       — zero-pad last d4 texel when D % 4 != 0
  */
 
 #ifndef SDPA_FP_K_CACHE_TILE_LOAD_GLSLH
 #define SDPA_FP_K_CACHE_TILE_LOAD_GLSLH
 
+#ifndef DSHB
+#define DSHB 0
+#define DHSB 1
+#endif
+
 #extension GL_EXT_control_flow_attributes : require
 
 #include "linear_fp_weight_tile.glslh"
 
-VEC4_T load_k_cache_d4(
+// Determine whether buffer mode is active. Both K_CACHE_BUFFER (LLM) and
+// K_BUFFER (fused) activate the buffer path.
+#if defined(K_CACHE_BUFFER) || defined(K_BUFFER)
+#define _SDPA_K_USE_BUFFER
+#endif
+
+LINEAR_FP_WEIGHT_TILE_VEC4_T load_k_cache_d4(
     const int d4,
     const int c,
     const int kv_h,
     const int D4,
+    const int D,
     const int C,
     const int KV_H) {
-#ifdef K_CACHE_BUFFER
-  return VEC4_T(t_k_cache[(c * KV_H * D4) + (kv_h * D4) + d4]);
-#else
-  return VEC4_T(texelFetch(t_k_cache, ivec3(d4, kv_h, c), 0));
+  LINEAR_FP_WEIGHT_TILE_VEC4_T val;
+
+#ifdef _SDPA_K_USE_BUFFER
+  #if K_LAYOUT == DSHB
+    val = LINEAR_FP_WEIGHT_TILE_VEC4_T(t_k[(kv_h * C * D4) + (c * D4) + d4]);
+  #elif K_LAYOUT == DHSB
+    val = LINEAR_FP_WEIGHT_TILE_VEC4_T(t_k[(c * KV_H * D4) + (kv_h * D4) + d4]);
+  #endif
+#else // texture
+  #if K_LAYOUT == DSHB
+    val = LINEAR_FP_WEIGHT_TILE_VEC4_T(texelFetch(t_k, ivec3(d4, c, kv_h), 0));
+  #elif K_LAYOUT == DHSB
+    val = LINEAR_FP_WEIGHT_TILE_VEC4_T(texelFetch(t_k, ivec3(d4, kv_h, c), 0));
+  #endif
 #endif
+
+#ifdef SDPA_PAD_D
+  if (d4 == D4 - 1) {
+    const int valid = D - mul_4(d4);
+    [[unroll]] for (int i = 0; i < 4; ++i) {
+      if (i >= valid) {
+        val[i] = LINEAR_FP_WEIGHT_TILE_VEC4_T(0)[i];
+      }
+    }
+  }
+#endif
+
+  return val;
 }
 
 void load_k_cache_tile_no_checks(
@@ -41,6 +83,7 @@ void load_k_cache_tile_no_checks(
     const int c_start,
     const int kv_h,
     const int D4,
+    const int D,
     const int context_len,
     const int C,
     const int KV_H) {
@@ -48,8 +91,8 @@ void load_k_cache_tile_no_checks(
     const int c4 = div_4(c);
     const int c4i = mod_4(c);
     [[unroll]] for (int d4 = 0; d4 < TILE_K4; ++d4) {
-      VEC4_T d4_row =
-          load_k_cache_d4(d4_start + d4, c_start + c, kv_h, D4, C, KV_H);
+      LINEAR_FP_WEIGHT_TILE_VEC4_T d4_row =
+          load_k_cache_d4(d4_start + d4, c_start + c, kv_h, D4, D, C, KV_H);
 
       // Transpose in-place
       const int d_base = mul_4(d4);
@@ -67,6 +110,7 @@ void load_k_cache_tile_with_checks(
     const int c_start,
     const int kv_h,
     const int D4,
+    const int D,
     const int context_len,
     const int C,
     const int KV_H) {
@@ -74,9 +118,9 @@ void load_k_cache_tile_with_checks(
     const int c4 = div_4(c);
     const int c4i = mod_4(c);
     [[unroll]] for (int d4 = 0; d4 < TILE_K4; ++d4) {
-      VEC4_T d4_row = VEC4_T(0.0);
+      LINEAR_FP_WEIGHT_TILE_VEC4_T d4_row = LINEAR_FP_WEIGHT_TILE_VEC4_T(0.0);
       if (d4_start + d4 < D4 && c_start + c < context_len) {
-        d4_row = load_k_cache_d4(d4_start + d4, c_start + c, kv_h, D4, C, KV_H);
+        d4_row = load_k_cache_d4(d4_start + d4, c_start + c, kv_h, D4, D, C, KV_H);
       }
 
       // Transpose in-place
