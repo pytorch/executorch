@@ -45,3 +45,9 @@ Args:
 Returns:
 - **PartitionResult**: The input program with nodes tagged for delegation
     and a mapping of partition tags to delegation specs.
+
+```python
+def EthosUPartitioner.register_custom_partition_op(self, op: torch._ops.OpOverload) -> None:
+```
+Register a custom op to be considered supported by this
+partitioner.

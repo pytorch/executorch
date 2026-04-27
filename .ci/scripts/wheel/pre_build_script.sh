@@ -9,6 +9,27 @@ set -euxo pipefail
 
 # This script is run before building ExecuTorch binaries
 
+# Initialize submodules here instead of during checkout so we can use OpenSSL
+# on Windows (schannel fails with SEC_E_ILLEGAL_MESSAGE on some gitlab hosts).
+UNAME_S=$(uname -s)
+if [[ $UNAME_S == *"MINGW"* || $UNAME_S == *"MSYS"* ]]; then
+  git -c http.sslBackend=openssl submodule update --init
+else
+  git submodule update --init
+fi
+
+# Clone nested submodules for tokenizers - this is a workaround for recursive
+# submodule clone failing due to path length limitations on Windows. Eventually,
+# we should update the core job in test-infra to enable long paths before
+# checkout to avoid needing to do this.
+pushd extension/llm/tokenizers
+if [[ $UNAME_S == *"MINGW"* || $UNAME_S == *"MSYS"* ]]; then
+  git -c http.sslBackend=openssl submodule update --init
+else
+  git submodule update --init
+fi
+popd
+
 if [[ "$(uname -m)" == "aarch64" ]]; then
   # On some Linux aarch64 systems, the "atomic" library is not found during linking.
   # To work around this, replace "atomic" with the literal ${ATOMIC_LIB} so the
@@ -21,17 +42,8 @@ if [[ "$(uname -m)" == "aarch64" ]]; then
     echo "the file $file has been modified for atomic to use full path"
 fi
 
-# Clone nested submodules for tokenizers - this is a workaround for recursive
-# submodule clone failing due to path length limitations on Windows. Eventually,
-# we should update the core job in test-infra to enable long paths before
-# checkout to avoid needing to do this.
-pushd extension/llm/tokenizers
-git submodule update --init
-popd
-
 # On Windows, enable symlinks and re-checkout the current revision to create
 # the symlinked src/ directory. This is needed to build the wheel.
-UNAME_S=$(uname -s)
 if [[ $UNAME_S == *"MINGW"* || $UNAME_S == *"MSYS"* ]]; then
     echo "Enabling symlinks on Windows"
     git config core.symlinks true

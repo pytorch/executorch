@@ -27,6 +27,18 @@ namespace native {
     int64_t out_zero_point,
     ::executorch::aten::Tensor& out);
 
+::executorch::aten::Tensor& quantized_mul_per_tensor_out(
+    ::executorch::runtime::KernelRuntimeContext& ctx,
+    const ::executorch::aten::Tensor& X,
+    double X_scale,
+    int64_t X_zero_point,
+    const ::executorch::aten::Tensor& Y,
+    double Y_scale,
+    int64_t Y_zero_point,
+    double out_scale,
+    int64_t out_zero_point,
+    ::executorch::aten::Tensor& out);
+
 ::executorch::aten::Tensor& quantized_mul_Scalar_out(
     ::executorch::runtime::KernelRuntimeContext& ctx,
     const ::executorch::aten::Tensor& X,
