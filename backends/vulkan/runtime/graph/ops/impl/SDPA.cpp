@@ -54,8 +54,6 @@ struct SDPADims {
   int64_t max_context_len = 0; // LLM: size_at(-3, k); FUSED: size_at(-2, k)
 };
 
-} // namespace
-
 SDPADims compute_sdpa_dims(
     ComputeGraph& graph,
     const ValueRef q,
@@ -85,6 +83,8 @@ SDPADims compute_sdpa_dims(
   }
   return d;
 }
+
+} // namespace
 
 bool is_single_token(ComputeGraph* graph, const ValueRef& q_projected) {
   return graph->size_at<uint32_t>(-3, q_projected) == 1;
