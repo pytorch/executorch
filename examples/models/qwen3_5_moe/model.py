@@ -613,10 +613,6 @@ class Qwen35MoE(nn.Module):
         for layer in self.layers:
             x = layer(x, input_pos)
         x = self.norm(x)
-        # When no sampling is requested, return the full ``[B, T, V]``
-        # logits so callers (eval, custom samplers) can inspect every
-        # position. Otherwise apply the prefill optimization and only
-        # materialize ``[B, V]`` for the last token.
         if temperature is None:
             return self.lm_head(x)  # [B, T, V] in model dtype
         logits = self.lm_head(x[:, -1, :]).float()  # [B, V] float32
