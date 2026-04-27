@@ -822,7 +822,6 @@ def _export_cuda(model, config, args):
                 CudaPartitioner(
                     [
                         CudaBackend.generate_method_name_compile_spec("decode"),
-                        CudaBackend.generate_share_kv_cache_compile_spec(),
                     ]
                 )
             ],
@@ -830,7 +829,6 @@ def _export_cuda(model, config, args):
                 CudaPartitioner(
                     [
                         CudaBackend.generate_method_name_compile_spec("prefill"),
-                        CudaBackend.generate_share_kv_cache_compile_spec(),
                     ]
                 )
             ],
