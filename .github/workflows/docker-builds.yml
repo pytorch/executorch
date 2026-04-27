@@ -33,17 +33,20 @@ jobs:
       matrix:
         runner: [linux.4xlarge]
         docker-image-name: [
-          executorch-ubuntu-22.04-gcc11,
           executorch-ubuntu-22.04-gcc9-nopytorch,
           executorch-ubuntu-22.04-clang12,
           executorch-ubuntu-22.04-linter,
           executorch-ubuntu-22.04-arm-sdk,
-          executorch-ubuntu-22.04-zephyr-sdk,
           executorch-ubuntu-22.04-qnn-sdk,
           executorch-ubuntu-22.04-mediatek-sdk,
           executorch-ubuntu-22.04-clang12-android
         ]
         include:
+          # PyTorch is built from source in these images; 4xlarge OOMs mid-build.
+          - docker-image-name: executorch-ubuntu-22.04-gcc11
+            runner: linux.12xlarge
+          - docker-image-name: executorch-ubuntu-22.04-zephyr-sdk
+            runner: linux.12xlarge
           - docker-image-name: executorch-ubuntu-22.04-gcc11-aarch64
             runner: linux.arm64.2xlarge
           - docker-image-name: executorch-ubuntu-22.04-gcc11-aarch64-android

@@ -11,12 +11,13 @@ set -ex
 
 INSTALL_DIR="${WINDOWS_CUDA_INSTALL_DIR:-/opt/cuda-windows}"
 
-# Mapping of CUDA versions to their corresponding driver versions for Windows installers
+# Mapping of CUDA versions to their corresponding driver versions for Windows installers.
 # Source: https://developer.nvidia.com/cuda-toolkit-archive
+# Format: "PATCH_VERSION:DRIVER_VERSION". Starting with CUDA 13.0, NVIDIA dropped the
+# driver suffix from the Windows installer filename, so the driver field is empty.
 declare -A CUDA_DRIVER_MAP=(
     ["12.6"]="12.6.3:561.17"
-    ["12.8"]="12.8.1:572.61"
-    ["12.9"]="12.9.1:576.57"
+    ["13.0"]="13.0.3:"
 )
 
 install_mingw() {
@@ -83,7 +84,8 @@ install_windows_cuda() {
     mkdir -p "${INSTALL_DIR}"
     cd "${INSTALL_DIR}"
 
-    CUDA_INSTALLER="cuda_${CUDA_VERSION}_${CUDA_DRIVER_VERSION}_windows.exe"
+    # CUDA 13.0+ installers no longer include the driver version in the filename.
+    CUDA_INSTALLER="cuda_${CUDA_VERSION}${CUDA_DRIVER_VERSION:+_${CUDA_DRIVER_VERSION}}_windows.exe"
     CUDA_URL="https://developer.download.nvidia.com/compute/cuda/${CUDA_VERSION}/local_installers/${CUDA_INSTALLER}"
 
     # Check if already downloaded and extracted
