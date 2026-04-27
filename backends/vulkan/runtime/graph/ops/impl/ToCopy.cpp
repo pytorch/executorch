@@ -30,8 +30,8 @@ bool is_float_type(vkapi::ScalarType dtype) {
 }
 
 void add_to_copy_node(ComputeGraph& graph, ValueRef in, ValueRef out) {
-  vkapi::ScalarType in_dtype = graph.dtype_of(in);
-  vkapi::ScalarType out_dtype = graph.dtype_of(out);
+  const vkapi::ScalarType in_dtype = graph.dtype_of(in);
+  const vkapi::ScalarType out_dtype = graph.dtype_of(out);
 
   // Same-dtype or float<->half conversions can use BlitNode
   if (in_dtype == out_dtype ||
@@ -41,13 +41,7 @@ void add_to_copy_node(ComputeGraph& graph, ValueRef in, ValueRef out) {
   }
 
   // Other conversions (e.g. int<->float) use view_convert shaders
-  if (graph.is_buffer_storage(in)) {
-    add_view_copy_convert_buffer_node(
-        graph, in, out, {}, resize_to_copy_op_node);
-  } else {
-    add_view_copy_convert_texture_node(
-        graph, in, out, {}, resize_to_copy_op_node);
-  }
+  add_view_copy_convert_node(graph, in, out, {}, resize_to_copy_op_node);
 }
 
 void to_copy(ComputeGraph& graph, const std::vector<ValueRef>& args) {

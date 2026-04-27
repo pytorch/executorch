@@ -77,6 +77,9 @@ std::unique_ptr<QuantizeParamsWrapper> CreateQuantizationParamWrapper(
         quantization.blockwiseExpansion->scaleOffsets,
         quantization.blockwiseExpansion->scaleOffsets +
             QNN_TENSOR_VER_PTR(tensor)->dimensions[ch_axis]);
+    std::vector<uint8_t> block_scales(
+        quantization.blockwiseExpansion->blocksScale8,
+        quantization.blockwiseExpansion->blocksScale8 + block_scales_sz);
     quantize_param_wrapper =
         std::make_unique<BlockwiseExpansionQuantizeParamsWrapper>(
             quantization.blockwiseExpansion->axis,
@@ -84,8 +87,7 @@ std::unique_ptr<QuantizeParamsWrapper> CreateQuantizationParamWrapper(
             quantization.blockwiseExpansion->numBlocksPerAxis,
             quantization.blockwiseExpansion->blockScaleBitwidth,
             quantization.blockwiseExpansion->blockScaleStorageType,
-            quantization.blockwiseExpansion->blocksScale8,
-            block_scales_sz);
+            block_scales);
   } else {
     QNN_EXECUTORCH_LOG_ERROR(
         "Unknown the encoding of quantization: %d",

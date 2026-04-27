@@ -6,6 +6,8 @@ on:
     branches:
       - main
       - release/*
+    tags:
+      - ciflow/trunk/*
   workflow_dispatch:
 
 concurrency:
@@ -520,6 +522,121 @@ jobs:
           exit 1
         fi
 
+  test-arm-cortex-m-size-test:
+    name: test-arm-cortex-m-size-test
+    uses: pytorch/test-infra/.github/workflows/linux_job_v2.yml@main
+    permissions:
+      id-token: write
+      contents: read
+    strategy:
+      matrix:
+        os: [bare_metal, zephyr-preset]
+      fail-fast: false
+    with:
+      runner: linux.2xlarge
+      docker-image: ci-image:executorch-ubuntu-22.04-arm-sdk
+      submodules: 'recursive'
+      ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
+      timeout: 90
+      script: |
+        # The generic Linux job chooses to use base env, not the one setup by the image
+        CONDA_ENV=$(conda env list --json | jq -r ".envs | .[-1]")
+        conda activate "${CONDA_ENV}"
+
+        cxx_flags="-fno-exceptions -fno-rtti -Wall -Werror -Wno-int-in-bool-context -DET_HAVE_PREAD=0"
+        setup_script_args=""
+        if [[ ${{ matrix.os}} == "bare_metal" ]]; then
+          toolchain_prefix=arm-none-eabi-
+          threshold="111000" # 111 KiB
+          toolchain_cmake=examples/arm/ethos-u-setup/arm-none-eabi-gcc.cmake
+        elif [[ ${{ matrix.os}} == "zephyr-preset" ]]; then
+          setup_script_args="--target-toolchain zephyr"
+          toolchain_prefix=arm-zephyr-eabi-
+          threshold="136020" # 136 KiB
+          toolchain_cmake=examples/zephyr/x86_64-linux-arm-zephyr-eabi-gcc.cmake
+        else
+          echo "Unsupported OS selection: ${{ matrix.os }}"
+          exit 1
+        fi
+
+        source .ci/scripts/utils.sh
+        install_executorch "--use-pt-pinned-commit"
+        .ci/scripts/setup-arm-baremetal-tools.sh ${setup_script_args}
+        source examples/arm/arm-scratch/setup_path.sh
+
+        # User toolchain
+        ${toolchain_prefix}c++ --version
+
+        # Setup cmake target to desired toolchain
+        toolchain_cmake=$(realpath ${toolchain_cmake})
+
+        # Build and run size test
+        if [[ ${{ matrix.os}} == "bare_metal" ]]; then
+          bash test/build_size_test.sh "-DCMAKE_TOOLCHAIN_FILE=${toolchain_cmake} -DEXECUTORCH_BUILD_ARM_BAREMETAL=ON"
+        elif [[ ${{ matrix.os}} == "zephyr-preset" ]]; then
+          CXXFLAGS=${cxx_flags} cmake --preset zephyr -DCMAKE_BUILD_TYPE=Release -DEXECUTORCH_OPTIMIZE_SIZE=ON -DEXECUTORCH_BUILD_EXTENSION_DATA_LOADER=ON -DCMAKE_INSTALL_PREFIX=cmake-out -Bcmake-out .
+          cmake --build cmake-out -j9 --target install --config Release
+          CXXFLAGS=${cxx_flags}  cmake -DCMAKE_TOOLCHAIN_FILE=${toolchain_cmake} -DCMAKE_BUILD_TYPE=Release -DCMAKE_INSTALL_PREFIX=cmake-out -Bcmake-out/test test
+          cmake --build cmake-out/test -j9 --config Release
+        else
+          echo "Fail unsupported OS selection ${{ matrix.os }}"
+          exit 1
+        fi
+
+        elf="cmake-out/test/size_test"
+
+        # Dump basic info
+        ls -al ${elf}
+        ${toolchain_prefix}size ${elf}
+
+        # Dump symbol
+        python .github/scripts/run_nm.py -e ${elf}
+        python .github/scripts/run_nm.py -e ${elf} -f "executorch" -p "${toolchain_prefix}"
+        python .github/scripts/run_nm.py -e ${elf} -f "executorch_text" -p "${toolchain_prefix}"
+
+        # Add basic guard - TODO: refine this!
+        ${toolchain_prefix}strip ${elf}
+        output=$(ls -la ${elf})
+        arr=($output)
+        size=${arr[4]}
+        echo "size: $size, threshold: $threshold"
+        if [[ "$size" -le "$threshold" ]]; then
+          echo "Success $size <= $threshold"
+        else
+          echo "Fail $size > $threshold"
+          exit 1
+        fi
+
+  test-mcu-cortex-m-backend:
+    name: test-mcu-cortex-m-backend
+    uses: pytorch/test-infra/.github/workflows/linux_job_v2.yml@main
+    permissions:
+      id-token: write
+      contents: read
+    with:
+      runner: linux.2xlarge.memory
+      docker-image: ci-image:executorch-ubuntu-22.04-arm-sdk
+      submodules: 'recursive'
+      ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
+      timeout: 120
+      script: |
+        # The generic Linux job chooses to use base env, not the one setup by the image
+        CONDA_ENV=$(conda env list --json | jq -r ".envs | .[-1]")
+        conda activate "${CONDA_ENV}"
+
+        source .ci/scripts/utils.sh
+        install_executorch "--use-pt-pinned-commit"
+
+        # Install arm dependencies
+        .ci/scripts/setup-arm-baremetal-tools.sh
+        source examples/arm/arm-scratch/setup_path.sh
+
+        # To build cortex-m test runner
+        backends/cortex_m/test/build_test_runner.sh
+
+        # To run cortex_m tests
+        pytest --config-file=backends/arm/test/pytest.ini backends/cortex_m/test
+
   android:
     uses: ./.github/workflows/_android.yml
     permissions:
@@ -556,6 +673,40 @@ jobs:
       build-mode: Debug
       build-tool: buck2
       docker-image: ci-image:executorch-ubuntu-22.04-clang12
+
+  test-qnn-buck-build-linux:
+    name: test-qnn-buck-build-linux
+    uses: pytorch/test-infra/.github/workflows/linux_job_v2.yml@main
+    permissions:
+      id-token: write
+      contents: read
+    strategy:
+      fail-fast: false
+    with:
+      runner: linux.2xlarge
+      docker-image: ci-image:executorch-ubuntu-22.04-qnn-sdk
+      submodules: 'recursive'
+      ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
+      timeout: 90
+      script: |
+        set -eux
+
+        CONDA_ENV=$(conda env list --json | jq -r ".envs | .[-1]")
+        conda activate "${CONDA_ENV}"
+
+        # Download QNN SDK and get the path
+        QNN_SDK_ROOT=$(python3 backends/qualcomm/scripts/download_qnn_sdk.py --print-sdk-path)
+        echo "QNN_SDK_ROOT=${QNN_SDK_ROOT}"
+
+        # Configure Buck to find the QNN SDK
+        echo "[qualcomm]" >> .buckconfig
+        echo "  qnn_sdk_root = ${QNN_SDK_ROOT}" >> .buckconfig
+
+        # Setup buck2
+        PYTHON_EXECUTABLE=python bash .ci/scripts/setup-linux.sh --build-tool buck2
+
+        # Build QNN backend with Buck
+        buck2 build //backends/qualcomm/...
 
   unittest-arm-backend-with-no-deps:
     name: unittest-arm-backend-with-no-deps
@@ -706,6 +857,8 @@ jobs:
       id-token: write
       contents: read
     strategy:
+      matrix:
+        model: [mv2, mv3, dl3]
       fail-fast: false
     with:
       runner: linux.2xlarge
@@ -717,9 +870,58 @@ jobs:
         # The generic Linux job chooses to use base env, not the one setup by the image
         CONDA_ENV=$(conda env list --json | jq -r ".envs | .[-1]")
         conda activate "${CONDA_ENV}"
+        PYTHON_EXECUTABLE=python bash .ci/scripts/setup-linux.sh --build-tool cmake
+        PYTHON_EXECUTABLE=python bash .ci/scripts/setup-qnn-deps.sh
+        PYTHON_EXECUTABLE=python bash .ci/scripts/build-qnn-sdk.sh
+        PYTHON_EXECUTABLE=python bash .ci/scripts/test_model.sh ${{ matrix.model }} "cmake" "qnn"
 
-        # placeholder for running test_qnn_delegate.py, can use matrix such that we can trigger different jobs, refers to test-llama-runner-qnn-linux
-        # reminder: make sure each job runs fast
+  test-qnn-testsuite-linux:
+    name: test-qnn-testsuite-linux
+    permissions:
+      id-token: write
+      contents: read
+    uses: ./.github/workflows/_test_backend.yml
+    with:
+      backend: qnn
+      flows: '["qnn"]'
+      ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
+      timeout: 120
+      run-linux: true
+      runner-linux: linux.2xlarge
+
+  test-qnn-passes-linux:
+    name: test-qnn-passes-linux
+    uses: pytorch/test-infra/.github/workflows/linux_job_v2.yml@main
+    permissions:
+      id-token: write
+      contents: read
+    strategy:
+      fail-fast: false
+    with:
+      runner: linux.2xlarge
+      docker-image: ci-image:executorch-ubuntu-22.04-qnn-sdk
+      submodules: 'recursive'
+      ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
+      timeout: 30
+      script: |
+        # The generic Linux job chooses to use base env, not the one setup by the image
+        CONDA_ENV=$(conda env list --json | jq -r ".envs | .[-1]")
+        conda activate "${CONDA_ENV}"
+
+        PYTHON_EXECUTABLE=python bash .ci/scripts/setup-qnn-deps.sh
+        # Source (not bash) so QNN_SDK_ROOT stays in the environment
+        PYTHON_EXECUTABLE=python source .ci/scripts/build-qnn-sdk.sh
+
+        # Editable install so the PyQnnManagerAdaptor .so built by build-qnn-sdk.sh
+        # is visible in the source tree (the _passes import chain pulls it in transitively)
+        CMAKE_ARGS="-DEXECUTORCH_BUILD_QNN=ON -DQNN_SDK_ROOT=$QNN_SDK_ROOT -DEXECUTORCH_BUILD_EXTENSION_TENSOR=ON" \
+          PYTHON_EXECUTABLE=python bash .ci/scripts/setup-linux.sh --build-tool cmake --editable true
+
+        # test_mha_to_sha imports oss_scripts/llama which transitively needs torchtune
+        pip install -r requirements-examples.txt
+
+        # Run QNN pass unit tests
+        pytest -xvs backends/qualcomm/tests/test_passes.py
 
   test-phi-3-mini-runner-linux:
     name: test-phi-3-mini-runner-linux
@@ -917,7 +1119,6 @@ jobs:
   test-openvino-linux:
     name: test-openvino-linux
     uses: pytorch/test-infra/.github/workflows/linux_job_v2.yml@main
-    if: false # TODO: fix https://github.com/pytorch/executorch/issues/17684
     permissions:
       id-token: write
       contents: read
@@ -1028,7 +1229,7 @@ jobs:
         # The generic Linux job chooses to use base env, not the one setup by the image
         CONDA_ENV=$(conda env list --json | jq -r ".envs | .[-1]")
         conda activate "${CONDA_ENV}"
-        
+
         # Install eIQ packages
         pip install -r backends/nxp/requirements-eiq.txt
 
@@ -1047,13 +1248,13 @@ jobs:
         # Run aot examples:
         PYTHON_EXECUTABLE=python bash examples/nxp/run_aot_example.sh cifar10
         PYTHON_EXECUTABLE=python bash examples/nxp/run_aot_example.sh mobilenetv2
-        
+
         # Run e2e example with Simulator:
         PYTHON_EXECUTABLE=python bash examples/nxp/run.sh cifar10
-        
-        # Run lightweight model tests: 
+
+        # Run lightweight model tests:
         PYTHON_EXECUTABLE=python pytest -c /dev/null backends/nxp/tests_models/ \
-        --nxp_runner_path "./examples/nxp/executor_runner/build/nxp_executor_runner" 
+        --nxp_runner_path "./examples/nxp/executor_runner/build/nxp_executor_runner"
 
   test-samsung-quantmodels-linux:
     name: test-samsung-quantmodels-linux
