@@ -445,6 +445,41 @@ def _isnan_handler(P: MLXProgramBuilder, n: Node) -> Slot:
     return out
 
 
+@REGISTRY.register(target=[torch.ops.aten.isinf.default])
+def _isinf_handler(P: MLXProgramBuilder, n: Node) -> Slot:
+    """Handle aten.isinf - check for infinite values element-wise.
+
+    isinf(x) is equivalent to abs(x) == inf.
+    """
+    args = P.args(n)
+    require_args(args, 1, 1, "aten.isinf")
+    require_kwargs(P.kwargs(n), set(), "aten.isinf")
+    x = args[0]
+
+    # Create abs(x)
+    _, abs_tmp = P.make_tmp_slot()
+    P.emit(
+        AbsNode(
+            x=P.slot_to_tid(x),
+            out=P.slot_to_tid(abs_tmp),
+        )
+    )
+
+    # Create inf constant
+    inf_slot = emit_lifted_constant(P, float('inf'), torch.float32)
+
+    # Compare abs(x) == inf
+    out = P.make_or_get_slot(n)
+    P.emit(
+        EqualNode(
+            a=P.slot_to_tid(abs_tmp),
+            b=P.slot_to_tid(inf_slot),
+            out=P.slot_to_tid(out),
+        )
+    )
+    return out
+
+
 _BINARY_OPS: List[Tuple[List[Any], Any, str, bool]] = [
     (
         [torch.ops.aten.mul.Tensor, torch.ops.aten.mul.Scalar],
