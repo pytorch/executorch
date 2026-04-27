@@ -79,9 +79,10 @@ class WeightObserverBase(ObserverBase, ABC):
         )
 
         q_weight, scale, zp = None, None, None
-        assert isinstance(
-            nncf_compressed_weight, CompressedWeight
-        ), f'Expected the output of weight compression to be of type CompressedWeight, but got {type(nncf_compressed_weight)}'
+        if not isinstance(nncf_compressed_weight, CompressedWeight):
+            raise TypeError(
+                f'Expected the output of weight compression to be of type CompressedWeight, but got {type(nncf_compressed_weight)}'
+            )
         q_weight = nncf_compressed_weight.tensor
         scale = nncf_compressed_weight.scale
         zp = nncf_compressed_weight.zero_point
