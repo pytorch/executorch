@@ -19,11 +19,11 @@ from nncf.experimental.torch.fx.transformations import (  # type: ignore[import-
     module_insertion,
     node_removal,
 )
-from nncf.quantization.algorithms.weight_compression.parameters import (  # type: ignore[import-untyped]
-    CompressedWeight
-)
 from nncf.quantization.algorithms.weight_compression.config import (  # type: ignore[import-untyped]
     WeightCompressionParameters,
+)
+from nncf.quantization.algorithms.weight_compression.parameters import (  # type: ignore[import-untyped]
+    CompressedWeight,
 )
 from nncf.quantization.algorithms.weight_compression.weight_lowering import (  # type: ignore[import-untyped]
     do_integer_quantization,
@@ -88,8 +88,10 @@ class WeightObserverBase(ObserverBase, ABC):
             q_weight, scale, zp = nncf_compressed_weight
 
         if not all(val is not None for val in (q_weight, scale)):
-            msg = f"Could not calculate quantization parameters for weight compression observer. " \
-                  f"None values: { {name: val for name, val in [('quantized_weight', q_weight), ('scale', scale)] if val is None} }"
+            msg = (
+                f"Could not calculate quantization parameters for weight compression observer. "
+                f"None values: { {name: val for name, val in [('quantized_weight', q_weight), ('scale', scale)] if val is None} }"
+            )
             raise ValueError(msg)
 
         zp = zp.data if zp is not None else None
