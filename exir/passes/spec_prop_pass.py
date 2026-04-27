@@ -9,6 +9,8 @@
 import operator
 from typing import Optional
 
+import executorch.extension.llm.custom_ops.model_sharding  # noqa: F401
+
 import torch
 from executorch.exir.delegate import executorch_call_delegate
 from executorch.exir.dialects._ops import ops as exir_ops
