@@ -3,8 +3,142 @@
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
 
-cmake_minimum_required(VERSION 3.20)
-project(arm_executor_runner)
+set(_arm_executor_runner_standalone FALSE)
+if(CMAKE_SOURCE_DIR STREQUAL CMAKE_CURRENT_SOURCE_DIR)
+  cmake_minimum_required(VERSION 3.20)
+  project(arm_executor_runner LANGUAGES C CXX)
+  set(_arm_executor_runner_standalone TRUE)
+endif()
+
+if(_arm_executor_runner_standalone)
+  set(ARM_EXECUTOR_RUNNER_STANDALONE
+      ${_arm_executor_runner_standalone}
+      CACHE
+        BOOL
+        "Indicates arm_executor_runner was configured as a standalone project"
+        FORCE
+  )
+endif()
+
+# Derive the ExecuTorch checkout root by walking upward until we find the shared
+# tooling directory rather than assuming a fixed relative depth.
+set(_candidate_executorch_root "${CMAKE_CURRENT_LIST_DIR}")
+set(_default_executorch_root "")
+while(TRUE)
+  if(EXISTS "${_candidate_executorch_root}/tools/cmake/common/preset.cmake")
+    set(_default_executorch_root "${_candidate_executorch_root}")
+    break()
+  endif()
+  get_filename_component(_parent_dir "${_candidate_executorch_root}" DIRECTORY)
+  if(_parent_dir STREQUAL "${_candidate_executorch_root}")
+    break()
+  endif()
+  set(_candidate_executorch_root "${_parent_dir}")
+endwhile()
+
+if(_default_executorch_root STREQUAL "")
+  message(
+    FATAL_ERROR
+      "Unable to locate an ExecuTorch checkout near ${CMAKE_CURRENT_LIST_DIR}. Please rerun CMake with -DEXECUTORCH_ROOT=<path-to-executorch>."
+  )
+endif()
+
+if(NOT DEFINED EXECUTORCH_ROOT)
+  set(EXECUTORCH_ROOT
+      "${_default_executorch_root}"
+      CACHE PATH "Path to an ExecuTorch checkout"
+  )
+endif()
+
+set(ET_DIR_PATH
+    "${EXECUTORCH_ROOT}"
+    CACHE PATH "Kept for backward compatibility; synonym for EXECUTORCH_ROOT"
+)
+
+if(NOT EXISTS "${EXECUTORCH_ROOT}/CMakeLists.txt")
+  if(EXISTS "${_default_executorch_root}/CMakeLists.txt")
+    message(
+      WARNING
+        "EXECUTORCH_ROOT (${EXECUTORCH_ROOT}) does not contain an ExecuTorch CMake project. Falling back to ${_default_executorch_root}."
+    )
+    set(EXECUTORCH_ROOT
+        "${_default_executorch_root}"
+        CACHE PATH "Path to an ExecuTorch checkout" FORCE
+    )
+    set(ET_DIR_PATH
+        "${EXECUTORCH_ROOT}"
+        CACHE PATH
+              "Kept for backward compatibility; synonym for EXECUTORCH_ROOT"
+              FORCE
+    )
+  else()
+    message(
+      FATAL_ERROR
+        "EXECUTORCH_ROOT (${EXECUTORCH_ROOT}) does not contain an ExecuTorch CMake project."
+    )
+  endif()
+endif()
+
+if(_arm_executor_runner_standalone)
+  # Load the preset helper so standalone builds inherit the same defaults as the
+  # superbuild (toolchains, delegated targets, devtools options, etc.).
+  set(_executorch_preset_cmake
+      "${EXECUTORCH_ROOT}/tools/cmake/common/preset.cmake"
+  )
+  if(EXISTS "${_executorch_preset_cmake}")
+    include("${_executorch_preset_cmake}")
+    if(NOT DEFINED EXECUTORCH_BUILD_PRESET_FILE)
+      set(EXECUTORCH_BUILD_PRESET_FILE
+          "${EXECUTORCH_ROOT}/tools/cmake/preset/arm_baremetal.cmake"
+          CACHE PATH "Preset used when configuring the standalone runner"
+      )
+    endif()
+    load_build_preset()
+  endif()
+  include(${EXECUTORCH_ROOT}/tools/cmake/Utils.cmake)
+
+  # Configure the standalone runner’s cache defaults and pull ExecuTorch in-tree
+  # so all required targets are built from this checkout.
+  option(ARM_EXECUTOR_RUNNER_SKIP_INSTALL_RULES
+         "Skip install() rules for standalone arm_executor_runner builds" ON
+  )
+  if(DEFINED CMAKE_SKIP_INSTALL_RULES)
+    set(_arm_runner_skip_install_rules "${CMAKE_SKIP_INSTALL_RULES}")
+  endif()
+  if(ARM_EXECUTOR_RUNNER_SKIP_INSTALL_RULES)
+    set(CMAKE_SKIP_INSTALL_RULES ON)
+  endif()
+  foreach(
+    _opt
+    EXECUTORCH_BUILD_ARM_BAREMETAL EXECUTORCH_BUILD_CORTEX_M
+    EXECUTORCH_BUILD_KERNELS_QUANTIZED EXECUTORCH_BUILD_EXTENSION_RUNNER_UTIL
+  )
+    if(NOT DEFINED ${_opt})
+      set(${_opt}
+          ON
+          CACHE BOOL "" FORCE
+      )
+    endif()
+  endforeach()
+  set(EXECUTORCH_SKIP_ARM_EXECUTOR_RUNNER
+      ON
+      CACHE BOOL "" FORCE
+  )
+  # When configured on its own, pull ExecuTorch in-tree so all required targets
+  # (delegates, kernels, runner util, etc.) are built from the same checkout.
+  # The preset above (or manual cache overrides) must configure any top-level
+  # ExecuTorch options a superbuild would normally supply.
+  add_subdirectory(
+    ${EXECUTORCH_ROOT} ${CMAKE_BINARY_DIR}/executorch EXCLUDE_FROM_ALL
+  )
+  if(ARM_EXECUTOR_RUNNER_SKIP_INSTALL_RULES)
+    if(DEFINED _arm_runner_skip_install_rules)
+      set(CMAKE_SKIP_INSTALL_RULES "${_arm_runner_skip_install_rules}")
+    else()
+      unset(CMAKE_SKIP_INSTALL_RULES)
+    endif()
+  endif()
+endif()
 
 option(
   ET_MODEL_PTE_ADDR
@@ -21,6 +155,12 @@ option(ET_LOG_DUMP_INPUT "Dump input in log" OFF)
 option(ET_LOG_DUMP_OUTPUT "Dump output in log" ON)
 
 option(ET_BUNDLE_IO "Set to compile in BundleIO support" OFF)
+set(BUNDLED_PROGRAM_LIBRARY_DIR
+    ""
+    CACHE
+      PATH
+      "Optional directory that contains a prebuilt libbundled_program.a when ET_BUNDLE_IO is enabled without building devtools."
+)
 set(ET_ATOL
     "0.01"
     CACHE STRING "Set atol to use for BundleIO testing (Requires ET_BUNDLE_IO)"
@@ -154,13 +294,8 @@ message(
 add_corstone_subdirectory(${SYSTEM_CONFIG} ${ETHOS_SDK_PATH})
 configure_timing_adapters(${SYSTEM_CONFIG} ${MEMORY_MODE})
 
-# Dependencies from the ExecuTorch build
-find_package(
-  executorch REQUIRED HINTS "${ET_BUILD_DIR_PATH}/lib/cmake/ExecuTorch"
-)
-
 # Convert pte to header
-if(NOT ${ET_MODEL_PTE_ADDR} AND NOT SEMIHOSTING)
+if(NOT "${ET_MODEL_PTE_ADDR}" AND NOT SEMIHOSTING)
   add_custom_target(
     gen_model_header DEPENDS ${CMAKE_CURRENT_BINARY_DIR}/model_pte.h
   )
@@ -333,7 +468,50 @@ if(EXECUTORCH_ENABLE_EVENT_TRACER)
 endif()
 
 if(ET_BUNDLE_IO)
-  list(APPEND arm_executor_runner_link bundled_program)
+  if(TARGET bundled_program)
+    list(APPEND arm_executor_runner_link bundled_program)
+    target_link_directories(
+      arm_executor_runner PRIVATE $<TARGET_FILE_DIR:bundled_program>
+    )
+  else()
+    set(_bundled_program_library "")
+    set(_bundled_program_search_paths "")
+    if(ET_BUILD_DIR_PATH)
+      list(
+        APPEND
+        _bundled_program_search_paths
+        "${ET_BUILD_DIR_PATH}"
+        "${ET_BUILD_DIR_PATH}/lib"
+        "${ET_BUILD_DIR_PATH}/devtools/bundled_program"
+        "${ET_BUILD_DIR_PATH}/devtools/bundled_program/lib"
+      )
+    endif()
+    if(BUNDLED_PROGRAM_LIBRARY_DIR)
+      list(APPEND _bundled_program_search_paths
+           "${BUNDLED_PROGRAM_LIBRARY_DIR}"
+      )
+    endif()
+    if(_bundled_program_search_paths)
+      list(REMOVE_DUPLICATES _bundled_program_search_paths)
+      find_library(
+        _bundled_program_library
+        NAMES bundled_program
+        PATHS ${_bundled_program_search_paths}
+        NO_DEFAULT_PATH
+      )
+    endif()
+    if(NOT _bundled_program_library)
+      find_library(_bundled_program_library NAMES bundled_program)
+    endif()
+    if(_bundled_program_library)
+      list(APPEND arm_executor_runner_link ${_bundled_program_library})
+    else()
+      message(
+        FATAL_ERROR
+          "ET_BUNDLE_IO enabled but bundled_program is unavailable. Either configure this build with EXECUTORCH_BUILD_DEVTOOLS=ON so the target exists or set BUNDLED_PROGRAM_LIBRARY_DIR/ET_BUILD_DIR_PATH to a build directory that contains libbundled_program.a."
+      )
+    endif()
+  endif()
 endif()
 
 # Need whole-archive to ensure C++ ctor's are called - this may be wasteful for
@@ -386,7 +564,7 @@ target_compile_definitions(
   arm_executor_runner PRIVATE C10_USING_CUSTOM_GENERATED_MACROS
 )
 
-if(NOT ${ET_MODEL_PTE_ADDR} AND NOT SEMIHOSTING)
+if(NOT "${ET_MODEL_PTE_ADDR}" AND NOT SEMIHOSTING)
   add_dependencies(arm_executor_runner gen_model_header)
 endif()
 
