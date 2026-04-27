@@ -144,7 +144,7 @@ class ClampConverter(NodeConverter):
                 node, partition_list, filter_fn=is_not_qdq_node
             )
             if is_alone_in_partition:
-                return activation_supported_on_target(node, neutron_target_spec)
+                return activation_supported_on_target(node)
 
         return True
 
