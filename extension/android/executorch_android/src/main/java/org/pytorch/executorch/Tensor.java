@@ -555,6 +555,27 @@ public abstract class Tensor {
   }
 
   /**
+   * Copies the tensor's data into a caller-provided {@link FloatBuffer}, avoiding the per-call
+   * {@code float[]} allocation that {@link #getDataAsFloatArray()} performs. The destination
+   * buffer's position is advanced by the number of elements written; its content from the
+   * starting position must have at least {@link #numel()} elements of remaining capacity.
+   *
+   * <p>Useful in steady-state inference loops where the same output tensor shape is read every
+   * frame: pre-allocate a {@code FloatBuffer} once (e.g. via {@link
+   * #allocateFloatBuffer(int)}) and reuse it across calls.
+   *
+   * @param dst the destination buffer; must have remaining capacity {@code >=} {@link #numel()}.
+   * @throws IllegalStateException if it is called for a tensor type that does not support a
+   *     float view (i.e. anything other than float32 or float16).
+   * @throws java.nio.BufferOverflowException if {@code dst} does not have enough remaining
+   *     capacity.
+   */
+  public void copyDataInto(FloatBuffer dst) {
+    throw new IllegalStateException(
+        "Tensor of type " + getClass().getSimpleName() + " cannot copy data into FloatBuffer.");
+  }
+
+  /**
    * @return a Java long array that contains the tensor data. This may be a copy or reference.
    * @throws IllegalStateException if it is called for a non-int64 tensor.
    */
@@ -691,6 +712,12 @@ public abstract class Tensor {
     }
 
     @Override
+    public void copyDataInto(FloatBuffer dst) {
+      data.rewind();
+      dst.put(data);
+    }
+
+    @Override
     public DType dtype() {
       return DType.FLOAT;
     }
@@ -741,6 +768,15 @@ public abstract class Tensor {
         arr[i] = halfBitsToFloat(data.get());
       }
       return arr;
+    }
+
+    @Override
+    public void copyDataInto(FloatBuffer dst) {
+      data.rewind();
+      int remaining = data.remaining();
+      for (int i = 0; i < remaining; i++) {
+        dst.put(halfBitsToFloat(data.get()));
+      }
     }
 
     @Override
