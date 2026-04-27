@@ -379,6 +379,52 @@ def test_add_dual_conv_u85_INT(test_data: input_t1):
     pipeline.run()
 
 
+class AddMultiReader(torch.nn.Module):
+    """Conv2(conv1(x)) + conv3(conv1(x)) — conv1's output Rescale has two
+    readers.
+    """
+
+    def __init__(self):
+        super().__init__()
+        self.conv1 = torch.nn.Conv2d(3, 3, 1, bias=False)
+        self.conv2 = torch.nn.Conv2d(3, 3, 1, bias=False)
+        self.conv3 = torch.nn.Conv2d(3, 3, 1, bias=False)
+
+    def forward(self, x):
+        y = self.conv1(x)
+        return self.conv2(y) + self.conv3(y)
+
+    test_data = {
+        "4d_randn": lambda: (torch.randn(1, 3, 4, 4),),
+    }
+
+
+@common.parametrize("test_data", AddMultiReader.test_data)
+def test_add_multi_reader_tosa_INT(test_data: input_t1):
+    pipeline = TosaPipelineINT[input_t1](
+        AddMultiReader(), test_data(), aten_op, exir_op
+    )
+    pipeline.run()
+
+
+@common.parametrize("test_data", AddMultiReader.test_data)
+@common.XfailIfNoCorstone300
+def test_add_multi_reader_u55_INT(test_data: input_t1):
+    pipeline = EthosU55PipelineINT[input_t1](
+        AddMultiReader(), test_data(), aten_op, exir_op
+    )
+    pipeline.run()
+
+
+@common.parametrize("test_data", AddMultiReader.test_data)
+@common.XfailIfNoCorstone320
+def test_add_multi_reader_u85_INT(test_data: input_t1):
+    pipeline = EthosU85PipelineINT[input_t1](
+        AddMultiReader(), test_data(), aten_op, exir_op
+    )
+    pipeline.run()
+
+
 @common.parametrize("test_data", Add.test_data)
 def test_add_tensor_tosa_INT_16a8w(test_data: input_t1):
     """Test add operation with 16A8W quantization (16-bit activations, 8-bit

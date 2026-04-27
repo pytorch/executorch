@@ -6,6 +6,7 @@
  * LICENSE file in the root directory of this source tree.
  */
 
+#include <c10/util/safe_numerics.h>
 #include <executorch/examples/qualcomm/oss_scripts/llama/runner/prompt_processor.h>
 #include <numeric>
 using executorch::aten::TensorImpl;
@@ -248,9 +249,12 @@ Result<uint64_t> PromptProcessor<T>::prefill(
     ET_CHECK_MSG(
         start_pos == 0, "Bert model doesn't support multi-turn conversation.");
   } else if (!enable_attention_sink) {
+    int64_t end_pos = 0;
     ET_CHECK_MSG(
-        (start_pos + num_prompt_tokens) <=
-            (metadata_.context_len - metadata_.ar_len),
+        !c10::add_overflows(
+            start_pos, static_cast<int64_t>(num_prompt_tokens), &end_pos) &&
+            end_pos <= static_cast<int64_t>(metadata_.context_len) -
+                    static_cast<int64_t>(metadata_.ar_len),
         "The sequence length exceeds the maximum limit that the prompt processor can handle.");
   }
 

@@ -38,3 +38,12 @@ try:
     __all__.append("tq4_sdpa")
 except ImportError:
     pass
+
+try:
+    from executorch.backends.cuda.triton.kernels.fused_deltanet_decode import (  # noqa: F401
+        fused_deltanet_decode,
+    )
+
+    __all__.append("fused_deltanet_decode")
+except ImportError:
+    pass
