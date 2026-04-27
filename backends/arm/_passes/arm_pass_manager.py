@@ -75,6 +75,7 @@ from executorch.backends.arm._passes import (
     DecomposeMaxPool2dPass,
     DecomposeMeanDimPass,
     DecomposeNotEqualPass,
+    DecomposePermuteForU55Pass,
     DecomposeQuantNodesPass,
     DecomposeRemainderPass,
     DecomposeRnnPass,
@@ -536,13 +537,14 @@ class ArmPassManager(PassManager):
                 RewriteConvPass(exported_program),
                 RewriteMatmulPass(),
                 RewritePadPass(),
-                RewriteSlicePass(),
                 FuseViewCopyTransformPass(),
                 RemovePermutesAroundElementwiseOps(),
                 PostponePermuteOpBelowSqueezeOrUnsqueezeLikeView(),
                 FuseCascadedTransposeOrPermuteOps(),
                 ConvertPermuteSingletonToViewPass(),
                 RewriteHighRankSingletonPermutePass(),
+                DecomposePermuteForU55Pass(),
+                RewriteSlicePass(),
                 InsertConstShapesPass(),
             ]
         )

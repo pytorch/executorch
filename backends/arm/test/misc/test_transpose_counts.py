@@ -496,7 +496,7 @@ cases_channels_last = {
     "grouped_conv_channels_last": TransposeCountCase(
         GroupedConvModule(),
         (torch.randn(1, 4, 8, 8).to(memory_format=torch.channels_last),),
-        3,
+        0,
     ),
     "transpose_conv_channels_last": TransposeCountCase(
         TransposeConvModule(),
