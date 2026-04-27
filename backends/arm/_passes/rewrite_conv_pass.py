@@ -21,10 +21,14 @@ from executorch.backends.arm._passes.fold_qdq_with_annotated_qparams_pass import
     get_input_qparams,
     get_output_qparams,
 )
+from executorch.backends.arm._passes.symbolic_value_range import (
+    evaluate_symbolic_expr_values,
+)
 from executorch.backends.arm.constants import (
     HWCM_ORDER,
     NHWC_INVERSE_ORDER,
     NHWC_ORDER,
+    ODHWI_INVERSE_ORDER,
     ODHWI_ORDER,
     OHWI_ORDER,
 )
@@ -47,9 +51,6 @@ class RewriteConvPass(ArmPass):
         self.exported_program = exported_program
 
     _passes_required_after: Set[Type[ExportPass]] = set()
-    _OUTPUT_DIM_ORDER_META_KEY = "arm_output_dim_order"
-    _NDHWC_ORDER = (0, 2, 3, 4, 1)
-    _NDHWC_INVERSE_ORDER = (0, 4, 1, 2, 3)
 
     # torch.nn.Conv2d does not require the result of
     # `(input + 2 * pad - dilation * (weight - 1) - 1) / stride`
@@ -92,8 +93,14 @@ class RewriteConvPass(ArmPass):
 
         if isinstance(mod_remainder, torch.SymInt):
             shape_env = get_context_shape_env()
-            value_ranges = shape_env.bound_sympy(mod_remainder.node.expr)
-            mod_remainder_upper = int(value_ranges.upper)
+            exact_values = evaluate_symbolic_expr_values(
+                mod_remainder.node.expr, shape_env
+            )
+            if exact_values is not None:
+                mod_remainder_upper = max(exact_values)
+            else:
+                value_ranges = shape_env.bound_sympy(mod_remainder.node.expr)
+                mod_remainder_upper = int(value_ranges.upper)
             if mod_remainder_upper == 0:
                 mod_remainder = 0
         else:
@@ -101,7 +108,7 @@ class RewriteConvPass(ArmPass):
 
         if mod_remainder_upper > pad:
             raise RuntimeError(
-                "This case should be handled by the SizeAdjustInputPass, is it enabled?"
+                "This case should be handled by the SizeAdjustInputPass, is it enabled?\n"
             )
         return pad - mod_remainder
 
@@ -449,8 +456,8 @@ class RewriteConvPass(ArmPass):
 
                 if self._is_conv3d(len(input_shape), group):
                     target_op = exir_ops.backend.tosa.CONV3D.default
-                    pre_permute_dims = self._NDHWC_ORDER
-                    post_permute_dims = self._NDHWC_INVERSE_ORDER
+                    pre_permute_dims = ODHWI_ORDER
+                    post_permute_dims = ODHWI_INVERSE_ORDER
                     with graph_module.graph.inserting_before(node):
                         x = create_node(
                             graph=graph_module.graph,
@@ -599,11 +606,6 @@ class RewriteConvPass(ArmPass):
                 TosaSpecialDtype.meta_key()
             ):
                 node_replacement.meta[TosaSpecialDtype.meta_key()] = special_dtype
-            original_output_fake = node.meta.get("val")
-            if isinstance(original_output_fake, torch.Tensor):
-                node_replacement.meta[self._OUTPUT_DIM_ORDER_META_KEY] = tuple(
-                    original_output_fake.dim_order()
-                )
             node_replacement.meta["val"] = exir_ops.edge.aten.permute_copy.default(
                 node_replacement_fake_tensor, list(post_permute_dims)
             )

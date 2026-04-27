@@ -43,6 +43,8 @@ NNNCHW_ORDER: Final = (0, 1, 2, 3, 4, 5)
 
 OHWI_ORDER: Final = (1, 2, 3, 0)
 ODHWI_ORDER: Final = (0, 2, 3, 4, 1)
+ODHWI_INVERSE_ORDER: Final = (0, 4, 1, 2, 3)
+
 HWCM_ORDER: Final = (2, 3, 0, 1)
 
 MAX_RANK: Final = 6
