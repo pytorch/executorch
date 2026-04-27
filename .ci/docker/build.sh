@@ -81,7 +81,7 @@ case "${IMAGE_NAME}" in
     LINTRUNNER=""
     GCC_VERSION=11
     CUDA_WINDOWS_CROSS_COMPILE=yes
-    CUDA_VERSION=12.6
+    CUDA_VERSION=12.8
     SKIP_PYTORCH=yes
     ;;
   *)
