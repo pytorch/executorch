@@ -40,6 +40,25 @@ inline std::shared_ptr<cudaStream_t> create_cuda_stream() {
       new cudaStream_t(stream), CudaStreamDeleter());
 }
 
+// Phases of the CUDA graph lifecycle for a delegate handle.
+//
+// The transition flow is:
+//   Disabled  ──(if CUDA graph is enabled for this method)──▶  Warmup
+//   Warmup    ──(after `warmup_remaining` execute() calls)──▶  Replay
+//
+// - Disabled: CUDA graph is not used for this method. Every execute() runs
+//   eagerly through the normal kernel-launch path.
+//
+// - Warmup:   The first `kCudaGraphWarmupSteps` execute() calls run eagerly
+//   to let lazy allocators, autotuners, and JIT-compiled kernels stabilize.
+//   On the final warmup step (`warmup_remaining == 0`), persistent static
+//   input/output GPU buffers are allocated and the work is recorded into
+//   `graph` / `graph_exec` via stream capture.
+//
+// - Replay:   The captured `graph_exec` is launched on every execute() call.
+//   Inputs are memcpy'd into the static input buffers, the graph is replayed,
+//   and outputs are memcpy'd back from the static output buffers. No tensor
+//   setup or kernel launches happen on the host hot path.
 enum class CudaGraphPhase {
   Disabled = 0,
   Warmup = 1,
