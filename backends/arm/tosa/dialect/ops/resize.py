@@ -86,7 +86,7 @@ def RESIZE(
     scale_y_n, scale_y_d, scale_x_n, scale_x_d = scale
     offset_y, offset_x = offset
     border_y, border_x = border
-    H, W = input_shape[2], input_shape[3]
+    H, W = input_shape[1], input_shape[2]
     # RESIZE first upscales the input by an integer value, to "upscale space".
     H_upscaled = (H - 1) * scale_y_n
     # offset and border are provided in this scale, therefore adjust for these while in this space.
@@ -97,6 +97,8 @@ def RESIZE(
     W_upscaled = (W - 1) * scale_x_n
     W_shifted = W_upscaled - offset_x + border_x
     OW = (W_shifted // scale_x_d) + 1
-    fake_aten_tensor = torch.empty(size=(*input_shape[:2], OH, OW), dtype=output_dtype)
+    fake_aten_tensor = torch.empty(
+        size=(input_shape[0], OH, OW, input_shape[3]), dtype=output_dtype
+    )
 
     return fake_aten_tensor

@@ -397,3 +397,12 @@ def get_cond_while_submodules_nested(
     }
     # collect cond/while submodules (using mapping indices)
     return _get_control_flow_submodules(graph_module, mapping)
+
+
+def to_2tuple(value):
+    """Normalizes scalars, and 1-element sequences to a tuple of length 2."""
+    if isinstance(value, int):
+        return (value, value)
+    if len(value) == 1:
+        return (value[0], value[0])
+    return tuple(value)
