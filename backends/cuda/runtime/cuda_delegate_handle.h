@@ -40,6 +40,25 @@ inline std::shared_ptr<cudaStream_t> create_cuda_stream() {
       new cudaStream_t(stream), CudaStreamDeleter());
 }
 
+// Phases of the CUDA graph lifecycle for a delegate handle.
+//
+// The transition flow is:
+//   Disabled  ──(if CUDA graph is enabled for this method)──▶  Warmup
+//   Warmup    ──(after `warmup_remaining` execute() calls)──▶  Replay
+//
+// - Disabled: CUDA graph is not used for this method. Every execute() runs
+//   eagerly through the normal kernel-launch path.
+//
+// - Warmup:   The first `kCudaGraphWarmupSteps` execute() calls run eagerly
+//   to let lazy allocators, autotuners, and JIT-compiled kernels stabilize.
+//   On the final warmup step (`warmup_remaining == 0`), persistent static
+//   input/output GPU buffers are allocated and the work is recorded into
+//   `graph` / `graph_exec` via stream capture.
+//
+// - Replay:   The captured `graph_exec` is launched on every execute() call.
+//   Inputs are memcpy'd into the static input buffers, the graph is replayed,
+//   and outputs are memcpy'd back from the static output buffers. No tensor
+//   setup or kernel launches happen on the host hot path.
 enum class CudaGraphPhase {
   Disabled = 0,
   Warmup = 1,
@@ -149,44 +168,6 @@ struct CudaDelegateHandle : public aoti::AOTIDelegateHandle {
 
   // CUDA graph state (warmup, capture, replay, static buffers)
   CudaGraphState cuda_graph_state;
-  // --- CUDA graph state ---
-  // Phase: 0=disabled, 1=warmup, 2=captured (replay mode)
-  int cuda_graph_phase = 0;
-  int cuda_graph_warmup_remaining = 0;
-
-  // Captured graph and executable instance
-  cudaGraph_t cuda_graph = nullptr;
-  cudaGraphExec_t cuda_graph_exec = nullptr;
-
-  // Static input/output GPU buffers pinned during capture.
-  // These hold the tensor metadata; the underlying data pointers are fixed
-  // addresses that CUDA graph replay will write to / read from.
-  // SlimTensor pointers — owned by this handle.
-  std::vector<void*> static_input_ptrs; // raw GPU data pointers for inputs
-  std::vector<void*> static_output_ptrs; // raw GPU data pointers for outputs
-  std::vector<std::vector<int64_t>> static_input_sizes;
-  std::vector<std::vector<int64_t>> static_input_strides;
-  std::vector<std::vector<int64_t>> static_output_sizes;
-  std::vector<std::vector<int64_t>> static_output_strides;
-  std::vector<int> static_input_scalar_types;
-  std::vector<int> static_output_scalar_types;
-  std::vector<size_t> static_input_nbytes;
-  std::vector<size_t> static_output_nbytes;
-
-  ~CudaDelegateHandle() {
-    if (cuda_graph_exec) {
-      cudaGraphExecDestroy(cuda_graph_exec);
-    }
-    if (cuda_graph) {
-      cudaGraphDestroy(cuda_graph);
-    }
-    // Only free input buffers — output buffers are owned by the AOTI runtime
-    // (allocated during graph capture via the caching allocator).
-    for (auto* ptr : static_input_ptrs) {
-      if (ptr)
-        cudaFree(ptr);
-    }
-  }
 };
 
 } // namespace cuda
