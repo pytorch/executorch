@@ -17,6 +17,12 @@ from executorch.backends.cortex_m.quantizer.pattern_checkers import (
 
 BINARY_OP_PATTERNS = {
     (torch.ops.aten.add.Tensor,): CortexMAddMulCheck,
+    (torch.ops.aten.add.Tensor, torch.ops.aten.relu.default): CortexMAddMulCheck,
+    (torch.ops.aten.add.Tensor, torch.ops.aten.relu_.default): CortexMAddMulCheck,
+    (torch.ops.aten.add.Tensor, torch.ops.aten.hardtanh.default): CortexMAddMulCheck,
+    (torch.ops.aten.add.Tensor, torch.ops.aten.hardtanh_.default): CortexMAddMulCheck,
+    (torch.ops.aten.add.Tensor, torch.ops.aten.clamp.default): CortexMAddMulCheck,
+    (torch.ops.aten.add.Tensor, torch.ops.aten.clamp_.default): CortexMAddMulCheck,
     (torch.ops.aten.add_.Tensor,): CortexMAddMulCheck,
     (torch.ops.aten.mul.Tensor,): CortexMAddMulCheck,
     (torch.ops.aten.mul_.Tensor,): CortexMAddMulCheck,
@@ -116,7 +122,31 @@ SOFTMAX_OP_PATTERNS = {
 POOL_OP_PATTERNS = {
     (torch.ops.aten.avg_pool2d.default,): CortexMAvgPool2DCheck,
     (torch.ops.aten.max_pool2d.default,): CortexMMaxPool2DCheck,
+    (
+        torch.ops.aten.max_pool2d.default,
+        torch.ops.aten.relu.default,
+    ): CortexMMaxPool2DCheck,
+    (
+        torch.ops.aten.max_pool2d.default,
+        torch.ops.aten.hardtanh.default,
+    ): CortexMMaxPool2DCheck,
+    (
+        torch.ops.aten.max_pool2d.default,
+        torch.ops.aten.clamp.default,
+    ): CortexMMaxPool2DCheck,
     (torch.ops.aten.max_pool2d_with_indices.default,): CortexMMaxPool2DCheck,
+    (
+        torch.ops.aten.max_pool2d_with_indices.default,
+        torch.ops.aten.relu.default,
+    ): CortexMMaxPool2DCheck,
+    (
+        torch.ops.aten.max_pool2d_with_indices.default,
+        torch.ops.aten.hardtanh.default,
+    ): CortexMMaxPool2DCheck,
+    (
+        torch.ops.aten.max_pool2d_with_indices.default,
+        torch.ops.aten.clamp.default,
+    ): CortexMMaxPool2DCheck,
 }
 
 BMM_OP_PATTERNS = {

@@ -121,6 +121,7 @@ define_overridable_option(
   EXECUTORCH_BUILD_EXTENSION_APPLE "Build the Apple extension" BOOL OFF
 )
 define_overridable_option(EXECUTORCH_BUILD_MPS "Build the MPS backend" BOOL OFF)
+define_overridable_option(EXECUTORCH_BUILD_MLX "Build the MLX backend" BOOL OFF)
 define_overridable_option(
   EXECUTORCH_BUILD_NEURON "Build the backends/mediatek directory" BOOL OFF
 )
@@ -336,6 +337,10 @@ define_overridable_option(
 
 check_required_options_on(
   IF_ON EXECUTORCH_ENABLE_EVENT_TRACER REQUIRES EXECUTORCH_BUILD_DEVTOOLS
+)
+
+check_required_options_on(
+  IF_ON EXECUTORCH_BUILD_QNN REQUIRES EXECUTORCH_BUILD_EXTENSION_TENSOR
 )
 
 check_required_options_on(

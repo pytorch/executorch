@@ -6,6 +6,9 @@
 from typing import List, Union
 
 import torch
+from executorch.backends.arm.quantizer.arm_quantizer import (
+    get_symmetric_a16w8_quantization_config,
+)
 from executorch.backends.arm.test import common
 from executorch.backends.arm.test.tester.test_pipeline import (
     EthosU55PipelineINT,
@@ -135,6 +138,27 @@ def test_native_layer_norm_vgf_quant(test_data):
         test_input,
         "torch.ops.aten.sub.Tensor",
         quantize=True,
+    )
+    pipeline.run()
+
+
+@common.parametrize("test_data", test_data_suite)
+@common.SkipIfNoModelConverter
+def test_native_layer_norm_vgf_quant_a16w8(test_data):
+    test_input, model = test_data()
+    pipeline = VgfPipeline[input_t](
+        model,
+        test_input,
+        "torch.ops.aten.sub.Tensor",
+        symmetric_io_quantization=True,
+        quantize=True,
+        tosa_extensions=["int16"],
+        qtol=400,
+    )
+    pipeline.quantizer.set_global(
+        get_symmetric_a16w8_quantization_config(
+            epsilon=2**-16,
+        )
     )
     pipeline.run()
 

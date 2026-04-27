@@ -431,3 +431,155 @@ class UpdateQuantizedKVCacheTest(unittest.TestCase):
         self._update_and_validate(
             k, v, k_scales, v_scales, k_zero_points, v_zero_points, start_pos
         )
+
+
+class RecurrentGatedDeltaRuleTest(unittest.TestCase):
+    def _make_inputs(
+        self,
+        batch_size: int = 2,
+        num_heads: int = 3,
+        seq_len: int = 4,
+        k_head_dim: int = 5,
+        v_head_dim: int = 6,
+    ):
+        query = torch.randn(batch_size, num_heads, seq_len, k_head_dim)
+        key = torch.randn(batch_size, num_heads, seq_len, k_head_dim)
+        value = torch.randn(batch_size, num_heads, seq_len, v_head_dim)
+        g = torch.randn(batch_size, num_heads, seq_len)
+        beta = torch.sigmoid(torch.randn(batch_size, num_heads, seq_len))
+        recurrent_state = torch.randn(batch_size, num_heads, k_head_dim, v_head_dim)
+        return query, key, value, g, beta, recurrent_state
+
+    def _reference_recurrent_gated_delta_rule(
+        self,
+        query: torch.Tensor,
+        key: torch.Tensor,
+        value: torch.Tensor,
+        g: torch.Tensor,
+        beta: torch.Tensor,
+        recurrent_state: torch.Tensor,
+    ):
+        state = recurrent_state.clone()
+        output = torch.zeros_like(value)
+
+        for token in range(query.size(2)):
+            g_t = g[:, :, token].exp().unsqueeze(-1).unsqueeze(-1)
+            beta_t = beta[:, :, token].unsqueeze(-1)
+            k_t = key[:, :, token]
+            v_t = value[:, :, token]
+            q_t = query[:, :, token]
+
+            state = state * g_t
+            kv_mem = (state * k_t.unsqueeze(-1)).sum(dim=-2)
+            delta = (v_t - kv_mem) * beta_t
+            state = state + k_t.unsqueeze(-1) * delta.unsqueeze(-2)
+            output[:, :, token] = (state * q_t.unsqueeze(-1)).sum(dim=-2)
+
+        return output, state
+
+    def test_recurrent_gated_delta_rule_matches_reference(self):
+        torch.manual_seed(0)
+
+        test_cases = (
+            (2, 3, 4, 5, 6),
+            (1, 4, 7, 8, 3),
+        )
+
+        for case in test_cases:
+            with self.subTest(case=case):
+                (
+                    query,
+                    key,
+                    value,
+                    g,
+                    beta,
+                    recurrent_state,
+                ) = self._make_inputs(*case)
+
+                expected_output, expected_state = (
+                    self._reference_recurrent_gated_delta_rule(
+                        query,
+                        key,
+                        value,
+                        g,
+                        beta,
+                        recurrent_state,
+                    )
+                )
+
+                actual_state = recurrent_state.clone()
+                actual_output = torch.ops.llama.recurrent_gated_delta_rule(
+                    query,
+                    key,
+                    value,
+                    g,
+                    beta,
+                    actual_state,
+                )
+
+                self.assertTrue(
+                    torch.allclose(actual_output, expected_output, atol=1e-5)
+                )
+                self.assertTrue(torch.allclose(actual_state, expected_state, atol=1e-5))
+
+    def test_recurrent_gated_delta_rule_out_matches_reference(self):
+        torch.manual_seed(0)
+
+        query, key, value, g, beta, recurrent_state = self._make_inputs()
+        expected_output, expected_state = self._reference_recurrent_gated_delta_rule(
+            query,
+            key,
+            value,
+            g,
+            beta,
+            recurrent_state,
+        )
+
+        actual_state = recurrent_state.clone()
+        actual_output = torch.empty_like(value)
+        returned_output = torch.ops.llama.recurrent_gated_delta_rule.out(
+            query,
+            key,
+            value,
+            g,
+            beta,
+            actual_state,
+            out=actual_output,
+        )
+
+        self.assertEqual(returned_output.data_ptr(), actual_output.data_ptr())
+        self.assertTrue(torch.allclose(actual_output, expected_output, atol=1e-5))
+        self.assertTrue(torch.allclose(actual_state, expected_state, atol=1e-5))
+
+    def test_recurrent_gated_delta_rule_chunked_matches_full_sequence(self):
+        torch.manual_seed(0)
+
+        query, key, value, g, beta, recurrent_state = self._make_inputs(seq_len=6)
+
+        full_state = recurrent_state.clone()
+        full_output = torch.ops.llama.recurrent_gated_delta_rule(
+            query,
+            key,
+            value,
+            g,
+            beta,
+            full_state,
+        )
+
+        chunk_state = recurrent_state.clone()
+        chunk_outputs = []
+        for start, end in ((0, 2), (2, 5), (5, 6)):
+            chunk_outputs.append(
+                torch.ops.llama.recurrent_gated_delta_rule(
+                    query[:, :, start:end, :],
+                    key[:, :, start:end, :],
+                    value[:, :, start:end, :],
+                    g[:, :, start:end],
+                    beta[:, :, start:end],
+                    chunk_state,
+                )
+            )
+
+        chunked_output = torch.cat(chunk_outputs, dim=2)
+        self.assertTrue(torch.allclose(chunked_output, full_output, atol=1e-5))
+        self.assertTrue(torch.allclose(chunk_state, full_state, atol=1e-5))

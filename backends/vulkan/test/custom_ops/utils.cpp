@@ -74,6 +74,49 @@ void generate_random_int4_data(
 void generate_ones_data(std::vector<float>& data);
 void generate_zeros_data(std::vector<float>& data);
 
+// Convert a float32 value to IEEE 754 half-precision (uint16_t)
+uint16_t float_to_half(float value) {
+  uint32_t float_bits;
+  std::memcpy(&float_bits, &value, sizeof(float));
+  uint32_t sign = (float_bits >> 31) & 0x1;
+  int32_t exponent = static_cast<int32_t>((float_bits >> 23) & 0xFF) - 127;
+  uint32_t mantissa = float_bits & 0x7FFFFF;
+
+  uint16_t half_val;
+  if (exponent > 15) {
+    half_val = static_cast<uint16_t>((sign << 15) | 0x7C00); // Inf
+  } else if (exponent < -14) {
+    half_val = static_cast<uint16_t>(sign << 15); // Zero / subnormal
+  } else {
+    half_val = static_cast<uint16_t>(
+        (sign << 15) | (static_cast<uint32_t>(exponent + 15) << 10) |
+        (mantissa >> 13));
+  }
+  return half_val;
+}
+
+// Convert a IEEE 754 half-precision (uint16_t) value to float32
+float half_to_float(uint16_t half_val) {
+  uint32_t sign = (half_val >> 15) & 0x1;
+  uint32_t exponent = (half_val >> 10) & 0x1F;
+  uint32_t mantissa = half_val & 0x3FF;
+
+  float result;
+  if (exponent == 0) {
+    result = std::ldexp(static_cast<float>(mantissa), -24);
+  } else if (exponent == 31) {
+    result = mantissa ? std::numeric_limits<float>::quiet_NaN()
+                      : std::numeric_limits<float>::infinity();
+  } else {
+    result = std::ldexp(
+        1.0f + static_cast<float>(mantissa) / 1024.0f, exponent - 15);
+  }
+  if (sign) {
+    result = -result;
+  }
+  return result;
+}
+
 // Output and latency printing utilities
 namespace {
 static int print_output_enabled = 0;
@@ -153,6 +196,13 @@ void ValueSpec::generate_tensor_data(int seed) {
         for (size_t i = 0; i < temp_data.size(); ++i) {
           // Simple conversion to uint16_t representation of half
           half_data[i] = static_cast<uint16_t>(temp_data[i] * 32767.0f);
+        }
+      } else if (data_gen_type == DataGenType::RANDOM_SCALES) {
+        // Generate random scales in float, then convert to proper fp16
+        std::vector<float> temp_data(num_elements);
+        generate_random_float_data(temp_data, 0.005f, 0.015f, seed);
+        for (size_t i = 0; i < temp_data.size(); ++i) {
+          half_data[i] = float_to_half(temp_data[i]);
         }
       } else if (data_gen_type == DataGenType::RANDINT) {
         generate_randint_half_data(half_data, -10, 10, seed);
@@ -1395,15 +1445,19 @@ execute_test_case(TestCase& test_case, int warmup_runs, int benchmark_runs) {
   graph.prepack();
 
   // Copy input data into the graph's staging buffers
+  size_t graph_input_idx = 0;
   for (size_t i = 0; i < test_case.num_inputs(); ++i) {
     const ValueSpec& input_spec = test_case.inputs()[i];
-    if (input_spec.is_tensor() && i < graph.inputs().size()) {
-      // Skip copying data for constant tensors
-      if (input_spec.is_constant()) {
-        continue;
-      }
 
-      const auto& input_ref = graph.inputs()[i];
+    // Only non-constant tensor inputs correspond to graph.inputs() entries
+    bool is_graph_input = input_spec.is_tensor() && !input_spec.is_constant() &&
+        !input_spec.is_none();
+    if (!is_graph_input) {
+      continue;
+    }
+
+    if (graph_input_idx < graph.inputs().size()) {
+      const auto& input_ref = graph.inputs()[graph_input_idx];
 
       // Get the appropriate data based on dtype
       const void* data_ptr = nullptr;
@@ -1433,6 +1487,7 @@ execute_test_case(TestCase& test_case, int warmup_runs, int benchmark_runs) {
       graph.maybe_cast_and_copy_into_staging(
           input_ref.staging, data_ptr, data_numel, input_spec.dtype);
     }
+    ++graph_input_idx;
   }
 
   // Warmup runs

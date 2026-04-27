@@ -223,7 +223,9 @@ exclude_patterns = [
     '**/*.gif',
     'extension/llm/tokenizers',
     'extension/llm/tokenizers/**',
+    'backends/cadence/utils/FACTO',
     'examples/cuda',
+    'examples/qualcomm',
     'kernels/portable',
     # File contains @generated
     'extension/llm/custom_ops/spinquant/fast_hadamard_transform_special.h',
@@ -351,6 +353,7 @@ include_patterns = [
     # TODO(https://github.com/pytorch/executorch/issues/7441): Gradually start enabling all folders.
     # 'backends/**/*.py',
     'backends/arm/**/*.py',
+    'backends/cortex_m/**/*.py',
     'backends/openvino/**/*.py',
     'build/**/*.py',
     'codegen/**/*.py',
@@ -403,6 +406,7 @@ code = 'BANDIT'
 include_patterns = [
     'backends/arm/**/*.py',
     'examples/arm/**/*.py',
+    'backends/cortex_m/**/*.py',
 ]
 exclude_patterns = [
     'third-party/**',

@@ -8,8 +8,8 @@
 
 import executorch.backends.cadence.aot.ops_registrations  # noqa
 import torch
-from executorch.backends.cadence.aot.program_builder import ProgramBuilder
 from executorch.backends.cadence.aot.to_out_var_pass import CadenceToOutVarPass
+from executorch.backends.test.program_builder import ProgramBuilder
 from executorch.exir import ExecutorchBackendConfig
 from executorch.exir.dialects._ops import ops as exir_ops
 from later.unittest import TestCase
