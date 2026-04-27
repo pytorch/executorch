@@ -153,6 +153,61 @@ class AddPattern(QuantizationPattern):
         return torch.ops.cadence.quantized_add.per_tensor
 
 
+# This is a base class for Add+ReLU fusion, since it can be used with two different relu aten ops
+class AddReluBasePattern(QuantizationPattern):
+    @abstractmethod
+    def partition_types(self) -> List[OpOverload]:
+        pass
+
+    def get_anchors(
+        self, gm: fx.GraphModule, fused_partition: List[fx.GraphModule]
+    ) -> Tuple[PartitionAnchors, fx.Node]:
+        # The first node should be add, the second should be relu
+        # pyre-fixme[29]: `Union[BoundMethod[typing.Callable(torch._C.TensorBase.__ge...
+        add_node = fused_partition[0].nodes[-1]
+        # pyre-fixme[29]: `Union[BoundMethod[typing.Callable(torch._C.TensorBase.__ge...
+        relu_node = fused_partition[1].nodes[-1]
+
+        # Bail if:
+        #   - the add node is not a tensor add
+        #   - the add node has kwargs (e.g. alpha)
+        is_tensor_add = isinstance(add_node.args[0], fx.Node) and isinstance(
+            add_node.args[1], fx.Node
+        )
+        if not is_tensor_add or len(add_node.kwargs) > 0:
+            return (
+                PartitionAnchors(
+                    empty=True,
+                ),
+                add_node,
+            )
+
+        return (
+            PartitionAnchors(
+                inputs=[(add_node, 0), (add_node, 1)],
+                weights=[],
+                biases=[],
+                output=[(relu_node,)],  # Output is from the relu node
+            ),
+            relu_node,
+        )
+
+    def replacement_op(self) -> OpOverload:
+        return torch.ops.cadence.quantized_add.per_tensor
+
+
+# Add + regular relu op fusion
+class AddReluPattern0(AddReluBasePattern):
+    def partition_types(self) -> List[OpOverload]:
+        return [torch.ops.aten.add.Tensor, torch.ops.aten.relu.default]
+
+
+# Add + alternate relu op fusion
+class AddReluPattern1(AddReluBasePattern):
+    def partition_types(self) -> List[OpOverload]:
+        return [torch.ops.aten.add.Tensor, torch.ops.aten.relu_.default]
+
+
 class BmmPattern(QuantizationPattern):
     def partition_types(self) -> List[OpOverload]:
         return [torch.ops.aten.bmm.default]

@@ -177,7 +177,12 @@ class FuseBatchNormWithLinearPass(PassBase):
 
             # Replace the uses of the BatchNorm with the Linear.
             bn_node.replace_all_uses_with(linear_node)
+            graph_module.graph.erase_node(bn_node)
 
             made_changes = True
+
+        if made_changes:
+            graph_module.graph.eliminate_dead_code()
+            graph_module.recompile()
 
         return PassResult(graph_module, made_changes)
