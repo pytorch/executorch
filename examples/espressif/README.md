@@ -271,8 +271,3 @@ For larger models, load from the filesystem at runtime:
 - Disable with `CONFIG_ESP_TASK_WDT_EN=n` in sdkconfig
 - Or increase the timeout: `CONFIG_ESP_TASK_WDT_TIMEOUT_S=30`
 
-## License
-
-This project is licensed under the BSD-style license found in the
-[LICENSE](../../../LICENSE) file in the root directory of the ExecuTorch
-source tree.
