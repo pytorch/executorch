@@ -6,7 +6,6 @@
 import numpy as np
 import pytest
 import torch
-
 from executorch.backends.nxp.backend.edge_program_converter import (
     EdgeProgramToIRConverter,
     exir_ops,
@@ -21,7 +20,9 @@ from executorch.backends.nxp.tests.executors import (
     ToNCHWPreprocess,
     ToNHWCPreprocess,
 )
+from executorch.backends.nxp.tests.graph_verifier import BaseGraphVerifier
 from executorch.backends.nxp.tests.models import Conv2dModule, LinearModule, ReLUModule
+from executorch.backends.nxp.tests.nsys_testing import lower_run_compare
 from torch.export import ExportedProgram
 from executorch.backends.nxp.tests.use_qat import *  # noqa F403
 
@@ -146,3 +147,21 @@ def test_relu_conversion__unsupported(mocker, input_shape):
     # Make sure the `relu` was NOT delegated.
     assert not graph_contains_any_of_ops(delegated_ep.graph, [ExecutorchDelegateCall])
     assert graph_contains_any_of_ops(delegated_ep.graph, [ReLU])
+
+
+@pytest.mark.parametrize(
+    "input_shape",
+    [
+        pytest.param(
+            (3, 9, 7), id="num_channels not divisible by NUM_MACS, alone in partition"
+        ),
+    ],
+)
+def test_relu_conversion__new_flow_support(mocker, input_shape):
+    model = ReLUModule()
+    graph_verifier = BaseGraphVerifier(
+        exp_num_delegate_call_nodes=1,  # Delegated AvgPool.
+        exp_non_delegated_nodes=[],
+    )
+
+    lower_run_compare(model, input_shape, graph_verifier, use_new_flow_neutron_c=True)
