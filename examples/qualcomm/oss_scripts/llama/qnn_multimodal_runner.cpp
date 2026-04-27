@@ -137,7 +137,6 @@ std::vector<std::string> CollectPrompts(int argc, char** argv) {
   return prompts;
 }
 
-template <typename T>
 void start_multimodal_runner(
     std::unique_ptr<executorch::extension::Module> encoder,
     std::unique_ptr<executorch::extension::Module> tok_embedding,
@@ -150,7 +149,7 @@ void start_multimodal_runner(
                                                                          : true;
 
   // Create multimodal runner
-  example::QNNMultimodalRunner<T> runner(
+  example::QNNMultimodalRunner runner(
       std::move(encoder),
       std::move(tok_embedding),
       std::move(text_decoder),
@@ -288,35 +287,12 @@ int main(int argc, char** argv) {
           FLAGS_decoder_path.c_str(),
           executorch::extension::Module::LoadMode::MmapUseMlockIgnoreErrors);
 
-  // Using 8bit as default since this meta is introduced with 16bit kv io
-  // support and older models only have 8bit kv io.
-  example::KvBitWidth kv_bitwidth = example::KvBitWidth::kWidth8;
-  if (text_decoder->method_names()->count("get_kv_io_bit_width") > 0) {
-    kv_bitwidth = static_cast<example::KvBitWidth>(
-        text_decoder->get("get_kv_io_bit_width")
-            .get()
-            .toScalar()
-            .to<int64_t>());
-  }
-  // Start runner with appropriate KV bitwidth
-  if (kv_bitwidth == example::KvBitWidth::kWidth8) {
-    start_multimodal_runner<uint8_t>(
-        std::move(encoder),
-        std::move(tok_embedding),
-        std::move(text_decoder),
-        prompts);
-  } else if (kv_bitwidth == example::KvBitWidth::kWidth16) {
-    start_multimodal_runner<uint16_t>(
-        std::move(encoder),
-        std::move(tok_embedding),
-        std::move(text_decoder),
-        prompts);
-  } else {
-    ET_CHECK_MSG(
-        false,
-        "Unsupported kv bitwidth: %ld",
-        static_cast<int64_t>(kv_bitwidth));
-  }
+  // Start runner
+  start_multimodal_runner(
+      std::move(encoder),
+      std::move(tok_embedding),
+      std::move(text_decoder),
+      prompts);
 
   return 0;
 }

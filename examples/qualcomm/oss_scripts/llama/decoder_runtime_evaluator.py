@@ -133,7 +133,7 @@ class EvalBase(ABC):
             base_cmd = " ".join(
                 [
                     f"export LD_LIBRARY_PATH={self.qnn_sdk}/lib/x86_64-linux-clang/:{args.build_folder}/lib &&",
-                    f"./{args.build_folder}/examples/qualcomm/oss_scripts/llama/{self.runner}",
+                    f"{args.build_folder}/examples/qualcomm/oss_scripts/llama/{self.runner}",
                     f"--decoder_model_version {DECODER_MODEL_VERSION[args.decoder_model]}",
                     f"--tokenizer_path {self.runtime_tokenizer_path}",
                     f"--output_path {self.device_output_response_path}",

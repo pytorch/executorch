@@ -15,9 +15,7 @@ namespace example {
  * @class MultimodalLhdTokenGenerator
  * @brief Extended LhdTokenGenerator with multimodal embedding support
  */
-template <typename T>
-class MultimodalLhdTokenGenerator
-    : public example::MultimodalTokenGenerator<T> {
+class MultimodalLhdTokenGenerator : public example::MultimodalTokenGenerator {
  public:
   struct Metadata {
     int32_t context_len;
@@ -37,19 +35,20 @@ class MultimodalLhdTokenGenerator
       tokenizers::Tokenizer* tokenizer,
       TokenEmbeddingProcessor* embedding_runner,
       DecoderRunner* decoder_runner,
-      KVManager<T>* kv_manager,
+      KVManager* kv_manager,
       const std::string& forward_name,
       std::unique_ptr<std::unordered_set<uint64_t>>&& eos_ids,
       Metadata metadata,
-      executorch::llm::Stats* stats)
-      : MultimodalTokenGenerator<T>(
+      executorch::llm::Stats* stats,
+      std::unique_ptr<executorch::extension::MethodMeta> method_meta)
+      : MultimodalTokenGenerator(
             tokenizer,
             embedding_runner,
             decoder_runner,
             kv_manager,
             forward_name,
             std::move(eos_ids),
-            typename MultimodalTokenGenerator<T>::Metadata{
+            MultimodalTokenGenerator::Metadata{
                 metadata.context_len,
                 metadata.num_heads,
                 metadata.num_layers,
@@ -59,7 +58,8 @@ class MultimodalLhdTokenGenerator
                 metadata.sliding_window,
                 metadata.cache_mode,
                 metadata.embedding_dim},
-            stats),
+            stats,
+            std::move(method_meta)),
         tok_embedding_runner_(embedding_runner),
         metadata_(metadata),
         lhd_branch_(metadata.ngram - 1, std::vector<int32_t>(metadata.window)),

@@ -15,8 +15,8 @@ namespace example {
  * @brief Class for generating the token using decoder and key-value manager
  * with lookahead decoding.
  */
-template <typename T>
-class LhdTokenGenerator : public TokenGenerator<T> {
+
+class LhdTokenGenerator : public TokenGenerator {
  public:
   struct Metadata {
     int32_t context_len;
@@ -34,18 +34,19 @@ class LhdTokenGenerator : public TokenGenerator<T> {
   LhdTokenGenerator(
       tokenizers::Tokenizer* tokenizer,
       DecoderRunner* decoder_runner,
-      KVManager<T>* kv_manager,
+      KVManager* kv_manager,
       const std::string& forward_name,
       std::unique_ptr<std::unordered_set<uint64_t>>&& eos_ids,
       Metadata metadata,
-      executorch::llm::Stats* stats)
-      : TokenGenerator<T>(
+      executorch::llm::Stats* stats,
+      std::unique_ptr<executorch::runtime::MethodMeta> method_meta)
+      : TokenGenerator(
             tokenizer,
             decoder_runner,
             kv_manager,
             forward_name,
             std::move(eos_ids),
-            typename TokenGenerator<T>::Metadata{
+            TokenGenerator::Metadata{
                 metadata.context_len,
                 metadata.num_heads,
                 metadata.num_layers,
@@ -54,7 +55,8 @@ class LhdTokenGenerator : public TokenGenerator<T> {
                 metadata.use_int64_token,
                 metadata.sliding_window,
                 metadata.cache_mode},
-            stats),
+            stats,
+            std::move(method_meta)),
         metadata_(metadata),
         lhd_branch_(metadata.ngram - 1, std::vector<int32_t>(metadata.window)),
         lhd_branch_prev_(metadata.window),

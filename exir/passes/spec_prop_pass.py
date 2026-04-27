@@ -11,6 +11,7 @@ from typing import Optional
 
 import torch
 from executorch.exir.delegate import executorch_call_delegate
+from executorch.exir.dialects._ops import ops as exir_ops
 from executorch.exir.pass_base import ExportPass, ProxyValue
 from executorch.exir.tensor import TensorSpec
 from torch.export.exported_program import ExportGraphSignature
@@ -75,9 +76,9 @@ class SpecPropPass(ExportPass):
                     elif node.op == "call_function" and node.target == operator.getitem:
                         value_spec = pytree.tree_map(get_spec, node.args[0])
                         node.meta["spec"] = value_spec[node.args[1]]
-                    elif (
-                        node.op == "call_function"
-                        and node.target == executorch_call_delegate
+                    elif node.op == "call_function" and node.target in (
+                        executorch_call_delegate,
+                        exir_ops.edge.llama.fallback.default,
                     ):
                         # Note: We currently rely on delegate node specs not being regenerated,
                         # as the spec is set somewhat manually when adding the call delegate node.

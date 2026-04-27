@@ -203,38 +203,14 @@ class ExecuTorchLlmJni : public facebook::jni::HybridClass<ExecuTorchLlmJni> {
               data_files_vector,
               cpp_load_mode);
       std::string decoder_model = "llama3"; // use llama3 for now
-      // Using 8bit as default since this meta is introduced with 16bit kv io
-      // support and older models only have 8bit kv io.
-      example::KvBitWidth kv_bitwidth = example::KvBitWidth::kWidth8;
-      if (module->method_names()->count("get_kv_io_bit_width") > 0) {
-        kv_bitwidth = static_cast<example::KvBitWidth>(
-            module->get("get_kv_io_bit_width").get().toScalar().to<int64_t>());
-      }
-
-      if (kv_bitwidth == example::KvBitWidth::kWidth8) {
-        runner_ = std::make_unique<example::Runner<uint8_t>>(
-            std::move(module),
-            decoder_model.c_str(),
-            model_path->toStdString().c_str(),
-            tokenizer_path->toStdString().c_str(),
-            "",
-            "",
-            temperature_);
-      } else if (kv_bitwidth == example::KvBitWidth::kWidth16) {
-        runner_ = std::make_unique<example::Runner<uint16_t>>(
-            std::move(module),
-            decoder_model.c_str(),
-            model_path->toStdString().c_str(),
-            tokenizer_path->toStdString().c_str(),
-            "",
-            "",
-            temperature_);
-      } else {
-        ET_CHECK_MSG(
-            false,
-            "Unsupported kv bitwidth: %ld",
-            static_cast<int64_t>(kv_bitwidth));
-      }
+      runner_ = std::make_unique<example::Runner>(
+          std::move(module),
+          decoder_model.c_str(),
+          model_path->toStdString().c_str(),
+          tokenizer_path->toStdString().c_str(),
+          "",
+          "",
+          temperature_);
       model_type_category_ = MODEL_TYPE_CATEGORY_LLM;
 #endif
 #if defined(EXECUTORCH_BUILD_MEDIATEK)
