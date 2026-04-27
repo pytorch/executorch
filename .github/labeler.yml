@@ -1,0 +1,15 @@
+"module: arm":
+- changed-files:
+  - any-glob-to-any-file:
+    - 'backends/arm/**'
+    - 'examples/arm/**'
+    - 'docs/source/backends/arm-*/**'
+    - 'docs/source/embedded-arm-ethos-u.md'
+    - 'docs/source/android-arm-vgf.md'
+    - 'docs/source/arm-delegate-runtime-build.svg'
+
+ciflow/trunk:
+- changed-files:
+  - any-glob-to-any-file:
+    - 'backends/arm/**'
+    - 'examples/arm/**'

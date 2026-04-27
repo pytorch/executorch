@@ -1,12 +1,13 @@
 # Copyright (c) Meta Platforms, Inc. and affiliates.
 # All rights reserved.
+# Copyright 2025-2026 Arm Limited and/or its affiliates.
 #
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
 
 
 import torch
-from executorch.backends.arm.test.common import parametrize
+from executorch.backends.arm.test.common import parametrize, xfail_type
 from executorch.backends.cortex_m.test.tester import (
     CortexMTester,
     McuTestCase,
@@ -57,6 +58,61 @@ class CortexMConvTranspose2DBias(torch.nn.Module):
 
     def forward(self, x):
         return self.conv_transpose(x)
+
+
+class CortexMConvTranspose2DReLU(torch.nn.Module):
+    ops_before_transforms = {
+        "executorch_exir_dialects_edge__ops_aten_convolution_default": 1,
+        "executorch_exir_dialects_edge__ops_aten_relu_default": 1,
+        "executorch_exir_dialects_edge__ops_quantized_decomposed_quantize_per_tensor_default": 2,
+        "executorch_exir_dialects_edge__ops_quantized_decomposed_dequantize_per_tensor_default": 2,
+        "executorch_exir_dialects_edge__ops_quantized_decomposed_dequantize_per_channel_default": 2,
+    }
+
+    ops_after_transforms = {
+        "executorch_exir_dialects_edge__ops_cortex_m_quantized_transpose_conv2d_default": 1,
+        "executorch_exir_dialects_edge__ops_cortex_m_quantize_per_tensor_default": 1,
+        "executorch_exir_dialects_edge__ops_cortex_m_dequantize_per_tensor_default": 1,
+    }
+
+    ops_after_absent = ["executorch_exir_dialects_edge__ops_aten_relu_default"]
+
+    def __init__(self):
+        super().__init__()
+        self.conv_transpose = torch.nn.ConvTranspose2d(
+            4, 2, kernel_size=3, stride=2, padding=1, bias=True
+        )
+        self.relu = torch.nn.ReLU()
+
+    def forward(self, x):
+        return self.relu(self.conv_transpose(x))
+
+
+class CortexMConvTranspose2DHardtanh(torch.nn.Module):
+    ops_before_transforms = {
+        "executorch_exir_dialects_edge__ops_aten_convolution_default": 1,
+        "executorch_exir_dialects_edge__ops_aten_hardtanh_default": 1,
+        "executorch_exir_dialects_edge__ops_quantized_decomposed_quantize_per_tensor_default": 2,
+        "executorch_exir_dialects_edge__ops_quantized_decomposed_dequantize_per_tensor_default": 2,
+        "executorch_exir_dialects_edge__ops_quantized_decomposed_dequantize_per_channel_default": 2,
+    }
+
+    ops_after_transforms = {
+        "executorch_exir_dialects_edge__ops_cortex_m_quantized_transpose_conv2d_default": 1,
+        "executorch_exir_dialects_edge__ops_cortex_m_quantize_per_tensor_default": 1,
+        "executorch_exir_dialects_edge__ops_cortex_m_dequantize_per_tensor_default": 1,
+    }
+
+    ops_after_absent = ["executorch_exir_dialects_edge__ops_aten_hardtanh_default"]
+
+    def __init__(self):
+        super().__init__()
+        self.conv_transpose = torch.nn.ConvTranspose2d(
+            4, 2, kernel_size=3, stride=2, padding=1, bias=True
+        )
+
+    def forward(self, x):
+        return torch.nn.functional.hardtanh(self.conv_transpose(x), -0.5, 0.5)
 
 
 # Test cases covering various configurations
@@ -120,6 +176,18 @@ test_cases = {
         model=CortexMConvTranspose2DBias(5, 1, kernel_size=3, stride=2),
         example_inputs=(
             ramp_tensor(0, 50, (1, 5, 4, 4)).to(memory_format=torch.channels_last),
+        ),
+    ),
+    "conv_transpose2d_relu": McuTestCase(
+        model=CortexMConvTranspose2DReLU(),
+        example_inputs=(
+            ramp_tensor(-10, 10, (1, 4, 4, 4)).to(memory_format=torch.channels_last),
+        ),
+    ),
+    "conv_transpose2d_hardtanh": McuTestCase(
+        model=CortexMConvTranspose2DHardtanh(),
+        example_inputs=(
+            ramp_tensor(-10, 10, (1, 4, 4, 4)).to(memory_format=torch.channels_last),
         ),
     ),
     # Dilation variation
@@ -220,7 +288,7 @@ test_cases = {
     ),
 }
 
-xfails_dialect = {
+xfails_dialect: dict[str, xfail_type] = {
     # Grouped convolutions not supported by CMSIS-NN - rejected during quantization
     "conv_transpose2d_groups_2": "Grouped transpose conv not supported by CMSIS-NN",
     "conv_transpose2d_depthwise": "Depthwise transpose conv not supported by CMSIS-NN",
@@ -243,12 +311,14 @@ def test_dialect_conv_transpose2d(test_case):
         test_case.model.ops_after_transforms,
         qtol=1,
     )
+    if hasattr(test_case.model, "ops_after_absent"):
+        tester.check_not(test_case.model.ops_after_absent)
 
 
-# Implementation xfails: empty because unsupported configurations are now
-# rejected at AOT time by the quantizer filter, so they fall back to portable
-# ops and work correctly. Only xfails_dialect needs to track these.
-xfails_implementation = {}
+xfails_implementation: dict[str, xfail_type] = {
+    "conv_transpose2d_relu": "Fused transpose-conv + relu lowers correctly but current implementation is numerically incorrect.",
+    "conv_transpose2d_hardtanh": "Fused transpose-conv + hardtanh lowers correctly but current implementation is numerically incorrect.",
+}
 
 
 @parametrize("test_case", test_cases, xfails=xfails_implementation)

@@ -4,6 +4,8 @@
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
 
+import torch
+
 # Qualcomm specific key
 
 # constants in backends/qualcomm/_passes & backends/qualcomm/builders
@@ -19,6 +21,7 @@ QCOM_BYPASS_NODE = "bypass_node"
 QCOM_DATA = "data"
 QCOM_DTYPE = "dtype"
 QCOM_ENCODING = "encoding"
+QCOM_FALLBACK_NODE = "fallback_node"
 QCOM_INSERTED_PERMUTE = "qnn_permute"
 QCOM_LAYOUT_CHANGE = "layout_change"
 QCOM_NUM_BLOCKS_PER_AXIS = "num_blocks_per_axis"
@@ -53,3 +56,8 @@ QCOM_QNN_COMPILE_SPEC = "qnn_compile_spec"
 HEXAGON_SDK_ROOT = "HEXAGON_SDK_ROOT"
 HEXAGON_TOOLS_ROOT = "HEXAGON_TOOLS_ROOT"
 DSP_VERSION = "DSP_VERSION"
+
+# Eps constants for quantizer
+DEFAULT_EPS_8BIT = 0.0001 / 255
+DEFAULT_EPS_16BIT = 0.0001 / 65535
+DEFAULT_EPS_FP32 = torch.finfo(torch.float32).eps

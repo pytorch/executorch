@@ -19,7 +19,6 @@ from executorch.backends.arm.operators.operator_validation_utils import (
     validate_valid_dtype,
 )
 from executorch.backends.arm.tosa.mapping import TosaArg
-from executorch.backends.arm.tosa.utils import tosa_shape
 
 
 @register_node_visitor
@@ -36,33 +35,21 @@ class RepeatVisitor(NodeVisitor):
         inputs: list[TosaArg],
         output: TosaArg,
     ) -> None:
+        supported_dtypes = [ts.DType.BOOL]
+        if self.tosa_spec.support_integer():
+            supported_dtypes.extend([ts.DType.INT8, ts.DType.INT16, ts.DType.INT32])
+        if self.tosa_spec.support_float():
+            supported_dtypes.extend([ts.DType.FP16, ts.DType.FP32])
+        if self.tosa_spec.support_extension("bf16"):
+            supported_dtypes.append(ts.DType.BF16)
+
         validate_num_inputs(self.target, inputs, 2)
         validate_same_dtype(self.target, [inputs[0], output], ts)
         validate_valid_dtype(
             self.target,
             [inputs[0], output],
-            [
-                ts.DType.BOOL,
-                ts.DType.INT8,
-                ts.DType.INT16,
-                ts.DType.INT32,
-                ts.DType.FP16,
-                ts.DType.FP32,
-                ts.DType.BF16,
-            ],
+            supported_dtypes,
             self.tosa_spec,
-        )
-
-        multiples = inputs[1].special
-
-        if len(multiples) == 0:
-            raise ValueError(f"Length of multiples argument is 0: {inputs[1]}!")
-
-        multiple_shapes = tosa_graph.addConst(
-            (len(multiples),),
-            ts.DType.SHAPE,
-            list(tosa_shape(multiples, output.dim_order)),
-            name=output.name + "_multiples",
         )
 
         attr = ts.TosaSerializerAttribute()
@@ -71,7 +58,7 @@ class RepeatVisitor(NodeVisitor):
             node,
             tosa_graph,
             ts.Op.TILE,
-            [inputs[0].name, multiple_shapes.name],
+            [inputs[0].name, inputs[1].name],
             [output.name],
             attr,
         )

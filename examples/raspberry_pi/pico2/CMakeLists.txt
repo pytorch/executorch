@@ -125,20 +125,82 @@ target_compile_options(
 
 set(CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} -Wl,--gc-sections")
 
-set(BAREMETAL_BUILD_DIR ${EXECUTORCH_ROOT}/executorch/cmake-out/)
-
-# Link ExecuTorch and Pico libraries
-target_link_libraries(
-  executorch_pico
-  PRIVATE ${BAREMETAL_BUILD_DIR}/lib/libexecutorch.a
-          ${BAREMETAL_BUILD_DIR}/lib/libexecutorch_core.a
-          -Wl,--whole-archive
-          ${BAREMETAL_BUILD_DIR}/lib/libportable_ops_lib.a
-          -Wl,--no-whole-archive
-          ${BAREMETAL_BUILD_DIR}/lib/libportable_kernels.a
-          pico_stdlib
-          pico_stdio_usb
+set(BAREMETAL_BUILD_DIR
+    ${EXECUTORCH_ROOT}/executorch/cmake-out/
+    CACHE STRING "ExecuTorch baremetal build dir"
 )
+
+# CMSIS-NN support: link quantized cortex_m kernels instead of portable ops
+option(USE_CMSIS_NN "Link CMSIS-NN INT8 kernels for Cortex-M33 acceleration"
+       OFF
+)
+option(USE_SELECTIVE_BUILD "Use selective build (only link model-required ops)"
+       OFF
+)
+
+if(USE_CMSIS_NN)
+  message(STATUS "CMSIS-NN enabled: linking cortex_m_ops_lib + cmsis-nn")
+  if(USE_SELECTIVE_BUILD)
+    # CMSIS-NN model uses only cortex_m:: ops, no portable ops needed. Skip
+    # --whole-archive on portable_ops_lib to avoid pulling unused ops.
+    message(STATUS "Selective build: CMSIS-NN only (no portable ops)")
+    target_link_libraries(
+      executorch_pico
+      PRIVATE ${BAREMETAL_BUILD_DIR}/lib/libexecutorch.a
+              ${BAREMETAL_BUILD_DIR}/lib/libexecutorch_core.a
+              -Wl,--whole-archive
+              ${BAREMETAL_BUILD_DIR}/lib/libcortex_m_ops_lib.a
+              -Wl,--no-whole-archive
+              ${BAREMETAL_BUILD_DIR}/lib/libcortex_m_kernels.a
+              ${BAREMETAL_BUILD_DIR}/lib/libportable_kernels.a
+              ${BAREMETAL_BUILD_DIR}/lib/libcmsis-nn.a
+              pico_stdlib
+              pico_stdio_usb
+    )
+  else()
+    target_link_libraries(
+      executorch_pico
+      PRIVATE ${BAREMETAL_BUILD_DIR}/lib/libexecutorch.a
+              ${BAREMETAL_BUILD_DIR}/lib/libexecutorch_core.a
+              -Wl,--whole-archive
+              ${BAREMETAL_BUILD_DIR}/lib/libcortex_m_ops_lib.a
+              ${BAREMETAL_BUILD_DIR}/lib/libportable_ops_lib.a
+              -Wl,--no-whole-archive
+              ${BAREMETAL_BUILD_DIR}/lib/libcortex_m_kernels.a
+              ${BAREMETAL_BUILD_DIR}/lib/libportable_kernels.a
+              ${BAREMETAL_BUILD_DIR}/lib/libcmsis-nn.a
+              pico_stdlib
+              pico_stdio_usb
+    )
+  endif()
+else()
+  if(USE_SELECTIVE_BUILD)
+    message(STATUS "Selective build: using executorch_selected_kernels")
+    target_link_libraries(
+      executorch_pico
+      PRIVATE ${BAREMETAL_BUILD_DIR}/lib/libexecutorch.a
+              ${BAREMETAL_BUILD_DIR}/lib/libexecutorch_core.a
+              -Wl,--whole-archive
+              ${BAREMETAL_BUILD_DIR}/lib/libexecutorch_selected_kernels.a
+              -Wl,--no-whole-archive
+              ${BAREMETAL_BUILD_DIR}/lib/libportable_kernels.a
+              pico_stdlib
+              pico_stdio_usb
+    )
+  else()
+    target_link_libraries(
+      executorch_pico
+      PRIVATE ${BAREMETAL_BUILD_DIR}/lib/libexecutorch.a
+              ${BAREMETAL_BUILD_DIR}/lib/libexecutorch_core.a
+              -Wl,--whole-archive
+              ${BAREMETAL_BUILD_DIR}/lib/libportable_ops_lib.a
+              -Wl,--no-whole-archive
+              ${BAREMETAL_BUILD_DIR}/lib/libportable_kernels.a
+              pico_stdlib
+              pico_stdio_usb
+    )
+  endif()
+endif()
 
 # Only add extra outputs if the target builds successfully
 if(TARGET executorch_pico)
