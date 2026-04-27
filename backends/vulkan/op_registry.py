@@ -1072,6 +1072,20 @@ def register_sdpa_cpp_ops():
 
 
 # =============================================================================
+# SDPA.cpp (fused SDPA entry point)
+# =============================================================================
+
+
+@update_features("et_vk::sdpa")
+def register_general_sdpa():
+    return OpFeatures(
+        inputs_storage=utils.CONTIGUOUS_ANY,
+        inputs_dtypes=utils.FP_T,
+        supports_resize=True,
+    )
+
+
+# =============================================================================
 # RotaryEmbedding.cpp
 # =============================================================================
 
