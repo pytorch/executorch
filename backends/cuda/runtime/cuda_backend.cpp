@@ -6,6 +6,7 @@
  * LICENSE file in the root directory of this source tree.
  */
 
+#include <c10/util/safe_numerics.h>
 #include <cuda_runtime.h>
 #include <executorch/runtime/backend/interface.h>
 #include <executorch/runtime/backend/options.h>
@@ -550,8 +551,10 @@ class ET_EXPERIMENTAL CudaBackend final
 
     setCurrentCUDAStream(handle->get_cuda_stream(), 0);
 
+    size_t n_io_sum = 0;
     ET_CHECK_OR_RETURN_ERROR(
-        n_inputs + n_outputs == args.size(),
+        !c10::add_overflows(n_inputs, n_outputs, &n_io_sum) &&
+            n_io_sum == args.size(),
         InvalidArgument,
         "number of user input %zd and output %zd generated from AOT Inductor does not match ET runner's %zd. Exit.",
         n_inputs,
