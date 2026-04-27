@@ -960,6 +960,34 @@ lib.define(f"{name}(Tensor x, int dim, int index) -> SymInt")
 lib.impl(name, select_as_symint_impl, "Meta")
 select_as_symint_op = getattr(getattr(torch.ops, namespace), name)
 
+##########
+## sdpa ##
+##########
+
+
+def sdpa_impl(
+    q: torch.Tensor,
+    k: torch.Tensor,
+    v: torch.Tensor,
+    attn_mask: Optional[torch.Tensor] = None,
+    scale: Optional[float] = None,
+):
+    if scale is None:
+        scale = 1.0 / (q.size(-1) ** 0.5)
+    attn = torch.matmul(q, k.transpose(-2, -1)) * scale
+    if attn_mask is not None:
+        attn = attn + attn_mask
+    attn = torch.softmax(attn, dim=-1)
+    return torch.matmul(attn, v)
+
+
+name = "sdpa"
+lib.define(
+    f"{name}(Tensor q, Tensor k, Tensor v, Tensor? attn_mask = None, float? scale = None) -> Tensor"
+)
+lib.impl(name, sdpa_impl, "CompositeExplicitAutograd")
+sdpa_op = getattr(getattr(torch.ops, namespace), name)
+
 ################
 ## rms_norm ##
 ################
