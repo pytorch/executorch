@@ -134,7 +134,7 @@ class KVCache(nn.Module):
             torch._check(start_pos < self.max_context_length)
             dim_to_slice = 2
             seq_length = k_val.size(dim_to_slice)
-            indices = torch.arange(seq_length) + start_pos
+            indices = torch.arange(seq_length, device=k_val.device) + start_pos
             self.k_cache.index_copy_(dim_to_slice, indices, k_val)
             self.v_cache.index_copy_(dim_to_slice, indices, v_val)
             return self.k_cache, self.v_cache
