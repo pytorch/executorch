@@ -61,7 +61,6 @@ backends/qualcomm
 examples/qualcomm
 ├── executor_runner # A general runner that is capable of running most of the basic models.
 ├── oss_scripts # Scripts for OSS(Open Source Software) models and customized runner for some specific models.
-├── qaihub_scripts # Scripts for Qaihub models and corresponding customized runner for these models.
 └── scripts # Scripts for models provided by executorch.
 ```
 

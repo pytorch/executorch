@@ -47,6 +47,15 @@ def _tensor_to_numpy_with_dim_order(
     return np.transpose(np_tensor, dim_order)
 
 
+def _prepare_const_values_for_tosa_dtype(
+    values: np.ndarray, tosa_dtype: ts.DType
+) -> np.ndarray:
+    """Normalize constant storage to the expected TOSA serializer dtype."""
+    if tosa_dtype == ts.DType.INT48 and values.dtype != np.int64:
+        return values.astype(np.int64)
+    return values
+
+
 def process_call_function(
     node: torch.fx.Node,
     tosa_graph: Any,
@@ -140,6 +149,9 @@ def process_inputs_to_parameters(
     parameter_values = _tensor_to_numpy_with_dim_order(
         parameter_data, tosa_arg.dim_order  # type: ignore[arg-type]
     )
+    parameter_values = _prepare_const_values_for_tosa_dtype(
+        parameter_values, tosa_arg.dtype
+    )
 
     tosa_graph.addConst(
         parameter_values.shape, tosa_arg.dtype, parameter_values, name=tosa_arg.name
@@ -168,6 +180,7 @@ def process_inputs_to_buffers(
             f"{type(buffer_data).__name__}"
         )
     buffer_values = _tensor_to_numpy_with_dim_order(buffer_data, tosa_arg.dim_order)  # type: ignore[arg-type]
+    buffer_values = _prepare_const_values_for_tosa_dtype(buffer_values, tosa_arg.dtype)
 
     tosa_graph.addConst(
         buffer_values.shape, tosa_arg.dtype, buffer_values, name=tosa_arg.name
@@ -192,6 +205,7 @@ def process_inputs_to_lifted_tensor_constants(
         tensor,  # type: ignore[arg-type]
         tosa_arg.dim_order,  # type: ignore[arg-type]
     )
+    tensor_values = _prepare_const_values_for_tosa_dtype(tensor_values, tosa_arg.dtype)
 
     tosa_graph.addConst(
         tensor_values.shape, tosa_arg.dtype, tensor_values, name=tosa_arg.name

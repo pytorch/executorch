@@ -47,9 +47,10 @@ class SplitGraph(ExportPass):
     not load all llama model in one pte.
     """
 
-    def __init__(self, shard_layers: List[int]):
+    def __init__(self, shard_layers: List[int], pattern=r"layers.(\d+)"):
         super().__init__()
         self.shard_layers = shard_layers
+        self.pattern = pattern
 
     def _insert_fallback_op(
         self, graph_module: torch.fx.GraphModule
@@ -62,7 +63,6 @@ class SplitGraph(ExportPass):
             The second partition will contain layers [4, 8).
             The third partition will contain layers [8, 12) and output.
         """
-        pattern = r"layers.(\d+)"
         prev_node = None
         prev_layer = None
         for node in graph_module.graph.nodes:
@@ -72,7 +72,7 @@ class SplitGraph(ExportPass):
             module_values_list = list(node.meta["nn_module_stack"].values())
             full_qualified_name = module_values_list[-1][0]
             # Search which layer this node belongs to
-            match = re.search(pattern, full_qualified_name)
+            match = re.search(self.pattern, full_qualified_name)
             if match is None:
                 continue
 
@@ -103,15 +103,20 @@ class SplitGraph(ExportPass):
         return PassResult(graph_module, True)
 
 
-def split_graph(edge_program: ExportedProgram, num_layers: int, shares: int):
+def split_graph(
+    edge_program: ExportedProgram, num_layers: int, shares: int, pattern=r"layers.(\d+)"
+):
     graph_module = edge_program.graph_module
     shard_layers = list(range(0, num_layers, int(num_layers / shares)))
-    return SplitGraph(shard_layers)(graph_module)
+    return SplitGraph(shard_layers, pattern=pattern)(graph_module)
 
 
-def get_split_graph_pass(num_layers: int, shares: int):
+def get_split_graph_pass(num_layers: int, shares: int, pattern=r"layers.(\d+)"):
     shard_layers = list(range(0, num_layers, int(num_layers / shares)))
     return SplitGraph, {
         QCOM_PASS_ACTIVATE_KEY: True,
-        QCOM_PASS_ARGS_KWARGS_DEFAULTS_KEY: {"shard_layers": shard_layers},
+        QCOM_PASS_ARGS_KWARGS_DEFAULTS_KEY: {
+            "shard_layers": shard_layers,
+            "pattern": pattern,
+        },
     }
