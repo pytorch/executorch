@@ -502,17 +502,32 @@ class TestFusedMoEBatchedInt8(unittest.TestCase):
 
     def test_int8_correctness(self):
         """INT8 batched kernel matches reference across M values."""
-        for seed, M, hidden, intermediate, num_experts, top_k, gs, desc in self.INT8_TEST_CONFIGS:
+        for (
+            seed,
+            M,
+            hidden,
+            intermediate,
+            num_experts,
+            top_k,
+            gs,
+            desc,
+        ) in self.INT8_TEST_CONFIGS:
             with self.subTest(desc=desc):
                 torch.manual_seed(seed)
                 x = torch.randn(M, hidden, dtype=torch.bfloat16, device="cuda")
                 w1_weight = torch.randn(
-                    num_experts, 2 * intermediate, hidden,
-                    dtype=torch.bfloat16, device="cuda",
+                    num_experts,
+                    2 * intermediate,
+                    hidden,
+                    dtype=torch.bfloat16,
+                    device="cuda",
                 )
                 w2_weight = torch.randn(
-                    num_experts, hidden, intermediate,
-                    dtype=torch.bfloat16, device="cuda",
+                    num_experts,
+                    hidden,
+                    intermediate,
+                    dtype=torch.bfloat16,
+                    device="cuda",
                 )
                 w1, w1s = _quantize_weights_int4(w1_weight.cpu(), gs)
                 w2, w2s = _quantize_weights_int4(w2_weight.cpu(), gs)
@@ -523,9 +538,16 @@ class TestFusedMoEBatchedInt8(unittest.TestCase):
                 topk_weights = topk_weights.softmax(dim=-1).float()
 
                 out_int8 = triton_fused_moe_batched_int8(
-                    x, w1, w1s, w2, w2s,
-                    topk_weights, topk_ids,
-                    top_k, num_experts, gs,
+                    x,
+                    w1,
+                    w1s,
+                    w2,
+                    w2s,
+                    topk_weights,
+                    topk_ids,
+                    top_k,
+                    num_experts,
+                    gs,
                 )
 
                 w1_dq = _dequantize_int4(w1.cpu(), w1s.cpu(), gs).cuda()
@@ -535,23 +557,39 @@ class TestFusedMoEBatchedInt8(unittest.TestCase):
                 diff = (out_int8.float() - ref.float()).abs().max().item()
                 rel = diff / (ref.float().abs().max().item() + 1e-10)
                 self.assertLess(
-                    rel, 0.10,
+                    rel,
+                    0.10,
                     f"{desc}: relative diff {rel:.4f} (abs {diff:.6f})",
                 )
 
     def test_int8_matches_bf16_batched(self):
         """INT8 batched output is close to BF16 batched output."""
-        for seed, M, hidden, intermediate, num_experts, top_k, gs, desc in self.INT8_TEST_CONFIGS:
+        for (
+            seed,
+            M,
+            hidden,
+            intermediate,
+            num_experts,
+            top_k,
+            gs,
+            desc,
+        ) in self.INT8_TEST_CONFIGS:
             with self.subTest(desc=desc):
                 torch.manual_seed(seed)
                 x = torch.randn(M, hidden, dtype=torch.bfloat16, device="cuda")
                 w1_weight = torch.randn(
-                    num_experts, 2 * intermediate, hidden,
-                    dtype=torch.bfloat16, device="cuda",
+                    num_experts,
+                    2 * intermediate,
+                    hidden,
+                    dtype=torch.bfloat16,
+                    device="cuda",
                 )
                 w2_weight = torch.randn(
-                    num_experts, hidden, intermediate,
-                    dtype=torch.bfloat16, device="cuda",
+                    num_experts,
+                    hidden,
+                    intermediate,
+                    dtype=torch.bfloat16,
+                    device="cuda",
                 )
                 w1, w1s = _quantize_weights_int4(w1_weight.cpu(), gs)
                 w2, w2s = _quantize_weights_int4(w2_weight.cpu(), gs)
@@ -562,21 +600,36 @@ class TestFusedMoEBatchedInt8(unittest.TestCase):
                 topk_weights = topk_weights.softmax(dim=-1).float()
 
                 out_bf16 = triton_fused_moe_batched(
-                    x, w1, w1s, w2, w2s,
-                    topk_weights, topk_ids,
-                    top_k, num_experts, gs,
+                    x,
+                    w1,
+                    w1s,
+                    w2,
+                    w2s,
+                    topk_weights,
+                    topk_ids,
+                    top_k,
+                    num_experts,
+                    gs,
                 )
 
                 out_int8 = triton_fused_moe_batched_int8(
-                    x, w1, w1s, w2, w2s,
-                    topk_weights, topk_ids,
-                    top_k, num_experts, gs,
+                    x,
+                    w1,
+                    w1s,
+                    w2,
+                    w2s,
+                    topk_weights,
+                    topk_ids,
+                    top_k,
+                    num_experts,
+                    gs,
                 )
 
                 diff = (out_int8.float() - out_bf16.float()).abs().max().item()
                 rel = diff / (out_bf16.float().abs().max().item() + 1e-10)
                 self.assertLess(
-                    rel, 0.15,
+                    rel,
+                    0.15,
                     f"{desc}: int8 vs bf16 relative diff {rel:.4f} (abs {diff:.6f})",
                 )
 

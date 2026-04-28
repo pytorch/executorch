@@ -707,11 +707,11 @@ def _fused_moe_batched_kernel(
 # Autotune configs for batched INT8 GEMM1 (gate+up projection, W4A8).
 _BATCHED_GEMM1_INT8_CONFIGS = [
     triton.Config({"BLOCK_SIZE_N": 64, "BLOCK_SIZE_K": 128}, num_warps=4, num_stages=3),
-    triton.Config({"BLOCK_SIZE_N": 128, "BLOCK_SIZE_K": 128}, num_warps=4, num_stages=2),
-    triton.Config({"BLOCK_SIZE_N": 64, "BLOCK_SIZE_K": 64}, num_warps=4, num_stages=3),
     triton.Config(
-        {"BLOCK_SIZE_N": 128, "BLOCK_SIZE_K": 64}, num_warps=4, num_stages=3
+        {"BLOCK_SIZE_N": 128, "BLOCK_SIZE_K": 128}, num_warps=4, num_stages=2
     ),
+    triton.Config({"BLOCK_SIZE_N": 64, "BLOCK_SIZE_K": 64}, num_warps=4, num_stages=3),
+    triton.Config({"BLOCK_SIZE_N": 128, "BLOCK_SIZE_K": 64}, num_warps=4, num_stages=3),
     triton.Config({"BLOCK_SIZE_N": 64, "BLOCK_SIZE_K": 32}, num_warps=4, num_stages=4),
     triton.Config({"BLOCK_SIZE_N": 128, "BLOCK_SIZE_K": 32}, num_warps=4, num_stages=4),
 ]
@@ -833,7 +833,10 @@ def _fused_moe_batched_int8_kernel(
         else:
             # Multi-group tile: dequantize weights per group, use float matmul
             b_dequant = (b_int8.to(tl.float32) * b_scale).to(compute_type)
-            acc += tl.dot(a_int8.to(compute_type), b_dequant).to(tl.float32) * a_scale[:, None]
+            acc += (
+                tl.dot(a_int8.to(compute_type), b_dequant).to(tl.float32)
+                * a_scale[:, None]
+            )
 
         a_ptrs += BLOCK_SIZE_K * stride_ak
         b_ptrs += (BLOCK_SIZE_K // 2) * stride_bk
@@ -977,11 +980,11 @@ def _fused_moe_silu_batched_kernel(
 # Autotune configs for batched INT8 GEMM2 (down projection + SiLU, W4A8).
 _BATCHED_GEMM2_INT8_CONFIGS = [
     triton.Config({"BLOCK_SIZE_N": 64, "BLOCK_SIZE_K": 128}, num_warps=4, num_stages=2),
-    triton.Config({"BLOCK_SIZE_N": 128, "BLOCK_SIZE_K": 128}, num_warps=4, num_stages=2),
-    triton.Config({"BLOCK_SIZE_N": 64, "BLOCK_SIZE_K": 64}, num_warps=4, num_stages=3),
     triton.Config(
-        {"BLOCK_SIZE_N": 128, "BLOCK_SIZE_K": 64}, num_warps=4, num_stages=3
+        {"BLOCK_SIZE_N": 128, "BLOCK_SIZE_K": 128}, num_warps=4, num_stages=2
     ),
+    triton.Config({"BLOCK_SIZE_N": 64, "BLOCK_SIZE_K": 64}, num_warps=4, num_stages=3),
+    triton.Config({"BLOCK_SIZE_N": 128, "BLOCK_SIZE_K": 64}, num_warps=4, num_stages=3),
     triton.Config({"BLOCK_SIZE_N": 64, "BLOCK_SIZE_K": 32}, num_warps=4, num_stages=4),
     triton.Config({"BLOCK_SIZE_N": 128, "BLOCK_SIZE_K": 32}, num_warps=4, num_stages=4),
 ]
@@ -1105,7 +1108,10 @@ def _fused_moe_silu_batched_int8_kernel(
         else:
             # Multi-group tile: dequantize weights per group, use float matmul
             b_dequant = (b_int8.to(tl.float32) * b_scale).to(compute_type)
-            acc += tl.dot(a_int8.to(compute_type), b_dequant).to(tl.float32) * a_scale[:, None]
+            acc += (
+                tl.dot(a_int8.to(compute_type), b_dequant).to(tl.float32)
+                * a_scale[:, None]
+            )
 
         a_gate_ptrs += BLOCK_SIZE_K * stride_ak
         a_up_ptrs += BLOCK_SIZE_K * stride_ak

@@ -28,19 +28,67 @@ from torch.library import triton_op, wrap_triton
 
 _INT4_MATMUL_CONFIGS = [
     # Large-M prefill configs (tensor core saturated)
-    triton.Config({"BLOCK_SIZE_M": 128, "BLOCK_SIZE_N": 128, "BLOCK_SIZE_K": 128}, num_warps=8, num_stages=3),
-    triton.Config({"BLOCK_SIZE_M": 128, "BLOCK_SIZE_N": 256, "BLOCK_SIZE_K": 64}, num_warps=8, num_stages=3),
-    triton.Config({"BLOCK_SIZE_M": 64, "BLOCK_SIZE_N": 128, "BLOCK_SIZE_K": 128}, num_warps=4, num_stages=4),
-    triton.Config({"BLOCK_SIZE_M": 128, "BLOCK_SIZE_N": 64, "BLOCK_SIZE_K": 128}, num_warps=4, num_stages=3),
-    triton.Config({"BLOCK_SIZE_M": 64, "BLOCK_SIZE_N": 256, "BLOCK_SIZE_K": 64}, num_warps=4, num_stages=4),
-    triton.Config({"BLOCK_SIZE_M": 64, "BLOCK_SIZE_N": 64, "BLOCK_SIZE_K": 128}, num_warps=4, num_stages=4),
+    triton.Config(
+        {"BLOCK_SIZE_M": 128, "BLOCK_SIZE_N": 128, "BLOCK_SIZE_K": 128},
+        num_warps=8,
+        num_stages=3,
+    ),
+    triton.Config(
+        {"BLOCK_SIZE_M": 128, "BLOCK_SIZE_N": 256, "BLOCK_SIZE_K": 64},
+        num_warps=8,
+        num_stages=3,
+    ),
+    triton.Config(
+        {"BLOCK_SIZE_M": 64, "BLOCK_SIZE_N": 128, "BLOCK_SIZE_K": 128},
+        num_warps=4,
+        num_stages=4,
+    ),
+    triton.Config(
+        {"BLOCK_SIZE_M": 128, "BLOCK_SIZE_N": 64, "BLOCK_SIZE_K": 128},
+        num_warps=4,
+        num_stages=3,
+    ),
+    triton.Config(
+        {"BLOCK_SIZE_M": 64, "BLOCK_SIZE_N": 256, "BLOCK_SIZE_K": 64},
+        num_warps=4,
+        num_stages=4,
+    ),
+    triton.Config(
+        {"BLOCK_SIZE_M": 64, "BLOCK_SIZE_N": 64, "BLOCK_SIZE_K": 128},
+        num_warps=4,
+        num_stages=4,
+    ),
     # Small-M decode configs (bandwidth-bound, wide N tiles)
-    triton.Config({"BLOCK_SIZE_M": 16, "BLOCK_SIZE_N": 128, "BLOCK_SIZE_K": 128}, num_warps=4, num_stages=5),
-    triton.Config({"BLOCK_SIZE_M": 16, "BLOCK_SIZE_N": 256, "BLOCK_SIZE_K": 128}, num_warps=4, num_stages=3),
-    triton.Config({"BLOCK_SIZE_M": 16, "BLOCK_SIZE_N": 64, "BLOCK_SIZE_K": 128}, num_warps=4, num_stages=5),
-    triton.Config({"BLOCK_SIZE_M": 16, "BLOCK_SIZE_N": 128, "BLOCK_SIZE_K": 64}, num_warps=4, num_stages=5),
-    triton.Config({"BLOCK_SIZE_M": 32, "BLOCK_SIZE_N": 128, "BLOCK_SIZE_K": 128}, num_warps=4, num_stages=4),
-    triton.Config({"BLOCK_SIZE_M": 32, "BLOCK_SIZE_N": 256, "BLOCK_SIZE_K": 64}, num_warps=4, num_stages=4),
+    triton.Config(
+        {"BLOCK_SIZE_M": 16, "BLOCK_SIZE_N": 128, "BLOCK_SIZE_K": 128},
+        num_warps=4,
+        num_stages=5,
+    ),
+    triton.Config(
+        {"BLOCK_SIZE_M": 16, "BLOCK_SIZE_N": 256, "BLOCK_SIZE_K": 128},
+        num_warps=4,
+        num_stages=3,
+    ),
+    triton.Config(
+        {"BLOCK_SIZE_M": 16, "BLOCK_SIZE_N": 64, "BLOCK_SIZE_K": 128},
+        num_warps=4,
+        num_stages=5,
+    ),
+    triton.Config(
+        {"BLOCK_SIZE_M": 16, "BLOCK_SIZE_N": 128, "BLOCK_SIZE_K": 64},
+        num_warps=4,
+        num_stages=5,
+    ),
+    triton.Config(
+        {"BLOCK_SIZE_M": 32, "BLOCK_SIZE_N": 128, "BLOCK_SIZE_K": 128},
+        num_warps=4,
+        num_stages=4,
+    ),
+    triton.Config(
+        {"BLOCK_SIZE_M": 32, "BLOCK_SIZE_N": 256, "BLOCK_SIZE_K": 64},
+        num_warps=4,
+        num_stages=4,
+    ),
 ]
 
 
@@ -100,11 +148,7 @@ def _int4_matmul_kernel(
     # For the dot product A[M,K] @ B_dequant[K,N], we need B transposed:
     #   b_ptrs indexes as B[offs_n, offs_k//2], then we read [BLOCK_K//2, BLOCK_N]
     #   and reshape to [BLOCK_K, BLOCK_N] after unpacking.
-    b_ptrs = (
-        B
-        + offs_n[None, :] * stride_bn
-        + (offs_k[:, None] // 2) * stride_bk
-    )
+    b_ptrs = B + offs_n[None, :] * stride_bn + (offs_k[:, None] // 2) * stride_bk
     b_shifter = (offs_k[:, None] % 2) * 4
 
     # Accumulator [BLOCK_M, BLOCK_N] in float32
@@ -125,11 +169,7 @@ def _int4_matmul_kernel(
         if BLOCK_SIZE_K <= group_size:
             # One scale per column per tile — broadcast
             group_idx = (BLOCK_SIZE_K * k_step) // group_size
-            scale_ptrs = (
-                B_scale
-                + offs_n[None, :] * stride_bsn
-                + group_idx * stride_bsk
-            )
+            scale_ptrs = B_scale + offs_n[None, :] * stride_bsn + group_idx * stride_bsk
             b_scale = tl.load(scale_ptrs, mask=n_mask[None, :], other=0.0).to(
                 tl.float32
             )
@@ -186,12 +226,20 @@ def int4_matmul(
     assert x.dtype == torch.bfloat16
     assert w_packed.dtype == torch.int8
     assert w_scale.dtype == torch.bfloat16
-    assert w_packed.shape == (N, K // 2), f"w_packed shape {w_packed.shape} != ({N}, {K // 2})"
-    assert w_scale.shape == (N, K // group_size), f"w_scale shape {w_scale.shape} != ({N}, {K // group_size})"
+    assert w_packed.shape == (
+        N,
+        K // 2,
+    ), f"w_packed shape {w_packed.shape} != ({N}, {K // 2})"
+    assert w_scale.shape == (
+        N,
+        K // group_size,
+    ), f"w_scale shape {w_scale.shape} != ({N}, {K // group_size})"
 
     output = torch.empty(M, N, dtype=torch.bfloat16, device=x.device)
 
-    grid = (triton.cdiv(M, 128) * triton.cdiv(N, 128),)  # placeholder, autotune picks BLOCK sizes
+    grid = (
+        triton.cdiv(M, 128) * triton.cdiv(N, 128),
+    )  # placeholder, autotune picks BLOCK sizes
 
     def _grid(meta):
         return (
@@ -309,9 +357,9 @@ def _int4_matvec_kernel(
                 + offs_n[:, None] * stride_sn
                 + (abs_k[None, :] // group_size) * stride_sk
             )
-            scale = tl.load(
-                scale_ptrs, mask=nm[:, None] & km[None, :], other=0.0
-            ).to(tl.float32)
+            scale = tl.load(scale_ptrs, mask=nm[:, None] & km[None, :], other=0.0).to(
+                tl.float32
+            )
             w_dq = (w_uint4.to(tl.float32) - 8.0) * scale
 
         acc += tl.sum(w_dq * x_val[None, :], axis=1)
@@ -414,9 +462,7 @@ def _dequant_w4_to_bf16_kernel(
 
     # Load packed bytes [BLOCK_N, BLOCK_K//2] — each byte has two int4 values
     packed_ptrs = (
-        W_packed
-        + offs_n[:, None] * stride_wn
-        + (offs_k[None, :] // 2) * stride_wk
+        W_packed + offs_n[:, None] * stride_wn + (offs_k[None, :] // 2) * stride_wk
     )
     packed = tl.load(packed_ptrs, mask=n_mask[:, None] & k_mask[None, :], other=0)
 
@@ -465,9 +511,7 @@ def dequant_w4_to_bf16(
     output = torch.empty(N, K, dtype=torch.bfloat16, device=w_packed.device)
 
     def _grid(meta):
-        return (
-            triton.cdiv(N, meta["BLOCK_N"]) * triton.cdiv(K, meta["BLOCK_K"]),
-        )
+        return (triton.cdiv(N, meta["BLOCK_N"]) * triton.cdiv(K, meta["BLOCK_K"]),)
 
     wrap_triton(_dequant_w4_to_bf16_kernel)[_grid](
         w_packed,
@@ -495,4 +539,3 @@ def _dequant_w4_to_bf16_fake(
     N, K_half = w_packed.shape
     K = K_half * 2
     return torch.empty(N, K, dtype=torch.bfloat16, device=w_packed.device)
-
