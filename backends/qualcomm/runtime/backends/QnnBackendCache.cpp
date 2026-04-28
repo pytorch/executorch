@@ -18,7 +18,7 @@ Error QnnBackendCache::GetQnnGraphInfoFromBinary(
     void* buffer,
     uint32_t nbytes) {
   const QnnSystemInterface& qnn_sys_interface =
-      qnn_sys_impl_.GetQnnSystemInterface();
+      qnn_sys_impl_->GetQnnSystemInterface();
   std::uint32_t num_graphs;
   QnnSystemContext_GraphInfo_t* graphs = nullptr;
   const QnnSystemContext_BinaryInfo_t* binaryinfo{nullptr};
@@ -88,7 +88,7 @@ Error QnnBackendCache::Configure(const std::vector<std::string>& graph_names) {
     return Error::Ok;
   }
 
-  if (qnn_sys_impl_.Load() != Error::Ok) {
+  if (qnn_sys_impl_->Load() != Error::Ok) {
     QNN_EXECUTORCH_LOG_ERROR(
         "Failed to Load QnnSystem "
         "APIs. Caching mechanism is being disabled.");
@@ -99,7 +99,7 @@ Error QnnBackendCache::Configure(const std::vector<std::string>& graph_names) {
 
   // create QNN SystemContext
   const QnnSystemInterface& qnn_sys_interface =
-      qnn_sys_impl_.GetQnnSystemInterface();
+      qnn_sys_impl_->GetQnnSystemInterface();
   error = qnn_sys_interface.qnn_system_context_create(&sys_context_handle_);
 
   if (error != QNN_SUCCESS) {
@@ -137,14 +137,13 @@ QnnBackendCache::~QnnBackendCache() {
   Qnn_ErrorHandle_t error = QNN_SUCCESS;
   if (sys_context_handle_ != nullptr) {
     const QnnSystemInterface& qnn_sys_interface =
-        qnn_sys_impl_.GetQnnSystemInterface();
+        qnn_sys_impl_->GetQnnSystemInterface();
     error = qnn_sys_interface.qnn_system_context_free(sys_context_handle_);
     if (error != QNN_SUCCESS) {
       QNN_EXECUTORCH_LOG_WARN("Failed to free QNN system context.");
     }
     sys_context_handle_ = nullptr;
   }
-  qnn_sys_impl_.Unload();
 }
 
 std::vector<Qnn_Tensor_t> QnnBackendCache::GetGraphInputs(

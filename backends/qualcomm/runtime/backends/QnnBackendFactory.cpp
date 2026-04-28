@@ -64,7 +64,8 @@ std::unique_ptr<BackendConfigParameters> QnnBackendFactory::Create(
             htp_options->use_weight_sharing());
       }
       backend_params->qnn_backend_cache_ptr_ =
-          std::make_unique<HtpBackendCache>(qnn_context_blob);
+          std::make_unique<HtpBackendCache>(
+              qnn_context_blob, system_implementation_ptr);
 
       backend_params->qnn_context_ptr_ = std::make_unique<HtpContext>(
           implementation_ptr,
@@ -108,7 +109,8 @@ std::unique_ptr<BackendConfigParameters> QnnBackendFactory::Create(
       }
 
       backend_params->qnn_backend_cache_ptr_ =
-          std::make_unique<QnnBackendCache>(qnn_context_blob);
+          std::make_unique<QnnBackendCache>(
+              qnn_context_blob, system_implementation_ptr);
 
       backend_params->qnn_context_ptr_ = std::make_unique<GpuContext>(
           implementation_ptr,
@@ -153,7 +155,8 @@ std::unique_ptr<BackendConfigParameters> QnnBackendFactory::Create(
             "target_env in lpai_options: %d", lpai_options->target_env());
       }
       backend_params->qnn_backend_cache_ptr_ =
-          std::make_unique<QnnBackendCache>(qnn_context_blob);
+          std::make_unique<QnnBackendCache>(
+              qnn_context_blob, system_implementation_ptr);
 
       backend_params->qnn_context_ptr_ = std::make_unique<LpaiContext>(
           implementation_ptr,

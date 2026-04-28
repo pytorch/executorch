@@ -39,7 +39,8 @@ Error QnnDlcManager::Create() {
       backend_bundle_ptr_->qnn_logger_ptr.get());
 
   backend_params_ptr_->qnn_backend_cache_ptr_ =
-      std::make_unique<QnnBackendCache>(qnn_context_blob_);
+      std::make_unique<QnnBackendCache>(
+          qnn_context_blob_, backend_bundle_ptr_->system_implementation.get());
 
   backend_params_ptr_->qnn_context_ptr_ = std::make_unique<IrContext>(
       backend_bundle_ptr_->implementation.get(),
