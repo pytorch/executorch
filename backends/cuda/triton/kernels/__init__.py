@@ -13,7 +13,13 @@ from executorch.backends.cuda.triton.kernels.fused_moe import (
 from executorch.backends.cuda.triton.kernels.sdpa import sdpa, sdpa_decode_splitk
 from executorch.backends.cuda.triton.kernels.topk import topk
 
+from executorch.backends.cuda.triton.kernels.int4_matmul import (
+    dequant_w4_to_bf16,
+    int4_matvec,
+)
+
 __all__ = [
+    "dequant_w4_to_bf16",
     "fused_moe",
     "fused_moe_batched",
     "fused_moe_batched_gemm",

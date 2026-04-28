@@ -537,6 +537,47 @@ class FusedMoEExperts(nn.Module):
         )
 
 
+class W4DequantLinear(nn.Module):
+    """Dense W4 linear with dual decode/prefill dispatch.
+
+    Replaces tinygemm-format dense linears with simple [N, K//2] packed INT4
+    weights (same format as MoE experts). The prefill/decode path is baked at
+    export time via use_dequant_prefill:
+
+        False → decode path: Triton int4_matvec (bandwidth-optimized vec-mat)
+        True  → prefill path: dequant_w4_to_bf16 + F.linear (Inductor Triton mm)
+    """
+
+    def __init__(self, in_features, out_features, group_size=32):
+        super().__init__()
+        self.in_features = in_features
+        self.out_features = out_features
+        self.group_size = group_size
+        self.use_dequant_prefill = False
+        self.register_buffer("w_packed", None)  # [N, K//2] int8
+        self.register_buffer("w_scale", None)  # [N, K//gs] bf16
+
+    def forward(self, x):
+        orig_shape = x.shape
+        x_2d = x.reshape(-1, self.in_features)
+
+        if self.use_dequant_prefill:
+            w_bf16 = torch.ops.triton.dequant_w4_to_bf16(
+                self.w_packed, self.w_scale, self.group_size
+            )
+            out = F.linear(x_2d, w_bf16)
+        else:
+            assert x_2d.shape[0] == 1, (
+                f"int4_matvec decode path requires M=1, got M={x_2d.shape[0]}. "
+                f"Set use_dequant_prefill=True for M>1."
+            )
+            out = torch.ops.triton.int4_matvec(
+                x_2d, self.w_packed, self.w_scale, self.group_size
+            )
+
+        return out.reshape(*orig_shape[:-1], self.out_features)
+
+
 class SwiGLU(nn.Module):
     """SwiGLU MLP with fused gate+up projection."""
 
