@@ -108,14 +108,18 @@ i.e., the directory containing `QNN_README.txt`.
 
 ### Setup environment variables
 
-We set `LD_LIBRARY_PATH` to make sure the dynamic linker can find QNN libraries.
-
-Further, we set `PYTHONPATH` because it's easier to develop and import ExecuTorch
-Python APIs.
+Source the QNN SDK environment setup script to configure paths and environment variables:
 
 ```bash
-export LD_LIBRARY_PATH=$QNN_SDK_ROOT/lib/x86_64-linux-clang/:$LD_LIBRARY_PATH
-export PYTHONPATH=$EXECUTORCH_ROOT/..
+source $QNN_SDK_ROOT/bin/envsetup.sh
+```
+
+This sets up `LD_LIBRARY_PATH` and other required variables for the QNN SDK tools and libraries.
+
+Additionally, set `PYTHONPATH` for ExecuTorch Python APIs:
+
+```bash
+export PYTHONPATH=$EXECUTORCH_ROOT/..:$PYTHONPATH
 ```
 
 ## Build
@@ -615,14 +619,13 @@ This matrix directly corresponds to the implementations in: [executorch/backends
 
 ### Custom Ops Support
 
-You can extend QNN backend support for your own operators.
-Follow the [tutorial](https://github.com/pytorch/executorch/tree/f32cdc3de6f7176d70a80228f1a60bcd45d93437/examples/qualcomm/custom_op#custom-operator-support):
+The QNN backend supports custom PyTorch operators with the op package mechanism.
+See the [custom op tutorial](https://github.com/pytorch/executorch/tree/main/examples/qualcomm/custom_op) for the full end-to-end flow. It covers:
 
-It covers:
-- Writing new NodeVisitor for your op
-- Registering via @register_node_visitor
-- Creating and linking libQnnOp*.so for the delegate
-- Testing and verifying custom kernels on HTP
+- Defining a custom PyTorch op (single-output and multi-output)
+- Writing and building a QNN op package (XML and Op Implementation)
+- Registering the op package with ExecuTorch via `QnnCustomOpPackageBuilder`
+- Annotating custom ops for quantization via `CustomOpsQuantAnnotator` / `IOQuantConfig`
 
 ## FAQ
 
