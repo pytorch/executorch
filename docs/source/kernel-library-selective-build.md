@@ -85,6 +85,41 @@ This API lets users pass in a list of operator names. Note that this API can be 
 
 This API lets users pass in a pte file of an exported model. When used, the pte file will be parsed to generate a yaml file that enumerates the operators and dtypes used in the model.
 
+### Right-sizing the kernel registry
+
+The runtime's operator registry is a fixed-size static array whose capacity
+is set at compile time via `MAX_KERNEL_NUM` (default 2000). Each slot is a
+three-pointer `Kernel` struct (12 bytes on 32-bit, 24 bytes on 64-bit), so
+the array permanently occupies roughly 24&nbsp;KiB on 32-bit targets and
+48&nbsp;KiB on 64-bit — regardless of how many kernels actually register.
+This overhead is most visible on small embedded targets where KiBs of
+static RAM matter. When selective build is active the exact kernel set is
+known at build time, so the registry can be sized to fit.
+
+Any selective-build invocation (`EXECUTORCH_SELECT_OPS_MODEL`,
+`EXECUTORCH_SELECT_OPS_LIST`, or `EXECUTORCH_SELECT_OPS_YAML`) now
+automatically computes a right-sized `MAX_KERNEL_NUM` and propagates it into
+`operator_registry.cpp` via a generated header. No additional flag is
+required.
+
+Resolution order in `operator_registry.cpp`:
+
+1. A user-supplied `-DMAX_KERNEL_NUM=N` always wins.
+2. Otherwise, the auto-computed value from the generated
+   `selected_max_kernel_num.h` is used.
+3. Otherwise (no selective build), the default 2000 is used.
+
+The count is `sum(kernel variants in et_kernel_metadata)` plus the prim ops
+registered by `kernels/prim_ops/register_prim_ops.cpp`. If a YAML opts into
+`include_all_operators`, auto-sizing is skipped and the default capacity
+applies.
+
+If you register kernels outside the selective-build YAML (for example via
+`EXECUTORCH_LIBRARY` macros in your own code), pin the registry explicitly
+with `-DMAX_KERNEL_NUM=N`. A too-small registry aborts at static init with
+`Error::RegistrationExceedingMaxKernels` and a log of every attempted
+kernel.
+
 ### Dtype Selective Build
 
 Beyond pruning the binary to remove unused operators, the binary size can further reduced by removing unused dtypes. For example, if your model only uses floats for the `add` operator, then including variants of the `add` operators for `doubles` and `ints` is unnecessary. The flag `DTYPE_SELECTIVE_BUILD` can be set to `ON` to support this additional optimization. Currently, dtype selective build is only supported with the model API described above. Once enabled, a header file that specifies only the operators and dtypes used by the model is created and linked against a rebuild of the `portable_kernels` lib. This feature is only supported for the portable kernels library; it's not supported for optimized, quantized or custom kernel libraries.

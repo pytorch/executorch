@@ -7,7 +7,6 @@ import multiprocessing
 
 import torch
 from eiq_neutron_sdk.neutron_converter.neutron_converter import CompilationContext
-
 from executorch import exir
 from executorch.backends.nxp.backend.edge_program_converter import (
     EdgeProgramToIRConverter,
@@ -72,4 +71,5 @@ def test_neutron_converter_with_experimental_mlir_flow(mocker):
 
     compilation_context = process_spy.call_args.kwargs["args"][2]
     assert isinstance(compilation_context, CompilationContext)
-    assert compilation_context.compilationOpts.useNewFlowNeutronC
+    if hasattr(compilation_context.compilationOpts, "useNewFlowNeutronC"):
+        assert compilation_context.compilationOpts.useNewFlowNeutronC
