@@ -82,6 +82,7 @@ class VoxtralTTSConfig:
     # Runtime
     max_seq_len: int = 4096
     backend: str = "xnnpack"
+    dtype: torch.dtype = torch.float32
 
     @staticmethod
     def from_params_json(path: str) -> "VoxtralTTSConfig":
@@ -300,6 +301,41 @@ class StaticKVCache(nn.Module):
         return self.k_cache, self.v_cache
 
 
+class MLXStaticKVCache(nn.Module):
+    """KV cache wrapping executorch.backends.mlx.llm.cache.KVCache.
+
+    The underlying MLX KVCache uses BHSD layout. The model's QKV projections
+    produce BSHD tensors, so this wrapper transposes on entry and returns
+    BHSD (full slices) for MLXSDPA.
+
+    dtype is passed in — callers should use the LM weight dtype so the cache
+    matches the model (bf16/fp16/fp32 all supported by MLX).
+    """
+
+    def __init__(
+        self, max_seq_len: int, n_kv_heads: int, head_dim: int, dtype: torch.dtype
+    ):
+        super().__init__()
+        from executorch.backends.mlx.llm.cache import KVCache as MLXKVCacheImpl
+
+        self.cache = MLXKVCacheImpl(
+            max_batch_size=1,
+            max_context_length=max_seq_len,
+            n_heads=n_kv_heads,
+            head_dim=head_dim,
+            enable_dynamic_shape=True,
+            dtype=dtype,
+        )
+
+    def update(
+        self, input_pos: torch.Tensor, k_val: torch.Tensor, v_val: torch.Tensor
+    ) -> tuple[torch.Tensor, torch.Tensor]:
+        # Transpose BSHD -> BHSD for MLX cache.
+        k_val = k_val.transpose(1, 2)
+        v_val = v_val.transpose(1, 2)
+        return self.cache.update(input_pos, k_val, v_val)
+
+
 class SDPA(nn.Module):
     """Scaled dot-product attention using torch.ops.llama.custom_sdpa."""
 
@@ -394,6 +430,39 @@ class StandardSDPA(nn.Module):
         return y.view(bsz, seqlen, self.dim)
 
 
+class MLXSDPA(nn.Module):
+    """SDPA using MLX's custom op for Apple Silicon GPU acceleration.
+
+    torch.ops.mlx.custom_sdpa handles GQA expansion, causal masking via
+    start_pos, and on-device execution — no explicit mask needed.
+
+    KV cache arrives in BHSD layout (full cache from MLXStaticKVCache);
+    queries arrive in BSHD. The op expects BHSD, so q is transposed.
+    """
+
+    def __init__(self, n_heads: int, head_dim: int):
+        super().__init__()
+        self.dim = n_heads * head_dim
+        self.scale = head_dim**-0.5
+
+    def forward(
+        self,
+        input_pos: torch.Tensor,
+        q: torch.Tensor,
+        k: torch.Tensor,
+        v: torch.Tensor,
+        bsz: int,
+        seqlen: int,
+        mask: torch.Tensor | None = None,
+    ) -> torch.Tensor:
+        start_pos = input_pos[0].item()
+        q = q.transpose(1, 2)  # BSHD -> BHSD
+        y = torch.ops.mlx.custom_sdpa(
+            q, k, v, start_pos=start_pos, is_causal=True, scale=self.scale
+        )
+        return y.transpose(1, 2).contiguous().view(bsz, seqlen, self.dim)
+
+
 class LMAttention(nn.Module):
     """GQA with RoPE, KV cache, and SDPA. No biases.
 
@@ -401,6 +470,9 @@ class LMAttention(nn.Module):
       - "xnnpack"/"portable" (default): KVCache (BSHD) + custom SDPA op.
       - "cuda": StaticKVCache (BHSD) + StandardSDPA (F.scaled_dot_product_attention).
         The custom_sdpa op cannot lower through AOTInductor.
+      - "mlx": MLXStaticKVCache (BHSD, MLX-backed) + MLXSDPA
+        (torch.ops.mlx.custom_sdpa). RoPE is computed on-the-fly via
+        torch.ops.mlx.rope in forward() instead of the precomputed freqs table.
     """
 
     def __init__(self, config: VoxtralTTSConfig):
@@ -410,6 +482,9 @@ class LMAttention(nn.Module):
         self.head_dim = config.head_dim
         self.dim = config.dim
         self.backend = config.backend
+        # Stored so the MLX RoPE branch can call torch.ops.mlx.rope(...) with
+        # the Mistral rope base directly. Harmless on other backends.
+        self.rope_theta = config.rope_theta
 
         self.wq = nn.Linear(config.dim, self.n_heads * self.head_dim, bias=False)
         self.wk = nn.Linear(config.dim, self.n_kv_heads * self.head_dim, bias=False)
@@ -421,6 +496,14 @@ class LMAttention(nn.Module):
                 config.max_seq_len, self.n_kv_heads, self.head_dim
             )
             self.sdpa = StandardSDPA(self.n_heads, self.n_kv_heads, self.head_dim)
+        elif self.backend == "mlx":
+            self.kv_cache = MLXStaticKVCache(
+                config.max_seq_len,
+                self.n_kv_heads,
+                self.head_dim,
+                dtype=config.dtype,
+            )
+            self.sdpa = MLXSDPA(self.n_heads, self.head_dim)
         else:
             self.kv_cache = KVCache(config.max_seq_len, self.n_kv_heads, self.head_dim)
             self.sdpa = SDPA(self.n_heads, self.head_dim)
@@ -437,7 +520,28 @@ class LMAttention(nn.Module):
         q = self.wq(x).view(B, T, self.n_heads, self.head_dim)
         k = self.wk(x).view(B, T, self.n_kv_heads, self.head_dim)
         v = self.wv(x).view(B, T, self.n_kv_heads, self.head_dim)
-        q, k = apply_rotary_emb(q, k, freqs_cos, freqs_sin)
+        if self.backend == "mlx":
+            # On-the-fly Mistral-style interleaved RoPE via MLX op.
+            # traditional=True matches Mistral's (x0,x1),(x2,x3),... pairing.
+            start_pos = input_pos[0].item()
+            q = torch.ops.mlx.rope(
+                q.transpose(1, 2),  # BSHD -> BHSD
+                self.head_dim,
+                start_pos,
+                traditional=True,
+                base=self.rope_theta,
+            ).transpose(
+                1, 2
+            )  # back to BSHD
+            k = torch.ops.mlx.rope(
+                k.transpose(1, 2),
+                self.head_dim,
+                start_pos,
+                traditional=True,
+                base=self.rope_theta,
+            ).transpose(1, 2)
+        else:
+            q, k = apply_rotary_emb(q, k, freqs_cos, freqs_sin)
         k, v = self.kv_cache.update(input_pos, k, v)
         y = self.sdpa(input_pos, q, k, v, B, T, attn_mask)
         return self.wo(y)
@@ -763,11 +867,13 @@ class FlowMatchingHead(nn.Module):
     def semantic_logits(self, llm_hidden: torch.Tensor) -> torch.Tensor:
         """Raw masked logits for semantic code prediction."""
         logit = self.semantic_codebook_output(llm_hidden).float()
-        logit[:, EMPTY_AUDIO_ID] = float("-inf")
-        logit[:, (N_SPECIAL_TOKENS + self.config.semantic_codebook_size) :] = float(
-            "-inf"
+        idx = torch.arange(self.padded_semantic_size, device=logit.device)
+        invalid = (idx == EMPTY_AUDIO_ID) | (
+            idx >= (N_SPECIAL_TOKENS + self.config.semantic_codebook_size)
         )
-        return logit
+        return torch.where(
+            invalid.unsqueeze(0), torch.full_like(logit, -float("inf")), logit
+        )
 
     def forward(self, llm_hidden: torch.Tensor) -> torch.Tensor:
         """Full forward: semantic code + flow matching ODE -> all codes.
@@ -1500,10 +1606,22 @@ def load_model(
     """
     from safetensors import safe_open
 
+    _VALID_BACKENDS = ("portable", "xnnpack", "cuda", "cuda-windows", "mlx")
+    if backend not in _VALID_BACKENDS:
+        raise ValueError(
+            f"Unknown backend '{backend}'. Must be one of {_VALID_BACKENDS}."
+        )
+
+    # Import MLX custom ops so torch.ops.mlx.{custom_sdpa,rope,kv_cache_update}
+    # resolve during the model forward pass. Side-effect import only.
+    if backend == "mlx":
+        import executorch.backends.mlx.custom_ops  # noqa: F401
+
     model_dir = Path(model_path)
     config = VoxtralTTSConfig.from_params_json(str(model_dir / "params.json"))
     config.max_seq_len = max_seq_len
     config.backend = backend
+    config.dtype = dtype
 
     print(
         f"Building model on meta device (dim={config.dim}, layers={config.n_layers}, "

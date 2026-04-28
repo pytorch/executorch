@@ -28,8 +28,6 @@ from pathlib import Path
 
 import torch
 import torch.nn as nn
-from executorch.examples.models.voxtral_tts.model import load_model
-from executorch.examples.models.voxtral_tts.voice import load_voice_from_model_dir
 from executorch.exir import (
     EdgeCompileConfig,
     ExecutorchBackendConfig,
@@ -39,6 +37,13 @@ from executorch.exir.passes import MemoryPlanningPass
 from executorch.exir.passes.init_mutable_pass import InitializedMutableBufferPass
 from executorch.extension.llm.export.quantize import quantize_model_
 from torch.export import Dim, export
+
+try:
+    from .model import load_model
+    from .voice import load_voice_from_model_dir
+except ImportError:
+    from model import load_model
+    from voice import load_voice_from_model_dir
 
 # ---------------------------------------------------------------------------
 # Export wrappers
@@ -155,11 +160,18 @@ def _export_codec_pte(model, args, device: str) -> None:
         qlinear_codec_group_size=args.qlinear_codec_group_size,
         device=device,
     )
-    codec_triton_mode = "OFF" if args.backend in ("cuda", "cuda-windows") else "ON"
+    codec_backend = "portable" if args.backend == "mlx" else args.backend
+    if codec_backend != args.backend:
+        print(
+            "Using portable codec lowering for MLX export "
+            "(MLX codec lowering currently corrupts waveform amplitude)."
+        )
+    codec_triton_mode = "OFF" if codec_backend in ("cuda", "cuda-windows") else "ON"
+    # triton_kernel_mode is a no-op for non-CUDA backends (xnnpack, mlx, portable).
     et_codec = lower_to_executorch(
         codec_programs,
         codec_metadata,
-        backend=args.backend,
+        backend=codec_backend,
         triton_kernel_mode=codec_triton_mode,
     )
 
@@ -208,6 +220,30 @@ def _apply_cuda_arg_defaults(parser, args, backend_for_export: str) -> None:
             "needs bf16 weights for the int-pack kernels)."
         )
         args.dtype = "bf16"
+
+
+def _apply_mlx_arg_defaults(args, backend_for_export: str) -> None:
+    """Choose MLX-compatible quantization defaults."""
+    if (
+        backend_for_export == "mlx"
+        and args.qembedding is not None
+        and args.qembedding_group_size is None
+    ):
+        args.qembedding_group_size = 128
+        print(
+            "Auto-selected --qembedding-group-size=128 "
+            "(MLX embedding lowering requires grouped quantization)."
+        )
+
+
+def _validate_mlx_args(parser, args, backend_for_export: str) -> None:
+    """Reject MLX combinations that produce runner-incompatible artifacts."""
+    if backend_for_export == "mlx" and args.qlinear_codec is not None:
+        parser.error(
+            "--backend=mlx does not currently support --qlinear-codec because "
+            "codec_decoder.pte is lowered through portable ExecuTorch, while "
+            "the MLX runner does not link portable quantized CPU ops."
+        )
 
 
 def resolve_effective_quantization(
@@ -485,6 +521,7 @@ def lower_to_executorch(programs, metadata, backend="xnnpack", triton_kernel_mod
             (Triton sdpa kernel only accepts bool masks).
     """
     mutable_buffer_passes = [InitializedMutableBufferPass(["k_cache", "v_cache"])]
+    transform_passes = None
     if backend == "xnnpack":
         from executorch.backends.xnnpack.partition.xnnpack_partitioner import (
             XnnpackDynamicallyQuantizedPartitioner,
@@ -519,12 +556,23 @@ def lower_to_executorch(programs, metadata, backend="xnnpack", triton_kernel_mod
             if backend == "cuda-windows":
                 compile_specs.append(CompileSpec("platform", b"windows"))
             partitioner[key] = [CudaPartitioner(compile_specs)]
+    elif backend == "mlx":
+        from executorch.backends.mlx.partitioner import MLXPartitioner
+        from executorch.backends.mlx.passes import get_default_passes
+
+        print(f"\nLowering to ExecuTorch with MLX ({len(programs)} methods)...")
+        # One fresh partitioner per method (LM, audio_token_embedding,
+        # semantic_head, predict_velocity, codec_decoder, ...).
+        partitioner = {key: [MLXPartitioner()] for key in programs}
+        # MLX requires reshape/permute/dtype canonicalization before lowering.
+        transform_passes = get_default_passes()
     else:
         print(f"\nLowering to ExecuTorch (portable, {len(programs)} methods)...")
         partitioner = []
 
     et_prog = to_edge_transform_and_lower(
         programs,
+        transform_passes=transform_passes,
         partitioner=partitioner,
         compile_config=EdgeCompileConfig(
             _check_ir_validity=False,
@@ -532,6 +580,18 @@ def lower_to_executorch(programs, metadata, backend="xnnpack", triton_kernel_mod
         ),
         constant_methods=metadata,
     )
+
+    if backend == "mlx":
+        # MLX uses its own KV cache semantics and does not need the CUDA-only
+        # mutable-buffer sharing / name emission paths. Match the
+        # voxtral_realtime MLX export config.
+        return et_prog.to_executorch(
+            config=ExecutorchBackendConfig(
+                extract_delegate_segments=True,
+                do_quant_fusion_and_const_prop=True,
+                memory_planning_pass=MemoryPlanningPass(alloc_graph_input=False),
+            ),
+        )
 
     return et_prog.to_executorch(
         config=ExecutorchBackendConfig(
@@ -564,9 +624,10 @@ def main():
     parser.add_argument(
         "--backend",
         default="xnnpack",
-        choices=["portable", "xnnpack", "cuda", "cuda-windows"],
+        choices=["portable", "xnnpack", "cuda", "cuda-windows", "mlx"],
         help="Backend (default: xnnpack). cuda/cuda-windows compile via "
-        "AOTInductor and emit model.pte + model.ptd.",
+        "AOTInductor and emit model.pte + model.ptd. mlx targets Apple "
+        "Silicon GPU via the MLX delegate (Darwin only).",
     )
     parser.add_argument(
         "--output-dir",
@@ -652,7 +713,11 @@ def main():
     args = parser.parse_args()
 
     backend_for_export = "cuda" if args.backend == "cuda-windows" else args.backend
+    if backend_for_export == "mlx" and sys.platform != "darwin":
+        parser.error("--backend=mlx requires macOS (Apple Silicon)")
     _apply_cuda_arg_defaults(parser, args, backend_for_export)
+    _apply_mlx_arg_defaults(args, backend_for_export)
+    _validate_mlx_args(parser, args, backend_for_export)
 
     os.makedirs(args.output_dir, exist_ok=True)
     model_dtype = {"fp32": torch.float32, "bf16": torch.bfloat16}[args.dtype]
