@@ -73,7 +73,9 @@ class TestDequantW4ToBf16(unittest.TestCase):
         self.assertEqual(out.shape, (N, K))
         self.assertEqual(out.dtype, torch.bfloat16)
         max_err = (out.float() - w_ref.float()).abs().max().item()
-        self.assertLess(max_err, ATOL, f"dequant [{N}x{K}] gs={group_size}: max_err={max_err}")
+        self.assertLess(
+            max_err, ATOL, f"dequant [{N}x{K}] gs={group_size}: max_err={max_err}"
+        )
 
     def test_square(self):
         self._run_dequant(256, 256, 32)
@@ -248,7 +250,9 @@ class TestDequantThenMatmul(unittest.TestCase):
         out_dequant = torch.nn.functional.linear(x, w_bf16)
 
         self.assertTrue(
-            torch.allclose(out_fused.float(), out_dequant.float(), atol=ATOL, rtol=0.01),
+            torch.allclose(
+                out_fused.float(), out_dequant.float(), atol=ATOL, rtol=0.01
+            ),
             f"fused vs dequant M={M} [{N}x{K}]: "
             f"max_abs_err={(out_fused.float() - out_dequant.float()).abs().max().item():.4f}",
         )
