@@ -36,6 +36,7 @@ __all__ = [
     "EngineNotAvailableError",
     "EngineProxy",
     "EngineType",
+    "GenAIPipeline",
     "InferenceInputConfig",
     "InferenceOutputConfig",
     "ModelPreparationInputConfig",
