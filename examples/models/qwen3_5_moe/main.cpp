@@ -404,8 +404,7 @@ int main(int argc, char** argv) {
       (double)(stats.inference_end_ms - stats.inference_start_ms);
   double prompt_eval_ms =
       (double)(stats.prompt_eval_end_ms - stats.inference_start_ms);
-  double eval_ms =
-      (double)(stats.inference_end_ms - stats.prompt_eval_end_ms);
+  double eval_ms = (double)(stats.inference_end_ms - stats.prompt_eval_end_ms);
   double ttft_s =
       (double)(stats.first_token_ms - stats.inference_start_ms) / ms_per_s;
   double sampling_s = (double)stats.aggregate_sampling_time_ms / ms_per_s;
