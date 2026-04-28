@@ -119,9 +119,12 @@ def define_op_library(name, deps, android_deps, aten_target, _allow_third_party_
         visibility = ["PUBLIC"],
         # kernels often have helpers with no prototypes just disabling the warning here as the headers
         # are codegend and linked in later
+        # -Wno-missing-prototypes is Clang-only for C++; GCC rejects it
+        # with -Werror, so exclude it for GCC and Windows builds.
         compiler_flags = select({
                 "DEFAULT": ["-Wno-missing-prototypes"],
                 "ovr_config//os:windows": [],
+                "ovr_config//compiler/constraints:gcc": [],
             }) + (
             # For shared library build, we don't want to expose symbols of
             # kernel implementation (ex torch::executor::native::tanh_out)

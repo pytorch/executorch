@@ -47,7 +47,10 @@ def define_common_targets():
         exported_headers = [
             "activation_ops_util.h",
         ],
-        compiler_flags = ["-Wno-missing-prototypes"],
+        compiler_flags = select({
+            "DEFAULT": ["-Wno-missing-prototypes"],
+            "ovr_config//compiler/constraints:gcc": [],
+        }),
         deps = [
             "//executorch/runtime/core/exec_aten/util:tensor_shape_to_c_string",
             "//executorch/runtime/kernel:kernel_includes",
@@ -97,7 +100,10 @@ def define_common_targets():
         exported_headers = [
             "dtype_util.h",
         ],
-        compiler_flags = ["-Wno-missing-prototypes"],
+        compiler_flags = select({
+            "DEFAULT": ["-Wno-missing-prototypes"],
+            "ovr_config//compiler/constraints:gcc": [],
+        }),
         deps = [
             "//executorch/runtime/kernel:kernel_includes",
         ],
@@ -109,7 +115,10 @@ def define_common_targets():
         exported_headers = [
             "elementwise_util.h",
         ],
-        compiler_flags = ["-Wno-missing-prototypes"],
+        compiler_flags = select({
+            "DEFAULT": ["-Wno-missing-prototypes"],
+            "ovr_config//compiler/constraints:gcc": [],
+        }),
         exported_deps = [
             ":broadcast_indexes_range",
             ":broadcast_util",
@@ -141,7 +150,10 @@ def define_common_targets():
         exported_headers = [
             "advanced_index_util.h",
         ],
-        compiler_flags = ["-Wno-missing-prototypes"],
+        compiler_flags = select({
+            "DEFAULT": ["-Wno-missing-prototypes"],
+            "ovr_config//compiler/constraints:gcc": [],
+        }),
         deps = [
             ":broadcast_util",
             "//executorch/runtime/core/exec_aten/util:tensor_shape_to_c_string",
@@ -156,7 +168,10 @@ def define_common_targets():
         exported_headers = [
             "copy_ops_util.h",
         ],
-        compiler_flags = ["-Wno-missing-prototypes"],
+        compiler_flags = select({
+            "DEFAULT": ["-Wno-missing-prototypes"],
+            "ovr_config//compiler/constraints:gcc": [],
+        }),
         exported_deps = [
             ":broadcast_util",
         ],
@@ -172,7 +187,10 @@ def define_common_targets():
         exported_headers = [
             "distance_util.h",
         ],
-        compiler_flags = ["-Wno-missing-prototypes"],
+        compiler_flags = select({
+            "DEFAULT": ["-Wno-missing-prototypes"],
+            "ovr_config//compiler/constraints:gcc": [],
+        }),
         deps = [
             "//executorch/runtime/kernel:kernel_includes",
         ],
@@ -188,7 +206,10 @@ def define_common_targets():
         exported_headers = [
             "kernel_ops_util.h",
         ],
-        compiler_flags = ["-Wno-missing-prototypes"],
+        compiler_flags = select({
+            "DEFAULT": ["-Wno-missing-prototypes"],
+            "ovr_config//compiler/constraints:gcc": [],
+        }),
         deps = [
             "//executorch/runtime/kernel:kernel_includes",
         ],
@@ -201,7 +222,10 @@ def define_common_targets():
         exported_headers = [
             "matmul_ops_util.h",
         ],
-        compiler_flags = ["-Wno-missing-prototypes"],
+        compiler_flags = select({
+            "DEFAULT": ["-Wno-missing-prototypes"],
+            "ovr_config//compiler/constraints:gcc": [],
+        }),
         deps = [
             ":broadcast_util",
             "//executorch/runtime/kernel:kernel_includes",
@@ -218,7 +242,10 @@ def define_common_targets():
         exported_headers = [
             "padding_util.h",
         ],
-        compiler_flags = ["-Wno-missing-prototypes"],
+        compiler_flags = select({
+            "DEFAULT": ["-Wno-missing-prototypes"],
+            "ovr_config//compiler/constraints:gcc": [],
+        }),
         deps = [
             "//executorch/runtime/kernel:kernel_includes",
         ],
@@ -231,7 +258,10 @@ def define_common_targets():
         exported_headers = [
             "normalization_ops_util.h",
         ],
-        compiler_flags = ["-Wno-missing-prototypes"],
+        compiler_flags = select({
+            "DEFAULT": ["-Wno-missing-prototypes"],
+            "ovr_config//compiler/constraints:gcc": [],
+        }),
         deps = [
             "//executorch/runtime/kernel:kernel_includes",
         ],
