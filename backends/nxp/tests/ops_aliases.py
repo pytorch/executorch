@@ -13,6 +13,7 @@ from executorch.exir.dialects._ops import ops as exir_ops
 
 AvgPool2D = exir_ops.edge.aten.avg_pool2d.default
 Bmm = exir_ops.edge.aten.bmm.default
+Convolution = exir_ops.edge.aten.convolution.default
 DequantizePerChannel = exir_ops.edge.quantized_decomposed.dequantize_per_channel.default
 DequantizePerTensor = exir_ops.edge.quantized_decomposed.dequantize_per_tensor.default
 ExecutorchDelegateCall = torch.ops.higher_order.executorch_call_delegate
@@ -20,6 +21,7 @@ GetItem = operator.getitem
 HardTanh = exir_ops.edge.aten.hardtanh.default
 HardTanh_ = exir_ops.edge.aten.hardtanh_.default
 MaxPool2DWithIndices = exir_ops.edge.aten.max_pool2d_with_indices.default
+MulTensor = exir_ops.edge.aten.mul.Tensor
 QuantizePerChannel = exir_ops.edge.quantized_decomposed.quantize_per_channel.default
 QuantizePerTensor = exir_ops.edge.quantized_decomposed.quantize_per_tensor.default
 Slice = exir_ops.edge.aten.slice.Tensor
