@@ -65,6 +65,7 @@ if [[ "$FLOW" == *arm* ]]; then
         .ci/scripts/setup-arm-baremetal-tools.sh
     fi
     source examples/arm/arm-scratch/setup_path.sh
+    export VK_LOADER_DEBUG=all
 
     if [[ "$FLOW" == *ethos_u* ]]; then
         # Prepare a test runner binary that can run on the Corstone-3x0 FVPs
