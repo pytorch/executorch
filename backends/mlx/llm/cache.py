@@ -12,6 +12,7 @@ Shared KV cache utilities for MLX delegate examples.
 Provides reusable KV cache implementations optimized for the MLX backend:
 """
 
+import inspect
 from typing import Tuple
 
 import torch
@@ -399,14 +400,30 @@ class HFStaticCache(StaticCache):
             device=device,
             dtype=dtype,
         )
-        # Call early_initialization to ensure parent's layers are fully initialized
-        self.early_initialization(
-            batch_size=max_batch_size,
-            num_heads=num_heads,
-            head_dim=head_dims,
-            dtype=dtype,
-            device=device,
-        )
+        # The HF cache API pinned in CI expects scalar num_heads/head_dim in
+        # early_initialization(). Gemma 4-style hybrid layouts need per-layer
+        # shapes, so initialize each cache layer directly using the resolved
+        # backing-cache geometry instead of relying on the helper.
+        for layer, layer_num_heads, layer_head_dim in zip(
+            self.layers, num_heads, head_dims
+        ):
+            fake_keys_tensor = torch.zeros(
+                (max_batch_size, layer_num_heads, 0, layer_head_dim),
+                dtype=dtype,
+                device=device,
+            )
+            lazy_init_sig = inspect.signature(layer.lazy_initialization)
+            # Older pinned HF caches take a single fake tensor, while newer
+            # versions expect both key_states and value_states separately.
+            if len(lazy_init_sig.parameters) == 1:
+                layer.lazy_initialization(fake_keys_tensor)
+            else:
+                fake_values_tensor = torch.zeros(
+                    (max_batch_size, layer_num_heads, 0, layer_head_dim),
+                    dtype=dtype,
+                    device=device,
+                )
+                layer.lazy_initialization(fake_keys_tensor, fake_values_tensor)
 
         # Some models (for example Gemma 4) only allocate cache entries for the
         # non-shared KV layers. Mirror the parent StaticCache layout exactly so
@@ -472,7 +489,14 @@ class HFStaticCache(StaticCache):
         if cache_position is None:
             # Current HF ExecuTorch wrappers copy the requested cache position
             # into each StaticCache layer's cumulative_length before forward().
-            cache_position = self.layers[layer_idx].cumulative_length
+            if hasattr(self.layers[layer_idx], "cumulative_length"):
+                cache_position = self.layers[layer_idx].cumulative_length
+            else:
+                raise RuntimeError(
+                    "cache_position was not provided and the pinned "
+                    "transformers StaticCache layer does not expose "
+                    "cumulative_length"
+                )
 
         assert isinstance(
             cache_position, torch.Tensor
