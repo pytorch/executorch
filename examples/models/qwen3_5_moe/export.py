@@ -269,7 +269,6 @@ def load_prequantized_model(prequantized_dir, max_seq_len=4096, use_splitk_decod
         ".conv_state",
         ".recurrent_state",
         ".cache_positions",
-        ".inv_freq",
     )
     expected_missing = {k for k in missing if any(p in k for p in runtime_prefixes)}
     weight_missing = set(missing) - expected_missing
@@ -769,10 +768,11 @@ def _export_cuda(model, config, args):
     print("Exporting decode method...")
     decode_tokens = torch.tensor([[0]], dtype=torch.long)
     decode_pos = torch.tensor([0], dtype=torch.long)
+    decode_temperature = torch.tensor([1.0], dtype=torch.float32)
     with torch.no_grad():
         decode_ep = export(
             model,
-            (decode_tokens, decode_pos),
+            (decode_tokens, decode_pos, decode_temperature),
             strict=True,
         )
     print("Decode export successful!")
@@ -784,18 +784,21 @@ def _export_cuda(model, config, args):
     # that reject longer prompts at runtime.
     _set_batched_moe(model, True)
     print("Exporting prefill method...")
+
     example_prefill_len = config.max_seq_len - 1
     prefill_tokens = torch.zeros((1, example_prefill_len), dtype=torch.long)
     prefill_pos = torch.arange(example_prefill_len, dtype=torch.long)
+    prefill_temperature = torch.tensor([1.0], dtype=torch.float32)
     seq_dim = Dim("seq_len", min=2, max=config.max_seq_len - 1)
     prefill_dynamic_shapes = (
         {1: seq_dim},  # tokens
         {0: seq_dim},  # input_pos
+        None,  # temperature (static scalar tensor)
     )
     with torch.no_grad():
         prefill_ep = export(
             model,
-            (prefill_tokens, prefill_pos),
+            (prefill_tokens, prefill_pos, prefill_temperature),
             dynamic_shapes=prefill_dynamic_shapes,
             strict=True,
         )
@@ -819,7 +822,6 @@ def _export_cuda(model, config, args):
                 CudaPartitioner(
                     [
                         CudaBackend.generate_method_name_compile_spec("decode"),
-                        CudaBackend.generate_share_kv_cache_compile_spec(),
                     ]
                 )
             ],
@@ -827,7 +829,6 @@ def _export_cuda(model, config, args):
                 CudaPartitioner(
                     [
                         CudaBackend.generate_method_name_compile_spec("prefill"),
-                        CudaBackend.generate_share_kv_cache_compile_spec(),
                     ]
                 )
             ],
