@@ -48,6 +48,7 @@ class QnnSystemInterface {
   DEFINE_SHIM_FUNCTION_SYS_INTERFACE(
       system_dlc_create_from_binary,
       systemDlcCreateFromBinary);
+  DEFINE_SHIM_FUNCTION_SYS_INTERFACE(system_dlc_free, systemDlcFree);
 
  private:
   const QnnSystemInterface_t* qnn_sys_interface_{nullptr};

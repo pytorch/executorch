@@ -550,10 +550,18 @@ Error QnnManager::CompileDlc() {
   for (uint32_t i = 0; i < num_graphs; ++i) {
     auto& graphInfo = graphs[i].graphInfoV1;
     Qnn_GraphHandle_t graphHandle;
-    backend_bundle_ptr_->implementation->GetQnnInterface().qnn_graph_retrieve(
-        backend_params_ptr_->qnn_context_ptr_->GetHandle(),
-        graphInfo.graphName,
-        &graphHandle);
+    error = backend_bundle_ptr_->implementation->GetQnnInterface()
+                .qnn_graph_retrieve(
+                    backend_params_ptr_->qnn_context_ptr_->GetHandle(),
+                    graphInfo.graphName,
+                    &graphHandle);
+    if (error != QNN_SUCCESS) {
+      QNN_EXECUTORCH_LOG_ERROR(
+          "Failed to retrieve graph %s. Error %d.",
+          graphInfo.graphName,
+          QNN_GET_ERROR_CODE(error));
+      return Error::Internal;
+    }
     backend_params_ptr_->qnn_graph_ptr_->SetGraphHandle(
         graphInfo.graphName, graphHandle);
     error =

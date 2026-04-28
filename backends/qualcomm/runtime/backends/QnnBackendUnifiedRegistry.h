@@ -43,8 +43,8 @@ struct QnnBackendBundle {
     qnn_device_ptr.reset();
     qnn_backend_ptr.reset();
     qnn_logger_ptr.reset();
-    implementation.reset();
     system_implementation.reset();
+    implementation.reset();
   }
 };
 
