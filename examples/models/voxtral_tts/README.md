@@ -117,6 +117,11 @@ full audio at the end. The first chunk arrives in ~0.4 s of audio (short
 prefill delay), then 2 s chunks follow continuously. This decouples
 time-to-first-audio from total synthesis length and enables live piped playback.
 
+The streaming flags are shared by all runner builds. MLX export and offline
+synthesis are validated in this directory, but MLX streaming performance is not
+reported yet: MLX currently keeps `codec_decoder.pte` on portable lowering, so
+streaming chunks still pay portable CPU codec decode cost.
+
 Measured on RTX 5080 (sm_120, warm Triton autotune cache):
 
 | Prompt | Audio | Wall clock | **RTF** | Time-to-first |
