@@ -66,6 +66,13 @@ python -m executorch.backends.mlx.examples.llm.export_llm_hf \
 Gemma 4 support is currently validated for the text-only path using
 `--use-custom-sdpa --use-custom-kv-cache --qlinear 4w`.
 
+Validated with `transformers` commit
+`61461a7bcb458db7cf6eeea49678b9ab776a7821`:
+
+```bash
+pip install -U "transformers @ git+https://github.com/huggingface/transformers.git@61461a7bcb458db7cf6eeea49678b9ab776a7821"
+```
+
 ### Options
 
 | Option | Default | Description |
