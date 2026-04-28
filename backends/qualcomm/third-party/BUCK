@@ -14,15 +14,18 @@ oncall("executorch")
 _QNN_SDK_ROOT = native.read_config("qualcomm", "qnn_sdk_root", "")
 _QNN_APP_SDK_FILES = [
     ("QnnModel.cpp", "share/QNN/converter/jni/QnnModel.cpp"),
+    ("QnnWrapperUtils.cpp", "share/QNN/converter/jni/QnnWrapperUtils.cpp"),
     ("linux_QnnModelPal.cpp", "share/QNN/converter/jni/linux/QnnModelPal.cpp"),
     ("windows_QnnModelPal.cpp", "share/QNN/converter/jni/windows/QnnModelPal.cpp"),
     ("QnnModel.hpp", "share/QNN/converter/jni/QnnModel.hpp"),
     ("QnnModelPal.hpp", "share/QNN/converter/jni/QnnModelPal.hpp"),
     ("QnnTypeMacros.hpp", "share/QNN/converter/jni/QnnTypeMacros.hpp"),
+    ("QnnWrapperUtils.hpp", "share/QNN/converter/jni/QnnWrapperUtils.hpp"),
 ]
 
 _QNN_APP_SRCS = [
     ":qnn_app_sources_files[QnnModel.cpp]",
+    ":qnn_app_sources_files[QnnWrapperUtils.cpp]",
 ] + select({
     "DEFAULT": [":qnn_app_sources_files[linux_QnnModelPal.cpp]"],
     "ovr_config//os:linux": [":qnn_app_sources_files[linux_QnnModelPal.cpp]"],
@@ -33,6 +36,7 @@ _QNN_APP_HEADERS = [
     ":qnn_app_sources_files[QnnModel.hpp]",
     ":qnn_app_sources_files[QnnModelPal.hpp]",
     ":qnn_app_sources_files[QnnTypeMacros.hpp]",
+    ":qnn_app_sources_files[QnnWrapperUtils.hpp]",
 ]
 
 _QNN_APP_EXPORTED_HEADERS = {
@@ -41,6 +45,7 @@ _QNN_APP_EXPORTED_HEADERS = {
         "QnnModel.hpp",
         "QnnModelPal.hpp",
         "QnnTypeMacros.hpp",
+        "QnnWrapperUtils.hpp",
     ]
 }
 
