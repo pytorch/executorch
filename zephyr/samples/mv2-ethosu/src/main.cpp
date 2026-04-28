@@ -426,7 +426,7 @@ int main(void) {
   ET_LOG(Info, "Model size: %lu bytes", static_cast<unsigned long>(pte_size));
   ET_LOG(
       Info,
-      "Input: 224x224x3 RGB image (%lu bytes)",
+      "Input: [1, 3, 224, 224] NCHW RGB tensor (%lu bytes)",
       static_cast<unsigned long>(sizeof(mv2_input_data)));
   ET_LOG(
       Info,

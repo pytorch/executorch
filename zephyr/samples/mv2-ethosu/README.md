@@ -3,8 +3,8 @@
 This sample demonstrates running a quantized MobileNetV2 image classification
 model on the Arm Ethos-U NPU using ExecuTorch within a Zephyr RTOS application.
 
-The model classifies a static 224x224x3 RGB test image into one of 1000
-ImageNet classes and prints the top-5 predictions.
+The model classifies a static RGB test input tensor with shape `[1, 3, 224, 224]`
+(NCHW) into one of 1000 ImageNet classes and prints the top-5 predictions.
 
 ## Prerequisites
 
@@ -78,5 +78,6 @@ weights) for meaningful predictions.
 The default configuration allocates 1.5 MB each for the method and temporary
 allocator pools. These defaults are sufficient for a fully NPU-delegated INT8
 MobileNetV2. Adjust `CONFIG_EXECUTORCH_METHOD_ALLOCATOR_POOL_SIZE` and
-`CONFIG_EXECUTORCH_TEMP_ALLOCATOR_POOL_SIZE` in `prj.conf` or via board-specific
-overlay files for different model configurations.
+`CONFIG_EXECUTORCH_TEMP_ALLOCATOR_POOL_SIZE` in `prj.conf`, in board-specific
+`*.conf` files (for example, `boards/<board>.conf`), or via Zephyr's
+`OVERLAY_CONFIG` mechanism for different model configurations.
