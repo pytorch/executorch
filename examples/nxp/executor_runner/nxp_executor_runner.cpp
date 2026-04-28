@@ -446,6 +446,9 @@ int main(int argc, char* argv[]) {
         }
         closedir(datasetDir);
 
+        // Sort inputsData to ensure correct input ordering
+        std::sort(inputsData.begin(), inputsData.end());
+
         setInputs(method.get(), inputsData);
 
         status = method->execute();

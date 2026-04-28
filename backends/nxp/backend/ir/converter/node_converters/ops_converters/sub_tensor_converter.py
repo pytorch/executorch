@@ -1,11 +1,8 @@
-# Copyright 2025 NXP
+# Copyright 2025-2026 NXP
 #
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
 
-from executorch.backends.nxp.backend.ir.converter.conversion.common import (
-    node_uses_shape_broadcasting,
-)
 from executorch.backends.nxp.backend.ir.converter.node_converter import (
     CustomDelegationOptions,
     NodeConverter,
@@ -26,7 +23,7 @@ class SubTensorConverter(NodeConverter):
         parameters_mapping: dict[str, Parameter],
         custom_delegation_options: CustomDelegationOptions,
     ) -> bool:
-        if node_uses_shape_broadcasting(node):
+        if NodeConverter.uses_shape_broadcasting(node):
             # Shape broadcasting may require the addition of `Transpose` ops during conversion.
             return False
 
