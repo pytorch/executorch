@@ -592,8 +592,6 @@ def _export_mlx(model, config, args):
     from executorch.exir.passes import MemoryPlanningPass
     from torch.export import Dim, export
 
-    # Use the minimal forward variant for non-CUDA export. See
-    # _strip_sampler_from_forward docstring for why this matters.
     _strip_sampler_from_forward(model)
 
     example_tokens = torch.tensor([[0, 1]], dtype=torch.long)
@@ -678,9 +676,6 @@ def _export_metal(model, config, args):
 
     inductor_config.coordinate_descent_tuning = False
     inductor_config.aot_inductor.compile_wrapper_opt_level = "O0"
-
-    # Use the minimal forward variant for non-CUDA export. See
-    # _strip_sampler_from_forward docstring for why this matters.
     _strip_sampler_from_forward(model)
 
     # --- Decode method (T=1, static shape) ---
