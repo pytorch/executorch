@@ -2807,6 +2807,17 @@ class TestQNNQuantizedOperator(TestQNN):
                 module = self.get_qdq_module(module, sample_input)
                 self.lower_module_and_test_output(module, sample_input)
 
+    def test_qnn_backend_cat_fixed_input(self):
+        module = Cat6()  # noqa: F405
+        sample_input = (
+            torch.tensor([[[[-10.0, 2.0], [3.0, 4.0]]]]),
+            torch.tensor([[[[1.0, 3.0], [8.0, 10.0]]]]),
+        )
+        module = self.get_qdq_module(module, sample_input)
+        from executorch.backends.qualcomm.utils.utils import draw_graph
+        draw_graph("qdq_bad", ".", module)
+        self.lower_module_and_test_output(module, sample_input)
+
     def test_qnn_backend_cdist(self):
         module = CDist()  # noqa: F405
         sample_input = (
