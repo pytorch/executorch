@@ -247,6 +247,34 @@ try:
         )
 
     BACKENDS["triton_batched"] = ("Triton batched", _run_triton_batched)
+
+    def _run_triton_batched_int8(
+        hidden_states,
+        w1,
+        w1_scale,
+        w2,
+        w2_scale,
+        topk_weights,
+        topk_ids,
+        top_k,
+        num_experts,
+        group_size,
+    ):
+        return fused_moe_batched(
+            hidden_states,
+            w1,
+            w1_scale,
+            w2,
+            w2_scale,
+            topk_weights,
+            topk_ids,
+            top_k=top_k,
+            num_experts=num_experts,
+            group_size=group_size,
+            activation_dtype="int8",
+        )
+
+    BACKENDS["triton_batched_int8"] = ("Triton bat-i8", _run_triton_batched_int8)
 except ImportError:
     pass
 
@@ -358,6 +386,15 @@ def run_benchmark(
                 f"Triton vs eager mismatch at M={M}: "
                 f"max abs error {err:.3e} >= 2.0e-1"
             )
+            if "triton_batched_int8" in BACKENDS:
+                _, _, run_int8 = BACKENDS["triton_batched_int8"]
+                int8_out = run_int8(**common_args)
+                int8_err = _max_abs_error(int8_out, ref_out)
+                assert int8_err < 5.0e-1, (
+                    f"Triton INT8 vs eager mismatch at M={M}: "
+                    f"max abs error {int8_err:.3e} >= 5.0e-1"
+                )
+                del int8_out
             del ref_out, tri_out
 
         # Benchmark
