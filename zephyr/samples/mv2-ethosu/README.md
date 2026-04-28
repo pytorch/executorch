@@ -12,33 +12,54 @@ The model classifies a static RGB test input tensor with shape `[1, 3, 224, 224]
 - Python 3.10+ with ExecuTorch, torchvision, and ethos-u-vela installed
 - A board with Arm Ethos-U NPU (e.g., Corstone-300 FVP, Alif E7/E8 DevKit)
 
-## Export the model
+## Corstone-300 FVP (Ethos-U55)
 
-Export a quantized INT8 MobileNetV2 model with Ethos-U delegation:
+### Export the model
+
+Export a quantized INT8 MobileNetV2 model with Ethos-U55 delegation:
+
+<!-- RUN test_mv2_ethos-u55_generate_pte -->
+```
+python -m modules.lib.executorch.backends.arm.scripts.aot_arm_compiler --model_name=mv2_untrained --quantize --delegate --target=ethos-u55-128 --output=mv2_u55_128.pte
+```
+
+### Build and run
+
+<!-- RUN test_mv2_ethos-u55_build_and_run -->
+```
+west build -b mps3/corstone300/fvp modules/lib/executorch/zephyr/samples/mv2-ethosu -t run -- -DET_PTE_FILE_PATH=mv2_u55_128.pte
+```
+
+## Corstone-320 FVP (Ethos-U85)
+
+### Export the model
+
+Export a quantized INT8 MobileNetV2 model with Ethos-U85 delegation:
+
+<!-- RUN test_mv2_ethos-u85_generate_pte -->
+```
+python -m modules.lib.executorch.backends.arm.scripts.aot_arm_compiler --model_name=mv2_untrained --quantize --delegate --target=ethos-u85-256 --output=mv2_u85_256.pte
+```
+
+### Build and run
+
+<!-- RUN test_mv2_ethos-u85_build_and_run -->
+```
+west build -b mps4/corstone320/fvp modules/lib/executorch/zephyr/samples/mv2-ethosu -t run -- -DET_PTE_FILE_PATH=mv2_u85_256.pte
+```
+
+## Alif Ensemble E8 DevKit
+
+For boards with Ethos-U55-256 (e.g., Alif E8 HP core), use `--target=ethos-u55-256`:
 
 ```bash
 python -m modules.lib.executorch.backends.arm.scripts.aot_arm_compiler \
     --model_name=mv2_untrained \
     --quantize \
     --delegate \
-    --target=ethos-u55-128 \
+    --target=ethos-u55-256 \
     --output=mv2_ethosu.pte
 ```
-
-For boards with Ethos-U55-256 (e.g., Alif E8 HP core), use `--target=ethos-u55-256`.
-
-## Build
-
-### Corstone-300 FVP
-
-```bash
-west build -b mps3/corstone300/fvp \
-    modules/lib/executorch/zephyr/samples/mv2-ethosu \
-    -t run -- \
-    -DET_PTE_FILE_PATH=mv2_ethosu.pte
-```
-
-### Alif Ensemble E8 DevKit
 
 ```bash
 west build -b alif_e8_dk/ae822fa0e5597xx0/rtss_hp \
