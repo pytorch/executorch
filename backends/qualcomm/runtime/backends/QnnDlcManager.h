@@ -14,13 +14,11 @@
 #include <executorch/backends/qualcomm/runtime/backends/QnnBackendUnifiedRegistry.h>
 #include <executorch/backends/qualcomm/runtime/backends/ir/IrContext.h>
 
-#include "QnnWrapperUtils.hpp"
 namespace executorch {
 namespace backends {
 namespace qnn {
 
 using executorch::runtime::Error;
-using QnnModel_composeGraphsFromDlc = qnn_wrapper_api::ModelError_t (*)(...);
 class QnnDlcManager {
  public:
   QnnDlcManager(
@@ -77,8 +75,6 @@ class QnnDlcManager {
     // compose graphs from dlc
     const QnnInterface_t* interface =
         implementation->GetQnnInterface().GetInterface();
-    // QnnSystemContext_GraphInfo_t* graphs = nullptr;
-    // uint32_t num_graphs = 0;
     error = system_interface.qnn_system_dlc_compose_graphs(
         /*dlcHandle=*/dlc_handle,
         /*graphConfigs=*/nullptr,
@@ -100,6 +96,7 @@ class QnnDlcManager {
       cache->SetGraphNames(graphInfo.graphName);
     }
 
+    error = system_interface.qnn_system_dlc_free(/*dlcHandle=*/dlc_handle);
     return Error::Ok;
   }
 
