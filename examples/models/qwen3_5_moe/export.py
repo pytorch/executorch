@@ -483,8 +483,8 @@ def _replace_dense_with_w4dequant(model, group_size=128, use_hqq=False):
         )
     else:
         from torchao.quantization.quant_primitives import (
-            MappingType,
             choose_qparams_affine,
+            MappingType,
             quantize_affine,
         )
 
@@ -526,7 +526,10 @@ def _replace_dense_with_w4dequant(model, group_size=128, use_hqq=False):
         del w_bf16
         if use_hqq:
             int_data, scale = _choose_qparams_and_quantize_scale_only_hqq(
-                w_float, block_size=[1, effective_gs], qmin=-8, qmax=7,
+                w_float,
+                block_size=[1, effective_gs],
+                qmin=-8,
+                qmax=7,
             )
             int_data = int_data.to(torch.int8).view(N, K)
             scale = scale.view(N, -1)
