@@ -89,42 +89,42 @@
             "displayName": "Build Parakeet runner (CPU)",
             "configurePreset": "parakeet-cpu",
             "configuration": "Release",
-            "targets": ["parakeet_runner"]
+            "targets": ["parakeet_runner", "parakeet_helper"]
         },
         {
             "name": "parakeet-cuda",
             "displayName": "Build Parakeet runner (CUDA)",
             "configurePreset": "parakeet-cuda",
             "configuration": "Release",
-            "targets": ["parakeet_runner"]
+            "targets": ["parakeet_runner", "parakeet_helper"]
         },
         {
             "name": "parakeet-cuda-debug",
             "displayName": "Build Parakeet runner (CUDA, Debug)",
             "configurePreset": "parakeet-cuda-debug",
             "configuration": "Debug",
-            "targets": ["parakeet_runner"]
+            "targets": ["parakeet_runner", "parakeet_helper"]
         },
         {
             "name": "parakeet-metal",
             "displayName": "Build Parakeet runner (Metal)",
             "configurePreset": "parakeet-metal",
             "configuration": "Release",
-            "targets": ["parakeet_runner"]
+            "targets": ["parakeet_runner", "parakeet_helper"]
         },
         {
             "name": "parakeet-mlx",
             "displayName": "Build Parakeet runner (MLX)",
             "configurePreset": "parakeet-mlx",
             "configuration": "Release",
-            "targets": ["parakeet_runner"]
+            "targets": ["parakeet_runner", "parakeet_helper"]
         },
         {
             "name": "parakeet-vulkan",
             "displayName": "Build Parakeet runner (Vulkan)",
             "configurePreset": "parakeet-vulkan",
             "configuration": "Release",
-            "targets": ["parakeet_runner"]
+            "targets": ["parakeet_runner", "parakeet_helper"]
         }
     ],
     "workflowPresets": [

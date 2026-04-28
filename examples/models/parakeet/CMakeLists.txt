@@ -108,32 +108,49 @@ if(EXECUTORCH_BUILD_VULKAN)
   executorch_target_link_options_shared_lib(vulkan_backend)
 endif()
 
-add_executable(parakeet_runner main.cpp timestamp_utils.cpp tokenizer_utils.cpp)
-if(NOT CMAKE_BUILD_TYPE STREQUAL "Debug")
-  target_link_options_gc_sections(parakeet_runner)
-  if(NOT APPLE AND NOT MSVC)
-    target_link_options(parakeet_runner PRIVATE "LINKER:-s")
-  endif()
-endif()
-
-# Copy MLX metallib for runtime if MLX delegate is enabled
-if(TARGET mlxdelegate)
-  executorch_target_copy_mlx_metallib(parakeet_runner)
-endif()
-
-target_include_directories(
-  parakeet_runner PUBLIC ${_common_include_directories}
+set(parakeet_shared_sources parakeet_transcriber.cpp timestamp_utils.cpp
+                            tokenizer_utils.cpp
 )
-target_link_libraries(parakeet_runner PUBLIC ${link_libraries})
-target_compile_options(parakeet_runner PUBLIC ${_common_compile_options})
+
+set(parakeet_common_include_directories
+    ${_common_include_directories} ${EXECUTORCH_ROOT}/third-party/json/include
+)
+
+add_executable(parakeet_runner main.cpp ${parakeet_shared_sources})
+add_executable(
+  parakeet_helper parakeet_helper.cpp parakeet_helper_protocol.cpp
+                  ${parakeet_shared_sources}
+)
+
+foreach(parakeet_target parakeet_runner parakeet_helper)
+  if(NOT CMAKE_BUILD_TYPE STREQUAL "Debug")
+    target_link_options_gc_sections(${parakeet_target})
+    if(NOT APPLE AND NOT MSVC)
+      target_link_options(${parakeet_target} PRIVATE "LINKER:-s")
+    endif()
+  endif()
+
+  if(TARGET mlxdelegate)
+    executorch_target_copy_mlx_metallib(${parakeet_target})
+  endif()
+
+  target_include_directories(
+    ${parakeet_target} PUBLIC ${parakeet_common_include_directories}
+  )
+  target_link_libraries(${parakeet_target} PUBLIC ${link_libraries})
+  target_compile_options(${parakeet_target} PUBLIC ${_common_compile_options})
+endforeach()
 
 # On Windows, copy required DLLs to the executable directory
 if(MSVC AND EXECUTORCH_BUILD_CUDA)
-  add_custom_command(
-    TARGET parakeet_runner
-    POST_BUILD
-    COMMAND ${CMAKE_COMMAND} -E copy_if_different $<TARGET_FILE:aoti_cuda_shims>
-            $<TARGET_FILE_DIR:parakeet_runner>
-    COMMENT "Copying aoti_cuda_shims.dll to parakeet_runner directory"
-  )
+  foreach(parakeet_target parakeet_runner parakeet_helper)
+    add_custom_command(
+      TARGET ${parakeet_target}
+      POST_BUILD
+      COMMAND
+        ${CMAKE_COMMAND} -E copy_if_different $<TARGET_FILE:aoti_cuda_shims>
+        $<TARGET_FILE_DIR:${parakeet_target}>
+      COMMENT "Copying aoti_cuda_shims.dll to ${parakeet_target} directory"
+    )
+  endforeach()
 endif()
