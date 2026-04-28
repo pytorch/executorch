@@ -35,6 +35,7 @@ class MetalBackend(AotiBackend, BackendDetails):
             "aoti_torch_mps_convolution": None,
             "aoti_torch_mps_mm_out": None,
             "at::_ops::_scaled_dot_product_attention_math_for_mps::call": None,
+            "at::_ops::_scaled_dot_product_attention_math_for_mps_v2::call": None,
             "torchao::_linear_fp_act_4bit_weight": None,
             "at::_ops::topk::call": None,
             "metal::gather_qmv": None,
