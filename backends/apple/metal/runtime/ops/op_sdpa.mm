@@ -251,6 +251,21 @@ ETMetalShaderLibrary* get_sdpa_shader_library() {
 
 extern "C" {
 
+// Forward declaration of the implementation shared by both v1 and v2.
+static AOTITorchError sdpa_mps_impl(
+    AOTITensorHandle query,
+    AOTITensorHandle key,
+    AOTITensorHandle value,
+    AOTITensorHandle* attn_mask,
+    double dropout_p,
+    int32_t is_causal,
+    AOTITensorHandle* dropout_mask,
+    double* scale,
+    int32_t enable_gqa,
+    AOTITensorHandle* ret0,
+    AOTITensorHandle* ret1);
+
+// v1: Original signature without enable_gqa (for old .pte files).
 AOTITorchError aoti_torch_mps__scaled_dot_product_attention_math_for_mps(
     AOTITensorHandle query,
     AOTITensorHandle key,
@@ -260,6 +275,41 @@ AOTITorchError aoti_torch_mps__scaled_dot_product_attention_math_for_mps(
     int32_t is_causal,
     AOTITensorHandle* dropout_mask,
     double* scale,
+    AOTITensorHandle* ret0,
+    AOTITensorHandle* ret1) {
+  return sdpa_mps_impl(
+      query, key, value, attn_mask, dropout_p, is_causal,
+      dropout_mask, scale, /*enable_gqa=*/0, ret0, ret1);
+}
+
+// v2: New signature with enable_gqa (for new .pte files).
+AOTITorchError aoti_torch_mps__scaled_dot_product_attention_math_for_mps_v2(
+    AOTITensorHandle query,
+    AOTITensorHandle key,
+    AOTITensorHandle value,
+    AOTITensorHandle* attn_mask,
+    double dropout_p,
+    int32_t is_causal,
+    AOTITensorHandle* dropout_mask,
+    double* scale,
+    int32_t enable_gqa,
+    AOTITensorHandle* ret0,
+    AOTITensorHandle* ret1) {
+  return sdpa_mps_impl(
+      query, key, value, attn_mask, dropout_p, is_causal,
+      dropout_mask, scale, enable_gqa, ret0, ret1);
+}
+
+static AOTITorchError sdpa_mps_impl(
+    AOTITensorHandle query,
+    AOTITensorHandle key,
+    AOTITensorHandle value,
+    AOTITensorHandle* attn_mask,
+    double dropout_p,
+    int32_t is_causal,
+    AOTITensorHandle* dropout_mask,
+    double* scale,
+    int32_t enable_gqa,
     AOTITensorHandle* ret0,
     AOTITensorHandle* ret1) {
 

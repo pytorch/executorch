@@ -6,9 +6,10 @@
 # LICENSE file in the root directory of this source tree.
 
 
+import operator
 import traceback
 from inspect import isclass
-from typing import List, Optional, Sequence, Tuple
+from typing import cast, List, Optional, Sequence, Tuple
 
 import torch
 import torch.fx
@@ -57,6 +58,17 @@ def is_get_attr_node(node: torch.fx.Node) -> bool:
         and node.op == "get_attr"
         and not is_submodule_node(node)
     )
+
+
+def get_getitem_users(
+    source_node: torch.fx.Node, max_users: int
+) -> dict[int, torch.fx.Node | None]:
+    getitem_users: dict[int, torch.fx.Node | None] = {i: None for i in range(max_users)}
+    for user in source_node.users:
+        if user.target == operator.getitem:
+            getitem_users[cast(int, user.args[1])] = user
+
+    return getitem_users
 
 
 def is_param_node(exp_prog: ExportedProgram, node: torch.fx.Node) -> bool:
@@ -397,3 +409,12 @@ def get_cond_while_submodules_nested(
     }
     # collect cond/while submodules (using mapping indices)
     return _get_control_flow_submodules(graph_module, mapping)
+
+
+def to_2tuple(value):
+    """Normalizes scalars, and 1-element sequences to a tuple of length 2."""
+    if isinstance(value, int):
+        return (value, value)
+    if len(value) == 1:
+        return (value[0], value[0])
+    return tuple(value)
