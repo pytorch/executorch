@@ -160,12 +160,7 @@ def _export_codec_pte(model, args, device: str) -> None:
         qlinear_codec_group_size=args.qlinear_codec_group_size,
         device=device,
     )
-    codec_backend = "portable" if args.backend == "mlx" else args.backend
-    if codec_backend != args.backend:
-        print(
-            "Using portable codec lowering for MLX export "
-            "(MLX codec lowering currently corrupts waveform amplitude)."
-        )
+    codec_backend = args.backend
     codec_triton_mode = "OFF" if codec_backend in ("cuda", "cuda-windows") else "ON"
     # triton_kernel_mode is a no-op for non-CUDA backends (xnnpack, mlx, portable).
     et_codec = lower_to_executorch(
@@ -241,8 +236,8 @@ def _validate_mlx_args(parser, args, backend_for_export: str) -> None:
     if backend_for_export == "mlx" and args.qlinear_codec is not None:
         parser.error(
             "--backend=mlx does not currently support --qlinear-codec because "
-            "codec_decoder.pte is lowered through portable ExecuTorch, while "
-            "the MLX runner does not link portable quantized CPU ops."
+            "native MLX codec lowering is only validated for the unquantized "
+            "codec decoder."
         )
 
 

@@ -104,8 +104,8 @@ def test_mlx_qembedding_default_group_size_is_supported():
     assert args.qembedding_group_size == 128
 
 
-def test_mlx_rejects_quantized_portable_codec():
-    """MLX runner does not link portable quantized CPU ops for codec fallback."""
+def test_mlx_rejects_quantized_codec():
+    """Native MLX codec lowering is only validated for the unquantized codec."""
     import export_voxtral_tts  # noqa: E402
 
     parser = argparse.ArgumentParser()
@@ -115,8 +115,8 @@ def test_mlx_rejects_quantized_portable_codec():
         export_voxtral_tts._validate_mlx_args(parser, args, backend_for_export="mlx")
 
 
-def test_mlx_codec_export_uses_portable_lowering(monkeypatch, tmp_path):
-    """Codec MLX lowering currently corrupts waveform amplitude; keep codec portable."""
+def test_mlx_codec_export_uses_mlx_lowering(monkeypatch, tmp_path):
+    """Codec decoder should lower through MLX for native codec execution."""
     import export_voxtral_tts  # noqa: E402
 
     captured = {}
@@ -151,7 +151,7 @@ def test_mlx_codec_export_uses_portable_lowering(monkeypatch, tmp_path):
     )
     export_voxtral_tts._export_codec_pte(model=object(), args=args, device="cpu")
 
-    assert captured == {"backend": "portable", "triton_kernel_mode": "ON"}
+    assert captured == {"backend": "mlx", "triton_kernel_mode": "ON"}
 
 
 @pytest.mark.skipif(not _MLX_OK, reason=_MLX_REASON or "MLX not available")

@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Voxtral TTS — MLX (Apple Silicon) end-to-end script.
-# Exports the bf16 + 4w-quantized MLX LM/flow pipeline and a portable codec
+# Exports the bf16 + 4w-quantized MLX LM/flow pipeline and native MLX codec
 # decoder, then runs the runner.
 #
 # Usage:
@@ -50,7 +50,7 @@ python -c "import executorch.backends.mlx  # noqa" || {
 }
 
 echo
-echo "=== 2/4. export ${DTYPE} + qlinear=${QLINEAR:-none} + qembedding=${QEMBEDDING:-none} MLX model + portable codec ==="
+echo "=== 2/4. export ${DTYPE} + qlinear=${QLINEAR:-none} + qembedding=${QEMBEDDING:-none} MLX model + codec ==="
 if [[ "${SKIP_EXPORT:-0}" == "1" && -f "$OUT_DIR/model.pte" && -f "$OUT_DIR/codec_decoder.pte" ]]; then
   echo "  SKIP_EXPORT=1 and $OUT_DIR/{model,codec_decoder}.pte exist — skipping export"
 else

@@ -31,10 +31,9 @@ set(link_libraries executorch gflags)
 list(APPEND link_libraries optimized_native_cpu_ops_lib cpublas eigen_blas)
 executorch_target_link_options_shared_lib(optimized_native_cpu_ops_lib)
 
-# CPU-only builds need quantized and custom ops. MLX builds intentionally avoid
-# quantized_ops_lib here: quantized LM/flow ops are delegated to MLX, while the
-# default MLX codec artifact is exported separately through portable lowering
-# without codec quantization.
+# CPU-only builds need quantized and custom ops. CUDA/MLX builds intentionally
+# avoid quantized_ops_lib here because quantized LM/flow ops are delegated to the
+# backend and MLX codec quantization is not enabled.
 if(NOT EXECUTORCH_BUILD_CUDA AND NOT EXECUTORCH_BUILD_MLX)
   list(APPEND link_libraries quantized_ops_lib custom_ops)
   executorch_target_link_options_shared_lib(quantized_ops_lib)
