@@ -51,11 +51,11 @@ def _mlx_available() -> tuple[bool, str]:
         return False, f"MLX requires macOS (got {sys.platform})"
     try:
         import executorch.backends.mlx  # noqa: F401
-    except ImportError as e:
+    except (AttributeError, ImportError, OSError) as e:
         return False, f"executorch.backends.mlx not importable: {e}"
     try:
         import executorch.backends.mlx.custom_ops  # noqa: F401
-    except ImportError as e:
+    except (AttributeError, ImportError, OSError) as e:
         return False, f"executorch.backends.mlx.custom_ops not importable: {e}"
     if not hasattr(torch.ops, "mlx"):
         return False, "torch.ops.mlx namespace not registered"
@@ -89,9 +89,10 @@ def test_export_script_uses_local_model_module():
     """The export script must use this source tree's model.py, not site-packages."""
     import export_voxtral_tts  # noqa: E402
 
-    assert Path(inspect.getfile(export_voxtral_tts.load_model)).resolve() == Path(
-        __file__
-    ).with_name("model.py").resolve()
+    assert (
+        Path(inspect.getfile(export_voxtral_tts.load_model)).resolve()
+        == Path(__file__).with_name("model.py").resolve()
+    )
 
 
 def test_mlx_qembedding_default_group_size_is_supported():

@@ -21,7 +21,7 @@ try:
     )
 
     _MLX_RUNTIME_OK = sys.platform == "darwin"
-except ImportError:
+except (AttributeError, ImportError, OSError):
     _MLX_RUNTIME_OK = False
 
 

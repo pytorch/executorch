@@ -1678,6 +1678,30 @@ def _repeat_handler(P: MLXProgramBuilder, n: Node) -> Slot:
     return out
 
 
+def _index_gather_permutation(
+    indexed_axes: Set[int],
+    x_ndim: int,
+    broadcast_ndim: int,
+) -> List[int]:
+    indexed_axes_sorted = sorted(indexed_axes)
+    expected_rank = broadcast_ndim + x_ndim
+    is_contiguous = indexed_axes_sorted == list(
+        range(indexed_axes_sorted[0], indexed_axes_sorted[-1] + 1)
+    )
+    if not is_contiguous:
+        return list(range(expected_rank))
+
+    non_indexed_axes = [i for i in range(x_ndim) if i not in indexed_axes]
+    before_axes = [i for i in non_indexed_axes if i < indexed_axes_sorted[0]]
+    after_axes = [i for i in non_indexed_axes if i > indexed_axes_sorted[-1]]
+    return (
+        [broadcast_ndim + i for i in before_axes]
+        + list(range(broadcast_ndim))
+        + [broadcast_ndim + i for i in after_axes]
+        + [broadcast_ndim + i for i in indexed_axes_sorted]
+    )
+
+
 @REGISTRY.register(target=[torch.ops.aten.index.Tensor])
 def _index_handler(P: MLXProgramBuilder, n: Node) -> Slot:
     args = P.args(n)
@@ -1775,8 +1799,8 @@ def _index_handler(P: MLXProgramBuilder, n: Node) -> Slot:
     out_shape = [P.to_int_or_vid(int(d)) for d in out_meta.shape]
 
     # MLX gather returns broadcast(indices).shape followed by one slice
-    # dimension per input dimension. PyTorch advanced indexing keeps
-    # contiguous advanced-index dimensions at the indexed position, so reorder
+    # dimension per input dimension. For contiguous advanced-index groups,
+    # PyTorch keeps the broadcast dims at the indexed position, so reorder
     # before stripping the singleton indexed slice dimensions via reshape.
     non_indexed_axes = [i for i in range(x_ndim) if i not in indexed_axes]
     broadcast_ndim = len(out_meta.shape) - len(non_indexed_axes)
@@ -1785,28 +1809,9 @@ def _index_handler(P: MLXProgramBuilder, n: Node) -> Slot:
             "aten.index.Tensor: could not infer broadcast rank for multi-index gather"
         )
 
-    indexed_axes_sorted = sorted(indexed_axes)
-    contiguous_indices = indexed_axes_sorted == list(
-        range(indexed_axes_sorted[0], indexed_axes_sorted[-1] + 1)
-    )
-    if contiguous_indices:
-        before_axes = [i for i in non_indexed_axes if i < indexed_axes_sorted[0]]
-        after_axes = [i for i in non_indexed_axes if i > indexed_axes_sorted[-1]]
-        perm = (
-            [broadcast_ndim + i for i in before_axes]
-            + list(range(broadcast_ndim))
-            + [broadcast_ndim + i for i in after_axes]
-            + [broadcast_ndim + i for i in indexed_axes_sorted]
-        )
-    else:
-        # When advanced indices are separated by basic indices, PyTorch moves
-        # the broadcast dimensions to the front.
-        perm = list(range(broadcast_ndim)) + [
-            broadcast_ndim + i for i in non_indexed_axes + indexed_axes_sorted
-        ]
-
     reshape_input = gather_slot
     expected_rank = broadcast_ndim + x_ndim
+    perm = _index_gather_permutation(indexed_axes, x_ndim, broadcast_ndim)
     if len(perm) != expected_rank:
         raise ValueError(
             f"aten.index.Tensor: internal gather permutation has rank {len(perm)}, "
