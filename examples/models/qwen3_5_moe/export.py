@@ -554,6 +554,30 @@ def export_and_lower(model, config, args):
         _export_cuda(model, config, args)
 
 
+def _strip_sampler_from_forward(model):
+    """Bind ``model.forward`` to a minimal ``(tokens, input_pos) -> logits``
+    variant for non-CUDA export.
+
+    The default ``Qwen35MoE.forward`` carries an optional temperature input and
+    a sampling branch used only by the on-device CUDA sampler; non-CUDA
+    backends sample on the host so that branch is dead code at trace time.
+    Even when statically eliminated, the extra parameter and branch perturb
+    the program ``torch.export`` produces enough to shift kernel selection in
+    the lowered MLX/Metal graph and slow execution by 10-30%. Eager callers
+    and the CUDA export path are unaffected.
+    """
+    import types
+
+    def _clean_forward(self, tokens, input_pos):
+        x = self.embed_tokens(tokens)
+        for layer in self.layers:
+            x = layer(x, input_pos)
+        x = self.norm(x)
+        return self.lm_head(x)
+
+    model.forward = types.MethodType(_clean_forward, model)
+
+
 def _export_mlx(model, config, args):
     """Export model to .pte via torch.export + MLX backend."""
     import gc
@@ -567,6 +591,10 @@ def _export_mlx(model, config, args):
     )
     from executorch.exir.passes import MemoryPlanningPass
     from torch.export import Dim, export
+
+    # Use the minimal forward variant for non-CUDA export. See
+    # _strip_sampler_from_forward docstring for why this matters.
+    _strip_sampler_from_forward(model)
 
     example_tokens = torch.tensor([[0, 1]], dtype=torch.long)
     example_input_pos = torch.tensor([0, 1], dtype=torch.long)
@@ -650,6 +678,10 @@ def _export_metal(model, config, args):
 
     inductor_config.coordinate_descent_tuning = False
     inductor_config.aot_inductor.compile_wrapper_opt_level = "O0"
+
+    # Use the minimal forward variant for non-CUDA export. See
+    # _strip_sampler_from_forward docstring for why this matters.
+    _strip_sampler_from_forward(model)
 
     # --- Decode method (T=1, static shape) ---
     print("Exporting decode method...")
