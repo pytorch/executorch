@@ -371,6 +371,14 @@ class Cat5(torch.nn.Module):
         return torch.cat((x, y, self.const_tensor), axis=2)
 
 
+class Cat6(torch.nn.Module):
+    def __init__(self):
+        super().__init__()
+
+    def forward(self, x, y):
+        return torch.cat((x, y), axis=2)
+
+
 class CausalMask(torch.nn.Module):
     def __init__(self):
         super().__init__()

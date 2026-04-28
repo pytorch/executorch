@@ -56,6 +56,8 @@ class QnnBackend(BackendDetails):
         graph_module = QnnPassManager().transform_for_preprocess_pipeline(
             edge_program, use_mha2sha=use_mha2sha
         )
+        from executorch.backends.qualcomm.utils.utils import draw_graph
+        draw_graph("qnn_preprocess_bad", ".", graph_module)
         assert graph_module is not None
 
         nodes_to_wrappers = defaultdict(dict)

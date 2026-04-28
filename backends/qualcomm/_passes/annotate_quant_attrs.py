@@ -25,6 +25,12 @@ from executorch.exir.pass_base import ExportPass, PassResult
 from .utils import get_quant_attrs
 
 
+EDGE_CAT_OPS = {
+    exir_ops.edge.aten.cat.default,
+    exir_ops.edge.aten.concat.default,
+}
+
+
 class AnnotateQuantAttrs(ExportPass):
     """
     Add "quant_attrs" to graph nodes' meta from the QDQ information
@@ -79,11 +85,56 @@ class AnnotateQuantAttrs(ExportPass):
 
         return last_dq_nodes
 
+    def _is_requant_needed(self, src_attrs: Dict[str, Any], dst_attrs: Dict[str, Any]):
+        if self.skip_advanced_requant:
+            return src_attrs[QCOM_DTYPE] != dst_attrs[QCOM_DTYPE]
+
+        return any(
+            src_attrs[attr] != dst_attrs[attr]
+            for attr in [
+                QCOM_SCALE,
+                QCOM_ZERO_POINT,
+                QCOM_QUANT_MIN,
+                QCOM_QUANT_MAX,
+                QCOM_DTYPE,
+            ]
+        )
+
+    def _annotate_cat_requant(self, quant_node: torch.fx.Node) -> None:
+        cat_node = quant_node.args[0]
+        if cat_node.target not in EDGE_CAT_OPS:
+            return
+
+        output_q_attrs = get_quant_attrs(self.edge_program, quant_node)
+        for input_node in cat_node.args[0]:
+            # only process q->dq->cat
+            if input_node.target not in dq_ops:
+                continue
+
+            source_q_node = input_node.args[0]
+            if source_q_node.target not in q_ops:
+                continue
+
+            source_q_attrs = get_quant_attrs(self.edge_program, source_q_node)
+            if not self._is_requant_needed(source_q_attrs, output_q_attrs):
+                continue
+
+            source_node = source_q_node.args[0]
+            # check produced before q node is Fx node, as we store metadata on producer
+            if not isinstance(source_node, torch.fx.Node):
+                continue
+
+            requant_attrs = output_q_attrs.copy()
+            requant_attrs[QCOM_ENCODING] = source_q_attrs[QCOM_ENCODING]
+            source_node.meta.setdefault(QCOM_REQUANTIZE, {})
+            source_node.meta[QCOM_REQUANTIZE][cat_node.name] = requant_attrs
+
     def _annotate_requant(self, n):
         # Record requant attributes:
         # node1 -> q_ui8 (n) -> dq_ui8 -> q_int32 -> dq_int32 -> node2 -> ....
         # We store {node2: quant_attr in dq_int32} in node1.meta
         if n.target in q_ops and n.args[0].target not in dq_ops:
+            self._annotate_cat_requant(n)
             # for some fixed scale op, there is no need to requantize it
             if n.args[0].target in self.skip_requant_allowlist:
                 return
@@ -96,28 +147,7 @@ class AnnotateQuantAttrs(ExportPass):
                 # that has multiple outputs that requires quant attributes.
 
                 # Determine if requantization is needed based on configuration and attribute mismatch.
-                is_requant_needed = False
-                if self.skip_advanced_requant:
-                    # In skip_advanced_requant mode, only consider requant if dtypes differ.
-                    if q_attrs[QCOM_DTYPE] != dq_attrs[QCOM_DTYPE]:
-                        is_requant_needed = True
-                else:
-                    # In full requant mode, consider requant if any key attribute differs.
-                    # This aims to improve accuracy by adjusting scale, zero_point, etc.
-                    # Users can disable this if it causes regressions.
-                    if any(
-                        q_attrs[attr] != dq_attrs[attr]
-                        for attr in [
-                            QCOM_SCALE,
-                            QCOM_ZERO_POINT,
-                            QCOM_QUANT_MIN,
-                            QCOM_QUANT_MAX,
-                            QCOM_DTYPE,
-                        ]
-                    ):
-                        is_requant_needed = True
-
-                if is_requant_needed:
+                if self._is_requant_needed(q_attrs, dq_attrs):
                     dq_attrs[QCOM_ENCODING] = q_attrs[QCOM_ENCODING]
                     user_node = list(dq_node.users)[0]
                     n.args[0].meta.setdefault(QCOM_REQUANTIZE, {})

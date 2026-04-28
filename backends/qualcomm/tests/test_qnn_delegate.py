@@ -8,6 +8,7 @@ import io
 import itertools
 import json
 import logging
+import operator
 import subprocess
 import sys
 import tempfile
@@ -33,11 +34,14 @@ from executorch.backends.qualcomm.export_utils import (
     make_quantizer,
     setup_common_args_and_variables,
 )
+from executorch.backends.qualcomm.quantizer.rules import Q_ANNOTATION_KEY
 from executorch.backends.qualcomm.serialization.qc_schema import (
     QnnExecuTorchBackendType,
     QnnExecuTorchHtpPerformanceMode,
     QnnExecuTorchLpaiTargetEnv,
 )
+
+from executorch.backends.qualcomm.tests.models import Cat2
 from executorch.backends.qualcomm.tests.utils import (
     convert_pt2e,
     generate_context_binary,
@@ -72,7 +76,6 @@ from executorch.backends.qualcomm.utils.utils import (
     to_edge_transform_and_lower_to_qnn,
     update_spill_fill_size,
 )
-
 from executorch.backends.qualcomm.tests.models import *  # noqa: F403
 
 import os
@@ -97,6 +100,7 @@ from executorch.examples.models.torchvision_vit.model import TorchVisionViTModel
 from executorch.examples.models.wav2letter import Wav2LetterModel
 from executorch.exir import to_edge
 from executorch.exir.backend.backend_api import disable_validation
+from torchao.quantization.pt2e.quantizer import SharedQuantizationSpec
 
 
 class TestQNNFloatingPointOperator(TestQNN):
@@ -1688,12 +1692,16 @@ class TestQNNFloatingPointOperator(TestQNN):
 
     def test_qnn_backend_pixel_shuffle(self):
         module = PixelShuffle(2)  # noqa: F405
-        sample_input = (torch.ones([2, 4, 3, 3]),)
+        sample_input = (
+            torch.arange(2 * 4 * 3 * 3, dtype=torch.float32).reshape(2, 4, 3, 3),
+        )
         self.lower_module_and_test_output(module, sample_input)
 
     def test_qnn_backend_pixel_unshuffle(self):
         module = PixelUnshuffle(2)  # noqa: F405
-        sample_input = (torch.ones([2, 2, 6, 6]),)
+        sample_input = (
+            torch.arange(2 * 2 * 6 * 6, dtype=torch.float32).reshape(2, 2, 6, 6),
+        )
         self.lower_module_and_test_output(module, sample_input)
 
     def test_qnn_backend_pow_tensor_scalar(self):
@@ -2798,6 +2806,17 @@ class TestQNNQuantizedOperator(TestQNN):
             with self.subTest(i=i):
                 module = self.get_qdq_module(module, sample_input)
                 self.lower_module_and_test_output(module, sample_input)
+
+    def test_qnn_backend_cat_fixed_input(self):
+        module = Cat6()  # noqa: F405
+        sample_input = (
+            torch.tensor([[[[-10.0, 2.0], [3.0, 4.0]]]]),
+            torch.tensor([[[[1.0, 3.0], [8.0, 10.0]]]]),
+        )
+        module = self.get_qdq_module(module, sample_input)
+        from executorch.backends.qualcomm.utils.utils import draw_graph
+        draw_graph("qdq_bad", ".", module)
+        self.lower_module_and_test_output(module, sample_input)
 
     def test_qnn_backend_cdist(self):
         module = CDist()  # noqa: F405
@@ -4229,15 +4248,207 @@ class TestQNNQuantizedOperator(TestQNN):
 
     def test_qnn_backend_pixel_shuffle(self):
         module = PixelShuffle(2)  # noqa: F405
-        sample_input = (torch.ones([2, 4, 3, 3]),)
+        sample_input = (
+            torch.arange(2 * 4 * 3 * 3, dtype=torch.float32).reshape(2, 4, 3, 3),
+        )
         module = self.get_qdq_module(module, sample_input)
         self.lower_module_and_test_output(module, sample_input)
 
     def test_qnn_backend_pixel_unshuffle(self):
         module = PixelUnshuffle(2)  # noqa: F405
-        sample_input = (torch.ones([2, 2, 6, 6]),)
+        sample_input = (
+            torch.arange(2 * 2 * 6 * 6, dtype=torch.float32).reshape(2, 2, 6, 6),
+        )
         module = self.get_qdq_module(module, sample_input)
         self.lower_module_and_test_output(module, sample_input)
+
+    def _prepare_module_for_qparam_assertions(self, module, sample_input):
+        backend = get_backend_type(self.backend)
+        quantizer = make_quantizer(
+            quant_dtype=QuantDtype.use_8a8w,
+            custom_annotations=(),
+            per_channel_conv=True,
+            per_channel_linear=False,
+            per_channel_embedding=False,
+            backend=backend,
+            soc_model=self.soc_model,
+        )
+        return prepare_pt2e(
+            torch.export.export(module, sample_input, strict=True).module(),
+            quantizer,
+        )
+
+    def _assert_prepared_nodes_share_qparams(
+        self, module, sample_input, target_tokens
+    ) -> list[torch.fx.Node]:
+        prepared = self._prepare_module_for_qparam_assertions(module, sample_input)
+        matching_nodes = [
+            node
+            for node in prepared.graph.nodes
+            if node.op == "call_function"
+            and any(target_token in str(node.target) for target_token in target_tokens)
+        ]
+
+        self.assertGreater(
+            len(matching_nodes),
+            0,
+            f"Failed to find node matching any of {target_tokens}",
+        )
+        for node in matching_nodes:
+            self.assertIsInstance(
+                node.meta[Q_ANNOTATION_KEY].output_qspec,
+                SharedQuantizationSpec,
+            )
+
+        return matching_nodes
+
+    def test_qnn_backend_pixel_shuffle_unshuffle_share_qparams(self):
+        test_cases = [
+            (
+                "pixel_shuffle",
+                PixelShuffle(2),  # noqa: F405
+                (torch.arange(2 * 4 * 3 * 3, dtype=torch.float32).reshape(2, 4, 3, 3),),
+                torch.ops.aten.pixel_shuffle.default,
+            ),
+            (
+                "pixel_unshuffle",
+                PixelUnshuffle(2),  # noqa: F405
+                (torch.arange(2 * 2 * 6 * 6, dtype=torch.float32).reshape(2, 2, 6, 6),),
+                torch.ops.aten.pixel_unshuffle.default,
+            ),
+        ]
+
+        for name, module, sample_input, target in test_cases:
+            with self.subTest(name=name):
+                prepared = self._prepare_module_for_qparam_assertions(
+                    module, sample_input
+                )
+                for node in prepared.graph.nodes:
+                    if node.op == "call_function" and node.target == target:
+                        self.assertIsInstance(
+                            node.meta[Q_ANNOTATION_KEY].output_qspec,
+                            SharedQuantizationSpec,
+                        )
+                        break
+                else:
+                    self.fail(f"Failed to find {target} in prepared graph")
+
+    def test_qnn_backend_value_preserving_ops_share_qparams(self):
+        test_cases = [
+            (
+                "channel_shuffle",
+                ChannelShuffle(2),  # noqa: F405
+                (torch.randn(1, 4, 3, 3),),
+                ("aten.channel_shuffle",),
+            ),
+            (
+                "permute",
+                Permute([0, 2, 3, 1]),  # noqa: F405
+                (torch.randn(2, 3, 4, 5),),
+                ("aten.permute",),
+            ),
+            (
+                "pixel_shuffle",
+                PixelShuffle(2),  # noqa: F405
+                (torch.arange(2 * 4 * 3 * 3, dtype=torch.float32).reshape(2, 4, 3, 3),),
+                ("aten.pixel_shuffle",),
+            ),
+            (
+                "pixel_unshuffle",
+                PixelUnshuffle(2),  # noqa: F405
+                (torch.arange(2 * 2 * 6 * 6, dtype=torch.float32).reshape(2, 2, 6, 6),),
+                ("aten.pixel_unshuffle",),
+            ),
+            (
+                "repeat",
+                Repeat(),  # noqa: F405
+                (torch.randn(2, 2, 2, 2),),
+                ("aten.repeat",),
+            ),
+            (
+                "expand_as",
+                ExpandAs(),  # noqa: F405
+                (torch.randn(3, 4),),
+                ("aten.expand",),
+            ),
+            (
+                "reshape",
+                Reshape(),  # noqa: F405
+                (torch.randn(3, 4),),
+                ("aten.reshape", "aten.view"),
+            ),
+        ]
+
+        for name, module, sample_input, target_tokens in test_cases:
+            with self.subTest(name=name):
+                self._assert_prepared_nodes_share_qparams(
+                    module, sample_input, target_tokens
+                )
+
+    def test_qnn_backend_split_with_sizes_copy_share_qparams(self):
+        class SplitWithSizesCopy(torch.nn.Module):
+            def forward(self, x):
+                out = torch.ops.aten.split_with_sizes_copy.default(x, [2, 2], 1)
+                return out[0] + out[1]
+
+        backend = get_backend_type(self.backend)
+        sample_input = (
+            torch.arange(2 * 4 * 3 * 3, dtype=torch.float32).reshape(2, 4, 3, 3),
+        )
+        quantizer = make_quantizer(
+            quant_dtype=QuantDtype.use_8a8w,
+            custom_annotations=(),
+            per_channel_conv=True,
+            per_channel_linear=False,
+            per_channel_embedding=False,
+            backend=backend,
+            soc_model=self.soc_model,
+        )
+        prepared = prepare_pt2e(
+            torch.export.export(
+                SplitWithSizesCopy(), sample_input, strict=True
+            ).module(),
+            quantizer,
+        )
+
+        getitem_count = 0
+        for node in prepared.graph.nodes:
+            if (
+                node.op == "call_function"
+                and node.target == operator.getitem
+                and node.args[0].target == torch.ops.aten.split_with_sizes_copy.default
+            ):
+                self.assertIsInstance(
+                    node.meta[Q_ANNOTATION_KEY].output_qspec,
+                    SharedQuantizationSpec,
+                )
+                getitem_count += 1
+
+        self.assertGreater(getitem_count, 0)
+
+    def test_qnn_backend_cat_output_shares_with_first_input(self):
+        sample_input = (
+            torch.arange(2 * 3 * 4 * 5, dtype=torch.float32).reshape(2, 3, 4, 5),
+            torch.arange(2 * 3 * 4 * 5, dtype=torch.float32).reshape(2, 3, 4, 5),
+        )
+        prepared = self._prepare_module_for_qparam_assertions(Cat2(), sample_input)
+
+        for node in prepared.graph.nodes:
+            if node.op == "call_function" and node.target == torch.ops.aten.cat.default:
+                self.assertIsInstance(
+                    node.meta[Q_ANNOTATION_KEY].output_qspec,
+                    SharedQuantizationSpec,
+                )
+                second_input_node = node.args[0][1]
+                if second_input_node not in node.meta[Q_ANNOTATION_KEY].input_qspec_map:
+                    second_input_node = second_input_node.args[0]
+                self.assertNotIsInstance(
+                    node.meta[Q_ANNOTATION_KEY].input_qspec_map[second_input_node],
+                    SharedQuantizationSpec,
+                )
+                break
+        else:
+            self.fail("Failed to find aten.cat.default in prepared graph")
 
     def test_qnn_backend_pow_tensor_scalar(self):
         test_comb = [

@@ -7,10 +7,12 @@ from executorch.backends.qualcomm._passes import (
     ConvertMhaToSha,
     FoldQDQ,
     InsertIOQDQ,
+    InsertRequantize,
     InsertReshapeForReduceOps,
     RemoveRedundancy,
 )
 from executorch.backends.qualcomm.quantizer.quantizer import QnnQuantizer, QuantDtype
+from executorch.backends.qualcomm.quantizer.rules import Q_ANNOTATION_KEY
 from executorch.backends.qualcomm.serialization.qc_schema import QcomChipset
 from executorch.backends.qualcomm.tests.models import TopKandIndex
 from executorch.backends.qualcomm.utils.utils import (
@@ -22,19 +24,25 @@ from executorch.exir import to_edge
 from executorch.exir.debug_handle_utils import DEBUG_HANDLE_KEY
 from executorch.exir.dialects._ops import ops as exir_ops
 from torchao.quantization.pt2e.quantize_pt2e import convert_pt2e, prepare_pt2e
+from torchao.quantization.pt2e.quantizer import SharedQuantizationSpec
 
 
 class TestPasses(unittest.TestCase):
-    def _build_quantized_graph(self):
+    def _build_quantized_graph(self, module=None, sample_input=None):
         """Build a quantized graph through AnnotateQuantAttrs + FoldQDQ."""
 
-        class AddModule(torch.nn.Module):
-            def forward(self, x):
-                return x + 1
+        if module is None:
 
-        module = AddModule().eval()
-        sample_input = (torch.randn(1, 4),)
+            class AddModule(torch.nn.Module):
+                def forward(self, x):
+                    return x + 1
 
+            module = AddModule()
+
+        if sample_input is None:
+            sample_input = (torch.randn(1, 4),)
+
+        module = module.eval()
         exported = torch.export.export(module, sample_input, strict=True).module()
         quantizer = QnnQuantizer()
         quantizer.set_default_quant_config(quant_dtype=QuantDtype.use_8a8w)
@@ -101,6 +109,58 @@ class TestPasses(unittest.TestCase):
         # AddModule with one input and one output should insert exactly
         # one quantize (input) and one dequantize (output) = +2 nodes.
         self.assertEqual(node_count_after, node_count_before + 2)
+
+    def test_insert_requantize_for_mismatched_cat_inputs(self):
+        class CatRequiresRequant(torch.nn.Module):
+            def forward(self, x):
+                first = torch.clamp(x, -0.1, 0.1)
+                second = x * 10.0
+                return torch.cat((first, second), dim=1)
+
+        sample_input = (torch.linspace(-1.0, 1.0, 16).reshape(1, 1, 4, 4),)
+        gm, _ = self._build_quantized_graph(CatRequiresRequant(), sample_input)
+        gm = InsertRequantize()(gm).graph_module
+
+        cat_node = next(
+            n for n in gm.graph.nodes if n.target == exir_ops.edge.aten.cat.default
+        )
+        cat_inputs = cat_node.args[0]
+        to_copy_target = exir_ops.edge.aten._to_copy.default
+
+        self.assertNotEqual(cat_inputs[0].target, to_copy_target)
+        self.assertEqual(cat_inputs[1].target, to_copy_target)
+
+    def test_cat_annotation_only_shares_output_with_first_input(self):
+        class CatModule(torch.nn.Module):
+            def forward(self, x, y):
+                return torch.cat((x, y), dim=1)
+
+        sample_input = (
+            torch.randn(1, 1, 4, 4),
+            torch.randn(1, 1, 4, 4),
+        )
+        exported = torch.export.export(
+            CatModule().eval(), sample_input, strict=True
+        ).module()
+        quantizer = QnnQuantizer()
+        quantizer.set_default_quant_config(quant_dtype=QuantDtype.use_8a8w)
+        prepared = prepare_pt2e(exported, quantizer)
+
+        cat_node = next(
+            n for n in prepared.graph.nodes if n.target == torch.ops.aten.cat.default
+        )
+        second_input_node = cat_node.args[0][1]
+        if second_input_node not in cat_node.meta[Q_ANNOTATION_KEY].input_qspec_map:
+            second_input_node = second_input_node.args[0]
+
+        self.assertIsInstance(
+            cat_node.meta[Q_ANNOTATION_KEY].output_qspec,
+            SharedQuantizationSpec,
+        )
+        self.assertNotIsInstance(
+            cat_node.meta[Q_ANNOTATION_KEY].input_qspec_map[second_input_node],
+            SharedQuantizationSpec,
+        )
 
     def test_insert_reshape_for_argmax(self):
         class ArgmaxModule(torch.nn.Module):

@@ -216,6 +216,7 @@ class TestQNN(unittest.TestCase):
             )
 
     def _assert_outputs_equal(self, model_output, ref_output):
+        print("QNN output: ", model_output)
         self.assertTrue(len(ref_output) == len(model_output))
         for i in range(len(ref_output)):
             if model_output[i].dtype == torch.bool or ref_output[i].dtype == torch.bool:
