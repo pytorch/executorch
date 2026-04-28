@@ -1767,8 +1767,6 @@ def _index_handler(P: MLXProgramBuilder, n: Node) -> Slot:
         )
     )
 
-    # Reshape to match aten.index.Tensor output shape, which strips the
-    # trailing dimensions introduced by gather's slice_sizes
     out_meta = n.meta.get("val")
     if out_meta is None:
         raise ValueError(
@@ -1776,10 +1774,61 @@ def _index_handler(P: MLXProgramBuilder, n: Node) -> Slot:
         )
     out_shape = [P.to_int_or_vid(int(d)) for d in out_meta.shape]
 
+    # MLX gather returns broadcast(indices).shape followed by one slice
+    # dimension per input dimension. PyTorch advanced indexing keeps
+    # contiguous advanced-index dimensions at the indexed position, so reorder
+    # before stripping the singleton indexed slice dimensions via reshape.
+    non_indexed_axes = [i for i in range(x_ndim) if i not in indexed_axes]
+    broadcast_ndim = len(out_meta.shape) - len(non_indexed_axes)
+    if broadcast_ndim < 0:
+        raise ValueError(
+            "aten.index.Tensor: could not infer broadcast rank for multi-index gather"
+        )
+
+    indexed_axes_sorted = sorted(indexed_axes)
+    contiguous_indices = indexed_axes_sorted == list(
+        range(indexed_axes_sorted[0], indexed_axes_sorted[-1] + 1)
+    )
+    if contiguous_indices:
+        before_axes = [i for i in non_indexed_axes if i < indexed_axes_sorted[0]]
+        after_axes = [i for i in non_indexed_axes if i > indexed_axes_sorted[-1]]
+        perm = (
+            [broadcast_ndim + i for i in before_axes]
+            + list(range(broadcast_ndim))
+            + [broadcast_ndim + i for i in after_axes]
+            + [broadcast_ndim + i for i in indexed_axes_sorted]
+        )
+    else:
+        # When advanced indices are separated by basic indices, PyTorch moves
+        # the broadcast dimensions to the front.
+        perm = list(range(broadcast_ndim)) + [
+            broadcast_ndim + i for i in non_indexed_axes + indexed_axes_sorted
+        ]
+
+    reshape_input = gather_slot
+    expected_rank = broadcast_ndim + x_ndim
+    if len(perm) != expected_rank:
+        raise ValueError(
+            f"aten.index.Tensor: internal gather permutation has rank {len(perm)}, "
+            f"expected {expected_rank}"
+        )
+    if perm != list(range(expected_rank)):
+        _, ordered_slot = P.make_tmp_slot()
+        P.emit(
+            TransposeNode(
+                x=P.slot_to_tid(gather_slot),
+                out=P.slot_to_tid(ordered_slot),
+                perm=perm,
+            )
+        )
+        reshape_input = ordered_slot
+
+    # Reshape to match aten.index.Tensor output shape, stripping the singleton
+    # dimensions introduced by gather's slice_sizes for indexed axes.
     out = P.make_or_get_slot(n)
     P.emit(
         ReshapeNode(
-            x=P.slot_to_tid(gather_slot),
+            x=P.slot_to_tid(reshape_input),
             out=P.slot_to_tid(out),
             shape=out_shape,
         )

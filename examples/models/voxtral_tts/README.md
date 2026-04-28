@@ -7,8 +7,7 @@ text. Weights are loaded directly from the HuggingFace safetensors
 checkpoint. Supports CPU (portable + XNNPACK), CUDA, and MLX backends. With
 `--streaming`, the CUDA 4w export runs at **RTF 0.31x on RTX 5080 — 3× faster
 than real-time** with 2.6 s time-to-first-audio. On Apple Silicon, the MLX
-export delegates the LM + flow head to MLX and keeps the codec on portable
-ExecuTorch for waveform correctness.
+export delegates the LM, flow head, and codec decoder to MLX.
 
 ## Overview
 
@@ -77,10 +76,9 @@ auto-set to `tile_packed_to_4d` when `--backend cuda --qlinear 4w` is
 selected (required by AOTI's `_weight_int4pack_mm` kernel).
 
 For MLX, `--qembedding 8w` auto-selects `--qembedding-group-size=128`.
-`codec_decoder.pte` is intentionally lowered through portable ExecuTorch
-because the current MLX codec lowering corrupts waveform amplitude; the LM,
-token embedding, audio embedding, semantic head, and flow velocity methods are
-lowered to MLX.
+The LM, token embedding, audio embedding, semantic head, flow velocity, and
+codec decoder methods are lowered to MLX. `--qlinear-codec` is not yet
+validated for MLX, so the default MLX codec export remains unquantized.
 
 ### Options
 
@@ -109,6 +107,14 @@ Validated on A100, `seed=42`, `"Hello, how are you today?"`:
 | `--backend cuda` | 15.8 GB | 11.5 s | 178 s | 51x | FP32 weights, codec on portable CPU |
 | **`--backend cuda --qlinear 4w`** | **3.4 GB** | **2.1 s** | **3.7 s** | **0.88x** ⚡ | int4 weights, codec on CUDA |
 
+### MLX quantization configs
+
+Validated on Apple Silicon, `seed=42`, `"Hello, how are you today?"`:
+
+| Config | model.pte | codec_decoder.pte | Generation RTF | Process wall | Notes |
+|---|---|---|---|---|---|
+| `--backend mlx --dtype bf16 --qlinear 4w --qembedding 8w` | 2.20 GiB | 289 MiB | 0.811x avg (0.762x warm) | 3.82 s avg (3.14 s warm) for 3.44 s audio | Native MLX codec, Apple Speech: "Hello how are you today" |
+
 
 ### Streaming
 
@@ -118,9 +124,8 @@ prefill delay), then 2 s chunks follow continuously. This decouples
 time-to-first-audio from total synthesis length and enables live piped playback.
 
 The streaming flags are shared by all runner builds. MLX export and offline
-synthesis are validated in this directory, but MLX streaming performance is not
-reported yet: MLX currently keeps `codec_decoder.pte` on portable lowering, so
-streaming chunks still pay portable CPU codec decode cost.
+synthesis are validated in this directory; MLX streaming uses the same native
+MLX codec artifact and avoids the old portable CPU codec fallback.
 
 Measured on RTX 5080 (sm_120, warm Triton autotune cache):
 
@@ -128,25 +133,22 @@ Measured on RTX 5080 (sm_120, warm Triton autotune cache):
 |---|---|---|---|---|
 | 24 tokens | 10.3 s | 3.85 s | **0.31x** ⚡⚡ (~3.2× real-time) | ~2.6 s |
 
-Live playback (pipe raw f32le PCM to `ffplay` or `aplay`):
+Live MLX playback on Apple Silicon (pipe raw f32le PCM to `ffplay`):
 
 ```bash
 unset CPATH
-export LD_LIBRARY_PATH=$CONDA_PREFIX/lib:$LD_LIBRARY_PATH
 
 cmake-out/examples/models/voxtral_tts/voxtral_tts_runner \
-    --model voxtral_tts_exports_cuda_4w/model.pte \
-    --data_path voxtral_tts_exports_cuda_4w/aoti_cuda_blob.ptd \
-    --codec voxtral_tts_exports_cuda_4w/codec_decoder.pte \
-    --codec_data_path voxtral_tts_exports_cuda_4w/codec_aoti_cuda_blob.ptd \
+    --model voxtral_tts_exports_mlx_4w/model.pte \
+    --codec voxtral_tts_exports_mlx_4w/codec_decoder.pte \
     --tokenizer ~/models/Voxtral-4B-TTS-2603/tekken.json \
     --voice ~/models/Voxtral-4B-TTS-2603/voice_embedding/neutral_female.pt \
-    --text "Hello, how are you today?" \
+    --text "Introducing real-time Voxtral TTS streaming on Apple Silicon with the ExecuTorch MLX backend." \
     --streaming --speaker \
-  | ffplay -f f32le -ar 24000 -ac 1 -nodisp -autoexit -
+  | ffplay -f f32le -sample_rate 24000 -ch_layout mono -nodisp -autoexit -
 ```
 
-Or `aplay`: replace `| ffplay ...` with `| aplay -f FLOAT_LE -r 24000 -c 1`.
+On Linux, replace the `ffplay` pipe with `| aplay -f FLOAT_LE -r 24000 -c 1`.
 
 ### XNNPACK quantization configs
 
@@ -289,9 +291,10 @@ full details.
   `install_executorch.sh` does `pip install .`. Repo edits to
   `examples/models/voxtral_tts/` won't take effect until you reinstall as
   editable.
-- **MLX output is clipped or noisy**: use the default MLX export path, which
-  keeps `codec_decoder.pte` on portable lowering. Native MLX codec lowering is
-  not yet waveform-correct for this model.
+- **MLX output is clipped or noisy**: make sure the export was produced from a
+  build that includes the MLX advanced-indexing fix for `F.unfold`/`im2col`.
+  Older exports routed through native MLX codec lowering could corrupt waveform
+  amplitude.
 
 ## Pre-exported artifacts
 
