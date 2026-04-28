@@ -143,6 +143,34 @@ int main(int argc, char** argv) {
 
   printf("Loading methods...\n");
 
+  // Enable cross-method per-FQN weight sharing in the CUDA backend so that
+  // prefill and decode (which share KV cache and other mutable buffers /
+  // weights) avoid duplicate GPU allocations. This is critical for fitting
+  // Qwen 3.5 MoE on a single GPU. MUST be set BEFORE load_method, since the
+  // backend reads this flag during init() to decide between the per-weight
+  // cache path and the legacy per-method blob load.
+  {
+    executorch::runtime::BackendOptions<1> backend_options;
+    auto set_err =
+        backend_options.set_option("weight_sharing_across_methods", true);
+    if (set_err != Error::Ok) {
+      ET_LOG(
+          Error,
+          "Failed to construct weight_sharing_across_methods option: %d",
+          static_cast<int>(set_err));
+      return 1;
+    }
+    const auto opt_err =
+        executorch::runtime::set_option("CudaBackend", backend_options.view());
+    if (opt_err != Error::Ok) {
+      ET_LOG(
+          Error,
+          "Failed to enable weight_sharing_across_methods: %d",
+          static_cast<int>(opt_err));
+      return 1;
+    }
+  }
+
   auto err = module->load_method("prefill");
   if (err != Error::Ok) {
     ET_LOG(Error, "Failed to load prefill method");
