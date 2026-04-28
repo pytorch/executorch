@@ -38,7 +38,6 @@ from executorch.backends.arm.tosa.compile_spec import TosaCompileSpec
 from executorch.backends.arm.tosa.mapping import TOSA_TENSOR_NAME_META
 from executorch.exir.backend.backend_details import BackendDetails, PreprocessResult
 from executorch.exir.backend.compile_spec_schema import CompileSpec
-from executorch.exir.dim_order_utils import get_memory_format
 from torch.export.exported_program import ExportedProgram
 from torch.fx import Graph, GraphModule, Node
 
@@ -119,12 +118,8 @@ def _sort_outputs(graph_module: GraphModule, node_to_id_map: dict[str, int]):
 
 
 def _get_matching_fake_tensor(node: Node):
-    """Return a fake tensor with the same properties as node, but with
-    .dim_order() == node.meta["tosa_dim_order"]
-    """
-    fake_tensor = node.meta["val"]
-    desired_dim_order = node.meta["tosa_dim_order"]
-    return fake_tensor.to(memory_format=get_memory_format(list(desired_dim_order)))
+    """Return the fake tensor of node."""
+    return node.meta["val"]
 
 
 def arm_get_first_delegation_tag(graph_module) -> str:
