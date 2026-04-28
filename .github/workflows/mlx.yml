@@ -5,6 +5,8 @@ on:
     branches:
       - main
       - release/*
+    tags:
+      - ciflow/mlx/*
   pull_request:
     paths:
       - .github/workflows/mlx.yml
@@ -15,6 +17,10 @@ on:
       - examples/models/voxtral_realtime/**
       - examples/models/qwen3_5_moe/**
   workflow_dispatch:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.sha }}-${{ github.event_name == 'workflow_dispatch' }}
+  cancel-in-progress: true
 
 permissions: {}
 
@@ -218,6 +224,10 @@ jobs:
         echo "::endgroup::"
 
   test-mlx-voxtral:
+    # Requires HuggingFace secrets — skip on fork PRs.
+    # Maintainers can opt-in by applying the ciflow/mlx label, which
+    # pushes a ciflow/mlx/<PR> tag that re-runs this workflow with secrets.
+    if: github.event.pull_request.head.repo.full_name == github.repository || github.event_name != 'pull_request'
     uses: pytorch/test-infra/.github/workflows/macos_job.yml@main
     secrets: inherit
     with:
@@ -275,6 +285,9 @@ jobs:
         echo "::endgroup::"
 
   test-mlx-voxtral-realtime:
+    # Requires HuggingFace secrets — skip on fork PRs.
+    # Maintainers can opt-in by applying the ciflow/mlx label.
+    if: github.event.pull_request.head.repo.full_name == github.repository || github.event_name != 'pull_request'
     uses: pytorch/test-infra/.github/workflows/macos_job.yml@main
     secrets: inherit
     with:
@@ -347,6 +360,9 @@ jobs:
         echo "::endgroup::"
 
   test-mlx-whisper:
+    # Requires HuggingFace secrets — skip on fork PRs.
+    # Maintainers can opt-in by applying the ciflow/mlx label.
+    if: github.event.pull_request.head.repo.full_name == github.repository || github.event_name != 'pull_request'
     uses: pytorch/test-infra/.github/workflows/macos_job.yml@main
     secrets: inherit
     with:
@@ -458,6 +474,9 @@ jobs:
         echo "::endgroup::"
 
   test-mlx-llm:
+    # Requires HuggingFace secrets — skip on fork PRs.
+    # Maintainers can opt-in by applying the ciflow/mlx label.
+    if: github.event.pull_request.head.repo.full_name == github.repository || github.event_name != 'pull_request'
     strategy:
       fail-fast: false
       matrix:
