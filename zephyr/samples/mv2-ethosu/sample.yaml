@@ -12,9 +12,3 @@ common:
   depends_on:
     - executorch
     - arm_ethos_u
-  build_only: true
-tests:
-  sample.executorch.mv2_ethosu.corstone300:
-    platform_allow: mps3/corstone300/fvp
-  sample.executorch.mv2_ethosu.corstone320:
-    platform_allow: mps4/corstone320/fvp

@@ -17,6 +17,7 @@
 #include <stdio.h>
 #include <zephyr/kernel.h>
 #include <zephyr/sys/printk.h>
+#include <cinttypes>
 #include <cstring>
 #include <vector>
 
@@ -90,6 +91,7 @@ Error prepare_input_tensors(
     size_t input_size) {
   MethodMeta method_meta = method.method_meta();
   size_t num_inputs = method_meta.num_inputs();
+  size_t tensor_inputs_seen = 0;
 
   for (size_t i = 0; i < num_inputs; i++) {
     auto tag = method_meta.input_tag(i);
@@ -101,6 +103,14 @@ Error prepare_input_tensors(
       ET_LOG(Debug, "Skipping non-tensor input %zu", i);
       continue;
     }
+    if (tensor_inputs_seen > 0) {
+      ET_LOG(
+          Error,
+          "Model has multiple tensor inputs; this sample supports only one");
+      return Error::InvalidArgument;
+    }
+    tensor_inputs_seen++;
+
     Result<TensorInfo> tensor_meta = method_meta.input_tensor_meta(i);
     if (!tensor_meta.ok()) {
       return tensor_meta.error();
@@ -315,8 +325,17 @@ int main(void) {
   size_t num_memory_planned_buffers = method_meta->num_memory_planned_buffers();
 
   for (size_t id = 0; id < num_memory_planned_buffers; ++id) {
-    size_t buffer_size =
-        static_cast<size_t>(method_meta->memory_planned_buffer_size(id).get());
+    Result<int64_t> buffer_size_result =
+        method_meta->memory_planned_buffer_size(id);
+    if (!buffer_size_result.ok()) {
+      ET_LOG(
+          Error,
+          "Failed to get planned buffer size for buffer %lu: 0x%x",
+          static_cast<unsigned long>(id),
+          (unsigned int)buffer_size_result.error());
+      return 1;
+    }
+    size_t buffer_size = static_cast<size_t>(buffer_size_result.get());
     ET_LOG(
         Info,
         "Setting up planned buffer %lu, size %lu.",
