@@ -4,7 +4,8 @@
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
 
-"""Example of showcasing registering custom operator through torch library API."""
+"""Example of registering single output custom operator through torch library API."""
+
 import json
 import os
 import subprocess
@@ -13,6 +14,12 @@ from multiprocessing.connection import Client
 
 import numpy as np
 import torch
+
+from executorch.backends.qualcomm.custom_op.annotator import (
+    CustomOpsQuantAnnotator,
+    IOQuantConfig,
+)
+from executorch.backends.qualcomm.custom_op.interface import QnnCustomOpPackageBuilder
 from executorch.backends.qualcomm.export_utils import (
     build_executorch_binary,
     generate_inputs,
@@ -22,14 +29,13 @@ from executorch.backends.qualcomm.export_utils import (
     setup_common_args_and_variables,
     SimpleADB,
 )
-
+from executorch.backends.qualcomm.quantizer.qconfig import (
+    get_ptq_per_channel_quant_config,
+)
 from executorch.backends.qualcomm.quantizer.quantizer import QuantDtype
 from executorch.backends.qualcomm.serialization.qc_schema import (
     _soc_info_table,
-    HtpArch,
     QcomChipset,
-    QnnExecuTorchOpPackageInfo,
-    QnnExecuTorchOpPackageOptions,
     QnnExecuTorchOpPackagePlatform,
     QnnExecuTorchOpPackageTarget,
 )
@@ -39,7 +45,7 @@ from torch.library import impl, Library
 my_op_lib = Library("my_ops", "DEF")
 
 # registering an operator that multiplies input tensor by 3 and returns it.
-my_op_lib.define("mul3(Tensor input) -> Tensor")  # should print 'mul3'
+my_op_lib.define("mul3(Tensor input) -> Tensor")
 
 
 @impl(my_op_lib, "mul3", dispatch_key="CompositeExplicitAutograd")
@@ -48,9 +54,7 @@ def mul3_impl(a: torch.Tensor) -> torch.Tensor:
 
 
 # registering the out variant.
-my_op_lib.define(
-    "mul3.out(Tensor input, *, Tensor(a!) output) -> Tensor(a!)"
-)  # should print 'mul3.out'
+my_op_lib.define("mul3.out(Tensor input, *, Tensor(a!) output) -> Tensor(a!)")
 
 
 @impl(my_op_lib, "mul3.out", dispatch_key="CompositeExplicitAutograd")
@@ -66,103 +70,8 @@ class Model(torch.nn.Module):
         return torch.ops.my_ops.mul3.default(a)
 
 
-def annotate_custom(gm: torch.fx.GraphModule) -> None:
-    """
-    This function is specific for custom op.
-    The source_fn of the rewritten nn module turns out to be "my_ops.mul3.default"
-    """
-    from executorch.backends.qualcomm.quantizer.qconfig import (
-        get_ptq_per_channel_quant_config,
-    )
-    from torch.fx import Node
-    from torchao.quantization.pt2e.quantizer import QuantizationAnnotation
-    from torchao.quantization.pt2e.quantizer.quantizer import Q_ANNOTATION_KEY
-
-    quantization_config = get_ptq_per_channel_quant_config()
-    for node in gm.graph.nodes:
-        if node.target != torch.ops.my_ops.mul3.default:
-            continue
-
-        # skip annotation if it is already annotated
-        if Q_ANNOTATION_KEY in node.meta and node.meta[Q_ANNOTATION_KEY]._annotated:
-            continue
-
-        input_qspec_map = {}
-        input_act = node.args[0]
-        assert isinstance(input_act, Node)
-        input_spec = quantization_config.input_activation
-        input_qspec_map[input_act] = input_spec
-
-        node.meta[Q_ANNOTATION_KEY] = QuantizationAnnotation(
-            input_qspec_map=input_qspec_map,
-            output_qspec=quantization_config.output_activation,
-            _annotated=True,
-        )
-
-
 def _run(cmd, cwd=None):
     subprocess.run(cmd, stdout=sys.stdout, cwd=cwd, check=True)
-
-
-def prepare_op_package(
-    workspace: str, op_package_dir: str, arch: HtpArch, build_op_package: bool
-):
-    if build_op_package:
-        _run(["rm", "-rf", "build"], cwd=op_package_dir)
-        _run(["make", "htp_x86", "htp_aarch64", f"htp_v{arch}"], cwd=op_package_dir)
-        _run(
-            [
-                "cp",
-                f"{op_package_dir}/build/hexagon-v{arch}/libQnnExampleOpPackage.so",
-                f"{op_package_dir}/build/hexagon-v{arch}/libQnnExampleOpPackage_HTP.so",
-            ]
-        )
-
-    op_package_paths = [
-        f"{op_package_dir}/build/hexagon-v{arch}/libQnnExampleOpPackage_HTP.so",
-        f"{op_package_dir}/build/aarch64-android/libQnnExampleOpPackage.so",
-    ]
-
-    op_package_infos_HTP = QnnExecuTorchOpPackageInfo()
-    op_package_infos_HTP.interface_provider = "ExampleOpPackageInterfaceProvider"
-    op_package_infos_HTP.op_package_name = "ExampleOpPackage"
-    op_package_infos_HTP.op_package_path = f"{workspace}/libQnnExampleOpPackage_HTP.so"
-    op_package_infos_HTP.target = QnnExecuTorchOpPackageTarget.HTP
-    op_package_infos_HTP.custom_op_name = "my_ops.mul3.default"
-    op_package_infos_HTP.qnn_op_type_name = "ExampleCustomOp"
-    op_package_infos_HTP.platform = QnnExecuTorchOpPackagePlatform.AARCH64_ANDROID
-    op_package_infos_aarch64_CPU = QnnExecuTorchOpPackageInfo()
-    op_package_infos_aarch64_CPU.interface_provider = (
-        "ExampleOpPackageInterfaceProvider"
-    )
-    op_package_infos_aarch64_CPU.op_package_name = "ExampleOpPackage"
-    op_package_infos_aarch64_CPU.op_package_path = (
-        f"{workspace}/libQnnExampleOpPackage.so"
-    )
-    op_package_infos_aarch64_CPU.target = QnnExecuTorchOpPackageTarget.CPU
-    op_package_infos_aarch64_CPU.custom_op_name = "my_ops.mul3.default"
-    op_package_infos_aarch64_CPU.qnn_op_type_name = "ExampleCustomOp"
-    op_package_infos_aarch64_CPU.platform = (
-        QnnExecuTorchOpPackagePlatform.AARCH64_ANDROID
-    )
-    op_package_infos_x86_CPU = QnnExecuTorchOpPackageInfo()
-    op_package_infos_x86_CPU.interface_provider = "ExampleOpPackageInterfaceProvider"
-    op_package_infos_x86_CPU.op_package_name = "ExampleOpPackage"
-    op_package_infos_x86_CPU.op_package_path = (
-        f"{op_package_dir}/build/x86_64-linux-clang/libQnnExampleOpPackage.so"
-    )
-    op_package_infos_x86_CPU.target = QnnExecuTorchOpPackageTarget.CPU
-    op_package_infos_x86_CPU.custom_op_name = "my_ops.mul3.default"
-    op_package_infos_x86_CPU.qnn_op_type_name = "ExampleCustomOp"
-    op_package_infos_x86_CPU.platform = QnnExecuTorchOpPackagePlatform.X86_64
-    op_package_options = QnnExecuTorchOpPackageOptions()
-    op_package_options.op_package_infos = [
-        op_package_infos_x86_CPU,
-        op_package_infos_aarch64_CPU,
-        op_package_infos_HTP,
-    ]
-
-    return op_package_options, op_package_paths
 
 
 def main(args):
@@ -186,21 +95,70 @@ def main(args):
     workspace = f"/data/local/tmp/executorch/{pte_filename}"
 
     soc_info = _soc_info_table[getattr(QcomChipset, args.soc_model)]
+    arch = soc_info.htp_info.htp_arch
 
-    op_package_options, op_package_paths = prepare_op_package(
-        workspace,
-        args.op_package_dir,
-        soc_info.htp_info.htp_arch,
-        args.build_op_package,
+    # op package setup
+    xml_path = f"{args.op_package_dir}/config/example_op_package_htp.xml"
+    op_package_config = QnnCustomOpPackageBuilder(
+        xml_path=xml_path,
+        torch_op_name_map={"ExampleCustomOp": torch.ops.my_ops.mul3.default},
     )
+    lib_name = f"libQnn{op_package_config.op_package_name}"
 
+    if args.build_op_package:
+        _run(["rm", "-rf", "build"], cwd=args.op_package_dir)
+        _run(
+            ["make", "htp_x86", "htp_aarch64", f"htp_v{arch}"], cwd=args.op_package_dir
+        )
+        _run(
+            [
+                "cp",
+                f"{args.op_package_dir}/build/hexagon-v{arch}/{lib_name}.so",
+                f"{args.op_package_dir}/build/hexagon-v{arch}/{lib_name}_HTP.so",
+            ]
+        )
+
+    op_package_config.register_implementation(
+        target=QnnExecuTorchOpPackageTarget.HTP,
+        platform=QnnExecuTorchOpPackagePlatform.AARCH64_ANDROID,
+        op_package_path=f"{workspace}/{lib_name}_HTP.so",
+    )
+    op_package_config.register_implementation(
+        target=QnnExecuTorchOpPackageTarget.CPU,
+        platform=QnnExecuTorchOpPackagePlatform.AARCH64_ANDROID,
+        op_package_path=f"{workspace}/{lib_name}.so",
+    )
+    op_package_config.register_implementation(
+        target=QnnExecuTorchOpPackageTarget.CPU,
+        platform=QnnExecuTorchOpPackagePlatform.X86_64,
+        op_package_path=os.path.abspath(
+            f"{args.op_package_dir}/build/x86_64-linux-clang/{lib_name}.so"
+        ),
+    )
+    op_package_options = op_package_config.get_op_package_options()
+    op_package_paths = [
+        f"{args.op_package_dir}/build/hexagon-v{arch}/{lib_name}_HTP.so",
+        f"{args.op_package_dir}/build/aarch64-android/{lib_name}.so",
+    ]
+
+    # Quantization
     quant_dtype = QuantDtype.use_8a8w
     if args.use_fp16:
         quantizer = None
     else:
+        quant_cfg = get_ptq_per_channel_quant_config()
+        custom_quant_annotator = CustomOpsQuantAnnotator()
+        custom_quant_annotator.register_annotation(
+            torch.ops.my_ops.mul3.default,
+            IOQuantConfig(
+                input_quant_specs={0: quant_cfg.input_activation},
+                output_quant_specs={0: quant_cfg.output_activation},
+            ),
+        )
+        annotate_fn = custom_quant_annotator.build_annotation_fn()
         quantizer = make_quantizer(
             quant_dtype=quant_dtype,
-            custom_annotations=(annotate_custom,),
+            custom_annotations=(annotate_fn,),
             backend=get_backend_type(args.backend),
             soc_model=args.soc_model,
         )
@@ -225,23 +183,23 @@ def main(args):
         qnn_sdk = os.getenv("QNN_SDK_ROOT")
         assert qnn_sdk, "QNN_SDK_ROOT was not found in environment variable"
         target = "x86_64-linux-clang"
+        build_folder = os.path.abspath(args.build_folder)
+        artifact = os.path.abspath(args.artifact)
 
         runner_cmd = " ".join(
             [
-                f"export LD_LIBRARY_PATH={qnn_sdk}/lib/{target}/:{args.build_folder}/lib &&",
-                f"./{args.build_folder}/examples/qualcomm/executor_runner/qnn_executor_runner",
-                f"--model_path {args.artifact}/{pte_filename}.pte",
-                f"--input_list_path {args.artifact}/{input_list_filename}",
-                f"--output_folder_path {output_data_folder}",
+                f"export LD_LIBRARY_PATH={qnn_sdk}/lib/{target}/:{build_folder}/lib &&",
+                f"{build_folder}/examples/qualcomm/executor_runner/qnn_executor_runner",
+                f"--model_path {artifact}/{pte_filename}.pte",
+                f"--input_list_path {artifact}/{input_list_filename}",
+                f"--output_folder_path {artifact}/outputs",
             ]
         )
         subprocess.run(
             runner_cmd,
-            # stdout=subprocess.PIPE,
-            # stderr=subprocess.STDOUT,
             shell=True,
             executable="/bin/bash",
-            capture_output=True,
+            cwd=artifact,
         )
     else:
         # setup required params accordingly
@@ -305,7 +263,7 @@ if __name__ == "__main__":
     parser.add_argument(
         "-d",
         "--op_package_dir",
-        help="Path to operator package which generates from QNN.",
+        help="Path to operator package generated from QNN.",
         type=str,
         required=True,
     )
@@ -322,7 +280,7 @@ if __name__ == "__main__":
         "--build_op_package",
         help="Build op package based on op_package_dir. Please set up "
         "`HEXAGON_SDK_ROOT` and `ANDROID_NDK_ROOT` environment variable. "
-        "And add clang compiler into `PATH`. Please refer to  Qualcomm AI Engine "
+        "And add clang compiler into `PATH`. Please refer to Qualcomm AI Engine "
         "Direct SDK document to get more details",
         action="store_true",
         default=False,
