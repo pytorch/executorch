@@ -350,7 +350,10 @@
         "CMAKE_BUILD_TYPE": "Release",
         "CMAKE_INSTALL_PREFIX": "${sourceDir}/cmake-out",
         "ET_MLX_ENABLE_OP_LOGGING": "OFF",
-        "ET_MIN_LOG_LEVEL": "Error"
+        "ET_MIN_LOG_LEVEL": "Error",
+        "EXECUTORCH_BUILD_KERNELS_LLM": "ON",
+        "EXECUTORCH_BUILD_KERNELS_QUANTIZED": "ON",
+        "EXECUTORCH_BUILD_KERNELS_OPTIMIZED": "ON"
       }
     },
     {
