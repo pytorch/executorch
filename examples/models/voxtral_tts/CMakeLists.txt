@@ -31,8 +31,11 @@ set(link_libraries executorch gflags)
 list(APPEND link_libraries optimized_native_cpu_ops_lib cpublas eigen_blas)
 executorch_target_link_options_shared_lib(optimized_native_cpu_ops_lib)
 
-# CPU-only builds need quantized and custom ops
-if(NOT EXECUTORCH_BUILD_CUDA)
+# CPU-only builds need quantized and custom ops. MLX builds intentionally avoid
+# quantized_ops_lib here: quantized LM/flow ops are delegated to MLX, while the
+# default MLX codec artifact is exported separately through portable lowering
+# without codec quantization.
+if(NOT EXECUTORCH_BUILD_CUDA AND NOT EXECUTORCH_BUILD_MLX)
   list(APPEND link_libraries quantized_ops_lib custom_ops)
   executorch_target_link_options_shared_lib(quantized_ops_lib)
   executorch_target_link_options_shared_lib(custom_ops)
@@ -85,6 +88,12 @@ if(EXECUTORCH_BUILD_METAL)
   executorch_target_link_options_shared_lib(metal_backend)
 endif()
 
+# Link MLX delegate
+if(TARGET mlxdelegate)
+  list(APPEND link_libraries mlxdelegate mlx)
+  executorch_target_link_options_shared_lib(mlxdelegate)
+endif()
+
 # Tokenizer
 list(APPEND link_libraries tokenizers::tokenizers)
 
@@ -104,3 +113,8 @@ target_include_directories(
 )
 target_link_libraries(voxtral_tts_runner PUBLIC ${link_libraries})
 target_compile_options(voxtral_tts_runner PUBLIC ${_common_compile_options})
+
+# Copy MLX metallib for runtime if MLX delegate is enabled
+if(TARGET mlxdelegate)
+  executorch_target_copy_mlx_metallib(voxtral_tts_runner)
+endif()
