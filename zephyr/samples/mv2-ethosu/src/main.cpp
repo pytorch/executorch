@@ -24,12 +24,18 @@
 #include "model_pte.h"
 #include "mv2_input.h"
 
-// Runtime copy of the model blob so that the Ethos-U DMA can access command
-// stream and weights. On Corstone FVP the original model_pte[] lives in flash
-// which is not DMA-accessible. On boards where MRAM is DMA-accessible (e.g.
-// Alif Ensemble), this copy can be bypassed via board-specific linker config.
+// Runtime view of the model blob used by Ethos-U DMA for command stream and
+// weights. By default we keep a writable SRAM copy because some targets (e.g.
+// Corstone FVP) place model_pte[] in flash which is not DMA-accessible.
+// Boards that can DMA directly from the embedded model blob (e.g. Alif
+// Ensemble with MRAM) should define ET_ARM_MODEL_PTE_DMA_ACCESSIBLE at build
+// time to avoid the SRAM duplicate.
+#if defined(ET_ARM_MODEL_PTE_DMA_ACCESSIBLE)
+static const unsigned char* model_pte_ptr = model_pte;
+#else
 alignas(16) static unsigned char model_pte_runtime[sizeof(model_pte)];
 static bool model_pte_runtime_initialized = false;
+#endif
 
 using executorch::aten::ScalarType;
 using executorch::aten::Tensor;
@@ -266,11 +272,15 @@ int main(void) {
       model_pte,
       static_cast<unsigned long>(pte_size));
 
+#if defined(ET_ARM_MODEL_PTE_DMA_ACCESSIBLE)
+  const void* program_data = model_pte_ptr;
+#else
   if (!model_pte_runtime_initialized) {
     std::memcpy(model_pte_runtime, model_pte, sizeof(model_pte));
     model_pte_runtime_initialized = true;
   }
   const void* program_data = model_pte_runtime;
+#endif
   size_t program_data_len = pte_size;
 
   auto loader = BufferDataLoader(program_data, program_data_len);
@@ -428,10 +438,13 @@ int main(void) {
       Info,
       "Input: [1, 3, 224, 224] NCHW RGB tensor (%lu bytes)",
       static_cast<unsigned long>(sizeof(mv2_input_data)));
+  size_t num_output_classes = (!outputs.empty() && outputs[0].isTensor())
+      ? outputs[0].toTensor().numel()
+      : MV2_NUM_OUTPUT_CLASSES;
   ET_LOG(
       Info,
-      "Output: %d ImageNet classes (top-%d shown)",
-      MV2_NUM_OUTPUT_CLASSES,
+      "Output: %lu classes (top-%d shown)",
+      static_cast<unsigned long>(num_output_classes),
       MV2_TOP_K);
   ET_LOG(Info, "Inference time: %u ms", inference_time);
   ET_LOG(Info, "========================================\n");
