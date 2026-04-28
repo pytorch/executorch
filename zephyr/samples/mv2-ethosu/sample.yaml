@@ -1,0 +1,14 @@
+sample:
+  name: ExecuTorch MobileNetV2 Ethos-U
+  description: MobileNetV2 image classification using ExecuTorch with Ethos-U NPU
+common:
+  tags:
+    - executorch
+    - ml
+    - npu
+    - ethos-u
+    - mv2
+    - image-classification
+  depends_on:
+    - executorch
+    - arm_ethos_u
