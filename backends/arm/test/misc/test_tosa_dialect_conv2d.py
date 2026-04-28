@@ -1,4 +1,4 @@
-# Copyright 2025 Arm Limited and/or its affiliates.
+# Copyright 2025-2026 Arm Limited and/or its affiliates.
 #
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
@@ -27,7 +27,7 @@ def test_conv2d_tosa_INT():
                 [2, 2, 2, 2],
                 [1, 1],
             ),
-            (1, 8, 20, 20),
+            (1, 11, 20, 8),
             torch.int32,
         ),
         (
@@ -39,7 +39,7 @@ def test_conv2d_tosa_INT():
                 [2, 2, 2, 2],
                 [1, 1],
             ),
-            (1, 4, 10, 10),
+            (1, 6, 10, 4),
             torch.int32,
         ),
     ]
@@ -129,7 +129,7 @@ def test_conv2d_tosa_FP():
                 [2, 2, 2, 2],
                 [1, 1],
             ),
-            (1, 8, 20, 20),
+            (1, 11, 20, 8),
             torch.float32,
         ),
         (
@@ -141,7 +141,7 @@ def test_conv2d_tosa_FP():
                 [2, 2, 2, 2],
                 [1, 1],
             ),
-            (1, 4, 10, 10),
+            (1, 6, 10, 4),
             torch.float32,
         ),
     ]

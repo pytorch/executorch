@@ -159,7 +159,7 @@ def _build_high_rank_permute_cases() -> dict[str, TransposeInvariantCase]:
         20260225
     )  # nosec B311: deterministic RNG for test case generation
     start_shape = [1, 16, 16, 64]
-    expected_transpose_counts = [6, 11, 10, 10, 7, 7, 10, 10, 8, 10]
+    expected_transpose_counts = [4, 3, 3, 3, 2, 3, 3, 3, 3, 2]
     cases: dict[str, TransposeInvariantCase] = {}
     for idx in range(10):
         ops = _generate_chain(rng, start_shape, steps=8)

@@ -78,15 +78,16 @@ def AVG_POOL2D(
             f"must be one of {acc_allowed}",
             op="AVG_POOL2D",
         )
-    # Unpack dimensions and parameters; zero-points are not used for shape
-    n, c, h, w = x.shape
+    # Unpack dimensions and parameters in NHWC order;
+    # zero-points are not used for shape.
+    n, h, w, c = x.shape
 
     k_h, k_w = kernel
     s_h, s_w = stride
-    p_top, p_left, p_bot, p_right = pad
+    p_top, p_bottom, p_left, p_right = pad
     # Compute output spatial dimensions (floor division)
-    h_out = (h + p_top + p_left - k_h) // s_h + 1
-    w_out = (w + p_bot + p_right - k_w) // s_w + 1
+    h_out = (h + p_top + p_bottom - k_h) // s_h + 1
+    w_out = (w + p_left + p_right - k_w) // s_w + 1
 
     # Return a tensor with the computed shape and dtype
-    return torch.empty(size=[n, c, h_out, w_out], dtype=x.dtype)
+    return torch.empty(size=[n, h_out, w_out, c], dtype=x.dtype)
