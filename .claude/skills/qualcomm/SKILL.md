@@ -93,6 +93,5 @@ Required flags: `-m` (SoC model), `-b` (Android build dir). Optional: `-s` (devi
 | `TestExampleLLMScript` | LLM script tests |
 | `TestExampleMultimodalityScript` | Multimodality script tests |
 | `TestExampleOssScript` | OSS model script tests |
-| `TestExampleQaihubScript` | QAI Hub script tests |
 | `TestExampleScript` | General example script tests |
 | `TestUtilsScript` | Utility script tests |

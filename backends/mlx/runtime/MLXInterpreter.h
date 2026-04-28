@@ -1380,6 +1380,13 @@ inline void exec_logical_not(
   st.set_tensor(n.out, logical_not(st.const_tensor_ref(n.x), s));
 }
 
+inline void exec_bitwise_invert(
+    const BitwiseInvertNode& n,
+    ExecutionState& st,
+    StreamOrDevice s) {
+  st.set_tensor(n.out, bitwise_invert(st.const_tensor_ref(n.x), s));
+}
+
 inline void exec_logical_and(
     const LogicalAndNode& n,
     ExecutionState& st,
@@ -2027,6 +2034,10 @@ class Interpreter {
         break;
       case OpCode::LOGICAL_NOT:
         ops::exec_logical_not(std::get<LogicalNotNode>(instr.node), st, s);
+        break;
+      case OpCode::BITWISE_INVERT:
+        ops::exec_bitwise_invert(
+            std::get<BitwiseInvertNode>(instr.node), st, s);
         break;
       case OpCode::LOGICAL_AND:
         ops::exec_logical_and(std::get<LogicalAndNode>(instr.node), st, s);

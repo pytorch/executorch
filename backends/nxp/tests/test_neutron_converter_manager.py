@@ -3,8 +3,10 @@
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
 
-import torch
+import multiprocessing
 
+import torch
+from eiq_neutron_sdk.neutron_converter.neutron_converter import CompilationContext
 from executorch import exir
 from executorch.backends.nxp.backend.edge_program_converter import (
     EdgeProgramToIRConverter,
@@ -56,3 +58,18 @@ def test_conv2d_neutron_conversion__prefetching(mocker):
     assert len(neutron_model_prefetch) != len(
         neutron_model_regular
     ), "The weight prefetching flag does not make a difference!"
+
+
+def test_neutron_converter_with_experimental_mlir_flow(mocker):
+    model = LinearModule(True)
+    input_shape = (1, 1, 32, 32)
+
+    process_spy = mocker.spy(multiprocessing, "Process")
+    to_quantized_edge_program(
+        model, input_shape, use_new_flow_neutron_c=True
+    ).exported_program()
+
+    compilation_context = process_spy.call_args.kwargs["args"][2]
+    assert isinstance(compilation_context, CompilationContext)
+    if hasattr(compilation_context.compilationOpts, "useNewFlowNeutronC"):
+        assert compilation_context.compilationOpts.useNewFlowNeutronC
