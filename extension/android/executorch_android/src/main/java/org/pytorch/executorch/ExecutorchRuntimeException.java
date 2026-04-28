@@ -8,6 +8,7 @@
 
 package org.pytorch.executorch;
 
+import com.facebook.jni.annotations.DoNotStrip;
 import java.util.Collections;
 import java.util.HashMap;
 import java.util.Map;
@@ -156,13 +157,9 @@ public class ExecutorchRuntimeException extends RuntimeException {
 
   private final int errorCode;
 
+  @DoNotStrip
   public ExecutorchRuntimeException(int errorCode, String details) {
     super(ErrorHelper.formatMessage(errorCode, details));
-    this.errorCode = errorCode;
-  }
-
-  public ExecutorchRuntimeException(int errorCode, String details, Throwable cause) {
-    super(ErrorHelper.formatMessage(errorCode, details), cause);
     this.errorCode = errorCode;
   }
 
@@ -176,14 +173,15 @@ public class ExecutorchRuntimeException extends RuntimeException {
     return ErrorHelper.getDetailedErrorLogs();
   }
 
-  // Idiomatic Java exception for invalid arguments - extends ExecutorchRuntimeException
+  @DoNotStrip
   public static class ExecutorchInvalidArgumentException extends ExecutorchRuntimeException {
+    @DoNotStrip
     public ExecutorchInvalidArgumentException(String details) {
       super(INVALID_ARGUMENT, details);
     }
   }
 
-  // Factory method to create an exception of the appropriate subclass.
+  @DoNotStrip
   public static RuntimeException makeExecutorchException(int errorCode, String details) {
     switch (errorCode) {
       case INVALID_ARGUMENT:
