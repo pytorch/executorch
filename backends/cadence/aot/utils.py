@@ -192,9 +192,9 @@ def get_shape(
     graph_module: torch.fx.GraphModule, node: torch.fx.Node
 ) -> Union[torch.Size, None]:
     """
-    Return the shape of the tensor correspnding to node. If the node has a
+    Return the shape of the tensor corresponding to node. If the node has a
     tensor spec, return the shape from the metadata. If the node is a param,
-    return it shape. Otherwise return None.
+    return its shape. Otherwise return None.
     """
     try:
         # Case 1. node is a scalar
