@@ -4,7 +4,7 @@
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
 
-"""Example of registering single output custom operator through torch library API."""
+"""Example of registering multi-output custom operator through torch library API."""
 
 import json
 import os
@@ -43,31 +43,37 @@ from executorch.examples.qualcomm.utils import make_output_dir
 from torch.library import impl, Library
 
 my_op_lib = Library("my_ops", "DEF")
-
-# registering an operator that multiplies input tensor by 3 and returns it.
-my_op_lib.define("mul3(Tensor input) -> Tensor")
+my_op_lib.define("split_custom(Tensor input) -> (Tensor, Tensor)")
 
 
-@impl(my_op_lib, "mul3", dispatch_key="CompositeExplicitAutograd")
-def mul3_impl(a: torch.Tensor) -> torch.Tensor:
-    return a * 3
+@impl(my_op_lib, "split_custom", dispatch_key="CompositeExplicitAutograd")
+def split_custom_impl(x: torch.Tensor):
+    half = x.shape[-1] // 2
+    return x[..., :half], x[..., half:]
 
 
-# registering the out variant.
-my_op_lib.define("mul3.out(Tensor input, *, Tensor(a!) output) -> Tensor(a!)")
+my_op_lib.define(
+    "split_custom.out("
+    "Tensor input, "
+    "*, Tensor(a!) first_half, Tensor(b!) second_half"
+    ") -> (Tensor(a!), Tensor(b!))"
+)
 
 
-@impl(my_op_lib, "mul3.out", dispatch_key="CompositeExplicitAutograd")
-def mul3_out_impl(a: torch.Tensor, *, out: torch.Tensor) -> torch.Tensor:
-    out.copy_(a)
-    out.mul_(3)
-    return out
+@impl(my_op_lib, "split_custom.out", dispatch_key="CompositeExplicitAutograd")
+def split_custom_out_impl(
+    x: torch.Tensor, *, first_half: torch.Tensor, second_half: torch.Tensor
+):
+    half = x.shape[-1] // 2
+    first_half.copy_(x[..., :half])
+    second_half.copy_(x[..., half:])
+    return first_half, second_half
 
 
-# example model
 class Model(torch.nn.Module):
-    def forward(self, a):
-        return torch.ops.my_ops.mul3.default(a)
+    def forward(self, x):
+        first_half, second_half = torch.ops.my_ops.split_custom.default(x)
+        return first_half + second_half
 
 
 def _run(cmd, cwd=None):
@@ -86,29 +92,31 @@ def main(args):
             raise RuntimeError("Environment variable ANDROID_NDK_ROOT must be set")
         print(f"ANDROID_NDK_ROOT={os.getenv('ANDROID_NDK_ROOT')}")
 
-    # ensure the working directory exist.
     os.makedirs(args.artifact, exist_ok=True)
 
     instance = Model()
-    pte_filename = "custom_qnn"
+    pte_filename = "custom_qnn_split"
+    # Input: [1, 32, 28, 28] — split along last dim, to get two [1, 32, 28, 14] halves
     sample_input = (torch.ones(1, 32, 28, 28),)
     workspace = f"/data/local/tmp/executorch/{pte_filename}"
 
     soc_info = _soc_info_table[getattr(QcomChipset, args.soc_model)]
     arch = soc_info.htp_info.htp_arch
 
-    # op package setup
-    xml_path = f"{args.op_package_dir}/config/example_op_package_htp.xml"
+    xml_path = f"{args.op_package_dir}/config/split_custom_op_package.xml"
     op_package_config = QnnCustomOpPackageBuilder(
         xml_path=xml_path,
-        torch_op_name_map={"ExampleCustomOp": torch.ops.my_ops.mul3.default},
+        torch_op_name_map={
+            "SplitCustomOp": torch.ops.my_ops.split_custom.default,
+        },
     )
     lib_name = f"libQnn{op_package_config.op_package_name}"
 
     if args.build_op_package:
         _run(["rm", "-rf", "build"], cwd=args.op_package_dir)
         _run(
-            ["make", "htp_x86", "htp_aarch64", f"htp_v{arch}"], cwd=args.op_package_dir
+            ["make", "htp_x86", "htp_aarch64", f"htp_v{arch}"],
+            cwd=args.op_package_dir,
         )
         _run(
             [
@@ -149,10 +157,13 @@ def main(args):
         quant_cfg = get_ptq_per_channel_quant_config()
         custom_quant_annotator = CustomOpsQuantAnnotator()
         custom_quant_annotator.register_annotation(
-            torch.ops.my_ops.mul3.default,
+            torch.ops.my_ops.split_custom.default,
             IOQuantConfig(
                 input_quant_specs={0: quant_cfg.input_activation},
-                output_quant_specs={0: quant_cfg.output_activation},
+                output_quant_specs={
+                    0: quant_cfg.output_activation,
+                    1: quant_cfg.output_activation,
+                },
             ),
         )
         annotate_fn = custom_quant_annotator.build_annotation_fn()
@@ -173,7 +184,6 @@ def main(args):
         custom_quantizer=quantizer,
     )
 
-    # collect output data
     output_data_folder = f"{args.artifact}/outputs"
     make_output_dir(output_data_folder)
 
@@ -263,7 +273,7 @@ if __name__ == "__main__":
     parser.add_argument(
         "-d",
         "--op_package_dir",
-        help="Path to operator package generated from QNN.",
+        help="Path to the SplitCustomOpPackage directory generated from QNN",
         type=str,
         required=True,
     )
