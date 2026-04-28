@@ -134,11 +134,12 @@ def replace_hf_cache_with_mlx(
         ):
             setattr(module, f"key_cache_{i}", layer_cache.k_cache)
             setattr(module, f"value_cache_{i}", layer_cache.v_cache)
-            setattr(
-                module,
-                f"cumulative_length_{i}",
-                cache_layer.cumulative_length,
-            )
+            if hasattr(cache_layer, "cumulative_length"):
+                setattr(
+                    module,
+                    f"cumulative_length_{i}",
+                    cache_layer.cumulative_length,
+                )
 
     if hasattr(module, "static_cache"):
         assert isinstance(
@@ -219,11 +220,12 @@ def replace_hf_cache_with_mlx_ring_buffer(
         ):
             setattr(module, f"key_cache_{i}", layer_cache.k_cache)
             setattr(module, f"value_cache_{i}", layer_cache.v_cache)
-            setattr(
-                module,
-                f"cumulative_length_{i}",
-                cache_layer.cumulative_length,
-            )
+            if hasattr(cache_layer, "cumulative_length"):
+                setattr(
+                    module,
+                    f"cumulative_length_{i}",
+                    cache_layer.cumulative_length,
+                )
 
     if hasattr(module, "static_cache"):
         assert isinstance(
