@@ -48,6 +48,8 @@ class EagerEvalWrapper(eval_wrapper):
 
     @property
     def prefix_token_id(self):
+        if hasattr(self._tokenizer, "bos_id"):
+            return self._tokenizer.bos_id
         return self.eot_token_id
 
     @property
