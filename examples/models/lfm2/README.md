@@ -3,6 +3,10 @@
 
 [LFM2.5](https://huggingface.co/LiquidAI/LFM2.5-1.2B-Instruct) is an updated version with improved training (28T tokens vs 10T) and extended context length support (32K tokens).
 
+Pre-exported ExecuTorch MLX artifacts for LFM2.5 350M and 1.2B are available
+on the Hugging Face Hub at
+[younghan-meta/LFM2.5-ExecuTorch-MLX](https://huggingface.co/younghan-meta/LFM2.5-ExecuTorch-MLX).
+
 ## Instructions
 
 LFM2 uses the same example code as optimized Llama model, while the checkpoint, model params, and tokenizer are different. Please see the [Llama README page](../llama/README.md) for details.
