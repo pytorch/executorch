@@ -9,7 +9,8 @@
 import operator
 from typing import Optional
 
-import executorch.extension.llm.custom_ops.model_sharding  # noqa: F401
+# register llama.fallback
+import executorch.extension.llm.custom_ops.op_fallback  # noqa: F401
 
 import torch
 from executorch.exir.delegate import executorch_call_delegate
