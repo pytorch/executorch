@@ -93,6 +93,19 @@ class AotiBackend(ABC):
         return contextlib.nullcontext()
 
     @classmethod
+    def codesign_so(cls, so_path: str, compile_specs: List[CompileSpec]) -> None:
+        """Sign the compiled .so before packing into .pte.
+
+        Called after AOTInductor compilation, before the .so bytes are read
+        and packed into the named data store. Override in platform-specific
+        backends to apply code signing (e.g., macOS codesign for Hardened
+        Runtime compatibility).
+
+        Default: no-op.
+        """
+        return
+
+    @classmethod
     @contextlib.contextmanager
     def collect_unsupported_fallback_kernels(cls, missing_fallback_kernels: Set[str]):
         """
@@ -225,6 +238,9 @@ class AotiBackend(ABC):
             raise RuntimeError(
                 f"Could not find required files in compiled paths, got {paths}"
             )
+
+        # Sign the .so for platform-specific requirements (e.g., macOS Hardened Runtime)
+        cls.codesign_so(so_path, compile_specs)
 
         # Read SO file
         with open(so_path, "rb") as f:
