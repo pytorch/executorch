@@ -8,6 +8,17 @@ source "Kconfig.zephyr"
 
 menu "ExecuTorch MobileNetV2 sample configuration"
 
+config ET_ARM_MODEL_PTE_DMA_ACCESSIBLE
+	bool "Model PTE is in DMA-accessible memory"
+	default n
+	help
+	  Skip copying the model PTE blob to a separate SRAM buffer at
+	  runtime. Enable this when the embedded model blob already resides
+	  in memory the Ethos-U NPU can DMA from (e.g. DDR on Corstone FVP,
+	  MRAM on Alif). This is independent of where the linker places the
+	  model section; DDR placement is controlled by the model_ddr DTS
+	  node in the board overlay.
+
 config EXECUTORCH_METHOD_ALLOCATOR_POOL_SIZE
 	int "Method allocator pool size in bytes"
 	default 1572864

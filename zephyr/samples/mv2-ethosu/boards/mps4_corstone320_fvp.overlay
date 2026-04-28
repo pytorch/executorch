@@ -1,0 +1,18 @@
+/* Copyright (c) Meta Platforms, Inc. and affiliates.
+ *
+ * Copyright 2026 Arm Limited and/or its affiliates.
+ *
+ * SPDX-License-Identifier: Apache-2.0
+ */
+
+/* The model PTE blob is placed in DDR (0x7000_0000) via a linker snippet
+ * to avoid overflowing SRAM with the full MobileNetV2 model.
+ * The Ethos-U can DMA from DDR on the Corstone-320 FVP.
+ */
+/ {
+	model_ddr: memory@70000000 {
+		compatible = "zephyr,memory-region", "mmio-sram";
+		reg = <0x70000000 DT_SIZE_M(16)>;
+		zephyr,memory-region = "MODEL_DDR";
+	};
+};

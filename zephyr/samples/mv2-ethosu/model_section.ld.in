@@ -1,0 +1,13 @@
+/* Place the model PTE blob in DDR so it does not overflow the small
+ * ITCM (FLASH) and ISRAM (RAM) regions on Corstone FVP boards.
+ * The Ethos-U NPU can DMA from DDR on these platforms.
+ *
+ * Section name is substituted from the ET_PTE_SECTION CMake variable
+ * so this stays in sync with pte_to_header.py --section.
+ */
+SECTION_DATA_PROLOGUE(@ET_PTE_SECTION@,,)
+{
+    . = ALIGN(16);
+    *(.@ET_PTE_SECTION@)
+    *(.@ET_PTE_SECTION@.*)
+} GROUP_DATA_LINK_IN(MODEL_DDR, MODEL_DDR)
