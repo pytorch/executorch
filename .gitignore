@@ -19,7 +19,7 @@ cmake-out-android/
 backends/webgpu/third-party/
 build-android/
 build-x86/
-build-hexagon/
+build-direct/
 dist/
 arm-scratch/
 executorch.egg-info

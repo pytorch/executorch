@@ -40,7 +40,7 @@ Use `backends/qualcomm/scripts/build.sh`. Linux only (macOS not supported).
 |---|---|---|
 | x86_64 (Python interface + host tools) | enabled | `build-x86/` |
 | Android arm64-v8a (device runner) | enabled | `build-android/` |
-| Hexagon DSP (direct mode) | disabled | `build-hexagon/` |
+| Direct mode (LPAI ADSP or Hexagon CDSP) | disabled | `build-direct/` |
 | OE Linux embedded | disabled | `build-oe-linux/` |
 
 **Common build commands:**
