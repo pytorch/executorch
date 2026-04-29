@@ -1387,7 +1387,11 @@ class TestQNNFloatingPointOperator(TestQNN):
         self.lower_module_and_test_output(module, sample_input)
 
     def test_qnn_backend_layer_norm(self):
-        modules = [LayerNorm(), LayerNorm(bias=False)]  # noqa: F405
+        modules = [
+            LayerNorm(),  # noqa: F405
+            LayerNorm(bias=False),  # noqa: F405
+            LayerNorm(elementwise_affine=False),  # noqa: F405
+        ]
         sample_input = (torch.randn(196, 768),)
         for i, module in enumerate(modules):
             with self.subTest(i=i):
@@ -3871,7 +3875,11 @@ class TestQNNQuantizedOperator(TestQNN):
         self.lower_module_and_test_output(module, sample_input)
 
     def test_qnn_backend_layer_norm(self):
-        modules = [LayerNorm(), LayerNorm(bias=False)]  # noqa: F405
+        modules = [
+            LayerNorm(),  # noqa: F405
+            LayerNorm(bias=False),  # noqa: F405
+            LayerNorm(elementwise_affine=False),  # noqa: F405
+        ]
         sample_input = (torch.randn(196, 768),)
         for i, module in enumerate(modules):
             with self.subTest(i=i):
