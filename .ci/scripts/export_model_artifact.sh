@@ -418,7 +418,8 @@ if [ "$MODEL_NAME" = "qwen3_5_moe" ]; then
   TORCHINDUCTOR_CACHE_DIR="$INDUCTOR_CACHE" \
   python -m executorch.examples.models.qwen3_5_moe.export \
       --prequantized "$LOCAL_MODEL_DIR" \
-      --output-dir "${OUTPUT_DIR}"
+      --output-dir "${OUTPUT_DIR}" \
+      --moe-activation-dtype int8
   echo "::endgroup::"
 
   test -f "${OUTPUT_DIR}/model.pte"
