@@ -112,7 +112,7 @@ def test_batch_norm_conv_fusing__full_pipeline__1d(bias: bool):
         module, tuple(input_shape)
     ).exported_program()
 
-    assert len(edge_program.graph.nodes) == 15
+    assert len(edge_program.graph.nodes) == 21
     assert not graph_contains_any_of_ops(edge_program.graph, batch_norm_target_ops)
 
 

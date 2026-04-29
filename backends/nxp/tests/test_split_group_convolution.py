@@ -151,7 +151,7 @@ class TestSplitGroupConvolution(unittest.TestCase):
             in_channels=input_shape[1],
             out_channels=8
             * group,  # Make sure the output channels are multiple of 8, so the `cat` can be delegated.
-            group=group,
+            groups=group,
             stride=1,
         )
         graph_module = torch.export.export(module, example_input).module()

@@ -9,19 +9,10 @@ import torch
 from executorch.backends.nxp.backend.edge_program_converter import (
     EdgeProgramToIRConverter,
 )
-from executorch.backends.nxp.backend.ir.converter.conversion import translator
-from executorch.backends.nxp.backend.neutron_operator_support import (
-    transposition_is_supported_on_neutron,
-)
-from executorch.backends.nxp.tests.executorch_pipeline import (
-    neutron_target_spec,
-    to_quantized_edge_program,
-)
+from executorch.backends.nxp.tests.executorch_pipeline import to_quantized_edge_program
 from executorch.backends.nxp.tests.executors import (
     convert_run_compare,
     graph_contains_any_of_ops,
-    ToChannelFirstPreprocess,
-    ToChannelLastPreprocess,
 )
 from executorch.backends.nxp.tests.models import BatchMatMulConvModel, BatchMatMulModel
 from executorch.backends.nxp.tests.use_qat import *  # noqa F403
@@ -105,31 +96,6 @@ def test_convert_bmm__unsupported_shape(input_shape_x1, input_shape_x2, use_qat)
     assert graph_contains_any_of_ops(delegated_ep.graph, [Bmm])
 
 
-def test_convert_bmm__unsupported_dim_order(mocker, use_qat):
-    n1 = n2 = 5
-    w1 = c2 = 16
-    c1 = 8
-    w2 = 24
-
-    x_input_shape = (n1, c1, w1)
-    y_input_shape = (n2, c2, w2)
-
-    model = BatchMatMulConvModel(in_channels=c1, out_channels=c1)
-
-    delegated_ep = to_quantized_edge_program(
-        model,
-        [x_input_shape, y_input_shape],
-        use_neutron_for_format_conversion=False,
-        use_qat=use_qat,
-    ).exported_program()
-
-    # Make sure the `bmm` was NOT delegated.
-    # For `bmm` to work in channels-first order, support for 3D `transpose` is needed,
-    # which is not implemented in NXP Executorch backend yet.
-    assert not graph_contains_any_of_ops(delegated_ep.graph, [ExecutorchDelegateCall])
-    assert graph_contains_any_of_ops(delegated_ep.graph, [Bmm])
-
-
 def test_convert_bmm__channels_first(mocker, use_qat):
     # These must match:
     # - `n1 = n2`
@@ -144,19 +110,6 @@ def test_convert_bmm__channels_first(mocker, use_qat):
 
     x_input_shape = (n1, c1, w1)
     y_input_shape = (n2, c2, w2)
-
-    # Channels-last shape of the output before the newly-inserted `transpose`
-    # converts it to channels-first
-    output_shape = (n1, w2, c1)
-
-    perm = translator.create_channels_first_to_channels_last_permutation(
-        len(output_shape), return_list=True
-    )
-    transp_not_supported = not transposition_is_supported_on_neutron(
-        output_shape, perm, neutron_target_spec
-    )
-    if transp_not_supported:
-        pytest.skip("3D dim order swap not implemented.")
 
     model = BatchMatMulConvModel(in_channels=c1, out_channels=c1)
 
@@ -198,6 +151,4 @@ def test_convert_bmm__channels_first(mocker, use_qat):
         tfl_model=neutron_ir_model,
         input_data=input_data,
         atol=1,
-        tflite_input_preprocess=ToChannelLastPreprocess(),
-        tflite_output_preprocess=ToChannelFirstPreprocess(),
     )
