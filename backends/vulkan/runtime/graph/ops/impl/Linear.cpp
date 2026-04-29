@@ -24,7 +24,8 @@ ValueRef prepack_fp_linear_weight(
     ComputeGraph& graph,
     const ValueRef weight_data,
     bool is_transposed,
-    int64_t B) {
+    int64_t B,
+    bool force_buffer) {
   std::vector<int64_t> weight_sizes = graph.sizes_of(weight_data);
 
   int64_t N, K;
@@ -47,12 +48,17 @@ ValueRef prepack_fp_linear_weight(
   int64_t output_height = B * K4;
   int64_t output_width = N4 * 4 * 4;
 
-  utils::StorageType weight_storage = utils::kTexture2D;
-  uint32_t max_extent = graph.context()->adapter_ptr()->max_texture2d_dim();
-  // output_width is in scalars; texture width in texels = output_width / 4
-  if (output_width / 4 > max_extent ||
-      static_cast<uint32_t>(output_height) > max_extent) {
+  utils::StorageType weight_storage;
+  if (force_buffer) {
     weight_storage = utils::kBuffer;
+  } else {
+    weight_storage = utils::kTexture2D;
+    uint32_t max_extent = graph.context()->adapter_ptr()->max_texture2d_dim();
+    // output_width is in scalars; texture width in texels = output_width / 4
+    if (output_width / 4 > max_extent ||
+        static_cast<uint32_t>(output_height) > max_extent) {
+      weight_storage = utils::kBuffer;
+    }
   }
 
   ValueRef packed_weight = graph.add_tensor(
@@ -233,6 +239,100 @@ void add_linear_tiled_node(
       resize_linear_node));
 }
 
+// ── Cooperative matrix linear ──
+
+static constexpr uint32_t kLinearCoopMatTileM = 64;
+static constexpr uint32_t kLinearCoopMatTileN = 64;
+static constexpr uint32_t kLinearCoopMatInvocations = 256; // 4 subgroups x 64
+
+vkapi::ShaderInfo pick_linear_coopmat_shader(
+    ComputeGraph* graph,
+    const std::vector<ArgGroup>& args,
+    const std::vector<ValueRef>& resize_args) {
+  const ValueRef out = args.at(0).refs.at(0);
+  bool has_bias = graph->get_bool(resize_args.at(1));
+  std::string kernel_name =
+      has_bias ? "linear_coopmat_bias" : "linear_coopmat";
+  kernel_name.reserve(kShaderNameReserve);
+  add_dtype_suffix(kernel_name, graph->dtype_of(out));
+  return VK_KERNEL_FROM_STR(kernel_name);
+}
+
+utils::uvec3 pick_linear_coopmat_global_wg_size(
+    ComputeGraph* graph,
+    const vkapi::ShaderInfo& shader,
+    const std::vector<ArgGroup>& args,
+    const std::vector<ValueRef>& resize_args) {
+  (void)shader;
+  (void)resize_args;
+  const ValueRef out = args.at(0).refs.at(0);
+  const auto out_sizes = graph->sizes_of(out);
+  uint32_t M = out_sizes.at(out_sizes.size() - 2);
+  uint32_t N = out_sizes.at(out_sizes.size() - 1);
+  uint32_t num_tiles_n = utils::div_up(N, kLinearCoopMatTileN);
+  uint32_t num_tiles_m = utils::div_up(M, kLinearCoopMatTileM);
+  return {num_tiles_n * kLinearCoopMatInvocations, num_tiles_m, 1};
+}
+
+utils::uvec3 pick_linear_coopmat_local_wg_size(
+    ComputeGraph* graph,
+    const vkapi::ShaderInfo& shader,
+    const utils::uvec3& global_workgroup_size,
+    const std::vector<ArgGroup>& args,
+    const std::vector<ValueRef>& resize_args) {
+  (void)graph;
+  (void)shader;
+  (void)global_workgroup_size;
+  (void)args;
+  (void)resize_args;
+  return {kLinearCoopMatInvocations, 1, 1};
+}
+
+void add_linear_coopmat_node(
+    ComputeGraph& graph,
+    const ValueRef input,
+    const ValueRef packed_weight,
+    const ValueRef packed_bias,
+    bool has_bias,
+    const ValueRef out,
+    int32_t weight_B) {
+  VK_CHECK_COND(graph.packed_dim_of(input) == WHCN::kWidthDim);
+  VK_CHECK_COND(graph.packed_dim_of(out) == WHCN::kWidthDim);
+  VK_CHECK_COND(
+      graph.storage_type_of(out) == utils::kBuffer,
+      "linear_coopmat requires buffer storage");
+
+  std::vector<int64_t> out_sizes = graph.sizes_of(out);
+  int32_t orig_N = utils::safe_downcast<int32_t>(out_sizes.back());
+  ValueRef orig_N_ref = graph.add_scalar(static_cast<int64_t>(orig_N));
+  ValueRef has_bias_ref = graph.add_scalar(has_bias);
+
+  std::vector<ValueRef> read_inputs = {input, packed_weight};
+  if (has_bias) {
+    read_inputs.push_back(packed_bias);
+  }
+
+  graph.execute_nodes().emplace_back(new DynamicDispatchNode(
+      graph,
+      pick_linear_coopmat_shader,
+      pick_linear_coopmat_global_wg_size,
+      pick_linear_coopmat_local_wg_size,
+      // Inputs and Outputs
+      {{out, vkapi::kWrite}, {read_inputs, vkapi::kRead}},
+      // Shader params buffers
+      {graph.sizes_ubo(input), graph.sizes_ubo(out)},
+      // Push Constants
+      {},
+      // Specialization Constants
+      {},
+      // Resize Args
+      {orig_N_ref, has_bias_ref},
+      // Resizing Logic
+      resize_linear_node));
+}
+
+// ── End cooperative matrix linear ──
+
 void linear_packed_weight(
     ComputeGraph& graph,
     const std::vector<ValueRef>& args) {
@@ -241,18 +341,38 @@ void linear_packed_weight(
   ValueRef bias = args.at(2);
   ValueRef out = args.at(3);
 
+  bool has_bias = graph.val_is_not_none(bias);
+  // Coopmat shader assumes M is a multiple of TILE_M (64) because the store
+  // does not bounds-check. Fall back to the tiled shader otherwise.
+  // TODO: remove this guard once the coopmat shader gains partial-tile
+  // bounds checking.
+  auto input_sizes = graph.sizes_of(input);
+  int64_t M = input_sizes.size() >= 2
+      ? input_sizes.at(input_sizes.size() - 2)
+      : 1;
+  bool use_coopmat =
+      graph.context()->adapter_ptr()->supports_cooperative_matrix() &&
+      graph.storage_type_of(out) == utils::kBuffer &&
+      M >= 64;
+
   ValueRef packed_weight = prepack_fp_linear_weight(
-      graph, weight_data, /*is_transposed=*/true, /*B=*/1);
+      graph, weight_data, /*is_transposed=*/true, /*B=*/1,
+      /*force_buffer=*/use_coopmat);
 
   ValueRef packed_bias = kDummyValueRef;
-  bool has_bias = graph.val_is_not_none(bias);
   if (has_bias) {
     packed_bias = prepack_standard(
-        graph, bias, graph.storage_type_of(out), utils::kWidthPacked);
+        graph, bias, graph.storage_type_of(out), utils::kWidthPacked,
+        /*passthrough=*/use_coopmat);
   }
 
-  add_linear_tiled_node(
-      graph, input, packed_weight, packed_bias, has_bias, out);
+  if (use_coopmat) {
+    add_linear_coopmat_node(
+        graph, input, packed_weight, packed_bias, has_bias, out);
+  } else {
+    add_linear_tiled_node(
+        graph, input, packed_weight, packed_bias, has_bias, out);
+  }
 }
 
 REGISTER_OPERATORS {
