@@ -1,4 +1,5 @@
 load("@fbcode_macros//build_defs:build_file_migration.bzl", "fbcode_target", "non_fbcode_target")
+load("@fbcode_macros//build_defs:cpp_benchmark.bzl", "cpp_benchmark")
 oncall("executorch")
 # Any targets that should be shared between fbcode and xplat must be defined in
 # targets.bzl. This file can contain xplat-only targets.
@@ -87,5 +88,18 @@ fbcode_target(_kind = runtime.python_test,
     ],
     deps = [
         "//caffe2:torch",
+    ],
+)
+
+fbcode_target(_kind = cpp_benchmark,
+    name = "bench_sdpa",
+    srcs = ["bench_sdpa.cpp"],
+    deps = [
+        "fbsource//third-party/benchmark:benchmark",
+        "//executorch/extension/llm/custom_ops:custom_ops_mkl_noomp",
+        "//executorch/extension/threadpool:threadpool",
+        "//executorch/kernels/optimized:libblas",
+        "//executorch/runtime/core/exec_aten:lib",
+        "//executorch/runtime/core/exec_aten/testing_util:tensor_util",
     ],
 )
