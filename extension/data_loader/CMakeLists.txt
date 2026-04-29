@@ -24,6 +24,14 @@ if(NOT ET_HAVE_SYS_MMAN_H AND NOT WIN32)
        "extension/data_loader/mmap_data_loader.cpp"
   )
 endif()
+if(EXECUTORCH_BUILD_ENN)
+  list(REMOVE_ITEM _extension_data_loader__srcs
+       "extension/data_loader/file_data_loader.cpp"
+  )
+  list(APPEND _extension_data_loader__srcs
+       "backends/samsung/runtime/extension/exynos_file_data_loader.cpp"
+  )
+endif()
 if(WIN32)
   list(APPEND _extension_data_loader__srcs
        "extension/data_loader/mman_windows.cpp"
