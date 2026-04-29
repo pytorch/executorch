@@ -47,6 +47,7 @@ def define_arm_tests():
         "misc/test_compile_spec.py",
         # "misc/test_evaluate_model.py",
         "misc/test_pass_pipeline_config.py",
+        "misc/test_tosa_dialect_resize.py",
         "misc/test_tosa_spec.py",
         "misc/test_bn_relu_folding_qat.py",
         "misc/test_custom_partition.py",
