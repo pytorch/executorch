@@ -10,6 +10,7 @@ from typing import Dict
 
 from executorch.backends.qualcomm._passes import (
     AnnotateAvgPool1D,
+    AnnotateConcatRequant,
     AnnotateQuantAttrs,
     AnnotateStack,
     AnnotateUnbind,
@@ -99,6 +100,7 @@ def get_capture_program_passes():
     default_passes_and_setting = [
         (AnnotateAvgPool1D, True),
         (AnnotateQuantAttrs, True),
+        (AnnotateConcatRequant, True),
         (AnnotateStack, True),
         (AnnotateUnbind, True),
         (ConvertBmmToMatmul, False),

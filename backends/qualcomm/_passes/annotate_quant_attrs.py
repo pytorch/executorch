@@ -79,6 +79,21 @@ class AnnotateQuantAttrs(ExportPass):
 
         return last_dq_nodes
 
+    def _is_requant_needed(self, src_attrs: Dict[str, Any], dst_attrs: Dict[str, Any]):
+        if self.skip_advanced_requant:
+            return src_attrs[QCOM_DTYPE] != dst_attrs[QCOM_DTYPE]
+
+        return any(
+            src_attrs[attr] != dst_attrs[attr]
+            for attr in [
+                QCOM_SCALE,
+                QCOM_ZERO_POINT,
+                QCOM_QUANT_MIN,
+                QCOM_QUANT_MAX,
+                QCOM_DTYPE,
+            ]
+        )
+
     def _annotate_requant(self, n):
         # Record requant attributes:
         # node1 -> q_ui8 (n) -> dq_ui8 -> q_int32 -> dq_int32 -> node2 -> ....
@@ -96,28 +111,7 @@ class AnnotateQuantAttrs(ExportPass):
                 # that has multiple outputs that requires quant attributes.
 
                 # Determine if requantization is needed based on configuration and attribute mismatch.
-                is_requant_needed = False
-                if self.skip_advanced_requant:
-                    # In skip_advanced_requant mode, only consider requant if dtypes differ.
-                    if q_attrs[QCOM_DTYPE] != dq_attrs[QCOM_DTYPE]:
-                        is_requant_needed = True
-                else:
-                    # In full requant mode, consider requant if any key attribute differs.
-                    # This aims to improve accuracy by adjusting scale, zero_point, etc.
-                    # Users can disable this if it causes regressions.
-                    if any(
-                        q_attrs[attr] != dq_attrs[attr]
-                        for attr in [
-                            QCOM_SCALE,
-                            QCOM_ZERO_POINT,
-                            QCOM_QUANT_MIN,
-                            QCOM_QUANT_MAX,
-                            QCOM_DTYPE,
-                        ]
-                    ):
-                        is_requant_needed = True
-
-                if is_requant_needed:
+                if self._is_requant_needed(q_attrs, dq_attrs):
                     dq_attrs[QCOM_ENCODING] = q_attrs[QCOM_ENCODING]
                     user_node = list(dq_node.users)[0]
                     n.args[0].meta.setdefault(QCOM_REQUANTIZE, {})

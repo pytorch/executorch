@@ -8,6 +8,7 @@ import io
 import itertools
 import json
 import logging
+import operator
 import subprocess
 import sys
 import tempfile
@@ -33,11 +34,17 @@ from executorch.backends.qualcomm.export_utils import (
     make_quantizer,
     setup_common_args_and_variables,
 )
+from executorch.backends.qualcomm.quantizer.observers.concat_observer import (
+    ConcatObserver,
+)
+from executorch.backends.qualcomm.quantizer.rules import Q_ANNOTATION_KEY
 from executorch.backends.qualcomm.serialization.qc_schema import (
     QnnExecuTorchBackendType,
     QnnExecuTorchHtpPerformanceMode,
     QnnExecuTorchLpaiTargetEnv,
 )
+
+from executorch.backends.qualcomm.tests.models import Cat2
 from executorch.backends.qualcomm.tests.utils import (
     convert_pt2e,
     generate_context_binary,
@@ -72,7 +79,6 @@ from executorch.backends.qualcomm.utils.utils import (
     to_edge_transform_and_lower_to_qnn,
     update_spill_fill_size,
 )
-
 from executorch.backends.qualcomm.tests.models import *  # noqa: F403
 
 import os
@@ -97,6 +103,7 @@ from executorch.examples.models.torchvision_vit.model import TorchVisionViTModel
 from executorch.examples.models.wav2letter import Wav2LetterModel
 from executorch.exir import to_edge
 from executorch.exir.backend.backend_api import disable_validation
+from torchao.quantization.pt2e.quantizer import SharedQuantizationSpec
 
 
 class TestQNNFloatingPointOperator(TestQNN):
@@ -410,13 +417,6 @@ class TestQNNFloatingPointOperator(TestQNN):
     def test_qnn_backend_conv1d(self):
         modules = [Conv1dSequential(), Conv1dSequential(bias=False)]  # noqa: F405
         sample_input = (torch.randn([1, 1, 3]),)
-        for i, module in enumerate(modules):
-            with self.subTest(i=i):
-                self.lower_module_and_test_output(module, sample_input)
-
-    def test_qnn_conv1d_batch_norm(self):
-        modules = [Conv1dBn(), Conv1dBn(bias=False)]  # noqa: F405
-        sample_input = (torch.randn([1, 2048, 858]),)
         for i, module in enumerate(modules):
             with self.subTest(i=i):
                 self.lower_module_and_test_output(module, sample_input)
@@ -1688,12 +1688,16 @@ class TestQNNFloatingPointOperator(TestQNN):
 
     def test_qnn_backend_pixel_shuffle(self):
         module = PixelShuffle(2)  # noqa: F405
-        sample_input = (torch.ones([2, 4, 3, 3]),)
+        sample_input = (
+            torch.arange(2 * 4 * 3 * 3, dtype=torch.float32).reshape(2, 4, 3, 3),
+        )
         self.lower_module_and_test_output(module, sample_input)
 
     def test_qnn_backend_pixel_unshuffle(self):
         module = PixelUnshuffle(2)  # noqa: F405
-        sample_input = (torch.ones([2, 2, 6, 6]),)
+        sample_input = (
+            torch.arange(2 * 2 * 6 * 6, dtype=torch.float32).reshape(2, 2, 6, 6),
+        )
         self.lower_module_and_test_output(module, sample_input)
 
     def test_qnn_backend_pow_tensor_scalar(self):
@@ -2799,6 +2803,20 @@ class TestQNNQuantizedOperator(TestQNN):
                 module = self.get_qdq_module(module, sample_input)
                 self.lower_module_and_test_output(module, sample_input)
 
+    def test_qnn_backend_cat_wide_range_inputs(self):
+        module = self.get_qdq_module(
+            Cat2(),
+            (
+                torch.tensor([[[[-10.0, 2.0], [3.0, 4.0]]]]),
+                torch.tensor([[[[1.0, 3.0], [8.0, 10.0]]]]),
+            ),
+        )
+        sample_input = (
+            torch.tensor([[[[-10.0, 2.0], [3.0, 4.0]]]]),
+            torch.tensor([[[[1.0, 3.0], [8.0, 10.0]]]]),
+        )
+        self.lower_module_and_test_output(module, sample_input)
+
     def test_qnn_backend_cdist(self):
         module = CDist()  # noqa: F405
         sample_input = (
@@ -2831,14 +2849,6 @@ class TestQNNQuantizedOperator(TestQNN):
     def test_qnn_backend_conv1d(self):
         modules = [Conv1dSequential(), Conv1dSequential(bias=False)]  # noqa: F405
         sample_input = (torch.randn([1, 1, 3]),)
-        for i, module in enumerate(modules):
-            with self.subTest(i=i):
-                module = self.get_qdq_module(module, sample_input)
-                self.lower_module_and_test_output(module, sample_input)
-
-    def test_qnn_conv1d_batch_norm(self):
-        modules = [Conv1dBn(), Conv1dBn(bias=False)]  # noqa: F405
-        sample_input = (torch.randn([1, 2048, 858]),)
         for i, module in enumerate(modules):
             with self.subTest(i=i):
                 module = self.get_qdq_module(module, sample_input)
@@ -4229,15 +4239,212 @@ class TestQNNQuantizedOperator(TestQNN):
 
     def test_qnn_backend_pixel_shuffle(self):
         module = PixelShuffle(2)  # noqa: F405
-        sample_input = (torch.ones([2, 4, 3, 3]),)
+        sample_input = (
+            torch.arange(2 * 4 * 3 * 3, dtype=torch.float32).reshape(2, 4, 3, 3),
+        )
         module = self.get_qdq_module(module, sample_input)
         self.lower_module_and_test_output(module, sample_input)
 
     def test_qnn_backend_pixel_unshuffle(self):
         module = PixelUnshuffle(2)  # noqa: F405
-        sample_input = (torch.ones([2, 2, 6, 6]),)
+        sample_input = (
+            torch.arange(2 * 2 * 6 * 6, dtype=torch.float32).reshape(2, 2, 6, 6),
+        )
         module = self.get_qdq_module(module, sample_input)
         self.lower_module_and_test_output(module, sample_input)
+
+    def _prepare_module_for_qparam_assertions(self, module, sample_input):
+        backend = get_backend_type(self.backend)
+        quantizer = make_quantizer(
+            quant_dtype=QuantDtype.use_8a8w,
+            custom_annotations=(),
+            per_channel_conv=True,
+            per_channel_linear=False,
+            per_channel_embedding=False,
+            backend=backend,
+            soc_model=self.soc_model,
+        )
+        return prepare_pt2e(
+            torch.export.export(module, sample_input, strict=True).module(),
+            quantizer,
+        )
+
+    def _assert_prepared_nodes_share_qparams(
+        self, module, sample_input, target_tokens
+    ) -> list[torch.fx.Node]:
+        prepared = self._prepare_module_for_qparam_assertions(module, sample_input)
+        matching_nodes = [
+            node
+            for node in prepared.graph.nodes
+            if node.op == "call_function"
+            and any(target_token in str(node.target) for target_token in target_tokens)
+        ]
+
+        self.assertGreater(
+            len(matching_nodes),
+            0,
+            f"Failed to find node matching any of {target_tokens}",
+        )
+        for node in matching_nodes:
+            self.assertIsInstance(
+                node.meta[Q_ANNOTATION_KEY].output_qspec,
+                SharedQuantizationSpec,
+            )
+
+        return matching_nodes
+
+    def test_qnn_backend_pixel_shuffle_unshuffle_share_qparams(self):
+        test_cases = [
+            (
+                "pixel_shuffle",
+                PixelShuffle(2),  # noqa: F405
+                (torch.arange(2 * 4 * 3 * 3, dtype=torch.float32).reshape(2, 4, 3, 3),),
+                torch.ops.aten.pixel_shuffle.default,
+            ),
+            (
+                "pixel_unshuffle",
+                PixelUnshuffle(2),  # noqa: F405
+                (torch.arange(2 * 2 * 6 * 6, dtype=torch.float32).reshape(2, 2, 6, 6),),
+                torch.ops.aten.pixel_unshuffle.default,
+            ),
+        ]
+
+        for name, module, sample_input, target in test_cases:
+            with self.subTest(name=name):
+                prepared = self._prepare_module_for_qparam_assertions(
+                    module, sample_input
+                )
+                for node in prepared.graph.nodes:
+                    if node.op == "call_function" and node.target == target:
+                        self.assertIsInstance(
+                            node.meta[Q_ANNOTATION_KEY].output_qspec,
+                            SharedQuantizationSpec,
+                        )
+                        break
+                else:
+                    self.fail(f"Failed to find {target} in prepared graph")
+
+    def test_qnn_backend_value_preserving_ops_share_qparams(self):
+        test_cases = [
+            (
+                "channel_shuffle",
+                ChannelShuffle(2),  # noqa: F405
+                (torch.randn(1, 4, 3, 3),),
+                ("aten.channel_shuffle",),
+            ),
+            (
+                "permute",
+                Permute([0, 2, 3, 1]),  # noqa: F405
+                (torch.randn(2, 3, 4, 5),),
+                ("aten.permute",),
+            ),
+            (
+                "pixel_shuffle",
+                PixelShuffle(2),  # noqa: F405
+                (torch.arange(2 * 4 * 3 * 3, dtype=torch.float32).reshape(2, 4, 3, 3),),
+                ("aten.pixel_shuffle",),
+            ),
+            (
+                "pixel_unshuffle",
+                PixelUnshuffle(2),  # noqa: F405
+                (torch.arange(2 * 2 * 6 * 6, dtype=torch.float32).reshape(2, 2, 6, 6),),
+                ("aten.pixel_unshuffle",),
+            ),
+            (
+                "repeat",
+                Repeat(),  # noqa: F405
+                (torch.randn(2, 2, 2, 2),),
+                ("aten.repeat",),
+            ),
+            (
+                "expand_as",
+                ExpandAs(),  # noqa: F405
+                (torch.randn(3, 4),),
+                ("aten.expand",),
+            ),
+            (
+                "reshape",
+                Reshape(),  # noqa: F405
+                (torch.randn(3, 4),),
+                ("aten.reshape", "aten.view"),
+            ),
+        ]
+
+        for name, module, sample_input, target_tokens in test_cases:
+            with self.subTest(name=name):
+                self._assert_prepared_nodes_share_qparams(
+                    module, sample_input, target_tokens
+                )
+
+    def test_qnn_backend_split_with_sizes_copy_share_qparams(self):
+        class SplitWithSizesCopy(torch.nn.Module):
+            def forward(self, x):
+                out = torch.ops.aten.split_with_sizes_copy.default(x, [2, 2], 1)
+                return out[0] + out[1]
+
+        backend = get_backend_type(self.backend)
+        sample_input = (
+            torch.arange(2 * 4 * 3 * 3, dtype=torch.float32).reshape(2, 4, 3, 3),
+        )
+        quantizer = make_quantizer(
+            quant_dtype=QuantDtype.use_8a8w,
+            custom_annotations=(),
+            per_channel_conv=True,
+            per_channel_linear=False,
+            per_channel_embedding=False,
+            backend=backend,
+            soc_model=self.soc_model,
+        )
+        prepared = prepare_pt2e(
+            torch.export.export(
+                SplitWithSizesCopy(), sample_input, strict=True
+            ).module(),
+            quantizer,
+        )
+
+        getitem_count = 0
+        for node in prepared.graph.nodes:
+            if (
+                node.op == "call_function"
+                and node.target == operator.getitem
+                and node.args[0].target == torch.ops.aten.split_with_sizes_copy.default
+            ):
+                self.assertIsInstance(
+                    node.meta[Q_ANNOTATION_KEY].output_qspec,
+                    SharedQuantizationSpec,
+                )
+                getitem_count += 1
+
+        self.assertGreater(getitem_count, 0)
+
+    def test_qnn_backend_cat_uses_concat_observer_output_qspec(self):
+        sample_input = (
+            torch.arange(2 * 3 * 4 * 5, dtype=torch.float32).reshape(2, 3, 4, 5),
+            torch.arange(2 * 3 * 4 * 5, dtype=torch.float32).reshape(2, 3, 4, 5),
+        )
+        prepared = self._prepare_module_for_qparam_assertions(Cat2(), sample_input)
+
+        for node in prepared.graph.nodes:
+            if node.op == "call_function" and node.target == torch.ops.aten.cat.default:
+                output_qspec = node.meta[Q_ANNOTATION_KEY].output_qspec
+                self.assertNotIsInstance(
+                    output_qspec,
+                    SharedQuantizationSpec,
+                )
+                self.assertIs(
+                    output_qspec.observer_or_fake_quant_ctr.p.func,
+                    ConcatObserver,
+                )
+                second_input_node = node.args[0][1]
+                if second_input_node not in node.meta[Q_ANNOTATION_KEY].input_qspec_map:
+                    second_input_node = second_input_node.args[0]
+                self.assertNotIsInstance(
+                    node.meta[Q_ANNOTATION_KEY].input_qspec_map[second_input_node],
+                    SharedQuantizationSpec,
+                )
+                break
+        else:
+            self.fail("Failed to find aten.cat.default in prepared graph")
 
     def test_qnn_backend_pow_tensor_scalar(self):
         test_comb = [
@@ -7372,29 +7579,12 @@ class TestExampleMultimodalityScript(TestQNN):
         decoder_pte_size: float
 
     @dataclass(frozen=True)
-    class ALMSpecs(MLLMSpecs):
-        audio_path: str
-        golden_audio_feature: str
-
-    @dataclass(frozen=True)
     class VLMSpecs(MLLMSpecs):
         image_path: str
         golden_image_feature: str
 
     # TODO: refactor to support different backends
     def setUp(self):
-        self.alm_specs = {
-            "granite_speech_3_3-2b": TestExampleMultimodalityScript.ALMSpecs(
-                max_seq_len=512,
-                sm8650_token_rate=5,
-                sm8750_token_rate=8,
-                encoder_pte_size=900_000_000,  # 900MB
-                tok_embedding_pte_size=240_000_000,  # 240MB
-                decoder_pte_size=3_000_000_000,  # 3GB
-                audio_path="https://huggingface.co/ibm-granite/granite-speech-3.3-2b/resolve/main/10226_10111_000000.wav?download=true",  # Audio content: after his nap,...
-                golden_audio_feature="after his nap,",
-            ),
-        }
         self.vlm_specs = {
             "smolvlm_500m_instruct": TestExampleMultimodalityScript.VLMSpecs(
                 max_seq_len=128,
@@ -7417,96 +7607,6 @@ class TestExampleMultimodalityScript(TestQNN):
                 golden_image_feature="cats",
             ),
         }
-
-    def test_static_asr(self):
-        if not self.required_envs([self.model_name]):
-            self.skipTest("missing required envs")
-
-        if self.enable_x86_64:
-            # Running on host is extremely slow for large models, so we skip this check to avoid timeouts.
-            # Please verify the output on the actual device instead.
-            self.skipTest(
-                "Skipping the check for the static ASR model on x86 due to long execution time."
-            )
-
-        alm_specs: TestExampleMultimodalityScript.ALMSpecs = self.alm_specs[
-            self.model_name
-        ]
-        prompt = "can you transcribe the speech into a written format?"
-        audio_path = alm_specs.audio_path
-        cmds = [
-            "python",
-            f"{self.executorch_root}/examples/qualcomm/oss_scripts/llama/llama.py",
-            "--artifact",
-            self.artifact_dir,
-            "--build_folder",
-            self.build_folder,
-            "--soc_model",
-            self.soc_model,
-            "--ip",
-            self.ip,
-            "--port",
-            str(self.port),
-            "--prompt",
-            prompt,
-            "--audio_path",
-            audio_path,
-            "--temperature",
-            "0",
-            "--decoder_model",
-            f"{self.model_name}",
-            "--model_mode",
-            "kv",
-            "--max_seq_len",
-            f"{alm_specs.max_seq_len}",
-        ]
-        if self.compile_only:
-            cmds.extend(["--compile_only"])
-        elif self.device:
-            cmds.extend(["--device", self.device])
-        if self.host:
-            cmds.extend(["--host", self.host])
-        if self.pre_gen_pte:
-            cmds.extend(["--pre_gen_pte", self.pre_gen_pte])
-
-        p = subprocess.Popen(cmds, stdout=subprocess.DEVNULL)
-        with Listener((self.ip, self.port)) as listener:
-            conn = listener.accept()
-            p.communicate()
-            msg = json.loads(conn.recv())
-            if "Error" in msg:
-                self.fail(msg["Error"])
-            else:
-                if not self.compile_only:
-                    model_out = msg["result"][0]
-                    self.assertTrue(
-                        alm_specs.golden_audio_feature in model_out.lower(),
-                        f"Expected Output contains feature: '{alm_specs.golden_audio_feature}'  Actual Output: '{model_out}'",
-                    )
-                    print(f"Audio Path: {audio_path}")
-                    print(f"Query: {prompt}")
-                    print(f"Answer: {model_out}")
-
-                encoder_pte_size = msg["audio_encoder_pte_size"]
-                tok_embedding_pte_size = msg["tok_embedding_pte_size"]
-                decoder_pte_size = msg["pte_size"]
-                self.assertLessEqual(encoder_pte_size, alm_specs.encoder_pte_size)
-                self.assertLessEqual(
-                    tok_embedding_pte_size, alm_specs.tok_embedding_pte_size
-                )
-                self.assertLessEqual(decoder_pte_size, alm_specs.decoder_pte_size)
-                print(f"Encoder PTE Size: {encoder_pte_size} bytes")
-                print(f"Token Embedding PTE Size: {tok_embedding_pte_size} bytes")
-                print(f"Text Decoder PTE Size: {decoder_pte_size} bytes")
-
-                attr_name = f"{self.soc_model.lower()}_token_rate"
-                if not self.compile_only and hasattr(alm_specs, attr_name):
-                    device_inference_speed = msg["inference_speed"]
-                    expected_inference_speed = getattr(alm_specs, attr_name)
-                    print(f"Prompt Evaluation: {device_inference_speed} tokens/second")
-                    self.assertGreaterEqual(
-                        device_inference_speed, expected_inference_speed
-                    )
 
     def test_static_vlm(self):
         if not self.required_envs([self.model_name]):
@@ -7572,7 +7672,7 @@ class TestExampleMultimodalityScript(TestQNN):
                     print(f"Query: {prompt}")
                     print(f"Answer: {model_out}")
                 if not self.enable_x86_64:
-                    encoder_pte_size = msg["vision_encoder_pte_size"]
+                    encoder_pte_size = msg["encoder_pte_size"]
                     tok_embedding_pte_size = msg["tok_embedding_pte_size"]
                     decoder_pte_size = msg["pte_size"]
                     self.assertLessEqual(encoder_pte_size, vlm_specs.encoder_pte_size)

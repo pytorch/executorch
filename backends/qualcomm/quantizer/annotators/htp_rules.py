@@ -12,7 +12,6 @@ from typing import Dict, List, Optional, Sequence, Tuple
 
 import executorch.backends.qualcomm.builders.qnn_constants as QnnConstants
 import torch
-
 from executorch.backends.qualcomm.quantizer.observers.concat_observer import (
     ConcatObserver,
 )
@@ -235,15 +234,16 @@ class Cat(GeneralOpDef):
             return
 
         input_qspec_map, input_nodes = {}, node.args[0]
-        for input in input_nodes:
-            input_qspec = input.meta.get(Q_ANNOTATION_KEY, None)
+        for input_node in input_nodes:
+            assert isinstance(input_node, Node)
+            input_qspec = input_node.meta.get(Q_ANNOTATION_KEY, None)
             qspec = getattr(input_qspec, "output_qspec", None)
-            # keep shared qspec here for propagation the data range
-            # without introducing extra requantizations
+            # Preserve shared upstream qspecs, but derive concat's output domain
+            # from the merged output range to avoid clipping wider branches.
             if isinstance(qspec, SharedQuantizationSpec):
-                input_qspec_map[input] = SharedQuantizationSpec(input)
+                input_qspec_map[input_node] = SharedQuantizationSpec(input_node)
             else:
-                input_qspec_map[input] = quantization_config.input_activation
+                input_qspec_map[input_node] = quantization_config.input_activation
 
         output_qspec = QuantizationSpec(
             dtype=quantization_config.output_activation.dtype,
@@ -251,15 +251,11 @@ class Cat(GeneralOpDef):
             quant_max=quantization_config.output_activation.quant_max,
             quant_min=quantization_config.output_activation.quant_min,
             observer_or_fake_quant_ctr=ConcatObserver.with_args(
-                # we need to know the concat node in order to hack all the input observers' data range
-                # since deep copy of fake tensor (node.meta["val"]) is inhibited
-                # we could only ship grap & node name and perform postprocess inside observer currently
-                **{
-                    "node_name": node.name,
-                    "graph": node.graph,
-                }
+                node_name=node.name,
+                graph=node.graph,
             ),
         )
+
         node.meta[Q_ANNOTATION_KEY] = QuantizationAnnotation(
             input_qspec_map=input_qspec_map,
             output_qspec=output_qspec,
@@ -295,6 +291,7 @@ class ChannelShuffle(GeneralOpDef):
 @register_annotator(
     [
         torch.ops.aten.split_with_sizes.default,
+        torch.ops.aten.split_with_sizes_copy.default,
         torch.ops.aten.split.Tensor,
         torch.ops.aten.chunk.default,
     ],
@@ -1203,14 +1200,22 @@ class Permute(GeneralOpDef):
     [torch.ops.aten.pixel_shuffle.default], QnnConstants.OpDepthToSpace.op_name
 )
 class PixelShuffle(GeneralOpDef):
-    pass
+    @staticmethod
+    def annotate(node: Node, quantization_config: QuantizationConfig) -> None:
+        annotate_in_out_obs_sharing_op(node, quantization_config)
+        if not _is_annotated([node]):
+            annotate_single_in_share_out(node, quantization_config)
 
 
 @register_annotator(
     [torch.ops.aten.pixel_unshuffle.default], QnnConstants.OpSpaceToDepth.op_name
 )
 class PixelUnshuffle(GeneralOpDef):
-    pass
+    @staticmethod
+    def annotate(node: Node, quantization_config: QuantizationConfig) -> None:
+        annotate_in_out_obs_sharing_op(node, quantization_config)
+        if not _is_annotated([node]):
+            annotate_single_in_share_out(node, quantization_config)
 
 
 @register_annotator(
