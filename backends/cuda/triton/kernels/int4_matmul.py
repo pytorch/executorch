@@ -282,23 +282,6 @@ def _int4_matmul_fake(
 # -- Dequant W4 → BF16 kernel ------------------------------------------------
 
 
-_DEQUANT_CONFIGS = [
-    triton.Config(
-        {"BLOCK_N": 64, "BLOCK_K": 128},
-        num_warps=4,
-        num_stages=4,
-    ),
-    triton.Config(
-        {"BLOCK_N": 128, "BLOCK_K": 128},
-        num_warps=4,
-        num_stages=3,
-    ),
-    triton.Config(
-        {"BLOCK_N": 64, "BLOCK_K": 256},
-        num_warps=4,
-        num_stages=3,
-    ),
-]
 
 
 # -- INT4 matvec kernel (M=1 decode) ------------------------------------------
@@ -421,6 +404,12 @@ def _int4_matvec_fake(
 
 
 # -- Dequant W4 → BF16 kernel ------------------------------------------------
+
+_DEQUANT_CONFIGS = [
+    triton.Config({"BLOCK_N": 64, "BLOCK_K": 128}, num_warps=4, num_stages=4),
+    triton.Config({"BLOCK_N": 128, "BLOCK_K": 128}, num_warps=4, num_stages=3),
+    triton.Config({"BLOCK_N": 64, "BLOCK_K": 256}, num_warps=4, num_stages=3),
+]
 
 
 @triton.autotune(configs=_DEQUANT_CONFIGS, key=["N", "K"])
