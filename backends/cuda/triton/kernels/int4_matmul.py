@@ -237,10 +237,6 @@ def int4_matmul(
 
     output = torch.empty(M, N, dtype=torch.bfloat16, device=x.device)
 
-    grid = (
-        triton.cdiv(M, 128) * triton.cdiv(N, 128),
-    )  # placeholder, autotune picks BLOCK sizes
-
     def _grid(meta):
         return (
             triton.cdiv(M, meta["BLOCK_SIZE_M"]) * triton.cdiv(N, meta["BLOCK_SIZE_N"]),
@@ -280,8 +276,6 @@ def _int4_matmul_fake(
 
 
 # -- Dequant W4 → BF16 kernel ------------------------------------------------
-
-
 
 
 # -- INT4 matvec kernel (M=1 decode) ------------------------------------------
