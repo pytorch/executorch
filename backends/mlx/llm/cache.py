@@ -400,30 +400,38 @@ class HFStaticCache(StaticCache):
             device=device,
             dtype=dtype,
         )
-        # The HF cache API pinned in CI expects scalar num_heads/head_dim in
-        # early_initialization(). Gemma 4-style hybrid layouts need per-layer
-        # shapes, so initialize each cache layer directly using the resolved
-        # backing-cache geometry instead of relying on the helper.
-        for layer, layer_num_heads, layer_head_dim in zip(
-            self.layers, num_heads, head_dims
-        ):
-            fake_keys_tensor = torch.zeros(
-                (max_batch_size, layer_num_heads, 0, layer_head_dim),
+        # Newer HF cache implementations already support per-layer layouts in
+        # early_initialization(). Keep that path for Gemma 4, and only fall
+        # back to manual layer initialization for the older CI-pinned API.
+        try:
+            self.early_initialization(
+                batch_size=max_batch_size,
+                num_heads=num_heads,
+                head_dim=head_dims,
                 dtype=dtype,
                 device=device,
             )
-            lazy_init_sig = inspect.signature(layer.lazy_initialization)
-            # Older pinned HF caches take a single fake tensor, while newer
-            # versions expect both key_states and value_states separately.
-            if len(lazy_init_sig.parameters) == 1:
-                layer.lazy_initialization(fake_keys_tensor)
-            else:
-                fake_values_tensor = torch.zeros(
+        except TypeError:
+            for layer, layer_num_heads, layer_head_dim in zip(
+                self.layers, num_heads, head_dims
+            ):
+                fake_keys_tensor = torch.zeros(
                     (max_batch_size, layer_num_heads, 0, layer_head_dim),
                     dtype=dtype,
                     device=device,
                 )
-                layer.lazy_initialization(fake_keys_tensor, fake_values_tensor)
+                lazy_init_sig = inspect.signature(layer.lazy_initialization)
+                # Older pinned HF caches take a single fake tensor, while newer
+                # versions expect both key_states and value_states separately.
+                if len(lazy_init_sig.parameters) == 1:
+                    layer.lazy_initialization(fake_keys_tensor)
+                else:
+                    fake_values_tensor = torch.zeros(
+                        (max_batch_size, layer_num_heads, 0, layer_head_dim),
+                        dtype=dtype,
+                        device=device,
+                    )
+                    layer.lazy_initialization(fake_keys_tensor, fake_values_tensor)
 
         # Some models (for example Gemma 4) only allocate cache entries for the
         # non-shared KV layers. Mirror the parent StaticCache layout exactly so
