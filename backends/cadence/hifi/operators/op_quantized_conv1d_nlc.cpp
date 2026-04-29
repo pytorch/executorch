@@ -298,9 +298,9 @@ void quantized_conv1d_nlc_per_tensor_out(
           out);
     }
   } else if (dtype == ScalarType::Byte) {
-    // HiFi nnlib conv1d_std kernel does not support depthwise (groups > 1).
-    // Fall back to generic implementation.
-    if (groups > 1) {
+    // HiFi nnlib conv1d_std kernel does not support depthwise (groups > 1)
+    // or stride > 1. Fall back to generic implementation.
+    if (groups > 1 || stride[0] > 1) {
       impl::generic::native::quantized_conv1d_nlc_per_tensor_out(
           ctx,
           input,
