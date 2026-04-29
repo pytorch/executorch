@@ -1,0 +1,29 @@
+# Copyright (c) Meta Platforms, Inc. and affiliates.
+# All rights reserved.
+# Copyright 2025-2026 Arm Limited and/or its affiliates.
+#
+# SPDX-License-Identifier: Apache-2.0
+
+source "Kconfig.zephyr"
+
+menu "ExecuTorch MobileNetV2 sample configuration"
+
+config EXECUTORCH_METHOD_ALLOCATOR_POOL_SIZE
+	int "Method allocator pool size in bytes"
+	default 1572864
+	depends on EXECUTORCH
+	help
+	  Size of the method allocator pool in bytes. MobileNetV2 requires
+	  more memory than simple models. Default is 1.5MB which is sufficient
+	  for a fully NPU-delegated INT8 MobileNetV2 model.
+
+config EXECUTORCH_TEMP_ALLOCATOR_POOL_SIZE
+	int "Temporary allocator pool size in bytes"
+	default 1572864
+	depends on EXECUTORCH
+	help
+	  Size of the temporary allocator pool in bytes. Default is 1.5MB
+	  which provides sufficient scratch space for MobileNetV2 inference
+	  on Ethos-U NPU.
+
+endmenu

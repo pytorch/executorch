@@ -11,6 +11,7 @@ on:
     paths:
       - .ci/docker/ci_commit_pins/pytorch.txt
       - .ci/scripts/**
+      - zephyr/**
   workflow_dispatch:
 
 concurrency:
@@ -177,6 +178,39 @@ jobs:
 
           echo "---- ${TARGET} Build and run ----"
           run_command_block_from_readme "${ZEPHYR_SAMPLES_README_PATH}" "<!-- RUN test_${TARGET}_build_and_run -->"
+        done
+
+        # MV2 Ethos-U sample (NPU targets only — skips cortex-m55)
+        MV2_README_PATH="zephyr/samples/mv2-ethosu/README.md"
+
+        for TARGET in "${TARGETS[@]}"; do
+          TARGET="$(echo "$TARGET" | xargs)"
+
+          if [[ ${TARGET} == "cortex-m55" ]]; then
+            echo "---- Skipping MV2 for ${TARGET} (NPU-only sample) ----"
+            continue
+          fi
+
+          echo "---- MV2 ${TARGET} ----"
+          rm -Rf build
+
+          if [[ ${TARGET} == "ethos-u55" ]]; then
+            BOARD="corstone300"
+          elif [[ ${TARGET} == "ethos-u85" ]]; then
+            BOARD="corstone320"
+          else
+            echo "Fail unsupported target selection ${TARGET}"
+            exit 1
+          fi
+
+          echo "---- MV2 ${TARGET} Board ${BOARD} FVP setup ----"
+          run_command_block_from_readme "${ZEPHYR_SAMPLES_README_PATH}" "<!-- RUN setup_${BOARD}_fvp -->"
+
+          echo "---- MV2 ${TARGET} Create PTE ----"
+          run_command_block_from_readme "${MV2_README_PATH}" "<!-- RUN test_mv2_${TARGET}_generate_pte -->"
+
+          echo "---- MV2 ${TARGET} Build and run ----"
+          run_command_block_from_readme "${MV2_README_PATH}" "<!-- RUN test_mv2_${TARGET}_build_and_run -->"
         done
 
   test-models-linux-aarch64:
