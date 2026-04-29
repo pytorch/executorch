@@ -16,12 +16,12 @@ from dataclasses import dataclass
 from typing import ClassVar, Dict, List, Literal, Optional, Sequence, Tuple
 
 from executorch.exir._serialize._cord import Cord
-from executorch.exir._serialize._dataclass import _DataclassEncoder, _json_to_dataclass
-from executorch.exir._serialize._flatbuffer import (
-    _FlatbufferResult,
-    _program_flatbuffer_to_json,
+from executorch.exir._serialize._dataclass import _DataclassEncoder
+from executorch.exir._serialize._flatbuffer import _FlatbufferResult
+from executorch.exir._serialize._flatbuffer_program import (
+    _flatbuffer_to_program,
+    _program_to_flatbuffer,
 )
-from executorch.exir._serialize._flatbuffer_program import _program_to_flatbuffer
 from executorch.exir._serialize._named_data_store import (
     NamedDataStore,
     NamedDataStoreOutput,
@@ -84,12 +84,6 @@ class AlignedData:
 def _program_to_json(program: Program) -> str:
     """Returns the JSON representation of the given Program."""
     return json.dumps(program, cls=_DataclassEncoder)
-
-
-def _json_to_program(program_json: bytes) -> Program:
-    """Returns a Program deserialized from the given JSON string."""
-    # construct program class recursively from dict
-    return _json_to_dataclass(json.loads(program_json), cls=Program)
 
 
 def _insert_flatbuffer_header(
@@ -757,9 +751,7 @@ def deserialize_pte_binary(program_data: bytes) -> PTEFile:
         segment_base_offset = eh.segment_base_offset
 
     # Parse the flatbuffer data.
-    program: Program = _json_to_program(
-        _program_flatbuffer_to_json(program_data[:program_size])
-    )
+    program: Program = _flatbuffer_to_program(program_data[:program_size])
 
     if segment_base_offset != 0:
         # Move segment data back into the Program.
