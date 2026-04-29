@@ -221,6 +221,15 @@ OPTIMIZED_ATEN_OPS = (
         name = "op_grid_sampler_2d",
         deps = [
             "//executorch/kernels/portable/cpu:op_grid_sampler_2d",
+            # Hardware fp16 path lives in a separate translation unit so the
+            # ARMv8.2-a+fp16 compile flag can be scoped locally. A runtime
+            # cpuinfo_has_arm_neon_fp16() check in op_grid_sampler_2d.cpp
+            # picks between it and the software-convert fp16 path. Named
+            # without the "op_" prefix so _enforce_deps doesn't reject it
+            # as an op_target-to-op_target edge.
+            ":grid_sampler_2d_fp16_hw_impl",
+            "fbsource//third-party/cpuinfo:cpuinfo",
+            "//executorch/runtime/core/portable_type/c10/c10:aten_headers_for_executorch",
         ],
     ),
     op_target(

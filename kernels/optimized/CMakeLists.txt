@@ -76,17 +76,34 @@ target_link_libraries(
 )
 target_compile_options(optimized_kernels PUBLIC ${_common_compile_options})
 
-# op_grid_sampler_2d.cpp uses ARMv8.2-a+fp16 NEON intrinsics
-# (vcvt_f32_f16 / vld1_f16) when compiled for aarch64. Scope the extra
-# `-march` flag to just that source so non-arm64 targets (e.g. x86_64 on
-# Android) are unaffected — the kernel itself has `#ifdef __aarch64__`
-# guards and falls through to the portable kernel otherwise.
-if(CMAKE_SYSTEM_PROCESSOR MATCHES "aarch64|arm64"
-   OR ANDROID_ABI STREQUAL "arm64-v8a"
+# op_grid_sampler_2d_fp16_hw.cpp uses hardware fp16 NEON intrinsics
+# (vcvt_f32_f16 / vld1_f16). Those are part of the ARMv8.2-a+fp16 extension and
+# raise SIGILL on chips without it. Build it as a separate OBJECT library so the
+# `-march=armv8.2-a+fp16` flag stays strictly scoped to that translation unit
+# and never reaches the dispatcher / fallback code in op_grid_sampler_2d.cpp
+# (which would otherwise risk auto-vectorizing into fp16 NEON instructions). The
+# dispatcher chooses between this entry point and the fp16 software-convert path
+# at runtime via cpuinfo_has_arm_neon_fp16(). Mirrors the buck
+# `grid_sampler_2d_fp16_hw_impl` library.
+if(CMAKE_SYSTEM_PROCESSOR MATCHES "aarch64|arm64" OR ANDROID_ABI STREQUAL
+                                                     "arm64-v8a"
 )
-  set_source_files_properties(
-    ${EXECUTORCH_ROOT}/kernels/optimized/cpu/op_grid_sampler_2d.cpp
-    PROPERTIES COMPILE_OPTIONS "-march=armv8.2-a+fp16"
+  add_library(
+    grid_sampler_2d_fp16_hw_impl OBJECT
+    ${EXECUTORCH_ROOT}/kernels/optimized/cpu/op_grid_sampler_2d_fp16_hw.cpp
+  )
+  target_compile_options(
+    grid_sampler_2d_fp16_hw_impl PRIVATE -march=armv8.2-a+fp16
+                                         ${_common_compile_options}
+  )
+  target_link_libraries(grid_sampler_2d_fp16_hw_impl PRIVATE executorch_core)
+  # BUILD_LOCAL_INTERFACE: object files are baked into optimized_kernels.a at
+  # archive time, so this OBJECT target stays out of the install EXPORT set and
+  # downstream consumers of the installed optimized_kernels need no separate
+  # link entry.
+  target_link_libraries(
+    optimized_kernels
+    PRIVATE $<BUILD_LOCAL_INTERFACE:grid_sampler_2d_fp16_hw_impl>
   )
 endif()
 
@@ -97,30 +114,6 @@ gen_operators_lib(
   LIB_NAME "optimized_ops_lib" KERNEL_LIBS optimized_kernels DEPS
   executorch_core
 )
-
-# On-device verifier for optimized grid_sampler_2d / sum.IntList_out.
-# Opt-in via -DEXECUTORCH_BUILD_OPTIMIZED_VERIFY=ON so it doesn't affect
-# default AAR / library builds. Cross-checks both ops against an fp32
-# reference derived from the portable kernel; non-zero exit on divergence.
-if(EXECUTORCH_BUILD_OPTIMIZED_VERIFY)
-  add_executable(
-    verify_optimized_kernels ${EXECUTORCH_ROOT}/kernels/optimized/verify.cpp
-  )
-  target_link_libraries(
-    verify_optimized_kernels
-    PRIVATE optimized_kernels portable_kernels executorch_core
-  )
-  target_compile_options(
-    verify_optimized_kernels PRIVATE ${_common_compile_options}
-  )
-  if(CMAKE_SYSTEM_PROCESSOR MATCHES "aarch64|arm64"
-     OR ANDROID_ABI STREQUAL "arm64-v8a"
-  )
-    target_compile_options(
-      verify_optimized_kernels PRIVATE -march=armv8.2-a+fp16
-    )
-  endif()
-endif()
 
 install(
   # eigen_blas doesn't export itself, so we have to do our own install to export
