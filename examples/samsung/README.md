@@ -38,6 +38,10 @@ Take `EXECUTORCH_ROOT` as work directory and here is an example for ic3.
 python -m executorch.examples.samsung.aot_compiler --chipset E9955 (or E9965) -m ic3 --output_dir ic3_artifact
 ```
 
+Examples use "PerformanceMode.HIGH_PERFORMANCE" mode, this mode is experimental.
+If you want to use this mode on your model, verify your model on devicefarm which can use samsung developer society site
+firstly for checking stability. (https://soc-developer.semiconductor.samsung.com/)
+
 ## Execution
 
 After lowering, we could get a pte model and then run it on mobile phone.

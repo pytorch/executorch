@@ -12,6 +12,7 @@ import torch
 
 from executorch.backends.samsung.serialization.compile_options import (
     gen_samsung_backend_compile_spec,
+    PerformanceMode,
 )
 from executorch.backends.samsung.utils.export_utils import (
     to_edge_transform_and_lower_to_enn,
@@ -245,7 +246,9 @@ if __name__ == "__main__":
     example_inputs = mobilebert_finetune.get_example_inputs()
     output = model(*example_inputs)
 
-    compile_specs = [gen_samsung_backend_compile_spec(args.chipset)]
+    compile_specs = [
+        gen_samsung_backend_compile_spec(args.chipset, PerformanceMode.HIGH_PERFORMANCE)
+    ]
     edge = to_edge_transform_and_lower_to_enn(
         model, example_inputs, compile_specs=compile_specs
     )
