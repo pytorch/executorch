@@ -32,17 +32,36 @@ Two built-in recipes (see `quantize_and_save.py`):
 | `default` | INT4 min_max linears, INT8 per-axis embedding |
 | `sensitive` | INT8 for edge-layer v_proj/down_proj, INT4 hqq elsewhere, INT8 per-axis embedding |
 
-## Quantize once
+## Prequantized checkpoint
+
+A prequantized checkpoint (sensitive recipe) is available on HuggingFace:
+
+```bash
+huggingface-cli download SocialLocalMobile/gemma-4-31B-it-HQQ-INT4 --local-dir gemma-4-31B-it-HQQ-INT4
+```
+
+> **Note**: This checkpoint is intended for development and testing of the
+> ExecuTorch CUDA export pipeline. Output quality has not been formally
+> evaluated against the base model.
+
+Use it directly with `--prequantized` in the export and inference scripts
+below — no need to run `quantize_and_save.py`.
+
+## Quantize from scratch (optional)
+
+To quantize from the original bf16 checkpoint instead, pass
+`--quant-recipe` to select a recipe (`default` or `sensitive`):
 
 ```bash
 python examples/models/gemma4_31b/quantize_and_save.py \
-    --model-dir ~/local/scripts/models/gemma-4-31B-it \
+    --model-dir /path/to/gemma-4-31B-it \
     --output ./gemma4_31b_int4 \
-    --quant-recipe default
+    --quant-recipe sensitive
 ```
 
-Writes `model.safetensors`, `config.json`, and
-`tokenizer.json` into `--output`.
+See [Quantization recipes](#quantization-recipes) above for details on each
+recipe. Writes `model.safetensors`, `config.json`, and `tokenizer.json` into
+`--output`.
 
 ## Export to ExecuTorch
 

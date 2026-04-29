@@ -20,7 +20,7 @@ from typing import Optional
 class QuantConfig:
     """Per-weight quantization parameters."""
 
-    bits: int  # 4, 6, 8
+    bits: int  # 4, 8
     group_size: int  # 32, 64, 128
     symmetric: bool  # True = no zero point
     method: str  # "min_max" | "hqq"

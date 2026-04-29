@@ -186,8 +186,8 @@ class TestQuantizeSaveLoadRoundtrip(unittest.TestCase):
         self.assertNotIn("embed_tokens.weight", unquantized)
         self.assertEqual(quantized["embed_tokens.weight"].config.bits, 8)
 
-    def test_corrupted_checkpoint_detected(self):
-        """Renaming a key in the safetensors file causes a load-time error."""
+    def test_corrupted_checkpoint_missing_key(self):
+        """Renaming a key in the safetensors file makes it absent after load."""
         from safetensors import safe_open
 
         with tempfile.TemporaryDirectory() as tmpdir:
@@ -201,9 +201,8 @@ class TestQuantizeSaveLoadRoundtrip(unittest.TestCase):
             save_file(tensors, path, metadata=header)
 
             q, u = load(path)
-            # norm.weight is now missing from unquantized, norm.BOGUS is unexpected.
-            # pack_model would fail, but we can verify at the load level:
             self.assertNotIn("norm.weight", u)
+            self.assertIn("norm.BOGUS", u)
 
 
 if __name__ == "__main__":

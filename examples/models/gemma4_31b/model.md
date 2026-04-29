@@ -105,13 +105,19 @@ Decoder norms per layer: `input_layernorm`, `post_attention_layernorm`,
 | Method    | Input                                                      | Output (sampled) |
 |-----------|------------------------------------------------------------|------------------|
 | `decode`  | tokens `(1, 1)` + input_pos `(1,)` + temperature `(1,)`    | `(1, 1)` float   |
-| `prefill` | tokens `(1, T)` + input_pos `(T,)` + temperature `(1,)`, T∈[2, max_seq_len-1] | `(1, 1)` float   |
+| `prefill` | tokens `(1, T)` + input_pos `(T,)` + temperature `(1,)`, T∈[2, min(max_seq_len-1, 2×sliding_window)] | `(1, 1)` float   |
 
 Both methods share the same KV-cache buffers via
 `MemoryPlanningPass(share_mutable_buffers=True)` and
 `emit_mutable_buffer_names=True`. The exported program performs Gumbel-max
 sampling on-device and returns a single token ID per call so the C++ runner
 only has to feed tokens.
+
+Prefill length is capped to the ring-buffer KV cache size
+(`2 × sliding_window`) to avoid duplicate wrapped indices in
+`index_copy_`. The C++ runner chunks longer prompts automatically using
+the `get_max_prefill_chunk` constant method. Chunked prefill produces
+identical logits to sequential one-token-at-a-time prefill.
 
 ## Quantization
 
