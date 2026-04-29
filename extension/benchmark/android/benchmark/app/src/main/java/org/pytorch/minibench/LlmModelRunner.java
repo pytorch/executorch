@@ -87,21 +87,10 @@ class LlmModelRunnerHandler extends Handler {
   @Override
   public void handleMessage(android.os.Message msg) {
     if (msg.what == MESSAGE_LOAD_MODEL) {
-      int status = 0;
-      try {
-        mLlmModelRunner.mModule.load();
-      } catch (org.pytorch.executorch.ExecutorchRuntimeException e) {
-        status = e.getErrorCode();
-      } catch (Exception e) {
-        status = -1;
-      }
+      int status = mLlmModelRunner.mModule.load();
       mLlmModelRunner.mCallback.onModelLoaded(status);
     } else if (msg.what == MESSAGE_GENERATE) {
-      try {
-        mLlmModelRunner.mModule.generate((String) msg.obj, mLlmModelRunner);
-      } catch (Exception e) {
-        android.util.Log.e("LlmModelRunner", "generate() failed", e);
-      }
+      mLlmModelRunner.mModule.generate((String) msg.obj, mLlmModelRunner);
       mLlmModelRunner.mCallback.onGenerationStopped();
     }
   }
