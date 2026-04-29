@@ -97,6 +97,10 @@ class QnnDlcManager {
     }
 
     error = system_interface.qnn_system_dlc_free(/*dlcHandle=*/dlc_handle);
+    if (error != QNN_SUCCESS) {
+      QNN_EXECUTORCH_LOG_WARN(
+          "Failed to free DLC handle. Error %d.", QNN_GET_ERROR_CODE(error));
+    }
     return Error::Ok;
   }
 
