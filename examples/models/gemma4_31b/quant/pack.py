@@ -61,11 +61,13 @@ def pack_model(
 
     module_weights: dict[str, dict[str, CanonicalQuantizedWeight]] = defaultdict(dict)
     for fqn, cw in quantized.items():
-        parent_fqn, attr = fqn.rsplit(".", 1)
+        parts = fqn.rsplit(".", 1)
+        parent_fqn = parts[0] if len(parts) > 1 else ""
+        attr = parts[-1]
         module_weights[parent_fqn][attr] = cw
 
     for parent_fqn, weights in module_weights.items():
-        module = model.get_submodule(parent_fqn)
+        module = model.get_submodule(parent_fqn) if parent_fqn else model
         packer = packers.get(type(module))
         if packer is None:
             raise ValueError(

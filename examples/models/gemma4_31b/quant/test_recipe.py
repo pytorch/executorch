@@ -13,7 +13,7 @@ from parameterized import parameterized
 from .recipe import QuantConfig, QuantRecipe, QuantRule
 
 _Q4 = QuantConfig(4, 32, True, "min_max")
-_Q6 = QuantConfig(6, 32, False, "min_max")
+_Q8 = QuantConfig(8, 32, True, "min_max")
 
 
 class TestQuantRecipeGetConfig(unittest.TestCase):
@@ -23,13 +23,13 @@ class TestQuantRecipeGetConfig(unittest.TestCase):
         [
             (
                 "first_match_wins",
-                [QuantRule(r".*v_proj\.weight", _Q6), QuantRule(r".*\.weight", _Q4)],
+                [QuantRule(r".*v_proj\.weight", _Q8), QuantRule(r".*\.weight", _Q4)],
                 "layers.0.self_attn.v_proj.weight",
-                6,
+                8,
             ),
             (
                 "fallthrough_to_catchall",
-                [QuantRule(r".*v_proj\.weight", _Q6), QuantRule(r".*\.weight", _Q4)],
+                [QuantRule(r".*v_proj\.weight", _Q8), QuantRule(r".*\.weight", _Q4)],
                 "layers.0.self_attn.q_proj.weight",
                 4,
             ),
@@ -85,13 +85,13 @@ class TestQuantRecipeLayerFilter(unittest.TestCase):
         recipe = QuantRecipe(
             rules=[
                 QuantRule(r".*norm\.weight", None),
-                QuantRule(r".*\.(v_proj|down_proj)\.weight", _Q6, layers=edge),
+                QuantRule(r".*\.(v_proj|down_proj)\.weight", _Q8, layers=edge),
                 QuantRule(r".*\.weight", _Q4),
             ]
         )
-        # Edge v_proj → 6-bit
-        self.assertEqual(recipe.get_config("layers.0.self_attn.v_proj.weight").bits, 6)
-        self.assertEqual(recipe.get_config("layers.58.self_attn.v_proj.weight").bits, 6)
+        # Edge v_proj → 8-bit
+        self.assertEqual(recipe.get_config("layers.0.self_attn.v_proj.weight").bits, 8)
+        self.assertEqual(recipe.get_config("layers.58.self_attn.v_proj.weight").bits, 8)
         # Middle v_proj → falls through → 4-bit
         self.assertEqual(recipe.get_config("layers.30.self_attn.v_proj.weight").bits, 4)
         # q_proj always 4-bit
