@@ -26,9 +26,6 @@
 #define QNN_RUNTIME_LPAI_AFFINITY "qnn_runtime_lpai_affinity"
 #define QNN_RUNTIME_LPAI_CORE_SELECTION "qnn_runtime_lpai_core_selection"
 
-// This is for direct mode, especially LPAI
-#define QNN_TENSOR_ALIGNMENT 64
-
 #ifdef __cplusplus
 extern "C" {
 #endif // __cplusplus

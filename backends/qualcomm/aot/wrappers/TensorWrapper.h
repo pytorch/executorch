@@ -19,6 +19,9 @@
 #define QNN_TENSOR_VER_PTR(x) (&((x).v2))
 #define QNN_OP_VER_PTR(x) (&((x).v1))
 
+// This is for direct mode, especially LPAI
+#define QNN_TENSOR_ALIGNMENT 64
+
 namespace executorch {
 namespace backends {
 namespace qnn {

@@ -7,7 +7,6 @@
  */
 
 #include <executorch/backends/qualcomm/aot/wrappers/TensorWrapper.h>
-#include <executorch/backends/qualcomm/runtime/backends/QnnCustomProtocol.h>
 
 #include <atomic>
 #include <cstring>
