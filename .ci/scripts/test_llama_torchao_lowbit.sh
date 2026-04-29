@@ -23,9 +23,8 @@ echo "Update tokenizers submodule"
 git submodule update --init
 popd
 
-# Install ET with CMake
+# Build llama runner with torchao
 cmake -DPYTHON_EXECUTABLE=python \
-    -DCMAKE_INSTALL_PREFIX=cmake-out \
     -DEXECUTORCH_ENABLE_LOGGING=1 \
     -DCMAKE_BUILD_TYPE=Release \
     -DEXECUTORCH_BUILD_EXTENSION_DATA_LOADER=ON \
@@ -41,14 +40,7 @@ cmake -DPYTHON_EXECUTABLE=python \
     -DEXECUTORCH_BUILD_EXTENSION_LLM=ON \
     -DEXECUTORCH_BUILD_KERNELS_LLM=ON \
     -Bcmake-out .
-cmake --build cmake-out -j16 --config Release --target install
-
-# Install llama runner with torchao
-cmake -DPYTHON_EXECUTABLE=python \
-    -DCMAKE_BUILD_TYPE=Release \
-    -Bcmake-out/examples/models/llama \
-    examples/models/llama
-cmake --build cmake-out/examples/models/llama -j16 --config Release
+cmake --build cmake-out -j16 --config Release --target llama_main
 
 # Download stories llama110m artifacts
 download_stories_model_artifacts
