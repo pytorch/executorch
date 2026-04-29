@@ -191,6 +191,11 @@ jobs:
             continue
           fi
 
+          if [[ ${TARGET} == "ethos-u55" ]]; then
+            echo "---- Skipping MV2 for ${TARGET} (Corstone-300 ISRAM too small for MV2 runtime pools) ----"
+            continue
+          fi
+
           echo "---- MV2 ${TARGET} ----"
           rm -Rf build
 
