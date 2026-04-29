@@ -213,6 +213,11 @@ def _run_cpp_runner(runner_path, pte_path, ptd_path, input_files, output_base):
 
 
 class TestFusedMoE(unittest.TestCase):
+    # TODO: migrate from manual max_abs/max_ref relative checks to
+    # torch.allclose(atol=, rtol=). Current tests use per-tensor-max relative
+    # error which is looser than per-element allclose — need to calibrate atol
+    # for INT4 quantization noise floor across random weight magnitudes.
+
     def setUp(self):
         if not torch.cuda.is_available():
             self.skipTest("CUDA is not available")

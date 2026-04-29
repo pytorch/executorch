@@ -667,12 +667,12 @@ def _apply_turboquant(model, config):
 # ---------------------------------------------------------------------------
 
 
-def _set_batched_moe(model, enabled, activation_dtype="bf16"):
+def _set_batched_moe(model, enabled, moe_moe_moe_activation_dtype="bf16"):
     """Toggle batched tensor-core MoE kernel for all MoE layers."""
     for layer in model.layers:
         if hasattr(layer, "mlp") and hasattr(layer.mlp, "experts"):
             layer.mlp.experts.use_batched_moe = enabled
-            layer.mlp.experts.activation_dtype = activation_dtype
+            layer.mlp.experts.moe_moe_moe_activation_dtype = moe_moe_moe_activation_dtype
 
 
 def export_and_lower(model, config, args):
@@ -916,8 +916,8 @@ def _export_cuda(model, config, args):
     # chunk_gated_delta_rule with CHUNK_SIZE=64) for the full range of sequence
     # lengths. Smaller examples cause AOTI to bake in intermediate buffer sizes
     # that reject longer prompts at runtime.
-    activation_dtype = getattr(args, "activation_dtype", "bf16")
-    _set_batched_moe(model, True, activation_dtype=activation_dtype)
+    moe_moe_moe_activation_dtype = getattr(args, "moe_moe_moe_activation_dtype", "bf16")
+    _set_batched_moe(model, True, moe_moe_moe_activation_dtype=moe_moe_moe_activation_dtype)
     dense_prefill = getattr(args, "dense_prefill", "tinygemm")
     _set_dequant_prefill(model, dense_prefill == "dequant")
     print("Exporting prefill method...")
@@ -1084,10 +1084,10 @@ def main():  # noqa: C901
         help="Disable split-K (flash-decoding) SDPA for decode; use tiled SDPA instead.",
     )
     parser.add_argument(
-        "--activation-dtype",
+        "--moe-activation-dtype",
         choices=["bf16", "int8"],
         default="bf16",
-        help="Activation dtype for batched MoE prefill kernels (bf16=W4A16, int8=W4A8).",
+        help="MoE activation dtype for prefill only. Decode always uses bf16. bf16 (default): W4A16 batched GEMM. int8: W4A8 with INT8 tensor cores (~1.5x faster prefill).",
     )
     parser.add_argument(
         "--dense-prefill",
@@ -1139,8 +1139,8 @@ def main():  # noqa: C901
                 "(dense weights must be W4 quantized)"
             )
 
-    if args.activation_dtype != "bf16" and args.backend != "cuda":
-        parser.error("--activation-dtype int8 requires --backend cuda")
+    if args.moe_moe_activation_dtype != "bf16" and args.backend != "cuda":
+        parser.error("--moe-activation-dtype int8 requires --backend cuda")
 
     model, config = load_and_quantize(args)
 
