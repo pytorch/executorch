@@ -51,9 +51,18 @@ def _load_text_processor(model_id: str):
     """
     Load a text processor for the model.
 
-    Prefer AutoProcessor for multimodal/text-hybrid models like Gemma 4, and
-    fall back to AutoTokenizer for text-only checkpoints.
+    Prefer AutoTokenizer for text-only prompting, even for checkpoints that
+    also ship an AutoProcessor. Some hybrid checkpoints (for example Gemma 4)
+    expose both, but the tokenizer path is the more stable interface for the
+    plain text generation flow exercised by this runner.
     """
+    logger.info(f"Loading tokenizer from HuggingFace: {model_id}...")
+    try:
+        tokenizer = AutoTokenizer.from_pretrained(model_id)
+        return tokenizer, False
+    except Exception as exc:
+        logger.info(f"AutoTokenizer unavailable for {model_id}: {exc}")
+
     try:
         processor = AutoProcessor.from_pretrained(model_id)
         if hasattr(processor, "apply_chat_template") and hasattr(processor, "decode"):
@@ -62,9 +71,7 @@ def _load_text_processor(model_id: str):
     except Exception as exc:
         logger.info(f"AutoProcessor unavailable for {model_id}: {exc}")
 
-    logger.info(f"Loading tokenizer from HuggingFace: {model_id}...")
-    tokenizer = AutoTokenizer.from_pretrained(model_id)
-    return tokenizer, False
+    raise RuntimeError(f"Could not load tokenizer or processor for {model_id}")
 
 
 def _apply_chat_template(text_processor, messages) -> str:
