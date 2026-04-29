@@ -5,9 +5,11 @@
 # LICENSE file in the root directory of this source tree.
 
 
+import contextlib
 import logging
 import os
 import shutil
+import threading
 import typing
 from importlib import resources
 from typing import Any, Dict, final, List, Optional
@@ -25,6 +27,83 @@ from executorch.exir.backend.backend_details import BackendDetails
 from executorch.exir.backend.compile_spec_schema import CompileSpec
 from torch._inductor.decomposition import conv1d_to_conv2d
 from torch.nn.attention import SDPBackend
+
+
+# ---------------------------------------------------------------------------
+# AOTI compile-time CPU clones for mutated buffers
+# ---------------------------------------------------------------------------
+#
+# Inductor's `_unlift_graph` clones every mutated buffer that gets lifted into
+# the AOTI graph. By default it clones on whatever device the original tensor
+# lives on — which after `move_to_device_pass` is CUDA. For Large models like
+# Qwen3.5-MoE that means an extra ~18 GB GPU clone during compile, blowing past
+# the 24 GB cap we want to honor for consumer GPUs (RTX 4090 and similar).
+#
+# The patch below side-steps that by:
+#   1. Wrapping `torch._inductor.compile_fx.clone_preserve_strides` so every
+#      clone the AOTI compile pipeline produces lands on CPU.
+#   2. Wrapping `CppWrapperCpu.codegen_device` so the C++ wrapper still records
+#      the model's original target device (e.g. cuda) in `constants_info_`,
+#      not the now-CPU storage device. Without this the runtime would refuse
+#      to load the constants because of a mixed-device mismatch.
+#
+# The wrappers are scoped via a thread-local guard and are only active while
+# `_compile_time_cpu_clones(...)` is on the call stack — they are inert
+# anywhere else in the process.
+
+_CPU_CLONE_GUARD = threading.local()
+
+
+def _is_cpu_clone_active() -> bool:
+    return getattr(_CPU_CLONE_GUARD, "active", False)
+
+
+@contextlib.contextmanager
+def _compile_time_cpu_clones(target_device: torch.device):
+    """Force AOTI's mutated-buffer clones onto CPU while preserving the
+    serialized constants' target device."""
+    from torch._inductor import compile_fx as _cfx
+    from torch._inductor.codegen.cpp_wrapper_cpu import CppWrapperCpu as _Cpp
+
+    orig_clone = _cfx.clone_preserve_strides
+    orig_codegen_device = _Cpp.codegen_device
+
+    def _cpu_clone_preserve_strides(x: torch.Tensor) -> torch.Tensor:
+        # `clone_preserve_strides` is shared by `_unlift_graph` (clones
+        # lifted buffers — can be safely kept on CPU) and by autotuning code
+        # in `triton_heuristics.py` (clones for benchmark — must stay on
+        # GPU for Triton). Discriminate by caller frame so we only force
+        # CPU clones for the buffer-lifting path.
+        import sys
+
+        caller = sys._getframe(1).f_code.co_name
+        if caller == "_unlift_graph":
+            return orig_clone(x).cpu()
+        return orig_clone(x)
+
+    def _codegen_device_target_aware(self, device):
+        # Translate accidental CPU device strings back to the model target
+        # device only when a constant we forced to CPU is being serialized.
+        # Other code paths (extern op args etc.) are pass-through.
+        if (
+            _is_cpu_clone_active()
+            and self.device != "cpu"
+            and isinstance(device, torch.device)
+            and device.type == "cpu"
+        ):
+            device = target_device
+        return orig_codegen_device(self, device)
+
+    _cfx.clone_preserve_strides = _cpu_clone_preserve_strides
+    _Cpp.codegen_device = _codegen_device_target_aware
+    prev_active = getattr(_CPU_CLONE_GUARD, "active", False)
+    _CPU_CLONE_GUARD.active = True
+    try:
+        yield
+    finally:
+        _CPU_CLONE_GUARD.active = prev_active
+        _cfx.clone_preserve_strides = orig_clone
+        _Cpp.codegen_device = orig_codegen_device
 
 
 @final
@@ -255,17 +334,71 @@ class CudaBackend(AotiBackend, BackendDetails):
     @classmethod
     def get_extra_aoti_compile_context_manager(cls):
         """
-        Return SDPA MATH backend context manager for CUDA compilation.
-
-        This context manager plays as a fallback solution for any remaining PyTorch SDPA
-        operations to use the MATH backend (decomposed SDPA) during AOTInductor compilation.
-
-        Note:
-        - If SDPA ops are replaced with Triton kernels by ReplaceEdgeOpWithTritonOpPass,
-          this context manager will have no effect on those ops (they are no longer
-          PyTorch SDPA ops).
-        - If SDPA ops are NOT replaced (e.g., when triton_kernel_mode="OFF"), this
-          context manager will force them to use the MATH backend, causing them to
-          be automatically decomposed during compilation.
+        Combine all extra context managers needed during AOTInductor
+        compilation for the CUDA backend. Each manager is documented at
+        its own `enter_context` call site below.
         """
-        return torch.nn.attention.sdpa_kernel([SDPBackend.MATH])
+        @contextlib.contextmanager
+        def _combined():
+            with contextlib.ExitStack() as stack:
+                # Force any remaining PyTorch SDPA ops to use the MATH
+                # backend during compilation so AOTI can lower / decompose
+                # them. SDPA ops already replaced by Triton kernels via
+                # `ReplaceEdgeOpWithTritonOpPass` are unaffected; this is
+                # only the fallback for the `triton_kernel_mode="OFF"` path.
+                stack.enter_context(
+                    torch.nn.attention.sdpa_kernel([SDPBackend.MATH])
+                )
+                # Force AOTI's mutated-buffer clones onto CPU during compile
+                # so we stay under tight GPU memory caps (e.g. 24 GB on a
+                # consumer 4090). See `_compile_time_cpu_clones` for details.
+                stack.enter_context(
+                    _compile_time_cpu_clones(torch.device(cls.get_device_name()))
+                )
+                yield
+
+        return _combined()
+
+    @classmethod
+    def preprocess_multimethod(
+        cls,
+        edge_programs,
+        compile_specs,
+    ):
+        """
+        Override of base preprocess_multimethod to run aggressive GPU cleanup
+        between methods (e.g. decode then prefill). Inductor caches hold CUDA
+        tensors from the first compilation, causing the second to OOM under
+        tight VRAM caps (e.g. 24GB simulating an RTX 4090).
+        """
+        import gc
+
+        preprocess_results = {}
+        for method_name, programs in edge_programs.items():
+            assert method_name in compile_specs
+            compile_specs_for_method = compile_specs[method_name]
+            assert len(compile_specs_for_method) == len(programs)
+            results_for_method = []
+            for program, compile_spec_for_program in zip(
+                programs, compile_specs_for_method
+            ):
+                preprocess_result = cls.preprocess(program, compile_spec_for_program)
+                results_for_method.append(preprocess_result)
+
+                # Aggressive GPU cleanup between methods
+                if torch.cuda.is_available():
+                    pre_mem = torch.cuda.memory_allocated()
+                    gc.collect()
+                    freed = 0
+                    for obj in gc.get_objects():
+                        if isinstance(obj, torch.Tensor) and obj.is_cuda:
+                            try:
+                                obj.untyped_storage().resize_(0)
+                                freed += 1
+                            except Exception:
+                                pass
+                    gc.collect()
+                    torch.cuda.empty_cache()
+
+            preprocess_results[method_name] = results_for_method
+        return preprocess_results
