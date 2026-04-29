@@ -192,14 +192,6 @@ jobs:
           fi
 
           if [[ ${TARGET} == "ethos-u55" ]]; then
-            echo "---- Skipping MV2 for ${TARGET} (Corstone-300 ISRAM too small for MV2 runtime pools) ----"
-            continue
-          fi
-
-          echo "---- MV2 ${TARGET} ----"
-          rm -Rf build
-
-          if [[ ${TARGET} == "ethos-u55" ]]; then
             BOARD="corstone300"
           elif [[ ${TARGET} == "ethos-u85" ]]; then
             BOARD="corstone320"
@@ -208,14 +200,20 @@ jobs:
             exit 1
           fi
 
+          echo "---- MV2 ${TARGET} ----"
+          rm -Rf build
+
           echo "---- MV2 ${TARGET} Board ${BOARD} FVP setup ----"
           run_command_block_from_readme "${ZEPHYR_SAMPLES_README_PATH}" "<!-- RUN setup_${BOARD}_fvp -->"
 
           echo "---- MV2 ${TARGET} Create PTE ----"
           run_command_block_from_readme "${MV2_README_PATH}" "<!-- RUN test_mv2_${TARGET}_generate_pte -->"
 
-          echo "---- MV2 ${TARGET} Build and run ----"
-          run_command_block_from_readme "${MV2_README_PATH}" "<!-- RUN test_mv2_${TARGET}_build_and_run -->"
+          # Build only — FVP cycle-accurate simulation of MV2 is too slow
+          # for the CI timeout.  Corstone-300 also lacks enough ISRAM for
+          # the runtime pools.  The build step still catches link regressions.
+          echo "---- MV2 ${TARGET} Build only ----"
+          run_command_block_from_readme "${MV2_README_PATH}" "<!-- RUN test_mv2_${TARGET}_build -->"
         done
 
   test-models-linux-aarch64:
