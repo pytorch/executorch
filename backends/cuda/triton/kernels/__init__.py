@@ -8,6 +8,7 @@ from executorch.backends.cuda.triton.kernels.fused_moe import (
     fused_moe,
     fused_moe_batched,
     fused_moe_batched_gemm,
+    fused_moe_batched_gemm_int8,
     moe_align_block_size,
 )
 
@@ -23,6 +24,7 @@ __all__ = [
     "fused_moe",
     "fused_moe_batched",
     "fused_moe_batched_gemm",
+    "fused_moe_batched_gemm_int8",
     "int4_matvec",
     "moe_align_block_size",
     "sdpa",
