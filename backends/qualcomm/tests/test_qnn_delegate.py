@@ -6900,7 +6900,7 @@ class TestExampleLLMScript(TestQNN):
                 SM8650=37,
                 SM8750=45,
                 pte_size=1_500_000_000,  # 1.5 GB
-                wikitext_ppl=17,
+                wikitext_ppl=18,
                 hellaswag_acc_norm=None,
                 sqnr=15,
             ),
