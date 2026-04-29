@@ -162,6 +162,12 @@ class ModelArgs:
     final_logit_softcapping: Optional[float] = None
     attn_logit_softcapping: Optional[float] = None
 
+    # Block repetition: repeat contiguous ranges of transformer layers.
+    # List of {"start": int, "end": int, "count": int} dicts where start/end
+    # are layer indices (both inclusive) and count is total number of passes
+    # (1 = normal, 2 = run the block twice, etc.). Blocks must not overlap.
+    transformer_block_repeat_config: Optional[list] = None
+
     def __post_init__(self):  # noqa: C901
         if self.n_kv_heads is None:
             self.n_kv_heads = self.n_heads
@@ -204,3 +210,33 @@ class ModelArgs:
         # Convert string act_fn to enum if needed
         if isinstance(self.act_fn, str):
             self.act_fn = ActFn.from_string(self.act_fn)
+
+        self.validate_block_repeat_config()
+
+    def validate_block_repeat_config(self) -> None:
+        """Validate transformer_block_repeat_config field.
+
+        Called from __post_init__ and should also be called after setting
+        transformer_block_repeat_config post-construction.
+        """
+        if self.transformer_block_repeat_config is not None:
+            for i, block in enumerate(self.transformer_block_repeat_config):
+                assert (
+                    "start" in block and "end" in block and "count" in block
+                ), f"transformer_block_repeat_config[{i}] must have 'start', 'end', and 'count' keys"
+                assert 0 <= block["start"] <= block["end"] < self.n_layers, (
+                    f"transformer_block_repeat_config[{i}]: invalid range [{block['start']}, {block['end']}] "
+                    f"for {self.n_layers} layers"
+                )
+                assert (
+                    block["count"] >= 1
+                ), f"transformer_block_repeat_config[{i}]: count must be >= 1"
+            # Check for overlapping blocks (end is inclusive, so next start must be > prev end)
+            sorted_blocks = sorted(
+                self.transformer_block_repeat_config, key=lambda b: b["start"]
+            )
+            for i in range(1, len(sorted_blocks)):
+                assert sorted_blocks[i]["start"] > sorted_blocks[i - 1]["end"], (
+                    f"transformer_block_repeat_config: blocks {sorted_blocks[i-1]} and "
+                    f"{sorted_blocks[i]} overlap"
+                )
