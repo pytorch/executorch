@@ -466,7 +466,7 @@ def _quantize(model, config, args):
         print(f"Quantized linear layers ({args.qlinear})")
 
 
-def _replace_dense_with_w4dequant(model, group_size=128, use_hqq=False):
+def _replace_dense_with_w4dequant(model, group_size=128, use_hqq=False):  # noqa: C901
     """Replace quantized dense linears with W4DequantLinear.
 
     Dequantizes Int4TilePackedTo4dTensor weights to BF16, re-quantizes to
