@@ -43,10 +43,9 @@ def define_common_targets():
             "runner/gemma4_runner.cpp",
         ],
         visibility = ["PUBLIC"],
-        preprocessor_flags = [
-            "-DENABLE_XNNPACK_SHARED_WORKSPACE",
-        ],
         deps = _KERNEL_BACKEND_DEPS + [
+            "//executorch/backends/xnnpack:xnnpack_interface",
+            "//executorch/runtime/backend:interface",
             "//executorch/extension/llm/sampler:sampler",
             "//executorch/extension/module:module",
             "//executorch/extension/tensor:tensor",
@@ -72,5 +71,5 @@ def define_common_targets():
         ],
         visibility = ["PUBLIC"],
         compiler_flags = ["-Wno-global-constructors"],
-        preprocessor_flags = ["-DET_USE_THREADPOOL", "-DENABLE_XNNPACK_SHARED_WORKSPACE"],
+        preprocessor_flags = ["-DET_USE_THREADPOOL"],
     )
