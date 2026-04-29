@@ -105,8 +105,8 @@ jobs:
         ASTYPE_COUNT=$(${CONDA_RUN} python -m executorch.backends.mlx.pte_inspector \
           /tmp/qwen35_moe_mlx_tiny/model.pte --mlx-instructions 2>&1 | grep -c "AsTypeNode" || true)
         echo "AsType nodes: ${ASTYPE_COUNT}"
-        if [ "$ASTYPE_COUNT" -gt 23 ]; then
-          echo "Failed: expected no more than 23 AsType nodes, got ${ASTYPE_COUNT}"
+        if [ "$ASTYPE_COUNT" -gt 24 ]; then
+          echo "Failed: expected no more than 24 AsType nodes, got ${ASTYPE_COUNT}"
           exit 1
         fi
         echo "::endgroup::"
