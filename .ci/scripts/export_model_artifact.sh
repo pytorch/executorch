@@ -419,6 +419,7 @@ if [ "$MODEL_NAME" = "qwen3_5_moe" ]; then
   python -m executorch.examples.models.qwen3_5_moe.export \
       --prequantized "$LOCAL_MODEL_DIR" \
       --output-dir "${OUTPUT_DIR}" \
+      --dense-prefill dequant \
       --moe-activation-dtype int8
   echo "::endgroup::"
 
