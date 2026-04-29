@@ -1,0 +1,55 @@
+load("@fbcode_macros//build_defs:build_file_migration.bzl", "fbcode_target", "non_fbcode_target")
+# Any targets that should be shared between fbcode and xplat must be defined in
+# targets.bzl. This file can contain fbcode-only targets.
+
+load("@fbsource//xplat/executorch/build:runtime_wrapper.bzl", "runtime")
+
+oncall("executorch")
+
+fbcode_target(_kind = runtime.python_library,
+    name = "lfm2_5_vl",
+    srcs = [
+        "__init__.py",
+        "convert_weights.py",
+        "model.py",
+    ],
+    resources = {
+        "config/lfm2_5_vl_1_6b_config.json": "config/lfm2_5_vl_1_6b_config.json",
+    },
+    base_module = "executorch.examples.models.lfm2_5_vl",
+    visibility = ["PUBLIC"],
+    deps = [
+        "//caffe2:torch",
+        "//executorch/examples/models/llama:transformer_modules",
+        "//executorch/examples/models/llama:export_library",
+        "fbsource//third-party/pypi/safetensors:safetensors",
+        "fbsource//third-party/pypi/transformers:transformers",
+    ],
+)
+
+fbcode_target(_kind = runtime.python_library,
+    name = "export_lib",
+    srcs = [
+        "export_lfm2_5_vl.py",
+    ],
+    _is_external_target = True,
+    base_module = "executorch.examples.models.lfm2_5_vl",
+    visibility = [
+        "//executorch/...",
+    ],
+    deps = [
+        ":lfm2_5_vl",
+    ],
+)
+
+fbcode_target(_kind = runtime.python_binary,
+    name = "export",
+    main_function = "executorch.examples.models.lfm2_5_vl.export_lfm2_5_vl.main",
+    preload_deps = [
+        "//executorch/extension/llm/custom_ops:custom_ops_aot_lib",
+        "//executorch/kernels/quantized:aot_lib",
+    ],
+    deps = [
+        ":export_lib",
+    ],
+)
