@@ -43,6 +43,11 @@ DEFINE_int32(max_new_tokens, 100, "Maximum tokens to generate.");
 DEFINE_int32(max_vision_tokens, 140, "Maximum soft tokens for vision encoder.");
 DEFINE_double(temperature, 0.0, "Sampling temperature (0.0 = greedy).");
 DEFINE_int32(cpu_threads, -1, "Number of CPU threads. -1 = auto-detect.");
+DEFINE_bool(
+    enable_workspace_sharing,
+    true,
+    "Enable XNNPACK PerModel workspace sharing + weight cache. "
+    "Pass --noenable_workspace_sharing to disable for debugging.");
 
 int32_t main(int32_t argc, char** argv) {
   gflags::ParseCommandLineFlags(&argc, &argv, true);
@@ -62,7 +67,10 @@ int32_t main(int32_t argc, char** argv) {
   Gemma4Stats stats;
   stats.on_load_begin();
 
-  Gemma4Runner runner(FLAGS_model_path, FLAGS_tokenizer_path);
+  Gemma4Runner runner(
+      FLAGS_model_path,
+      FLAGS_tokenizer_path,
+      FLAGS_enable_workspace_sharing);
   auto err = runner.load();
   ET_CHECK_MSG(err == executorch::runtime::Error::Ok, "Failed to load model");
 

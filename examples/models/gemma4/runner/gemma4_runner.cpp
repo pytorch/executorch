@@ -10,9 +10,12 @@
 
 #include <executorch/examples/models/gemma4/runner/gemma4_runner.h>
 
+#include <executorch/backends/xnnpack/runtime/XNNPACKBackend.h>
 #include <executorch/extension/llm/runner/llm_runner_helper.h>
 #include <executorch/extension/llm/sampler/sampler.h>
 #include <executorch/extension/tensor/tensor_ptr_maker.h>
+#include <executorch/runtime/backend/interface.h>
+#include <executorch/runtime/backend/options.h>
 #include <executorch/runtime/core/evalue.h>
 #include <executorch/runtime/platform/log.h>
 
@@ -28,10 +31,36 @@ using ::executorch::runtime::EValue;
 
 Gemma4Runner::Gemma4Runner(
     const std::string& model_path,
-    const std::string& tokenizer_path)
-    : model_path_(model_path), tokenizer_path_(tokenizer_path) {}
+    const std::string& tokenizer_path,
+    bool enable_workspace_sharing)
+    : model_path_(model_path),
+      tokenizer_path_(tokenizer_path),
+      enable_workspace_sharing_(enable_workspace_sharing) {}
 
 Error Gemma4Runner::load() {
+  // Set XNNPACK workspace sharing explicitly. The compile-time default
+  // varies across build configurations, and set_option state is process-
+  // global, so always set it here to get the intended mode regardless of
+  // how the binary was built or what other code in the process did first.
+  {
+    auto mode = enable_workspace_sharing_
+        ? ::executorch::backends::xnnpack::WorkspaceSharingMode::PerModel
+        : ::executorch::backends::xnnpack::WorkspaceSharingMode::Disabled;
+    ::executorch::runtime::BackendOptions<2> xnnpack_opts;
+    xnnpack_opts.set_option(
+        ::executorch::backends::xnnpack::weight_cache_option_key,
+        enable_workspace_sharing_);
+    xnnpack_opts.set_option(
+        ::executorch::backends::xnnpack::workspace_sharing_mode_option_key,
+        static_cast<int>(mode));
+    auto opts_status = ::executorch::runtime::set_option(
+        ::executorch::backends::xnnpack::xnnpack_backend_key,
+        xnnpack_opts.view());
+    if (opts_status != Error::Ok) {
+      ET_LOG(Error, "Failed to set XNNPACK options");
+    }
+  }
+
   ET_LOG(Info, "Loading model: %s", model_path_.c_str());
   module_ = std::make_unique<Module>(model_path_, Module::LoadMode::Mmap);
 
