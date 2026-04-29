@@ -24,7 +24,6 @@ namespace native {
 
 namespace {
 
-// Optimized NLC 1D convolution for int8 x int8 -> int8
 void xa_opt_quantized_conv1d_nlc_asym8sxsym8s_asym8s(
     KernelRuntimeContext& ctx,
     const Tensor& input,
@@ -76,10 +75,12 @@ void xa_opt_quantized_conv1d_nlc_asym8sxsym8s_asym8s(
   WORD32 p_out_multiplier32[out_channels];
   WORD32 p_out_shift32[out_channels];
 
-  float out_scale = 1. / output_scale;
+  const float eff_scale = bias_scale * (1.0f / output_scale);
 
   for (int i = 0; i < out_channels; i++) {
-    p_out_multiplier32[i] = bias_scale * out_scale * 2147483648;
+    p_out_multiplier32[i] = (eff_scale >= 1.0f)
+        ? static_cast<WORD32>(2147483647)
+        : static_cast<WORD32>(eff_scale * 2147483648.0f);
     p_out_shift32[i] = 0;
   }
 
@@ -144,7 +145,6 @@ void xa_opt_quantized_conv1d_nlc_asym8sxsym8s_asym8s(
   }
 }
 
-// Optimized NLC 1D convolution for uint8 x uint8 -> uint8
 void xa_opt_quantized_conv1d_nlc_asym8uxsym8u_asym8u(
     KernelRuntimeContext& ctx,
     const Tensor& input,
@@ -176,7 +176,10 @@ void xa_opt_quantized_conv1d_nlc_asym8uxsym8u_asym8u(
   WORD32 x_stride = stride[stride.size() - 1];
   WORD32 x_padding = padding[padding.size() - 1];
   WORD32 input_zero_bias = -in_zero_point;
-  WORD32 out_multiplier32 = bias_scale * (1. / output_scale) * 2147483648;
+  const float eff_scale = bias_scale * (1.0f / output_scale);
+  WORD32 out_multiplier32 = (eff_scale >= 1.0f)
+      ? static_cast<WORD32>(2147483647)
+      : static_cast<WORD32>(eff_scale * 2147483648.0f);
   WORD32 out_shift32 = 0;
   WORD32 kernel_zero_bias = -weight_zero_point;
 
@@ -237,7 +240,6 @@ void quantized_conv1d_nlc_per_tensor_out(
     Tensor& out) {
   // HiFi nnlib kernels only support dilation=1.
   // Fall back to generic implementation for dilation > 1.
-  // Note: For 1D convolution, dilation is a single-element array.
   if (dilation[dilation.size() - 1] != 1) {
     impl::generic::native::quantized_conv1d_nlc_per_tensor_out(
         ctx,
@@ -298,9 +300,9 @@ void quantized_conv1d_nlc_per_tensor_out(
           out);
     }
   } else if (dtype == ScalarType::Byte) {
-    // HiFi nnlib conv1d_std kernel does not support depthwise (groups > 1).
-    // Fall back to generic implementation.
-    if (groups > 1) {
+    // HiFi nnlib conv1d_std kernel does not support depthwise (groups > 1)
+    // or stride > 1. Fall back to generic implementation.
+    if (groups > 1 || stride[stride.size() - 1] > 1) {
       impl::generic::native::quantized_conv1d_nlc_per_tensor_out(
           ctx,
           input,
