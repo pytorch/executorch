@@ -97,6 +97,15 @@ else()
 endif()
 
 find_package(Zephyr REQUIRED HINTS $ENV{ZEPHYR_BASE})
+
+dt_nodelabel(model_ddr_path NODELABEL "model_ddr")
+if(model_ddr_path)
+  configure_file(
+    model_section.ld.in ${CMAKE_CURRENT_BINARY_DIR}/model_section.ld @ONLY
+  )
+  zephyr_linker_sources(SECTIONS ${CMAKE_CURRENT_BINARY_DIR}/model_section.ld)
+endif()
+
 project(executorch_mv2_ethosu)
 
 set(CMAKE_CXX_FLAGS
@@ -223,6 +232,9 @@ if(DEFINED CONFIG_EXECUTORCH_TEMP_ALLOCATOR_POOL_SIZE)
     PRIVATE
       ET_ARM_BAREMETAL_SCRATCH_TEMP_ALLOCATOR_POOL_SIZE=${CONFIG_EXECUTORCH_TEMP_ALLOCATOR_POOL_SIZE}
   )
+endif()
+if(CONFIG_ET_ARM_MODEL_PTE_DMA_ACCESSIBLE)
+  target_compile_definitions(app PRIVATE ET_ARM_MODEL_PTE_DMA_ACCESSIBLE)
 endif()
 
 target_link_libraries(app PRIVATE libexecutorch)
