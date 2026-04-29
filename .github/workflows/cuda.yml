@@ -148,6 +148,9 @@ jobs:
         # Run Qwen 3.5 MoE tests (quantize roundtrip + TurboQuant KV cache + sampler)
         python -m pytest examples/models/qwen3_5_moe/test_quantize_roundtrip.py examples/models/qwen3_5_moe/test_turboquant.py examples/models/qwen3_5_moe/test_sampler.py -v -o "addopts="
 
+        # Run Gemma 4 31B tests (quant unit tests + pipeline integration tests)
+        python -m pytest examples/models/gemma4_31b/quant/ examples/models/gemma4_31b/test_pipeline.py examples/models/gemma4_31b/test_cuda_pipeline.py -v -o "addopts="
+
   export-model-cuda-artifact:
     name: export-model-cuda-artifact
     # Skip this job if the pull request is from a fork (HuggingFace secrets are not available)
