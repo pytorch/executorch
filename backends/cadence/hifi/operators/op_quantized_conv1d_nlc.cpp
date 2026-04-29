@@ -176,7 +176,10 @@ void xa_opt_quantized_conv1d_nlc_asym8uxsym8u_asym8u(
   WORD32 x_stride = stride[stride.size() - 1];
   WORD32 x_padding = padding[padding.size() - 1];
   WORD32 input_zero_bias = -in_zero_point;
-  WORD32 out_multiplier32 = bias_scale * (1. / output_scale) * 2147483648;
+  const float eff_scale = bias_scale * (1.0f / output_scale);
+  WORD32 out_multiplier32 = (eff_scale >= 1.0f)
+      ? static_cast<WORD32>(2147483647)
+      : static_cast<WORD32>(eff_scale * 2147483648.0f);
   WORD32 out_shift32 = 0;
   WORD32 kernel_zero_bias = -weight_zero_point;
 
@@ -298,9 +301,9 @@ void quantized_conv1d_nlc_per_tensor_out(
           out);
     }
   } else if (dtype == ScalarType::Byte) {
-    // HiFi nnlib conv1d_std kernel does not support depthwise (groups > 1).
-    // Fall back to generic implementation.
-    if (groups > 1) {
+    // HiFi nnlib conv1d_std kernel does not support depthwise (groups > 1)
+    // or stride > 1. Fall back to generic implementation.
+    if (groups > 1 || stride[0] > 1) {
       impl::generic::native::quantized_conv1d_nlc_per_tensor_out(
           ctx,
           input,
