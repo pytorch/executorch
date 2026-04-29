@@ -967,6 +967,13 @@ def main():  # noqa: C901
         # Register FLA Triton kernel (CUDA only)
         import executorch.backends.cuda.triton.kernels  # noqa: F401
 
+        # Reset peak GPU memory stats so we can report the actual peak
+        # consumed during the export pipeline (load + quantize + lowering)
+        # at the very end. This is also gated by CI to make sure low-VRAM
+        # GPUs (e.g. RTX 4090, 24 GB) can still complete the export.
+        if torch.cuda.is_available():
+            torch.cuda.reset_peak_memory_stats(0)
+
     if args.backend == "mlx":
         if args.prequantized:
             parser.error("--prequantized is not supported with --backend mlx")
@@ -988,6 +995,13 @@ def main():  # noqa: C901
             _apply_turboquant(model, config)
 
     export_and_lower(model, config, args)
+
+    # Report peak GPU memory consumed during the export so CI / users can
+    # gate this against a known budget (e.g. 24 GB consumer GPUs).
+    if args.backend == "cuda" and torch.cuda.is_available():
+        peak_mb = torch.cuda.max_memory_allocated(0) / (1024 * 1024)
+        # Stable, machine-parseable marker for CI grep.
+        print(f"EXPORT_GPU_PEAK_MEMORY_MB: {peak_mb:.2f}")
 
 
 if __name__ == "__main__":
