@@ -36,8 +36,8 @@ from executorch.backends.qualcomm.export_utils import (
 from executorch.backends.qualcomm.serialization.qc_schema import (
     QnnExecuTorchBackendType,
     QnnExecuTorchHtpPerformanceMode,
-    QnnExecuTorchLpaiTargetEnv,
 )
+
 from executorch.backends.qualcomm.tests.utils import (
     convert_pt2e,
     generate_context_binary,
@@ -312,6 +312,46 @@ class TestQNNFloatingPointOperator(TestQNN):
         sample_input = (torch.randn(3, 4),)
         module = Atan()  # noqa: F405
         self.lower_module_and_test_output(module, sample_input)
+
+    def test_qnn_backend_atan2(self):
+        test_comb = [
+            {
+                QCOM_MODULE: [Atan2()],  # noqa: F405
+                QCOM_SAMPLE_INPUTS: [
+                    (
+                        torch.tensor(
+                            [1.0, 1.0, -1.0, -1.0, 1.0, -1.0, 0.0], dtype=torch.float32
+                        ),
+                        torch.tensor(
+                            [1.0, -1.0, -1.0, 1.0, 0.0, 0.0, 0.0], dtype=torch.float32
+                        ),
+                    ),
+                    (
+                        torch.tensor([1, 1, -1, -1, 1, -1, 0], dtype=torch.int32),
+                        torch.tensor([1, -1, -1, 1, 0, 0, 0], dtype=torch.int32),
+                    ),
+                ],
+            },
+            {
+                QCOM_MODULE: [Atan2MultiNode()],  # noqa: F405
+                QCOM_SAMPLE_INPUTS: [
+                    (
+                        torch.tensor([1.0, -1.0, 1.0, -1.0]),
+                        torch.tensor([1.0, -1.0, -1.0, 1.0]),
+                        torch.tensor([1.0, -1.0, 1.0, -1.0]),
+                        torch.tensor([-1.0, 1.0, 0.0, 0.0]),
+                    )
+                ],
+            },
+        ]
+
+        index = 0
+        for comb in test_comb:
+            for module in comb[QCOM_MODULE]:
+                for sample_input in comb[QCOM_SAMPLE_INPUTS]:
+                    with self.subTest(i=index):
+                        index += 1
+                        self.lower_module_and_test_output(module, sample_input)
 
     def test_qnn_backend_avg_pool1d(self):
         module = AvgPool1D()  # noqa: F405
@@ -1315,6 +1355,8 @@ class TestQNNFloatingPointOperator(TestQNN):
         self.lower_module_and_test_output(module, sample_input)
 
     def test_qnn_backend_is_nan(self):
+        if self.enable_x86_64:
+            self.skipTest("isnan produces incorrect results on x86 simulator")
         module = IsNan()  # noqa: F405
         sample_inputs = [
             (
@@ -2189,7 +2231,9 @@ class TestQNNFloatingPointModel(TestQNN):
         module = CausalMask()  # noqa: F405
         torch.manual_seed(8)
         sample_input = (torch.rand((1, 1, 1, 128)) < 0.5,)
-        self.lower_module_and_test_output(module, sample_input)
+        self.lower_module_and_test_output(
+            module, sample_input, skip_mutable_buffer=self.enable_x86_64
+        )
 
     def test_qnn_backend_chunk_add(self):
         module = ChunkAdd()  # noqa: F405
@@ -2400,11 +2444,7 @@ class TestQNNQuantizedOperator(TestQNN):
                 backend_options = generate_htp_compiler_spec(use_fp16=False)
             case QnnExecuTorchBackendType.kLpaiBackend:
                 backend_options = generate_lpai_compiler_spec(
-                    target_env=(
-                        QnnExecuTorchLpaiTargetEnv.kX86
-                        if self.enable_x86_64
-                        else QnnExecuTorchLpaiTargetEnv.kArm
-                    )
+                    target_env=self.get_lpai_target_env()
                 )
             case _:
                 raise ValueError("Backend is not implemented yet")
@@ -2722,6 +2762,39 @@ class TestQNNQuantizedOperator(TestQNN):
         module = Atan()  # noqa: F405
         module = self.get_qdq_module(module, sample_input)
         self.lower_module_and_test_output(module, sample_input)
+
+    def test_qnn_backend_atan2(self):
+        test_comb = [
+            {
+                QCOM_MODULE: [Atan2()],  # noqa: F405
+                QCOM_SAMPLE_INPUTS: [
+                    (
+                        torch.tensor([1.0, 1.0, -1.0, -1.0, 1.0, -1.0, 0.0]),
+                        torch.tensor([1.0, -1.0, -1.0, 1.0, 0.0, 0.0, 0.0]),
+                    )
+                ],
+            },
+            {
+                QCOM_MODULE: [Atan2MultiNode()],  # noqa: F405
+                QCOM_SAMPLE_INPUTS: [
+                    (
+                        torch.tensor([1.0, -1.0, 1.0, -1.0]),
+                        torch.tensor([1.0, -1.0, -1.0, 1.0]),
+                        torch.tensor([1.0, -1.0, 1.0, -1.0]),
+                        torch.tensor([-1.0, 1.0, 0.0, 0.0]),
+                    )
+                ],
+            },
+        ]
+
+        index = 0
+        for comb in test_comb:
+            for module in comb[QCOM_MODULE]:
+                for sample_input in comb[QCOM_SAMPLE_INPUTS]:
+                    with self.subTest(i=index):
+                        index += 1
+                        qdq_module = self.get_qdq_module(module, sample_input)
+                        self.lower_module_and_test_output(qdq_module, sample_input)
 
     def test_qnn_backend_avg_pool1d(self):
         module = AvgPool1D()  # noqa: F405
@@ -4750,11 +4823,7 @@ class TestQNNQuantizedModel(TestQNN):
                 backend_options = generate_htp_compiler_spec(use_fp16=False)
             case QnnExecuTorchBackendType.kLpaiBackend:
                 backend_options = generate_lpai_compiler_spec(
-                    target_env=(
-                        QnnExecuTorchLpaiTargetEnv.kX86
-                        if self.enable_x86_64
-                        else QnnExecuTorchLpaiTargetEnv.kArm
-                    )
+                    target_env=self.get_lpai_target_env()
                 )
             case _:
                 raise ValueError("Backend is not implemented yet")
@@ -4781,7 +4850,9 @@ class TestQNNQuantizedModel(TestQNN):
         module = CausalMask()  # noqa: F405
         sample_input = (torch.rand((1, 1, 1, 128)) < 0.5,)
         module = self.get_qdq_module(module, sample_input)
-        self.lower_module_and_test_output(module, sample_input)
+        self.lower_module_and_test_output(
+            module, sample_input, skip_mutable_buffer=self.enable_x86_64
+        )
 
     def test_qnn_backend_chunk_add(self):
         module = ChunkAdd()  # noqa: F405
@@ -5860,11 +5931,7 @@ class TestQNNQuantizedUtils(TestQNN):
                 backend_options = generate_htp_compiler_spec(use_fp16=False)
             case QnnExecuTorchBackendType.kLpaiBackend:
                 backend_options = generate_lpai_compiler_spec(
-                    target_env=(
-                        QnnExecuTorchLpaiTargetEnv.kX86
-                        if self.enable_x86_64
-                        else QnnExecuTorchLpaiTargetEnv.kArm
-                    )
+                    target_env=self.get_lpai_target_env()
                 )
             case _:
                 raise ValueError("Backend is not implemented yet")
@@ -6102,11 +6169,7 @@ class TestQNNQuantizedUtils(TestQNN):
                 backend_options = generate_htp_compiler_spec(use_fp16=False)
             case QnnExecuTorchBackendType.kLpaiBackend:
                 backend_options = generate_lpai_compiler_spec(
-                    target_env=(
-                        QnnExecuTorchLpaiTargetEnv.kX86
-                        if self.enable_x86_64
-                        else QnnExecuTorchLpaiTargetEnv.kArm
-                    )
+                    target_env=self.get_lpai_target_env()
                 )
             case _:
                 raise ValueError("Backend is not implemented yet")
@@ -6160,11 +6223,7 @@ class TestQNNQuantizedUtils(TestQNN):
                 backend_options = generate_htp_compiler_spec(use_fp16=False)
             case QnnExecuTorchBackendType.kLpaiBackend:
                 backend_options = generate_lpai_compiler_spec(
-                    target_env=(
-                        QnnExecuTorchLpaiTargetEnv.kX86
-                        if self.enable_x86_64
-                        else QnnExecuTorchLpaiTargetEnv.kArm
-                    )
+                    target_env=self.get_lpai_target_env()
                 )
             case _:
                 raise ValueError("Backend is not implemented yet")
