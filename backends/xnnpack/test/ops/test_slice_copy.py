@@ -121,7 +121,7 @@ class TestSliceCopy(unittest.TestCase):
 
     def test_fp32_static_slice_with_dynamic_dim(self):
         """
-        XNNPACK does not support dynamic dims with static slice
+        Slices on static dims are delegated; slices on the dynamic dim are not.
         """
 
         class SliceCopy(torch.nn.Module):
@@ -137,7 +137,8 @@ class TestSliceCopy(unittest.TestCase):
             )
             .export()
             .to_edge_transform_and_lower()
-            .check_not(["torch.ops.higher_order.executorch_call_delegate"])
+            .check_count({"torch.ops.higher_order.executorch_call_delegate": 1})
+            .check(["executorch_exir_dialects_edge__ops_aten_slice_copy_Tensor"])
         )
 
     # Note: Slice ends up as slice_copy later in the process, but during quantization,

@@ -373,6 +373,24 @@ class XNNScaledDotProductAttention:
     flags: int
 
 
+@dataclass
+class XNNRope:
+    max_tokens: int
+    input_id: int
+    weights_id: int
+    output_id: int
+    flags: int
+
+
+@dataclass
+class XNNStaticExpandDims:
+    num_new_axes: int
+    new_axes: List[int]
+    input_id: int
+    output_id: int
+    flags: int
+
+
 XNodeUnion = Union[
     XNNAdd,
     XNNFullyConnected,
@@ -421,6 +439,8 @@ XNodeUnion = Union[
     XNNSin,
     XNNCopy,
     XNNCos,
+    XNNRope,
+    XNNStaticExpandDims,
 ]
 
 
