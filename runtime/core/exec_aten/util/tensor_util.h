@@ -1280,22 +1280,26 @@ bool tensor_is_default_dim_order(executorch::aten::Tensor t);
 bool tensor_is_channels_last_dim_order(executorch::aten::Tensor t);
 
 /**
- * Asserts that four tensors have the same dim_order
+ * Returns true if all tensors are in a compatible layout for portable kernels.
  *
- * Note that this macro only tests dim order, but not others like actual data,
- * sizes, etc.
+ * First, the legacy rule: either every tensor is contiguous-order
+ * (`is_contiguous_dim_order`) or every tensor is channels-last-order
+ * (`is_channels_last_dim_order`). That matches mixed-rank argument lists
+ * (e.g. batch norm with reduced outputs), broadcast shapes, and typical
+ * elementwise ops.
  *
+ * If that fails, falls back to semantic equivalence for tensors with the same
+ * rank as the first tensor: matching dim_order labels, or matching strides on
+ * non-size-1 dimensions (degenerate-shape / ambiguous dim_order cases).
+ * Tensors with a different rank than the first must match the first tensor's
+ * format family (both contiguous-order, or both channels-last-order).
+ *
+ * Does not validate sizes, dtypes, or data.
  */
 bool tensors_have_same_dim_order(
     const executorch::aten::ArrayRef<executorch::aten::Tensor> tensor_list);
 
-/**
- * Asserts that two tensors have the same dim_order
- *
- * Note that this macro only tests dim order, but not others like actual data,
- * sizes, etc.
- */
-
+/** @see tensors_have_same_dim_order(ArrayRef) */
 inline bool tensors_have_same_dim_order(
     const executorch::aten::Tensor& a,
     const executorch::aten::Tensor& b) {
@@ -1303,14 +1307,7 @@ inline bool tensors_have_same_dim_order(
   return tensors_have_same_dim_order(tensor_list);
 }
 
-/**
- * Asserts that three tensors have the same dim_order
- *
- * Note that this macro only tests dim order, but not others like actual data,
- * sizes, etc.
- *
- */
-
+/** @see tensors_have_same_dim_order(ArrayRef) */
 inline bool tensors_have_same_dim_order(
     const executorch::aten::Tensor& a,
     const executorch::aten::Tensor& b,
@@ -1319,14 +1316,7 @@ inline bool tensors_have_same_dim_order(
   return tensors_have_same_dim_order(tensor_list);
 }
 
-/**
- * Asserts that four tensors have the same dim_order
- *
- * Note that this macro only tests dim order, but not others like actual data,
- * sizes, etc.
- *
- */
-
+/** @see tensors_have_same_dim_order(ArrayRef) */
 inline bool tensors_have_same_dim_order(
     const executorch::aten::Tensor& a,
     const executorch::aten::Tensor& b,
