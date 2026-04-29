@@ -79,6 +79,57 @@ class TestCudaInference(unittest.TestCase):
         self.assertGreater(len(out_greedy), 0)
 
 
+class TestChunkedPrefill(unittest.TestCase):
+    """Verify that chunked prefill matches one-token-at-a-time prefill."""
+
+    def setUp(self):
+        _require_cuda(self)
+
+    def test_chunked_prefill_matches_sequential(self):
+        """Long prompt chunked across ring buffer gives same logits as sequential."""
+        with tempfile.TemporaryDirectory() as tmpdir:
+            save_checkpoint(tmpdir)
+            model_seq, config = load_prequantized_model(
+                tmpdir, max_seq_len=TINY_CONFIG.max_seq_len
+            )
+            model_chunk, _ = load_prequantized_model(
+                tmpdir, max_seq_len=TINY_CONFIG.max_seq_len
+            )
+
+        _move_to_cuda(model_seq, config)
+        _move_to_cuda(model_chunk, config)
+        model_seq.eval()
+        model_chunk.eval()
+
+        buf_size = config.sliding_window * 2
+        prompt_len = buf_size + 8  # exceeds buf_size
+        torch.manual_seed(0)
+        prompt = torch.randint(0, config.vocab_size, (1, prompt_len), device="cuda")
+
+        # Sequential: one token at a time (temperature=None returns logits)
+        with torch.no_grad():
+            for i in range(prompt_len):
+                tok = prompt[:, i : i + 1]
+                pos = torch.tensor([i], dtype=torch.long, device="cuda")
+                logits_seq = model_seq(tok, pos, None)
+
+        # Chunked: two chunks respecting buf_size
+        with torch.no_grad():
+            chunk1 = prompt[:, :buf_size]
+            pos1 = torch.arange(buf_size, dtype=torch.long, device="cuda")
+            model_chunk(chunk1, pos1, None)
+
+            chunk2 = prompt[:, buf_size:]
+            pos2 = torch.arange(buf_size, prompt_len, dtype=torch.long, device="cuda")
+            logits_chunk = model_chunk(chunk2, pos2, None)
+
+        # Compare last-token logits (skip sampling to avoid RNG differences)
+        self.assertTrue(
+            torch.equal(logits_seq[0, -1], logits_chunk[0, -1]),
+            f"Max diff: {(logits_seq[0, -1] - logits_chunk[0, -1]).abs().max()}",
+        )
+
+
 class TestCudaExport(unittest.TestCase):
     def setUp(self):
         _require_cuda(self)

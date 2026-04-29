@@ -7,7 +7,7 @@
 """Unit tests for quant/serialize.py — data format and I/O only.
 
 Tests nibble pack/unpack and save/load. Does NOT test
-quantize_weight (that lives in test_quantize.py). Bundle tests use
+quantize_weight (that lives in test_quantize.py). Save/load tests use
 hand-built CanonicalQuantizedWeight fixtures to avoid coupling to the
 quantizer.
 """

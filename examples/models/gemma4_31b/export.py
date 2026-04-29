@@ -161,7 +161,9 @@ def _export_cuda(model: Gemma4_31B, config: Gemma4_31BConfig, output_dir: str) -
             strict=True,
         )
 
-    max_prefill = config.max_seq_len - 1
+    # Cap prefill length to the ring-buffer KV cache size (2×sliding_window).
+    # Longer prompts are chunked by the runner.
+    max_prefill = min(config.max_seq_len - 1, config.sliding_window * 2)
     seq_dim = Dim("seq_len", min=2, max=max_prefill)
     print(f"Exporting prefill (T in [2, {max_prefill}])...")
     with torch.no_grad():
@@ -199,6 +201,7 @@ def _export_cuda(model: Gemma4_31B, config: Gemma4_31BConfig, output_dir: str) -
             "get_max_seq_len": config.max_seq_len,
             "get_vocab_size": config.vocab_size,
             "get_n_layers": config.num_hidden_layers,
+            "get_max_prefill_chunk": max_prefill,
             "use_kv_cache": True,
             "use_sdpa_with_kv_cache": False,
             "enable_dynamic_shape": True,

@@ -34,20 +34,20 @@
 #include <cuda_runtime.h>
 #endif
 
-DEFINE_string(model_path, "", "Path to model.pte.");
-DEFINE_string(data_path, "", "Path to model.ptd (CUDA tensor data).");
+DEFINE_string(model_path, "", "Model .pte file path.");
+DEFINE_string(data_path, "", "Data file (.ptd) for CUDA backend.");
 DEFINE_string(tokenizer_path, "", "HuggingFace tokenizer.json path.");
 DEFINE_string(prompt, "Hello", "Prompt text.");
 DEFINE_string(
     prompt_file,
     "",
-    "Optional path to a file with the prompt text (overrides --prompt).");
+    "Path to file containing prompt text (overrides --prompt).");
 DEFINE_double(temperature, 0.8, "Sampling temperature (0 = near-greedy).");
 DEFINE_int32(max_new_tokens, 128, "Maximum tokens to generate.");
 DEFINE_bool(
     cuda_graph,
     false,
-    "Enable CUDA graph capture for the decode method.");
+    "Enable CUDA graph capture for the decode method. CUDA only.");
 
 namespace llm = ::executorch::extension::llm;
 using ::executorch::extension::from_blob;
@@ -57,8 +57,6 @@ using ::executorch::runtime::EValue;
 
 using SizesType = executorch::aten::SizesType;
 
-// The model performs sampling on-device and returns a [B, 1] float tensor
-// holding a token ID. Copy it to host and convert to uint64.
 static uint64_t read_token(const executorch::aten::Tensor& output) {
   const void* ptr = output.const_data_ptr();
   float val = 0.0f;
@@ -135,12 +133,14 @@ int main(int argc, char** argv) {
       /*temp_allocator=*/nullptr,
       /*share_memory_arenas=*/true);
 
+  // Get metadata
   auto metadata_result = llm::get_llm_metadata(tokenizer.get(), module.get());
   if (metadata_result.error() != Error::Ok) {
     ET_LOG(Error, "Failed to read model metadata");
     return 1;
   }
 
+#ifdef EXECUTORCH_BUILD_CUDA
   if (FLAGS_cuda_graph) {
     executorch::runtime::BackendOptions<2> cuda_opts;
     cuda_opts.set_option("enable_cuda_graph_for_method", "decode");
@@ -154,14 +154,30 @@ int main(int argc, char** argv) {
   // load_method.
   {
     executorch::runtime::BackendOptions<1> backend_options;
-    if (backend_options.set_option("weight_sharing_across_methods", true) !=
-            Error::Ok ||
-        executorch::runtime::set_option(
-            "CudaBackend", backend_options.view()) != Error::Ok) {
-      ET_LOG(Error, "Failed to enable weight_sharing_across_methods");
+    auto set_err =
+        backend_options.set_option("weight_sharing_across_methods", true);
+    if (set_err != Error::Ok) {
+      ET_LOG(
+          Error,
+          "Failed to construct weight_sharing_across_methods option: %d",
+          static_cast<int>(set_err));
+      return 1;
+    }
+    auto opt_err =
+        executorch::runtime::set_option("CudaBackend", backend_options.view());
+    if (opt_err != Error::Ok) {
+      ET_LOG(
+          Error,
+          "Failed to enable weight_sharing_across_methods: %d",
+          static_cast<int>(opt_err));
       return 1;
     }
   }
+#else
+  if (FLAGS_cuda_graph) {
+    ET_LOG(Info, "--cuda_graph ignored on non-CUDA build");
+  }
+#endif
 
   printf("Loading methods...\n");
   if (module->load_method("prefill") != Error::Ok) {
@@ -181,6 +197,7 @@ int main(int argc, char** argv) {
 
   auto eos_ids = llm::get_eos_ids(tokenizer.get(), module.get());
 
+  // Read prompt from file or flag
   std::string prompt_text = FLAGS_prompt;
   if (!FLAGS_prompt_file.empty()) {
     std::ifstream f(FLAGS_prompt_file);
@@ -189,10 +206,11 @@ int main(int argc, char** argv) {
           Error, "Failed to open prompt file: %s", FLAGS_prompt_file.c_str());
       return 1;
     }
-    prompt_text.assign(
+    prompt_text = std::string(
         (std::istreambuf_iterator<char>(f)), std::istreambuf_iterator<char>());
   }
 
+  // Encode prompt
   auto encode_result = tokenizer->encode(prompt_text);
   if (!encode_result.ok()) {
     ET_LOG(Error, "Failed to encode prompt");
@@ -207,49 +225,66 @@ int main(int argc, char** argv) {
 
   auto S = [](int64_t v) -> SizesType { return static_cast<SizesType>(v); };
 
-  // Temperature: clamp 0 to a tiny epsilon so the divide in the exported
-  // sampler stays well-defined. Gumbel noise then becomes negligible
-  // relative to logit gaps and we get effectively-greedy sampling.
+#ifdef EXECUTORCH_BUILD_CUDA
+  // CUDA build: model fuses the sampler. Pass temperature as a third input.
   float temp_val =
       FLAGS_temperature <= 0.0 ? 1e-6f : static_cast<float>(FLAGS_temperature);
   auto temp_tensor =
       from_blob(&temp_val, {1}, executorch::aten::ScalarType::Float);
+#endif
 
   // ---------------------------------------------------------------
-  // Prefill
+  // Prefill (chunked to respect ring-buffer KV cache limit)
   // ---------------------------------------------------------------
-  std::string run_method = "prefill";
-  if (num_prompt_tokens == 1) {
-    // prefill was exported with min seq_len=2; decode handles T==1.
-    run_method = "decode";
+  // Sliding layers use a ring buffer sized to 2×sliding_window. A single
+  // prefill call must not exceed this size, otherwise index_copy_ with
+  // wrapped indices produces non-deterministic results on CUDA.
+  int64_t max_prefill_chunk = (*metadata_result)[llm::kMaxSeqLen] - 1;
+  {
+    auto get_result = module->get("get_max_prefill_chunk");
+    if (get_result.ok()) {
+      max_prefill_chunk = get_result->toScalar().to<int64_t>();
+    }
   }
 
-  std::vector<int64_t> token_data(prompt_tokens.begin(), prompt_tokens.end());
-  std::vector<int64_t> pos_data(num_prompt_tokens);
-  for (int64_t i = 0; i < num_prompt_tokens; i++) {
-    pos_data[i] = i;
-  }
-  auto tokens_tensor = from_blob(
-      token_data.data(),
-      {1, S(num_prompt_tokens)},
-      executorch::aten::ScalarType::Long);
-  auto pos_tensor = from_blob(
-      pos_data.data(),
-      {S(num_prompt_tokens)},
-      executorch::aten::ScalarType::Long);
+  uint64_t cur_token = 0;
+  int64_t prefill_pos = 0;
+  while (prefill_pos < num_prompt_tokens) {
+    int64_t chunk_len =
+        std::min(num_prompt_tokens - prefill_pos, max_prefill_chunk);
 
-  std::vector<EValue> prefill_inputs = {
-      EValue(tokens_tensor),
-      EValue(pos_tensor),
-      EValue(temp_tensor),
-  };
+    std::string run_method = (chunk_len == 1) ? "decode" : "prefill";
 
-  auto prefill_result = module->execute(run_method, prefill_inputs);
-  if (prefill_result.error() != Error::Ok) {
-    ET_LOG(Error, "%s failed", run_method.c_str());
-    return 1;
+    std::vector<int64_t> token_data(
+        prompt_tokens.begin() + prefill_pos,
+        prompt_tokens.begin() + prefill_pos + chunk_len);
+    std::vector<int64_t> pos_data(chunk_len);
+    for (int64_t i = 0; i < chunk_len; i++) {
+      pos_data[i] = prefill_pos + i;
+    }
+    auto tokens_tensor = from_blob(
+        token_data.data(),
+        {1, S(chunk_len)},
+        executorch::aten::ScalarType::Long);
+    auto pos_tensor = from_blob(
+        pos_data.data(), {S(chunk_len)}, executorch::aten::ScalarType::Long);
+
+    std::vector<EValue> prefill_inputs;
+    prefill_inputs.push_back(EValue(tokens_tensor));
+    prefill_inputs.push_back(EValue(pos_tensor));
+#ifdef EXECUTORCH_BUILD_CUDA
+    prefill_inputs.push_back(EValue(temp_tensor));
+#endif
+
+    auto prefill_result = module->execute(run_method, prefill_inputs);
+    if (prefill_result.error() != Error::Ok) {
+      ET_LOG(
+          Error, "%s failed at pos %" PRId64, run_method.c_str(), prefill_pos);
+      return 1;
+    }
+    cur_token = read_token(prefill_result.get()[0].toTensor());
+    prefill_pos += chunk_len;
   }
-  uint64_t cur_token = read_token(prefill_result.get()[0].toTensor());
 
   stats.prompt_eval_end_ms = llm::time_in_ms();
   double prefill_ms =
@@ -261,8 +296,9 @@ int main(int argc, char** argv) {
       num_prompt_tokens * 1000.0 / prefill_ms);
 
 #ifdef EXECUTORCH_BUILD_CUDA
-  // Make prefill's writes to the shared KV cache visible before decode
-  // potentially runs on a different stream.
+  // Synchronize CUDA device to ensure prefill's writes to shared mutable
+  // buffers (KV cache) are visible to the decode method, which may run on
+  // a different CUDA stream.
   cudaDeviceSynchronize();
 #endif
 
@@ -282,11 +318,12 @@ int main(int argc, char** argv) {
     decode_token_data[0] = static_cast<int64_t>(cur_token);
     decode_pos_data[0] = pos;
 
-    std::vector<EValue> decode_inputs = {
-        EValue(decode_tokens),
-        EValue(decode_pos),
-        EValue(temp_tensor),
-    };
+    std::vector<EValue> decode_inputs;
+    decode_inputs.push_back(EValue(decode_tokens));
+    decode_inputs.push_back(EValue(decode_pos));
+#ifdef EXECUTORCH_BUILD_CUDA
+    decode_inputs.push_back(EValue(temp_tensor));
+#endif
 
     auto decode_result = module->execute("decode", decode_inputs);
     if (decode_result.error() != Error::Ok) {
