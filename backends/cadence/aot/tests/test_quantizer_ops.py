@@ -28,6 +28,7 @@ from executorch.backends.cadence.aot.quantizer.quantizer import (
     CadenceWithLayerNormQuantizer,
     CadenceWithSoftmaxQuantizer,
     qconfig_A16,
+    qconfig_A32W8sym_127,
     qconfig_A8W8,
     qconfig_A8W8sym,
 )
@@ -57,7 +58,6 @@ GraphBuilderFn = Callable[
 # These should be explicitly justified when added.
 EXCLUDED_FROM_ANNOTATION_TESTING: set[type[CadenceQuantizer]] = {
     CadenceNopQuantizer,  # No-op quantizer, doesn't annotate anything
-    CadenceW8A32MixedQuantizer,  # TODO: T247438158 Add test coverage
     CadenceRmsNormNopQuantizer,  # No-op quantizer, doesn't annotate anything, preserves rms_norm from decomposition
 }
 
@@ -248,7 +248,7 @@ QUANTIZER_ANNOTATION_TEST_CASES: list[
 # This ensures TESTED_QUANTIZER_CLASSES stays in sync with actual tests.
 TESTED_QUANTIZER_CLASSES: set[type[CadenceQuantizer]] = {
     type(case[2]) for case in QUANTIZER_ANNOTATION_TEST_CASES
-}
+} | {CadenceW8A32MixedQuantizer}  # tested via dedicated methods
 
 
 class QuantizerAnnotationTest(unittest.TestCase):
@@ -607,6 +607,38 @@ class QuantizerAnnotationTest(unittest.TestCase):
 
         return gm, relu_nodes[0], conv2d_nodes[0]
 
+    def _build_w8a32_conv1d_graph(
+        self,
+    ) -> tuple[torch.fx.GraphModule, torch.fx.Node]:
+        """Build a graph with conv1d(input, weight, bias) for the W8A32 pattern.
+
+        The MixedW8A32ConvPattern requires exactly 3 args (input, weight, bias),
+        no kwargs, weight shape with channels multiple of 4 and kernel_size==3,
+        and input length equal to the kernel size (3).
+        """
+        builder = GraphBuilder()
+        # Input shape: (batch, in_channels, length) = (1, 4, 3) — channels and length match constraints.
+        x = builder.placeholder("x", torch.randn(1, 4, 3))
+        # Weight shape: (out_channels, in_channels, kernel_size) = (8, 4, 3).
+        weight = builder.placeholder("weight", torch.randn(8, 4, 3))
+        bias = builder.placeholder("bias", torch.randn(8))
+        conv1d = builder.call_operator(
+            op=torch.ops.aten.conv1d.default,
+            args=(x, weight, bias),
+            meta=NodeMetadata(
+                {"source_fn_stack": [("conv1d", torch.ops.aten.conv1d.default)]}
+            ),
+        )
+        builder.output([conv1d])
+        gm = builder.get_graph_module()
+
+        conv1d_nodes = gm.graph.find_nodes(
+            op="call_function",
+            target=torch.ops.aten.conv1d.default,
+        )
+        self.assertEqual(len(conv1d_nodes), 1, "Should find exactly one conv1d node")
+        return gm, conv1d_nodes[0]
+
     def _build_conv1d_relu_graph(
         self,
     ) -> tuple[torch.fx.GraphModule, torch.fx.Node, torch.fx.Node]:
@@ -741,6 +773,26 @@ class QuantizerAnnotationTest(unittest.TestCase):
                 f"test_quantizer_annotation and not in EXCLUDED_FROM_ANNOTATION_TESTING: "
                 f"{untested_names}. Please add test cases or explicitly exclude them."
             )
+
+    def test_w8a32_mixed_conv1d_annotation(self) -> None:
+        """W8A32 conv1d: weight + bias are int8 sym, input/output stay fp32."""
+        gm, conv_node = self._build_w8a32_conv1d_graph()
+        CadenceW8A32MixedQuantizer().annotate(gm)
+
+        annotation: QuantizationAnnotation = conv_node.meta[Q_ANNOTATION_KEY]
+        self.assertTrue(annotation._annotated)
+        self.assertIsNone(annotation.output_qspec)
+
+        weight_node, bias_node = conv_node.args[1], conv_node.args[2]
+        self.assertEqual(
+            set(annotation.input_qspec_map.keys()), {weight_node, bias_node}
+        )
+        self.assertEqual(
+            annotation.input_qspec_map[weight_node], qconfig_A32W8sym_127.weight
+        )
+        self.assertEqual(
+            annotation.input_qspec_map[bias_node], qconfig_A32W8sym_127.bias
+        )
 
 
 class QuantizerOpsPreserveTest(unittest.TestCase):
