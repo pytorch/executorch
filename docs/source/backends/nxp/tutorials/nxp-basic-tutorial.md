@@ -102,22 +102,18 @@ For further details about `eiq_nsys` refer for the provided user guide in the py
 ### Build the nxp_executor_runner
 Use the provided `examples/nxp/executor_runner/CMakeLists.txt`. It can be build separately: 
 ```bash
-mkdir ./examples/nxp/executor_runner/build 
-pushd ./examples/nxp/executor_runner/build
-cmake ..
-make nxp_executor_runner
-popd
+cmake -B examples/nxp/executor_runner/build -S examples/nxp/executor_runner
+cmake --build examples/nxp/executor_runner/build --target nxp_executor_runner
 ```
 or as part of the ExecuTorch build:
 ```bash
 cd <executorch_root_dir>
-mkdir build
-cmake .. \
+cmake -B cmake-out \
   -DEXECUTORCH_BUILD_NXP_NEUTRON=ON \
   -DEXECUTORCH_BUILD_NXP_NEUTRON_RUNNER=ON \
   -DEXECUTORCH_BUILD_KERNELS_QUANTIZED=ON \
-  -DEXECUTORCH_BUILD_KERNELS_QUANTIZED_AOT=ON \
-make nxp_executorch_runner
+  -DEXECUTORCH_BUILD_KERNELS_QUANTIZED_AOT=ON
+cmake --build cmake-out --target nxp_executorch_runner
 ```
 
 ### Run the nxp_executor_runner
