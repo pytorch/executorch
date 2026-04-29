@@ -50,6 +50,7 @@ logger = logging.getLogger(__name__)
 
 def _export_with_optimum(
     model_id: str,
+    revision: Optional[str],
     output_path: str,
     max_seq_len: int,
     dtype: str,
@@ -73,6 +74,7 @@ def _export_with_optimum(
     logger.info(f"Loading model using optimum-executorch: {model_id}")
     exportable = load_causal_lm_model(
         model_id,
+        revision=revision,
         dtype=dtype_str,
         max_seq_len=max_seq_len,
     )
@@ -124,6 +126,7 @@ def _export_with_optimum(
 
 def _export_with_custom_components(
     model_id: str,
+    revision: Optional[str],
     output_path: str,
     max_seq_len: int,
     dtype: str,
@@ -171,6 +174,8 @@ def _export_with_custom_components(
         "torch_dtype": torch_dtype,
         "low_cpu_mem_usage": True,
     }
+    if revision is not None:
+        load_kwargs["revision"] = revision
     if attn_implementation:
         load_kwargs["attn_implementation"] = attn_implementation
     model = AutoModelForCausalLM.from_pretrained(model_id, **load_kwargs)
@@ -345,6 +350,7 @@ def _save_program(executorch_program, output_path: str) -> None:
 
 def export_llama_hf(
     model_id: str,
+    revision: Optional[str],
     output_path: str,
     max_seq_len: int = 1024,
     dtype: str = "bf16",
@@ -376,6 +382,7 @@ def export_llama_hf(
         )
         _export_with_custom_components(
             model_id=model_id,
+            revision=revision,
             output_path=output_path,
             max_seq_len=max_seq_len,
             dtype=dtype,
@@ -391,6 +398,7 @@ def export_llama_hf(
         logger.info("Using optimum-executorch pipeline (no custom components)")
         _export_with_optimum(
             model_id=model_id,
+            revision=revision,
             output_path=output_path,
             max_seq_len=max_seq_len,
             dtype=dtype,
@@ -411,6 +419,12 @@ def main():
         type=str,
         default="unsloth/Llama-3.2-1B-Instruct",
         help="HuggingFace model ID",
+    )
+    parser.add_argument(
+        "--revision",
+        type=str,
+        default=None,
+        help="Optional HuggingFace model revision/commit to pin",
     )
     parser.add_argument(
         "--output",
@@ -451,6 +465,7 @@ def main():
 
     export_llama_hf(
         model_id=args.model_id,
+        revision=args.revision,
         output_path=args.output,
         max_seq_len=args.max_seq_len,
         dtype=args.dtype,

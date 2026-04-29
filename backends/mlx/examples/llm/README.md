@@ -57,6 +57,7 @@ python -m executorch.backends.mlx.examples.llm.export_llm_hf \
 # Gemma 4 text-only export
 python -m executorch.backends.mlx.examples.llm.export_llm_hf \
     --model-id "google/gemma-4-E2B-it" \
+    --revision "b4a601102c3d45e2b7b50e2057a6d5ec8ed4adcf" \
     --output gemma4_hf_int4.pte \
     --use-custom-sdpa \
     --use-custom-kv-cache \
@@ -108,6 +109,7 @@ Validated Gemma 4 run command:
 python -m executorch.backends.mlx.examples.llm.run_llm_hf \
     --pte gemma4_hf_int4.pte \
     --model-id google/gemma-4-E2B-it \
+    --revision b4a601102c3d45e2b7b50e2057a6d5ec8ed4adcf \
     --prompt "What is the capital of France?" \
     --max-new-tokens 50
 ```
