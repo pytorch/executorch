@@ -8,7 +8,7 @@ import os
 import pathlib
 import shutil
 
-from executorch.backends.nxp.tests_models.outputs_dir_importer import outputs_dir
+from executorch.backends.nxp.tests.outputs_dir_importer import outputs_dir
 
 
 def pytest_addoption(parser):

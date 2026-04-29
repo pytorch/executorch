@@ -1235,15 +1235,15 @@ jobs:
 
         # Build and install Executorch
         PYTHON_EXECUTABLE=python \
-        CMAKE_ARGS="-DEXECUTORCH_BUILD_NXP_NEUTRON=ON -DEXECUTORCH_BUILD_NXP_NEUTRON_RUNNER=ON " \
-        .ci/scripts/setup-linux.sh --build-tool "cmake"
+        CMAKE_ARGS="-DEXECUTORCH_BUILD_NXP_NEUTRON=ON -DEXECUTORCH_BUILD_NXP_NEUTRON_RUNNER=ON \
+        -DEXECUTORCH_BUILD_KERNELS_PORTABLE=ON -DEXECUTORCH_BUILD_PYBIND=ON -DEXECUTORCH_BUILD_EXTENSION_MODULE=ON \
+        -DEXECUTORCH_BUILD_EXTENSION_DATA_LOADER=ON -DEXECUTORCH_BUILD_EXTENSION_FLAT_TENSOR=ON \
+        -DEXECUTORCH_BUILD_EXTENSION_TENSOR=ON -DEXECUTORCH_BUILD_EXTENSION_NAMED_DATA_MAP=ON" \
+        .ci/scripts/setup-linux.sh --build-tool "cmake"  --editable true
 
         # Install test requirements
         pip install -r backends/nxp/requirements-tests-pypi.txt
         PYTHON_EXECUTABLE=python bash examples/nxp/setup.sh
-
-        # Run pytest
-        PYTHON_EXECUTABLE=python bash backends/nxp/run_unittests.sh
 
         # Run aot examples:
         PYTHON_EXECUTABLE=python bash examples/nxp/run_aot_example.sh cifar10
@@ -1252,9 +1252,9 @@ jobs:
         # Run e2e example with Simulator:
         PYTHON_EXECUTABLE=python bash examples/nxp/run.sh cifar10
 
-        # Run lightweight model tests:
-        PYTHON_EXECUTABLE=python pytest -c /dev/null backends/nxp/tests_models/ \
-        --nxp_runner_path "./examples/nxp/executor_runner/build/nxp_executor_runner"
+        # Run unit tests:
+        PYTHON_EXECUTABLE=python NXP_RUNNER_PATH="./examples/nxp/executor_runner/build/nxp_executor_runner" \
+        bash backends/nxp/run_unittests.sh
 
   test-samsung-quantmodels-linux:
     name: test-samsung-quantmodels-linux
