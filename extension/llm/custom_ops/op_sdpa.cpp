@@ -412,7 +412,11 @@ Tensor& custom_sdpa_out_impl(
       InvalidArgument,
       output);
 
-  bool use_unfused_sdpa = seq_len == 1;
+  // Quantized GEMM kernels may not handle non-contiguous per-head strides
+  // correctly when seq_dim=ONE and seq_len > 1, so keep the conservative
+  // condition for quantized inputs.
+  bool is_quantized = q.scalar_type() == ScalarType::Char;
+  bool use_unfused_sdpa = (!is_quantized) && (seq_len <= 128 || num_keys_for_causal_attention <= 128);
   if (use_unfused_sdpa) {
     ET_SWITCH_FLOAT_TYPES(output.scalar_type(), ctx, "sdpa", CTYPE, [&] {
       sdpa::impl::cpu_sdpa<CTYPE>(
