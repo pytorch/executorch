@@ -439,7 +439,7 @@ class SimpleADB:
                             else ""
                         ),
                         f"--method_index {method_index}",
-                        f"--iteration {iteration}",
+                        "" if self.direct_build_folder else f"--iteration {iteration}",
                     ]
                 )
                 + self.extra_cmds
