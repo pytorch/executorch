@@ -821,6 +821,11 @@ def pre_memory_planning_passes(
         raise RuntimeError(
             f"sym_shape_eval_pass must be a dict or a PassBase, got {config.sym_shape_eval_pass}"
         )
+    inplace_pass = (
+        [config.inplace_elem_wise_like_ops_pass]
+        if config.inplace_elem_wise_like_ops_pass is not None
+        else []
+    )
     if config.remove_view_copy:
         return [
             NormalizeViewCopyBasePass(),
@@ -828,11 +833,13 @@ def pre_memory_planning_passes(
             ReplaceViewCopyWithViewPass(),
             sym_shape_eval_pass,
             config.to_out_var_pass,
+            *inplace_pass,
         ]
     else:
         return [
             sym_shape_eval_pass,
             config.to_out_var_pass,
+            *inplace_pass,
         ]
 
 
