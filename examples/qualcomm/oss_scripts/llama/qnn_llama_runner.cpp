@@ -210,7 +210,6 @@ std::string get_formatted_prompt(
   return formatted_prompt;
 }
 
-template <typename T>
 void start_runner(
     std::unique_ptr<executorch::extension::Module> module,
     std::vector<std::string>& prompts,
@@ -219,7 +218,7 @@ void start_runner(
       gflags::GetCommandLineFlagInfoOrDie("tokenized_prompt").is_default ? false
                                                                          : true;
   // create llama runner
-  example::Runner<T> runner(
+  example::Runner runner(
       std::move(module),
       FLAGS_decoder_model_version.c_str(),
       FLAGS_model_path.c_str(),
@@ -296,26 +295,8 @@ int main(int argc, char** argv) {
             FLAGS_attention_sink_rope_path.c_str(),
             executorch::extension::Module::LoadMode::MmapUseMlockIgnoreErrors);
   }
-  // Using 8bit as default since this meta is introduced with 16bit kv io
-  // support and older models only have 8bit kv io.
-  example::KvBitWidth kv_bitwidth = example::KvBitWidth::kWidth8;
-  if (module->method_names()->count("get_kv_io_bit_width") > 0) {
-    kv_bitwidth = static_cast<example::KvBitWidth>(
-        module->get("get_kv_io_bit_width").get().toScalar().to<int64_t>());
-  }
-
-  if (kv_bitwidth == example::KvBitWidth::kWidth8) {
-    start_runner<uint8_t>(
-        std::move(module), prompts, std::move(attention_sink_rope_module));
-  } else if (kv_bitwidth == example::KvBitWidth::kWidth16) {
-    start_runner<uint16_t>(
-        std::move(module), prompts, std::move(attention_sink_rope_module));
-  } else {
-    ET_CHECK_MSG(
-        false,
-        "Unsupported kv bitwidth: %ld",
-        static_cast<int64_t>(kv_bitwidth));
-  }
+  start_runner(
+      std::move(module), prompts, std::move(attention_sink_rope_module));
 
   return 0;
 }

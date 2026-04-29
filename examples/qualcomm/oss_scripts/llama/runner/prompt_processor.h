@@ -21,7 +21,7 @@ namespace example {
  * @class PromptProcessor
  * @brief Class for processing prompts using decoder and key-value manager.
  */
-template <typename T>
+
 class PromptProcessor {
  public:
   struct Metadata {
@@ -36,9 +36,10 @@ class PromptProcessor {
   };
   PromptProcessor(
       DecoderRunner* decoder_runner,
-      KVManager<T>* kv_manager,
+      KVManager* kv_manager,
       const std::string& method_name,
-      Metadata metadata);
+      Metadata metadata,
+      std::unique_ptr<executorch::extension::MethodMeta> method_meta);
 
   /**
    * @brief Initialize I/O tensor and allocate I/O data buffer.
@@ -53,9 +54,9 @@ class PromptProcessor {
   /**
    * @brief Get the all logits generated
    *
-   * @return std::vector<uint16_t>& all the logits generated
+   * @return std::vector<std::byte>& all the logits generated
    */
-  virtual const std::vector<uint16_t>& get_all_logits();
+  virtual const std::vector<std::byte>& get_all_logits();
 
   /**
    * Prefill an LLM Module with the given text input.
@@ -77,13 +78,8 @@ class PromptProcessor {
    * @return Total I/O size in bytes.
    */
   inline const size_t total_prompt_processor_io_size_in_bytes() const {
-    if (metadata_.cache_mode == CacheMode::HybridCache) {
-      return input_toks_.size + input_pos_.size + attention_mask_.size +
-          window_attention_mask_.size + logits_.size;
-    } else {
-      return input_toks_.size + input_pos_.size + attention_mask_.size +
-          logits_.size;
-    }
+    return input_toks_.size + input_pos_.size + attention_mask_.size +
+        window_attention_mask_.size + logits_.size;
   }
 
  protected:
@@ -103,7 +99,7 @@ class PromptProcessor {
       int64_t prompt_pos,
       int64_t start_pos);
   DecoderRunner* decoder_runner_;
-  KVManager<T>* kv_manager_;
+  KVManager* kv_manager_;
   std::string method_name_;
 
   // metadata
@@ -112,9 +108,9 @@ class PromptProcessor {
   // inputs and outputs
   TensorStruct<int64_t> input_toks_;
   TensorStruct<int32_t> input_pos_;
-  TensorStruct<uint16_t> attention_mask_;
-  TensorStruct<uint16_t> window_attention_mask_;
-  TensorStruct<uint16_t> logits_;
+  TensorStructRaw attention_mask_;
+  TensorStructRaw window_attention_mask_;
+  TensorStructRaw logits_;
 
   // layer -> TensorImpl
   std::vector<std::unique_ptr<executorch::aten::TensorImpl>> k_cache_in_;
@@ -129,6 +125,6 @@ class PromptProcessor {
   std::vector<executorch::runtime::EValue> cache_inputs_;
 
   // Unused by default, only used when dump_logits_path is provided.
-  std::vector<uint16_t> prompt_all_logits_;
+  std::vector<std::byte> prompt_all_logits_;
 };
 } // namespace example

@@ -191,6 +191,7 @@ class TestQNN(unittest.TestCase):
     inference_speed_output_path = "outputs/inference_speed.txt"
     static_llm_eval_method = ""
     direct_build_folder: str = ""
+    use_fp16 = False
 
     @classmethod
     def setUpClass(cls):
