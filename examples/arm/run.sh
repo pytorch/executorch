@@ -223,6 +223,10 @@ function check_setup () {
             || { echo "Executorch repo doesn't contain CMakeLists.txt file at root level"; return 1; }
 
     backends/arm/scripts/build_executorch.sh --et_build_root="${et_build_root}" --build_type=$build_type $devtools_flag $et_dump_flag --toolchain="${toolchain}"
+    elif [[ ${target} == cortex-m* ]]; then
+        # build_test_runner.sh handles toolchain setup; just validate it's on PATH.
+        hash arm-none-eabi-gcc \
+            || { echo "Could not find arm-none-eabi-gcc on PATH, ${_setup_msg}"; return 1; }
     elif [[ ${target} =~ "vgf" ]]; then
         model_converter=$(which model-converter)
         echo "${model_converter}"
@@ -364,10 +368,6 @@ for i in "${!test_model[@]}"; do
         set -x
         backends/cortex_m/test/build_test_runner.sh
         cortex_m_elf="${et_root_dir}/arm_test/arm_semihosting_executor_runner_corstone-300/arm_executor_runner"
-        # The bundled-IO runner requires its -i argument to point at a real file
-        # even though inputs come from the bundle; write a placeholder next to
-        # the .bpte for run_fvp.sh to pass along.
-        dd if=/dev/zero of="$(dirname "${pte_file}")/fvp_dummy_input.bin" bs=4 count=1 2>/dev/null
         if [ "$build_only" = false ] ; then
             backends/arm/scripts/run_fvp.sh --elf="${cortex_m_elf}" --target="${target}" --bundle="${pte_file}"
         fi

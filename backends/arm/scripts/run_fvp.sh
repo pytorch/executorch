@@ -55,6 +55,8 @@ done
 
 elf_file=$(realpath ${elf_file})
 
+# cortex-m55 is the only Cortex-M CPU on the Corstone-300 board today;
+# cortex-m85 lives on Corstone-320, so it falls through to the SSE-320 FVP.
 if [[ ${target} == *"ethos-u55"* || ${target} == cortex-m55* ]]; then
     fvp_model=FVP_Corstone_SSE-300_Ethos-U55
 else
@@ -111,11 +113,9 @@ if [[ ${target} == cortex-m* ]]; then
     bundle_file=$(realpath "${bundle_file}")
     bundle_dir=$(dirname "${bundle_file}")
     bundle_name=$(basename "${bundle_file}")
-    # The bundled-IO runner requires its -i argument to refer to a real file
-    # even though inputs come from the embedded bundle; the caller is expected
-    # to have created fvp_dummy_input.bin next to the bundle.
-    [[ ! -f "${bundle_dir}/fvp_dummy_input.bin" ]] \
-        && { echo "[${BASH_SOURCE[0]}] ${bundle_dir}/fvp_dummy_input.bin is missing; the caller must create a placeholder input file next to the bundle"; exit 1; }
+    # Bundled-IO runner needs -i to point at a real file even though
+    # inputs come from the bundle.
+    dd if=/dev/zero of="${bundle_dir}/fvp_dummy_input.bin" bs=4 count=1 2>/dev/null
     ${nobuf} ${fvp_model}                                              \
         -C ethosu.num_macs=${num_macs}                                 \
         -C mps3_board.visualisation.disable-visualisation=1            \
