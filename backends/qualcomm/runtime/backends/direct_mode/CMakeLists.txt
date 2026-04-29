@@ -35,14 +35,17 @@ add_library(
 target_include_directories(
   qnn_executorch_skel PRIVATE ${CMAKE_CURRENT_BINARY_DIR}
 )
+# aDSP will also use cDSP c/c++ library since aDSP does not have these
+# libraries.
 target_link_libraries(
   qnn_executorch_skel
   PRIVATE
     extension_data_loader
     qnn_executorch_backend
+    quantized_ops_lib
     etdump
-    ${HEXAGON_TOOLS_ROOT}/Tools/target/hexagon/lib/${DSP_VERSION}/G0/pic/libc.so
-    ${HEXAGON_TOOLS_ROOT}/Tools/target/hexagon/lib/${DSP_VERSION}/G0/pic/libc++.so.1
-    ${HEXAGON_TOOLS_ROOT}/Tools/target/hexagon/lib/${DSP_VERSION}/G0/pic/libc++abi.so.1
+    ${HEXAGON_TOOLS_ROOT}/Tools/target/hexagon/lib/${CDSP_VERSION}/G0/pic/libc.so
+    ${HEXAGON_TOOLS_ROOT}/Tools/target/hexagon/lib/${CDSP_VERSION}/G0/pic/libc++.so.1
+    ${HEXAGON_TOOLS_ROOT}/Tools/target/hexagon/lib/${CDSP_VERSION}/G0/pic/libc++abi.so.1
 )
 target_compile_options(qnn_executorch_skel PRIVATE "-fvisibility=default")

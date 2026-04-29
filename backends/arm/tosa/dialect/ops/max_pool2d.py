@@ -64,7 +64,7 @@ def MAX_POOL2D(
             op="MAX_POOL2D",
         )
 
-    n, c, h, w = x.shape
+    n, h, w, c = x.shape
     k_h, k_w = kernel
     s_h, s_w = stride
     # TOSA MAX_POOL2D pad order is [top, bottom, left, right]
@@ -72,4 +72,4 @@ def MAX_POOL2D(
 
     h_out = (h + p_top + p_bot - k_h) // s_h + 1
     w_out = (w + p_left + p_right - k_w) // s_w + 1
-    return torch.empty(size=[n, c, h_out, w_out], dtype=x.dtype)
+    return torch.empty(size=[n, h_out, w_out, c], dtype=x.dtype)

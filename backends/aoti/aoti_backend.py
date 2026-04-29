@@ -25,7 +25,6 @@ from torch.export.passes import move_to_device_pass
 
 class COMPILE_SPEC_KEYS(Enum):
     METHOD_NAME = "method_name"
-    SHARE_KV_CACHE_ACROSS_METHODS = "share_kv_cache_across_methods"
 
 
 @experimental(
@@ -92,6 +91,19 @@ class AotiBackend(ABC):
     def get_extra_aoti_compile_context_manager(cls):
         """Return extra context manager to apply during aoti_compile stage. By default returns an empty context manager."""
         return contextlib.nullcontext()
+
+    @classmethod
+    def codesign_so(cls, so_path: str, compile_specs: List[CompileSpec]) -> None:
+        """Sign the compiled .so before packing into .pte.
+
+        Called after AOTInductor compilation, before the .so bytes are read
+        and packed into the named data store. Override in platform-specific
+        backends to apply code signing (e.g., macOS codesign for Hardened
+        Runtime compatibility).
+
+        Default: no-op.
+        """
+        return
 
     @classmethod
     @contextlib.contextmanager
@@ -227,6 +239,9 @@ class AotiBackend(ABC):
                 f"Could not find required files in compiled paths, got {paths}"
             )
 
+        # Sign the .so for platform-specific requirements (e.g., macOS Hardened Runtime)
+        cls.codesign_so(so_path, compile_specs)
+
         # Read SO file
         with open(so_path, "rb") as f:
             so_data = f.read()
@@ -286,14 +301,4 @@ class AotiBackend(ABC):
                 return spec.value.decode("utf-8")
         raise RuntimeError(
             f"Could not find method name in compile specs: {compile_specs}"
-        )
-
-    @classmethod
-    def generate_share_kv_cache_compile_spec(cls) -> CompileSpec:
-        """
-        Generate a CompileSpec to enable cross-method KV cache sharing.
-        """
-        return CompileSpec(
-            COMPILE_SPEC_KEYS.SHARE_KV_CACHE_ACROSS_METHODS.value,
-            bytes([1]),
         )

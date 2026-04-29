@@ -269,7 +269,6 @@ def load_prequantized_model(prequantized_dir, max_seq_len=4096, use_splitk_decod
         ".conv_state",
         ".recurrent_state",
         ".cache_positions",
-        ".inv_freq",
     )
     expected_missing = {k for k in missing if any(p in k for p in runtime_prefixes)}
     weight_missing = set(missing) - expected_missing
@@ -555,6 +554,30 @@ def export_and_lower(model, config, args):
         _export_cuda(model, config, args)
 
 
+def _strip_sampler_from_forward(model):
+    """Bind ``model.forward`` to a minimal ``(tokens, input_pos) -> logits``
+    variant for non-CUDA export.
+
+    The default ``Qwen35MoE.forward`` carries an optional temperature input and
+    a sampling branch used only by the on-device CUDA sampler; non-CUDA
+    backends sample on the host so that branch is dead code at trace time.
+    Even when statically eliminated, the extra parameter and branch perturb
+    the program ``torch.export`` produces enough to shift kernel selection in
+    the lowered MLX/Metal graph and slow execution by 10-30%. Eager callers
+    and the CUDA export path are unaffected.
+    """
+    import types
+
+    def _clean_forward(self, tokens, input_pos):
+        x = self.embed_tokens(tokens)
+        for layer in self.layers:
+            x = layer(x, input_pos)
+        x = self.norm(x)
+        return self.lm_head(x)
+
+    model.forward = types.MethodType(_clean_forward, model)
+
+
 def _export_mlx(model, config, args):
     """Export model to .pte via torch.export + MLX backend."""
     import gc
@@ -568,6 +591,8 @@ def _export_mlx(model, config, args):
     )
     from executorch.exir.passes import MemoryPlanningPass
     from torch.export import Dim, export
+
+    _strip_sampler_from_forward(model)
 
     example_tokens = torch.tensor([[0, 1]], dtype=torch.long)
     example_input_pos = torch.tensor([0, 1], dtype=torch.long)
@@ -651,6 +676,7 @@ def _export_metal(model, config, args):
 
     inductor_config.coordinate_descent_tuning = False
     inductor_config.aot_inductor.compile_wrapper_opt_level = "O0"
+    _strip_sampler_from_forward(model)
 
     # --- Decode method (T=1, static shape) ---
     print("Exporting decode method...")
@@ -769,10 +795,11 @@ def _export_cuda(model, config, args):
     print("Exporting decode method...")
     decode_tokens = torch.tensor([[0]], dtype=torch.long)
     decode_pos = torch.tensor([0], dtype=torch.long)
+    decode_temperature = torch.tensor([1.0], dtype=torch.float32)
     with torch.no_grad():
         decode_ep = export(
             model,
-            (decode_tokens, decode_pos),
+            (decode_tokens, decode_pos, decode_temperature),
             strict=True,
         )
     print("Decode export successful!")
@@ -784,18 +811,21 @@ def _export_cuda(model, config, args):
     # that reject longer prompts at runtime.
     _set_batched_moe(model, True)
     print("Exporting prefill method...")
+
     example_prefill_len = config.max_seq_len - 1
     prefill_tokens = torch.zeros((1, example_prefill_len), dtype=torch.long)
     prefill_pos = torch.arange(example_prefill_len, dtype=torch.long)
+    prefill_temperature = torch.tensor([1.0], dtype=torch.float32)
     seq_dim = Dim("seq_len", min=2, max=config.max_seq_len - 1)
     prefill_dynamic_shapes = (
         {1: seq_dim},  # tokens
         {0: seq_dim},  # input_pos
+        None,  # temperature (static scalar tensor)
     )
     with torch.no_grad():
         prefill_ep = export(
             model,
-            (prefill_tokens, prefill_pos),
+            (prefill_tokens, prefill_pos, prefill_temperature),
             dynamic_shapes=prefill_dynamic_shapes,
             strict=True,
         )
@@ -819,7 +849,6 @@ def _export_cuda(model, config, args):
                 CudaPartitioner(
                     [
                         CudaBackend.generate_method_name_compile_spec("decode"),
-                        CudaBackend.generate_share_kv_cache_compile_spec(),
                     ]
                 )
             ],
@@ -827,7 +856,6 @@ def _export_cuda(model, config, args):
                 CudaPartitioner(
                     [
                         CudaBackend.generate_method_name_compile_spec("prefill"),
-                        CudaBackend.generate_share_kv_cache_compile_spec(),
                     ]
                 )
             ],

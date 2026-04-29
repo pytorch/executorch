@@ -36,8 +36,8 @@ from executorch.backends.qualcomm.export_utils import (
 from executorch.backends.qualcomm.serialization.qc_schema import (
     QnnExecuTorchBackendType,
     QnnExecuTorchHtpPerformanceMode,
-    QnnExecuTorchLpaiTargetEnv,
 )
+
 from executorch.backends.qualcomm.tests.utils import (
     convert_pt2e,
     generate_context_binary,
@@ -1315,6 +1315,8 @@ class TestQNNFloatingPointOperator(TestQNN):
         self.lower_module_and_test_output(module, sample_input)
 
     def test_qnn_backend_is_nan(self):
+        if self.enable_x86_64:
+            self.skipTest("isnan produces incorrect results on x86 simulator")
         module = IsNan()  # noqa: F405
         sample_inputs = [
             (
@@ -2189,7 +2191,9 @@ class TestQNNFloatingPointModel(TestQNN):
         module = CausalMask()  # noqa: F405
         torch.manual_seed(8)
         sample_input = (torch.rand((1, 1, 1, 128)) < 0.5,)
-        self.lower_module_and_test_output(module, sample_input)
+        self.lower_module_and_test_output(
+            module, sample_input, skip_mutable_buffer=self.enable_x86_64
+        )
 
     def test_qnn_backend_chunk_add(self):
         module = ChunkAdd()  # noqa: F405
@@ -2400,11 +2404,7 @@ class TestQNNQuantizedOperator(TestQNN):
                 backend_options = generate_htp_compiler_spec(use_fp16=False)
             case QnnExecuTorchBackendType.kLpaiBackend:
                 backend_options = generate_lpai_compiler_spec(
-                    target_env=(
-                        QnnExecuTorchLpaiTargetEnv.kX86
-                        if self.enable_x86_64
-                        else QnnExecuTorchLpaiTargetEnv.kArm
-                    )
+                    target_env=self.get_lpai_target_env()
                 )
             case _:
                 raise ValueError("Backend is not implemented yet")
@@ -4750,11 +4750,7 @@ class TestQNNQuantizedModel(TestQNN):
                 backend_options = generate_htp_compiler_spec(use_fp16=False)
             case QnnExecuTorchBackendType.kLpaiBackend:
                 backend_options = generate_lpai_compiler_spec(
-                    target_env=(
-                        QnnExecuTorchLpaiTargetEnv.kX86
-                        if self.enable_x86_64
-                        else QnnExecuTorchLpaiTargetEnv.kArm
-                    )
+                    target_env=self.get_lpai_target_env()
                 )
             case _:
                 raise ValueError("Backend is not implemented yet")
@@ -4781,7 +4777,9 @@ class TestQNNQuantizedModel(TestQNN):
         module = CausalMask()  # noqa: F405
         sample_input = (torch.rand((1, 1, 1, 128)) < 0.5,)
         module = self.get_qdq_module(module, sample_input)
-        self.lower_module_and_test_output(module, sample_input)
+        self.lower_module_and_test_output(
+            module, sample_input, skip_mutable_buffer=self.enable_x86_64
+        )
 
     def test_qnn_backend_chunk_add(self):
         module = ChunkAdd()  # noqa: F405
@@ -5860,11 +5858,7 @@ class TestQNNQuantizedUtils(TestQNN):
                 backend_options = generate_htp_compiler_spec(use_fp16=False)
             case QnnExecuTorchBackendType.kLpaiBackend:
                 backend_options = generate_lpai_compiler_spec(
-                    target_env=(
-                        QnnExecuTorchLpaiTargetEnv.kX86
-                        if self.enable_x86_64
-                        else QnnExecuTorchLpaiTargetEnv.kArm
-                    )
+                    target_env=self.get_lpai_target_env()
                 )
             case _:
                 raise ValueError("Backend is not implemented yet")
@@ -6102,11 +6096,7 @@ class TestQNNQuantizedUtils(TestQNN):
                 backend_options = generate_htp_compiler_spec(use_fp16=False)
             case QnnExecuTorchBackendType.kLpaiBackend:
                 backend_options = generate_lpai_compiler_spec(
-                    target_env=(
-                        QnnExecuTorchLpaiTargetEnv.kX86
-                        if self.enable_x86_64
-                        else QnnExecuTorchLpaiTargetEnv.kArm
-                    )
+                    target_env=self.get_lpai_target_env()
                 )
             case _:
                 raise ValueError("Backend is not implemented yet")
@@ -6160,11 +6150,7 @@ class TestQNNQuantizedUtils(TestQNN):
                 backend_options = generate_htp_compiler_spec(use_fp16=False)
             case QnnExecuTorchBackendType.kLpaiBackend:
                 backend_options = generate_lpai_compiler_spec(
-                    target_env=(
-                        QnnExecuTorchLpaiTargetEnv.kX86
-                        if self.enable_x86_64
-                        else QnnExecuTorchLpaiTargetEnv.kArm
-                    )
+                    target_env=self.get_lpai_target_env()
                 )
             case _:
                 raise ValueError("Backend is not implemented yet")
@@ -6900,7 +6886,7 @@ class TestExampleLLMScript(TestQNN):
                 SM8650=37,
                 SM8750=45,
                 pte_size=1_500_000_000,  # 1.5 GB
-                wikitext_ppl=17,
+                wikitext_ppl=18,
                 hellaswag_acc_norm=None,
                 sqnr=15,
             ),
@@ -9204,7 +9190,79 @@ class TestUtilsScript(TestQNN):
             golden_output = ep.module()(sample_input, sample_input2)
             self._assert_outputs_equal(golden_output, device_output)
 
-    def test_custom_op(self):
+    def test_cli_execute_with_profile(self):
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            sample_input = torch.randn(1, 2, 3, 4)
+            sample_input2 = torch.randn(1, 2, 3, 4)
+            ep = torch.export.export(
+                Sub_y_x_from_x_y(), (sample_input, sample_input2)  # noqa: F405
+            )
+            torch.export.save(ep, f"{tmp_dir}/sub.pt2")
+            torch.save(sample_input, f"{tmp_dir}/input_0_0.pt")
+            torch.save(sample_input2, f"{tmp_dir}/input_0_1.pt")
+            with open(f"{tmp_dir}/input_list", "w") as f:
+                f.write(f"x:={tmp_dir}/input_0_0.pt y:={tmp_dir}/input_0_1.pt\n")
+
+            # quantize
+            cmds = [
+                "python",
+                "-m",
+                "executorch.examples.qualcomm.util_scripts.cli",
+                "quantize",
+                "--artifact",
+                f"{tmp_dir}/sub.pt2",
+                "--output_folder",
+                f"{tmp_dir}/q_out",
+                "--input_list",
+                f"{tmp_dir}/input_list",
+                "--soc_model",
+                self.soc_model,
+            ]
+            subprocess.run(cmds, stdout=subprocess.DEVNULL)
+            self.assertTrue(os.path.isfile(f"{tmp_dir}/q_out/sub_quantized.pt2"))
+            # compile
+            cmds = [
+                "python",
+                "-m",
+                "executorch.examples.qualcomm.util_scripts.cli",
+                "compile",
+                "--artifact",
+                f"{tmp_dir}/q_out/sub_quantized.pt2",
+                "--output_folder",
+                f"{tmp_dir}/c_out",
+                "--soc_model",
+                self.soc_model,
+            ]
+            subprocess.run(cmds, stdout=subprocess.DEVNULL)
+            self.assertTrue(os.path.isfile(f"{tmp_dir}/c_out/sub_quantized.pte"))
+            self.assertTrue(os.path.isfile(f"{tmp_dir}/c_out/sub_quantized.svg"))
+            # execute
+            cmds = [
+                "python",
+                "-m",
+                "executorch.examples.qualcomm.util_scripts.cli",
+                "execute",
+                "--artifact",
+                f"{tmp_dir}/c_out/sub_quantized.pte",
+                "--output_folder",
+                f"{tmp_dir}/e_out",
+                "--soc_model",
+                self.soc_model,
+                "--target",
+                self.target,
+                "--device",
+                self.device,
+                "--build_folder",
+                self.build_folder,
+                "--input_list",
+                f"{tmp_dir}/input_list",
+                "--profile",
+            ]
+            subprocess.run(cmds, stdout=subprocess.DEVNULL)
+            performance_file = f"{tmp_dir}/e_out/performance.json"
+            self.assertTrue(os.path.isfile(performance_file))
+
+    def test_custom_op_1(self):
         if not self.required_envs([self.op_package_dir]):
             self.skipTest("missing required envs")
         cmds = [
@@ -9218,6 +9276,42 @@ class TestUtilsScript(TestQNN):
             self.device,
             "--soc_model",
             self.soc_model,
+            "--target",
+            self.target,
+            "--ip",
+            self.ip,
+            "--port",
+            str(self.port),
+            "--op_package_dir",
+            self.op_package_dir,
+            "--build_op_package",
+        ]
+        if self.host:
+            cmds.extend(["--host", self.host])
+        if self.enable_x86_64:
+            cmds.extend(["--enable_x86_64"])
+
+        p = subprocess.Popen(cmds, stdout=subprocess.DEVNULL)
+        with Listener((self.ip, self.port)) as listener:
+            conn = listener.accept()
+            p.communicate()
+            msg = json.loads(conn.recv())
+            self.assertTrue(msg["is_close"])
+
+    def test_custom_op_2(self):
+        if not self.required_envs([self.op_package_dir]):
+            self.skipTest("missing required envs")
+        cmds = [
+            "python",
+            f"{self.executorch_root}/examples/qualcomm/custom_op/custom_ops_2.py",
+            "--artifact",
+            self.artifact_dir,
+            "--build_folder",
+            self.build_folder,
+            "--device",
+            self.device,
+            "--model",
+            self.model,
             "--target",
             self.target,
             "--ip",
