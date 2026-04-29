@@ -17,6 +17,7 @@ import torch
 import tosa_serializer as ts
 from executorch.backends.arm.tosa.specification import TosaSpecification
 
+TOSA_CONTROL_FLOW_REGION_NAME_META = "tosa_control_flow_region_name"
 TOSA_TENSOR_NAME_META = "tosa_tensor_name"
 
 UNSUPPORTED_DTYPES = (

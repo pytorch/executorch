@@ -250,8 +250,6 @@ def test_cond_tosa_INT(case: Callable[[], tuple[torch.nn.Module, tuple]]):
         example_inputs,
         aten_op,
         tosa_extensions=["cf"],
-        frobenius_threshold=0.8,
-        cosine_threshold=0.8,  # MLETORCH-1808
     )
     _set_branch_calibration_samples(pipeline, module, example_inputs)
     # Make sure no cond ops are left after partitioning.
