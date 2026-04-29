@@ -232,7 +232,7 @@ public class <span class="typeNameLabel"><a href=Module.html>Module</a></span>
                                         </tr>
                                         
                                         <tr id="i5" class="rowColor">
-                                            <td class="colFirst"><code>void</code>
+                                            <td class="colFirst"><code>int</code>
                                             </td>
                                             <th class="colSecond" scope="row"><code><a href=Module.html#loadMethod(String)>loadMethod</a>(<a href=https://developer.android.com/reference/kotlin/java/lang/String.html>String</a> methodName) </code>
                                             </th>
@@ -240,7 +240,7 @@ public class <span class="typeNameLabel"><a href=Module.html>Module</a></span>
                                         </tr>
                                         
                                         <tr id="i6" class="altColor">
-                                            <td class="colFirst"><code><a href=https://kotlinlang.org/api/latest/jvm/stdlib/kotlin/-array/index.html>Array</a>&lt;<a href=https://developer.android.com/reference/kotlin/java/lang/String.html>String</a>&gt;</code>
+                                            <td class="colFirst"><code>native <a href=https://kotlinlang.org/api/latest/jvm/stdlib/kotlin/-array/index.html>Array</a>&lt;<a href=https://developer.android.com/reference/kotlin/java/lang/String.html>String</a>&gt;</code>
                                             </td>
                                             <th class="colSecond" scope="row"><code><a href=Module.html#getMethods()>getMethods</a>() </code>
                                             </th>
@@ -272,7 +272,7 @@ public class <span class="typeNameLabel"><a href=Module.html>Module</a></span>
                                         </tr>
                                         
                                         <tr id="i10" class="altColor">
-                                            <td class="colFirst"><code>boolean</code>
+                                            <td class="colFirst"><code>native boolean</code>
                                             </td>
                                             <th class="colSecond" scope="row"><code><a href=Module.html#etdump()>etdump</a>() </code>
                                             </th>
@@ -464,7 +464,7 @@ public class <span class="typeNameLabel"><a href=Module.html>Module</a></span>
                                           >
                                     <li class="blockList">
                                         <h4>loadMethod</h4>
-                                        <pre class="methodSignature"> void <a href=Module.html#loadMethod(String)>loadMethod</a>(<a href=https://developer.android.com/reference/kotlin/java/lang/String.html>String</a> methodName)</pre>
+                                        <pre class="methodSignature"> int <a href=Module.html#loadMethod(String)>loadMethod</a>(<a href=https://developer.android.com/reference/kotlin/java/lang/String.html>String</a> methodName)</pre>
                                         <div class="block"><p>Load a method on this module. This might help with the first time inference performance,because otherwise the method is loaded lazily when it's execute. Note: this function issynchronous, and will block until the method is loaded. Therefore, it is recommended to callthis on a background thread. However, users need to make sure that they don't execute beforethis function returns.</p></div>
                                         
                                         <!-- TODO missing return annotation -->
@@ -479,7 +479,7 @@ public class <span class="typeNameLabel"><a href=Module.html>Module</a></span>
                                           >
                                     <li class="blockList">
                                         <h4>getMethods</h4>
-                                        <pre class="methodSignature"> <a href=https://kotlinlang.org/api/latest/jvm/stdlib/kotlin/-array/index.html>Array</a>&lt;<a href=https://developer.android.com/reference/kotlin/java/lang/String.html>String</a>&gt; <a href=Module.html#getMethods()>getMethods</a>()</pre>
+                                        <pre class="methodSignature"> native <a href=https://kotlinlang.org/api/latest/jvm/stdlib/kotlin/-array/index.html>Array</a>&lt;<a href=https://developer.android.com/reference/kotlin/java/lang/String.html>String</a>&gt; <a href=Module.html#getMethods()>getMethods</a>()</pre>
                                         <div class="block"><p>Returns the names of methods.</p></div>
                                         
                                         <!-- TODO missing return annotation -->
@@ -548,7 +548,7 @@ public class <span class="typeNameLabel"><a href=Module.html>Module</a></span>
                                           >
                                     <li class="blockList">
                                         <h4>etdump</h4>
-                                        <pre class="methodSignature"> boolean <a href=Module.html#etdump()>etdump</a>()</pre>
+                                        <pre class="methodSignature"> native boolean <a href=Module.html#etdump()>etdump</a>()</pre>
                                         <div class="block"><p>Dump the ExecuTorch ETRecord file to /data/local/tmp/result.etdump.</p><p>Currently for internal (minibench) use only.</p></div>
                                         
                                         <!-- TODO missing return annotation -->
