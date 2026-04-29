@@ -125,6 +125,20 @@ def define_common_targets():
         ],
     )
 
+    runtime.cxx_test(
+        name = "op_custom_sdpa_test",
+        srcs = [
+            "op_custom_sdpa_test.cpp",
+        ],
+        visibility = ["//executorch/..."],
+        deps = [
+            "//executorch/runtime/core/exec_aten:lib",
+            "//executorch/runtime/core/exec_aten/testing_util:tensor_util",
+            "//executorch/kernels/test:test_util",
+            ":custom_ops",
+        ],
+    )
+
     ## For preprocess
     runtime.python_library(
         name = "preprocess_custom_ops_py",

@@ -1097,6 +1097,211 @@ void cpu_flash_attention(
   torch::executor::parallel_for(
       0, batchSize * num_head * qSlice, 1, compute_lambda);
 }
+
+/**
+ * @brief Non-flash (unfused) SDPA implementation using standard GEMM.
+ *
+ * Single full GEMM per head for Q@K^T and scores@V, with standard 3-pass
+ * softmax (no tiling). Useful as a simpler baseline and for cases where
+ * flash attention is not optimal (e.g. very short sequences).
+ *
+ * @tparam scalar_t Data type for computation
+ * @param seq_dim Which dimension is sequence dimension (SeqDim::ONE or TWO)
+ *   Used for all of Q, K, V, and output stride extraction.
+ * @param start_pos Starting position for causal masking
+ * @param num_keys_for_causal_attention Number of keys for causal attention
+ */
+template <typename scalar_t>
+void cpu_sdpa(
+    RuntimeContext& ctx,
+    Tensor& output,
+    const Tensor& query,
+    const Tensor& key,
+    const Tensor& value,
+    bool is_causal,
+    const optional<Tensor>& attn_mask,
+    const optional<double>& scale,
+    const SeqDim seq_dim,
+    const int64_t start_pos,
+    const int64_t num_keys_for_causal_attention) {
+  using accum_t = scalar_t;
+  using Vec = vec::Vectorized<accum_t>;
+  accum_t scaling_factor = static_cast<accum_t>(calculate_scale(query, scale));
+
+  int64_t batchSize = query.size(0);
+  int64_t num_head = query.size(1);
+  int64_t qSize = query.size(2);
+  int64_t headSize = query.size(3);
+  int64_t kvSize = value.size(2);
+  int64_t num_heads_kv = key.size(1);
+
+  if (seq_dim == SeqDim::ONE) {
+    num_head = query.size(2);
+    num_heads_kv = key.size(2);
+    qSize = query.size(1);
+    kvSize = value.size(1);
+  }
+
+  if (num_keys_for_causal_attention > 0) {
+    ET_CHECK_MSG(
+        num_keys_for_causal_attention <= kvSize,
+        "num_keys_for_causal_attention must be <= kvSize");
+    kvSize = num_keys_for_causal_attention;
+  }
+
+  ET_CHECK_MSG(
+      num_heads_kv <= num_head,
+      "cpu_sdpa does not support num kv heads > num query heads");
+  ET_CHECK_MSG(
+      num_head % num_heads_kv == 0,
+      "cpu_sdpa: num query heads must be divisible by num kv heads");
+  int64_t num_reps = num_head / num_heads_kv;
+
+  bool has_attn_mask = attn_mask.has_value() && attn_mask.value().numel();
+
+  // Extract strides, swapping seq/head dims based on seq_dim
+  auto q_strides = query.strides();
+  int64_t qStrideB = q_strides[0];
+  int64_t qStrideH = (seq_dim == SeqDim::ONE) ? q_strides[2] : q_strides[1];
+  int64_t qStrideM = (seq_dim == SeqDim::ONE) ? q_strides[1] : q_strides[2];
+
+  auto k_strides = key.strides();
+  int64_t kStrideB = k_strides[0];
+  int64_t kStrideH = (seq_dim == SeqDim::ONE) ? k_strides[2] : k_strides[1];
+  int64_t kStrideN = (seq_dim == SeqDim::ONE) ? k_strides[1] : k_strides[2];
+
+  auto v_strides = value.strides();
+  int64_t vStrideB = v_strides[0];
+  int64_t vStrideH = (seq_dim == SeqDim::ONE) ? v_strides[2] : v_strides[1];
+  int64_t vStrideN = (seq_dim == SeqDim::ONE) ? v_strides[1] : v_strides[2];
+
+  auto o_strides = output.strides();
+  int64_t oStrideB = o_strides[0];
+  int64_t oStrideH = (seq_dim == SeqDim::ONE) ? o_strides[2] : o_strides[1];
+  int64_t oStrideM = (seq_dim == SeqDim::ONE) ? o_strides[1] : o_strides[2];
+
+  int64_t mStrideM = 0;
+  if (has_attn_mask) {
+    auto m_strides = attn_mask.value().strides();
+    mStrideM = m_strides[0];
+  }
+
+  // Allocate per-thread scores buffer: [qSize, kvSize] per (batch, head)
+#ifdef ET_USE_THREADPOOL
+  int64_t num_thread =
+      ::executorch::extension::threadpool::get_threadpool()->get_thread_count();
+#else
+  int64_t num_thread = 1;
+#endif
+
+  int64_t scores_per_thread = qSize * kvSize;
+  int64_t size_bytes = scores_per_thread * num_thread * sizeof(accum_t);
+  std::unique_ptr<char[]> allocated_buf;
+  void* buf;
+  Result<void*> scratch = ctx.allocate_temp(size_bytes, 64);
+  if (!scratch.ok()) {
+    allocated_buf = std::make_unique<char[]>(size_bytes);
+    buf = allocated_buf.get();
+  } else {
+    buf = scratch.get();
+  }
+  accum_t* buf_data = reinterpret_cast<accum_t*>(buf);
+
+  const scalar_t* q_data = query.const_data_ptr<scalar_t>();
+  const scalar_t* k_data = key.const_data_ptr<scalar_t>();
+  const scalar_t* v_data = value.const_data_ptr<scalar_t>();
+  const accum_t* mask_data =
+      has_attn_mask ? attn_mask.value().const_data_ptr<accum_t>() : nullptr;
+  scalar_t* out_data = output.mutable_data_ptr<scalar_t>();
+
+  auto compute_lambda = [&](int64_t begin, int64_t end) {
+    int64_t ompIdx = torch::executor::get_thread_num();
+    accum_t* scores = buf_data + ompIdx * scores_per_thread;
+
+    for (int64_t idx = begin; idx < end; ++idx) {
+      int64_t b = idx / num_head;
+      int64_t h = idx % num_head;
+      int64_t kv_h = h / num_reps;
+
+      // Pointer to Q[b, h, :, :] and K[b, kv_h, :, :] with appropriate strides
+      const scalar_t* q_ptr = q_data + b * qStrideB + h * qStrideH;
+      const scalar_t* k_ptr = k_data + b * kStrideB + kv_h * kStrideH;
+      const scalar_t* v_ptr = v_data + b * vStrideB + kv_h * vStrideH;
+      scalar_t* o_ptr = out_data + b * oStrideB + h * oStrideH;
+
+      // GEMM 1: scores[qSize, kvSize] = scaling_factor * Q[qSize, D] @ K^T[D,
+      // kvSize]
+      ::executorch::cpublas::gemm(
+          ::executorch::cpublas::TransposeType::Transpose,
+          ::executorch::cpublas::TransposeType::NoTranspose,
+          kvSize,
+          qSize,
+          headSize,
+          scaling_factor,
+          k_ptr,
+          kStrideN,
+          q_ptr,
+          qStrideM,
+          static_cast<accum_t>(0),
+          scores,
+          kvSize);
+
+      // Causal mask + attention mask + softmax per query row
+      for (int64_t qi = 0; qi < qSize; ++qi) {
+        accum_t* row = scores + qi * kvSize;
+
+        // Apply attention mask if present
+        if (has_attn_mask) {
+          const accum_t* mask_row = mask_data + qi * mStrideM;
+          for (int64_t j = 0; j < kvSize; ++j) {
+            row[j] += mask_row[j];
+          }
+        }
+
+        // Apply causal mask
+        if (is_causal) {
+          int64_t valid = std::min(start_pos + qi + 1, kvSize);
+          for (int64_t j = valid; j < kvSize; ++j) {
+            row[j] = -std::numeric_limits<accum_t>::infinity();
+          }
+        }
+
+        // Softmax: find max, compute exp, normalize
+        accum_t max_val = vec::reduce_all<accum_t>(
+            [](Vec& x, Vec& y) { return vec::maximum(x, y); }, row, kvSize);
+
+        if (max_val == -std::numeric_limits<accum_t>::infinity()) {
+          fill_stub(row, static_cast<accum_t>(0), kvSize);
+        } else {
+          accum_t sum_val = max_val;
+          const int kvSizeInt = static_cast<int>(kvSize);
+          _exp_reduce_sum_fusion_kernel(row, kvSizeInt, row, sum_val);
+          accum_t inv_sum = static_cast<accum_t>(1) / sum_val;
+          vec::map<accum_t>(
+              [inv_sum](Vec x) { return x * Vec(inv_sum); }, row, row, kvSize);
+        }
+      }
+
+      // GEMM 2: output[qSize, D] = scores[qSize, kvSize] @ V[kvSize, D]
+      ::executorch::cpublas::gemm(
+          ::executorch::cpublas::TransposeType::NoTranspose,
+          ::executorch::cpublas::TransposeType::NoTranspose,
+          headSize,
+          qSize,
+          kvSize,
+          static_cast<accum_t>(1),
+          v_ptr,
+          vStrideN,
+          scores,
+          kvSize,
+          static_cast<accum_t>(0),
+          o_ptr,
+          oStrideM);
+    }
+  };
+  torch::executor::parallel_for(0, batchSize * num_head, 1, compute_lambda);
+}
+
 } // namespace sdpa::impl
 } // namespace native
 } // namespace executor
