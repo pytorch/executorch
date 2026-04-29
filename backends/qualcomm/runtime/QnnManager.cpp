@@ -283,7 +283,7 @@ Error QnnManager::InitContext(
   if (IsOnlinePrepare() &&
       backend_params_ptr_->qnn_backend_cache_ptr_->GetCacheState() ==
           QnnBackendCache::SERIALIZE) {
-    // The place is used for AOT
+    // Set up DLC environment at AOT time
     // Check whether the QNN version supports the DLC format.
     Qnn_ApiVersion_t qnn_version = {QNN_VERSION_INIT};
     backend_bundle_ptr_->implementation->GetQnnInterface()

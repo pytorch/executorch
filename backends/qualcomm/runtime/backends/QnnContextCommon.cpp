@@ -86,7 +86,7 @@ Error QnnContext::Configure() {
     return Error::Internal;
   }
   if (cache_->GetCacheState() == QnnBackendCache::ONLINE_PREPARE) {
-    // The place is used for runtime
+    // Register DLC graphs at runtime
     return qnn_dlc_manager_->RegisterGraphsFromDLC(
         implementation_, system_implementation_, backend_, this, cache_);
   }

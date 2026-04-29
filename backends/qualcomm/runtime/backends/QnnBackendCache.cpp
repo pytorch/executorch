@@ -88,13 +88,6 @@ Error QnnBackendCache::Configure(const std::vector<std::string>& graph_names) {
     return Error::Ok;
   }
 
-  if (qnn_sys_impl_->Load() != Error::Ok) {
-    QNN_EXECUTORCH_LOG_ERROR(
-        "Failed to Load QnnSystem "
-        "APIs. Caching mechanism is being disabled.");
-    return Error::Internal;
-  }
-
   Qnn_ErrorHandle_t error = QNN_SUCCESS;
 
   // create QNN SystemContext
