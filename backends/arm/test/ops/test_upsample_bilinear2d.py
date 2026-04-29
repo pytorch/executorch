@@ -140,6 +140,25 @@ class Interpolate(torch.nn.Module):
         return self.upsample(x)
 
 
+class InterpolateAlignCornersFalse(torch.nn.Module):
+    def __init__(
+        self,
+        size: Optional[Tuple[int]],
+        scale_factor: Optional[float | Tuple[float]],
+    ):
+        super().__init__()
+        self.upsample = lambda x: torch.nn.functional.interpolate(
+            x,
+            size=size,
+            scale_factor=scale_factor,
+            mode="bilinear",
+            align_corners=False,
+        )
+
+    def forward(self, x):
+        return self.upsample(x)
+
+
 @common.parametrize(
     "test_data",
     test_data_suite_tosa | test_data_suite_tosa_bf16 | test_data_suite_tosa_fp16,
@@ -228,6 +247,17 @@ def test_upsample_bilinear2d_vec_tosa_FP_Interpolate(
     )
     if not compare_outputs:
         pipeline.pop_stage(-1)
+    pipeline.run()
+
+
+def test_upsample_bilinear2d_vec_tosa_does_not_delegate_exact_one_sixteenth_downscale():
+    pipeline = OpNotSupportedPipeline[input_t1](
+        InterpolateAlignCornersFalse(size=None, scale_factor=1.0 / 16.0),
+        (torch.randn(1, 3, 256, 448),),
+        {exir_op: 1},
+        n_expected_delegates=0,
+    )
+
     pipeline.run()
 
 
