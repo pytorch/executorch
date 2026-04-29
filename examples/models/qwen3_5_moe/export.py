@@ -952,7 +952,7 @@ def main():  # noqa: C901
         "--moe-activation-dtype",
         choices=["bf16", "int8"],
         default="bf16",
-        help="MoE activation dtype for prefill only. Decode always uses bf16. bf16 (default): W4A16 batched GEMM. int8: W4A8 with INT8 tensor cores (~1.5x faster prefill).",
+        help="MoE activation dtype for prefill only. Decode always uses bf16. bf16 (default): W4A16 batched GEMM. int8: W4A8 with INT8 tensor cores.",
     )
     args = parser.parse_args()
 
