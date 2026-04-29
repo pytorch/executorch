@@ -233,81 +233,16 @@ Result<executorch_flatbuffer::ExecutionPlan*> get_execution_plan(
     pte_data_map.emplace(std::move(pte_data_map_result.get()));
   }
 
-  // Constant data may live inside the flatbuffer data (constant_buffer) or in a
-  // separate segment (constant_segment). It should not be in both.
-  // Check constant_segment->offsets()->size() > 1, as the offsets list will
-  // always contain a placeholder value 0 for non-const tensors. If this is the
-  // only offset, the constant segment is empty and does not need to be loaded.
+  // Constant data lives in a separate segment (constant_segment).
   const auto* constant_segment = flatbuffer_program->constant_segment();
-  if (constant_segment != nullptr && constant_segment->offsets() != nullptr &&
-      constant_segment->offsets()->size() > 0) {
-    if (constant_segment->offsets()->size() == 1) {
-      // No constants; the constant segment is empty and does not
-      // need to be loaded.
-      return Program(
-          loader,
-          segment_base_offset,
-          std::move(program_data.get()),
-          flatbuffer_program,
-          /*constant_segment_data=*/FreeableBuffer{},
-          std::move(pte_data_map));
-    }
-    // The constant data is inside a separate segment.
-    const auto* constant_buffer = flatbuffer_program->constant_buffer();
-    ET_CHECK_OR_RETURN_ERROR(
-        constant_buffer == nullptr || constant_buffer->size() == 0,
-        InvalidProgram,
-        "constant_buffer contains %zu items, "
-        "constant_segment.offsets contains %zu items. Only one should be used.",
-        static_cast<size_t>(constant_buffer->size()),
-        static_cast<size_t>(constant_segment->offsets()->size()));
-    const auto* segments = flatbuffer_program->segments();
-    ET_CHECK_OR_RETURN_ERROR(
-        segments != nullptr, InvalidProgram, "No segments in program");
-
-    // Load constant segment.
-    // TODO(T171839323): Add test for segment_index > num available segments.
-    ET_CHECK_OR_RETURN_ERROR(
-        constant_segment->segment_index() < segments->size(),
-        InvalidProgram,
-        "Constant segment index %zu invalid for program segments range %zu",
-        static_cast<size_t>(constant_segment->segment_index()),
-        static_cast<size_t>(segments->size()));
-
-    const executorch_flatbuffer::DataSegment* data_segment =
-        segments->Get(constant_segment->segment_index());
-    Result<FreeableBuffer> constant_segment_data = loader->load(
-        segment_base_offset + data_segment->offset(),
-        data_segment->size(),
-        DataLoader::SegmentInfo(
-            DataLoader::SegmentInfo::Type::Constant,
-            constant_segment->segment_index()));
-    if (!constant_segment_data.ok()) {
-      return constant_segment_data.error();
-    }
-    // The FreeableBuffer owns the data that flatbuffer_program points into.
-    // Also keep a pointer to the loader so it can load more segments when
-    // necessary.
-    return Program(
-        loader,
-        segment_base_offset,
-        std::move(program_data.get()),
-        flatbuffer_program,
-        std::move(constant_segment_data.get()),
-        std::move(pte_data_map));
-  } else {
-    // The constant data is stored inside the flatbuffer, so this program does
-    // not contain a separate segment for it.
-
-    // NOTE: This branch is deprecated from ExecuTorch 0.7 onwards.
-    // Please regenerate your PTE file to ensure newer ExecuTorch runtimes can
-    // support it. ExecuTorch deprecation policy:
-    // https://docs.pytorch.org/executorch/stable/api-life-cycle.html#deprecation-policy.
-    // For support, contact the PyTorch Edge team or make an issue in:
-    // https://github.com/pytorch/executorch/issues.
-    ET_LOG(
-        Error,
-        "!!DEPRECATED!! This branch is deprecated from ExecuTorch 0.7; re-export this PTE file to ensure support on newer runtimes.");
+  ET_CHECK_OR_RETURN_ERROR(
+      constant_segment != nullptr && constant_segment->offsets() != nullptr,
+      InvalidProgram,
+      "Program constant segment is nullptr. Expect at least one constant placeholder.");
+  // The offsets list will always contain a placeholder value 0 for non-const
+  // tensors. If this is the only offset, the constant segment is empty and
+  // does not need to be loaded.
+  if (constant_segment->offsets()->size() == 1) {
     return Program(
         loader,
         segment_base_offset,
@@ -316,6 +251,48 @@ Result<executorch_flatbuffer::ExecutionPlan*> get_execution_plan(
         /*constant_segment_data=*/FreeableBuffer{},
         std::move(pte_data_map));
   }
+  const auto* constant_buffer = flatbuffer_program->constant_buffer();
+  ET_CHECK_OR_RETURN_ERROR(
+      constant_buffer == nullptr || constant_buffer->size() == 0,
+      InvalidProgram,
+      "constant_buffer contains %zu items, "
+      "constant_segment.offsets contains %zu items. Only one should be used.",
+      static_cast<size_t>(constant_buffer->size()),
+      static_cast<size_t>(constant_segment->offsets()->size()));
+  const auto* segments = flatbuffer_program->segments();
+  ET_CHECK_OR_RETURN_ERROR(
+      segments != nullptr, InvalidProgram, "No segments in program");
+
+  // Load constant segment.
+  // TODO(T171839323): Add test for segment_index > num available segments.
+  ET_CHECK_OR_RETURN_ERROR(
+      constant_segment->segment_index() < segments->size(),
+      InvalidProgram,
+      "Constant segment index %zu invalid for program segments range %zu",
+      static_cast<size_t>(constant_segment->segment_index()),
+      static_cast<size_t>(segments->size()));
+
+  const executorch_flatbuffer::DataSegment* data_segment =
+      segments->Get(constant_segment->segment_index());
+  Result<FreeableBuffer> constant_segment_data = loader->load(
+      segment_base_offset + data_segment->offset(),
+      data_segment->size(),
+      DataLoader::SegmentInfo(
+          DataLoader::SegmentInfo::Type::Constant,
+          constant_segment->segment_index()));
+  if (!constant_segment_data.ok()) {
+    return constant_segment_data.error();
+  }
+  // The FreeableBuffer owns the data that flatbuffer_program points into.
+  // Also keep a pointer to the loader so it can load more segments when
+  // necessary.
+  return Program(
+      loader,
+      segment_base_offset,
+      std::move(program_data.get()),
+      flatbuffer_program,
+      std::move(constant_segment_data.get()),
+      std::move(pte_data_map));
 }
 
 size_t Program::num_methods() const {
@@ -408,73 +385,49 @@ Result<const void*> Program::get_constant_buffer_data(
   auto internal_program =
       static_cast<const executorch_flatbuffer::Program*>(internal_program_);
 
-  // Constant data is either in a separate segment (constant_segment_data) and
-  // loaded during Program::load, or stored inside the flatbuffer data
-  // (constant_buffer).
-  if (constant_segment_data_.data() != nullptr) {
-    const auto* constant_segment = internal_program->constant_segment();
-    size_t num_elems = constant_segment == nullptr
-        ? 0
-        : (constant_segment->offsets() == nullptr
-               ? 0
-               : constant_segment->offsets()->size());
-    ET_CHECK_OR_RETURN_ERROR(
-        buffer_index < num_elems,
-        InvalidArgument,
-        "Constant segment buffer index %zu invalid for program constant segment range %zu",
-        buffer_index,
-        num_elems);
+  // Constant data must live in a separate segment (constant_segment_data) that
+  // was loaded during Program::load. The deprecated inline
+  // Program.constant_buffer path is rejected at load time.
+  ET_CHECK_OR_RETURN_ERROR(
+      constant_segment_data_.data() != nullptr,
+      InvalidProgram,
+      "Program has no constant segment; cannot retrieve constant data.");
 
-    // All constant data is stored in one segment, with each tensor aligned to
-    // @executorch_tensor_alignment. Tensor offsets are stored in the flatbuffer
-    // data in Program.constant_segment.offsets.
-    // The constant data at buffer_index is located at: base address of the
-    // constant segment + offset for tensor at buffer_index.
-    uint64_t offset = static_cast<uint64_t>(
-        (*internal_program->constant_segment()->offsets())[buffer_index]);
+  const auto* constant_segment = internal_program->constant_segment();
+  size_t num_elems = constant_segment == nullptr
+      ? 0
+      : (constant_segment->offsets() == nullptr
+             ? 0
+             : constant_segment->offsets()->size());
+  ET_CHECK_OR_RETURN_ERROR(
+      buffer_index < num_elems,
+      InvalidArgument,
+      "Constant segment buffer index %zu invalid for program constant segment range %zu",
+      buffer_index,
+      num_elems);
 
-    size_t size = constant_segment_data_.size();
-    ET_CHECK_OR_RETURN_ERROR(
-        offset <= size && nbytes <= size - offset,
-        InvalidArgument,
-        "Constant segment offset %" PRIu64
-        " + size_bytes %zu invalid for program constant segment size %zu",
-        offset,
-        nbytes,
-        size);
+  // All constant data is stored in one segment, with each tensor aligned to
+  // @executorch_tensor_alignment. Tensor offsets are stored in the flatbuffer
+  // data in Program.constant_segment.offsets.
+  // The constant data at buffer_index is located at: base address of the
+  // constant segment + offset for tensor at buffer_index.
+  uint64_t offset = static_cast<uint64_t>(
+      (*internal_program->constant_segment()->offsets())[buffer_index]);
 
-    // Offset is wrt the beginning of the constant segment.
-    return static_cast<const void*>(
-        static_cast<const unsigned char*>(constant_segment_data_.data()) +
-        offset);
-  } else {
-    // Otherwise, the constant data is stored inside Program.constant_buffer.
-    const auto* constant_buffer_ptr = internal_program->constant_buffer();
-    size_t num_elems =
-        constant_buffer_ptr == nullptr ? 0 : constant_buffer_ptr->size();
-    ET_CHECK_OR_RETURN_ERROR(
-        buffer_index < num_elems,
-        InvalidArgument,
-        "Constant buffer index %zu invalid for program constant buffer range %zu",
-        buffer_index,
-        num_elems);
+  size_t size = constant_segment_data_.size();
+  ET_CHECK_OR_RETURN_ERROR(
+      offset <= size && nbytes <= size - offset,
+      InvalidArgument,
+      "Constant segment offset %" PRIu64
+      " + size_bytes %zu invalid for program constant segment size %zu",
+      offset,
+      nbytes,
+      size);
 
-    const auto& constant_buffer = *constant_buffer_ptr;
-    const auto* storage = constant_buffer[buffer_index]->storage();
-    auto storage_size = storage == nullptr ? 0 : storage->size();
-    // nbytes (requested from the program) should be less than storage_size
-    // (size of the constant buffer from PTE), to prevent reading out of bounds.
-    // in some cases storage size may be larger than nbytes because of padding;
-    // executorch-tensor-alignment, or 16 by default.
-    ET_CHECK_OR_RETURN_ERROR(
-        nbytes <= storage_size,
-        InvalidArgument,
-        "Requested nbytes %zu exceeds constant buffer storage size %zu",
-        nbytes,
-        static_cast<size_t>(storage_size));
-
-    return storage->data();
-  }
+  // Offset is wrt the beginning of the constant segment.
+  return static_cast<const void*>(
+      static_cast<const unsigned char*>(constant_segment_data_.data()) +
+      offset);
 }
 
 Result<const NamedDataMap*> Program::get_named_data_map() const {

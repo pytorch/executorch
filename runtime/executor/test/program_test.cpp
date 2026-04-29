@@ -502,36 +502,17 @@ TEST_F(ProgramTest, LoadConstantSegment) {
   EXPECT_GE(flatbuffer_program->constant_segment()->offsets()->size(), 1);
 }
 
-TEST_F(ProgramTest, LoadConstantSegmentWhenConstantBufferExists) {
-  // Load the serialized ModuleAddMul data, with constants in the flatbuffer and
-  // no constants in the segment.
+TEST_F(ProgramTest, RejectsDeprecatedInlineConstantBuffer) {
+  // PTE files that store constants inline in the flatbuffer
+  // (Program.constant_buffer, deprecated since ExecuTorch 0.7) must be
+  // rejected at load.
   const char* linear_path =
       std::getenv("DEPRECATED_ET_MODULE_LINEAR_CONSTANT_BUFFER_PATH");
   Result<FileDataLoader> linear_loader = FileDataLoader::from(linear_path);
   ASSERT_EQ(linear_loader.error(), Error::Ok);
 
-  // This file should always be compatible.
-  Result<FreeableBuffer> linear_header = linear_loader->load(
-      /*offset=*/0,
-      Program::kMinHeadBytes,
-      /*segment_info=*/
-      DataLoader::SegmentInfo(DataLoader::SegmentInfo::Type::Program));
-  ASSERT_EQ(linear_header.error(), Error::Ok);
-  EXPECT_EQ(
-      Program::check_header(linear_header->data(), linear_header->size()),
-      Program::HeaderStatus::CompatibleVersion);
-
   Result<Program> program = Program::load(&linear_loader.get());
-  ASSERT_EQ(program.error(), Error::Ok);
-
-  const executorch_flatbuffer::Program* flatbuffer_program =
-      ProgramTestFriend::GetInternalProgram(&program.get());
-
-  // Expect no segments.
-  EXPECT_EQ(flatbuffer_program->segments()->size(), 0);
-
-  // The constant buffer should exist.
-  EXPECT_GE(flatbuffer_program->constant_buffer()->size(), 1);
+  EXPECT_EQ(program.error(), Error::InvalidProgram);
 }
 
 TEST_F(ProgramTest, LoadFromMutableSegment) {
@@ -867,15 +848,10 @@ TEST_F(ProgramTest, NullPlanNameDoesNotCrash) {
 }
 
 TEST_F(ProgramTest, GetConstantBufferDataRejectsOversizedRequest) {
-  const char* path =
-      std::getenv("DEPRECATED_ET_MODULE_LINEAR_CONSTANT_BUFFER_PATH");
-  Result<FileDataLoader> loader = FileDataLoader::from(path);
-  ASSERT_EQ(loader.error(), Error::Ok);
-
-  Result<Program> program = Program::load(&loader.get());
+  Result<Program> program = Program::load(add_loader_.get());
   ASSERT_EQ(program.error(), Error::Ok);
 
-  // Request way more bytes than any buffer could contain
+  // Request way more bytes than the constant segment could contain.
   Result<const void*> data = ProgramTestFriend::get_constant_buffer_data(
       &program.get(), /*buffer_index=*/0, /*nbytes=*/SIZE_MAX);
 
