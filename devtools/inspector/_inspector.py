@@ -1025,6 +1025,7 @@ class Inspector:
             Callable[[Union[int, str], Union[int, float]], Union[int, float]]
         ] = None,
         enable_module_hierarchy: bool = False,
+        reference_graph_name: str = EDGE_DIALECT_GRAPH_KEY,
     ) -> None:
         r"""
         Initialize an `Inspector` instance with the underlying `EventBlock`\ s populated with data from the provided ETDump path or binary,
@@ -1040,6 +1041,7 @@ class Inspector:
             delegate_metadata_parser: Optional function to parse delegate metadata from an Profiling Event. Expected signature of the function is (delegate_metadata_list: List[bytes]) -> Union[List[str], Dict[str, Any]].
             delegate_time_scale_converter: Optional function to convert the time scale of delegate profiling data. If not given, use the conversion ratio of target_time_scale/source_time_scale.
             enable_module_hierarchy: Enable submodules in the operator graph. Defaults to False.
+            reference_graph_name: The reference graph used to consume ETRecord
 
         Returns:
             None
@@ -1104,9 +1106,9 @@ class Inspector:
         # Key str is method name; value is list of ProgramOutputs because of list of test cases
         self._reference_outputs: Dict[str, List[ProgramOutput]] = {}
         self._enable_module_hierarchy = enable_module_hierarchy
-        self._consume_etrecord()
+        self._consume_etrecord(reference_graph_name)
 
-    def _consume_etrecord(self) -> None:
+    def _consume_etrecord(self, reference_graph_name) -> None:
         """
         If an ETRecord is provided, connect it to the EventBlocks and populate the Event metadata.
 
@@ -1147,7 +1149,7 @@ class Inspector:
             enable_module_hierarchy=self._enable_module_hierarchy,
         )
         debug_handle_to_op_node_map = create_debug_handle_to_op_node_mapping(
-            self.op_graph_dict[EDGE_DIALECT_GRAPH_KEY],
+            self.op_graph_dict[reference_graph_name],
         )
         for event_block in self.event_blocks:
             for event in event_block.events:

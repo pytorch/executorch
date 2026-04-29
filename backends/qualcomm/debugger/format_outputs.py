@@ -5,21 +5,30 @@
 # LICENSE file in the root directory of this source tree.
 
 import csv
+import logging
 import os
+import subprocess
 from typing import Any
 
+import executorch.exir as exir
+import pandas
 import pydot
 import torch
+from executorch.backends.qualcomm.debugger.qcom_numerical_comparator_base import (
+    QcomNumericalComparatorBase,
+)
 from executorch.backends.qualcomm.utils.constants import (
     QCOM_QUANT_ATTRS,
     QCOM_SCALE,
     QCOM_SCALES,
-    QCOM_TENSOR_NAME,
     QCOM_ZERO_POINT,
     QCOM_ZERO_POINTS,
 )
+from executorch.exir.debug_handle_utils import DEBUG_HANDLE_KEY
 
-from .metrics_evaluator import MetricEvaluatorBase
+FORMAT = "[%(levelname)s %(asctime)s %(filename)s:%(lineno)s] %(message)s"
+logging.basicConfig(level=logging.INFO, format=FORMAT)
+logging.getLogger().setLevel(logging.INFO)
 
 
 # Copied from site-packages/torch/fx/passes/graph_drawer.py
@@ -39,63 +48,37 @@ def typename(target: Any) -> str:
     return ret.replace("{", r"\{").replace("}", r"\}")
 
 
-def retrieve_node_info(evaluator, node, node_tensor_map):
-
-    node_info = {}
-    node_info["name"] = node.name
-    node_info["op_code"] = node.op
-    node_info["target"] = typename(node.target)
-    node_info["num_users"] = len(node.users)
-
-    if "val" in node.meta:
-        if isinstance(node.meta["val"], torch.Tensor):
-            node_info["pytorch_layout"] = node.meta["val"].shape
-        elif isinstance(node.meta["val"], (list, tuple)):
-            shape_list = []
-            for i in range(len(node.meta["val"])):
-                shape_list.append(node.meta["val"][i].shape)
-            node_info["pytorch_layout"] = shape_list
-
+def get_scale_zero_point(node: torch.fx.node.Node):
+    scale_zero_point = {"scale(s)": None, "zero_point(s)": None}
     if quant_attrs := node.meta.get(QCOM_QUANT_ATTRS):
-        node_info["scale(s)"] = (
+        scale_zero_point["scale(s)"] = (
             quant_attrs.get(QCOM_SCALES)
             if QCOM_SCALES in quant_attrs
             else quant_attrs.get(QCOM_SCALE)
         )
-        node_info["zero_point(s)"] = (
+        scale_zero_point["zero_point(s)"] = (
             quant_attrs.get(QCOM_ZERO_POINTS)
             if QCOM_ZERO_POINTS in quant_attrs
             else quant_attrs.get(QCOM_ZERO_POINT)
         )
-
-    if node.name in node_tensor_map:
-        qnn_output, cpu_output, meta = node_tensor_map[node.name]
-        node_info[QCOM_TENSOR_NAME] = meta.get(QCOM_TENSOR_NAME)
-        node_info[evaluator.metric_name()], node_info["is_valid_score"] = (
-            evaluator.evaluate(qnn_output, cpu_output)
-        )
-
-        # The values in meta are directly retrieved from the node during the forward hook, which means the values should be the same for meta and node.meta.
-        # Storing these data during the forward hook helps us compare QNN tensors with CPU tensors without traversing the graph.
-        # We only check "scale" and not "scales" since the forward hook only stores the node's output, which should always be per tensor.
-        if QCOM_QUANT_ATTRS in node.meta:
-            assert (
-                node_info["scale(s)"] == node.meta[QCOM_QUANT_ATTRS][QCOM_SCALE]
-            ), "node meta scale should be same as scale retrieve during forward hook"
-            assert (
-                node_info["zero_point(s)"]
-                == node.meta[QCOM_QUANT_ATTRS][QCOM_ZERO_POINT]
-            ), "node meta zero_point should be same as zero_point retrieve during forward hook"
-
-    return node_info
+    return scale_zero_point
 
 
-def export_svg(
+def get_pytorch_layout_info(node: torch.fx.node.Node):
+    val = node.meta.get("val")
+    if val is None:
+        return None
+    if isinstance(val, torch.Tensor):
+        return val.shape
+    return [v.shape for v in val if isinstance(v, torch.Tensor)]
+
+
+def export_svg(  # noqa: C901
     title: str,
     path: str,
-    evaluator: MetricEvaluatorBase,
-    edge_module: torch.fx.GraphModule,
-    node_tensor_map: dict,
+    edge_ep: exir.ExirExportedProgram,
+    numeric_results: pandas.core.frame.DataFrame,
+    comparator: QcomNumericalComparatorBase,
 ):
     def get_node_style(is_valid_score: bool):
         template = {
@@ -117,37 +100,46 @@ def export_svg(
     node_map = {}
 
     # Create node
-    for node in edge_module.graph.nodes:
+    for node in edge_ep.graph_module.graph.nodes:
         # These are just nodes before fold_quant and still there
         if len(node.users) == 0 and node.op == "placeholder":
             continue
-        node_info = retrieve_node_info(
-            evaluator=evaluator, node=node, node_tensor_map=node_tensor_map
-        )
+
+        pytorch_layout = get_pytorch_layout_info(node)
+        scale_zero_point = get_scale_zero_point(node)
+        scale = scale_zero_point["scale(s)"]
+        zero_point = scale_zero_point["zero_point(s)"]
 
         node_label = "{"
-        node_label += f"name=%{node_info.get('name')}" + r"\n"
-        node_label += f"|op_code={node_info.get('op_code')}" + r"\n"
-        node_label += f"|qnn_tensor_name={node_info.get('qnn_tensor_name')}" + r"\n"
-        node_label += f"|target={node_info.get('target')}" + r"\n"
-        node_label += f"|num_users={node_info.get('num_users')}" + r"\n"
-        node_label += f"|pytorch_layout={node_info.get('pytorch_layout')}" + r"\n"
-        node_label += f"|scale(s)={node_info.get('scale(s)')}" + r"\n"
-        node_label += f"|zero_point(s)={node_info.get('zero_point(s)')}" + r"\n"
-        node_label += (
-            f"|{evaluator.metric_name()}={node_info.get(evaluator.metric_name())}"
-            + r"\n"
-        )
-        node_label += f"|is_valid_score={node_info.get('is_valid_score')}" + r"\n"
+        node_label += f"name=%{node.name}" + r"\n"
+        node_label += f"|op_code={node.op}" + r"\n"
+        node_label += f"|target={typename(node.target)}" + r"\n"
+        node_label += f"|num_users={len(node.users)}" + r"\n"
+        node_label += f"|pytorch_layout={pytorch_layout}" + r"\n"
+        node_label += f"|scale(s)={scale}" + r"\n"
+        node_label += f"|zero_point(s)={zero_point}" + r"\n"
+
+        is_valid_score = None
+        if debug_handle := node.meta.get(DEBUG_HANDLE_KEY, None):
+            node_label += f"|debug_handle={debug_handle}" + r"\n"
+            debug_handle = (debug_handle,)
+            if debug_handle in numeric_results.index:
+                score = numeric_results.loc[[debug_handle], "gap"].iat[0][0]
+                assert isinstance(
+                    score, float
+                ), f"Expecting QcomNumericalComparatorBase element_compare to return float, but get {type(score)}."
+                node_label += f"|{comparator.metric_name()}={score:.3f}" + r"\n"
+                is_valid_score = comparator.is_valid_score(score)
+        node_label += f"|is_valid_score={is_valid_score}" + r"\n"
         node_label += "}"
 
-        template = get_node_style(node_info.get("is_valid_score"))
+        template = get_node_style(is_valid_score)
         pydot_node = pydot.Node(node.name, label=node_label, **template)
         node_map[node.name] = pydot_node
         pydot_graph.add_node(pydot_node)
 
     # Create edge
-    for node in edge_module.graph.nodes:
+    for node in edge_ep.graph_module.graph.nodes:
         if len(node.users) == 0 and node.op == "placeholder":
             continue
         cur_pydot_node = node_map[node.name]
@@ -157,28 +149,68 @@ def export_svg(
             pydot_graph.add_edge(
                 pydot.Edge(cur_pydot_node, user_pydot_node, dir="forward")
             )
+    dot_file_path = os.path.join(path, f"{title}.dot")
+    pydot_graph.write_raw(dot_file_path)
+    logging.info(f"Intermediate debugger dot graph saved at: {dot_file_path}")
 
     svg_file_path = os.path.join(path, f"{title}.svg")
-    pydot_graph.write_svg(svg_file_path)
-    print(f"Intermediate debugger graph saved at: {svg_file_path}")
+    try:
+        subprocess.run(
+            ["dot", "-Tsvg", dot_file_path, "-o", svg_file_path],
+            timeout=5,
+            check=True,
+        )
+        logging.info(f"Intermediate debugger SVG graph saved at: {svg_file_path}.")
+    except subprocess.TimeoutExpired:
+        logging.warning(
+            f"SVG generation timed out after 5s, skipping. "
+            f"Only saving the dot file: {dot_file_path}."
+        )
+    except (subprocess.CalledProcessError, FileNotFoundError) as e:
+        logging.warning(f"SVG generation failed ({e}), skipping.")
 
 
 def export_csv(
     title: str,
     path: str,
-    evaluator: MetricEvaluatorBase,
-    edge_module: torch.fx.GraphModule,
-    node_tensor_map: dict,
+    edge_ep: exir.ExirExportedProgram,
+    numeric_results: pandas.core.frame.DataFrame,
+    comparator: QcomNumericalComparatorBase,
 ):
     node_info_list = []
-    for node in edge_module.graph.nodes:
+    for node in edge_ep.graph_module.graph.nodes:
         # These are just nodes before fold_quant and still there
         if len(node.users) == 0 and node.op == "placeholder":
             continue
-        node_info = retrieve_node_info(
-            evaluator=evaluator, node=node, node_tensor_map=node_tensor_map
+
+        pytorch_layout = get_pytorch_layout_info(node)
+        scale_zero_point = get_scale_zero_point(node)
+        scale = scale_zero_point["scale(s)"]
+        zero_point = scale_zero_point["zero_point(s)"]
+        score = None
+        is_valid_score = None
+        if debug_handle := node.meta.get(DEBUG_HANDLE_KEY, None):
+            if (debug_handle,) in numeric_results.index:
+                score = numeric_results.loc[[(debug_handle,)], "gap"].iat[0][0]
+                assert isinstance(
+                    score, float
+                ), f"Expecting QcomNumericalComparatorBase element_compare to return float, but get {type(score)}."
+                is_valid_score = comparator.is_valid_score(score)
+
+        node_info_list.append(
+            {
+                "name": node.name,
+                "op_code": node.op,
+                "target": typename(node.target),
+                "num_users": len(node.users),
+                "pytorch_layout": pytorch_layout,
+                "scale(s)": scale,
+                "zero_point(s)": zero_point,
+                "debug_handle": debug_handle,
+                comparator.metric_name(): score,
+                "is_valid_score": is_valid_score,
+            }
         )
-        node_info_list.append(node_info)
 
     # Writing to a CSV file
     csv_file_path = os.path.join(path, f"{title}.csv")
@@ -186,13 +218,13 @@ def export_csv(
         fieldnames = [
             "name",
             "op_code",
-            "qnn_tensor_name",
             "target",
             "num_users",
             "pytorch_layout",
             "scale(s)",
             "zero_point(s)",
-            f"{evaluator.metric_name()}",
+            "debug_handle",
+            comparator.metric_name(),
             "is_valid_score",
         ]
         writer = csv.DictWriter(csv_file, fieldnames=fieldnames)
@@ -201,23 +233,3 @@ def export_csv(
         writer.writerows(node_info_list)
 
     print(f"Intermediate debugger csv saved at: {csv_file_path}")
-
-
-def export_raw(
-    path: str,
-    edge_module: torch.fx.GraphModule,
-    node_tensor_map: dict,
-):
-    for node in edge_module.graph.nodes:
-        # These are just unused nodes before fold_quant and still there
-        if len(node.users) == 0 and node.op == "placeholder":
-            continue
-        if paired_event := node_tensor_map.get(node.name):
-            qnn_output, cpu_output, meta = paired_event
-            qnn_tensor_name = meta[QCOM_TENSOR_NAME]
-            qnn_output_path = os.path.join(path, qnn_tensor_name + "_qnn.raw")
-            cpu_output_path = os.path.join(path, qnn_tensor_name + "_cpu.raw")
-            qnn_output.numpy().tofile(qnn_output_path)
-            cpu_output.numpy().tofile(cpu_output_path)
-
-    print(f"Intermediate debugger raw files saved at: {path}")

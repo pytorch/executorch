@@ -41,6 +41,7 @@ QCOM_ZERO_POINT = "zero_point"
 QCOM_ZERO_POINTS = "zero_points"
 QCOM_PASS_ACTIVATE_KEY = "activate"
 QCOM_PASS_ARGS_KWARGS_DEFAULTS_KEY = "args_kwargs_defaults"
+QCOM_TENSOR_NAME = "qnn_tensor_name"
 
 # constants in backends/qualcomm/tests
 QCOM_ANNOTATION = "annotation"
