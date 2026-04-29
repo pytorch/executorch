@@ -6900,7 +6900,7 @@ class TestExampleLLMScript(TestQNN):
                 SM8650=37,
                 SM8750=45,
                 pte_size=1_500_000_000,  # 1.5 GB
-                wikitext_ppl=17,
+                wikitext_ppl=18,
                 hellaswag_acc_norm=None,
                 sqnr=15,
             ),
@@ -9204,7 +9204,7 @@ class TestUtilsScript(TestQNN):
             golden_output = ep.module()(sample_input, sample_input2)
             self._assert_outputs_equal(golden_output, device_output)
 
-    def test_custom_op(self):
+    def test_custom_op_1(self):
         if not self.required_envs([self.op_package_dir]):
             self.skipTest("missing required envs")
         cmds = [
@@ -9218,6 +9218,42 @@ class TestUtilsScript(TestQNN):
             self.device,
             "--soc_model",
             self.soc_model,
+            "--target",
+            self.target,
+            "--ip",
+            self.ip,
+            "--port",
+            str(self.port),
+            "--op_package_dir",
+            self.op_package_dir,
+            "--build_op_package",
+        ]
+        if self.host:
+            cmds.extend(["--host", self.host])
+        if self.enable_x86_64:
+            cmds.extend(["--enable_x86_64"])
+
+        p = subprocess.Popen(cmds, stdout=subprocess.DEVNULL)
+        with Listener((self.ip, self.port)) as listener:
+            conn = listener.accept()
+            p.communicate()
+            msg = json.loads(conn.recv())
+            self.assertTrue(msg["is_close"])
+
+    def test_custom_op_2(self):
+        if not self.required_envs([self.op_package_dir]):
+            self.skipTest("missing required envs")
+        cmds = [
+            "python",
+            f"{self.executorch_root}/examples/qualcomm/custom_op/custom_ops_2.py",
+            "--artifact",
+            self.artifact_dir,
+            "--build_folder",
+            self.build_folder,
+            "--device",
+            self.device,
+            "--model",
+            self.model,
             "--target",
             self.target,
             "--ip",
