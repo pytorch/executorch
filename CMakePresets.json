@@ -314,6 +314,14 @@
       }
     },
     {
+      "name": "esp-baremetal",
+      "displayName": "Build ExecuTorch for ESP baremetal",
+      "inherits": ["common"],
+      "cacheVariables": {
+        "EXECUTORCH_BUILD_PRESET_FILE": "${sourceDir}/tools/cmake/preset/esp_baremetal.cmake"
+      }
+    },
+    {
       "name": "mlx",
       "displayName": "Build MLX delegate",
       "inherits": ["common"],
