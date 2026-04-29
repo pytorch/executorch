@@ -61,6 +61,7 @@ def get_passes_dependency_for_capture_program():
     """
     from executorch.backends.qualcomm._passes import (
         AnnotateAvgPool1D,
+        AnnotateConcatRequant,
         AnnotateQuantAttrs,
         AnnotateStack,
         AnnotateUnbind,
@@ -89,6 +90,7 @@ def get_passes_dependency_for_capture_program():
 
     return {
         AnnotateAvgPool1D: [RemoveRedundancy],
+        AnnotateConcatRequant: [AnnotateQuantAttrs],
         AnnotateQuantAttrs: [
             ConvertBmmToMatmul,
             RecomposePixelUnshuffle,
@@ -108,9 +110,15 @@ def get_passes_dependency_for_capture_program():
         DecomposeTrunc: [RemoveRedundancy],
         ExpandBroadcastTensorShape: [FoldQDQ],
         FixedLinearKeepDim: [FoldQDQ],
-        FoldQDQ: [AnnotateQuantAttrs, AnnotateStack, AnnotateUnbind],
+        FoldQDQ: [
+            AnnotateConcatRequant,
+            AnnotateQuantAttrs,
+            AnnotateStack,
+            AnnotateUnbind,
+        ],
         I64toI32: [RemoveRedundancy],
         LayoutTransform: [
+            AnnotateConcatRequant,
             AnnotateQuantAttrs,
             ExpandBroadcastTensorShape,
             FixedLinearKeepDim,

@@ -60,6 +60,11 @@ DEFINE_string(
     "If etdump generation is enabled an etdump will be written out to this path");
 
 DEFINE_bool(
+    enable_etdump,
+    true,
+    "Enable ETDump event tracing. Disable for cleaner latency benchmarking.");
+
+DEFINE_bool(
     dump_intermediate_outputs,
     false,
     "Dump intermediate outputs to etdump file.");
@@ -385,8 +390,11 @@ int main(int argc, char** argv) {
   // be used by a single thread at at time, but it can be reused.
   //
   ETDumpGen etdump_gen;
+  auto* event_tracer = (FLAGS_enable_etdump || FLAGS_dump_intermediate_outputs)
+      ? &etdump_gen
+      : nullptr;
   Result<Method> method =
-      program->load_method(method_name, &memory_manager, &etdump_gen);
+      program->load_method(method_name, &memory_manager, event_tracer);
   ET_CHECK_MSG(
       method.ok(),
       "Loading of method %s failed with status 0x%" PRIx32,
@@ -694,7 +702,7 @@ int main(int argc, char** argv) {
   // Dump the etdump data containing profiling/debugging data to the specified
   // file.
   ETDumpResult result = etdump_gen.get_etdump_data();
-  if (result.buf != nullptr && result.size > 0) {
+  if (FLAGS_enable_etdump && result.buf != nullptr && result.size > 0) {
     ET_LOG(
         Info,
         "Write etdump to %s, Size = %zu",
