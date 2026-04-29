@@ -50,7 +50,7 @@ def _get_output_dtype(
     return output_dtype
 
 
-def _validate_resize_parameters(scale, border):
+def _validate_resize_parameters(scale, border, resize_mode):
     def in_int16_range(values):
         return all((x >= -(2**15)) and (x <= 2**15 - 1) for x in values)
 
@@ -58,6 +58,13 @@ def _validate_resize_parameters(scale, border):
         raise TosaValueError("scale is out of the int16 range", op="RESIZE")
     if not in_int16_range(border):
         raise TosaValueError("border is out of the int16 range", op="RESIZE")
+    if resize_mode == "bilinear":
+        scale_y_n, scale_y_d, scale_x_n, scale_x_d = scale
+        if scale_y_d >= 16 * scale_y_n or scale_x_d >= 16 * scale_x_n:
+            raise TosaValueError(
+                "Bilinear RESIZE downscale must be strictly greater than 1/16",
+                op="RESIZE",
+            )
 
 
 @register_fake_tosa_op(
@@ -79,7 +86,7 @@ def RESIZE(
             f"Input tensor must be 4D, but got {x.dim()}D", op="RESIZE"
         )
     _validate_resize_mode(resize_mode)
-    _validate_resize_parameters(scale, border)
+    _validate_resize_parameters(scale, border, resize_mode)
     output_dtype = _get_output_dtype(x.dtype, tosa_spec, resize_mode)
 
     input_shape = x.shape
