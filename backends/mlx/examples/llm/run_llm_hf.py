@@ -47,7 +47,7 @@ def _get_max_input_seq_len(program) -> int:
     return sizes[1] if len(sizes) >= 2 else 1
 
 
-def _load_text_processor(model_id: str):
+def _load_text_processor(model_id: str, revision: str | None):
     """
     Load a text processor for the model.
 
@@ -58,13 +58,13 @@ def _load_text_processor(model_id: str):
     """
     logger.info(f"Loading tokenizer from HuggingFace: {model_id}...")
     try:
-        tokenizer = AutoTokenizer.from_pretrained(model_id)
+        tokenizer = AutoTokenizer.from_pretrained(model_id, revision=revision)
         return tokenizer, False
     except Exception as exc:
         logger.info(f"AutoTokenizer unavailable for {model_id}: {exc}")
 
     try:
-        processor = AutoProcessor.from_pretrained(model_id)
+        processor = AutoProcessor.from_pretrained(model_id, revision=revision)
         if hasattr(processor, "apply_chat_template") and hasattr(processor, "decode"):
             logger.info(f"Loaded processor from HuggingFace: {model_id}")
             return processor, True
@@ -101,11 +101,12 @@ def _get_eos_token_id(text_processor):
 def run_inference(
     pte_path: str,
     model_id: str,
+    revision: str | None,
     prompt: str,
     max_new_tokens: int = 50,
 ) -> str:
     """Run inference on the exported HuggingFace model."""
-    text_processor, uses_processor = _load_text_processor(model_id)
+    text_processor, uses_processor = _load_text_processor(model_id, revision)
 
     logger.info(f"Loading model from {pte_path}...")
     et_runtime = Runtime.get()
@@ -209,6 +210,12 @@ def main():
         help="HuggingFace model ID (used to load tokenizer or processor)",
     )
     parser.add_argument(
+        "--revision",
+        type=str,
+        default=None,
+        help="Optional HuggingFace model revision/commit to pin",
+    )
+    parser.add_argument(
         "--prompt",
         type=str,
         default="The quick brown fox",
@@ -226,6 +233,7 @@ def main():
     generated_text = run_inference(
         pte_path=args.pte,
         model_id=args.model_id,
+        revision=args.revision,
         prompt=args.prompt,
         max_new_tokens=args.max_new_tokens,
     )
