@@ -170,7 +170,7 @@ generate_bindings_for_kernels(
   LIB_NAME "cadence_ops_lib" OPS_SCHEMA_YAML FUNCTIONS_YAML
   ${CMAKE_CURRENT_SOURCE_DIR}/../../aot/functions_hifi.yaml
 )
-message("Generated files ${gen_command_sources}")
+message("Generated files: ${gen_command_sources}")
 
 gen_operators_lib(
   LIB_NAME "cadence_ops_lib" KERNEL_LIBS custom_ops DEPS aten_ops_cadence
