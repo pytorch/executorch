@@ -192,9 +192,17 @@ case "$HF_MODEL" in
     PREPROCESSOR_FEATURE_SIZE=""
     PREPROCESSOR_OUTPUT=""
     ;;
+  gasoonjia/Gemma4-31B-HQQ-INT4)
+    MODEL_NAME="gemma4"
+    TASK=""
+    MAX_SEQ_LEN=""
+    EXTRA_PIP=""
+    PREPROCESSOR_FEATURE_SIZE=""
+    PREPROCESSOR_OUTPUT=""
+    ;;
   *)
     echo "Error: Unsupported model '$HF_MODEL'"
-    echo "Supported models: mistralai/Voxtral-Mini-3B-2507, mistralai/Voxtral-Mini-4B-Realtime-2602, openai/whisper-{small, medium, large, large-v2, large-v3, large-v3-turbo}, google/gemma-3-4b-it, Qwen/Qwen3-0.6B, nvidia/diar_streaming_sortformer_4spk-v2, nvidia/parakeet-tdt, facebook/dinov2-small-imagenet1k-1-layer, SocialLocalMobile/Qwen3.5-35B-A3B-HQQ-INT4"
+    echo "Supported models: mistralai/Voxtral-Mini-3B-2507, mistralai/Voxtral-Mini-4B-Realtime-2602, openai/whisper-{small, medium, large, large-v2, large-v3, large-v3-turbo}, google/gemma-3-4b-it, Qwen/Qwen3-0.6B, nvidia/diar_streaming_sortformer_4spk-v2, nvidia/parakeet-tdt, facebook/dinov2-small-imagenet1k-1-layer, SocialLocalMobile/Qwen3.5-35B-A3B-HQQ-INT4, gasoonjia/Gemma4-31B-HQQ-INT4"
     exit 1
     ;;
 esac
@@ -417,6 +425,42 @@ if [ "$MODEL_NAME" = "qwen3_5_moe" ]; then
   echo "::group::Export"
   TORCHINDUCTOR_CACHE_DIR="$INDUCTOR_CACHE" \
   python -m executorch.examples.models.qwen3_5_moe.export \
+      --prequantized "$LOCAL_MODEL_DIR" \
+      --output-dir "${OUTPUT_DIR}"
+  echo "::endgroup::"
+
+  test -f "${OUTPUT_DIR}/model.pte"
+  test -f "${OUTPUT_DIR}/aoti_cuda_blob.ptd"
+  ls -al "${OUTPUT_DIR}"
+
+  exit 0
+fi
+
+# Gemma4 uses a prequantized checkpoint and custom export script
+if [ "$MODEL_NAME" = "gemma4" ]; then
+  pip install safetensors huggingface_hub
+  pip install -r examples/models/gemma4/requirements.txt
+
+  # Download prequantized model outside OUTPUT_DIR to avoid uploading on failure
+  LOCAL_MODEL_DIR=$(mktemp -d)
+  INDUCTOR_CACHE=$(mktemp -d)
+  trap 'rm -rf "$LOCAL_MODEL_DIR" "$INDUCTOR_CACHE"' EXIT
+
+  python -c "from huggingface_hub import snapshot_download; snapshot_download('${HF_MODEL}', local_dir='${LOCAL_MODEL_DIR}')"
+
+  # Sanity check: run inference on the prequantized model
+  echo "::group::Inference sanity check"
+  python -m executorch.examples.models.gemma4.inference \
+      --prequantized "$LOCAL_MODEL_DIR"
+  echo "::endgroup::"
+
+  # Copy tokenizer for the runner
+  cp "$LOCAL_MODEL_DIR/tokenizer.json" "${OUTPUT_DIR}/tokenizer.json"
+
+  # Export to .pte/.ptd (short cache dir avoids objcopy symbol length issues)
+  echo "::group::Export"
+  TORCHINDUCTOR_CACHE_DIR="$INDUCTOR_CACHE" \
+  python -m executorch.examples.models.gemma4.export \
       --prequantized "$LOCAL_MODEL_DIR" \
       --output-dir "${OUTPUT_DIR}"
   echo "::endgroup::"
