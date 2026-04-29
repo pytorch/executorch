@@ -17,6 +17,7 @@ def define_common_targets():
         compiler_flags = select({
                 "DEFAULT": ["-Wno-missing-prototypes"],
                 "ovr_config//os:windows": [],
+                "ovr_config//compiler/constraints:gcc": [],
             }),
         deps = [
             "//executorch/runtime/kernel:kernel_includes_aten",

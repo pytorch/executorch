@@ -93,14 +93,21 @@ def define_op_library(name, compiler_flags, deps):
             "{}.cpp".format(name),
         ],
         visibility = ["PUBLIC"],
-        compiler_flags = [
+        compiler_flags = select({
             # kernels often have helpers with no prototypes just disabling the warning here as the headers
             # are codegend and linked in later
-            "-Wno-missing-prototypes",
-            # pragma unroll fails with -Os, don't need to warn us and
-            # fail Werror builds; see https://godbolt.org/z/zvf85vTsr
-            "-Wno-pass-failed",
-        ] + compiler_flags + get_compiler_optimization_flags(),
+            # -Wno-missing-prototypes is Clang-only for C++; GCC rejects it
+            # with -Werror.
+            "DEFAULT": [
+                "-Wno-missing-prototypes",
+                # pragma unroll fails with -Os, don't need to warn us and
+                # fail Werror builds; see https://godbolt.org/z/zvf85vTsr
+                "-Wno-pass-failed",
+            ],
+            "ovr_config//compiler/constraints:gcc": [
+                "-Wno-pass-failed",
+            ],
+        }) + compiler_flags + get_compiler_optimization_flags(),
         # sleef needs to be added as a direct dependency of the operator target when building for Android,
         # or a linker error may occur. Not sure why this happens; it seems that fbandroid_platform_deps of
         # dependencies are not transitive
