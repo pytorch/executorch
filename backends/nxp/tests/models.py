@@ -14,14 +14,14 @@ from torch import nn
 class Conv1dModule(torch.nn.Module):
     def __init__(
         self,
-        bias: bool = True,
-        dilation: Union[int, tuple[int, int]] = 1,
         in_channels: int = 4,
-        kernel_size: Union[int, tuple[int, int]] = 3,
         out_channels: int = 8,
-        padding: Union[str, int, Collection[int]] = 0,
+        kernel_size: Union[int, tuple[int, int]] = 3,
         stride: Union[int, tuple[int, int]] = 2,
-        group: int = 1,
+        padding: Union[str, int, tuple[int]] = 0,
+        dilation: Union[int, tuple[int, int]] = 1,
+        groups: int = 1,
+        bias: bool = True,
     ):
         super().__init__()
 
@@ -33,11 +33,42 @@ class Conv1dModule(torch.nn.Module):
             padding=padding,
             dilation=dilation,
             bias=bias,
-            groups=group,
+            groups=groups,
         )
 
     def forward(self, x):
         return self.conv(x)
+
+
+class ConvTranspose1dModule(torch.nn.Module):
+    def __init__(
+        self,
+        in_channels: int = 4,
+        out_channels: int = 8,
+        kernel_size: Union[int, tuple[int, int]] = 3,
+        stride: Union[int, tuple[int, int]] = 1,
+        padding: Union[int, tuple[int]] = 0,
+        output_padding: Union[int, tuple[int]] = 0,
+        groups: int = 1,
+        bias: bool = True,
+        dilation: Union[int, tuple[int, int]] = 1,
+    ):
+        super().__init__()
+
+        self.conv_transp = torch.nn.ConvTranspose1d(
+            in_channels=in_channels,
+            out_channels=out_channels,
+            kernel_size=kernel_size,
+            stride=stride,
+            padding=padding,
+            output_padding=output_padding,
+            groups=groups,
+            bias=bias,
+            dilation=dilation,
+        )
+
+    def forward(self, x):
+        return self.conv_transp(x)
 
 
 class Conv2dModule(torch.nn.Module):

@@ -73,6 +73,32 @@ def get_bias_qparams(
     return bias_scale, bias_zero_point
 
 
+def get_padded_bias_qparams(
+    obs_or_fqs: List[ObserverOrFakeQuantize],
+    out_channels: int | None = None,
+) -> Tuple[torch.Tensor, torch.Tensor]:
+    act_scale, _ = obs_or_fqs[0].calculate_qparams()
+    weight_scale, _ = obs_or_fqs[1].calculate_qparams()
+
+    # It may happen that `torch.ao` incorrectly sets the weight qparams, not matching bias qparams.
+    # If `out_channels` is given, ensure bias qparams are per-output-channel:
+    # So for example  w = [w1, w2, w3]  ->  [w1, w2, w3, w1, w2, w3, ...]
+    if out_channels is not None:
+        weight_scale = weight_scale.flatten()
+        if weight_scale.numel() != out_channels:
+            if out_channels % weight_scale.numel() != 0:
+                raise RuntimeError(
+                    "Weight qparams cannot be repeated if not divisible by `out_channels`."
+                )
+            weight_scale = weight_scale.repeat(out_channels // weight_scale.numel())
+
+        act_scale = act_scale.flatten()[0]
+
+    bias_scale = act_scale * weight_scale
+    bias_zero_point = torch.zeros_like(bias_scale, dtype=torch.int64)
+    return bias_scale, bias_zero_point
+
+
 def get_aten_node_target_partitions(
     graph: torch.fx.Graph,
     wanted_original_aten_op: List[OpOverload],
