@@ -479,7 +479,7 @@ class FusedMoEExperts(nn.Module):
         self.hidden_size = config.hidden_size
         self.group_size = 32
         self.use_batched_moe = False
-        self.moe_moe_moe_activation_dtype = "bf16"
+        self.moe_activation_dtype = "bf16"
 
         self.w1_weight = nn.Parameter(
             torch.empty(
@@ -498,7 +498,7 @@ class FusedMoEExperts(nn.Module):
 
     def forward(self, x, expert_weights, expert_indices, top_k):
         if self.use_batched_moe:
-            if self.moe_moe_moe_activation_dtype == "int8":
+            if self.moe_activation_dtype == "int8":
                 return torch.ops.triton.fused_moe_batched_gemm_int8(
                     x,
                     self.w1,
