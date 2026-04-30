@@ -489,22 +489,25 @@ jobs:
             name: "gemma3-1b"
         use-custom: [false, true]
         qconfig: ["4w", "nvfp4"]
+        runner: ["macos-14-xlarge"]
         include:
           - model:
               id: "google/gemma-4-E2B-it"
               name: "gemma4-e2b"
             use-custom: true
-            qconfig: "bf16"
+            qconfig: "4w"
+            runner: "macos-15-xlarge"
           - model:
               id: "google/gemma-4-E2B-it"
               name: "gemma4-e2b"
             use-custom: false
-            qconfig: "bf16"
+            qconfig: "4w"
+            runner: "macos-15-xlarge"
     uses: pytorch/test-infra/.github/workflows/macos_job.yml@main
     secrets: inherit
     with:
       job-name: test-mlx-llm-${{ matrix.model.name }}${{ matrix.use-custom && '-custom' || '' }}-${{ matrix.qconfig }}
-      runner: macos-14-xlarge
+      runner: ${{ matrix.runner }}
       python-version: "3.12"
       submodules: recursive
       ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
@@ -530,21 +533,6 @@ jobs:
         QEMBEDDING_ARGS="--qembedding ${QCONFIG}"
         if [ "${MODEL_ID}" = "google/gemma-4-E2B-it" ]; then
           QEMBEDDING_ARGS=""
-        fi
-
-        # 8w currently requires an explicit group size (default 0 fails export
-        # on torchao::dequantize_affine missing out variant).
-        GROUP_SIZE_ARGS=""
-        if [ "${QCONFIG}" = "8w" ]; then
-          GROUP_SIZE_ARGS="--qlinear-group-size 32"
-        fi
-
-        # "bf16" means no linear quantization — drop --qlinear/--qembedding.
-        QLINEAR_ARGS="--qlinear ${QCONFIG}"
-        if [ "${QCONFIG}" = "bf16" ]; then
-          QLINEAR_ARGS=""
-          QEMBEDDING_ARGS=""
-          GROUP_SIZE_ARGS=""
         fi
 
         echo "::group::Install ExecuTorch and configure MLX build"
@@ -573,8 +561,7 @@ jobs:
           --model-id "${MODEL_ID}" \
           ${MODEL_REVISION:+--revision "${MODEL_REVISION}"} \
           --output /tmp/${MODEL_NAME}.pte \
-          ${QLINEAR_ARGS} \
-          ${GROUP_SIZE_ARGS} \
+          --qlinear ${QCONFIG} \
           ${QEMBEDDING_ARGS} \
           ${CUSTOM_ARGS}
         echo "::endgroup::"
