@@ -1259,6 +1259,42 @@ class _Emitter(torch.fx.Interpreter):
         self.chain.instructions.append(kernel)
         return out_arg
 
+    def _emit_subview(self, args: Tuple[_Argument, ...]) -> _EmitterValue:
+        spec = self.node.meta["spec"]
+        is_static = spec.is_static_shape_tensor
+        is_memory_planned = (spec.mem_id is not None) and (spec.mem_offset is not None)
+        if is_static and is_memory_planned:
+            return self._emit_spec(spec)
+
+        out_arg = self._emit_argument(
+            self._emit_spec(self.node.meta["spec"]), torch.TensorType  # pyre-ignore[6]
+        )
+
+        if self.node.target == memory.select:
+            self_arg = self._emit_argument(args[0], torch.TensorType)  # pyre-ignore[6]
+            dim_arg = self._emit_argument(args[1], torch.IntType)
+            index_arg = self._emit_argument(args[2], torch.IntType)
+            op_idx, op = self._get_operator(
+                name="executorch_prim::et_select",
+                overload="default",
+            )
+            kernel = Instruction(
+                KernelCall(
+                    op_idx,
+                    args=[self_arg.id, dim_arg.id, index_arg.id, out_arg.id],
+                )
+            )
+        else:
+            raise InternalError(
+                self._emit_node_specific_error(
+                    self.node,
+                    f"Unsupported subview target: {self.node.target}",
+                )
+            )
+
+        self.chain.instructions.append(kernel)
+        return out_arg
+
     def _add_debug_handle(
         self,
         emitter_id: int,
@@ -1757,6 +1793,9 @@ class _Emitter(torch.fx.Interpreter):
 
         elif target == memory.view:
             return self._emit_view(args)
+
+        elif target == memory.select:
+            return self._emit_subview(args)
 
         elif target == memory.free:
             assert len(args) == 1

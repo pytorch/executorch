@@ -12,6 +12,7 @@ import torch.nn as nn
 from executorch.exir import memory, to_edge
 from executorch.exir.capture._config import ExecutorchBackendConfig
 from executorch.exir.passes import MemoryPlanningPass
+from executorch.exir.passes.replace_view_copy_with_view_pass import _ViewSpec
 
 
 class TestModel1(nn.Module):
@@ -234,3 +235,369 @@ class TestRemoveViewCopy(unittest.TestCase):
         plan = etpm.executorch_program.execution_plan[0]
         op_names = [op.name for op in plan.operators]
         self.assertTrue("executorch_prim::et_view" in op_names)
+
+    def test_contiguous_select_replaced(self) -> None:
+        class SelectDim0Model(nn.Module):
+            __test__ = False
+
+            def forward(self, x):
+                y = x + 1
+                z = y.select(0, 2)
+                return z * 2
+
+        model = SelectDim0Model()
+        model.eval()
+        example_inputs = (torch.rand(4, 3),)
+        ep = torch.export.export(model, example_inputs, strict=True)
+        etpm = to_edge(ep).to_executorch(
+            config=ExecutorchBackendConfig(
+                remove_view_copy=True,
+                memory_planning_pass=MemoryPlanningPass(alloc_graph_input=False),
+            ),
+        )
+
+        found_select_view = False
+        for node in etpm.exported_program().graph.nodes:
+            if node.target == memory.select:
+                found_select_view = True
+                self.assertIsInstance(node.meta["spec"], _ViewSpec)
+                base = node.args[0]
+                self.assertEqual(
+                    node.meta["spec"].mem_id, base.meta["spec"].mem_id
+                )
+                self.assertEqual(
+                    node.meta["spec"].lifetime, base.meta["spec"].lifetime
+                )
+        self.assertTrue(found_select_view)
+
+    def test_non_contiguous_select_not_replaced(self) -> None:
+        class SelectDim1Model(nn.Module):
+            __test__ = False
+
+            def forward(self, x):
+                y = x + 1
+                z = y.select(1, 1)
+                return z * 2
+
+        model = SelectDim1Model()
+        model.eval()
+        example_inputs = (torch.rand(4, 3),)
+        ep = torch.export.export(model, example_inputs, strict=True)
+        etpm = to_edge(ep).to_executorch(
+            config=ExecutorchBackendConfig(
+                remove_view_copy=True,
+                memory_planning_pass=MemoryPlanningPass(alloc_graph_input=False),
+            ),
+        )
+
+        for node in etpm.exported_program().graph.nodes:
+            self.assertNotEqual(node.target, memory.select)
+
+    def test_select_output_matches(self) -> None:
+        class SelectModel(nn.Module):
+            __test__ = False
+
+            def forward(self, x):
+                y = x + 1
+                z = y.select(0, 2)
+                return z * 2
+
+        model = SelectModel()
+        model.eval()
+        example_inputs = (torch.rand(4, 3),)
+        ep = torch.export.export(model, example_inputs, strict=True)
+
+        epm_remove = to_edge(ep)
+        epm_no_remove = copy.deepcopy(epm_remove)
+
+        etpm_remove = epm_remove.to_executorch(
+            config=ExecutorchBackendConfig(
+                remove_view_copy=True,
+                memory_planning_pass=MemoryPlanningPass(alloc_graph_input=False),
+            ),
+        )
+        etpm_no_remove = epm_no_remove.to_executorch(
+            config=ExecutorchBackendConfig(
+                remove_view_copy=False,
+                memory_planning_pass=MemoryPlanningPass(alloc_graph_input=False),
+            ),
+        )
+
+        out_remove = etpm_remove.exported_program().module()(*example_inputs)
+        out_no_remove = etpm_no_remove.exported_program().module()(*example_inputs)
+        self.assertTrue(torch.allclose(out_remove, out_no_remove))
+
+    def test_select_spec_mem_offset(self) -> None:
+        class SelectModel(nn.Module):
+            __test__ = False
+
+            def forward(self, x):
+                y = x + 1
+                z = y.select(0, 2)
+                return z * 2
+
+        model = SelectModel()
+        model.eval()
+        example_inputs = (torch.rand(4, 3),)
+        ep = torch.export.export(model, example_inputs, strict=True)
+        etpm = to_edge(ep).to_executorch(
+            config=ExecutorchBackendConfig(
+                remove_view_copy=True,
+                memory_planning_pass=MemoryPlanningPass(alloc_graph_input=False),
+            ),
+        )
+
+        for node in etpm.exported_program().graph.nodes:
+            if node.target == memory.select:
+                base = node.args[0]
+                base_offset = base.meta["spec"].mem_offset
+                select_offset = node.meta["spec"].mem_offset
+                # select(dim=0, index=2) on [4,3] float32: offset = 2 * 3 * 4 = 24
+                self.assertEqual(select_offset, base_offset + 24)
+
+    def test_dynamic_shape_select_replaced(self) -> None:
+        class SelectDim0Model(nn.Module):
+            __test__ = False
+
+            def forward(self, x):
+                y = x + 1
+                z = y.select(0, 2)
+                return z * 2
+
+        model = SelectDim0Model()
+        model.eval()
+        example_inputs = (torch.rand(4, 3),)
+        dynamic_shapes = {"x": {1: torch.export.Dim("dim1", min=1, max=10)}}
+        ep = torch.export.export(
+            model, example_inputs, strict=True, dynamic_shapes=dynamic_shapes
+        )
+
+        epm = to_edge(ep)
+        epm_copy = copy.deepcopy(epm)
+
+        etpm_on = epm.to_executorch(
+            config=ExecutorchBackendConfig(
+                remove_view_copy=True,
+                memory_planning_pass=MemoryPlanningPass(alloc_graph_input=True),
+            ),
+        )
+        etpm_off = epm_copy.to_executorch(
+            config=ExecutorchBackendConfig(
+                remove_view_copy=False,
+                memory_planning_pass=MemoryPlanningPass(alloc_graph_input=True),
+            ),
+        )
+
+        found_select_view = False
+        for node in etpm_on.exported_program().graph.nodes:
+            if node.target == memory.select:
+                found_select_view = True
+        self.assertTrue(found_select_view)
+
+    def test_dynamic_shape_select_no_allocation(self) -> None:
+        class SelectDim0Model(nn.Module):
+            __test__ = False
+
+            def forward(self, x):
+                y = x + 1
+                z = y.select(0, 2)
+                return z * 2
+
+        model = SelectDim0Model()
+        model.eval()
+        example_inputs = (torch.rand(4, 3),)
+        dynamic_shapes = {"x": {1: torch.export.Dim("dim1", min=1, max=10)}}
+        ep = torch.export.export(
+            model, example_inputs, strict=True, dynamic_shapes=dynamic_shapes
+        )
+
+        etpm = to_edge(ep).to_executorch(
+            config=ExecutorchBackendConfig(
+                remove_view_copy=True,
+                memory_planning_pass=MemoryPlanningPass(alloc_graph_input=True),
+            ),
+        )
+
+        for node in etpm.exported_program().graph.nodes:
+            if node.target == memory.select:
+                spec = node.meta["spec"]
+                self.assertIsNone(spec.mem_id)
+                self.assertIsNone(spec.mem_offset)
+
+    def test_input_select_shares_allocation(self) -> None:
+        class InputSelectModel(nn.Module):
+            __test__ = False
+
+            def forward(self, x):
+                z = x.select(0, 1)
+                return z * 2
+
+        model = InputSelectModel()
+        model.eval()
+        example_inputs = (torch.rand(4, 3),)
+        ep = torch.export.export(model, example_inputs, strict=True)
+
+        etpm = to_edge(ep).to_executorch(
+            config=ExecutorchBackendConfig(
+                remove_view_copy=True,
+                memory_planning_pass=MemoryPlanningPass(alloc_graph_input=True),
+            ),
+        )
+
+        found_select = False
+        for node in etpm.exported_program().graph.nodes:
+            if node.target == memory.select:
+                found_select = True
+                spec = node.meta["spec"]
+                base = node.args[0]
+                self.assertEqual(spec.mem_id, base.meta["spec"].mem_id)
+                base_offset = base.meta["spec"].mem_offset
+                # select(0, 1) on [4, 3] float32: byte_offset = 1 * 3 * 4 = 12
+                self.assertEqual(spec.mem_offset, base_offset + 12)
+        self.assertTrue(found_select)
+
+    def test_dynamic_dim_selected_away_replaced(self) -> None:
+        class SelectDynDimModel(nn.Module):
+            __test__ = False
+
+            def forward(self, x):
+                y = x + 1
+                z = y.select(1, 0)
+                return z * 2
+
+        model = SelectDynDimModel()
+        model.eval()
+        example_inputs = (torch.rand(1, 4, 3),)
+        dynamic_shapes = {"x": {1: torch.export.Dim("seq", min=1, max=128)}}
+        ep = torch.export.export(
+            model, example_inputs, strict=True, dynamic_shapes=dynamic_shapes
+        )
+        etpm = to_edge(ep).to_executorch(
+            config=ExecutorchBackendConfig(
+                remove_view_copy=True,
+                memory_planning_pass=MemoryPlanningPass(alloc_graph_input=True),
+            ),
+        )
+
+        found_select_view = False
+        for node in etpm.exported_program().graph.nodes:
+            if node.target == memory.select:
+                found_select_view = True
+        self.assertTrue(found_select_view)
+
+    def test_dynamic_leading_dim_select_not_replaced(self) -> None:
+        class SelectDim1Model(nn.Module):
+            __test__ = False
+
+            def forward(self, x):
+                y = x + 1
+                z = y.select(1, 0)
+                return z * 2
+
+        model = SelectDim1Model()
+        model.eval()
+        example_inputs = (torch.rand(2, 3),)
+        dynamic_shapes = {"x": {0: torch.export.Dim("batch", min=1, max=10)}}
+        ep = torch.export.export(
+            model, example_inputs, strict=True, dynamic_shapes=dynamic_shapes
+        )
+        etpm = to_edge(ep).to_executorch(
+            config=ExecutorchBackendConfig(
+                remove_view_copy=True,
+                memory_planning_pass=MemoryPlanningPass(alloc_graph_input=True),
+            ),
+        )
+
+        for node in etpm.exported_program().graph.nodes:
+            self.assertNotEqual(node.target, memory.select)
+
+    def test_view_then_select_chained(self) -> None:
+        class ViewThenSelectModel(nn.Module):
+            __test__ = False
+
+            def forward(self, x):
+                y = x + 1
+                z = y.view(3, 1, 4)
+                a = z.select(0, 0)
+                b = z.select(0, 1)
+                c = z.select(0, 2)
+                return a + b + c
+
+        model = ViewThenSelectModel()
+        model.eval()
+        example_inputs = (torch.rand(3, 4),)
+        ep = torch.export.export(model, example_inputs, strict=True)
+        etpm = to_edge(ep).to_executorch(
+            config=ExecutorchBackendConfig(
+                remove_view_copy=True,
+                memory_planning_pass=MemoryPlanningPass(alloc_graph_input=False),
+            ),
+        )
+
+        found_select_view = False
+        for node in etpm.exported_program().graph.nodes:
+            if node.target == memory.select:
+                found_select_view = True
+                spec = node.meta["spec"]
+                self.assertIsInstance(spec, _ViewSpec)
+                self.assertIsNotNone(spec.mem_id)
+                self.assertIsNotNone(spec.mem_offset)
+        self.assertTrue(found_select_view)
+
+        import math
+        from executorch.exir.schema import ScalarType
+
+        plan = etpm.executorch_program.execution_plan[0]
+        buffer_sizes = plan.non_const_buffer_sizes
+        for tensor in plan.values:
+            t = tensor.val
+            if hasattr(t, "allocation_info") and t.allocation_info is not None:
+                mem_id = t.allocation_info.memory_id
+                if mem_id >= len(buffer_sizes):
+                    continue
+                buf_size = buffer_sizes[mem_id]
+                offset = (
+                    t.allocation_info.memory_offset_high << 32
+                ) | t.allocation_info.memory_offset_low
+                elem_size = {
+                    ScalarType.FLOAT: 4,
+                    ScalarType.INT: 4,
+                    ScalarType.LONG: 8,
+                    ScalarType.DOUBLE: 8,
+                    ScalarType.HALF: 2,
+                    ScalarType.BYTE: 1,
+                }.get(t.scalar_type, 4)
+                nbytes = math.prod(t.sizes) * elem_size
+                self.assertLessEqual(
+                    offset + nbytes,
+                    buf_size,
+                    f"Tensor with sizes={t.sizes} at offset={offset} "
+                    f"exceeds buffer[{mem_id}] size {buf_size}",
+                )
+
+    def test_constant_base_not_replaced(self) -> None:
+        class ConstSelectModel(nn.Module):
+            __test__ = False
+
+            def __init__(self):
+                super().__init__()
+                self.param = nn.Parameter(torch.rand(4, 3))
+                self.param.requires_grad = False
+
+            def forward(self, x):
+                z = self.param.select(0, 1)
+                return x + z
+
+        model = ConstSelectModel()
+        model.eval()
+        example_inputs = (torch.rand(3),)
+        ep = torch.export.export(model, example_inputs, strict=True)
+        etpm = to_edge(ep).to_executorch(
+            config=ExecutorchBackendConfig(
+                remove_view_copy=True,
+                memory_planning_pass=MemoryPlanningPass(alloc_graph_input=False),
+            ),
+        )
+
+        for node in etpm.exported_program().graph.nodes:
+            self.assertNotEqual(node.target, memory.select)

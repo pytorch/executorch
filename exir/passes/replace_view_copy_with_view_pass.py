@@ -33,7 +33,16 @@ def _is_view_copy(node: torch.fx.Node) -> bool:
     )
 
 
+def _is_select_copy(node: torch.fx.Node) -> bool:
+    return node.op == "call_function" and node.target in (
+        torch.ops.aten.select_copy.int,
+        ops.edge.aten.select_copy.int,
+    )
+
+
 _VIEW_OP = memory.view
+_SELECT_OP = memory.select
+
 
 
 class _Guard:
@@ -54,7 +63,12 @@ class _Guard:
 
 
 class _ViewSpec(TensorSpec):
-    def __init__(self, base: TensorSpec, shape: List[int]) -> None:
+    def __init__(
+        self,
+        base: TensorSpec,
+        shape: List[int],
+        byte_offset: int = 0,
+    ) -> None:
         """
         A _ViewSpec is TensorSpec that shares non-size related fields with its base.
         The size-related fields are: shape, stride, dim_order, and shape_dynamism.
@@ -65,7 +79,11 @@ class _ViewSpec(TensorSpec):
 
         A _ViewSpec can only be created from a non-sparse, strided TensorSpec.
         On creation, a _ViewSpec must be compatible with its base with respect to
-        shape_dynamism, dtype, and nbytes.
+        shape_dynamism, dtype, and nbytes (when byte_offset is 0).
+
+        When byte_offset is non-zero (used for select/slice sub-views), the view
+        describes a contiguous sub-region of the base at the given byte offset.
+        In this case, nbytes may differ from the base and rank may change.
 
         A _ViewSpec contains _guards that are evaluated on every __getattribute__ call.
         The purpose of the guards is to make sure the _ViewSpec is still compatible
@@ -119,6 +137,7 @@ class _ViewSpec(TensorSpec):
 
         self._guards: List[_Guard] = []
         self._unguarded_access = False
+        self._byte_offset: int = byte_offset
 
         # Make sure base is not sparse and add a guard
         if base.is_sparse:
@@ -154,27 +173,6 @@ class _ViewSpec(TensorSpec):
             torch.Size(self.shape)
         )
 
-        # Check compatibility with base on creation
-        if self.shape_dynamism != base.shape_dynamism:
-            raise Exception(
-                f"_ViewSpec is incompatible with its base on creation.  It has shape_dynamism={self.shape_dynamism}, but its base has shape_dynamism={base.shape_dynamism}."
-            )
-        self._guards.append(
-            _Guard(
-                "shape_dynamism_init",
-                lambda view_spec: view_spec.shape_dynamism,
-                base.shape_dynamism,
-            )
-        )
-        self._guards.append(
-            _Guard(
-                "shape_dynamism_eq_base",
-                lambda view_spec: view_spec.shape_dynamism
-                == view_spec._base.shape_dynamism,
-                True,
-            )
-        )
-
         if self.dtype != base.dtype:
             raise Exception(
                 f"_ViewSpec is incompatible with its base on creation.  It has dtype={self.dtype}, but its base has dtype={base.dtype}."
@@ -183,15 +181,32 @@ class _ViewSpec(TensorSpec):
             _Guard("dtype", lambda view_spec: view_spec.dtype, base.dtype)
         )
 
-        # We do not guard nbytes because dynamic symints are replaced by upper bounds.
-        # We do guard on rank, though
-        if self.nbytes() != base.nbytes():
-            raise Exception(
-                f"_ViewSpec is incompatible with its base on creation.  It has nbytes={self.nbytes()}, but its base has nbytes={base.nbytes()}."
+        # For full views (same nbytes, zero offset), dynamism and rank must match.
+        # For sub-views (select/slice), the output is a contiguous subset so
+        # nbytes will differ, rank may change, and dynamism may differ
+        # (e.g., selecting away a dynamic dim produces a static output).
+        is_full_view = byte_offset == 0 and self.nbytes() == base.nbytes()
+        if is_full_view:
+            if self.shape_dynamism != base.shape_dynamism:
+                raise Exception(
+                    f"_ViewSpec is incompatible with its base on creation.  It has shape_dynamism={self.shape_dynamism}, but its base has shape_dynamism={base.shape_dynamism}."
+                )
+            self._guards.append(
+                _Guard(
+                    "shape_dynamism_eq_base",
+                    lambda view_spec: view_spec.shape_dynamism
+                    == view_spec._base.shape_dynamism,
+                    True,
+                )
             )
-        self._guards.append(
-            _Guard("rank", lambda view_spec: len(view_spec.shape), len(shape))
-        )
+            self._guards.append(
+                _Guard("rank", lambda view_spec: len(view_spec.shape), len(shape))
+            )
+        else:
+            if self.nbytes() + byte_offset > base.nbytes():
+                raise Exception(
+                    f"_ViewSpec sub-view extends beyond base.  Sub-view needs {self.nbytes()} bytes at offset {byte_offset}, but base has {base.nbytes()} bytes."
+                )
 
     def _run_guards(self) -> None:
         unguarded_access = self._unguarded_access
@@ -211,6 +226,7 @@ class _ViewSpec(TensorSpec):
             "_guards",
             "_unguarded_access",
             "_run_guards",
+            "_byte_offset",
         ]:
             return object.__getattribute__(self, name)
 
@@ -218,7 +234,19 @@ class _ViewSpec(TensorSpec):
         if name in self._self_fields:
             val = object.__getattribute__(self, name)
         elif name in self._base_fields:
-            val = object.__getattribute__(self._base, name)
+            val = getattr(self._base, name)
+            # For static sub-views, adjust mem_offset by byte_offset so the
+            # emitter can elide the op. For non-static sub-views, return
+            # None for mem_id/mem_offset — et_select runs at runtime and
+            # the output needs no allocation info.
+            if name in ("mem_id", "mem_offset") and val is not None:
+                byte_offset = object.__getattribute__(self, "_byte_offset")
+                if byte_offset != 0:
+                    shape_dynamism = object.__getattribute__(self, "shape_dynamism")
+                    if shape_dynamism != TensorShapeDynamism.STATIC:
+                        val = None
+                    elif name == "mem_offset":
+                        val = val + byte_offset
         else:
             if len(name) > 0 and name[0] != "_":
                 logger.warning(
@@ -239,6 +267,7 @@ class _ViewSpec(TensorSpec):
             "_guards",
             "_unguarded_access",
             "_run_guards",
+            "_byte_offset",
         ]:
             object.__setattr__(self, name, val)
             return
@@ -293,10 +322,52 @@ class ReplaceViewCopyWithViewPass(PassBase):
 
                     n_replaced += 1
 
+                elif _is_select_copy(node) and all(
+                    u.op != "output" for u in node.users
+                ):
+                    replaced = self._try_replace_select(node)
+                    if replaced:
+                        n_replaced += 1
+
             module.recompile()
 
         logger.debug(f"Replaced {n_replaced} view_copy nodes with {_VIEW_OP} nodes.")
+        logger.debug(
+            f"Replaced {n_replaced} select_copy nodes with {_SELECT_OP} nodes."
+        )
         return PassResult(graph_module, n_replaced > 0)
+
+    def _try_replace_select(self, node: torch.fx.Node) -> bool:
+        base = node.args[0]
+        assert isinstance(base, torch.fx.Node)
+        base_spec = base.meta["spec"]
+
+        dim: int = node.args[1]
+        index: int = node.args[2]
+        base_shape = list(base_spec.shape)
+
+        if dim < 0:
+            dim += len(base_shape)
+
+        if any(base_shape[i] != 1 for i in range(dim)):
+            return False
+
+        if index < 0:
+            index += base_shape[dim]
+
+        base_stride = contiguous_stride_from_shape(torch.Size(base_shape))
+        element_size = torch._utils._element_size(base_spec.dtype)
+        byte_offset = index * base_stride[dim] * element_size
+
+        if base_spec.const:
+            return False
+
+        node.target = _SELECT_OP
+        view_spec = _ViewSpec(base_spec, node.meta["val"].shape, byte_offset)
+        if base_spec.shape_dynamism != TensorShapeDynamism.STATIC:
+            view_spec.shape_dynamism = base_spec.shape_dynamism
+        node.meta["spec"] = view_spec
+        return True
 
     def ensures(self, graph_module: torch.fx.GraphModule) -> None:
         for module in graph_module.modules():
@@ -309,6 +380,8 @@ class ReplaceViewCopyWithViewPass(PassBase):
                     _is_view_copy(node) and all(u.op != "output" for u in node.users)
                 )
                 if node.op == "call_function" and node.target == _VIEW_OP:
+                    assert isinstance(node.meta["spec"], _ViewSpec)
+                if node.op == "call_function" and node.target == _SELECT_OP:
                     assert isinstance(node.meta["spec"], _ViewSpec)
 
     def requires(self, graph_module: torch.fx.GraphModule) -> None:
