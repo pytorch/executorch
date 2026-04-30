@@ -3,8 +3,9 @@
 Self-contained ExecuTorch implementation of
 [Voxtral-4B-TTS-2603](https://huggingface.co/mistralai/Voxtral-4B-TTS-2603),
 a ~4B parameter text-to-speech model that produces 24 kHz mono audio from
-text. Weights are loaded directly from the HuggingFace safetensors
-checkpoint. Supports CPU (portable + XNNPACK), CUDA, and MLX backends. With
+text. Export reads weights directly from the HuggingFace safetensors
+checkpoint and produces `.pte` files that the C++ runner loads at
+inference time. Supports CPU (portable + XNNPACK), CUDA, and MLX backends. With
 `--streaming`, the CUDA 4w export runs at **RTF 0.31x on RTX 5080 — 3× faster
 than real-time** with 2.6 s time-to-first-audio. On Apple Silicon, the MLX
 export delegates the LM, flow head, and codec decoder to MLX.
