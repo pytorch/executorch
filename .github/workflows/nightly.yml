@@ -37,6 +37,16 @@ jobs:
     with:
       ref: ${{ github.sha }}
     
+  test-cortex-m-e2e-nightly:
+    name: test-cortex-m-e2e-nightly
+    permissions:
+      id-token: write
+      contents: read
+    uses: ./.github/workflows/_test_cortex_m_e2e.yml
+    with:
+      models: '["ds_cnn", "mobilenet_v1_025", "resnet8", "deep_autoencoder"]'
+      timeout: 180
+
   test-static-hf-llm-qnn-linux:
     name: test-static-hf-llm-qnn-linux
     uses: pytorch/test-infra/.github/workflows/linux_job_v2.yml@main

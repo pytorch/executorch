@@ -13,7 +13,11 @@ namespace backends {
 namespace qnn {
 
 Error LpaiDevice::Configure() {
+#ifndef __hexagon__
   return QnnDevice::Configure();
+#else
+  return Error::Ok;
+#endif
 }
 
 } // namespace qnn
