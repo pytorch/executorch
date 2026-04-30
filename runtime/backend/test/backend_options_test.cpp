@@ -61,6 +61,31 @@ TEST_F(BackendOptionsTest, HandlesIntOptions) {
   EXPECT_EQ(num_threads, 256);
 }
 
+// Test int64_t options - exercises the variant arm that holds pointer-sized
+// opaque handles. Uses a value with the high 32 bits set to ensure the value
+// is not silently routed through (or truncated by) the int arm.
+TEST_F(BackendOptionsTest, HandlesInt64Options) {
+  constexpr int64_t kHandle = static_cast<int64_t>(0x123456789ABCDEF0LL);
+  options.set_option("handle", kHandle);
+
+  int64_t handle = 0;
+  EXPECT_EQ(options.get_option("handle", handle), Error::Ok);
+  EXPECT_EQ(handle, kHandle);
+
+  // Reading the same key as int should fail because the variant arm differs.
+  int as_int = 0;
+  EXPECT_EQ(options.get_option("handle", as_int), Error::InvalidArgument);
+
+  // Update existing key with a new int64_t value. Use a value with the top
+  // bit clear so the literal is well-defined as a signed int64_t across all
+  // toolchains (0xFEDCBA98... would be treated as an unsigned literal on many
+  // compilers and the cast back to int64_t would be implementation-defined).
+  constexpr int64_t kHandle2 = static_cast<int64_t>(0x7EDCBA9876543210LL);
+  options.set_option("handle", kHandle2);
+  EXPECT_EQ(options.get_option("handle", handle), Error::Ok);
+  EXPECT_EQ(handle, kHandle2);
+}
+
 // Test error conditions
 TEST_F(BackendOptionsTest, HandlesErrors) {
   // Non-existent key
