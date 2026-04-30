@@ -576,9 +576,12 @@ def _fused_moe_fake(
 # ---------------------------------------------------------------------------
 
 # Fixed BLOCK_M for the batched kernel. Not autotuned because the token
-# sorting layout depends on it. 16 is the minimum for tl.dot and wastes
-# the least padding with typical Qwen3.5 expert load (~30 tokens/expert).
-_BATCHED_BLOCK_M = 16
+# sorting layout depends on it. Microbenchmarked on Qwen3.5 MoE prefill
+# (M=1696, top_k=8, 256 experts) — BLOCK_M=64 is ~1.32x faster than 16
+# despite the extra padding, because the per-expert M block (~30 tokens
+# × 8 top_k = ~53 active rows/expert) saturates 64-row tensor-core MMAs
+# and reduces total program count.
+_BATCHED_BLOCK_M = 64
 
 
 def moe_align_block_size(
