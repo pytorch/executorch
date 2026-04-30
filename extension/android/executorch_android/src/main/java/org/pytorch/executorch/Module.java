@@ -8,6 +8,7 @@
 
 package org.pytorch.executorch;
 
+import android.util.Log;
 import com.facebook.jni.HybridData;
 import com.facebook.jni.annotations.DoNotStrip;
 import com.facebook.soloader.nativeloader.NativeLoader;
@@ -129,10 +130,11 @@ public class Module {
    * @return return value from the method.
    */
   public EValue[] execute(String methodName, EValue... inputs) {
-    mLock.lock();
     try {
+      mLock.lock();
       if (!mHybridData.isValid()) {
-        throw new IllegalStateException("Module has been destroyed");
+        Log.e("ExecuTorch", "Attempt to use a destroyed module");
+        return new EValue[0];
       }
       return executeNative(methodName, inputs);
     } finally {
@@ -149,17 +151,17 @@ public class Module {
    * synchronous, and will block until the method is loaded. Therefore, it is recommended to call
    * this on a background thread. However, users need to make sure that they don't execute before
    * this function returns.
+   *
+   * @return the Error code if there was an error loading the method
    */
-  public void loadMethod(String methodName) {
-    mLock.lock();
+  public int loadMethod(String methodName) {
     try {
+      mLock.lock();
       if (!mHybridData.isValid()) {
-        throw new IllegalStateException("Module has been destroyed");
+        Log.e("ExecuTorch", "Attempt to use a destroyed module");
+        return 0x2; // InvalidState
       }
-      int errorCode = loadMethodNative(methodName);
-      if (errorCode != 0) {
-        throw new ExecutorchRuntimeException(errorCode, "Failed to load method: " + methodName);
-      }
+      return loadMethodNative(methodName);
     } finally {
       mLock.unlock();
     }
@@ -182,20 +184,8 @@ public class Module {
    *
    * @return name of methods in this Module
    */
-  public String[] getMethods() {
-    mLock.lock();
-    try {
-      if (!mHybridData.isValid()) {
-        throw new IllegalStateException("Module has been destroyed");
-      }
-      return getMethodsNative();
-    } finally {
-      mLock.unlock();
-    }
-  }
-
   @DoNotStrip
-  private native String[] getMethodsNative();
+  public native String[] getMethods();
 
   /**
    * Get the corresponding @MethodMetadata for a method
@@ -204,19 +194,11 @@ public class Module {
    * @return @MethodMetadata for this method
    */
   public MethodMetadata getMethodMetadata(String name) {
-    mLock.lock();
-    try {
-      if (!mHybridData.isValid()) {
-        throw new IllegalStateException("Module has been destroyed");
-      }
-      MethodMetadata methodMetadata = mMethodMetadata.get(name);
-      if (methodMetadata == null) {
-        throw new IllegalArgumentException("method " + name + " does not exist for this module");
-      }
-      return methodMetadata;
-    } finally {
-      mLock.unlock();
+    MethodMetadata methodMetadata = mMethodMetadata.get(name);
+    if (methodMetadata == null) {
+      throw new IllegalArgumentException("method " + name + " does not exist for this module");
     }
+    return methodMetadata;
   }
 
   @DoNotStrip
@@ -228,15 +210,7 @@ public class Module {
 
   /** Retrieve the in-memory log buffer, containing the most recent ExecuTorch log entries. */
   public String[] readLogBuffer() {
-    mLock.lock();
-    try {
-      if (!mHybridData.isValid()) {
-        throw new IllegalStateException("Module has been destroyed");
-      }
-      return readLogBufferNative();
-    } finally {
-      mLock.unlock();
-    }
+    return readLogBufferNative();
   }
 
   @DoNotStrip
@@ -250,20 +224,8 @@ public class Module {
    * @return true if the etdump was successfully written, false otherwise.
    */
   @Experimental
-  public boolean etdump() {
-    mLock.lock();
-    try {
-      if (!mHybridData.isValid()) {
-        throw new IllegalStateException("Module has been destroyed");
-      }
-      return etdumpNative();
-    } finally {
-      mLock.unlock();
-    }
-  }
-
   @DoNotStrip
-  private native boolean etdumpNative();
+  public native boolean etdump();
 
   /**
    * Dump the ExecuTorch ETDump file to {@code outputPath}.
@@ -301,7 +263,10 @@ public class Module {
         mLock.unlock();
       }
     } else {
-      throw new IllegalStateException("Cannot destroy module while method is executing");
+      Log.w(
+          "ExecuTorch",
+          "Destroy was called while the module was in use. Resources will not be immediately"
+              + " released.");
     }
   }
 }

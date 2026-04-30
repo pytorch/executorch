@@ -86,6 +86,7 @@ def define_common_targets():
     runtime.cxx_library(
         name = "grid_sampler_2d_fp16_hw_impl",
         srcs = ["op_grid_sampler_2d_fp16_hw.cpp"],
+        exported_headers = ["op_grid_sampler_2d_fp16_hw.h"],
         visibility = ["PUBLIC"],
         compiler_flags = select({
             "DEFAULT": [],

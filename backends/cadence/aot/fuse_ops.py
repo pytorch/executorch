@@ -31,6 +31,7 @@ from executorch.backends.cadence.aot.pass_utils import (
     HierarchicalInplacePassInterface,
     register_cadence_pass,
     RemoveOrReplacePassInterface,
+    set_arg,
 )
 from executorch.backends.cadence.aot.utils import get_edge_overload_packet
 from executorch.backends.transforms.fuse_cascaded_transpose_or_permute_ops import (
@@ -54,6 +55,7 @@ from torch.nn.utils.fusion import fuse_conv_bn_weights
 
 def get_tensor_arg(node: torch.fx.Node, arg_name: str) -> torch.Tensor:
     graph_module = node.graph.owning_module
+    assert graph_module is not None
     tensor = get_tensor_from_attr(graph_module, get_arg(node, arg_name, torch.fx.Node))
     assert isinstance(tensor, torch.Tensor), f"{arg_name} must be present"
     return tensor
@@ -263,6 +265,7 @@ class FuseBatchNormWithConv(RemoveOrReplacePassInterface):
         conv_weight = get_tensor_arg(conv_node, "weight")
         # conv_bias is truly optional - fusion function handles None
         graph_module = conv_node.graph.owning_module
+        assert graph_module is not None
         conv_bias = get_tensor_from_attr(
             graph_module, cast(Optional[torch.fx.Node], get_arg(conv_node, "bias"))
         )
@@ -1003,6 +1006,75 @@ class FuseFullThenReshapePass(RemoveOrReplacePassInterface):
         return True
 
 
+@register_cadence_pass(CadencePassAttribute(opt_level=0))
+class FuseSliceSameDimPass(RemoveOrReplacePassInterface):
+    """Fuse chained slices on the same dim into a single slice.
+
+    When a slice_copy's input is another slice_copy on the same dimension
+    with step=1, the child slice can read directly from the grandparent
+    with merged indices, eliminating the intermediate slice.
+
+    Handles negative start/end indices by canonicalizing them against the
+    relevant dimension size before merging.
+    """
+
+    @staticmethod
+    def _canonicalize(val: int, dim_size: int) -> int:
+        return val + dim_size if val < 0 else val
+
+    @property
+    def targets(self) -> list[EdgeOpOverload]:
+        return [exir_ops.edge.aten.slice_copy.Tensor]
+
+    def maybe_remove_or_replace(self, node: torch.fx.Node) -> bool:
+        parent = get_arg(node, "input", torch.fx.Node)
+        if parent.target != exir_ops.edge.aten.slice_copy.Tensor:
+            return False
+
+        grandparent = get_arg(parent, "input", torch.fx.Node)
+        ndim = len(grandparent.meta["val"].shape)
+        child_dim = get_arg(node, "dim", int) % ndim
+        parent_dim = get_arg(parent, "dim", int) % ndim
+        if child_dim != parent_dim:
+            return False
+
+        child_start = get_arg(node, "start", Optional[int])
+        child_end = get_arg(node, "end", Optional[int])
+        child_step = get_arg(node, "step", int)
+        parent_start = get_arg(parent, "start", Optional[int])
+        parent_end = get_arg(parent, "end", Optional[int])
+        parent_step = get_arg(parent, "step", int)
+
+        if child_step != 1 or parent_step != 1:
+            return False
+        if (
+            child_start is None
+            or child_end is None
+            or parent_start is None
+            or parent_end is None
+        ):
+            return False
+
+        grandparent_dim_size = grandparent.meta["val"].shape[parent_dim]
+        parent_dim_size = parent.meta["val"].shape[parent_dim]
+
+        p_start = self._canonicalize(parent_start, grandparent_dim_size)
+        p_end = self._canonicalize(parent_end, grandparent_dim_size)
+        c_start = self._canonicalize(child_start, parent_dim_size)
+        c_end = self._canonicalize(child_end, parent_dim_size)
+
+        new_start = p_start + c_start
+        new_end = min(p_start + c_end, p_end)
+
+        if new_end > grandparent_dim_size:
+            return False
+
+        node.replace_input_with(parent, grandparent)
+        set_arg(node, "start", new_start)
+        set_arg(node, "end", new_end)
+        return True
+
+
 class HierarchicalCSEPass(HierarchicalInplacePassInterface):
     """
     A hierarchical Common Subexpression Elimination (CSE) pass that recursively
@@ -1035,4 +1107,5 @@ class CadenceFuseOpsInGraph:
         FuseMulScalarIntoDequantPass,
         FuseFullThenReshapePass,
         FuseTransposeOrPermuteOpPairsPass,
+        FuseSliceSameDimPass,
     ]

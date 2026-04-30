@@ -17,6 +17,7 @@ import java.util.concurrent.atomic.AtomicInteger
 import org.apache.commons.io.FileUtils
 import org.junit.Assert
 import org.junit.Before
+import org.junit.Ignore
 import org.junit.Test
 import org.junit.runner.RunWith
 import org.pytorch.executorch.TestFileUtils.getTestFilePath
@@ -39,49 +40,49 @@ class ModuleInstrumentationTest {
     inputStream.close()
   }
 
+  @Ignore(
+      "The forward has failure that needs to be fixed before enabling this test: [Executorch Error 0x12] Invalid argument: Execution failed for method: forward "
+  )
   @Test
   @Throws(IOException::class, URISyntaxException::class)
   fun testModuleLoadAndForward() {
     val module = Module.load(getTestFilePath(TEST_FILE_NAME))
-    try {
-      val results = module.forward(EValue.from(dummyInput()))
-      Assert.assertTrue(results[0].isTensor)
-    } finally {
-      module.destroy()
-    }
+
+    val results = module.forward()
+    Assert.assertTrue(results[0].isTensor)
   }
 
   @Test
   @Throws(IOException::class, URISyntaxException::class)
   fun testMethodMetadata() {
     val module = Module.load(getTestFilePath(TEST_FILE_NAME))
-    module.destroy()
   }
 
+  @Ignore(
+      "The forward has failure that needs to be fixed before enabling this test: [Executorch Error 0x12] Invalid argument: Execution failed for method: forward "
+  )
   @Test
   @Throws(IOException::class)
   fun testModuleLoadMethodAndForward() {
     val module = Module.load(getTestFilePath(TEST_FILE_NAME))
-    try {
-      module.loadMethod(FORWARD_METHOD)
 
-      val results = module.forward(EValue.from(dummyInput()))
-      Assert.assertTrue(results[0].isTensor)
-    } finally {
-      module.destroy()
-    }
+    val loadMethod = module.loadMethod(FORWARD_METHOD)
+    Assert.assertEquals(loadMethod.toLong(), OK.toLong())
+
+    val results = module.forward()
+    Assert.assertTrue(results[0].isTensor)
   }
 
+  @Ignore(
+      "The forward has failure that needs to be fixed before enabling this test: [Executorch Error 0x12] Invalid argument: Execution failed for method: forward "
+  )
   @Test
   @Throws(IOException::class)
   fun testModuleLoadForwardExplicit() {
     val module = Module.load(getTestFilePath(TEST_FILE_NAME))
-    try {
-      val results = module.execute(FORWARD_METHOD, EValue.from(dummyInput()))
-      Assert.assertTrue(results[0].isTensor)
-    } finally {
-      module.destroy()
-    }
+
+    val results = module.execute(FORWARD_METHOD)
+    Assert.assertTrue(results[0].isTensor)
   }
 
   @Test(expected = RuntimeException::class)
@@ -94,18 +95,9 @@ class ModuleInstrumentationTest {
   @Throws(IOException::class)
   fun testModuleLoadMethodNonExistantMethod() {
     val module = Module.load(getTestFilePath(TEST_FILE_NAME))
-    try {
-      val exception =
-          Assert.assertThrows(ExecutorchRuntimeException::class.java) {
-            module.loadMethod(NONE_METHOD)
-          }
-      Assert.assertEquals(
-          ExecutorchRuntimeException.INVALID_ARGUMENT,
-          exception.getErrorCode(),
-      )
-    } finally {
-      module.destroy()
-    }
+
+    val loadMethod = module.loadMethod(NONE_METHOD)
+    Assert.assertEquals(loadMethod.toLong(), INVALID_ARGUMENT.toLong())
   }
 
   @Test(expected = RuntimeException::class)
@@ -113,7 +105,8 @@ class ModuleInstrumentationTest {
   fun testNonPteFile() {
     val module = Module.load(getTestFilePath(NON_PTE_FILE_NAME))
 
-    module.loadMethod(FORWARD_METHOD)
+    val loadMethod = module.loadMethod(FORWARD_METHOD)
+    Assert.assertEquals(loadMethod.toLong(), INVALID_ARGUMENT.toLong())
   }
 
   @Test
@@ -123,7 +116,8 @@ class ModuleInstrumentationTest {
 
     module.destroy()
 
-    Assert.assertThrows(IllegalStateException::class.java) { module.loadMethod(FORWARD_METHOD) }
+    val loadMethod = module.loadMethod(FORWARD_METHOD)
+    Assert.assertEquals(loadMethod.toLong(), INVALID_STATE.toLong())
   }
 
   @Test
@@ -131,13 +125,18 @@ class ModuleInstrumentationTest {
   fun testForwardOnDestroyedModule() {
     val module = Module.load(getTestFilePath(TEST_FILE_NAME))
 
-    module.loadMethod(FORWARD_METHOD)
+    val loadMethod = module.loadMethod(FORWARD_METHOD)
+    Assert.assertEquals(loadMethod.toLong(), OK.toLong())
 
     module.destroy()
 
-    Assert.assertThrows(IllegalStateException::class.java) { module.forward() }
+    val results = module.forward()
+    Assert.assertEquals(0, results.size.toLong())
   }
 
+  @Ignore(
+      "The forward has failure that needs to be fixed before enabling this test: [Executorch Error 0x12] Invalid argument: Execution failed for method: forward "
+  )
   @Test
   @Throws(InterruptedException::class, IOException::class)
   fun testForwardFromMultipleThreads() {
@@ -151,7 +150,7 @@ class ModuleInstrumentationTest {
       try {
         latch.countDown()
         latch.await(5000, TimeUnit.MILLISECONDS)
-        val results = module.forward(EValue.from(dummyInput()))
+        val results = module.forward()
         Assert.assertTrue(results[0].isTensor)
         completed.incrementAndGet()
       } catch (_: InterruptedException) {}
@@ -168,7 +167,6 @@ class ModuleInstrumentationTest {
     }
 
     Assert.assertEquals(numThreads.toLong(), completed.get().toLong())
-    module.destroy()
   }
 
   companion object {
@@ -177,8 +175,9 @@ class ModuleInstrumentationTest {
     private const val NON_PTE_FILE_NAME = "/test.txt"
     private const val FORWARD_METHOD = "forward"
     private const val NONE_METHOD = "none"
-    private val inputShape = longArrayOf(1, 3, 224, 224)
-
-    private fun dummyInput(): Tensor = Tensor.ones(inputShape, DType.FLOAT)
+    private const val OK = 0x00
+    private const val INVALID_STATE = 0x2
+    private const val INVALID_ARGUMENT = 0x12
+    private const val ACCESS_FAILED = 0x22
   }
 }

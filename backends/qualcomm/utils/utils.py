@@ -1253,6 +1253,7 @@ def generate_qnn_executorch_compiler_spec(  # noqa: C901
     ]
 
 
+# If changing function interface, please ensure it doesn't break backends/qualcomm/scripts/build_utils.sh
 def get_soc_to_htp_arch_map():
     return {
         "SA8295": HtpArch.V68,
@@ -1278,6 +1279,7 @@ def get_soc_to_htp_arch_map():
     }
 
 
+# If changing function interface, please ensure it doesn't break backends/qualcomm/scripts/build_utils.sh
 def get_soc_to_lpai_hw_ver_map():
     return {
         "SM8850": LpaiHardwareVersion.V6,
