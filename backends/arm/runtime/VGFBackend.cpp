@@ -27,8 +27,8 @@ using executorch::runtime::MemoryAllocator;
 using executorch::runtime::Result;
 using executorch::runtime::Span;
 
-// We use the platform and runtime environment provided by the Vulkan delegate
-#include <executorch/backends/vulkan/runtime/vk_api/vk_api.h>
+// Volk meta-loader provides Vulkan function pointers (ARM tensor extensions, etc.)
+#include <volk.h>
 
 // Dependencies for processing VGF files into Vulkan calls
 #include <vgf/decoder.hpp>
