@@ -20,7 +20,13 @@ LpaiContext::LpaiContext(
     QnnDevice* device,
     QnnBackendCache* cache,
     QnnDlcManager* qnn_dlc_manager)
-    : QnnContext(implementation, backend, device, cache, qnn_dlc_manager) {
+    : QnnContext(
+          implementation,
+          backend,
+          device,
+          cache,
+          qnn_dlc_manager,
+          QnnExecuTorchProfileLevel::kProfileOff) {
   lpai_context_custom_config_ = std::make_unique<LpaiContextCustomConfig>();
 }
 

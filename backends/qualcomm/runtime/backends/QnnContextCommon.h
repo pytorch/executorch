@@ -13,7 +13,10 @@
 #include <executorch/backends/qualcomm/runtime/backends/QnnCustomProtocol.h>
 #include <executorch/backends/qualcomm/runtime/backends/QnnDeviceCommon.h>
 
+#include <executorch/backends/qualcomm/runtime/backends/QnnProfiler.h>
+
 #include <memory>
+#include <mutex>
 
 namespace executorch {
 namespace backends {
@@ -28,13 +31,23 @@ class QnnContext {
       QnnBackend* backend,
       QnnDevice* device,
       QnnBackendCache* cache,
-      QnnDlcManager* qnn_dlc_manager)
+      QnnDlcManager* qnn_dlc_manager,
+      const QnnExecuTorchProfileLevel& profile_level)
       : handle_(nullptr),
         implementation_(implementation),
         backend_(backend),
         device_(device),
         cache_(cache),
-        qnn_dlc_manager_(qnn_dlc_manager) {}
+        qnn_dlc_manager_(qnn_dlc_manager),
+        profile_level_(profile_level),
+        is_htp_backend_(
+            implementation->GetQnnInterface().GetBackendId() ==
+            QNN_BACKEND_ID_HTP),
+        need_to_profile_(
+            profile_level != QnnExecuTorchProfileLevel::kProfileOff) {
+    qnn_profiler_ =
+        std::make_unique<QnnProfile>(implementation_, backend_, profile_level_);
+  }
 
   virtual ~QnnContext();
 
@@ -73,6 +86,7 @@ class QnnContext {
   };
 
  private:
+  void WriteHeapProfile();
   Qnn_ContextHandle_t handle_;
   QnnImplementation* implementation_;
   QnnBackend* backend_;
@@ -80,6 +94,13 @@ class QnnContext {
   QnnBackendCache* cache_;
   QnnContextCustomProtocol qnn_context_custom_protocol_;
   QnnDlcManager* qnn_dlc_manager_;
+
+  QnnExecuTorchProfileLevel profile_level_;
+  std::unique_ptr<QnnProfile> qnn_profiler_;
+  bool is_htp_backend_;
+  bool need_to_profile_;
+  static std::mutex htp_context_mutex_;
+  static int htp_context_count_;
 };
 } // namespace qnn
 } // namespace backends

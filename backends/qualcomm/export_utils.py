@@ -494,6 +494,11 @@ class SimpleADB:
         if callback:
             callback()
 
+    def pull_heap_output(self, src_file_path, dst_folder, callback=None):
+        self._adb(["pull", src_file_path, dst_folder])
+        if callback:
+            callback()
+
 
 def build_executorch_binary(
     model: torch.nn.Module,  # noqa: B006

@@ -5528,6 +5528,42 @@ class TestQNNFloatingPointUtils(TestQNN):
         )
         TestQNN.profile_level = 0
 
+    def test_qnn_backend_runtime_option_heap_profile(self):
+        module = SimpleModel()  # noqa: F405
+        sample_input = (torch.ones(1, 32, 28, 28), torch.ones(1, 32, 28, 28))
+
+        backend_options = generate_htp_compiler_spec(
+            use_fp16=True,
+            use_multi_contexts=True,
+        )
+
+        compiler_specs = generate_qnn_executorch_compiler_spec(
+            soc_model=self.chipset_table[TestQNN.soc_model],
+            backend_options=backend_options,
+            profile_level=2,  # if 0 for closing heap profiling
+        )
+
+        pass_jobs = get_capture_program_passes()
+        split_graph_pass, setting = self.split_graph(4)
+        pass_jobs[split_graph_pass] = setting
+        dep_table = get_passes_dependency_for_capture_program()
+        dep_table[split_graph_pass] = [FoldQDQ]
+
+        edge_prog_mgr = to_edge_transform_and_lower_to_qnn(
+            module=module,
+            inputs=sample_input,
+            compiler_specs=compiler_specs,
+            dep_table=dep_table,
+            passes_job=pass_jobs,
+        )
+        exec_prog = edge_prog_mgr.to_executorch()
+        self.verify_output(
+            module,
+            sample_input,
+            exec_prog,
+            save_heap_result=True,
+        )
+
     def test_qnn_backend_runtime_option_htp_performance(self):
         backend_options = generate_htp_compiler_spec(use_fp16=True)
         TestQNN.compiler_specs = generate_qnn_executorch_compiler_spec(
@@ -6431,6 +6467,43 @@ class TestQNNQuantizedUtils(TestQNN):
             expected_profile_events=30,
         )
         TestQNN.profile_level = 0
+
+    def test_qnn_backend_runtime_option_heap_profile(self):
+        module = SimpleModel()  # noqa: F405
+        sample_input = (torch.ones(1, 32, 28, 28), torch.ones(1, 32, 28, 28))
+        module1 = self.get_qdq_module(module, sample_input)
+
+        backend_options = generate_htp_compiler_spec(
+            use_fp16=False,
+            use_multi_contexts=True,
+        )
+
+        compiler_specs = generate_qnn_executorch_compiler_spec(
+            soc_model=self.chipset_table[TestQNN.soc_model],
+            backend_options=backend_options,
+            profile_level=2,  # if 0 for closing heap profiling
+        )
+
+        pass_jobs = get_capture_program_passes()
+        split_graph_pass, setting = self.split_graph(4)
+        pass_jobs[split_graph_pass] = setting
+        dep_table = get_passes_dependency_for_capture_program()
+        dep_table[split_graph_pass] = [FoldQDQ]
+
+        edge_prog_mgr = to_edge_transform_and_lower_to_qnn(
+            module=module1,
+            inputs=sample_input,
+            compiler_specs=compiler_specs,
+            dep_table=dep_table,
+            passes_job=pass_jobs,
+        )
+        exec_prog = edge_prog_mgr.to_executorch()
+        self.verify_output(
+            module1,
+            sample_input,
+            exec_prog,
+            save_heap_result=True,
+        )
 
     def test_qnn_backend_runtime_option_htp_performance(self):
         backend_options = generate_htp_compiler_spec(use_fp16=False)
