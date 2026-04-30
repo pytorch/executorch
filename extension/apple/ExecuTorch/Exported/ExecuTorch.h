@@ -6,6 +6,7 @@
  * LICENSE file in the root directory of this source tree.
  */
 
+#import "ExecuTorchBackendOption.h"
 #import "ExecuTorchError.h"
 #import "ExecuTorchLog.h"
 #import "ExecuTorchModule.h"

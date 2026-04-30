@@ -193,4 +193,153 @@ class ModuleTest: XCTestCase {
     XCTAssertNoThrow(try module.setInputs(Tensor<Float>([2]), Tensor<Float>([3])))
     XCTAssertEqual(try module.forward(), Tensor<Float>([5]))
   }
+
+  func testBackendOptionCreation() {
+    let boolOption = BackendOption("use_cache", true)
+    XCTAssertEqual(boolOption.key, "use_cache")
+    XCTAssertEqual(boolOption.type, .boolean)
+    XCTAssertTrue(boolOption.boolValue)
+
+    let intOption = BackendOption("num_threads", 4)
+    XCTAssertEqual(intOption.key, "num_threads")
+    XCTAssertEqual(intOption.type, .integer)
+    XCTAssertEqual(intOption.intValue, 4)
+
+    let stringOption = BackendOption("compute_unit", "cpu_and_gpu")
+    XCTAssertEqual(stringOption.key, "compute_unit")
+    XCTAssertEqual(stringOption.type, .string)
+    XCTAssertEqual(stringOption.stringValue, "cpu_and_gpu")
+  }
+
+  func testLoadWithBackendOptions() {
+    guard let modelPath = resourceBundle.path(forResource: "add", ofType: "pte") else {
+      XCTFail("Couldn't find the model file")
+      return
+    }
+    let module = Module(filePath: modelPath)
+    let backendOptions: [String: [BackendOption]] = [
+      "SomeBackend": [
+        BackendOption("num_threads", 4),
+        BackendOption("use_cache", true),
+      ]
+    ]
+    XCTAssertNoThrow(try module.load(backendOptions: backendOptions))
+    XCTAssertTrue(module.isLoaded())
+  }
+
+  func testLoadWithEmptyBackendOptions() {
+    guard let modelPath = resourceBundle.path(forResource: "add", ofType: "pte") else {
+      XCTFail("Couldn't find the model file")
+      return
+    }
+    let module = Module(filePath: modelPath)
+    let backendOptions: [String: [BackendOption]] = [:]
+    XCTAssertNoThrow(try module.load(backendOptions: backendOptions))
+    XCTAssertTrue(module.isLoaded())
+  }
+
+  func testLoadMethodWithBackendOptions() {
+    guard let modelPath = resourceBundle.path(forResource: "add", ofType: "pte") else {
+      XCTFail("Couldn't find the model file")
+      return
+    }
+    let module = Module(filePath: modelPath)
+    let backendOptions: [String: [BackendOption]] = [
+      "SomeBackend": [
+        BackendOption("compute_unit", "cpu_and_gpu"),
+      ]
+    ]
+    XCTAssertNoThrow(try module.load("forward", backendOptions: backendOptions))
+    XCTAssertTrue(module.isLoaded("forward"))
+  }
+
+  func testLoadWithBackendOptionsThenExecute() {
+    guard let modelPath = resourceBundle.path(forResource: "add", ofType: "pte") else {
+      XCTFail("Couldn't find the model file")
+      return
+    }
+    let module = Module(filePath: modelPath)
+    let backendOptions: [String: [BackendOption]] = [
+      "SomeBackend": [
+        BackendOption("num_threads", 4),
+      ]
+    ]
+    XCTAssertNoThrow(try module.load(backendOptions: backendOptions))
+
+    let inputs: [Tensor<Float>] = [Tensor([1]), Tensor([1])]
+    var outputs: [Value]?
+    XCTAssertNoThrow(outputs = try module.forward(inputs))
+    XCTAssertEqual(outputs?.first?.tensor(), Tensor([Float(2)]))
+  }
+
+  // Regression test: when load(backendOptions:) is followed by a lazy
+  // load_method (triggered by forward without an explicit load("forward")),
+  // the LoadBackendOptionsMap built by the ObjC wrapper must outlive the
+  // wrapper call. The previous implementation built the map on the stack and
+  // passed its address into Module::load (which only borrows it per the C++
+  // contract); the per-delegate loop in Method::init then dereferenced a
+  // dangling pointer in strcmp and crashed with EXC_BAD_ACCESS.
+  //
+  // The plain add.pte fixture does NOT trigger this because it has zero
+  // delegates, so the per-delegate loop never executes. We use a
+  // CoreML-delegated add model (add_coreml.pte, generated at CI time by
+  // resources/generate_coreml_test_models.py) which has at least one
+  // delegate.
+  func testLoadWithBackendOptionsThenExecuteOnCoreMLDelegatedModel() throws {
+    guard let modelPath = resourceBundle.path(forResource: "add_coreml", ofType: "pte") else {
+      throw XCTSkip("add_coreml.pte not bundled — run extension/apple/ExecuTorch/__tests__/resources/generate_coreml_test_models.py to generate it.")
+    }
+    let module = Module(filePath: modelPath)
+    let backendOptions: [String: [BackendOption]] = [
+      "CoreMLBackend": [
+        BackendOption("compute_unit", "cpu_and_gpu"),
+        BackendOption("_use_new_cache", true),
+      ]
+    ]
+    XCTAssertNoThrow(try module.load(backendOptions: backendOptions))
+    // No explicit load("forward") here — exercise the lazy load_method path
+    // that previously dereferenced a dangling LoadBackendOptionsMap.
+    let inputs: [Tensor<Float>] = [Tensor([1]), Tensor([1])]
+    var outputs: [Value]?
+    XCTAssertNoThrow(outputs = try module.forward(inputs))
+    XCTAssertEqual(outputs?.first?.tensor(), Tensor([Float(2)]))
+  }
+
+  // Regression test: calling load(backendOptions:) twice on the same Module
+  // must remain safe. The C++ Module stores a pointer to the ObjC wrapper's
+  // ivar map; the wrapper rebuilds the map in place on each call rather than
+  // reallocating a new object. This test locks in the contract that the
+  // ivar's address is stable across replacements, so a lazy load_method
+  // triggered after the second load call dereferences valid (replaced)
+  // contents rather than freed memory.
+  func testRepeatedLoadWithBackendOptionsThenExecuteOnCoreMLDelegatedModel() throws {
+    guard let modelPath = resourceBundle.path(forResource: "add_coreml", ofType: "pte") else {
+      throw XCTSkip("add_coreml.pte not bundled — run extension/apple/ExecuTorch/__tests__/resources/generate_coreml_test_models.py to generate it.")
+    }
+    let module = Module(filePath: modelPath)
+
+    let firstOptions: [String: [BackendOption]] = [
+      "CoreMLBackend": [
+        BackendOption("compute_unit", "cpu_only"),
+      ]
+    ]
+    XCTAssertNoThrow(try module.load(backendOptions: firstOptions))
+
+    // Replace the options before any method is loaded. The previous storage
+    // (and any Spans into it) must be safely torn down and rebuilt without
+    // invalidating the stored pointer in the underlying C++ Module.
+    let secondOptions: [String: [BackendOption]] = [
+      "CoreMLBackend": [
+        BackendOption("compute_unit", "cpu_and_gpu"),
+        BackendOption("_use_new_cache", true),
+      ]
+    ]
+    XCTAssertNoThrow(try module.load(backendOptions: secondOptions))
+
+    // Lazy load_method via forward() should now see the second options.
+    let inputs: [Tensor<Float>] = [Tensor([1]), Tensor([1])]
+    var outputs: [Value]?
+    XCTAssertNoThrow(outputs = try module.forward(inputs))
+    XCTAssertEqual(outputs?.first?.tensor(), Tensor([Float(2)]))
+  }
 }

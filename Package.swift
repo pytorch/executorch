@@ -126,6 +126,18 @@ for (key, value) in products {
   packageTargets.append(target)
 }
 
+// Test fixtures. add_coreml.pte is generated at CI time by
+// extension/apple/ExecuTorch/__tests__/resources/generate_coreml_test_models.py
+// (invoked by scripts/build_apple_frameworks.sh before `swift test`). It is
+// gitignored, so include it in test resources only when present so that
+// `swift test` runs on dev machines without CoreML python deps don't fail
+// at the SwiftPM resolve stage.
+let testResourcesDir = "extension/apple/ExecuTorch/__tests__/resources"
+var testResources: [Resource] = [.copy("resources/add.pte")]
+if FileManager.default.fileExists(atPath: "\(testResourcesDir)/add_coreml.pte") {
+  testResources.append(.copy("resources/add_coreml.pte"))
+}
+
 let package = Package(
   name: "executorch",
   platforms: [
@@ -141,9 +153,7 @@ let package = Package(
         .target(name: "kernels_optimized\(dependencies_suffix)"),
       ],
       path: "extension/apple/ExecuTorch/__tests__",
-      resources: [
-        .copy("resources/add.pte"),
-      ],
+      resources: testResources,
       linkerSettings: [
         .unsafeFlags([
           "-Xlinker", "-force_load",
