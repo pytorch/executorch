@@ -535,11 +535,12 @@ def _apply_turboquant(model, config):
 # ---------------------------------------------------------------------------
 
 
-def _set_batched_moe(model, enabled):
+def _set_batched_moe(model, enabled, moe_activation_dtype="bf16"):
     """Toggle batched tensor-core MoE kernel for all MoE layers."""
     for layer in model.layers:
         if hasattr(layer, "mlp") and hasattr(layer.mlp, "experts"):
             layer.mlp.experts.use_batched_moe = enabled
+            layer.mlp.experts.moe_activation_dtype = moe_activation_dtype
 
 
 def export_and_lower(model, config, args):
@@ -782,7 +783,8 @@ def _export_cuda(model, config, args):
     # chunk_gated_delta_rule with CHUNK_SIZE=64) for the full range of sequence
     # lengths. Smaller examples cause AOTI to bake in intermediate buffer sizes
     # that reject longer prompts at runtime.
-    _set_batched_moe(model, True)
+    moe_activation_dtype = getattr(args, "moe_activation_dtype", "bf16")
+    _set_batched_moe(model, True, moe_activation_dtype=moe_activation_dtype)
     print("Exporting prefill method...")
 
     example_prefill_len = config.max_seq_len - 1
@@ -945,6 +947,12 @@ def main():  # noqa: C901
         "--no-splitk",
         action="store_true",
         help="Disable split-K (flash-decoding) SDPA for decode; use tiled SDPA instead.",
+    )
+    parser.add_argument(
+        "--moe-activation-dtype",
+        choices=["bf16", "int8"],
+        default="bf16",
+        help="MoE activation dtype for prefill only. Decode always uses bf16. bf16 (default): W4A16 batched GEMM. int8: W4A8 with INT8 tensor cores.",
     )
     args = parser.parse_args()
 
