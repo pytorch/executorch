@@ -365,8 +365,7 @@ class TextDecoder(Component):
                             break
 
     def _save_output_kv_cache_quant_attrs(self):
-        k_idx = 0
-        v_idx = 0
+        kv_idx = 0
         for node in self.decoder.graph.nodes:
             if not is_graph_output(node):
                 continue
@@ -374,13 +373,14 @@ class TextDecoder(Component):
             if cache_output_node.meta["val"].size()[-2:] in self.kv_cache_shape:
                 # [QCOM_SCALE, QCOM_ZERO_POINT, QCOM_QUANT_MIN, QCOM_QUANT_MAX, QCOM_DTYPE]
                 # This meta is for attention sink feature
-                self.meta[f"get_kv_output_{k_idx+v_idx}_quant_attr"] = [
+                self.meta[f"get_kv_output_{kv_idx}_quant_attr"] = [
                     node.args[1],
                     node.args[2],
                     node.args[3],
                     node.args[4],
                     str(node.args[5]),
                 ]
+                kv_idx += 1
 
     def _tag_ios(self, node, fixed_point_type):
         atten_mask_shape = {
