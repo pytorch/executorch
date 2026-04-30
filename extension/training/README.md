@@ -8,7 +8,7 @@ current state.
 ## Layout
 - `examples/` : Example end to end flows from model definition to optimizer.step()
 - `module/`: Utility class to provide an improved UX when using ExecuTorch for Training.
-- `optimizer/`: Cpp implementations of various optimizers, currently only SGD though Adam is planned.
+- `optimizer/`: Cpp implementations of various optimizers, currently SGD and AdamW. Adam is planned.
 - `test/`: Tests that cover multiple subdirs.
 
 ## Technical Birds Eye view
