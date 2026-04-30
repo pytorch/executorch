@@ -43,9 +43,13 @@ def resolve_hf_cache_layout(config):
 
     if layer_types is None:
         if getattr(text_config, "sliding_window", None) is not None:
-            layer_types = ["sliding_attention" for _ in range(text_config.num_hidden_layers)]
+            layer_types = [
+                "sliding_attention" for _ in range(text_config.num_hidden_layers)
+            ]
         else:
-            layer_types = ["full_attention" for _ in range(text_config.num_hidden_layers)]
+            layer_types = [
+                "full_attention" for _ in range(text_config.num_hidden_layers)
+            ]
     else:
         layer_types = list(layer_types)
 
@@ -54,13 +58,20 @@ def resolve_hf_cache_layout(config):
 
     if hasattr(text_config, "global_head_dim"):
         head_dims = [
-            text_config.global_head_dim if layer_type == "full_attention" else text_config.head_dim
+            (
+                text_config.global_head_dim
+                if layer_type == "full_attention"
+                else text_config.head_dim
+            )
             for layer_type in layer_types
         ]
         num_heads = [
-            text_config.num_global_key_value_heads
-            if layer_type == "full_attention" and getattr(text_config, "attention_k_eq_v", False)
-            else text_config.num_key_value_heads
+            (
+                text_config.num_global_key_value_heads
+                if layer_type == "full_attention"
+                and getattr(text_config, "attention_k_eq_v", False)
+                else text_config.num_key_value_heads
+            )
             for layer_type in layer_types
         ]
     else:
