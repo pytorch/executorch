@@ -248,21 +248,31 @@ target_link_libraries(
 
 if(${CMAKE_SYSTEM_PROCESSOR} MATCHES Hexagon)
   # Add macro here so we can dlopen the correct .so library.
-  if(DSP_TYPE STREQUAL "3")
-    string(TOUPPER ${DSP_VERSION} CAPITAL_DSP_VERSION)
-    set(HEXAGON_LIB "libQnnHtp${CAPITAL_DSP_VERSION}.so")
+  if(DSP_TYPE STREQUAL "0")
+    message(
+      STATUS
+        "aDSP direct and non-direct mode uses shared libraries under different folders but have the same name, skipping HEXAGON_LIB override."
+    )
+    # Just random string here since QnnBackendUnifiedRegistry.h will ignore this
+    # macro for aDSP case.
+    add_compile_definitions(HEXAGON_LIB="")
+  elseif(DSP_TYPE STREQUAL "3")
+    string(TOUPPER ${CDSP_VERSION} CAPITAL_CDSP_VERSION)
+    set(HEXAGON_LIB "libQnnHtp${CAPITAL_CDSP_VERSION}.so")
     add_compile_definitions(HEXAGON_LIB="${HEXAGON_LIB}")
     message(STATUS "For hexagon build, using HTP Library: ${HEXAGON_LIB}")
   else()
     message(FATAL_ERROR "Unknown DSP_TYPE ${DSP_TYPE}")
   endif()
 
+  # aDSP will also use cDSP c/c++ library since aDSP does not have these
+  # libraries.
   target_link_libraries(
     qnn_executorch_backend
     PRIVATE
-      ${HEXAGON_TOOLS_ROOT}/Tools/target/hexagon/lib/${DSP_VERSION}/G0/pic/libc.so
-      ${HEXAGON_TOOLS_ROOT}/Tools/target/hexagon/lib/${DSP_VERSION}/G0/pic/libc++.so.1
-      ${HEXAGON_TOOLS_ROOT}/Tools/target/hexagon/lib/${DSP_VERSION}/G0/pic/libc++abi.so.1
+      ${HEXAGON_TOOLS_ROOT}/Tools/target/hexagon/lib/${CDSP_VERSION}/G0/pic/libc.so
+      ${HEXAGON_TOOLS_ROOT}/Tools/target/hexagon/lib/${CDSP_VERSION}/G0/pic/libc++.so.1
+      ${HEXAGON_TOOLS_ROOT}/Tools/target/hexagon/lib/${CDSP_VERSION}/G0/pic/libc++abi.so.1
   )
 endif()
 

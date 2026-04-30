@@ -80,6 +80,7 @@ libabsl_tracing_internal.a,\
 libabsl_utf8_for_code_point.a,\
 libextension_llm_apple.a,\
 libextension_llm_runner.a,\
+libextension_memory_allocator.a,\
 libpcre2-8.a,\
 libre2.a,\
 libregex_lookahead.a,\
