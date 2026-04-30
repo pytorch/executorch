@@ -32,10 +32,7 @@
 - (nullable NSString *)requireFixture:(NSString *)name ofType:(NSString *)type {
   NSString *path = [[self resourceBundle] pathForResource:name ofType:type];
   if (path) return path;
-  NSString *message = [NSString stringWithFormat:
-      @"%@.%@ not bundled — run "
-       "extension/apple/ExecuTorch/__tests__/resources/generate_coreml_test_models.py "
-       "to generate it.", name, type];
+  NSString *message = [NSString stringWithFormat:@"%@.%@ not bundled.", name, type];
   if (NSProcessInfo.processInfo.environment[@"CI"] != nil) {
     // CI: hard fail. XCTFail records the failure; we then return nil so the
     // caller exits early. Single failure artifact.

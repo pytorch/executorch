@@ -259,9 +259,8 @@ static inline ExecuTorchValue *toExecuTorchValue(EValue value) NS_RETURNS_RETAIN
   //
   // INVARIANT: this ivar is only ever overwritten with another non-nil
   // BackendOptionsMap, and never reset to nil while `_module` is alive.
-  // Resetting it to nil would release the C++ map underneath `_module`'s
-  // borrowed pointer and re-introduce the dangling-pointer bug class this
-  // refactor was created to eliminate.
+  // Resetting to nil would release the C++ map underneath `_module`'s
+  // borrowed pointer, causing a dangling-pointer crash.
   //
   // THREAD SAFETY: like the rest of `ExecuTorchModule`, write access here
   // is not thread-safe. The ARC retain/release on assignment is non-atomic
@@ -376,11 +375,13 @@ static inline ExecuTorchValue *toExecuTorchValue(EValue value) NS_RETURNS_RETAIN
            options:(ExecuTorchBackendOptionsMap *)options
              error:(NSError **)error {
   NSParameterAssert(options);
-  // Note: unlike -loadWithOptions:..., this path passes the C++ map pointer
-  // synchronously into Module::load_method, which uses it within the same
-  // call stack and does not store it. We therefore do NOT need to retain
-  // `options` past this method's return — `options` is held alive by ARC
-  // via the local parameter for the duration of the call.
+  // Defensively retain the options for the Module's lifetime, matching
+  // -loadWithOptions:. Today Module::load_method consumes the pointer
+  // synchronously and does not cache it, so retention is not strictly
+  // required for this call. We retain anyway so that a future change to
+  // the C++ API that caches the pointer cannot silently introduce a
+  // dangling-pointer bug in this wrapper.
+  _loadedBackendOptions = options;
   const auto errorCode = _module->load_method(methodName.UTF8String,
                                                /*planned_memory=*/nullptr,
                                                /*event_tracer=*/nullptr,

@@ -102,13 +102,18 @@
       return _boolValue == other.boolValue;
     case ExecuTorchBackendOptionTypeInteger:
       return _intValue == other.intValue;
-    case ExecuTorchBackendOptionTypeString:
+    case ExecuTorchBackendOptionTypeString: {
       // Both are non-null when type is String (init enforces it), but be
       // defensive in case of subclass/manual misuse.
-      if (_stringValue == other.stringValue) {
+      NSString *otherString = other.stringValue;
+      if (_stringValue == otherString) {
         return YES;
       }
-      return [_stringValue isEqualToString:other.stringValue];
+      if (_stringValue == nil || otherString == nil) {
+        return NO;
+      }
+      return [_stringValue isEqualToString:otherString];
+    }
   }
   return NO;
 }

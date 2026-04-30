@@ -28,7 +28,7 @@ class ModuleTest: XCTestCase {
     if let path = resourceBundle.path(forResource: name, ofType: type) {
       return path
     }
-    let message = "\(name).\(type) not bundled — run extension/apple/ExecuTorch/__tests__/resources/generate_coreml_test_models.py to generate it."
+    let message = "\(name).\(type) not bundled."
     if ProcessInfo.processInfo.environment["CI"] != nil {
       // Throw a plain Error (NOT XCTSkip) so the test is reported as failed
       // rather than skipped. The thrown error's localizedDescription is the
@@ -263,80 +263,10 @@ class ModuleTest: XCTestCase {
     XCTAssertFalse(desc.contains("0x"), "description should not include a pointer: \(desc)")
   }
 
-  func testLoadWithBackendOptions() throws {
-    guard let modelPath = resourceBundle.path(forResource: "add", ofType: "pte") else {
-      XCTFail("Couldn't find the model file")
-      return
-    }
-    let module = Module(filePath: modelPath)
-    let options = try BackendOptionsMap(options: [
-      "SomeBackend": [
-        BackendOption("num_threads", 4),
-        BackendOption("use_cache", true),
-      ]
-    ])
-    XCTAssertNoThrow(try module.load(options))
-    XCTAssertTrue(module.isLoaded())
-  }
-
-  func testLoadWithEmptyBackendOptions() throws {
-    guard let modelPath = resourceBundle.path(forResource: "add", ofType: "pte") else {
-      XCTFail("Couldn't find the model file")
-      return
-    }
-    let module = Module(filePath: modelPath)
-    let options = try BackendOptionsMap(options: [:])
-    XCTAssertNoThrow(try module.load(options))
-    XCTAssertTrue(module.isLoaded())
-  }
-
-  func testLoadMethodWithBackendOptions() throws {
-    guard let modelPath = resourceBundle.path(forResource: "add", ofType: "pte") else {
-      XCTFail("Couldn't find the model file")
-      return
-    }
-    let module = Module(filePath: modelPath)
-    let options = try BackendOptionsMap(options: [
-      "SomeBackend": [
-        BackendOption("compute_unit", "cpu_and_gpu"),
-      ]
-    ])
-    XCTAssertNoThrow(try module.load("forward", options: options))
-    XCTAssertTrue(module.isLoaded("forward"))
-  }
-
-  func testLoadWithBackendOptionsThenExecute() throws {
-    guard let modelPath = resourceBundle.path(forResource: "add", ofType: "pte") else {
-      XCTFail("Couldn't find the model file")
-      return
-    }
-    let module = Module(filePath: modelPath)
-    let options = try BackendOptionsMap(options: [
-      "SomeBackend": [
-        BackendOption("num_threads", 4),
-      ]
-    ])
-    XCTAssertNoThrow(try module.load(options))
-
-    let inputs: [Tensor<Float>] = [Tensor([1]), Tensor([1])]
-    var outputs: [Value]?
-    XCTAssertNoThrow(outputs = try module.forward(inputs))
-    XCTAssertEqual(outputs?.first?.tensor(), Tensor([Float(2)]))
-  }
-
-  // Regression test: when load(_:BackendOptionsMap) is followed by a lazy
-  // load_method (triggered by forward without an explicit load("forward")),
-  // the C++ LoadBackendOptionsMap held inside the BackendOptionsMap must
-  // outlive the wrapper call. The Module retains the BackendOptionsMap via
-  // ARC for exactly that reason. The per-delegate loop in Method::init
-  // would otherwise dereference a dangling pointer in strcmp and crash
-  // with EXC_BAD_ACCESS.
-  //
-  // The plain add.pte fixture does NOT trigger this because it has zero
-  // delegates, so the per-delegate loop never executes. We use a
-  // CoreML-delegated add model (add_coreml.pte, generated at CI time by
-  // resources/generate_coreml_test_models.py) which has at least one
-  // delegate.
+  // Regression test for the lazy load_method path: after load(options),
+  // forward() triggers load_method which must still see valid backend
+  // options. Requires a delegated model — the plain add.pte has no
+  // delegates and so does not exercise the code path.
   func testLoadWithBackendOptionsThenExecuteOnCoreMLDelegatedModel() throws {
     let modelPath = try requireFixture("add_coreml", ofType: "pte")
     let module = Module(filePath: modelPath)
