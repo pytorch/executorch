@@ -15,8 +15,8 @@ from executorch.exir.schema import DelegateCall, KernelCall
 def test_aot_example__mobilenet_v2():
     """Test that mobilenet can be lowered to Neutron backend via `aot_neutron_compile.py` and all ops are delegated."""
 
-    # Find the executorch root directory (4 levels up from this test file)
-    executorch_root = Path(__file__).parent.parent.parent.parent
+    # Find the executorch root directory (5 levels up from this test file)
+    executorch_root = Path(__file__).parent.parent.parent.parent.parent
     assert executorch_root.exists(), f"Executorch root not found at {executorch_root}"
 
     # Run the compilation script as a module (like run_aot_example.sh does)

@@ -29,7 +29,7 @@ def define_common_targets():
             "//executorch/runtime/backend:interface",
             ":vela_bin_stream",
             "//executorch/runtime/core:core",
-            "fbsource//third-party/ethos-u-core-driver:core_driver",
+            "fbsource//third-party/ethos-u-core-driver:core_driver_headers_only",
         ],
     )
     runtime.cxx_library(
