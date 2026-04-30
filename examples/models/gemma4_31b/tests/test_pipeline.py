@@ -22,7 +22,11 @@ import unittest
 import torch
 import torch.nn as nn
 
-from executorch.examples.models.gemma4_31b.model import Gemma4_31B, Gemma4_31BConfig
+from executorch.examples.models.gemma4_31b.model import (
+    Gemma4_31B,
+    Gemma4_31BConfig,
+    RingKVCache,
+)
 from executorch.examples.models.gemma4_31b.quant import (
     load,
     QuantConfig,
@@ -203,6 +207,63 @@ class TestQuantizeSaveLoadRoundtrip(unittest.TestCase):
             q, u = load(path)
             self.assertNotIn("norm.weight", u)
             self.assertIn("norm.BOGUS", u)
+
+
+class TestRingKVCache(unittest.TestCase):
+    """Unit tests for the ring-buffer KV cache (CPU, no model needed)."""
+
+    def _make_cache(self, window=4, heads=2, head_dim=8):
+        return RingKVCache(
+            max_batch_size=1, window_size=window, num_kv_heads=heads, head_dim=head_dim
+        )
+
+    def test_sequential_write_read(self):
+        """Writing positions 0..buf_size-1 fills every slot exactly once."""
+        cache = self._make_cache(window=4)
+        buf_size = cache.buf_size  # 8
+        for i in range(buf_size):
+            pos = torch.tensor([i], dtype=torch.long)
+            k = torch.full((1, 2, 1, 8), float(i))
+            v = torch.full((1, 2, 1, 8), float(i + 100))
+            k_out, v_out = cache.update(pos, k, v)
+        for i in range(buf_size):
+            slot = i % buf_size
+            self.assertEqual(k_out[0, 0, slot, 0].item(), float(i))
+            self.assertEqual(v_out[0, 0, slot, 0].item(), float(i + 100))
+
+    def test_wraparound_overwrites_oldest(self):
+        """Position buf_size overwrites slot 0 (the oldest entry)."""
+        cache = self._make_cache(window=4)
+        buf_size = cache.buf_size  # 8
+        for i in range(buf_size + 1):
+            pos = torch.tensor([i], dtype=torch.long)
+            k = torch.full((1, 2, 1, 8), float(i))
+            v = torch.full((1, 2, 1, 8), float(i))
+            k_out, _ = cache.update(pos, k, v)
+        # Slot 0 should now contain position buf_size (not 0)
+        self.assertEqual(k_out[0, 0, 0, 0].item(), float(buf_size))
+        # Slot 1 should still contain position 1
+        self.assertEqual(k_out[0, 0, 1, 0].item(), 1.0)
+
+    def test_multi_token_prefill(self):
+        """Writing multiple positions in one call places them correctly."""
+        cache = self._make_cache(window=4)
+        pos = torch.arange(4, dtype=torch.long)
+        k = torch.arange(4).float().view(1, 1, 4, 1).expand(1, 2, 4, 8)
+        v = torch.zeros(1, 2, 4, 8)
+        k_out, _ = cache.update(pos, k, v)
+        for i in range(4):
+            self.assertEqual(k_out[0, 0, i, 0].item(), float(i))
+
+    def test_assert_on_oversized_prefill(self):
+        """seq_len > buf_size raises AssertionError."""
+        cache = self._make_cache(window=4)
+        buf_size = cache.buf_size
+        pos = torch.arange(buf_size + 1, dtype=torch.long)
+        k = torch.zeros(1, 2, buf_size + 1, 8)
+        v = torch.zeros(1, 2, buf_size + 1, 8)
+        with self.assertRaises(AssertionError):
+            cache.update(pos, k, v)
 
 
 if __name__ == "__main__":
