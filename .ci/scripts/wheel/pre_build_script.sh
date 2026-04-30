@@ -2,6 +2,8 @@
 # Copyright (c) Meta Platforms, Inc. and affiliates.
 # All rights reserved.
 #
+# Copyright 2026 Arm Limited and/or its affiliates.
+#
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
 
@@ -57,13 +59,37 @@ fi
 
 "${GITHUB_WORKSPACE}/${REPOSITORY}/install_requirements.sh" --example
 
+setup_vulkan_for_vgf() {
+  if [[ "$UNAME_S" == "Linux" && "$(uname -m)" == "x86_64" ]]; then
+    source "${GITHUB_WORKSPACE}/${REPOSITORY}/.ci/scripts/setup-vulkan-linux-deps.sh"
+  elif [[ "$UNAME_S" == "Darwin" ]]; then
+    source "${GITHUB_WORKSPACE}/${REPOSITORY}/.ci/scripts/setup-vulkan-macos-deps.sh"
+  fi
+
+  if ! command -v glslc >/dev/null 2>&1; then
+    return 1
+  fi
+
+  for _var in PATH VULKAN_SDK LD_LIBRARY_PATH DYLD_LIBRARY_PATH VK_ICD_FILENAMES VK_DRIVER_FILES ETVK_USING_SWIFTSHADER; do
+    if [[ -n "${!_var:-}" ]]; then
+      echo "${_var}=${!_var}" >> "${GITHUB_ENV}"
+    fi
+  done
+
+  return 0
+}
+
 # Enable VGF in pybind wheel builds when the platform-specific build input is
 # available from pip.
 if [[ "$UNAME_S" == "Linux" || "$UNAME_S" == "Darwin" ]]; then
   if python3 -m pip install -r \
     "${GITHUB_WORKSPACE}/${REPOSITORY}/backends/arm/requirements-arm-vgf-runtime.txt"; then
-    export EXECUTORCH_PYBIND_ENABLE_VGF=ON
-    echo "EXECUTORCH_PYBIND_ENABLE_VGF=ON" >> "${GITHUB_ENV}"
+    if setup_vulkan_for_vgf; then
+      export EXECUTORCH_PYBIND_ENABLE_VGF=ON
+      echo "EXECUTORCH_PYBIND_ENABLE_VGF=ON" >> "${GITHUB_ENV}"
+    else
+      echo "glslc unavailable after VGF build dependency install; building without VGF"
+    fi
   else
     echo "VGF build dependency unavailable on this platform; building without VGF"
   fi
