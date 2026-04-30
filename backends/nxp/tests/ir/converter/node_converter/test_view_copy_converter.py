@@ -257,7 +257,7 @@ def test_view_copy_w_linear_quant_conversion(mocker, input_shape, new_shape, use
     )
 
     # Capture generated model
-    tflite_flatbuffers_model, io_formats = converter_spy.spy_return
+    tflite_flatbuffers_model, *_ = converter_spy.spy_return
 
     # Capture converted program
     edge_program: ExportedProgram = converter_spy.call_args.args[1]
@@ -291,7 +291,7 @@ def test_view_w_conv_linear_quant_conversion(
     )
 
     # Capture generated model
-    tflite_flatbuffers_model, io_formats = converter_spy.spy_return
+    tflite_flatbuffers_model, *_ = converter_spy.spy_return
 
     # Capture converted program
     edge_program: ExportedProgram = converter_spy.call_args.args[1]

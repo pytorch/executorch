@@ -82,7 +82,7 @@ def test_relu_with_conv_quant_conversion(mocker, use_qat):
     ).exported_program()
 
     # Capture generated model
-    tflite_flatbuffers_model, _ = converter_spy.spy_return
+    tflite_flatbuffers_model, *_ = converter_spy.spy_return
 
     # Capture converted program
     edge_program: ExportedProgram = converter_spy.call_args.args[1]
@@ -114,7 +114,7 @@ def test_relu_with_linear_quant_conversion(mocker, use_qat):
     ).exported_program()
 
     # Capture generated model
-    tflite_flatbuffers_model, _ = converter_spy.spy_return
+    tflite_flatbuffers_model, *_ = converter_spy.spy_return
 
     # Capture converted program
     edge_program: ExportedProgram = converter_spy.call_args.args[1]

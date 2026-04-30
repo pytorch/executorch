@@ -62,7 +62,7 @@ def test_adaptive_avg_pool_2d_delegated_quant_conversion(
     assert "aten__adaptive_avg_pool2d_default" not in nodes
 
     # Capture generated model
-    tflite_flatbuffers_model, io_formats = converter_spy.spy_return
+    tflite_flatbuffers_model, *_ = converter_spy.spy_return
 
     # Capture converted program
     exported_program: ExportedProgram = converter_spy.call_args.args[1]
@@ -108,7 +108,7 @@ def test_adaptive_avg_pool_2d_non_delegated_quant_conversion(
     assert str(nodes[6]) == "aten__adaptive_avg_pool2d_default"
 
     # Capture generated model
-    tflite_flatbuffers_model, io_formats = converter_spy.spy_return
+    tflite_flatbuffers_model, *_ = converter_spy.spy_return
 
     # Capture converted program
     exported_program: ExportedProgram = converter_spy.call_args.args[1]
@@ -137,7 +137,7 @@ def test_adaptive_avg_pool_2d_mean_dim_quant_conversion(mocker, use_qat):
     )
 
     # Capture generated model
-    tflite_flatbuffers_model, io_formats = converter_spy.spy_return
+    tflite_flatbuffers_model, *_ = converter_spy.spy_return
 
     # Capture converted program
     exported_program: ExportedProgram = converter_spy.call_args.args[1]

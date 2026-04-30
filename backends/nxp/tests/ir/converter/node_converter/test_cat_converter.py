@@ -100,7 +100,7 @@ def test_cat__same_shapes(dim, num_inputs, rank, mocker, use_qat):
     )
     assert any("lowered_module" in node.name for node in quantized_program.graph.nodes)
 
-    tflite_flatbuffers_model, io_formats = converter_spy.spy_return
+    tflite_flatbuffers_model, *_ = converter_spy.spy_return
     exported_program: ExportedProgram = converter_spy.call_args.args[1]
     input_data = {
         i: (np.random.random(input_shape) * 50).astype(np.int8)
@@ -131,7 +131,7 @@ def test_cat__channels_first__same_shapes(dim, num_inputs, mocker, use_qat):
     )
     assert any("lowered_module" in node.name for node in quantized_program.graph.nodes)
 
-    tflite_flatbuffers_model, io_formats = converter_spy.spy_return
+    tflite_flatbuffers_model, *_ = converter_spy.spy_return
     exported_program: ExportedProgram = converter_spy.call_args.args[1]
     input_data = {
         i: (np.random.random(input_shape) * 50).astype(np.int8)
@@ -244,7 +244,7 @@ def test_cat__different_shapes(dim, num_inputs, rank, mocker, use_qat):
     )
     assert any("lowered_module" in node.name for node in quantized_program.graph.nodes)
 
-    tflite_flatbuffers_model, io_formats = converter_spy.spy_return
+    tflite_flatbuffers_model, *_ = converter_spy.spy_return
     exported_program: ExportedProgram = converter_spy.call_args.args[1]
     input_data = {
         i: (np.random.random(shape) * 50).astype(np.int8)
@@ -289,7 +289,7 @@ def test_cat__channels_first__different_shapes(dim, num_inputs, mocker, use_qat)
     )
     assert any("lowered_module" in node.name for node in quantized_program.graph.nodes)
 
-    tflite_flatbuffers_model, io_formats = converter_spy.spy_return
+    tflite_flatbuffers_model, *_ = converter_spy.spy_return
     exported_program: ExportedProgram = converter_spy.call_args.args[1]
     input_data = {
         i: (np.random.random(shape) * 50).astype(np.int8)
@@ -439,7 +439,7 @@ def test_cat__format_specific_support__formatless(mocker, use_qat):
     )
     assert any("lowered_module" in node.name for node in quantized_program.graph.nodes)
 
-    tflite_flatbuffers_model, io_formats = converter_spy.spy_return
+    tflite_flatbuffers_model, *_ = converter_spy.spy_return
     exported_program: ExportedProgram = converter_spy.call_args.args[1]
     input_data = {
         i: (np.random.random(shape) * 50).astype(np.int8)
@@ -477,7 +477,7 @@ def test_cat__format_specific_support__channels_first(mocker, use_qat):
     )
     assert any("lowered_module" in node.name for node in quantized_program.graph.nodes)
 
-    tflite_flatbuffers_model, io_formats = converter_spy.spy_return
+    tflite_flatbuffers_model, *_ = converter_spy.spy_return
     exported_program: ExportedProgram = converter_spy.call_args.args[1]
     input_data = {
         i: (np.random.random(shape) * 50).astype(np.int8)

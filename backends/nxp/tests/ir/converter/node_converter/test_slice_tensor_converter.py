@@ -153,7 +153,7 @@ def test_slice_tensor_quant_conversion(mocker, x_input_shape, dims, starts, ends
     assert graph_contains_any_of_ops(edge_program.graph, [ExecutorchDelegateCall])
 
     # Capture generated model
-    tflite_flatbuffers_model, _ = converter_spy.spy_return
+    tflite_flatbuffers_model, *_ = converter_spy.spy_return
 
     # Capture converted program
     exported_program: ExportedProgram = converter_spy.call_args.args[1]
@@ -206,7 +206,7 @@ def test_slice_tensor_w_conv_quant_conversion(
     assert graph_contains_any_of_ops(edge_program.graph, [ExecutorchDelegateCall])
 
     # Capture generated model
-    tflite_flatbuffers_model, _ = converter_spy.spy_return
+    tflite_flatbuffers_model, *_ = converter_spy.spy_return
 
     # Capture converted program
     exported_program: ExportedProgram = converter_spy.call_args.args[1]

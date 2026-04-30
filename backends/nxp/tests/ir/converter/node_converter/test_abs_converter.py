@@ -73,7 +73,7 @@ def test_conv_abs(mocker, use_qat, input_shape: tuple[int] = (1, 3, 112, 112)):
         model, input_shape, use_qat=use_qat, use_neutron_for_format_conversion=False
     ).exported_program()
 
-    tflite_flatbuffers_model, io_formats = converter_spy.spy_return
+    tflite_flatbuffers_model, *_ = converter_spy.spy_return
     exported_program: ExportedProgram = converter_spy.call_args.args[1]
 
     assert not graph_contains_any_of_ops(

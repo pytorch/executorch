@@ -85,6 +85,8 @@ class ModelBuilder:
 
     conversion_config: ConversionConfig
 
+    edge_to_tflite_map: dict[int, tuple[int, ...]]  # Mapping edge debug handles to tuple of TFLite operator indices
+
     _default_conversion_config = ConversionConfig()
 
     def __init__(
@@ -105,6 +107,7 @@ class ModelBuilder:
         self._nchw_tensor_version = {}
         self._skipped_output_map = {}
         self._zeros_tensor_map = {}
+        self.edge_to_tflite_map = {}
 
     def create_zeros_tensor(
         self, dims: List[int], name: str, dtype: np.dtype, can_reuse: bool = False
@@ -503,6 +506,9 @@ class ModelBuilder:
             self.conversion_config.optimization_blacklist,
         )
 
+        # Create the final edge-to-tflite mapping after model optimization
+        self._create_edge_to_tflite_mapping()
+
         self._keep_one_empty_buffer()
 
         # Remove outputs, which are not produced by any node. Otherwise, there would be errors after inference.
@@ -523,6 +529,24 @@ class ModelBuilder:
             quantization_verification.verify_quantization_integrity(self._tfl_model)
 
         return self._tfl_model
+
+    def _create_edge_to_tflite_mapping(self):
+        """Create edge-to-TFLite mapping and save it to the edge_to_tflite_map class variable.
+
+        This function should be called after all model optimizations have been applied to match the output TFLite model.
+        """
+
+        edge_to_tflite_dict = {}
+        for idx, op in enumerate(self.get_operators().vector):
+            if hasattr(op, 'tmp_edge_debug_handle') and op.tmp_edge_debug_handle is not None:
+                debug_handle = op.tmp_edge_debug_handle
+                if debug_handle not in edge_to_tflite_dict:
+                    edge_to_tflite_dict[debug_handle] = []
+                edge_to_tflite_dict[debug_handle].append(idx)
+
+        # Convert lists to tuples in the dictionary
+        self.edge_to_tflite_map = {k: tuple(v) for k, v in edge_to_tflite_dict.items()}
+        logger.i(f"\nFinal edge_to_tflite_map after optimization: {self.edge_to_tflite_map}")
 
     def _assign_io_tensor_indices(self, inputs, outputs, allow_inputs_stripping: bool):
         for tensor in outputs.tmp_outputs:
