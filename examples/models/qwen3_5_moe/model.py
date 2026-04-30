@@ -17,10 +17,11 @@ import json
 import os
 import re
 from dataclasses import dataclass, field
+from typing import Optional
 
 import torch
 import torch.nn as nn
-
+from executorch.examples.models.qwen3_5_moe.sampler import sample
 from torch.nn import functional as F
 
 
@@ -184,7 +185,6 @@ class RotaryEmbedding(nn.Module):
 
 
 class KVCache(nn.Module):
-
     def __init__(self, n_kv_heads, head_dim, max_seq_len):
         super().__init__()
         self.register_buffer(
@@ -205,7 +205,6 @@ class KVCache(nn.Module):
 
 
 class FullAttention(nn.Module):
-
     def __init__(self, config):
         super().__init__()
         self.n_heads = config.num_attention_heads
@@ -316,7 +315,6 @@ class FullAttention(nn.Module):
 
 
 class GatedDeltaNet(nn.Module):
-
     def __init__(self, config):
         super().__init__()
         self.num_k_heads = config.linear_num_key_heads
@@ -405,57 +403,41 @@ class GatedDeltaNet(nn.Module):
             acc = acc + conv_input[:, :, k : k + T_conv].float() * w[:, k : k + 1]
         qkv_conv = F.silu(acc[:, :, -T:]).to(conv_input.dtype).transpose(1, 2)
 
-        # Split via slicing (torch.split produces split_copy which lacks AOTI fallback)
-        kd = self.key_dim
-        q = qkv_conv[..., :kd].reshape(B, T, self.num_k_heads, self.head_k_dim)
-        k = qkv_conv[..., kd : 2 * kd].reshape(B, T, self.num_k_heads, self.head_k_dim)
-        v = qkv_conv[..., 2 * kd :].reshape(B, T, self.num_v_heads, self.head_v_dim)
-
-        # L2-normalize Q and K (the FLA kernel expects pre-normalized inputs;
-        # HF reference uses use_qk_l2norm_in_kernel=True which does this inside)
-        q = F.normalize(q, p=2, dim=-1)
-        k = F.normalize(k, p=2, dim=-1)
-
-        # head_repeat for k_heads != v_heads
-        if self.head_repeat > 1:
-            q = q.repeat_interleave(self.head_repeat, dim=2)
-            k = k.repeat_interleave(self.head_repeat, dim=2)
-
-        # Mamba-style gating
-        beta = b.sigmoid()
-        g = -self.A_log.float().exp() * F.softplus(a.float() + self.dt_bias)
-
         if T == 1:
-            # Native recurrent delta rule — AOTI fuses with surrounding ops
-            scale = self.head_k_dim**-0.5
-
-            q_s = q[:, 0].float()  # [B, H, K]
-            k_s = k[:, 0].float()  # [B, H, K]
-            v_s = v[:, 0].float()  # [B, H, V]
-            g_s = g[:, 0]  # [B, H]
-            beta_s = beta[:, 0]  # [B, H]
-
-            state = self.recurrent_state[:B].float()  # [B, H, K, V]
-
-            # Decay state by exp(g)
-            decay = torch.exp(g_s).unsqueeze(-1).unsqueeze(-1)  # [B, H, 1, 1]
-            state = state * decay
-
-            # Sk = state @ k (project state by key)
-            Sk = torch.einsum("bhkv,bhk->bhv", state, k_s)
-
-            # Delta rule state update
-            delta = beta_s.unsqueeze(-1) * (v_s - Sk)  # [B, H, V]
-            state = state + torch.einsum("bhk,bhv->bhkv", k_s, delta)
-
-            # Output = state @ q * scale
-            output = torch.einsum("bhkv,bhk->bhv", state, q_s) * scale
-            output = output.unsqueeze(1).to(q.dtype)  # [B, 1, H, V]
+            # Fully-fused Triton decode kernel: Q/K/V split, L2 norm,
+            # head repeat, gating, and delta rule recurrence in one kernel.
+            # State is mutated in-place (CUDA Graph compatible).
+            output, new_state = torch.ops.triton.fused_deltanet_decode(
+                qkv_conv[:, 0],  # [B, conv_dim] — squeeze T=1
+                a[:, 0],  # [B, H] raw alpha
+                b[:, 0],  # [B, H] raw beta
+                self.A_log,  # [H] nn.Parameter
+                self.dt_bias,  # [H] nn.Parameter
+                self.recurrent_state[:B],  # [B, H, K, V]
+            )
+            output = output.unsqueeze(1).to(qkv_conv.dtype)  # [B, 1, H, V]
 
             with torch.no_grad():
-                self.recurrent_state[:B].copy_(state.to(self.recurrent_state.dtype))
+                self.recurrent_state[:B].copy_(new_state)
         else:
-            # Chunked FLA triton_op for prefill
+            # Chunked FLA triton_op for prefill — needs pre-processed inputs
+            kd = self.key_dim
+            q = qkv_conv[..., :kd].reshape(B, T, self.num_k_heads, self.head_k_dim)
+            k = qkv_conv[..., kd : 2 * kd].reshape(
+                B, T, self.num_k_heads, self.head_k_dim
+            )
+            v = qkv_conv[..., 2 * kd :].reshape(B, T, self.num_v_heads, self.head_v_dim)
+
+            q = F.normalize(q, p=2, dim=-1)
+            k = F.normalize(k, p=2, dim=-1)
+
+            if self.head_repeat > 1:
+                q = q.repeat_interleave(self.head_repeat, dim=2)
+                k = k.repeat_interleave(self.head_repeat, dim=2)
+
+            beta = b.sigmoid()
+            g = -self.A_log.float().exp() * F.softplus(a.float() + self.dt_bias)
+
             output, new_state = torch.ops.triton.chunk_gated_delta_rule(
                 q, k, v, g, beta, self.recurrent_state[:B]
             )
@@ -554,7 +536,6 @@ class SwiGLU(nn.Module):
 
 
 class SparseMoE(nn.Module):
-
     def __init__(self, config):
         super().__init__()
         self.top_k = config.num_experts_per_tok
@@ -588,7 +569,6 @@ class SparseMoE(nn.Module):
 
 
 class Block(nn.Module):
-
     def __init__(self, config, layer_idx):
         super().__init__()
         self.layer_type = config.layer_types[layer_idx]
@@ -608,8 +588,11 @@ class Block(nn.Module):
         return x
 
 
-class Qwen35MoE(nn.Module):
+# ---------------------------------------------------------------------------
+# Top-level model
 
+
+class Qwen35MoE(nn.Module):
     def __init__(self, config):
         super().__init__()
         self.config = config
@@ -621,13 +604,26 @@ class Qwen35MoE(nn.Module):
         self.lm_head = nn.Linear(config.hidden_size, config.vocab_size, bias=False)
 
     def forward(
-        self, tokens: torch.LongTensor, input_pos: torch.LongTensor
+        self,
+        tokens: torch.LongTensor,
+        input_pos: torch.LongTensor,
+        temperature: Optional[torch.Tensor] = None,
     ) -> torch.Tensor:
         x = self.embed_tokens(tokens)
         for layer in self.layers:
             x = layer(x, input_pos)
         x = self.norm(x)
-        return self.lm_head(x)
+        if temperature is None:
+            return self.lm_head(x)  # [B, T, V] in model dtype
+        logits = self.lm_head(x[:, -1, :]).float()  # [B, V] float32
+        # GPU-side Gumbel-max sampling: argmax(logits/T + gumbel_noise) is
+        # equivalent to drawing from softmax(logits/T) but stays entirely
+        # on-device. Algorithm reference:
+        # https://huggingface.co/blog/cxdu/fastsampling
+        # TODO(gasoonjia): once the on-device sampling stack lands, promote
+        # ``sample`` into a shared CUDA sampling utility reusable by other
+        # models, and add top-k / top-p filtering support.
+        return sample(logits, temperature)  # [B, 1]
 
     @staticmethod
     def from_hf_checkpoint(model_dir, max_seq_len=4096):

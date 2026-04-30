@@ -6,7 +6,6 @@
 
 # pyre-strict
 
-from dataclasses import dataclass, field
 from typing import cast, List, Optional, Sequence, Set, Type
 
 # Import these for the cadence function signatures.
@@ -26,12 +25,16 @@ from executorch.backends.cadence.aot.pass_utils import (
 from executorch.backends.cadence.aot.simplify_ops import SimplifySliceOpPass
 from executorch.backends.cadence.aot.utils import get_edge_overload_packet
 from executorch.backends.transforms.remove_clone_ops import RemoveCloneOpsTransform
+from executorch.backends.transforms.remove_permutes_around_elementwise_ops import (
+    RemovePermutesAroundElementwiseOps as _SharedRemovePermutesAroundElementwiseOps,
+)
 from executorch.exir.dialects._ops import ops as exir_ops
 from executorch.exir.dialects.edge._ops import EdgeOpOverload, EdgeOpOverloadPacket
 from executorch.exir.pass_base import ExportPass, PassResult
 from executorch.exir.pass_manager import PassManager, PassType
 from executorch.exir.passes import dead_code_elimination_pass
 from torch.fx.node import Node
+from torch.utils import _pytree as pytree
 
 
 @register_cadence_pass(CadencePassAttribute(opt_level=0))
@@ -385,268 +388,231 @@ class RemoveNopAddOpPass(RemoveOrReplacePassInterface):
         return False
 
 
-@register_cadence_pass(CadencePassAttribute(opt_level=2))
-class RemovePermutesAroundElementwiseOps(ExportPass):
+@register_cadence_pass(CadencePassAttribute(opt_level=1))
+class RemovePermuteBeforeMeanPass(RemoveOrReplacePassInterface):
+    """Remove or sink permute ops that precede mean reductions through unary chains.
+
+    When a permute feeds into a mean (possibly through unary ops like
+    dequantize/quantize), two optimizations apply:
+
+    1. If non-reduced dims maintain their relative order and positions, the
+       permute is fully removed and the mean's reduction dims are remapped.
+    2. Otherwise, the permute is moved after the mean so it operates on
+       smaller data.
+
+    Cost model
+    ----------
+    Let S_in = input size in bytes, S_out = output size in bytes,
+    R = S_in / S_out (reduction ratio), C_c = contiguous mean compute
+    cost, C_s = strided mean compute cost, and Delta = C_s - C_c.
+
+    Original graph (permute -> mean):
+        Cost_orig = 3*S_in + S_out + C_c
+        Breakdown: permute reads and writes S_in (2*S_in), mean reads
+        S_in and writes S_out.
+
+    Case 1 -- full removal (mean with remapped dims, no permute):
+        Cost_remove = S_in + S_out + C_s
+        Profitable when: Delta < 2*S_in
+        The strided access penalty must be less than twice the full
+        input tensor I/O (the eliminated permute cost).
+
+    Case 2 -- reorder (mean with remapped dims -> small permute):
+        Cost_reorder = S_in + 3*S_out + C_s
+        Profitable when: Delta < 2*(S_in - S_out) = 2*S_in*(R-1)/R
+        At R = 4 the threshold is 1.5*S_in; at R = 16 it approaches
+        2*S_in, converging to the full-removal bound as S_out becomes
+        negligible.
+
+    Full removal always dominates reorder when both are structurally
+    possible (Cost_remove < Cost_reorder since S_out < 3*S_out), so
+    removal is applied without a cost gate.
+
+    Additionally, if the original permute does not place the reduction
+    dims as the trailing (innermost) dimensions, the mean is already
+    strided in the original graph. Removing or sinking the permute
+    saves the permute I/O (2*S_in) while the mean performance can only
+    improve or stay the same. This makes the transformation
+    unconditionally profitable without needing the cost model.
     """
-    Looks for subgraphs of elementwise ops sandwiched between permutes and removes those
-    permutes if possible.
-    Allows special handling for certain non-elementwise ops that can be easily updated
-    based on the permute's parameter such as mean, cat, and slice.
-    """
 
-    @dataclass()
-    class Subgraph:
-        start_permute: list[int]
-        end_permute: list[int]
-        # Nodes in the subgraph, does not include permutes.
-        nodes: set[torch.fx.Node] = field(default_factory=set)
-        # Incoming edges to the subgraph from permute nodes.
-        edges_in: set[tuple[torch.fx.Node, torch.fx.Node]] = field(default_factory=set)
-        # Outgoing edges of the subgraph to permute nodes.
-        edges_out: set[tuple[torch.fx.Node, torch.fx.Node]] = field(default_factory=set)
-        # Incoming edges from constant nodes that need a compensating permute.
-        constant_edges_in: set[tuple[torch.fx.Node, torch.fx.Node]] = field(
-            default_factory=set
-        )
+    _UNARY_TARGETS: frozenset[EdgeOpOverload] = frozenset(
+        {
+            exir_ops.edge.cadence.dequantize_per_tensor.default,
+            exir_ops.edge.cadence.quantize_per_tensor.default,
+            exir_ops.edge.quantized_decomposed.dequantize_per_tensor.default,
+            exir_ops.edge.quantized_decomposed.quantize_per_tensor.default,
+            exir_ops.edge.aten.clone.default,
+            exir_ops.edge.aten.relu.default,
+            exir_ops.edge.aten.neg.default,
+            exir_ops.edge.aten.abs.default,
+        }
+    )
 
-    permutable_ops: set[EdgeOpOverload] = {
-        exir_ops.edge.aten.add.Tensor,
-        exir_ops.edge.aten.mul.Tensor,
-        exir_ops.edge.aten.hardtanh.default,
-        exir_ops.edge.aten.clamp.default,
-        exir_ops.edge.quantized_decomposed.quantize_per_tensor.default,
-        exir_ops.edge.quantized_decomposed.dequantize_per_tensor.default,
-        exir_ops.edge.cadence.quantize_per_tensor.default,
-        exir_ops.edge.cadence.dequantize_per_tensor.default,
-        exir_ops.edge.cadence.quantized_relu.per_tensor,
-        exir_ops.edge.cadence.requantize.per_tensor,
-        exir_ops.edge.cadence.quantized_add.per_tensor,
-        # Ops that require special handling.
-        exir_ops.edge.aten.cat.default,
-        exir_ops.edge.aten.mean.dim,
-        exir_ops.edge.aten.slice_copy.Tensor,
-    }
+    _MIN_REDUCTION_RATIO_FOR_REORDER: int = 4
 
-    def call(self, graph_module: torch.fx.GraphModule) -> PassResult:
-        subgraphs_found: list[RemovePermutesAroundElementwiseOps.Subgraph] = []
-        processed_nodes: set[torch.fx.Node] = set()
-        for node in graph_module.graph.find_nodes(
-            op="call_function", target=exir_ops.edge.aten.permute_copy.default
-        ):
-            start_permute = self.get_permutation(node)
-            # Expected end permutation for the subgraph.
-            end_permute = [start_permute.index(i) for i in range(len(start_permute))]
+    @property
+    def targets(self) -> list[EdgeOpOverload]:
+        return [exir_ops.edge.aten.mean.dim]
 
-            for user in node.users:
-                if user.target not in self.permutable_ops:
-                    continue
-                # Create a separate subgraph for each user since there may be cases
-                # where only a portion of the users are permutable.
-                subgraph = self.Subgraph(start_permute, end_permute)
-                if self.visit(user, subgraph, processed_nodes):
-                    subgraphs_found.append(subgraph)
-                    for node in subgraph.nodes:
-                        processed_nodes.add(node)
+    def _find_permute_through_unary_chain(self, mean_node: Node) -> Optional[Node]:
+        """Walk backward from mean through single-user unary ops to find a permute."""
+        current = mean_node.args[0]
+        if not isinstance(current, Node):
+            return None
+        while True:
+            if current.target == exir_ops.edge.aten.permute_copy.default:
+                return current
+            if current.target not in self._UNARY_TARGETS:
+                return None
+            if len(current.users) != 1:
+                return None
+            parent = current.args[0]
+            if not isinstance(parent, Node):
+                return None
+            current = parent
 
-        modified = False
-        for subgraph in subgraphs_found:
-            self.permute_subgraph(subgraph)
-            modified = True
+    @staticmethod
+    def _reduction_dims_are_trailing(reduction_dims: list[int], ndim: int) -> bool:
+        """Check whether all reduction dims are the trailing (innermost) dims."""
+        canonical = sorted(d % ndim for d in reduction_dims)
+        return canonical == list(range(ndim - len(canonical), ndim))
 
-        if modified:
-            graph_module.graph.eliminate_dead_code()
-            graph_module.recompile()
-            return super().call(graph_module)
-
-        return PassResult(graph_module, False)
-
-    def visit(  # noqa: C901
+    def _is_reorder_profitable(
         self,
-        node: torch.fx.Node,
-        subgraph: Subgraph,
-        processed_nodes: set[torch.fx.Node],
+        reduction_dims: list[int],
+        new_reduction_dims: list[int],
+        ndim: int,
+        input_shape: torch.Size,
     ) -> bool:
-        if node in subgraph.nodes:
+        """Determine whether sinking the permute past the mean is profitable.
+
+        Three cases, in order of evaluation:
+
+        1. The original permute does not place the reduction dims as trailing
+           (innermost) dimensions. The mean is already strided, so removing
+           the permute saves 2*S_in with no mean degradation. Always
+           profitable.
+
+        2. The new (remapped) reduction dims are trailing in the original
+           layout. The mean stays contiguous after the transformation
+           (Delta ~ 0). Always profitable.
+
+        3. The mean becomes strided. The reorder is profitable when
+           Delta < 2*S_in*(R-1)/R. We approximate this by requiring
+           R >= _MIN_REDUCTION_RATIO_FOR_REORDER, ensuring the I/O savings
+           from operating on a smaller tensor outweigh the strided access
+           penalty.
+        """
+        if not self._reduction_dims_are_trailing(reduction_dims, ndim):
             return True
-        if node in processed_nodes or not self.is_node_permutable(node):
+
+        if self._reduction_dims_are_trailing(new_reduction_dims, ndim):
+            return True
+
+        reduction_ratio = 1
+        canonical_reduction = set(new_reduction_dims)
+        for d in canonical_reduction:
+            reduction_ratio *= input_shape[d]
+
+        return reduction_ratio >= self._MIN_REDUCTION_RATIO_FOR_REORDER
+
+    def maybe_remove_or_replace(self, node: Node) -> bool:
+        reduction_dims = get_arg(node, "dim", list[int])
+
+        permute_node = self._find_permute_through_unary_chain(node)
+        if permute_node is None:
             return False
-        subgraph.nodes.add(node)
 
-        # Traverse downstream:
-        for user in node.users:
-            # Output should either go to a matching permute or another permutable op.
-            if user.target == exir_ops.edge.aten.permute_copy.default:
-                if self.get_permutation(user) != subgraph.end_permute:
-                    return False
-                subgraph.edges_out.add((node, user))
-            elif user.op == "output":
-                # Graph output requires the data in its original layout.
-                # Removing permutes here would silently change the output
-                # format, so treat this as an invalid subgraph boundary.
-                return False
-            elif not self.visit(user, subgraph, processed_nodes):
+        perm = get_arg(permute_node, "dims", list[int])
+        ndim = len(perm)
+
+        if len(permute_node.users) != 1:
+            return False
+
+        permute_input = permute_node.args[0]
+        assert isinstance(permute_input, Node)
+
+        new_reduction_dims = [perm[d] for d in reduction_dims]
+        keepdim = get_arg(node, "keepdim", bool)
+
+        # Determine if the permute can be fully removed (post-mean permute
+        # would be a no-op) vs needing to be sunk after the mean.
+        canonical_reduction = set(new_reduction_dims)
+        if keepdim:
+            can_remove = all(
+                perm[d] == d for d in range(ndim) if d not in canonical_reduction
+            )
+        else:
+            non_reduced_in_perm_order = [
+                d for d in perm if d not in canonical_reduction
+            ]
+            can_remove = non_reduced_in_perm_order == sorted(non_reduced_in_perm_order)
+
+        # Full removal is almost always profitable. Reorder requires a
+        # tighter cost bound; verify via the cost model before proceeding.
+        if not can_remove:
+            input_shape = permute_input.meta["val"].shape
+            if not self._is_reorder_profitable(
+                reduction_dims, new_reduction_dims, ndim, input_shape
+            ):
                 return False
 
-        # Traverse upstream:
-        for inp in node.all_input_nodes:
-            # Input should either come from a matching permute or another permutable op.
-            if inp.target == exir_ops.edge.aten.permute_copy.default:
-                if self.get_permutation(inp) != subgraph.start_permute:
-                    return False
-                subgraph.edges_in.add((inp, node))
-            elif self._is_constant(inp):
-                # Only accept the constant if we can compensate it with a
-                # permute or view. Otherwise reject the subgraph.
-                const_rank = self._get_node_rank(inp)
-                if const_rank is None:
-                    return False
-                if const_rank > len(subgraph.end_permute):
-                    return False
-                if (
-                    const_rank < len(subgraph.end_permute)
-                    and inp.meta.get("val") is None
-                ):
-                    return False
-                subgraph.constant_edges_in.add((inp, node))
-            elif not self.visit(inp, subgraph, processed_nodes):
-                return False
+        # Rewire: the permute's single user (either the mean itself or the
+        # first unary op in the chain) should read from the permute's input.
+        permute_user = next(iter(permute_node.users))
+        permute_user.replace_input_with(permute_node, permute_input)
+        node.args = (node.args[0], new_reduction_dims) + node.args[2:]
+
+        # Re-derive the mean's meta since its reduction dims changed.
+        fake_args = pytree.tree_map(
+            lambda x: x.meta["val"] if isinstance(x, Node) else x,
+            node.args,
+        )
+        node.meta["val"] = node.target(*fake_args)  # pyre-ignore[29]
+
+        if not can_remove:
+            # Compute the post-mean permute on the reduced output.
+            if keepdim:
+                post_perm = list(perm)
+            else:
+                non_reduced_original = sorted(
+                    d for d in range(ndim) if d not in canonical_reduction
+                )
+                non_reduced_permuted = [d for d in perm if d not in canonical_reduction]
+                post_perm = [
+                    non_reduced_original.index(d) for d in non_reduced_permuted
+                ]
+
+            graph = node.graph
+            with graph.inserting_after(node):
+                new_permute = graph.create_node(
+                    "call_function",
+                    exir_ops.edge.aten.permute_copy.default,
+                    args=(node, post_perm),
+                )
+                new_permute.meta["val"] = exir_ops.edge.aten.permute_copy.default(
+                    node.meta["val"], post_perm
+                )
+            for user in list(node.users):
+                if user is not new_permute:
+                    user.replace_input_with(node, new_permute)
 
         return True
 
-    def _is_constant(self, node: torch.fx.Node) -> bool:
-        """Check if a node's value is available at compile time.
-        Only considers direct constants (get_attr, parameter/buffer/constant
-        placeholders) — does not recurse into call_function chains to avoid
-        stack overflow on deep graphs."""
-        if node.op == "get_attr":
-            return True
-        if node.op == "placeholder":
-            target = str(node.target)
-            return target.startswith(("b_", "p_", "c_"))
-        return False
 
-    def _get_node_rank(self, node: torch.fx.Node) -> int | None:
-        """Return the tensor rank of a node's output, or None if unknown."""
-        val = node.meta.get("val")
-        if val is not None and hasattr(val, "shape"):
-            return len(val.shape)
-        return None
-
-    def is_node_permutable(self, node: torch.fx.Node) -> bool:
-        if node.target not in self.permutable_ops:
-            return False
-        if node.target == exir_ops.edge.aten.mean.dim:
-            # keepdim should be True.
-            if len(node.args) >= 3:
-                if not node.args[2]:
-                    return False
-            elif "keepdim" in node.kwargs:
-                if not node.kwargs["keepdim"]:
-                    return False
-            else:
-                # Default keepdim is False.
-                return False
-        return True
-
-    def permute_subgraph(self, subgraph: Subgraph) -> None:
-        # Skip incoming permutes.
-        for inp, out in subgraph.edges_in:
-            assert inp.target == exir_ops.edge.aten.permute_copy.default
-            if len(inp.args) >= 1:
-                out.replace_input_with(inp, cast(torch.fx.Node, inp.args[0]))
-            else:
-                out.replace_input_with(inp, cast(torch.fx.Node, inp.kwargs["input"]))
-
-        # Insert compensating permute on constant inputs.
-        # Since the subgraph's start permutes are being removed, the subgraph
-        # will operate in the un-permuted (original) layout. Constants that
-        # were in the permuted layout need end_permute (the inverse of
-        # start_permute) to convert back to the original layout.
-        for const_node, user_node in subgraph.constant_edges_in:
-            graph = const_node.graph
-            const_rank = self._get_node_rank(const_node)
-            permute_rank = len(subgraph.end_permute)
-
-            with graph.inserting_after(const_node):
-                if const_rank is not None and const_rank == permute_rank:
-                    new_node = graph.create_node(
-                        "call_function",
-                        exir_ops.edge.aten.permute_copy.default,
-                        args=(const_node, subgraph.end_permute),
-                    )
-                elif (
-                    const_rank is not None
-                    and const_rank < permute_rank
-                    and const_node.meta.get("val") is not None
-                ):
-                    # Rank mismatch (e.g. rank-1 bias with rank-4 permute).
-                    # The constant is broadcastable and its shape is smaller
-                    # than the permute rank, so we can't apply the permute
-                    # directly. Instead, use view_copy to rearrange the
-                    # shape according to the end_permute restricted to
-                    # the trailing dimensions.
-                    original_shape = list(const_node.meta["val"].shape)
-                    # Pad shape to match permute rank for reordering
-                    padded = [1] * (permute_rank - const_rank) + original_shape
-                    target_shape = [padded[d] for d in subgraph.end_permute]
-                    # Strip leading 1s back to original rank
-                    target_shape = target_shape[permute_rank - const_rank :]
-                    new_node = graph.create_node(
-                        "call_function",
-                        exir_ops.edge.aten.view_copy.default,
-                        args=(const_node, target_shape),
-                    )
-                else:
-                    # Cannot determine rank or handle this case; skip.
-                    continue
-            user_node.replace_input_with(const_node, new_node)
-
-        # Skip outgoing permutes.
-        for inp, out in subgraph.edges_out:
-            assert out.target == exir_ops.edge.aten.permute_copy.default
-            out.replace_all_uses_with(inp)
-
-        # Handle dimension related node arguments.
-        for node in subgraph.nodes:
-            if node.target == exir_ops.edge.aten.cat.default:
-                self.update_cat(node, subgraph.start_permute)
-            elif node.target == exir_ops.edge.aten.mean.dim:
-                self.update_mean_dim(node, subgraph.start_permute)
-            elif node.target == exir_ops.edge.aten.slice_copy.Tensor:
-                self.update_slice_copy(node, subgraph.start_permute)
-
-    def update_cat(self, node: torch.fx.Node, start_permute: list[int]) -> None:
-        if len(node.args) >= 2:
-            node.update_arg(1, start_permute[cast(int, node.args[1])])
-        elif "dim" in node.kwargs:
-            node.update_kwarg("dim", start_permute[cast(int, node.kwargs["dim"])])
-        else:
-            # Default cat dim is 0.
-            node.update_kwarg("dim", start_permute[0])
-
-    def update_mean_dim(self, node: torch.fx.Node, start_permute: list[int]) -> None:
-        if len(node.args) >= 2:
-            node.update_arg(
-                1, [start_permute[dim] for dim in cast(list[int], node.args[1])]
-            )
-        else:
-            node.update_kwarg(
-                "dim",
-                [start_permute[dim] for dim in cast(list[int], node.kwargs["dim"])],
-            )
-
-    def update_slice_copy(self, node: torch.fx.Node, start_permute: list[int]) -> None:
-        if len(node.args) >= 2:
-            node.update_arg(1, start_permute[cast(int, node.args[1])])
-        else:
-            node.update_kwarg("dim", start_permute[cast(int, node.kwargs["dim"])])
-
-    def get_permutation(self, permute_node: torch.fx.Node) -> list[int]:
-        assert permute_node.target == exir_ops.edge.aten.permute_copy.default
-        if len(permute_node.args) >= 2:
-            return cast(list[int], permute_node.args[1])
-        assert "dim" in permute_node.kwargs
-        return cast(list[int], permute_node.kwargs["dim"])
+@register_cadence_pass(CadencePassAttribute(opt_level=2))
+class RemovePermutesAroundElementwiseOps(_SharedRemovePermutesAroundElementwiseOps):
+    permutable_ops: set[EdgeOpOverload] = (
+        _SharedRemovePermutesAroundElementwiseOps.permutable_ops
+        | {
+            exir_ops.edge.cadence.quantize_per_tensor.default,
+            exir_ops.edge.cadence.dequantize_per_tensor.default,
+            exir_ops.edge.cadence.quantized_relu.per_tensor,
+            exir_ops.edge.cadence.requantize.per_tensor,
+            exir_ops.edge.cadence.quantized_add.per_tensor,
+        }
+    )
 
 
 @register_cadence_pass(CadencePassAttribute(opt_level=2))
@@ -894,6 +860,7 @@ class CommonRemovePasses:
         RemoveNopSliceOrViewOpPass,
         RemoveToOpsPass,
         RemoveZeroSizedCatArgsPass,
+        RemovePermuteBeforeMeanPass,
         RemovePermutesAroundElementwiseOps,
         FuseTransposeOrPermuteOpPairsPass,
         RemoveSqueezeViewBeforeElementwiseOps,

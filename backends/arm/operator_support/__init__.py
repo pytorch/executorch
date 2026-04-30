@@ -24,5 +24,6 @@ from . import (  # noqa
     to_dim_order_copy_support,
     tosa_supported_operators,
     unfold_copy_support,
+    upsample_support,
     where_support,
 )

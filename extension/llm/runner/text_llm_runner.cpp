@@ -138,16 +138,16 @@ Error TextLLMRunner::generate(
         num_prompt_tokens >= 1,
         InvalidArgument,
         "Expected at least 1 prompt token");
-    ET_CHECK_OR_RETURN_ERROR(
-        num_prompt_tokens <= max_seq_len,
-        InvalidArgument,
-        "num_prompt_tokens %d > max_seq_len %" PRId64
-        ", Single prefill chunk too large - please reduce prompt size or increase max_seq_len",
-        num_prompt_tokens,
-        max_seq_len);
-    // For non-sliding-window models, also check that we won't exceed
-    // KV cache capacity. Sliding window models (where max_seq_len <
-    // max_context_len) handle position wrapping internally.
+    // Note: We intentionally do NOT enforce num_prompt_tokens <= max_seq_len
+    // here. TextPrefiller::prefill() supports chunked prefill: when
+    // num_prompt_tokens > max_seq_len it splits the prompt into max_seq_len
+    // chunks and prefills them sequentially. Models that were exported with
+    // max_seq_len < max_context_len (e.g. a 1024 prefill chunk over a 4096 KV
+    // cache) rely on this behavior.
+    // Ensure the prompt fits within total KV cache capacity. For
+    // sliding-window models (where max_seq_len < max_context_len) the model
+    // handles position wrapping internally, so pos_ doesn't represent
+    // consumed capacity and we only need a per-call bound.
     if (max_seq_len >= max_context_len) {
       ET_CHECK_OR_RETURN_ERROR(
           pos_ + num_prompt_tokens < max_context_len,
@@ -156,6 +156,15 @@ Error TextLLMRunner::generate(
           ", Max seq length exceeded - please increase max seq len value in "
           "your export script",
           pos_,
+          num_prompt_tokens,
+          max_context_len);
+    } else {
+      ET_CHECK_OR_RETURN_ERROR(
+          num_prompt_tokens < max_context_len,
+          InvalidArgument,
+          "num_prompt_tokens %d >= max_context_len %" PRId64
+          ", Prompt exceeds KV cache capacity - please reduce prompt size or "
+          "increase max_context_len in your export script",
           num_prompt_tokens,
           max_context_len);
     }

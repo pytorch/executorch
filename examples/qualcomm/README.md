@@ -9,12 +9,9 @@ We have separated the example scripts into the following subfolders, please refe
 2. oss_scripts: OSS stands for Open Source Software. This folder contains python scripts for open source models. Some models under this folder might also have their own customized runner.
    For example, [llama](oss_scripts/llama/qnn_llama_runner.cpp) contains not only the python scripts to prepare the model but also a customized runner for executing the model.
 
-3. qaihub_scripts: QAIHub stands for [Qualcomm AI Hub](https://aihub.qualcomm.com/). On QAIHub, users can find pre-compiled context binaries, a format used by QNN to save its models. This provides users with a new option for model deployment. Different from oss_scripts & scripts, which the example scripts are converting a model from nn.Module to ExecuTorch .pte files, qaihub_scripts provides example scripts for converting pre-compiled context binaries to ExecuTorch .pte files. Additionally, users can find customized example runners specific to the QAIHub models for execution. For example [qaihub_llama2_7b](qaihub_scripts/llama/llama2/qaihub_llama2_7b.py) is a script converting context binaries to ExecuTorch .pte files, and [qaihub_llama2_7b_runner](qaihub_scripts/llama/llama2/qaihub_llama2_7b_runner.cpp) is a customized example runner to execute llama2 .pte files. Please be aware that context-binaries downloaded from QAIHub are tied to a specific QNN SDK version.
-Before executing the scripts and runner, please ensure that you are using the QNN SDK version that is matching the context binary. Please refer to [Check context binary version](#check-context-binary-version) for tutorial on how to check the QNN Version for a context binary.
+3. scripts: This folder contains scripts to build models provided by ExecuTorch.
 
-4. scripts: This folder contains scripts to build models provided by ExecuTorch.
-
-5. util_scripts: This folder includes tutorial example scripts designed to showcase the utilities we've developed. For example, we provide a debugging tool [qnn_intermediate_debugger](./util_scripts/qnn_intermediate_debugger_demo.py) that allow users to compare the intermediate outputs of QNNs V.S. CPUs. By reviewing these scripts, we aim to help users smoothly integrate these utilities into their own projects.
+4. util_scripts: This folder includes tutorial example scripts designed to showcase the utilities we've developed. For example, we provide a debugging tool [qnn_intermediate_debugger](./util_scripts/qnn_intermediate_debugger_demo.py) that allow users to compare the intermediate outputs of QNNs V.S. CPUs. By reviewing these scripts, we aim to help users smoothly integrate these utilities into their own projects.
 
 
 
@@ -74,17 +71,6 @@ python mobilenet_v2.py -s <device_serial> -m "SM8550" -b path/to/build-android/ 
 python deeplab_v3.py -s <device_serial> -m "SM8550" -b path/to/build-android/ --download
 ```
 
-#### Check context binary version
-This is typically useful when users want to run any models under `qaihub_scripts`. When users retrieve context binaries from Qualcomm AI Hub, we need to ensure the QNN SDK used to run the `qaihub_scripts` is the same version as the QNN SDK that Qualcomm AI Hub used to compile the context binaries. To do so, please run the following script to retrieve the JSON file that contains the metadata about the context binary:
-```bash
-cd ${QNN_SDK_ROOT}/bin/x86_64-linux-clang
-./qnn-context-binary-utility --context_binary ${PATH_TO_CONTEXT_BINARY} --json_file ${OUTPUT_JSON_NAME}
-```
-After retrieving the json file, search in the json file for the field "buildId" and ensure it matches the `${QNN_SDK_ROOT}` you are using for the environment variable.
-If you run into the following error, that means the ${QNN_SDK_ROOT} that you are using is older than the context binary's QNN SDK version. In this case, please download a newer QNN SDK version.
-```
-Error: Failed to get context binary info.
-```
 ## Model Structure
 This section outlines the essential APIs and utilities provided to streamline the process of model conversion, deployment, and evaluation on Qualcomm hardware using ExecuTorch. The official APIs can be found under [export_utils.py](../../backends/qualcomm/export_utils.py)
 
