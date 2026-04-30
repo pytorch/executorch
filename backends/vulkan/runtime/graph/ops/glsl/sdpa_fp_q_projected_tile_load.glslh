@@ -7,32 +7,65 @@
  */
 
 /*
- * Assume the following variables are defined in the shader layout:
- * - t_input
+ * Shared Q tile load for both LLM SDPA and fused SDPA.
  *
- * Macro Settings:
- * - INPUT_BUFFER
+ * Layout selection (caller must #define Q_LAYOUT before including):
+ *   DSHB (0) — fused SDPA: [B, H, S, D] → WHCN {D, S, H, B}
+ *              index = (head * S + s) * D4 + d4
+ *   DHSB (1) — LLM SDPA:  [B, S, H, D] → WHCN {D, H, S, B}
+ *              index = (s * H + head) * D4 + d4
+ *
+ * Optional macros:
+ *   INPUT_BUFFER  — use buffer path; otherwise texture
+ *   SDPA_PAD_D    — zero-pad last d4 texel when D % 4 != 0
  */
 
 #ifndef SDPA_FP_Q_PROJECTED_TILE_LOAD_GLSLH
 #define SDPA_FP_Q_PROJECTED_TILE_LOAD_GLSLH
 
+#define DSHB 0
+#define DHSB 1
+
 #extension GL_EXT_control_flow_attributes : require
 
 #include "linear_fp_input_tile.glslh"
 
-VEC4_T load_q_projected_d4(
+LINEAR_FP_INPUT_TILE_VEC4_T load_q_projected_d4(
     const int d4,
-    const int q_h,
     const int s,
+    const int q_h,
     const int D4,
-    const int Q_H,
-    const int S) {
+    const int D,
+    const int S,
+    const int Q_H) {
+  LINEAR_FP_INPUT_TILE_VEC4_T val;
+
 #ifdef INPUT_BUFFER
-  return t_q_projected[(s * Q_H * D4) + (q_h * D4) + d4];
-#else
-  return texelFetch(t_q_projected, ivec3(d4, q_h, s), 0);
+  #if Q_LAYOUT == DSHB
+    val = LINEAR_FP_INPUT_TILE_VEC4_T(t_q[(q_h * S * D4) + (s * D4) + d4]);
+  #elif Q_LAYOUT == DHSB
+    val = LINEAR_FP_INPUT_TILE_VEC4_T(t_q[(s * Q_H * D4) + (q_h * D4) + d4]);
+  #endif
+#else // texture
+  #if Q_LAYOUT == DSHB
+    val = LINEAR_FP_INPUT_TILE_VEC4_T(texelFetch(t_q, ivec3(d4, s, q_h), 0));
+  #elif Q_LAYOUT == DHSB
+    val = LINEAR_FP_INPUT_TILE_VEC4_T(texelFetch(t_q, ivec3(d4, q_h, s), 0));
+  #endif
 #endif
+
+#ifdef SDPA_PAD_D
+  if (d4 == D4 - 1) {
+    const int valid = D - mul_4(d4);
+    [[unroll]] for (int i = 0; i < 4; ++i) {
+      if (i >= valid) {
+        val[i] = T(0);
+      }
+    }
+  }
+#endif
+
+  return val;
 }
 
 void load_q_projected_tile_no_checks(
@@ -41,12 +74,13 @@ void load_q_projected_tile_no_checks(
     const int s_start,
     const int q_h,
     const int D4,
-    const int Q_H,
-    const int S) {
+    const int D,
+    const int S,
+    const int Q_H) {
   [[unroll]] for (int s = 0; s < TILE_M; ++s) {
     [[unroll]] for (int d4 = 0; d4 < TILE_K4; ++d4) {
       tile.data[s][d4] =
-          load_q_projected_d4(d4_start + d4, q_h, s_start + s, D4, Q_H, S);
+          load_q_projected_d4(d4_start + d4, s_start + s, q_h, D4, D, S, Q_H);
     }
   }
 }
@@ -57,15 +91,16 @@ void load_q_projected_tile_with_checks(
     const int s_start,
     const int q_h,
     const int D4,
-    const int Q_H,
-    const int S) {
+    const int D,
+    const int S,
+    const int Q_H) {
   [[unroll]] for (int s = 0; s < TILE_M; ++s) {
     [[unroll]] for (int d4 = 0; d4 < TILE_K4; ++d4) {
       if (d4_start + d4 < D4 && s_start + s < S) {
         tile.data[s][d4] =
-            load_q_projected_d4(d4_start + d4, q_h, s_start + s, D4, Q_H, S);
+            load_q_projected_d4(d4_start + d4, s_start + s, q_h, D4, D, S, Q_H);
       } else {
-        tile.data[s][d4] = VEC4_T(0.0);
+        tile.data[s][d4] = LINEAR_FP_INPUT_TILE_VEC4_T(0.0);
       }
     }
   }

@@ -1,0 +1,110 @@
+name: Weekly PyTorch Pin Bump
+
+on:
+  schedule:
+    - cron: '0 9 * * 1'  # Monday 9:00 UTC
+  workflow_dispatch:
+
+jobs:
+  create-pin-bump-pr:
+    if: github.repository_owner == 'pytorch'
+    runs-on: ubuntu-latest
+    environment: update-commit-hash
+    permissions:
+      contents: write
+      pull-requests: write
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          token: ${{ secrets.UPDATEBOT_TOKEN }}
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Check torch_pin channel
+        id: channel
+        run: |
+          CHANNEL=$(python -c "from torch_pin import CHANNEL; print(CHANNEL)")
+          echo "channel=${CHANNEL}" >> "$GITHUB_OUTPUT"
+          if [ "${CHANNEL}" != "nightly" ]; then
+            echo "torch_pin.py CHANNEL is '${CHANNEL}'; weekly nightly bump only runs when CHANNEL == 'nightly'."
+          fi
+
+      - name: Determine nightly version
+        if: steps.channel.outputs.channel == 'nightly'
+        id: nightly
+        run: |
+          NIGHTLY_DATE=$(date -u -d 'yesterday' '+%Y%m%d')
+          NIGHTLY_VERSION="dev${NIGHTLY_DATE}"
+          echo "version=${NIGHTLY_VERSION}" >> "$GITHUB_OUTPUT"
+
+      - name: Update torch_pin.py with new NIGHTLY_VERSION
+        if: steps.channel.outputs.channel == 'nightly'
+        env:
+          NIGHTLY_VERSION: ${{ steps.nightly.outputs.version }}
+        run: |
+          python - <<'PY'
+          import os, pathlib, re
+          p = pathlib.Path('torch_pin.py')
+          p.write_text(re.sub(
+              r'^NIGHTLY_VERSION\s*=\s*".*"$',
+              f'NIGHTLY_VERSION = "{os.environ["NIGHTLY_VERSION"]}"',
+              p.read_text(),
+              count=1,
+              flags=re.MULTILINE,
+          ))
+          PY
+
+      - name: Run pin bump script
+        if: steps.channel.outputs.channel == 'nightly'
+        run: python .github/scripts/update_pytorch_pin.py
+
+      - name: Create branch and PR
+        if: steps.channel.outputs.channel == 'nightly'
+        env:
+          GH_TOKEN: ${{ secrets.UPDATEBOT_TOKEN }}
+        run: |
+          BRANCH="automated/pytorch-pin-bump-${{ steps.nightly.outputs.version }}"
+
+          git config user.name "pytorchbot"
+          git config user.email "pytorchbot@users.noreply.github.com"
+          git checkout -b "${BRANCH}"
+          git add torch_pin.py
+          git add .ci/docker/ci_commit_pins/pytorch.txt
+          git add runtime/core/portable_type/c10/
+
+          if git diff --cached --quiet; then
+            echo "No changes to commit. Pin is already up to date."
+            exit 0
+          fi
+
+          git commit -m "Bump PyTorch pin to nightly ${{ steps.nightly.outputs.version }}"
+          git push -u origin "${BRANCH}"
+
+          EXISTING=$(gh pr list --label "ci/pytorch-pin-bump" --state open --json number --jq '.[0].number')
+          if [ -n "${EXISTING}" ]; then
+            echo "Closing existing pin bump PR #${EXISTING} in favor of new one"
+            gh pr close "${EXISTING}" --comment "Superseded by newer pin bump."
+          fi
+
+          NIGHTLY="${{ steps.nightly.outputs.version }}"
+          read -r -d '' PR_BODY <<EOF || true
+          ## Summary
+
+          Automated weekly PyTorch pin bump.
+
+          - Updates \`NIGHTLY_VERSION\` in \`torch_pin.py\` to \`${NIGHTLY}\`
+          - Updates \`.ci/docker/ci_commit_pins/pytorch.txt\` to the corresponding nightly commit hash
+          - Syncs c10 headers from PyTorch into \`runtime/core/portable_type/c10/\`
+
+          This PR was created automatically. If CI fails, Claude will attempt to fix issues (up to 3 attempts). If CI still fails, human review will be requested.
+
+          cc @jakeszwe
+          EOF
+          PR_BODY=$(echo "${PR_BODY}" | sed 's/^          //')
+
+          gh pr create \
+            --title "Bump PyTorch pin to nightly ${NIGHTLY}" \
+            --body "${PR_BODY}" \
+            --label "ci/pytorch-pin-bump"

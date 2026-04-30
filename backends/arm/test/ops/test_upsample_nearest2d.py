@@ -135,6 +135,16 @@ class Interpolate(torch.nn.Module):
         return self.upsample(x)
 
 
+class ChainedBilinearInterpolate(torch.nn.Module):
+    def forward(self, x):
+        x = torch.nn.functional.interpolate(
+            x, scale_factor=2.0, mode="bilinear", align_corners=False
+        )
+        return torch.nn.functional.interpolate(
+            x, scale_factor=2.0, mode="bilinear", align_corners=False
+        )
+
+
 @common.parametrize(
     "test_data", test_data_suite | test_data_suite_bf16 | test_data_suite_fp16
 )
@@ -230,6 +240,16 @@ def test_upsample_nearest2d_vec_tosa_INT_interpolate(test_data: torch.Tensor):
     )
     if not compare_outputs:
         pipeline.pop_stage(-1)
+    pipeline.run()
+
+
+def test_upsample_nearest2d_vec_tosa_INT_chained_bilinear_interpolate():
+    pipeline = TosaPipelineINT[input_t1](
+        ChainedBilinearInterpolate(),
+        (torch.rand(1, 3, 4, 4),),
+        "torch.ops.aten.upsample_bilinear2d.vec",
+        exir_op=[],
+    )
     pipeline.run()
 
 

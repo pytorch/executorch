@@ -164,23 +164,20 @@ def build_reshape_tosa(
 
 
 def tosa_shape(shape, dim_order):
-    """Reorder a shape tuple into TOSA layout while resolving symints.
+    """Convert a shape tuple to a TOSA shape list while resolving symints.
 
     Args:
         shape (Sequence[int | torch.SymInt]): Original tensor shape,
             possibly containing ``torch.SymInt``.
-        dim_order (Sequence[int]): Desired dimension order for the output
-            shape.
+        dim_order (Sequence[int]): Kept for API compatibility. Shape lowering
+            now uses the original tensor order directly.
 
     Returns:
-        list[int]: List containing the reordered dimensions where symbolic
+        list[int]: List containing dimensions in original order where symbolic
             values become ``-1``.
 
     """
-    reordered = tuple([shape[dim] for dim in dim_order])
-    # Dynamic shapes in executorch are represented with torch.SymInt objects in the shapes,
-    # in TOSA we do not have this concept and instead use -1.
-    removed_symints = tuple(
-        [-1 if isinstance(d, torch.SymInt) else d for d in reordered]
-    )
+    # Dynamic shapes in executorch are represented with torch.SymInt objects in
+    # the shapes, in TOSA we do not have this concept and instead use -1.
+    removed_symints = tuple([-1 if isinstance(d, torch.SymInt) else d for d in shape])
     return list(removed_symints)

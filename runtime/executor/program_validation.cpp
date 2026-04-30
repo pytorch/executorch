@@ -14,7 +14,7 @@
 #include <executorch/runtime/platform/log.h>
 #include <executorch/schema/program_generated.h>
 
-// #include <c10/util/safe_numerics.h>
+#include <c10/util/safe_numerics.h>
 
 namespace executorch {
 namespace runtime {
@@ -32,7 +32,8 @@ validate_tensor(const executorch_flatbuffer::Tensor* tensor) {
     return Error::InvalidProgram;
   }
 
-  // ssize_t numel = 1;
+  ssize_t numel = 1;
+  bool numel_overflowed = false;
   for (flatbuffers::uoffset_t i = 0; i < sizes->size(); i++) {
     int32_t size = sizes->Get(i);
 
@@ -45,16 +46,10 @@ validate_tensor(const executorch_flatbuffer::Tensor* tensor) {
       return Error::InvalidProgram;
     }
 
-    // bool overflow =
-    //     c10::mul_overflows(numel, static_cast<ssize_t>(size), &numel);
-    // if (overflow) {
-    //   ET_LOG(
-    //       Error,
-    //       "numel overflowed at dimension %u with size %d",
-    //       static_cast<unsigned>(i),
-    //       size);
-    //   return Error::InvalidProgram;
-    // }
+    if (!numel_overflowed) {
+      numel_overflowed =
+          c10::mul_overflows(numel, static_cast<ssize_t>(size), &numel);
+    }
   }
 
   auto scalar_type =
@@ -64,19 +59,18 @@ validate_tensor(const executorch_flatbuffer::Tensor* tensor) {
     return Error::InvalidProgram;
   }
 
-  // size_t nbytes;
-  // bool nbytes_overflow = c10::mul_overflows(
-  //     static_cast<size_t>(numel),
-  //     executorch::runtime::elementSize(scalar_type),
-  //     &nbytes);
-  // if (nbytes_overflow) {
-  //   ET_LOG(
-  //       Error,
-  //       "nbytes overflowed: numel %zd with element size %zu",
-  //       numel,
-  //       executorch::runtime::elementSize(scalar_type));
-  //   return Error::InvalidProgram;
-  // }
+  if (numel_overflowed) {
+    return Error::InvalidProgram;
+  }
+
+  size_t nbytes;
+  bool nbytes_overflow = c10::mul_overflows(
+      static_cast<size_t>(numel),
+      executorch::runtime::elementSize(scalar_type),
+      &nbytes);
+  if (nbytes_overflow) {
+    return Error::InvalidProgram;
+  }
 
   return Error::Ok;
 }
@@ -114,6 +108,27 @@ validate_program(const executorch_flatbuffer::Program* program) {
       return Error::InvalidProgram;
     }
 
+    const auto* inputs = plan->inputs();
+    auto is_dynamic_input = [&](flatbuffers::uoffset_t idx) -> bool {
+      if (inputs == nullptr) {
+        return false;
+      }
+      for (flatbuffers::uoffset_t i = 0; i < inputs->size(); i++) {
+        if (inputs->Get(i) == static_cast<int32_t>(idx)) {
+          const auto* value = values->Get(idx);
+          if (value == nullptr) {
+            return false;
+          }
+          const auto* tensor =
+              static_cast<const executorch_flatbuffer::Tensor*>(value->val());
+          return tensor != nullptr &&
+              tensor->shape_dynamism() !=
+              executorch_flatbuffer::TensorShapeDynamism::STATIC;
+        }
+      }
+      return false;
+    };
+
     for (flatbuffers::uoffset_t value_idx = 0; value_idx < values->size();
          value_idx++) {
       const auto* value = values->Get(value_idx);
@@ -128,12 +143,25 @@ validate_program(const executorch_flatbuffer::Program* program) {
 
         Error err = validate_tensor(tensor);
         if (err != Error::Ok) {
-          ET_LOG(
-              Error,
-              "Tensor validation failed for value %u in execution plan %u",
-              static_cast<unsigned>(value_idx),
-              static_cast<unsigned>(plan_idx));
-          return err;
+          // Dynamic input tensors may have upper-bound sizes serialized for
+          // 64-bit machines that would overflow on 32-bit. Since their actual
+          // sizes are provided at set_input time, we defer overflow checks
+          // for those to Method::set_input.
+          if (is_dynamic_input(value_idx)) {
+            ET_LOG(
+                Info,
+                "Skipping validation failure for dynamic input tensor "
+                "at value %u in execution plan %u",
+                static_cast<unsigned>(value_idx),
+                static_cast<unsigned>(plan_idx));
+          } else {
+            ET_LOG(
+                Error,
+                "Tensor validation failed for value %u in execution plan %u",
+                static_cast<unsigned>(value_idx),
+                static_cast<unsigned>(plan_idx));
+            return err;
+          }
         }
       }
 

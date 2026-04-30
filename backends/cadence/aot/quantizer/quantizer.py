@@ -13,6 +13,8 @@ import torch
 from executorch.backends.cadence.aot.quantizer.patterns import (
     AddmmPattern,
     AddPattern,
+    AddReluPattern0,
+    AddReluPattern1,
     BmmPattern,
     CatPattern,
     Conv1dPattern,
@@ -398,6 +400,8 @@ class CadenceFusedConvReluQuantizer(CadenceQuantizer):
         quantizers.append(CadenceAtenQuantizer(Conv1dReluPattern1(), a8w8sym))
         quantizers.append(CadenceAtenQuantizer(Conv2dReluPattern0(), a8w8sym))
         quantizers.append(CadenceAtenQuantizer(Conv2dReluPattern1(), a8w8sym))
+        quantizers.append(CadenceAtenQuantizer(AddReluPattern0(), a8w8))
+        quantizers.append(CadenceAtenQuantizer(AddReluPattern1(), a8w8))
         quantizers = quantizers + get_cadence_default_quantizers(is_qat=is_qat)
         quantizers.append(CadenceAtenQuantizer(AddPattern(), a8w8))
         quantizers.append(CadenceAtenQuantizer(CatPattern(), a8w8))
