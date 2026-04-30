@@ -10,7 +10,6 @@
 #include <cstdint>
 #include <cstring>
 #include <memory>
-#include <sstream>
 #include <string>
 #include <unordered_map>
 #include <vector>
@@ -596,28 +595,29 @@ class ExecuTorchLlmJni : public facebook::jni::HybridClass<ExecuTorchLlmJni> {
   jint load() {
     if (!runner_) {
       std::stringstream ss;
-      ss << "Model runner was not created. model_type_category="
-         << model_type_category_
-         << ". Valid values: " << MODEL_TYPE_CATEGORY_LLM << " (LLM), "
-         << MODEL_TYPE_CATEGORY_MULTIMODAL << " (Multimodal)";
+      ss << "Invalid model type category: " << model_type_category_
+         << ". Valid values are: " << MODEL_TYPE_CATEGORY_LLM << " or "
+         << MODEL_TYPE_CATEGORY_MULTIMODAL;
       executorch::jni_helper::throwExecutorchException(
-          static_cast<uint32_t>(Error::InvalidState), ss.str().c_str());
-      return static_cast<jint>(Error::InvalidState);
+          static_cast<uint32_t>(Error::InvalidArgument), ss.str().c_str());
+      return -1;
     }
-    const auto load_result = static_cast<jint>(runner_->load());
-    if (load_result != static_cast<jint>(Error::Ok)) {
+    int result = static_cast<jint>(runner_->load());
+    if (result != 0) {
+      std::stringstream ss;
+      ss << "Failed to load runner: [" << result << "]";
       executorch::jni_helper::throwExecutorchException(
-          static_cast<uint32_t>(load_result), "Failed to load model runner");
+          static_cast<uint32_t>(result), ss.str().c_str());
     }
-    return load_result;
+    return result;
   }
 
   static void registerNatives() {
     registerHybrid({
         makeNativeMethod("initHybrid", ExecuTorchLlmJni::initHybrid),
-        makeNativeMethod("generateNative", ExecuTorchLlmJni::generate),
+        makeNativeMethod("generate", ExecuTorchLlmJni::generate),
         makeNativeMethod("stop", ExecuTorchLlmJni::stop),
-        makeNativeMethod("loadNative", ExecuTorchLlmJni::load),
+        makeNativeMethod("load", ExecuTorchLlmJni::load),
         makeNativeMethod(
             "prefillImagesInput", ExecuTorchLlmJni::prefill_images_input),
         makeNativeMethod(
@@ -638,7 +638,7 @@ class ExecuTorchLlmJni : public facebook::jni::HybridClass<ExecuTorchLlmJni> {
             "prefillRawAudioInput", ExecuTorchLlmJni::prefill_raw_audio_input),
         makeNativeMethod(
             "prefillTextInput", ExecuTorchLlmJni::prefill_text_input),
-        makeNativeMethod("resetContextNative", ExecuTorchLlmJni::reset_context),
+        makeNativeMethod("resetContext", ExecuTorchLlmJni::reset_context),
     });
   }
 };

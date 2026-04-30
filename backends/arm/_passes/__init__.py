@@ -131,6 +131,7 @@ from .insert_table_ops import InsertTableOpsPass  # noqa
 from .match_arg_dtype_pass import MatchArgDtypePass  # noqa
 from .match_arg_ranks_pass import MatchArgRanksPass  # noqa
 from .mm_to_bmm_pass import ConvertMmToBmmPass  # noqa
+from .normalize_delegate_io_layout_pass import NormalizeDelegateIOLayoutPass  # noqa
 from .normalize_index_put_bool_index_tensor_pass import (  # noqa
     NormalizeIndexPutBoolIndexTensorPass,
 )

@@ -169,6 +169,9 @@ define_overridable_option(
   EXECUTORCH_BUILD_VULKAN "Build the Vulkan backend" BOOL OFF
 )
 define_overridable_option(
+  EXECUTORCH_BUILD_WEBGPU "Build the WebGPU backend" BOOL OFF
+)
+define_overridable_option(
   EXECUTORCH_BUILD_PORTABLE_OPS "Build portable_ops library" BOOL ON
 )
 define_overridable_option(EXECUTORCH_USE_DL "Use libdl library" BOOL ON)
