@@ -21,7 +21,13 @@ GpuContext::GpuContext(
     QnnBackendCache* cache,
     QnnDlcManager* qnn_dlc_manager,
     const QnnExecuTorchGpuBackendOptions* gpu_options)
-    : QnnContext(implementation, backend, device, cache, qnn_dlc_manager) {
+    : QnnContext(
+          implementation,
+          backend,
+          device,
+          cache,
+          qnn_dlc_manager,
+          QnnExecuTorchProfileLevel::kProfileOff) {
   gpu_context_custom_config_ =
       std::make_unique<GpuContextCustomConfig>(gpu_options);
 }

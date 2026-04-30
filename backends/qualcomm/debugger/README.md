@@ -50,7 +50,7 @@ Generate optrace and QHAS files using QNN tools under $QNN_SDK_ROOT. After finis
 adb = SimpleADB(
     qnn_config=qnn_config,
     pte_path=f"{args.artifact}/{pte_filename}.pte",
-    workspace=f"/data/local/tmp/executorch/{pte_filename},
+    workspace=f"/data/local/tmp/executorch/{pte_filename}",
 )
 binaries_trace = generate_optrace(
     args, adb, f"{args.artifact}/{pte_filename}.pte", example_input
@@ -78,7 +78,7 @@ qairt_visualizer.view(reports=[optrace, qhas])
 - `model`: Path to your QNN model file (e.g., `path_to_your_model.dlc`).
 - **`reports`**: List of report file paths, including the optrace (`optrace.json`) and QHAS (`optrace_qnn_htp_analysis_summary.json`).
 
-Note: Files ending with `.bin ` do not support graph visualization in qairt_visualizer.
+Note: Files ending with `.bin` do not support graph visualization in qairt_visualizer.
 
 ## Demo
 
@@ -226,3 +226,79 @@ python examples/qualcomm/util_scripts/qnn_intermediate_debugger_demo.py -b build
 2. Please ignore this if you are using `qnn_executor_runner`. If you have decided to write your own runner, please follow the [tutorial](https://pytorch.org/executorch/stable/etdump.html) on how to implement etdump into your own runner.
 3. The current debugger does not support graph with partitions. (WIP)
 4. The current debugger does not support LLM models. (WIP)
+
+
+## ExecuTorch QNN HTP Heap Profiling
+
+Measures DSP memory usage when using context binary models on the HTP backend.
+
+### Introduction
+
+DSP heap profiling is available for `QnnContext_createFromBinary` use-cases. It captures total DSP heap usage at two checkpoints:
+
+- **Before the first context is created** (`before_context_created`)
+- **After the last context is freed** (`after_context_freed`)
+
+The difference between the two values represents heap consumed during context execution. The value after freeing is typically equal to or greater than before creation.
+
+### Instructions
+
+#### Run the example test
+
+```bash
+python backends/qualcomm/tests/test_qnn_delegate.py \
+    TestQNNQuantizedUtils.test_qnn_backend_runtime_option_heap_profile \
+    -b build-android -H ${HOST} -s ${SN} -m ${SOC_MODEL}
+```
+
+See [test_qnn_delegate.py](../tests/test_qnn_delegate.py) for the full test implementation.
+
+#### Setting
+
+```python
+from executorch.backends.qualcomm.utils.utils import generate_htp_compiler_spec
+from executorch.backends.qualcomm.utils.utils import generate_qnn_executorch_compiler_spec
+
+backend_options = generate_htp_compiler_spec(
+    use_multi_contexts=True,
+)
+
+compiler_specs = generate_qnn_executorch_compiler_spec(
+    soc_model=self.chipset_table[TestQNN.soc_model],
+    backend_options=backend_options,
+    profile_level=2,
+)
+
+# ...
+
+self.verify_output(
+    module,
+    sample_input,
+    exec_prog,
+    save_heap_result=True,
+)
+```
+
+#### Output file format
+
+The result is written to a text file (default: `htp_heap_usage.txt`) with two lines:
+
+```
+DSP:before_context_created (bytes), <value>
+DSP:after_context_freed (bytes), <value>
+```
+
+#### Reference result
+
+Measured on SM8850. A difference of 0 means no additional heap is consumed during context binary execution.
+
+```console
+First value (before_context_created): 928212 bytes
+Second value (after_context_freed): 928212 bytes
+difference: 0.00 bytes
+```
+
+### Limitations
+
+1. Only supported HTP backend on Android and QNX platforms.
+2. By enabling this feature, initialization and cleanup time might be impacted.
