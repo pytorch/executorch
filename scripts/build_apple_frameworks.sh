@@ -334,6 +334,11 @@ done
 rm -rf "$FRAMEWORK_EXECUTORCH_HEADERS_PATH"
 rm -rf "$FRAMEWORK_EXECUTORCH_LLM_HEADERS_PATH"
 
+echo "Generating Swift test fixtures (requires CoreML python deps)"
+
+cd "$SOURCE_ROOT_DIR"
+python3 extension/apple/ExecuTorch/__tests__/resources/generate_coreml_test_models.py
+
 echo "Running tests"
 
 cd "$SOURCE_ROOT_DIR"

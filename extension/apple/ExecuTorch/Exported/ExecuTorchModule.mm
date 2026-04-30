@@ -293,6 +293,13 @@ static Error buildBackendOptionsMap(
   std::unique_ptr<Module> _module;
   NSMutableDictionary<NSString *, NSMutableArray<ExecuTorchValue *> *> *_inputs;
   NSMutableDictionary<NSString *, NSMutableArray<ExecuTorchValue *> *> *_outputs;
+  // Storage backing _backendOptionsMap. Per the C++ contract on
+  // Module::load(const LoadBackendOptionsMap&, ...), the map (and the
+  // vectors whose Spans it references) must outlive any methods loaded
+  // with these options. We hold them as ivars so they live as long as
+  // this ExecuTorchModule (and therefore the underlying _module).
+  std::vector<std::vector<BackendOption>> _backendOptionsStorage;
+  LoadBackendOptionsMap _backendOptionsMap;
 }
 
 - (instancetype)initWithFilePath:(NSString *)filePath
@@ -373,16 +380,20 @@ static Error buildBackendOptionsMap(
 - (BOOL)loadWithBackendOptions:(NSDictionary<NSString *, NSArray<ExecuTorchBackendOption *> *> *)backendOptions
                   verification:(ExecuTorchVerification)verification
                          error:(NSError **)error {
-  std::vector<std::vector<BackendOption>> allOptions;
-  LoadBackendOptionsMap map;
-  const auto buildError = buildBackendOptionsMap(backendOptions, allOptions, map);
+  // Reset the persistent storage. The C++ Module borrows a pointer into
+  // _backendOptionsMap (which in turn holds Spans into _backendOptionsStorage),
+  // so both must remain alive for the lifetime of any methods loaded with
+  // these options. They are ivars, so that's true until -dealloc.
+  _backendOptionsStorage.clear();
+  _backendOptionsMap = LoadBackendOptionsMap();
+  const auto buildError = buildBackendOptionsMap(backendOptions, _backendOptionsStorage, _backendOptionsMap);
   if (buildError != Error::Ok) {
     if (error) {
       *error = ExecuTorchErrorWithCode((ExecuTorchErrorCode)buildError);
     }
     return NO;
   }
-  const auto errorCode = _module->load(map, static_cast<Program::Verification>(verification));
+  const auto errorCode = _module->load(_backendOptionsMap, static_cast<Program::Verification>(verification));
   if (errorCode != Error::Ok) {
     if (error) {
       *error = ExecuTorchErrorWithCode((ExecuTorchErrorCode)errorCode);
