@@ -19,7 +19,6 @@ Usage:
 import unittest
 
 import torch
-import torch.nn as nn
 
 from executorch.backends.cuda.triton.kernels.int4_matmul import (
     dequant_w4_to_bf16,

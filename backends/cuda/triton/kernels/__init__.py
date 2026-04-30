@@ -23,6 +23,7 @@ __all__ = [
     "fused_moe",
     "fused_moe_batched",
     "fused_moe_batched_gemm",
+    "int4_matvec",
     "moe_align_block_size",
     "sdpa",
     "sdpa_decode_splitk",
