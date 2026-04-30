@@ -47,6 +47,53 @@ FORMAT = "[%(levelname)s %(asctime)s %(filename)s:%(lineno)s] %(message)s"
 logging.basicConfig(level=logging.INFO, format=FORMAT)
 logger = logging.getLogger(__name__)
 
+_GEMMA4_MODEL_ID = "google/gemma-4-E2B-it"
+_GEMMA4_PROBLEM_LAYER_FQN = "model.language_model.layers.22.mlp.down_proj"
+
+
+def _get_submodule_by_fqn(root: torch.nn.Module, fqn: str) -> torch.nn.Module:
+    cur = root
+    for part in fqn.split("."):
+        if part.isdigit():
+            cur = cur[int(part)]  # type: ignore[index]
+        else:
+            cur = getattr(cur, part)
+    return cur
+
+
+def _capture_gemma4_float_fallback_weight(
+    model_id: str,
+    qlinear: Optional[str],
+    model: torch.nn.Module,
+) -> Optional[torch.Tensor]:
+    if model_id != _GEMMA4_MODEL_ID or qlinear != "4w":
+        return None
+
+    layer = _get_submodule_by_fqn(model, _GEMMA4_PROBLEM_LAYER_FQN)
+    weight = layer.weight.detach().clone()
+    logger.info(
+        "Saving %s in floating point to avoid the current Gemma 4 4w mismatch",
+        _GEMMA4_PROBLEM_LAYER_FQN,
+    )
+    return weight
+
+
+def _restore_gemma4_float_fallback_weight(
+    model_id: str,
+    qlinear: Optional[str],
+    model: torch.nn.Module,
+    weight: Optional[torch.Tensor],
+) -> None:
+    if weight is None or model_id != _GEMMA4_MODEL_ID or qlinear != "4w":
+        return
+
+    layer = _get_submodule_by_fqn(model, _GEMMA4_PROBLEM_LAYER_FQN)
+    layer.weight = torch.nn.Parameter(weight, requires_grad=False)
+    logger.info(
+        "Restored %s in floating point after quantization",
+        _GEMMA4_PROBLEM_LAYER_FQN,
+    )
+
 
 def _export_with_optimum(
     model_id: str,
@@ -81,6 +128,10 @@ def _export_with_optimum(
 
     from executorch.backends.mlx.llm.quantization import quantize_model_
 
+    gemma4_float_weight = _capture_gemma4_float_fallback_weight(
+        model_id, qlinear, exportable.model
+    )
+
     quantize_model_(
         exportable.model,
         qlinear_config=qlinear,
@@ -91,6 +142,9 @@ def _export_with_optimum(
             exportable.model.config, "tie_word_embeddings", False
         )
         and not no_tie_word_embeddings,
+    )
+    _restore_gemma4_float_fallback_weight(
+        model_id, qlinear, exportable.model, gemma4_float_weight
     )
 
     logger.info("Exporting model with torch.export...")
@@ -277,6 +331,10 @@ def _export_with_custom_components(
 
     from executorch.backends.mlx.llm.quantization import quantize_model_
 
+    gemma4_float_weight = _capture_gemma4_float_fallback_weight(
+        model_id, qlinear, exportable.model
+    )
+
     quantize_model_(
         exportable.model,
         qlinear_config=qlinear,
@@ -285,6 +343,9 @@ def _export_with_custom_components(
         qembedding_group_size=qembedding_group_size,
         tie_word_embeddings=getattr(model.config, "tie_word_embeddings", False)
         and not no_tie_word_embeddings,
+    )
+    _restore_gemma4_float_fallback_weight(
+        model_id, qlinear, exportable.model, gemma4_float_weight
     )
 
     logger.info("Exporting model with torch.export...")
