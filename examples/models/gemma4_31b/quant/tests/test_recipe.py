@@ -8,9 +8,13 @@
 
 import unittest
 
-from parameterized import parameterized
+from executorch.examples.models.gemma4_31b.quant.recipe import (
+    QuantConfig,
+    QuantRecipe,
+    QuantRule,
+)
 
-from .recipe import QuantConfig, QuantRecipe, QuantRule
+from parameterized import parameterized
 
 _Q4 = QuantConfig(4, 32, True, "min_max")
 _Q8 = QuantConfig(8, 32, True, "min_max")

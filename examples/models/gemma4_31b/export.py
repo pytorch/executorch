@@ -10,9 +10,10 @@ Two methods are exported and lowered together so they share KV-cache buffers:
   - "decode":  T=1, static shape, returns the next sampled token.
   - "prefill": T>=2, dynamic shape, returns the next sampled token.
 
-Two input paths:
+Three input paths:
   --prequantized <dir>      Load a quantized checkpoint (from quantize_and_save.py)
                             and pack for the target backend. No re-quantization.
+  --gguf <file>             Load a GGUF file (e.g., Q4_K_M from the community).
   --model-dir <hf>          Load bf16 checkpoint, quantize, pack, and export
                             in one shot.
 
@@ -251,6 +252,11 @@ def main() -> None:
         default=None,
         help="Path to a quantized checkpoint directory. Skips quantization.",
     )
+    src.add_argument(
+        "--gguf",
+        default=None,
+        help="Path to a GGUF file (e.g., gemma-4-31B-it-Q4_K_M.gguf).",
+    )
     parser.add_argument(
         "--output-dir",
         default="./gemma4_31b_exports",
@@ -284,6 +290,12 @@ def main() -> None:
             args.prequantized,
             max_seq_len=args.max_seq_len,
             backend=args.backend,
+        )
+    elif args.gguf:
+        from executorch.examples.models.gemma4_31b.gguf_loader import load_gguf_model
+
+        model, config = load_gguf_model(
+            args.gguf, max_seq_len=args.max_seq_len, backend=args.backend
         )
     else:
         model, config = load_and_quantize(

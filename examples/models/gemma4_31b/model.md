@@ -121,20 +121,19 @@ identical logits to sequential one-token-at-a-time prefill.
 
 ## Quantization
 
-Three modules in `quant/`:
+Modules in `quant/`:
 
-- **Recipe** (`recipe.py`): `QuantConfig` (bits, group_size, symmetric,
-  method) + `QuantRule` (regex pattern, config, optional layer filter) +
-  `QuantRecipe` (ordered rules, first match wins). Declares what to
-  quantize and how — says nothing about packing or backends.
+- **Recipe** (`recipe.py`): `QuantConfig` + `QuantRule` + `QuantRecipe`.
+  Declares what to quantize — says nothing about packing or backends.
+- **Quantize** (`quantize.py`): `quantize_weight` / `dequantize_weight` /
+  `quantize_model`. Produces `CanonicalQuantizedWeight` from fp weights.
 - **Serialize** (`serialize.py`): `CanonicalQuantizedWeight` (int8 qdata +
-  bf16 scale + optional zero). `save()` / `load()` persist to safetensors
-  with a JSON header per weight. Packing-agnostic — any backend can read
-  the file.
-- **Packer** (`pack_cuda.py`): converts `CanonicalQuantizedWeight` to
-  backend runtime format at load time via `pack_model()`. Dispatches per
-  parent module type (`nn.Linear` → `Int4TilePackedTo4dTensor` for
-  tinygemm). Extensible via a packers dict.
+  bf16 scale + optional zero). `save()` / `load()` persist to safetensors.
+- **Pack** (`pack.py` + `pack_cuda.py`): `pack_model` groups weights by
+  parent module, `pack_one` handles single weights. Per-module packers
+  dispatch by module type (`nn.Linear`, `nn.Embedding`, extensible for MoE).
+- **GGUF** (`gguf.py`): `unpack_gguf_tensor` / `iter_gguf_tensors` for
+  loading community-quantized GGUF files (Q4_K, Q6_K).
 
 The quantize-once flow:
 

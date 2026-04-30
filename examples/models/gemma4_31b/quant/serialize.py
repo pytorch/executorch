@@ -54,6 +54,26 @@ class CanonicalQuantizedWeight:
     zero: Optional[torch.Tensor]
     config: QuantConfig
 
+    def __post_init__(self):
+        if self.qdata.dtype != torch.int8:
+            raise ValueError(f"qdata must be int8, got {self.qdata.dtype}")
+        K = self.qdata.shape[-1]
+        if K % self.config.group_size != 0:
+            raise ValueError(
+                f"Last dim ({K}) must be divisible by group_size ({self.config.group_size})"
+            )
+        n_groups = K // self.config.group_size
+        expected_numel = self.qdata[..., 0:1].numel() * n_groups
+        if self.scale.numel() != expected_numel:
+            raise ValueError(
+                f"scale has {self.scale.numel()} elements, expected {expected_numel} "
+                f"(from qdata {tuple(self.qdata.shape)}, group_size={self.config.group_size})"
+            )
+        if self.config.symmetric and self.zero is not None:
+            raise ValueError("symmetric config must have zero=None")
+        if not self.config.symmetric and self.zero is None:
+            raise ValueError("asymmetric config must have zero (not None)")
+
 
 # ---------------------------------------------------------------------------
 # Nibble packing for 4-bit on-disk storage.

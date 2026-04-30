@@ -13,7 +13,8 @@ import unittest
 import torch
 import torch.nn as nn
 
-from .pack_cuda import (
+from executorch.examples.models.gemma4_31b.quant.pack import pack_one
+from executorch.examples.models.gemma4_31b.quant.pack_cuda import (
     DEFAULT_CUDA_PACKERS,
     load_and_pack_for_cuda,
     pack_embedding_for_cuda,
@@ -22,10 +23,10 @@ from .pack_cuda import (
     pack_linear_for_cuda,
     pack_model,
 )
-from .quantize import quantize_weight
-from .recipe import QuantConfig
+from executorch.examples.models.gemma4_31b.quant.quantize import quantize_weight
+from executorch.examples.models.gemma4_31b.quant.recipe import QuantConfig
 
-from .serialize import save
+from executorch.examples.models.gemma4_31b.quant.serialize import save
 
 
 class TestPackInt4ForCuda(unittest.TestCase):
@@ -354,6 +355,76 @@ class TestLoadAndPackForCuda(unittest.TestCase):
         self.assertEqual(len(call_log), 1)
         self.assertEqual(call_log[0], ("my_packer", ["weight"]))
         self.assertEqual(model2.m.weight.device.type, "cpu")
+
+    def test_multi_weight_module_grouped(self):
+        """pack_model groups multiple weights per module (MoE-style)."""
+        call_log = []
+
+        class FusedExperts(nn.Module):
+            def __init__(self):
+                super().__init__()
+                self.w1 = nn.Parameter(torch.randn(32, 64))
+                self.w2 = nn.Parameter(torch.randn(32, 64))
+
+        def moe_packer(module, weights):
+            call_log.append(sorted(weights.keys()))
+            for attr, cw in weights.items():
+                setattr(
+                    module,
+                    attr,
+                    nn.Parameter(cw.qdata.to(torch.bfloat16), requires_grad=False),
+                )
+
+        config = QuantConfig(bits=4, group_size=32, symmetric=False, method="min_max")
+        cw1 = quantize_weight(torch.randn(32, 64, dtype=torch.bfloat16), config)
+        cw2 = quantize_weight(torch.randn(32, 64, dtype=torch.bfloat16), config)
+
+        with torch.device("meta"):
+            model = nn.ModuleDict({"experts": FusedExperts()})
+
+        packers = {**DEFAULT_CUDA_PACKERS, FusedExperts: moe_packer}
+        pack_model(
+            model,
+            {"experts.w1": cw1, "experts.w2": cw2},
+            {},
+            packers,
+        )
+
+        # Packer should be called ONCE with both weights
+        self.assertEqual(len(call_log), 1)
+        self.assertEqual(call_log[0], ["w1", "w2"])
+
+
+class TestPackOne(unittest.TestCase):
+    def setUp(self):
+        if not torch.cuda.is_available():
+            self.skipTest("CUDA required")
+
+    def test_quantized_weight(self):
+        """pack_one dispatches CQW to the module packer."""
+        config = QuantConfig(bits=4, group_size=32, symmetric=False, method="min_max")
+        cw = quantize_weight(torch.randn(64, 128, dtype=torch.bfloat16), config)
+
+        with torch.device("meta"):
+            model = nn.ModuleDict({"proj": nn.Linear(128, 64, bias=False)})
+        pack_one(model, "proj.weight", cw, DEFAULT_CUDA_PACKERS)
+
+        self.assertNotEqual(model.proj.weight.device.type, "meta")
+        self.assertEqual(model.proj.weight.shape, torch.Size([64, 128]))
+
+    def test_plain_tensor(self):
+        """pack_one assigns a plain tensor as a parameter or buffer."""
+        with torch.device("meta"):
+            model = nn.ModuleDict({"norm": nn.LayerNorm(64, bias=False)})
+        pack_one(
+            model,
+            "norm.weight",
+            torch.randn(64, dtype=torch.bfloat16),
+            DEFAULT_CUDA_PACKERS,
+        )
+
+        self.assertEqual(model.norm.weight.shape, torch.Size([64]))
+        self.assertEqual(model.norm.weight.dtype, torch.bfloat16)
 
 
 if __name__ == "__main__":

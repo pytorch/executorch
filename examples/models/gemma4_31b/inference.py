@@ -4,13 +4,14 @@
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
 
-"""Eager inference on a prequantized Gemma 4 31B-IT model (CUDA + torch.compile).
+"""Eager inference on Gemma 4 31B-IT (CUDA + torch.compile).
 
-Loads a quantized checkpoint (from ``quantize_and_save.py``), packs for CUDA,
-materializes runtime buffers, optionally compiles with ``torch.compile``, and
-generates text autoregressively. The model performs Gumbel-max sampling
-on-device, so each forward returns the next token ID as a float tensor of
-shape ``[B, 1]``.
+Two input paths:
+  --prequantized <dir>   Load a quantized checkpoint (from quantize_and_save.py).
+  --gguf <file>          Load a GGUF file (e.g., Q4_K_M from the community).
+
+Packs for the target backend (--backend cuda), materializes runtime buffers,
+optionally compiles with ``torch.compile``, and generates text autoregressively.
 
 Usage:
     python inference.py \\
@@ -18,6 +19,11 @@ Usage:
         --prompt "Write a short joke about saving RAM." \\
         --max-new-tokens 128 \\
         --temperature 0.8
+
+    python inference.py \\
+        --gguf ./gemma-4-31B-it-Q4_K_M.gguf \\
+        --tokenizer-path ./tokenizer.json \\
+        --prompt "Hello"
 """
 
 import argparse
@@ -113,13 +119,22 @@ def generate(
 
 
 def main() -> None:
-    parser = argparse.ArgumentParser(
-        description="Eager inference on prequantized Gemma 4 31B-IT (CUDA)."
+    parser = argparse.ArgumentParser(description="Eager inference on Gemma 4 31B-IT.")
+    src = parser.add_mutually_exclusive_group(required=True)
+    src.add_argument(
+        "--prequantized",
+        default=None,
+        help="Path to a quantized checkpoint directory.",
+    )
+    src.add_argument(
+        "--gguf",
+        default=None,
+        help="Path to a GGUF file (e.g., gemma-4-31B-it-Q4_K_M.gguf).",
     )
     parser.add_argument(
-        "--prequantized",
-        required=True,
-        help="Path to a quantized checkpoint directory.",
+        "--tokenizer-path",
+        default=None,
+        help="Path to tokenizer.json (required with --gguf, optional with --prequantized).",
     )
     parser.add_argument("--prompt", default="Hello", help="Input prompt.")
     parser.add_argument(
@@ -145,15 +160,28 @@ def main() -> None:
         action="store_true",
         help="Skip torch.compile (slower, but easier to debug).",
     )
+    parser.add_argument(
+        "--backend",
+        default="cuda",
+        choices=["cuda"],
+        help="Target backend.",
+    )
     args = parser.parse_args()
 
-    if not torch.cuda.is_available():
-        parser.error("CUDA is required for inference.")
+    if args.backend == "cuda" and not torch.cuda.is_available():
+        parser.error("CUDA is required for the cuda backend.")
 
-    print(f"Loading prequantized model from {args.prequantized}...")
-    model, config = load_prequantized_model(
-        args.prequantized, max_seq_len=args.max_seq_len
-    )
+    if args.gguf:
+        from executorch.examples.models.gemma4_31b.gguf_loader import load_gguf_model
+
+        model, config = load_gguf_model(
+            args.gguf, args.max_seq_len, backend=args.backend
+        )
+    else:
+        print(f"Loading prequantized model from {args.prequantized}...")
+        model, config = load_prequantized_model(
+            args.prequantized, max_seq_len=args.max_seq_len, backend=args.backend
+        )
     _move_to_cuda(model, config)
     model.eval()
 
@@ -161,7 +189,12 @@ def main() -> None:
         print("Compiling model with torch.compile...")
         model = torch.compile(model, mode="default")
 
-    tokenizer_path = os.path.join(args.prequantized, "tokenizer.json")
+    if args.tokenizer_path:
+        tokenizer_path = args.tokenizer_path
+    elif args.prequantized:
+        tokenizer_path = os.path.join(args.prequantized, "tokenizer.json")
+    else:
+        parser.error("--tokenizer-path is required with --gguf.")
     from tokenizers import Tokenizer
 
     tokenizer = Tokenizer.from_file(tokenizer_path)

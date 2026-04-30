@@ -16,6 +16,7 @@ both export and eager inference:
 | `quantize_and_save.py` | bf16 HF checkpoint → quantized checkpoint (one-time) | ~30 GB CPU |
 | `export.py --prequantized <dir>` | quantized checkpoint → `model.pte` + `model.ptd` | ~24 GB CPU + CUDA for packing |
 | `inference.py --prequantized <dir>` | quantized checkpoint → eager generation under `torch.compile` | ~24 GB GPU |
+| `inference.py --gguf <file>` | GGUF file (Q4_K_M, etc.) → eager generation | ~24 GB GPU |
 | `export.py --model-dir <hf>` | one-shot bf16 → quantize → export (no intermediate file) | ~30 GB CPU + CUDA for packing |
 
 The quantized checkpoint is a safetensors file with int values + per-group
@@ -83,6 +84,15 @@ python examples/models/gemma4_31b/inference.py \
     --prompt "Write a short joke about saving RAM." \
     --max-new-tokens 128 \
     --temperature 0.8
+```
+
+GGUF files from the community (e.g., Q4_K_M) can also be used directly:
+
+```bash
+python examples/models/gemma4_31b/inference.py \
+    --gguf ./gemma-4-31B-it-Q4_K_M.gguf \
+    --tokenizer-path /path/to/tokenizer.json \
+    --prompt "Hello"
 ```
 
 Useful before spending the export+lowering time to confirm the quantized
