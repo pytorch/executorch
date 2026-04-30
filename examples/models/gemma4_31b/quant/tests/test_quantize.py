@@ -84,11 +84,17 @@ class TestQuantizeWeight(unittest.TestCase):
         self.assertEqual(dequantize_weight(cw, torch.float16).dtype, torch.float16)
 
     def test_dequantize_symmetric(self):
+        torch.manual_seed(1)
+        weight = torch.randn(32, 64, dtype=torch.bfloat16)
         config = QuantConfig(bits=4, group_size=32, symmetric=True, method="min_max")
-        cw = quantize_weight(torch.randn(32, 64, dtype=torch.bfloat16), config)
+        cw = quantize_weight(weight, config)
         self.assertIsNone(cw.zero)
         dequant = dequantize_weight(cw)
         self.assertEqual(dequant.shape, (32, 64))
+        rel_error = (
+            dequant.float() - weight.float()
+        ).abs().mean() / weight.float().abs().mean()
+        self.assertLess(rel_error.item(), 0.15)
 
     @parameterized.expand(
         [

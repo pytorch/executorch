@@ -197,10 +197,16 @@ def dequantize_weight(
     """
     gs = cw.config.group_size
     scale = cw.scale.float().repeat_interleave(gs, dim=-1)
+    qdata = cw.qdata.float()
+    # Symmetric 4-bit qdata is stored as unsigned [0, 15] (shifted +8 in
+    # quantize_weight). Undo the shift to recover signed [-8, 7] before
+    # scaling. (Q4_K is asymmetric and uses a zero field instead.)
+    if cw.config.bits == 4 and cw.zero is None:
+        qdata = qdata - 8
     if cw.zero is not None:
         zero = cw.zero.float().repeat_interleave(gs, dim=-1)
-        return ((cw.qdata.float() - zero) * scale).to(dtype)
-    return (cw.qdata.float() * scale).to(dtype)
+        return ((qdata - zero) * scale).to(dtype)
+    return (qdata * scale).to(dtype)
 
 
 # ---------------------------------------------------------------------------
