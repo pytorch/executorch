@@ -215,13 +215,20 @@ def _export_with_custom_components(
     }
     torch_dtype = torch_dtype_map.get(dtype, torch.bfloat16)
 
-    if use_custom_sdpa:
+    effective_use_custom_sdpa = use_custom_sdpa
+    if model_id == _GEMMA4_MODEL_ID and use_custom_sdpa:
+        logger.info(
+            "Disabling custom SDPA for Gemma 4 while keeping the custom cache path"
+        )
+        effective_use_custom_sdpa = False
+
+    if effective_use_custom_sdpa:
         from executorch.backends.mlx.llm.hf_attention import register_mlx_attention
 
         register_mlx_attention()
         logger.info("Registered MLX custom SDPA attention")
 
-    attn_implementation = "mlx" if use_custom_sdpa else None
+    attn_implementation = "mlx" if effective_use_custom_sdpa else None
 
     logger.info(f"Loading HuggingFace model: {model_id}")
     load_kwargs = {
