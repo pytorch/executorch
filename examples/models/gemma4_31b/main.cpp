@@ -82,7 +82,7 @@ static uint64_t read_token(const executorch::aten::Tensor& output) {
   memcpy(&val, ptr, sizeof(float));
 #endif
 
-  return static_cast<uint64_t>(val);
+  return static_cast<uint64_t>(llrintf(val));
 }
 
 int main(int argc, char** argv) {

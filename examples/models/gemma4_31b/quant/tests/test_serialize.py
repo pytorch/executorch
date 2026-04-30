@@ -60,6 +60,67 @@ def _make_cqw(
 
 
 # ---------------------------------------------------------------------------
+# CanonicalQuantizedWeight validation
+
+
+class TestCanonicalQuantizedWeightValidation(unittest.TestCase):
+    def test_rejects_non_int8_qdata(self):
+        config = QuantConfig(bits=4, group_size=32, symmetric=False, method="min_max")
+        with self.assertRaises(ValueError) as ctx:
+            CanonicalQuantizedWeight(
+                qdata=torch.randint(0, 16, (8, 64), dtype=torch.int32),
+                scale=torch.randn(8, 2, dtype=torch.bfloat16),
+                zero=torch.randn(8, 2, dtype=torch.bfloat16),
+                config=config,
+            )
+        self.assertIn("int8", str(ctx.exception))
+
+    def test_rejects_indivisible_group_size(self):
+        config = QuantConfig(bits=4, group_size=33, symmetric=False, method="min_max")
+        with self.assertRaises(ValueError) as ctx:
+            CanonicalQuantizedWeight(
+                qdata=torch.randint(0, 16, (8, 64), dtype=torch.int8),
+                scale=torch.randn(8, 2, dtype=torch.bfloat16),
+                zero=torch.randn(8, 2, dtype=torch.bfloat16),
+                config=config,
+            )
+        self.assertIn("divisible", str(ctx.exception))
+
+    def test_rejects_wrong_scale_numel(self):
+        config = QuantConfig(bits=4, group_size=32, symmetric=False, method="min_max")
+        with self.assertRaises(ValueError) as ctx:
+            CanonicalQuantizedWeight(
+                qdata=torch.randint(0, 16, (8, 64), dtype=torch.int8),
+                scale=torch.randn(8, 4, dtype=torch.bfloat16),  # should be (8, 2)
+                zero=torch.randn(8, 4, dtype=torch.bfloat16),
+                config=config,
+            )
+        self.assertIn("scale", str(ctx.exception))
+
+    def test_rejects_symmetric_with_zero(self):
+        config = QuantConfig(bits=4, group_size=32, symmetric=True, method="min_max")
+        with self.assertRaises(ValueError) as ctx:
+            CanonicalQuantizedWeight(
+                qdata=torch.randint(0, 16, (8, 64), dtype=torch.int8),
+                scale=torch.randn(8, 2, dtype=torch.bfloat16),
+                zero=torch.randn(8, 2, dtype=torch.bfloat16),
+                config=config,
+            )
+        self.assertIn("symmetric", str(ctx.exception))
+
+    def test_rejects_asymmetric_without_zero(self):
+        config = QuantConfig(bits=4, group_size=32, symmetric=False, method="min_max")
+        with self.assertRaises(ValueError) as ctx:
+            CanonicalQuantizedWeight(
+                qdata=torch.randint(0, 16, (8, 64), dtype=torch.int8),
+                scale=torch.randn(8, 2, dtype=torch.bfloat16),
+                zero=None,
+                config=config,
+            )
+        self.assertIn("asymmetric", str(ctx.exception))
+
+
+# ---------------------------------------------------------------------------
 # Nibble pack / unpack
 
 

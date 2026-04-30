@@ -92,6 +92,9 @@ class RingKVCache(nn.Module):
         # seq_len must not exceed buf_size, otherwise wrapped indices contain
         # duplicates and index_copy_ is non-deterministic on CUDA. The C++
         # runner must chunk prefill to respect this limit.
+        assert (
+            input_pos.shape[0] <= self.buf_size
+        ), f"seq_len {input_pos.shape[0]} > buf_size {self.buf_size}"
         wrapped = input_pos % self.buf_size
         self.k_cache.index_copy_(2, wrapped, k_val)
         self.v_cache.index_copy_(2, wrapped, v_val)

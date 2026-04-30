@@ -20,10 +20,10 @@ from typing import Optional
 class QuantConfig:
     """Per-weight quantization parameters."""
 
-    bits: int  # 4, 8
+    bits: int  # storage width: 4 or 8 (6-bit formats like Q6_K are widened to 8)
     group_size: int  # 32, 64, 128
     symmetric: bool  # True = no zero point
-    method: str  # "min_max" | "hqq"
+    method: str  # "min_max" | "hqq" | "gguf_q4_k" | "gguf_q6_k"
 
 
 @dataclass

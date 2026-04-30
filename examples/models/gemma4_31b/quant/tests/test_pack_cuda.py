@@ -103,6 +103,38 @@ class TestPackInt4ForCuda(unittest.TestCase):
         ).abs().mean() / original_out.float().abs().mean()
         self.assertLess(rel_error.item(), 0.15)
 
+    def test_asymmetric_gguf_q4_k_matmul(self):
+        """Asymmetric 4-bit (GGUF Q4_K style) packs and produces correct matmul."""
+        torch.manual_seed(0)
+        weight = torch.randn(256, 1024, dtype=torch.bfloat16)
+        x = torch.randn(1, 1024, dtype=torch.bfloat16)
+
+        original_out = torch.nn.functional.linear(x.cuda(), weight.cuda())
+
+        config = QuantConfig(bits=4, group_size=32, symmetric=False, method="min_max")
+        cw = quantize_weight(weight, config)
+        # Mimic GGUF Q4_K: asymmetric with a non-standard method name
+        from executorch.examples.models.gemma4_31b.quant.serialize import (
+            CanonicalQuantizedWeight,
+        )
+
+        cw_gguf = CanonicalQuantizedWeight(
+            qdata=cw.qdata,
+            scale=cw.scale,
+            zero=cw.zero,
+            config=QuantConfig(
+                bits=4, group_size=32, symmetric=False, method="gguf_q4_k"
+            ),
+        )
+        packed = pack_int4_for_cuda(cw_gguf)
+
+        packed_out = torch.nn.functional.linear(x.cuda(), packed.cuda())
+
+        rel_error = (
+            packed_out.float() - original_out.float()
+        ).abs().mean() / original_out.float().abs().mean()
+        self.assertLess(rel_error.item(), 0.15)
+
 
 class TestPackInt8ForCuda(unittest.TestCase):
     def setUp(self):
@@ -123,6 +155,25 @@ class TestPackInt8ForCuda(unittest.TestCase):
         original_out = torch.nn.functional.linear(x.cuda(), weight.cuda())
 
         config = QuantConfig(bits=8, group_size=32, symmetric=True, method="min_max")
+        cw = quantize_weight(weight, config)
+        packed = pack_int8_for_cuda(cw)
+
+        packed_out = torch.nn.functional.linear(x.cuda(), packed.cuda())
+
+        rel_error = (
+            packed_out.float() - original_out.float()
+        ).abs().mean() / original_out.float().abs().mean()
+        self.assertLess(rel_error.item(), 0.02)
+
+    def test_asymmetric_matmul_approximates_original(self):
+        """8-bit asymmetric quantization packs and produces correct matmul."""
+        torch.manual_seed(0)
+        weight = torch.randn(256, 128, dtype=torch.bfloat16)
+        x = torch.randn(1, 128, dtype=torch.bfloat16)
+
+        original_out = torch.nn.functional.linear(x.cuda(), weight.cuda())
+
+        config = QuantConfig(bits=8, group_size=32, symmetric=False, method="min_max")
         cw = quantize_weight(weight, config)
         packed = pack_int8_for_cuda(cw)
 

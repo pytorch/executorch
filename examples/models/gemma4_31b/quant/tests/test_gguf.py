@@ -228,6 +228,13 @@ class TestUnpackGgufTensor(unittest.TestCase):
         self.assertEqual(result.dtype, torch.float32)
         self.assertEqual(result.tolist(), [1.0, 2.0, 3.0, 4.0])
 
+    def test_f16_returns_bf16_tensor(self):
+        data = np.array([1.0, 2.0, 3.0, 4.0], dtype=np.float16)
+        result = unpack_gguf_tensor(data, GGMLQuantizationType.F16, [2, 2])
+        self.assertIsInstance(result, torch.Tensor)
+        self.assertEqual(result.dtype, torch.bfloat16)
+        self.assertEqual(result.shape, (2, 2))
+
     def test_unsupported_type_raises(self):
         with self.assertRaises(ValueError):
             unpack_gguf_tensor(

@@ -48,7 +48,9 @@ from executorch.examples.models.gemma4_31b.quant import (
 _INT4 = QuantConfig(bits=4, group_size=32, symmetric=False, method="min_max")
 _INT4_HQQ = QuantConfig(bits=4, group_size=32, symmetric=True, method="hqq")
 _INT8 = QuantConfig(bits=8, group_size=32, symmetric=True, method="min_max")
-_INT8_PER_AXIS = QuantConfig(bits=8, group_size=5376, symmetric=True, method="min_max")
+_INT8_PER_AXIS = QuantConfig(  # group_size = hidden_size (5376) for Gemma 4 31B
+    bits=8, group_size=5376, symmetric=True, method="min_max"
+)
 _EDGE_LAYERS = set(range(15)) | set(range(45, 60))
 
 GEMMA4_31B_DEFAULT_RECIPE = QuantRecipe(
