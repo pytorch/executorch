@@ -421,10 +421,24 @@ def export_llama_hf(
         use_custom_sdpa: Use MLX custom SDPA (mlx::custom_sdpa)
         use_custom_kv_cache: Use MLX custom KV cache (mlx::kv_cache_update)
     """
-    if use_custom_sdpa or use_custom_kv_cache:
+    effective_use_custom_sdpa = use_custom_sdpa
+    effective_use_custom_kv_cache = use_custom_kv_cache
+    if model_id == _GEMMA4_MODEL_ID:
+        if effective_use_custom_sdpa:
+            logger.info(
+                "Disabling custom SDPA for Gemma 4 and falling back to the baseline export path"
+            )
+            effective_use_custom_sdpa = False
+        if effective_use_custom_kv_cache:
+            logger.info(
+                "Disabling custom KV cache for Gemma 4 and falling back to the baseline export path"
+            )
+            effective_use_custom_kv_cache = False
+
+    if effective_use_custom_sdpa or effective_use_custom_kv_cache:
         logger.info(
-            f"Using custom components: sdpa={use_custom_sdpa}, "
-            f"kv_cache={use_custom_kv_cache}"
+            f"Using custom components: sdpa={effective_use_custom_sdpa}, "
+            f"kv_cache={effective_use_custom_kv_cache}"
         )
         _export_with_custom_components(
             model_id=model_id,
@@ -434,8 +448,8 @@ def export_llama_hf(
             dtype=dtype,
             qlinear=qlinear,
             qembedding=qembedding,
-            use_custom_sdpa=use_custom_sdpa,
-            use_custom_kv_cache=use_custom_kv_cache,
+            use_custom_sdpa=effective_use_custom_sdpa,
+            use_custom_kv_cache=effective_use_custom_kv_cache,
             no_tie_word_embeddings=no_tie_word_embeddings,
             qlinear_group_size=qlinear_group_size,
             qembedding_group_size=qembedding_group_size,
