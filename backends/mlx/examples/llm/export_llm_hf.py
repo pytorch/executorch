@@ -47,9 +47,57 @@ FORMAT = "[%(levelname)s %(asctime)s %(filename)s:%(lineno)s] %(message)s"
 logging.basicConfig(level=logging.INFO, format=FORMAT)
 logger = logging.getLogger(__name__)
 
+_GEMMA4_MODEL_ID = "google/gemma-4-E2B-it"
+_GEMMA4_PROBLEM_LAYER_FQN = "model.language_model.layers.22.mlp.down_proj"
+
+
+def _get_submodule_by_fqn(root: torch.nn.Module, fqn: str) -> torch.nn.Module:
+    cur = root
+    for part in fqn.split("."):
+        if part.isdigit():
+            cur = cur[int(part)]  # type: ignore[index]
+        else:
+            cur = getattr(cur, part)
+    return cur
+
+
+def _capture_gemma4_float_fallback_weight(
+    model_id: str,
+    qlinear: Optional[str],
+    model: torch.nn.Module,
+) -> Optional[torch.Tensor]:
+    if model_id != _GEMMA4_MODEL_ID or qlinear != "4w":
+        return None
+
+    layer = _get_submodule_by_fqn(model, _GEMMA4_PROBLEM_LAYER_FQN)
+    weight = layer.weight.detach().clone()
+    logger.info(
+        "Saving %s in floating point to avoid the current Gemma 4 4w mismatch",
+        _GEMMA4_PROBLEM_LAYER_FQN,
+    )
+    return weight
+
+
+def _restore_gemma4_float_fallback_weight(
+    model_id: str,
+    qlinear: Optional[str],
+    model: torch.nn.Module,
+    weight: Optional[torch.Tensor],
+) -> None:
+    if weight is None or model_id != _GEMMA4_MODEL_ID or qlinear != "4w":
+        return
+
+    layer = _get_submodule_by_fqn(model, _GEMMA4_PROBLEM_LAYER_FQN)
+    layer.weight = torch.nn.Parameter(weight, requires_grad=False)
+    logger.info(
+        "Restored %s in floating point after quantization",
+        _GEMMA4_PROBLEM_LAYER_FQN,
+    )
+
 
 def _export_with_optimum(
     model_id: str,
+    revision: Optional[str],
     output_path: str,
     max_seq_len: int,
     dtype: str,
@@ -73,11 +121,16 @@ def _export_with_optimum(
     logger.info(f"Loading model using optimum-executorch: {model_id}")
     exportable = load_causal_lm_model(
         model_id,
+        revision=revision,
         dtype=dtype_str,
         max_seq_len=max_seq_len,
     )
 
     from executorch.backends.mlx.llm.quantization import quantize_model_
+
+    gemma4_float_weight = _capture_gemma4_float_fallback_weight(
+        model_id, qlinear, exportable.model
+    )
 
     quantize_model_(
         exportable.model,
@@ -89,6 +142,9 @@ def _export_with_optimum(
             exportable.model.config, "tie_word_embeddings", False
         )
         and not no_tie_word_embeddings,
+    )
+    _restore_gemma4_float_fallback_weight(
+        model_id, qlinear, exportable.model, gemma4_float_weight
     )
 
     logger.info("Exporting model with torch.export...")
@@ -124,6 +180,7 @@ def _export_with_optimum(
 
 def _export_with_custom_components(
     model_id: str,
+    revision: Optional[str],
     output_path: str,
     max_seq_len: int,
     dtype: str,
@@ -158,28 +215,40 @@ def _export_with_custom_components(
     }
     torch_dtype = torch_dtype_map.get(dtype, torch.bfloat16)
 
-    if use_custom_sdpa:
+    effective_use_custom_sdpa = use_custom_sdpa
+    effective_use_custom_kv_cache = use_custom_kv_cache
+    if model_id == _GEMMA4_MODEL_ID and use_custom_sdpa:
+        logger.info(
+            "Disabling custom SDPA for Gemma 4 while keeping the custom cache path"
+        )
+        effective_use_custom_sdpa = False
+    if model_id == _GEMMA4_MODEL_ID and use_custom_kv_cache:
+        logger.info("Disabling custom KV cache for Gemma 4")
+        effective_use_custom_kv_cache = False
+
+    if effective_use_custom_sdpa:
         from executorch.backends.mlx.llm.hf_attention import register_mlx_attention
 
         register_mlx_attention()
         logger.info("Registered MLX custom SDPA attention")
 
-    attn_implementation = "mlx" if use_custom_sdpa else None
-
-    # Detect sliding window models (e.g., gemma)
-    sliding_window = None
+    attn_implementation = "mlx" if effective_use_custom_sdpa else None
 
     logger.info(f"Loading HuggingFace model: {model_id}")
     load_kwargs = {
         "torch_dtype": torch_dtype,
         "low_cpu_mem_usage": True,
     }
+    if revision is not None:
+        load_kwargs["revision"] = revision
     if attn_implementation:
         load_kwargs["attn_implementation"] = attn_implementation
     model = AutoModelForCausalLM.from_pretrained(model_id, **load_kwargs)
 
-    # Check if model uses sliding window attention
-    sliding_window = getattr(model.config, "sliding_window", None)
+    # Check if model uses sliding window attention. Multimodal configs like
+    # Gemma 4 keep transformer attributes under text_config.
+    text_config = model.config.get_text_config()
+    sliding_window = getattr(text_config, "sliding_window", None)
     if sliding_window is not None:
         logger.info(f"Model has sliding_window={sliding_window}")
         # Cap max_seq_len to sliding window size for cache allocation
@@ -188,11 +257,16 @@ def _export_with_custom_components(
     else:
         effective_cache_len = max_seq_len
 
+    # The HF ExecuTorch cache wrappers validate both generation_config.use_cache
+    # and the text config's use_cache flag before constructing static caches.
+    model.generation_config.use_cache = True
     model.generation_config.cache_implementation = "static"
     model.generation_config.cache_config = {
         "batch_size": 1,
         "max_cache_len": effective_cache_len,
     }
+    text_config = model.config.get_text_config()
+    text_config.use_cache = True
     model.eval()
 
     # Use HybridCache wrapper for sliding window models (stores cache as .cache),
@@ -218,55 +292,33 @@ def _export_with_custom_components(
             max_cache_len=effective_cache_len,
         )
 
-    if use_custom_kv_cache:
+    if effective_use_custom_kv_cache:
+        from executorch.backends.mlx.llm.source_transformation import (
+            replace_hf_cache_with_mlx,
+        )
+
         if sliding_window is not None:
-            # Use ring buffer cache for sliding window models
-            from executorch.backends.mlx.llm.source_transformation import (
-                replace_hf_cache_with_mlx_ring_buffer,
-            )
-
             logger.info(
-                f"Replacing StaticCache with RingBuffer KV cache "
-                f"(window_size={effective_cache_len})..."
+                "Replacing HuggingFace StaticCache with HFStaticCache "
+                f"(capped to sliding window: {effective_cache_len})..."
             )
-            replace_hf_cache_with_mlx_ring_buffer(
-                exportable,
-                model.config,
-                max_batch_size=1,
-                window_size=effective_cache_len,
-                dtype=torch_dtype,
-            )
-
-            if use_custom_sdpa:
-                # Re-register attention with sliding window closure
-                from executorch.backends.mlx.llm.hf_attention import (
-                    register_mlx_sliding_window_attention,
-                )
-
-                register_mlx_sliding_window_attention(exportable)
-                model.config._attn_implementation = "mlx_sliding_window"
-                logger.info(
-                    "  Registered sliding window attention (mlx_sliding_window)"
-                )
-
-            logger.info("  RingBuffer KV cache installed successfully")
         else:
-            # Use standard linear cache for non-sliding-window models
-            from executorch.backends.mlx.llm.source_transformation import (
-                replace_hf_cache_with_mlx,
-            )
-
             logger.info("Replacing HuggingFace StaticCache with HFStaticCache...")
-            replace_hf_cache_with_mlx(
-                exportable,
-                model.config,
-                max_batch_size=1,
-                max_cache_len=effective_cache_len,
-                dtype=torch_dtype,
-            )
-            logger.info("  HFStaticCache installed successfully")
+
+        replace_hf_cache_with_mlx(
+            exportable,
+            model.config,
+            max_batch_size=1,
+            max_cache_len=effective_cache_len,
+            dtype=torch_dtype,
+        )
+        logger.info("  HFStaticCache installed successfully")
 
     from executorch.backends.mlx.llm.quantization import quantize_model_
+
+    gemma4_float_weight = _capture_gemma4_float_fallback_weight(
+        model_id, qlinear, exportable.model
+    )
 
     quantize_model_(
         exportable.model,
@@ -276,6 +328,9 @@ def _export_with_custom_components(
         qembedding_group_size=qembedding_group_size,
         tie_word_embeddings=getattr(model.config, "tie_word_embeddings", False)
         and not no_tie_word_embeddings,
+    )
+    _restore_gemma4_float_fallback_weight(
+        model_id, qlinear, exportable.model, gemma4_float_weight
     )
 
     logger.info("Exporting model with torch.export...")
@@ -341,6 +396,7 @@ def _save_program(executorch_program, output_path: str) -> None:
 
 def export_llama_hf(
     model_id: str,
+    revision: Optional[str],
     output_path: str,
     max_seq_len: int = 1024,
     dtype: str = "bf16",
@@ -365,20 +421,35 @@ def export_llama_hf(
         use_custom_sdpa: Use MLX custom SDPA (mlx::custom_sdpa)
         use_custom_kv_cache: Use MLX custom KV cache (mlx::kv_cache_update)
     """
-    if use_custom_sdpa or use_custom_kv_cache:
+    effective_use_custom_sdpa = use_custom_sdpa
+    effective_use_custom_kv_cache = use_custom_kv_cache
+    if model_id == _GEMMA4_MODEL_ID:
+        if effective_use_custom_sdpa:
+            logger.info(
+                "Disabling custom SDPA for Gemma 4 and falling back to the baseline export path"
+            )
+            effective_use_custom_sdpa = False
+        if effective_use_custom_kv_cache:
+            logger.info(
+                "Disabling custom KV cache for Gemma 4 and falling back to the baseline export path"
+            )
+            effective_use_custom_kv_cache = False
+
+    if effective_use_custom_sdpa or effective_use_custom_kv_cache:
         logger.info(
-            f"Using custom components: sdpa={use_custom_sdpa}, "
-            f"kv_cache={use_custom_kv_cache}"
+            f"Using custom components: sdpa={effective_use_custom_sdpa}, "
+            f"kv_cache={effective_use_custom_kv_cache}"
         )
         _export_with_custom_components(
             model_id=model_id,
+            revision=revision,
             output_path=output_path,
             max_seq_len=max_seq_len,
             dtype=dtype,
             qlinear=qlinear,
             qembedding=qembedding,
-            use_custom_sdpa=use_custom_sdpa,
-            use_custom_kv_cache=use_custom_kv_cache,
+            use_custom_sdpa=effective_use_custom_sdpa,
+            use_custom_kv_cache=effective_use_custom_kv_cache,
             no_tie_word_embeddings=no_tie_word_embeddings,
             qlinear_group_size=qlinear_group_size,
             qembedding_group_size=qembedding_group_size,
@@ -387,6 +458,7 @@ def export_llama_hf(
         logger.info("Using optimum-executorch pipeline (no custom components)")
         _export_with_optimum(
             model_id=model_id,
+            revision=revision,
             output_path=output_path,
             max_seq_len=max_seq_len,
             dtype=dtype,
@@ -407,6 +479,12 @@ def main():
         type=str,
         default="unsloth/Llama-3.2-1B-Instruct",
         help="HuggingFace model ID",
+    )
+    parser.add_argument(
+        "--revision",
+        type=str,
+        default=None,
+        help="Optional HuggingFace model revision/commit to pin",
     )
     parser.add_argument(
         "--output",
@@ -447,6 +525,7 @@ def main():
 
     export_llama_hf(
         model_id=args.model_id,
+        revision=args.revision,
         output_path=args.output,
         max_seq_len=args.max_seq_len,
         dtype=args.dtype,

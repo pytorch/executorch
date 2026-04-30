@@ -444,26 +444,50 @@ class MLXProgramBuilder:
             else:
                 raise NotImplementedError(f"Support for input {arg} is not implemented")
 
+        placeholder_nodes = {
+            node.name: node for node in self.ep.graph.nodes if node.op == "placeholder"
+        }
+
+        # Allocate placeholder-backed slots in graph-signature order instead of
+        # raw FX node traversal order. This keeps lifted constant tids stable
+        # across equivalent exports, which matters for models like Gemma 4 that
+        # carry multiple rotary constant placeholders with similar structure.
+        for name in constant_tensors:
+            node = placeholder_nodes.get(name)
+            if node is None or node.users == {}:
+                continue
+            self.make_or_get_slot(node, id_space=IdSpace.Constant)
+
+        for name in user_inputs:
+            node = placeholder_nodes.get(name)
+            if node is None or node.users == {}:
+                continue
+            val = node.meta.get("val", None)
+            if isinstance(val, torch.Tensor) and not val.is_contiguous():
+                raise ValueError(
+                    f"MLX backend requires contiguous input tensors, "
+                    f"but input '{node.name}' has non-contiguous strides. "
+                    f"shape={list(val.shape)}, stride={list(val.stride())}. "
+                    f"Ensure example inputs passed to torch.export.export() "
+                    f"are contiguous (call .contiguous() on them)."
+                )
+            self.make_or_get_slot(node, id_space=IdSpace.Input)
+
+        for name in mutable_buffers:
+            node = placeholder_nodes.get(name)
+            if node is None or node.users == {}:
+                continue
+            self.make_or_get_slot(node, id_space=IdSpace.MutableBuffer)
+
+        classified_placeholders = (
+            set(constant_tensors) | set(user_inputs) | set(mutable_buffers)
+        )
+
         for node in self.ep.graph.nodes:
             if node.op == "placeholder":
                 if node.users == {}:
                     continue
-                if node.name in constant_tensors:
-                    self.make_or_get_slot(node, id_space=IdSpace.Constant)
-                elif node.name in user_inputs:
-                    val = node.meta.get("val", None)
-                    if isinstance(val, torch.Tensor) and not val.is_contiguous():
-                        raise ValueError(
-                            f"MLX backend requires contiguous input tensors, "
-                            f"but input '{node.name}' has non-contiguous strides. "
-                            f"shape={list(val.shape)}, stride={list(val.stride())}. "
-                            f"Ensure example inputs passed to torch.export.export() "
-                            f"are contiguous (call .contiguous() on them)."
-                        )
-                    self.make_or_get_slot(node, id_space=IdSpace.Input)
-                elif node.name in mutable_buffers:
-                    self.make_or_get_slot(node, id_space=IdSpace.MutableBuffer)
-                else:
+                if node.name not in classified_placeholders:
                     raise NotImplementedError(
                         f"Support for placeholder {node.name} is not implemented"
                     )

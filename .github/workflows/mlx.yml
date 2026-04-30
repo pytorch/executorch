@@ -489,6 +489,12 @@ jobs:
             name: "gemma3-1b"
         use-custom: [false, true]
         qconfig: ["4w", "nvfp4"]
+        include:
+          - model:
+              id: "google/gemma-4-E2B-it"
+              name: "gemma4-e2b"
+            use-custom: true
+            qconfig: "4w"
     uses: pytorch/test-infra/.github/workflows/macos_job.yml@main
     secrets: inherit
     with:
@@ -506,10 +512,19 @@ jobs:
         MODEL_NAME="${{ matrix.model.name }}"
         USE_CUSTOM="${{ matrix.use-custom }}"
         QCONFIG="${{ matrix.qconfig }}"
+        MODEL_REVISION=""
+        if [ "${MODEL_ID}" = "google/gemma-4-E2B-it" ]; then
+          MODEL_REVISION="b4a601102c3d45e2b7b50e2057a6d5ec8ed4adcf"
+        fi
 
         CUSTOM_ARGS=""
         if [ "${USE_CUSTOM}" = "true" ]; then
           CUSTOM_ARGS="--use-custom-sdpa --use-custom-kv-cache"
+        fi
+
+        QEMBEDDING_ARGS="--qembedding ${QCONFIG}"
+        if [ "${MODEL_ID}" = "google/gemma-4-E2B-it" ]; then
+          QEMBEDDING_ARGS=""
         fi
 
         echo "::group::Install ExecuTorch and configure MLX build"
@@ -522,6 +537,13 @@ jobs:
         ${CONDA_RUN} huggingface-cli login --token $SECRET_EXECUTORCH_HF_TOKEN
         OPTIMUM_ET_VERSION=$(cat .ci/docker/ci_commit_pins/optimum-executorch.txt)
         ${CONDA_RUN} pip install transformers "optimum-executorch @ git+https://github.com/huggingface/optimum-executorch.git@${OPTIMUM_ET_VERSION}"
+        if [ "${MODEL_ID}" = "google/gemma-4-E2B-it" ]; then
+          # Gemma 4 requires a newer Transformers build than the CI-wide
+          # optimum-executorch pin currently brings in. Keep this pinned to the
+          # locally validated commit instead of floating on Transformers HEAD.
+          GEMMA4_TRANSFORMERS_COMMIT=61461a7bcb458db7cf6eeea49678b9ab776a7821
+          ${CONDA_RUN} pip install -U "transformers @ git+https://github.com/huggingface/transformers.git@${GEMMA4_TRANSFORMERS_COMMIT}"
+        fi
         echo "::endgroup::"
 
         ${CONDA_RUN} pip list
@@ -529,9 +551,10 @@ jobs:
         echo "::group::Export ${MODEL_NAME}"
         ${CONDA_RUN} python -m executorch.backends.mlx.examples.llm.export_llm_hf \
           --model-id "${MODEL_ID}" \
+          ${MODEL_REVISION:+--revision "${MODEL_REVISION}"} \
           --output /tmp/${MODEL_NAME}.pte \
           --qlinear ${QCONFIG} \
-          --qembedding ${QCONFIG} \
+          ${QEMBEDDING_ARGS} \
           ${CUSTOM_ARGS}
         echo "::endgroup::"
 
@@ -539,6 +562,7 @@ jobs:
         OUTPUT=$(${CONDA_RUN} python -m executorch.backends.mlx.examples.llm.run_llm_hf \
           --pte /tmp/${MODEL_NAME}.pte \
           --model-id "${MODEL_ID}" \
+          ${MODEL_REVISION:+--revision "${MODEL_REVISION}"} \
           --prompt "What is the capital of France?" \
           --max-new-tokens 50 2>&1)
         echo "$OUTPUT"
