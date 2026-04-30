@@ -171,6 +171,7 @@ def _quantize_fused_conv_bias(
     set_param,
     get_weight_scale_tensor,
     default_zero_bias=False,
+    use_symmetric_quantization=False,
 ):
     """Core logic for quantizing biases introduced by BatchNorm fusion/QAT.
 
@@ -188,6 +189,7 @@ def _quantize_fused_conv_bias(
         set_param: Callable(node_or_name, tensor, insert_before=None) -> Node.
         get_weight_scale_tensor: Callable(node) -> Tensor.
         default_zero_bias: If True, create zero bias for conv nodes without bias.
+        use_symmetric_quantization: If True, uses symmetric quantization range.
 
     Returns:
         True if any modifications were made.
@@ -236,6 +238,7 @@ def _quantize_fused_conv_bias(
             else torch.empty(bias.shape, dtype=torch.float32)
         )
 
+        quant_min = -(2**31) + 1 if use_symmetric_quantization else -(2**31)
         if isinstance(weight_dequant.args[1], torch.fx.node.Node):
             weight_scale = get_weight_scale_tensor(weight_dequant.args[1])
             bias_scale = input_dequant.args[1] * weight_scale
@@ -246,7 +249,7 @@ def _quantize_fused_conv_bias(
                 bias_scale,
                 bias_zp,
                 0,
-                -(2**31),
+                quant_min,
                 2**31 - 1,
                 torch.int32,
             )
@@ -267,7 +270,7 @@ def _quantize_fused_conv_bias(
                         scale_node,
                         zp_node,
                         0,
-                        -(2**31),
+                        quant_min,
                         2**31 - 1,
                         torch.int32,
                     ),
@@ -279,14 +282,14 @@ def _quantize_fused_conv_bias(
             bias_scale = input_dequant.args[1] * weight_scale
 
             qbias = torch.ops.quantized_decomposed.quantize_per_tensor.default(
-                bias, bias_scale, 0, -(2**31), 2**31 - 1, torch.int32
+                bias, bias_scale, 0, quant_min, 2**31 - 1, torch.int32
             )
             set_param(bias_node, qbias)
 
             with graph_module.graph.inserting_before(node):
                 bias_dequant = graph_module.graph.call_function(
                     dq_per_tensor,
-                    (bias_node, bias_scale, 0, -(2**31), 2**31 - 1, torch.int32),
+                    (bias_node, bias_scale, 0, quant_min, 2**31 - 1, torch.int32),
                 )
                 bias_dequant.meta["val"] = dequant_val
                 node.replace_input_with(bias_node, bias_dequant)
@@ -306,9 +309,12 @@ class QuantizeFusedConvBnBiasAtenPass(PassBase):
     exported_program can be omitted.
     """
 
-    def __init__(self, exported_program=None, default_zero_bias=False) -> None:
+    def __init__(
+        self, exported_program=None, default_zero_bias=False, symmetric_quant=False
+    ) -> None:
         self.exported_program = exported_program
         self.default_zero_bias = default_zero_bias
+        self.symmetric_quantization = symmetric_quant
 
     def call(self, graph_module: fx.GraphModule) -> PassResult:
         ep = self.exported_program
@@ -351,5 +357,6 @@ class QuantizeFusedConvBnBiasAtenPass(PassBase):
             set_param=set_param,
             get_weight_scale_tensor=get_scale,
             default_zero_bias=self.default_zero_bias,
+            use_symmetric_quantization=self.symmetric_quantization,
         )
         return PassResult(graph_module, modified)
