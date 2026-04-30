@@ -52,6 +52,8 @@ _GEMM1_CONFIGS = [
     triton.Config({"BLOCK_SIZE_N": 8, "BLOCK_SIZE_K": 256}, num_warps=2, num_stages=5),
     triton.Config({"BLOCK_SIZE_N": 8, "BLOCK_SIZE_K": 256}, num_warps=2, num_stages=3),
     triton.Config({"BLOCK_SIZE_N": 16, "BLOCK_SIZE_K": 256}, num_warps=2, num_stages=5),
+    triton.Config({"BLOCK_SIZE_N": 16, "BLOCK_SIZE_K": 128}, num_warps=4, num_stages=4),
+    triton.Config({"BLOCK_SIZE_N": 32, "BLOCK_SIZE_K": 128}, num_warps=4, num_stages=3),
 ]
 
 # Autotune configs for GEMM2 (_fused_moe_silu_kernel).
@@ -64,6 +66,8 @@ _GEMM2_CONFIGS = [
     triton.Config({"BLOCK_SIZE_N": 16, "BLOCK_SIZE_K": 256}, num_warps=4, num_stages=4),
     triton.Config({"BLOCK_SIZE_N": 8, "BLOCK_SIZE_K": 256}, num_warps=2, num_stages=3),
     triton.Config({"BLOCK_SIZE_N": 8, "BLOCK_SIZE_K": 256}, num_warps=4, num_stages=3),
+    triton.Config({"BLOCK_SIZE_N": 16, "BLOCK_SIZE_K": 128}, num_warps=2, num_stages=3),
+    triton.Config({"BLOCK_SIZE_N": 32, "BLOCK_SIZE_K": 128}, num_warps=4, num_stages=4),
 ]
 
 
@@ -172,9 +176,9 @@ def _fused_moe_kernel(
                 scale_ptrs, mask=k_mask[:, None] & n_mask[None, :], other=0.0
             ).to(tl.float32)
 
-        # Dequantize and accumulate: vector-matrix multiply
-        b_dequant = ((b.to(tl.float32) - 8.0) * b_scale).to(compute_type)
-        acc += tl.sum(a[:, None].to(compute_type) * b_dequant, axis=0)
+        # Dequantize and accumulate in float32: vector-matrix multiply
+        b_dequant = (b.to(tl.float32) - 8.0) * b_scale
+        acc += tl.sum(a[:, None].to(tl.float32) * b_dequant, axis=0)
 
         # Advance K pointers
         a_ptrs += BLOCK_SIZE_K * stride_ak
@@ -260,10 +264,10 @@ def _fused_moe_silu_kernel(
         k_remaining = K - k_step * BLOCK_SIZE_K
         k_mask = offs_k < k_remaining
 
-        # Load gate and up, apply SiLU(gate) * up
+        # Load gate and up in float32, apply SiLU(gate) * up
         gate = tl.load(a_gate_ptrs, mask=k_mask, other=0.0).to(tl.float32)
-        up = tl.load(a_up_ptrs, mask=k_mask, other=0.0)
-        a = (gate * tl.sigmoid(gate) * up).to(compute_type)
+        up = tl.load(a_up_ptrs, mask=k_mask, other=0.0).to(tl.float32)
+        a = gate * tl.sigmoid(gate) * up
 
         # Load and dequantize INT4 weights
         b = tl.load(b_ptrs, mask=k_mask[:, None] & n_mask[None, :], other=0)
@@ -291,8 +295,8 @@ def _fused_moe_silu_kernel(
                 scale_ptrs, mask=k_mask[:, None] & n_mask[None, :], other=0.0
             ).to(tl.float32)
 
-        b_dequant = ((b.to(tl.float32) - 8.0) * b_scale).to(compute_type)
-        acc += tl.sum(a[:, None].to(compute_type) * b_dequant, axis=0)
+        b_dequant = (b.to(tl.float32) - 8.0) * b_scale
+        acc += tl.sum(a[:, None] * b_dequant, axis=0)
 
         a_gate_ptrs += BLOCK_SIZE_K * stride_ak
         a_up_ptrs += BLOCK_SIZE_K * stride_ak
@@ -572,6 +576,8 @@ _BATCHED_GEMM1_CONFIGS = [
     triton.Config(
         {"BLOCK_SIZE_N": 128, "BLOCK_SIZE_K": 128}, num_warps=4, num_stages=2
     ),
+    triton.Config({"BLOCK_SIZE_N": 64, "BLOCK_SIZE_K": 128}, num_warps=8, num_stages=4),
+    triton.Config({"BLOCK_SIZE_N": 128, "BLOCK_SIZE_K": 64}, num_warps=8, num_stages=4),
 ]
 
 # Autotune configs for batched GEMM2 (down projection + SiLU).
@@ -582,6 +588,8 @@ _BATCHED_GEMM2_CONFIGS = [
     triton.Config(
         {"BLOCK_SIZE_N": 128, "BLOCK_SIZE_K": 128}, num_warps=4, num_stages=2
     ),
+    triton.Config({"BLOCK_SIZE_N": 64, "BLOCK_SIZE_K": 128}, num_warps=8, num_stages=3),
+    triton.Config({"BLOCK_SIZE_N": 128, "BLOCK_SIZE_K": 64}, num_warps=8, num_stages=4),
 ]
 
 
@@ -921,9 +929,9 @@ def _fused_moe_silu_batched_kernel(
         k_remaining = K - k_step * BLOCK_SIZE_K
         k_mask = offs_k < k_remaining
 
-        # Load gate and up tiles [BLOCK_M, BLOCK_K], apply SiLU
+        # Load gate and up in float32 [BLOCK_M, BLOCK_K], apply SiLU
         gate = tl.load(a_gate_ptrs, mask=k_mask[None, :], other=0.0).to(tl.float32)
-        up = tl.load(a_up_ptrs, mask=k_mask[None, :], other=0.0)
+        up = tl.load(a_up_ptrs, mask=k_mask[None, :], other=0.0).to(tl.float32)
         a = (gate * tl.sigmoid(gate) * up).to(compute_type)
 
         # Load and dequantize INT4 weights [BLOCK_K, BLOCK_N]

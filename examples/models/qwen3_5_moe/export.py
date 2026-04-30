@@ -466,6 +466,124 @@ def _quantize(model, config, args):
         print(f"Quantized linear layers ({args.qlinear})")
 
 
+def _infer_w4_group_size(linear):
+    """Infer quantization group size from the weight's metadata.
+
+    For prequantized bundles, the weight may be a torchao
+    AffineQuantizedTensor whose block_size encodes the original group
+    size.  Trusting the CLI default would silently re-quantize to the
+    wrong group size (e.g. gs32 when the bundle used gs128).
+    """
+    w = linear.weight
+    if hasattr(w, "block_size"):
+        return w.block_size[-1]
+    return None
+
+
+def _resolve_w4_group_size(linear, group_size):
+    effective_gs = _infer_w4_group_size(linear)
+    if effective_gs is not None and effective_gs != group_size:
+        print(
+            f"\n  Detected group_size={effective_gs} from quantized weight "
+            f"(overriding CLI value {group_size})"
+        )
+        return effective_gs
+    if effective_gs is None:
+        return group_size
+    return effective_gs
+
+
+def _dequant_linear_to_bf16(linear):
+    """Materialize the linear's weight as a contiguous BF16 [N, K] tensor."""
+    from torch.nn import functional as F
+
+    K = linear.in_features
+    linear_cuda = linear.cuda()
+    with torch.no_grad():
+        eye = torch.eye(K, dtype=torch.bfloat16, device="cuda")
+        w_bf16 = F.linear(eye, linear_cuda.weight).T.contiguous()
+    del linear_cuda
+    return w_bf16
+
+
+def _quantize_w4_hqq(w_float, N, K, effective_gs):
+    from torchao.quantization.quant_primitives import (
+        _choose_qparams_and_quantize_scale_only_hqq,
+    )
+
+    int_data, scale = _choose_qparams_and_quantize_scale_only_hqq(
+        w_float,
+        block_size=[1, effective_gs],
+        qmin=-8,
+        qmax=7,
+    )
+    return int_data.to(torch.int8).view(N, K), scale.view(N, -1)
+
+
+def _quantize_w4_affine(w_float, N, effective_gs):
+    from torchao.quantization.quant_primitives import (
+        choose_qparams_affine,
+        MappingType,
+        quantize_affine,
+    )
+
+    block_size = (1, effective_gs)
+    scale, zero_point = choose_qparams_affine(
+        w_float,
+        MappingType.SYMMETRIC,
+        block_size,
+        target_dtype=torch.int8,
+        quant_min=-8,
+        quant_max=7,
+    )
+    int_data = quantize_affine(
+        w_float,
+        block_size,
+        scale,
+        zero_point,
+        output_dtype=torch.int8,
+        quant_min=-8,
+        quant_max=7,
+    )
+    return int_data, scale.reshape(N, -1)
+
+
+def _convert_linear_to_w4dequant(linear, group_size, use_hqq):
+    N, K = linear.out_features, linear.in_features
+    effective_gs = _resolve_w4_group_size(linear, group_size)
+
+    w_bf16 = _dequant_linear_to_bf16(linear)
+    w_float = w_bf16.float()
+    del w_bf16
+
+    if use_hqq:
+        int_data, scale = _quantize_w4_hqq(w_float, N, K, effective_gs)
+    else:
+        int_data, scale = _quantize_w4_affine(w_float, N, effective_gs)
+    del w_float
+
+    uint4 = (int_data + 8).to(torch.int16)
+    packed = (uint4[:, 0::2] | (uint4[:, 1::2] << 4)).to(torch.int8)
+    del int_data, uint4
+
+    w4 = W4DequantLinear(K, N, effective_gs)
+    w4.w_packed = packed.cpu()
+    w4.w_scale = scale.to(torch.bfloat16).cpu()
+    torch.cuda.empty_cache()
+    return w4
+
+
+def _collect_w4_replacement_targets(model):
+    replacements = []
+    for parent in model.modules():
+        if isinstance(parent, FusedMoEExperts):
+            continue
+        for name, child in parent.named_children():
+            if isinstance(child, nn.Linear):
+                replacements.append((parent, name, child))
+    return replacements
+
+
 def _replace_dense_with_w4dequant(model, group_size=128, use_hqq=False):
     """Replace quantized dense linears with W4DequantLinear.
 
@@ -475,104 +593,7 @@ def _replace_dense_with_w4dequant(model, group_size=128, use_hqq=False):
 
     MoE expert weights (FusedMoEExperts) are left unchanged.
     """
-    from torch.nn import functional as F
-
-    if use_hqq:
-        from torchao.quantization.quant_primitives import (
-            _choose_qparams_and_quantize_scale_only_hqq,
-        )
-    else:
-        from torchao.quantization.quant_primitives import (
-            choose_qparams_affine,
-            MappingType,
-            quantize_affine,
-        )
-
-    count = 0
-
-    def _infer_group_size(linear):
-        """Infer quantization group size from the weight's metadata.
-
-        For prequantized bundles, the weight may be a torchao
-        AffineQuantizedTensor whose block_size encodes the original group
-        size.  Trusting the CLI default would silently re-quantize to the
-        wrong group size (e.g. gs32 when the bundle used gs128).
-        """
-        w = linear.weight
-        if hasattr(w, "block_size"):
-            return w.block_size[-1]
-        return None
-
-    def _convert_one(linear):
-        nonlocal count
-        N, K = linear.out_features, linear.in_features
-
-        effective_gs = _infer_group_size(linear)
-        if effective_gs is not None and effective_gs != group_size:
-            print(
-                f"\n  Detected group_size={effective_gs} from quantized weight "
-                f"(overriding CLI value {group_size})"
-            )
-        elif effective_gs is None:
-            effective_gs = group_size
-
-        linear_cuda = linear.cuda()
-        with torch.no_grad():
-            eye = torch.eye(K, dtype=torch.bfloat16, device="cuda")
-            w_bf16 = F.linear(eye, linear_cuda.weight).T.contiguous()
-        del linear_cuda
-
-        w_float = w_bf16.float()
-        del w_bf16
-        if use_hqq:
-            int_data, scale = _choose_qparams_and_quantize_scale_only_hqq(
-                w_float,
-                block_size=[1, effective_gs],
-                qmin=-8,
-                qmax=7,
-            )
-            int_data = int_data.to(torch.int8).view(N, K)
-            scale = scale.view(N, -1)
-        else:
-            block_size = (1, effective_gs)
-            scale, zero_point = choose_qparams_affine(
-                w_float,
-                MappingType.SYMMETRIC,
-                block_size,
-                target_dtype=torch.int8,
-                quant_min=-8,
-                quant_max=7,
-            )
-            int_data = quantize_affine(
-                w_float,
-                block_size,
-                scale,
-                zero_point,
-                output_dtype=torch.int8,
-                quant_min=-8,
-                quant_max=7,
-            )
-            scale = scale.reshape(N, -1)
-        del w_float
-
-        uint4 = (int_data + 8).to(torch.int16)
-        packed = (uint4[:, 0::2] | (uint4[:, 1::2] << 4)).to(torch.int8)
-        del int_data, uint4
-
-        w4 = W4DequantLinear(K, N, effective_gs)
-        w4.w_packed = packed.cpu()
-        w4.w_scale = scale.to(torch.bfloat16).cpu()
-        count += 1
-        torch.cuda.empty_cache()
-        return w4
-
-    replacements = []
-    for parent in model.modules():
-        if isinstance(parent, FusedMoEExperts):
-            continue
-        for name, child in parent.named_children():
-            if isinstance(child, nn.Linear):
-                replacements.append((parent, name, child))
+    replacements = _collect_w4_replacement_targets(model)
 
     if not replacements:
         raise RuntimeError(
@@ -581,13 +602,13 @@ def _replace_dense_with_w4dequant(model, group_size=128, use_hqq=False):
         )
 
     for i, (parent, name, linear) in enumerate(replacements):
-        setattr(parent, name, _convert_one(linear))
+        setattr(parent, name, _convert_linear_to_w4dequant(linear, group_size, use_hqq))
         print(
             f"  Converted {name} ({i + 1}/{len(replacements)})",
             end="\r",
         )
     print()
-    print(f"Replaced {count} dense linears with W4DequantLinear")
+    print(f"Replaced {len(replacements)} dense linears with W4DequantLinear")
 
 
 def _set_dequant_prefill(model, enabled):
@@ -687,6 +708,30 @@ def export_and_lower(model, config, args):
         _export_cuda(model, config, args)
 
 
+def _strip_sampler_from_forward(model):
+    """Bind ``model.forward`` to a minimal ``(tokens, input_pos) -> logits``
+    variant for non-CUDA export.
+
+    The default ``Qwen35MoE.forward`` carries an optional temperature input and
+    a sampling branch used only by the on-device CUDA sampler; non-CUDA
+    backends sample on the host so that branch is dead code at trace time.
+    Even when statically eliminated, the extra parameter and branch perturb
+    the program ``torch.export`` produces enough to shift kernel selection in
+    the lowered MLX/Metal graph and slow execution by 10-30%. Eager callers
+    and the CUDA export path are unaffected.
+    """
+    import types
+
+    def _clean_forward(self, tokens, input_pos):
+        x = self.embed_tokens(tokens)
+        for layer in self.layers:
+            x = layer(x, input_pos)
+        x = self.norm(x)
+        return self.lm_head(x)
+
+    model.forward = types.MethodType(_clean_forward, model)
+
+
 def _export_mlx(model, config, args):
     """Export model to .pte via torch.export + MLX backend."""
     import gc
@@ -700,6 +745,8 @@ def _export_mlx(model, config, args):
     )
     from executorch.exir.passes import MemoryPlanningPass
     from torch.export import Dim, export
+
+    _strip_sampler_from_forward(model)
 
     example_tokens = torch.tensor([[0, 1]], dtype=torch.long)
     example_input_pos = torch.tensor([0, 1], dtype=torch.long)
@@ -783,6 +830,7 @@ def _export_metal(model, config, args):
 
     inductor_config.coordinate_descent_tuning = False
     inductor_config.aot_inductor.compile_wrapper_opt_level = "O0"
+    _strip_sampler_from_forward(model)
 
     # --- Decode method (T=1, static shape) ---
     print("Exporting decode method...")
