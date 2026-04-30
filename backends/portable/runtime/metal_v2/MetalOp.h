@@ -8,6 +8,7 @@
 
 #pragma once
 
+#include <executorch/backends/portable/runtime/metal_v2/MetalStream.h>
 #include <executorch/backends/portable/runtime/metal_v2/MetalTypes.h>
 #include <executorch/runtime/core/evalue.h>
 #include <executorch/runtime/core/exec_aten/exec_aten.h>
@@ -28,16 +29,16 @@ namespace metal_v2 {
 class MetalStream;
 class MetalKernel;
 
-using runtime::etensor::Tensor;
 using exec_aten::ArrayRef;
 using exec_aten::SizesType;
+using runtime::etensor::Tensor;
 
 //===----------------------------------------------------------------------===//
 // MetalOp - Base class for GPU operations
 //===----------------------------------------------------------------------===//
 
 class MetalOp {
-public:
+ public:
   virtual ~MetalOp() = default;
 
   /// Op name (e.g., "aten::add", "aten::mm")
@@ -48,27 +49,29 @@ public:
     return dtype == ScalarType::Float;
   }
 
-  /// Convenience alias for the EValue-pointer span used by op interfaces.
-  /// Caller provides storage (typically a stack std::array) so dispatch is
-  /// alloc-free per call.
-  using EValuePtrSpan = runtime::Span<runtime::EValue*>;
-
   /// Compute output shape from inputs (for resize)
   /// Returns empty vector if output shape matches first input
   virtual std::vector<SizesType> computeOutputShape(
-      EValuePtrSpan inputs) const {
+      ::executorch::runtime::Span<::executorch::runtime::EValue*> inputs)
+      const {
     return {};
   }
 
   /// Dispatch the op using stream
   virtual void dispatch(
       MetalStream* stream,
-      EValuePtrSpan inputs,
-      EValuePtrSpan outputs) = 0;
+      ::executorch::runtime::Span<::executorch::runtime::EValue*> inputs,
+      ::executorch::runtime::Span<::executorch::runtime::EValue*> outputs) = 0;
 
-protected:
-  /// Get or compile kernel by name (caches result)
-  MetalKernel* getKernel(MetalStream* stream, const char* kernelName);
+ protected:
+  /// Get or compile kernel by name (caches result).
+  /// Optional `constants` enables MSL function-constant specialization;
+  /// distinct constant-tuples produce distinct PSO cache entries (the per-op
+  /// cache key includes the constants fingerprint).
+  MetalKernel* getKernel(
+      MetalStream* stream,
+      const char* kernelName,
+      const MetalKernelCompiler::FunctionConstants* constants = nullptr);
 
   /// Kernel source code (subclass provides)
   virtual const char* kernelSource() const = 0;
@@ -78,11 +81,15 @@ protected:
 
   /// Resize output tensor if needed
   runtime::Error resizeOutput(
-      EValuePtrSpan inputs,
+      ::executorch::runtime::Span<::executorch::runtime::EValue*> inputs,
       runtime::EValue* output) const;
 
 private:
-  std::unordered_map<std::string, MetalKernel*> kernelCache_;
+  // Per-op kernel cache was removed in 2026 — MetalKernelCache (process-
+  // wide singleton) is the canonical store. getKernel() goes through it
+  // directly. Adds ~50 ns per dispatch for the shared-mutex shared_lock,
+  // versus the prior ~5 ns for an unordered_map::find — invisible against
+  // multi-µs dispatch overhead.
 };
 
 } // namespace metal_v2

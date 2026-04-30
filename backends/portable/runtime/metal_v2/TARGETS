@@ -5,7 +5,7 @@
 # LICENSE file in the root directory of this source tree.
 
 # Metal v2 Runtime - Unified GPU runtime with automatic command replay
-# Features: ICB replay, ResidencySet, Binary Archives, MTLHeap, Buffer Pool
+# Features: ResidencySet, Binary Archives, MTLHeap, Buffer Pool
 
 load("@fbsource//xplat/executorch/build:runtime_wrapper.bzl", "runtime")
 

@@ -31,8 +31,16 @@ uvec3 MetalKernel::maxThreadsPerThreadgroup() const {
   return uvec3(static_cast<uint32_t>(maxThreads), 1, 1);
 }
 
+void MetalKernel::setSlotAccess(uint32_t slot, SlotAccess access) {
+  slotAccess_[slot] = access;
+}
+
+MetalKernel::SlotAccess MetalKernel::accessForSlot(uint32_t slot) const {
+  auto it = slotAccess_.find(slot);
+  return it == slotAccess_.end() ? SlotAccess::Unknown : it->second;
+}
+
 
 } // namespace metal_v2
 } // namespace backends
 } // namespace executorch
-

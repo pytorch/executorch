@@ -7,13 +7,19 @@
  */
 
 #import "MatMulOp.h"
+#include <executorch/backends/portable/runtime/metal_v2/ops/MatMulKernels.metal.h>
+#include <executorch/backends/portable/runtime/metal_v2/ops/MatMulCommon.h>
+#include <executorch/backends/portable/runtime/metal_v2/ops/MatMulMlxJit.h>
+#include <executorch/backends/portable/runtime/metal_v2/ops/mlx_jit/KernelLoader.h>
 #include <executorch/backends/portable/runtime/metal_v2/OpUtils.h>
 #include <executorch/backends/portable/runtime/metal_v2/MetalStream.h>
+#include <executorch/backends/portable/runtime/metal_v2/MetalDeviceInfo.h>
 #include <executorch/backends/portable/runtime/metal_v2/kernels/TileLoad.h>
 #include <executorch/backends/portable/runtime/metal_v2/ops/MPSGraphOp.h>
 #include <executorch/runtime/platform/log.h>
 #include <cstdlib>
 #include <cstring>
+#include <sstream>
 #include <string>
 
 namespace executorch {
@@ -21,13 +27,50 @@ namespace backends {
 namespace metal_v2 {
 
 using runtime::Error;
+//===----------------------------------------------------------------------===//
+// File layout (~2k lines):
+//   §1  HOST-SIDE OP CLASSES                                  (this section)
+//        §1a  shared host helpers (FCs, tile pickers)         lines ~60-150
+//        §1b  MatMulOp     — aten::mm / linear (un-fused)     lines ~155-370
+//        §1c  AddMMOp      — aten::addmm (matmul + bias)
+//        §1d  BAddBMMOp    — aten::baddbmm (3D matmul + bias)
+//        §1e  BatchedMatMulOp — aten::bmm
+//   §2  KERNEL SOURCE STRING (matmulKernelSource)             lines ~370-1440
+//        Single Metal raw-string literal compiled at runtime via
+//        MetalKernelCompiler. Internal layout (free helpers, then kernels):
+//          §2a  applesimd::frag_coord / swizzle_tile          (Apple lane mapping)
+//          §2b  Epilogue functors (None, AxpbyBias)
+//          §2c  storeFragWithEpilogue (per-lane bounds-safe store)
+//          §2d  simdMMAKTile (one K-tile of MMA, mixed-precision)
+//          §2e  BlockLoader (cooperative tile load; from TileLoad.h)
+//          §2f  matmul_naive / matmul_tiled                   (small/medium fallbacks)
+//          §2g  matmul_simd_addmm_t                           (the unified SIMD-MMA kernel —
+//                handles both un-fused matmul AND fused matmul+bias via the
+//                use_out_source / do_axpby function constants — see §2g header
+//                comment for the full FC matrix)
+//          §2h  gemv / gemv_t                                  (M=1 / N=1 fast paths)
+//          §2i  matmul_tensor_ops                              (Apple9+ tensor_ops::matmul2d)
+//          §2j  bmm_<dtype>                                    (small-batch naive batched)
+//          §2k  template [[host_name]] instantiations          (PSO entry points)
+//   §3  KERNEL-SOURCE ACCESSORS  (kernelSource() one-liners)   lines ~1440 onward
+// All four op classes share the same matmulKernelSource(); the unified
+// matmul_simd_addmm_t is the workhorse — its (align_M, align_N, align_K,
+// use_out_source, do_axpby) function-constant tuple specializes it per
+// dispatch (~32 PSO variants per (tile, layout, dtype)).
+// Function constants (declared at top of MSL string, indices 0-4):
+//   0: align_M       — M % BM == 0   (DCEs un-aligned safe-load paths)
+//   1: align_N       — N % BN == 0
+//   2: align_K       — K % BK == 0
+//   3: use_out_source — true ⇒ apply bias epilogue; false ⇒ identity
+//   4: do_axpby      — true ⇒ use kernel-passed alpha/beta; false ⇒ alpha=beta=1
+//===----------------------------------------------------------------------===//
 
 //===----------------------------------------------------------------------===//
 // Output Shape
 //===----------------------------------------------------------------------===//
 
 std::vector<SizesType> MatMulOp::computeOutputShape(
-    EValuePtrSpan inputs) const {
+    ::executorch::runtime::Span<::executorch::runtime::EValue*> inputs) const {
 
   if (inputs.size() < 2 || !inputs[0]->isTensor() || !inputs[1]->isTensor()) {
     return {};
@@ -48,7 +91,6 @@ std::vector<SizesType> MatMulOp::computeOutputShape(
 
 //===----------------------------------------------------------------------===//
 // Kernel Selection
-//
 // Picks among Naive / Tiled / Simd / NT / TN / GEMV / GEMV_T based on:
 //   - input layout (row-contig vs col-contig, where col-contig means the
 //     tensor is a .T view of an underlying row-contig tensor)
@@ -56,50 +98,35 @@ std::vector<SizesType> MatMulOp::computeOutputShape(
 //   - device tier (smaller thresholds on phones, larger on Ultra/Max)
 //===----------------------------------------------------------------------===//
 
-namespace {
-
-struct MatMulThresholds {
-  int simdMNK;   // min M,N,K to pick Simd over Tiled/Naive
-  int gemvMK;    // min M (or N for gemv_t) to use the simdgroup gemv path
-};
-
-constexpr MatMulThresholds thresholdsForTier(DeviceTier tier) {
-  switch (tier) {
-    case DeviceTier::Phone:    return {32, 16};
-    case DeviceTier::MacUltra: return {64, 32};
-    case DeviceTier::MacBase:
-    default:                   return {48, 24};
-  }
-}
-
-} // namespace
-
-const char* MatMulOp::kernelTypePrefix(MatMulKernelType type) const {
+std::string MatMulOp::kernelTypePrefix(MatMulKernelType type) const {
+  // Returns the local big-source kernel-name prefix for the kernel types
+  // that still use the big-source path (Naive / Tiled / GEMV / GEMV_T).
+  // The Simd-MMA family (Simd*/NT/TN) and the NAX/SplitK paths route
+  // through MLX JIT directly and don't use this prefix.
   switch (type) {
     case MatMulKernelType::Naive:           return "matmul_naive";
     case MatMulKernelType::Tiled:           return "matmul_tiled";
-    case MatMulKernelType::Simd:            return "matmul_simd_t_64_64_16_2_2_n";
-    case MatMulKernelType::Simd_BN32:       return "matmul_simd_t_64_32_32_2_2_n";
-    case MatMulKernelType::Simd_M32:        return "matmul_simd_t_32_64_32_1_4_n";
-    case MatMulKernelType::NT:              return "matmul_simd_t_64_64_16_2_2_t";
-    case MatMulKernelType::TN:              return "matmul_simd_t_64_64_16_2_2_tn";
     case MatMulKernelType::GEMV:            return "gemv";
     case MatMulKernelType::GEMV_T:          return "gemv_t";
-    case MatMulKernelType::TensorOps:       return "matmul_tensor_ops";
+    default:
+      // Simd*/NT/TN/Mlx_Dense_NAX/Simd_SplitK/SplitK_NAX should be
+      // dispatched through their MLX-JIT helpers without ever consulting
+      // this map. If we end up here, the dispatch switch is incomplete.
+      ET_CHECK_MSG(false, "MatMulOp::kernelTypePrefix: unhandled type %d "
+                          "(should have been routed through MLX JIT)",
+                   int(type));
+      return "matmul_naive";
   }
-  return "matmul_naive";
 }
 
 // selectKernel only handles the size-based fallback ladder for the regular
 // (NN) case. NT/TN/GEMV/GEMV_T are picked separately based on input layout.
-//
 // Tier ladder:
 //   Simd     : M >= 64. 64x64 output, 4 sg in 2x2.
 //   Simd_M32 : 16 <= M < 64. 32x64 output, 4 sg in 1x4. MLX-style "skinny"
 //              variant for prefill batches like Llama M=32.
 //   Tiled    : 32 <= M < 16 (rare middle ground), legacy fallback.
 //   Naive    : everything smaller.
-//
 // Variants compiled but NOT auto-routed (kept for future use / experimentation):
 // - Simd_M32_BN128: tried for compute-bound large-K cases. Theoretical AI
 //   gain (10.7 -> 12.8 FLOPs/byte) is real, but in practice doubling the
@@ -109,22 +136,704 @@ const char* MatMulOp::kernelTypePrefix(MatMulKernelType type) const {
 //   add register-blocked variants or tune for specific GPU families.
 // - Simd_M32_SplitK: didn't help compute-bound cases (the bottleneck is
 //   arithmetic intensity, not parallelism).
-MatMulKernelType MatMulOp::selectKernel(int64_t M, int64_t N, int64_t K) const {
-  if (M >= 64 && N >= 64 && K >= 16) {
-    // MLX-inspired heuristic for fp32 NN, refined empirically from sweep:
-    //   N <= 1024              -> BN32 (need more tgs along N for parallelism)
-    //   M >= 512 + K >= 4096   -> BN32 (BK=32 halves K-barrier count, big wins
-    //                                   when both M and K are large enough that
-    //                                   barrier overhead dominates)
-    //   otherwise              -> Simd (BN=64 wins for moderate-M large-N where
-    //                                   tg-level data reuse beats parallelism)
-    if (N <= 1024) return MatMulKernelType::Simd_BN32;
-    if (M >= 512 && K >= 4096) return MatMulKernelType::Simd_BN32;
-    return MatMulKernelType::Simd;
+MatMulKernelType MatMulOp::selectKernel(int64_t M, int64_t N, int64_t K,
+                                        ScalarType dtype) const {
+  // M==1 fast path → gemv_t.
+  if (M == 1 && N >= 1 && K >= 1) {
+    return MatMulKernelType::GEMV_T;
   }
-  if (M >= 2 && N >= 64 && K >= 16) return MatMulKernelType::Simd_M32;
-  if (M >= 32 && N >= 32) return MatMulKernelType::Tiled;
-  return MatMulKernelType::Naive;
+
+  // Below the simd-MMA path's lower bound: keep the legacy ladder.
+  if (M < 64 || N < 64 || K < 16) {
+    if (M >= 2 && N >= 64 && K >= 16) return MatMulKernelType::Simd_M32;
+    if (M >= 32 && N >= 32) return MatMulKernelType::Tiled;
+    return MatMulKernelType::Naive;
+  }
+
+  // MLX-style SIMD split-K precondition (mlx/backend/metal/matmul.cpp:935-940):
+  //   batch == 1                                     (MatMulOp is non-batched)
+  //   _tm·_tn ≤ min_tmn_threshold                    (output tile count)
+  //   _tk ≥ 8                                        (≥ 8 K-blocks of bk=16 → K ≥ 128)
+  //   K ≥ max(M, N)                                  (deep-K regime)
+  // We also gate K%16==0 because we only emit the K-aligned partial-kernel
+  // variants (MLX uses a separate residual loop for the last partition;
+  // we skip that to keep PSO count down).
+  // Threshold per MLX: 2048 on Max/Ultra ('s'/'d'), 1024 on medium / phone.
+  // Phase C: NAX split-K precondition (mlx/backend/metal/matmul.cpp:962-966):
+  //   half/bf16 only (fp32 only with TF32, which we don't enable)
+  //   M·N ≥ 4 194 304   (≥ 2048·2048)
+  //   K ≥ 10240
+  //   K ≥ 3·max(M, N)
+  //   batch == 1
+  //   Apple9+ (M3+) family — checked at dispatch time.
+  // NAX is more specific than SIMD split-K so check it first.
+  {
+    const auto preTier = MetalDeviceInfo::tier();
+
+    // NAX split-K (Apple9+ check happens at dispatch via supportsFamily;
+    // here we only filter by shape + dtype). MLX 0.31.2 also gates fp32
+    // NAX behind env::enable_tf32() (truncated mantissa); we mirror that
+    // via MLX_ENABLE_TF32=1.
+    const bool nax_dtype_ok = (dtype == ScalarType::Half ||
+                               dtype == ScalarType::BFloat16 ||
+                               (dtype == ScalarType::Float && tf32Enabled()));
+    const int64_t mn = M * N;
+    if (nax_dtype_ok &&
+        mn >= int64_t(2048) * 2048 &&
+        K >= 10240 &&
+        K >= 3 * std::max(M, N)) {
+      // Apple9 device check happens in dispatch — for non-Apple9 we'll
+      // fall back below. Do the supportsFamily check here too to avoid
+      // returning SplitK_NAX on unsupported HW.
+      auto* metalStream = static_cast<MetalStream*>(MetalStream::get());
+      if (metalStream && metalStream->device() &&
+          [metalStream->device() supportsFamily:MTLGPUFamilyApple9]) {
+        return MatMulKernelType::SplitK_NAX;
+      }
+    }
+
+    // Mlx_Dense_NAX (MLX 0.31.2 gemm_fused_nax) — fires when NAX
+    // precondition holds AND split-K-NAX precondition didn't. MLX 0.31.2
+    // routes most matmuls through this dense NAX path (matmul.cpp:983-1009).
+    // NN layout only — NT/TN dense NAX not ported.
+    {
+      if (nax_dtype_ok) {
+        auto* metalStream = static_cast<MetalStream*>(MetalStream::get());
+        if (metalStream && metalStream->device() &&
+            [metalStream->device() supportsFamily:MTLGPUFamilyApple9]) {
+          return MatMulKernelType::Mlx_Dense_NAX;
+        }
+      }
+    }
+
+    const int min_tmn_threshold =
+        (preTier == DeviceTier::MacUltra) ? 2048 : 1024;
+    const int64_t _tm = (M + 16 - 1) / 16;
+    const int64_t _tn = (N + 16 - 1) / 16;
+    const int64_t _tk = K / 16;
+    if (_tm * _tn <= min_tmn_threshold && _tk >= 8 &&
+        K >= std::max(M, N) && (K % 16) == 0) {
+      return MatMulKernelType::Simd_SplitK;
+    }
+  }
+
+  // MLX's GEMM_TPARAM_MACRO transcribed verbatim from
+  // mlx/backend/metal/matmul.cpp:88-169. NN-only (NT/TN go through
+  // separate code paths above this function), so MLX's `nt` branches are
+  // dead-coded out. Device-class mapping:
+  //   'g'/'p' (small Apple Silicon) → DeviceTier::Phone
+  //   'd'     (Mac Max/Ultra)       → DeviceTier::MacUltra
+  //   else    (M-base/Pro, 's', 'c')→ DeviceTier::MacBase  (defaults only)
+  // Tile-substitution: we don't have MLX's (32, 64, 16, 1, 2) tile, so
+  // when MLX would pick it (large 'd' nn deep-K half/bf, small 'd' fp32
+  // nt) we fall back to Simd_M32 = (32, 64, 32, 1, 4). Same BM/BN, larger
+  // BK + double WN — closest available shape.
+  const bool fp32 = (dtype == ScalarType::Float);
+  const auto tier = MetalDeviceInfo::tier();
+
+  // MLX defaults → Simd (64, 64, 16, 2, 2).
+  MatMulKernelType k = MatMulKernelType::Simd;
+
+  if (tier == DeviceTier::Phone) {
+    if (!fp32) k = MatMulKernelType::Simd_W12;            // 64,64,16,1,2
+    // else fp32 nn → defaults (Simd).
+  } else if (tier == DeviceTier::MacUltra) {
+    const int64_t area = M * N;
+    if (area >= (int64_t(1) << 20)) {
+      // large
+      if (!fp32) {
+        if (2 * std::max(M, N) > K) {
+          k = MatMulKernelType::Simd_W12;                 // 64,64,16,1,2
+        } else {
+          k = MatMulKernelType::Simd_W12_M32;             // 32,64,16,1,2 (real, was Simd_M32 substitute)
+        }
+      }
+      // else fp32 large 'd' → defaults (Simd).
+    } else {
+      // smaller
+      if (!fp32) {
+        k = MatMulKernelType::Simd_W12;                   // 64,64,16,1,2
+      } else {
+        k = MatMulKernelType::Simd_BN32;                  // 64,32,32,2,2
+      }
+    }
+  }
+  // else: DeviceTier::MacBase (medium) → defaults (Simd).
+  return k;
+}
+
+//===----------------------------------------------------------------------===//
+// SIMD split-K dispatch helper.
+// MLX-faithful translation of `steel_matmul_splitk_axpby` in
+//   mlx/backend/metal/matmul.cpp:529-680
+// (specifically the non-axpby case: alpha=1, beta=0, no bias).
+// Two-stage dispatch:
+//   1. Partial:  matmul_simd_splitk_partial_<bm>_<bn>_16_2_2_<mna>_<dtype>
+//                Grid = (tn, tm, P), block = (32, 2, 2) = 128 threads.
+//                Writes to a freshly-allocated [P, M, N] fp32 buffer.
+//   2. Accum:    matmul_simd_splitk_accum_<dtype>
+//                Grid = (N, M, 1), block = (32, 1, 1).
+//                Reduces partial[0..P-1, m, n] → out[m, n] in T.
+// Tile sizes per MLX (matmul.cpp:550-557):
+//   bm = M < 40 ? 16 : 32,   bn = N < 40 ? 16 : 32,   bk = 16
+// Partition count (matmul.cpp:560-561):
+//   P = clamp(next_pow2(_tk / (_tm * _tn)), 2, 32)
+// Caller has already validated split-K eligibility via selectKernel.
+//===----------------------------------------------------------------------===//
+namespace {
+inline int next_pow2(int v) {
+  if (v <= 1) return 1;
+  int p = 1;
+  while (p < v) p <<= 1;
+  return p;
+}
+}  // namespace
+
+namespace {
+// Reuse the shared MLX-JIT helpers (struct mirrors + helpers). These used
+// to live inline in this anon namespace but were moved to MatMulMlxJit.h
+// when AddMM-family ops needed them too (Tier 4). The using-declarations
+// below keep all this file's call sites working without textual changes.
+using mlx_jit_helpers::GEMMParamsHost;
+using mlx_jit_helpers::GEMMSplitKParamsHost;
+using mlx_jit_helpers::GEMMAddMMParamsHost;
+using mlx_jit_helpers::toJitDtype;
+using mlx_jit_helpers::buildBaseName;
+using mlx_jit_helpers::buildFusedHashSuffix;
+using mlx_jit_helpers::buildSplitKNaxHashSuffix;
+using mlx_jit_helpers::makeMlxFusedFCs;
+using mlx_jit_helpers::makeMlxSplitKNaxFCs;
+
+// Dispatch the SIMD-MMA split-K *partial* via MLX 0.31.2's `gemm_splitk`
+// template (steel_gemm_splitk.h). The accum is intentionally kept on our
+// local `matmul_simd_splitk_accum_*` kernel — MLX's gemm_splitk_accum is
+// designed for `dispatch_threads` (Metal's exact-thread-count dispatch),
+// while MetalStream only exposes `dispatch_threadgroups`. Under
+// dispatch_threadgroups the MLX accum's `[[thread_position_in_grid]]`
+// would OOB whenever N % 32 != 0 (no host-side bounds-check); routing
+// only the partial avoids that landmine for now.
+// Caller pre-computes (bm, bn, P, partition_size, partition_stride,
+// gemm_k_iterations) from MLX's heuristic in matmul.cpp:550-561 — same
+// values the legacy big-source dispatchSplitK uses.
+// Allocates + frees the fp32 partial buffer internally.
+inline void dispatchSimdSplitKPartialViaMlxJit(
+    MetalStream* stream,
+    const executorch::aten::Tensor& A,
+    const executorch::aten::Tensor& B,
+    void* partial_ptr, size_t partial_bytes,
+    int32_t M, int32_t K, int32_t N,
+    int bm, int bn, int bk, int wm, int wn,
+    int P,
+    int split_k_partition_size,
+    int split_k_partition_stride,
+    int gemm_k_iterations,
+    bool mn_aligned, bool k_aligned,
+    executorch::aten::ScalarType dtype) {
+  const auto jdtIn = toJitDtype(dtype);
+  const auto jdtOut = mlx_jit::JitDtype::Float32;
+  const char* aTname = mlx_jit::typeToName(jdtIn);
+  const char* outTname = mlx_jit::typeToName(jdtOut);
+
+  // MLX-style kernel name. mn_aligned and k_aligned are TEMPLATE args
+  // (not FCs) for gemm_splitk, so they MUST be in the cache key —
+  // distinct (mn × k_aligned) combos compile to separate libraries.
+  std::ostringstream kn;
+  kn << "steel_gemm_splitk_nn_" << aTname << "_" << outTname
+     << "_bm" << bm << "_bn" << bn << "_bk" << bk
+     << "_wm" << wm << "_wn" << wn
+     << "_mn_aligned_" << (mn_aligned ? 't' : 'n')
+     << "_k_aligned_" << (k_aligned ? 't' : 'n');
+  const std::string baseName = kn.str();
+
+  ET_LOG(Debug,
+         "MatMulOp[simd_splitk/mlx_jit]: M=%d K=%d N=%d dtype=%s "
+         "tile=(%d,%d,%d,%d,%d) P=%d mn_aligned=%d k_aligned=%d kname=%s",
+         M, K, N, dtypeSuffix(dtype), bm, bn, bk, wm, wn, P,
+         int(mn_aligned), int(k_aligned), baseName.c_str());
+
+  auto pso = mlx_jit::shared(stream->compiler())
+                 .getSplitKKernel(baseName, jdtIn, jdtOut,
+                                  /*ta=*/false, /*tb=*/false,
+                                  bm, bn, bk, wm, wn,
+                                  mn_aligned, k_aligned);
+  ET_CHECK_MSG(pso != nil,
+               "MatMulOp::dispatchSimdSplitKPartialViaMlxJit: "
+               "getSplitKKernel returned nil for '%s'", baseName.c_str());
+
+  // GEMMSpiltKParams (MLX's struct, typo preserved). NN row-major
+  // layout: lda=K, ldb=N, ldc=N. swizzle_log=0 for SIMD split-K
+  // (matches matmul.cpp's steel_matmul_splitk_axpby which doesn't
+  // swizzle the partial-kernel grid).
+  const int _tn = (N + bn - 1) / bn;
+  const int _tm = (M + bm - 1) / bm;
+  GEMMSplitKParamsHost params{
+      /*M=*/M, /*N=*/N, /*K=*/K,
+      /*lda=*/K, /*ldb=*/N, /*ldc=*/N,
+      /*tiles_n=*/_tn, /*tiles_m=*/_tm,
+      /*split_k_partitions=*/P,
+      /*split_k_partition_stride=*/split_k_partition_stride,
+      /*split_k_partition_size=*/split_k_partition_size,
+      /*swizzle_log=*/0,
+      /*gemm_k_iterations_aligned=*/gemm_k_iterations,
+  };
+
+  stream->setInput(0, A.const_data_ptr(), A.nbytes());
+  stream->setInput(1, B.const_data_ptr(), B.nbytes());
+  {
+    // partial = OUTPUT of split-K phase A. Use hazard-aware setOutputBuffer
+    // so phase B (which reads `partial`) sees a RAW edge.
+    auto bo = stream->bufferAndOffsetForPtr(partial_ptr, partial_bytes);
+    stream->setOutputBuffer(2, bo.mtl, bo.offset, partial_bytes);
+  }
+  stream->setBytes(3, &params, sizeof(params));
+
+  // Grid + block per matmul.cpp's steel_matmul_splitk_axpby
+  // (3D grid, 32 × WN × WM block).
+  uvec3 grid{uint32_t(_tn), uint32_t(_tm), uint32_t(P)};
+  uvec3 block{32u, uint32_t(wn), uint32_t(wm)};
+  stream->dispatch(pso, grid, block);
+}
+
+//===----------------------------------------------------------------------===//
+// Tier 1 — Simd* family routed through MLX 0.31.2 `gemm` template via
+// per-shape JIT (steel/gemm/kernels/steel_gemm_fused.h). The host-side
+// kernel selection (which (BM, BN, BK, WM, WN) tile + which kernelType)
+// is unchanged — we just swap the kernel-acquisition + binding layer.
+//===----------------------------------------------------------------------===//
+
+// Mapping from our MatMulKernelType enum → the (BM, BN, BK, WM, WN) tile
+// each variant has historically been hardcoded to. Centralized so the JIT
+// path and the legacy big-source path can't drift.
+struct SimdTileShape {
+  int BM, BN, BK, WM, WN;
+};
+
+inline SimdTileShape simdTileFor(MatMulKernelType kt) {
+  switch (kt) {
+    case MatMulKernelType::Simd:        return {64, 64, 16, 2, 2};
+    case MatMulKernelType::Simd_BN32:   return {64, 32, 32, 2, 2};
+    case MatMulKernelType::Simd_M32:    return {32, 64, 32, 1, 4};
+    case MatMulKernelType::Simd_W12:    return {64, 64, 16, 1, 2};
+    case MatMulKernelType::Simd_W12_M32:return {32, 64, 16, 1, 2};
+    // NT/TN historically use the (64,64,16,2,2) tile too. Tier 2 will
+    // route them through the JIT path; until then this mapping is unused
+    // for the transposed cases.
+    case MatMulKernelType::NT:          return {64, 64, 16, 2, 2};
+    case MatMulKernelType::TN:          return {64, 64, 16, 2, 2};
+    default: return {64, 64, 16, 2, 2};
+  }
+}
+
+// Dispatch a SIMD-MMA dense GEMM via MLX 0.31.2's `gemm` template
+// (steel_gemm_fused.h). Shape-and-tile selection is the caller's
+// responsibility (matches MatMulOp's existing per-kernelType tile
+// hardcoding); this helper only swaps in MLX's kernel + ABI.
+// Caller already knows (BM, BN, BK, WM, WN) and transpose flags.
+// FCs match MLX upstream slot numbers (10/100/110/200/201/202). use_out_source
+// + do_axpby + has_batch are fixed false here (un-fused matmul, no bias,
+// non-batched). The split-K variant uses a different helper.
+inline void dispatchSimdViaMlxJit(
+    MetalStream* stream,
+    const executorch::aten::Tensor& A,
+    const executorch::aten::Tensor& B,
+    executorch::aten::Tensor& C,
+    int32_t M, int32_t K, int32_t N,
+    int BM, int BN, int BK, int WM, int WN,
+    int32_t swizzle_log,
+    bool transpose_a, bool transpose_b,
+    executorch::aten::ScalarType dtype) {
+  const auto jdt = toJitDtype(dtype);
+  const char* tname = mlx_jit::typeToName(jdt);
+  const std::string baseName = buildBaseName(
+      "steel_gemm_fused", transpose_a, transpose_b,
+      tname, tname, BM, BN, BK, WM, WN);
+
+  const bool has_batch = false;
+  const bool use_out_source = false;
+  const bool do_axpby = false;
+  const bool align_M = (M % BM) == 0;
+  const bool align_N = (N % BN) == 0;
+  const bool align_K = (K % BK) == 0;
+
+  const std::string hashName = baseName + buildFusedHashSuffix(
+      has_batch, use_out_source, do_axpby, align_M, align_N, align_K);
+  const auto fcs = makeMlxFusedFCs(
+      has_batch, use_out_source, do_axpby, align_M, align_N, align_K);
+
+  ET_LOG(Debug,
+         "MatMulOp[simd/mlx_jit]: M=%d K=%d N=%d dtype=%s "
+         "tile=(%d,%d,%d,%d,%d) ta=%d tb=%d swizzle_log=%d kname=%s",
+         M, K, N, dtypeSuffix(dtype), BM, BN, BK, WM, WN,
+         transpose_a, transpose_b, swizzle_log, baseName.c_str());
+
+  auto pso = mlx_jit::shared(stream->compiler())
+                 .getDenseGemmKernel(baseName, hashName, fcs, jdt,
+                                     transpose_a, transpose_b,
+                                     BM, BN, BK, WM, WN);
+  ET_CHECK_MSG(pso != nil,
+               "MatMulOp::dispatchSimdViaMlxJit: getDenseGemmKernel returned "
+               "nil for '%s'", baseName.c_str());
+
+  // GEMMParams layout. Leading dimensions follow MLX's convention:
+  //   transpose_a=false → A is row-major [M, K] → lda = K
+  //   transpose_a=true  → A.T is row-major [K, M] → lda = M
+  //   transpose_b=false → B is row-major [K, N] → ldb = N
+  //   transpose_b=true  → B.T is row-major [N, K] → ldb = K
+  //   D is always row-major [M, N] → ldd = N
+  const int lda = transpose_a ? M : K;
+  const int ldb = transpose_b ? K : N;
+  const int ldd = N;
+  const int tilesN = (N + BN - 1) / BN;
+  const int tilesM = (M + BM - 1) / BM;
+
+  GEMMParamsHost params{
+      /*M=*/M, /*N=*/N, /*K=*/K,
+      /*lda=*/lda, /*ldb=*/ldb, /*ldd=*/ldd,
+      /*tiles_n=*/tilesN, /*tiles_m=*/tilesM,
+      /*batch_stride_a=*/0, /*batch_stride_b=*/0, /*batch_stride_d=*/0,
+      /*swizzle_log=*/swizzle_log,
+      /*gemm_k_iterations_aligned=*/(K / BK),
+      /*batch_ndim=*/0,
+  };
+
+  // Bindings (skipping FC-gated slots 2/5/6/7).
+  stream->setInput(0, A.const_data_ptr(), A.nbytes());
+  stream->setInput(1, B.const_data_ptr(), B.nbytes());
+  // slot 2 (C / out_source) FC-gated to use_out_source=false → unused.
+  stream->setOutput(3, C.mutable_data_ptr(), C.nbytes());
+  stream->setBytes(4, &params, sizeof(params));
+  // slots 5/6/7 FC-gated → unused.
+
+  // Grid: swizzled (tn, tm, batch=1) per MLX (matmul.cpp:300-306).
+  const int tile = 1 << swizzle_log;
+  const int swizzled_tn = tilesN * tile;
+  const int swizzled_tm = (tilesM + tile - 1) / tile;
+  uvec3 grid{uint32_t(swizzled_tn), uint32_t(swizzled_tm), 1u};
+  uvec3 block{32u, uint32_t(WN), uint32_t(WM)};
+  stream->dispatch(pso, grid, block);
+}
+
+}  // namespace
+
+//===----------------------------------------------------------------------===//
+// dispatchSplitK — SIMD split-K dispatch helper (legacy big-source path).
+// MLX-faithful translation of `steel_matmul_splitk_axpby` in
+//   mlx/backend/metal/matmul.cpp:529-680
+// (specifically the non-axpby case: alpha=1, beta=0, no bias).
+//===----------------------------------------------------------------------===//
+
+void MatMulOp::dispatchSplitK(
+    MetalStream* stream,
+    const executorch::aten::Tensor& A,
+    const executorch::aten::Tensor& B,
+    executorch::aten::Tensor& C,
+    int32_t M, int32_t K, int32_t N,
+    executorch::aten::ScalarType dtype) {
+  const int bm = (M < 40) ? 16 : 32;
+  const int bn = (N < 40) ? 16 : 32;
+  const int bk = 16;
+  const int wm = 2;
+  const int wn = 2;
+  const int _tm = (M + bm - 1) / bm;
+  const int _tn = (N + bn - 1) / bn;
+  const int _tk = K / bk;
+  int P = std::min(std::max(2, next_pow2(_tk / std::max(1, _tm * _tn))), 32);
+  // P must divide _tk evenly so each partition gets ≥ 1 K-iter; clamp down.
+  while (P > 1 && (_tk / P) < 1) P /= 2;
+  const int gemm_k_iterations = _tk / P;
+  const int split_k_partition_size = gemm_k_iterations * bk;
+  const int split_k_partition_stride = M * N;
+  const bool mn_aligned = (M % bm == 0) && (N % bn == 0);
+  const bool k_aligned = (K % bk == 0);
+
+  // Allocate the fp32 partial buffer.
+  const size_t partial_bytes = size_t(P) * size_t(M) * size_t(N) * sizeof(float);
+  void* partial_ptr = stream->alloc(partial_bytes);
+  ET_CHECK_MSG(partial_ptr != nullptr,
+               "MatMulOp::dispatchSplitK: alloc(%zu) failed (P=%d M=%d N=%d)",
+               partial_bytes, P, M, N);
+
+  // ---- Partial dispatch via MLX `gemm_splitk` template (JIT) ----
+  dispatchSimdSplitKPartialViaMlxJit(
+      stream, A, B, partial_ptr, partial_bytes,
+      M, K, N, bm, bn, bk, wm, wn,
+      P, split_k_partition_size, split_k_partition_stride,
+      gemm_k_iterations, mn_aligned, k_aligned, dtype);
+
+  // ---- Accum dispatch ----
+  {
+    char kname[64];
+    std::snprintf(kname, sizeof(kname),
+                  "matmul_simd_splitk_accum_%s", dtypeSuffix(dtype));
+    auto* kernel = getKernel(stream, kname, /*fcs=*/nullptr);
+    ET_CHECK_MSG(kernel != nullptr,
+                 "MatMulOp::dispatchSplitK: failed to load kernel '%s'", kname);
+
+    {
+      // partial = INPUT to phase B (the accum kernel reads partial sums
+      // produced by phase A). Hazard-aware setInputBuffer records the
+      // RAW dependency on the parent MTLBuffer.
+      auto bo = stream->bufferAndOffsetForPtr(partial_ptr, partial_bytes);
+      stream->setInputBuffer(0, bo.mtl, bo.offset, partial_bytes);
+    }
+    stream->setOutput(1, C.mutable_data_ptr(), C.nbytes());
+    stream->setBytes<int32_t>(2, M);
+    stream->setBytes<int32_t>(3, N);
+    stream->setBytes<int32_t>(4, P);
+    stream->setBytes<int32_t>(5, split_k_partition_stride);
+
+    // One thread per output element. Round N up to a multiple of 32 to
+    // fit a (32, 1, 1) TG; in-kernel bounds-check guards the tail.
+    const uint32_t tgN = uint32_t((N + 31) / 32);
+    uvec3 grid(tgN, uint32_t(M), 1);
+    uvec3 block(32, 1, 1);
+    stream->dispatch(kernel, grid, block);
+  }
+
+  // Free the intermediate. The MTLBuffer stays retained by the encoder
+  // via setBuffer until commit, so this is safe even though the GPU
+  // hasn't run the work yet (M1 fix routes Pool/Heap correctly).
+  stream->free(partial_ptr);
+}
+
+//===----------------------------------------------------------------------===//
+// NAX split-K dispatch helper.
+// MLX-faithful translation of `steel_matmul_splitk_axpby_nax`
+//   mlx/backend/metal/matmul.cpp:686-852
+// adapted to our simpler tensor_ops::matmul2d-based partial kernel
+// (single-tile BM=BN=64, BK=16, 4 simdgroups). Reuses Phase B's accum.
+// Caller has already validated NAX eligibility via selectKernel
+// (Apple9+, half/bf16, M·N ≥ 4M, K ≥ 10240, K ≥ 3·max(M,N), batch=1).
+// Tile / partition params chosen for our BM=BN=64 partial kernel (vs
+// MLX's 128×128×512 with 16 simdgroups). We use:
+//   BM = BN = 64,  BK = 16
+//   split_k_partition_size = 3072  (matches MLX matmul.cpp:711 — gives
+//   P=4 partitions for K=12288, P=3 for K=10240)
+//===----------------------------------------------------------------------===//
+
+void MatMulOp::dispatchSplitKNAX(
+    MetalStream* stream,
+    const executorch::aten::Tensor& A,
+    const executorch::aten::Tensor& B,
+    executorch::aten::Tensor& C,
+    int32_t M, int32_t K, int32_t N,
+    executorch::aten::ScalarType dtype) {
+  // ---- MLX 0.31.2 split-K NAX path via per-shape JIT ----
+  // Tile selection per matmul.cpp:678-686.
+  int BM, BN, BK, WM, WN;
+  int kPartitionK;
+  if ((M + N) / 2 < 512 || K <= 4096) {
+    BM = BN = 64; BK = 256; WM = WN = 2;
+  } else {
+    BM = BN = 128; BK = 512; WM = WN = 4;
+  }
+  if (K <= 1024)        kPartitionK = K / 2;
+  else if (K <= 2048)   kPartitionK = 1024;
+  else if (K <= 4096)   kPartitionK = 2048;
+  else                  kPartitionK = 4096;
+
+  const int P = (K + kPartitionK - 1) / kPartitionK;
+  const int split_k_partition_size = kPartitionK;
+  const int split_k_partition_stride = M * N;
+  const int tn = (N + BN - 1) / BN;
+  const int tm = (M + BM - 1) / BM;
+  const int swizzle_log = (tm <= 3) ? 0 : 1;
+  const int tile = 1 << swizzle_log;
+  const int tm_swizzled = (tm + tile - 1) / tile;
+  const int tn_swizzled = tn * tile;
+
+  // ---- Allocate fp32 partial buffer ----
+  const size_t partial_bytes = size_t(P) * size_t(M) * size_t(N) * sizeof(float);
+  void* partial_ptr = stream->alloc(partial_bytes);
+  ET_CHECK_MSG(partial_ptr != nullptr,
+               "MatMulOp::dispatchSplitKNAX: alloc(%zu) failed "
+               "(P=%d M=%d N=%d)", partial_bytes, P, M, N);
+
+  // ---- NAX partial dispatch (steel_gemm_splitk_nax) ----
+  {
+    const auto jdtIn = toJitDtype(dtype);
+    const auto jdtOut = mlx_jit::JitDtype::Float32;  // partial is fp32
+    const char* aTname = mlx_jit::typeToName(jdtIn);
+    const char* outTname = mlx_jit::typeToName(jdtOut);
+    const std::string baseName = buildBaseName(
+        "steel_gemm_splitk_nax", /*ta=*/false, /*tb=*/false,
+        aTname, outTname, BM, BN, BK, WM, WN);
+    const bool align_M = (M % BM) == 0;
+    const bool align_N = (N % BN) == 0;
+    const bool align_K = (K % BK) == 0;
+    const std::string hashName = baseName + buildSplitKNaxHashSuffix(
+        align_M, align_N, align_K);
+    const auto fcs = makeMlxSplitKNaxFCs(align_M, align_N);
+
+    auto pso = mlx_jit::shared(stream->compiler())
+                   .getSplitKNaxKernel(baseName, hashName, fcs, jdtOut,
+                                       /*ta=*/false, /*tb=*/false,
+                                       BM, BN, BK, WM, WN);
+    ET_CHECK_MSG(pso != nil,
+                 "MatMulOp::dispatchSplitKNAX: getSplitKNaxKernel "
+                 "returned nil for '%s'", baseName.c_str());
+
+    GEMMSplitKParamsHost params{
+        /*M=*/M, /*N=*/N, /*K=*/K,
+        /*lda=*/K, /*ldb=*/N, /*ldc=*/N,
+        /*tiles_n=*/tn, /*tiles_m=*/tm,
+        /*split_k_partitions=*/P,
+        /*split_k_partition_stride=*/split_k_partition_stride,
+        /*split_k_partition_size=*/split_k_partition_size,
+        /*swizzle_log=*/swizzle_log,
+        /*gemm_k_iterations_aligned=*/(split_k_partition_size / BK),
+    };
+
+    stream->setInput(0, A.const_data_ptr(), A.nbytes());
+    stream->setInput(1, B.const_data_ptr(), B.nbytes());
+    {
+      // partial = OUTPUT of split-K phase A.
+      auto bo = stream->bufferAndOffsetForPtr(partial_ptr, partial_bytes);
+      stream->setOutputBuffer(2, bo.mtl, bo.offset, partial_bytes);
+    }
+    stream->setBytes(3, &params, sizeof(params));
+
+    // Grid: 1D K-partition-major (matmul.cpp:781-782).
+    uvec3 grid{uint32_t(tn_swizzled * tm_swizzled * P), 1u, 1u};
+    uvec3 block{32u, uint32_t(WN), uint32_t(WM)};
+    stream->dispatch(pso, grid, block);
+  }
+
+  // ---- Accum dispatch (local matmul_simd_splitk_accum_*; kept off MLX
+  // because MLX's gemm_splitk_accum uses dispatch_threads, our stream
+  // only exposes dispatch_threadgroups — see helper comment) ----
+  {
+    char kname[64];
+    std::snprintf(kname, sizeof(kname),
+                  "matmul_simd_splitk_accum_%s", dtypeSuffix(dtype));
+    auto* kernel = getKernel(stream, kname, /*fcs=*/nullptr);
+    ET_CHECK_MSG(kernel != nullptr,
+                 "MatMulOp::dispatchSplitKNAX: failed to load accum kernel '%s'",
+                 kname);
+
+    {
+      // partial = INPUT to phase B accum kernel.
+      auto bo = stream->bufferAndOffsetForPtr(partial_ptr, partial_bytes);
+      stream->setInputBuffer(0, bo.mtl, bo.offset, partial_bytes);
+    }
+    stream->setOutput(1, C.mutable_data_ptr(), C.nbytes());
+    stream->setBytes<int32_t>(2, M);
+    stream->setBytes<int32_t>(3, N);
+    stream->setBytes<int32_t>(4, P);
+    stream->setBytes<int32_t>(5, split_k_partition_stride);
+
+    const uint32_t tgN = uint32_t((N + 31) / 32);
+    uvec3 grid{tgN, uint32_t(M), 1u};
+    uvec3 block{32u, 1u, 1u};
+    stream->dispatch(kernel, grid, block);
+  }
+
+  stream->free(partial_ptr);
+}
+
+void MatMulOp::dispatchDenseNAX(
+    MetalStream* stream,
+    const executorch::aten::Tensor& A,
+    const executorch::aten::Tensor& B,
+    executorch::aten::Tensor& C,
+    int32_t M, int32_t K, int32_t N,
+    executorch::aten::ScalarType dtype) {
+  // ---- Tile selection (kept from pre-JIT empirical tuning) ----
+  // Defaults to our (64,64,256,2,2) symmetric small that benched best on
+  // M4 Max for prefill shapes. METAL_NAX_TILE overrides for diagnostics
+  // (see comment block in the prior implementation).
+  int BM = 64, BN = 64, BK = 256, WM = 2, WN = 2;
+  static const int forceTile = []() {
+    const char* e = getenv("METAL_NAX_TILE");
+    if (!e) return 0;
+    if (strcmp(e, "asym")  == 0) return 1;  // (64, 128) MLX MacUltra
+    if (strcmp(e, "small") == 0) return 2;  // (64, 64)  symmetric — DEFAULT
+    if (strcmp(e, "large") == 0) return 3;  // (128, 128) symmetric
+    return 0;
+  }();
+  if (forceTile == 1) { BM = 64;  BN = 128; BK = 256; WM = 2; WN = 4; }
+  if (forceTile == 2) { BM = 64;  BN = 64;  BK = 256; WM = 2; WN = 2; }
+  if (forceTile == 3) { BM = 128; BN = 128; BK = 512; WM = 4; WN = 4; }
+
+  const int tilesN = (N + BN - 1) / BN;
+  const int tilesM = (M + BM - 1) / BM;
+
+  int swizzle_log = 0;
+  if (const char* e = getenv("METAL_NAX_SWIZZLE")) {
+    swizzle_log = atoi(e);
+  }
+  const int tile = 1 << swizzle_log;
+  const int swizzled_tm = (tilesM + tile - 1) / tile;
+  const int swizzled_tn = tilesN * tile;
+
+  // ---- MLX kernel naming (matches matmul.cpp:217-254) ----
+  const auto jdt = toJitDtype(dtype);
+  const char* tname = mlx_jit::typeToName(jdt);
+  const std::string baseName = buildBaseName(
+      "steel_gemm_fused_nax", /*ta=*/false, /*tb=*/false,
+      tname, tname, BM, BN, BK, WM, WN);
+
+  const bool has_batch = false;          // MatMulOp is non-batched
+  const bool use_out_source = false;     // un-fused: no bias / no axpby
+  const bool do_axpby = false;
+  const bool align_M = (M % BM) == 0;
+  const bool align_N = (N % BN) == 0;
+  const bool align_K = (K % BK) == 0;
+
+  const std::string hashName = baseName + buildFusedHashSuffix(
+      has_batch, use_out_source, do_axpby, align_M, align_N, align_K);
+
+  const auto fcs = makeMlxFusedFCs(
+      has_batch, use_out_source, do_axpby, align_M, align_N, align_K);
+
+  ET_LOG(Debug,
+         "MatMulOp[mlx_dense_nax/jit]: M=%d K=%d N=%d dtype=%s "
+         "tile=(%d,%d,%d,%d,%d) swizzle_log=%d kname=%s",
+         M, K, N, dtypeSuffix(dtype), BM, BN, BK, WM, WN, swizzle_log,
+         baseName.c_str());
+
+  // ---- Acquire PSO via the free-function singleton ----
+  auto pso = mlx_jit::shared(stream->compiler())
+                 .getDenseNaxKernel(baseName, hashName, fcs, jdt,
+                                    /*ta=*/false, /*tb=*/false,
+                                    BM, BN, BK, WM, WN);
+  ET_CHECK_MSG(pso != nil,
+               "MatMulOp::dispatchDenseNAX: getDenseNaxKernel returned nil "
+               "for '%s'", baseName.c_str());
+
+  // ---- Build GEMMParams (struct layout must match MSL exactly) ----
+  GEMMParamsHost params{
+      /*M=*/M,
+      /*N=*/N,
+      /*K=*/K,
+      /*lda=*/K,    // A row-contig [M,K]
+      /*ldb=*/N,    // B row-contig [K,N]
+      /*ldd=*/N,    // D row-contig [M,N]
+      /*tiles_n=*/tilesN,
+      /*tiles_m=*/tilesM,
+      /*batch_stride_a=*/0,
+      /*batch_stride_b=*/0,
+      /*batch_stride_d=*/0,
+      /*swizzle_log=*/swizzle_log,
+      /*gemm_k_iterations_aligned=*/(K / BK),
+      /*batch_ndim=*/0,
+  };
+
+  // ---- Bind buffers (skipping FC-gated slots 2/5/6/7) ----
+  stream->setInput(0, A.const_data_ptr(), A.nbytes());
+  stream->setInput(1, B.const_data_ptr(), B.nbytes());
+  // slot 2 (C / out_source) FC-gated to use_out_source=false → unused.
+  stream->setOutput(3, C.mutable_data_ptr(), C.nbytes());
+  stream->setBytes(4, &params, sizeof(params));
+  // slot 5 (addmm_params) FC-gated to use_out_source=false → unused.
+  // slot 6/7 (batch_shape/strides) FC-gated to has_batch=false → unused.
+
+  // ---- Dispatch ----
+  // Grid: swizzled (tn, tm, batch=1). Block: (32, WN, WM) per MLX's
+  // matmul.cpp:305 (MTL::Size(32, wn, wm)).
+  uvec3 grid{uint32_t(swizzled_tn), uint32_t(swizzled_tm), 1u};
+  uvec3 block{32u, uint32_t(WN), uint32_t(WM)};
+  stream->dispatch(pso, grid, block);
 }
 
 //===----------------------------------------------------------------------===//
@@ -133,15 +842,16 @@ MatMulKernelType MatMulOp::selectKernel(int64_t M, int64_t N, int64_t K) const {
 
 void MatMulOp::dispatch(
     MetalStream* stream,
-    EValuePtrSpan inputs,
-    EValuePtrSpan outputs) {
+    ::executorch::runtime::Span<::executorch::runtime::EValue*> inputs,
+    ::executorch::runtime::Span<::executorch::runtime::EValue*> outputs) {
 
   // TEMPORARY runtime switch: when METAL_USE_MPSGRAPH=1 (or =true), route ALL
   // matmul cases through MPSGraph instead of our hand-written kernels. Useful
   // for benchmarking and as a sanity-check fallback when the custom kernels
   // misbehave. Selection logic below is left intact (just bypassed).
-  // Works under both MTL3 and MTL4 (MPSGraphOp branches internally on
-  // useMTL4() — under MTL4 it uses a singleton legacy queue + shared event).
+  // Compiled out entirely when ET_METAL_USE_MPSGRAPH=0 (which is enforced
+  // mutually-exclusive with ET_METAL4_ENABLE — see MpsInterop.h).
+#if ET_METAL_USE_MPSGRAPH
   static const bool kForceMPSGraph = []() {
     const char* env = getenv("METAL_USE_MPSGRAPH");
     return env && (strcmp(env, "1") == 0 || strcmp(env, "true") == 0);
@@ -152,6 +862,7 @@ void MatMulOp::dispatch(
     mpsOp.dispatch(stream, inputs, outputs);
     return;
   }
+#endif
 
   auto& A = inputs[0]->toTensor();
   auto& B = inputs[1]->toTensor();
@@ -183,38 +894,113 @@ void MatMulOp::dispatch(
 
   ScalarType dtype = C.scalar_type();
 
-  // Pick kernel type from layout + size.
+  // GEMV / GEMV_T enabled for M==1. The selector picks GEMV_T whenever
+  // M==1 (most common autoregressive-decode shape).
   MatMulKernelType kernelType;
   if (aRC && bRC) {
-    if (N == 1)      kernelType = MatMulKernelType::GEMV;
-    else if (M == 1) kernelType = MatMulKernelType::GEMV_T;
-    else             kernelType = selectKernel(M, N, K);
+    kernelType = selectKernel(M, N, K, dtype);
   } else if (aRC && bCC) {
     kernelType = MatMulKernelType::NT;
   } else /* aCC && bRC — A is transposed (TN) */ {
     kernelType = MatMulKernelType::TN;
   }
 
-  // Upgrade Simd -> TensorOps when device supports Apple9 family (M3+/A17 Pro+)
-  // AND sizes meet matmul2d constraints (BM=BN=64, K aligned to 16). We don't
-  // upgrade NT/TN — tensor_ops::matmul2d would need a different descriptor
-  // (transpose flags). Could be added later if perf justifies it.
-  if (kernelType == MatMulKernelType::Simd) {
-    auto* metalStream = static_cast<MetalStream*>(stream);
-    if (metalStream && metalStream->device() &&
-        [metalStream->device() supportsFamily:MTLGPUFamilyApple9] &&
-        (M % 64 == 0) && (N % 64 == 0) && (K % 16 == 0) &&
-        (dtype == ScalarType::Float ||
-         dtype == ScalarType::Half  ||
-         dtype == ScalarType::BFloat16)) {
-      kernelType = MatMulKernelType::TensorOps;
+  // TensorOps upgrade was removed — empirically slower than routing
+  // Simd through MLX's `gemm` template via the JIT loader. MLX's gemm
+  // already maps simdgroup_matrix to the Apple9+ NAX hardware path
+  // (same HW as tensor_ops::matmul2d), and its BlockLoader / K-loop
+  // unroll outperformed our hand-rolled tensor_ops::matmul2d wrapper
+  // by ~45% on M4 Max for seq=128 fp32 prefill (3.36 ms vs 4.91 ms).
+  // For NAX-eligible dtypes (fp16/bf16, or fp32+TF32) the routing
+  // selects Mlx_Dense_NAX before reaching this point anyway.
+
+  // Phase B: SIMD split-K — two-stage dispatch with an fp32 intermediate.
+  // Bypasses the unified single-kernel dispatch flow below.
+  if (kernelType == MatMulKernelType::Simd_SplitK) {
+    ET_LOG(Debug, "MatMulOp: M=%d, K=%d, N=%d, kernel=splitk", M, K, N);
+    dispatchSplitK(stream, A, B, C, M, K, N, dtype);
+    return;
+  }
+
+  // Phase C: NAX split-K — Apple9+ tensor_ops::matmul2d partial + Phase B accum.
+  if (kernelType == MatMulKernelType::SplitK_NAX) {
+    ET_LOG(Debug, "MatMulOp: M=%d, K=%d, N=%d, kernel=splitk_nax", M, K, N);
+    dispatchSplitKNAX(stream, A, B, C, M, K, N, dtype);
+    return;
+  }
+
+  // MLX dense NAX (gemm_fused_nax). Tile selection per MLX 0.31.2.
+  if (kernelType == MatMulKernelType::Mlx_Dense_NAX) {
+    ET_LOG(Debug, "MatMulOp: M=%d, K=%d, N=%d, kernel=mlx_dense_nax", M, K, N);
+    dispatchDenseNAX(stream, A, B, C, M, K, N, dtype);
+    return;
+  }
+
+  // Route the SIMD-MMA family (Simd*/NT/TN) through MLX 0.31.2's `gemm`
+  // template (steel_gemm_fused.h) via the per-shape JIT loader. Tile +
+  // kernelType selection above owns routing — this just acquires + binds
+  // the kernel.
+  switch (kernelType) {
+    case MatMulKernelType::Simd:
+    case MatMulKernelType::Simd_BN32:
+    case MatMulKernelType::Simd_M32:
+    case MatMulKernelType::Simd_W12:
+    case MatMulKernelType::Simd_W12_M32:
+    case MatMulKernelType::NT:
+    case MatMulKernelType::TN: {
+      const auto tile = simdTileFor(kernelType);
+      const int32_t tilesM = (M + tile.BM - 1) / tile.BM;
+      const int32_t tilesN = (N + tile.BN - 1) / tile.BN;
+      const int32_t swizzle_log = (tilesM >= 4 && tilesN >= 4) ? 2 : 0;
+      // NT: B is the transposed operand (transpose_b=true).
+      // TN: A is the transposed operand (transpose_a=true).
+      const bool transpose_a = (kernelType == MatMulKernelType::TN);
+      const bool transpose_b = (kernelType == MatMulKernelType::NT);
+      ET_LOG(Debug, "MatMulOp: M=%d K=%d N=%d kernel=simd "
+                     "(kt=%d tile=(%d,%d,%d,%d,%d) ta=%d tb=%d)",
+             M, K, N, int(kernelType),
+             tile.BM, tile.BN, tile.BK, tile.WM, tile.WN,
+             transpose_a, transpose_b);
+      dispatchSimdViaMlxJit(stream, A, B, C, M, K, N,
+                            tile.BM, tile.BN, tile.BK, tile.WM, tile.WN,
+                            swizzle_log,
+                            transpose_a, transpose_b,
+                            dtype);
+      return;
+    }
+    default:
+      // Other kernelTypes (Naive / Tiled / GEMV / GEMV_T / TensorOps)
+      // fall through to the local-kernel dispatch below.
+      break;
+  }
+
+  // ---- Local-kernel paths (Naive / Tiled / GEMV / GEMV_T) ----
+  // GEMV / GEMV_T can also route to MLX's gemv kernel via the JIT
+  // loader when METAL_USE_MLX_GEMV=1 (env-gated for A/B testing
+  // against our local impl). Naive / Tiled stay local — MLX has no
+  // small-tile equivalents.
+  static const bool kUseMlxGemv = []() {
+    const char* env = getenv("METAL_USE_MLX_GEMV");
+    return env && (strcmp(env, "1") == 0 || strcmp(env, "true") == 0);
+  }();
+  if (kUseMlxGemv) {
+    if (kernelType == MatMulKernelType::GEMV_T) {
+      using mlx_jit_helpers::dispatchGemvTViaMlxJit;
+      dispatchGemvTViaMlxJit(stream, A, B, C, K, N, dtype);
+      return;
+    }
+    if (kernelType == MatMulKernelType::GEMV) {
+      using mlx_jit_helpers::dispatchGemvViaMlxJit;
+      dispatchGemvViaMlxJit(stream, A, B, C, M, K, dtype);
+      return;
     }
   }
 
+  // Local fallback: hand-rolled gemv / gemv_t (or Naive / Tiled).
   std::string kname = std::string(kernelTypePrefix(kernelType)) + "_" + dtypeSuffix(dtype);
-  auto* kernel = getKernel(stream, kname.c_str());
+  auto* kernel = getKernel(stream, kname.c_str(), /*fcs=*/nullptr);
 
-  ET_LOG(Info, "MatMulOp: M=%d, K=%d, N=%d, kernel=%s", M, K, N, kname.c_str());
+  ET_LOG(Debug, "MatMulOp: M=%d, K=%d, N=%d, kernel=%s", M, K, N, kname.c_str());
 
   uvec3 grid, block;
 
@@ -229,1328 +1015,47 @@ void MatMulOp::dispatch(
       block = uvec3(32, 32, 1);
       break;
 
-    case MatMulKernelType::Simd:
-    case MatMulKernelType::NT:
-    case MatMulKernelType::TN:
-    case MatMulKernelType::TensorOps:
-      // 64x64 output tile, 4 simdgroups (128 threads), grid.z=1 (no batch).
-      grid = uvec3((N + 63) / 64, (M + 63) / 64, 1);
-      block = uvec3(128, 1, 1);
-      break;
-
-    case MatMulKernelType::Simd_BN32:
-      // 64x32 output tile (BM=64, BN=32), 4 simdgroups in 2x2 layout.
-      // Doubles tg count along N vs Simd, helps small-N cases.
-      grid = uvec3((N + 31) / 32, (M + 63) / 64, 1);
-      block = uvec3(128, 1, 1);
-      break;
-
-    case MatMulKernelType::Simd_M32:
-      // 32x64 output tile (BM=32, BN=64), 4 simdgroups in 1x4 layout (128
-      // threads), grid.z=1 (no batch).
-      grid = uvec3((N + 63) / 64, (M + 31) / 32, 1);
-      block = uvec3(128, 1, 1);
-      break;
-
     case MatMulKernelType::GEMV:
-      // y = A @ x ; one simdgroup per output row (M outputs).
-      grid = uvec3(M * 32, 1, 1);
+      grid = uvec3(M, 1, 1);
       block = uvec3(32, 1, 1);
       break;
 
     case MatMulKernelType::GEMV_T:
-      // C = A_row @ B ; MLX-style TM×TN tiled gemv_t. Each tg = 1 simdgroup
-      // (32 threads) outputs SN*TN = 16 consecutive columns. Total tgs =
-      // ceil(N / 16).
-      grid = uvec3(((N + 15) / 16) * 32, 1, 1);
+      grid = uvec3((N + 15) / 16, 1, 1);
       block = uvec3(32, 1, 1);
       break;
+
+    default:
+      // Unreachable — Simd*/NT/TN/Mlx_Dense_NAX/Simd_SplitK/SplitK_NAX
+      // were all handled above with `return`.
+      ET_CHECK_MSG(false, "MatMulOp: unhandled kernelType=%d in local-dispatch "
+                          "switch", int(kernelType));
+      return;
   }
 
   // GEMV_T has swapped operand semantics: gemv_t(matrix=B, vector=A, out=C).
   if (kernelType == MatMulKernelType::GEMV_T) {
-    stream->dispatch(kernel, {
-      {B.mutable_data_ptr(), B.nbytes()},  // matrix [K,N]
-      {A.mutable_data_ptr(), A.nbytes()},  // vector [K]
-      {C.mutable_data_ptr(), C.nbytes()},  // output [N]
-      M, K, N
-    }, grid, block);
-  } else {
-    stream->dispatch(kernel, {
-      {A.mutable_data_ptr(), A.nbytes()},
-      {B.mutable_data_ptr(), B.nbytes()},
-      {C.mutable_data_ptr(), C.nbytes()},
-      M, K, N
-    }, grid, block);
-  }
-}
-
-//===----------------------------------------------------------------------===//
-// Kernel Source
-//===----------------------------------------------------------------------===//
-
-// Kernel source: prepend kTileLoadMetalSource so matmul_simd / nt / tn can
-// call cooperativeLoadTileVec4 + cooperativeLoadTileTransposedVec4. Built
-// once into a static std::string. Shared between MatMulOp and
-// BatchedMatMulOp so both can reference matmul_simd and bmm kernels.
-static const std::string& matmulKernelSource() {
-  static const std::string source = std::string(kTileLoadMetalSource) + R"(
-#include <metal_stdlib>
-#include <metal_simdgroup_matrix>
-using namespace metal;
-
-constant int TILE_SIZE = 32;
-
-//===----------------------------------------------------------------------===//
-// Naive kernel (fallback for small matrices or older devices)
-//===----------------------------------------------------------------------===//
-
-template<typename T>
-kernel void matmul_naive(
-    device const T* A [[buffer(0)]],
-    device const T* B [[buffer(1)]],
-    device T* C [[buffer(2)]],
-    constant int& M [[buffer(3)]],
-    constant int& K [[buffer(4)]],
-    constant int& N [[buffer(5)]],
-    uint2 gid [[thread_position_in_grid]]) {
-  int row = gid.y;
-  int col = gid.x;
-  if (row >= M || col >= N) return;
-
-  T sum = T(0);
-  for (int k = 0; k < K; k++) {
-    sum += A[row * K + k] * B[k * N + col];
-  }
-  C[row * N + col] = sum;
-}
-
-//===----------------------------------------------------------------------===//
-// Tiled kernel (medium matrices)
-//===----------------------------------------------------------------------===//
-
-template<typename T>
-kernel void matmul_tiled(
-    device const T* A [[buffer(0)]],
-    device const T* B [[buffer(1)]],
-    device T* C [[buffer(2)]],
-    constant int& M [[buffer(3)]],
-    constant int& K [[buffer(4)]],
-    constant int& N [[buffer(5)]],
-    uint2 gid [[thread_position_in_grid]],
-    uint2 tid [[thread_position_in_threadgroup]],
-    uint2 tgid [[threadgroup_position_in_grid]]) {
-
-  threadgroup T As[TILE_SIZE][TILE_SIZE + 1];
-  threadgroup T Bs[TILE_SIZE][TILE_SIZE + 1];
-
-  int row = tgid.y * TILE_SIZE + tid.y;
-  int col = tgid.x * TILE_SIZE + tid.x;
-
-  T sum = T(0);
-
-  for (int tileK = 0; tileK < K; tileK += TILE_SIZE) {
-    int aRow = row;
-    int aCol = tileK + tid.x;
-    As[tid.y][tid.x] = (aRow < M && aCol < K) ? A[aRow * K + aCol] : T(0);
-
-    int bRow = tileK + tid.y;
-    int bCol = col;
-    Bs[tid.y][tid.x] = (bRow < K && bCol < N) ? B[bRow * N + bCol] : T(0);
-
-    threadgroup_barrier(mem_flags::mem_threadgroup);
-
-    for (int k = 0; k < TILE_SIZE && (tileK + k) < K; k++) {
-      sum += As[tid.y][k] * Bs[k][tid.x];
-    }
-
-    threadgroup_barrier(mem_flags::mem_threadgroup);
-  }
-
-  if (row < M && col < N) {
-    C[row * N + col] = sum;
-  }
-}
-
-//===----------------------------------------------------------------------===//
-// MMA helper: run one K-tile of multiply-accumulate using simdgroup_matrix.
-// Loads FRAGS_M A-fragments × FRAGS_N B-fragments from threadgroup memory
-// at (a_row, b_col) within the tile, then performs FRAGS_M × FRAGS_N MMAs
-// into the existing C_frag accumulators.
-//
-// Templating on FRAGS_M / FRAGS_N lets matmul_simd (4×4) and
-// matmul_simd_m32 (4×2) share the inner loop without duplication.
-//===----------------------------------------------------------------------===//
-template <typename T, int FRAGS_M, int FRAGS_N, int SMEM_A_STRIDE, int SMEM_B_STRIDE>
-inline void simdMMAKTile(
-    simdgroup_matrix<T, 8, 8> C_frag[FRAGS_M][FRAGS_N],
-    threadgroup const T* As,   // points at &As_buf[curBuf][a_row][k_off]
-    threadgroup const T* Bs,   // points at &Bs_buf[curBuf][k_off][b_col]
-    int BK_) {
-  for (int k = 0; k < BK_; k += 8) {
-    simdgroup_matrix<T, 8, 8> A_frag[FRAGS_M];
-    #pragma clang loop unroll(full)
-    for (int i = 0; i < FRAGS_M; ++i) {
-      simdgroup_load(A_frag[i], As + i * 8 * SMEM_A_STRIDE + k, SMEM_A_STRIDE);
-    }
-    simdgroup_matrix<T, 8, 8> B_frag[FRAGS_N];
-    #pragma clang loop unroll(full)
-    for (int j = 0; j < FRAGS_N; ++j) {
-      simdgroup_load(B_frag[j], Bs + k * SMEM_B_STRIDE + j * 8, SMEM_B_STRIDE);
-    }
-    #pragma clang loop unroll(full)
-    for (int i = 0; i < FRAGS_M; ++i) {
-      #pragma clang loop unroll(full)
-      for (int j = 0; j < FRAGS_N; ++j) {
-        simdgroup_multiply_accumulate(
-            C_frag[i][j], A_frag[i], B_frag[j], C_frag[i][j]);
-      }
-    }
-  }
-}
-
-//===----------------------------------------------------------------------===//
-// BlockLoader: stateful, MLX-style cooperative tile loader.
-//
-// Drop-in replacement for cooperativeLoadTileVec4 with several improvements:
-//
-//  1) Auto-derives per-thread vec width from (BROWS * BCOLS / tgp_size).
-//     Our cooperativeLoadTileVec4 was hardcoded to vec4 — that meant a
-//     64-thread tg loading a 16x64 tile had to do 4 vec4 loads/thread
-//     (16 elts each); BlockLoader auto-derives vec16 = 1 load/thread.
-//
-//  2) Stateful src pointer + next() advances by one K-tile worth of bytes,
-//     avoiding the per-call (gRow * srcStride + gCol) re-derivation.
-//
-//  3) Branch-free load_safe via predicate SELECT (not predicate FLOW):
-//        tmp_val[j] = src[in_bounds ? offset : 0];
-//        tmp_val[j] = in_bounds ? tmp_val[j] : 0;
-//     The compiler can vectorize fully even at edges, no warp divergence.
-//
-//  4) reduction_dim template flag selects K-direction:
-//        reduction_dim=0 → K is the row dim (B's tile)  → tile_stride = BROWS*src_ld
-//        reduction_dim=1 → K is the col dim (A's tile)  → tile_stride = BCOLS
-//
-//  5) ReadVector POD struct for arbitrary vec_size loads (compiler lowers
-//     to underlying vec4/vec8 instructions).
-//
-// Constraints (static_assert):
-//   BROWS * BCOLS must be divisible by tgp_size  (so n_reads is integer)
-//   BCOLS must be divisible by n_reads           (so TCOLS is integer)
-//
-// dst is supplied per call (load_unsafe / load_safe) so that the same
-// loader instance can target either of two threadgroup buffers in
-// double-buffered K loops.
-//===----------------------------------------------------------------------===//
-
-template <
-    typename T, short BROWS, short BCOLS, short dst_ld,
-    short reduction_dim, short tgp_size>
-struct BlockLoader {
-  static_assert((BROWS * BCOLS) % tgp_size == 0,
-      "BROWS*BCOLS must be divisible by tgp_size");
-
-  // Compile-time-derived shape using enum (Metal does not allow
-  // static constexpr struct members in the default address space; enum
-  // constants work because they have no storage).
-  enum : short {
-    n_reads = (BCOLS * BROWS) / tgp_size,
-    vec_size = n_reads,
-    TCOLS    = BCOLS / n_reads,
-    TROWS    = tgp_size / TCOLS,
-  };
-  static_assert(BCOLS % n_reads == 0,
-      "BCOLS must be divisible by n_reads");
-
-  // Per-thread (bi, bj) within the tile.
-  const int src_ld;
-  const int tile_stride;
-  const short bi;
-  const short bj;
-  device const T* src;
-
-  // POD-sized vector for raw byte copy. Compiler lowers to native vec4/8/16
-  // load/store instructions as appropriate.
-  struct alignas(sizeof(T)) ReadVector {
-    uint8_t v[sizeof(T) * vec_size];
-  };
-
-  inline BlockLoader(device const T* src_, int src_ld_, ushort tid)
-      : src_ld(src_ld_),
-        tile_stride(reduction_dim ? BCOLS : BROWS * src_ld_),
-        bi(tid / TCOLS),
-        bj(vec_size * (tid % TCOLS)),
-        src(src_ + bi * src_ld_ + bj) {}
-
-  // Branch-free load: assumes the entire tile is in-bounds.
-  inline void load_unsafe(threadgroup T* dst) const {
-    threadgroup T* dst_thread = dst + bi * dst_ld + bj;
-    #pragma clang loop unroll(full)
-    for (short i = 0; i < BROWS; i += TROWS) {
-      *((threadgroup ReadVector*)(dst_thread + i * dst_ld)) =
-          *((device const ReadVector*)(src + i * src_ld));
-    }
-  }
-
-  // Bounds-checked load. src_tile_dim = (in-bounds-cols, in-bounds-rows)
-  // for the current tile (computed by caller from M/N/K and tile offsets).
-  // Out-of-bounds elements are zero-filled via predicate SELECT — no
-  // warp divergence even at edges.
-  inline void load_safe(threadgroup T* dst, short2 src_tile_dim) const {
-    threadgroup T* dst_thread = dst + bi * dst_ld + bj;
-    short2 my_dim = src_tile_dim - short2(bj, bi);
-
-    // This thread is entirely past the tile edge → zero-fill.
-    if (my_dim.x <= 0 || my_dim.y <= 0) {
-      #pragma clang loop unroll(full)
-      for (short i = 0; i < BROWS; i += TROWS) {
-        #pragma clang loop unroll(full)
-        for (short j = 0; j < vec_size; ++j) {
-          dst_thread[i * dst_ld + j] = T(0);
-        }
-      }
-      return;
-    }
-
-    bool tmp_idx[vec_size];
-    T tmp_val[vec_size];
-    #pragma clang loop unroll(full)
-    for (short i = 0; i < BROWS; i += TROWS) {
-      #pragma clang loop unroll(full)
-      for (short j = 0; j < vec_size; ++j) {
-        tmp_idx[j] = (i < my_dim.y) && (j < my_dim.x);
-      }
-      // Predicate SELECT for the load: read from a safe address (offset 0)
-      // when out-of-bounds. Avoids reading past the buffer.
-      #pragma clang loop unroll(full)
-      for (short j = 0; j < vec_size; ++j) {
-        tmp_val[j] = src[tmp_idx[j] ? (i * src_ld + j) : 0];
-      }
-      #pragma clang loop unroll(full)
-      for (short j = 0; j < vec_size; ++j) {
-        tmp_val[j] = tmp_idx[j] ? tmp_val[j] : T(0);
-      }
-      #pragma clang loop unroll(full)
-      for (short j = 0; j < vec_size; ++j) {
-        dst_thread[i * dst_ld + j] = tmp_val[j];
-      }
-    }
-  }
-
-  // Advance src to the next K-tile.
-  inline void next() {
-    src += tile_stride;
-  }
-};
-
-//===----------------------------------------------------------------------===//
-// matmul_simd_t: templated GEMM kernel with tunable tile params.
-//
-// Subsumes matmul_simd / matmul_simd_m32 / matmul_nt via template params:
-//   BM, BN, BK   : output / K tile dims (BM,BN multiples of 8; BK multiple of 8)
-//   WM, WN       : simdgroup grid (WM × WN simdgroups per tg, total WM*WN)
-//                  BM must be multiple of WM*8, BN multiple of WN*8.
-//   TRANSPOSE_B  : if true, B is physically [N, K] (logical [K, N]); load via
-//                  the transposed tile loader (used for matmul_nt).
-//
-// Shape constraints enforced via static_assert. Per-simdgroup output sub-tile
-// is (BM/WM) × (BN/WN), broken into FRAGS_M × FRAGS_N fragments of 8×8.
-//
-// Threadgroup layout: WM * WN simdgroups × 32 = total threads.
-//
-// Notes:
-//   - Bounds-checked loaders used everywhere (cooperativeLoadTileVec4 zero-
-//     pads M/N/K edges). For NN-aligned shapes the compiler may DCE the
-//     edge predicates inside the inner loop. We do NOT yet have a separate
-//     "branch-free interior" kernel instantiation (item 3 in the MLX gap
-//     list); deferred for clarity.
-//   - Float accumulator is NOT used here — accumulator type follows T. For
-//     long K reductions in fp16/bf16 this may lose precision; revisit if
-//     accuracy issues appear.
-//===----------------------------------------------------------------------===//
-
-template <typename T, int BM, int BN, int BK, int WM, int WN, bool TRANSPOSE_A, bool TRANSPOSE_B>
-kernel void matmul_simd_t(
-    device const T* A [[buffer(0)]],
-    device const T* B [[buffer(1)]],
-    device T* C [[buffer(2)]],
-    constant int& M [[buffer(3)]],
-    constant int& K [[buffer(4)]],
-    constant int& N [[buffer(5)]],
-    uint3 tgid [[threadgroup_position_in_grid]],
-    uint tid [[thread_index_in_threadgroup]],
-    uint simd_gid [[simdgroup_index_in_threadgroup]],
-    uint simd_lane [[thread_index_in_simdgroup]]) {
-
-  static_assert(BM % (WM * 8) == 0, "BM must be multiple of WM*8");
-  static_assert(BN % (WN * 8) == 0, "BN must be multiple of WN*8");
-  static_assert(BK % 8 == 0,        "BK must be multiple of 8");
-  static_assert(WM * WN >= 1,       "Need at least 1 simdgroup");
-
-  constexpr int NUM_SIMDS = WM * WN;
-  constexpr int NUM_THREADS = NUM_SIMDS * 32;
-  constexpr int SUBROWS_PER_SG = BM / WM;
-  constexpr int SUBCOLS_PER_SG = BN / WN;
-  constexpr int FRAGS_M = SUBROWS_PER_SG / 8;
-  constexpr int FRAGS_N = SUBCOLS_PER_SG / 8;
-  constexpr int PAD = 4;
-  constexpr int SMEM_A = BK + PAD;
-  constexpr int SMEM_B = BN + PAD;
-
-  A += int(tgid.z) * M * K;
-  B += int(tgid.z) * K * N;
-  C += int(tgid.z) * M * N;
-
-  const int tileRow = int(tgid.y) * BM;
-  const int tileCol = int(tgid.x) * BN;
-
-  const int simd_m = int(simd_gid) / WN;
-  const int simd_n = int(simd_gid) % WN;
-  const int subRow = tileRow + simd_m * SUBROWS_PER_SG;
-  const int subCol = tileCol + simd_n * SUBCOLS_PER_SG;
-
-  threadgroup T As[2][BM][SMEM_A];
-  threadgroup T Bs[2][BK][SMEM_B];
-
-  simdgroup_matrix<T, 8, 8> C_frag[FRAGS_M][FRAGS_N];
-  #pragma clang loop unroll(full)
-  for (int i = 0; i < FRAGS_M; ++i) {
-    #pragma clang loop unroll(full)
-    for (int j = 0; j < FRAGS_N; ++j) {
-      C_frag[i][j] = simdgroup_matrix<T, 8, 8>(0);
-    }
-  }
-
-  // BlockLoader for A (used unless TRANSPOSE_A; constructed unconditionally
-  // for simplicity — the unused state is just a few register slots).
-  // For TRANSPOSE_A=true, A is logically [M, K] but stored as [K, M]; loaded
-  // via cooperativeLoadTileTransposedVec4 directly (stateless).
-  BlockLoader<T, BM, BK, SMEM_A, /*reduction_dim=*/1, NUM_THREADS>
-      loader_a(A + tileRow * K, K, tid);
-
-  const bool m_aligned = (tileRow + BM <= M);
-  const bool n_aligned = (tileCol + BN <= N);
-  const int  m_inb     = m_aligned ? BM : (M - tileRow);
-  const int  n_inb     = n_aligned ? BN : (N - tileCol);
-
-  // A-load helper: dispatches to BlockLoader (NN/NT) or transposed helper (TN).
-  // BUF_IDX = 0 or 1 (which double-buffer slot); k_off = K-tile starting
-  // offset; k_inb = in-bounds K count for this tile.
-  #define LOAD_A_TILE(BUF_IDX, k_off, k_inb)                                        \
-    do {                                                                            \
-      if (TRANSPOSE_A) {                                                            \
-        /* A is physical [K,M], stride M; load logical [BM,BK] tile */              \
-        cooperativeLoadTileTransposedVec4<T, BM, BK, SMEM_A, NUM_THREADS>(          \
-            As[(BUF_IDX)], A, K, M, M, (k_off), tileRow, tid);                      \
-      } else if (m_aligned && (k_inb) == BK) {                                      \
-        loader_a.load_unsafe(&As[(BUF_IDX)][0][0]);                                 \
-      } else {                                                                      \
-        loader_a.load_safe(&As[(BUF_IDX)][0][0], short2((k_inb), m_inb));           \
-      }                                                                             \
-    } while (0)
-
-  if (TRANSPOSE_B) {
-    // Initial loads: A (NN or TN-transposed) + B via existing transposed helper.
-    LOAD_A_TILE(0, 0, min(int(BK), K));
-    cooperativeLoadTileTransposedVec4<T, BK, BN, SMEM_B, NUM_THREADS>(
-        Bs[0], B, K, N, K, 0, tileCol, tid);
-  } else {
-    // BlockLoader for B (non-transposed): K is the ROW dim.
-    BlockLoader<T, BK, BN, SMEM_B, /*reduction_dim=*/0, NUM_THREADS>
-        loader_b(B + tileCol, N, tid);
-
-    LOAD_A_TILE(0, 0, min(int(BK), K));
-    if (n_aligned && BK <= K) loader_b.load_unsafe(&Bs[0][0][0]);
-    else loader_b.load_safe(&Bs[0][0][0],
-                            short2(n_inb, min(int(BK), K)));
-
-    threadgroup_barrier(mem_flags::mem_threadgroup);
-
-    const int numKTiles = (K + BK - 1) / BK;
-
-    for (int t = 0; t < numKTiles; t++) {
-      int curBuf = t & 1;
-      int nextBuf = curBuf ^ 1;
-
-      if (t + 1 < numKTiles) {
-        if (!TRANSPOSE_A) loader_a.next();
-        loader_b.next();
-        int nextTileK = (t + 1) * BK;
-        int k_inb = min(int(BK), K - nextTileK);
-        LOAD_A_TILE(nextBuf, nextTileK, k_inb);
-        if (n_aligned && k_inb == BK) loader_b.load_unsafe(&Bs[nextBuf][0][0]);
-        else loader_b.load_safe(&Bs[nextBuf][0][0], short2(n_inb, k_inb));
-      }
-
-      simdMMAKTile<T, FRAGS_M, FRAGS_N, SMEM_A, SMEM_B>(
-          C_frag,
-          &As[curBuf][simd_m * SUBROWS_PER_SG][0],
-          &Bs[curBuf][0][simd_n * SUBCOLS_PER_SG],
-          BK);
-
-      threadgroup_barrier(mem_flags::mem_threadgroup);
-    }
-
-    #pragma clang loop unroll(full)
-    for (int i = 0; i < FRAGS_M; ++i) {
-      #pragma clang loop unroll(full)
-      for (int j = 0; j < FRAGS_N; ++j) {
-        int outRow = subRow + i * 8;
-        int outCol = subCol + j * 8;
-        if (outRow < M && outCol < N) {
-          simdgroup_store(C_frag[i][j], C + outRow * N + outCol, N);
-        }
-      }
-    }
+    stream->setInput(0, B.const_data_ptr(), B.nbytes());   // matrix [K,N]
+    stream->setInput(1, A.const_data_ptr(), A.nbytes());   // vector [K]
+    stream->setOutput(2, C.mutable_data_ptr(), C.nbytes()); // output [N]
+    stream->setBytes<int32_t>(3, M);
+    stream->setBytes<int32_t>(4, K);
+    stream->setBytes<int32_t>(5, N);
+    stream->dispatch(kernel, grid, block);
     return;
   }
 
-  // ========== TRANSPOSE_B=true K-loop ==========
-
-  threadgroup_barrier(mem_flags::mem_threadgroup);
-
-  const int numKTiles = (K + BK - 1) / BK;
-
-  for (int t = 0; t < numKTiles; t++) {
-    int curBuf = t & 1;
-    int nextBuf = curBuf ^ 1;
-
-    if (t + 1 < numKTiles) {
-      if (!TRANSPOSE_A) loader_a.next();
-      int nextTileK = (t + 1) * BK;
-      int k_inb = min(int(BK), K - nextTileK);
-      LOAD_A_TILE(nextBuf, nextTileK, k_inb);
-      cooperativeLoadTileTransposedVec4<T, BK, BN, SMEM_B, NUM_THREADS>(
-          Bs[nextBuf], B, K, N, K, nextTileK, tileCol, tid);
-    }
-
-    simdMMAKTile<T, FRAGS_M, FRAGS_N, SMEM_A, SMEM_B>(
-        C_frag,
-        &As[curBuf][simd_m * SUBROWS_PER_SG][0],
-        &Bs[curBuf][0][simd_n * SUBCOLS_PER_SG],
-        BK);
-
-    threadgroup_barrier(mem_flags::mem_threadgroup);
-  }
-
-  #pragma clang loop unroll(full)
-  for (int i = 0; i < FRAGS_M; ++i) {
-    #pragma clang loop unroll(full)
-    for (int j = 0; j < FRAGS_N; ++j) {
-      int outRow = subRow + i * 8;
-      int outCol = subCol + j * 8;
-      if (outRow < M && outCol < N) {
-        simdgroup_store(C_frag[i][j], C + outRow * N + outCol, N);
-      }
-    }
-  }
-  #undef LOAD_A_TILE
-}
-
-//===----------------------------------------------------------------------===//
-// Simdgroup helpers
-//===----------------------------------------------------------------------===//
-
-// Sum-reduce a per-lane value across the 32-lane simdgroup using the
-// shuffle-down ladder. After this, lane 0 holds the total; other lanes hold
-// partial sums (don't rely on them).
-//
-// Note: simd_shuffle_down has overloads for float/half/int but NOT bfloat,
-// so any kernel that uses this can't be instantiated for bfloat directly —
-// see gemv below. Kernels that don't need cross-lane reduction (e.g. the
-// new gemv_t) work for bfloat too.
-template<typename T>
-inline T simdReduceSum(T x) {
-  #pragma clang loop unroll(full)
-  for (int offset = 16; offset > 0; offset /= 2) {
-    x += simd_shuffle_down(x, ushort(offset));
-  }
-  return x;
-}
-
-// Sum-reduce a per-lane value across a SUBSET of lanes within the simdgroup
-// — specifically, lanes whose IDs differ only in some upper-stride bits.
-// `stride` is the smallest distance between two lanes that should be merged
-// (= the count of "fast" lanes that don't participate). `log2_count` is
-// the number of merges = log2(participating lane count).
-//
-// Example layout: lane_id = sm * SN + sn, with sm in [0, SM) and sn in
-// [0, SN). To reduce across SM lanes (different sm values, same sn), use
-// stride=SN and log2_count=log2(SM). After the call, lanes with sm == 0
-// hold the reduced total for their sn group; other sm lanes hold garbage.
-template<typename T>
-inline T simdReduceSumStrided(T x, ushort stride, ushort log2_count) {
-  for (ushort i = 0; i < log2_count; ++i) {
-    x += simd_shuffle_down(x, ushort(stride << i));
-  }
-  return x;
-}
-
-//===----------------------------------------------------------------------===//
-// matmul_simd_addmm_t: NN matmul with FUSED bias add (epilogue fusion).
-//
-// CURRENTLY BROKEN — kept as a starting point for a future session.
-//
-// Problem: MSL's simdgroup_matrix does NOT support the '+' binary operator,
-// so the naive `simdgroup_store(C_frag[i][j] + bias_frag, ...)` fails to
-// compile. To make this work we'd need one of:
-//
-//   1) Store C_frag to TGSM via simdgroup_store, then have each thread
-//      do a scalar bias-add load→store pass to global C. ~30 LOC + ~16KB
-//      additional TGSM (overlay-able with the As/Bs buffers since K-loop
-//      is done; would need a union or careful sequencing).
-//
-//   2) Use simdgroup_multiply_accumulate(out, identity, bias_frag, C_frag)
-//      where identity is an 8x8 identity matrix loaded from a TGSM constant.
-//      Requires constructing the identity (no built-in MSL constructor).
-//
-//   3) Switch to a per-fragment lane-aware scalar epilogue using
-//      simd_shuffle to gather bias values per lane.
-//
-// All three are real options. Approach 1 is simplest correct;
-// approach 2 keeps everything in registers (best perf); approach 3 is the
-// most general (easy to extend to other epilogue ops like ReLU/SiLU).
-//
-// Additional non-kernel work needed for end-to-end addmm:
-//   - aoti_torch_mps_addmm_out shim function (AOTI C ABI boundary)
-//   - Update partition allow-list to include aten::addmm
-//   - Make decompose_linear_pass conditional on whether v2 supports addmm
-//
-// For now: this kernel template body is the un-fused matmul (no bias),
-// kept compiled so the AddMMOp class wiring remains in place. It will
-// produce INCORRECT results (matmul without the bias add) if invoked.
-// Since AOTI rejects addmm at export time today (no shim), this is not
-// reachable from any test or model. Marked TODO for future work.
-//===----------------------------------------------------------------------===//
-
-template <typename T, int BM, int BN, int BK, int WM, int WN>
-kernel void matmul_simd_addmm_t(
-    device const T* A [[buffer(0)]],
-    device const T* B [[buffer(1)]],
-    device T* C [[buffer(2)]],
-    constant int& M [[buffer(3)]],
-    constant int& K [[buffer(4)]],
-    constant int& N [[buffer(5)]],
-    device const T* BIAS [[buffer(6)]],
-    constant int& bias_stride_m [[buffer(7)]],
-    uint3 tgid [[threadgroup_position_in_grid]],
-    uint tid [[thread_index_in_threadgroup]],
-    uint simd_gid [[simdgroup_index_in_threadgroup]],
-    uint simd_lane [[thread_index_in_simdgroup]]) {
-
-  (void)BIAS;            // unused while bias-fusion is TODO (see header)
-  (void)bias_stride_m;
-
-  static_assert(BM % (WM * 8) == 0, "BM must be multiple of WM*8");
-  static_assert(BN % (WN * 8) == 0, "BN must be multiple of WN*8");
-  static_assert(BK % 8 == 0,        "BK must be multiple of 8");
-
-  constexpr int NUM_SIMDS = WM * WN;
-  constexpr int NUM_THREADS = NUM_SIMDS * 32;
-  constexpr int SUBROWS_PER_SG = BM / WM;
-  constexpr int SUBCOLS_PER_SG = BN / WN;
-  constexpr int FRAGS_M = SUBROWS_PER_SG / 8;
-  constexpr int FRAGS_N = SUBCOLS_PER_SG / 8;
-  constexpr int PAD = 4;
-  constexpr int SMEM_A = BK + PAD;
-  constexpr int SMEM_B = BN + PAD;
-
-  A += int(tgid.z) * M * K;
-  B += int(tgid.z) * K * N;
-  C += int(tgid.z) * M * N;
-
-  const int tileRow = int(tgid.y) * BM;
-  const int tileCol = int(tgid.x) * BN;
-  const int simd_m = int(simd_gid) / WN;
-  const int simd_n = int(simd_gid) % WN;
-  const int subRow = tileRow + simd_m * SUBROWS_PER_SG;
-  const int subCol = tileCol + simd_n * SUBCOLS_PER_SG;
-
-  threadgroup T As[2][BM][SMEM_A];
-  threadgroup T Bs[2][BK][SMEM_B];
-
-  simdgroup_matrix<T, 8, 8> C_frag[FRAGS_M][FRAGS_N];
-  #pragma clang loop unroll(full)
-  for (int i = 0; i < FRAGS_M; ++i) {
-    #pragma clang loop unroll(full)
-    for (int j = 0; j < FRAGS_N; ++j) {
-      C_frag[i][j] = simdgroup_matrix<T, 8, 8>(0);
-    }
-  }
-
-  BlockLoader<T, BM, BK, SMEM_A, /*reduction_dim=*/1, NUM_THREADS>
-      loader_a(A + tileRow * K, K, tid);
-  BlockLoader<T, BK, BN, SMEM_B, /*reduction_dim=*/0, NUM_THREADS>
-      loader_b(B + tileCol, N, tid);
-
-  const bool m_aligned = (tileRow + BM <= M);
-  const bool n_aligned = (tileCol + BN <= N);
-  const int  m_inb     = m_aligned ? BM : (M - tileRow);
-  const int  n_inb     = n_aligned ? BN : (N - tileCol);
-
-  if (m_aligned && BK <= K) loader_a.load_unsafe(&As[0][0][0]);
-  else loader_a.load_safe(&As[0][0][0], short2(min(int(BK), K), m_inb));
-  if (n_aligned && BK <= K) loader_b.load_unsafe(&Bs[0][0][0]);
-  else loader_b.load_safe(&Bs[0][0][0], short2(n_inb, min(int(BK), K)));
-
-  threadgroup_barrier(mem_flags::mem_threadgroup);
-
-  const int numKTiles = (K + BK - 1) / BK;
-
-  for (int t = 0; t < numKTiles; t++) {
-    int curBuf = t & 1;
-    int nextBuf = curBuf ^ 1;
-
-    if (t + 1 < numKTiles) {
-      loader_a.next();
-      loader_b.next();
-      int nextTileK = (t + 1) * BK;
-      int k_inb = min(int(BK), K - nextTileK);
-      if (m_aligned && k_inb == BK) loader_a.load_unsafe(&As[nextBuf][0][0]);
-      else loader_a.load_safe(&As[nextBuf][0][0], short2(k_inb, m_inb));
-      if (n_aligned && k_inb == BK) loader_b.load_unsafe(&Bs[nextBuf][0][0]);
-      else loader_b.load_safe(&Bs[nextBuf][0][0], short2(n_inb, k_inb));
-    }
-
-    simdMMAKTile<T, FRAGS_M, FRAGS_N, SMEM_A, SMEM_B>(
-        C_frag,
-        &As[curBuf][simd_m * SUBROWS_PER_SG][0],
-        &Bs[curBuf][0][simd_n * SUBCOLS_PER_SG],
-        BK);
-
-    threadgroup_barrier(mem_flags::mem_threadgroup);
-  }
-
-  // TODO: bias-add epilogue (see header comment for the 3 implementation
-  // options). For now this just stores the unfused matmul accumulator.
-  #pragma clang loop unroll(full)
-  for (int i = 0; i < FRAGS_M; ++i) {
-    #pragma clang loop unroll(full)
-    for (int j = 0; j < FRAGS_N; ++j) {
-      int outRow = subRow + i * 8;
-      int outCol = subCol + j * 8;
-      if (outRow < M && outCol < N) {
-        simdgroup_store(C_frag[i][j], C + outRow * N + outCol, N);
-      }
-    }
-  }
-}
-
-//===----------------------------------------------------------------------===//
-// GEMV: Matrix-vector (N=1)
-//===----------------------------------------------------------------------===//
-
-template<typename T>
-kernel void gemv(
-    device const T* A [[buffer(0)]],
-    device const T* x [[buffer(1)]],
-    device T* y [[buffer(2)]],
-    constant int& M [[buffer(3)]],
-    constant int& K [[buffer(4)]],
-    constant int& N [[buffer(5)]],
-    uint gid [[thread_position_in_grid]],
-    uint simd_lane [[thread_index_in_simdgroup]]) {
-
-  int row = gid / 32;
-  if (row >= M) return;
-
-  T sum = T(0);
-  for (int k = simd_lane; k < K; k += 32) {
-    sum += A[row * K + k] * x[k];
-  }
-  sum = simdReduceSum(sum);
-  if (simd_lane == 0) {
-    y[row] = sum;
-  }
-}
-
-//===----------------------------------------------------------------------===//
-// GEMV transposed: y = A^T @ x, A is [K, N] row-major, x is [K], y is [N].
-// Used when M==1 in matmul (autoregressive decode).
-//
-// Design follows MLX's GEMVTKernel (mlx/backend/metal/kernels/gemv_masked.h):
-// Per-thread tile of TM K-rows × TN N-cols. Simdgroup is laid out as
-// SM × SN lanes (SM*SN=32) splitting the K dimension SM ways and the N
-// dimension SN ways. After the K loop, partial sums are reduced across
-// the SM K-lanes via simd_shuffle_down (handled by simdReduceSumStrided).
-//
-//   tg layout       : 1 simdgroup = 32 threads
-//   per-thread tile : TM=4 K-rows × TN=4 N-cols
-//   simdgroup tile  : SM=8 K-lanes × SN=4 N-lanes -> 32*TM K-rows / iter,
-//                     SN*TN=16 output cols / simdgroup
-//   tg per N        : ceil(N / 16)
-//
-// Why TM×TN instead of "lane-per-col scalar":
-//   - More work per thread (16 fmas/iter vs 1) -> better load amortization,
-//     better ILP on the FMA pipeline.
-//   - K split SM=8 ways within the simdgroup -> 8x less per-thread K work
-//     for the same K, so scales to large K without becoming latency-bound.
-//   - Same memory pattern (lanes within a simdgroup access consecutive N
-//     cols for fixed K row) -> still fully coalesced.
-//
-// Accumulator promoted to float so reduction works for bf16 (Metal's
-// simd_shuffle_down has no bfloat overload).
-//===----------------------------------------------------------------------===//
-
-template<typename T>
-kernel void gemv_t(
-    device const T* A [[buffer(0)]],
-    device const T* x [[buffer(1)]],
-    device T* y [[buffer(2)]],
-    constant int& M [[buffer(3)]],
-    constant int& K [[buffer(4)]],
-    constant int& N [[buffer(5)]],
-    uint3 tgid [[threadgroup_position_in_grid]],
-    uint simd_lane [[thread_index_in_simdgroup]]) {
-
-  constexpr int SM = 8;
-  constexpr int SN = 4;
-  constexpr int TM = 4;
-  constexpr int TN = 4;
-  static_assert(SM * SN == 32, "simdgroup must have 32 lanes");
-  constexpr int BLOCK_K = SM * TM;   // K rows consumed per outer iter (32)
-  constexpr int COLS_PER_SG = SN * TN;  // output cols per simdgroup (16)
-
-  // Lane decomposition: sn is fast (changes every lane), sm is slow.
-  ushort sn = simd_lane % SN;
-  ushort sm = simd_lane / SN;
-
-  // Each tg owns COLS_PER_SG consecutive output columns. This thread's TN
-  // contiguous cols start here.
-  int col_base = int(tgid.x) * COLS_PER_SG + int(sn) * TN;
-  if (col_base >= N) return;
-
-  // Per-thread accumulators in float for accuracy + bf16-safe reduction.
-  float results[TN] = {0.0f, 0.0f, 0.0f, 0.0f};
-
-  // Determine in-bounds TN for THIS thread (uniform across the K loop).
-  // Branch-free inner loop relies on this being checked once.
-  int valid_tn = TN;
-  if (col_base + TN > N) {
-    valid_tn = N - col_base;  // 1..TN-1; we still wrote 'return' above for col_base >= N
-  }
-
-  // Whole BLOCK_K chunks (no per-K bounds check needed).
-  int k_full = (K / BLOCK_K) * BLOCK_K;
-  for (int k_block = 0; k_block < k_full; k_block += BLOCK_K) {
-    int k_start = k_block + int(sm) * TM;
-
-    float x_vals[TM];
-    #pragma clang loop unroll(full)
-    for (int tm = 0; tm < TM; ++tm) {
-      x_vals[tm] = float(x[k_start + tm]);
-    }
-    if (valid_tn == TN) {
-      // Hot path: full TN cols. Branch-free inner loop.
-      #pragma clang loop unroll(full)
-      for (int tm = 0; tm < TM; ++tm) {
-        int kk = k_start + tm;
-        #pragma clang loop unroll(full)
-        for (int tn = 0; tn < TN; ++tn) {
-          results[tn] += float(A[kk * N + col_base + tn]) * x_vals[tm];
-        }
-      }
-    } else {
-      // Edge tg: partial TN. Bounds-check tn; tm is fully in range.
-      #pragma clang loop unroll(full)
-      for (int tm = 0; tm < TM; ++tm) {
-        int kk = k_start + tm;
-        for (int tn = 0; tn < valid_tn; ++tn) {
-          results[tn] += float(A[kk * N + col_base + tn]) * x_vals[tm];
-        }
-      }
-    }
-  }
-
-  // K tail: remaining K rows < BLOCK_K (only when K is not a multiple of 32).
-  if (k_full < K) {
-    int k_start = k_full + int(sm) * TM;
-    if (k_start < K) {
-      int tm_max = min(TM, K - k_start);
-      for (int tm = 0; tm < tm_max; ++tm) {
-        float xv = float(x[k_start + tm]);
-        for (int tn = 0; tn < valid_tn; ++tn) {
-          results[tn] += float(A[(k_start + tm) * N + col_base + tn]) * xv;
-        }
-      }
-    }
-  }
-
-  // Reduce across SM K-lanes (different sm, same sn). After this, lanes
-  // with sm == 0 hold the total; other sm lanes hold garbage.
-  #pragma clang loop unroll(full)
-  for (int tn = 0; tn < TN; ++tn) {
-    results[tn] = simdReduceSumStrided(results[tn], ushort(SN), ushort(3));
-  }
-
-  // First K-lane writes the in-bounds cols.
-  if (sm == 0) {
-    for (int tn = 0; tn < valid_tn; ++tn) {
-      y[col_base + tn] = T(results[tn]);
-    }
-  }
-}
-
-//===----------------------------------------------------------------------===//
-// Template instantiations
-//===----------------------------------------------------------------------===//
-
-template [[host_name("matmul_naive_f32")]] kernel void matmul_naive<float>(device const float*, device const float*, device float*, constant int&, constant int&, constant int&, uint2);
-template [[host_name("matmul_naive_f16")]] kernel void matmul_naive<half>(device const half*, device const half*, device half*, constant int&, constant int&, constant int&, uint2);
-template [[host_name("matmul_naive_bf16")]] kernel void matmul_naive<bfloat>(device const bfloat*, device const bfloat*, device bfloat*, constant int&, constant int&, constant int&, uint2);
-
-template [[host_name("matmul_tiled_f32")]] kernel void matmul_tiled<float>(device const float*, device const float*, device float*, constant int&, constant int&, constant int&, uint2, uint2, uint2);
-template [[host_name("matmul_tiled_f16")]] kernel void matmul_tiled<half>(device const half*, device const half*, device half*, constant int&, constant int&, constant int&, uint2, uint2, uint2);
-template [[host_name("matmul_tiled_bf16")]] kernel void matmul_tiled<bfloat>(device const bfloat*, device const bfloat*, device bfloat*, constant int&, constant int&, constant int&, uint2, uint2, uint2);
-
-// matmul_simd_t instantiations. Kernel name encodes tile params so the
-// host can compose the name from a TileSpec at dispatch time.
-//   matmul_simd_t_<BM>_<BN>_<BK>_<WM>_<WN>_<n|t>_<dtype>
-//
-// Currently registered:
-//   (32, 64, 32, 1, 4, n) — replicates matmul_simd_m32 (16 <= M < 64)
-//   (64, 64, 16, 2, 2, n) — replicates matmul_simd          (M >= 64, NN)
-//   (64, 64, 16, 2, 2, t) — replicates matmul_nt            (M >= 64, NT)
-// Each combo × 3 dtypes = 9 total. Add more here as we build out per-shape
-// or per-dtype tile tables. Each one adds compiled .metallib bytes; only
-// register what we'll route to.
-template [[host_name("matmul_simd_t_32_64_32_1_4_n_f32")]] kernel void matmul_simd_t<float,    32, 64, 32, 1, 4, false, false>(device const float*, device const float*, device float*, constant int&, constant int&, constant int&, uint3, uint, uint, uint);
-template [[host_name("matmul_simd_t_32_64_32_1_4_n_f16")]] kernel void matmul_simd_t<half,     32, 64, 32, 1, 4, false, false>(device const half*,  device const half*,  device half*,  constant int&, constant int&, constant int&, uint3, uint, uint, uint);
-template [[host_name("matmul_simd_t_32_64_32_1_4_n_bf16")]] kernel void matmul_simd_t<bfloat,  32, 64, 32, 1, 4, false, false>(device const bfloat*,device const bfloat*,device bfloat*,constant int&, constant int&, constant int&, uint3, uint, uint, uint);
-
-template [[host_name("matmul_simd_t_64_64_16_2_2_n_f32")]] kernel void matmul_simd_t<float,    64, 64, 16, 2, 2, false, false>(device const float*, device const float*, device float*, constant int&, constant int&, constant int&, uint3, uint, uint, uint);
-template [[host_name("matmul_simd_t_64_64_16_2_2_n_f16")]] kernel void matmul_simd_t<half,     64, 64, 16, 2, 2, false, false>(device const half*,  device const half*,  device half*,  constant int&, constant int&, constant int&, uint3, uint, uint, uint);
-template [[host_name("matmul_simd_t_64_64_16_2_2_n_bf16")]] kernel void matmul_simd_t<bfloat,  64, 64, 16, 2, 2, false, false>(device const bfloat*,device const bfloat*,device bfloat*,constant int&, constant int&, constant int&, uint3, uint, uint, uint);
-
-template [[host_name("matmul_simd_t_64_64_16_2_2_t_f32")]] kernel void matmul_simd_t<float,    64, 64, 16, 2, 2, false, true>(device const float*, device const float*, device float*, constant int&, constant int&, constant int&, uint3, uint, uint, uint);
-template [[host_name("matmul_simd_t_64_64_16_2_2_t_f16")]] kernel void matmul_simd_t<half,     64, 64, 16, 2, 2, false, true>(device const half*,  device const half*,  device half*,  constant int&, constant int&, constant int&, uint3, uint, uint, uint);
-template [[host_name("matmul_simd_t_64_64_16_2_2_t_bf16")]] kernel void matmul_simd_t<bfloat,  64, 64, 16, 2, 2, false, true>(device const bfloat*,device const bfloat*,device bfloat*,constant int&, constant int&, constant int&, uint3, uint, uint, uint);
-
-// MLX's "small fp32 NN" tile: bm=64, bn=32, bk=32, wm=2, wn=2.
-// Use for fp32 medium-M cases where Simd's 64x64 tile produces too few
-// tgs (small N relative to M) — the smaller BN doubles tg count along N
-// and the bigger BK halves K-tile barriers.
-template [[host_name("matmul_simd_t_64_32_32_2_2_n_f32")]] kernel void matmul_simd_t<float,    64, 32, 32, 2, 2, false, false>(device const float*, device const float*, device float*, constant int&, constant int&, constant int&, uint3, uint, uint, uint);
-template [[host_name("matmul_simd_t_64_32_32_2_2_n_f16")]] kernel void matmul_simd_t<half,     64, 32, 32, 2, 2, false, false>(device const half*,  device const half*,  device half*,  constant int&, constant int&, constant int&, uint3, uint, uint, uint);
-template [[host_name("matmul_simd_t_64_32_32_2_2_n_bf16")]] kernel void matmul_simd_t<bfloat,  64, 32, 32, 2, 2, false, false>(device const bfloat*,device const bfloat*,device bfloat*,constant int&, constant int&, constant int&, uint3, uint, uint, uint);
-
-// TN instantiations: TRANSPOSE_A=true, TRANSPOSE_B=false. A is physically
-// stored [K, M] (column-contiguous from PyTorch's view) and loaded via the
-// transposed helper; B is loaded normally.
-//   matmul_simd_t_<BM>_<BN>_<BK>_<WM>_<WN>_tn_<dtype>
-template [[host_name("matmul_simd_t_64_64_16_2_2_tn_f32")]] kernel void matmul_simd_t<float,    64, 64, 16, 2, 2, true, false>(device const float*, device const float*, device float*, constant int&, constant int&, constant int&, uint3, uint, uint, uint);
-template [[host_name("matmul_simd_t_64_64_16_2_2_tn_f16")]] kernel void matmul_simd_t<half,     64, 64, 16, 2, 2, true, false>(device const half*,  device const half*,  device half*,  constant int&, constant int&, constant int&, uint3, uint, uint, uint);
-template [[host_name("matmul_simd_t_64_64_16_2_2_tn_bf16")]] kernel void matmul_simd_t<bfloat,  64, 64, 16, 2, 2, true, false>(device const bfloat*,device const bfloat*,device bfloat*,constant int&, constant int&, constant int&, uint3, uint, uint, uint);
-
-// Fused matmul+bias kernel (NN, single 64x64 tile). Used by AddMMOp.
-template [[host_name("matmul_simd_addmm_t_64_64_16_2_2_f32")]] kernel void matmul_simd_addmm_t<float,    64, 64, 16, 2, 2>(device const float*, device const float*, device float*, constant int&, constant int&, constant int&, device const float*, constant int&, uint3, uint, uint, uint);
-template [[host_name("matmul_simd_addmm_t_64_64_16_2_2_f16")]] kernel void matmul_simd_addmm_t<half,     64, 64, 16, 2, 2>(device const half*,  device const half*,  device half*,  constant int&, constant int&, constant int&, device const half*,  constant int&, uint3, uint, uint, uint);
-template [[host_name("matmul_simd_addmm_t_64_64_16_2_2_bf16")]] kernel void matmul_simd_addmm_t<bfloat,  64, 64, 16, 2, 2>(device const bfloat*,device const bfloat*,device bfloat*,constant int&, constant int&, constant int&, device const bfloat*,constant int&, uint3, uint, uint, uint);
-
-template [[host_name("gemv_f32")]] kernel void gemv<float>(device const float*, device const float*, device float*, constant int&, constant int&, constant int&, uint, uint);
-template [[host_name("gemv_f16")]] kernel void gemv<half>(device const half*, device const half*, device half*, constant int&, constant int&, constant int&, uint, uint);
-// NOTE: no gemv_bf16: Metal's simd_shuffle_down used inside gemv<T> has no
-// bfloat overload (only float/half/int), and instantiating gemv<bfloat>
-// would fail to compile the whole shader source — taking down every other
-// _bf16 kernel with it. MatMulOp::selectKernel only picks GEMV when N==1,
-// which our test models don't hit. If you need bf16 GEMV, refactor the
-// kernel to promote to float for the simd reduction.
-
-template [[host_name("gemv_t_f32")]] kernel void gemv_t<float>(device const float*, device const float*, device float*, constant int&, constant int&, constant int&, uint3, uint);
-template [[host_name("gemv_t_f16")]] kernel void gemv_t<half>(device const half*, device const half*, device half*, constant int&, constant int&, constant int&, uint3, uint);
-template [[host_name("gemv_t_bf16")]] kernel void gemv_t<bfloat>(device const bfloat*, device const bfloat*, device bfloat*, constant int&, constant int&, constant int&, uint3, uint);
-// gemv_t_bf16 works because the float accumulator + simdReduceSumStrided
-// promotes to float for the cross-lane reduction (Metal's
-// simd_shuffle_down has no bfloat overload).
-
-//===----------------------------------------------------------------------===//
-// matmul_tensor_ops — Metal 4 tensor_ops::matmul2d (Apple9+ / M3+ only)
-//
-// Uses the Apple-blessed pattern from example_matmul_metal4: each threadgroup
-// computes one BMxBN output tile via tensor_ops::matmul2d with
-// execution_simdgroups<4> (= 128 threads/threadgroup). K is dynamic so a
-// single kernel handles arbitrary K (K must still be a multiple of 16,
-// enforced by host dispatch).
-//
-// Gated on __METAL_VERSION__ >= 410 (MSL 4.1, ships with macOS 26 / iOS 26).
-// On older MSL versions this entire block is skipped so other kernels still
-// compile.
-//===----------------------------------------------------------------------===//
-// Note: dropped the __METAL_VERSION__ gate during debugging — re-add once the
-// runtime macro for MSL 4.1 is confirmed.
-#include <metal_tensor>
-#include <MetalPerformancePrimitives/MetalPerformancePrimitives.h>
-
-template <typename T>
-kernel void matmul_tensor_ops(
-    device T* A_buf [[buffer(0)]],
-    device T* B_buf [[buffer(1)]],
-    device T* C_buf [[buffer(2)]],
-    constant int& M [[buffer(3)]],
-    constant int& K [[buffer(4)]],
-    constant int& N [[buffer(5)]],
-    uint2 tgid [[threadgroup_position_in_grid]])
-{
-  using namespace mpp::tensor_ops;
-  constexpr int BM = 64;
-  constexpr int BN = 64;
-  constexpr int BK = 16;  // matmul2d's inner K-tile size
-
-  // Build inline tensors from raw buffer pointers + runtime dims.
-  // dextents arg order: (cols, rows) so the second dim is the M axis.
-  auto A = metal::tensor<device T, metal::dextents<int32_t, 2>, metal::tensor_inline>(
-      A_buf, metal::dextents<int32_t, 2>(K, M));
-  auto B = metal::tensor<device T, metal::dextents<int32_t, 2>, metal::tensor_inline>(
-      B_buf, metal::dextents<int32_t, 2>(N, K));
-  auto C = metal::tensor<device T, metal::dextents<int32_t, 2>, metal::tensor_inline>(
-      C_buf, metal::dextents<int32_t, 2>(N, M));
-
-  // Two ops: init (mode::multiply, overwrites C tile) + accumulate
-  // (mode::multiply_accumulate, += into C tile). matmul2d processes BK=16
-  // K-elements per run() call -> we loop K/BK times.
-  constexpr auto desc_init = matmul2d_descriptor(
-      BM, BN, BK,
-      false, false, false,
-      matmul2d_descriptor::mode::multiply);
-  constexpr auto desc_acc = matmul2d_descriptor(
-      BM, BN, BK,
-      false, false, false,
-      matmul2d_descriptor::mode::multiply_accumulate);
-  matmul2d<desc_init, metal::execution_simdgroups<4>> mm_init;
-  matmul2d<desc_acc,  metal::execution_simdgroups<4>> mm_acc;
-
-  auto c_tile = C.slice(tgid.x * BN, tgid.y * BM);
-
-  // First K-tile: initialize C
-  {
-    auto a = A.slice(0, tgid.y * BM);
-    auto b = B.slice(tgid.x * BN, 0);
-    mm_init.run(a, b, c_tile);
-  }
-  // Remaining K-tiles: accumulate
-  for (int k = BK; k < K; k += BK) {
-    auto a = A.slice(k, tgid.y * BM);
-    auto b = B.slice(tgid.x * BN, k);
-    mm_acc.run(a, b, c_tile);
-  }
-}
-
-template [[host_name("matmul_tensor_ops_f32")]] kernel void matmul_tensor_ops<float>(device float*, device float*, device float*, constant int&, constant int&, constant int&, uint2);
-template [[host_name("matmul_tensor_ops_f16")]] kernel void matmul_tensor_ops<half>(device half*, device half*, device half*, constant int&, constant int&, constant int&, uint2);
-template [[host_name("matmul_tensor_ops_bf16")]] kernel void matmul_tensor_ops<bfloat>(device bfloat*, device bfloat*, device bfloat*, constant int&, constant int&, constant int&, uint2);
-
-//===----------------------------------------------------------------------===//
-// Naive batched matmul fallback (small problems where SIMD MMA has poor
-// occupancy). [B, M, K] @ [B, K, N] -> [B, M, N], one thread per output.
-//===----------------------------------------------------------------------===//
-template<typename T>
-kernel void bmm(
-    device const T* A [[buffer(0)]],
-    device const T* B [[buffer(1)]],
-    device T* C [[buffer(2)]],
-    constant int& batch [[buffer(3)]],
-    constant int& M [[buffer(4)]],
-    constant int& K [[buffer(5)]],
-    constant int& N [[buffer(6)]],
-    constant int& A_batch_stride [[buffer(7)]],
-    constant int& B_batch_stride [[buffer(8)]],
-    constant int& C_batch_stride [[buffer(9)]],
-    uint3 gid [[thread_position_in_grid]]) {
-  int col = gid.x;
-  int row = gid.y;
-  int b = gid.z;
-  if (row >= M || col >= N || b >= batch) return;
-  device const T* A_b = A + b * A_batch_stride;
-  device const T* B_b = B + b * B_batch_stride;
-  device T* C_b = C + b * C_batch_stride;
-  T sum = T(0);
-  for (int k = 0; k < K; k++) sum += A_b[row * K + k] * B_b[k * N + col];
-  C_b[row * N + col] = sum;
-}
-
-template [[host_name("bmm_f32")]] kernel void bmm<float>(device const float*, device const float*, device float*, constant int&, constant int&, constant int&, constant int&, constant int&, constant int&, constant int&, uint3);
-template [[host_name("bmm_f16")]] kernel void bmm<half>(device const half*, device const half*, device half*, constant int&, constant int&, constant int&, constant int&, constant int&, constant int&, constant int&, uint3);
-template [[host_name("bmm_bf16")]] kernel void bmm<bfloat>(device const bfloat*, device const bfloat*, device bfloat*, constant int&, constant int&, constant int&, constant int&, constant int&, constant int&, constant int&, uint3);
-)";
-  return source;
+  // Naive / Tiled / TensorOps / GEMV: simple 6-arg ABI.
+  stream->setInput(0, A.const_data_ptr(), A.nbytes());
+  stream->setInput(1, B.const_data_ptr(), B.nbytes());
+  stream->setOutput(2, C.mutable_data_ptr(), C.nbytes());
+  stream->setBytes<int32_t>(3, M);
+  stream->setBytes<int32_t>(4, K);
+  stream->setBytes<int32_t>(5, N);
+  stream->dispatch(kernel, grid, block);
 }
 
 const char* MatMulOp::kernelSource() const {
-  return matmulKernelSource().c_str();
-}
-
-//===----------------------------------------------------------------------===//
-// AddMMOp (aten::addmm) — fused bias-matmul.
-//
-// Schema: addmm(input, mat1, mat2, *, beta=1, alpha=1) -> Tensor
-//   inputs[0] = input (bias) [M, N] OR broadcast (commonly [N])
-//   inputs[1] = mat1 [M, K]
-//   inputs[2] = mat2 [K, N]
-//   inputs[3] = beta (Scalar, default 1) — IGNORED, must be 1 for now
-//   inputs[4] = alpha (Scalar, default 1) — IGNORED, must be 1 for now
-//
-// Constraints (currently enforced — caller must satisfy or use mm + add):
-//   - mat1 row-contiguous, mat2 row-contiguous (NN layout)
-//   - bias is [M, N] contiguous OR [N] (1D-broadcast)
-//   - beta == alpha == 1
-//
-// Falls through to MatMulOp's plain matmul kernel + a separate elementwise
-// add IF those constraints don't hold (rare in practice for nn.Linear).
-//===----------------------------------------------------------------------===//
-
-std::vector<SizesType> AddMMOp::computeOutputShape(
-    EValuePtrSpan inputs) const {
-  if (inputs.size() < 3 || !inputs[1]->isTensor() || !inputs[2]->isTensor()) {
-    return {};
-  }
-  const auto& mat1 = inputs[1]->toTensor();
-  const auto& mat2 = inputs[2]->toTensor();
-  return {static_cast<SizesType>(mat1.size(0)),
-          static_cast<SizesType>(mat2.size(1))};
-}
-
-void AddMMOp::dispatch(
-    MetalStream* stream,
-    EValuePtrSpan inputs,
-    EValuePtrSpan outputs) {
-
-  if (inputs.size() < 3) {
-    ET_LOG(Error, "AddMMOp: expected at least 3 inputs (input, mat1, mat2)");
-    return;
-  }
-
-  auto& bias = inputs[0]->toTensor();
-  auto& A    = inputs[1]->toTensor();
-  auto& B    = inputs[2]->toTensor();
-  auto& C    = outputs[0]->toTensor();
-
-  auto err = resizeOutput(inputs, outputs[0]);
-  if (err != Error::Ok) {
-    ET_LOG(Error, "AddMMOp: failed to resize output");
-    return;
-  }
-
-  // For unsupported alpha/beta or non-NN layouts: fall back to plain matmul
-  // followed by an elementwise add. (Unimplemented; just error for now —
-  // PyTorch's addmm with default scalars + nn.Linear bias hits the fast path.)
-  const bool aRC = isRowContiguous(A);
-  const bool bRC = isRowContiguous(B);
-  if (!aRC || !bRC) {
-    ET_LOG(Error, "AddMMOp: only NN layout (both row-contiguous) is supported "
-                  "currently; got A.RC=%d B.RC=%d", aRC, bRC);
-    return;
-  }
-
-  int32_t M = static_cast<int32_t>(A.size(0));
-  int32_t K = static_cast<int32_t>(A.size(1));
-  int32_t N = static_cast<int32_t>(B.size(1));
-  ScalarType dtype = C.scalar_type();
-
-  // Determine bias stride pattern. Two supported cases:
-  //  1) bias is 2D [M, N] contiguous → stride_m = N
-  //  2) bias is 1D [N] (broadcasts across M rows) → stride_m = 0
-  // We detect via dim() == 1; for 2D we trust it's contiguous (PyTorch addmm
-  // requires this OR will broadcast-expand before reaching us).
-  int32_t bias_stride_m;
-  if (bias.dim() == 1) {
-    if (bias.size(0) != N) {
-      ET_LOG(Error, "AddMMOp: 1D bias dim mismatch (got %lld, expected %d)",
-             (long long)bias.size(0), N);
-      return;
-    }
-    bias_stride_m = 0;  // same row repeated
-  } else if (bias.dim() == 2 && bias.size(0) == M && bias.size(1) == N) {
-    bias_stride_m = N;
-  } else {
-    ET_LOG(Error, "AddMMOp: unsupported bias shape (dim=%zd)",
-           (ptrdiff_t)bias.dim());
-    return;
-  }
-
-  std::string kname =
-      std::string("matmul_simd_addmm_t_64_64_16_2_2_") + dtypeSuffix(dtype);
-  auto* kernel = getKernel(stream, kname.c_str());
-
-  ET_LOG(Info,
-         "AddMMOp: M=%d K=%d N=%d bias_stride_m=%d kernel=%s",
-         M, K, N, bias_stride_m, kname.c_str());
-
-  // Same dispatch grid as the Simd 64x64 MM tile.
-  uvec3 grid((N + 63) / 64, (M + 63) / 64, 1);
-  uvec3 block(128, 1, 1);
-
-  stream->dispatch(kernel, {
-    {A.mutable_data_ptr(), A.nbytes()},
-    {B.mutable_data_ptr(), B.nbytes()},
-    {C.mutable_data_ptr(), C.nbytes()},
-    M, K, N,
-    {bias.mutable_data_ptr(), bias.nbytes()},
-    bias_stride_m
-  }, grid, block);
-}
-
-const char* AddMMOp::kernelSource() const {
-  // The addmm kernel template lives inside the same source string as
-  // matmul_simd_t — both are compiled from matmulKernelSource(). Reuse it.
-  return matmulKernelSource().c_str();
-}
-
-//===----------------------------------------------------------------------===//
-// BatchedMatMulOp (aten::bmm) - [B, M, K] @ [B, K, N] -> [B, M, N]
-//===----------------------------------------------------------------------===//
-
-std::vector<SizesType> BatchedMatMulOp::computeOutputShape(
-    EValuePtrSpan inputs) const {
-
-  if (inputs.size() < 2 || !inputs[0]->isTensor() || !inputs[1]->isTensor()) {
-    return {};
-  }
-
-  auto& A = inputs[0]->toTensor();  // [B, M, K]
-  auto& B = inputs[1]->toTensor();  // [B, K, N]
-
-  if (A.dim() != 3 || B.dim() != 3) {
-    return {};
-  }
-
-  SizesType batch = A.size(0);
-  SizesType M = A.size(1);
-  SizesType N = B.size(2);
-
-  return {batch, M, N};
-}
-
-void BatchedMatMulOp::dispatch(
-    MetalStream* stream,
-    EValuePtrSpan inputs,
-    EValuePtrSpan outputs) {
-
-  auto& A = inputs[0]->toTensor();  // [B, M, K]
-  auto& B = inputs[1]->toTensor();  // [B, K, N]
-  auto& C = outputs[0]->toTensor(); // [B, M, N]
-
-  auto err = resizeOutput(inputs, outputs[0]);
-  if (err != Error::Ok) {
-    ET_LOG(Error, "BatchedMatMulOp: failed to resize output");
-    return;
-  }
-
-  if (!isRowContiguous(A) || !isRowContiguous(B)) {
-    // Broadcast tolerated below; non-broadcast non-contig is an error.
-    if (!(isRowContiguous(A) && B.strides().size() >= 1 && B.strides()[0] == 0)) {
-      ET_LOG(Error, "BatchedMatMulOp: inputs must be row-contiguous (or B broadcast over batch)");
-      return;
-    }
-  }
-
-  int32_t batch = static_cast<int32_t>(A.size(0));
-  int32_t M = static_cast<int32_t>(A.size(1));
-  int32_t K = static_cast<int32_t>(A.size(2));
-  int32_t N = static_cast<int32_t>(B.size(2));
-
-  ScalarType dtype = C.scalar_type();
-
-  //----------------------------------------------------------------------
-  // Broadcast fast path: if B's per-batch stride is 0, B is just [K, N]
-  // replicated across batch. The whole bmm collapses to one 2D matmul:
-  //     (batch*M, K) @ (K, N)  ->  (batch*M, N)
-  // Bigger M => better tile occupancy, single kernel launch, and we get
-  // to ride MatMulOp's full ladder including TensorOps when aligned.
-  // (Not normally hit by aten::bmm — torch.bmm requires both operands to
-  // have an explicit batch dim — but defensive in case an upstream pass
-  // emits this pattern.)
-  //----------------------------------------------------------------------
-  if (B.strides().size() >= 1 && B.strides()[0] == 0 && batch > 1 &&
-      isRowContiguous(A)) {
-    int32_t M2 = batch * M;
-
-    // Mirror MatMulOp's kernel-selection ladder (size + Apple9 family).
-    auto* metalStream = static_cast<MetalStream*>(stream);
-    const bool canTensorOps =
-        metalStream && metalStream->device() &&
-        [metalStream->device() supportsFamily:MTLGPUFamilyApple9] &&
-        (M2 % 64 == 0) && (N % 64 == 0) && (K % 16 == 0) &&
-        (dtype == ScalarType::Float || dtype == ScalarType::Half ||
-         dtype == ScalarType::BFloat16);
-
-    std::string kname;
-    uvec3 grid, block;
-    if (canTensorOps) {
-      kname = std::string("matmul_tensor_ops_") + dtypeSuffix(dtype);
-      grid = uvec3((N + 63) / 64, (M2 + 63) / 64, 1);
-      block = uvec3(128, 1, 1);
-    } else if (M2 >= 64 && N >= 64 && K >= 16) {
-      kname = std::string("matmul_simd_") + dtypeSuffix(dtype);
-      grid = uvec3((N + 63) / 64, (M2 + 63) / 64, 1);
-      block = uvec3(128, 1, 1);
-    } else if (M2 >= 32 && N >= 32) {
-      kname = std::string("matmul_tiled_") + dtypeSuffix(dtype);
-      grid = uvec3((N + 31) / 32, (M2 + 31) / 32, 1);
-      block = uvec3(32, 32, 1);
-    } else {
-      kname = std::string("matmul_naive_") + dtypeSuffix(dtype);
-      grid = uvec3((N + 7) / 8, (M2 + 7) / 8, 1);
-      block = uvec3(8, 8, 1);
-    }
-
-    ET_LOG(Info,
-           "BatchedMatMulOp: broadcast collapse batch=%d M=%d->%d K=%d N=%d kernel=%s",
-           batch, M, M2, K, N, kname.c_str());
-
-    auto* kernel = getKernel(stream, kname.c_str());
-    stream->dispatch(kernel, {
-      {A.mutable_data_ptr(), A.nbytes()},
-      {B.mutable_data_ptr(), B.nbytes()},
-      {C.mutable_data_ptr(), C.nbytes()},
-      M2, K, N
-    }, grid, block);
-    return;
-  }
-
-  // Prefer the SIMD MMA kernel (with tgid.z = batch) for large enough tiles;
-  // fall back to the naive batched kernel for small problems where SIMD
-  // would have low occupancy. matmul_simd assumes contiguous batched layout
-  // (A_stride = M*K, etc), which our row-contiguous check above guarantees.
-  const bool useSimd = (M >= 64) && (N >= 64) && (K >= 16);
-
-  if (useSimd) {
-    std::string kname = std::string("matmul_simd_") + dtypeSuffix(dtype);
-    auto* kernel = getKernel(stream, kname.c_str());
-    ET_LOG(Info, "BatchedMatMulOp: simd batch=%d M=%d K=%d N=%d",
-           batch, M, K, N);
-    uvec3 grid((N + 63) / 64, (M + 63) / 64, batch);
-    uvec3 block(128, 1, 1);
-    stream->dispatch(kernel, {
-      {A.mutable_data_ptr(), A.nbytes()},
-      {B.mutable_data_ptr(), B.nbytes()},
-      {C.mutable_data_ptr(), C.nbytes()},
-      M, K, N
-    }, grid, block);
-    return;
-  }
-
-  // Naive fallback (small problems).
-  int32_t A_batch_stride = M * K;
-  int32_t B_batch_stride = K * N;
-  int32_t C_batch_stride = M * N;
-  std::string kname = std::string("bmm_") + dtypeSuffix(dtype);
-  auto* kernel = getKernel(stream, kname.c_str());
-  ET_LOG(Info, "BatchedMatMulOp: naive batch=%d M=%d K=%d N=%d",
-         batch, M, K, N);
-  uvec3 grid((N + 7) / 8, (M + 7) / 8, batch);
-  uvec3 block(8, 8, 1);
-  stream->dispatch(kernel, {
-    {A.mutable_data_ptr(), A.nbytes()},
-    {B.mutable_data_ptr(), B.nbytes()},
-    {C.mutable_data_ptr(), C.nbytes()},
-    batch, M, K, N,
-    A_batch_stride, B_batch_stride, C_batch_stride
-  }, grid, block);
-}
-
-const char* BatchedMatMulOp::kernelSource() const {
-  // Share the full kernel source with MatMulOp so we can use both
-  // matmul_simd_<dtype> (fast path) and bmm_<dtype> (naive fallback).
   return matmulKernelSource().c_str();
 }
 

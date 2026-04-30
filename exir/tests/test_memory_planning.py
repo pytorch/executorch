@@ -673,51 +673,69 @@ class TestMisc(unittest.TestCase):
 
         et = to_edge(export(model, inputs, strict=True)).to_executorch()
 
-        # The mutable buffer (5x5 float32 = 100 bytes) should not be double allocated.
-        # The input and output of copy_ should share the same memory location.
-        values = et.executorch_program.execution_plan[0].values
-        expected_buffer_size = 5 * 5 * 4  # 5x5 float32
+        # The mutable buffer (5x5 float32 = 100 bytes) should not be
+        # double allocated. After the upstream emit dedup
+        # (`_emit_spec` reusing value_id when two FX nodes share a
+        # TensorSpec via the planner's `_alias_inplace_result_specs`),
+        # the `copy_` writeback's "out" arg uses the SAME value_id as
+        # its "self" arg (the buffer), rather than creating a separate
+        # Value at the same (mem_id, offset).
+        execution_plan = et.executorch_program.execution_plan[0]
+        values = execution_plan.values
 
-        # Collect all tensor allocations by their (memory_id, offset) and track sizes
-        # Size is computed from tensor's sizes and scalar_type, not from allocation_info
-        # (memory_offset_low/high are low/high 32-bit parts of a 64-bit offset, not bounds)
-        scalar_type_sizes = {
-            0: 1,  # BYTE
-            1: 1,  # CHAR
-            2: 2,  # SHORT
-            3: 4,  # INT
-            4: 8,  # LONG
-            5: 2,  # HALF
-            6: 4,  # FLOAT
-            7: 8,  # DOUBLE
-        }
-        offset_to_indices = {}
-        for i, val in enumerate(values):
-            tensor = val.val
-            if hasattr(tensor, "allocation_info") and tensor.allocation_info:
-                alloc = tensor.allocation_info
-                # Compute tensor size from sizes and scalar_type
-                num_elements = 1
-                for dim in tensor.sizes:
-                    num_elements *= dim
-                element_size = scalar_type_sizes.get(int(tensor.scalar_type), 4)
-                size = num_elements * element_size
-                key = (alloc.memory_id, alloc.memory_offset)
-                if key not in offset_to_indices:
-                    offset_to_indices[key] = {"indices": [], "size": size}
-                offset_to_indices[key]["indices"].append(i)
+        # Find the `copy_` writeback instruction.
+        copy_instructions = []
+        for chain in execution_plan.chains:
+            for ins in chain.instructions:
+                inner = ins.instr_args
+                if hasattr(inner, "op_index"):
+                    op = execution_plan.operators[inner.op_index]
+                    if op.name == "aten::copy_":
+                        copy_instructions.append(inner)
+        self.assertEqual(
+            len(copy_instructions),
+            1,
+            "Expected exactly one copy_ writeback for the buffer mutation",
+        )
 
-        # Find shared allocations matching the mutable buffer size (before/after copy_)
-        mutable_buffer_shares = [
-            info
-            for info in offset_to_indices.values()
-            if len(info["indices"]) == 2 and info["size"] == expected_buffer_size
+        # For an in-place copy_(self, src, ..., out), self (arg 0) and
+        # out (the emitted synthetic last arg) must share a value_id
+        # per the `(a!)` schema annotation. Emit's spec2id_dict
+        # dedup enforces this.
+        copy_args = list(copy_instructions[0].args)
+        self.assertEqual(
+            copy_args[0],
+            copy_args[-1],
+            f"copy_'s out arg should reference the same value_id as its "
+            f"self arg (buffer) via emit dedup. args={copy_args}",
+        )
+
+        # Additionally verify no distinct second Value at the buffer's
+        # (mem_id, offset): after dedup, the buffer occupies its slot alone.
+        buffer_value_id = copy_args[0]
+        buffer_val = values[buffer_value_id].val
+        self.assertTrue(
+            hasattr(buffer_val, "allocation_info") and buffer_val.allocation_info,
+            "Buffer value should have allocation_info",
+        )
+        buffer_alloc = buffer_val.allocation_info
+        duplicates_at_buffer_slot = [
+            i
+            for i, val in enumerate(values)
+            if i != buffer_value_id
+            and hasattr(val.val, "allocation_info")
+            and val.val.allocation_info
+            and val.val.allocation_info.memory_id == buffer_alloc.memory_id
+            and val.val.allocation_info.memory_offset == buffer_alloc.memory_offset
         ]
         self.assertEqual(
-            len(mutable_buffer_shares),
-            1,
-            f"Expected exactly one shared allocation of size {expected_buffer_size} "
-            f"with 2 values (copy_ input/output), found: {mutable_buffer_shares}",
+            duplicates_at_buffer_slot,
+            [],
+            f"Expected no other Values at the buffer's allocation "
+            f"(mem_id={buffer_alloc.memory_id}, "
+            f"offset={buffer_alloc.memory_offset}); emit dedup should "
+            f"collapse placeholder + writeback into one value_id. "
+            f"Found duplicates at indices: {duplicates_at_buffer_slot}",
         )
 
     def test_mutable_buffers_infinite_lifespan(self) -> None:

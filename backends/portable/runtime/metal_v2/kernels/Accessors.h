@@ -10,7 +10,6 @@
 
 // Shared Metal-shader-side helpers for index decoding (strided / broadcast
 // access). Mirrors mlx/backend/metal/kernels/utils.h.
-//
 // Usage from a host .mm:
 //   #include "metal_v2/kernels/Accessors.h"
 //   const char* MyOp::kernelSource() const {
@@ -20,7 +19,6 @@
 //     )";
 //     return source.c_str();
 //   }
-//
 // All helpers use `int` strides (matches our host conversion in OpUtils
 // where strides are i32 by the time they reach the kernel).
 
@@ -31,11 +29,9 @@ namespace metal_v2 {
 inline constexpr const char* kAccessorsMetalSource = R"METAL(
 //===----------------------------------------------------------------------===//
 // WorkPerThread<T>
-//
 // How many elements each thread should process in elementwise kernels.
 // Smaller dtypes -> more elements/thread for better memory throughput.
 // Mirrors mlx::WorkPerThread.
-//
 // MUST stay in sync with the host-side OpUtils::workPerThread(dtype).
 //===----------------------------------------------------------------------===//
 
@@ -47,11 +43,9 @@ template <>           struct WorkPerThread<short>  { static constant constexpr i
 
 //===----------------------------------------------------------------------===//
 // elemToLoc family
-//
 // Convert a flat element index (or a multi-dim grid position) into a strided
 // byte/element offset into a tensor's underlying buffer. Mirrors MLX's
 // elem_to_loc_* in mlx/backend/metal/kernels/utils.h.
-//
 // Convention: shape[ndim - 1] is the innermost dimension.
 // Strides may be 0 to express broadcasting along that dimension.
 //===----------------------------------------------------------------------===//
@@ -90,7 +84,6 @@ inline int elemToLoc3(uint3 elem, constant const int strides[3]) {
 
 //===----------------------------------------------------------------------===//
 // elemToLocBinary / elemToLocTernary
-//
 // Decode the same flat elem against multiple inputs at once (binary/ternary
 // general kernels). Returns one offset per input.
 //===----------------------------------------------------------------------===//

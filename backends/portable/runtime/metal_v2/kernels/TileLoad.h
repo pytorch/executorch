@@ -11,9 +11,7 @@
 // Shared Metal-shader-side helpers for cooperative tile loading from
 // device memory into threadgroup memory. Used by GEMM-style kernels
 // (matmul_simd, matmul_nt, matmul_tn, conv2d, etc).
-//
 // Mirrors the load loops in mlx/backend/metal/kernels/steel/gemm/loader.h.
-//
 // Usage from a host .mm:
 //   #include "metal_v2/kernels/TileLoad.h"
 //   const char* MyOp::kernelSource() const {
@@ -30,18 +28,14 @@ namespace metal_v2 {
 inline constexpr const char* kTileLoadMetalSource = R"METAL(
 //===----------------------------------------------------------------------===//
 // cooperativeLoadTileVec4
-//
 // Cooperatively load a ROWS x COLS tile from row-major device memory `src`
 // (full tensor of size srcRows x srcCols, row stride `srcStride`) into a
 // padded threadgroup-memory tile `smem` of shape ROWS x SMEM_STRIDE.
-//
 // The tile origin in `src` is (baseRow, baseCol). NUM_THREADS threads
 // (typically a full threadgroup of 128) cooperate; each thread loads
 // ceil(ROWS*COLS/4 / NUM_THREADS) vec<T,4> chunks.
-//
 // Vectorized (vec<T,4>) load is used when the 4-element column block is
 // fully in bounds; scalar fallback handles the boundary tile.
-//
 // Constraints:
 //   - COLS must be a multiple of 4
 //   - SMEM_STRIDE >= COLS (the extra columns are usually padding to avoid
@@ -89,15 +83,12 @@ inline void cooperativeLoadTileVec4(
 
 //===----------------------------------------------------------------------===//
 // cooperativeLoadTileTransposedVec4
-//
 // Same as cooperativeLoadTileVec4 but loads a logical ROWS x COLS tile from
 // a PHYSICALLY TRANSPOSED source: src is stored as [srcCols x srcRows] (i.e.
 // src[c * srcStride + r] = logical(r, c)). srcStride is the physical row
 // stride (in elements) of src, which equals the logical row count.
-//
 // Used by matmul_nt (loads B which is logically [K, N] but stored [N, K])
 // and matmul_tn (loads A which is logically [M, K] but stored [K, M]).
-//
 // Vec4 coalescing: we vectorize along the PHYSICAL row direction (= logical
 // row direction), so each thread loads 4 logical rows for one logical col.
 // This requires ROWS to be a multiple of 4.

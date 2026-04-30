@@ -35,7 +35,7 @@ std::string BinaryOp::kernelName(ElementwiseVariant variant, ScalarType dtype) c
 //===----------------------------------------------------------------------===//
 
 std::vector<SizesType> BinaryOp::computeOutputShape(
-    EValuePtrSpan inputs) const {
+    ::executorch::runtime::Span<::executorch::runtime::EValue*> inputs) const {
 
   if (inputs.size() < 2 || !inputs[0]->isTensor() || !inputs[1]->isTensor()) {
     return {};
@@ -64,8 +64,8 @@ std::vector<SizesType> BinaryOp::computeOutputShape(
 
 void BinaryOp::dispatch(
     MetalStream* stream,
-    EValuePtrSpan inputs,
-    EValuePtrSpan outputs) {
+    ::executorch::runtime::Span<::executorch::runtime::EValue*> inputs,
+    ::executorch::runtime::Span<::executorch::runtime::EValue*> outputs) {
 
   auto& a = inputs[0]->toTensor();
   auto& b = inputs[1]->toTensor();
@@ -84,33 +84,52 @@ void BinaryOp::dispatch(
   auto* kernel = getKernel(stream, kname.c_str());
   size_t numel = out.numel();
 
-  ET_LOG(Info, "BinaryOp::dispatch(%s): variant=%s, kernel=%s, numel=%zu",
-         name(), variantPrefix(variant), kname.c_str(), numel);
+  // audit H2 fix: alpha was previously hardcoded to 1.0f. For
+  // aten::add(a, b, alpha=k) lowered through this path, the kernel was
+  // computing a + b instead of a + alpha*b. Read the alpha scalar from
+  // inputs[2] (PyTorch's standard arg order: self, other, alpha) when
+  // hasAlpha() is true and a 3rd input EValue is present.
+  float alpha = 1.0f;
+  if (hasAlpha() && inputs.size() >= 3 && inputs[2] != nullptr) {
+    auto* alpha_ev = inputs[2];
+    if (alpha_ev->isScalar()) {
+      auto s = alpha_ev->toScalar();
+      // Scalar may carry int or float; both convert to float for the kernel.
+      if (s.isFloatingPoint()) {
+        alpha = static_cast<float>(s.to<double>());
+      } else if (s.isIntegral(/*includeBool=*/false)) {
+        alpha = static_cast<float>(s.to<int64_t>());
+      }
+    } else if (alpha_ev->isDouble()) {
+      alpha = static_cast<float>(alpha_ev->toDouble());
+    } else if (alpha_ev->isInt()) {
+      alpha = static_cast<float>(alpha_ev->toInt());
+    }
+  }
+
+  ET_LOG(Debug, "BinaryOp::dispatch(%s): variant=%s, kernel=%s, numel=%zu, alpha=%g",
+         name(), variantPrefix(variant), kname.c_str(), numel, alpha);
 
   constexpr uint32_t blockSize = 256;
   // Kernels are templated on N = WorkPerThread<T>::n; pick the matching N
   // here so the host launch matches the kernel's per-thread work.
   const uint32_t elemPerThread = static_cast<uint32_t>(workPerThread(dtype));
 
+  // typed-setter migration. Use const_data_ptr() for read-only inputs;
+  // mutable_data_ptr() only for outputs. Setters express semantic role and
+  // feed R8.1 hazard tracker.
   switch (variant) {
     case ElementwiseVariant::ScalarScalar: {
+      stream->setInput(0, a.const_data_ptr(), a.nbytes());
+      stream->setInput(1, b.const_data_ptr(), b.nbytes());
+      stream->setOutput(2, out.mutable_data_ptr(), out.nbytes());
       if (hasAlpha()) {
-        float alpha = 1.0f;
-        stream->dispatch(kernel, {
-          {a.mutable_data_ptr(), a.nbytes()},
-          {b.mutable_data_ptr(), b.nbytes()},
-          {out.mutable_data_ptr(), out.nbytes()},
-          alpha,
-          static_cast<uint32_t>(numel)
-        }, uvec3(1, 1, 1), uvec3(1, 1, 1));
+        stream->setBytes<float>(3, alpha);
+        stream->setBytes<uint32_t>(4, static_cast<uint32_t>(numel));
       } else {
-        stream->dispatch(kernel, {
-          {a.mutable_data_ptr(), a.nbytes()},
-          {b.mutable_data_ptr(), b.nbytes()},
-          {out.mutable_data_ptr(), out.nbytes()},
-          static_cast<uint32_t>(numel)
-        }, uvec3(1, 1, 1), uvec3(1, 1, 1));
+        stream->setBytes<uint32_t>(3, static_cast<uint32_t>(numel));
       }
+      stream->dispatch(kernel, uvec3(1, 1, 1), uvec3(1, 1, 1));
       break;
     }
 
@@ -118,31 +137,27 @@ void BinaryOp::dispatch(
     case ElementwiseVariant::VectorScalar:
     case ElementwiseVariant::VectorVector: {
       uint32_t gridX = (uint32_t)((numel + elemPerThread * blockSize - 1) / (elemPerThread * blockSize));
-
+      stream->setInput(0, a.const_data_ptr(), a.nbytes());
+      stream->setInput(1, b.const_data_ptr(), b.nbytes());
+      stream->setOutput(2, out.mutable_data_ptr(), out.nbytes());
       if (hasAlpha()) {
-        float alpha = 1.0f;
-        stream->dispatch(kernel, {
-          {a.mutable_data_ptr(), a.nbytes()},
-          {b.mutable_data_ptr(), b.nbytes()},
-          {out.mutable_data_ptr(), out.nbytes()},
-          alpha,
-          static_cast<uint32_t>(numel)
-        }, uvec3(gridX, 1, 1), uvec3(blockSize, 1, 1));
+        stream->setBytes<float>(3, alpha);
+        stream->setBytes<uint32_t>(4, static_cast<uint32_t>(numel));
       } else {
-        stream->dispatch(kernel, {
-          {a.mutable_data_ptr(), a.nbytes()},
-          {b.mutable_data_ptr(), b.nbytes()},
-          {out.mutable_data_ptr(), out.nbytes()},
-          static_cast<uint32_t>(numel)
-        }, uvec3(gridX, 1, 1), uvec3(blockSize, 1, 1));
+        stream->setBytes<uint32_t>(3, static_cast<uint32_t>(numel));
       }
+      stream->dispatch(kernel, uvec3(gridX, 1, 1), uvec3(blockSize, 1, 1));
       break;
     }
 
     case ElementwiseVariant::General: {
       auto out_shape = computeOutputShape(inputs);
-      auto a_strides_full = broadcastStrides(a.sizes(), out_shape);
-      auto b_strides_full = broadcastStrides(b.sizes(), out_shape);
+      // audit H1 fix: pass each input's actual strides() so non-
+      // contiguous tensors going through the General path get correct
+      // broadcast strides (instead of strides recomputed from shape
+      // assuming contiguous layout).
+      auto a_strides_full = broadcastStrides(a.sizes(), a.strides(), out_shape);
+      auto b_strides_full = broadcastStrides(b.sizes(), b.strides(), out_shape);
 
       // Collapse adjacent dims that are contiguous in BOTH inputs to
       // shrink ndim and reduce per-element index math in the shader.
@@ -156,16 +171,19 @@ void BinaryOp::dispatch(
 
       uint32_t gridX = (uint32_t)((numel + blockSize - 1) / blockSize);
 
-      stream->dispatch(kernel, {
-        {a.mutable_data_ptr(), a.nbytes()},
-        {b.mutable_data_ptr(), b.nbytes()},
-        {out.mutable_data_ptr(), out.nbytes()},
-        {shape_i32.data(), shape_i32.size() * sizeof(int32_t)},
-        {a_strides_i32.data(), a_strides_i32.size() * sizeof(int32_t)},
-        {b_strides_i32.data(), b_strides_i32.size() * sizeof(int32_t)},
-        ndim,
-        static_cast<uint32_t>(numel)
-      }, uvec3(gridX, 1, 1), uvec3(blockSize, 1, 1));
+      // setVectorBytes — snapshot semantics. The vectors are stack-local;
+      // by snapshotting at encode time we avoid the dispatch-cache aliasing
+      // race that legacy inline-bytes args (Arg::INLINE_BYTES, deleted in M6)
+      // were added to fix originally (dyn_shapes_v2 g_add_f32 bug).
+      stream->setInput(0, a.const_data_ptr(), a.nbytes());
+      stream->setInput(1, b.const_data_ptr(), b.nbytes());
+      stream->setOutput(2, out.mutable_data_ptr(), out.nbytes());
+      stream->setVectorBytes<int32_t>(3, shape_i32);
+      stream->setVectorBytes<int32_t>(4, a_strides_i32);
+      stream->setVectorBytes<int32_t>(5, b_strides_i32);
+      stream->setBytes<int32_t>(6, ndim);
+      stream->setBytes<uint32_t>(7, static_cast<uint32_t>(numel));
+      stream->dispatch(kernel, uvec3(gridX, 1, 1), uvec3(blockSize, 1, 1));
       break;
     }
   }
@@ -177,7 +195,6 @@ void BinaryOp::dispatch(
 
 //===----------------------------------------------------------------------===//
 // Kernel Source
-//
 // We prepend metal_v2/kernels/Accessors.h's shared shader helpers (elemToLoc
 // family) to the per-op kernel body. The result is built once into a static
 // std::string and returned by .c_str() so that MetalOp's `const char*` API is

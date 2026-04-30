@@ -27,16 +27,19 @@ class MetalOpRegistry;
 //===----------------------------------------------------------------------===//
 
 class MetalRuntime : public portable::GraphRuntime {
-public:
+ public:
   MetalRuntime();
   ~MetalRuntime() override;
 
   //=== GraphRuntime interface ===
 
-  const char* name() const override { return "MetalRuntime_v2"; }
+  const char* name() const override {
+    return "MetalRuntime_v2";
+  }
   bool is_available() const override;
 
-  bool has_op(const portable::OperatorCall& op, const portable::Graph& graph) const override;
+  bool has_op(const portable::OperatorCall& op, const portable::Graph& graph)
+      const override;
 
   runtime::Error init(
       const portable::Graph& graph,
@@ -62,7 +65,7 @@ public:
 
   void destroy() override;
 
-private:
+ private:
   MetalStream* stream_;
   const portable::Graph* graph_;
   std::vector<portable::ExecutionSegment> segments_;

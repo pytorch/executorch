@@ -20,7 +20,6 @@ namespace metal_v2 {
 
 //===----------------------------------------------------------------------===//
 // MetalOpRegistry — global singleton mapping op-name → MetalOp instance
-//
 // Populated at process start (constructor registers built-in ops). External
 // callers look up ops via MetalOpRegistry::shared().get("aten::add").
 //===----------------------------------------------------------------------===//
@@ -31,9 +30,13 @@ class MetalOpRegistry {
 
   void registerOp(std::unique_ptr<MetalOp> op);
   MetalOp* get(const char* name) const;
-  MetalOp* get(const std::string& name) const { return get(name.c_str()); }
+  MetalOp* get(const std::string& name) const {
+    return get(name.c_str());
+  }
   bool hasOp(const char* name) const;
-  bool hasOp(const std::string& name) const { return hasOp(name.c_str()); }
+  bool hasOp(const std::string& name) const {
+    return hasOp(name.c_str());
+  }
 
  private:
   MetalOpRegistry();

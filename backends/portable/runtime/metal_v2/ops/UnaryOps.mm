@@ -22,8 +22,8 @@ using runtime::Error;
 
 void ReluOp::dispatch(
     MetalStream* stream,
-    EValuePtrSpan inputs,
-    EValuePtrSpan outputs) {
+    ::executorch::runtime::Span<::executorch::runtime::EValue*> inputs,
+    ::executorch::runtime::Span<::executorch::runtime::EValue*> outputs) {
   
   auto& input = inputs[0]->toTensor();
   auto& output = outputs[0]->toTensor();
@@ -39,12 +39,20 @@ void ReluOp::dispatch(
   
   auto* kernel = getKernel(stream, kname.c_str());
   uint32_t numel = static_cast<uint32_t>(input.numel());
-  
-  stream->dispatch(kernel, {
-    {input.mutable_data_ptr(), input.nbytes()},
-    {output.mutable_data_ptr(), output.nbytes()},
-    numel
-  }, computeGrid(output), uvec3(256, 1, 1));
+
+  // (first migrated op): typed setters replace the Arg-union form.
+  // Benefits:
+  //   - Compile-time type checking on the scalar (uint32_t matches the
+  //     kernel's `constant uint& numel` exactly).
+  //   - Semantic role at the call site (setInput vs setOutput) prepares
+  //     hazard tracking so chained ops (mm → relu → mm) automatically
+  //     get barrier-skip optimization on the MTL4 path when independent.
+  //   - input.const_data_ptr() correctly expresses read-only intent
+  //     (was incorrectly using mutable_data_ptr).
+  stream->setInput(0, input.const_data_ptr(), input.nbytes());
+  stream->setOutput(1, output.mutable_data_ptr(), output.nbytes());
+  stream->setBytes<uint32_t>(2, numel);
+  stream->dispatch(kernel, computeGrid(output), uvec3(256, 1, 1));
 }
 
 const char* ReluOp::kernelSource() const {

@@ -42,7 +42,9 @@ MetalHeap::MetalHeap(id<MTLDevice> device, size_t size, bool aliasable) : totalS
   [desc release];
 
   if (heap_) {
-    [heap_ retain];
+    // audit H7 fix: newHeapWithDescriptor: already returns +1 retained
+    // (per Apple's "new*" convention). The previous [heap_ retain] made
+    // it +2; only one [release] in the destructor, so the heap leaked.
     ET_LOG(Info, "MetalHeap: Created %zu MB heap (aliasable=%d)", size / (1024*1024), aliasable);
   } else {
     ET_LOG(Error, "MetalHeap: Failed to create heap");
@@ -80,4 +82,3 @@ id<MTLBuffer> MetalHeap::allocBuffer(size_t size) {
 } // namespace metal_v2
 } // namespace backends
 } // namespace executorch
-

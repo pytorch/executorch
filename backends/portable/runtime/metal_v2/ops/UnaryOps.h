@@ -19,19 +19,21 @@ namespace metal_v2 {
 //===----------------------------------------------------------------------===//
 
 class ReluOp : public MetalOp {
-public:
-  const char* name() const override { return "aten::relu"; }
-  
+ public:
+  const char* name() const override {
+    return "aten::relu";
+  }
+
   bool supports(ScalarType dtype) const override {
     return isFloatingPoint(dtype);
   }
-  
+
   void dispatch(
       MetalStream* stream,
-      EValuePtrSpan inputs,
-      EValuePtrSpan outputs) override;
+      ::executorch::runtime::Span<::executorch::runtime::EValue*> inputs,
+      ::executorch::runtime::Span<::executorch::runtime::EValue*> outputs) override;
 
-protected:
+ protected:
   const char* kernelSource() const override;
 };
 

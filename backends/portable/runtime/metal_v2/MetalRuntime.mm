@@ -22,7 +22,7 @@ using runtime::EValue;
 using runtime::Span;
 
 MetalRuntime::MetalRuntime() : stream_(nullptr), graph_(nullptr) {
-  stream_ = MetalStream::getDefault();
+  stream_ = MetalStream::get();
 }
 
 MetalRuntime::~MetalRuntime() {
@@ -133,8 +133,8 @@ Error MetalRuntime::execute_segment(size_t segment_index, Span<EValue> values) {
     // Dispatch - MetalStream handles replay automatically
     gpuOp->dispatch(
         stream_,
-        MetalOp::EValuePtrSpan(inputs.data(), inputs.size()),
-        MetalOp::EValuePtrSpan(outputs.data(), outputs.size()));
+        ::executorch::runtime::Span<::executorch::runtime::EValue*>(inputs.data(), inputs.size()),
+        ::executorch::runtime::Span<::executorch::runtime::EValue*>(outputs.data(), outputs.size()));
   }
 
   // Note: don't sync here - let dispatches accumulate

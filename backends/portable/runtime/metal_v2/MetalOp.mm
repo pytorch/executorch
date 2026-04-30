@@ -8,6 +8,7 @@
 
 #import "MetalOp.h"
 #include <executorch/runtime/platform/assert.h>
+#include <executorch/backends/portable/runtime/metal_v2/MetalKernelCache.h>
 #include <executorch/backends/portable/runtime/metal_v2/MetalStream.h>
 #include <executorch/runtime/platform/log.h>
 
@@ -21,22 +22,31 @@ using runtime::Error;
 // MetalOp Base Implementation
 //===----------------------------------------------------------------------===//
 
-MetalKernel* MetalOp::getKernel(MetalStream* stream, const char* kernelName) {
-  auto it = kernelCache_.find(kernelName);
-  if (it != kernelCache_.end()) {
-    // Treat a previously cached null as a hard failure too — a cached null
-    // means a prior compile attempt for this name failed.
-    ET_CHECK_MSG(
-        it->second != nullptr,
-        "MetalOp '%s': previously failed to compile kernel '%s' (cached null). "
-        "Most likely the kernel template wasn't instantiated for this dtype "
-        "(check kernelSource() for the missing [[host_name(\"...\")]] entry).",
-        name(), kernelName);
-    return it->second;
-  }
+MetalKernel* MetalOp::getKernel(
+    MetalStream* stream,
+    const char* kernelName,
+    const MetalKernelCompiler::FunctionConstants* constants) {
+  // Cache key includes a hash of kernelSource() so the same kernelName
+  // appearing in different sources (e.g., AOTI's "generated_kernel"
+  // emitted by Inductor for different graphs) doesn't collide. We hash
+  // the source pointer; subclasses are required to return a stable
+  // string-pointer for kernelSource() (typically a string-literal or
+  // static const char[]).
+  const char* source = kernelSource();
+  std::string cacheKey = std::to_string(std::hash<std::string_view>{}(
+                              std::string_view(source))) +
+      "/" + kernelName +
+      (constants ? constants->fingerprint() : std::string{});
 
-  MetalKernel* kernel = stream->compiler()->compile(kernelSource(), kernelName);
-  kernelCache_[kernelName] = kernel;
+  // Process-wide MetalKernelCache (the canonical store). On miss the
+  // factory compiles and the cache atomically takes ownership; concurrent
+  // threads racing the same key see the winner.
+  MetalKernel* kernel = MetalKernelCache::shared().findOrInsert(
+      cacheKey,
+      [&]() {
+        return stream->compiler()->compile(source, kernelName, constants);
+      });
+
   // Hard-fail on missing kernel rather than letting the dispatch silently
   // no-op. The previous behavior just logged at ERROR and returned, which
   // produced numerically wrong results that *looked* like a successful run
@@ -57,7 +67,7 @@ uvec3 MetalOp::computeGrid(const Tensor& output, uint32_t blockSize) const {
 }
 
 Error MetalOp::resizeOutput(
-    EValuePtrSpan inputs,
+    ::executorch::runtime::Span<::executorch::runtime::EValue*> inputs,
     runtime::EValue* output) const {
 
   if (!output->isTensor()) {

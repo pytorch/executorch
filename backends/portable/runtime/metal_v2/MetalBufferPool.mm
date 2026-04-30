@@ -141,4 +141,3 @@ void MetalBufferPool::prewarm(const std::vector<size_t>& sizes) {
 } // namespace metal_v2
 } // namespace backends
 } // namespace executorch
-

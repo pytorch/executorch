@@ -8,6 +8,11 @@
 
 #import "MPSGraphOp.h"
 
+// MPSGraphOp.h's gate fully removes the class declaration when
+// ET_METAL_USE_MPSGRAPH=0; wrap the .mm body in the same gate so the TU
+// compiles to an empty object file in that build mode.
+#if ET_METAL_USE_MPSGRAPH
+
 #include <executorch/runtime/platform/log.h>
 
 #include <atomic>
@@ -55,10 +60,35 @@ NSArray<NSNumber*>* nsShape(const Tensor& t) {
 
 // Wrap an ExecuTorch tensor as MPSGraphTensorData (no copy, no retain on data).
 MPSGraphTensorData* makeTensorData(MetalStream* stream, const Tensor& t) {
-  id<MTLBuffer> buf = stream->bufferForPtr(t.mutable_data_ptr(), t.nbytes());
-  return [[MPSGraphTensorData alloc] initWithMTLBuffer:buf
-                                                  shape:nsShape(t)
-                                               dataType:toMPSDataType(t.scalar_type())];
+  // R8.3: use bufferAndOffsetForPtr so subregion tensors (AOTI workspace
+  // views) bind at the correct byte offset within the parent MTLBuffer.
+  auto bo = stream->bufferAndOffsetForPtr(t.mutable_data_ptr(), t.nbytes());
+  if (bo.offset == 0) {
+    return [[MPSGraphTensorData alloc] initWithMTLBuffer:bo.mtl
+                                                    shape:nsShape(t)
+                                                 dataType:toMPSDataType(t.scalar_type())];
+  }
+  // Non-zero offset path: construct a TensorData rooted at the offset.
+  // MPSGraphTensorData has an MTLBuffer+offset descriptor variant on
+  // macOS 14+; the simpler portable form is to use rowBytes/init that
+  // takes a (buffer, descriptor) pair where the descriptor includes the
+  // offset via the buffer's contents+offset wrapping. We use the
+  // explicit (buffer, shape, dataType, rowBytes) initializer with no
+  // direct offset — fall back to wrapping a sub-region MTLBuffer.
+  // (Apple's MPSGraphTensorData has no public offset-aware init that
+  // takes shape+dataType; create a sub-allocated alias via
+  // newBufferWithBytesNoCopy on the offset host ptr.)
+  void* sub_ptr = static_cast<char*>([bo.mtl contents]) + bo.offset;
+  id<MTLDevice> dev = stream->device();
+  id<MTLBuffer> sub = [dev newBufferWithBytesNoCopy:sub_ptr
+                                              length:t.nbytes()
+                                             options:MTLResourceStorageModeShared
+                                         deallocator:nil];
+  auto* td = [[MPSGraphTensorData alloc] initWithMTLBuffer:sub
+                                                     shape:nsShape(t)
+                                                  dataType:toMPSDataType(t.scalar_type())];
+  [sub release];  // td retains the buffer
+  return td;
 }
 
 }  // anonymous namespace
@@ -75,8 +105,8 @@ MPSGraphOp::~MPSGraphOp() {
 }
 
 std::string MPSGraphOp::cacheKey(
-    EValuePtrSpan inputs,
-    EValuePtrSpan outputs) {
+    ::executorch::runtime::Span<::executorch::runtime::EValue*> inputs,
+    ::executorch::runtime::Span<::executorch::runtime::EValue*> outputs) {
   std::ostringstream oss;
   auto append = [&oss](const Tensor& t) {
     oss << static_cast<int>(t.scalar_type()) << ':';
@@ -91,8 +121,8 @@ std::string MPSGraphOp::cacheKey(
 }
 
 MPSGraphOp::ShapeKey MPSGraphOp::packShapes(
-    EValuePtrSpan inputs,
-    EValuePtrSpan outputs) {
+    ::executorch::runtime::Span<::executorch::runtime::EValue*> inputs,
+    ::executorch::runtime::Span<::executorch::runtime::EValue*> outputs) {
   ShapeKey k;
   size_t n = 0;
   auto pack = [&](const Tensor& t) {
@@ -119,8 +149,8 @@ MPSGraphOp::ShapeKey MPSGraphOp::packShapes(
 
 void MPSGraphOp::dispatch(
     MetalStream* stream,
-    EValuePtrSpan inputs,
-    EValuePtrSpan outputs) {
+    ::executorch::runtime::Span<::executorch::runtime::EValue*> inputs,
+    ::executorch::runtime::Span<::executorch::runtime::EValue*> outputs) {
   // Resize output(s) using the standard helper (subclass may also override
   // computeOutputShape if non-trivial).
   for (auto* outE : outputs) {
@@ -190,8 +220,8 @@ void MPSGraphOp::dispatch(
           makeTensorData(mstream, outputs[i]->toTensor());
     }
 
-    // MetalStream handles all the cross-queue sync, ICB drain, encoder
-    // close, commit-and-continue adopt-back. We just encode our MPSGraph.
+    // MetalStream handles all the cross-queue sync, encoder close,
+    // commit-and-continue adopt-back. We just encode our MPSGraph.
     mstream->encodeWithLegacyCommandBuffer([&](MPSCommandBuffer* mpsCB) {
       [g.graph encodeToCommandBuffer:mpsCB
                                 feeds:feeds
@@ -207,8 +237,8 @@ void MPSGraphOp::dispatch(
 //===----------------------------------------------------------------------===//
 
 MPSGraphOp::CachedGraph MPSGraphMatMulOp::buildGraph(
-    EValuePtrSpan inputs,
-    EValuePtrSpan outputs) {
+    ::executorch::runtime::Span<::executorch::runtime::EValue*> inputs,
+    ::executorch::runtime::Span<::executorch::runtime::EValue*> outputs) {
   const Tensor& A = inputs[0]->toTensor();
   const Tensor& B = inputs[1]->toTensor();
   const Tensor& C = outputs[0]->toTensor();
@@ -242,3 +272,5 @@ MPSGraphOp::CachedGraph MPSGraphMatMulOp::buildGraph(
 } // namespace metal_v2
 } // namespace backends
 } // namespace executorch
+
+#endif // ET_METAL_USE_MPSGRAPH

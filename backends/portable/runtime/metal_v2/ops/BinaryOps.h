@@ -17,29 +17,30 @@ namespace metal_v2 {
 
 //===----------------------------------------------------------------------===//
 // BinaryOp - Base class for elementwise binary operations
-//
 // Variant classification, broadcast strides, and contiguous-dim collapsing
 // all live in OpUtils.h (shared with other ops).
 //===----------------------------------------------------------------------===//
 
 class BinaryOp : public MetalOp {
-public:
+ public:
   virtual const char* opName() const = 0;
-  virtual bool hasAlpha() const { return false; }
+  virtual bool hasAlpha() const {
+    return false;
+  }
 
   bool supports(ScalarType dtype) const override {
     return isFloatingPoint(dtype);
   }
 
   std::vector<SizesType> computeOutputShape(
-      EValuePtrSpan inputs) const override;
+      ::executorch::runtime::Span<::executorch::runtime::EValue*> inputs) const override;
 
   void dispatch(
       MetalStream* stream,
-      EValuePtrSpan inputs,
-      EValuePtrSpan outputs) override;
+      ::executorch::runtime::Span<::executorch::runtime::EValue*> inputs,
+      ::executorch::runtime::Span<::executorch::runtime::EValue*> outputs) override;
 
-protected:
+ protected:
   const char* kernelSource() const override;
 
   std::string kernelName(ElementwiseVariant variant, ScalarType dtype) const;
@@ -50,22 +51,36 @@ protected:
 //===----------------------------------------------------------------------===//
 
 class AddOp : public BinaryOp {
-public:
-  const char* name() const override { return "aten::add"; }
-  const char* opName() const override { return "add"; }
-  bool hasAlpha() const override { return true; }
+ public:
+  const char* name() const override {
+    return "aten::add";
+  }
+  const char* opName() const override {
+    return "add";
+  }
+  bool hasAlpha() const override {
+    return true;
+  }
 };
 
 class MulOp : public BinaryOp {
-public:
-  const char* name() const override { return "aten::mul"; }
-  const char* opName() const override { return "mul"; }
+ public:
+  const char* name() const override {
+    return "aten::mul";
+  }
+  const char* opName() const override {
+    return "mul";
+  }
 };
 
 class SubOp : public BinaryOp {
-public:
-  const char* name() const override { return "aten::sub"; }
-  const char* opName() const override { return "sub"; }
+ public:
+  const char* name() const override {
+    return "aten::sub";
+  }
+  const char* opName() const override {
+    return "sub";
+  }
 };
 
 } // namespace metal_v2
