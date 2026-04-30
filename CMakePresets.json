@@ -152,8 +152,7 @@
         "llm-release"
       ],
       "cacheVariables": {
-        "EXECUTORCH_BUILD_CUDA": "ON",
-        "CMAKE_CUDA_ARCHITECTURES": "native"
+        "EXECUTORCH_BUILD_CUDA": "ON"
       },
       "condition": {
         "type": "inList",

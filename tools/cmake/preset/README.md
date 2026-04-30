@@ -65,20 +65,6 @@ $ cmake --workflow --preset llm-debug-cuda
 $ cmake --workflow --preset llm-debug-metal
 ```
 
-> [!NOTE]
-> **CUDA architecture selection:** The `llm-release-cuda` (and `llm-debug-cuda`)
-> preset sets `CMAKE_CUDA_ARCHITECTURES=native`, which auto-detects the GPU
-> on the build machine at configure time. To target a different architecture,
-> override it with `-D` on the configure step:
-> ```bash
-> cmake --preset llm-release-cuda -DCMAKE_CUDA_ARCHITECTURES="80;86;89;90;120"
-> cmake --build --preset llm-release-cuda --config Release
-> ```
-> Note that `cmake --workflow` does not accept `-D` flags, so you must run
-> configure and build as separate steps when overriding. Also note that on
-> Windows, setting `CMAKE_CUDA_ARCHITECTURES` via environment variable does
-> **not** work with CMake presets — you must use the `-D` flag.
-
 #### Understanding workflow components
 
 A workflow preset typically consists of:
