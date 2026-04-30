@@ -338,6 +338,7 @@ class CudaBackend(AotiBackend, BackendDetails):
         compilation for the CUDA backend. Each manager is documented at
         its own `enter_context` call site below.
         """
+
         @contextlib.contextmanager
         def _combined():
             with contextlib.ExitStack() as stack:
@@ -346,9 +347,7 @@ class CudaBackend(AotiBackend, BackendDetails):
                 # them. SDPA ops already replaced by Triton kernels via
                 # `ReplaceEdgeOpWithTritonOpPass` are unaffected; this is
                 # only the fallback for the `triton_kernel_mode="OFF"` path.
-                stack.enter_context(
-                    torch.nn.attention.sdpa_kernel([SDPBackend.MATH])
-                )
+                stack.enter_context(torch.nn.attention.sdpa_kernel([SDPBackend.MATH]))
                 # Force AOTI's mutated-buffer clones onto CPU during compile
                 # so we stay under tight GPU memory caps (e.g. 24 GB on a
                 # consumer 4090). See `_compile_time_cpu_clones` for details.
@@ -387,7 +386,6 @@ class CudaBackend(AotiBackend, BackendDetails):
 
                 # Aggressive GPU cleanup between methods
                 if torch.cuda.is_available():
-                    pre_mem = torch.cuda.memory_allocated()
                     gc.collect()
                     freed = 0
                     for obj in gc.get_objects():
