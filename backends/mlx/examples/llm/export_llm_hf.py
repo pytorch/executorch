@@ -282,52 +282,26 @@ def _export_with_custom_components(
         )
 
     if use_custom_kv_cache:
+        from executorch.backends.mlx.llm.source_transformation import (
+            replace_hf_cache_with_mlx,
+        )
+
         if sliding_window is not None:
-            # Use ring buffer cache for sliding window models
-            from executorch.backends.mlx.llm.source_transformation import (
-                replace_hf_cache_with_mlx_ring_buffer,
-            )
-
             logger.info(
-                f"Replacing StaticCache with RingBuffer KV cache "
-                f"(window_size={effective_cache_len})..."
+                "Replacing HuggingFace StaticCache with HFStaticCache "
+                f"(capped to sliding window: {effective_cache_len})..."
             )
-            replace_hf_cache_with_mlx_ring_buffer(
-                exportable,
-                model.config,
-                max_batch_size=1,
-                window_size=effective_cache_len,
-                dtype=torch_dtype,
-            )
-
-            if use_custom_sdpa:
-                # Re-register attention with sliding window closure
-                from executorch.backends.mlx.llm.hf_attention import (
-                    register_mlx_sliding_window_attention,
-                )
-
-                register_mlx_sliding_window_attention(exportable)
-                model.config._attn_implementation = "mlx_sliding_window"
-                logger.info(
-                    "  Registered sliding window attention (mlx_sliding_window)"
-                )
-
-            logger.info("  RingBuffer KV cache installed successfully")
         else:
-            # Use standard linear cache for non-sliding-window models
-            from executorch.backends.mlx.llm.source_transformation import (
-                replace_hf_cache_with_mlx,
-            )
-
             logger.info("Replacing HuggingFace StaticCache with HFStaticCache...")
-            replace_hf_cache_with_mlx(
-                exportable,
-                model.config,
-                max_batch_size=1,
-                max_cache_len=effective_cache_len,
-                dtype=torch_dtype,
-            )
-            logger.info("  HFStaticCache installed successfully")
+
+        replace_hf_cache_with_mlx(
+            exportable,
+            model.config,
+            max_batch_size=1,
+            max_cache_len=effective_cache_len,
+            dtype=torch_dtype,
+        )
+        logger.info("  HFStaticCache installed successfully")
 
     from executorch.backends.mlx.llm.quantization import quantize_model_
 
