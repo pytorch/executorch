@@ -1,0 +1,43 @@
+{
+	"sources" : 
+	[
+		{
+			"file" : "/home/sraut/ext_main/cad_rlc/executorch/third-party/CMakeFiles/flatbuffers_ep"
+		},
+		{
+			"file" : "/home/sraut/ext_main/cad_rlc/executorch/third-party/CMakeFiles/flatbuffers_ep.rule"
+		},
+		{
+			"file" : "/home/sraut/ext_main/cad_rlc/executorch/third-party/CMakeFiles/flatbuffers_ep-complete.rule"
+		},
+		{
+			"file" : "/home/sraut/ext_main/cad_rlc/executorch/third-party/flatc_ep/src/flatbuffers_ep-stamp/flatbuffers_ep-build.rule"
+		},
+		{
+			"file" : "/home/sraut/ext_main/cad_rlc/executorch/third-party/flatc_ep/src/flatbuffers_ep-stamp/flatbuffers_ep-configure.rule"
+		},
+		{
+			"file" : "/home/sraut/ext_main/cad_rlc/executorch/third-party/flatc_ep/src/flatbuffers_ep-stamp/flatbuffers_ep-download.rule"
+		},
+		{
+			"file" : "/home/sraut/ext_main/cad_rlc/executorch/third-party/flatc_ep/src/flatbuffers_ep-stamp/flatbuffers_ep-install.rule"
+		},
+		{
+			"file" : "/home/sraut/ext_main/cad_rlc/executorch/third-party/flatc_ep/src/flatbuffers_ep-stamp/flatbuffers_ep-mkdir.rule"
+		},
+		{
+			"file" : "/home/sraut/ext_main/cad_rlc/executorch/third-party/flatc_ep/src/flatbuffers_ep-stamp/flatbuffers_ep-patch.rule"
+		},
+		{
+			"file" : "/home/sraut/ext_main/cad_rlc/executorch/third-party/flatc_ep/src/flatbuffers_ep-stamp/flatbuffers_ep-update.rule"
+		}
+	],
+	"target" : 
+	{
+		"labels" : 
+		[
+			"flatbuffers_ep"
+		],
+		"name" : "flatbuffers_ep"
+	}
+}

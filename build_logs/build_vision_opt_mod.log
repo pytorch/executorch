@@ -1,0 +1,38 @@
+[  2%] Built target flatbuffers_ep
+Building C object /home/kvariar/ExecuTorch/find_stable/executorch/runtime/core/portable_type/c10/CMakeFiles/xa_nnlib.dir/library/dma.c.o
+Building C object /home/kvariar/ExecuTorch/find_stable/executorch/runtime/core/portable_type/c10/CMakeFiles/xa_nnlib.dir/library/memory_manager.c.o
+[  4%] Built target xai_common
+[  6%] Built target flatcc_ep
+[  6%] Built target common_schema
+[  6%] Built target scalar_type_schema
+[  7%] Built target program_schema
+[ 11%] Built target xai
+[ 12%] Built target flatccrt
+[ 12%] Built target flat_tensor_schema
+[ 13%] Built target cadence_kernels
+[ 13%] Built target gflags_nothreads_static
+[ 18%] Built target executorch_core
+[ 19%] Built target extension_flat_tensor
+[ 21%] Built target extension_data_loader
+[ 21%] Built target executorch
+[ 22%] Built target extension_runner_util
+[ 22%] Built target extension_evalue_util
+[ 27%] Built target kernels_util_all_deps
+[ 75%] Built target portable_kernels
+[ 76%] Built target portable_ops_lib
+Linking C static library bin/libxa_nnlib.a
+[ 80%] Built target xa_nnlib
+[ 81%] Building CXX object backends/cadence/vision/operators/CMakeFiles/custom_ops.dir/quantized_conv2d_nchw_out_per_tensor.cpp.o
+[ 81%] Building CXX object backends/cadence/vision/operators/CMakeFiles/custom_ops.dir/quantize_per_tensor.cpp.o
+[ 82%] Building CXX object backends/cadence/vision/operators/CMakeFiles/custom_ops.dir/dequantize_per_tensor.cpp.o
+[ 82%] Building CXX object backends/cadence/vision/operators/CMakeFiles/aten_ops_cadence.dir/op_softmax.cpp.o
+[ 82%] Building CXX object backends/cadence/vision/operators/CMakeFiles/aten_ops_cadence.dir/op_max_pool2d_with_indices.cpp.o
+[ 82%] Building CXX object backends/cadence/vision/operators/CMakeFiles/aten_ops_cadence.dir/op_add.cpp.o
+[ 83%] Building CXX object backends/cadence/vision/operators/CMakeFiles/aten_ops_cadence.dir/quantized_relu.cpp.o
+[ 84%] Linking CXX static library libcustom_ops.a
+[ 87%] Built target custom_ops
+[ 88%] Linking CXX static library libaten_ops_cadence.a
+[ 98%] Built target aten_ops_cadence
+[ 99%] Built target cadence_ops_lib
+[100%] Linking CXX executable executor_runner
+[100%] Built target executor_runner

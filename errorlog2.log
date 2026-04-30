@@ -1,0 +1,144 @@
+-- Found toolchain: xt-clang (/fac/proj_apps_dspqa/xtensa/XtDevTools/install/tools)
+-- ccache not found, builds will not be cached
+-- Using the multi-header code from /home/sraut/ext_main/cad_rlc/executorch/third-party/json/include/
+-- dist install dir /home/sraut/ext_main/cad_rlc/executorch/third-party/flatcc
+-- lib install dir /home/sraut/ext_main/cad_rlc/executorch/third-party/flatcc/lib
+-- Setting Clang compiler options
+-- Configured C_FLAGS: -stdlib=libc++ -mtext-section-literals -mlongcalls -DET_ENABLE_ENUM_STRINGS=0 -DFLATCC_REFLECTION=0 -Wstrict-prototypes -Wsign-conversion -Wconversion -std=c11 -pedantic -Wall -Wextra -Werror
+-- Generating selected operator lib:
+--   LIB_NAME: portable_ops_lib
+--   OPS_SCHEMA_YAML: /home/sraut/ext_main/cad_rlc/executorch/kernels/portable/functions.yaml
+--   ROOT_OPS: 
+--   INCLUDE_ALL_OPS: 
+--   OPS_FROM_MODEL: 
+--   DTYPE_SELECTIVE_BUILD: 
+-- Generating kernel bindings:
+--   LIB_NAME: portable_ops_lib
+--   FUNCTIONS_YAML: /home/sraut/ext_main/cad_rlc/executorch/kernels/portable/functions.yaml
+--   CUSTOM_OPS_YAML: 
+--   ADD_EXCEPTION_BOUNDARY: FALSE
+--   DTYPE_SELECTIVE_BUILD: 
+-- Generating operator lib:
+--   LIB_NAME: portable_ops_lib
+--   KERNEL_LIBS: portable_kernels
+--   DEPS: executorch_core
+--   DTYPE_SELECTIVE_BUILD: 
+-- Generating selected operator lib:
+--   LIB_NAME: cadence_ops_lib
+--   OPS_SCHEMA_YAML: /home/sraut/ext_main/cad_rlc/executorch/backends/cadence/vision/operators/../../aot/functions_vision.yaml
+--   ROOT_OPS: 
+--   INCLUDE_ALL_OPS: 
+--   OPS_FROM_MODEL: 
+--   DTYPE_SELECTIVE_BUILD: 
+-- Generating kernel bindings:
+--   LIB_NAME: cadence_ops_lib
+--   FUNCTIONS_YAML: /home/sraut/ext_main/cad_rlc/executorch/backends/cadence/vision/operators/../../aot/functions_vision.yaml
+--   CUSTOM_OPS_YAML: 
+--   ADD_EXCEPTION_BOUNDARY: FALSE
+--   DTYPE_SELECTIVE_BUILD: 
+-- Generating operator lib:
+--   LIB_NAME: cadence_ops_lib
+--   KERNEL_LIBS: custom_ops
+--   DEPS: aten_ops_cadence
+--   DTYPE_SELECTIVE_BUILD: 
+-- --- Configured Options ---
+
+-- BUILD_TESTING                               : OFF
+-- CCACHE_PROGRAM                              : CCACHE_PROGRAM-NOTFOUND
+-- CMAKE_BUILD_TYPE                            : Release
+-- CMAKE_CXX_COMPILER_ID                       : Clang
+-- CMAKE_CXX_STANDARD                          : 17
+-- CMAKE_SYSTEM_PROCESSOR                      : x86_64
+-- CMAKE_TOOLCHAIN_FILE                        : ./backends/cadence/cadence.cmake
+-- EXECUTORCH_BUILD_ARM_BAREMETAL              : OFF
+-- EXECUTORCH_BUILD_CADENCE                    : ON
+-- EXECUTORCH_BUILD_COREML                     : OFF
+-- EXECUTORCH_BUILD_CORTEX_M                   : OFF
+-- EXECUTORCH_BUILD_CPUINFO                    : OFF
+-- EXECUTORCH_BUILD_CUDA                       : OFF
+-- EXECUTORCH_BUILD_DEVTOOLS                   : OFF
+-- EXECUTORCH_BUILD_EXECUTOR_RUNNER            : ON
+-- EXECUTORCH_BUILD_EXTENSION_APPLE            : OFF
+-- EXECUTORCH_BUILD_EXTENSION_ASR_RUNNER       : OFF
+-- EXECUTORCH_BUILD_EXTENSION_DATA_LOADER      : ON
+-- EXECUTORCH_BUILD_EXTENSION_EVALUE_UTIL      : ON
+-- EXECUTORCH_BUILD_EXTENSION_FLAT_TENSOR      : ON
+-- EXECUTORCH_BUILD_EXTENSION_LLM              : OFF
+-- EXECUTORCH_BUILD_EXTENSION_LLM_APPLE        : OFF
+-- EXECUTORCH_BUILD_EXTENSION_LLM_RUNNER       : OFF
+-- EXECUTORCH_BUILD_EXTENSION_MODULE           : OFF
+-- EXECUTORCH_BUILD_EXTENSION_NAMED_DATA_MAP   : OFF
+-- EXECUTORCH_BUILD_EXTENSION_RUNNER_UTIL      : ON
+-- EXECUTORCH_BUILD_EXTENSION_TENSOR           : OFF
+-- EXECUTORCH_BUILD_EXTENSION_TRAINING         : OFF
+-- EXECUTORCH_BUILD_KERNELS_LLM                : OFF
+-- EXECUTORCH_BUILD_KERNELS_LLM_AOT            : OFF
+-- EXECUTORCH_BUILD_KERNELS_OPTIMIZED          : OFF
+-- EXECUTORCH_BUILD_KERNELS_QUANTIZED          : OFF
+-- EXECUTORCH_BUILD_KERNELS_QUANTIZED_AOT      : OFF
+-- EXECUTORCH_BUILD_METAL                      : OFF
+-- EXECUTORCH_BUILD_MPS                        : OFF
+-- EXECUTORCH_BUILD_NEURON                     : OFF
+-- EXECUTORCH_BUILD_OPENVINO                   : OFF
+-- EXECUTORCH_BUILD_PORTABLE_OPS               : ON
+-- EXECUTORCH_BUILD_PTHREADPOOL                : OFF
+-- EXECUTORCH_BUILD_PYBIND                     : OFF
+-- EXECUTORCH_BUILD_QNN                        : OFF
+-- EXECUTORCH_BUILD_SIZE_TEST                  : OFF
+-- EXECUTORCH_BUILD_TESTS                      : OFF
+-- EXECUTORCH_BUILD_TOKENIZERS_WASM            : OFF
+-- EXECUTORCH_BUILD_VGF                        : OFF
+-- EXECUTORCH_BUILD_VULKAN                     : OFF
+-- EXECUTORCH_BUILD_WASM                       : OFF
+-- EXECUTORCH_BUILD_XNNPACK                    : OFF
+-- EXECUTORCH_CADENCE_CPU_RUNNER               : OFF
+-- EXECUTORCH_COREML_BUILD_EXECUTOR_RUNNER     : OFF
+-- EXECUTORCH_ENABLE_DTYPE_SELECTIVE_BUILD     : FALSE
+-- EXECUTORCH_ENABLE_EVENT_TRACER              : OFF
+-- EXECUTORCH_ENABLE_LOGGING                   : ON
+-- EXECUTORCH_ENABLE_PROGRAM_VERIFICATION      : ON
+-- EXECUTORCH_FLATBUFFERS_MAX_ALIGNMENT        : 1024
+-- EXECUTORCH_LOG_LEVEL                        : Info
+-- EXECUTORCH_NNLIB_OPT                        : OFF
+-- EXECUTORCH_OPTIMIZE_SIZE                    : OFF
+-- EXECUTORCH_PAL_DEFAULT                      : posix
+-- EXECUTORCH_PAL_DEFAULT_FILE_PATH            : /home/sraut/ext_main/cad_rlc/executorch/runtime/platform/default/posix.cpp
+-- EXECUTORCH_SELECT_OPS_LIST                  : 
+-- EXECUTORCH_SELECT_OPS_MODEL                 : 
+-- EXECUTORCH_SELECT_OPS_YAML                  : 
+-- EXECUTORCH_THREADPOOL_USE_ALL_LOGICAL_CORES : OFF
+-- EXECUTORCH_THREADPOOL_USE_PERFORMANCE_CORES : OFF
+-- EXECUTORCH_USE_CPP_CODE_COVERAGE            : OFF
+-- EXECUTORCH_USE_DL                           : OFF
+-- EXECUTORCH_XNNPACK_ENABLE_KLEIDI            : ON
+-- EXECUTORCH_XNNPACK_ENABLE_WEIGHT_CACHE      : OFF
+-- EXECUTORCH_XNNPACK_SHARED_WORKSPACE         : ON
+-- PYTHON_EXECUTABLE                           : python3
+-- --------------------------
+-- Configuring done (1.6s)
+-- Generating done (1.6s)
+-- Build files have been written to: /home/sraut/ext_main/cad_rlc/executorch/cmake-out
+[  4%] Built target flatcc_ep
+[  4%] Built target flatbuffers_ep
+[  4%] Built target common_schema
+[  4%] Built target scalar_type_schema
+[  8%] Built target xai_common
+[  9%] Built target xa_nnlib
+[  9%] Built target flat_tensor_schema
+[ 10%] Built target program_schema
+[ 10%] Linking C static library /home/sraut/ext_main/cad_rlc/executorch/third-party/flatcc/lib/libflatccrt.a
+[ 14%] Built target xai
+[ 14%] Built target cadence_kernels
+[ 15%] Built target gflags_nothreads_static
+[ 21%] Built target executorch_core
+[ 21%] Built target extension_data_loader
+[ 24%] Built target extension_runner_util
+[ 24%] Built target extension_flat_tensor
+[ 24%] Built target extension_evalue_util
+[ 25%] Built target executorch
+[ 30%] Built target kernels_util_all_deps
+[ 30%] Building CXX object backends/cadence/vision/operators/CMakeFiles/custom_ops.dir/quantized_conv2d_nchw_out_per_tensor.cpp.o
+[ 42%] Built target aten_ops_cadence
+[ 44%] Built target flatccrt
+[ 93%] Built target portable_kernels
+[ 94%] Built target portable_ops_lib

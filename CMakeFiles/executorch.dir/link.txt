@@ -1,0 +1,2 @@
+/usr/bin/ar qc libexecutorch.a CMakeFiles/executorch.dir/kernels/prim_ops/et_copy_index.cpp.o CMakeFiles/executorch.dir/kernels/prim_ops/et_view.cpp.o CMakeFiles/executorch.dir/kernels/prim_ops/register_prim_ops.cpp.o
+/usr/bin/ranlib libexecutorch.a

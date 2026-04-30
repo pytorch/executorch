@@ -6,14 +6,11 @@
  * LICENSE file in the root directory of this source tree.
  */
 
-#include <executorch/backends/cadence/vision/kernels/kernels.h>
+#include <lib.h>
 #include <executorch/kernels/portable/cpu/util/activation_ops_util.h>
 #include <executorch/kernels/portable/cpu/util/functional_util.h>
 #include <executorch/kernels/portable/cpu/util/reduce_util.h>
 #include <executorch/runtime/kernel/kernel_includes.h>
-#include <include/api.h>
-#include <include_private/idma_init.h>
-#include <stdio.h>
 
 using executorch::aten::ScalarType;
 using executorch::aten::Tensor;
@@ -30,6 +27,10 @@ Tensor& _softmax_out(
     int64_t dim,
     bool half_to_float,
     Tensor& out) {
+  
+  TIME_DECL(softmax);
+  TIME_START(softmax);
+
   (void)ctx;
 
   ET_KERNEL_CHECK(
@@ -42,9 +43,9 @@ Tensor& _softmax_out(
       ctx, resize_tensor(out, in.sizes()) == Error::Ok, InvalidArgument, out);
 
   ET_KERNEL_CHECK(
-      ctx,
-      executorch::runtime::tensors_have_same_dim_order(in, out),
-      InvalidArgument,
+      ctx, 
+      executorch::runtime::tensors_have_same_dim_order(in, out), 
+      InvalidArgument, 
       out);
 
   // Adjust for negative dim
@@ -65,11 +66,73 @@ Tensor& _softmax_out(
   bool ping_pong_process = false;
   bool ping_process_pong = false;
 
-  if ((d == in.dim() - 1)) {
-    if (size <= IDMA_BUFF_SIZE / 4 && in.dim() != 1) {
-      ping_pong_process = true;
-    } else if (size <= IDMA_BUFF_SIZE / 2) {
-      ping_process_pong = true;
+  float32_t *inp_buff[2];
+  float32_t *out_buff[2];
+
+  if ((d == in.dim() - 1)){
+    if ((4 * FLT32_SIZE * size <= (IDMA_BUFFER_SIZE_DRAM0 + IDMA_BUFFER_SIZE_DRAM1)) && (in.dim() != 1)){
+      // For ping-pong processing we need to have enough buffer to hold 2 input and 2 output blocks
+      if (2 * FLT32_SIZE * size <= IDMA_BUFFER_SIZE_DRAM0 &&  2 * FLT32_SIZE * size <= IDMA_BUFFER_SIZE_DRAM1){
+        // Both DRAM0 and DRAM1 can hold 2 input and 2 output blocks
+        inp_buff[0] = (float32_t *)ptr_dram0;
+        inp_buff[1] = (float32_t *)ptr_dram1;
+        out_buff[0] = (float32_t *)(ptr_dram0) + size;
+        out_buff[1] = (float32_t *)(ptr_dram1) + size;
+        ping_pong_process = true;
+      }
+      else if (4 * FLT32_SIZE * size <= IDMA_BUFFER_SIZE_DRAM0){
+        // DRAM0 can hold 2 input and 2 output blocks
+        inp_buff[0] = (float32_t *)ptr_dram0;
+        inp_buff[1] = (float32_t *)(ptr_dram0) + size; 
+        out_buff[0] = (float32_t *)(ptr_dram0) + 2 * size;
+        out_buff[1] = (float32_t *)(ptr_dram0) + 3 * size;
+        ping_pong_process = true;
+      }
+      else if (4 * FLT32_SIZE * size <= IDMA_BUFFER_SIZE_DRAM1){
+        // DRAM1 can hold 2 input and 2 output blocks
+        inp_buff[0] = (float32_t *)ptr_dram1;
+        inp_buff[1] = (float32_t *)(ptr_dram1) + size; 
+        out_buff[0] = (float32_t *)(ptr_dram1) + 2 * size;
+        out_buff[1] = (float32_t *)(ptr_dram1) + 3 * size;
+        ping_pong_process = true;
+      }
+      else if (3 * FLT32_SIZE * size <= IDMA_BUFFER_SIZE_DRAM0 && FLT32_SIZE * size <= IDMA_BUFFER_SIZE_DRAM1){
+        // DRAM0 can hold 2 output and 1 input blocks, DRAM1 can hold 1 input block
+        inp_buff[0] = (float32_t *)ptr_dram0;
+        inp_buff[1] = (float32_t *)ptr_dram1;
+        out_buff[0] = (float32_t *)(ptr_dram0) + size;
+        out_buff[1] = (float32_t *)(ptr_dram0) + 2 * size;
+        ping_pong_process = true;
+      }
+      else if (FLT32_SIZE * size <= IDMA_BUFFER_SIZE_DRAM0 && 3 * FLT32_SIZE * size <= IDMA_BUFFER_SIZE_DRAM1){
+        // DRAM1 can hold 2 output and 1 input blocks, DRAM0 can hold 1 input block
+        inp_buff[0] = (float32_t *)ptr_dram0;
+        inp_buff[1] = (float32_t *)ptr_dram1;
+        out_buff[0] = (float32_t *)(ptr_dram1) + size;
+        out_buff[1] = (float32_t *)(ptr_dram1) + 2 * size;
+        ping_pong_process = true;
+      }
+    }
+    else if (2 * FLT32_SIZE * size <= (IDMA_BUFFER_SIZE_DRAM0 + IDMA_BUFFER_SIZE_DRAM1)){
+      // For ping-process-pong we need to have enough buffer to hold 1 input and 1 output block
+      if (FLT32_SIZE * size <= IDMA_BUFFER_SIZE_DRAM0 && FLT32_SIZE * size <= IDMA_BUFFER_SIZE_DRAM1){
+        // Both DRAM0 and DRAM1 can hold 1 input and 1 output block
+        inp_buff[0] = (float32_t *)ptr_dram0;
+        out_buff[0] = (float32_t *)ptr_dram1;
+        ping_process_pong = true;
+      }
+      else if (2 * FLT32_SIZE * size <= IDMA_BUFFER_SIZE_DRAM0){
+        // DRAM0 can hold 1 input and 1 output block
+        inp_buff[0] = (float32_t *)ptr_dram0;
+        out_buff[0] = (float32_t *)(ptr_dram0) + size;
+        ping_process_pong = true;
+      }
+      else if (2 * FLT32_SIZE * size <= IDMA_BUFFER_SIZE_DRAM1){
+        // DRAM1 can hold 1 input and 1 output block
+        inp_buff[0] = (float32_t *)ptr_dram1;
+        out_buff[0] = (float32_t *)(ptr_dram1) + size;
+        ping_process_pong = true;
+      }
     }
   }
 
@@ -79,20 +142,16 @@ Tensor& _softmax_out(
   if (in.dim() > MaxDim)
     optimized = false;
 
-  if (optimized) {
-    const float* ptr_inp = (float*)in.const_data_ptr<float>();
-    float* out_data = (float*)out.mutable_data_ptr<float>();
+  if (optimized){
+    const float32_t *ptr_inp = (float32_t *)in.const_data_ptr<float>();
+    float32_t *out_data = (float32_t *)out.mutable_data_ptr<float>();
 
-    /* Channel 0*/
-    idma_init(0, 0, MAX_BLOCK_16, 8, TICK_CYCLES_1, 0, NULL);
-    idma_init_loop(0, descbuf[0], IDMA_2D_DESC, 1, NULL, NULL);
-
-    /* Channel 1*/
-    idma_init(1, 0, MAX_BLOCK_16, 8, TICK_CYCLES_1, 0, NULL);
-    idma_init_loop(1, descbuf[1], IDMA_2D_DESC, 1, NULL, NULL);
+    /* Initialize DMA Channel 0 (loads) and Channel 1 (stores) */
+    dma_2dm_init(0);
+    dma_2dm_init(1);
 
     if (ping_pong_process) {
-      for (int i = 0; i < in.dim(); i++) {
+      for (int i = 0; i < in.dim(); i++){
         if (i != d)
           outer_size *= in.size(i);
       }
@@ -100,60 +159,49 @@ Tensor& _softmax_out(
       outer_stride = size;
       stride = size;
 
-      int pp_swap = 0;
+      int32_t pp_swap = 0;
 
-      float32_t* ptr_out = out_data;
-      float32_t* ptr_in = (float32_t*)ptr_inp;
+	    float32_t *ptr_out = out_data;
+	    float32_t *ptr_in = (float32_t *) ptr_inp;
 
-      idma_copy_2d_desc(
-          0, inpData[pp_swap], ptr_in, 4 * stride, DESC_IDMA_PRIOR_H, 1, 0, 0);
-      pp_swap = 1;
+      // Load first chunk via ch0
+      dma_1dm(0, ptr_in, inp_buff[pp_swap], 4 * stride);
 
-      for (int i = 0; i < (outer_size - 1); i++) {
-        IDMA_HW_WAIT_ALL(0);
-        ptr_in += outer_stride;
-        idma_copy_2d_desc(
-            0,
-            inpData[pp_swap],
-            ptr_in,
-            4 * stride,
-            DESC_IDMA_PRIOR_H,
-            1,
-            0,
-            0);
-        pp_swap = pp_swap ^ 1;
+      for (int i = 0; i < (outer_size - 1); i++){
+          // Wait for current load to complete
+          idma_hw_wait_all(0);
 
-        /* PROCESS CALL */
-        vsoftmaxf(outData[pp_swap], inpData[pp_swap], stride);
+          ptr_in += outer_stride;
+          // Start loading next chunk into alternate buffer via ch0
+          dma_1dm(0, ptr_in, inp_buff[pp_swap ^ 1], 4 * stride);
 
-        IDMA_HW_WAIT_ALL(1);
-        idma_copy_2d_desc(
-            1,
-            ptr_out,
-            outData[pp_swap],
-            4 * stride,
-            DESC_IDMA_PRIOR_H,
-            1,
-            0,
-            0);
-        ptr_out += outer_stride;
-      }
+          /* PROCESS CALL */
+          vsoftmaxf(out_buff[pp_swap], inp_buff[pp_swap], stride);
 
-      IDMA_HW_WAIT_ALL(0);
-      pp_swap = pp_swap ^ 1;
+          // Wait for previous store to complete before reusing out_buff
+          idma_hw_wait_all(1);
 
-      /* PROCESS CALL */
-      vsoftmaxf(outData[pp_swap], inpData[pp_swap], stride);
+          // Store result via ch1
+          dma_1dm(1, out_buff[pp_swap], ptr_out, 4 * stride);
+          ptr_out += outer_stride;
 
-      IDMA_HW_WAIT_ALL(1);
-      idma_copy_2d_desc(
-          1, ptr_out, outData[pp_swap], 4 * stride, DESC_IDMA_PRIOR_H, 1, 0, 0);
+          pp_swap ^= 1;
+        }
 
-      IDMA_HW_WAIT_ALL(1);
+      // Process last chunk
+      idma_hw_wait_all(0);
+      vsoftmaxf(out_buff[pp_swap], inp_buff[pp_swap], stride);
+
+      idma_hw_wait_all(1);
+      dma_1dm(1, out_buff[pp_swap], ptr_out, 4 * stride);
+      idma_hw_wait_all(1);
+
+      TIME_END(softmax);
+      TIME_DISPLAY(softmax, in.numel(), "floats");
 
       return out;
     } else if (ping_process_pong) {
-      for (int i = 0; i < in.dim(); i++) {
+      for (int i = 0; i < in.dim(); i++){
         if (i != d)
           outer_size *= in.size(i);
       }
@@ -161,23 +209,29 @@ Tensor& _softmax_out(
       outer_stride = size;
       stride = size;
 
-      float32_t* ptr_out = out_data;
-      float32_t* ptr_in = (float32_t*)ptr_inp;
+	    float32_t *ptr_out = out_data;
+	    float32_t *ptr_in = (float32_t *) ptr_inp;
 
-      for (int i = 0; i < outer_size; i++) {
-        idma_copy_2d_desc(
-            0, data_dram0, ptr_in, 4 * stride, DESC_IDMA_PRIOR_H, 1, 0, 0);
-        IDMA_HW_WAIT_ALL(0);
+	    for (int i = 0; i < outer_size; i++){
+        // Start load via ch0 (overlaps with any pending ch1 store)
+        dma_1dm(0, ptr_in, inp_buff[0], 4 * stride);
+        // Wait for previous store to complete
+        idma_hw_wait_all(1);
+        // Wait for load to complete
+        idma_hw_wait_all(0);
 
-        vsoftmaxf(data_dram1, data_dram0, stride);
+		    vsoftmaxf(out_buff[0], inp_buff[0], stride);
 
-        idma_copy_2d_desc(
-            1, ptr_out, data_dram1, 4 * stride, DESC_IDMA_PRIOR_H, 1, 0, 0);
-        IDMA_HW_WAIT_ALL(1);
+        // Store via ch1
+        dma_1dm(1, out_buff[0], ptr_out, 4 * stride);
 
         ptr_in += outer_stride;
-        ptr_out += outer_stride;
-      }
+		    ptr_out += outer_stride;
+	    }
+      idma_hw_wait_all(1);
+
+      TIME_END(softmax);
+      TIME_DISPLAY(softmax, in.numel(), "floats");
 
       return out;
     } else {
@@ -207,45 +261,53 @@ Tensor& _softmax_out(
 
       outer_stride = size;
 
-      float* ptr_out = (float*)kernels::allocate_temp_memory(
-          ctx, out.numel() * sizeof(float));
+      executorch::runtime::Result<void*> temp_mem_res = ctx.allocate_temp(out.numel() * sizeof(float));
+      float* ptr_out =
+          (float*)(temp_mem_res.ok() ? temp_mem_res.get() : nullptr);
 
       ET_KERNEL_CHECK(ctx, ptr_out != nullptr, MemoryAllocationFailed, out);
 
-      float* ptr_out1 = (float*)kernels::allocate_temp_memory(
-          ctx, out.numel() * sizeof(float));
+      executorch::runtime::Result<void*> temp_mem_res1 = ctx.allocate_temp(out.numel() * sizeof(float));
+      float* ptr_out1 =
+          (float*)(temp_mem_res1.ok() ? temp_mem_res1.get() : nullptr);
 
       ET_KERNEL_CHECK(ctx, ptr_out1 != nullptr, MemoryAllocationFailed, out);
 
       tensor_transposef(
-          ptr_out,
-          ptr_out_shape,
-          ptr_inp,
-          ptr_inp_shape,
-          ptr_permute_vec,
-          num_out_dims,
-          num_inp_dims);
+        ptr_out,
+        ptr_out_shape,
+        ptr_inp,
+        ptr_inp_shape,
+        ptr_permute_vec,
+        num_out_dims,
+        num_inp_dims);
 
       for (size_t outer_idx = 0; outer_idx < outer_size; ++outer_idx) {
         size_t outer = outer_idx * outer_stride;
         for (size_t inner_idx = 0; inner_idx < stride; ++inner_idx) {
           size_t base = outer + inner_idx;
-
-          float* ptr_in_data = &ptr_out[base];
-          float* ptr_out_data = &ptr_out1[base];
+        
+          float *ptr_in_data = &ptr_out[base];
+          float *ptr_out_data = &ptr_out1[base];
 
           vsoftmaxf(ptr_out_data, ptr_in_data, size);
         }
       }
 
       tensor_transposef(
-          out_data,
-          ptr_inp_shape,
-          ptr_out1,
-          ptr_out_shape,
-          ptr_permute_vec,
-          num_out_dims,
-          num_inp_dims);
+        out_data,
+        ptr_inp_shape,
+        ptr_out1,
+        ptr_out_shape,
+        ptr_permute_vec,
+        num_out_dims,
+        num_inp_dims);
+
+      // Writeback output from cache to system memory for DMA coherency
+      xthal_dcache_region_writeback(out_data, sizeof(float) * in.numel());
+
+      TIME_END(softmax);
+      TIME_DISPLAY(softmax, in.numel(), "floats");
 
       return out;
     }
@@ -270,13 +332,13 @@ Tensor& _softmax_out(
                   size,
                   stride);
 
-              const CTYPE temp_sum =
+              const CTYPE temp_sum = 
                   torch::executor::apply_unary_map_reduce_fn<CTYPE, CTYPE>(
                       [max_in](const CTYPE val_in) {
-                        return std::exp(val_in - max_in);
+                      return std::exp(val_in - max_in);
                       },
                       [](const CTYPE mapped_in, CTYPE val_accum) {
-                        return val_accum + mapped_in;
+                      return val_accum + mapped_in;
                       },
                       in_data + base,
                       size,
@@ -294,6 +356,9 @@ Tensor& _softmax_out(
             in,
             dim);
       });
+
+  TIME_END(softmax);
+  TIME_DISPLAY(softmax, in.numel(), "floats");
 
   return out;
 }
