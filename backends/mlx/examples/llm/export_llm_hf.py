@@ -216,11 +216,15 @@ def _export_with_custom_components(
     torch_dtype = torch_dtype_map.get(dtype, torch.bfloat16)
 
     effective_use_custom_sdpa = use_custom_sdpa
+    effective_use_custom_kv_cache = use_custom_kv_cache
     if model_id == _GEMMA4_MODEL_ID and use_custom_sdpa:
         logger.info(
             "Disabling custom SDPA for Gemma 4 while keeping the custom cache path"
         )
         effective_use_custom_sdpa = False
+    if model_id == _GEMMA4_MODEL_ID and use_custom_kv_cache:
+        logger.info("Disabling custom KV cache for Gemma 4")
+        effective_use_custom_kv_cache = False
 
     if effective_use_custom_sdpa:
         from executorch.backends.mlx.llm.hf_attention import register_mlx_attention
@@ -288,7 +292,7 @@ def _export_with_custom_components(
             max_cache_len=effective_cache_len,
         )
 
-    if use_custom_kv_cache:
+    if effective_use_custom_kv_cache:
         from executorch.backends.mlx.llm.source_transformation import (
             replace_hf_cache_with_mlx,
         )
