@@ -2425,6 +2425,14 @@ class SwapAxes(torch.nn.Module):
         return torch.swapaxes(x, axis0=self.axis0, axis1=self.axis1)
 
 
+class Tan(torch.nn.Module):
+    def __init__(self):
+        super().__init__()
+
+    def forward(self, x):
+        return torch.tan(x)
+
+
 class Tanh(torch.nn.Module):
     def __init__(self):
         super().__init__()
