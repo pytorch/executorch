@@ -342,8 +342,9 @@ python3 extension/apple/ExecuTorch/__tests__/resources/generate_coreml_test_mode
 
 # SwiftPM requires resources to live under the test target's path. The ObjC
 # test target shares fixtures with the Swift one via symlinks.
-ln -sfn ../resources/add.pte         extension/apple/ExecuTorch/__tests__/ObjC/add.pte
-ln -sfn ../resources/add_coreml.pte  extension/apple/ExecuTorch/__tests__/ObjC/add_coreml.pte
+ln -sfn ../resources/add.pte             extension/apple/ExecuTorch/__tests__/ObjC/add.pte
+ln -sfn ../resources/add_coreml.pte      extension/apple/ExecuTorch/__tests__/ObjC/add_coreml.pte
+ln -sfn ../resources/add_mul_coreml.pte  extension/apple/ExecuTorch/__tests__/ObjC/add_mul_coreml.pte
 
 echo "Running tests"
 

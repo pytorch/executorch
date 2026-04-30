@@ -375,13 +375,14 @@ static inline ExecuTorchValue *toExecuTorchValue(EValue value) NS_RETURNS_RETAIN
            options:(ExecuTorchBackendOptionsMap *)options
              error:(NSError **)error {
   NSParameterAssert(options);
-  // Retain the options for the Module's lifetime, matching -loadWithOptions:.
-  // Today Module::load_method consumes the pointer synchronously and does
-  // not cache it, so retention is not strictly required for this call.
-  // We retain uniformly so the ObjC ownership rule is the same for both
-  // entry points: any BackendOptionsMap handed to the Module stays alive
-  // as long as the Module does.
-  _loadedBackendOptions = options;
+  // Do NOT assign to _loadedBackendOptions here. Module::load_method
+  // consumes `backend_options` synchronously within this call and does
+  // not cache it (see module.cpp); ARC keeps `options` alive for the
+  // call duration via the parameter. Overwriting _loadedBackendOptions
+  // would release any map previously installed by -loadWithOptions:,
+  // but the C++ Module's `backend_options_` raw pointer (set by
+  // -loadWithOptions:) would still reference that released map's
+  // storage — a use-after-free on the next lazy load_method.
   const auto errorCode = _module->load_method(methodName.UTF8String,
                                                /*planned_memory=*/nullptr,
                                                /*event_tracer=*/nullptr,

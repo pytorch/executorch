@@ -374,4 +374,74 @@ class ModuleTest: XCTestCase {
       XCTAssertEqual(outs.first?.tensor(), Tensor([Float(2)]))
     }
   }
+
+  // Covers the Module.load(_:options:) Swift wrapper over the ObjC
+  // loadMethod:options: bridge. Loads a specific method with per-delegate
+  // backend options, then executes it.
+  func testLoadMethodWithBackendOptionsThenExecuteOnCoreMLDelegatedModel() throws {
+    let modelPath = try requireFixture("add_coreml", ofType: "pte")
+    let module = Module(filePath: modelPath)
+    let options = try BackendOptionsMap(options: [
+      "CoreMLBackend": [
+        BackendOption("compute_unit", "cpu_and_gpu"),
+      ]
+    ])
+    try module.load("forward", options: options)
+    XCTAssertTrue(module.isLoaded("forward"))
+
+    let inputs: [Tensor<Float>] = [Tensor([1]), Tensor([1])]
+    let outputs: [Value] = try module.forward(inputs)
+    XCTAssertEqual(outputs.first?.tensor(), Tensor([Float(2)]))
+  }
+
+  // Mixed sequence on a multi-method delegated model:
+  //   1. load(optionsA)            — installs optionsA; the C++ Module
+  //      stores a raw pointer into optionsA's storage and the ObjC
+  //      wrapper retains optionsA via _loadedBackendOptions.
+  //   2. load("mul", options: optionsB) — loads "mul" explicitly with
+  //      optionsB, synchronously. Must NOT release optionsA (doing so
+  //      would leave _module->backend_options_ dangling).
+  //   3. forward(inputs)           — triggers a lazy load_method on
+  //      "forward" which falls back to the stored pointer (into optionsA).
+  //
+  // The XCTAssertNotNil(weakA) after step 2 is the deterministic check:
+  // a buggy loadMethod:options: that assigns `_loadedBackendOptions =
+  // options` releases optionsA's last strong ref there, weakA becomes
+  // nil, and the assertion fails independent of heap layout. With the
+  // correct implementation weakA stays non-nil. The forward/execute
+  // assertions additionally verify the positive path end-to-end.
+  func testMixedLoadWithOptionsAndLoadMethodWithOptionsOnMultiMethodModel() throws {
+    let modelPath = try requireFixture("add_mul_coreml", ofType: "pte")
+    let module = Module(filePath: modelPath)
+
+    weak var weakA: BackendOptionsMap?
+    try autoreleasepool {
+      let optionsA = try BackendOptionsMap(options: [
+        "CoreMLBackend": [BackendOption("compute_unit", "cpu_only")]
+      ])
+      weakA = optionsA
+      try module.load(optionsA)
+    }
+    XCTAssertNotNil(weakA, "Module must retain optionsA after load(optionsA)")
+
+    try autoreleasepool {
+      let optionsB = try BackendOptionsMap(options: [
+        "CoreMLBackend": [BackendOption("compute_unit", "cpu_and_gpu")]
+      ])
+      try module.load("mul", options: optionsB)
+    }
+    XCTAssertTrue(module.isLoaded("mul"))
+    XCTAssertNotNil(weakA,
+      "load(\"mul\", options: optionsB) must not release optionsA — " +
+      "_module->backend_options_ still points into its storage")
+
+    // Lazy load_method("forward") must still see valid optionsA storage.
+    let inputs: [Tensor<Float>] = [Tensor([2]), Tensor([3])]
+    let addOuts: [Value] = try module.forward(inputs)
+    XCTAssertEqual(addOuts.first?.tensor(), Tensor([Float(5)]))
+
+    // "mul" was loaded explicitly with optionsB and should compute 2 * 3.
+    let mulOuts: [Value] = try module.execute("mul", inputs)
+    XCTAssertEqual(mulOuts.first?.tensor(), Tensor([Float(6)]))
+  }
 }

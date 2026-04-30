@@ -18,6 +18,7 @@
 // https://pytorch.org/executorch/main/using-executorch-ios
 
 import PackageDescription
+import Foundation
 
 let debug_suffix = "_debug"
 let dependencies_suffix = "_with_dependencies"
@@ -126,22 +127,24 @@ for (key, value) in products {
   packageTargets.append(target)
 }
 
-// Test fixtures. add_coreml.pte is generated at CI time by
-// extension/apple/ExecuTorch/__tests__/resources/generate_coreml_test_models.py
-// (invoked by scripts/build_apple_frameworks.sh before `swift test`). It is
-// gitignored, so include it in test resources only when present so that
-// `swift test` runs on dev machines without CoreML python deps don't fail
-// at the SwiftPM resolve stage.
+// Test fixtures. add_coreml.pte and add_mul_coreml.pte are generated at CI
+// time by extension/apple/ExecuTorch/__tests__/resources/generate_coreml_test_models.py
+// (invoked by scripts/build_apple_frameworks.sh before `swift test`). They
+// are gitignored, so include them in test resources only when present so
+// that `swift test` runs on dev machines without CoreML python deps don't
+// fail at the SwiftPM resolve stage.
 let testResourcesDir = "extension/apple/ExecuTorch/__tests__/resources"
 var testResources: [Resource] = [.copy("resources/add.pte")]
 if FileManager.default.fileExists(atPath: "\(testResourcesDir)/add_coreml.pte") {
   testResources.append(.copy("resources/add_coreml.pte"))
 }
+if FileManager.default.fileExists(atPath: "\(testResourcesDir)/add_mul_coreml.pte") {
+  testResources.append(.copy("resources/add_mul_coreml.pte"))
+}
 
 // SwiftPM resources must live under the target's path, so the ObjC test
 // target uses symlinks to the canonical resources directory. The symlinks
-// themselves are gitignored and (re)created by scripts/build_apple_frameworks.sh
-// (CI) and swift_play/run.sh (local).
+// themselves are gitignored and (re)created by scripts/build_apple_frameworks.sh.
 let objcTestsDir = "extension/apple/ExecuTorch/__tests__/ObjC"
 var objcTestResources: [Resource] = []
 if FileManager.default.fileExists(atPath: "\(objcTestsDir)/add.pte") {
@@ -149,6 +152,9 @@ if FileManager.default.fileExists(atPath: "\(objcTestsDir)/add.pte") {
 }
 if FileManager.default.fileExists(atPath: "\(objcTestsDir)/add_coreml.pte") {
   objcTestResources.append(.copy("add_coreml.pte"))
+}
+if FileManager.default.fileExists(atPath: "\(objcTestsDir)/add_mul_coreml.pte") {
+  objcTestResources.append(.copy("add_mul_coreml.pte"))
 }
 
 let testLinkerSettings: [LinkerSetting] = [

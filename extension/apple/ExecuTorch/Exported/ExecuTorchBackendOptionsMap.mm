@@ -71,7 +71,11 @@ Error buildBackendOptionsMap(
           break;
         case ExecuTorchBackendOptionTypeInteger:
           // The C++ runtime stores integer option values as 32-bit `int`.
-          // Reject anything that would silently narrow.
+          // Reject anything that would silently narrow. On Apple's current
+          // 64-bit-only targets NSInteger is int64_t, so this check is
+          // meaningful; on a hypothetical 32-bit build NSInteger would be
+          // int32_t and the comparison would be tautological (still correct,
+          // just never trips).
           if (opt.intValue < INT_MIN || opt.intValue > INT_MAX) {
             return Error::InvalidArgument;
           }
@@ -138,6 +142,13 @@ Error buildBackendOptionsMap(
     return nil;
   }
   _storage = std::move(storage);
+  // Move-assignment order matters: `_storage` is moved first so the Spans
+  // inside `map` (which point at each inner vector's heap buffer) survive
+  // into `_storage`. std::vector's move preserves data() pointers, so the
+  // Spans remain valid. This relies on `LoadBackendOptionsMap`'s move
+  // being a shallow member-wise move that does not recompute span
+  // pointers; if that ever changes, the move order here would need to be
+  // revisited. The end-to-end CoreML-delegated test exercises this path.
   _map = std::move(map);
   // Snapshot the input as a shallow-immutable dictionary, then also copy
   // each value array immutably. Combined with ExecuTorchBackendOption
