@@ -51,6 +51,7 @@ class LpaiGraph : public QnnGraph {
   std::vector<std::unique_ptr<QnnLpaiGraph_CoreAffinity_t>> lpai_core_affinity_;
   std::vector<std::unique_ptr<QnnLpaiGraph_CustomConfigPrepare_t>>
       lpai_prepare_;
+  std::vector<uint8_t> scratch_buf_, persistent_buf_;
 
   QnnLpaiGraph_Mem_t* AllocMem() {
     lpai_mem_.emplace_back(std::make_unique<QnnLpaiGraph_Mem_t>());
