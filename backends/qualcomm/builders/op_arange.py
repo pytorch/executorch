@@ -27,7 +27,8 @@ class Arange(NodeVisitor):
     ) -> PyQnnManager.PyQnnOpWrapper:
         start, end = node.args[0:2]
         step = node.args[2] if len(node.args) > 2 else 1
-        out_tensor = torch.arange(start, end, step)
+        arange_tensor = self.get_tensor(node, node)
+        out_tensor = torch.arange(start, end, step).to(arange_tensor.dtype)
 
         # since we can derive the constant value of current op in AoT stage
         # we only build static tensor here for consumers of current node

@@ -102,6 +102,9 @@ class ModelArgs:
     apply_output: bool = True  # Use output layer (unembedding) inside the transformer
     use_qk_norm: bool = False  # apply normalization to q and k in the attention
     qk_norm_before_rope: bool = False  # when to apply qk norm
+    qk_norm_affine: bool = (
+        True  # whether QK norm has learnable weight (False = scaleless)
+    )
     residual_multiplier: Optional[float] = (
         None  # Scaling factor applied to the residual hidden states
     )
@@ -161,6 +164,15 @@ class ModelArgs:
     # gemma2 attn and output soft capping
     final_logit_softcapping: Optional[float] = None
     attn_logit_softcapping: Optional[float] = None
+
+    # rlformers forward-pass features for on-device model parity
+    normalize_tok_embeddings: bool = False
+    scale_query_by: float = 1.0
+    use_attn_o_gate: bool = False
+    use_attn_o_norm: bool = False
+    use_residual_gate: bool = False
+    use_ffn_learnable_scales: bool = False
+    output_soft_cap_temp: Optional[float] = None
 
     def __post_init__(self):  # noqa: C901
         if self.n_kv_heads is None:
