@@ -34,6 +34,7 @@ from executorch.exir.operator.convert import (
 from executorch.exir.pass_base import ExportPass
 from executorch.exir.pass_manager import PassManager, PassType
 from executorch.exir.passes.const_prop_pass import ConstPropPass
+from executorch.exir.passes.cse_pass import CSEPass
 from executorch.exir.passes.debug_handle_generator_pass import DebugHandleGeneratorPass
 
 from executorch.exir.passes.executorch_prim_ops_registry import _EXECUTORCH_SYM_OPS
@@ -510,6 +511,7 @@ base_pre_op_replace_passes: List[Callable[[torch.nn.Module], PassResult]] = Pass
 base_post_op_replace_passes: List[Callable[[torch.nn.Module], PassResult]] = (
     PassManager(
         passes=[
+            CSEPass(),
             dead_code_elimination_pass,
             DebugHandleGeneratorPass(),
         ]
