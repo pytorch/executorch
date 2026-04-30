@@ -14,6 +14,10 @@ The model classifies a static RGB test input tensor with shape `[1, 3, 224, 224]
 
 ## Corstone-300 FVP (Ethos-U55)
 
+> **Note:** Corstone-300 has only 2 MiB ISRAM. The MV2 allocator pools require
+> ~3 MiB, so the build will link but FVP execution will fail at runtime.
+> Use Corstone-320 (below) for end-to-end MV2 inference.
+
 ### Export the model
 
 Export a quantized INT8 MobileNetV2 model with Ethos-U55 delegation:
@@ -23,11 +27,11 @@ Export a quantized INT8 MobileNetV2 model with Ethos-U55 delegation:
 python -m modules.lib.executorch.backends.arm.scripts.aot_arm_compiler --model_name=mv2_untrained --quantize --delegate --target=ethos-u55-128 --output=mv2_u55_128.pte
 ```
 
-### Build and run
+### Build (link-check only)
 
-<!-- RUN test_mv2_ethos-u55_build_and_run -->
+<!-- RUN test_mv2_ethos-u55_build -->
 ```
-west build -b mps3/corstone300/fvp modules/lib/executorch/zephyr/samples/mv2-ethosu -t run -- -DET_PTE_FILE_PATH=mv2_u55_128.pte
+west build -b mps3/corstone300/fvp modules/lib/executorch/zephyr/samples/mv2-ethosu -- -DET_PTE_FILE_PATH=mv2_u55_128.pte
 ```
 
 ## Corstone-320 FVP (Ethos-U85)
@@ -41,11 +45,17 @@ Export a quantized INT8 MobileNetV2 model with Ethos-U85 delegation:
 python -m modules.lib.executorch.backends.arm.scripts.aot_arm_compiler --model_name=mv2_untrained --quantize --delegate --target=ethos-u85-256 --output=mv2_u85_256.pte
 ```
 
-### Build and run
+### Build
 
-<!-- RUN test_mv2_ethos-u85_build_and_run -->
+<!-- RUN test_mv2_ethos-u85_build -->
 ```
-west build -b mps4/corstone320/fvp modules/lib/executorch/zephyr/samples/mv2-ethosu -t run -- -DET_PTE_FILE_PATH=mv2_u85_256.pte
+west build -b mps4/corstone320/fvp modules/lib/executorch/zephyr/samples/mv2-ethosu -- -DET_PTE_FILE_PATH=mv2_u85_256.pte
+```
+
+### Run on FVP
+
+```
+west build -t run
 ```
 
 ## Alif Ensemble E8 DevKit
