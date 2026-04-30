@@ -48,6 +48,7 @@ def prim_ops_registry_selective(name, selected_prim_ops_header_target, aten_suff
         }) + ["-DET_PRIM_OPS_SELECTIVE_BUILD"],
         deps = [
             "//executorch/kernels/prim_ops:et_copy_index" + aten_suffix,
+            "//executorch/kernels/prim_ops:et_select" + aten_suffix,
             "//executorch/kernels/prim_ops:et_view" + aten_suffix,
             "//executorch/runtime/core:evalue" + aten_suffix,
             "//executorch/runtime/kernel:operator_registry" + aten_suffix,

@@ -486,6 +486,7 @@ def collect_specs_from_nodes(  # noqa: C901
                 in [
                     memory.alloc,
                     memory.view,
+                    memory.select,
                     operator.getitem,
                     torch.ops.higher_order.cond,
                     exir_while,
@@ -763,9 +764,12 @@ def get_node_tensor_specs(
     has no tensor specs.
     """
     # get tensor specs
-    if node.target == memory.view:
+    if node.target in (memory.view, memory.select):
         base = node.args[0]
         assert isinstance(base, torch.fx.Node)
+        while base.target in (memory.view, memory.select):
+            base = base.args[0]
+            assert isinstance(base, torch.fx.Node)
         specs = base.meta.get("spec")
     else:
         specs = node.meta.get("spec")
