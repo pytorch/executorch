@@ -107,6 +107,9 @@ class QnnInterface {
   const QNN_INTERFACE_VER_TYPE& GetInterfaceVer() const {
     return qnn_interface_->QNN_INTERFACE_VER_NAME;
   }
+  const QnnInterface_t* GetInterface() const {
+    return qnn_interface_;
+  }
   void Unload() {
     qnn_interface_ = nullptr;
   }
