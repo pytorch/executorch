@@ -45,10 +45,9 @@
   return nil;
 }
 
-// Mirror of the Swift testLoadWithBackendOptionsThenExecuteOnCoreMLDelegatedModel
-// regression test, exercising the ObjC API surface directly so we don't lose
-// coverage if Swift overlays change. See ModuleTest.swift for the full
-// description of the bug class this protects against.
+// Mirrors the Swift testLoadWithBackendOptionsThenExecuteOnCoreMLDelegatedModel,
+// exercising the ObjC API surface directly so coverage does not depend on
+// the Swift overlays.
 - (void)testLoadWithOptionsThenExecuteOnCoreMLDelegatedModel {
   NSString *modelPath = [self requireFixture:@"add_coreml" ofType:@"pte"];
   if (!modelPath) return;
@@ -64,8 +63,8 @@
   ExecuTorchModule *module = [[ExecuTorchModule alloc] initWithFilePath:modelPath];
   XCTAssertTrue([module loadWithOptions:options error:&error], @"%@", error);
 
-  // No explicit -loadMethod: — exercise the lazy load_method path that was
-  // the original regression site.
+  // No explicit -loadMethod: — exercise the lazy load_method path that
+  // consumes the retained backend options map.
   ExecuTorchTensor *one =
       [[ExecuTorchTensor alloc] initWithScalars:@[@1.0f] dataType:ExecuTorchDataTypeFloat];
   NSArray<ExecuTorchValue *> *outputs =

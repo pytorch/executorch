@@ -3,8 +3,9 @@
 Currently produces:
   - add_coreml.pte: a CoreML-delegated tensor-add model whose forward(x, y)
     returns x + y. Used by ModuleTest.testLoadWithBackendOptionsThenExecuteOnCoreML
-    as a regression fixture for the LoadBackendOptionsMap lifetime fix in the
-    ObjC wrapper.
+    to exercise the BackendOptionsMap lifetime path end-to-end against a
+    delegated model (add.pte has no delegates, so the per-delegate option
+    lookup path is only exercised with a delegated fixture like this one).
 
 Usage:
     python extension/apple/ExecuTorch/__tests__/resources/generate_coreml_test_models.py

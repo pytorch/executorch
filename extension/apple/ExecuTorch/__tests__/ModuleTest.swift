@@ -263,10 +263,10 @@ class ModuleTest: XCTestCase {
     XCTAssertFalse(desc.contains("0x"), "description should not include a pointer: \(desc)")
   }
 
-  // Regression test for the lazy load_method path: after load(options),
-  // forward() triggers load_method which must still see valid backend
-  // options. Requires a delegated model — the plain add.pte has no
-  // delegates and so does not exercise the code path.
+  // Exercises the full feature end-to-end against a delegated model:
+  // load(options) installs backend options, then forward() triggers lazy
+  // load_method which consumes them. A delegated fixture is required so
+  // the per-delegate option lookup actually runs.
   func testLoadWithBackendOptionsThenExecuteOnCoreMLDelegatedModel() throws {
     let modelPath = try requireFixture("add_coreml", ofType: "pte")
     let module = Module(filePath: modelPath)
@@ -278,17 +278,17 @@ class ModuleTest: XCTestCase {
     ])
     XCTAssertNoThrow(try module.load(options))
     // No explicit load("forward") here — exercise the lazy load_method path
-    // that previously dereferenced a dangling LoadBackendOptionsMap.
+    // that consumes the retained LoadBackendOptionsMap.
     let inputs: [Tensor<Float>] = [Tensor([1]), Tensor([1])]
     var outputs: [Value]?
     XCTAssertNoThrow(outputs = try module.forward(inputs))
     XCTAssertEqual(outputs?.first?.tensor(), Tensor([Float(2)]))
   }
 
-  // Regression test: calling load(_:BackendOptionsMap) twice on the same
-  // Module must remain safe. The Module retains the most recently passed
-  // map via ARC; the previous one is released only after the new one is
-  // installed, so the C++ pointer it stored is always valid.
+  // Calling load(_:BackendOptionsMap) repeatedly replaces the installed
+  // options. The Module retains the most recently passed map via ARC; the
+  // previous one is released only after the new one is installed, so the
+  // C++ pointer it stored is always valid.
   func testRepeatedLoadWithBackendOptionsThenExecuteOnCoreMLDelegatedModel() throws {
     let modelPath = try requireFixture("add_coreml", ofType: "pte")
     let module = Module(filePath: modelPath)
