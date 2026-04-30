@@ -14,10 +14,18 @@ import unittest
 
 import torch
 import torch.nn as nn
-from parameterized import parameterized
 
-from .quantize import quantize_model, quantize_weight
-from .recipe import QuantConfig, QuantRecipe, QuantRule
+from executorch.examples.models.gemma4_31b.quant.quantize import (
+    dequantize_weight,
+    quantize_model,
+    quantize_weight,
+)
+from executorch.examples.models.gemma4_31b.quant.recipe import (
+    QuantConfig,
+    QuantRecipe,
+    QuantRule,
+)
+from parameterized import parameterized
 
 
 # ---------------------------------------------------------------------------
@@ -57,16 +65,30 @@ class TestQuantizeWeight(unittest.TestCase):
         cw = quantize_weight(torch.randn(32, 64, dtype=torch.float32), config)
         self.assertEqual(cw.qdata.shape, (32, 64))
 
-    def test_dequant_approximates_original(self):
+    def test_quantize_dequantize_roundtrip(self):
         torch.manual_seed(0)
-        weight = torch.randn(64, 128, dtype=torch.float32)
+        weight = torch.randn(64, 128, dtype=torch.bfloat16)
         config = QuantConfig(bits=4, group_size=32, symmetric=False, method="min_max")
         cw = quantize_weight(weight, config)
-        scale = cw.scale.float().repeat_interleave(config.group_size, dim=-1)
-        zero = cw.zero.float().repeat_interleave(config.group_size, dim=-1)
-        dequant = (cw.qdata.float() - zero) * scale
-        rel_error = (dequant - weight).abs().mean() / weight.abs().mean()
+        dequant = dequantize_weight(cw, dtype=torch.bfloat16)
+        rel_error = (
+            dequant.float() - weight.float()
+        ).abs().mean() / weight.float().abs().mean()
         self.assertLess(rel_error.item(), 0.15)
+
+    def test_dequantize_output_dtype(self):
+        config = QuantConfig(bits=4, group_size=32, symmetric=False, method="min_max")
+        cw = quantize_weight(torch.randn(32, 64, dtype=torch.bfloat16), config)
+        self.assertEqual(dequantize_weight(cw, torch.float32).dtype, torch.float32)
+        self.assertEqual(dequantize_weight(cw, torch.bfloat16).dtype, torch.bfloat16)
+        self.assertEqual(dequantize_weight(cw, torch.float16).dtype, torch.float16)
+
+    def test_dequantize_symmetric(self):
+        config = QuantConfig(bits=4, group_size=32, symmetric=True, method="min_max")
+        cw = quantize_weight(torch.randn(32, 64, dtype=torch.bfloat16), config)
+        self.assertIsNone(cw.zero)
+        dequant = dequantize_weight(cw)
+        self.assertEqual(dequant.shape, (32, 64))
 
     @parameterized.expand(
         [
@@ -90,15 +112,15 @@ class TestQuantizeWeightHQQ(unittest.TestCase):
         if not torch.cuda.is_available():
             self.skipTest("CUDA required for HQQ")
 
-    def test_dequant_approximates_original(self):
+    def test_quantize_dequantize_roundtrip(self):
         torch.manual_seed(0)
-        weight = torch.randn(64, 128, dtype=torch.float32, device="cuda")
+        weight = torch.randn(64, 128, dtype=torch.bfloat16, device="cuda")
         config = QuantConfig(bits=4, group_size=32, symmetric=False, method="hqq")
         cw = quantize_weight(weight, config)
-        scale = cw.scale.cpu().float().repeat_interleave(config.group_size, dim=-1)
-        zero = cw.zero.cpu().float().repeat_interleave(config.group_size, dim=-1)
-        dequant = (cw.qdata.cpu().float() - zero) * scale
-        rel_error = (dequant - weight.cpu()).abs().mean() / weight.cpu().abs().mean()
+        dequant = dequantize_weight(cw, dtype=torch.bfloat16).cpu()
+        rel_error = (
+            dequant.float() - weight.cpu().float()
+        ).abs().mean() / weight.cpu().float().abs().mean()
         self.assertLess(rel_error.item(), 0.15)
 
     def test_symmetric_scale_only(self):

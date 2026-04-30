@@ -186,6 +186,23 @@ def quantize_weight(
     )
 
 
+def dequantize_weight(
+    cw: CanonicalQuantizedWeight,
+    dtype: torch.dtype = torch.float32,
+) -> torch.Tensor:
+    """Dequantize a ``CanonicalQuantizedWeight`` back to a dense tensor.
+
+    Inverse of ``quantize_weight``. Useful for embedding lookups (which
+    need dense weights) or for inspecting quantized values.
+    """
+    gs = cw.config.group_size
+    scale = cw.scale.float().repeat_interleave(gs, dim=-1)
+    if cw.zero is not None:
+        zero = cw.zero.float().repeat_interleave(gs, dim=-1)
+        return ((cw.qdata.float() - zero) * scale).to(dtype)
+    return (cw.qdata.float() * scale).to(dtype)
+
+
 # ---------------------------------------------------------------------------
 # Per-model quantization
 

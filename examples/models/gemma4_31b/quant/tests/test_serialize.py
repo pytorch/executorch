@@ -18,11 +18,10 @@ import tempfile
 import unittest
 
 import torch
-from safetensors import safe_open
 
-from .recipe import QuantConfig
+from executorch.examples.models.gemma4_31b.quant.recipe import QuantConfig
 
-from .serialize import (
+from executorch.examples.models.gemma4_31b.quant.serialize import (
     _nibble_pack,
     _nibble_unpack,
     CanonicalQuantizedWeight,
@@ -31,6 +30,7 @@ from .serialize import (
     save,
     serialize,
 )
+from safetensors import safe_open
 
 
 def _make_cqw(

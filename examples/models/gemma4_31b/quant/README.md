@@ -7,10 +7,11 @@ Packing-agnostic quantization framework: **recipe → quantize → serialize →
 | File | Concern | Depends on |
 |---|---|---|
 | `recipe.py` | **Policy** — what to quantize, what precision, which layers | nothing |
-| `quantize.py` | **Computation** — produces canonical weights from fp weights | recipe, torchao |
+| `quantize.py` | **Computation** — produces/dequantizes canonical weights | recipe, torchao |
 | `serialize.py` | **Data format** — saves/loads canonical weights to safetensors | recipe |
-| `pack.py` | **Packing dispatch** — walks model, dispatches to per-module packers | serialize |
+| `pack.py` | **Packing dispatch** — `pack_model` (bulk) and `pack_one` (streaming) | serialize |
 | `pack_cuda.py` | **CUDA packing** — converts canonical to tinygemm/intx runtime format | pack, serialize |
+| `gguf.py` | **GGUF import** — unpacks Q4_K/Q6_K blocks to canonical form | recipe, serialize |
 
 ## Data flow
 
@@ -79,10 +80,8 @@ symmetric, and method per weight. Unquantized weights stored as-is.
   `IntxWeightOnlyConfig` subclass for the `mlx::gather_qmm` kernel.
   For MoE models, stack per-expert weights into `SwitchLinear` format.
 
-- `gguf.py` — read a GGUF file and convert to `CanonicalQuantizedWeight`
-  dicts, enabling `load() → pack_model()` from community-quantized GGUF
-  checkpoints without re-quantizing from bf16. Maps GGUF quant types
-  (Q4_K, Q6_K, Q8_0, etc.) to `QuantConfig` and unpacks super-blocks
-  into the canonical qdata + scale + zero layout. For CUDA packing,
-  Q6_K would be widened to 8-bit (`pack_int8_for_cuda`) since there is
-  no 6-bit CUDA kernel — lossless, ~33% more memory than true 6-bit.
+- `gguf.py` — extend with Q5_K, Q8_0, and other GGUF quant types.
+  Currently supports Q4_K and Q6_K. Some Q4_K_M files also contain
+  Q5_K or Q8_0 tensors (for sensitive layers on certain architectures)
+  which will raise — add support as needed. Q6_K is widened to 8-bit
+  for CUDA packing since there is no 6-bit CUDA kernel.

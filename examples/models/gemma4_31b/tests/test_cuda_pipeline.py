@@ -33,7 +33,7 @@ from executorch.examples.models.gemma4_31b.quant import (
     pack_model,
     quantize_model,
 )
-from executorch.examples.models.gemma4_31b.test_pipeline import (
+from executorch.examples.models.gemma4_31b.tests.test_pipeline import (
     build_hf_checkpoint,
     DEFAULT_RECIPE,
     MockTokenizer,
