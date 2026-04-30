@@ -135,11 +135,13 @@ fi
 ### QUANTIZATION & PROGRAM DATA SEPARATION ###
 EXPECTED_QUANT_PREFIX="<|im_start|>user Calculate 15% of 80?<|im_end|><|im_start|>assistant:
 <think>
+<think>
 Okay, so I need to calculate 15% of 80."
 EXPECTED_QUANT_LORA_PREFIX="
 <|im_start|>user Calculate 15% of 80?<|im_end|><|im_start|>assistant
 To calculate 15% of 80, we can multiply 80 by 15/100.
-So, 15% of 80 is equal to (80 * 15) / 100 = 1200 / 100 = 12.
+80 * 0.15 = 12.
+So, 15% of 80 is 12.
 #### 12
 The answer is: 12<|im_end|>"
 
