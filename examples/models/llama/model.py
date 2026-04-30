@@ -1,5 +1,6 @@
 # Copyright (c) Meta Platforms, Inc. and affiliates.
 # All rights reserved.
+# Copyright 2026 Arm Limited and/or its affiliates.
 #
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
@@ -285,11 +286,11 @@ class Llama2Model(EagerModelBase):
         if self.use_kv_cache:
             return self.get_example_inputs_kvcache_sdpa()
         else:
-            return (
-                torch.tensor(
-                    [[1, 2, 3]], dtype=torch.long
-                ),  # tokens, with kv cache our input token length is always just 1 token.
-            )
+            max_len = getattr(self.llm_config.export, "max_seq_length", 3)
+            max_len = max(3, int(max_len))
+            example_tokens = torch.arange(max_len, dtype=torch.int32).unsqueeze(0)
+            example_tokens = example_tokens % 100 + 1
+            return (example_tokens,)
 
     # assumption is the custom op doesnt support dynamic shape right now. It might but its untested so lets first get static shape working
     def get_example_inputs_kvcache_sdpa(self):
