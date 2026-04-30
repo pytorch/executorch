@@ -340,6 +340,11 @@ echo "Generating Swift test fixtures (requires CoreML python deps)"
 cd "$SOURCE_ROOT_DIR"
 python3 extension/apple/ExecuTorch/__tests__/resources/generate_coreml_test_models.py
 
+# SwiftPM requires resources to live under the test target's path. The ObjC
+# test target shares fixtures with the Swift one via symlinks.
+ln -sfn ../resources/add.pte         extension/apple/ExecuTorch/__tests__/ObjC/add.pte
+ln -sfn ../resources/add_coreml.pte  extension/apple/ExecuTorch/__tests__/ObjC/add_coreml.pte
+
 echo "Running tests"
 
 cd "$SOURCE_ROOT_DIR"

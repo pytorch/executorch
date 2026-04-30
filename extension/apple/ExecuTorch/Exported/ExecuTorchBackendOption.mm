@@ -64,4 +64,69 @@
   return [[self alloc] initWithKey:key stringValue:value];
 }
 
+#pragma mark - NSObject
+
+- (NSString *)description {
+  switch (_type) {
+    case ExecuTorchBackendOptionTypeBoolean:
+      return [NSString stringWithFormat:@"<%@ %@=%@ (bool)>",
+              NSStringFromClass([self class]), _key, _boolValue ? @"true" : @"false"];
+    case ExecuTorchBackendOptionTypeInteger:
+      return [NSString stringWithFormat:@"<%@ %@=%ld (int)>",
+              NSStringFromClass([self class]), _key, (long)_intValue];
+    case ExecuTorchBackendOptionTypeString:
+      return [NSString stringWithFormat:@"<%@ %@=%@ (string)>",
+              NSStringFromClass([self class]), _key,
+              _stringValue ? [NSString stringWithFormat:@"\"%@\"", _stringValue] : @"(null)"];
+  }
+  return [super description];
+}
+
+- (NSString *)debugDescription {
+  return [self description];
+}
+
+- (BOOL)isEqual:(id)object {
+  if (self == object) {
+    return YES;
+  }
+  if (![object isKindOfClass:[ExecuTorchBackendOption class]]) {
+    return NO;
+  }
+  ExecuTorchBackendOption *other = (ExecuTorchBackendOption *)object;
+  if (_type != other.type || ![_key isEqualToString:other.key]) {
+    return NO;
+  }
+  switch (_type) {
+    case ExecuTorchBackendOptionTypeBoolean:
+      return _boolValue == other.boolValue;
+    case ExecuTorchBackendOptionTypeInteger:
+      return _intValue == other.intValue;
+    case ExecuTorchBackendOptionTypeString:
+      // Both are non-null when type is String (init enforces it), but be
+      // defensive in case of subclass/manual misuse.
+      if (_stringValue == other.stringValue) {
+        return YES;
+      }
+      return [_stringValue isEqualToString:other.stringValue];
+  }
+  return NO;
+}
+
+- (NSUInteger)hash {
+  NSUInteger h = _key.hash ^ (NSUInteger)_type;
+  switch (_type) {
+    case ExecuTorchBackendOptionTypeBoolean:
+      h ^= (NSUInteger)(_boolValue ? 1 : 0);
+      break;
+    case ExecuTorchBackendOptionTypeInteger:
+      h ^= (NSUInteger)_intValue;
+      break;
+    case ExecuTorchBackendOptionTypeString:
+      h ^= _stringValue.hash;
+      break;
+  }
+  return h;
+}
+
 @end

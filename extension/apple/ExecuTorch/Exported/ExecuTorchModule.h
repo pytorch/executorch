@@ -7,6 +7,7 @@
  */
 
 #import "ExecuTorchBackendOption.h"
+#import "ExecuTorchBackendOptionsMap.h"
 #import "ExecuTorchValue.h"
 
 NS_ASSUME_NONNULL_BEGIN
@@ -190,26 +191,30 @@ NS_SWIFT_NAME(Module)
 /**
  * Loads the module's program with per-delegate backend options.
  *
- * @param backendOptions A dictionary mapping backend identifiers (e.g. "CoreMLBackend")
- *        to arrays of ExecuTorchBackendOption objects configuring that backend.
+ * The receiver retains @c options for as long as the underlying program
+ * references it (lifetime tracked via ARC).
+ *
+ * @param options A `ExecuTorchBackendOptionsMap` containing per-delegate
+ *        load-time configuration, built once via
+ *        `[ExecuTorchBackendOptionsMap mapWithOptions:error:]`.
  * @param verification The verification level to apply when loading the program.
  * @param error A pointer to an NSError pointer that will be set if an error occurs.
  * @return YES if the program was successfully loaded; otherwise, NO.
  */
-- (BOOL)loadWithBackendOptions:(NSDictionary<NSString *, NSArray<ExecuTorchBackendOption *> *> *)backendOptions
-                  verification:(ExecuTorchVerification)verification
-                         error:(NSError **)error NS_REFINED_FOR_SWIFT;
+- (BOOL)loadWithOptions:(ExecuTorchBackendOptionsMap *)options
+           verification:(ExecuTorchVerification)verification
+                  error:(NSError **)error NS_REFINED_FOR_SWIFT;
 
 /**
  * Loads the module's program with per-delegate backend options using minimal verification.
  *
- * @param backendOptions A dictionary mapping backend identifiers (e.g. "CoreMLBackend")
- *        to arrays of ExecuTorchBackendOption objects configuring that backend.
+ * @param options A `ExecuTorchBackendOptionsMap` containing per-delegate
+ *        load-time configuration.
  * @param error A pointer to an NSError pointer that will be set if an error occurs.
  * @return YES if the program was successfully loaded; otherwise, NO.
  */
-- (BOOL)loadWithBackendOptions:(NSDictionary<NSString *, NSArray<ExecuTorchBackendOption *> *> *)backendOptions
-                         error:(NSError **)error NS_REFINED_FOR_SWIFT;
+- (BOOL)loadWithOptions:(ExecuTorchBackendOptionsMap *)options
+                  error:(NSError **)error NS_REFINED_FOR_SWIFT;
 
 /**
  * Checks if the module is loaded.
@@ -232,13 +237,13 @@ NS_SWIFT_NAME(Module)
  * Loads a specific method from the program with per-delegate backend options.
  *
  * @param methodName A string representing the name of the method to load.
- * @param backendOptions A dictionary mapping backend identifiers (e.g. "CoreMLBackend")
- *        to arrays of ExecuTorchBackendOption objects configuring that backend.
+ * @param options A `ExecuTorchBackendOptionsMap` containing per-delegate
+ *        load-time configuration.
  * @param error A pointer to an NSError pointer that is set if an error occurs.
  * @return YES if the method was successfully loaded; otherwise, NO.
  */
 - (BOOL)loadMethod:(NSString *)methodName
-    backendOptions:(NSDictionary<NSString *, NSArray<ExecuTorchBackendOption *> *> *)backendOptions
+           options:(ExecuTorchBackendOptionsMap *)options
              error:(NSError **)error NS_REFINED_FOR_SWIFT;
 
 /**

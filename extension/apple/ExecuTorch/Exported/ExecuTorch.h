@@ -7,6 +7,7 @@
  */
 
 #import "ExecuTorchBackendOption.h"
+#import "ExecuTorchBackendOptionsMap.h"
 #import "ExecuTorchError.h"
 #import "ExecuTorchLog.h"
 #import "ExecuTorchModule.h"

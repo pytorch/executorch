@@ -138,6 +138,26 @@ if FileManager.default.fileExists(atPath: "\(testResourcesDir)/add_coreml.pte") 
   testResources.append(.copy("resources/add_coreml.pte"))
 }
 
+// SwiftPM resources must live under the target's path, so the ObjC test
+// target uses symlinks to the canonical resources directory. The symlinks
+// themselves are gitignored and (re)created by scripts/build_apple_frameworks.sh
+// (CI) and swift_play/run.sh (local).
+let objcTestsDir = "extension/apple/ExecuTorch/__tests__/ObjC"
+var objcTestResources: [Resource] = []
+if FileManager.default.fileExists(atPath: "\(objcTestsDir)/add.pte") {
+  objcTestResources.append(.copy("add.pte"))
+}
+if FileManager.default.fileExists(atPath: "\(objcTestsDir)/add_coreml.pte") {
+  objcTestResources.append(.copy("add_coreml.pte"))
+}
+
+let testLinkerSettings: [LinkerSetting] = [
+  .unsafeFlags([
+    "-Xlinker", "-force_load",
+    "-Xlinker", "cmake-out/kernels_optimized.xcframework/macos-arm64/libkernels_optimized_macos.a",
+  ])
+]
+
 let package = Package(
   name: "executorch",
   platforms: [
@@ -153,13 +173,20 @@ let package = Package(
         .target(name: "kernels_optimized\(dependencies_suffix)"),
       ],
       path: "extension/apple/ExecuTorch/__tests__",
+      exclude: ["ObjC", "resources/generate_coreml_test_models.py", "resources/.gitignore"],
       resources: testResources,
-      linkerSettings: [
-        .unsafeFlags([
-          "-Xlinker", "-force_load",
-          "-Xlinker", "cmake-out/kernels_optimized.xcframework/macos-arm64/libkernels_optimized_macos.a",
-        ])
-      ]
+      linkerSettings: testLinkerSettings
+    ),
+    .testTarget(
+      name: "objc_tests",
+      dependencies: [
+        .target(name: "executorch\(debug_suffix)"),
+        .target(name: "kernels_optimized\(dependencies_suffix)"),
+      ],
+      path: "extension/apple/ExecuTorch/__tests__/ObjC",
+      exclude: [".gitignore"],
+      resources: objcTestResources,
+      linkerSettings: testLinkerSettings
     )
   ]
 )

@@ -9,6 +9,8 @@
 #import "ExecuTorchModule.h"
 
 #import "ExecuTorchBackendOption.h"
+#import "ExecuTorchBackendOptionsMap.h"
+#import "ExecuTorchBackendOptionsMap+Internal.h"
 #import "ExecuTorchError.h"
 #import "ExecuTorchUtils.h"
 
@@ -64,49 +66,6 @@ static inline ExecuTorchValue *toExecuTorchValue(EValue value) NS_RETURNS_RETAIN
   }
   ET_CHECK_MSG(false, "Unsupported EValue type");
   return [ExecuTorchValue new];
-}
-
-static Error buildBackendOptionsMap(
-    NSDictionary<NSString *, NSArray<ExecuTorchBackendOption *> *> *backendOptions,
-    std::vector<std::vector<BackendOption>> &allOptions,
-    LoadBackendOptionsMap &map) {
-  allOptions.reserve(backendOptions.count);
-  for (NSString *backendId in backendOptions) {
-    NSArray<ExecuTorchBackendOption *> *options = backendOptions[backendId];
-    std::vector<BackendOption> opts;
-    opts.reserve(options.count);
-    for (ExecuTorchBackendOption *opt in options) {
-      BackendOption bo;
-      strncpy(bo.key, opt.key.UTF8String, kMaxOptionKeyLength - 1);
-      bo.key[kMaxOptionKeyLength - 1] = '\0';
-      switch (opt.type) {
-        case ExecuTorchBackendOptionTypeBoolean:
-          bo.value = (bool)opt.boolValue;
-          break;
-        case ExecuTorchBackendOptionTypeInteger:
-          if (opt.intValue < INT_MIN || opt.intValue > INT_MAX) {
-            return Error::InvalidArgument;
-          }
-          bo.value = (int)opt.intValue;
-          break;
-        case ExecuTorchBackendOptionTypeString: {
-          std::array<char, kMaxOptionValueLength> arr{};
-          strncpy(arr.data(), opt.stringValue.UTF8String, kMaxOptionValueLength - 1);
-          arr[kMaxOptionValueLength - 1] = '\0';
-          bo.value = arr;
-          break;
-        }
-      }
-      opts.push_back(bo);
-    }
-    allOptions.push_back(std::move(opts));
-    auto &backOpts = allOptions.back();
-    const auto err = map.set_options(backendId.UTF8String, Span<BackendOption>(backOpts.data(), backOpts.size()));
-    if (err != Error::Ok) {
-      return err;
-    }
-  }
-  return Error::Ok;
 }
 
 @interface ExecuTorchTensorMetadata ()
@@ -293,13 +252,22 @@ static Error buildBackendOptionsMap(
   std::unique_ptr<Module> _module;
   NSMutableDictionary<NSString *, NSMutableArray<ExecuTorchValue *> *> *_inputs;
   NSMutableDictionary<NSString *, NSMutableArray<ExecuTorchValue *> *> *_outputs;
-  // Storage backing _backendOptionsMap. Per the C++ contract on
-  // Module::load(const LoadBackendOptionsMap&, ...), the map (and the
-  // vectors whose Spans it references) must outlive any methods loaded
-  // with these options. We hold them as ivars so they live as long as
-  // this ExecuTorchModule (and therefore the underlying _module).
-  std::vector<std::vector<BackendOption>> _backendOptionsStorage;
-  LoadBackendOptionsMap _backendOptionsMap;
+  // Strong reference to the most recently passed BackendOptionsMap. The
+  // C++ Module borrows a pointer into the map's underlying C++ storage and
+  // dereferences it during lazy load_method calls (triggered by forward),
+  // so the ObjC wrapper must keep it alive. ARC handles the lifetime.
+  //
+  // INVARIANT: this ivar is only ever overwritten with another non-nil
+  // BackendOptionsMap, and never reset to nil while `_module` is alive.
+  // Resetting it to nil would release the C++ map underneath `_module`'s
+  // borrowed pointer and re-introduce the dangling-pointer bug class this
+  // refactor was created to eliminate.
+  //
+  // THREAD SAFETY: like the rest of `ExecuTorchModule`, write access here
+  // is not thread-safe. The ARC retain/release on assignment is non-atomic
+  // for direct ivars; serialize `loadWithOptions:` calls externally if you
+  // share a `Module` across threads.
+  ExecuTorchBackendOptionsMap *_loadedBackendOptions;
 }
 
 - (instancetype)initWithFilePath:(NSString *)filePath
@@ -377,23 +345,17 @@ static Error buildBackendOptionsMap(
   return YES;
 }
 
-- (BOOL)loadWithBackendOptions:(NSDictionary<NSString *, NSArray<ExecuTorchBackendOption *> *> *)backendOptions
-                  verification:(ExecuTorchVerification)verification
-                         error:(NSError **)error {
-  // Reset the persistent storage. The C++ Module borrows a pointer into
-  // _backendOptionsMap (which in turn holds Spans into _backendOptionsStorage),
-  // so both must remain alive for the lifetime of any methods loaded with
-  // these options. They are ivars, so that's true until -dealloc.
-  _backendOptionsStorage.clear();
-  _backendOptionsMap = LoadBackendOptionsMap();
-  const auto buildError = buildBackendOptionsMap(backendOptions, _backendOptionsStorage, _backendOptionsMap);
-  if (buildError != Error::Ok) {
-    if (error) {
-      *error = ExecuTorchErrorWithCode((ExecuTorchErrorCode)buildError);
-    }
-    return NO;
-  }
-  const auto errorCode = _module->load(_backendOptionsMap, static_cast<Program::Verification>(verification));
+- (BOOL)loadWithOptions:(ExecuTorchBackendOptionsMap *)options
+           verification:(ExecuTorchVerification)verification
+                  error:(NSError **)error {
+  NSParameterAssert(options);
+  // Retain the options object so the C++ borrowed pointer it contains stays
+  // valid for the lifetime of any methods loaded with these options.
+  // (Methods load lazily during forward(), so the borrow may outlive this
+  // call.) See ExecuTorchBackendOptionsMap.h for the lifetime contract.
+  _loadedBackendOptions = options;
+  const auto errorCode = _module->load(*[options cppMap],
+                                        static_cast<Program::Verification>(verification));
   if (errorCode != Error::Ok) {
     if (error) {
       *error = ExecuTorchErrorWithCode((ExecuTorchErrorCode)errorCode);
@@ -403,26 +365,26 @@ static Error buildBackendOptionsMap(
   return YES;
 }
 
-- (BOOL)loadWithBackendOptions:(NSDictionary<NSString *, NSArray<ExecuTorchBackendOption *> *> *)backendOptions
-                         error:(NSError **)error {
-  return [self loadWithBackendOptions:backendOptions
-                         verification:ExecuTorchVerificationMinimal
-                                error:error];
+- (BOOL)loadWithOptions:(ExecuTorchBackendOptionsMap *)options
+                  error:(NSError **)error {
+  return [self loadWithOptions:options
+                  verification:ExecuTorchVerificationMinimal
+                         error:error];
 }
 
 - (BOOL)loadMethod:(NSString *)methodName
-    backendOptions:(NSDictionary<NSString *, NSArray<ExecuTorchBackendOption *> *> *)backendOptions
+           options:(ExecuTorchBackendOptionsMap *)options
              error:(NSError **)error {
-  std::vector<std::vector<BackendOption>> allOptions;
-  LoadBackendOptionsMap map;
-  const auto buildError = buildBackendOptionsMap(backendOptions, allOptions, map);
-  if (buildError != Error::Ok) {
-    if (error) {
-      *error = ExecuTorchErrorWithCode((ExecuTorchErrorCode)buildError);
-    }
-    return NO;
-  }
-  const auto errorCode = _module->load_method(methodName.UTF8String, nullptr, nullptr, &map);
+  NSParameterAssert(options);
+  // Note: unlike -loadWithOptions:..., this path passes the C++ map pointer
+  // synchronously into Module::load_method, which uses it within the same
+  // call stack and does not store it. We therefore do NOT need to retain
+  // `options` past this method's return — `options` is held alive by ARC
+  // via the local parameter for the duration of the call.
+  const auto errorCode = _module->load_method(methodName.UTF8String,
+                                               /*planned_memory=*/nullptr,
+                                               /*event_tracer=*/nullptr,
+                                               [options cppMap]);
   if (errorCode != Error::Ok) {
     if (error) {
       *error = ExecuTorchErrorWithCode((ExecuTorchErrorCode)errorCode);
