@@ -26,6 +26,7 @@ from executorch.examples.models.gemma4_31b.quant.serialize import (
     _nibble_unpack,
     CanonicalQuantizedWeight,
     deserialize,
+    iter_load,
     load,
     save,
     serialize,
@@ -262,6 +263,70 @@ class TestSaveLoad(unittest.TestCase):
             q, u = load(path)
         self.assertEqual(len(q), 0)
         self.assertTrue(torch.equal(unq["w"], u["w"]))
+
+
+class TestIterLoad(unittest.TestCase):
+    """Streaming load — one weight at a time from disk."""
+
+    def test_yields_all_weights(self):
+        """iter_load yields every quantized and unquantized weight."""
+        q4 = QuantConfig(bits=4, group_size=32, symmetric=False, method="min_max")
+        q8 = QuantConfig(bits=8, group_size=32, symmetric=True, method="min_max")
+        cw4 = _make_cqw((64, 128), q4)
+        cw8 = _make_cqw((32, 64), q8)
+        unq = {"norm.weight": torch.randn(64, dtype=torch.bfloat16)}
+
+        with tempfile.TemporaryDirectory() as d:
+            path = os.path.join(d, "m.safetensors")
+            save({"proj.weight": cw4, "embed.weight": cw8}, unq, path)
+            items = list(iter_load(path))
+
+        fqns = {fqn for fqn, _ in items}
+        self.assertIn("proj.weight", fqns)
+        self.assertIn("embed.weight", fqns)
+        self.assertIn("norm.weight", fqns)
+        self.assertEqual(len(items), 3)
+
+    def test_quantized_matches_load(self):
+        """Streaming yields identical CQW to batch load."""
+        config = QuantConfig(bits=4, group_size=32, symmetric=False, method="min_max")
+        cw = _make_cqw((64, 128), config)
+
+        with tempfile.TemporaryDirectory() as d:
+            path = os.path.join(d, "m.safetensors")
+            save({"w": cw}, {}, path)
+
+            q_batch, _ = load(path)
+            items = dict(iter_load(path))
+
+        batch_cw = q_batch["w"]
+        stream_cw = items["w"]
+        self.assertIsInstance(stream_cw, CanonicalQuantizedWeight)
+        self.assertTrue(torch.equal(batch_cw.qdata, stream_cw.qdata))
+        self.assertTrue(torch.equal(batch_cw.scale, stream_cw.scale))
+        self.assertTrue(torch.equal(batch_cw.zero, stream_cw.zero))
+        self.assertEqual(batch_cw.config, stream_cw.config)
+
+    def test_unquantized_matches_load(self):
+        """Streaming yields identical plain tensors to batch load."""
+        unq = {"a": torch.randn(8, 16, dtype=torch.bfloat16)}
+
+        with tempfile.TemporaryDirectory() as d:
+            path = os.path.join(d, "m.safetensors")
+            save({}, unq, path)
+
+            _, u_batch = load(path)
+            items = dict(iter_load(path))
+
+        self.assertTrue(torch.equal(u_batch["a"], items["a"]))
+
+    def test_empty_file(self):
+        """Streaming an empty checkpoint yields nothing."""
+        with tempfile.TemporaryDirectory() as d:
+            path = os.path.join(d, "m.safetensors")
+            save({}, {}, path)
+            items = list(iter_load(path))
+        self.assertEqual(len(items), 0)
 
 
 if __name__ == "__main__":

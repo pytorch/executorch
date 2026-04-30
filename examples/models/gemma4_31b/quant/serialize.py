@@ -22,7 +22,7 @@ serialization to keep file size at ~0.5 bytes/param.
 
 import json
 from dataclasses import dataclass
-from typing import Optional
+from typing import Iterator, Optional
 
 import torch
 from safetensors import safe_open
@@ -233,3 +233,49 @@ def load(
         header = f.metadata()
         tensors = {k: f.get_tensor(k) for k in f.keys()}
     return deserialize(tensors, header)
+
+
+def iter_load(
+    path: str,
+) -> Iterator[tuple[str, CanonicalQuantizedWeight | torch.Tensor]]:
+    """Stream weights from a safetensors file one at a time.
+
+    Yields ``(fqn, value)`` where *value* is a ``CanonicalQuantizedWeight``
+    for quantized weights or a plain ``torch.Tensor`` for unquantized ones.
+    Only one weight's tensors are resident in memory at a time, keeping peak
+    memory proportional to the largest single weight.
+    """
+    with safe_open(path, framework="pt", device="cpu") as f:
+        header = f.metadata()
+        quant_meta = json.loads(header.get("quant", "{}"))
+        all_keys = set(f.keys())
+        consumed: set[str] = set()
+
+        for fqn, meta in quant_meta.items():
+            config = QuantConfig(
+                bits=meta["bits"],
+                group_size=meta["group_size"],
+                symmetric=meta["symmetric"],
+                method=meta["method"],
+            )
+            qdata = f.get_tensor(f"{fqn}.qdata")
+            consumed.add(f"{fqn}.qdata")
+            if config.bits == 4:
+                qdata = _nibble_unpack(qdata, meta["shape"][-1])
+
+            scale = f.get_tensor(f"{fqn}.scale")
+            consumed.add(f"{fqn}.scale")
+
+            zero_key = f"{fqn}.zero"
+            zero = None
+            if zero_key in all_keys:
+                zero = f.get_tensor(zero_key)
+                consumed.add(zero_key)
+
+            yield fqn, CanonicalQuantizedWeight(
+                qdata=qdata, scale=scale, zero=zero, config=config
+            )
+
+        for key in all_keys:
+            if key not in consumed:
+                yield key, f.get_tensor(key)
