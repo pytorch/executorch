@@ -47,53 +47,6 @@ FORMAT = "[%(levelname)s %(asctime)s %(filename)s:%(lineno)s] %(message)s"
 logging.basicConfig(level=logging.INFO, format=FORMAT)
 logger = logging.getLogger(__name__)
 
-_GEMMA4_MODEL_ID = "google/gemma-4-E2B-it"
-_GEMMA4_PROBLEM_LAYER_FQN = "model.language_model.layers.22.mlp.down_proj"
-
-
-def _get_submodule_by_fqn(root: torch.nn.Module, fqn: str) -> torch.nn.Module:
-    cur = root
-    for part in fqn.split("."):
-        if part.isdigit():
-            cur = cur[int(part)]  # type: ignore[index]
-        else:
-            cur = getattr(cur, part)
-    return cur
-
-
-def _capture_gemma4_float_fallback_weight(
-    model_id: str,
-    qlinear: Optional[str],
-    model: torch.nn.Module,
-) -> Optional[torch.Tensor]:
-    if model_id != _GEMMA4_MODEL_ID or qlinear != "4w":
-        return None
-
-    layer = _get_submodule_by_fqn(model, _GEMMA4_PROBLEM_LAYER_FQN)
-    weight = layer.weight.detach().clone()
-    logger.info(
-        "Saving %s in floating point to avoid the current Gemma 4 4w mismatch",
-        _GEMMA4_PROBLEM_LAYER_FQN,
-    )
-    return weight
-
-
-def _restore_gemma4_float_fallback_weight(
-    model_id: str,
-    qlinear: Optional[str],
-    model: torch.nn.Module,
-    weight: Optional[torch.Tensor],
-) -> None:
-    if weight is None or model_id != _GEMMA4_MODEL_ID or qlinear != "4w":
-        return
-
-    layer = _get_submodule_by_fqn(model, _GEMMA4_PROBLEM_LAYER_FQN)
-    layer.weight = torch.nn.Parameter(weight, requires_grad=False)
-    logger.info(
-        "Restored %s in floating point after quantization",
-        _GEMMA4_PROBLEM_LAYER_FQN,
-    )
-
 
 def _export_with_optimum(
     model_id: str,
@@ -128,10 +81,6 @@ def _export_with_optimum(
 
     from executorch.backends.mlx.llm.quantization import quantize_model_
 
-    gemma4_float_weight = _capture_gemma4_float_fallback_weight(
-        model_id, qlinear, exportable.model
-    )
-
     quantize_model_(
         exportable.model,
         qlinear_config=qlinear,
@@ -142,9 +91,6 @@ def _export_with_optimum(
             exportable.model.config, "tie_word_embeddings", False
         )
         and not no_tie_word_embeddings,
-    )
-    _restore_gemma4_float_fallback_weight(
-        model_id, qlinear, exportable.model, gemma4_float_weight
     )
 
     logger.info("Exporting model with torch.export...")
@@ -215,24 +161,13 @@ def _export_with_custom_components(
     }
     torch_dtype = torch_dtype_map.get(dtype, torch.bfloat16)
 
-    effective_use_custom_sdpa = use_custom_sdpa
-    effective_use_custom_kv_cache = use_custom_kv_cache
-    if model_id == _GEMMA4_MODEL_ID and use_custom_sdpa:
-        logger.info(
-            "Disabling custom SDPA for Gemma 4 while keeping the custom cache path"
-        )
-        effective_use_custom_sdpa = False
-    if model_id == _GEMMA4_MODEL_ID and use_custom_kv_cache:
-        logger.info("Disabling custom KV cache for Gemma 4")
-        effective_use_custom_kv_cache = False
-
-    if effective_use_custom_sdpa:
+    if use_custom_sdpa:
         from executorch.backends.mlx.llm.hf_attention import register_mlx_attention
 
         register_mlx_attention()
         logger.info("Registered MLX custom SDPA attention")
 
-    attn_implementation = "mlx" if effective_use_custom_sdpa else None
+    attn_implementation = "mlx" if use_custom_sdpa else None
 
     logger.info(f"Loading HuggingFace model: {model_id}")
     load_kwargs = {
@@ -292,7 +227,7 @@ def _export_with_custom_components(
             max_cache_len=effective_cache_len,
         )
 
-    if effective_use_custom_kv_cache:
+    if use_custom_kv_cache:
         from executorch.backends.mlx.llm.source_transformation import (
             replace_hf_cache_with_mlx,
         )
@@ -316,10 +251,6 @@ def _export_with_custom_components(
 
     from executorch.backends.mlx.llm.quantization import quantize_model_
 
-    gemma4_float_weight = _capture_gemma4_float_fallback_weight(
-        model_id, qlinear, exportable.model
-    )
-
     quantize_model_(
         exportable.model,
         qlinear_config=qlinear,
@@ -328,9 +259,6 @@ def _export_with_custom_components(
         qembedding_group_size=qembedding_group_size,
         tie_word_embeddings=getattr(model.config, "tie_word_embeddings", False)
         and not no_tie_word_embeddings,
-    )
-    _restore_gemma4_float_fallback_weight(
-        model_id, qlinear, exportable.model, gemma4_float_weight
     )
 
     logger.info("Exporting model with torch.export...")
@@ -421,24 +349,10 @@ def export_llama_hf(
         use_custom_sdpa: Use MLX custom SDPA (mlx::custom_sdpa)
         use_custom_kv_cache: Use MLX custom KV cache (mlx::kv_cache_update)
     """
-    effective_use_custom_sdpa = use_custom_sdpa
-    effective_use_custom_kv_cache = use_custom_kv_cache
-    if model_id == _GEMMA4_MODEL_ID:
-        if effective_use_custom_sdpa:
-            logger.info(
-                "Disabling custom SDPA for Gemma 4 and falling back to the baseline export path"
-            )
-            effective_use_custom_sdpa = False
-        if effective_use_custom_kv_cache:
-            logger.info(
-                "Disabling custom KV cache for Gemma 4 and falling back to the baseline export path"
-            )
-            effective_use_custom_kv_cache = False
-
-    if effective_use_custom_sdpa or effective_use_custom_kv_cache:
+    if use_custom_sdpa or use_custom_kv_cache:
         logger.info(
-            f"Using custom components: sdpa={effective_use_custom_sdpa}, "
-            f"kv_cache={effective_use_custom_kv_cache}"
+            f"Using custom components: sdpa={use_custom_sdpa}, "
+            f"kv_cache={use_custom_kv_cache}"
         )
         _export_with_custom_components(
             model_id=model_id,
@@ -448,8 +362,8 @@ def export_llama_hf(
             dtype=dtype,
             qlinear=qlinear,
             qembedding=qembedding,
-            use_custom_sdpa=effective_use_custom_sdpa,
-            use_custom_kv_cache=effective_use_custom_kv_cache,
+            use_custom_sdpa=use_custom_sdpa,
+            use_custom_kv_cache=use_custom_kv_cache,
             no_tie_word_embeddings=no_tie_word_embeddings,
             qlinear_group_size=qlinear_group_size,
             qembedding_group_size=qembedding_group_size,
