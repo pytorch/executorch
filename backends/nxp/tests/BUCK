@@ -33,7 +33,7 @@ fbcode_target(_kind = runtime.python_library,
 fbcode_target(_kind = python_pytest,
     name = "test_quantizer",
     srcs = [
-        "test_quantizer.py",
+        "generic_tests/test_quantizer.py",
     ],
     deps = [
         "//executorch/backends/nxp:quantizer",
@@ -47,7 +47,7 @@ fbcode_target(_kind = python_pytest,
 fbcode_target(_kind = python_pytest,
     name = "test_neutron_backend",
     srcs = [
-        "test_neutron_backend.py",
+        "generic_tests/test_neutron_backend.py",
     ],
     deps = [
         "//executorch/backends/nxp:neutron_backend",
@@ -69,7 +69,7 @@ fbcode_target(_kind = runtime.python_library,
 fbcode_target(_kind = python_pytest,
     name = "test_batch_norm_fusion",
     srcs = [
-        "test_batch_norm_fusion.py",
+        "generic_tests/test_batch_norm_fusion.py",
     ],
     deps = [
         "//caffe2:torch",
@@ -84,7 +84,7 @@ fbcode_target(_kind = python_pytest,
 fbcode_target(_kind = python_pytest,
     name = "test_qdq_clustering_conv",
     srcs = [
-        "test_qdq_clustering_conv.py",
+        "generic_tests/test_qdq_clustering_conv.py",
     ],
     deps = [
         ":executorch_pipeline",
@@ -95,7 +95,7 @@ fbcode_target(_kind = python_pytest,
 fbcode_target(_kind = python_pytest,
     name = "test_integration",
     srcs = [
-        "test_integration.py",
+        "generic_tests/test_integration.py",
     ],
     preload_deps = [
         "//executorch/kernels/quantized:custom_ops_generated_lib",
