@@ -17,7 +17,7 @@ import torch
 import torch.nn as nn
 
 from .pack import ModulePackerFn, pack_model  # noqa: F401
-from .serialize import CanonicalQuantizedWeight, load
+from .serialize import CanonicalQuantizedWeight
 
 
 # ---------------------------------------------------------------------------
@@ -202,9 +202,23 @@ def load_and_pack_for_cuda(
     model: nn.Module,
     packers: dict[type, ModulePackerFn] | None = None,
 ) -> None:
-    """Read a quantized safetensors file and pack into ``model`` for CUDA.
+    """Stream weights from a quantized safetensors file and pack for CUDA.
 
-    Thin wrapper: ``load`` + ``pack_model``.
+    Uses ``iter_load`` to process one weight at a time, keeping peak
+    memory proportional to the largest single weight instead of loading
+    all weights into memory at once.
     """
-    quantized, unquantized = load(path)
-    pack_model(model, quantized, unquantized, packers or DEFAULT_CUDA_PACKERS)
+    from .pack import pack_one
+    from .serialize import iter_load
+
+    _packers = packers or DEFAULT_CUDA_PACKERS
+
+    for fqn, value in iter_load(path):
+        pack_one(model, fqn, value, _packers)
+
+    for fqn, p in model.named_parameters():
+        if p.device.type == "meta":
+            raise RuntimeError(
+                f"Weight '{fqn}' not found in checkpoint "
+                f"(model/checkpoint version mismatch?)"
+            )
