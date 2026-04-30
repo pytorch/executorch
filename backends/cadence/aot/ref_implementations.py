@@ -633,10 +633,8 @@ def quantized_fully_connected_asym8uxasym8u_asym8u_per_tensor() -> torch.Tensor:
 def fully_connected(
     input_tensor: torch.Tensor,
     weight: torch.Tensor,
-    bias: torch.Tensor,
+    bias: Optional[torch.Tensor] = None,
 ) -> torch.Tensor:
-    if input_tensor.shape[0] != 1:
-        raise ValueError("Fully connected linear only supports batch size of 1")
     return F.linear(input_tensor, weight, bias)
 
 

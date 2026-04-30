@@ -2527,7 +2527,7 @@ def quantized_max_pool2d_nhwc_meta(
 def fully_connected_meta(
     src: torch.Tensor,
     weight: torch.Tensor,
-    bias: torch.Tensor,
+    bias: Optional[torch.Tensor] = None,
 ) -> torch.Tensor:
     # src comes in shape [leading_dims, in_dim]
     # weight comes in shape [out_dim, in_dim]
