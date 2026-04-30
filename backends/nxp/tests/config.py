@@ -15,13 +15,19 @@ import eiq_neutron_sdk
 # TODO(Robert Kalmar) In accordance with the "TODO(dbort): Prune /test[s]/ dirs, /third-party/ dirs" in pyproject.toml,
 #  once the test folders are not installed we can derive the path from current file location: `pathlib.Path(__file__)`
 PROJECT_DIR = os.environ.get("PROJECT_DIR")
-assert PROJECT_DIR and os.path.exists(PROJECT_DIR)
+if not PROJECT_DIR:
+    # Auto-detect: The PROJECT_DIR env variable is set by the conftest.py in backends.nxp.tests.conftest. But unittests
+    #               don't use the conftest, so this variable is not set -> set it manually here in that case.
+    PROJECT_DIR = str(pathlib.Path(__file__).parent.parent.parent.parent)
+assert os.path.exists(
+    PROJECT_DIR
+), f"Invalid PROJECT_DIR env variable: `{PROJECT_DIR}`."
 
 OUTPUTS_DIR = pathlib.Path(os.getcwd()) / ".outputs"
 
 NSYS_PATH = pathlib.Path(shutil.which("nsys"))
 NSYS_CONFIG_PATH = os.path.join(
-    PROJECT_DIR, "backends", "nxp", "tests_models", "neutron-imxrt700.ini"
+    PROJECT_DIR, "backends", "nxp", "tests", "neutron-imxrt700.ini"
 )
 NSYS_FIRMWARE_PATH = os.path.join(
     os.path.dirname(eiq_neutron_sdk.__file__),
@@ -34,4 +40,17 @@ NSYS_FIRMWARE_PATH = os.path.join(
 # The NXP_RUNNER_PATH env variable is either defined by pytest when using the CLI argument --nxp_executor_path or
 # a standard environment variable.
 NEUTRON_TEST_PATH = os.environ.get("NXP_RUNNER_PATH")
-assert NEUTRON_TEST_PATH and os.path.exists(NEUTRON_TEST_PATH)
+if not NEUTRON_TEST_PATH:
+    # Auto-detect: The NXP_RUNNER_PATH env variable is set by the conftest.py in backends.nxp.tests.conftest. But
+    #               unittests don't use the conftest, so this variable is not set -> set it manually here in that case.
+    NEUTRON_TEST_PATH = (
+        pathlib.Path(PROJECT_DIR)
+        / "examples"
+        / "nxp"
+        / "executor_runner"
+        / "build"
+        / "nxp_executor_runner"
+    )
+assert os.path.exists(
+    NEUTRON_TEST_PATH
+), f"Invalid NXP_RUNNER_PATH env variable: `{NEUTRON_TEST_PATH}`."
