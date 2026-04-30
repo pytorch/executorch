@@ -1,5 +1,5 @@
 # Copyright 2023 Martin Pavella
-# Copyright 2023-2025 NXP
+# Copyright 2023-2026 NXP
 #
 # License: MIT
 # See the LICENSE_MIT for more details.
@@ -547,8 +547,8 @@ def convert_data_type(torch_type: torch.TensorType) -> TensorType:
         )
 
 
-def torch_type_to_numpy_type(torch_type: torch.TensorType) -> np.ScalarType:
-    """Convert Torch DataType to NeutronIR TensorType"""
+def torch_type_to_numpy_type(torch_type: torch.TensorType) -> np.dtype:
+    """Convert Torch data type to Numpy data type."""
 
     if torch_type == torch.float32:
         return np.dtype(np.float32)

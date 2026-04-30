@@ -79,6 +79,7 @@ class QnnBackendUnifiedRegistry {
 #endif
   static constexpr const char* gpu_library_name_ = "libQnnGpu.so";
   static constexpr const char* dsp_library_name_ = "libQnnDsp.so";
+  // Lpai library name is same for both traditional build and hexagon build.
   static constexpr const char* lpai_library_name_ = "libQnnLpai.so";
 
   std::unique_ptr<const QnnSaver_Config_t*[]> GetImplementationConfig(
