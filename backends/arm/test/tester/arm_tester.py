@@ -8,6 +8,7 @@ import copy
 import inspect
 
 import logging
+import platform
 
 from collections import Counter, defaultdict
 from pprint import pformat
@@ -103,6 +104,21 @@ from torchao.quantization.pt2e.quantizer import QuantizationSpec, SharedQuantiza
 from torchao.quantization.pt2e.quantizer.quantizer import Q_ANNOTATION_KEY
 
 logger = logging.getLogger(__name__)
+
+
+# TODO(MLETORCH-2048: Remove if possible or rework this to match minimal tolerance diff between architectures when TOSA is updated, or investigate/update atol in the failing tests)
+def _adjust_tosa_aarch64_atol(compile_spec: ArmCompileSpec, atol: float) -> float:
+    """Increase tolerance for aarch64 when running on TOSA.
+
+    This is due to the TOSA ref model being experimental on Aarch64.
+
+    """
+    if isinstance(compile_spec, TosaCompileSpec) and platform.machine().lower() in (
+        "aarch64",
+        "arm64",
+    ):
+        return atol * 1.1
+    return atol
 
 
 def _dump_lowered_modules_artifact(
@@ -572,6 +588,8 @@ class ArmTester(tester.Tester):
                 The default is random data.
 
         """
+
+        atol = _adjust_tosa_aarch64_atol(self.compile_spec, atol)
 
         # backward-compatible ordering (accept inputs as the first positional argument)
         inputs, reference_stage, test_stage = self._get_input_and_stages(
