@@ -13,7 +13,7 @@ from executorch.exir.pass_base import ExportPass
 class NormalizeIndexPutNoneIndicesPass(ArmPass):
     """Normalize index_put with None:s in the indices_tensor list by moving
     None-indexed dims to the channel dimensions (*C_j in RewriteIndexPutPass
-    teminology) by permutating the destination and data tensors. A None-index
+    terminology) by permuting the destination and data tensors. A None-index
     corresponds to selecting the entire dim, which is equivalent with being a
     channel dimension.
 
