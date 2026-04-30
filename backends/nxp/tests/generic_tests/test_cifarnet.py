@@ -8,21 +8,18 @@ import os.path
 import pytest
 import torch
 
-from executorch.backends.nxp.tests_models.config_importer import test_config
-from executorch.backends.nxp.tests_models.dataset_creator import CopyDatasetCreator
-
-from executorch.backends.nxp.tests_models.executors import (
-    convert_run_compare,
-    ReferenceModel,
-)
-from executorch.backends.nxp.tests_models.graph_verifier import (
+from executorch.backends.nxp.tests.config_importer import test_config
+from executorch.backends.nxp.tests.dataset_creator import CopyDatasetCreator
+from executorch.backends.nxp.tests.executorch_pipeline import ModelInputSpec
+from executorch.backends.nxp.tests.graph_verifier import (
     BaseGraphVerifier,
     NonDelegatedNode,
 )
-from executorch.backends.nxp.tests_models.model_input_spec import ModelInputSpec
-from executorch.backends.nxp.tests_models.model_output_comparator import (
+from executorch.backends.nxp.tests.model_output_comparator import (
     NumericalStatsOutputComparator,
 )
+
+from executorch.backends.nxp.tests.nsys_testing import lower_run_compare, ReferenceModel
 from executorch.examples.nxp.experimental.cifar_net.cifar_net import (
     CifarNet,
     store_test_data,
@@ -64,7 +61,7 @@ def test_cifarnet(mocker, cifar_test_files, channels_last):
     comparator = NumericalStatsOutputComparator(
         max_mse_error=1.0e-3, is_classification_task=True
     )
-    convert_run_compare(
+    lower_run_compare(
         model,
         [input_spec],
         dataset_creator=CopyDatasetCreator(cifar_test_files),
@@ -94,7 +91,7 @@ def test_cifarnet_qat(mocker, cifar_test_files):
     comparator = NumericalStatsOutputComparator(
         max_mse_error=8e-2, is_classification_task=True
     )
-    convert_run_compare(
+    lower_run_compare(
         model,
         input_shape,
         dataset_creator=CopyDatasetCreator(cifar_test_files),
