@@ -12,7 +12,7 @@ Backend-agnostic tests (quantize, save, load) live in ``test_pipeline.py``.
 Requires CUDA.
 
 Usage:
-    python -m pytest examples/models/gemma4_31b/test_cuda_pipeline.py -v
+    python -m pytest examples/models/gemma4_31b/tests/test_cuda_pipeline.py -v
 """
 
 import os
@@ -123,10 +123,18 @@ class TestChunkedPrefill(unittest.TestCase):
             pos2 = torch.arange(buf_size, prompt_len, dtype=torch.long, device="cuda")
             logits_chunk = model_chunk(chunk2, pos2, None)
 
-        # Compare last-token logits (skip sampling to avoid RNG differences)
+        # Compare last-token logits (skip sampling to avoid RNG differences).
+        # Use allclose rather than equal — CUDA kernels can produce small FP
+        # differences across execution shapes.
+        max_diff = (logits_seq[0, -1].float() - logits_chunk[0, -1].float()).abs().max()
         self.assertTrue(
-            torch.equal(logits_seq[0, -1], logits_chunk[0, -1]),
-            f"Max diff: {(logits_seq[0, -1] - logits_chunk[0, -1]).abs().max()}",
+            torch.allclose(
+                logits_seq[0, -1].float(),
+                logits_chunk[0, -1].float(),
+                atol=1e-2,
+                rtol=1e-3,
+            ),
+            f"Chunked prefill diverged: max_diff={max_diff:.4g}",
         )
 
 

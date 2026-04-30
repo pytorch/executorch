@@ -11,7 +11,7 @@ required. Backend-specific tests (pack, inference, export) live in
 ``test_cuda_pipeline.py``.
 
 Usage:
-    python -m pytest examples/models/gemma4_31b/test_pipeline.py -v
+    python -m pytest examples/models/gemma4_31b/tests/test_pipeline.py -v
 """
 
 import json

@@ -17,18 +17,18 @@ import unittest
 import numpy as np
 import torch
 
-from executorch.examples.models.gemma4_31b.quant.gguf import unpack_gguf_tensor
-from executorch.examples.models.gemma4_31b.quant.quantize import dequantize_weight
-from executorch.examples.models.gemma4_31b.quant.serialize import deserialize, serialize
-
 try:
     from gguf import GGMLQuantizationType
 
-    _Q4_K = GGMLQuantizationType.Q4_K
-    _Q6_K = GGMLQuantizationType.Q6_K
+    _HAS_GGUF = True
 except ImportError:
-    _Q4_K = None
-    _Q6_K = None
+    _HAS_GGUF = False
+
+if _HAS_GGUF:
+    from executorch.examples.models.gemma4_31b.quant.gguf import unpack_gguf_tensor
+
+from executorch.examples.models.gemma4_31b.quant.quantize import dequantize_weight
+from executorch.examples.models.gemma4_31b.quant.serialize import deserialize, serialize
 
 
 def _make_q4_k_block(d, dmin, sub_scales, sub_mins, qvals):
@@ -113,6 +113,7 @@ def _q6_k_reference_dequant(d, scales_16, qvals_256):
     return result
 
 
+@unittest.skipUnless(_HAS_GGUF, "gguf package not installed")
 class TestQ4KDequant(unittest.TestCase):
     def test_dequant_matches_reference(self):
         """Canonical dequant reproduces the GGUF Q4_K formula across all sub-blocks."""
@@ -123,7 +124,7 @@ class TestQ4KDequant(unittest.TestCase):
 
         block = _make_q4_k_block(d, dmin, sub_scales, sub_mins, qvals)
         data = np.frombuffer(bytes(block), dtype=np.uint8).reshape(1, 144)
-        cw = unpack_gguf_tensor(data, _Q4_K, [1, 256])
+        cw = unpack_gguf_tensor(data, GGMLQuantizationType.Q4_K, [1, 256])
 
         actual = dequantize_weight(cw)[0]
         expected = torch.tensor(
@@ -139,7 +140,7 @@ class TestQ4KDequant(unittest.TestCase):
         """Scale=0 produces zero dequantized values (not dmin*min)."""
         block = _make_q4_k_block(0.0, 1.0, [0] * 8, [1] * 8, [7] * 256)
         data = np.frombuffer(bytes(block), dtype=np.uint8).reshape(1, 144)
-        cw = unpack_gguf_tensor(data, _Q4_K, [1, 256])
+        cw = unpack_gguf_tensor(data, GGMLQuantizationType.Q4_K, [1, 256])
         dequant = dequantize_weight(cw)
         self.assertFalse(torch.isnan(dequant).any())
         self.assertFalse(torch.isinf(dequant).any())
@@ -149,6 +150,7 @@ class TestQ4KDequant(unittest.TestCase):
         self.assertTrue((dequant == 0).all())
 
 
+@unittest.skipUnless(_HAS_GGUF, "gguf package not installed")
 class TestQ6KDequant(unittest.TestCase):
     def test_dequant_matches_reference(self):
         """Canonical dequant reproduces the GGUF Q6_K formula."""
@@ -158,7 +160,7 @@ class TestQ6KDequant(unittest.TestCase):
 
         block = _make_q6_k_block(d, scales_16, qvals)
         data = np.frombuffer(bytes(block), dtype=np.uint8).reshape(1, 210)
-        cw = unpack_gguf_tensor(data, _Q6_K, [1, 256])
+        cw = unpack_gguf_tensor(data, GGMLQuantizationType.Q6_K, [1, 256])
 
         actual = dequantize_weight(cw)[0]
         expected = torch.tensor(_q6_k_reference_dequant(d, scales_16, qvals))
@@ -169,6 +171,7 @@ class TestQ6KDequant(unittest.TestCase):
         )
 
 
+@unittest.skipUnless(_HAS_GGUF, "gguf package not installed")
 class TestGgufSerializeRoundtrip(unittest.TestCase):
     def test_q4_k_survives_serialize_roundtrip(self):
         """unpack → serialize → deserialize → dequant matches original."""
@@ -179,7 +182,7 @@ class TestGgufSerializeRoundtrip(unittest.TestCase):
 
         block = _make_q4_k_block(d, dmin, sub_scales, sub_mins, qvals)
         data = np.frombuffer(bytes(block), dtype=np.uint8).reshape(1, 144)
-        cw = unpack_gguf_tensor(data, _Q4_K, [1, 256])
+        cw = unpack_gguf_tensor(data, GGMLQuantizationType.Q4_K, [1, 256])
 
         dequant_before = dequantize_weight(cw)
 
@@ -200,7 +203,7 @@ class TestGgufSerializeRoundtrip(unittest.TestCase):
 
         block = _make_q6_k_block(d, scales_16, qvals)
         data = np.frombuffer(bytes(block), dtype=np.uint8).reshape(1, 210)
-        cw = unpack_gguf_tensor(data, _Q6_K, [1, 256])
+        cw = unpack_gguf_tensor(data, GGMLQuantizationType.Q6_K, [1, 256])
 
         dequant_before = dequantize_weight(cw)
 
@@ -214,12 +217,11 @@ class TestGgufSerializeRoundtrip(unittest.TestCase):
         )
 
 
+@unittest.skipUnless(_HAS_GGUF, "gguf package not installed")
 class TestUnpackGgufTensor(unittest.TestCase):
     """Tests for the public ``unpack_gguf_tensor`` API."""
 
     def test_f32_returns_tensor(self):
-        from gguf import GGMLQuantizationType
-
         data = np.array([1.0, 2.0, 3.0, 4.0], dtype=np.float32)
         result = unpack_gguf_tensor(data, GGMLQuantizationType.F32, [4])
         self.assertIsInstance(result, torch.Tensor)
@@ -227,8 +229,6 @@ class TestUnpackGgufTensor(unittest.TestCase):
         self.assertEqual(result.tolist(), [1.0, 2.0, 3.0, 4.0])
 
     def test_unsupported_type_raises(self):
-        from gguf import GGMLQuantizationType
-
         with self.assertRaises(ValueError):
             unpack_gguf_tensor(
                 np.zeros(10, dtype=np.uint8), GGMLQuantizationType.Q5_K, [1, 10]
