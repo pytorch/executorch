@@ -289,7 +289,7 @@ class TOSAPartitioner(Partitioner):
         containing_program: ExportedProgram,
         reporter: WhyNoPartitionReporter,
         tag_iterator: count | None = None,
-    ) -> set[str]:
+    ) -> list[str]:
         """Tag nodes in a module or submodule from the containing program.
 
         Args:
@@ -298,21 +298,25 @@ class TOSAPartitioner(Partitioner):
             reporter: A reporter to report why nodes were rejected.
 
         Returns:
-            A set of strings with the partition tags.
+            A list of strings with the partition tags in discovery order.
 
         """
-        tags: set[str] = set()
+        # Preserve discovery order so backend lowering sees a deterministic
+        # partition order across Python processes.
+        tags: list[str] = []
+        seen_tags: set[str] = set()
         if tag_iterator is None:
             tag_iterator = count(0)
         for _, submodule, _ in get_cond_while_submodules_nested(module):
             submodule_tags = self._tag_module(
                 submodule, containing_program, reporter, tag_iterator
             )
-            if len(tags & submodule_tags) != 0:
+            if any(tag in seen_tags for tag in submodule_tags):
                 raise RuntimeError(
                     "Got overlapping tags in two different modules, this shouldn't happen."
                 )
-            tags = tags | submodule_tags
+            tags.extend(submodule_tags)
+            seen_tags.update(submodule_tags)
         operator_support = tosa_support_factory(
             self.tosa_spec, containing_program, reporter, self.additional_checks
         )
@@ -335,7 +339,8 @@ class TOSAPartitioner(Partitioner):
 
         for partition in partition_list:
             tag = f"tag{next(tag_iterator)}"
-            tags.add(tag)
+            tags.append(tag)
+            seen_tags.add(tag)
 
             for node in partition.nodes:
                 node.meta["delegation_tag"] = tag
@@ -364,6 +369,7 @@ class TOSAPartitioner(Partitioner):
                     reporter,
                 )
                 tags.remove(tag)
+                seen_tags.remove(tag)
                 continue
 
             # Check whether the partition contains only no-op or non-computational ops. Such partitions don't make sense to delegate, and in the worst case may be optimized away during lowering, which can break compilation."
@@ -385,6 +391,7 @@ class TOSAPartitioner(Partitioner):
                     reporter,
                 )
                 tags.remove(tag)
+                seen_tags.remove(tag)
         return tags
 
     def partition(self, exported_program: ExportedProgram) -> PartitionResult:
