@@ -40,7 +40,7 @@ class QnnSystemInterface {
       systemContextCreate);
   DEFINE_SHIM_FUNCTION_SYS_INTERFACE(
       system_context_get_binary_info,
-      systemContextGetBinaryInfo);
+      systemContextGetMetaData);
   DEFINE_SHIM_FUNCTION_SYS_INTERFACE(system_context_free, systemContextFree);
 
  private:

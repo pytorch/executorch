@@ -54,6 +54,7 @@ def main(args):
     quant_dtype = {
         QnnExecuTorchBackendType.kGpuBackend: None,
         QnnExecuTorchBackendType.kHtpBackend: QuantDtype.use_8a8w,
+        QnnExecuTorchBackendType.kLpaiBackend: QuantDtype.use_8a8w,
     }[qnn_config.backend]
 
     build_executorch_binary(

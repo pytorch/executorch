@@ -14,8 +14,11 @@ from random import sample, seed
 import numpy as np
 import torch
 from executorch.backends.nxp.backend.ir.converter.conversion import translator
-from executorch.backends.nxp.tests_models.calibration_dataset import CalibrationDataset
-from executorch.backends.nxp.tests_models.model_input_spec import ModelInputSpec
+from executorch.backends.nxp.backend.ir.converter.conversion.translator import (
+    torch_type_to_numpy_type,
+)
+from executorch.backends.nxp.tests.calibration_dataset import CalibrationDataset
+from executorch.backends.nxp.tests.executorch_pipeline import ModelInputSpec
 from torch import Tensor
 
 
@@ -100,10 +103,15 @@ class RandomDatasetCreator(DatasetCreator):
                     case _:
                         raise ValueError(f"Unsupported dim_order: {spec.dim_order}")
 
-                sample_vector = rng.random(np.prod(shape), spec.type).reshape(shape)
-                sample_vector.tofile(
-                    os.path.join(sample_dir, f"{str(spec_idx).zfill(2)}.bin")
+                sample_vector = rng.random(
+                    np.prod(shape), torch_type_to_numpy_type(spec.dtype)
+                ).reshape(shape)
+                file_name = (
+                    f"{str(spec_idx).zfill(2)}.bin"
+                    if len(input_spec) > 1
+                    else f"{str(idx).zfill(4)}.bin"
                 )
+                sample_vector.tofile(os.path.join(sample_dir, file_name))
 
 
 class CopyDatasetCreator(DatasetCreator):
@@ -132,9 +140,9 @@ class CopyDatasetCreator(DatasetCreator):
 
             if input_spec[0].dim_order == torch.channels_last:
                 # Permute the sample to channels last and store it in the testing dataset.
-                tensor = np.fromfile(sample_path, dtype=input_spec[0].type).reshape(
-                    input_spec[0].shape
-                )
+                tensor = np.fromfile(
+                    sample_path, dtype=torch_type_to_numpy_type(input_spec[0].dtype)
+                ).reshape(input_spec[0].shape)
 
                 if (
                     list(tensor.shape) == list(input_spec[0].shape)
