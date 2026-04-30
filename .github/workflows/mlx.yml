@@ -494,12 +494,12 @@ jobs:
               id: "google/gemma-4-E2B-it"
               name: "gemma4-e2b"
             use-custom: true
-            qconfig: "8w"
+            qconfig: "bf16"
           - model:
               id: "google/gemma-4-E2B-it"
               name: "gemma4-e2b"
             use-custom: false
-            qconfig: "8w"
+            qconfig: "bf16"
     uses: pytorch/test-infra/.github/workflows/macos_job.yml@main
     secrets: inherit
     with:
@@ -539,6 +539,14 @@ jobs:
           GROUP_SIZE_ARGS="--qlinear-group-size 32"
         fi
 
+        # "bf16" means no linear quantization — drop --qlinear/--qembedding.
+        QLINEAR_ARGS="--qlinear ${QCONFIG}"
+        if [ "${QCONFIG}" = "bf16" ]; then
+          QLINEAR_ARGS=""
+          QEMBEDDING_ARGS=""
+          GROUP_SIZE_ARGS=""
+        fi
+
         echo "::group::Install ExecuTorch and configure MLX build"
         ${CONDA_RUN} python install_executorch.py > /dev/null
         ${CONDA_RUN} cmake --preset mlx-release
@@ -565,7 +573,7 @@ jobs:
           --model-id "${MODEL_ID}" \
           ${MODEL_REVISION:+--revision "${MODEL_REVISION}"} \
           --output /tmp/${MODEL_NAME}.pte \
-          --qlinear ${QCONFIG} \
+          ${QLINEAR_ARGS} \
           ${GROUP_SIZE_ARGS} \
           ${QEMBEDDING_ARGS} \
           ${CUSTOM_ARGS}
