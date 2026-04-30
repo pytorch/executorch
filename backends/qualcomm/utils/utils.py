@@ -1138,7 +1138,9 @@ def generate_qnn_executorch_compiler_spec(  # noqa: C901
             SM8450 (Snapdragon 8 Gen 1)
             SM8475(Snapdragon 8 Gen 1+)
             SM8550(Snapdragon 8 Gen 2)
+            SM8635(Snapdragon 8s Gen 3)
             SM8650(Snapdragon 8 Gen 3)
+            SM8735(Snapdragon 8s Gen 4)
             SM8750(Snapdragon 8 Elite)
             SM8850(Snapdragon 8 Elite Gen 5)
         backend_options: Options required by different backends.
@@ -1263,7 +1265,9 @@ def get_soc_to_htp_arch_map():
         "SM8475": HtpArch.V69,
         "SM8550": HtpArch.V73,
         "SA8255": HtpArch.V73,
+        "SM8635": HtpArch.V73,
         "SM8650": HtpArch.V75,
+        "SM8735": HtpArch.V79,
         "SM8750": HtpArch.V79,
         "SM8850": HtpArch.V81,
         "SSG2115P": HtpArch.V73,
@@ -1296,7 +1300,9 @@ def get_soc_to_chipset_map():
         "SM8475": QcomChipset.SM8475,
         "SM8550": QcomChipset.SM8550,
         "SA8255": QcomChipset.SA8255,
+        "SM8635": QcomChipset.SM8635,
         "SM8650": QcomChipset.SM8650,
+        "SM8735": QcomChipset.SM8735,
         "SM8750": QcomChipset.SM8750,
         "SM8850": QcomChipset.SM8850,
         "SSG2115P": QcomChipset.SSG2115P,
