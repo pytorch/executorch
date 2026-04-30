@@ -30,6 +30,22 @@
 #include <string>
 #include <vector>
 
+#include <executorch/runtime/platform/platform.h>
+#include <executorch/runtime/platform/types.h>
+extern "C" void et_pal_emit_log_message(
+    ET_UNUSED et_timestamp_t timestamp,
+    et_pal_log_level_t level,
+    const char* filename,
+    ET_UNUSED const char* function,
+    size_t line,
+    const char* message,
+    ET_UNUSED size_t length) {
+  if (level < 'W') {
+    return;
+  }
+  fprintf(stderr, "%c [%s:%zu] %s\n", (char)level, filename, line, message);
+}
+
 #ifdef EXECUTORCH_BUILD_CUDA
 #include <cuda_runtime.h>
 #endif
@@ -44,6 +60,8 @@ DEFINE_string(
     "Path to file containing prompt text (overrides --prompt).");
 DEFINE_double(temperature, 0.8, "Sampling temperature (0 = near-greedy).");
 DEFINE_int32(max_new_tokens, 128, "Maximum tokens to generate.");
+DEFINE_int32(bos_id, 2, "BOS token id to prepend (Gemma convention: 2).");
+DEFINE_int32(eos_id, 1, "EOS token id (Gemma convention: 1).");
 DEFINE_bool(
     cuda_graph,
     false,
@@ -196,6 +214,7 @@ int main(int argc, char** argv) {
 #endif
 
   auto eos_ids = llm::get_eos_ids(tokenizer.get(), module.get());
+  eos_ids.insert(static_cast<uint64_t>(FLAGS_eos_id));
 
   // Read prompt from file or flag
   std::string prompt_text = FLAGS_prompt;
@@ -217,6 +236,9 @@ int main(int argc, char** argv) {
     return 1;
   }
   auto prompt_tokens = std::move(*encode_result);
+  // Gemma models require BOS at the start of the sequence.
+  prompt_tokens.insert(
+      prompt_tokens.begin(), static_cast<uint64_t>(FLAGS_bos_id));
   int64_t num_prompt_tokens = static_cast<int64_t>(prompt_tokens.size());
   printf("Prompt tokens: %" PRId64 "\n", num_prompt_tokens);
   stats.num_prompt_tokens = num_prompt_tokens;
