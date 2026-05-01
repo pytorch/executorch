@@ -9,7 +9,7 @@
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" /><meta name="generator" content="Docutils 0.18.1: http://docutils.sourceforge.net/" />
 
-    <title>Desktop &amp; Laptop Platforms &#8212; ExecuTorch main documentation</title>
+    <title>Zephyr: MobileNetV2 with Ethos-U NPU (Corstone FVP &amp; Alif E8) &#8212; ExecuTorch main documentation</title>
   
   
   
@@ -49,19 +49,19 @@
     <script src="_static/clipboard.min.js?v=a7894cd8"></script>
     <script src="_static/copybutton.js?v=f281be69"></script>
     <script src="_static/design-tabs.js?v=f930bc37"></script>
-    <script>DOCUMENTATION_OPTIONS.pagename = 'desktop-section';</script>
+    <script>DOCUMENTATION_OPTIONS.pagename = 'zephyr_alif_tutorial';</script>
     <script>
         DOCUMENTATION_OPTIONS.theme_version = '0.15.4';
         DOCUMENTATION_OPTIONS.theme_switcher_json_url = 'https://docs.pytorch.org/executorch/executorch-versions.json';
         DOCUMENTATION_OPTIONS.theme_switcher_version_match = 'main';
         DOCUMENTATION_OPTIONS.show_version_warning_banner = true;
         </script>
-    <link rel="canonical" href="https://docs.pytorch.org/executorch/stable/desktop-section.html" />
+    <link rel="canonical" href="https://docs.pytorch.org/executorch/stable/zephyr_alif_tutorial.html" />
     <link rel="icon" href="_static/executorch-chip-logo.svg"/>
     <link rel="index" title="Index" href="genindex.html" />
     <link rel="search" title="Search" href="search.html" />
-    <link rel="next" title="Using ExecuTorch with C++" href="using-executorch-cpp.html" />
-    <link rel="prev" title="Examples &amp; Demos" href="ios-examples.html" />
+    <link rel="next" title="Profiling and Debugging" href="using-executorch-troubleshooting.html" />
+    <link rel="prev" title="Pico2: A simple MNIST Tutorial" href="pico2_tutorial.html" />
 
   <meta name="viewport" content="width=device-width, initial-scale=1"/>
   <meta name="docsearch:language" content="en"/>
@@ -616,7 +616,7 @@ document.write(`
               </li>
             
               <li class=" ">
-                <a class="nav-link dropdown-item nav-internal" href="#">
+                <a class="nav-link dropdown-item nav-internal" href="desktop-section.html">
                   Desktop & Laptop Platforms
                 </a>
               </li>
@@ -1256,7 +1256,7 @@ document.write(`
               </li>
             
               <li class=" ">
-                <a class="nav-link dropdown-item nav-internal" href="#">
+                <a class="nav-link dropdown-item nav-internal" href="desktop-section.html">
                   Desktop & Laptop Platforms
                 </a>
               </li>
@@ -1809,7 +1809,7 @@ document.write(`
 <li class="toctree-l2"><a class="reference internal" href="ios-examples.html">Examples &amp; Demos</a></li>
 </ul>
 </details></li>
-<li class="toctree-l1 current active has-children"><a class="current reference internal" href="#">Desktop &amp; Laptop Platforms</a><details open="open"><summary><span class="toctree-toggle" role="presentation"><i class="fa-solid fa-chevron-down"></i></span></summary><ul>
+<li class="toctree-l1 has-children"><a class="reference internal" href="desktop-section.html">Desktop &amp; Laptop Platforms</a><details><summary><span class="toctree-toggle" role="presentation"><i class="fa-solid fa-chevron-down"></i></span></summary><ul>
 <li class="toctree-l2"><a class="reference internal" href="using-executorch-cpp.html">Using ExecuTorch with C++</a></li>
 <li class="toctree-l2"><a class="reference internal" href="using-executorch-building-from-source.html">Building from Source</a></li>
 <li class="toctree-l2 has-children"><a class="reference internal" href="desktop-backends.html">Backends</a><details><summary><span class="toctree-toggle" role="presentation"><i class="fa-solid fa-chevron-down"></i></span></summary><ul>
@@ -1830,7 +1830,7 @@ document.write(`
 <li class="toctree-l2"><a class="reference internal" href="raspberry_pi_llama_tutorial.html">ExecuTorch on Raspberry Pi</a></li>
 </ul>
 </details></li>
-<li class="toctree-l1 has-children"><a class="reference internal" href="embedded-section.html">Embedded Systems</a><details><summary><span class="toctree-toggle" role="presentation"><i class="fa-solid fa-chevron-down"></i></span></summary><ul>
+<li class="toctree-l1 current active has-children"><a class="reference internal" href="embedded-section.html">Embedded Systems</a><details open="open"><summary><span class="toctree-toggle" role="presentation"><i class="fa-solid fa-chevron-down"></i></span></summary><ul class="current">
 <li class="toctree-l2"><a class="reference internal" href="executorch-runtime-api-reference.html">Runtime API Reference</a></li>
 <li class="toctree-l2"><a class="reference internal" href="running-a-model-cpp-tutorial.html">Detailed C++ Runtime APIs Tutorial</a></li>
 <li class="toctree-l2"><a class="reference internal" href="extension-module.html">Running an ExecuTorch Model Using the Module Extension in C++</a></li>
@@ -1848,7 +1848,7 @@ document.write(`
 <li class="toctree-l2"><a class="reference internal" href="backends/arm-ethos-u/tutorials/ethos-u-getting-started.html">Getting Started Tutorial</a></li>
 <li class="toctree-l2"><a class="reference internal" href="raspberry_pi_llama_tutorial.html">ExecuTorch on Raspberry Pi</a></li>
 <li class="toctree-l2"><a class="reference internal" href="pico2_tutorial.html">Pico2: A simple MNIST Tutorial</a></li>
-<li class="toctree-l2"><a class="reference internal" href="zephyr_alif_tutorial.html">Zephyr: MobileNetV2 with Ethos-U NPU (Corstone FVP &amp; Alif E8)</a></li>
+<li class="toctree-l2 current active"><a class="current reference internal" href="#">Zephyr: MobileNetV2 with Ethos-U NPU (Corstone FVP &amp; Alif E8)</a></li>
 </ul>
 </details></li>
 <li class="toctree-l1"><a class="reference internal" href="using-executorch-troubleshooting.html">Profiling and Debugging</a></li>
@@ -1892,7 +1892,10 @@ document.write(`
     
     <li class="breadcrumb-item"><a href="edge-platforms-section.html" class="nav-link">Edge</a></li>
     
-    <li class="breadcrumb-item active" aria-current="page">Desktop...</li>
+    
+    <li class="breadcrumb-item"><a href="embedded-section.html" class="nav-link">Embedded Systems</a></li>
+    
+    <li class="breadcrumb-item active" aria-current="page">Zephyr:...</li>
   </ul>
 </nav>
 </div>
@@ -1940,8 +1943,14 @@ document.write(`
     </div>
     
     <div itemprop="itemListElement" itemscope itemtype="https://schema.org/ListItem">
-      <meta itemprop="name" content="Desktop &amp; Laptop Platforms">
+      <link itemprop="item" href="embedded-section.html">
+      <meta itemprop="name" content="Embedded Systems">
       <meta itemprop="position" content="2">
+    </div>
+    
+    <div itemprop="itemListElement" itemscope itemtype="https://schema.org/ListItem">
+      <meta itemprop="name" content="Zephyr: MobileNetV2 with Ethos-U NPU (Corstone FVP &amp; Alif E8)">
+      <meta itemprop="position" content="3">
     </div>
   </div>
 
@@ -1954,29 +1963,352 @@ document.write(`
 <div id="searchbox"></div>
                 <article class="bd-article">
                   
-  <section id="desktop-laptop-platforms">
-<span id="desktop-section"></span><h1>Desktop &amp; Laptop Platforms<a class="headerlink" href="#desktop-laptop-platforms" title="Link to this heading">#</a></h1>
-<p>Deploy ExecuTorch on Linux, macOS, and Windows with optimized backends for each platform.</p>
-<section id="platform-overview-runtime">
-<h2>Platform Overview &amp; Runtime<a class="headerlink" href="#platform-overview-runtime" title="Link to this heading">#</a></h2>
+  <section id="zephyr-mobilenetv2-with-ethos-u-npu-corstone-fvp-alif-e8">
+<h1>Zephyr: MobileNetV2 with Ethos-U NPU (Corstone FVP &amp; Alif E8)<a class="headerlink" href="#zephyr-mobilenetv2-with-ethos-u-npu-corstone-fvp-alif-e8" title="Link to this heading">#</a></h1>
+<p>Run a quantized MobileNetV2 image classifier on the
+Alif Ensemble E8 DevKit using
+ExecuTorch, Zephyr RTOS, and the Arm Ethos-U55 NPU. The same build flow also
+works on the Arm Corstone-320 FVP for development without hardware.</p>
+<section id="what-you-ll-build">
+<h2>What You’ll Build<a class="headerlink" href="#what-you-ll-build" title="Link to this heading">#</a></h2>
 <ul class="simple">
-<li><p><a class="reference internal" href="using-executorch-cpp.html"><span class="doc">Using ExecuTorch with C++</span></a> — C++ runtime integration guide</p></li>
-<li><p><a class="reference internal" href="using-executorch-building-from-source.html"><span class="doc">Building from Source</span></a> — Building ExecuTorch from source</p></li>
+<li><p>A quantized INT8 MobileNetV2 model fully delegated to the Ethos-U55 NPU
+(110 ops, ~19 ms inference on Alif E8)</p></li>
+<li><p>A Zephyr RTOS application that loads the <code class="docutils literal notranslate"><span class="pre">.pte</span></code> model, runs inference on a
+static test image, and prints the top-5 ImageNet predictions over UART</p></li>
 </ul>
 </section>
-<section id="backends">
-<h2>Backends<a class="headerlink" href="#backends" title="Link to this heading">#</a></h2>
-<ul class="simple">
-<li><p><a class="reference internal" href="desktop-backends.html"><span class="doc">Backends</span></a> — Available desktop backends and platform-specific optimization</p></li>
-</ul>
-</section>
-<section id="tutorials">
-<h2>Tutorials<a class="headerlink" href="#tutorials" title="Link to this heading">#</a></h2>
-<ul class="simple">
-<li><p><a class="reference internal" href="raspberry_pi_llama_tutorial.html"><span class="doc">ExecuTorch on Raspberry Pi</span></a> — Cross compiling ExecuTorch for the Raspberry Pi on Linux Host</p></li>
-</ul>
-<div class="toctree-wrapper compound">
+<section id="prerequisites">
+<h2>Prerequisites<a class="headerlink" href="#prerequisites" title="Link to this heading">#</a></h2>
+<section id="hardware-choose-one">
+<h3>Hardware (choose one)<a class="headerlink" href="#hardware-choose-one" title="Link to this heading">#</a></h3>
+<div class="pst-scrollable-table-container"><table class="table">
+<thead>
+<tr class="row-odd"><th class="head"><p>Target</p></th>
+<th class="head"><p>Description</p></th>
+</tr>
+</thead>
+<tbody>
+<tr class="row-even"><td><p><strong>Alif Ensemble E8 DevKit</strong></p></td>
+<td><p>Cortex-M55 HP core + Ethos-U55 (256 MACs), 4.5 MB HP SRAM, MRAM</p></td>
+</tr>
+<tr class="row-odd"><td><p><strong>Corstone-320 FVP</strong></p></td>
+<td><p>Virtual platform simulating Cortex-M85 + Ethos-U85 (no hardware needed, Linux only)</p></td>
+</tr>
+</tbody>
+</table>
 </div>
+</section>
+<section id="software">
+<h3>Software<a class="headerlink" href="#software" title="Link to this heading">#</a></h3>
+<ul class="simple">
+<li><p>Linux x86_64 (FVP and Arm toolchain are Linux-only; macOS can export models
+but cannot run the FVP or flash)</p></li>
+<li><p>Python 3.10+</p></li>
+<li><p>Alif SE Tools for flashing (Alif hardware only)</p></li>
+</ul>
+</section>
+</section>
+<section id="step-1-set-up-the-zephyr-workspace">
+<h2>Step 1: Set Up the Zephyr Workspace<a class="headerlink" href="#step-1-set-up-the-zephyr-workspace" title="Link to this heading">#</a></h2>
+<p>Create a workspace, install <code class="docutils literal notranslate"><span class="pre">west</span></code>, and initialize the Zephyr tree:</p>
+<div class="highlight-bash notranslate"><div class="highlight"><pre><span></span>mkdir<span class="w"> </span>~/zephyr_workspace<span class="w"> </span><span class="o">&amp;&amp;</span><span class="w"> </span><span class="nb">cd</span><span class="w"> </span>~/zephyr_workspace
+python3<span class="w"> </span>-m<span class="w"> </span>venv<span class="w"> </span>.venv<span class="w"> </span><span class="o">&amp;&amp;</span><span class="w"> </span><span class="nb">source</span><span class="w"> </span>.venv/bin/activate
+pip<span class="w"> </span>install<span class="w"> </span>west<span class="w"> </span><span class="s2">&quot;cmake&lt;4.0.0&quot;</span><span class="w"> </span>pyelftools<span class="w"> </span>ninja<span class="w"> </span>jsonschema
+west<span class="w"> </span>init<span class="w"> </span>--manifest-rev<span class="w"> </span>v4.3.0
+</pre></div>
+</div>
+<p>Install the Zephyr SDK (compiler toolchain):</p>
+<div class="highlight-bash notranslate"><div class="highlight"><pre><span></span>wget<span class="w"> </span>https://github.com/zephyrproject-rtos/sdk-ng/releases/download/v0.17.4/zephyr-sdk-0.17.4_linux-x86_64.tar.xz
+tar<span class="w"> </span>-xf<span class="w"> </span>zephyr-sdk-0.17.4_linux-x86_64.tar.xz<span class="w"> </span><span class="o">&amp;&amp;</span><span class="w"> </span>rm<span class="w"> </span>-f<span class="w"> </span>zephyr-sdk-0.17.4_linux-x86_64.tar.xz
+./zephyr-sdk-0.17.4/setup.sh<span class="w"> </span>-c<span class="w"> </span>-t<span class="w"> </span>arm-zephyr-eabi
+<span class="nb">export</span><span class="w"> </span><span class="nv">ZEPHYR_SDK_INSTALL_DIR</span><span class="o">=</span><span class="k">$(</span>realpath<span class="w"> </span>./zephyr-sdk-0.17.4<span class="k">)</span>
+</pre></div>
+</div>
+</section>
+<section id="step-2-add-executorch-as-a-zephyr-module">
+<h2>Step 2: Add ExecuTorch as a Zephyr Module<a class="headerlink" href="#step-2-add-executorch-as-a-zephyr-module" title="Link to this heading">#</a></h2>
+<p>Copy the submanifest, configure <code class="docutils literal notranslate"><span class="pre">west</span></code> to pull only the modules we need, and
+update:</p>
+<div class="highlight-bash notranslate"><div class="highlight"><pre><span></span>mkdir<span class="w"> </span>-p<span class="w"> </span>zephyr/submanifests
+cat<span class="w"> </span>&gt;<span class="w"> </span>zephyr/submanifests/executorch.yaml<span class="w"> </span><span class="s">&lt;&lt; &#39;EOF&#39;</span>
+<span class="s">manifest:</span>
+<span class="s">  projects:</span>
+<span class="s">    - name: executorch</span>
+<span class="s">      url: https://github.com/pytorch/executorch</span>
+<span class="s">      revision: main</span>
+<span class="s">      path: modules/lib/executorch</span>
+<span class="s">EOF</span>
+
+west<span class="w"> </span>config<span class="w"> </span>manifest.project-filter<span class="w"> </span>--<span class="w"> </span>-.*,+zephyr,+executorch,+cmsis,+cmsis_6,+cmsis-nn,+hal_ethos_u
+west<span class="w"> </span>update
+</pre></div>
+</div>
+<p>For Alif boards, also add the Alif HAL:</p>
+<div class="highlight-bash notranslate"><div class="highlight"><pre><span></span>west<span class="w"> </span>config<span class="w"> </span>manifest.project-filter<span class="w"> </span>--<span class="w"> </span>-.*,+zephyr,+executorch,+cmsis,+cmsis_6,+cmsis-nn,+hal_ethos_u,+hal_alif
+west<span class="w"> </span>update
+</pre></div>
+</div>
+</section>
+<section id="step-3-install-executorch-and-arm-tools">
+<h2>Step 3: Install ExecuTorch and Arm Tools<a class="headerlink" href="#step-3-install-executorch-and-arm-tools" title="Link to this heading">#</a></h2>
+<div class="highlight-bash notranslate"><div class="highlight"><pre><span></span><span class="nb">cd</span><span class="w"> </span>modules/lib/executorch
+git<span class="w"> </span>submodule<span class="w"> </span>sync<span class="w"> </span><span class="o">&amp;&amp;</span><span class="w"> </span>git<span class="w"> </span>submodule<span class="w"> </span>update<span class="w"> </span>--init<span class="w"> </span>--recursive
+./install_executorch.sh
+<span class="nb">cd</span><span class="w"> </span>../../..
+</pre></div>
+</div>
+<p>Install the Arm toolchain, Vela compiler, and Corstone FVPs:</p>
+<div class="highlight-bash notranslate"><div class="highlight"><pre><span></span>modules/lib/executorch/examples/arm/setup.sh<span class="w"> </span>--i-agree-to-the-contained-eula
+<span class="nb">source</span><span class="w"> </span>modules/lib/executorch/examples/arm/arm-scratch/setup_path.sh
+</pre></div>
+</div>
+</section>
+<section id="step-4-export-the-mobilenetv2-model">
+<h2>Step 4: Export the MobileNetV2 Model<a class="headerlink" href="#step-4-export-the-mobilenetv2-model" title="Link to this heading">#</a></h2>
+<p>Export a quantized INT8 MobileNetV2 with Ethos-U delegation. Choose the target
+that matches your hardware:</p>
+<p><strong>For Alif E8 (Ethos-U55 with 256 MACs):</strong></p>
+<div class="highlight-bash notranslate"><div class="highlight"><pre><span></span>python<span class="w"> </span>-m<span class="w"> </span>modules.lib.executorch.backends.arm.scripts.aot_arm_compiler<span class="w"> </span><span class="se">\</span>
+<span class="w">    </span>--model_name<span class="o">=</span>mv2_untrained<span class="w"> </span><span class="se">\</span>
+<span class="w">    </span>--quantize<span class="w"> </span>--delegate<span class="w"> </span><span class="se">\</span>
+<span class="w">    </span>--target<span class="o">=</span>ethos-u55-256<span class="w"> </span><span class="se">\</span>
+<span class="w">    </span>--output<span class="o">=</span>mv2_ethosu.pte
+</pre></div>
+</div>
+<p><strong>For Corstone-320 FVP (Ethos-U85 with 256 MACs):</strong></p>
+<div class="highlight-bash notranslate"><div class="highlight"><pre><span></span>python<span class="w"> </span>-m<span class="w"> </span>modules.lib.executorch.backends.arm.scripts.aot_arm_compiler<span class="w"> </span><span class="se">\</span>
+<span class="w">    </span>--model_name<span class="o">=</span>mv2_untrained<span class="w"> </span><span class="se">\</span>
+<span class="w">    </span>--quantize<span class="w"> </span>--delegate<span class="w"> </span><span class="se">\</span>
+<span class="w">    </span>--target<span class="o">=</span>ethos-u85-256<span class="w"> </span><span class="se">\</span>
+<span class="w">    </span>--output<span class="o">=</span>mv2_u85_256.pte
+</pre></div>
+</div>
+<p>The <code class="docutils literal notranslate"><span class="pre">--delegate</span></code> flag routes all compatible ops through the Ethos-U backend.
+The Vela compiler converts the TOSA intermediate representation into an
+optimized command stream for the NPU. Use <code class="docutils literal notranslate"><span class="pre">mv2</span></code> instead of <code class="docutils literal notranslate"><span class="pre">mv2_untrained</span></code> for
+meaningful predictions (requires torchvision pretrained weights).</p>
+</section>
+<section id="step-5-build-the-zephyr-application">
+<h2>Step 5: Build the Zephyr Application<a class="headerlink" href="#step-5-build-the-zephyr-application" title="Link to this heading">#</a></h2>
+<p><strong>For Alif E8:</strong></p>
+<div class="highlight-bash notranslate"><div class="highlight"><pre><span></span>west<span class="w"> </span>build<span class="w"> </span>-b<span class="w"> </span>alif_e8_dk/ae822fa0e5597xx0/rtss_hp<span class="w"> </span><span class="se">\</span>
+<span class="w">    </span>-S<span class="w"> </span>ethos-u55-enable<span class="w"> </span><span class="se">\</span>
+<span class="w">    </span>modules/lib/executorch/zephyr/samples/mv2-ethosu<span class="w"> </span>--<span class="w"> </span><span class="se">\</span>
+<span class="w">    </span>-DET_PTE_FILE_PATH<span class="o">=</span>mv2_ethosu.pte
+</pre></div>
+</div>
+<p><strong>For Corstone-320 FVP:</strong></p>
+<div class="highlight-bash notranslate"><div class="highlight"><pre><span></span>west<span class="w"> </span>build<span class="w"> </span>-b<span class="w"> </span>mps4/corstone320/fvp<span class="w"> </span><span class="se">\</span>
+<span class="w">    </span>modules/lib/executorch/zephyr/samples/mv2-ethosu<span class="w"> </span>--<span class="w"> </span><span class="se">\</span>
+<span class="w">    </span>-DET_PTE_FILE_PATH<span class="o">=</span>mv2_u85_256.pte
+</pre></div>
+</div>
+</section>
+<section id="step-6a-run-on-corstone-320-fvp">
+<h2>Step 6a: Run on Corstone-320 FVP<a class="headerlink" href="#step-6a-run-on-corstone-320-fvp" title="Link to this heading">#</a></h2>
+<p>Set up the FVP paths and run:</p>
+<div class="highlight-bash notranslate"><div class="highlight"><pre><span></span><span class="nb">export</span><span class="w"> </span><span class="nv">FVP_ROOT</span><span class="o">=</span><span class="nv">$PWD</span>/modules/lib/executorch/examples/arm/arm-scratch/FVP-corstone320
+<span class="nb">export</span><span class="w"> </span><span class="nv">ARMFVP_BIN_PATH</span><span class="o">=</span><span class="si">${</span><span class="nv">FVP_ROOT</span><span class="si">}</span>/models/Linux64_GCC-9.3
+<span class="nb">export</span><span class="w"> </span><span class="nv">LD_LIBRARY_PATH</span><span class="o">=</span><span class="si">${</span><span class="nv">FVP_ROOT</span><span class="si">}</span>/python/lib:<span class="si">${</span><span class="nv">ARMFVP_BIN_PATH</span><span class="si">}</span>:<span class="si">${</span><span class="nv">LD_LIBRARY_PATH</span><span class="si">}</span>
+<span class="nb">export</span><span class="w"> </span><span class="nv">ARMFVP_EXTRA_FLAGS</span><span class="o">=</span><span class="s2">&quot;-C mps4_board.uart0.shutdown_on_eot=1 -C mps4_board.subsystem.ethosu.num_macs=256&quot;</span>
+
+west<span class="w"> </span>build<span class="w"> </span>-t<span class="w"> </span>run
+</pre></div>
+</div>
+<p>MV2 inference is cycle-accurate on the FVP and takes 10-20 minutes of wall
+clock. You should see output like:</p>
+<div class="highlight-default notranslate"><div class="highlight"><pre><span></span>========================================
+ExecuTorch MobileNetV2 Classification Demo
+========================================
+Ethos-U backend registered successfully
+Model loaded, has 1 methods
+Inference completed in &lt;N&gt; ms
+--- Classification Results ---
+Top-5 predictions:
+  [1] class &lt;id&gt;: &lt;score&gt;
+  ...
+MobileNetV2 Demo Complete
+========================================
+</pre></div>
+</div>
+</section>
+<section id="step-6b-flash-and-run-on-alif-e8">
+<h2>Step 6b: Flash and Run on Alif E8<a class="headerlink" href="#step-6b-flash-and-run-on-alif-e8" title="Link to this heading">#</a></h2>
+<section id="flash-with-alif-se-tools">
+<h3>Flash with Alif SE Tools<a class="headerlink" href="#flash-with-alif-se-tools" title="Link to this heading">#</a></h3>
+<p>Use the Alif SE Tools to program the binary into the E8’s MRAM. Create a
+<code class="docutils literal notranslate"><span class="pre">zephyr.json</span></code> in the build output directory:</p>
+<div class="highlight-bash notranslate"><div class="highlight"><pre><span></span>cat<span class="w"> </span>&gt;<span class="w"> </span>build/zephyr/zephyr.json<span class="w"> </span><span class="s">&lt;&lt; &#39;EOF&#39;</span>
+<span class="s">{</span>
+<span class="s">    &quot;HP_img_class&quot;: {</span>
+<span class="s">        &quot;binary&quot;: &quot;zephyr.bin&quot;,</span>
+<span class="s">        &quot;version&quot;: &quot;1.0.0&quot;,</span>
+<span class="s">        &quot;mramAddress&quot;: &quot;0x80008000&quot;,</span>
+<span class="s">        &quot;cpu_id&quot;: &quot;M55_HP&quot;,</span>
+<span class="s">        &quot;flags&quot;: [&quot;boot&quot;],</span>
+<span class="s">        &quot;signed&quot;: false</span>
+<span class="s">    }</span>
+<span class="s">}</span>
+<span class="s">EOF</span>
+</pre></div>
+</div>
+<blockquote>
+<div><p><strong>Important:</strong> Use <code class="docutils literal notranslate"><span class="pre">mramAddress:</span> <span class="pre">&quot;0x80008000&quot;</span></code> (FLASH_LOAD_OFFSET=0x8000),
+<strong>not</strong> the default <code class="docutils literal notranslate"><span class="pre">0x80200000</span></code>. The default offset does not leave enough
+MRAM for the ~3.5 MB MV2 model blob.</p>
+</div></blockquote>
+<blockquote>
+<div><p><strong>Note:</strong> Your SE Tools install may include additional <code class="docutils literal notranslate"><span class="pre">zephyr.json</span></code> entries
+(e.g., a <code class="docutils literal notranslate"><span class="pre">DEVICE</span></code> block referencing <code class="docutils literal notranslate"><span class="pre">app-device-config.json</span></code>). Copy those
+from the SE Tools template if your board configuration requires them.</p>
+</div></blockquote>
+<p>Generate the table of contents and flash using the SE Tools:</p>
+<div class="highlight-bash notranslate"><div class="highlight"><pre><span></span><span class="nb">cd</span><span class="w"> </span>build/zephyr
+python<span class="w"> </span>&lt;path-to-alif-se-tools&gt;/app-gen-toc.py
+python<span class="w"> </span>&lt;path-to-alif-se-tools&gt;/app-write-mram.py
+<span class="nb">cd</span><span class="w"> </span>../..
+</pre></div>
+</div>
+<p>Refer to the Alif SE Tools documentation for installation and detailed usage.</p>
+</section>
+<section id="connect-serial-console">
+<h3>Connect Serial Console<a class="headerlink" href="#connect-serial-console" title="Link to this heading">#</a></h3>
+<p>Connect to UART4 at 115200 baud. On Linux:</p>
+<div class="highlight-bash notranslate"><div class="highlight"><pre><span></span>picocom<span class="w"> </span>-b<span class="w"> </span><span class="m">115200</span><span class="w"> </span>/dev/ttyUSB0
+</pre></div>
+</div>
+<p>Press the reset button on the E8 DevKit. You should see:</p>
+<div class="highlight-default notranslate"><div class="highlight"><pre><span></span>Booting Zephyr OS build ff8b8697c0f5 ***
+
+========================================
+ExecuTorch MobileNetV2 Classification Demo
+========================================
+
+I [executorch:main.cpp] Ethos-U backend registered successfully
+I [executorch:main.cpp] Model PTE at 0x8004b290, Size: 3490912 bytes
+I [executorch:main.cpp] Model loaded, has 1 methods
+I [executorch:main.cpp] Running method: forward
+I [executorch:main.cpp] Method allocator pool size: 1572864 bytes.
+I [executorch:main.cpp] Setting up planned buffer 0, size 752640.
+I [executorch:main.cpp] Loading method...
+I [executorch:main.cpp] Method &#39;forward&#39; loaded successfully
+I [executorch:main.cpp] Preparing input: static RGB image (150528 bytes)
+I [executorch:main.cpp]
+--- Starting inference ---
+I [executorch:main.cpp] Inference completed in 19 ms
+I [executorch:main.cpp]
+--- Classification Results ---
+I [executorch:main.cpp] Top-5 predictions:
+I [executorch:main.cpp]   [1] class 0: 0.0000
+I [executorch:main.cpp]   [2] class 1: 0.0000
+I [executorch:main.cpp]   [3] class 2: 0.0000
+I [executorch:main.cpp]   [4] class 3: 0.0000
+I [executorch:main.cpp]   [5] class 4: 0.0000
+I [executorch:main.cpp]
+========================================
+I [executorch:main.cpp] MobileNetV2 Demo Complete
+I [executorch:main.cpp] Model size: 3490912 bytes
+I [executorch:main.cpp] Input: 224x224x3 RGB image (150528 bytes)
+I [executorch:main.cpp] Output: 1000 ImageNet classes (top-5 shown)
+I [executorch:main.cpp] Inference time: 19 ms
+I [executorch:main.cpp] ========================================
+</pre></div>
+</div>
+<p>All predictions show <code class="docutils literal notranslate"><span class="pre">0.0000</span></code> because <code class="docutils literal notranslate"><span class="pre">mv2_untrained</span></code> has random weights.
+Use <code class="docutils literal notranslate"><span class="pre">mv2</span></code> (with torchvision pretrained weights) for meaningful class scores.</p>
+</section>
+</section>
+<section id="troubleshooting">
+<h2>Troubleshooting<a class="headerlink" href="#troubleshooting" title="Link to this heading">#</a></h2>
+<div class="pst-scrollable-table-container"><table class="table">
+<thead>
+<tr class="row-odd"><th class="head"><p>Symptom</p></th>
+<th class="head"><p>Cause</p></th>
+<th class="head"><p>Fix</p></th>
+</tr>
+</thead>
+<tbody>
+<tr class="row-even"><td><p>Linker: <code class="docutils literal notranslate"><span class="pre">region</span> <span class="pre">'FLASH'</span> <span class="pre">overflowed</span></code></p></td>
+<td><p>Model PTE too large for ITCM</p></td>
+<td><p>Use the DDR overlay (FVP) or verify mramAddress (Alif)</p></td>
+</tr>
+<tr class="row-odd"><td><p>Linker: <code class="docutils literal notranslate"><span class="pre">region</span> <span class="pre">'RAM'</span> <span class="pre">overflowed</span></code></p></td>
+<td><p>Pools + model copy exceed SRAM</p></td>
+<td><p>Set <code class="docutils literal notranslate"><span class="pre">CONFIG_ET_ARM_MODEL_PTE_DMA_ACCESSIBLE=y</span></code> to skip the SRAM copy</p></td>
+</tr>
+<tr class="row-even"><td><p>FVP hangs after “Ethos-U backend registered”</p></td>
+<td><p>Cycle-accurate MV2 simulation is slow</p></td>
+<td><p>Wait 10-20 min, or use Corstone-320 (faster than 300)</p></td>
+</tr>
+<tr class="row-odd"><td><p>No serial output on Alif</p></td>
+<td><p>Wrong UART or baud rate</p></td>
+<td><p>Use UART4 at 115200 baud</p></td>
+</tr>
+<tr class="row-even"><td><p><code class="docutils literal notranslate"><span class="pre">app-write-mram.py</span></code> fails</p></td>
+<td><p>Wrong mramAddress</p></td>
+<td><p>Use <code class="docutils literal notranslate"><span class="pre">0x80008000</span></code>, not <code class="docutils literal notranslate"><span class="pre">0x80200000</span></code></p></td>
+</tr>
+<tr class="row-odd"><td><p>Runtime: method allocator OOM</p></td>
+<td><p>Pool size too small</p></td>
+<td><p>Increase <code class="docutils literal notranslate"><span class="pre">CONFIG_EXECUTORCH_METHOD_ALLOCATOR_POOL_SIZE</span></code> in the Zephyr config used for the build (for example <code class="docutils literal notranslate"><span class="pre">prj.conf</span></code>, an <code class="docutils literal notranslate"><span class="pre">OVERLAY_CONFIG</span></code>, or a board <code class="docutils literal notranslate"><span class="pre">.conf</span></code>)</p></td>
+</tr>
+</tbody>
+</table>
+</div>
+</section>
+<section id="memory-layout">
+<h2>Memory Layout<a class="headerlink" href="#memory-layout" title="Link to this heading">#</a></h2>
+<div class="pst-scrollable-table-container"><table class="table">
+<thead>
+<tr class="row-odd"><th class="head"><p>Region</p></th>
+<th class="head"><p>Corstone-320 FVP</p></th>
+<th class="head"><p>Alif E8</p></th>
+</tr>
+</thead>
+<tbody>
+<tr class="row-even"><td><p>Code + .rodata</p></td>
+<td><p>ITCM (512 KB)</p></td>
+<td><p>MRAM</p></td>
+</tr>
+<tr class="row-odd"><td><p>.data + .bss + pools</p></td>
+<td><p>ISRAM (4 MB)</p></td>
+<td><p>HP SRAM (4.5 MB)</p></td>
+</tr>
+<tr class="row-even"><td><p>Model PTE (~3.5 MB)</p></td>
+<td><p>DDR (16 MB, via overlay)</p></td>
+<td><p>MRAM (DMA-accessible)</p></td>
+</tr>
+<tr class="row-odd"><td><p>NPU delegation</p></td>
+<td><p>Ethos-U85 (256 MACs)</p></td>
+<td><p>Ethos-U55 (256 MACs)</p></td>
+</tr>
+</tbody>
+</table>
+</div>
+</section>
+<section id="using-claude-code-with-zephyr">
+<h2>Using Claude Code with Zephyr<a class="headerlink" href="#using-claude-code-with-zephyr" title="Link to this heading">#</a></h2>
+<p>If you use <a class="reference external" href="https://docs.anthropic.com/en/docs/claude-code">Claude Code</a>, the
+ExecuTorch repo ships a <code class="docutils literal notranslate"><span class="pre">/zephyr</span></code> skill that can help with:</p>
+<ul class="simple">
+<li><p><strong>Workspace setup</strong> — scaffolds the Zephyr workspace, west manifests, and SDK install</p></li>
+<li><p><strong>Board bringup</strong> — generates DTS overlays, board confs, and linker snippets for new boards</p></li>
+<li><p><strong>Memory debugging</strong> — diagnoses linker overflow errors and runtime allocation failures,
+with the exact pool sizes your model needs</p></li>
+</ul>
+<p>Type <code class="docutils literal notranslate"><span class="pre">/zephyr</span></code> in Claude Code while working in the ExecuTorch repo to activate
+it. Related skills: <code class="docutils literal notranslate"><span class="pre">/export</span></code> for model conversion, <code class="docutils literal notranslate"><span class="pre">/cortex-m</span></code> for baremetal
+Cortex-M builds, <code class="docutils literal notranslate"><span class="pre">/executorch-kb</span></code> for backend-specific debugging.</p>
+</section>
+<section id="next-steps">
+<h2>Next Steps<a class="headerlink" href="#next-steps" title="Link to this heading">#</a></h2>
+<ul class="simple">
+<li><p>Swap <code class="docutils literal notranslate"><span class="pre">mv2_untrained</span></code> for <code class="docutils literal notranslate"><span class="pre">mv2</span></code> (with torchvision) to get real ImageNet predictions</p></li>
+<li><p>Try other models: <code class="docutils literal notranslate"><span class="pre">resnet18</span></code>, or bring your own <code class="docutils literal notranslate"><span class="pre">.py</span></code> model file</p></li>
+<li><p>Explore the <a class="reference external" href="https://github.com/pytorch/executorch/tree/main/zephyr/samples/hello-executorch">hello-executorch sample</a> for a minimal starting point</p></li>
+<li><p>See the <a class="reference internal" href="backends/arm-ethos-u/tutorials/ethos-u-getting-started.html"><span class="doc">Ethos-U Getting Started tutorial</span></a> for the baremetal (non-Zephyr) flow</p></li>
+</ul>
 </section>
 </section>
 
@@ -2023,20 +2355,20 @@ document.write(`
 
 <div class="prev-next-area">
     <a class="left-prev"
-       href="ios-examples.html"
+       href="pico2_tutorial.html"
        title="previous page">
       <i class="fa-solid fa-angle-left"></i>
       <div class="prev-next-info">
         <p class="prev-next-subtitle">previous</p>
-        <p class="prev-next-title">Examples &amp; Demos</p>
+        <p class="prev-next-title">Pico2: A simple MNIST Tutorial</p>
       </div>
     </a>
     <a class="right-next"
-       href="using-executorch-cpp.html"
+       href="using-executorch-troubleshooting.html"
        title="next page">
       <div class="prev-next-info">
         <p class="prev-next-subtitle">next</p>
-        <p class="prev-next-title">Using ExecuTorch with C++</p>
+        <p class="prev-next-title">Profiling and Debugging</p>
       </div>
       <i class="fa-solid fa-angle-right"></i>
     </a>
@@ -2062,20 +2394,20 @@ document.write(`
                   
 <div class="prev-next-area">
     <a class="left-prev"
-       href="ios-examples.html"
+       href="pico2_tutorial.html"
        title="previous page">
       <i class="fa-solid fa-angle-left"></i>
       <div class="prev-next-info">
         <p class="prev-next-subtitle">previous</p>
-        <p class="prev-next-title">Examples &amp; Demos</p>
+        <p class="prev-next-title">Pico2: A simple MNIST Tutorial</p>
       </div>
     </a>
     <a class="right-next"
-       href="using-executorch-cpp.html"
+       href="using-executorch-troubleshooting.html"
        title="next page">
       <div class="prev-next-info">
         <p class="prev-next-subtitle">next</p>
-        <p class="prev-next-title">Using ExecuTorch with C++</p>
+        <p class="prev-next-title">Profiling and Debugging</p>
       </div>
       <i class="fa-solid fa-angle-right"></i>
     </a>
@@ -2097,9 +2429,27 @@ document.write(`
   </div>
   <nav class="bd-toc-nav page-toc" aria-labelledby="pst-page-navigation-heading-2">
     <ul class="visible nav section-nav flex-column">
-<li class="toc-h2 nav-item toc-entry"><a class="reference internal nav-link" href="#platform-overview-runtime">Platform Overview &amp; Runtime</a></li>
-<li class="toc-h2 nav-item toc-entry"><a class="reference internal nav-link" href="#backends">Backends</a></li>
-<li class="toc-h2 nav-item toc-entry"><a class="reference internal nav-link" href="#tutorials">Tutorials</a></li>
+<li class="toc-h2 nav-item toc-entry"><a class="reference internal nav-link" href="#what-you-ll-build">What You’ll Build</a></li>
+<li class="toc-h2 nav-item toc-entry"><a class="reference internal nav-link" href="#prerequisites">Prerequisites</a><ul class="visible nav section-nav flex-column">
+<li class="toc-h3 nav-item toc-entry"><a class="reference internal nav-link" href="#hardware-choose-one">Hardware (choose one)</a></li>
+<li class="toc-h3 nav-item toc-entry"><a class="reference internal nav-link" href="#software">Software</a></li>
+</ul>
+</li>
+<li class="toc-h2 nav-item toc-entry"><a class="reference internal nav-link" href="#step-1-set-up-the-zephyr-workspace">Step 1: Set Up the Zephyr Workspace</a></li>
+<li class="toc-h2 nav-item toc-entry"><a class="reference internal nav-link" href="#step-2-add-executorch-as-a-zephyr-module">Step 2: Add ExecuTorch as a Zephyr Module</a></li>
+<li class="toc-h2 nav-item toc-entry"><a class="reference internal nav-link" href="#step-3-install-executorch-and-arm-tools">Step 3: Install ExecuTorch and Arm Tools</a></li>
+<li class="toc-h2 nav-item toc-entry"><a class="reference internal nav-link" href="#step-4-export-the-mobilenetv2-model">Step 4: Export the MobileNetV2 Model</a></li>
+<li class="toc-h2 nav-item toc-entry"><a class="reference internal nav-link" href="#step-5-build-the-zephyr-application">Step 5: Build the Zephyr Application</a></li>
+<li class="toc-h2 nav-item toc-entry"><a class="reference internal nav-link" href="#step-6a-run-on-corstone-320-fvp">Step 6a: Run on Corstone-320 FVP</a></li>
+<li class="toc-h2 nav-item toc-entry"><a class="reference internal nav-link" href="#step-6b-flash-and-run-on-alif-e8">Step 6b: Flash and Run on Alif E8</a><ul class="visible nav section-nav flex-column">
+<li class="toc-h3 nav-item toc-entry"><a class="reference internal nav-link" href="#flash-with-alif-se-tools">Flash with Alif SE Tools</a></li>
+<li class="toc-h3 nav-item toc-entry"><a class="reference internal nav-link" href="#connect-serial-console">Connect Serial Console</a></li>
+</ul>
+</li>
+<li class="toc-h2 nav-item toc-entry"><a class="reference internal nav-link" href="#troubleshooting">Troubleshooting</a></li>
+<li class="toc-h2 nav-item toc-entry"><a class="reference internal nav-link" href="#memory-layout">Memory Layout</a></li>
+<li class="toc-h2 nav-item toc-entry"><a class="reference internal nav-link" href="#using-claude-code-with-zephyr">Using Claude Code with Zephyr</a></li>
+<li class="toc-h2 nav-item toc-entry"><a class="reference internal nav-link" href="#next-steps">Next Steps</a></li>
 </ul>
   </nav></div>
     
@@ -2107,7 +2457,7 @@ document.write(`
 
   
   <div class="tocsection editthispage">
-    <a href="https://github.com/pytorch/executorch/edit/main/docs/source/desktop-section.md">
+    <a href="https://github.com/pytorch/executorch/edit/main/docs/source/zephyr_alif_tutorial.md">
       <i class="fa-solid fa-pencil"></i>
       
       
@@ -2121,7 +2471,7 @@ document.write(`
     
        <div class="sidebar-secondary-item">
     <div class="tocsection sourcelink">
-      <a href="_sources/desktop-section.md.txt">
+      <a href="_sources/zephyr_alif_tutorial.md.txt">
         <i class="fa-solid fa-file-lines"></i> Show Source
       </a>
     </div>
@@ -2321,11 +2671,11 @@ document.write(`
     {
        "@context": "https://schema.org",
        "@type": "Article",
-       "name": "Desktop \u0026 Laptop Platforms",
-       "headline": "Desktop \u0026 Laptop Platforms",
+       "name": "Zephyr: MobileNetV2 with Ethos-U NPU (Corstone FVP \u0026 Alif E8)",
+       "headline": "Zephyr: MobileNetV2 with Ethos-U NPU (Corstone FVP \u0026 Alif E8)",
        "description": "PyTorch Documentation. Explore PyTorch, an open-source machine learning library that accelerates the path from research prototyping to production deployment.",
-       "url": "/desktop-section.html",
-       "articleBody": "Desktop \u0026 Laptop Platforms# Deploy ExecuTorch on Linux, macOS, and Windows with optimized backends for each platform. Platform Overview \u0026 Runtime# Using ExecuTorch with C++ \u2014 C++ runtime integration guide Building from Source \u2014 Building ExecuTorch from source Backends# Backends \u2014 Available desktop backends and platform-specific optimization Tutorials# ExecuTorch on Raspberry Pi \u2014 Cross compiling ExecuTorch for the Raspberry Pi on Linux Host",
+       "url": "/zephyr_alif_tutorial.html",
+       "articleBody": "Zephyr: MobileNetV2 with Ethos-U NPU (Corstone FVP \u0026 Alif E8)# Run a quantized MobileNetV2 image classifier on the Alif Ensemble E8 DevKit using ExecuTorch, Zephyr RTOS, and the Arm Ethos-U55 NPU. The same build flow also works on the Arm Corstone-320 FVP for development without hardware. What You\u2019ll Build# A quantized INT8 MobileNetV2 model fully delegated to the Ethos-U55 NPU (110 ops, ~19 ms inference on Alif E8) A Zephyr RTOS application that loads the .pte model, runs inference on a static test image, and prints the top-5 ImageNet predictions over UART Prerequisites# Hardware (choose one)# Target Description Alif Ensemble E8 DevKit Cortex-M55 HP core + Ethos-U55 (256 MACs), 4.5 MB HP SRAM, MRAM Corstone-320 FVP Virtual platform simulating Cortex-M85 + Ethos-U85 (no hardware needed, Linux only) Software# Linux x86_64 (FVP and Arm toolchain are Linux-only; macOS can export models but cannot run the FVP or flash) Python 3.10+ Alif SE Tools for flashing (Alif hardware only) Step 1: Set Up the Zephyr Workspace# Create a workspace, install west, and initialize the Zephyr tree: mkdir ~/zephyr_workspace \u0026\u0026 cd ~/zephyr_workspace python3 -m venv .venv \u0026\u0026 source .venv/bin/activate pip install west \"cmake\u003c4.0.0\" pyelftools ninja jsonschema west init --manifest-rev v4.3.0 Install the Zephyr SDK (compiler toolchain): wget https://github.com/zephyrproject-rtos/sdk-ng/releases/download/v0.17.4/zephyr-sdk-0.17.4_linux-x86_64.tar.xz tar -xf zephyr-sdk-0.17.4_linux-x86_64.tar.xz \u0026\u0026 rm -f zephyr-sdk-0.17.4_linux-x86_64.tar.xz ./zephyr-sdk-0.17.4/setup.sh -c -t arm-zephyr-eabi export ZEPHYR_SDK_INSTALL_DIR=$(realpath ./zephyr-sdk-0.17.4) Step 2: Add ExecuTorch as a Zephyr Module# Copy the submanifest, configure west to pull only the modules we need, and update: mkdir -p zephyr/submanifests cat \u003e zephyr/submanifests/executorch.yaml \u003c\u003c \u0027EOF\u0027 manifest: projects: - name: executorch url: https://github.com/pytorch/executorch revision: main path: modules/lib/executorch EOF west config manifest.project-filter -- -.*,+zephyr,+executorch,+cmsis,+cmsis_6,+cmsis-nn,+hal_ethos_u west update For Alif boards, also add the Alif HAL: west config manifest.project-filter -- -.*,+zephyr,+executorch,+cmsis,+cmsis_6,+cmsis-nn,+hal_ethos_u,+hal_alif west update Step 3: Install ExecuTorch and Arm Tools# cd modules/lib/executorch git submodule sync \u0026\u0026 git submodule update --init --recursive ./install_executorch.sh cd ../../.. Install the Arm toolchain, Vela compiler, and Corstone FVPs: modules/lib/executorch/examples/arm/setup.sh --i-agree-to-the-contained-eula source modules/lib/executorch/examples/arm/arm-scratch/setup_path.sh Step 4: Export the MobileNetV2 Model# Export a quantized INT8 MobileNetV2 with Ethos-U delegation. Choose the target that matches your hardware: For Alif E8 (Ethos-U55 with 256 MACs): python -m modules.lib.executorch.backends.arm.scripts.aot_arm_compiler \\ --model_name=mv2_untrained \\ --quantize --delegate \\ --target=ethos-u55-256 \\ --output=mv2_ethosu.pte For Corstone-320 FVP (Ethos-U85 with 256 MACs): python -m modules.lib.executorch.backends.arm.scripts.aot_arm_compiler \\ --model_name=mv2_untrained \\ --quantize --delegate \\ --target=ethos-u85-256 \\ --output=mv2_u85_256.pte The --delegate flag routes all compatible ops through the Ethos-U backend. The Vela compiler converts the TOSA intermediate representation into an optimized command stream for the NPU. Use mv2 instead of mv2_untrained for meaningful predictions (requires torchvision pretrained weights). Step 5: Build the Zephyr Application# For Alif E8: west build -b alif_e8_dk/ae822fa0e5597xx0/rtss_hp \\ -S ethos-u55-enable \\ modules/lib/executorch/zephyr/samples/mv2-ethosu -- \\ -DET_PTE_FILE_PATH=mv2_ethosu.pte For Corstone-320 FVP: west build -b mps4/corstone320/fvp \\ modules/lib/executorch/zephyr/samples/mv2-ethosu -- \\ -DET_PTE_FILE_PATH=mv2_u85_256.pte Step 6a: Run on Corstone-320 FVP# Set up the FVP paths and run: export FVP_ROOT=$PWD/modules/lib/executorch/examples/arm/arm-scratch/FVP-corstone320 export ARMFVP_BIN_PATH=${FVP_ROOT}/models/Linux64_GCC-9.3 export LD_LIBRARY_PATH=${FVP_ROOT}/python/lib:${ARMFVP_BIN_PATH}:${LD_LIBRARY_PATH} export ARMFVP_EXTRA_FLAGS=\"-C mps4_board.uart0.shutdown_on_eot=1 -C mps4_board.subsystem.ethosu.num_macs=256\" west build -t run MV2 inference is cycle-accurate on the FVP and takes 10-20 minutes of wall clock. You should see output like: ======================================== ExecuTorch MobileNetV2 Classification Demo ======================================== Ethos-U backend registered successfully Model loaded, has 1 methods Inference completed in \u003cN\u003e ms --- Classification Results --- Top-5 predictions: [1] class \u003cid\u003e: \u003cscore\u003e ... MobileNetV2 Demo Complete ======================================== Step 6b: Flash and Run on Alif E8# Flash with Alif SE Tools# Use the Alif SE Tools to program the binary into the E8\u2019s MRAM. Create a zephyr.json in the build output directory: cat \u003e build/zephyr/zephyr.json \u003c\u003c \u0027EOF\u0027 { \"HP_img_class\": { \"binary\": \"zephyr.bin\", \"version\": \"1.0.0\", \"mramAddress\": \"0x80008000\", \"cpu_id\": \"M55_HP\", \"flags\": [\"boot\"], \"signed\": false } } EOF Important: Use mramAddress: \"0x80008000\" (FLASH_LOAD_OFFSET=0x8000), not the default 0x80200000. The default offset does not leave enough MRAM for the ~3.5 MB MV2 model blob. Note: Your SE Tools install may include additional zephyr.json entries (e.g., a DEVICE block referencing app-device-config.json). Copy those from the SE Tools template if your board configuration requires them. Generate the table of contents and flash using the SE Tools: cd build/zephyr python \u003cpath-to-alif-se-tools\u003e/app-gen-toc.py python \u003cpath-to-alif-se-tools\u003e/app-write-mram.py cd ../.. Refer to the Alif SE Tools documentation for installation and detailed usage. Connect Serial Console# Connect to UART4 at 115200 baud. On Linux: picocom -b 115200 /dev/ttyUSB0 Press the reset button on the E8 DevKit. You should see: Booting Zephyr OS build ff8b8697c0f5 *** ======================================== ExecuTorch MobileNetV2 Classification Demo ======================================== I [executorch:main.cpp] Ethos-U backend registered successfully I [executorch:main.cpp] Model PTE at 0x8004b290, Size: 3490912 bytes I [executorch:main.cpp] Model loaded, has 1 methods I [executorch:main.cpp] Running method: forward I [executorch:main.cpp] Method allocator pool size: 1572864 bytes. I [executorch:main.cpp] Setting up planned buffer 0, size 752640. I [executorch:main.cpp] Loading method... I [executorch:main.cpp] Method \u0027forward\u0027 loaded successfully I [executorch:main.cpp] Preparing input: static RGB image (150528 bytes) I [executorch:main.cpp] --- Starting inference --- I [executorch:main.cpp] Inference completed in 19 ms I [executorch:main.cpp] --- Classification Results --- I [executorch:main.cpp] Top-5 predictions: I [executorch:main.cpp] [1] class 0: 0.0000 I [executorch:main.cpp] [2] class 1: 0.0000 I [executorch:main.cpp] [3] class 2: 0.0000 I [executorch:main.cpp] [4] class 3: 0.0000 I [executorch:main.cpp] [5] class 4: 0.0000 I [executorch:main.cpp] ======================================== I [executorch:main.cpp] MobileNetV2 Demo Complete I [executorch:main.cpp] Model size: 3490912 bytes I [executorch:main.cpp] Input: 224x224x3 RGB image (150528 bytes) I [executorch:main.cpp] Output: 1000 ImageNet classes (top-5 shown) I [executorch:main.cpp] Inference time: 19 ms I [executorch:main.cpp] ======================================== All predictions show 0.0000 because mv2_untrained has random weights. Use mv2 (with torchvision pretrained weights) for meaningful class scores. Troubleshooting# Symptom Cause Fix Linker: region \u0027FLASH\u0027 overflowed Model PTE too large for ITCM Use the DDR overlay (FVP) or verify mramAddress (Alif) Linker: region \u0027RAM\u0027 overflowed Pools + model copy exceed SRAM Set CONFIG_ET_ARM_MODEL_PTE_DMA_ACCESSIBLE=y to skip the SRAM copy FVP hangs after \u201cEthos-U backend registered\u201d Cycle-accurate MV2 simulation is slow Wait 10-20 min, or use Corstone-320 (faster than 300) No serial output on Alif Wrong UART or baud rate Use UART4 at 115200 baud app-write-mram.py fails Wrong mramAddress Use 0x80008000, not 0x80200000 Runtime: method allocator OOM Pool size too small Increase CONFIG_EXECUTORCH_METHOD_ALLOCATOR_POOL_SIZE in the Zephyr config used for the build (for example prj.conf, an OVERLAY_CONFIG, or a board .conf) Memory Layout# Region Corstone-320 FVP Alif E8 Code + .rodata ITCM (512 KB) MRAM .data + .bss + pools ISRAM (4 MB) HP SRAM (4.5 MB) Model PTE (~3.5 MB) DDR (16 MB, via overlay) MRAM (DMA-accessible) NPU delegation Ethos-U85 (256 MACs) Ethos-U55 (256 MACs) Using Claude Code with Zephyr# If you use Claude Code, the ExecuTorch repo ships a /zephyr skill that can help with: Workspace setup \u2014 scaffolds the Zephyr workspace, west manifests, and SDK install Board bringup \u2014 generates DTS overlays, board confs, and linker snippets for new boards Memory debugging \u2014 diagnoses linker overflow errors and runtime allocation failures, with the exact pool sizes your model needs Type /zephyr in Claude Code while working in the ExecuTorch repo to activate it. Related skills: /export for model conversion, /cortex-m for baremetal Cortex-M builds, /executorch-kb for backend-specific debugging. Next Steps# Swap mv2_untrained for mv2 (with torchvision) to get real ImageNet predictions Try other models: resnet18, or bring your own .py model file Explore the hello-executorch sample for a minimal starting point See the Ethos-U Getting Started tutorial for the baremetal (non-Zephyr) flow",
        "author": {
          "@type": "Organization",
          "name": "PyTorch Contributors",
@@ -2334,7 +2684,7 @@ document.write(`
        "image": "https://pytorch.org/docs/stable/_static/img/pytorch_seo.png",
        "mainEntityOfPage": {
          "@type": "WebPage",
-         "@id": "/desktop-section.html"
+         "@id": "/zephyr_alif_tutorial.html"
        },
        "datePublished": "2023-01-01T00:00:00Z",
        "dateModified": "2023-01-01T00:00:00Z"
