@@ -20,6 +20,12 @@ backends/cortex_m/test/build_test_runner.sh                               # Buil
 pytest --config-file=backends/arm/test/pytest.ini backends/cortex_m/test  # Run tests with correct configuration file
 ```
 
+For an end-to-end bundled-IO FVP run of a single model (export → build → FVP → `Test_result: PASS`), use `examples/arm/run.sh`:
+```
+examples/arm/run.sh --model_name=<model> --target=cortex-m55+int8 --bundleio
+```
+This drives `aot_arm_compiler --bundleio`, invokes `build_test_runner.sh`, and launches the Corstone-300 FVP via `backends/arm/scripts/run_fvp.sh`.
+
 ## Supported operators
 Refer to `backends/cortex_m/test/ops` for currently supported accelerated ops/dtypes. Additionally, the quantizer targets pure "data-movement ops" such as data copies, slicing and concatenations to use quantized dtypes using the portable-kernels operator library.
 In general however, operators not supported by Cortex-M are kept in `fp32` using non-accelerated portable-kernels. It is recommended to analyze the graph after lowering to understand how much of the graph has been accelerated.
