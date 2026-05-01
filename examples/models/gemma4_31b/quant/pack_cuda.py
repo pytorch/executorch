@@ -4,35 +4,38 @@
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
 
-"""CUDA packer: canonical → CUDA runtime format.
+"""CUDA packer: torchao quantized tensors → CUDA runtime format.
 
-Provides per-module packers for the CUDA backend (INT4 via tinygemm,
-INT8 via ``IntxUnpackedToInt8Tensor``) and ``load_and_pack_for_cuda``
-as a convenience I/O wrapper.
+Converts ``Int4Tensor`` to ``Int4TilePackedTo4dTensor`` (tinygemm) and
+passes ``IntxUnpackedToInt8Tensor`` through unchanged (AOTI fuses
+the dequantize-matmul pattern).
 
 The backend-agnostic ``pack_model`` dispatcher lives in ``pack.py``.
 """
+
+import json
 
 import torch
 import torch.nn as nn
 
 from .pack import ModulePackerFn, pack_model  # noqa: F401
-from .serialize import CanonicalQuantizedWeight
 
 
 # ---------------------------------------------------------------------------
-# Low-level: canonical → Int4TilePackedTo4dTensor (one weight at a time)
+# Low-level converters
 
 
 def pack_int4_for_cuda(
-    cw: CanonicalQuantizedWeight,
+    weight: torch.Tensor,
     device: str = "cuda",
 ) -> nn.Parameter:
-    """Convert a canonical 4-bit weight to ``Int4TilePackedTo4dTensor``.
+    """Convert an ``Int4Tensor`` to ``Int4TilePackedTo4dTensor`` for tinygemm.
 
-    Pads K to a multiple of 1024 and N to a multiple of 8 (tinygemm
-    requirements), nibble-packs, then tile-packs via the CUDA kernel.
-    Returns an ``nn.Parameter`` wrapping the subclass tensor **on CUDA**.
+    Unpacks nibbles, pads to tinygemm alignment, tile-packs via CUDA kernel,
+    and builds the combined scale_and_zero tensor.
+
+    TODO: replace with ``Int4TilePackedTo4dTensor.from_int4_tensor()`` once
+    that's upstreamed to torchao.
     """
     from torchao.quantization.quantize_.workflows.int4.int4_tile_packed_to_4d_tensor import (
         Int4TilePackedTo4dTensor,
@@ -40,57 +43,43 @@ def pack_int4_for_cuda(
     from torchao.quantization.utils import pack_tinygemm_scales_and_zeros
     from torchao.utils import find_multiple
 
-    assert cw.config.bits == 4, f"Expected 4-bit, got {cw.config.bits}"
-    assert cw.qdata.ndim == 2, (
-        f"pack_int4_for_cuda requires 2D weight (nn.Linear), got {cw.qdata.ndim}D "
-        f"shape {tuple(cw.qdata.shape)}."
-    )
-
-    original_shape = cw.qdata.shape
+    original_shape = weight.shape
     N, K = original_shape
-    gs = cw.config.group_size
+    gs = weight.block_size[-1]
     inner_k_tiles = 8
 
+    # Unpack Int4Tensor nibbles to int32
+    p = weight.qdata.to(torch.uint8)
+    low = (p & 0x0F).to(torch.int32)
+    high = ((p >> 4) & 0x0F).to(torch.int32)
+    int_data = torch.stack([low, high], dim=-1).reshape(N, K)
+
+    # Scale/zero: Int4Tensor stores (K//gs, N), transpose to (N, K//gs)
+    scale = weight.scale.t().contiguous()
+    zero = weight.zero_point.t().contiguous()
+
+    # Pad to tinygemm alignment
     K_padded = find_multiple(K, 1024)
     N_padded = find_multiple(N, 8)
-
-    int_data = cw.qdata.to(torch.int32)
     if K_padded != K or N_padded != N:
         int_data = torch.nn.functional.pad(int_data, (0, K_padded - K, 0, N_padded - N))
-
-    scale = cw.scale
-    n_groups_orig = K // gs
-    n_groups_padded = K_padded // gs
-    if n_groups_padded != n_groups_orig or N_padded != N:
+        n_groups_padded = K_padded // gs
+        n_groups_orig = K // gs
         scale = torch.nn.functional.pad(
             scale, (0, n_groups_padded - n_groups_orig, 0, N_padded - N)
         )
-
-    if cw.zero is not None:
-        zero = cw.zero
-        if n_groups_padded != n_groups_orig or N_padded != N:
-            zero = torch.nn.functional.pad(
-                zero, (0, n_groups_padded - n_groups_orig, 0, N_padded - N)
-            )
-    else:
-        # Symmetric: qdata is unsigned [0, 15] (shifted +8 from signed [-8, 7]).
-        # Standard convention: weight = (q - zp_std) * scale, so zp_std = 8.
-        zero = torch.full_like(scale, 8.0)
+        zero = torch.nn.functional.pad(
+            zero, (0, n_groups_padded - n_groups_orig, 0, N_padded - N)
+        )
 
     int_data = int_data.to(device)
     scale = scale.to(device)
     zero = zero.to(device)
 
-    # Convert zero from standard convention (weight = (q - zp_std) * scale)
-    # to tinygemm convention (weight = (q - 8) * scale + zp_tg).
-    # Derivation: (q - zp_std) * scale = (q - 8) * scale + zp_tg
-    #           → zp_tg = (8 - zp_std) * scale
-    tinygemm_zero = (8 - zero.to(torch.float32)) * scale.to(torch.float32)
+    # Convert zero-point convention: tinygemm uses zp_tg = (8 - zp_std) * scale
+    tinygemm_zero = (8 - zero.float()) * scale.float()
 
-    # Tinygemm nibble convention: even index in HIGH nibble, odd in LOW.
-    # (This differs from serialize.py's _nibble_pack which uses the opposite
-    # convention for on-disk storage — both are valid, they serve different
-    # consumers.)
+    # Tinygemm nibble convention: even=HIGH, odd=LOW
     int_data_u8 = (int_data[:, ::2] << 4 | int_data[:, 1::2]).to(torch.uint8)
     packed_weight = torch.ops.aten._convert_weight_to_int4pack(
         int_data_u8.contiguous(), inner_k_tiles
@@ -113,78 +102,37 @@ def pack_int4_for_cuda(
 # Per-module packers
 
 
-def pack_int8_for_cuda(
-    cw: CanonicalQuantizedWeight,
-) -> nn.Parameter:
-    """Convert a canonical 8-bit weight to ``IntxUnpackedToInt8Tensor``.
-
-    Unlike INT4 (which needs tinygemm tile packing), INT8 weights are stored
-    unpacked. The subclass carries int8 qdata + scales and dequantizes during
-    matmul — AOTI fuses the ``dequantize → mm`` pattern in the compiled graph.
-    """
+def pack_linear_for_cuda(module: nn.Module, weights: dict[str, torch.Tensor]) -> None:
+    """Pack a quantized ``nn.Linear`` for CUDA."""
     from torchao.quantization import IntxUnpackedToInt8Tensor
+    from torchao.quantization.quantize_.workflows.int4.int4_tensor import Int4Tensor
 
-    assert cw.config.bits == 8, f"Expected 8-bit, got {cw.config.bits}"
-    assert cw.qdata.ndim == 2, f"Expected 2D weight, got {cw.qdata.ndim}D"
-
-    N, K = cw.qdata.shape
-    n_groups = K // cw.config.group_size
-    scale = cw.scale.to(torch.bfloat16).reshape(N, n_groups)
-    zero_point = (
-        cw.zero.to(torch.int8).reshape(N, n_groups)
-        if cw.zero is not None
-        else torch.zeros(N, n_groups, dtype=torch.int8)
-    )
-
-    subclass = IntxUnpackedToInt8Tensor(
-        qdata=cw.qdata,
-        scale=scale,
-        zero_point=zero_point,
-        target_dtype=torch.int8,
-        block_size=(1, cw.config.group_size),
-        dtype=torch.bfloat16,
-        activation_quantization=None,
-    )
-    return nn.Parameter(subclass, requires_grad=False)
-
-
-def pack_linear_for_cuda(
-    module: nn.Module, weights: dict[str, CanonicalQuantizedWeight]
-) -> None:
-    """Pack a quantized ``nn.Linear`` for CUDA.
-
-    4-bit weights use ``Int4TilePackedTo4dTensor`` (tinygemm kernel, requires
-    CUDA for packing). 8-bit weights use ``IntxUnpackedToInt8Tensor`` (AOTI
-    fuses the dequantize-matmul pattern). Both stay as tensor subclasses so
-    the export graph captures quantized ops.
-    """
-    cw = weights["weight"]
-    if cw.config.bits == 4:
-        packed = pack_int4_for_cuda(cw, device="cuda")
+    w = weights["weight"]
+    if isinstance(w, Int4Tensor):
+        # Pack on CUDA (required by _convert_weight_to_int4pack), move back
+        # to CPU for assembly. The model moves to CUDA later at runtime.
+        packed = pack_int4_for_cuda(w, device="cuda")
         module.weight = nn.Parameter(packed.data.to("cpu"), requires_grad=False)
         torch.cuda.empty_cache()
-    elif cw.config.bits == 8:
-        module.weight = pack_int8_for_cuda(cw)
+    elif isinstance(w, IntxUnpackedToInt8Tensor):
+        module.weight = nn.Parameter(w, requires_grad=False)
     else:
-        raise ValueError(f"Unsupported bit width: {cw.config.bits}")
+        raise ValueError(f"Unsupported weight type: {type(w).__name__}")
 
 
 def pack_embedding_for_cuda(
-    module: nn.Module, weights: dict[str, CanonicalQuantizedWeight]
+    module: nn.Module, weights: dict[str, torch.Tensor]
 ) -> None:
-    """Pack a quantized ``nn.Embedding`` for CUDA.
+    """Pack a quantized ``nn.Embedding`` for CUDA (INT8 only)."""
+    from torchao.quantization.quantize_.workflows.int4.int4_tensor import Int4Tensor
 
-    Uses ``IntxUnpackedToInt8Tensor`` which supports embedding gather.
-    Only INT8 is supported — ``Int4TilePackedTo4dTensor`` does not
-    implement the embedding op.
-    """
-    cw = weights["weight"]
-    if cw.config.bits != 8:
+    w = weights["weight"]
+    if isinstance(w, Int4Tensor):
         raise ValueError(
-            f"Only 8-bit embedding quantization is supported on CUDA, "
-            f"got {cw.config.bits}-bit."
+            "Only 8-bit embedding quantization is supported on CUDA. "
+            "Int4TilePackedTo4dTensor does not implement the embedding op."
         )
-    module.weight = pack_int8_for_cuda(cw)
+    module.weight = nn.Parameter(w, requires_grad=False)
 
 
 DEFAULT_CUDA_PACKERS: dict[type, ModulePackerFn] = {
@@ -202,19 +150,34 @@ def load_and_pack_for_cuda(
     model: nn.Module,
     packers: dict[type, ModulePackerFn] | None = None,
 ) -> None:
-    """Stream weights from a quantized safetensors file and pack for CUDA.
+    """Load a quantized safetensors file and pack for CUDA."""
+    from safetensors import safe_open
+    from torchao.prototype.safetensors.safetensors_support import (
+        unflatten_tensor_state_dict,
+    )
 
-    Uses ``iter_load`` to process one weight at a time, keeping peak
-    memory proportional to the largest single weight instead of loading
-    all weights into memory at once.
-    """
     from .pack import pack_one
-    from .serialize import iter_load
 
     _packers = packers or DEFAULT_CUDA_PACKERS
+    with safe_open(path, framework="pt", device="cpu") as f:
+        metadata = f.metadata()
+        all_keys = list(f.keys())
+        tensor_names = json.loads(metadata.get("tensor_names", "[]"))
 
-    for fqn, value in iter_load(path):
-        pack_one(model, fqn, value, _packers)
+        # Stream one logical weight at a time: load its inner tensors,
+        # reconstruct the subclass, pack, then release before the next.
+        loaded_keys: set[str] = set()
+        for name in tensor_names:
+            module_fqn, weight_name = name.rsplit(".", 1)
+            prefix = f"{module_fqn}._{weight_name}_"
+            partial = {}
+            for key in all_keys:
+                if key.startswith(prefix) or key == name:
+                    partial[key] = f.get_tensor(key)
+                    loaded_keys.add(key)
+            result, _ = unflatten_tensor_state_dict(partial, metadata)
+            for fqn, value in result.items():
+                pack_one(model, fqn, value, _packers)
 
     for fqn, p in model.named_parameters():
         if p.device.type == "meta":

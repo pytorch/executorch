@@ -19,10 +19,11 @@ both export and eager inference:
 | `inference.py --gguf <file>` | GGUF file (Q4_K_M, etc.) → eager generation | ~24 GB GPU |
 | `export.py --model-dir <hf>` | one-shot bf16 → quantize → export (no intermediate file) | ~30 GB CPU + CUDA for packing |
 
-The quantized checkpoint is a safetensors file with int values + per-group
-scales and a JSON header describing each weight's `QuantConfig`. No tensor
-subclass or backend-specific packing — packing for the target backend happens
-at load time via `quant.pack_model()`.
+The quantized checkpoint is a safetensors file containing torchao tensor
+subclasses (`Int4Tensor`, `IntxUnpackedToInt8Tensor`) and plain tensors.
+Metadata records each subclass's type and attributes. No backend-specific
+packing — packing for the target backend happens at load time via
+`quant.pack_model()`.
 
 ## Quantization recipes
 

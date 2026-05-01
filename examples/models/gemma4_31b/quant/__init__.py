@@ -8,10 +8,3 @@ from .pack import ModulePackerFn, pack_model, pack_one  # noqa: F401
 from .pack_cuda import DEFAULT_CUDA_PACKERS, load_and_pack_for_cuda  # noqa: F401
 from .quantize import dequantize_weight, quantize_model, quantize_weight  # noqa: F401
 from .recipe import QuantConfig, QuantRecipe, QuantRule  # noqa: F401
-from .serialize import (  # noqa: F401
-    CanonicalQuantizedWeight,
-    deserialize,
-    load,
-    save,
-    serialize,
-)

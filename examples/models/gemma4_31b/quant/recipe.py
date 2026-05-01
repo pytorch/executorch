@@ -18,12 +18,16 @@ from typing import Optional
 
 @dataclass(frozen=True)
 class QuantConfig:
-    """Per-weight quantization parameters."""
+    """Per-weight quantization parameters (quantization-time only).
 
-    bits: int  # storage width: 4 or 8 (6-bit formats like Q6_K are widened to 8)
+    Not stored in the serialized checkpoint — torchao tensor subclasses
+    carry their own metadata. This is purely for driving ``quantize_weight``.
+    """
+
+    bits: int  # 4 or 8
     group_size: int  # 32, 64, 128
     symmetric: bool  # True = no zero point
-    method: str  # "min_max" | "hqq" | "gguf_q4_k" | "gguf_q6_k"
+    method: str  # "min_max" | "hqq"
 
 
 @dataclass
