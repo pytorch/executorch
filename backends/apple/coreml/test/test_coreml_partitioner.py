@@ -338,6 +338,34 @@ class TestCoreMLPartitioner(unittest.TestCase):
                 torch.allclose(et_outputs, eager_outputs, atol=1e-02, rtol=1e-02)
             )
 
+    def test_random_ops_are_skipped(self):
+        """
+        Regression test for https://github.com/pytorch/executorch/issues/11722.
+
+        coremltools' converter aborts when it encounters torch random ops.
+        The partitioner must reject them so they fall back to the portable
+        backend instead of crashing the export.
+        """
+
+        class Model(torch.nn.Module):
+            def forward(self, x):
+                return torch.randn(x.shape) + torch.rand(x.shape) + x
+
+        model = Model().eval()
+        example_inputs = (torch.zeros(5, 5),)
+        exir_program_aten = torch.export.export(model, example_inputs, strict=True)
+        edge_program_manager = executorch.exir.to_edge_transform_and_lower(
+            exir_program_aten, partitioner=[CoreMLPartitioner()]
+        )
+
+        op_names = [
+            node.target.__name__
+            for node in edge_program_manager.exported_program().graph.nodes
+            if node.op == "call_function"
+        ]
+        self.assertIn("aten.randn.default", op_names)
+        self.assertIn("aten.rand.default", op_names)
+
     def test_deprecation_warning_for_to_backend_workflow(self):
         """
         Test that the deprecated to_edge + to_backend workflow shows a deprecation warning.

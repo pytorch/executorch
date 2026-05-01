@@ -116,6 +116,28 @@ class _OperatorsSupportedForCoreMLBackend(OperatorSupportBase):
             )
             return True
 
+        # https://github.com/pytorch/executorch/issues/11722
+        # coremltools' converter for the torch random ops does not pass the
+        # number-of-inputs check and aborts with an internal error.
+        if node.target in [
+            torch.ops.aten.rand.default,
+            torch.ops.aten.randn.default,
+            torch.ops.aten.rand_like.default,
+            torch.ops.aten.randn_like.default,
+            torch.ops.aten.randint.default,
+            torch.ops.aten.randint_like.default,
+            exir_ops.edge.aten.rand.default,
+            exir_ops.edge.aten.randn.default,
+            exir_ops.edge.aten.rand_like.default,
+            exir_ops.edge.aten.randn_like.default,
+            exir_ops.edge.aten.randint.default,
+            exir_ops.edge.aten.randint_like.default,
+        ]:
+            self.log_once(
+                "torch random ops are not supported by CoreML.  Overriding op support."
+            )
+            return True
+
         # TODO: enable this after bugs in ExecuTorch's partitioner are fixed
         # # If lower_full_graph=False, do not partition nodes with symbolic args because it can result in symbolic args
         # # in the placeholders due to partitioning, which CoreML does not support
