@@ -88,8 +88,12 @@ class AotiBackend(ABC):
         return False
 
     @classmethod
-    def get_extra_aoti_compile_context_manager(cls):
-        """Return extra context manager to apply during aoti_compile stage. By default returns an empty context manager."""
+    def get_extra_aoti_compile_context_manager(cls, compile_specs: List[CompileSpec]):
+        """Return extra context manager to apply during aoti_compile stage. By default returns an empty context manager.
+
+        Subclasses may inspect ``compile_specs`` to opt into behaviors that
+        only apply to specific methods/models (e.g. low-memory export).
+        """
         return contextlib.nullcontext()
 
     @classmethod
@@ -208,7 +212,7 @@ class AotiBackend(ABC):
         # Compile with fallback kernel collection
         with cls.collect_unsupported_fallback_kernels(
             missing_fallback_kernels
-        ), torch.no_grad(), cls.get_extra_aoti_compile_context_manager():
+        ), torch.no_grad(), cls.get_extra_aoti_compile_context_manager(compile_specs):
             paths = torch._inductor.aot_compile(
                 edge_program_module, tuple(user_input_placeholders), options=options
             )

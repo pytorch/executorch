@@ -332,12 +332,28 @@ class CudaBackend(AotiBackend, BackendDetails):
         return options
 
     @classmethod
-    def get_extra_aoti_compile_context_manager(cls):
+    def get_extra_aoti_compile_context_manager(cls, compile_specs: List[CompileSpec]):
         """
         Combine all extra context managers needed during AOTInductor
         compilation for the CUDA backend. Each manager is documented at
         its own `enter_context` call site below.
+
+        The low-memory export monkey-patch (CPU clones for mutated buffers)
+        is gated on the ``low_memory_mode`` compile spec — only models that
+        explicitly opt in (currently Qwen3.5 MoE) get it. Other models go
+        through the unmodified AOTI codepath, which avoids regressions in
+        their cuda CI exports.
         """
+        # Parse compile_specs for low_memory_mode (default OFF)
+        low_memory_mode = "OFF"
+        for spec in compile_specs:
+            if spec.key == "low_memory_mode":
+                mode = spec.value.decode("utf-8").upper()
+                if mode not in ["ON", "OFF"]:
+                    raise ValueError(
+                        f"Invalid low_memory_mode: {mode}. Expected 'ON' or 'OFF'."
+                    )
+                low_memory_mode = mode
 
         @contextlib.contextmanager
         def _combined():
@@ -348,15 +364,29 @@ class CudaBackend(AotiBackend, BackendDetails):
                 # `ReplaceEdgeOpWithTritonOpPass` are unaffected; this is
                 # only the fallback for the `triton_kernel_mode="OFF"` path.
                 stack.enter_context(torch.nn.attention.sdpa_kernel([SDPBackend.MATH]))
-                # Force AOTI's mutated-buffer clones onto CPU during compile
-                # so we stay under tight GPU memory caps (e.g. 24 GB on a
-                # consumer 4090). See `_compile_time_cpu_clones` for details.
-                stack.enter_context(
-                    _compile_time_cpu_clones(torch.device(cls.get_device_name()))
-                )
+                if low_memory_mode == "ON":
+                    # Force AOTI's mutated-buffer clones onto CPU during
+                    # compile so we stay under tight GPU memory caps (e.g.
+                    # 24 GB on a consumer 4090). See
+                    # `_compile_time_cpu_clones` for details. Only enabled
+                    # for models that explicitly opt in via the
+                    # `low_memory_mode="ON"` compile spec, since the
+                    # monkey-patch can interact poorly with other models'
+                    # AOTI compile pipelines.
+                    stack.enter_context(
+                        _compile_time_cpu_clones(torch.device(cls.get_device_name()))
+                    )
                 yield
 
         return _combined()
+
+    @staticmethod
+    def _is_low_memory_mode(compile_specs: List[CompileSpec]) -> bool:
+        """Return True if any compile spec opts into low-memory export."""
+        for spec in compile_specs:
+            if spec.key == "low_memory_mode":
+                return spec.value.decode("utf-8").upper() == "ON"
+        return False
 
     @classmethod
     def preprocess_multimethod(
@@ -369,6 +399,11 @@ class CudaBackend(AotiBackend, BackendDetails):
         between methods (e.g. decode then prefill). Inductor caches hold CUDA
         tensors from the first compilation, causing the second to OOM under
         tight VRAM caps (e.g. 24GB simulating an RTX 4090).
+
+        The aggressive cleanup (resizing every CUDA tensor's storage to 0)
+        is only enabled for methods that opt into ``low_memory_mode="ON"``
+        — it can otherwise break models that expect their CUDA tensors to
+        stay live across method preprocessing.
         """
         import gc
 
@@ -384,17 +419,17 @@ class CudaBackend(AotiBackend, BackendDetails):
                 preprocess_result = cls.preprocess(program, compile_spec_for_program)
                 results_for_method.append(preprocess_result)
 
-                # Aggressive GPU cleanup between methods
+                # GPU cleanup between methods. Aggressive storage resize is
+                # only run for methods that opt into low-memory mode.
                 if torch.cuda.is_available():
-                    gc.collect()
-                    freed = 0
-                    for obj in gc.get_objects():
-                        if isinstance(obj, torch.Tensor) and obj.is_cuda:
-                            try:
-                                obj.untyped_storage().resize_(0)
-                                freed += 1
-                            except Exception:
-                                pass
+                    if cls._is_low_memory_mode(compile_spec_for_program):
+                        gc.collect()
+                        for obj in gc.get_objects():
+                            if isinstance(obj, torch.Tensor) and obj.is_cuda:
+                                try:
+                                    obj.untyped_storage().resize_(0)
+                                except Exception:
+                                    pass
                     gc.collect()
                     torch.cuda.empty_cache()
 
