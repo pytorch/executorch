@@ -35,7 +35,7 @@ class HtpContextCustomConfig {
   std::vector<QnnContext_CustomConfig_t> CreateContextCustomConfig();
 
  private:
-  QnnExecuTorchProfileLevel profile_level_;
+  [[maybe_unused]] QnnExecuTorchProfileLevel profile_level_;
   QnnHtpContext_CustomConfig_t* AllocContextCustomConfig() {
     htp_context_config_.emplace_back(
         std::make_unique<QnnHtpContext_CustomConfig_t>());
