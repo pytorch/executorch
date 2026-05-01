@@ -112,7 +112,7 @@ def pack_linear_for_cuda(module: nn.Module, weights: dict[str, torch.Tensor]) ->
         # Pack on CUDA (required by _convert_weight_to_int4pack), move back
         # to CPU for assembly. The model moves to CUDA later at runtime.
         packed = pack_int4_for_cuda(w, device="cuda")
-        module.weight = nn.Parameter(packed.data.to("cpu"), requires_grad=False)
+        module.weight = nn.Parameter(packed.detach().to("cpu"), requires_grad=False)
         torch.cuda.empty_cache()
     elif isinstance(w, IntxUnpackedToInt8Tensor):
         module.weight = nn.Parameter(w, requires_grad=False)
@@ -166,15 +166,17 @@ def load_and_pack_for_cuda(
 
         # Stream one logical weight at a time: load its inner tensors,
         # reconstruct the subclass, pack, then release before the next.
-        loaded_keys: set[str] = set()
         for name in tensor_names:
-            module_fqn, weight_name = name.rsplit(".", 1)
-            prefix = f"{module_fqn}._{weight_name}_"
+            parts = name.rsplit(".", 1)
+            module_fqn = parts[0] if len(parts) > 1 else ""
+            weight_name = parts[-1]
+            prefix = (
+                f"{module_fqn}._{weight_name}_" if module_fqn else f"_{weight_name}_"
+            )
             partial = {}
             for key in all_keys:
                 if key.startswith(prefix) or key == name:
                     partial[key] = f.get_tensor(key)
-                    loaded_keys.add(key)
             result, _ = unflatten_tensor_state_dict(partial, metadata)
             for fqn, value in result.items():
                 pack_one(model, fqn, value, _packers)
