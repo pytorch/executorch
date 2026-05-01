@@ -124,6 +124,7 @@ jobs:
 
     uses: pytorch/test-infra/.github/workflows/macos_job.yml@main
     with:
+      default-packages: ""
       ref: ${{ inputs.ref }}
       runner: macos-m1-stable
       python-version: "3.12"
