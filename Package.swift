@@ -9,7 +9,7 @@
 
 import PackageDescription
 
-let version = "__VERSION__"
+let version = "1.3.0.20260501"
 let url = "https://ossci-ios.s3.amazonaws.com/executorch/"
 let debug_suffix = "_debug"
 let dependencies_suffix = "_with_dependencies"
@@ -36,8 +36,8 @@ func deliverables(_ dict: [String: [String: Any]]) -> [String: [String: Any]] {
 
 let products = deliverables([
   "backend_coreml": [
-    "sha256": "__SHA256_backend_coreml__",
-    "sha256" + debug_suffix: "__SHA256_backend_coreml_debug__",
+    "sha256": "e5637cefbbb9cb3f77d48776c660db9f116f03245e0e8ef7a9d56e78fe77701b",
+    "sha256" + debug_suffix: "03426fb118ea125edeb3fb3db1759ab6da44d7479319ce90b82b52ac61df70c1",
     "frameworks": [
       "Accelerate",
       "CoreML",
@@ -47,8 +47,8 @@ let products = deliverables([
     ],
   ],
   "backend_mps": [
-    "sha256": "__SHA256_backend_mps__",
-    "sha256" + debug_suffix: "__SHA256_backend_mps_debug__",
+    "sha256": "ba32729879cd1345141903c1dd824df06f0f554f472440fa77f218e3c3181e0e",
+    "sha256" + debug_suffix: "5a21f35ceb9731bf2955f357cccb4194b8d9bd76bd1f6fe68ea6ab616791ac81",
     "frameworks": [
       "Metal",
       "MetalPerformanceShaders",
@@ -56,33 +56,33 @@ let products = deliverables([
     ],
   ],
   "backend_xnnpack": [
-    "sha256": "__SHA256_backend_xnnpack__",
-    "sha256" + debug_suffix: "__SHA256_backend_xnnpack_debug__",
+    "sha256": "5650202ea192d0edbec55972ab6088046fbd44ac07f3ca800f2c3aed57997239",
+    "sha256" + debug_suffix: "3733a244f0abcc6039dc5782c313298c9bdc566b5cb9b8e3c15a56e63062873b",
     "targets": [
       "threadpool",
     ],
   ],
   "executorch": [
-    "sha256": "__SHA256_executorch__",
-    "sha256" + debug_suffix: "__SHA256_executorch_debug__",
+    "sha256": "d2a11a8c341d6f7dd27058c191473e551e12eb37278e248d8a217e0e3f2d91dd",
+    "sha256" + debug_suffix: "205a22ddb622b698890d77626b985762ac6c91c7c7d395b7a71813a5d2ce7bf6",
     "libraries": [
       "c++",
     ],
   ],
   "executorch_llm": [
-    "sha256": "__SHA256_executorch_llm__",
-    "sha256" + debug_suffix: "__SHA256_executorch_llm_debug__",
+    "sha256": "81527d6f346b5cce50b54ad072276793e8f71bc51f0224b3544a6984c96c28eb",
+    "sha256" + debug_suffix: "9832ab2eb43680c2d582180e3fbcd5eb59d3ea606251734f118347616b9a811f",
     "targets": [
       "executorch",
     ],
   ],
   "kernels_llm": [
-    "sha256": "__SHA256_kernels_llm__",
-    "sha256" + debug_suffix: "__SHA256_kernels_llm_debug__",
+    "sha256": "3d0c8baa19c50ad8df2c6ebdcf1a8cd91fca2b9760d2ec2a3c5b40b88b2ed935",
+    "sha256" + debug_suffix: "7a61011cf14e0ced4f6ec8901b33429643e9a8c119ef230871487b803504df27",
   ],
   "kernels_optimized": [
-    "sha256": "__SHA256_kernels_optimized__",
-    "sha256" + debug_suffix: "__SHA256_kernels_optimized_debug__",
+    "sha256": "c8c24c618fc9ad5be9aa094cc3e6f17fba7f4cbdfbaf72aaf14923f0ba8c9084",
+    "sha256" + debug_suffix: "43de4f0a350c0030801585b44fde39de4a4a2874faf7c0a4c23c7bda37610fde",
     "frameworks": [
       "Accelerate",
     ],
@@ -91,12 +91,12 @@ let products = deliverables([
     ],
   ],
   "kernels_quantized": [
-    "sha256": "__SHA256_kernels_quantized__",
-    "sha256" + debug_suffix: "__SHA256_kernels_quantized_debug__",
+    "sha256": "85b1d66189c345c4b90ab68939a2dabcaa0f68e6ebe81677d6fa13a3a0c891b8",
+    "sha256" + debug_suffix: "aa5f80d0419f437b233da3a96122e2b9b5a8e90d747b80dc32a2990018475033",
   ],
   "kernels_torchao": [
-    "sha256": "__SHA256_kernels_torchao__",
-    "sha256" + debug_suffix: "__SHA256_kernels_torchao_debug__",
+    "sha256": "ef8f70b5c16fa72d2c7d954fdb92c4800143bc498ffb09ead9cde6d6c865667f",
+    "sha256" + debug_suffix: "146cbf4dc18d4d30aff082f594e7aa78ec378911fdcc02a42540e54f0c858ab3",
     "targets": [
       "threadpool",
     ],
@@ -105,8 +105,8 @@ let products = deliverables([
 
 let targets = deliverables([
   "threadpool": [
-    "sha256": "__SHA256_threadpool__",
-    "sha256" + debug_suffix: "__SHA256_threadpool_debug__",
+    "sha256": "a6dd969bfe8b0f59938abac781f5d9398755777a600655e24ff1f8b1fdb48814",
+    "sha256" + debug_suffix: "462c5756f96bccb1f85a9b576b35d52296287913f9b7b50452572e02b04d6c56",
   ],
 ])
 
