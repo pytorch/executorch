@@ -11,7 +11,11 @@ import copy
 
 import pytest
 import torch
-from export_static_llm_coreml import _create_example_inputs, _resolve_cache_len
+from export_static_llm_coreml import (
+    _create_example_inputs,
+    _resolve_cache_len,
+    _resolve_per_layer_cache_lens,
+)
 from utils import replace_linear_with_split_linear
 
 from executorch.examples.models.llama.model_args import ModelArgs
@@ -122,6 +126,142 @@ def test_create_example_inputs_with_sliding_window_shrinks_kv_cache():
     assert masks[sliding_window].shape[-1] == input_len + sliding_window
 
 
+def test_per_layer_cache_lens_uniform_when_no_pattern():
+    # Without a pattern every layer gets the same cache length.
+    out = _resolve_per_layer_cache_lens(
+        n_layers=4, max_context_len=1024, input_len=32, sliding_window=64
+    )
+    assert out == [64, 64, 64, 64]
+
+
+def test_per_layer_cache_lens_uniform_full_when_no_window():
+    # No window at all is just `max_context_len - input_len` everywhere.
+    out = _resolve_per_layer_cache_lens(
+        n_layers=4, max_context_len=1024, input_len=32
+    )
+    assert out == [992, 992, 992, 992]
+
+
+def test_per_layer_cache_lens_gemma4_e2b_pattern():
+    # Gemma 4 E2B: 35 layers, P=5 → 4 sliding + 1 full repeated 7 times.
+    out = _resolve_per_layer_cache_lens(
+        n_layers=35,
+        max_context_len=8192,
+        input_len=32,
+        sliding_window=4096,
+        sliding_window_pattern=5,
+    )
+    full = 8192 - 32
+    sliding = 4096
+    assert len(out) == 35
+    # Layers at 1-indexed positions 5, 10, 15, …, 35 are full.
+    assert [out[i] for i in range(35)] == [
+        full if (i + 1) % 5 == 0 else sliding for i in range(35)
+    ]
+    assert sum(1 for cl in out if cl == full) == 7
+    assert sum(1 for cl in out if cl == sliding) == 28
+
+
+def test_per_layer_cache_lens_gemma3_pattern():
+    # Gemma 3 uses P=6 (5 sliding + 1 full).
+    out = _resolve_per_layer_cache_lens(
+        n_layers=12,
+        max_context_len=2048,
+        input_len=32,
+        sliding_window=512,
+        sliding_window_pattern=6,
+    )
+    full = 2048 - 32
+    sliding = 512
+    assert out == [
+        sliding,
+        sliding,
+        sliding,
+        sliding,
+        sliding,
+        full,
+        sliding,
+        sliding,
+        sliding,
+        sliding,
+        sliding,
+        full,
+    ]
+
+
+def test_per_layer_cache_lens_pattern_requires_sliding_window():
+    with pytest.raises(ValueError):
+        _resolve_per_layer_cache_lens(
+            n_layers=8,
+            max_context_len=1024,
+            input_len=32,
+            sliding_window=None,
+            sliding_window_pattern=5,
+        )
+
+
+def test_per_layer_cache_lens_rejects_pattern_le_one():
+    # P=1 would make every layer full and is almost certainly a typo, so
+    # surface it rather than silently doing the no-pattern thing.
+    with pytest.raises(ValueError):
+        _resolve_per_layer_cache_lens(
+            n_layers=8,
+            max_context_len=1024,
+            input_len=32,
+            sliding_window=64,
+            sliding_window_pattern=1,
+        )
+
+
+def test_create_example_inputs_with_per_layer_pattern_yields_two_cache_sizes():
+    model_args = ModelArgs(
+        dim=32,
+        n_layers=10,
+        n_heads=4,
+        n_kv_heads=2,
+        head_dim=8,
+        vocab_size=128,
+        max_context_len=1024,
+        max_seq_len=1024,
+    )
+    max_context_len = 1024
+    input_len = 32
+    sliding_window = 64
+    pattern = 5
+
+    cache_lens = _resolve_per_layer_cache_lens(
+        n_layers=model_args.n_layers,
+        max_context_len=max_context_len,
+        input_len=input_len,
+        sliding_window=sliding_window,
+        sliding_window_pattern=pattern,
+    )
+
+    example_inputs, _ = _create_example_inputs(
+        model_args,
+        input_len,
+        max_context_len,
+        float_dtype=torch.float32,
+        cache_len=cache_lens,
+    )
+
+    in_cache_state = example_inputs[1]["in_cache_state"]
+    seen = set()
+    for per_kind in in_cache_state:
+        for tensor in per_kind.values():
+            seen.add(tensor.size(-2))
+    full = max_context_len - input_len
+    assert seen == {sliding_window, full}, (
+        f"expected both {sliding_window} (sliding) and {full} (full) cache sizes, got {seen}"
+    )
+
+    # Both cache_len values get their own mask; (input_len + cache_len) per mask.
+    masks = example_inputs[1]["masks"]
+    assert set(masks.keys()) == {sliding_window, full}
+    assert masks[sliding_window].shape[-1] == input_len + sliding_window
+    assert masks[full].shape[-1] == input_len + full
+
+
 if __name__ == "__main__":
     test_split_model()
     test_resolve_cache_len_no_sliding_window()
@@ -129,3 +269,10 @@ if __name__ == "__main__":
     test_resolve_cache_len_sliding_window_larger_than_context_is_a_no_op()
     test_resolve_cache_len_rejects_non_positive_window()
     test_create_example_inputs_with_sliding_window_shrinks_kv_cache()
+    test_per_layer_cache_lens_uniform_when_no_pattern()
+    test_per_layer_cache_lens_uniform_full_when_no_window()
+    test_per_layer_cache_lens_gemma4_e2b_pattern()
+    test_per_layer_cache_lens_gemma3_pattern()
+    test_per_layer_cache_lens_pattern_requires_sliding_window()
+    test_per_layer_cache_lens_rejects_pattern_le_one()
+    test_create_example_inputs_with_per_layer_pattern_yields_two_cache_sizes()
