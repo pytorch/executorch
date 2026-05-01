@@ -4,7 +4,7 @@
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
 
-# An torch.export() friendly version of torchtune's positional embeddings.
+# A torch.export() friendly version of torchtune's positional embeddings.
 # Added torch._check() to make sure guards on symints are enforced.
 # See https://github.com/pytorch/torchtune/blob/main/torchtune/models/clip/_position_embeddings.py
 
