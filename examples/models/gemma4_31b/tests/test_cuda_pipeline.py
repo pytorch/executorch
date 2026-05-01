@@ -162,11 +162,11 @@ class TestCudaExport(unittest.TestCase):
                 ckpt_dir, max_seq_len=TINY_CONFIG.max_seq_len
             )
             model.lm_head.weight = nn.Parameter(model.embed_tokens.weight.clone())
-            quantized, unquantized = quantize_model(model, DEFAULT_RECIPE)
+            state_dict = quantize_model(model, DEFAULT_RECIPE)
 
             with torch.device("meta"):
                 model = Gemma4_31B(config)
-            pack_model(model, quantized, unquantized, DEFAULT_CUDA_PACKERS)
+            pack_model(model, state_dict, DEFAULT_CUDA_PACKERS)
             model.eval()
 
             params = dict(model.named_parameters())

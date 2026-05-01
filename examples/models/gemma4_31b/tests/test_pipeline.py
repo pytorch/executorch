@@ -28,14 +28,17 @@ from executorch.examples.models.gemma4_31b.model import (
     RingKVCache,
 )
 from executorch.examples.models.gemma4_31b.quant import (
-    load,
     QuantConfig,
     quantize_model,
     QuantRecipe,
     QuantRule,
-    save,
 )
+from safetensors import safe_open
 from safetensors.torch import save_file
+from torchao.prototype.safetensors.safetensors_support import (
+    flatten_tensor_state_dict,
+    unflatten_tensor_state_dict,
+)
 
 
 # ---------------------------------------------------------------------------
@@ -137,9 +140,10 @@ def build_random_tiny_model() -> Gemma4_31B:
 def save_checkpoint(output_dir: str):
     model = build_random_tiny_model()
     model.lm_head.weight = nn.Parameter(model.embed_tokens.weight.clone())
-    quantized, unquantized = quantize_model(model, DEFAULT_RECIPE)
+    state_dict = quantize_model(model, DEFAULT_RECIPE)
     os.makedirs(output_dir, exist_ok=True)
-    save(quantized, unquantized, os.path.join(output_dir, "model.safetensors"))
+    td, md = flatten_tensor_state_dict(state_dict)
+    save_file(td, os.path.join(output_dir, "model.safetensors"), metadata=md)
     with open(os.path.join(output_dir, "config.json"), "w") as f:
         json.dump(config_dict(), f)
 
@@ -160,53 +164,49 @@ def build_hf_checkpoint(output_dir: str) -> None:
 
 class TestQuantizeSaveLoadRoundtrip(unittest.TestCase):
     def test_roundtrip_preserves_weights(self):
-        """quantize → save → load recovers all weights and configs."""
+        """quantize → save → load recovers all weights."""
+        from torchao.quantization import IntxUnpackedToInt8Tensor
+        from torchao.quantization.quantize_.workflows.int4.int4_tensor import Int4Tensor
+
         model = build_random_tiny_model()
         model.lm_head.weight = nn.Parameter(model.embed_tokens.weight.clone())
-        quantized, unquantized = quantize_model(model, DEFAULT_RECIPE)
+        state_dict = quantize_model(model, DEFAULT_RECIPE)
 
         with tempfile.TemporaryDirectory() as tmpdir:
             path = os.path.join(tmpdir, "model.safetensors")
-            save(quantized, unquantized, path)
-            q_loaded, u_loaded = load(path)
+            td, md = flatten_tensor_state_dict(state_dict)
+            save_file(td, path, metadata=md)
+            with safe_open(path, framework="pt", device="cpu") as f:
+                loaded_meta = f.metadata()
+                loaded_tensors = {k: f.get_tensor(k) for k in f.keys()}
+            loaded, _ = unflatten_tensor_state_dict(loaded_tensors, loaded_meta)
 
-        self.assertEqual(set(quantized.keys()), set(q_loaded.keys()))
-        for fqn in quantized:
-            self.assertEqual(quantized[fqn].config, q_loaded[fqn].config)
-            self.assertTrue(torch.equal(quantized[fqn].qdata, q_loaded[fqn].qdata))
-            self.assertTrue(torch.equal(quantized[fqn].scale, q_loaded[fqn].scale))
-
-        self.assertEqual(set(unquantized.keys()), set(u_loaded.keys()))
-        for fqn in unquantized:
-            self.assertTrue(torch.equal(unquantized[fqn], u_loaded[fqn]))
+        self.assertEqual(set(state_dict.keys()), set(loaded.keys()))
+        for fqn in state_dict:
+            orig = state_dict[fqn]
+            got = loaded[fqn]
+            self.assertEqual(type(orig).__name__, type(got).__name__)
+            if isinstance(orig, Int4Tensor):
+                self.assertTrue(torch.equal(orig.qdata, got.qdata))
+                self.assertTrue(torch.equal(orig.scale, got.scale))
+            elif isinstance(orig, IntxUnpackedToInt8Tensor):
+                self.assertTrue(torch.equal(orig.qdata, got.qdata))
+                self.assertTrue(torch.equal(orig.scale, got.scale))
+            elif isinstance(orig, torch.Tensor):
+                self.assertTrue(torch.equal(orig, got))
 
     def test_embedding_quantized_as_int8(self):
-        """embed_tokens is quantized to INT8 per-axis, not skipped."""
+        """embed_tokens is quantized to INT8 (IntxUnpackedToInt8Tensor)."""
+        from torchao.quantization import IntxUnpackedToInt8Tensor
+
         model = build_random_tiny_model()
         model.lm_head.weight = nn.Parameter(model.embed_tokens.weight.clone())
-        quantized, unquantized = quantize_model(model, DEFAULT_RECIPE)
+        state_dict = quantize_model(model, DEFAULT_RECIPE)
 
-        self.assertIn("embed_tokens.weight", quantized)
-        self.assertNotIn("embed_tokens.weight", unquantized)
-        self.assertEqual(quantized["embed_tokens.weight"].config.bits, 8)
-
-    def test_corrupted_checkpoint_missing_key(self):
-        """Renaming a key in the safetensors file makes it absent after load."""
-        from safetensors import safe_open
-
-        with tempfile.TemporaryDirectory() as tmpdir:
-            save_checkpoint(tmpdir)
-            path = os.path.join(tmpdir, "model.safetensors")
-
-            with safe_open(path, framework="pt", device="cpu") as f:
-                header = f.metadata()
-                tensors = {k: f.get_tensor(k) for k in f.keys()}
-            tensors["norm.BOGUS"] = tensors.pop("norm.weight")
-            save_file(tensors, path, metadata=header)
-
-            q, u = load(path)
-            self.assertNotIn("norm.weight", u)
-            self.assertIn("norm.BOGUS", u)
+        self.assertIn("embed_tokens.weight", state_dict)
+        self.assertIsInstance(
+            state_dict["embed_tokens.weight"], IntxUnpackedToInt8Tensor
+        )
 
 
 class TestRingKVCache(unittest.TestCase):
@@ -264,6 +264,46 @@ class TestRingKVCache(unittest.TestCase):
         v = torch.zeros(1, 2, buf_size + 1, 8)
         with self.assertRaises(AssertionError):
             cache.update(pos, k, v)
+
+
+class TestGgufKeyMapping(unittest.TestCase):
+    """Unit tests for gguf_loader.gguf_to_model_key (CPU, no GGUF file needed)."""
+
+    def test_attention_keys(self):
+        from executorch.examples.models.gemma4_31b.gguf_loader import gguf_to_model_key
+
+        self.assertEqual(
+            gguf_to_model_key("blk.0.attn_q.weight"),
+            "layers.0.self_attn.q_proj.weight",
+        )
+        self.assertEqual(
+            gguf_to_model_key("blk.59.attn_output.weight"),
+            "layers.59.self_attn.o_proj.weight",
+        )
+
+    def test_mlp_keys(self):
+        from executorch.examples.models.gemma4_31b.gguf_loader import gguf_to_model_key
+
+        self.assertEqual(
+            gguf_to_model_key("blk.5.ffn_gate.weight"),
+            "layers.5.mlp.gate_proj.weight",
+        )
+
+    def test_global_keys(self):
+        from executorch.examples.models.gemma4_31b.gguf_loader import gguf_to_model_key
+
+        self.assertEqual(gguf_to_model_key("token_embd.weight"), "embed_tokens.weight")
+        self.assertEqual(gguf_to_model_key("output_norm.weight"), "norm.weight")
+
+    def test_unknown_key_returns_none(self):
+        from executorch.examples.models.gemma4_31b.gguf_loader import gguf_to_model_key
+
+        self.assertIsNone(gguf_to_model_key("blk.0.some_unknown.weight"))
+
+    def test_ignored_key_returns_none(self):
+        from executorch.examples.models.gemma4_31b.gguf_loader import gguf_to_model_key
+
+        self.assertIsNone(gguf_to_model_key("rope_freqs.weight"))
 
 
 if __name__ == "__main__":

@@ -82,12 +82,12 @@ def load_and_quantize(
         model.lm_head.weight = nn.Parameter(model.embed_tokens.weight.clone())
 
     print(f"Quantizing with recipe '{recipe_name}'...")
-    quantized, unquantized = quantize_model(model, recipe)
+    state_dict = quantize_model(model, recipe)
 
     print(f"Packing for {backend}...")
     with torch.device("meta"):
         model = Gemma4_31B(config)
-    pack_model(model, quantized, unquantized, packers=_get_packers(backend))
+    pack_model(model, state_dict, packers=_get_packers(backend))
     model.eval()
 
     print(f"Model: {config.num_hidden_layers} layers, hidden={config.hidden_size}")

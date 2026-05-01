@@ -126,9 +126,10 @@ Modules in `quant/`:
 - **Recipe** (`recipe.py`): `QuantConfig` + `QuantRule` + `QuantRecipe`.
   Declares what to quantize — says nothing about packing or backends.
 - **Quantize** (`quantize.py`): `quantize_weight` / `dequantize_weight` /
-  `quantize_model`. Produces `CanonicalQuantizedWeight` from fp weights.
-- **Serialize** (`serialize.py`): `CanonicalQuantizedWeight` (int8 qdata +
-  bf16 scale + optional zero). `save()` / `load()` persist to safetensors.
+  `quantize_model`. Produces torchao tensor subclasses (`Int4Tensor`,
+  `IntxUnpackedToInt8Tensor`) from fp weights.
+- **Serialization**: callers use torchao's safetensors integration
+  (`torchao.prototype.safetensors`) directly — no wrapper module needed.
 - **Pack** (`pack.py` + `pack_cuda.py`): `pack_model` groups weights by
   parent module, `pack_one` handles single weights. Per-module packers
   dispatch by module type (`nn.Linear`, `nn.Embedding`, extensible for MoE).
@@ -142,11 +143,11 @@ quantize_and_save.py                    export.py / inference.py
      |                                       |
   bf16 weights                          quantized checkpoint (safetensors)
      |                                       |
-  quantize_weight()                     load()
+  quantize_weight()                     load (torchao safetensors)
      |                                       |
-  CanonicalQuantizedWeight              CanonicalQuantizedWeight
+  Int4Tensor / IntxUnpacked             Int4Tensor / IntxUnpacked
      |                                       |
-  save()                                pack_model()
+  save (torchao safetensors)            pack_model()
      |                                       |
   model.safetensors                     Int4TilePackedTo4dTensor (runtime)
 ```

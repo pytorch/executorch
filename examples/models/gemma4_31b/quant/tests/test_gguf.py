@@ -6,12 +6,13 @@
 
 """Unit tests for quant/gguf.py — Q4_K and Q6_K unpacking.
 
-Tests verify the API contract: dequantized canonical weights match the
-original GGUF dequantization formula. Uses synthetic blocks — no GGUF
-file required.
+Tests verify the API contract: dequantized weights match the original
+GGUF dequantization formula. Uses synthetic blocks — no GGUF file required.
 """
 
+import os
 import struct
+import tempfile
 import unittest
 
 import numpy as np
@@ -28,7 +29,12 @@ if _HAS_GGUF:
     from executorch.examples.models.gemma4_31b.quant.gguf import unpack_gguf_tensor
 
 from executorch.examples.models.gemma4_31b.quant.quantize import dequantize_weight
-from executorch.examples.models.gemma4_31b.quant.serialize import deserialize, serialize
+from safetensors import safe_open
+from safetensors.torch import save_file
+from torchao.prototype.safetensors.safetensors_support import (
+    flatten_tensor_state_dict,
+    unflatten_tensor_state_dict,
+)
 
 
 def _make_q4_k_block(d, dmin, sub_scales, sub_mins, qvals):
@@ -173,8 +179,8 @@ class TestQ6KDequant(unittest.TestCase):
 
 @unittest.skipUnless(_HAS_GGUF, "gguf package not installed")
 class TestGgufSerializeRoundtrip(unittest.TestCase):
-    def test_q4_k_survives_serialize_roundtrip(self):
-        """unpack → serialize → deserialize → dequant matches original."""
+    def test_q4_k_survives_save_load_roundtrip(self):
+        """unpack → save → load → dequant matches original."""
         d, dmin = 0.5, 0.25
         sub_scales = [3, 7, 1, 15, 20, 10, 31, 5]
         sub_mins = [1, 2, 0, 4, 8, 3, 12, 6]
@@ -182,34 +188,46 @@ class TestGgufSerializeRoundtrip(unittest.TestCase):
 
         block = _make_q4_k_block(d, dmin, sub_scales, sub_mins, qvals)
         data = np.frombuffer(bytes(block), dtype=np.uint8).reshape(1, 144)
-        cw = unpack_gguf_tensor(data, GGMLQuantizationType.Q4_K, [1, 256])
+        q = unpack_gguf_tensor(data, GGMLQuantizationType.Q4_K, [1, 256])
 
-        dequant_before = dequantize_weight(cw)
+        dequant_before = dequantize_weight(q)
 
-        tensors, header = serialize({"w": cw}, {})
-        q_loaded, _ = deserialize(tensors, header)
-        dequant_after = dequantize_weight(q_loaded["w"])
+        with tempfile.TemporaryDirectory() as tmpdir:
+            path = os.path.join(tmpdir, "m.safetensors")
+            td, md = flatten_tensor_state_dict({"layer.weight": q})
+            save_file(td, path, metadata=md)
+            with safe_open(path, framework="pt", device="cpu") as sf:
+                loaded_meta = sf.metadata()
+                loaded_tensors = {k: sf.get_tensor(k) for k in sf.keys()}
+            loaded, _ = unflatten_tensor_state_dict(loaded_tensors, loaded_meta)
+        dequant_after = dequantize_weight(loaded["layer.weight"])
 
         self.assertTrue(
             torch.allclose(dequant_before, dequant_after, atol=0.01),
             f"Max diff: {(dequant_before - dequant_after).abs().max():.6f}",
         )
 
-    def test_q6_k_survives_serialize_roundtrip(self):
-        """unpack → serialize → deserialize → dequant matches original."""
+    def test_q6_k_survives_save_load_roundtrip(self):
+        """unpack → save → load → dequant matches original."""
         d = 0.5
         scales_16 = [i + 1 for i in range(16)]
         qvals = [(i * 3 + 5) % 64 for i in range(256)]
 
         block = _make_q6_k_block(d, scales_16, qvals)
         data = np.frombuffer(bytes(block), dtype=np.uint8).reshape(1, 210)
-        cw = unpack_gguf_tensor(data, GGMLQuantizationType.Q6_K, [1, 256])
+        q = unpack_gguf_tensor(data, GGMLQuantizationType.Q6_K, [1, 256])
 
-        dequant_before = dequantize_weight(cw)
+        dequant_before = dequantize_weight(q)
 
-        tensors, header = serialize({"w": cw}, {})
-        q_loaded, _ = deserialize(tensors, header)
-        dequant_after = dequantize_weight(q_loaded["w"])
+        with tempfile.TemporaryDirectory() as tmpdir:
+            path = os.path.join(tmpdir, "m.safetensors")
+            td, md = flatten_tensor_state_dict({"layer.weight": q})
+            save_file(td, path, metadata=md)
+            with safe_open(path, framework="pt", device="cpu") as sf:
+                loaded_meta = sf.metadata()
+                loaded_tensors = {k: sf.get_tensor(k) for k in sf.keys()}
+            loaded, _ = unflatten_tensor_state_dict(loaded_tensors, loaded_meta)
+        dequant_after = dequantize_weight(loaded["layer.weight"])
 
         self.assertTrue(
             torch.allclose(dequant_before, dequant_after, atol=0.01),
@@ -220,6 +238,24 @@ class TestGgufSerializeRoundtrip(unittest.TestCase):
 @unittest.skipUnless(_HAS_GGUF, "gguf package not installed")
 class TestUnpackGgufTensor(unittest.TestCase):
     """Tests for the public ``unpack_gguf_tensor`` API."""
+
+    def test_q4_k_returns_int4_tensor(self):
+        from torchao.quantization.quantize_.workflows.int4.int4_tensor import Int4Tensor
+
+        block = _make_q4_k_block(0.5, 0.25, [1] * 8, [1] * 8, [7] * 256)
+        data = np.frombuffer(bytes(block), dtype=np.uint8).reshape(1, 144)
+        result = unpack_gguf_tensor(data, GGMLQuantizationType.Q4_K, [1, 256])
+        self.assertIsInstance(result, Int4Tensor)
+        self.assertEqual(result.shape, torch.Size([1, 256]))
+
+    def test_q6_k_returns_intx_tensor(self):
+        from torchao.quantization import IntxUnpackedToInt8Tensor
+
+        block = _make_q6_k_block(0.5, list(range(1, 17)), [32] * 256)
+        data = np.frombuffer(bytes(block), dtype=np.uint8).reshape(1, 210)
+        result = unpack_gguf_tensor(data, GGMLQuantizationType.Q6_K, [1, 256])
+        self.assertIsInstance(result, IntxUnpackedToInt8Tensor)
+        self.assertEqual(result.shape, torch.Size([1, 256]))
 
     def test_f32_returns_tensor(self):
         data = np.array([1.0, 2.0, 3.0, 4.0], dtype=np.float32)

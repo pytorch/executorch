@@ -64,15 +64,15 @@ def gguf_to_model_key(gguf_key: str) -> Optional[str]:
     return None
 
 
-def _resolve_tied_lm_head(model, embed_cw, packers):
+def _resolve_tied_lm_head(model, embed_quant, packers):
     """Handle tied embed/lm_head after streaming all tensors."""
     from executorch.examples.models.gemma4_31b.quant import pack_one
 
     lm_head = getattr(model.lm_head, "weight", None)
     if lm_head is None or lm_head.device.type != "meta":
         return
-    if embed_cw is not None:
-        pack_one(model, "lm_head.weight", embed_cw, packers)
+    if embed_quant is not None:
+        pack_one(model, "lm_head.weight", embed_quant, packers)
     else:
         pack_one(
             model,
@@ -114,9 +114,7 @@ def load_gguf_model(
     from executorch.examples.models.gemma4_31b.model import Gemma4_31B, Gemma4_31BConfig
     from executorch.examples.models.gemma4_31b.quant import dequantize_weight, pack_one
     from executorch.examples.models.gemma4_31b.quant.gguf import iter_gguf_tensors
-    from executorch.examples.models.gemma4_31b.quant.serialize import (
-        CanonicalQuantizedWeight,
-    )
+    from torchao.quantization.quantize_.workflows.int4.int4_tensor import Int4Tensor
 
     if backend == "cuda":
         from executorch.examples.models.gemma4_31b.quant import DEFAULT_CUDA_PACKERS
@@ -131,7 +129,7 @@ def load_gguf_model(
     with torch.device("meta"):
         model = Gemma4_31B(config)
 
-    embed_cw = None
+    embed_quant = None
     n_processed = 0
 
     print(f"Streaming GGUF from {gguf_path}...")
@@ -140,13 +138,11 @@ def load_gguf_model(
         if model_key is None:
             continue
 
-        if isinstance(result, torch.Tensor) and result.dtype == torch.float32:
+        if type(result) is torch.Tensor and result.dtype == torch.float32:
             result = result.to(torch.bfloat16)
 
-        if model_key == "embed_tokens.weight" and isinstance(
-            result, CanonicalQuantizedWeight
-        ):
-            embed_cw = result
+        if model_key == "embed_tokens.weight" and isinstance(result, Int4Tensor):
+            embed_quant = result
             result = dequantize_weight(result, torch.bfloat16)
 
         pack_one(model, model_key, result, packers)
@@ -155,8 +151,8 @@ def load_gguf_model(
         if n_processed % 100 == 0:
             print(f"  Processed {n_processed} tensors...")
 
-    _resolve_tied_lm_head(model, embed_cw, packers)
-    del embed_cw
+    _resolve_tied_lm_head(model, embed_quant, packers)
+    del embed_quant
 
     _validate_no_meta(model)
     model.eval()

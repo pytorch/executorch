@@ -1,27 +1,29 @@
 # quant/
 
-Packing-agnostic quantization framework: **recipe → quantize → serialize → pack**.
+Quantization framework: **recipe → quantize → pack**.
 
 ## Files
 
 | File | Concern | Depends on |
 |---|---|---|
 | `recipe.py` | **Policy** — what to quantize, what precision, which layers | nothing |
-| `quantize.py` | **Computation** — produces/dequantizes canonical weights | recipe, torchao |
-| `serialize.py` | **Data format** — saves/loads canonical weights to safetensors | recipe |
-| `pack.py` | **Packing dispatch** — `pack_model` (bulk) and `pack_one` (streaming) | serialize |
-| `pack_cuda.py` | **CUDA packing** — converts canonical to tinygemm/intx runtime format | pack, serialize |
-| `gguf.py` | **GGUF import** — unpacks Q4_K/Q6_K blocks to canonical form | recipe, serialize |
+| `quantize.py` | **Computation** — produces torchao subclass tensors | recipe, torchao |
+| `pack.py` | **Packing dispatch** — `pack_model` (bulk) and `pack_one` (streaming) | — |
+| `pack_cuda.py` | **CUDA packing** — converts Int4Tensor to tinygemm format | pack |
+| `gguf.py` | **GGUF import** — unpacks Q4_K/Q6_K blocks to torchao subclasses | torchao |
 
 ## Data flow
 
 ```
-QuantRecipe → quantize_model() → CanonicalQuantizedWeight → save() → file → load() → CanonicalQuantizedWeight → pack_model() → runtime model
+QuantRecipe → quantize_model() → state_dict{Int4Tensor, IntxUnpackedToInt8Tensor, Tensor} → safetensors → state_dict → pack_model() → runtime model
 ```
 
-`CanonicalQuantizedWeight` is the interchange point — int8 qdata + bf16
-scale + optional zero + config. Everything left of it is backend-agnostic.
-Everything right is backend-specific.
+Quantized weights are stored as torchao tensor subclasses:
+- **Int4Tensor** — 4-bit weights (nibble-packed qdata + transposed scale/zero_point)
+- **IntxUnpackedToInt8Tensor** — 8-bit weights (int8 qdata + scale + zero_point)
+
+These are the canonical interchange formats from torchao. Everything left
+of `save()` is backend-agnostic. Everything right is backend-specific.
 
 ## Adding a new backend
 
@@ -32,56 +34,21 @@ def pack_linear_for_metal(module, weights): ...
 DEFAULT_METAL_PACKERS = {nn.Linear: pack_linear_for_metal}
 ```
 
-Call `pack_model(model, quantized, unquantized, packers=DEFAULT_METAL_PACKERS)`.
-No changes to recipe, quantize, or serialize.
-
-Things to consider:
-
-- **Recipes may need to be backend-aware.** Each backend's kernels have
-  different constraints (e.g., Metal's `fpa4w` is INT4-only — no INT8 linear
-  kernel, so the sensitive recipe's 8-bit edge layers would need to be INT4
-  or dequantized to bf16). Define per-backend recipes or validate recipe
-  compatibility at pack time.
-- **Source transforms before packing.** Some backends replace model modules
-  (e.g., MLX swaps `FusedMoEExperts` → `SwitchMLP`, Metal swaps to
-  `MetalMoEExperts`). These transforms change the module types that
-  packers dispatch on, so they must run before `pack_model()`. For dense
-  models (no MoE) this is not needed.
-- **Embedding quantization.** Not all backends have a quantized embedding
-  gather kernel. The packer can dequantize to bf16 at load time — the
-  disk savings from the canonical format still apply.
-
-## Adding a new model
-
-1. Define a `QuantRecipe` with rules for the model's FQN patterns.
-2. If the model has custom module types (e.g., `FusedMoEExperts`), write a
-   per-module packer and extend the packers dict:
-   ```python
-   packers = {**DEFAULT_CUDA_PACKERS, FusedMoEExperts: pack_moe_experts}
-   ```
-3. No changes to the quant package itself.
+Call `pack_model(model, state_dict, packers=DEFAULT_METAL_PACKERS)`.
+No changes to recipe or quantize.
 
 ## On-disk format
 
-Safetensors with a `format_version` in the header. Per quantized weight:
-`{fqn}.qdata` (int8, nibble-packed for 4-bit), `{fqn}.scale` (bf16),
-optionally `{fqn}.zero` (bf16). Header JSON records bits, group_size,
-symmetric, and method per weight. Unquantized weights stored as-is.
+Uses torchao's safetensors integration (`torchao.prototype.safetensors`).
+Each tensor subclass is decomposed into its inner tensors
+(e.g., `layer._weight_qdata`, `layer._weight_scale`) plus JSON metadata
+recording the subclass type and attributes. Plain tensors are stored as-is.
+The format is compatible with torchao's `save_pretrained` / `load_pretrained`.
 
 ## TODO
 
-- `pack_metal.py` — Metal backend packer. Convert canonical INT4 to
-  `UIntxWeightOnlyConfig` subclass (torchao experimental) for the
-  `torchao::_linear_fp_act_4bit_weight` kernel. For MoE models, pack
-  expert weights into Metal's `gather_qmv` format (asymmetric, unsigned
-  INT4 with scale + bias buffers).
-
-- `pack_mlx.py` — MLX backend packer. Convert canonical INT4 to
-  `IntxWeightOnlyConfig` subclass for the `mlx::gather_qmm` kernel.
-  For MoE models, stack per-expert weights into `SwitchLinear` format.
-
-- `gguf.py` — extend with Q5_K, Q8_0, and other GGUF quant types.
-  Currently supports Q4_K and Q6_K. Some Q4_K_M files also contain
-  Q5_K or Q8_0 tensors (for sensitive layers on certain architectures)
-  which will raise — add support as needed. Q6_K is widened to 8-bit
-  for CUDA packing since there is no 6-bit CUDA kernel.
+- `pack_metal.py` — Metal backend packer.
+- `pack_mlx.py` — MLX backend packer.
+- `gguf.py` — extend with Q5_K, Q8_0 GGUF quant types.
+- Upstream `Int4TilePackedTo4dTensor.from_int4_tensor()` to torchao
+  to replace the manual conversion in `pack_int4_for_cuda`.
