@@ -55,6 +55,7 @@ from torch.nn.utils.fusion import fuse_conv_bn_weights
 
 def get_tensor_arg(node: torch.fx.Node, arg_name: str) -> torch.Tensor:
     graph_module = node.graph.owning_module
+    assert graph_module is not None
     tensor = get_tensor_from_attr(graph_module, get_arg(node, arg_name, torch.fx.Node))
     assert isinstance(tensor, torch.Tensor), f"{arg_name} must be present"
     return tensor
@@ -264,6 +265,7 @@ class FuseBatchNormWithConv(RemoveOrReplacePassInterface):
         conv_weight = get_tensor_arg(conv_node, "weight")
         # conv_bias is truly optional - fusion function handles None
         graph_module = conv_node.graph.owning_module
+        assert graph_module is not None
         conv_bias = get_tensor_from_attr(
             graph_module, cast(Optional[torch.fx.Node], get_arg(conv_node, "bias"))
         )

@@ -42,7 +42,7 @@ class RewriteAvgPool2dPass(ArmPass):
 
         pad_h, pad_w = to_2tuple(args[3]) if len(args) > 3 else (0, 0)
         # Make sure pad corresponds to TOSA
-        pad = [pad_h, pad_w, pad_h, pad_w]
+        pad = [pad_h, pad_h, pad_w, pad_w]
 
         ceil_mode = args[4] if len(args) > 4 else False
 
