@@ -29,6 +29,7 @@ void resize_matmul_tiled_node(
 
 static constexpr uint32_t kCoopMatTileM = 64;
 static constexpr uint32_t kCoopMatTileN = 64;
+static constexpr uint32_t kCoopMatTileK = 32;
 static constexpr uint32_t kCoopMatInvocations = 256; // 4 subgroups × 64
 
 vkapi::ShaderInfo pick_matmul_coopmat_shader(
@@ -275,18 +276,35 @@ void matmul_tiled(ComputeGraph& graph, const std::vector<ValueRef>& args) {
   ValueRef mat2 = args[1];
   ValueRef out = args[2];
 
+  // Coopmat path requires M%TILE_M==0, N%TILE_N==0, K%TILE_K==0 — the shader
+  // has no partial-tile or K-tail handling.
+  auto mat1_sizes = graph.sizes_of(mat1);
+  int64_t M = mat1_sizes.at(mat1_sizes.size() - 2);
+  int64_t K = mat1_sizes.back();
+  int64_t N = graph.sizes_of(out).back();
+  const bool coopmat_aligned = M % kCoopMatTileM == 0 &&
+      N % kCoopMatTileN == 0 && K % kCoopMatTileK == 0;
+
   if (graph.val_is_tref(mat2)) {
     auto mat2_sizes = graph.sizes_of(mat2);
     int64_t B = mat2_sizes.size() >= 3 ? mat2_sizes.at(0) : 1;
     bool use_coopmat =
         graph.context()->adapter_ptr()->supports_cooperative_matrix() &&
-        graph.storage_type_of(out) == utils::kBuffer;
+        graph.storage_type_of(out) == utils::kBuffer && coopmat_aligned;
     ValueRef packed = prepack_fp_linear_weight(
-        graph, mat2, /*is_transposed=*/false, B,
+        graph,
+        mat2,
+        /*is_transposed=*/false,
+        B,
         /*force_buffer=*/use_coopmat);
     if (use_coopmat) {
       add_linear_coopmat_node(
-          graph, mat1, packed, kDummyValueRef, false, out,
+          graph,
+          mat1,
+          packed,
+          kDummyValueRef,
+          false,
+          out,
           utils::safe_downcast<int32_t>(B));
     } else {
       add_linear_tiled_node(
@@ -300,7 +318,7 @@ void matmul_tiled(ComputeGraph& graph, const std::vector<ValueRef>& args) {
     }
   } else if (
       graph.context()->adapter_ptr()->supports_cooperative_matrix() &&
-      graph.storage_type_of(out) == utils::kBuffer) {
+      graph.storage_type_of(out) == utils::kBuffer && coopmat_aligned) {
     add_matmul_coopmat_node(graph, mat1, mat2, out);
   } else {
     add_matmul_tiled_node(graph, mat1, mat2, out);

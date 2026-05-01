@@ -12,7 +12,8 @@
 // When mat2 is constant (set_constant(true)), aten.mm prepacks the weight
 // and routes through the linear path:
 //   - texture3d output  -> linear_vec (Stephen's tiled shader)
-//   - buffer output + coop mat device -> linear_coopmat (KHR cooperative matrix)
+//   - buffer output + coop mat device -> linear_coopmat (KHR cooperative
+//   matrix)
 //
 // For each matrix size, runs two variants:
 //   vec_tex: mat1=tex3d, mat2=tex3d(constant), out=tex3d -> linear_vec
@@ -64,16 +65,25 @@ std::vector<TestCase> generate_test_cases() {
     tc.set_operator_name("test_etvk.test_mm.default");
 
     ValueSpec input_A(
-        {cfg.M, cfg.K}, vkapi::kFloat, utils::kTexture3D,
-        utils::kWidthPacked, DataGenType::RANDOM);
+        {cfg.M, cfg.K},
+        vkapi::kFloat,
+        utils::kTexture3D,
+        utils::kWidthPacked,
+        DataGenType::RANDOM);
     ValueSpec input_B(
-        {cfg.K, cfg.N}, vkapi::kFloat, utils::kTexture3D,
-        utils::kWidthPacked, DataGenType::RANDOM);
+        {cfg.K, cfg.N},
+        vkapi::kFloat,
+        utils::kTexture3D,
+        utils::kWidthPacked,
+        DataGenType::RANDOM);
     input_B.set_constant(true);
     ValueSpec impl_selector = ValueSpec::make_string("default");
     ValueSpec output(
-        {cfg.M, cfg.N}, vkapi::kFloat, utils::kTexture3D,
-        utils::kWidthPacked, DataGenType::ZEROS);
+        {cfg.M, cfg.N},
+        vkapi::kFloat,
+        utils::kTexture3D,
+        utils::kWidthPacked,
+        DataGenType::ZEROS);
 
     tc.add_input_spec(input_A);
     tc.add_input_spec(input_B);
@@ -92,19 +102,75 @@ std::vector<TestCase> generate_test_cases() {
     tc.set_operator_name("test_etvk.test_mm.default");
 
     ValueSpec input_A(
-        {cfg.M, cfg.K}, vkapi::kFloat, utils::kBuffer,
-        utils::kWidthPacked, DataGenType::RANDOM);
+        {cfg.M, cfg.K},
+        vkapi::kFloat,
+        utils::kBuffer,
+        utils::kWidthPacked,
+        DataGenType::RANDOM);
     ValueSpec input_B(
-        {cfg.K, cfg.N}, vkapi::kFloat, utils::kBuffer,
-        utils::kWidthPacked, DataGenType::RANDOM);
+        {cfg.K, cfg.N},
+        vkapi::kFloat,
+        utils::kBuffer,
+        utils::kWidthPacked,
+        DataGenType::RANDOM);
     input_B.set_constant(true);
     ValueSpec impl_selector = ValueSpec::make_string("default");
     ValueSpec output(
-        {cfg.M, cfg.N}, vkapi::kFloat, utils::kBuffer,
-        utils::kWidthPacked, DataGenType::ZEROS);
+        {cfg.M, cfg.N},
+        vkapi::kFloat,
+        utils::kBuffer,
+        utils::kWidthPacked,
+        DataGenType::ZEROS);
 
     tc.add_input_spec(input_A);
     tc.add_input_spec(input_B);
+    tc.add_input_spec(impl_selector);
+    tc.add_output_spec(output);
+    tc.set_abs_tolerance(5e-1f);
+    tc.set_rel_tolerance(5e-1f);
+    test_cases.push_back(tc);
+  }
+
+  // Variant 3: linear_coopmat with bias (aligned shape only).
+  // Routes through aten.linear, which exercises linear_coopmat_bias.
+  // Weight is [N, K] (transposed) per linear's convention.
+  {
+    LinearConfig bias_cfg = {256, 1024, 1024, "sq_1024_bias"};
+    TestCase tc;
+    tc.set_name("cm_fp32_" + bias_cfg.name);
+    tc.set_operator_name("test_etvk.test_linear.default");
+
+    ValueSpec input_A(
+        {bias_cfg.M, bias_cfg.K},
+        vkapi::kFloat,
+        utils::kBuffer,
+        utils::kWidthPacked,
+        DataGenType::RANDOM);
+    ValueSpec weight(
+        {bias_cfg.N, bias_cfg.K},
+        vkapi::kFloat,
+        utils::kBuffer,
+        utils::kWidthPacked,
+        DataGenType::RANDOM);
+    weight.set_constant(true);
+    ValueSpec bias(
+        {bias_cfg.N},
+        vkapi::kFloat,
+        utils::kBuffer,
+        utils::kWidthPacked,
+        DataGenType::RANDOM);
+    bias.set_constant(true);
+    ValueSpec impl_selector = ValueSpec::make_string("default");
+    ValueSpec output(
+        {bias_cfg.M, bias_cfg.N},
+        vkapi::kFloat,
+        utils::kBuffer,
+        utils::kWidthPacked,
+        DataGenType::ZEROS);
+
+    tc.add_input_spec(input_A);
+    tc.add_input_spec(weight);
+    tc.add_input_spec(bias);
     tc.add_input_spec(impl_selector);
     tc.add_output_spec(output);
     tc.set_abs_tolerance(5e-1f);
@@ -116,12 +182,16 @@ std::vector<TestCase> generate_test_cases() {
 }
 
 int64_t linear_flops(const TestCase& test_case) {
-  if (test_case.empty() || test_case.num_inputs() < 2) return 0;
+  if (test_case.empty() || test_case.num_inputs() < 2)
+    return 0;
   const auto& A = test_case.inputs()[0].get_tensor_sizes();
   const auto& B = test_case.inputs()[1].get_tensor_sizes();
   int64_t M = A.at(A.size() - 2);
   int64_t K = A.at(A.size() - 1);
-  int64_t N = B.at(B.size() - 1);
+  // aten.linear: weight is [N, K]; aten.mm: B is [K, N].
+  const bool is_linear =
+      test_case.operator_name() == "test_etvk.test_linear.default";
+  int64_t N = is_linear ? B.at(0) : B.at(B.size() - 1);
   return 2 * M * N * K;
 }
 
@@ -136,11 +206,15 @@ void linear_reference(TestCase& test_case) {
   const auto& B_sizes = B_spec.get_tensor_sizes();
   int64_t M = A_sizes.at(A_sizes.size() - 2);
   int64_t K = A_sizes.at(A_sizes.size() - 1);
-  int64_t N = B_sizes.at(B_sizes.size() - 1);
+  // aten.linear: weight is [N, K]; aten.mm: B is [K, N].
+  const bool weight_is_transposed =
+      test_case.operator_name() == "test_etvk.test_linear.default";
+  int64_t N =
+      weight_is_transposed ? B_sizes.at(0) : B_sizes.at(B_sizes.size() - 1);
 
   if (M > kRefLimit || K > kRefLimit || N > kRefLimit) {
-    std::cerr << "Skipping reference for large matrix ("
-              << M << "x" << K << "x" << N << ")" << std::endl;
+    std::cerr << "Skipping reference for large matrix (" << M << "x" << K << "x"
+              << N << ")" << std::endl;
     return;
   }
 
@@ -152,10 +226,29 @@ void linear_reference(TestCase& test_case) {
   for (int64_t m = 0; m < M; ++m)
     for (int64_t n = 0; n < N; ++n) {
       float sum = 0.0f;
-      for (int64_t k = 0; k < K; ++k)
-        sum += A_f[m * K + k] * B_f[k * N + n];
+      for (int64_t k = 0; k < K; ++k) {
+        // mm:    B[k * N + n]
+        // linear: weight[n * K + k]  (weight is [N, K])
+        float b = weight_is_transposed ? B_f[n * K + k] : B_f[k * N + n];
+        sum += A_f[m * K + k] * b;
+      }
       ref[m * N + n] = sum;
     }
+
+  // Add bias if present (aten.linear path: inputs[2] is a 1-D bias tensor;
+  // for aten.mm inputs[2] is the impl_selector string).
+  if (test_case.num_inputs() >= 3) {
+    const ValueSpec& bias_spec = test_case.inputs().at(2);
+    if (!bias_spec.is_string() && !bias_spec.is_none()) {
+      const auto& bias_sizes = bias_spec.get_tensor_sizes();
+      if (bias_sizes.size() == 1 && bias_sizes.at(0) == N) {
+        const auto& bias_f = bias_spec.get_float_data();
+        for (int64_t m = 0; m < M; ++m)
+          for (int64_t n = 0; n < N; ++n)
+            ref[m * N + n] += bias_f[n];
+      }
+    }
+  }
 }
 
 int main(int argc, char* argv[]) {
@@ -181,15 +274,17 @@ int main(int argc, char* argv[]) {
     std::cout << "Cooperative matrix: SUPPORTED" << std::endl;
     queryCooperativeMatrixProperties();
   } else {
-    std::cout << "Cooperative matrix: NOT supported (buffer tests will use linear_vec)" << std::endl;
+    std::cout
+        << "Cooperative matrix: NOT supported (buffer tests will use linear_vec)"
+        << std::endl;
   }
 
   auto results = execute_test_cases(
       generate_test_cases,
       linear_flops,
       "LINEAR_COOPMAT_BENCH",
-      3,   // warmup
-      10,  // benchmark runs
+      3, // warmup
+      10, // benchmark runs
       linear_reference);
 
   return 0;

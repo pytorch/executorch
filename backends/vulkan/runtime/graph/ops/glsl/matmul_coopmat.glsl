@@ -134,8 +134,8 @@ void main() {
             f16vec4 v0 = t_mat1[row * K4 + k_hv4];
             f16vec4 v1 = t_mat1[row * K4 + k_hv4 + 1];
             Ash[a_row_offset * A_STRIDE_VEC4 + a_col] = uvec4(
-                packHalf2x16(vec2(v0.xy)), packHalf2x16(vec2(v0.zw)),
-                packHalf2x16(vec2(v1.xy)), packHalf2x16(vec2(v1.zw)));
+                packFloat2x16(v0.xy), packFloat2x16(v0.zw),
+                packFloat2x16(v1.xy), packFloat2x16(v1.zw));
 #else
             // fp32 inputs: load two vec4 (8 fp32), convert to 8 fp16
             uint k_vec4 = k_elem / 4;
@@ -157,8 +157,8 @@ void main() {
             f16vec4 v0 = t_mat2[row * N4 + n_hv4];
             f16vec4 v1 = t_mat2[row * N4 + n_hv4 + 1];
             Bsh[b_row_offset * B_STRIDE_VEC4 + b_col] = uvec4(
-                packHalf2x16(vec2(v0.xy)), packHalf2x16(vec2(v0.zw)),
-                packHalf2x16(vec2(v1.xy)), packHalf2x16(vec2(v1.zw)));
+                packFloat2x16(v0.xy), packFloat2x16(v0.zw),
+                packFloat2x16(v1.xy), packFloat2x16(v1.zw));
 #else
             uint n_vec4 = n_elem / 4;
             vec4 v0 = t_mat2[row * N4 + n_vec4];

@@ -23,8 +23,9 @@
  * Output is always fp32 (fp32 accumulator -> fp32 store) when DTYPE=float,
  * or fp16 when DTYPE=half.
  *
- * Optional bias: when HAS_BIAS is defined, bias is added post-store via
- * read-modify-write on the output buffer (one pass over the tile).
+ * Optional bias: when HAS_BIAS is defined, bias is staged once into shared
+ * memory and broadcast into each accumulator tile (stride-0 coopMatLoad)
+ * before the store, so t_output is write-only.
  */
 
 #version 450 core
@@ -51,10 +52,7 @@ layout(std430) buffer;
 #include "common.glslh"
 
 // Bindings: output(0), mat1(1), weight_packed(2), [bias(3)]
-$if HAS_BIAS:
-  ${layout_declare_tensor(B, "rw", "t_output", DTYPE, "buffer", is_scalar_array=True)}
-$else:
-  ${layout_declare_tensor(B, "w", "t_output", DTYPE, "buffer", is_scalar_array=True)}
+${layout_declare_tensor(B, "w", "t_output", DTYPE, "buffer", is_scalar_array=True)}
 ${layout_declare_tensor(B, "r", "t_mat1", DTYPE, "buffer", is_scalar_array=False)}
 ${layout_declare_tensor(B, "r", "t_weight_packed", DTYPE, "buffer", is_scalar_array=False)}
 $if HAS_BIAS:
@@ -93,6 +91,12 @@ const uint B_STRIDE_VEC4 = (TILE_N + FP16_PER_VEC4) / FP16_PER_VEC4; // 9
 
 shared uvec4 Ash[TILE_M * A_STRIDE_VEC4];  // 5KB
 shared uvec4 Bsh[TILE_K * B_STRIDE_VEC4];  // 4.5KB
+
+#ifdef HAS_BIAS
+// fp32 staging buffer so coopMatLoad can broadcast directly into the
+// fp32 accumulator coopmat without a type conversion at the load.
+shared float bias_sh[TILE_N];  // 256B
+#endif
 
 // Accumulator tiles (fp32)
 coopmat<float, gl_ScopeSubgroup, lM, lN, gl_MatrixUseAccumulator> result[C_ROWS][C_COLS];
@@ -146,8 +150,8 @@ void main() {
             f16vec4 v0 = t_mat1[row * K4 + k_hv4];
             f16vec4 v1 = t_mat1[row * K4 + k_hv4 + 1];
             Ash[a_row_offset * A_STRIDE_VEC4 + a_col] = uvec4(
-                packHalf2x16(vec2(v0.xy)), packHalf2x16(vec2(v0.zw)),
-                packHalf2x16(vec2(v1.xy)), packHalf2x16(vec2(v1.zw)));
+                packFloat2x16(v0.xy), packFloat2x16(v0.zw),
+                packFloat2x16(v1.xy), packFloat2x16(v1.zw));
 #else
             uint k_vec4 = k_elem / 4;
             vec4 v0 = t_mat1[row * K4 + k_vec4];
@@ -173,8 +177,8 @@ void main() {
             f16vec4 v0 = t_weight_packed[(k4 * N4 + n4_0) * 4u + dk];
             f16vec4 v1 = t_weight_packed[(k4 * N4 + n4_0 + 1u) * 4u + dk];
             Bsh[b_row_offset * B_STRIDE_VEC4 + b_col] = uvec4(
-                packHalf2x16(vec2(v0.xy)), packHalf2x16(vec2(v0.zw)),
-                packHalf2x16(vec2(v1.xy)), packHalf2x16(vec2(v1.zw)));
+                packFloat2x16(v0.xy), packFloat2x16(v0.zw),
+                packFloat2x16(v1.xy), packFloat2x16(v1.zw));
 #else
             vec4 v0 = t_weight_packed[(k4 * N4 + n4_0) * 4u + dk];
             vec4 v1 = t_weight_packed[(k4 * N4 + n4_0 + 1u) * 4u + dk];
@@ -218,11 +222,37 @@ void main() {
         barrier();
     }
 
-    // --- Store result ---
+#ifdef HAS_BIAS
+    // Stage one TILE_N-wide row of bias into shared memory. The C++ dispatch
+    // gate ensures N % TILE_N == 0, so no per-element bounds check is needed.
+    {
+        const uint tile_n_start = TILE_N * tileID.x;
+        for (uint t = gl_LocalInvocationID.x; t < TILE_N; t += INVOCATIONS) {
+            bias_sh[t] = float(t_bias[tile_n_start + t]);
+        }
+    }
+    memoryBarrierShared();
+    barrier();
+#endif
+
+    // --- Store result (with bias folded in pre-store, if present) ---
     [[unroll]] for (uint i = 0; i < C_ROWS; ++i) {
         [[unroll]] for (uint j = 0; j < C_COLS; ++j) {
             uint gi = TILE_M * tileID.y + lM * (C_ROWS * warpInTile.y + i);
             uint gj = TILE_N * tileID.x + lN * (C_COLS * warpInTile.x + j);
+
+#ifdef HAS_BIAS
+            // Stride-0 row-major load broadcasts lN bias values across all
+            // lM rows of the accumulator tile.
+            uint local_n = lN * (C_COLS * warpInTile.x + j);
+            coopmat<float, gl_ScopeSubgroup, lM, lN, gl_MatrixUseAccumulator> bias_tile;
+            coopMatLoad(
+                bias_tile, bias_sh,
+                local_n, /*stride=*/0u,
+                gl_CooperativeMatrixLayoutRowMajor);
+            result[i][j] += bias_tile;
+#endif
+
 #ifdef IS_FP16_INPUT
             coopmat<float16_t, gl_ScopeSubgroup, lM, lN, gl_MatrixUseAccumulator> out_tile =
                 coopmat<float16_t, gl_ScopeSubgroup, lM, lN, gl_MatrixUseAccumulator>(result[i][j]);
@@ -238,24 +268,4 @@ void main() {
 #endif
         }
     }
-
-#ifdef HAS_BIAS
-    // Add bias via read-modify-write on the output buffer.
-    // barrier() ensures all coopMatStore writes within this workgroup are visible.
-    barrier();
-
-    const uint tile_m_start = TILE_M * tileID.y;
-    const uint tile_n_start = TILE_N * tileID.x;
-    // 64x64 tile = 4096 elements, 256 threads -> 16 elements per thread
-    for (uint idx = gl_LocalInvocationID.x; idx < TILE_M * TILE_N; idx += INVOCATIONS) {
-        uint local_m = idx / TILE_N;
-        uint local_n = idx % TILE_N;
-        uint gm = tile_m_start + local_m;
-        uint gn = tile_n_start + local_n;
-        if (gm < M && gn < N) {
-            uint out_idx = gm * N + gn;
-            t_output[out_idx] = t_output[out_idx] + t_bias[gn];
-        }
-    }
-#endif
 }

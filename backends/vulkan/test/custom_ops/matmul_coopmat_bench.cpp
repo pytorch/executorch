@@ -8,16 +8,16 @@
 
 // Microbenchmark: matmul_coopmat vs matmul_vec (texture3d and buffer).
 //
-// Uses test_etvk.test_gemm.default which routes to aten.mm.default.
+// Uses test_etvk.test_mm.default which routes to aten.mm.default.
 // The shader selected depends on storage type and device capabilities:
 //   - texture3d storage → matmul_vec (texture path)
-//   - buffer storage + coop mat device → matmul_coopmat
-//   - buffer storage + no coop mat → matmul_vec (buffer path)
+//   - buffer storage + coop mat device + aligned shape → matmul_coopmat
+//   - buffer storage + no coop mat / unaligned → matmul_vec (buffer path)
 //
 // For each matrix size, runs three variants:
-//   impl=0: aten.mm buffer (→ matmul_coopmat if coop mat available)
-//   impl=2: aten.mm texture3d (→ matmul_vec texture)
-//   impl=4: aten.mm buffer fp16 (→ matmul_coopmat fp16 if coop mat available)
+//   vec_tex:  aten.mm texture3d (→ matmul_vec texture)
+//   cm_fp32:  aten.mm buffer fp32 (→ matmul_coopmat if device supports)
+//   cm_fp16:  aten.mm buffer fp16 (→ matmul_coopmat fp16 if device supports)
 
 #include <executorch/backends/vulkan/runtime/graph/ops/impl/Common.h>
 #include <executorch/backends/vulkan/runtime/graph/ops/utils/ShaderNameUtils.h>
@@ -56,102 +56,106 @@ std::vector<TestCase> generate_test_cases() {
       {4096, 4096, 4096, "sq_4096"},
   };
 
-  // impl=2: matmul_vec texture3d (baseline, fp32)
+  // vec_tex: matmul_vec texture3d (baseline, fp32)
   for (const auto& cfg : configs) {
     TestCase tc;
     tc.set_name("vec_tex_" + cfg.name);
-    tc.set_operator_name("test_etvk.test_gemm.default");
+    tc.set_operator_name("test_etvk.test_mm.default");
 
     ValueSpec input_A(
-        {cfg.M, cfg.K}, vkapi::kFloat, utils::kTexture3D,
-        utils::kWidthPacked, DataGenType::RANDOM);
+        {cfg.M, cfg.K},
+        vkapi::kFloat,
+        utils::kTexture3D,
+        utils::kWidthPacked,
+        DataGenType::RANDOM);
     ValueSpec input_B(
-        {cfg.K, cfg.N}, vkapi::kFloat, utils::kTexture3D,
-        utils::kWidthPacked, DataGenType::RANDOM);
-    ValueSpec input_C(
-        {cfg.M, cfg.N}, vkapi::kFloat, utils::kBuffer,
-        utils::kWidthPacked, DataGenType::ZEROS);
-    ValueSpec alpha_spec(1.0f);
-    ValueSpec beta_spec(0.0f);
-    ValueSpec impl_selector_spec(static_cast<int32_t>(2));
+        {cfg.K, cfg.N},
+        vkapi::kFloat,
+        utils::kTexture3D,
+        utils::kWidthPacked,
+        DataGenType::RANDOM);
+    ValueSpec impl_selector = ValueSpec::make_string("default");
     ValueSpec output(
-        {cfg.M, cfg.N}, vkapi::kFloat, utils::kTexture3D,
-        utils::kWidthPacked, DataGenType::ZEROS);
+        {cfg.M, cfg.N},
+        vkapi::kFloat,
+        utils::kTexture3D,
+        utils::kWidthPacked,
+        DataGenType::ZEROS);
 
     tc.add_input_spec(input_A);
     tc.add_input_spec(input_B);
-    tc.add_input_spec(input_C);
-    tc.add_input_spec(alpha_spec);
-    tc.add_input_spec(beta_spec);
-    tc.add_input_spec(impl_selector_spec);
+    tc.add_input_spec(impl_selector);
     tc.add_output_spec(output);
     tc.set_abs_tolerance(1e-2f);
     tc.set_rel_tolerance(1e-1f);
     test_cases.push_back(tc);
   }
 
-  // impl=0: aten.mm buffer fp32 (→ matmul_coopmat if device supports)
+  // cm_fp32: aten.mm buffer fp32 (→ matmul_coopmat if device supports +
+  // aligned)
   for (const auto& cfg : configs) {
     TestCase tc;
     tc.set_name("cm_fp32_" + cfg.name);
-    tc.set_operator_name("test_etvk.test_gemm.default");
+    tc.set_operator_name("test_etvk.test_mm.default");
 
     ValueSpec input_A(
-        {cfg.M, cfg.K}, vkapi::kFloat, utils::kBuffer,
-        utils::kWidthPacked, DataGenType::RANDOM);
+        {cfg.M, cfg.K},
+        vkapi::kFloat,
+        utils::kBuffer,
+        utils::kWidthPacked,
+        DataGenType::RANDOM);
     ValueSpec input_B(
-        {cfg.K, cfg.N}, vkapi::kFloat, utils::kBuffer,
-        utils::kWidthPacked, DataGenType::RANDOM);
-    ValueSpec input_C(
-        {cfg.M, cfg.N}, vkapi::kFloat, utils::kBuffer,
-        utils::kWidthPacked, DataGenType::ZEROS);
-    ValueSpec alpha_spec(1.0f);
-    ValueSpec beta_spec(0.0f);
-    ValueSpec impl_selector_spec(static_cast<int32_t>(0));
+        {cfg.K, cfg.N},
+        vkapi::kFloat,
+        utils::kBuffer,
+        utils::kWidthPacked,
+        DataGenType::RANDOM);
+    ValueSpec impl_selector = ValueSpec::make_string("default");
     ValueSpec output(
-        {cfg.M, cfg.N}, vkapi::kFloat, utils::kBuffer,
-        utils::kWidthPacked, DataGenType::ZEROS);
+        {cfg.M, cfg.N},
+        vkapi::kFloat,
+        utils::kBuffer,
+        utils::kWidthPacked,
+        DataGenType::ZEROS);
 
     tc.add_input_spec(input_A);
     tc.add_input_spec(input_B);
-    tc.add_input_spec(input_C);
-    tc.add_input_spec(alpha_spec);
-    tc.add_input_spec(beta_spec);
-    tc.add_input_spec(impl_selector_spec);
+    tc.add_input_spec(impl_selector);
     tc.add_output_spec(output);
     tc.set_abs_tolerance(5e-1f);
     tc.set_rel_tolerance(5e-1f);
     test_cases.push_back(tc);
   }
 
-  // impl=0: aten.mm buffer fp16 (→ matmul_coopmat fp16 if device supports)
+  // cm_fp16: aten.mm buffer fp16 (→ matmul_coopmat fp16 if device supports)
   for (const auto& cfg : configs) {
     TestCase tc;
     tc.set_name("cm_fp16_" + cfg.name);
-    tc.set_operator_name("test_etvk.test_gemm.default");
+    tc.set_operator_name("test_etvk.test_mm.default");
 
     ValueSpec input_A(
-        {cfg.M, cfg.K}, vkapi::kHalf, utils::kBuffer,
-        utils::kWidthPacked, DataGenType::RANDOM);
+        {cfg.M, cfg.K},
+        vkapi::kHalf,
+        utils::kBuffer,
+        utils::kWidthPacked,
+        DataGenType::RANDOM);
     ValueSpec input_B(
-        {cfg.K, cfg.N}, vkapi::kHalf, utils::kBuffer,
-        utils::kWidthPacked, DataGenType::RANDOM);
-    ValueSpec input_C(
-        {cfg.M, cfg.N}, vkapi::kFloat, utils::kBuffer,
-        utils::kWidthPacked, DataGenType::ZEROS);
-    ValueSpec alpha_spec(1.0f);
-    ValueSpec beta_spec(0.0f);
-    ValueSpec impl_selector_spec(static_cast<int32_t>(0));
+        {cfg.K, cfg.N},
+        vkapi::kHalf,
+        utils::kBuffer,
+        utils::kWidthPacked,
+        DataGenType::RANDOM);
+    ValueSpec impl_selector = ValueSpec::make_string("default");
     ValueSpec output(
-        {cfg.M, cfg.N}, vkapi::kHalf, utils::kBuffer,
-        utils::kWidthPacked, DataGenType::ZEROS);
+        {cfg.M, cfg.N},
+        vkapi::kHalf,
+        utils::kBuffer,
+        utils::kWidthPacked,
+        DataGenType::ZEROS);
 
     tc.add_input_spec(input_A);
     tc.add_input_spec(input_B);
-    tc.add_input_spec(input_C);
-    tc.add_input_spec(alpha_spec);
-    tc.add_input_spec(beta_spec);
-    tc.add_input_spec(impl_selector_spec);
+    tc.add_input_spec(impl_selector);
     tc.add_output_spec(output);
     tc.set_abs_tolerance(5e-1f);
     tc.set_rel_tolerance(5e-1f);
@@ -162,7 +166,8 @@ std::vector<TestCase> generate_test_cases() {
 }
 
 int64_t matmul_flops(const TestCase& test_case) {
-  if (test_case.empty() || test_case.num_inputs() < 2) return 0;
+  if (test_case.empty() || test_case.num_inputs() < 2)
+    return 0;
   const auto& A = test_case.inputs()[0].get_tensor_sizes();
   const auto& B = test_case.inputs()[1].get_tensor_sizes();
   int64_t M = A.at(A.size() - 2);
@@ -185,8 +190,8 @@ void matmul_reference(TestCase& test_case) {
   int64_t N = B_sizes.at(B_sizes.size() - 1);
 
   if (M > kRefLimit || K > kRefLimit || N > kRefLimit) {
-    std::cerr << "Skipping reference for large matrix ("
-              << M << "x" << K << "x" << N << ")" << std::endl;
+    std::cerr << "Skipping reference for large matrix (" << M << "x" << K << "x"
+              << N << ")" << std::endl;
     return;
   }
 
@@ -239,15 +244,17 @@ int main(int argc, char* argv[]) {
     std::cout << "Cooperative matrix: SUPPORTED" << std::endl;
     queryCooperativeMatrixProperties();
   } else {
-    std::cout << "Cooperative matrix: NOT supported (buffer tests will use matmul_vec)" << std::endl;
+    std::cout
+        << "Cooperative matrix: NOT supported (buffer tests will use matmul_vec)"
+        << std::endl;
   }
 
   auto results = execute_test_cases(
       generate_test_cases,
       matmul_flops,
       "MATMUL_COOPMAT_BENCH",
-      3,   // warmup
-      10,  // benchmark runs
+      3, // warmup
+      10, // benchmark runs
       matmul_reference);
 
   return 0;

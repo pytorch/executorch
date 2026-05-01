@@ -243,6 +243,7 @@ void add_linear_tiled_node(
 
 static constexpr uint32_t kLinearCoopMatTileM = 64;
 static constexpr uint32_t kLinearCoopMatTileN = 64;
+static constexpr uint32_t kLinearCoopMatTileK = 32;
 static constexpr uint32_t kLinearCoopMatInvocations = 256; // 4 subgroups x 64
 
 vkapi::ShaderInfo pick_linear_coopmat_shader(
@@ -251,8 +252,7 @@ vkapi::ShaderInfo pick_linear_coopmat_shader(
     const std::vector<ValueRef>& resize_args) {
   const ValueRef out = args.at(0).refs.at(0);
   bool has_bias = graph->get_bool(resize_args.at(1));
-  std::string kernel_name =
-      has_bias ? "linear_coopmat_bias" : "linear_coopmat";
+  std::string kernel_name = has_bias ? "linear_coopmat_bias" : "linear_coopmat";
   kernel_name.reserve(kShaderNameReserve);
   add_dtype_suffix(kernel_name, graph->dtype_of(out));
   return VK_KERNEL_FROM_STR(kernel_name);
@@ -342,27 +342,38 @@ void linear_packed_weight(
   ValueRef out = args.at(3);
 
   bool has_bias = graph.val_is_not_none(bias);
-  // Coopmat shader assumes M is a multiple of TILE_M (64) because the store
-  // does not bounds-check. Fall back to the tiled shader otherwise.
-  // TODO: remove this guard once the coopmat shader gains partial-tile
-  // bounds checking.
+  // Coopmat shader has no partial-tile / K-tail handling: the store overruns
+  // unless M and N are multiples of the output tile, and the K-loop reads past
+  // the end unless K is a multiple of TILE_K. Fall back to the tiled shader
+  // when alignment is not met.
+  // TODO: remove this guard once the coopmat shader gains partial-tile +
+  // K-tail bounds checking.
   auto input_sizes = graph.sizes_of(input);
-  int64_t M = input_sizes.size() >= 2
-      ? input_sizes.at(input_sizes.size() - 2)
-      : 1;
+  auto out_sizes_vec = graph.sizes_of(out);
+  int64_t M =
+      input_sizes.size() >= 2 ? input_sizes.at(input_sizes.size() - 2) : 1;
+  int64_t K = input_sizes.back();
+  int64_t N = out_sizes_vec.back();
   bool use_coopmat =
       graph.context()->adapter_ptr()->supports_cooperative_matrix() &&
       graph.storage_type_of(out) == utils::kBuffer &&
-      M >= 64;
+      M % kLinearCoopMatTileM == 0 && N % kLinearCoopMatTileN == 0 &&
+      K % kLinearCoopMatTileK == 0;
 
   ValueRef packed_weight = prepack_fp_linear_weight(
-      graph, weight_data, /*is_transposed=*/true, /*B=*/1,
+      graph,
+      weight_data,
+      /*is_transposed=*/true,
+      /*B=*/1,
       /*force_buffer=*/use_coopmat);
 
   ValueRef packed_bias = kDummyValueRef;
   if (has_bias) {
     packed_bias = prepack_standard(
-        graph, bias, graph.storage_type_of(out), utils::kWidthPacked,
+        graph,
+        bias,
+        graph.storage_type_of(out),
+        utils::kWidthPacked,
         /*passthrough=*/use_coopmat);
   }
 
