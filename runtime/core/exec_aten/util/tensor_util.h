@@ -9,6 +9,7 @@
 #pragma once
 
 #include <c10/util/irange.h>
+#include <c10/util/safe_numerics.h>
 #include <algorithm>
 #include <array> // std::array
 #include <cinttypes> // PRId64
@@ -932,7 +933,12 @@ inline size_t getLeadingDims(
       ssize_t(tensor.dim()));
   size_t dims = 1;
   for (const auto i : c10::irange(dim)) {
-    dims *= static_cast<size_t>(tensor.size(i));
+    size_t next_dims;
+    ET_CHECK_MSG(
+        !c10::mul_overflows(dims, static_cast<size_t>(tensor.size(i)), &next_dims),
+        "Overflow computing leading dims at dimension %zd",
+        (ssize_t)i);
+    dims = next_dims;
   }
   return dims;
 }
@@ -949,7 +955,12 @@ inline size_t getTrailingDims(
       ssize_t(tensor.dim()));
   size_t dims = 1;
   for (size_t i = dim + 1; i < static_cast<size_t>(tensor.dim()); ++i) {
-    dims *= static_cast<size_t>(tensor.size(i));
+    size_t next_dims;
+    ET_CHECK_MSG(
+        !c10::mul_overflows(dims, static_cast<size_t>(tensor.size(i)), &next_dims),
+        "Overflow computing trailing dims at dimension %zu",
+        i);
+    dims = next_dims;
   }
   return dims;
 }
