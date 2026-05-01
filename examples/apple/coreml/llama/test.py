@@ -213,6 +213,52 @@ def test_per_layer_cache_lens_rejects_pattern_le_one():
         )
 
 
+def test_per_layer_pattern_forward_pass_runs_end_to_end():
+    """A tiny static-attention transformer must accept the heterogeneous
+    cache shapes produced by `_resolve_per_layer_cache_lens` and run a
+    forward pass without complaining about the mismatched cache sizes
+    between sliding and full layers."""
+    from executorch.examples.models.llama.llama_transformer import (
+        construct_transformer,
+    )
+    from executorch.examples.models.llama.static_attention import (
+        transform_attention_mha_to_static_attention,
+    )
+
+    args = ModelArgs(
+        dim=64,
+        n_layers=10,
+        n_heads=4,
+        n_kv_heads=2,
+        head_dim=16,
+        vocab_size=128,
+        max_context_len=512,
+        max_seq_len=512,
+        attention_type="static_mha",
+        attention_kwargs={"decompose_sdpa_in_mha": True},
+    )
+    model = construct_transformer(args).eval()
+    model = transform_attention_mha_to_static_attention(
+        model, split_mha=True, inplace=False
+    ).eval()
+
+    cache_lens = _resolve_per_layer_cache_lens(
+        n_layers=10,
+        max_context_len=512,
+        input_len=32,
+        sliding_window=64,
+        sliding_window_pattern=5,
+    )
+    # 4 sliding + 1 full, twice.
+    assert cache_lens == [64, 64, 64, 64, 480, 64, 64, 64, 64, 480]
+
+    example_inputs, _ = _create_example_inputs(
+        args, 32, 512, float_dtype=torch.float32, cache_len=cache_lens
+    )
+    with torch.no_grad():
+        model(*example_inputs)
+
+
 def test_create_example_inputs_with_per_layer_pattern_yields_two_cache_sizes():
     model_args = ModelArgs(
         dim=32,
@@ -276,3 +322,4 @@ if __name__ == "__main__":
     test_per_layer_cache_lens_pattern_requires_sliding_window()
     test_per_layer_cache_lens_rejects_pattern_le_one()
     test_create_example_inputs_with_per_layer_pattern_yields_two_cache_sizes()
+    test_per_layer_pattern_forward_pass_runs_end_to_end()
