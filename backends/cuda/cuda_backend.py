@@ -332,7 +332,9 @@ class CudaBackend(AotiBackend, BackendDetails):
         return options
 
     @classmethod
-    def get_extra_aoti_compile_context_manager(cls, compile_specs: List[CompileSpec]):
+    def get_extra_aoti_compile_context_manager(
+        cls, compile_specs: Optional[List[CompileSpec]] = None
+    ):
         """
         Combine all extra context managers needed during AOTInductor
         compilation for the CUDA backend. Each manager is documented at
@@ -344,9 +346,10 @@ class CudaBackend(AotiBackend, BackendDetails):
         through the unmodified AOTI codepath, which avoids regressions in
         their cuda CI exports.
         """
-        # Parse compile_specs for low_memory_mode (default OFF)
+        # Parse compile_specs for low_memory_mode (default OFF). compile_specs
+        # may be None when called without specs (parity with base default).
         low_memory_mode = "OFF"
-        for spec in compile_specs:
+        for spec in compile_specs or []:
             if spec.key == "low_memory_mode":
                 mode = spec.value.decode("utf-8").upper()
                 if mode not in ["ON", "OFF"]:

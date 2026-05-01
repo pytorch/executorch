@@ -9,7 +9,7 @@ import os
 import typing
 from abc import ABC, abstractmethod
 from enum import Enum
-from typing import Any, Dict, List, Set
+from typing import Any, Dict, List, Optional, Set
 
 import torch
 from executorch.backends.aoti.passes.replace_view_copy_with_view import (
@@ -88,7 +88,9 @@ class AotiBackend(ABC):
         return False
 
     @classmethod
-    def get_extra_aoti_compile_context_manager(cls, compile_specs: List[CompileSpec]):
+    def get_extra_aoti_compile_context_manager(
+        cls, compile_specs: Optional[List[CompileSpec]] = None
+    ):
         """Return extra context manager to apply during aoti_compile stage. By default returns an empty context manager.
 
         Subclasses may inspect ``compile_specs`` to opt into behaviors that
