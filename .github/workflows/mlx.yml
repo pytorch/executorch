@@ -489,17 +489,25 @@ jobs:
             name: "gemma3-1b"
         use-custom: [false, true]
         qconfig: ["4w", "nvfp4"]
+        runner: ["macos-14-xlarge"]
         include:
           - model:
               id: "google/gemma-4-E2B-it"
               name: "gemma4-e2b"
             use-custom: true
             qconfig: "4w"
+            runner: "macos-15-xlarge"
+          - model:
+              id: "google/gemma-4-E2B-it"
+              name: "gemma4-e2b"
+            use-custom: false
+            qconfig: "4w"
+            runner: "macos-15-xlarge"
     uses: pytorch/test-infra/.github/workflows/macos_job.yml@main
     secrets: inherit
     with:
       job-name: test-mlx-llm-${{ matrix.model.name }}${{ matrix.use-custom && '-custom' || '' }}-${{ matrix.qconfig }}
-      runner: macos-14-xlarge
+      runner: ${{ matrix.runner }}
       python-version: "3.12"
       submodules: recursive
       ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
@@ -512,11 +520,6 @@ jobs:
         MODEL_NAME="${{ matrix.model.name }}"
         USE_CUSTOM="${{ matrix.use-custom }}"
         QCONFIG="${{ matrix.qconfig }}"
-        MODEL_REVISION=""
-        if [ "${MODEL_ID}" = "google/gemma-4-E2B-it" ]; then
-          MODEL_REVISION="b4a601102c3d45e2b7b50e2057a6d5ec8ed4adcf"
-        fi
-
         CUSTOM_ARGS=""
         if [ "${USE_CUSTOM}" = "true" ]; then
           CUSTOM_ARGS="--use-custom-sdpa --use-custom-kv-cache"
@@ -551,7 +554,6 @@ jobs:
         echo "::group::Export ${MODEL_NAME}"
         ${CONDA_RUN} python -m executorch.backends.mlx.examples.llm.export_llm_hf \
           --model-id "${MODEL_ID}" \
-          ${MODEL_REVISION:+--revision "${MODEL_REVISION}"} \
           --output /tmp/${MODEL_NAME}.pte \
           --qlinear ${QCONFIG} \
           ${QEMBEDDING_ARGS} \
@@ -562,7 +564,6 @@ jobs:
         OUTPUT=$(${CONDA_RUN} python -m executorch.backends.mlx.examples.llm.run_llm_hf \
           --pte /tmp/${MODEL_NAME}.pte \
           --model-id "${MODEL_ID}" \
-          ${MODEL_REVISION:+--revision "${MODEL_REVISION}"} \
           --prompt "What is the capital of France?" \
           --max-new-tokens 50 2>&1)
         echo "$OUTPUT"
