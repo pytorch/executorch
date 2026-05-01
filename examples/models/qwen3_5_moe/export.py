@@ -21,6 +21,7 @@ from executorch.examples.models.qwen3_5_moe.model import (
     FusedMoEExperts,
     Qwen35MoE,
     Qwen35MoEConfig,
+    W4DequantLinear,
 )
 
 
@@ -465,6 +466,158 @@ def _quantize(model, config, args):
         print(f"Quantized linear layers ({args.qlinear})")
 
 
+def _infer_w4_group_size(linear):
+    """Infer quantization group size from the weight's metadata.
+
+    For prequantized bundles, the weight may be a torchao
+    AffineQuantizedTensor whose block_size encodes the original group
+    size.  Trusting the CLI default would silently re-quantize to the
+    wrong group size (e.g. gs32 when the bundle used gs128).
+    """
+    w = linear.weight
+    if hasattr(w, "block_size"):
+        return w.block_size[-1]
+    return None
+
+
+def _resolve_w4_group_size(linear, group_size):
+    effective_gs = _infer_w4_group_size(linear)
+    if effective_gs is not None and effective_gs != group_size:
+        print(
+            f"\n  Detected group_size={effective_gs} from quantized weight "
+            f"(overriding CLI value {group_size})"
+        )
+        return effective_gs
+    if effective_gs is None:
+        return group_size
+    return effective_gs
+
+
+def _dequant_linear_to_bf16(linear):
+    """Materialize the linear's weight as a contiguous BF16 [N, K] tensor."""
+    from torch.nn import functional as F
+
+    K = linear.in_features
+    linear_cuda = linear.cuda()
+    with torch.no_grad():
+        eye = torch.eye(K, dtype=torch.bfloat16, device="cuda")
+        w_bf16 = F.linear(eye, linear_cuda.weight).T.contiguous()
+    del linear_cuda
+    return w_bf16
+
+
+def _quantize_w4_hqq(w_float, N, K, effective_gs):
+    from torchao.quantization.quant_primitives import (
+        _choose_qparams_and_quantize_scale_only_hqq,
+    )
+
+    int_data, scale = _choose_qparams_and_quantize_scale_only_hqq(
+        w_float,
+        block_size=[1, effective_gs],
+        qmin=-8,
+        qmax=7,
+    )
+    return int_data.to(torch.int8).view(N, K), scale.view(N, -1)
+
+
+def _quantize_w4_affine(w_float, N, effective_gs):
+    from torchao.quantization.quant_primitives import (
+        choose_qparams_affine,
+        MappingType,
+        quantize_affine,
+    )
+
+    block_size = (1, effective_gs)
+    scale, zero_point = choose_qparams_affine(
+        w_float,
+        MappingType.SYMMETRIC,
+        block_size,
+        target_dtype=torch.int8,
+        quant_min=-8,
+        quant_max=7,
+    )
+    int_data = quantize_affine(
+        w_float,
+        block_size,
+        scale,
+        zero_point,
+        output_dtype=torch.int8,
+        quant_min=-8,
+        quant_max=7,
+    )
+    return int_data, scale.reshape(N, -1)
+
+
+def _convert_linear_to_w4dequant(linear, group_size, use_hqq):
+    N, K = linear.out_features, linear.in_features
+    effective_gs = _resolve_w4_group_size(linear, group_size)
+
+    w_bf16 = _dequant_linear_to_bf16(linear)
+    w_float = w_bf16.float()
+    del w_bf16
+
+    if use_hqq:
+        int_data, scale = _quantize_w4_hqq(w_float, N, K, effective_gs)
+    else:
+        int_data, scale = _quantize_w4_affine(w_float, N, effective_gs)
+    del w_float
+
+    uint4 = (int_data + 8).to(torch.int16)
+    packed = (uint4[:, 0::2] | (uint4[:, 1::2] << 4)).to(torch.int8)
+    del int_data, uint4
+
+    w4 = W4DequantLinear(K, N, effective_gs)
+    w4.w_packed = packed.cpu()
+    w4.w_scale = scale.to(torch.bfloat16).cpu()
+    torch.cuda.empty_cache()
+    return w4
+
+
+def _collect_w4_replacement_targets(model):
+    replacements = []
+    for parent in model.modules():
+        if isinstance(parent, FusedMoEExperts):
+            continue
+        for name, child in parent.named_children():
+            if isinstance(child, nn.Linear):
+                replacements.append((parent, name, child))
+    return replacements
+
+
+def _replace_dense_with_w4dequant(model, group_size=128, use_hqq=False):
+    """Replace quantized dense linears with W4DequantLinear.
+
+    Dequantizes Int4TilePackedTo4dTensor weights to BF16, re-quantizes to
+    simple [N, K//2] packed INT4 format (same as MoE experts), and wraps in
+    W4DequantLinear for dual decode/prefill dispatch.
+
+    MoE expert weights (FusedMoEExperts) are left unchanged.
+    """
+    replacements = _collect_w4_replacement_targets(model)
+
+    if not replacements:
+        raise RuntimeError(
+            "--dense-prefill=dequant found no nn.Linear modules to convert. "
+            "Ensure the model has W4-quantized dense layers."
+        )
+
+    for i, (parent, name, linear) in enumerate(replacements):
+        setattr(parent, name, _convert_linear_to_w4dequant(linear, group_size, use_hqq))
+        print(
+            f"  Converted {name} ({i + 1}/{len(replacements)})",
+            end="\r",
+        )
+    print()
+    print(f"Replaced {len(replacements)} dense linears with W4DequantLinear")
+
+
+def _set_dequant_prefill(model, enabled):
+    """Toggle dequant+BF16 prefill path for all W4DequantLinear modules."""
+    for mod in model.modules():
+        if isinstance(mod, W4DequantLinear):
+            mod.use_dequant_prefill = enabled
+
+
 def _materialize_buffers(model, config):
     """Materialize meta-device buffers before torch.export.
 
@@ -535,11 +688,12 @@ def _apply_turboquant(model, config):
 # ---------------------------------------------------------------------------
 
 
-def _set_batched_moe(model, enabled):
+def _set_batched_moe(model, enabled, moe_activation_dtype="bf16"):
     """Toggle batched tensor-core MoE kernel for all MoE layers."""
     for layer in model.layers:
         if hasattr(layer, "mlp") and hasattr(layer.mlp, "experts"):
             layer.mlp.experts.use_batched_moe = enabled
+            layer.mlp.experts.moe_activation_dtype = moe_activation_dtype
 
 
 def export_and_lower(model, config, args):
@@ -792,6 +946,7 @@ def _export_cuda(model, config, args):
 
     # --- Decode method (T=1, static shape, vec-mat MoE kernel) ---
     _set_batched_moe(model, False)
+    _set_dequant_prefill(model, False)
     print("Exporting decode method...")
     decode_tokens = torch.tensor([[0]], dtype=torch.long)
     decode_pos = torch.tensor([0], dtype=torch.long)
@@ -809,7 +964,10 @@ def _export_cuda(model, config, args):
     # chunk_gated_delta_rule with CHUNK_SIZE=64) for the full range of sequence
     # lengths. Smaller examples cause AOTI to bake in intermediate buffer sizes
     # that reject longer prompts at runtime.
-    _set_batched_moe(model, True)
+    moe_activation_dtype = getattr(args, "moe_activation_dtype", "bf16")
+    _set_batched_moe(model, True, moe_activation_dtype=moe_activation_dtype)
+    dense_prefill = getattr(args, "dense_prefill", "tinygemm")
+    _set_dequant_prefill(model, dense_prefill == "dequant")
     print("Exporting prefill method...")
 
     example_prefill_len = config.max_seq_len - 1
@@ -973,6 +1131,20 @@ def main():  # noqa: C901
         action="store_true",
         help="Disable split-K (flash-decoding) SDPA for decode; use tiled SDPA instead.",
     )
+    parser.add_argument(
+        "--moe-activation-dtype",
+        choices=["bf16", "int8"],
+        default="bf16",
+        help="MoE activation dtype for prefill only. Decode always uses bf16. bf16 (default): W4A16 batched GEMM. int8: W4A8 with INT8 tensor cores.",
+    )
+    parser.add_argument(
+        "--dense-prefill",
+        choices=["tinygemm", "dequant"],
+        default="tinygemm",
+        help="Dense linear prefill kernel. Decode always uses int4_matvec (Triton W4A16 vec-mat). "
+        "tinygemm (default): W4A16 _weight_int4pack_mm. "
+        "dequant: dequant W4→BF16 + cuBLAS GEMM.",
+    )
     args = parser.parse_args()
 
     if args.model_id:
@@ -1007,12 +1179,31 @@ def main():  # noqa: C901
     if args.qlinear == "fpa4w" and args.backend != "metal":
         parser.error("--qlinear=fpa4w can only be used with --backend=metal")
 
+    if args.dense_prefill == "dequant":
+        if args.backend != "cuda":
+            parser.error("--dense-prefill dequant requires --backend cuda")
+        if not args.prequantized and args.qlinear != "4w":
+            parser.error(
+                "--dense-prefill dequant requires --qlinear=4w or --prequantized "
+                "(dense weights must be W4 quantized)"
+            )
+
+    if args.moe_activation_dtype != "bf16" and args.backend != "cuda":
+        parser.error("--moe-activation-dtype int8 requires --backend cuda")
+
     model, config = load_and_quantize(args)
 
     if args.backend == "cuda":
         _materialize_buffers(model, config)
         if args.turboquant:
             _apply_turboquant(model, config)
+        if args.dense_prefill == "dequant":
+            print("Converting dense linears to W4DequantLinear...")
+            _replace_dense_with_w4dequant(
+                model,
+                group_size=getattr(args, "qlinear_group_size", 32),
+                use_hqq=getattr(args, "hqq", False),
+            )
 
     export_and_lower(model, config, args)
 

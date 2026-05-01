@@ -5,6 +5,7 @@
 
 from executorch.backends.arm.tosa.dialect.ops import (  # noqa F401
     avg_pool2d,
+    avg_pool2d_adaptive,
     conv2d,
     conv3d,
     custom,
