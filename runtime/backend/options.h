@@ -59,7 +59,11 @@ struct BackendOption {
  * configuration, with compile-time capacity limits and runtime type checking.
  * It supports bool, int, int64_t, and const char* value types. The int64_t
  * arm allows callers to pass pointer-sized opaque handles (e.g., driver
- * handles like CUgreenCtx) by reinterpret_cast to/from int64_t.
+ * handles like CUgreenCtx) by round-tripping the pointer through uintptr_t
+ * (raw `reinterpret_cast` directly between int64_t and a pointer is
+ * implementation-defined per the standard; via uintptr_t it is well-defined
+ * on every platform). See the file-level comment above for the canonical
+ * pattern.
  *
  * @tparam MaxCapacity The maximum number of options that can be stored
  */
