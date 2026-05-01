@@ -9,6 +9,8 @@
 #include <executorch/backends/vulkan/runtime/graph/ops/OperatorRegistry.h>
 
 #include <executorch/backends/vulkan/runtime/graph/ops/impl/Common.h>
+#include <executorch/backends/vulkan/runtime/graph/ops/impl/GemmCommon.h>
+#include <executorch/backends/vulkan/runtime/graph/ops/impl/GemmCoopmat.h>
 #include <executorch/backends/vulkan/runtime/graph/ops/impl/Linear.h>
 #include <executorch/backends/vulkan/runtime/graph/ops/impl/MatMul.h>
 #include <executorch/backends/vulkan/runtime/graph/ops/impl/Staging.h>
@@ -19,109 +21,6 @@
 #include <executorch/backends/vulkan/runtime/graph/ops/utils/ShaderNameUtils.h>
 
 namespace vkcompute {
-
-ValueRef prepack_fp_linear_weight(
-    ComputeGraph& graph,
-    const ValueRef weight_data,
-    bool is_transposed,
-    int64_t B,
-    bool force_buffer) {
-  std::vector<int64_t> weight_sizes = graph.sizes_of(weight_data);
-
-  int64_t N, K;
-  if (is_transposed) {
-    // Source is [N, K] or [B, N, K]
-    N = weight_sizes.at(weight_sizes.size() - 2);
-    K = weight_sizes.at(weight_sizes.size() - 1);
-  } else {
-    // Source is [K, N] or [B, K, N]
-    K = weight_sizes.at(weight_sizes.size() - 2);
-    N = weight_sizes.at(weight_sizes.size() - 1);
-  }
-
-  int64_t K4 = utils::div_up(K, int64_t(4));
-  int64_t N4 = utils::div_up(N, int64_t(4));
-
-  // Packed tensor: B*K4 rows, N4*4 vec4 elements per row (batch-stacked).
-  // Since the tensor size is in scalars and kWidthPacked packs 4 scalars per
-  // texel, we need width = N4*4*4 scalars to get N4*4 texels.
-  int64_t output_height = B * K4;
-  int64_t output_width = N4 * 4 * 4;
-
-  utils::StorageType weight_storage;
-  if (force_buffer) {
-    weight_storage = utils::kBuffer;
-  } else {
-    weight_storage = utils::kTexture2D;
-    uint32_t max_extent = graph.context()->adapter_ptr()->max_texture2d_dim();
-    // output_width is in scalars; texture width in texels = output_width / 4
-    if (output_width / 4 > max_extent ||
-        static_cast<uint32_t>(output_height) > max_extent) {
-      weight_storage = utils::kBuffer;
-    }
-  }
-
-  ValueRef packed_weight = graph.add_tensor(
-      {output_height, output_width},
-      graph.dtype_of(weight_data),
-      weight_storage,
-      utils::kWidthPacked);
-
-  utils::uvec3 global_wg_size = {
-      utils::safe_downcast<uint32_t>(N4),
-      utils::safe_downcast<uint32_t>(K4),
-      utils::safe_downcast<uint32_t>(B)};
-
-  struct PackParams {
-    int32_t N;
-    int32_t K;
-    int32_t B;
-    int32_t is_transposed;
-  };
-  PackParams pack_params{
-      utils::safe_downcast<int32_t>(N),
-      utils::safe_downcast<int32_t>(K),
-      utils::safe_downcast<int32_t>(B),
-      is_transposed ? 1 : 0};
-
-  std::string kernel_name = "pack_fp_linear_weight";
-  add_storage_type_suffix(kernel_name, weight_storage);
-  add_dtype_suffix(kernel_name, graph.dtype_of(weight_data));
-  add_dtype_suffix(kernel_name, graph.get_staging_dtype_for(weight_data));
-
-  graph.prepack_nodes().emplace_back(new PrepackNode(
-      graph,
-      VK_KERNEL_FROM_STR(kernel_name),
-      global_wg_size,
-      graph.create_local_wg_size(global_wg_size),
-      weight_data,
-      packed_weight,
-      {},
-      {},
-      {PushConstantDataInfo(&pack_params, sizeof(PackParams))}));
-
-  return packed_weight;
-}
-
-void resize_linear_node(
-    ComputeGraph* graph,
-    const std::vector<ArgGroup>& args,
-    const std::vector<ValueRef>& resize_args) {
-  const ValueRef out = args.at(0).refs.at(0);
-  const ValueRef mat1 = args.at(1).refs.at(0);
-
-  const std::vector<int64_t> mat1_sizes = graph->sizes_of(mat1);
-
-  int64_t M = mat1_sizes.at(mat1_sizes.size() - 2);
-  int64_t N = graph->get_int(resize_args.at(0));
-
-  if (mat1_sizes.size() >= 3) {
-    int64_t B = mat1_sizes.at(0);
-    graph->virtual_resize(out, {B, M, N});
-  } else {
-    graph->virtual_resize(out, {M, N});
-  }
-}
 
 struct LinearIntParams final {
   int32_t weight_B;
@@ -239,100 +138,6 @@ void add_linear_tiled_node(
       resize_linear_node));
 }
 
-// ── Cooperative matrix linear ──
-
-static constexpr uint32_t kLinearCoopMatTileM = 64;
-static constexpr uint32_t kLinearCoopMatTileN = 64;
-static constexpr uint32_t kLinearCoopMatTileK = 32;
-static constexpr uint32_t kLinearCoopMatInvocations = 256; // 4 subgroups x 64
-
-vkapi::ShaderInfo pick_linear_coopmat_shader(
-    ComputeGraph* graph,
-    const std::vector<ArgGroup>& args,
-    const std::vector<ValueRef>& resize_args) {
-  const ValueRef out = args.at(0).refs.at(0);
-  bool has_bias = graph->get_bool(resize_args.at(1));
-  std::string kernel_name = has_bias ? "linear_coopmat_bias" : "linear_coopmat";
-  kernel_name.reserve(kShaderNameReserve);
-  add_dtype_suffix(kernel_name, graph->dtype_of(out));
-  return VK_KERNEL_FROM_STR(kernel_name);
-}
-
-utils::uvec3 pick_linear_coopmat_global_wg_size(
-    ComputeGraph* graph,
-    const vkapi::ShaderInfo& shader,
-    const std::vector<ArgGroup>& args,
-    const std::vector<ValueRef>& resize_args) {
-  (void)shader;
-  (void)resize_args;
-  const ValueRef out = args.at(0).refs.at(0);
-  const auto out_sizes = graph->sizes_of(out);
-  uint32_t M = out_sizes.at(out_sizes.size() - 2);
-  uint32_t N = out_sizes.at(out_sizes.size() - 1);
-  uint32_t num_tiles_n = utils::div_up(N, kLinearCoopMatTileN);
-  uint32_t num_tiles_m = utils::div_up(M, kLinearCoopMatTileM);
-  return {num_tiles_n * kLinearCoopMatInvocations, num_tiles_m, 1};
-}
-
-utils::uvec3 pick_linear_coopmat_local_wg_size(
-    ComputeGraph* graph,
-    const vkapi::ShaderInfo& shader,
-    const utils::uvec3& global_workgroup_size,
-    const std::vector<ArgGroup>& args,
-    const std::vector<ValueRef>& resize_args) {
-  (void)graph;
-  (void)shader;
-  (void)global_workgroup_size;
-  (void)args;
-  (void)resize_args;
-  return {kLinearCoopMatInvocations, 1, 1};
-}
-
-void add_linear_coopmat_node(
-    ComputeGraph& graph,
-    const ValueRef input,
-    const ValueRef packed_weight,
-    const ValueRef packed_bias,
-    bool has_bias,
-    const ValueRef out,
-    int32_t weight_B) {
-  VK_CHECK_COND(graph.packed_dim_of(input) == WHCN::kWidthDim);
-  VK_CHECK_COND(graph.packed_dim_of(out) == WHCN::kWidthDim);
-  VK_CHECK_COND(
-      graph.storage_type_of(out) == utils::kBuffer,
-      "linear_coopmat requires buffer storage");
-
-  std::vector<int64_t> out_sizes = graph.sizes_of(out);
-  int32_t orig_N = utils::safe_downcast<int32_t>(out_sizes.back());
-  ValueRef orig_N_ref = graph.add_scalar(static_cast<int64_t>(orig_N));
-  ValueRef has_bias_ref = graph.add_scalar(has_bias);
-
-  std::vector<ValueRef> read_inputs = {input, packed_weight};
-  if (has_bias) {
-    read_inputs.push_back(packed_bias);
-  }
-
-  graph.execute_nodes().emplace_back(new DynamicDispatchNode(
-      graph,
-      pick_linear_coopmat_shader,
-      pick_linear_coopmat_global_wg_size,
-      pick_linear_coopmat_local_wg_size,
-      // Inputs and Outputs
-      {{out, vkapi::kWrite}, {read_inputs, vkapi::kRead}},
-      // Shader params buffers
-      {graph.sizes_ubo(input), graph.sizes_ubo(out)},
-      // Push Constants
-      {},
-      // Specialization Constants
-      {},
-      // Resize Args
-      {orig_N_ref, has_bias_ref},
-      // Resizing Logic
-      resize_linear_node));
-}
-
-// ── End cooperative matrix linear ──
-
 void linear_packed_weight(
     ComputeGraph& graph,
     const std::vector<ValueRef>& args) {
@@ -354,11 +159,7 @@ void linear_packed_weight(
       input_sizes.size() >= 2 ? input_sizes.at(input_sizes.size() - 2) : 1;
   int64_t K = input_sizes.back();
   int64_t N = out_sizes_vec.back();
-  bool use_coopmat =
-      graph.context()->adapter_ptr()->supports_cooperative_matrix() &&
-      graph.storage_type_of(out) == utils::kBuffer &&
-      M % kLinearCoopMatTileM == 0 && N % kLinearCoopMatTileN == 0 &&
-      K % kLinearCoopMatTileK == 0;
+  bool use_coopmat = is_coopmat_eligible(graph, out, M, N, K);
 
   ValueRef packed_weight = prepack_fp_linear_weight(
       graph,

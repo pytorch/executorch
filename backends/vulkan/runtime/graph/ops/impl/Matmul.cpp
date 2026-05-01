@@ -9,7 +9,10 @@
 #include <executorch/backends/vulkan/runtime/graph/ops/OperatorRegistry.h>
 
 #include <executorch/backends/vulkan/runtime/graph/ops/impl/Common.h>
+#include <executorch/backends/vulkan/runtime/graph/ops/impl/GemmCommon.h>
+#include <executorch/backends/vulkan/runtime/graph/ops/impl/GemmCoopmat.h>
 #include <executorch/backends/vulkan/runtime/graph/ops/impl/Linear.h>
+#include <executorch/backends/vulkan/runtime/graph/ops/impl/MatMul.h>
 #include <executorch/backends/vulkan/runtime/graph/ops/impl/Staging.h>
 
 #include <executorch/backends/vulkan/runtime/graph/ops/impl/utils/ScalarUtils.h>
@@ -18,116 +21,6 @@
 #include <executorch/backends/vulkan/runtime/graph/ops/utils/ShaderNameUtils.h>
 
 namespace vkcompute {
-
-// Forward declaration
-void resize_matmul_tiled_node(
-    ComputeGraph* graph,
-    const std::vector<ArgGroup>& args,
-    const std::vector<ValueRef>& resize_args);
-
-// ── Cooperative matrix tile configuration (must match matmul_coopmat.glsl) ──
-
-static constexpr uint32_t kCoopMatTileM = 64;
-static constexpr uint32_t kCoopMatTileN = 64;
-static constexpr uint32_t kCoopMatTileK = 32;
-static constexpr uint32_t kCoopMatInvocations = 256; // 4 subgroups × 64
-
-vkapi::ShaderInfo pick_matmul_coopmat_shader(
-    ComputeGraph* graph,
-    const std::vector<ArgGroup>& args,
-    const std::vector<ValueRef>& resize_args) {
-  (void)resize_args;
-  const ValueRef out = args.at(0).refs.at(0);
-  std::string kernel_name = "matmul_coopmat";
-  kernel_name.reserve(kShaderNameReserve);
-  add_dtype_suffix(kernel_name, graph->dtype_of(out));
-  return VK_KERNEL_FROM_STR(kernel_name);
-}
-
-utils::uvec3 pick_matmul_coopmat_global_wg_size(
-    ComputeGraph* graph,
-    const vkapi::ShaderInfo& shader,
-    const std::vector<ArgGroup>& args,
-    const std::vector<ValueRef>& resize_args) {
-  (void)shader;
-  (void)resize_args;
-  const ValueRef out = args.at(0).refs.at(0);
-  const auto out_sizes = graph->sizes_of(out);
-  uint32_t M = out_sizes.at(out_sizes.size() - 2);
-  uint32_t N = out_sizes.at(out_sizes.size() - 1);
-  uint32_t num_tiles_n = utils::div_up(N, kCoopMatTileN);
-  uint32_t num_tiles_m = utils::div_up(M, kCoopMatTileM);
-  return {num_tiles_n * kCoopMatInvocations, num_tiles_m, 1};
-}
-
-utils::uvec3 pick_matmul_coopmat_local_wg_size(
-    ComputeGraph* graph,
-    const vkapi::ShaderInfo& shader,
-    const utils::uvec3& global_workgroup_size,
-    const std::vector<ArgGroup>& args,
-    const std::vector<ValueRef>& resize_args) {
-  (void)graph;
-  (void)shader;
-  (void)global_workgroup_size;
-  (void)args;
-  (void)resize_args;
-  return {kCoopMatInvocations, 1, 1};
-}
-
-void add_matmul_coopmat_node(
-    ComputeGraph& graph,
-    const ValueRef mat1,
-    const ValueRef mat2,
-    const ValueRef out) {
-  VK_CHECK_COND(graph.packed_dim_of(mat1) == WHCN::kWidthDim);
-  VK_CHECK_COND(graph.packed_dim_of(mat2) == WHCN::kWidthDim);
-  VK_CHECK_COND(graph.packed_dim_of(out) == WHCN::kWidthDim);
-  VK_CHECK_COND(
-      graph.storage_type_of(out) == utils::kBuffer,
-      "matmul_coopmat requires buffer storage");
-
-  ValueRef has_bias_ref = graph.add_scalar(false);
-
-  graph.execute_nodes().emplace_back(new DynamicDispatchNode(
-      graph,
-      pick_matmul_coopmat_shader,
-      pick_matmul_coopmat_global_wg_size,
-      pick_matmul_coopmat_local_wg_size,
-      // Inputs and Outputs — same binding order as matmul_vec
-      {{out, vkapi::kWrite}, {{mat1, mat2}, vkapi::kRead}},
-      // Shader params buffers — same UBOs as matmul_vec
-      {graph.sizes_ubo(mat1), graph.sizes_ubo(mat2)},
-      // Push Constants
-      {},
-      // Specialization Constants (tile config hardcoded in shader)
-      {},
-      // Resize Args
-      {has_bias_ref},
-      // Resizing Logic
-      resize_matmul_tiled_node));
-}
-
-// ── End cooperative matrix section ──
-
-void resize_matmul_tiled_node(
-    ComputeGraph* graph,
-    const std::vector<ArgGroup>& args,
-    const std::vector<ValueRef>& resize_args) {
-  (void)resize_args;
-  const ValueRef out = args.at(0).refs.at(0);
-  const ValueRef mat1 = args.at(1).refs.at(0);
-  const ValueRef mat2 = args.at(1).refs.at(1);
-
-  const std::vector<int64_t> mat1_sizes = graph->sizes_of(mat1);
-  const std::vector<int64_t> mat2_sizes = graph->sizes_of(mat2);
-
-  std::vector<int64_t> new_out_sizes(mat1_sizes);
-  new_out_sizes.at(new_out_sizes.size() - 1) = mat2_sizes.back();
-  new_out_sizes.at(new_out_sizes.size() - 2) =
-      mat1_sizes.at(mat1_sizes.size() - 2);
-
-  graph->virtual_resize(out, new_out_sizes);
-}
 
 // Minimum number of thread groups to target for good GPU occupancy. When the
 // default 4-row tiling produces fewer threads than this, a smaller tile is
@@ -282,15 +175,12 @@ void matmul_tiled(ComputeGraph& graph, const std::vector<ValueRef>& args) {
   int64_t M = mat1_sizes.at(mat1_sizes.size() - 2);
   int64_t K = mat1_sizes.back();
   int64_t N = graph.sizes_of(out).back();
-  const bool coopmat_aligned = M % kCoopMatTileM == 0 &&
-      N % kCoopMatTileN == 0 && K % kCoopMatTileK == 0;
+  const bool coopmat_eligible = is_coopmat_eligible(graph, out, M, N, K);
 
   if (graph.val_is_tref(mat2)) {
     auto mat2_sizes = graph.sizes_of(mat2);
     int64_t B = mat2_sizes.size() >= 3 ? mat2_sizes.at(0) : 1;
-    bool use_coopmat =
-        graph.context()->adapter_ptr()->supports_cooperative_matrix() &&
-        graph.storage_type_of(out) == utils::kBuffer && coopmat_aligned;
+    bool use_coopmat = coopmat_eligible;
     ValueRef packed = prepack_fp_linear_weight(
         graph,
         mat2,
@@ -316,9 +206,7 @@ void matmul_tiled(ComputeGraph& graph, const std::vector<ValueRef>& args) {
           out,
           utils::safe_downcast<int32_t>(B));
     }
-  } else if (
-      graph.context()->adapter_ptr()->supports_cooperative_matrix() &&
-      graph.storage_type_of(out) == utils::kBuffer && coopmat_aligned) {
+  } else if (coopmat_eligible) {
     add_matmul_coopmat_node(graph, mat1, mat2, out);
   } else {
     add_matmul_tiled_node(graph, mat1, mat2, out);
