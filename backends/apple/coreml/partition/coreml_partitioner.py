@@ -32,6 +32,19 @@ from torch.fx.passes.operator_support import OperatorSupportBase
 logger = logging.getLogger(__name__)
 logger.setLevel(get_coreml_log_level(default_level=logging.INFO))
 
+# Mirrors coremltools' TORCH_DTYPE_TO_MIL_DTYPE.  Ops whose inputs use any
+# other dtype (e.g. torch.uint8) cannot be lowered, so the partitioner must
+# reject them.  See pytorch/executorch#11686.
+_COREML_SUPPORTED_INPUT_DTYPES = {
+    torch.bool,
+    torch.float16,
+    torch.float32,
+    torch.float64,
+    torch.int16,
+    torch.int32,
+    torch.int64,
+}
+
 
 def _is_view_op(op: torch._ops.OpOverload) -> bool:
     schema = op._schema
@@ -75,6 +88,18 @@ class _OperatorsSupportedForCoreMLBackend(OperatorSupportBase):
         return False
 
     def should_override_support(self, node) -> bool:
+        # https://github.com/pytorch/executorch/issues/11686
+        for arg in node.all_input_nodes:
+            val = arg.meta.get("val", None)
+            dtype = getattr(val, "dtype", None)
+            if dtype is not None and dtype not in _COREML_SUPPORTED_INPUT_DTYPES:
+                self.log_once(
+                    "Skipping op for CoreML delegation because input dtype "
+                    f"{dtype} is not supported by CoreML: "
+                    + getattr(node.target, "__name__", str(node.target))
+                )
+                return True
+
         # https://github.com/apple/coremltools/issues/2573
         if (
             node.target
@@ -147,10 +172,19 @@ class _OperatorsSupportedForCoreMLBackend(OperatorSupportBase):
             if self.should_skip_op_for_delegation(node_target_name):
                 return False
 
-            # query coremltools to see if node is supported
-            is_supported = ct.converters.mil.frontend.torch.is_torch_fx_node_supported(
-                node
-            )
+            # query coremltools to see if node is supported.  coremltools may
+            # raise instead of returning False; treat any exception as
+            # unsupported and let the op fall back to the portable backend.
+            try:
+                is_supported = (
+                    ct.converters.mil.frontend.torch.is_torch_fx_node_supported(node)
+                )
+            except Exception as e:
+                self.log_once(
+                    "Skipping op for CoreML delegation because coremltools raised "
+                    f"while checking support for {node_target_name}: {e}"
+                )
+                is_supported = False
             if self.should_override_support(node):
                 is_supported = False
 

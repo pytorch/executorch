@@ -338,6 +338,35 @@ class TestCoreMLPartitioner(unittest.TestCase):
                 torch.allclose(et_outputs, eager_outputs, atol=1e-02, rtol=1e-02)
             )
 
+    def test_unsupported_dtype_does_not_crash_partitioner(self):
+        """
+        Regression test for https://github.com/pytorch/executorch/issues/11686.
+
+        coremltools raises KeyError when asked about ops with unsupported input
+        dtypes (e.g. torch.uint8).  The partitioner must treat this as "not
+        supported" rather than propagating the exception, so the op falls back
+        to the portable backend.
+        """
+
+        class Model(torch.nn.Module):
+            def forward(self, x):
+                return torch.abs(x)
+
+        model = Model().eval()
+        example_inputs = (torch.randint(0, 255, (1, 10)).to(torch.uint8),)
+        exir_program_aten = torch.export.export(model, example_inputs, strict=True)
+        edge_program_manager = executorch.exir.to_edge_transform_and_lower(
+            exir_program_aten, partitioner=[CoreMLPartitioner()]
+        )
+
+        op_names = [
+            node.target.__name__
+            for node in edge_program_manager.exported_program().graph.nodes
+            if node.op == "call_function"
+        ]
+        self.assertNotIn("executorch_call_delegate", op_names)
+        self.assertIn("aten.abs.default", op_names)
+
     def test_deprecation_warning_for_to_backend_workflow(self):
         """
         Test that the deprecated to_edge + to_backend workflow shows a deprecation warning.
@@ -435,5 +464,6 @@ if __name__ == "__main__":
     test_runner.test_lower_full_graph()
     # test_runner.test_symint_arg()
     test_runner.test_take_over_constant_data_false()
+    test_runner.test_unsupported_dtype_does_not_crash_partitioner()
     test_runner.test_deprecation_warning_for_to_backend_workflow()
     test_runner.test_no_warning_for_to_edge_transform_and_lower_workflow()
