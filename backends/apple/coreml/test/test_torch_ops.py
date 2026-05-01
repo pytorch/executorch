@@ -318,6 +318,36 @@ class TestTorchOps(unittest.TestCase):
         self._compare_outputs(et_prog, model, example_inputs)
 
 
+    def test_dequantize_affine_below_ios18_raises_with_hint(self):
+        """
+        Regression test for https://github.com/pytorch/executorch/issues/13122.
+
+        `quantize_(...)` with blockwise / int4 configurations requires iOS18.
+        coremltools raises a ValueError that does not mention how to fix the
+        deployment target on the ExecuTorch side; we wrap it to add the
+        partitioner-level guidance.
+        """
+        model = torch.nn.Linear(64, 64)
+        quantize_(
+            model,
+            IntxWeightOnlyConfig(weight_dtype=torch.int4, granularity=PerGroup(32)),
+        )
+        ep = torch.export.export(model.eval(), (torch.randn(1, 64),), strict=True)
+        with self.assertRaises(ValueError) as cm:
+            executorch.exir.to_edge_transform_and_lower(
+                ep,
+                partitioner=[
+                    self._coreml_partitioner(
+                        minimum_deployment_target=ct.target.iOS17
+                    )
+                ],
+            )
+        msg = str(cm.exception)
+        self.assertIn("iOS18", msg)
+        self.assertIn("CoreMLPartitioner", msg)
+        self.assertIn("minimum_deployment_target", msg)
+
+
 if __name__ == "__main__":
     test_runner = TestTorchOps()
     test_runner.test_dequantize_affine_b4w_embedding()
