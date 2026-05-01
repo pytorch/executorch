@@ -147,6 +147,34 @@ class TestBatchNorm(unittest.TestCase):
         """Test BatchNorm1d with NC input is lowered to XNNPACK."""
         self._test_batch_norm(self.BatchNorm1dNC(num_features=3))
 
+    def test_fp32_batch_norm_nc_dynamic_batch(self):
+        """Test BatchNorm1d NC with dynamic batch, inference at batch=20."""
+        model = self.BatchNorm1dNC(num_features=3)
+        model.eval()
+        with torch.no_grad():
+            for _ in range(5):
+                model(*model.get_inputs())
+
+        batch = torch.export.Dim("batch", min=1, max=32)
+        (
+            Tester(
+                model,
+                model.get_inputs(),
+                dynamic_shapes=({0: batch},),
+            )
+            .export()
+            .to_edge_transform_and_lower()
+            .check_not(
+                [
+                    "executorch_exir_dialects_edge__ops_aten__native_batch_norm_legit_no_training_default"
+                ]
+            )
+            .check_count({"torch.ops.higher_order.executorch_call_delegate": 1})
+            .to_executorch()
+            .serialize()
+            .run_method_and_compare_outputs(inputs=(torch.randn(20, 3),))
+        )
+
     def test_fp32_batch_norm_ncl(self):
         """Test BatchNorm1d with NCL input is lowered to XNNPACK."""
         self._test_batch_norm(self.BatchNorm1dNCL(num_features=3))
