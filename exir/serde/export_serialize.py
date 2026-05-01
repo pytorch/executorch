@@ -325,7 +325,7 @@ def serialize_torch_artifact(artifact: Dict[str, Any]) -> bytes:
 
 
 def deserialize_torch_artifact(
-    serialized: Union[Dict[str, Any], Tuple[Any, ...], bytes]
+    serialized: Union[Dict[str, Any], Tuple[Any, ...], bytes], weights_only: bool = True
 ):
     if isinstance(serialized, (dict, tuple)):
         return serialized
@@ -333,7 +333,7 @@ def deserialize_torch_artifact(
         return {}
     buffer = io.BytesIO(serialized)
     buffer.seek(0)
-    artifact = torch.load(buffer, weights_only=True)
+    artifact = torch.load(buffer, weights_only=weights_only)
     assert isinstance(artifact, (tuple, dict))
     return artifact
 
@@ -1836,6 +1836,7 @@ class GraphModuleDeserializer:
             Union[Tuple[Tuple[torch.Tensor, ...], Dict[str, Any]], bytes]
         ] = None,
         symbol_name_to_range: Optional[Dict[str, symbolic_shapes.ValueRanges]] = None,
+        weights_only: bool = True
     ) -> Result:
         global _CURRENT_DESERIALIZER
         current_deserializer_state = _CURRENT_DESERIALIZER.copy()
@@ -1887,7 +1888,7 @@ class GraphModuleDeserializer:
                 signature=self.signature,
                 module_call_graph=module_call_graph,
                 names_to_symbols=self.symbol_name_to_symbol,
-                state_dict=deserialize_torch_artifact(serialized_state_dict),
+                state_dict=deserialize_torch_artifact(serialized_state_dict, weights_only = weights_only),
                 constants=self.constants,
                 example_inputs=self.example_inputs,
             )

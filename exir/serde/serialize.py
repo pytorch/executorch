@@ -631,6 +631,7 @@ class ExportedProgramDeserializer(export_serialize.ExportedProgramDeserializer):
         example_inputs: Optional[
             Union[Tuple[Tuple[torch.Tensor, ...], Dict[str, Any]], bytes]
         ] = None,
+        weights_only: bool = True
     ) -> ep.ExportedProgram:
         assert isinstance(exported_program, export_serialize.ExportedProgram)
         version = exported_program.schema_version
@@ -657,6 +658,7 @@ class ExportedProgramDeserializer(export_serialize.ExportedProgramDeserializer):
             constants,
             example_inputs,
             symbol_name_to_range,
+            weights_only=weights_only,
         )
         range_constraints = self.deserialize_range_constraints(
             symbol_name_to_range,
@@ -721,7 +723,7 @@ def serialize(
 
 
 def deserialize(
-    artifact: export_serialize.SerializedArtifact,
+    artifact: export_serialize.SerializedArtifact,weights_only: bool = True
 ) -> ep.ExportedProgram:
     assert isinstance(artifact.exported_program, bytes)
     exported_program_str = artifact.exported_program.decode("utf-8")
@@ -734,6 +736,7 @@ def deserialize(
         artifact.state_dict,
         artifact.constants,
         artifact.example_inputs,
+        weights_only=weights_only,
     )
 
 
