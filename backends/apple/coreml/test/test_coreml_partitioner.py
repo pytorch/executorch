@@ -338,6 +338,51 @@ class TestCoreMLPartitioner(unittest.TestCase):
                 torch.allclose(et_outputs, eager_outputs, atol=1e-02, rtol=1e-02)
             )
 
+    def test_argmax_argmin_dim_none_is_skipped(self):
+        """
+        Regression test for https://github.com/pytorch/executorch/issues/11715.
+
+        argmax/argmin with dim=None reduces over the flattened tensor, which
+        CoreML does not support; the resulting model intermittently crashes
+        the process at runtime.  The partitioner must reject these so they
+        fall back to the portable backend, while still delegating the
+        ordinary dim=int form.
+        """
+
+        class FlatModel(torch.nn.Module):
+            def forward(self, x):
+                return torch.argmax(x, dim=None, keepdim=False) + torch.argmin(
+                    x, dim=None
+                )
+
+        ep = torch.export.export(FlatModel().eval(), (torch.randn(10, 10),), strict=True)
+        edge = executorch.exir.to_edge_transform_and_lower(
+            ep, partitioner=[CoreMLPartitioner()]
+        )
+        op_names = [
+            n.target.__name__
+            for n in edge.exported_program().graph.nodes
+            if n.op == "call_function"
+        ]
+        self.assertIn("aten.argmax.default", op_names)
+        self.assertIn("aten.argmin.default", op_names)
+
+        class DimModel(torch.nn.Module):
+            def forward(self, x):
+                return torch.argmax(x, dim=1)
+
+        ep = torch.export.export(DimModel().eval(), (torch.randn(10, 10),), strict=True)
+        edge = executorch.exir.to_edge_transform_and_lower(
+            ep, partitioner=[CoreMLPartitioner()]
+        )
+        op_names = [
+            n.target.__name__
+            for n in edge.exported_program().graph.nodes
+            if n.op == "call_function"
+        ]
+        self.assertIn("executorch_call_delegate", op_names)
+        self.assertNotIn("aten.argmax.default", op_names)
+
     def test_deprecation_warning_for_to_backend_workflow(self):
         """
         Test that the deprecated to_edge + to_backend workflow shows a deprecation warning.

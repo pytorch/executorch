@@ -116,6 +116,23 @@ class _OperatorsSupportedForCoreMLBackend(OperatorSupportBase):
             )
             return True
 
+        # https://github.com/pytorch/executorch/issues/11715
+        # argmin/argmax with dim=None reduces over the flattened input, which
+        # CoreML does not support and causes intermittent process crashes.
+        if node.target in [
+            torch.ops.aten.argmax.default,
+            torch.ops.aten.argmin.default,
+            exir_ops.edge.aten.argmax.default,
+            exir_ops.edge.aten.argmin.default,
+        ]:
+            dim = node.args[1] if len(node.args) >= 2 else node.kwargs.get("dim", None)
+            if dim is None:
+                self.log_once(
+                    "torch.ops.aten.{argmax, argmin}.default with dim=None is "
+                    "not supported by CoreML.  Overriding op support."
+                )
+                return True
+
         # TODO: enable this after bugs in ExecuTorch's partitioner are fixed
         # # If lower_full_graph=False, do not partition nodes with symbolic args because it can result in symbolic args
         # # in the placeholders due to partitioning, which CoreML does not support
