@@ -23,9 +23,9 @@ conda activate executorch
 
 **Path B — no conda (fall back to venv):**
 ```bash
-# Find a compatible Python (3.10–3.13). On macOS with only Homebrew Python 3.14+,
+# Find a compatible Python (3.10–3.14). On macOS with only Homebrew Python 3.14+,
 # install a compatible version first: brew install python@3.12
-python3.12 -m venv .executorch-venv   # or python3.11, python3.10, python3.13
+python3.12 -m venv .executorch-venv   # or python3.11, python3.10, python3.13, python3.14
 source .executorch-venv/bin/activate
 pip install --upgrade pip
 ```
@@ -33,7 +33,7 @@ pip install --upgrade pip
 **Then verify (either path):**
 
 Run `python --version` and `cmake --version`. Fix automatically:
-- **Python not 3.10–3.13**: recreate the env with a correct Python version.
+- **Python not 3.10–3.14**: recreate the env with a correct Python version.
 - **cmake missing or < 3.24**: run `pip install 'cmake>=3.24'` inside the env.
 - **cmake >= 4.0**: works in practice, no action needed.
 
