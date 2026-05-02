@@ -27,18 +27,18 @@ using executorch::runtime::MemoryAllocator;
 
 XNNWeightsCache::XNNWeightsCache() {
   weights_cache_.context = this;
-  weights_cache_.look_up = (size_t(*)(
+  weights_cache_.look_up = (size_t (*)(
       void*, const xnn_weights_cache_look_up_key*))XNNWeightsCache::look_up;
   weights_cache_.reserve_space =
       (void* (*)(void*, size_t))XNNWeightsCache::reserve_space;
   weights_cache_.look_up_or_insert =
-      (size_t(*)(void*, const xnn_weights_cache_look_up_key*, void*, size_t))
+      (size_t (*)(void*, const xnn_weights_cache_look_up_key*, void*, size_t))
           XNNWeightsCache::look_up_or_insert;
   weights_cache_.is_finalized = (bool (*)(void*))XNNWeightsCache::is_finalized;
   weights_cache_.offset_to_addr =
       (void* (*)(void*, size_t))XNNWeightsCache::offset_to_addr;
   weights_cache_.delete_cache =
-      (enum xnn_status(*)(void*))XNNWeightsCache::delete_cache;
+      (enum xnn_status (*)(void*))XNNWeightsCache::delete_cache;
 }
 
 Error XNNWeightsCache::initialize_for_runtime(
@@ -216,6 +216,12 @@ size_t XNNWeightsCache::look_up_or_insert(
   }
 
   if (offset != SIZE_MAX) {
+    // When XNNPACK's look_up already returned a cache hit, it skips packing
+    // and calls look_up_or_insert with ptr = NULL. In this case, trust the
+    // cache and return the existing offset without comparing.
+    if (ptr == nullptr) {
+      return offset;
+    }
     void* saved_ptr = context->offset_to_addr(context, offset);
     if (saved_ptr != nullptr && 0 == memcmp(ptr, saved_ptr, size)) {
       return offset;
