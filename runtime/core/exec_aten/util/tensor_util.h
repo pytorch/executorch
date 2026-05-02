@@ -935,7 +935,8 @@ inline size_t getLeadingDims(
   for (const auto i : c10::irange(dim)) {
     size_t next_dims;
     ET_CHECK_MSG(
-        !c10::mul_overflows(dims, static_cast<size_t>(tensor.size(i)), &next_dims),
+        !c10::mul_overflows(
+            dims, static_cast<size_t>(tensor.size(i)), &next_dims),
         "Overflow computing leading dims at dimension %zd",
         (ssize_t)i);
     dims = next_dims;
@@ -957,7 +958,8 @@ inline size_t getTrailingDims(
   for (size_t i = dim + 1; i < static_cast<size_t>(tensor.dim()); ++i) {
     size_t next_dims;
     ET_CHECK_MSG(
-        !c10::mul_overflows(dims, static_cast<size_t>(tensor.size(i)), &next_dims),
+        !c10::mul_overflows(
+            dims, static_cast<size_t>(tensor.size(i)), &next_dims),
         "Overflow computing trailing dims at dimension %zu",
         i);
     dims = next_dims;
