@@ -30,7 +30,7 @@ def parse_model_device_config(config):
     os_version = config.get("arch", "")
     full_device = f"{base_device}({os_version})" if os_version else base_device
     if not base_device:
-        return full_model, "unkown", "unknown", ""
+        return full_model, "unknown", "unknown", ""
     return full_model, full_device, base_device, os_version
 
 
