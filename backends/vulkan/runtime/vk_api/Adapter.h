@@ -252,7 +252,10 @@ class Adapter final {
 #endif /* VK_NV_cooperative_matrix2 */
   }
 
-  inline bool supports_cooperative_matrix() {
+  inline bool supports_cooperative_matrix() const {
+#ifdef ETVK_FORCE_NO_EXTENSIONS
+    return false;
+#endif
 #ifdef VK_KHR_cooperative_matrix
     return physical_device_.cooperative_matrix_features.cooperativeMatrix ==
         VK_TRUE;

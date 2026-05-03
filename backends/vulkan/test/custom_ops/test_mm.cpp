@@ -198,7 +198,9 @@ static TestCase create_mm_test_case(
     routes_to_coopmat = true;
   } else if (
       config.impl_selector == "default" && storage_type == utils::kBuffer &&
-      config.M % 64 == 0 && config.N % 64 == 0 && config.K % 32 == 0) {
+      !is_batched && config.M % 64 == 0 && config.N % 64 == 0 &&
+      config.K % 32 == 0 &&
+      api::context()->adapter_ptr()->supports_cooperative_matrix()) {
     routes_to_coopmat = true;
   }
 
@@ -385,9 +387,6 @@ static std::vector<TestCase> generate_mm_test_cases() {
   auto coopmat_eligible = [](const MmShape& s) {
     return s.B == 0 && s.M % 64 == 0 && s.N % 64 == 0 && s.K % 32 == 0;
   };
-  const std::vector<std::string> impl_selectors_default = {"default"};
-  const std::vector<std::string> impl_selectors_aligned = {
-      "default", "tiled", "coopmat"};
 
   for (const auto& s : shapes) {
     bool is_batched = s.B > 0;

@@ -69,7 +69,13 @@ void add_linear_coopmat_node(
     bool has_bias,
     const ValueRef out,
     int32_t weight_B) {
-  (void)weight_B;
+  // weight_B must be 1 — the shader is 2D and dispatch z-dim is hardcoded to
+  // 1, so batched weights would only compute the first batch. The
+  // is_coopmat_eligible() gate rejects batched outputs upstream; this
+  // VK_CHECK_COND turns silent miscompute into a hard fail for any direct
+  // caller that bypasses the gate.
+  VK_CHECK_COND(
+      weight_B == 1, "linear_coopmat does not support batched weights");
   VK_CHECK_COND(graph.packed_dim_of(input) == WHCN::kWidthDim);
   VK_CHECK_COND(graph.packed_dim_of(out) == WHCN::kWidthDim);
   VK_CHECK_COND(

@@ -34,6 +34,17 @@ inline bool is_coopmat_eligible(
     int64_t M,
     int64_t N,
     int64_t K) {
+  // The shader operates on 2D buffers; dispatch z-dim is hardcoded to 1, so
+  // batched outputs would silent-miscompute batch > 0. Reject any rank-3+
+  // output conservatively.
+  if (graph.dim_of(out) > 2) {
+    return false;
+  }
+  // TODO: also gate on adapter->subgroup_size() == 64 once a subgroup-size
+  // accessor lands on Adapter. The shader bakes a 4-subgroup x 64-thread =
+  // 256-thread workgroup; on a subgroup-32 device this would silently
+  // miscompute. Today's only in-tree adapter exposing
+  // VK_KHR_cooperative_matrix is subgroup-64, so the assumption holds.
   return graph.context()->adapter_ptr()->supports_cooperative_matrix() &&
       graph.storage_type_of(out) == utils::kBuffer && M % kCoopmatTileM == 0 &&
       N % kCoopmatTileN == 0 && K % kCoopmatTileK == 0;
