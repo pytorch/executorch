@@ -266,6 +266,12 @@ static inline ExecuTorchValue *toExecuTorchValue(EValue value) NS_RETURNS_RETAIN
   // is not thread-safe. The ARC retain/release on assignment is non-atomic
   // for direct ivars; serialize `loadWithOptions:` calls externally if you
   // share a `Module` across threads.
+  //
+  // TODO: remove this ivar once the C++ Module owns its LoadBackendOptionsMap
+  // by value (today it borrows a raw pointer). With owned options the ObjC
+  // wrapper has nothing to retain, the thread-safety caveat above goes
+  // away, and -loadMethod:options: / -loadWithOptions: stop needing a
+  // custom lifetime contract between the bindings and the C++ layer.
   ExecuTorchBackendOptionsMap *_loadedBackendOptions;
 }
 
@@ -353,12 +359,19 @@ static inline ExecuTorchValue *toExecuTorchValue(EValue value) NS_RETURNS_RETAIN
   // (Methods load lazily during forward(), so the borrow may outlive this
   // call.) See ExecuTorchBackendOptionsMap.h for the lifetime contract.
   //
-  // No rollback on failure: Module::load (see module.cpp:192-197) updates
-  // its backend_options_ raw pointer BEFORE attempting load_internal, so
-  // after a failed call the C++ side already references `options`. The
-  // ObjC retain therefore always matches what C++ points at, even on the
-  // failure path — a two-phase commit here would instead leave C++
-  // pointing at a map the wrapper no longer retains.
+  // No rollback on failure: Module::load updates its backend_options_ raw
+  // pointer BEFORE attempting load_internal, so after a failed call the
+  // C++ side already references `options`. The ObjC retain therefore
+  // always matches what C++ points at, even on the failure path — a
+  // two-phase commit here would instead leave C++ pointing at a map the
+  // wrapper no longer retains. See:
+  // https://github.com/pytorch/executorch/blob/6412f55a54dd3ce1f4ed220a3e96ee19b8f37967/extension/module/module.cpp#L192-L197
+  //
+  // TODO: once Module::load is made transactional (i.e. it only commits
+  // `backend_options_` after load_internal succeeds), replace the
+  // unconditional assignment below with a proper two-phase commit that
+  // only overwrites _loadedBackendOptions on success. This removes the
+  // "match C++'s unconditional write" workaround documented above.
   _loadedBackendOptions = options;
   const auto errorCode = _module->load(*[options cppMap],
                                         static_cast<Program::Verification>(verification));
@@ -383,12 +396,14 @@ static inline ExecuTorchValue *toExecuTorchValue(EValue value) NS_RETURNS_RETAIN
              error:(NSError **)error {
   NSParameterAssert(options);
   // Do NOT assign to _loadedBackendOptions here. Module::load_method
-  // (module.cpp:353-409) consumes `backend_options` synchronously within
-  // this call — it is passed through to program_->load_method and is not
-  // cached on the Module. Only Module::load(backend_options, ...) stores
-  // the pointer (via backend_options_ at module.cpp:195). ARC keeps
-  // `options` alive for the call duration via the parameter, so no
-  // ivar retention is needed here.
+  // consumes `backend_options` synchronously within this call — it is
+  // passed through to program_->load_method and is not cached on the
+  // Module. Only Module::load(backend_options, ...) stores the pointer
+  // (via backend_options_). ARC keeps `options` alive for the call
+  // duration via the parameter, so no ivar retention is needed here.
+  // See:
+  //   load_method: https://github.com/pytorch/executorch/blob/6412f55a54dd3ce1f4ed220a3e96ee19b8f37967/extension/module/module.cpp#L353-L409
+  //   load (stores backend_options_): https://github.com/pytorch/executorch/blob/6412f55a54dd3ce1f4ed220a3e96ee19b8f37967/extension/module/module.cpp#L195
   //
   // Overwriting _loadedBackendOptions would release any map previously
   // installed by -loadWithOptions:, but the C++ Module's backend_options_
@@ -396,8 +411,6 @@ static inline ExecuTorchValue *toExecuTorchValue(EValue value) NS_RETURNS_RETAIN
   // use-after-free on the next lazy load_method. The XCTest
   // testMixedLoadWithOptionsAndLoadMethodWithOptionsOnMultiMethodModel
   // pins this invariant via a weak reference.
-  // TODO: update the C++ Module API to use a two-stage commit, and
-  // once this is done, update the ObjC/Swift API to match.
   const auto errorCode = _module->load_method(methodName.UTF8String,
                                                /*planned_memory=*/nullptr,
                                                /*event_tracer=*/nullptr,
