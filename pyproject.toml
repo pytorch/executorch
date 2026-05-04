@@ -79,7 +79,7 @@ dependencies=[
 [project.optional-dependencies]
 cortex_m = [
   # Keep this in sync with AoT deps from backends/cortex_m/requirements-cortex-m.txt
-  "cmsis_nn @ git+https://github.com/ARM-software/CMSIS-NN.git@ba16fde665262d2ca3cc5074e1b4894461e06a2f",
+  "cmsis_nn @ git+https://github.com/ARM-software/CMSIS-NN.git@d933672e7ca97eec70ef43230baee7b20c2a28ae",
 ]
 vgf = [
   # AoT vgf dependencies
