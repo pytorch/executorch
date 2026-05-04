@@ -301,14 +301,131 @@ def _is_out_var_node(node: torch.fx.Node) -> bool:
     )
 
 
+def _unwrap_op_overload(target: object) -> Optional[torch._ops.OpOverload]:
+    """Return the underlying ``torch._ops.OpOverload`` for a node target.
+
+    Handles both raw aten ops (``torch.ops.aten.X.Y``) and edge-dialect
+    wrappers (``ops.edge.aten.X.Y`` / ``BackendOpOverload``), which expose
+    the underlying ATen op as ``target._op`` but are not themselves
+    subclasses of ``torch._ops.OpOverload``.
+    """
+    if isinstance(target, torch._ops.OpOverload):
+        return target
+    underlying = getattr(target, "_op", None)
+    if isinstance(underlying, torch._ops.OpOverload):
+        return underlying
+    return None
+
+
 def _is_inplace_node(node: torch.fx.Node) -> bool:
-    return (
-        node.op == "call_function"
-        and isinstance(node.target, torch._ops.OpOverload)
-        and is_inplace_variant(
-            node.target._schema.name, node.target._schema.overload_name
-        )
-    )
+    if node.op != "call_function":
+        return False
+    op = _unwrap_op_overload(node.target)
+    if op is None:
+        return False
+    return is_inplace_variant(op._schema.name, op._schema.overload_name)
+
+
+def _alias_inplace_result_specs(node: torch.fx.Node) -> None:
+    """Alias an in-place op's result TensorSpec(s) onto the corresponding
+    input's spec.
+
+    In-place ops (schema kind == inplace) mutate one or more of their
+    inputs and return tensors that alias them, declared via the
+    ``Tensor(a!)`` schema annotation. To make the memory planner treat
+    result and aliased input as one storage, we copy the input's spec
+    object onto the output's ``node.meta["spec"]`` slot.
+
+    Correspondence is determined by the schema's alias sets
+    (``alias_info.before_set``): a return with ``is_write=True`` is
+    aliased to the input arg carrying the matching alias set.
+
+    Gating:
+
+    - Only runs for in-place nodes (caller checks ``_is_inplace_node``).
+    - Skipped when the aliased input is a placeholder. Named buffer
+      and parameter placeholders are handled separately by the emit
+      pipeline (via ``BUFFER_MUTATION`` output specs); propagating
+      their spec here would cause emit to produce multiple Values with
+      the same fully-qualified name.
+    - Multi-output in-place ops are supported when each return's alias
+      set matches exactly one input's alias set.
+    - Falls through silently when alias info is absent or unparseable,
+      preserving the original spec.
+    """
+    target = node.target
+    op = _unwrap_op_overload(target)
+    if op is None:
+        return
+
+    schema = op._schema
+    if not schema.returns:
+        return
+
+    # Normalize the current spec container into a list for uniform handling.
+    current = node.meta.get("spec")
+    if isinstance(current, TensorSpec):
+        out_specs_list: List[Optional[TensorSpec]] = [current]
+        return_container_kind = "scalar"
+    elif isinstance(current, (list, tuple)):
+        out_specs_list = list(current)
+        return_container_kind = type(current).__name__
+    else:
+        return
+
+    # Compute new spec for each return; None means "keep original".
+    replacements: List[Optional[TensorSpec]] = [None] * len(out_specs_list)
+
+    for out_idx, ret in enumerate(schema.returns):
+        if out_idx >= len(out_specs_list):
+            break
+        if ret.alias_info is None or not ret.alias_info.is_write:
+            continue
+        target_alias_set = ret.alias_info.before_set
+
+        # Locate the input arg sharing this alias set with is_write=True.
+        aliased_input_idx: Optional[int] = None
+        for in_idx, arg in enumerate(schema.arguments):
+            info = arg.alias_info
+            if info is None or not info.is_write:
+                continue
+            if info.before_set == target_alias_set:
+                aliased_input_idx = in_idx
+                break
+
+        if aliased_input_idx is None or aliased_input_idx >= len(node.args):
+            continue
+        in_node = node.args[aliased_input_idx]
+        if not isinstance(in_node, torch.fx.Node):
+            continue
+        # NOTE: alias unconditionally — including when the input is a
+        # placeholder (named buffer / mutable input). Skipping
+        # placeholders would leave a dangling out-arg on in-place op
+        # instructions whose self is a buffer; the runtime kernel
+        # writes to that out-arg's storage rather than mutating the
+        # buffer, producing incorrect results. The companion change in
+        # `_emit_spec` (emit/_emitter.py) deduplicates by spec identity
+        # so this aliasing doesn't produce two Values for the same FQN.
+        in_spec = in_node.meta.get("spec")
+        if not isinstance(in_spec, TensorSpec):
+            continue
+        replacements[out_idx] = in_spec
+
+    if not any(r is not None for r in replacements):
+        return
+
+    # Assemble the new spec container, preserving the original shape.
+    new_list = [
+        replacements[i] if replacements[i] is not None else out_specs_list[i]
+        for i in range(len(out_specs_list))
+    ]
+    if return_container_kind == "scalar":
+        if isinstance(new_list[0], TensorSpec):
+            node.meta["spec"] = new_list[0]
+    elif return_container_kind == "list":
+        node.meta["spec"] = list(new_list)
+    elif return_container_kind == "tuple":
+        node.meta["spec"] = tuple(new_list)
 
 
 def update_tensor_lifetime(
@@ -474,6 +591,11 @@ def collect_specs_from_nodes(  # noqa: C901
             continue
 
         if _is_inplace_node(node):
+            # Schema-driven: alias the in-place op's result spec(s) onto
+            # the corresponding mutated input's spec so the planner gives
+            # them the same allocation slot. See `_alias_inplace_result_specs`
+            # for the full rationale and gating rules.
+            _alias_inplace_result_specs(node)
             continue
 
         if _is_mutable_buffer(node, graph_signature) and ignore_mutable_buffers:
