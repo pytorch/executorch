@@ -28,7 +28,10 @@ from executorch.backends.nxp.tests.executors import (
     ToNCHWPreprocess,
     ToNHWCPreprocess,
 )
-from executorch.backends.nxp.tests.graph_verifier import BaseGraphVerifier
+from executorch.backends.nxp.tests.graph_verifier import (
+    BaseGraphVerifier,
+    NonDelegatedNode,
+)
 from executorch.backends.nxp.tests.models import AvgPool2dConvModule, AvgPool2dModule
 
 from executorch.backends.nxp.tests.nsys_testing import lower_run_compare
@@ -370,3 +373,23 @@ class TestAvgPool2DNewNeutronFlow:
             delegated_ep.graph, [ExecutorchDelegateCall]
         )
         assert graph_contains_any_of_ops(delegated_ep.graph, [AvgPool2D])
+
+
+class TestAvgPool1DNewNeutronFlow:
+
+    # Just a basic test to verify that the operator gets extended to the 2D variant correctly.
+    def test__basic_nsys_inference__view_not_delegated(self):
+        input_shape = (2, 4, 6)  # The old flow limited the batch size to 1.
+        model = AvgPool1DModule()
+        graph_verifier = BaseGraphVerifier(
+            exp_num_delegate_call_nodes=1,  # Delegated AvgPool.
+            exp_non_delegated_nodes=[
+                NonDelegatedNode(
+                    "aten_view_copy_default", 2
+                )  # Non delegated due to shape requirements.
+            ],
+        )
+
+        lower_run_compare(
+            model, input_shape, graph_verifier, use_new_flow_neutron_c=True
+        )
