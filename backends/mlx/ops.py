@@ -464,7 +464,7 @@ def _isinf_handler(P: MLXProgramBuilder, n: Node) -> Slot:
         )
     )
 
-    # Create inf constant
+    # Create inf constant (float32; EqualNode handles type promotion to match input dtype)
     inf_slot = emit_lifted_constant(P, float('inf'), torch.float32)
 
     # Compare abs(x) == inf

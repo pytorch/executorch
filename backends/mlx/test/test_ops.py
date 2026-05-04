@@ -4025,9 +4025,9 @@ def _inf_input_fn():
 
     def fn(shape, dtype):
         x = torch.randn(shape, dtype=dtype)
-        # Insert some inf values
-        mask_pos = torch.rand(shape) > 0.8
-        mask_neg = torch.rand(shape) > 0.9
+        # Insert ~20% +inf and ~10% -inf using non-overlapping masks
+        mask_pos = torch.rand(shape) > 0.8  # ~20% -> +inf
+        mask_neg = (~mask_pos) & (torch.rand(shape) > 0.9)  # ~10% of remaining -> -inf
         x[mask_pos] = float('inf')
         x[mask_neg] = float('-inf')
         return (x,)
@@ -4127,7 +4127,8 @@ _UNARY_OP_TESTS = [
     {"op_name": "neg",        "op_fn": torch.neg},
     {"op_name": "logical_not","op_fn": torch.logical_not, "shapes": [(2, 3, 4), (10,), (4, 8)], "dtypes": [torch.bool], "input_fn": _bool_input_fn()},
     {"op_name": "isnan",      "op_fn": torch.isnan,      "shapes": _SHAPES_3, "dtypes": [torch.float32, torch.float16, torch.bfloat16], "input_fn": _nan_input_fn()},
-    {"op_name": "isinf",      "op_fn": torch.isinf,      "shapes": _SHAPES_3, "dtypes": [torch.float32, torch.float16, torch.bfloat16], "input_fn": _inf_input_fn()},    # activations
+    {"op_name": "isinf",      "op_fn": torch.isinf,      "shapes": _SHAPES_3, "dtypes": [torch.float32, torch.float16, torch.bfloat16], "input_fn": _inf_input_fn()},
+    # activations
     {"op_name": "relu",    "op_fn": torch.relu,    "shapes": [(2, 3, 4), (10,), (4, 8), (2, 8, 16), (1, 128, 64)], "dtypes": [torch.float32], "input_fn": _input_fn(scale=2, offset=-1)},
     {"op_name": "sigmoid", "op_fn": torch.sigmoid, "shapes": [(2, 3, 4), (10,), (4, 8), (2, 8, 16), (1, 1, 128)],  "dtypes": [torch.float32], "input_fn": _input_fn(scale=2)},
     {"op_name": "tanh",    "op_fn": torch.tanh,    "shapes": [(2, 3, 4), (10,), (4, 8), (2, 8, 16), (1, 1, 128)],  "dtypes": [torch.float32], "input_fn": _input_fn(scale=3)},
