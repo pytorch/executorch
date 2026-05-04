@@ -772,7 +772,9 @@ def quantize_per_tensor_meta(
     quant_max: int,
     dtype: torch.dtype,
 ) -> torch.Tensor:
-    torch._check(input.dtype == torch.float32, lambda: "expected float32")
+    torch._check(
+        input.dtype in (torch.float32, torch.bfloat16), lambda: "expected float dtype"
+    )
     return input.new_empty(input.size(), dtype=dtype)
 
 
@@ -785,7 +787,9 @@ def quantize_per_tensor_asym8s_meta(
     quant_max: int,
     dtype: torch.dtype,
 ) -> torch.Tensor:
-    torch._check(input.dtype == torch.float32, lambda: "expected float32")
+    torch._check(
+        input.dtype in (torch.float32, torch.bfloat16), lambda: "expected float dtype"
+    )
     return input.new_empty(input.size(), dtype=dtype)
 
 
@@ -798,7 +802,9 @@ def quantize_per_tensor_asym8u_meta(
     quant_max: int,
     dtype: torch.dtype,
 ) -> torch.Tensor:
-    torch._check(input.dtype == torch.float32, lambda: "expected float32")
+    torch._check(
+        input.dtype in (torch.float32, torch.bfloat16), lambda: "expected float dtype"
+    )
     return input.new_empty(input.size(), dtype=dtype)
 
 
@@ -811,7 +817,9 @@ def quantize_per_tensor_asym16s_meta(
     quant_max: int,
     dtype: torch.dtype,
 ) -> torch.Tensor:
-    torch._check(input.dtype == torch.float32, lambda: "expected float32")
+    torch._check(
+        input.dtype in (torch.float32, torch.bfloat16), lambda: "expected float dtype"
+    )
     return input.new_empty(input.size(), dtype=dtype)
 
 
@@ -824,7 +832,9 @@ def quantize_per_tensor_asym16u_meta(
     quant_max: int,
     dtype: torch.dtype,
 ) -> torch.Tensor:
-    torch._check(input.dtype == torch.float32, lambda: "expected float32")
+    torch._check(
+        input.dtype in (torch.float32, torch.bfloat16), lambda: "expected float dtype"
+    )
     return input.new_empty(input.size(), dtype=dtype)
 
 
@@ -837,7 +847,9 @@ def quantize_per_tensor_asym32s_meta(
     quant_max: int,
     dtype: torch.dtype,
 ) -> torch.Tensor:
-    torch._check(input.dtype == torch.float32, lambda: "expected float32")
+    torch._check(
+        input.dtype in (torch.float32, torch.bfloat16), lambda: "expected float dtype"
+    )
     return input.new_empty(input.size(), dtype=dtype)
 
 
@@ -2601,7 +2613,9 @@ def fully_connected_meta(
     weight: torch.Tensor,
     bias: Optional[torch.Tensor] = None,
 ) -> torch.Tensor:
-    torch._check(src.dtype == torch.float32, lambda: "expected float32")
+    torch._check(
+        src.dtype in (torch.float32, torch.bfloat16), lambda: "expected float dtype"
+    )
     torch._check(src.size(0) == 1, lambda: "expected batch size of 1")
     # src comes in shape [leading_dims, in_dim]
     # weight comes in shape [out_dim, in_dim]
