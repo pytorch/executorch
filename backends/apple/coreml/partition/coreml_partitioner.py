@@ -46,6 +46,22 @@ _COREML_SUPPORTED_INPUT_DTYPES = {
 }
 
 
+def _unsupported_input_dtype(node: torch.fx.Node):
+    """Return the first input dtype that CoreML cannot lower, else ``None``.
+
+    See pytorch/executorch#11686: coremltools' torch -> MIL converter only
+    knows the dtypes in ``TORCH_DTYPE_TO_MIL_DTYPE``; ops with any other
+    input dtype (notably ``torch.uint8``) crash the converter rather than
+    being reported as unsupported.
+    """
+    for arg in node.all_input_nodes:
+        val = arg.meta.get("val", None)
+        dtype = getattr(val, "dtype", None)
+        if dtype is not None and dtype not in _COREML_SUPPORTED_INPUT_DTYPES:
+            return dtype
+    return None
+
+
 def _is_view_op(op: torch._ops.OpOverload) -> bool:
     schema = op._schema
     if len(schema.arguments) == 0:
@@ -89,16 +105,14 @@ class _OperatorsSupportedForCoreMLBackend(OperatorSupportBase):
 
     def should_override_support(self, node) -> bool:
         # https://github.com/pytorch/executorch/issues/11686
-        for arg in node.all_input_nodes:
-            val = arg.meta.get("val", None)
-            dtype = getattr(val, "dtype", None)
-            if dtype is not None and dtype not in _COREML_SUPPORTED_INPUT_DTYPES:
-                self.log_once(
-                    "Skipping op for CoreML delegation because input dtype "
-                    f"{dtype} is not supported by CoreML: "
-                    + getattr(node.target, "__name__", str(node.target))
-                )
-                return True
+        unsupported_dtype = _unsupported_input_dtype(node)
+        if unsupported_dtype is not None:
+            self.log_once(
+                "Skipping op for CoreML delegation because input dtype "
+                f"{unsupported_dtype} is not supported by CoreML: "
+                + getattr(node.target, "__name__", str(node.target))
+            )
+            return True
 
         # https://github.com/apple/coremltools/issues/2573
         if (
