@@ -170,12 +170,16 @@ void linear_packed_weight(
 
   ValueRef packed_bias = kDummyValueRef;
   if (has_bias) {
+    // passthrough=false: always actually-prepack so the bias matches the
+    // shader's expected storage/layout. The coopmat shader binds t_bias as
+    // a buffer scalar array, and a passthrough on a texture-backed bias
+    // would land us on a descriptor-type mismatch.
     packed_bias = prepack_standard(
         graph,
         bias,
         graph.storage_type_of(out),
         utils::kWidthPacked,
-        /*passthrough=*/use_coopmat);
+        /*passthrough=*/false);
   }
 
   if (use_coopmat) {

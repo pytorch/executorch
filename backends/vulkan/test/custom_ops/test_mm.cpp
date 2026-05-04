@@ -389,9 +389,21 @@ static std::vector<TestCase> generate_mm_test_cases() {
   // K-tail handling). Sweep both "coopmat" and "tiled" force-dispatch variants
   // for shapes that satisfy alignment, on buffer storage only (coopmat
   // requires buffer outputs).
-  auto coopmat_eligible = [](const MmShape& s) {
+  auto coopmat_shape_eligible = [](const MmShape& s) {
     return s.B == 0 && s.M % 64 == 0 && s.N % 64 == 0 && s.K % 32 == 0;
   };
+
+  // The "coopmat" forced-dispatch sweep skips the runtime eligibility check
+  // (it's intentionally bypassing the gate to exercise the shader). Skip
+  // generating those cases on adapters that can't actually run the shader,
+  // or pipeline creation/dispatch will fail.
+  const auto* adapter = api::context()->adapter_ptr();
+  const bool coopmat_runnable =
+      adapter->supports_cooperative_matrix() && adapter->subgroup_size() == 64;
+  std::vector<std::string> coopmat_sweep_selectors = {"tiled"};
+  if (coopmat_runnable) {
+    coopmat_sweep_selectors.push_back("coopmat");
+  }
 
   for (const auto& s : shapes) {
     bool is_batched = s.B > 0;
@@ -414,8 +426,8 @@ static std::vector<TestCase> generate_mm_test_cases() {
       }
 
       // Coopmat A/B sweep: only on aligned shapes + buffer storage.
-      if (coopmat_eligible(s)) {
-        for (const auto& sel : {"tiled", "coopmat"}) {
+      if (coopmat_shape_eligible(s)) {
+        for (const auto& sel : coopmat_sweep_selectors) {
           MmConfig dyn = dynamic_cfg;
           dyn.impl_selector = sel;
           test_cases.push_back(create_mm_test_case(
@@ -445,8 +457,8 @@ static std::vector<TestCase> generate_mm_test_cases() {
         }
 
         // Coopmat A/B sweep on linear paths too (only aligned shapes).
-        if (coopmat_eligible(s)) {
-          for (const auto& sel : {"tiled", "coopmat"}) {
+        if (coopmat_shape_eligible(s)) {
+          for (const auto& sel : coopmat_sweep_selectors) {
             MmConfig lin = linear_cfg;
             lin.impl_selector = sel;
             test_cases.push_back(create_mm_test_case(

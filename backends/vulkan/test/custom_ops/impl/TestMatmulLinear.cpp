@@ -119,12 +119,15 @@ void test_linear(ComputeGraph& graph, const std::vector<ValueRef>& args) {
         graph, weight, /*is_transposed=*/true, /*B=*/1, force_buffer);
     ValueRef packed_bias = kDummyValueRef;
     if (has_bias) {
+      // passthrough=false: actually prepack into the storage/layout the
+      // selected shader expects. Coopmat's t_bias binding is a buffer
+      // scalar array; a passthrough on a non-buffer bias would mismatch.
       packed_bias = prepack_standard(
           graph,
           bias,
           graph.storage_type_of(out),
           utils::kWidthPacked,
-          /*passthrough=*/force_buffer);
+          /*passthrough=*/false);
     }
     if (impl_selector == "coopmat") {
       add_linear_coopmat_node(
