@@ -857,6 +857,13 @@ class SPVGenerator:
         for key, value in variant_params.items():
             shader_params[key] = value
 
+        # Downgrade PRECISION to mediump for half-precision variants.
+        if (
+            shader_params.get("DTYPE") == "half"
+            and shader_params.get("PRECISION") == "highp"
+        ):
+            shader_params["PRECISION"] = "mediump"
+
         return shader_params
 
     def constructOutputMap(self) -> None:
