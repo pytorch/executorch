@@ -275,6 +275,12 @@ class AotiBackend(ABC):
         os.remove(so_path)
         os.remove(blob_path)
 
+        # Release device memory held by tensors that ``move_to_device_pass``
+        # placed on the target device. Default impl is a no-op; concrete
+        # backends (e.g. CudaBackend) override this to free GPU memory before
+        # the next preprocess call (e.g. for the next method).
+        cls.release_moved_tensors(device_edge_program, compile_specs)
+
         return PreprocessResult(
             processed_bytes=b"",
             debug_handle_map={},

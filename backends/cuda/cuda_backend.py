@@ -392,49 +392,37 @@ class CudaBackend(AotiBackend, BackendDetails):
         return False
 
     @classmethod
-    def preprocess_multimethod(
+    def release_moved_tensors(
         cls,
-        edge_programs,
-        compile_specs,
-    ):
+        device_edge_program,
+        compile_specs: List[CompileSpec],
+    ) -> None:
         """
-        Override of base preprocess_multimethod to run aggressive GPU cleanup
-        between methods (e.g. decode then prefill). Inductor caches hold CUDA
-        tensors from the first compilation, causing the second to OOM under
-        tight VRAM caps (e.g. 24GB simulating an RTX 4090).
+        Free GPU memory held by tensors that ``move_to_device_pass`` placed
+        on CUDA (params, buffers, and constants of ``device_edge_program``).
 
-        The aggressive cleanup (resizing every CUDA tensor's storage to 0)
-        is only enabled for methods that opt into ``low_memory_mode="ON"``
-        — it can otherwise break models that expect their CUDA tensors to
-        stay live across method preprocessing.
+        Resizing the underlying storage to 0 returns those bytes to PyTorch's
+        caching allocator, so the next ``preprocess`` call (e.g. for the
+        next method in a multi-method export) can reuse them when its own
+        ``move_to_device_pass`` runs.
         """
-        import gc
+        if not torch.cuda.is_available():
+            return
 
-        preprocess_results = {}
-        for method_name, programs in edge_programs.items():
-            assert method_name in compile_specs
-            compile_specs_for_method = compile_specs[method_name]
-            assert len(compile_specs_for_method) == len(programs)
-            results_for_method = []
-            for program, compile_spec_for_program in zip(
-                programs, compile_specs_for_method
-            ):
-                preprocess_result = cls.preprocess(program, compile_spec_for_program)
-                results_for_method.append(preprocess_result)
+        pools = []
+        state_dict = getattr(device_edge_program, "state_dict", None)
+        if state_dict:
+            pools.append(state_dict.values())
+        constants = getattr(device_edge_program, "constants", None)
+        if constants:
+            pools.append(constants.values())
 
-                # GPU cleanup between methods. Aggressive storage resize is
-                # only run for methods that opt into low-memory mode.
-                if torch.cuda.is_available():
-                    if cls._is_low_memory_mode(compile_spec_for_program):
-                        gc.collect()
-                        for obj in gc.get_objects():
-                            if isinstance(obj, torch.Tensor) and obj.is_cuda:
-                                try:
-                                    obj.untyped_storage().resize_(0)
-                                except Exception:
-                                    pass
-                    gc.collect()
-                    torch.cuda.empty_cache()
-
-            preprocess_results[method_name] = results_for_method
-        return preprocess_results
+        for pool in pools:
+            for tensor in pool:
+                if isinstance(tensor, torch.Tensor) and tensor.is_cuda:
+                    try:
+                        tensor.untyped_storage().resize_(0)
+                    except Exception:
+                        # Some storages may be shared / non-resizable; skip
+                        # them rather than failing the export.
+                        pass
