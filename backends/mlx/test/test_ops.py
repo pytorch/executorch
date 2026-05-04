@@ -28,6 +28,7 @@ from typing import Callable, Dict, List, Optional, Tuple
 
 import torch
 import torch.nn as nn
+import torch.nn.functional as F
 
 # Import custom ops for RoPE and KV cache tests
 from executorch.backends.mlx import (  # noqa: F401 - registers mlx ops  # noqa: F401 - registers mlx.rope
@@ -3608,6 +3609,28 @@ class IndexTest(OpTestCase):
         return (x, indices)
 
 
+class Unfold1DModel(nn.Module):
+    """1D unfold decomposes through aten.index.Tensor in the codec conv path."""
+
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        return F.unfold(x.unsqueeze(-1), kernel_size=(3, 1), stride=(1, 1))
+
+
+@register_test
+class Unfold1DTest(OpTestCase):
+    """Regression test for aten.index.Tensor order in F.unfold."""
+
+    name = "unfold_1d"
+    rtol = 1e-5
+    atol = 1e-5
+
+    def create_model(self) -> nn.Module:
+        return Unfold1DModel()
+
+    def create_inputs(self) -> Tuple[torch.Tensor, ...]:
+        return (torch.arange(10, dtype=torch.float32).reshape(1, 2, 5),)
+
+
 class AdvancedIndexModel(nn.Module):
     """Model that performs advanced (multi-index) tensor indexing.
 
@@ -3669,6 +3692,33 @@ class AdvancedIndexTest(OpTestCase):
             idx = torch.randint(0, self.input_shape[dim], (self.num_indices,))
             indices.append(idx)
         return (x, *indices)
+
+
+class SeparatedAdvancedIndexModel(nn.Module):
+    """Advanced indices separated by a basic slice keep broadcast dims in front."""
+
+    def forward(
+        self, x: torch.Tensor, idx0: torch.Tensor, idx2: torch.Tensor
+    ) -> torch.Tensor:
+        return x[idx0, :, idx2]
+
+
+@register_test
+class SeparatedAdvancedIndexTest(OpTestCase):
+    """Regression test for separated advanced-index dimensions."""
+
+    name = "advanced_index_separated"
+    rtol = 1e-5
+    atol = 1e-5
+
+    def create_model(self) -> nn.Module:
+        return SeparatedAdvancedIndexModel()
+
+    def create_inputs(self) -> Tuple[torch.Tensor, ...]:
+        x = torch.arange(2 * 3 * 5, dtype=torch.float32).reshape(2, 3, 5)
+        idx0 = torch.tensor([[0], [1]], dtype=torch.long)
+        idx2 = torch.tensor([[0, 2, 4]], dtype=torch.long)
+        return (x, idx0, idx2)
 
 
 class IndexUpdateModel(nn.Module):

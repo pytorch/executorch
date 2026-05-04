@@ -1683,6 +1683,9 @@ def _index_gather_permutation(
     x_ndim: int,
     broadcast_ndim: int,
 ) -> List[int]:
+    # PyTorch decomposes F.unfold to aten.index.Tensor, and the Voxtral codec
+    # uses that path for ConvTranspose1d. Match PyTorch's advanced-index
+    # placement so MLX gather preserves the codec patch/channel order.
     indexed_axes_sorted = sorted(indexed_axes)
     expected_rank = broadcast_ndim + x_ndim
     is_contiguous = indexed_axes_sorted == list(
