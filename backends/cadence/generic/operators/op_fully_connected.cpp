@@ -27,7 +27,8 @@ void linear(
     Tensor& output) {
   const float* __restrict__ input_data = input.const_data_ptr<float>();
   const float* __restrict__ weight_data = weight.const_data_ptr<float>();
-  const float* __restrict__ bias_data = bias.value().const_data_ptr<float>();
+  const float* __restrict__ bias_data =
+      bias.has_value() ? bias.value().const_data_ptr<float>() : nullptr;
   float* __restrict__ output_data = output.mutable_data_ptr<float>();
 
   // input comes in shape [batch_size, in_dim]
@@ -43,7 +44,7 @@ void linear(
 
   for (int i = 0; i < leading_dims; ++i) {
     for (int j = 0; j < M; ++j) {
-      float sum = bias_data[j];
+      float sum = bias_data != nullptr ? bias_data[j] : 0.0f;
       for (int k = 0; k < N; ++k) {
         sum += input_data[i * N + k] * weight_data[j * N + k];
       }
