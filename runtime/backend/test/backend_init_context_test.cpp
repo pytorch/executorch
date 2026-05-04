@@ -97,14 +97,14 @@ TEST_F(BackendInitContextTest, GetRuntimeSpecIntValid) {
   EXPECT_EQ(result2.get(), 32);
 }
 
-// Test get_runtime_spec<int64_t> with valid key (covers pointer-sized handle
+// Test get_runtime_spec<uint64_t> with valid key (covers pointer-sized handle
 // use case, e.g., CUDA driver handles like CUgreenCtx).
-TEST_F(BackendInitContextTest, GetRuntimeSpecInt64Valid) {
+TEST_F(BackendInitContextTest, GetRuntimeSpecUint64Valid) {
   BackendOptions<2> opts;
-  // Use a value with the top bit clear so the literal is well-defined as a
-  // signed int64_t across toolchains.
-  constexpr int64_t kHandle = static_cast<int64_t>(0x123456789ABCDEF0LL);
-  constexpr int64_t kLargeOffset = static_cast<int64_t>(0x7FFFFFFFFFFFFFFFLL);
+  // uint64_t and uintptr_t are both unsigned, so any 64-bit bit pattern is a
+  // valid value of the variant arm -- including the all-ones case.
+  constexpr uint64_t kHandle = static_cast<uint64_t>(0x123456789ABCDEF0ULL);
+  constexpr uint64_t kLargeOffset = static_cast<uint64_t>(0xFFFFFFFFFFFFFFFFULL);
   opts.set_option("opaque_handle", kHandle);
   opts.set_option("large_offset", kLargeOffset);
 
@@ -113,11 +113,11 @@ TEST_F(BackendInitContextTest, GetRuntimeSpecInt64Valid) {
 
   BackendInitContext context(nullptr, nullptr, nullptr, nullptr, const_span);
 
-  auto result1 = context.get_runtime_spec<int64_t>("opaque_handle");
+  auto result1 = context.get_runtime_spec<uint64_t>("opaque_handle");
   EXPECT_TRUE(result1.ok());
   EXPECT_EQ(result1.get(), kHandle);
 
-  auto result2 = context.get_runtime_spec<int64_t>("large_offset");
+  auto result2 = context.get_runtime_spec<uint64_t>("large_offset");
   EXPECT_TRUE(result2.ok());
   EXPECT_EQ(result2.get(), kLargeOffset);
 }
@@ -170,7 +170,7 @@ TEST_F(BackendInitContextTest, GetRuntimeSpecTypeMismatch) {
   BackendOptions<4> opts;
   opts.set_option("bool_opt", true);
   opts.set_option("int_opt", 42);
-  opts.set_option("int64_opt", static_cast<int64_t>(0x123456789ABCDEF0LL));
+  opts.set_option("uint64_opt", static_cast<uint64_t>(0x123456789ABCDEF0ULL));
   opts.set_option("string_opt", "hello");
 
   auto view = opts.view();
@@ -193,14 +193,14 @@ TEST_F(BackendInitContextTest, GetRuntimeSpecTypeMismatch) {
   EXPECT_FALSE(result3.ok());
   EXPECT_EQ(result3.error(), Error::InvalidArgument);
 
-  // int and int64_t are distinct variant arms; reading an int as int64_t
+  // int and uint64_t are distinct variant arms; reading an int as uint64_t
   // (and vice versa) must fail with InvalidArgument rather than implicit
   // narrowing/widening.
-  auto result4 = context.get_runtime_spec<int64_t>("int_opt");
+  auto result4 = context.get_runtime_spec<uint64_t>("int_opt");
   EXPECT_FALSE(result4.ok());
   EXPECT_EQ(result4.error(), Error::InvalidArgument);
 
-  auto result5 = context.get_runtime_spec<int>("int64_opt");
+  auto result5 = context.get_runtime_spec<int>("uint64_opt");
   EXPECT_FALSE(result5.ok());
   EXPECT_EQ(result5.error(), Error::InvalidArgument);
 }

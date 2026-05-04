@@ -99,7 +99,7 @@ class BackendInitContext final {
   /**
    * Get a runtime spec value by key and type.
    *
-   * @tparam T The expected type (bool, int, int64_t, or const char*)
+   * @tparam T The expected type (bool, int, uint64_t, or const char*)
    * @param key The option key to look up.
    * @return Result containing the value if found and type matches,
    *         Error::NotFound if key doesn't exist,
@@ -109,8 +109,8 @@ class BackendInitContext final {
   Result<T> get_runtime_spec(const char* key) const {
     static_assert(
         std::is_same_v<T, bool> || std::is_same_v<T, int> ||
-            std::is_same_v<T, int64_t> || std::is_same_v<T, const char*>,
-        "get_runtime_spec<T> only supports bool, int, int64_t, and const char*");
+            std::is_same_v<T, uint64_t> || std::is_same_v<T, const char*>,
+        "get_runtime_spec<T> only supports bool, int, uint64_t, and const char*");
 
     for (size_t i = 0; i < runtime_specs_.size(); ++i) {
       const auto& opt = runtime_specs_[i];
