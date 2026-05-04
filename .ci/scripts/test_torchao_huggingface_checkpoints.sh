@@ -147,7 +147,6 @@ fi
 if [[ "$TEST_WITH_RUNNER" -eq 1 ]]; then
   echo "[runner] Building and testing llama_main ..."
     cmake -DPYTHON_EXECUTABLE=python \
-        -DCMAKE_INSTALL_PREFIX=cmake-out \
         -DEXECUTORCH_ENABLE_LOGGING=1 \
         -DCMAKE_BUILD_TYPE=Release \
         -DEXECUTORCH_BUILD_EXTENSION_DATA_LOADER=ON \
@@ -163,15 +162,7 @@ if [[ "$TEST_WITH_RUNNER" -eq 1 ]]; then
         -DEXECUTORCH_BUILD_KERNELS_LLM=ON \
         -DEXECUTORCH_BUILD_KERNELS_TORCHAO=${EXECUTORCH_BUILD_KERNELS_TORCHAO} \
         -Bcmake-out .
-    cmake --build cmake-out -j16 --config Release --target install
-
-
-    # Install llama runner
-    cmake -DPYTHON_EXECUTABLE=python \
-        -DCMAKE_BUILD_TYPE=Release \
-        -Bcmake-out/examples/models/llama \
-        examples/models/llama
-    cmake --build cmake-out/examples/models/llama -j16 --config Release
+    cmake --build cmake-out -j16 --config Release --target llama_main
 
     # Run the model
     ./cmake-out/examples/models/llama/llama_main --model_path=$MODEL_OUT --tokenizer_path="${HF_MODEL_DIR}/tokenizer.json" --prompt="Once upon a time,"

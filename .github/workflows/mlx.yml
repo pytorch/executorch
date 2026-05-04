@@ -437,9 +437,7 @@ jobs:
         echo "::endgroup::"
 
         echo "::group::Build Llama runner with MLX"
-        pushd examples/models/llama
-        ${CONDA_RUN} cmake --workflow --preset llama-release
-        popd
+        ${CONDA_RUN} cmake --build cmake-out --target llama_main
         echo "::endgroup::"
 
         echo "::group::Download stories110M artifacts"

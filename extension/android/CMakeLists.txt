@@ -137,7 +137,7 @@ if(TARGET vulkan_backend)
 endif()
 
 if(EXECUTORCH_BUILD_KERNELS_LLM)
-  list(APPEND link_libraries $<LINK_LIBRARY:WHOLE_ARCHIVE,custom_ops>)
+  list(APPEND link_libraries custom_ops)
 endif()
 
 if(TARGET pthreadpool)

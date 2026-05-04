@@ -444,6 +444,35 @@
         "install"
       ],
       "jobs": 0
+    },
+    {
+      "name": "llama-release-build",
+      "displayName": "Build llama_main (Release)",
+      "configurePreset": "llm-release",
+      "configuration": "Release",
+      "targets": [
+        "llama_main"
+      ],
+      "jobs": 0
+    },
+    {
+      "name": "llama-cuda-build",
+      "displayName": "Build llama_main with CUDA (Release)",
+      "configurePreset": "llm-release-cuda",
+      "configuration": "Release",
+      "targets": [
+        "llama_main"
+      ],
+      "jobs": 0
+    },
+    {
+      "name": "llama-cuda-debug-build",
+      "displayName": "Build llama_main with CUDA (Debug)",
+      "configurePreset": "llm-debug-cuda",
+      "targets": [
+        "llama_main"
+      ],
+      "jobs": 0
     }
   ],
   "workflowPresets": [
@@ -584,6 +613,48 @@
         {
           "type": "build",
           "name": "mlx-debug-install"
+        }
+      ]
+    },
+    {
+      "name": "llama-release",
+      "displayName": "Configure and build llama_main (Release, CPU)",
+      "steps": [
+        {
+          "type": "configure",
+          "name": "llm-release"
+        },
+        {
+          "type": "build",
+          "name": "llama-release-build"
+        }
+      ]
+    },
+    {
+      "name": "llama-cuda",
+      "displayName": "Configure and build llama_main (Release, CUDA)",
+      "steps": [
+        {
+          "type": "configure",
+          "name": "llm-release-cuda"
+        },
+        {
+          "type": "build",
+          "name": "llama-cuda-build"
+        }
+      ]
+    },
+    {
+      "name": "llama-cuda-debug",
+      "displayName": "Configure and build llama_main (Debug, CUDA)",
+      "steps": [
+        {
+          "type": "configure",
+          "name": "llm-debug-cuda"
+        },
+        {
+          "type": "build",
+          "name": "llama-cuda-debug-build"
         }
       ]
     }
