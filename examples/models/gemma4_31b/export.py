@@ -148,22 +148,14 @@ def _export_cuda(model: Gemma4_31B, config: Gemma4_31BConfig, output_dir: str) -
     inductor_config.coordinate_descent_tuning = False
     inductor_config.aot_inductor.compile_wrapper_opt_level = "O0"
 
+    from executorch.backends.cuda.transforms.int4_linear_dispatch import (
+        use_tinygemm_linears,
+    )
+
     materialize_runtime_buffers(model, dtype=torch.bfloat16)
 
-    print("Exporting decode (T=1)...")
-    with torch.no_grad():
-        decode_ep = export(
-            model,
-            (
-                torch.tensor([[0]], dtype=torch.long),
-                torch.tensor([0], dtype=torch.long),
-                torch.tensor([1.0], dtype=torch.float32),
-            ),
-            strict=True,
-        )
-
-    # Cap prefill length to the ring-buffer KV cache size (2×sliding_window).
-    # Longer prompts are chunked by the runner.
+    # Prefill first (T>=2): default IntxUnpacked dispatch does dequant+cuBLAS,
+    # which is optimal for large M (compute-bound).
     max_prefill = min(config.max_seq_len - 1, config.sliding_window * 2)
     seq_dim = Dim("seq_len", min=2, max=max_prefill)
     print(f"Exporting prefill (T in [2, {max_prefill}])...")
@@ -176,6 +168,21 @@ def _export_cuda(model: Gemma4_31B, config: Gemma4_31BConfig, output_dir: str) -
                 torch.tensor([1.0], dtype=torch.float32),
             ),
             dynamic_shapes=({1: seq_dim}, {0: seq_dim}, None),
+            strict=True,
+        )
+
+    # Decode second (T=1): convert to tinygemm, optimal for M=1 (bandwidth-bound).
+    print("Converting INT4 linears to tinygemm for decode...")
+    use_tinygemm_linears(model)
+    print("Exporting decode (T=1)...")
+    with torch.no_grad():
+        decode_ep = export(
+            model,
+            (
+                torch.tensor([[0]], dtype=torch.long),
+                torch.tensor([0], dtype=torch.long),
+                torch.tensor([1.0], dtype=torch.float32),
+            ),
             strict=True,
         )
 

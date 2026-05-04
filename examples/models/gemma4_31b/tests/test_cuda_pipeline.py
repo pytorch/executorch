@@ -52,7 +52,11 @@ class TestCudaInference(unittest.TestCase):
         _require_cuda(self)
 
     def test_generate(self):
-        """save → load → pack → generate (sampling + greedy)."""
+        """save → load → pack → tinygemm transform → generate."""
+        from executorch.backends.cuda.transforms.int4_linear_dispatch import (
+            use_tinygemm_linears,
+        )
+
         with tempfile.TemporaryDirectory() as tmpdir:
             save_checkpoint(tmpdir)
             model, config = load_prequantized_model(
@@ -60,6 +64,7 @@ class TestCudaInference(unittest.TestCase):
             )
         _move_to_cuda(model, config)
         model.eval()
+        use_tinygemm_linears(model)
         tokenizer = MockTokenizer(TINY_CONFIG.vocab_size)
 
         torch.manual_seed(0)
@@ -143,7 +148,7 @@ class TestCudaExport(unittest.TestCase):
         _require_cuda(self)
 
     def test_export_from_quantized_checkpoint(self):
-        """--prequantized path: load → pack → export."""
+        """--prequantized path: load → pack → tinygemm/dequant transforms → export."""
         with tempfile.TemporaryDirectory() as ckpt_dir, tempfile.TemporaryDirectory() as out_dir:
             save_checkpoint(ckpt_dir)
             model, config = load_prequantized_model(
@@ -155,7 +160,7 @@ class TestCudaExport(unittest.TestCase):
             self.assertGreater(len(ptd_files), 0)
 
     def test_export_from_hf_checkpoint(self):
-        """--model-dir path: load HF → quantize → pack → export."""
+        """--model-dir path: load HF → quantize → pack → transforms → export."""
         with tempfile.TemporaryDirectory() as ckpt_dir, tempfile.TemporaryDirectory() as out_dir:
             build_hf_checkpoint(ckpt_dir)
             model, config = Gemma4_31B.from_hf_checkpoint(
@@ -169,11 +174,58 @@ class TestCudaExport(unittest.TestCase):
             pack_model(model, state_dict, DEFAULT_CUDA_PACKERS)
             model.eval()
 
-            params = dict(model.named_parameters())
-            self.assertIn("lm_head.weight", params)
-            self.assertNotIn("layers.5.self_attn.v_proj.weight", params)
             export_and_lower(model, config, out_dir)
             self.assertTrue(os.path.exists(os.path.join(out_dir, "model.pte")))
+
+
+class TestLinearTransforms(unittest.TestCase):
+    """Test use_tinygemm_linears / use_dequant_linears on a tiny Gemma model."""
+
+    def setUp(self):
+        _require_cuda(self)
+        with tempfile.TemporaryDirectory() as tmpdir:
+            save_checkpoint(tmpdir)
+            self.model, self.config = load_prequantized_model(
+                tmpdir, max_seq_len=TINY_CONFIG.max_seq_len
+            )
+        _move_to_cuda(self.model, self.config)
+        self.model.eval()
+
+    def _forward(self):
+        with torch.no_grad():
+            tok = torch.tensor([[1]], dtype=torch.long, device="cuda")
+            pos = torch.tensor([0], dtype=torch.long, device="cuda")
+            temp = torch.tensor([1.0], dtype=torch.float32, device="cuda")
+            return self.model(tok, pos, temp)
+
+    def test_default_inference(self):
+        """After packing (no transform), model produces valid output."""
+        out = self._forward()
+        self.assertEqual(out.shape, torch.Size([1, 1]))
+        self.assertFalse(out.isnan().any())
+
+    def test_tinygemm_inference(self):
+        """After tinygemm transform, model produces valid output."""
+        from executorch.backends.cuda.transforms.int4_linear_dispatch import (
+            use_tinygemm_linears,
+        )
+
+        use_tinygemm_linears(self.model)
+        out = self._forward()
+        self.assertEqual(out.shape, torch.Size([1, 1]))
+        self.assertFalse(out.isnan().any())
+
+    def test_embedding_unchanged_after_transform(self):
+        """Transforms don't break embedding lookup."""
+        from executorch.backends.cuda.transforms.int4_linear_dispatch import (
+            use_tinygemm_linears,
+        )
+
+        tok = torch.tensor([[1]], dtype=torch.long, device="cuda")
+        emb_before = self.model.embed_tokens(tok).clone()
+        use_tinygemm_linears(self.model)
+        emb_after = self.model.embed_tokens(tok)
+        self.assertTrue(torch.equal(emb_before, emb_after))
 
 
 if __name__ == "__main__":

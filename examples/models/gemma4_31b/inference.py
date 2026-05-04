@@ -185,6 +185,12 @@ def main() -> None:
     _move_to_cuda(model, config)
     model.eval()
 
+    from executorch.backends.cuda.transforms.int4_linear_dispatch import (
+        use_tinygemm_linears,
+    )
+
+    use_tinygemm_linears(model)
+
     if not args.no_compile:
         print("Compiling model with torch.compile...")
         model = torch.compile(model, mode="default")

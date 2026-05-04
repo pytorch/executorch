@@ -4,13 +4,14 @@
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
 
-"""CUDA packer: torchao quantized tensors → CUDA runtime format.
+"""CUDA packer: assign quantized weights to model modules.
 
-Converts ``Int4Tensor`` to ``Int4TilePackedTo4dTensor`` (tinygemm) and
-passes ``IntxUnpackedToInt8Tensor`` through unchanged (AOTI fuses
-the dequantize-matmul pattern).
+Converts ``Int4Tensor`` (nibble-packed) to ``IntxUnpackedToInt8Tensor``
+(int4 values unpacked to int8).  Passes ``IntxUnpackedToInt8Tensor``
+(8-bit) through unchanged.
 
-The backend-agnostic ``pack_model`` dispatcher lives in ``pack.py``.
+No CUDA is required for packing.  The backend-agnostic ``pack_model``
+dispatcher lives in ``pack.py``.
 """
 
 import json
@@ -25,77 +26,36 @@ from .pack import ModulePackerFn, pack_model  # noqa: F401
 # Low-level converters
 
 
-def pack_int4_for_cuda(
-    weight: torch.Tensor,
-    device: str = "cuda",
-) -> nn.Parameter:
-    """Convert an ``Int4Tensor`` to ``Int4TilePackedTo4dTensor`` for tinygemm.
+def int4_tensor_to_intx(weight: torch.Tensor) -> torch.Tensor:
+    """Convert an ``Int4Tensor`` to ``IntxUnpackedToInt8Tensor``.
 
-    Unpacks nibbles, pads to tinygemm alignment, tile-packs via CUDA kernel,
-    and builds the combined scale_and_zero tensor.
-
-    TODO: replace with ``Int4TilePackedTo4dTensor.from_int4_tensor()`` once
-    that's upstreamed to torchao.
+    Unpacks nibble-packed qdata to int8 (keeping unsigned [0, 15] values)
+    and transposes scale/zero_point from Int4Tensor's ``(K//gs, N)``
+    layout to ``(N, K//gs)``.  Uses bf16 zero_point to preserve the
+    asymmetric offset.
     """
-    from torchao.quantization.quantize_.workflows.int4.int4_tile_packed_to_4d_tensor import (
-        Int4TilePackedTo4dTensor,
-    )
-    from torchao.quantization.utils import pack_tinygemm_scales_and_zeros
-    from torchao.utils import find_multiple
+    from torchao.quantization import IntxUnpackedToInt8Tensor
 
-    original_shape = weight.shape
-    N, K = original_shape
+    N, K = weight.shape
     gs = weight.block_size[-1]
-    inner_k_tiles = 8
 
-    # Unpack Int4Tensor nibbles to int32
     p = weight.qdata.to(torch.uint8)
-    low = (p & 0x0F).to(torch.int32)
-    high = ((p >> 4) & 0x0F).to(torch.int32)
-    int_data = torch.stack([low, high], dim=-1).reshape(N, K)
+    low = (p & 0x0F).to(torch.int8)
+    high = ((p >> 4) & 0x0F).to(torch.int8)
+    qdata = torch.stack([low, high], dim=-1).reshape(N, K)
 
-    # Scale/zero: Int4Tensor stores (K//gs, N), transpose to (N, K//gs)
     scale = weight.scale.t().contiguous()
-    zero = weight.zero_point.t().contiguous()
+    zero_point = weight.zero_point.t().contiguous()
 
-    # Pad to tinygemm alignment
-    K_padded = find_multiple(K, 1024)
-    N_padded = find_multiple(N, 8)
-    if K_padded != K or N_padded != N:
-        int_data = torch.nn.functional.pad(int_data, (0, K_padded - K, 0, N_padded - N))
-        n_groups_padded = K_padded // gs
-        n_groups_orig = K // gs
-        scale = torch.nn.functional.pad(
-            scale, (0, n_groups_padded - n_groups_orig, 0, N_padded - N)
-        )
-        zero = torch.nn.functional.pad(
-            zero, (0, n_groups_padded - n_groups_orig, 0, N_padded - N)
-        )
-
-    int_data = int_data.to(device)
-    scale = scale.to(device)
-    zero = zero.to(device)
-
-    # Convert zero-point convention: tinygemm uses zp_tg = (8 - zp_std) * scale
-    tinygemm_zero = (8 - zero.float()) * scale.float()
-
-    # Tinygemm nibble convention: even=HIGH, odd=LOW
-    int_data_u8 = (int_data[:, ::2] << 4 | int_data[:, 1::2]).to(torch.uint8)
-    packed_weight = torch.ops.aten._convert_weight_to_int4pack(
-        int_data_u8.contiguous(), inner_k_tiles
+    return IntxUnpackedToInt8Tensor(
+        qdata=qdata,
+        scale=scale,
+        zero_point=zero_point,
+        target_dtype=torch.int8,
+        block_size=(1, gs),
+        dtype=torch.bfloat16,
+        activation_quantization=None,
     )
-
-    scale_and_zero = pack_tinygemm_scales_and_zeros(
-        scale.to(torch.bfloat16), tinygemm_zero.to(torch.bfloat16), torch.bfloat16
-    )
-
-    subclass = Int4TilePackedTo4dTensor(
-        qdata=packed_weight,
-        scale_and_zero=scale_and_zero,
-        block_size=[1, gs],
-        shape=torch.Size(original_shape),
-    )
-    return nn.Parameter(subclass, requires_grad=False)
 
 
 # ---------------------------------------------------------------------------
@@ -109,11 +69,7 @@ def pack_linear_for_cuda(module: nn.Module, weights: dict[str, torch.Tensor]) ->
 
     w = weights["weight"]
     if isinstance(w, Int4Tensor):
-        # Pack on CUDA (required by _convert_weight_to_int4pack), move back
-        # to CPU for assembly. The model moves to CUDA later at runtime.
-        packed = pack_int4_for_cuda(w, device="cuda")
-        module.weight = nn.Parameter(packed.detach().to("cpu"), requires_grad=False)
-        torch.cuda.empty_cache()
+        module.weight = nn.Parameter(int4_tensor_to_intx(w), requires_grad=False)
     elif isinstance(w, IntxUnpackedToInt8Tensor):
         module.weight = nn.Parameter(w, requires_grad=False)
     else:
@@ -130,7 +86,7 @@ def pack_embedding_for_cuda(
     if isinstance(w, Int4Tensor):
         raise ValueError(
             "Only 8-bit embedding quantization is supported on CUDA. "
-            "Int4TilePackedTo4dTensor does not implement the embedding op."
+            "INT4 does not implement the embedding op."
         )
     module.weight = nn.Parameter(w, requires_grad=False)
 
@@ -150,7 +106,7 @@ def load_and_pack_for_cuda(
     model: nn.Module,
     packers: dict[type, ModulePackerFn] | None = None,
 ) -> None:
-    """Load a quantized safetensors file and pack for CUDA."""
+    """Load a quantized safetensors file and assign weights to the model."""
     from safetensors import safe_open
     from torchao.prototype.safetensors.safetensors_support import (
         unflatten_tensor_state_dict,
