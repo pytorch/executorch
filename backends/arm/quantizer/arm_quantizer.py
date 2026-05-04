@@ -478,7 +478,7 @@ class TOSAQuantizer(Quantizer):
     def __init__(
         self,
         compile_spec_or_tosa_spec,
-        use_composable_quantizer: bool = False,
+        use_composable_quantizer: bool = True,
     ) -> None:
         """Create a TOSA quantizer from a TOSA spec or Arm compile spec.
 

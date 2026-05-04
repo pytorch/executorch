@@ -243,6 +243,18 @@ class PatternQuantizer(Quantizer, QuantizerReporterUser):
 
     """
 
+    PARAMETER_TARGETS = {
+        torch.ops.aten.linear.default,
+        torch.ops.aten.convolution.default,
+        torch.ops.aten.conv1d.default,
+        torch.ops.aten.conv1d.padding,
+        torch.ops.aten.conv2d.default,
+        torch.ops.aten.conv2d.padding,
+        torch.ops.aten.conv3d.default,
+        torch.ops.aten.conv3d.padding,
+        torch.ops.aten.conv_transpose2d.input,
+    }
+
     def __init__(
         self,
         quantization_config: QuantizationConfig | None,
@@ -275,75 +287,59 @@ class PatternQuantizer(Quantizer, QuantizerReporterUser):
             support_config_path,
         )
 
-    def is_parameter(self, node: Node, model: torch.fx.GraphModule) -> bool:
-        """Returns True if the given node is a parameter of the model."""
-        try:
-            _ = model.get_parameter(node.target)  # type: ignore[arg-type]
-            return True
-        except Exception:
+    def is_weight(self, node: Node) -> bool:
+        """Returns True if node is used as a weight by all users."""
+        if node.op != "get_attr":
             return False
 
-    def is_weight(
-        self, node: Node, params: list[Node], model: torch.fx.GraphModule
-    ) -> bool:
-        """Returns True if node is the first parameter of the given
-        parameters.
-        """
-        return len(params) > 0 and node == params[0]
+        # Ensure that the node is used as a weight by all users
+        for user_node in node.users:
+            if user_node.target not in self.PARAMETER_TARGETS:
+                return False
 
-    def is_bias(
-        self, node: Node, params: list[Node], model: torch.fx.GraphModule
-    ) -> bool:
-        """Returns True if node is the second parameter of the given
-        parameters.
-        """
-        return len(params) == 2 and node == params[1]
+            args = list(user_node.args)
+            if not (len(args) > 1 and node == args[1]):
+                return False
+
+        return True
+
+    def is_bias(self, node: Node) -> bool:
+        """Returns True if node is used as a bias by all users."""
+        if node.op != "get_attr":
+            return False
+
+        # Ensure that the node is used as a bias by all users
+        for user_node in node.users:
+            if user_node.target not in self.PARAMETER_TARGETS:
+                return False
+
+            args = list(user_node.args)
+            if not (len(args) > 2 and node == args[2]):
+                return False
+
+        return True
 
     def annotate_match(
         self,
         match: list[Node],
         config: QuantizationConfig | None,
-        model: torch.fx.GraphModule,
     ) -> None:
         """Annotates a matched pattern according to the given quantization
         config.
         """
-        parameter_targets = {
-            torch.ops.aten.linear.default,
-            torch.ops.aten.convolution.default,
-            torch.ops.aten.conv1d.default,
-            torch.ops.aten.conv1d.padding,
-            torch.ops.aten.conv2d.default,
-            torch.ops.aten.conv2d.padding,
-            torch.ops.aten.conv3d.default,
-            torch.ops.aten.conv3d.padding,
-            torch.ops.aten.conv_transpose2d.input,
-        }
 
         for node in match:
             input_qspec_map = {}
             output_qspec = None
 
-            params = [n for n in node.all_input_nodes if self.is_parameter(n, model)]
-            if node.target in parameter_targets:
-                if len(params) == 0 or len(params) > 2:
-                    logger.warning(
-                        f"{node.name} is expected to have parameter tensors for weight/bias but no such inputs found, which may cause unexpected quantization annotations. This is likely caused by incorrect tensor instantiations or non-constant weight/biases."
-                    )
-            else:
-                if len(params) > 0:
-                    logger.warning(
-                        f"{node.name} is not expected to not have parameter tensors but found {[n.name for n in params]}, which may cause unexpected quantization annotations."
-                    )
-
             for input_node in node.all_input_nodes:
                 if not has_float_output(input_node):
                     continue
-                if self.is_weight(input_node, params, model):
+                if self.is_weight(input_node):
                     input_qspec_map[input_node] = (
                         config.get_weight_qspec(node) if config else None
                     )
-                elif self.is_bias(input_node, params, model):
+                elif self.is_bias(input_node):
                     input_qspec_map[input_node] = (
                         config.get_bias_qspec(node) if config else None  # type: ignore[assignment]
                     )
@@ -370,7 +366,7 @@ class PatternQuantizer(Quantizer, QuantizerReporterUser):
         )
         for result in matches:
             if result.accepted:
-                self.annotate_match(result.pattern, self.quantization_config, model)
+                self.annotate_match(result.pattern, self.quantization_config)
                 self.report_accept(result.pattern)
             else:
                 self.report_reject(
@@ -424,6 +420,9 @@ class SharedQspecQuantizer(Quantizer, QuantizerReporterUser):
         torch.ops.aten.flip.default,
         torch.ops.aten.index_select.default,
         torch.ops.aten.index_put.default,
+        torch.ops.aten.index_put_.default,
+        torch.ops.aten.index_copy.default,
+        torch.ops.aten.index_copy_.default,
         torch.ops.aten.contiguous.default,
         torch.ops.aten.as_strided_copy.default,
         torch.ops.aten.pixel_shuffle.default,
@@ -571,6 +570,42 @@ class SharedQspecQuantizer(Quantizer, QuantizerReporterUser):
 
         return shared_nodes, adjacent_qspecs
 
+    def _should_skip_while_shared_qspec(self, node: Node) -> bool:
+        return node.target == torch.ops.higher_order.while_loop and bool(
+            node.meta.get("additional_inputs")
+        )
+
+    def _annotate_while_with_additional_inputs(
+        self,
+        root_node: Node,
+        adjacent_qspecs: list[Any],
+    ) -> bool:
+        if not self._should_skip_while_shared_qspec(root_node):
+            return False
+        if len(adjacent_qspecs) == 0:
+            self.report_reject(
+                [root_node],
+                "Couldn't find any adjacent quantization spec to annotate while_loop.",
+            )
+            return True
+
+        input_qspec = adjacent_qspecs[0]
+        input_qspec_map: dict[Node, Optional[QuantizationSpec]] = {
+            n: input_qspec for n in self._get_input_nodes_with_float_output(root_node)
+        }
+        output_qspec: Optional[QuantizationSpec] = None
+        if len(self._get_user_nodes_with_float_input(root_node)) > 0:
+            output_qspec = input_qspec
+
+        _mark_node_as_quantized(
+            root_node,
+            input_qspec_map,
+            output_qspec,
+            is_quantized=True,
+        )
+        self.report_accept([root_node])
+        return True
+
     def _annotate_shared_cluster(self, root_node: Node) -> None:
         if (
             len(self._get_input_nodes_with_float_output(root_node)) == 0
@@ -592,9 +627,11 @@ class SharedQspecQuantizer(Quantizer, QuantizerReporterUser):
         node_order = {node: index for index, node in enumerate(root_node.graph.nodes)}
         ordered_nodes = sorted(shared_nodes, key=lambda node: node_order.get(node, 0))
 
+        if self._annotate_while_with_additional_inputs(root_node, adjacent_qspecs):
+            return
+
         # Ensure the root node is the first one in the graph.
         root_node = ordered_nodes[0]
-
         if len(adjacent_qspecs) > 0:
             root_node_float_inputs = self._get_input_nodes_with_float_output(root_node)
             if len(root_node_float_inputs) > 0:
