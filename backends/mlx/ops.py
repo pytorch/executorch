@@ -1678,82 +1678,115 @@ def _repeat_handler(P: MLXProgramBuilder, n: Node) -> Slot:
     return out
 
 
-@REGISTRY.register(target=[torch.ops.aten.index.Tensor])
-def _index_handler(P: MLXProgramBuilder, n: Node) -> Slot:
-    args = P.args(n)
-    require_args(args, 2, 2, "aten.index.Tensor")
-    require_kwargs(P.kwargs(n), set(), "aten.index.Tensor")
-    x, idx_list = args
+def _index_gather_permutation(
+    indexed_axes: Set[int],
+    x_ndim: int,
+    broadcast_ndim: int,
+) -> List[int]:
+    # PyTorch decomposes F.unfold to aten.index.Tensor, and the Voxtral codec
+    # uses that path for ConvTranspose1d. Match PyTorch's advanced-index
+    # placement so MLX gather preserves the codec patch/channel order.
+    indexed_axes_sorted = sorted(indexed_axes)
+    expected_rank = broadcast_ndim + x_ndim
+    is_contiguous = indexed_axes_sorted == list(
+        range(indexed_axes_sorted[0], indexed_axes_sorted[-1] + 1)
+    )
+    if not is_contiguous:
+        return list(range(expected_rank))
+
+    non_indexed_axes = [i for i in range(x_ndim) if i not in indexed_axes]
+    before_axes = [i for i in non_indexed_axes if i < indexed_axes_sorted[0]]
+    after_axes = [i for i in non_indexed_axes if i > indexed_axes_sorted[-1]]
+    return (
+        [broadcast_ndim + i for i in before_axes]
+        + list(range(broadcast_ndim))
+        + [broadcast_ndim + i for i in after_axes]
+        + [broadcast_ndim + i for i in indexed_axes_sorted]
+    )
+
+
+def _non_none_index_tensors(idx_list: Any) -> List[Tuple[int, Slot]]:
     if not isinstance(idx_list, list) or len(idx_list) == 0:
         raise ValueError(
-            f"aten.index.Tensor requires a list of index tensors, "
-            f"got {type(idx_list)}"
+            f"aten.index.Tensor requires a list of index tensors, got {type(idx_list)}"
         )
 
-    x_meta = n.args[0].meta.get("val")
-    x_ndim = len(x_meta.shape) if x_meta is not None else None
-
-    # Filter out None indices and track which axes they correspond to
     non_none = [(i, idx) for i, idx in enumerate(idx_list) if idx is not None]
-
     if len(non_none) == 0:
         raise ValueError("aten.index.Tensor: all indices are None")
+    return non_none
 
-    if len(non_none) == 1:
-        axis, idx = non_none[0]
-        idx_meta = n.args[1][axis].meta.get("val")
-        ndim_match = (
-            x_meta is not None
-            and idx_meta is not None
-            and len(x_meta.shape) == len(idx_meta.shape)
-        )
-        out = P.make_or_get_slot(n)
-        if ndim_match:
-            # Same ndim: use TakeAlongAxisNode (element-wise gather)
-            P.emit(
-                TakeAlongAxisNode(
-                    x=P.slot_to_tid(x),
-                    indices=P.slot_to_tid(idx),
-                    out=P.slot_to_tid(out),
-                    axis=axis,
-                )
+
+def _emit_single_index_handler(
+    P: MLXProgramBuilder,
+    n: Node,
+    x: Slot,
+    axis: int,
+    idx: Slot,
+    x_meta: Any,
+) -> Slot:
+    idx_meta = n.args[1][axis].meta.get("val")
+    ndim_match = (
+        x_meta is not None
+        and idx_meta is not None
+        and len(x_meta.shape) == len(idx_meta.shape)
+    )
+    out = P.make_or_get_slot(n)
+    if ndim_match:
+        # Same ndim: use TakeAlongAxisNode (element-wise gather)
+        P.emit(
+            TakeAlongAxisNode(
+                x=P.slot_to_tid(x),
+                indices=P.slot_to_tid(idx),
+                out=P.slot_to_tid(out),
+                axis=axis,
             )
-        else:
-            # Different ndim (e.g. 1D indices into 3D tensor): use TakeNode
-            P.emit(
-                TakeNode(
-                    x=P.slot_to_tid(x),
-                    index=IntOrVidOrTid.from_tid(P.slot_to_tid(idx)),
-                    out=P.slot_to_tid(out),
-                    axis=axis,
-                )
-            )
-        return out
-
-    # Multi-index: use GatherNode (maps to mlx::gather)
-    if x_meta is None or x_ndim is None:
-        raise ValueError(
-            "aten.index.Tensor with multiple indices requires input shape metadata"
         )
+    else:
+        # Different ndim (e.g. 1D indices into 3D tensor): use TakeNode
+        P.emit(
+            TakeNode(
+                x=P.slot_to_tid(x),
+                index=IntOrVidOrTid.from_tid(P.slot_to_tid(idx)),
+                out=P.slot_to_tid(out),
+                axis=axis,
+            )
+        )
+    return out
 
-    indices = [P.slot_to_tid(idx) for _, idx in non_none]
-    axes = [i for i, _ in non_none]
 
-    # slice_sizes: 1 for indexed axes, full dim size for non-indexed axes
-    # Use int() to handle SymInt values from dynamic shapes
-    indexed_axes = set(axes)
+def _index_slice_sizes(x_meta: Any, x_ndim: int, indexed_axes: Set[int]) -> List[int]:
     slice_sizes = []
     for dim in range(x_ndim):
         if dim in indexed_axes:
             slice_sizes.append(1)
-        else:
-            dim_size = x_meta.shape[dim]
-            if not isinstance(dim_size, int):
-                raise ValueError(
-                    f"aten.index.Tensor: non-indexed dimension {dim} has dynamic size "
-                    f"{dim_size}, which is not supported with multi-index gather"
-                )
-            slice_sizes.append(dim_size)
+            continue
+
+        dim_size = x_meta.shape[dim]
+        if not isinstance(dim_size, int):
+            raise ValueError(
+                f"aten.index.Tensor: non-indexed dimension {dim} has dynamic size "
+                f"{dim_size}, which is not supported with multi-index gather"
+            )
+        slice_sizes.append(dim_size)
+    return slice_sizes
+
+
+def _emit_multi_index_handler(
+    P: MLXProgramBuilder,
+    n: Node,
+    x: Slot,
+    x_meta: Any,
+    x_ndim: int,
+    non_none: List[Tuple[int, Slot]],
+) -> Slot:
+    indices = [P.slot_to_tid(idx) for _, idx in non_none]
+    axes = [i for i, _ in non_none]
+    indexed_axes = set(axes)
+
+    # slice_sizes: 1 for indexed axes, full dim size for non-indexed axes
+    # Use int() to handle SymInt values from dynamic shapes
+    slice_sizes = _index_slice_sizes(x_meta, x_ndim, indexed_axes)
 
     # Emit gather — output shape is broadcast(indices).shape + slice_sizes
     _, gather_slot = P.make_tmp_slot()
@@ -1767,8 +1800,6 @@ def _index_handler(P: MLXProgramBuilder, n: Node) -> Slot:
         )
     )
 
-    # Reshape to match aten.index.Tensor output shape, which strips the
-    # trailing dimensions introduced by gather's slice_sizes
     out_meta = n.meta.get("val")
     if out_meta is None:
         raise ValueError(
@@ -1776,15 +1807,70 @@ def _index_handler(P: MLXProgramBuilder, n: Node) -> Slot:
         )
     out_shape = [P.to_int_or_vid(int(d)) for d in out_meta.shape]
 
+    # MLX gather returns broadcast(indices).shape followed by one slice
+    # dimension per input dimension. For contiguous advanced-index groups,
+    # PyTorch keeps the broadcast dims at the indexed position, so reorder
+    # before stripping the singleton indexed slice dimensions via reshape.
+    non_indexed_axes = [i for i in range(x_ndim) if i not in indexed_axes]
+    broadcast_ndim = len(out_meta.shape) - len(non_indexed_axes)
+    if broadcast_ndim < 0:
+        raise ValueError(
+            "aten.index.Tensor: could not infer broadcast rank for multi-index gather"
+        )
+
+    reshape_input = gather_slot
+    expected_rank = broadcast_ndim + x_ndim
+    perm = _index_gather_permutation(indexed_axes, x_ndim, broadcast_ndim)
+    if len(perm) != expected_rank:
+        raise ValueError(
+            f"aten.index.Tensor: internal gather permutation has rank {len(perm)}, "
+            f"expected {expected_rank}"
+        )
+    if perm != list(range(expected_rank)):
+        _, ordered_slot = P.make_tmp_slot()
+        P.emit(
+            TransposeNode(
+                x=P.slot_to_tid(gather_slot),
+                out=P.slot_to_tid(ordered_slot),
+                perm=perm,
+            )
+        )
+        reshape_input = ordered_slot
+
+    # Reshape to match aten.index.Tensor output shape, stripping the singleton
+    # dimensions introduced by gather's slice_sizes for indexed axes.
     out = P.make_or_get_slot(n)
     P.emit(
         ReshapeNode(
-            x=P.slot_to_tid(gather_slot),
+            x=P.slot_to_tid(reshape_input),
             out=P.slot_to_tid(out),
             shape=out_shape,
         )
     )
     return out
+
+
+@REGISTRY.register(target=[torch.ops.aten.index.Tensor])
+def _index_handler(P: MLXProgramBuilder, n: Node) -> Slot:
+    args = P.args(n)
+    require_args(args, 2, 2, "aten.index.Tensor")
+    require_kwargs(P.kwargs(n), set(), "aten.index.Tensor")
+    x, idx_list = args
+
+    x_meta = n.args[0].meta.get("val")
+    x_ndim = len(x_meta.shape) if x_meta is not None else None
+    non_none = _non_none_index_tensors(idx_list)
+
+    if len(non_none) == 1:
+        axis, idx = non_none[0]
+        return _emit_single_index_handler(P, n, x, axis, idx, x_meta)
+
+    if x_meta is None or x_ndim is None:
+        raise ValueError(
+            "aten.index.Tensor with multiple indices requires input shape metadata"
+        )
+
+    return _emit_multi_index_handler(P, n, x, x_meta, x_ndim, non_none)
 
 
 @REGISTRY.register(target=[torch.ops.aten.index_select.default])

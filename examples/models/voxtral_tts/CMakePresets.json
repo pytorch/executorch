@@ -35,6 +35,21 @@
                     "Windows"
                 ]
             }
+        },
+        {
+            "name": "voxtral-tts-mlx",
+            "displayName": "Voxtral TTS runner (MLX)",
+            "inherits": [
+                "voxtral-tts-base"
+            ],
+            "cacheVariables": {
+                "EXECUTORCH_BUILD_MLX": "ON"
+            },
+            "condition": {
+                "lhs": "${hostSystemName}",
+                "type": "equals",
+                "rhs": "Darwin"
+            }
         }
     ],
     "buildPresets": [
@@ -51,6 +66,15 @@
             "name": "voxtral-tts-cuda",
             "displayName": "Build Voxtral TTS runner (CUDA)",
             "configurePreset": "voxtral-tts-cuda",
+            "configuration": "Release",
+            "targets": [
+                "voxtral_tts_runner"
+            ]
+        },
+        {
+            "name": "voxtral-tts-mlx",
+            "displayName": "Build Voxtral TTS runner (MLX)",
+            "configurePreset": "voxtral-tts-mlx",
             "configuration": "Release",
             "targets": [
                 "voxtral_tts_runner"
@@ -83,6 +107,20 @@
                 {
                     "type": "build",
                     "name": "voxtral-tts-cuda"
+                }
+            ]
+        },
+        {
+            "name": "voxtral-tts-mlx",
+            "displayName": "Voxtral TTS (MLX)",
+            "steps": [
+                {
+                    "type": "configure",
+                    "name": "voxtral-tts-mlx"
+                },
+                {
+                    "type": "build",
+                    "name": "voxtral-tts-mlx"
                 }
             ]
         }
