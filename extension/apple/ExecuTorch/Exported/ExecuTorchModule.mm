@@ -352,6 +352,13 @@ static inline ExecuTorchValue *toExecuTorchValue(EValue value) NS_RETURNS_RETAIN
   // valid for the lifetime of any methods loaded with these options.
   // (Methods load lazily during forward(), so the borrow may outlive this
   // call.) See ExecuTorchBackendOptionsMap.h for the lifetime contract.
+  //
+  // No rollback on failure: Module::load (see module.cpp:192-197) updates
+  // its backend_options_ raw pointer BEFORE attempting load_internal, so
+  // after a failed call the C++ side already references `options`. The
+  // ObjC retain therefore always matches what C++ points at, even on the
+  // failure path — a two-phase commit here would instead leave C++
+  // pointing at a map the wrapper no longer retains.
   _loadedBackendOptions = options;
   const auto errorCode = _module->load(*[options cppMap],
                                         static_cast<Program::Verification>(verification));
@@ -376,13 +383,21 @@ static inline ExecuTorchValue *toExecuTorchValue(EValue value) NS_RETURNS_RETAIN
              error:(NSError **)error {
   NSParameterAssert(options);
   // Do NOT assign to _loadedBackendOptions here. Module::load_method
-  // consumes `backend_options` synchronously within this call and does
-  // not cache it (see module.cpp); ARC keeps `options` alive for the
-  // call duration via the parameter. Overwriting _loadedBackendOptions
-  // would release any map previously installed by -loadWithOptions:,
-  // but the C++ Module's `backend_options_` raw pointer (set by
-  // -loadWithOptions:) would still reference that released map's
-  // storage — a use-after-free on the next lazy load_method.
+  // (module.cpp:353-409) consumes `backend_options` synchronously within
+  // this call — it is passed through to program_->load_method and is not
+  // cached on the Module. Only Module::load(backend_options, ...) stores
+  // the pointer (via backend_options_ at module.cpp:195). ARC keeps
+  // `options` alive for the call duration via the parameter, so no
+  // ivar retention is needed here.
+  //
+  // Overwriting _loadedBackendOptions would release any map previously
+  // installed by -loadWithOptions:, but the C++ Module's backend_options_
+  // raw pointer would still reference that released map's storage — a
+  // use-after-free on the next lazy load_method. The XCTest
+  // testMixedLoadWithOptionsAndLoadMethodWithOptionsOnMultiMethodModel
+  // pins this invariant via a weak reference.
+  // TODO: update the C++ Module API to use a two-stage commit, and
+  // once this is done, update the ObjC/Swift API to match.
   const auto errorCode = _module->load_method(methodName.UTF8String,
                                                /*planned_memory=*/nullptr,
                                                /*event_tracer=*/nullptr,

@@ -60,7 +60,7 @@ public extension Module {
   ///   - verification: The verification level to apply when loading the program.
   /// - Throws: An error if loading fails.
   func load(
-    _ options: BackendOptionsMap,
+    options: BackendOptionsMap,
     verification: ModuleVerification = .minimal
   ) throws {
     try __load(withOptions: options, verification: verification)

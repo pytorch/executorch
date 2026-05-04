@@ -14,6 +14,7 @@
 #import <executorch/runtime/backend/options.h>
 
 #import <climits>
+#import <unordered_set>
 #import <vector>
 
 using executorch::runtime::BackendOption;
@@ -26,9 +27,10 @@ using executorch::runtime::kMaxOptionValueLength;
 namespace {
 
 // Translate an ObjC dictionary into the C++ map + the backing storage whose
-// Spans the map references. On failure, returns a non-OK Error and leaves the
-// outputs in a partial (but destructible) state. Callers should construct
-// the storage/map locally and only commit them to ivars on success.
+// Spans the map references. On failure, returns a non-OK Error, writes a
+// human-readable explanation to `*outReason`, and leaves the outputs in a
+// partial (but destructible) state. Callers should construct the
+// storage/map locally and only commit them to ivars on success.
 //
 // Lifetime note on `storage`: each `Span<BackendOption>` stored inside `map`
 // points at the heap buffer owned by one of the inner `std::vector`s. Even
@@ -41,26 +43,58 @@ namespace {
 Error buildBackendOptionsMap(
     NSDictionary<NSString *, NSArray<ExecuTorchBackendOption *> *> *options,
     std::vector<std::vector<BackendOption>> &storage,
-    LoadBackendOptionsMap &map) {
+    LoadBackendOptionsMap &map,
+    NSString * __autoreleasing *outReason) {
   storage.reserve(options.count);
   for (NSString *backendId in options) {
     const char *backendIdCStr = backendId.UTF8String;
     if (backendIdCStr == nullptr) {
+      *outReason = @"backend id is not valid UTF-8";
+      return Error::InvalidArgument;
+    }
+    // Reject empty backend ids early so the error message names the caller
+    // bug precisely; the C++ set_options below also rejects empty ids, but
+    // via a generic InvalidArgument.
+    if (backendIdCStr[0] == '\0') {
+      *outReason = @"backend id is empty";
       return Error::InvalidArgument;
     }
     NSArray<ExecuTorchBackendOption *> *backendOptions = options[backendId];
     std::vector<BackendOption> opts;
     opts.reserve(backendOptions.count);
+    // Reject duplicate keys within the same backend. The C++ runtime's
+    // set_option path would otherwise silently resolve to last-write-wins
+    // (or undefined depending on the backend), which is almost never what
+    // the caller intended.
+    std::unordered_set<std::string> seenKeys;
+    seenKeys.reserve(backendOptions.count);
     for (ExecuTorchBackendOption *opt in backendOptions) {
       BackendOption bo;
       const char *keyCStr = opt.key.UTF8String;
       if (keyCStr == nullptr) {
+        *outReason = [NSString stringWithFormat:
+            @"option key for backend '%@' is not valid UTF-8", backendId];
+        return Error::InvalidArgument;
+      }
+      if (keyCStr[0] == '\0') {
+        *outReason = [NSString stringWithFormat:
+            @"option key for backend '%@' is empty", backendId];
         return Error::InvalidArgument;
       }
       // The C++ runtime stores option keys in a fixed-size buffer of
       // kMaxOptionKeyLength (including the null terminator). Reject inputs
       // that would silently truncate.
-      if (strlen(keyCStr) >= kMaxOptionKeyLength) {
+      const size_t keyLen = strlen(keyCStr);
+      if (keyLen >= kMaxOptionKeyLength) {
+        *outReason = [NSString stringWithFormat:
+            @"option key '%@' for backend '%@' is %zu bytes; limit is %zu",
+            opt.key, backendId, keyLen, (size_t)(kMaxOptionKeyLength - 1)];
+        return Error::InvalidArgument;
+      }
+      if (!seenKeys.insert(std::string(keyCStr)).second) {
+        *outReason = [NSString stringWithFormat:
+            @"duplicate option key '%@' for backend '%@'",
+            opt.key, backendId];
         return Error::InvalidArgument;
       }
       strncpy(bo.key, keyCStr, kMaxOptionKeyLength - 1);
@@ -77,6 +111,9 @@ Error buildBackendOptionsMap(
           // int32_t and the comparison would be tautological (still correct,
           // just never trips).
           if (opt.intValue < INT_MIN || opt.intValue > INT_MAX) {
+            *outReason = [NSString stringWithFormat:
+                @"option '%@' for backend '%@' is %ld; out of 32-bit int range",
+                opt.key, backendId, (long)opt.intValue];
             return Error::InvalidArgument;
           }
           bo.value = (int)opt.intValue;
@@ -84,10 +121,17 @@ Error buildBackendOptionsMap(
         case ExecuTorchBackendOptionTypeString: {
           const char *valCStr = opt.stringValue.UTF8String;
           if (valCStr == nullptr) {
+            *outReason = [NSString stringWithFormat:
+                @"option '%@' value for backend '%@' is not valid UTF-8",
+                opt.key, backendId];
             return Error::InvalidArgument;
           }
           // Same fixed-buffer constraint as the key.
-          if (strlen(valCStr) >= kMaxOptionValueLength) {
+          const size_t valLen = strlen(valCStr);
+          if (valLen >= kMaxOptionValueLength) {
+            *outReason = [NSString stringWithFormat:
+                @"option '%@' value for backend '%@' is %zu bytes; limit is %zu",
+                opt.key, backendId, valLen, (size_t)(kMaxOptionValueLength - 1)];
             return Error::InvalidArgument;
           }
           std::array<char, kMaxOptionValueLength> arr{};
@@ -102,11 +146,14 @@ Error buildBackendOptionsMap(
     storage.push_back(std::move(opts));
     auto &backOpts = storage.back();
     // C++ set_options enforces backend-id length (kMaxBackendIdLength = 64).
-    // We pass through its Error code unchanged.
+    // We pass through its Error code unchanged but surface a targeted reason.
     const auto err = map.set_options(
         backendIdCStr,
         Span<BackendOption>(backOpts.data(), backOpts.size()));
     if (err != Error::Ok) {
+      *outReason = [NSString stringWithFormat:
+          @"failed to install options for backend '%@' (C++ Error %d; backend id may exceed 63 bytes or map is full)",
+          backendId, (int)err];
       return err;
     }
   }
@@ -134,10 +181,12 @@ Error buildBackendOptionsMap(
   // pristine (default-constructed) state. Commit only on full success.
   std::vector<std::vector<BackendOption>> storage;
   LoadBackendOptionsMap map;
-  const auto buildError = buildBackendOptionsMap(options, storage, map);
+  NSString *reason = nil;
+  const auto buildError = buildBackendOptionsMap(options, storage, map, &reason);
   if (buildError != Error::Ok) {
     if (error) {
-      *error = ExecuTorchErrorWithCode((ExecuTorchErrorCode)buildError);
+      *error = ExecuTorchErrorWithCodeAndDescription(
+          (ExecuTorchErrorCode)buildError, reason);
     }
     return nil;
   }

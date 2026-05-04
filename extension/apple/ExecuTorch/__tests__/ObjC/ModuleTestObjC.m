@@ -11,6 +11,41 @@
 #import <ExecuTorch/ExecuTorch.h>
 
 @interface ModuleTestObjC : XCTestCase
+// Covers -[ExecuTorchModule loadMethod:options:error:]. Loads "forward"
+// explicitly with per-delegate backend options, then executes it and
+// checks the output.
+- (void)testLoadMethodWithOptionsOnCoreMLDelegatedModel {
+  NSString *modelPath = [self requireFixture:@"add_coreml" ofType:@"pte"];
+  if (!modelPath) return;
+  NSError *error = nil;
+  ExecuTorchBackendOptionsMap *options = [ExecuTorchBackendOptionsMap mapWithOptions:@{
+    @"CoreMLBackend": @[
+      [ExecuTorchBackendOption optionWithKey:@"compute_unit" stringValue:@"cpu_and_gpu"],
+    ],
+  } error:&error];
+  XCTAssertNotNil(options, @"%@", error);
+
+  ExecuTorchModule *module = [[ExecuTorchModule alloc] initWithFilePath:modelPath];
+  XCTAssertTrue([module loadMethod:@"forward" options:options error:&error],
+                @"%@", error);
+  XCTAssertTrue([module isMethodLoaded:@"forward"]);
+
+  ExecuTorchTensor *one =
+      [[ExecuTorchTensor alloc] initWithScalars:@[@1.0f] dataType:ExecuTorchDataTypeFloat];
+  NSArray<ExecuTorchValue *> *outputs =
+      [module forwardWithTensors:@[one, one] error:&error];
+  XCTAssertNotNil(outputs, @"%@", error);
+
+  __block float result = NAN;
+  [outputs.firstObject.tensorValue
+      bytesWithHandler:^(const void *bytes, NSInteger count, ExecuTorchDataType dt) {
+    if (dt == ExecuTorchDataTypeFloat && count >= 1) {
+      result = ((const float *)bytes)[0];
+    }
+  }];
+  XCTAssertEqual(result, 2.0f);
+}
+
 @end
 
 @implementation ModuleTestObjC

@@ -276,7 +276,7 @@ class ModuleTest: XCTestCase {
         BackendOption("_use_new_cache", true),
       ]
     ])
-    XCTAssertNoThrow(try module.load(options))
+    XCTAssertNoThrow(try module.load(options: options))
     // No explicit load("forward") here — exercise the lazy load_method path
     // that consumes the retained LoadBackendOptionsMap.
     let inputs: [Tensor<Float>] = [Tensor([1]), Tensor([1])]
@@ -298,7 +298,7 @@ class ModuleTest: XCTestCase {
         BackendOption("compute_unit", "cpu_only"),
       ]
     ])
-    XCTAssertNoThrow(try module.load(firstOptions))
+    XCTAssertNoThrow(try module.load(options: firstOptions))
 
     let secondOptions = try BackendOptionsMap(options: [
       "CoreMLBackend": [
@@ -306,7 +306,7 @@ class ModuleTest: XCTestCase {
         BackendOption("_use_new_cache", true),
       ]
     ])
-    XCTAssertNoThrow(try module.load(secondOptions))
+    XCTAssertNoThrow(try module.load(options: secondOptions))
 
     // Lazy load_method via forward() should now see the second options.
     let inputs: [Tensor<Float>] = [Tensor([1]), Tensor([1])]
@@ -337,25 +337,155 @@ class ModuleTest: XCTestCase {
   }
 
   func testBackendOptionsMapValidation() {
-    // Integer overflow.
-    XCTAssertThrowsError(try BackendOptionsMap(options: [
-      "AnyBackend": [BackendOption("too_big", Int(Int32.max) + 1)]
-    ]))
-    XCTAssertThrowsError(try BackendOptionsMap(options: [
-      "AnyBackend": [BackendOption("too_small", Int(Int32.min) - 1)]
-    ]))
-    // Oversized key. The C++ kMaxOptionKeyLength is small (32 chars at the
-    // time of writing); 256 bytes is well over any plausible bound.
+    // Helper that asserts throwing with a specific ExecuTorch error code
+    // and a non-empty localizedDescription (enriched reason from the
+    // wrapper, not just the generic enum name).
+    func assertInvalidArgument(
+      _ build: () throws -> BackendOptionsMap,
+      reasonContains expected: String,
+      file: StaticString = #file, line: UInt = #line
+    ) {
+      XCTAssertThrowsError(try build(), file: file, line: line) { error in
+        let ns = error as NSError
+        XCTAssertEqual(ns.domain, ErrorDomain, file: file, line: line)
+        XCTAssertEqual(
+          ns.code, ErrorCode.invalidArgument.rawValue,
+          "unexpected code \(ns.code)", file: file, line: line)
+        XCTAssertTrue(
+          ns.localizedDescription.contains(expected),
+          "localizedDescription missing '\(expected)': \(ns.localizedDescription)",
+          file: file, line: line)
+      }
+    }
+
+    // Integer overflow — both bounds.
+    assertInvalidArgument({
+      try BackendOptionsMap(options: [
+        "AnyBackend": [BackendOption("too_big", Int(Int32.max) + 1)]
+      ])
+    }, reasonContains: "too_big")
+    assertInvalidArgument({
+      try BackendOptionsMap(options: [
+        "AnyBackend": [BackendOption("too_small", Int(Int32.min) - 1)]
+      ])
+    }, reasonContains: "too_small")
+
+    // Oversized key / value — well over any plausible limit.
     let longKey = String(repeating: "k", count: 256)
-    XCTAssertThrowsError(try BackendOptionsMap(options: [
-      "AnyBackend": [BackendOption(longKey, 1)]
-    ]))
-    // Oversized string value. kMaxOptionValueLength is also a small fixed
-    // buffer; 4096 bytes will exceed it on every supported runtime.
+    assertInvalidArgument({
+      try BackendOptionsMap(options: [
+        "AnyBackend": [BackendOption(longKey, 1)]
+      ])
+    }, reasonContains: "limit is")
     let longValue = String(repeating: "v", count: 4096)
-    XCTAssertThrowsError(try BackendOptionsMap(options: [
-      "AnyBackend": [BackendOption("compute_unit", longValue)]
+    assertInvalidArgument({
+      try BackendOptionsMap(options: [
+        "AnyBackend": [BackendOption("compute_unit", longValue)]
+      ])
+    }, reasonContains: "limit is")
+
+    // Empty option key.
+    assertInvalidArgument({
+      try BackendOptionsMap(options: [
+        "AnyBackend": [BackendOption("", 1)]
+      ])
+    }, reasonContains: "empty")
+
+    // Empty backend id.
+    assertInvalidArgument({
+      try BackendOptionsMap(options: [
+        "": [BackendOption("k", 1)]
+      ])
+    }, reasonContains: "empty")
+
+    // Duplicate keys within the same backend.
+    assertInvalidArgument({
+      try BackendOptionsMap(options: [
+        "AnyBackend": [
+          BackendOption("dup", 1),
+          BackendOption("dup", 2),
+        ]
+      ])
+    }, reasonContains: "duplicate")
+  }
+
+  // Boundary lengths. kMaxOptionKeyLength (64) is the fixed-buffer size
+  // including the NUL terminator, so the largest valid key is 63 bytes.
+  // kMaxOptionValueLength (256) → largest valid value 255. Pins the
+  // off-by-one math in the C++-buffer length check at
+  // ExecuTorchBackendOptionsMap.mm so a future refactor cannot silently
+  // allow truncation.
+  func testBackendOptionsMapBoundaryLengths() throws {
+    // Max valid key: 63 bytes.
+    let maxKey = String(repeating: "k", count: 63)
+    XCTAssertNoThrow(try BackendOptionsMap(options: [
+      "AnyBackend": [BackendOption(maxKey, 1)]
     ]))
+    // One over: 64 bytes should fail (no room for the NUL).
+    let tooLongKey = String(repeating: "k", count: 64)
+    XCTAssertThrowsError(try BackendOptionsMap(options: [
+      "AnyBackend": [BackendOption(tooLongKey, 1)]
+    ]))
+
+    // Max valid value: 255 bytes.
+    let maxValue = String(repeating: "v", count: 255)
+    XCTAssertNoThrow(try BackendOptionsMap(options: [
+      "AnyBackend": [BackendOption("compute_unit", maxValue)]
+    ]))
+    // One over: 256 bytes should fail.
+    let tooLongValue = String(repeating: "v", count: 256)
+    XCTAssertThrowsError(try BackendOptionsMap(options: [
+      "AnyBackend": [BackendOption("compute_unit", tooLongValue)]
+    ]))
+  }
+
+  // The .options accessor must return a deep-immutable snapshot of the
+  // construction input. Mutating the original containers afterwards must
+  // not leak through.
+  func testBackendOptionsMapOptionsSnapshotIsDeepImmutable() throws {
+    let mutableOpts = NSMutableArray(array: [
+      BackendOption("compute_unit", "cpu_only"),
+    ])
+    let mutableDict = NSMutableDictionary(dictionary: [
+      "CoreMLBackend": mutableOpts,
+    ])
+    // Force the Swift bridge to the concrete Foundation types.
+    let map = try BackendOptionsMap(
+      options: mutableDict as! [String: [BackendOption]])
+
+    // Mutate the inputs after construction.
+    mutableOpts.add(BackendOption("_use_new_cache", true))
+    mutableDict["XNNPACK"] = [BackendOption("num_threads", 4)]
+
+    // The snapshot must be unchanged.
+    let snapshot = map.options
+    XCTAssertEqual(snapshot.count, 1)
+    XCTAssertEqual(snapshot["CoreMLBackend"]?.count, 1)
+    XCTAssertEqual(snapshot["CoreMLBackend"]?.first?.key, "compute_unit")
+    XCTAssertNil(snapshot["XNNPACK"])
+  }
+
+  // A single map may configure multiple backends. Exercises the outer
+  // backend-iteration loop in BackendOptionsMap's builder.
+  func testBackendOptionsMapMultipleBackends() throws {
+    let map = try BackendOptionsMap(options: [
+      "CoreMLBackend": [
+        BackendOption("compute_unit", "cpu_and_gpu"),
+        BackendOption("_use_new_cache", true),
+      ],
+      "XNNPACK": [
+        BackendOption("num_threads", 4),
+      ],
+    ])
+    let snapshot = map.options
+    XCTAssertEqual(snapshot.count, 2)
+    XCTAssertEqual(snapshot["CoreMLBackend"]?.count, 2)
+    XCTAssertEqual(snapshot["XNNPACK"]?.count, 1)
+    XCTAssertEqual(snapshot["XNNPACK"]?.first?.intValue, 4)
+
+    let desc = map.description
+    XCTAssertTrue(desc.contains("CoreMLBackend"), desc)
+    XCTAssertTrue(desc.contains("XNNPACK"), desc)
   }
 
   // A single BackendOptionsMap can be reused across multiple Module
@@ -369,7 +499,7 @@ class ModuleTest: XCTestCase {
     let inputs: [Tensor<Float>] = [Tensor([1]), Tensor([1])]
     for _ in 0..<2 {
       let module = Module(filePath: modelPath)
-      try module.load(options)
+      try module.load(options: options)
       let outs: [Value] = try module.forward(inputs)
       XCTAssertEqual(outs.first?.tensor(), Tensor([Float(2)]))
     }
@@ -420,7 +550,7 @@ class ModuleTest: XCTestCase {
         "CoreMLBackend": [BackendOption("compute_unit", "cpu_only")]
       ])
       weakA = optionsA
-      try module.load(optionsA)
+      try module.load(options: optionsA)
     }
     XCTAssertNotNil(weakA, "Module must retain optionsA after load(optionsA)")
 
