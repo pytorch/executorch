@@ -139,6 +139,21 @@ class Adapter final {
     return physical_device_.device_type;
   }
 
+  // Driver-reported physical device type. Use device_type() above for
+  // vendor-specific quirks; this for capability-tier decisions.
+  inline bool is_integrated_gpu() const {
+    return physical_device_.properties.deviceType ==
+        VK_PHYSICAL_DEVICE_TYPE_INTEGRATED_GPU;
+  }
+
+  // Hardware subgroup width. Populated from VkPhysicalDeviceSubgroupProperties
+  // (core Vulkan 1.1). Returns 0 on Vulkan 1.0-only devices where the property
+  // is not queryable; callers gating on a specific size should treat 0 as
+  // unsupported.
+  inline uint32_t subgroup_size() const {
+    return physical_device_.subgroup_properties.subgroupSize;
+  }
+
   // Queue Management
 
   Queue request_queue();
@@ -253,10 +268,9 @@ class Adapter final {
   }
 
   inline bool supports_cooperative_matrix() const {
-#ifdef ETVK_FORCE_NO_EXTENSIONS
+#if defined(ETVK_FORCE_NO_EXTENSIONS)
     return false;
-#endif
-#ifdef VK_KHR_cooperative_matrix
+#elif defined(VK_KHR_cooperative_matrix)
     return physical_device_.cooperative_matrix_features.cooperativeMatrix ==
         VK_TRUE;
 #else

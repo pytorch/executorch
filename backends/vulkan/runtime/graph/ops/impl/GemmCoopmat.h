@@ -28,24 +28,26 @@ constexpr uint32_t kCoopmatInvocations = 256; // 4 subgroups x 64
 // Whether the coopmat path can be dispatched for the given M/N/K shape.
 // Caller is responsible for falling back to the tiled path when this returns
 // false.
+//
+// Three device-capability gates beyond simple shape alignment:
+//   * 2D outputs only — dispatch z-dim is hardcoded to 1, so batched outputs
+//     silent-miscompute batch > 0.
+//   * subgroup_size() == 64 — the shader bakes a 4-subgroup x 64-thread =
+//     256-thread workgroup; subgroup-32 devices would silently miscompute.
+//   * !is_integrated_gpu() — the kernel is desktop-tuned (256-thread
+//     workgroups, ~9.5 KB shared mem, fp32 accumulators).
 inline bool is_coopmat_eligible(
     ComputeGraph& graph,
     const ValueRef out,
     int64_t M,
     int64_t N,
     int64_t K) {
-  // The shader operates on 2D buffers; dispatch z-dim is hardcoded to 1, so
-  // batched outputs would silent-miscompute batch > 0. Reject any rank-3+
-  // output conservatively.
   if (graph.dim_of(out) > 2) {
     return false;
   }
-  // TODO: also gate on adapter->subgroup_size() == 64 once a subgroup-size
-  // accessor lands on Adapter. The shader bakes a 4-subgroup x 64-thread =
-  // 256-thread workgroup; on a subgroup-32 device this would silently
-  // miscompute. Today's only in-tree adapter exposing
-  // VK_KHR_cooperative_matrix is subgroup-64, so the assumption holds.
-  return graph.context()->adapter_ptr()->supports_cooperative_matrix() &&
+  const auto* adapter = graph.context()->adapter_ptr();
+  return adapter->supports_cooperative_matrix() &&
+      adapter->subgroup_size() == 64 && !adapter->is_integrated_gpu() &&
       graph.storage_type_of(out) == utils::kBuffer && M % kCoopmatTileM == 0 &&
       N % kCoopmatTileN == 0 && K % kCoopmatTileK == 0;
 }

@@ -199,9 +199,14 @@ static TestCase create_mm_test_case(
   } else if (
       config.impl_selector == "default" && storage_type == utils::kBuffer &&
       !is_batched && config.M % 64 == 0 && config.N % 64 == 0 &&
-      config.K % 32 == 0 &&
-      api::context()->adapter_ptr()->supports_cooperative_matrix()) {
-    routes_to_coopmat = true;
+      config.K % 32 == 0) {
+    // Mirror is_coopmat_eligible's full device-capability gate so default
+    // routing's tolerance matches its actual dispatch path. On a device
+    // that's integrated, subgroup-32, or otherwise ineligible, the default
+    // routes to tiled and tolerance must stay tight.
+    const auto* adapter = api::context()->adapter_ptr();
+    routes_to_coopmat = adapter->supports_cooperative_matrix() &&
+        adapter->subgroup_size() == 64 && !adapter->is_integrated_gpu();
   }
 
   if (dtype == vkapi::kHalf || routes_to_coopmat) {
