@@ -112,6 +112,24 @@ class AotiBackend(ABC):
         return
 
     @classmethod
+    def release_moved_tensors(
+        cls,
+        device_edge_program: ExportedProgram,
+        compile_specs: List[CompileSpec],
+    ) -> None:
+        """Release device memory held by tensors that ``move_to_device_pass``
+        placed on the target device.
+
+        Called at the end of ``preprocess`` so that the next ``preprocess``
+        call (e.g. for the next method in a multi-method export) can reuse
+        the freed memory. Override in concrete backends (e.g. ``CudaBackend``)
+        to actually free device memory.
+
+        Default: no-op.
+        """
+        return
+
+    @classmethod
     @contextlib.contextmanager
     def collect_unsupported_fallback_kernels(cls, missing_fallback_kernels: Set[str]):
         """
