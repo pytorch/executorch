@@ -58,10 +58,10 @@ from torch.library import triton_op, wrap_triton
 # (cdiv(K, BLOCK_SIZE_K) tiles * BLOCK_SIZE_M rows) and halves activation HBM
 # bandwidth in the GEMM K-loop (bf16 -> int8).
 #
-# BLOCK_SIZE_K is fixed at PREQUANT_BLOCK_K (= 128, matches the typical
+# BLOCK_SIZE_K is fixed at PREQUANT_BLOCK_K (= 32, matches the llama.cpp
 # group_size) so the per-tile activation scales line up with the GEMM K-loop.
 # ---------------------------------------------------------------------------
-PREQUANT_BLOCK_K = 128
+PREQUANT_BLOCK_K = 32
 
 
 @triton.jit
