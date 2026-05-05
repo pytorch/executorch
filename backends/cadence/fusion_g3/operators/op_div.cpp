@@ -18,6 +18,7 @@
 #include <executorch/kernels/portable/cpu/util/math_util.h>
 #include <executorch/runtime/kernel/kernel_includes.h>
 #include <executorch/runtime/platform/assert.h>
+#include <algorithm>
 
 using ::executorch::aten::Scalar;
 using ::executorch::aten::ScalarType;
@@ -33,6 +34,33 @@ namespace G3 {
 namespace native {
 
 namespace {
+
+[[maybe_unused]] bool tensor_has_zero(const Tensor& t) {
+  switch (t.scalar_type()) {
+    case ScalarType::Float:
+      return std::any_of(
+          t.const_data_ptr<float>(),
+          t.const_data_ptr<float>() + t.numel(),
+          [](float v) { return v == 0.0f; });
+    case ScalarType::Double:
+      return std::any_of(
+          t.const_data_ptr<double>(),
+          t.const_data_ptr<double>() + t.numel(),
+          [](double v) { return v == 0.0; });
+    case ScalarType::Int:
+      return std::any_of(
+          t.const_data_ptr<int32_t>(),
+          t.const_data_ptr<int32_t>() + t.numel(),
+          [](int32_t v) { return v == 0; });
+    case ScalarType::Long:
+      return std::any_of(
+          t.const_data_ptr<int64_t>(),
+          t.const_data_ptr<int64_t>() + t.numel(),
+          [](int64_t v) { return v == 0; });
+    default:
+      return false;
+  }
+}
 
 ScalarType get_common_type(ScalarType a_type, ScalarType b_type) {
   if (executorch::runtime::isFloatingType(a_type) &&
@@ -53,6 +81,8 @@ Tensor& div_out(
     const Tensor& a,
     const Tensor& b,
     Tensor& out) {
+  ET_DCHECK_MSG(!tensor_has_zero(b), "divisor tensor contains zero");
+
 #ifdef OP_ARG_CHECK
   // Check Dim Order
   ET_KERNEL_CHECK(
@@ -228,6 +258,8 @@ Tensor& div_out_mode(
     const Tensor& b,
     optional<string_view> mode,
     Tensor& out) {
+  ET_DCHECK_MSG(!tensor_has_zero(b), "divisor tensor contains zero");
+
   if (!mode.has_value()) {
     return div_out(ctx, a, b, out);
   }
