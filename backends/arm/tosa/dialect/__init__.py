@@ -5,6 +5,7 @@
 
 from executorch.backends.arm.tosa.dialect.ops import (  # noqa F401
     activation,
+    argmax,
     avg_pool2d,
     avg_pool2d_adaptive,
     conv2d,
