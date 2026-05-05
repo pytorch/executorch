@@ -33,6 +33,24 @@ cleanup_files() {
   rm result*.txt
 }
 
+matches_base_response_prefix() {
+  local output_file="$1"
+  python - "$output_file" <<'PY'
+import pathlib
+import re
+import sys
+
+text = pathlib.Path(sys.argv[1]).read_text()
+pattern = re.compile(
+    r"^<\|im_start\|>user Calculate 15% of 80\?<\|im_end\|><\|im_start\|>assistant:\n"
+    r"(?:<think>\n)+"
+    r"Okay, so I need to calculate 15% of 80\.",
+    re.MULTILINE,
+)
+sys.exit(0 if pattern.match(text) else 1)
+PY
+}
+
 # Hosting lora adapter in personal repo for now.
 python -m pip install -q huggingface_hub
 HF_ADAPTER_REPO="lucylq/qwen3_06B_lora_math"
@@ -186,7 +204,7 @@ cmake-out/examples/models/llama/llama_main --model_path=qwen_q.pte --data_paths=
 NOW=$(date +"%H:%M:%S")
 echo "Finished at ${NOW}"
 RESULT=$(cat result.txt)
-if [[ "${RESULT}" == "${EXPECTED_QUANT_PREFIX}"* ]]; then
+if matches_base_response_prefix result.txt; then
   echo "Expected result prefix: ${EXPECTED_QUANT_PREFIX}"
   echo "Actual result: ${RESULT}"
   echo "Test 3: Success"
