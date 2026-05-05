@@ -204,8 +204,6 @@ def test_native_layer_norm_16a8w_u55_INT(test_data):
 
 u85_xfails_16a8w = {
     "randn_last_dim": "MLETORCH-1834 - 16A8W native_layer_norm output diff for certain configurations.",
-    "randn_last_three_dims": "MLETORCH-1834 - 16A8W native_layer_norm output diff for certain configurations.",
-    "randn_last_three_dims_no_bias": "MLETORCH-1834 - 16A8W native_layer_norm output diff for certain configurations.",
 }
 
 
