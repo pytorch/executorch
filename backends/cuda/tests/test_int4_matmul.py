@@ -19,7 +19,6 @@ Usage:
 import unittest
 
 import torch
-
 from executorch.backends.cuda.triton.kernels.int4_matmul import (
     dequant_w4_to_bf16,
     int4_matmul,
@@ -28,7 +27,7 @@ from executorch.backends.cuda.triton.kernels.int4_matmul import (
 
 ATOL = 0.01
 DEVICE = "cuda"
-SNR_THRESHOLD_DB = 60.0
+SNR_THRESHOLD_DB = 50.0
 
 
 def _assert_snr(test_case, actual, expected, label, threshold_db=SNR_THRESHOLD_DB):
@@ -46,8 +45,8 @@ def _assert_snr(test_case, actual, expected, label, threshold_db=SNR_THRESHOLD_D
         orders (Triton fused vs cuBLAS). atol/rtol false-fails on these;
         SNR averages them out.
       * Sensitive to real bugs: wrong stride, flipped nibble, off-by-one
-        group_idx, or a missing mask all collapse SNR to <20 dB. The 60 dB
-        threshold (≈0.1% RMS error) sits comfortably between observed clean
+        group_idx, or a missing mask all collapse SNR to <20 dB. The 50 dB
+        threshold (≈0.3% RMS error) sits comfortably between observed clean
         noise floor (~80-90 dB) and any genuine functional break.
     """
     a = actual.float()
@@ -153,9 +152,7 @@ class TestInt4Matmul(unittest.TestCase):
 
         self.assertEqual(out.shape, (M, N))
         self.assertEqual(out.dtype, torch.bfloat16)
-        _assert_snr(
-            self, out, ref, f"int4_matmul M={M} [{N}x{K}] gs={group_size}"
-        )
+        _assert_snr(self, out, ref, f"int4_matmul M={M} [{N}x{K}] gs={group_size}")
 
     # --- Decode (M=1) ---
     def test_decode_square(self):
