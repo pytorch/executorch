@@ -22,9 +22,8 @@ import torch.nn as nn
 from executorch.backends.mlx.llm.cache import (
     HFStaticCache,
     KVCache,
-    RingBufferKVCache,
     resolve_hf_cache_layout,
-    resolve_hf_text_config,
+    RingBufferKVCache,
 )
 
 logger = logging.getLogger(__name__)
