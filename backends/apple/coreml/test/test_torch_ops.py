@@ -317,7 +317,6 @@ class TestTorchOps(unittest.TestCase):
         et_prog = delegated_program.to_executorch()
         self._compare_outputs(et_prog, model, example_inputs)
 
-
     def test_dequantize_affine_below_ios18_raises_with_hint(self):
         """
         Regression test for https://github.com/pytorch/executorch/issues/13122.
@@ -337,9 +336,7 @@ class TestTorchOps(unittest.TestCase):
             executorch.exir.to_edge_transform_and_lower(
                 ep,
                 partitioner=[
-                    self._coreml_partitioner(
-                        minimum_deployment_target=ct.target.iOS17
-                    )
+                    self._coreml_partitioner(minimum_deployment_target=ct.target.iOS17)
                 ],
             )
         msg = str(cm.exception)

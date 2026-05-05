@@ -12,20 +12,6 @@ import numpy as np
 import torch as _torch
 from coremltools import _logger
 from coremltools.converters.mil.frontend import _utils
-
-_IOS18_QUANT_HINT = (
-    "ExecuTorch hint: pass `compile_specs=CoreMLBackend.generate_compile_specs("
-    "minimum_deployment_target=ct.target.iOS18)` (or higher) to "
-    "`CoreMLPartitioner` when lowering models that use `quantize_(...)`."
-)
-
-
-def _raise_with_executorch_hint(err: Exception) -> "BaseException":
-    """Re-raise a coremltools quantization error with ExecuTorch-specific guidance."""
-    msg = str(err)
-    if "iOS18" in msg or "iOS 18" in msg:
-        raise ValueError(f"{msg}\n{_IOS18_QUANT_HINT}") from err
-    raise err
 from coremltools.converters.mil.frontend.torch.ops import (
     _get_inputs,
     _get_kwinputs,
@@ -40,6 +26,21 @@ from coremltools.converters.mil.frontend.torch.torch_op_registry import (
 )
 from coremltools.converters.mil.mil import types
 from executorch.exir.dim_order_utils import get_memory_format
+
+
+_IOS18_QUANT_HINT = (
+    "ExecuTorch hint: pass `compile_specs=CoreMLBackend.generate_compile_specs("
+    "minimum_deployment_target=ct.target.iOS18)` (or higher) to "
+    "`CoreMLPartitioner` when lowering models that use `quantize_(...)`."
+)
+
+
+def _raise_with_executorch_hint(err: Exception) -> "BaseException":
+    """Re-raise a coremltools quantization error with ExecuTorch-specific guidance."""
+    msg = str(err)
+    if "iOS18" in msg or "iOS 18" in msg:
+        raise ValueError(f"{msg}\n{_IOS18_QUANT_HINT}") from err
+    raise err
 
 
 # https://github.com/apple/coremltools/pull/2563
