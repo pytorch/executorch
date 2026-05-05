@@ -904,39 +904,75 @@ class FXGraphCompare {
             return el;
         };
 
-        const allProps = [];
+        const visViewerPairs = this.viewers
+            .map((v, i) => ({ v, name: this._viewerNames[i] }))
+            .filter(({ name }) => this._visibleViewers.has(name));
+        const sections = [{ key: 'base', title: null, props: [] }];
+        const sectionByKey = new Map([['base', sections[0]]]);
         const rowData = new Map();
+        const addProp = (section, prop) => {
+            if (!section.props.includes(prop)) section.props.push(prop);
+        };
+        const addSection = (key, title) => {
+            if (!sectionByKey.has(key)) {
+                const section = { key, title, props: [] };
+                sectionByKey.set(key, section);
+                sections.push(section);
+            }
+            return sectionByKey.get(key);
+        };
+
         nodeIdMap.forEach((nid, v) => {
             const node = v.store.activeNodeMap.get(nid);
             if (!node) return;
-            const props = { id: nid, op: node.op || '', ...(node.info || {}) };
-            Object.keys(props).forEach((k) => { if (!allProps.includes(k)) allProps.push(k); });
-            rowData.set(v, props);
+            const baseNode = (v.store.baseData.nodes || []).find((n) => n.id === nid) || node;
+            const bySection = new Map();
+            const baseProps = { id: nid, op: baseNode.op || node.op || '', ...(baseNode.info || {}) };
+            Object.keys(baseProps).forEach((prop) => addProp(sections[0], prop));
+            bySection.set('base', baseProps);
+
+            const activeExtensions = Array.from(v.controller?.state?.activeExtensions || []);
+            activeExtensions.forEach((extId) => {
+                const ext = v.store.extensions && v.store.extensions[extId];
+                const extNode = ext && ext.nodes && ext.nodes[nid];
+                if (!extNode || !extNode.info) return;
+                const title = ext.name || extId;
+                const section = addSection(`ext:${extId}`, title);
+                const props = { ...extNode.info };
+                Object.keys(props).forEach((prop) => addProp(section, prop));
+                bySection.set(section.key, props);
+            });
+
+            rowData.set(v, bySection);
         });
 
         // Header row
         this._infoRow.appendChild(makeCell('fx-compare-info-hdr fx-compare-info-prop', 'Property'));
-        this._viewerNames.forEach((name) => {
-            if (!this._visibleViewers.has(name)) return;
+        visViewerPairs.forEach(({ name }) => {
             this._infoRow.appendChild(makeCell('fx-compare-info-hdr', name));
         });
 
-        // Data rows
-        allProps.forEach((prop, idx) => {
-            const rowCls = idx % 2 === 1 ? ' fx-compare-info-row-alt' : '';
-            const visViewerPairs = this.viewers
-                .map((v, i) => ({ v, name: this._viewerNames[i] }))
-                .filter(({ name }) => this._visibleViewers.has(name));
-            const vals = visViewerPairs.map(({ v }) => {
-                const d = rowData.get(v);
-                if (!d || d[prop] === undefined) return ' -- ';
-                const raw = d[prop];
-                return (raw !== null && typeof raw === 'object') ? JSON.stringify(raw, null, 2) : String(raw);
-            });
-            const allSame = vals.every((v) => v === vals[0]);
-            this._infoRow.appendChild(makeCell('fx-compare-info-prop' + rowCls, prop));
-            vals.forEach((val) => {
-                this._infoRow.appendChild(makeCell('fx-compare-info-val' + rowCls + (allSame ? '' : ' fx-compare-info-diff'), val));
+        let rowIdx = 0;
+        sections.forEach((section) => {
+            if (section.props.length === 0) return;
+            if (section.title) {
+                this._infoRow.appendChild(makeCell('fx-compare-info-section', section.title));
+            }
+            section.props.forEach((prop) => {
+                const rowCls = rowIdx % 2 === 1 ? ' fx-compare-info-row-alt' : '';
+                rowIdx++;
+                const vals = visViewerPairs.map(({ v }) => {
+                    const bySection = rowData.get(v);
+                    const d = bySection && bySection.get(section.key);
+                    if (!d || d[prop] === undefined) return ' -- ';
+                    const raw = d[prop];
+                    return (raw !== null && typeof raw === 'object') ? JSON.stringify(raw, null, 2) : String(raw);
+                });
+                const allSame = vals.every((v) => v === vals[0]);
+                this._infoRow.appendChild(makeCell('fx-compare-info-prop' + rowCls, prop));
+                vals.forEach((val) => {
+                    this._infoRow.appendChild(makeCell('fx-compare-info-val' + rowCls + (allSame ? '' : ' fx-compare-info-diff'), val));
+                });
             });
         });
     }
