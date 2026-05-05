@@ -404,7 +404,7 @@ cases = {
     "groupnorm": TransposeCountCase(
         GroupNormModule(),
         (torch.randn(1, 4, 4, 4),),
-        1,
+        0,
     ),
     "multihead_attention_rank2": TransposeCountCase(
         MultiheadAttentionModule(),
@@ -430,16 +430,16 @@ cases = {
         Model1ConvMaxPoolResidualLinear(), (torch.randn(2, 8, 64),), 5
     ),
     "model_2_conv_mha_linear_layernorm": TransposeCountCase(
-        Model2ConvMhaLinearLayerNorm(), (torch.randn(2, 8, 32),), 11
+        Model2ConvMhaLinearLayerNorm(), (torch.randn(2, 8, 32),), 9
     ),
     "model_3_lstm_linear": TransposeCountCase(
         Model3LstmLinear(), (torch.randn(2, 16, 8),), 2
     ),
     "model_4_conv_lstm_linear_layernorm": TransposeCountCase(
-        Model4ConvLstmLinearLayerNorm(), (torch.randn(2, 8, 32),), 5
+        Model4ConvLstmLinearLayerNorm(), (torch.randn(2, 8, 32),), 3
     ),
     "model_5_dwconv_gelu_layernorm_avgpool": TransposeCountCase(
-        Model5DwConvGeluLayerNormAvgPool(), (torch.randn(1, 8, 16, 16),), 6
+        Model5DwConvGeluLayerNormAvgPool(), (torch.randn(1, 8, 16, 16),), 4
     ),
     "model_6_gru_linear": TransposeCountCase(
         Model6GruLinear(), (torch.randn(2, 16, 8),), 2
@@ -521,7 +521,7 @@ cases_channels_last = {
     "groupnorm_channels_last": TransposeCountCase(
         GroupNormModule(),
         (torch.randn(1, 4, 4, 4).to(memory_format=torch.channels_last),),
-        3,
+        2,
     ),
     "cumsum_rank4_dim3_channels_last": TransposeCountCase(
         CumsumModule(),
