@@ -7,6 +7,7 @@
 # pyre-unsafe
 
 import ctypes
+import os
 import unittest
 from typing import Tuple
 
@@ -38,8 +39,33 @@ from torchao.utils import unwrap_tensor_subclass
 
 try:
     ctypes.CDLL("libvulkan.so.1")
-except:
+except OSError:
     pass
+
+
+def _is_using_swiftshader() -> bool:
+    try:
+        if os.environ.get("ETVK_USING_SWIFTSHADER", "0") in ("1", "True"):
+            return True
+        vk_icd = os.environ.get("VK_ICD_FILENAMES", "")
+        if "swiftshader" in vk_icd.lower():
+            return True
+        RTLD_NOLOAD = 4
+        for lib_name in ("libvk_swiftshader.so", "libvk_swiftshader_fbcode.so"):
+            try:
+                ctypes.CDLL(lib_name, mode=RTLD_NOLOAD)
+                return True
+            except Exception:
+                continue
+        return False
+    except Exception:
+        return True
+
+
+skip_if_swiftshader = unittest.skipIf(
+    _is_using_swiftshader(),
+    "Not compatible with swiftshader",
+)
 
 
 def lower_module(
@@ -590,6 +616,7 @@ class TestVulkanBackend(unittest.TestCase):
 
         self.lower_unary_module_and_test_output(SqrtModule())
 
+    @skip_if_swiftshader
     def test_vulkan_backend_hardshrink(self):
         class HardshrinkModule(torch.nn.Module):
             def __init__(self):
@@ -1028,7 +1055,7 @@ class TestVulkanBackend(unittest.TestCase):
             sample_inputs,
         )
 
-    @unittest.skip("layer norm compute shader not working with swiftshader")
+    @skip_if_swiftshader
     def test_vulkan_backend_native_layer_norm(self):
         class NativeLayerNormModule(torch.nn.Module):
             def __init__(self):
@@ -1459,9 +1486,7 @@ class TestVulkanBackend(unittest.TestCase):
             sample_inputs,
         )
 
-    @unittest.skip(
-        "Softmax shader with shared memory does not work with swiftshader due to potential swiftshader bug"
-    )
+    @skip_if_swiftshader
     def test_vulkan_backend_softmax(self):
         class SoftmaxModule(torch.nn.Module):
             def __init__(self):
@@ -1480,9 +1505,7 @@ class TestVulkanBackend(unittest.TestCase):
             sample_inputs,
         )
 
-    @unittest.skip(
-        "Softmax shader with shared memory does not work with swiftshader due to potential swiftshader bug"
-    )
+    @skip_if_swiftshader
     def test_vulkan_backend_logsoftmax(self):
         class LogSoftmaxModule(torch.nn.Module):
             def __init__(self):
@@ -2364,7 +2387,7 @@ class TestVulkanBackend(unittest.TestCase):
             quantized_linear_module_gemm, sample_inputs_gemm, atol=1e-2, rtol=1e-2
         )
 
-    @unittest.skip("Cannot run on swiftshader due to no integer dot product support")
+    @skip_if_swiftshader
     def test_vulkan_backend_xnnpack_pt2e_quantized_linear_sequence(self):
         """
         Test a sequence of linear layers quantized with XNNPACK quantization config.
@@ -2439,7 +2462,7 @@ class TestVulkanBackend(unittest.TestCase):
             rtol=1e-1,
         )
 
-    @unittest.skip("Cannot run on swiftshader due to no integer dot product support")
+    @skip_if_swiftshader
     def test_vulkan_backend_xnnpack_pt2e_quantized_conv_sequence(self):
         """
         Test a sequence of convolution layers quantized with PT2E quantization.
@@ -2530,7 +2553,7 @@ class TestVulkanBackend(unittest.TestCase):
             rtol=1e-1,
         )
 
-    @unittest.skip("Cannot run on swiftshader due to no integer dot product support")
+    @skip_if_swiftshader
     def test_vulkan_backend_xnnpack_pt2e_quantized_conv_sequence_all_reduced(self):
         """
         Test a sequence of convolution layers quantized with PT2E quantization.
@@ -2610,7 +2633,7 @@ class TestVulkanBackend(unittest.TestCase):
             rtol=1e-1,
         )
 
-    @unittest.skip("Cannot run on swiftshader due to no 8-bit int support")
+    @skip_if_swiftshader
     def test_vulkan_backend_torchao_8da4w_quantized_linear(self):
         """
         Test TorchAO 8da4w quantization (int8 dynamic activation + int4 weight) with Vulkan backend.
