@@ -30,7 +30,11 @@ set_overridable_option(EXECUTORCH_BUILD_WHEEL_DO_NOT_USE ON)
 # override mechanism.
 set(_executorch_pybind_enable_vgf OFF)
 if(DEFINED ENV{EXECUTORCH_PYBIND_ENABLE_VGF})
-  set(_executorch_pybind_enable_vgf "$ENV{EXECUTORCH_PYBIND_ENABLE_VGF}")
+  if("$ENV{EXECUTORCH_PYBIND_ENABLE_VGF}" STREQUAL "ON")
+    set(_executorch_pybind_enable_vgf ON)
+  else()
+    set(_executorch_pybind_enable_vgf OFF)
+  endif()
 endif()
 
 # TODO(larryliu0820): Temporarily disable building llm_runner for Windows wheel
