@@ -16,7 +16,6 @@ from executorch.backends.arm._passes.fuse_constant_ops_pass import (
 )
 from executorch.backends.arm._passes.size_adjust_input_pass import SizeAdjustInputPass
 from executorch.backends.arm.constants import DQ_OPS, Q_OPS
-from executorch.exir.backend.utils import WhyNoPartitionReporter
 from executorch.exir.dialects._ops import ops as exir_ops
 from executorch.exir.pass_base import ExportPass
 
@@ -51,14 +50,6 @@ def get_dynamic_meandim_decomposition(op) -> tuple:
     raise RuntimeError(f"Can't get meandim decomposition for op {op}")
 
 
-def get_avgpool(op):
-    if op in (exir_ops.edge.aten.mean.dim, exir_ops.edge.aten.mean.default):
-        return exir_ops.edge.aten.avg_pool2d.default
-    if op in (torch.ops.aten.mean.dim, torch.ops.aten.mean.default):
-        return torch.ops.aten.avg_pool2d.default
-    raise RuntimeError(f"Can't get meandim decomposition for op {op}")
-
-
 def get_view(op):
     if op in (exir_ops.edge.aten.mean.dim, exir_ops.edge.aten.mean.default):
         return exir_ops.edge.aten.view_copy.default
@@ -79,12 +70,11 @@ def get_quantization(op):
 
 
 class DecomposeMeanDimPass(ArmPass):
-    """Decomposes a meandim into avg_pool and/or sum + mul (1/N).
+    """Decomposes a meandim into sum + mul (1/N).
 
-    ::
-
-        h, w -> avg_pool
-        n, c -> sum + mul(1/N)
+    Each reduction dimension is handled via REDUCE_SUM followed by
+    multiplication by 1/N, which works on any axis without layout
+    constraints (unlike AVG_POOL2D which only pools over spatial H×W).
 
     For rank < 4, the input is reshaped to 4D by padding with dim=1 from the
     left.
@@ -92,10 +82,9 @@ class DecomposeMeanDimPass(ArmPass):
     Example:
         x = mean_dim(x, (0,2), keepdim=False) # x = (c,h,w)
     Becomes:
-        x = view_copy.default(x, new_shape=(1,c,h,w)) # Reshape to work with avg_pool
-        x = avg_pool2d.default(x, kernel=(1,w), stride=(1,1)) # Reduce w with avg_pool
-        x = sum.dim_IntList(x, dim=1, keepdims=True) # Reduce c with sum
-        x = mul.Tensor(x, 1/c) # Divide by number of channels to get mean
+        x = view_copy.default(x, new_shape=(1,c,h,w)) # Reshape to 4D
+        x = sum.dim_IntList(x, dim=(1,3), keepdims=True) # Reduce c,w with sum
+        x = mul.Tensor(x, 1/(c*w)) # Divide by number of elements to get mean
         x = view_copy.default(x, new_shape=(h)) # Squeeze dims since keepdims = False
 
     """
@@ -110,14 +99,6 @@ class DecomposeMeanDimPass(ArmPass):
         super().__init__(*args, **kwargs)
         self._graph_module = graph_module
         self._tosa_spec = tosa_spec
-        # Lazy import to avoid circular dependency with operator_support
-        from executorch.backends.arm.operator_support.pool_2d_support import (
-            AvgPool2dSupported,
-        )
-
-        self._avg_pool_checker = AvgPool2dSupported(
-            self._tosa_spec, WhyNoPartitionReporter()
-        )
 
     def call_operator(self, op, args, kwargs, meta, updated=False):
         if op not in (
@@ -167,12 +148,6 @@ class DecomposeMeanDimPass(ArmPass):
 
             x = super().call_operator(view_op, (x, new_shape), {}, meta, True)
             x = self._maybe_insert_q_dq_after(x, meta)
-
-        # Reduce (h,w) dims by avg pool if possible
-        if not has_symbolic_reduce_dim:
-            x, dims_to_reduce = self._reduce_by_average_pool(
-                op, x, dims_to_reduce, meta
-            )
 
         # Reshape back to 5D if necessary
         if len(input_shape) > 4:
@@ -258,44 +233,6 @@ class DecomposeMeanDimPass(ArmPass):
             )
 
         return super().call_operator(mul_op, (sum, divisor), {}, meta, True)
-
-    def _reduce_by_average_pool(self, op, input_node, dims, meta):
-        dims_to_reduce_by_avgpool = [dim for dim in dims if dim >= 2]
-        if len(dims_to_reduce_by_avgpool) == 0:
-            return input_node, dims
-
-        dims_to_reduce_by_sum = [dim for dim in dims if dim < 2]
-
-        avgpool_op = get_avgpool(op)
-        input_shape = input_node.data.size()
-
-        stride = [1, 1]
-        if dims_to_reduce_by_avgpool in ([2, 3], [3, 2]):
-            kernel_size = [input_shape[2], input_shape[3]]
-        elif dims_to_reduce_by_avgpool == [3]:
-            kernel_size = [1, input_shape[3]]
-        elif dims_to_reduce_by_avgpool == [2]:
-            kernel_size = [input_shape[2], 1]
-        else:
-            raise RuntimeError(
-                f"Bad dims {dims_to_reduce_by_avgpool} for {op} decomposition of mean_dim."
-            )
-
-        args = (input_node, kernel_size, stride)
-
-        avg_pool_node = self._graph_module.graph.create_node(
-            "call_function", avgpool_op, args
-        )
-        is_supported = self._avg_pool_checker.is_node_tosa_supported(
-            avg_pool_node, self._tosa_spec
-        )
-
-        if is_supported:
-            out = super().call_operator(avgpool_op, args, {}, meta, True)
-            out = self._maybe_insert_q_dq_after(out, meta)
-            return out, dims_to_reduce_by_sum
-
-        return input_node, dims
 
     def _maybe_insert_q_dq_after(self, op, meta):
         """If the input node of op is a dequant node, insert a q-dq pair after
