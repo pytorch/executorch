@@ -36,10 +36,18 @@ Weight layout:
   Dequant: weight = (uint4 - 8) * scale  (symmetric, no zero-point tensor)
 """
 
+import functools
+
 import torch
 import triton
 import triton.language as tl
 from torch.library import triton_op, wrap_triton
+
+
+@functools.lru_cache(maxsize=8)
+def _num_sms(device_index: int) -> int:
+    """Cache device SM count; queried once per device."""
+    return torch.cuda.get_device_properties(device_index).multi_processor_count
 
 
 # ---------------------------------------------------------------------------
@@ -177,8 +185,6 @@ _GEMM1_CONFIGS = [
     triton.Config({"BLOCK_SIZE_N": 8, "BLOCK_SIZE_K": 256}, num_warps=2, num_stages=5),
     triton.Config({"BLOCK_SIZE_N": 8, "BLOCK_SIZE_K": 256}, num_warps=2, num_stages=3),
     triton.Config({"BLOCK_SIZE_N": 16, "BLOCK_SIZE_K": 256}, num_warps=2, num_stages=5),
-    triton.Config({"BLOCK_SIZE_N": 16, "BLOCK_SIZE_K": 128}, num_warps=4, num_stages=4),
-    triton.Config({"BLOCK_SIZE_N": 32, "BLOCK_SIZE_K": 128}, num_warps=4, num_stages=3),
 ]
 
 # Autotune configs for GEMM2 (_fused_moe_silu_kernel).
@@ -191,8 +197,6 @@ _GEMM2_CONFIGS = [
     triton.Config({"BLOCK_SIZE_N": 16, "BLOCK_SIZE_K": 256}, num_warps=4, num_stages=4),
     triton.Config({"BLOCK_SIZE_N": 8, "BLOCK_SIZE_K": 256}, num_warps=2, num_stages=3),
     triton.Config({"BLOCK_SIZE_N": 8, "BLOCK_SIZE_K": 256}, num_warps=4, num_stages=3),
-    triton.Config({"BLOCK_SIZE_N": 16, "BLOCK_SIZE_K": 128}, num_warps=2, num_stages=3),
-    triton.Config({"BLOCK_SIZE_N": 32, "BLOCK_SIZE_K": 128}, num_warps=4, num_stages=4),
 ]
 
 
@@ -301,9 +305,9 @@ def _fused_moe_kernel(
                 scale_ptrs, mask=k_mask[:, None] & n_mask[None, :], other=0.0
             ).to(tl.float32)
 
-        # Dequantize and accumulate in float32: vector-matrix multiply
-        b_dequant = (b.to(tl.float32) - 8.0) * b_scale
-        acc += tl.sum(a[:, None].to(tl.float32) * b_dequant, axis=0)
+        # Dequantize and accumulate: vector-matrix multiply
+        b_dequant = ((b.to(tl.float32) - 8.0) * b_scale).to(compute_type)
+        acc += tl.sum(a[:, None].to(compute_type) * b_dequant, axis=0)
 
         # Advance K pointers
         a_ptrs += BLOCK_SIZE_K * stride_ak
@@ -389,10 +393,10 @@ def _fused_moe_silu_kernel(
         k_remaining = K - k_step * BLOCK_SIZE_K
         k_mask = offs_k < k_remaining
 
-        # Load gate and up in float32, apply SiLU(gate) * up
+        # Load gate and up, apply SiLU(gate) * up
         gate = tl.load(a_gate_ptrs, mask=k_mask, other=0.0).to(tl.float32)
-        up = tl.load(a_up_ptrs, mask=k_mask, other=0.0).to(tl.float32)
-        a = gate * tl.sigmoid(gate) * up
+        up = tl.load(a_up_ptrs, mask=k_mask, other=0.0)
+        a = (gate * tl.sigmoid(gate) * up).to(compute_type)
 
         # Load and dequantize INT4 weights
         b = tl.load(b_ptrs, mask=k_mask[:, None] & n_mask[None, :], other=0)
@@ -420,8 +424,8 @@ def _fused_moe_silu_kernel(
                 scale_ptrs, mask=k_mask[:, None] & n_mask[None, :], other=0.0
             ).to(tl.float32)
 
-        b_dequant = (b.to(tl.float32) - 8.0) * b_scale
-        acc += tl.sum(a[:, None] * b_dequant, axis=0)
+        b_dequant = ((b.to(tl.float32) - 8.0) * b_scale).to(compute_type)
+        acc += tl.sum(a[:, None].to(compute_type) * b_dequant, axis=0)
 
         a_gate_ptrs += BLOCK_SIZE_K * stride_ak
         a_up_ptrs += BLOCK_SIZE_K * stride_ak
@@ -698,26 +702,31 @@ def moe_align_block_size(
 # Autotune configs for batched GEMM1 (gate+up projection).
 # BLOCK_M is fixed at _BATCHED_BLOCK_M; only N and K are tuned.
 _BATCHED_GEMM1_CONFIGS = [
-    triton.Config({"BLOCK_SIZE_N": 64, "BLOCK_SIZE_K": 64}, num_warps=4, num_stages=3),
-    triton.Config({"BLOCK_SIZE_N": 64, "BLOCK_SIZE_K": 128}, num_warps=4, num_stages=3),
-    triton.Config({"BLOCK_SIZE_N": 128, "BLOCK_SIZE_K": 64}, num_warps=4, num_stages=3),
+    triton.Config({"BLOCK_SIZE_N": 64, "BLOCK_SIZE_K": 64, "GROUP_SIZE_M": 8}, num_warps=4, num_stages=3),
+    triton.Config({"BLOCK_SIZE_N": 64, "BLOCK_SIZE_K": 128, "GROUP_SIZE_M": 8}, num_warps=4, num_stages=3),
+    triton.Config({"BLOCK_SIZE_N": 64, "BLOCK_SIZE_K": 128, "GROUP_SIZE_M": 16}, num_warps=4, num_stages=3),
+    triton.Config({"BLOCK_SIZE_N": 128, "BLOCK_SIZE_K": 64, "GROUP_SIZE_M": 8}, num_warps=4, num_stages=3),
+    triton.Config({"BLOCK_SIZE_N": 128, "BLOCK_SIZE_K": 64, "GROUP_SIZE_M": 16}, num_warps=4, num_stages=3),
     triton.Config(
-        {"BLOCK_SIZE_N": 128, "BLOCK_SIZE_K": 128}, num_warps=4, num_stages=2
+        {"BLOCK_SIZE_N": 128, "BLOCK_SIZE_K": 128, "GROUP_SIZE_M": 8}, num_warps=4, num_stages=2
     ),
-    triton.Config({"BLOCK_SIZE_N": 64, "BLOCK_SIZE_K": 128}, num_warps=8, num_stages=4),
-    triton.Config({"BLOCK_SIZE_N": 128, "BLOCK_SIZE_K": 64}, num_warps=8, num_stages=4),
+    triton.Config(
+        {"BLOCK_SIZE_N": 128, "BLOCK_SIZE_K": 128, "GROUP_SIZE_M": 16}, num_warps=4, num_stages=2
+    ),
 ]
 
 # Autotune configs for batched GEMM2 (down projection + SiLU).
 _BATCHED_GEMM2_CONFIGS = [
-    triton.Config({"BLOCK_SIZE_N": 64, "BLOCK_SIZE_K": 64}, num_warps=4, num_stages=3),
-    triton.Config({"BLOCK_SIZE_N": 128, "BLOCK_SIZE_K": 64}, num_warps=4, num_stages=3),
-    triton.Config({"BLOCK_SIZE_N": 64, "BLOCK_SIZE_K": 128}, num_warps=4, num_stages=2),
+    triton.Config({"BLOCK_SIZE_N": 64, "BLOCK_SIZE_K": 64, "GROUP_SIZE_M": 8}, num_warps=4, num_stages=3),
+    triton.Config({"BLOCK_SIZE_N": 128, "BLOCK_SIZE_K": 64, "GROUP_SIZE_M": 8}, num_warps=4, num_stages=3),
+    triton.Config({"BLOCK_SIZE_N": 128, "BLOCK_SIZE_K": 64, "GROUP_SIZE_M": 16}, num_warps=4, num_stages=3),
+    triton.Config({"BLOCK_SIZE_N": 64, "BLOCK_SIZE_K": 128, "GROUP_SIZE_M": 8}, num_warps=4, num_stages=2),
     triton.Config(
-        {"BLOCK_SIZE_N": 128, "BLOCK_SIZE_K": 128}, num_warps=4, num_stages=2
+        {"BLOCK_SIZE_N": 128, "BLOCK_SIZE_K": 128, "GROUP_SIZE_M": 8}, num_warps=4, num_stages=2
     ),
-    triton.Config({"BLOCK_SIZE_N": 64, "BLOCK_SIZE_K": 128}, num_warps=8, num_stages=3),
-    triton.Config({"BLOCK_SIZE_N": 128, "BLOCK_SIZE_K": 64}, num_warps=8, num_stages=4),
+    triton.Config(
+        {"BLOCK_SIZE_N": 128, "BLOCK_SIZE_K": 128, "GROUP_SIZE_M": 16}, num_warps=4, num_stages=2
+    ),
 ]
 
 
@@ -734,6 +743,7 @@ def _fused_moe_batched_kernel(
     # Dimensions
     N: tl.constexpr,
     K: tl.constexpr,
+    num_expert_blocks,
     # Strides
     stride_am,
     stride_ak,
@@ -751,105 +761,104 @@ def _fused_moe_batched_kernel(
     BLOCK_SIZE_M: tl.constexpr,
     BLOCK_SIZE_N: tl.constexpr,
     BLOCK_SIZE_K: tl.constexpr,
+    GROUP_SIZE_M: tl.constexpr,
+    NUM_SMS: tl.constexpr,
     compute_type: tl.constexpr,
 ):
-    """Batched GEMM1 (gate+up) with tensor cores.
+    """Batched GEMM1 (gate+up) with tensor cores — persistent + grouped tiles.
 
-    Each program handles one (expert-M-block, N-block). Tokens are
-    gathered via sorted_token_ids for expert-grouped access.
+    Launches NUM_SMS programs and loops over the (expert_block, n_block)
+    tile space. Uses Triton-style grouped (column-major within group) ordering
+    so consecutive M-blocks of the same expert reuse B[expert, n_block, *]
+    via L2.
     """
-    pid = tl.program_id(0)
+    start_pid = tl.program_id(0)
     num_n_blocks = tl.cdiv(N, BLOCK_SIZE_N)
-    expert_block_idx = pid // num_n_blocks
-    n_block = pid % num_n_blocks
+    num_tiles = num_expert_blocks * num_n_blocks
+    num_tiles_per_group = GROUP_SIZE_M * num_n_blocks
 
-    expert_id = tl.load(expert_ids + expert_block_idx).to(tl.int64)
+    for tile_id in tl.range(start_pid, num_tiles, NUM_SMS):
+        group_id = tile_id // num_tiles_per_group
+        first_eb = group_id * GROUP_SIZE_M
+        group_size_m = tl.minimum(num_expert_blocks - first_eb, GROUP_SIZE_M)
+        within = tile_id % num_tiles_per_group
+        expert_block_idx = first_eb + (within % group_size_m)
+        n_block = within // group_size_m
 
-    # M-block: BLOCK_SIZE_M consecutive entries in sorted_token_ids
-    offs_m = expert_block_idx * BLOCK_SIZE_M + tl.arange(0, BLOCK_SIZE_M)
-    # Load pair indices; sentinel values map to the zero-padding row
-    pair_ids = tl.load(sorted_token_ids + offs_m)
-    token_ids = pair_ids // top_k  # map pair -> token for activation lookup
+        expert_id = tl.load(expert_ids + expert_block_idx).to(tl.int64)
 
-    # N offsets
-    offs_n = n_block * BLOCK_SIZE_N + tl.arange(0, BLOCK_SIZE_N).to(tl.int64)
-    n_mask = offs_n < N
-    offs_k = tl.arange(0, BLOCK_SIZE_K)
+        offs_m = expert_block_idx * BLOCK_SIZE_M + tl.arange(0, BLOCK_SIZE_M)
+        pair_ids = tl.load(sorted_token_ids + offs_m)
+        token_ids = pair_ids // top_k
 
-    # A pointers: gathered rows [BLOCK_M, K]
-    a_ptrs = A + token_ids[:, None] * stride_am + offs_k[None, :] * stride_ak
+        offs_n = n_block * BLOCK_SIZE_N + tl.arange(0, BLOCK_SIZE_N).to(tl.int64)
+        n_mask = offs_n < N
+        offs_k = tl.arange(0, BLOCK_SIZE_K)
 
-    # B pointers: [expert_id, offs_n, offs_k//2]
-    b_ptrs = (
-        B
-        + expert_id * stride_be
-        + (offs_k[:, None] // 2) * stride_bk
-        + offs_n[None, :] * stride_bn
-    )
-    b_shifter = (offs_k[:, None] % 2) * 4
+        a_ptrs = A + token_ids[:, None] * stride_am + offs_k[None, :] * stride_ak
+        b_ptrs = (
+            B
+            + expert_id * stride_be
+            + (offs_k[:, None] // 2) * stride_bk
+            + offs_n[None, :] * stride_bn
+        )
+        b_shifter = (offs_k[:, None] % 2) * 4
 
-    # 2D accumulator [BLOCK_M, BLOCK_N]
-    acc = tl.zeros((BLOCK_SIZE_M, BLOCK_SIZE_N), dtype=tl.float32)
+        acc = tl.zeros((BLOCK_SIZE_M, BLOCK_SIZE_N), dtype=tl.float32)
 
-    for k_step in range(0, tl.cdiv(K, BLOCK_SIZE_K)):
-        k_remaining = K - k_step * BLOCK_SIZE_K
-        k_mask = offs_k < k_remaining
+        for k_step in range(0, tl.cdiv(K, BLOCK_SIZE_K)):
+            k_remaining = K - k_step * BLOCK_SIZE_K
+            k_mask = offs_k < k_remaining
 
-        # Load A tile [BLOCK_M, BLOCK_K] — gathered via token_ids
-        a = tl.load(a_ptrs, mask=k_mask[None, :], other=0.0)
+            a = tl.load(a_ptrs, mask=k_mask[None, :], other=0.0)
 
-        # Load B tile [BLOCK_K, BLOCK_N] and unpack INT4
-        b = tl.load(b_ptrs, mask=k_mask[:, None] & n_mask[None, :], other=0)
-        b = (b >> b_shifter) & 0xF
+            b = tl.load(b_ptrs, mask=k_mask[:, None] & n_mask[None, :], other=0)
+            b = (b >> b_shifter) & 0xF
 
-        # Per-group scales
-        if BLOCK_SIZE_K <= group_size:
-            group_idx = (BLOCK_SIZE_K * k_step) // group_size
-            scale_ptrs = (
-                B_scale
-                + expert_id * stride_bse
-                + offs_n[None, :] * stride_bsn
-                + group_idx * stride_bsk
-            )
-            b_scale = tl.load(scale_ptrs, mask=n_mask[None, :], other=0.0).to(
-                tl.float32
-            )
-        else:
-            scale_ptrs = (
-                B_scale
-                + expert_id * stride_bse
-                + offs_n[None, :] * stride_bsn
-                + ((offs_k[:, None] + BLOCK_SIZE_K * k_step) // group_size) * stride_bsk
-            )
-            b_scale = tl.load(
-                scale_ptrs, mask=k_mask[:, None] & n_mask[None, :], other=0.0
-            ).to(tl.float32)
+            if BLOCK_SIZE_K <= group_size:
+                group_idx = (BLOCK_SIZE_K * k_step) // group_size
+                scale_ptrs = (
+                    B_scale
+                    + expert_id * stride_bse
+                    + offs_n[None, :] * stride_bsn
+                    + group_idx * stride_bsk
+                )
+                b_scale = tl.load(scale_ptrs, mask=n_mask[None, :], other=0.0).to(
+                    tl.float32
+                )
+            else:
+                scale_ptrs = (
+                    B_scale
+                    + expert_id * stride_bse
+                    + offs_n[None, :] * stride_bsn
+                    + ((offs_k[:, None] + BLOCK_SIZE_K * k_step) // group_size) * stride_bsk
+                )
+                b_scale = tl.load(
+                    scale_ptrs, mask=k_mask[:, None] & n_mask[None, :], other=0.0
+                ).to(tl.float32)
 
-        # Dequantize: (uint4 - 8) * scale
-        b_dequant = ((b.to(tl.float32) - 8.0) * b_scale).to(compute_type)
+            b_dequant = ((b.to(tl.float32) - 8.0) * b_scale).to(compute_type)
+            acc += tl.dot(a.to(compute_type), b_dequant)
 
-        # Tensor core matmul: [BLOCK_M, BLOCK_K] @ [BLOCK_K, BLOCK_N]
-        acc += tl.dot(a.to(compute_type), b_dequant)
+            a_ptrs += BLOCK_SIZE_K * stride_ak
+            b_ptrs += (BLOCK_SIZE_K // 2) * stride_bk
 
-        # Advance K pointers
-        a_ptrs += BLOCK_SIZE_K * stride_ak
-        b_ptrs += (BLOCK_SIZE_K // 2) * stride_bk
-
-    # Write output in sorted order [BLOCK_M, BLOCK_N]
-    c_ptrs = C + offs_m[:, None] * stride_cm + offs_n[None, :] * stride_cn
-    tl.store(c_ptrs, acc.to(compute_type), mask=n_mask[None, :])
+        c_ptrs = C + offs_m[:, None] * stride_cm + offs_n[None, :] * stride_cn
+        tl.store(c_ptrs, acc.to(compute_type), mask=n_mask[None, :])
 
 
 # Autotune configs for the prequant GEMM1 INT8 kernel.
-# BLOCK_SIZE_K is FIXED at PREQUANT_BLOCK_K — only N/warps/stages tunable.
+# BLOCK_SIZE_K is FIXED at PREQUANT_BLOCK_K — only N/warps/stages/groups tunable.
 _BATCHED_GEMM1_INT8_CONFIGS = [
-    triton.Config({"BLOCK_SIZE_N": 128}, num_warps=4, num_stages=3),
-    triton.Config({"BLOCK_SIZE_N": 128}, num_warps=4, num_stages=4),
-    triton.Config({"BLOCK_SIZE_N": 128}, num_warps=8, num_stages=3),
-    triton.Config({"BLOCK_SIZE_N": 64}, num_warps=4, num_stages=3),
-    triton.Config({"BLOCK_SIZE_N": 64}, num_warps=4, num_stages=4),
-    triton.Config({"BLOCK_SIZE_N": 256}, num_warps=8, num_stages=3),
-    triton.Config({"BLOCK_SIZE_N": 256}, num_warps=8, num_stages=2),
+    triton.Config({"BLOCK_SIZE_N": 128, "GROUP_SIZE_M": 8}, num_warps=4, num_stages=3),
+    triton.Config({"BLOCK_SIZE_N": 128, "GROUP_SIZE_M": 8}, num_warps=4, num_stages=4),
+    triton.Config({"BLOCK_SIZE_N": 128, "GROUP_SIZE_M": 16}, num_warps=4, num_stages=3),
+    triton.Config({"BLOCK_SIZE_N": 128, "GROUP_SIZE_M": 8}, num_warps=8, num_stages=3),
+    triton.Config({"BLOCK_SIZE_N": 128, "GROUP_SIZE_M": 16}, num_warps=8, num_stages=3),
+    triton.Config({"BLOCK_SIZE_N": 64, "GROUP_SIZE_M": 8}, num_warps=4, num_stages=3),
+    triton.Config({"BLOCK_SIZE_N": 64, "GROUP_SIZE_M": 16}, num_warps=4, num_stages=3),
+    triton.Config({"BLOCK_SIZE_N": 256, "GROUP_SIZE_M": 8}, num_warps=8, num_stages=3),
+    triton.Config({"BLOCK_SIZE_N": 256, "GROUP_SIZE_M": 16}, num_warps=8, num_stages=2),
 ]
 
 
@@ -866,6 +875,7 @@ def _fused_moe_batched_int8_kernel(
     # Dimensions
     N: tl.constexpr,
     K: tl.constexpr,
+    num_expert_blocks,
     # Strides
     stride_qm,
     stride_qk,
@@ -884,87 +894,95 @@ def _fused_moe_batched_int8_kernel(
     BLOCK_SIZE_M: tl.constexpr,
     BLOCK_SIZE_N: tl.constexpr,
     BLOCK_SIZE_K: tl.constexpr,
+    GROUP_SIZE_M: tl.constexpr,
+    NUM_SMS: tl.constexpr,
     compute_type: tl.constexpr,
 ):
-    """Batched GEMM1 (gate+up) with INT8 tensor cores, consuming pre-quantized
-    activations + per-row-per-tile scales. No quantization in the K-loop.
+    """Batched GEMM1 with INT8 tensor cores — persistent + grouped tiles.
+
+    Consumes pre-quantized activations + per-row-per-tile scales.
+    Persistent grid: NUM_SMS programs each loop over a slice of the
+    (expert_block, n_block) tile space using grouped (column-major within
+    group) ordering for L2 reuse of expert weights.
     """
-    pid = tl.program_id(0)
+    start_pid = tl.program_id(0)
     num_n_blocks = tl.cdiv(N, BLOCK_SIZE_N)
-    expert_block_idx = pid // num_n_blocks
-    n_block = pid % num_n_blocks
+    num_tiles = num_expert_blocks * num_n_blocks
+    num_tiles_per_group = GROUP_SIZE_M * num_n_blocks
 
-    expert_id = tl.load(expert_ids + expert_block_idx).to(tl.int64)
+    for tile_id in tl.range(start_pid, num_tiles, NUM_SMS):
+        group_id = tile_id // num_tiles_per_group
+        first_eb = group_id * GROUP_SIZE_M
+        group_size_m = tl.minimum(num_expert_blocks - first_eb, GROUP_SIZE_M)
+        within = tile_id % num_tiles_per_group
+        expert_block_idx = first_eb + (within % group_size_m)
+        n_block = within // group_size_m
 
-    offs_m = expert_block_idx * BLOCK_SIZE_M + tl.arange(0, BLOCK_SIZE_M)
+        expert_id = tl.load(expert_ids + expert_block_idx).to(tl.int64)
 
-    offs_n = n_block * BLOCK_SIZE_N + tl.arange(0, BLOCK_SIZE_N).to(tl.int64)
-    n_mask = offs_n < N
-    offs_k = tl.arange(0, BLOCK_SIZE_K)
+        offs_m = expert_block_idx * BLOCK_SIZE_M + tl.arange(0, BLOCK_SIZE_M)
 
-    # A_int8 is in sorted order, indexed directly by offs_m
-    a_ptrs = A_int8 + offs_m[:, None] * stride_qm + offs_k[None, :] * stride_qk
+        offs_n = n_block * BLOCK_SIZE_N + tl.arange(0, BLOCK_SIZE_N).to(tl.int64)
+        n_mask = offs_n < N
+        offs_k = tl.arange(0, BLOCK_SIZE_K)
 
-    b_ptrs = (
-        B
-        + expert_id * stride_be
-        + (offs_k[:, None] // 2) * stride_bk
-        + offs_n[None, :] * stride_bn
-    )
-    b_shifter = (offs_k[:, None] % 2) * 4
+        a_ptrs = A_int8 + offs_m[:, None] * stride_qm + offs_k[None, :] * stride_qk
 
-    acc = tl.zeros((BLOCK_SIZE_M, BLOCK_SIZE_N), dtype=tl.float32)
+        b_ptrs = (
+            B
+            + expert_id * stride_be
+            + (offs_k[:, None] // 2) * stride_bk
+            + offs_n[None, :] * stride_bn
+        )
+        b_shifter = (offs_k[:, None] % 2) * 4
 
-    for k_step in range(0, tl.cdiv(K, BLOCK_SIZE_K)):
-        k_remaining = K - k_step * BLOCK_SIZE_K
-        k_mask = offs_k < k_remaining
+        acc = tl.zeros((BLOCK_SIZE_M, BLOCK_SIZE_N), dtype=tl.float32)
 
-        # Load pre-quantized INT8 activation tile [BLOCK_M, BLOCK_K]
-        a_int8 = tl.load(a_ptrs, mask=k_mask[None, :], other=0)
+        for k_step in range(0, tl.cdiv(K, BLOCK_SIZE_K)):
+            k_remaining = K - k_step * BLOCK_SIZE_K
+            k_mask = offs_k < k_remaining
 
-        # Load pre-computed per-row-per-tile scale [BLOCK_M]
-        a_scale = tl.load(A_scale + offs_m * stride_sm + k_step * stride_sk)
+            a_int8 = tl.load(a_ptrs, mask=k_mask[None, :], other=0)
+            a_scale = tl.load(A_scale + offs_m * stride_sm + k_step * stride_sk)
 
-        # Load and unpack INT4 weights to INT8 [BLOCK_K, BLOCK_N]
-        b = tl.load(b_ptrs, mask=k_mask[:, None] & n_mask[None, :], other=0)
-        b = (b >> b_shifter) & 0xF
-        b_int8 = (b - 8).to(tl.int8)
+            b = tl.load(b_ptrs, mask=k_mask[:, None] & n_mask[None, :], other=0)
+            b = (b >> b_shifter) & 0xF
+            b_int8 = (b - 8).to(tl.int8)
 
-        # Per-group weight scale
-        if BLOCK_SIZE_K <= group_size:
-            group_idx = (BLOCK_SIZE_K * k_step) // group_size
-            scale_ptrs = (
-                B_scale
-                + expert_id * stride_bse
-                + offs_n[None, :] * stride_bsn
-                + group_idx * stride_bsk
-            )
-            b_scale = tl.load(scale_ptrs, mask=n_mask[None, :], other=0.0).to(
-                tl.float32
-            )
-            dot_i32 = tl.dot(a_int8, b_int8)
-            acc += dot_i32.to(tl.float32) * a_scale[:, None] * b_scale
-        else:
-            scale_ptrs = (
-                B_scale
-                + expert_id * stride_bse
-                + offs_n[None, :] * stride_bsn
-                + ((offs_k[:, None] + BLOCK_SIZE_K * k_step) // group_size) * stride_bsk
-            )
-            b_scale = tl.load(
-                scale_ptrs, mask=k_mask[:, None] & n_mask[None, :], other=0.0
-            ).to(tl.float32)
-            b_dequant = (b_int8.to(tl.float32) * b_scale).to(compute_type)
-            acc += (
-                tl.dot(a_int8.to(compute_type), b_dequant).to(tl.float32)
-                * a_scale[:, None]
-            )
+            if BLOCK_SIZE_K <= group_size:
+                group_idx = (BLOCK_SIZE_K * k_step) // group_size
+                scale_ptrs = (
+                    B_scale
+                    + expert_id * stride_bse
+                    + offs_n[None, :] * stride_bsn
+                    + group_idx * stride_bsk
+                )
+                b_scale = tl.load(scale_ptrs, mask=n_mask[None, :], other=0.0).to(
+                    tl.float32
+                )
+                dot_i32 = tl.dot(a_int8, b_int8)
+                acc += dot_i32.to(tl.float32) * a_scale[:, None] * b_scale
+            else:
+                scale_ptrs = (
+                    B_scale
+                    + expert_id * stride_bse
+                    + offs_n[None, :] * stride_bsn
+                    + ((offs_k[:, None] + BLOCK_SIZE_K * k_step) // group_size) * stride_bsk
+                )
+                b_scale = tl.load(
+                    scale_ptrs, mask=k_mask[:, None] & n_mask[None, :], other=0.0
+                ).to(tl.float32)
+                b_dequant = (b_int8.to(tl.float32) * b_scale).to(compute_type)
+                acc += (
+                    tl.dot(a_int8.to(compute_type), b_dequant).to(tl.float32)
+                    * a_scale[:, None]
+                )
 
-        a_ptrs += BLOCK_SIZE_K * stride_qk
-        b_ptrs += (BLOCK_SIZE_K // 2) * stride_bk
+            a_ptrs += BLOCK_SIZE_K * stride_qk
+            b_ptrs += (BLOCK_SIZE_K // 2) * stride_bk
 
-    c_ptrs = C + offs_m[:, None] * stride_cm + offs_n[None, :] * stride_cn
-    tl.store(c_ptrs, acc.to(compute_type), mask=n_mask[None, :])
+        c_ptrs = C + offs_m[:, None] * stride_cm + offs_n[None, :] * stride_cn
+        tl.store(c_ptrs, acc.to(compute_type), mask=n_mask[None, :])
 
 
 @triton.autotune(configs=_BATCHED_GEMM2_CONFIGS, key=["N", "K"])
@@ -982,6 +1000,7 @@ def _fused_moe_silu_batched_kernel(
     N: tl.constexpr,
     K: tl.constexpr,  # intermediate_size
     num_pairs,  # M * top_k (for clamping sentinel weight lookups)
+    num_expert_blocks,
     # Strides
     stride_am,
     stride_ak,
@@ -999,112 +1018,107 @@ def _fused_moe_silu_batched_kernel(
     BLOCK_SIZE_M: tl.constexpr,
     BLOCK_SIZE_N: tl.constexpr,
     BLOCK_SIZE_K: tl.constexpr,
+    GROUP_SIZE_M: tl.constexpr,
+    NUM_SMS: tl.constexpr,
     compute_type: tl.constexpr,
 ):
-    """Batched GEMM2 with fused SiLU and scatter-back.
-
-    Reads gate+up from GEMM1 output (sorted order), applies SiLU(gate)*up,
-    multiplies by INT4 w2 weights, applies router weights, and scatters
-    output to original pair positions.
-    """
-    pid = tl.program_id(0)
+    """Batched GEMM2 with fused SiLU and scatter-back — persistent + grouped."""
+    start_pid = tl.program_id(0)
     num_n_blocks = tl.cdiv(N, BLOCK_SIZE_N)
-    expert_block_idx = pid // num_n_blocks
-    n_block = pid % num_n_blocks
+    num_tiles = num_expert_blocks * num_n_blocks
+    num_tiles_per_group = GROUP_SIZE_M * num_n_blocks
 
-    expert_id = tl.load(expert_ids + expert_block_idx).to(tl.int64)
+    for tile_id in tl.range(start_pid, num_tiles, NUM_SMS):
+        group_id = tile_id // num_tiles_per_group
+        first_eb = group_id * GROUP_SIZE_M
+        group_size_m = tl.minimum(num_expert_blocks - first_eb, GROUP_SIZE_M)
+        within = tile_id % num_tiles_per_group
+        expert_block_idx = first_eb + (within % group_size_m)
+        n_block = within // group_size_m
 
-    # M-block in sorted order
-    offs_m = expert_block_idx * BLOCK_SIZE_M + tl.arange(0, BLOCK_SIZE_M)
-    pair_ids = tl.load(sorted_token_ids + offs_m)
+        expert_id = tl.load(expert_ids + expert_block_idx).to(tl.int64)
 
-    # N offsets
-    offs_n = n_block * BLOCK_SIZE_N + tl.arange(0, BLOCK_SIZE_N).to(tl.int64)
-    n_mask = offs_n < N
-    offs_k = tl.arange(0, BLOCK_SIZE_K)
+        offs_m = expert_block_idx * BLOCK_SIZE_M + tl.arange(0, BLOCK_SIZE_M)
+        pair_ids = tl.load(sorted_token_ids + offs_m)
 
-    # A pointers: gate at [0, K), up at [K, 2K) — contiguous in sorted order
-    a_gate_ptrs = A + offs_m[:, None] * stride_am + offs_k[None, :] * stride_ak
-    a_up_ptrs = a_gate_ptrs + K * stride_ak
+        offs_n = n_block * BLOCK_SIZE_N + tl.arange(0, BLOCK_SIZE_N).to(tl.int64)
+        n_mask = offs_n < N
+        offs_k = tl.arange(0, BLOCK_SIZE_K)
 
-    # B pointers: [expert_id, offs_n, offs_k//2]
-    b_ptrs = (
-        B
-        + expert_id * stride_be
-        + (offs_k[:, None] // 2) * stride_bk
-        + offs_n[None, :] * stride_bn
-    )
-    b_shifter = (offs_k[:, None] % 2) * 4
+        a_gate_ptrs = A + offs_m[:, None] * stride_am + offs_k[None, :] * stride_ak
+        a_up_ptrs = a_gate_ptrs + K * stride_ak
 
-    acc = tl.zeros((BLOCK_SIZE_M, BLOCK_SIZE_N), dtype=tl.float32)
+        b_ptrs = (
+            B
+            + expert_id * stride_be
+            + (offs_k[:, None] // 2) * stride_bk
+            + offs_n[None, :] * stride_bn
+        )
+        b_shifter = (offs_k[:, None] % 2) * 4
 
-    for k_step in range(0, tl.cdiv(K, BLOCK_SIZE_K)):
-        k_remaining = K - k_step * BLOCK_SIZE_K
-        k_mask = offs_k < k_remaining
+        acc = tl.zeros((BLOCK_SIZE_M, BLOCK_SIZE_N), dtype=tl.float32)
 
-        # Load gate and up in float32 [BLOCK_M, BLOCK_K], apply SiLU
-        gate = tl.load(a_gate_ptrs, mask=k_mask[None, :], other=0.0).to(tl.float32)
-        up = tl.load(a_up_ptrs, mask=k_mask[None, :], other=0.0).to(tl.float32)
-        a = (gate * tl.sigmoid(gate) * up).to(compute_type)
+        for k_step in range(0, tl.cdiv(K, BLOCK_SIZE_K)):
+            k_remaining = K - k_step * BLOCK_SIZE_K
+            k_mask = offs_k < k_remaining
 
-        # Load and dequantize INT4 weights [BLOCK_K, BLOCK_N]
-        b = tl.load(b_ptrs, mask=k_mask[:, None] & n_mask[None, :], other=0)
-        b = (b >> b_shifter) & 0xF
+            gate = tl.load(a_gate_ptrs, mask=k_mask[None, :], other=0.0).to(tl.float32)
+            up = tl.load(a_up_ptrs, mask=k_mask[None, :], other=0.0)
+            a = (gate * tl.sigmoid(gate) * up).to(compute_type)
 
-        if BLOCK_SIZE_K <= group_size:
-            group_idx = (BLOCK_SIZE_K * k_step) // group_size
-            scale_ptrs = (
-                B_scale
-                + expert_id * stride_bse
-                + offs_n[None, :] * stride_bsn
-                + group_idx * stride_bsk
-            )
-            b_scale = tl.load(scale_ptrs, mask=n_mask[None, :], other=0.0).to(
-                tl.float32
-            )
-        else:
-            scale_ptrs = (
-                B_scale
-                + expert_id * stride_bse
-                + offs_n[None, :] * stride_bsn
-                + ((offs_k[:, None] + BLOCK_SIZE_K * k_step) // group_size) * stride_bsk
-            )
-            b_scale = tl.load(
-                scale_ptrs, mask=k_mask[:, None] & n_mask[None, :], other=0.0
-            ).to(tl.float32)
+            b = tl.load(b_ptrs, mask=k_mask[:, None] & n_mask[None, :], other=0)
+            b = (b >> b_shifter) & 0xF
 
-        b_dequant = ((b.to(tl.float32) - 8.0) * b_scale).to(compute_type)
+            if BLOCK_SIZE_K <= group_size:
+                group_idx = (BLOCK_SIZE_K * k_step) // group_size
+                scale_ptrs = (
+                    B_scale
+                    + expert_id * stride_bse
+                    + offs_n[None, :] * stride_bsn
+                    + group_idx * stride_bsk
+                )
+                b_scale = tl.load(scale_ptrs, mask=n_mask[None, :], other=0.0).to(
+                    tl.float32
+                )
+            else:
+                scale_ptrs = (
+                    B_scale
+                    + expert_id * stride_bse
+                    + offs_n[None, :] * stride_bsn
+                    + ((offs_k[:, None] + BLOCK_SIZE_K * k_step) // group_size) * stride_bsk
+                )
+                b_scale = tl.load(
+                    scale_ptrs, mask=k_mask[:, None] & n_mask[None, :], other=0.0
+                ).to(tl.float32)
 
-        # Tensor core matmul: [BLOCK_M, BLOCK_K] @ [BLOCK_K, BLOCK_N]
-        acc += tl.dot(a, b_dequant)
+            b_dequant = ((b.to(tl.float32) - 8.0) * b_scale).to(compute_type)
+            acc += tl.dot(a, b_dequant)
 
-        a_gate_ptrs += BLOCK_SIZE_K * stride_ak
-        a_up_ptrs += BLOCK_SIZE_K * stride_ak
-        b_ptrs += (BLOCK_SIZE_K // 2) * stride_bk
+            a_gate_ptrs += BLOCK_SIZE_K * stride_ak
+            a_up_ptrs += BLOCK_SIZE_K * stride_ak
+            b_ptrs += (BLOCK_SIZE_K // 2) * stride_bk
 
-    # Apply router weights per row
-    # Clamp sentinel pair_ids to a valid index for the weight load
-    safe_pair_ids = tl.minimum(pair_ids, num_pairs - 1)
-    weights = tl.load(topk_weights + safe_pair_ids)
-    # Zero out sentinel rows (pair_ids >= num_pairs means padding)
-    is_valid = pair_ids < num_pairs
-    weights = tl.where(is_valid, weights, 0.0)
-    acc = acc * weights[:, None]
+        safe_pair_ids = tl.minimum(pair_ids, num_pairs - 1)
+        weights = tl.load(topk_weights + safe_pair_ids)
+        is_valid = pair_ids < num_pairs
+        weights = tl.where(is_valid, weights, 0.0)
+        acc = acc * weights[:, None]
 
-    # Scatter to original pair order: write at pair_ids positions
-    # Sentinel pair_ids write to the extra row at end (ignored)
-    scatter_ids = tl.where(is_valid, pair_ids, num_pairs)
-    c_ptrs = C + scatter_ids[:, None] * stride_cm + offs_n[None, :] * stride_cn
-    tl.store(c_ptrs, acc.to(compute_type), mask=n_mask[None, :])
+        scatter_ids = tl.where(is_valid, pair_ids, num_pairs)
+        c_ptrs = C + scatter_ids[:, None] * stride_cm + offs_n[None, :] * stride_cn
+        tl.store(c_ptrs, acc.to(compute_type), mask=n_mask[None, :])
 
 
 _BATCHED_GEMM2_INT8_CONFIGS = [
-    triton.Config({"BLOCK_SIZE_N": 128}, num_warps=4, num_stages=3),
-    triton.Config({"BLOCK_SIZE_N": 128}, num_warps=4, num_stages=4),
-    triton.Config({"BLOCK_SIZE_N": 128}, num_warps=8, num_stages=3),
-    triton.Config({"BLOCK_SIZE_N": 64}, num_warps=4, num_stages=3),
-    triton.Config({"BLOCK_SIZE_N": 256}, num_warps=8, num_stages=3),
-    triton.Config({"BLOCK_SIZE_N": 256}, num_warps=8, num_stages=2),
+    triton.Config({"BLOCK_SIZE_N": 128, "GROUP_SIZE_M": 8}, num_warps=4, num_stages=3),
+    triton.Config({"BLOCK_SIZE_N": 128, "GROUP_SIZE_M": 8}, num_warps=4, num_stages=4),
+    triton.Config({"BLOCK_SIZE_N": 128, "GROUP_SIZE_M": 16}, num_warps=4, num_stages=3),
+    triton.Config({"BLOCK_SIZE_N": 128, "GROUP_SIZE_M": 8}, num_warps=8, num_stages=3),
+    triton.Config({"BLOCK_SIZE_N": 128, "GROUP_SIZE_M": 16}, num_warps=8, num_stages=3),
+    triton.Config({"BLOCK_SIZE_N": 64, "GROUP_SIZE_M": 8}, num_warps=4, num_stages=3),
+    triton.Config({"BLOCK_SIZE_N": 64, "GROUP_SIZE_M": 16}, num_warps=4, num_stages=3),
+    triton.Config({"BLOCK_SIZE_N": 256, "GROUP_SIZE_M": 8}, num_warps=8, num_stages=3),
+    triton.Config({"BLOCK_SIZE_N": 256, "GROUP_SIZE_M": 16}, num_warps=8, num_stages=2),
 ]
 
 
@@ -1123,6 +1137,7 @@ def _fused_moe_silu_batched_int8_kernel(
     N: tl.constexpr,
     K: tl.constexpr,
     num_pairs,
+    num_expert_blocks,
     # Strides
     stride_qm,
     stride_qk,
@@ -1141,90 +1156,100 @@ def _fused_moe_silu_batched_int8_kernel(
     BLOCK_SIZE_M: tl.constexpr,
     BLOCK_SIZE_N: tl.constexpr,
     BLOCK_SIZE_K: tl.constexpr,
+    GROUP_SIZE_M: tl.constexpr,
+    NUM_SMS: tl.constexpr,
     compute_type: tl.constexpr,
 ):
-    """GEMM2 with INT8 tensor cores, consuming pre-quantized SiLU(gate)*up
-    activations + per-row-per-tile scales. Scatter-back to pair order.
+    """GEMM2 with INT8 tensor cores, scatter-back — persistent + grouped tiles.
+
+    Consumes pre-quantized SiLU(gate)*up activations + per-row-per-tile scales.
     """
-    pid = tl.program_id(0)
+    start_pid = tl.program_id(0)
     num_n_blocks = tl.cdiv(N, BLOCK_SIZE_N)
-    expert_block_idx = pid // num_n_blocks
-    n_block = pid % num_n_blocks
+    num_tiles = num_expert_blocks * num_n_blocks
+    num_tiles_per_group = GROUP_SIZE_M * num_n_blocks
 
-    expert_id = tl.load(expert_ids + expert_block_idx).to(tl.int64)
+    for tile_id in tl.range(start_pid, num_tiles, NUM_SMS):
+        group_id = tile_id // num_tiles_per_group
+        first_eb = group_id * GROUP_SIZE_M
+        group_size_m = tl.minimum(num_expert_blocks - first_eb, GROUP_SIZE_M)
+        within = tile_id % num_tiles_per_group
+        expert_block_idx = first_eb + (within % group_size_m)
+        n_block = within // group_size_m
 
-    offs_m = expert_block_idx * BLOCK_SIZE_M + tl.arange(0, BLOCK_SIZE_M)
-    pair_ids = tl.load(sorted_token_ids + offs_m)
+        expert_id = tl.load(expert_ids + expert_block_idx).to(tl.int64)
 
-    offs_n = n_block * BLOCK_SIZE_N + tl.arange(0, BLOCK_SIZE_N).to(tl.int64)
-    n_mask = offs_n < N
-    offs_k = tl.arange(0, BLOCK_SIZE_K)
+        offs_m = expert_block_idx * BLOCK_SIZE_M + tl.arange(0, BLOCK_SIZE_M)
+        pair_ids = tl.load(sorted_token_ids + offs_m)
 
-    a_ptrs = A_int8 + offs_m[:, None] * stride_qm + offs_k[None, :] * stride_qk
+        offs_n = n_block * BLOCK_SIZE_N + tl.arange(0, BLOCK_SIZE_N).to(tl.int64)
+        n_mask = offs_n < N
+        offs_k = tl.arange(0, BLOCK_SIZE_K)
 
-    b_ptrs = (
-        B
-        + expert_id * stride_be
-        + (offs_k[:, None] // 2) * stride_bk
-        + offs_n[None, :] * stride_bn
-    )
-    b_shifter = (offs_k[:, None] % 2) * 4
+        a_ptrs = A_int8 + offs_m[:, None] * stride_qm + offs_k[None, :] * stride_qk
 
-    acc = tl.zeros((BLOCK_SIZE_M, BLOCK_SIZE_N), dtype=tl.float32)
+        b_ptrs = (
+            B
+            + expert_id * stride_be
+            + (offs_k[:, None] // 2) * stride_bk
+            + offs_n[None, :] * stride_bn
+        )
+        b_shifter = (offs_k[:, None] % 2) * 4
 
-    for k_step in range(0, tl.cdiv(K, BLOCK_SIZE_K)):
-        k_remaining = K - k_step * BLOCK_SIZE_K
-        k_mask = offs_k < k_remaining
+        acc = tl.zeros((BLOCK_SIZE_M, BLOCK_SIZE_N), dtype=tl.float32)
 
-        a_int8 = tl.load(a_ptrs, mask=k_mask[None, :], other=0)
-        a_scale = tl.load(A_scale + offs_m * stride_sm + k_step * stride_sk)
+        for k_step in range(0, tl.cdiv(K, BLOCK_SIZE_K)):
+            k_remaining = K - k_step * BLOCK_SIZE_K
+            k_mask = offs_k < k_remaining
 
-        b = tl.load(b_ptrs, mask=k_mask[:, None] & n_mask[None, :], other=0)
-        b = (b >> b_shifter) & 0xF
-        b_int8 = (b - 8).to(tl.int8)
+            a_int8 = tl.load(a_ptrs, mask=k_mask[None, :], other=0)
+            a_scale = tl.load(A_scale + offs_m * stride_sm + k_step * stride_sk)
 
-        if BLOCK_SIZE_K <= group_size:
-            group_idx = (BLOCK_SIZE_K * k_step) // group_size
-            scale_ptrs = (
-                B_scale
-                + expert_id * stride_bse
-                + offs_n[None, :] * stride_bsn
-                + group_idx * stride_bsk
-            )
-            b_scale = tl.load(scale_ptrs, mask=n_mask[None, :], other=0.0).to(
-                tl.float32
-            )
-            dot_i32 = tl.dot(a_int8, b_int8)
-            acc += dot_i32.to(tl.float32) * a_scale[:, None] * b_scale
-        else:
-            scale_ptrs = (
-                B_scale
-                + expert_id * stride_bse
-                + offs_n[None, :] * stride_bsn
-                + ((offs_k[:, None] + BLOCK_SIZE_K * k_step) // group_size) * stride_bsk
-            )
-            b_scale = tl.load(
-                scale_ptrs, mask=k_mask[:, None] & n_mask[None, :], other=0.0
-            ).to(tl.float32)
-            b_dequant = (b_int8.to(tl.float32) * b_scale).to(compute_type)
-            acc += (
-                tl.dot(a_int8.to(compute_type), b_dequant).to(tl.float32)
-                * a_scale[:, None]
-            )
+            b = tl.load(b_ptrs, mask=k_mask[:, None] & n_mask[None, :], other=0)
+            b = (b >> b_shifter) & 0xF
+            b_int8 = (b - 8).to(tl.int8)
 
-        a_ptrs += BLOCK_SIZE_K * stride_qk
-        b_ptrs += (BLOCK_SIZE_K // 2) * stride_bk
+            if BLOCK_SIZE_K <= group_size:
+                group_idx = (BLOCK_SIZE_K * k_step) // group_size
+                scale_ptrs = (
+                    B_scale
+                    + expert_id * stride_bse
+                    + offs_n[None, :] * stride_bsn
+                    + group_idx * stride_bsk
+                )
+                b_scale = tl.load(scale_ptrs, mask=n_mask[None, :], other=0.0).to(
+                    tl.float32
+                )
+                dot_i32 = tl.dot(a_int8, b_int8)
+                acc += dot_i32.to(tl.float32) * a_scale[:, None] * b_scale
+            else:
+                scale_ptrs = (
+                    B_scale
+                    + expert_id * stride_bse
+                    + offs_n[None, :] * stride_bsn
+                    + ((offs_k[:, None] + BLOCK_SIZE_K * k_step) // group_size) * stride_bsk
+                )
+                b_scale = tl.load(
+                    scale_ptrs, mask=k_mask[:, None] & n_mask[None, :], other=0.0
+                ).to(tl.float32)
+                b_dequant = (b_int8.to(tl.float32) * b_scale).to(compute_type)
+                acc += (
+                    tl.dot(a_int8.to(compute_type), b_dequant).to(tl.float32)
+                    * a_scale[:, None]
+                )
 
-    # Apply router weights per row
-    safe_pair_ids = tl.minimum(pair_ids, num_pairs - 1)
-    weights = tl.load(topk_weights + safe_pair_ids)
-    is_valid = pair_ids < num_pairs
-    weights = tl.where(is_valid, weights, 0.0)
-    acc = acc * weights[:, None]
+            a_ptrs += BLOCK_SIZE_K * stride_qk
+            b_ptrs += (BLOCK_SIZE_K // 2) * stride_bk
 
-    scatter_ids = tl.where(is_valid, pair_ids, num_pairs)
-    c_ptrs = C + scatter_ids[:, None] * stride_cm + offs_n[None, :] * stride_cn
-    tl.store(c_ptrs, acc.to(compute_type), mask=n_mask[None, :])
+        safe_pair_ids = tl.minimum(pair_ids, num_pairs - 1)
+        weights = tl.load(topk_weights + safe_pair_ids)
+        is_valid = pair_ids < num_pairs
+        weights = tl.where(is_valid, weights, 0.0)
+        acc = acc * weights[:, None]
+
+        scatter_ids = tl.where(is_valid, pair_ids, num_pairs)
+        c_ptrs = C + scatter_ids[:, None] * stride_cm + offs_n[None, :] * stride_cn
+        tl.store(c_ptrs, acc.to(compute_type), mask=n_mask[None, :])
 
 
 # ---------------------------------------------------------------------------
@@ -1276,8 +1301,12 @@ def fused_moe_batched_gemm(
         device=hidden_states.device,
     )
 
+    NUM_SMS = _num_sms(hidden_states.device.index)
+
     def grid1(meta):
-        return (num_expert_blocks * triton.cdiv(N1, meta["BLOCK_SIZE_N"]),)
+        n_blocks = triton.cdiv(N1, meta["BLOCK_SIZE_N"])
+        total_tiles = num_expert_blocks * n_blocks
+        return (min(NUM_SMS, total_tiles),)
 
     wrap_triton(_fused_moe_batched_kernel)[grid1](
         hidden_padded,
@@ -1288,6 +1317,7 @@ def fused_moe_batched_gemm(
         expert_ids,
         N=N1,
         K=K,
+        num_expert_blocks=num_expert_blocks,
         stride_am=hidden_padded.stride(0),
         stride_ak=hidden_padded.stride(1),
         stride_be=w1.stride(0),
@@ -1301,6 +1331,7 @@ def fused_moe_batched_gemm(
         top_k=top_k,
         group_size=group_size,
         BLOCK_SIZE_M=BLOCK_M,
+        NUM_SMS=NUM_SMS,
         compute_type=tl.bfloat16,
     )
 
@@ -1312,7 +1343,9 @@ def fused_moe_batched_gemm(
     )
 
     def grid2(meta):
-        return (num_expert_blocks * triton.cdiv(N2, meta["BLOCK_SIZE_N"]),)
+        n_blocks = triton.cdiv(N2, meta["BLOCK_SIZE_N"])
+        total_tiles = num_expert_blocks * n_blocks
+        return (min(NUM_SMS, total_tiles),)
 
     wrap_triton(_fused_moe_silu_batched_kernel)[grid2](
         cache1,
@@ -1325,6 +1358,7 @@ def fused_moe_batched_gemm(
         N=N2,
         K=intermediate,
         num_pairs=num_pairs,
+        num_expert_blocks=num_expert_blocks,
         stride_am=cache1.stride(0),
         stride_ak=cache1.stride(1),
         stride_be=w2.stride(0),
@@ -1338,6 +1372,7 @@ def fused_moe_batched_gemm(
         top_k=top_k,
         group_size=group_size,
         BLOCK_SIZE_M=BLOCK_M,
+        NUM_SMS=NUM_SMS,
         compute_type=tl.bfloat16,
     )
 
@@ -1444,8 +1479,12 @@ def fused_moe_batched_gemm_int8(
         device=hidden_states.device,
     )
 
+    NUM_SMS = _num_sms(hidden_states.device.index)
+
     def grid1(meta):
-        return (num_expert_blocks * triton.cdiv(N1, meta["BLOCK_SIZE_N"]),)
+        n_blocks = triton.cdiv(N1, meta["BLOCK_SIZE_N"])
+        total_tiles = num_expert_blocks * n_blocks
+        return (min(NUM_SMS, total_tiles),)
 
     wrap_triton(_fused_moe_batched_int8_kernel)[grid1](
         a_int8_g1,
@@ -1456,6 +1495,7 @@ def fused_moe_batched_gemm_int8(
         expert_ids,
         N=N1,
         K=K,
+        num_expert_blocks=num_expert_blocks,
         stride_qm=a_int8_g1.stride(0),
         stride_qk=a_int8_g1.stride(1),
         stride_sm=a_scale_g1.stride(0),
@@ -1471,6 +1511,7 @@ def fused_moe_batched_gemm_int8(
         group_size=group_size,
         BLOCK_SIZE_M=BLOCK_M,
         BLOCK_SIZE_K=BLOCK_K_QUANT,
+        NUM_SMS=NUM_SMS,
         compute_type=tl.bfloat16,
     )
 
@@ -1507,7 +1548,9 @@ def fused_moe_batched_gemm_int8(
     )
 
     def grid2(meta):
-        return (num_expert_blocks * triton.cdiv(N2, meta["BLOCK_SIZE_N"]),)
+        n_blocks = triton.cdiv(N2, meta["BLOCK_SIZE_N"])
+        total_tiles = num_expert_blocks * n_blocks
+        return (min(NUM_SMS, total_tiles),)
 
     wrap_triton(_fused_moe_silu_batched_int8_kernel)[grid2](
         a_int8_g2,
@@ -1521,6 +1564,7 @@ def fused_moe_batched_gemm_int8(
         N=N2,
         K=intermediate,
         num_pairs=num_pairs,
+        num_expert_blocks=num_expert_blocks,
         stride_qm=a_int8_g2.stride(0),
         stride_qk=a_int8_g2.stride(1),
         stride_sm=a_scale_g2.stride(0),
@@ -1536,6 +1580,7 @@ def fused_moe_batched_gemm_int8(
         group_size=group_size,
         BLOCK_SIZE_M=BLOCK_M,
         BLOCK_SIZE_K=BLOCK_K_QUANT,
+        NUM_SMS=NUM_SMS,
         compute_type=tl.bfloat16,
     )
 
