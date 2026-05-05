@@ -1,4 +1,4 @@
-# Copyright 2025 Arm Limited and/or its affiliates.
+# Copyright 2025-2026 Arm Limited and/or its affiliates.
 #
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
@@ -77,13 +77,6 @@ def test_native_group_norm_tosa_FP(test_data):
 @common.parametrize(
     "test_data",
     test_data_suite,
-    xfails={
-        "randn_1_12_8_6_groups_12": "MLETORCH-925: Fix numerical issue for aten.native_group_norm",
-        "rand_6_8_10_12_groups_1": "MLETORCH-925: Fix numerical issue for aten.native_group_norm",
-        "rand_6_8_10_12_groups_4_no_affine": "MLETORCH-925: Fix numerical issue for aten.native_group_norm",
-        "rand_6_8_10_12_groups_8": "MLETORCH-925: Fix numerical issue for aten.native_group_norm",
-    },
-    strict=False,
 )
 def test_native_group_norm_tosa_INT(test_data):
     aten_op = "torch.ops.aten.sub.Tensor"  # 'sub' op arbitrarily chosen to confirm groupnorm was decomposed
@@ -101,16 +94,6 @@ def test_native_group_norm_tosa_INT(test_data):
 @common.parametrize(
     "test_data",
     test_data_suite,
-    xfails={
-        "rand_4_6_8_groups_2_eps_no_affine": "MLETORCH-925: Fix numerical issue for aten.native_group_norm",
-        "rand_4_6_groups_1": "MLETORCH-925: Fix numerical issue for aten.native_group_norm",
-        "rand_4_6_groups_2": "MLETORCH-925: Fix numerical issue for aten.native_group_norm",
-        "randn_1_12_8_6_groups_12": "MLETORCH-925: Fix numerical issue for aten.native_group_norm",
-        "rand_6_8_10_12_groups_1": "MLETORCH-925: Fix numerical issue for aten.native_group_norm",
-        "rand_6_8_10_12_groups_4_no_affine": "MLETORCH-925: Fix numerical issue for aten.native_group_norm",
-        "rand_6_8_10_12_groups_8": "MLETORCH-925: Fix numerical issue for aten.native_group_norm",
-    },
-    strict=False,
 )
 @common.XfailIfNoCorstone300
 def test_native_group_norm_u55_INT(test_data):
@@ -127,13 +110,6 @@ def test_native_group_norm_u55_INT(test_data):
 @common.parametrize(
     "test_data",
     test_data_suite,
-    xfails={
-        "randn_1_12_8_6_groups_12": "MLETORCH-925: Fix numerical issue for aten.native_group_norm",
-        "rand_6_8_10_12_groups_1": "MLETORCH-925: Fix numerical issue for aten.native_group_norm",
-        "rand_6_8_10_12_groups_4_no_affine": "MLETORCH-925: Fix numerical issue for aten.native_group_norm",
-        "rand_6_8_10_12_groups_8": "MLETORCH-925: Fix numerical issue for aten.native_group_norm",
-    },
-    strict=False,
 )
 @common.XfailIfNoCorstone320
 def test_native_group_norm_u85_INT(test_data):
@@ -150,13 +126,6 @@ def test_native_group_norm_u85_INT(test_data):
 @common.parametrize(
     "test_data",
     test_data_suite,
-    xfails={
-        "randn_1_12_8_6_groups_12": "MLETORCH-925: Fix numerical issue",
-        "rand_6_8_10_12_groups_1": "MLETORCH-925: Fix numerical issue",
-        "rand_6_8_10_12_groups_4_no_affine": "MLETORCH-925: Fix numerical issue",
-        "rand_6_8_10_12_groups_8": "MLETORCH-925: Fix numerical issue",
-    },
-    strict=False,
 )
 @common.SkipIfNoModelConverter
 def test_native_group_norm_vgf_no_quant(test_data):
@@ -176,13 +145,6 @@ def test_native_group_norm_vgf_no_quant(test_data):
 @common.parametrize(
     "test_data",
     test_data_suite,
-    xfails={
-        "randn_1_12_8_6_groups_12": "MLETORCH-925: Fix numerical issue",
-        "rand_6_8_10_12_groups_1": "MLETORCH-925: Fix numerical issue",
-        "rand_6_8_10_12_groups_4_no_affine": "MLETORCH-925: Fix numerical issue",
-        "rand_6_8_10_12_groups_8": "MLETORCH-925: Fix numerical issue",
-    },
-    strict=False,
 )
 @common.SkipIfNoModelConverter
 def test_native_group_norm_vgf_quant(test_data):
