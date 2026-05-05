@@ -68,8 +68,11 @@ Error platform_execute(
     char* ethosu_scratch) {
   // Parse product config from command stream to reserve the correct driver
   uint32_t product, log2_macs;
-  if (ethosu_get_product_config_from_cop_data(
-          handles.cmd_data, handles.cmd_data_size, &product, &log2_macs) != 0) {
+  // The weak fallback below always returns 0, but some builds replace it
+  // with a real driver implementation that can return an error code.
+  const int product_config_status = ethosu_get_product_config_from_cop_data(
+      handles.cmd_data, handles.cmd_data_size, &product, &log2_macs);
+  if (product_config_status != 0) { // cppcheck-suppress knownConditionTrueFalse
     ET_LOG(Error, "Failed to parse product config from command stream");
     return Error::InvalidProgram;
   }
