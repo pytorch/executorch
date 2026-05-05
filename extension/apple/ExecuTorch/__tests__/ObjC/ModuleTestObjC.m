@@ -11,55 +11,6 @@
 #import <ExecuTorch/ExecuTorch.h>
 
 @interface ModuleTestObjC : XCTestCase
-// Covers -[ExecuTorchModule loadMethod:options:error:] and locks the
-// "load_method consumes the borrow synchronously and does not cache it"
-// invariant that the no-retain decision in the wrapper rests on.
-// See the citation on ExecuTorchModule.mm's loadMethod:options:error:
-// (module.cpp#L353-L409). If a future refactor caches `backend_options`
-// on the Module, this test fails (the weak reference stays non-nil).
-- (void)testLoadMethodWithOptionsDoesNotRetainOptions {
-  NSString *modelPath = [self requireFixture:@"add_coreml" ofType:@"pte"];
-  if (!modelPath) return;
-  NSError *error = nil;
-  ExecuTorchModule *module = [[ExecuTorchModule alloc] initWithFilePath:modelPath];
-
-  __weak ExecuTorchBackendOptionsMap *weakOptions = nil;
-  @autoreleasepool {
-    ExecuTorchBackendOptionsMap *options = [ExecuTorchBackendOptionsMap mapWithOptions:@{
-      @"CoreMLBackend": @[
-        [ExecuTorchBackendOption optionWithKey:@"compute_unit" stringValue:@"cpu_and_gpu"],
-      ],
-    } error:&error];
-    XCTAssertNotNil(options, @"%@", error);
-    weakOptions = options;
-    XCTAssertTrue([module loadMethod:@"forward" options:options error:&error],
-                  @"%@", error);
-    XCTAssertTrue([module isMethodLoaded:@"forward"]);
-  }
-  // The local + any autoreleased refs have drained. If loadMethod:options:
-  // silently retained the map, weakOptions would still be live here.
-  XCTAssertNil(weakOptions,
-      @"loadMethod:options: must not retain the map (load_method consumes "
-      @"it synchronously). See module.cpp load_method borrow contract.");
-
-  // The loaded method must still run — it reads from _module->methods_
-  // (populated during loadMethod:options:), not from the options map.
-  ExecuTorchTensor *one =
-      [[ExecuTorchTensor alloc] initWithScalars:@[@1.0f] dataType:ExecuTorchDataTypeFloat];
-  NSArray<ExecuTorchValue *> *outputs =
-      [module forwardWithTensors:@[one, one] error:&error];
-  XCTAssertNotNil(outputs, @"%@", error);
-
-  __block float result = NAN;
-  [outputs.firstObject.tensorValue
-      bytesWithHandler:^(const void *bytes, NSInteger count, ExecuTorchDataType dt) {
-    if (dt == ExecuTorchDataTypeFloat && count >= 1) {
-      result = ((const float *)bytes)[0];
-    }
-  }];
-  XCTAssertEqual(result, 2.0f);
-}
-
 @end
 
 @implementation ModuleTestObjC
@@ -196,6 +147,55 @@
     }];
     XCTAssertEqual(result, 2.0f);
   }
+}
+
+// Covers -[ExecuTorchModule loadMethod:options:error:] and locks the
+// "load_method consumes the borrow synchronously and does not cache it"
+// invariant that the no-retain decision in the wrapper rests on.
+// See the citation on ExecuTorchModule.mm's loadMethod:options:error:
+// (module.cpp#L353-L409). If a future refactor caches `backend_options`
+// on the Module, this test fails (the weak reference stays non-nil).
+- (void)testLoadMethodWithOptionsDoesNotRetainOptions {
+  NSString *modelPath = [self requireFixture:@"add_coreml" ofType:@"pte"];
+  if (!modelPath) return;
+  NSError *error = nil;
+  ExecuTorchModule *module = [[ExecuTorchModule alloc] initWithFilePath:modelPath];
+
+  __weak ExecuTorchBackendOptionsMap *weakOptions = nil;
+  @autoreleasepool {
+    ExecuTorchBackendOptionsMap *options = [ExecuTorchBackendOptionsMap mapWithOptions:@{
+      @"CoreMLBackend": @[
+        [ExecuTorchBackendOption optionWithKey:@"compute_unit" stringValue:@"cpu_and_gpu"],
+      ],
+    } error:&error];
+    XCTAssertNotNil(options, @"%@", error);
+    weakOptions = options;
+    XCTAssertTrue([module loadMethod:@"forward" options:options error:&error],
+                  @"%@", error);
+    XCTAssertTrue([module isMethodLoaded:@"forward"]);
+  }
+  // The local + any autoreleased refs have drained. If loadMethod:options:
+  // silently retained the map, weakOptions would still be live here.
+  XCTAssertNil(weakOptions,
+      @"loadMethod:options: must not retain the map (load_method consumes "
+      @"it synchronously). See module.cpp load_method borrow contract.");
+
+  // The loaded method must still run — it reads from _module->methods_
+  // (populated during loadMethod:options:), not from the options map.
+  ExecuTorchTensor *one =
+      [[ExecuTorchTensor alloc] initWithScalars:@[@1.0f] dataType:ExecuTorchDataTypeFloat];
+  NSArray<ExecuTorchValue *> *outputs =
+      [module forwardWithTensors:@[one, one] error:&error];
+  XCTAssertNotNil(outputs, @"%@", error);
+
+  __block float result = NAN;
+  [outputs.firstObject.tensorValue
+      bytesWithHandler:^(const void *bytes, NSInteger count, ExecuTorchDataType dt) {
+    if (dt == ExecuTorchDataTypeFloat && count >= 1) {
+      result = ((const float *)bytes)[0];
+    }
+  }];
+  XCTAssertEqual(result, 2.0f);
 }
 
 @end
