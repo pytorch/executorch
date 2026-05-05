@@ -24,4 +24,5 @@ from executorch.backends.arm.tosa.dialect.ops import (  # noqa F401
     slice,
     table,
     transpose_conv2d,
+    unary_elementwise,
 )
