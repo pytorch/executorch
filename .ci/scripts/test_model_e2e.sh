@@ -258,7 +258,19 @@ fi
 if [ "$AUDIO_URL" != "" ]; then
   curl -L $AUDIO_URL -o ${MODEL_DIR}/$AUDIO_FILE
 elif [[ "$MODEL_NAME" == *whisper* ]] || [ "$MODEL_NAME" = "voxtral_realtime" ]; then
-  conda install -y -c conda-forge ffmpeg
+  if ! command -v ffmpeg >/dev/null; then
+    if [ "$(uname -s)" = "Linux" ] && command -v apt-get >/dev/null; then
+      if [ "$(id -u)" -eq 0 ]; then
+        apt-get update
+        apt-get install -y --no-install-recommends ffmpeg
+      else
+        sudo apt-get update
+        sudo apt-get install -y --no-install-recommends ffmpeg
+      fi
+    else
+      conda install -y -c conda-forge ffmpeg
+    fi
+  fi
   pip install datasets soundfile
   # We pushd'd into EXECUTORCH_ROOT above, so torch_pin is importable here.
   TORCHCODEC_PKG=$(python -c "from torch_pin import torchcodec_spec; print(torchcodec_spec())")
