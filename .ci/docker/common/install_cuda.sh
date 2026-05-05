@@ -38,13 +38,15 @@ apt-get update
 # - libcublas-dev: cuBLAS development files
 # - libcusparse-dev: cuSPARSE development files
 # - libcufft-dev: cuFFT development files
+# - libcurand-dev: cuRAND development files
 apt-get install -y --no-install-recommends \
     "cuda-nvcc-${CUDA_VERSION_DASH}" \
     "cuda-cudart-dev-${CUDA_VERSION_DASH}" \
     "cuda-nvrtc-dev-${CUDA_VERSION_DASH}" \
     "libcublas-dev-${CUDA_VERSION_DASH}" \
     "libcusparse-dev-${CUDA_VERSION_DASH}" \
-    "libcufft-dev-${CUDA_VERSION_DASH}"
+    "libcufft-dev-${CUDA_VERSION_DASH}" \
+    "libcurand-dev-${CUDA_VERSION_DASH}"
 
 # Clean up
 apt-get clean

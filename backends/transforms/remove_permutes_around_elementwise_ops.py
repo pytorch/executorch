@@ -1,5 +1,6 @@
 # Copyright (c) Meta Platforms, Inc. and affiliates.
 # All rights reserved.
+# Copyright 2026 Arm Limited and/or its affiliates.
 #
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
@@ -49,6 +50,7 @@ class RemovePermutesAroundElementwiseOps(ExportPass):
         # Ops that require special handling.
         exir_ops.edge.aten.cat.default,
         exir_ops.edge.aten.mean.dim,
+        exir_ops.edge.aten.sum.dim_IntList,
         exir_ops.edge.aten.slice_copy.Tensor,
     }
 
@@ -59,6 +61,8 @@ class RemovePermutesAroundElementwiseOps(ExportPass):
             op="call_function", target=exir_ops.edge.aten.permute_copy.default
         ):
             start_permute = self.get_permutation(node)
+            if start_permute is None:
+                continue
             # Expected end permutation for the subgraph.
             end_permute = [start_permute.index(i) for i in range(len(start_permute))]
 
@@ -158,7 +162,10 @@ class RemovePermutesAroundElementwiseOps(ExportPass):
     def is_node_permutable(self, node: torch.fx.Node) -> bool:
         if node.target not in self.permutable_ops:
             return False
-        if node.target == exir_ops.edge.aten.mean.dim:
+        if node.target in (
+            exir_ops.edge.aten.mean.dim,
+            exir_ops.edge.aten.sum.dim_IntList,
+        ):
             # keepdim should be True.
             if len(node.args) >= 3:
                 if not node.args[2]:
@@ -233,7 +240,10 @@ class RemovePermutesAroundElementwiseOps(ExportPass):
         for node in subgraph.nodes:
             if node.target == exir_ops.edge.aten.cat.default:
                 self.update_cat(node, subgraph.start_permute)
-            elif node.target == exir_ops.edge.aten.mean.dim:
+            elif node.target in (
+                exir_ops.edge.aten.mean.dim,
+                exir_ops.edge.aten.sum.dim_IntList,
+            ):
                 self.update_mean_dim(node, subgraph.start_permute)
             elif node.target == exir_ops.edge.aten.slice_copy.Tensor:
                 self.update_slice_copy(node, subgraph.start_permute)
@@ -264,9 +274,22 @@ class RemovePermutesAroundElementwiseOps(ExportPass):
         else:
             node.update_kwarg("dim", start_permute[cast(int, node.kwargs["dim"])])
 
-    def get_permutation(self, permute_node: torch.fx.Node) -> list[int]:
+    def get_permutation(self, permute_node: torch.fx.Node) -> list[int] | None:
         assert permute_node.target == exir_ops.edge.aten.permute_copy.default
+        raw_permute: list[int]
         if len(permute_node.args) >= 2:
-            return cast(list[int], permute_node.args[1])
-        assert "dim" in permute_node.kwargs
-        return cast(list[int], permute_node.kwargs["dim"])
+            raw_permute = list(cast(list[int], permute_node.args[1]))
+        else:
+            raw_dims = permute_node.kwargs.get("dims", permute_node.kwargs.get("dim"))
+            if raw_dims is None:
+                return None
+            raw_permute = list(cast(list[int], raw_dims))
+
+        rank = len(raw_permute)
+        normalized_permute = [d + rank if d < 0 else d for d in raw_permute]
+
+        if not all(0 <= d < rank for d in normalized_permute):
+            return None
+        if sorted(normalized_permute) != list(range(rank)):
+            return None
+        return normalized_permute

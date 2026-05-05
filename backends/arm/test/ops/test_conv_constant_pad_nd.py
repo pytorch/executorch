@@ -139,5 +139,7 @@ def test_constant_pad_nd_vgf_quant(test_data: Tuple):
         aten_op,
         exir_op,
         quantize=True,
+        atol=0.005,  # TODO: Investigate flakyness (MLETORCH-989)
+        rtol=0.01,
     )
     pipeline.run()

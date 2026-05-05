@@ -260,7 +260,10 @@ if [ "$AUDIO_URL" != "" ]; then
 elif [[ "$MODEL_NAME" == *whisper* ]] || [ "$MODEL_NAME" = "voxtral_realtime" ]; then
   conda install -y -c conda-forge "ffmpeg<8"
   pip install datasets soundfile
-  pip install torchcodec==0.11.0 --extra-index-url https://download.pytorch.org/whl/test/cpu
+  # We pushd'd into EXECUTORCH_ROOT above, so torch_pin is importable here.
+  TORCHCODEC_PKG=$(python -c "from torch_pin import torchcodec_spec; print(torchcodec_spec())")
+  TORCHCODEC_INDEX=$(python -c "from torch_pin import torch_index_url_base; print(torch_index_url_base())")
+  pip install "$TORCHCODEC_PKG" --extra-index-url "${TORCHCODEC_INDEX}/cpu"
   python -c "from datasets import load_dataset;import soundfile as sf;sample = load_dataset('distil-whisper/librispeech_long', 'clean', split='validation')[0]['audio'];sf.write('${MODEL_DIR}/$AUDIO_FILE', sample['array'][:sample['sampling_rate']*30], sample['sampling_rate'])"
 fi
 
@@ -397,6 +400,27 @@ if [ -n "$EXPECTED_OUTPUT" ]; then
 else
   echo "SUCCESS: Runner completed successfully"
 fi
+
+# Validate GPU peak memory usage for models with known memory budgets.
+# The runner prints "GPU peak memory usage: XXXX.X MiB" at the end.
+case "$MODEL_NAME" in
+  qwen3_5_moe)
+    MAX_MEMORY_MIB=20480  # 20 GB — must fit on a single GPU (e.g. 4090)
+    PEAK_MEM=$(echo "$OUTPUT" | grep -oP 'GPU peak memory usage: \K[0-9.]+' || true)
+    if [ -n "$PEAK_MEM" ]; then
+      # Compare as integers (truncate decimals)
+      PEAK_MEM_INT=${PEAK_MEM%%.*}
+      if [ "$PEAK_MEM_INT" -gt "$MAX_MEMORY_MIB" ]; then
+        echo "FAIL: GPU peak memory ${PEAK_MEM} MiB exceeds budget ${MAX_MEMORY_MIB} MiB"
+        exit 1
+      else
+        echo "Success: GPU peak memory ${PEAK_MEM} MiB within budget (max ${MAX_MEMORY_MIB} MiB)"
+      fi
+    else
+      echo "WARNING: GPU peak memory usage not found in output"
+    fi
+    ;;
+esac
 echo "::endgroup::"
 
 popd

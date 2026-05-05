@@ -37,6 +37,8 @@ class RewriteUpsamplePass(ArmPass):
     )
 
     _passes_required_after: Set[Type[ExportPass]] = set()
+    _NHWC_ORDER = (0, 2, 3, 1)
+    _NHWC_INVERSE_ORDER = (0, 3, 1, 2)
 
     @staticmethod
     def get_resize_parameters_1d(
@@ -70,16 +72,16 @@ class RewriteUpsamplePass(ArmPass):
                     "We do not support align_corners=True for symbolic shapes."
                 )
 
-        # SymInt seems to not actually work for symbolic expressions, so use the underlying sympy objects instead
+        # Use the exported SymPy expressions for symbolic shapes.
         input_size = (
-            input_size.node._expr
+            sympy.sympify(input_size.node.expr)
             if isinstance(input_size, torch.SymInt)
-            else input_size
+            else sympy.sympify(input_size)
         )
         output_size = (
-            output_size.node._expr
+            sympy.sympify(output_size.node.expr)
             if isinstance(output_size, torch.SymInt)
-            else output_size
+            else sympy.sympify(output_size)
         )
         if align_corners and input_size > 1 and output_size > 1:
             scale_n = output_size - 1
@@ -89,17 +91,15 @@ class RewriteUpsamplePass(ArmPass):
             scale_d = input_size - 1
         else:
             scale_d = input_size
-        ratio = scale_n / scale_d
-        if not sympy.sympify(ratio).is_constant():
+        ratio = sympy.nsimplify(sympy.simplify(scale_n / scale_d))
+        if ratio.free_symbols:
             raise RuntimeError(
                 "Resize requires a constant ratio: " + str(ratio) + " is not constant!"
             )
-        gcd = sympy.gcd(scale_n, scale_d)
-        scale_n = 2 * scale_n // gcd
-        scale_d = 2 * scale_d // gcd
-        # These should always be whole integers, based on the above calculations
-        scale_n = int(scale_n.evalf())
-        scale_d = int(scale_d.evalf())
+        ratio_num, ratio_den = ratio.as_numer_denom()
+        # TOSA encodes resize scales as doubled rationals.
+        scale_n = int((2 * ratio_num).evalf())
+        scale_d = int((2 * ratio_den).evalf())
 
         if align_corners:
             offset = 0
@@ -109,9 +109,11 @@ class RewriteUpsamplePass(ArmPass):
 
         # Calculate border to maintain the correct the output size.
         # Note that this should always result in a constant value, as the ratio is constant.
-        border = scale_d * (output_size - 1) - scale_n * (input_size - 1) + offset
+        border = sympy.simplify(
+            scale_d * (output_size - 1) - scale_n * (input_size - 1) + offset
+        )
 
-        if not sympy.sympify(border).is_constant():
+        if border.free_symbols:
             raise RuntimeError(
                 "Resize requires a constant border: "
                 + str(border)
@@ -188,17 +190,34 @@ class RewriteUpsamplePass(ArmPass):
                         from_node=node,
                     )
 
+                pre_permute = create_node(
+                    graph_module.graph,
+                    op_target=exir_ops.edge.aten.permute_copy.default,
+                    args=(x, list(self._NHWC_ORDER)),
+                    from_node=node,
+                )
+                pre_permute.meta["val"] = exir_ops.edge.aten.permute_copy.default(
+                    get_first_fake_tensor(x), list(self._NHWC_ORDER)
+                )
+
                 tosa_resize_node = create_node(
                     graph_module.graph,
                     op_target=exir_ops.backend.tosa.RESIZE.default,
-                    args=(x, scale, offset, border),
+                    args=(pre_permute, scale, offset, border),
                     kwargs={"resize_mode": resize_mode},
                     from_node=node,
                     inherit_qparams=True,
                 )
-                node.replace_all_uses_with(tosa_resize_node)
-                graph_module.graph.erase_node(node)
+                tosa_resize_node.meta["val"] = exir_ops.backend.tosa.RESIZE.default(
+                    pre_permute.meta["val"],
+                    scale if isinstance(scale, list) else scale.args[0],
+                    offset if isinstance(offset, list) else offset.args[0],
+                    border if isinstance(border, list) else border.args[0],
+                    resize_mode=resize_mode,
+                )
             input_dtype = get_first_fake_tensor(x).dtype
+            node_replacement = tosa_resize_node
+            node_replacement_fake = tosa_resize_node.meta["val"]
             if (
                 input_dtype == torch.int8 or input_dtype == torch.int16
             ) and resize_mode == "bilinear":
@@ -208,8 +227,10 @@ class RewriteUpsamplePass(ArmPass):
                     rescale_node = create_node(
                         graph_module.graph,
                         exir_ops.backend.tosa.RESCALE.default,
+                        from_node=node,
                     )
-                    tosa_resize_node.replace_all_uses_with(rescale_node)
+                    rescale_node.meta["val"] = node_replacement_fake
+
                     if input_dtype == torch.int16:
                         tosa_resize_node.meta[TosaSpecialDtype.meta_key()] = (
                             TosaSpecialDtype.INT48
@@ -222,6 +243,24 @@ class RewriteUpsamplePass(ArmPass):
                         0,  # zero point
                         0,  # zero point
                     )
+                    node_replacement = rescale_node
+                    node_replacement_fake = exir_ops.backend.tosa.RESCALE.default(
+                        tosa_resize_node.meta["val"], output_dtype, [output_scale], 0, 0
+                    )
+
+            with graph_module.graph.inserting_after(node_replacement):
+                post_permute = create_node(
+                    graph=graph_module.graph,
+                    op_target=exir_ops.edge.aten.permute_copy.default,
+                    args=(node_replacement, list(self._NHWC_INVERSE_ORDER)),
+                    from_node=node,
+                )
+            post_permute.meta["val"] = exir_ops.edge.aten.permute_copy.default(
+                node_replacement_fake,
+                list(self._NHWC_INVERSE_ORDER),
+            )
+            node.replace_all_uses_with(post_permute)
+            graph_module.graph.erase_node(node)
 
         if modified:
             graph_module = super().call(graph_module).graph_module
