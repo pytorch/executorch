@@ -14,6 +14,8 @@
 #include <executorch/backends/webgpu/runtime/WebGPUDevice.h>
 #include <webgpu/wgpu.h>
 
+#include <executorch/runtime/platform/assert.h>
+
 #include <cstring>
 #include <stdexcept>
 
@@ -135,7 +137,8 @@ void WebGPUGraph::build(
         if (constant_id >= 0 || mem_obj_id < 0) {
           // Dedicated buffer: constants or tensors that don't share memory
           WGPUBufferDescriptor buf_desc = {};
-          buf_desc.size = tensor.nbytes > 0 ? tensor.nbytes : 4;
+          ET_CHECK_MSG(tensor.nbytes > 0, "Tensor has zero bytes");
+          buf_desc.size = tensor.nbytes;
           buf_desc.usage = WGPUBufferUsage_Storage | WGPUBufferUsage_CopyDst |
               WGPUBufferUsage_CopySrc;
           buf_desc.mappedAtCreation = false;
@@ -189,8 +192,8 @@ void WebGPUGraph::build(
   shared_buffers_.resize(shared_buffer_sizes_.size(), nullptr);
   for (size_t id = 0; id < shared_buffer_sizes_.size(); id++) {
     WGPUBufferDescriptor buf_desc = {};
-    buf_desc.size =
-        shared_buffer_sizes_[id] > 0 ? shared_buffer_sizes_[id] : 4;
+    ET_CHECK_MSG(shared_buffer_sizes_[id] > 0, "Shared buffer has zero bytes");
+    buf_desc.size = shared_buffer_sizes_[id];
     buf_desc.usage = WGPUBufferUsage_Storage | WGPUBufferUsage_CopyDst |
         WGPUBufferUsage_CopySrc;
     buf_desc.mappedAtCreation = false;
@@ -218,7 +221,8 @@ void WebGPUGraph::build(
 
       // Create staging buffer for output readback
       WGPUBufferDescriptor staging_desc = {};
-      staging_desc.size = tensors_[oid].nbytes > 0 ? tensors_[oid].nbytes : 4;
+      ET_CHECK_MSG(tensors_[oid].nbytes > 0, "Output tensor has zero bytes");
+      staging_desc.size = tensors_[oid].nbytes;
       staging_desc.usage = WGPUBufferUsage_MapRead | WGPUBufferUsage_CopyDst;
       staging_desc.mappedAtCreation = false;
       output_staging_buffers_.push_back(
