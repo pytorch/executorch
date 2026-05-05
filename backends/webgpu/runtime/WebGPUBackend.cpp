@@ -38,6 +38,12 @@ using executorch::runtime::register_backend;
 using executorch::runtime::Result;
 using executorch::runtime::Span;
 
+static WebGPUMemoryStats s_last_memory_stats;
+
+WebGPUMemoryStats get_last_memory_stats() {
+  return s_last_memory_stats;
+}
+
 bool WebGPUBackend::is_available() const {
   return true;
 }
@@ -82,6 +88,8 @@ Result<DelegateHandle*> WebGPUBackend::init(
     graph->~WebGPUGraph();
     return Error::DelegateInvalidCompatibility;
   }
+
+  s_last_memory_stats = graph->memory_stats();
 
   processed->Free();
 
