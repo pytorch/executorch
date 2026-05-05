@@ -6,6 +6,7 @@
 
 # pyre-strict
 
+import operator
 from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
 from typing import List, Tuple, Union
@@ -493,7 +494,20 @@ class MaxPool2dPattern(QuantizationPattern):
         # pyre-fixme[29]: `Union[BoundMethod[typing.Callable(torch._C.TensorBase.__ge...
         max_pool_node = fused_partition[0].nodes[-1]
 
-        # Input and output share quantization parameters since max is order-preserving
+        # Since max_pool2d_with_indices returns a tuple, the output observer must be
+        # placed on getitem[0] rather than the tuple-returning op. Otherwise
+        # prepare_pt2e silently skips it.
+        # Expect exactly one user: getitem[0] extracting the values tensor. If indices
+        # are also used or the structure is unexpected, bail out.
+        users = list(max_pool_node.users)
+        if (
+            len(users) != 1
+            or users[0].target is not operator.getitem
+            or users[0].args[1] != 0
+        ):
+            return PartitionAnchors(empty=True), max_pool_node
+        getitem_0 = users[0]
+
         return (
             PartitionAnchors(
                 inputs=[(max_pool_node, 0)],
@@ -505,7 +519,7 @@ class MaxPool2dPattern(QuantizationPattern):
                 ],
                 output=[
                     (
-                        max_pool_node,
+                        getitem_0,
                         SharedQuantizationSpec((max_pool_node.args[0], max_pool_node)),
                     )
                 ],

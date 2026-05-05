@@ -131,6 +131,7 @@ int main(int argc, char** argv) {
     return 1;
   }
 
+#ifdef EXECUTORCH_BUILD_CUDA
   // GPU memory: before load
   {
     size_t free = 0, total = 0;
@@ -139,6 +140,7 @@ int main(int argc, char** argv) {
       stats.gpu_free_before_load_bytes = free;
     }
   }
+#endif
 
   stats.model_load_start_ms = llm::time_in_ms();
 
@@ -224,6 +226,7 @@ int main(int argc, char** argv) {
 
   stats.model_load_end_ms = llm::time_in_ms();
 
+#ifdef EXECUTORCH_BUILD_CUDA
   // GPU memory: after load
   {
     size_t free = 0, total = 0;
@@ -231,6 +234,7 @@ int main(int argc, char** argv) {
       stats.gpu_free_after_load_bytes = free;
     }
   }
+#endif
 
   // Get EOS ids
   auto eos_ids = llm::get_eos_ids(tokenizer.get(), module.get());
@@ -397,6 +401,7 @@ int main(int argc, char** argv) {
   int64_t num_generated = pos - num_prompt_tokens;
   stats.num_generated_tokens = num_generated;
 
+#ifdef EXECUTORCH_BUILD_CUDA
   // GPU memory: after generate + peak usage
   {
     size_t free = 0, total = 0;
@@ -412,6 +417,7 @@ int main(int argc, char** argv) {
       stats.gpu_peak_usage_mb = (double)(total - min_free) / 1024.0 / 1024.0;
     }
   }
+#endif
 
   printf("\n");
 
