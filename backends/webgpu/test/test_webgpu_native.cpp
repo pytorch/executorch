@@ -123,13 +123,13 @@ static bool test_chained_add_memory(const std::string& model_path) {
     return false;
   }
 
-  // z = x+y; z = z+x = 2x+y; z = z+y = 2x+2y
+  // z=x+y; z=z+x=2x+y; z=z+y=2x+2y; z=z+x=3x+2y; z=z+y=3x+3y
   const auto& out_tensor = outputs[0].toTensor();
   const float* out_data = out_tensor.const_data_ptr<float>();
 
   float max_error = 0.0f;
   for (int i = 0; i < size; i++) {
-    float expected = 2.0f * x_data[i] + 2.0f * y_data[i];
+    float expected = 3.0f * x_data[i] + 3.0f * y_data[i];
     float error = std::abs(out_data[i] - expected);
     max_error = std::max(max_error, error);
   }

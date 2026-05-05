@@ -31,6 +31,8 @@ class AddChainedModule(torch.nn.Module):
         z = x + y
         z = z + x
         z = z + y
+        z = z + x
+        z = z + y
         return z
 
 
@@ -98,7 +100,7 @@ def export_add_model(output_path: str) -> None:
 
 
 def export_chained_add_model(output_path: str) -> None:
-    """Export a chained add model (z=x+y; z=z+x; z=z+y) to .pte for memory aliasing testing."""
+    """Export a chained add model (z=x+y; z=z+x; z=z+y; z=z+x; z=z+y) to .pte for memory aliasing testing."""
     model = AddChainedModule()
     example_inputs = (torch.randn(1024, 1024), torch.randn(1024, 1024))
     ep = torch.export.export(model, example_inputs)
