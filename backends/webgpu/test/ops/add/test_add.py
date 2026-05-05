@@ -97,5 +97,18 @@ def export_add_model(output_path: str) -> None:
     print(f"Exported {output_path}")
 
 
+def export_chained_add_model(output_path: str) -> None:
+    """Export a chained add model (z=x+y; z=z+x; z=z+y) to .pte for memory aliasing testing."""
+    model = AddChainedModule()
+    example_inputs = (torch.randn(1024, 1024), torch.randn(1024, 1024))
+    ep = torch.export.export(model, example_inputs)
+    et_program = to_edge_transform_and_lower(
+        ep, partitioner=[VulkanPartitioner()]
+    ).to_executorch()
+    with open(output_path, "wb") as f:
+        f.write(et_program.buffer)
+    print(f"Exported {output_path}")
+
+
 if __name__ == "__main__":
     unittest.main()

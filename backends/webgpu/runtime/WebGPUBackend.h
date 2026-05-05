@@ -8,11 +8,14 @@
 
 #pragma once
 
+#include <executorch/backends/webgpu/runtime/WebGPUGraph.h>
 #include <executorch/runtime/backend/interface.h>
 
 namespace executorch {
 namespace backends {
 namespace webgpu {
+
+WebGPUMemoryStats get_last_memory_stats();
 
 class WebGPUBackend final : public ::executorch::runtime::BackendInterface {
  public:
