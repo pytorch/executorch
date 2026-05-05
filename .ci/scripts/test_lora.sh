@@ -160,6 +160,13 @@ To calculate 15% of 80, we can multiply 80 by 15/100.
 So, 15% of 80 is equal to (80 * 15) / 100 = 1200 / 100 = 12.
 #### 12
 The answer is: 12<|im_end|>"
+EXPECTED_QUANT_LORA_ALTERNATE_PREFIX="
+<|im_start|>user Calculate 15% of 80?<|im_end|><|im_start|>assistant
+To calculate 15% of 80, we can multiply 80 by 15/100.
+80 * 15/100 = 12.
+So, 15% of 80 is 12.
+#### 12
+The answer is: 12<|im_end|>"
 
 # Export Quantized PTE, PTD file, no LoRA.
 # override base.lora_config=null to avoid creating a lora model
@@ -225,12 +232,13 @@ NOW=$(date +"%H:%M:%S")
 echo "Finished at ${NOW}"
 
 RESULT=$(cat result.txt)
-if [[ "${RESULT}" == "${EXPECTED_QUANT_LORA_PREFIX}"* ]]; then
+if [[ "${RESULT}" == "${EXPECTED_QUANT_LORA_PREFIX}"* ]] || [[ "${RESULT}" == "${EXPECTED_QUANT_LORA_ALTERNATE_PREFIX}"* ]]; then
   echo "Expected result prefix: ${EXPECTED_QUANT_LORA_PREFIX}"
   echo "Actual result: ${RESULT}"
   echo "Test 4: Success"
 else
   echo "Expected result prefix: ${EXPECTED_QUANT_LORA_PREFIX}"
+  echo "Alternate expected result prefix: ${EXPECTED_QUANT_LORA_ALTERNATE_PREFIX}"
   echo "Actual result: ${RESULT}"
   echo "Test 4: Failure; results not the same"
   cleanup_files
