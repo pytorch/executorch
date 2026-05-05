@@ -14,6 +14,31 @@
     evictViewerCache,
   } = OBS.utils;
 
+  function refreshCompareLayouts(container, options) {
+    if (!container || !(state.graphCompareInstances instanceof Map)) return;
+    for (const [, inst] of state.graphCompareInstances) {
+      const compare = inst && inst.compare;
+      if (!compare || !compare._root || !compare._root.isConnected) continue;
+      if (container !== compare._root && !container.contains(compare._root)) continue;
+      try {
+        if (typeof compare.refreshLayout === 'function') {
+          compare.refreshLayout(options || {});
+        } else {
+          for (const v of compare.viewers || []) {
+            try { v.canvasRenderer.resize(); } catch (_) {}
+            try {
+              if (v.minimapRenderer) {
+                v.minimapRenderer.resize();
+                v.minimapRenderer.generateThumbnail();
+              }
+            } catch (_) {}
+            try { v.renderAll(); } catch (_) {}
+          }
+        }
+      } catch (_) {}
+    }
+  }
+
   function createSection(title, storageKey, collapsible) {
     const isCollapsible = collapsible !== false;
     const isCollapsed = isCollapsible && state.viewPrefs[storageKey] === false;
@@ -36,8 +61,12 @@
       header.onclick = () => {
         content.classList.toggle('hidden');
         header.classList.toggle('collapsed');
-        state.viewPrefs[storageKey] = content.classList.contains('hidden') ? false : true;
+        const isExpanded = !content.classList.contains('hidden');
+        state.viewPrefs[storageKey] = isExpanded;
         localStorage.setItem('graphCollectorViewPrefs', JSON.stringify(state.viewPrefs));
+        if (isExpanded) {
+          requestAnimationFrame(() => refreshCompareLayouts(content));
+        }
       };
     }
 
@@ -369,8 +398,18 @@
     if (cached) {
       content.appendChild(cached.compare._root);
       requestAnimationFrame(() => {
+        if (typeof cached.compare.refreshLayout === 'function') {
+          try { cached.compare.refreshLayout(); } catch (_) {}
+          return;
+        }
         for (const v of cached.compare.viewers) {
           try { v.canvasRenderer.resize(); } catch (_) {}
+          try {
+            if (v.minimapRenderer) {
+              v.minimapRenderer.resize();
+              v.minimapRenderer.generateThumbnail();
+            }
+          } catch (_) {}
           try { v.renderAll(); } catch (_) {}
         }
       });

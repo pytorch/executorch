@@ -49,6 +49,13 @@ class CanvasRenderer {
         this.viewer.renderAll();
     }
 
+    resetInteractionState() {
+        this.isDragging = false;
+        this.dragMoved = false;
+        this.lastMousePos = { x: 0, y: 0 };
+        this.viewer.controller.handleHover(null, null);
+    }
+
     destroy() {
         if (this._resizeObserver) {
             this._resizeObserver.disconnect();
