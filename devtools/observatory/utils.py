@@ -11,6 +11,7 @@ import os
 import subprocess
 from dataclasses import dataclass
 from typing import Optional
+from urllib.parse import urlparse
 
 
 @dataclass
@@ -18,14 +19,63 @@ class GitInfo:
     """Git repository information for source links."""
 
     remote_url: Optional[str] = None
+    remote_https_url: Optional[str] = None
     branch: Optional[str] = None
     commit_hash: Optional[str] = None
     is_dirty: bool = False
     github_link: Optional[str] = None
+    branch_blob_url: Optional[str] = None
+    commit_blob_url: Optional[str] = None
 
 
 _cached_git_info: Optional[GitInfo] = None
 _cached_repo_root: Optional[str] = None
+
+
+def _strip_git_suffix(value: str) -> str:
+    return value[:-4] if value.endswith(".git") else value
+
+
+def _normalize_remote_url(remote_url: str) -> Optional[str]:
+    """Return an https URL for browser links regardless of git remote scheme."""
+
+    if not remote_url:
+        return None
+
+    remote_url = remote_url.strip()
+    if not remote_url:
+        return None
+
+    if remote_url.startswith("git@"):
+        try:
+            user_host, path = remote_url.split(":", 1)
+        except ValueError:
+            return None
+        host = user_host.split("@", 1)[1]
+        cleaned_path = _strip_git_suffix(path.lstrip("/").rstrip("/"))
+        return f"https://{host}/{cleaned_path}" if cleaned_path else f"https://{host}"
+
+    if remote_url.startswith("ssh://"):
+        parsed = urlparse(remote_url)
+        host = parsed.hostname
+        if not host:
+            return None
+        port_suffix = f":{parsed.port}" if parsed.port and parsed.port not in (22,) else ""
+        cleaned_path = _strip_git_suffix(parsed.path.lstrip("/").rstrip("/"))
+        return f"https://{host}{port_suffix}/{cleaned_path}" if cleaned_path else f"https://{host}{port_suffix}"
+
+    parsed = urlparse(remote_url)
+    if parsed.scheme in {"http", "https"}:
+        host = parsed.hostname
+        if not host:
+            return None
+        port_suffix = ""
+        if parsed.port and not (parsed.scheme == "http" and parsed.port == 80) and not (parsed.scheme == "https" and parsed.port == 443):
+            port_suffix = f":{parsed.port}"
+        cleaned_path = _strip_git_suffix(parsed.path.lstrip("/").rstrip("/"))
+        return f"https://{host}{port_suffix}/{cleaned_path}" if cleaned_path else f"https://{host}{port_suffix}"
+
+    return None
 
 
 def get_repo_root() -> Optional[str]:
@@ -94,6 +144,7 @@ def get_git_info() -> GitInfo:
             )
             if remote_url.returncode == 0:
                 info.remote_url = remote_url.stdout.strip()
+                info.remote_https_url = _normalize_remote_url(info.remote_url)
 
         commit = subprocess.run(
             ["git", "rev-parse", "HEAD"],
@@ -113,9 +164,11 @@ def get_git_info() -> GitInfo:
         if dirty.returncode == 0:
             info.is_dirty = bool(dirty.stdout.strip())
 
-        if info.remote_url and info.branch:
-            base = info.remote_url[:-4] if info.remote_url.endswith(".git") else info.remote_url
-            info.github_link = f"{base}/tree/{info.branch}"
+        if info.remote_https_url and info.branch:
+            info.github_link = f"{info.remote_https_url}/tree/{info.branch}"
+            info.branch_blob_url = f"{info.remote_https_url}/blob/{info.branch}"
+        if info.remote_https_url and info.commit_hash:
+            info.commit_blob_url = f"{info.remote_https_url}/blob/{info.commit_hash}"
     except Exception as exc:
         logging.debug("[Observatory] Failed to query git info: %s", exc)
 

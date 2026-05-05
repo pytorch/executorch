@@ -35,10 +35,11 @@ class StackTraceLens(Lens):
                 continue
 
             github_link = None
-            if git_info.github_link and repo_root:
+            link_root = git_info.commit_blob_url or git_info.branch_blob_url or git_info.github_link
+            if link_root and repo_root:
                 try:
                     rel_path = os.path.relpath(frame_info.filename, repo_root)
-                    github_link = f"{git_info.github_link}/{rel_path}#L{frame_info.lineno}"
+                    github_link = f"{link_root}/{rel_path}#L{frame_info.lineno}"
                 except Exception:
                     pass
 
