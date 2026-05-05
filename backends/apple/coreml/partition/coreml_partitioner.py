@@ -50,21 +50,15 @@ _UNSUPPORTED_OP_TARGETS = frozenset(
         exir_ops.edge.aten.acosh.default,
         torch.ops.aten.asinh.default,
         exir_ops.edge.aten.asinh.default,
-        # https://github.com/pytorch/executorch/issues/11722 — coremltools'
-        # converter aborts on the torch random ops (rand / randn / *_like /
-        # randint).
+        # https://github.com/pytorch/executorch/issues/11722 — only
+        # ``aten.rand.default`` actually reaches an unimplemented branch in
+        # coremltools 9.0 ("not enough values to unpack (expected 5, got 1)"
+        # raised from the rand handler).  ``randn`` / ``rand_like`` /
+        # ``randn_like`` / ``randint`` lower cleanly today, so we leave them
+        # delegated.  Verified locally against coremltools 9.0 / Python 3.10
+        # by lowering each op in isolation.
         torch.ops.aten.rand.default,
-        torch.ops.aten.randn.default,
-        torch.ops.aten.rand_like.default,
-        torch.ops.aten.randn_like.default,
-        torch.ops.aten.randint.default,
-        torch.ops.aten.randint_like.default,
         exir_ops.edge.aten.rand.default,
-        exir_ops.edge.aten.randn.default,
-        exir_ops.edge.aten.rand_like.default,
-        exir_ops.edge.aten.randn_like.default,
-        exir_ops.edge.aten.randint.default,
-        exir_ops.edge.aten.randint_like.default,
     ]
 )
 
