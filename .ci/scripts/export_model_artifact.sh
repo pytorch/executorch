@@ -415,11 +415,39 @@ if [ "$MODEL_NAME" = "qwen3_5_moe" ]; then
 
   # Export to .pte/.ptd (short cache dir avoids objcopy symbol length issues)
   echo "::group::Export"
+  EXPORT_LOG=$(mktemp)
   TORCHINDUCTOR_CACHE_DIR="$INDUCTOR_CACHE" \
   python -m executorch.examples.models.qwen3_5_moe.export \
       --prequantized "$LOCAL_MODEL_DIR" \
-      --output-dir "${OUTPUT_DIR}"
+      --output-dir "${OUTPUT_DIR}" \
+      --dense-prefill dequant \
+      --moe-activation-dtype int8 2>&1 | tee "$EXPORT_LOG"
+  EXPORT_RC=${PIPESTATUS[0]}
   echo "::endgroup::"
+
+  if [ "$EXPORT_RC" -ne 0 ]; then
+    echo "ERROR: Qwen3.5 MoE export failed (exit $EXPORT_RC)"
+    rm -f "$EXPORT_LOG"
+    exit "$EXPORT_RC"
+  fi
+
+  # Gate peak GPU memory so we keep the export viable on consumer GPUs
+  # (e.g. RTX 4090 with 24 GB). The export script prints a machine-
+  # parseable marker line "EXPORT_GPU_PEAK_MEMORY_MB: <float>".
+  EXPORT_GPU_PEAK_MB_LIMIT="${EXPORT_GPU_PEAK_MB_LIMIT:-20480}"
+  PEAK_LINE=$(grep -E '^EXPORT_GPU_PEAK_MEMORY_MB:' "$EXPORT_LOG" | tail -1)
+  rm -f "$EXPORT_LOG"
+  if [ -z "$PEAK_LINE" ]; then
+    echo "ERROR: export did not emit EXPORT_GPU_PEAK_MEMORY_MB marker; cannot enforce GPU memory budget"
+    exit 1
+  fi
+  PEAK_MB=$(echo "$PEAK_LINE" | awk '{print $2}')
+  echo "Export GPU peak memory: ${PEAK_MB} MB (limit ${EXPORT_GPU_PEAK_MB_LIMIT} MB)"
+  if awk -v p="$PEAK_MB" -v l="$EXPORT_GPU_PEAK_MB_LIMIT" 'BEGIN{exit !(p>l)}'; then
+    echo "ERROR: export exceeded GPU memory budget (${PEAK_MB} MB > ${EXPORT_GPU_PEAK_MB_LIMIT} MB)"
+    echo "       — this would prevent the model from being exported on a 24 GB consumer GPU."
+    exit 1
+  fi
 
   test -f "${OUTPUT_DIR}/model.pte"
   test -f "${OUTPUT_DIR}/aoti_cuda_blob.ptd"

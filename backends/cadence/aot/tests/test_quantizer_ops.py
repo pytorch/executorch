@@ -7,6 +7,7 @@
 # pyre-strict
 
 import inspect
+import operator
 import unittest
 from typing import Callable
 
@@ -483,12 +484,18 @@ class QuantizerAnnotationTest(unittest.TestCase):
         self.assertEqual(len(addmm_nodes), 1, "Should find exactly one addmm node")
         return gm, addmm_nodes[0]
 
-    def _build_max_pool2d_graph(self) -> tuple[torch.fx.GraphModule, torch.fx.Node]:
-        """Build a simple graph with a max_pool2d_with_indices operation."""
+    def _build_max_pool2d_graph(
+        self,
+    ) -> tuple[torch.fx.GraphModule, torch.fx.Node, torch.fx.Node]:
+        """Build a graph with max_pool2d_with_indices followed by getitem[0].
+
+        Returns:
+            A tuple of (graph_module, getitem_node, max_pool_node).
+            The getitem_node is where the output annotation is placed.
+            The max_pool_node is where the input annotation is placed.
+        """
         builder = GraphBuilder()
-        # Input shape: (batch, channels, height, width)
         x = builder.placeholder("x", torch.randn(1, 3, 8, 8))
-        # max_pool2d_with_indices args: (input, kernel_size, stride, padding, dilation, ceil_mode)
         max_pool = builder.call_operator(
             op=torch.ops.aten.max_pool2d_with_indices.default,
             args=(x, [2, 2], [2, 2], [0, 0], [1, 1], False),
@@ -503,19 +510,24 @@ class QuantizerAnnotationTest(unittest.TestCase):
                 }
             ),
         )
-        builder.output([max_pool])
+        getitem = builder.call_operator(
+            op=operator.getitem,
+            args=(max_pool, 0),
+        )
+        builder.output([getitem])
         gm = builder.get_graph_module()
 
         max_pool_nodes = gm.graph.find_nodes(
             op="call_function",
             target=torch.ops.aten.max_pool2d_with_indices.default,
         )
-        self.assertEqual(
-            len(max_pool_nodes),
-            1,
-            "Should find exactly one max_pool2d_with_indices node",
+        self.assertEqual(len(max_pool_nodes), 1)
+        getitem_nodes = gm.graph.find_nodes(
+            op="call_function",
+            target=operator.getitem,
         )
-        return gm, max_pool_nodes[0]
+        self.assertEqual(len(getitem_nodes), 1)
+        return gm, getitem_nodes[0], max_pool_nodes[0]
 
     def _build_add_relu_graph(
         self,

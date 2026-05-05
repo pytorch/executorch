@@ -27,7 +27,10 @@ from executorch.backends.qualcomm.export_utils import (
 )
 from executorch.backends.qualcomm.qnn_preprocess import QnnBackend
 from executorch.backends.qualcomm.quantizer.quantizer import ModuleQConfig, QuantDtype
-from executorch.backends.qualcomm.serialization.qc_schema import QcomChipset
+from executorch.backends.qualcomm.serialization.qc_schema import (
+    QcomChipset,
+    QnnExecuTorchLpaiTargetEnv,
+)
 from executorch.backends.qualcomm.utils.constants import (
     QCOM_DTYPE,
     QCOM_PASS_ACTIVATE_KEY,
@@ -832,3 +835,10 @@ class TestQNN(unittest.TestCase):
             QCOM_PASS_ACTIVATE_KEY: True,
             QCOM_PASS_ARGS_KWARGS_DEFAULTS_KEY: {"division": division},
         }
+
+    def get_lpai_target_env(self):
+        if self.enable_x86_64:
+            return QnnExecuTorchLpaiTargetEnv.kX86
+        elif self.direct_build_folder:
+            return QnnExecuTorchLpaiTargetEnv.kAdsp
+        return QnnExecuTorchLpaiTargetEnv.kArm
