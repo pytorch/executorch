@@ -24,10 +24,10 @@ if TYPE_CHECKING:
 def install_qnn_patches(cls: type[PipelineGraphCollectorLens]) -> None:
     """Install QNN ptq_calibrate patch on the PipelineGraphCollectorLens."""
     try:
-        import executorch.examples.qualcomm.utils as qnn_utils_module
+        import executorch.backends.qualcomm.export_utils as qnn_utils_module
 
-        original = qnn_utils_module.ptq_calibrate
-        cls._originals["qnn.ptq_calibrate"] = original
+        original = qnn_utils_module._ptq_calibrate
+        cls._originals["qnn._ptq_calibrate"] = original
 
         def patched_ptq_calibrate(captured_model, quantizer, dataset):
             cls._set_accuracy_fallback_dataset(
@@ -58,15 +58,14 @@ def install_qnn_patches(cls: type[PipelineGraphCollectorLens]) -> None:
                     "[PipelineGraphCollector] collect skipped (Exported Float): %s",
                     exc,
                 )
-
             return original(captured_model, quantizer, dataset)
 
-        qnn_utils_module.ptq_calibrate = patched_ptq_calibrate
-        logging.info("[PipelineGraphCollector] Installed QNN patch: ptq_calibrate")
+        qnn_utils_module._ptq_calibrate = patched_ptq_calibrate
+        logging.info("[PipelineGraphCollector] Installed QNN patch: _ptq_calibrate")
 
         def _uninstall():
             try:
-                qnn_utils_module.ptq_calibrate = original
+                qnn_utils_module._ptq_calibrate = original
             except Exception:
                 pass
 
