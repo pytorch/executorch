@@ -355,7 +355,9 @@ class TestCoreMLPartitioner(unittest.TestCase):
                     x, dim=None
                 )
 
-        ep = torch.export.export(FlatModel().eval(), (torch.randn(10, 10),), strict=True)
+        ep = torch.export.export(
+            FlatModel().eval(), (torch.randn(10, 10),), strict=True
+        )
         edge = executorch.exir.to_edge_transform_and_lower(
             ep, partitioner=[CoreMLPartitioner()]
         )
