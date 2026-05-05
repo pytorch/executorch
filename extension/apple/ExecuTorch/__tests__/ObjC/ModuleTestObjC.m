@@ -87,32 +87,41 @@
 - (void)testBackendOptionsMapValidation {
   NSError *error = nil;
   // Oversized integer.
+  // NOTE: dict/array literals are extracted to locals because the C
+  // preprocessor only treats `()` as nesting — commas inside `@{...}` and
+  // `@[...]` would otherwise split the XCTAssertNil(...) macro argument.
   long long oversized = (long long)INT32_MAX + 1;
-  XCTAssertNil([ExecuTorchBackendOptionsMap mapWithOptions:@{
-    @"AnyBackend": @[
-      [ExecuTorchBackendOption optionWithKey:@"too_big" integerValue:(NSInteger)oversized],
-    ]
-  } error:&error]);
+  ExecuTorchBackendOptionsMap *oversizedIntMap =
+      [ExecuTorchBackendOptionsMap mapWithOptions:@{
+        @"AnyBackend": @[
+          [ExecuTorchBackendOption optionWithKey:@"too_big" integerValue:(NSInteger)oversized],
+        ]
+      } error:&error];
+  XCTAssertNil(oversizedIntMap);
   XCTAssertNotNil(error);
 
   // Oversized key.
   error = nil;
   NSString *longKey = [@"" stringByPaddingToLength:256 withString:@"k" startingAtIndex:0];
-  XCTAssertNil([ExecuTorchBackendOptionsMap mapWithOptions:@{
-    @"AnyBackend": @[
-      [ExecuTorchBackendOption optionWithKey:longKey integerValue:1],
-    ]
-  } error:&error]);
+  ExecuTorchBackendOptionsMap *oversizedKeyMap =
+      [ExecuTorchBackendOptionsMap mapWithOptions:@{
+        @"AnyBackend": @[
+          [ExecuTorchBackendOption optionWithKey:longKey integerValue:1],
+        ]
+      } error:&error];
+  XCTAssertNil(oversizedKeyMap);
   XCTAssertNotNil(error);
 
   // Oversized string value.
   error = nil;
   NSString *longValue = [@"" stringByPaddingToLength:4096 withString:@"v" startingAtIndex:0];
-  XCTAssertNil([ExecuTorchBackendOptionsMap mapWithOptions:@{
-    @"AnyBackend": @[
-      [ExecuTorchBackendOption optionWithKey:@"compute_unit" stringValue:longValue],
-    ]
-  } error:&error]);
+  ExecuTorchBackendOptionsMap *oversizedValueMap =
+      [ExecuTorchBackendOptionsMap mapWithOptions:@{
+        @"AnyBackend": @[
+          [ExecuTorchBackendOption optionWithKey:@"compute_unit" stringValue:longValue],
+        ]
+      } error:&error];
+  XCTAssertNil(oversizedValueMap);
   XCTAssertNotNil(error);
 }
 
