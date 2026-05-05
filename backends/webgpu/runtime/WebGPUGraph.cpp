@@ -357,9 +357,10 @@ WebGPUMemoryStats WebGPUGraph::memory_stats() const {
   for (size_t i = 0; i < value_types_.size(); i++) {
     if (value_types_[i] == ValueType::Tensor && tensors_[i].nbytes > 0) {
       stats.num_tensors++;
-      if (i < tensor_mem_obj_ids_.size() && tensor_mem_obj_ids_[i] >= 0) {
-        // Shared tensor — actual allocation tracked via shared_buffer_sizes_
-      } else {
+      // Shared tensors are tracked via shared_buffer_sizes_
+      bool is_shared =
+          i < tensor_mem_obj_ids_.size() && tensor_mem_obj_ids_[i] >= 0;
+      if (!is_shared) {
         stats.unshared_tensor_buffer_bytes += tensors_[i].nbytes;
       }
     }
