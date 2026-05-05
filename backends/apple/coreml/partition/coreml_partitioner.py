@@ -32,32 +32,60 @@ from torch.fx.passes.operator_support import OperatorSupportBase
 logger = logging.getLogger(__name__)
 logger.setLevel(get_coreml_log_level(default_level=logging.INFO))
 
-# Mirrors coremltools' TORCH_DTYPE_TO_MIL_DTYPE.  Ops whose inputs use any
-# other dtype (e.g. torch.uint8) cannot be lowered, so the partitioner must
-# reject them.  See pytorch/executorch#11686.
-_COREML_SUPPORTED_INPUT_DTYPES = {
-    torch.bool,
-    torch.float16,
-    torch.float32,
-    torch.float64,
-    torch.int16,
-    torch.int32,
-    torch.int64,
-}
 
+def _coreml_graph_input_dtypes() -> set:
+    """The dtypes coremltools can map for *graph inputs*.
 
-def _unsupported_input_dtype(node: torch.fx.Node):
-    """Return the first input dtype that CoreML cannot lower, else ``None``.
-
-    See pytorch/executorch#11686: coremltools' torch -> MIL converter only
-    knows the dtypes in ``TORCH_DTYPE_TO_MIL_DTYPE``; ops with any other
-    input dtype (notably ``torch.uint8``) crash the converter rather than
-    being reported as unsupported.
+    Imported from coremltools so we don't drift if Apple updates the table
+    (e.g. iOS26 adds ``int8``).  Falls back to a hand-written set for older
+    coremltools versions that don't expose ``TORCH_DTYPE_TO_MIL_DTYPE``.
     """
+    try:
+        from coremltools.converters.mil.frontend.torch.exir_utils import (
+            TORCH_DTYPE_TO_MIL_DTYPE,
+        )
+
+        return set(TORCH_DTYPE_TO_MIL_DTYPE.keys())
+    except ImportError:
+        return {
+            torch.bool,
+            torch.float16,
+            torch.float32,
+            torch.float64,
+            torch.int16,
+            torch.int32,
+            torch.int64,
+        }
+
+
+def _unsupported_graph_input_dtype(
+    node: torch.fx.Node, user_input_names: Optional[set] = None
+):
+    """Return the first **user-input** dtype CoreML cannot map, else ``None``.
+
+    See pytorch/executorch#11686: coremltools' torch -> MIL converter aborts
+    with a ``KeyError`` from ``TORCH_DTYPE_TO_MIL_DTYPE`` when a *user input*
+    placeholder uses an unsupported dtype (notably ``torch.uint8``).
+
+    We only inspect placeholders that correspond to actual user inputs.
+    Lifted parameters / buffers are also ``placeholder`` nodes in the FX
+    graph, but they are baked in as constants by coremltools and must not
+    be flagged here — that would break static quantization, where weights
+    legitimately ride on int8 / uint8 placeholders.
+
+    When ``user_input_names`` is ``None`` the check is conservative and
+    treats no placeholder as a user input; this matches the legacy
+    no-knowledge case (e.g. when called from ``ops_to_not_decompose``).
+    """
+    if user_input_names is None:
+        return None
+    supported = _coreml_graph_input_dtypes()
     for arg in node.all_input_nodes:
+        if arg.op != "placeholder" or arg.name not in user_input_names:
+            continue
         val = arg.meta.get("val", None)
         dtype = getattr(val, "dtype", None)
-        if dtype is not None and dtype not in _COREML_SUPPORTED_INPUT_DTYPES:
+        if dtype is not None and dtype not in supported:
             return dtype
     return None
 
@@ -76,6 +104,7 @@ class _OperatorsSupportedForCoreMLBackend(OperatorSupportBase):
         skip_ops_for_coreml_delegation: Optional[List[str]] = None,
         lower_full_graph: bool = False,
         log: bool = False,
+        user_input_names: Optional[List[str]] = None,
     ) -> None:
         if skip_ops_for_coreml_delegation is None:
             skip_ops_for_coreml_delegation = []
@@ -84,6 +113,14 @@ class _OperatorsSupportedForCoreMLBackend(OperatorSupportBase):
         self.lower_full_graph = lower_full_graph
         self._logged_msgs = set()
         self._log = log
+        # Names of *true* user-input placeholders (i.e. placeholders that
+        # become CoreML model inputs).  Lifted parameters / buffers are also
+        # placeholders in the FX graph but are baked in as constants by
+        # coremltools, and they must not be flagged by the dtype check that
+        # protects against pytorch/executorch#11686.
+        self.user_input_names = (
+            set(user_input_names) if user_input_names is not None else None
+        )
 
     def log_once(self, msg: str) -> None:
         if self._log and msg not in self._logged_msgs:
@@ -105,10 +142,12 @@ class _OperatorsSupportedForCoreMLBackend(OperatorSupportBase):
 
     def should_override_support(self, node) -> bool:
         # https://github.com/pytorch/executorch/issues/11686
-        unsupported_dtype = _unsupported_input_dtype(node)
+        unsupported_dtype = _unsupported_graph_input_dtype(
+            node, user_input_names=self.user_input_names
+        )
         if unsupported_dtype is not None:
             self.log_once(
-                "Skipping op for CoreML delegation because input dtype "
+                "Skipping op for CoreML delegation because user-input dtype "
                 f"{unsupported_dtype} is not supported by CoreML: "
                 + getattr(node.target, "__name__", str(node.target))
             )
@@ -308,12 +347,18 @@ class CoreMLPartitioner(Partitioner):
         logger.info("CoreMLPartitioner::partition")
         partition_tags = {}
 
+        user_input_names = [
+            spec.arg.name
+            for spec in exported_program.graph_signature.input_specs
+            if spec.kind.name == "USER_INPUT"
+        ]
         capability_partitioner = CapabilityBasedPartitioner(
             exported_program.graph_module,
             _OperatorsSupportedForCoreMLBackend(
                 self.skip_ops_for_coreml_delegation,
                 self.lower_full_graph,
                 log=True,
+                user_input_names=user_input_names,
             ),
             allows_single_node_partition=True,
         )
@@ -349,10 +394,16 @@ class CoreMLPartitioner(Partitioner):
         self, ep: ExportedProgram
     ) -> Tuple[List[torch._ops.OpOverload], Optional[Callable[[torch.fx.Node], bool]]]:
         do_not_decompose = []
+        user_input_names = [
+            spec.arg.name
+            for spec in ep.graph_signature.input_specs
+            if spec.kind.name == "USER_INPUT"
+        ]
         op_support = _OperatorsSupportedForCoreMLBackend(
             self.skip_ops_for_coreml_delegation,
             self.lower_full_graph,
             log=False,
+            user_input_names=user_input_names,
         )
 
         # CoreML prevents certain ops (like triu) from lowering to CoreML when put in the ExecuTorch op namespace
