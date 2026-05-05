@@ -168,6 +168,10 @@ class MinimapRenderer {
         this.viewer.renderAll();
     }
 
+    resetInteractionState() {
+        this.isDragging = false;
+    }
+
     render() {
         const dpr = window.devicePixelRatio || 1;
         if (this.canvas.width === 0 || this.canvas.height === 0) return;

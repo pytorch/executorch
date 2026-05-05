@@ -72,6 +72,10 @@ class FXGraphCompare {
         this._followSelection = true;
         this._openPortalMenus = [];
         this._currentTheme = this.viewers[0]?.controller?.state?.themeName || 'light';
+        this._layoutRefreshQueued = false;
+        this._layoutRefreshAgain = false;
+        this._pendingRefreshAgainResetView = false;
+        this._needsResetOnNextVisibleLayout = false;
 
         if (this.container) {
             this._buildCompareDOM();
@@ -166,11 +170,11 @@ class FXGraphCompare {
 
             // ResizeObserver on canvas cell
             if (typeof ResizeObserver !== 'undefined') {
-                const ro = new ResizeObserver(() => {
-                    viewer.canvasRenderer.resize();
-                    viewer.renderAll();
-                });
+                const ro = new ResizeObserver(() => this._scheduleLayoutRefresh());
                 ro.observe(canvasCell);
+                if (viewer.minimapRenderer) {
+                    ro.observe(minimapCell);
+                }
                 this._colResizeObservers.push(ro);
             }
         });
@@ -183,19 +187,65 @@ class FXGraphCompare {
 
         this._applyCompareTheme(this.viewers[0]?.controller?.state?.themeName || 'light');
 
-        // Resize all viewers after DOM settles (double-rAF ensures grid layout is complete)
+        this._scheduleLayoutRefresh({ resetView: true });
+    }
+
+    _scheduleLayoutRefresh(options = {}) {
+        if (!this._root) return;
+        if (this._layoutRefreshQueued) {
+            this._layoutRefreshAgain = true;
+            this._pendingRefreshAgainResetView = this._pendingRefreshAgainResetView || !!options.resetView;
+            return;
+        }
+        this._pendingRefreshResetView = this._pendingRefreshResetView || !!options.resetView;
+        this._layoutRefreshQueued = true;
         requestAnimationFrame(() => {
             requestAnimationFrame(() => {
-                this.viewers.forEach((v) => {
-                    v.canvasRenderer.resize();
-                    if (v.minimapRenderer) {
-                        v.minimapRenderer.resize();
-                        v.minimapRenderer.generateThumbnail();
-                    }
-                    v.init();
-                });
+                this._layoutRefreshQueued = false;
+                if (!this._root) return;
+                const resetView = !!this._pendingRefreshResetView || this._needsResetOnNextVisibleLayout;
+                this._pendingRefreshResetView = false;
+                this._refreshViewerLayout({ resetView });
+                if (this._layoutRefreshAgain) {
+                    const resetAgain = this._pendingRefreshAgainResetView;
+                    this._layoutRefreshAgain = false;
+                    this._pendingRefreshAgainResetView = false;
+                    this._scheduleLayoutRefresh({ resetView: resetAgain });
+                }
             });
         });
+    }
+
+    _refreshViewerLayout(options = {}) {
+        const resetView = !!options.resetView;
+        let sawInvalidLayout = false;
+        this.viewers.forEach((viewer, i) => {
+            if (!this._visibleViewers.has(this._viewerNames[i])) return;
+            if (viewer.canvasRenderer && typeof viewer.canvasRenderer.resetInteractionState === 'function') {
+                viewer.canvasRenderer.resetInteractionState();
+            }
+            if (viewer.minimapRenderer && typeof viewer.minimapRenderer.resetInteractionState === 'function') {
+                viewer.minimapRenderer.resetInteractionState();
+            }
+
+            const canvasRect = viewer.canvasContainer && viewer.canvasContainer.getBoundingClientRect();
+            const minimapRect = viewer.minimapRenderer && viewer.minimapRenderer.container.getBoundingClientRect();
+            const hasCanvasLayout = canvasRect && canvasRect.width > 0 && canvasRect.height > 0;
+            const hasMinimapLayout = !viewer.minimapRenderer || (minimapRect && minimapRect.width > 0 && minimapRect.height > 0);
+            if (!hasCanvasLayout || !hasMinimapLayout) {
+                sawInvalidLayout = true;
+                return;
+            }
+
+            if (viewer.canvasRenderer) viewer.canvasRenderer.resize();
+            if (viewer.minimapRenderer) {
+                viewer.minimapRenderer.resize();
+                viewer.minimapRenderer.generateThumbnail();
+            }
+            if (resetView) viewer.init();
+            else viewer.renderAll();
+        });
+        this._needsResetOnNextVisibleLayout = sawInvalidLayout;
     }
 
     _buildSidebar(sidebar) {
@@ -489,15 +539,24 @@ class FXGraphCompare {
             }
             if (isVis) {
                 colIdx++;
-                v.canvasRenderer.resize();
-                v.renderAll();
             }
         });
+
+        this._scheduleLayoutRefresh();
 
         if (visible) {
             const newViewer = this.viewers[this._viewerNames.indexOf(name)];
             requestAnimationFrame(() => {
-                newViewer.canvasRenderer.resize();
+                const canvasRect = newViewer.canvasContainer && newViewer.canvasContainer.getBoundingClientRect();
+                if (!canvasRect || canvasRect.width <= 0 || canvasRect.height <= 0) {
+                    this._needsResetOnNextVisibleLayout = true;
+                    return;
+                }
+                if (newViewer.canvasRenderer) newViewer.canvasRenderer.resize();
+                if (newViewer.minimapRenderer) {
+                    newViewer.minimapRenderer.resize();
+                    newViewer.minimapRenderer.generateThumbnail();
+                }
                 let srcViewer = null, srcNodeId = null;
                 this.viewers.forEach((v, i) => {
                     if (v === newViewer || !this._visibleViewers.has(this._viewerNames[i])) return;
@@ -992,6 +1051,10 @@ class FXGraphCompare {
 
     setViewerVisible(name, visible) {
         this._setViewerVisible(name, visible);
+    }
+
+    refreshLayout(options = {}) {
+        this._scheduleLayoutRefresh(options);
     }
 
     destroy() {
