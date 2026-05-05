@@ -2172,7 +2172,7 @@ class TestReplaceConvWithChannelLastConvPass(unittest.TestCase):
         else:
             x = torch.randint(0, 100, (1, 3, 224, 56), dtype=torch.int32)
             w = torch.randint(0, 100, (16, 3, 16, 16), dtype=torch.int32)
-        b = torch.randn(16)
+        b = torch.randint(-1000, 1000, (16,), dtype=torch.int32)
         stride = (2, 2)
         padding = (0, 0)
         dilation = (1, 1)
@@ -2434,7 +2434,7 @@ class TestReplaceConvWithChannelLastConvPass(unittest.TestCase):
         x = torch.randint(0, 100, (1, in_channels, 224, 56), dtype=torch.int32)
         # Depthwise: weight shape is [out_channels, 1, kernel_h, kernel_w]
         w = torch.randint(0, 100, (out_channels, 1, 3, 3), dtype=torch.int32)
-        b = torch.randn(out_channels)
+        b = torch.randint(-1000, 1000, (out_channels,), dtype=torch.int32)
         stride = (1, 1)
         padding = (1, 1)
         dilation = (1, 1)
@@ -2579,7 +2579,7 @@ class TestReplaceConvWithChannelLastConvPass(unittest.TestCase):
         w = torch.randint(
             0, 100, (out_channels, in_channels, kernel_size), dtype=torch.int32
         )
-        b = torch.randn(out_channels)
+        b = torch.randint(-1000, 1000, (out_channels,), dtype=torch.int32)
         stride = (1, 1)
         padding = (0, 0)
         dilation = (1, 1)
@@ -2689,7 +2689,7 @@ class TestReplaceConvWithChannelLastConvPass(unittest.TestCase):
         kernel_size = 3
         x = torch.randint(0, 100, (1, in_channels, 64), dtype=torch.int32)
         w = torch.randint(0, 100, (out_channels, 1, kernel_size), dtype=torch.int32)
-        b = torch.randn(out_channels)
+        b = torch.randint(-1000, 1000, (out_channels,), dtype=torch.int32)
         stride = (1, 1)
         padding = (1, 1)
         dilation = (1, 1)
