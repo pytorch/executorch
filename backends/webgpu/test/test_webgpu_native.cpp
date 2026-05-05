@@ -140,22 +140,23 @@ static bool test_chained_add_memory(const std::string& model_path) {
     return false;
   }
 
-  if (stats.num_shared_objects > 0) {
-    printf(
-        "PASS: memory aliasing is active (%d shared objects)\n",
-        stats.num_shared_objects);
-  } else {
-    printf(
-        "INFO: no shared objects (memory aliasing not used by this model)\n");
+  if (stats.num_shared_objects <= 0) {
+    printf("FAIL: expected shared objects but got none\n");
+    return false;
   }
+  printf(
+      "PASS: memory aliasing is active (%d shared objects)\n",
+      stats.num_shared_objects);
 
   size_t naive_bytes =
       static_cast<size_t>(stats.num_tensors) * dim * dim * sizeof(float);
   printf("Naive tensor bytes:  %zu\n", naive_bytes);
   printf("Actual tensor bytes: %zu\n", stats.tensor_buffer_bytes);
-  if (stats.num_shared_objects > 0 && stats.tensor_buffer_bytes < naive_bytes) {
-    printf("PASS: memory savings from aliasing confirmed\n");
+  if (stats.tensor_buffer_bytes >= naive_bytes) {
+    printf("FAIL: expected memory savings but actual >= naive\n");
+    return false;
   }
+  printf("PASS: memory savings from aliasing confirmed\n");
 
   printf("PASS: chained add memory test\n");
   return true;

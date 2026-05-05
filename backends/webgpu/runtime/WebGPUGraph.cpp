@@ -132,10 +132,10 @@ void WebGPUGraph::build(
 
         int constant_id = vk_tensor->constant_id();
         int mem_obj_id = vk_tensor->mem_obj_id();
-        tensor_mem_obj_ids_[i] = mem_obj_id;
 
+        // Constants always get dedicated buffers regardless of mem_obj_id
         if (constant_id >= 0 || mem_obj_id < 0) {
-          // Dedicated buffer: constants or tensors that don't share memory
+          tensor_mem_obj_ids_[i] = -1;
           WGPUBufferDescriptor buf_desc = {};
           ET_CHECK_MSG(tensor.nbytes > 0, "Tensor has zero bytes");
           buf_desc.size = tensor.nbytes;
@@ -158,6 +158,7 @@ void WebGPUGraph::build(
           }
         } else {
           // Shared buffer: track required size, defer allocation to pass 2
+          tensor_mem_obj_ids_[i] = mem_obj_id;
           size_t id = static_cast<size_t>(mem_obj_id);
           if (id >= shared_buffer_sizes_.size()) {
             shared_buffer_sizes_.resize(id + 1, 0);
