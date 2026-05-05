@@ -22,12 +22,14 @@ $PYTHON_EXECUTABLE -m pytest "${SCRIPT_DIR}/ops/add/test_add.py" -v
 
 # ── Step 2: Export .pte model ─────────────────────────────────────────────────
 
-echo "=== Step 2: Export test model ==="
+echo "=== Step 2: Export test models ==="
 PTE_MODEL="/tmp/webgpu_add_test.pte"
+PTE_CHAINED_MODEL="/tmp/webgpu_chained_add_test.pte"
 cd "${EXECUTORCH_ROOT}"
 $PYTHON_EXECUTABLE -c "
-from executorch.backends.webgpu.test.ops.add.test_add import export_add_model
+from executorch.backends.webgpu.test.ops.add.test_add import export_add_model, export_chained_add_model
 export_add_model('${PTE_MODEL}')
+export_chained_add_model('${PTE_CHAINED_MODEL}')
 "
 
 # ── Step 3: Native build + test (wgpu-native) ────────────────────────────────
@@ -60,6 +62,7 @@ cmake --build "${NATIVE_BUILD_DIR}" --target webgpu_native_test -j${NPROC}
 
 echo "=== Step 4: Run native test ==="
 WEBGPU_TEST_MODEL="${PTE_MODEL}" \
+WEBGPU_TEST_CHAINED_MODEL="${PTE_CHAINED_MODEL}" \
     "${NATIVE_BUILD_DIR}/backends/webgpu/webgpu_native_test"
 
 echo "=== Done ==="
