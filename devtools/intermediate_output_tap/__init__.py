@@ -37,6 +37,7 @@ from executorch.devtools.intermediate_output_tap import (
     custom_ops_lib,  # noqa: F401  ensures torch.ops.executorch_devtools.tap is registered
 )
 from executorch.devtools.intermediate_output_tap._convenience import (
+    compare_aot_runtime_dataframe,
     format_tap_dataframe,
     specs_to_dataframe,
     tap_all_and_run,
@@ -77,6 +78,7 @@ __all__ = [
     "tap_all_and_run",
     "specs_to_dataframe",
     "format_tap_dataframe",
+    "compare_aot_runtime_dataframe",
     # Reducers
     "StatReducer",
     "FULL_TENSOR",

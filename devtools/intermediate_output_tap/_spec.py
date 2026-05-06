@@ -58,3 +58,4 @@ class TapSpec:
     fields: tuple[str, ...]
     stack_trace: str | None = None
     reducer_node_name: str | None = None
+    module_path: str | None = None

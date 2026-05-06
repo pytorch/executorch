@@ -27,7 +27,10 @@ from typing import Any
 
 import pandas as pd
 import torch
-from executorch.devtools.intermediate_output_tap._reducers import StatReducer
+from executorch.devtools.intermediate_output_tap._reducers import (
+    get_reducer,
+    StatReducer,
+)
 from executorch.devtools.intermediate_output_tap._selectors import (
     NodeSelector,
     select_all_call_function,
@@ -219,3 +222,78 @@ def _to_float_list(v: Any) -> list[float]:
                     out.append(float("nan"))
         return out
     return []
+
+
+def _flat_floats(v: Any) -> list[float]:
+    """Flatten a tap value (tensor / list / scalar) to a flat list of floats."""
+    if isinstance(v, torch.Tensor):
+        return [float(x) for x in v.detach().to(torch.float32).cpu().reshape(-1).tolist()]
+    if isinstance(v, (list, tuple)):
+        out: list[float] = []
+        for x in v:
+            out.extend(_flat_floats(x))
+        return out
+    try:
+        return [float(v)]
+    except (TypeError, ValueError):
+        return []
+
+
+def compare_aot_runtime_dataframe(
+    specs: Sequence[TapSpec],
+    aot_flat: Sequence[Any],
+    rt_flat: Sequence[Any],
+) -> pd.DataFrame:
+    """
+    Build a side-by-side AOT-vs-runtime DataFrame from the flat outputs of
+    the *tapped* ExportedProgram (eager) and the post-strip runtime program.
+
+    AOT side:
+        `aot_flat[spec.output_index]` is the **raw** tapped tensor — at eager
+        time `tap.Tensor` is identity, so the output is the source op's
+        output. We apply the reducer's `eager` callable to reproduce what
+        `strip_taps_` materialises in the runtime graph.
+
+    Runtime side:
+        `rt_flat[spec.output_index]` already contains the reduced 1-D tensor
+        (or original tensor for FULL_TENSOR).
+
+    Returns one row per spec with columns:
+        node_name, op_target, reducer_name, output_index,
+        aot_<field1>, rt_<field1>, aot_<field2>, rt_<field2>, ...
+    """
+    rows: list[dict[str, Any]] = []
+    for spec in specs:
+        aot_raw = aot_flat[spec.output_index]
+        rt_raw = rt_flat[spec.output_index]
+
+        # AOT raw might be wrapped in a 1-tuple; unwrap first tensor.
+        if not isinstance(aot_raw, torch.Tensor) and isinstance(
+            aot_raw, (list, tuple)
+        ) and aot_raw:
+            aot_raw = aot_raw[0]
+
+        reducer = get_reducer(spec.reducer_name)
+        if isinstance(aot_raw, torch.Tensor):
+            aot_reduced = reducer.eager(aot_raw)
+        else:
+            aot_reduced = aot_raw
+
+        aot_vals = _flat_floats(aot_reduced)
+        rt_vals = _flat_floats(rt_raw)
+
+        fields = list(spec.fields) if spec.fields else [
+            f"v{i}" for i in range(max(len(aot_vals), len(rt_vals)))
+        ]
+        row: dict[str, Any] = {
+            "node_name": spec.node_name,
+            "module_path": spec.module_path,
+            "op_target": spec.op_target,
+            "reducer_name": spec.reducer_name,
+            "output_index": spec.output_index,
+        }
+        for i, f in enumerate(fields):
+            row[f"aot_{f}"] = aot_vals[i] if i < len(aot_vals) else float("nan")
+            row[f"rt_{f}"] = rt_vals[i] if i < len(rt_vals) else float("nan")
+        rows.append(row)
+    return pd.DataFrame(rows)

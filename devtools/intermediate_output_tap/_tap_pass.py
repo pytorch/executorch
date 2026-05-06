@@ -141,6 +141,17 @@ def tap_intermediate_outputs(
         tap_node.meta["source_node"] = node.name
 
         new_tap_nodes.append(tap_node)
+        # Leaf module FQN from nn_module_stack (e.g., "layers.0.attention.wqs.0").
+        module_path: str | None = None
+        stack = node.meta.get("nn_module_stack")
+        if stack:
+            try:
+                last_entry = list(stack.values())[-1]
+                module_path = (
+                    last_entry[0] if isinstance(last_entry, tuple) else str(last_entry)
+                )
+            except Exception:
+                module_path = None
         specs.append(
             TapSpec(
                 node_name=node.name,
@@ -150,6 +161,7 @@ def tap_intermediate_outputs(
                 reducer_name=reducer_obj.name,
                 fields=reducer_obj.fields,
                 stack_trace=node.meta.get("stack_trace"),
+                module_path=module_path,
             )
         )
 

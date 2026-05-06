@@ -42,13 +42,18 @@ if TYPE_CHECKING:
 # --- Reducer dataclass ---------------------------------------------------
 
 EmitFn = Callable[["fx.Graph", "fx.Node"], "fx.Node"]
+EagerFn = Callable[[torch.Tensor], torch.Tensor]
 
 
 @dataclass(frozen=True)
 class StatReducer:
     """
-    A reducer specification. `emit` is invoked by `strip_taps_` to materialise
-    the reducer subgraph in the post-lowering graph.
+    A reducer specification.
+
+    `emit` is invoked by `strip_taps_` to materialise the reducer subgraph
+    in the post-lowering FX graph. `eager` is the equivalent pure-torch
+    implementation, used by callers that want to reproduce what the runtime
+    will compute (e.g. AOT-vs-runtime comparisons without a debugger).
 
     `name` is what the user types and what's stored on each TapSpec.
     `fields` enumerates the columns of the 1-D output tensor (empty for
@@ -58,6 +63,7 @@ class StatReducer:
     name: str
     fields: tuple[str, ...]
     emit: EmitFn
+    eager: EagerFn
 
 
 # --- Helpers -------------------------------------------------------------
@@ -96,10 +102,15 @@ def _emit_full_tensor(_graph: "fx.Graph", src: "fx.Node") -> "fx.Node":
     return src
 
 
+def _eager_full_tensor(t: torch.Tensor) -> torch.Tensor:
+    return t.detach()
+
+
 FULL_TENSOR: StatReducer = StatReducer(
     name="FULL_TENSOR",
     fields=(),
     emit=_emit_full_tensor,
+    eager=_eager_full_tensor,
 )
 
 
@@ -109,10 +120,16 @@ def _emit_abs_max(graph: "fx.Graph", src: "fx.Node") -> "fx.Node":
     return _scalar_node(graph, exir_ops.edge.aten.amax.default, abs_x)
 
 
+def _eager_abs_max(t: torch.Tensor) -> torch.Tensor:
+    f = t.detach().to(torch.float32)
+    return f.abs().amax()
+
+
 ABS_MAX_ONLY: StatReducer = StatReducer(
     name="ABS_MAX_ONLY",
     fields=("abs_max",),
     emit=_emit_abs_max,
+    eager=_eager_abs_max,
 )
 
 
@@ -124,10 +141,16 @@ def _emit_min_max_mean(graph: "fx.Graph", src: "fx.Node") -> "fx.Node":
     return _stack(graph, [mn, mx, me])
 
 
+def _eager_min_max_mean(t: torch.Tensor) -> torch.Tensor:
+    f = t.detach().to(torch.float32)
+    return torch.stack([f.amin(), f.amax(), f.mean()], dim=0)
+
+
 MIN_MAX_MEAN: StatReducer = StatReducer(
     name="MIN_MAX_MEAN",
     fields=("min", "max", "mean"),
     emit=_emit_min_max_mean,
+    eager=_eager_min_max_mean,
 )
 
 
@@ -152,10 +175,19 @@ def _emit_default_stats(graph: "fx.Graph", src: "fx.Node") -> "fx.Node":
     return _stack(graph, [mn, mx, me, abs_max])
 
 
+def _eager_default_stats(t: torch.Tensor) -> torch.Tensor:
+    f = t.detach().to(torch.float32)
+    return torch.stack(
+        [f.amin(), f.amax(), f.mean(), f.abs().amax()],
+        dim=0,
+    )
+
+
 DEFAULT_STATS: StatReducer = StatReducer(
     name="DEFAULT_STATS",
     fields=("min", "max", "mean", "abs_max"),
     emit=_emit_default_stats,
+    eager=_eager_default_stats,
 )
 
 
