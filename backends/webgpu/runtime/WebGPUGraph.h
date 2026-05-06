@@ -41,8 +41,7 @@ struct WebGPUMemoryStats {
   int num_dispatches = 0;
 
   size_t total_bytes() const {
-    return shared_buffer_bytes + unshared_tensor_buffer_bytes +
-        staging_buffer_bytes + uniform_buffer_bytes;
+    return tensor_buffer_bytes + staging_buffer_bytes + uniform_buffer_bytes;
   }
 };
 

@@ -15,6 +15,8 @@ namespace executorch {
 namespace backends {
 namespace webgpu {
 
+// Test-only: returns memory stats from the most recently initialized graph.
+// Not thread-safe; only valid when a single graph is loaded at a time.
 WebGPUMemoryStats get_last_memory_stats();
 
 class WebGPUBackend final : public ::executorch::runtime::BackendInterface {
