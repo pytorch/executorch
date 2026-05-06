@@ -3,8 +3,6 @@
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
 
-import operator
-
 import numpy as np
 import torch
 
@@ -18,25 +16,20 @@ from executorch.backends.nxp.tests.executors import (
     ToChannelFirstPreprocess,
     ToChannelLastPreprocess,
 )
-from executorch.backends.nxp.tests.graph_verifier import (
-    BaseGraphVerifier,
-    NonDelegatedNode,
-)
+from executorch.backends.nxp.tests.graph_verifier import DetailedGraphVerifier
 from executorch.backends.nxp.tests.nsys_testing import lower_run_compare
+from executorch.backends.nxp.tests.ops_aliases import (
+    ExecutorchDelegateCall,
+    GetItem,
+    MaxPool2DWithIndices,
+    Squeeze,
+    SqueezeDim,
+    SqueezeDims,
+    Unsqueeze,
+    ViewCopy,
+)
 from executorch.backends.nxp.tests.use_qat import *  # noqa F403
 import pytest
-
-# noinspection PyProtectedMember
-from executorch.exir.dialects._ops import ops as exir_ops
-
-ExecutorchDelegateCall = torch.ops.higher_order.executorch_call_delegate
-GetItem = operator.getitem
-MaxPool2D = exir_ops.edge.aten.max_pool2d_with_indices.default
-Squeeze = exir_ops.edge.aten.squeeze.default
-SqueezeDim = exir_ops.edge.aten.squeeze.dim
-SqueezeDims = exir_ops.edge.aten.squeeze.dims
-Unsqueeze = exir_ops.edge.aten.unsqueeze.default
-ViewCopy = exir_ops.edge.aten.view_copy.default
 
 
 class MaxPool1DModule(torch.nn.Module):
@@ -85,7 +78,7 @@ class TestMaxPool2DSupported:
         ).exported_program()
 
         # Make sure the MaxPool was delegated.
-        assert not graph_contains_any_of_ops(edge_model.graph, [MaxPool2D])
+        assert not graph_contains_any_of_ops(edge_model.graph, [MaxPool2DWithIndices])
         assert graph_contains_any_of_ops(edge_model.graph, [ExecutorchDelegateCall])
 
         # Verify correct behavior of the converted NeutronIR model.
@@ -95,7 +88,7 @@ class TestMaxPool2DSupported:
         input_data = _generate_test_data(input_shape)
 
         # Make sure the tested program contains the `MaxPool`.
-        assert graph_contains_any_of_ops(edge_partition.graph, [MaxPool2D])
+        assert graph_contains_any_of_ops(edge_partition.graph, [MaxPool2DWithIndices])
         assert graph_contains_any_of_ops(edge_partition.graph, [GetItem])
 
         convert_run_compare(
@@ -143,7 +136,7 @@ class TestMaxPool2DUnsupported:
             use_neutron_for_format_conversion=False,
         ).exported_program()
 
-        assert graph_contains_any_of_ops(edge_model.graph, [MaxPool2D])
+        assert graph_contains_any_of_ops(edge_model.graph, [MaxPool2DWithIndices])
         assert graph_contains_any_of_ops(edge_model.graph, [GetItem])
         assert not graph_contains_any_of_ops(edge_model.graph, [ExecutorchDelegateCall])
 
@@ -224,7 +217,7 @@ class TestMaxPool1D:
 
         # Make sure the `max_pool` was delegated.
         assert graph_contains_any_of_ops(edge_model.graph, [ExecutorchDelegateCall])
-        assert not graph_contains_any_of_ops(edge_model.graph, [MaxPool2D])
+        assert not graph_contains_any_of_ops(edge_model.graph, [MaxPool2DWithIndices])
         # There is not `max_pool1d` in the edge dialect, so we cannot check for its absence by comparing with the target.
         # In order to detect any potential future changes (like the addition of `max_pool1d` to edge dialect), we check
         #  the name of the target.
@@ -245,7 +238,7 @@ class TestMaxPool1D:
         input_data = _generate_test_data(extended_shape)
 
         # Make sure the tested program contains the `MaxPool`.
-        assert graph_contains_any_of_ops(edge_partition.graph, [MaxPool2D])
+        assert graph_contains_any_of_ops(edge_partition.graph, [MaxPool2DWithIndices])
         assert graph_contains_any_of_ops(edge_partition.graph, [GetItem])
 
         convert_run_compare(
@@ -259,10 +252,11 @@ class TestMaxPool1D:
 
 class TestMaxPool2DNewNeutronFlow:
     # noinspection PyMethodMayBeStatic
-    def assert_delegated(self, model, input_shape):
-        graph_verifier = BaseGraphVerifier(
-            exp_num_delegate_call_nodes=1,  # Delegated MaxPool.
-            exp_non_delegated_nodes=[],
+    def assert_delegated(self, model, input_shape, mocker):
+        graph_verifier = DetailedGraphVerifier(
+            mocker,
+            expected_delegated_ops={MaxPool2DWithIndices: 1, GetItem: 1},
+            expected_non_delegated_ops={},
         )
 
         lower_run_compare(
@@ -279,18 +273,18 @@ class TestMaxPool2DNewNeutronFlow:
         assert not graph_contains_any_of_ops(
             delegated_ep.graph, [ExecutorchDelegateCall]
         )
-        assert graph_contains_any_of_ops(delegated_ep.graph, [MaxPool2D])
+        assert graph_contains_any_of_ops(delegated_ep.graph, [MaxPool2DWithIndices])
 
-    def test__basic_nsys_inference(self):
+    def test__basic_nsys_inference(self, mocker):
         input_shape = (2, 4, 6, 7)  # The old flow limited the batch size to 1.
         model = MaxPool2dModule()
-        self.assert_delegated(model, input_shape)
+        self.assert_delegated(model, input_shape, mocker)
 
-    def test__kernel_size_limit(self):
+    def test__kernel_size_limit(self, mocker):
         kernel_size = (1, 4096)
         input_shape = (1, 4) + kernel_size
         model = MaxPool2dModule(kernel_size)
-        self.assert_delegated(model, input_shape)
+        self.assert_delegated(model, input_shape, mocker)
 
     def test__kernel_size_limit_exceeded(self):
         kernel_size = (1, 4097)  # Exceeds the kernel size limit.
@@ -298,11 +292,11 @@ class TestMaxPool2DNewNeutronFlow:
         model = MaxPool2dModule(kernel_size)
         self.assert_not_delegated(model, input_shape)
 
-    def test__stride_limit__no_padding(self):
+    def test__stride_limit__no_padding(self, mocker):
         stride = 4096
         input_shape = (1, 4, 1, 4096)
         model = MaxPool2dModule(1, stride=stride)
-        self.assert_delegated(model, input_shape)
+        self.assert_delegated(model, input_shape, mocker)
 
     def test__stride_limit_exceeded__no_padding(self):
         stride = 4097  # Exceeds the stride limit.
@@ -310,12 +304,12 @@ class TestMaxPool2DNewNeutronFlow:
         model = MaxPool2dModule(1, stride=stride)
         self.assert_not_delegated(model, input_shape)
 
-    def test__stride_limit__padding(self):
+    def test__stride_limit__padding(self, mocker):
         padding = 1
         stride = 4096
         input_shape = (1, 2, 3, stride)
         model = MaxPool2dModule(3, stride=stride, padding=padding)
-        self.assert_delegated(model, input_shape)
+        self.assert_delegated(model, input_shape, mocker)
 
     def test__stride_limit_exceeded__padding(self):
         padding = 1
@@ -327,7 +321,7 @@ class TestMaxPool2DNewNeutronFlow:
     @pytest.mark.skip(
         reason="Large padding requires large kernel size which results in an extremely slow test."
     )
-    def test__padding_limit(self):
+    def test__padding_limit(self, mocker):
         # As the padding is added wia a `Pad` operator (not the `MaxPool` arguments), there is no limit to the padded
         #  value. But as padding can be at most half of the kernel size (PyTorch requirement) and kernel size is limited
         #  to 4096, padding of 2048 is the limit.
@@ -335,16 +329,16 @@ class TestMaxPool2DNewNeutronFlow:
         kernel_size = padding * 2
         input_shape = (1, 1, 2, 3)
         model = MaxPool2dModule(kernel_size, padding=padding)
-        self.assert_delegated(model, input_shape)
+        self.assert_delegated(model, input_shape, mocker)
 
-    def test__padding__max_pool_limit_exceeded(self):
+    def test__padding__max_pool_limit_exceeded(self, mocker):
         # NeutronIR `MaxPool` padding is limited to 32. But as it is added by the `Pad` operator instead, there is no
         #  limit. This tests ensures the `MaxPool` padding limit is not a problem.
         padding = 33
         kernel_size = padding * 2
         input_shape = (1, 2, 3, 4)
         model = MaxPool2dModule(kernel_size, padding=padding)
-        self.assert_delegated(model, input_shape)
+        self.assert_delegated(model, input_shape, mocker)
 
     def test__padding_to_kernel_ratio_exceeded(self):
         # Both PyTorch and Neutron require the padding to be at most half of the kernel size.
@@ -361,16 +355,14 @@ class TestMaxPool2DNewNeutronFlow:
 class TestMaxPool1DNewNeutronFlow:
 
     # Just a basic test to verify that the operator gets extended to the 2D variant correctly.
-    def test__basic_nsys_inference__view_not_delegated(self):
+    def test__basic_nsys_inference__view_not_delegated(self, mocker):
         input_shape = (2, 4, 6)  # The old flow limited the batch size to 1.
         model = MaxPool1DModule()
-        graph_verifier = BaseGraphVerifier(
-            exp_num_delegate_call_nodes=1,  # Delegated MaxPool.
-            exp_non_delegated_nodes=[
-                NonDelegatedNode(
-                    "aten_view_copy_default", 2
-                )  # Non delegated due to shape requirements.
-            ],
+
+        graph_verifier = DetailedGraphVerifier(
+            mocker,
+            expected_delegated_ops={MaxPool2DWithIndices: 1, GetItem: 1},
+            expected_non_delegated_ops={ViewCopy: 2},
         )
 
         lower_run_compare(
