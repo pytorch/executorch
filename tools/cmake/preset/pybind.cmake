@@ -41,10 +41,6 @@ endif()
 # TODO(larryliu0820): Temporarily disable building llm_runner for Windows wheel
 # due to the issue of tokenizer file path length limitation.
 if(CMAKE_SYSTEM_NAME STREQUAL "Darwin")
-  # VGF depends on Vulkan in the pybind flow.
-  set_overridable_option(
-    EXECUTORCH_BUILD_VULKAN ${_executorch_pybind_enable_vgf}
-  )
   set_overridable_option(EXECUTORCH_BUILD_VGF ${_executorch_pybind_enable_vgf})
   set_overridable_option(EXECUTORCH_BUILD_COREML ON)
   set_overridable_option(EXECUTORCH_BUILD_EXTENSION_TRAINING ON)
@@ -69,10 +65,6 @@ if(CMAKE_SYSTEM_NAME STREQUAL "Darwin")
     endif()
   endif()
 elseif(CMAKE_SYSTEM_NAME STREQUAL "Linux")
-  # VGF depends on Vulkan in the pybind flow.
-  set_overridable_option(
-    EXECUTORCH_BUILD_VULKAN ${_executorch_pybind_enable_vgf}
-  )
   set_overridable_option(EXECUTORCH_BUILD_VGF ${_executorch_pybind_enable_vgf})
   set_overridable_option(EXECUTORCH_BUILD_COREML ON)
   set_overridable_option(EXECUTORCH_BUILD_EXTENSION_TRAINING ON)
