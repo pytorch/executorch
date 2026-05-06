@@ -17,16 +17,26 @@ A `StatReducer` is a small specification consumed by `strip_taps_` (after
 just before the placeholder, using the source tensor `src_node` as input,
 and returns the final node whose output replaces the placeholder's output.
 
-The emit functions cast to fp32 first for cross-backend numerical stability
-and use full-tensor reductions (no `dim=`) so the result is a stable shape
-regardless of the source tensor's rank.
+`eager(tensor) -> tensor` is the pure-torch equivalent that callers can use
+to reproduce, in eager mode, what the runtime will compute. `tap.Tensor`'s
+own dispatch impl uses this to produce the *reduced* value at AOT time, so
+that `ep.module()(*inputs)` returns the same flat outputs as the runtime.
 
-For v1 we ship: FULL_TENSOR, ABS_MAX_ONLY, MIN_MAX_MEAN, DEFAULT_STATS.
-HISTOGRAM_64 is deferred (`aten.histc` has restricted edge support).
+The emit functions cast to fp32 first for cross-backend numerical stability
+and produce a fixed-shape output (0-D or 1-D) regardless of the source
+tensor's rank, so callers don't need to track per-tap shapes.
+
+We ship two built-ins:
+
+* `FULL_TENSOR` — identity. The whole source tensor is surfaced.
+* `STATS` — a comprehensive bundle of debugging-friendly scalars:
+  min, max, mean, abs_max, abs_mean, std, rms, l1_norm, l2_norm,
+  nan_count, inf_count, zero_count, p99_abs.
 """
 
 from __future__ import annotations
 
+import operator
 from collections.abc import Callable
 from dataclasses import dataclass
 from typing import TYPE_CHECKING
@@ -57,7 +67,7 @@ class StatReducer:
 
     `name` is what the user types and what's stored on each TapSpec.
     `fields` enumerates the columns of the 1-D output tensor (empty for
-    FULL_TENSOR, which preserves the original tensor shape).
+    FULL_TENSOR which preserves a tensor of values).
     """
 
     name: str
@@ -71,8 +81,6 @@ class StatReducer:
 
 def _cast_fp32(graph: "fx.Graph", x: "fx.Node") -> "fx.Node":
     """Insert a fp32 cast (no-op semantically if already fp32)."""
-    # exir_ops.edge.dim_order_ops._to_dim_order_copy.default exists for edge dialect,
-    # but the simpler aten._to_copy variant is broadly supported.
     return graph.call_function(
         exir_ops.edge.aten._to_copy.default,
         args=(x,),
@@ -94,11 +102,37 @@ def _stack(graph: "fx.Graph", scalars: list["fx.Node"]) -> "fx.Node":
     )
 
 
-# --- Built-in reducers ---------------------------------------------------
+def _abs(graph: "fx.Graph", x: "fx.Node") -> "fx.Node":
+    return graph.call_function(exir_ops.edge.aten.abs.default, args=(x,))
+
+
+def _square(graph: "fx.Graph", x: "fx.Node") -> "fx.Node":
+    return graph.call_function(exir_ops.edge.aten.pow.Tensor_Scalar, args=(x, 2.0))
+
+
+def _sqrt(graph: "fx.Graph", x: "fx.Node") -> "fx.Node":
+    return graph.call_function(exir_ops.edge.aten.sqrt.default, args=(x,))
+
+
+def _full_sum(graph: "fx.Graph", x: "fx.Node") -> "fx.Node":
+    """Full-tensor sum via aten.sum.dim_IntList(dim=[]) — portable + has out variant."""
+    return graph.call_function(exir_ops.edge.aten.sum.dim_IntList, args=(x, []))
+
+
+def _bool_to_fp32_count(graph: "fx.Graph", mask: "fx.Node") -> "fx.Node":
+    """Sum of a bool mask cast to fp32 → a 0-d fp32 count."""
+    casted = graph.call_function(
+        exir_ops.edge.aten._to_copy.default,
+        args=(mask,),
+        kwargs={"dtype": torch.float32},
+    )
+    return _full_sum(graph, casted)
+
+
+# --- FULL_TENSOR ---------------------------------------------------------
 
 
 def _emit_full_tensor(_graph: "fx.Graph", src: "fx.Node") -> "fx.Node":
-    """Identity — return the source node directly. strip_taps_ will splice."""
     return src
 
 
@@ -114,89 +148,163 @@ FULL_TENSOR: StatReducer = StatReducer(
 )
 
 
-def _emit_abs_max(graph: "fx.Graph", src: "fx.Node") -> "fx.Node":
-    f = _cast_fp32(graph, src)
-    abs_x = graph.call_function(exir_ops.edge.aten.abs.default, args=(f,))
-    return _scalar_node(graph, exir_ops.edge.aten.amax.default, abs_x)
+# --- STATS ---------------------------------------------------------------
 
 
-def _eager_abs_max(t: torch.Tensor) -> torch.Tensor:
-    f = t.detach().to(torch.float32)
-    return f.abs().amax()
-
-
-ABS_MAX_ONLY: StatReducer = StatReducer(
-    name="ABS_MAX_ONLY",
-    fields=("abs_max",),
-    emit=_emit_abs_max,
-    eager=_eager_abs_max,
+_STATS_FIELDS: tuple[str, ...] = (
+    "min",
+    "max",
+    "mean",
+    "abs_max",
+    "abs_mean",
+    "std",
+    "rms",
+    "l1_norm",
+    "l2_norm",
+    "nan_count",
+    "inf_count",
+    "zero_count",
+    "p99_abs",
 )
 
 
-def _emit_min_max_mean(graph: "fx.Graph", src: "fx.Node") -> "fx.Node":
+def _emit_stats(graph: "fx.Graph", src: "fx.Node") -> "fx.Node":
     f = _cast_fp32(graph, src)
+    abs_f = _abs(graph, f)
+    sq_f = _square(graph, f)
+
     mn = _scalar_node(graph, exir_ops.edge.aten.amin.default, f)
     mx = _scalar_node(graph, exir_ops.edge.aten.amax.default, f)
     me = _scalar_node(graph, exir_ops.edge.aten.mean.default, f)
-    return _stack(graph, [mn, mx, me])
+    abs_max = _scalar_node(graph, exir_ops.edge.aten.amax.default, abs_f)
+    abs_mean = _scalar_node(graph, exir_ops.edge.aten.mean.default, abs_f)
+
+    sum_sq = _full_sum(graph, sq_f)
+    mean_sq = _scalar_node(graph, exir_ops.edge.aten.mean.default, sq_f)
+    rms = _sqrt(graph, mean_sq)
+
+    # std = sqrt( E[x^2] - E[x]^2 ); avoids aten.var which lacks an out variant.
+    me_sq_scalar = graph.call_function(
+        exir_ops.edge.aten.pow.Tensor_Scalar, args=(me, 2.0)
+    )
+    var = graph.call_function(
+        exir_ops.edge.aten.sub.Tensor, args=(mean_sq, me_sq_scalar)
+    )
+    # Variance can be slightly negative due to fp roundoff; clamp at 0 via abs.
+    var = graph.call_function(exir_ops.edge.aten.abs.default, args=(var,))
+    std = _sqrt(graph, var)
+
+    l1 = _full_sum(graph, abs_f)
+    l2 = _sqrt(graph, sum_sq)
+
+    nan_mask = graph.call_function(exir_ops.edge.aten.isnan.default, args=(f,))
+    nan_count = _bool_to_fp32_count(graph, nan_mask)
+
+    inf_mask = graph.call_function(exir_ops.edge.aten.isinf.default, args=(f,))
+    inf_count = _bool_to_fp32_count(graph, inf_mask)
+
+    zero_mask = graph.call_function(exir_ops.edge.aten.eq.Scalar, args=(f, 0.0))
+    zero_count = _bool_to_fp32_count(graph, zero_mask)
+
+    # p99_abs: use topk on flattened |x| to get the k-th largest, where
+    # k = max(1, ceil(numel * 0.01)). Numel is read from the source's
+    # FakeTensor at graph-build time.
+    fake = src.meta.get("val")
+    numel = int(fake.numel()) if fake is not None else 1
+    k = max(1, (numel + 99) // 100)  # ceil(numel/100)
+    abs_flat = graph.call_function(
+        exir_ops.edge.aten.view_copy.default, args=(abs_f, [-1])
+    )
+    topk_out = graph.call_function(
+        exir_ops.edge.aten.topk.default,
+        args=(abs_flat, k),
+        kwargs={"dim": -1, "largest": True, "sorted": True},
+    )
+    topk_values = graph.call_function(operator.getitem, args=(topk_out, 0))
+    p99_abs = graph.call_function(
+        exir_ops.edge.aten.select_copy.int, args=(topk_values, 0, k - 1)
+    )
+
+    return _stack(
+        graph,
+        [
+            mn,
+            mx,
+            me,
+            abs_max,
+            abs_mean,
+            std,
+            rms,
+            l1,
+            l2,
+            nan_count,
+            inf_count,
+            zero_count,
+            p99_abs,
+        ],
+    )
 
 
-def _eager_min_max_mean(t: torch.Tensor) -> torch.Tensor:
+def _eager_stats(t: torch.Tensor) -> torch.Tensor:
     f = t.detach().to(torch.float32)
-    return torch.stack([f.amin(), f.amax(), f.mean()], dim=0)
+    abs_f = f.abs()
+    sq = f.pow(2.0)
 
+    # std via E[x^2] - E[x]^2 (population variance) to match the emit subgraph.
+    if f.numel() > 0:
+        var = (sq.mean() - f.mean().pow(2)).abs()
+        std = var.sqrt()
+    else:
+        std = torch.tensor(0.0)
 
-MIN_MAX_MEAN: StatReducer = StatReducer(
-    name="MIN_MAX_MEAN",
-    fields=("min", "max", "mean"),
-    emit=_emit_min_max_mean,
-    eager=_eager_min_max_mean,
-)
+    sum_sq = sq.sum()
+    rms = sq.mean().sqrt()
+    l1 = abs_f.sum()
+    l2 = sum_sq.sqrt()
 
+    nan_count = torch.isnan(f).to(torch.float32).sum()
+    inf_count = torch.isinf(f).to(torch.float32).sum()
+    zero_count = (f == 0).to(torch.float32).sum()
 
-def _emit_default_stats(graph: "fx.Graph", src: "fx.Node") -> "fx.Node":
-    """
-    Default stats: (min, max, mean, abs_max) — 4 floats.
+    numel = f.numel()
+    k = max(1, (numel + 99) // 100)
+    if numel > 0:
+        topk_vals = torch.topk(abs_f.reshape(-1), k=k, largest=True, sorted=True).values
+        p99_abs = topk_vals[k - 1]
+    else:
+        p99_abs = torch.tensor(float("nan"))
 
-    NOTE: nan_count/inf_count/std are intentionally excluded because the
-    underlying portable kernels (`isnan`, `isinf`, `sum.dtype`, `std.*`)
-    don't all have out variants registered in ExecuTorch's default runtime
-    op table, which fails memory planning or runtime method-load. If you
-    need them, supply a custom StatReducer.
-    """
-    f = _cast_fp32(graph, src)
-    mn = _scalar_node(graph, exir_ops.edge.aten.amin.default, f)
-    mx = _scalar_node(graph, exir_ops.edge.aten.amax.default, f)
-    me = _scalar_node(graph, exir_ops.edge.aten.mean.default, f)
-
-    abs_x = graph.call_function(exir_ops.edge.aten.abs.default, args=(f,))
-    abs_max = _scalar_node(graph, exir_ops.edge.aten.amax.default, abs_x)
-
-    return _stack(graph, [mn, mx, me, abs_max])
-
-
-def _eager_default_stats(t: torch.Tensor) -> torch.Tensor:
-    f = t.detach().to(torch.float32)
     return torch.stack(
-        [f.amin(), f.amax(), f.mean(), f.abs().amax()],
+        [
+            f.amin(),
+            f.amax(),
+            f.mean(),
+            abs_f.amax(),
+            abs_f.mean(),
+            std,
+            rms,
+            l1,
+            l2,
+            nan_count,
+            inf_count,
+            zero_count,
+            p99_abs,
+        ],
         dim=0,
     )
 
 
-DEFAULT_STATS: StatReducer = StatReducer(
-    name="DEFAULT_STATS",
-    fields=("min", "max", "mean", "abs_max"),
-    emit=_emit_default_stats,
-    eager=_eager_default_stats,
+STATS: StatReducer = StatReducer(
+    name="STATS",
+    fields=_STATS_FIELDS,
+    emit=_emit_stats,
+    eager=_eager_stats,
 )
 
 
 # --- Registry -------------------------------------------------------------
 
-_BUILTIN_REDUCERS: dict[str, StatReducer] = {
-    r.name: r
-    for r in (FULL_TENSOR, ABS_MAX_ONLY, MIN_MAX_MEAN, DEFAULT_STATS)
-}
+_BUILTIN_REDUCERS: dict[str, StatReducer] = {r.name: r for r in (FULL_TENSOR, STATS)}
 
 
 def get_reducer(name_or_reducer: str | StatReducer) -> StatReducer:

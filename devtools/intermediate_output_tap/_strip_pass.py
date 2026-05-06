@@ -9,7 +9,7 @@
 """
 Post-`to_backend` pass: replace each `executorch_devtools::tap.Tensor` node
 with either an identity edge (FULL_TENSOR) or a portable reducer subgraph
-(DEFAULT_STATS, MIN_MAX_MEAN, ABS_MAX_ONLY).
+(STATS, or any user-supplied StatReducer).
 
 Pattern stolen from `remove_graph_break_` in
 `executorch/examples/apple/coreml/llama/export_static_llm_coreml.py`.
@@ -138,9 +138,7 @@ def _strip_taps_in_graph_module(gm: fx.GraphModule) -> list[fx.Node | None]:
             replacement.meta["debug_handle"] = next_handle
             next_handle += 1
         replacement.meta["is_tap"] = True
-        replacement.meta["source_node"] = (
-            src.name if isinstance(src, fx.Node) else None
-        )
+        replacement.meta["source_node"] = src.name if isinstance(src, fx.Node) else None
 
         # `tap` may have ended up in the data path during to_edge's re-trace
         # (because CompositeExplicitAutograd preserves the op as an identity

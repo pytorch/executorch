@@ -37,7 +37,7 @@ class TapSpec:
             tuple where this tap's value lands. Computed at AOT time and stable
             through `to_edge` / `to_backend` / `to_executorch` because we only
             ever *append* to the output node and `OutputSpec`.
-        reducer_name: Name of the StatReducer used (e.g. "DEFAULT_STATS").
+        reducer_name: Name of the StatReducer used (e.g. "STATS").
         fields: Names of the per-element fields in the reducer's output tensor
             (e.g. ("min", "max", "abs_max")). Empty tuple for FULL_TENSOR.
         stack_trace: `node.meta["stack_trace"]` of the source node if present,

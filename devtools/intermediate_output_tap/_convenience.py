@@ -7,15 +7,19 @@
 # pyre-unsafe
 
 """
-One-line convenience wrapper for the most common smoke-test workflow:
+Convenience helpers built on top of `tap_intermediate_outputs` / `strip_taps_`:
 
-    df = tap_all_and_run(model, example_inputs, partitioner=[XnnpackPartitioner()])
-
-Exports `model`, taps every call_function, lowers with the user's partitioner,
-runs through the ExecuTorch runtime, and returns a pandas DataFrame of one row
-per tap (one column per stat field). No Inspector setup, no ETRecord. For
-AOT-vs-runtime numerical comparison, use Inspector.calculate_numeric_gap_from_taps,
-then `format_tap_dataframe(df, tap_specs)` to get a friendly view.
+* `tap_all_and_run`: one-shot smoke-test wrapper that exports a model, taps
+  every call_function, lowers with the user's partitioner, runs through the
+  ExecuTorch runtime, and returns a per-tap DataFrame.
+* `specs_to_dataframe`: build a per-tap DataFrame from a tap_specs list and
+  the runtime's flat output tuple.
+* `compare_aot_runtime_dataframe`: side-by-side AOT-vs-runtime DataFrame from
+  the flat outputs of the *tapped* ExportedProgram (eager) and the post-strip
+  runtime program. The simpler alternative to `Inspector.calculate_numeric_gap_from_taps`
+  when you don't need ETDump/ETRecord plumbing.
+* `format_tap_dataframe`: reshape the raw DataFrame returned by
+  `Inspector.calculate_numeric_gap_from_taps` into a friendlier per-tap view.
 """
 
 from __future__ import annotations
@@ -27,10 +31,7 @@ from typing import Any
 
 import pandas as pd
 import torch
-from executorch.devtools.intermediate_output_tap._reducers import (
-    get_reducer,
-    StatReducer,
-)
+from executorch.devtools.intermediate_output_tap._reducers import StatReducer
 from executorch.devtools.intermediate_output_tap._selectors import (
     NodeSelector,
     select_all_call_function,
@@ -46,7 +47,7 @@ def tap_all_and_run(
     model: torch.nn.Module,
     example_inputs: tuple[Any, ...],
     partitioner: list | None = None,
-    reducer: str | StatReducer = "DEFAULT_STATS",
+    reducer: str | StatReducer = "STATS",
     selector: NodeSelector | None = None,
     skip_if_no_debug_handle: bool = True,
 ) -> pd.DataFrame:
@@ -67,9 +68,7 @@ def tap_all_and_run(
         reducer=reducer,
         skip_if_no_debug_handle=skip_if_no_debug_handle,
     )
-    edge = to_edge_transform_and_lower(
-        ep_tapped, partitioner=partitioner or []
-    )
+    edge = to_edge_transform_and_lower(ep_tapped, partitioner=partitioner or [])
     strip_taps_(edge)
     et_program = edge.to_executorch()
 
@@ -147,9 +146,7 @@ def format_tap_dataframe(
     """
     # Map reducer_node_name -> spec for quick lookup.
     name_to_spec: dict[str, TapSpec] = {
-        s.reducer_node_name: s
-        for s in tap_specs
-        if s.reducer_node_name is not None
+        s.reducer_node_name: s for s in tap_specs if s.reducer_node_name is not None
     }
 
     rows = []
@@ -227,7 +224,9 @@ def _to_float_list(v: Any) -> list[float]:
 def _flat_floats(v: Any) -> list[float]:
     """Flatten a tap value (tensor / list / scalar) to a flat list of floats."""
     if isinstance(v, torch.Tensor):
-        return [float(x) for x in v.detach().to(torch.float32).cpu().reshape(-1).tolist()]
+        return [
+            float(x) for x in v.detach().to(torch.float32).cpu().reshape(-1).tolist()
+        ]
     if isinstance(v, (list, tuple)):
         out: list[float] = []
         for x in v:
@@ -239,6 +238,22 @@ def _flat_floats(v: Any) -> list[float]:
         return []
 
 
+def _sqnr_db(aot_vals: list[float], rt_vals: list[float]) -> float:
+    """Signal-to-quantization-noise ratio in dB. Higher is better.
+
+    Thin wrapper around `torch.ao.ns.fx.utils.compute_sqnr` (the canonical
+    implementation already used by `backends/test/harness/error_statistics.py`).
+    """
+    from torch.ao.ns.fx.utils import compute_sqnr
+
+    n = min(len(aot_vals), len(rt_vals))
+    if n == 0:
+        return float("nan")
+    aot_t = torch.tensor(aot_vals[:n], dtype=torch.float32)
+    rt_t = torch.tensor(rt_vals[:n], dtype=torch.float32)
+    return float(compute_sqnr(rt_t, aot_t))
+
+
 def compare_aot_runtime_dataframe(
     specs: Sequence[TapSpec],
     aot_flat: Sequence[Any],
@@ -248,43 +263,21 @@ def compare_aot_runtime_dataframe(
     Build a side-by-side AOT-vs-runtime DataFrame from the flat outputs of
     the *tapped* ExportedProgram (eager) and the post-strip runtime program.
 
-    AOT side:
-        `aot_flat[spec.output_index]` is the **raw** tapped tensor — at eager
-        time `tap.Tensor` is identity, so the output is the source op's
-        output. We apply the reducer's `eager` callable to reproduce what
-        `strip_taps_` materialises in the runtime graph.
+    Both `aot_flat[spec.output_index]` and `rt_flat[spec.output_index]` already
+    contain the *reduced* tap value, since `tap.Tensor`'s eager impl applies
+    the named reducer (see `custom_ops_lib.py`).
 
-    Runtime side:
-        `rt_flat[spec.output_index]` already contains the reduced 1-D tensor
-        (or original tensor for FULL_TENSOR).
-
-    Returns one row per spec with columns:
-        node_name, op_target, reducer_name, output_index,
-        aot_<field1>, rt_<field1>, aot_<field2>, rt_<field2>, ...
+    Output columns per spec:
+      - For non-FULL_TENSOR reducers: one `aot_<field>` and `rt_<field>` per
+        reducer field (e.g. `aot_min`, `rt_min`, ...).
+      - For FULL_TENSOR: `sqnr_db` (signal-to-noise of aot vs rt over the
+        whole tensor, in dB)
     """
     rows: list[dict[str, Any]] = []
     for spec in specs:
-        aot_raw = aot_flat[spec.output_index]
-        rt_raw = rt_flat[spec.output_index]
+        aot_vals = _flat_floats(aot_flat[spec.output_index])
+        rt_vals = _flat_floats(rt_flat[spec.output_index])
 
-        # AOT raw might be wrapped in a 1-tuple; unwrap first tensor.
-        if not isinstance(aot_raw, torch.Tensor) and isinstance(
-            aot_raw, (list, tuple)
-        ) and aot_raw:
-            aot_raw = aot_raw[0]
-
-        reducer = get_reducer(spec.reducer_name)
-        if isinstance(aot_raw, torch.Tensor):
-            aot_reduced = reducer.eager(aot_raw)
-        else:
-            aot_reduced = aot_raw
-
-        aot_vals = _flat_floats(aot_reduced)
-        rt_vals = _flat_floats(rt_raw)
-
-        fields = list(spec.fields) if spec.fields else [
-            f"v{i}" for i in range(max(len(aot_vals), len(rt_vals)))
-        ]
         row: dict[str, Any] = {
             "node_name": spec.node_name,
             "module_path": spec.module_path,
@@ -292,8 +285,20 @@ def compare_aot_runtime_dataframe(
             "reducer_name": spec.reducer_name,
             "output_index": spec.output_index,
         }
-        for i, f in enumerate(fields):
-            row[f"aot_{f}"] = aot_vals[i] if i < len(aot_vals) else float("nan")
-            row[f"rt_{f}"] = rt_vals[i] if i < len(rt_vals) else float("nan")
+
+        if spec.reducer_name == "FULL_TENSOR":
+            row["sqnr_db"] = _sqnr_db(aot_vals, rt_vals)
+            row["aot_numel"] = len(aot_vals)
+            row["rt_numel"] = len(rt_vals)
+        else:
+            fields = (
+                list(spec.fields)
+                if spec.fields
+                else [f"v{i}" for i in range(max(len(aot_vals), len(rt_vals)))]
+            )
+            for i, f in enumerate(fields):
+                row[f"aot_{f}"] = aot_vals[i] if i < len(aot_vals) else float("nan")
+                row[f"rt_{f}"] = rt_vals[i] if i < len(rt_vals) else float("nan")
+
         rows.append(row)
     return pd.DataFrame(rows)

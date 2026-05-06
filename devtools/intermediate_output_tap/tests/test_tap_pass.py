@@ -14,9 +14,7 @@ from executorch.devtools.intermediate_output_tap._reducers import (
     DEFAULT_STATS,
     FULL_TENSOR,
 )
-from executorch.devtools.intermediate_output_tap._selectors import (
-    select_by_op_type,
-)
+from executorch.devtools.intermediate_output_tap._selectors import select_by_op_type
 from executorch.devtools.intermediate_output_tap._tap_pass import (
     is_tap_node,
     tap_intermediate_outputs,
@@ -56,7 +54,9 @@ class TapPassTest(unittest.TestCase):
     def test_appends_user_outputs(self):
         ep = _export()
         original_user_outs = sum(
-            1 for s in ep.graph_signature.output_specs if s.kind == OutputKind.USER_OUTPUT
+            1
+            for s in ep.graph_signature.output_specs
+            if s.kind == OutputKind.USER_OUTPUT
         )
         ep_t, specs = tap_intermediate_outputs(
             ep,
@@ -73,7 +73,9 @@ class TapPassTest(unittest.TestCase):
     def test_output_indices_contiguous_after_user_outputs(self):
         ep = _export()
         original_user_outs = sum(
-            1 for s in ep.graph_signature.output_specs if s.kind == OutputKind.USER_OUTPUT
+            1
+            for s in ep.graph_signature.output_specs
+            if s.kind == OutputKind.USER_OUTPUT
         )
         _, specs = tap_intermediate_outputs(
             ep,

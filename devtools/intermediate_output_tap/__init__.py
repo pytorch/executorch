@@ -20,11 +20,11 @@ Inspector framework:
 Typical usage:
 
     from executorch.devtools.intermediate_output_tap import (
-        tap_intermediate_outputs, strip_taps_, DEFAULT_STATS,
+        tap_intermediate_outputs, strip_taps_, STATS,
     )
 
     ep = export(model, example_inputs)
-    ep_tapped, specs = tap_intermediate_outputs(ep, reducer=DEFAULT_STATS)
+    ep_tapped, specs = tap_intermediate_outputs(ep, reducer=STATS)
     edge = to_edge_transform_and_lower(ep_tapped, partitioner=[XnnpackPartitioner()])
     strip_taps_(edge)
     et_program = edge.to_executorch()
@@ -33,9 +33,8 @@ Typical usage:
     df = inspector.calculate_numeric_gap_from_taps(flat_outputs, specs)
 """
 
-from executorch.devtools.intermediate_output_tap import (
-    custom_ops_lib,  # noqa: F401  ensures torch.ops.executorch_devtools.tap is registered
-)
+# Importing this module registers torch.ops.executorch_devtools.tap.Tensor.
+from executorch.devtools.intermediate_output_tap import custom_ops_lib  # noqa: F401
 from executorch.devtools.intermediate_output_tap._convenience import (
     compare_aot_runtime_dataframe,
     format_tap_dataframe,
@@ -43,12 +42,10 @@ from executorch.devtools.intermediate_output_tap._convenience import (
     tap_all_and_run,
 )
 from executorch.devtools.intermediate_output_tap._reducers import (
-    ABS_MAX_ONLY,
-    DEFAULT_STATS,
     FULL_TENSOR,
     get_reducer,
-    MIN_MAX_MEAN,
     StatReducer,
+    STATS,
 )
 from executorch.devtools.intermediate_output_tap._selectors import (
     NodeSelector,
@@ -82,9 +79,7 @@ __all__ = [
     # Reducers
     "StatReducer",
     "FULL_TENSOR",
-    "ABS_MAX_ONLY",
-    "MIN_MAX_MEAN",
-    "DEFAULT_STATS",
+    "STATS",
     "get_reducer",
     # Selectors
     "NodeSelector",

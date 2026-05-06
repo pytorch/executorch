@@ -14,9 +14,7 @@ from executorch.devtools.intermediate_output_tap._reducers import (
     FULL_TENSOR,
     MIN_MAX_MEAN,
 )
-from executorch.devtools.intermediate_output_tap._selectors import (
-    select_by_op_type,
-)
+from executorch.devtools.intermediate_output_tap._selectors import select_by_op_type
 from executorch.devtools.intermediate_output_tap._strip_pass import strip_taps_
 from executorch.devtools.intermediate_output_tap._tap_pass import (
     find_tap_nodes,

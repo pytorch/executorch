@@ -21,15 +21,18 @@ Pattern stolen from `executorch/exir/passes/weights_to_outputs_pass.py`:
 from __future__ import annotations
 
 import copy
+import warnings
 from collections.abc import Callable
 
 import torch
 import torch.fx as fx
-from executorch.devtools.intermediate_output_tap import custom_ops_lib  # noqa: F401  registers tap.Tensor
+from executorch.devtools.intermediate_output_tap import (  # noqa: F401  registers tap.Tensor
+    custom_ops_lib,
+)
 from executorch.devtools.intermediate_output_tap._reducers import (
-    DEFAULT_STATS,
     get_reducer,
     StatReducer,
+    STATS,
 )
 from executorch.devtools.intermediate_output_tap._selectors import (
     NodeSelector,
@@ -50,15 +53,16 @@ def _is_tap_node(n: fx.Node) -> bool:
     return n.op == "call_function" and n.target is _TAP_TARGET
 
 
-def tap_intermediate_outputs(
+def tap_intermediate_outputs(  # noqa: C901
     ep: ExportedProgram,
     selector: NodeSelector | None = None,
-    reducer: str | StatReducer = DEFAULT_STATS,
+    reducer: str | StatReducer = STATS,
     *,
     tap_name_prefix: str = "tap_",
     skip_if_no_debug_handle: bool = False,
     max_taps: int | None = None,
     inplace: bool = False,
+    error_on_empty: bool = True,
 ) -> tuple[ExportedProgram, list[TapSpec]]:
     """
     Rewrite `ep` so each node matching `selector` has its output appended to
@@ -75,9 +79,8 @@ def tap_intermediate_outputs(
         selector: A predicate over fx.Node. Defaults to
             `select_all_call_function()`. Tap nodes themselves are always
             excluded so re-running the pass is idempotent.
-        reducer: Either a built-in reducer name ("DEFAULT_STATS",
-            "MIN_MAX_MEAN", "ABS_MAX_ONLY", "FULL_TENSOR") or a custom
-            StatReducer instance.
+        reducer: Either a built-in reducer name ("STATS", "FULL_TENSOR")
+            or a custom StatReducer instance.
         tap_name_prefix: Prefix for the tap nodes' names. Helps when
             grepping the dumped graph.
         skip_if_no_debug_handle: If True, only tap nodes that already
@@ -87,6 +90,10 @@ def tap_intermediate_outputs(
         max_taps: Optional cap on number of taps. Helps avoid OOM for
             very large models.
         inplace: If False (default), deep-copy `ep` before mutating.
+        error_on_empty: If True (default), raise `ValueError` when no nodes
+            match the selector. Set to False to only emit a `UserWarning`
+            and return `(ep, [])` — handy when iterating on selector
+            patterns.
     """
     if selector is None:
         selector = select_all_call_function()
@@ -166,6 +173,14 @@ def tap_intermediate_outputs(
         )
 
     if not new_tap_nodes:
+        msg = (
+            "tap_intermediate_outputs: selector matched 0 nodes. "
+            "Double-check your selector predicates, "
+            "or pass `error_on_empty=False` to suppress this error."
+        )
+        if error_on_empty:
+            raise ValueError(msg)
+        warnings.warn(msg, UserWarning, stacklevel=2)
         return ep, []
 
     # Splice new outputs into the graph (mirror weights_to_outputs_pass).

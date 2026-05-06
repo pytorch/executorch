@@ -29,14 +29,12 @@ import tempfile
 import unittest
 
 import torch
-from executorch.backends.xnnpack.partition.xnnpack_partitioner import (
-    XnnpackPartitioner,
-)
+from executorch.backends.xnnpack.partition.xnnpack_partitioner import XnnpackPartitioner
 from executorch.devtools import generate_etrecord, Inspector
 from executorch.devtools.intermediate_output_tap import (
-    DEFAULT_STATS,
     format_tap_dataframe,
     select_by_op_type,
+    STATS,
     strip_taps_,
     tap_intermediate_outputs,
 )
@@ -55,7 +53,9 @@ class _MLP(torch.nn.Module):
         return self.l2(self.l1(x).relu())
 
 
-@unittest.skipIf(sys.platform.startswith("win"), "ExecuTorch runtime not available on Windows")
+@unittest.skipIf(
+    sys.platform.startswith("win"), "ExecuTorch runtime not available on Windows"
+)
 class InspectorIntegrationTest(unittest.TestCase):
     def test_calculate_numeric_gap_from_taps(self):
         model = _MLP()
@@ -65,7 +65,7 @@ class InspectorIntegrationTest(unittest.TestCase):
         ep_t, specs = tap_intermediate_outputs(
             ep,
             selector=select_by_op_type("aten.linear.default"),
-            reducer=DEFAULT_STATS,
+            reducer=STATS,
         )
         # Do NOT pass generate_etrecord=True — we'd snapshot the EP while it
         # still has tap.Tensor nodes (unserializable).
@@ -125,11 +125,16 @@ class InspectorIntegrationTest(unittest.TestCase):
             # Print friendly per-tap view to stdout (visible via --print-passing-details).
             friendly = format_tap_dataframe(df, specs)
             import pandas as _pd
+
             with _pd.option_context(
-                "display.max_columns", None,
-                "display.width", 240,
-                "display.max_colwidth", 30,
-                "display.float_format", "{:.4g}".format,
+                "display.max_columns",
+                None,
+                "display.width",
+                240,
+                "display.max_colwidth",
+                30,
+                "display.float_format",
+                "{:.4g}".format,
             ):
                 print("\n=== Inspector.calculate_numeric_gap_from_taps (friendly) ===")
                 print(friendly.to_string())
