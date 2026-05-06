@@ -26,6 +26,7 @@ from executorch.backends.cadence.aot.reorder_ops import (
     MoveSliceBeforePermutePass,
     PostponeDequantizeOpBelowUseChainPass,
     PostponePermuteOpBelowSqueezeOrUnsqueezeLikeView,
+    PropagateSlice,
     SinkOpsCloserToUsePass,
 )
 from executorch.backends.test.graph_builder import GraphBuilder
@@ -761,3 +762,168 @@ class TestMoveSliceBeforePermutePass(unittest.TestCase):
             MoveSliceBeforePermutePass(),
         )
         self.assertTrue(result.modified)
+
+
+class TestPropagateSlice(unittest.TestCase):
+    def test_swap_quantize_slice(self) -> None:
+        builder = GraphBuilder()
+        x = builder.placeholder("x", torch.randn(4, 60, 1, 1))
+        quant = builder.call_operator(
+            exir_ops.edge.cadence.quantize_per_tensor.default,
+            args=(x, 0.5, 0, 0, 255, torch.uint8),
+        )
+        sliced = builder.call_operator(
+            exir_ops.edge.aten.slice_copy.Tensor,
+            args=(quant, 0, 0, 4, 2),
+        )
+        builder.output([sliced])
+        gm = builder.get_graph_module()
+
+        result = PropagateSlice().call(gm)
+
+        self.assertTrue(result.modified)
+
+        slice_nodes = gm.graph.find_nodes(
+            op="call_function", target=exir_ops.edge.aten.slice_copy.Tensor
+        )
+        self.assertEqual(len(slice_nodes), 1)
+        slice_node = slice_nodes[0]
+        self.assertEqual(slice_node.args[0].name, "x")
+        self.assertEqual(list(slice_node.meta["val"].shape), [2, 60, 1, 1])
+
+        quant_nodes = gm.graph.find_nodes(
+            op="call_function",
+            target=exir_ops.edge.cadence.quantize_per_tensor.default,
+        )
+        self.assertEqual(len(quant_nodes), 1)
+        self.assertEqual(quant_nodes[0].args[0], slice_node)
+        self.assertEqual(list(quant_nodes[0].meta["val"].shape), [2, 60, 1, 1])
+
+    def test_swap_dequantize_slice(self) -> None:
+        builder = GraphBuilder()
+        x = builder.placeholder(
+            "x", torch.randint(0, 255, (4, 60, 4, 4), dtype=torch.uint8)
+        )
+        dequant = builder.call_operator(
+            exir_ops.edge.cadence.dequantize_per_tensor.default,
+            args=(x, 0.5, 0, 0, 255, torch.uint8),
+        )
+        sliced = builder.call_operator(
+            exir_ops.edge.aten.slice_copy.Tensor,
+            args=(dequant, 0, 0, 4, 2),
+        )
+        builder.output([sliced])
+        gm = builder.get_graph_module()
+
+        result = PropagateSlice().call(gm)
+
+        self.assertTrue(result.modified)
+
+        slice_nodes = gm.graph.find_nodes(
+            op="call_function", target=exir_ops.edge.aten.slice_copy.Tensor
+        )
+        self.assertEqual(len(slice_nodes), 1)
+        self.assertEqual(slice_nodes[0].args[0].name, "x")
+
+    def test_step_2_through_quantize(self) -> None:
+        builder = GraphBuilder()
+        x = builder.placeholder("x", torch.randn(4, 60, 1, 1))
+        quant = builder.call_operator(
+            exir_ops.edge.cadence.quantize_per_tensor.default,
+            args=(x, 0.5, 0, 0, 255, torch.uint8),
+        )
+        sliced = builder.call_operator(
+            exir_ops.edge.aten.slice_copy.Tensor,
+            args=(quant, 0, 0, 4, 2),
+        )
+        builder.output([sliced])
+        gm = builder.get_graph_module()
+
+        result = PropagateSlice().call(gm)
+
+        self.assertTrue(result.modified)
+
+        slice_nodes = gm.graph.find_nodes(
+            op="call_function", target=exir_ops.edge.aten.slice_copy.Tensor
+        )
+        self.assertEqual(len(slice_nodes), 1)
+        self.assertEqual(slice_nodes[0].args[4], 2)
+        self.assertEqual(list(slice_nodes[0].meta["val"].shape), [2, 60, 1, 1])
+
+    def test_non_batch_dim_slice(self) -> None:
+        builder = GraphBuilder()
+        x = builder.placeholder("x", torch.randn(4, 60, 4, 4))
+        quant = builder.call_operator(
+            exir_ops.edge.cadence.quantize_per_tensor.default,
+            args=(x, 0.5, 0, 0, 255, torch.uint8),
+        )
+        sliced = builder.call_operator(
+            exir_ops.edge.aten.slice_copy.Tensor,
+            args=(quant, 1, 0, 30, 1),
+        )
+        builder.output([sliced])
+        gm = builder.get_graph_module()
+
+        result = PropagateSlice().call(gm)
+
+        self.assertTrue(result.modified)
+
+        slice_nodes = gm.graph.find_nodes(
+            op="call_function", target=exir_ops.edge.aten.slice_copy.Tensor
+        )
+        self.assertEqual(len(slice_nodes), 1)
+        self.assertEqual(list(slice_nodes[0].meta["val"].shape), [4, 30, 4, 4])
+
+    def test_no_swap_when_multi_user(self) -> None:
+        builder = GraphBuilder()
+        x = builder.placeholder("x", torch.randn(4, 60, 1, 1))
+        quant = builder.call_operator(
+            exir_ops.edge.cadence.quantize_per_tensor.default,
+            args=(x, 0.5, 0, 0, 255, torch.uint8),
+        )
+        sliced = builder.call_operator(
+            exir_ops.edge.aten.slice_copy.Tensor,
+            args=(quant, 0, 0, 4, 2),
+        )
+        builder.output([sliced, quant])
+        gm = builder.get_graph_module()
+
+        result = PropagateSlice().call(gm)
+
+        self.assertFalse(result.modified)
+
+    def test_no_swap_noop_slice(self) -> None:
+        builder = GraphBuilder()
+        x = builder.placeholder("x", torch.randn(4, 60, 1, 1))
+        quant = builder.call_operator(
+            exir_ops.edge.cadence.quantize_per_tensor.default,
+            args=(x, 0.5, 0, 0, 255, torch.uint8),
+        )
+        sliced = builder.call_operator(
+            exir_ops.edge.aten.slice_copy.Tensor,
+            args=(quant, 0, 0, 4, 1),
+        )
+        builder.output([sliced])
+        gm = builder.get_graph_module()
+
+        result = PropagateSlice().call(gm)
+
+        self.assertFalse(result.modified)
+
+    def test_unsupported_parent_not_swapped(self) -> None:
+        builder = GraphBuilder()
+        x = builder.placeholder("x", torch.randn(4, 60, 1, 1))
+        relu = builder.call_operator(
+            exir_ops.edge.aten.relu.default,
+            args=(x,),
+        )
+        sliced = builder.call_operator(
+            exir_ops.edge.aten.slice_copy.Tensor,
+            args=(relu, 0, 0, 4, 2),
+        )
+        builder.output([sliced])
+        gm = builder.get_graph_module()
+
+        result = PropagateSlice().call(gm)
+
+        self.assertFalse(result.modified)
