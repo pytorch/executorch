@@ -340,7 +340,7 @@ class TOSABackend(BackendDetails):
         # TODO: Fix the need to lazily import this.
         from executorch.backends.arm.operators.node_visitor import get_node_visitors
 
-        node_visitors = get_node_visitors(edge_program, tosa_spec, debug_hook)
+        node_visitors = get_node_visitors(tosa_spec, debug_hook)
 
         if output_order_workaround:
             logger.debug("Re-sorting outputs during TOSA lowering.")
