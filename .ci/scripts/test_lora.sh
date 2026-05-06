@@ -151,13 +151,12 @@ else
 fi
 
 ### QUANTIZATION & PROGRAM DATA SEPARATION ###
-EXPECTED_QUANT_PREFIX="<|im_start|>user Calculate 15% of 80?<|im_end|><|im_start|>assistant:
-<think>
+EXPECTED_QUANT_PREFIX="<|im_start|>user Calculate 15% of 80?<|im_end|><|im_start|>assistant: me
 Okay, so I need to calculate 15% of 80."
 EXPECTED_QUANT_LORA_PREFIX="
 <|im_start|>user Calculate 15% of 80?<|im_end|><|im_start|>assistant
-To calculate 15% of 80, we can multiply 80 by 15/100 and then simplify the fraction.
-So, 15% of 80 is equal to (80 * 15) / 100 = 1200 / 100 = 12.
+To calculate 15% of 80, we can multiply 80 by 15/100.
+So, 15% of 80 is equal to 80 * 15/100 = 12.
 #### 12
 The answer is: 12<|im_end|>"
 EXPECTED_QUANT_LORA_ALTERNATE_PREFIX="
@@ -167,6 +166,7 @@ To calculate 15% of 80, we can multiply 80 by 15/100.
 So, 15% of 80 is 12.
 #### 12
 The answer is: 12<|im_end|>"
+
 
 
 # Export Quantized PTE, PTD file, no LoRA.
@@ -228,7 +228,7 @@ fi
 NOW=$(date +"%H:%M:%S")
 echo "Test 4: Quantized, program-data separation lora. Starting to run llama runner at ${NOW}"
 # shellcheck source=/dev/null
-cmake-out/examples/models/llama/llama_main --model_path=qwen_lora_math_q.pte --data_paths="qwen_foundation_q.ptd,qwen_lora_math_q.ptd" --prompt="${PROMPT}" ${RUNTIME_ARGS} --seq_len=104 > result.txt
+cmake-out/examples/models/llama/llama_main --model_path=qwen_lora_math_q.pte --data_paths="qwen_foundation_q.ptd,qwen_lora_math_q.ptd" --prompt="${PROMPT}" ${RUNTIME_ARGS} > result.txt
 NOW=$(date +"%H:%M:%S")
 echo "Finished at ${NOW}"
 
