@@ -1,5 +1,6 @@
 load("@fbcode_macros//build_defs:build_file_migration.bzl", "fbcode_target", "non_fbcode_target")
 load("@fbcode_macros//build_defs:cpp_benchmark.bzl", "cpp_benchmark")
+load("@fbsource//xplat/executorch/build:runtime_wrapper.bzl", "runtime")
 oncall("executorch")
 # Any targets that should be shared between fbcode and xplat must be defined in
 # targets.bzl. This file can contain xplat-only targets.
@@ -9,12 +10,25 @@ load(":targets.bzl", "define_common_targets")
 
 non_fbcode_target(_kind = define_common_targets,)
 
+non_fbcode_target(_kind = runtime.cxx_binary,
+    name = "bench_sdpa",
+    srcs = ["bench_sdpa.cpp"],
+    compiler_flags = ["-O2"],
+    deps = [
+        "fbsource//third-party/benchmark:benchmark",
+        "//executorch/extension/llm/custom_ops:custom_ops",
+        "//executorch/extension/threadpool:threadpool",
+        "//executorch/kernels/optimized:libblas",
+        "//executorch/runtime/core/exec_aten:lib",
+        "//executorch/runtime/core/exec_aten/testing_util:tensor_util",
+    ],
+)
+
 # !!!! fbcode/executorch/extension/llm/custom_ops/TARGETS was merged into this file, see https://fburl.com/workplace/xl8l9yuo for more info !!!!
 
 # Any targets that should be shared between fbcode and xplat must be defined in
 # targets.bzl. This file can contain fbcode-only targets.
 
-load("@fbsource//xplat/executorch/build:runtime_wrapper.bzl", "runtime")
 load(":targets.bzl", "define_common_targets")
 
 
