@@ -166,6 +166,7 @@ int32_t main(int32_t argc, char** argv) {
 
   ::executorch::extension::llm::GenerationConfig config;
   config.temperature = temperature;
+  config.seq_len = seq_len;
   config.echo = true;
 
   // Generate

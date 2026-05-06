@@ -24,13 +24,13 @@ input_t1 = Tuple[torch.Tensor]
 
 
 test_data_suite = {
-    "zeros": torch.zeros(1, 10, 10, 10),
-    "zeros_alt_shape": torch.zeros(1, 10, 3, 5),
-    "rand": torch.rand(10, 10) - 0.5,
-    "rand_alt_shape": torch.rand(1, 10, 3, 5) - 0.5,
-    "ramp": torch.arange(-1, 1, 0.2),
-    "near_bounds": torch.tensor([-0.99, -0.9, 0.9, 0.99]),
-    "on_bounds": torch.tensor([-1.0, 1.0]),
+    "zeros": lambda: torch.zeros(1, 10, 10, 10),
+    "zeros_alt_shape": lambda: torch.zeros(1, 10, 3, 5),
+    "rand": lambda: torch.rand(10, 10) - 0.5,
+    "rand_alt_shape": lambda: torch.rand(1, 10, 3, 5) - 0.5,
+    "ramp": lambda: torch.arange(-1, 1, 0.2),
+    "near_bounds": lambda: torch.tensor([-0.99, -0.9, 0.9, 0.99]),
+    "on_bounds": lambda: torch.tensor([-1.0, 1.0]),
 }
 
 
@@ -43,7 +43,7 @@ class Atanh(torch.nn.Module):
 def test_atanh_tosa_FP(test_data: Tuple):
     pipeline = TosaPipelineFP[input_t1](
         Atanh(),
-        (test_data,),
+        (test_data(),),
         aten_op=aten_op,
         exir_op=exir_op,
     )
@@ -52,13 +52,14 @@ def test_atanh_tosa_FP(test_data: Tuple):
 
 @common.parametrize("test_data", test_data_suite)
 def test_atanh_tosa_INT(test_data: Tuple):
+    input_data = test_data()
     pipeline = TosaPipelineINT[input_t1](
         Atanh(),
-        (test_data,),
+        (input_data,),
         aten_op=aten_op,
         exir_op=exir_op,
     )
-    if torch.any(test_data >= 1) or torch.any(test_data <= -1):
+    if torch.any(input_data >= 1) or torch.any(input_data <= -1):
         # The quantized model will saturate to max/min values while the
         # original model will return inf/-inf, so comparison wont be valid here.
         pipeline.pop_stage("run_method_and_compare_outputs.original_model")
@@ -70,7 +71,7 @@ def test_atanh_tosa_INT(test_data: Tuple):
 def test_atanh_u55_INT(test_data: Tuple):
     pipeline = EthosU55PipelineINT[input_t1](
         Atanh(),
-        (test_data,),
+        (test_data(),),
         aten_ops=aten_op,
         exir_ops=exir_op,
     )
@@ -82,7 +83,7 @@ def test_atanh_u55_INT(test_data: Tuple):
 def test_atanh_u85_INT(test_data: Tuple):
     pipeline = EthosU85PipelineINT[input_t1](
         Atanh(),
-        (test_data,),
+        (test_data(),),
         aten_ops=aten_op,
         exir_ops=exir_op,
     )
@@ -94,7 +95,7 @@ def test_atanh_u85_INT(test_data: Tuple):
 def test_atanh_vgf_no_quant(test_data: input_t1):
     pipeline = VgfPipeline[input_t1](
         Atanh(),
-        (test_data,),
+        (test_data(),),
         aten_op=aten_op,
         exir_op=exir_op,
         quantize=False,
@@ -107,7 +108,7 @@ def test_atanh_vgf_no_quant(test_data: input_t1):
 def test_atanh_vgf_quant(test_data: input_t1):
     pipeline = VgfPipeline[input_t1](
         Atanh(),
-        (test_data,),
+        (test_data(),),
         aten_op=aten_op,
         exir_op=exir_op,
         quantize=True,
