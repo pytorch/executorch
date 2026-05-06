@@ -296,6 +296,7 @@ redirects = {
     "backends-mps": "backends/mps/mps-overview.html",
     "backends-xnnpack": "backends/xnnpack/xnnpack-overview.html",
     "backend-delegates-xnnpack-reference": "backends/xnnpack/xnnpack-arch-internals.html",
+    "llm/llama-demo-android": "../using-executorch-android.html",
     "tutorial-arm-ethos-u": "backends/arm-ethos-u/tutorials/ethos-u-getting-started.html",
     "tutorial-arm-vgf": "backends/arm-vgf/tutorials/vgf-getting-started.html",
     "visualization": "visualize.html",
