@@ -40,6 +40,7 @@ jobs:
             backend: portable
       fail-fast: false
     with:
+      default-packages: ""
       runner: macos-m1-stable
       python-version: '3.11'
       submodules: 'recursive'
@@ -275,6 +276,7 @@ jobs:
           - build-tool: cmake
       fail-fast: false
     with:
+      default-packages: ""
       runner: macos-m1-stable
       python-version: '3.11'
       submodules: 'recursive'
@@ -297,6 +299,7 @@ jobs:
           - build-tool: cmake
       fail-fast: false
     with:
+      default-packages: ""
       runner: macos-m1-stable
       python-version: '3.11'
       submodules: 'recursive'
@@ -457,6 +460,7 @@ jobs:
     name: test-coreml-delegate
     uses: pytorch/test-infra/.github/workflows/macos_job.yml@main
     with:
+      default-packages: ""
       runner: macos-14-xlarge
       python-version: '3.11'
       submodules: 'recursive'
@@ -475,6 +479,7 @@ jobs:
     name: test-static-llama-ane
     uses: pytorch/test-infra/.github/workflows/macos_job.yml@main
     with:
+      default-packages: ""
       runner: macos-m1-stable
       python-version: '3.11'
       submodules: 'recursive'
@@ -497,6 +502,7 @@ jobs:
     name: test-llama-torchao-lowbit
     uses: pytorch/test-infra/.github/workflows/macos_job.yml@main
     with:
+      default-packages: ""
       runner: macos-m1-stable
       python-version: '3.11'
       submodules: 'recursive'
@@ -581,6 +587,7 @@ jobs:
         mode: [mps, coreml, xnnpack+custom+quantize_kv]
       fail-fast: false
     with:
+      default-packages: ""
       runner: macos-m1-stable
       python-version: '3.11'
       submodules: 'recursive'
@@ -667,6 +674,7 @@ jobs:
       matrix:
         model: ["gemma3-4b"] # llava gives segfault so not covering.
     with:
+      default-packages: ""
       secrets-env: EXECUTORCH_HF_TOKEN
       runner: macos-15-xlarge
       python-version: '3.11'
@@ -754,6 +762,7 @@ jobs:
         model: [dl3, edsr, efficient_sam, emformer_join, emformer_transcribe, ic3, ic4, mobilebert, mv2, mv3, resnet50, vit, w2l]
       fail-fast: false
     with:
+      default-packages: ""
       runner: macos-m1-stable
       python-version: '3.11'
       submodules: 'recursive'
@@ -793,6 +802,7 @@ jobs:
     strategy:
       fail-fast: false
     with:
+      default-packages: ""
       runner: macos-m1-stable
       python-version: '3.11'
       submodules: 'recursive'
@@ -932,6 +942,7 @@ jobs:
         ]
       fail-fast: false
     with:
+      default-packages: ""
       secrets-env: EXECUTORCH_HF_TOKEN
       runner: macos-15-xlarge
       python-version: '3.11'
