@@ -21,6 +21,5 @@ from executorch.backends.arm.tosa.dialect.ops import (  # noqa F401
     shape_ops,
     slice,
     table,
-    transpose,
     transpose_conv2d,
 )
