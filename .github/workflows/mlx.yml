@@ -28,6 +28,7 @@ jobs:
   test-mlx:
     uses: pytorch/test-infra/.github/workflows/macos_job.yml@main
     with:
+      default-packages: ""
       job-name: test-mlx
       runner: macos-14-xlarge
       python-version: "3.12"
@@ -77,6 +78,7 @@ jobs:
   test-mlx-qwen35-moe:
     uses: pytorch/test-infra/.github/workflows/macos_job.yml@main
     with:
+      default-packages: ""
       job-name: test-mlx-qwen35-moe
       runner: macos-14-xlarge
       python-version: "3.12"
@@ -132,6 +134,7 @@ jobs:
         suite: [models, operators]
     uses: pytorch/test-infra/.github/workflows/macos_job.yml@main
     with:
+      default-packages: ""
       job-name: test-mlx-backend-${{ matrix.suite }}
       runner: macos-14-xlarge
       python-version: "3.12"
@@ -173,6 +176,7 @@ jobs:
   test-mlx-parakeet:
     uses: pytorch/test-infra/.github/workflows/macos_job.yml@main
     with:
+      default-packages: ""
       job-name: test-mlx-parakeet
       runner: macos-14-xlarge
       python-version: "3.12"
@@ -231,6 +235,7 @@ jobs:
     uses: pytorch/test-infra/.github/workflows/macos_job.yml@main
     secrets: inherit
     with:
+      default-packages: ""
       job-name: test-mlx-voxtral
       runner: macos-14-xlarge
       python-version: "3.12"
@@ -291,6 +296,7 @@ jobs:
     uses: pytorch/test-infra/.github/workflows/macos_job.yml@main
     secrets: inherit
     with:
+      default-packages: ""
       job-name: test-mlx-voxtral-realtime
       runner: macos-14-xlarge
       python-version: "3.12"
@@ -366,6 +372,7 @@ jobs:
     uses: pytorch/test-infra/.github/workflows/macos_job.yml@main
     secrets: inherit
     with:
+      default-packages: ""
       job-name: test-mlx-whisper
       runner: macos-14-xlarge
       python-version: "3.12"
@@ -413,6 +420,7 @@ jobs:
   test-mlx-stories110m:
     uses: pytorch/test-infra/.github/workflows/macos_job.yml@main
     with:
+      default-packages: ""
       job-name: test-mlx-stories110m
       runner: macos-14-xlarge
       python-version: "3.12"
@@ -492,6 +500,7 @@ jobs:
     uses: pytorch/test-infra/.github/workflows/macos_job.yml@main
     secrets: inherit
     with:
+      default-packages: ""
       job-name: test-mlx-llm-${{ matrix.model.name }}${{ matrix.use-custom && '-custom' || '' }}-${{ matrix.qconfig }}
       runner: macos-14-xlarge
       python-version: "3.12"

@@ -7,7 +7,6 @@
 from . import arm_pass_utils  # noqa
 from .arm_pass import ArmPass  # noqa  # usort: skip
 from .accumulate_index_put_pass import AccumulateIndexPutPass  # noqa
-from .annotate_output_dim_order_pass import AnnotateOutputDimOrderPass  # noqa
 from .broadcast_args_pass import BroadcastArgsPass  # noqa
 from .canonicalize_gather_pass import CanonicalizeGatherPass  # noqa
 from .cast_int64_pass import CastInt64BuffersToInt32Pass  # noqa
@@ -61,9 +60,6 @@ from .decompose_index_select_to_gather_pass import (  # noqa
 from .decompose_index_tensor_to_gather_pass import (  # noqa
     DecomposeIndexTensorToGatherPass,
 )
-from .decompose_int16_activation_conv_pass import (  # noqa
-    DecomposeConvWithInt16ActivationPass,
-)
 from .decompose_int_pow_pass import DecomposeIntPowPass  # noqa
 from .decompose_layernorm_pass import DecomposeLayerNormPass  # noqa
 from .decompose_leaky_relu_pass import DecomposeLeakyReLUPass  # noqa
@@ -77,6 +73,7 @@ from .decompose_matmul import DecomposeMatmulPass  # noqa
 from .decompose_maxpool2d_with_dilation_pass import DecomposeMaxPool2dPass  # noqa
 from .decompose_meandim_pass import DecomposeMeanDimPass  # noqa
 from .decompose_ne_pass import DecomposeNotEqualPass  # noqa
+from .decompose_permute_for_u55_pass import DecomposePermuteForU55Pass  # noqa
 from .decompose_quant_nodes import DecomposeQuantNodesPass  # noqa
 from .decompose_remainder_pass import DecomposeRemainderPass  # noqa
 from .decompose_rnn_pass import DecomposeRnnPass  # noqa
@@ -170,7 +167,6 @@ from .rewrite_slice import RewriteSlicePass  # noqa
 from .rewrite_upsample import RewriteUpsamplePass  # noqa
 from .scalars_to_attribute_pass import ScalarsToAttributePass  # noqa
 from .size_adjust_input_pass import SizeAdjustInputPass  # noqa
-from .to_tosa_memory_format_pass import ToTosaMemoryFormatPass  # noqa
 from .unsqueeze_before_repeat_pass import UnsqueezeBeforeRepeatPass  # noqa
 from .unsqueeze_scalar_placeholders_pass import UnsqueezeScalarPlaceholdersPass  # noqa
 from .replace_inf_and_limit_values_pass import (  # noqa  # usort: skip
