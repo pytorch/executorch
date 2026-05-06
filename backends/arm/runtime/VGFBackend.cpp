@@ -5,10 +5,12 @@
  * LICENSE file in the root directory of this source tree.
  */
 
+#include <cinttypes>
 #include <list>
 #include <numeric>
 using namespace std;
 
+#include <c10/util/safe_numerics.h>
 #include <executorch/runtime/backend/interface.h>
 #include <executorch/runtime/core/error.h>
 #include <executorch/runtime/core/evalue.h>
@@ -191,8 +193,18 @@ class VGFBackend final : public ::executorch::runtime::BackendInterface {
       if (!io->is_input)
         continue;
 
-      size_t io_size = accumulate(
-          io->size.begin(), io->size.end(), io->elt_size, std::multiplies<>());
+      size_t io_size = io->elt_size;
+      for (int64_t dim : io->size) {
+        ET_CHECK_OR_RETURN_ERROR(
+            dim >= 0,
+            InvalidArgument,
+            "Negative dimension in IO size: %" PRId64,
+            dim);
+        ET_CHECK_OR_RETURN_ERROR(
+            !c10::mul_overflows(io_size, static_cast<size_t>(dim), &io_size),
+            InvalidArgument,
+            "Overflow computing IO buffer size");
+      }
 
       void* data;
       if (!repr->map_io(io, &data)) {
@@ -226,8 +238,18 @@ class VGFBackend final : public ::executorch::runtime::BackendInterface {
       if (io->is_input)
         continue;
 
-      size_t io_size = accumulate(
-          io->size.begin(), io->size.end(), io->elt_size, std::multiplies<>());
+      size_t io_size = io->elt_size;
+      for (int64_t dim : io->size) {
+        ET_CHECK_OR_RETURN_ERROR(
+            dim >= 0,
+            InvalidArgument,
+            "Negative dimension in IO size: %" PRId64,
+            dim);
+        ET_CHECK_OR_RETURN_ERROR(
+            !c10::mul_overflows(io_size, static_cast<size_t>(dim), &io_size),
+            InvalidArgument,
+            "Overflow computing IO buffer size");
+      }
 
       void* data;
       if (!repr->map_io(io, &data)) {
