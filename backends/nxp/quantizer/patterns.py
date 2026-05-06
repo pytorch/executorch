@@ -10,7 +10,6 @@ from dataclasses import dataclass, field
 from functools import partial
 
 import torch
-
 from executorch.backends.nxp.quantizer.utils import (
     get_bias_qparams,
     get_bias_qparams_transp_conv,
@@ -157,9 +156,6 @@ class SingleInputBasicPattern(QuantizationPattern):
 
 
 class BatchNormPattern(QuantizationPattern):
-    def __init__(self, is_qat: bool):
-        super().__init__(is_qat=is_qat)
-
     def partition_types(self) -> list[OpOverload]:
         # BatchNorm quantization is needed only when in QAT mode
         return [torch.ops.aten.batch_norm.default] if self.is_qat else []
@@ -414,6 +410,10 @@ class CatPattern(QuantizationPattern):
 
 class ClampPattern(SingleInputBasicPattern):
     """Quantizer for the `aten.clamp.default` operator."""
+
+    def __init__(self, neutron_quantizer, is_qat=False):
+        super().__init__(is_qat)
+        self.neutron_quantizer = neutron_quantizer
 
     def partition_types(self):
         return [torch.ops.aten.clamp.default]

@@ -14,7 +14,6 @@ from typing import final, List, Optional
 
 import numpy as np
 import torch
-
 from executorch.backends.nxp.backend.custom_delegation_options import (
     CustomDelegationOptions,
 )
@@ -86,7 +85,9 @@ class NeutronCompileSpecBuilder:
         :return: self for method chaining
         """
 
-        self.config = NeutronTargetSpec(config)
+        self.config = NeutronTargetSpec(
+            config, use_new_flow_neutron_c=use_new_flow_neutron_c
+        )
 
         assert (
             self.output_format is None
