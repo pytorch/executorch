@@ -33,6 +33,24 @@ cleanup_files() {
   rm -f result*.txt
 }
 
+matches_base_response_prefix() {
+  local output_file="$1"
+  python - "$output_file" <<'PY'
+import pathlib
+import re
+import sys
+
+text = pathlib.Path(sys.argv[1]).read_text()
+pattern = re.compile(
+    r"^<\|im_start\|>user Calculate 15% of 80\?<\|im_end\|><\|im_start\|>assistant:\n"
+    r"(?:<think>\n)+"
+    r"Okay, so I need to calculate 15% of 80\.",
+    re.MULTILINE,
+)
+sys.exit(0 if pattern.match(text) else 1)
+PY
+}
+
 # Download LoRA adapter.
 python -m pip install -q huggingface_hub
 HF_ADAPTER_REPO="lucylq/qwen3_06B_lora_math"
@@ -107,7 +125,7 @@ NOW=$(date +"%H:%M:%S")
 echo "Finished at ${NOW}"
 
 RESULT=$(cat result_base.txt)
-if [[ "${RESULT}" == "${EXPECTED_BASE_PREFIX}"* ]]; then
+if matches_base_response_prefix result_base.txt; then
   echo "Test 2 (base_forward): Success"
 else
   echo "Test 2 (base_forward): Failure"

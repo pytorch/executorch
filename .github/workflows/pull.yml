@@ -1548,6 +1548,7 @@ jobs:
         runner: [macos-m1-stable, macos-m2-stable]
       fail-fast: false
     with:
+      default-packages: ""
       runner: ${{ matrix.runner }}
       submodules: 'recursive'
       ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}

@@ -107,6 +107,7 @@ def define_arm_tests():
                 "//executorch/backends/arm/tosa:partitioner",
                 "//executorch/backends/arm:vgf",
                 "//executorch/backends/test:graph_builder",
+                "//executorch/backends/test:program_builder",
                 "//executorch/exir:lib",
                 "fbsource//third-party/pypi/pytest:pytest",
                 "fbsource//third-party/pypi/parameterized:parameterized",
