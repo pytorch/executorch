@@ -67,6 +67,15 @@ if [ -z "${1:-}" ]; then
   exit 1
 fi
 
+# DO NOT MERGE: diagnostic instrumentation for HF download stalls. CUDA jobs
+# have been silently hanging mid-`snapshot_download` until the 90-min job
+# timeout fires, with no exception logged. These flags surface what the
+# huggingface_hub / httpx / httpcore stack is doing, and let faulthandler
+# dump a traceback every 60s so we can see where the process is actually
+# stuck. Revert once we have signal.
+export HF_HUB_VERBOSITY=debug
+export PYTHONUNBUFFERED=1
+
 set -eux
 
 DEVICE="$1"
@@ -333,7 +342,14 @@ if [ "$MODEL_NAME" = "voxtral_realtime" ]; then
 
   # Download model weights from HuggingFace (requires HF_TOKEN for gated model)
   LOCAL_MODEL_DIR="${OUTPUT_DIR}/model_weights"
-  python -c "from huggingface_hub import snapshot_download; snapshot_download('${HF_MODEL}', local_dir='${LOCAL_MODEL_DIR}')"
+  # DO NOT MERGE: faulthandler + verbose logging to diagnose HF stalls.
+  python -c "
+import faulthandler, logging, sys
+faulthandler.dump_traceback_later(60, repeat=True, file=sys.stderr)
+logging.basicConfig(level=logging.DEBUG, format='%(asctime)s [%(name)s] %(levelname)s: %(message)s', force=True, stream=sys.stderr)
+from huggingface_hub import snapshot_download
+snapshot_download('${HF_MODEL}', local_dir='${LOCAL_MODEL_DIR}')
+"
 
   # Per-component quantization flags
   VR_QUANT_ARGS=""
@@ -398,7 +414,14 @@ if [ "$MODEL_NAME" = "qwen3_5_moe" ]; then
   INDUCTOR_CACHE=$(mktemp -d)
   trap 'rm -rf "$LOCAL_MODEL_DIR" "$INDUCTOR_CACHE"' EXIT
 
-  python -c "from huggingface_hub import snapshot_download; snapshot_download('${HF_MODEL}', local_dir='${LOCAL_MODEL_DIR}')"
+  # DO NOT MERGE: faulthandler + verbose logging to diagnose HF stalls.
+  python -c "
+import faulthandler, logging, sys
+faulthandler.dump_traceback_later(60, repeat=True, file=sys.stderr)
+logging.basicConfig(level=logging.DEBUG, format='%(asctime)s [%(name)s] %(levelname)s: %(message)s', force=True, stream=sys.stderr)
+from huggingface_hub import snapshot_download
+snapshot_download('${HF_MODEL}', local_dir='${LOCAL_MODEL_DIR}')
+"
 
   # Sanity check: run inference on the prequantized model
   echo "::group::Inference sanity check"

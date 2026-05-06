@@ -1,24 +1,46 @@
 import argparse
+import faulthandler
 import gc
 import logging
 import math
+import os
 import shutil
 import subprocess
+import sys
 import tempfile
 import time
 from pathlib import Path
 from typing import List
 
-import torch
-from datasets import load_dataset
+# DO NOT MERGE: diagnostic instrumentation for HF download stalls. CUDA jobs
+# have been silently hanging mid-download with no exception logged. Dump a
+# traceback every 60s so we can see where the process is actually stuck,
+# turn on verbose huggingface_hub/httpx/httpcore logging, and force every
+# child process invoked via `subprocess.run` (notably `optimum-cli export`)
+# to inherit HF_HUB_VERBOSITY=debug and PYTHONUNBUFFERED=1. Revert once we
+# have signal.
+faulthandler.dump_traceback_later(60, repeat=True, file=sys.stderr)
+logging.basicConfig(
+    level=logging.DEBUG,
+    format="%(asctime)s [%(name)s] %(levelname)s: %(message)s",
+    force=True,
+    stream=sys.stderr,
+)
+for _name in ("huggingface_hub", "httpx", "httpcore", "urllib3"):
+    logging.getLogger(_name).setLevel(logging.DEBUG)
+os.environ.setdefault("HF_HUB_VERBOSITY", "debug")
+os.environ.setdefault("PYTHONUNBUFFERED", "1")
 
-from optimum.executorch import (
+import torch  # noqa: E402
+from datasets import load_dataset  # noqa: E402
+
+from optimum.executorch import (  # noqa: E402
     ExecuTorchModelForImageClassification,
     ExecuTorchModelForMaskedLM,
     ExecuTorchModelForSeq2SeqLM,
     ExecuTorchModelForSpeechSeq2Seq,
 )
-from transformers import (
+from transformers import (  # noqa: E402
     AutoConfig,
     AutoModelForCausalLM,
     AutoModelForImageClassification,

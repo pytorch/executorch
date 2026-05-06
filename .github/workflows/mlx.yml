@@ -307,6 +307,10 @@ jobs:
       script: |
         set -eux
 
+        # DO NOT MERGE: diagnostic instrumentation for HF download stalls.
+        export HF_HUB_VERBOSITY=debug
+        export PYTHONUNBUFFERED=1
+
         echo "::group::Install ExecuTorch"
         ${CONDA_RUN} python install_executorch.py > /dev/null
         echo "::endgroup::"
@@ -318,7 +322,14 @@ jobs:
         ${CONDA_RUN} pip list
 
         echo "::group::Download model"
-        HF_TOKEN=$SECRET_EXECUTORCH_HF_TOKEN ${CONDA_RUN} python -c "from huggingface_hub import snapshot_download; snapshot_download('mistralai/Voxtral-Mini-4B-Realtime-2602')"
+        # DO NOT MERGE: faulthandler + verbose logging to diagnose HF stalls.
+        HF_TOKEN=$SECRET_EXECUTORCH_HF_TOKEN ${CONDA_RUN} python -c "
+import faulthandler, logging, sys
+faulthandler.dump_traceback_later(60, repeat=True, file=sys.stderr)
+logging.basicConfig(level=logging.DEBUG, format='%(asctime)s [%(name)s] %(levelname)s: %(message)s', force=True, stream=sys.stderr)
+from huggingface_hub import snapshot_download
+snapshot_download('mistralai/Voxtral-Mini-4B-Realtime-2602')
+"
         MODEL_PATH=$(HF_TOKEN=$SECRET_EXECUTORCH_HF_TOKEN ${CONDA_RUN} python -c "from huggingface_hub import snapshot_download; print(snapshot_download('mistralai/Voxtral-Mini-4B-Realtime-2602'))")
         echo "Model path: ${MODEL_PATH}"
         echo "::endgroup::"
