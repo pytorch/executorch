@@ -22,46 +22,29 @@ jobs:
         with:
           python-version: '3.11'
 
-      - name: Check torch_pin channel
-        id: channel
-        run: |
-          CHANNEL=$(python -c "from torch_pin import CHANNEL; print(CHANNEL)")
-          echo "channel=${CHANNEL}" >> "$GITHUB_OUTPUT"
-          if [ "${CHANNEL}" != "nightly" ]; then
-            echo "torch_pin.py CHANNEL is '${CHANNEL}'; weekly nightly bump only runs when CHANNEL == 'nightly'."
-          fi
-
       - name: Determine nightly version
-        if: steps.channel.outputs.channel == 'nightly'
         id: nightly
         run: |
           NIGHTLY_DATE=$(date -u -d 'yesterday' '+%Y%m%d')
           NIGHTLY_VERSION="dev${NIGHTLY_DATE}"
           echo "version=${NIGHTLY_VERSION}" >> "$GITHUB_OUTPUT"
 
-      - name: Update torch_pin.py with new NIGHTLY_VERSION
-        if: steps.channel.outputs.channel == 'nightly'
-        env:
-          NIGHTLY_VERSION: ${{ steps.nightly.outputs.version }}
+      - name: Read current TORCH_VERSION
+        id: torch
         run: |
-          python - <<'PY'
-          import os, pathlib, re
-          p = pathlib.Path('torch_pin.py')
-          p.write_text(re.sub(
-              r'^NIGHTLY_VERSION\s*=\s*".*"$',
-              f'NIGHTLY_VERSION = "{os.environ["NIGHTLY_VERSION"]}"',
-              p.read_text(),
-              count=1,
-              flags=re.MULTILINE,
-          ))
-          PY
+          TORCH_VERSION=$(python -c "exec(open('torch_pin.py').read()); print(TORCH_VERSION)")
+          echo "version=${TORCH_VERSION}" >> "$GITHUB_OUTPUT"
+
+      - name: Update torch_pin.py with new NIGHTLY_VERSION
+        run: |
+          printf 'TORCH_VERSION = "%s"\nNIGHTLY_VERSION = "%s"\n' \
+            "${{ steps.torch.outputs.version }}" \
+            "${{ steps.nightly.outputs.version }}" > torch_pin.py
 
       - name: Run pin bump script
-        if: steps.channel.outputs.channel == 'nightly'
         run: python .github/scripts/update_pytorch_pin.py
 
       - name: Create branch and PR
-        if: steps.channel.outputs.channel == 'nightly'
         env:
           GH_TOKEN: ${{ secrets.UPDATEBOT_TOKEN }}
         run: |
