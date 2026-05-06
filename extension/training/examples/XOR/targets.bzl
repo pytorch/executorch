@@ -1,4 +1,4 @@
-load("@fbsource//xplat/executorch/build:runtime_wrapper.bzl", "runtime")
+load("@fbsource//xplat/executorch/build:runtime_wrapper.bzl", "is_xplat", "runtime")
 
 def define_common_targets():
     """Defines targets that should be shared between fbcode and xplat.
@@ -23,30 +23,34 @@ def define_common_targets():
         define_static_target = True,
     )
 
-    runtime.python_library(
-        name = "model",
-        srcs = ["model.py"],
-        visibility = [],  # Private
-        deps = [
-            "//caffe2:torch",
-        ],
-    )
+    # The Python export targets depend on `//caffe2:torch` and
+    # `//executorch/exir:lib`, neither of which exist as xplat (fbsource)
+    # targets. Restrict these to fbcode only.
+    if not is_xplat():
+        runtime.python_library(
+            name = "model",
+            srcs = ["model.py"],
+            visibility = [],  # Private
+            deps = [
+                "//caffe2:torch",
+            ],
+        )
 
-    runtime.python_library(
-        name = "export_model_lib",
-        srcs = ["export_model.py"],
-        visibility = ["//executorch/extension/training/examples/XOR/..."],
-        deps = [
-            ":model",
-            "//caffe2:torch",
-            "//executorch/exir:lib",
-        ],
-    )
+        runtime.python_library(
+            name = "export_model_lib",
+            srcs = ["export_model.py"],
+            visibility = ["//executorch/extension/training/examples/XOR/..."],
+            deps = [
+                ":model",
+                "//caffe2:torch",
+                "//executorch/exir:lib",
+            ],
+        )
 
-    runtime.python_binary(
-        name = "export_model",
-        main_module = "executorch.extension.training.examples.XOR.export_model",
-        deps = [
-            ":export_model_lib",
-        ],
-    )
+        runtime.python_binary(
+            name = "export_model",
+            main_module = "executorch.extension.training.examples.XOR.export_model",
+            deps = [
+                ":export_model_lib",
+            ],
+        )

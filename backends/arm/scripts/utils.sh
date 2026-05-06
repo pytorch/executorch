@@ -47,7 +47,10 @@ function verify_md5() {
     # Arg 1: Expected checksum for file
     # Arg 2: Path to file
     # Exits with return code 1 if the number of arguments is incorrect.
-    # Exits with return code 2 if the calculated mf5 does not match the given. 
+    # Returns 2 if the calculated md5 does not match the given. Returning
+    # rather than exiting lets callers like download_with_retry treat a bad
+    # checksum as a retryable failure (e.g. truncated download) instead of
+    # tearing down the whole script.
 
     [[ $# -ne 2 ]]  \
         && { echo "[${FUNCNAME[0]}] Invalid number of args, expecting 2, but got $#"; exit 1; }
@@ -60,9 +63,48 @@ function verify_md5() {
         local file_checksum="$(md5sum $file | awk '{print $1}')"
     fi
     if [[ ${ref_checksum} != ${file_checksum} ]]; then
-        echo "Mismatched MD5 checksum for file: ${file}. Expecting ${ref_checksum} but got ${file_checksum}. Exiting."
-        exit 2
+        echo "Mismatched MD5 checksum for file: ${file}. Expecting ${ref_checksum} but got ${file_checksum}."
+        return 2
     fi
+}
+
+function download_with_retry() {
+    # Download a URL to a path and validate its MD5, retrying on transport
+    # or checksum errors. developer.arm.com's CDN intermittently aborts the
+    # download mid-stream with HTTP/2 INTERNAL_ERROR (curl exit 92), and
+    # rare cases return a short error body that curl treats as success;
+    # both are caught here. --fail rejects HTTP errors,
+    # --retry-all-errors handles transport errors, and verify_md5 catches
+    # truncation / wrong-content via the published archive checksum.
+
+    # Arg 1: log context (passed to log_step)
+    # Arg 2: URL to download
+    # Arg 3: Output path
+    # Arg 4: Expected MD5 checksum
+
+    [[ $# -ne 4 ]] \
+        && { echo "[${FUNCNAME[0]}] Invalid number of args, expecting 4, but got $#"; exit 1; }
+    local context="${1}"
+    local url="${2}"
+    local output="${3}"
+    local expected_md5="${4}"
+
+    local max_attempts=5
+    for attempt in $(seq 1 ${max_attempts}); do
+        rm -f "${output}"
+        if curl --fail --retry 3 --retry-delay 5 --retry-connrefused --retry-all-errors \
+             -L --output "${output}" "${url}" \
+           && verify_md5 "${expected_md5}" "${output}"; then
+            return 0
+        fi
+        ls -l "${output}" 2>&1 || true
+        if [[ "${attempt}" = "${max_attempts}" ]]; then
+            log_step "${context}" "ERROR: download of ${url} failed after ${attempt} attempts"
+            return 1
+        fi
+        log_step "${context}" "download attempt ${attempt} failed; retrying in $((attempt * 10))s..."
+        sleep $((attempt * 10))
+    done
 }
 
 function patch_repo() {
