@@ -23,10 +23,26 @@ namespace openvino {
 
 namespace {
 
+#ifdef _WIN32
+constexpr const char* kDefaultLibName = "openvino_c.dll";
+#else
 constexpr const char* kDefaultLibName = "libopenvino_c.so";
+#endif
 
 template <typename FuncPtr>
 FuncPtr load_symbol(void* handle, const char* name) {
+#ifdef _WIN32
+  void* sym = reinterpret_cast<void*>(
+      GetProcAddress(static_cast<HMODULE>(handle), name));
+  if (!sym) {
+    ET_LOG(
+        Error,
+        "OpenVINO: failed to resolve symbol '%s': error %lu",
+        name,
+        GetLastError());
+    return nullptr;
+  }
+#else
   dlerror(); // Clear any stale error state.
   void* sym = dlsym(handle, name);
   const char* err = dlerror();
@@ -34,6 +50,7 @@ FuncPtr load_symbol(void* handle, const char* name) {
     ET_LOG(Error, "OpenVINO: failed to resolve symbol '%s': %s", name, err);
     return nullptr;
   }
+#endif
   return reinterpret_cast<FuncPtr>(sym);
 }
 
@@ -47,6 +64,19 @@ bool OpenvinoBackend::ensure_loaded() const {
     const char* lib_path = std::getenv("OPENVINO_LIB_PATH");
     const char* effective_path = lib_path ? lib_path : kDefaultLibName;
 
+#ifdef _WIN32
+    void* handle = static_cast<void*>(LoadLibrary(effective_path));
+    if (!handle) {
+      ET_LOG(
+          Error,
+          "OpenVINO runtime not found (LoadLibrary failed: error %lu). "
+          "Set OPENVINO_LIB_PATH to the full path of 'openvino_c.dll', "
+          "or add its containing directory to PATH, or install with: "
+          "pip install \"openvino>=2025.1.0,<2026.0.0\"",
+          GetLastError());
+      return;
+    }
+#else
     void* handle = dlopen(effective_path, RTLD_NOW | RTLD_LOCAL);
     if (!handle) {
       ET_LOG(
@@ -58,6 +88,7 @@ bool OpenvinoBackend::ensure_loaded() const {
           dlerror());
       return;
     }
+#endif
     lib_handle_.reset(handle);
 
 #define LOAD_SYM(field, symbol_name)                                  \

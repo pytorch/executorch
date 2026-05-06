@@ -8,7 +8,11 @@
 
 #pragma once
 
+#ifdef _WIN32
+#include <windows.h>
+#else
 #include <dlfcn.h>
+#endif
 #include <cstddef>
 #include <cstdint>
 #include <memory>
@@ -99,7 +103,11 @@ using ov_shape_free_fn = ov_status_e (*)(ov_shape_t*);
 struct DlCloser {
   void operator()(void* handle) {
     if (handle) {
+#ifdef _WIN32
+      FreeLibrary(static_cast<HMODULE>(handle));
+#else
       dlclose(handle);
+#endif
     }
   }
 };
