@@ -180,7 +180,7 @@ case "$HF_MODEL" in
     MODEL_NAME="voxtral_realtime"
     TASK=""
     MAX_SEQ_LEN=""
-    EXTRA_PIP="mistral-common librosa"
+    EXTRA_PIP=""
     PREPROCESSOR_FEATURE_SIZE=""
     PREPROCESSOR_OUTPUT=""
     ;;
