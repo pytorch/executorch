@@ -673,6 +673,16 @@ table ArgPartitionNode {
     axis: int32;
 }
 
+// Shift tensor elements along specified axes with wrap-around.
+// Maps to mlx::core::roll(a, shifts, axes).
+// Flat roll (torch.roll with dims=None) is not yet supported.
+table RollNode {
+    x: Tid (required);
+    out: Tid (required);
+    shift: [IntOrVid] (required);  // Shift amount per axis (can be dynamic)
+    axes: [int32] (required);      // Axes to roll along; len(shift) == len(axes)
+}
+
 
 // =============================================================================
 // Math ops - Unary element-wise
@@ -1119,7 +1129,8 @@ union OpNode {
     GatherQmmNode,
     ScanNode,
     MetalKernelNode,
-    BitwiseInvertNode
+    BitwiseInvertNode,
+    RollNode
     // BC: Add new op nodes here (append only)
 }
 
