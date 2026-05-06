@@ -5,6 +5,8 @@ on:
     branches:
       - main
       - release/*
+    tags:
+      - ciflow/mlx/*
   pull_request:
     paths:
       - .github/workflows/mlx.yml
@@ -16,12 +18,17 @@ on:
       - examples/models/qwen3_5_moe/**
   workflow_dispatch:
 
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.sha }}-${{ github.event_name == 'workflow_dispatch' }}
+  cancel-in-progress: true
+
 permissions: {}
 
 jobs:
   test-mlx:
     uses: pytorch/test-infra/.github/workflows/macos_job.yml@main
     with:
+      default-packages: ""
       job-name: test-mlx
       runner: macos-14-xlarge
       python-version: "3.12"
@@ -71,6 +78,7 @@ jobs:
   test-mlx-qwen35-moe:
     uses: pytorch/test-infra/.github/workflows/macos_job.yml@main
     with:
+      default-packages: ""
       job-name: test-mlx-qwen35-moe
       runner: macos-14-xlarge
       python-version: "3.12"
@@ -126,6 +134,7 @@ jobs:
         suite: [models, operators]
     uses: pytorch/test-infra/.github/workflows/macos_job.yml@main
     with:
+      default-packages: ""
       job-name: test-mlx-backend-${{ matrix.suite }}
       runner: macos-14-xlarge
       python-version: "3.12"
@@ -167,6 +176,7 @@ jobs:
   test-mlx-parakeet:
     uses: pytorch/test-infra/.github/workflows/macos_job.yml@main
     with:
+      default-packages: ""
       job-name: test-mlx-parakeet
       runner: macos-14-xlarge
       python-version: "3.12"
@@ -218,9 +228,14 @@ jobs:
         echo "::endgroup::"
 
   test-mlx-voxtral:
+    # Requires HuggingFace secrets — skip on fork PRs.
+    # Maintainers can opt-in by applying the ciflow/mlx label, which
+    # pushes a ciflow/mlx/<PR> tag that re-runs this workflow with secrets.
+    if: github.event.pull_request.head.repo.full_name == github.repository || github.event_name != 'pull_request'
     uses: pytorch/test-infra/.github/workflows/macos_job.yml@main
     secrets: inherit
     with:
+      default-packages: ""
       job-name: test-mlx-voxtral
       runner: macos-14-xlarge
       python-version: "3.12"
@@ -275,9 +290,13 @@ jobs:
         echo "::endgroup::"
 
   test-mlx-voxtral-realtime:
+    # Requires HuggingFace secrets — skip on fork PRs.
+    # Maintainers can opt-in by applying the ciflow/mlx label.
+    if: github.event.pull_request.head.repo.full_name == github.repository || github.event_name != 'pull_request'
     uses: pytorch/test-infra/.github/workflows/macos_job.yml@main
     secrets: inherit
     with:
+      default-packages: ""
       job-name: test-mlx-voxtral-realtime
       runner: macos-14-xlarge
       python-version: "3.12"
@@ -347,9 +366,13 @@ jobs:
         echo "::endgroup::"
 
   test-mlx-whisper:
+    # Requires HuggingFace secrets — skip on fork PRs.
+    # Maintainers can opt-in by applying the ciflow/mlx label.
+    if: github.event.pull_request.head.repo.full_name == github.repository || github.event_name != 'pull_request'
     uses: pytorch/test-infra/.github/workflows/macos_job.yml@main
     secrets: inherit
     with:
+      default-packages: ""
       job-name: test-mlx-whisper
       runner: macos-14-xlarge
       python-version: "3.12"
@@ -397,6 +420,7 @@ jobs:
   test-mlx-stories110m:
     uses: pytorch/test-infra/.github/workflows/macos_job.yml@main
     with:
+      default-packages: ""
       job-name: test-mlx-stories110m
       runner: macos-14-xlarge
       python-version: "3.12"
@@ -458,6 +482,9 @@ jobs:
         echo "::endgroup::"
 
   test-mlx-llm:
+    # Requires HuggingFace secrets — skip on fork PRs.
+    # Maintainers can opt-in by applying the ciflow/mlx label.
+    if: github.event.pull_request.head.repo.full_name == github.repository || github.event_name != 'pull_request'
     strategy:
       fail-fast: false
       matrix:
@@ -473,6 +500,7 @@ jobs:
     uses: pytorch/test-infra/.github/workflows/macos_job.yml@main
     secrets: inherit
     with:
+      default-packages: ""
       job-name: test-mlx-llm-${{ matrix.model.name }}${{ matrix.use-custom && '-custom' || '' }}-${{ matrix.qconfig }}
       runner: macos-14-xlarge
       python-version: "3.12"

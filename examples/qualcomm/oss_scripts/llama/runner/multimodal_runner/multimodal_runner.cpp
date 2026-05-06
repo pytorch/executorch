@@ -32,6 +32,7 @@
 
 using executorch::aten::Tensor;
 using executorch::extension::Module;
+using executorch::extension::llm::Audio;
 using executorch::extension::llm::get_rss_bytes;
 using executorch::extension::llm::Image;
 using executorch::extension::llm::MultimodalInput;
@@ -137,6 +138,8 @@ QNNMultimodalRunner<T>::QNNMultimodalRunner(
     model_version_ = VisionLanguageModel::kSmolvlm;
   } else if (model_version == "internvl3") {
     model_version_ = VisionLanguageModel::kInternvl3;
+  } else if (model_version == "granite_speech") {
+    model_version_ = AudioLanguageModel::kGraniteSpeech;
   } else {
     ET_CHECK_MSG(false, "Unsupported Decoder Model");
   }
@@ -202,6 +205,11 @@ Error QNNMultimodalRunner<T>::load() {
       eos_ids->insert(tokenizer_->encode("<end_of_utterance>", 0, 0).get()[0]);
     } else if (*vlm == VisionLanguageModel::kInternvl3) {
       eos_ids->insert(tokenizer_->encode("<|im_end|>", 0, 0).get()[0]);
+    }
+  } else if (
+      const auto* alm = std::get_if<AudioLanguageModel>(&model_version_)) {
+    if (*alm == AudioLanguageModel::kGraniteSpeech) {
+      eos_ids->insert(tokenizer_->encode("<|end_of_text|>", 0, 0).get()[0]);
     }
   }
 
@@ -394,18 +402,6 @@ Error QNNMultimodalRunner<T>::load() {
       buffer_manager_.get(),
       tok_embedding_->method_meta(tok_embedding_method_name));
 
-  // Get image token ID from text_decoder
-  if (modality_of(model_version_) == Modality::kVision) {
-    ET_CHECK_MSG(
-        text_decoder_->method_names()->count("image_token_id") > 0,
-        "Vision model is missing the required 'image_token_id' in metadata.");
-    image_token_id_ = ET_UNWRAP(text_decoder_->get("image_token_id")).toInt();
-    ET_LOG(
-        Info,
-        "Image placeholder token ID for vision modality loaded: %zu",
-        image_token_id_);
-  }
-
   // Initialize embedding merger
   embedding_merger_ =
       std::make_unique<MultimodalEmbeddingMerger>(static_cast<int32_t>(dim));
@@ -470,10 +466,21 @@ executorch::runtime::Error QNNMultimodalRunner<T>::generate(
           tok_embedding_processor_->get_prompt_embeddings();
 
       // Add text embeddings to merger
-      embedding_merger_->add_text_embeddings(text_embeddings);
+      embedding_merger_->add_embeddings(text_embeddings);
 
       prompt_tokens.insert(prompt_tokens.end(), tokens.begin(), tokens.end());
 
+    } else if (input.is_audio()) {
+      const Audio& audio = input.get_audio();
+      auto audio_tensor_res = audio.toTensor();
+      executorch::extension::TensorPtr audio_tensor_ptr =
+          audio_tensor_res.get();
+
+      auto encode_res = encoder_runner_->encode(audio_tensor_ptr);
+      executorch::aten::Tensor audio_embeddings_tensor = encode_res.get();
+
+      // Add audio embeddings to merger
+      embedding_merger_->add_embeddings(audio_embeddings_tensor);
     } else if (input.is_image()) {
       const Image& image = input.get_image();
       auto image_tensor_res = image.toTensor(/*with_batch*/ true);
@@ -484,16 +491,15 @@ executorch::runtime::Error QNNMultimodalRunner<T>::generate(
       executorch::aten::Tensor image_embeddings_tensor = encode_res.get();
 
       // Add image embeddings to merger
-      embedding_merger_->add_image_embeddings(image_embeddings_tensor);
+      embedding_merger_->add_embeddings(image_embeddings_tensor);
 
     } else {
       ET_CHECK_MSG(false, "Unsupported input data type");
     }
   }
 
-  // Fuse embeddings by placeholder_token_id from model
   TensorStruct<float> merged_embeddings =
-      embedding_merger_->merge(prompt_tokens, image_token_id_);
+      embedding_merger_->get_merged_embeddings();
   int num_prompt_tokens = embedding_merger_->get_total_tokens();
 
   ET_CHECK_MSG(num_prompt_tokens >= 1, "Expected at least 1 prompt token");

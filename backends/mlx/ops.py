@@ -51,6 +51,7 @@ from executorch.backends.mlx.serialization.mlx_graph_schema import (
     AsTypeNode,
     Atan2Node,
     BitwiseAndNode,
+    BitwiseInvertNode,
     BroadcastToNode,
     CeilNode,
     ClipNode,
@@ -117,6 +118,7 @@ from executorch.backends.mlx.serialization.mlx_graph_schema import (
     RepeatNode,
     ReshapeNode,
     RMSNormNode,
+    RollNode,
     RopeNode,
     RoundNode,
     RsqrtNode,
@@ -1685,6 +1687,45 @@ def _repeat_handler(P: MLXProgramBuilder, n: Node) -> Slot:
     return out
 
 
+@REGISTRY.register(target=[torch.ops.aten.roll.default])
+def _roll_handler(P: MLXProgramBuilder, n: Node) -> Slot:
+    args = P.args(n)
+    require_args(args, 2, 3, "aten.roll")
+    require_kwargs(P.kwargs(n), set(), "aten.roll")
+    x = args[0]
+    shifts_arg = args[1]
+    dims_arg = args[2] if len(args) > 2 else []
+
+    shifts = [shifts_arg] if isinstance(shifts_arg, int) else list(shifts_arg)
+    dims: List[int] = [dims_arg] if isinstance(dims_arg, int) else list(dims_arg)
+
+    # Flat roll (torch.roll with dims=[]) would require reshape + roll +
+    # reshape at the graph level. Not yet supported; Swin-style usage always
+    # passes explicit dims.
+    if not dims:
+        raise NotImplementedError(
+            "aten.roll without dims (flat roll) is not supported by the MLX "
+            "delegate yet."
+        )
+    if len(shifts) != len(dims):
+        raise ValueError(
+            f"aten.roll: shifts and dims must have the same length, got "
+            f"shifts={shifts} (len={len(shifts)}) dims={dims} (len={len(dims)})"
+        )
+    require_static_ints(dims, "dims", "aten.roll")
+
+    out = P.make_or_get_slot(n)
+    P.emit(
+        RollNode(
+            x=P.slot_to_tid(x),
+            out=P.slot_to_tid(out),
+            shift=[P.to_int_or_vid(s) for s in shifts],
+            axes=dims,
+        )
+    )
+    return out
+
+
 @REGISTRY.register(target=[torch.ops.aten.index.Tensor])
 def _index_handler(P: MLXProgramBuilder, n: Node) -> Slot:
     args = P.args(n)
@@ -3074,27 +3115,40 @@ def _where_handler(P: MLXProgramBuilder, n: Node) -> Slot:
 
 @REGISTRY.register(target=[torch.ops.aten.bitwise_not.default])
 def _bitwise_not_handler(P: MLXProgramBuilder, n: Node) -> Slot:
-    """Handle aten.bitwise_not - for boolean tensors, dispatch to logical_not."""
+    """Handle aten.bitwise_not - logical_not for bool, bitwise_invert for integers."""
     args = P.args(n)
     require_args(args, 1, 1, "aten.bitwise_not")
     require_kwargs(P.kwargs(n), set(), "aten.bitwise_not")
     x_meta = n.args[0].meta.get("val")
+    out = P.make_or_get_slot(n)
 
-    if x_meta is not None and x_meta.dtype == torch.bool:
-        # For boolean tensors, bitwise_not is equivalent to logical_not
-        out = P.make_or_get_slot(n)
+    if x_meta is None or not hasattr(x_meta, "dtype"):
+        raise NotImplementedError(
+            "aten.bitwise_not requires known input dtype metadata for MLX lowering"
+        )
+
+    if x_meta.dtype == torch.bool:
         P.emit(
             LogicalNotNode(
                 x=P.slot_to_tid(args[0]),
                 out=P.slot_to_tid(out),
             )
         )
-        return out
+    elif x_meta.dtype in {
+        torch.int32,
+        torch.int64,
+    }:
+        P.emit(
+            BitwiseInvertNode(
+                x=P.slot_to_tid(args[0]),
+                out=P.slot_to_tid(out),
+            )
+        )
     else:
         raise NotImplementedError(
-            f"aten.bitwise_not is only supported for boolean tensors. "
-            f"Got dtype={x_meta.dtype if x_meta else 'unknown'}"
+            f"aten.bitwise_not on dtype {x_meta.dtype} is not supported for MLX lowering"
         )
+    return out
 
 
 @REGISTRY.register(target=[torch.ops.aten.scalar_tensor.default])

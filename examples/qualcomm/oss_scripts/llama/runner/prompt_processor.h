@@ -40,6 +40,8 @@ class PromptProcessor {
       const std::string& method_name,
       Metadata metadata);
 
+  virtual ~PromptProcessor() = default;
+
   /**
    * @brief Initialize I/O tensor and allocate I/O data buffer.
    * @param buffer_manager Pointer to IMemAlloc instance; by default, it uses a

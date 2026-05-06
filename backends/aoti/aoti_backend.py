@@ -9,7 +9,7 @@ import os
 import typing
 from abc import ABC, abstractmethod
 from enum import Enum
-from typing import Any, Dict, List, Set
+from typing import Any, Dict, List, Optional, Set
 
 import torch
 from executorch.backends.aoti.passes.replace_view_copy_with_view import (
@@ -25,7 +25,6 @@ from torch.export.passes import move_to_device_pass
 
 class COMPILE_SPEC_KEYS(Enum):
     METHOD_NAME = "method_name"
-    SHARE_KV_CACHE_ACROSS_METHODS = "share_kv_cache_across_methods"
 
 
 @experimental(
@@ -89,9 +88,46 @@ class AotiBackend(ABC):
         return False
 
     @classmethod
-    def get_extra_aoti_compile_context_manager(cls):
-        """Return extra context manager to apply during aoti_compile stage. By default returns an empty context manager."""
+    def get_extra_aoti_compile_context_manager(
+        cls, compile_specs: Optional[List[CompileSpec]] = None
+    ):
+        """Return extra context manager to apply during aoti_compile stage. By default returns an empty context manager.
+
+        Subclasses may inspect ``compile_specs`` to opt into behaviors that
+        only apply to specific methods/models (e.g. low-memory export).
+        """
         return contextlib.nullcontext()
+
+    @classmethod
+    def codesign_so(cls, so_path: str, compile_specs: List[CompileSpec]) -> None:
+        """Sign the compiled .so before packing into .pte.
+
+        Called after AOTInductor compilation, before the .so bytes are read
+        and packed into the named data store. Override in platform-specific
+        backends to apply code signing (e.g., macOS codesign for Hardened
+        Runtime compatibility).
+
+        Default: no-op.
+        """
+        return
+
+    @classmethod
+    def release_moved_tensors(
+        cls,
+        device_edge_program: ExportedProgram,
+        compile_specs: List[CompileSpec],
+    ) -> None:
+        """Release device memory held by tensors that ``move_to_device_pass``
+        placed on the target device.
+
+        Called at the end of ``preprocess`` so that the next ``preprocess``
+        call (e.g. for the next method in a multi-method export) can reuse
+        the freed memory. Override in concrete backends (e.g. ``CudaBackend``)
+        to actually free device memory.
+
+        Default: no-op.
+        """
+        return
 
     @classmethod
     @contextlib.contextmanager
@@ -196,7 +232,7 @@ class AotiBackend(ABC):
         # Compile with fallback kernel collection
         with cls.collect_unsupported_fallback_kernels(
             missing_fallback_kernels
-        ), torch.no_grad(), cls.get_extra_aoti_compile_context_manager():
+        ), torch.no_grad(), cls.get_extra_aoti_compile_context_manager(compile_specs):
             paths = torch._inductor.aot_compile(
                 edge_program_module, tuple(user_input_placeholders), options=options
             )
@@ -227,6 +263,9 @@ class AotiBackend(ABC):
                 f"Could not find required files in compiled paths, got {paths}"
             )
 
+        # Sign the .so for platform-specific requirements (e.g., macOS Hardened Runtime)
+        cls.codesign_so(so_path, compile_specs)
+
         # Read SO file
         with open(so_path, "rb") as f:
             so_data = f.read()
@@ -253,6 +292,12 @@ class AotiBackend(ABC):
         # Clean up the generated files
         os.remove(so_path)
         os.remove(blob_path)
+
+        # Release device memory held by tensors that ``move_to_device_pass``
+        # placed on the target device. Default impl is a no-op; concrete
+        # backends (e.g. CudaBackend) override this to free GPU memory before
+        # the next preprocess call (e.g. for the next method).
+        cls.release_moved_tensors(device_edge_program, compile_specs)
 
         return PreprocessResult(
             processed_bytes=b"",
@@ -286,14 +331,4 @@ class AotiBackend(ABC):
                 return spec.value.decode("utf-8")
         raise RuntimeError(
             f"Could not find method name in compile specs: {compile_specs}"
-        )
-
-    @classmethod
-    def generate_share_kv_cache_compile_spec(cls) -> CompileSpec:
-        """
-        Generate a CompileSpec to enable cross-method KV cache sharing.
-        """
-        return CompileSpec(
-            COMPILE_SPEC_KEYS.SHARE_KV_CACHE_ACROSS_METHODS.value,
-            bytes([1]),
         )

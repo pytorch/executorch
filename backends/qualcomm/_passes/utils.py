@@ -67,10 +67,12 @@ def get_passes_dependency_for_capture_program():
         ConvertBmmToMatmul,
         DecomposeAcos,
         DecomposeAny,
+        DecomposeAtan2,
         DecomposeColIm,
         DecomposeLinalgVectorNorm,
         DecomposeLogVariants,
         DecomposeMaxPool3d,
+        DecomposePad,
         DecomposeRemainder,
         DecomposeTrunc,
         ExpandBroadcastTensorShape,
@@ -98,10 +100,12 @@ def get_passes_dependency_for_capture_program():
         ConvertBmmToMatmul: [RecomposePixelUnshuffle],
         DecomposeAcos: [RemoveRedundancy],
         DecomposeAny: [RemoveRedundancy],
+        DecomposeAtan2: [RemoveRedundancy],
         DecomposeColIm: [FoldQDQ],
         DecomposeLinalgVectorNorm: [RemoveRedundancy],
         DecomposeLogVariants: [RemoveRedundancy],
         DecomposeMaxPool3d: [RemoveRedundancy],
+        DecomposePad: [RemoveRedundancy],
         DecomposeRemainder: [RemoveRedundancy],
         DecomposeTrunc: [RemoveRedundancy],
         ExpandBroadcastTensorShape: [FoldQDQ],
@@ -313,3 +317,9 @@ def get_const_node(
         const_node = graph.get_attr(attr_name)
         const_node.meta["val"] = fake_mode.from_tensor(tensor)
     return const_node
+
+
+def create_node(graph, target, args, meta, callback=None):
+    node = graph.create_node("call_function", target, args)
+    node.meta = copy_meta(meta, callback)
+    return node

@@ -57,7 +57,6 @@ class CatVisitor(NodeVisitor):
         dim = 0 if len(inputs) < 2 else inputs[1].number
         rank = len(output.shape)
         dim = (dim + rank) % rank
-        dim = output.dim_order.index(dim)
 
         attr = ts.TosaSerializerAttribute()
         attr.ConcatAttribute(dim)

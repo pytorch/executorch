@@ -20,6 +20,7 @@ from executorch.backends.qualcomm._passes import (
     ConvertSquareToPow,
     DecomposeAcos,
     DecomposeAny,
+    DecomposeAtan2,
     DecomposeBinaryAlpha,
     DecomposeCDist,
     DecomposeColIm,
@@ -31,6 +32,7 @@ from executorch.backends.qualcomm._passes import (
     DecomposeLogVariants,
     DecomposeMaxPool3d,
     DecomposeMinMaxDim,
+    DecomposePad,
     DecomposeReciprocal,
     DecomposeRemainder,
     DecomposeRoll,
@@ -103,10 +105,12 @@ def get_capture_program_passes():
         (ConvertBmmToMatmul, False),
         (DecomposeAcos, True),
         (DecomposeAny, True),
+        (DecomposeAtan2, True),
         (DecomposeColIm, True),
         (DecomposeLogVariants, True),
         (DecomposeMaxPool3d, True),
         (DecomposeMinMaxDim, True),
+        (DecomposePad, True),
         (DecomposeRemainder, True),
         (DecomposeTrunc, True),
         (ExpandBroadcastTensorShape, True),
@@ -224,9 +228,11 @@ class QnnPassManager(PassManager):
         self.add_pass(RecomposeRmsNorm(quantization_capture=True))
         self.add_pass(ReplaceArangeArgs())
         self.add_pass(DecomposeAcos())
+        self.add_pass(DecomposeAtan2())
         self.add_pass(DecomposeBinaryAlpha())
         self.add_pass(DecomposeCDist())
         self.add_pass(DecomposeMaxPool3d(quantization_capture=True))
+        self.add_pass(DecomposePad())
         self.add_pass(DecomposeScaledDotProductAttention())
         self.add_pass(DecomposeRoll())
         self.add_pass(DecomposeSilu())
@@ -254,6 +260,7 @@ class QnnPassManager(PassManager):
     ):
         self.add_pass(DecomposeBinaryAlpha())
         self.add_pass(DecomposeCDist())
+        self.add_pass(DecomposePad())
         self.add_pass(DecomposeScaledDotProductAttention())
         self.add_pass(DecomposeRoll())
         self.add_pass(DecomposeThreshold())

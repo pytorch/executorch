@@ -6,6 +6,7 @@
 
 # pyre-strict
 
+import operator
 from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
 from typing import List, Tuple, Union
@@ -151,6 +152,61 @@ class AddPattern(QuantizationPattern):
 
     def replacement_op(self) -> OpOverload:
         return torch.ops.cadence.quantized_add.per_tensor
+
+
+# This is a base class for Add+ReLU fusion, since it can be used with two different relu aten ops
+class AddReluBasePattern(QuantizationPattern):
+    @abstractmethod
+    def partition_types(self) -> List[OpOverload]:
+        pass
+
+    def get_anchors(
+        self, gm: fx.GraphModule, fused_partition: List[fx.GraphModule]
+    ) -> Tuple[PartitionAnchors, fx.Node]:
+        # The first node should be add, the second should be relu
+        # pyre-fixme[29]: `Union[BoundMethod[typing.Callable(torch._C.TensorBase.__ge...
+        add_node = fused_partition[0].nodes[-1]
+        # pyre-fixme[29]: `Union[BoundMethod[typing.Callable(torch._C.TensorBase.__ge...
+        relu_node = fused_partition[1].nodes[-1]
+
+        # Bail if:
+        #   - the add node is not a tensor add
+        #   - the add node has kwargs (e.g. alpha)
+        is_tensor_add = isinstance(add_node.args[0], fx.Node) and isinstance(
+            add_node.args[1], fx.Node
+        )
+        if not is_tensor_add or len(add_node.kwargs) > 0:
+            return (
+                PartitionAnchors(
+                    empty=True,
+                ),
+                add_node,
+            )
+
+        return (
+            PartitionAnchors(
+                inputs=[(add_node, 0), (add_node, 1)],
+                weights=[],
+                biases=[],
+                output=[(relu_node,)],  # Output is from the relu node
+            ),
+            relu_node,
+        )
+
+    def replacement_op(self) -> OpOverload:
+        return torch.ops.cadence.quantized_add.per_tensor
+
+
+# Add + regular relu op fusion
+class AddReluPattern0(AddReluBasePattern):
+    def partition_types(self) -> List[OpOverload]:
+        return [torch.ops.aten.add.Tensor, torch.ops.aten.relu.default]
+
+
+# Add + alternate relu op fusion
+class AddReluPattern1(AddReluBasePattern):
+    def partition_types(self) -> List[OpOverload]:
+        return [torch.ops.aten.add.Tensor, torch.ops.aten.relu_.default]
 
 
 class BmmPattern(QuantizationPattern):
@@ -438,7 +494,20 @@ class MaxPool2dPattern(QuantizationPattern):
         # pyre-fixme[29]: `Union[BoundMethod[typing.Callable(torch._C.TensorBase.__ge...
         max_pool_node = fused_partition[0].nodes[-1]
 
-        # Input and output share quantization parameters since max is order-preserving
+        # Since max_pool2d_with_indices returns a tuple, the output observer must be
+        # placed on getitem[0] rather than the tuple-returning op. Otherwise
+        # prepare_pt2e silently skips it.
+        # Expect exactly one user: getitem[0] extracting the values tensor. If indices
+        # are also used or the structure is unexpected, bail out.
+        users = list(max_pool_node.users)
+        if (
+            len(users) != 1
+            or users[0].target is not operator.getitem
+            or users[0].args[1] != 0
+        ):
+            return PartitionAnchors(empty=True), max_pool_node
+        getitem_0 = users[0]
+
         return (
             PartitionAnchors(
                 inputs=[(max_pool_node, 0)],
@@ -450,7 +519,7 @@ class MaxPool2dPattern(QuantizationPattern):
                 ],
                 output=[
                     (
-                        max_pool_node,
+                        getitem_0,
                         SharedQuantizationSpec((max_pool_node.args[0], max_pool_node)),
                     )
                 ],

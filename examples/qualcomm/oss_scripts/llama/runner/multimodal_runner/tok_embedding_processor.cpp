@@ -96,16 +96,11 @@ void TokenEmbeddingProcessor::prefill(
   // Allocate memory using std::vector for smart pointer management
   prompt_embeddings_buffer_.resize(num_prompt_tokens * metadata_.embedding_dim);
   prompt_embeddings_.data = prompt_embeddings_buffer_.data();
-
-  // Create TensorImpl for prompt_embeddings_ with shape [1, num_prompt_tokens,
-  // dim] Store sizes and dim_order as member variables to keep them
-  // alive
-  std::vector<TensorImpl::SizesType> sizes = {
-      1, num_prompt_tokens, metadata_.embedding_dim};
+  prompt_embeddings_sizes_ = {1, num_prompt_tokens, metadata_.embedding_dim};
   prompt_embeddings_.tensor = std::make_unique<TensorImpl>(
       executorch::aten::ScalarType::Float,
-      sizes.size(),
-      sizes.data(),
+      prompt_embeddings_sizes_.size(),
+      prompt_embeddings_sizes_.data(),
       prompt_embeddings_.data);
 
   int num_iters = 1 + ((num_prompt_tokens - 1) / metadata_.ar_len);

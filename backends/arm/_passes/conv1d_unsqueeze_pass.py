@@ -47,7 +47,7 @@ class Conv1dUnsqueezePass(ArmPass):
         x_meta.data["output_qparams"] = {}
 
         x = args[0]
-        x_unsqueezed_shape = list(x.data.shape) + [1]
+        x_unsqueezed_shape = list(x.data.shape[:-1]) + [1] + [x.data.shape[-1]]
         x = super().call_operator(
             exir_ops.edge.aten.view_copy.default,
             (x, x_unsqueezed_shape),
@@ -61,7 +61,7 @@ class Conv1dUnsqueezePass(ArmPass):
         w_meta.data["output_qparams"] = {}
 
         w = args[1]
-        w_unsqueezed_shape = list(w.data.shape) + [1]
+        w_unsqueezed_shape = list(w.data.shape[:-1]) + [1] + [w.data.shape[-1]]
         w = super().call_operator(
             exir_ops.edge.aten.view_copy.default,
             (w, w_unsqueezed_shape),
@@ -74,11 +74,11 @@ class Conv1dUnsqueezePass(ArmPass):
             x,
             w,
             args[2],
-            args[3] + [1],  # stride
-            args[4] + [0],  # padding
-            args[5] + [1],  # dilation
+            [1] + args[3],  # stride
+            [0] + args[4],  # padding
+            [1] + args[5],  # dilation
             args[6],
-            args[7] + [0],
+            [0] + args[7],
             args[8],
         )
         x = super().call_operator(
@@ -88,7 +88,7 @@ class Conv1dUnsqueezePass(ArmPass):
         x_squeezed_meta = meta.copy()
         x_squeezed_meta.data["input_qparams"] = {}
         x_squeezed_meta.data["output_qparams"] = {}
-        x_squeezed_shape = list(x.data.shape)[:-1]
+        x_squeezed_shape = list(x.data.shape[:-2]) + [x.data.shape[-1]]
         x = super().call_operator(
             exir_ops.edge.aten.view_copy.default,
             (x, x_squeezed_shape),

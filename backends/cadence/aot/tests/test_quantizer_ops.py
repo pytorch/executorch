@@ -7,6 +7,7 @@
 # pyre-strict
 
 import inspect
+import operator
 import unittest
 from typing import Callable
 
@@ -215,6 +216,15 @@ QUANTIZER_ANNOTATION_TEST_CASES: list[
         [qconfig_A8W8.input_activation],
     ),
     # CadenceFusedConvReluQuantizer test cases
+    (
+        "fused_add_relu_A8W8",
+        lambda self: self._build_add_relu_graph(),
+        CadenceFusedConvReluQuantizer(),
+        torch.ops.aten.relu.default,
+        qconfig_A8W8.output_activation,
+        # For fused add+relu: both inputs are activations from add node
+        [qconfig_A8W8.input_activation, qconfig_A8W8.input_activation],
+    ),
     (
         "fused_conv1d_relu_A8W8sym",
         lambda self: self._build_conv1d_relu_graph(),
@@ -474,12 +484,18 @@ class QuantizerAnnotationTest(unittest.TestCase):
         self.assertEqual(len(addmm_nodes), 1, "Should find exactly one addmm node")
         return gm, addmm_nodes[0]
 
-    def _build_max_pool2d_graph(self) -> tuple[torch.fx.GraphModule, torch.fx.Node]:
-        """Build a simple graph with a max_pool2d_with_indices operation."""
+    def _build_max_pool2d_graph(
+        self,
+    ) -> tuple[torch.fx.GraphModule, torch.fx.Node, torch.fx.Node]:
+        """Build a graph with max_pool2d_with_indices followed by getitem[0].
+
+        Returns:
+            A tuple of (graph_module, getitem_node, max_pool_node).
+            The getitem_node is where the output annotation is placed.
+            The max_pool_node is where the input annotation is placed.
+        """
         builder = GraphBuilder()
-        # Input shape: (batch, channels, height, width)
         x = builder.placeholder("x", torch.randn(1, 3, 8, 8))
-        # max_pool2d_with_indices args: (input, kernel_size, stride, padding, dilation, ceil_mode)
         max_pool = builder.call_operator(
             op=torch.ops.aten.max_pool2d_with_indices.default,
             args=(x, [2, 2], [2, 2], [0, 0], [1, 1], False),
@@ -494,19 +510,68 @@ class QuantizerAnnotationTest(unittest.TestCase):
                 }
             ),
         )
-        builder.output([max_pool])
+        getitem = builder.call_operator(
+            op=operator.getitem,
+            args=(max_pool, 0),
+        )
+        builder.output([getitem])
         gm = builder.get_graph_module()
 
         max_pool_nodes = gm.graph.find_nodes(
             op="call_function",
             target=torch.ops.aten.max_pool2d_with_indices.default,
         )
-        self.assertEqual(
-            len(max_pool_nodes),
-            1,
-            "Should find exactly one max_pool2d_with_indices node",
+        self.assertEqual(len(max_pool_nodes), 1)
+        getitem_nodes = gm.graph.find_nodes(
+            op="call_function",
+            target=operator.getitem,
         )
-        return gm, max_pool_nodes[0]
+        self.assertEqual(len(getitem_nodes), 1)
+        return gm, getitem_nodes[0], max_pool_nodes[0]
+
+    def _build_add_relu_graph(
+        self,
+    ) -> tuple[torch.fx.GraphModule, torch.fx.Node, torch.fx.Node]:
+        """Build a graph with an add followed by relu (fused pattern).
+
+        Returns:
+            A tuple of (graph_module, relu_node, add_node).
+            The relu_node is the target node where the annotation is placed.
+            The add_node is the input source node whose args contain the quantized inputs.
+        """
+        builder = GraphBuilder()
+        x = builder.placeholder("x", torch.randn(1, 10))
+        y = builder.placeholder("y", torch.randn(1, 10))
+        add = builder.call_operator(
+            op=torch.ops.aten.add.Tensor,
+            args=(x, y),
+            meta=NodeMetadata(
+                {"source_fn_stack": [("add", torch.ops.aten.add.Tensor)]}
+            ),
+        )
+        relu = builder.call_operator(
+            op=torch.ops.aten.relu.default,
+            args=(add,),
+            meta=NodeMetadata(
+                {"source_fn_stack": [("relu", torch.ops.aten.relu.default)]}
+            ),
+        )
+        builder.output([relu])
+        gm = builder.get_graph_module()
+
+        relu_nodes = gm.graph.find_nodes(
+            op="call_function",
+            target=torch.ops.aten.relu.default,
+        )
+        self.assertEqual(len(relu_nodes), 1, "Should find exactly one relu node")
+
+        add_nodes = gm.graph.find_nodes(
+            op="call_function",
+            target=torch.ops.aten.add.Tensor,
+        )
+        self.assertEqual(len(add_nodes), 1, "Should find exactly one add node")
+
+        return gm, relu_nodes[0], add_nodes[0]
 
     def _build_conv2d_relu_graph(
         self,

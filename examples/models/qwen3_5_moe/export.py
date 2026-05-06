@@ -21,6 +21,7 @@ from executorch.examples.models.qwen3_5_moe.model import (
     FusedMoEExperts,
     Qwen35MoE,
     Qwen35MoEConfig,
+    W4DequantLinear,
 )
 
 
@@ -66,6 +67,34 @@ def _prepare_and_quantize_mlx(model, config, args):
             qembedding_group_size=getattr(args, "qembedding_group_size", None),
         )
     pack_all_switch_linears(model)
+
+
+def _prepare_and_quantize_metal(model, config, args):
+    """Metal: apply source transforms, quantize experts + non-expert layers."""
+    import executorch.backends.apple.metal.ops.gated_delta_rule  # noqa: F401
+    import executorch.backends.apple.metal.ops.gather_qmv  # noqa: F401
+    from executorch.examples.models.qwen3_5_moe.metal_source_transformations import (
+        metal_source_transformations,
+        quantize_experts_metal,
+    )
+
+    # Quantize expert weights to Metal-compatible INT4 format
+    if args.qlinear:
+        quantize_experts_metal(model, config, args.qlinear_group_size)
+
+    if args.qlinear:
+        from executorch.extension.llm.export.quantize import quantize_model_
+
+        # skip_incompatible_shapes skips shared_expert_gate (N=1, N%4!=0)
+        quantize_model_(
+            model,
+            qlinear_config=args.qlinear,
+            qlinear_group_size=args.qlinear_group_size,
+            skip_incompatible_shapes=True,
+        )
+
+    _materialize_buffers(model, config)
+    metal_source_transformations(model, config=config)
 
 
 def load_and_quantize(args):  # noqa: C901
@@ -152,6 +181,11 @@ def load_and_quantize(args):  # noqa: C901
             )
         _prepare_and_quantize_mlx(model, config, args)
 
+    elif backend == "metal":
+        if args.prequantized:
+            raise ValueError("Metal backend does not support --prequantized.")
+        _prepare_and_quantize_metal(model, config, args)
+
     elif backend == "cuda":
         if args.prequantized:
             return load_prequantized_model(
@@ -236,7 +270,6 @@ def load_prequantized_model(prequantized_dir, max_seq_len=4096, use_splitk_decod
         ".conv_state",
         ".recurrent_state",
         ".cache_positions",
-        ".inv_freq",
     )
     expected_missing = {k for k in missing if any(p in k for p in runtime_prefixes)}
     weight_missing = set(missing) - expected_missing
@@ -433,6 +466,158 @@ def _quantize(model, config, args):
         print(f"Quantized linear layers ({args.qlinear})")
 
 
+def _infer_w4_group_size(linear):
+    """Infer quantization group size from the weight's metadata.
+
+    For prequantized bundles, the weight may be a torchao
+    AffineQuantizedTensor whose block_size encodes the original group
+    size.  Trusting the CLI default would silently re-quantize to the
+    wrong group size (e.g. gs32 when the bundle used gs128).
+    """
+    w = linear.weight
+    if hasattr(w, "block_size"):
+        return w.block_size[-1]
+    return None
+
+
+def _resolve_w4_group_size(linear, group_size):
+    effective_gs = _infer_w4_group_size(linear)
+    if effective_gs is not None and effective_gs != group_size:
+        print(
+            f"\n  Detected group_size={effective_gs} from quantized weight "
+            f"(overriding CLI value {group_size})"
+        )
+        return effective_gs
+    if effective_gs is None:
+        return group_size
+    return effective_gs
+
+
+def _dequant_linear_to_bf16(linear):
+    """Materialize the linear's weight as a contiguous BF16 [N, K] tensor."""
+    from torch.nn import functional as F
+
+    K = linear.in_features
+    linear_cuda = linear.cuda()
+    with torch.no_grad():
+        eye = torch.eye(K, dtype=torch.bfloat16, device="cuda")
+        w_bf16 = F.linear(eye, linear_cuda.weight).T.contiguous()
+    del linear_cuda
+    return w_bf16
+
+
+def _quantize_w4_hqq(w_float, N, K, effective_gs):
+    from torchao.quantization.quant_primitives import (
+        _choose_qparams_and_quantize_scale_only_hqq,
+    )
+
+    int_data, scale = _choose_qparams_and_quantize_scale_only_hqq(
+        w_float,
+        block_size=[1, effective_gs],
+        qmin=-8,
+        qmax=7,
+    )
+    return int_data.to(torch.int8).view(N, K), scale.view(N, -1)
+
+
+def _quantize_w4_affine(w_float, N, effective_gs):
+    from torchao.quantization.quant_primitives import (
+        choose_qparams_affine,
+        MappingType,
+        quantize_affine,
+    )
+
+    block_size = (1, effective_gs)
+    scale, zero_point = choose_qparams_affine(
+        w_float,
+        MappingType.SYMMETRIC,
+        block_size,
+        target_dtype=torch.int8,
+        quant_min=-8,
+        quant_max=7,
+    )
+    int_data = quantize_affine(
+        w_float,
+        block_size,
+        scale,
+        zero_point,
+        output_dtype=torch.int8,
+        quant_min=-8,
+        quant_max=7,
+    )
+    return int_data, scale.reshape(N, -1)
+
+
+def _convert_linear_to_w4dequant(linear, group_size, use_hqq):
+    N, K = linear.out_features, linear.in_features
+    effective_gs = _resolve_w4_group_size(linear, group_size)
+
+    w_bf16 = _dequant_linear_to_bf16(linear)
+    w_float = w_bf16.float()
+    del w_bf16
+
+    if use_hqq:
+        int_data, scale = _quantize_w4_hqq(w_float, N, K, effective_gs)
+    else:
+        int_data, scale = _quantize_w4_affine(w_float, N, effective_gs)
+    del w_float
+
+    uint4 = (int_data + 8).to(torch.int16)
+    packed = (uint4[:, 0::2] | (uint4[:, 1::2] << 4)).to(torch.int8)
+    del int_data, uint4
+
+    w4 = W4DequantLinear(K, N, effective_gs)
+    w4.w_packed = packed.cpu()
+    w4.w_scale = scale.to(torch.bfloat16).cpu()
+    torch.cuda.empty_cache()
+    return w4
+
+
+def _collect_w4_replacement_targets(model):
+    replacements = []
+    for parent in model.modules():
+        if isinstance(parent, FusedMoEExperts):
+            continue
+        for name, child in parent.named_children():
+            if isinstance(child, nn.Linear):
+                replacements.append((parent, name, child))
+    return replacements
+
+
+def _replace_dense_with_w4dequant(model, group_size=128, use_hqq=False):
+    """Replace quantized dense linears with W4DequantLinear.
+
+    Dequantizes Int4TilePackedTo4dTensor weights to BF16, re-quantizes to
+    simple [N, K//2] packed INT4 format (same as MoE experts), and wraps in
+    W4DequantLinear for dual decode/prefill dispatch.
+
+    MoE expert weights (FusedMoEExperts) are left unchanged.
+    """
+    replacements = _collect_w4_replacement_targets(model)
+
+    if not replacements:
+        raise RuntimeError(
+            "--dense-prefill=dequant found no nn.Linear modules to convert. "
+            "Ensure the model has W4-quantized dense layers."
+        )
+
+    for i, (parent, name, linear) in enumerate(replacements):
+        setattr(parent, name, _convert_linear_to_w4dequant(linear, group_size, use_hqq))
+        print(
+            f"  Converted {name} ({i + 1}/{len(replacements)})",
+            end="\r",
+        )
+    print()
+    print(f"Replaced {len(replacements)} dense linears with W4DequantLinear")
+
+
+def _set_dequant_prefill(model, enabled):
+    """Toggle dequant+BF16 prefill path for all W4DequantLinear modules."""
+    for mod in model.modules():
+        if isinstance(mod, W4DequantLinear):
+            mod.use_dequant_prefill = enabled
+
+
 def _materialize_buffers(model, config):
     """Materialize meta-device buffers before torch.export.
 
@@ -503,11 +688,12 @@ def _apply_turboquant(model, config):
 # ---------------------------------------------------------------------------
 
 
-def _set_batched_moe(model, enabled):
+def _set_batched_moe(model, enabled, moe_activation_dtype="bf16"):
     """Toggle batched tensor-core MoE kernel for all MoE layers."""
     for layer in model.layers:
         if hasattr(layer, "mlp") and hasattr(layer.mlp, "experts"):
             layer.mlp.experts.use_batched_moe = enabled
+            layer.mlp.experts.moe_activation_dtype = moe_activation_dtype
 
 
 def export_and_lower(model, config, args):
@@ -516,8 +702,34 @@ def export_and_lower(model, config, args):
 
     if backend == "mlx":
         _export_mlx(model, config, args)
+    elif backend == "metal":
+        _export_metal(model, config, args)
     else:
         _export_cuda(model, config, args)
+
+
+def _strip_sampler_from_forward(model):
+    """Bind ``model.forward`` to a minimal ``(tokens, input_pos) -> logits``
+    variant for non-CUDA export.
+
+    The default ``Qwen35MoE.forward`` carries an optional temperature input and
+    a sampling branch used only by the on-device CUDA sampler; non-CUDA
+    backends sample on the host so that branch is dead code at trace time.
+    Even when statically eliminated, the extra parameter and branch perturb
+    the program ``torch.export`` produces enough to shift kernel selection in
+    the lowered MLX/Metal graph and slow execution by 10-30%. Eager callers
+    and the CUDA export path are unaffected.
+    """
+    import types
+
+    def _clean_forward(self, tokens, input_pos):
+        x = self.embed_tokens(tokens)
+        for layer in self.layers:
+            x = layer(x, input_pos)
+        x = self.norm(x)
+        return self.lm_head(x)
+
+    model.forward = types.MethodType(_clean_forward, model)
 
 
 def _export_mlx(model, config, args):
@@ -533,6 +745,8 @@ def _export_mlx(model, config, args):
     )
     from executorch.exir.passes import MemoryPlanningPass
     from torch.export import Dim, export
+
+    _strip_sampler_from_forward(model)
 
     example_tokens = torch.tensor([[0, 1]], dtype=torch.long)
     example_input_pos = torch.tensor([0, 1], dtype=torch.long)
@@ -600,6 +814,105 @@ def _export_mlx(model, config, args):
     print("Done!")
 
 
+def _export_metal(model, config, args):
+    """Export model to .pte via torch.export + Metal backend."""
+    import torch._inductor.config as inductor_config
+
+    from executorch.backends.apple.metal.metal_backend import MetalBackend
+    from executorch.backends.apple.metal.metal_partitioner import MetalPartitioner
+    from executorch.exir import (
+        EdgeCompileConfig,
+        ExecutorchBackendConfig,
+        to_edge_transform_and_lower,
+    )
+    from executorch.exir.passes import MemoryPlanningPass
+    from torch.export import Dim, export
+
+    inductor_config.coordinate_descent_tuning = False
+    inductor_config.aot_inductor.compile_wrapper_opt_level = "O0"
+    _strip_sampler_from_forward(model)
+
+    # --- Decode method (T=1, static shape) ---
+    print("Exporting decode method...")
+    decode_tokens = torch.tensor([[0]], dtype=torch.long)
+    decode_pos = torch.tensor([0], dtype=torch.long)
+    with torch.no_grad():
+        decode_ep = export(model, (decode_tokens, decode_pos), strict=True)
+    print("Decode export successful!")
+
+    # --- Prefill method (T>=2, dynamic shape) ---
+    # Use max-sized example so the serialized numel_bound_ is large enough
+    # for any runtime input (Metal/AOTI pattern: alloc_graph_input=False
+    # means numel_bound_ comes from the export example size).
+    print("Exporting prefill method...")
+    max_prefill = config.max_seq_len - 1
+    prefill_tokens = torch.zeros((1, max_prefill), dtype=torch.long)
+    prefill_pos = torch.arange(max_prefill, dtype=torch.long)
+    seq_dim = Dim("seq_len", min=2, max=max_prefill)
+    prefill_dynamic_shapes = ({1: seq_dim}, {0: seq_dim})
+    with torch.no_grad():
+        prefill_ep = export(
+            model,
+            (prefill_tokens, prefill_pos),
+            dynamic_shapes=prefill_dynamic_shapes,
+            strict=True,
+        )
+    print("Prefill export successful!")
+
+    # Lower with Metal backend
+    print("Lowering to ExecuTorch with Metal...")
+    metadata = {
+        "get_max_seq_len": config.max_seq_len,
+        "get_vocab_size": config.vocab_size,
+        "get_n_layers": config.num_hidden_layers,
+        "use_kv_cache": True,
+        "use_sdpa_with_kv_cache": False,
+        "enable_dynamic_shape": True,
+    }
+    et_prog = to_edge_transform_and_lower(
+        {"decode": decode_ep, "prefill": prefill_ep},
+        partitioner={
+            "decode": [
+                MetalPartitioner(
+                    [MetalBackend.generate_method_name_compile_spec("decode")]
+                )
+            ],
+            "prefill": [
+                MetalPartitioner(
+                    [MetalBackend.generate_method_name_compile_spec("prefill")]
+                )
+            ],
+        },
+        compile_config=EdgeCompileConfig(
+            _check_ir_validity=False,
+            _skip_dim_order=True,
+        ),
+        constant_methods=metadata,
+    )
+    et_program = et_prog.to_executorch(
+        config=ExecutorchBackendConfig(
+            extract_delegate_segments=True,
+            do_quant_fusion_and_const_prop=True,
+            memory_planning_pass=MemoryPlanningPass(alloc_graph_input=False),
+        ),
+    )
+
+    # Save .pte
+    os.makedirs(args.output_dir, exist_ok=True)
+    pte_path = os.path.join(args.output_dir, "model.pte")
+    print(f"Saving to {pte_path}...")
+    with open(pte_path, "wb") as f:
+        et_program.write_to_file(f)
+    size_mb = os.path.getsize(pte_path) / (1024 * 1024)
+    print(f"Saved {size_mb:.1f} MB")
+
+    if et_program._tensor_data:
+        et_program.write_tensor_data_to_file(args.output_dir)
+        print(f"Saved tensor data to {args.output_dir}/")
+
+    print("Done!")
+
+
 def _export_cuda(model, config, args):
     """Export model to .pte via torch.export + CUDA backend.
 
@@ -621,6 +934,7 @@ def _export_cuda(model, config, args):
         ExecutorchBackendConfig,
         to_edge_transform_and_lower,
     )
+    from executorch.exir.backend.compile_spec_schema import CompileSpec
     from executorch.exir.passes import MemoryPlanningPass
     from torch.export import Dim, export
 
@@ -633,13 +947,15 @@ def _export_cuda(model, config, args):
 
     # --- Decode method (T=1, static shape, vec-mat MoE kernel) ---
     _set_batched_moe(model, False)
+    _set_dequant_prefill(model, False)
     print("Exporting decode method...")
     decode_tokens = torch.tensor([[0]], dtype=torch.long)
     decode_pos = torch.tensor([0], dtype=torch.long)
+    decode_temperature = torch.tensor([1.0], dtype=torch.float32)
     with torch.no_grad():
         decode_ep = export(
             model,
-            (decode_tokens, decode_pos),
+            (decode_tokens, decode_pos, decode_temperature),
             strict=True,
         )
     print("Decode export successful!")
@@ -649,20 +965,26 @@ def _export_cuda(model, config, args):
     # chunk_gated_delta_rule with CHUNK_SIZE=64) for the full range of sequence
     # lengths. Smaller examples cause AOTI to bake in intermediate buffer sizes
     # that reject longer prompts at runtime.
-    _set_batched_moe(model, True)
+    moe_activation_dtype = getattr(args, "moe_activation_dtype", "bf16")
+    _set_batched_moe(model, True, moe_activation_dtype=moe_activation_dtype)
+    dense_prefill = getattr(args, "dense_prefill", "tinygemm")
+    _set_dequant_prefill(model, dense_prefill == "dequant")
     print("Exporting prefill method...")
+
     example_prefill_len = config.max_seq_len - 1
     prefill_tokens = torch.zeros((1, example_prefill_len), dtype=torch.long)
     prefill_pos = torch.arange(example_prefill_len, dtype=torch.long)
+    prefill_temperature = torch.tensor([1.0], dtype=torch.float32)
     seq_dim = Dim("seq_len", min=2, max=config.max_seq_len - 1)
     prefill_dynamic_shapes = (
         {1: seq_dim},  # tokens
         {0: seq_dim},  # input_pos
+        None,  # temperature (static scalar tensor)
     )
     with torch.no_grad():
         prefill_ep = export(
             model,
-            (prefill_tokens, prefill_pos),
+            (prefill_tokens, prefill_pos, prefill_temperature),
             dynamic_shapes=prefill_dynamic_shapes,
             strict=True,
         )
@@ -686,7 +1008,7 @@ def _export_cuda(model, config, args):
                 CudaPartitioner(
                     [
                         CudaBackend.generate_method_name_compile_spec("decode"),
-                        CudaBackend.generate_share_kv_cache_compile_spec(),
+                        CompileSpec("low_memory_mode", b"ON"),
                     ]
                 )
             ],
@@ -694,7 +1016,7 @@ def _export_cuda(model, config, args):
                 CudaPartitioner(
                     [
                         CudaBackend.generate_method_name_compile_spec("prefill"),
-                        CudaBackend.generate_share_kv_cache_compile_spec(),
+                        CompileSpec("low_memory_mode", b"ON"),
                     ]
                 )
             ],
@@ -739,10 +1061,8 @@ def _export_cuda(model, config, args):
 # ---------------------------------------------------------------------------
 
 
-def main():
-    parser = argparse.ArgumentParser(
-        description="Export Qwen3.5 MoE to ExecuTorch (CUDA or MLX)"
-    )
+def main():  # noqa: C901
+    parser = argparse.ArgumentParser(description="Export Qwen3.5 MoE to ExecuTorch")
     parser.add_argument(
         "--model-dir",
         default=None,
@@ -760,13 +1080,13 @@ def main():
     parser.add_argument(
         "--backend",
         default="cuda",
-        choices=["cuda", "mlx"],
-        help="Backend for export: cuda (default) or mlx.",
+        choices=["cuda", "mlx", "metal"],
+        help="Backend for export: cuda (default), mlx, or metal.",
     )
     parser.add_argument(
         "--qlinear",
         default=None,
-        choices=["4w", "8w", "8da4w", "8da8w"],
+        choices=["4w", "8w", "8da4w", "8da8w", "fpa4w"],
         help="Quantize linear layers.",
     )
     parser.add_argument(
@@ -814,6 +1134,20 @@ def main():
         action="store_true",
         help="Disable split-K (flash-decoding) SDPA for decode; use tiled SDPA instead.",
     )
+    parser.add_argument(
+        "--moe-activation-dtype",
+        choices=["bf16", "int8"],
+        default="bf16",
+        help="MoE activation dtype for prefill only. Decode always uses bf16. bf16 (default): W4A16 batched GEMM. int8: W4A8 with INT8 tensor cores.",
+    )
+    parser.add_argument(
+        "--dense-prefill",
+        choices=["tinygemm", "dequant"],
+        default="tinygemm",
+        help="Dense linear prefill kernel. Decode always uses int4_matvec (Triton W4A16 vec-mat). "
+        "tinygemm (default): W4A16 _weight_int4pack_mm. "
+        "dequant: dequant W4→BF16 + cuBLAS GEMM.",
+    )
     args = parser.parse_args()
 
     if args.model_id:
@@ -835,11 +1169,37 @@ def main():
         # Register FLA Triton kernel (CUDA only)
         import executorch.backends.cuda.triton.kernels  # noqa: F401
 
+        # Reset peak GPU memory stats so we can report the actual peak
+        # consumed during the export pipeline (load + quantize + lowering)
+        # at the very end. This is also gated by CI to make sure low-VRAM
+        # GPUs (e.g. RTX 4090, 24 GB) can still complete the export.
+        if torch.cuda.is_available():
+            torch.cuda.reset_peak_memory_stats(0)
+
     if args.backend == "mlx":
         if args.prequantized:
             parser.error("--prequantized is not supported with --backend mlx")
         if args.turboquant:
             parser.error("--turboquant is not supported with --backend mlx")
+
+    if args.backend == "metal":
+        if args.turboquant:
+            parser.error("--turboquant is not supported with --backend metal")
+
+    if args.qlinear == "fpa4w" and args.backend != "metal":
+        parser.error("--qlinear=fpa4w can only be used with --backend=metal")
+
+    if args.dense_prefill == "dequant":
+        if args.backend != "cuda":
+            parser.error("--dense-prefill dequant requires --backend cuda")
+        if not args.prequantized and args.qlinear != "4w":
+            parser.error(
+                "--dense-prefill dequant requires --qlinear=4w or --prequantized "
+                "(dense weights must be W4 quantized)"
+            )
+
+    if args.moe_activation_dtype != "bf16" and args.backend != "cuda":
+        parser.error("--moe-activation-dtype int8 requires --backend cuda")
 
     model, config = load_and_quantize(args)
 
@@ -847,8 +1207,22 @@ def main():
         _materialize_buffers(model, config)
         if args.turboquant:
             _apply_turboquant(model, config)
+        if args.dense_prefill == "dequant":
+            print("Converting dense linears to W4DequantLinear...")
+            _replace_dense_with_w4dequant(
+                model,
+                group_size=getattr(args, "qlinear_group_size", 32),
+                use_hqq=getattr(args, "hqq", False),
+            )
 
     export_and_lower(model, config, args)
+
+    # Report peak GPU memory consumed during the export so CI / users can
+    # gate this against a known budget (e.g. 24 GB consumer GPUs).
+    if args.backend == "cuda" and torch.cuda.is_available():
+        peak_mb = torch.cuda.max_memory_allocated(0) / (1024 * 1024)
+        # Stable, machine-parseable marker for CI grep.
+        print(f"EXPORT_GPU_PEAK_MEMORY_MB: {peak_mb:.2f}")
 
 
 if __name__ == "__main__":

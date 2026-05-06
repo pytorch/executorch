@@ -10,13 +10,20 @@ from executorch.backends.cuda.triton.kernels.fused_moe import (
     fused_moe_batched_gemm,
     moe_align_block_size,
 )
+
+from executorch.backends.cuda.triton.kernels.int4_matmul import (
+    dequant_w4_to_bf16,
+    int4_matvec,
+)
 from executorch.backends.cuda.triton.kernels.sdpa import sdpa, sdpa_decode_splitk
 from executorch.backends.cuda.triton.kernels.topk import topk
 
 __all__ = [
+    "dequant_w4_to_bf16",
     "fused_moe",
     "fused_moe_batched",
     "fused_moe_batched_gemm",
+    "int4_matvec",
     "moe_align_block_size",
     "sdpa",
     "sdpa_decode_splitk",
@@ -36,5 +43,14 @@ try:
     from executorch.backends.cuda.triton.kernels.tq4_sdpa import tq4_sdpa  # noqa: F401
 
     __all__.append("tq4_sdpa")
+except ImportError:
+    pass
+
+try:
+    from executorch.backends.cuda.triton.kernels.fused_deltanet_decode import (  # noqa: F401
+        fused_deltanet_decode,
+    )
+
+    __all__.append("fused_deltanet_decode")
 except ImportError:
     pass

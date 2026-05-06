@@ -674,6 +674,40 @@ jobs:
       build-tool: buck2
       docker-image: ci-image:executorch-ubuntu-22.04-clang12
 
+  test-qnn-buck-build-linux:
+    name: test-qnn-buck-build-linux
+    uses: pytorch/test-infra/.github/workflows/linux_job_v2.yml@main
+    permissions:
+      id-token: write
+      contents: read
+    strategy:
+      fail-fast: false
+    with:
+      runner: linux.2xlarge
+      docker-image: ci-image:executorch-ubuntu-22.04-qnn-sdk
+      submodules: 'recursive'
+      ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
+      timeout: 90
+      script: |
+        set -eux
+
+        CONDA_ENV=$(conda env list --json | jq -r ".envs | .[-1]")
+        conda activate "${CONDA_ENV}"
+
+        # Download QNN SDK and get the path
+        QNN_SDK_ROOT=$(python3 backends/qualcomm/scripts/download_qnn_sdk.py --print-sdk-path)
+        echo "QNN_SDK_ROOT=${QNN_SDK_ROOT}"
+
+        # Configure Buck to find the QNN SDK
+        echo "[qualcomm]" >> .buckconfig
+        echo "  qnn_sdk_root = ${QNN_SDK_ROOT}" >> .buckconfig
+
+        # Setup buck2
+        PYTHON_EXECUTABLE=python bash .ci/scripts/setup-linux.sh --build-tool buck2
+
+        # Build QNN backend with Buck
+        buck2 build //backends/qualcomm/...
+
   unittest-arm-backend-with-no-deps:
     name: unittest-arm-backend-with-no-deps
     uses: pytorch/test-infra/.github/workflows/linux_job_v2.yml@main
@@ -823,6 +857,8 @@ jobs:
       id-token: write
       contents: read
     strategy:
+      matrix:
+        model: [mv2, mv3, dl3]
       fail-fast: false
     with:
       runner: linux.2xlarge
@@ -834,9 +870,96 @@ jobs:
         # The generic Linux job chooses to use base env, not the one setup by the image
         CONDA_ENV=$(conda env list --json | jq -r ".envs | .[-1]")
         conda activate "${CONDA_ENV}"
+        PYTHON_EXECUTABLE=python bash .ci/scripts/setup-linux.sh --build-tool cmake
+        PYTHON_EXECUTABLE=python bash .ci/scripts/setup-qnn-deps.sh
+        PYTHON_EXECUTABLE=python bash .ci/scripts/build-qnn-sdk.sh
+        PYTHON_EXECUTABLE=python bash .ci/scripts/test_model.sh ${{ matrix.model }} "cmake" "qnn"
 
-        # placeholder for running test_qnn_delegate.py, can use matrix such that we can trigger different jobs, refers to test-llama-runner-qnn-linux
-        # reminder: make sure each job runs fast
+  test-qnn-testsuite-linux:
+    name: test-qnn-testsuite-linux
+    permissions:
+      id-token: write
+      contents: read
+    uses: ./.github/workflows/_test_backend.yml
+    with:
+      backend: qnn
+      flows: '["qnn"]'
+      ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
+      timeout: 120
+      run-linux: true
+      runner-linux: linux.2xlarge
+
+  test-qnn-passes-linux:
+    name: test-qnn-passes-linux
+    uses: pytorch/test-infra/.github/workflows/linux_job_v2.yml@main
+    permissions:
+      id-token: write
+      contents: read
+    strategy:
+      fail-fast: false
+    with:
+      runner: linux.2xlarge
+      docker-image: ci-image:executorch-ubuntu-22.04-qnn-sdk
+      submodules: 'recursive'
+      ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
+      timeout: 30
+      script: |
+        # The generic Linux job chooses to use base env, not the one setup by the image
+        CONDA_ENV=$(conda env list --json | jq -r ".envs | .[-1]")
+        conda activate "${CONDA_ENV}"
+
+        PYTHON_EXECUTABLE=python bash .ci/scripts/setup-qnn-deps.sh
+        # Source (not bash) so QNN_SDK_ROOT stays in the environment
+        PYTHON_EXECUTABLE=python source .ci/scripts/build-qnn-sdk.sh
+
+        # Editable install so the PyQnnManagerAdaptor .so built by build-qnn-sdk.sh
+        # is visible in the source tree (the _passes import chain pulls it in transitively)
+        CMAKE_ARGS="-DEXECUTORCH_BUILD_QNN=ON -DQNN_SDK_ROOT=$QNN_SDK_ROOT -DEXECUTORCH_BUILD_EXTENSION_TENSOR=ON" \
+          PYTHON_EXECUTABLE=python bash .ci/scripts/setup-linux.sh --build-tool cmake --editable true
+
+        # test_mha_to_sha imports oss_scripts/llama which transitively needs torchtune
+        pip install -r requirements-examples.txt
+
+        # Run QNN pass unit tests
+        pytest -xvs backends/qualcomm/tests/test_passes.py
+
+  test-qnn-delegate-linux:
+    name: test-qnn-delegate-linux
+    uses: pytorch/test-infra/.github/workflows/linux_job_v2.yml@main
+    permissions:
+      id-token: write
+      contents: read
+    strategy:
+      fail-fast: false
+    with:
+      runner: linux.2xlarge
+      docker-image: ci-image:executorch-ubuntu-22.04-qnn-sdk
+      submodules: 'recursive'
+      ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
+      timeout: 90
+      script: |
+        # The generic Linux job chooses to use base env, not the one setup by the image
+        CONDA_ENV=$(conda env list --json | jq -r ".envs | .[-1]")
+        conda activate "${CONDA_ENV}"
+
+        PYTHON_EXECUTABLE=python bash .ci/scripts/setup-qnn-deps.sh
+        # Source (not bash) so QNN_SDK_ROOT stays in the environment
+        PYTHON_EXECUTABLE=python source .ci/scripts/build-qnn-sdk.sh
+
+        # Editable install so the PyQnnManagerAdaptor .so built by build-qnn-sdk.sh
+        # is visible in the source tree
+        CMAKE_ARGS="-DEXECUTORCH_BUILD_QNN=ON -DQNN_SDK_ROOT=$QNN_SDK_ROOT -DEXECUTORCH_BUILD_EXTENSION_TENSOR=ON" \
+          PYTHON_EXECUTABLE=python bash .ci/scripts/setup-linux.sh --build-tool cmake --editable true
+
+        pip install -r requirements-examples.txt
+
+        # Enable conftest.py to call setup_environment() for pytest runs
+        export QNN_DELEGATE_TEST=1
+        export LD_LIBRARY_PATH="$QNN_SDK_ROOT/lib/x86_64-linux-clang/:$(realpath build-x86/lib/):${LD_LIBRARY_PATH:-}"
+
+        # Run operator test classes only.
+        pytest -vs backends/qualcomm/tests/test_qnn_delegate.py \
+            -k "TestQNNFloatingPointOperator or TestQNNQuantizedOperator"
 
   test-phi-3-mini-runner-linux:
     name: test-phi-3-mini-runner-linux
@@ -867,6 +990,54 @@ jobs:
 
         # run e2e (export, tokenizer and runner)
         PYTHON_EXECUTABLE=python bash .ci/scripts/test_phi_3_mini.sh Release
+
+  test-qnn-python-imports-linux:
+    name: test-qnn-python-imports-linux
+    uses: pytorch/test-infra/.github/workflows/linux_job_v2.yml@main
+    permissions:
+      id-token: write
+      contents: read
+    strategy:
+      fail-fast: false
+    with:
+      runner: linux.2xlarge
+      docker-image: ci-image:executorch-ubuntu-22.04-qnn-sdk
+      submodules: 'recursive'
+      ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
+      timeout: 15
+      script: |
+        CONDA_ENV=$(conda env list --json | jq -r ".envs | .[-1]")
+        conda activate "${CONDA_ENV}"
+
+        PYTHON_EXECUTABLE=python bash .ci/scripts/setup-qnn-deps.sh
+        PYTHON_EXECUTABLE=python source .ci/scripts/build-qnn-sdk.sh
+
+        CMAKE_ARGS="-DEXECUTORCH_BUILD_QNN=ON -DQNN_SDK_ROOT=$QNN_SDK_ROOT -DEXECUTORCH_BUILD_EXTENSION_TENSOR=ON" \
+          PYTHON_EXECUTABLE=python bash .ci/scripts/setup-linux.sh --build-tool cmake --editable true
+
+        pip install -r requirements-examples.txt
+
+        # Source the QNN SDK environment so its bundled Python helpers
+        # (e.g. QnnOpPackageGenerator) are importable during the smoke test.
+        # envsetup.sh references PYTHONPATH (and friends) directly, which trips
+        # the `set -u` inherited from build-qnn-sdk.sh, so relax it for the
+        # duration of the source call.
+        set +u
+        source "${QNN_SDK_ROOT}/bin/envsetup.sh"
+        set -u
+
+        # Validate QNN backend Python imports resolve.
+        # Catches backend-side Python dependency issues early with a clear error.
+        python .ci/scripts/test_backend_imports.py \
+          --name QNN \
+          --package-root backends/qualcomm \
+          --package-prefix executorch.backends.qualcomm
+
+        # Static check that maintained QNN examples still reference valid internal modules.
+        python .ci/scripts/test_example_imports.py \
+          --name QNN \
+          --examples-root examples/qualcomm \
+          --module-prefix executorch.examples.qualcomm
 
   test-eval_llama-wikitext-linux:
     name: test-eval_llama-wikitext-linux
@@ -1150,15 +1321,15 @@ jobs:
 
         # Build and install Executorch
         PYTHON_EXECUTABLE=python \
-        CMAKE_ARGS="-DEXECUTORCH_BUILD_NXP_NEUTRON=ON -DEXECUTORCH_BUILD_NXP_NEUTRON_RUNNER=ON " \
-        .ci/scripts/setup-linux.sh --build-tool "cmake"
+        CMAKE_ARGS="-DEXECUTORCH_BUILD_NXP_NEUTRON=ON -DEXECUTORCH_BUILD_NXP_NEUTRON_RUNNER=ON \
+        -DEXECUTORCH_BUILD_KERNELS_PORTABLE=ON -DEXECUTORCH_BUILD_PYBIND=ON -DEXECUTORCH_BUILD_EXTENSION_MODULE=ON \
+        -DEXECUTORCH_BUILD_EXTENSION_DATA_LOADER=ON -DEXECUTORCH_BUILD_EXTENSION_FLAT_TENSOR=ON \
+        -DEXECUTORCH_BUILD_EXTENSION_TENSOR=ON -DEXECUTORCH_BUILD_EXTENSION_NAMED_DATA_MAP=ON" \
+        .ci/scripts/setup-linux.sh --build-tool "cmake"  --editable true
 
         # Install test requirements
         pip install -r backends/nxp/requirements-tests-pypi.txt
         PYTHON_EXECUTABLE=python bash examples/nxp/setup.sh
-
-        # Run pytest
-        PYTHON_EXECUTABLE=python bash backends/nxp/run_unittests.sh
 
         # Run aot examples:
         PYTHON_EXECUTABLE=python bash examples/nxp/run_aot_example.sh cifar10
@@ -1167,9 +1338,9 @@ jobs:
         # Run e2e example with Simulator:
         PYTHON_EXECUTABLE=python bash examples/nxp/run.sh cifar10
 
-        # Run lightweight model tests:
-        PYTHON_EXECUTABLE=python pytest -c /dev/null backends/nxp/tests_models/ \
-        --nxp_runner_path "./examples/nxp/executor_runner/build/nxp_executor_runner"
+        # Run unit tests:
+        PYTHON_EXECUTABLE=python NXP_RUNNER_PATH="./examples/nxp/executor_runner/build/nxp_executor_runner" \
+        bash backends/nxp/run_unittests.sh
 
   test-samsung-quantmodels-linux:
     name: test-samsung-quantmodels-linux
@@ -1350,6 +1521,7 @@ jobs:
         runner: [macos-m1-stable, macos-m2-stable]
       fail-fast: false
     with:
+      default-packages: ""
       runner: ${{ matrix.runner }}
       submodules: 'recursive'
       ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}

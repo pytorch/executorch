@@ -102,6 +102,9 @@ class ModelArgs:
     apply_output: bool = True  # Use output layer (unembedding) inside the transformer
     use_qk_norm: bool = False  # apply normalization to q and k in the attention
     qk_norm_before_rope: bool = False  # when to apply qk norm
+    qk_norm_affine: bool = (
+        True  # whether QK norm has learnable weight (False = scaleless)
+    )
     residual_multiplier: Optional[float] = (
         None  # Scaling factor applied to the residual hidden states
     )
@@ -120,6 +123,14 @@ class ModelArgs:
     use_scaled_rope: bool = False  # Use scaled RoPE, introduced in llama3.1.
     rope_scale_factor: int = 8
     high_freq_factor: int = 4
+    # LongRoPE (https://arxiv.org/abs/2402.13753) used by Phi-3 / Phi-4 family.
+    # Mirrors HF's rope_scaling.{short_factor,long_factor,attention_factor}
+    # plus original_max_position_embeddings / max_position_embeddings.
+    rope_scaling_short_factor: Optional[list] = None
+    rope_scaling_long_factor: Optional[list] = None
+    original_max_position_embeddings: Optional[int] = None
+    max_position_embeddings: Optional[int] = None
+    rope_scaling_attention_factor: Optional[float] = None
     # Additional Model Metadata needed at runtime
     bos_idx: int = 1
     eos_idx: int = 3
@@ -161,6 +172,15 @@ class ModelArgs:
     # gemma2 attn and output soft capping
     final_logit_softcapping: Optional[float] = None
     attn_logit_softcapping: Optional[float] = None
+
+    # rlformers forward-pass features for on-device model parity
+    normalize_tok_embeddings: bool = False
+    scale_query_by: float = 1.0
+    use_attn_o_gate: bool = False
+    use_attn_o_norm: bool = False
+    use_residual_gate: bool = False
+    use_ffn_learnable_scales: bool = False
+    output_soft_cap_temp: Optional[float] = None
 
     def __post_init__(self):  # noqa: C901
         if self.n_kv_heads is None:

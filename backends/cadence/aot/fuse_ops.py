@@ -12,9 +12,8 @@
 import logging
 import math
 import operator
-from collections import deque
 from numbers import Number
-from typing import Any, Callable, cast, Optional, override
+from typing import Any, cast, Optional, override
 
 # Import these for the cadence function signatures.
 import executorch.backends.cadence.aot.ops_registrations  # noqa: F401
@@ -22,10 +21,8 @@ import torch
 import torch.fx
 from executorch.backends.cadence.aot.compiler_utils import (
     broadcastable,
-    get_permuted_dims,
     get_scale,
     get_tensor_from_attr,
-    get_transposed_dims,
     get_zero_point,
 )
 from executorch.backends.cadence.aot.pass_utils import (
@@ -34,17 +31,31 @@ from executorch.backends.cadence.aot.pass_utils import (
     HierarchicalInplacePassInterface,
     register_cadence_pass,
     RemoveOrReplacePassInterface,
+    set_arg,
 )
 from executorch.backends.cadence.aot.utils import get_edge_overload_packet
+from executorch.backends.transforms.fuse_cascaded_transpose_or_permute_ops import (
+    FuseCascadedTransposeOrPermuteOps as _SharedFuseCascadedTransposeOrPermuteOps,
+)
+from executorch.backends.transforms.fuse_cascaded_view_ops import (
+    FuseCascadedViewOps as _SharedFuseCascadedViewOps,
+)
+from executorch.backends.transforms.fuse_transpose_or_permute_op_pairs_pass import (
+    FuseTransposeOrPermuteOpPairsPass as _SharedFuseTransposeOrPermuteOpPairsPass,
+)
+from executorch.backends.transforms.permute_pass_utils import (
+    FuseOpPairsAcrossBranchesPass,
+)
 from executorch.exir.dialects._ops import ops as exir_ops
 from executorch.exir.dialects.edge._ops import EdgeOpOverload, EdgeOpOverloadPacket
-from executorch.exir.pass_base import ExportPass, PassResult
+from executorch.exir.pass_base import PassResult
 from executorch.exir.passes.cse_pass import CSEPass
 from torch.nn.utils.fusion import fuse_conv_bn_weights
 
 
 def get_tensor_arg(node: torch.fx.Node, arg_name: str) -> torch.Tensor:
     graph_module = node.graph.owning_module
+    assert graph_module is not None
     tensor = get_tensor_from_attr(graph_module, get_arg(node, arg_name, torch.fx.Node))
     assert isinstance(tensor, torch.Tensor), f"{arg_name} must be present"
     return tensor
@@ -179,7 +190,7 @@ class FuseMMWithAdd(RemoveOrReplacePassInterface):
         #    is True)
         # 2. The single successor of addmm is not a view op.
         if len(addmm_node.users) == 0:
-            return False
+            return True
 
         addmm_user = list(addmm_node.users.keys())[0]
         if intermediate_view and not self._is_view_node(addmm_user):
@@ -254,6 +265,7 @@ class FuseBatchNormWithConv(RemoveOrReplacePassInterface):
         conv_weight = get_tensor_arg(conv_node, "weight")
         # conv_bias is truly optional - fusion function handles None
         graph_module = conv_node.graph.owning_module
+        assert graph_module is not None
         conv_bias = get_tensor_from_attr(
             graph_module, cast(Optional[torch.fx.Node], get_arg(conv_node, "bias"))
         )
@@ -578,207 +590,13 @@ class FuseQuantizedBatchNormWithConv(RemoveOrReplacePassInterface):
 
 
 @register_cadence_pass(CadencePassAttribute(opt_level=1))
-class FuseCascadedTransposeOrPermuteOps(RemoveOrReplacePassInterface):
-    """
-    Fuse a chain of transpose and permute ops into a single permute or a no-op.
-    Handles branches and chains permutes.
-    """
-
-    transpose_or_permute_target = {
-        exir_ops.edge.aten.transpose_copy.int,
-        exir_ops.edge.aten.permute_copy.default,
-    }
-
-    @property
-    def targets(self) -> list[EdgeOpOverload]:
-        return list(self.transpose_or_permute_target)
-
-    def maybe_remove_or_replace(self, node: torch.fx.Node) -> bool:
-        # Fuse with the parent node if it's also a permute or a transpose. Since the
-        # pass interface traverses all ops in order the pass will properly fuse a chain
-        # of permutes.
-        parent_node = get_arg(node, "input", torch.fx.Node)
-        if parent_node.target not in self.transpose_or_permute_target:
-            return False
-        input_of_parent = get_arg(parent_node, "input", torch.fx.Node)
-
-        # Compute combined effect of permutes.
-        dims = list(range(node.meta["val"].ndim))
-
-        if parent_node.target == exir_ops.edge.aten.transpose_copy.int:
-            dims = get_transposed_dims(parent_node, dims)
-        else:
-            dims = get_permuted_dims(parent_node, dims)
-
-        if node.target == exir_ops.edge.aten.transpose_copy.int:
-            dims = get_transposed_dims(node, dims)
-        else:
-            dims = get_permuted_dims(node, dims)
-
-        # If combined effect is identity replace the node with input.
-        if dims == sorted(dims):
-            node.replace_all_uses_with(input_of_parent)
-        else:
-            with node.graph.inserting_before(node):
-                new_permute = node.graph.call_function(
-                    exir_ops.edge.aten.permute_copy.default,
-                    args=(input_of_parent, dims),
-                )
-                new_permute.meta = node.meta
-            node.replace_all_uses_with(new_permute)
-
-        return True
+class FuseCascadedTransposeOrPermuteOps(_SharedFuseCascadedTransposeOrPermuteOps):
+    pass
 
 
 @register_cadence_pass(CadencePassAttribute(opt_level=1))
-class FuseCascadedViewOps(RemoveOrReplacePassInterface):
-    """
-    Fuse a cascaded chain of view ops
-    """
-
-    @property
-    def targets(self) -> list[EdgeOpOverload]:
-        return [exir_ops.edge.aten.view_copy.default]
-
-    def maybe_remove_or_replace(self, node: torch.fx.Node) -> bool:
-        # Check if the input to this view node is also a view node
-        input_view = node.args[0]
-        if not isinstance(input_view, torch.fx.Node):
-            return False
-
-        if (
-            input_view.op != "call_function"
-            or input_view.target != exir_ops.edge.aten.view_copy.default
-        ):
-            return False
-
-        # Replace the input of this view node with the input of the cascaded view
-        # This effectively "skips" the intermediate view node
-        node.replace_input_with(input_view, cast(torch.fx.Node, input_view.args[0]))
-        return True
-
-
-class FuseOpPairsAcrossBranchesPass(ExportPass):
-    """
-    Base class for passes that fuse op pairs across branches.
-    Provides common functionality for finding and fusing producer-consumer chains.
-    """
-
-    def check_ok_to_fuse(
-        self,
-        producer: torch.fx.Node,
-        consumers: list[torch.fx.Node],
-    ) -> bool:
-        # Always ok to replace / remove.
-        return True
-
-    def can_fuse_for_chain(
-        self,
-        producer: torch.fx.Node,
-        consumer: torch.fx.Node,
-        consumer_op_packets: set[EdgeOpOverloadPacket],
-    ) -> bool:
-        """
-        Returns true if producer and consumer can be fused for a single chain
-        (-> producer -> ops -> consumer ->) to (-> ops -> fused_op)
-        """
-        if (
-            isinstance(consumer.target, EdgeOpOverload)
-            and get_edge_overload_packet(consumer.target) in consumer_op_packets
-        ):
-            return True
-        return False
-
-    def get_fuse_candidates(
-        self,
-        producer: torch.fx.Node,
-        consumer_op_packets: set[EdgeOpOverloadPacket],
-        bypass_ops: set[EdgeOpOverload],
-    ) -> list[torch.fx.Node]:
-        # Start by iterating over all the users of this node, and check
-        # if they are have their target in consumer_op_packets.
-        users = deque(producer.users.keys())
-        # This holds the list of the user ops that directly (or transitively
-        # via view/slice) consume this producer_op_packets, and hence can be removed.
-        removal_candidates = []
-        while users:
-            user = users.popleft()
-
-            # If the user is a bypass op, we bypass it, and examine
-            # its users instead for consumer_op_packets.
-            if user.target in bypass_ops:
-                users.extend(list(user.users.keys()))
-            elif self.can_fuse_for_chain(producer, user, consumer_op_packets):
-                removal_candidates.append(user)
-            else:
-                removal_candidates.clear()
-                break
-        return removal_candidates
-
-    def find_and_fuse(
-        self,
-        graph_module: torch.fx.GraphModule,
-        producer_op_packets: set[EdgeOpOverloadPacket],
-        consumer_op_packets: set[EdgeOpOverloadPacket],
-        bypass_ops: set[EdgeOpOverload],
-    ) -> bool:
-        """
-        Find and fuse producer-consumer op pairs.
-
-        Returns True if any fusion was performed, False otherwise.
-        """
-        modified = False
-        for node in graph_module.graph.nodes:
-            # We are only interested in ops that have overload target in
-            # producer_op.
-            if not (
-                isinstance(node.target, EdgeOpOverload)
-                and get_edge_overload_packet(node.target) in producer_op_packets
-            ):
-                continue
-
-            removal_candidates = self.get_fuse_candidates(
-                node, consumer_op_packets, bypass_ops
-            )
-
-            if len(removal_candidates) == 0:
-                # No candidates found.
-                continue
-
-            if not self.check_ok_to_fuse(node, removal_candidates):
-                # Not ok to remove quant-dequant pairs or replace with requantize.
-                continue
-
-            self.fuse(node, removal_candidates, graph_module)
-            modified = True
-
-        if modified:
-            graph_module.recompile()
-
-        return modified
-
-    def get_fused_node(
-        self,
-        producer: torch.fx.Node,
-        consumer: torch.fx.Node,
-        graph_module: torch.fx.GraphModule,
-    ) -> torch.fx.Node:
-        return consumer
-
-    def fuse(
-        self,
-        node: torch.fx.Node,
-        removal_candidates: list[torch.fx.Node],
-        graph_module: torch.fx.GraphModule,
-    ) -> None:
-        # Replace all the uses of the producer op with it's input.
-        node.replace_all_uses_with(cast(torch.fx.Node, node.args[0]))
-        graph_module.graph.erase_node(node)
-
-        # Iterate over all the removal candidates (quantize op users) and generate replacements.
-        for rnode in removal_candidates:
-            rnode.replace_all_uses_with(self.get_fused_node(node, rnode, graph_module))
-            graph_module.graph.erase_node(rnode)
+class FuseCascadedViewOps(_SharedFuseCascadedViewOps):
+    pass
 
 
 @register_cadence_pass(CadencePassAttribute(opt_level=1))
@@ -1123,89 +941,15 @@ class FuseMulTensorIntoDequantPass(RemoveOrReplacePassInterface):
 
 
 @register_cadence_pass(CadencePassAttribute(opt_level=1))
-class FuseTransposeOrPermuteOpPairsPass(FuseOpPairsAcrossBranchesPass):
-    """
-    Fuse transpose or permute op pairs to a single view op.
-    (transpose or permutation) -> (quant or dequant) -> (transpose or permutation)
-    This happens when op2(op1) == identity, modulo unitary dimensions.
-    'unitary dimensions' example: a tensor of shape [1, 5, 30] is equivalent (in memory) to [5, 1, 30]
-    so transpose(1, 2) then transpose(0, 2) is a pseudo identity and should be fused.
-    """
-
-    # A list of ops that can be bypassed when looking for a
-    # dequantize->quantize chain
-    bypass_ops: set[EdgeOpOverload] = {
-        exir_ops.edge.cadence.quantize_per_tensor.default,
-        exir_ops.edge.quantized_decomposed.quantize_per_tensor.default,
-        exir_ops.edge.quantized_decomposed.quantize_per_channel.default,
-        exir_ops.edge.cadence.dequantize_per_tensor.default,
-        exir_ops.edge.quantized_decomposed.dequantize_per_tensor.default,
-        exir_ops.edge.quantized_decomposed.dequantize_per_channel.default,
-        exir_ops.edge.cadence.quantized_relu.per_tensor,
-    }
-
-    def can_fuse_for_chain(
-        self,
-        producer: torch.fx.Node,
-        consumer: torch.fx.Node,
-        consumer_op_packets: set[EdgeOpOverloadPacket],
-    ) -> bool:
-        if not super().can_fuse_for_chain(producer, consumer, consumer_op_packets):
-            return False
-
-        # checking that permut2(permut1(identity)) == identity, modulo unitary dimensions
-        producer_input = cast(torch.fx.Node, producer.args[0])
-        if "val" not in producer_input.meta:
-            return False
-        input_shape = producer_input.meta["val"].shape
-        ident_dims = list(range(len(input_shape)))
-        # this mapping helps to handle both transpose and permutations
-        f: dict[Any, Callable] = {
-            exir_ops.edge.aten.transpose_copy.int: get_transposed_dims,
-            exir_ops.edge.aten.permute_copy.default: get_permuted_dims,
+class FuseTransposeOrPermuteOpPairsPass(_SharedFuseTransposeOrPermuteOpPairsPass):
+    bypass_ops: set[EdgeOpOverload] = (
+        _SharedFuseTransposeOrPermuteOpPairsPass.bypass_ops
+        | {
+            exir_ops.edge.cadence.quantize_per_tensor.default,
+            exir_ops.edge.cadence.dequantize_per_tensor.default,
+            exir_ops.edge.cadence.quantized_relu.per_tensor,
         }
-        in_dims = f[producer.target](producer, ident_dims)
-        out_dims = f[consumer.target](consumer, in_dims)
-        # Filtering out unitary dimensions
-        non_unit_ident_dims = [dim for dim in ident_dims if input_shape[dim] != 1]
-        non_unit_out_dims = [dim for dim in out_dims if input_shape[dim] != 1]
-        return non_unit_out_dims == non_unit_ident_dims
-
-    def get_fused_node(
-        self,
-        producer: torch.fx.Node,
-        consumer: torch.fx.Node,
-        graph_module: torch.fx.GraphModule,
-    ) -> torch.fx.Node:
-        # This step is important because of how we can fuse transpositions that are not perfectly
-        # reverse one of another but will be fused if there are unitary dimensions.
-        # The fused operation must have the same output shape as the consumer.
-        output_shape = consumer.meta["val"].shape
-        with graph_module.graph.inserting_after(consumer):
-            view = graph_module.graph.call_function(
-                exir_ops.edge.aten.view_copy.default,
-                (consumer.args[0], output_shape),
-                {},
-            )
-        return view
-
-    def call(self, graph_module: torch.fx.GraphModule) -> PassResult:
-        # Remove any transpose/permutation op pair that cancel each other.
-        modified = self.find_and_fuse(
-            graph_module,
-            producer_op_packets={
-                exir_ops.edge.aten.transpose_copy,
-                exir_ops.edge.aten.permute_copy,
-            },
-            consumer_op_packets={
-                exir_ops.edge.aten.transpose_copy,
-                exir_ops.edge.aten.permute_copy,
-            },
-            bypass_ops=self.bypass_ops,
-        )
-        if modified:
-            return super().call(graph_module)
-        return PassResult(graph_module, False)
+    )
 
 
 @register_cadence_pass(CadencePassAttribute(opt_level=1))
@@ -1262,6 +1006,75 @@ class FuseFullThenReshapePass(RemoveOrReplacePassInterface):
         return True
 
 
+@register_cadence_pass(CadencePassAttribute(opt_level=0))
+class FuseSliceSameDimPass(RemoveOrReplacePassInterface):
+    """Fuse chained slices on the same dim into a single slice.
+
+    When a slice_copy's input is another slice_copy on the same dimension
+    with step=1, the child slice can read directly from the grandparent
+    with merged indices, eliminating the intermediate slice.
+
+    Handles negative start/end indices by canonicalizing them against the
+    relevant dimension size before merging.
+    """
+
+    @staticmethod
+    def _canonicalize(val: int, dim_size: int) -> int:
+        return val + dim_size if val < 0 else val
+
+    @property
+    def targets(self) -> list[EdgeOpOverload]:
+        return [exir_ops.edge.aten.slice_copy.Tensor]
+
+    def maybe_remove_or_replace(self, node: torch.fx.Node) -> bool:
+        parent = get_arg(node, "input", torch.fx.Node)
+        if parent.target != exir_ops.edge.aten.slice_copy.Tensor:
+            return False
+
+        grandparent = get_arg(parent, "input", torch.fx.Node)
+        ndim = len(grandparent.meta["val"].shape)
+        child_dim = get_arg(node, "dim", int) % ndim
+        parent_dim = get_arg(parent, "dim", int) % ndim
+        if child_dim != parent_dim:
+            return False
+
+        child_start = get_arg(node, "start", Optional[int])
+        child_end = get_arg(node, "end", Optional[int])
+        child_step = get_arg(node, "step", int)
+        parent_start = get_arg(parent, "start", Optional[int])
+        parent_end = get_arg(parent, "end", Optional[int])
+        parent_step = get_arg(parent, "step", int)
+
+        if child_step != 1 or parent_step != 1:
+            return False
+        if (
+            child_start is None
+            or child_end is None
+            or parent_start is None
+            or parent_end is None
+        ):
+            return False
+
+        grandparent_dim_size = grandparent.meta["val"].shape[parent_dim]
+        parent_dim_size = parent.meta["val"].shape[parent_dim]
+
+        p_start = self._canonicalize(parent_start, grandparent_dim_size)
+        p_end = self._canonicalize(parent_end, grandparent_dim_size)
+        c_start = self._canonicalize(child_start, parent_dim_size)
+        c_end = self._canonicalize(child_end, parent_dim_size)
+
+        new_start = p_start + c_start
+        new_end = min(p_start + c_end, p_end)
+
+        if new_end > grandparent_dim_size:
+            return False
+
+        node.replace_input_with(parent, grandparent)
+        set_arg(node, "start", new_start)
+        set_arg(node, "end", new_end)
+        return True
+
+
 class HierarchicalCSEPass(HierarchicalInplacePassInterface):
     """
     A hierarchical Common Subexpression Elimination (CSE) pass that recursively
@@ -1294,4 +1107,5 @@ class CadenceFuseOpsInGraph:
         FuseMulScalarIntoDequantPass,
         FuseFullThenReshapePass,
         FuseTransposeOrPermuteOpPairsPass,
+        FuseSliceSameDimPass,
     ]

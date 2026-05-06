@@ -379,7 +379,7 @@ def _linear_bias_decomposition(input, weight, bias=None):
     return out
 
 
-def lower_to_executorch(programs, metadata, backend="xnnpack"):
+def lower_to_executorch(programs, metadata, backend="xnnpack", codesign_identity=None):
     """Lower exported programs to ExecuTorch."""
     transform_passes = None
 
@@ -397,6 +397,7 @@ def lower_to_executorch(programs, metadata, backend="xnnpack"):
     elif backend == "metal":
         from executorch.backends.apple.metal.metal_backend import MetalBackend
         from executorch.backends.apple.metal.metal_partitioner import MetalPartitioner
+        from executorch.exir.backend.compile_spec_schema import CompileSpec
 
         print("\nLowering to ExecuTorch with Metal...")
 
@@ -411,6 +412,10 @@ def lower_to_executorch(programs, metadata, backend="xnnpack"):
         partitioner = {}
         for key in programs:
             compile_specs = [MetalBackend.generate_method_name_compile_spec(key)]
+            if codesign_identity:
+                compile_specs.append(
+                    CompileSpec("codesign_identity", codesign_identity.encode("utf-8"))
+                )
             partitioner[key] = [MetalPartitioner(compile_specs)]
     elif backend in ("cuda", "cuda-windows"):
         from executorch.backends.cuda.cuda_backend import CudaBackend
@@ -577,6 +582,13 @@ def main():
         choices=["fp32", "bf16"],
         help="Model dtype (default: fp32).",
     )
+    parser.add_argument(
+        "--codesign-identity",
+        default=None,
+        help="macOS code signing identity for the Metal backend .so. "
+        "Use '-' for ad-hoc or a Developer ID for notarized apps. "
+        "If omitted, the .so is not signed.",
+    )
     args = parser.parse_args()
     backend_for_export = "cuda" if args.backend == "cuda-windows" else args.backend
 
@@ -638,7 +650,12 @@ def main():
     metadata["delay_tokens"] = args.delay_tokens
 
     # Lower
-    et = lower_to_executorch(programs, metadata, backend=args.backend)
+    et = lower_to_executorch(
+        programs,
+        metadata,
+        backend=args.backend,
+        codesign_identity=args.codesign_identity,
+    )
 
     # Save
     pte_path = os.path.join(args.output_dir, "model.pte")
