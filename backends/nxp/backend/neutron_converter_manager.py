@@ -95,6 +95,13 @@ class NeutronConverterManager:
         if hasattr(cctx.compilationOpts, "useNewFlowNeutronC"):
             cctx.compilationOpts.useNewFlowNeutronC = use_new_flow_neutron_c
 
+        # Neutron-C debugging outputs
+        cctx.compilationOpts.verbose = True
+        cctx.compilationOpts.keepGraphs = True
+        cctx.compilationOpts.dumpAfterOptimize = "optimized_model.tflite"
+        cctx.compilationOpts.dumpAfterExtract = "extracted_model.tflite"
+        cctx.compilationOpts.dumpMicrocode = True
+
         # Try to use multiprocessing for isolation, but fall back to direct execution
         # if the environment doesn't support it (e.g., in sandcastle/build environments)
         try:

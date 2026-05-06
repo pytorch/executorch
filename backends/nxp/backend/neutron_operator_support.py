@@ -86,13 +86,17 @@ def transposition_is_supported_on_neutron(
 
 
 def activation_supported_on_target(
-    node: Node, neutron_target_spec: NeutronTargetSpec
+    node: Node, neutron_target_spec: NeutronTargetSpec, use_new_flow_neutron_c: bool = False,
 ) -> bool:
     """This function determines if the current NeutronSoftware properly supports an activation operator represented by the given node.
 
     :param node: The node representing the activation operator.
     :param neutron_target_spec: Object for querying the target platform to retrieve its properties.
     """
+
+    if use_new_flow_neutron_c:
+        return True
+
     input_shape = list(input_tensor(node, 0).shape)
     if node.args[0].meta[NXP_NODE_FORMAT].is_channels_first():
         input_shape = dims_to_channels_last(input_shape)

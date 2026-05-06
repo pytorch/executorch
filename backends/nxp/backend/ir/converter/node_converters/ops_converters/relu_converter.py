@@ -43,7 +43,12 @@ class ReLUConverter(NodeConverter):
             node, partition_list, filter_fn=is_not_qdq_node
         )
         if is_alone_in_partition:
-            return activation_supported_on_target(node, neutron_target_spec)
+            neutron_c = getattr(
+                custom_delegation_options, "use_new_flow_neutron_c", False
+            )
+            return activation_supported_on_target(
+                node, neutron_target_spec, use_new_flow_neutron_c=neutron_c
+            )
 
         return True
 
