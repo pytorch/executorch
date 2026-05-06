@@ -11,6 +11,7 @@
 using namespace std;
 
 #include <executorch/runtime/backend/interface.h>
+#include <executorch/runtime/core/event_tracer.h>
 
 using executorch::runtime::ArrayRef;
 using executorch::runtime::CompileSpec;
@@ -48,12 +49,14 @@ class VgfRepr {
       VkPhysicalDevice phys,
       VkDevice dev,
       VkQueue queue,
-      VkCommandPool pool)
+      VkCommandPool pool,
+      uint32_t queue_family_index = UINT32_MAX)
       : vk_instance(inst),
         vk_physical(phys),
         vk_device(dev),
         vk_queue(queue),
-        vk_command_pool(pool) {}
+        vk_command_pool(pool),
+        vk_queue_family_index(queue_family_index) {}
 
   /*
    * Process a VGF ready for execution, allocate necessary Vulkan objects.
@@ -61,13 +64,13 @@ class VgfRepr {
   bool process_vgf(
       const char* vgf_data,
       size_t vgf_size,
-      ArrayRef<CompileSpec> specs);
+      ArrayRef<CompileSpec> specs,
+      executorch::runtime::EventTracer* event_tracer = nullptr);
 
   /*
    * Execute the VGF we've previously processed.
    */
-  bool execute_vgf();
-
+  bool execute_vgf(executorch::runtime::EventTracer* event_tracer = nullptr);
   /*
    * Free any allocations made in process_vgf.
    */
@@ -105,6 +108,12 @@ class VgfRepr {
   VkDevice vk_device;
   VkQueue vk_queue;
   VkCommandPool vk_command_pool;
+  uint32_t vk_queue_family_index = UINT32_MAX;
+
+  bool timestamp_queries_enabled = false;
+  uint32_t timestamp_valid_bits = 0;
+  double timestamp_period_ns = 0.0;
+  VkQueryPool vk_timestamp_query_pool = VK_NULL_HANDLE;
 
   // per-VgfRepr-instance objects allocated in process_vgf, used (can be more
   // than once) in execute_vgf
@@ -117,6 +126,9 @@ class VgfRepr {
   VkShaderModule vk_shader;
   // Note: the vector of tensor memory is stored in IOs above
   vector<VkDescriptorSet> descriptor_sets;
+
+  bool init_timestamp_queries();
+  void read_timestamp_queries(executorch::runtime::EventTracer* event_tracer);
 };
 
 } // namespace vgf

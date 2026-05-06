@@ -12,6 +12,13 @@
 
 #include <executorch/backends/arm/runtime/VGFSetup.h>
 
+#include <cstdlib>
+#include <limits>
+
+#ifdef ET_EVENT_TRACER_ENABLED
+#include <executorch/runtime/core/event_tracer_hooks_delegate.h>
+#endif
+
 #include <vgf/decoder.hpp>
 #include <vgf/vulkan_helpers.generated.hpp>
 
@@ -31,8 +38,41 @@ namespace {
 constexpr int64_t kScalarSentinelDimension = 1;
 }
 
-#if defined(ET_ARM_VGF_DEBUG)
+#ifdef ET_EVENT_TRACER_ENABLED
+namespace {
+class ScopedVgfProfileEvent {
+ public:
+  ScopedVgfProfileEvent(
+      executorch::runtime::EventTracer* event_tracer,
+      const char* name)
+      : event_tracer_(event_tracer),
+        entry_(executorch::runtime::event_tracer_start_profiling_delegate(
+            event_tracer_,
+            name,
+            /*delegate_debug_id=*/-1)) {}
+
+  ~ScopedVgfProfileEvent() {
+    executorch::runtime::event_tracer_end_profiling_delegate(
+        event_tracer_, entry_);
+  }
+
+ private:
+  executorch::runtime::EventTracer* event_tracer_;
+  executorch::runtime::EventTracerEntry entry_;
+};
+} // namespace
+
+#define VGF_CONCAT_INNER(a, b) a##b
+#define VGF_CONCAT(a, b) VGF_CONCAT_INNER(a, b)
+#define VGF_PROFILE_SCOPE(event_tracer, name)                      \
+  ScopedVgfProfileEvent VGF_CONCAT(_vgf_profile_scope_, __LINE__)( \
+      event_tracer, name)
+#else
+#define VGF_PROFILE_SCOPE(event_tracer, name) (void)(event_tracer)
+#endif
+
 // Debug function to inspect memory properties
+#if defined(ET_ARM_VGF_DEBUG)
 static string memory_flags_to_string(VkMemoryPropertyFlags flags) {
   if (flags == 0)
     return "0";
@@ -100,6 +140,153 @@ uint32_t get_memory_index(
     }
   }
   return memory_type;
+}
+
+bool VgfRepr::init_timestamp_queries() {
+  const char* enable = std::getenv("EXECUTORCH_VGF_ENABLE_TIMESTAMP_QUERIES");
+  if (enable == nullptr || enable[0] == '\0') {
+    ET_LOG(Info, "VGF timestamp queries disabled");
+    return true;
+  }
+
+  if (timestamp_queries_enabled || vk_timestamp_query_pool != VK_NULL_HANDLE) {
+    return true;
+  }
+
+  if (vk_queue_family_index == UINT32_MAX) {
+    ET_LOG(Info, "VGF timestamp queries disabled: unknown queue family index");
+    return true;
+  }
+
+  uint32_t queue_family_count = 0;
+  vkGetPhysicalDeviceQueueFamilyProperties(
+      vk_physical, &queue_family_count, nullptr);
+
+  if (vk_queue_family_index >= queue_family_count) {
+    ET_LOG(
+        Info,
+        "VGF timestamp queries disabled: queue family index %u is out of range",
+        vk_queue_family_index);
+    return true;
+  }
+
+  vector<VkQueueFamilyProperties> queue_family_properties(queue_family_count);
+  vkGetPhysicalDeviceQueueFamilyProperties(
+      vk_physical, &queue_family_count, queue_family_properties.data());
+
+  timestamp_valid_bits =
+      queue_family_properties[vk_queue_family_index].timestampValidBits;
+
+  if (timestamp_valid_bits == 0) {
+    ET_LOG(
+        Info,
+        "VGF timestamp queries disabled: queue family %u does not support timestamps",
+        vk_queue_family_index);
+    return true;
+  }
+
+  VkPhysicalDeviceProperties physical_device_properties;
+  vkGetPhysicalDeviceProperties(vk_physical, &physical_device_properties);
+
+  timestamp_period_ns =
+      static_cast<double>(physical_device_properties.limits.timestampPeriod);
+
+  if (timestamp_period_ns <= 0.0) {
+    ET_LOG(
+        Info,
+        "VGF timestampPeriod is %.6f; using fallback 52.0 ns/tick",
+        timestamp_period_ns);
+    timestamp_period_ns = 52.0;
+  }
+
+  VkQueryPoolCreateInfo query_pool_info{
+      .sType = VK_STRUCTURE_TYPE_QUERY_POOL_CREATE_INFO,
+      .pNext = nullptr,
+      .flags = 0,
+      .queryType = VK_QUERY_TYPE_TIMESTAMP,
+      .queryCount = 2,
+      .pipelineStatistics = 0,
+  };
+
+  VkResult result = vkCreateQueryPool(
+      vk_device, &query_pool_info, nullptr, &vk_timestamp_query_pool);
+
+  if (result != VK_SUCCESS) {
+    ET_LOG(
+        Info,
+        "VGF timestamp queries disabled: vkCreateQueryPool failed with %d",
+        result);
+    vk_timestamp_query_pool = VK_NULL_HANDLE;
+    return true;
+  }
+
+  timestamp_queries_enabled = true;
+
+  ET_LOG(
+      Info,
+      "VGF timestamp queries enabled: queue_family=%u valid_bits=%u period_ns=%.6f",
+      vk_queue_family_index,
+      timestamp_valid_bits,
+      timestamp_period_ns);
+
+  return true;
+}
+
+void VgfRepr::read_timestamp_queries(
+    executorch::runtime::EventTracer* event_tracer) {
+  if (!timestamp_queries_enabled || vk_timestamp_query_pool == VK_NULL_HANDLE) {
+    return;
+  }
+
+  uint64_t timestamps[2] = {0, 0};
+  VkResult result;
+
+  {
+    VGF_PROFILE_SCOPE(event_tracer, "VGF_TIMESTAMP_QUERY_READBACK");
+
+    result = vkGetQueryPoolResults(
+        vk_device,
+        vk_timestamp_query_pool,
+        0,
+        2,
+        sizeof(timestamps),
+        timestamps,
+        sizeof(uint64_t),
+        VK_QUERY_RESULT_64_BIT | VK_QUERY_RESULT_WAIT_BIT);
+  }
+
+  if (result != VK_SUCCESS) {
+    ET_LOG(Error, "Failed to read VGF timestamp query results: %d", result);
+    return;
+  }
+
+  uint64_t start = timestamps[0];
+  uint64_t end = timestamps[1];
+
+  uint64_t mask = std::numeric_limits<uint64_t>::max();
+  if (timestamp_valid_bits < 64) {
+    mask = (1ULL << timestamp_valid_bits) - 1ULL;
+    start &= mask;
+    end &= mask;
+  }
+
+  uint64_t delta_ticks;
+  if (end >= start) {
+    delta_ticks = end - start;
+  } else {
+    delta_ticks = (mask - start) + end + 1ULL;
+  }
+
+  const double duration_ns =
+      static_cast<double>(delta_ticks) * timestamp_period_ns;
+  const double duration_ms = duration_ns / 1000000.0;
+
+  ET_LOG(
+      Info,
+      "VGF_DATA_GRAPH_DEVICE_TIME ticks=%llu duration_ns=%.3f duration_ms=%.6f",
+      static_cast<unsigned long long>(delta_ticks),
+      duration_ns,
+      duration_ms);
 }
 
 /**
@@ -339,41 +526,51 @@ static void debug_print_modules(
 bool VgfRepr::process_vgf(
     const char* vgf_data,
     size_t vgf_size,
-    ArrayRef<CompileSpec> specs) {
+    ArrayRef<CompileSpec> specs,
+    executorch::runtime::EventTracer* event_tracer) {
+  VGF_PROFILE_SCOPE(event_tracer, "VGF_INIT_PROCESS_VGF");
+  (void)specs;
+
   ET_LOG(Info, "Preparing VGF as Vulkan objects");
 
   VkResult result;
 
-  // Prepare temporary decoders
-  unique_ptr<vgflib::HeaderDecoder> header_decoder =
-      vgflib::CreateHeaderDecoder(vgf_data, vgflib::HeaderSize(), vgf_size);
-  if (!header_decoder) {
-    ET_LOG(Error, "Failed to create VGF header decoder");
-    return false;
-  }
+  unique_ptr<vgflib::HeaderDecoder> header_decoder;
+  unique_ptr<vgflib::ModelSequenceTableDecoder> sequence_decoder;
+  unique_ptr<vgflib::ModuleTableDecoder> module_decoder;
+  unique_ptr<vgflib::ModelResourceTableDecoder> resource_decoder;
+  unique_ptr<vgflib::ConstantDecoder> constant_decoder;
 
-  unique_ptr<vgflib::ModelSequenceTableDecoder> sequence_decoder =
-      vgflib::CreateModelSequenceTableDecoder(
-          vgf_data + header_decoder->GetModelSequenceTableOffset(),
-          header_decoder->GetModelSequenceTableSize());
-  unique_ptr<vgflib::ModuleTableDecoder> module_decoder =
-      vgflib::CreateModuleTableDecoder(
-          vgf_data + header_decoder->GetModuleTableOffset(),
-          header_decoder->GetModuleTableSize());
-  unique_ptr<vgflib::ModelResourceTableDecoder> resource_decoder =
-      vgflib::CreateModelResourceTableDecoder(
-          vgf_data + header_decoder->GetModelResourceTableOffset(),
-          header_decoder->GetModelResourceTableSize());
-  unique_ptr<vgflib::ConstantDecoder> constant_decoder =
-      vgflib::CreateConstantDecoder(
-          vgf_data + header_decoder->GetConstantsOffset(),
-          header_decoder->GetConstantsSize());
-  // Check the VGF decoders
-  if (not(header_decoder && module_decoder && sequence_decoder &&
-          resource_decoder && constant_decoder && header_decoder->IsValid() &&
-          header_decoder->CheckVersion())) {
-    ET_LOG(Error, "Failed to process VGF file internalsr");
-    return false;
+  {
+    VGF_PROFILE_SCOPE(event_tracer, "VGF_INIT_DECODE_TABLES");
+
+    // Prepare temporary decoders
+    header_decoder =
+        vgflib::CreateHeaderDecoder(vgf_data, vgflib::HeaderSize(), vgf_size);
+    if (!header_decoder) {
+      ET_LOG(Error, "Failed to create VGF header decoder");
+      return false;
+    }
+
+    sequence_decoder = vgflib::CreateModelSequenceTableDecoder(
+        vgf_data + header_decoder->GetModelSequenceTableOffset(),
+        header_decoder->GetModelSequenceTableSize());
+    module_decoder = vgflib::CreateModuleTableDecoder(
+        vgf_data + header_decoder->GetModuleTableOffset(),
+        header_decoder->GetModuleTableSize());
+    resource_decoder = vgflib::CreateModelResourceTableDecoder(
+        vgf_data + header_decoder->GetModelResourceTableOffset(),
+        header_decoder->GetModelResourceTableSize());
+    constant_decoder = vgflib::CreateConstantDecoder(
+        vgf_data + header_decoder->GetConstantsOffset(),
+        header_decoder->GetConstantsSize());
+    // Check the VGF decoders
+    if (not(header_decoder && module_decoder && sequence_decoder &&
+            resource_decoder && constant_decoder && header_decoder->IsValid() &&
+            header_decoder->CheckVersion())) {
+      ET_LOG(Error, "Failed to process VGF file internalsr");
+      return false;
+    }
   }
 
   // Parse the sequences in the VGF (while there can be multiple sequences of
@@ -381,22 +578,27 @@ bool VgfRepr::process_vgf(
   // GRAPH segment to be present.
   const int segment_id = 0;
 
-  debug_print_sequence(sequence_decoder);
+  {
+    VGF_PROFILE_SCOPE(event_tracer, "VGF_INIT_PARSE_SEQUENCE_AND_MODULE");
+
+    debug_print_sequence(sequence_decoder);
 #if defined(ET_ARM_VGF_DEBUG)
-  debug_print_resources(resource_decoder);
+    debug_print_resources(resource_decoder);
 #endif
-  if (sequence_decoder->modelSequenceTableSize() != 1) {
-    ET_LOG(Error, "Expected sequence length 1");
-    return false;
-  }
-  if (sequence_decoder->getSegmentType(segment_id) !=
-      vgflib::ModuleType::GRAPH) {
-    ET_LOG(Error, "Expected segment to be of type GRAPH");
-    return false;
+    if (sequence_decoder->modelSequenceTableSize() != 1) {
+      ET_LOG(Error, "Expected sequence length 1");
+      return false;
+    }
+    if (sequence_decoder->getSegmentType(segment_id) !=
+        vgflib::ModuleType::GRAPH) {
+      ET_LOG(Error, "Expected segment to be of type GRAPH");
+      return false;
+    }
+
+    // Extract first segment and its associated module
+    debug_print_modules(module_decoder);
   }
 
-  // Extract first segment and it's associated module
-  debug_print_modules(module_decoder);
   auto segment_name = string(sequence_decoder->getSegmentName(segment_id));
   auto segment_module = sequence_decoder->getSegmentModuleIndex(segment_id);
 
@@ -405,18 +607,22 @@ bool VgfRepr::process_vgf(
       string(module_decoder->getModuleEntryPoint(segment_module));
   auto segment_m_spirv = module_decoder->getModuleCode(segment_module);
 
-  // Build a shader from the module
-  VkShaderModuleCreateInfo smci{
-      .sType = VK_STRUCTURE_TYPE_SHADER_MODULE_CREATE_INFO,
-      .pNext = nullptr,
-      .flags = 0,
-      .codeSize = segment_m_spirv.size() * sizeof(uint32_t),
-      .pCode = segment_m_spirv.begin(),
-  };
-  result = vkCreateShaderModule(vk_device, &smci, nullptr, &vk_shader);
-  if (result != VK_SUCCESS) {
-    ET_LOG(Error, "Failed to load shader from segment %d", segment_module);
-    return false;
+  {
+    VGF_PROFILE_SCOPE(event_tracer, "VGF_INIT_CREATE_SHADER_MODULE");
+
+    // Build a shader from the module
+    VkShaderModuleCreateInfo smci{
+        .sType = VK_STRUCTURE_TYPE_SHADER_MODULE_CREATE_INFO,
+        .pNext = nullptr,
+        .flags = 0,
+        .codeSize = segment_m_spirv.size() * sizeof(uint32_t),
+        .pCode = segment_m_spirv.begin(),
+    };
+    result = vkCreateShaderModule(vk_device, &smci, nullptr, &vk_shader);
+    if (result != VK_SUCCESS) {
+      ET_LOG(Error, "Failed to load shader from segment %d", segment_module);
+      return false;
+    }
   }
 
   // Record our shader and entrypoint string
@@ -428,539 +634,675 @@ bool VgfRepr::process_vgf(
   vector<tuple<VkTensorARM, VkTensorViewARM>> resources;
   vector<VkDataGraphPipelineConstantARM> constants;
 
-  int IO_count = resource_decoder->size();
-  for (int i = 0; i < IO_count; i++) {
-    auto resource_type = resource_decoder->getDescriptorType(i).value_or(0);
-    auto resource_format = vgflib::ToVkFormat(resource_decoder->getVkFormat(i));
+  {
+    VGF_PROFILE_SCOPE(event_tracer, "VGF_INIT_RESOURCE_TABLE");
 
-    // Get tensor shape and strides
-    auto shape = resource_decoder->getTensorShape(i);
-    auto stride = resource_decoder->getTensorStride(i);
-    const auto shape_size = shape.size();
+    int IO_count = resource_decoder->size();
+    for (int i = 0; i < IO_count; i++) {
+      auto resource_type = resource_decoder->getDescriptorType(i).value_or(0);
+      auto resource_format =
+          vgflib::ToVkFormat(resource_decoder->getVkFormat(i));
 
-    switch (resource_decoder->getCategory(i)) {
-      case vgflib::ResourceCategory::INPUT:
-      case vgflib::ResourceCategory::OUTPUT: {
-        // Expect IO to be a tensor type
-        if (resource_type != VK_DESCRIPTOR_TYPE_TENSOR_ARM) {
-          ET_LOG(
-              Error,
-              "Expected tensor type descriptor %u got %u",
-              VK_DESCRIPTOR_TYPE_TENSOR_ARM,
-              resource_type);
-          return false;
-        }
+      // Get tensor shape and strides
+      auto shape = resource_decoder->getTensorShape(i);
+      auto stride = resource_decoder->getTensorStride(i);
+      const auto shape_size = shape.size();
 
-        // Allocate a tensor with backing memory
-        VkTensorARM tensor;
-        VkTensorViewARM tensor_view;
-        VkDeviceMemory tensor_memory;
-        VkTensorDescriptionARM tensor_description;
-        result = allocate_tensor(
-            vk_physical,
-            vk_device,
-            resource_format,
-            shape_size == 0 ? 1 : static_cast<uint32_t>(shape_size),
-            shape_size == 0 ? &kScalarSentinelDimension : shape.begin(),
-            static_cast<uint32_t>(stride.size()),
-            stride.begin(),
-            &tensor_description,
-            &tensor_view,
-            &tensor,
-            &tensor_memory);
-        if (result != VK_SUCCESS) {
-          ET_LOG(Error, "Failed to allocate tensor for VGF resource %d", i);
-          return false;
-        }
-        size_t e_size = get_format_size(resource_format);
-        if (0 == e_size) {
-          ET_LOG(Error, "failed to get element size of VkFormat");
-          return false;
-        }
+      switch (resource_decoder->getCategory(i)) {
+        case vgflib::ResourceCategory::INPUT:
+        case vgflib::ResourceCategory::OUTPUT: {
+          // Expect IO to be a tensor type
+          if (resource_type != VK_DESCRIPTOR_TYPE_TENSOR_ARM) {
+            ET_LOG(
+                Error,
+                "Expected tensor type descriptor %u got %u",
+                VK_DESCRIPTOR_TYPE_TENSOR_ARM,
+                resource_type);
+            return false;
+          }
 
-        bool is_in =
-            resource_decoder->getCategory(i) == vgflib::ResourceCategory::INPUT;
-        IOs.push_back(
-            IO{vector<int64_t>(shape.begin(), shape.end()),
-               vector<int64_t>(stride.begin(), stride.end()),
-               e_size,
-               tensor,
-               tensor_view,
-               tensor_memory,
-               is_in});
-        resources.push_back({tensor, tensor_view});
-        descriptors.push_back(tensor_description);
-        break;
-      }
-      case vgflib::ResourceCategory::CONSTANT:
-        // Constants just need a descriptor
-        descriptors.push_back(VkTensorDescriptionARM{
-            .sType = VK_STRUCTURE_TYPE_TENSOR_DESCRIPTION_ARM,
-            .pNext = nullptr,
-            .tiling = VK_TENSOR_TILING_LINEAR_ARM,
-            .format = resource_format,
-            .dimensionCount =
+          // Allocate a tensor with backing memory
+          VkTensorARM tensor;
+          VkTensorViewARM tensor_view;
+          VkDeviceMemory tensor_memory;
+          VkTensorDescriptionARM tensor_description;
+
+          {
+            VGF_PROFILE_SCOPE(event_tracer, "VGF_INIT_ALLOCATE_IO_TENSOR");
+
+            result = allocate_tensor(
+                vk_physical,
+                vk_device,
+                resource_format,
                 shape_size == 0 ? 1 : static_cast<uint32_t>(shape_size),
-            .pDimensions =
                 shape_size == 0 ? &kScalarSentinelDimension : shape.begin(),
-            // Note: stride_data of 0's causes size==0, null means stride==size
-            .pStrides = (0 == stride.size() ? nullptr : stride.begin()),
-            .usage = VK_TENSOR_USAGE_DATA_GRAPH_BIT_ARM,
-        });
-        break;
-      case vgflib::ResourceCategory::INTERMEDIATE:
-        ET_LOG(Error, "Unsupported resource category INTERMEDIATE");
-        return false;
-      default:
-        ET_LOG(Info, "Unsupported resource category UNKNOWN");
-        return false;
+                static_cast<uint32_t>(stride.size()),
+                stride.begin(),
+                &tensor_description,
+                &tensor_view,
+                &tensor,
+                &tensor_memory);
+          }
+
+          if (result != VK_SUCCESS) {
+            ET_LOG(Error, "Failed to allocate tensor for VGF resource %d", i);
+            return false;
+          }
+          size_t e_size = get_format_size(resource_format);
+          if (0 == e_size) {
+            ET_LOG(Error, "failed to get element size of VkFormat");
+            return false;
+          }
+
+          bool is_in = resource_decoder->getCategory(i) ==
+              vgflib::ResourceCategory::INPUT;
+          IOs.push_back(
+              IO{vector<int64_t>(shape.begin(), shape.end()),
+                 vector<int64_t>(stride.begin(), stride.end()),
+                 e_size,
+                 tensor,
+                 tensor_view,
+                 tensor_memory,
+                 is_in});
+          resources.push_back({tensor, tensor_view});
+          descriptors.push_back(tensor_description);
+          break;
+        }
+        case vgflib::ResourceCategory::CONSTANT:
+          // Constants just need a descriptor
+          descriptors.push_back(VkTensorDescriptionARM{
+              .sType = VK_STRUCTURE_TYPE_TENSOR_DESCRIPTION_ARM,
+              .pNext = nullptr,
+              .tiling = VK_TENSOR_TILING_LINEAR_ARM,
+              .format = resource_format,
+              .dimensionCount =
+                  shape_size == 0 ? 1 : static_cast<uint32_t>(shape_size),
+              .pDimensions =
+                  shape_size == 0 ? &kScalarSentinelDimension : shape.begin(),
+              // Note: stride_data of 0's causes size==0, null means
+              // stride==size
+              .pStrides = (0 == stride.size() ? nullptr : stride.begin()),
+              .usage = VK_TENSOR_USAGE_DATA_GRAPH_BIT_ARM,
+          });
+          break;
+        case vgflib::ResourceCategory::INTERMEDIATE:
+          ET_LOG(Error, "Unsupported resource category INTERMEDIATE");
+          return false;
+        default:
+          ET_LOG(Info, "Unsupported resource category UNKNOWN");
+          return false;
+      }
     }
   }
 
-  // Constants table - mapping of shader bindings to MRT's and their descriptors
-  auto constant_indexes =
-      sequence_decoder->getSegmentConstantIndexes(segment_id);
-  for (uint32_t i : constant_indexes) {
-    auto mrt_i = constant_decoder->getConstantMrtIndex(i);
-    auto constant_data = constant_decoder->getConstant(i);
-    constants.push_back(VkDataGraphPipelineConstantARM{
-        .sType = VK_STRUCTURE_TYPE_DATA_GRAPH_PIPELINE_CONSTANT_ARM,
-        .pNext = &descriptors[mrt_i],
-        .id = i,
-        .pConstantData = constant_data.begin(),
-    });
+  {
+    VGF_PROFILE_SCOPE(event_tracer, "VGF_INIT_CONSTANT_TABLE");
+
+    // Constants table - mapping of shader bindings to MRT's and their
+    // descriptors
+    auto constant_indexes =
+        sequence_decoder->getSegmentConstantIndexes(segment_id);
+    for (uint32_t i : constant_indexes) {
+      auto mrt_i = constant_decoder->getConstantMrtIndex(i);
+      auto constant_data = constant_decoder->getConstant(i);
+      constants.push_back(VkDataGraphPipelineConstantARM{
+          .sType = VK_STRUCTURE_TYPE_DATA_GRAPH_PIPELINE_CONSTANT_ARM,
+          .pNext = &descriptors[mrt_i],
+          .id = i,
+          .pConstantData = constant_data.begin(),
+      });
+    }
   }
 
   // Prepare our layout bindings from the segment's information
   vector<VkDescriptorSetLayoutBinding> layout_bindings;
   vector<VkDataGraphPipelineResourceInfoARM> data_graph_resources;
 
-  auto set_count =
-      sequence_decoder->getSegmentDescriptorSetInfosSize(segment_id);
-  for (uint32_t d_idx = 0; d_idx < set_count; d_idx++) {
-    auto handle =
-        sequence_decoder->getDescriptorBindingSlotsHandle(segment_id, d_idx);
-    auto binding_count = sequence_decoder->getBindingsSize(handle);
-    for (int binding = 0; binding < binding_count; binding++) {
-      auto binding_index =
-          sequence_decoder->getBindingSlotBinding(handle, binding);
-      auto MRT_index =
-          sequence_decoder->getBindingSlotMrtIndex(handle, binding);
-      auto MRT_type = resource_decoder->getDescriptorType(MRT_index).value();
+  uint32_t set_count = 0;
 
-      const VkDescriptorSetLayoutBinding layout_binding{
-          .binding = binding_index,
-          .descriptorType = vgflib::ToVkDescriptorType(MRT_type),
-          .descriptorCount = 1,
-          .stageFlags = VK_SHADER_STAGE_ALL,
-          .pImmutableSamplers = nullptr,
-      };
-      layout_bindings.push_back(layout_binding);
+  {
+    VGF_PROFILE_SCOPE(event_tracer, "VGF_INIT_DESCRIPTOR_METADATA");
 
-      const VkDataGraphPipelineResourceInfoARM resource{
-          .sType = VK_STRUCTURE_TYPE_DATA_GRAPH_PIPELINE_RESOURCE_INFO_ARM,
-          // Note: we populate the resource_descriptors 1:1 with the MRT table,
-          // so can directly use that index into the resource_descriptors
-          .pNext = &descriptors[MRT_index],
-          .descriptorSet = d_idx,
-          .binding = binding_index,
-          .arrayElement = 0,
-      };
-      data_graph_resources.push_back(resource);
-    }
-  }
+    set_count = sequence_decoder->getSegmentDescriptorSetInfosSize(segment_id);
+    for (uint32_t d_idx = 0; d_idx < set_count; d_idx++) {
+      auto handle =
+          sequence_decoder->getDescriptorBindingSlotsHandle(segment_id, d_idx);
+      auto binding_count = sequence_decoder->getBindingsSize(handle);
+      for (int binding = 0; binding < binding_count; binding++) {
+        auto binding_index =
+            sequence_decoder->getBindingSlotBinding(handle, binding);
+        auto MRT_index =
+            sequence_decoder->getBindingSlotMrtIndex(handle, binding);
+        auto MRT_type = resource_decoder->getDescriptorType(MRT_index).value();
 
-  // create fixed layout for this module
-  const VkDescriptorSetLayoutCreateInfo layout_info = {
-      .sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO,
-      .pNext = nullptr,
-      .flags = 0,
-      .bindingCount = static_cast<uint32_t>(layout_bindings.size()),
-      .pBindings = layout_bindings.data(),
-  };
-  result =
-      vkCreateDescriptorSetLayout(vk_device, &layout_info, nullptr, &vk_layout);
-  if (result != VK_SUCCESS) {
-    ET_LOG(Error, "Failed to create descriptor layout");
-    return false;
-  }
+        const VkDescriptorSetLayoutBinding layout_binding{
+            .binding = binding_index,
+            .descriptorType = vgflib::ToVkDescriptorType(MRT_type),
+            .descriptorCount = 1,
+            .stageFlags = VK_SHADER_STAGE_ALL,
+            .pImmutableSamplers = nullptr,
+        };
+        layout_bindings.push_back(layout_binding);
 
-  std::vector<VkDescriptorPoolSize> poolSizes;
-  poolSizes.reserve(layout_bindings.size());
-  for (const auto& b : layout_bindings) {
-    bool found = false;
-    for (size_t idx = 0; idx < poolSizes.size(); ++idx) {
-      if (poolSizes[idx].type == b.descriptorType) {
-        poolSizes[idx].descriptorCount += b.descriptorCount;
-        found = true;
-        break;
+        const VkDataGraphPipelineResourceInfoARM resource{
+            .sType = VK_STRUCTURE_TYPE_DATA_GRAPH_PIPELINE_RESOURCE_INFO_ARM,
+            // Note: we populate the resource_descriptors 1:1 with the MRT
+            // table, so can directly use that index into the
+            // resource_descriptors
+            .pNext = &descriptors[MRT_index],
+            .descriptorSet = d_idx,
+            .binding = binding_index,
+            .arrayElement = 0,
+        };
+        data_graph_resources.push_back(resource);
       }
     }
-    if (!found) {
-      poolSizes.push_back({b.descriptorType, b.descriptorCount});
+  }
+
+  {
+    VGF_PROFILE_SCOPE(event_tracer, "VGF_INIT_CREATE_DESCRIPTOR_SET_LAYOUT");
+
+    // create fixed layout for this module
+    const VkDescriptorSetLayoutCreateInfo layout_info = {
+        .sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO,
+        .pNext = nullptr,
+        .flags = 0,
+        .bindingCount = static_cast<uint32_t>(layout_bindings.size()),
+        .pBindings = layout_bindings.data(),
+    };
+    result = vkCreateDescriptorSetLayout(
+        vk_device, &layout_info, nullptr, &vk_layout);
+    if (result != VK_SUCCESS) {
+      ET_LOG(Error, "Failed to create descriptor layout");
+      return false;
     }
   }
 
-  // Create descriptor pool and descriptors for pipeline
-  const VkDescriptorPoolCreateInfo descriptor_pool_info = {
-      .sType = VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO,
-      .pNext = nullptr,
-      .flags = 0,
-      .maxSets = static_cast<uint32_t>(set_count),
-      .poolSizeCount = static_cast<uint32_t>(poolSizes.size()),
-      .pPoolSizes = poolSizes.data(),
-  };
-  result = vkCreateDescriptorPool(
-      vk_device, &descriptor_pool_info, nullptr, &vk_descriptor_pool);
-  if (result != VK_SUCCESS) {
-    ET_LOG(Error, "Failed to create descriptor pool");
-    return false;
-  }
+  {
+    VGF_PROFILE_SCOPE(event_tracer, "VGF_INIT_CREATE_DESCRIPTOR_POOL");
 
-  const VkDescriptorSetAllocateInfo descriptor_set_info = {
-      .sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO,
-      .pNext = nullptr,
-      .descriptorPool = vk_descriptor_pool,
-      .descriptorSetCount = static_cast<uint32_t>(set_count),
-      .pSetLayouts = &vk_layout,
-  };
+    std::vector<VkDescriptorPoolSize> poolSizes;
+    poolSizes.reserve(layout_bindings.size());
+    for (const auto& b : layout_bindings) {
+      bool found = false;
+      for (size_t idx = 0; idx < poolSizes.size(); ++idx) {
+        if (poolSizes[idx].type == b.descriptorType) {
+          poolSizes[idx].descriptorCount += b.descriptorCount;
+          found = true;
+          break;
+        }
+      }
+      if (!found) {
+        poolSizes.push_back({b.descriptorType, b.descriptorCount});
+      }
+    }
 
-  // Alloc descriptor sets
-  // currently, as we require modelSequenceTableSize to == 1
-  // we can only get one descriptor set.
-  descriptor_sets.resize(layout_bindings.size());
-  result = vkAllocateDescriptorSets(
-      vk_device, &descriptor_set_info, descriptor_sets.data());
-  if (result != VK_SUCCESS) {
-    ET_LOG(Error, "Failed to allocate descriptor sets");
-    return false;
-  }
-
-  // write descriptor updates for every input
-  auto input_slots =
-      sequence_decoder->getSegmentInputBindingSlotsHandle(segment_id);
-  auto input_size = sequence_decoder->getBindingsSize(input_slots);
-  for (uint32_t i = 0; i < input_size; i++) {
-    auto binding = sequence_decoder->getBindingSlotBinding(input_slots, i);
-    auto mrt_i = sequence_decoder->getBindingSlotMrtIndex(input_slots, i);
-
-    VkWriteDescriptorSetTensorARM write_desc = {
-        .sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET_TENSOR_ARM,
+    // Create descriptor pool and descriptors for pipeline
+    const VkDescriptorPoolCreateInfo descriptor_pool_info = {
+        .sType = VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO,
         .pNext = nullptr,
-        .tensorViewCount = 1,
-        .pTensorViews = &get<1>(resources[i]),
+        .flags = 0,
+        .maxSets = static_cast<uint32_t>(set_count),
+        .poolSizeCount = static_cast<uint32_t>(poolSizes.size()),
+        .pPoolSizes = poolSizes.data(),
     };
-    VkWriteDescriptorSet desc_set = {
-        .sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET,
-        .pNext = &write_desc,
-        .dstSet = descriptor_sets[0],
-        .dstBinding = binding,
-        .dstArrayElement = 0,
-        .descriptorCount = 1,
-        .descriptorType = VK_DESCRIPTOR_TYPE_TENSOR_ARM,
-        .pImageInfo = nullptr,
-        .pBufferInfo = nullptr,
-        .pTexelBufferView = nullptr,
-    };
-    vkUpdateDescriptorSets(vk_device, 1, &desc_set, 0, nullptr);
+    result = vkCreateDescriptorPool(
+        vk_device, &descriptor_pool_info, nullptr, &vk_descriptor_pool);
+    if (result != VK_SUCCESS) {
+      ET_LOG(Error, "Failed to create descriptor pool");
+      return false;
+    }
   }
 
-  // write descriptor updates for every output
-  auto output_slots =
-      sequence_decoder->getSegmentOutputBindingSlotsHandle(segment_id);
-  auto output_size = sequence_decoder->getBindingsSize(output_slots);
-  for (uint32_t i = 0; i < output_size; i++) {
-    auto binding = sequence_decoder->getBindingSlotBinding(output_slots, i);
-    auto mrt_i = sequence_decoder->getBindingSlotMrtIndex(output_slots, i);
+  {
+    VGF_PROFILE_SCOPE(event_tracer, "VGF_INIT_ALLOCATE_DESCRIPTOR_SETS");
 
-    VkWriteDescriptorSetTensorARM write_desc = {
-        .sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET_TENSOR_ARM,
+    const VkDescriptorSetAllocateInfo descriptor_set_info = {
+        .sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO,
         .pNext = nullptr,
-        .tensorViewCount = 1,
-        .pTensorViews = &get<1>(resources[i + input_size]),
+        .descriptorPool = vk_descriptor_pool,
+        .descriptorSetCount = static_cast<uint32_t>(set_count),
+        .pSetLayouts = &vk_layout,
     };
-    VkWriteDescriptorSet desc_set = {
-        .sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET,
-        .pNext = &write_desc,
-        .dstSet = descriptor_sets[0],
-        .dstBinding = binding,
-        .dstArrayElement = 0,
-        .descriptorCount = 1,
-        .descriptorType = VK_DESCRIPTOR_TYPE_TENSOR_ARM,
-        .pImageInfo = nullptr,
-        .pBufferInfo = nullptr,
-        .pTexelBufferView = nullptr,
-    };
-    vkUpdateDescriptorSets(vk_device, 1, &desc_set, 0, nullptr);
+
+    // Alloc descriptor sets
+    // currently, as we require modelSequenceTableSize to == 1
+    // we can only get one descriptor set.
+    descriptor_sets.resize(layout_bindings.size());
+    result = vkAllocateDescriptorSets(
+        vk_device, &descriptor_set_info, descriptor_sets.data());
+    if (result != VK_SUCCESS) {
+      ET_LOG(Error, "Failed to allocate descriptor sets");
+      return false;
+    }
   }
 
-  // create our pipeline
-  VkPipelineLayoutCreateInfo pipeline_layout_info = {
-      .sType = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO,
-      .pNext = nullptr,
-      .flags = 0,
-      .setLayoutCount = 1,
-      .pSetLayouts = &vk_layout,
-      .pushConstantRangeCount = 0,
-      .pPushConstantRanges = nullptr,
-  };
-  result = vkCreatePipelineLayout(
-      vk_device, &pipeline_layout_info, nullptr, &vk_pipeline_layout);
-  if (result != VK_SUCCESS) {
-    ET_LOG(Error, "Failed to create pipeline layout");
-    return false;
+  {
+    VGF_PROFILE_SCOPE(event_tracer, "VGF_INIT_UPDATE_DESCRIPTOR_SETS");
+
+    // write descriptor updates for every input
+    auto input_slots =
+        sequence_decoder->getSegmentInputBindingSlotsHandle(segment_id);
+    auto input_size = sequence_decoder->getBindingsSize(input_slots);
+    for (uint32_t i = 0; i < input_size; i++) {
+      auto binding = sequence_decoder->getBindingSlotBinding(input_slots, i);
+      auto mrt_i = sequence_decoder->getBindingSlotMrtIndex(input_slots, i);
+
+      VkWriteDescriptorSetTensorARM write_desc = {
+          .sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET_TENSOR_ARM,
+          .pNext = nullptr,
+          .tensorViewCount = 1,
+          .pTensorViews = &get<1>(resources[i]),
+      };
+      VkWriteDescriptorSet desc_set = {
+          .sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET,
+          .pNext = &write_desc,
+          .dstSet = descriptor_sets[0],
+          .dstBinding = binding,
+          .dstArrayElement = 0,
+          .descriptorCount = 1,
+          .descriptorType = VK_DESCRIPTOR_TYPE_TENSOR_ARM,
+          .pImageInfo = nullptr,
+          .pBufferInfo = nullptr,
+          .pTexelBufferView = nullptr,
+      };
+      vkUpdateDescriptorSets(vk_device, 1, &desc_set, 0, nullptr);
+    }
+
+    // write descriptor updates for every output
+    auto output_slots =
+        sequence_decoder->getSegmentOutputBindingSlotsHandle(segment_id);
+    auto output_size = sequence_decoder->getBindingsSize(output_slots);
+    for (uint32_t i = 0; i < output_size; i++) {
+      auto binding = sequence_decoder->getBindingSlotBinding(output_slots, i);
+      auto mrt_i = sequence_decoder->getBindingSlotMrtIndex(output_slots, i);
+
+      VkWriteDescriptorSetTensorARM write_desc = {
+          .sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET_TENSOR_ARM,
+          .pNext = nullptr,
+          .tensorViewCount = 1,
+          .pTensorViews = &get<1>(resources[i + input_size]),
+      };
+      VkWriteDescriptorSet desc_set = {
+          .sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET,
+          .pNext = &write_desc,
+          .dstSet = descriptor_sets[0],
+          .dstBinding = binding,
+          .dstArrayElement = 0,
+          .descriptorCount = 1,
+          .descriptorType = VK_DESCRIPTOR_TYPE_TENSOR_ARM,
+          .pImageInfo = nullptr,
+          .pBufferInfo = nullptr,
+          .pTexelBufferView = nullptr,
+      };
+      vkUpdateDescriptorSets(vk_device, 1, &desc_set, 0, nullptr);
+    }
   }
 
-  // Shader Module Create
-  VkDataGraphPipelineShaderModuleCreateInfoARM shader_info{
-      .sType =
-          VK_STRUCTURE_TYPE_DATA_GRAPH_PIPELINE_SHADER_MODULE_CREATE_INFO_ARM,
-      .pNext = nullptr,
-      .module = get<0>(shader_modules[0]),
-      .pName = get<1>(shader_modules[0]).c_str(),
-      .pSpecializationInfo = nullptr,
-      .constantCount = static_cast<uint32_t>(constants.size()),
-      .pConstants = constants.data(),
-  };
+  {
+    VGF_PROFILE_SCOPE(event_tracer, "VGF_INIT_CREATE_PIPELINE_LAYOUT");
 
-  // Prepare Graph Pipeline
-  VkDataGraphPipelineCreateInfoARM graph_pipeline_info{
-      .sType = VK_STRUCTURE_TYPE_DATA_GRAPH_PIPELINE_CREATE_INFO_ARM,
-      .pNext = &shader_info,
-      .flags = VK_PIPELINE_CREATE_2_FAIL_ON_PIPELINE_COMPILE_REQUIRED_BIT |
-          VK_PIPELINE_CREATE_2_EARLY_RETURN_ON_FAILURE_BIT_KHR,
-      .layout = vk_pipeline_layout,
-      .resourceInfoCount = static_cast<uint32_t>(data_graph_resources.size()),
-      .pResourceInfos = data_graph_resources.data(),
-  };
+    // create our pipeline
+    VkPipelineLayoutCreateInfo pipeline_layout_info = {
+        .sType = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO,
+        .pNext = nullptr,
+        .flags = 0,
+        .setLayoutCount = 1,
+        .pSetLayouts = &vk_layout,
+        .pushConstantRangeCount = 0,
+        .pPushConstantRanges = nullptr,
+    };
+    result = vkCreatePipelineLayout(
+        vk_device, &pipeline_layout_info, nullptr, &vk_pipeline_layout);
+    if (result != VK_SUCCESS) {
+      ET_LOG(Error, "Failed to create pipeline layout");
+      return false;
+    }
+  }
 
-  result = vkCreateDataGraphPipelinesARM(
-      vk_device, // device
-      VK_NULL_HANDLE, // deferredOperation
-      VK_NULL_HANDLE, // VkPipelineCache
-      1, // createInfoCount
-      &graph_pipeline_info, // pCreateInfos
-      nullptr, // pAllocator
-      &vk_pipeline // pPipelines (VkPipeline*)
-  );
-  if (result != VK_SUCCESS) {
-    ET_LOG(Error, "Failed to create DataGraphPipeline");
-    return false;
+  {
+    VGF_PROFILE_SCOPE(event_tracer, "VGF_INIT_CREATE_DATA_GRAPH_PIPELINE");
+
+    // Shader Module Create
+    VkDataGraphPipelineShaderModuleCreateInfoARM shader_info{
+        .sType =
+            VK_STRUCTURE_TYPE_DATA_GRAPH_PIPELINE_SHADER_MODULE_CREATE_INFO_ARM,
+        .pNext = nullptr,
+        .module = get<0>(shader_modules[0]),
+        .pName = get<1>(shader_modules[0]).c_str(),
+        .pSpecializationInfo = nullptr,
+        .constantCount = static_cast<uint32_t>(constants.size()),
+        .pConstants = constants.data(),
+    };
+
+    // Prepare Graph Pipeline
+    VkDataGraphPipelineCreateInfoARM graph_pipeline_info{
+        .sType = VK_STRUCTURE_TYPE_DATA_GRAPH_PIPELINE_CREATE_INFO_ARM,
+        .pNext = &shader_info,
+        .flags = VK_PIPELINE_CREATE_2_FAIL_ON_PIPELINE_COMPILE_REQUIRED_BIT |
+            VK_PIPELINE_CREATE_2_EARLY_RETURN_ON_FAILURE_BIT_KHR,
+        .layout = vk_pipeline_layout,
+        .resourceInfoCount = static_cast<uint32_t>(data_graph_resources.size()),
+        .pResourceInfos = data_graph_resources.data(),
+    };
+
+    result = vkCreateDataGraphPipelinesARM(
+        vk_device, // device
+        VK_NULL_HANDLE, // deferredOperation
+        VK_NULL_HANDLE, // VkPipelineCache
+        1, // createInfoCount
+        &graph_pipeline_info, // pCreateInfos
+        nullptr, // pAllocator
+        &vk_pipeline // pPipelines (VkPipeline*)
+    );
+
+    if (result != VK_SUCCESS) {
+      ET_LOG(Error, "Failed to create DataGraphPipeline");
+      return false;
+    }
   }
 
   // prepare the graph pipeline session
-  VkDataGraphPipelineSessionCreateInfoARM pipeline_session_info{
-      .sType = VK_STRUCTURE_TYPE_DATA_GRAPH_PIPELINE_SESSION_CREATE_INFO_ARM,
-      .pNext = nullptr,
-      .flags = 0,
-      .dataGraphPipeline = vk_pipeline,
-  };
-  result = vkCreateDataGraphPipelineSessionARM(
-      vk_device, &pipeline_session_info, nullptr, &vk_session);
-  if (result != VK_SUCCESS) {
-    ET_LOG(Error, "Failed to create DataGraphPipelineSession");
-    return false;
+  {
+    VGF_PROFILE_SCOPE(event_tracer, "VGF_INIT_CREATE_PIPELINE_SESSION");
+
+    VkDataGraphPipelineSessionCreateInfoARM pipeline_session_info{
+        .sType = VK_STRUCTURE_TYPE_DATA_GRAPH_PIPELINE_SESSION_CREATE_INFO_ARM,
+        .pNext = nullptr,
+        .flags = 0,
+        .dataGraphPipeline = vk_pipeline,
+    };
+    result = vkCreateDataGraphPipelineSessionARM(
+        vk_device, &pipeline_session_info, nullptr, &vk_session);
+    if (result != VK_SUCCESS) {
+      ET_LOG(Error, "Failed to create DataGraphPipelineSession");
+      return false;
+    }
   }
 
-  // Allocate command buffer
-  VkCommandBufferAllocateInfo buffer_allocate_info{
-      .sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO,
-      .pNext = nullptr,
-      .commandPool = vk_command_pool,
-      .level = VK_COMMAND_BUFFER_LEVEL_PRIMARY,
-      .commandBufferCount = 1};
-  result = vkAllocateCommandBuffers(
-      vk_device, &buffer_allocate_info, &vk_execute_cmd);
-  if (result != VK_SUCCESS) {
-    ET_LOG(Error, "Failed to allocate command buffers");
-    return false;
+  {
+    VGF_PROFILE_SCOPE(event_tracer, "VGF_INIT_ALLOCATE_COMMAND_BUFFER");
+
+    // Allocate command buffer
+    VkCommandBufferAllocateInfo buffer_allocate_info{
+        .sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO,
+        .pNext = nullptr,
+        .commandPool = vk_command_pool,
+        .level = VK_COMMAND_BUFFER_LEVEL_PRIMARY,
+        .commandBufferCount = 1};
+    result = vkAllocateCommandBuffers(
+        vk_device, &buffer_allocate_info, &vk_execute_cmd);
+    if (result != VK_SUCCESS) {
+      ET_LOG(Error, "Failed to allocate command buffers");
+      return false;
+    }
   }
 
-  // Allocate intermediates memory based on the pipeline requirements provided
-  // by the driver
-  VkDataGraphPipelineSessionBindPointRequirementsInfoARM
-      bind_point_requirements_info = {
-          .sType =
-              VK_STRUCTURE_TYPE_DATA_GRAPH_PIPELINE_SESSION_BIND_POINT_REQUIREMENTS_INFO_ARM,
+  {
+    VGF_PROFILE_SCOPE(event_tracer, "VGF_INIT_ALLOCATE_TRANSIENT_MEMORY");
+
+    // Allocate intermediates memory based on the pipeline requirements provided
+    // by the driver
+    VkDataGraphPipelineSessionBindPointRequirementsInfoARM
+        bind_point_requirements_info = {
+            .sType =
+                VK_STRUCTURE_TYPE_DATA_GRAPH_PIPELINE_SESSION_BIND_POINT_REQUIREMENTS_INFO_ARM,
+            .pNext = nullptr,
+            .session = vk_session,
+        };
+
+    uint32_t bind_point_count = 0;
+    result = vkGetDataGraphPipelineSessionBindPointRequirementsARM(
+        vk_device, &bind_point_requirements_info, &bind_point_count, nullptr);
+    if (result != VK_SUCCESS) {
+      ET_LOG(Error, "Failed to get session bind point count");
+      return false;
+    }
+
+    vector<VkDataGraphPipelineSessionBindPointRequirementARM>
+        bind_point_requirements;
+    bind_point_requirements.resize(bind_point_count);
+    result = vkGetDataGraphPipelineSessionBindPointRequirementsARM(
+        vk_device,
+        &bind_point_requirements_info,
+        &bind_point_count,
+        bind_point_requirements.data());
+    if (result != VK_SUCCESS) {
+      ET_LOG(Error, "Failed to get session bind point requirements");
+      return false;
+    }
+
+    // Given the bind points, just make individual allocations and bind them
+    for (const auto& bind_point_requirement : bind_point_requirements) {
+      // These are the only allowed type and bindpoint with the current spec
+      if (bind_point_requirement.bindPointType !=
+          VK_DATA_GRAPH_PIPELINE_SESSION_BIND_POINT_TYPE_MEMORY_ARM) {
+        ET_LOG(
+            Error,
+            "Expected VK_DATA_GRAPH_PIPELINE_SESSION_BIND_POINT_TYPE_MEMORY_ARM");
+        return false;
+      }
+      if (bind_point_requirement.bindPoint !=
+          VK_DATA_GRAPH_PIPELINE_SESSION_BIND_POINT_TRANSIENT_ARM) {
+        ET_LOG(
+            Error,
+            "Expected VK_DATA_GRAPH_PIPELINE_SESSION_BIND_POINT_TRANSIENT_ARM");
+        return false;
+      }
+      if (bind_point_requirement.numObjects != 1) {
+        ET_LOG(Error, "Expected only one object for the bindpoint");
+        return false;
+      }
+
+      VkDataGraphPipelineSessionMemoryRequirementsInfoARM
+          memory_requirements_info = {
+              .sType =
+                  VK_STRUCTURE_TYPE_DATA_GRAPH_PIPELINE_SESSION_MEMORY_REQUIREMENTS_INFO_ARM,
+              .pNext = nullptr,
+              .session = vk_session,
+              .bindPoint = bind_point_requirement.bindPoint,
+              .objectIndex = 0, // NOTE: tied to numObjects assert above
+          };
+      VkMemoryRequirements2 memory_requirements = {
+          .sType = VK_STRUCTURE_TYPE_MEMORY_REQUIREMENTS_2,
           .pNext = nullptr,
-          .session = vk_session,
+      };
+      vkGetDataGraphPipelineSessionMemoryRequirementsARM(
+          vk_device, &memory_requirements_info, &memory_requirements);
+
+      VkMemoryPropertyFlags aims = VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT |
+          VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT |
+          VK_MEMORY_PROPERTY_HOST_COHERENT_BIT;
+      uint32_t memory_index =
+          get_memory_index(vk_physical, memory_requirements, aims);
+
+      VkMemoryAllocateInfo memory_allocate_info = {
+          .sType = VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO,
+          .pNext = nullptr,
+          .allocationSize = memory_requirements.memoryRequirements.size,
+          .memoryTypeIndex = memory_index,
       };
 
-  uint32_t bind_point_count = 0;
-  result = vkGetDataGraphPipelineSessionBindPointRequirementsARM(
-      vk_device, &bind_point_requirements_info, &bind_point_count, nullptr);
-  if (result != VK_SUCCESS) {
-    ET_LOG(Error, "Failed to get session bind point count");
-    return false;
+      VkDeviceMemory memory;
+      result =
+          vkAllocateMemory(vk_device, &memory_allocate_info, nullptr, &memory);
+      if (result != VK_SUCCESS) {
+        ET_LOG(Error, "Failed to allocate memory for intermediates");
+        return false;
+      }
+      // so we can free this object in destructor
+      intermediates.push_back(memory);
+
+      VkBindDataGraphPipelineSessionMemoryInfoARM bind_info = {
+          .sType =
+              VK_STRUCTURE_TYPE_BIND_DATA_GRAPH_PIPELINE_SESSION_MEMORY_INFO_ARM,
+          .pNext = nullptr,
+          .session = vk_session,
+          .bindPoint = bind_point_requirement.bindPoint,
+          .objectIndex = 0, // NOTE: tied to numObjects assert above
+          .memory = memory,
+          .memoryOffset = 0,
+      };
+      result =
+          vkBindDataGraphPipelineSessionMemoryARM(vk_device, 1, &bind_info);
+      if (result != VK_SUCCESS) {
+        ET_LOG(Error, "Failed to bind intermediates memory");
+        return false;
+      }
+    }
   }
 
-  vector<VkDataGraphPipelineSessionBindPointRequirementARM>
-      bind_point_requirements;
-  bind_point_requirements.resize(bind_point_count);
-  result = vkGetDataGraphPipelineSessionBindPointRequirementsARM(
-      vk_device,
-      &bind_point_requirements_info,
-      &bind_point_count,
-      bind_point_requirements.data());
-  if (result != VK_SUCCESS) {
-    ET_LOG(Error, "Failed to get session bind point requirements");
-    return false;
-  }
+  {
+    VGF_PROFILE_SCOPE(event_tracer, "VGF_INIT_TIMESTAMP_QUERIES");
 
-  // Given the bind points, just make individual allocations and bind them
-  for (const auto& bind_point_requirement : bind_point_requirements) {
-    // These are the only allowed type and bindpoint with the current spec
-    if (bind_point_requirement.bindPointType !=
-        VK_DATA_GRAPH_PIPELINE_SESSION_BIND_POINT_TYPE_MEMORY_ARM) {
-      ET_LOG(
-          Error,
-          "Expected VK_DATA_GRAPH_PIPELINE_SESSION_BIND_POINT_TYPE_MEMORY_ARM");
-      return false;
-    }
-    if (bind_point_requirement.bindPoint !=
-        VK_DATA_GRAPH_PIPELINE_SESSION_BIND_POINT_TRANSIENT_ARM) {
-      ET_LOG(
-          Error,
-          "Expected VK_DATA_GRAPH_PIPELINE_SESSION_BIND_POINT_TRANSIENT_ARM");
-      return false;
-    }
-    if (bind_point_requirement.numObjects != 1) {
-      ET_LOG(Error, "Expected only one object for the bindpoint");
-      return false;
-    }
-
-    VkDataGraphPipelineSessionMemoryRequirementsInfoARM memory_requirements_info = {
-        .sType =
-            VK_STRUCTURE_TYPE_DATA_GRAPH_PIPELINE_SESSION_MEMORY_REQUIREMENTS_INFO_ARM,
-        .pNext = nullptr,
-        .session = vk_session,
-        .bindPoint = bind_point_requirement.bindPoint,
-        .objectIndex = 0, // NOTE: tied to numObjects assert above
-    };
-    VkMemoryRequirements2 memory_requirements = {
-        .sType = VK_STRUCTURE_TYPE_MEMORY_REQUIREMENTS_2,
-        .pNext = nullptr,
-    };
-    vkGetDataGraphPipelineSessionMemoryRequirementsARM(
-        vk_device, &memory_requirements_info, &memory_requirements);
-
-    VkMemoryPropertyFlags aims = VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT |
-        VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT |
-        VK_MEMORY_PROPERTY_HOST_COHERENT_BIT;
-    uint32_t memory_index =
-        get_memory_index(vk_physical, memory_requirements, aims);
-
-    VkMemoryAllocateInfo memory_allocate_info = {
-        .sType = VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO,
-        .pNext = nullptr,
-        .allocationSize = memory_requirements.memoryRequirements.size,
-        .memoryTypeIndex = memory_index,
-    };
-
-    VkDeviceMemory memory;
-    result =
-        vkAllocateMemory(vk_device, &memory_allocate_info, nullptr, &memory);
-    if (result != VK_SUCCESS) {
-      ET_LOG(Error, "Failed to allocate memory for intermediates");
-      return false;
-    }
-    // so we can free this object in destructor
-    intermediates.push_back(memory);
-
-    VkBindDataGraphPipelineSessionMemoryInfoARM bind_info = {
-        .sType =
-            VK_STRUCTURE_TYPE_BIND_DATA_GRAPH_PIPELINE_SESSION_MEMORY_INFO_ARM,
-        .pNext = nullptr,
-        .session = vk_session,
-        .bindPoint = bind_point_requirement.bindPoint,
-        .objectIndex = 0, // NOTE: tied to numObjects assert above
-        .memory = memory,
-        .memoryOffset = 0,
-    };
-    result = vkBindDataGraphPipelineSessionMemoryARM(vk_device, 1, &bind_info);
-    if (result != VK_SUCCESS) {
-      ET_LOG(Error, "Failed to bind intermediates memory");
+    if (!init_timestamp_queries()) {
+      ET_LOG(Error, "Failed to initialize VGF timestamp queries");
       return false;
     }
   }
 
-  // Populate command once with our dispatch information
-  VkCommandBufferBeginInfo beginInfo{
-      VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO};
-  vkBeginCommandBuffer(vk_execute_cmd, &beginInfo);
+  {
+    VGF_PROFILE_SCOPE(event_tracer, "VGF_INIT_RECORD_COMMAND_BUFFER");
 
-  // Sync what will be the data coming in from host
-  VkMemoryBarrier2 barrier = {
-      .sType = VK_STRUCTURE_TYPE_MEMORY_BARRIER_2,
-      .srcStageMask = VK_PIPELINE_STAGE_2_HOST_BIT,
-      .srcAccessMask = VK_ACCESS_2_HOST_WRITE_BIT,
-      .dstStageMask = VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT,
-      .dstAccessMask = VK_ACCESS_2_SHADER_READ_BIT,
-  };
-  VkDependencyInfo dependency_info = {
-      .sType = VK_STRUCTURE_TYPE_DEPENDENCY_INFO,
-      .memoryBarrierCount = 1,
-      .pMemoryBarriers = &barrier,
-  };
-  vkCmdPipelineBarrier2(vk_execute_cmd, &dependency_info);
+    // Populate command once with our dispatch information
+    VkCommandBufferBeginInfo beginInfo{
+        VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO};
+    vkBeginCommandBuffer(vk_execute_cmd, &beginInfo);
 
-  // bind pipeline + descriptor set
-  vkCmdBindPipeline(
-      vk_execute_cmd, VK_PIPELINE_BIND_POINT_DATA_GRAPH_ARM, vk_pipeline);
+    // Sync what will be the data coming in from host
+    VkMemoryBarrier2 barrier = {
+        .sType = VK_STRUCTURE_TYPE_MEMORY_BARRIER_2,
+        .srcStageMask = VK_PIPELINE_STAGE_2_HOST_BIT,
+        .srcAccessMask = VK_ACCESS_2_HOST_WRITE_BIT,
+        .dstStageMask = VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT,
+        .dstAccessMask = VK_ACCESS_2_SHADER_READ_BIT,
+    };
+    VkDependencyInfo dependency_info = {
+        .sType = VK_STRUCTURE_TYPE_DEPENDENCY_INFO,
+        .memoryBarrierCount = 1,
+        .pMemoryBarriers = &barrier,
+    };
+    vkCmdPipelineBarrier2(vk_execute_cmd, &dependency_info);
 
-  vkCmdBindDescriptorSets(
-      vk_execute_cmd,
-      VK_PIPELINE_BIND_POINT_DATA_GRAPH_ARM,
-      vk_pipeline_layout,
-      0, // first set
-      1,
-      descriptor_sets.data(), // descriptor set count + pointer
-      0,
-      nullptr // no dynamic offsets
-  );
+    // bind pipeline + descriptor set
+    vkCmdBindPipeline(
+        vk_execute_cmd, VK_PIPELINE_BIND_POINT_DATA_GRAPH_ARM, vk_pipeline);
 
-  // Dispatch the graph command
-  vkCmdDispatchDataGraphARM(vk_execute_cmd, vk_session, nullptr);
+    vkCmdBindDescriptorSets(
+        vk_execute_cmd,
+        VK_PIPELINE_BIND_POINT_DATA_GRAPH_ARM,
+        vk_pipeline_layout,
+        0, // first set
+        1,
+        descriptor_sets.data(), // descriptor set count + pointer
+        0,
+        nullptr // no dynamic offsets
+    );
 
-  // Sync data back
-  VkMemoryBarrier2 barrier_2 = {
-      .sType = VK_STRUCTURE_TYPE_MEMORY_BARRIER_2,
-      .srcStageMask = VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT,
-      .srcAccessMask = VK_ACCESS_2_SHADER_WRITE_BIT,
-      .dstStageMask = VK_PIPELINE_STAGE_2_HOST_BIT,
-      .dstAccessMask = VK_ACCESS_2_HOST_READ_BIT,
-  };
-  VkDependencyInfo dependency_info_2 = {
-      .sType = VK_STRUCTURE_TYPE_DEPENDENCY_INFO,
-      .memoryBarrierCount = 1,
-      .pMemoryBarriers = &barrier_2,
-  };
-  vkCmdPipelineBarrier2(vk_execute_cmd, &dependency_info_2);
+    // Dispatch the graph command
+    if (timestamp_queries_enabled &&
+        vk_timestamp_query_pool != VK_NULL_HANDLE) {
+      vkCmdResetQueryPool(vk_execute_cmd, vk_timestamp_query_pool, 0, 2);
 
-  // end the command buffer
-  vkEndCommandBuffer(vk_execute_cmd);
+      if (vkCmdWriteTimestamp2) {
+        vkCmdWriteTimestamp2(
+            vk_execute_cmd,
+            VK_PIPELINE_STAGE_2_ALL_COMMANDS_BIT,
+            vk_timestamp_query_pool,
+            0);
+      } else {
+        vkCmdWriteTimestamp(
+            vk_execute_cmd,
+            VK_PIPELINE_STAGE_BOTTOM_OF_PIPE_BIT,
+            vk_timestamp_query_pool,
+            0);
+      }
+    }
+
+    // Dispatch the graph command
+    vkCmdDispatchDataGraphARM(vk_execute_cmd, vk_session, nullptr);
+
+    if (timestamp_queries_enabled &&
+        vk_timestamp_query_pool != VK_NULL_HANDLE) {
+      if (vkCmdWriteTimestamp2) {
+        vkCmdWriteTimestamp2(
+            vk_execute_cmd,
+            VK_PIPELINE_STAGE_2_ALL_COMMANDS_BIT,
+            vk_timestamp_query_pool,
+            1);
+      } else {
+        vkCmdWriteTimestamp(
+            vk_execute_cmd,
+            VK_PIPELINE_STAGE_BOTTOM_OF_PIPE_BIT,
+            vk_timestamp_query_pool,
+            1);
+      }
+    }
+
+    // Sync data back
+    VkMemoryBarrier2 barrier_2 = {
+        .sType = VK_STRUCTURE_TYPE_MEMORY_BARRIER_2,
+        .srcStageMask = VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT,
+        .srcAccessMask = VK_ACCESS_2_SHADER_WRITE_BIT,
+        .dstStageMask = VK_PIPELINE_STAGE_2_HOST_BIT,
+        .dstAccessMask = VK_ACCESS_2_HOST_READ_BIT,
+    };
+    VkDependencyInfo dependency_info_2 = {
+        .sType = VK_STRUCTURE_TYPE_DEPENDENCY_INFO,
+        .memoryBarrierCount = 1,
+        .pMemoryBarriers = &barrier_2,
+    };
+    vkCmdPipelineBarrier2(vk_execute_cmd, &dependency_info_2);
+
+    // end the command buffer
+    vkEndCommandBuffer(vk_execute_cmd);
+  }
 
   return true;
 }
 
-bool VgfRepr::execute_vgf() {
+bool VgfRepr::execute_vgf(executorch::runtime::EventTracer* event_tracer) {
   ET_LOG(Info, "Executing vgf");
 
-  // Submit & wait for idle
   VkSubmitInfo submit{VK_STRUCTURE_TYPE_SUBMIT_INFO};
   submit.commandBufferCount = 1;
   submit.pCommandBuffers = &vk_execute_cmd;
-  VkResult result = vkQueueSubmit(vk_queue, 1, &submit, VK_NULL_HANDLE);
+
+  VkResult result;
+
+  {
+    VGF_PROFILE_SCOPE(event_tracer, "VGF_QUEUE_SUBMIT");
+
+    result = vkQueueSubmit(vk_queue, 1, &submit, VK_NULL_HANDLE);
+  }
+
   if (result != VK_SUCCESS) {
     ET_LOG(Error, "VGF/VkCommandBuffer command submission failed");
     return false;
   }
-  vkQueueWaitIdle(vk_queue);
+
+  {
+    VGF_PROFILE_SCOPE(event_tracer, "VGF_QUEUE_WAIT_IDLE");
+
+    result = vkQueueWaitIdle(vk_queue);
+  }
+
+  if (result != VK_SUCCESS) {
+    ET_LOG(Error, "VGF/VkQueue wait idle failed");
+    return false;
+  }
+
+  read_timestamp_queries(event_tracer);
 
   return true;
 }
 
 void VgfRepr::free_vgf() {
+  if (vk_timestamp_query_pool != VK_NULL_HANDLE) {
+    vkDestroyQueryPool(vk_device, vk_timestamp_query_pool, nullptr);
+    vk_timestamp_query_pool = VK_NULL_HANDLE;
+  }
+
   vkFreeCommandBuffers(vk_device, vk_command_pool, 1, &vk_execute_cmd);
   vkDestroyDataGraphPipelineSessionARM(vk_device, vk_session, nullptr);
   vkDestroyPipeline(vk_device, vk_pipeline, nullptr);
