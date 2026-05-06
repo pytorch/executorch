@@ -230,7 +230,7 @@ html_theme_options = {
     ],
     "show_version_warning_banner": True,
     "use_edit_page_button": True,
-    "header_links_before_dropdown": 8,
+    "header_links_before_dropdown": 9,
     "navbar_align": "left",
     "navbar_start": ["navbar-logo", "version-switcher"],
     "navbar_center": ["navbar-nav"],
