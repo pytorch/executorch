@@ -9,14 +9,12 @@ used by the TOSA partitioner to decide if FX nodes are eligible for delegation.
 
 """
 
-
 import operator
 import typing
 from typing import final, Optional, Sequence, Type
 
 import torch
 import torch.fx as fx
-
 from executorch.backends.arm._passes.arm_pass_utils import (
     get_first_fake_tensor,
     is_submodule_node,
@@ -50,7 +48,6 @@ from executorch.backends.arm.tosa.specification import (
 from executorch.exir import ExportedProgram
 from executorch.exir.backend.utils import WhyNoPartitionReporter
 from executorch.exir.dialects._ops import ops as exir_ops
-
 from torch._subclasses.fake_tensor import FakeTensor
 from torch.export.graph_signature import InputKind
 from torch.fx.passes.operator_support import any_chain, chain, OperatorSupportBase
@@ -216,6 +213,48 @@ def is_quantized(node: torch.fx.Node) -> bool:
     return False
 
 
+_checks_registered = False
+
+
+def _ensure_checks_registered() -> None:
+    """Force-import all operator support modules to trigger @register_tosa_support_check.
+
+    With lazy imports enabled, the side-effect imports in ``__init__.py`` may be
+    deferred indefinitely because the imported names are never accessed.  This
+    helper eagerly imports every sibling module that contains
+    ``@register_tosa_support_check`` so the ``_tosa_spec_support`` mapping is
+    populated before the first lookup.
+    """
+    global _checks_registered
+    if _checks_registered:
+        return
+    _checks_registered = True
+
+    import importlib
+
+    _modules = [
+        "as_strided_copy_support",
+        "bool_bitwise_support",
+        "clone_dim_order_support",
+        "convolution_support",
+        "embedding_support",
+        "gather_support",
+        "index_put_support",
+        "index_select_support",
+        "index_tensor_support",
+        "minmax_support",
+        "pool_2d_support",
+        "reduce_sum_support",
+        "right_shift_support",
+        "slice_copy_support",
+        "to_dim_order_copy_support",
+        "unfold_copy_support",
+        "where_support",
+    ]
+    for mod in _modules:
+        importlib.import_module(f".{mod}", "executorch.backends.arm.operator_support")
+
+
 def get_registered_tosa_support_checks(
     tosa_spec: TosaSpecification,
 ) -> list[Type[SupportedTOSAOperatorCheck]]:
@@ -228,6 +267,7 @@ def get_registered_tosa_support_checks(
         list[Type[SupportedTOSAOperatorCheck]]: Registered checker classes.
 
     """
+    _ensure_checks_registered()
     checks = _tosa_spec_support.get(tosa_spec)
     if not checks:
         raise RuntimeError(
@@ -385,7 +425,6 @@ class CheckArmQuantized(OperatorSupportBase):
     def is_node_supported(
         self, submodules: typing.Mapping[str, torch.nn.Module], node: fx.Node
     ) -> bool:
-
         if node.target in (*DQ_OPS, *Q_OPS):
             return True
 
