@@ -58,7 +58,9 @@ if [[ "$FLOW" == *vulkan* ]]; then
 fi
 
 if [[ "$FLOW" == *arm* ]]; then
-    PYTEST_RETRY_ARGS=(--reruns 2 --reruns-delay 1)
+    if [[ "$SUITE" == "operators" ]]; then
+        PYTEST_RETRY_ARGS=(--reruns 2 --reruns-delay 1)
+    fi
 
     # Setup ARM deps.
     if [[ "$FLOW" == *vgf* ]]; then
