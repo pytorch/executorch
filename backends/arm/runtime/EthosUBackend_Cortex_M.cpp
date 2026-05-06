@@ -42,6 +42,12 @@ extern "C" __attribute__((weak)) struct ethosu_driver* ethosu_reserve_driver_ex(
   return ethosu_reserve_driver();
 }
 
+// Overridable memcpy used by the EthosU backend for output scratch
+// shuffling. Default (weak) implementation in EthosUBackend_IoMemcpy.cpp does
+// std::memcpy. Firmware targets can supply a strong override (e.g. routing
+// through a DMA engine) to reduce CPU memcpy load on the host MCU.
+extern "C" void arm_ethos_io_memcpy(void* dst, const void* src, size_t size);
+
 namespace executorch {
 namespace backends {
 namespace arm {
@@ -136,7 +142,8 @@ Error platform_execute(
       }
       io_bytes_total += tensor_bytes;
     } else {
-      memcpy(
+      // Routed through arm_ethos_io_memcpy so firmware can DMA-accelerate.
+      arm_ethos_io_memcpy(
           tensor_out.mutable_data_ptr<char>(),
           static_cast<const char*>(output_addr),
           tensor_bytes);
