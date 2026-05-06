@@ -38,7 +38,6 @@ class InsertDataLayoutCastsPass(ArmPass):
         exir_ops.edge.aten.concatenate.default,
     }
     _single_input_ops = {
-        exir_ops.backend.tosa.TRANSPOSE.default,
         exir_ops.edge.aten.constant_pad_nd.default,
         exir_ops.edge.aten.view_copy.default,
         exir_ops.edge.aten.repeat.default,
