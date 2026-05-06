@@ -144,6 +144,12 @@ class Method:
         Returns:
             A list of output values, typically torch.Tensor objects.
         """
+        import torch
+
+        inputs = [
+            x.contiguous() if isinstance(x, torch.Tensor) and not x.is_contiguous() else x
+            for x in inputs
+        ]
         return self._method(inputs)
 
     @property
