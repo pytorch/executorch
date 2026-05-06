@@ -171,7 +171,7 @@ class ScalarToTensorPass(ExportPass):
 ### Level 2
 
 For creating many-to-one mappings, we can utilize FX's [subgraph
-rewriter](https://github.com/pytorch/pytorch/blob/main/torch/fx/subgraph_rewriter.py#L226).
+rewriter](https://github.com/pytorch/pytorch/blob/main/torch/fx/subgraph_rewriter.py#L96).
 Given a `pattern`, it creates a subgraph of operators matching to the pattern,
 and then replaces each matched subgraph with the `replacement`.
 
