@@ -2,7 +2,7 @@ import dataclasses
 from dataclasses import dataclass
 from enum import Enum
 from functools import partial
-from typing import Any, Dict, Optional
+from typing import Any, Dict, List, Optional
 
 import torch.nn.functional as F
 
@@ -182,6 +182,12 @@ class ModelArgs:
     use_ffn_learnable_scales: bool = False
     output_soft_cap_temp: Optional[float] = None
 
+    # Block repetition: repeat contiguous ranges of transformer layers.
+    # List of {"start": int, "end": int, "count": int} dicts where start/end
+    # are layer indices (both inclusive) and count is total number of passes
+    # (1 = normal, 2 = run the block twice, etc.). Blocks must not overlap.
+    transformer_block_repeat_config: Optional[list] = None
+
     def __post_init__(self):  # noqa: C901
         if self.n_kv_heads is None:
             self.n_kv_heads = self.n_heads
@@ -224,3 +230,50 @@ class ModelArgs:
         # Convert string act_fn to enum if needed
         if isinstance(self.act_fn, str):
             self.act_fn = ActFn.from_string(self.act_fn)
+
+        self.validate_block_repeat_config()
+
+    def validate_block_repeat_config(self) -> None:
+        """Validate transformer_block_repeat_config field.
+
+        Called from __post_init__ and should also be called after setting
+        transformer_block_repeat_config post-construction.
+        """
+        if self.transformer_block_repeat_config is None:
+            return
+        for i, block in enumerate(self.transformer_block_repeat_config):
+            assert (
+                "start" in block and "end" in block and "count" in block
+            ), f"transformer_block_repeat_config[{i}] must have 'start', 'end', and 'count' keys"
+            assert 0 <= block["start"] <= block["end"] < self.n_layers, (
+                f"transformer_block_repeat_config[{i}]: invalid range [{block['start']}, {block['end']}] "
+                f"for {self.n_layers} layers"
+            )
+            assert (
+                block["count"] >= 1
+            ), f"transformer_block_repeat_config[{i}]: count must be >= 1"
+        # Check for overlapping blocks (end is inclusive, so next start must be > prev end)
+        sorted_blocks = sorted(
+            self.transformer_block_repeat_config, key=lambda b: b["start"]
+        )
+        for i in range(1, len(sorted_blocks)):
+            assert sorted_blocks[i]["start"] > sorted_blocks[i - 1]["end"], (
+                f"transformer_block_repeat_config: blocks {sorted_blocks[i-1]} and "
+                f"{sorted_blocks[i]} overlap"
+            )
+
+    @staticmethod
+    def normalize_block_repeat_config(
+        config: Optional[List[Dict[str, int]]],
+    ) -> Optional[List[Dict[str, int]]]:
+        """Drop entries with `count == 1`; return None if nothing remains.
+
+        A block-repeat entry with count=1 visits its layers exactly once --
+        the same as if the entry were omitted. Stripping these no-ops at
+        assignment time lets every downstream consumer assume each entry is
+        a genuine repeat (count > 1). Pure function: does not mutate input.
+        """
+        if not config:
+            return None
+        normalized = [b for b in config if b.get("count", 1) > 1]
+        return normalized if normalized else None
