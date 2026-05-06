@@ -234,19 +234,22 @@ TEST_F(CUDAStreamGuardTest, NegativeDeviceIndex) {
   EXPECT_FALSE(guard_result.ok());
 }
 
-TEST_F(CUDAStreamGuardTest, CopyConstructorDeleted) {
+// Compile-time type-trait checks. These do not need a CUDA device, so they
+// live outside the CUDAStreamGuardTest fixture (whose SetUp() calls
+// GTEST_SKIP when no CUDA device is available).
+TEST(CUDAStreamGuardCompileTimeTest, CopyConstructorDeleted) {
   static_assert(
       !std::is_copy_constructible_v<CUDAStreamGuard>,
       "CUDAStreamGuard should not be copy constructible");
 }
 
-TEST_F(CUDAStreamGuardTest, CopyAssignmentDeleted) {
+TEST(CUDAStreamGuardCompileTimeTest, CopyAssignmentDeleted) {
   static_assert(
       !std::is_copy_assignable_v<CUDAStreamGuard>,
       "CUDAStreamGuard should not be copy assignable");
 }
 
-TEST_F(CUDAStreamGuardTest, MoveAssignmentDeleted) {
+TEST(CUDAStreamGuardCompileTimeTest, MoveAssignmentDeleted) {
   static_assert(
       !std::is_move_assignable_v<CUDAStreamGuard>,
       "CUDAStreamGuard should not be move assignable");
