@@ -44,6 +44,15 @@ static utils::uvec3 pick_linear_coopmat_global_wg_size(
   uint32_t N = out_sizes.at(out_sizes.size() - 1);
   uint32_t num_tiles_n = utils::div_up(N, kCoopmatTileN);
   uint32_t num_tiles_m = utils::div_up(M, kCoopmatTileM);
+  // Each workgroup processes one WG_TILE_M x WG_TILE_N output tile via
+  // cooperative-matrix MMAs across its 4 subgroups. We want the dispatch
+  // to launch exactly num_tiles_n x num_tiles_m workgroups.
+  //
+  // The framework computes the group count as
+  //   group_count = div_up(global_wg_size, local_wg_size)
+  // (see Context.cpp + Command.cpp). With local_wg = (kCoopmatInvocations,
+  // 1, 1), multiplying num_tiles_n by kCoopmatInvocations cancels the
+  // div, yielding group_count.x = num_tiles_n.
   return {num_tiles_n * kCoopmatInvocations, num_tiles_m, 1};
 }
 
@@ -138,6 +147,15 @@ static utils::uvec3 pick_matmul_coopmat_global_wg_size(
   uint32_t N = out_sizes.at(out_sizes.size() - 1);
   uint32_t num_tiles_n = utils::div_up(N, kCoopmatTileN);
   uint32_t num_tiles_m = utils::div_up(M, kCoopmatTileM);
+  // Each workgroup processes one WG_TILE_M x WG_TILE_N output tile via
+  // cooperative-matrix MMAs across its 4 subgroups. We want the dispatch
+  // to launch exactly num_tiles_n x num_tiles_m workgroups.
+  //
+  // The framework computes the group count as
+  //   group_count = div_up(global_wg_size, local_wg_size)
+  // (see Context.cpp + Command.cpp). With local_wg = (kCoopmatInvocations,
+  // 1, 1), multiplying num_tiles_n by kCoopmatInvocations cancels the
+  // div, yielding group_count.x = num_tiles_n.
   return {num_tiles_n * kCoopmatInvocations, num_tiles_m, 1};
 }
 

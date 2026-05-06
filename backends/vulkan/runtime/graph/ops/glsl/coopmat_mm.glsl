@@ -145,6 +145,16 @@ void main() {
     const uint K4 = (K + 3u) / 4u;
     const uint N4 = (N + 3u) / 4u;
 
+    // Defensive: skip workgroups whose tile is out of bounds. The C++ pick
+    // function dispatches exactly num_tiles_n x num_tiles_m workgroups under
+    // the alignment-gated (M%WG_TILE_M==0, N%WG_TILE_N==0) inputs, so this
+    // never triggers today; it guards against a future dispatch error.
+    const uint num_tiles_n = (N + WG_TILE_N - 1u) / WG_TILE_N;
+    const uint num_tiles_m = (M + WG_TILE_M - 1u) / WG_TILE_M;
+    if (tileID.x >= num_tiles_n || tileID.y >= num_tiles_m) {
+        return;
+    }
+
     [[unroll]] for (uint i = 0; i < MMAS_PER_SG_M; ++i) {
         [[unroll]] for (uint j = 0; j < MMAS_PER_SG_N; ++j) {
             result[i][j] = coopmat<float, gl_ScopeSubgroup, MMA_M, MMA_N, gl_MatrixUseAccumulator>(0.0);
