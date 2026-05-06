@@ -56,6 +56,10 @@ class FuseBatchNorm2dPass(ArmPass):
                 != exir_ops.edge.aten._native_batch_norm_legit_no_training.default
             ):
                 continue
+            if get_first_fake_tensor(node).dtype == torch.bfloat16:
+                # Don't fuse if the data type is bfloat16, as the fused weights may
+                # not be accurate enough and cause significant accuracy drop.
+                continue
 
             # Get data from batchnorm
             input_node = node.all_input_nodes[0]
@@ -153,8 +157,8 @@ class FuseBatchNorm2dPass(ArmPass):
                 if not (
                     (input_bias_node is None)
                     or (
-                        isinstance(input_weight_node, Node)
-                        and input_weight_node.op == "placeholder"
+                        isinstance(input_bias_node, Node)
+                        and input_bias_node.op == "placeholder"
                     )
                 ):
                     raise RuntimeError(
