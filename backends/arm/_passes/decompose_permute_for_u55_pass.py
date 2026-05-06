@@ -14,7 +14,6 @@ import tosa_serializer as ts
 from executorch.backends.arm._passes.arm_pass import ArmPass
 from executorch.backends.arm._passes.rewrite_slice import RewriteSlicePass
 from executorch.backends.arm.arm_vela import vela_compile
-from executorch.backends.arm.ethosu.compile_spec import EthosUCompileSpec
 from executorch.backends.arm.tosa.mapping import map_dtype
 from executorch.backends.arm.tosa.specification import get_context_spec
 from executorch.exir.dialects._ops import ops as exir_ops
@@ -111,6 +110,9 @@ class DecomposePermuteForU55Pass(ArmPass):
         """Performs a Vela compilation of a permute with given shape,
         permutation and dtype to check wheter it is supported.
         """
+
+        # Lazy import to avoid circular dependency
+        from executorch.backends.arm.ethosu.compile_spec import EthosUCompileSpec
 
         if dtype not in (torch.int8, torch.bool, torch.int16):
             return True
