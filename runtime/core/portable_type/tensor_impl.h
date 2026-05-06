@@ -10,6 +10,7 @@
 
 #include <executorch/runtime/core/array_ref.h>
 #include <executorch/runtime/core/error.h>
+#include <executorch/runtime/core/result.h>
 #include <executorch/runtime/core/portable_type/device.h>
 #include <executorch/runtime/core/portable_type/scalar_type.h>
 #include <executorch/runtime/core/result.h>
@@ -150,6 +151,12 @@ class TensorImpl {
   ssize_t numel() const {
     return numel_;
   }
+
+  /**
+   * Returns the number of elements in the tensor, or an error if the result
+   * would overflow ssize_t.
+   */
+  Result<ssize_t> safe_numel() const;
 
   /// Returns the type of the elements in the tensor (int32, float, bool, etc).
   ScalarType scalar_type() const {
