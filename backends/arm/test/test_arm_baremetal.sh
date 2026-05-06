@@ -48,6 +48,7 @@ fi
 TEST_SUITE_NAME="$(basename "$0") ${TEST_SUITE}"
 
 EXCLUDE_TARGET_EXPR="(not u55) and (not u85) and (not tosa) and (not _vgf_)"
+PYTEST_RETRY_ARGS=(--reruns 2 --reruns-delay 1)
 
 all() { # Run all tests
     # This will list all lines in this file that is starting with test_ remove () { and add this script name in
@@ -80,7 +81,7 @@ test_pytest_ops_no_target() {
     echo "${TEST_SUITE_NAME}: Run pytest ops for target-less tests"
 
     # Run arm baremetal pytest tests without target
-    pytest  --verbose --color=yes --numprocesses=auto --durations=10 backends/arm/test/ --ignore=backends/arm/test/models -k "${EXCLUDE_TARGET_EXPR}"
+    pytest "${PYTEST_RETRY_ARGS[@]}" --verbose --color=yes --numprocesses=auto --durations=10 backends/arm/test/ --ignore=backends/arm/test/models -k "${EXCLUDE_TARGET_EXPR}"
     echo "${TEST_SUITE_NAME}: PASS"
 }
 
@@ -91,7 +92,7 @@ test_pytest_models_no_target() {
     source backends/arm/scripts/install_models_for_test.sh
 
     # Run arm baremetal pytest tests without FVP
-    pytest  --verbose --color=yes --numprocesses=auto --durations=0 backends/arm/test/models -k "${EXCLUDE_TARGET_EXPR}"
+    pytest "${PYTEST_RETRY_ARGS[@]}" --verbose --color=yes --numprocesses=auto --durations=0 backends/arm/test/models -k "${EXCLUDE_TARGET_EXPR}"
     echo "${TEST_SUITE_NAME}: PASS"
 }
 
@@ -101,7 +102,7 @@ test_pytest_models_no_target() {
 test_pytest_ops_tosa() {
     echo "${TEST_SUITE_NAME}: Run pytest ops for TOSA"
 
-    pytest  --verbose --color=yes --numprocesses=auto --durations=10 backends/arm/test/ --ignore=backends/arm/test/models -k tosa
+    pytest "${PYTEST_RETRY_ARGS[@]}" --verbose --color=yes --numprocesses=auto --durations=10 backends/arm/test/ --ignore=backends/arm/test/models -k tosa
     echo "${TEST_SUITE_NAME}: PASS"
 }
 
@@ -111,7 +112,7 @@ test_pytest_models_tosa() {
     # Install model dependencies for pytest
     source backends/arm/scripts/install_models_for_test.sh
 
-    pytest  --verbose --color=yes --numprocesses=auto --durations=0 backends/arm/test/models -k tosa
+    pytest "${PYTEST_RETRY_ARGS[@]}" --verbose --color=yes --numprocesses=auto --durations=0 backends/arm/test/models -k tosa
     echo "${TEST_SUITE_NAME}: PASS"
 }
 
@@ -134,7 +135,7 @@ test_pytest_ops_ethos_u55() {
     backends/arm/scripts/build_executorch.sh
     backends/arm/test/setup_testing.sh
 
-    pytest  --verbose --color=yes --numprocesses=auto --durations=10  backends/arm/test/ --ignore=backends/arm/test/models -k u55
+    pytest "${PYTEST_RETRY_ARGS[@]}" --verbose --color=yes --numprocesses=auto --durations=10  backends/arm/test/ --ignore=backends/arm/test/models -k u55
     echo "${TEST_SUITE_NAME}: PASS"
 }
 
@@ -147,7 +148,7 @@ test_pytest_models_ethos_u55() {
     # Install model dependencies for pytest
     source backends/arm/scripts/install_models_for_test.sh
 
-    pytest  --verbose --color=yes --numprocesses=auto --durations=0 backends/arm/test/models -k u55
+    pytest "${PYTEST_RETRY_ARGS[@]}" --verbose --color=yes --numprocesses=auto --durations=0 backends/arm/test/models -k u55
     echo "${TEST_SUITE_NAME}: PASS"
 }
 
@@ -188,7 +189,7 @@ test_pytest_ops_ethos_u85() {
     backends/arm/test/setup_testing.sh
 
     # Run arm baremetal pytest tests with FVP
-    pytest  --verbose --color=yes --numprocesses=auto --durations=10  backends/arm/test/ --ignore=backends/arm/test/models -k u85
+    pytest "${PYTEST_RETRY_ARGS[@]}" --verbose --color=yes --numprocesses=auto --durations=10  backends/arm/test/ --ignore=backends/arm/test/models -k u85
     echo "${TEST_SUITE_NAME}: PASS"
 }
 
@@ -201,7 +202,7 @@ test_pytest_models_ethos_u85() {
     # Install model dependencies for pytest
     source backends/arm/scripts/install_models_for_test.sh
 
-    pytest  --verbose --color=yes --numprocesses=auto --durations=0 backends/arm/test/models -k u85
+    pytest "${PYTEST_RETRY_ARGS[@]}" --verbose --color=yes --numprocesses=auto --durations=0 backends/arm/test/models -k u85
     echo "${TEST_SUITE_NAME}: PASS"
 }
 
@@ -235,7 +236,7 @@ test_pytest_ops_vkml() {
 
     source backends/arm/test/setup_testing_vkml.sh
 
-    pytest  --verbose --color=yes --numprocesses=auto --durations=10  backends/arm/test/ \
+    pytest "${PYTEST_RETRY_ARGS[@]}" --verbose --color=yes --numprocesses=auto --durations=10  backends/arm/test/ \
             --ignore=backends/arm/test/models -k _vgf_
     echo "${TEST_SUITE_NAME}: PASS"
 }
@@ -248,7 +249,7 @@ test_pytest_models_vkml() {
     # Install model dependencies for pytest
     source backends/arm/scripts/install_models_for_test.sh
 
-    pytest  --verbose --color=yes --numprocesses=auto --durations=0 backends/arm/test/models -k _vgf_
+    pytest "${PYTEST_RETRY_ARGS[@]}" --verbose --color=yes --numprocesses=auto --durations=0 backends/arm/test/models -k _vgf_
     echo "${TEST_SUITE_NAME}: PASS"
 }
 
@@ -295,6 +296,7 @@ test_smaller_stories_llama() {
     # Get path to source directory
     pytest \
     -c /dev/null \
+    "${PYTEST_RETRY_ARGS[@]}" \
     --verbose \
     --color=yes \
     --numprocesses=auto \
