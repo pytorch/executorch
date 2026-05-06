@@ -633,4 +633,4 @@ If you encounter any issues while reproducing the tutorial, please file a github
 [issue](https://github.com/pytorch/executorch/issues) on ExecuTorch repo and tag use `#qcom_aisw` tag
 
  ### Debugging tips
- - Before trying any complicated models, try out [a simple model example](https://github.com/pytorch/executorch/tree/main/examples/qualcomm#simple-examples-to-verify-the-backend-is-working) and see it if works one device.
+ - Before trying any complicated models, try out [a simple model example](https://github.com/pytorch/executorch/tree/main/examples/qualcomm#simple-examples-to-verify-the-backend-is-working) and see if it works on your device.

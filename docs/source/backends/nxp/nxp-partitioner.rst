@@ -37,7 +37,7 @@ Operator Support
 Operators are the building blocks of the ML model. See `IRs <https://docs.pytorch.org/docs/stable/torch.compiler_ir.html>`_ for more information on the PyTorch operator set.
 
 This section lists the Edge operators supported by the Neutron backend.
-For detailed constraints of the operators see the conditions in the ``is_supported_*`` functions in the `Node converters <https://github.com/pytorch/executorch/blob/main/backends/nxp/neutron_partitioner.py#L202>`_
+For detailed constraints of the operators see the ``is_supported`` / ``_is_supported_in_IR`` / ``_is_supported_on_target`` checks in the `Node converters <https://github.com/pytorch/executorch/blob/main/backends/nxp/backend/ir/converter/node_converter.py#L118>`_
 
 
 .. csv-table:: Operator Support

@@ -209,7 +209,7 @@ We call `executorch::bundled_program::verify_method_outputs` to verify the metho
 
 ### Runtime Example
 
-Please checkout our [example runner](https://github.com/pytorch/executorch/blob/main/examples/devtools/README.md#bundledprogram) for a bundled program. You could run these commands to test with the BundledProgram binary (`.bpte`) file you generated in the previous step:
+Please check out our [example runner](https://github.com/pytorch/executorch/blob/main/examples/devtools/README.md#bundledprogram) for a bundled program. You could run these commands to test with the BundledProgram binary (`.bpte`) file you generated in the previous step:
 
 ```bash
 cd executorch
