@@ -190,7 +190,7 @@ class FuseMMWithAdd(RemoveOrReplacePassInterface):
         #    is True)
         # 2. The single successor of addmm is not a view op.
         if len(addmm_node.users) == 0:
-            return False
+            return True
 
         addmm_user = list(addmm_node.users.keys())[0]
         if intermediate_view and not self._is_view_node(addmm_user):
