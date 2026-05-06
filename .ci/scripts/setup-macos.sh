@@ -116,7 +116,6 @@ setup_macos_env_variables
 # buck2 atm
 install_buck
 brew install libomp
-install_pip_dependencies
 
 # TODO(huydhn): Unlike our self-hosted runner, GitHub runner doesn't have access
 # to our infra, so compiler caching needs to be setup differently using GitHub
@@ -125,10 +124,17 @@ if [[ -z "${GITHUB_RUNNER:-}" ]]; then
   install_sccache
 fi
 
+# Install pinned torch before requirements-ci.txt so torchsr's transitive
+# torch dep is satisfied by the existing install and pip does not pull a
+# separate copy from PyPI. sccache is initialized above so source-build
+# cache misses still hit the cache.
 print_cmake_info
 install_pytorch_and_domains
-# We build PyTorch from source here instead of using nightly. This allows CI to test against
-# the pinned commit from PyTorch
+
+install_pip_dependencies
+
+# install_executorch's --use-pt-pinned-commit skips re-installing torch since
+# install_pytorch_and_domains already installed the pinned build above.
 if [[ "$EDITABLE" == "true" ]]; then
   install_executorch --use-pt-pinned-commit --editable
 else
