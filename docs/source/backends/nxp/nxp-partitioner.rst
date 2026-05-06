@@ -28,7 +28,7 @@ Following fields can be set:
 Custom Delegation Options
 -------------------------
 By default the Neutron backend is defensive, what means it does not delegate operators which cannot be decided statically during partitioning. But as the model author you typically have insight into the model and so you can allow opportunistic delegation for some cases. For list of options, see
-`CustomDelegationOptions <https://github.com/pytorch/executorch/blob/release/1.2/backends/nxp/backend/custom_delegation_options.py#L11>`_
+`CustomDelegationOptions <https://github.com/pytorch/executorch/blob/main/backends/nxp/backend/custom_delegation_options.py#L11>`_
 
 ================
 Operator Support
@@ -37,7 +37,7 @@ Operator Support
 Operators are the building blocks of the ML model. See `IRs <https://docs.pytorch.org/docs/stable/torch.compiler_ir.html>`_ for more information on the PyTorch operator set.
 
 This section lists the Edge operators supported by the Neutron backend.
-For detailed constraints of the operators see the conditions in the ``is_supported_*`` functions in the `Node converters <https://github.com/pytorch/executorch/blob/release/1.2/backends/nxp/neutron_partitioner.py#L202>`_
+For detailed constraints of the operators see the conditions in the ``is_supported_*`` functions in the `Node converters <https://github.com/pytorch/executorch/blob/main/backends/nxp/neutron_partitioner.py#L202>`_
 
 
 .. csv-table:: Operator Support
