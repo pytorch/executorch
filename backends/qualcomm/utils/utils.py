@@ -323,6 +323,42 @@ def get_decomp_table(passes_job) -> Dict[torch._ops.OperatorBase, Callable]:
     return source_decompositions
 
 
+def _draw_qnn_graph(
+    aten_programs: Dict[str, ExportedProgram],
+    transform_passes: Dict[str, List],
+    draw_graph_path: str,
+) -> None:
+    from executorch.backends.qualcomm.builders.node_visitor_manager import (
+        get_node_visitors,
+    )
+    from executorch.backends.qualcomm.debugger.utils import DrawGraph
+
+    os.makedirs(draw_graph_path, exist_ok=True)
+    edge_mgr = to_edge(aten_programs, compile_config=qnn_edge_config())
+    for graph_name, passes in transform_passes.items():
+        if passes:
+            edge_mgr = edge_mgr.transform(passes)
+    for graph_name in aten_programs:
+        ep = edge_mgr.exported_program(graph_name)
+        graph_module = QnnPassManager().transform_for_preprocess_pipeline(ep)
+        nodes_to_wrappers = defaultdict(dict)
+        node_visitors = get_node_visitors(ep, enable_tensor_dump=False)
+        py_op_wrapper_list = []
+        for node in graph_module.graph.nodes:
+            if node.op == "call_function":
+                if node.target.__name__ in node_visitors:
+                    py_op_wrapper = node_visitors[node.target.__name__].define_node(
+                        node, nodes_to_wrappers
+                    )
+                    if py_op_wrapper is not None:
+                        if isinstance(py_op_wrapper, List):
+                            py_op_wrapper_list.extend(py_op_wrapper)
+                        else:
+                            py_op_wrapper_list.append(py_op_wrapper)
+        filename = f"qnn_graph_{graph_name}" if len(aten_programs) > 1 else "qnn_graph"
+        DrawGraph(filename, draw_graph_path, py_op_wrapper_list, dot_string=True)
+
+
 def to_edge_transform_and_lower_to_qnn(
     module: Union[
         torch.nn.Module,
@@ -341,6 +377,7 @@ def to_edge_transform_and_lower_to_qnn(
     skip_mutable_buffer: Optional[bool] = False,
     generate_etrecord: Optional[bool] = False,
     convert_linear_to_conv2d: Optional[bool] = False,
+    draw_graph_path: Optional[str] = None,
 ) -> EdgeProgramManager:
     """
     Transforms and lowers a given PyTorch module to the QNN backend.
@@ -369,6 +406,8 @@ def to_edge_transform_and_lower_to_qnn(
             Whether to skip delegating the mutable buffer in QNN backend.
         convert_linear_to_conv2d (Optional[bool]):
             Whether to convert linear to conv2d in some cases to improve performance in HTP backend.
+        draw_graph_path (Optional[str]):
+            If set, saves a QNN graph visualization (SVG and .dot) to the given directory path using DrawGraph.
 
     Returns:
         EdgeProgramManager:
@@ -452,8 +491,11 @@ def to_edge_transform_and_lower_to_qnn(
             dep_table=dep_table[graph_name],
             backend_type=backend_type,
         )
+    if draw_graph_path is not None:
+        _draw_qnn_graph(aten_programs, transform_passes, draw_graph_path)
+
     with QnnManagerContext(compiler_specs):
-        return to_edge_transform_and_lower(
+        edge_prog_mgr = to_edge_transform_and_lower(
             aten_programs,
             transform_passes=transform_passes,
             partitioner=qnn_partitioners,
@@ -461,6 +503,8 @@ def to_edge_transform_and_lower_to_qnn(
             compile_config=qnn_edge_config(),
             generate_etrecord=generate_etrecord,
         )
+
+    return edge_prog_mgr
 
 
 def capture_program(
