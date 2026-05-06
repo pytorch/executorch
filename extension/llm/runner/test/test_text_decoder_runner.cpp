@@ -155,6 +155,64 @@ TEST_F(TextDecoderRunnerTest, LogitsToTokenWithTemperature) {
   EXPECT_LT(token, 4);
 }
 
+// Test logits_to_token() with an injected Sampler (greedy, temp=0)
+TEST_F(TextDecoderRunnerTest, LogitsToTokenWithInjectedSampler) {
+  TensorFactory<executorch::aten::ScalarType::Float> tf_float;
+  auto logits = tf_float.make({1, 4}, {0.1f, 0.2f, 0.8f, 0.4f});
+
+  auto sampler = std::make_unique<executorch::extension::llm::Sampler>(4, 0.0f);
+  auto runner = std::make_unique<TextDecoderRunner>(
+      nullptr, nullptr, "forward", std::move(sampler));
+
+  int32_t token = runner->logits_to_token(logits, 0.0f);
+  EXPECT_EQ(token, 2);
+
+  auto logits2 = tf_float.make({1, 4}, {0.1f, 0.2f, 0.8f, 0.4f});
+  token = runner->logits_to_token(logits2, 0.0f);
+  EXPECT_EQ(token, 2);
+}
+
+// Test that set_temperature works on an injected Sampler
+TEST_F(TextDecoderRunnerTest, LogitsToTokenInjectedSamplerTemperatureSwitch) {
+  auto sampler = std::make_unique<executorch::extension::llm::Sampler>(4, 0.0f);
+  auto runner = std::make_unique<TextDecoderRunner>(
+      nullptr, nullptr, "forward", std::move(sampler));
+
+  TensorFactory<executorch::aten::ScalarType::Float> tf_float;
+
+  // temp=0 → argmax
+  auto logits1 = tf_float.make({1, 4}, {0.1f, 0.2f, 0.8f, 0.4f});
+  EXPECT_EQ(runner->logits_to_token(logits1, 0.0f), 2);
+
+  // temp=1.0 → stochastic, result must be in valid range
+  auto logits2 = tf_float.make({1, 4}, {0.1f, 0.2f, 0.8f, 0.4f});
+  int32_t token = runner->logits_to_token(logits2, 1.0f);
+  EXPECT_GE(token, 0);
+  EXPECT_LT(token, 4);
+
+  // temp=0 again → back to argmax
+  auto logits3 = tf_float.make({1, 4}, {0.1f, 0.2f, 0.8f, 0.4f});
+  EXPECT_EQ(runner->logits_to_token(logits3, 0.0f), 2);
+}
+
+// Test logits_to_token() with an injected Sampler on a 3D tensor
+TEST_F(TextDecoderRunnerTest, LogitsToTokenWithInjectedSampler3D) {
+  TensorFactory<executorch::aten::ScalarType::Float> tf_float;
+  auto logits = tf_float.make(
+      {1, 2, 4},
+      {
+          0.1f, 0.2f, 0.3f, 0.4f, // first position
+          0.5f, 0.6f, 0.9f, 0.8f  // last position (used for sampling)
+      });
+
+  auto sampler = std::make_unique<executorch::extension::llm::Sampler>(4, 0.0f);
+  auto runner = std::make_unique<TextDecoderRunner>(
+      nullptr, nullptr, "forward", std::move(sampler));
+
+  int32_t token = runner->logits_to_token(logits, 0.0f);
+  EXPECT_EQ(token, 2);
+}
+
 // Test step() method with all available PTE models
 TEST_F(TextDecoderRunnerTest, StepWithAllModels) {
   // List of all environment variables for PTE models
