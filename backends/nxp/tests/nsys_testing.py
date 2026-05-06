@@ -125,7 +125,9 @@ def _run_delegated_executorch_program(
             use_new_flow_neutron_c=use_new_flow_neutron_c,
         )
     except RuntimeError as e:
-        if "Model converted with neutron-converter has" in str(e):
+        if "Model converted with neutron-converter has" in str(e) and hasattr(
+            dlg_model_verifier, "check_num_delegated_nodes"
+        ):
             dlg_model_verifier.check_num_delegated_nodes(e.args[1])
         raise
 
