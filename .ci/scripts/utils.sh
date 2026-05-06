@@ -105,7 +105,11 @@ install_pytorch_and_domains() {
   fi
   local python_version=$(python -c 'import platform; v=platform.python_version_tuple(); print(f"{v[0]}{v[1]}")')
   local torch_release=$(cat version.txt)
-  local torch_short_hash=${TORCH_VERSION:0:7}
+  # Download key must match the upload key below (basename of dist/*.whl,
+  # which always carries setup.py's resolved +gitHASH). Branch-ref pins
+  # like `release/2.11` would otherwise produce `+gitrelease` here and
+  # never hit the cache.
+  local torch_short_hash=$(git rev-parse --short=7 HEAD)
   local torch_wheel_path="cached_artifacts/pytorch/executorch/pytorch_wheels/${system_name}/${python_version}"
   local torch_wheel_name="torch-${torch_release}%2Bgit${torch_short_hash}-cp${python_version}-cp${python_version}-${platform:-}.whl"
 
