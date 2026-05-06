@@ -58,8 +58,6 @@ if [[ "$FLOW" == *vulkan* ]]; then
 fi
 
 if [[ "$FLOW" == *arm* ]]; then
-    PYTEST_RETRY_ARGS=(--reruns 2 --reruns-delay 1)
-
     # Setup ARM deps.
     if [[ "$FLOW" == *vgf* ]]; then
         .ci/scripts/setup-arm-baremetal-tools.sh --enable-mlsdk-deps --install-mlsdk-deps-with-pip
@@ -95,6 +93,10 @@ CMAKE_ARGS="$EXTRA_BUILD_ARGS" ${CONDA_RUN_CMD} $SETUP_SCRIPT --build-tool cmake
 
 GOLDEN_DIR="${ARTIFACT_DIR}/golden-artifacts"
 export GOLDEN_ARTIFACTS_DIR="${GOLDEN_DIR}"
+
+if [[ "$FLOW" == *arm* && "$SUITE" == "operators" ]]; then
+    PYTEST_RETRY_ARGS=(--reruns 1 --reruns-delay 1)
+fi
 
 EXIT_CODE=0
 PYTEST_ARGS=(-c /dev/null -n auto)
