@@ -160,6 +160,9 @@ if(EXECUTORCH_BUILD_VGF)
   set(_vgf_backend_sources backends/arm/runtime/VGFBackend.cpp
                            backends/arm/runtime/VGFSetup.cpp
   )
+  if(NOT EXECUTORCH_BUILD_VULKAN)
+    list(APPEND _vgf_backend_sources backends/vulkan/third-party/volk/volk.c)
+  endif()
 
   # vgf backend
   list(TRANSFORM _vgf_backend_sources PREPEND "${EXECUTORCH_ROOT}/")
