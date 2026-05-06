@@ -55,7 +55,9 @@ _QUANT_PRIMITIVES = [
     torch.ops.quantized_decomposed.choose_qparams.tensor,
 ]
 try:
-    import torchao  # noqa: F401
+    # Import quant_primitives directly to ensure custom ops are registered
+    # before accessing them via torch.ops.torchao
+    import torchao.quantization.quant_primitives  # noqa: F401
 
     _QUANT_PRIMITIVES.extend(
         [
@@ -64,5 +66,7 @@ try:
             torch.ops.torchao.choose_qparams_affine.default,
         ]
     )
-except ImportError:
+except (ImportError, AttributeError):
+    # ImportError: torchao or quant_primitives not installed
+    # AttributeError: torchao installed but operators not registered (e.g., older version)
     pass
