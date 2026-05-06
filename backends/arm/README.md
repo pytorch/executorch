@@ -249,10 +249,15 @@ Some tests, with `u55`, `u85` and `vgf` in the name require external dependencie
   ```
 
 In addition, some model tests in the Arm backend require third-party libraries or packages.
-To run these tests, you need to install the required dependencies by running the script `examples/arm/setup.sh` with the flag `--setup-test-dependency`.
+To run these tests, install the required dependencies directly:
 
-Please note that installing model test dependencies is a standalone process. When using the `--setup-test-dependency` flag,
-the script will install only the necessary dependencies for model tests, skipping all other setup procedures.
+```
+bash backends/arm/scripts/install_models_for_test.sh
+```
+
+Installing model test dependencies is a standalone process. The script installs
+only the dependencies needed for model tests, skipping all other setup
+procedures.
 
 ## Using git hooks
 
