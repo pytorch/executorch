@@ -412,7 +412,7 @@ Tensor& custom_sdpa_out_impl(
       InvalidArgument,
       output);
 
-  bool use_unfused_sdpa = q.scalar_type() != ScalarType::Char && seq_len == 1;
+  bool use_unfused_sdpa = seq_len == 1;
   if (use_unfused_sdpa) {
     ET_SWITCH_FLOAT_TYPES(output.scalar_type(), ctx, "sdpa", CTYPE, [&] {
       sdpa::impl::cpu_sdpa<CTYPE>(
@@ -426,7 +426,13 @@ Tensor& custom_sdpa_out_impl(
           scale,
           seq_dim,
           start_pos,
-          num_keys_for_causal_attention);
+          num_keys_for_causal_attention,
+          q_zero_points,
+          q_scales,
+          k_zero_points,
+          k_scales,
+          v_zero_points,
+          v_scales);
     });
   } else {
     ET_SWITCH_FLOAT_TYPES(
