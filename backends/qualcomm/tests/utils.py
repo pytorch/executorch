@@ -592,8 +592,7 @@ class TestQNN(unittest.TestCase):
             skip_node_id_set=skip_node_id_set,
             skip_node_op_set=skip_node_op_set,
             skip_mutable_buffer=skip_mutable_buffer,
-            generate_etrecord=self.profile_level != 0
-            or expected_compared_events != -1,
+            generate_etrecord=self.profile_level != 0 or expected_compared_events != -1,
         )
 
         # Don't allocate if shared_buffer enabled or using direct_mode
