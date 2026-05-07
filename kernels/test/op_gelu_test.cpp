@@ -213,8 +213,8 @@ TEST_F(OpGeluTest, DynamicShapeUpperBoundSameAsExpected) {
   EXPECT_TENSOR_CLOSE(out, expected_result);
 }
 
-TEST_F(OpGeluTest, DynamicShapeUpperBoundLargerThanExpected) {
-  GTEST_SKIP() << "Dynamic shape not supported";
+// DISABLED: Dynamic shape not supported
+TEST_F(OpGeluTest, DISABLED_DynamicShapeUpperBoundLargerThanExpected) {
   TensorFactory<ScalarType::Float> tf;
 
   Tensor x = tf.make(
@@ -240,8 +240,8 @@ TEST_F(OpGeluTest, DynamicShapeUpperBoundLargerThanExpected) {
   EXPECT_TENSOR_CLOSE(out, expected_result);
 }
 
-TEST_F(OpGeluTest, DynamicShapeUnbound) {
-  GTEST_SKIP() << "Dynamic shape not supported";
+// DISABLED: Dynamic shape not supported
+TEST_F(OpGeluTest, DISABLED_DynamicShapeUnbound) {
   TensorFactory<ScalarType::Float> tf;
 
   Tensor x = tf.make(

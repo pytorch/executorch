@@ -563,14 +563,16 @@ TEST_F(OpSplitCopyTensorOutTest, DynamicShapeUpperBoundSameAsExpected) {
       {2, 3}, torch::executor::TensorShapeDynamism::DYNAMIC_BOUND);
 }
 
-TEST_F(OpSplitCopyTensorOutTest, DynamicShapeUpperBoundLargerThanExpected) {
-  GTEST_SKIP() << "Dynamic shape not supported";
+// DISABLED: Dynamic shape not supported
+TEST_F(
+    OpSplitCopyTensorOutTest,
+    DISABLED_DynamicShapeUpperBoundLargerThanExpected) {
   test_dynamic_shape(
       {10, 10}, torch::executor::TensorShapeDynamism::DYNAMIC_BOUND);
 }
 
-TEST_F(OpSplitCopyTensorOutTest, DynamicShapeUnbound) {
-  GTEST_SKIP() << "Dynamic shape not supported";
+// DISABLED: Dynamic shape not supported
+TEST_F(OpSplitCopyTensorOutTest, DISABLED_DynamicShapeUnbound) {
   test_dynamic_shape(
       {1, 1}, torch::executor::TensorShapeDynamism::DYNAMIC_UNBOUND);
 }
