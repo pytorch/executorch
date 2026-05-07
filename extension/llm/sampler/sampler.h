@@ -44,6 +44,10 @@ class ET_EXPERIMENTAL Sampler {
 
   Sampler(int32_t vocab_size, float temperature);
 
+  void set_temperature(float temperature) {
+    inv_temperature_ = static_cast<bool>(temperature) ? 1.0f / temperature : 0.0f;
+  }
+
   // Enable top-k filtering. k <= 0 or k >= vocab_size disables top-k.
   // When top-k is enabled, top-p is ignored — the two modes are mutually
   // exclusive in this implementation.

@@ -25,10 +25,12 @@ namespace llm {
 TextDecoderRunner::TextDecoderRunner(
     Module* module,
     IOManager* io_manager,
-    std::string method_name)
+    std::string method_name,
+    std::unique_ptr<Sampler> sampler)
     : module_(module),
       io_manager_(io_manager),
-      method_name_(std::move(method_name)) {}
+      method_name_(std::move(method_name)),
+      sampler_(std::move(sampler)) {}
 
 // This function is functional, meaning it shouldn't modify any state of the
 // input. It should be safe to call multiple times with the same inputs. The
