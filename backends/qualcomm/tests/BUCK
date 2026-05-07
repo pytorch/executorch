@@ -64,6 +64,10 @@ fbcode_target(_kind = runtime.python_test,
     srcs = [
         "test_passes.py",
     ],
+    env = {} if runtime.is_oss else {
+        "LD_LIBRARY_PATH": "$(location fbsource//third-party/qualcomm/qnn/qnn-{0}:qnn_offline_compile_libs)".format(get_qnn_library_version()),
+        "QNN_SDK_ROOT": "$(location fbsource//third-party/qualcomm/qnn/qnn-{0}:__dir__)".format(get_qnn_library_version()),
+    },
     deps = [
         ":models",
         "fbsource//third-party/pypi/expecttest:expecttest",  # @manual
@@ -77,6 +81,7 @@ fbcode_target(_kind = runtime.python_test,
         "//executorch/backends/qualcomm/builders:builders",
     ] + ([] if runtime.is_oss else [
         # These deps fail in OSS: keep_gpu_sections kwarg breaks TARGETS evaluation
+        "//executorch/devtools:lib",
         "//executorch/examples/models/llama:transformer_modules",
         "//executorch/examples/qualcomm/oss_scripts/llama:masking_utils",
         "//executorch/examples/qualcomm/oss_scripts/llama:static_llama",
