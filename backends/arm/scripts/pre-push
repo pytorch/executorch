@@ -70,6 +70,13 @@ run_docgen_check() {
     fi
 }
 
+run_public_api_validator() {
+    if ! backends/arm/scripts/public_api_manifest/validate_all_public_api_manifests.sh; then
+        echo -e "${ERROR} Arm public API manifest validation failed"
+        FAILED=1
+    fi
+}
+
 # This list of imperative verbs was compiled from the entire list of Executorch
 # commits. It should be fairly exhaustive, but add more verbs if you find one
 # that's missing.
@@ -149,7 +156,6 @@ for COMMIT in ${COMMITS}; do
             fi
         done
     fi
-
     # Check license headers
     # We do a simple check of if all committed headers contain
     # "$current_year Arm". This does not guarantee OK in ci but should be ok
@@ -177,7 +183,7 @@ for COMMIT in ${COMMITS}; do
     for committed_file in "${license_files[@]}"; do
         # Skip files with certain extensions
         case "$committed_file" in
-            *.md|*.md.in|*.json|*.yml|*.yaml|*.cmake|*.patch|.gitignore|*.bzl)
+            *.md|*.md.in|*.json|*.yml|*.yaml|*.cmake|*.patch|*.bzl|.gitignore)
                 echo -e "${INFO} Skipping license check for ${committed_file} (excluded extension)"
                 continue
                 ;;
@@ -310,6 +316,8 @@ if [[ $RUN_DOCGEN -eq 1 ]]; then
 else
     echo -e "${INFO} Skipping Arm docgen (no public API inputs changed)"
 fi
+
+run_public_api_validator
 
 if [[ $FAILED ]]; then
     echo -e "${INFO} Fix your commit message errors with"\
