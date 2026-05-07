@@ -466,34 +466,15 @@ class ExecuTorchJni : public facebook::jni::HybridClass<ExecuTorchJni> {
   }
 
   jboolean etdump() {
-#ifdef EXECUTORCH_ANDROID_PROFILING
-    executorch::etdump::ETDumpGen* etdumpgen =
-        (executorch::etdump::ETDumpGen*)module_->event_tracer();
-    auto etdump_data = etdumpgen->get_etdump_data();
+    return etdump_to_path("/data/local/tmp/result.etdump");
+  }
 
-    if (etdump_data.buf != nullptr && etdump_data.size > 0) {
-      int etdump_file =
-          open("/data/local/tmp/result.etdump", O_WRONLY | O_CREAT, 0644);
-      if (etdump_file == -1) {
-        ET_LOG(Error, "Cannot create result.etdump error: %d", errno);
-        return false;
-      }
-      ssize_t bytes_written =
-          write(etdump_file, (uint8_t*)etdump_data.buf, etdump_data.size);
-      if (bytes_written == -1) {
-        ET_LOG(Error, "Cannot write result.etdump error: %d", errno);
-        return false;
-      } else {
-        ET_LOG(Info, "ETDump written %d bytes to file.", bytes_written);
-      }
-      close(etdump_file);
-      free(etdump_data.buf);
-      return true;
-    } else {
-      ET_LOG(Error, "No ETDump data available!");
+  jboolean etdumpTo(facebook::jni::alias_ref<jstring> outputPath) {
+    if (!outputPath) {
+      ET_LOG(Error, "etdumpTo called with null outputPath");
+      return false;
     }
-#endif
-    return false;
+    return etdump_to_path(outputPath->toStdString().c_str());
   }
 
   facebook::jni::local_ref<facebook::jni::JArrayClass<jstring>> getMethods() {
@@ -565,9 +546,50 @@ class ExecuTorchJni : public facebook::jni::HybridClass<ExecuTorchJni> {
         makeNativeMethod(
             "readLogBufferStaticNative", ExecuTorchJni::readLogBufferStatic),
         makeNativeMethod("etdump", ExecuTorchJni::etdump),
+        makeNativeMethod("etdumpToNative", ExecuTorchJni::etdumpTo),
         makeNativeMethod("getMethods", ExecuTorchJni::getMethods),
         makeNativeMethod("getUsedBackends", ExecuTorchJni::getUsedBackends),
     });
+  }
+
+ private:
+  jboolean etdump_to_path(const char* path) {
+#ifdef EXECUTORCH_ANDROID_PROFILING
+    auto* tracer = module_->event_tracer();
+    if (!tracer) {
+      ET_LOG(Error, "ETDump not available: no event tracer attached");
+      return false;
+    }
+    auto* etdumpgen = static_cast<executorch::etdump::ETDumpGen*>(tracer);
+    auto etdump_data = etdumpgen->get_etdump_data();
+
+    if (etdump_data.buf != nullptr && etdump_data.size > 0) {
+      int etdump_file = open(path, O_WRONLY | O_CREAT | O_TRUNC, 0644);
+      if (etdump_file == -1) {
+        ET_LOG(Error, "Cannot create %s error: %d", path, errno);
+        free(etdump_data.buf);
+        return false;
+      }
+      ssize_t bytes_written =
+          write(etdump_file, (uint8_t*)etdump_data.buf, etdump_data.size);
+      if (bytes_written == -1) {
+        ET_LOG(Error, "Cannot write %s error: %d", path, errno);
+        close(etdump_file);
+        free(etdump_data.buf);
+        return false;
+      } else {
+        ET_LOG(Info, "ETDump written %zd bytes to %s.", bytes_written, path);
+      }
+      close(etdump_file);
+      free(etdump_data.buf);
+      return true;
+    } else {
+      ET_LOG(Error, "No ETDump data available!");
+    }
+#else
+    (void)path;
+#endif
+    return false;
   }
 };
 } // namespace executorch::extension
