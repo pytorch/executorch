@@ -85,6 +85,7 @@ class MatchArgRanksPass(ArmPass):
             node.replace_input_with(arg, view)
 
     def call(self, graph_module: GraphModule) -> PassResult:
+        modified = False
         for node in graph_module.graph.nodes:
             node = cast(Node, node)
 
@@ -108,7 +109,8 @@ class MatchArgRanksPass(ArmPass):
                     continue
 
                 self._match_op_rank(graph_module, node, arg, max_rank)
+                modified = True
 
-        graph_module.recompile()
-        graph_module = super().call(graph_module).graph_module
-        return PassResult(graph_module, True)
+        if modified:
+            graph_module = super().call(graph_module).graph_module
+        return PassResult(graph_module, modified)
