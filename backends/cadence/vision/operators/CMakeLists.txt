@@ -20,11 +20,13 @@ endif()
 
 # ATen compliant ops that are needed to run this model.
 set(_aten_ops__srcs
-    "${CMAKE_CURRENT_SOURCE_DIR}/op_add.cpp"
-    "${CMAKE_CURRENT_SOURCE_DIR}/op_embedding.cpp"
-    "${CMAKE_CURRENT_SOURCE_DIR}/op_full.cpp"
-    "${CMAKE_CURRENT_SOURCE_DIR}/op_view_copy.cpp"
     "${CMAKE_CURRENT_SOURCE_DIR}/op_softmax.cpp"
+    "${CMAKE_CURRENT_SOURCE_DIR}/op_max_pool2d_with_indices.cpp"
+    "${CMAKE_CURRENT_SOURCE_DIR}/maxpool/maxpool_exec_mxnj2.c"
+    "${CMAKE_CURRENT_SOURCE_DIR}/mean/mean_exec_dma.c"
+    "${CMAKE_CURRENT_SOURCE_DIR}/op_add.cpp"
+    "${CMAKE_CURRENT_SOURCE_DIR}/op_mean.cpp"
+    "${CMAKE_CURRENT_SOURCE_DIR}/quantized_relu.cpp"
     "${EXECUTORCH_ROOT}/kernels/portable/cpu/util/activation_ops_util.cpp"
     "${EXECUTORCH_ROOT}/kernels/portable/cpu/util/copy_ops_util.cpp"
     "${EXECUTORCH_ROOT}/kernels/portable/cpu/util/broadcast_util.cpp"
@@ -36,12 +38,14 @@ set(_aten_ops__srcs
     "${EXECUTORCH_ROOT}/kernels/portable/cpu/util/repeat_util.cpp"
     "${EXECUTORCH_ROOT}/kernels/portable/cpu/util/slice_util.cpp"
     "${EXECUTORCH_ROOT}/kernels/portable/cpu/pattern/unary_ufunc_realhbbf16_to_floathbf16.cpp"
+    "${EXECUTORCH_ROOT}/kernels/portable/cpu/op_add.cpp"
     "${EXECUTORCH_ROOT}/kernels/portable/cpu/op_bmm.cpp"
     "${EXECUTORCH_ROOT}/kernels/portable/cpu/op_cat.cpp"
     "${EXECUTORCH_ROOT}/kernels/portable/cpu/op_clone.cpp"
     "${EXECUTORCH_ROOT}/kernels/portable/cpu/op_div.cpp"
+    "${EXECUTORCH_ROOT}/kernels/portable/cpu/op_embedding.cpp"
+    "${EXECUTORCH_ROOT}/kernels/portable/cpu/op_full.cpp"
     "${EXECUTORCH_ROOT}/kernels/portable/cpu/op_hardtanh.cpp"
-    "${EXECUTORCH_ROOT}/kernels/portable/cpu/op_max_pool2d_with_indices.cpp"
     "${EXECUTORCH_ROOT}/kernels/portable/cpu/op_mean.cpp"
     "${EXECUTORCH_ROOT}/kernels/portable/cpu/op_mul.cpp"
     "${EXECUTORCH_ROOT}/kernels/portable/cpu/op_permute_copy.cpp"
@@ -62,6 +66,7 @@ set(_aten_ops__srcs
     "${EXECUTORCH_ROOT}/kernels/portable/cpu/op_native_group_norm.cpp"
     "${EXECUTORCH_ROOT}/kernels/portable/cpu/op_sum.cpp"
     "${EXECUTORCH_ROOT}/kernels/portable/cpu/op_select_copy.cpp"
+    "${EXECUTORCH_ROOT}/kernels/portable/cpu/op_view_copy.cpp"
     "${EXECUTORCH_ROOT}/kernels/portable/cpu/util/delinearize_index.cpp"
     "${EXECUTORCH_ROOT}/kernels/portable/cpu/util/dtype_util.cpp"
     "${EXECUTORCH_ROOT}/kernels/portable/cpu/util/normalization_ops_util.cpp"
@@ -69,40 +74,60 @@ set(_aten_ops__srcs
 )
 add_library(aten_ops_cadence ${_aten_ops__srcs})
 target_link_libraries(aten_ops_cadence PUBLIC executorch)
-target_link_libraries(aten_ops_cadence PRIVATE cadence_kernels)
+target_link_libraries(aten_ops_cadence PRIVATE xa_nnlib cadence_kernels idma)
 
 # Let files say "include <executorch/path/to/header.h>".
-set(_common_include_directories
-    ${EXECUTORCH_ROOT}/.. ${EXECUTORCH_ROOT}/runtime/core/portable_type/c10
-)
+set(_common_include_directories ${EXECUTORCH_ROOT}/..
+${EXECUTORCH_ROOT}/runtime/core/portable_type/c10)
 
 target_include_directories(
-  aten_ops_cadence
-  PUBLIC ${ROOT_DIR}/.. ${CMAKE_BINARY_DIR} ${_common_include_directories}
-         ${CMAKE_CURRENT_SOURCE_DIR}/../third-party
+  aten_ops_cadence 
+  PUBLIC ${ROOT_DIR}/.. 
+  ${CMAKE_BINARY_DIR}
+  ${_common_include_directories}
+  PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/../third-party/include
 )
 
 # Custom ops that are needed to run the test model.
 add_library(
   custom_ops
-  "op_quantized_linear_out.cpp"
-  "op_quantized_conv_out.cpp"
-  "op_quantized_relu_out.cpp"
-  "op_quantized_layer_norm.cpp"
-  "op_quantize_per_tensor.cpp"
-  "op_quantized_fully_connected_out.cpp"
-  "op_dequantize_per_tensor.cpp"
-  "op_quantized_matmul_out.cpp"
-  "op_requantize_out.cpp"
-  "op_im2row_out.cpp"
+  "${CMAKE_CURRENT_SOURCE_DIR}/../../generic/operators/op_quantized_linear.cpp"
+  "${CMAKE_CURRENT_SOURCE_DIR}/../../generic/operators/op_quantized_add.cpp"
+  "${CMAKE_CURRENT_SOURCE_DIR}/../../generic/operators/op_quantized_conv2d.cpp"
+  "${CMAKE_CURRENT_SOURCE_DIR}/../../generic/operators/op_quantized_conv1d.cpp"
+  "${CMAKE_CURRENT_SOURCE_DIR}/../../generic/operators/op_quantized_conv1d_ncl.cpp"
+  "${CMAKE_CURRENT_SOURCE_DIR}/../../generic/operators/op_quantized_conv1d_nlc.cpp"
+  "${CMAKE_CURRENT_SOURCE_DIR}/op_quantized_conv_out.cpp"
+  "${CMAKE_CURRENT_SOURCE_DIR}/conv/conv_kernel_dispatcher.c"
+  "${CMAKE_CURRENT_SOURCE_DIR}/conv/conv_exec_7x7j2d1.c"
+  "${CMAKE_CURRENT_SOURCE_DIR}/conv/conv_exec_1x1j1d1.c"
+  "${CMAKE_CURRENT_SOURCE_DIR}/conv/conv_exec_1x1j2d1.c"
+  "${CMAKE_CURRENT_SOURCE_DIR}/conv/conv_exec_3x3j1d1.c"
+  "${CMAKE_CURRENT_SOURCE_DIR}/conv/conv_exec_3x3j2d1.c"
+  "${CMAKE_CURRENT_SOURCE_DIR}/../../generic/operators/op_quantized_relu.cpp"
+  "${CMAKE_CURRENT_SOURCE_DIR}/../../generic/operators/op_quantized_layer_norm.cpp"
+  "${CMAKE_CURRENT_SOURCE_DIR}/quantize_per_tensor.cpp"
+  "${CMAKE_CURRENT_SOURCE_DIR}/quantized_linear_out.cpp"
+  "${CMAKE_CURRENT_SOURCE_DIR}/../../generic/operators/op_quantized_fully_connected.cpp"
+  "${CMAKE_CURRENT_SOURCE_DIR}/dequantize_per_tensor.cpp"
+  "${CMAKE_CURRENT_SOURCE_DIR}/../../generic/operators/op_quantized_matmul.cpp"
+  "${CMAKE_CURRENT_SOURCE_DIR}/../../generic/operators/op_requantize.cpp"
+  "${CMAKE_CURRENT_SOURCE_DIR}/../../generic/operators/op_im2row.cpp"
 )
-target_include_directories(
-  custom_ops PUBLIC ${ROOT_DIR}/.. ${CMAKE_BINARY_DIR}
-                    ${_common_include_directories}
-)
-
 target_link_libraries(custom_ops PUBLIC executorch)
-target_link_libraries(custom_ops PRIVATE cadence_kernels)
+target_link_libraries(custom_ops PRIVATE xa_nnlib cadence_kernels idma xai)
+
+target_include_directories(
+  custom_ops 
+  PUBLIC 
+  ${ROOT_DIR}/.. 
+  ${CMAKE_BINARY_DIR}
+  ${_common_include_directories}
+  PRIVATE 
+  ${CMAKE_CURRENT_SOURCE_DIR}/../third-party/include
+  ${CMAKE_CURRENT_SOURCE_DIR}/../third-party/libxai/include
+  ${CMAKE_CURRENT_SOURCE_DIR}/../third-party/libxai_common/include
+)
 
 # Generate C++ bindings to register kernels into both PyTorch (for AOT) and
 # Executorch (for runtime). Here select all ops in functions_vision.yaml
@@ -119,6 +144,3 @@ message("Generated cadence x86 files ${gen_command_sources}")
 gen_operators_lib(
   LIB_NAME "cadence_ops_lib" KERNEL_LIBS custom_ops DEPS aten_ops_cadence
 )
-
-# Link custom_ops to the generated library to ensure the symbols are available
-target_link_libraries(cadence_ops_lib PUBLIC custom_ops)

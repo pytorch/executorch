@@ -1,0 +1,29 @@
+[  4%] Built target flatcc_ep
+[  4%] Built target flatbuffers_ep
+[  4%] Built target common_schema
+[  4%] Built target scalar_type_schema
+[  7%] Built target program_schema
+[  7%] Built target xai_common
+[  8%] Built target flat_tensor_schema
+[ 10%] Built target xa_nnlib
+[ 12%] Built target flatccrt
+[ 16%] Built target xai
+[ 16%] Built target cadence_kernels
+[ 17%] Built target gflags_nothreads_static
+[ 22%] Built target executorch_core
+[ 22%] Built target extension_evalue_util
+[ 25%] Built target extension_data_loader
+[ 25%] Built target extension_runner_util
+[ 25%] Built target extension_flat_tensor
+[ 26%] Built target executorch
+[ 31%] Built target kernels_util_all_deps
+[ 32%] Building CXX object backends/cadence/vision/operators/CMakeFiles/custom_ops.dir/quantized_conv2d_nchw_out_per_tensor.cpp.o
+[ 32%] Building C object backends/cadence/vision/operators/CMakeFiles/custom_ops.dir/conv/conv_exec_7x7j2d1.c.o
+[ 44%] Built target aten_ops_cadence
+[ 92%] Built target portable_kernels
+[ 93%] Built target portable_ops_lib
+[ 94%] Linking CXX static library libcustom_ops.a
+[ 98%] Built target custom_ops
+[ 99%] Built target cadence_ops_lib
+[100%] Linking CXX executable executor_runner
+[100%] Built target executor_runner

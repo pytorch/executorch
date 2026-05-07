@@ -87,7 +87,7 @@ class SoftmaxModule(torch.nn.Module, EagerModelBase):
         return self
 
     def get_example_inputs(self):
-        return (torch.ones(2, 2),)
+        return (torch.ones(2, 4096),)
 
 
 class Conv1dModule(torch.nn.Module, EagerModelBase):

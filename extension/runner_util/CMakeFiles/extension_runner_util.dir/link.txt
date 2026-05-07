@@ -1,0 +1,2 @@
+/usr/bin/ar qc libextension_runner_util.a CMakeFiles/extension_runner_util.dir/inputs.cpp.o CMakeFiles/extension_runner_util.dir/inputs_portable.cpp.o
+/usr/bin/ranlib libextension_runner_util.a

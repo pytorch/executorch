@@ -1,0 +1,26 @@
+[  2%] Built target flatcc_ep
+[  5%] Built target flatbuffers_ep
+[  8%] Built target xa_nnlib
+[  8%] Built target common_schema
+[  9%] Built target scalar_type_schema
+[ 11%] Built target flatccrt
+[ 11%] Built target flat_tensor_schema
+[ 11%] Built target program_schema
+[ 13%] Built target gflags_nothreads_static
+[ 13%] Built target cadence_kernels
+[ 19%] Built target executorch_core
+[ 22%] Built target extension_evalue_util
+[ 22%] Built target extension_flat_tensor
+[ 22%] Built target extension_data_loader
+[ 22%] Built target extension_runner_util
+[ 23%] Built target executorch
+[ 28%] Built target kernels_util_all_deps
+[ 32%] Built target custom_ops
+[ 32%] Building CXX object backends/cadence/vision/operators/CMakeFiles/aten_ops_cadence.dir/op_max_pool2d_with_indices.cpp.o
+[ 85%] Built target portable_kernels
+[ 86%] Built target portable_ops_lib
+[ 86%] Linking CXX static library libaten_ops_cadence.a
+[ 98%] Built target aten_ops_cadence
+[ 99%] Built target cadence_ops_lib
+[ 99%] Linking CXX executable executor_runner
+[100%] Built target executor_runner
