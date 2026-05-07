@@ -223,6 +223,7 @@ class Cdist(GeneralOpDef):
 @register_annotator(
     [
         torch.ops.aten.split_with_sizes.default,
+        torch.ops.aten.split_with_sizes_copy.default,
         torch.ops.aten.split.Tensor,
         torch.ops.aten.chunk.default,
     ],
@@ -705,14 +706,22 @@ class Permute(GeneralOpDef):
     [torch.ops.aten.pixel_shuffle.default], QnnConstants.OpDepthToSpace.op_name
 )
 class PixelShuffle(GeneralOpDef):
-    pass
+    @staticmethod
+    def annotate(node: Node, quantization_config: QuantizationConfig) -> None:
+        annotate_in_out_obs_sharing_op(node, quantization_config)
+        if not _is_annotated([node]):
+            annotate_single_in_share_out(node, quantization_config)
 
 
 @register_annotator(
     [torch.ops.aten.pixel_unshuffle.default], QnnConstants.OpSpaceToDepth.op_name
 )
 class PixelUnshuffle(GeneralOpDef):
-    pass
+    @staticmethod
+    def annotate(node: Node, quantization_config: QuantizationConfig) -> None:
+        annotate_in_out_obs_sharing_op(node, quantization_config)
+        if not _is_annotated([node]):
+            annotate_single_in_share_out(node, quantization_config)
 
 
 @register_annotator(
