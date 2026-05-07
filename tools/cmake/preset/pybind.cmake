@@ -1,5 +1,6 @@
 # Copyright (c) Meta Platforms, Inc. and affiliates.
 # All rights reserved.
+# Copyright 2026 Arm Limited and/or its affiliates.
 #
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
@@ -25,9 +26,22 @@ set_overridable_option(EXECUTORCH_BUILD_EXTENSION_MODULE ON)
 set_overridable_option(EXECUTORCH_BUILD_EXTENSION_NAMED_DATA_MAP ON)
 set_overridable_option(EXECUTORCH_BUILD_WHEEL_DO_NOT_USE ON)
 
+# Optional VGF enable for the default pybind/install flow. This is intentionally
+# scoped to this preset rather than acting as a general environment-to-CMake
+# override mechanism.
+set(_executorch_pybind_enable_vgf OFF)
+if(DEFINED ENV{EXECUTORCH_PYBIND_ENABLE_VGF})
+  if("$ENV{EXECUTORCH_PYBIND_ENABLE_VGF}" STREQUAL "ON")
+    set(_executorch_pybind_enable_vgf ON)
+  else()
+    set(_executorch_pybind_enable_vgf OFF)
+  endif()
+endif()
+
 # TODO(larryliu0820): Temporarily disable building llm_runner for Windows wheel
 # due to the issue of tokenizer file path length limitation.
 if(CMAKE_SYSTEM_NAME STREQUAL "Darwin")
+  set_overridable_option(EXECUTORCH_BUILD_VGF ${_executorch_pybind_enable_vgf})
   set_overridable_option(EXECUTORCH_BUILD_COREML ON)
   set_overridable_option(EXECUTORCH_BUILD_EXTENSION_TRAINING ON)
   set_overridable_option(EXECUTORCH_BUILD_EXTENSION_LLM_RUNNER ON)
@@ -51,6 +65,7 @@ if(CMAKE_SYSTEM_NAME STREQUAL "Darwin")
     endif()
   endif()
 elseif(CMAKE_SYSTEM_NAME STREQUAL "Linux")
+  set_overridable_option(EXECUTORCH_BUILD_VGF ${_executorch_pybind_enable_vgf})
   set_overridable_option(EXECUTORCH_BUILD_COREML ON)
   set_overridable_option(EXECUTORCH_BUILD_EXTENSION_TRAINING ON)
   set_overridable_option(EXECUTORCH_BUILD_EXTENSION_LLM_RUNNER ON)
