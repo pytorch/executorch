@@ -898,18 +898,11 @@ class StaticAttention(Attention):
 
     def _init_qk_norms(self, config: ModelArgs, is_kv_shared_layer: bool) -> None:
         if self.use_qk_norm:
-            if getattr(config, "qk_norm_affine", True):
-                self.q_norm = torch.nn.RMSNorm(self.head_dim, config.norm_eps)
-                if is_kv_shared_layer:
-                    self.k_norm = nn.Identity()
-                else:
-                    self.k_norm = torch.nn.RMSNorm(self.head_dim, config.norm_eps)
+            self.q_norm = torch.nn.RMSNorm(self.head_dim, config.norm_eps)
+            if is_kv_shared_layer:
+                self.k_norm = nn.Identity()
             else:
-                self.q_norm = ScalelessRMSNorm(self.head_dim, eps=config.norm_eps)
-                if is_kv_shared_layer:
-                    self.k_norm = nn.Identity()
-                else:
-                    self.k_norm = ScalelessRMSNorm(self.head_dim, eps=config.norm_eps)
+                self.k_norm = torch.nn.RMSNorm(self.head_dim, config.norm_eps)
         else:
             self.q_norm = torch.nn.Identity()
             self.k_norm = torch.nn.Identity()
