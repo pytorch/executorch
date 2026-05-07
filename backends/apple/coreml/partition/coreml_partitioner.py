@@ -33,6 +33,26 @@ logger = logging.getLogger(__name__)
 logger.setLevel(get_coreml_log_level(default_level=logging.INFO))
 
 
+_ARG_MIN_MAX_TARGETS = (
+    torch.ops.aten.argmax.default,
+    torch.ops.aten.argmin.default,
+    exir_ops.edge.aten.argmax.default,
+    exir_ops.edge.aten.argmin.default,
+)
+
+
+def _is_arg_min_max_over_flattened_input(node: torch.fx.Node) -> bool:
+    """``argmin``/``argmax`` with ``dim=None`` reduces over the flattened input.
+
+    CoreML doesn't support that reduction shape and intermittently crashes
+    the process at runtime — see pytorch/executorch#11715.
+    """
+    if node.target not in _ARG_MIN_MAX_TARGETS:
+        return False
+    dim = node.args[1] if len(node.args) >= 2 else node.kwargs.get("dim", None)
+    return dim is None
+
+
 def _is_view_op(op: torch._ops.OpOverload) -> bool:
     schema = op._schema
     if len(schema.arguments) == 0:
@@ -113,6 +133,13 @@ class _OperatorsSupportedForCoreMLBackend(OperatorSupportBase):
         ]:
             self.log_once(
                 "torch.ops.aten.{acosh, asinh}.default is not supported by CoreML.  Overriding op support."
+            )
+            return True
+
+        if _is_arg_min_max_over_flattened_input(node):
+            self.log_once(
+                "torch.ops.aten.{argmax, argmin}.default with dim=None is "
+                "not supported by CoreML.  Overriding op support."
             )
             return True
 
