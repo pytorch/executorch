@@ -34,6 +34,9 @@ struct PhysicalDevice final {
   // Properties obtained from Vulkan
   VkPhysicalDeviceProperties properties;
   VkPhysicalDeviceMemoryProperties memory_properties;
+  // Core Vulkan 1.1 — populated via vkGetPhysicalDeviceProperties2.
+  // subgroupSize is left 0 on Vulkan 1.0-only devices.
+  VkPhysicalDeviceSubgroupProperties subgroup_properties;
 
   // Additional features available from extensions
 #ifdef VK_KHR_16bit_storage

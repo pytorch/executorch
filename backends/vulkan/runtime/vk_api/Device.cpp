@@ -47,6 +47,9 @@ PhysicalDevice::PhysicalDevice(
       handle(physical_device_handle),
       properties{},
       memory_properties{},
+      subgroup_properties{
+          VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_SUBGROUP_PROPERTIES,
+          nullptr},
 #ifdef VK_KHR_16bit_storage
       shader_16bit_storage{
           VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_16BIT_STORAGE_FEATURES,
@@ -293,10 +296,16 @@ void PhysicalDevice::query_extensions_vk_1_1() {
   VkPhysicalDeviceProperties2 properties2{
       VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_PROPERTIES_2};
 
+  void* properties_list_top = nullptr;
+  subgroup_properties.pNext = properties_list_top;
+  properties_list_top = &subgroup_properties;
+
 #ifdef VK_KHR_shader_integer_dot_product
-  shader_int_dot_product_properties.pNext = nullptr;
-  properties2.pNext = &shader_int_dot_product_properties;
+  shader_int_dot_product_properties.pNext = properties_list_top;
+  properties_list_top = &shader_int_dot_product_properties;
 #endif /* VK_KHR_shader_integer_dot_product */
+
+  properties2.pNext = properties_list_top;
 
   vkGetPhysicalDeviceProperties2(handle, &properties2);
 }

@@ -27,6 +27,9 @@ struct MmConfig {
   bool has_bias; // true for addmm/linear
   bool mat2_is_transposed; // true for linear (weight is [N, K])
   bool mat2_is_constant; // true to test prepacked linear path
+  // "default" routes through aten.{mm,linear,...}.default (production path).
+  // "coopmat" / "tiled" force-dispatch a specific shader implementation.
+  std::string impl_selector = "default";
 };
 
 struct MmShape {
@@ -77,6 +80,9 @@ static TestCase create_mm_test_case(
 
   std::string name = prefix + "  " + op_type + " " + shape + "  " +
       storage_str + "(" + layout_str + ") " + dtype_str;
+  if (config.impl_selector != "default") {
+    name += " [" + config.impl_selector + "]";
+  }
 
   test_case.set_name(name);
 
@@ -168,7 +174,7 @@ static TestCase create_mm_test_case(
   }
 
   // impl_selector (added before output for all variants)
-  ValueSpec impl_selector_spec = ValueSpec::make_string("default");
+  ValueSpec impl_selector_spec = ValueSpec::make_string(config.impl_selector);
   test_case.add_input_spec(impl_selector_spec);
 
   // output
@@ -182,8 +188,28 @@ static TestCase create_mm_test_case(
       out_sizes, dtype, storage_type, memory_layout, DataGenType::ZEROS);
   test_case.add_output_spec(output);
 
-  // Set tolerances - half precision needs wider tolerance
-  if (dtype == vkapi::kHalf) {
+  // The coopmat shader uses fp16 intermediates regardless of input dtype
+  // (inputs are packHalf2x16-converted before entering the MMA), so the
+  // achievable precision is fp16-bounded for any path that dispatches to
+  // it. A coopmat dispatch occurs when impl_selector forces it, or when
+  // the default routing's gate (buffer + M/N/K alignment) is met.
+  bool routes_to_coopmat = false;
+  if (config.impl_selector == "coopmat") {
+    routes_to_coopmat = true;
+  } else if (
+      config.impl_selector == "default" && storage_type == utils::kBuffer &&
+      !is_batched && config.M % 64 == 0 && config.N % 64 == 0 &&
+      config.K % 32 == 0) {
+    // Mirror is_coopmat_eligible's full device-capability gate so default
+    // routing's tolerance matches its actual dispatch path. On a device
+    // that's integrated, subgroup-32, or otherwise ineligible, the default
+    // routes to tiled and tolerance must stay tight.
+    const auto* adapter = api::context()->adapter_ptr();
+    routes_to_coopmat = adapter->supports_cooperative_matrix() &&
+        adapter->subgroup_size() == 64 && !adapter->is_integrated_gpu();
+  }
+
+  if (dtype == vkapi::kHalf || routes_to_coopmat) {
     test_case.set_abs_tolerance(1e-1f);
     test_case.set_rel_tolerance(1e-2f);
   } else {
@@ -359,6 +385,26 @@ static std::vector<TestCase> generate_mm_test_cases() {
       {0, 4096, 64, 128},
   };
 
+  // Coopmat shader requires M%64==0, N%64==0, K%32==0 (no partial-tile or
+  // K-tail handling). Sweep both "coopmat" and "tiled" force-dispatch variants
+  // for shapes that satisfy alignment, on buffer storage only (coopmat
+  // requires buffer outputs).
+  auto coopmat_shape_eligible = [](const MmShape& s) {
+    return s.B == 0 && s.M % 64 == 0 && s.N % 64 == 0 && s.K % 32 == 0;
+  };
+
+  // The "coopmat" forced-dispatch sweep skips the runtime eligibility check
+  // (it's intentionally bypassing the gate to exercise the shader). Skip
+  // generating those cases on adapters that can't actually run the shader,
+  // or pipeline creation/dispatch will fail.
+  const auto* adapter = api::context()->adapter_ptr();
+  const bool coopmat_runnable =
+      adapter->supports_cooperative_matrix() && adapter->subgroup_size() == 64;
+  std::vector<std::string> coopmat_sweep_selectors = {"tiled"};
+  if (coopmat_runnable) {
+    coopmat_sweep_selectors.push_back("coopmat");
+  }
+
   for (const auto& s : shapes) {
     bool is_batched = s.B > 0;
     bool is_perf = s.M > kRefDimSizeLimit || s.K > kRefDimSizeLimit ||
@@ -379,6 +425,20 @@ static std::vector<TestCase> generate_mm_test_cases() {
             create_mm_test_case(const_cfg, dtype, st, utils::kWidthPacked));
       }
 
+      // Coopmat A/B sweep: only on aligned shapes + buffer storage.
+      if (coopmat_shape_eligible(s)) {
+        for (const auto& sel : coopmat_sweep_selectors) {
+          MmConfig dyn = dynamic_cfg;
+          dyn.impl_selector = sel;
+          test_cases.push_back(create_mm_test_case(
+              dyn, dtype, utils::kBuffer, utils::kWidthPacked));
+          MmConfig con = const_cfg;
+          con.impl_selector = sel;
+          test_cases.push_back(create_mm_test_case(
+              con, dtype, utils::kBuffer, utils::kWidthPacked));
+        }
+      }
+
       if (!is_batched) {
         MmConfig addmm_cfg{s.B, s.M, s.K, s.N, true, false, false};
         MmConfig addmm_const_cfg{s.B, s.M, s.K, s.N, true, false, true};
@@ -394,6 +454,20 @@ static std::vector<TestCase> generate_mm_test_cases() {
               create_mm_test_case(linear_cfg, dtype, st, utils::kWidthPacked));
           test_cases.push_back(create_mm_test_case(
               linear_bias_cfg, dtype, st, utils::kWidthPacked));
+        }
+
+        // Coopmat A/B sweep on linear paths too (only aligned shapes).
+        if (coopmat_shape_eligible(s)) {
+          for (const auto& sel : coopmat_sweep_selectors) {
+            MmConfig lin = linear_cfg;
+            lin.impl_selector = sel;
+            test_cases.push_back(create_mm_test_case(
+                lin, dtype, utils::kBuffer, utils::kWidthPacked));
+            MmConfig lin_bias = linear_bias_cfg;
+            lin_bias.impl_selector = sel;
+            test_cases.push_back(create_mm_test_case(
+                lin_bias, dtype, utils::kBuffer, utils::kWidthPacked));
+          }
         }
       }
     }
