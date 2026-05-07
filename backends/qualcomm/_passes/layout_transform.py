@@ -118,6 +118,7 @@ class LayoutTransform(ExportPass):
         exir_ops.edge.aten.repeat.default,
         exir_ops.edge.aten.relu.default,
         exir_ops.edge.aten.round.default,
+        exir_ops.edge.aten.scatter.src,
         exir_ops.edge.aten.sigmoid.default,
         exir_ops.edge.aten.sign.default,
         exir_ops.edge.aten.slice_copy.Tensor,

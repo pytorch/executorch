@@ -1380,6 +1380,45 @@ class ScaledDotProductAttention(GeneralOpDef):
 
 
 @register_annotator(
+    [torch.ops.aten.scatter.src],
+    qnn_op=None,
+)
+class ScatterElements(GeneralOpDef):
+    @staticmethod
+    def annotate(node: Node, quantization_config: QuantizationConfig) -> None:
+        if _is_annotated([node]):
+            return
+
+        input_qspec_map = {}
+        input_act = None
+
+        if _is_float_tensor(node.args[0]):
+            input_act = node.args[0]
+            assert isinstance(input_act, Node)
+            input_qspec_map[input_act] = quantization_config.input_activation
+
+        if (
+            len(node.args) > 3
+            and isinstance(node.args[3], Node)
+            and _is_float_tensor(node.args[3])
+        ):
+            input_qspec_map[node.args[3]] = SharedQuantizationSpec((input_act, node))
+
+        output_act_qspec = (
+            SharedQuantizationSpec((input_act, node))
+            if _is_float_tensor(node)
+            else None
+        )
+
+        if len(input_qspec_map) > 0 or output_act_qspec is not None:
+            node.meta[Q_ANNOTATION_KEY] = QuantizationAnnotation(
+                input_qspec_map=input_qspec_map,
+                output_qspec=output_act_qspec,
+                _annotated=True,
+            )
+
+
+@register_annotator(
     [torch.ops.aten.sigmoid, torch.ops.aten.sigmoid.default],
     QnnConstants.OpSigmoid.op_name,
 )
