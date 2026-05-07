@@ -153,7 +153,7 @@ class TestPerChannelConversion(unittest.TestCase):
                 use_neutron_for_format_conversion=False,
             )
 
-            tflite_flatbuffers_model, io_formats = converter_spy.calls[-1].return_value
+            tflite_flatbuffers_model, *_ = converter_spy.calls[-1].return_value
             exported_program: ExportedProgram = converter_spy.calls[-1].args[0]
 
             input_data = (np.random.random(input_shape).astype(np.float32) * 50).astype(

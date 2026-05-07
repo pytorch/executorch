@@ -67,7 +67,7 @@ class TestTanhConverter(unittest.TestCase):
                 use_qat=use_qat,
                 use_neutron_for_format_conversion=False,
             ).exported_program()
-            tflite_flatbuffers_model, io_formats = converter_spy.calls[-1].return_value
+            tflite_flatbuffers_model, *_ = converter_spy.calls[-1].return_value
             exported_program: ExportedProgram = converter_spy.calls[-1].args[0]
 
             lowered_module_graph = (

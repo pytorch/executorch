@@ -49,7 +49,7 @@ def test_sub_tensor_quant_conversion(mocker, input_shape, use_qat):
     _ = to_quantized_edge_program(model, [input_shape, input_shape], use_qat=use_qat)
 
     # Capture generated model
-    tflite_flatbuffers_model, io_formats = converter_spy.spy_return
+    tflite_flatbuffers_model, *_ = converter_spy.spy_return
 
     # Capture converted program
     exported_program: ExportedProgram = converter_spy.call_args.args[1]
@@ -88,7 +88,7 @@ def test_sub_tensor_one_input_quant_conversion(mocker, input_shape, use_qat):
     _ = to_quantized_edge_program(model, input_shape, use_qat=use_qat)
 
     # Capture generated model
-    tflite_flatbuffers_model, io_formats = converter_spy.spy_return
+    tflite_flatbuffers_model, *_ = converter_spy.spy_return
 
     # Capture converted program
     exported_program: ExportedProgram = converter_spy.call_args.args[1]
@@ -127,7 +127,7 @@ def test_sub_tensor_w_conv_quant_conversion(mocker, x_input_shape, use_qat):
     )
 
     # Capture generated model
-    tflite_flatbuffers_model, io_formats = converter_spy.spy_return
+    tflite_flatbuffers_model, *_ = converter_spy.spy_return
 
     # Capture converted program
     exported_program: ExportedProgram = converter_spy.call_args.args[1]

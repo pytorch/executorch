@@ -8,6 +8,8 @@
 # backends.
 #
 
+import os
+import tempfile
 import logging
 import struct
 from typing import final, List, Optional
@@ -35,6 +37,8 @@ from executorch.exir.backend.backend_details import BackendDetails, PreprocessRe
 from executorch.exir.backend.compile_spec_schema import CompileSpec
 from torch.export.exported_program import ExportedProgram
 
+from executorch.backends.nxp.backend.neutron_map import NeutronMap
+
 # Aten dialect operators that are allowed to be in the edge dialect model. These operators are usually created by a
 #  transform pass or by a prevented operator decomposition during lowering to edge.
 core_aten_ops_exception_list = [
@@ -54,6 +58,7 @@ class NeutronCompileSpecBuilder:
         self.fetch_constants_to_sram = False
         self.dump_kernel_selection_code = False
         self.use_new_flow_neutron_c = False
+        self.use_profiling = False
 
     def _replace_colons(self, operator: str) -> str:
         """
@@ -70,6 +75,7 @@ class NeutronCompileSpecBuilder:
         fetch_constants_to_sram: bool = False,
         dump_kernel_selection_code: bool = False,
         use_new_flow_neutron_c: bool = False,
+        use_profiling: bool = False,
     ) -> "NeutronCompileSpecBuilder":
         """Generate compile spec for Neutron NPU
 
@@ -83,6 +89,7 @@ class NeutronCompileSpecBuilder:
                                      from FLASH to SRAM. This should be used when the whole model does not fit into SRAM.
         :param dump_kernel_selection_code: Whether Neutron converter dumps kernel selection code.
         :param use_new_flow_neutron_c: Enable experimental MLIR-based flow for Neutron-C with improved INT8 operator support.
+        :param use_profiling: If true Neutron Converter will enable profiling for neutron delegated model
         :return: self for method chaining
         """
 
@@ -106,6 +113,7 @@ class NeutronCompileSpecBuilder:
         self.fetch_constants_to_sram = fetch_constants_to_sram
         self.dump_kernel_selection_code = dump_kernel_selection_code
         self.use_new_flow_neutron_c = use_new_flow_neutron_c
+        self.use_profiling = use_profiling
 
         return self
 
@@ -138,6 +146,10 @@ class NeutronCompileSpecBuilder:
                     "use_new_flow_neutron_c",
                     f"{self.use_new_flow_neutron_c}".encode(),
                 ),
+                CompileSpec(
+                    "use_profiling",
+                    f"{self.use_profiling}".encode(),
+                ),
             ]
 
         return self.compile_spec
@@ -152,6 +164,7 @@ def generate_neutron_compile_spec(
     fetch_constants_to_sram: bool = False,
     dump_kernel_selection_code: bool = False,
     use_new_flow_neutron_c: bool = False,
+    use_profiling: bool = False,
 ) -> List[CompileSpec]:
     return (
         NeutronCompileSpecBuilder()
@@ -163,9 +176,42 @@ def generate_neutron_compile_spec(
             fetch_constants_to_sram=fetch_constants_to_sram,
             dump_kernel_selection_code=dump_kernel_selection_code,
             use_new_flow_neutron_c=use_new_flow_neutron_c,
+            use_profiling=use_profiling,
         )
         .build()
     )
+
+
+def capture_fd_output(func, *args, **kwargs):
+    # Create temp file to capture output
+    tmp = tempfile.TemporaryFile()
+
+    # Save original stdout / stderr file descriptors
+    original_stdout_fd = os.dup(1)
+    original_stderr_fd = os.dup(2)
+
+    try:
+        # Redirect fd=1 and fd=2 to the temp file
+        os.dup2(tmp.fileno(), 1)
+        os.dup2(tmp.fileno(), 2)
+
+        # Run your function
+        result = func(*args, **kwargs)
+
+    finally:
+        # Restore original file descriptors
+        os.dup2(original_stdout_fd, 1)
+        os.dup2(original_stderr_fd, 2)
+
+        # Cleanup
+        os.close(original_stdout_fd)
+        os.close(original_stderr_fd)
+
+    # Read captured output
+    tmp.seek(0)
+    output = tmp.read().decode()
+
+    return result, output
 
 
 @final
@@ -188,6 +234,7 @@ class NeutronBackend(BackendDetails):
         fetch_constants_to_sram = False
         dump_kernel_selection_code = None
         use_new_flow_neutron_c = False
+        use_profiling = False
         for spec in compile_spec:
             if spec.key == "output_format":
                 output_format = spec.value.decode()
@@ -203,6 +250,8 @@ class NeutronBackend(BackendDetails):
                 dump_kernel_selection_code = spec.value.decode() == "True"
             if spec.key == "use_new_flow_neutron_c":
                 use_new_flow_neutron_c = spec.value.decode() == "True"
+            if spec.key == "use_profiling":
+                use_profiling = spec.value.decode() == "True"
 
         # Check that the output format is set in the compile spec
         if not output_format:
@@ -228,7 +277,7 @@ class NeutronBackend(BackendDetails):
                 if use_neutron_for_format_conversion is not None
                 else {}
             )
-            tflite_model, io_formats = EdgeProgramToIRConverter().convert_program(
+            tflite_model, io_formats, edge_to_tflite_map = EdgeProgramToIRConverter().convert_program(
                 edge_program,
                 neutron_target_spec=NeutronTargetSpec(target),
                 conversion_config=conversion_config,
@@ -237,13 +286,18 @@ class NeutronBackend(BackendDetails):
                 ),
             )
 
-            neutron_model = NeutronConverterManager(dump_kernel_selection_code).convert(
+            neutron_model, log_output = capture_fd_output(
+                NeutronConverterManager(dump_kernel_selection_code).convert,
                 tflite_model,
                 target,
                 delegation_tag,
                 fetch_constants_to_sram,
                 use_new_flow_neutron_c,
+                use_profiling
             )
+            # Get mapping from tflite to neutron
+            map = NeutronMap(log_output, edge_to_tflite_map)
+            neutron_to_edge_map = map.get_neutron_to_edge_map()
 
             # Dump the tflite file if logging level is enabled
             if logging.root.isEnabledFor(logging.DEBUG):
@@ -261,7 +315,10 @@ class NeutronBackend(BackendDetails):
         else:
             raise RuntimeError(f"Unknown format {output_format}")
 
-        return PreprocessResult(processed_bytes=binary)
+        return PreprocessResult(
+            processed_bytes=binary,
+            debug_handle_map=neutron_to_edge_map
+        )
 
 
 class PayloadComposer:

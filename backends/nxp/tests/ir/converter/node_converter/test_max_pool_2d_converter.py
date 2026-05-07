@@ -85,7 +85,7 @@ class TestMaxPool2DSupported:
 
         # Verify correct behavior of the converted NeutronIR model.
         edge_partition = converter_spy.call_args.args[1]
-        neutron_ir_partition, _ = converter_spy.spy_return
+        neutron_ir_partition, *_ = converter_spy.spy_return
 
         input_data = _generate_test_data(input_shape)
 
@@ -235,7 +235,7 @@ class TestMaxPool1D:
 
         # Verify correct behavior of the converted NeutronIR model.
         edge_partition = converter_spy.call_args.args[1]
-        neutron_ir_partition, _ = converter_spy.spy_return
+        neutron_ir_partition, *_ = converter_spy.spy_return
 
         input_data = _generate_test_data(extended_shape)
 

@@ -49,7 +49,7 @@ def test_relu6_quant(mocker, input_shape: tuple[int], inplace: bool, use_qat: bo
         model, input_shape, use_qat=use_qat, use_neutron_for_format_conversion=False
     ).exported_program()
 
-    tflite_flatbuffers_model, io_formats = converter_spy.spy_return
+    tflite_flatbuffers_model, *_ = converter_spy.spy_return
     exported_program: ExportedProgram = converter_spy.call_args.args[1]
 
     assert not graph_contains_any_of_ops(quantized_program.graph, [HardTanh, HardTanh_])
@@ -102,7 +102,7 @@ def test_custom_hardtanh_quant(
         model, input_shape, use_qat=use_qat, use_neutron_for_format_conversion=False
     ).exported_program()
 
-    tflite_flatbuffers_model, io_formats = converter_spy.spy_return
+    tflite_flatbuffers_model, *_ = converter_spy.spy_return
     exported_program: ExportedProgram = converter_spy.call_args.args[1]
 
     assert not graph_contains_any_of_ops(quantized_program.graph, [HardTanh, HardTanh_])

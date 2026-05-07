@@ -6,8 +6,10 @@
 # Example script to compile the model for the NXP Neutron NPU
 
 import argparse
+import copy
 import io
 import logging
+import os
 from collections import defaultdict
 
 import executorch.extension.pybindings.portable_lib
@@ -31,6 +33,7 @@ from executorch.backends.nxp.nxp_backend import (
 )
 from executorch.backends.nxp.quantizer.neutron_quantizer import NeutronQuantizer
 from executorch.backends.nxp.quantizer.utils import calibrate_and_quantize
+from executorch.devtools.etrecord import generate_etrecord
 from executorch.devtools.visualization.visualization_utils import (
     visualize_with_clusters,
 )
@@ -167,6 +170,13 @@ if __name__ == "__main__":  # noqa C901
         required=False,
         default=False,
         help="Use QAT mode for quantization (performs two QAT training epochs)",
+    )
+    parser.add_argument(
+        "--use_profiling",
+        action="store_true",
+        required=False,
+        default=False,
+        help="Enable profiling for eIQ Neutron NPU delegated model",
     )
     parser.add_argument(
         "-s",
@@ -331,6 +341,7 @@ if __name__ == "__main__":  # noqa C901
         fetch_constants_to_sram=args.fetch_constants_to_sram,
         dump_kernel_selection_code=args.dump_kernel_selection_code,
         use_new_flow_neutron_c=args.use_new_flow_neutron_c,
+        use_profiling = args.use_profiling,
     )
     partitioners = (
         [
@@ -347,6 +358,7 @@ if __name__ == "__main__":  # noqa C901
     edge_program_manager = to_edge_transform_and_lower(
         export(module, example_inputs, strict=True),
         transform_passes=NeutronEdgePassManager(),
+        generate_etrecord=args.use_profiling,
         partitioner=partitioners,
         compile_config=EdgeCompileConfig(
             _core_aten_ops_exception_list=core_aten_ops_exception_list,
@@ -369,6 +381,23 @@ if __name__ == "__main__":  # noqa C901
         exec_prog = edge_program_manager.to_executorch(
             config=ExecutorchBackendConfig(extract_delegate_segments=False)
         )
+
+        # Generate ETRecord if profiling flag is set
+        if args.use_profiling:
+            etrecord_path = f"etrecord/{args.model_name}_etrecord.bin"
+            # Create directory if it doesn't exist
+            os.makedirs(os.path.dirname(etrecord_path), exist_ok=True)
+            # Save ETRecord
+            exec_prog.get_etrecord().save(etrecord_path)
+            # Notify the user about profiling enablement and ETRecord generation.
+            print(
+                "The model was converted with profiling enabled. The time spent generating the profiling dump is traced as the "
+                "final delegate operation and can be ignored, as no dump is produced for non‑profilable models."
+            )
+            print(
+                f"The ETRecord for the model was saved to {etrecord_path}."
+            )
+
     except RuntimeError as e:
         if "Missing out variants" in str(e.args[0]):
             raise RuntimeError(
@@ -389,6 +418,8 @@ if __name__ == "__main__":  # noqa C901
     # 6. Serialize to *.pte
     model_name = f"{args.model_name}" + (
         "_nxp_delegate" if args.delegate is True else ""
+    ) + (
+         "_profile" if args.use_profiling is True else ""
     )
     save_pte_program(exec_prog, model_name)
 

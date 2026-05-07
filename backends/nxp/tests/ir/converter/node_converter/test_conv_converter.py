@@ -55,7 +55,7 @@ def test_conv1d_quant_conversion(bias, stride, dilation, kernel_size, mocker, us
     _ = to_quantized_edge_program(model, input_shape, use_qat=use_qat)
 
     # Capture generated model
-    tflite_flatbuffers_model, io_formats = converter_spy.spy_return
+    tflite_flatbuffers_model, *_ = converter_spy.spy_return
 
     # Capture converted program
     exported_program: ExportedProgram = converter_spy.call_args.args[1]
@@ -99,7 +99,7 @@ def test_conv1d_quant_conversion__padded(
     _ = to_quantized_edge_program(model, input_shape, use_qat=use_qat)
 
     # Capture generated model
-    tflite_flatbuffers_model, io_formats = converter_spy.spy_return
+    tflite_flatbuffers_model, *_ = converter_spy.spy_return
 
     # Capture converted program
     exported_program: ExportedProgram = converter_spy.call_args.args[1]
@@ -163,7 +163,7 @@ def test_conv1d_quant_conversion__depthwise(
     _ = to_quantized_edge_program(model, input_shape, use_qat=use_qat)
 
     # Capture generated model
-    tflite_flatbuffers_model, io_formats = converter_spy.spy_return
+    tflite_flatbuffers_model, *_ = converter_spy.spy_return
 
     # Capture converted program
     exported_program: ExportedProgram = converter_spy.call_args.args[1]
@@ -213,7 +213,7 @@ def test_conv1d_quant_conversion__depthwise__padded(
     _ = to_quantized_edge_program(model, input_shape, use_qat=use_qat)
 
     # Capture generated model
-    tflite_flatbuffers_model, io_formats = converter_spy.spy_return
+    tflite_flatbuffers_model, *_ = converter_spy.spy_return
 
     # Capture converted program
     exported_program: ExportedProgram = converter_spy.call_args.args[1]
@@ -389,7 +389,7 @@ def test_conv2d_quant_conversion(mocker, model: torch.nn.Module, input_shape, us
     )
 
     # Capture generated model
-    tflite_flatbuffers_model, io_formats = converter_spy.spy_return
+    tflite_flatbuffers_model, *_ = converter_spy.spy_return
 
     # Capture converted program
     exported_program: ExportedProgram = converter_spy.call_args.args[1]
@@ -576,7 +576,7 @@ def test_conv_transpose2d_conversion__quantized(
     assert any("lowered_module" in node.name for node in edge_program.graph.nodes)
 
     # Capture generated model
-    tflite_flatbuffers_model, io_formats = converter_spy.spy_return
+    tflite_flatbuffers_model, *_ = converter_spy.spy_return
 
     # Capture converted program
     exported_program: ExportedProgram = converter_spy.call_args.args[1]

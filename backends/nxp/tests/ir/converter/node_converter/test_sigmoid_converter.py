@@ -38,7 +38,7 @@ def test_conv_sigmoid(mocker, use_qat, input_shape: tuple[int] = (1, 3, 112, 112
         model, input_shape, use_qat=use_qat, use_neutron_for_format_conversion=False
     ).exported_program()
 
-    tflite_flatbuffers_model, io_formats = converter_spy.spy_return
+    tflite_flatbuffers_model, *_ = converter_spy.spy_return
     exported_program: ExportedProgram = converter_spy.call_args.args[1]
 
     input_data = (np.random.random(input_shape) * 50).astype(np.int8)
@@ -69,7 +69,7 @@ def test_sigmoid_only(mocker, use_qat, input_shape):
 
     to_quantized_edge_program(model, input_shape, use_qat=use_qat).exported_program()
 
-    tflite_flatbuffers_model, io_formats = converter_spy.spy_return
+    tflite_flatbuffers_model, *_ = converter_spy.spy_return
     exported_program: ExportedProgram = converter_spy.call_args.args[1]
 
     input_data = (np.random.random(input_shape) * 50).astype(np.int8)

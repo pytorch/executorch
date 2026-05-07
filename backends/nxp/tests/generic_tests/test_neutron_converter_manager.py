@@ -28,7 +28,7 @@ def test_conv2d_neutron_conversion():
 
     NodeFormatInference(edge_program_manager.exported_program()).identify_node_formats()
     edge_program_converter = EdgeProgramToIRConverter()
-    tflite_model, _ = edge_program_converter.convert_program(
+    tflite_model, *_ = edge_program_converter.convert_program(
         edge_program_manager.exported_program()
     )
 

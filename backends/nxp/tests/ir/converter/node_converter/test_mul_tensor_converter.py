@@ -55,7 +55,7 @@ def test_mul_tensor_quant_conversion(mocker, x_input_shape):
     assert not any("mul" in n.name for n in edge_nodes)
 
     # Capture generated model
-    tflite_flatbuffers_model, io_formats = converter_spy.spy_return
+    tflite_flatbuffers_model, *_ = converter_spy.spy_return
 
     # Capture converted program
     exported_program: ExportedProgram = converter_spy.call_args.args[1]
@@ -120,7 +120,7 @@ def test_mul_tensor_one_input_quant_conversion(mocker, input_shape):
     assert not any("mul" in n.name for n in edge_nodes)
 
     # Capture generated model
-    tflite_flatbuffers_model, io_formats = converter_spy.spy_return
+    tflite_flatbuffers_model, *_ = converter_spy.spy_return
 
     # Capture converted program
     exported_program: ExportedProgram = converter_spy.call_args.args[1]
@@ -162,7 +162,7 @@ def test_mul_tensor_w_conv_quant_conversion(mocker, x_input_shape):
     assert not any("convolution" in n.name for n in edge_nodes)
 
     # Capture generated model
-    tflite_flatbuffers_model, io_formats = converter_spy.spy_return
+    tflite_flatbuffers_model, *_ = converter_spy.spy_return
 
     # Capture converted program
     exported_program: ExportedProgram = converter_spy.call_args.args[1]

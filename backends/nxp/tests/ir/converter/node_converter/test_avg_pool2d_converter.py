@@ -172,7 +172,7 @@ def test_avg_pool_2d_quant_conversion(
     )
 
     # Capture generated model
-    tflite_flatbuffers_model, io_formats = converter_spy.spy_return
+    tflite_flatbuffers_model, *_ = converter_spy.spy_return
 
     # Capture converted program
     exported_program: ExportedProgram = converter_spy.call_args.args[1]
@@ -204,7 +204,7 @@ def test_avg_pool_2d_quant_conversion__padded(mocker, use_qat):
     ops = ops_spy.spy_return.sub_graphs[0].operators.vector
 
     # Capture generated model
-    tflite_flatbuffers_model, io_formats = converter_spy.spy_return
+    tflite_flatbuffers_model, *_ = converter_spy.spy_return
 
     # Capture converted program
     exported_program: ExportedProgram = converter_spy.call_args.args[1]
@@ -284,7 +284,7 @@ def test_from_avg_pool_1d(mocker):
 
     # Verify correct behavior of the converted NeutronIR model.
     intermediate_ep = converter_spy.call_args.args[1]
-    neutron_ir_model, _ = converter_spy.spy_return
+    neutron_ir_model, *_ = converter_spy.spy_return
 
     input_data = (
         np.random.random(extended_shape).astype(np.float32) * 256.0 - 128.0

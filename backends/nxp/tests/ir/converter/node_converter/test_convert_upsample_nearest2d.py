@@ -64,7 +64,7 @@ def test_convert_upsample_nearest2d__size(mocker, input_shape, size):
 
     # Verify correct behavior of the converted NeutronIR model.
     intermediate_ep = converter_spy.call_args.args[1]
-    neutron_ir_model, _ = converter_spy.spy_return
+    neutron_ir_model, *_ = converter_spy.spy_return
 
     input_data = (
         np.random.random(input_shape).astype(np.float32) * 256.0 - 128.0
@@ -106,7 +106,7 @@ def test_convert_upsample_nearest2d__scale_factor(mocker, input_shape, scale_fac
 
     # Verify correct behavior of the converted NeutronIR model.
     intermediate_ep = converter_spy.call_args.args[1]
-    neutron_ir_model, _ = converter_spy.spy_return
+    neutron_ir_model, *_ = converter_spy.spy_return
 
     input_data = (
         np.random.random(input_shape).astype(np.float32) * 256.0 - 128.0
