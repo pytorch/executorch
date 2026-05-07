@@ -14,7 +14,7 @@ from typing import Any, Callable, Dict, List, Optional, Set, Tuple
 import torch
 from executorch.exir._warnings import deprecated
 from executorch.exir.error import internal_assert
-from executorch.exir.memory import alloc
+from executorch.exir.memory import alloc, alloc_inplace
 from executorch.exir.memory_planning import (
     _is_out_var_node,
     apply_algo,
@@ -192,6 +192,12 @@ class MemoryPlanningPass(PassBase):
                     if len(out_arg_names) == 1:
                         out_alloc_node = node.kwargs[out_arg_names[0]]
                         out_alloc_node.meta["spec"] = node.meta["spec"]
+                        if out_alloc_node.target == alloc_inplace and isinstance(
+                            out_alloc_node.args[0], Node
+                        ):
+                            base_spec = out_alloc_node.args[0].meta.get("spec")
+                            if base_spec is not None:
+                                node.meta["spec"].inplace_base = base_spec
                         continue
                     specs = get_node_tensor_specs(node)
                     i = 0
@@ -206,7 +212,7 @@ class MemoryPlanningPass(PassBase):
                             # dont increment i as we dont have a spec for this node
                         internal_assert(
                             out_alloc_node.op == "call_function"
-                            and out_alloc_node.target == alloc,
+                            and out_alloc_node.target in (alloc, alloc_inplace),
                             f"Out-var's node {out_alloc_node} has op {out_alloc_node.op} and target {out_alloc_node.target}",
                         )
                         internal_assert(

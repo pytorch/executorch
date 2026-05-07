@@ -186,9 +186,16 @@ class Verifier:
                 if not allow_lifetime_and_storage_overlap and self.lifetime_overlap(
                     lhs_spec, rhs_spec
                 ):
-                    raise InternalError(
-                        f"Unexpected storage overlap: {Verifier._debug_message_from_specs(lhs_spec, rhs_spec)}"
+                    # In-place element-wise ops intentionally share storage
+                    # between input and output despite overlapping lifetimes.
+                    is_inplace_pair = (
+                        lhs_spec.inplace_base is rhs_spec
+                        or rhs_spec.inplace_base is lhs_spec
                     )
+                    if not is_inplace_pair:
+                        raise InternalError(
+                            f"Unexpected storage overlap: {Verifier._debug_message_from_specs(lhs_spec, rhs_spec)}"
+                        )
 
                 # Check that each mem_obj_id is consistent with whether the tensors have
                 # storage overlap
@@ -485,6 +492,7 @@ def collect_specs_from_nodes(  # noqa: C901
                 or node.target
                 in [
                     memory.alloc,
+                    memory.alloc_inplace,
                     memory.view,
                     operator.getitem,
                     torch.ops.higher_order.cond,
@@ -838,9 +846,9 @@ def greedy(
 
     sorted_specs.reverse()
 
+    deferred_inplace: List[TensorSpec] = []
+
     for spec in sorted_specs:
-        # Create an entry for this TensorSpec in the result object that we'll be
-        # returning from this algorithm.
         spec_alloc_result = greedy_result.spec_dict.get(spec, SpecAllocResult(0, 0, 0))
         if spec.mem_id is None:
             spec_alloc_result.mem_id = 1
@@ -848,11 +856,54 @@ def greedy(
             spec_alloc_result.mem_id = spec.mem_id
         greedy_result.spec_dict[spec] = spec_alloc_result
         spec.realign(alignment)
+
+        if spec.inplace_base is not None:
+            deferred_inplace.append(spec)
+            continue
+
         spec2obj[spec] = pick_shared_obj(
             shared_objects[spec_alloc_result.mem_id],
             spec,
             allow_overlapping_allocations,
         )
+
+    remaining = list(deferred_inplace)
+    while remaining:
+        progress = False
+        next_remaining = []
+        for spec in remaining:
+            base = spec.inplace_base
+            if base not in spec2obj:
+                next_remaining.append(spec)
+                continue
+            progress = True
+            sobj = spec2obj[base]
+
+            base_alloc_result = greedy_result.spec_dict[base]
+            spec_alloc_result = greedy_result.spec_dict[spec]
+            spec_alloc_result.mem_id = base_alloc_result.mem_id
+
+            base_alloc_offset = None
+            for alloc_entry in sobj.allocations:
+                if alloc_entry.spec is base:
+                    base_alloc_offset = alloc_entry.offset
+                    break
+            assert base_alloc_offset is not None, (
+                f"Base allocation entry not found in shared object for spec "
+                f"with allocated_memory={spec.allocated_memory}"
+            )
+            sobj.first_used_index = min(sobj.first_used_index, spec.lifetime[0])
+            sobj.last_used_index = max(sobj.last_used_index, spec.lifetime[1])
+            sobj.allocations.append(AllocationSpec(base_alloc_offset, spec))
+            spec2obj[spec] = sobj
+        if not progress:
+            unresolved = ", ".join(
+                f"allocated_memory={s.allocated_memory}" for s in next_remaining
+            )
+            raise InternalError(
+                f"Circular or unresolvable in-place dependency chain: {unresolved}"
+            )
+        remaining = next_remaining
 
     if len(shared_objects) == 0:
         # Cannot find any tensor in the graph that needs to be allocated.
@@ -1012,6 +1063,12 @@ def naive(
     bufsizes = cast(List[int], bufsizes)
 
     for spec in specs:
+        if spec.inplace_base is not None:
+            raise InternalError(
+                "The naive memory planning algorithm does not support in-place "
+                "element-wise ops (inplace_base). Use the greedy algorithm instead."
+            )
+
         spec_alloc_result = naive_result.spec_dict.get(spec, SpecAllocResult(0, 0, 0))
         # assume a single memory layer which has mem_id 1
         if spec.mem_id is None:
