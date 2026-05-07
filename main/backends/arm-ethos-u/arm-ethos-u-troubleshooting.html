@@ -1984,7 +1984,7 @@ You can see how  this coupling between the memory mode and runtime application i
 </section>
 <section id="using-bundled-io-and-etdump">
 <h2>Using Bundled.io and ETdump<a class="headerlink" href="#using-bundled-io-and-etdump" title="Link to this heading">#</a></h2>
-<p>The arm_executor_runner supports <a class="reference external" href="https://docs.pytorch.org/executorch/0.4/bundled-io.html">bundled-io</a> and <a class="reference external" href="https://docs.pytorch.org/executorch/stable/etdump.html">ETdump</a> debugging tools.</p>
+<p>The arm_executor_runner supports <a class="reference external" href="https://docs.pytorch.org/executorch/stable/bundled-io.html">bundled-io</a> and <a class="reference external" href="https://docs.pytorch.org/executorch/stable/etdump.html">ETdump</a> debugging tools.</p>
 <p>To enable bundled-io, set <code class="docutils literal notranslate"><span class="pre">-DEXECUTORCH_BUILD_DEVTOOLS=ON</span></code> when building Executorch and <code class="docutils literal notranslate"><span class="pre">-DET_BUNDLE_IO=ON</span></code> when building the executor_runner. To enable ETdump, set <code class="docutils literal notranslate"><span class="pre">-DEXECUTORCH_BUILD_ARM_ETDUMP=ON</span></code> when building Executorch and <code class="docutils literal notranslate"><span class="pre">-DEXECUTORCH_ENABLE_EVENT_TRACER=ON</span></code> when building the executor_runner.</p>
 </section>
 <section id="issues-with-memory-formats">
