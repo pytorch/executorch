@@ -1079,7 +1079,7 @@ def _sanity_check_graph_for_non_decomp_ops(
                     logging.warning(warning_str)
 
 
-def _remove_invalid_ops_for_not_decompose(
+def _remove_invalid_ops_for_not_decompose(  # noqa: C901
     preserve_ops: List[torch._ops.OpOverload],
 ) -> List[torch._ops.OpOverload]:
     _logged_warnings = set()
