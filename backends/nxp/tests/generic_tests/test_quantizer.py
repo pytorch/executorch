@@ -667,9 +667,6 @@ def test_torchao_native_conv_bn_qat_fusing(
     if not conv_bias:
         pytest.skip("Conv without bias is not supported.")
 
-    if len(input_shape) < 4 and transposed_conv:
-        pytest.skip("Conv1d transpose is not supported.")
-
     model = models.ConvBatchNormModule(
         bias=conv_bias,
         input_rank=len(input_shape),
@@ -713,4 +710,10 @@ def test_torchao_native_conv_bn_qat_fusing(
         )
         for arg in conv_node_args
     )
-    assert len(graph_nodes) == 15
+
+    # if model with `conv1d` or `conv_transpose1d` is used, then it is converted to the 2d variant
+    # and additional nodes, such as `squeeze` and `unsqueeze` are inserted.
+    if len(input_shape) == 3 or len(input_shape) == 2:
+        assert len(graph_nodes) == 21
+    else:
+        assert len(graph_nodes) == 15
