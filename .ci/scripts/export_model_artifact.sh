@@ -67,6 +67,8 @@ if [ -z "${1:-}" ]; then
   exit 1
 fi
 
+export HF_HUB_DISABLE_XET=1
+
 set -eux
 
 DEVICE="$1"
