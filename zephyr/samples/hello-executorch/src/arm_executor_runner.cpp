@@ -62,7 +62,7 @@ using executorch::runtime::TensorInfo;
  * The method_allocation_pool should be large enough to fit the setup, input
  * used and other data used like the planned memory pool (e.g. memory-planned
  * buffers to use for mutable tensor data) This should be lowered to fit into
- * your availible memory.
+ * your available memory.
  */
 
 #if !defined(ET_ARM_METHOD_ALLOCATOR_POOL_SIZE)
