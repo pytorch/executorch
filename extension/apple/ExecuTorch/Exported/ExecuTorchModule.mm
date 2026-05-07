@@ -258,11 +258,11 @@ static inline ExecuTorchValue *toExecuTorchValue(EValue value) NS_RETURNS_RETAIN
     std::vector<std::string> dataFilePathsVector;
     if (dataFilePaths != nil) {
       for (NSString *dataFile in dataFilePaths) {
-        dataFilePathsVector.emplace_back(dataFile.UTF8String);
+        dataFilePathsVector.emplace_back(dataFile.UTF8String ?: "");
       }
     }
     _module = std::make_unique<Module>(
-      filePath.UTF8String,
+      filePath.UTF8String ?: "",
       dataFilePathsVector,
       static_cast<Module::LoadMode>(loadMode)
     );
@@ -314,7 +314,7 @@ static inline ExecuTorchValue *toExecuTorchValue(EValue value) NS_RETURNS_RETAIN
 
 - (BOOL)loadMethod:(NSString *)methodName
              error:(NSError **)error {
-  const auto errorCode = _module->load_method(methodName.UTF8String);
+  const auto errorCode = _module->load_method(methodName.UTF8String ?: "");
   if (errorCode != Error::Ok) {
     if (error) {
       *error = ExecuTorchErrorWithCode((ExecuTorchErrorCode)errorCode);
@@ -325,11 +325,11 @@ static inline ExecuTorchValue *toExecuTorchValue(EValue value) NS_RETURNS_RETAIN
 }
 
 - (BOOL)isMethodLoaded:(NSString *)methodName {
-  return _module->is_method_loaded(methodName.UTF8String);
+  return _module->is_method_loaded(methodName.UTF8String ?: "");
 }
 
 - (BOOL)unloadMethod:(NSString *)methodName {
-  const auto didUnload = _module->unload_method(methodName.UTF8String);
+  const auto didUnload = _module->unload_method(methodName.UTF8String ?: "");
   [_inputs removeObjectForKey:methodName];
   [_outputs removeObjectForKey:methodName];
   return didUnload;
@@ -352,7 +352,7 @@ static inline ExecuTorchValue *toExecuTorchValue(EValue value) NS_RETURNS_RETAIN
 
 - (nullable ExecuTorchMethodMetadata *)methodMetadata:(NSString *)methodName
                                                 error:(NSError **)error {
-  const auto result = _module->method_meta(methodName.UTF8String);
+  const auto result = _module->method_meta(methodName.UTF8String ?: "");
   if (!result.ok()) {
     if (error) {
       *error = ExecuTorchErrorWithCode((ExecuTorchErrorCode)result.error());
@@ -366,7 +366,7 @@ static inline ExecuTorchValue *toExecuTorchValue(EValue value) NS_RETURNS_RETAIN
 - (nullable NSArray<ExecuTorchValue *> *)executeMethod:(NSString *)methodName
                                             withInputs:(NSArray<ExecuTorchValue *> *)values
                                                  error:(NSError **)error {
-  const char *methodNameString = methodName.UTF8String;
+  const char *methodNameString = methodName.UTF8String ?: "";
   __block auto errorCode = Error::Ok;
   [values enumerateObjectsUsingBlock:^(ExecuTorchValue *value, NSUInteger index, BOOL *stop) {
     errorCode = _module->set_input(methodNameString, toEValue(value), index);
@@ -497,7 +497,7 @@ static inline ExecuTorchValue *toExecuTorchValue(EValue value) NS_RETURNS_RETAIN
        forMethod:(NSString *)methodName
          atIndex:(NSInteger)index
            error:(NSError **)error {
-  const auto errorCode = _module->set_input(methodName.UTF8String, toEValue(value), index);
+  const auto errorCode = _module->set_input(methodName.UTF8String ?: "", toEValue(value), index);
   if (errorCode != Error::Ok) {
     if (error) {
       *error = ExecuTorchErrorWithCode((ExecuTorchErrorCode)errorCode);
@@ -537,7 +537,7 @@ static inline ExecuTorchValue *toExecuTorchValue(EValue value) NS_RETURNS_RETAIN
   for (ExecuTorchValue *value in values) {
     inputs.push_back(toEValue(value));
   }
-  const auto errorCode = _module->set_inputs(methodName.UTF8String, inputs);
+  const auto errorCode = _module->set_inputs(methodName.UTF8String ?: "", inputs);
   if (errorCode != Error::Ok) {
     if (error) {
       *error = ExecuTorchErrorWithCode((ExecuTorchErrorCode)errorCode);
@@ -580,7 +580,7 @@ static inline ExecuTorchValue *toExecuTorchValue(EValue value) NS_RETURNS_RETAIN
         forMethod:(NSString *)methodName
           atIndex:(NSInteger)index
             error:(NSError **)error {
-  const auto errorCode = _module->set_output(methodName.UTF8String, toEValue(value), index);
+  const auto errorCode = _module->set_output(methodName.UTF8String ?: "", toEValue(value), index);
   if (errorCode != Error::Ok) {
     if (error) {
       *error = ExecuTorchErrorWithCode((ExecuTorchErrorCode)errorCode);
