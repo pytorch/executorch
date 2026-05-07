@@ -131,6 +131,30 @@ install_pytorch_and_domains() {
     USE_DISTRIBUTED=1 python setup.py bdist_wheel
     pip install "$(echo dist/*.whl)"
 
+    # Invariant: the basename setup.py just produced must match the cache
+    # URL we'd reconstruct on the next run. If they diverge (someone edits
+    # torch_wheel_name above, or PyTorch renames its wheels), the cache
+    # will silently miss and every macOS run will fall back to a ~30-min
+    # source build. Fail loudly so the regression is caught immediately.
+    shopt -s nullglob
+    local built_wheels=(dist/*.whl)
+    shopt -u nullglob
+    if [[ ${#built_wheels[@]} -ne 1 ]]; then
+      echo "ERROR: expected exactly 1 wheel in dist/, found ${#built_wheels[@]}" >&2
+      exit 1
+    fi
+    local built_wheel_name
+    built_wheel_name=$(basename "${built_wheels[0]}")
+    local expected_wheel_name="${torch_wheel_name//\%2B/+}"
+    if [[ "${built_wheel_name}" != "${expected_wheel_name}" ]]; then
+      echo "ERROR: built torch wheel name does not match cache URL key:" >&2
+      echo "  built:    ${built_wheel_name}" >&2
+      echo "  expected: ${expected_wheel_name}" >&2
+      echo "Fix torch_wheel_name construction in install_pytorch_and_domains" >&2
+      echo "in .ci/scripts/utils.sh" >&2
+      exit 1
+    fi
+
     # Only AWS runners have access to S3
     if command -v aws && [[ -z "${GITHUB_RUNNER:-}" ]]; then
       for wheel_path in dist/*.whl; do
