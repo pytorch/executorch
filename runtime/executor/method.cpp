@@ -1229,6 +1229,12 @@ Method::set_input(const EValue& input_evalue, size_t input_idx) {
         "Error resizing tensor at input %" ET_PRIsize_t,
         input_idx);
     auto tensor_meta = this->method_meta().input_tensor_meta(input_idx);
+    ET_CHECK_OK_OR_RETURN_ERROR(tensor_meta.error());
+    auto expected_dim_order = tensor_meta->dim_order();
+    ET_CHECK_OK_OR_RETURN_ERROR(
+        internal::check_tensor_data_layout(t_src, expected_dim_order),
+        "Error validating tensor layout at input %" ET_PRIsize_t,
+        input_idx);
     if (tensor_meta->is_memory_planned()) {
       ET_CHECK_OK_OR_RETURN_ERROR(
           internal::copy_tensor_data(t_dst, t_src),
