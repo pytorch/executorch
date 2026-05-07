@@ -34,28 +34,17 @@ logger.setLevel(get_coreml_log_level(default_level=logging.INFO))
 
 
 def _coreml_graph_input_dtypes() -> set:
-    """The dtypes coremltools can map for *graph inputs*.
+    """The dtypes coremltools can map for graph inputs.
 
-    Imported from coremltools so we don't drift if Apple updates the table
-    (e.g. iOS26 adds ``int8``).  Falls back to a hand-written set for older
-    coremltools versions that don't expose ``TORCH_DTYPE_TO_MIL_DTYPE``.
+    Imported directly from coremltools (ExecuTorch pins to a specific
+    coremltools version, currently 9.0) so the table stays aligned if/when
+    Apple widens it (e.g. iOS26 adds ``int8``).
     """
-    try:
-        from coremltools.converters.mil.frontend.torch.exir_utils import (
-            TORCH_DTYPE_TO_MIL_DTYPE,
-        )
+    from coremltools.converters.mil.frontend.torch.exir_utils import (
+        TORCH_DTYPE_TO_MIL_DTYPE,
+    )
 
-        return set(TORCH_DTYPE_TO_MIL_DTYPE.keys())
-    except ImportError:
-        return {
-            torch.bool,
-            torch.float16,
-            torch.float32,
-            torch.float64,
-            torch.int16,
-            torch.int32,
-            torch.int64,
-        }
+    return set(TORCH_DTYPE_TO_MIL_DTYPE.keys())
 
 
 def _unsupported_graph_input_dtype(
