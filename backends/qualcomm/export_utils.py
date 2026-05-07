@@ -312,7 +312,6 @@ class SimpleADB:
             traditional_general_artifacts = [
                 f"{self.qnn_sdk}/lib/{self.target}/libQnnSystem.so",
                 f"{self.build_path}/backends/qualcomm/libqnn_executorch_backend.so",
-                f"{self.qnn_sdk}/lib/{self.target}/libQnnModelDlc.so",
             ]
             self.backend_library_paths.update(
                 {
