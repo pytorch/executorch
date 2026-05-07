@@ -1,5 +1,6 @@
 # Copyright (c) Meta Platforms, Inc. and affiliates.
 # All rights reserved.
+# Copyright 2026 Arm Limited and/or its affiliates.
 #
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
@@ -89,6 +90,14 @@ class TestTensor(unittest.TestCase):
         # thus strides = (3*4*5, 4*5, 5, 1)
         # whereas strides for torch.memory_format = torch.channels_last is
         # (3*4*5, 1, 5*3, 3))
+
+    def test_fp8_tensor_conversion(self) -> None:
+        for dtype in (torch.float8_e5m2, torch.float8_e4m3fn):
+            normal_tensor = torch.randn(2, 2, 3, dtype=torch.float32).to(dtype)
+            flatbuffer_tensor = make_tensor_value(
+                1, 0, TensorSpec.from_tensor(normal_tensor)
+            )
+            self.compare_tensors(normal_tensor, flatbuffer_tensor)
 
     def test_allocation_info_succeeds(self) -> None:
         test_cases = (

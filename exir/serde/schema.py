@@ -1,5 +1,6 @@
 # Copyright (c) Meta Platforms, Inc. and affiliates.
 # All rights reserved.
+# Copyright 2026 Arm Limited and/or its affiliates.
 #
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
@@ -16,7 +17,7 @@ import executorch.exir.serde.schema as export_schema
 from executorch.exir.serde.union import _Union
 
 # NOTE: Please update this value if any modifications are made to the schema
-SCHEMA_VERSION = (5, 3)
+SCHEMA_VERSION = (5, 4)
 TREESPEC_VERSION = 1
 
 
@@ -36,6 +37,8 @@ class ScalarType(IntEnum):
     BOOL = 12
     BFLOAT16 = 13
     UINT16 = 14
+    FLOAT8E5M2 = 15
+    FLOAT8E4M3FN = 16
 
 class Layout(IntEnum):
     Unknown = 0
