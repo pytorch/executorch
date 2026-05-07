@@ -66,12 +66,6 @@ inline Modality modality_of(const ModelVersion& model_version) {
       [](const auto& model) { return modality_of(model); }, model_version);
 }
 
-enum KvBitWidth {
-  kWidth8 = 8,
-  kWidth16 = 16,
-};
-
-template <typename T>
 class QNNMultimodalRunner
     : public executorch::extension::llm::MultimodalRunner {
  public:
@@ -139,11 +133,11 @@ class QNNMultimodalRunner
 
   ModelVersion model_version_;
   std::unique_ptr<IMemAlloc> buffer_manager_;
-  std::unique_ptr<KVManager<T>> kv_manager_;
+  std::unique_ptr<KVManager> kv_manager_;
   std::unique_ptr<tokenizers::Tokenizer> tokenizer_;
   std::unique_ptr<DecoderRunner> decoder_runner_;
-  std::unique_ptr<MultimodalPromptProcessor<T>> prompt_processor_;
-  std::unique_ptr<MultimodalTokenGenerator<T>> token_generator_;
+  std::unique_ptr<MultimodalPromptProcessor> prompt_processor_;
+  std::unique_ptr<MultimodalTokenGenerator> token_generator_;
   std::unique_ptr<EncoderRunner> encoder_runner_;
   std::unique_ptr<TokenEmbeddingRunner> tok_embedding_runner_;
   std::unique_ptr<TokenEmbeddingProcessor> tok_embedding_processor_;

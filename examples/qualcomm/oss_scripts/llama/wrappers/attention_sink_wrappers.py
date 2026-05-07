@@ -13,6 +13,7 @@ from typing import Dict
 
 import torch
 from executorch.backends.qualcomm._passes import TagQuantIO
+from executorch.backends.qualcomm._passes.build_quant_io import BuildQuantIo
 from executorch.backends.qualcomm._passes.qnn_pass_manager import (
     get_capture_program_passes,
 )
@@ -460,6 +461,7 @@ class HybridAttentionSinkEvictor(Component):
                 alloc_graph_input=False,
                 alloc_graph_output=False,
             ),
+            passes=[BuildQuantIo()],
             extract_delegate_segments=True,
         )
         exec_prog_mgr = edge_prog_mgr.to_executorch(executorch_config)

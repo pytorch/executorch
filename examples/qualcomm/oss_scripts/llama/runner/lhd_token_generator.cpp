@@ -13,20 +13,19 @@ using executorch::runtime::Result;
 
 namespace example {
 
-template <typename T>
-void LhdTokenGenerator<T>::prepare_io(
+void LhdTokenGenerator::prepare_io(
     std::vector<uint64_t> input_tokens,
     std::vector<int32_t> input_pos) {
   for (int i = 0; i < metadata_.ar_len; i++) {
     if (i < input_tokens.size()) {
       // Prepare pos data
-      this->input_pos_.data[i] = input_pos[i];
+      reinterpret_cast<int32_t*>(this->input_pos_.data)[i] = input_pos[i];
 
       // Support CPU 4-bit embedding, which requires int64 input.
       // However, for QNN embedding, only int32 input is needed.
       // Therefore, we need to cast to the correct type to write the data.
       if (metadata_.use_int64_token) {
-        this->input_toks_.data[i] = input_tokens[i];
+        reinterpret_cast<int64_t*>(this->input_toks_.data)[i] = input_tokens[i];
       } else {
         int32_t* input_toks_ptr =
             reinterpret_cast<int32_t*>(this->input_toks_.data);
@@ -36,8 +35,7 @@ void LhdTokenGenerator<T>::prepare_io(
   }
 }
 
-template <typename T>
-void LhdTokenGenerator<T>::init_attention_mask(int32_t n_past) {
+void LhdTokenGenerator::init_attention_mask(int32_t n_past) {
   std::vector<int32_t> attention_map;
   attention_map.reserve(metadata_.ar_len);
   // Initialize attention mask with current position
@@ -73,8 +71,7 @@ void LhdTokenGenerator<T>::init_attention_mask(int32_t n_past) {
   }
 }
 
-template <typename T>
-void LhdTokenGenerator<T>::init_lookahead_branch(
+void LhdTokenGenerator::init_lookahead_branch(
     const std::vector<uint64_t>& tokens) {
   for (int i = 0; i < metadata_.ngram - 1; ++i) {
     for (int j = 0; j < metadata_.window; ++j) {
@@ -91,8 +88,7 @@ void LhdTokenGenerator<T>::init_lookahead_branch(
   is_lhd_branch_initialized_ = true;
 }
 
-template <typename T>
-void LhdTokenGenerator<T>::init_verification_branch(uint64_t cur_token) {
+void LhdTokenGenerator::init_verification_branch(uint64_t cur_token) {
   const int g_cur = ngrams_pool_.cnt[cur_token];
 
   v_branch_.resize(g_cur);
@@ -116,8 +112,7 @@ void LhdTokenGenerator<T>::init_verification_branch(uint64_t cur_token) {
   }
 }
 
-template <typename T>
-void LhdTokenGenerator<T>::update_ngrams_pool() {
+void LhdTokenGenerator::update_ngrams_pool() {
   std::vector<int32_t> ngram(metadata_.ngram - 1);
   // n-gram pool generation
   for (int f = 0; f < metadata_.window; ++f) {
@@ -170,8 +165,7 @@ void LhdTokenGenerator<T>::update_ngrams_pool() {
   }
 }
 
-template <typename T>
-void LhdTokenGenerator<T>::update_lookahead_branch(
+void LhdTokenGenerator::update_lookahead_branch(
     const executorch::aten::Tensor& logits_tensor) {
   for (int i = 0; i < metadata_.window; i++) {
     lhd_branch_prev_[i] = lhd_branch_[0][i];
@@ -189,8 +183,7 @@ void LhdTokenGenerator<T>::update_lookahead_branch(
   }
 }
 
-template <typename T>
-Result<int64_t> LhdTokenGenerator<T>::generate(
+Result<int64_t> LhdTokenGenerator::generate(
     std::vector<uint64_t> tokens,
     int64_t start_pos,
     int32_t seq_len,
@@ -426,9 +419,5 @@ Result<int64_t> LhdTokenGenerator<T>::generate(
 
   return pos - start_pos;
 }
-
-// Explicit instantiations
-template class LhdTokenGenerator<uint16_t>;
-template class LhdTokenGenerator<uint8_t>;
 
 } // namespace example

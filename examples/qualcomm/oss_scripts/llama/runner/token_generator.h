@@ -22,7 +22,7 @@ namespace example {
  * @class TokenGenerator
  * @brief Class for generating the token using decoder and key-value manager.
  */
-template <typename T>
+
 class TokenGenerator {
  public:
   struct Metadata {
@@ -38,11 +38,12 @@ class TokenGenerator {
   TokenGenerator(
       tokenizers::Tokenizer* tokenizer,
       DecoderRunner* decoder_runner,
-      KVManager<T>* kv_manager,
+      KVManager* kv_manager,
       const std::string& method_name,
       std::unique_ptr<std::unordered_set<uint64_t>>&& eos_ids,
       Metadata metadata,
-      executorch::llm::Stats* stats);
+      executorch::llm::Stats* stats,
+      std::unique_ptr<executorch::extension::MethodMeta> method_meta);
 
   virtual ~TokenGenerator() = default;
   /**
@@ -58,9 +59,9 @@ class TokenGenerator {
   /**
    * @brief Get the all logits generated
    *
-   * @return std::vector<uint16_t>& all the logits generated
+   * @return std::vector<std::byte>& all the logits generated
    */
-  virtual const std::vector<uint16_t>& get_all_logits();
+  virtual const std::vector<std::byte>& get_all_logits();
 
   /**
      * @brief Generate tokens.
@@ -78,28 +79,23 @@ class TokenGenerator {
       bool dump_logits,
       AttentionSinkRopeRunner* attention_sink_rope_runner);
   inline const size_t total_token_generator_io_size_in_bytes() const {
-    if (metadata_.cache_mode == CacheMode::HybridCache) {
-      return input_toks_.size + input_pos_.size + attention_mask_.size +
-          window_attention_mask_.size + logits_.size;
-    } else {
-      return input_toks_.size + input_pos_.size + attention_mask_.size +
-          logits_.size;
-    }
+    return input_toks_.size + input_pos_.size + attention_mask_.size +
+        window_attention_mask_.size + logits_.size;
   }
 
  protected:
   tokenizers::Tokenizer* tokenizer_;
   DecoderRunner* decoder_runner_;
-  KVManager<T>* kv_manager_;
+  KVManager* kv_manager_;
   std::string method_name_;
   std::unique_ptr<std::unordered_set<uint64_t>> eos_ids_;
 
   // inputs and outputs
   TensorStruct<int64_t> input_toks_;
   TensorStruct<int32_t> input_pos_;
-  TensorStruct<uint16_t> attention_mask_;
-  TensorStruct<uint16_t> window_attention_mask_;
-  TensorStruct<uint16_t> logits_;
+  TensorStructRaw attention_mask_;
+  TensorStructRaw window_attention_mask_;
+  TensorStructRaw logits_;
 
   // layer -> TensorImpl
   std::vector<std::unique_ptr<executorch::aten::TensorImpl>> k_cache_in_;
@@ -128,6 +124,6 @@ class TokenGenerator {
   Metadata metadata_;
 
   // Unused by default, only used when dump_logits_path is provided.
-  std::vector<uint16_t> token_all_logits_;
+  std::vector<std::byte> token_all_logits_;
 };
 } // namespace example
