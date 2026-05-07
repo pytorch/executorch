@@ -90,6 +90,38 @@ Note: Files ending with `.bin ` do not support graph visualization in qairt_visu
 For more details, visit the [QAIRT Visualizer](https://pypi.org/project/qairt-visualizer/).
 
 
+# Observatory
+
+A new, review-focused Observatory implementation is available under:
+
+`backends/qualcomm/debugger/observatory`
+
+Use the Observatory CLI to wrap any Qualcomm AOT export script. Use `--lens_recipe=accuracy`
+to enable accuracy lenses.
+
+```bash
+python -m executorch.backends.qualcomm.debugger.observatory \
+    --output-html obs_report.html \
+    --lens_recipe=accuracy \
+    {original script and args}
+```
+
+For example:
+
+```bash
+python -m executorch.backends.qualcomm.debugger.observatory \
+    --output-html obs_report.html \
+    --lens_recipe=accuracy \
+    examples/qualcomm/oss_scripts/mobilevit_v2.py \
+    --backend htp --model SM8650 -d ./imagenet-mini-val/ -b build-android/ --compile_only
+```
+
+> **Note**: Qualcomm example scripts (e.g. `oss_scripts/roberta.py`) use only absolute imports
+> and are run as plain scripts. The Observatory CLI auto-selects `runpy.run_path` for these since
+> their directories do not contain `__init__.py`.
+
+See `backends/qualcomm/debugger/observatory/README.md` for full documentation.
+
 # ExecuTorch QNN Intermediate Output Debugger
 
 ExecuTorch QNN Intermediate Output Debugger is a tool that helps users debug intermediate output accuracy by comparing CPU outputs with QNN outputs. This tool offers a variety of output formats and flexibility for users to define their own metrics when debugging.
