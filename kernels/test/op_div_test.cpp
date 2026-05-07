@@ -526,8 +526,8 @@ TEST_F(OpDivOutTest, BroadcastNDTest) {
   test_broadcast_3D<ScalarType::BFloat16>();
 }
 
-TEST_F(OpDivOutTest, DynamicShapeUnbound) {
-  GTEST_SKIP() << "Dynamic shape not supported";
+// DISABLED: Dynamic shape not supported
+TEST_F(OpDivOutTest, DISABLED_DynamicShapeUnbound) {
   TensorFactory<ScalarType::Float> tf;
 
   Tensor x = tf.make(
