@@ -18,7 +18,6 @@ from torch._guards import detect_fake_mode
 from torch.export.exported_program import InputKind, InputSpec, TensorArgument
 from torch.fx.passes.infra.pass_base import PassBase, PassResult
 
-
 # --- ExportedProgram param helpers ---
 
 
@@ -338,6 +337,7 @@ class QuantizeFusedConvBnBiasAtenPass(PassBase):
             graph_module,
             conv_targets=(
                 torch.ops.aten.convolution.default,
+                torch.ops.aten.conv1d.default,
                 torch.ops.aten.conv2d.default,
                 torch.ops.aten.conv_transpose2d.input,
             ),
