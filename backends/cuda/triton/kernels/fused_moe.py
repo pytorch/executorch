@@ -193,7 +193,7 @@ _GEMM2_CONFIGS = [
     triton.Config({"BLOCK_SIZE_N": 8, "BLOCK_SIZE_K": 256}, num_warps=4, num_stages=3),
     triton.Config({"BLOCK_SIZE_N": 16, "BLOCK_SIZE_K": 128}, num_warps=2, num_stages=3),
     triton.Config({"BLOCK_SIZE_N": 32, "BLOCK_SIZE_K": 128}, num_warps=4, num_stages=4),
-    triton.Config({"BLOCK_SIZE_N": 8, "BLOCK_SIZE_K": 256}, num_warps=2, num_stages=2),  # for (N=2048, K=512) decode MoE GEMM2
+    triton.Config({"BLOCK_SIZE_N": 8, "BLOCK_SIZE_K": 256}, num_warps=2, num_stages=2),
 ]
 
 
@@ -1103,7 +1103,7 @@ def _fused_moe_silu_batched_kernel(
 
 _BATCHED_GEMM2_INT8_CONFIGS = [
     triton.Config({"BLOCK_SIZE_N": 64}, num_warps=2, num_stages=2),
-    triton.Config({"BLOCK_SIZE_N": 64}, num_warps=2, num_stages=3),   # num_warps=2
+    triton.Config({"BLOCK_SIZE_N": 64}, num_warps=2, num_stages=3),  # num_warps=2
     triton.Config({"BLOCK_SIZE_N": 128}, num_warps=4, num_stages=3),
     triton.Config({"BLOCK_SIZE_N": 128}, num_warps=4, num_stages=4),
     triton.Config({"BLOCK_SIZE_N": 128}, num_warps=8, num_stages=3),
