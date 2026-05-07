@@ -6,6 +6,8 @@
 # LICENSE file in the root directory of this source tree.
 
 set -exu
+# Disable HF Xet storage to avoid stalled downloads on CI runners
+export HF_HUB_DISABLE_XET=1
 
 BUILD_TYPE=${1:-Debug}
 BUILD_DIR=${3:-cmake-out}
