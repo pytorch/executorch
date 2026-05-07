@@ -339,6 +339,7 @@ Tensor& opt_grid_sampler_2d_out(
   // default-dim-order layout — no use of .strides() or .dim_order(). Fall
   // back to portable for anything else.
   const bool fast_eligible = input.dim() == 4 && grid.dim() == 4 &&
+      grid.size(3) == 2 && input.size(0) == grid.size(0) &&
       tensor_is_default_dim_order(input) && tensor_is_default_dim_order(grid) &&
       tensor_is_default_dim_order(out) && tensor_is_contiguous(input) &&
       tensor_is_contiguous(grid) && tensor_is_contiguous(out);
