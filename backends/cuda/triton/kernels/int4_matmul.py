@@ -362,8 +362,15 @@ def int4_matvec(
     Returns:
         [1, N] bf16
     """
+    assert x.ndim == 2 and x.shape[0] == 1, f"int4_matvec requires [1, K] input, got {x.shape}"
+    assert x.dtype == torch.bfloat16
+    assert w_packed.dtype == torch.int8
+    assert w_scale.dtype == torch.bfloat16
     K = x.shape[-1]
     N = w_packed.shape[0]
+    assert w_packed.shape == (N, K // 2), f"w_packed shape {w_packed.shape} != ({N}, {K // 2})"
+    assert w_scale.shape == (N, K // group_size), f"w_scale shape {w_scale.shape} != ({N}, {K // group_size})"
+    assert K % 32 == 0, f"K={K} must be a multiple of 32 for vectorized loads"
 
     output = torch.empty(1, N, dtype=torch.bfloat16, device=x.device)
 
@@ -488,8 +495,12 @@ def dequant_w4_to_bf16(
     Returns:
         [N, K] bf16 dequantized weight matrix
     """
+    assert w_packed.ndim == 2, f"w_packed must be 2D, got {w_packed.ndim}D"
+    assert w_packed.dtype == torch.int8
+    assert w_scale.dtype == torch.bfloat16
     N, K_half = w_packed.shape
     K = K_half * 2
+    assert w_scale.shape == (N, K // group_size), f"w_scale shape {w_scale.shape} != ({N}, {K // group_size})"
 
     output = torch.empty(N, K, dtype=torch.bfloat16, device=w_packed.device)
 
