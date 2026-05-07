@@ -32,7 +32,7 @@ try:
         tree_unflatten as tree_unflatten,
         TreeSpec as TreeSpec,
     )
-except:
+except Exception:
     logger.info(
         "Unable to import executorch.extension.pytree, using native torch pytree instead."
     )
