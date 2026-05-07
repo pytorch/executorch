@@ -11,7 +11,7 @@
 
 from collections import defaultdict
 from math import prod
-from typing import cast, DefaultDict, List, Tuple
+from typing import Callable, cast, DefaultDict, List, Tuple
 
 import torch
 import torch.fx
@@ -717,6 +717,109 @@ class MoveSliceBeforePermutePass(RemoveOrReplacePassInterface):
 
         node.replace_all_uses_with(new_permute)
         return True
+
+
+@register_cadence_pass(CadencePassAttribute(opt_level=1))
+class PropagateSlice(RemoveOrReplacePassInterface):
+    """Propagate slice_copy before unary element-wise ops when the cost
+    model indicates it reduces total data movement.
+
+    Supported ops (extensible via dispatch table):
+        - quantize_per_tensor: element-wise, slice passes through unchanged
+        - dequantize_per_tensor: element-wise, slice passes through unchanged
+
+    Handles any slice dim and any step size. Runs in the iterative pass
+    loop — chains are handled by repeated application.
+    """
+
+    def __init__(self) -> None:
+        super().__init__()
+        elementwise_targets = [
+            exir_ops.edge.quantized_decomposed.quantize_per_tensor.default,
+            exir_ops.edge.cadence.quantize_per_tensor.default,
+            exir_ops.edge.quantized_decomposed.dequantize_per_tensor.default,
+            exir_ops.edge.cadence.dequantize_per_tensor.default,
+        ]
+        self._dispatch: dict[
+            EdgeOpOverload,
+            tuple[
+                Callable[[torch.fx.Node, torch.fx.Node], bool],
+                Callable[[torch.fx.Node, torch.fx.Node], bool],
+            ],
+        ] = {
+            t: (self._should_swap_elementwise, self._swap_elementwise_slice)
+            for t in elementwise_targets
+        }
+
+    @property
+    def targets(self) -> list[EdgeOpOverload]:
+        return [exir_ops.edge.aten.slice_copy.Tensor]
+
+    def _should_swap_elementwise(
+        self, op_node: torch.fx.Node, slice_node: torch.fx.Node
+    ) -> bool:
+        full_size = prod(op_node.meta["val"].shape)
+        sliced_size = prod(slice_node.meta["val"].shape)
+        return sliced_size < full_size
+
+    def _swap_elementwise_slice(
+        self, op_node: torch.fx.Node, slice_node: torch.fx.Node
+    ) -> bool:
+        op_input = op_node.args[0]
+        assert isinstance(op_input, torch.fx.Node)
+        graph = slice_node.graph
+
+        slice_args = slice_node.args[1:]
+
+        with graph.inserting_before(op_node):
+            new_slice = graph.call_function(
+                exir_ops.edge.aten.slice_copy.Tensor,
+                args=(op_input, *slice_args),
+            )
+            new_slice.meta["val"] = exir_ops.edge.aten.slice_copy.Tensor(
+                op_input.meta["val"], *slice_args
+            )
+
+            new_args = list(op_node.args)
+            new_args[0] = new_slice
+            target = cast(EdgeOpOverload, op_node.target)
+            new_op = graph.call_function(
+                target,
+                args=tuple(new_args),
+                kwargs=op_node.kwargs,
+            )
+            new_op.meta["val"] = target(
+                new_slice.meta["val"],
+                *[
+                    a.meta["val"] if isinstance(a, torch.fx.Node) else a
+                    for a in new_args[1:]
+                ],
+                **{
+                    k: v.meta["val"] if isinstance(v, torch.fx.Node) else v
+                    for k, v in op_node.kwargs.items()
+                },
+            )
+
+        slice_node.replace_all_uses_with(new_op)
+        graph.erase_node(slice_node)
+        graph.erase_node(op_node)
+        return True
+
+    def maybe_remove_or_replace(self, node: torch.fx.Node) -> bool:
+        parent = node.args[0]
+        if not isinstance(parent, torch.fx.Node):
+            return False
+        if len(parent.users) != 1:
+            return False
+        if not isinstance(parent.target, EdgeOpOverload):
+            return False
+
+        entry = self._dispatch.get(parent.target)
+        if entry is None:
+            return False
+
+        should_swap, do_swap = entry
+        return should_swap(parent, node) and do_swap(parent, node)
 
 
 # The following class consolidates functions to reoder ops (i.e., either hoist
