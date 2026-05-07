@@ -282,23 +282,39 @@ class LLMEdgeManager:
             module: torch.fx.GraphModule, tokenizer, prompts: str, max_len: int
         ):
             # TODO: change criteria & support batch inputs if necessary
-            pos = torch.tensor(0, dtype=torch.int64)
+            pos = 0
             token_list = tokenizer.encode(prompts, bos=True, eos=False)
+
+            pad_token = getattr(tokenizer, "pad_id", tokenizer.eos_id)
 
             with torch.no_grad():
                 while token_list[-1] != tokenizer.eos_id and pos < max_len:
-                    logits = module(
-                        torch.full((1, 1), token_list[pos]),
-                        {"input_pos": torch.tensor((pos,))},
-                    )
+                    if self.use_kv_cache:
+                        logits = module(
+                            torch.full((1, 1), token_list[pos]),
+                            {"input_pos": torch.tensor((pos,))},
+                        )
+                    else:
+                        prefix_tokens = list(token_list[: pos + 1])
+                        if len(prefix_tokens) < max_len:
+                            prefix_tokens.extend(
+                                [pad_token] * (max_len - len(prefix_tokens))
+                            )
+                        else:
+                            prefix_tokens = prefix_tokens[:max_len]
+
+                        prefix = torch.tensor(
+                            prefix_tokens, dtype=torch.long
+                        ).unsqueeze(0)
+                        logits = module(prefix)
+
                     pos += 1
                     if pos >= len(token_list):
                         if self.generate_full_logits:
-                            token_list.append(
-                                torch.argmax(logits[:, -1], dim=-1).item()
-                            )
+                            next_token = torch.argmax(logits[:, -1], dim=-1).item()
                         else:
-                            token_list.append(torch.argmax(logits[:], dim=-1).item())
+                            next_token = torch.argmax(logits[:], dim=-1).item()
+                        token_list.append(next_token)
 
         calibrate_template(
             module=prepared_module,
@@ -307,26 +323,31 @@ class LLMEdgeManager:
             max_len=calibration_seq_length,
         )
 
-        eval_wrapper = GraphModuleEvalWrapper(
-            model=prepared_module,
-            tokenizer=tokenizer,
-            max_seq_length=calibration_seq_length,
-            use_kv_cache=self.use_kv_cache,
-            generate_full_logits=self.generate_full_logits,
-            enable_dynamic_shape=self.enable_dynamic_shape,
-        )
-
-        # Evaluate the model
-        with torch.no_grad():
-            eval_results = simple_evaluate(
-                model=eval_wrapper,
-                tasks=calibration_tasks,
-                limit=calibration_limit,
+        if calibration_tasks:
+            eval_wrapper = GraphModuleEvalWrapper(
+                model=prepared_module,
+                tokenizer=tokenizer,
+                max_seq_length=calibration_seq_length,
+                use_kv_cache=self.use_kv_cache,
+                generate_full_logits=self.generate_full_logits,
+                enable_dynamic_shape=self.enable_dynamic_shape,
+                # The exported graph can contain ops like aten.full.default
+                # without explicit device, which default to CPU and can
+                # trigger device-mismatch errors when lm_eval runs on CUDA.
+                # Calibrate on CPU for stability.
+                device="cpu",
             )
 
-        for task, res in eval_results["results"].items():
-            print(f"{task}: {res}")
-        logging.info("Calibration finish...")
+            with torch.no_grad():
+                eval_results = simple_evaluate(
+                    model=eval_wrapper,
+                    tasks=calibration_tasks,
+                    limit=calibration_limit,
+                )
+
+            for task, res in eval_results["results"].items():
+                print(f"{task}: {res}")
+            logging.info("Calibration finish...")
 
     def pt2e_quantize(self, quantizers: Optional[List[Quantizer]]) -> "LLMEdgeManager":
         """
@@ -360,9 +381,7 @@ class LLMEdgeManager:
                 )
                 # Calibrate
                 if (
-                    self.calibration_tasks is not None
-                    and self.calibration_limit is not None
-                    and self.calibration_seq_length is not None
+                    self.calibration_seq_length is not None
                     and self.calibration_data is not None
                     and self.tokenizer_path is not None
                 ):

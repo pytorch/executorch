@@ -1,5 +1,6 @@
 # Copyright (c) Meta Platforms, Inc. and affiliates.
 # All rights reserved.
+# Copyright 2026 Arm Limited and/or its affiliates.
 #
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
@@ -46,9 +47,13 @@ class GraphModuleEvalWrapper(EagerEvalWrapper):
         use_kv_cache: bool = False,
         generate_full_logits: bool = False,
         enable_dynamic_shape: bool = True,
+        device: Optional[str] = None,
     ):
         super().__init__(
-            model=model, tokenizer=tokenizer, max_seq_length=max_seq_length
+            model=model,
+            tokenizer=tokenizer,
+            max_seq_length=max_seq_length,
+            device=device,
         )
         self._model = model.to(self.device)
         self._use_kv_cache = use_kv_cache
@@ -80,7 +85,47 @@ class GraphModuleEvalWrapper(EagerEvalWrapper):
                 return logits
 
         else:
-            return self._model(inps)
+            # lm-eval expects logits shaped [batch, seq, vocab].
+            # The KV-cache path above handles that separately. In the non-KV path,
+            # some exported graphs (when generate_full_logits=False) return only
+            # last-position logits [batch, vocab], so reconstruct per-position
+            # logits by running prefix calls.
+
+            seq_len = inps.shape[-1]
+
+            def pad_to_max_len(tokens: torch.Tensor) -> torch.Tensor:
+                if self._enable_dynamic_shape:
+                    return tokens
+                token_len = tokens.shape[-1]
+                if token_len < self._max_seq_length:
+                    pad_len = self._max_seq_length - token_len
+                    pad_token = getattr(
+                        self._tokenizer, "pad_id", self._tokenizer.eos_id
+                    )
+                    pad = torch.full(
+                        (tokens.shape[0], pad_len),
+                        pad_token,
+                        dtype=tokens.dtype,
+                        device=tokens.device,
+                    )
+                    return torch.cat((tokens, pad), dim=-1)
+                if token_len > self._max_seq_length:
+                    return tokens[:, : self._max_seq_length]
+                return tokens
+
+            if self._generate_full_logits:
+                return self._model(pad_to_max_len(inps))
+
+            # Reconstruct full logits by running prefixes.
+            result_logits = []
+            for pos in range(min(seq_len, self._max_seq_length)):
+                prefix = pad_to_max_len(inps[:, : pos + 1])
+                logits = self._model(prefix)
+                if logits.dim() == 3:
+                    logits = logits[:, -1, :]
+                result_logits.append(logits)
+
+            return torch.stack(result_logits, dim=1)
 
     def _model_generate(self, context, max_length, eos_token_id):
         raise Exception("unimplemented")
