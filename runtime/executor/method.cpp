@@ -618,7 +618,7 @@ Error Method::parse_values(const NamedDataMap* external_data_map) {
         auto tensors = deserialization::parseTensorList(
             items,
             values_,
-            n_value, // The size of the full array.
+            i, // Only slots [0, i) are constructed; reject forward references.
             memory_manager_);
         if (!tensors.ok()) {
           ET_LOG(
@@ -647,7 +647,7 @@ Error Method::parse_values(const NamedDataMap* external_data_map) {
             deserialization::parseListOptionalType<executorch::aten::Tensor>(
                 items,
                 values_,
-                n_value, // The size of the full array.
+                i, // Only slots [0, i) are constructed; reject forward references.
                 memory_manager_);
         if (!tensors.ok()) {
           ET_LOG(
