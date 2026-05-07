@@ -117,7 +117,7 @@ class TestQNNFloatingPointOperator(TestQNN):
             debug=False,
             saver=False,
             online_prepare=TestQNN.online_prepare,
-            dump_intermediate_outputs=TestQNN.dump_intermediate_outputs,
+            dump_intermediate_outputs=False,
             profile_level=TestQNN.profile_level,
             shared_buffer=TestQNN.shared_buffer,
         )
@@ -2212,7 +2212,7 @@ class TestQNNFloatingPointModel(TestQNN):
             debug=False,
             saver=False,
             online_prepare=TestQNN.online_prepare,
-            dump_intermediate_outputs=TestQNN.dump_intermediate_outputs,
+            dump_intermediate_outputs=False,
             profile_level=TestQNN.profile_level,
             shared_buffer=TestQNN.shared_buffer,
         )
@@ -2456,7 +2456,7 @@ class TestQNNQuantizedOperator(TestQNN):
             debug=False,
             saver=False,
             online_prepare=TestQNN.online_prepare,
-            dump_intermediate_outputs=TestQNN.dump_intermediate_outputs,
+            dump_intermediate_outputs=False,
             profile_level=TestQNN.profile_level,
             shared_buffer=TestQNN.shared_buffer,
         )
@@ -4835,7 +4835,7 @@ class TestQNNQuantizedModel(TestQNN):
             debug=False,
             saver=False,
             online_prepare=TestQNN.online_prepare,
-            dump_intermediate_outputs=TestQNN.dump_intermediate_outputs,
+            dump_intermediate_outputs=False,
             profile_level=TestQNN.profile_level,
             shared_buffer=TestQNN.shared_buffer,
         )
@@ -5308,7 +5308,6 @@ class TestQNNFloatingPointUtils(TestQNN):
     def setUp(self):
         TestQNN.atol = 1e-1
         TestQNN.rtol = 1e-1
-        TestQNN.dump_intermediate_outputs = False
         TestQNN.enable_profile = False
         TestQNN.shared_buffer = False
         backend_options = generate_htp_compiler_spec(use_fp16=True)
@@ -5347,7 +5346,6 @@ class TestQNNFloatingPointUtils(TestQNN):
         )
 
     def test_qnn_backend_dump_intermediate_outputs_topk(self):
-        TestQNN.dump_intermediate_outputs = True
         backend_options = generate_htp_compiler_spec(use_fp16=True)
         TestQNN.compiler_specs = generate_qnn_executorch_compiler_spec(
             soc_model=self.chipset_table[TestQNN.soc_model],
@@ -5360,12 +5358,10 @@ class TestQNNFloatingPointUtils(TestQNN):
             module,
             sample_input,
             expected_partitions=1,
-            expected_intermediate_events=7,
-            expected_compared_events=5,
+            expected_compared_events=3,
         )
 
     def test_qnn_backend_dump_intermediate_outputs_simple_model(self):
-        TestQNN.dump_intermediate_outputs = True
         backend_options = generate_htp_compiler_spec(use_fp16=True)
         TestQNN.compiler_specs = generate_qnn_executorch_compiler_spec(
             soc_model=self.chipset_table[TestQNN.soc_model],
@@ -5378,8 +5374,7 @@ class TestQNNFloatingPointUtils(TestQNN):
             module,
             sample_input,
             expected_partitions=1,
-            expected_intermediate_events=20,
-            expected_compared_events=16,
+            expected_compared_events=14,
         )
 
     def test_qnn_backend_skip_node_id(self):
@@ -5937,7 +5932,6 @@ class TestQNNQuantizedUtils(TestQNN):
                 raise ValueError("Backend is not implemented yet")
         TestQNN.atol = 1e-1
         TestQNN.rtol = 1
-        TestQNN.dump_intermediate_outputs = False
         TestQNN.enable_profile = False
         TestQNN.shared_buffer = False
         backend_options = generate_htp_compiler_spec(use_fp16=False)
@@ -5977,7 +5971,6 @@ class TestQNNQuantizedUtils(TestQNN):
         )
 
     def test_qnn_backend_dump_intermediate_outputs_simple_model(self):
-        TestQNN.dump_intermediate_outputs = True
         backend_options = generate_htp_compiler_spec(use_fp16=False)
         TestQNN.compiler_specs = generate_qnn_executorch_compiler_spec(
             soc_model=self.chipset_table[TestQNN.soc_model],
@@ -5991,13 +5984,11 @@ class TestQNNQuantizedUtils(TestQNN):
             module,
             sample_input,
             expected_partitions=1,
-            expected_intermediate_events=21,
             expected_compared_events=14,
         )
 
     def test_qnn_backend_dump_intermediate_outputs_topk(self):
         torch.manual_seed(8)
-        TestQNN.dump_intermediate_outputs = True
         backend_options = generate_htp_compiler_spec(use_fp16=False)
         TestQNN.compiler_specs = generate_qnn_executorch_compiler_spec(
             soc_model=self.chipset_table[TestQNN.soc_model],
@@ -6011,8 +6002,7 @@ class TestQNNQuantizedUtils(TestQNN):
             module,
             sample_input,
             expected_partitions=1,
-            expected_intermediate_events=9,
-            expected_compared_events=5,
+            expected_compared_events=3,
         )
 
     def test_qnn_backend_dynamic_shape(self):
@@ -9490,9 +9480,9 @@ class TestUtilsScript(TestQNN):
             else:
                 svg_path = msg["svg_path"]
                 csv_path = msg["csv_path"]
-                min_accepted = 235
-                max_accepted = 241
-                # Having a +- 3 tolerance, expecting 238 events
+                min_accepted = 231
+                max_accepted = 237
+                # Having a +- 3 tolerance, expecting 234 events
                 assert os.path.exists(svg_path), f"Unable to find SVG file: {svg_path}"
                 assert os.path.exists(csv_path), f"Unable to find CSV file: {csv_path}"
 
@@ -9674,7 +9664,6 @@ def setup_environment():
     TestQNN.oss_repo = args.oss_repo
     TestQNN.shared_buffer = args.shared_buffer
     TestQNN.enable_x86_64 = args.enable_x86_64
-    TestQNN.dump_intermediate_outputs = args.dump_intermediate_outputs
     TestQNN.compile_only = args.compile_only
     TestQNN.pre_gen_pte = args.pre_gen_pte
     TestQNN.llama_artifacts = args.llama_artifacts

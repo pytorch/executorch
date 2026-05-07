@@ -19,7 +19,10 @@ from executorch.backends.qualcomm.serialization.qc_schema import (
 from executorch.backends.qualcomm.serialization.qc_schema_serialize import (
     flatbuffer_to_option,
 )
-from executorch.backends.qualcomm.utils.constants import QCOM_AXIS_ORDER
+from executorch.backends.qualcomm.utils.constants import (
+    QCOM_AXIS_ORDER,
+    QCOM_TENSOR_NAME,
+)
 from executorch.backends.qualcomm.utils.qnn_manager_lifecycle import (
     get_current_qnn_manager,
 )
@@ -181,10 +184,15 @@ class QnnBackend(BackendDetails):
                 )
                 if qnn_manager.IsTensorDump():
                     for node in programs[i].graph.nodes:
-                        if handle_id := node.meta.get(DEBUG_HANDLE_KEY):
+                        # Make sure debug handle and runtime tensor name exists. Since we cannot support multioutput, only save single output nodes, which len of node.meta[QCOM_TENSOR_NAME] == 1
+                        if (
+                            (handle_id := node.meta.get(DEBUG_HANDLE_KEY))
+                            and QCOM_TENSOR_NAME in node.meta
+                            and len(node.meta[QCOM_TENSOR_NAME]) == 1
+                        ):
                             debug_handle_builder.insert_delegate_mapping_entry(
                                 handles=handle_id,
-                                identifier=node.name,
+                                identifier=node.meta[QCOM_TENSOR_NAME][0],
                             )
                 if isinstance(py_op_wrappers, bytes):
                     ctx_binary_list.append(py_op_wrappers)
@@ -195,7 +203,6 @@ class QnnBackend(BackendDetails):
                             for py_op_wrapper in py_op_wrappers
                         ]
                     )
-
             if len(py_op_wrapper_list) == len(edge_programs.values()):
                 qnn_context_binary = qnn_manager.Compile(
                     graph_names, py_op_wrapper_list

@@ -7,15 +7,14 @@
 import json
 import os
 from multiprocessing.connection import Client
-from typing import Any, Tuple
 
 import numpy as np
 
 import torch
-import torch.nn.functional as F
-from executorch.backends.qualcomm.debugger.metrics_evaluator import (
-    CosineSimilarityEvaluator,
-    MetricEvaluatorBase,
+
+from executorch.backends.qualcomm.debugger.qcom_numerical_comparator_sample import (
+    QcomCosineSimilarityComparator,
+    QcomMSEComparator,
 )
 from executorch.backends.qualcomm.debugger.qnn_intermediate_debugger import (
     OutputFormat,
@@ -29,7 +28,6 @@ from executorch.backends.qualcomm.export_utils import (
     SimpleADB,
 )
 from executorch.backends.qualcomm.quantizer.quantizer import QuantDtype
-from executorch.devtools import Inspector
 from executorch.examples.models.inception_v3.model import InceptionV3Model
 from executorch.examples.qualcomm.utils import (
     get_imagenet_dataset,
@@ -62,12 +60,13 @@ def main(args):
         data_size=data_num,
         image_shape=(256, 256),
         crop_size=224,
+        shuffle=False,
     )
     pte_filename = "ic3_qnn_debug"
     instance = InceptionV3Model()
     source_model = instance.get_eager_model().eval()
     # Init our QNNIntermediateDebugger and pass it in to build_executorch_binary().
-    qnn_intermediate_debugger = QNNIntermediateDebugger()
+    qnn_intermediate_debugger = QNNIntermediateDebugger(sample_input=inputs[0])
     build_executorch_binary(
         model=source_model,
         qnn_config=qnn_config,
@@ -98,64 +97,52 @@ def main(args):
     output_data_folder = f"{args.artifact}/outputs"
     make_output_dir(output_data_folder)
 
-    class RootMeanSquaredErrorEvaluator(MetricEvaluatorBase):
-        def __init__(self, threshold=0.02):
-            self.threshold = threshold
-
-        def metric_name(self) -> str:
-            return "Root Mean Squared Error"
-
-        def evaluate(
-            self, qnn_output: torch.Tensor, cpu_output: torch.Tensor
-        ) -> Tuple[Any, bool]:
-            mse = F.mse_loss(qnn_output, cpu_output)
-            rmse = torch.sqrt(mse)
-            valid = rmse < self.threshold
-            return rmse, valid
-
     # We will pull the debug output and provide them to the Inspector class.
     # We can then provide our own metrics and output type to generate the intermediate debugging results.
     def validate_intermediate_tensor():
-        inspector = Inspector(
+        qnn_intermediate_debugger.setup_inspector(
             etdump_path=f"{args.artifact}/etdump.etdp",
             debug_buffer_path=f"{args.artifact}/debug_output.bin",
         )
 
-        edge_result = qnn_intermediate_debugger.intermediate_output_module(
-            *(inputs[0])
-        )[0]
+        edge_result = qnn_intermediate_debugger.edge_ep.module()(
+            *(qnn_intermediate_debugger.sample_input)
+        )
 
-        # Optional: Ensures that edge module accuracy aligns with nn.Module
+        # Highly Recommended: Ensures that edge module accuracy aligns with nn.Module
         with torch.no_grad():
-            source_result = source_model(*(inputs[0]))
+            source_result = source_model(*(qnn_intermediate_debugger.sample_input))
             score = torch.nn.functional.cosine_similarity(
                 edge_result.flatten(), source_result.flatten(), dim=0
             ).item()
             print("Cosine Similarity Score between nn.Module and Edge CPU is: ", score)
-
         # Users can generate multiple comparison metrics in a single execution.
-        # Below, we generate 3 metrics.
+
+        cos_comparator = qnn_intermediate_debugger.create_comparator(
+            QcomCosineSimilarityComparator, threshold=0.9
+        )
         qnn_intermediate_debugger.generate_results(
             title="ic3_cos_similarity_debugging_graph",
             path=args.artifact,
-            output_format=OutputFormat.SVG_GRAPHS,
-            inspector=inspector,
-            evaluator=CosineSimilarityEvaluator(0.9),
+            output_format=OutputFormat.SVG_GRAPH,
+            comparator=cos_comparator,
+        )
+
+        qnn_intermediate_debugger.generate_results(
+            title="ic3_cos_similarity_debugging_graph",
+            path=args.artifact,
+            output_format=OutputFormat.CSV_FILE,
+            comparator=cos_comparator,
+        )
+
+        mse_comparator = qnn_intermediate_debugger.create_comparator(
+            QcomMSEComparator, threshold=0.1
         )
         qnn_intermediate_debugger.generate_results(
-            title="ic3_cos_similarity_csv",
+            title="ic3_mse_debugging_graph",
             path=args.artifact,
-            output_format=OutputFormat.CSV_FILES,
-            inspector=inspector,
-            evaluator=CosineSimilarityEvaluator(0.9),
-        )
-        # Using self defined metrics to print svg graphs
-        qnn_intermediate_debugger.generate_results(
-            title="ic3_rmse_debugging_graph",
-            path=args.artifact,
-            output_format=OutputFormat.SVG_GRAPHS,
-            inspector=inspector,
-            evaluator=RootMeanSquaredErrorEvaluator(0.9),
+            output_format=OutputFormat.SVG_GRAPH,
+            comparator=mse_comparator,
         )
 
     adb.pull_debug_output(
@@ -180,8 +167,8 @@ def main(args):
             conn.send(
                 json.dumps(
                     {
-                        "svg_path": f"{args.artifact}/ic3_rmse_debugging_graph.svg",
-                        "csv_path": f"{args.artifact}/ic3_cos_similarity_csv.csv",
+                        "svg_path": f"{args.artifact}/ic3_mse_debugging_graph.svg",
+                        "csv_path": f"{args.artifact}/ic3_cos_similarity_debugging_graph.csv",
                     }
                 )
             )
