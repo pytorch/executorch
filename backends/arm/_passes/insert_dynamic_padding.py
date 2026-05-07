@@ -7,14 +7,14 @@ from typing import Set, Type
 
 import torch
 
-from executorch.backends.arm._passes import ArmPass
+from executorch.backends.arm._passes import ArmOpTargetedPass
 from executorch.backends.arm.tosa.dialect.shape import is_shape_op_node
 
 from executorch.exir.dialects._ops import ops as exir_ops
 from executorch.exir.pass_base import ExportPass, ProxyValue
 
 
-class InsertDynamicPaddingPass(ArmPass):
+class InsertDynamicPaddingPass(ArmOpTargetedPass):
     """This pass rewrites conv operations with padding to use an explicit pad
     operator before the conv2d operation and setting the padding to zero in the
     conv2d operator. E.g. conv2d(x, weight, bias, stride, padding, dilation)
@@ -27,6 +27,10 @@ class InsertDynamicPaddingPass(ArmPass):
     """
 
     _passes_required_after: Set[Type[ExportPass]] = set()
+    target_ops = (
+        exir_ops.backend.tosa.CONV2D.default,
+        exir_ops.backend.tosa.DEPTHWISE_CONV2D.default,
+    )
 
     def _is_dynamic_padding(
         self, padding: ProxyValue | list[int] | tuple[int, ...]
@@ -39,10 +43,7 @@ class InsertDynamicPaddingPass(ArmPass):
         )
 
     def call_operator(self, op, args, kwargs, meta, updated=False) -> ProxyValue:
-        if op not in (
-            exir_ops.backend.tosa.CONV2D.default,
-            exir_ops.backend.tosa.DEPTHWISE_CONV2D.default,
-        ):
+        if op not in self.target_ops:
             return super().call_operator(op, args, kwargs, meta, updated)
         padding = args[4]
         if not self._is_dynamic_padding(padding):

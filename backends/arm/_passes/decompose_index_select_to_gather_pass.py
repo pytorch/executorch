@@ -8,7 +8,7 @@ from typing import Set, Type
 
 import torch
 
-from executorch.backends.arm._passes import ArmPass
+from executorch.backends.arm._passes import ArmOpTargetedPass
 from executorch.backends.arm._passes.convert_expand_copy_to_repeat import (
     ConvertExpandCopyToRepeatPass,
 )
@@ -38,7 +38,7 @@ def _get_index_select_decomposition(op):
     raise RuntimeError(f"Can't get index_select decomposition for op {op}")
 
 
-class DecomposeIndexSelectToGatherPass(ArmPass):
+class DecomposeIndexSelectToGatherPass(ArmOpTargetedPass):
     """Decompose edge index_select into a single backend TOSA gather.
 
     index_select(x, dim, index) semantics:
@@ -67,12 +67,12 @@ class DecomposeIndexSelectToGatherPass(ArmPass):
         ConvertSqueezesToViewPass,
     }
 
-    _TARGET_OPS = {
+    target_ops = {
         exir_ops.edge.aten.index_select.default,
     }
 
     def call_operator(self, op, args, kwargs, meta):
-        if op not in self._TARGET_OPS:
+        if op not in self.target_ops:
             return super().call_operator(op, args, kwargs, meta)
 
         x, dim, index = args

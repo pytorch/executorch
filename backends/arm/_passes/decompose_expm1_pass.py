@@ -5,7 +5,7 @@
 
 from typing import Set, Type
 
-from executorch.backends.arm._passes import ArmPass
+from executorch.backends.arm._passes import ArmOpTargetedPass
 from executorch.backends.arm._passes.decompose_div_pass import DecomposeDivPass
 from executorch.backends.arm._passes.decompose_int_pow_pass import DecomposeIntPowPass
 from executorch.backends.arm._passes.insert_table_ops import InsertTableOpsPass
@@ -55,7 +55,7 @@ def _get_expm1_decomposition(op) -> tuple:
     raise RuntimeError(f"Can't get expm1 decomposition for op {op}")
 
 
-class DecomposeExpm1Pass(ArmPass):
+class DecomposeExpm1Pass(ArmOpTargetedPass):
     """A transformation pass that decomposes unsupported 'aten.expm1' operations
     into a combination of supported TOSA-equivalent operations.
 
@@ -87,9 +87,10 @@ class DecomposeExpm1Pass(ArmPass):
         MatchArgDtypePass,
         MatchArgRanksPass,
     }
+    target_ops = edge_expm1_ops
 
     def call_operator(self, op, args, kwargs, meta):
-        if op not in edge_expm1_ops:
+        if op not in self.target_ops:
             return super().call_operator(op, args, kwargs, meta, updated=False)
 
         if self._is_quantized_meta(meta):

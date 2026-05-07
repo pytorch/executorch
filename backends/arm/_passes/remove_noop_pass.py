@@ -8,7 +8,7 @@
 import logging
 from typing import Set, Type
 
-from executorch.backends.arm._passes import ArmPass
+from executorch.backends.arm._passes import ArmOpTargetedPass
 
 from executorch.exir.dialects._ops import ops as exir_ops
 from executorch.exir.pass_base import ExportPass
@@ -16,19 +16,20 @@ from executorch.exir.pass_base import ExportPass
 logger = logging.getLogger(__name__)
 
 
-class RemoveNoopPass(ArmPass):
+class RemoveNoopPass(ArmOpTargetedPass):
     """Remove no-ops from graph_module."""
 
     _passes_required_after: Set[Type[ExportPass]] = set()
+    target_ops = (
+        exir_ops.edge.dim_order_ops._clone_dim_order.default,
+        exir_ops.edge.dim_order_ops._to_dim_order_copy.default,
+        exir_ops.edge.aten.alias_copy.default,
+        exir_ops.edge.aten.copy.default,
+        exir_ops.edge.aten.detach_copy.default,
+    )
 
     def call_operator(self, op, args, kwargs, meta):
-        if op not in (
-            exir_ops.edge.dim_order_ops._clone_dim_order.default,
-            exir_ops.edge.dim_order_ops._to_dim_order_copy.default,
-            exir_ops.edge.aten.alias_copy.default,
-            exir_ops.edge.aten.copy.default,
-            exir_ops.edge.aten.detach_copy.default,
-        ):
+        if op not in self.target_ops:
             return super().call_operator(op, args, kwargs, meta)
 
         input_dtype = args[0].data.dtype

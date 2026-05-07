@@ -7,7 +7,7 @@ from copy import copy
 from typing import Literal, Protocol, Set, Type, TypeGuard
 
 import torch
-from executorch.backends.arm._passes.arm_pass import ArmPass
+from executorch.backends.arm._passes.arm_pass import ArmOpTargetedPass
 from executorch.backends.arm._passes.conv1d_unsqueeze_pass import Conv1dUnsqueezePass
 from executorch.backends.arm._passes.quant_args import QuantArgs
 from executorch.exir.dialects._ops import ops as exir_ops
@@ -24,7 +24,7 @@ class _PerChannelQuantArgs(Protocol):
     per_channel: Literal[True]
 
 
-class DecomposeGroupedConvPass(ArmPass):
+class DecomposeGroupedConvPass(ArmOpTargetedPass):
     """Splits a grouped convolution which is not supported by TOSA into multiple
     convolutions using slice->conv->cat.
 
@@ -47,6 +47,11 @@ class DecomposeGroupedConvPass(ArmPass):
     """
 
     _passes_required_after: Set[Type[ExportPass]] = {Conv1dUnsqueezePass}
+    target_ops = (
+        exir_ops.edge.aten.convolution.default,
+        torch.ops.aten.conv_transpose2d.input,
+        torch.ops.aten.conv2d.default,
+    )
 
     @staticmethod
     def _get_decomposition(op):

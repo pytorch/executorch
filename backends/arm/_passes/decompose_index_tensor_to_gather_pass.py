@@ -9,7 +9,7 @@ from typing import Sequence, Set, Type
 
 import torch
 
-from executorch.backends.arm._passes import ArmPass
+from executorch.backends.arm._passes import ArmOpTargetedPass
 from executorch.backends.arm._passes.arm_pass_utils import meta_without_qparams
 from executorch.backends.arm._passes.convert_expand_copy_to_repeat import (
     ConvertExpandCopyToRepeatPass,
@@ -75,7 +75,7 @@ def _broadcast_shape(
     return out
 
 
-class DecomposeIndexTensorToGatherPass(ArmPass):
+class DecomposeIndexTensorToGatherPass(ArmOpTargetedPass):
     """Decompose edge.aten.index.Tensor into backend TOSA gather (+ basic
     arith).
 
@@ -165,7 +165,7 @@ class DecomposeIndexTensorToGatherPass(ArmPass):
         ReplaceScalarWithTensorByProfilePass,
     }
 
-    _TARGET_OPS = {
+    target_ops = {
         exir_ops.edge.aten.index.Tensor,
     }
 
@@ -246,7 +246,7 @@ class DecomposeIndexTensorToGatherPass(ArmPass):
         return x_data, S, W, K, C, trailing, lin_scales
 
     def call_operator(self, op, args, kwargs, meta):
-        if op not in self._TARGET_OPS:
+        if op not in self.target_ops:
             return super().call_operator(op, args, kwargs, meta)
 
         assert (

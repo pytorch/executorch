@@ -8,7 +8,7 @@
 from typing import Set, Type
 
 import torch
-from executorch.backends.arm._passes import ArmPass
+from executorch.backends.arm._passes import ArmOpTargetedPass
 from executorch.backends.arm._passes.arm_pass_utils import get_node_arg
 from executorch.backends.arm._passes.decompose_meandim_pass import DecomposeMeanDimPass
 from executorch.backends.arm._passes.decompose_sum_pass import DecomposeSumPass
@@ -37,7 +37,7 @@ def get_var_decomposition(op) -> tuple:
     raise RuntimeError(f"Can't get var decomposition for op {op}")
 
 
-class DecomposeVarPass(ArmPass):
+class DecomposeVarPass(ArmOpTargetedPass):
     """
     This pass decomposes var.correction and var.dim into smaller ops (see https://pytorch.org/docs/stable/generated/torch.var.html)
 
@@ -56,13 +56,15 @@ class DecomposeVarPass(ArmPass):
         DecomposeMeanDimPass,
         DecomposeSumPass,
     }
+    target_ops = (
+        exir_ops.edge.aten.var.correction,
+        torch.ops.aten.var.correction,
+        torch.ops.aten.var.dim,
+    )
+    check_allowed_to_transform = True
 
     def call_operator(self, op, args, kwargs, meta):
-        if op not in (
-            exir_ops.edge.aten.var.correction,
-            torch.ops.aten.var.correction,
-            torch.ops.aten.var.dim,
-        ) or not self.allowed_to_transform(meta):
+        if op not in self.target_ops or not self.allowed_to_transform(meta):
             return super().call_operator(op, args, kwargs, meta)
 
         x = args[0]

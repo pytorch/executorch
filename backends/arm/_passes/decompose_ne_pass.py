@@ -6,7 +6,7 @@
 from typing import Set, Type
 
 import torch
-from executorch.backends.arm._passes import ArmPass
+from executorch.backends.arm._passes import ArmOpTargetedPass
 from executorch.exir.dialects._ops import ops as exir_ops
 from executorch.exir.pass_base import ExportPass
 
@@ -38,7 +38,7 @@ def get_ne_decomposition(op) -> tuple:
     raise RuntimeError(f"Can't get ne decomposition for op {op}")
 
 
-class DecomposeNotEqualPass(ArmPass):
+class DecomposeNotEqualPass(ArmOpTargetedPass):
     """A transformation pass that decomposes unsupported `aten.ne` operations
     into a combination of supported TOSA-equivalent operations.
 
@@ -57,9 +57,10 @@ class DecomposeNotEqualPass(ArmPass):
     """
 
     _passes_required_after: Set[Type[ExportPass]] = set()
+    target_ops = edge_ne_ops + aten_ne_ops
 
     def call_operator(self, op, args, kwargs, meta):
-        if op not in (edge_ne_ops + aten_ne_ops) or not self.allowed_to_transform(meta):
+        if op not in self.target_ops or not self.allowed_to_transform(meta):
             return super().call_operator(op, args, kwargs, meta)
 
         lhs, rhs = args

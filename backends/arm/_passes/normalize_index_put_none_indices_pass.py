@@ -4,13 +4,13 @@
 # LICENSE file in the root directory of this source tree.
 from typing import Set, Type
 
-from executorch.backends.arm._passes import ArmPass
+from executorch.backends.arm._passes import ArmOpTargetedPass
 from executorch.backends.arm._passes.rewrite_index_put_pass import RewriteIndexPutPass
 from executorch.exir.dialects._ops import ops as exir_ops
 from executorch.exir.pass_base import ExportPass
 
 
-class NormalizeIndexPutNoneIndicesPass(ArmPass):
+class NormalizeIndexPutNoneIndicesPass(ArmOpTargetedPass):
     """Normalize index_put with None:s in the indices_tensor list by moving
     None-indexed dims to the channel dimensions (*C_j in RewriteIndexPutPass
     teminology) by permutating the destination and data tensors. A None-index
@@ -41,6 +41,7 @@ class NormalizeIndexPutNoneIndicesPass(ArmPass):
     """
 
     _passes_required_after: Set[Type[ExportPass]] = {RewriteIndexPutPass}
+    target_ops = (exir_ops.edge.aten.index_put.default,)
 
     def __init__(self):
         super().__init__()
@@ -67,7 +68,7 @@ class NormalizeIndexPutNoneIndicesPass(ArmPass):
             return destination_dim_order
 
     def call_operator(self, op, args, kwargs, meta, updated: bool | None = False):
-        if op not in (exir_ops.edge.aten.index_put.default,):
+        if op not in self.target_ops:
             return super().call_operator(op, args, kwargs, meta)
 
         destination, indices_tensor_list, data = args[:3]

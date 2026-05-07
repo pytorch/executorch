@@ -8,7 +8,7 @@
 from typing import Set, Type
 
 import torch
-from executorch.backends.arm._passes import ArmPass
+from executorch.backends.arm._passes import ArmOpTargetedPass
 from executorch.exir.dialects._ops import ops as exir_ops
 from executorch.exir.pass_base import ExportPass
 
@@ -33,7 +33,7 @@ def _get_leaky_relu_ops(op) -> tuple:
         raise RuntimeError(f"Can't get decomposition ops for op {op}")
 
 
-class DecomposeLeakyReLUPass(ArmPass):
+class DecomposeLeakyReLUPass(ArmOpTargetedPass):
     """This pass decomposes Leaky ReLU into primitive operations.
     LeakyReLU(x,slope) = max(0,x) + slope * min(0,x)
 
@@ -47,9 +47,11 @@ class DecomposeLeakyReLUPass(ArmPass):
     """
 
     _passes_required_after: Set[Type[ExportPass]] = set()
+    target_ops = edge_ops + torch_ops
+    check_allowed_to_transform = True
 
     def call_operator(self, op, args, kwargs, meta):
-        if op not in (edge_ops + torch_ops) or not self.allowed_to_transform(meta):
+        if op not in self.target_ops or not self.allowed_to_transform(meta):
             return super().call_operator(op, args, kwargs, meta)
 
         x = args[0]

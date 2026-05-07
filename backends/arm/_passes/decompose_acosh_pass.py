@@ -6,7 +6,7 @@
 
 from typing import Set, Type
 
-from executorch.backends.arm._passes import ArmPass
+from executorch.backends.arm._passes import ArmOpTargetedPass
 from executorch.backends.arm._passes.decompose_sqrt_pass import DecomposeSqrtPass
 from executorch.backends.arm._passes.insert_table_ops import InsertTableOpsPass  # noqa
 from executorch.backends.arm._passes.match_arg_dtype_pass import MatchArgDtypePass
@@ -21,7 +21,7 @@ from executorch.exir.pass_base import ExportPass
 edge_acosh_op = exir_ops.edge.aten.acosh.default
 
 
-class DecomposeAcoshPass(ArmPass):
+class DecomposeAcoshPass(ArmOpTargetedPass):
     """Decomposes acosh to supported TOSA-operations.
 
     This decomposition is based on the mathematical identity:
@@ -36,10 +36,11 @@ class DecomposeAcoshPass(ArmPass):
         ReplaceScalarWithTensorByProfilePass,
         MatchArgDtypePass,
     }
+    target_ops = (edge_acosh_op,)
 
     def call_operator(self, op, args, kwargs, meta, updated=False):
 
-        if op is not edge_acosh_op:
+        if op not in self.target_ops:
             return super().call_operator(op, args, kwargs, meta, updated)
 
         if self._is_quantized_meta(meta):

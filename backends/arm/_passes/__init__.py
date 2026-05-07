@@ -5,7 +5,7 @@
 
 
 from . import arm_pass_utils  # noqa
-from .arm_pass import ArmPass  # noqa  # usort: skip
+from .arm_pass import ArmOpTargetedPass, ArmPass  # noqa  # usort: skip
 from .accumulate_index_put_pass import AccumulateIndexPutPass  # noqa
 from .broadcast_args_pass import BroadcastArgsPass  # noqa
 from .canonicalize_gather_pass import CanonicalizeGatherPass  # noqa

@@ -7,6 +7,7 @@
 import copy
 import traceback
 from abc import abstractmethod
+from collections.abc import Collection
 from typing import Any, List, Optional, Set, Type
 
 import torch
@@ -14,7 +15,7 @@ from executorch.backends.arm.constants import DISALLOW_TFA_META_KEY
 from executorch.backends.arm.tosa.mapping import TosaSpecialDtype
 from executorch.exir.dialects._ops import ops as exir_ops
 from executorch.exir.pass_base import ExportPass, NodeMetadata, ProxyValue
-from torch.fx import GraphModule
+from torch.fx import GraphModule, Node
 from torch.fx.passes.infra.pass_base import PassResult
 from torch.utils import _pytree as pytree
 
@@ -191,3 +192,99 @@ class ArmPass(ExportPass):
             meta=meta,
             updated=True,
         )
+
+    def should_run_pass(self, graph_module: GraphModule) -> bool:
+        """Return whether this pass should run on the graph module.
+
+        Subclasses can override this to cheaply skip the pass before
+        ``call()`` starts the normal ``ExportPass`` retracing path.
+
+        Args:
+            graph_module (GraphModule): The graph module to inspect.
+
+        Returns:
+            bool: True when the pass should run.
+
+        """
+        return True
+
+    def __call__(self, graph_module: GraphModule) -> PassResult | None:
+        self.requires(graph_module)
+        if not self.should_run_pass(graph_module):
+            self.ensures(graph_module)
+            return PassResult(graph_module, False)
+        res = self.call(graph_module)
+        self.ensures(graph_module)
+        return res
+
+
+class ArmOpTargetedPass(ArmPass):
+    """Base class for passes that only transform selected operators.
+
+    Subclasses set ``target_ops`` to the call_function targets they can
+    transform. If the current graph and nested control-flow subgraphs do not
+    contain any target, the pass returns immediately without paying the default
+    ExportPass retracing cost.
+
+    Set ``check_allowed_to_transform`` to ``True`` when the target pre-scan
+    should also apply ``allowed_to_transform()`` to matching target nodes. This
+    is useful for TFA passes whose ``call_operator()`` leaves disallowed target
+    nodes unchanged. If all matching targets are disallowed, the pass can
+    return before entering the normal ``ExportPass`` path.
+
+    """
+
+    target_ops: Collection[Any] = ()
+    check_allowed_to_transform = False
+
+    def has_target_node(self, graph_module: GraphModule) -> bool:
+        """Return whether the graph module tree contains a target node.
+
+        Args:
+            graph_module (GraphModule): The graph module tree to inspect.
+
+        Returns:
+            bool: True if a matching call_function node is present.
+
+        """
+        visited_graph_modules = set()
+
+        def target_node_can_trigger_pass(node: Node) -> bool:
+            if not self.check_allowed_to_transform:
+                return True
+            if self.allowed_to_transform(node.meta):
+                return True
+            return False
+
+        def graph_has_target(module: GraphModule) -> bool:
+            if id(module) in visited_graph_modules:
+                return False
+            visited_graph_modules.add(id(module))
+
+            for target in self.target_ops:
+                for node in module.graph.find_nodes(
+                    op="call_function",
+                    target=target,
+                    sort=False,
+                ):
+                    if target_node_can_trigger_pass(node):
+                        return True
+
+            return any(
+                isinstance(child, GraphModule) and graph_has_target(child)
+                for child in module.children()
+            )
+
+        return graph_has_target(graph_module)
+
+    def should_run_pass(self, graph_module: GraphModule) -> bool:
+        """Return whether this pass has a target node to transform.
+
+        Args:
+            graph_module (GraphModule): The graph module tree to inspect.
+
+        Returns:
+            bool: True when a matching target node is present.
+
+        """
+        return self.has_target_node(graph_module)

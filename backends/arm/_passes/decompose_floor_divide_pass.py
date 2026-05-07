@@ -6,7 +6,7 @@
 from typing import Set, Type
 
 import torch
-from executorch.backends.arm._passes import ArmPass
+from executorch.backends.arm._passes import ArmOpTargetedPass
 from executorch.backends.arm._passes.decompose_div_tensor_mode import (
     DecomposeDivTensorModePass,
 )
@@ -47,15 +47,16 @@ def get_floor_divide_decomposition(op) -> tuple:
     raise RuntimeError(f"Can't get floor_div decomposition for op {op}")
 
 
-class DecomposeFloorDividePass(ArmPass):
+class DecomposeFloorDividePass(ArmOpTargetedPass):
     """Decomposes aten.floor_divide into aten.div.Tensor_mode with
     rounding_mode="floor".
     """
 
     _passes_required_after: Set[Type[ExportPass]] = {DecomposeDivTensorModePass}
+    target_ops = edge_floor_divide_ops + aten_floor_divide_ops
 
     def call_operator(self, op, args, kwargs, meta):
-        if op not in (edge_floor_divide_ops + aten_floor_divide_ops):
+        if op not in self.target_ops:
             return super().call_operator(op, args, kwargs, meta, updated=False)
 
         (div_op, full_op) = get_floor_divide_decomposition(op)

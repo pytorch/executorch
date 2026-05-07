@@ -7,7 +7,7 @@ from typing import Set, Type
 
 import torch
 
-from executorch.backends.arm._passes import ArmPass
+from executorch.backends.arm._passes import ArmOpTargetedPass
 from executorch.backends.arm._passes.convert_int64_const_ops_to_int32 import (
     ConvertInt64ConstOpsToInt32Pass,
 )
@@ -44,7 +44,7 @@ def get_select_scatter_decomposition(op) -> tuple:
     raise RuntimeError(f"Can't get select_scatter decomposition for op {op}")
 
 
-class DecomposeSelectScatterPass(ArmPass):
+class DecomposeSelectScatterPass(ArmOpTargetedPass):
     """select_scatter is decomposed into other ops during export, however this
     is only suppported for the fp profile and for the int profile we need to
     decompose it here.
@@ -65,9 +65,10 @@ class DecomposeSelectScatterPass(ArmPass):
         ReplaceScalarWithTensorByProfilePass,
         ConvertInt64ConstOpsToInt32Pass,
     }
+    target_ops = edge_scatter_ops + aten_scatter_ops
 
     def call_operator(self, op, args, kwargs, meta):
-        if op not in (edge_scatter_ops + aten_scatter_ops):
+        if op not in self.target_ops:
             return super().call_operator(op, args, kwargs, meta, updated=False)
 
         (

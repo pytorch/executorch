@@ -6,7 +6,7 @@
 from typing import Set, Type
 
 import torch
-from executorch.backends.arm._passes import ArmPass
+from executorch.backends.arm._passes import ArmOpTargetedPass
 from executorch.backends.arm._passes.convert_full_like_to_full_pass import (
     ConvertFullLikeToFullPass,
 )
@@ -19,7 +19,7 @@ from executorch.exir.pass_base import ExportPass
 torch_cosine_similarity = (torch.ops.aten.cosine_similarity.default,)
 
 
-class DecomposeCosineSimilarityPass(ArmPass):
+class DecomposeCosineSimilarityPass(ArmOpTargetedPass):
     """Decomposition of aten.cosine_similarity.
 
     Example:
@@ -42,9 +42,11 @@ class DecomposeCosineSimilarityPass(ArmPass):
         ConvertFullLikeToFullPass,
         InsertTableOpsPass,
     }
+    target_ops = torch_cosine_similarity
+    check_allowed_to_transform = True
 
     def call_operator(self, op, args, kwargs, meta):
-        if op not in torch_cosine_similarity or not self.allowed_to_transform(meta):
+        if op not in self.target_ops or not self.allowed_to_transform(meta):
             return super().call_operator(op, args, kwargs, meta)
 
         x1, x2 = args[0], args[1]

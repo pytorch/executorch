@@ -6,7 +6,7 @@
 from typing import Set, Type
 
 import torch
-from executorch.backends.arm._passes import ArmPass
+from executorch.backends.arm._passes import ArmOpTargetedPass
 from executorch.backends.arm._passes.arm_pass_utils import get_node_arg
 from executorch.backends.arm._passes.fuse_constant_ops_pass import (
     ComputeConstantOpsAOTPass,
@@ -44,7 +44,7 @@ def _get_ops(op):
     raise RuntimeError(f"Unable to get decomposition ops for {op}")
 
 
-class DecomposeTrilPass(ArmPass):
+class DecomposeTrilPass(ArmOpTargetedPass):
     """Tril decomposition.
 
     Decomposition:
@@ -54,11 +54,10 @@ class DecomposeTrilPass(ArmPass):
     """
 
     _passes_required_after: Set[Type[ExportPass]] = {ComputeConstantOpsAOTPass}
+    target_ops = (torch.ops.aten.tril.default,)
 
     def call_operator(self, op, args, kwargs, meta):
-        handled_ops = [torch.ops.aten.tril.default]
-
-        if op not in handled_ops:
+        if op not in self.target_ops:
             return super().call_operator(op, args, kwargs, meta)
 
         x = args[0]
