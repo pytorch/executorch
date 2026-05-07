@@ -927,3 +927,100 @@ class TestPropagateSlice(unittest.TestCase):
         result = PropagateSlice().call(gm)
 
         self.assertFalse(result.modified)
+
+    def test_swap_broadcast_mul_slice_on_broadcast_dim(self) -> None:
+        """[1,60,1,1] * [4,1,1,1] → [4,60,1,1] → slice(dim=0, step=2)
+        Only the [4,1,1,1] input should be sliced."""
+        builder = GraphBuilder()
+        a = builder.placeholder("a", torch.randn(1, 60, 1, 1))
+        b = builder.placeholder("b", torch.randn(4, 1, 1, 1))
+        mul = builder.call_operator(exir_ops.edge.aten.mul.Tensor, args=(a, b))
+        sliced = builder.call_operator(
+            exir_ops.edge.aten.slice_copy.Tensor,
+            args=(mul, 0, 0, 4, 2),
+        )
+        builder.output([sliced])
+        gm = builder.get_graph_module()
+
+        result = PropagateSlice().call(gm)
+
+        self.assertTrue(result.modified)
+
+        slice_nodes = gm.graph.find_nodes(
+            op="call_function", target=exir_ops.edge.aten.slice_copy.Tensor
+        )
+        self.assertEqual(len(slice_nodes), 1)
+        self.assertEqual(slice_nodes[0].args[0].name, "b")
+        self.assertEqual(list(slice_nodes[0].meta["val"].shape), [2, 1, 1, 1])
+
+        mul_nodes = gm.graph.find_nodes(
+            op="call_function", target=exir_ops.edge.aten.mul.Tensor
+        )
+        self.assertEqual(len(mul_nodes), 1)
+        self.assertEqual(list(mul_nodes[0].meta["val"].shape), [2, 60, 1, 1])
+
+    def test_swap_broadcast_add_lhs_broadcasts(self) -> None:
+        """[1,60,4,4] + [4,60,4,4] → [4,60,4,4] → slice(dim=0, step=2)
+        Only the [4,60,4,4] (rhs) should be sliced."""
+        builder = GraphBuilder()
+        a = builder.placeholder("a", torch.randn(1, 60, 4, 4))
+        b = builder.placeholder("b", torch.randn(4, 60, 4, 4))
+        add = builder.call_operator(exir_ops.edge.aten.add.Tensor, args=(a, b))
+        sliced = builder.call_operator(
+            exir_ops.edge.aten.slice_copy.Tensor,
+            args=(add, 0, 0, 4, 2),
+        )
+        builder.output([sliced])
+        gm = builder.get_graph_module()
+
+        result = PropagateSlice().call(gm)
+
+        self.assertTrue(result.modified)
+
+        slice_nodes = gm.graph.find_nodes(
+            op="call_function", target=exir_ops.edge.aten.slice_copy.Tensor
+        )
+        self.assertEqual(len(slice_nodes), 1)
+        self.assertEqual(slice_nodes[0].args[0].name, "b")
+
+    def test_swap_broadcast_mul_slice_on_non_broadcast_dim(self) -> None:
+        """[4,60,1,1] * [4,1,1,1] → [4,60,1,1] → slice(dim=1, start=0, end=30)
+        Only the [4,60,1,1] (lhs) should be sliced since rhs has dim1=1."""
+        builder = GraphBuilder()
+        a = builder.placeholder("a", torch.randn(4, 60, 1, 1))
+        b = builder.placeholder("b", torch.randn(4, 1, 1, 1))
+        mul = builder.call_operator(exir_ops.edge.aten.mul.Tensor, args=(a, b))
+        sliced = builder.call_operator(
+            exir_ops.edge.aten.slice_copy.Tensor,
+            args=(mul, 1, 0, 30, 1),
+        )
+        builder.output([sliced])
+        gm = builder.get_graph_module()
+
+        result = PropagateSlice().call(gm)
+
+        self.assertTrue(result.modified)
+
+        slice_nodes = gm.graph.find_nodes(
+            op="call_function", target=exir_ops.edge.aten.slice_copy.Tensor
+        )
+        self.assertEqual(len(slice_nodes), 1)
+        self.assertEqual(slice_nodes[0].args[0].name, "a")
+        self.assertEqual(list(slice_nodes[0].meta["val"].shape), [4, 30, 1, 1])
+
+    def test_no_swap_binary_same_shape(self) -> None:
+        """Same-shape binary ops are not swapped (no broadcast)."""
+        builder = GraphBuilder()
+        a = builder.placeholder("a", torch.randn(4, 60, 4, 4))
+        b = builder.placeholder("b", torch.randn(4, 60, 4, 4))
+        add = builder.call_operator(exir_ops.edge.aten.add.Tensor, args=(a, b))
+        sliced = builder.call_operator(
+            exir_ops.edge.aten.slice_copy.Tensor,
+            args=(add, 0, 0, 4, 2),
+        )
+        builder.output([sliced])
+        gm = builder.get_graph_module()
+
+        result = PropagateSlice().call(gm)
+
+        self.assertFalse(result.modified)
