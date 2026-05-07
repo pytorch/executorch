@@ -2063,6 +2063,11 @@ class TestQNNFloatingPointOperator(TestQNN):
         sample_input = (torch.randn([1, 2, 3, 4]),)
         self.lower_module_and_test_output(module, sample_input)
 
+    def test_qnn_backend_tan(self):
+        module = Tan()  # noqa: F405
+        sample_input = (torch.rand(2, 5, 1, 3) * 2 - 1,)
+        self.lower_module_and_test_output(module, sample_input)
+
     def test_qnn_backend_tanh(self):
         module = Tanh()  # noqa: F405
         sample_input = (torch.randn(2, 5, 1, 3),)
@@ -4664,6 +4669,12 @@ class TestQNNQuantizedOperator(TestQNN):
     def test_qnn_backend_swapaxes(self):
         module = SwapAxes(0, 1)  # noqa: F405
         sample_input = (torch.randn([1, 2, 3, 4]),)
+        module = self.get_qdq_module(module, sample_input)
+        self.lower_module_and_test_output(module, sample_input)
+
+    def test_qnn_backend_tan(self):
+        module = Tan()  # noqa: F405
+        sample_input = (torch.rand(2, 5, 1, 3) * 2 - 1,)
         module = self.get_qdq_module(module, sample_input)
         self.lower_module_and_test_output(module, sample_input)
 
