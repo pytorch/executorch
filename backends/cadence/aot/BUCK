@@ -32,11 +32,22 @@ fbcode_target(_kind = runtime.python_library,
 )
 
 fbcode_target(_kind = runtime.python_library,
+    name = "fold_qat_conv_bn",
+    srcs = [
+        "fold_qat_conv_bn.py",
+    ],
+    deps = [
+        "//caffe2:torch",
+    ],
+)
+
+fbcode_target(_kind = runtime.python_library,
     name = "compiler",
     srcs = [
         "compiler.py",
     ],
     deps = [
+        ":fold_qat_conv_bn",
         ":memory_planning",
         ":ops_registrations",
         ":passes",
@@ -46,6 +57,7 @@ fbcode_target(_kind = runtime.python_library,
         "//caffe2:torch",
         "//executorch/backends/cadence/aot/quantizer:fusion_pass",
         "//executorch/backends/cadence/aot/quantizer:quantizer",
+        "//executorch/backends/transforms:quantize_fused_convbn_bias_pass",
         "//executorch/backends/transforms:decompose_sdpa",
         "//executorch/backends/transforms:remove_clone_ops",
         "//executorch/devtools:lib",
@@ -509,6 +521,23 @@ fbcode_target(_kind = python_unittest,
         "//executorch/backends/cadence/aot:pass_utils",
         "//executorch/exir/dialects:lib",
         "//executorch/exir/dialects/edge:lib",
+    ],
+)
+
+fbcode_target(_kind = python_unittest,
+    name = "test_fold_qat_conv_bn",
+    srcs = [
+        "tests/test_fold_qat_conv_bn.py",
+    ],
+    supports_static_listing = False,
+    typing = True,
+    deps = [
+        ":compiler",
+        ":fold_qat_conv_bn",
+        "//caffe2:torch",
+        "//executorch/backends/cadence/aot:ops_registrations",
+        "//executorch/backends/cadence/aot/quantizer:quantizer",
+        "//executorch/backends/transforms:quantize_fused_convbn_bias_pass",
     ],
 )
 

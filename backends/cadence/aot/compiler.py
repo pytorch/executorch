@@ -17,6 +17,7 @@ from executorch.backends.cadence.aot.compiler_funcs import (
     QuantizedInputWrapper,
     trace as trace_fn,
 )
+from executorch.backends.cadence.aot.fold_qat_conv_bn import FoldQATConvBNPass
 from executorch.backends.cadence.aot.memory_planning import (
     CadenceMemoryPlanning,
     print_memory_planning_info,
@@ -29,6 +30,9 @@ from executorch.backends.cadence.aot.quantizer.quantizer import (
 from executorch.backends.cadence.aot.utils import (
     get_default_memory_config,
     MemoryConfig,
+)
+from executorch.backends.transforms.quantize_fused_convbn_bias_pass import (
+    QuantizeFusedConvBnBiasAtenPass,
 )
 from executorch.devtools import generate_etrecord
 from executorch.exir import (
@@ -162,6 +166,18 @@ def apply_pre_edge_transform_passes(
     which will instantiate a default quantizer for you if needed.
     Returns an ExportedProgram with the fused model.
     """
+    # Create zero biases for convs without one, quantize any float biases if exists
+    converted_program = _transform(
+        converted_program,
+        QuantizeFusedConvBnBiasAtenPass(
+            exported_program=converted_program, default_zero_bias=True
+        ),
+    )
+
+    # Fold QAT Conv-BN simulated fusion patterns
+    # Removes (div(scale) → add(bias) → batch_norm chain and absorbs the correction into the conv bias
+    FoldQATConvBNPass(converted_program)(converted_program.graph_module)
+
     # Get patterns and apply fusion of dq -> op -> q to qop
     # pyre-ignore[16]: no attribute
     patterns = [q.pattern for q in quantizer.quantizers]
@@ -205,6 +221,13 @@ def get_fake_quant_model(
 
     # Get converted graph module
     converted_gm = convert_pt2(prepared_gm, dump_graphs=dump_graphs)
+
+    # Create zero biases for convs without one, quantize any float biases
+    QuantizeFusedConvBnBiasAtenPass(default_zero_bias=True)(converted_gm)
+
+    # Fold QAT Conv-BN simulated fusion patterns (now all convs have a bias to fold into)
+    FoldQATConvBNPass()(converted_gm)
+
     return converted_gm
 
 
