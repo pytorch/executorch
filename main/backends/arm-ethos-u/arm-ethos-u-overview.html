@@ -911,6 +911,12 @@ document.write(`
                 </a>
               </li>
             
+              <li class=" ">
+                <a class="nav-link dropdown-item nav-internal" href="../../visualize.html">
+                  Visualize a Model using ModelExplorer
+                </a>
+              </li>
+            
           </ul>
         
       </li>
@@ -1551,6 +1557,12 @@ document.write(`
                 </a>
               </li>
             
+              <li class=" ">
+                <a class="nav-link dropdown-item nav-internal" href="../../visualize.html">
+                  Visualize a Model using ModelExplorer
+                </a>
+              </li>
+            
           </ul>
         
       </li>
@@ -1946,7 +1958,7 @@ document.write(`
 <a class="reference external" href="https://www.arm.com/products/silicon-ip-cpu/ethos/ethos-u55">Arm® Ethos™-U55 NPU</a>, <a class="reference external" href="https://www.arm.com/products/silicon-ip-cpu/ethos/ethos-u65">Arm® Ethos™-U65 NPU</a>, and
 <a class="reference external" href="https://www.arm.com/products/silicon-ip-cpu/ethos/ethos-u85">Arm® Ethos™-U85 NPU</a>, leveraging <a class="reference external" href="https://www.mlplatform.org/tosa/">TOSA</a> and the
 <a class="reference external" href="https://pypi.org/project/ethos-u-vela/">ethos-u-vela</a> graph compiler. This document is a technical reference for using the Ethos-U backend, for a top level view with code examples
-please refer to the <a class="reference external" href="https://docs.pytorch.org/executorch/stable/tutorial-arm-ethos-u.html">Arm Ethos-U Backend Tutorial</a>.</p>
+please refer to the <a class="reference internal" href="tutorials/ethos-u-getting-started.html"><span class="std std-doc">Arm Ethos-U Backend Tutorial</span></a>.</p>
 <section id="features">
 <h2>Features<a class="headerlink" href="#features" title="Link to this heading">#</a></h2>
 <ul class="simple">
@@ -2052,7 +2064,7 @@ behave. Subclasses may override to tweak defaults for specific targets.</p>
 </section>
 <section id="runtime-integration">
 <h2>Runtime Integration<a class="headerlink" href="#runtime-integration" title="Link to this heading">#</a></h2>
-<p>An example runtime application is available in <a class="reference external" href="https://github.com/pytorch/executorch/blob/main/examples/arm/executor_runner/">examples/arm/executor_runner</a>, and the steps requried for building and deploying it on a FVP it is explained in the previously mentioned <a class="reference external" href="https://docs.pytorch.org/executorch/stable/tutorial-arm-ethos-u.html">Arm Ethos-U Backend Tutorial</a>.
+<p>An example runtime application is available in <a class="reference external" href="https://github.com/pytorch/executorch/blob/main/examples/arm/executor_runner/">examples/arm/executor_runner</a>, and the steps requried for building and deploying it on a FVP it is explained in the previously mentioned <a class="reference internal" href="tutorials/ethos-u-getting-started.html"><span class="std std-doc">Arm Ethos-U Backend Tutorial</span></a>.
 The example application is recommended to use for testing basic functionality of your lowered models, as well as a starting point for developing runtime integrations for your own targets.
 For an in-depth explanation of the architecture of the executor_runner and the steps required for doing such an integration, please refer to <a class="reference external" href="https://github.com/pytorch/executorch/blob/main/examples/arm/ethos-u-porting-guide.md">Ethos-U porting guide</a>.</p>
 <section id="example-image-classification-flow">
