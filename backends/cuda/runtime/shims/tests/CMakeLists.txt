@@ -67,3 +67,21 @@ foreach(test_name ${CUDA_SHIM_TESTS})
 
   add_test(NAME ${test_name} COMMAND ${test_name})
 endforeach()
+
+# mm_out test — cuBLAS is already linked into aoti_cuda_shims
+add_executable(test_aoti_torch_cuda_mm_out test_aoti_torch_cuda_mm_out.cpp)
+
+target_include_directories(
+  test_aoti_torch_cuda_mm_out PRIVATE ${EXECUTORCH_ROOT}/.. ${EXECUTORCH_ROOT}
+                                      ${CUDAToolkit_INCLUDE_DIRS}
+)
+
+target_compile_definitions(test_aoti_torch_cuda_mm_out PRIVATE CUDA_AVAILABLE=1)
+
+target_link_libraries(
+  test_aoti_torch_cuda_mm_out
+  PRIVATE GTest::gtest GTest::gtest_main aoti_cuda_shims executorch_core
+          CUDA::cudart
+)
+
+add_test(NAME test_aoti_torch_cuda_mm_out COMMAND test_aoti_torch_cuda_mm_out)
