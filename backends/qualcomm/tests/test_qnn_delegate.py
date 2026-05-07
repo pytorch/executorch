@@ -5865,6 +5865,31 @@ class TestQNNFloatingPointUtils(TestQNN):
                 test_data.split()
             ), "Generated .dot file does not match the golden file."
 
+    def test_qnn_backend_draw_graph_lowered(self):
+        module = DrawGraphModel()  # noqa: F405
+        sample_input = (torch.randn(1, 32, 28, 28),)
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            to_edge_transform_and_lower_to_qnn(
+                module,
+                sample_input,
+                self.compiler_specs,
+                draw_graph_path=tmp_dir,
+            )
+            dot_file = os.path.join(tmp_dir, "qnn_graph.dot")
+            svg_file = os.path.join(tmp_dir, "qnn_graph.svg")
+            self.assertTrue(
+                os.path.isfile(dot_file),
+                f"Expected .dot file not found at {dot_file}",
+            )
+            self.assertTrue(
+                os.path.isfile(svg_file),
+                f"Expected .svg file not found at {svg_file}",
+            )
+            with open(dot_file, "r") as f:
+                dot_content = f.read()
+            self.assertIn("digraph", dot_content)
+            self.assertIn("aten_convolution_default", dot_content)
+
     def test_qnn_backend_generate_optrace(self):
         if self.enable_x86_64:
             self.skipTest(
@@ -6796,6 +6821,32 @@ class TestQNNQuantizedUtils(TestQNN):
             assert sorted(golden_data.split()) == sorted(
                 test_data.split()
             ), "Generated .dot file does not match the golden file."
+
+    def test_qnn_backend_draw_graph_lowered(self):
+        module = DrawGraphModel()  # noqa: F405
+        sample_input = (torch.randn(1, 32, 28, 28),)
+        module = self.get_qdq_module(module, sample_input)
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            to_edge_transform_and_lower_to_qnn(
+                module,
+                sample_input,
+                self.compiler_specs,
+                draw_graph_path=tmp_dir,
+            )
+            dot_file = os.path.join(tmp_dir, "qnn_graph.dot")
+            svg_file = os.path.join(tmp_dir, "qnn_graph.svg")
+            self.assertTrue(
+                os.path.isfile(dot_file),
+                f"Expected .dot file not found at {dot_file}",
+            )
+            self.assertTrue(
+                os.path.isfile(svg_file),
+                f"Expected .svg file not found at {svg_file}",
+            )
+            with open(dot_file, "r") as f:
+                dot_content = f.read()
+            self.assertIn("digraph", dot_content)
+            self.assertIn("aten_convolution_default", dot_content)
 
     def test_qnn_backend_generate_optrace(self):
         if self.enable_x86_64:
