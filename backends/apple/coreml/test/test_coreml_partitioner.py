@@ -338,6 +338,54 @@ class TestCoreMLPartitioner(unittest.TestCase):
                 torch.allclose(et_outputs, eager_outputs, atol=1e-02, rtol=1e-02)
             )
 
+    def test_aten_rand_default_falls_back_to_portable(self):
+        """
+        Regression test for https://github.com/pytorch/executorch/issues/11722.
+
+        coremltools 9.0's ``aten.rand.default`` handler hits an unimplemented
+        branch (``not enough values to unpack (expected 5, got 1)``).  The
+        partitioner must reject it so the op falls back to the portable
+        backend instead of crashing the export.  Sibling ops like
+        ``aten.randn``, ``aten.rand_like``, etc. lower cleanly and are
+        intentionally still delegated.
+        """
+
+        class Model(torch.nn.Module):
+            def forward(self, x):
+                return torch.rand(x.shape) + x
+
+        model = Model().eval()
+        example_inputs = (torch.zeros(5, 5),)
+        exir_program_aten = torch.export.export(model, example_inputs, strict=True)
+        edge_program_manager = executorch.exir.to_edge_transform_and_lower(
+            exir_program_aten, partitioner=[CoreMLPartitioner()]
+        )
+        op_names = [
+            node.target.__name__
+            for node in edge_program_manager.exported_program().graph.nodes
+            if node.op == "call_function"
+        ]
+        self.assertIn("aten.rand.default", op_names)
+
+    def test_aten_randn_is_still_delegated(self):
+        """``aten.randn`` is *not* in the deny list — it lowers cleanly."""
+
+        class Model(torch.nn.Module):
+            def forward(self, x):
+                return torch.randn(x.shape) + x
+
+        ep = torch.export.export(Model().eval(), (torch.zeros(5, 5),), strict=True)
+        edge = executorch.exir.to_edge_transform_and_lower(
+            ep, partitioner=[CoreMLPartitioner()]
+        )
+        op_names = [
+            n.target.__name__
+            for n in edge.exported_program().graph.nodes
+            if n.op == "call_function"
+        ]
+        self.assertIn("executorch_call_delegate", op_names)
+        self.assertNotIn("aten.randn.default", op_names)
+
     def test_deprecation_warning_for_to_backend_workflow(self):
         """
         Test that the deprecated to_edge + to_backend workflow shows a deprecation warning.
@@ -435,5 +483,7 @@ if __name__ == "__main__":
     test_runner.test_lower_full_graph()
     # test_runner.test_symint_arg()
     test_runner.test_take_over_constant_data_false()
+    test_runner.test_aten_rand_default_falls_back_to_portable()
+    test_runner.test_aten_randn_is_still_delegated()
     test_runner.test_deprecation_warning_for_to_backend_workflow()
     test_runner.test_no_warning_for_to_edge_transform_and_lower_workflow()
