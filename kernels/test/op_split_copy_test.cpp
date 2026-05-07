@@ -564,7 +564,9 @@ TEST_F(OpSplitCopyTensorOutTest, DynamicShapeUpperBoundSameAsExpected) {
 }
 
 // DISABLED: Dynamic shape not supported
-TEST_F(OpSplitCopyTensorOutTest, DISABLED_DynamicShapeUpperBoundLargerThanExpected) {
+TEST_F(
+    OpSplitCopyTensorOutTest,
+    DISABLED_DynamicShapeUpperBoundLargerThanExpected) {
   test_dynamic_shape(
       {10, 10}, torch::executor::TensorShapeDynamism::DYNAMIC_BOUND);
 }
