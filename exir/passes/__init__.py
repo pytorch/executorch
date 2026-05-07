@@ -76,6 +76,8 @@ __all__ = [
     "ToDevicePass",
     "EdgeToBackendOpsPass",
     "MemoryFormatOpsPass",
+    "InPlaceElemWiseLikeOpsPass",
+    "ElemWiseInPlaceAwareMemoryPlanningPass",
     "MemoryPlanningPass",
     "HintBasedSymShapeEvalPass",
     "insert_write_back_for_buffers_pass",
@@ -260,6 +262,7 @@ to_out_var_skiplist: Set[Callable[[Any], Any]] = {
     # we won't see it in the input graph to the to_out_variant pass, unless
     # it's retraced after running to_out_variant with the first trace.
     memory.alloc,
+    memory.alloc_inplace,
     memory.view,
     executorch_call_delegate,
 }
@@ -442,6 +445,109 @@ class ToOutVarPass(PassBase):
         if (not self.ignore_to_out_var_failure) and len(missing_out_vars) > 0:
             raise RuntimeError(f"Missing out variants: {missing_out_vars}")
         return PassResult(graph_module, True)
+
+
+class InPlaceElemWiseLikeOpsPass(PassBase):
+    """Replace memory.alloc with memory.alloc_inplace for element-wise-like ops.
+
+    For out-variant ops that are element-wise, the output can be allocated in
+    the same memory as the input when:
+      1. output_bytes <= input_bytes
+      2. The input tensor has no other users after this op (dead after consumption)
+
+    This pass replaces the memory.alloc node for the output with
+    memory.alloc_inplace(input_node, spec), which signals to the memory planner
+    to place the output at the same offset as the input.
+
+    Eligible ops are specified via the constructor's eligible_ops parameter or a
+    default set is used set by _default_eligible_ops.
+    """
+
+    @staticmethod
+    def _default_eligible_ops() -> Set[Callable[..., Any]]:
+        return {
+            torch.ops.cortex_m.quantize_per_tensor.out,
+        }
+
+    def __init__(self, eligible_ops: Optional[Set[Callable[..., Any]]] = None) -> None:
+        self._eligible_ops = (
+            eligible_ops if eligible_ops is not None else self._default_eligible_ops()
+        )
+
+    def _is_eligible(self, target: Any) -> bool:
+        return target in self._eligible_ops
+
+    def call(self, graph_module: torch.fx.GraphModule) -> PassResult:
+        changed = False
+        for node in graph_module.graph.nodes:
+            if node.op != "call_function":
+                continue
+            if not self._is_eligible(node.target):
+                continue
+            if not memory_planning._is_out_var_node(node):
+                continue
+
+            out_arg_names = get_out_args_from_opoverload(node.target)
+            if len(out_arg_names) != 1:
+                continue
+
+            out_alloc_node = node.kwargs.get(out_arg_names[0])
+            if out_alloc_node is None or out_alloc_node.target != memory.alloc:
+                continue
+
+            out_val = out_alloc_node.meta.get("val")
+            if out_val is None or not isinstance(out_val, torch.Tensor):
+                continue
+            out_nbytes = out_val.nelement() * out_val.element_size()
+
+            input_node = None
+            for arg in node.args:
+                if not isinstance(arg, torch.fx.Node):
+                    continue
+                in_val = arg.meta.get("val")
+                if in_val is None or not isinstance(in_val, torch.Tensor):
+                    continue
+                if in_val.nelement() * in_val.element_size() < out_nbytes:
+                    continue
+                if any(u != node and u.target != memory.free for u in arg.users):
+                    continue
+                input_node = arg
+                break
+            if input_node is None:
+                continue
+
+            with graph_module.graph.inserting_before(out_alloc_node):
+                inplace_node = graph_module.graph.call_function(
+                    memory.alloc_inplace,
+                    (input_node, out_alloc_node.args[0]),
+                )
+                inplace_node.meta = out_alloc_node.meta.copy()
+
+            out_alloc_node.replace_all_uses_with(inplace_node)
+            graph_module.graph.erase_node(out_alloc_node)
+            changed = True
+
+        return PassResult(graph_module, changed)
+
+
+class ElemWiseInPlaceAwareMemoryPlanningPass(MemoryPlanningPass):
+    """MemoryPlanningPass that first runs InPlaceElemWiseLikeOpsPass."""
+
+    def __init__(
+        self,
+        eligible_ops: Optional[Set[Callable[..., Any]]] = None,
+        **kwargs: Any,
+    ) -> None:
+        super().__init__(**kwargs)
+        self._inplace_pass = InPlaceElemWiseLikeOpsPass(eligible_ops)
+
+    def run(
+        self,
+        graph_module: torch.fx.GraphModule,
+        graph_signature=None,
+    ) -> PassResult:
+        self._inplace_pass(graph_module)
+        return super().run(graph_module, graph_signature)
 
 
 def to_scratch_op_pass(graph_module: torch.fx.GraphModule) -> PassResult:

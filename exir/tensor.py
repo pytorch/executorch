@@ -216,6 +216,9 @@ class TensorSpec:
         self.mem_id = None
         self.mem_obj_id = None
         self.mem_offset = None
+        # Set by InPlaceElemWiseLikeOpsPass: the base TensorSpec whose memory
+        # this spec should share (output allocated in-place over the input).
+        self.inplace_base: Optional["TensorSpec"] = None
 
     @property
     def dtype(self) -> torch.dtype:

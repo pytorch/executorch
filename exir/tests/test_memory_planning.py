@@ -24,9 +24,10 @@ except ModuleNotFoundError:
     del logging
 
 import torch
-from executorch.exir import ExecutorchBackendConfig, to_edge
+from executorch.exir import ExecutorchBackendConfig, memory, to_edge
 from executorch.exir.capture._capture import patch_forward
 from executorch.exir.dialects._ops import ops as exir_ops
+from executorch.exir.error import InternalError
 from executorch.exir.memory_planning import (
     _do_user_inputs_exist,
     filter_nodes,
@@ -40,6 +41,7 @@ from executorch.exir.memory_planning import (
 from executorch.exir.pass_base import ExportPass, PassResult
 from executorch.exir.pass_manager import PassManager
 from executorch.exir.passes import (  # noqa
+    ElemWiseInPlaceAwareMemoryPlanningPass,
     MemoryPlanningPass,
     SpecPropPass,
     ToOutVarPass,
@@ -1259,3 +1261,135 @@ class TestMap(unittest.TestCase):
             self.assertEqual(v_cache[0].val.allocation_info.memory_id, 2)
             self.assertEqual(v_cache[0].val.allocation_info.memory_offset_low, 256)
             self.assertEqual(v_cache[0].val.allocation_info.memory_offset_high, 0)
+
+
+class TestInPlaceElemWise(unittest.TestCase):
+    def _run_inplace_pipeline(
+        self,
+        model: torch.nn.Module,
+        inputs: Tuple[torch.Tensor, ...],
+        eligible_ops: set,  # pyre-ignore[2]
+        algo: Callable[..., MemoryAlgoResult] = greedy,
+    ) -> torch.fx.GraphModule:
+        graph_module = (
+            to_edge(export(model.eval(), inputs, strict=True))
+            .exported_program()
+            .graph_module
+        )
+        mem_algo = MemoryPlanningAlgorithmSuite(algo_list=[algo])
+        return PassManager(
+            passes=[
+                SpecPropPass(),
+                ToOutVarPass(),
+                ElemWiseInPlaceAwareMemoryPlanningPass(
+                    eligible_ops=eligible_ops,
+                    memory_planning_algo=mem_algo,
+                    alignment=1,
+                ),
+            ],
+        )(graph_module).graph_module
+
+    def test_basic_inplace_sharing(self) -> None:
+        class Model(torch.nn.Module):
+            def forward(self, a: torch.Tensor, b: torch.Tensor) -> torch.Tensor:
+                c = a + b
+                d = c * b
+                return d
+
+        gm = self._run_inplace_pipeline(
+            Model(),
+            (torch.randn(10), torch.randn(10)),
+            {torch.ops.aten.mul.out},
+        )
+
+        add_spec = None
+        mul_spec = None
+        for node in gm.graph.nodes:
+            if node.op == "call_function":
+                if node.target == torch.ops.aten.add.out:
+                    add_spec = node.meta["spec"]
+                elif node.target == torch.ops.aten.mul.out:
+                    mul_spec = node.meta["spec"]
+
+        self.assertIsNotNone(add_spec)
+        self.assertIsNotNone(mul_spec)
+        self.assertEqual(add_spec.mem_offset, mul_spec.mem_offset)
+        self.assertEqual(add_spec.mem_id, mul_spec.mem_id)
+
+    def test_verifier_allows_inplace_overlap(self) -> None:
+        class Model(torch.nn.Module):
+            def forward(self, a: torch.Tensor, b: torch.Tensor) -> torch.Tensor:
+                c = a + b
+                d = c * b
+                return d
+
+        gm = self._run_inplace_pipeline(
+            Model(),
+            (torch.randn(10), torch.randn(10)),
+            {torch.ops.aten.mul.out},
+        )
+
+        verifier = Verifier(
+            gm,
+            alloc_graph_input=True,
+            alloc_graph_output=True,
+            alloc_mutable_buffers=True,
+        )
+        verifier.verify_storage_reuse()
+
+    def test_multi_user_blocks_inplace(self) -> None:
+        class Model(torch.nn.Module):
+            def forward(self, a: torch.Tensor, b: torch.Tensor) -> torch.Tensor:
+                c = a + b
+                d = c * b
+                e = c + d
+                return e
+
+        gm = self._run_inplace_pipeline(
+            Model(),
+            (torch.randn(10), torch.randn(10)),
+            {torch.ops.aten.mul.out},
+        )
+
+        has_alloc_inplace = any(
+            node.target == memory.alloc_inplace
+            for node in gm.graph.nodes
+            if node.op == "call_function"
+        )
+        self.assertFalse(has_alloc_inplace)
+
+    def test_naive_rejects_inplace(self) -> None:
+        class Model(torch.nn.Module):
+            def forward(self, a: torch.Tensor, b: torch.Tensor) -> torch.Tensor:
+                c = a + b
+                d = c * b
+                return d
+
+        with self.assertRaises(Exception) as ctx:
+            self._run_inplace_pipeline(
+                Model(),
+                (torch.randn(10), torch.randn(10)),
+                {torch.ops.aten.mul.out},
+                algo=naive,
+            )
+        self.assertIsInstance(ctx.exception.__cause__, InternalError)
+
+    def test_no_inplace_when_ops_not_eligible(self) -> None:
+        class Model(torch.nn.Module):
+            def forward(self, a: torch.Tensor, b: torch.Tensor) -> torch.Tensor:
+                c = a + b
+                d = c * b
+                return d
+
+        gm = self._run_inplace_pipeline(
+            Model(),
+            (torch.randn(10), torch.randn(10)),
+            set(),
+        )
+
+        has_alloc_inplace = any(
+            node.target == memory.alloc_inplace
+            for node in gm.graph.nodes
+            if node.op == "call_function"
+        )
+        self.assertFalse(has_alloc_inplace)

@@ -1755,6 +1755,10 @@ class _Emitter(torch.fx.Interpreter):
             assert len(args) == 1
             return self._emit_spec(self.node.meta["spec"])
 
+        elif target == memory.alloc_inplace:
+            assert len(args) == 2
+            return self._emit_spec(self.node.meta["spec"])
+
         elif target == memory.view:
             return self._emit_view(args)
 
