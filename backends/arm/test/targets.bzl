@@ -84,11 +84,12 @@ def define_arm_tests():
                 "EMULATION_LAYER_TENSOR_JSON": "$(location fbsource//third-party/arm-ml-emulation-layer/v0.9.0/src:VkLayer_Tensor_json)",
                 "EMULATION_LAYER_GRAPH_JSON": "$(location fbsource//third-party/arm-ml-emulation-layer/v0.9.0/src:VkLayer_Graph_json)",
             } if _ENABLE_VGF else {}),
-            preload_deps = [] if runtime.is_oss or not _ENABLE_VGF else [
+            preload_deps = [
                 "//executorch/kernels/quantized:custom_ops_generated_lib",
+            ] + ([] if runtime.is_oss or not _ENABLE_VGF else [
                 "fbsource//third-party/khronos:vulkan",
                 "//executorch/backends/arm/runtime:vgf_backend",
-            ],
+            ]),
             deps = [
                 "//executorch/backends/arm/test:arm_tester" if runtime.is_oss else "//executorch/backends/arm/test/tester/fb:arm_tester_fb",
                 "//executorch/backends/arm/test:conftest",
