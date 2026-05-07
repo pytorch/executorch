@@ -209,8 +209,8 @@ TEST_F(OpCloneTest, DynamicShapeUpperBoundLargerThanExpected) {
   EXPECT_TENSOR_CLOSE(out, expected_result);
 }
 
-TEST_F(OpCloneTest, DynamicShapeUnbound) {
-  GTEST_SKIP() << "Dynamic shape unbound not supported";
+// DISABLED: Dynamic shape unbound not supported
+TEST_F(OpCloneTest, DISABLED_DynamicShapeUnbound) {
   TensorFactory<ScalarType::Float> tf;
 
   Tensor x = tf.make(

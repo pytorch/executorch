@@ -200,8 +200,8 @@ TEST_F(OpGluOutTest, AllNonFloatOutputDTypeDies) {
 #undef TEST_ENTRY
 }
 
-TEST_F(OpGluOutTest, DynamicShapeUpperBoundSameAsExpected) {
-  GTEST_SKIP() << "Dynamic shape not supported";
+// DISABLED: Dynamic shape not supported
+TEST_F(OpGluOutTest, DISABLED_DynamicShapeUpperBoundSameAsExpected) {
   TensorFactory<ScalarType::Float> tf;
 
   Tensor x = tf.make(
@@ -253,8 +253,8 @@ TEST_F(OpGluOutTest, DynamicShapeUpperBoundLargerThanExpected) {
   EXPECT_TENSOR_CLOSE(out, expected_result);
 }
 
-TEST_F(OpGluOutTest, DynamicShapeUnbound) {
-  GTEST_SKIP() << "Dynamic shape unbound not supported";
+// DISABLED: Dynamic shape unbound not supported
+TEST_F(OpGluOutTest, DISABLED_DynamicShapeUnbound) {
   TensorFactory<ScalarType::Float> tf;
 
   Tensor x = tf.make(

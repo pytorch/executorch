@@ -421,8 +421,8 @@ TEST_F(OpLogSoftmaxOutTest, DynamicShapeUpperBoundLargerThanExpected) {
   EXPECT_TENSOR_CLOSE(out, expected_result);
 }
 
-TEST_F(OpLogSoftmaxOutTest, DynamicShapeUnbound) {
-  GTEST_SKIP() << "Dynamic shape not supported";
+// DISABLED: Dynamic shape not supported
+TEST_F(OpLogSoftmaxOutTest, DISABLED_DynamicShapeUnbound) {
   TensorFactory<ScalarType::Float> tf;
 
   Tensor x = tf.make(
