@@ -456,10 +456,13 @@ class _Emitter(torch.fx.Interpreter):
                 ctypes.c_char * typing.cast(torch.UntypedStorage, spec.storage).nbytes()
             )
 
+            storage = typing.cast(torch.UntypedStorage, spec.storage)
+            if spec.allocated_memory != 0 and storage.device.type != "cpu":
+                storage = storage.cpu()
             buffer_data = (
                 bytes(
                     ctypes.cast(
-                        typing.cast(torch.UntypedStorage, spec.storage).data_ptr(),
+                        storage.data_ptr(),
                         ctypes.POINTER(spec_array_type),
                     ).contents
                 )
