@@ -109,11 +109,56 @@ bool tensor_is_channels_last_dim_order(torch::executor::Tensor t) {
   return ret_val;
 }
 
-bool tensors_have_same_dim_order(
-    const executorch::aten::ArrayRef<executorch::aten::Tensor> tensor_list) {
-  if (tensor_list.size() < 2) {
+namespace {
+
+// Helper: check if two tensors have semantically equivalent memory layouts.
+// First tries exact dim_order label match; if labels differ, falls back to
+// stride comparison that ignores size-1 dimensions (PyTorch semantics).
+// In ExecuTorch, strides are derived from dim_order + sizes at tensor
+// construction (TensorImpl), so this comparison is equivalent to comparing
+// the actual memory layout.
+bool two_tensors_same_dim_order(
+    const executorch::aten::Tensor& a,
+    const executorch::aten::Tensor& b) {
+  if (a.dim() != b.dim()) {
+    return false;
+  }
+  const int ndim = static_cast<int>(a.dim());
+
+  // Fast path: check if dim_order labels match exactly
+  bool labels_match = true;
+  for (int i = 0; i < ndim; ++i) {
+    if (a.dim_order()[i] != b.dim_order()[i]) {
+      labels_match = false;
+      break;
+    }
+  }
+  if (labels_match) {
     return true;
   }
+
+  // Semantic equivalence: compare strides, ignoring size-1 dimensions.
+  // Two tensors are equivalent if their strides match for all dimensions
+  // where both tensors have size > 1. Size-1 dims don't affect memory
+  // traversal order (PyTorch's is_contiguous uses this logic).
+  for (int i = 0; i < ndim; ++i) {
+    // Skip dimensions where both tensors have size 1
+    if (a.sizes()[i] == 1 && b.sizes()[i] == 1) {
+      continue;
+    }
+    // For non-trivial dimensions, strides must match
+    if (a.strides()[i] != b.strides()[i]) {
+      return false;
+    }
+  }
+  return true;
+}
+
+// Tier A: every tensor is contiguous-order or every tensor is channels-last
+// (original portable contract). Handles mixed rank, broadcast shapes, and
+// reduced aux outputs (e.g. batch norm mean tensors).
+bool tensors_share_legacy_format_family(
+    const executorch::aten::ArrayRef<executorch::aten::Tensor> tensor_list) {
   bool all_contiguous = true;
   bool all_channels_last = true;
   for (const auto i : c10::irange(tensor_list.size())) {
@@ -126,12 +171,53 @@ bool tensors_have_same_dim_order(
                             tensor_list[i].dim_order().data(),
                             tensor_list[i].dim_order().size());
   }
+  return all_contiguous || all_channels_last;
+}
 
-  ET_CHECK_OR_RETURN_FALSE(
-      all_contiguous || all_channels_last,
-      "%zd input tensors have different dim orders",
-      tensor_list.size());
+} // namespace
 
+bool tensors_have_same_dim_order(
+    const executorch::aten::ArrayRef<executorch::aten::Tensor> tensor_list) {
+  if (tensor_list.size() < 2) {
+    return true;
+  }
+
+  if (tensors_share_legacy_format_family(tensor_list)) {
+    return true;
+  }
+
+  const executorch::aten::Tensor& ref = tensor_list[0];
+  const bool ref_contiguous =
+      is_contiguous_dim_order(ref.dim_order().data(), ref.dim_order().size());
+  const bool ref_channels_last = is_channels_last_dim_order(
+      ref.dim_order().data(), ref.dim_order().size());
+
+  for (size_t i = 1; i < tensor_list.size(); ++i) {
+    const executorch::aten::Tensor& t = tensor_list[i];
+    if (t.dim() == ref.dim()) {
+      if (!two_tensors_same_dim_order(ref, t)) {
+        ET_LOG(
+            Error,
+            "%zd input tensors have different dim orders",
+            tensor_list.size());
+        return false;
+      }
+    } else {
+      const bool t_contiguous =
+          is_contiguous_dim_order(t.dim_order().data(), t.dim_order().size());
+      const bool t_channels_last = is_channels_last_dim_order(
+          t.dim_order().data(), t.dim_order().size());
+      const bool ok = (ref_contiguous && t_contiguous) ||
+          (ref_channels_last && t_channels_last);
+      if (!ok) {
+        ET_LOG(
+            Error,
+            "%zd input tensors have different dim orders",
+            tensor_list.size());
+        return false;
+      }
+    }
+  }
   return true;
 }
 
