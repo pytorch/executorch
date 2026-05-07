@@ -2344,6 +2344,17 @@ class TestQNNFloatingPointModel(TestQNN):
         )
         self.lower_module_and_test_output(module, sample_input)
 
+    def test_qnn_backend_full_layout_transformed(self):
+        full_shape = (1, 16, 4, 6)
+        module = ConvFull(0.5, full_shape)  # noqa: F405
+        sample_input = (torch.randn(1, 8, 4, 6),)
+        self.lower_module_and_test_output(module, sample_input)
+
+    def test_qnn_backend_full_like_layout_transformed(self):
+        module = ConvFullLike(0.5)  # noqa: F405
+        sample_input = (torch.randn(1, 8, 4, 6),)
+        self.lower_module_and_test_output(module, sample_input)
+
     # TODO: Create a new UT class for passes specific checks
     def test_qnn_backend_lift_add_tensor(self):
         module = LiftAddTensor()  # noqa: F405
@@ -5092,6 +5103,19 @@ class TestQNNQuantizedModel(TestQNN):
             x,
             y,
         )
+        module = self.get_qdq_module(module, sample_input)
+        self.lower_module_and_test_output(module, sample_input)
+
+    def test_qnn_backend_full_layout_transformed(self):
+        full_shape = (1, 16, 4, 6)
+        module = ConvFull(0.5, full_shape)  # noqa: F405
+        sample_input = (torch.randn(1, 8, 4, 6),)
+        module = self.get_qdq_module(module, sample_input)
+        self.lower_module_and_test_output(module, sample_input)
+
+    def test_qnn_backend_full_like_layout_transformed(self):
+        module = ConvFullLike(0.5)  # noqa: F405
+        sample_input = (torch.randn(1, 8, 4, 6),)
         module = self.get_qdq_module(module, sample_input)
         self.lower_module_and_test_output(module, sample_input)
 
