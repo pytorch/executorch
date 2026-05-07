@@ -111,7 +111,7 @@ set(_aoti_cuda_shim_sources runtime/shims/memory.cpp
 if(CMAKE_CUDA_COMPILER)
   list(APPEND _aoti_cuda_shim_sources runtime/shims/int4mm.cu
        runtime/shims/int4_plain_mm.cu runtime/shims/sort.cu
-       runtime/shims/rand.cu
+       runtime/shims/rand.cu runtime/shims/mm.cu
   )
 endif()
 
@@ -154,7 +154,7 @@ endif()
 if(_cuda_is_msvc_toolchain)
   target_link_libraries(
     aoti_cuda_shims PRIVATE cuda_platform CUDA::cudart CUDA::curand
-                            ${CMAKE_DL_LIBS}
+                            CUDA::cublas ${CMAKE_DL_LIBS}
   )
   # Link object library directly so symbols are pulled exactly once while
   # avoiding duplicate static/object inclusion and interface leakage.
@@ -163,8 +163,13 @@ else()
   target_link_libraries(
     aoti_cuda_shims
     PRIVATE cuda_platform
-    PUBLIC -Wl,--whole-archive aoti_common_shims_slim -Wl,--no-whole-archive
-           CUDA::cudart CUDA::curand ${CMAKE_DL_LIBS}
+    PUBLIC -Wl,--whole-archive
+           aoti_common_shims_slim
+           -Wl,--no-whole-archive
+           CUDA::cudart
+           CUDA::curand
+           CUDA::cublas
+           ${CMAKE_DL_LIBS}
   )
 endif()
 
