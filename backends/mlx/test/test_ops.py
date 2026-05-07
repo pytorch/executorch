@@ -855,6 +855,59 @@ class RepeatTest(OpTestCase):
         return (x,)
 
 
+class RollModel(nn.Module):
+    """Model that rolls a tensor along specified dimensions."""
+
+    def __init__(self, shifts: Tuple[int, ...], dims: Tuple[int, ...]):
+        super().__init__()
+        self.shifts = shifts
+        self.dims = dims
+
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        return torch.roll(x, shifts=self.shifts, dims=self.dims)
+
+
+@register_test
+class RollTest(OpTestCase):
+    """Test case for torch.roll()."""
+
+    name = "roll"
+    rtol = 1e-5
+    atol = 1e-5
+
+    def __init__(
+        self,
+        input_shape: Tuple[int, ...] = (4, 5),
+        shifts: Tuple[int, ...] = (1,),
+        dims: Tuple[int, ...] = (0,),
+    ):
+        self.input_shape = input_shape
+        self.shifts = shifts
+        self.dims = dims
+        shift_str = ",".join(str(s) for s in shifts)
+        dim_str = ",".join(str(d) for d in dims)
+        self.name = f"roll_shift({shift_str})_dim({dim_str})"
+
+    @classmethod
+    def get_test_configs(cls) -> List["RollTest"]:
+        return [
+            cls(input_shape=(8,), shifts=(2,), dims=(0,)),
+            cls(input_shape=(4, 5), shifts=(1,), dims=(0,)),
+            cls(input_shape=(4, 5), shifts=(-2,), dims=(1,)),
+            cls(input_shape=(3, 4, 5), shifts=(3,), dims=(2,)),
+            cls(input_shape=(3, 4, 5), shifts=(1, 2), dims=(0, 2)),
+            cls(input_shape=(3, 4, 5), shifts=(-1, -2, -3), dims=(0, 1, 2)),
+            cls(input_shape=(3, 4, 5), shifts=(2,), dims=(-1,)),
+        ]
+
+    def create_model(self) -> nn.Module:
+        return RollModel(self.shifts, self.dims)
+
+    def create_inputs(self) -> Tuple[torch.Tensor, ...]:
+        x = torch.randn(self.input_shape)
+        return (x,)
+
+
 class CatNModel(nn.Module):
     """Model that concatenates N tensors along a dimension."""
 
@@ -1757,7 +1810,7 @@ class KVCacheModel(nn.Module):
     """
     Test model wrapping KVCache from cache.py.
 
-    This tests the ExecutorTorch llama KVCache-compatible interface that uses
+    This tests the ExecuTorch llama KVCache-compatible interface that uses
     the mlx::kv_cache_update op internally.
     """
 
@@ -1792,7 +1845,7 @@ class KVCacheModel(nn.Module):
 @register_test
 class KVCacheTest(OpTestCase):
     """
-    Test case for MLX KVCache with ExecutorTorch llama KVCache interface.
+    Test case for MLX KVCache with ExecuTorch llama KVCache interface.
 
     This verifies that KVCache:
     1. Accepts the ET llama KVCache update interface

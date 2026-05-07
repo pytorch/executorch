@@ -23,7 +23,7 @@ from executorch.backends.mlx import custom_ops as _mlx_custom_ops  # noqa: F401
 
 class KVCache(nn.Module):
     """
-    MLX-optimized KV cache with ExecutorTorch llama KVCache interface.
+    MLX-optimized KV cache with ExecuTorch llama KVCache interface.
 
     This class follows the same interface as examples/models/llama/attention.py KVCache,
     making it a drop-in replacement, but uses the mlx::kv_cache_update op internally
