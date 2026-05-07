@@ -12,6 +12,7 @@ import unittest
 from typing import List, Optional, Tuple
 
 import torch
+from parameterized import parameterized
 from executorch.backends.xnnpack.recipes.xnnpack_recipe_provider import (
     XNNPACKRecipeProvider,
 )
@@ -42,6 +43,9 @@ class TestXnnpackRecipes(unittest.TestCase):
 
     def tearDown(self) -> None:
         super().tearDown()
+        # Clean up dog.jpg file if it exists (created by some model tests)
+        if os.path.exists("dog.jpg"):
+            os.remove("dog.jpg")
 
     def check_fully_delegated(self, program: Program) -> None:
         instructions = program.execution_plan[0].chains[0].instructions
@@ -260,9 +264,8 @@ class TestXnnpackRecipes(unittest.TestCase):
                 error > sqnr_threshold, f"Model '{model_name}' SQNR check failed"
             )
 
-    def test_all_models_with_recipes(self) -> None:
-        models_to_test = [
-            # Tuple format: (model_name, error tolerance, minimum sqnr)
+    @parameterized.expand(
+        [
             ("linear", 1e-3, 20),
             ("add", 1e-3, 20),
             ("add_mul", 1e-3, 20),
@@ -276,15 +279,15 @@ class TestXnnpackRecipes(unittest.TestCase):
             ("vit", 1e-1, 10),
             ("w2l", 1e-3, 20),
         ]
-        try:
-            for model_name, tolerance, sqnr in models_to_test:
-                with self.subTest(model=model_name):
-                    with torch.no_grad():
-                        self._test_model_with_factory(model_name, tolerance, sqnr)
-        finally:
-            # Clean up dog.jpg file if it exists
-            if os.path.exists("dog.jpg"):
-                os.remove("dog.jpg")
+    )
+    def test_model(
+        self,
+        model_name: str,
+        tolerance: Optional[float],
+        sqnr_threshold: Optional[float],
+    ) -> None:
+        with torch.no_grad():
+            self._test_model_with_factory(model_name, tolerance, sqnr_threshold)
 
     def test_validate_recipe_kwargs_int4_tensor_with_valid_group_size(
         self,
