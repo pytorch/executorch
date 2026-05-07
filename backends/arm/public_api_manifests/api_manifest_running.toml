@@ -22,7 +22,7 @@ signature = "EthosUCompileSpec(target: str, system_config: str | None = None, me
 
 [python.EthosUCompileSpec.DebugMode]
 kind = "enum"
-signature = "EthosUCompileSpec.DebugMode(value, names=None, *, module=None, qualname=None, type=None, start=1)"
+signature = "EthosUCompileSpec.DebugMode(*values)"
 
 [python.EthosUCompileSpec.__eq__]
 kind = "function"
@@ -106,7 +106,7 @@ signature = "VgfCompileSpec(tosa_spec: executorch.backends.arm.tosa.specificatio
 
 [python.VgfCompileSpec.DebugMode]
 kind = "enum"
-signature = "VgfCompileSpec.DebugMode(value, names=None, *, module=None, qualname=None, type=None, start=1)"
+signature = "VgfCompileSpec.DebugMode(*values)"
 
 [python.VgfCompileSpec.__eq__]
 kind = "function"
