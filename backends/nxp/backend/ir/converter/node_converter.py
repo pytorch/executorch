@@ -16,6 +16,7 @@ from executorch.backends.nxp.backend.edge_helper import (
     input_quantization_type,
     output_quantization_type,
 )
+from executorch.backends.nxp.backend.ir import logger as logger
 from executorch.backends.nxp.backend.ir.conversion_context import ConversionContext
 from executorch.backends.nxp.backend.ir.converter.builder.aten_model_builder_director import (
     AtenModelBuilderDirector,
@@ -376,4 +377,68 @@ class NodeConverter(ABC):
             node, supported_types, input_indices
         ) and NodeConverter.uses_quantization_type_for_outputs(
             node, supported_types, output_indices
+        )
+
+    @staticmethod
+    def uses_shape_broadcasting(node: Node) -> bool:
+        """Determine if given PyTorch fx Node uses shape broadcasting for it's input nodes or not.
+
+        :param node: PyTorch fx Node with 'all_input_nodes' initialized.
+        :return: True, if the node uses shape broadcasting for it's input nodes.
+                 False otherwise.
+        """
+
+        if node.all_input_nodes is None:
+            logger.e(
+                logger.Code.INTERNAL_ERROR,
+                "node_converter.uses_shape_broadcasting(): 'all_input_nodes' are None!",
+            )
+
+        if len(node.all_input_nodes) == 0:
+            logger.e(
+                logger.Code.INTERNAL_ERROR,
+                "node_converter.uses_shape_broadcasting(): Operator has no inputs!",
+            )
+
+        first_input_shape = node.all_input_nodes[0].meta["val"].shape
+
+        return any(
+            input_tensor.meta["val"].shape != first_input_shape
+            for input_tensor in node.all_input_nodes[1:]
+        )
+
+    @staticmethod
+    def at_least_one_input_shape_matches_the_output_shape(node: Node) -> bool:
+        """Determine if given PyTorch fx Node uses at least one input shape broadcasting for it's input nodes or not.
+
+        :param node: PyTorch fx Node with 'all_input_nodes' initialized.
+        :return: True, if at least one input has the same shape as the output node.
+                 False otherwise.
+        """
+
+        if node.all_input_nodes is None:
+            logger.e(
+                logger.Code.INTERNAL_ERROR,
+                "node_converter.at_least_one_input_shape_matches_the_output_shape(): 'all_input_nodes' are None!",
+            )
+
+        if len(node.all_input_nodes) == 0:
+            logger.e(
+                logger.Code.INTERNAL_ERROR,
+                "node_converter.at_least_one_input_shape_matches_the_output_shape(): Operator has no inputs!",
+            )
+
+        output_shape = node.meta["val"].shape
+
+        return any(
+            input_tensor.meta["val"].shape == output_shape
+            for input_tensor in node.all_input_nodes
+        )
+
+    @staticmethod
+    def _node_inputs_ranks_not_equal(node) -> bool:
+        first_input_shape = node.all_input_nodes[0].meta["val"].shape
+        return not all(
+            len(input_node.meta["val"].shape) == len(first_input_shape)
+            for input_node in node.all_input_nodes[1:]
         )
