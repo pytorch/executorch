@@ -53,7 +53,7 @@ dedupe_macos_loader_path_rpaths() {
   pushd ..
   torch_lib_dir=$(python -c "import importlib.util; print(importlib.util.find_spec('torch').submodule_search_locations[0])")/lib
   popd
-  
+
   if [[ -z "${torch_lib_dir}" || ! -d "${torch_lib_dir}" ]]; then
     return
   fi
@@ -89,30 +89,6 @@ install_domains() {
 }
 
 install_pytorch_and_domains() {
-  # CWD is the executorch repo root, where torch_pin.py lives.
-  TORCH_CHANNEL=$(python -c "from torch_pin import CHANNEL; print(CHANNEL)")
-
-  if [ "${TORCH_CHANNEL}" != "nightly" ]; then
-    # Test/release: install the published wheels directly from torch_pin.py's
-    # channel index, skipping the source-build path entirely. RC wheels at
-    # /whl/test/ get re-uploaded under the same version, so use --no-cache-dir
-    # there to avoid stale cache hits.
-    local torch_spec=$(python -c "from torch_pin import torch_spec; print(torch_spec())")
-    local torchvision_spec=$(python -c "from torch_pin import torchvision_spec; print(torchvision_spec())")
-    local torchaudio_spec=$(python -c "from torch_pin import torchaudio_spec; print(torchaudio_spec())")
-    local torch_index_url=$(python -c "from torch_pin import torch_index_url_base; print(torch_index_url_base())")
-    local cache_flag=""
-    if [ "${TORCH_CHANNEL}" = "test" ]; then
-      cache_flag="--no-cache-dir"
-    fi
-    pip install --force-reinstall ${cache_flag} \
-      "${torch_spec}" "${torchvision_spec}" "${torchaudio_spec}" \
-      --index-url "${torch_index_url}/cpu"
-    return
-  fi
-
-  # Nightly: source-build pytorch from the pinned SHA so CI catches upstream
-  # regressions; pytorch's own audio/vision pins drive those installs.
   pushd .ci/docker || return
   TORCH_VERSION=$(cat ci_commit_pins/pytorch.txt)
   popd || return
@@ -164,10 +140,10 @@ install_pytorch_and_domains() {
   fi
 
   dedupe_macos_loader_path_rpaths
-  # We're on the nightly path here; defer to PyTorch's own pinned commits.
-  TORCHAUDIO_VERSION=$(cat .github/ci_commit_pins/audio.txt)
+  # Grab the pinned audio and vision commits from PyTorch
+  TORCHAUDIO_VERSION=release/2.11
   export TORCHAUDIO_VERSION
-  TORCHVISION_VERSION=$(cat .github/ci_commit_pins/vision.txt)
+  TORCHVISION_VERSION=release/0.26
   export TORCHVISION_VERSION
 
   install_domains
@@ -242,21 +218,17 @@ download_stories_model_artifacts() {
 }
 
 do_not_use_nightly_on_ci() {
-  # Sanity check that prevents accidentally landing a PR that pins to PyTorch
-  # nightly without exercising the source-build path (see #6564).
-  #
-  # For CHANNEL=nightly, CI source-builds pytorch from the SHA in pytorch.txt,
-  # so the installed torch shows up as e.g. 2.13.0a0+gitc8a648d — assert that.
-  # For CHANNEL=test/release, we install published wheels by design (e.g.
-  # 2.11.0), so the +git assertion doesn't apply.
-  TORCH_CHANNEL=$(python -c "from torch_pin import CHANNEL; print(CHANNEL)")
-  if [ "${TORCH_CHANNEL}" != "nightly" ]; then
-    return 0
-  fi
-
+  # An assert to make sure that we are not using PyTorch nightly on CI to prevent
+  # regression as documented in https://github.com/pytorch/executorch/pull/6564
   TORCH_VERSION=$(pip list | grep -w 'torch ' | awk -F ' ' {'print $2'} | tr -d '\n')
+
+  # The version of PyTorch building from source looks like 2.6.0a0+gitc8a648d that
+  # includes the commit while nightly (2.6.0.dev20241019+cpu) or release (2.6.0)
+  # won't have that. Note that we couldn't check for the exact commit from the pin
+  # ci_commit_pins/pytorch.txt here because the value will be different when running
+  # this on PyTorch CI
   if [[ "${TORCH_VERSION}" != *"+git"* ]]; then
-    echo "Unexpected torch version. Expected binary built from source for CHANNEL=nightly, got ${TORCH_VERSION}"
+    echo "Unexpected torch version. Expected binary built from source, got ${TORCH_VERSION}"
     exit 1
   fi
 }

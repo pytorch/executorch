@@ -26,6 +26,12 @@
 #include <executorch/runtime/core/exec_aten/util/dim_order_util.h>
 #include <executorch/runtime/core/exec_aten/util/scalar_type_util.h>
 
+// Overridable memcpy used by the EthosU backend for input/output scratch
+// shuffling. Default (weak) implementation in EthosUBackend_IoMemcpy.cpp does
+// std::memcpy. Firmware targets can supply a strong override (e.g. routing
+// through a DMA engine) to reduce CPU memcpy load on the host MCU.
+extern "C" void arm_ethos_io_memcpy(void* dst, const void* src, size_t size);
+
 using namespace std;
 
 using executorch::aten::ScalarType;
@@ -237,8 +243,9 @@ class EthosUBackend final : public ::executorch::runtime::BackendInterface {
       if (both_char || both_int || both_short || both_bool) {
         EXECUTORCH_PROF_SCOPE(
             event_tracer, "+EthosUBackend::execute()handles.input.memcpy()");
-        // Sizes match and elt size matches so memcpy
-        memcpy(
+        // Sizes match and elt size matches so memcpy.
+        // Routed through arm_ethos_io_memcpy so firmware can DMA-accelerate.
+        arm_ethos_io_memcpy(
             scratch_addr,
             tensor_in.mutable_data_ptr<char>(),
             tensor_in.nbytes());
@@ -389,7 +396,8 @@ Error copy_with_layout_adjustment(
   }
   const char* src_bytes = src;
   for (size_t chunk_idx = 0; chunk_idx < chunk_count; ++chunk_idx) {
-    memcpy(dest, src_bytes, chunk_size);
+    // Routed through arm_ethos_io_memcpy so firmware can DMA-accelerate.
+    arm_ethos_io_memcpy(dest, src_bytes, chunk_size);
     src_bytes += vela_chunk_size;
     dest += chunk_size;
   }

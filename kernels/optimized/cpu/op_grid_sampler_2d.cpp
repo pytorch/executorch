@@ -338,10 +338,11 @@ Tensor& opt_grid_sampler_2d_out(
   // The NEON paths index input/grid/out directly assuming a contiguous NCHW
   // default-dim-order layout — no use of .strides() or .dim_order(). Fall
   // back to portable for anything else.
-  const bool fast_eligible = tensor_is_default_dim_order(input) &&
-      tensor_is_default_dim_order(grid) && tensor_is_default_dim_order(out) &&
-      tensor_is_contiguous(input) && tensor_is_contiguous(grid) &&
-      tensor_is_contiguous(out);
+  const bool fast_eligible = input.dim() == 4 && grid.dim() == 4 &&
+      grid.size(3) == 2 && input.size(0) == grid.size(0) &&
+      tensor_is_default_dim_order(input) && tensor_is_default_dim_order(grid) &&
+      tensor_is_default_dim_order(out) && tensor_is_contiguous(input) &&
+      tensor_is_contiguous(grid) && tensor_is_contiguous(out);
 
   // The fast paths read input/grid and write out as a single dtype: float for
   // the fp32 NEON path, fp16 for both the fp16 HW path (which raw-casts the
