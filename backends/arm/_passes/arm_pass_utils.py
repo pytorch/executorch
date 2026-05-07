@@ -307,8 +307,8 @@ def get_node_arg(args: list | dict, key: int | str | type, default_value=None):
     """Help-function for getting a value from node.args/ kwargs, three cases:
 
     1. By position in node.args - Returns arg at given position or default_value if index is one out of bounds
-    2. By key in node.kwargs - Returns kwarg with given key or default_value if it deos not exist
-    3. By type in node.args - Returns first arg of args of given type. Useful for cases where arg postions may differ but types are unique.
+    2. By key in node.kwargs - Returns kwarg with given key or default_value if it does not exist
+    3. By type in node.args - Returns first arg of args of given type. Useful for cases where arg positions may differ but types are unique.
 
     """
     if isinstance(key, int):
