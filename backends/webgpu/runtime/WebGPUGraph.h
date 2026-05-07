@@ -32,6 +32,9 @@ struct WebGPUDispatch {
 
 struct WebGPUMemoryStats {
   size_t tensor_buffer_bytes = 0;
+  size_t shared_buffer_bytes = 0;
+  int num_shared_objects = 0;
+  size_t unshared_tensor_buffer_bytes = 0;
   size_t staging_buffer_bytes = 0;
   size_t uniform_buffer_bytes = 0;
   int num_tensors = 0;
@@ -133,6 +136,11 @@ class WebGPUGraph {
 
   std::vector<int> input_ids_;
   std::vector<int> output_ids_;
+
+  // Memory aliasing: tensors with the same mem_obj_id share a WGPUBuffer.
+  std::vector<int> tensor_mem_obj_ids_;
+  std::vector<WGPUBuffer> shared_buffers_;
+  std::vector<size_t> shared_buffer_sizes_;
 
   // Staging buffers for reading back outputs (MapRead | CopyDst).
   std::vector<WGPUBuffer> output_staging_buffers_;

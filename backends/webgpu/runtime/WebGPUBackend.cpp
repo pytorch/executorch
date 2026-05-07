@@ -38,6 +38,13 @@ using executorch::runtime::register_backend;
 using executorch::runtime::Result;
 using executorch::runtime::Span;
 
+// Test-only global; overwritten on each init() call.
+static WebGPUMemoryStats s_last_memory_stats_for_testing;
+
+WebGPUMemoryStats get_last_memory_stats() {
+  return s_last_memory_stats_for_testing;
+}
+
 bool WebGPUBackend::is_available() const {
   return true;
 }
@@ -82,6 +89,8 @@ Result<DelegateHandle*> WebGPUBackend::init(
     graph->~WebGPUGraph();
     return Error::DelegateInvalidCompatibility;
   }
+
+  s_last_memory_stats_for_testing = graph->memory_stats();
 
   processed->Free();
 

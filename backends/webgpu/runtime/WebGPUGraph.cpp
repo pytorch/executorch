@@ -14,6 +14,8 @@
 #include <executorch/backends/webgpu/runtime/WebGPUDevice.h>
 #include <webgpu/wgpu.h>
 
+#include <executorch/runtime/platform/assert.h>
+
 #include <cstring>
 #include <stdexcept>
 
@@ -50,9 +52,15 @@ size_t vk_datatype_size(vkgraph::VkDataType dtype) {
 WebGPUGraph::WebGPUGraph() = default;
 
 WebGPUGraph::~WebGPUGraph() {
-  for (auto& t : tensors_) {
-    if (t.buffer) {
-      wgpuBufferRelease(t.buffer);
+  for (size_t i = 0; i < tensors_.size(); i++) {
+    if (tensors_[i].buffer &&
+        (i >= tensor_mem_obj_ids_.size() || tensor_mem_obj_ids_[i] < 0)) {
+      wgpuBufferRelease(tensors_[i].buffer);
+    }
+  }
+  for (auto& buf : shared_buffers_) {
+    if (buf) {
+      wgpuBufferRelease(buf);
     }
   }
   for (auto& buf : output_staging_buffers_) {
@@ -94,6 +102,7 @@ void WebGPUGraph::build(
   const int num_vals = values ? values->size() : 0;
   value_types_.resize(num_vals, ValueType::Null);
   tensors_.resize(num_vals);
+  tensor_mem_obj_ids_.resize(num_vals, -1);
   ints_.resize(num_vals, 0);
   doubles_.resize(num_vals, 0.0);
   bools_.resize(num_vals, false);
@@ -121,27 +130,41 @@ void WebGPUGraph::build(
         }
         tensor.nbytes = numel * vk_datatype_size(vk_tensor->datatype());
 
-        // Create GPU buffer
-        WGPUBufferDescriptor buf_desc = {};
-        buf_desc.size = tensor.nbytes > 0 ? tensor.nbytes : 4;
-        buf_desc.usage = WGPUBufferUsage_Storage | WGPUBufferUsage_CopyDst |
-            WGPUBufferUsage_CopySrc;
-        buf_desc.mappedAtCreation = false;
-        tensor.buffer = wgpuDeviceCreateBuffer(device_, &buf_desc);
-
-        // Upload constant data if this tensor has a constant_id
         int constant_id = vk_tensor->constant_id();
-        if (constant_id >= 0 && constant_data) {
-          const auto* constants = graph->constants();
-          if (constants && constant_id < static_cast<int>(constants->size())) {
-            const auto* vk_bytes = constants->Get(constant_id);
-            // Only upload from embedded bytes (not named data map)
-            if (vk_bytes->offset() != UINT64_MAX) {
-              const uint8_t* src = constant_data + vk_bytes->offset();
-              wgpuQueueWriteBuffer(
-                  queue_, tensor.buffer, 0, src, tensor.nbytes);
+        int mem_obj_id = vk_tensor->mem_obj_id();
+
+        // Constants always get dedicated buffers regardless of mem_obj_id
+        if (constant_id >= 0 || mem_obj_id < 0) {
+          tensor_mem_obj_ids_[i] = -1;
+          WGPUBufferDescriptor buf_desc = {};
+          ET_CHECK_MSG(tensor.nbytes > 0, "Tensor has zero bytes");
+          buf_desc.size = tensor.nbytes;
+          buf_desc.usage = WGPUBufferUsage_Storage | WGPUBufferUsage_CopyDst |
+              WGPUBufferUsage_CopySrc;
+          buf_desc.mappedAtCreation = false;
+          tensor.buffer = wgpuDeviceCreateBuffer(device_, &buf_desc);
+
+          if (constant_id >= 0 && constant_data) {
+            const auto* constants = graph->constants();
+            if (constants &&
+                constant_id < static_cast<int>(constants->size())) {
+              const auto* vk_bytes = constants->Get(constant_id);
+              if (vk_bytes->offset() != UINT64_MAX) {
+                const uint8_t* src = constant_data + vk_bytes->offset();
+                wgpuQueueWriteBuffer(
+                    queue_, tensor.buffer, 0, src, tensor.nbytes);
+              }
             }
           }
+        } else {
+          // Shared buffer: track required size, defer allocation to pass 2
+          tensor_mem_obj_ids_[i] = mem_obj_id;
+          size_t id = static_cast<size_t>(mem_obj_id);
+          if (id >= shared_buffer_sizes_.size()) {
+            shared_buffer_sizes_.resize(id + 1, 0);
+          }
+          shared_buffer_sizes_[id] =
+              std::max(shared_buffer_sizes_[id], tensor.nbytes);
         }
         break;
       }
@@ -166,6 +189,24 @@ void WebGPUGraph::build(
     }
   }
 
+  // Allocate shared buffers and assign to tensors
+  shared_buffers_.resize(shared_buffer_sizes_.size(), nullptr);
+  for (size_t id = 0; id < shared_buffer_sizes_.size(); id++) {
+    WGPUBufferDescriptor buf_desc = {};
+    ET_CHECK_MSG(shared_buffer_sizes_[id] > 0, "Shared buffer has zero bytes");
+    buf_desc.size = shared_buffer_sizes_[id];
+    buf_desc.usage = WGPUBufferUsage_Storage | WGPUBufferUsage_CopyDst |
+        WGPUBufferUsage_CopySrc;
+    buf_desc.mappedAtCreation = false;
+    shared_buffers_[id] = wgpuDeviceCreateBuffer(device_, &buf_desc);
+  }
+  for (int i = 0; i < num_vals; i++) {
+    int mid = tensor_mem_obj_ids_[i];
+    if (mid >= 0) {
+      tensors_[i].buffer = shared_buffers_[mid];
+    }
+  }
+
   // Phase 2: Record input and output IDs
   const auto* fb_input_ids = graph->input_ids();
   if (fb_input_ids) {
@@ -181,7 +222,8 @@ void WebGPUGraph::build(
 
       // Create staging buffer for output readback
       WGPUBufferDescriptor staging_desc = {};
-      staging_desc.size = tensors_[oid].nbytes > 0 ? tensors_[oid].nbytes : 4;
+      ET_CHECK_MSG(tensors_[oid].nbytes > 0, "Output tensor has zero bytes");
+      staging_desc.size = tensors_[oid].nbytes;
       staging_desc.usage = WGPUBufferUsage_MapRead | WGPUBufferUsage_CopyDst;
       staging_desc.mappedAtCreation = false;
       output_staging_buffers_.push_back(
@@ -315,10 +357,21 @@ WebGPUMemoryStats WebGPUGraph::memory_stats() const {
   WebGPUMemoryStats stats;
   for (size_t i = 0; i < value_types_.size(); i++) {
     if (value_types_[i] == ValueType::Tensor && tensors_[i].nbytes > 0) {
-      stats.tensor_buffer_bytes += tensors_[i].nbytes;
       stats.num_tensors++;
+      // Shared tensors are tracked via shared_buffer_sizes_
+      bool is_shared =
+          i < tensor_mem_obj_ids_.size() && tensor_mem_obj_ids_[i] >= 0;
+      if (!is_shared) {
+        stats.unshared_tensor_buffer_bytes += tensors_[i].nbytes;
+      }
     }
   }
+  for (size_t s : shared_buffer_sizes_) {
+    stats.shared_buffer_bytes += s;
+  }
+  stats.num_shared_objects = static_cast<int>(shared_buffers_.size());
+  stats.tensor_buffer_bytes =
+      stats.shared_buffer_bytes + stats.unshared_tensor_buffer_bytes;
   for (size_t i = 0; i < output_ids_.size(); i++) {
     stats.staging_buffer_bytes += tensors_[output_ids_[i]].nbytes;
   }
