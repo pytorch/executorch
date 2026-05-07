@@ -285,6 +285,11 @@ _MATVEC_CONFIGS = [
     triton.Config({"BLOCK_N": 8, "BLOCK_K": 128}, num_warps=2, num_stages=3),
     triton.Config({"BLOCK_N": 8, "BLOCK_K": 256}, num_warps=2, num_stages=3),
     triton.Config({"BLOCK_N": 4, "BLOCK_K": 256}, num_warps=2, num_stages=3),
+    triton.Config({"BLOCK_N": 1, "BLOCK_K": 512}, num_warps=4, num_stages=3),
+    triton.Config({"BLOCK_N": 4, "BLOCK_K": 256}, num_warps=4, num_stages=4),
+    triton.Config({"BLOCK_N": 4, "BLOCK_K": 256}, num_warps=1, num_stages=2),
+    triton.Config({"BLOCK_N": 4, "BLOCK_K": 64},  num_warps=1, num_stages=3),
+    triton.Config({"BLOCK_N": 4, "BLOCK_K": 256}, num_warps=8, num_stages=3),
 ]
 
 
