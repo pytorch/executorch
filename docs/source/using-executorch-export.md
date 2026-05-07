@@ -38,7 +38,7 @@ Commonly used hardware backends are listed below. For mobile, consider using XNN
 - [Vulkan (Android GPU)](backends/vulkan/vulkan-overview.md)
 - [Qualcomm NPU](backends-qualcomm.md)
 - [MediaTek NPU](backends-mediatek.md)
-- [Arm Ethos-U NPU](backends-arm-ethos-u.md)
+- [Arm Ethos-U NPU](backends/arm-ethos-u/arm-ethos-u-overview.md)
 - [Cadence DSP](backends-cadence.md)
 
 ## Model Preparation

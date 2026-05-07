@@ -608,7 +608,7 @@ Supports:
 For details, see: backends/qualcomm/quantizer/quantizer.py
 
 ### Operator Support
-[The full operator support matrix](https://github.com/pytorch/executorch/tree/f32cdc3de6f7176d70a80228f1a60bcd45d93437/backends/qualcomm/builders#operator-support-status) is tracked and frequently updated in the ExecuTorch repository.
+[The full operator support matrix](https://github.com/pytorch/executorch/tree/main/backends/qualcomm/builders#operator-support-status) is tracked and frequently updated in the ExecuTorch repository.
 
 It lists:
 - Supported PyTorch ops (aten.*, custom ops)
@@ -633,4 +633,4 @@ If you encounter any issues while reproducing the tutorial, please file a github
 [issue](https://github.com/pytorch/executorch/issues) on ExecuTorch repo and tag use `#qcom_aisw` tag
 
  ### Debugging tips
- - Before trying any complicated models, try out [a simple model example](https://github.com/pytorch/executorch/tree/f32cdc3de6f7176d70a80228f1a60bcd45d93437/examples/qualcomm#simple-examples-to-verify-the-backend-is-working) and see it if works one device.
+ - Before trying any complicated models, try out [a simple model example](https://github.com/pytorch/executorch/tree/main/examples/qualcomm#simple-examples-to-verify-the-backend-is-working) and see if it works on your device.

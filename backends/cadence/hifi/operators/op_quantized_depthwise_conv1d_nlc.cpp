@@ -206,6 +206,7 @@ void quantized_depthwise_conv1d_nlc_per_tensor_out(
         output_zero_point,
         out_multiplier,
         out_shift,
+        ::executorch::aten::optional<Tensor>(),
         out);
     return;
   }
