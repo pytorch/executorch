@@ -79,6 +79,25 @@ void test_q8ta_conv2d_dw(
         groups,
         packed_int8_output};
     VK_GET_OP_FN("et_vk.conv2d_q8ta_q8csw_q8to.default")(graph, conv_args);
+  } else if (impl_selector == "spec_const") {
+    std::vector<ValueRef> conv_args = {
+        packed_int8_input,
+        input_scale,
+        input_zp,
+        weight_data,
+        weight_sums_data,
+        weight_scales_data,
+        output_scale,
+        output_zp,
+        bias_data,
+        kernel_size,
+        stride,
+        padding,
+        dilation,
+        groups,
+        activation,
+        packed_int8_output};
+    VK_GET_OP_FN("et_vk.q8ta_conv2d_dw.spec_const")(graph, conv_args);
   } else {
     std::vector<ValueRef> conv_args = {
         packed_int8_input,
@@ -190,6 +209,12 @@ void test_q8ta_conv2d(ComputeGraph& graph, const std::vector<ValueRef>& args) {
       VK_GET_OP_FN("et_vk.q8ta_conv2d_im2col.default")(graph, conv_args);
     } else if (impl_selector == "general") {
       VK_GET_OP_FN("et_vk.q8ta_conv2d_general.default")(graph, conv_args);
+    } else if (impl_selector == "spec_const") {
+      VK_GET_OP_FN("et_vk.q8ta_conv2d.spec_const")(graph, conv_args);
+    } else if (impl_selector == "general_spec_const") {
+      VK_GET_OP_FN("et_vk.q8ta_conv2d_general.spec_const")(graph, conv_args);
+    } else if (impl_selector == "im2col_spec_const") {
+      VK_GET_OP_FN("et_vk.q8ta_conv2d_im2col.spec_const")(graph, conv_args);
     } else {
       VK_GET_OP_FN("et_vk.q8ta_conv2d.default")(graph, conv_args);
     }
@@ -269,6 +294,25 @@ void test_q8ta_conv2d_pw(
         groups,
         packed_int8_output};
     VK_GET_OP_FN("et_vk.conv2d_q8ta_q8csw_q8to.default")(graph, conv_args);
+  } else if (impl_selector == "spec_const") {
+    std::vector<ValueRef> conv_args = {
+        packed_int8_input,
+        input_scale,
+        input_zp,
+        weight_data,
+        weight_sums_data,
+        weight_scales_data,
+        output_scale,
+        output_zp,
+        bias_data,
+        kernel_size,
+        stride,
+        padding,
+        dilation,
+        groups,
+        activation,
+        packed_int8_output};
+    VK_GET_OP_FN("et_vk.q8ta_conv2d_pw.spec_const")(graph, conv_args);
   } else {
     std::vector<ValueRef> conv_args = {
         packed_int8_input,

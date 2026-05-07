@@ -334,6 +334,12 @@ static std::vector<TestCase> generate_quantized_conv2d_pw_test_cases() {
             config, is_performance, fp_storage_type, utils::kBuffer);
         test_cases.push_back(create_test_case_from_config(
             config, vkapi::kFloat, fp_storage_type, int8_memory_layout));
+        test_cases.push_back(create_test_case_from_config(
+            config,
+            vkapi::kFloat,
+            fp_storage_type,
+            int8_memory_layout,
+            /*impl_selector=*/"spec_const"));
 
         // For 4W4C layout, also test the legacy implementation
         if (int8_memory_layout == utils::kPackedInt8_4W4C) {

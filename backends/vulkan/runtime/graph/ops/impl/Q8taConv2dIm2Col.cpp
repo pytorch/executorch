@@ -109,7 +109,8 @@ void add_q8ta_im2col_node(
     const ValueRef groups,
     const ValueRef packed_int8_output,
     const ValueRef packed_int8_im2col,
-    const int32_t zp) {
+    const int32_t zp,
+    const bool spec_const) {
   // Validate packed dim info for input and output tensors
   VK_CHECK_COND(q8ta_conv2d_check_packed_dim_info(
       graph.packed_dim_info_of(packed_int8_input)));
@@ -132,22 +133,45 @@ void add_q8ta_im2col_node(
   VK_CHECK_COND(conv_params.in_channels_per_group % 4 == 0);
 
   std::string kernel_name = "q8ta_im2col";
+  if (spec_const) {
+    kernel_name += "_spec_const";
+  }
 
   vkapi::ParamsBindList param_buffers = {
       graph.buffer_meta_ubo(packed_int8_im2col),
-      graph.buffer_meta_ubo(packed_int8_input),
-      graph.create_params_buffer(conv_params)};
+      graph.buffer_meta_ubo(packed_int8_input)};
+  if (!spec_const) {
+    param_buffers.append(graph.create_params_buffer(conv_params));
+  }
 
   std::vector<PushConstantDataInfo> push_constants = {
       PushConstantDataInfo(&zp, sizeof(zp)),
   };
 
-  // Build spec constants: apply_bias + layout constants (for generic shader)
+  // Build spec constants: apply_bias, layout constants
   vkapi::SpecVarList spec_constants = {
       1u,
       graph.hashed_layout_of(packed_int8_im2col),
       graph.hashed_layout_of(packed_int8_input),
   };
+
+  if (spec_const) {
+    // Conv2D parameter specialization constants
+    spec_constants.append(
+        static_cast<uint32_t>(conv_params.kernel_size[0]));
+    spec_constants.append(static_cast<uint32_t>(conv_params.stride[0]));
+    spec_constants.append(static_cast<uint32_t>(conv_params.stride[1]));
+    spec_constants.append(static_cast<uint32_t>(conv_params.padding[0]));
+    spec_constants.append(static_cast<uint32_t>(conv_params.padding[1]));
+    spec_constants.append(
+        static_cast<uint32_t>(conv_params.dilation[0]));
+    spec_constants.append(
+        static_cast<uint32_t>(conv_params.dilation[1]));
+    spec_constants.append(
+        static_cast<uint32_t>(conv_params.in_channels_per_group));
+    spec_constants.append(
+        static_cast<uint32_t>(conv_params.K_per_group));
+  }
 
   // // Add layout specialization constants (only for generic shader)
   // if (!use_4w4c_path) {
@@ -275,8 +299,103 @@ void q8ta_conv2d_im2col(
       groups_val);
 }
 
+void q8ta_conv2d_im2col_spec_const(
+    ComputeGraph& graph,
+    const std::vector<ValueRef>& args) {
+  int32_t idx = 0;
+  const ValueRef packed_int8_input = args.at(idx++);
+  const ValueRef input_scale = args.at(idx++);
+  const ValueRef input_zp = args.at(idx++);
+  const ValueRef weight_data = args.at(idx++);
+  const ValueRef weight_sums_data = args.at(idx++);
+  const ValueRef weight_scales_data = args.at(idx++);
+  const ValueRef output_scale = args.at(idx++);
+  const ValueRef output_zp = args.at(idx++);
+  const ValueRef bias_data = args.at(idx++);
+  const ValueRef kernel_size = args.at(idx++);
+  const ValueRef stride = args.at(idx++);
+  const ValueRef padding = args.at(idx++);
+  const ValueRef dilation = args.at(idx++);
+  const ValueRef groups = args.at(idx++);
+  const ValueRef activation = args.at(idx++);
+  const ValueRef packed_int8_output = args.at(idx++);
+
+  QuantizationConfig weight_quant_config(8, kPerChannel, {});
+
+  ValueRef packed_weight =
+      prepack_quantized_linear_weight(graph, weight_quant_config, weight_data);
+
+  ValueRef packed_weight_sums = prepack_standard(
+      graph, weight_sums_data, utils::kBuffer, utils::kWidthPacked);
+
+  ValueRef packed_weight_scales = prepack_standard(
+      graph, weight_scales_data, utils::kBuffer, utils::kWidthPacked);
+
+  TmpTensor dummy_bias(
+      &graph,
+      {},
+      graph.dtype_of(weight_scales_data),
+      utils::kBuffer,
+      utils::kWidthPacked);
+
+  ValueRef packed_bias = dummy_bias.vref;
+  if (graph.val_is_not_none(bias_data)) {
+    packed_bias =
+        prepack_standard(graph, bias_data, utils::kBuffer, utils::kWidthPacked);
+  }
+
+  uint32_t activation_type_val = static_cast<uint32_t>(
+      activation_type_from_string(graph.extract_string(activation)));
+
+  std::vector<int64_t> im2col_sizes = calculate_q8ta_im2col_sizes(
+      &graph, packed_int8_input, packed_int8_output, kernel_size, groups);
+
+  TmpTensor packed_int8_im2col(
+      &graph,
+      im2col_sizes,
+      vkapi::kInt8x4,
+      utils::kBuffer,
+      utils::kPackedInt8_4W4C);
+
+  int32_t zp = graph.extract_scalar<int32_t>(input_zp);
+
+  add_q8ta_im2col_node(
+      graph,
+      packed_int8_input,
+      kernel_size,
+      stride,
+      padding,
+      dilation,
+      groups,
+      packed_int8_output,
+      packed_int8_im2col,
+      zp,
+      /*spec_const=*/true);
+
+  const int32_t groups_val = graph.extract_scalar<int32_t>(groups);
+
+  add_q8ta_conv2d_pw_node(
+      graph,
+      packed_int8_im2col,
+      input_scale,
+      input_zp,
+      packed_weight,
+      packed_weight_sums,
+      packed_weight_scales,
+      output_scale,
+      output_zp,
+      bias_data,
+      packed_bias,
+      activation_type_val,
+      packed_int8_output,
+      groups_val,
+      /*spec_const=*/true);
+}
+
 REGISTER_OPERATORS {
   VK_REGISTER_OP(et_vk.q8ta_conv2d_im2col.default, q8ta_conv2d_im2col);
+  VK_REGISTER_OP(
+      et_vk.q8ta_conv2d_im2col.spec_const, q8ta_conv2d_im2col_spec_const);
 }
 
 } // namespace vkcompute
