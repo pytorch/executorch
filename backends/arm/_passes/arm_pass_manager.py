@@ -125,6 +125,7 @@ from executorch.backends.arm._passes import (
     RemoveGetItemPass,
     RemoveGraphAssertsPass,
     RemoveNoopPass,
+    RemovePermutesAroundElementwiseTosaOps,
     ReplaceInfAndLimitValuesPass,
     ReplaceScalarWithTensorByProfilePass,
     RewriteAvgPool2dPass,
@@ -164,9 +165,6 @@ from executorch.backends.transforms.postpone_permute_below_squeeze_view import (
     PostponePermuteOpBelowSqueezeOrUnsqueezeLikeView,
 )
 
-from executorch.backends.transforms.remove_permutes_around_elementwise_ops import (
-    RemovePermutesAroundElementwiseOps,
-)
 from executorch.exir import ExportedProgram
 from executorch.exir.pass_base import ExportPass
 from executorch.exir.pass_manager import PassManager
@@ -538,7 +536,7 @@ class ArmPassManager(PassManager):
                 RewriteMatmulPass(),
                 RewritePadPass(),
                 FuseViewCopyTransformPass(),
-                RemovePermutesAroundElementwiseOps(),
+                RemovePermutesAroundElementwiseTosaOps(),
                 PostponePermuteOpBelowSqueezeOrUnsqueezeLikeView(),
                 FuseCascadedTransposeOrPermuteOps(),
                 ConvertPermuteSingletonToViewPass(),
