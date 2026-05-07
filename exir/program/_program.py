@@ -5,8 +5,7 @@
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
 
-# pyre-unsafe
-
+# pyre-strict
 import copy
 import io
 import logging
@@ -38,7 +37,14 @@ from executorch.exir.graph_module import get_control_flow_submodules
 from executorch.exir.operator.convert import _pybind_schema_to_native_schema
 from executorch.exir.operator.util import _QUANT_PRIMITIVES
 from executorch.exir.pass_base import PassBase
-from executorch.exir.pass_manager import PassType
+from executorch.exir.edge_program_manager_pass_base import (
+    _get_pass_name,
+    MethodFilteredEdgeProgramManagerPass,
+    MethodPassType,
+    PassType,
+    wrap_passes,
+)
+
 from executorch.exir.passes import (
     base_post_op_replace_passes,
     base_pre_op_replace_passes,
@@ -98,6 +104,7 @@ from torch.export.exported_program import (
 )
 from torch.fx import _pytree as fx_pytree
 from torch.fx._compatibility import compatibility
+
 from torch.fx.passes.infra.pass_manager import PassManager
 from torch.utils import _pytree as pytree
 
@@ -248,7 +255,7 @@ def _transform(
 
 
 def _transform_with_pass_manager(
-    self,
+    self: ExportedProgram,
     pass_manager: PassManager,
     override_verifiers: None | list[Type[Verifier]] = None,
 ) -> "ExportedProgram":
@@ -274,6 +281,7 @@ def _transform_with_pass_manager(
     return _update_exported_program_graph_module(
         self, transformed_gm, override_verifiers
     )
+
 
 
 def _update_exported_program_graph_module(
@@ -1314,7 +1322,7 @@ def collect_named_data_store_from_exported_program(
 def to_edge_transform_and_lower(  # noqa: C901
     programs: Union[ExportedProgram, Dict[str, ExportedProgram]],
     transform_passes: Optional[
-        Union[Sequence[PassType], Dict[str, Sequence[PassType]], PassManager]
+        Union[Sequence[PassType], Dict[str, Sequence[MethodPassType]], PassManager]
     ] = None,
     partitioner: Optional[
         Union[List[Partitioner], Dict[str, List[Partitioner]]]
@@ -1594,8 +1602,13 @@ class EdgeProgramManager:
     @et_logger("transform")
     def transform(
         self,
-        passes: Union[Sequence[PassType], Dict[str, Sequence[PassType]], PassManager],
+        passes: Union[
+            Sequence[PassType],
+            PassManager,
+            Dict[str, Sequence[MethodPassType]]
+        ],
         compile_config: Optional[EdgeCompileConfig] = None,
+        run_checks_after_each_pass: bool = False,
     ) -> "EdgeProgramManager":
         """
         Transforms the program according to the provided passes.
@@ -1605,66 +1618,77 @@ class EdgeProgramManager:
                 1) a list of passes -
                     all methods in the given EdgeProgramManager
                     will be transformed with the provided passes.
-                2) a dictionary mapping method names to lists of passes -
-                    only method names specified in the dictionary will be
-                    transformed with their corresponding passes.
-                3) a PassManager instance -
-                    all methods in the given EdgeProgramManager will be
-                    transformed with the given PassManager instance.
-            compile_config: Compile config to use for veriy the correctness of model
+                    Passes can be EdgeProgramManagerPassBase,
+                    ExportedProgramPassBase, or GraphModule callables.
+                2) a PassManager instance (deprecated) -
+                    for backwards compatibility.
+            compile_config: Compile config to use for verifying the correctness of model
                 graph after each pass. If not specified, the compile config of the
-                calling EdgeProgramManager will be used. It will be used in as compile
-                config of returned EdgeProgramManager.
+                calling EdgeProgramManager will be used. It will be used as compile
+                config of the returned EdgeProgramManager.
+            run_checks_after_each_pass: If True, run validation checks after each
+                pass is applied.
 
         Returns:
             EdgeProgramManager: A copy of the calling EdgeProgramManager with the
             transformations applied.
         """
-
         compile_config = compile_config or self.compile_config
-        new_programs: Dict[str, ExportedProgram] = {}
 
-        # Cast passes parameter upfront.
-        passes_seq: Optional[Sequence[PassType]] = None
-        passes_dict: Optional[Dict[str, Sequence[PassType]]] = None
-        pass_manager: Optional[PassManager] = None
-
-        if isinstance(passes, Sequence):
-            passes_seq = passes
-        if isinstance(passes, dict):
-            passes_dict = passes
         if isinstance(passes, PassManager):
-            pass_manager = passes
+            # For backwards compatibility, extract the passes from the
+            # deprecated PassManager and wrap them.
+            wrapped_passes = wrap_passes([passes])
+        elif isinstance(passes, dict):
+            wrapped_passes = [MethodFilteredEdgeProgramManagerPass(passes)]
+        else:
+            wrapped_passes = wrap_passes(list(passes))
 
-        for name, program in self._edge_programs.items():
-            # If the method name is enforced, but not matched, we skip transformation.
-            if (
-                isinstance(passes, dict)
-                and passes_dict
-                and name not in passes_dict.keys()
-            ):
-                new_programs[name] = copy.deepcopy(program)
-                continue
+        epm = self
+        for i, fn in enumerate(wrapped_passes):
+            try:
+                result = fn(epm)
+                epm = result.edge_program_manager
 
-            # Depending on the passes parameter, call the corresponding transform function.
-            if passes_seq is not None:
-                new_programs[name] = _transform(program, *passes_seq)
-            elif passes_dict is not None:
-                new_programs[name] = _transform(program, *passes_dict[name])
-            elif pass_manager is not None:
-                new_programs[name] = _transform_with_pass_manager(program, pass_manager)
+                if run_checks_after_each_pass:
+                    self._check_edge_programs(epm)
 
-            # Verify the correctness of model graph after each transformation.
+            except Exception as e:
+                prev_names = [_get_pass_name(p) for p in wrapped_passes[:i]]
+                msg = (
+                    f"An error occurred when running the \'{_get_pass_name(fn)}\' pass "
+                    f"after the following passes: {prev_names}\n"
+                    f"Original error: {e}"
+                )
+                raise Exception(msg) from e
+
+        for name, program in epm._edge_programs.items():
             EXIREdgeDialectVerifier(edge_compile_config=compile_config)(
-                new_programs[name].graph_module
+                program.graph_module
             )
 
-        epm = EdgeProgramManager(
-            new_programs, copy.deepcopy(self._config_methods), compile_config
-        )
+        new_epm = epm
+        new_epm.compile_config = compile_config
+        new_epm._etrecord = self._etrecord
+        return new_epm
 
-        epm._etrecord = self._etrecord
-        return epm
+    def _check_edge_programs(self, epm: "EdgeProgramManager") -> None:
+        """
+        Runs validation checks on each ExportedProgram in the EdgeProgramManager.
+        """
+        from executorch.exir.error import ExportError, ExportErrorType
+
+        for name, program in epm._edge_programs.items():  # noqa: B007
+            module = program.graph_module
+            module.recompile()
+            module.graph.lint()
+
+            for node in module.graph.nodes:
+                if node.op == "call_method":
+                    raise ExportError(
+                        ExportErrorType.NOT_SUPPORTED,
+                        f"call_method `{node}` is not supported except for backend delegate.",
+                    )
 
     @et_logger("to_backend")
     def to_backend(
