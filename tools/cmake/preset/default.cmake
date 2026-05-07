@@ -105,6 +105,10 @@ define_overridable_option(
   OFF
 )
 define_overridable_option(
+  EXECUTORCH_BUILD_EXTENSION_BACKEND_CACHE "Build the Backend Cache extension"
+  BOOL OFF
+)
+define_overridable_option(
   EXECUTORCH_BUILD_EXTENSION_MODULE "Build the Module extension" BOOL OFF
 )
 define_overridable_option(

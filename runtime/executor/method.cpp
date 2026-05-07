@@ -93,13 +93,6 @@ class BackendDelegate final {
         "Backend %s is not available.",
         backend_id);
 
-    // Get the delegate data.
-    Result<FreeableBuffer> processed_data = GetProcessedData(delegate, program);
-    if (!processed_data.ok()) {
-      ET_LOG(Error, "Failed to load data for backend %s", backend_id);
-      return processed_data.error();
-    }
-
     // Parse compilation specs from program
     CompileSpec* compile_specs = nullptr;
     size_t num_compile_specs = 0;
@@ -111,6 +104,37 @@ class BackendDelegate final {
         return err;
       }
       num_compile_specs = delegate.compile_specs()->size();
+    }
+
+    // Try cache-first path: if a cache is available, call init_from_cache()
+    // before loading the processed data segment.
+    if (backend_init_context.get_cache() != nullptr) {
+      Result<DelegateHandle*> cached_handle = backend->init_from_cache(
+          backend_init_context,
+          ArrayRef<CompileSpec>(compile_specs, num_compile_specs));
+      if (cached_handle.ok()) {
+        out->backend_ = backend;
+        out->handle_ = cached_handle.get();
+        new (&out->segment_) FreeableBuffer();
+        return Error::Ok;
+      }
+      // NotSupported means the backend doesn't support caching or had a
+      // cache miss. Fall through to the normal init() path.
+      if (cached_handle.error() != Error::NotSupported) {
+        ET_LOG(
+            Error,
+            "init_from_cache failed for backend %s: 0x%" PRIx32,
+            backend_id,
+            static_cast<uint32_t>(cached_handle.error()));
+        return cached_handle.error();
+      }
+    }
+
+    // Normal path: load the processed data and call init().
+    Result<FreeableBuffer> processed_data = GetProcessedData(delegate, program);
+    if (!processed_data.ok()) {
+      ET_LOG(Error, "Failed to load data for backend %s", backend_id);
+      return processed_data.error();
     }
 
     out->backend_ = backend;
@@ -831,7 +855,8 @@ Result<Method> Method::load(
     MemoryManager* memory_manager,
     EventTracer* event_tracer,
     const NamedDataMap* external_data_map,
-    const LoadBackendOptionsMap* backend_options) {
+    const LoadBackendOptionsMap* backend_options,
+    BackendCache* backend_cache) {
   MemoryAllocator* temp_allocator = memory_manager->temp_allocator();
   if (temp_allocator == nullptr) {
     PlatformMemoryAllocator* platform_allocator =
@@ -846,7 +871,8 @@ Result<Method> Method::load(
   }
   Method method(program, memory_manager, event_tracer, temp_allocator);
   ET_LOG(Debug, "Loading method: %s.", s_plan->name()->c_str());
-  Error err = method.init(s_plan, external_data_map, backend_options);
+  Error err =
+      method.init(s_plan, external_data_map, backend_options, backend_cache);
   if (err != Error::Ok) {
     return err;
   } else {
@@ -867,7 +893,8 @@ Result<Method> Method::load(
 Error Method::init(
     executorch_flatbuffer::ExecutionPlan* s_plan,
     const NamedDataMap* external_data_map,
-    const LoadBackendOptionsMap* backend_options) {
+    const LoadBackendOptionsMap* backend_options,
+    BackendCache* backend_cache) {
   internal::EventTracerProfileMethodScope event_tracer_scope =
       internal::EventTracerProfileMethodScope(event_tracer_, "Method::init");
   ET_CHECK_OR_RETURN_ERROR(
@@ -949,12 +976,16 @@ Error Method::init(
             backend_options->get_options(delegate.id()->c_str());
       }
 
+      DelegateBackendCache scoped_cache(
+          backend_cache, delegate.id()->c_str(), i);
+
       BackendInitContext backend_init_context(
           method_allocator,
           /*event_tracer=*/event_tracer_,
           /*method_name=*/serialization_plan_->name()->c_str(),
           /*named_data_map=*/named_data_map,
-          /*runtime_specs=*/delegate_runtime_specs);
+          /*runtime_specs=*/delegate_runtime_specs,
+          /*backend_cache=*/backend_cache ? &scoped_cache : nullptr);
       Error err = BackendDelegate::Init(
           delegate, program_, backend_init_context, &delegates_[i]);
       if (err != Error::Ok) {
