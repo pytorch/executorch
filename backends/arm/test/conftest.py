@@ -29,7 +29,30 @@ def pytest_configure(config):
 
 
 def pytest_collection_modifyitems(config, items):
-    pass
+    from executorch.backends.arm.test import common
+    from executorch.backends.arm.test.runner_utils import model_converter_installed
+
+    skip_marker = getattr(
+        common.SkipIfNoModelConverter, "mark", common.SkipIfNoModelConverter
+    )
+
+    if not model_converter_installed():
+        deselected = []
+        remaining = []
+        for item in items:
+            for marker in item.iter_markers("skipif"):
+                if (
+                    marker.name == skip_marker.name
+                    and marker.args == skip_marker.args
+                    and marker.kwargs == skip_marker.kwargs
+                ):
+                    deselected.append(item)
+                    break
+            else:
+                remaining.append(item)
+        if deselected:
+            config.hook.pytest_deselected(items=deselected)
+            items[:] = remaining
 
 
 def pytest_addoption(parser):
