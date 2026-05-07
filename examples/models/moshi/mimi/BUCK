@@ -1,5 +1,4 @@
 load("@fbcode_macros//build_defs:build_file_migration.bzl", "fbcode_target", "non_fbcode_target")
-load("@fbsource//tools/target_determinator/macros:fbcode_ci_helpers.bzl", "fbcode_ci")
 load("@fbsource//tools/target_determinator/macros:ci.bzl", "ci")
 load("@fbsource//xplat/executorch/build:runtime_wrapper.bzl", "runtime")
 
@@ -8,7 +7,9 @@ oncall("executorch")
 fbcode_target(_kind = runtime.python_test,
     name = "test_mimi",
     srcs = ["test_mimi.py"],
-    labels = ci.labels(fbcode_ci.use_opt_instead_of_dev()),
+    # Skipped in fbcode CI: setUpClass downloads the model from HuggingFace,
+    # which requires network access unavailable in this CI environment. Still runs in OSS CI.
+    labels = [ci.skip_target()],
     deps = [
         "fbsource//third-party/pypi/huggingface-hub:huggingface-hub",
         "fbsource//third-party/pypi/moshi:moshi",
