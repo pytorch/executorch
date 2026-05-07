@@ -6,6 +6,7 @@
 import operator
 
 import numpy as np
+import torch
 
 from executorch.backends.nxp.backend.edge_helper import try_get_arg
 from executorch.backends.nxp.backend.ir.converter.conversion import (
@@ -73,32 +74,54 @@ class MaxPool2DWithIndicesConverter(NodeConverter):
             MaxPool2DWithIndicesConverter._get_node_args(node)
         )
 
-        output_shape = node.meta["val"][0].shape  # Shape of the main output (index 0)
-        if output_shape[0] != 1:
-            # /neutron-converter/src/OperatorC/MaxPoolPlugin.cpp?at=NEUTRON_SOFTWARE_2.2.2#106
-            return False
+        if custom_delegation_options.use_new_flow_neutron_c:
+            # Requirements specified by the new Neutron flow documentation.
 
-        # Neutron only has a restriction on `stride_h`. `stride_w` is not restricted.
-        stride_h = stride[0]
-        if stride_h not in (1, 2):
-            # /neutron-library/src/utils/NeutronLibraryInterrogation.cpp?at=refs%2Ftags%2FNEUTRON_SOFTWARE_2.2.2#901
-            # /neutron-library/src/utils/NeutronLibraryInterrogation.cpp?at=refs%2Ftags%2FNEUTRON_SOFTWARE_2.2.2#923
-            return False
+            supported_types = [torch.int8, torch.uint8]
+            if not NodeConverter.uses_quantization_type_for_io(
+                node, supported_types, [0], [0]
+            ):
+                return False
 
-        channels = output_shape[1]
-        if channels % neutron_target_spec.get_num_macs() != 0:
-            # /neutron-library/src/utils/NeutronLibraryInterrogation.cpp?at=refs%2Ftags%2FNEUTRON_SOFTWARE_2.2.2#903
-            # /neutron-library/src/utils/NeutronLibraryInterrogation.cpp?at=refs%2Ftags%2FNEUTRON_SOFTWARE_2.2.2#925
-            return False
+            maximum_supported_kernel_size = 4096
+            # If there is no padding, Neutron allows maximum stride of 4096. Otherwise, it's 32. But the converter
+            #  always inserts a `Pad` operator to add the padding, so the `MaxPool` never pads it's input itself, so
+            #  4096 is always the limit. And similarly, the `MaxPool` input padding limitation does not apply either.
+            maximum_supported_stride = 4096
 
-        if any(pad > kernel_dim for pad, kernel_dim in zip(padding, kernel_size)):
-            # /neutron-library/src/utils/NeutronLibraryInterrogation.cpp?at=refs%2Ftags%2FNEUTRON_SOFTWARE_2.2.2#904-907
-            # /neutron-library/src/utils/NeutronLibraryInterrogation.cpp?at=refs%2Ftags%2FNEUTRON_SOFTWARE_2.2.2#926-929
+            if any(k > maximum_supported_kernel_size for k in kernel_size):
+                return False
+            if any(s > maximum_supported_stride for s in stride):
+                return False
 
-            # Cannot be tested as PyTorch crashes in this case. It requires the padding to be at most half of the
-            #  effective kernel size, which is an even stricter requirement than what Neutron imposes.
-            # https://github.com/pytorch/pytorch/blob/449b1768410104d3ed79d3bcfe4ba1d65c7f22c0/torch/_meta_registrations.py#L4483-L4489
-            return False
+        else:
+            # Shape of the main output (index 0)
+            output_shape = node.meta["val"][0].shape
+            if output_shape[0] != 1:
+                # /neutron-converter/src/OperatorC/MaxPoolPlugin.cpp?at=NEUTRON_SOFTWARE_2.2.2#106
+                return False
+
+            # Neutron only has a restriction on `stride_h`. `stride_w` is not restricted.
+            stride_h = stride[0]
+            if stride_h not in (1, 2):
+                # /neutron-library/src/utils/NeutronLibraryInterrogation.cpp?at=refs%2Ftags%2FNEUTRON_SOFTWARE_2.2.2#901
+                # /neutron-library/src/utils/NeutronLibraryInterrogation.cpp?at=refs%2Ftags%2FNEUTRON_SOFTWARE_2.2.2#923
+                return False
+
+            channels = output_shape[1]
+            if channels % neutron_target_spec.get_num_macs() != 0:
+                # /neutron-library/src/utils/NeutronLibraryInterrogation.cpp?at=refs%2Ftags%2FNEUTRON_SOFTWARE_2.2.2#903
+                # /neutron-library/src/utils/NeutronLibraryInterrogation.cpp?at=refs%2Ftags%2FNEUTRON_SOFTWARE_2.2.2#925
+                return False
+
+            if any(pad > kernel_dim for pad, kernel_dim in zip(padding, kernel_size)):
+                # /neutron-library/src/utils/NeutronLibraryInterrogation.cpp?at=refs%2Ftags%2FNEUTRON_SOFTWARE_2.2.2#904-907
+                # /neutron-library/src/utils/NeutronLibraryInterrogation.cpp?at=refs%2Ftags%2FNEUTRON_SOFTWARE_2.2.2#926-929
+
+                # Cannot be tested as PyTorch crashes in this case. It requires the padding to be at most half of the
+                #  effective kernel size, which is an even stricter requirement than what Neutron imposes.
+                # https://github.com/pytorch/pytorch/blob/449b1768410104d3ed79d3bcfe4ba1d65c7f22c0/torch/_meta_registrations.py#L4483-L4489
+                return False
 
         return True
 
