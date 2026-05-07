@@ -45,8 +45,10 @@ class DatasetCreator(abc.ABC):
 class RandomDatasetCreator(DatasetCreator):
     """Dataset creator that generates random input samples."""
 
-    def __init__(self, num_samples=2):
+    def __init__(self, num_samples=2, low=0.0, high=1.0):
         self._num_samples = num_samples
+        self.low = low
+        self.high = high
 
     def generate_samples(
         self, dataset_dir: str, input_spec: list[ModelInputSpec]
@@ -103,9 +105,11 @@ class RandomDatasetCreator(DatasetCreator):
                     case _:
                         raise ValueError(f"Unsupported dim_order: {spec.dim_order}")
 
-                sample_vector = rng.random(
-                    np.prod(shape), torch_type_to_numpy_type(spec.dtype)
-                ).reshape(shape)
+                sample_vector = (
+                    rng.uniform(self.low, self.high, size=np.prod(shape))
+                    .astype(torch_type_to_numpy_type(spec.dtype))
+                    .reshape(shape)
+                )
                 file_name = (
                     f"{str(spec_idx).zfill(2)}.bin"
                     if len(input_spec) > 1
