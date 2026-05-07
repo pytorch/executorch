@@ -1649,3 +1649,129 @@ class Inspector:
             df["stacktraces"] = df["aot_ops"].apply(get_stacktraces_for_row)
 
         return df
+
+    def calculate_numeric_gap_from_taps(
+        self,
+        flat_runtime_outputs: Sequence,
+        tap_specs: Sequence,
+        distance: Union[str, NumericalComparatorBase] = "MSE",
+        reference_graph: Optional[str] = None,
+        disable_debug_handle_valdiation: bool = False,
+    ) -> pd.DataFrame:
+        """
+        Compares AOT intermediate outputs (from the ETRecord, captured by
+        IntermediateOutputCapturer) with runtime tap values exposed as
+        USER_OUTPUTs by the `intermediate_output_tap` package.
+
+        Unlike `calculate_numeric_gap`, this method works through delegates
+        with no backend-side support: the runtime values come from extra
+        outputs the AOT pass added to the ExportedProgram before lowering.
+
+        IMPORTANT: ETRecord serialization regenerates `debug_handle`s during
+        roundtrip, so the handles in `tap_specs` (set at AOT-pass time) are
+        stale. Each spec's `reducer_node_name` (set by
+        `strip_taps_(edge, tap_specs=specs)`) is used to look up the
+        post-roundtrip `debug_handle` in the AOT reference graph.
+
+        Args:
+            flat_runtime_outputs: The flat output tuple/list returned by
+                running the lowered program (e.g. `Method.execute(inputs)`).
+            tap_specs: The list of TapSpec returned by
+                `strip_taps_(edge, tap_specs=specs)` — these carry
+                `reducer_node_name` for alignment.
+            distance: "MSE", "L1", "SNR", or a `NumericalComparatorBase`.
+            reference_graph: AOT graph to use as the golden. See
+                `calculate_numeric_gap` for valid values.
+            disable_debug_handle_valdiation: Bypass debug handle validation.
+
+        Returns:
+            DataFrame with one row per (aot_handle, runtime_handle) pair.
+            Same shape produced by `calculate_numeric_gap`.
+        """
+        reference_graph_module, _resolved_graph_name = self._resolve_reference_graph(
+            reference_graph,
+            disable_debug_handle_valdiation,
+        )
+        aot_intermediate_outputs, aot_debug_handle_to_op_names = (
+            self._get_aot_intermediate_outputs_and_op_names(reference_graph_module)
+        )
+        if len(aot_intermediate_outputs) == 0:
+            raise ValueError(
+                "No AOT intermediate outputs were captured. ETRecord must be "
+                "provided with representative_inputs for tap-based comparison."
+            )
+
+        spec_handles = _lookup_handles_by_name(reference_graph_module, tap_specs)
+
+        runtime_intermediate_outputs: Dict[DebugHandle, Tuple[Any, int]] = {}
+        runtime_debug_handle_to_op_names: Dict[DebugHandle, List[str]] = {}
+        for spec, dh in zip(tap_specs, spec_handles):
+            if dh is None:
+                continue
+            key: DebugHandle = (int(dh),)
+            runtime_intermediate_outputs[key] = (
+                flat_runtime_outputs[spec.output_index],
+                1,
+            )
+            runtime_debug_handle_to_op_names[key] = [spec.op_target]
+
+        if not runtime_intermediate_outputs:
+            raise ValueError(
+                "Could not recover any post-roundtrip handles for tap_specs. "
+                "Verify that strip_taps_(edge, tap_specs=specs) was called and "
+                "the returned specs were passed to this method, and that "
+                "generate_etrecord ran AFTER strip_taps_."
+            )
+
+        mapping = map_runtime_aot_intermediate_outputs(
+            aot_intermediate_outputs, runtime_intermediate_outputs
+        )
+
+        if isinstance(distance, NumericalComparatorBase):
+            comparator = distance
+            if comparator.inspector is None:
+                comparator.inspector = self
+        else:
+            metric = distance.strip().upper()
+            if metric == "MSE":
+                comparator = MSEComparator(inspector=self)
+            elif metric == "L1":
+                comparator = L1Comparator(inspector=self)
+            elif metric == "SNR":
+                comparator = SNRComparator(inspector=self)
+            else:
+                raise ValueError(f"Unsupported distance metric {distance!r}")
+
+        return comparator.compare(
+            mapping,
+            aot_debug_handle_to_op_names,
+            runtime_debug_handle_to_op_names,
+        )
+
+
+def _lookup_handles_by_name(
+    reference_graph_module,
+    tap_specs: Sequence,
+) -> List[Optional[int]]:
+    """
+    For each TapSpec, return the post-roundtrip `debug_handle` of the FX node
+    whose name equals `spec.reducer_node_name`. Returns None for any spec
+    without a `reducer_node_name` set or whose name is not found.
+
+    `reducer_node_name` is set by `strip_taps_(edge, tap_specs=specs)`. FX
+    node names survive ETRecord serialization roundtrip, so this lookup is
+    stable.
+    """
+    name_to_handle: Dict[str, Optional[int]] = {}
+    for n in reference_graph_module.graph.nodes:
+        h = n.meta.get("debug_handle")
+        name_to_handle[n.name] = int(h) if isinstance(h, int) else None
+
+    out: List[Optional[int]] = []
+    for spec in tap_specs:
+        rn = getattr(spec, "reducer_node_name", None)
+        if rn is None:
+            out.append(None)
+            continue
+        out.append(name_to_handle.get(rn))
+    return out
