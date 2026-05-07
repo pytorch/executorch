@@ -635,8 +635,8 @@ TEST_F(OpVarMeanCorrectionOutTest, DynamicShapeUpperBoundLargerThanExpected) {
   EXPECT_TENSOR_CLOSE(mean_out, expected_mean);
 }
 
-TEST_F(OpVarMeanCorrectionOutTest, DynamicShapeUnbound) {
-  GTEST_SKIP() << "Dynamic shape unbound not supported";
+// DISABLED: Dynamic shape unbound not supported
+TEST_F(OpVarMeanCorrectionOutTest, DISABLED_DynamicShapeUnbound) {
   TensorFactory<ScalarType::Float> tf;
 
   Tensor x = tf.make({3, 2}, {0.49, 0.40, 0.56, 0.38, 0.49, 0.56});
