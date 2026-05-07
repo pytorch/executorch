@@ -2,12 +2,16 @@ import argparse
 import gc
 import logging
 import math
+import os
 import shutil
 import subprocess
 import tempfile
 import time
 from pathlib import Path
 from typing import List
+
+# Disable HF Xet storage to avoid stalled downloads on CI runners
+os.environ.setdefault("HF_HUB_DISABLE_XET", "1")
 
 import torch
 from datasets import load_dataset

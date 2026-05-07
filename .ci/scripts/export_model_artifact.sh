@@ -67,6 +67,7 @@ if [ -z "${1:-}" ]; then
   exit 1
 fi
 
+# Disable HF Xet storage to avoid stalled downloads on CI runners
 export HF_HUB_DISABLE_XET=1
 
 set -eux
