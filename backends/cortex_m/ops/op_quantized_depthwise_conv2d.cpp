@@ -135,6 +135,7 @@ bool validate_depthwise_conv2d_arguments(
 }
 } // namespace
 
+// cppcheck-suppress unusedFunction
 Tensor& quantized_depthwise_conv2d_out(
     KernelRuntimeContext& context,
     const Tensor& input,
