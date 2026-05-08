@@ -612,6 +612,25 @@ def register_q8ta_relu():
 
 
 # =============================================================================
+# Q8taPixelShuffle.cpp
+# =============================================================================
+
+
+@update_features(exir_ops.edge.et_vk.q8ta_pixel_shuffle.default)
+def register_q8ta_pixel_shuffle():
+    # The fused kernel is restricted to the channels-packed family
+    # (PACKED_INT8_4W4C, PACKED_INT8_4C1W, PACKED_INT8_CONV2D), all of which
+    # share packed_dim=C. See add_q8ta_pixel_shuffle_node in Q8taPixelShuffle.cpp
+    # for the runtime assertion. The surrounding q8ta_conv2d ops produce
+    # PACKED_INT8_4W4C on this model, so the partitioner can route through this
+    # op without inserting layout-transition q8ta_clone dispatches.
+    return OpFeatures(
+        inputs_storage=utils.PACKED_INT8_CHANNELS_PACKED_BUFFER,
+        supports_resize=True,
+    )
+
+
+# =============================================================================
 # =============================================================================
 
 
