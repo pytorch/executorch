@@ -41,6 +41,7 @@ class AnnotateQparamsPass(ExportPass):
         exir_ops.edge.aten.concat.default,
         exir_ops.edge.aten.cat.default,
         exir_ops.edge.aten.expand_copy.default,
+        exir_ops.edge.aten.split_with_sizes_copy.default,
     }
 
     def __init__(self, edge_program: ExportedProgram):

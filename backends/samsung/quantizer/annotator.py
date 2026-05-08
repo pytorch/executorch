@@ -393,6 +393,7 @@ def annotate_add_ops_with_SharedQuant(
         torch.ops.aten.relu6_.default,
         torch.ops.aten.cos.default,
         torch.ops.aten.sin.default,
+        torch.ops.aten.silu.default,
         torch.ops.aten.tanh.default,
         torch.ops.aten.hardswish.default,
         torch.ops.aten.hardswish_.default,
@@ -506,9 +507,6 @@ def annotate_1in1out_with_SharedQuant_for_FP(
 
     if _is_annotated([node]) or not _is_float_tensor(input):
         return
-
-    if input.target in ADD_OPS and _is_annotated([input]):
-        del input.meta["quantization_annotation"]
 
     # get QuantAnnot from the input path
     shared_quant_node = _get_quantization_annotation(input)
