@@ -1116,7 +1116,7 @@ def generate_lpai_compiler_spec(
     )
 
 
-def generate_qnn_executorch_compiler_spec(
+def generate_qnn_executorch_compiler_spec(  # noqa: C901
     soc_model: QcomChipset,
     backend_options: QnnExecuTorchBackendOptions,
     debug: bool = False,
@@ -1224,6 +1224,21 @@ def generate_qnn_executorch_compiler_spec(
     ):
         raise ValueError("LPAI does not support online prepare.")
 
+    if backend_options.backend_type == QnnExecuTorchBackendType.kLpaiBackend:
+        if soc_model.name not in get_soc_to_lpai_hw_ver_map():
+            raise ValueError(
+                f"Target soc_model({soc_model.name}) doesn't support LPAI backend. \n"
+                "Please choose the following SOC: "
+                f"{list(get_soc_to_lpai_hw_ver_map().keys())}"
+            )
+        elif get_soc_to_lpai_hw_ver_map()[
+            soc_model.name
+        ] == LpaiHardwareVersion.V6 and is_qnn_sdk_version_less_than("2.39"):
+            raise ValueError(
+                f"Target soc_model({soc_model.name}) with LPAI backend v6 requires QNN SDK version >= 2.39. \n"
+                f"Current QNN SDK version: {get_sdk_build_id()}"
+            )
+
     qnn_executorch_options.shared_buffer = shared_buffer
     qnn_executorch_options.online_prepare = online_prepare
     qnn_executorch_options.is_from_context_binary = is_from_context_binary
@@ -1238,6 +1253,7 @@ def generate_qnn_executorch_compiler_spec(
     ]
 
 
+# If changing function interface, please ensure it doesn't break backends/qualcomm/scripts/build_utils.sh
 def get_soc_to_htp_arch_map():
     return {
         "SA8295": HtpArch.V68,
@@ -1263,6 +1279,7 @@ def get_soc_to_htp_arch_map():
     }
 
 
+# If changing function interface, please ensure it doesn't break backends/qualcomm/scripts/build_utils.sh
 def get_soc_to_lpai_hw_ver_map():
     return {
         "SM8850": LpaiHardwareVersion.V6,

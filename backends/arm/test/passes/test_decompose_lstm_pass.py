@@ -9,7 +9,9 @@ from typing import Tuple
 
 import pytest
 import torch
+from executorch.backends.arm._passes import DecomposeLstmPass
 from executorch.backends.arm.test.tester.test_pipeline import (
+    PassPipeline,
     TosaPipelineFP,
     TosaPipelineINT,
 )
@@ -57,6 +59,37 @@ class LSTMModel(torch.nn.Module):
             self.num_layers * self.num_directions, batch_size, self.hidden_size
         )
         return (x, (h, c))
+
+
+chain_lstm_input_t = Tuple[
+    torch.Tensor,
+    Tuple[torch.Tensor, torch.Tensor],
+    Tuple[torch.Tensor, torch.Tensor],
+]
+
+
+class SequentialLSTMModel(torch.nn.Module):
+    def __init__(self) -> None:
+        super().__init__()
+        self.lstm1 = torch.nn.LSTM(10, 12, batch_first=True)
+        self.lstm2 = torch.nn.LSTM(12, 8, batch_first=True)
+
+    def forward(
+        self,
+        x: torch.Tensor,
+        hx1: Tuple[torch.Tensor, torch.Tensor],
+        hx2: Tuple[torch.Tensor, torch.Tensor],
+    ) -> Tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
+        y, _ = self.lstm1(x, hx1)
+        z, (h_n, c_n) = self.lstm2(y, hx2)
+        return z, h_n, c_n
+
+    def get_inputs(self) -> chain_lstm_input_t:
+        return (
+            torch.randn(2, 5, 10),
+            (torch.randn(1, 2, 12), torch.randn(1, 2, 12)),
+            (torch.randn(1, 2, 8), torch.randn(1, 2, 8)),
+        )
 
 
 def _run_fp_test(module):
@@ -153,3 +186,14 @@ def test_decompose_lstm_tosa_INT_no_bias():
 
 def test_decompose_lstm_tosa_INT_multilayer():
     _run_int_test(LSTMModel(num_layers=2))
+
+
+def test_decompose_lstm_pass_handles_chained_lstms() -> None:
+    module = SequentialLSTMModel()
+    pipeline = PassPipeline(
+        module,
+        module.get_inputs(),
+        quantize=True,
+        pass_list=[DecomposeLstmPass],
+    )
+    pipeline.run()

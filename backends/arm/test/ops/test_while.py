@@ -210,9 +210,6 @@ def test_while_loop_tosa_FP(case: Callable[[], Tuple[torch.nn.Module, Tuple]]):
 @common.parametrize(
     "case",
     test_cases,
-    xfails={
-        "large_threshold": "MLETORCH-1808 - Handle different scales for different parameters"
-    },
 )
 def test_while_loop_tosa_INT(case: Callable[[], Tuple[torch.nn.Module, Tuple]]):
     module, example_inputs = case()

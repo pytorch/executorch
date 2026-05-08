@@ -3,6 +3,8 @@
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
 
+# These dependencies need to match pyproject.toml
+
 ai_ml_emulation_layer_for_vulkan == 0.9.0
 ai_ml_sdk_model_converter == 0.9.0
 ai_ml_sdk_vgf_library == 0.9.0

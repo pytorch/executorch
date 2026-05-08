@@ -24,8 +24,8 @@ namespace executorch::backends::cuda {
 
 namespace c10_slim = executorch::backends::aoti::slim::c10;
 
-// PyTorch ScalarType::Half = 5, not defined in slim ScalarType enum.
-constexpr auto kHalf = static_cast<c10_slim::ScalarType>(5);
+// PyTorch ScalarType::Half = 5, now defined in slim ScalarType enum.
+using c10_slim::kHalf;
 
 namespace {
 
@@ -188,7 +188,7 @@ AOTITorchError aoti_torch_cuda_sort_stable(
     case c10_slim::ScalarType::BFloat16:
       elem_size = sizeof(__nv_bfloat16);
       break;
-    case kHalf:
+    case c10_slim::ScalarType::Half:
       elem_size = sizeof(__half);
       break;
     default:
@@ -387,7 +387,7 @@ AOTITorchError aoti_torch_cuda_sort_stable(
             stream);
         break;
       }
-      case kHalf: {
+      case c10_slim::ScalarType::Half: {
         sort_slice_impl(
             static_cast<__half*>(values_base) + offset,
             idx_ptr,

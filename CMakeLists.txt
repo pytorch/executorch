@@ -1124,6 +1124,8 @@ if(EXECUTORCH_BUILD_EXTENSION_TRAINING)
 endif()
 
 if(EXECUTORCH_BUILD_EXTENSION_LLM_RUNNER)
+  add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/extension/memory_allocator)
+  list(APPEND _executorch_extensions extension_memory_allocator)
   add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/extension/llm/runner)
   list(APPEND _executorch_extensions extension_llm_runner)
 endif()
@@ -1152,6 +1154,11 @@ endif()
 if(EXECUTORCH_BUILD_VULKAN)
   add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/backends/vulkan)
   list(APPEND _executorch_backends vulkan_backend vulkan_schema)
+endif()
+
+if(EXECUTORCH_BUILD_WEBGPU)
+  add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/backends/webgpu)
+  list(APPEND _executorch_backends webgpu_backend)
 endif()
 
 if(EXECUTORCH_BUILD_VGF)
@@ -1227,6 +1234,32 @@ if(NOT EXECUTORCH_SELECT_OPS_YAML STREQUAL ""
     "${EXECUTORCH_ENABLE_DTYPE_SELECTIVE_BUILD}"
   )
   list(APPEND _executorch_kernels executorch_selected_kernels)
+
+  # Auto-right-size the kernel registry unless the user has pinned
+  # MAX_KERNEL_NUM.
+  if(NOT DEFINED CACHE{MAX_KERNEL_NUM} AND NOT DEFINED MAX_KERNEL_NUM)
+    gen_selected_max_kernel_num(
+      LIB_NAME "executorch_selected_kernels" OPLIST_YAMLS
+      ${gen_selected_ops_output_yaml}
+    )
+    target_include_directories(
+      executorch_core
+      PRIVATE ${executorch_selected_kernels_max_kernel_num_include_dir}
+    )
+    add_dependencies(
+      executorch_core executorch_selected_kernels_max_kernel_num_header
+    )
+    if(TARGET executorch_core_shared)
+      target_include_directories(
+        executorch_core_shared
+        PRIVATE ${executorch_selected_kernels_max_kernel_num_include_dir}
+      )
+      add_dependencies(
+        executorch_core_shared
+        executorch_selected_kernels_max_kernel_num_header
+      )
+    endif()
+  endif()
 
   install(
     TARGETS executorch_selected_kernels

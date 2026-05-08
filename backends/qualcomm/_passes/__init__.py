@@ -15,6 +15,7 @@ from .convert_mha_to_sha import ConvertMhaToSha
 from .convert_square_to_pow import ConvertSquareToPow
 from .decompose_acos import DecomposeAcos
 from .decompose_any import DecomposeAny
+from .decompose_atan2 import DecomposeAtan2
 from .decompose_binary_alpha import DecomposeBinaryAlpha
 from .decompose_cdist import DecomposeCDist
 from .decompose_col_im import DecomposeColIm
@@ -26,6 +27,7 @@ from .decompose_linalg_vector_norm import DecomposeLinalgVectorNorm
 from .decompose_log_variants import DecomposeLogVariants
 from .decompose_maxpool3d import DecomposeMaxPool3d
 from .decompose_minmaxdim import DecomposeMinMaxDim
+from .decompose_pad import DecomposePad
 from .decompose_reciprocal import DecomposeReciprocal
 from .decompose_remainder import DecomposeRemainder
 from .decompose_roll import DecomposeRoll
@@ -69,6 +71,7 @@ __all__ = [
     ConvertSquareToPow,
     DecomposeAcos,
     DecomposeAny,
+    DecomposeAtan2,
     DecomposeBinaryAlpha,
     DecomposeCDist,
     DecomposeColIm,
@@ -80,6 +83,7 @@ __all__ = [
     DecomposeLogVariants,
     DecomposeMaxPool3d,
     DecomposeMinMaxDim,
+    DecomposePad,
     DecomposeReciprocal,
     DecomposeRemainder,
     DecomposeRoll,

@@ -26,7 +26,6 @@ enable_model_converter=0   # model-converter tool for VGF output
 enable_vgf_lib=0  # vgf reader - runtime backend dependency
 enable_emulation_layer=0  # Vulkan layer driver - emulates Vulkan ML extensions
 enable_vulkan_sdk=0  # Download and export Vulkan SDK required by emulation layer
-enable_mlsdk_pip_install=1
 
 # Figure out if setup.sh was called or sourced and save it into "is_script_sourced"
 (return 0 2>/dev/null) && is_script_sourced=1 || is_script_sourced=0
@@ -54,9 +53,10 @@ OPTION_LIST=(
   "--enable-emulation-layer Enable MLSDK Vulkan emulation layer"
   "--disable-ethos-u-deps Do not setup what is needed for Ethos-U"
   "--enable-mlsdk-deps Setup what is needed for MLSDK"
-  "--install-mlsdk-deps-with-pip (default) Use MLSDK PyPi package. This flag will be removed."
-  "--install-mlsdk-deps-from-src Build from source instead of using MLSDK PyPi packages"
-  "--mlsdk-manifest-url URL to the MLSDK manifest for vulkan."
+  "--install-mlsdk-deps-with-pip (default) Use MLSDK PyPI packages"
+  "--install-mlsdk-deps-from-src Use the dedicated source-build script instead"
+  "--mlsdk-manifest-url Deprecated: use with the dedicated source-build script"
+  "--mlsdk-manifest-tag Deprecated: use with the dedicated source-build script"
   "--help Display help"
 )
 
@@ -146,12 +146,34 @@ function check_options() {
                 shift
                 ;;
             --install-mlsdk-deps-with-pip)
-                enable_mlsdk_pip_install=1
+                log_step "mlsdk" \
+                    "Option '--install-mlsdk-deps-with-pip' is now the default behavior"
                 shift
                 ;;
             --install-mlsdk-deps-from-src)
-                enable_mlsdk_pip_install=0
-                shift
+                log_step "mlsdk" \
+                    "Deprecated option '--install-mlsdk-deps-from-src' selected"
+                log_step "mlsdk" \
+                    "Source builds moved to ./backends/arm/scripts/setup-mlsdk-from-source.sh"
+                exit 1
+                ;;
+            --mlsdk-manifest-url)
+                if [[ $# -lt 2 ]]; then
+                    print_usage "$@"
+                    exit 1
+                fi
+                log_step "mlsdk" \
+                    "Deprecated option '--mlsdk-manifest-url' selected; use it with ./backends/arm/scripts/setup-mlsdk-from-source.sh instead"
+                shift 2
+                ;;
+            --mlsdk-manifest-tag)
+                if [[ $# -lt 2 ]]; then
+                    print_usage "$@"
+                    exit 1
+                fi
+                log_step "mlsdk" \
+                    "Deprecated option '--mlsdk-manifest-tag' selected; use it with ./backends/arm/scripts/setup-mlsdk-from-source.sh instead"
+                shift 2
                 ;;
             --enable-mlsdk-deps)
                 enable_model_converter=1
@@ -190,8 +212,29 @@ function setup_ethos_u_tools() {
 }
 
 function setup_mlsdk_dependencies() {
-    log_step "mlsdk" "Installing MLSDK dependencies from pip"
+    log_step "mlsdk" "Installing MLSDK dependencies"
     pip install -r $et_dir/backends/arm/requirements-arm-vgf.txt
+}
+
+function validate_mlsdk_pip_compatibility() {
+    if [[ "${enable_emulation_layer}" -eq 0 ]]; then
+        return
+    fi
+
+    local float_as_double=""
+    float_as_double="$(detect_emulation_layer_float_as_double)"
+    if [[ "${float_as_double}" == "ON" ]]; then
+        log_step "mlsdk" \
+            "Detected missing shaderFloat64 support. The pip-installed emulation layer does not include the required workaround."
+        log_step "mlsdk" \
+            "Use ./backends/arm/scripts/setup-mlsdk-from-source.sh to build the emulation layer from source."
+        exit 1
+    fi
+
+    if [[ "${float_as_double}" == "UNKNOWN" ]]; then
+        log_step "mlsdk" \
+            "Unable to detect shaderFloat64 support. If the emulation layer crashes, use ./backends/arm/scripts/setup-mlsdk-from-source.sh."
+    fi
 }
 
 function create_setup_path(){
@@ -206,11 +249,6 @@ function create_setup_path(){
         prepend_env_in_setup_path PATH "${et_dir}/env/bin"
     fi
 
-    local use_mlsdk_pip=0
-    if use_mlsdk_pip_package; then
-        use_mlsdk_pip=1
-    fi
-
     if [[ "${enable_fvps}" -eq 1 ]]; then
         setup_path_fvp
     fi
@@ -223,31 +261,11 @@ function create_setup_path(){
         setup_path_vulkan
     fi
 
-    if [[ "${enable_model_converter}" -eq 1 && "${use_mlsdk_pip}" -eq 0 ]]; then
-        setup_path_model_converter
-    fi
-
-    if [[ "${enable_vgf_lib}" -eq 1 && "${use_mlsdk_pip}" -eq 0 ]]; then
-        setup_path_vgf_lib
-    fi
-
     if [[ "${enable_emulation_layer}" -eq 1 ]]; then
-        if [[ "${use_mlsdk_pip}" -eq 0 ]]; then
-            setup_path_emulation_layer
-        else
-            setup_path_emulation_layer_from_pip
-        fi
+        setup_path_emulation_layer
     fi
 
    log_step "path" "Update PATH by sourcing ${setup_path_script}.{sh|fish}"
-}
-
-function use_mlsdk_pip_package() {
-    if [[ "${enable_mlsdk_pip_install}" -eq 0 ]]; then
-        return 1
-    fi
-
-    return 0
 }
 
 
@@ -277,12 +295,8 @@ if [[ $is_script_sourced -eq 0 ]]; then
     setup_root_dir
     cd "${root_dir}"
 
-    if [[ "${mlsdk_manifest_dir}" != /* ]]; then
-        mlsdk_manifest_dir="${root_dir}/${mlsdk_manifest_dir}"
-    fi
-
     log_step "options" \
-             "root=${root_dir}, target-toolchain=${target_toolchain:-<default>}, mlsdk-dir=${mlsdk_manifest_dir}"
+             "root=${root_dir}, target-toolchain=${target_toolchain:-<default>}"
     log_step "options" \
              "ethos-u: fvps=${enable_fvps}, toolchain=${enable_baremetal_toolchain}, vela=${enable_vela} | " \
              "mlsdk: model-converter=${enable_model_converter}, vgf-lib=${enable_vgf_lib}, " \
@@ -310,21 +324,16 @@ if [[ $is_script_sourced -eq 0 ]]; then
         setup_vulkan_sdk
     fi
 
+    # Keep this after Vulkan SDK setup so vulkaninfo is available for the
+    # shaderFloat64 compatibility probe.
+    validate_mlsdk_pip_compatibility
+
     if [[ "${enable_model_converter}" -eq 1 || \
           "${enable_vgf_lib}" -eq 1 || \
           "${enable_emulation_layer}" -eq 1 ]]; then
         log_step "mlsdk" "Configuring MLSDK components (model-converter=${enable_model_converter}, " \
                          "vgf-lib=${enable_vgf_lib}, emu-layer=${enable_emulation_layer})"
-        if use_mlsdk_pip_package; then
-            setup_mlsdk_dependencies
-        else
-            log_step "mlsdk" "Installing MLSDK dependencies from source"
-            setup_mlsdk ${root_dir} \
-                        ${mlsdk_manifest_dir} \
-                        ${enable_model_converter} \
-                        ${enable_vgf_lib} \
-                        ${enable_emulation_layer}
-        fi
+        setup_mlsdk_dependencies
     fi
 
     # Create the setup_path.sh used to create the PATH variable for shell

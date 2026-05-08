@@ -10,6 +10,7 @@
 
 #pragma once
 
+#include <algorithm>
 #include <cstdint>
 #include <functional>
 #include <memory>
@@ -65,36 +66,41 @@ struct GenerationConfig {
    *
    * This method calculates the maximum number of new tokens that can be
    * generated considering both seq_len and max_new_tokens constraints, as well
-   * as the model's maximum context length and the number of tokens in the
-   * prompt.
+   * as the model's maximum context length and how many token positions are
+   * already occupied (e.g. by prior turns and the current prompt).
    *
    * @param max_context_len The maximum context length supported by the model
-   * @param num_prompt_tokens The number of tokens in the input prompt
+   * @param num_tokens_occupied The number of token positions already occupied
+   *   in the context window (e.g. pos_ after prefill)
    * @return The resolved maximum number of new tokens to generate
    */
   int32_t resolve_max_new_tokens(
-      int32_t max_context_len,
-      int32_t num_prompt_tokens) const {
-    int32_t result;
+      int64_t max_context_len,
+      int64_t num_tokens_occupied) const {
+    int64_t result;
 
     if (seq_len == -1 && max_new_tokens == -1) {
-      // Both are -1, use max context len minus prompt tokens
-      result = max_context_len - num_prompt_tokens;
+      // Both are -1, use max context len minus occupied tokens
+      result = max_context_len - num_tokens_occupied;
     } else if (seq_len == -1 && max_new_tokens != -1) {
       // Only max_new_tokens is specified
-      result = std::min(max_new_tokens, max_context_len - num_prompt_tokens);
+      result = std::min(
+          static_cast<int64_t>(max_new_tokens),
+          max_context_len - num_tokens_occupied);
     } else if (seq_len != -1 && max_new_tokens == -1) {
       // Only seq_len is specified
-      result = std::min(seq_len, max_context_len) - num_prompt_tokens;
+      result = std::min(static_cast<int64_t>(seq_len), max_context_len) -
+          num_tokens_occupied;
     } else {
       // Both are specified
       result = std::min(
-          std::min(seq_len, max_context_len) - num_prompt_tokens,
-          max_new_tokens);
+          std::min(static_cast<int64_t>(seq_len), max_context_len) -
+              num_tokens_occupied,
+          static_cast<int64_t>(max_new_tokens));
     }
 
     // Ensure result is not negative
-    return std::max(0, result);
+    return static_cast<int32_t>(std::max(static_cast<int64_t>(0), result));
   }
 };
 

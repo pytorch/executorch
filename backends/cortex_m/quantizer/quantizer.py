@@ -22,13 +22,13 @@ from executorch.backends.cortex_m.quantizer.quantization_configs import (
     INT8_PER_CHANNEL_CONFIG,
     INT8_PER_TENSOR_CONFIG,
 )
-from executorch.backends.cortex_m.quantizer.quantizer_reporter import QuantizerReporter
 from executorch.backends.cortex_m.quantizer.quantizer_support import (
     __name__ as cortex_m_quantizer_support_module,
     CONV_OP_PATTERNS,
     CONV_TRANSPOSE_OP_PATTERNS,
     CORTEX_M_QUANTIZER_SUPPORT_DICT,
 )
+from executorch.backends.cortex_m.quantizer_reporter import QuantizerReporter
 from torch._ops import OpOverload
 from torch.fx import GraphModule
 from torchao.quantization.pt2e.quantizer import ComposableQuantizer, Quantizer

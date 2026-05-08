@@ -13,6 +13,8 @@ fbcode_target(_kind = runtime.python_library,
     ]
 )
 
+# Test targets have transitive deps (caffe2, torchvision, torchaudio, etc.)
+# that are not available in OSS Buck builds.
 fbcode_target(_kind = runtime.python_library,
     name = "test_qnn_delegate",
     srcs = [
@@ -28,7 +30,6 @@ fbcode_target(_kind = runtime.python_library,
         "//caffe2/functorch:functorch_src",
         "//executorch/exir/backend:partitioner",
         "//executorch/exir/dialects:lib",
-        "//executorch/extension/pybindings:portable_lib",  # @manual
         "//executorch/extension/pytree:pylib",
         "//executorch/backends/qualcomm/partition:partition",
         "//executorch/backends/qualcomm/quantizer:quantizer",
@@ -36,11 +37,16 @@ fbcode_target(_kind = runtime.python_library,
         "//executorch/backends/qualcomm/utils:utils",
         "//executorch/devtools:lib",
         "//executorch/examples/qualcomm:utils",
-        "//executorch/examples/models:models",
         "//executorch/backends/qualcomm:export_utils",
         "//executorch/backends/qualcomm/debugger:utils",
         "//executorch/backends/qualcomm/debugger:qnn_intermediate_debugger",
-    ],
+    ] + ([] if runtime.is_oss else [
+        # These deps have pre-existing issues in OSS Buck:
+        # portable_lib: shim//build_defs/cpp_python_extension.bzl missing
+        # models: examples/models/BUCK uses raw python_library (no dep patching)
+        "//executorch/extension/pybindings:portable_lib",  # @manual
+        "//executorch/examples/models:models",
+    ]),
 )
 
 fbcode_target(_kind = runtime.python_library,
@@ -68,9 +74,11 @@ fbcode_target(_kind = runtime.python_test,
         "//executorch/backends/qualcomm/partition:partition",
         "//executorch/backends/qualcomm/serialization:serialization",
         "//executorch/backends/qualcomm/utils:utils",
+        "//executorch/backends/qualcomm/builders:builders",
+    ] + ([] if runtime.is_oss else [
+        # These deps fail in OSS: keep_gpu_sections kwarg breaks TARGETS evaluation
         "//executorch/examples/models/llama:transformer_modules",
         "//executorch/examples/qualcomm/oss_scripts/llama:masking_utils",
         "//executorch/examples/qualcomm/oss_scripts/llama:static_llama",
-        "//executorch/backends/qualcomm/builders:builders",
-    ],
+    ]),
 )

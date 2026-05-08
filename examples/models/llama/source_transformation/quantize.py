@@ -190,7 +190,6 @@ def quantize(  # noqa C901
             ),
         )
         quantize_(model, q_config)
-        model = unwrap_tensor_subclass(model)
 
         return model
     else:
