@@ -954,6 +954,39 @@ lib.define(
 lib.impl(name, q8ta_relu_impl, "CompositeExplicitAutograd")
 q8ta_relu_op = getattr(getattr(torch.ops, namespace), name)
 
+###########################
+## q8ta_pixel_shuffle    ##
+###########################
+
+
+def q8ta_pixel_shuffle_impl(
+    input: torch.Tensor,
+    input_scale: float,
+    input_zero_point: int,
+    output_inv_scale: float,
+    output_zero_point: int,
+    upscale_factor: int,
+):
+    # Reference Python impl for op registration. The runtime kernel does a
+    # fused byte-shuffle (and optional requantize when scales differ).
+    output_scale = 1.0 / output_inv_scale
+    dequant = torch.ops.quantized_decomposed.dequantize_per_tensor(
+        input, input_scale, input_zero_point, -128, 127, input.dtype
+    )
+    shuffled = torch.nn.functional.pixel_shuffle(dequant, upscale_factor)
+    requantized = torch.ops.quantized_decomposed.quantize_per_tensor(
+        shuffled, output_scale, output_zero_point, -128, 127, torch.int8
+    )
+    return requantized
+
+
+name = "q8ta_pixel_shuffle"
+lib.define(
+    f"{name}(Tensor input, float input_scale, int input_zero_point, float output_inv_scale, int output_zero_point, int upscale_factor) -> Tensor"
+)
+lib.impl(name, q8ta_pixel_shuffle_impl, "CompositeExplicitAutograd")
+q8ta_pixel_shuffle_op = getattr(getattr(torch.ops, namespace), name)
+
 ########################
 ## embedding_q4gsw ##
 ########################
