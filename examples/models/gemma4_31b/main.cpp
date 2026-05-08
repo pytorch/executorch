@@ -26,6 +26,9 @@
 #include <pytorch/tokenizers/hf_tokenizer.h>
 
 #include <cinttypes>
+#include <cmath>
+#include <cstdio>
+#include <cstring>
 #include <fstream>
 #include <string>
 #include <vector>
@@ -40,7 +43,7 @@ extern "C" void et_pal_emit_log_message(
     size_t line,
     const char* message,
     ET_UNUSED size_t length) {
-  if (level < 'W') {
+  if (level == 'D' || level == 'I') {
     return;
   }
   fprintf(stderr, "%c [%s:%zu] %s\n", (char)level, filename, line, message);

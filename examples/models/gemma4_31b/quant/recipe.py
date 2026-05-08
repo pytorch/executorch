@@ -25,7 +25,7 @@ class QuantConfig:
     """
 
     bits: int  # 4 or 8
-    group_size: int  # 32, 64, 128
+    group_size: int
     symmetric: bool  # True = no zero point
     method: str  # "min_max" | "hqq"
 

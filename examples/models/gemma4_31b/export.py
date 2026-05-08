@@ -82,7 +82,7 @@ def load_and_quantize(
         model.lm_head.weight = nn.Parameter(model.embed_tokens.weight.clone())
 
     print(f"Quantizing with recipe '{recipe_name}'...")
-    state_dict = quantize_model(model, recipe)
+    state_dict = quantize_model(model, recipe, verbose=True)
 
     print(f"Packing for {backend}...")
     with torch.device("meta"):
@@ -133,6 +133,8 @@ def export_and_lower(
 
 
 def _export_cuda(model: Gemma4_31B, config: Gemma4_31BConfig, output_dir: str) -> None:
+    import gc
+
     import torch._inductor.config as inductor_config
 
     from executorch.backends.cuda.cuda_backend import CudaBackend
@@ -142,28 +144,23 @@ def _export_cuda(model: Gemma4_31B, config: Gemma4_31BConfig, output_dir: str) -
         ExecutorchBackendConfig,
         to_edge_transform_and_lower,
     )
+    from executorch.exir.backend.compile_spec_schema import CompileSpec
     from executorch.exir.passes import MemoryPlanningPass
     from torch.export import Dim, export
 
     inductor_config.coordinate_descent_tuning = False
     inductor_config.aot_inductor.compile_wrapper_opt_level = "O0"
 
+    # Register Int4Tensor dispatch → executorch_cuda::int4_plain_mm shim
+    import executorch.backends.cuda.int4_dispatch  # noqa: F401
+
     materialize_runtime_buffers(model, dtype=torch.bfloat16)
 
-    print("Exporting decode (T=1)...")
-    with torch.no_grad():
-        decode_ep = export(
-            model,
-            (
-                torch.tensor([[0]], dtype=torch.long),
-                torch.tensor([0], dtype=torch.long),
-                torch.tensor([1.0], dtype=torch.float32),
-            ),
-            strict=True,
-        )
+    # Int4Tensor weights are used directly — no format conversion.
+    # F.linear dispatches to executorch_cuda::int4_plain_mm (CUDA shim).
+    # Both decode and prefill share the same nibble-packed weights.
 
-    # Cap prefill length to the ring-buffer KV cache size (2×sliding_window).
-    # Longer prompts are chunked by the runner.
+    # Prefill (T>=2): shim does dequant+cuBLAS (optimal for large M).
     max_prefill = min(config.max_seq_len - 1, config.sliding_window * 2)
     seq_dim = Dim("seq_len", min=2, max=max_prefill)
     print(f"Exporting prefill (T in [2, {max_prefill}])...")
@@ -179,18 +176,40 @@ def _export_cuda(model: Gemma4_31B, config: Gemma4_31BConfig, output_dir: str) -
             strict=True,
         )
 
+    # Decode (T=1): same Int4Tensor weights, same format. No transform needed.
+    print("Exporting decode (T=1)...")
+    with torch.no_grad():
+        decode_ep = export(
+            model,
+            (
+                torch.tensor([[0]], dtype=torch.long),
+                torch.tensor([0], dtype=torch.long),
+                torch.tensor([1.0], dtype=torch.float32),
+            ),
+            strict=True,
+        )
+
+    del model
+    gc.collect()
+
     print("Lowering to ExecuTorch with CUDA backend...")
     et_prog = to_edge_transform_and_lower(
         {"decode": decode_ep, "prefill": prefill_ep},
         partitioner={
             "decode": [
                 CudaPartitioner(
-                    [CudaBackend.generate_method_name_compile_spec("decode")]
+                    [
+                        CudaBackend.generate_method_name_compile_spec("decode"),
+                        CompileSpec("low_memory_mode", b"ON"),
+                    ]
                 )
             ],
             "prefill": [
                 CudaPartitioner(
-                    [CudaBackend.generate_method_name_compile_spec("prefill")]
+                    [
+                        CudaBackend.generate_method_name_compile_spec("prefill"),
+                        CompileSpec("low_memory_mode", b"ON"),
+                    ]
                 )
             ],
         },
@@ -208,6 +227,9 @@ def _export_cuda(model: Gemma4_31B, config: Gemma4_31BConfig, output_dir: str) -
             "enable_dynamic_shape": True,
         },
     )
+    del decode_ep, prefill_ep
+    gc.collect()
+
     et_program = et_prog.to_executorch(
         config=ExecutorchBackendConfig(
             extract_delegate_segments=True,
@@ -219,6 +241,9 @@ def _export_cuda(model: Gemma4_31B, config: Gemma4_31BConfig, output_dir: str) -
             emit_mutable_buffer_names=True,
         ),
     )
+
+    del et_prog
+    gc.collect()
 
     os.makedirs(output_dir, exist_ok=True)
     pte_path = os.path.join(output_dir, "model.pte")

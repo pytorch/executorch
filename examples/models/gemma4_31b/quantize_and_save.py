@@ -11,7 +11,7 @@ Produces a safetensors file containing torchao tensor subclasses
 packed for any backend via ``load_and_pack_for_cuda`` or ``pack_model``.
 
 The default recipe runs on CPU. The sensitive recipe requires CUDA for
-HQQ asymmetric quantization. CUDA is also required at load-and-pack time.
+HQQ asymmetric quantization.
 
 Usage:
     python quantize_and_save.py \\
@@ -115,7 +115,7 @@ def main() -> None:
         model.lm_head.weight = nn.Parameter(model.embed_tokens.weight.clone())
 
     print(f"Quantizing with recipe '{args.quant_recipe}'...")
-    state_dict = quantize_model(model, recipe)
+    state_dict = quantize_model(model, recipe, verbose=True)
 
     os.makedirs(args.output, exist_ok=True)
     safetensors_path = os.path.join(args.output, "model.safetensors")

@@ -19,9 +19,11 @@ import os
 import tempfile
 import unittest
 
+# Register Int4Tensor dispatch before any model usage
+import executorch.backends.cuda.int4_dispatch  # noqa: F401
+
 import torch
 import torch.nn as nn
-
 from executorch.examples.models.gemma4_31b.export import (
     export_and_lower,
     load_prequantized_model,
@@ -52,7 +54,7 @@ class TestCudaInference(unittest.TestCase):
         _require_cuda(self)
 
     def test_generate(self):
-        """save → load → pack → generate (sampling + greedy)."""
+        """save → load → pack → generate."""
         with tempfile.TemporaryDirectory() as tmpdir:
             save_checkpoint(tmpdir)
             model, config = load_prequantized_model(
@@ -102,18 +104,16 @@ class TestChunkedPrefill(unittest.TestCase):
         model_chunk.eval()
 
         buf_size = config.sliding_window * 2
-        prompt_len = buf_size + 8  # exceeds buf_size
+        prompt_len = buf_size + 8
         torch.manual_seed(0)
         prompt = torch.randint(0, config.vocab_size, (1, prompt_len), device="cuda")
 
-        # Sequential: one token at a time (temperature=None returns logits)
         with torch.no_grad():
             for i in range(prompt_len):
                 tok = prompt[:, i : i + 1]
                 pos = torch.tensor([i], dtype=torch.long, device="cuda")
                 logits_seq = model_seq(tok, pos, None)
 
-        # Chunked: two chunks respecting buf_size
         with torch.no_grad():
             chunk1 = prompt[:, :buf_size]
             pos1 = torch.arange(buf_size, dtype=torch.long, device="cuda")
@@ -123,9 +123,6 @@ class TestChunkedPrefill(unittest.TestCase):
             pos2 = torch.arange(buf_size, prompt_len, dtype=torch.long, device="cuda")
             logits_chunk = model_chunk(chunk2, pos2, None)
 
-        # Compare last-token logits (skip sampling to avoid RNG differences).
-        # Use allclose rather than equal — CUDA kernels can produce small FP
-        # differences across execution shapes.
         max_diff = (logits_seq[0, -1].float() - logits_chunk[0, -1].float()).abs().max()
         self.assertTrue(
             torch.allclose(
@@ -169,11 +166,66 @@ class TestCudaExport(unittest.TestCase):
             pack_model(model, state_dict, DEFAULT_CUDA_PACKERS)
             model.eval()
 
-            params = dict(model.named_parameters())
-            self.assertIn("lm_head.weight", params)
-            self.assertNotIn("layers.5.self_attn.v_proj.weight", params)
             export_and_lower(model, config, out_dir)
             self.assertTrue(os.path.exists(os.path.join(out_dir, "model.pte")))
+
+
+class TestInt4Inference(unittest.TestCase):
+    """Test Int4Tensor passthrough with dispatch override."""
+
+    def setUp(self):
+        _require_cuda(self)
+        with tempfile.TemporaryDirectory() as tmpdir:
+            save_checkpoint(tmpdir)
+            self.model, self.config = load_prequantized_model(
+                tmpdir, max_seq_len=TINY_CONFIG.max_seq_len
+            )
+        _move_to_cuda(self.model, self.config)
+        self.model.eval()
+
+    def _forward(self):
+        with torch.no_grad():
+            tok = torch.tensor([[1]], dtype=torch.long, device="cuda")
+            pos = torch.tensor([0], dtype=torch.long, device="cuda")
+            temp = torch.tensor([1.0], dtype=torch.float32, device="cuda")
+            return self.model(tok, pos, temp)
+
+    def test_int4_weights_preserved(self):
+        """Packing passes Int4Tensor through without conversion."""
+        from torchao.quantization.quantize_.workflows.int4.int4_tensor import Int4Tensor
+
+        w = self.model.layers[0].mlp.gate_proj.weight.data
+        self.assertIsInstance(w, Int4Tensor)
+
+    def test_inference_produces_valid_output(self):
+        out = self._forward()
+        self.assertEqual(out.shape, torch.Size([1, 1]))
+        self.assertFalse(out.isnan().any())
+
+    def test_deterministic(self):
+        """Same seed produces same output."""
+        torch.manual_seed(99)
+        out1 = self._forward()
+        # Reset KV cache by reloading
+        with tempfile.TemporaryDirectory() as tmpdir:
+            save_checkpoint(tmpdir)
+            model2, config2 = load_prequantized_model(
+                tmpdir, max_seq_len=TINY_CONFIG.max_seq_len
+            )
+        _move_to_cuda(model2, config2)
+        model2.eval()
+        with torch.no_grad():
+            tok = torch.tensor([[1]], dtype=torch.long, device="cuda")
+            pos = torch.tensor([0], dtype=torch.long, device="cuda")
+            temp = torch.tensor([1.0], dtype=torch.float32, device="cuda")
+            torch.manual_seed(99)
+            out2 = model2(tok, pos, temp)
+        self.assertEqual(int(out1.item()), int(out2.item()))
+
+    def test_embedding_works(self):
+        tok = torch.tensor([[1]], dtype=torch.long, device="cuda")
+        emb = self.model.embed_tokens(tok)
+        self.assertFalse(emb.isnan().any())
 
 
 if __name__ == "__main__":

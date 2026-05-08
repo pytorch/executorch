@@ -283,6 +283,7 @@ def quantize_model(
     model: nn.Module,
     recipe: QuantRecipe,
     dtype: torch.dtype = torch.bfloat16,
+    verbose: bool = False,
 ) -> dict[str, torch.Tensor]:
     """Walk model parameters + persistent buffers, apply recipe.
 
@@ -300,8 +301,10 @@ def quantize_model(
             state[fqn] = param.data.to(dtype)
         else:
             state[fqn] = quantize_weight(param.data, config)
-            print(f"  Quantized {i + 1}/{n_params}: {fqn}", end="\r")
-    print()
+            if verbose:
+                print(f"  Quantized {i + 1}/{n_params}: {fqn}", end="\r")
+    if verbose:
+        print()
 
     for fqn, buf in model.named_buffers():
         if fqn in persistent_keys and fqn not in state:

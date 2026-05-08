@@ -185,6 +185,8 @@ def main() -> None:
     _move_to_cuda(model, config)
     model.eval()
 
+    import executorch.backends.cuda.int4_dispatch  # noqa: F401
+
     if not args.no_compile:
         print("Compiling model with torch.compile...")
         model = torch.compile(model, mode="default")
