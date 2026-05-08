@@ -101,9 +101,12 @@ def vulkan_spv_shader_lib(name, spv_filegroups, is_fbcode = False, no_volk = Fal
     for target, subpath in spv_filegroups.items():
         glsl_paths.append("$(location {})/{}".format(target, subpath))
 
-    # Default to single-threaded shader compilation on macOS to avoid
-    # multiprocessing issues with the local build toolchain.
-    default_nthreads = "1" if host_info().os.is_macos else "-1"
+    # macOS: single-threaded due to local build toolchain multiprocessing issues.
+    # Linux: cap to 16. Sandcastle workers have no CPU cgroup, so os.cpu_count()
+    # in gen_vulkan_spv.py's ThreadPool returns the host count (158 on I7),
+    # which can OOM small worker_size cgroups when each glslc spawns a dotslash
+    # + scribe_cat (~80MB resident).
+    default_nthreads = "1" if host_info().os.is_macos else "16"
     nthreads = read_config("etvk", "shader_compile_nthreads", default_nthreads)
 
     genrule_cmd = (
