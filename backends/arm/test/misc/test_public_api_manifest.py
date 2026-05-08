@@ -30,7 +30,7 @@ def _entry_block(path: str, entry: dict[str, str]) -> str:
     )
 
 
-def test_public_api_manifest_entries_are_well_formed_no_target():
+def test_public_api_manifest_entries_are_well_formed():
     entries = _collect_public_api()
 
     assert entries
@@ -46,7 +46,7 @@ def test_public_api_manifest_entries_are_well_formed_no_target():
             assert path.rsplit(".", 1)[0] in entries
 
 
-def test_public_api_manifest_matches_generator_no_target():
+def test_public_api_manifest_matches_generator():
     entries = _collect_public_api()
     manifest = _render_manifest(entries)
 
@@ -60,7 +60,7 @@ def test_public_api_manifest_matches_generator_no_target():
     assert manifest == Path(RUNNING_MANIFEST_PATH).read_text(encoding="utf-8")
 
 
-def test_public_api_manifest_collection_handles_deprecated_symbols_no_target():
+def test_public_api_manifest_collection_handles_deprecated_symbols():
     @deprecated("old foo")
     def old_foo(x: int) -> int:
         return x
@@ -73,7 +73,7 @@ def test_public_api_manifest_collection_handles_deprecated_symbols_no_target():
     assert "old_foo" not in entries
 
 
-def test_public_api_manifest_collection_excludes_init_for_equivalent_classes_no_target():
+def test_public_api_manifest_collection_excludes_init_for_equivalent_classes():
     class ExplicitInit:
         def __init__(self, x: int = 0) -> None:
             del x

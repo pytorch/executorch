@@ -5,7 +5,8 @@ model on a Arm backend via ExecuTorch. This backend supports Ethos-U and VGF as
 targets (using TOSA) but you can also use the Ethos-U example runner as an example
 on Cortex-M if you do not delegate the model.
 
-The main scripts are `setup.sh`, `run.sh` and `aot_arm_compiler.py`.
+The main scripts are `setup.sh`, `run.sh` and
+`backends/arm/scripts/aot_arm_compiler.py`.
 
 `setup.sh` will install the needed tools and with --root-dir <FOLDER> 
 you can change the path to a scratch folder where it will download and generate build
@@ -38,13 +39,13 @@ You point out the model to convert with `--model_name=<MODELNAME/FILE>` It suppo
 from a python file if you just specify `ModelUnderTest` and `ModelInputs` in it.
 
 ```
-$ python3 -m examples.arm.aot_arm_compiler --help
+$ python3 -m backends.arm.scripts.aot_arm_compiler --help
 ```
 
 This is how you generate a BundleIO BPTE of a simple add example
 
 ```
-$ python3 -m examples.arm.aot_arm_compiler --model_name=examples/arm/example_modules/add.py --target=ethos-u55-128 --bundleio
+$ python3 -m backends.arm.scripts.aot_arm_compiler --model_name=examples/arm/example_modules/add.py --target=ethos-u55-128 --bundleio
 ```
 
 The example model used has added two extra variables that is picked up to make this work.
@@ -57,11 +58,11 @@ The example model used has added two extra variables that is picked up to make t
 You can also use the models from example/models directly by just using the short name e.g.
 
 ```
-$ python3 -m examples.arm.aot_arm_compiler --model_name=mv2 --target=ethos-u55-64
+$ python3 -m backends.arm.scripts.aot_arm_compiler --model_name=mv2 --target=ethos-u55-64
 ```
 
 
-The `aot_arm_compiler.py` is called from the scripts below so you don't need to, but it can be useful to do by hand in some cases.
+`aot_arm_compiler.py` is called from the scripts below so you don't need to, but it can be useful to do by hand in some cases.
 
 
 ## ExecuTorch on Arm Ethos-U55/U65 and U85

@@ -37,7 +37,7 @@ echo '{"dim": 64, "n_layers": 5, "n_heads": 8, "n_kv_heads": 4, "vocab_size": 51
 
 ``` bash
 # Checks accuracy with weight sharing disabled since x86 does not support weight sharing.
-python backends/qualcomm/tests/test_qnn_delegate.py -k TestExampleLLMScript.test_llama_stories_260k --model SM8650 --build_folder build-x86/ --executorch_root . --artifact_dir ./examples/qualcomm/oss_scripts/llama/artifacts --llama_artifacts . --enable_x86_64 --compile_only
+python backends/qualcomm/tests/test_qnn_delegate.py -k TestExampleLLMScript.test_llama_stories_260k --soc_model SM8650 --build_folder build-x86/ --executorch_root . --artifact_dir ./examples/qualcomm/oss_scripts/llama/artifacts --llama_artifacts . --enable_x86_64 --compile_only
 
 ```
 4. Commit the hybrid_llama_qnn.pte file to the repository.

@@ -4,6 +4,7 @@
 # LICENSE file in the root directory of this source tree.
 
 import logging
+import operator
 
 import torch
 
@@ -367,3 +368,104 @@ def node_has_well_defined_shape(node: Node) -> bool:
 
 def try_get_arg(node: Node, idx: int) -> Argument | None:
     return node.args[idx] if idx < len(node.args) else None
+
+
+def input_quantization_type(
+    node: Node, input_index: int | tuple[int, int]
+) -> torch.dtype | None:
+    """Return the quantization input datatype of the QDQ quantized `node`.
+
+    :param node: The compute node.
+    :param input_index: The index into the `node.args`. If a tuple of 2 ints is provided,
+                         `args[input_index[0]][input_index[1]]` is used instead.
+    :return: The input quantization datatype of the QDQ quantized `node`, or `None` if the graph does not follow the
+              QDQ pattern or some metadata is incomplete or an invalid input index is given.
+
+          │ <returned type>
+    ┌─────▼──────┐
+    │ Dequantize │
+    └─────┬──────┘
+          │ float
+      ┌───▼────┐
+      │ `node` │
+      └───┬────┘
+    """
+    try:
+        if isinstance(input_index, int):
+            dequantize_node = node.args[input_index]
+        elif (
+            isinstance(input_index, tuple)
+            and len(input_index) == 2
+            and all(isinstance(i, int) for i in input_index)
+        ):
+            dequantize_node = node.args[input_index[0]][input_index[1]]
+        else:
+            raise RuntimeError(
+                "NXP backend: edge_helper.input_quantization_type(): Invalid input index."
+            )
+    except IndexError:
+        return None  # Invalid input args index.
+
+    if not _is_dequantize(dequantize_node):
+        return None  # Broken QDQ schema.
+
+    if (dequantize_input_val := dequantize_node.args[0].meta.get("val")) is None:
+        return None  # Invalid metadata.
+
+    return dequantize_input_val.dtype
+
+
+def output_quantization_type(
+    node: Node, output_index: int | None = None
+) -> torch.dtype | None:
+    """Return the quantization output datatype of the QDQ quantized `node`.
+
+    :param node: The compute node.
+    :param output_index: If the `node` has multiple outputs and therefore multiple `getitem` nodes follow it, the
+                          index selects the output.
+    :return: The output quantization datatype of the QDQ quantized `node`, or `None` if the graph does not follow the
+              QDQ pattern or some metadata is incomplete or an invalid input index is given.
+
+                                           ┌───▼────┐
+                                           │ `node` │
+     ┌───▼────┐                            └───┬────┘
+     │ `node` │                                │
+     └───┬────┘                             ┌──┴───────────────...──
+         │ float                  ┌─────────▼─────────────┐
+    ┌────▼─────┐         or       │ getitem(output_index) │    ...
+    │ Quantize │                  └─────────┬─────────────┘
+    └────┬─────┘                            │ float
+         │ <returned type>             ┌────▼─────┐
+                                       │ Quantize │
+                                       └────┬─────┘
+                                            │ <returned type>
+    """
+    users = list(node.users)
+    if len(users) == 1:
+        if not _is_quantize(quantize_node := users[0]):
+            return None
+
+    else:  # Multiple users
+        if not isinstance(output_index, int):
+            return None  # Invalid index.
+        if not all(user.target == operator.getitem for user in users):
+            # Broken QDQ schema (unexpected nodes). These nodes should be moved out by
+            #  `move_auxiliary_operator_into_separate_qdq_cluster_pass.py`.
+            return None
+
+        selected_getitems = list(
+            filter(lambda getitem: getitem.args[1] == output_index, users)
+        )
+        if len(selected_getitems) != 1:
+            return None  # Multiple getitems access the selected output -> broken QDQ schema.
+        selected_getitem_users = list(selected_getitems[0].users)
+        if not (
+            len(selected_getitem_users) == 1
+            and _is_quantize(quantize_node := selected_getitem_users[0])
+        ):
+            return None  # Broken QDQ schema.
+
+    if (quantize_val := quantize_node.meta.get("val")) is None:
+        return None  # Invalid metadata.
+
+    return quantize_val.dtype

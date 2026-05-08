@@ -190,7 +190,6 @@ def quantize(  # noqa C901
             ),
         )
         quantize_(model, q_config)
-        model = unwrap_tensor_subclass(model)
 
         return model
     else:
@@ -755,6 +754,14 @@ class QuantizedGroupEmbedding(torch.nn.Module):
                 self.weight, self.scales, None, -8, 7, indices, dtype=self.dtype
             )
 
+    def _apply(self, fn, recurse=True):
+        """Override _apply to update self.dtype when the module is cast via .to(dtype)."""
+        super()._apply(fn, recurse)
+        # Probe the new dtype from the scales buffer, which gets cast by super()._apply.
+        if self.scales is not None:
+            self.dtype = self.scales.dtype
+        return self
+
 
 ############################ Source Transform Start #######################
 
@@ -762,7 +769,6 @@ class QuantizedGroupEmbedding(torch.nn.Module):
 def get_quant_embedding_transform(
     embedding_quantize: str,
     use_shared_embedding: bool = False,
-    dtype_override: Optional[DType] = None,
     quantize_with_hqq: bool = True,
 ):
     if embedding_quantize.startswith("torchao:"):
@@ -817,13 +823,11 @@ def get_quant_embedding_transform(
     else:
         group_size = int(group_size)
     bitwidth = int(bitwidth)
-    torch_dtype = dtype_override.to_torch_dtype() if dtype_override else None
     return lambda model: EmbeddingQuantHandler(
         model,
         bitwidth=bitwidth,
         group_size=group_size,
         packed=(bitwidth in [2, 4]),
-        precision=torch_dtype,
         quantize_with_hqq=quantize_with_hqq,
     ).quantized_model()
 

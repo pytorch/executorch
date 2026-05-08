@@ -82,7 +82,7 @@ class CondOneArgTwoOutputs(torch.nn.Module):
             return arg + torch.sin(arg), arg - torch.sin(arg)
 
         def false_branch(arg: torch.Tensor) -> tuple[torch.Tensor, torch.Tensor]:
-            return arg - arg.mean(), arg + arg.mean()
+            return arg - torch.cos(arg), arg + torch.cos(arg)
 
         predicate = x.flatten().sum() > 0
         return torch.cond(predicate, true_branch, false_branch, [x])

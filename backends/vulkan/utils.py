@@ -1511,14 +1511,19 @@ class OpRepSets:
         if not arg_current_repset.any_in_common(source_repset):
             return False
 
+        # Compute the narrowed repset (intersection of current arg and source).
+        narrowed = arg_current_repset.make_intersect(source_repset)
+
         if self.sync_primary_io_repr:
-            if not self.get_out_repset(0).has_compatible_packed_dim_info_set(
-                source_repset
-            ):
+            # Check that the narrowed result is compatible with the output.
+            # Using the intersection rather than the raw source_repset avoids
+            # rejecting valid constraints where the source has extra layouts
+            # (e.g. ANY_TEXTURE includes HP/CP) that don't exist in the output
+            # but also don't appear in the intersection.
+            if not self.get_out_repset(0).has_compatible_packed_dim_info_set(narrowed):
                 return False
 
         # If this point is reached, then it is possible to constrain
-        narrowed = arg_current_repset.make_intersect(source_repset)
         self.args_repset_list[arg_i] = narrowed
 
         # Propagate to other synced args via packed-dim compatibility

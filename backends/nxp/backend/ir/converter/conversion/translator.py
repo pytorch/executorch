@@ -1,5 +1,5 @@
 # Copyright 2023 Martin Pavella
-# Copyright 2023-2025 NXP
+# Copyright 2023-2026 NXP
 #
 # License: MIT
 # See the LICENSE_MIT for more details.
@@ -547,8 +547,8 @@ def convert_data_type(torch_type: torch.TensorType) -> TensorType:
         )
 
 
-def torch_type_to_numpy_type(torch_type: torch.TensorType) -> np.ScalarType:
-    """Convert Torch DataType to NeutronIR TensorType"""
+def torch_type_to_numpy_type(torch_type: torch.TensorType) -> np.dtype:
+    """Convert Torch data type to Numpy data type."""
 
     if torch_type == torch.float32:
         return np.dtype(np.float32)
@@ -601,7 +601,7 @@ def numpy_type_to_tf_lite(numpy_type: np.dtype) -> TensorType:  # noqa C901
     elif numpy_type == np.int64:
         return TensorType.INT64
 
-    elif numpy_type == np.string_:
+    elif numpy_type == np.bytes_:
         return TensorType.STRING
 
     elif numpy_type == np.bool_:
@@ -659,7 +659,7 @@ def tf_lite_type_to_numpy(tfl_type: TensorType) -> np.ScalarType:  # noqa C901
         return np.dtype(np.int64)
 
     elif tfl_type == TensorType.STRING:
-        return np.dtype(np.string_)
+        return np.dtype(np.bytes_)
 
     elif tfl_type == TensorType.BOOL:
         return np.dtype(np.bool_)

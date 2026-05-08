@@ -1,9 +1,10 @@
-# Copyright 2025 NXP
+# Copyright 2025-2026 NXP
 #
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
 
 import numpy as np
+import torch
 
 from executorch.backends.nxp.backend.ir.converter.conversion import (
     aten_translator,
@@ -21,6 +22,8 @@ from executorch.backends.nxp.backend.ir.tflite_generator import tflite_model
 from executorch.backends.nxp.backend.ir.tflite_generator.builtin_options import (
     average_pool_2d_options,
 )
+
+from executorch.backends.nxp.backend.neutron_target_spec import NeutronTargetSpec
 from torch.fx import Node
 from torch.nn import Parameter
 
@@ -50,6 +53,33 @@ class AvgPool2dConverter(NodeConverter):
 
         if not NodeConverter._has_shared_q_params_if_quantized(node):
             return False
+
+        return True
+
+    @staticmethod
+    def _is_supported_on_target(
+        node: Node,
+        neutron_target_spec: NeutronTargetSpec,
+        parameters_mapping: dict[str, Parameter],
+        custom_delegation_options: CustomDelegationOptions,
+    ) -> bool:
+        kernel = node.args[1]
+        stride = node.args[2]
+
+        if custom_delegation_options.use_new_flow_neutron_c:
+            # Requirements specified by the new Neutron flow documentation.
+
+            supported_types = [torch.int8, torch.uint8]
+            if not NodeConverter.uses_quantization_type_for_io(
+                node, supported_types, [0]
+            ):
+                return False
+
+            if any(k > 4096 for k in kernel):
+                return False
+
+            if any(s > 4096 for s in stride):
+                return False
 
         return True
 
@@ -85,10 +115,19 @@ class AvgPool2dConverter(NodeConverter):
 
         return ops.flatten()
 
-    # AvgPool2d Node format: (Tensor self, int[2] kernel_size, int[2] stride=[], int[2] padding=0, bool ceil_mode=False
-    #                         bool count_include_pad=True, int? divisor_override=None)
     def convert(self, node: Node):
-        """Convert 'avg_pool2d' operator to TFLite 'AveragePool2D'."""
+        """Convert the 'aten.avg_pool2d' operator to NeutronIR 'AveragePool2D'.
+        The ExecuTorch schema is:
+            aten.avg_pool2d(
+                Tensor self,
+                int[2] kernel_size,
+                int[2] stride=[],
+                int[2] padding=0,
+                bool ceil_mode=False
+                bool count_include_pad=True,
+                int? divisor_override=None
+            )
+        """
         self.assert_convertible(node)
 
         kernel_size = node.args[1]

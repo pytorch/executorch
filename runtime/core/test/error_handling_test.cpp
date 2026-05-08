@@ -105,6 +105,72 @@ class Movable {
   mutable void* buffer_;
 };
 
+TEST(ErrorHandlingTest, ToStringKnownError) {
+  EXPECT_STREQ(executorch::runtime::to_string(Error::Ok), "Error::Ok");
+  EXPECT_STREQ(
+      executorch::runtime::to_string(Error::Internal), "Error::Internal");
+  EXPECT_STREQ(
+      executorch::runtime::to_string(Error::InvalidState),
+      "Error::InvalidState");
+  EXPECT_STREQ(
+      executorch::runtime::to_string(Error::EndOfMethod), "Error::EndOfMethod");
+  EXPECT_STREQ(
+      executorch::runtime::to_string(Error::AlreadyLoaded),
+      "Error::AlreadyLoaded");
+  EXPECT_STREQ(
+      executorch::runtime::to_string(Error::NotSupported),
+      "Error::NotSupported");
+  EXPECT_STREQ(
+      executorch::runtime::to_string(Error::NotImplemented),
+      "Error::NotImplemented");
+  EXPECT_STREQ(
+      executorch::runtime::to_string(Error::InvalidArgument),
+      "Error::InvalidArgument");
+  EXPECT_STREQ(
+      executorch::runtime::to_string(Error::InvalidType), "Error::InvalidType");
+  EXPECT_STREQ(
+      executorch::runtime::to_string(Error::OperatorMissing),
+      "Error::OperatorMissing");
+  EXPECT_STREQ(
+      executorch::runtime::to_string(Error::RegistrationExceedingMaxKernels),
+      "Error::RegistrationExceedingMaxKernels");
+  EXPECT_STREQ(
+      executorch::runtime::to_string(Error::RegistrationAlreadyRegistered),
+      "Error::RegistrationAlreadyRegistered");
+  EXPECT_STREQ(
+      executorch::runtime::to_string(Error::NotFound), "Error::NotFound");
+  EXPECT_STREQ(
+      executorch::runtime::to_string(Error::MemoryAllocationFailed),
+      "Error::MemoryAllocationFailed");
+  EXPECT_STREQ(
+      executorch::runtime::to_string(Error::AccessFailed),
+      "Error::AccessFailed");
+  EXPECT_STREQ(
+      executorch::runtime::to_string(Error::InvalidProgram),
+      "Error::InvalidProgram");
+  EXPECT_STREQ(
+      executorch::runtime::to_string(Error::InvalidExternalData),
+      "Error::InvalidExternalData");
+  EXPECT_STREQ(
+      executorch::runtime::to_string(Error::OutOfResources),
+      "Error::OutOfResources");
+  EXPECT_STREQ(
+      executorch::runtime::to_string(Error::DelegateInvalidCompatibility),
+      "Error::DelegateInvalidCompatibility");
+  EXPECT_STREQ(
+      executorch::runtime::to_string(Error::DelegateMemoryAllocationFailed),
+      "Error::DelegateMemoryAllocationFailed");
+  EXPECT_STREQ(
+      executorch::runtime::to_string(Error::DelegateInvalidHandle),
+      "Error::DelegateInvalidHandle");
+}
+
+TEST(ErrorHandlingTest, ToStringUnknownError) {
+  auto unknown = static_cast<Error>(0xFF);
+  const char* result = executorch::runtime::to_string(unknown);
+  EXPECT_STREQ(result, "Error::Unknown");
+}
+
 TEST(ErrorHandlingTest, ResultBasic) {
   Result<uint32_t> r(1);
   ASSERT_TRUE(r.ok());

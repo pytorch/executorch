@@ -8,6 +8,8 @@
 
 #include <executorch/runtime/executor/tensor_parser.h>
 
+#include <cstring>
+
 #include <executorch/extension/data_loader/file_data_loader.h>
 #include <executorch/runtime/core/exec_aten/exec_aten.h>
 #include <executorch/runtime/core/tensor_layout.h>
@@ -19,6 +21,7 @@
 using namespace ::testing;
 using executorch::aten::ScalarType;
 using executorch::aten::Tensor;
+using executorch::runtime::BoxedEvalueList;
 using executorch::runtime::Error;
 using executorch::runtime::EValue;
 using executorch::runtime::FreeableBuffer;
@@ -26,7 +29,9 @@ using executorch::runtime::Program;
 using executorch::runtime::Result;
 using executorch::runtime::Span;
 using executorch::runtime::TensorLayout;
+using executorch::runtime::deserialization::parseListOptionalType;
 using executorch::runtime::deserialization::parseTensor;
+using executorch::runtime::deserialization::parseTensorList;
 using executorch::runtime::deserialization::validateTensorLayout;
 using executorch::runtime::testing::ManagedMemoryManager;
 using torch::executor::util::FileDataLoader;
@@ -222,4 +227,61 @@ TEST(ValidateTensorLayoutTest, DimOrderSizeMismatchIsRejected) {
 
   EXPECT_EQ(
       validateTensorLayout(s_tensor, layout.get()), Error::InvalidExternalData);
+}
+
+// Helper to construct a flatbuffers::Vector<int32_t> from raw data.
+// FlatBuffer vectors are stored as [uint32_t length][T elements...].
+namespace {
+struct FlatVectorInt32 {
+  static const flatbuffers::Vector<int32_t>* create(
+      std::vector<uint8_t>& buf,
+      const std::vector<int32_t>& elements) {
+    buf.resize(sizeof(uint32_t) + elements.size() * sizeof(int32_t));
+    uint32_t len = static_cast<uint32_t>(elements.size());
+    memcpy(buf.data(), &len, sizeof(len));
+    if (!elements.empty()) {
+      memcpy(
+          buf.data() + sizeof(uint32_t),
+          elements.data(),
+          elements.size() * sizeof(int32_t));
+    }
+    return reinterpret_cast<const flatbuffers::Vector<int32_t>*>(buf.data());
+  }
+};
+} // namespace
+
+// parseTensorList should return an error when the EValue at the given index
+// is not a Tensor, instead of aborting.
+TEST_F(TensorParserTest, ParseTensorListRejectsNonTensorEValue) {
+  ManagedMemoryManager mmm(kDefaultNonConstMemBytes, kDefaultRuntimeMemBytes);
+
+  // Create an EValue array with a non-Tensor value at index 0.
+  EValue values[2];
+  values[0] = EValue(static_cast<int64_t>(42)); // Int, not Tensor
+  values[1] = EValue(static_cast<int64_t>(7));
+
+  // Create a vector with index 0 (pointing to the Int EValue).
+  std::vector<uint8_t> vec_buf;
+  auto* indices = FlatVectorInt32::create(vec_buf, {0});
+
+  auto result = parseTensorList(indices, values, 2, &mmm.get());
+  EXPECT_EQ(result.error(), Error::InvalidType);
+}
+
+// parseListOptionalType should return an error when the EValue at the given
+// index is neither None nor the expected type.
+TEST_F(TensorParserTest, ParseListOptionalTypeRejectsWrongType) {
+  ManagedMemoryManager mmm(kDefaultNonConstMemBytes, kDefaultRuntimeMemBytes);
+
+  // Create an EValue array with a non-Tensor, non-None value at index 0.
+  EValue values[2];
+  values[0] = EValue(static_cast<int64_t>(42)); // Int, not Tensor or None
+  values[1] = EValue(static_cast<int64_t>(7));
+
+  // Create a vector with index 0 (pointing to the Int EValue).
+  std::vector<uint8_t> vec_buf;
+  auto* indices = FlatVectorInt32::create(vec_buf, {0});
+
+  auto result = parseListOptionalType<Tensor>(indices, values, 2, &mmm.get());
+  EXPECT_EQ(result.error(), Error::InvalidType);
 }

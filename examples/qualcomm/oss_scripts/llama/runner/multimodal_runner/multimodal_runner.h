@@ -26,6 +26,7 @@
 #include <executorch/examples/qualcomm/oss_scripts/llama/runner/multimodal_runner/multimodal_token_generator.h>
 #include <executorch/examples/qualcomm/oss_scripts/llama/runner/multimodal_runner/tok_embedding_processor.h>
 #include <executorch/examples/qualcomm/oss_scripts/llama/runner/multimodal_runner/tok_embedding_runner.h>
+#include <executorch/extension/llm/runner/audio.h>
 #include <executorch/extension/llm/runner/image.h>
 #include <executorch/extension/llm/runner/irunner.h>
 #include <executorch/extension/llm/runner/multimodal_input.h>
@@ -46,8 +47,9 @@ enum class VisionLanguageModel {
   kInternvl3,
 };
 
-// TODO: Add audio models when they are supported
-enum class AudioLanguageModel {};
+enum class AudioLanguageModel {
+  kGraniteSpeech = 0,
+};
 
 using ModelVersion = std::variant<VisionLanguageModel, AudioLanguageModel>;
 
@@ -147,11 +149,6 @@ class QNNMultimodalRunner
   std::unique_ptr<TokenEmbeddingProcessor> tok_embedding_processor_;
   std::unique_ptr<TokenEmbeddingProcessor> tok_embedding_generator_;
   std::unique_ptr<MultimodalEmbeddingMerger> embedding_merger_;
-
-  // Placeholder token ID for image inputs. This value will be set from the
-  // model's metadata. A default of 0 indicates that the vision modality is not
-  // supported.
-  uint64_t image_token_id_{0};
 
   // stats
   executorch::llm::Stats stats_;
