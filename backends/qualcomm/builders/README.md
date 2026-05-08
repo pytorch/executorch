@@ -490,6 +490,37 @@ Please help update following table if you are contributing new operators:
 | TransPoseConv3d | &check; |
 | Unpack | &check; |
 
+
+## Additional Operators Supported via Passes
+The following PyTorch operators are supported through decomposition or annotation passes located in `backends/qualcomm/_passes/`. These ops do not have a direct 1:1 mapping to a QNN operator but are handled by transforming them into supported QNN operations.
+
+| PyTorch Op | Decomposition Pass |
+|---|---|
+| `aten.acos` | `DecomposeAcos` |
+| `aten.adaptive_avg_pool1d`, `aten.avg_pool1d` | `AnnotateAvgPool1D` |
+| `aten.any` | `DecomposeAny` |
+| `aten.atan2.default`, `aten.atan2.out` | `DecomposeAtan2` |
+| `aten.add` (with alpha), `aten.sub` (with alpha) | `DecomposeBinaryAlpha` |
+| `aten.cdist` | `DecomposeCDist` |
+| `aten.im2col`, `aten.col2im` | `DecomposeColIm` |
+| `aten.einsum` | `DecomposeEinsum` |
+| `aten.special_expm1` | `DecomposeExpM1` |
+| `aten.floor_divide` | `DecomposeFloorDivide` |
+| `aten.glu` | `DecomposeGlu` |
+| `aten.linalg_vector_norm` | `DecomposeLinalgVectorNorm` |
+| `aten.log10`, `aten.log2`, `aten.log1p` | `DecomposeLogVariants` |
+| `aten.max_pool3d` | `DecomposeMaxPool3d` |
+| `aten.min.dim`, `aten.max.dim` | `DecomposeMinMaxDim` |
+| `aten.reciprocal` | `DecomposeReciprocal` |
+| `aten.reflection_pad1d` | PyTorch built-in decomposition |
+| `aten.reflection_pad2d` | `DecomposePad` |
+| `aten.remainder.Scalar`, `aten.remainder.Tensor` | `DecomposeRemainder` |
+| `aten.roll` | `DecomposeRoll` |
+| `aten.silu` | `DecomposeSilu` |
+| `aten.threshold` | `DecomposeThreshold` |
+| `aten.triu` | `DecomposeTriu` |
+| `aten.trunc` | `DecomposeTrunc` |
+
 ## Issues
 Please refer to the [issue section](../README.md#issues) for more information.
 

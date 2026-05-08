@@ -139,6 +139,17 @@ class InsertTableOpsPass(ArmPass):
         """Add buffer to self.exported_program.state_dict."""
         self.exported_program.state_dict[buffer_name] = buffer
 
+    @staticmethod
+    def _get_8bit_table_domain() -> torch.Tensor:
+        """Return the canonical 8-bit TOSA TABLE input domain."""
+        int8_info = torch.iinfo(torch.int8)
+        # torch.arange excludes the end value, so use max + 1 to include 127.
+        return torch.arange(
+            int8_info.min,
+            int8_info.max + 1,
+            dtype=torch.int8,
+        )
+
     def generate_8bit_table_values(
         self,
         torch_op: Callable[[torch.Tensor], torch.Tensor],
@@ -157,17 +168,10 @@ class InsertTableOpsPass(ArmPass):
             x = torch_op(x)
             return out_quantargs.quantize_value(x)
 
-        return (
-            f(
-                torch.linspace(
-                    start=in_quantargs.qmin,
-                    end=in_quantargs.qmax,
-                    steps=256,
-                    dtype=torch.int8,
-                )
-            ).to(dtype=torch.int8),
-            0,
+        effective_codes = self._get_8bit_table_domain().clamp(
+            in_quantargs.qmin, in_quantargs.qmax
         )
+        return (f(effective_codes).to(dtype=torch.int8), 0)
 
     def generate_16_bit_table_values(
         self,

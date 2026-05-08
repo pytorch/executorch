@@ -1171,7 +1171,14 @@ class Or(GeneralOpDef):
         annotate_binary(node, quantization_config)
 
 
-@register_annotator([torch.ops.aten.pad.default], QnnConstants.OpPad.op_name)
+@register_annotator(
+    [
+        torch.ops.aten.pad.default,
+        torch.ops.aten.reflection_pad1d.default,
+        torch.ops.aten.reflection_pad2d.default,
+    ],
+    QnnConstants.OpPad.op_name,
+)
 class Pad(GeneralOpDef):
     pass
 

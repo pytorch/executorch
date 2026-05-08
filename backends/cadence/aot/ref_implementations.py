@@ -633,10 +633,8 @@ def quantized_fully_connected_asym8uxasym8u_asym8u_per_tensor() -> torch.Tensor:
 def fully_connected(
     input_tensor: torch.Tensor,
     weight: torch.Tensor,
-    bias: torch.Tensor,
+    bias: Optional[torch.Tensor] = None,
 ) -> torch.Tensor:
-    if input_tensor.shape[0] != 1:
-        raise ValueError("Fully connected linear only supports batch size of 1")
     return F.linear(input_tensor, weight, bias)
 
 
@@ -1449,6 +1447,7 @@ def quantized_conv2d_nhwc_per_tensor(
     output_zero_point: int,
     out_multiplier: int,
     out_shift: int,
+    offset: torch.Tensor | None = None,
 ) -> torch.Tensor:
     """
     Quantized convolution operation.
@@ -1552,6 +1551,41 @@ def quantized_conv2d_nhwc(
         output_zero_point,
         int(out_multiplier.item()),
         int(out_shift.item()),
+    )
+
+
+@impl_tracked(m, "quantized_conv2d_depthwise_nhwc")
+def quantized_conv2d_depthwise_nhwc(
+    input_tensor: torch.Tensor,
+    weight: torch.Tensor,
+    bias: torch.Tensor,
+    stride: tuple[int, int],
+    padding: tuple[int, int],
+    dilation: tuple[int, int],
+    groups: int,
+    in_zero_point: int,
+    weight_zero_point: int,
+    bias_scale: float,
+    output_scale: float,
+    output_zero_point: int,
+    out_multiplier: int,
+    out_shift: int,
+) -> torch.Tensor:
+    return quantized_conv2d_nhwc_per_tensor(
+        input_tensor,
+        weight,
+        bias,
+        stride,
+        padding,
+        dilation,
+        groups,
+        in_zero_point,
+        weight_zero_point,
+        bias_scale,
+        output_scale,
+        output_zero_point,
+        out_multiplier,
+        out_shift,
     )
 
 

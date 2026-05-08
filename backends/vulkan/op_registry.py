@@ -1072,6 +1072,20 @@ def register_sdpa_cpp_ops():
 
 
 # =============================================================================
+# SDPA.cpp (fused SDPA entry point)
+# =============================================================================
+
+
+@update_features("et_vk::sdpa")
+def register_general_sdpa():
+    return OpFeatures(
+        inputs_storage=utils.CONTIGUOUS_ANY,
+        inputs_dtypes=utils.FP_T,
+        supports_resize=True,
+    )
+
+
+# =============================================================================
 # RotaryEmbedding.cpp
 # =============================================================================
 
@@ -1090,6 +1104,22 @@ def register_apply_rotary_emb():
 def register_apply_rotary_emb_hf():
     return OpFeatures(
         inputs_storage=utils.CONTIGUOUS_ANY,
+        inputs_dtypes=utils.FP_T,
+        supports_resize=True,
+        supports_highdim=True,
+    )
+
+
+@update_features(exir_ops.edge.et_vk.apply_rotary_emb_interleaved.default)
+def register_apply_rotary_emb_interleaved():
+    return OpFeatures(
+        # freqs_cis is pinned to buffer storage so the shader can compute a
+        # flat [N, C] linear address regardless of the tensor's declared rank
+        # (callers commonly pass 4D [1, N, C/2, 2] without a preceding view).
+        inputs_storage=[
+            utils.CONTIGUOUS_ANY,  # x
+            utils.CONTIGUOUS_BUFFER,  # freqs_cis
+        ],
         inputs_dtypes=utils.FP_T,
         supports_resize=True,
         supports_highdim=True,

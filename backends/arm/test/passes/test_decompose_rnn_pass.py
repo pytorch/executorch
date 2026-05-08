@@ -8,7 +8,9 @@
 from typing import cast, Protocol, Tuple
 
 import torch
+from executorch.backends.arm._passes import DecomposeRnnPass
 from executorch.backends.arm.test.tester.test_pipeline import (
+    PassPipeline,
     TosaPipelineFP,
     TosaPipelineINT,
 )
@@ -114,6 +116,30 @@ class RNNRelu(torch.nn.Module):
         return (x, h)
 
 
+chain_input_t = Tuple[torch.Tensor, torch.Tensor, torch.Tensor]
+
+
+class SequentialRNNTanh(torch.nn.Module):
+    def __init__(self) -> None:
+        super().__init__()
+        self.rnn1 = torch.nn.RNN(10, 12, nonlinearity="tanh", batch_first=True)
+        self.rnn2 = torch.nn.RNN(12, 8, nonlinearity="tanh", batch_first=True)
+
+    def forward(
+        self, x: torch.Tensor, h1: torch.Tensor, h2: torch.Tensor
+    ) -> Tuple[torch.Tensor, torch.Tensor]:
+        y, _ = self.rnn1(x, h1)
+        z, h_n = self.rnn2(y, h2)
+        return z, h_n
+
+    def get_inputs(self) -> chain_input_t:
+        return (
+            torch.randn(2, 5, 10),
+            torch.randn(1, 2, 12),
+            torch.randn(1, 2, 8),
+        )
+
+
 def _make_rnn_fp_pipeline(module: ModuleWithInputs) -> TosaPipelineFP:
     nn_module = cast(torch.nn.Module, module)
     pipeline = TosaPipelineFP[input_t](
@@ -203,3 +229,14 @@ def test_decompose_rnn_tosa_FP_tanh_multilayer():
 def test_decompose_rnn_tosa_INT_tanh_multilayer():
     """Test multi-layer RNN with tanh through quantized pipeline."""
     _make_rnn_int_pipeline(RNNTanh(num_layers=2)).run()
+
+
+def test_decompose_rnn_pass_handles_chained_rnns() -> None:
+    module = SequentialRNNTanh()
+    pipeline = PassPipeline(
+        module,
+        module.get_inputs(),
+        quantize=True,
+        pass_list=[DecomposeRnnPass],
+    )
+    pipeline.run()

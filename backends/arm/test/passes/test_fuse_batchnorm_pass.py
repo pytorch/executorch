@@ -54,6 +54,18 @@ class MergeOneOfTwoBN(torch.nn.Module):
         return x
 
 
+class MergeOneOfTwoBNBf16(MergeOneOfTwoBN):
+    ops_before_pass: ClassVar[Dict[str, int]] = MergeOneOfTwoBN.ops_before_pass
+    ops_after_pass: ClassVar[Dict[str, int]] = MergeOneOfTwoBN.ops_before_pass
+
+    def __init__(self, affine: bool):
+        super().__init__(affine)
+        self.to(torch.bfloat16)
+
+    def get_inputs(self) -> input_t:
+        return (torch.randn(1, 3, 256, 256, dtype=torch.bfloat16),)
+
+
 class MergeTwosOfTwoBN(torch.nn.Module):
     ops_before_pass: ClassVar[Dict[str, int]] = {
         "executorch_exir_dialects_edge__ops_aten__native_batch_norm_legit_no_training_default": 2,
@@ -161,5 +173,20 @@ def test_fuse_batch_norm2d_tosa_FP(module: ModuleWithBatchNormAttrs) -> None:
         ops_before_pass=module.ops_before_pass,
         ops_after_pass=module.ops_after_pass,
         passes_with_exported_program=[FuseBatchNorm2dPass],
+    )
+    pipeline.run()
+
+
+def test_fuse_batch_norm2d_tosa_FP_bf16_skips_fusion() -> None:
+    module = cast(ModuleWithBatchNormAttrs, MergeOneOfTwoBNBf16(True))
+    nn_module = cast(torch.nn.Module, module)
+    pipeline = PassPipeline[input_t](
+        nn_module,
+        module.get_inputs(),
+        quantize=False,
+        ops_before_pass=module.ops_before_pass,
+        ops_after_pass=module.ops_after_pass,
+        passes_with_exported_program=[FuseBatchNorm2dPass],
+        tosa_extensions=["bf16"],
     )
     pipeline.run()
