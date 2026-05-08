@@ -47,7 +47,8 @@ Error QnnDlcManager::Create() {
       backend_bundle_ptr_->qnn_backend_ptr.get(),
       backend_bundle_ptr_->qnn_device_ptr.get(),
       backend_params_ptr_->qnn_backend_cache_ptr_.get(),
-      nullptr);
+      nullptr,
+      QnnExecuTorchProfileLevel::kProfileOff);
 
   backend_params_ptr_->qnn_graph_ptr_ = std::make_unique<QnnGraph>(
       backend_bundle_ptr_->implementation.get(),

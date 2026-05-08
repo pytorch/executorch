@@ -12,6 +12,9 @@
 #include <executorch/backends/qualcomm/runtime/backends/QnnImplementation.h>
 #include <executorch/runtime/core/event_tracer_hooks_delegate.h>
 #include "QnnProfile.h"
+
+#include <string>
+
 namespace executorch {
 namespace backends {
 namespace qnn {
@@ -24,6 +27,7 @@ class QnnProfile {
       const QnnExecuTorchProfileLevel& profile_level);
   ~QnnProfile();
   Qnn_ErrorHandle_t ProfileData(executorch::runtime::EventTracer* event_tracer);
+  Qnn_ErrorHandle_t ProfileDataToFile(const std::string profile_filename);
 
   Qnn_ProfileHandle_t GetHandle() {
     return handle_;
@@ -33,6 +37,10 @@ class QnnProfile {
   Qnn_ProfileHandle_t handle_;
   QnnImplementation* implementation_;
   QnnBackend* backend_;
+
+  Qnn_ErrorHandle_t FetchEvents(
+      const QnnProfile_EventId_t** events_ptr,
+      std::uint32_t* num_events);
 };
 } // namespace qnn
 } // namespace backends
