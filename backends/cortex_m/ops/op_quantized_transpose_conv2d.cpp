@@ -82,6 +82,7 @@ bool validate_transpose_conv2d_arguments(
 }
 } // namespace
 
+// cppcheck-suppress unusedFunction
 Tensor& quantized_transpose_conv2d_out(
     KernelRuntimeContext& context,
     const Tensor& input,
