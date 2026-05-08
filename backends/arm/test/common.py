@@ -160,6 +160,7 @@ def get_vgf_compile_spec(
     compiler_flags: Optional[str] = "",
     custom_path: Optional[str] = None,
     tosa_debug_mode: VgfCompileSpec.DebugMode | None = None,
+    preserve_io_quantization: bool = False,
 ) -> VgfCompileSpec:
     """Get the ArmCompileSpec for the default VGF tests, to modify the compile
     spec before calling .build() to finalize it.
@@ -187,6 +188,9 @@ def get_vgf_compile_spec(
         .dump_intermediate_artifacts_to(custom_path)
         .dump_debug_info(tosa_debug_mode)
     )
+
+    if preserve_io_quantization:
+        compile_spec._set_preserve_io_quantization(True)
 
     return compile_spec
 

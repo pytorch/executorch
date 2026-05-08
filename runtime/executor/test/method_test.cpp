@@ -310,6 +310,31 @@ TEST_F(MethodTest, AliasedIOTest) {
   }
 }
 
+TEST_F(MethodTest, SetInputRejectsOverflowingSizes) {
+  // The "cat" model (ModuleDynamicCatUnallocatedIO) has a 2D input.
+  // set_input validates numel/nbytes overflow before resize_tensor.
+  ManagedMemoryManager mmm(kDefaultNonConstMemBytes, kDefaultRuntimeMemBytes);
+  Result<Method> method = programs_["cat"]->load_method("forward", &mmm.get());
+  ASSERT_EQ(method.error(), Error::Ok);
+
+  // Create a 2D tensor with enormous sizes. On 32-bit platforms the numel
+  // multiplication overflows; on 64-bit the resize bounds check rejects it.
+  int32_t sizes[2] = {2000000000, 2000000000};
+  uint8_t dim_order[2] = {0, 1};
+  int32_t strides[2] = {1, 1};
+  executorch::aten::TensorImpl impl(
+      executorch::aten::ScalarType::Float,
+      2,
+      sizes,
+      nullptr,
+      dim_order,
+      strides);
+
+  auto input_err =
+      method->set_input(EValue(executorch::aten::Tensor(&impl)), 0);
+  EXPECT_NE(input_err, Error::Ok);
+}
+
 TEST_F(MethodTest, ConstantSegmentTest) {
   // Execute model with constants stored in segment.
   ManagedMemoryManager mmm(kDefaultNonConstMemBytes, kDefaultRuntimeMemBytes);

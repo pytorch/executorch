@@ -7,6 +7,7 @@
 # TODO: reenable pyre after fixing the issues
 # pyre-ignore-all-errors
 
+import argparse
 import getpass
 import json
 import logging
@@ -23,6 +24,12 @@ from executorch.backends.qualcomm._passes.qnn_pass_manager import (
     get_capture_program_passes,
 )
 from executorch.backends.qualcomm.builders.utils import is_graph_output
+from executorch.backends.qualcomm.export_utils import (
+    make_quantizer,
+    QnnConfig,
+    setup_common_args_and_variables,
+    SimpleADB,
+)
 
 from executorch.backends.qualcomm.quantizer.quantizer import QuantDtype
 from executorch.backends.qualcomm.serialization.qc_schema import (
@@ -49,14 +56,7 @@ from executorch.examples.qualcomm.oss_scripts.whisper.whisper_model import (
     QnnSeq2SeqLMEncoderExportableModule,
 )
 
-from executorch.examples.qualcomm.utils import (
-    get_backend_type,
-    make_output_dir,
-    make_quantizer,
-    parse_skip_delegation_node,
-    setup_common_args_and_variables,
-    SimpleADB,
-)
+from executorch.examples.qualcomm.utils import make_output_dir
 from executorch.exir.capture._config import ExecutorchBackendConfig
 from executorch.exir.passes.memory_planning_pass import MemoryPlanningPass
 from torchao.quantization.pt2e import MinMaxObserver
@@ -251,7 +251,7 @@ class Whisper:
             act_observer=MinMaxObserver,
             custom_annotations=custom_annotations,
             eps=2**-20,
-            backend=backend,
+            backend=qnn_config.backend,
             soc_model=soc_model,
         )
 
@@ -365,9 +365,7 @@ class Whisper:
                 whisper_edge_prog_mgr.write_to_file(file)
 
 
-def compile_whisper(args, inputs):
-    skip_node_id_set, skip_node_op_set = parse_skip_delegation_node(args)
-
+def compile_whisper(args: argparse.Namespace, qnn_config: QnnConfig, inputs):
     # ensure the working directory exist.
     os.makedirs(args.artifact, exist_ok=True)
 
@@ -386,28 +384,28 @@ def compile_whisper(args, inputs):
         max_cache_length=max_cache_length,
         max_seq_length=args.max_seq_len,
     )
-
-    backend = get_backend_type(args.backend)
     quant_type = {
         QnnExecuTorchBackendType.kGpuBackend: None,
         QnnExecuTorchBackendType.kHtpBackend: QuantDtype.use_16a8w,
-    }[backend]
+    }[qnn_config.backend]
     whisper.prepare_model()
     if quant_type:
-        whisper.quantize(backend, args.model, inputs, quant_type, tokenizer)
+        whisper.quantize(
+            qnn_config.backend, qnn_config.soc_model, inputs, quant_type, tokenizer
+        )
 
     whisper.lowering_modules(
         args.artifact,
         use_fp16=False,
-        soc_model=get_soc_to_chipset_map()[args.model],
-        skip_node_id_set=skip_node_id_set,
-        skip_node_op_set=skip_node_op_set,
-        backend=backend,
+        soc_model=get_soc_to_chipset_map()[args.soc_model],
+        skip_node_id_set=qnn_config.skip_delegate_node_ids,
+        skip_node_op_set=qnn_config.skip_delegate_node_ops,
+        backend=qnn_config.backend,
         online_prepare=args.online_prepare,
     )
 
 
-def inference_whisper(args, inputs, target):
+def inference_whisper(args: argparse.Namespace, qnn_config: QnnConfig, inputs, target):
     workspace = f"/data/local/tmp/{getpass.getuser()}/executorch/whisper"
     tokenizer = AutoTokenizer.from_pretrained("openai/whisper-tiny")
     tokenizer_json = tokenizer.save_pretrained(args.artifact)[-1]
@@ -465,21 +463,14 @@ def inference_whisper(args, inputs, target):
             ]
         )
 
-        backend = get_backend_type(args.backend)
         adb = SimpleADB(
-            qnn_sdk=os.getenv("QNN_SDK_ROOT"),
-            build_path=f"{args.build_folder}",
+            qnn_config=qnn_config,
             pte_path=pte_path,
             workspace=workspace,
-            device_id=args.device,
-            host_id=args.host,
-            soc_model=args.model,
-            shared_buffer=args.shared_buffer,
-            target=args.target,
             runner="examples/qualcomm/oss_scripts/whisper/qnn_whisper_runner",
         )
         # No pregen inputs, input_list is not required
-        adb.push(inputs=inputs, files=[tokenizer_json], backends={backend})
+        adb.push(inputs=inputs, files=[tokenizer_json])
         adb.execute(custom_runner_cmd=runner_cmd)
 
         adb.pull(host_output_path=args.artifact, callback=post_process)
@@ -520,10 +511,8 @@ if __name__ == "__main__":
     )
 
     args = parser.parse_args()
-    args.validate(args)
 
-    if args.compile_only and args.pre_gen_pte:
-        exit("Cannot set both compile_only and pre_gen_pte as true")
+    qnn_config = QnnConfig.load_config(args.config_file if args.config_file else args)
 
     data_num = 20
     if args.ci:
@@ -535,16 +524,16 @@ if __name__ == "__main__":
         inputs, target = get_dataset(data_num)
 
     if args.pre_gen_pte:
-        inference_whisper(args, inputs, target)
+        inference_whisper(args, qnn_config, inputs, target)
         exit(f"Finish the running pre_gen_pte from {args.pre_gen_pte}")
 
     if args.compile_only:
-        compile_whisper(args, inputs)
+        compile_whisper(args, qnn_config, inputs)
         exit(f"Finish compile_only and save to {args.artifact}")
 
     try:
-        compile_whisper(args, inputs)
-        inference_whisper(args, inputs, target)
+        compile_whisper(args, qnn_config, inputs)
+        inference_whisper(args, qnn_config, inputs, target)
     except Exception as e:
         if args.ip and args.port != -1:
             with Client((args.ip, args.port)) as conn:

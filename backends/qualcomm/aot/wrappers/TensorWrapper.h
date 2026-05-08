@@ -19,6 +19,9 @@
 #define QNN_TENSOR_VER_PTR(x) (&((x).v2))
 #define QNN_OP_VER_PTR(x) (&((x).v1))
 
+// This is for direct mode, especially LPAI
+#define QNN_TENSOR_ALIGNMENT 64
+
 namespace executorch {
 namespace backends {
 namespace qnn {
@@ -36,9 +39,7 @@ class TensorWrapper {
       const void* data = nullptr,
       bool copy_data = false);
 
-  executorch::runtime::Error FillDataBuffer(
-      const void* data,
-      bool copy_data = false);
+  executorch::runtime::Error FillDataBuffer(const void* data);
 
   executorch::runtime::Error AllocateDataBuffer();
 
@@ -76,7 +77,7 @@ class TensorWrapper {
           rank);
       return;
     }
-    for (int i = 0; i < rank; ++i) {
+    for (size_t i = 0; i < rank; ++i) {
       QNN_TENSOR_VER_PTR(tensor_)->dimensions[i] = dims[i];
     }
   }

@@ -1134,8 +1134,7 @@ void ComputeGraph::clear_deferred_cmds() {
 void ComputeGraph::prepack() {
   int i = 0;
   bool submitted = false;
-  const bool reduce_peak_memory = total_constant_nbytes_ > 500 * MB;
-  // int count = 0;
+  const bool reduce_peak_memory = total_constant_nbytes_ > 10 * MB;
   context_->set_cmd();
   for (std::unique_ptr<PrepackNode>& node : prepack_nodes_) {
     // Do not trigger on the first or last prepack node.

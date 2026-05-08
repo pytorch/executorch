@@ -31,13 +31,14 @@ To enable model visualization, please add the `--online_prepare` flag.
 ## Details
 ### 1. Lower to QNN backend
 Generate an ExecuTorch binary for Qualcomm platforms.
+Ensure that qnn_config.profile_level is set to 3, which will generate op_trace.
 ```python
+qnn_config.profile_level = 3
 build_executorch_binary(
-    model,
-    example_input,
-    args.model,
-    f"{args.artifact}/{pte_filename}",
-    [example_input],
+    model=model,
+    qnn_config=qnn_config,
+    file_name=f"{args.artifact}/{pte_filename}",
+    dataset=[example_input],
     quant_dtype=QuantDtype.use_8a8w,
     online_prepare=args.online_prepare,
     optrace=True,
@@ -47,14 +48,9 @@ build_executorch_binary(
 Generate optrace and QHAS files using QNN tools under $QNN_SDK_ROOT. After finishing, you will get a `binaries_trace` dictionary.
 ``` python
 adb = SimpleADB(
-    qnn_sdk=os.getenv("QNN_SDK_ROOT"),
-    build_path=f"{args.build_folder}",
+    qnn_config=qnn_config,
     pte_path=f"{args.artifact}/{pte_filename}.pte",
-    workspace=f"/data/local/tmp/executorch/{pte_filename}",
-    device_id=args.device,
-    host_id=args.host,
-    soc_model=args.model,
-    target=args.target,
+    workspace=f"/data/local/tmp/executorch/{pte_filename},
 )
 binaries_trace = generate_optrace(
     args, adb, f"{args.artifact}/{pte_filename}.pte", example_input
@@ -139,42 +135,23 @@ When executing the script, please add the flag `--dump_intermediate_outputs`. Th
 Initialize a `QNNIntermediateDebugger`. Please pass initialized `QNNIntermediateDebugger` and the `args.dump_intermediate_outputs` to `build_executorch_binary` method as well.
 #### Example:
 ```python
-from executorch.examples.qualcomm.utils import build_executorch_binary
+from executorch.backends.qualcomm.export_utils import build_executorch_binary
 from executorch.backends.qualcomm.debugger.qnn_intermediate_debugger import QNNIntermediateDebugger
 
 qnn_intermediate_debugger = QNNIntermediateDebugger()
 build_executorch_binary(
     model=MyModel(),
-    inputs=(torch.randn(200, 768),),
-    soc_model="SM8650",
+    qnn_config=qnn_config,
     file_name="my_model",
     dataset=my_dataset,
-    dump_intermediate_outputs=args.dump_intermediate_outputs, # Add this flag
-    qnn_intermediate_debugger=qnn_intermediate_debugger, # Add this flag
+    qnn_intermediate_debugger=qnn_intermediate_debugger, # Provide this param
 )
 ```
 
 ### 4. Set data num to 1
 It is perfectly fine for users to pass the desired amount of datasets to `build_executorch_binary`, which helps achieve better quantization results. However, after `build_executorch_binary` is called, we need to ensure that we only perform one inference during execution. Please ensure that CPU and QNN is using the same input during execution; otherwise, the debugging results might not be accurate.
 
-### 5. Pass flag to SimpleADB
-When creating `SimpleADB`, please also pass the flag `args.dump_intermediate_outputs`. This tells the runner to create files that store the intermediate output schema and binary data.
-#### Example:
-```python
-adb = SimpleADB(
-    qnn_sdk=os.getenv("QNN_SDK_ROOT"),
-    build_path=f"{args.build_folder}",
-    pte_path=f"{args.artifact}/{pte_filename}.pte",
-    workspace=f"/data/local/tmp/executorch/{pte_filename}",
-    device_id=args.device,
-    host_id=args.host,
-    soc_model=args.model,
-    shared_buffer=args.shared_buffer,
-    dump_intermediate_outputs=args.dump_intermediate_outputs, # Add this flag
-)
-```
-
-### 6: Pull and process the results.
+### 5: Pull and process the results.
 After QNN execution with the runner, if the previous steps are done correctly, we should be able to get two files: `etdump.etdp` and `debug_output.bin`.
 The following example pulls the files back and calls a callback function to process the results. In this callback function, we create the `Inspector`. Then we perform CPU inference to get CPU intermediate results. Now, we have both QNN and CPU intermediate results, we can start generating results to compare the accuracy. Taking the following example, we should be able to get `debug_graph.svg` as an output in the current directory.
 #### Example:
