@@ -1506,6 +1506,20 @@ def register_upsample_cpp_ops():
 
 
 # =============================================================================
+# PixelShuffle.cpp
+# =============================================================================
+
+
+@update_features(exir_ops.edge.aten.pixel_shuffle.default)
+def register_pixel_shuffle():
+    return OpFeatures(
+        inputs_storage=utils.ANY_STORAGE,
+        inputs_dtypes=utils.FP_T,
+        supports_resize=True,
+    )
+
+
+# =============================================================================
 # GridPriors.cpp
 # =============================================================================
 
