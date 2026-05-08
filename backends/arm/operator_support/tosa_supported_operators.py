@@ -38,8 +38,6 @@ from executorch.backends.arm.operator_support.ethos_u55_support import (
     EthosU55CastCheck,
     EthosU55DtypeSupport,
     EthosU55NotSupported,
-    EthosU55TransposeCheck,
-    EthosU55ViewCheck,
 )
 from executorch.backends.arm.operator_support.tosa_profile_supported_op_lists import (
     TOSA_PRO_FP_SupportList,
@@ -307,8 +305,6 @@ def tosa_support_factory(
     if tosa_spec.is_U55_subset:
         negative_checks.append(EthosU55NotSupported(reporter))
         negative_checks.append(EthosU55DtypeSupport(reporter))
-        negative_checks.append(EthosU55TransposeCheck(reporter))
-        negative_checks.append(EthosU55ViewCheck(reporter))
         negative_checks.append(EthosU55CastCheck(reporter))
 
     return chain(
