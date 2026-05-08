@@ -77,6 +77,23 @@ dependencies=[
 ]
 
 [project.optional-dependencies]
+vgf = [
+  # AoT vgf dependencies
+  # Keep this in sync with AoT deps from backends/arm/requirements-arm-vgf.txt and
+  # backends/arm/requirements-arm-tosa.txt.
+  "ai_ml_emulation_layer_for_vulkan==0.9.0",
+  "ai_ml_sdk_model_converter==0.9.0",
+  "ml_dtypes==0.5.1",
+  "tosa-tools==2026.2.1",
+]
+ethos_u = [
+  # AoT ethos_u dependencies
+  # Keep this in sync with AoT deps backends/arm/requirements-arm-ethos-u.txt and
+  # backends/arm/requirements-arm-tosa.txt.
+  "ethos-u-vela==5.0.0",
+  "ml_dtypes==0.5.1",
+  "tosa-tools==2026.2.1",
+]
 openvino = [
   "openvino>=2025.1.0,<2026.0.0; platform_system == 'Linux'",
 ]

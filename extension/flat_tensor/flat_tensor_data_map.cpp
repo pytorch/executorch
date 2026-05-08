@@ -8,6 +8,8 @@
 
 #include <executorch/extension/flat_tensor/flat_tensor_data_map.h>
 
+#include <c10/util/safe_numerics.h>
+
 #include <executorch/extension/flat_tensor/serialize/flat_tensor_generated.h>
 #include <executorch/extension/flat_tensor/serialize/flat_tensor_header.h>
 
@@ -73,9 +75,13 @@ Result<const flat_tensor_flatbuffer::NamedData*> get_named_data(
           key.data(),
           segments->size());
       // Validate the segment.
+      uint64_t seg_end = 0;
       ET_CHECK_OR_RETURN_ERROR(
-          (segments->Get(segment_index)->offset() +
-           segments->Get(segment_index)->size()) <= segment_end_offset,
+          !c10::add_overflows(
+              static_cast<uint64_t>(segments->Get(segment_index)->offset()),
+              static_cast<uint64_t>(segments->Get(segment_index)->size()),
+              &seg_end) &&
+              seg_end <= static_cast<uint64_t>(segment_end_offset),
           InvalidExternalData,
           "Invalid segment offset %" PRIu64
           " is larger than the segment_base_offset + segment_data_size %" PRIu64

@@ -20,6 +20,14 @@ import torch
 import torch.nn as nn
 import torchaudio
 
+from executorch.backends.qualcomm.export_utils import (
+    build_executorch_binary,
+    make_quantizer,
+    QnnConfig,
+    setup_common_args_and_variables,
+    SimpleADB,
+)
+
 from executorch.backends.qualcomm.quantizer.custom_annotation import (
     annotate_mimi_decoder,
 )
@@ -40,14 +48,7 @@ from executorch.examples.qualcomm.oss_scripts.moshi.model.static_mimi import (
     get_static_mimi,
     MIMI_NAME,
 )
-from executorch.examples.qualcomm.utils import (
-    build_executorch_binary,
-    make_output_dir,
-    make_quantizer,
-    parse_skip_delegation_node,
-    setup_common_args_and_variables,
-    SimpleADB,
-)
+from executorch.examples.qualcomm.utils import make_output_dir
 from executorch.exir.capture._config import ExecutorchBackendConfig
 from executorch.exir.passes.memory_planning_pass import MemoryPlanningPass
 
@@ -152,10 +153,9 @@ def init_inputs():
 
 def compile_mimi_encoder(
     args,
+    qnn_config,
     orig_mimi,
     encoder_inputs,
-    skip_node_id_set,
-    skip_node_op_set,
     encoder_pte_filename,
 ):
     class MimiEncode(nn.Module):
@@ -168,29 +168,19 @@ def compile_mimi_encoder(
 
     mimi_encoder_model = MimiEncode(orig_mimi)
     build_executorch_binary(
-        mimi_encoder_model.eval(),
-        encoder_inputs[0],
-        args.model,
-        f"{args.artifact}/{encoder_pte_filename}",
-        encoder_inputs,
-        skip_node_id_set=skip_node_id_set,
-        skip_node_op_set=skip_node_op_set,
+        model=mimi_encoder_model.eval(),
+        qnn_config=qnn_config,
+        file_name=f"{args.artifact}/{encoder_pte_filename}",
+        dataset=encoder_inputs,
         quant_dtype=QuantDtype.use_8a8w,
-        shared_buffer=args.shared_buffer,
     )
 
 
-def inference_mimi_encoder(args, encoder_inputs, encoder_pte_filename):
+def inference_mimi_encoder(args, qnn_config, encoder_inputs, encoder_pte_filename):
     adb = SimpleADB(
-        qnn_sdk=os.getenv("QNN_SDK_ROOT"),
-        build_path=f"{args.build_folder}",
+        qnn_config=qnn_config,
         pte_path=f"{args.artifact}/{encoder_pte_filename}.pte",
         workspace=f"/data/local/tmp/executorch/{encoder_pte_filename}",
-        device_id=args.device,
-        host_id=args.host,
-        soc_model=args.model,
-        shared_buffer=args.shared_buffer,
-        target=args.target,
     )
     adb.push(inputs=encoder_inputs)
     adb.execute()
@@ -210,9 +200,7 @@ def inference_mimi_encoder(args, encoder_inputs, encoder_pte_filename):
     return encoder_predictions
 
 
-def export_mimi_encoder(
-    args, orig_mimi, sample_pcm, pcm_chunk_size, skip_node_id_set, skip_node_op_set
-):
+def export_mimi_encoder(args, qnn_config, orig_mimi, sample_pcm, pcm_chunk_size):
     encoder_inputs = []
     count = 0
     cpu_encoded_results = []
@@ -235,16 +223,16 @@ def export_mimi_encoder(
         logging.info("Compile only for QNN Encoder")
         compile_mimi_encoder(
             args,
+            qnn_config,
             orig_mimi,
             encoder_inputs,
-            skip_node_id_set,
-            skip_node_op_set,
             encoder_pte_filename,
         )
     elif args.pre_gen_pte:
         logging.info("Inference only for QNN Encoder")
         qnn_encoded_results = inference_mimi_encoder(
             args,
+            qnn_config,
             encoder_inputs,
             encoder_pte_filename,
         )
@@ -252,14 +240,14 @@ def export_mimi_encoder(
         logging.info("Compile and Inference for QNN Encoder")
         compile_mimi_encoder(
             args,
+            qnn_config,
             orig_mimi,
             encoder_inputs,
-            skip_node_id_set,
-            skip_node_op_set,
             encoder_pte_filename,
         )
         qnn_encoded_results = inference_mimi_encoder(
             args,
+            qnn_config,
             encoder_inputs,
             encoder_pte_filename,
         )
@@ -276,10 +264,9 @@ def export_mimi_encoder(
 
 def compile_static_mimi_decoder(
     args,
+    qnn_config,
     static_mimi_decoder,
     encoded_results,
-    skip_node_id_set,
-    skip_node_op_set,
     static_decoder_pte_filename,
 ):
     quantizer = make_quantizer(
@@ -288,7 +275,7 @@ def compile_static_mimi_decoder(
         per_channel_linear=True,
         act_observer=MinMaxObserver,
         backend=QnnExecuTorchBackendType.kHtpBackend,
-        soc_model=args.model,
+        soc_model=qnn_config.soc_model,
     )
     quantizer.add_custom_quant_annotations((annotate_mimi_decoder,))
 
@@ -314,7 +301,7 @@ def compile_static_mimi_decoder(
 
     backend_options = generate_htp_compiler_spec(use_fp16=False)
     compiler_spec = generate_qnn_executorch_compiler_spec(
-        soc_model=get_soc_to_chipset_map()[args.model],
+        soc_model=get_soc_to_chipset_map()[args.soc_model],
         backend_options=backend_options,
     )
 
@@ -325,8 +312,8 @@ def compile_static_mimi_decoder(
             *static_states,
         ),
         compiler_spec,
-        skip_node_id_set=skip_node_id_set,
-        skip_node_op_set=skip_node_op_set,
+        skip_node_id_set=qnn_config.skip_delegate_node_ids,
+        skip_node_op_set=qnn_config.skip_delegate_node_ops,
     )
 
     executorch_config = ExecutorchBackendConfig(
@@ -342,8 +329,8 @@ def compile_static_mimi_decoder(
 
 def inference_static_mimi_decoder(
     args,
+    qnn_config,
     encoded_results,
-    encoded_results_list,
     pcm_chunk_size,
     static_decoder_pte_filename,
 ):
@@ -357,17 +344,10 @@ def inference_static_mimi_decoder(
             f"--output_folder_path {workspace}/outputs",
         ]
     )
-
     adb = SimpleADB(
-        qnn_sdk=os.getenv("QNN_SDK_ROOT"),
-        build_path=f"{args.build_folder}",
+        qnn_config=qnn_config,
         pte_path=pte_path,
         workspace=workspace,
-        device_id=args.device,
-        host_id=args.host,
-        soc_model=args.model,
-        shared_buffer=args.shared_buffer,
-        target=args.target,
         runner="examples/qualcomm/oss_scripts/moshi/qnn_mimi_decoder_runner",
     )
     adb.push(inputs=encoded_results)
@@ -392,11 +372,10 @@ def inference_static_mimi_decoder(
 
 def export_mimi_decoder(
     args,
+    qnn_config,
     static_mimi_decoder,
     encoded_results,
     pcm_chunk_size,
-    skip_node_id_set,
-    skip_node_op_set,
 ):
     encoded_results_list = ""
     for index, encoder_result in enumerate(encoded_results):
@@ -411,18 +390,17 @@ def export_mimi_decoder(
             logging.info("Compile only for QNN Static Decoder")
             compile_static_mimi_decoder(
                 args,
+                qnn_config,
                 static_mimi_decoder,
                 encoded_results,
-                skip_node_id_set,
-                skip_node_op_set,
                 static_decoder_pte_filename,
             )
         elif args.pre_gen_pte:
             logging.info("Inference only for QNN Static Decoder")
             qnn_decode_res = inference_static_mimi_decoder(
                 args,
+                qnn_config,
                 encoded_results,
-                encoded_results_list,
                 pcm_chunk_size,
                 static_decoder_pte_filename,
             )
@@ -430,14 +408,14 @@ def export_mimi_decoder(
             logging.info("Compile and Inference for QNN Static Decoder")
             compile_static_mimi_decoder(
                 args,
+                qnn_config,
                 static_mimi_decoder,
                 encoded_results,
-                skip_node_id_set,
-                skip_node_op_set,
                 static_decoder_pte_filename,
             )
             qnn_decode_res = inference_static_mimi_decoder(
                 args,
+                qnn_config,
                 encoded_results,
                 encoded_results_list,
                 pcm_chunk_size,
@@ -451,8 +429,7 @@ def main(args):
         moshi.__version__ == MOSHI_VERSION
     ), f"Please ensure Moshi version == {MOSHI_VERSION}, current version is {moshi.__version__}"
 
-    if args.compile_only and args.pre_gen_pte:
-        exit("Cannot set both compile_only and pre_gen_pte as true")
+    qnn_config = QnnConfig.load_config(args.config_file if args.config_file else args)
 
     logging.info("loading mimi")
     if args.mimi_weight is None:
@@ -461,7 +438,6 @@ def main(args):
     static_mimi = get_static_mimi(args.mimi_weight, "cpu")  # For static decoder
     logging.info("mimi loaded")
 
-    skip_node_id_set, skip_node_op_set = parse_skip_delegation_node(args)
     os.makedirs(args.artifact, exist_ok=True)
 
     sample_rate = orig_mimi.sample_rate
@@ -480,19 +456,17 @@ def main(args):
     with torch.no_grad():
         encoded_results, cpu_encoded_results = export_mimi_encoder(
             args,
+            qnn_config,
             orig_mimi,
             sample_pcm,
             pcm_chunk_size,
-            skip_node_id_set,
-            skip_node_op_set,
         )
         qnn_decode_res = export_mimi_decoder(
             args,
+            qnn_config,
             static_mimi,
             encoded_results,
             pcm_chunk_size,
-            skip_node_id_set,
-            skip_node_op_set,
         )
 
         if args.compile_only:

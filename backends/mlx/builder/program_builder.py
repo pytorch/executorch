@@ -23,6 +23,7 @@ from __future__ import annotations
 
 import traceback
 from collections import defaultdict
+from contextlib import contextmanager
 from dataclasses import dataclass
 from typing import Any, DefaultDict, Dict, List, Optional, Set, Tuple, Union
 
@@ -171,6 +172,24 @@ class MLXProgramBuilder:
             self.init_chain_idx = len(self._chains)
             self._chains.append([])
         self._chains[self.init_chain_idx].append(Instruction(op=op))
+
+    @contextmanager
+    def new_chain(self):
+        """Context manager that creates a new instruction chain and redirects emit() to it.
+
+        Usage:
+            with P.new_chain() as chain_idx:
+                P.emit(MulNode(...))   # goes to the new chain
+            # P.emit() goes back to the previous chain
+        """
+        chain_idx = len(self._chains)
+        self._chains.append([])
+        prev_chain = self._current_chain
+        self._current_chain = chain_idx
+        try:
+            yield chain_idx
+        finally:
+            self._current_chain = prev_chain
 
     def args(self, node: Node) -> Tuple[Any, ...]:
         return self.slot_map(node.args)
@@ -629,9 +648,12 @@ class MLXProgramBuilder:
                 info.handler in (noop_handler, PatternHandler.deferred_handler)
                 or n.users == {}
             ):
-                assert (
-                    self.slot_manager.get_slot(n) is None
-                ), f"Did not expect node {n} handled by {info.handler} to have a slot"
+                # Deferred body nodes may or may not have slots — this is fine.
+                # Pattern handlers absorb nodes into their body and may set
+                # slots on them (e.g., GatedDeltaRuleHandler sets getitem[0]'s
+                # slot to the ScanNode output). Dead nodes (no users) also
+                # skip the slot check.
+                pass
             else:
                 assert (
                     self.slot_manager.get_slot(n) is not None
@@ -962,6 +984,11 @@ class MLXProgramBuilder:
         ``ep.constants`` / ``extra_constants`` (which all use unprefixed
         keys).  The prefix is applied at the exit boundary — the
         ``NamedDataStore`` key — so it matches the FlatBuffer ``named_slots``.
+
+        To reduce peak memory, each constant is deleted from the EP
+        immediately after its bytes are added to the NamedDataStore.
+        This avoids holding two full copies of all constants simultaneously
+        (important for large models where constants can be 20+ GB).
         """
         named_data_store = NamedDataStore()
 
@@ -970,6 +997,17 @@ class MLXProgramBuilder:
             self._constant_name_to_slot.items(),
             key=lambda x: self._slot_to_final_tid.get(x[1], 0),
         )
+
+        # Free EP constants not used by the MLX graph to reduce peak memory.
+        used = set(self._constant_name_to_slot.keys())
+        for ispec in self.ep.graph_signature.input_specs:
+            if ispec.arg.name in used and ispec.target is not None:
+                used.add(ispec.target)
+
+        for d in (self.ep._state_dict, self.ep._constants):
+            for name in list(d.keys()):
+                if name not in used and isinstance(d[name], torch.Tensor):
+                    del d[name]
 
         logger.debug(f"Adding {len(entries)} constants to NamedDataStore...")
         for canonical_name, _slot in entries:
@@ -983,6 +1021,15 @@ class MLXProgramBuilder:
                 data=t,
                 alignment=16,
             )
+
+            # Free the original tensor from the EP immediately.
+            # The contiguous copy is now serialized as bytes in the
+            # NamedDataStore — the EP reference is no longer needed.
+            # (It would be deleted by lowered_backend_module.py after
+            # preprocess() returns anyway.)
+            self._delete_constant_tensor(canonical_name)
+            del tensor, t
+
         logger.debug("Done adding constants to NamedDataStore")
 
         return named_data_store
@@ -1011,17 +1058,33 @@ class MLXProgramBuilder:
 
     def _find_constant_tensor(self, name: str) -> Optional[torch.Tensor]:
         """Find a constant tensor by name from various sources."""
-        if name in self.ep.state_dict:
-            return self.ep.state_dict[name]
-        if name in self.ep.constants:
-            return self.ep.constants[name]
+        result = self._resolve_constant(name)
+        if result is None:
+            return None
+
+        d, k = result
+        return d[k]
+
+    def _delete_constant_tensor(self, name: str) -> None:
+        """Delete a constant from the EP to free memory during serialization."""
+
+        result = self._resolve_constant(name)
+        if result:
+            d, k = result
+            del d[k]
+
+    def _resolve_constant(self, name):
+        """Returns (dict, key) or None."""
+        if name in self.ep._state_dict:
+            return self.ep._state_dict, name
+        if name in self.ep._constants:
+            return self.ep._constants, name
         if name in self.extra_constants:
-            return self.extra_constants[name]
-        # Look up by target
+            return self.extra_constants, name
         for ispec in self.ep.graph_signature.input_specs:
             if ispec.arg.name == name and ispec.target is not None:
-                if ispec.target in self.ep.state_dict:
-                    return self.ep.state_dict[ispec.target]
-                if ispec.target in self.ep.constants:
-                    return self.ep.constants[ispec.target]
+                if ispec.target in self.ep._state_dict:
+                    return self.ep._state_dict, ispec.target
+                if ispec.target in self.ep._constants:
+                    return self.ep._constants, ispec.target
         return None

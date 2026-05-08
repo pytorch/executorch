@@ -3,15 +3,15 @@
 # related to a specific file path. Approvals from people in this
 # file are not required for merges.
 
-/backends/apple @shoumikhin @cccclai
-/backends/apple/mps @cccclai @DenisVieriu97
+/backends/apple @shoumikhin
+/backends/apple/mps @DenisVieriu97
 /backends/arm @digantdesai
 /backends/cadence
 /backends/cortex_m @rascani
 /backends/example @JacobSzwejbka @larryliu0820
-/backends/mediatek @cccclai @neuropilot-captain
-/backends/qualcomm @cccclai @chunit-quic @haowhsu-quic @shewu-quic @winskuo-quic @abhinaykukkadapu
-/backends/test @cccclai
+/backends/mediatek @neuropilot-captain
+/backends/qualcomm @chunit-quic @haowhsu-quic @shewu-quic @winskuo-quic @abhinaykukkadapu
+/backends/test
 /backends/transforms @kimishpatel
 /backends/vulkan @SS-JIA
 /backends/xnnpack @digantdesai @mcr229
@@ -22,22 +22,22 @@
 /docs @mergennachin @AlannaBurke
 
 /examples/apple @shoumikhin
-/examples/apple/coreml @cccclai @metascroy @cymbalrush @YifanShenSZ
+/examples/apple/coreml @metascroy @cymbalrush @YifanShenSZ
 /examples/arm @digantdesai
 /examples/cadence
 /examples/demo-apps @shoumikhin @kirklandsign
 /examples/devtools @Gasoonjia
 /examples/llm_manual @larryliu0820
 /examples/llm_pte_finetuning @JacobSzwejbka
-/examples/mediatek @cccclai
+/examples/mediatek
 /examples/models @lucylq @jackzhxng
 /examples/portable @larryliu0820 @manuelcandales
-/examples/qualcomm @cccclai @abhinaykukkadapu
+/examples/qualcomm @abhinaykukkadapu
 /examples/selective_build @lucylq @larryliu0820 @JacobSzwejbka
 /examples/xnnpack @digantdesai @mcr229
 /examples/nxp @robert-kalmar
 
-/exir/backend @cccclai @kimishpatel @JacobSzwejbka
+/exir/backend @kimishpatel @JacobSzwejbka
 /exir @JacobSzwejbka @larryliu0820
 
 /extension/android @kirklandsign
@@ -68,7 +68,7 @@
 /profiler @Gasoonjia
 
 /runtime @JacobSzwejbka @lucylq
-/runtime/backend @cccclai
+/runtime/backend
 
 /schema @JacobSzwejbka @lucylq
 
@@ -89,3 +89,7 @@ CMakePresets.json @larryliu0820 @kirklandsign
 
 /codegen @larryliu0820 @lucylq
 /tools/cmake @larryliu0820 @kirklandsign
+
+# Tribal knowledge base ---------------------------------------------------------
+/.wiki/ @abhinaykukkadapu
+/.claude/skills/ @abhinaykukkadapu
