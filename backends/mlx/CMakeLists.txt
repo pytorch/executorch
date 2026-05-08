@@ -247,6 +247,14 @@ add_subdirectory(${MLX_SOURCE_DIR} ${CMAKE_CURRENT_BINARY_DIR}/mlx)
 # Op logging option (for debugging) - OFF by default for performance
 option(ET_MLX_ENABLE_OP_LOGGING "Enable per-op logging in MLX delegate" OFF)
 
+# Custom kernel execution - OFF by default for security. When enabled,
+# MetalKernelNode can execute arbitrary Metal shader code embedded in .pte
+# files. Only enable for trusted .pte sources.
+option(ET_MLX_ALLOW_CUSTOM_KERNEL_EXECUTION
+       "Allow MetalKernelNode to execute custom Metal shaders from .pte files"
+       ON
+)
+
 set(_mlx_backend__srcs ${CMAKE_CURRENT_SOURCE_DIR}/runtime/MLXLoader.cpp
                        ${CMAKE_CURRENT_SOURCE_DIR}/runtime/MLXBackend.cpp
 )
@@ -260,6 +268,13 @@ add_dependencies(mlxdelegate mlx_schema)
 if(ET_MLX_ENABLE_OP_LOGGING)
   target_compile_definitions(mlxdelegate PRIVATE ET_MLX_ENABLE_OP_LOGGING=1)
   message(STATUS "MLX delegate op logging ENABLED")
+endif()
+
+if(ET_MLX_ALLOW_CUSTOM_KERNEL_EXECUTION)
+  target_compile_definitions(
+    mlxdelegate PRIVATE ET_MLX_ALLOW_CUSTOM_KERNEL_EXECUTION
+  )
+  message(STATUS "MLX delegate custom kernel execution ENABLED")
 endif()
 
 target_include_directories(

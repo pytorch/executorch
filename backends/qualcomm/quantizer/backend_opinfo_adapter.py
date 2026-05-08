@@ -17,7 +17,10 @@ from executorch.backends.qualcomm.quantizer.validators import (
     PortDatatypeConstraints,
     TensorQuantConstraint,
 )
-from executorch.backends.qualcomm.serialization.qc_schema import QcomChipset
+from executorch.backends.qualcomm.serialization.qc_schema import (
+    QcomChipset,
+    QnnExecuTorchBackendType,
+)
 
 
 def add_qnn_python_path():
@@ -56,6 +59,7 @@ class _NoOpBackendOpInfo:
 
 class _NoOpNamespace:
     HTP = 1
+    LPAI = 3
     BackendOpInfo = _NoOpBackendOpInfo
 
 
@@ -69,6 +73,9 @@ if not _HAS_BACKEND_OPINFO:
 def get_backend_opinfo(backend: str, soc_model: QcomChipset):
     backend_type = getattr(backend_opinfo, backend.upper())
     # For qnn 2.41, it only supports HTP backend
+    # It will support LPAI backend as soon as possible.
+    if backend == str(QnnExecuTorchBackendType.kLpaiBackend):
+        return _NoOpBackendOpInfo()
     try:
         return backend_opinfo.BackendOpInfo(backend_type, soc_model)
     except Exception:

@@ -44,12 +44,21 @@ class ET_EXPERIMENTAL Sampler {
 
   Sampler(int32_t vocab_size, float temperature);
 
+  // Enable top-k filtering. k <= 0 or k >= vocab_size disables top-k.
+  // When top-k is enabled, top-p is ignored — the two modes are mutually
+  // exclusive in this implementation.
+  void set_topk(int32_t topk) {
+    topk_ = topk;
+  }
+
   template <typename T>
   int32_t sample(T* logits);
 
  private:
   template <typename T>
   int32_t sample_topp(T* probabilities, float coin);
+  template <typename T>
+  int32_t sample_topk(T* probabilities, float coin);
   template <typename T>
   int32_t sample_mult(T* probabilities, float coin);
   template <typename T>
@@ -60,6 +69,8 @@ class ET_EXPERIMENTAL Sampler {
   // reciprocal of temperature, or 0 if temperature == 0.
   float inv_temperature_;
   float topp_;
+  // 0 (or >= vocab_size_) means top-k is disabled.
+  int32_t topk_ = 0;
   unsigned long long rng_state_;
 };
 

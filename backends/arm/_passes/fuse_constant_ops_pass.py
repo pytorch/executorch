@@ -4,7 +4,8 @@
 # LICENSE file in the root directory of this source tree.
 
 import logging
-from typing import Set, Type
+from collections.abc import Mapping
+from typing import Sequence, Set, Type
 
 import torch._export.utils
 import torch.fx
@@ -18,6 +19,7 @@ from executorch.backends.arm._passes.arm_pass_utils import (
 from executorch.backends.arm._passes.fuse_equal_placeholders_pass import (
     FuseEqualPlaceholdersPass,
 )
+from executorch.backends.arm.tosa.dialect.shape import meta_has_shape_mark
 from executorch.backends.arm.tosa.mapping import TosaSpecialDtype
 from executorch.backends.transforms.utils import (
     create_constant_placeholder,
@@ -53,6 +55,36 @@ class FuseConstantArgsPass(ArmPass):
         super().__init__(*args, **kwargs)
         self.exported_program = exported_program
 
+    @staticmethod
+    def _is_tosa_dialect_op(target) -> bool:
+        target_str = str(target)
+        return (
+            "executorch.exir.dialects.backend._ops.tosa." in target_str
+            or "<EdgeOpOverload: tosa." in target_str
+        )
+
+    @staticmethod
+    def _arg_contains_symbolic_shape(arg) -> bool:
+        if isinstance(arg, torch.fx.Node):
+            if meta_has_shape_mark(arg.meta):
+                return True
+            return FuseConstantArgsPass._arg_contains_symbolic_shape(
+                arg.meta.get("val")
+            )
+        if isinstance(arg, torch.SymInt):
+            return True
+        if isinstance(arg, Mapping):
+            return any(
+                FuseConstantArgsPass._arg_contains_symbolic_shape(k)
+                or FuseConstantArgsPass._arg_contains_symbolic_shape(v)
+                for k, v in arg.items()
+            )
+        if isinstance(arg, Sequence) and not isinstance(arg, (str, bytes)):
+            return any(
+                FuseConstantArgsPass._arg_contains_symbolic_shape(v) for v in arg
+            )
+        return False
+
     def _propagate_special_dtype(self, from_nodes, to_node, data):
         """Propagate special dtype meta if it exists."""
         special_dtypes = set()
@@ -83,21 +115,24 @@ class FuseConstantArgsPass(ArmPass):
         input_nodes = list(node.all_input_nodes)
         qparams = node.meta.get("input_qparams", None)
 
-        def resolve_arg(arg):
+        def resolve_arg(arg, arg_index=None):
+            qparam = (
+                qparams.get(arg_index) if qparams and arg_index is not None else None
+            )
             if isinstance(arg, torch.fx.Node) and arg in input_nodes:
-                idx = input_nodes.index(arg)
                 t = get_param_tensor(self.exported_program, arg)
-                # Check if qparams exist for this arg
-                if qparams and idx in qparams.keys():
-                    t = qparams[idx].dequantize_value(t)
+                if qparam is not None:
+                    t = qparam.dequantize_value(t)
                 return t
             if isinstance(arg, tuple):
-                return tuple(resolve_arg(x) for x in arg)
+                return tuple(resolve_arg(x, arg_index) for x in arg)
             if isinstance(arg, list):
-                return [resolve_arg(x) for x in arg]
+                return [resolve_arg(x, arg_index) for x in arg]
             return arg
 
-        new_args = tuple(resolve_arg(a) for a in node.args)
+        new_args = tuple(
+            resolve_arg(arg, arg_index) for arg_index, arg in enumerate(node.args)
+        )
         new_kwargs = {k: resolve_arg(v) for k, v in node.kwargs.items()}
 
         data = node.target(*new_args, **new_kwargs)
@@ -139,13 +174,13 @@ class FuseConstantArgsPass(ArmPass):
         for node in graph_module.graph.nodes:
             if node.op != "call_function":
                 continue
-            if node.target in [
-                exir_ops.backend.tosa.MATMUL.default,
-                exir_ops.backend.tosa.RESCALE.default,
-                exir_ops.backend.tosa.RESIZE.default,
-                exir_ops.backend.tosa.TABLE.default,
-                exir_ops.backend.tosa.TRANSPOSE.default,
-            ]:
+            # Don't fuse TOSA dialect ops as they do not have eager forward functions.
+            # Also don't fuse ops whose explicit args/kwargs include symbolic shape values.
+            if (
+                self._is_tosa_dialect_op(node.target)
+                or self._arg_contains_symbolic_shape(node.args)
+                or self._arg_contains_symbolic_shape(node.kwargs)
+            ):
                 continue
 
             input_nodes = node.all_input_nodes
@@ -161,7 +196,6 @@ class FuseConstantArgsPass(ArmPass):
             )
             if not all(input_nodes_constant):
                 continue
-
             try:
                 did_fuse = self._fuse_nodes(node)
                 if did_fuse:

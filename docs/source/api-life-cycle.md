@@ -104,7 +104,7 @@ decorator.
 
 Use <code>.. warning::</code> in the docstrings of deprecated and experimental
 APIs. See
-<a href="https://github.com/pytorch/pytorch/blob/cd8bbdc71a0258292381a7d54c8b353988d02ff4/torch/nn/utils/stateless.py#L170">example
+<a href="https://github.com/pytorch/pytorch/blob/main/torch/nn/utils/stateless.py#L176">example
 usage</a>.
 
 </ul>
@@ -115,7 +115,7 @@ usage</a>.
    </td>
    <td>
 
-Use the <code>ET_DEPRECATED</code> annotation macro. See <a href="https://github.com/pytorch/executorch/blob/8e0f856ee269b319ac4195509cf31e3f548aa0e8/runtime/executor/program.h#L81">example usage</a>.
+Use the <code>ET_DEPRECATED</code> annotation macro. See <a href="https://github.com/pytorch/executorch/blob/main/runtime/executor/program.h#L92">example usage</a>.
 
 <p>
 <p>
@@ -125,7 +125,7 @@ Use the <code>ET_EXPERIMENTAL</code> annotation macro.
    <td>
 
 Start Doxygen comments with <code>DEPRECATED:</code> See
-<a href="https://github.com/pytorch/executorch/blob/9d859653ae916d0a72f6b2b5c5925bed38832140/runtime/executor/program.h#L139">example
+<a href="https://github.com/pytorch/executorch/blob/main/runtime/executor/program.h#L164">example
 usage</a>.
 
 <p>

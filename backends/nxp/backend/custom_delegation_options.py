@@ -22,3 +22,7 @@ class CustomDelegationOptions:
     #  not create any NeutronGraph that can be called. This is done by the partitioner itself, and is not handled by
     #  the individual node converters.
     allow_no_op_partitions: bool = False
+
+    # The new neutron converter flow has different constraints for supported operators. These need to be addressed when
+    # deciding is operator is delegated or not in _is_supported_on_target().
+    use_new_flow_neutron_c: bool = False

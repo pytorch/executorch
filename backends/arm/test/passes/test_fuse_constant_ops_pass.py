@@ -6,13 +6,25 @@
 import operator
 from typing import cast, ClassVar, Dict, Protocol, Tuple
 
+import executorch.backends.arm.tosa.dialect  # noqa: F401
 import torch
 from executorch.backends.arm._passes.fuse_constant_ops_pass import (
     ComputeConstantOpsAOTPass,
     FuseConstantArgsPass,
 )
+from executorch.backends.arm._passes.quant_args import QuantArgs
 from executorch.backends.arm.test import common
+from executorch.backends.arm.test.tester.arm_tester import ArmTester
 from executorch.backends.arm.test.tester.test_pipeline import PassPipeline
+from executorch.backends.arm.tosa.mapping import TosaSpecialDtype
+from executorch.backends.arm.tosa.specification import (
+    TosaLoweringContext,
+    TosaSpecification,
+)
+from executorch.backends.test.harness.stages import StageType
+from executorch.backends.test.program_builder import ProgramBuilder
+from executorch.exir.dialects._ops import ops as exir_ops
+from torch.export.graph_signature import InputKind
 
 input_t = Tuple[torch.Tensor]  # Input x
 input_t2 = Tuple[torch.Tensor, torch.Tensor]
@@ -116,6 +128,52 @@ class CatConst(torch.nn.Module):
         return torch.cat((a, b), dim=0)
 
 
+class QuantizedCatConstantBuffers(torch.nn.Module):
+    def __init__(self) -> None:
+        super().__init__()
+        self.register_buffer(
+            "horizontal_ramp",
+            torch.tensor(
+                [
+                    [
+                        [
+                            [-95, -32, 32, 95, 0],
+                            [-95, -32, 32, 95, 0],
+                            [-95, -32, 32, 95, 0],
+                            [-95, -32, 32, 95, 0],
+                        ]
+                    ]
+                ],
+                dtype=torch.int8,
+            ),
+        )
+        self.register_buffer(
+            "vertical_ramp",
+            torch.tensor(
+                [
+                    [
+                        [
+                            [-95, -95, -95, -95, -95],
+                            [-32, -32, -32, -32, -32],
+                            [32, 32, 32, 32, 32],
+                            [95, 95, 95, 95, 95],
+                        ]
+                    ]
+                ],
+                dtype=torch.int8,
+            ),
+        )
+
+    def forward(self) -> torch.Tensor:
+        return torch.cat(
+            (
+                cast(torch.Tensor, self.horizontal_ramp),
+                cast(torch.Tensor, self.vertical_ramp),
+            ),
+            dim=1,
+        )
+
+
 modules: Dict[str, ModuleWithFuseAttrs] = {
     "fuse_parameter": cast(ModuleWithFuseAttrs, FuseParameter()),
     "fuse_buffer": cast(ModuleWithFuseAttrs, FuseBuffer()),
@@ -174,3 +232,116 @@ def test_fuse_constant_args_tosa_INT_cat(module: ModuleWithFuseAttrs) -> None:
         ],
     )
     pipeline.run()
+
+
+def test_fuse_constant_args_tosa_INT_cat_uses_top_level_arg_qparams() -> None:
+    qargs = QuantArgs(
+        scale=1.0 / 127.0,
+        zp=0,
+        qmin=-127,
+        qmax=127,
+        dtype=torch.int8,
+    )
+    module = QuantizedCatConstantBuffers()
+    compile_spec = common.get_tosa_compile_spec(
+        TosaSpecification.create_from_string("TOSA-1.0+FP")
+    )
+    tester = ArmTester(module, example_inputs=(), compile_spec=compile_spec)
+    tester.export().to_edge()
+    exported_program = tester.get_artifact(StageType.TO_EDGE).exported_program()
+
+    cat_node = next(
+        node
+        for node in exported_program.graph_module.graph.nodes
+        if node.op == "call_function"
+    )
+    cat_node.meta["input_qparams"] = {0: qargs}
+    cat_node.meta["output_qparams"] = {0: qargs}
+
+    pass_result = FuseConstantArgsPass(exported_program).call(
+        exported_program.graph_module
+    )
+
+    assert list(exported_program.state_dict) == ["aten_cat_default_fused_const"]
+    torch.testing.assert_close(
+        exported_program.state_dict["aten_cat_default_fused_const"],
+        torch.cat(
+            (
+                cast(torch.Tensor, module.horizontal_ramp),
+                cast(torch.Tensor, module.vertical_ramp),
+            ),
+            dim=1,
+        ),
+    )
+    assert [
+        node.name
+        for node in pass_result.graph_module.graph.nodes
+        if node.op == "placeholder"
+    ] == ["aten_cat_default_fused_const"]
+
+
+def test_fuse_constant_args_identifies_tosa_dialect_targets() -> None:
+    class FakeTosaTarget:
+        def __str__(self) -> str:
+            return "executorch.exir.dialects.backend._ops.tosa.MAX_POOL2D.default"
+
+    assert FuseConstantArgsPass._is_tosa_dialect_op(FakeTosaTarget())
+    assert FuseConstantArgsPass._is_tosa_dialect_op(
+        exir_ops.backend.tosa.GATHER.default
+    )
+    assert not FuseConstantArgsPass._is_tosa_dialect_op(torch.ops.aten.add.Tensor)
+
+
+def test_fuse_constant_args_identifies_symbolic_shape_args() -> None:
+    graph = torch.fx.Graph()
+    shape_node = graph.placeholder("shape")
+    shape_node.meta[TosaSpecialDtype.meta_key()] = TosaSpecialDtype.SHAPE
+
+    assert FuseConstantArgsPass._arg_contains_symbolic_shape((shape_node, [1, 2]))
+    assert not FuseConstantArgsPass._arg_contains_symbolic_shape(
+        ([1, 2], {"pad": (0, 0)})
+    )
+
+
+def test_fuse_constant_args_skips_backend_tosa_gather(caplog) -> None:
+    with TosaLoweringContext(TosaSpecification.create_from_string("TOSA-1.1+FP+shape")):
+        builder = ProgramBuilder()
+        values = builder.placeholder(
+            "values",
+            torch.randn(1, 4, 3),
+            input_kind=InputKind.CONSTANT_TENSOR,
+        )
+        indices = builder.placeholder(
+            "indices",
+            torch.tensor([[0, 2]], dtype=torch.int32),
+            input_kind=InputKind.CONSTANT_TENSOR,
+        )
+        gather = builder.call_operator(
+            exir_ops.backend.tosa.GATHER.default,
+            (values, indices),
+        )
+        builder.output([gather])
+
+        exported_program = builder.get_program()
+        graph_module = exported_program.graph_module
+
+        with caplog.at_level("WARNING"):
+            FuseConstantArgsPass(exported_program)(graph_module)
+
+    warning_messages = [
+        record.getMessage()
+        for record in caplog.records
+        if record.name == "executorch.backends.arm._passes.fuse_constant_ops_pass"
+    ]
+    assert not any(
+        "Failed to fuse constant op" in message and "GATHER" in message
+        for message in warning_messages
+    )
+    assert (
+        sum(
+            node.op == "call_function"
+            and node.target == exir_ops.backend.tosa.GATHER.default
+            for node in graph_module.graph.nodes
+        )
+        == 1
+    )
