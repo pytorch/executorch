@@ -213,6 +213,14 @@ def _load_static_transformer(args: argparse.Namespace):
     config.use_kv_cache = True
     config.max_seq_len = args.max_seq_len
     config.enable_dynamic_shape = True
+    # Use index_copy_ instead of narrow().copy_() for KV-cache writes. The
+    # narrow path produces start_pos = input_pos[0].item() (an unbacked SymInt
+    # u700) and writes via aten.slice_scatter, which trips both the CoreML
+    # partitioner's SymInt filter and the lowered_backend_module
+    # _get_new_signature assertion (partition output → slice_scatter user with
+    # no intervening getitem). index_copy_ functionalizes to aten.index_put
+    # with all-tensor args — no SymInts, no slice_scatter.
+    config.use_index_copy_for_kv_cache = True
 
     torch_dtype = {
         "fp16": torch.float16,
@@ -369,6 +377,184 @@ def _patch_coremltools_inplace_assertion() -> None:
     torch_op_registry._inplace_assertion_patched = True
 
 
+def _patch_coremltools_index_put_whole_slice() -> None:
+    """Replace CoreML's `index_put` op handler to support multi-position writes
+    with leading-None indices (the `index_copy_(dim, input_pos, src)` pattern).
+
+    With `use_index_copy_for_kv_cache=True`, the cache update emits
+    `aten.index_put.default(self, [None, None, input_pos, None], k_val,
+    accumulate=False)` where `input_pos = arange(seq_len)` is a rank-1 tensor
+    of length seq_len > 1 and the leading two indices are None (whole slice).
+
+    coremltools' upstream handler can't handle this:
+      - Its `_try_whole_slice` path squeezes the index and feeds it into a
+        rank-0 `mb.concat`, which fails when the squeeze is a no-op:
+          `ValueError: Input squeeze_0 has rank 1 != other inputs rank 0`
+      - Its scatter_nd fallback assumes `indices[0]` is non-None and derefs
+        `indices[0].sym_type.get_primitive()`, which crashes on None.
+
+    We re-register `index_put` with `override=True`. For the
+    "leading Nones + one rank-1 index + trailing None" pattern we permute
+    the indexed dim to dim 0, do a single `mb.scatter_nd` with the rank-1
+    index expanded to shape (N, 1), and permute back. For the fully-specified
+    int-index pattern we fall back to the standard scatter_nd shape. Bool
+    indices and other shapes raise NotImplementedError so we don't silently
+    miscompile.
+    """
+    from coremltools.converters.mil.frontend.torch import ops as ct_ops  # pyre-ignore[21]
+    from coremltools.converters.mil.frontend.torch.torch_op_registry import (  # pyre-ignore[21]
+        register_torch_op,
+    )
+
+    if getattr(ct_ops, "_index_put_whole_slice_patched", False):
+        return
+
+    @register_torch_op(override=True)
+    def index_put(context, node):
+        from coremltools.converters.mil.frontend.torch.ops import (  # pyre-ignore[21]
+            _get_inputs,
+            _get_kwinputs,
+        )
+        from coremltools.converters.mil.mil import Builder as mb  # pyre-ignore[21]
+        from coremltools.converters.mil.mil import types  # pyre-ignore[21]
+
+        inputs = _get_inputs(context, node, expected=(3, 4))
+        x = inputs[0]
+        indices = inputs[1]
+        values = inputs[2]
+        accumulate_var = inputs[3] if len(inputs) > 3 else False
+        accumulate = _get_kwinputs(
+            context, node, "accumulate", default=[accumulate_var]
+        )[0]
+        if hasattr(accumulate, "val"):
+            accumulate = accumulate.val
+        if accumulate:
+            raise NotImplementedError(
+                "index_put with accumulate=True is not supported by this patch"
+            )
+
+        # Identify the single non-None index and its dim.
+        non_none_dims = [i for i, idx in enumerate(indices) if idx is not None]
+        if len(non_none_dims) != 1:
+            raise NotImplementedError(
+                f"index_put patch supports exactly one non-None index, got "
+                f"{len(non_none_dims)} (indices structure: "
+                f"{['None' if i is None else 'Var' for i in indices]})"
+            )
+        scatter_dim = non_none_dims[0]
+        scatter_index = indices[scatter_dim]
+
+        if types.is_bool(scatter_index.sym_type.get_primitive()):
+            raise NotImplementedError(
+                "index_put patch does not support bool indices"
+            )
+
+        # Bring scatter_dim to dim 0 of both x and values, do the scatter, then
+        # permute back. scatter_nd expects index shape (N, K) where K is the
+        # number of leading dims being indexed; we want K=1 (one indexed dim).
+        x_rank = x.rank
+        if scatter_dim != 0:
+            perm = [scatter_dim] + [d for d in range(x_rank) if d != scatter_dim]
+            inv_perm = [perm.index(d) for d in range(x_rank)]
+            x_perm = mb.transpose(x=x, perm=perm)
+            values_perm = mb.transpose(x=values, perm=perm)
+        else:
+            perm = list(range(x_rank))
+            inv_perm = perm
+            x_perm = x
+            values_perm = values
+
+        # scatter_nd index: (N,) -> (N, 1)
+        idx_2d = mb.expand_dims(x=scatter_index, axes=[-1])
+
+        scattered = mb.scatter_nd(
+            data=x_perm,
+            indices=idx_2d,
+            updates=values_perm,
+            mode="update",
+        )
+
+        if scatter_dim != 0:
+            result = mb.transpose(x=scattered, perm=inv_perm, name=node.name)
+        else:
+            result = mb.identity(x=scattered, name=node.name)
+        context.add(result)
+
+    ct_ops._index_put_whole_slice_patched = True
+
+
+def _patch_coremltools_int8_dtype() -> None:
+    """Add torch.int8 / torch.uint8 to coremltools' TORCH_DTYPE_TO_MIL_DTYPE map.
+
+    8da4w / emb8 quantization produces int8 weights that get lifted as inputs of
+    CoreML-delegated subgraphs. coremltools' default `TORCH_DTYPE_TO_MIL_DTYPE`
+    only covers fp16/fp32/int16/int32 (+ int64/float64 fallbacks); torch.int8
+    raises `KeyError: torch.int8` in `_construct_ct_tensor_type_from_torch`.
+
+    MIL has native `types.int8` / `types.uint8`, so the mapping is well-defined —
+    upstream just never registered it for the EXIR ingest path.
+    """
+    from coremltools.converters.mil.frontend.torch import utils as ct_utils  # pyre-ignore[21]
+    from coremltools.converters.mil.mil import types  # pyre-ignore[21]
+
+    if getattr(ct_utils, "_int8_dtype_patched", False):
+        return
+
+    ct_utils.TORCH_DTYPE_TO_MIL_DTYPE.setdefault(torch.int8, types.int8)
+    ct_utils.TORCH_DTYPE_TO_MIL_DTYPE.setdefault(torch.uint8, types.uint8)
+    ct_utils._int8_dtype_patched = True
+
+
+def _patch_coreml_partitioner_skip_symint_args() -> None:
+    """Force CoreMLPartitioner to skip nodes whose args carry SymInt/SymBool/SymFloat.
+
+    The KV-cache update / index path in Gemma4Attention produces unbacked
+    SymInts (e.g. `u700`) that flow through ops the partitioner happily marks
+    as CoreML-supported. After the partition splits the graph, those SymInts
+    become placeholder values of the delegated subgraph, and coremltools'
+    `_extract_inputs_from_exir_program` raises:
+
+      NotImplementedError: Placeholder val must be a tensor or fake tensor,
+      but got type torch.SymInt, value u700
+
+    Upstream `_OperatorsSupportedForCoreMLBackend.should_override_support`
+    has the right filter commented out (gated on `lower_full_graph=False`,
+    which is our case) with TODO 'enable this after bugs in ExecuTorch's
+    partitioner are fixed'. We wrap the method to add the same check.
+    """
+    from executorch.backends.apple.coreml.partition.coreml_partitioner import (  # pyre-ignore[21]
+        _OperatorsSupportedForCoreMLBackend,
+    )
+
+    if getattr(_OperatorsSupportedForCoreMLBackend, "_symint_filter_patched", False):
+        return
+
+    original = _OperatorsSupportedForCoreMLBackend.should_override_support
+
+    def patched_should_override_support(self, node) -> bool:
+        if original(self, node):
+            return True
+        if not self.lower_full_graph and any(
+            isinstance(arg, torch.fx.Node)
+            and isinstance(
+                arg.meta.get("val", None),
+                (torch.SymInt, torch.SymBool, torch.SymFloat),
+            )
+            for arg in node.args
+        ):
+            self.log_once(
+                "Skipping op for CoreML delegation because it contains symbolic args: "
+                + getattr(node.target, "__name__", str(node.target))
+            )
+            return True
+        return False
+
+    _OperatorsSupportedForCoreMLBackend.should_override_support = (
+        patched_should_override_support
+    )
+    _OperatorsSupportedForCoreMLBackend._symint_filter_patched = True
+
+
 def _build_coreml_partitioner(args: argparse.Namespace):
     """Build a CoreML partitioner targeting the CPU_AND_NE compute unit."""
     from executorch.backends.apple.coreml.compiler.coreml_preprocess import (  # pyre-ignore[21]
@@ -379,6 +565,9 @@ def _build_coreml_partitioner(args: argparse.Namespace):
     )
 
     _patch_coremltools_inplace_assertion()
+    _patch_coremltools_int8_dtype()
+    _patch_coreml_partitioner_skip_symint_args()
+    _patch_coremltools_index_put_whole_slice()
 
     coreml_model_type = (
         CoreMLBackend.MODEL_TYPE.COMPILED_MODEL
@@ -398,9 +587,15 @@ def _build_coreml_partitioner(args: argparse.Namespace):
         model_type=coreml_model_type,
     )
 
-    skip_ops_for_coreml_delegation = []
+    # Always keep dequantize_affine on CPU. The matching quantize_affine /
+    # choose_qparams_affine ops are already CoreML-unsupported and skipped, so
+    # the int8 weight constants get lifted as subgraph inputs. CoreML's
+    # dequantize_affine handler then sees `int_data.val == None` and crashes
+    # with `AttributeError: 'NoneType' object has no attribute 'shape'`.
+    # Running dequant on CPU keeps only the fp16 result inside CoreML.
+    skip_ops_for_coreml_delegation = ["torchao.dequantize_affine.default"]
     if args.skip_embedding_delegation:
-        skip_ops_for_coreml_delegation = [
+        skip_ops_for_coreml_delegation += [
             "quantized_decomposed.embedding_4bit.dtype",
             "aten.embedding.default",
         ]
@@ -416,7 +611,7 @@ def _finalize_export(export_config: ExportConfig, ep) -> Path:
     """Lower the ExportedProgram to CoreML and write the .pte file."""
     from executorch.exir import EdgeCompileConfig, to_edge_transform_and_lower
     from executorch.exir.capture._config import ExecutorchBackendConfig
-    from executorch.exir.passes import MemoryPlanningPass
+    from executorch.exir.passes import MemoryPlanningPass, ToOutVarPass
     from executorch.exir.passes.sym_shape_eval_pass import (
         ConstraintBasedSymShapeEvalPass,
     )
@@ -451,6 +646,17 @@ def _finalize_export(export_config: ExportConfig, ep) -> Path:
                 alloc_graph_input=False, alloc_graph_output=False
             ),
             sym_shape_eval_pass=ConstraintBasedSymShapeEvalPass(),
+            # `do_quant_fusion_and_const_prop` covers the older
+            # quantized_decomposed.* ops but doesn't fold the torchao.* variants
+            # we keep on CPU (quantize_affine, choose_qparams_affine, and our
+            # explicitly-skipped dequantize_affine). Without an out variant
+            # registered for those ops, the default `to_out_var_pass` raises:
+            #   RuntimeError: Missing out variants:
+            #     {'torchao::dequantize_affine', 'torchao::choose_qparams_affine',
+            #      'torchao::quantize_affine'}
+            # Let the lowering finish; ExecuTorch falls back to the functional
+            # form at runtime for these ops.
+            to_out_var_pass=ToOutVarPass(ignore_to_out_var_failure=True),
         )
     )
     timing_info["to_executorch"] = time.time() - start_time
