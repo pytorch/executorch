@@ -12,9 +12,6 @@ import torch
 from executorch.backends.qualcomm.builders import node_visitor_manager
 from executorch.backends.qualcomm.builders.qnn_constants import OpContextLoader
 from executorch.backends.qualcomm.qnn_preprocess import QnnBackend
-from executorch.backends.qualcomm.serialization.qc_schema import (
-    QnnExecuTorchBackendType,
-)
 from executorch.backends.qualcomm.serialization.qc_schema_serialize import (
     flatbuffer_to_option,
 )
@@ -79,12 +76,13 @@ class QnnOperatorSupport(OperatorSupportBase):
             return False
 
         if node.target in to_be_implemented_operator:
-            print(
-                f"[QNN Partitioner Op Support]: {node.target.__name__} | Skipped, this op can be supported, please report an issue in https://github.com/pytorch/executorch/issues"
+            logger.info(
+                f"{node.target.__name__} | Skipped, this op can be supported, please report an issue in https://github.com/pytorch/executorch/issues"
             )
             return False
 
         if node.meta.get(QCOM_FALLBACK_NODE, False):
+            logger.info(f"{node.target.__name__} | Forced Fallback")
             return False
 
         if (
@@ -94,13 +92,14 @@ class QnnOperatorSupport(OperatorSupportBase):
             # bypass dequantize op for parameters & buffers
             or node.meta.get(QCOM_BYPASS_NODE, False)
         ):
+            logger.info(f"{node.target.__name__} | Forced Passed")
             return True
 
         if (
             node.name in self.skip_node_id_set
             or node.target.__name__ in self.skip_node_op_set
         ):
-            print(f"[QNN Partitioner Op Support]: {node.target.__name__} | Skipped")
+            logger.info(f"{node.target.__name__} | Skipped")
             return False
 
         supported = False
@@ -122,7 +121,7 @@ class QnnOperatorSupport(OperatorSupportBase):
             )
 
         self.nodes_to_wrappers.clear()
-        print(f"[QNN Partitioner Op Support]: {node.target.__name__} | {supported}")
+        logger.info(f"{node.target.__name__} | {supported}")
         return supported
 
 
@@ -200,39 +199,23 @@ class QnnPartitioner(Partitioner):
                 # since they will all be removed in following stage
                 node.meta["delegation_tag"] = delegation_tag
 
-    @staticmethod
-    def check_partitions(
-        backend: QnnExecuTorchBackendType, partitions: List[Any]
-    ) -> bool:
-        pl = len(partitions)
-        if backend == QnnExecuTorchBackendType.kLpaiBackend:
-            assert (
-                pl == 1
-            ), "LPAI backend only supports fully delegation due to the accuracy issue of Q/DQ in the LPAI backend."
-        if pl == 0:
-            logging.warning("Nothing can be partitioned!")
-        else:
-            logging.info(f"Found {pl} subgraphs to be partitioned.")
-        return pl != 0
-
     # override
     def partition(self, edge_program: torch.export.ExportedProgram) -> PartitionResult:
         # Generate partitions by QNN op_support checker
         partitions = self.generate_partitions(edge_program)
         del self.op_support_checker
         # If partitions are found, handle tagging of nodes, constant data, and mutated buffers for delegation
-        if self.check_partitions(self.backend, partitions):
-            self.tag_nodes(partitions, edge_program)
-            tag_constant_data(edge_program)
-            if not self.skip_mutable_buffer:
-                logger.info(
-                    "Qnn partitioner will delegate torch mutable buffer with the same I/O address during the runtime, "
-                    "so if your model contains mutable buffer, "
-                    "then you can get the better performance with skip_mutable_buffer=False. "
-                    "If you encounter accuracy issue during the runtime, "
-                    "then please set `skip_mutable_buffer=True` and try again."
-                )
-                tag_mutated_buffer(edge_program)
+        self.tag_nodes(partitions, edge_program)
+        tag_constant_data(edge_program)
+        if not self.skip_mutable_buffer:
+            logger.info(
+                "Qnn partitioner will delegate torch mutable buffer with the same I/O address during the runtime, "
+                "so if your model contains mutable buffer, "
+                "then you can get the better performance with skip_mutable_buffer=False. "
+                "If you encounter accuracy issue during the runtime, "
+                "then please set `skip_mutable_buffer=True` and try again."
+            )
+            tag_mutated_buffer(edge_program)
 
         return PartitionResult(
             tagged_exported_program=edge_program, partition_tags=self.partition_tags

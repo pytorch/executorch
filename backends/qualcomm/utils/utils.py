@@ -469,6 +469,9 @@ def to_edge_transform_and_lower_to_qnn(
             ep,
             passes_job=passes_job[graph_name],
             dep_table=dep_table[graph_name],
+            compiler_specs=compiler_specs[graph_name],
+            skip_node_id_set=skip_node_id_set,
+            skip_node_op_set=skip_node_op_set,
         )
     with QnnManagerContext(compiler_specs):
         return to_edge_transform_and_lower(
