@@ -119,7 +119,7 @@ class QnnConfig:
     ci: Optional[bool] = False
     seed: Optional[int] = None
     htp_performance_mode: QnnExecuTorchHtpPerformanceMode = (
-        QnnExecuTorchHtpPerformanceMode.kHtpBurst,
+        QnnExecuTorchHtpPerformanceMode.kHtpBurst
     )
 
     def __post_init__(self):
