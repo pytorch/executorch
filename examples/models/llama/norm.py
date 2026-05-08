@@ -41,17 +41,20 @@ class RMSNorm(torch.nn.Module):
         return output * self.weight.type_as(x)
 
 
-class ScalelessRMSNorm(torch.nn.Module):
-    def __init__(self, dim: int, eps: float = 1e-6):
-        super().__init__()
-        self.dim = dim
-        self.eps = eps
+class ScalelessRMSNorm(torch.nn.RMSNorm):
+    """RMSNorm with weight hardcoded to ones and not trainable.
 
-    def forward(self, x):
-        x_float = x.float()
-        return (
-            x_float * torch.rsqrt((x_float * x_float).mean(-1, keepdim=True) + self.eps)
-        ).type_as(x)
+    Equivalent to a scaleless RMSNorm (no learnable scaling) but implemented as a
+    torch.nn.RMSNorm so the op composes/decomposes cleanly for backends like QNN
+    instead of being expressed as a hand-rolled decomposition.
+    """
+
+    def __init__(self, dim: int, eps: float = 1e-6):
+        super().__init__(dim, eps)
+        self.dim = dim
+        with torch.no_grad():
+            self.weight.fill_(1.0)
+        self.weight.requires_grad = False
 
 
 class RMSNormWithInputScale(torch.nn.Module):

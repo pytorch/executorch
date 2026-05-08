@@ -69,7 +69,7 @@ class SDPACustom(torch.nn.Module):
                 0,  # dropout probability. Ignored by the code
                 True,  # is_causal
             )
-        return output.view(bsz, seqlen, self.dim).to(dtype=input_dtype)
+        return output.reshape(bsz, seqlen, self.dim).to(dtype=input_dtype)
 
 
 def _replace_sdpa_with_custom_op(
@@ -198,7 +198,7 @@ class QuantizedSDPA(torch.nn.Module):
                 v_scale_fp32,
             )
 
-        return output.view(bsz, seqlen, self.dim)
+        return output.reshape(bsz, seqlen, self.dim)
 
 
 def _update_attention_module_with_quantized_sdpa(
