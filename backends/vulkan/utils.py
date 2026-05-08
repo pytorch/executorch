@@ -1203,8 +1203,15 @@ PACKED_INT8_CHANNELS_PACKED_BUFFER = TensorRepSet(
 # Special use RepSets
 
 NO_STORAGE = TensorRepSet(set(), set())
-ALL_STORAGES_REPSET = TensorRepSet(
-    universal_memory_layout_set, universal_memory_layout_set
+# Buffer side admits both float and quantized (PACKED_INT8_*) layouts; texture side
+# is float-only because the Vulkan backend has no quantized texture support
+# (required_image_extents and the texture indexing helpers only know about the
+# float layouts). Used as an intersection identity (e.g. common_arg_repset
+# accumulator) and as a placeholder for non-tensor / not-yet-prepacked args, so
+# narrowing the texture side is non-breaking for those uses while letting it act
+# as a true universal set when intersected against quant-aware repsets.
+ANY_STORAGE_INCL_PACKED_INT8 = TensorRepSet(
+    universal_memory_layout_set, all_memory_layouts
 )
 
 
@@ -1330,19 +1337,19 @@ class OpRepSets:
         # Now, go through the arguments of the operator and create a filtered repset
         # for each based on the actual tensor value.
         args_repset_list = TensorRepSetList([])
-        common_arg_repset = ALL_STORAGES_REPSET
+        common_arg_repset = ANY_STORAGE_INCL_PACKED_INT8
         for i, arg_node in enumerate(op_node.args):
             arg_repset = inputs_repsets[i]
 
-            # Use ALL_STORAGES_REPSET for non-tensor nodes so they don't cause the op
+            # Use ANY_STORAGE_INCL_PACKED_INT8 for non-tensor nodes so they don't cause the op
             # repsets to appear empty
             if not is_tensor_arg_node(arg_node):
-                args_repset_list.append(ALL_STORAGES_REPSET)
+                args_repset_list.append(ANY_STORAGE_INCL_PACKED_INT8)
             # NO_STORAGE is used to denote that an input is either a non tensor arg or
             # a weight tensor that is not prepacked. Similar to the above, use
-            # ALL_STORAGES_REPSET in this case.
+            # ANY_STORAGE_INCL_PACKED_INT8 in this case.
             elif arg_repset.is_empty():
-                args_repset_list.append(ALL_STORAGES_REPSET)
+                args_repset_list.append(ANY_STORAGE_INCL_PACKED_INT8)
             else:
                 assert not arg_repset.is_empty()
 
@@ -1355,7 +1362,7 @@ class OpRepSets:
 
         # Repeat for output tensors.
         outs_repset_list = TensorRepSetList([])
-        common_out_repset = ALL_STORAGES_REPSET
+        common_out_repset = ANY_STORAGE_INCL_PACKED_INT8
         if num_tensors_in_node(op_node) == 1:
             common_out_repset = filter_invalid_reprs(
                 op_node.meta["val"], outputs_repsets[0], texture_limits
