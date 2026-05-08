@@ -19,7 +19,7 @@ The auto-export path is controlled by these Kconfig options:
   trigger reconfigure when changed.
 
 The sample sets a default Cortex-M exporter in `prj.conf` and overrides it in
-board-specific `boards/*.conf` files for the Corstone&trade; FVP one Ethos-U boards.
+board-specific `boards/*.conf` files for the Corstone&trade; FVP and Ethos-U boards.
 
 You can also bypass auto-export entirely and point the build at a prebuilt model
 with `-DET_PTE_FILE_PATH=<model>.pte`.
