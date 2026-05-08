@@ -7,13 +7,10 @@ from github import Github
 
 def main() -> None:
     token = os.environ.get("GITHUB_TOKEN")
-
-    repo_owner = "pytorch"
-    repo_name = "pytorch"
     pull_request_number = int(sys.argv[1])
 
     g = Github(token)
-    repo = g.get_repo(f"{repo_owner}/{repo_name}")
+    repo = g.get_repo(os.environ.get("GITHUB_REPOSITORY", "pytorch/executorch"))
     pull_request = repo.get_pull(pull_request_number)
     pull_request_body = pull_request.body
     # PR without description
