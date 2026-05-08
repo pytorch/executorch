@@ -12,13 +12,14 @@ from pathlib import Path
 from typing import Dict, List, Optional
 
 from executorch.backends.apple.coreml import executorchcoreml
-from executorch.backends.apple.coreml.compiler import CoreMLBackend
 from executorch.exir._serialize._program import deserialize_pte_binary
 from executorch.exir.schema import (
     BackendDelegate,
     BackendDelegateDataReference,
     DataLocation,
 )
+
+COREML_BACKEND_ID = "CoreMLBackend"
 
 
 def extract_coreml_models(pte_data: bytes):
@@ -39,7 +40,7 @@ def extract_coreml_models(pte_data: bytes):
         [execution_plan.delegates for execution_plan in program.execution_plan], []
     )
     coreml_delegates: List[BackendDelegate] = [
-        delegate for delegate in delegates if delegate.id == CoreMLBackend.__name__
+        delegate for delegate in delegates if delegate.id == COREML_BACKEND_ID
     ]
 
     # Track extracted models to avoid duplicates (multifunction models share partitions)
@@ -109,7 +110,7 @@ def extract_coreml_models(pte_data: bytes):
         print("The model isn't delegated to Core ML.")
 
 
-if __name__ == "__main__":
+def main() -> None:
     """
     Extracts the Core ML models embedded in the ``.pte`` file and saves them to the
     file system.
@@ -127,3 +128,7 @@ if __name__ == "__main__":
     with open(model_path, mode="rb") as pte_file:
         pte_data = pte_file.read()
         extract_coreml_models(pte_data)
+
+
+if __name__ == "__main__":
+    main()

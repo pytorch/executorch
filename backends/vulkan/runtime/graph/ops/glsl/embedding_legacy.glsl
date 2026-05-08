@@ -16,7 +16,7 @@ layout(std430) buffer;
 
 ${layout_declare_tensor(B, "w", "t_out", DTYPE, STORAGE)}
 ${layout_declare_tensor(B, "r", "t_in", "int", STORAGE)}
-${layout_declare_tensor(B, "r", "t_weight", DTYPE, STORAGE)}
+${layout_declare_tensor(B, "r", "t_weight", DTYPE, "texture2d")}
 ${layout_declare_ubo(B, "ivec4", "sizes")}
 
 #include "indexing_utils.h"
@@ -29,9 +29,6 @@ const lowp int packed_dim = unhash_packed_dim(out_layout);
 
 ${layout_declare_spec_const(C, "int", "in_layout", "DEFAULT_LAYOUT")}
 const lowp ivec4 in_axis_map = unhash_axis_map(in_layout);
-
-${layout_declare_spec_const(C, "int", "weight_layout", "DEFAULT_LAYOUT")}
-const lowp ivec4 weight_axis_map = unhash_axis_map(weight_layout);
 
 void main() {
   const ivec3 out_lpos = ivec3(gl_GlobalInvocationID);
@@ -48,8 +45,8 @@ void main() {
     const int in_texel_elem = load_texel_lpos(t_in, in_lpos, in_axis_map)[out_tidx.w % 4];
 
     // Read weight tensor for embedding, it is height-packed.
-    const ivec3 weight_lpos = ivec3(out_tidx.x, in_texel_elem / 4, 0);
-    out_texel[i] = load_texel_lpos(t_weight, weight_lpos, weight_axis_map)[in_texel_elem % 4];
+    const ivec2 weight_pos = ivec2(out_tidx.x, in_texel_elem / 4);
+    out_texel[i] = texelFetch(t_weight, weight_pos, 0)[in_texel_elem % 4];
   }
 
   write_texel_lpos(t_out, out_lpos, out_texel, out_axis_map);

@@ -7,6 +7,7 @@
 from typing import Tuple
 
 import torch
+from executorch.backends.qualcomm.utils.constants import DEFAULT_EPS_FP32
 from torchao.quantization.pt2e import FakeQuantize, MappingType, PerBlock
 from torchao.quantization.pt2e._affine_quantization import (
     _get_reduction_params,
@@ -23,7 +24,7 @@ class PerBlockParamObserver(AffineQuantizedMinMaxObserver):
         block_size: torch.Size,
         quant_min=None,
         quant_max=None,
-        eps=torch.finfo(torch.float32).eps,  # noqa: B008
+        eps=DEFAULT_EPS_FP32,
         **kwargs,
     ):
         super().__init__(
@@ -99,7 +100,7 @@ class PerBlockParamFakeQuantize(FakeQuantize):
         block_size: torch.Size = None,
         quant_min: int = None,
         quant_max: int = None,
-        eps: float = torch.finfo(torch.float32).eps,  # noqa: B008
+        eps: float = DEFAULT_EPS_FP32,
         **kwargs,
     ):
         super().__init__()

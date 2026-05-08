@@ -17,7 +17,7 @@ source .zephyr_venv/bin/activate
 Install requirements
 <!-- RUN install_reqs -->
 ```
-pip install west cmake==3.29 pyelftools ninja jsonschema
+pip install west "cmake<4.0.0" pyelftools ninja jsonschema
 ```
 
 Setup zephyr repo

@@ -1,11 +1,11 @@
-# Copyright 2025 Arm Limited and/or its affiliates.
+# Copyright 2025-2026 Arm Limited and/or its affiliates.
 #
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
 
 
 import torch
-from executorch.backends.arm.test.common import parametrize
+from executorch.backends.arm.test.common import parametrize, xfail_type
 from executorch.backends.cortex_m.test.tester import (
     CortexMTester,
     McuTestCase,
@@ -14,8 +14,8 @@ from executorch.backends.cortex_m.test.tester import (
 
 
 class CortexMConv1D(torch.nn.Module):
-    ops_before_transforms = {}
-    ops_after_transforms = {}
+    ops_before_transforms: dict[str, int] = {}
+    ops_after_transforms: dict[str, int] = {}
 
     def __init__(self, *args, **kwargs):
         super().__init__()
@@ -72,9 +72,8 @@ class CortexMConv2DBias(torch.nn.Module):
 
 
 class CortexMConv3D(torch.nn.Module):
-    ops_before_transforms = {}
-
-    ops_after_transforms = {}
+    ops_before_transforms: dict[str, int] = {}
+    ops_after_transforms: dict[str, int] = {}
 
     def __init__(self, *args, **kwargs):
         super().__init__()
@@ -313,7 +312,7 @@ test_cases = {
 }
 
 
-xfails_dialect = {
+xfails_dialect: dict[str, xfail_type] = {
     "conv2d_dilation": "NotImplementedError: 'slow_conv_dilated<>' not implemented for 'Int'",
     "conv1d": "Currently not supported.",
     "conv2d_nchw": "Currently not supported.",
@@ -330,7 +329,7 @@ def test_dialect_conv2d(test_case):
     )
 
 
-xfails_implementation = {
+xfails_implementation: dict[str, xfail_type] = {
     "conv1d": "Currently not supported.",
     "conv3d": "Currently not supported.",
 }

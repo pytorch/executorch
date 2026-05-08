@@ -12,6 +12,9 @@ from executorch.backends.nxp.backend.ir.converter.node_converter import (
 from executorch.backends.nxp.backend.ir.lib.tflite.BuiltinOperator import (
     BuiltinOperator,
 )
+from executorch.backends.nxp.backend.neutron_operator_support import (
+    activation_supported_on_target,
+)
 from executorch.backends.nxp.backend.neutron_target_spec import NeutronTargetSpec
 from torch.fx import Node
 from torch.fx.passes.infra.partitioner import Partition
@@ -76,19 +79,15 @@ class ClampConverter(NodeConverter):
     ) -> bool:
         bounds = cls._get_clamp_bounds(node)
 
+        # Neutron cannot delegate a partition where ReLU or ReLU6 is the only operator
+        # and at the same time the node does not satisfy delegation requirements.
+        # In contrast, ReLUN1To1 and ReLU0To1 are supported and delegated successfuly.
         if bounds in [cls.SUPPORTED_BOUNDS["Relu"], cls.SUPPORTED_BOUNDS["Relu6"]]:
-            # If this is the only operator in the partition, NeutronConverter will not create a NeutronNode for some
-            #  reason.
-            clamp_partitions = [p for p in partition_list if node in p.nodes]
-            if len(clamp_partitions) != 1:
-                return False  # Should never happen
-
-            clamp_partition = clamp_partitions[0]
-            non_q_dq_partition_nodes = list(
-                filter(is_not_qdq_node, clamp_partition.nodes)
+            is_alone_in_partition = cls.is_node_alone_in_partition(
+                node, partition_list, filter_fn=is_not_qdq_node
             )
-            if len(non_q_dq_partition_nodes) <= 1:
-                return False  # This would be the only node in the partition, which would cause a crash later on.
+            if is_alone_in_partition:
+                return activation_supported_on_target(node, neutron_target_spec)
 
         return True
 

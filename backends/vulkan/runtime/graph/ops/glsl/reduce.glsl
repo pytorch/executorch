@@ -43,6 +43,7 @@ layout(constant_id = 5) const int group_dim = 1;
 shared vec4 shared_vecs[MAX_NTHREADS];
 
 #include "indexing_utils.h"
+#include "indexing.glslh"
 
 int tid_to_smi(const ivec2 tid) {
   return tid.x + tid.y * NWORKERS;
@@ -95,7 +96,7 @@ void reduce_nonpacked_dim(const ivec2 tid, ivec3 scan_pos) {
   scan_pos[reduce_dim] = tid.x;
   // Partially accumulate over elements i, i + NWORKERS, i + 2*NWORKERS, ... of
   // the reduction row
-  for (int i = tid.x; i < tin_sizes[reduce_dim];
+  for (int i = tid.x; i < safe_idx(tin_sizes, reduce_dim);
        i += NWORKERS, scan_pos[reduce_dim] += NWORKERS) {
     accum = UPDATE_ACCUM(accum, load_texel(tin, scan_pos));
   }
@@ -115,11 +116,11 @@ void reduce_nonpacked_dim(const ivec2 tid, ivec3 scan_pos) {
 
     // Determine if there are any padding elements in the final texel of the
     // packed dimension
-    const int nspill = mod4(tin_sizes[packed_dim]);
+    const int nspill = mod4(safe_idx(tin_sizes, packed_dim));
     // Detect if this thread is working on the final texels of the packed
     // dimension, which may have padding elements
     const bool is_last_texel =
-        scan_pos[packed_dim] == (tin_limits[packed_dim] - 1);
+        scan_pos[packed_dim] == (safe_idx(tin_limits, packed_dim) - 1);
 
     // Explicitly set padding elements to 0
     if (is_last_texel && nspill > 0) {
@@ -145,10 +146,10 @@ void reduce_packed_dim(const ivec2 tid, ivec3 scan_pos) {
   const int smi = tid_to_smi(tid);
 
   // Number of non-padding elements in the last texel in the reduction row
-  const int nspill = mod4(tin_sizes[packed_dim]);
+  const int nspill = mod4(safe_idx(tin_sizes, packed_dim));
   // Only reduce up to the last "complete" texel. The last texel will need to be
   // handled specially if it has padding elements.
-  const int reduce_len = tin_sizes[packed_dim] - nspill;
+  const int reduce_len = safe_idx(tin_sizes, packed_dim) - nspill;
 
   scan_pos[reduce_dim] = 0;
   vec4 accum = INIT_ACCUM(vec4(load_texel(tin, scan_pos).x));
@@ -163,7 +164,7 @@ void reduce_packed_dim(const ivec2 tid, ivec3 scan_pos) {
   // For the last texel in the dim, if there are padding elements then each
   // element of the texel needs to be processed individually such that the
   // padding elements are ignored
-  if (scan_pos[reduce_dim] == tin_limits[reduce_dim] - 1 && nspill > 0) {
+  if (scan_pos[reduce_dim] == safe_idx(tin_limits, reduce_dim) - 1 && nspill > 0) {
     const vec4 intex = load_texel(tin, scan_pos);
     for (int i = 0; i < nspill; i++) {
       accum.x = UPDATE_ACCUM(accum.x, intex[i]);

@@ -489,7 +489,7 @@ int main(int argc, char** argv) {
       static_cast<long long>(pred_hidden),
       static_cast<long long>(sample_rate),
       window_stride,
-      encoder_subsampling_factor);
+      static_cast<long long>(encoder_subsampling_factor));
 
   ET_LOG(Info, "Running TDT greedy decode...");
   auto decoded_tokens = greedy_decode_executorch(

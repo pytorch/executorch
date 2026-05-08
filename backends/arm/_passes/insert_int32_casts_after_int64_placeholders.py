@@ -89,8 +89,10 @@ class InsertInt32CastsAfterInt64PlaceholdersPass(ArmPass):
         modified = False
         graph = graph_module.graph
         for node in graph.nodes:
-            if node.op != "placeholder":
+            if node.op not in ("placeholder", "get_attr"):
                 continue
+            if "val" not in node.meta:
+                continue  # Ignore submodule get_attrs
             node_val = node.meta["val"]
             if not self._is_tensor_of_dtype(node_val, torch.int64):
                 continue

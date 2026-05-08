@@ -17,7 +17,7 @@ import torch
 from datasets import load_dataset
 
 from executorch.backends.qualcomm.quantizer.observers.per_channel_param_observer import (
-    PerChannelParamObserver,
+    PerChannelParamObserverWithLossEvaluation,
 )
 from executorch.backends.qualcomm.quantizer.qconfig import (
     _derived_bias_quant_spec,
@@ -96,7 +96,7 @@ def add_mse_weight_observer(quant_dtype, quantizer):
         quant_max=(7 if weight_dtype == torch.int4 else torch.iinfo(weight_dtype).max),
         qscheme=torch.per_channel_symmetric,
         ch_axis=0,
-        observer_or_fake_quant_ctr=PerChannelParamObserver.with_args(
+        observer_or_fake_quant_ctr=PerChannelParamObserverWithLossEvaluation.with_args(
             **{"steps": 200, "use_mse": True}
         ),
     )

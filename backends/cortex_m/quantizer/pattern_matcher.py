@@ -5,15 +5,12 @@
 
 
 from dataclasses import dataclass
-from typing import Iterator, List, Optional
+from typing import cast, Iterator, List, Optional
+
+from executorch.backends.arm.quantizer.arm_quantizer_utils import PatternCheck
 
 from executorch.backends.arm.quantizer.quantization_annotator import _is_large_scalar
-
-from executorch.backends.cortex_m.quantizer.pattern_checkers import PatternCheck
-from executorch.backends.cortex_m.quantizer.quantization_configs import (
-    CortexMQuantizationConfig,
-    QuantizationConfig,
-)
+from executorch.backends.arm.quantizer.quantization_config import QuantizationConfig
 from torch._ops import OpOverload
 from torch.fx import Node
 
@@ -26,13 +23,13 @@ class PatternMatchResult:
 
 
 class PatternMatcher:
-    """
-    Find supported patterns in a sequence of nodes.
+    """Find supported patterns in a sequence of nodes.
 
     Attributes:
         support_dict: A dictionary mapping patterns (tuples of operator overloads) to
                   PatternCheck instances that validate the patterns.
         support_dict_name: An optional name for the support dict, used for logging.
+
     """
 
     Q_PATTERN_MATCHED_KEY = "quantizer_matched"
@@ -45,7 +42,7 @@ class PatternMatcher:
 
     def __init__(
         self,
-        support_dict: dict[tuple[OpOverload, ...], PatternCheck],
+        support_dict: dict[tuple[OpOverload, ...], Optional[type[PatternCheck]]],
         support_dict_name: str | None = None,
     ):
         self.support_dict = support_dict
@@ -58,11 +55,13 @@ class PatternMatcher:
     def _validate_match(
         self,
         match: List[Node],
-        quantization_config: CortexMQuantizationConfig,
-    ) -> Optional[PatternMatchResult]:
-        """
-        Returns a PatternMatchResult when the pattern structurally matches, with
-        status indicating accept/reject. Returns None if there is no match.
+        quantization_config: QuantizationConfig,
+    ) -> PatternMatchResult:
+        """Returns a PatternMatchResult when the pattern structurally matches,
+        with status indicating accept/reject.
+
+        Returns None if there is no match.
+
         """
 
         # Reject match if it contains a node that has already been matched as part of another pattern.
@@ -79,7 +78,7 @@ class PatternMatcher:
                 node.meta[self.Q_PATTERN_MATCHED_KEY] = True
             return PatternMatchResult(match, True)
 
-        key = tuple([n.target for n in match])
+        key = tuple(cast(OpOverload, n.target) for n in match)
         pattern_checker = self.support_dict.get(key, None)
 
         if pattern_checker is not None:
@@ -98,8 +97,8 @@ class PatternMatcher:
         return PatternMatchResult(match, True)
 
     def _get_match(self, node_queue: List[Node]) -> List[Node]:
-        """
-        Returns the longest pattern match starting at the front of the queue.
+        """Returns the longest pattern match starting at the front of the
+        queue.
         """
         if node_queue[0].op in ("placeholder", "output"):
             return [node_queue[0]]
@@ -116,10 +115,10 @@ class PatternMatcher:
     def _get_matches(
         self, node_queue: List[Node], quantization_config: QuantizationConfig
     ) -> List[PatternMatchResult]:
+        """Returns the longest accepted match starting at the first node of the
+        queue as well as longer rejected matches.
         """
-        Returns the longest accepted match starting at the first node of the queue as well as longer rejected matches.
-        """
-        matches = []
+        matches: list[PatternMatchResult] = []
         accepted = False
         max_match_length = len(node_queue)
 
@@ -139,8 +138,13 @@ class PatternMatcher:
     def _dequeue_and_get_matches(
         self, node_queue: List[Node], quantization_config: QuantizationConfig
     ) -> List[PatternMatchResult]:
-        """
-        Dequeues the longest accepted match starting at the first node of the queue, and returns all potential matches that were checked (rejected ones). If no match is found, simply dequeues the first node and returns an empty list.
+        """Dequeues the longest accepted match starting at the first node of the
+        queue, and returns all potential matches that were checked (rejected
+        ones).
+
+        If no match is found, simply dequeues the first node and returns an
+        empty list.
+
         """
         potential_matches = self._get_matches(node_queue, quantization_config)
         accepted_matches = [m for m in potential_matches if m.accepted]
@@ -156,16 +160,16 @@ class PatternMatcher:
         return potential_matches
 
     def find_pattern_matches(
-        self, nodes: Iterator[Node], quantization_config: CortexMQuantizationConfig
+        self, nodes: Iterator[Node], quantization_config: QuantizationConfig
     ) -> Iterator[PatternMatchResult]:
-        """
-        Match all given patterns in the graph and return match results with
-        acceptance/rejection status.
-        Each node can only be part of one match, larger patterns are prioritized.
-        Currently only linear patterns (single chain) are supported.
+        """Match all given patterns in the graph and return match results with
+        acceptance/rejection status. Each node can only be part of one match,
+        larger patterns are prioritized. Currently only linear patterns (single
+        chain) are supported.
 
-        Q_PATTERN_MATCHED_KEY is set to True in node.meta to track which nodes have
-        already been matched.
+        Q_PATTERN_MATCHED_KEY is set to True in node.meta to track which nodes
+        have already been matched.
+
         """
 
         node = next(nodes, None)

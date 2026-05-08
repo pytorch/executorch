@@ -1,10 +1,9 @@
 # Copyright (c) Meta Platforms, Inc. and affiliates.
 # All rights reserved.
-# Copyright 2025 Arm Limited and/or its affiliates.
+# Copyright 2025-2026 Arm Limited and/or its affiliates.
 #
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
-
 
 import executorch.backends.cortex_m.ops.operators  # noqa
 
@@ -139,7 +138,7 @@ class ConvertToCortexMPass(XNNPACKPass):
 
         return exir_ops.edge.cortex_m.quantized_linear.default, args
 
-    def _get_convolution_replacement(self, node) -> int:
+    def _get_convolution_replacement(self, node):
         (
             x,
             weight,
@@ -156,8 +155,8 @@ class ConvertToCortexMPass(XNNPACKPass):
         input_zero_point = node.meta["input_qparams"][0].zp
         weight_scales = node.meta["input_qparams"][1].scale
         if not isinstance(weight_scales, list):
-            weight_tensor = get_first_fake_tensor(weight)
-            weight_scales = [weight_scales] * weight_tensor.shape[0]
+            fake_weight_tensor = get_first_fake_tensor(weight)
+            weight_scales = [weight_scales] * fake_weight_tensor.shape[0]
 
         output_qparams = node.meta["output_qparams"][0]
         output_scale = output_qparams.scale
@@ -174,13 +173,17 @@ class ConvertToCortexMPass(XNNPACKPass):
             quantized_multipliers.append(quantized_multiplier)
             quantized_shifts.append(quantized_shift)
 
-        weight_tensor = get_param_tensor(self.exported_program, weight)
+        param_weight_tensor = get_param_tensor(self.exported_program, weight)
+        if param_weight_tensor is None:
+            raise RuntimeError(
+                f"Expected convolution weight parameter tensor for node {node.name}."
+            )
 
         # Detect depthwise convolution:
         # Depthwise means groups == in_channels, out_channels == K * in_channels
         # Weight shape is [out_ch, in_ch_per_group, H, W]
-        in_channels = weight_tensor.shape[1] * groups
-        out_channels = weight_tensor.shape[0]
+        in_channels = param_weight_tensor.shape[1] * groups
+        out_channels = param_weight_tensor.shape[0]
         is_depthwise = (in_channels == groups) and (out_channels % in_channels == 0)
 
         # Only use DW path if batch_size==1, as CMSIS-NN DW falls back to
@@ -202,13 +205,13 @@ class ConvertToCortexMPass(XNNPACKPass):
             # The permute achieves the desired logical layout (IHWO). CMSIS-NN expects
             # weights in physically contiguous memory after the permute (not in channels-last)
             # so we use contiguous() here.
-            weight_permuted = weight_tensor.permute(1, 2, 3, 0).contiguous()
+            weight_permuted = param_weight_tensor.permute(1, 2, 3, 0).contiguous()
         else:
             # For regular conv: OIHW -> OHWI
             # The permute achieves the desired logical layout (OHWI). CMSIS-NN expects
             # weights in physically contiguous memory after the permute (not in channels-last)
             # so we use contiguous() here.
-            weight_permuted = weight_tensor.permute(0, 2, 3, 1).contiguous()
+            weight_permuted = param_weight_tensor.permute(0, 2, 3, 1).contiguous()
 
         with node.graph.inserting_after(weight):
             weight_nhwc = create_constant_placeholder(
@@ -280,7 +283,7 @@ class ConvertToCortexMPass(XNNPACKPass):
             )
             return exir_ops.edge.cortex_m.quantized_conv2d.default, new_args
 
-    def _get_transpose_conv2d_replacement(self, node) -> tuple:
+    def _get_transpose_conv2d_replacement(self, node):
         """
         Transform aten.convolution with transposed=True to cortex_m.quantized_transpose_conv2d
         """
@@ -328,8 +331,12 @@ class ConvertToCortexMPass(XNNPACKPass):
         # PyTorch ConvTranspose2d: (in_channels, out_channels/groups, H, W)
         # CMSIS-NN expects: (out_channels, H, W, in_channels) = OHWI
         # Permutation: (1, 2, 3, 0)
-        weight_tensor = get_param_tensor(self.exported_program, weight)
-        weight_permuted = weight_tensor.permute(1, 2, 3, 0).contiguous()
+        weight_tensor_param = get_param_tensor(self.exported_program, weight)
+        if weight_tensor_param is None:
+            raise RuntimeError(
+                f"Expected transpose conv weight parameter tensor for node {node.name}."
+            )
+        weight_permuted = weight_tensor_param.permute(1, 2, 3, 0).contiguous()
 
         with node.graph.inserting_after(weight):
             weight_nhwc = create_constant_placeholder(

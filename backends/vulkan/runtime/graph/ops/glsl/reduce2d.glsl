@@ -44,6 +44,7 @@ layout(constant_id = 6) const int group_dim = 2;
 shared vec4 shared_vecs[MAX_NTHREADS];
 
 #include "indexing_utils.h"
+#include "indexing.glslh"
 
 int tid_to_smi(const ivec2 tid) {
   return tid.x + tid.y * NWORKERS;
@@ -68,12 +69,12 @@ void reduce_2d_non_packed_dim(const ivec2 tid, ivec3 scan_pos) {
   
   // First dimension reduction
   scan_pos[reduce_dim1] = tid.x;
-  for (int i = tid.x; i < tin_sizes[reduce_dim1]; 
+  for (int i = tid.x; i < safe_idx(tin_sizes, reduce_dim1);
        i += NWORKERS, scan_pos[reduce_dim1] += NWORKERS) {
     
     // Second dimension reduction
     scan_pos[reduce_dim2] = 0;
-    for (int j = 0; j < tin_sizes[reduce_dim2]; j++, scan_pos[reduce_dim2]++) {
+    for (int j = 0; j < safe_idx(tin_sizes, reduce_dim2); j++, scan_pos[reduce_dim2]++) {
       accum = UPDATE_ACCUM(accum, load_texel(tin, scan_pos));
     }
   }
@@ -93,11 +94,11 @@ void reduce_2d_non_packed_dim(const ivec2 tid, ivec3 scan_pos) {
     
     // Determine if there are any padding elements in the final texel of the
     // packed dimension
-    const int nspill = mod4(tin_sizes[packed_dim]);
+    const int nspill = mod4(safe_idx(tin_sizes, packed_dim));
     // Detect if this thread is working on the final texels of the packed
     // dimension, which may have padding elements
-    const bool is_last_texel = 
-        scan_pos[packed_dim] == (tin_limits[packed_dim] - 1);
+    const bool is_last_texel =
+        scan_pos[packed_dim] == (safe_idx(tin_limits, packed_dim) - 1);
     
     // Explicitly set padding elements to 0
     if (is_last_texel && nspill > 0) {

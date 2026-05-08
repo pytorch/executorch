@@ -20,9 +20,6 @@ source "${script_dir}/utils.sh"
 vulkan_sdk_version="1.4.321.1"
 vulkan_sdk_base_dir="vulkan_sdk"
 
-# MLSDK dependencies
-mlsdk_manifest_dir="ml-sdk-for-vulkan-manifest"
-
 os_name="${OS:-$(uname -s)}"
 vulkan_sdk_arch="${ARCH}"
 

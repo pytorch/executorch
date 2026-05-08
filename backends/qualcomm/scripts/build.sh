@@ -6,7 +6,7 @@
 # LICENSE file in the root directory of this source tree.
 set -e
 
-pip install pydot
+pip install -r backends/qualcomm/requirements.txt
 
 # Check if running on macOS/Darwin
 if [[ "$(uname -s)" == "Darwin" ]]; then
@@ -16,22 +16,46 @@ if [[ "$(uname -s)" == "Darwin" ]]; then
     exit 1
 fi
 
-if [[ -z ${QNN_SDK_ROOT} ]]; then
-    echo "Please export QNN_SDK_ROOT=/path/to/qnn_sdk"
-    exit -1
-fi
+SCRIPT_DIR="$( cd "$(dirname "$0")" ; pwd -P)"
 
+# If QNN_SDK_ROOT is set, pass it to cmake. Otherwise cmake will
+# auto-download the SDK via download_qnn_sdk.py during configure.
+if [[ -n ${QNN_SDK_ROOT} ]]; then
+    QNN_SDK_CMAKE_FLAG="-DQNN_SDK_ROOT=${QNN_SDK_ROOT}"
+
+    # Ensure LD_LIBRARY_PATH includes QNN SDK libs
+    QNN_LIB_DIR="${QNN_SDK_ROOT}/lib/x86_64-linux-clang"
+    if [[ -d "${QNN_LIB_DIR}" ]] && [[ ":${LD_LIBRARY_PATH:-}:" != *":${QNN_LIB_DIR}:"* ]]; then
+        export LD_LIBRARY_PATH="${QNN_LIB_DIR}:${LD_LIBRARY_PATH:-}"
+    fi
+else
+    QNN_SDK_CMAKE_FLAG=""
+    echo "[QNN] QNN_SDK_ROOT not set. SDK will be auto-downloaded during cmake configure."
+fi
 
 set -o xtrace
 
 usage() {
+  set +x
   echo "Usage: Build the aarch64 version of executor runner or the python interface of Qnn Manager"
-  echo "First, you need to set the environment variable for QNN_SDK_ROOT"
-  echo ", and if you want to build the android version of executor runner"
-  echo ", you need to export ANDROID_NDK_ROOT=/path/to/android_ndkXX"
+  echo ""
+  echo "QNN SDK and Android NDK will be auto-downloaded if not set."
+  echo "To use a custom SDK, export QNN_SDK_ROOT=/path/to/qnn_sdk"
+  echo "To use a custom NDK, export ANDROID_NDK_ROOT=/path/to/android_ndkXX"
   echo "(or export TOOLCHAIN_ROOT_HOST=/path/to/sysroots/xx_host, "
   echo "TOOLCHAIN_ROOT_TARGET=/path/to/sysroots/xx_target for linux embedded with --enable_linux_embedded)"
+  echo ""
   echo "e.g.: executorch$ ./backends/qualcomm/scripts/build.sh --skip_x86_64"
+  echo ""
+  echo "Direct mode: Use --build_direct_mode <dsp_type> --soc_model <model> to enable."
+  echo "You can choose either LPAI (ADSP) or CDSP (HTP) as the target DSP:"
+  echo "  LPAI (ADSP): dsp_type=0"
+  echo "  CDSP (HTP):  dsp_type=3"
+  echo ""
+  echo "e.g. Build with LPAI direct mode for SM8850 device:"
+  echo "  executorch$ ./backends/qualcomm/scripts/build.sh --build_direct_mode 0 --soc_model SM8850"
+  echo "e.g. Build with CDSP direct mode for SM8750 device:"
+  echo "  executorch$ ./backends/qualcomm/scripts/build.sh --build_direct_mode 3 --soc_model SM8750"
   exit 1
 }
 
@@ -43,25 +67,26 @@ CMAKE_X86_64="build-x86"
 BUILD_ANDROID="true"
 CMAKE_ANDROID="build-android"
 BUILD_HEXAGON="false"
-CMAKE_HEXAGON="build-hexagon"
+CMAKE_HEXAGON="build-direct"
 BUILD_OE_LINUX="false"
 CMAKE_OE_LINUX="build-oe-linux"
 CLEAN="true"
 BUILD_TYPE="RelWithDebInfo"
 BUILD_JOB_NUMBER="16"
 
-# Default to use CDSP for now
-DSP_TYPE=3 
+# Default DSP_TYPE=-1 means direct mode is disabled.
+DSP_TYPE=-1
+SOC_MODEL=""
 
-if [ -z PYTHON_EXECUTABLE ]; then
+if [ -z "$PYTHON_EXECUTABLE" ]; then
   PYTHON_EXECUTABLE="python3"
 fi
 
-if [ -z BUCK2 ]; then
+if [ -z "$BUCK2" ]; then
   BUCK2="buck2"
 fi
 
-long_options=skip_x86_64,skip_linux_android,enable_linux_embedded,enable_hexagon,no_clean,release,job_number:,dsp_type:
+long_options=skip_x86_64,skip_linux_android,enable_linux_embedded,build_direct_mode:,soc_model:,no_clean,release,job_number:
 
 parsed_args=$(getopt -a --options '' --longoptions $long_options --name "$0" -- "$@")
 eval set -- "$parsed_args"
@@ -70,23 +95,52 @@ while true ; do
     case "$1" in
         --skip_x86_64) BUILD_X86_64="false"; shift;;
         --skip_linux_android) BUILD_ANDROID="false"; shift;;
-        --enable_hexagon) BUILD_HEXAGON="true"; shift;;
+        --build_direct_mode) DSP_TYPE="$2"; BUILD_HEXAGON="true"; shift 2;;
+        --soc_model) SOC_MODEL="$2"; shift 2;;
         --enable_linux_embedded) BUILD_ANDROID="false"; BUILD_OE_LINUX="true"; shift;;
         --no_clean) CLEAN="false"; shift;;
         --release) BUILD_TYPE="Release"; shift;;
         --job_number) BUILD_JOB_NUMBER="$2"; shift 2;;
-        --dsp_type) DSP_TYPE="$2"; shift 2;;
         --) shift; break;;
     esac
 done
 
 PRJ_ROOT="$( cd "$(dirname "$0")/../../.." ; pwd -P)"
 
+if [ "$DSP_TYPE" -ne -1 ]; then
+    if [ "$DSP_TYPE" != "0" ] && [ "$DSP_TYPE" != "3" ]; then
+        echo "Error: --build_direct_mode only accepts 0 (ADSP/LPAI) or 3 (CDSP/HTP)."
+        exit 1
+    fi
+
+    if [ -z "$SOC_MODEL" ]; then
+        echo "Error: --soc_model <model> is required when using --build_direct_mode."
+        echo "e.g. --soc_model SM8850"
+        exit 1
+    fi
+
+    source "${SCRIPT_DIR}/build_utils.sh"
+    resolve_soc_info "$PYTHON_EXECUTABLE" "$SOC_MODEL" "$DSP_TYPE"
+    HTP_ARCH="v${HTP_ARCH}"
+    if [ -n "$LPAI_HW_VER" ]; then
+        LPAI_HW_VER="v${LPAI_HW_VER}"
+    fi
+    echo "[QNN Direct Mode] SoC model: ${SOC_MODEL}"
+    echo "[QNN Direct Mode] HTP arch version: ${HTP_ARCH}"
+    echo "[QNN Direct Mode] LPAI hardware version: ${LPAI_HW_VER}"
+fi
+
 
 if [ "$BUILD_ANDROID" = true ]; then
     if [[ -z ${ANDROID_NDK_ROOT} ]]; then
-        echo "Please export ANDROID_NDK_ROOT=/path/to/android_ndkXX"
-        exit -1
+        echo "[QNN] ANDROID_NDK_ROOT not set. Auto-downloading Android NDK..."
+        source "${SCRIPT_DIR}/install_qnn_sdk.sh"
+        setup_android_ndk
+        if [[ -z ${ANDROID_NDK_ROOT} ]]; then
+            echo "[QNN] Error: Failed to download Android NDK."
+            echo "[QNN] Set ANDROID_NDK_ROOT manually."
+            exit 1
+        fi
     fi
 
     BUILD_ROOT=$PRJ_ROOT/$CMAKE_ANDROID
@@ -112,7 +166,7 @@ if [ "$BUILD_ANDROID" = true ]; then
         -DEXECUTORCH_BUILD_EXTENSION_TENSOR=ON \
         -DEXECUTORCH_ENABLE_EVENT_TRACER=ON \
         -DEXECUTORCH_ENABLE_LOGGING=ON \
-        -DQNN_SDK_ROOT=$QNN_SDK_ROOT \
+        ${QNN_SDK_CMAKE_FLAG} \
         -DCMAKE_TOOLCHAIN_FILE=$ANDROID_NDK_ROOT/build/cmake/android.toolchain.cmake \
         -DANDROID_ABI='arm64-v8a' \
         -DEXECUTORCH_BUILD_KERNELS_QUANTIZED=ON \
@@ -125,8 +179,12 @@ if [ "$BUILD_ANDROID" = true ]; then
     EXAMPLE_ROOT=examples/qualcomm
     CMAKE_PREFIX_PATH="${BUILD_ROOT};${BUILD_ROOT}/third-party/gflags;"
 
-    # DSP_TYPE variable only matters when building direct_mode.
-    # Ignore the variable for traditional mode. 
+    if [ "$BUILD_HEXAGON" = "true" ]; then
+        DIRECT_MODE_FLAG="-DBUILD_DIRECT_MODE=ON"
+    else
+        DIRECT_MODE_FLAG="-DBUILD_DIRECT_MODE=OFF"
+    fi
+
     cmake $PRJ_ROOT/$EXAMPLE_ROOT \
         -DCMAKE_TOOLCHAIN_FILE=$ANDROID_NDK_ROOT/build/cmake/android.toolchain.cmake \
         -DCMAKE_BUILD_TYPE=$BUILD_TYPE \
@@ -140,6 +198,7 @@ if [ "$BUILD_ANDROID" = true ]; then
         -DCMAKE_FIND_ROOT_PATH_MODE_PACKAGE=BOTH \
         -DPYTHON_EXECUTABLE=$PYTHON_EXECUTABLE \
         -DDSP_TYPE=$DSP_TYPE \
+        $DIRECT_MODE_FLAG \
         -B$EXAMPLE_ROOT
 
     cmake --build $EXAMPLE_ROOT -j$BUILD_JOB_NUMBER
@@ -160,8 +219,7 @@ if [ "$BUILD_ANDROID" = true ]; then
     cmake --build $LLAMA_EXAMPLE_ROOT -j$BUILD_JOB_NUMBER
 fi
 
-# TODO: Currently, DSP Domain is set to 3 (cdsp). In future, either create 2 folders: build_cdsp, build_adsp when supporting LPAI, or
-# see if there's a way to build both cdsp and adsp in 1 library.
+
 if [ "$BUILD_HEXAGON" = true ]; then
     if [[ -z ${ANDROID_NDK_ROOT} ]]; then
         echo "Please export ANDROID_NDK_ROOT=/path/to/android_ndkXX"
@@ -175,11 +233,6 @@ if [ "$BUILD_HEXAGON" = true ]; then
 
     if [[ -z ${HEXAGON_TOOLS_ROOT} ]]; then
         echo "Please export HEXAGON_TOOLS_ROOT=/path/to/hexagon-sdk-x.x.x/tools/HEXAGON_Tools/x.x.x. Please be aware of tools version is dependent on DSP_VERSION version. Refer to README under this folder for more information."
-        exit -1
-    fi
-
-    if [[ -z ${DSP_VERSION} ]]; then
-        echo "Please export DSP_VERSION=xx. e.g. For SM8750, please export v79. Conversion table can be found in _soc_info_table under executorch/backends/qualcomm/serialization/qc_schema.py."
         exit -1
     fi
 
@@ -213,7 +266,7 @@ if [ "$BUILD_HEXAGON" = true ]; then
         -DQNN_SDK_ROOT=$QNN_SDK_ROOT \
         -DHEXAGON_SDK_ROOT=$HEXAGON_SDK_ROOT \
         -DHEXAGON_TOOLS_ROOT=$HEXAGON_TOOLS_ROOT \
-        -DDSP_VERSION=$DSP_VERSION \
+        -DCDSP_VERSION=$HTP_ARCH \
         -DCMAKE_TOOLCHAIN_FILE=$HEXAGON_SDK_ROOT/build/cmake/hexagon_toolchain.cmake \
         -DDSP_TYPE=$DSP_TYPE \
         -DANDROID_ABI='arm64-v8a' \
@@ -223,6 +276,10 @@ if [ "$BUILD_HEXAGON" = true ]; then
         -B$BUILD_ROOT
 
     cmake --build $BUILD_ROOT -j$BUILD_JOB_NUMBER --target install
+
+    if [ "$DSP_TYPE" = "0" ]; then
+        bash $SCRIPT_DIR/sign_library.sh --direct_mode --htp_arch $HTP_ARCH --lpai_arch $LPAI_HW_VER
+    fi
 fi
 
 
@@ -266,7 +323,7 @@ if [ "$BUILD_OE_LINUX" = true ]; then
         -DEXECUTORCH_BUILD_EXTENSION_TENSOR=ON \
         -DEXECUTORCH_ENABLE_EVENT_TRACER=ON \
         -DEXECUTORCH_ENABLE_LOGGING=ON \
-        -DQNN_SDK_ROOT=$QNN_SDK_ROOT \
+        ${QNN_SDK_CMAKE_FLAG} \
         -DEXECUTORCH_BUILD_KERNELS_QUANTIZED=ON \
         -DPYTHON_EXECUTABLE=$PYTHON_EXECUTABLE \
         -B$BUILD_ROOT
@@ -327,7 +384,7 @@ if [ "$BUILD_X86_64" = true ]; then
     cmake \
         -DCMAKE_BUILD_TYPE=$BUILD_TYPE \
         -DCMAKE_INSTALL_PREFIX=$BUILD_ROOT \
-        -DQNN_SDK_ROOT=${QNN_SDK_ROOT} \
+        ${QNN_SDK_CMAKE_FLAG} \
         -DEXECUTORCH_BUILD_QNN=ON \
         -DEXECUTORCH_BUILD_DEVTOOLS=ON \
         -DEXECUTORCH_BUILD_EXTENSION_LLM=ON \
@@ -337,6 +394,7 @@ if [ "$BUILD_X86_64" = true ]; then
         -DEXECUTORCH_BUILD_EXTENSION_FLAT_TENSOR=ON \
         -DEXECUTORCH_BUILD_EXTENSION_NAMED_DATA_MAP=ON \
         -DEXECUTORCH_BUILD_KERNELS_QUANTIZED=ON \
+        -DEXECUTORCH_BUILD_KERNELS_QUANTIZED_AOT=ON \
         -DEXECUTORCH_BUILD_EXTENSION_TENSOR=ON \
         -DEXECUTORCH_ENABLE_EVENT_TRACER=ON \
         -DEXECUTORCH_ENABLE_LOGGING=ON \
@@ -348,6 +406,7 @@ if [ "$BUILD_X86_64" = true ]; then
 
     rm -f $PRJ_ROOT/backends/qualcomm/python/*
     cp -fv $BUILD_ROOT/backends/qualcomm/Py* "$PRJ_ROOT/backends/qualcomm/python"
+    cp -fv $BUILD_ROOT/kernels/quantized/libquantized_ops_aot_lib.so "$PRJ_ROOT/kernels/quantized"
     cp -fv "$PRJ_ROOT/schema/program.fbs" "$PRJ_ROOT/exir/_serialize/program.fbs"
     cp -fv "$PRJ_ROOT/schema/scalar_type.fbs" "$PRJ_ROOT/exir/_serialize/scalar_type.fbs"
 

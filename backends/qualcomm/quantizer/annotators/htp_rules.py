@@ -163,6 +163,7 @@ class Atan(GeneralOpDef):
     [
         torch.ops.aten.adaptive_avg_pool1d.default,
         torch.ops.aten.adaptive_avg_pool2d.default,
+        torch.ops.aten.avg_pool1d.default,
         torch.ops.aten.avg_pool2d.default,
     ],
     QnnConstants.OpPoolAvg2d.op_name,
@@ -278,6 +279,17 @@ class Cdist(GeneralOpDef):
 )
 class Ceil(GeneralOpDef):
     pass
+
+
+@register_annotator(
+    [torch.ops.aten.channel_shuffle.default], QnnConstants.OpChannelShuffle.op_name
+)
+class ChannelShuffle(GeneralOpDef):
+    @staticmethod
+    def annotate(node: Node, quantization_config: QuantizationConfig) -> None:
+        annotate_in_out_obs_sharing_op(node, quantization_config)
+        if not _is_annotated([node]):
+            annotate_single_in_share_out(node, quantization_config)
 
 
 @register_annotator(
@@ -535,20 +547,53 @@ class Elu(GeneralOpDef):
 # TODO: Embedding op cannot directly map to OpGather because the index input in torch is not a tensor.
 @register_annotator(
     [
-        torch.ops.aten.embedding.default,
         torch.ops.aten.gather.default,
         torch.ops.aten.index.Tensor,
         torch.ops.aten.index_select.default,
     ],
     qnn_op=None,
 )
-class Embedding(GeneralOpDef):
+class Gather(GeneralOpDef):
     @staticmethod
     def annotate(node: Node, quantization_config: QuantizationConfig) -> None:
         # args[2] = indices, which should be int
         annotate_in_out_obs_sharing_op(node, quantization_config)
         if not _is_annotated([node]):
             annotate_single_in_share_out(node, quantization_config)
+
+
+@register_annotator(
+    [
+        torch.ops.aten.embedding.default,
+    ],
+    qnn_op=None,
+)
+class Embedding(GeneralOpDef):
+    @staticmethod
+    def annotate(node: Node, quantization_config: QuantizationConfig) -> None:
+        weight = node.args[0]
+
+        # Only quantize if input is a float tensor
+        if _is_annotated([node]) or not _is_float_tensor(weight):
+            return
+
+        is_pcq_embedding = quantization_config.per_channel_embedding
+        input_qspec_map = {}
+        input_qspec_map[weight] = (
+            quantization_config.weight
+            if is_pcq_embedding
+            else quantization_config.input_activation
+        )
+        output_qspec = (
+            quantization_config.input_activation
+            if is_pcq_embedding
+            else SharedQuantizationSpec((weight, node))
+        )
+        node.meta[Q_ANNOTATION_KEY] = QuantizationAnnotation(
+            input_qspec_map=input_qspec_map,
+            output_qspec=output_qspec,
+            _annotated=True,
+        )
 
 
 @register_annotator([torch.ops.aten.eq.Tensor], QnnConstants.OpElementWiseEqual.op_name)
@@ -1126,7 +1171,14 @@ class Or(GeneralOpDef):
         annotate_binary(node, quantization_config)
 
 
-@register_annotator([torch.ops.aten.pad.default], QnnConstants.OpPad.op_name)
+@register_annotator(
+    [
+        torch.ops.aten.pad.default,
+        torch.ops.aten.reflection_pad1d.default,
+        torch.ops.aten.reflection_pad2d.default,
+    ],
+    QnnConstants.OpPad.op_name,
+)
 class Pad(GeneralOpDef):
     pass
 
@@ -1289,7 +1341,6 @@ class RmsNorm(GeneralOpDef):
             return
 
         act_node = node.args[0]
-        weight_node = node.args[2]
 
         # TODO current only support 16a16w
         annotate_input_qspec_map(
@@ -1298,11 +1349,13 @@ class RmsNorm(GeneralOpDef):
             quantization_config.input_activation,
         )
 
-        annotate_input_qspec_map(
-            node,
-            weight_node,
-            quantization_config.input_activation,
-        )
+        if len(node.args) > 2 and node.args[2] is not None:
+            weight_node = node.args[2]
+            annotate_input_qspec_map(
+                node,
+                weight_node,
+                quantization_config.input_activation,
+            )
         nodes_to_mark_annotated = [node]
         annotate_output_qspec(node, quantization_config.output_activation)
         _mark_nodes_as_annotated(nodes_to_mark_annotated)

@@ -206,6 +206,18 @@ lintrunner init
 Then run `lintrunner` from the root of the repo to see its suggestions, or run
 `lintrunner -a` to automatically apply the suggestions.
 
+### Git Hooks
+
+A pre-commit hook runs lintrunner automatically on every commit. Install it with:
+
+```
+git config core.hooksPath .githooks
+```
+
+This is also done automatically by `./install_executorch.sh`. If lintrunner
+auto-fixes files, the commit will be blocked so you can review the changes with
+`git diff` before re-committing.
+
 ### Python Style
 
 ExecuTorch Python code follows the style used by the PyTorch core project.

@@ -59,8 +59,9 @@
                                                                              \
     /* General path: use stride for non-contiguous access */                 \
     const uint outer_stride =                                                \
-        stride_at(meta, block_outer_dim) * texels_per_block;                 \
-    const uint outer_size = size_at(meta, block_outer_dim);                  \
+        safe_idx(meta.strides[0], block_outer_dim) * texels_per_block;       \
+    const uint outer_size =                                                  \
+        safe_idx(meta.sizes[0], block_outer_dim);                            \
     const int base_outer_idx = tidx_base.data[block_outer_dim];              \
                                                                              \
     [[unroll]] for (int block_y = 0; block_y < 4; ++block_y) {               \
@@ -109,8 +110,9 @@
                                                                                \
     /* General path: use stride for non-contiguous access */                   \
     const uint outer_stride =                                                  \
-        stride_at(meta, block_outer_dim) * texels_per_block;                   \
-    const uint outer_size = size_at(meta, block_outer_dim);                    \
+        safe_idx(meta.strides[0], block_outer_dim) * texels_per_block;         \
+    const uint outer_size =                                                    \
+        safe_idx(meta.sizes[0], block_outer_dim);                              \
     const int base_outer_idx = int(tidx_base.data[0][block_outer_dim]);        \
                                                                                \
     [[unroll]] for (int block_y = 0; block_y < 4; ++block_y) {                 \

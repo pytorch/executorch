@@ -55,8 +55,6 @@ def test_asin_tosa_INT(test_data: Tuple):
         (test_data(),),
         aten_op=[],
         exir_op=[],
-        frobenius_threshold=0.6,  # MLETORCH-1709
-        cosine_threshold=0.8,  # MLETORCH-1709
     )
     pipeline.run()
 

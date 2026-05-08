@@ -141,6 +141,27 @@ def define_common_targets():
         visibility = [],  # Private
     )
 
+    runtime.python_library(
+        name = "export_program_with_device_info_lib",
+        srcs = ["export_program_with_device_info.py"],
+        deps = [
+            "//caffe2:torch",
+            "//executorch/exir/backend/test:backend_with_compiler_demo",
+            "//executorch/exir:lib",
+        ],
+        visibility = [],  # Private
+    )
+
+    runtime.python_binary(
+        name = "export_program_with_device_info",
+        main_module = "executorch.test.models.export_program_with_device_info",
+        par_style = "xar",
+        deps = [
+            ":export_program_with_device_info_lib",
+        ],
+        visibility = [],  # Private
+    )
+
     runtime.python_binary(
         name = "export_delegated_program",
         main_module = "executorch.test.models.export_delegated_program",
@@ -193,6 +214,18 @@ def define_common_targets():
         visibility = [
             "//executorch/runtime/executor/test/...",
             "//executorch/test/...",
+        ],
+    )
+
+    runtime.genrule(
+        name = "exported_program_with_device_info",
+        cmd = "$(exe :export_program_with_device_info) --outdir $OUT",
+        outs = {
+            "ModuleAddWithDevice.pte": ["ModuleAddWithDevice.pte"],
+        },
+        default_outs = ["."],
+        visibility = [
+            "//executorch/runtime/executor/test/...",
         ],
     )
 

@@ -71,6 +71,14 @@ class ExecuTorchLlmCallbackJni
         facebook::jni::make_jstring(
             executorch::extension::llm::stats_to_json_string(result)));
   }
+
+  void onError(int errorCode, const std::string& message) const {
+    static auto cls = ExecuTorchLlmCallbackJni::javaClassStatic();
+    static const auto on_error_method =
+        cls->getMethod<void(jint, facebook::jni::local_ref<jstring>)>(
+            "onError");
+    on_error_method(self(), errorCode, facebook::jni::make_jstring(message));
+  }
 };
 
 class ExecuTorchLlmJni : public facebook::jni::HybridClass<ExecuTorchLlmJni> {
@@ -101,7 +109,8 @@ class ExecuTorchLlmJni : public facebook::jni::HybridClass<ExecuTorchLlmJni> {
       facebook::jni::alias_ref<facebook::jni::JList<jstring>::javaobject>
           data_files,
       jint num_bos,
-      jint num_eos) {
+      jint num_eos,
+      jint load_mode) {
     return makeCxxInstance(
         model_type_category,
         model_path,
@@ -109,7 +118,25 @@ class ExecuTorchLlmJni : public facebook::jni::HybridClass<ExecuTorchLlmJni> {
         temperature,
         data_files,
         num_bos,
-        num_eos);
+        num_eos,
+        load_mode);
+  }
+
+  static executorch::extension::Module::LoadMode load_mode_from_int(
+      jint load_mode) {
+    switch (load_mode) {
+      case 0:
+        return executorch::extension::Module::LoadMode::File;
+      case 1:
+        return executorch::extension::Module::LoadMode::Mmap;
+      case 2:
+        return executorch::extension::Module::LoadMode::MmapUseMlock;
+      case 3:
+        return executorch::extension::Module::LoadMode::
+            MmapUseMlockIgnoreErrors;
+      default:
+        return executorch::extension::Module::LoadMode::Mmap;
+    }
   }
 
   ExecuTorchLlmJni(
@@ -119,7 +146,8 @@ class ExecuTorchLlmJni : public facebook::jni::HybridClass<ExecuTorchLlmJni> {
       jfloat temperature,
       facebook::jni::alias_ref<jobject> data_files = nullptr,
       jint num_bos = 0,
-      jint num_eos = 0) {
+      jint num_eos = 0,
+      jint load_mode = 1) {
     temperature_ = temperature;
     num_bos_ = num_bos;
     num_eos_ = num_eos;
@@ -135,13 +163,14 @@ class ExecuTorchLlmJni : public facebook::jni::HybridClass<ExecuTorchLlmJni> {
 #endif
 
     model_type_category_ = model_type_category;
+    auto cpp_load_mode = load_mode_from_int(load_mode);
     std::vector<std::string> data_files_vector;
     if (model_type_category == MODEL_TYPE_CATEGORY_MULTIMODAL) {
       runner_ = llm::create_multimodal_runner(
           model_path->toStdString().c_str(),
           llm::load_tokenizer(tokenizer_path->toStdString()),
           std::nullopt,
-          executorch::extension::Module::LoadMode::MmapUseMlockIgnoreErrors);
+          cpp_load_mode);
     } else if (model_type_category == MODEL_TYPE_CATEGORY_LLM) {
       if (data_files != nullptr) {
         // Convert Java List<String> to C++ std::vector<string>
@@ -161,22 +190,51 @@ class ExecuTorchLlmJni : public facebook::jni::HybridClass<ExecuTorchLlmJni> {
       runner_ = executorch::extension::llm::create_text_llm_runner(
           model_path->toStdString(),
           llm::load_tokenizer(tokenizer_path->toStdString()),
-          data_files_vector);
+          data_files_vector,
+          /*temperature=*/-1.0f,
+          /*event_tracer=*/nullptr,
+          /*method_name=*/"forward",
+          cpp_load_mode);
 #if defined(EXECUTORCH_BUILD_QNN)
     } else if (model_type_category == MODEL_TYPE_QNN_LLAMA) {
-      std::unique_ptr<executorch::extension::Module> module = std::make_unique<
-          executorch::extension::Module>(
-          model_path->toStdString().c_str(),
-          data_files_vector,
-          executorch::extension::Module::LoadMode::MmapUseMlockIgnoreErrors);
+      std::unique_ptr<executorch::extension::Module> module =
+          std::make_unique<executorch::extension::Module>(
+              model_path->toStdString().c_str(),
+              data_files_vector,
+              cpp_load_mode);
       std::string decoder_model = "llama3"; // use llama3 for now
-      runner_ = std::make_unique<example::Runner<uint16_t>>( // QNN runner
-          std::move(module),
-          decoder_model.c_str(),
-          model_path->toStdString().c_str(),
-          tokenizer_path->toStdString().c_str(),
-          "",
-          "");
+      // Using 8bit as default since this meta is introduced with 16bit kv io
+      // support and older models only have 8bit kv io.
+      example::KvBitWidth kv_bitwidth = example::KvBitWidth::kWidth8;
+      if (module->method_names()->count("get_kv_io_bit_width") > 0) {
+        kv_bitwidth = static_cast<example::KvBitWidth>(
+            module->get("get_kv_io_bit_width").get().toScalar().to<int64_t>());
+      }
+
+      if (kv_bitwidth == example::KvBitWidth::kWidth8) {
+        runner_ = std::make_unique<example::Runner<uint8_t>>(
+            std::move(module),
+            decoder_model.c_str(),
+            model_path->toStdString().c_str(),
+            tokenizer_path->toStdString().c_str(),
+            "",
+            "",
+            temperature_);
+      } else if (kv_bitwidth == example::KvBitWidth::kWidth16) {
+        runner_ = std::make_unique<example::Runner<uint16_t>>(
+            std::move(module),
+            decoder_model.c_str(),
+            model_path->toStdString().c_str(),
+            tokenizer_path->toStdString().c_str(),
+            "",
+            "",
+            temperature_);
+      } else {
+        ET_CHECK_MSG(
+            false,
+            "Unsupported kv bitwidth: %ld",
+            static_cast<int64_t>(kv_bitwidth));
+      }
       model_type_category_ = MODEL_TYPE_CATEGORY_LLM;
 #endif
 #if defined(EXECUTORCH_BUILD_MEDIATEK)
@@ -198,6 +256,17 @@ class ExecuTorchLlmJni : public facebook::jni::HybridClass<ExecuTorchLlmJni> {
       jfloat temperature,
       jint num_bos,
       jint num_eos) {
+    Error err = Error::Ok;
+    if (!prompt) {
+      err = Error::InvalidArgument;
+      if (callback) {
+        callback->onError(
+            static_cast<int>(err),
+            "generate() failed: prompt must not be null");
+      }
+      return static_cast<jint>(err);
+    }
+
     float effective_temperature = temperature >= 0 ? temperature : temperature_;
     std::string token_buffer;
     auto token_callback = [callback, &token_buffer](const std::string& token) {
@@ -209,26 +278,53 @@ class ExecuTorchLlmJni : public facebook::jni::HybridClass<ExecuTorchLlmJni> {
       }
       std::string result = token_buffer;
       token_buffer.clear();
-      callback->onResult(result);
+      if (callback) {
+        callback->onResult(result);
+      }
     };
 
     if (!runner_) {
-      return static_cast<jint>(Error::InvalidState);
+      err = Error::InvalidState;
+      if (callback) {
+        callback->onError(
+            static_cast<int>(err), "generate() failed: runner not initialized");
+      }
+      return static_cast<jint>(err);
     }
-    executorch::extension::llm::GenerationConfig config{
-        .echo = static_cast<bool>(echo),
-        .seq_len = seq_len,
-        .temperature = effective_temperature,
-        .num_bos = needs_bos_ ? num_bos_ : 0,
-        .num_eos = num_eos,
-    };
-    auto err = runner_->generate(
-        prompt->toStdString(),
-        config,
-        token_callback,
-        [callback](const llm::Stats& result) { callback->onStats(result); });
-    if (err == Error::Ok) {
-      needs_bos_ = false;
+
+    try {
+      executorch::extension::llm::GenerationConfig config{
+          .echo = static_cast<bool>(echo),
+          .seq_len = seq_len,
+          .temperature = effective_temperature,
+          .num_bos = needs_bos_ ? num_bos_ : 0,
+          .num_eos = num_eos,
+      };
+      err = runner_->generate(
+          prompt->toStdString(),
+          config,
+          token_callback,
+          [callback](const llm::Stats& result) {
+            if (callback) {
+              callback->onStats(result);
+            }
+          });
+      if (err == Error::Ok) {
+        needs_bos_ = false;
+      }
+      if (err != Error::Ok && callback) {
+        callback->onError(
+            static_cast<int>(err),
+            "generate() failed with error code " +
+                std::to_string(static_cast<int>(err)));
+      }
+    } catch (const std::exception& e) {
+      if (callback) {
+        callback->onError(
+            static_cast<int>(Error::Internal),
+            std::string("generate() threw: ") + e.what());
+      }
+      return static_cast<jint>(Error::Internal);
     }
     return static_cast<jint>(err);
   }

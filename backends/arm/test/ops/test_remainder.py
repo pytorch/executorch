@@ -29,6 +29,7 @@ class Remainder(torch.nn.Module):
     exir_op_tensor = "executorch_exir_dialects_edge__ops_aten_remainder_Tensor"
     aten_op_scalar = "torch.ops.aten.remainder.Scalar"
     exir_op_scalar = "executorch_exir_dialects_edge__ops_aten_remainder_Scalar"
+    lowered_exir_ops = [exir_op_scalar, exir_op_tensor]
 
     test_cases_tensor = {
         "rank2_tensors": lambda: (
@@ -97,18 +98,14 @@ def test_remainder_tensor_tosa_INT(test_data):
     pipeline.run()
 
 
-@common.parametrize(
-    "test_data",
-    Remainder.test_cases_scalar,
-    xfails={
-        "scalar_pos": "MLETORCH-1832 - Quantized remainder with scalar divisor produces incorrect results for certain inputs"
-    },
-)
+@common.parametrize("test_data", Remainder.test_cases_scalar)
 def test_remainder_scalar_tosa_INT(test_data):
     pipeline = TosaPipelineINT[Remainder.input_t](
         Remainder(),
         test_data(),
         [],
+        Remainder.lowered_exir_ops,
+        frobenius_threshold=0.4,
     )
     pipeline.run()
 
@@ -131,6 +128,7 @@ def test_remainder_scalar_u55_INT(test_data):
         Remainder(),
         test_data(),
         [],
+        Remainder.lowered_exir_ops,
     )
     pipeline.run()
 
@@ -153,6 +151,7 @@ def test_remainder_scalar_u85_INT(test_data):
         Remainder(),
         test_data(),
         [],
+        Remainder.lowered_exir_ops,
     )
     pipeline.run()
 

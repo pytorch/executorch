@@ -27,14 +27,12 @@ class ScalarsToAttributePass(ArmPass):
 
     targeted_ops = [
         torch.ops.aten.add.Tensor,
-        torch.ops.aten.add_.Tensor,
         torch.ops.aten.sub.Tensor,
-        torch.ops.aten.sub_.Tensor,
         torch.ops.aten.rsub.Scalar,
         torch.ops.aten.mul.Tensor,
-        torch.ops.aten.mul_.Tensor,
         torch.ops.aten.div.Tensor,
         torch.ops.aten.div_.Tensor,
+        torch.ops.aten.div.Tensor_mode,
     ]
 
     def _convert_scalar_args(
@@ -96,22 +94,20 @@ class ScalarsToAttributePass(ArmPass):
                     sub.meta["val"] = n.meta["val"]
                 graph_module.graph.erase_node(n)
 
-    def handle_control_nodes(self, node: Node, graph_module: GraphModule) -> None:
+    def handle_control_nodes(self, graph_module: GraphModule) -> None:
         """Apply scalar argument conversion on subgraphs of control-flow
         nodes.
         """
         for _, submodule, _ in get_cond_while_submodules_nested(graph_module):
             for submodule_node in submodule.graph.nodes:
-                # use aten.full.default for scalar constants in control subgraphs
                 self._convert_scalar_args(submodule, submodule_node)
-        graph_module.recompile()
 
     def call(self, graph_module: GraphModule) -> PassResult:
         # convert scalars in control-flow subgraphs and main graph
         for node in list(graph_module.graph.nodes):
             n = cast(Node, node)
-            self.handle_control_nodes(n, graph_module)
             self._convert_scalar_args(graph_module, n)
+        self.handle_control_nodes(graph_module)
         graph_module.recompile()
         graph_module = super().call(graph_module).graph_module
         return PassResult(graph_module, True)

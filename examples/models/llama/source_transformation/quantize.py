@@ -144,30 +144,14 @@ def quantize(  # noqa C901
         from torchao.utils import unwrap_tensor_subclass
 
         def filter_fn(m, fqn):
-            # Check if it's a regular nn.Linear
-            is_linear = isinstance(m, nn.Linear)
-
-            # Check if it's a LoRALinear (which has a base weight parameter to quantize)
-            is_lora_linear = False
-            try:
-                from executorch.examples.models.llama.lora import LoRALinear
-
-                is_lora_linear = isinstance(m, LoRALinear)
-            except ImportError:
-                pass
-
-            # Check if the weight shape is compatible with group size
-            has_shape_compatible_with_group_size = False
-            if is_linear or is_lora_linear:
-                if group_size == 0:
-                    has_shape_compatible_with_group_size = True
-                else:
-                    has_shape_compatible_with_group_size = (
-                        m.weight.shape[1] % group_size == 0
-                    )
-            return (
-                is_linear or is_lora_linear
-            ) and has_shape_compatible_with_group_size
+            if not isinstance(m, nn.Linear):
+                return False
+            parts = fqn.split(".")
+            if "lora_a" in parts or "lora_b" in parts:
+                return False
+            if group_size == 0:
+                return True
+            return m.weight.shape[1] % group_size == 0
 
         weight_dtype = torch.int4 if qmode == "8da4w" else torch.int8
         quantize_(
@@ -206,7 +190,6 @@ def quantize(  # noqa C901
             ),
         )
         quantize_(model, q_config)
-        model = unwrap_tensor_subclass(model)
 
         return model
     else:
@@ -771,6 +754,14 @@ class QuantizedGroupEmbedding(torch.nn.Module):
                 self.weight, self.scales, None, -8, 7, indices, dtype=self.dtype
             )
 
+    def _apply(self, fn, recurse=True):
+        """Override _apply to update self.dtype when the module is cast via .to(dtype)."""
+        super()._apply(fn, recurse)
+        # Probe the new dtype from the scales buffer, which gets cast by super()._apply.
+        if self.scales is not None:
+            self.dtype = self.scales.dtype
+        return self
+
 
 ############################ Source Transform Start #######################
 
@@ -778,7 +769,6 @@ class QuantizedGroupEmbedding(torch.nn.Module):
 def get_quant_embedding_transform(
     embedding_quantize: str,
     use_shared_embedding: bool = False,
-    dtype_override: Optional[DType] = None,
     quantize_with_hqq: bool = True,
 ):
     if embedding_quantize.startswith("torchao:"):
@@ -833,13 +823,11 @@ def get_quant_embedding_transform(
     else:
         group_size = int(group_size)
     bitwidth = int(bitwidth)
-    torch_dtype = dtype_override.to_torch_dtype() if dtype_override else None
     return lambda model: EmbeddingQuantHandler(
         model,
         bitwidth=bitwidth,
         group_size=group_size,
         packed=(bitwidth in [2, 4]),
-        precision=torch_dtype,
         quantize_with_hqq=quantize_with_hqq,
     ).quantized_model()
 

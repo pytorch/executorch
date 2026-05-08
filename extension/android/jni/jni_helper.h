@@ -20,10 +20,34 @@ namespace executorch::jni_helper {
  * code and details. Uses the Java factory method
  * ExecutorchRuntimeException.makeExecutorchException(int, String).
  *
+ * IMPORTANT: This attempts to throw a C++ exception (via fbjni). Only use in
+ * fbjni HybridClass methods where fbjni catches it at the JNI boundary.
+ * For plain extern "C" JNIEXPORT functions, use setExecutorchPendingException.
+ *
+ * Note: If there is no current JNI environment (for example, if
+ * facebook::jni::Environment::current() returns null), this function is a
+ * no-op and does not throw. Callers must not rely on this always aborting
+ * control flow.
+ *
  * @param errorCode The error code from the C++ Executorch runtime.
  * @param details Additional details to include in the exception message.
  */
 void throwExecutorchException(uint32_t errorCode, const std::string& details);
+
+/**
+ * Sets a pending Java ExecutorchRuntimeException without throwing a C++
+ * exception. Safe to call from plain extern "C" JNIEXPORT functions.
+ * After calling this, the caller must return from the JNI function promptly;
+ * the Java exception will be delivered when control returns to the JVM.
+ *
+ * @param env The JNI environment pointer.
+ * @param errorCode The error code from the C++ Executorch runtime.
+ * @param details Additional details to include in the exception message.
+ */
+void setExecutorchPendingException(
+    JNIEnv* env,
+    uint32_t errorCode,
+    const std::string& details);
 
 // Define the JavaClass wrapper
 struct JExecutorchRuntimeException

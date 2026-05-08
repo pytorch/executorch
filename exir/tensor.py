@@ -172,6 +172,9 @@ class TensorSpec:
         self.init_mem_planning_fields()
         self.shape_dynamism: TensorShapeDynamism = determine_tensor_dynanism(self.shape)
         self.extra_tensor_info = extra_tensor_info
+        # device type will be only updated during PropagateDevicePass.
+        self.device: schema.DeviceType = schema.DeviceType.CPU
+        self.device_index: int = 0
 
     @property
     def allocated_memory(self) -> int:
@@ -254,6 +257,7 @@ class TensorSpec:
             + f", is_sparse={self.is_sparse}"
             + f", shape_dynamism={self.shape_dynamism}"
             + f", const={self.const}, requires_grad={self.requires_grad}"
+            + f", device={self.device.name}:{self.device_index}"
             + ")"
         )
 
@@ -362,6 +366,21 @@ def make_tensor_value(
     tensor_size = to_list(spec.shape)
     tensor_dim_order = to_list(spec.dim_order)
 
+    extra_tensor_info = spec.extra_tensor_info
+    # Propagate device from TensorSpec into ExtraTensorInfo for serialization.
+    # Note: we don't propagate Device on CPU; if no device info will be noticed,
+    # tensor_parser will automatic treat it as CPU:0, to prevent pte size
+    # regression as much as possible.
+    if spec.device != schema.DeviceType.CPU:
+        if extra_tensor_info is None:
+            extra_tensor_info = schema.ExtraTensorInfo(
+                device_type=spec.device,
+                device_index=spec.device_index,
+            )
+        else:
+            extra_tensor_info.device_type = spec.device
+            extra_tensor_info.device_index = spec.device_index
+
     flatbuffer_tensor = schema.Tensor(
         scalar_type=scalar_type_enum(spec.scalar_type),
         # The runtime currently only supports tensors with offsets of zero.
@@ -373,7 +392,7 @@ def make_tensor_value(
         allocation_info=allocation_info,
         layout=layout_enum(spec.layout),
         shape_dynamism=spec.shape_dynamism,
-        extra_tensor_info=spec.extra_tensor_info,
+        extra_tensor_info=extra_tensor_info,
     )
     return flatbuffer_tensor
 

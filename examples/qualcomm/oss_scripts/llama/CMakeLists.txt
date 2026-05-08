@@ -94,12 +94,15 @@ list(
   ${CMAKE_CURRENT_LIST_DIR}/qnn_multimodal_runner.cpp
   ${CMAKE_CURRENT_LIST_DIR}/runner/multimodal_runner/multimodal_runner.cpp
   ${CMAKE_CURRENT_LIST_DIR}/runner/multimodal_runner/multimodal_runner.h
+  ${CMAKE_CURRENT_LIST_DIR}/runner/multimodal_runner/multimodal_embedding_merger.cpp
+  ${CMAKE_CURRENT_LIST_DIR}/runner/multimodal_runner/multimodal_embedding_merger.h
+  ${CMAKE_CURRENT_LIST_DIR}/runner/multimodal_runner/utils.h
   ${CMAKE_CURRENT_LIST_DIR}/runner/multimodal_runner/encoder.cpp
   ${CMAKE_CURRENT_LIST_DIR}/runner/multimodal_runner/encoder.h
-  ${CMAKE_CURRENT_LIST_DIR}/runner/multimodal_runner/embedding_runner.cpp
-  ${CMAKE_CURRENT_LIST_DIR}/runner/multimodal_runner/embedding_runner.h
-  ${CMAKE_CURRENT_LIST_DIR}/runner/multimodal_runner/embedding_processor.cpp
-  ${CMAKE_CURRENT_LIST_DIR}/runner/multimodal_runner/embedding_processor.h
+  ${CMAKE_CURRENT_LIST_DIR}/runner/multimodal_runner/tok_embedding_runner.cpp
+  ${CMAKE_CURRENT_LIST_DIR}/runner/multimodal_runner/tok_embedding_runner.h
+  ${CMAKE_CURRENT_LIST_DIR}/runner/multimodal_runner/tok_embedding_processor.cpp
+  ${CMAKE_CURRENT_LIST_DIR}/runner/multimodal_runner/tok_embedding_processor.h
   ${CMAKE_CURRENT_LIST_DIR}/runner/multimodal_runner/multimodal_prompt_processor.cpp
   ${CMAKE_CURRENT_LIST_DIR}/runner/multimodal_runner/multimodal_prompt_processor.h
   ${CMAKE_CURRENT_LIST_DIR}/runner/multimodal_runner/multimodal_token_generator.cpp

@@ -21,10 +21,22 @@ void resize_where_node(
     const std::vector<ValueRef>& extra_args) {
   (void)extra_args;
   const ValueRef out = args.at(0).refs.at(0);
-  const ValueRef self = args.at(1).refs.at(1);
 
-  const std::vector<int64_t> self_sizes = graph->sizes_of(self);
-  graph->virtual_resize(out, self_sizes);
+  std::vector<int64_t> out_sizes;
+  for (const ValueRef ref : args.at(1).refs) {
+    if (!graph->val_is_tensor(ref)) {
+      continue;
+    }
+    const std::vector<int64_t> s = graph->sizes_of(ref);
+    if (s.size() > out_sizes.size()) {
+      out_sizes.resize(s.size(), 1);
+    }
+    const size_t offset = out_sizes.size() - s.size();
+    for (size_t i = 0; i < s.size(); i++) {
+      out_sizes[offset + i] = std::max(out_sizes[offset + i], s[i]);
+    }
+  }
+  graph->virtual_resize(out, out_sizes);
 }
 
 void add_where_node(
@@ -56,7 +68,10 @@ void add_where_node(
       // Push Constants
       {},
       // Specialization Constants
-      {},
+      {graph.hashed_layout_of(out),
+       graph.hashed_layout_of(cond),
+       graph.hashed_layout_of(self),
+       graph.hashed_layout_of(other)},
       // Resize Arguments
       {},
       // Resizing Logic

@@ -6,7 +6,7 @@
 
 import torch
 from executorch.backends.arm._passes.arm_pass_utils import get_first_fake_tensor
-from executorch.backends.arm.test.common import parametrize
+from executorch.backends.arm.test.common import parametrize, xfail_type
 from executorch.backends.cortex_m.test.tester import (
     CortexMTester,
     McuTestCase,
@@ -141,8 +141,8 @@ class SharedQspecInputForkYShared(torch.nn.Module):
 class SharedQspecInputForkXConstant(torch.nn.Module):
     """Shared qspec cluster with an input fork with left input as global constant."""
 
-    ops_before_transforms = {}
-    ops_after_transforms = {}
+    ops_before_transforms: dict[str, int] = {}
+    ops_after_transforms: dict[str, int] = {}
     constant = torch.tensor(5.0)
 
     def forward(self, x):
@@ -152,8 +152,8 @@ class SharedQspecInputForkXConstant(torch.nn.Module):
 class SharedQspecInputForkYConstant(torch.nn.Module):
     """Shared qspec cluster with an input fork with left input as local constant."""
 
-    ops_before_transforms = {}
-    ops_after_transforms = {}
+    ops_before_transforms: dict[str, int] = {}
+    ops_after_transforms: dict[str, int] = {}
 
     def forward(self, x):
         return torch.maximum(x, torch.tensor(5.0))
@@ -259,8 +259,8 @@ class SharedQspecSurroundedQuantizedOp(torch.nn.Module):
 
 
 class SharedQspecSurroundedQuantizedOpConstant(torch.nn.Module):
-    ops_before_transforms = {}
-    ops_after_transforms = {}
+    ops_before_transforms: dict[str, int] = {}
+    ops_after_transforms: dict[str, int] = {}
 
     def forward(self, x):
         x1 = torch.clone(x)
@@ -270,16 +270,16 @@ class SharedQspecSurroundedQuantizedOpConstant(torch.nn.Module):
 
 
 class SharedQspecSub(torch.nn.Module):
-    ops_before_transforms = {}
-    ops_after_transforms = {}
+    ops_before_transforms: dict[str, int] = {}
+    ops_after_transforms: dict[str, int] = {}
 
     def forward(self, x, y):
         return torch.clone(x - y)
 
 
 class SharedQspecCompetingQspecs(torch.nn.Module):
-    ops_before_transforms = {}
-    ops_after_transforms = {}
+    ops_before_transforms: dict[str, int] = {}
+    ops_after_transforms: dict[str, int] = {}
 
     def __init__(self):
         super().__init__()
@@ -299,8 +299,8 @@ class SharedQspecCompetingQspecs(torch.nn.Module):
 
 
 class SharedQspecNoQspecs(torch.nn.Module):
-    ops_before_transforms = {}
-    ops_after_transforms = {}
+    ops_before_transforms: dict[str, int] = {}
+    ops_after_transforms: dict[str, int] = {}
 
     def forward(self, x):
         z = torch.clone(x - x)
@@ -358,7 +358,7 @@ test_cases = {
     ),
 }
 
-xfails = {
+xfails: dict[str, xfail_type] = {
     "surrounded_quantized_op_constant": "Numerical error since the add is forced to have non-correct qparams.",
 }
 

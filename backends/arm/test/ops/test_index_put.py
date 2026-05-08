@@ -156,6 +156,18 @@ test_data_suite_fp = {
         ),
         0,
     ),
+    "bool_mask_scalar": (
+        lambda: (
+            torch.randn((2, 3, 4), dtype=torch.float32),
+            (
+                torch.arange(3).expand(2, 3)
+                >= torch.tensor([3, 2], dtype=torch.int64)[:, None],
+            ),
+            torch.tensor(0.0, dtype=torch.float32),
+            False,
+        ),
+        0,
+    ),
     "none_indices": (
         lambda: (
             torch.ones((5, 3, 2, 2), dtype=torch.float32),
@@ -206,6 +218,62 @@ test_data_suite_fp = {
             torch.ones((5, 3, 2, 2), dtype=torch.float32),
             (None, torch.IntTensor([2, 0]), None, torch.IntTensor([0])),
             torch.zeros(2, 1, 2),
+            False,
+        ),
+        0,
+    ),
+    "none_and_bool_indices_scalar": (
+        lambda: (
+            torch.randn((2, 3, 4), dtype=torch.float32),
+            (None, torch.tensor([True, False, True]), None),
+            torch.tensor(0.0, dtype=torch.float32),
+            False,
+        ),
+        0,
+    ),
+}
+mixed_indices_not_supported = {
+    "bool_and_tensor_indices_scalar": (
+        lambda: (
+            torch.randn((2, 3, 4), dtype=torch.float32),
+            (
+                torch.tensor([True, False]),
+                torch.tensor([1, 2], dtype=torch.int64),
+            ),
+            torch.tensor(0.0, dtype=torch.float32),
+            False,
+        ),
+        0,
+    ),
+    "bool_mask_tensor": (
+        lambda: (
+            torch.randn((2, 3, 4), dtype=torch.float32),
+            (torch.tensor([True, False]),),
+            torch.rand((1, 3, 4), dtype=torch.float32),
+            False,
+        ),
+        0,
+    ),
+    "two_bool_mask_scalar": (
+        lambda: (
+            torch.randn((2, 3, 4), dtype=torch.float32),
+            (
+                torch.tensor([False, True]),
+                torch.tensor([True, False, False]),
+            ),
+            torch.tensor(0.0, dtype=torch.float32),
+            False,
+        ),
+        0,
+    ),
+    "two_bool_mask_tensor": (
+        lambda: (
+            torch.randn((2, 3, 4), dtype=torch.float32),
+            (
+                torch.tensor([False, True]),
+                torch.tensor([True, False, False]),
+            ),
+            torch.rand((1, 4), dtype=torch.float32),
             False,
         ),
         0,
@@ -383,5 +451,30 @@ def test_index_put_vgf_quant(test_module: input_t):
         test_module[0](),
         aten_op=IndexPut.aten_op,
         exir_op=IndexPut.exir_op,
+    )
+    pipeline.run()
+
+
+@common.parametrize("test_module", mixed_indices_not_supported)
+def test_index_put_tosa_FP_not_delegated(test_module: input_t):
+    pipeline = OpNotSupportedPipeline[input_t](
+        IndexPut(),
+        test_module[0](),
+        {IndexPut.exir_op: 1},
+        quantize=False,
+        u55_subset=False,
+        n_expected_delegates=0,
+    )
+    pipeline.run()
+
+
+@common.parametrize("test_module", mixed_indices_not_supported)
+def test_index_put_tosa_INT_not_delegated(test_module: input_t):
+    pipeline = OpNotSupportedPipeline[input_t](
+        IndexPut(),
+        test_module[0](),
+        {IndexPut.exir_op: 1},
+        quantize=True,
+        n_expected_delegates=0,
     )
     pipeline.run()

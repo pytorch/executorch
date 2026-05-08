@@ -35,7 +35,7 @@ class MultimodalLhdTokenGenerator
   };
   MultimodalLhdTokenGenerator(
       tokenizers::Tokenizer* tokenizer,
-      EmbeddingProcessor* embedding_runner,
+      TokenEmbeddingProcessor* embedding_runner,
       DecoderRunner* decoder_runner,
       KVManager<T>* kv_manager,
       const std::string& forward_name,
@@ -60,7 +60,7 @@ class MultimodalLhdTokenGenerator
                 metadata.cache_mode,
                 metadata.embedding_dim},
             stats),
-        embedding_runner_(embedding_runner),
+        tok_embedding_runner_(embedding_runner),
         metadata_(metadata),
         lhd_branch_(metadata.ngram - 1, std::vector<int32_t>(metadata.window)),
         lhd_branch_prev_(metadata.window),
@@ -108,6 +108,9 @@ class MultimodalLhdTokenGenerator
       AttentionSinkRopeRunner* attention_sink_rope_runner) override;
 
  private:
+  // Bring base class's virtual prepare_io into scope so the overload below
+  // does not hide it (-Woverloaded-virtual).
+  using TokenGenerator<T>::prepare_io;
   /**
    * @brief Fill in I/O buffers with prompt token and position.
    * @param cur_token Current token.
@@ -123,7 +126,7 @@ class MultimodalLhdTokenGenerator
   void update_ngrams_pool();
 
   // Additional members specific to multimodal
-  EmbeddingProcessor* embedding_runner_;
+  TokenEmbeddingProcessor* tok_embedding_runner_;
 
   struct NgramData {
     bool active = false;

@@ -9,6 +9,10 @@ const char xnnpack_backend_key[] = "XnnpackBackend";
 /// for a description of the associated functionality.
 const char workspace_sharing_mode_option_key[] = "workspace_sharing_mode";
 
+/// The key for the weight cache option. When enabled, packed weights are shared
+// across delegate instances. Changes only affect subsequently loaded models.
+const char weight_cache_option_key[] = "weight_cache_enabled";
+
 /// Workspace sharing mode. This is a backend option that can be set via the
 /// set_option API to control memory sharing between CALL_DELEGATE instances.
 /// This is useful for reducing memory consumption.

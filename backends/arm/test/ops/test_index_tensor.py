@@ -243,46 +243,52 @@ def test_index_tensor_tosa_INT_slice(test_data: input_params_slice):
 
 
 class IndexTensor(torch.nn.Module):
-    test_data: dict[input_params] = {
-        "test_2d_1_idx": (torch.rand(5, 2), (torch.arange(5, dtype=torch.int32),)),
-        "test_2d_1_less_than_max_idx": (
+    test_data_fp: dict[input_params] = {
+        "test_2d_1_idx_fp32": (
+            torch.rand(5, 2),
+            (torch.arange(5, dtype=torch.int32),),
+        ),
+        "test_2d_1_less_than_max_idx_fp32": (
             torch.rand(5, 2),
             (torch.arange(3, dtype=torch.int32),),
         ),
-        "test_2d_1_2d_idx": (
+        "test_2d_1_2d_idx_fp32": (
             torch.rand(5, 2),
             (torch.randint(5, size=(4, 3), dtype=torch.int32)),
         ),
-        "test_2d_2_idx": (
+        "test_2d_2_idx_fp32": (
             torch.rand(5, 2),
             (
                 torch.randint(5, size=(5,), dtype=torch.int32),
                 torch.randint(2, size=(5,), dtype=torch.int32),
             ),
         ),
-        "test_2d_2_2d_idx_broadcastable": (
+        "test_2d_2_2d_idx_broadcastable_fp32": (
             torch.rand(5, 2),
             (
                 torch.randint(5, size=(5, 3), dtype=torch.int32),
                 torch.randint(2, size=(1, 3), dtype=torch.int32),
             ),
         ),
-        "test_2d_2_2d_idx_broadcastable_2": (
+        "test_2d_2_2d_idx_broadcastable_2_fp32": (
             torch.rand(5, 2),
             (
                 torch.randint(5, size=(5, 1), dtype=torch.int32),
                 torch.randint(2, size=(3,), dtype=torch.int32),
             ),
         ),
-        "test_3d_1_idx": (torch.rand(12, 3, 7), (torch.arange(12, dtype=torch.int32),)),
-        "test_3d_2_idx": (
+        "test_3d_1_idx_fp32": (
+            torch.rand(12, 3, 7),
+            (torch.arange(12, dtype=torch.int32),),
+        ),
+        "test_3d_2_idx_fp32": (
             torch.rand(12, 3, 7),
             (
                 torch.arange(12, dtype=torch.int32),
                 torch.randint(3, size=(12,), dtype=torch.int32),
             ),
         ),
-        "test_3d_3_idx": (
+        "test_3d_3_idx_fp32": (
             torch.rand(12, 3, 7),
             (
                 torch.arange(12, dtype=torch.int32),
@@ -290,18 +296,18 @@ class IndexTensor(torch.nn.Module):
                 torch.randint(7, size=(12,), dtype=torch.int32),
             ),
         ),
-        "test_4d_1_idx": (
+        "test_4d_1_idx_fp32": (
             torch.rand(15, 3, 7, 2),
             (torch.arange(15, dtype=torch.int32),),
         ),
-        "test_4d_2_idx": (
+        "test_4d_2_idx_fp32": (
             torch.rand(15, 3, 7, 2),
             (
                 torch.randint(15, size=(15,), dtype=torch.int32),
                 torch.randint(3, size=(1,), dtype=torch.int32),
             ),
         ),
-        "test_4d_3_idx": (
+        "test_4d_3_idx_fp32": (
             torch.rand(15, 3, 7, 2),
             (
                 torch.arange(15, dtype=torch.int32),
@@ -309,7 +315,7 @@ class IndexTensor(torch.nn.Module):
                 torch.randint(7, size=(15,), dtype=torch.int32),
             ),
         ),
-        "test_4d_4_id_broadcastable": (
+        "test_4d_4_id_broadcastable_fp32": (
             torch.rand(15, 3, 7, 2),
             (
                 torch.arange(15, dtype=torch.int32),
@@ -318,26 +324,47 @@ class IndexTensor(torch.nn.Module):
                 torch.randint(2, size=(15,), dtype=torch.int32),
             ),
         ),
-        "test_1d_rank4_index": (
+        "test_1d_rank4_index_fp32": (
             torch.rand(12),
             (torch.randint(12, size=(1, 2, 1, 3), dtype=torch.int32),),
         ),
-        "test_2d_rank4_broadcastable_indices": (
+        "test_2d_rank4_broadcastable_indices_fp32": (
             torch.rand(4, 6),
             (
                 torch.randint(4, size=(1, 2, 1, 1), dtype=torch.int32),
                 torch.randint(6, size=(1, 1, 3, 1), dtype=torch.int32),
             ),
         ),
-        "test_1d_high_rank_index": (
+        "test_1d_high_rank_index_fp32": (
             torch.rand(24),
             (torch.randint(24, size=(1, 1, 2, 1, 3), dtype=torch.int32),),
         ),
-        "test_2d_high_rank_broadcastable_indices": (
+        "test_2d_high_rank_broadcastable_indices_fp32": (
             torch.rand(4, 5),
             (
                 torch.randint(4, size=(1, 2, 1, 1, 1), dtype=torch.int32),
                 torch.randint(5, size=(1, 1, 3, 1, 1), dtype=torch.int32),
+            ),
+        ),
+    }
+    test_data_int: dict[input_params] = {
+        "test_2d_1_idx_int32": (
+            torch.randint(20, size=(5, 2), dtype=torch.int32),
+            (torch.arange(5, dtype=torch.int32),),
+        ),
+        "test_4d_3_idx_int32": (
+            torch.randint(20, size=(15, 3, 7, 2), dtype=torch.int32),
+            (
+                torch.arange(15, dtype=torch.int32),
+                torch.randint(3, size=(15,), dtype=torch.int32),
+                torch.randint(7, size=(15,), dtype=torch.int32),
+            ),
+        ),
+        "test_2d_rank4_broadcastable_indices_int32": (
+            torch.randint(20, size=(4, 6), dtype=torch.int32),
+            (
+                torch.randint(4, size=(1, 2, 1, 1), dtype=torch.int32),
+                torch.randint(6, size=(1, 1, 3, 1), dtype=torch.int32),
             ),
         ),
     }
@@ -406,7 +433,7 @@ class IndexTensor(torch.nn.Module):
 
 @common.parametrize(
     "test_data",
-    IndexTensor.test_data | IndexTensor.test_data_bf16 | IndexTensor.test_data_fp16,
+    IndexTensor.test_data_fp | IndexTensor.test_data_bf16 | IndexTensor.test_data_fp16,
 )
 def test_index_tensor_tosa_FP(test_data: input_params):
     test_input = test_data
@@ -424,7 +451,7 @@ def test_index_tensor_tosa_FP(test_data: input_params):
         )
 
 
-@common.parametrize("test_data", IndexTensor.test_data)
+@common.parametrize("test_data", IndexTensor.test_data_int | IndexTensor.test_data_fp)
 def test_index_tensor_tosa_INT(test_data: input_params):
     test_input = test_data
     with torch.no_grad():
@@ -488,7 +515,7 @@ def test_index_tensor_tosa_INT_none(test_data: input_params):
         )
 
 
-@common.parametrize("test_data", IndexTensor.test_data)
+@common.parametrize("test_data", IndexTensor.test_data_int | IndexTensor.test_data_fp)
 @common.XfailIfNoCorstone300
 def test_index_tensor_u55_INT_not_delegated(test_data: input_params):
     """Ethos-U55 backend BI pipeline test for index.Tensor."""

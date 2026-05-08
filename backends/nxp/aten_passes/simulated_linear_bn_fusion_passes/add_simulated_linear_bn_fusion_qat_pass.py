@@ -9,7 +9,11 @@ import torch
 from executorch.backends.nxp.aten_passes.fuse_batch_norm_with_linear_pass import (
     _unwrap_if_fq,
 )
-from executorch.backends.nxp.backend.graph_utils import is_batch_norm, is_op_node
+from executorch.backends.nxp.backend.graph_utils import (
+    get_output_shape,
+    is_batch_norm,
+    is_op_node,
+)
 from torch.fx import GraphModule, Node
 from torch.fx.passes.infra.pass_base import PassBase, PassResult
 from torchao.quantization.pt2e.export_utils import WrapperModule
@@ -260,6 +264,13 @@ class AddSimulatedLinearBatchNormFusionQATPass(PassBase):
                 continue
 
             linear_node = bn_in
+            linear_out_shape = get_output_shape(linear_node)
+
+            # Skip cases where batch norm does not operate on the same dim as linear.
+            # Linear operates on the last dim while batch norm works with the first dim right after batch.
+            # The only case where this occurs is when input shape is (B, C).
+            if not linear_out_shape or len(linear_out_shape) != 2:
+                continue
 
             linear_w_node_or_fq = linear_node.args[1]
             linear_b_node_or_fq = (

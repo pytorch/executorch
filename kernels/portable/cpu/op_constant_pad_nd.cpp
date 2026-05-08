@@ -206,7 +206,7 @@ void constant_pad_nd_out_impl(
     out_strides[i] = getTrailingDims(out, static_cast<int64_t>(i));
 
     size_t pad_i = ndim - 1 - i;
-    if (pad_i >= 0 && pad_i < pad.size() / 2) {
+    if (pad_i < pad.size() / 2) {
       if (pad[2 * pad_i] + pad[2 * pad_i + 1] > 0) {
         last_padded_dim = i;
       }

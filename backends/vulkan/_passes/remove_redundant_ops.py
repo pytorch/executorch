@@ -28,6 +28,8 @@ class RemoveRedundantOpsTransform(ExportPass):
         exir_ops.edge.aten.clone.default,
         torch.ops.aten.alias.default,
         exir_ops.edge.aten.alias.default,
+        torch.ops.aten.alias_copy.default,
+        exir_ops.edge.aten.alias_copy.default,
         exir_ops.edge.aten.lift_fresh_copy.default,
         exir_ops.edge.dim_order_ops._to_dim_order_copy.default,
         exir_ops.edge.dim_order_ops._clone_dim_order.default,

@@ -36,3 +36,14 @@ def is_op_node(node: Node, target_op) -> bool:
 
 def is_batch_norm(node: Node) -> bool:
     return is_op_node(node, batch_norm_target_ops)
+
+
+def get_output_shape(node: Node) -> tuple[torch.Size] | torch.Size | None:
+    val = node.meta.get("val")
+
+    if isinstance(val, torch.Tensor):
+        return val.shape
+    elif isinstance(val, tuple):
+        return tuple([v.shape for v in val])
+
+    return None

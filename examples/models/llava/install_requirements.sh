@@ -7,4 +7,6 @@
 
 set -x
 
-pip install git+https://github.com/huggingface/optimum-executorch.git@d4d3046738ca31b5542506aaa76a28d540600227
+EXECUTORCH_ROOT="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/../../.." && pwd)"
+OPTIMUM_ET_VERSION=$(cat "${EXECUTORCH_ROOT}/.ci/docker/ci_commit_pins/optimum-executorch.txt")
+pip install "git+https://github.com/huggingface/optimum-executorch.git@${OPTIMUM_ET_VERSION}"

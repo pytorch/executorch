@@ -216,9 +216,21 @@ case "$HF_MODEL" in
     AUDIO_FILE="test_audio.wav"
     IMAGE_PATH=""
     ;;
+  SocialLocalMobile/Qwen3.5-35B-A3B-HQQ-INT4)
+    MODEL_NAME="qwen3_5_moe"
+    RUNNER_TARGET="qwen3_5_moe_runner"
+    RUNNER_PATH="qwen3_5_moe"
+    EXPECTED_OUTPUT="Paris"
+    PREPROCESSOR=""
+    TOKENIZER_URL=""
+    TOKENIZER_FILE="tokenizer.json"
+    AUDIO_URL=""
+    AUDIO_FILE=""
+    IMAGE_PATH=""
+    ;;
   *)
     echo "Error: Unsupported model '$HF_MODEL'"
-    echo "Supported models: mistralai/Voxtral-Mini-3B-2507, mistralai/Voxtral-Mini-4B-Realtime-2602, nvidia/diar_streaming_sortformer_4spk-v2, openai/whisper series (whisper-{small, medium, large, large-v2, large-v3, large-v3-turbo}), google/gemma-3-4b-it, Qwen/Qwen3-0.6B, nvidia/parakeet-tdt, facebook/dinov2-small-imagenet1k-1-layer"
+    echo "Supported models: mistralai/Voxtral-Mini-3B-2507, mistralai/Voxtral-Mini-4B-Realtime-2602, nvidia/diar_streaming_sortformer_4spk-v2, openai/whisper series (whisper-{small, medium, large, large-v2, large-v3, large-v3-turbo}), google/gemma-3-4b-it, Qwen/Qwen3-0.6B, nvidia/parakeet-tdt, facebook/dinov2-small-imagenet1k-1-layer, SocialLocalMobile/Qwen3.5-35B-A3B-HQQ-INT4"
     exit 1
     ;;
 esac
@@ -232,7 +244,7 @@ echo "::group::Prepare $MODEL_NAME Artifacts"
 
 
 # Download tokenizer files (skip for models that bundle tokenizer in export or do not use one)
-if [ "$MODEL_NAME" != "parakeet" ] && [ "$MODEL_NAME" != "voxtral_realtime" ] && [ "$MODEL_NAME" != "sortformer" ] && [ "$MODEL_NAME" != "dinov2" ]; then
+if [ "$MODEL_NAME" != "parakeet" ] && [ "$MODEL_NAME" != "voxtral_realtime" ] && [ "$MODEL_NAME" != "sortformer" ] && [ "$MODEL_NAME" != "dinov2" ] && [ "$MODEL_NAME" != "qwen3_5_moe" ]; then
   if [ "$TOKENIZER_FILE" != "" ]; then
     curl -L $TOKENIZER_URL/$TOKENIZER_FILE -o $MODEL_DIR/$TOKENIZER_FILE
   else
@@ -246,9 +258,21 @@ fi
 if [ "$AUDIO_URL" != "" ]; then
   curl -L $AUDIO_URL -o ${MODEL_DIR}/$AUDIO_FILE
 elif [[ "$MODEL_NAME" == *whisper* ]] || [ "$MODEL_NAME" = "voxtral_realtime" ]; then
-  conda install -y -c conda-forge "ffmpeg<8"
+  if ! command -v ffmpeg >/dev/null; then
+    if [ "$(uname -s)" = "Linux" ] && command -v apt-get >/dev/null; then
+      if [ "$(id -u)" -eq 0 ]; then
+        apt-get update
+        apt-get install -y --no-install-recommends ffmpeg
+      else
+        sudo apt-get update
+        sudo apt-get install -y --no-install-recommends ffmpeg
+      fi
+    else
+      conda install -y -c conda-forge ffmpeg
+    fi
+  fi
   pip install datasets soundfile
-  pip install torchcodec==0.11.0.dev20260217 --extra-index-url https://download.pytorch.org/whl/nightly/cpu
+  pip install torchcodec==0.11.0 --extra-index-url https://download.pytorch.org/whl/test/cpu
   python -c "from datasets import load_dataset;import soundfile as sf;sample = load_dataset('distil-whisper/librispeech_long', 'clean', split='validation')[0]['audio'];sf.write('${MODEL_DIR}/$AUDIO_FILE', sample['array'][:sample['sampling_rate']*30], sample['sampling_rate'])"
 fi
 
@@ -341,6 +365,9 @@ EOF
       RUNNER_ARGS="$RUNNER_ARGS --data_path ${MODEL_DIR}/aoti_cuda_blob.ptd"
     fi
     ;;
+  qwen3_5_moe)
+    RUNNER_ARGS="$RUNNER_ARGS --tokenizer_path ${MODEL_DIR}/$TOKENIZER_FILE --prompt 'What is the capital of France?' --max_new_tokens 128 --temperature 0 --cuda_graph"
+    ;;
   voxtral_realtime)
     RUNNER_ARGS="--model_path ${MODEL_DIR}/model.pte --tokenizer_path ${MODEL_DIR}/$TOKENIZER_FILE --preprocessor_path ${MODEL_DIR}/$PREPROCESSOR --audio_path ${MODEL_DIR}/$AUDIO_FILE --temperature 0"
     # Add CUDA data path if present
@@ -359,7 +386,7 @@ EOF
     ;;
 esac
 
-OUTPUT=$($RUNNER_BIN $RUNNER_ARGS 2>&1)
+OUTPUT=$(eval $RUNNER_BIN $RUNNER_ARGS 2>&1)
 EXIT_CODE=$?
 set -e
 
@@ -382,6 +409,27 @@ if [ -n "$EXPECTED_OUTPUT" ]; then
 else
   echo "SUCCESS: Runner completed successfully"
 fi
+
+# Validate GPU peak memory usage for models with known memory budgets.
+# The runner prints "GPU peak memory usage: XXXX.X MiB" at the end.
+case "$MODEL_NAME" in
+  qwen3_5_moe)
+    MAX_MEMORY_MIB=20480  # 20 GB — must fit on a single GPU (e.g. 4090)
+    PEAK_MEM=$(echo "$OUTPUT" | grep -oP 'GPU peak memory usage: \K[0-9.]+' || true)
+    if [ -n "$PEAK_MEM" ]; then
+      # Compare as integers (truncate decimals)
+      PEAK_MEM_INT=${PEAK_MEM%%.*}
+      if [ "$PEAK_MEM_INT" -gt "$MAX_MEMORY_MIB" ]; then
+        echo "FAIL: GPU peak memory ${PEAK_MEM} MiB exceeds budget ${MAX_MEMORY_MIB} MiB"
+        exit 1
+      else
+        echo "Success: GPU peak memory ${PEAK_MEM} MiB within budget (max ${MAX_MEMORY_MIB} MiB)"
+      fi
+    else
+      echo "WARNING: GPU peak memory usage not found in output"
+    fi
+    ;;
+esac
 echo "::endgroup::"
 
 popd

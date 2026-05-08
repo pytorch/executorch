@@ -67,6 +67,9 @@ if [ -z "${1:-}" ]; then
   exit 1
 fi
 
+# Disable HF Xet storage to avoid stalled downloads on CI runners
+export HF_HUB_DISABLE_XET=1
+
 set -eux
 
 DEVICE="$1"
@@ -184,9 +187,17 @@ case "$HF_MODEL" in
     PREPROCESSOR_FEATURE_SIZE=""
     PREPROCESSOR_OUTPUT=""
     ;;
+  SocialLocalMobile/Qwen3.5-35B-A3B-HQQ-INT4)
+    MODEL_NAME="qwen3_5_moe"
+    TASK=""
+    MAX_SEQ_LEN=""
+    EXTRA_PIP=""
+    PREPROCESSOR_FEATURE_SIZE=""
+    PREPROCESSOR_OUTPUT=""
+    ;;
   *)
     echo "Error: Unsupported model '$HF_MODEL'"
-    echo "Supported models: mistralai/Voxtral-Mini-3B-2507, mistralai/Voxtral-Mini-4B-Realtime-2602, openai/whisper-{small, medium, large, large-v2, large-v3, large-v3-turbo}, google/gemma-3-4b-it, Qwen/Qwen3-0.6B, nvidia/diar_streaming_sortformer_4spk-v2, nvidia/parakeet-tdt, facebook/dinov2-small-imagenet1k-1-layer"
+    echo "Supported models: mistralai/Voxtral-Mini-3B-2507, mistralai/Voxtral-Mini-4B-Realtime-2602, openai/whisper-{small, medium, large, large-v2, large-v3, large-v3-turbo}, google/gemma-3-4b-it, Qwen/Qwen3-0.6B, nvidia/diar_streaming_sortformer_4spk-v2, nvidia/parakeet-tdt, facebook/dinov2-small-imagenet1k-1-layer, SocialLocalMobile/Qwen3.5-35B-A3B-HQQ-INT4"
     exit 1
     ;;
 esac
@@ -334,6 +345,7 @@ if [ "$MODEL_NAME" = "voxtral_realtime" ]; then
     VR_QUANT_ARGS="--qlinear-encoder 8da4w --qlinear 8da4w --qlinear-group-size 32 --qembedding 8w"
   elif [ "$QUANT_NAME" = "quantized-int4-metal" ]; then
     VR_QUANT_ARGS="--qlinear-encoder fpa4w --qlinear fpa4w"
+    VR_DTYPE_ARGS="--dtype bf16"
   elif [ "$QUANT_NAME" = "quantized-int4-tile-packed" ]; then
     VR_QUANT_ARGS="--qlinear-encoder 4w --qlinear-encoder-packing-format tile_packed_to_4d --qlinear 4w --qlinear-packing-format tile_packed_to_4d --qembedding 8w"
     VR_DTYPE_ARGS="--dtype bf16"
@@ -349,7 +361,7 @@ if [ "$MODEL_NAME" = "voxtral_realtime" ]; then
   STREAMING_ARG=""
   PREPROCESSOR_ARGS="--feature_size 128 --output_file ${OUTPUT_DIR}/preprocessor.pte"
   if [ "$USE_STREAMING" = "true" ]; then
-    STREAMING_ARG="--streaming"
+    STREAMING_ARG="--streaming --sliding-window 2048"
     PREPROCESSOR_ARGS="$PREPROCESSOR_ARGS --streaming"
   else
     PREPROCESSOR_ARGS="$PREPROCESSOR_ARGS --stack_output --max_audio_len 300"
@@ -373,8 +385,77 @@ if [ "$MODEL_NAME" = "voxtral_realtime" ]; then
   fi
   # Copy tokenizer from downloaded model weights
   cp "$LOCAL_MODEL_DIR/tekken.json" "${OUTPUT_DIR}/tekken.json"
+  rm -rf "$LOCAL_MODEL_DIR"
   ls -al "${OUTPUT_DIR}"
   echo "::endgroup::"
+  exit 0
+fi
+
+# Qwen 3.5 MoE uses a prequantized checkpoint and custom export script
+if [ "$MODEL_NAME" = "qwen3_5_moe" ]; then
+  pip install safetensors huggingface_hub
+  pip install -r examples/models/qwen3_5_moe/requirements.txt
+
+  # Download prequantized model outside OUTPUT_DIR to avoid uploading on failure
+  LOCAL_MODEL_DIR=$(mktemp -d)
+  INDUCTOR_CACHE=$(mktemp -d)
+  trap 'rm -rf "$LOCAL_MODEL_DIR" "$INDUCTOR_CACHE"' EXIT
+
+  python -c "from huggingface_hub import snapshot_download; snapshot_download('${HF_MODEL}', local_dir='${LOCAL_MODEL_DIR}')"
+
+  # Sanity check: run inference on the prequantized model
+  echo "::group::Inference sanity check"
+  python -m executorch.examples.models.qwen3_5_moe.inference \
+      --prequantized "$LOCAL_MODEL_DIR" \
+      --prompt "What is the capital of France?" \
+      --max-new-tokens 32 \
+      --temperature 0 \
+      --no-compile
+  echo "::endgroup::"
+
+  # Copy tokenizer for the runner
+  cp "$LOCAL_MODEL_DIR/tokenizer.json" "${OUTPUT_DIR}/tokenizer.json"
+
+  # Export to .pte/.ptd (short cache dir avoids objcopy symbol length issues)
+  echo "::group::Export"
+  EXPORT_LOG=$(mktemp)
+  TORCHINDUCTOR_CACHE_DIR="$INDUCTOR_CACHE" \
+  python -m executorch.examples.models.qwen3_5_moe.export \
+      --prequantized "$LOCAL_MODEL_DIR" \
+      --output-dir "${OUTPUT_DIR}" \
+      --dense-prefill dequant \
+      --moe-activation-dtype int8 2>&1 | tee "$EXPORT_LOG"
+  EXPORT_RC=${PIPESTATUS[0]}
+  echo "::endgroup::"
+
+  if [ "$EXPORT_RC" -ne 0 ]; then
+    echo "ERROR: Qwen3.5 MoE export failed (exit $EXPORT_RC)"
+    rm -f "$EXPORT_LOG"
+    exit "$EXPORT_RC"
+  fi
+
+  # Gate peak GPU memory so we keep the export viable on consumer GPUs
+  # (e.g. RTX 4090 with 24 GB). The export script prints a machine-
+  # parseable marker line "EXPORT_GPU_PEAK_MEMORY_MB: <float>".
+  EXPORT_GPU_PEAK_MB_LIMIT="${EXPORT_GPU_PEAK_MB_LIMIT:-20480}"
+  PEAK_LINE=$(grep -E '^EXPORT_GPU_PEAK_MEMORY_MB:' "$EXPORT_LOG" | tail -1)
+  rm -f "$EXPORT_LOG"
+  if [ -z "$PEAK_LINE" ]; then
+    echo "ERROR: export did not emit EXPORT_GPU_PEAK_MEMORY_MB marker; cannot enforce GPU memory budget"
+    exit 1
+  fi
+  PEAK_MB=$(echo "$PEAK_LINE" | awk '{print $2}')
+  echo "Export GPU peak memory: ${PEAK_MB} MB (limit ${EXPORT_GPU_PEAK_MB_LIMIT} MB)"
+  if awk -v p="$PEAK_MB" -v l="$EXPORT_GPU_PEAK_MB_LIMIT" 'BEGIN{exit !(p>l)}'; then
+    echo "ERROR: export exceeded GPU memory budget (${PEAK_MB} MB > ${EXPORT_GPU_PEAK_MB_LIMIT} MB)"
+    echo "       — this would prevent the model from being exported on a 24 GB consumer GPU."
+    exit 1
+  fi
+
+  test -f "${OUTPUT_DIR}/model.pte"
+  test -f "${OUTPUT_DIR}/aoti_cuda_blob.ptd"
+  ls -al "${OUTPUT_DIR}"
+
   exit 0
 fi
 

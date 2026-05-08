@@ -43,9 +43,9 @@ class VgfCompileSpec(ArmCompileSpec):
         if compiler_flags is None:
             compiler_flags = []
         self._set_compile_specs(tosa_spec, compiler_flags)
-        self.validate()
+        self._validate()
 
-    def validate(self):
+    def _validate(self):
         """Validate the configuration against VGF-supported TOSA profiles."""
         tosa_version = self.tosa_spec.version  # type: ignore[attr-defined]
         tosa_profiles = self.tosa_spec.profiles  # type: ignore[attr-defined]
@@ -63,12 +63,6 @@ class VgfCompileSpec(ArmCompileSpec):
             )
 
     @classmethod
-    def get_output_format(cls) -> str:
+    def _get_output_format(cls) -> str:
         """Return the artifact format emitted by this compile spec."""
         return "vgf"
-
-    def _create_default_pipeline_config(self) -> ArmPassPipelineConfig:
-        config = super()._create_default_pipeline_config()
-        # GRPHCOMP-3140 / MLETORCH-1529
-        config.disable_fuse_duplicate_users()
-        return config

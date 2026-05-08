@@ -39,6 +39,7 @@ class TableOps:
         exir_ops.edge.aten.floor.default: torch.floor,
         exir_ops.edge.aten.log.default: torch.log,
         exir_ops.edge.aten.log1p.default: torch.log1p,
+        exir_ops.edge.aten.log10.default: torch.log10,
         exir_ops.edge.aten.reciprocal.default: torch.reciprocal,
         exir_ops.edge.aten.rsqrt.default: torch.rsqrt,
         exir_ops.edge.aten.sigmoid.default: torch.sigmoid,
@@ -64,6 +65,7 @@ class TableOps:
         exir_ops.edge.aten.pow.Tensor_Scalar,
         exir_ops.edge.aten.gelu.default,
         exir_ops.edge.aten.elu.default,
+        exir_ops.edge.aten.remainder.Scalar,
     }
 
     def __init__(self, exported_program: ExportedProgram):
@@ -102,6 +104,9 @@ class TableOps:
                     return lambda x: torch.nn.functional.elu(
                         x, alpha=input_alpha
                     ).flatten()
+                case exir_ops.edge.aten.remainder.Scalar:
+                    divisor = cast(float | int, node.args[1])
+                    return lambda x: torch.remainder(x, divisor).flatten()
                 case _:
                     # Op must be handled if it's inside self.special_ops
                     raise AssertionError("Unhandled table operation")
@@ -134,6 +139,17 @@ class InsertTableOpsPass(ArmPass):
         """Add buffer to self.exported_program.state_dict."""
         self.exported_program.state_dict[buffer_name] = buffer
 
+    @staticmethod
+    def _get_8bit_table_domain() -> torch.Tensor:
+        """Return the canonical 8-bit TOSA TABLE input domain."""
+        int8_info = torch.iinfo(torch.int8)
+        # torch.arange excludes the end value, so use max + 1 to include 127.
+        return torch.arange(
+            int8_info.min,
+            int8_info.max + 1,
+            dtype=torch.int8,
+        )
+
     def generate_8bit_table_values(
         self,
         torch_op: Callable[[torch.Tensor], torch.Tensor],
@@ -152,17 +168,10 @@ class InsertTableOpsPass(ArmPass):
             x = torch_op(x)
             return out_quantargs.quantize_value(x)
 
-        return (
-            f(
-                torch.linspace(
-                    start=in_quantargs.qmin,
-                    end=in_quantargs.qmax,
-                    steps=256,
-                    dtype=torch.int8,
-                )
-            ).to(dtype=torch.int8),
-            0,
+        effective_codes = self._get_8bit_table_domain().clamp(
+            in_quantargs.qmin, in_quantargs.qmax
         )
+        return (f(effective_codes).to(dtype=torch.int8), 0)
 
     def generate_16_bit_table_values(
         self,

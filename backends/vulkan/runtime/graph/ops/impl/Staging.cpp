@@ -21,6 +21,21 @@
 
 namespace vkcompute {
 
+const std::string kBitw8PrefixStr = "bitw8_image_to_nchw_nobitw8buffer";
+const std::string kNchwToBitw8PrefixStr = "nchw_to_bitw8_image_nobitw8buffer";
+
+bool is_bitw8_shader(const vkapi::ShaderInfo& shader) {
+  const auto size = kBitw8PrefixStr.size();
+  const std::string& shader_prefix_str = shader.kernel_name.substr(0, size);
+  return shader_prefix_str == kBitw8PrefixStr;
+}
+
+bool is_nchw_to_bitw8_shader(const vkapi::ShaderInfo& shader) {
+  const auto size = kNchwToBitw8PrefixStr.size();
+  const std::string& shader_prefix_str = shader.kernel_name.substr(0, size);
+  return shader_prefix_str == kNchwToBitw8PrefixStr;
+}
+
 void add_staging_to_tensor_node(
     ComputeGraph& graph,
     const ValueRef in_staging,
@@ -40,10 +55,12 @@ void add_staging_to_tensor_node(
   vkapi::ParamsBindList param_buffers = {};
   if (graph.is_buffer_storage(out_tensor)) {
     param_buffers.append(graph.buffer_meta_ubo(out_tensor));
+  } else if (!is_nchw_to_bitw8_shader(shader)) {
+    param_buffers.append(graph.texture_meta_ubo(out_tensor));
   }
 
   std::vector<PushConstantDataInfo> pcs;
-  if (graph.is_texture_storage(out_tensor)) {
+  if (is_nchw_to_bitw8_shader(shader)) {
     pcs = {graph.sizes_pc_of(out_tensor)};
   }
 
@@ -64,14 +81,6 @@ void add_staging_to_tensor_node(
       {},
       // Resizing Logic
       nullptr));
-}
-
-const std::string kBitw8PrefixStr = "bitw8_image_to_nchw_nobitw8buffer";
-
-bool is_bitw8_shader(const vkapi::ShaderInfo& shader) {
-  const auto size = kBitw8PrefixStr.size();
-  const std::string& shader_prefix_str = shader.kernel_name.substr(0, size);
-  return shader_prefix_str == kBitw8PrefixStr;
 }
 
 utils::uvec3 tensor_to_staging_global_wg_size(
@@ -121,14 +130,13 @@ void add_tensor_to_staging_node(
   vkapi::ParamsBindList param_buffers = {};
   if (graph.is_buffer_storage(in_tensor)) {
     param_buffers.append(graph.buffer_meta_ubo(in_tensor));
+  } else if (!is_bitw8_shader(shader)) {
+    param_buffers.append(graph.texture_meta_ubo(in_tensor));
   }
 
   std::vector<PushConstantDataInfo> pcs;
-  if (graph.is_texture_storage(in_tensor)) {
-    pcs = {graph.sizes_pc_of(in_tensor)};
-  }
-
   if (is_bitw8_shader(shader)) {
+    pcs.push_back(graph.sizes_pc_of(in_tensor));
     pcs.push_back(graph.numel_pc_of(in_tensor));
   }
 
@@ -165,6 +173,8 @@ void add_prepack_standard_node(
   vkapi::ParamsBindList param_buffers = {};
   if (graph.is_buffer_storage(tensor)) {
     param_buffers.append(graph.buffer_meta_ubo(tensor));
+  } else if (!is_nchw_to_bitw8_shader(shader)) {
+    param_buffers.append(graph.texture_meta_ubo(tensor));
   }
 
   std::vector<PushConstantDataInfo> pcs;
@@ -173,7 +183,7 @@ void add_prepack_standard_node(
         graph.sizes_pc_of(tensor),
         graph.strides_pc_of(tensor),
         graph.numel_pc_of(tensor)};
-  } else {
+  } else if (is_nchw_to_bitw8_shader(shader)) {
     pcs = {graph.sizes_pc_of(tensor)};
   }
 

@@ -133,6 +133,15 @@ def parse_args():
 
 
 if __name__ == "__main__":  # noqa: C901
+    import warnings
+
+    warnings.warn(
+        "The MPS example script is deprecated and will be removed in "
+        "ExecuTorch 1.4. Please use the CoreML backend examples instead.",
+        FutureWarning,
+        stacklevel=1,
+    )
+
     args = parse_args()
 
     if args.model_name not in MODEL_NAME_TO_MODEL:

@@ -30,9 +30,9 @@ void MultimodalLhdTokenGenerator<T>::prepare_io(
   std::vector<uint64_t> tokens_to_process(
       input_tokens.begin(), input_tokens.begin() + num_tokens_to_process);
 
-  embedding_runner_->prefill(tokens_to_process);
+  tok_embedding_runner_->prefill(tokens_to_process);
   const TensorStruct<float>& text_embeddings =
-      embedding_runner_->get_prompt_embeddings();
+      tok_embedding_runner_->get_prompt_embeddings();
   int64_t embedding_dim = text_embeddings.tensor->size(2);
 
   // Copy embedding to input buffer from the left

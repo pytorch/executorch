@@ -6,6 +6,7 @@
  * LICENSE file in the root directory of this source tree.
  */
 
+#include <executorch/backends/cadence/generic/operators/op_quantized_conv1d_nlc.h>
 #include <executorch/backends/cadence/hifi/kernels/kernels.h>
 #include <executorch/backends/cadence/hifi/operators/operators.h>
 #include <executorch/runtime/kernel/kernel_includes.h>
@@ -23,7 +24,6 @@ namespace native {
 
 namespace {
 
-// Optimized NHWC 1D convolution for int8 x int8 -> int8
 void xa_opt_quantized_conv1d_nlc_asym8sxsym8s_asym8s(
     KernelRuntimeContext& ctx,
     const Tensor& input,
@@ -47,38 +47,41 @@ void xa_opt_quantized_conv1d_nlc_asym8sxsym8s_asym8s(
       (WORD32* __restrict__)bias.const_data_ptr<int32_t>();
 
   WORD32 batches = input.size(0);
-  WORD32 input_channels = input.size(1);
-  WORD32 input_width = input.size(2);
+  WORD32 input_channels = input.size(2);
+  WORD32 input_width = input.size(1);
   WORD32 input_height = 1;
   WORD32 kernel_height = 1;
   WORD32 out_channels = weight.size(0);
-  WORD32 kernel_channels = weight.size(1);
-  WORD32 kernel_width = weight.size(2);
-  WORD32 out_width = out.size(2);
+  WORD32 kernel_channels = weight.size(2);
+  WORD32 kernel_width = weight.size(1);
+  WORD32 out_width = out.size(1);
   WORD32 out_height = 1;
-  WORD32 x_stride = stride[1];
-  WORD32 y_stride = stride[0];
-  WORD32 x_padding = padding[1];
-  WORD32 y_padding = padding[0];
+  WORD32 x_stride = 1;
+  WORD32 y_stride = stride[stride.size() - 1];
+  WORD32 x_padding = 0;
+  WORD32 y_padding = padding[padding.size() - 1];
   WORD32 dilation_height = 1;
   WORD32 dilation_width = 1;
   WORD32 input_zero_bias = -in_zero_point;
-  WORD32 kernel_zero_bias = -weight_zero_point;
 
   WORD32 input_precision = 8;
   WORD32 kernel_precision = 8;
 
   WORD32 out_zero_bias = output_zero_point;
 
-  WORD32 out_data_format = 1;
+  WORD32 out_data_format = 0;
 
-  WORD32 p_out_multiplier32[out_channels];
-  WORD32 p_out_shift32[out_channels];
+  WORD32* p_out_multiplier32 = (WORD32*)kernels::allocate_temp_memory(
+      ctx, out_channels * sizeof(WORD32));
+  WORD32* p_out_shift32 = (WORD32*)kernels::allocate_temp_memory(
+      ctx, out_channels * sizeof(WORD32));
 
-  float out_scale = 1. / output_scale;
+  const float eff_scale = bias_scale * (1.0f / output_scale);
 
   for (int i = 0; i < out_channels; i++) {
-    p_out_multiplier32[i] = bias_scale * out_scale * 2147483648;
+    p_out_multiplier32[i] = (eff_scale >= 1.0f)
+        ? static_cast<WORD32>(2147483647)
+        : static_cast<WORD32>(eff_scale * 2147483648.0f);
     p_out_shift32[i] = 0;
   }
 
@@ -143,7 +146,6 @@ void xa_opt_quantized_conv1d_nlc_asym8sxsym8s_asym8s(
   }
 }
 
-// Optimized NHWC 1D convolution for uint8 x uint8 -> uint8
 void xa_opt_quantized_conv1d_nlc_asym8uxsym8u_asym8u(
     KernelRuntimeContext& ctx,
     const Tensor& input,
@@ -169,13 +171,16 @@ void xa_opt_quantized_conv1d_nlc_asym8uxsym8u_asym8u(
   WORD32 batches = input.size(0);
   WORD32 input_channels = input.size(2);
   WORD32 input_width = input.size(1);
-  WORD32 out_channels = weight.size(2);
+  WORD32 out_channels = weight.size(0);
   WORD32 kernel_width = weight.size(1);
   WORD32 out_width = out.size(1);
-  WORD32 x_stride = stride[1];
-  WORD32 x_padding = padding[1];
+  WORD32 x_stride = stride[stride.size() - 1];
+  WORD32 x_padding = padding[padding.size() - 1];
   WORD32 input_zero_bias = -in_zero_point;
-  WORD32 out_multiplier32 = bias_scale * (1. / output_scale) * 2147483648;
+  const float eff_scale = bias_scale * (1.0f / output_scale);
+  WORD32 out_multiplier32 = (eff_scale >= 1.0f)
+      ? static_cast<WORD32>(2147483647)
+      : static_cast<WORD32>(eff_scale * 2147483648.0f);
   WORD32 out_shift32 = 0;
   WORD32 kernel_zero_bias = -weight_zero_point;
 
@@ -224,46 +229,117 @@ void quantized_conv1d_nlc_per_tensor_out(
     const Tensor& bias,
     IntArrayRef stride,
     IntArrayRef padding,
-    __ET_UNUSED IntArrayRef dilation,
-    __ET_UNUSED int64_t groups,
+    IntArrayRef dilation,
+    int64_t groups,
     int64_t in_zero_point,
     int64_t weight_zero_point,
     double bias_scale,
     double output_scale,
     int64_t output_zero_point,
-    __ET_UNUSED int64_t out_multiplier,
-    __ET_UNUSED int64_t out_shift,
+    int64_t out_multiplier,
+    int64_t out_shift,
+    __ET_UNUSED const ::executorch::aten::optional<Tensor>& offset,
     Tensor& out) {
+  // HiFi nnlib kernels only support dilation=1.
+  // Fall back to generic implementation for dilation > 1.
+  if (dilation[dilation.size() - 1] != 1) {
+    impl::generic::native::quantized_conv1d_nlc_per_tensor_out(
+        ctx,
+        input,
+        weight,
+        bias,
+        stride,
+        padding,
+        dilation,
+        groups,
+        in_zero_point,
+        weight_zero_point,
+        bias_scale,
+        output_scale,
+        output_zero_point,
+        out_multiplier,
+        out_shift,
+        offset,
+        out);
+    return;
+  }
+
   ScalarType dtype = out.scalar_type();
 
   if (dtype == ScalarType::Char) {
-    xa_opt_quantized_conv1d_nlc_asym8sxsym8s_asym8s(
-        ctx,
-        input,
-        weight,
-        bias,
-        stride,
-        padding,
-        static_cast<int32_t>(in_zero_point),
-        static_cast<int32_t>(weight_zero_point),
-        static_cast<float>(bias_scale),
-        static_cast<float>(output_scale),
-        static_cast<int32_t>(output_zero_point),
-        out);
+    // HiFi nnlib conv2d kernel does not support depthwise (groups > 1)
+    // or stride > 1. Fall back to generic implementation.
+    if (groups > 1 || stride[stride.size() - 1] > 1) {
+      impl::generic::native::quantized_conv1d_nlc_per_tensor_out(
+          ctx,
+          input,
+          weight,
+          bias,
+          stride,
+          padding,
+          dilation,
+          groups,
+          in_zero_point,
+          weight_zero_point,
+          bias_scale,
+          output_scale,
+          output_zero_point,
+          out_multiplier,
+          out_shift,
+          offset,
+          out);
+    } else {
+      xa_opt_quantized_conv1d_nlc_asym8sxsym8s_asym8s(
+          ctx,
+          input,
+          weight,
+          bias,
+          stride,
+          padding,
+          static_cast<int32_t>(in_zero_point),
+          static_cast<int32_t>(weight_zero_point),
+          static_cast<float>(bias_scale),
+          static_cast<float>(output_scale),
+          static_cast<int32_t>(output_zero_point),
+          out);
+    }
   } else if (dtype == ScalarType::Byte) {
-    xa_opt_quantized_conv1d_nlc_asym8uxsym8u_asym8u(
-        ctx,
-        input,
-        weight,
-        bias,
-        stride,
-        padding,
-        static_cast<int32_t>(in_zero_point),
-        static_cast<int32_t>(weight_zero_point),
-        static_cast<float>(bias_scale),
-        static_cast<float>(output_scale),
-        static_cast<int32_t>(output_zero_point),
-        out);
+    // HiFi nnlib conv1d_std kernel does not support depthwise (groups > 1)
+    // or stride > 1. Fall back to generic implementation.
+    if (groups > 1 || stride[stride.size() - 1] > 1) {
+      impl::generic::native::quantized_conv1d_nlc_per_tensor_out(
+          ctx,
+          input,
+          weight,
+          bias,
+          stride,
+          padding,
+          dilation,
+          groups,
+          in_zero_point,
+          weight_zero_point,
+          bias_scale,
+          output_scale,
+          output_zero_point,
+          out_multiplier,
+          out_shift,
+          offset,
+          out);
+    } else {
+      xa_opt_quantized_conv1d_nlc_asym8uxsym8u_asym8u(
+          ctx,
+          input,
+          weight,
+          bias,
+          stride,
+          padding,
+          static_cast<int32_t>(in_zero_point),
+          static_cast<int32_t>(weight_zero_point),
+          static_cast<float>(bias_scale),
+          static_cast<float>(output_scale),
+          static_cast<int32_t>(output_zero_point),
+          out);
+    }
   } else {
     ET_DCHECK_MSG(
         false,

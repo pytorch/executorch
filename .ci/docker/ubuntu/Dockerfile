@@ -105,7 +105,7 @@ COPY ./common/install_cuda_windows_cross_compile.sh install_cuda_windows_cross_c
 COPY ./common/utils.sh utils.sh
 RUN if [ -n "${CUDA_WINDOWS_CROSS_COMPILE}" ]; then \
     CUDA_VERSION=${CUDA_VERSION} bash ./install_cuda.sh && \
-    bash ./install_cuda_windows_cross_compile.sh; \
+    CUDA_VERSION=${CUDA_VERSION} bash ./install_cuda_windows_cross_compile.sh; \
     fi
 RUN rm -f install_cuda.sh install_cuda_windows_cross_compile.sh utils.sh
 # Set up CUDA environment for Linux compilation (nvcc, etc.)

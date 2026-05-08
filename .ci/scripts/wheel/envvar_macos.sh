@@ -9,3 +9,8 @@
 # any variables so that subprocesses will see them.
 
 source "${GITHUB_WORKSPACE}/${REPOSITORY}/.ci/scripts/wheel/envvar_base.sh"
+
+# Force Apple Clang to avoid Homebrew LLVM, which doesn't properly handle
+# Apple SDK Objective-C framework headers (e.g. NSIntegerMax in NSObjCRuntime.h).
+export CC=/usr/bin/clang
+export CXX=/usr/bin/clang++

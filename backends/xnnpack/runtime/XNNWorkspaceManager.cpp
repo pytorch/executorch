@@ -46,9 +46,14 @@ WorkspaceSharingMode XNNWorkspaceManager::get_sharing_mode() const {
 
 Result<std::shared_ptr<XNNWorkspace>>
 XNNWorkspaceManager::get_or_create_workspace(uintptr_t program_id) const {
-  auto mode = sharing_mode_.load();
+  return get_or_create_workspace(program_id, sharing_mode_.load());
+}
 
-  // Get or create the workspace according to the current sharing mode.
+Result<std::shared_ptr<XNNWorkspace>>
+XNNWorkspaceManager::get_or_create_workspace(
+    uintptr_t program_id,
+    WorkspaceSharingMode mode) const {
+  // Get or create the workspace according to the specified sharing mode.
   if (mode == WorkspaceSharingMode::Disabled) {
     ET_LOG(Debug, "Instantiating workspace.");
     auto create_result = XNNWorkspace::create();
@@ -121,8 +126,7 @@ XNNWorkspaceManager::get_or_create_model_workspace(uintptr_t program_id) const {
         "Created workspace %p for program %" PRIuPTR ".",
         workspace->unsafe_get_workspace(),
         program_id);
-    model_workspaces_.insert(
-        {program_id, std::weak_ptr<XNNWorkspace>(workspace)});
+    model_workspaces_[program_id] = workspace;
   }
 
   return workspace;

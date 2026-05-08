@@ -24,6 +24,7 @@ triton = torch.ops.triton
 # Global mapping from edge dialect operators to Triton kernel functions
 EDGE_TO_TRITON_KERNELS = {
     exir_ops.edge.aten.scaled_dot_product_attention.default: triton.sdpa,
+    exir_ops.edge.aten.topk.default: triton.topk,
 }
 
 
@@ -72,10 +73,15 @@ class ReplaceEdgeOpWithTritonOpPass(PassBase):
             # Recompile the graph module after modifications
             graph_module.recompile()
 
-        # logger.info(f"Replaced {self._replacement_count} nodes with Triton kernels")
-        print(f"Replaced {self._replacement_count} nodes with Triton kernels")
+        logger.info(f"Replaced {self._replacement_count} nodes with Triton kernels")
 
         return PassResult(graph_module, modified)
+
+    # The topk kernel loads an entire row into a single thread block via
+    # tl.arange(0, BLOCK). For large N (e.g., vocab-sized topk with N=248K),
+    # this exceeds Triton's register/shared memory limits. Skip replacement
+    # for rows larger than this threshold.
+    _TOPK_MAX_N = 4096
 
     def _should_replace_node(self, node: Node) -> bool:
         """
@@ -87,11 +93,23 @@ class ReplaceEdgeOpWithTritonOpPass(PassBase):
         Returns:
             True if the node should be replaced
         """
-        # Only consider call_function nodes
         if node.op != "call_function":
             return False
 
-        return node.target in EDGE_TO_TRITON_KERNELS
+        if node.target not in EDGE_TO_TRITON_KERNELS:
+            return False
+
+        # The topk kernel loads an entire row into one thread block.
+        # Skip replacement for large N that would exceed Triton limits.
+        if node.target == exir_ops.edge.aten.topk.default:
+            input_shape = node.args[0].meta["val"].shape
+            dim = node.args[2] if len(node.args) > 2 else -1
+            N = input_shape[dim]
+            if N > self._TOPK_MAX_N:
+                logger.info(f"Skipping topk replacement: N={N} > {self._TOPK_MAX_N}")
+                return False
+
+        return True
 
     def _replace_node_with_triton(self, graph_module: GraphModule, node: Node) -> None:
         """

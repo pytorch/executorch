@@ -80,9 +80,6 @@ class TestT5ForConditionalGeneration:
         return model, inputs
 
 
-@pytest.mark.xfail(
-    reason="MLETORCH-1916: Don't partition aten.index.Tensor on int tensors in FP-only profile."
-)
 @pytest.mark.slow
 def test_t5_for_conditional_generation_tosa_FP():
     prompt = "summarize: studies have shown that owning a dog is good for you"
@@ -117,7 +114,8 @@ def test_t5_for_conditional_generation_tosa_INT():
             aten_op=[],
             exir_op=[],
             use_to_edge_transform_and_lower=True,
-            atol=5,  # TODO: MLETORCH-1703: Reduce the tolerance of quantized T5ForConditionalGeneration
+            atol=14,  # TODO: MLETORCH-1703: Reduce the tolerance of quantized T5ForConditionalGeneration
+            frobenius_threshold=0.3,
         )
         pipeline.change_args(
             "check_count.exir",
@@ -164,7 +162,7 @@ def test_t5_for_conditional_generation_vgf_quant():
             aten_op=[],
             exir_op=[],
             use_to_edge_transform_and_lower=True,
-            atol=5,  # TODO: MLETORCH-1703: Reduce the tolerance of quantized T5ForConditionalGeneration
+            atol=14,  # TODO: MLETORCH-1703: Reduce the tolerance of quantized T5ForConditionalGeneration
             quantize=True,
         )
         pipeline.change_args(

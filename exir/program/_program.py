@@ -59,6 +59,7 @@ from executorch.exir.passes.insert_write_back_for_buffers_pass import (
 from executorch.exir.passes.normalize_view_copy_base_pass import (
     NormalizeViewCopyBasePass,
 )
+from executorch.exir.passes.propagate_device_pass import PropagateDevicePass
 from executorch.exir.passes.quant_fusion_pass import quant_fusion_and_const_prop_pass
 from executorch.exir.passes.reinplace import reinplace_pass
 from executorch.exir.passes.remove_graph_asserts_pass import (
@@ -848,6 +849,7 @@ def edge_to_executorch_passes(
         # there exists an unbacked symint operation.
         *config.passes,
         SpecPropPass(),
+        PropagateDevicePass(),
         EdgeToBackendOpsPass(),
         RemoveGraphAssertsPass(),
     ] + pre_memory_planning_passes(config, name)

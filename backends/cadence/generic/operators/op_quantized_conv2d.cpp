@@ -16,6 +16,7 @@ namespace impl {
 namespace generic {
 namespace native {
 
+using ::executorch::aten::optional;
 using ::executorch::aten::ScalarType;
 using ::executorch::aten::Tensor;
 using ::executorch::runtime::KernelRuntimeContext;
@@ -510,14 +511,13 @@ void quantized_conv2d_nhwc(
   const int c = static_cast<int>(conv1d ? input.size(2) : input.size(3));
   // Depthwise is defined by in_channels == groups; depthwise weights have one
   // fewer dim than regular weights because the IC dim (always 1) was squeezed.
-  const bool is_depthwise =
-      !conv1d && c == groups && weight.dim() < input.dim();
+  const bool is_depthwise = c == groups && weight.dim() < input.dim();
   int oc, wh, ww, wc;
   if (is_depthwise) {
-    // Depthwise weight is [KH, KW, OC]
-    wh = static_cast<int>(weight.size(0));
-    ww = static_cast<int>(weight.size(1));
-    oc = static_cast<int>(weight.size(2));
+    // Depthwise weight: conv2d=[KH, KW, OC], conv1d=[K, OC]
+    wh = static_cast<int>(conv1d ? 1 : weight.size(0));
+    ww = static_cast<int>(conv1d ? weight.size(0) : weight.size(1));
+    oc = static_cast<int>(conv1d ? weight.size(1) : weight.size(2));
     wc = 1;
   } else {
     // Regular weight is [OC, WH, WW, WC] or for conv1d [OC, WW, WC]
@@ -936,6 +936,7 @@ Tensor& quantized_conv2d_nhwc_per_tensor_out(
     int64_t output_zero_point,
     ET_UNUSED int64_t out_multiplier,
     ET_UNUSED int64_t out_shift,
+    ET_UNUSED const ::executorch::aten::optional<Tensor>& offset,
     Tensor& out) {
   quantized_conv2d_nhwc(
       input,
@@ -950,6 +951,40 @@ Tensor& quantized_conv2d_nhwc_per_tensor_out(
       bias_scale,
       output_scale,
       output_zero_point,
+      out);
+  return out;
+}
+
+Tensor& quantized_conv2d_depthwise_nhwc_out(
+    ET_UNUSED KernelRuntimeContext& ctx,
+    const Tensor& input,
+    const Tensor& weight,
+    const Tensor& bias,
+    IntArrayRef stride,
+    IntArrayRef padding,
+    IntArrayRef dilation,
+    int64_t groups,
+    int64_t in_zero_point,
+    int64_t weight_zero_point,
+    double bias_scale,
+    double output_scale,
+    int64_t output_zero_point,
+    ET_UNUSED int64_t out_multiplier,
+    ET_UNUSED int64_t out_shift,
+    Tensor& out) {
+  quantized_conv2d_nhwc(
+      input,
+      weight,
+      bias,
+      stride,
+      padding,
+      dilation,
+      static_cast<int16_t>(groups),
+      static_cast<int32_t>(in_zero_point),
+      static_cast<int32_t>(weight_zero_point),
+      static_cast<float>(bias_scale),
+      static_cast<float>(output_scale),
+      static_cast<int32_t>(output_zero_point),
       out);
   return out;
 }

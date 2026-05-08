@@ -267,6 +267,7 @@ OPTIMIZED_KERNELS_SRCS = [
     "kernels/optimized/cpu/op_fft_c2r.cpp",
     "kernels/optimized/cpu/op_fft_r2c.cpp",
     "kernels/optimized/cpu/op_gelu.cpp",
+    "kernels/optimized/cpu/op_grid_sampler_2d.cpp",
     "kernels/optimized/cpu/op_le.cpp",
     "kernels/optimized/cpu/op_linear.cpp",
     "kernels/optimized/cpu/op_log_softmax.cpp",
@@ -274,6 +275,7 @@ OPTIMIZED_KERNELS_SRCS = [
     "kernels/optimized/cpu/op_mul.cpp",
     "kernels/optimized/cpu/op_native_layer_norm.cpp",
     "kernels/optimized/cpu/op_sub.cpp",
+    "kernels/optimized/cpu/op_sum.cpp",
     "kernels/optimized/cpu/op_where.cpp",
 ]
 
@@ -474,6 +476,7 @@ XNNPACK_BACKEND_BUCK_SRCS = [
     "runtime/XNNPACKBackend.cpp",
     "runtime/XNNWeightsCache.cpp",
     "runtime/XNNWorkspaceManager.cpp",
+    "runtime/XnnpackBackendOptions.cpp",
     "runtime/profiling/XNNProfiler.cpp",
 ]
 

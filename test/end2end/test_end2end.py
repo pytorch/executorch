@@ -21,12 +21,7 @@ import executorch.exir.control_flow as control_flow
 import executorch.extension.pytree as pytree
 import torch
 
-from executorch.exir import (
-    CaptureConfig,
-    EdgeCompileConfig,
-    ExecutorchBackendConfig,
-    memory,
-)
+from executorch.exir import EdgeCompileConfig, ExecutorchBackendConfig, memory
 from executorch.exir.dynamic_shape import DynamicMemoryPlanningMode
 from executorch.exir.emit import emit_program
 from executorch.exir.pass_manager import PassManager
@@ -471,7 +466,6 @@ def maketest(
     allow_non_contiguous_tensor: bool = False,
     method: str = "forward",
     dynamic_memory_planning_mode: DynamicMemoryPlanningMode = DynamicMemoryPlanningMode.UPPER_BOUND,
-    capture_config=None,
     verify_graph: Optional[Callable] = None,
 ) -> Callable[[unittest.TestCase], None]:
     r"""Returns a TestCase method to test the provided module class and method.
@@ -507,7 +501,6 @@ def maketest(
             methods=(method,),
             ignore_to_out_var_failure=ignore_to_out_var_failure,
             dynamic_memory_planning_mode=dynamic_memory_planning_mode,
-            capture_config=capture_config,
         )
         if verify_graph:
             verify_graph(self, module.exported_program.graph_module)
@@ -599,9 +592,6 @@ class E2ETest(unittest.TestCase):
     def test_mem_planning_toy_model(self):
         maketest(
             ToyModelForMemPlanning,
-            capture_config=exir.CaptureConfig(
-                enable_dynamic_shape=True,
-            ),
         )(self)
 
     # TODO: add ops implementations and turn on 'run_executor'
@@ -621,9 +611,6 @@ class E2ETest(unittest.TestCase):
         maketest(
             ModuleContainers,
             do_tree_flatten=True,
-            capture_config=exir.CaptureConfig(
-                enable_dynamic_shape=True,
-            ),
         )(self)
 
     # can not run the graph module since the out variance with tensor list out
@@ -675,9 +662,6 @@ class DynamicModelE2ETest(unittest.TestCase):
             ModuleIntermediateDynamicShape,
             run_graph_module=False,
             allow_non_contiguous_tensor=True,
-            capture_config=exir.CaptureConfig(
-                enable_dynamic_shape=True,
-            ),
         )(self)
 
     # TODO(shunting): some non constant tensors for transformer are non-contiguous.
@@ -697,10 +681,6 @@ class DynamicModelE2ETest(unittest.TestCase):
     def test_ft_cond_basic(self):
         maketest(
             FTCondBasic,
-            capture_config=exir.CaptureConfig(
-                enable_dynamic_shape=True,
-                enable_functionalization=False,  # TODO enable functionalization
-            ),
         )(self)
 
     def test_ft_map_basic(self):
@@ -746,10 +726,6 @@ class DynamicModelE2ETest(unittest.TestCase):
     def test_ft_cond_dynshape(self):
         maketest(
             FTCondDynShape,
-            capture_config=exir.CaptureConfig(
-                enable_dynamic_shape=True,
-                enable_functionalization=False,  # TODO enable functionalization
-            ),
         )(self)
 
     def test_ft_map_dynshape(self):
@@ -802,9 +778,6 @@ class DynamicModelE2ETest(unittest.TestCase):
     def test_batch_norm(self):
         maketest(
             BatchNormModel,
-            capture_config=exir.CaptureConfig(
-                enable_dynamic_shape=True,
-            ),
             verify_graph=BatchNormModel.verify_graph,
             # TODO: lean mode does not have native_batch_norm.out implemented
             # run this on aten mode.

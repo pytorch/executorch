@@ -168,13 +168,6 @@ xfails = {
     "float_r4_st": "MLETORCH-408: Arithmetic ops can't handle scalars first",
 }
 
-int_inplace_xfails = {
-    "int_r1_ts": "MLETORCH-1708: Numerical error in TFA/quantization",
-    "int_r4_ts": "MLETORCH-1708: Numerical error in TFA/quantization",
-    "float_r1_ts": "MLETORCH-1708: Numerical error in TFA/quantization",
-    "float_r4_ts": "MLETORCH-1708: Numerical error in TFA/quantization",
-}
-
 
 # ADD FP ------------------------------------------------------
 @common.parametrize("test_data", tensor_scalar_tests, xfails=xfails)
@@ -215,9 +208,7 @@ def test_add_tensor_tosa_INT_scalar(test_data):
     pipeline.run()
 
 
-@common.parametrize(
-    "test_data", tensor_scalar_tests, xfails=int_inplace_xfails, strict=False
-)
+@common.parametrize("test_data", tensor_scalar_tests)
 def test_add_tensor_tosa_INT_inplace(test_data):
     """Tests inplace add with one scalar input."""
     pipeline = TosaPipelineINT[input_t1](AddInplace(), test_data, aten_op=[])
@@ -285,9 +276,7 @@ def test_sub_tensor_tosa_INT_scalar(test_data):
     pipeline.run()
 
 
-@common.parametrize(
-    "test_data", tensor_scalar_tests, xfails=int_inplace_xfails, strict=False
-)
+@common.parametrize("test_data", tensor_scalar_tests)
 def test_sub_tensor_tosa_INT_inplace(test_data):
     """Tests inplace sub with one scalar input."""
     pipeline = TosaPipelineINT[input_t1](SubInplace(), test_data, aten_op=[])
@@ -344,9 +333,7 @@ def test_mul_tensor_tosa_INT_scalar(test_data):
     pipeline.run()
 
 
-@common.parametrize(
-    "test_data", tensor_scalar_tests, xfails=int_inplace_xfails, strict=False
-)
+@common.parametrize("test_data", tensor_scalar_tests)
 def test_mul_tensor_tosa_INT_inplace(test_data):
     """Tests inplace mul with one scalar input."""
     pipeline = TosaPipelineINT[input_t1](MulInplace(), test_data, aten_op=[])

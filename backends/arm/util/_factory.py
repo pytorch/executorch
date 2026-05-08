@@ -1,4 +1,4 @@
-# Copyright 2025 Arm Limited and/or its affiliates.
+# Copyright 2025-2026 Arm Limited and/or its affiliates.
 #
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
@@ -25,12 +25,12 @@ def parse_compile_spec(compile_specs: list[CompileSpec]) -> ArmCompileSpec:
             break
     else:
         raise ValueError("Compile spec without output format.")
-    if output_format == TosaCompileSpec.get_output_format():
-        return TosaCompileSpec.from_list(compile_specs)
-    if output_format == EthosUCompileSpec.get_output_format():
-        return EthosUCompileSpec.from_list(compile_specs)
-    if output_format == VgfCompileSpec.get_output_format():
-        return VgfCompileSpec.from_list(compile_specs)
+    if output_format == TosaCompileSpec._get_output_format():
+        return TosaCompileSpec._from_list(compile_specs)
+    if output_format == EthosUCompileSpec._get_output_format():
+        return EthosUCompileSpec._from_list(compile_specs)
+    if output_format == VgfCompileSpec._get_output_format():
+        return VgfCompileSpec._from_list(compile_specs)
     raise ValueError(f"Unknown output format {output_format}")
 
 

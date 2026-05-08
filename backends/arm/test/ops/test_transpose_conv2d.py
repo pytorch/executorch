@@ -177,6 +177,39 @@ u55_supported_test_data_INT = {
     )
 }
 
+u55_TransposeConv_limitations = {
+    "stride_3": lambda: (
+        TransposeConv2d(
+            in_channels=3,
+            out_channels=1,
+            kernel_size=(5, 5),
+            stride=(3, 3),
+            padding=(2, 2),
+        ),
+        True,
+    ),
+    "stride_1_2": lambda: (
+        TransposeConv2d(
+            in_channels=3,
+            out_channels=1,
+            kernel_size=(5, 5),
+            stride=(1, 2),
+            padding=(2, 2),
+        ),
+        True,
+    ),
+    "stride_2_1": lambda: (
+        TransposeConv2d(
+            in_channels=3,
+            out_channels=1,
+            kernel_size=(5, 5),
+            stride=(2, 1),
+            padding=(2, 2),
+        ),
+        True,
+    ),
+}
+
 reject_suite = {
     k: v
     for k, v in test_data_INT.items()
@@ -568,7 +601,11 @@ _u55_grouped_not_delegated_xfails = {
 }
 
 
-@common.parametrize("test_data", reject_suite, xfails=_u55_grouped_not_delegated_xfails)
+@common.parametrize(
+    "test_data",
+    reject_suite | u55_TransposeConv_limitations,
+    xfails=_u55_grouped_not_delegated_xfails,
+)
 def test_conv_transpose2d_u55_INT_not_delegated(test_data):
     model, per_channel_quantization = test_data()
     OpNotSupportedPipeline(

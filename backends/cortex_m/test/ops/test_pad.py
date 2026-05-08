@@ -69,6 +69,14 @@ test_cases = {
         CortexMPad((0, 0, 0, 0)),
         (ramp_tensor(-0.5, 0.5, (2, 3, 4, 5)),),
     ),
+    "pad_rank4_all_dims_channels_last": McuTestCase(
+        CortexMPad((1, 1, 2, 2, 1, 0, 0, 1)),
+        (ramp_tensor(-0.5, 0.5, (1, 2, 3, 4)).to(memory_format=torch.channels_last),),
+    ),
+    "pad_rank4_last_two_dims_channels_last": McuTestCase(
+        CortexMPad((1, 2, 3, 4)),
+        (ramp_tensor(-1.0, 1.0, (1, 3, 4, 5)).to(memory_format=torch.channels_last),),
+    ),
 }
 
 

@@ -325,7 +325,7 @@ class StaticAttentionTest(unittest.TestCase):
             static_config, input_len, cache_len, batch_size=batch_size
         )
         example_inputs = (
-            torch.zeros(batch_size, input_len),
+            torch.zeros(batch_size, input_len, dtype=torch.long),
             {
                 "masks": mgr.masks,
                 "freqs_cos_override": mgr.freqs_cos[:input_len],
@@ -350,7 +350,7 @@ class StaticAttentionTest(unittest.TestCase):
             static_config, input_len, cache_len, batch_size=1
         )
         example_inputs = (
-            torch.zeros(1, input_len),
+            torch.zeros(1, input_len, dtype=torch.long),
             {
                 "masks": mgr.masks,
                 "freqs_cos_override": mgr.freqs_cos[:input_len],
@@ -458,3 +458,167 @@ class StaticAttentionTest(unittest.TestCase):
         )
         y, _ = static_attn(x, freqs_cos, freqs_sin, masks={0: mask})
         self.assertTrue(torch.isclose(y, expected, rtol=1e-3).all())
+
+    # --- YOCO tests ---
+
+    def _make_yoco_args(self, n_layers=4, num_kv_shared_layers=2):
+        return ModelArgs(
+            dim=64,
+            n_heads=4,
+            n_kv_heads=2,
+            head_dim=16,
+            max_batch_size=1,
+            max_context_len=32,
+            max_seq_len=8,
+            enable_dynamic_shape=True,
+            n_layers=n_layers,
+            num_kv_shared_layers=num_kv_shared_layers,
+        )
+
+    def test_yoco_shared_layer_no_wk_wv(self):
+        config = self._make_yoco_args(n_layers=4, num_kv_shared_layers=2)
+        rope = Rope(config)
+        attn_mha = AttentionMHA(config, layer_id=2, rope=rope)
+        static_attn = StaticAttention.from_attention_mha(attn_mha, split_mha=False)
+
+        self.assertTrue(static_attn.is_kv_shared_layer)
+        self.assertEqual(len(static_attn.wks), 0)
+        self.assertEqual(len(static_attn.wvs), 0)
+        self.assertEqual(len(static_attn.k_caches), 0)
+        self.assertEqual(len(static_attn.v_caches), 0)
+        self.assertEqual(len(static_attn.wqs), 1)
+        self.assertIsNotNone(static_attn.wo)
+
+    def test_yoco_donor_layer_has_wk_wv(self):
+        config = self._make_yoco_args(n_layers=4, num_kv_shared_layers=2)
+        rope = Rope(config)
+        attn_mha = AttentionMHA(config, layer_id=1, rope=rope)
+        static_attn = StaticAttention.from_attention_mha(attn_mha, split_mha=False)
+
+        self.assertFalse(static_attn.is_kv_shared_layer)
+        self.assertEqual(len(static_attn.wks), 1)
+        self.assertEqual(len(static_attn.wvs), 1)
+        self.assertEqual(len(static_attn.k_caches), 1)
+        self.assertEqual(len(static_attn.v_caches), 1)
+
+    def test_yoco_shared_layer_forward_with_shared_kv(self):
+        config = self._make_yoco_args(n_layers=4, num_kv_shared_layers=2)
+        rope = Rope(config)
+        attn_mha = AttentionMHA(config, layer_id=2, rope=rope)
+        static_attn = StaticAttention.from_attention_mha(
+            attn_mha, split_mha=False
+        ).eval()
+
+        x = torch.rand(1, config.max_seq_len, config.dim)
+        freqs_cos, freqs_sin = rope.get_freqs(None, config.max_seq_len)
+        shared_kv = (
+            torch.randn(1, config.n_kv_heads, config.max_seq_len, config.head_dim),
+            torch.randn(1, config.n_kv_heads, config.max_seq_len, config.head_dim),
+        )
+        mask = torch.triu(
+            torch.full((1, config.max_seq_len, config.max_seq_len), float("-inf")),
+            diagonal=1,
+        )
+
+        y, update = static_attn(
+            x, freqs_cos, freqs_sin, masks={0: mask}, shared_kv=shared_kv
+        )
+
+        self.assertEqual(y.shape, (1, config.max_seq_len, config.dim))
+        self.assertIsNone(update["out_cache_state"])
+
+    def test_yoco_lora_with_shared_layer(self):
+        config = self._make_yoco_args(n_layers=4, num_kv_shared_layers=2)
+        config.r = 4
+        config.lora_alpha = 8
+        config.target_modules = ["q_proj", "o_proj"]
+
+        rope = Rope(config)
+        attn_mha = AttentionMHA(config, layer_id=2, rope=rope)
+
+        self.assertIsInstance(attn_mha.wq, LoRALinear)
+        self.assertIsNone(attn_mha.wk)
+        self.assertIsNone(attn_mha.wv)
+
+        static_attn = StaticAttention.from_attention_mha(attn_mha, split_mha=False)
+
+        self.assertIsInstance(static_attn.wqs[0], LoRALinear)
+        self.assertIsInstance(static_attn.wo, LoRALinear)
+        self.assertEqual(len(static_attn.wks), 0)
+        self.assertEqual(len(static_attn.wvs), 0)
+
+    def test_yoco_static_vs_mha_numerics(self):
+        torch.manual_seed(42)
+        config = self._make_yoco_args(n_layers=4, num_kv_shared_layers=2)
+        rope = Rope(config)
+
+        # Donor layer (layer_id=1, not shared)
+        attn_mha = AttentionMHA(config, layer_id=1, rope=rope).eval()
+        static_attn = StaticAttention.from_attention_mha(
+            attn_mha, split_mha=False
+        ).eval()
+
+        x = torch.rand(1, config.max_seq_len, config.dim)
+        freqs_cos, freqs_sin = rope.get_freqs(None, config.max_seq_len)
+        expected, _ = attn_mha(x, freqs_cos, freqs_sin)
+
+        mask = torch.triu(
+            torch.full((1, config.max_seq_len, config.max_seq_len), float("-inf")),
+            diagonal=1,
+        )
+        y, _ = static_attn(x, freqs_cos, freqs_sin, masks={0: mask})
+
+        self.assertTrue(
+            torch.isclose(y, expected, rtol=1e-3).all(),
+            "YOCO donor layer: StaticAttention vs AttentionMHA mismatch",
+        )
+
+    def test_yoco_io_manager_skips_shared_caches(self):
+        config = self._make_yoco_args(n_layers=4, num_kv_shared_layers=2)
+        rope = Rope(config)
+
+        layers = []
+        for layer_id in range(4):
+            attn_mha = AttentionMHA(config, layer_id=layer_id, rope=rope)
+            static_attn = StaticAttention.from_attention_mha(attn_mha, split_mha=False)
+            layers.append(static_attn)
+
+        model = torch.nn.Sequential(*layers)
+        io_mgr = StaticAttentionIOManager(
+            model,
+            input_len=config.max_seq_len,
+            cache_lens=[config.max_context_len] * 4,
+        )
+
+        # Donor layers (0, 1) should have cache entries
+        for layer_id in range(2):
+            cache_key = StaticKVCache.calculate_cache_key(layer_id, 0)
+            self.assertIn(cache_key, io_mgr.k_caches)
+            self.assertIn(cache_key, io_mgr.v_caches)
+
+        # Shared layers (2, 3) should NOT have cache entries
+        for layer_id in range(2, 4):
+            cache_key = StaticKVCache.calculate_cache_key(layer_id, 0)
+            self.assertNotIn(cache_key, io_mgr.k_caches)
+            self.assertNotIn(cache_key, io_mgr.v_caches)
+
+    def test_yoco_from_config_skips_shared_caches(self):
+        config = self._make_yoco_args(n_layers=4, num_kv_shared_layers=2)
+        config.attention_type = "static_mha"
+        io_mgr = StaticAttentionIOManager(
+            config,
+            input_len=config.max_seq_len,
+            cache_lens=[config.max_context_len] * 4,
+        )
+
+        # Donor layers (0, 1) should have cache entries
+        for layer_id in range(2):
+            cache_key = StaticKVCache.calculate_cache_key(layer_id, 0)
+            self.assertIn(cache_key, io_mgr.k_caches)
+            self.assertIn(cache_key, io_mgr.v_caches)
+
+        # Shared layers (2, 3) should NOT have cache entries
+        for layer_id in range(2, 4):
+            cache_key = StaticKVCache.calculate_cache_key(layer_id, 0)
+            self.assertNotIn(cache_key, io_mgr.k_caches)
+            self.assertNotIn(cache_key, io_mgr.v_caches)

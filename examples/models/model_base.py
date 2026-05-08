@@ -1,5 +1,6 @@
 # Copyright (c) Meta Platforms, Inc. and affiliates.
 # All rights reserved.
+# Copyright 2026 Arm Limited and/or its affiliates.
 #
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
@@ -17,14 +18,13 @@ class EagerModelBase(ABC):
     Eager mode models inherit from this class to ensure consistent behavior and structure.
     """
 
-    @abstractmethod
-    def __init__(self):
+    def __init__(self) -> None:
         """
         Constructor for EagerModelBase.
 
         This initializer may be overridden in derived classes to provide additional setup if needed.
         """
-        pass
+        super().__init__()
 
     @abstractmethod
     def get_eager_model(self) -> torch.nn.Module:

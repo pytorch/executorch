@@ -100,8 +100,7 @@ void squeeze_copy_dims(ComputeGraph& graph, const std::vector<ValueRef>& args) {
   std::vector<ValueRef> resize_args = {dims};
 
   if (graph.is_buffer_storage(in)) {
-    return add_view_copy_buffer_node(
-        graph, in, out, resize_args, resize_squeeze_node);
+    return add_view_copy_node(graph, in, out, resize_args, resize_squeeze_node);
   }
   return add_squeeze_copy_dims_node(graph, in, dims, out);
 }

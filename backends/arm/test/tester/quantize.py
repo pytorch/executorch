@@ -50,11 +50,11 @@ class ArmQuantize(Quantize):
             raise ValueError("ArmQuantizer can only run with TOSAQuantizer.")
 
         if self.calibration_samples is not None:
-            converted = self.quantizer.quantize_with_submodules(
+            converted = self.quantizer._quantize_with_submodules(
                 captured_graph, self.calibration_samples, bool(self.is_qat), self.fold_quantize  # type: ignore
             )
         else:
-            converted = self.quantizer.quantize_with_submodules(
+            converted = self.quantizer._quantize_with_submodules(
                 captured_graph, [inputs], bool(self.is_qat), self.fold_quantize
             )
 

@@ -9,8 +9,12 @@ from typing import Dict, Tuple
 import pytest
 
 import torch
+from executorch.backends.arm.quantizer.arm_quantizer import (
+    get_symmetric_a16w8_quantization_config,
+)
 from executorch.backends.arm.test import common
 from executorch.backends.arm.test.tester.test_pipeline import (
+    EthosU55PipelineINT,
     EthosU85PipelineINT,
     OpNotSupportedPipeline,
     TosaPipelineFP,
@@ -144,14 +148,14 @@ def test_amin_tosa_INT(test_data: Amin.input_t):
     pipeline.run()
 
 
-def test_amin_u55_INT_not_delegated():
-    data, dim, keep_dims = Amin.test_data["rank_4_all_dim"]()
-    pipeline = OpNotSupportedPipeline[Amin.input_t](
+@common.parametrize("test_data", Amin.test_data)
+@common.XfailIfNoCorstone300
+def test_amin_u55_INT(test_data: Amin.input_t):
+    data, dim, keep_dims = test_data()
+    pipeline = EthosU55PipelineINT[Amin.input_t](
         Amin(dim, keep_dims),
         data,
-        {"executorch_exir_dialects_edge__ops_aten_amin_default": 1},
-        quantize=True,
-        u55_subset=True,
+        amin_aten_op,
     )
     pipeline.run()
 
@@ -269,6 +273,21 @@ def test_min_dim_vgf_quant_to_amin(test_data: Min.input_t):
         amin_aten_op,
         quantize=True,
     )
+    pipeline.run()
+
+
+@common.parametrize("test_data", Amin.test_data)
+@common.SkipIfNoModelConverter
+def test_amin_vgf_quant_a16w8(test_data: Amin.input_t):
+    data, dim, keep_dims = test_data()
+    pipeline = VgfPipeline[Amin.input_t](
+        Amin(dim, keep_dims),
+        data,
+        amin_aten_op,
+        quantize=True,
+        tosa_extensions=["int16"],
+    )
+    pipeline.quantizer.set_global(get_symmetric_a16w8_quantization_config())
     pipeline.run()
 
 

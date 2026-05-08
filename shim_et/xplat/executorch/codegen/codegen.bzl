@@ -542,12 +542,14 @@ def get_optimized_lib_deps():
         "//executorch/kernels/optimized/cpu:add_sub_impl",
         "//executorch/kernels/optimized/cpu:binary_ops",
         "//executorch/kernels/optimized/cpu:fft_utils",
+        "//executorch/kernels/optimized/cpu:grid_sampler_2d_fp16_hw_impl",
         "//executorch/kernels/optimized/cpu:moments_utils",
         "//executorch/kernels/optimized:libblas",
         "//executorch/kernels/optimized:libutils",
         "//executorch/kernels/optimized:libvec",
         "//executorch/runtime/core/portable_type/c10/c10:aten_headers_for_executorch",
         "//executorch/runtime/kernel:kernel_includes",
+        "fbsource//third-party/cpuinfo:cpuinfo",
     ] + get_vec_deps()
 
 def build_portable_header_lib(name, oplist_header_name, feature = None, **kwargs):

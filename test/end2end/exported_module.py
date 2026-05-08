@@ -67,7 +67,6 @@ class ExportedModule:
         methods: Sequence[str] = ("forward",),
         ignore_to_out_var_failure: bool = False,
         dynamic_memory_planning_mode: DynamicMemoryPlanningMode = DynamicMemoryPlanningMode.UPPER_BOUND,
-        capture_config=None,
         export_joint_graph: bool = False,
         external_constants: bool = False,
         export_state_names: bool = False,
@@ -146,8 +145,6 @@ class ExportedModule:
 
         method_name_to_dynamic_shapes = None
         if hasattr(eager_module, "get_dynamic_shapes"):
-            assert capture_config is not None
-            assert capture_config.enable_aot is True
             trace_dynamic_shapes = eager_module.get_dynamic_shapes()  # type: ignore[operator]
             method_name_to_dynamic_shapes = {}
             for method in methods:

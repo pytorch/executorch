@@ -38,7 +38,6 @@ from executorch.backends.arm.tosa.compile_spec import TosaCompileSpec
 from executorch.backends.arm.tosa.mapping import TOSA_TENSOR_NAME_META
 from executorch.exir.backend.backend_details import BackendDetails, PreprocessResult
 from executorch.exir.backend.compile_spec_schema import CompileSpec
-from executorch.exir.dim_order_utils import get_memory_format
 from torch.export.exported_program import ExportedProgram
 from torch.fx import Graph, GraphModule, Node
 
@@ -119,12 +118,8 @@ def _sort_outputs(graph_module: GraphModule, node_to_id_map: dict[str, int]):
 
 
 def _get_matching_fake_tensor(node: Node):
-    """Return a fake tensor with the same properties as node, but with
-    .dim_order() == node.meta["tosa_dim_order"]
-    """
-    fake_tensor = node.meta["val"]
-    desired_dim_order = node.meta["tosa_dim_order"]
-    return fake_tensor.to(memory_format=get_memory_format(list(desired_dim_order)))
+    """Return the fake tensor of node."""
+    return node.meta["val"]
 
 
 def arm_get_first_delegation_tag(graph_module) -> str:
@@ -170,7 +165,7 @@ class TOSABackend(BackendDetails):
 
         """
         return TOSABackend._preprocess(
-            edge_program, TosaCompileSpec.from_list(compile_specs)
+            edge_program, TosaCompileSpec._from_list(compile_specs)
         )
 
     @staticmethod
@@ -204,7 +199,7 @@ class TOSABackend(BackendDetails):
 
         """
         # if a debug/test build capture output files from TOSA stage
-        artifact_path = compile_spec.get_intermediate_path()
+        artifact_path = compile_spec._get_intermediate_path()
         tosa_spec = compile_spec.tosa_spec
         dump_debug_info = compile_spec.tosa_debug_mode
         debug_hook = None
@@ -332,7 +327,7 @@ class TOSABackend(BackendDetails):
         """
         tosa_spec = compile_spec.tosa_spec
         node_to_id_map = _annotate_external_ids(graph_module.graph)
-        artifact_path = compile_spec.get_intermediate_path()
+        artifact_path = compile_spec._get_intermediate_path()
         output_order_workaround = compile_spec.get_output_order_workaround()
 
         # TODO: Fix the need to lazily import this.
@@ -431,12 +426,12 @@ class TOSABackend(BackendDetails):
 
         """
 
-        pipeline_config = compile_spec.get_pass_pipeline_config()
+        pipeline_config = compile_spec._get_pass_pipeline_config()
         tosa_compile_spec = TosaCompileSpec(compile_spec.tosa_spec)
         tosa_compile_spec.set_pass_pipeline_config(pipeline_config)
         return (
             tosa_compile_spec.dump_intermediate_artifacts_to(
-                compile_spec.get_intermediate_path()
+                compile_spec._get_intermediate_path()
             )
             .dump_debug_info(compile_spec.tosa_debug_mode)
             .set_output_order_workaround(compile_spec.output_order_workaround)

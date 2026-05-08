@@ -9,7 +9,7 @@ from executorch.backends.arm.test.common import parametrize
 
 from executorch.backends.cortex_m.test.tester import CortexMTester, McuTestCase
 from executorch.backends.test.harness.stages import StageType
-from torchvision import models
+from torchvision import models  # type: ignore[import-untyped]
 
 
 ops_before_transforms: dict[str, int] = {
@@ -65,7 +65,7 @@ test_cases = {
     strict=False,
 )
 def test_dialect_mv3(test_case):
-    inputs = test_case.example_inputs()
+    inputs = test_case.get_example_inputs()
     tester = CortexMTester(test_case.model, inputs)
     tester.test_dialect(
         ops_before_transforms,
@@ -89,7 +89,7 @@ def test_dialect_mv3(test_case):
     strict=False,
 )
 def test_implementation_mv3(test_case):
-    inputs = test_case.example_inputs()
+    inputs = test_case.get_example_inputs()
     tester = CortexMTester(test_case.model, inputs)
     tester.test_implementation(
         qtol=20,

@@ -9,15 +9,16 @@
 #version 450 core
 
 #define PRECISION ${PRECISION}
-#define VEC4_T ${texel_load_type(DTYPE, "buffer")}
-#define T ${texel_load_component_type(DTYPE, "buffer")}
+#define BUF_T ${buffer_scalar_type(BUF_DTYPE)}
+#define VEC4_T ${texel_load_type(DTYPE, PACKED_STORAGE)}
+#define T ${texel_load_component_type(DTYPE, PACKED_STORAGE)}
 
 $if PACKED_STORAGE == "buffer":
   #define OUTPUT_BUFFER
 
 #extension GL_EXT_control_flow_attributes : require
 
-${define_required_extensions("buffer", DTYPE)}
+${define_required_extensions("buffer", BUF_DTYPE)}
 $if PACKED_STORAGE != "buffer":
   ${define_required_extensions(PACKED_STORAGE, DTYPE)}
 
@@ -29,7 +30,7 @@ $if PACKED_STORAGE == "buffer":
   ${layout_declare_tensor(B, "w", "t_weight_packed", DTYPE, "buffer", is_scalar_array=False)}
 $else:
   ${layout_declare_tensor(B, "w", "t_weight_packed", DTYPE, PACKED_STORAGE, is_scalar_array=False)}
-${layout_declare_tensor(B, "r", "t_weight_src", DTYPE, "buffer", is_scalar_array=True)}
+${layout_declare_tensor(B, "r", "t_weight_src", BUF_DTYPE, "buffer", is_scalar_array=True)}
 
 layout(push_constant) uniform restrict Block {
   int N;

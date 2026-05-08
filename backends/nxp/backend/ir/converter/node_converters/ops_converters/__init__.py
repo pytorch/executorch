@@ -13,6 +13,9 @@ from executorch.backends.nxp.backend.ir.converter.node_converters.ops_converters
 from executorch.backends.nxp.backend.ir.converter.node_converters.ops_converters.avg_pool_2d_converter import (
     AvgPool2dConverter,
 )
+from executorch.backends.nxp.backend.ir.converter.node_converters.ops_converters.bmm_converter import (
+    BMMConverter,
+)
 from executorch.backends.nxp.backend.ir.converter.node_converters.ops_converters.cat_converter import (
     CatConverter,
 )
@@ -99,6 +102,7 @@ __all__ = [
     "AddMMConverter",
     "AddTensorConverter",
     "AvgPool2dConverter",
+    "BMMConverter",
     "CatConverter",
     "ClampConverter",
     "CloneConverter",

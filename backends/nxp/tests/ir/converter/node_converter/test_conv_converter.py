@@ -1,4 +1,4 @@
-# Copyright 2024-2025 NXP
+# Copyright 2024-2026 NXP
 #
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
@@ -83,18 +83,7 @@ def test_conv1d_quant_conversion(bias, stride, dilation, kernel_size, mocker, us
 
 @pytest.mark.parametrize("stride", [1, 2])
 @pytest.mark.parametrize("dilation", [2, 1])
-@pytest.mark.parametrize(
-    "kernel_size",
-    [
-        pytest.param(
-            (1,),
-            marks=pytest.mark.xfail(
-                reason="Regression in Neutron SW 2.1.x (AIR-13336)", strict=True
-            ),
-        ),
-        (3,),
-    ],
-)
+@pytest.mark.parametrize("kernel_size", [(1,), (3,)])
 @pytest.mark.parametrize("padding", [(1,), 2])
 def test_conv1d_quant_conversion__padded(
     stride, dilation, kernel_size, padding, mocker, use_qat
@@ -201,18 +190,7 @@ def test_conv1d_quant_conversion__depthwise(
 
 @pytest.mark.parametrize("stride", [1, 2])
 @pytest.mark.parametrize("dilation", [2, 1])
-@pytest.mark.parametrize(
-    "kernel_size",
-    [
-        pytest.param(
-            (1,),
-            marks=pytest.mark.xfail(
-                reason="Regression in Neutron SW 2.1.x (AIR-13336)", strict=True
-            ),
-        ),
-        (3,),
-    ],
-)
+@pytest.mark.parametrize("kernel_size", [(1,), (3,)])
 @pytest.mark.parametrize("padding", [(1,), 2])
 def test_conv1d_quant_conversion__depthwise__padded(
     stride, dilation, kernel_size, padding, mocker, use_qat

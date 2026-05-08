@@ -5,28 +5,22 @@
 # LICENSE file in the root directory of this source tree.
 
 import operator
-
 from typing import Optional
 
 import executorch.backends.vulkan.utils as utils
-
 import torch
 import torch.nn.functional as F
-
 from executorch.backends.transforms.utils import (
     create_constant_placeholder,
     get_param_tensor,
 )
-
 from executorch.backends.vulkan.patterns.pattern_registry import (
     PatternMatch,
     register_pattern_detector,
     register_pattern_replacement,
 )
-
 from executorch.exir import ExportedProgram
 from executorch.exir.dialects._ops import ops as exir_ops
-
 from torch.export.graph_signature import InputKind
 
 
@@ -398,6 +392,12 @@ def make_linear_q4gsw_op(
         force_update=True,
     )
 
+    # Pad bias to multiple of 4 if present
+    if match.bias_node is not None:
+        bias_tensor = get_param_tensor(ep, match.bias_node)
+        if bias_tensor is not None:
+            utils.align_width_and_update_state_dict(ep, match.bias_node, bias_tensor)
+
     with graph_module.graph.inserting_before(match.output_node):
         linear_q4gsw_node = graph_module.graph.create_node(
             "call_function",
@@ -407,6 +407,7 @@ def make_linear_q4gsw_op(
                 match.weight_node,
                 match.weight_scales_node,
                 group_size,
+                match.bias_node,
             ),
         )
 
@@ -445,6 +446,12 @@ def make_linear_dq8ca_q4gsw_op(
         force_update=True,
     )
 
+    # Pad bias to multiple of 4 if present
+    if match.bias_node is not None:
+        bias_tensor = get_param_tensor(ep, match.bias_node)
+        if bias_tensor is not None:
+            utils.align_width_and_update_state_dict(ep, match.bias_node, bias_tensor)
+
     first_graph_node = list(graph_module.graph.nodes)[0]
     with graph_module.graph.inserting_before(first_graph_node):
         weight_tensor_name = utils.get_tensor_name(ep, match.weight_node)
@@ -474,6 +481,7 @@ def make_linear_dq8ca_q4gsw_op(
                 weight_sums_node,
                 match.weight_scales_node,
                 group_size,
+                match.bias_node,
             ),
         )
 
@@ -538,6 +546,7 @@ def make_linear_q8ta_q8csw_custom_op(
                 match.weight_node,
                 weight_sums_node,
                 match.weight_scales_node,
+                match.bias_node,
             ),
         )
 
@@ -637,17 +646,12 @@ def replace_quantized_linear_patterns(
     assert weight_zeros_tensor is not None
 
     # Route to appropriate custom op.
-    # q8ta_linear supports bias, so check it first before the bias guard.
     if (
         match.is_input_static_per_tensor_quantized()
         and match.is_weight_perchannel_quantized()
         and match.has_output_quantization()
     ):
         make_q8ta_linear_custom_op(ep, graph_module, match, weight_tensor)
-        return
-
-    # Remaining ops do not support bias
-    if match.bias_node is not None:
         return
 
     if (

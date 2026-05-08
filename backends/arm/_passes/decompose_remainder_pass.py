@@ -1,4 +1,4 @@
-# Copyright 2025 Arm Limited and/or its affiliates.
+# Copyright 2025-2026 Arm Limited and/or its affiliates.
 #
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
@@ -58,6 +58,15 @@ class DecomposeRemainderPass(ArmPass):
             torch.ops.aten.remainder.Tensor,
         )
         if op not in supported_ops:
+            return super().call_operator(op, args, kwargs, meta, updated)
+        # Keep scalar remainder opaque during transform-for-annotation so the
+        # quantizer can wrap the original op directly. In the backend pipeline,
+        # also preserve quantized scalar remainder so InsertTableOpsPass can
+        # lower it as a lookup table instead of expanding to div/floor/mul/sub.
+        if op in (
+            exir_ops.edge.aten.remainder.Scalar,
+            torch.ops.aten.remainder.Scalar,
+        ) and (self.is_tfa_pass or self._is_quantized_meta(meta)):
             return super().call_operator(op, args, kwargs, meta, updated)
 
         div_op, mul_op, sub_op = _decomposition_ops[op]

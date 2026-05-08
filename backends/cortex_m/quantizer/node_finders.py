@@ -3,9 +3,9 @@
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
 
-from abc import ABC, abstractmethod
 from typing import Callable, Iterator, List
 
+from executorch.backends.arm.quantizer.arm_quantizer_utils import NodeFinder
 from torch._ops import OpOverload
 from torch.fx import GraphModule, Node
 from torchao.quantization.pt2e.quantizer.utils import get_module_name_filter
@@ -21,17 +21,6 @@ def make_list(item_or_list):
 def format_items(items) -> str:
     """Render an iterable as a comma-separated string."""
     return ", ".join(str(item) for item in items)
-
-
-class NodeFinder(ABC):
-    @abstractmethod
-    def find_nodes(self, model: GraphModule) -> Iterator[Node]:
-        """Return nodes of the graph module depending on NodeFinder type.
-
-        Args:
-            model (GraphModule): The graph module to search for matching nodes.
-        """
-        pass
 
 
 class GlobalNodeFinder(NodeFinder):

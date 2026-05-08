@@ -51,8 +51,22 @@ class ExtraTensorInfo(object):
             return self._tab.Get(flatbuffers.number_types.Int8Flags, o + self._tab.Pos)
         return 0
 
+    # ExtraTensorInfo
+    def DeviceType(self):
+        o = flatbuffers.number_types.UOffsetTFlags.py_type(self._tab.Offset(10))
+        if o != 0:
+            return self._tab.Get(flatbuffers.number_types.Int8Flags, o + self._tab.Pos)
+        return 0
+
+    # ExtraTensorInfo
+    def DeviceIndex(self):
+        o = flatbuffers.number_types.UOffsetTFlags.py_type(self._tab.Offset(12))
+        if o != 0:
+            return self._tab.Get(flatbuffers.number_types.Int8Flags, o + self._tab.Pos)
+        return 0
+
 def ExtraTensorInfoStart(builder: flatbuffers.Builder):
-    builder.StartObject(3)
+    builder.StartObject(5)
 
 def Start(builder: flatbuffers.Builder):
     ExtraTensorInfoStart(builder)
@@ -75,6 +89,18 @@ def ExtraTensorInfoAddLocation(builder: flatbuffers.Builder, location: int):
 def AddLocation(builder: flatbuffers.Builder, location: int):
     ExtraTensorInfoAddLocation(builder, location)
 
+def ExtraTensorInfoAddDeviceType(builder: flatbuffers.Builder, deviceType: int):
+    builder.PrependInt8Slot(3, deviceType, 0)
+
+def AddDeviceType(builder: flatbuffers.Builder, deviceType: int):
+    ExtraTensorInfoAddDeviceType(builder, deviceType)
+
+def ExtraTensorInfoAddDeviceIndex(builder: flatbuffers.Builder, deviceIndex: int):
+    builder.PrependInt8Slot(4, deviceIndex, 0)
+
+def AddDeviceIndex(builder: flatbuffers.Builder, deviceIndex: int):
+    ExtraTensorInfoAddDeviceIndex(builder, deviceIndex)
+
 def ExtraTensorInfoEnd(builder: flatbuffers.Builder) -> int:
     return builder.EndObject()
 
@@ -89,6 +115,8 @@ class ExtraTensorInfoT(object):
         self.mutableDataSegmentsIdx = 0  # type: int
         self.fullyQualifiedName = None  # type: str
         self.location = 0  # type: int
+        self.deviceType = 0  # type: int
+        self.deviceIndex = 0  # type: int
 
     @classmethod
     def InitFromBuf(cls, buf, pos):
@@ -111,7 +139,9 @@ class ExtraTensorInfoT(object):
         return type(self) == type(other) and \
             self.mutableDataSegmentsIdx == other.mutableDataSegmentsIdx and \
             self.fullyQualifiedName == other.fullyQualifiedName and \
-            self.location == other.location
+            self.location == other.location and \
+            self.deviceType == other.deviceType and \
+            self.deviceIndex == other.deviceIndex
 
     # ExtraTensorInfoT
     def _UnPack(self, extraTensorInfo):
@@ -120,6 +150,8 @@ class ExtraTensorInfoT(object):
         self.mutableDataSegmentsIdx = extraTensorInfo.MutableDataSegmentsIdx()
         self.fullyQualifiedName = extraTensorInfo.FullyQualifiedName()
         self.location = extraTensorInfo.Location()
+        self.deviceType = extraTensorInfo.DeviceType()
+        self.deviceIndex = extraTensorInfo.DeviceIndex()
 
     # ExtraTensorInfoT
     def Pack(self, builder):
@@ -130,5 +162,7 @@ class ExtraTensorInfoT(object):
         if self.fullyQualifiedName is not None:
             ExtraTensorInfoAddFullyQualifiedName(builder, fullyQualifiedName)
         ExtraTensorInfoAddLocation(builder, self.location)
+        ExtraTensorInfoAddDeviceType(builder, self.deviceType)
+        ExtraTensorInfoAddDeviceIndex(builder, self.deviceIndex)
         extraTensorInfo = ExtraTensorInfoEnd(builder)
         return extraTensorInfo

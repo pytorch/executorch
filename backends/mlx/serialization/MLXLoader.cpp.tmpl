@@ -1,0 +1,324 @@
+// -*- c++ -*-
+
+#include "MLXLoader.h"
+
+#include <cstring>
+#include <stdexcept>
+
+namespace executorch {
+namespace backends {
+namespace mlx {
+namespace loader {
+
+namespace {
+
+// Header structure for MLX payload
+constexpr size_t kHeaderSize = 24;
+constexpr uint32_t kMagic = 0x30584C4D;  // "MLX0" in little-endian
+
+struct MLXHeader {
+  uint32_t padding;
+  uint32_t magic;
+  uint64_t data_offset;
+  uint64_t data_size;
+};
+static_assert(sizeof(MLXHeader) == kHeaderSize, "MLXHeader size mismatch");
+
+bool parse_header(const void* data, size_t size, MLXHeader& header) {
+  if (size < kHeaderSize) {
+    return false;
+  }
+  std::memcpy(&header, data, sizeof(MLXHeader));
+  if (header.magic != kMagic) {
+    return false;
+  }
+  // Validate data_offset: must be strictly greater than kHeaderSize (so the
+  // FlatBuffer region is non-empty) and must not exceed the total buffer size.
+  if (header.data_offset <= kHeaderSize || header.data_offset > size) {
+    return false;
+  }
+  return true;
+}
+
+// Helper to convert FlatBuffer vectors to std::vector.
+// Caps size to prevent unbounded allocations from malformed payloads.
+template <typename T>
+std::vector<T> to_vector(const flatbuffers::Vector<T>* fb_vec) {
+  if (!fb_vec) {
+    return {};
+  }
+  constexpr size_t kMaxVectorSize = 1'000'000;
+  if (fb_vec->size() > kMaxVectorSize) {
+    throw std::runtime_error(
+        "FlatBuffer vector size " + std::to_string(fb_vec->size()) +
+        " exceeds maximum of " + std::to_string(kMaxVectorSize));
+  }
+  return std::vector<T>(fb_vec->begin(), fb_vec->end());
+}
+
+}  // namespace
+
+// =============================================================================
+// load_instruction - AUTO-GENERATED switch statement
+// =============================================================================
+
+Instruction load_instruction(const mlx_delegate::Instruction* fb_instr) {
+  Instruction instr;
+
+  if (!fb_instr || !fb_instr->op()) {
+    instr.op = OpCode::NOOP;
+    instr.node = NoopNode{};
+    return instr;
+  }
+
+  auto op_type = fb_instr->op_type();
+
+  switch (op_type) {
+{{LOAD_INSTRUCTION_CASES}}
+    default:
+      throw std::runtime_error(
+          "Unknown op_type in load_instruction: " +
+          std::to_string(static_cast<int>(op_type)) +
+          ". The .pte was built with a newer schema than this binary. "
+          "Rebuild with the latest runtime.");
+  }
+
+  return instr;
+}
+
+// =============================================================================
+// load_program
+// =============================================================================
+
+MLXProgram load_program(const void* data, size_t size) {
+  MLXHeader header;
+  if (!parse_header(data, size, header)) {
+    throw std::runtime_error("Invalid MLX header");
+  }
+
+  // Defense-in-depth: parse_header already validates this, but guard the
+  // unsigned subtraction against underflow in case the call site ever changes.
+  if (header.data_offset <= kHeaderSize || header.data_offset > size) {
+    throw std::runtime_error("data_offset out of range");
+  }
+  const uint8_t* fb_data = static_cast<const uint8_t*>(data) + kHeaderSize;
+  size_t fb_size = header.data_offset - kHeaderSize;
+
+  flatbuffers::Verifier verifier(fb_data, fb_size);
+  if (!mlx_delegate::VerifyMLXGraphBuffer(verifier)) {
+    throw std::runtime_error("Invalid FlatBuffer data");
+  }
+
+  const auto* fb_graph = mlx_delegate::GetMLXGraph(fb_data);
+  if (!fb_graph) {
+    throw std::runtime_error("Failed to parse MLXGraph");
+  }
+
+  MLXProgram program;
+
+  if (fb_graph->version()) {
+    program.version = fb_graph->version()->str();
+  }
+
+  program.num_constant_tensors = fb_graph->num_constant_tensors();
+  program.num_input_tensors = fb_graph->num_input_tensors();
+  program.num_output_tensors = fb_graph->num_output_tensors();
+  program.num_mutable_buffer_tensors = fb_graph->num_mutable_buffer_tensors();
+  program.num_temp_tensors = fb_graph->num_temp_tensors();
+  program.num_values = fb_graph->num_values();
+
+  // Cap all counts/collection sizes to prevent unbounded allocations from
+  // malformed FlatBuffer payloads
+  constexpr size_t kMaxCollectionSize = 1'000'000;
+  auto check_collection_size = [](size_t sz, const char* name) {
+    if (sz > kMaxCollectionSize) {
+      throw std::runtime_error(
+          std::string("Malformed program: ") + name + " size " +
+          std::to_string(sz) + " exceeds maximum of " +
+          std::to_string(kMaxCollectionSize));
+    }
+  };
+
+  check_collection_size(program.num_tensors(), "num_tensors()");
+  check_collection_size(program.num_values, "num_values");
+
+  if (fb_graph->instruction_chains()) {
+    check_collection_size(fb_graph->instruction_chains()->size(), "instruction_chains");
+    program.instruction_chains.reserve(fb_graph->instruction_chains()->size());
+    for (size_t c = 0; c < fb_graph->instruction_chains()->size(); ++c) {
+      const auto* fb_chain = fb_graph->instruction_chains()->Get(static_cast<flatbuffers::uoffset_t>(c));
+      std::vector<Instruction> chain;
+      if (fb_chain && fb_chain->instructions()) {
+        check_collection_size(fb_chain->instructions()->size(), "instructions in chain");
+        chain.reserve(fb_chain->instructions()->size());
+        for (size_t i = 0; i < fb_chain->instructions()->size(); ++i) {
+          chain.push_back(load_instruction(fb_chain->instructions()->Get(static_cast<flatbuffers::uoffset_t>(i))));
+        }
+      }
+      program.instruction_chains.push_back(std::move(chain));
+    }
+  }
+
+  program.main_chain_idx = fb_graph->main_chain_idx();
+  program.init_chain_idx = fb_graph->init_chain_idx();
+
+  // Validate chain indices against actual instruction_chains size.
+  if (program.main_chain_idx >= program.instruction_chains.size()) {
+    throw std::runtime_error(
+        "Invalid main_chain_idx " +
+        std::to_string(program.main_chain_idx) +
+        " (only " + std::to_string(program.instruction_chains.size()) +
+        " chains loaded)");
+  }
+  if (program.init_chain_idx >= 0 &&
+      static_cast<uint32_t>(program.init_chain_idx) >=
+          program.instruction_chains.size()) {
+    throw std::runtime_error(
+        "Invalid init_chain_idx " +
+        std::to_string(program.init_chain_idx) +
+        " (only " + std::to_string(program.instruction_chains.size()) +
+        " chains loaded)");
+  }
+
+  if (fb_graph->input_map()) {
+    check_collection_size(fb_graph->input_map()->size(), "input_map");
+    for (size_t i = 0; i < fb_graph->input_map()->size(); ++i) {
+      const auto* slot = fb_graph->input_map()->Get(static_cast<flatbuffers::uoffset_t>(i));
+      auto sv = convert_slot_variant(slot);
+      if (sv.slot_type == SlotType::TensorSlot &&
+          sv.idx >= program.num_tensors()) {
+        throw std::runtime_error(
+            "input_map: slot index " + std::to_string(sv.idx) +
+            " exceeds num_tensors " +
+            std::to_string(program.num_tensors()));
+      }
+      program.input_map.push_back(sv);
+    }
+  }
+
+  if (fb_graph->output_map()) {
+    check_collection_size(fb_graph->output_map()->size(), "output_map");
+    for (size_t i = 0; i < fb_graph->output_map()->size(); ++i) {
+      const auto* slot = fb_graph->output_map()->Get(static_cast<flatbuffers::uoffset_t>(i));
+      auto sv = convert_slot_variant(slot);
+      if (sv.slot_type == SlotType::TensorSlot &&
+          sv.idx >= program.num_tensors()) {
+        throw std::runtime_error(
+            "output_map: slot index " + std::to_string(sv.idx) +
+            " exceeds num_tensors " +
+            std::to_string(program.num_tensors()));
+      }
+      program.output_map.push_back(sv);
+    }
+  }
+
+  if (fb_graph->mutable_buffer_map()) {
+    check_collection_size(fb_graph->mutable_buffer_map()->size(), "mutable_buffer_map");
+    for (size_t i = 0; i < fb_graph->mutable_buffer_map()->size(); ++i) {
+      const auto* slot = fb_graph->mutable_buffer_map()->Get(static_cast<flatbuffers::uoffset_t>(i));
+      auto sv = convert_slot_variant(slot);
+      if (sv.slot_type == SlotType::TensorSlot &&
+          sv.idx >= program.num_tensors()) {
+        throw std::runtime_error(
+            "mutable_buffer_map: slot index " + std::to_string(sv.idx) +
+            " exceeds num_tensors " +
+            std::to_string(program.num_tensors()));
+      }
+      program.mutable_buffer_map.push_back(sv);
+    }
+  }
+
+  if (fb_graph->named_slots()) {
+    check_collection_size(fb_graph->named_slots()->size(), "named_slots");
+    for (size_t i = 0; i < fb_graph->named_slots()->size(); ++i) {
+      const auto* fb_slot = fb_graph->named_slots()->Get(static_cast<flatbuffers::uoffset_t>(i));
+      if (!fb_slot || !fb_slot->name()) {
+        throw std::runtime_error(
+            "Malformed program: named_slot at index " + std::to_string(i) +
+            " is null or has null name");
+      }
+      NamedSlot slot;
+      slot.name = fb_slot->name()->str();
+      slot.slot = convert_slot_variant(fb_slot->slot());
+      program.named_slots.push_back(std::move(slot));
+    }
+  }
+
+  if (fb_graph->tensor_meta()) {
+    check_collection_size(fb_graph->tensor_meta()->size(), "tensor_meta");
+    for (size_t i = 0; i < fb_graph->tensor_meta()->size(); ++i) {
+      const auto* fb_meta = fb_graph->tensor_meta()->Get(static_cast<flatbuffers::uoffset_t>(i));
+      if (fb_meta) {
+        TensorMeta meta;
+        if (fb_meta->shape()) {
+          // Validate tensor rank against kTensorDimensionLimit to prevent
+          // stack overflows from unchecked rank
+          constexpr size_t kTensorDimensionLimit = 16;
+          if (fb_meta->shape()->size() > kTensorDimensionLimit) {
+            throw std::runtime_error(
+                "Tensor at index " + std::to_string(i) +
+                " has rank " + std::to_string(fb_meta->shape()->size()) +
+                " exceeding kTensorDimensionLimit (" +
+                std::to_string(kTensorDimensionLimit) + ")");
+          }
+          for (size_t j = 0; j < fb_meta->shape()->size(); ++j) {
+            const auto* fb_dim = fb_meta->shape()->Get(static_cast<flatbuffers::uoffset_t>(j));
+            if (!fb_dim) {
+              throw std::runtime_error(
+                  "Null ShapeDim at index " + std::to_string(j) +
+                  " in tensor_meta " + std::to_string(i));
+            }
+            ShapeDim dim;
+            dim.value = fb_dim->value();
+            dim.min_value = fb_dim->min_value();
+            dim.max_value = fb_dim->max_value();
+            if (dim.value < -1) {
+              throw std::runtime_error(
+                  "Invalid ShapeDim value " + std::to_string(dim.value) +
+                  " at index " + std::to_string(j) +
+                  " in tensor_meta " + std::to_string(i));
+            }
+            if (dim.is_dynamic()) {
+              if (dim.min_value < 0) {
+                throw std::runtime_error(
+                    "Invalid ShapeDim min_value " + std::to_string(dim.min_value) +
+                    " at index " + std::to_string(j) +
+                    " in tensor_meta " + std::to_string(i));
+              }
+              if (dim.max_value != -1 && dim.max_value < dim.min_value) {
+                throw std::runtime_error(
+                    "ShapeDim max_value " + std::to_string(dim.max_value) +
+                    " < min_value " + std::to_string(dim.min_value) +
+                    " at index " + std::to_string(j) +
+                    " in tensor_meta " + std::to_string(i));
+              }
+            }
+            meta.shape.push_back(dim);
+          }
+        }
+        auto raw_scalar_type = fb_meta->scalar_type();
+        if (raw_scalar_type < 0 ||
+            raw_scalar_type >=
+                static_cast<int8_t>(ScalarType::NumOptions)) {
+          throw std::runtime_error(
+              "Invalid scalar_type " + std::to_string(raw_scalar_type) +
+              " in tensor_meta at index " + std::to_string(i));
+        }
+        meta.scalar_type = static_cast<ScalarType>(raw_scalar_type);
+        if (fb_meta->dim_order()) {
+          meta.dim_order = to_vector(fb_meta->dim_order());
+        }
+        program.tensor_meta.push_back(std::move(meta));
+      } else {
+        program.tensor_meta.push_back(std::nullopt);
+      }
+    }
+  }
+
+  return program;
+}
+
+}  // namespace loader
+}  // namespace mlx
+}  // namespace backends
+}  // namespace executorch

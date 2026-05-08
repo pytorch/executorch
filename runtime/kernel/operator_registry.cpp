@@ -20,13 +20,26 @@ namespace ET_RUNTIME_NAMESPACE {
 namespace {
 
 // Maximum number of operators and their associated kernels that can be
-// registered.
-#ifdef MAX_KERNEL_NUM
+// registered. Resolution order:
+//   1. User-defined -DMAX_KERNEL_NUM wins.
+//   2. Otherwise, if selective build generated selected_max_kernel_num.h and
+//      it defines EXECUTORCH_SELECTED_MAX_KERNEL_NUM, use that. (When a
+//      selective-build YAML opts into all operators the header is emitted
+//      without the define, and we fall through.)
+//   3. Otherwise, fall back to a conservative default of 2000 slots.
+#if defined(MAX_KERNEL_NUM)
 constexpr uint32_t kMaxRegisteredKernels = MAX_KERNEL_NUM;
+#else
+#if __has_include(<executorch/runtime/kernel/selected_max_kernel_num.h>)
+#include <executorch/runtime/kernel/selected_max_kernel_num.h>
+#endif
+#if defined(EXECUTORCH_SELECTED_MAX_KERNEL_NUM)
+constexpr uint32_t kMaxRegisteredKernels = EXECUTORCH_SELECTED_MAX_KERNEL_NUM;
 #else
 constexpr uint32_t kMaxOperators = 250;
 constexpr uint32_t kMaxKernelsPerOp = 8;
 constexpr uint32_t kMaxRegisteredKernels = kMaxOperators * kMaxKernelsPerOp;
+#endif
 #endif
 
 // Data that backs the kernel table. Since Kernel has a custom default
@@ -88,6 +101,13 @@ Error register_kernels_internal(const Span<const Kernel> kernels) {
           kernel.kernel_key_ == k.kernel_key_) {
         ET_LOG(Error, "Re-registering %s, from %s", k.name_, lib_name);
         ET_LOG_KERNEL_KEY(k.kernel_key_);
+        ET_CHECK_MSG(
+            false,
+            "Kernel registration failed with error %" PRIu32
+            ", Re-registering %s, from %s",
+            static_cast<uint32_t>(Error::RegistrationAlreadyRegistered),
+            k.name_,
+            lib_name);
         return Error::RegistrationAlreadyRegistered;
       }
     }

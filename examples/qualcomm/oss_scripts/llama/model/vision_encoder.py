@@ -4,8 +4,6 @@
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
 
-from typing import Tuple
-
 import torch
 
 from executorch.examples.qualcomm.utils import replace_module_with_custom_class
@@ -177,11 +175,6 @@ class Idefics3VisionEncoder(Idefics3PreTrainedModel):
             extra_custom_kwargs={"config": config.vision_config},
         )
 
-    def preprocess(self, pixel_values: Tuple[torch.FloatTensor]) -> Tuple[torch.Tensor]:
-        # HTP Prepare failed when pixel_values has 5D dimension, so we squeeze the batch dimension here.
-        pixel_values = pixel_values[0]
-        return (pixel_values.squeeze(0),)
-
     def get_example_inputs(self):
         # pixel values - use config dimensions instead of hardcoded values
         return (
@@ -256,9 +249,6 @@ class InternVL3VisionEncoder(torch.nn.Module):
         self.config = config
         self.img_resized_h = img_resized_h
         self.img_resized_w = img_resized_w
-
-    def preprocess(self, pixel_values: Tuple[torch.FloatTensor]) -> Tuple[torch.Tensor]:
-        return pixel_values
 
     def get_example_inputs(self):
         # pixel values - use config dimensions instead of hardcoded values

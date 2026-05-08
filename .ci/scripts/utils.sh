@@ -53,7 +53,7 @@ dedupe_macos_loader_path_rpaths() {
   pushd ..
   torch_lib_dir=$(python -c "import importlib.util; print(importlib.util.find_spec('torch').submodule_search_locations[0])")/lib
   popd
-  
+
   if [[ -z "${torch_lib_dir}" || ! -d "${torch_lib_dir}" ]]; then
     return
   fi
@@ -105,7 +105,11 @@ install_pytorch_and_domains() {
   fi
   local python_version=$(python -c 'import platform; v=platform.python_version_tuple(); print(f"{v[0]}{v[1]}")')
   local torch_release=$(cat version.txt)
-  local torch_short_hash=${TORCH_VERSION:0:7}
+  # Download key must match the upload key below (basename of dist/*.whl,
+  # which always carries setup.py's resolved +gitHASH). Branch-ref pins
+  # like `release/2.11` would otherwise produce `+gitrelease` here and
+  # never hit the cache.
+  local torch_short_hash=$(git rev-parse --short=7 HEAD)
   local torch_wheel_path="cached_artifacts/pytorch/executorch/pytorch_wheels/${system_name}/${python_version}"
   local torch_wheel_name="torch-${torch_release}%2Bgit${torch_short_hash}-cp${python_version}-cp${python_version}-${platform:-}.whl"
 
@@ -127,6 +131,30 @@ install_pytorch_and_domains() {
     USE_DISTRIBUTED=1 python setup.py bdist_wheel
     pip install "$(echo dist/*.whl)"
 
+    # Invariant: the basename setup.py just produced must match the cache
+    # URL we'd reconstruct on the next run. If they diverge (someone edits
+    # torch_wheel_name above, or PyTorch renames its wheels), the cache
+    # will silently miss and every macOS run will fall back to a ~30-min
+    # source build. Fail loudly so the regression is caught immediately.
+    shopt -s nullglob
+    local built_wheels=(dist/*.whl)
+    shopt -u nullglob
+    if [[ ${#built_wheels[@]} -ne 1 ]]; then
+      echo "ERROR: expected exactly 1 wheel in dist/, found ${#built_wheels[@]}" >&2
+      exit 1
+    fi
+    local built_wheel_name
+    built_wheel_name=$(basename "${built_wheels[0]}")
+    local expected_wheel_name="${torch_wheel_name//\%2B/+}"
+    if [[ "${built_wheel_name}" != "${expected_wheel_name}" ]]; then
+      echo "ERROR: built torch wheel name does not match cache URL key:" >&2
+      echo "  built:    ${built_wheel_name}" >&2
+      echo "  expected: ${expected_wheel_name}" >&2
+      echo "Fix torch_wheel_name construction in install_pytorch_and_domains" >&2
+      echo "in .ci/scripts/utils.sh" >&2
+      exit 1
+    fi
+
     # Only AWS runners have access to S3
     if command -v aws && [[ -z "${GITHUB_RUNNER:-}" ]]; then
       for wheel_path in dist/*.whl; do
@@ -141,9 +169,9 @@ install_pytorch_and_domains() {
 
   dedupe_macos_loader_path_rpaths
   # Grab the pinned audio and vision commits from PyTorch
-  TORCHAUDIO_VERSION=$(cat .github/ci_commit_pins/audio.txt)
+  TORCHAUDIO_VERSION=release/2.11
   export TORCHAUDIO_VERSION
-  TORCHVISION_VERSION=$(cat .github/ci_commit_pins/vision.txt)
+  TORCHVISION_VERSION=release/0.26
   export TORCHVISION_VERSION
 
   install_domains
