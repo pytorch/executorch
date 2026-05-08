@@ -1,7 +1,7 @@
 # Copyright (c) 2025 Petri Oksanen
 # Copyright (c) Meta Platforms, Inc. and affiliates.
 # All rights reserved.
-# Copyright 2025 Arm Limited and/or its affiliates.
+# Copyright 2025-2026 Arm Limited and/or its affiliates.
 #
 # SPDX-License-Identifier: Apache-2.0
 
@@ -48,5 +48,35 @@ config EXECUTORCH_BUILD_PORTABLE_OPS
 	  available operators. When disabled, you should use selective
 	  operator building to include only needed operators, but the
 	  underlying kernel implementations will still be available.
+
+config EXECUTORCH_EXPORT_PYTHON_SCRIPT
+	string "Python exporter script"
+	default ""
+	help
+	  Optional Python script run during CMake configure to generate the
+	  model file embedded by the sample or application.
+
+config EXECUTORCH_EXPORT_PYTHON_ARGS
+	string "Python exporter arguments"
+	default ""
+	help
+	  Optional extra command-line arguments appended when invoking
+	  CONFIG_EXECUTORCH_EXPORT_PYTHON_SCRIPT. Use this for exporter-
+	  specific lowering flags such as backend or target selection.
+
+config EXECUTORCH_EXPORT_PYTHON_DEPENDENCIES
+	string "Python exporter dependency files"
+	default ""
+	help
+	  Optional space-separated list of files that should trigger CMake
+	  reconfigure when changed. Use this for local Python helper modules or
+	  other side files imported by CONFIG_EXECUTORCH_EXPORT_PYTHON_SCRIPT.
+
+config EXECUTORCH_EXPORT_PYTHON_GENERATED_OUTPUT
+	string "Python exporter generated output path"
+	default ""
+	help
+	  Optional output path that Zephyr expects the exporter script to
+	  write. Relative paths are resolved from the sample build directory.
 
 endif # EXECUTORCH

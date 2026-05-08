@@ -2,7 +2,9 @@
 
 **ExecuTorch** is PyTorch's unified solution for deploying AI models on-device—from smartphones to microcontrollers—built for privacy, performance, and portability. It powers Meta's on-device AI across **Instagram, WhatsApp, Quest 3, Ray-Ban Meta Smart Glasses**, and [more](https://docs.pytorch.org/executorch/main/success-stories.html).
 
-This folder adds ExecuTorch so it can be build and run in the Zephyr project as a external module. This includes an example under zephyr/samples/hello-executorch of running executor runners with Arm&reg; Ethos&trade;-U backend on a Corstone&trade; FVP, targeting the Zephyr RTOS.
+This folder integrates ExecuTorch as a Zephyr module. It also contains sample
+applications under `zephyr/samples/`, including
+`zephyr/samples/hello-executorch` for embedding and running a `.pte` model.
 
 # Requirements
 
@@ -34,11 +36,15 @@ export ZEPHYR_SDK_INSTALL_DIR=<PATH-TO-ZEPHYR-SDK>
 
 # Usage with Zephyr
 
-To pull in ExecuTorch as a Zephyr module, either add it as a West project in the west.yaml file or pull it in by adding a submanifest (e.g. zephyr/submanifests/executorch.yaml)
+To pull in ExecuTorch as a Zephyr module, either add it as a West project in
+`west.yaml` or include it through a submanifest such as
+`zephyr/submanifests/executorch.yaml`.
 
 # Create executorch.yaml under zephyr/submanifests
 
-There is an example executorch.yaml in this folder you can copy or just create a new file <zephyr_build_root>/zephyr/submanifests/executorch.yaml with the following content:
+There is an example `executorch.yaml` in this folder you can copy, or you can
+create `<zephyr_build_root>/zephyr/submanifests/executorch.yaml` with the
+following content:
 
 <zephyr_build_root>/zephyr/submanifests/executorch.yaml
 ```
@@ -52,7 +58,7 @@ manifest:
 
 ## Run west config and update:
 
-Add ExecuTorch and Ethos-U driver to Zephyr
+Add ExecuTorch and Ethos&trade;-U driver to Zephyr
 <!-- RUN west_config -->
 ```
 west config manifest.project-filter -- -.*,+zephyr,+executorch,+cmsis,+cmsis_6,+cmsis-nn,+hal_ethos_u
@@ -71,9 +77,11 @@ git submodule update --init --recursive
 cd ../../..
 ```
 
-## Prepare Ethos-U tools like Vela compiler and Corstone 300/320 FVP
+## Prepare Ethos-U tools like Vela compiler and Corstone&trade; 300/320 FVP
 
-This is needed to convert python models to PTE files for Ethos-Ux5 and also installs Corstone 300/320 FVP so you can run and test.
+This installs the tools needed to export Python models to PTE files for
+Ethos-Ux5 and also installs the Corstone 300/320 FVPs used by the sample
+flows.
 
 Make sure to read and agree to the Corstone eula
 
@@ -89,6 +97,25 @@ modules/lib/executorch/examples/arm/setup.sh --i-agree-to-the-contained-eula
 Build and run instructions for simple Zephyr minimal example setup is documented in
 [`zephyr/samples/hello-executorch/README.md`](samples/hello-executorch/README.md).
 
+## Model export config
+
+Zephyr samples can auto-generate a `.pte` file during CMake configure by using
+the `CONFIG_EXECUTORCH_EXPORT_PYTHON_*` Kconfig options in `prj.conf` or in a
+board-specific `boards/*.conf` file.
+
+- `CONFIG_EXECUTORCH_EXPORT_PYTHON_SCRIPT` selects the Python exporter script to
+  run.
+- `CONFIG_EXECUTORCH_EXPORT_PYTHON_ARGS` passes extra arguments to that script.
+- `CONFIG_EXECUTORCH_EXPORT_PYTHON_DEPENDENCIES` lists local helper files that
+  should trigger reconfigure when changed.
+- `CONFIG_EXECUTORCH_EXPORT_PYTHON_GENERATED_OUTPUT` tells Zephyr which output
+  file the script is expected to write.
+
+These settings can be overridden per board in `boards/<board>.conf`, which is
+useful when different targets need different exporter scripts or generated model
+file names. The `hello-executorch` sample uses this to select different default
+exporters for Corstone-300 and Corstone-320.
+
 ## Notable files
 
 # executorch.yaml
@@ -97,7 +124,10 @@ Copy this to <zephyr_build_root>/zephyr/submanifests/
 
 # module.yml
 
-Do not remove this file. As mentioned in the official Zephyr [documenation](https://docs.zephyrproject.org/latest/develop/modules.html), for Executorch to be built as Zephyr module, the file `zephyr/module.yml` must exist at the top level directory in the project.
+Do not remove this file. As described in the official Zephyr
+[documentation](https://docs.zephyrproject.org/latest/develop/modules.html),
+`zephyr/module.yml` must exist at the top level of the project for ExecuTorch
+to be discovered as a Zephyr module.
 
 # Reference
 

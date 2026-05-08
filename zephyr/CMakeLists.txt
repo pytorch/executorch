@@ -11,6 +11,7 @@ if(CONFIG_EXECUTORCH)
 
   set(EXECUTORCH_DIR ${ZEPHYR_CURRENT_MODULE_DIR})
   message(STATUS "EXECUTORCH_DIR set to: ${EXECUTORCH_DIR}")
+  include(${EXECUTORCH_DIR}/zephyr/ExecuTorchZephyrModel.cmake)
   include(${EXECUTORCH_DIR}/tools/cmake/common/preset.cmake)
   include(${EXECUTORCH_DIR}/tools/cmake/preset/zephyr.cmake)
 

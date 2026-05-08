@@ -1,0 +1,11 @@
+sample:
+  name: ExecuTorch Hello
+  description: Minimal ExecuTorch sample using a tiny x + x model on Zephyr
+common:
+  tags:
+    - executorch
+    - ml
+    - cortex-m
+    - ethos-u
+  depends_on:
+    - executorch

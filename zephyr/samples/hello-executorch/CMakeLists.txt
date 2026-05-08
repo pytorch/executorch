@@ -21,69 +21,9 @@ set(ET_PTE_FILE_PATH
     CACHE FILEPATH "Path to the ExecuTorch .pte (or .bpte) model to embed"
 )
 set(ET_PTE_SECTION
-    "network_model_sec"
+    ".rodata"
     CACHE STRING "Section attribute used for the generated model data"
 )
-
-if(NOT ET_PTE_FILE_PATH)
-  message(
-    FATAL_ERROR
-      "ET_PTE_FILE_PATH must point to the ExecuTorch .pte (or .bpte) model to embed."
-  )
-endif()
-
-if(NOT IS_ABSOLUTE "${ET_PTE_FILE_PATH}")
-  get_filename_component(
-    ET_PTE_FILE_PATH "${ET_PTE_FILE_PATH}" ABSOLUTE BASE_DIR
-    "${CMAKE_CURRENT_SOURCE_DIR}"
-  )
-endif()
-
-if(NOT EXISTS "${ET_PTE_FILE_PATH}")
-  message(
-    FATAL_ERROR
-      "Could not find ExecuTorch model at ET_PTE_FILE_PATH: ${ET_PTE_FILE_PATH}"
-  )
-endif()
-
-set(ET_PTE_FILE_PATH
-    "${ET_PTE_FILE_PATH}"
-    CACHE FILEPATH "Path to the ExecuTorch .pte (or .bpte) model to embed"
-          FORCE
-)
-
-execute_process(
-  COMMAND
-    python "${CMAKE_CURRENT_LIST_DIR}/../../../codegen/tools/gen_oplist.py"
-    --model_file_path=${ET_PTE_FILE_PATH}
-    --output_path=${CMAKE_CURRENT_BINARY_DIR}/temp.yaml
-  OUTPUT_VARIABLE CMD_RESULT
-)
-
-if(CMD_RESULT MATCHES "aten::" OR CMD_RESULT MATCHES "dim_order_ops::")
-  set(FOUND_OPS_IN_FILE "true")
-else()
-  set(FOUND_OPS_IN_FILE "false")
-endif()
-
-if(${FOUND_OPS_IN_FILE})
-  set(EXECUTORCH_SELECT_OPS_LIST "")
-  set(EXECUTORCH_SELECT_OPS_MODEL
-      "${ET_PTE_FILE_PATH}"
-      CACHE STRING "Select operators from this ExecuTorch model" FORCE
-  )
-  set(_EXECUTORCH_GEN_ZEPHYR_PORTABLE_OPS ON)
-  message(
-    "gen_oplist:  EXECUTORCH_SELECT_OPS_MODEL=${ET_PTE_FILE_PATH} is used to auto generate ops from"
-  )
-else()
-  set(EXECUTORCH_SELECT_OPS_LIST "")
-  set(EXECUTORCH_SELECT_OPS_MODEL "")
-  set(_EXECUTORCH_GEN_ZEPHYR_PORTABLE_OPS OFF)
-  message(
-    "gen_oplist: No non delagated ops was found in ${ET_PTE_FILE_PATH} no ops added to build"
-  )
-endif()
 
 find_package(Zephyr REQUIRED HINTS $ENV{ZEPHYR_BASE})
 project(executorch_executor_runner)
@@ -121,6 +61,8 @@ if(NOT DEFINED EXECUTORCH_DIR)
 else()
   message(STATUS "Using predefined EXECUTORCH_DIR=${EXECUTORCH_DIR}")
 endif()
+
+executorch_zephyr_prepare_model_for_build(ET_PTE_FILE_PATH)
 
 # Set EXECUTORCH_ROOT for the Codegen.cmake file
 set(EXECUTORCH_ROOT ${EXECUTORCH_DIR})
@@ -197,20 +139,7 @@ set(app_sources
 )
 target_sources(app PRIVATE ${app_sources})
 
-set(_model_pte_header ${CMAKE_CURRENT_BINARY_DIR}/model_pte.h)
-add_custom_command(
-  OUTPUT ${_model_pte_header}
-  COMMAND
-    ${Python3_EXECUTABLE}
-    ${EXECUTORCH_DIR}/examples/arm/executor_runner/pte_to_header.py --pte
-    ${ET_PTE_FILE_PATH} --outdir ${CMAKE_CURRENT_BINARY_DIR} --section
-    ${ET_PTE_SECTION}
-  DEPENDS ${ET_PTE_FILE_PATH}
-          ${EXECUTORCH_DIR}/examples/arm/executor_runner/pte_to_header.py
-  COMMENT "Converting ${ET_PTE_FILE_PATH} to model_pte.h"
-)
-add_custom_target(gen_model_header DEPENDS ${_model_pte_header})
-add_dependencies(app gen_model_header)
+executorch_zephyr_add_model_header(app ${ET_PTE_FILE_PATH} ${ET_PTE_SECTION})
 
 if(DEFINED CONFIG_EXECUTORCH_METHOD_ALLOCATOR_POOL_SIZE)
   target_compile_definitions(
@@ -258,6 +187,6 @@ if(TARGET ethosu_core_driver)
 endif()
 
 # Add include directories for sources and generated headers
-target_include_directories(app PRIVATE src ${CMAKE_CURRENT_BINARY_DIR})
+target_include_directories(app PRIVATE src)
 get_target_property(OUT app LINK_LIBRARIES)
 message(STATUS ${OUT})

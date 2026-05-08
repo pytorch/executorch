@@ -61,10 +61,8 @@ using executorch::runtime::TensorInfo;
 /**
  * The method_allocation_pool should be large enough to fit the setup, input
  * used and other data used like the planned memory pool (e.g. memory-planned
- * buffers to use for mutable tensor data) In this example we run on a
- * Corstone-3xx FVP so we can use a lot of memory to be able to run and test
- * large models if you run on HW this should be lowered to fit into your
- * availible memory.
+ * buffers to use for mutable tensor data) This should be lowered to fit into
+ * your available memory.
  */
 
 #if !defined(ET_ARM_METHOD_ALLOCATOR_POOL_SIZE)
@@ -267,6 +265,12 @@ int main(int argc, const char* argv[]) {
       "Setup Method allocator pool. Size: %zu bytes.",
       method_allocation_pool_size);
 
+  /** ArmMemoryAllocator is just a subclass of
+   * executorch::runtime::MemoryAllocator that adds some info about usage that
+   * is used for the logs in the end. You can use the MemoryAllocator interface
+   * directly if you don't need that extra info and want to save a few bytes.
+   */
+
   ArmMemoryAllocator method_allocator(
       method_allocation_pool_size, method_allocation_pool);
 
@@ -281,7 +285,6 @@ int main(int argc, const char* argv[]) {
         static_cast<size_t>(method_meta->memory_planned_buffer_size(id).get());
     ET_LOG(Info, "Setting up planned buffer %zu, size %zu.", id, buffer_size);
 
-    /* Move to it's own allocator when MemoryPlanner is in place. */
     uint8_t* buffer =
         reinterpret_cast<uint8_t*>(method_allocator.allocate(buffer_size));
     ET_CHECK_MSG(
@@ -428,61 +431,63 @@ int main(int argc, const char* argv[]) {
 
   if (status != Error::Ok) {
     ET_LOG(
-        Info,
+        Error,
         "Execution of method %s failed with status 0x%" PRIx32,
         method_name,
         static_cast<uint32_t>(status));
+    ET_LOG(Error, "ERROR \04");
+    return -1;
   } else {
     ET_LOG(Info, "Model executed successfully.");
+    std::vector<EValue> outputs(method->outputs_size());
+    status = method->get_outputs(outputs.data(), outputs.size());
+    ET_CHECK(status == Error::Ok);
+
+    ET_LOG(Info, "Model outputs:");
+    for (size_t i = 0; i < outputs.size(); ++i) {
+      if (!outputs[i].isTensor()) {
+        ET_LOG(Info, "  output[%zu]: non-tensor value", i);
+        continue;
+      }
+      Tensor tensor = outputs[i].toTensor();
+      ET_LOG(
+          Info,
+          "  output[%zu]: tensor scalar_type=%s numel=%zd",
+          i,
+          executorch::runtime::toString(tensor.scalar_type()),
+          tensor.numel());
+      switch (tensor.scalar_type()) {
+        case ScalarType::Int: {
+          const int* data = tensor.const_data_ptr<int>();
+          for (ssize_t j = 0; j < tensor.numel(); ++j) {
+            ET_LOG(Info, "    [%zd] = %d", j, data[j]);
+          }
+          break;
+        }
+        case ScalarType::Float: {
+          const float* data = tensor.const_data_ptr<float>();
+          for (ssize_t j = 0; j < tensor.numel(); ++j) {
+            ET_LOG(Info, "    [%zd] = %f", j, static_cast<double>(data[j]));
+          }
+          break;
+        }
+        case ScalarType::Char: {
+          const int8_t* data = tensor.const_data_ptr<int8_t>();
+          for (ssize_t j = 0; j < tensor.numel(); ++j) {
+            ET_LOG(Info, "    [%zd] = %d", j, data[j]);
+          }
+          break;
+        }
+        default:
+          ET_LOG(
+              Info,
+              "    (%s tensor dump skipped)",
+              executorch::runtime::toString(tensor.scalar_type()));
+      }
+    }
+    ET_LOG(Info, "SUCCESS: Program complete, exiting.");
   }
 
-  std::vector<EValue> outputs(method->outputs_size());
-  status = method->get_outputs(outputs.data(), outputs.size());
-  ET_CHECK(status == Error::Ok);
-
-  ET_LOG(Info, "Model outputs:");
-  for (size_t i = 0; i < outputs.size(); ++i) {
-    if (!outputs[i].isTensor()) {
-      ET_LOG(Info, "  output[%zu]: non-tensor value", i);
-      continue;
-    }
-    Tensor tensor = outputs[i].toTensor();
-    ET_LOG(
-        Info,
-        "  output[%zu]: tensor scalar_type=%s numel=%zd",
-        i,
-        executorch::runtime::toString(tensor.scalar_type()),
-        tensor.numel());
-    switch (tensor.scalar_type()) {
-      case ScalarType::Int: {
-        const int* data = tensor.const_data_ptr<int>();
-        for (ssize_t j = 0; j < tensor.numel(); ++j) {
-          ET_LOG(Info, "    [%zd] = %d", j, data[j]);
-        }
-        break;
-      }
-      case ScalarType::Float: {
-        const float* data = tensor.const_data_ptr<float>();
-        for (ssize_t j = 0; j < tensor.numel(); ++j) {
-          ET_LOG(Info, "    [%zd] = %f", j, static_cast<double>(data[j]));
-        }
-        break;
-      }
-      case ScalarType::Char: {
-        const int8_t* data = tensor.const_data_ptr<int8_t>();
-        for (ssize_t j = 0; j < tensor.numel(); ++j) {
-          ET_LOG(Info, "    [%zd] = %d", j, data[j]);
-        }
-        break;
-      }
-      default:
-        ET_LOG(
-            Info,
-            "    (%s tensor dump skipped)",
-            executorch::runtime::toString(tensor.scalar_type()));
-    }
-  }
-  ET_LOG(Info, "SUCCESS: Program complete, exiting.");
   ET_LOG(Info, "\04");
   return 0;
 }
