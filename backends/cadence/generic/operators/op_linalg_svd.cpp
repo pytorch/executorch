@@ -323,6 +323,7 @@ std::tuple<Tensor&, Tensor&, Tensor&> linalg_svd_out(
 
   for (int i = 0; i < batch_size; i++) {
     int offset = i * 9;
+    int s_offset = i * 3;
     Matrix3x3 A_mat = {{
         {A_data[offset + 0], A_data[offset + 1], A_data[offset + 2]},
         {A_data[offset + 3], A_data[offset + 4], A_data[offset + 5]},
@@ -342,9 +343,9 @@ std::tuple<Tensor&, Tensor&, Tensor&> linalg_svd_out(
     U_data[offset + 7] = U_mat.m[2][1];
     U_data[offset + 8] = U_mat.m[2][2];
 
-    S_data[offset + 0] = S_mat.m[0][0];
-    S_data[offset + 1] = S_mat.m[1][1];
-    S_data[offset + 2] = S_mat.m[2][2];
+    S_data[s_offset + 0] = S_mat.m[0][0];
+    S_data[s_offset + 1] = S_mat.m[1][1];
+    S_data[s_offset + 2] = S_mat.m[2][2];
 
     Vh_data[offset + 0] = Vh_mat.m[0][0];
     Vh_data[offset + 1] = Vh_mat.m[0][1];

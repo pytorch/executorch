@@ -131,6 +131,9 @@ class Tester:
                 assert isinstance(self.example_inputs[arg_idx], torch.Tensor)
                 ex_shape = list(self.example_inputs[arg_idx].shape)
                 dynamic_dim_spec = self.dynamic_shapes[arg_idx]
+                if dynamic_dim_spec is None or dynamic_dim_spec == {}:
+                    input_shapes.append(torch.Size(ex_shape))
+                    continue
                 for dim_idx, dim_spec in dynamic_dim_spec.items():
                     assert dim_idx < len(ex_shape)
                     if isinstance(dim_spec, torch.export.dynamic_shapes._DerivedDim):

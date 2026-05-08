@@ -15,6 +15,7 @@
 template <typename T>
 struct TensorStruct {
   std::unique_ptr<executorch::aten::TensorImpl> tensor;
+  std::shared_ptr<std::vector<T>> buffer;
   T* data;
   // data size in bytes
   size_t size;

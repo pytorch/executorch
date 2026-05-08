@@ -29,6 +29,12 @@ struct TensorRef final {
   // This will be empty (default constructed) for the raw pointer constructor
   executorch::runtime::FreeableBuffer buffer;
 
+  // Number of PrepackNodes that still need to read from this TensorRef. When
+  // this reaches 0, the buffer can be safely freed. This prevents
+  // use-after-free when multiple PrepackNodes reference the same TensorRef
+  // (e.g. shared/tied weights).
+  int32_t prepack_use_count{0};
+
   explicit TensorRef(
       const std::vector<int64_t>& t_sizes,
       vkapi::ScalarType t_dtype,
@@ -44,8 +50,6 @@ struct TensorRef final {
     return utils::multiply_integers(sizes) * vkapi::element_size(dtype);
   }
 
-  // Manually free the buffer if needed (though it will be freed automatically
-  // on destruction)
   void free_buffer() {
     buffer.Free();
   }

@@ -82,7 +82,7 @@ program = edge_program.to_executorch(
         )
 ```
 
-Users attempting to write a custom memory planning algorithm should start by looking at [the greedy algorithm's implementation](https://github.com/pytorch/executorch/blob/d62c41ca86435e5316e7ed292b6d68aff27a2fb7/exir/memory_planning.py#L459C1-L459C12).
+Users attempting to write a custom memory planning algorithm should start by looking at [the greedy algorithm's implementation](https://github.com/pytorch/executorch/blob/main/exir/memory_planning.py#L801).
 
 ## Debugging Tool
 

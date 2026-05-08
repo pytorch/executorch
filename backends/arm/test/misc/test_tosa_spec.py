@@ -74,7 +74,7 @@ class TestTosaSpecification(unittest.TestCase):
     """Tests the TOSA specification class."""
 
     @parameterized.expand(test_valid_strings)  # type: ignore[misc]
-    def test_version_string_no_target(self, version_string: str, expected_type):
+    def test_version_string(self, version_string: str, expected_type):
         tosa_spec = TosaSpecification.create_from_string(version_string)
         assert isinstance(tosa_spec, expected_type)
         assert [profile in ["INT", "FP"] for profile in tosa_spec.profiles].count(
@@ -90,7 +90,7 @@ class TestTosaSpecification(unittest.TestCase):
         assert set(tosa_spec.extensions).issubset(allowed_extensions)
 
     @parameterized.expand(test_invalid_strings)  # type: ignore[misc]
-    def test_invalid_version_strings_no_target(self, version_string: str):
+    def test_invalid_version_strings(self, version_string: str):
         tosa_spec = None
         with self.assertRaises(ValueError):
             tosa_spec = TosaSpecification.create_from_string(version_string)
@@ -98,14 +98,12 @@ class TestTosaSpecification(unittest.TestCase):
         assert tosa_spec is None
 
     @parameterized.expand(test_valid_strings)
-    def test_correct_string_representation_no_target(
-        self, version_string: str, expected_type
-    ):
+    def test_correct_string_representation(self, version_string: str, expected_type):
         tosa_spec = TosaSpecification.create_from_string(version_string)
         assert isinstance(tosa_spec, expected_type)
         assert f"{tosa_spec}" == version_string
 
-    def test_supports_new_1_1_extensions_no_target(self):
+    def test_supports_new_1_1_extensions(self):
         fp_spec = TosaSpecification.create_from_string(
             "TOSA-1.1+FP+shape+int64+random+mxfp+blockscale_ue5m3"
         )
@@ -127,7 +125,7 @@ class TestTosaSpecification(unittest.TestCase):
 class TestTosaSpecMapping(unittest.TestCase):
     """Tests the TosaSpecMapping class."""
 
-    def test_mapping_no_target(self):
+    def test_mapping(self):
         mapping = TosaSpecMapping()
         mapping.add(TosaSpecification.create_from_string("TOSA-1.0+INT"), "A")
         # check that the mapping is correct
@@ -136,7 +134,7 @@ class TestTosaSpecMapping(unittest.TestCase):
         assert vals == ["A"]
         assert len(vals) == 1
 
-    def test_mapping_multiple_no_target(self):
+    def test_mapping_multiple(self):
         mapping = TosaSpecMapping()
         mapping.add(TosaSpecification.create_from_string("TOSA-1.0+INT"), "A")
         mapping.add(TosaSpecification.create_from_string("TOSA-1.0+INT"), "B")
@@ -146,7 +144,7 @@ class TestTosaSpecMapping(unittest.TestCase):
         assert vals == ["A", "B"]
         assert len(vals) == 2
 
-    def test_mapping_different_profiles_no_target(self):
+    def test_mapping_different_profiles(self):
         mapping = TosaSpecMapping()
         mapping.add(TosaSpecification.create_from_string("TOSA-1.0+INT"), "A")
         mapping.add(TosaSpecification.create_from_string("TOSA-1.0+FP"), "B")
@@ -159,7 +157,7 @@ class TestTosaSpecMapping(unittest.TestCase):
         assert len(vals_int) == 1
         assert len(vals_fp) == 1
 
-    def test_mapping_1_1_profiles_no_target(self):
+    def test_mapping_1_1_profiles(self):
         mapping = TosaSpecMapping()
         mapping.add(TosaSpecification.create_from_string("TOSA-1.1+INT"), "A")
         vals = mapping.get(TosaSpecification.create_from_string("TOSA-1.1+INT"))
@@ -167,7 +165,7 @@ class TestTosaSpecMapping(unittest.TestCase):
         assert vals == ["A"]
         assert len(vals) == 1
 
-    def test_mapping_different_profiles_combined_consumer_no_target(self):
+    def test_mapping_different_profiles_combined_consumer(self):
         mapping = TosaSpecMapping()
         mapping.add(TosaSpecification.create_from_string("TOSA-1.0+INT"), "A")
         mapping.add(TosaSpecification.create_from_string("TOSA-1.0+FP"), "B")
@@ -180,18 +178,18 @@ class TestTosaSpecMapping(unittest.TestCase):
         assert "B" in combined_vals
         assert len(combined_vals) == 2
 
-    def test_mapping_no_spec_no_target(self):
+    def test_mapping_no_spec(self):
         mapping = TosaSpecMapping()
         with self.assertRaises(KeyError):
             mapping.get(TosaSpecification.create_from_string("TOSA-1.0+INT"))
 
-    def test_mapping_no_values_for_spec_no_target(self):
+    def test_mapping_no_values_for_spec(self):
         mapping = TosaSpecMapping()
         mapping.add(TosaSpecification.create_from_string("TOSA-1.0+FP"), "A")
         with self.assertRaises(KeyError):
             mapping.get(TosaSpecification.create_from_string("TOSA-1.0+INT"))
 
-    def test_spec_with_different_profiles_no_target(self):
+    def test_spec_with_different_profiles(self):
         mapping = TosaSpecMapping()
         mapping.add(TosaSpecification.create_from_string("TOSA-1.0+FP"), "A")
         mapping.add(TosaSpecification.create_from_string("TOSA-1.0+INT"), "B")
@@ -208,20 +206,20 @@ class TestTosaSpecMapping(unittest.TestCase):
         assert len(vals_fp) == 1
         assert len(vals_int_fp) == 2
 
-    def test_combined_profiles_no_target(self):
+    def test_combined_profiles(self):
         mapping = TosaSpecMapping()
         with self.assertRaises(ValueError):
             # Don't allow multiple profiles in a single spec
             mapping.add(TosaSpecification.create_from_string("TOSA-1.0+INT+FP"), "A")
 
-    def test_spec_add_with_extension_no_target(self):
+    def test_spec_add_with_extension(self):
         mapping = TosaSpecMapping()
         with self.assertRaises(ValueError):
             mapping.add(
                 TosaSpecification.create_from_string("TOSA-1.0.0+INT+int16"), "A"
             )
 
-    def test_spec_non_canonical_key_no_target(self):
+    def test_spec_non_canonical_key(self):
         mapping = TosaSpecMapping()
         mapping.add(TosaSpecification.create_from_string("TOSA-1.0+INT"), "A")
 
