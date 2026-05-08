@@ -1,4 +1,4 @@
-# Copyright 2025 Arm Limited and/or its affiliates.
+# Copyright 2025-2026 Arm Limited and/or its affiliates.
 #
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
@@ -7,7 +7,7 @@ import logging
 import os
 
 from dataclasses import dataclass, field
-from typing import Callable
+from typing import Any, Callable
 
 from executorch.backends.test.harness import Tester
 from executorch.backends.test.harness.stages import Quantize
@@ -44,11 +44,30 @@ class TestFlow:
     skip_patterns: list[str] = field(default_factory=lambda: [])
     """ Tests with names containing any substrings in this list are skipped. """
 
+    param_skip_reasons: dict[str, dict[Any, str]] = field(default_factory=dict)
+    """ Skip tests with a given reason when a pytest parameter matches a given value."""
+
     supports_serialize: bool = True
     """ True if the test flow supports the Serialize stage. """
 
-    def should_skip_test(self, test_name: str) -> bool:
-        return any(pattern in test_name for pattern in self.skip_patterns)
+    def should_skip_test(
+        self, test_name: str, params: dict[str, Any] | None = None
+    ) -> tuple[bool, str]:
+        if any(pattern in test_name for pattern in self.skip_patterns):
+            return True, f"Skipped by {self.name} skip_patterns"
+
+        if params is None:
+            return False, ""
+
+        for param_name, values_to_skip in self.param_skip_reasons.items():
+            if param_name not in params:
+                continue
+
+            parameter = params[param_name]
+            if parameter in values_to_skip:
+                return True, values_to_skip[parameter]
+
+        return False, ""
 
     def __str__(self):
         return self.name
