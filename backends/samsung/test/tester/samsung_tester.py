@@ -20,9 +20,6 @@ from executorch.backends.samsung.test.utils.utils import TestConfig
 from executorch.backends.samsung.utils.export_utils import get_edge_compile_config
 from executorch.backends.test.harness import Tester as TesterBase
 from executorch.backends.test.harness.stages import StageType
-from executorch.backends.transforms.decompose_sdpa import (
-    DecomposeScaledDotProductAttention,
-)
 from executorch.exir import EdgeCompileConfig, to_edge_transform_and_lower
 from executorch.exir.backend.backend_details import CompileSpec
 
@@ -70,8 +67,6 @@ class Quantize(BaseStages.Quantize):
         captured_graph = export(artifact, inputs, strict=True).module()
 
         assert isinstance(captured_graph, torch.fx.GraphModule)
-
-        DecomposeScaledDotProductAttention()(captured_graph)
 
         if self.is_qat:
             prepared = prepare_qat_pt2e(captured_graph, self.quantizer)

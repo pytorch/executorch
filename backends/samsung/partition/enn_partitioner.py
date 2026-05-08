@@ -148,5 +148,6 @@ class EnnPartitioner(Partitioner):
             torch.ops.aten.layer_norm.default,
             torch.ops.aten.pixel_shuffle.default,
             torch.ops.aten.hardsigmoid.default,
+            torch.ops.aten.silu.default,
         ]
         return (ops_not_to_decompose, None)

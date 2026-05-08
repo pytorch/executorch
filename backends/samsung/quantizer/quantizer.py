@@ -7,6 +7,13 @@
 from typing import Callable, Sequence
 
 import torch
+
+from executorch.backends.transforms.decompose_einsum import DecomposeEinsum
+from executorch.backends.transforms.decompose_glu import DecomposeGlu
+from executorch.backends.transforms.decompose_sdpa import (
+    DecomposeScaledDotProductAttention,
+)
+from executorch.exir.passes import PassManager
 from torch.fx import GraphModule
 from torchao.quantization.pt2e.quantizer import Quantizer
 
@@ -27,6 +34,17 @@ class EnnQuantizer(Quantizer):
     def setup_precision(self, quant_dtype: Precision) -> None:
         assert quant_dtype in Precision, f"No support for Precision {quant_dtype}."
         self._precision = quant_dtype
+
+    def transform_for_annotation(self, model: GraphModule) -> GraphModule:
+        annotation_passes = PassManager(
+            passes=[
+                DecomposeScaledDotProductAttention(),
+                DecomposeGlu(),
+                DecomposeEinsum(),
+            ]
+        )
+        pass_result = annotation_passes(model)
+        return pass_result.graph_module
 
     def setup_quant_params(
         self, quant_dtype: Precision, is_per_channel=True, is_qat=False
