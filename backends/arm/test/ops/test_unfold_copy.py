@@ -161,12 +161,6 @@ def test_unfold_copy_u55_INT(test_data: input_params):
 @common.parametrize(
     "test_data",
     test_data_int | test_data_fp,
-    xfails={
-        "test_int8_3d_dim_neg1": "MLETORCH-1732: rand test fails",
-        "test_int32_4d_dim_neg1": "MLETORCH-1732: rand test fails",
-        "test_fp32_3d_dim_neg1": "MLETORCH-1732: rand test fails",
-        "test_fp32_4d_dim_neg1": "MLETORCH-1732: rand test fails",
-    },
 )
 @common.XfailIfNoCorstone320
 def test_unfold_copy_u85_INT(test_data: input_params):

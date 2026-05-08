@@ -268,3 +268,114 @@ def define_common_targets():
             "//executorch/exir/tests:test_memory_format_ops_pass_utils",
         ],
     )
+
+    # Shared permute optimization passes (used by both Cadence and Arm backends)
+    runtime.python_library(
+        name = "permute_pass_utils",
+        srcs = ["permute_pass_utils.py"],
+        visibility = [
+            "//executorch/backends/...",
+        ],
+        deps = [
+            "//caffe2:torch",
+            "//executorch/exir:pass_base",
+            "//executorch/exir/dialects:lib",
+        ],
+    )
+
+    runtime.python_library(
+        name = "fuse_cascaded_transpose_or_permute_ops",
+        srcs = ["fuse_cascaded_transpose_or_permute_ops.py"],
+        visibility = [
+            "//executorch/backends/...",
+        ],
+        deps = [
+            "//caffe2:torch",
+            "//executorch/exir/dialects:lib",
+            ":permute_pass_utils",
+        ],
+    )
+
+    runtime.python_library(
+        name = "fuse_cascaded_view_ops",
+        srcs = ["fuse_cascaded_view_ops.py"],
+        visibility = [
+            "//executorch/backends/...",
+        ],
+        deps = [
+            "//caffe2:torch",
+            "//executorch/exir/dialects:lib",
+            ":permute_pass_utils",
+        ],
+    )
+
+    runtime.python_library(
+        name = "fuse_transpose_or_permute_op_pairs_pass",
+        srcs = ["fuse_transpose_or_permute_op_pairs_pass.py"],
+        visibility = [
+            "//executorch/backends/...",
+        ],
+        deps = [
+            "//caffe2:torch",
+            "//executorch/exir:pass_base",
+            "//executorch/exir/dialects:lib",
+            ":permute_pass_utils",
+        ],
+    )
+
+    runtime.python_library(
+        name = "remove_permutes_around_elementwise_ops",
+        srcs = ["remove_permutes_around_elementwise_ops.py"],
+        visibility = [
+            "//executorch/backends/...",
+        ],
+        deps = [
+            "//caffe2:torch",
+            "//executorch/exir:pass_base",
+            "//executorch/exir/dialects:lib",
+        ],
+    )
+
+    runtime.python_library(
+        name = "postpone_permute_below_squeeze_view",
+        srcs = ["postpone_permute_below_squeeze_view.py"],
+        visibility = [
+            "//executorch/backends/...",
+        ],
+        deps = [
+            "//caffe2:torch",
+            "//executorch/exir:pass_base",
+            "//executorch/exir/dialects:lib",
+            ":permute_pass_utils",
+        ],
+    )
+
+    runtime.python_library(
+        name = "replace_nop_transpose_or_permute_with_view",
+        srcs = ["replace_nop_transpose_or_permute_with_view.py"],
+        visibility = [
+            "//executorch/backends/...",
+        ],
+        deps = [
+            "//caffe2:torch",
+            "//executorch/exir/dialects:lib",
+            ":permute_pass_utils",
+        ],
+    )
+
+    runtime.python_test(
+        name = "test_permute_optimization_passes",
+        srcs = [
+            "test/test_permute_optimization_passes.py",
+        ],
+        deps = [
+            "//caffe2:torch",
+            "//executorch/backends/test:graph_builder",
+            "//executorch/exir:pass_base",
+            "//executorch/exir/dialects:lib",
+            ":fuse_cascaded_transpose_or_permute_ops",
+            ":fuse_cascaded_view_ops",
+            ":postpone_permute_below_squeeze_view",
+            ":replace_nop_transpose_or_permute_with_view",
+        ],
+    )
