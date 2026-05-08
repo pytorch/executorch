@@ -306,6 +306,8 @@ jobs:
       timeout: 90
       script: |
         set -eux
+        # Disable HF Xet storage to avoid stalled downloads on CI runners
+        export HF_HUB_DISABLE_XET=1
 
         echo "::group::Install ExecuTorch"
         ${CONDA_RUN} python install_executorch.py > /dev/null
@@ -382,6 +384,8 @@ jobs:
       timeout: 90
       script: |
         set -eux
+        # Disable HF Xet storage to avoid stalled downloads on CI runners
+        export HF_HUB_DISABLE_XET=1
 
         echo "::group::Install ExecuTorch and configure MLX build"
         ${CONDA_RUN} python install_executorch.py > /dev/null
@@ -510,6 +514,8 @@ jobs:
       timeout: 90
       script: |
         set -eux
+        # Disable HF Xet storage to avoid stalled downloads on CI runners
+        export HF_HUB_DISABLE_XET=1
 
         MODEL_ID="${{ matrix.model.id }}"
         MODEL_NAME="${{ matrix.model.name }}"

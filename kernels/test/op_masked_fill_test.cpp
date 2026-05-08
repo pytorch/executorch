@@ -377,8 +377,8 @@ TEST_F(OpMaskedFillTest, DynamicShapeUpperBoundLargerThanExpected) {
   EXPECT_TENSOR_CLOSE(out, expected_result);
 }
 
-TEST_F(OpMaskedFillTest, DynamicShapeUnbound) {
-  GTEST_SKIP() << "Dynamic shape unbound not supported";
+// DISABLED: Dynamic shape unbound not supported
+TEST_F(OpMaskedFillTest, DISABLED_DynamicShapeUnbound) {
   TensorFactory<ScalarType::Float> tf;
   TensorFactory<ScalarType::Bool> bool_tf;
 

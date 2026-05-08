@@ -39,7 +39,7 @@ $ ./examples/nxp/setup.sh
 
 To test the eIQ Neutron Backend, both AoT flow for model preparation and Runtime for execution, refer to the [Getting started with eIQ Neutron NPU ExecuTorch backend](tutorials/nxp-basic-tutorial.md)
 
-For a quick overview how to convert a custom PyTorch model, take a look at our [example python script](https://github.com/pytorch/executorch/tree/release/1.0/examples/nxp/aot_neutron_compile.py).
+For a quick overview how to convert a custom PyTorch model, take a look at our [example python script](https://github.com/pytorch/executorch/tree/main/examples/nxp/aot_neutron_compile.py).
 
 
 ## Runtime Integration
