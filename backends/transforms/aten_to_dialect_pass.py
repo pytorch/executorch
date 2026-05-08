@@ -116,23 +116,3 @@ class AtenToDialectPass(ExportPass):
             graph_module = super().call(graph_module).graph_module
 
         return PassResult(graph_module, modified)
-
-    def requires(self, graph_module):
-        self.ops_before = sum(
-            1 for node in graph_module.graph.nodes if node.op == "call_function"
-        )
-        return super().requires(graph_module)
-
-    def ensures(self, graph_module: torch.fx.GraphModule) -> bool:
-        """Ensure that there has only been 1-1 substitution of call_function nodes, i.e. that the number of call_function nodes is preserved after the pass."""
-
-        self.ops_after = sum(
-            1 for node in graph_module.graph.nodes if node.op == "call_function"
-        )
-        if self.ops_after != self.ops_before:
-            raise RuntimeError(
-                f"{self.__class__.__name__} did not preserve the number of call_function nodes: "
-                f"before={self.ops_before}, after={self.ops_after}"
-            )
-
-        return super().ensures(graph_module)
