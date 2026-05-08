@@ -17,7 +17,7 @@ jobs:
   run:
     uses: pytorch/test-infra/.github/workflows/linux_job_v2.yml@main
     with:
-      runner: ubuntu-latest
+      runner: linux.2xlarge
       docker-image: ci-image:executorch-ubuntu-22.04-gcc11
       submodules: 'recursive'
       ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
