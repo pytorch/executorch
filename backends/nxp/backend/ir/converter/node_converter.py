@@ -325,6 +325,7 @@ class NodeConverter(ABC):
         :param node: The compute node.
         :param supported_types: List of supported quantization types.
         :param input_indices: List of indices into the `node.args`, or tuples of 2 indices into `node.args[idx1][idx2]`.
+                               If empty, no type checking is performed and `True` is returned.
         :return: True, if the `node` is QDQ quantized and has quantization input types in `supported_types`.
         """
         return all(
@@ -336,7 +337,7 @@ class NodeConverter(ABC):
     def uses_quantization_type_for_outputs(
         node: Node,
         supported_types: list[torch.dtype],
-        output_indices: list[int] | None = None,
+        output_indices: list[int],
     ):
         """Check if `node` uses the QDQ quantization schema and outputs on the provided indices use a quantization type
             that is in `supported_types`.
@@ -344,23 +345,22 @@ class NodeConverter(ABC):
         :param node: The compute node.
         :param supported_types: List of supported quantization types.
         :param output_indices: If the `node` has multiple outputs and therefore multiple `getitem` nodes follow it, the
-                                indices select the outputs to be checked.
+                                indices select the outputs to be checked. If no `getitem` nodes follow it, the operator
+                                produces only 1 output (most common case), and the value `[0]` must be used.
+                                If empty, no type checking is performed and `True` is returned.
         :return: True, if the `node` is QDQ quantized and has quantization output types in `supported_types`.
         """
-        if output_indices is None:
-            return output_quantization_type(node) in supported_types
-        else:
-            return all(
-                output_quantization_type(node, output_index) in supported_types
-                for output_index in output_indices
-            )
+        return all(
+            output_quantization_type(node, output_index) in supported_types
+            for output_index in output_indices
+        )
 
     @staticmethod
     def uses_quantization_type_for_io(
         node: Node,
         supported_types: list[torch.dtype],
         input_indices: list[int | tuple[int, int]],
-        output_indices: list[int] | None = None,
+        output_indices: list[int],
     ):
         """Check if `node` uses the QDQ quantization schema and inputs and outputs on the provided indices use a
             quantization type that is in `supported_types`.
@@ -368,8 +368,11 @@ class NodeConverter(ABC):
         :param node: The compute node.
         :param supported_types: List of supported quantization types.
         :param input_indices: List of indices into the `node.args`, or tuples of 2 indices into `node.args[idx1][idx2]`.
+                               If empty, no input type checking is performed.
         :param output_indices: If the `node` has multiple outputs and therefore multiple `getitem` nodes follow it, the
-                                indices select the outputs to be checked.
+                                indices select the outputs to be checked. If no `getitem` nodes follow it, the operator
+                                produces only 1 output (most common case), and the value `[0]` must be used.
+                                If empty, no output type checking is performed.
         :return: True, if the `node` is QDQ quantized and has quantization input types in `supported_types`.
         """
         return NodeConverter.uses_quantization_type_for_inputs(
