@@ -7,10 +7,17 @@ def define_common_targets():
     TARGETS and BUCK files that call this function.
     """
 
+    # Used by the INPUT_SCHEMA genrule in targets.bzl for OSS builds,
+    # where cross-package relative paths don't work in genrule srcs.
+    export_file(
+        name = "qc_compiler_spec.fbs",
+        visibility = ["PUBLIC"],
+    )
+
     export_file(
         name = "qc_compiler_spec_schema",
         src = "qc_compiler_spec.fbs",
-        visibility = ["//executorch/backends/qualcomm/serialization/..."],
+        visibility = ["PUBLIC"],
     )
 
     runtime.python_library(

@@ -152,6 +152,7 @@ constexpr const char* to_string(const Error error) {
     case Error::RegistrationAlreadyRegistered:
       return "Error::RegistrationAlreadyRegistered";
   }
+  return "Error::Unknown";
 }
 
 } // namespace runtime

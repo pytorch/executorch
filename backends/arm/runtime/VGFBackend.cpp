@@ -157,7 +157,8 @@ class VGFBackend final : public ::executorch::runtime::BackendInterface {
     new (repr) VgfRepr(
         vk_instance, vk_physical_device, vk_device, vk_queue, vk_command_pool);
 
-    auto valid_vgf = repr->process_vgf(vgf_data, compile_specs);
+    auto valid_vgf =
+        repr->process_vgf(vgf_data, processed->size(), compile_specs);
     if (!valid_vgf) {
       ET_LOG(Error, "Failed to process VGF blob.");
       return Error::Internal;
