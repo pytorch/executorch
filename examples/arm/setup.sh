@@ -182,11 +182,6 @@ function check_options() {
                 enable_vulkan_sdk=1
                 shift
                 ;;
-            --setup-test-dependency)
-                log_step "deps" "Installing test dependency..."
-                source $et_dir/backends/arm/scripts/install_models_for_test.sh
-                exit 0
-                ;;
             --help)
                 print_usage "$@"
                 exit 0
