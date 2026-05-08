@@ -10,8 +10,8 @@
 
 #include <executorch/backends/native/runtimes/metal/MetalEngine.h>
 
-#include <executorch/backends/portable/runtime/metal_v2/MetalOpRegistry.h>
-#include <executorch/backends/portable/runtime/metal_v2/MetalStream.h>
+#include <executorch/backends/metal/ops/registry/MetalOpRegistry.h>
+#include <executorch/backends/metal/core/MetalStream.h>
 
 #include <executorch/runtime/platform/log.h>
 

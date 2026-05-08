@@ -751,6 +751,10 @@ if(EXECUTORCH_BUILD_CUDA)
 endif()
 
 if(EXECUTORCH_BUILD_METAL)
+  # backends/metal is the runtime library (lives at backends/metal/).
+  # The AOTI v2 shim (backends/apple/metal) and any other consumers
+  # depend on this lib for the metal_v2 runtime types.
+  add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/backends/metal)
   add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/backends/apple/metal)
   list(APPEND _executorch_backends metal_backend)
 endif()

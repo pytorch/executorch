@@ -35,20 +35,43 @@ include(${EXECUTORCH_ROOT}/tools/cmake/Utils.cmake)
 find_package_torch()
 
 set(_aoti_metal_sources
-    runtime/metal_backend.cpp
     runtime/stats.cpp
+    # v1-only sources (no v2 replacement yet — built in both branches):
+    runtime/shims/utils.cpp
+)
+
+# AOTI shim layer: choose between v1 (vendored MLX qmv_fast for int4,
+# legacy stream/encoding/buffer-mgmt shims) and v2 (routes through
+# metal_v2::MetalStream + MetalOpRegistry → AffineQuantizedLinearOp,
+# SDPAOp with NAX / qmm_t / qmm_t_splitk dispatch + per-CB residency).
+#
+# v1 and v2 shim files share extern "C" symbol names (intentionally —
+# PTE files lower against the same AOTI shim ABI). They CANNOT coexist
+# in the same build; this if/else picks one.
+if(EXECUTORCH_USE_METAL_V2)
+  list(APPEND _aoti_metal_sources
+    runtime/metal_backend_v2.cpp
+    runtime/shims/v2/aoti_tensor.cpp
+    runtime/shims/v2/aoti_dtype_stubs.cpp
+    runtime/shims/v2/runtime.mm
+    runtime/shims/v2/aoti_kernel.mm
+    runtime/shims/v2/aoti_fallback_op.mm
+  )
+else()
+  list(APPEND _aoti_metal_sources
+    runtime/metal_backend.cpp
     runtime/shims/memory.cpp
     runtime/shims/et_metal.mm
     runtime/shims/shim_mps.mm
     runtime/shims/tensor_attribute.cpp
-    runtime/shims/utils.cpp
     runtime/ops/common.mm
     runtime/ops/op_bmm.mm
     runtime/ops/op_convolution.mm
     runtime/ops/op_linear_4bit.mm
     runtime/ops/op_mm.mm
     runtime/ops/op_sdpa.mm
-)
+  )
+endif()
 
 add_library(metal_backend STATIC ${_aoti_metal_sources})
 target_include_directories(
@@ -86,6 +109,14 @@ if(EXECUTORCH_METAL_COLLECT_STATS)
 endif()
 
 target_link_options(metal_backend PUBLIC -Wl,-export_dynamic)
+
+# Under the v2 shim path, metal_backend depends on the metal_v2 lib
+# (defined in backends/metal/) for MetalStream, MetalOpRegistry,
+# AffineQuantizedLinearOp, etc. PRIVATE link so it doesn't propagate
+# through install exports of metal_backend's downstream consumers.
+if(EXECUTORCH_USE_METAL_V2)
+  target_link_libraries(metal_backend PRIVATE metal_v2)
+endif()
 
 # Find PyTorch's OpenMP library specifically for libtorch-less AOTI
 get_torch_base_path(TORCH_BASE_PATH)

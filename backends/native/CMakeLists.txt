@@ -23,57 +23,23 @@ set(_portable_backend_v2__srcs
     ${CMAKE_CURRENT_SOURCE_DIR}/core/RuntimeRegistry.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/runtimes/cpu/CpuEngine.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/runtimes/cpu/CpuRuntime.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/runtimes/cpu/CpuOps.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/runtimes/host_pool/HostPoolEngine.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/routers/GreedyRouter.cpp
 )
 
-# Apple-only Metal provider. Reuses the existing metal_v2 .mm sources without
-# copying — we just compile them into this library directly. (We don't depend on
-# portable_backend's metal_v2 wiring because that's behind
-# EXECUTORCH_PORTABLE_USE_METAL_V2 and is currently broken on a stale
-# GpuStream.h import in MetalRuntime.mm — which we don't use.)
+# Apple-only Metal provider. Depends on the metal_v2 lib (defined in
+# backends/metal/CMakeLists.txt) for the underlying runtime types.
 if(APPLE)
   enable_language(OBJCXX)
-  set(_metal_v2_dir ${CMAKE_CURRENT_SOURCE_DIR}/../portable/runtime/metal_v2)
   list(
     APPEND
     _portable_backend_v2__srcs
-    # New runtime_v2/metal sources
+    # New runtime_v2/metal sources — native_backend's own metal provider
     ${CMAKE_CURRENT_SOURCE_DIR}/runtimes/metal/MetalBuffer.mm
     ${CMAKE_CURRENT_SOURCE_DIR}/runtimes/metal/MetalRuntime.mm
     ${CMAKE_CURRENT_SOURCE_DIR}/runtimes/metal/MetalEngine.mm
-    # Reused metal_v2 sources (compiled once into this lib)
-    ${_metal_v2_dir}/MetalStream.mm
-    ${_metal_v2_dir}/BufferRegistry.mm
-    ${_metal_v2_dir}/HazardTracker.mm
-    ${_metal_v2_dir}/MpsBridge.mm
-    ${_metal_v2_dir}/ResidencyManager.mm
-    ${_metal_v2_dir}/MetalMTL3Backend.mm
-    ${_metal_v2_dir}/MetalKernel.mm
-    ${_metal_v2_dir}/MetalKernelCompiler.mm
-    ${_metal_v2_dir}/MetalBufferPool.mm
-    ${_metal_v2_dir}/MetalHeap.mm
-    ${_metal_v2_dir}/MetalMTL4Backend.mm
-    ${_metal_v2_dir}/MetalOp.mm
-    ${_metal_v2_dir}/MetalOpRegistry.mm
-    ${_metal_v2_dir}/ops/AddMMOp.mm
-    ${_metal_v2_dir}/ops/BAddBMMOp.mm
-    ${_metal_v2_dir}/ops/BatchedMatMulOp.mm
-    ${_metal_v2_dir}/ops/BinaryOps.mm
-    ${_metal_v2_dir}/ops/UnaryOps.mm
-    ${_metal_v2_dir}/ops/MatMulOp.mm
-    ${_metal_v2_dir}/ops/SDPAOp.mm
-    ${_metal_v2_dir}/ops/AffineQuantizedLinearOp.mm
-    ${_metal_v2_dir}/ops/MPSGraphOp.mm
   )
-
-  # mlx_jit per-shape JIT path: generated snippets + KernelLoader.mm.
-  # Shared with backends/apple/metal/CMakeLists.txt via MlxJit.cmake.
-  # The custom-command guard inside MlxJit.cmake prevents duplicate
-  # OUTPUT-rule errors when both consumers are configured in the same
-  # build tree.
-  include(${_metal_v2_dir}/MlxJit.cmake)
-  add_metal_v2_mlx_jit_sources(_portable_backend_v2__srcs)
 endif()
 
 add_library(native_backend ${_portable_backend_v2__srcs})
@@ -92,21 +58,23 @@ target_include_directories(
                                          # "runtime_v2/api/GraphTypes.h" works
 )
 
-# Link the v1 portable_backend so we can reuse its Graph types and CpuOpRegistry
-# — note we depend on the *library*, not just headers, because cpu_op_registry()
-# is defined in CpuOps.cpp.
+# Link executorch_core (the minimal runtime) and program_schema (for
+# flatbuffer types). portable_ops_lib provides the underlying aten::*.out
+# kernel implementations that the CPU dispatcher routes to via its
+# default handler.
 target_link_libraries(
   native_backend PRIVATE executorch_core program_schema portable_ops_lib
-                              portable_backend
 )
 
 if(APPLE)
-  # Metal frameworks for the v2 metal provider + reused metal_v2 sources.
+  # metal_v2 lib provides MetalStream, BufferRegistry, ResidencyManager,
+  # MetalMTL{3,4}Backend, all metal ops, etc. — with matching ARC/MRC
+  # per-file flags and PUBLIC ET_METAL4_ENABLE / ET_METAL_USE_MPSGRAPH
+  # compile defs. Its PUBLIC link of executorch_core + Metal frameworks
+  # propagates to us.
   target_link_libraries(
     native_backend
-    PRIVATE "-framework Metal" "-framework Foundation"
-            "-framework MetalPerformanceShaders"
-            "-framework MetalPerformanceShadersGraph"
+    PRIVATE metal_v2
   )
   # Tell NativeBackend.cpp it can register MetalRuntime.
   target_compile_definitions(
@@ -114,8 +82,6 @@ if(APPLE)
   )
   # Mirror backends/apple/metal/CMakeLists.txt — enable TF32 by default for
   # fp32 NAX matmul / SDPA. Runtime env MLX_ENABLE_TF32 still overrides.
-  # Re-uses the same option name so a single -DEXECUTORCH_METAL_ENABLE_TF32_DEFAULT=ON/OFF
-  # at top-level configure controls both consumers consistently.
   if(NOT DEFINED EXECUTORCH_METAL_ENABLE_TF32_DEFAULT)
     option(EXECUTORCH_METAL_ENABLE_TF32_DEFAULT
            "Default fp32 NAX matmul/SDPA to TF32 (truncated mantissa) — runtime env MLX_ENABLE_TF32 still overrides"
@@ -128,34 +94,13 @@ if(APPLE)
       native_backend PRIVATE EXECUTORCH_METAL_TF32_DEFAULT_ENABLED=1
     )
   endif()
-  # All .mm files compile as Objective-C++ without ARC (memory managed manually;
-  # matches the existing metal_v2 build settings in
-  # backends/portable/CMakeLists.txt).
-  set(_objcxx_no_arc_files
-      ${CMAKE_CURRENT_SOURCE_DIR}/runtimes/metal/MetalBuffer.mm
-      ${CMAKE_CURRENT_SOURCE_DIR}/runtimes/metal/MetalRuntime.mm
-      ${CMAKE_CURRENT_SOURCE_DIR}/runtimes/metal/MetalEngine.mm
-      ${_metal_v2_dir}/MetalStream.mm
-      ${_metal_v2_dir}/MetalKernel.mm
-      ${_metal_v2_dir}/MetalKernelCompiler.mm
-      ${_metal_v2_dir}/MetalBufferPool.mm
-      ${_metal_v2_dir}/MetalHeap.mm
-      ${_metal_v2_dir}/MetalMTL4Backend.mm
-      ${_metal_v2_dir}/MetalOp.mm
-      ${_metal_v2_dir}/MetalOpRegistry.mm
-      ${_metal_v2_dir}/ops/AddMMOp.mm
-      ${_metal_v2_dir}/ops/BAddBMMOp.mm
-      ${_metal_v2_dir}/ops/BatchedMatMulOp.mm
-      ${_metal_v2_dir}/ops/BinaryOps.mm
-      ${_metal_v2_dir}/ops/UnaryOps.mm
-      ${_metal_v2_dir}/ops/MatMulOp.mm
-      ${_metal_v2_dir}/ops/SDPAOp.mm
-      ${_metal_v2_dir}/ops/AffineQuantizedLinearOp.mm
-      ${_metal_v2_dir}/ops/MPSGraphOp.mm
-  )
+  # native_backend's own runtimes/metal/*.mm files compile without ARC
+  # (memory managed manually). The metal_v2 lib handles its own files.
   set_source_files_properties(
-    ${_objcxx_no_arc_files} PROPERTIES LANGUAGE OBJCXX COMPILE_FLAGS
-                                                       "-fno-objc-arc"
+    ${CMAKE_CURRENT_SOURCE_DIR}/runtimes/metal/MetalBuffer.mm
+    ${CMAKE_CURRENT_SOURCE_DIR}/runtimes/metal/MetalRuntime.mm
+    ${CMAKE_CURRENT_SOURCE_DIR}/runtimes/metal/MetalEngine.mm
+    PROPERTIES COMPILE_FLAGS "-fno-objc-arc"
   )
 endif()
 
@@ -199,7 +144,6 @@ target_link_libraries(
           extension_flat_tensor
           portable_kernels
           portable_ops_lib
-          portable_backend
           "$<LINK_LIBRARY:WHOLE_ARCHIVE,native_backend>"
 )
 if(APPLE)
@@ -224,7 +168,6 @@ target_link_libraries(
           extension_flat_tensor
           portable_kernels
           portable_ops_lib
-          portable_backend
           "$<LINK_LIBRARY:WHOLE_ARCHIVE,native_backend>"
 )
 if(APPLE)
@@ -250,7 +193,6 @@ target_link_libraries(
           extension_flat_tensor
           portable_kernels
           portable_ops_lib
-          portable_backend
           "$<LINK_LIBRARY:WHOLE_ARCHIVE,native_backend>"
 )
 if(APPLE)
@@ -277,7 +219,6 @@ target_link_libraries(
           extension_flat_tensor
           portable_kernels
           portable_ops_lib
-          portable_backend
           "$<LINK_LIBRARY:WHOLE_ARCHIVE,native_backend>"
 )
 if(APPLE)

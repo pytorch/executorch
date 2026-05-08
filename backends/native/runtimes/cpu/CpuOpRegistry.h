@@ -15,7 +15,7 @@
  * CPU ops dispatch to ExecuTorch's existing portable kernel library.
  */
 
-#include <executorch/backends/portable/runtime/OpRegistry.h>
+#include <executorch/backends/native/api/OpRegistry.h>
 #include <executorch/runtime/core/evalue.h>
 #include <executorch/runtime/core/span.h>
 #include <executorch/runtime/kernel/kernel_runtime_context.h>

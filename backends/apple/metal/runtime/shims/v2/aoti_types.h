@@ -6,10 +6,7 @@
  * LICENSE file in the root directory of this source tree.
  */
 
-// SlimTensor-flavored types for the v2 AOTI Metal backend.
-//
-// The v2 backend uses SlimTensor (executorch::backends::aoti::slim::SlimTensor)
-// as its tensor type. This header is the v2 analogue of types.h.
+// Shared types for the v2 AOTI Metal backend.
 
 #pragma once
 
@@ -21,9 +18,6 @@ namespace executorch {
 namespace backends {
 namespace metal {
 
-// common_shims_slim.h defines `using Tensor = slim::SlimTensor;` in the
-// `executorch::backends::aoti` namespace. Re-export here so callers in
-// `executorch::backends::metal` can write `Tensor` unqualified.
 using executorch::runtime::Error;
 using executorch::backends::aoti::Tensor;
 using executorch::backends::aoti::AOTIRuntimeError;
@@ -31,21 +25,16 @@ using executorch::backends::aoti::AOTITorchError;
 
 extern "C" {
 
-// AOTI passes opaque tensor handles across the C ABI. In v2, these are
-// SlimTensor pointers.
+// Opaque tensor handle the AOTI .so passes across the C ABI.
 using AOTITensorHandle = Tensor*;
 
-} // extern "C"
+}  // extern "C"
 
-// Map int32_t dtype code (PyTorch convention) to slim::c10::ScalarType.
-// Mirrors aoti::dtype_to_scalar_type but returns slim's enum instead of
-// executorch::aten::ScalarType.
+// PyTorch dtype code → slim::c10::ScalarType. Unsupported codes return
+// Undefined (e.g. Half=5; SlimTensor's check_supportive will fault).
 inline executorch::backends::aoti::slim::c10::ScalarType
 dtype_to_c10_scalar_type(int32_t dtype) {
   using SST = executorch::backends::aoti::slim::c10::ScalarType;
-  // Enum values match PyTorch's standard dtype encoding, so a value-cast is
-  // safe for the supported set. Unsupported values (e.g. Half=5) will fail
-  // SlimTensor's check_supportive assertion downstream.
   switch (dtype) {
     case 0:  return SST::Byte;
     case 1:  return SST::Char;
@@ -59,6 +48,6 @@ dtype_to_c10_scalar_type(int32_t dtype) {
   }
 }
 
-} // namespace metal
-} // namespace backends
-} // namespace executorch
+}  // namespace metal
+}  // namespace backends
+}  // namespace executorch

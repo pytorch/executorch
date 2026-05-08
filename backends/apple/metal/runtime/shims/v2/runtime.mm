@@ -6,22 +6,14 @@
  * LICENSE file in the root directory of this source tree.
  */
 
-// MetalStream wrapper + buffer C ABI for v2.
-//
-// Buffer management and stream access. All AOTI dispatch logic lives in
-// the aoti_* files in this directory.
-//
-// Device-pointer tracking is kept here (rather than in MetalStream) so we
-// don't have to extend the portable MetalStream API. We track every
-// pointer we hand back from metal_allocate_buffer or successfully register
-// via metal_buffer_nocopy and use that set as the source of truth for
-// metal_is_device_pointer.
+// MetalStream wrapper + buffer C ABI. AOTI dispatch logic lives in the
+// aoti_* files in this directory.
 
 #import <Metal/Metal.h>
 
 #include <executorch/backends/apple/metal/runtime/shims/v2/runtime.h>
-#include <executorch/backends/portable/runtime/metal_v2/MetalTypes.h>
-#include <executorch/backends/portable/runtime/metal_v2/MetalStream.h>
+#include <executorch/backends/metal/core/MetalTypes.h>
+#include <executorch/backends/metal/core/MetalStream.h>
 #include <executorch/runtime/platform/log.h>
 
 #include <cstring>
@@ -36,8 +28,9 @@ using metal_v2::MetalStream;
 
 namespace {
 
-// Pointers we know are GPU-accessible (allocated via alloc() or
-// successfully registered via registerExternalBuffer()).
+// Pointers known to be GPU-accessible (allocated by metal_allocate_buffer
+// or registered by metal_buffer_nocopy). Source of truth for
+// metal_is_device_pointer().
 std::mutex g_device_ptrs_mutex;
 std::unordered_set<void*> g_device_ptrs;
 
@@ -59,19 +52,19 @@ bool is_tracked_device_ptr(void* ptr) {
   return g_device_ptrs.count(ptr) != 0;
 }
 
-} // namespace
+}  // namespace
 
 MetalStream* getMetalStream() {
-  // Thread-local stream: each thread that calls into the v2 shim layer gets
-  // its own MetalStream. Avoids races on the shared command buffer when
-  // execute() is invoked concurrently from multiple threads. Trade-off:
-  // kernel cache and buffer pool are per-thread, so shaders are recompiled
-  // on each new thread.
-  return MetalStream::getThreadLocal();
+  // Thread-local stream avoids races on the per-thread command buffer
+  // when execute() is invoked concurrently. The kernel cache (and
+  // PSO/MTLLibrary cache inside MetalKernelCompiler) is process-wide
+  // — kernels are NOT recompiled per thread.
+  thread_local std::unique_ptr<MetalStream> tls = MetalStream::create();
+  return tls.get();
 }
 
 void metal_set_flush_interval(int dispatches) {
-  getMetalStream()->setFlushInterval(dispatches);
+  getMetalStream()->recorder().setFlushInterval(dispatches);
 }
 
 MTLDevice_t getMetalDevice() {
@@ -82,19 +75,14 @@ extern "C" {
 
 void* metal_allocate_buffer(long bytes) {
   if (bytes <= 0) return nullptr;
-  void* ptr = getMetalStream()->alloc(static_cast<size_t>(bytes));
+  void* ptr = getMetalStream()->allocator().alloc(static_cast<size_t>(bytes));
   if (ptr) track_device_ptr(ptr);
   return ptr;
 }
 
-void* metal_allocate_buffer_untracked(long bytes) {
-  if (bytes <= 0) return nullptr;
-  return getMetalStream()->alloc(static_cast<size_t>(bytes));
-}
-
 void metal_deallocate_buffer(void* ptr) {
   if (!ptr) return;
-  getMetalStream()->free(ptr);
+  getMetalStream()->allocator().free(ptr);
   untrack_device_ptr(ptr);
 }
 
@@ -108,12 +96,12 @@ int metal_copy_memory(
     size_t nbytes,
     bool src_is_device,
     bool /*dst_is_device*/) {
-  if (!src || !dst || nbytes == 0) return -1;
+  if (nbytes == 0) return 0;  // 0-byte memcpy is a well-defined no-op.
+  if (!src || !dst) return -1;
 
-  // Apple Silicon unified memory: CPU and GPU share the same address space.
-  // Just need to ensure GPU writes are visible before the CPU reads them.
-  // wait() = "drain whatever's in flight"; we don't want to *trigger* any
-  // new submission here, just block until the GPU is caught up.
+  // Apple Silicon unified memory: CPU and GPU share an address space.
+  // wait() drains in-flight GPU work so its writes are visible to the
+  // following memcpy; it does not trigger any new submission.
   if (src_is_device) {
     getMetalStream()->wait();
   }
@@ -122,37 +110,27 @@ int metal_copy_memory(
 }
 
 void metal_cleanup_resources() {
-  // MetalStream manages its own pool. Clear our local tracking so a fresh
-  // process state doesn't leak entries.
   std::lock_guard<std::mutex> lock(g_device_ptrs_mutex);
   g_device_ptrs.clear();
 }
 
-bool metal_buffer_nocopy(void* ptr, size_t nbytes, bool /*map_ptr_to_buffer*/) {
+bool metal_buffer_nocopy(void* ptr, size_t nbytes) {
   if (!ptr || nbytes == 0) return false;
-  bool ok = getMetalStream()->registerExternalBuffer(ptr, nbytes);
+  bool ok = getMetalStream()->allocator().registerExternalBuffer(ptr, nbytes);
   if (ok) track_device_ptr(ptr);
   return ok;
 }
 
-bool metal_register_external_buffer_only(void* ptr, size_t nbytes) {
-  if (!ptr || nbytes == 0) return false;
-  return getMetalStream()->registerExternalBuffer(ptr, nbytes);
+void* get_metal_device() {
+  return (__bridge void*)getMetalDevice();
 }
 
-// Public C-ABI: drain the stream so GPU writes are visible to the CPU.
-// Used by metal_backend_v2::execute() after handle->run(); also exported
-// for any AOTI-emitted code that wants an explicit sync point. Marks the
-// end of an AOTI execute — calls endExecute() to reset per-execute state
-// (currentDispatchIdx_, icbRecordedThisIter_) needed for replay
-// correctness across iterations.
+}  // extern "C"
+
 void synchronize_metal_stream() {
   getMetalStream()->wait();
-  getMetalStream()->endExecute();
 }
 
-} // extern "C"
-
-} // namespace metal
-} // namespace backends
-} // namespace executorch
+}  // namespace metal
+}  // namespace backends
+}  // namespace executorch

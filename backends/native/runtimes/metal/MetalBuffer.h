@@ -16,7 +16,7 @@
 #include <utility>
 
 // Forward declaration so MetalBuffer.h stays pure C++ (no Metal/ObjC
-// imports). The actual id<MTLBuffer> is owned by MetalStream's internal
+// imports). The actual id<MTLBuffer> is owned by the stream's MetalAllocator
 // pools (ptrToBuffer_), so MetalBuffer just holds the host_ptr from
 // stream->alloc() / registerExternalBuffer() and the byte count.
 namespace executorch {
@@ -36,7 +36,7 @@ namespace native {
  *
  * On Apple Silicon, MTLBuffer.contents is a host-addressable pointer
  * (unified memory). We therefore store the host pointer here directly;
- * the underlying id<MTLBuffer> lives in MetalStream's internal
+ * the underlying id<MTLBuffer> lives in the stream's MetalAllocator
  * ptrToBuffer_ map, looked up via stream->bufferForPtr() when ops need
  * to encode dispatches against it. This keeps MetalBuffer.h pure-C++
  * and avoids dragging Metal/ObjC headers into runtime_v2 callers.
@@ -51,7 +51,7 @@ namespace native {
  *      Aliasing transition by re_alias.
  *   3. NDM_ALIAS — wraps a FreeableBuffer from the NamedDataMap (held
  *      internally; released in destructor). The data was registered with
- *      MetalStream via registerExternalBuffer() at upload time.
+ *      stream->allocator().registerExternalBuffer() at upload time.
  *
  * The "location" is set per Runtime (router stamps it during routing).
  */
@@ -96,7 +96,7 @@ class MetalBuffer : public Buffer {
     return mb;
   }
 
-  ~MetalBuffer() override; // defined in MetalBuffer.mm to call stream_->free()
+  ~MetalBuffer() override; // defined in MetalBuffer.mm to call stream_->allocator().free()
 
   void* host_ptr() override {
     return ptr_;
@@ -112,7 +112,7 @@ class MetalBuffer : public Buffer {
   //   dispatches resolve.
   // - Aliasing-mode rebind: just updates ptr/size.
   //
-  // Defined in MetalBuffer.mm to call stream_->free.
+  // Defined in MetalBuffer.mm to call stream_->allocator().free().
   void re_alias(void* ptr, size_t bytes);
 
   Mode mode() const {

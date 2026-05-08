@@ -13,9 +13,9 @@
 #include <executorch/backends/native/runtimes/metal/MetalEvent.h>
 #include <executorch/backends/native/runtimes/metal/MetalRuntime.h>
 
-#include <executorch/backends/portable/runtime/metal_v2/MetalOp.h>
-#include <executorch/backends/portable/runtime/metal_v2/MetalOpRegistry.h>
-#include <executorch/backends/portable/runtime/metal_v2/MetalStream.h>
+#include <executorch/backends/metal/ops/registry/MetalOp.h>
+#include <executorch/backends/metal/ops/registry/MetalOpRegistry.h>
+#include <executorch/backends/metal/core/MetalStream.h>
 
 #include <executorch/runtime/core/error.h>
 #include <executorch/runtime/core/exec_aten/util/tensor_util.h>
@@ -161,7 +161,7 @@ runtime::Error MetalEngine::allocate_buffers(
       }
     }
     if (partner_p &&
-        stream_->registerExternalBuffer(
+        stream_->allocator().registerExternalBuffer(
             partner_p, partner_bytes, /*strict_zero_copy=*/true)) {
       buf = MetalBuffer::alias(
           stream_, partner_p, partner_bytes, MemoryKind::DeviceMirror);
@@ -175,9 +175,9 @@ runtime::Error MetalEngine::allocate_buffers(
       // Fresh pool allocation.
       size_t nbytes = mem_obj_caps[req.mem_obj_id];
       if (nbytes == 0) nbytes = values[req.value_id].toTensor().nbytes();
-      void* ptr = stream_->alloc(nbytes);
+      void* ptr = stream_->allocator().alloc(nbytes);
       if (!ptr) return runtime::Error::MemoryAllocationFailed;
-      (void)stream_->bufferForPtr(ptr, nbytes);
+      (void)stream_->allocator().bufferMtlForPtr(ptr, nbytes);
       buf = MetalBuffer::allocate(stream_, ptr, nbytes, req.kind);
       ET_LOG(Debug,
              "[mem] metal: value_id=%u kind=%s bytes=%zu host_ptr=%p (mem_obj group capacity)",
@@ -217,8 +217,8 @@ runtime::Error MetalEngine::upload_constants(
     runtime::FreeableBuffer fb = std::move(fb_result.get());
     void* ptr = const_cast<void*>(fb.data());
     size_t bytes = fb.size();
-    stream_->registerExternalBuffer(ptr, bytes);
-    (void)stream_->bufferForPtr(ptr, bytes);
+    stream_->allocator().registerExternalBuffer(ptr, bytes);
+    (void)stream_->allocator().bufferMtlForPtr(ptr, bytes);
     auto* buf = MetalBuffer::alias_ndm(
         stream_, std::move(fb), MemoryKind::DeviceOnly);
     owned_buffers_.emplace_back(buf);
@@ -258,7 +258,7 @@ runtime::Error MetalEngine::bind_one_(
   if (it != value_to_buffer_.end()) {
     MetalBuffer* mb = it->second;
     if (mb->mode() == MetalBuffer::Mode::Aliasing) {
-      if (!stream_->registerExternalBuffer(
+      if (!stream_->allocator().registerExternalBuffer(
               host_ptr, nbytes, /*strict_zero_copy=*/true)) {
         ET_LOG(Error,
                "metal: bind: re-bind of dst=%u to caller_ptr=%p "
@@ -284,7 +284,7 @@ runtime::Error MetalEngine::bind_one_(
     return runtime::Error::Ok;
   }
 
-  if (stream_->registerExternalBuffer(
+  if (stream_->allocator().registerExternalBuffer(
           host_ptr, nbytes, /*strict_zero_copy=*/true)) {
     auto* mb = MetalBuffer::alias(
         stream_, host_ptr, nbytes, MemoryKind::DeviceMirror);
@@ -296,9 +296,9 @@ runtime::Error MetalEngine::bind_one_(
            value_id, host_ptr, nbytes);
     return runtime::Error::Ok;
   }
-  void* ptr = stream_->alloc(nbytes);
+  void* ptr = stream_->allocator().alloc(nbytes);
   if (!ptr) return runtime::Error::MemoryAllocationFailed;
-  (void)stream_->bufferForPtr(ptr, nbytes);
+  (void)stream_->allocator().bufferMtlForPtr(ptr, nbytes);
   auto* mb = MetalBuffer::allocate(
       stream_, ptr, nbytes, MemoryKind::DeviceMirror);
   if (nbytes > 0) std::memcpy(ptr, host_ptr, nbytes);

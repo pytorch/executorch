@@ -6,10 +6,9 @@
  * LICENSE file in the root directory of this source tree.
  */
 
-// AOTI tensor + memory layer impl for the v2 Metal backend.
-//
-// All buffer/memory work routes through the metal_* C ABI in runtime.h
-// so this file stays a .cpp (no Metal/Metal.h required).
+// Tensor + memory C ABI implementation. Buffer/memory work routes through
+// the metal_* C ABI in runtime.h so this file has no Metal/Metal.h
+// dependency.
 
 #include <executorch/backends/aoti/utils.h>
 #include <executorch/backends/aoti/slim/factory/from_blob.h>
@@ -20,20 +19,20 @@
 #include <cstdint>
 #include <cstring>
 #include <memory>
+#include <mutex>
 #include <unordered_map>
 #include <vector>
 
-// Forward declare validate_dtype (defined in shims/utils.cpp). We don't
-// include shims/utils.h here because it pulls in v1's shims/types.h, which
-// defines `Tensor = etensor::Tensor` and conflicts with our SlimTensor
-// alias from aoti_types.h.
+// Forward-declare validate_dtype (defined in shims/utils.cpp). Including
+// shims/utils.h would pull in v1's shims/types.h, which conflicts with
+// the SlimTensor `Tensor` alias from aoti_types.h.
 namespace executorch {
 namespace backends {
 namespace metal {
 extern "C" AOTITorchError validate_dtype(int32_t dtype);
-} // namespace metal
-} // namespace backends
-} // namespace executorch
+}  // namespace metal
+}  // namespace backends
+}  // namespace executorch
 
 namespace executorch {
 namespace backends {
@@ -44,10 +43,8 @@ namespace slim = executorch::backends::aoti::slim;
 
 extern "C" {
 
-// =====================================================================
-// Globals
-// =====================================================================
-
+// Globals — guarded by tensors_mutex.
+std::mutex tensors_mutex;
 std::unordered_map<Tensor*, std::unique_ptr<Tensor>> tensors;
 
 // Reference counting for memory addresses.
@@ -59,8 +56,6 @@ std::unordered_map<void*, int32_t> memory_to_n_tensor;
 
 namespace {
 
-// Convert int64_t sizes/strides arrays into std::vector<int64_t> for use
-// with slim::from_blob / IntArrayRef.
 std::vector<int64_t> to_int64_vector(int64_t ndim, const int64_t* ptr) {
   if (ptr == nullptr) {
     return {};
@@ -68,7 +63,9 @@ std::vector<int64_t> to_int64_vector(int64_t ndim, const int64_t* ptr) {
   return std::vector<int64_t>(ptr, ptr + ndim);
 }
 
-// Compute contiguous (row-major) strides if the caller didn't provide any.
+// Returns the caller-provided strides if non-null, otherwise computes
+// PyTorch-style contiguous strides. For a 0-sized inner dim, the higher
+// dim's stride collapses to 0 (matches torch.empty(N, 0).contiguous()).
 std::vector<int64_t> compute_or_copy_strides(
     int64_t ndim,
     const int64_t* sizes_ptr,
@@ -80,11 +77,7 @@ std::vector<int64_t> compute_or_copy_strides(
   if (ndim > 0) {
     strides[ndim - 1] = 1;
     for (int64_t i = ndim - 2; i >= 0; i--) {
-      // Match v1 quirk: when next-dim size is 0, just propagate the previous
-      // stride rather than zeroing out (avoids degenerate stride patterns).
-      strides[i] = (sizes_ptr[i + 1] == 0)
-          ? strides[i + 1]
-          : strides[i + 1] * sizes_ptr[i + 1];
+      strides[i] = strides[i + 1] * sizes_ptr[i + 1];
     }
   }
   return strides;
@@ -92,6 +85,9 @@ std::vector<int64_t> compute_or_copy_strides(
 
 // Insert a SlimTensor into the tensors map and return the raw pointer
 // used as the AOTI handle.
+//
+// Caller MUST hold tensors_mutex (the mutex is non-recursive; reacquiring
+// here would deadlock).
 Tensor* register_tensor(slim::SlimTensor&& t) {
   auto owned = std::make_unique<slim::SlimTensor>(std::move(t));
   Tensor* raw = owned.get();
@@ -99,11 +95,40 @@ Tensor* register_tensor(slim::SlimTensor&& t) {
   return raw;
 }
 
-} // namespace
+// Atomic register-and-track helper. Inserts the SlimTensor into the
+// global maps as a single critical section so concurrent observers
+// can't see a partially-registered state.
+//
+// initial_refcount = NOT_OWN registers the tensor as wrapping
+// externally-owned memory (never freed by us). initial_refcount >= 1
+// makes this tensor an owner of `data`.
+//
+// Caller must NOT hold tensors_mutex.
+static AOTITorchError register_tracked_tensor(
+    void* data,
+    slim::SlimTensor&& tensor,
+    int32_t initial_refcount,
+    AOTITensorHandle* ret_new_tensor) {
+  std::lock_guard<std::mutex> lk(tensors_mutex);
 
-// =====================================================================
-// Tensor lifecycle
-// =====================================================================
+  if (initial_refcount == NOT_OWN) {
+    // Externally-owned memory must not already be tracked.
+    auto memory_it = memory_to_n_tensor.find(data);
+    ET_CHECK_OR_RETURN_ERROR(
+        memory_it == memory_to_n_tensor.end(),
+        InvalidArgument,
+        "Memory address %p is already being tracked by another tensor",
+        data);
+  }
+
+  *ret_new_tensor = register_tensor(std::move(tensor));
+  memory_to_n_tensor[data] = initial_refcount;
+  return Error::Ok;
+}
+
+}  // namespace
+
+// Tensor lifecycle.
 
 AOTITorchError aoti_torch_create_tensor_from_blob_v2(
     void* data,
@@ -137,8 +162,7 @@ AOTITorchError aoti_torch_create_tensor_from_blob_v2(
 
   ET_CHECK_OK_OR_RETURN_ERROR(validate_dtype(dtype));
 
-  // Apply storage_offset by adjusting the raw pointer; pass 0 storage_offset
-  // to from_blob (mirrors v1 behavior).
+  // Apply storage_offset by adjusting the raw pointer; pass 0 to from_blob.
   void* adjusted_data = static_cast<char*>(data) +
       (storage_offset * dtype_to_element_size(dtype));
 
@@ -152,18 +176,38 @@ AOTITorchError aoti_torch_create_tensor_from_blob_v2(
       slim::makeArrayRef(strides),
       dtype_to_c10_scalar_type(dtype));
 
-  *ret_new_tensor = register_tensor(std::move(t));
+  return register_tracked_tensor(adjusted_data, std::move(t), NOT_OWN,
+                                 ret_new_tensor);
+}
 
-  // Register this address as externally-owned. It must not already be
-  // tracked: tensor-from-blob never owns memory it wraps.
-  auto memory_it = memory_to_n_tensor.find(adjusted_data);
+AOTITorchError aoti_torch_create_owned_tensor_from_blob_v2(
+    void* data,
+    int64_t ndim,
+    const int64_t* sizes_ptr,
+    const int64_t* strides_ptr,
+    int32_t dtype,
+    AOTITensorHandle* ret_new_tensor) {
   ET_CHECK_OR_RETURN_ERROR(
-      memory_it == memory_to_n_tensor.end(),
+      data != nullptr, InvalidArgument, "data pointer is null");
+  ET_CHECK_OR_RETURN_ERROR(
+      !(sizes_ptr == nullptr && ndim > 0),
       InvalidArgument,
-      "Memory address %p is already being tracked by another tensor",
-      adjusted_data);
-  memory_to_n_tensor[adjusted_data] = NOT_OWN;
-  return Error::Ok;
+      "sizes_ptr is null");
+  ET_CHECK_OR_RETURN_ERROR(
+      ret_new_tensor != nullptr, InvalidArgument, "ret_new_tensor is null");
+
+  std::vector<int64_t> sizes = to_int64_vector(ndim, sizes_ptr);
+  std::vector<int64_t> strides =
+      compute_or_copy_strides(ndim, sizes_ptr, strides_ptr);
+
+  slim::SlimTensor t = slim::from_blob(
+      data,
+      slim::makeArrayRef(sizes),
+      slim::makeArrayRef(strides),
+      dtype_to_c10_scalar_type(dtype));
+
+  return register_tracked_tensor(data, std::move(t), /*initial_refcount=*/1,
+                                 ret_new_tensor);
 }
 
 AOTITorchError aoti_torch_empty_strided(
@@ -177,28 +221,53 @@ AOTITorchError aoti_torch_empty_strided(
   ET_LOG(Debug, "aoti_torch_empty_strided[v2]: entered");
   (void)device_index;
 
+  ET_CHECK_OR_RETURN_ERROR(
+      !(sizes_ptr == nullptr && ndim > 0),
+      InvalidArgument,
+      "sizes_ptr is null");
+  ET_CHECK_OR_RETURN_ERROR(
+      ret_new_tensor != nullptr, InvalidArgument, "ret_new_tensor is null");
+
   void* ptr;
   int64_t numel = 1;
   for (int i = 0; i < ndim; i++) {
-    numel *= sizes_ptr[i];
+    ET_CHECK_OR_RETURN_ERROR(
+        sizes_ptr[i] >= 0,
+        InvalidArgument,
+        "negative size at dim %d: %lld", i, (long long)sizes_ptr[i]);
+    if (__builtin_mul_overflow(numel, sizes_ptr[i], &numel)) {
+      ET_LOG(Error, "numel overflow on shape product");
+      return Error::InvalidArgument;
+    }
   }
 
+  // Note: dtype validation is intentionally NOT called here. AOTI may
+  // allocate intermediate tensors with dtypes that no registered metal_v2
+  // op consumes (e.g. Bool masks for SDPA that get converted to float
+  // before any compute). validate_dtype's allow-list only covers compute
+  // dtypes; rejecting allocation would break those passthrough cases.
+  // The element_size guard below catches any genuinely invalid dtype.
   size_t element_size = dtype_to_element_size(dtype);
   ET_CHECK_OR_RETURN_ERROR(
       element_size != 0,
       InvalidArgument,
       "Invalid element size for dtype: %d",
       dtype);
-  int64_t nbytes = numel * element_size;
+  int64_t nbytes;
+  if (__builtin_mul_overflow(numel, (int64_t)element_size, &nbytes)) {
+    ET_LOG(Error, "byte-count overflow for numel=%lld element_size=%zu",
+        (long long)numel, element_size);
+    return Error::InvalidArgument;
+  }
 
-  int32_t mps_device_type = aoti_torch_device_type_mps(); // Returns 13
+  int32_t mps_device_type = aoti_torch_device_type_mps();
   if (device_type == mps_device_type) {
     ptr = metal_allocate_buffer(nbytes);
     if (ptr == nullptr) {
       ET_LOG(Error, "Failed to allocate %lld bytes on Metal", nbytes);
       return Error::MemoryAllocationFailed;
     }
-  } else if (device_type == 0) { // cpu
+  } else if (device_type == 0) {  // cpu
     int result = posix_memalign(&ptr, 16, nbytes);
     ET_CHECK_OR_RETURN_ERROR(
         result == 0,
@@ -225,17 +294,16 @@ AOTITorchError aoti_torch_empty_strided(
       slim::makeArrayRef(strides),
       dtype_to_c10_scalar_type(dtype));
 
-  *ret_new_tensor = register_tensor(std::move(t));
-
-  // This tensor logically owns the buffer (we allocated it). Refcount=1.
-  memory_to_n_tensor[ptr] = 1;
-  return Error::Ok;
+  return register_tracked_tensor(ptr, std::move(t), /*initial_refcount=*/1,
+                                 ret_new_tensor);
 }
 
 AOTITorchError aoti_torch_delete_tensor_object(AOTITensorHandle tensor) {
   if (tensor == nullptr) {
     return Error::Ok;
   }
+  // Single critical section across find + refcount decrement + erase.
+  std::lock_guard<std::mutex> lk(tensors_mutex);
 
   auto it = tensors.find(tensor);
   // Tensors not in the map are temporary views (e.g. CPU ETensor wrappers
@@ -282,7 +350,6 @@ AOTITorchError aoti_torch_copy_(
   ET_CHECK_OR_RETURN_ERROR(
       src != nullptr, InvalidArgument, "src tensor is null");
 
-  // Dtype compatibility check (same dtype required, like PyTorch copy_).
   auto self_dtype = self->dtype();
   auto src_dtype = src->dtype();
   ET_CHECK_OR_RETURN_ERROR(
@@ -292,7 +359,6 @@ AOTITorchError aoti_torch_copy_(
       static_cast<int>(self_dtype),
       static_cast<int>(src_dtype));
 
-  // Numel must match.
   size_t self_numel = self->numel();
   size_t src_numel = src->numel();
   ET_CHECK_OR_RETURN_ERROR(
@@ -302,20 +368,24 @@ AOTITorchError aoti_torch_copy_(
       self_numel,
       src_numel);
 
-  // Device classification via the GPU pointer registry (not SlimTensor's
-  // own device tag — v2 SlimTensors are all CPU-tagged regardless of
-  // whether the buffer is GPU-accessible).
+  // Device classification via the GPU pointer registry. SlimTensor's own
+  // device tag is always CPU regardless of where the buffer lives.
   bool srcIsDevice = metal_is_device_pointer(src->data_ptr());
   bool dstIsDevice = metal_is_device_pointer(self->data_ptr());
 
-  // Same-schema fast path. (TODO: catch (4,1,5) -> (4,5)-style cases.)
+  // Same-schema fast path: identical rank, dtype, sizes, AND strides.
+  // Without the size check, two non-contiguous tensors with matching
+  // strides but different element layouts would silently miscopy.
   bool same_schema =
       self->dim() == src->dim() && self->dtype() == src->dtype();
   if (same_schema) {
+    auto self_sizes = self->sizes();
+    auto src_sizes = src->sizes();
     auto self_strides = self->strides();
     auto src_strides = src->strides();
     for (size_t i = 0; i < self->dim(); i++) {
-      if (self_strides[i] != src_strides[i]) {
+      if (self_sizes[i] != src_sizes[i] ||
+          self_strides[i] != src_strides[i]) {
         same_schema = false;
         break;
       }
@@ -374,6 +444,9 @@ AOTITorchError aoti_torch__reinterpret_tensor(
       InvalidArgument,
       "Source tensor has null data pointer");
 
+  // Single critical section: lookup + register_tensor + refcount bumps.
+  std::lock_guard<std::mutex> lk(tensors_mutex);
+
   auto memory_it = memory_to_n_tensor.find(data_ptr);
   ET_CHECK_OR_RETURN_ERROR(
       memory_it != memory_to_n_tensor.end(),
@@ -397,8 +470,18 @@ AOTITorchError aoti_torch__reinterpret_tensor(
   *ret_new_tensor = register_tensor(std::move(t));
 
   if (adjusted_data != data_ptr) {
+    // Tracking is keyed by raw pointer; an existing entry at this
+    // sub-region address would overlap with this reinterpret view's
+    // lifecycle (potential double-free or premature free). Reject for
+    // now — caller should use a distinct base allocation.
+    auto adj_it = memory_to_n_tensor.find(adjusted_data);
     ET_CHECK_OR_RETURN_ERROR(
-        metal_buffer_nocopy(adjusted_data, (*ret_new_tensor)->nbytes(), true),
+        adj_it == memory_to_n_tensor.end(),
+        InvalidArgument,
+        "_reinterpret_tensor: address %p (= %p + offset) already tracked",
+        adjusted_data, data_ptr);
+    ET_CHECK_OR_RETURN_ERROR(
+        metal_buffer_nocopy(adjusted_data, (*ret_new_tensor)->nbytes()),
         Internal,
         "metal_buffer_nocopy failed for adjusted_data %p of size %zu",
         adjusted_data,
@@ -406,9 +489,9 @@ AOTITorchError aoti_torch__reinterpret_tensor(
     memory_to_n_tensor[adjusted_data] = NOT_OWN;
   }
 
-  // Bump refcount on the source pointer (only when it's owned, not borrowed).
-  if (memory_to_n_tensor[data_ptr] != NOT_OWN) {
-    memory_to_n_tensor[data_ptr] += 1;
+  // Bump source refcount only when owned (not borrowed).
+  if (memory_it->second != NOT_OWN) {
+    memory_it->second += 1;
   }
   return Error::Ok;
 }
@@ -439,6 +522,8 @@ AOTITorchError aoti_torch_new_tensor_handle(
       InvalidArgument,
       "Source tensor has null data pointer");
 
+  std::lock_guard<std::mutex> lk(tensors_mutex);
+
   auto memory_it = memory_to_n_tensor.find(data_ptr);
   ET_CHECK_OR_RETURN_ERROR(
       memory_it != memory_to_n_tensor.end(),
@@ -446,7 +531,7 @@ AOTITorchError aoti_torch_new_tensor_handle(
       "Memory address %p is not being tracked",
       data_ptr);
 
-  // Mirror the original tensor's shape/strides/dtype, sharing storage.
+  // Mirror shape/strides/dtype, sharing storage.
   std::vector<int64_t> sizes(
       orig_handle->sizes().begin(), orig_handle->sizes().end());
   std::vector<int64_t> strides(
@@ -460,46 +545,52 @@ AOTITorchError aoti_torch_new_tensor_handle(
 
   *new_handle = register_tensor(std::move(t));
 
-  // Refcount: only bump when the source memory is owned (not borrowed).
-  memory_to_n_tensor[data_ptr] = memory_to_n_tensor[data_ptr] == NOT_OWN
-      ? NOT_OWN
-      : memory_to_n_tensor[data_ptr] + 1;
+  // Bump source refcount only when owned (NOT_OWN entries stay borrowed).
+  if (memory_it->second != NOT_OWN) {
+    memory_it->second += 1;
+  }
   return Error::Ok;
 }
 
+// Drains all v2 AOTI shim state. Caller must guarantee no concurrent
+// registrations (typically called at backend tear-down).
 void cleanup_memory() {
-  // Use aoti_torch_delete_tensor_object so refcounts/buffer frees stay in
-  // sync. Collect keys first since deletion modifies the map.
+  // 2-phase: collect under lock, release, delete each (each reacquires
+  // since the mutex is non-recursive), then re-acquire to clear the
+  // residual maps.
   std::vector<Tensor*> tensor_ptrs;
-  tensor_ptrs.reserve(tensors.size());
-  for (const auto& entry : tensors) {
-    tensor_ptrs.push_back(entry.first);
+  {
+    std::lock_guard<std::mutex> lk(tensors_mutex);
+    tensor_ptrs.reserve(tensors.size());
+    for (const auto& entry : tensors) {
+      tensor_ptrs.push_back(entry.first);
+    }
   }
   for (Tensor* tensor_ptr : tensor_ptrs) {
     aoti_torch_delete_tensor_object(tensor_ptr);
   }
 
-  tensors.clear();
+  {
+    std::lock_guard<std::mutex> lk(tensors_mutex);
+    tensors.clear();
+    memory_to_n_tensor.clear();
+  }
   metal_cleanup_resources();
 
   ET_LOG(Info, "[v2] Cleared all tensors and Metal resources");
 }
 
-// =====================================================================
-// MPS buffer shims
-//
-// All four route through the metal_* C ABI in runtime.h. This means
-// allocations are device-pointer-tracked (so metal_is_device_pointer
-// works correctly downstream) and the file stays a .cpp.
-// =====================================================================
+// MPS buffer shims. Route through metal_* C ABI so allocations are
+// tracked by metal_is_device_pointer.
 
 AOTITorchError aoti_torch_mps_malloc(void** buffer, size_t num_bytes) {
-  if (num_bytes == 0) {
-    if (buffer) *buffer = nullptr;
-    return Error::Ok;
-  }
   if (!buffer) return Error::InvalidArgument;
-  *buffer = metal_allocate_buffer(static_cast<long>(num_bytes));
+  // Bump 0-byte requests to 1 byte. Lets create_tensor_from_blob_v2
+  // (which requires non-null data) handle 0-element tensors. The tensor's
+  // nbytes() comes from its shape, so the GPU never reads/writes the
+  // placeholder.
+  size_t alloc_bytes = num_bytes == 0 ? 1 : num_bytes;
+  *buffer = metal_allocate_buffer(static_cast<long>(alloc_bytes));
   return *buffer ? Error::Ok : Error::Internal;
 }
 
@@ -519,13 +610,19 @@ AOTITorchError aoti_torch_mps_memcpy(
   auto* dst = static_cast<uint8_t*>(buffer) + constant_offset;
   std::memcpy(dst, constants_start + bytes_read, data_size);
 
-  // Register the sub-region so GPU can see it.
+  // Register the sub-region so the GPU can address it.
   if (constant_offset != 0) {
-    metal_buffer_nocopy(dst, data_size, /*map_ptr_to_buffer=*/true);
+    metal_buffer_nocopy(dst, data_size);
   }
   return Error::Ok;
 }
 
+// Caller contract: src_buffer / dst_buffer must not be concurrently
+// mutated by GPU work that the caller hasn't already submitted to this
+// thread's stream. We drain in-flight GPU work BEFORE the host memcpy
+// so any pending writes from THIS stream are visible; the caller is
+// responsible for ensuring no other thread writes either buffer
+// concurrently with this copy.
 AOTITorchError aoti_torch_mps_copy_buffer(
     void* src_buffer,
     void* dst_buffer,
@@ -533,20 +630,21 @@ AOTITorchError aoti_torch_mps_copy_buffer(
     size_t src_offset,
     size_t dst_offset) {
   if (!src_buffer || !dst_buffer) return Error::InvalidArgument;
-  // Unified memory — direct memcpy.
   auto* src = static_cast<uint8_t*>(src_buffer) + src_offset;
   auto* dst = static_cast<uint8_t*>(dst_buffer) + dst_offset;
+  if (metal_is_device_pointer(src_buffer) || metal_is_device_pointer(dst_buffer)) {
+    synchronize_metal_stream();
+  }
   std::memcpy(dst, src, data_size);
   return Error::Ok;
 }
 
-// =====================================================================
-// MPS device-type override
-// =====================================================================
+// Device-type override. v2 reports MPS for all tensors flowing through
+// the AOTI shim regardless of how SlimTensor models device internally.
 
 __attribute__((__visibility__("default"))) int32_t
 aoti_torch_device_type_mps() {
-  return 13; // Matches c10/core/DeviceType.h::MPS
+  return 13;  // c10/core/DeviceType.h::MPS
 }
 
 AOTITorchError aoti_torch_get_device_type(
@@ -560,26 +658,8 @@ AOTITorchError aoti_torch_get_device_type(
   return Error::Ok;
 }
 
-} // extern "C"
+}  // extern "C"
 
-// ---------------------------------------------------------------------
-// Missing dtype shim (workaround for upstream gap)
-//
-// backends/aoti/common_shims_slim.cpp defines aoti_torch_dtype_float32(),
-// _bfloat16(), _int*(), etc. but not _float16. Without this symbol the
-// AOTI-generated .so for an fp16 model dlopens to a partially-resolved
-// state and dies with SIGSEGV on first use of the missing trampoline.
-//
-// We define it locally so the symbol resolves at dlopen time. Note: actual
-// fp16 execution is NOT supported because slim::c10::ScalarType doesn't
-// include Half (creating a SlimTensor with dtype=5 will assert in
-// check_supportive). This shim only satisfies the linker.
-extern "C" {
-int32_t aoti_torch_dtype_float16() {
-  return 5;  // PyTorch's float16 dtype code (c10::ScalarType::Half)
-}
-} // extern "C"
-
-} // namespace metal
-} // namespace backends
-} // namespace executorch
+}  // namespace metal
+}  // namespace backends
+}  // namespace executorch
