@@ -834,6 +834,29 @@ def get_upsample_bilinear2d_inputs():
     return VkTestSuite(inputs_list)
 
 
+@register_test_suite("aten.pixel_shuffle.default")
+def get_pixel_shuffle_inputs():
+    test_suite = VkTestSuite(
+        [
+            # (input tensor shape (N, C*r*r, H, W), upscale_factor r)
+            ((1, 4, 2, 2), 2),
+            ((1, 9, 3, 3), 3),
+            ((1, 16, 2, 2), 4),
+            ((2, 4, 3, 5), 2),
+            ((1, 8, 4, 4), 2),
+            ((1, 12, 3, 4), 2),
+        ]
+    )
+    test_suite.storage_types = ["utils::kTexture3D", "utils::kBuffer"]
+    test_suite.layouts = [
+        "utils::kChannelsPacked",
+        "utils::kWidthPacked",
+        "utils::kHeightPacked",
+    ]
+    test_suite.dtypes = ["at::kFloat", "at::kHalf"]
+    return test_suite
+
+
 @register_test_suite(["aten.full.default", "aten.full_like.default"])
 def get_full_inputs():
     test_suite = VkTestSuite(
