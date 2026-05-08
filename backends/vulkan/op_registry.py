@@ -1158,7 +1158,7 @@ def register_permute_copy():
 @update_features(exir_ops.edge.aten.view_copy.default)
 def register_view_copy():
     return OpFeatures(
-        inputs_storage=utils.ANY_STORAGE,
+        inputs_storage=utils.ANY_STORAGE_INCL_PACKED_INT8,
         inputs_dtypes=utils.FP_INT_BOOL_T,
         supports_resize=True,
         supports_highdim=True,
@@ -1213,7 +1213,7 @@ def register_unsqueeze_copy():
 @update_features(exir_ops.edge.aten.clone.default)
 def register_clone():
     return OpFeatures(
-        inputs_storage=utils.ANY_STORAGE,
+        inputs_storage=utils.ANY_STORAGE_INCL_PACKED_INT8,
         inputs_dtypes=utils.FP_INT_BOOL_T,
         supports_resize=True,
         supports_highdim=True,
@@ -1223,7 +1223,7 @@ def register_clone():
 @update_features(exir_ops.edge.dim_order_ops._clone_dim_order.default)
 def register_clone_dim_order():
     return OpFeatures(
-        inputs_storage=utils.ANY_STORAGE,
+        inputs_storage=utils.ANY_STORAGE_INCL_PACKED_INT8,
         inputs_dtypes=utils.FP_INT_BOOL_T,
         supports_resize=True,
         supports_highdim=True,
@@ -1237,7 +1237,7 @@ def register_clone_dim_order():
 @update_features(exir_ops.edge.aten.alias_copy.default)
 def register_alias_copy():
     return OpFeatures(
-        inputs_storage=utils.ANY_STORAGE,
+        inputs_storage=utils.ANY_STORAGE_INCL_PACKED_INT8,
         inputs_dtypes=utils.FP_INT_BOOL_T,
         supports_resize=True,
         supports_highdim=True,
