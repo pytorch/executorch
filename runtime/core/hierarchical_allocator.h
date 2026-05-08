@@ -9,6 +9,7 @@
 #pragma once
 
 #include <c10/util/irange.h>
+#include <c10/util/safe_numerics.h>
 
 #include <executorch/runtime/core/memory_allocator.h>
 #include <executorch/runtime/core/result.h>
@@ -58,8 +59,9 @@ class HierarchicalAllocator final {
       size_t offset_bytes,
       size_t size_bytes) {
     // Check for integer overflow in offset_bytes + size_bytes.
+    size_t end_bytes = 0;
     ET_CHECK_OR_RETURN_ERROR(
-        size_bytes <= SIZE_MAX - offset_bytes,
+        !c10::add_overflows(offset_bytes, size_bytes, &end_bytes),
         InvalidArgument,
         "Integer overflow in offset_bytes (%" ET_PRIsize_t
         ") + size_bytes (%" ET_PRIsize_t ")",
@@ -73,7 +75,7 @@ class HierarchicalAllocator final {
         buffers_.size());
     Span<uint8_t> buffer = buffers_[memory_id];
     ET_CHECK_OR_RETURN_ERROR(
-        offset_bytes + size_bytes <= buffer.size(),
+        end_bytes <= buffer.size(),
         MemoryAllocationFailed,
         "offset_bytes (%" ET_PRIsize_t ") + size_bytes (%" ET_PRIsize_t
         ") >= allocator size (%" ET_PRIsize_t

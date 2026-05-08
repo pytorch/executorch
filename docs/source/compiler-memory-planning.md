@@ -90,7 +90,7 @@ program = edge_program.to_executorch(
 > slots, leading to incorrect memory layout.  If both features are enabled
 > simultaneously, `apply_algo` will raise a `NotImplementedError`.
 
-Users attempting to write a custom memory planning algorithm should start by looking at [the greedy algorithm's implementation](https://github.com/pytorch/executorch/blob/d62c41ca86435e5316e7ed292b6d68aff27a2fb7/exir/memory_planning.py#L459C1-L459C12).
+Users attempting to write a custom memory planning algorithm should start by looking at [the greedy algorithm's implementation](https://github.com/pytorch/executorch/blob/main/exir/memory_planning.py#L801).
 
 ## Device-Aware Memory Planning
 

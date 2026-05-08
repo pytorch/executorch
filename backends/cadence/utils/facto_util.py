@@ -249,7 +249,7 @@ def apply_tensor_contraints(op_name: str, index: int) -> list[object]:
         case "permute_copy.default":
             tensor_constraints.extend(
                 [
-                    cp.Dtype.In(lambda deps: [torch.float32, torch.int8, torch.uint8]),
+                    cp.Dtype.In(lambda deps: [torch.float32, torch.int32]),
                     cp.Rank.Le(
                         lambda deps: 5
                     ),  # xa_nn_transpose only supports up to 5D
@@ -391,12 +391,13 @@ def apply_tensor_contraints(op_name: str, index: int) -> list[object]:
             tensor_constraints.extend(
                 [
                     cp.Dtype.In(lambda deps: [torch.float32, torch.int32]),
+                    cp.Value.Ge(lambda deps, dtype, struct: 0),
                 ]
             )
         case "div.Tensor_mode" | "minimum.default":
             if index == 0:
                 tensor_constraints = [
-                    cp.Dtype.In(lambda deps: [torch.int64, torch.int32, torch.float32]),
+                    cp.Dtype.In(lambda deps: [torch.int32, torch.float32]),
                     cp.Value.Ge(lambda deps, dtype, struct: -(2**4)),
                     cp.Value.Le(lambda deps, dtype, struct: 2**4),
                     cp.Rank.Ge(lambda deps: 1),
@@ -405,7 +406,7 @@ def apply_tensor_contraints(op_name: str, index: int) -> list[object]:
                 ]
             else:
                 tensor_constraints = [
-                    cp.Dtype.In(lambda deps: [torch.int64, torch.int32, torch.float32]),
+                    cp.Dtype.In(lambda deps: [torch.int32, torch.float32]),
                     cp.Value.Ge(lambda deps, dtype, struct: -(2**4)),
                     cp.Value.Le(lambda deps, dtype, struct: 2**4),
                     cp.Value.Ne(

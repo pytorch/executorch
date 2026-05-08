@@ -16,6 +16,8 @@ import executorch.backends.vulkan.patterns.quantized_linear  # noqa
 
 import executorch.backends.vulkan.patterns.quantized_unary  # noqa
 
+import executorch.backends.vulkan.patterns.rms_norm  # noqa
+
 import executorch.backends.vulkan.patterns.rope  # noqa
 
 import executorch.backends.vulkan.patterns.rope_hf  # noqa
