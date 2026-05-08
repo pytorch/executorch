@@ -55,6 +55,7 @@ runtime.python_library(
     srcs = [
         "triton/kernels/__init__.py",
         "triton/kernels/fused_moe.py",
+        "triton/kernels/int4_matmul.py",
         "triton/kernels/sdpa.py",
         "triton/kernels/topk.py",
     ],

@@ -26,7 +26,7 @@ endif()
 
 find_program(GLSLC_PATH glslc PATHS $ENV{PATH})
 
-if(NOT GLSLC_PATH)
+if(NOT GLSLC_PATH AND EXECUTORCH_BUILD_VULKAN)
   message(
     FATAL_ERROR
       "glslc from the Vulkan SDK must be installed to build the Vulkan backend. "

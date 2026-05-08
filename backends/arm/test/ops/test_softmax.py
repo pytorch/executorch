@@ -8,10 +8,6 @@
 from typing import Tuple
 
 import torch
-from executorch.backends.arm.common.pipeline_config import (
-    ArmPassPipelineConfig,
-    SoftmaxDecompositionConfig,
-)
 from executorch.backends.arm.test import common
 from executorch.backends.arm.test.tester.test_pipeline import (
     EthosU55PipelineINT,
@@ -37,6 +33,7 @@ class Softmax(torch.nn.Module):
     test_data = {
         "ones": lambda: ((torch.ones(10, 10),), 1),
         "ones_neg_dim": lambda: ((torch.ones(1, 3, 4),), -1),
+        "bigger_numbers": lambda: ((1000 * torch.rand(1, 16, 64, 64),), -1),
         "randn_neg_dim": lambda: ((torch.randn(1, 5, 8, 7),), -3),
         "zeros": lambda: ((torch.zeros(1, 8, 5, 2),), 0),
         "zeros_neg_dim": lambda: ((torch.zeros(1, 7, 8, 9),), -4),
@@ -75,28 +72,6 @@ def test_softmax_u55_INT(test_data):
         [],
     )
     pipeline.add_stage_after("quantize", pipeline.tester.check_not, [aten_op])
-    pipeline.change_args("run_method_and_compare_outputs", qtol=1)
-    pipeline.run()
-
-
-@common.parametrize("test_data", Softmax.test_data)
-@common.XfailIfNoCorstone300
-def test_softmax_u55_INT_unstable(test_data):
-    data, dim = test_data()
-    pipeline = EthosU55PipelineINT[input_t1](
-        Softmax(dim),
-        data,
-        [],
-    )
-    # Override to use the unstable softmax decomposition (no amax subtraction)
-    pipeline.tester.compile_spec.set_pass_pipeline_config(
-        ArmPassPipelineConfig(softmax=SoftmaxDecompositionConfig.UNSTABLE)
-    )
-    pipeline.add_stage_after(
-        "quantize",
-        pipeline.tester.check_not,
-        [aten_op, "torch.ops.aten.amax.default"],
-    )
     pipeline.change_args("run_method_and_compare_outputs", qtol=1)
     pipeline.run()
 

@@ -1,5 +1,5 @@
 # Copyright (c) Meta Platforms, Inc. and affiliates.
-# Copyright 2024-2025 NXP
+# Copyright 2024-2026 NXP
 # All rights reserved.
 #
 # This source code is licensed under the BSD-style license found in the
@@ -10,7 +10,7 @@
 import itertools
 from collections import OrderedDict
 from collections.abc import Iterable
-from typing import Any, Dict, List, Tuple, Type
+from typing import Any, Callable, Dict, List, Tuple, Type
 
 import torch
 from executorch.backends.nxp.aten_passes.fuse_batch_norm_with_linear_pass import (
@@ -30,8 +30,10 @@ from torch.fx.passes.utils.source_matcher_utils import (
     check_subgraphs_connected,
     SourcePartition,
 )
+
 from torchao.quantization.pt2e import (
     move_exported_model_to_eval,
+    move_exported_model_to_train,
     ObserverOrFakeQuantize,
 )
 from torchao.quantization.pt2e.quantize_pt2e import (
@@ -176,16 +178,17 @@ def calibrate_and_quantize(
     calibration_inputs: Iterable[tuple[torch.Tensor, ...]],
     quantizer: Quantizer,
     is_qat: bool = False,
+    train_fn: Callable[[torch.fx.GraphModule], None] | None = None,
 ) -> fx.GraphModule:
     """Quantize the provided model.
 
     :param model: Aten model (or it's GraphModule representation) to quantize.
-    :param calibration_inputs: Either a tuple of calibration input tensors where each element corresponds to a model
-                                input. Or an iterator over such tuples.
+    :param calibration_inputs: An iterator over tuples of calibration input tensors where each tensor corresponds to a
+                                model input.
     :param quantizer: Quantizer to use.
     :param is_qat: Whether quantization is done using Quantization Aware Training (QAT) or not.
                     Note: In QAT mode, training is not performed. Only calibration (in eval mode) is done.
-
+    :param train_fn: Optional training function to be called during QAT.
     :return: Quantized GraphModule.
     """
 
@@ -195,12 +198,20 @@ def calibrate_and_quantize(
     if is_qat:
         m = prepare_qat_pt2e(model, quantizer)
         m = AddSimulatedLinearBatchNormFusionQATPass()(m).graph_module
+
+        if train_fn:
+            m = move_exported_model_to_train(m)
+            train_fn(m)
+
         m = move_exported_model_to_eval(m)
+        m = RemoveSimulatedLinearBatchNormFusionQATPass()(m).graph_module
+        m = FuseBatchNormWithLinearPass()(m).graph_module
     else:
         m = prepare_pt2e(model, quantizer)
 
-    for data in calibration_inputs:
-        m(*data)
+    if not is_qat or (is_qat and not train_fn):
+        for data in calibration_inputs:
+            m(*data)
 
     if is_qat:
         m = RemoveSimulatedLinearBatchNormFusionQATPass()(m).graph_module
