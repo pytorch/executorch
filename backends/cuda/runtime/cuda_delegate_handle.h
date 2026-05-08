@@ -11,6 +11,7 @@
 #include <cuda_runtime.h>
 #include <executorch/backends/aoti/aoti_delegate_handle.h>
 #include <memory>
+#include <vector>
 
 namespace executorch {
 namespace backends {
@@ -38,6 +39,112 @@ inline std::shared_ptr<cudaStream_t> create_cuda_stream() {
   return std::shared_ptr<cudaStream_t>(
       new cudaStream_t(stream), CudaStreamDeleter());
 }
+
+// Phases of the CUDA graph lifecycle for a delegate handle.
+//
+// The transition flow is:
+//   Disabled  ──(if CUDA graph is enabled for this method)──▶  Warmup
+//   Warmup    ──(after `warmup_remaining` execute() calls)──▶  Replay
+//
+// - Disabled: CUDA graph is not used for this method. Every execute() runs
+//   eagerly through the normal kernel-launch path.
+//
+// - Warmup:   The first `kCudaGraphWarmupSteps` execute() calls run eagerly
+//   to let lazy allocators, autotuners, and JIT-compiled kernels stabilize.
+//   On the final warmup step (`warmup_remaining == 0`), persistent static
+//   input/output GPU buffers are allocated and the work is recorded into
+//   `graph` / `graph_exec` via stream capture.
+//
+// - Replay:   The captured `graph_exec` is launched on every execute() call.
+//   Inputs are memcpy'd into the static input buffers, the graph is replayed,
+//   and outputs are memcpy'd back from the static output buffers. No tensor
+//   setup or kernel launches happen on the host hot path.
+enum class CudaGraphPhase {
+  Disabled = 0,
+  Warmup = 1,
+  Replay = 2,
+};
+
+// All CUDA graph related state grouped into a single struct.
+struct CudaGraphState {
+  CudaGraphPhase phase = CudaGraphPhase::Disabled;
+  int warmup_remaining = 0;
+
+  // Captured graph and executable instance
+  cudaGraph_t graph = nullptr;
+  cudaGraphExec_t graph_exec = nullptr;
+
+  // Static input/output GPU buffers pinned during capture.
+  // These hold the tensor metadata; the underlying data pointers are fixed
+  // addresses that CUDA graph replay will write to / read from.
+  std::vector<void*> static_input_ptrs;
+  std::vector<void*> static_output_ptrs;
+  std::vector<size_t> static_input_nbytes;
+  std::vector<size_t> static_output_nbytes;
+
+  CudaGraphState() = default;
+
+  ~CudaGraphState() {
+    if (graph_exec) {
+      cudaGraphExecDestroy(graph_exec);
+    }
+    if (graph) {
+      cudaGraphDestroy(graph);
+    }
+    // Only free input buffers — output buffers are owned by the AOTI runtime
+    // (allocated during graph capture via the caching allocator).
+    for (auto* ptr : static_input_ptrs) {
+      if (ptr)
+        cudaFree(ptr);
+    }
+  }
+
+  // Non-copyable: prevent double-free of CUDA resources
+  CudaGraphState(const CudaGraphState&) = delete;
+  CudaGraphState& operator=(const CudaGraphState&) = delete;
+
+  // Movable
+  CudaGraphState(CudaGraphState&& other) noexcept
+      : phase(other.phase),
+        warmup_remaining(other.warmup_remaining),
+        graph(other.graph),
+        graph_exec(other.graph_exec),
+        static_input_ptrs(std::move(other.static_input_ptrs)),
+        static_output_ptrs(std::move(other.static_output_ptrs)),
+        static_input_nbytes(std::move(other.static_input_nbytes)),
+        static_output_nbytes(std::move(other.static_output_nbytes)) {
+    other.graph = nullptr;
+    other.graph_exec = nullptr;
+  }
+
+  CudaGraphState& operator=(CudaGraphState&& other) noexcept {
+    if (this != &other) {
+      // Clean up existing resources
+      if (graph_exec)
+        cudaGraphExecDestroy(graph_exec);
+      if (graph)
+        cudaGraphDestroy(graph);
+      for (auto* ptr : static_input_ptrs) {
+        if (ptr)
+          cudaFree(ptr);
+      }
+
+      phase = other.phase;
+      warmup_remaining = other.warmup_remaining;
+      graph = other.graph;
+      graph_exec = other.graph_exec;
+      static_input_ptrs = std::move(other.static_input_ptrs);
+      static_output_ptrs = std::move(other.static_output_ptrs);
+      static_input_nbytes = std::move(other.static_input_nbytes);
+      static_output_nbytes = std::move(other.static_output_nbytes);
+
+      other.graph = nullptr;
+      other.graph_exec = nullptr;
+    }
+    return *this;
+  }
+};
+
 // CUDA-specific delegate handle that extends AOTIDelegateHandle.
 // This consolidates CUDA stream management into a single location.
 struct CudaDelegateHandle : public aoti::AOTIDelegateHandle {
@@ -58,6 +165,9 @@ struct CudaDelegateHandle : public aoti::AOTIDelegateHandle {
   bool has_cuda_stream() const {
     return cuda_stream != nullptr && *cuda_stream != nullptr;
   }
+
+  // CUDA graph state (warmup, capture, replay, static buffers)
+  CudaGraphState cuda_graph_state;
 };
 
 } // namespace cuda

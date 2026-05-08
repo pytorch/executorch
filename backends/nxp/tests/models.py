@@ -348,12 +348,12 @@ class MaxPool2dConvModule(torch.nn.Module):
 
 
 class AvgPool2dModule(torch.nn.Module):
-    def __init__(self, count_include_pad, padding=0):
+    def __init__(self, count_include_pad, padding=0, kernel_size=3, stride=2):
         super().__init__()
 
         self.avg_pool = torch.nn.AvgPool2d(
-            kernel_size=3,
-            stride=2,
+            kernel_size=kernel_size,
+            stride=stride,
             padding=padding,
             count_include_pad=count_include_pad,
         )

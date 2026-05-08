@@ -14,6 +14,7 @@ from executorch.backends.arm.tosa.specification import (
 )
 from executorch.exir import to_edge
 from executorch.exir.dialects._ops import ops as exir_ops
+from torch._export.utils import _get_shape_env_from_gm
 from torch.export import Dim, export
 
 
@@ -26,7 +27,7 @@ class ConvModule(torch.nn.Module):
         return self.conv(x)
 
 
-def test_insert_dynamic_padding_no_target():
+def test_insert_dynamic_padding():
     model = ConvModule()
     example_inputs = (torch.randn(1, 3, 8, 8),)
     ep = export(
@@ -37,7 +38,10 @@ def test_insert_dynamic_padding_no_target():
         },
     )
     edge_model = to_edge(ep)
-    with TosaLoweringContext(TosaSpecification.create_from_string("TOSA-1.1+FP+shape")):
+    shape_env = _get_shape_env_from_gm(edge_model.exported_program().graph_module)
+    with TosaLoweringContext(
+        TosaSpecification.create_from_string("TOSA-1.1+FP+shape"), shape_env
+    ):
         edge_model = edge_model.transform(
             [RewriteConvPass(edge_model.exported_program())]
         )
