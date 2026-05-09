@@ -1,3 +1,5 @@
+load("@fbcode_macros//build_defs:build_file_migration.bzl", "fbcode_target", "non_fbcode_target")
+oncall("executorch")
 # Any targets that should be shared between fbcode and xplat must be defined in
 # targets.bzl. This file can contain xplat-only targets.
 
@@ -7,9 +9,8 @@ load(
 )
 load("@fbsource//xplat/executorch/build:runtime_wrapper.bzl", "runtime")
 
-oncall("executorch")
 
-runtime.cxx_library(
+non_fbcode_target(_kind = runtime.cxx_library,
     name = "neuron_backend",
     srcs = [
         "NeuronBackend.cpp",
@@ -31,3 +32,6 @@ runtime.cxx_library(
     platforms = [ANDROID],
     visibility = ["PUBLIC"],
 )
+
+# !!!! fbcode/executorch/backends/mediatek/runtime/TARGETS was merged into this file, see https://fburl.com/workplace/xl8l9yuo for more info !!!!
+
