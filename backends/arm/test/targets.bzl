@@ -3,7 +3,7 @@ load("@fbcode_macros//build_defs:python_pytest.bzl", "python_pytest")
 load("@bazel_skylib//lib:paths.bzl", "paths")
 load("@fbsource//xplat/executorch/build:runtime_wrapper.bzl", "runtime")
 
-_ENABLE_VGF = False  # Disabled: memfd_create blocked by seccomp on Sandcastle causes segfaults before Python pre-flight check can run
+_ENABLE_VGF = True
 
 def define_arm_tests():
     # TODO [fbonly] Add more tests
@@ -30,6 +30,7 @@ def define_arm_tests():
         "ops/test_slice.py",
         "ops/test_sigmoid.py",
         "ops/test_sub.py",
+        "ops/test_sum.py",
         "ops/test_tanh.py",
         "ops/test_view.py",
         "ops/test_cos.py",
