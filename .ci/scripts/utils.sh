@@ -127,6 +127,10 @@ install_pytorch_and_domains() {
   if [[ "${torch_wheel_not_found}" == "1" ]]; then
     echo "No cached wheel found, continue with building PyTorch at ${TORCH_VERSION}"
 
+    # Install PyTorch's own build-time deps so the source build does not
+    # silently inherit them from whatever else happens to be in the env
+    # (e.g. executorch's requirements-ci.txt).
+    pip install -r requirements-build.txt
     git submodule update --init --recursive
     USE_DISTRIBUTED=1 python setup.py bdist_wheel
     pip install "$(echo dist/*.whl)"
