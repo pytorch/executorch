@@ -1,10 +1,11 @@
+load("@fbcode_macros//build_defs:build_file_migration.bzl", "fbcode_target", "non_fbcode_target")
 load("@fbsource//xplat/executorch/build:runtime_wrapper.bzl", "runtime")
 load("@fbcode_macros//build_defs:python_unittest.bzl", "python_unittest")
 load("@fbcode_macros//build_defs:python_unittest_remote_gpu.bzl", "python_unittest_remote_gpu")
 
 oncall("executorch")
 
-python_unittest_remote_gpu(
+fbcode_target(_kind = python_unittest_remote_gpu,
     name = "test_cuda_export",
     srcs = [
         "test_cuda_export.py",
@@ -24,7 +25,7 @@ python_unittest_remote_gpu(
     keep_gpu_sections = True,
 )
 
-python_unittest(
+fbcode_target(_kind = python_unittest,
     name = "test_cuda_partitioner",
     srcs = [
         "test_cuda_partitioner.py",
