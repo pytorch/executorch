@@ -25,6 +25,8 @@ ${SUDO} apt-get install -y --no-install-recommends \
     gcc-riscv64-linux-gnu \
     g++-riscv64-linux-gnu \
     binutils-riscv64-linux-gnu \
+    libc6-riscv64-cross \
+    libc6-dev-riscv64-cross \
     qemu-user-static
 
 riscv64-linux-gnu-gcc --version | head -n1
