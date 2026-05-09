@@ -1081,7 +1081,7 @@ def _sanity_check_graph_for_non_decomp_ops(
                     logging.warning(warning_str)
 
 
-def _remove_invalid_ops_for_not_decompose(
+def _remove_invalid_ops_for_not_decompose(  # noqa: C901
     preserve_ops: List[torch._ops.OpOverload],
 ) -> List[torch._ops.OpOverload]:
     _logged_warnings = set()
@@ -1119,6 +1119,16 @@ def _remove_invalid_ops_for_not_decompose(
                 return False
 
             if native_schema.aliased_return_names() != [None]:
+                log_warning(
+                    f"Op {op} was requested for preservation by partitioner.  This request is ignored because it aliases output."
+                )
+                return False
+
+        # Fallback: torchgen does not detect alias annotations on ops
+        # returning lists of aliased tensors (e.g. split.Tensor returns
+        # Tensor(a)[]). Check op._schema.returns directly.
+        for ret in schema.returns:
+            if ret.alias_info is not None:
                 log_warning(
                     f"Op {op} was requested for preservation by partitioner.  This request is ignored because it aliases output."
                 )
