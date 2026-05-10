@@ -355,6 +355,12 @@ function(gen_operators_lib)
           selected_portable_kernels PRIVATE EXECUTORCH_SELECTIVE_BUILD_DTYPE=1
         )
 
+        install(
+          TARGETS selected_kernels_util_all_deps selected_portable_kernels
+          EXPORT ExecuTorchTargets
+          DESTINATION ${CMAKE_INSTALL_LIBDIR}
+        )
+
         target_link_libraries(${GEN_LIB_NAME} PUBLIC selected_portable_kernels)
       else()
         message(

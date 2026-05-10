@@ -423,15 +423,9 @@ check_conflicting_options_on(
   EXECUTORCH_BUILD_PTHREADPOOL EXECUTORCH_BUILD_CPUINFO
 )
 
-# Selective build specifiers are mutually exclusive.
-check_conflicting_options_on(
-  IF_ON EXECUTORCH_SELECT_OPS_YAML CONFLICTS_WITH EXECUTORCH_SELECT_OPS_LIST
-  EXECUTORCH_SELECT_OPS_MODEL
-)
-
-check_conflicting_options_on(
-  IF_ON EXECUTORCH_SELECT_OPS_LIST CONFLICTS_WITH EXECUTORCH_SELECT_OPS_MODEL
-)
+# Legacy selective build selectors are intentionally allowed to compose.
+# This matches gen_oplist.py, which merges list, YAML, and model inputs into
+# one selected_operators.yaml file.
 
 check_required_options_on(
   IF_ON EXECUTORCH_BUILD_WASM REQUIRES EXECUTORCH_BUILD_EXTENSION_MODULE
