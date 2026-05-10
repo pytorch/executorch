@@ -171,7 +171,7 @@ set(EXECUTORCH_BUILD_PRESET_FILE ${CMAKE_SOURCE_DIR}/executorch/tools/cmake/pres
 Standalone build:
 ```bash
 # Configure the build with the ios preset.
-cmake --preset ios
+cmake -B cmake-out --preset ios
 ```
 
 #### Build Options
