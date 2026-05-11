@@ -6,7 +6,6 @@
 import operator
 
 import numpy as np
-import pytest
 import torch
 
 from executorch.backends.nxp.backend.edge_program_converter import (
@@ -19,7 +18,13 @@ from executorch.backends.nxp.tests.executors import (
     ToChannelFirstPreprocess,
     ToChannelLastPreprocess,
 )
+from executorch.backends.nxp.tests.graph_verifier import (
+    BaseGraphVerifier,
+    NonDelegatedNode,
+)
+from executorch.backends.nxp.tests.nsys_testing import lower_run_compare
 from executorch.backends.nxp.tests.use_qat import *  # noqa F403
+import pytest
 
 # noinspection PyProtectedMember
 from executorch.exir.dialects._ops import ops as exir_ops
@@ -47,7 +52,7 @@ class MaxPool1DModule(torch.nn.Module):
 
 
 class MaxPool2dModule(torch.nn.Module):
-    def __init__(self, kernel_size=3, **kwargs):
+    def __init__(self, kernel_size: int | tuple[int, ...] = 3, **kwargs):
         super().__init__()
         self.max_pool2d = torch.nn.MaxPool2d(kernel_size, **kwargs)
 
@@ -249,4 +254,125 @@ class TestMaxPool1D:
             input_data=input_data,
             tflite_input_preprocess=ToChannelLastPreprocess(),
             tflite_output_preprocess=ToChannelFirstPreprocess(),
+        )
+
+
+class TestMaxPool2DNewNeutronFlow:
+    # noinspection PyMethodMayBeStatic
+    def assert_delegated(self, model, input_shape):
+        graph_verifier = BaseGraphVerifier(
+            exp_num_delegate_call_nodes=1,  # Delegated MaxPool.
+            exp_non_delegated_nodes=[],
+        )
+
+        lower_run_compare(
+            model, input_shape, graph_verifier, use_new_flow_neutron_c=True
+        )
+
+    # noinspection PyMethodMayBeStatic
+    def assert_not_delegated(self, model, input_shape):
+        delegated_ep = to_quantized_edge_program(
+            model, input_shape, use_new_flow_neutron_c=True
+        ).exported_program()
+
+        # Make sure the `max_pool2d` was NOT delegated.
+        assert not graph_contains_any_of_ops(
+            delegated_ep.graph, [ExecutorchDelegateCall]
+        )
+        assert graph_contains_any_of_ops(delegated_ep.graph, [MaxPool2D])
+
+    def test__basic_nsys_inference(self):
+        input_shape = (2, 4, 6, 7)  # The old flow limited the batch size to 1.
+        model = MaxPool2dModule()
+        self.assert_delegated(model, input_shape)
+
+    def test__kernel_size_limit(self):
+        kernel_size = (1, 4096)
+        input_shape = (1, 4) + kernel_size
+        model = MaxPool2dModule(kernel_size)
+        self.assert_delegated(model, input_shape)
+
+    def test__kernel_size_limit_exceeded(self):
+        kernel_size = (1, 4097)  # Exceeds the kernel size limit.
+        input_shape = (1, 4) + kernel_size
+        model = MaxPool2dModule(kernel_size)
+        self.assert_not_delegated(model, input_shape)
+
+    def test__stride_limit__no_padding(self):
+        stride = 4096
+        input_shape = (1, 4, 1, 4096)
+        model = MaxPool2dModule(1, stride=stride)
+        self.assert_delegated(model, input_shape)
+
+    def test__stride_limit_exceeded__no_padding(self):
+        stride = 4097  # Exceeds the stride limit.
+        input_shape = (1, 4, 1, 4096)
+        model = MaxPool2dModule(1, stride=stride)
+        self.assert_not_delegated(model, input_shape)
+
+    def test__stride_limit__padding(self):
+        padding = 1
+        stride = 4096
+        input_shape = (1, 2, 3, stride)
+        model = MaxPool2dModule(3, stride=stride, padding=padding)
+        self.assert_delegated(model, input_shape)
+
+    def test__stride_limit_exceeded__padding(self):
+        padding = 1
+        stride = 4097  # Exceeds the stride limit.
+        input_shape = (1, 2, 3, stride)
+        model = MaxPool2dModule(3, stride=stride, padding=padding)
+        self.assert_not_delegated(model, input_shape)
+
+    @pytest.mark.skip(
+        reason="Large padding requires large kernel size which results in an extremely slow test."
+    )
+    def test__padding_limit(self):
+        # As the padding is added wia a `Pad` operator (not the `MaxPool` arguments), there is no limit to the padded
+        #  value. But as padding can be at most half of the kernel size (PyTorch requirement) and kernel size is limited
+        #  to 4096, padding of 2048 is the limit.
+        padding = 2048
+        kernel_size = padding * 2
+        input_shape = (1, 1, 2, 3)
+        model = MaxPool2dModule(kernel_size, padding=padding)
+        self.assert_delegated(model, input_shape)
+
+    def test__padding__max_pool_limit_exceeded(self):
+        # NeutronIR `MaxPool` padding is limited to 32. But as it is added by the `Pad` operator instead, there is no
+        #  limit. This tests ensures the `MaxPool` padding limit is not a problem.
+        padding = 33
+        kernel_size = padding * 2
+        input_shape = (1, 2, 3, 4)
+        model = MaxPool2dModule(kernel_size, padding=padding)
+        self.assert_delegated(model, input_shape)
+
+    def test__padding_to_kernel_ratio_exceeded(self):
+        # Both PyTorch and Neutron require the padding to be at most half of the kernel size.
+        kernel_size = 3
+        padding = 2  # More than half of the kernel size.
+        input_shape = (1, 2, 3, 4)
+        model = MaxPool2dModule(kernel_size, padding=padding)
+        with pytest.raises(
+            RuntimeError, match="pad should be at most half of effective kernel size"
+        ):
+            to_quantized_edge_program(model, input_shape, use_new_flow_neutron_c=True)
+
+
+class TestMaxPool1DNewNeutronFlow:
+
+    # Just a basic test to verify that the operator gets extended to the 2D variant correctly.
+    def test__basic_nsys_inference__view_not_delegated(self):
+        input_shape = (2, 4, 6)  # The old flow limited the batch size to 1.
+        model = MaxPool1DModule()
+        graph_verifier = BaseGraphVerifier(
+            exp_num_delegate_call_nodes=1,  # Delegated MaxPool.
+            exp_non_delegated_nodes=[
+                NonDelegatedNode(
+                    "aten_view_copy_default", 2
+                )  # Non delegated due to shape requirements.
+            ],
+        )
+
+        lower_run_compare(
+            model, input_shape, graph_verifier, use_new_flow_neutron_c=True
         )
