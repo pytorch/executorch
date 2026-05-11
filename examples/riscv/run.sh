@@ -20,11 +20,13 @@ build_dir="${et_root_dir}/cmake-out-riscv"
 output_dir="${et_root_dir}/riscv_test"
 qemu="qemu-riscv64-static"
 qemu_timeout="600"
+xnnpack=false
 
 usage() {
     cat <<EOF
 Usage: $(basename "$0") [options]
 Options:
+  --xnnpack               Enable the XNNPACK backend (AOT partitioner + runtime)
   --build_only            Only export and cross-compile; do not invoke QEMU
   --build_dir=<DIR>       CMake build directory (default: ${build_dir})
   --output_dir=<DIR>      Directory for the exported .bpte (default: ${output_dir})
@@ -36,6 +38,7 @@ EOF
 
 for arg in "$@"; do
     case $arg in
+        --xnnpack) xnnpack=true ;;
         --build_only) build_only=true ;;
         --build_dir=*) build_dir="${arg#*=}" ;;
         --output_dir=*) output_dir="${arg#*=}" ;;
@@ -50,11 +53,20 @@ mkdir -p "${output_dir}"
 bpte_path="${output_dir}/add_riscv.bpte"
 
 echo "[run.sh] Step 1/3: AOT export on host"
-python "${script_dir}/aot_riscv.py" --output "${bpte_path}"
+aot_extra_args=()
+if ${xnnpack}; then
+    aot_extra_args+=(--xnnpack)
+fi
+python "${script_dir}/aot_riscv.py" "${aot_extra_args[@]}" --output "${bpte_path}"
 
 echo "[run.sh] Step 2/3: cross-compile executor_runner for riscv64-linux"
+cmake_extra_args=()
+if ${xnnpack}; then
+    cmake_extra_args+=(-DEXECUTORCH_BUILD_XNNPACK=ON)
+fi
 cmake -S "${et_root_dir}" -B "${build_dir}" \
     --preset riscv64-linux \
+    "${cmake_extra_args[@]}" \
     -DCMAKE_BUILD_TYPE=Release
 cmake --build "${build_dir}" -j"$(nproc)" --target executor_runner
 

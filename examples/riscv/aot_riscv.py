@@ -36,13 +36,34 @@ def main() -> None:
         default=Path("add_riscv.bpte"),
         help="Output .bpte path",
     )
+    parser.add_argument(
+        "--xnnpack",
+        action="store_true",
+        help="Lower through the XNNPACK partitioner",
+    )
     args = parser.parse_args()
 
     model = AddModule().eval()
     example_inputs = (torch.ones(1, 4), torch.full((1, 4), 2.0))
 
     exported = export(model, example_inputs)
-    et_program = to_edge_transform_and_lower(exported).to_executorch()
+    partitioners = []
+    if args.xnnpack:
+        from executorch.backends.xnnpack.partition.xnnpack_partitioner import (
+            XnnpackPartitioner,
+        )
+
+        partitioners.append(XnnpackPartitioner())
+
+    edge = to_edge_transform_and_lower(exported, partitioner=partitioners)
+    delegated = sum(
+        1
+        for n in edge.exported_program().graph.nodes
+        if n.op == "call_function" and "call_delegate" in str(n.target)
+    )
+    print(f"[aot_riscv] xnnpack={args.xnnpack} delegated_nodes={delegated}")
+
+    et_program = edge.to_executorch()
 
     test_inputs = [
         (torch.ones(1, 4), torch.full((1, 4), 2.0)),

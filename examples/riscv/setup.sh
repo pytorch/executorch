@@ -23,14 +23,19 @@ fi
 ${SUDO} apt-get update
 ${SUDO} apt-get install -y --no-install-recommends \
     build-essential \
-    gcc-riscv64-linux-gnu \
-    g++-riscv64-linux-gnu \
+    gcc${GCC_VERSION:+-${GCC_VERSION}}-riscv64-linux-gnu \
+    g++${GCC_VERSION:+-${GCC_VERSION}}-riscv64-linux-gnu \
     binutils-riscv64-linux-gnu \
     libc6-riscv64-cross \
     libc6-dev-riscv64-cross \
     cmake \
     file \
     qemu-user-static
+
+if [[ -n "${GCC_VERSION+x}" ]]; then
+    ${SUDO} update-alternatives --install /usr/bin/riscv64-linux-gnu-gcc riscv64-linux-gnu-gcc /usr/bin/riscv64-linux-gnu-gcc${GCC_VERSION:+-${GCC_VERSION}} 100
+    ${SUDO} update-alternatives --install /usr/bin/riscv64-linux-gnu-g++ riscv64-linux-gnu-g++ /usr/bin/riscv64-linux-gnu-g++${GCC_VERSION:+-${GCC_VERSION}} 100
+fi
 
 riscv64-linux-gnu-gcc --version | head -n1
 qemu-riscv64-static --version | head -n1

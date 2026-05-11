@@ -25,6 +25,16 @@ jobs:
   test-riscv:
     name: test-riscv
     uses: ./.github/workflows/_test_riscv.yml
+    strategy:
+      matrix:
+        include:
+          - { model: add, xnnpack: false }
+          - { model: add, xnnpack: true }
     permissions:
       id-token: write
       contents: read
+    with:
+      xnnpack: ${{ matrix.xnnpack }}
+      # XNNPACK requires GCC 14+
+      gcc-version: ${{ matrix.xnnpack && 14 }}
+      docker-image: ${{ matrix.xnnpack && 'ci-image:executorch-ubuntu-24.04-gcc14' }}
