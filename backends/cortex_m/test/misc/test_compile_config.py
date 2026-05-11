@@ -79,9 +79,7 @@ class TestCortexMCompileConfig:
         assert config.isa == "scalar"
 
 
-@pytest.mark.skipif(
-    not _HAS_CMSIS_NN, reason="cortex_m passes require cmsis_nn"
-)
+@pytest.mark.skipif(not _HAS_CMSIS_NN, reason="cortex_m passes require cmsis_nn")
 class TestPassManagerConfigWiring:
     def test_default_config_is_m55(self):
         from executorch.backends.cortex_m.passes.cortex_m_pass_manager import (

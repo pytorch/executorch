@@ -56,7 +56,7 @@ class CortexMRunPasses(RunPasses):
         # Pre-bind the config so it flows through that 2-arg call.
         super().__init__(
             partial(CortexMPassManager, config=config),  # type: ignore[arg-type]
-            CortexMPassManager.pass_list,
+            CortexMPassManager.pass_list,  # type: ignore[arg-type]
         )
 
 
@@ -89,7 +89,9 @@ class CortexMTester(TesterBase):
         else:
             resolved_example_inputs = example_inputs
         config = config or CortexMCompileConfig()
-        stage_classes = dict(cortex_m_stage_classes)
+        stage_classes: dict[StageType, Callable[..., Any]] = dict(
+            cortex_m_stage_classes
+        )
         stage_classes[StageType.RUN_PASSES] = lambda: CortexMRunPasses(config=config)
         super().__init__(module, resolved_example_inputs, stage_classes)
 
