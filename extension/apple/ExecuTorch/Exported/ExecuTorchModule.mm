@@ -314,7 +314,10 @@ static inline ExecuTorchValue *toExecuTorchValue(EValue value) NS_RETURNS_RETAIN
 
 - (BOOL)loadMethod:(NSString *)methodName
              error:(NSError **)error {
+#pragma clang diagnostic push
+#pragma clang diagnostic ignored "-Wnullable-to-nonnull-conversion"
   const auto errorCode = _module->load_method(methodName.UTF8String);
+#pragma clang diagnostic pop
   if (errorCode != Error::Ok) {
     if (error) {
       *error = ExecuTorchErrorWithCode((ExecuTorchErrorCode)errorCode);
@@ -325,11 +328,17 @@ static inline ExecuTorchValue *toExecuTorchValue(EValue value) NS_RETURNS_RETAIN
 }
 
 - (BOOL)isMethodLoaded:(NSString *)methodName {
+#pragma clang diagnostic push
+#pragma clang diagnostic ignored "-Wnullable-to-nonnull-conversion"
   return _module->is_method_loaded(methodName.UTF8String);
+#pragma clang diagnostic pop
 }
 
 - (BOOL)unloadMethod:(NSString *)methodName {
+#pragma clang diagnostic push
+#pragma clang diagnostic ignored "-Wnullable-to-nonnull-conversion"
   const auto didUnload = _module->unload_method(methodName.UTF8String);
+#pragma clang diagnostic pop
   [_inputs removeObjectForKey:methodName];
   [_outputs removeObjectForKey:methodName];
   return didUnload;
@@ -352,7 +361,10 @@ static inline ExecuTorchValue *toExecuTorchValue(EValue value) NS_RETURNS_RETAIN
 
 - (nullable ExecuTorchMethodMetadata *)methodMetadata:(NSString *)methodName
                                                 error:(NSError **)error {
+#pragma clang diagnostic push
+#pragma clang diagnostic ignored "-Wnullable-to-nonnull-conversion"
   const auto result = _module->method_meta(methodName.UTF8String);
+#pragma clang diagnostic pop
   if (!result.ok()) {
     if (error) {
       *error = ExecuTorchErrorWithCode((ExecuTorchErrorCode)result.error());
@@ -497,7 +509,10 @@ static inline ExecuTorchValue *toExecuTorchValue(EValue value) NS_RETURNS_RETAIN
        forMethod:(NSString *)methodName
          atIndex:(NSInteger)index
            error:(NSError **)error {
+#pragma clang diagnostic push
+#pragma clang diagnostic ignored "-Wnullable-to-nonnull-conversion"
   const auto errorCode = _module->set_input(methodName.UTF8String, toEValue(value), index);
+#pragma clang diagnostic pop
   if (errorCode != Error::Ok) {
     if (error) {
       *error = ExecuTorchErrorWithCode((ExecuTorchErrorCode)errorCode);
@@ -537,7 +552,10 @@ static inline ExecuTorchValue *toExecuTorchValue(EValue value) NS_RETURNS_RETAIN
   for (ExecuTorchValue *value in values) {
     inputs.push_back(toEValue(value));
   }
+#pragma clang diagnostic push
+#pragma clang diagnostic ignored "-Wnullable-to-nonnull-conversion"
   const auto errorCode = _module->set_inputs(methodName.UTF8String, inputs);
+#pragma clang diagnostic pop
   if (errorCode != Error::Ok) {
     if (error) {
       *error = ExecuTorchErrorWithCode((ExecuTorchErrorCode)errorCode);
@@ -580,7 +598,10 @@ static inline ExecuTorchValue *toExecuTorchValue(EValue value) NS_RETURNS_RETAIN
         forMethod:(NSString *)methodName
           atIndex:(NSInteger)index
             error:(NSError **)error {
+#pragma clang diagnostic push
+#pragma clang diagnostic ignored "-Wnullable-to-nonnull-conversion"
   const auto errorCode = _module->set_output(methodName.UTF8String, toEValue(value), index);
+#pragma clang diagnostic pop
   if (errorCode != Error::Ok) {
     if (error) {
       *error = ExecuTorchErrorWithCode((ExecuTorchErrorCode)errorCode);
