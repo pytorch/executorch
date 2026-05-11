@@ -302,11 +302,41 @@ test_deit_e2e_ethos_u() {
 test_model_smollm2_135M() {
     echo "${TEST_SUITE_NAME}: Test SmolLM2-135M on Ethos-U85"
 
-    # Build common libs once
-    python3 backends/arm/test/test_model.py --test_output=arm_test/test_model --build_libs
+    backends/arm/scripts/build_executorch.sh
 
-    python3 backends/arm/test/test_model.py --test_output=arm_test/test_model --target=ethos-u85-128 --model=smollm2 --extra_flags="-DEXECUTORCH_SELECT_OPS_LIST=dim_order_ops::_to_dim_order_copy.out" --specify_ethosu_scratch
+    # Build pte for smollm2
+    python -m extension.llm.export.export_llm \
+        base.model_class=smollm2 \
+        base.params=examples/models/smollm2/135M_config.json \
+        debug.verbose=True model.enable_dynamic_shape=False quantization.pt2e_quantize="ethosu_8a8w" \
+        backend.ethosu.enabled=True backend.ethosu.target="ethos-u85-256" backend.ethosu.memory_mode=Dedicated_Sram_384KB
 
+    # Build the arm_executor_runner application, pre-loading the pte in the DDR for faster linking
+    local pte_addr="0x76000000"
+    backends/arm/scripts/build_executor_runner.sh \
+      --et_build_root="${et_root_dir}/arm_test" \
+      --pte="${pte_addr}" \
+      --build_type=Release \
+      --target=ethos-u85-256 \
+      --system_config=Ethos_U85_SYS_DRAM_Mid \
+      --memory_mode=Dedicated_Sram_384KB \
+      --ethosu_tools_dir="${scratch_dir}" \
+      --toolchain=arm-none-eabi-gcc \
+      --extra_build_flags="-DET_ARM_BAREMETAL_SCRATCH_TEMP_ALLOCATOR_POOL_SIZE=0x20000" \
+      --select_ops_list="dim_order_ops::_to_dim_order_copy.out" 
+
+
+    # Deploy the application on the FVP in fast mode
+    FVP_Corstone_SSE-320 -C mps4_board.subsystem.ethosu.num_macs=256 \
+        -C mps4_board.visualisation.disable-visualisation=1 \
+        -C vis_hdlcd.disable_visualisation=1 \
+        -C mps4_board.telnetterminal0.start_telnet=0 \
+        -C mps4_board.uart0.out_file='-' \
+        -C mps4_board.uart0.shutdown_on_eot=1 \
+        -a "${et_root_dir}"/arm_test/ethos-u85-256_${pte_addr}/cmake-out/arm_executor_runner \
+        -C mps4_board.subsystem.ethosu.extra_args="--fast" \
+        --data smollm2.pte@"${pte_addr}"
+    
     echo "${TEST_SUITE_NAME}: PASS"
 }
 
