@@ -154,12 +154,16 @@ install(
           xnnpack-normalization
           xnnpack-operators
           xnnpack-operator-run
+          xnnpack-operator-delete
           xnnpack-operator-utils
           xnnpack-pack-lh
           xnnpack-packing
           xnnpack-sanitizers
           xnnpack-subgraph
           xnnpack-datatype
+          xnnpack-fingerprint-id
+          xnnpack-fingerprint-cache
+          xnnpack-fingerprint-check
           xnnpack-reference-ukernels
           xnnpack-logging
   EXPORT ExecuTorchTargets

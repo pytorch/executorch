@@ -1810,7 +1810,7 @@ class KVCacheModel(nn.Module):
     """
     Test model wrapping KVCache from cache.py.
 
-    This tests the ExecutorTorch llama KVCache-compatible interface that uses
+    This tests the ExecuTorch llama KVCache-compatible interface that uses
     the mlx::kv_cache_update op internally.
     """
 
@@ -1845,7 +1845,7 @@ class KVCacheModel(nn.Module):
 @register_test
 class KVCacheTest(OpTestCase):
     """
-    Test case for MLX KVCache with ExecutorTorch llama KVCache interface.
+    Test case for MLX KVCache with ExecuTorch llama KVCache interface.
 
     This verifies that KVCache:
     1. Accepts the ET llama KVCache update interface
