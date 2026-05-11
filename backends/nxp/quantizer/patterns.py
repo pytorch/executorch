@@ -543,10 +543,17 @@ class Conv2dPattern(ConvPattern):
 
         # If the following node is a fusable activation, quantize together with activation
         output = [(conv_node,)]
-        if len(
-            conv_node.users
-        ) == 1 and self.neutron_target_info.is_supported_fused_activation__aten(
-            activation := next(iter(conv_node.users))
+        if len(conv_node.users) == 1 and (
+            self.neutron_target_info.is_supported_fused_activation__aten(
+                activation := next(iter(conv_node.users))
+            )
+            or (
+                self.is_qat
+                and _is_batch_norm(activation)
+                and self.neutron_target_info.is_supported_fused_activation__aten(
+                    activation := next(iter(activation.users))
+                )
+            )
         ):
             activation_quantizer = self.neutron_quantizer.op_to_quantizer[
                 activation.target
@@ -554,6 +561,14 @@ class Conv2dPattern(ConvPattern):
             activation_quantizer.annotate(gm)
             output = []
             activation.meta["quantization_annotation"].input_qspec_map = {}
+
+            if isinstance(bn := next(iter(conv_node.users)), Node) and _is_batch_norm(
+                bn
+            ):
+                bn_quantizer = self.neutron_quantizer.op_to_quantizer[bn.target]
+                bn_quantizer.annotate(gm)
+                bn.meta["quantization_annotation"].input_qspec_map = {}
+                bn.meta["quantization_annotation"].output_qspec = None
 
         # In order for QAT to be numerically correct, there should be no quantization between
         # convolution node and batch norm node.

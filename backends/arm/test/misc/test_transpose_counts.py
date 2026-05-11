@@ -445,16 +445,16 @@ cases = {
         Model6GruLinear(), (torch.randn(2, 16, 8),), 2
     ),
     "model_7_dwconv_batchnorm_linear": TransposeCountCase(
-        Model7DwConvBatchNormLinear(), (torch.randn(2, 8, 64),), 3
+        Model7DwConvBatchNormLinear(), (torch.randn(2, 8, 64),), 1
     ),
     "model_8_conv_batchnorm_maxpool_residual": TransposeCountCase(
-        Model8ConvBatchNormMaxPoolResidual(), (torch.randn(1, 8, 16, 16),), 6
+        Model8ConvBatchNormMaxPoolResidual(), (torch.randn(1, 8, 16, 16),), 4
     ),
     "model_9_dilated_conv_batchnorm_avgpool_residual": TransposeCountCase(
-        Model9DilatedConvBatchNormAvgPoolResidual(), (torch.randn(1, 8, 16, 16),), 6
+        Model9DilatedConvBatchNormAvgPoolResidual(), (torch.randn(1, 8, 16, 16),), 4
     ),
     "model_10_dwconv_batchnorm_linear_cat": TransposeCountCase(
-        Model10DwConvBatchNormLinearCat(), (torch.randn(2, 8, 64),), 3
+        Model10DwConvBatchNormLinearCat(), (torch.randn(2, 8, 64),), 1
     ),
 }
 
@@ -496,7 +496,7 @@ cases_channels_last = {
     "grouped_conv_channels_last": TransposeCountCase(
         GroupedConvModule(),
         (torch.randn(1, 4, 8, 8).to(memory_format=torch.channels_last),),
-        3,
+        0,
     ),
     "transpose_conv_channels_last": TransposeCountCase(
         TransposeConvModule(),

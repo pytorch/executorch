@@ -3,6 +3,8 @@
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
 
+import os
+
 import pytest
 import torch
 import torch.nn as nn
@@ -33,6 +35,8 @@ from executorch.exir import EdgeCompileConfig, to_edge, to_edge_transform_and_lo
 from executorch.exir.dialects._ops import ops as exir_ops
 from torch.export import Dim, export
 from torch.export.exported_program import _get_shape_env
+
+_VGF_ENABLED = "LAVAPIPE_LIB_PATH" in os.environ
 
 
 class TinyConvReluCat(nn.Module):
@@ -214,6 +218,7 @@ def test_rewrite_conv_tosa_FP():
     pipeline.run()
 
 
+@pytest.mark.skipif(not _VGF_ENABLED, reason="VGF not enabled")
 def test_fold_and_annotate_q_params_vgf_quant_preserves_output_qparams_on_non_fuseable_clamp() -> (
     None
 ):
@@ -228,6 +233,7 @@ def test_fold_and_annotate_q_params_vgf_quant_preserves_output_qparams_on_non_fu
     assert clamp.meta["output_qparams"]
 
 
+@pytest.mark.skipif(not _VGF_ENABLED, reason="VGF not enabled")
 def test_rewrite_conv_vgf_quant_handles_non_fuseable_conv_clamp_cat_branch() -> None:
     exported_program = _export_quantized(TinyConvReluCat())
     compile_spec = _compile_spec()
@@ -239,6 +245,7 @@ def test_rewrite_conv_vgf_quant_handles_non_fuseable_conv_clamp_cat_branch() -> 
     )
 
 
+@pytest.mark.skipif(not _VGF_ENABLED, reason="VGF not enabled")
 def test_rewrite_conv_vgf_quant_infers_quantized_bias_dtype_from_inputs() -> None:
     exported_program = _export_quantized(TinyConvReluCat(conv1_bias=False))
     edge_program = to_edge(
