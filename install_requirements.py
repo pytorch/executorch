@@ -12,18 +12,9 @@ import sys
 
 from install_utils import determine_torch_url, is_intel_mac_os, python_is_compatible
 
-from torch_pin import (
-    CHANNEL,
-    torch_index_url_base,
-    torch_spec,
-    torchaudio_spec,
-    torchvision_spec,
-)
-
-# Only RC wheels at /whl/test/ get re-uploaded under the same version, so
-# pip's local cache can serve stale content. Nightly and release wheels are
-# immutable per their identifier.
-_NO_CACHE_DIR_FLAG = ["--no-cache-dir"] if CHANNEL == "test" else []
+# The pip repository that hosts nightly torch packages.
+# This will be dynamically set based on CUDA availability and CUDA backend enabled/disabled.
+TORCH_URL_BASE = "https://download.pytorch.org/whl/test"
 
 # Since ExecuTorch often uses main-branch features of pytorch, only the nightly
 # pip versions will have the required features.
@@ -32,18 +23,17 @@ _NO_CACHE_DIR_FLAG = ["--no-cache-dir"] if CHANNEL == "test" else []
 # NIGHTLY_VERSION, you should re-run this script to install the necessary
 # package versions.
 #
-# NOTE: If you change torch_pin.py, the pre-commit hook runs
-# .github/scripts/update_pytorch_pin.py to refresh
-# .ci/docker/ci_commit_pins/pytorch.txt and the c10 grafted headers.
-# If you bypass the hook, run that script manually.
+# NOTE: If you're changing, make the corresponding change in .ci/docker/ci_commit_pins/pytorch.txt
+# by picking the hash from the same date in
+# https://hud.pytorch.org/hud/pytorch/pytorch/nightly/ @lint-ignore
 #
 # NOTE: If you're changing, make the corresponding supported CUDA versions in
 # SUPPORTED_CUDA_VERSIONS in install_utils.py if needed.
 
 
-def install_requirements(install_pinned_version):
-    # No prebuilt wheels are available for Intel macOS, regardless of channel.
-    if install_pinned_version and is_intel_mac_os():
+def install_requirements(use_pytorch_nightly):
+    # Skip pip install on Intel macOS if using nightly.
+    if use_pytorch_nightly and is_intel_mac_os():
         print(
             "ERROR: Prebuilt PyTorch wheels are no longer available for Intel-based macOS.\n"
             "Please build from source by following https://docs.pytorch.org/executorch/main/using-executorch-building-from-source.html",
@@ -52,26 +42,25 @@ def install_requirements(install_pinned_version):
         sys.exit(1)
 
     # Determine the appropriate PyTorch URL based on CUDA delegate status
-    torch_url = determine_torch_url(torch_index_url_base())
+    torch_url = determine_torch_url(TORCH_URL_BASE)
 
     # pip packages needed by exir.
     TORCH_PACKAGE = [
-        # Default: install the specific pinned version from the channel selected
-        # in torch_pin.py. With --use-pt-pinned-commit, pass plain "torch" and
-        # let pip resolve its default (CI's source-build is already installed).
-        (torch_spec() if install_pinned_version else "torch"),
+        # Setting use_pytorch_nightly to false to test the pinned PyTorch commit. Note
+        # that we don't need to set any version number there because they have already
+        # been installed on CI before this step, so pip won't reinstall them
+        ("torch==2.11.0" if use_pytorch_nightly else "torch"),
     ]
 
     # Install the requirements for core ExecuTorch package.
-    # `--extra-index-url` tells pip to look for package versions on the
-    # provided URL if they aren't available on the default URL.
+    # `--extra-index-url` tells pip to look for package
+    # versions on the provided URL if they aren't available on the default URL.
     subprocess.run(
         [
             sys.executable,
             "-m",
             "pip",
             "install",
-            *_NO_CACHE_DIR_FLAG,
             "-r",
             "requirements-dev.txt",
             *TORCH_PACKAGE,
@@ -117,14 +106,14 @@ def install_requirements(install_pinned_version):
     )
 
 
-def install_optional_example_requirements(install_pinned_version):
+def install_optional_example_requirements(use_pytorch_nightly):
     # Determine the appropriate PyTorch URL based on CUDA delegate status
-    torch_url = determine_torch_url(torch_index_url_base())
+    torch_url = determine_torch_url(TORCH_URL_BASE)
 
     print("Installing torch domain libraries")
     DOMAIN_LIBRARIES = [
-        (torchvision_spec() if install_pinned_version else "torchvision"),
-        (torchaudio_spec() if install_pinned_version else "torchaudio"),
+        ("torchvision==0.26.0" if use_pytorch_nightly else "torchvision"),
+        ("torchaudio==2.11.0" if use_pytorch_nightly else "torchaudio"),
     ]
     # Then install domain libraries
     subprocess.run(
@@ -133,7 +122,6 @@ def install_optional_example_requirements(install_pinned_version):
             "-m",
             "pip",
             "install",
-            *_NO_CACHE_DIR_FLAG,
             *DOMAIN_LIBRARIES,
             "--extra-index-url",
             torch_url,
@@ -164,11 +152,7 @@ def main(args):
     parser.add_argument(
         "--use-pt-pinned-commit",
         action="store_true",
-        help="install plain `torch` (whatever pip resolves by default; CI "
-        "uses this when torch is already built from source against the "
-        "pinned ref in pytorch.txt). Without this flag, install the specific "
-        "pinned version from the channel selected in torch_pin.py "
-        "(nightly / test / release).",
+        help="build from the pinned PyTorch commit instead of nightly",
     )
     parser.add_argument(
         "--example",
@@ -176,10 +160,10 @@ def main(args):
         help="Also installs required packages for running example scripts.",
     )
     args = parser.parse_args(args)
-    install_pinned_version = not bool(args.use_pt_pinned_commit)
-    install_requirements(install_pinned_version)
+    use_pytorch_nightly = not bool(args.use_pt_pinned_commit)
+    install_requirements(use_pytorch_nightly)
     if args.example:
-        install_optional_example_requirements(install_pinned_version)
+        install_optional_example_requirements(use_pytorch_nightly)
 
 
 if __name__ == "__main__":
