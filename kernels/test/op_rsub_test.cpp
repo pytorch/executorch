@@ -222,10 +222,8 @@ TEST_F(OpRSubScalarOutTest, MismatchedOutputDtypeDies) {
 
 // Mismatched shape tests.
 
+#ifndef USE_ATEN_LIB
 TEST_F(OpRSubScalarOutTest, MismatchedOutputShapesDies) {
-  if (SupportedFeatures::get()->is_aten) {
-    GTEST_SKIP() << "ATen kernel can handle output shapes";
-  }
 
   TensorFactory<ScalarType::Int> tf;
 
@@ -241,6 +239,7 @@ TEST_F(OpRSubScalarOutTest, MismatchedOutputShapesDies) {
   ET_EXPECT_KERNEL_FAILURE(
       context_, op_rsub_scalar_out(a, 1, /*alpha=*/0, out));
 }
+#endif
 
 TEST_F(OpRSubScalarOutTest, DynamicShapeUpperBoundSameAsExpected) {
   test_dynamic_shape(

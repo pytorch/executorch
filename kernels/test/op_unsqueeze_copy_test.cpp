@@ -122,10 +122,8 @@ TEST_F(OpUnsqueezeTest, EmptyInputSupported) {
 #undef TEST_ENTRY
 }
 
+#ifndef USE_ATEN_LIB
 TEST_F(OpUnsqueezeTest, InputOutputMismatchedSizesDie) {
-  if (torch::executor::testing::SupportedFeatures::get()->is_aten) {
-    GTEST_SKIP() << "ATen kernel can handle mismatched sizes";
-  }
   TensorFactory<ScalarType::Int> tf;
 
   Tensor input = tf.make(/*sizes=*/{3, 1, 2}, /*data=*/{1, 2, 3, 4, 5, 6});
@@ -137,11 +135,10 @@ TEST_F(OpUnsqueezeTest, InputOutputMismatchedSizesDie) {
   out = tf.ones(/*sizes=*/{3, 1, 1, 2, 1});
   ET_EXPECT_KERNEL_FAILURE(context_, op_unsqueeze_copy_out(input, dim, out));
 }
+#endif
 
+#ifndef USE_ATEN_LIB
 TEST_F(OpUnsqueezeTest, DimOutputMismatchedSizesDie) {
-  if (torch::executor::testing::SupportedFeatures::get()->is_aten) {
-    GTEST_SKIP() << "ATen kernel can handle mismatched sizes";
-  }
   TensorFactory<ScalarType::Int> tf;
   Tensor input = tf.make(/*sizes=*/{3, 1, 2}, /*data=*/{1, 2, 3, 4, 5, 6});
   Tensor out = tf.ones(/*sizes=*/{3, 1, 2, 1});
@@ -150,6 +147,7 @@ TEST_F(OpUnsqueezeTest, DimOutputMismatchedSizesDie) {
   // The size of output should be [3,1,1,2], not [3,1,2,1], since dim=2 not 3
   ET_EXPECT_KERNEL_FAILURE(context_, op_unsqueeze_copy_out(input, dim, out));
 }
+#endif
 
 TEST_F(OpUnsqueezeTest, MismatchedTypesDie) {
   TensorFactory<ScalarType::Int> tf_in;

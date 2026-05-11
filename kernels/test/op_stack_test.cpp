@@ -347,10 +347,8 @@ TEST_F(OpStackOutTest, MismatchedDtypesDies) {
           ArrayRef<Tensor>(inputs.data(), inputs.size()), /*dim=*/0, out));
 }
 
+#ifndef USE_ATEN_LIB
 TEST_F(OpStackOutTest, OutMatchNumelWithExtraDimAtEndDies) {
-  if (torch::executor::testing::SupportedFeatures::get()->is_aten) {
-    GTEST_SKIP() << "ATen kernel can handle out with mismatched dimensions";
-  }
   TensorFactory<ScalarType::Int> tf;
   Tensor out = tf.zeros({1, 2, 2, 1});
 
@@ -363,11 +361,10 @@ TEST_F(OpStackOutTest, OutMatchNumelWithExtraDimAtEndDies) {
       op_stack_out(
           ArrayRef<Tensor>(inputs.data(), inputs.size()), /*dim=*/0, out));
 }
+#endif
 
+#ifndef USE_ATEN_LIB
 TEST_F(OpStackOutTest, OutMatchNumelLackDimAtFrontDies) {
-  if (torch::executor::testing::SupportedFeatures::get()->is_aten) {
-    GTEST_SKIP() << "ATen kernel can handle out with mismatched dimensions";
-  }
   TensorFactory<ScalarType::Int> tf;
   Tensor out = tf.zeros({2, 2});
 
@@ -380,11 +377,10 @@ TEST_F(OpStackOutTest, OutMatchNumelLackDimAtFrontDies) {
       op_stack_out(
           ArrayRef<Tensor>(inputs.data(), inputs.size()), /*dim=*/0, out));
 }
+#endif
 
+#ifndef USE_ATEN_LIB
 TEST_F(OpStackOutTest, OutRegularMismatchDimDies) {
-  if (torch::executor::testing::SupportedFeatures::get()->is_aten) {
-    GTEST_SKIP() << "ATen kernel can handle out with mismatched dimensions";
-  }
   TensorFactory<ScalarType::Int> tf;
 
   // Should be {2, 2, 3} to match the inputs when calling stack() with dim 0.
@@ -400,6 +396,7 @@ TEST_F(OpStackOutTest, OutRegularMismatchDimDies) {
       op_stack_out(
           ArrayRef<Tensor>(inputs.data(), inputs.size()), /*dim=*/0, out));
 }
+#endif
 
 /* %python
 import torch

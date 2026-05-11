@@ -764,10 +764,8 @@ TEST_F(OpSliceScatterTensorOutTest, MismatchedOutDtypesDies) {
           input, src, /*dim=*/0, /*start=*/0, /*end=*/1, /*step=*/1, out));
 }
 
+#ifndef USE_ATEN_LIB
 TEST_F(OpSliceScatterTensorOutTest, OutSizeMismatchDimDies) {
-  if (torch::executor::testing::SupportedFeatures::get()->is_aten) {
-    GTEST_SKIP() << "ATen kernel can handle out with mismatched dimensions";
-  }
   TensorFactory<ScalarType::Int> tf;
 
   Tensor input = tf.zeros({2, 4, 7, 5});
@@ -781,11 +779,10 @@ TEST_F(OpSliceScatterTensorOutTest, OutSizeMismatchDimDies) {
       op_slice_scatter_out(
           input, src, /*dim=*/0, /*start=*/0, /*end=*/2, /*step=*/1, out));
 }
+#endif
 
+#ifndef USE_ATEN_LIB
 TEST_F(OpSliceScatterTensorOutTest, SrcSizeMismatchDimDies) {
-  if (torch::executor::testing::SupportedFeatures::get()->is_aten) {
-    GTEST_SKIP() << "ATen kernel can handle out with mismatched dimensions";
-  }
   TensorFactory<ScalarType::Int> tf;
 
   Tensor input = tf.zeros({2, 4, 7, 5});
@@ -799,6 +796,7 @@ TEST_F(OpSliceScatterTensorOutTest, SrcSizeMismatchDimDies) {
       op_slice_scatter_out(
           input, src, /*dim=*/0, /*start=*/0, /*end=*/2, /*step=*/1, out));
 }
+#endif
 
 TEST_F(OpSliceScatterTensorOutTest, DefaultStartValSupported) {
   TensorFactory<ScalarType::Int> tf;

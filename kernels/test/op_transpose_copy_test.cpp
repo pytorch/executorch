@@ -157,10 +157,8 @@ TEST_F(OpTransposeIntCopyTest, OutOfBoundDimDies) {
 }
 
 // transpose a 3d tensor into a 2d one
+#ifndef USE_ATEN_LIB
 TEST_F(OpTransposeIntCopyTest, MismatchedDimDies) {
-  if (torch::executor::testing::SupportedFeatures::get()->is_aten) {
-    GTEST_SKIP() << "ATen kernel can handle mismatched dimensions";
-  }
   TensorFactory<ScalarType::Float> tf;
 
   Tensor a = tf.ones(/*sizes=*/{4, 2, 3});
@@ -168,6 +166,7 @@ TEST_F(OpTransposeIntCopyTest, MismatchedDimDies) {
 
   ET_EXPECT_KERNEL_FAILURE(context_, op_transpose_copy_int_out(a, 0, 1, out));
 }
+#endif
 
 /* %python
 import torch

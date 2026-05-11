@@ -268,10 +268,8 @@ TEST_F(OpUnbindCopyIntOutTest, UnbindWorksWithZeroSizedTensors) {
   EXPECT_TENSOR_LISTS_EQ(out, expected_out);
 }
 
+#ifndef USE_ATEN_LIB
 TEST_F(OpUnbindCopyIntOutTest, UnbindFailsWithWronglyAllocatedOutput) {
-  if (torch::executor::testing::SupportedFeatures::get()->is_aten) {
-    GTEST_SKIP() << "ATen kernel can handle mismatched output shape";
-  }
   TensorFactory<ScalarType::Int> tf;
   TensorListFactory<ScalarType::Int> tlf;
 
@@ -302,6 +300,7 @@ TEST_F(OpUnbindCopyIntOutTest, UnbindFailsWithWronglyAllocatedOutput) {
   ET_EXPECT_KERNEL_FAILURE(
       context_, op_unbind_copy_int_out(input, /*dim=*/1, out));
 }
+#endif
 
 TEST_F(OpUnbindCopyIntOutTest, UnbindProduceScalarTensors) {
   TensorFactory<ScalarType::Int> tf;

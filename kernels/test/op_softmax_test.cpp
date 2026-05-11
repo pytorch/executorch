@@ -130,10 +130,8 @@ TEST_F(OpSoftmaxOutTest, MismatchedDimensionsDies) {
       context_, op_softmax_out(x, /*dim=*/3, /*half_to_float*/ false, out));
 }
 
+#ifndef USE_ATEN_LIB
 TEST_F(OpSoftmaxOutTest, MismatchedDimensionSizeDies) {
-  if (torch::executor::testing::SupportedFeatures::get()->is_aten) {
-    GTEST_SKIP() << "ATen kernel can handle mismatched dimension size";
-  }
   TensorFactory<ScalarType::Float> tf;
 
   Tensor x = tf.ones({3, 4});
@@ -145,11 +143,10 @@ TEST_F(OpSoftmaxOutTest, MismatchedDimensionSizeDies) {
       context_,
       op_softmax_out(x, /*dim=*/1, /*half_to_float*/ false, wrong_out));
 }
+#endif
 
+#ifndef USE_ATEN_LIB
 TEST_F(OpSoftmaxOutTest, NegativeDim) {
-  if (torch::executor::testing::SupportedFeatures::get()->is_aten) {
-    GTEST_SKIP() << "ATen kernel test fails";
-  }
   TensorFactory<ScalarType::Float> tf;
 
   // Input tensor with shape (2, 3) and values (0, 1, 2, 3, 4, 5).
@@ -195,6 +192,7 @@ TEST_F(OpSoftmaxOutTest, NegativeDim) {
   EXPECT_TENSOR_CLOSE(out, expected);
   EXPECT_TENSOR_CLOSE(out_negative_dim, expected);
 }
+#endif
 
 TEST_F(OpSoftmaxOutTest, SimpleGeneratedCase) {
   TensorFactory<ScalarType::Float> tf;
