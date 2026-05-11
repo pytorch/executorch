@@ -16,7 +16,7 @@ script_dir=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" &> /dev/null && pwd)
 et_root_dir=$(realpath "${script_dir}/../..")
 
 build_only=false
-build_dir="${et_root_dir}/cmake-out"
+build_dir="${et_root_dir}/cmake-out-riscv"
 output_dir="${et_root_dir}/riscv_test"
 qemu="qemu-riscv64-static"
 qemu_timeout="600"
