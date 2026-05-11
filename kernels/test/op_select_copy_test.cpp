@@ -394,10 +394,8 @@ TEST_F(OpSelectCopyIntOutTest, MismatchedDtypesDies) {
       context_, op_select_copy_int_out(x, /*dim=*/0, /*index=*/0, out));
 }
 
+#ifndef USE_ATEN_LIB
 TEST_F(OpSelectCopyIntOutTest, OutMatchNumelLackDimAtEndDies) {
-  if (torch::executor::testing::SupportedFeatures::get()->is_aten) {
-    GTEST_SKIP() << "ATen kernel can handle out with mismatched dimensions";
-  }
   TensorFactory<ScalarType::Int> tf;
   Tensor x = tf.zeros({1, 2, 2, 1});
 
@@ -408,11 +406,10 @@ TEST_F(OpSelectCopyIntOutTest, OutMatchNumelLackDimAtEndDies) {
   ET_EXPECT_KERNEL_FAILURE(
       context_, op_select_copy_int_out(x, /*dim=*/0, /*index=*/0, out));
 }
+#endif
 
+#ifndef USE_ATEN_LIB
 TEST_F(OpSelectCopyIntOutTest, OutMatchNumelExtraDimAtFrontDies) {
-  if (torch::executor::testing::SupportedFeatures::get()->is_aten) {
-    GTEST_SKIP() << "ATen kernel can handle out with mismatched dimensions";
-  }
   TensorFactory<ScalarType::Int> tf;
   Tensor x = tf.zeros({2, 2});
 
@@ -423,11 +420,10 @@ TEST_F(OpSelectCopyIntOutTest, OutMatchNumelExtraDimAtFrontDies) {
   ET_EXPECT_KERNEL_FAILURE(
       context_, op_select_copy_int_out(x, /*dim=*/0, /*index=*/0, out));
 }
+#endif
 
+#ifndef USE_ATEN_LIB
 TEST_F(OpSelectCopyIntOutTest, OutSizeMismatchDimDies) {
-  if (torch::executor::testing::SupportedFeatures::get()->is_aten) {
-    GTEST_SKIP() << "ATen kernel can handle out with mismatched dimensions";
-  }
   TensorFactory<ScalarType::Int> tf;
 
   Tensor x = tf.zeros({2, 4, 7, 5});
@@ -438,6 +434,7 @@ TEST_F(OpSelectCopyIntOutTest, OutSizeMismatchDimDies) {
   ET_EXPECT_KERNEL_FAILURE(
       context_, op_select_copy_int_out(x, /*dim=*/2, /*index=*/3, out));
 }
+#endif
 
 /* %python
 import torch

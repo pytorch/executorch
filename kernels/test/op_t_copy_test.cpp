@@ -38,10 +38,8 @@ TEST_F(OpTCopyTest, 1DTranspose) {
   EXPECT_TENSOR_EQ(t_in, t_out);
 }
 
+#ifndef USE_ATEN_LIB
 TEST_F(OpTCopyTest, 1DTransposeMismatchShapeDie) {
-  if (torch::executor::testing::SupportedFeatures::get()->is_aten) {
-    GTEST_SKIP() << "ATen kernel can handle mismatched shapes";
-  }
   TensorFactory<ScalarType::Int> tf;
 
   Tensor t_in = tf.make({4}, {1, 2, 3, 4});
@@ -49,6 +47,7 @@ TEST_F(OpTCopyTest, 1DTransposeMismatchShapeDie) {
 
   ET_EXPECT_KERNEL_FAILURE(context_, op_t_copy_out(t_in, t_out));
 }
+#endif
 
 TEST_F(OpTCopyTest, 2DTranspose) {
   TensorFactory<ScalarType::Int> tf;
@@ -61,10 +60,8 @@ TEST_F(OpTCopyTest, 2DTranspose) {
   EXPECT_TENSOR_EQ(t_out, t_expected);
 }
 
+#ifndef USE_ATEN_LIB
 TEST_F(OpTCopyTest, 2DTransposeMismatchShapeDie) {
-  if (torch::executor::testing::SupportedFeatures::get()->is_aten) {
-    GTEST_SKIP() << "ATen kernel can handle mismatched shapes";
-  }
   TensorFactory<ScalarType::Int> tf;
 
   Tensor t_in = tf.make({2, 3}, {1, 2, 3, 4, 5, 6});
@@ -72,6 +69,7 @@ TEST_F(OpTCopyTest, 2DTransposeMismatchShapeDie) {
 
   ET_EXPECT_KERNEL_FAILURE(context_, op_t_copy_out(t_in, t_out));
 }
+#endif
 
 TEST_F(OpTCopyTest, 3DTransposeDie) {
   TensorFactory<ScalarType::Int> tf;

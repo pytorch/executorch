@@ -427,10 +427,8 @@ TEST_F(OpSliceCopyTensorOutTest, LegalStepsSupported) {
 
 /// A generic smoke test that works for any dtype that supports ones() and
 /// zeros().
+#ifndef USE_ATEN_LIB
 TEST_F(OpSliceCopyTensorOutTest, AllDtypesSupported) {
-  if (torch::executor::testing::SupportedFeatures::get()->is_aten) {
-    GTEST_SKIP() << "ATen kernel test fails";
-  }
 #define TEST_ENTRY(ctype, dtype) test_dtype<ctype, ScalarType::dtype>();
   ET_FORALL_REAL_TYPES_AND(Bool, TEST_ENTRY);
 #undef TEST_ENTRY
@@ -438,6 +436,7 @@ TEST_F(OpSliceCopyTensorOutTest, AllDtypesSupported) {
   // way to do that would be to make TensorFactory support zeros() and ones()
   // for those types.
 }
+#endif
 
 TEST_F(OpSliceCopyTensorOutTest, EmptyInputSupported) {
   TensorFactory<ScalarType::Int> tf;
@@ -540,10 +539,8 @@ TEST_F(OpSliceCopyTensorOutTest, MismatchedDtypesDies) {
           input, /*dim=*/0, /*start=*/0, /*end=*/1, /*step=*/1, out));
 }
 
+#ifndef USE_ATEN_LIB
 TEST_F(OpSliceCopyTensorOutTest, OutSizeMismatchDimDies) {
-  if (torch::executor::testing::SupportedFeatures::get()->is_aten) {
-    GTEST_SKIP() << "ATen kernel can handle out with mismatched dimensions";
-  }
   TensorFactory<ScalarType::Int> tf;
 
   Tensor input = tf.zeros({2, 4, 7, 5});
@@ -556,6 +553,7 @@ TEST_F(OpSliceCopyTensorOutTest, OutSizeMismatchDimDies) {
       op_slice_copy_tensor_out(
           input, /*dim=*/0, /*start=*/0, /*end=*/2, /*step=*/1, out));
 }
+#endif
 
 TEST_F(OpSliceCopyTensorOutTest, DefaultStartValSupported) {
   TensorFactory<ScalarType::Int> tf;

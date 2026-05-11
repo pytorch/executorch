@@ -323,15 +323,14 @@ TEST_F(OpScatterAddOutTest, InvalidDimensionsDies) {
 #undef TEST_ENTRY
 }
 
+#ifndef USE_ATEN_LIB
 TEST_F(OpScatterAddOutTest, MismatchedShapeDies) {
-  if (torch::executor::testing::SupportedFeatures::get()->is_aten) {
-    GTEST_SKIP() << "ATen kernel can handle mismatched shape";
-  }
 #define TEST_ENTRY(CTYPE, DTYPE) \
   test_scatter_add_out_mismatched_shape<ScalarType::DTYPE>();
   ET_FORALL_REAL_TYPES(TEST_ENTRY);
 #undef TEST_ENTRY
 }
+#endif
 
 TEST_F(OpScatterAddOutTest, MismatchedInputDtypesDies) {
   TensorFactory<ScalarType::Byte> tf_byte;

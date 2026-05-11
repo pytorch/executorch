@@ -86,14 +86,13 @@ class OpRepeatOutTest : public OperatorTest {
   }
 };
 
+#ifndef USE_ATEN_LIB
 TEST_F(OpRepeatOutTest, AllDtypesSupported) {
-  if (torch::executor::testing::SupportedFeatures::get()->is_aten) {
-    GTEST_SKIP() << "ATen kernel test fails";
-  }
 #define TEST_ENTRY(ctype, dtype) run_dtype_tests<ctype, ScalarType::dtype>();
   ET_FORALL_REAL_TYPES_AND(Bool, TEST_ENTRY);
 #undef TEST_ENTRY
 }
+#endif
 
 TEST_F(OpRepeatOutTest, EmptyInputSupported) {
   TensorFactory<ScalarType::Int> tf;
@@ -208,10 +207,8 @@ TEST_F(OpRepeatOutTest, NegativeRepeatDie) {
   ET_EXPECT_KERNEL_FAILURE(context_, op_repeat_out(x, repeats, out));
 }
 
+#ifndef USE_ATEN_LIB
 TEST_F(OpRepeatOutTest, WrongOutputShapeDie) {
-  if (torch::executor::testing::SupportedFeatures::get()->is_aten) {
-    GTEST_SKIP() << "ATen kernel can handle wrong output shape";
-  }
   TensorFactory<ScalarType::Int> tf;
 
   Tensor x = tf.ones(
@@ -226,6 +223,7 @@ TEST_F(OpRepeatOutTest, WrongOutputShapeDie) {
 
   ET_EXPECT_KERNEL_FAILURE(context_, op_repeat_out(x, repeats, out));
 }
+#endif
 
 TEST_F(OpRepeatOutTest, OutputDtypeMismatchedDie) {
   TensorFactory<ScalarType::Int> tf_in;
@@ -245,10 +243,8 @@ TEST_F(OpRepeatOutTest, OutputDtypeMismatchedDie) {
 
 // Right now we only support the dimension of input and output no larger
 // than 16.
+#ifndef USE_ATEN_LIB
 TEST_F(OpRepeatOutTest, TooManyDimensionsDies) {
-  if (torch::executor::testing::SupportedFeatures::get()->is_aten) {
-    GTEST_SKIP() << "ATen kernel can handle larger number of dimensions";
-  }
   TensorFactory<ScalarType::Int> tf;
 
   Tensor x = tf.ones(
@@ -266,6 +262,7 @@ TEST_F(OpRepeatOutTest, TooManyDimensionsDies) {
 
   ET_EXPECT_KERNEL_FAILURE(context_, op_repeat_out(x, repeats, out));
 }
+#endif
 
 #if !defined(USE_ATEN_LIB)
 TEST_F(OpRepeatOutTest, UpperBoundOutTensor) {

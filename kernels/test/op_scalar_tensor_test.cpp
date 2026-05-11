@@ -109,10 +109,8 @@ ET_FORALL_REAL_TYPES_AND3(Half, Bool, BFloat16, GENERATE_TEST_0D)
 
 ET_FORALL_REAL_TYPES_AND3(Half, Bool, BFloat16, GENERATE_TEST)
 
+#ifndef USE_ATEN_LIB
 TEST_F(OpScalarTensorOutTest, InvalidOutShapeFails) {
-  if (torch::executor::testing::SupportedFeatures::get()->is_aten) {
-    GTEST_SKIP() << "ATen kernel will reshape output";
-  }
 
   TensorFactory<ScalarType::Int> tf;
   std::vector<int32_t> sizes{1, 2, 1};
@@ -120,6 +118,7 @@ TEST_F(OpScalarTensorOutTest, InvalidOutShapeFails) {
   Tensor out = tf.ones(sizes);
   ET_EXPECT_KERNEL_FAILURE(context_, op_scalar_tensor_out(7, out));
 }
+#endif
 
 TEST_F(OpScalarTensorOutTest, HalfSupport) {
   TensorFactory<ScalarType::Half> tf;

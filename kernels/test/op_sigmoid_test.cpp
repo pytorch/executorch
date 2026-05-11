@@ -88,15 +88,14 @@ class OpSigmoidOutTest : public OperatorTest {
   }
 };
 
+#ifndef USE_ATEN_LIB
 TEST_F(OpSigmoidOutTest, AllRealInputHalfOutputSupport) {
-  if (torch::executor::testing::SupportedFeatures::get()->is_aten) {
-    GTEST_SKIP() << "Test Half support only for ExecuTorch mode";
-  }
 #define TEST_ENTRY(ctype, dtype) \
   test_integer_sigmoid_out<ScalarType::dtype, ScalarType::Half>();
   ET_FORALL_REALH_TYPES(TEST_ENTRY);
 #undef TEST_ENTRY
 }
+#endif
 
 TEST_F(OpSigmoidOutTest, AllRealInputFloatOutputSupport) {
 #define TEST_ENTRY(ctype, dtype) \
@@ -123,10 +122,8 @@ TEST_F(OpSigmoidOutTest, BooleanInputDoubleOutputSupport) {
 }
 
 // Mismatched shape tests.
+#ifndef USE_ATEN_LIB
 TEST_F(OpSigmoidOutTest, MismatchedShapesDies) {
-  if (SupportedFeatures::get()->is_aten) {
-    GTEST_SKIP() << "ATen kernel can handle mismatched shapes";
-  }
 
   TensorFactory<ScalarType::Int> tf;
   TensorFactory<ScalarType::Float> tf_out;
@@ -136,6 +133,7 @@ TEST_F(OpSigmoidOutTest, MismatchedShapesDies) {
 
   ET_EXPECT_KERNEL_FAILURE(context_, op_sigmoid_out(a, out));
 }
+#endif
 
 TEST_F(OpSigmoidOutTest, AllNonFloatOutputDTypeDies) {
 #define TEST_ENTRY(ctype, dtype) \

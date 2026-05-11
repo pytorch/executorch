@@ -283,10 +283,8 @@ class OpVarCorrectionOutTest : public OperatorTest {
   }
 };
 
+#ifndef USE_ATEN_LIB
 TEST_F(OpVarOutTest, InvalidDimensionListDies) {
-  if (torch::executor::testing::SupportedFeatures::get()->is_aten) {
-    GTEST_SKIP() << "ATen kernel test fails";
-  }
   // Use a two layer switch to hanldle each possible data pair
 #define TEST_KERNEL(INPUT_CTYPE, INPUT_DTYPE, OUTPUT_CTYPE, OUTPUT_DTYPE) \
   test_var_out_invalid_dimensions<                                        \
@@ -300,11 +298,10 @@ TEST_F(OpVarOutTest, InvalidDimensionListDies) {
 #undef TEST_ENTRY
 #undef TEST_KERNEL
 }
+#endif
 
+#ifndef USE_ATEN_LIB
 TEST_F(OpVarOutTest, InvalidShapeDies) {
-  if (torch::executor::testing::SupportedFeatures::get()->is_aten) {
-    GTEST_SKIP() << "ATen kernel test fails";
-  }
   // Use a two layer switch to hanldle each possible data pair
 #define TEST_KERNEL(INPUT_CTYPE, INPUT_DTYPE, OUTPUT_CTYPE, OUTPUT_DTYPE) \
   test_var_out_invalid_shape<                                             \
@@ -318,11 +315,10 @@ TEST_F(OpVarOutTest, InvalidShapeDies) {
 #undef TEST_ENTRY
 #undef TEST_KERNEL
 }
+#endif
 
+#ifndef USE_ATEN_LIB
 TEST_F(OpVarOutTest, InvalidDTypeDies) {
-  if (torch::executor::testing::SupportedFeatures::get()->is_aten) {
-    GTEST_SKIP() << "ATen kernel test fails";
-  }
   TensorFactory<ScalarType::Float> tf_float;
   TensorFactory<ScalarType::Int> tf_int;
 
@@ -354,11 +350,10 @@ TEST_F(OpVarOutTest, InvalidDTypeDies) {
           /*keepdim=*/true,
           out));
 }
+#endif
 
+#ifndef USE_ATEN_LIB
 TEST_F(OpVarOutTest, AllFloatInputFloatOutputPasses) {
-  if (torch::executor::testing::SupportedFeatures::get()->is_aten) {
-    GTEST_SKIP() << "ATen supports fewer dtypes";
-  }
   // Use a two layer switch to hanldle each possible data pair
 #define TEST_KERNEL(INPUT_CTYPE, INPUT_DTYPE, OUTPUT_CTYPE, OUTPUT_DTYPE) \
   test_var_out_dtype<ScalarType::INPUT_DTYPE, ScalarType::OUTPUT_DTYPE>();
@@ -370,11 +365,10 @@ TEST_F(OpVarOutTest, AllFloatInputFloatOutputPasses) {
 #undef TEST_ENTRY
 #undef TEST_KERNEL
 }
+#endif
 
+#ifdef USE_ATEN_LIB
 TEST_F(OpVarOutTest, AllFloatInputFloatOutputPasses_Aten) {
-  if (!torch::executor::testing::SupportedFeatures::get()->is_aten) {
-    GTEST_SKIP() << "ATen-specific variant of test case";
-  }
   // Use a two layer switch to hanldle each possible data pair
 #define TEST_KERNEL(INPUT_CTYPE, INPUT_DTYPE, OUTPUT_CTYPE, OUTPUT_DTYPE) \
   test_var_out_dtype<ScalarType::INPUT_DTYPE, ScalarType::OUTPUT_DTYPE>();
@@ -386,6 +380,7 @@ TEST_F(OpVarOutTest, AllFloatInputFloatOutputPasses_Aten) {
 #undef TEST_ENTRY
 #undef TEST_KERNEL
 }
+#endif
 
 TEST_F(OpVarOutTest, InfinityAndNANTest) {
   TensorFactory<ScalarType::Float> tf_float;

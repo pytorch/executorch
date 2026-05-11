@@ -101,10 +101,8 @@ TEST_F(OpNeScalarOutTest, BoolInputDtype) {
 }
 
 // Mismatched shape tests.
+#ifndef USE_ATEN_LIB
 TEST_F(OpNeScalarOutTest, MismatchedShapesDies) {
-  if (torch::executor::testing::SupportedFeatures::get()->is_aten) {
-    GTEST_SKIP() << "ATen kernel can handle mismatched shapes";
-  }
   TensorFactory<ScalarType::Int> tf_int;
   TensorFactory<ScalarType::Bool> tf_bool;
 
@@ -114,6 +112,7 @@ TEST_F(OpNeScalarOutTest, MismatchedShapesDies) {
 
   ET_EXPECT_KERNEL_FAILURE(context_, op_ne_scalar_out(a, other, out));
 }
+#endif
 
 TEST_F(OpNeScalarOutTest, AllRealOutputDTypesSupported) {
 #define TEST_ENTRY(ctype, dtype) test_ne_all_output_dtypes<ScalarType::dtype>();
