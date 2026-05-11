@@ -1109,6 +1109,23 @@ class _TOSAQuantizerV2(ComposableQuantizer):
 
         return model
 
+    def _log_nonquantized_nodes(self, model: GraphModule) -> None:
+        non_quantized_nodes = [
+            n
+            for n in model.graph.nodes
+            if n.meta.get(DISALLOW_TFA_META_KEY, True) and n.op != "get_attr"
+        ]
+        if len(non_quantized_nodes) > 0:
+            msg = """
+----------------------------------------------------------------------------------------------------
+                         PRE-TRANSFORM FOR ANNOTATION QUANTIZATION REPORT                                      
+----------------------------------------------------------------------------------------------------
+The following nodes are not marked for quantization and will not be decomposed in the transform for annotation pipeline:\n"""
+            for node in non_quantized_nodes:
+                msg += f"   {node.name}\n"
+
+            logger.debug(msg)
+
     def transform_for_annotation(self, model: GraphModule) -> GraphModule:
         # Transform_for_annotation should only decompose ops if quantized, which is
         # indicated either by node.meta['DISALLOW_TFA_META_KEY']==False or no such key
@@ -1121,14 +1138,12 @@ class _TOSAQuantizerV2(ComposableQuantizer):
         # run to set DISALLOW_TFA_META_KEY for quantized nodes and all nodes missing
         # this key afterwards are set to DISALLOW_TFA_META_KEY=True.
 
-        reporter = QuantizerReporter(
-            self.quantizers, "PRE-TRANSFORM_FOR_ANNOTATION QUANTIZATION REPORT"  # type: ignore[arg-type]
-        )
         model = super().annotate(model)
-        reporter.log_quantizer_report(model)
         for node in model.graph.nodes:
             if DISALLOW_TFA_META_KEY not in node.meta:
                 node.meta[DISALLOW_TFA_META_KEY] = True
+
+        self._log_nonquantized_nodes(model)
 
         pass_manager = ArmPassManager(self.compile_spec)
         transformed_model = pass_manager.transform_for_annotation_pipeline(model)

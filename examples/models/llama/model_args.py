@@ -123,6 +123,14 @@ class ModelArgs:
     use_scaled_rope: bool = False  # Use scaled RoPE, introduced in llama3.1.
     rope_scale_factor: int = 8
     high_freq_factor: int = 4
+    # LongRoPE (https://arxiv.org/abs/2402.13753) used by Phi-3 / Phi-4 family.
+    # Mirrors HF's rope_scaling.{short_factor,long_factor,attention_factor}
+    # plus original_max_position_embeddings / max_position_embeddings.
+    rope_scaling_short_factor: Optional[list] = None
+    rope_scaling_long_factor: Optional[list] = None
+    original_max_position_embeddings: Optional[int] = None
+    max_position_embeddings: Optional[int] = None
+    rope_scaling_attention_factor: Optional[float] = None
     # Additional Model Metadata needed at runtime
     bos_idx: int = 1
     eos_idx: int = 3

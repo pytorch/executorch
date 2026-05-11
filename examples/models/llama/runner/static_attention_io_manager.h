@@ -14,6 +14,7 @@
 #include <unordered_map>
 #include <vector>
 
+#include <executorch/runtime/core/exec_aten/util/scalar_type_util.h>
 #include <executorch/runtime/core/span.h>
 #include <executorch/runtime/executor/method.h>
 #include <executorch/runtime/platform/log.h>
@@ -53,8 +54,8 @@ class StaticKVCache {
         style_(style),
         input_ptrs_(n_caches_),
         output_ptrs_(n_caches_) {
-    size_t total_cache_len =
-        std::accumulate(cache_lengths_.begin(), cache_lengths_.end(), 0);
+    size_t total_cache_len = std::accumulate(
+        cache_lengths_.begin(), cache_lengths_.end(), size_t(0));
     cache_data_size_ = total_cache_len * n_heads_per_cache_ * head_dim_;
     update_data_size_ =
         n_caches_ * n_heads_per_cache_ * max_input_len_ * head_dim_;
@@ -63,6 +64,8 @@ class StaticKVCache {
     update_data_ = allocator_.allocate(update_data_size_);
     ET_CHECK(cache_data_ != nullptr);
     ET_CHECK(update_data_ != nullptr);
+    std::fill(cache_data_, cache_data_ + cache_data_size_, T(0));
+    std::fill(update_data_, update_data_ + update_data_size_, T(0));
     init_ptrs();
   }
 
@@ -185,6 +188,7 @@ class StaticKVCache {
    */
   void reset() {
     std::fill(cache_pos_.begin(), cache_pos_.end(), 0);
+    std::fill(cache_data_, cache_data_ + cache_data_size_, T(0));
   }
 
  private:
@@ -612,6 +616,10 @@ class StaticAttentionIOManager {
         return config_.generate_full_logits ? input_len - 1 : 0;
       }
       std::copy(&tokens[i], &tokens[i + batch_len], input_buffer.begin());
+      if (batch_len < input_len) {
+        std::fill(
+            input_buffer.begin() + batch_len, input_buffer.end(), TokenT(0));
+      }
       if (!config_.generate_full_logits && config_.last_valid_token_pos_index) {
         last_valid_token_pos_ = batch_len - 1;
         set_input(
@@ -867,6 +875,12 @@ class StaticAttentionIOManager {
   void set_input(executorch::runtime::Method& method, size_t idx, T* data) {
     auto methodMeta = method.method_meta();
     auto inputMeta = methodMeta.input_tensor_meta(idx);
+    ET_CHECK_MSG(
+        sizeof(T) == executorch::runtime::elementSize(inputMeta->scalar_type()),
+        "set_input: sizeof(T)=%zu but model expects element size %zu for input %zu",
+        sizeof(T),
+        executorch::runtime::elementSize(inputMeta->scalar_type()),
+        idx);
     auto impl = ::executorch::runtime::etensor::TensorImpl(
         inputMeta->scalar_type(),
         inputMeta->sizes().size(),
