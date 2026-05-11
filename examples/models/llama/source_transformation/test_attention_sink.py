@@ -398,6 +398,24 @@ class AttentionSinkE2ETest(unittest.TestCase):
                 torch.isfinite(out).all(), "Output contains non-finite values"
             )
 
+    def test_beyond_max_context_len(self):
+        """Generate tokens beyond max_context_len with RoPE position remapping."""
+        sink_size = 4
+        window_size = 16
+        # KV cache size = 36, max_context_len = 64
+        # Generate 100 tokens — well beyond max_context_len
+        args = self._make_args(max_context_len=64)
+        model = self._build_model(args, sink_size, window_size, use_custom_sdpa=False)
+
+        outputs = self._run_generation(model, args, num_tokens=100)
+
+        self.assertEqual(len(outputs), 97)  # 1 prefill + 96 decode steps
+        for out in outputs:
+            self.assertTrue(
+                torch.isfinite(out).all(),
+                "Output contains non-finite values beyond max_context_len",
+            )
+
     def test_beyond_context_window_custom_sdpa(self):
         """Generate tokens beyond context window with custom SDPA + custom KV cache."""
         sink_size = 4

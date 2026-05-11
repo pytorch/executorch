@@ -10,6 +10,37 @@ contents of `ETRecord <etrecord.html>`__ and
 architecture and performance statistics. It’s built on top of the `EventBlock Class <#eventblock-class>`__ data structure,
 which organizes a group of `Event <#event-class>`__\ s for easy access to details of profiling events.
 
+Printing event data
+~~~~~~~~~~~~~~~~~~~
+
+For a quick first look at profiling data from an ETDump, create an
+``Inspector`` and call ``print_data_tabular()``:
+
+.. code:: python
+
+    from executorch.devtools import Inspector
+
+    inspector = Inspector(
+        etdump_path="etdump.etdp",
+        etrecord="etrecord.bin",
+    )
+    inspector.print_data_tabular()
+
+This prints a table of runtime events. The output below shows a few rows and
+columns from a simple model:
+
+::
+
+    event_block_name  event_name                                  avg (ms)  op_types                                      is_delegated_op
+    Default           Method::init                                0.032137  []                                            False
+    Default           Program::load_method                        0.038477  []                                            False
+    Execute           native_call_convolution.out                 0.958706  ['aten.convolution.default']                 False
+    Execute           native_call_relu.out                        0.010483  ['aten.relu.default']                        False
+    Execute           native_call_max_pool2d_with_indices.out     0.068552  ['aten.max_pool2d_with_indices.default']     False
+
+Passing an ETRecord is optional. If omitted, the Inspector still displays
+runtime events, but without operator correlation.
+
 There are multiple ways in which users can interact with the Inspector
 APIs:
 
@@ -56,6 +87,7 @@ print_data_tabular
     inspector.print_data_tabular()
 
 .. image:: _static/img/print_data_tabular.png
+
 Note that the unit of delegate profiling events is "cycles". We're working on providing a way to set different units in the future.
 
 
@@ -107,7 +139,7 @@ get_exported_program
 
 
 calculate_numeric_gap
-~~~~~~~~~~~~~~~~~~
+~~~~~~~~~~~~~~~~~~~~~
 
 .. autofunction:: executorch.devtools.Inspector.calculate_numeric_gap
 

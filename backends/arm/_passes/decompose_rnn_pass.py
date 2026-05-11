@@ -9,7 +9,10 @@ from typing import List, Set, Tuple, Type
 
 import torch
 from executorch.backends.arm._passes.arm_pass import ArmPass
-from executorch.backends.arm._passes.arm_pass_utils import create_node
+from executorch.backends.arm._passes.arm_pass_utils import (
+    create_node,
+    get_getitem_users,
+)
 from executorch.backends.arm._passes.insert_table_ops import InsertTableOpsPass
 from executorch.exir.pass_base import ExportPass, PassResult
 
@@ -117,6 +120,7 @@ class DecomposeRnnPass(ArmPass):
 
             is_relu = node.target == torch.ops.aten.rnn_relu.input
             activation = self._relu if is_relu else self._tanh
+            getitem_users = get_getitem_users(node, 2)
 
             args = node.args
             input_node = args[0]
@@ -223,7 +227,7 @@ class DecomposeRnnPass(ArmPass):
                             graph,
                             self._cat,
                             args=([fw_combined, bw_combined], -1),
-                            from_node=node,
+                            from_node=(getitem_users.get(0)),
                         )
 
                         layer_final_hiddens.append(
@@ -247,7 +251,7 @@ class DecomposeRnnPass(ArmPass):
                             graph,
                             self._cat,
                             args=(fw_outputs, time_dim),
-                            from_node=node,
+                            from_node=(getitem_users.get(0)),
                         )
 
                         layer_final_hiddens.append(
@@ -255,7 +259,7 @@ class DecomposeRnnPass(ArmPass):
                                 graph,
                                 self._unsqueeze,
                                 args=(fw_h_final, 0),
-                                from_node=node,
+                                from_node=(getitem_users.get(1)),
                             )
                         )
 
@@ -269,7 +273,7 @@ class DecomposeRnnPass(ArmPass):
                         graph,
                         self._cat,
                         args=(layer_final_hiddens, 0),
-                        from_node=node,
+                        from_node=getitem_users.get(1),
                     )
 
                 output_node = current_input

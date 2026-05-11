@@ -13,12 +13,12 @@
 #include <string>
 #include <vector>
 
-const std::string IMG_TOKEN = "<image>";
+inline const std::string IMG_TOKEN = "<image>";
 
 /**
  * Special tokens structure for vision modality
  */
-struct SpecialTokens {
+struct VisionSpecialTokens {
   std::string image_token;
   std::string global_img;
   std::string fake_wrap_start;
@@ -28,19 +28,18 @@ struct SpecialTokens {
 /**
  * Get special tokens based on model version
  */
-inline SpecialTokens get_special_tokens(
+inline VisionSpecialTokens get_special_tokens(
     example::VisionLanguageModel model_version) {
-  SpecialTokens tokens;
+  VisionSpecialTokens tokens;
+  tokens.image_token = IMG_TOKEN;
 
   switch (model_version) {
     case example::VisionLanguageModel::kSmolvlm:
-      tokens.image_token = "<image>";
       tokens.global_img = "<global-img>";
       tokens.fake_wrap_start = "<fake_token_around_image>";
       tokens.fake_wrap_end = "<fake_token_around_image>";
       break;
     case example::VisionLanguageModel::kInternvl3:
-      tokens.image_token = "<IMG_CONTEXT>";
       tokens.global_img = "";
       tokens.fake_wrap_start = "<img>";
       tokens.fake_wrap_end = "</img>";
@@ -59,18 +58,17 @@ inline SpecialTokens get_special_tokens(
  */
 inline std::string expand_image_tokens(
     const std::string& prompt,
-    const SpecialTokens& specials) {
+    const VisionSpecialTokens& specials) {
   // Create image prompt with repeated image tokens
-  std::string image_prompt = specials.fake_wrap_start;
-  image_prompt += specials.global_img;
-  image_prompt += specials.image_token;
-  image_prompt += specials.fake_wrap_end;
+  const std::string image_prompt = specials.fake_wrap_start +
+      specials.global_img + specials.image_token + specials.fake_wrap_end;
 
   // Replace single image token with expanded version
   size_t pos = 0;
   std::string expanded = prompt;
-  while ((pos = expanded.find(IMG_TOKEN, pos)) != std::string::npos) {
-    expanded.replace(pos, IMG_TOKEN.size(), image_prompt);
+  while ((pos = expanded.find(specials.image_token, pos)) !=
+         std::string::npos) {
+    expanded.replace(pos, specials.image_token.size(), image_prompt);
     pos += image_prompt.size();
   }
   ET_LOG(Info, "Prompt after expanding image token: %s", expanded.c_str());
@@ -86,7 +84,7 @@ inline std::string apply_chat_template(
     const std::string& prompt,
     example::VisionLanguageModel model_version) {
   std::string formatted_prompt;
-  SpecialTokens specials = get_special_tokens(model_version);
+  VisionSpecialTokens specials = get_special_tokens(model_version);
 
   switch (model_version) {
     case example::VisionLanguageModel::kSmolvlm: {
@@ -113,7 +111,7 @@ inline std::string apply_chat_template(
       break;
     }
     default:
-      ET_CHECK_MSG(false, "unsupported VLM version");
+      ET_CHECK_MSG(false, "unsupported Vision-Language model version");
       break;
   }
   return formatted_prompt;

@@ -66,7 +66,8 @@ class ModuleInstrumentationTest {
   fun testModuleLoadMethodAndForward() {
     val module = Module.load(getTestFilePath(TEST_FILE_NAME))
 
-    module.loadMethod(FORWARD_METHOD)
+    val loadMethod = module.loadMethod(FORWARD_METHOD)
+    Assert.assertEquals(loadMethod.toLong(), OK.toLong())
 
     val results = module.forward()
     Assert.assertTrue(results[0].isTensor)
@@ -95,14 +96,8 @@ class ModuleInstrumentationTest {
   fun testModuleLoadMethodNonExistantMethod() {
     val module = Module.load(getTestFilePath(TEST_FILE_NAME))
 
-    val exception =
-        Assert.assertThrows(ExecutorchRuntimeException::class.java) {
-          module.loadMethod(NONE_METHOD)
-        }
-    Assert.assertEquals(
-        ExecutorchRuntimeException.INVALID_ARGUMENT,
-        exception.getErrorCode(),
-    )
+    val loadMethod = module.loadMethod(NONE_METHOD)
+    Assert.assertEquals(loadMethod.toLong(), INVALID_ARGUMENT.toLong())
   }
 
   @Test(expected = RuntimeException::class)
@@ -110,7 +105,8 @@ class ModuleInstrumentationTest {
   fun testNonPteFile() {
     val module = Module.load(getTestFilePath(NON_PTE_FILE_NAME))
 
-    module.loadMethod(FORWARD_METHOD)
+    val loadMethod = module.loadMethod(FORWARD_METHOD)
+    Assert.assertEquals(loadMethod.toLong(), INVALID_ARGUMENT.toLong())
   }
 
   @Test
@@ -120,7 +116,8 @@ class ModuleInstrumentationTest {
 
     module.destroy()
 
-    Assert.assertThrows(IllegalStateException::class.java) { module.loadMethod(FORWARD_METHOD) }
+    val loadMethod = module.loadMethod(FORWARD_METHOD)
+    Assert.assertEquals(loadMethod.toLong(), INVALID_STATE.toLong())
   }
 
   @Test
@@ -128,11 +125,13 @@ class ModuleInstrumentationTest {
   fun testForwardOnDestroyedModule() {
     val module = Module.load(getTestFilePath(TEST_FILE_NAME))
 
-    module.loadMethod(FORWARD_METHOD)
+    val loadMethod = module.loadMethod(FORWARD_METHOD)
+    Assert.assertEquals(loadMethod.toLong(), OK.toLong())
 
     module.destroy()
 
-    Assert.assertThrows(IllegalStateException::class.java) { module.forward() }
+    val results = module.forward()
+    Assert.assertEquals(0, results.size.toLong())
   }
 
   @Ignore(
@@ -176,5 +175,9 @@ class ModuleInstrumentationTest {
     private const val NON_PTE_FILE_NAME = "/test.txt"
     private const val FORWARD_METHOD = "forward"
     private const val NONE_METHOD = "none"
+    private const val OK = 0x00
+    private const val INVALID_STATE = 0x2
+    private const val INVALID_ARGUMENT = 0x12
+    private const val ACCESS_FAILED = 0x22
   }
 }

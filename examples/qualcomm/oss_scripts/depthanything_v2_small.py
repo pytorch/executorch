@@ -20,10 +20,9 @@ from executorch.backends.qualcomm.serialization.qc_schema import (
 
 from executorch.examples.qualcomm.utils import (
     build_executorch_binary,
-    get_backend_type,
     get_imagenet_dataset,
     make_output_dir,
-    parse_skip_delegation_node,
+    QnnConfig,
     setup_common_args_and_variables,
     SimpleADB,
 )
@@ -57,10 +56,8 @@ def postprocess_output_and_save(output, image_height, image_width, output_image_
 
 
 def main(args):
-    if args.compile_only and args.pre_gen_pte:
-        raise RuntimeError("Cannot set both compile_only and pre_gen_pte as true")
-
-    skip_node_id_set, skip_node_op_set = parse_skip_delegation_node(args)
+    qnn_config = QnnConfig.load_config(args.config_file if args.config_file else args)
+    # ensure the working directory exist.
     os.makedirs(args.artifact, exist_ok=True)
 
     model = AutoModelForDepthEstimation.from_pretrained(
@@ -101,30 +98,18 @@ def main(args):
             goldens.append(predicted_depth.flatten())
 
     pte_filename = "depthanything_v2_small_qnn"
-    # Skip lowering/compilation if using pre-generated PTE
-    if not args.pre_gen_pte:
-        # Lower to QNN
-        backend = get_backend_type(args.backend)
-        quant_dtype = {
-            QnnExecuTorchBackendType.kGpuBackend: None,
-            QnnExecuTorchBackendType.kHtpBackend: QuantDtype.use_8a8w,
-        }[backend]
-        build_executorch_binary(
-            model,
-            inputs[0],
-            args.model,
-            os.path.join(args.artifact, pte_filename),
-            inputs,
-            skip_node_id_set=skip_node_id_set,
-            skip_node_op_set=skip_node_op_set,
-            quant_dtype=quant_dtype,
-            backend=backend,
-            shared_buffer=args.shared_buffer,
-            online_prepare=args.online_prepare,
-        )
-
-    if args.compile_only:
-        return
+    quant_dtype = {
+        QnnExecuTorchBackendType.kGpuBackend: None,
+        QnnExecuTorchBackendType.kHtpBackend: QuantDtype.use_8a8w,
+        QnnExecuTorchBackendType.kLpaiBackend: QuantDtype.use_8a8w,
+    }[qnn_config.backend]
+    build_executorch_binary(
+        model=model,
+        qnn_config=qnn_config,
+        file_name=os.path.join(args.artifact, pte_filename),
+        dataset=inputs,
+        quant_dtype=quant_dtype,
+    )
 
     workspace = f"/data/local/tmp/{getpass.getuser()}/executorch/{pte_filename}"
     pte_path = (
@@ -134,17 +119,11 @@ def main(args):
     )
 
     adb = SimpleADB(
-        qnn_sdk=os.getenv("QNN_SDK_ROOT"),
-        build_path=f"{args.build_folder}",
+        qnn_config=qnn_config,
         pte_path=pte_path,
         workspace=workspace,
-        device_id=args.device,
-        host_id=args.host,
-        soc_model=args.model,
-        shared_buffer=args.shared_buffer,
-        target=args.target,
     )
-    adb.push(inputs=inputs, backends={backend})
+    adb.push(inputs=inputs)
     adb.execute()
 
     # collect output data
@@ -185,11 +164,10 @@ def main(args):
             image_width,
             os.path.join(args.artifact, "prediction_depth.png"),
         )
-
     evaluations["sqnr"] = sum(evaluations["sqnr"]) / data_num
     if args.ip and args.port != -1:
         with Client((args.ip, args.port)) as conn:
-            conn.send(json.dumps({"sqnr": evaluations["sqnr"]}))
+            conn.send(json.dumps({"sqnr": evaluations["sqnr"].item()}))
     else:
         print("SQNR(dB)={sqnr}".format(**evaluations))
 
@@ -225,7 +203,6 @@ if __name__ == "__main__":
     )
 
     args = parser.parse_args()
-    args.validate(args)
 
     try:
         main(args)

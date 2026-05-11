@@ -723,6 +723,7 @@ def kv_inference(  # noqa: C901
     tokenizer,
     tok_embedding=None,
     hidden_states: Tuple = (),
+    audio_token_id=None,
     image_token_id=None,
     ar_len=1,
     max_seq_len=512,
@@ -734,8 +735,8 @@ def kv_inference(  # noqa: C901
     input_samples = []  # Record input sample for quantization error analysis
     is_multimodal = all(
         [
-            tok_embedding is not None,
-            image_token_id is not None,
+            tok_embedding,
+            audio_token_id or image_token_id,
         ]
     )
 
@@ -810,7 +811,7 @@ def kv_inference(  # noqa: C901
                         :, :input_ids_len, :
                     ],  # Only use actual prompt length
                     torch.cat(hidden_states, dim=1),
-                    image_token_id,
+                    audio_token_id or image_token_id,
                 )
             else:
                 multimodal_embedding = text_embeddings[:, :input_ids_len, :]
@@ -876,6 +877,7 @@ def prefill_inference(
     tokenizer,
     tok_embedding=None,
     hidden_states=None,
+    audio_token_id=None,
     image_token_id=None,
     max_seq_len=512,
     use_i64_token=False,
@@ -884,9 +886,8 @@ def prefill_inference(
     input_samples = None  # Record input sample for quantization error analysis
     is_multimodal = all(
         [
-            tok_embedding is not None,
-            hidden_states is not None,
-            image_token_id is not None,
+            tok_embedding,
+            audio_token_id or image_token_id,
         ]
     )
 
@@ -931,7 +932,7 @@ def prefill_inference(
                     tmp_token_list,
                     text_embeddings,
                     torch.cat(hidden_states, dim=1),
-                    image_token_id,
+                    audio_token_id or image_token_id,
                 )
                 results = module(multimodal_embedding, *atten_mask)
                 input_samples = (multimodal_embedding, *atten_mask)
@@ -962,6 +963,7 @@ def graph_module_inference(
     prompt=None,
     tok_embedding=None,
     hidden_states: Tuple = (),
+    audio_token_id=None,
     image_token_id=None,
     tasks=None,
     tasks_limit=1,
@@ -993,6 +995,7 @@ def graph_module_inference(
             tokenizer,
             tok_embedding=tok_embedding,
             hidden_states=hidden_states,
+            audio_token_id=audio_token_id,
             image_token_id=image_token_id,
             max_seq_len=max_seq_len,
             use_i64_token=use_i64_token,

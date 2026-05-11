@@ -376,8 +376,7 @@ Error QnnManager::AllocateTensor(const std::string& graph_name) {
             mutable_buffer_id_to_memory_map.end()) {
       // Fill the same memory for I/O of mutable buffer
       tensor_wrapper->FillDataBuffer(
-          mutable_buffer_id_to_memory_map[mutable_buffer_id],
-          false /* copy_data */);
+          mutable_buffer_id_to_memory_map[mutable_buffer_id]);
     }
     output_tensors_[graph_name].emplace_back(std::move(tensor_wrapper));
   }
@@ -581,9 +580,7 @@ Error QnnManager::CompileDlc() {
           mutable_buffer_id_to_memory_map.find(mutable_buffer_id) !=
               mutable_buffer_id_to_memory_map.end()) {
         // Fill the same memory for I/O of mutable buffer
-        tw->FillDataBuffer(
-            mutable_buffer_id_to_memory_map[mutable_buffer_id],
-            false /* copy_data */);
+        tw->FillDataBuffer(mutable_buffer_id_to_memory_map[mutable_buffer_id]);
       }
       graph_outputs.push_back(tw);
     }

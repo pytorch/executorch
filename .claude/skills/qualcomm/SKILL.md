@@ -1,10 +1,18 @@
 ---
 name: qualcomm
-description: Build, test, or develop the QNN (Qualcomm AI Engine Direct) backend. Use when working on backends/qualcomm/, building QNN (use backends/qualcomm/scripts/build.sh), adding new ops or passes, running QNN delegate
-  tests, or exporting models for Qualcomm HTP/GPU targets.
+description: Build, test, or develop the QNN (Qualcomm AI Engine Direct) backend. Use when working on backends/qualcomm/, building QNN (use backends/qualcomm/scripts/build.sh), adding new ops or passes, running QNN delegate tests, or exporting models for Qualcomm HTP/GPU targets. Also exposes a Buck-vs-CMake parity workflow — invoke as `/qualcomm buck-fix`, `/qualcomm buck-cmake fix`, `/qualcomm buck-parity`, or any user request to fix `test-qnn-buck-build-linux` CI failures or check buck/cmake drift in backends/qualcomm/.
 ---
 
 # QNN (Qualcomm AI Engine Direct) Backend
+
+## Slash command argument routing
+
+When this skill is invoked with arguments (e.g. `/qualcomm <args>`), classify the args FIRST and route before doing anything else:
+
+| If args contain any of… | Route to |
+|---|---|
+| `buck-fix`, `buck-cmake`, `buck cmake`, `buck-parity`, `buck parity`, `buck ci`, `qnn buck`, `fix qnn ci`, `test-qnn-buck-build-linux`, or any natural-language request to fix QNN buck CI / catch buck-cmake drift | Read `buck_parity.md` and follow it end-to-end. Default mode: full iterative-fix loop. If the args also contain `check` or `diagnose`, run buck once and report only — do not apply fixes. |
+| (no args) or any other args | Stay in this file; treat as a normal `/qualcomm` discovery request and use the Advanced Topics table below. |
 
 ## Advanced Topics
 
@@ -15,6 +23,7 @@ When the user's request falls into one of these areas, read the corresponding fi
 | Export / lowering / quantization options / pass pipelines | `lowering_export.md` | User asks about exporting, lowering, quantization config, QuantDtype, QuantRecipe, pass pipelines |
 | New op development | `new_op_development.md` | User asks to add/implement a new op or op builder |
 | Model enablement | `model_enablement.md` | User asks to enable a new model end-to-end |
+| Buck vs CMake parity (pre-PR or fix red CI) | `buck_parity.md` | User changed BUCK / TARGETS / `targets.bzl` or `CMakeLists.txt` under `backends/qualcomm/`, added new `.cpp` / `.h` / `#include` there, is preparing to push a PR that touches QNN, **or** the `test-qnn-buck-build-linux` CI check on their PR is red and they want to fix it locally. Direct trigger: `/qualcomm buck-fix`. |
 | Profiling & debugging | `profiling.md` | User asks about profiling, optrace, QHAS, QAIRT Visualizer *(file TBD)* |
 
 ## Building
@@ -31,7 +40,7 @@ Use `backends/qualcomm/scripts/build.sh`. Linux only (macOS not supported).
 |---|---|---|
 | x86_64 (Python interface + host tools) | enabled | `build-x86/` |
 | Android arm64-v8a (device runner) | enabled | `build-android/` |
-| Hexagon DSP (direct mode) | disabled | `build-hexagon/` |
+| Direct mode (LPAI ADSP or Hexagon CDSP) | disabled | `build-direct/` |
 | OE Linux embedded | disabled | `build-oe-linux/` |
 
 **Common build commands:**
@@ -93,6 +102,5 @@ Required flags: `-m` (SoC model), `-b` (Android build dir). Optional: `-s` (devi
 | `TestExampleLLMScript` | LLM script tests |
 | `TestExampleMultimodalityScript` | Multimodality script tests |
 | `TestExampleOssScript` | OSS model script tests |
-| `TestExampleQaihubScript` | QAI Hub script tests |
 | `TestExampleScript` | General example script tests |
 | `TestUtilsScript` | Utility script tests |

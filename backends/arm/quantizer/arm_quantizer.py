@@ -39,11 +39,7 @@ from executorch.backends.cortex_m.quantizer.node_finders import (
 )
 from executorch.backends.cortex_m.quantizer.pattern_matcher import PatternMatcher
 
-from executorch.backends.cortex_m.quantizer.quantizer_reporter import (
-    QuantizerReporter,
-    SUPPORTED_QCONFIGS,
-    SUPPORTED_QSPECS,
-)
+from executorch.backends.cortex_m.quantizer_reporter import QuantizerReporter
 
 from torch._ops import OpOverload
 
@@ -219,20 +215,28 @@ def get_symmetric_quantization_config(
         bias_quantization_spec = _get_int32_bias_qspec
 
     if is_dynamic:
-        quantization_config = TOSAQuantizationConfig(
-            act_quantization_spec,
-            None,
-            weight_quantization_spec,
-            bias_quantization_spec,
-        )
+        output_activation = None
     else:
-        quantization_config = TOSAQuantizationConfig(
-            act_quantization_spec,
-            act_quantization_spec,
-            weight_quantization_spec,
-            bias_quantization_spec,
-        )
-    return quantization_config
+        output_activation = act_quantization_spec
+
+    module_name = __name__.rsplit(".", maxsplit=1)[-1]
+    label = (
+        f"{module_name}.get_symmetric_quantization_config("
+        f"per_channel={int(is_per_channel)}, "
+        f"qat={int(is_qat)}, "
+        f"dynamic={int(is_dynamic)}, "
+        f"act_range=[{act_qmin}, {act_qmax}], "
+        f"weight_range=[{weight_qmin}, {weight_qmax}]"
+        ")"
+    )
+
+    return TOSAQuantizationConfig(
+        act_quantization_spec,
+        output_activation,
+        weight_quantization_spec,
+        bias_quantization_spec,
+        label,
+    )
 
 
 @functools.lru_cache
@@ -357,59 +361,32 @@ def get_symmetric_a16w8_quantization_config(
         is_qat=is_qat,
         is_dynamic=is_dynamic,
     )
-    # Replace activation quantization spec with 16-bit version
+
     if is_dynamic:
-        quantization_config = TOSAQuantizationConfig(
-            act_quantization_spec,  # 16-bit input activations
-            None,
-            base_config.weight,  # 8-bit weights from base config
-            base_config.bias,  # bias from base config
-        )
+        output_activation = None
     else:
-        quantization_config = TOSAQuantizationConfig(
-            act_quantization_spec,  # 16-bit input activations
-            act_quantization_spec,  # 16-bit output activations
-            base_config.weight,  # 8-bit weights from base config
-            base_config.bias,  # bias from base config
-        )
-    return quantization_config
+        output_activation = act_quantization_spec
 
+    module_name = __name__.rsplit(".", maxsplit=1)[-1]
+    label = (
+        f"{module_name}.get_symmetric_a16w8_quantization_config("
+        f"per_channel={int(is_per_channel)}, "
+        f"qat={int(is_qat)}, "
+        f"dynamic={int(is_dynamic)}, "
+        f"act_range=[{act_quantization_spec.quant_min}, {act_quantization_spec.quant_max}], "
+        f"weight_range=[{weight_qmin}, {weight_qmax}]"
+        ")"
+    )
 
-# Register supported quantization configs and qspecs in the reporter for human-readable reporting
-# MLETORCH-1854: Temporary solution, refactor to automatically register these instead
-_symmetric_a8w4_config_per_channel = get_symmetric_a8w4_quantization_config()
-_symmetric_a8w8_config_per_channel = get_symmetric_quantization_config()
-_symmetric_a16w8_config_per_channel = get_symmetric_a16w8_quantization_config()
-_symmetric_a8w4_config_per_tensor = get_symmetric_a8w4_quantization_config(
-    is_per_channel=False
-)
-_symmetric_a8w8_config_per_tensor = get_symmetric_quantization_config(
-    is_per_channel=False
-)
-_symmetric_a16w8_config_per_tensor = get_symmetric_a16w8_quantization_config(
-    is_per_channel=False
-)
-SUPPORTED_QCONFIGS.update(
-    {
-        _symmetric_a8w8_config_per_channel: f"{__name__}.get_symmetric_quantization_config(is_per_channel=True)",
-        _symmetric_a16w8_config_per_channel: f"{__name__}.get_symmetric_a16w8_quantization_config(is_per_channel=True)",
-        _symmetric_a8w4_config_per_channel: f"{__name__}.get_symmetric_a8w4_quantization_config(is_per_channel=True)",
-        _symmetric_a8w8_config_per_tensor: f"{__name__}.get_symmetric_quantization_config(is_per_channel=False)",
-        _symmetric_a16w8_config_per_tensor: f"{__name__}.get_symmetric_a16w8_quantization_config(is_per_channel=False)",
-        _symmetric_a8w4_config_per_tensor: f"{__name__}.get_symmetric_a8w4_quantization_config(is_per_channel=False)",
-    }
-)
+    # Replace activation quantization spec with 16-bit version
+    return TOSAQuantizationConfig(
+        act_quantization_spec,  # 16-bit input activations
+        output_activation,
+        base_config.weight,  # 8-bit weights from base config
+        base_config.bias,  # bias from base config
+        label,
+    )
 
-SUPPORTED_QSPECS.update(
-    {
-        _symmetric_a8w4_config_per_channel.get_weight_qspec(): "INT4_PER_CHANNEL_QSPEC",
-        _symmetric_a8w8_config_per_channel.get_weight_qspec(): "INT8_PER_CHANNEL_QSPEC",
-        _symmetric_a8w8_config_per_tensor.get_weight_qspec(): "INT8_PER_TENSOR_QSPEC",
-        _symmetric_a8w4_config_per_tensor.get_weight_qspec(): "INT4_PER_TENSOR_QSPEC",
-        _symmetric_a8w8_config_per_tensor.get_input_act_qspec(): "INT8_PER_TENSOR_QSPEC",
-        _symmetric_a16w8_config_per_tensor.get_input_act_qspec(): "INT16_PER_TENSOR_QSPEC",
-    }
-)
 
 NodeFilterType = Callable[[Node], bool]
 """Type for a Node Filter used by annotators.
@@ -1132,6 +1109,23 @@ class _TOSAQuantizerV2(ComposableQuantizer):
 
         return model
 
+    def _log_nonquantized_nodes(self, model: GraphModule) -> None:
+        non_quantized_nodes = [
+            n
+            for n in model.graph.nodes
+            if n.meta.get(DISALLOW_TFA_META_KEY, True) and n.op != "get_attr"
+        ]
+        if len(non_quantized_nodes) > 0:
+            msg = """
+----------------------------------------------------------------------------------------------------
+                         PRE-TRANSFORM FOR ANNOTATION QUANTIZATION REPORT                                      
+----------------------------------------------------------------------------------------------------
+The following nodes are not marked for quantization and will not be decomposed in the transform for annotation pipeline:\n"""
+            for node in non_quantized_nodes:
+                msg += f"   {node.name}\n"
+
+            logger.debug(msg)
+
     def transform_for_annotation(self, model: GraphModule) -> GraphModule:
         # Transform_for_annotation should only decompose ops if quantized, which is
         # indicated either by node.meta['DISALLOW_TFA_META_KEY']==False or no such key
@@ -1144,14 +1138,12 @@ class _TOSAQuantizerV2(ComposableQuantizer):
         # run to set DISALLOW_TFA_META_KEY for quantized nodes and all nodes missing
         # this key afterwards are set to DISALLOW_TFA_META_KEY=True.
 
-        reporter = QuantizerReporter(
-            self.quantizers, "PRE-TRANSFORM_FOR_ANNOTATION QUANTIZATION REPORT"  # type: ignore[arg-type]
-        )
         model = super().annotate(model)
-        reporter.log_quantizer_report(model)
         for node in model.graph.nodes:
             if DISALLOW_TFA_META_KEY not in node.meta:
                 node.meta[DISALLOW_TFA_META_KEY] = True
+
+        self._log_nonquantized_nodes(model)
 
         pass_manager = ArmPassManager(self.compile_spec)
         transformed_model = pass_manager.transform_for_annotation_pipeline(model)

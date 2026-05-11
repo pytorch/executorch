@@ -9,6 +9,7 @@ import inspect
 import json
 import logging
 import os
+import re
 import time
 import types
 
@@ -61,6 +62,9 @@ from executorch.examples.qualcomm.oss_scripts.llama.decoder_constants import (
 from executorch.examples.qualcomm.oss_scripts.llama.decoder_utils import (
     graph_module_inference,
 )
+from executorch.examples.qualcomm.oss_scripts.llama.encoder.encoder_config import (
+    GraniteSpeechEncoder,
+)
 from executorch.examples.qualcomm.oss_scripts.llama.encoder.encoder_quant_recipe import (
     EncoderQuantRecipe,
 )
@@ -96,7 +100,7 @@ from executorch.extension.llm.export.builder import DType
 from torchao.prototype.spinquant import apply_spinquant
 from torchao.quantization.pt2e import MinMaxObserver
 from torchao.quantization.pt2e.quantize_pt2e import convert_pt2e, prepare_pt2e
-from transformers import AutoModel
+from transformers import AutoModel, AutoModelForSpeechSeq2Seq
 
 
 class TextDecoder(Component):
@@ -278,9 +282,14 @@ class TextDecoder(Component):
         # get embedding model
         tok_embedding = None
         if self.apply_embedding:
-            auto_model = AutoModel.from_pretrained(
-                self.config.repo_id, _attn_implementation="eager"
-            )
+            if hasattr(self.config, AUDIO_ENCODER):
+                auto_model = AutoModelForSpeechSeq2Seq.from_pretrained(
+                    self.config.repo_id, _attn_implementation="eager"
+                )
+            elif hasattr(self.config, VISION_ENCODER):
+                auto_model = AutoModel.from_pretrained(
+                    self.config.repo_id, _attn_implementation="eager"
+                )
             tok_embedding = TokenEmbedding(
                 auto_model.get_input_embeddings().to(torch.float32),
                 self.model_args.max_batch_size,
@@ -356,8 +365,7 @@ class TextDecoder(Component):
                             break
 
     def _save_output_kv_cache_quant_attrs(self):
-        k_idx = 0
-        v_idx = 0
+        kv_idx = 0
         for node in self.decoder.graph.nodes:
             if not is_graph_output(node):
                 continue
@@ -365,13 +373,14 @@ class TextDecoder(Component):
             if cache_output_node.meta["val"].size()[-2:] in self.kv_cache_shape:
                 # [QCOM_SCALE, QCOM_ZERO_POINT, QCOM_QUANT_MIN, QCOM_QUANT_MAX, QCOM_DTYPE]
                 # This meta is for attention sink feature
-                self.meta[f"get_kv_output_{k_idx+v_idx}_quant_attr"] = [
+                self.meta[f"get_kv_output_{kv_idx}_quant_attr"] = [
                     node.args[1],
                     node.args[2],
                     node.args[3],
                     node.args[4],
                     str(node.args[5]),
                 ]
+                kv_idx += 1
 
     def _tag_ios(self, node, fixed_point_type):
         atten_mask_shape = {
@@ -575,6 +584,7 @@ class TextDecoder(Component):
                 hidden_states=hidden_states,  # hidden_states for multimodal
                 module=model,
                 tok_embedding=tok_embedding,
+                audio_token_id=self.meta.get("audio_token_id", None),
                 image_token_id=self.meta.get("image_token_id", None),
                 tokenizer=tokenizer,
                 ar_len=self.meta["get_ar_len"],
@@ -721,10 +731,24 @@ class TextDecoder(Component):
                 self.tok_embedding = convert_pt2e(self.tok_embedding)
 
             if self.control_args.verbose and self.mode == Mode.DECODE:
-                if self.apply_embedding:
-                    qdq_intermediate_outputs = request.method_data[
-                        VISION_ENCODER
-                    ].calibration_data.qdq_intermediate_outputs
+                audio_turns = request.method_data[
+                    AUDIO_ENCODER
+                ].calibration_data.qdq_intermediate_outputs
+                vision_turns = request.method_data[
+                    VISION_ENCODER
+                ].calibration_data.qdq_intermediate_outputs
+                if audio_turns is None:
+                    audio_turns = [
+                        [] for _ in range(len(data.calibration_data.datasets))
+                    ]
+                if vision_turns is None:
+                    vision_turns = [
+                        [] for _ in range(len(data.calibration_data.datasets))
+                    ]
+                qdq_intermediate_outputs = [
+                    [*audio_turn, *vision_turn]
+                    for audio_turn, vision_turn in zip(audio_turns, vision_turns)
+                ]
                 self._calibrate(
                     model=self.decoder,
                     tokenizer=data.tokenizer,
@@ -1004,18 +1028,25 @@ class Modality(Component):
         repo_id = config.repo_id
 
         if config := getattr(config, modality, None):
-            if modality == TEXT_ENCODER or modality == AUDIO_ENCODER:
+            if modality == AUDIO_ENCODER:
+                auto_model = AutoModelForSpeechSeq2Seq.from_pretrained(repo_id)
+                self.num_layers = auto_model.config.encoder_config.num_layers
+                self.ctx_size = auto_model.config.encoder_config.context_size
+            elif modality == TEXT_ENCODER:
                 raise NotImplementedError(f"{modality} is under development")
+            elif modality == VISION_ENCODER:
+                auto_model = AutoModel.from_pretrained(
+                    repo_id, _attn_implementation="eager"
+                )
+                self.num_layers = auto_model.config.vision_config.num_hidden_layers
+            else:
+                raise NotImplementedError(f"Find no {modality}")
 
-            auto_model = AutoModel.from_pretrained(
-                repo_id, _attn_implementation="eager"
-            )
-            # Create an instance of the config class since it has init=False
-            self.model = config().create_encoder(auto_model.config)
-            # set strict to false to simplify parameter loading for non-text models
-            auto_model = auto_model.eval()
-            self.model = self.model.eval()
-            self.model.load_state_dict(auto_model.state_dict(), strict=False)
+            auto_model = auto_model.to(torch.float32).eval()
+            self.model = config().create_encoder(auto_model.config).eval()
+            self.model.load_state_dict(
+                auto_model.state_dict(), strict=False
+            )  # set strict to false to simplify parameter loading for non-text models
             self.example_input = self.model.get_example_inputs()
 
             # set quant recipe
@@ -1023,16 +1054,76 @@ class Modality(Component):
                 config.quant_recipe(True) if config.quant_recipe else None
             )
 
+            # metadata
+            self.config = config
+
+        self.passes_job = get_capture_program_passes()
+        self.dep_table = get_passes_dependency_for_capture_program()
+
+    def _tag_ios(self, node, fixed_point_type):
+        quant_io_type = None
+
+        # tag sharding io
+        if exir_ops.edge.llama.fallback.default in [
+            u.target for u in list(node.users.keys())
+        ] + [node.target]:
+            quant_io_type = fixed_point_type["io_type"]
+
+        # GraniteSpeech: tag _to_copy op as quantized tensors for attn dist. It is caused by sharding
+        if (
+            issubclass(self.config, GraniteSpeechEncoder)
+            and node.target == exir_ops.edge.aten._to_copy.default
+            and node.meta["val"].size() == (self.ctx_size, self.ctx_size)
+        ):
+            quant_io_type = torch.int32
+
+        return quant_io_type
+
+    def _get_sharding_get_pattern(self):
+        prefixes = [
+            "encoder.layers",
+            "vision_tower.encoder.layer",
+            "vision_model.encoder.layers",
+        ]
+        prefix_alt = "|".join(re.escape(p) for p in prefixes)
+        return rf"^(?:{prefix_alt})\.(\d+)"
+
     def compile(self, request: Request):
         if self.model is None:
             return
 
         request_data = request.method_data[self.modality]
+        # check if sharding required
+        if self.config.num_sharding > 1:
+            SplitGraph, setting = model_sharding.get_split_graph_pass(
+                self.num_layers,
+                shares=self.config.num_sharding,
+                pattern=self._get_sharding_get_pattern(),
+            )
+            self.passes_job[SplitGraph] = setting
+            self.dep_table[SplitGraph] = [FoldQDQ]
+            self.dep_table[TagQuantIO] = [SplitGraph]
+
+            if not request_data.skip_quantize:
+                fixed_point_type = {"io_type": torch.uint16}
+
+                # setup quantized IO
+                self.passes_job[TagQuantIO][QCOM_PASS_ACTIVATE_KEY] = True
+                self.passes_job[TagQuantIO][QCOM_PASS_ARGS_KWARGS_DEFAULTS_KEY][
+                    "get_quant_io_dtype_fn"
+                ] = partial(self._tag_ios, fixed_point_type=fixed_point_type)
+
         edge_prog_mgr = to_edge_transform_and_lower_to_qnn(
             module=self.model,
             inputs=self.example_input,
             compiler_specs=request_data.compile_spec,
+            dep_table=self.dep_table,
+            passes_job=self.passes_job,
+            skip_node_op_set={"llama.fallback.default"},
         )
+
+        if self.config.num_sharding > 1:
+            update_spill_fill_size(edge_prog_mgr.exported_program())
         if self.control_args.verbose:
             print_delegation_info(edge_prog_mgr.exported_program().graph_module)
 

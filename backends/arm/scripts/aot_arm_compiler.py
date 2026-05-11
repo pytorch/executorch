@@ -847,8 +847,8 @@ def _to_edge_TOSA_delegate(
     )
 
     # Replace quantized_decomposed::{quantize,dequantize}_per_tensor nodes
-    # with cortex_m:: equivalents for int8 QDQ ops remaining outside the
-    # delegated subgraph.
+    # with cortex_m:: equivalents for int8/int16 QDQ ops remaining outside
+    # the delegated subgraph.
     edge = _apply_replace_quant_nodes(edge, target, direct_drive)
 
     return model_quant, edge
@@ -955,8 +955,8 @@ def _to_edge_no_delegate(
     )
 
     # Replace quantized_decomposed::{quantize,dequantize}_per_tensor nodes
-    # with cortex_m:: equivalents for int8 QDQ ops remaining outside the
-    # delegated subgraph.
+    # with cortex_m:: equivalents for int8/int16 QDQ ops remaining outside
+    # the delegated subgraph.
     edge = _apply_replace_quant_nodes(edge, args.target, args.direct_drive)
 
     return model_quant, edge

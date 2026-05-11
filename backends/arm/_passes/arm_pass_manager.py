@@ -12,7 +12,6 @@ from dataclasses import dataclass, field
 
 from executorch.backends.arm._passes import (
     AccumulateIndexPutPass,
-    AnnotateOutputDimOrderPass,
     BroadcastArgsPass,
     CanonicalizeGatherPass,
     CastInt64BuffersToInt32Pass,
@@ -44,7 +43,6 @@ from executorch.backends.arm._passes import (
     DecomposeAtanPass,
     DecomposeAvgPool2dPass,
     DecomposeBatchNormNoStatsPass,
-    DecomposeConvWithInt16ActivationPass,
     DecomposeCoshPass,
     DecomposeCosineSimilarityPass,
     DecomposeCumsumPass,
@@ -77,6 +75,7 @@ from executorch.backends.arm._passes import (
     DecomposeMaxPool2dPass,
     DecomposeMeanDimPass,
     DecomposeNotEqualPass,
+    DecomposePermuteForU55Pass,
     DecomposeQuantNodesPass,
     DecomposeRemainderPass,
     DecomposeRnnPass,
@@ -98,6 +97,7 @@ from executorch.backends.arm._passes import (
     DecomposeVarPass,
     DecomposeWhereScalarOtherPass,
     DecorateFp32toInt32CastingPass,
+    EnsureUniqueOutputNodesPass,
     FoldAndAnnotateQParamsPass,
     FuseBatchNorm2dPass,
     FuseConsecutiveConcatShapesPass,
@@ -116,6 +116,7 @@ from executorch.backends.arm._passes import (
     InsertTableOpsPass,
     MatchArgDtypePass,
     MatchArgRanksPass,
+    NormalizeDelegateIOLayoutPass,
     NormalizeIndexPutBoolIndexTensorPass,
     NormalizeIndexPutNoneIndicesPass,
     NormalizeWhileInitialArgsPass,
@@ -124,6 +125,7 @@ from executorch.backends.arm._passes import (
     RemoveGetItemPass,
     RemoveGraphAssertsPass,
     RemoveNoopPass,
+    RemovePermutesAroundElementwiseTosaOps,
     ReplaceInfAndLimitValuesPass,
     ReplaceScalarWithTensorByProfilePass,
     RewriteAvgPool2dPass,
@@ -141,7 +143,6 @@ from executorch.backends.arm._passes import (
     RewriteUpsamplePass,
     ScalarsToAttributePass,
     SizeAdjustInputPass,
-    ToTosaMemoryFormatPass,
     UnsqueezeBeforeRepeatPass,
     UnsqueezeScalarPlaceholdersPass,
 )
@@ -157,6 +158,13 @@ from executorch.backends.arm.tosa.specification import (
     TosaLoweringContext,
     TosaSpecification,
 )
+from executorch.backends.transforms.fuse_cascaded_transpose_or_permute_ops import (
+    FuseCascadedTransposeOrPermuteOps,
+)
+from executorch.backends.transforms.postpone_permute_below_squeeze_view import (
+    PostponePermuteOpBelowSqueezeOrUnsqueezeLikeView,
+)
+
 from executorch.exir import ExportedProgram
 from executorch.exir.pass_base import ExportPass
 from executorch.exir.pass_manager import PassManager
@@ -385,12 +393,10 @@ class ArmPassManager(PassManager):
         # Allow subclasses to configure pass insertions before building pipeline
         self._configure_pass_insertions(exported_program)
 
-        # Preprocessing passes
-        self.add_pass(AnnotateOutputDimOrderPass())
-
         # Node transformation passes (pre q/dq folding)
         self.add_passes(
             [
+                NormalizeDelegateIOLayoutPass(exported_program),
                 FuseQuantizedActivationPass(),
                 RewriteBoolToFp32CastViaInt8Pass(),
                 CanonicalizeGatherPass(),
@@ -431,6 +437,7 @@ class ArmPassManager(PassManager):
                 ConvertSplitToSlicePass(),
                 QuantizeClampArgumentsPass(),
                 RemoveGetItemPass(),
+                FuseBatchNorm2dPass(exported_program),
                 DecomposeBatchNormNoStatsPass(),
                 DecomposeLogitPass(),
                 DecomposeMaskedFillPass(),
@@ -494,7 +501,6 @@ class ArmPassManager(PassManager):
                 RewriteBoolBitwiseToLogicalPass(),
                 DecomposeRemainderPass(),
                 DecomposeDivTensorModePass(),
-                FuseBatchNorm2dPass(exported_program),
                 ConvertMmToBmmPass(),
                 DecomposeGluPass(),
                 DecomposeDivPass(),
@@ -515,12 +521,10 @@ class ArmPassManager(PassManager):
                 ConvertSqueezesToViewPass(),
                 CastToInt32Pass(),
                 BroadcastArgsPass(),
-                ConvertPermuteSingletonToViewPass(),
-                RewriteHighRankSingletonPermutePass(),
-                FuseViewCopyTransformPass(),
-                DecomposeConvWithInt16ActivationPass(),
                 DecomposeSumPass(),
                 InsertTableOpsPass(exported_program),
+                RemoveNoopPass(),
+                InsertDataLayoutCastsPass(),
             ]
         )
 
@@ -532,6 +536,13 @@ class ArmPassManager(PassManager):
                 RewriteConvPass(exported_program),
                 RewriteMatmulPass(),
                 RewritePadPass(),
+                FuseViewCopyTransformPass(),
+                RemovePermutesAroundElementwiseTosaOps(),
+                PostponePermuteOpBelowSqueezeOrUnsqueezeLikeView(),
+                FuseCascadedTransposeOrPermuteOps(),
+                ConvertPermuteSingletonToViewPass(),
+                RewriteHighRankSingletonPermutePass(),
+                DecomposePermuteForU55Pass(),
                 RewriteSlicePass(),
                 InsertConstShapesPass(),
             ]
@@ -543,10 +554,9 @@ class ArmPassManager(PassManager):
                 CastInt64BuffersToInt32Pass(exported_program),
                 FuseEqualPlaceholdersPass(exported_program),
                 FuseConsecutiveConcatShapesPass(),
-                ToTosaMemoryFormatPass(exported_program),
+                EnsureUniqueOutputNodesPass(),
                 RemoveNoopPass(),
                 InsertRescalePass(),
-                InsertDataLayoutCastsPass(),
             ]
         )
 
