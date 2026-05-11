@@ -63,9 +63,13 @@ def _greater_than(input: SymIntLike, other: int) -> bool | torch.SymBool:
 
 
 def get_slices_convolution(conv_node: torch.fx.Node) -> Slices:
-    slices = []
+    slices: Slices = []
 
-    input_node, weight, _, stride_hw, pad_hw, dilation_hw, _, _, _ = conv_node.args
+    input_node, weight, _, stride_hw, pad_hw, dilation_hw, transposed, _, _ = (
+        conv_node.args
+    )
+    if transposed:
+        return slices
     weight_shape = cast(torch.fx.Node, weight).meta["val"].shape
     input_shape = cast(torch.fx.Node, input_node).meta["val"].shape
     spatial_rank = len(input_shape) - 2

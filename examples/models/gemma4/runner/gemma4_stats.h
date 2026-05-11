@@ -9,6 +9,7 @@
 #pragma once
 
 #include <chrono>
+#include <cinttypes>
 #include <cstdint>
 #include <cstdio>
 #include <string>
@@ -198,7 +199,7 @@ struct Gemma4Stats {
         "\"prefill_ms\":%.1f,\"generation_ms\":%.1f,"
         "\"num_prompt_tokens\":%d,\"num_generated_tokens\":%d,"
         "\"prefill_tok_per_s\":%.1f,\"gen_tok_per_s\":%.1f,"
-        "\"ttft_ms\":%.1f,\"total_ms\":%.1f,"
+        "\"ttft_ms\":%.1f,\"total_ms\":%.1f,\"rtf\":%.2f,"
         "\"rss_after_load_mb\":%.0f,\"rss_peak_gen_mb\":%.0f}",
         load_ms,
         speech_transform_ms,
@@ -212,6 +213,7 @@ struct Gemma4Stats {
         tokens_per_second(),
         time_to_first_token_ms(),
         total_inference_ms(),
+        rtf(),
         rss_after_load_kb / 1024.0,
         rss_peak_gen_kb / 1024.0);
     return std::string(buf);
@@ -226,7 +228,7 @@ struct Gemma4Stats {
     char line[256];
     int64_t rss_kb = 0;
     while (fgets(line, sizeof(line), f)) {
-      if (sscanf(line, "VmRSS: %ld kB", &rss_kb) == 1) {
+      if (sscanf(line, "VmRSS: %" SCNd64 " kB", &rss_kb) == 1) {
         break;
       }
     }

@@ -69,6 +69,13 @@ struct ShaderInfo final {
   bool requires_shader_int64 = false;
   bool requires_shader_float64 = false;
 
+  // Subgroup size requirement declared in the shader's yaml.
+  //   0  = no requirement (default)
+  //  >0  = literal fixed size; pipeline is pinned to this subgroup size.
+  // Sourced from the yaml's `SUBGROUP_SIZE` template parameter — single
+  // source of truth shared with GLSL ${SUBGROUP_SIZE} substitution.
+  uint32_t required_subgroup_size = 0u;
+
   explicit ShaderInfo();
 
   explicit ShaderInfo(
@@ -82,7 +89,8 @@ struct ShaderInfo final {
       const bool requires_8bit_storage_ext,
       const bool requires_integer_dot_product_ext,
       const bool requires_shader_int64_ext,
-      const bool requires_shader_float64_ext);
+      const bool requires_shader_float64_ext,
+      const uint32_t required_subgroup_size_arg = 0u);
 
   operator bool() const {
     return src_code.bin != nullptr;
