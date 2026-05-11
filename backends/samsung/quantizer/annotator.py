@@ -5,6 +5,7 @@
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
 
+import operator
 from typing import Callable, Dict, List
 
 import torch
@@ -93,6 +94,18 @@ def _mark_nodes_as_annotated(nodes: List[Node]):
 def annotate_placeholder(node: Node, quant_config: QuantizationConfig) -> None:
     if _is_annotated([node]):
         return
+
+    # If all users of the node are not in OP_ANNOTATOR, directly return.
+    # It's a workaround for unsupported single op.
+    # It's better that each op annotates its input, not from graph input.
+    if node.users:
+        all_users_not_in_annotator = True
+        for user in node.users:
+            if user.op == "call_function" and user.target in OP_ANNOTATOR:
+                all_users_not_in_annotator = False
+                break
+        if all_users_not_in_annotator:
+            return
 
     if _is_float_tensor(node):
         annotate_output_qspec(node, quant_config.output_activation)
@@ -385,7 +398,6 @@ def annotate_add_ops_with_SharedQuant(
 # CASE 3-1: Single input + Single Out case without Shared Quant
 @register_annotator(
     [
-        torch.ops.aten.ceil.default,
         torch.ops.aten.clamp.default,
         torch.ops.aten.relu.default,
         torch.ops.aten.relu_.default,
@@ -459,6 +471,9 @@ def annotate_1in1out(node: Node, quant_config: QuantizationConfig) -> None:
         torch.ops.aten.pad.default,
         torch.ops.aten.slice.Tensor,
         torch.ops.aten.to.dtype,
+        torch.ops.aten.chunk.default,
+        torch.ops.aten.view_copy.default,
+        torch.ops.aten.flip.default,
     ]
 )
 def annotate_1in1out_with_SharedQuant(
@@ -551,25 +566,7 @@ def annotate_index(node: Node, quant_config: QuantizationConfig) -> None:
         )
 
 
-# CASE 5 input + index + value & output with Shared Quant
-@register_annotator(
-    [torch.ops.aten.index_put.default, torch.ops.aten.index_put_.default]
-)
-def annotate_index_put(node: Node, quant_config: QuantizationConfig) -> None:
-    input_qspec_map = {}
-    value = node.args[2]  # from linear projection layer
-
-    input_qspec_map[value] = quant_config.input_activation
-    output_qspec = SharedQuantizationSpec((value, node))
-
-    node.meta["quantization_annotation"] = QuantizationAnnotation(
-        input_qspec_map=input_qspec_map,
-        output_qspec=output_qspec,
-        _annotated=True,
-    )
-
-
-# CASE 6 unbind + getitem case
+# CASE 5 unbind + getitem case
 # (inputQuant--unbinde--no Qunat) --> (no Qunat--getitem--outputQuant)
 @register_annotator([torch.ops.aten.unbind.int])
 def annotate_unbind(node: Node, quant_config: QuantizationConfig) -> None:
@@ -603,7 +600,7 @@ def annotate_unbind(node: Node, quant_config: QuantizationConfig) -> None:
         )
 
 
-# CASE 7: stand-alone Conv2d and Conv1d
+# CASE 6: stand-alone Conv2d and Conv1d
 @register_annotator(
     [
         torch.ops.aten.conv2d.default,
@@ -640,7 +637,7 @@ def annotate_conv2d(node: Node, quant_config: QuantizationConfig) -> None:
     node.meta["quantization_annotation"]._annotated = True
 
 
-# CASE 8: embedding
+# CASE 7: embedding
 @register_annotator([torch.ops.aten.embedding.default])
 def annotate_embedding(node: Node, quant_config: QuantizationConfig) -> None:
     input_qspec_map = {}
@@ -658,7 +655,7 @@ def annotate_embedding(node: Node, quant_config: QuantizationConfig) -> None:
     )
 
 
-# CASE 9: Concat & Stack
+# CASE 8: Concat & Stack
 @register_annotator(
     [
         torch.ops.aten.cat.default,
@@ -690,7 +687,7 @@ def annotate_cat(node: Node, quant_config: QuantizationConfig) -> None:
     )
 
 
-# CASE 10: various normalizations
+# CASE 9: various normalizations
 @register_annotator([torch.ops.aten.rms_norm.default])
 def annotate_rms_norm(node: Node, quant_config: QuantizationConfig) -> None:
     if _is_annotated([node]):
@@ -783,7 +780,7 @@ def annotate_batch_norm(node: Node, quant_config: QuantizationConfig) -> None:
     node.meta["quantization_annotation"]._annotated = True
 
 
-# CASE 11: Sigmoid
+# CASE 10: Sigmoid
 @register_annotator([torch.ops.aten.sigmoid, torch.ops.aten.sigmoid.default])
 def annotate_sigmoid(node: Node, quant_config: QuantizationConfig) -> None:
     input_act = node.args[0]
@@ -829,5 +826,46 @@ def annotate_sigmoid(node: Node, quant_config: QuantizationConfig) -> None:
         node.meta["quantization_annotation"] = QuantizationAnnotation(
             input_qspec_map=input_qspec_map,
             output_qspec=output_act_qspec,
+            _annotated=True,
+        )
+
+
+# CASE 10: const
+@register_annotator(
+    [
+        torch.ops.aten.arange.default,
+        torch.ops.aten.arange.start,
+        torch.ops.aten.arange.start_step,
+        torch.ops.aten.scalar_tensor.default,
+        torch.ops.aten.full_like.default,
+        torch.ops.aten.full.default,
+        torch.ops.aten.zeros.default,
+        torch.ops.aten.zeros_like.default,
+        torch.ops.aten.ones.default,
+        torch.ops.aten.ones_like.default,
+    ]
+)
+def annotate_const(node: Node, quant_config: QuantizationConfig) -> None:
+    if _is_annotated([node]) or not _is_float_tensor(node):
+        return
+
+    node.meta["quantization_annotation"] = QuantizationAnnotation(
+        input_qspec_map={},
+        output_qspec=quant_config.output_activation,
+        _annotated=True,
+    )
+
+
+@register_annotator([operator.getitem])
+def annotate_getitem(node: Node, quant_config: QuantizationConfig) -> None:
+    if _is_annotated([node]) or not _is_float_tensor(node):
+        return
+
+    out_act_quantization_spec = quant_config.output_activation
+    if node.args[0].target == torch.ops.aten.chunk.default:
+        # need to support other op with getitem
+        out_act_quantization_spec = SharedQuantizationSpec(node.args[0])
+        node.meta["quantization_annotation"] = QuantizationAnnotation(
+            output_qspec=out_act_quantization_spec,
             _annotated=True,
         )

@@ -108,6 +108,7 @@ class InsertQDQPass(ExportPass):
             for user in users:
                 if user.target not in QuantConstants.QUANT_OPS_KEY_MAP:
                     user.replace_input_with(node, new_node)
+        return new_node
 
     def _add_q_before(
         self,
@@ -150,9 +151,20 @@ class InsertQDQPass(ExportPass):
                 _ = self._add_dq_before(graph_module, q_node, node, ori_quant_attrs)
 
     def _add_qdq(self, graph_module: GraphModule):
+        # When some ops are not supported by partition, graph only contains QDQ.
+        # FoldQDQPass will delete QDQ, here graph don't have any call function op. We revert qdq here.
+        # Make it's more common later.
+        no_call_function_op = True
+        for node in list(graph_module.graph.nodes):
+            if node.op == "call_function":
+                no_call_function_op = False
+                break
+
         for node in list(graph_module.graph.nodes):
             if is_graph_input(self.edge_program, node):
-                self._add_q_after(graph_module, node)
+                q_node = self._add_q_after(graph_module, node)
+                if no_call_function_op:
+                    self._add_dq_after(graph_module, q_node)
             elif is_graph_output(node):
                 self._add_dq_after(graph_module, node)
 
