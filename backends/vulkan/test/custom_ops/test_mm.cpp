@@ -17,6 +17,25 @@ using namespace vkcompute;
 
 static constexpr int64_t kRefDimSizeLimit = 256;
 
+// Return the input data as float regardless of dtype. For kHalf, the
+// underlying half_data is converted via half_to_float; for kFloat the
+// existing float_data is copied. The CPU reference computes in float and
+// the framework compares against (and converts back to) the GPU output.
+static std::vector<float> as_float_data(const ValueSpec& spec) {
+  if (spec.dtype == vkapi::kFloat) {
+    return spec.get_float_data();
+  }
+  if (spec.dtype == vkapi::kHalf) {
+    const auto& half_bits = spec.get_half_data();
+    std::vector<float> out(half_bits.size());
+    for (size_t i = 0; i < half_bits.size(); ++i) {
+      out[i] = half_to_float(half_bits[i]);
+    }
+    return out;
+  }
+  throw std::invalid_argument("as_float_data: unsupported dtype");
+}
+
 struct MmConfig {
   // mat1: [M, K] or [B, M, K]
   // mat2: [K, N] or [B, K, N]
@@ -209,7 +228,17 @@ static TestCase create_mm_test_case(
         adapter->subgroup_size() == 64 && !adapter->is_integrated_gpu();
   }
 
-  if (dtype == vkapi::kHalf || routes_to_coopmat) {
+  if (dtype == vkapi::kHalf) {
+    // Pure-fp16 GEMM accumulates K products in fp16 (no fp32 accumulator on
+    // the tiled path), so error scales with ULP * sqrt(K) * output magnitude.
+    // For K up to 4096 in these tests with inputs in [-1, 1], that lands
+    // around 6% relative error empirically; 10% covers worst-case alignment
+    // of rounding signs without masking real shader bugs.
+    test_case.set_abs_tolerance(1.0f);
+    test_case.set_rel_tolerance(1e-1f);
+  } else if (routes_to_coopmat) {
+    // Coopmat uses fp16 inputs with an fp32 accumulator, so error is
+    // bounded by fp16 input-conversion noise, not accumulation drift.
     test_case.set_abs_tolerance(1e-1f);
     test_case.set_rel_tolerance(1e-2f);
   } else {
@@ -233,8 +262,9 @@ static void mm_reference_impl(TestCase& test_case) {
   ValueSpec& output = test_case.outputs()[0];
   auto out_sizes = output.get_tensor_sizes();
 
-  if (test_case.inputs()[0].dtype != vkapi::kFloat) {
-    throw std::invalid_argument("Reference only supports float");
+  const auto in_dtype = test_case.inputs()[0].dtype;
+  if (in_dtype != vkapi::kFloat && in_dtype != vkapi::kHalf) {
+    throw std::invalid_argument("Reference only supports float / half");
   }
 
   if (op_name == "test_etvk.test_mm.default") {
@@ -248,8 +278,8 @@ static void mm_reference_impl(TestCase& test_case) {
     int64_t K = mat1_sizes[1];
     int64_t N = mat2_sizes[1];
 
-    auto& mat1_data = mat1.get_float_data();
-    auto& mat2_data = mat2.get_float_data();
+    auto mat1_data = as_float_data(mat1);
+    auto mat2_data = as_float_data(mat2);
     auto& ref_data = output.get_ref_float_data();
     ref_data.resize(M * N, 0.0f);
 
@@ -274,8 +304,8 @@ static void mm_reference_impl(TestCase& test_case) {
     int64_t K = mat1_sizes[2];
     int64_t N = mat2_sizes[2];
 
-    auto& mat1_data = mat1.get_float_data();
-    auto& mat2_data = mat2.get_float_data();
+    auto mat1_data = as_float_data(mat1);
+    auto mat2_data = as_float_data(mat2);
     auto& ref_data = output.get_ref_float_data();
     ref_data.resize(B * M * N, 0.0f);
 
@@ -303,9 +333,9 @@ static void mm_reference_impl(TestCase& test_case) {
     int64_t K = mat1_sizes[1];
     int64_t N = mat2_sizes[1];
 
-    auto& bias_data = bias.get_float_data();
-    auto& mat1_data = mat1.get_float_data();
-    auto& mat2_data = mat2.get_float_data();
+    auto bias_data = as_float_data(bias);
+    auto mat1_data = as_float_data(mat1);
+    auto mat2_data = as_float_data(mat2);
     auto& ref_data = output.get_ref_float_data();
     ref_data.resize(M * N, 0.0f);
 
@@ -335,8 +365,12 @@ static void mm_reference_impl(TestCase& test_case) {
     int64_t K = input_sizes[1];
     int64_t N = weight_sizes[0];
 
-    auto& input_data = input.get_float_data();
-    auto& weight_data = weight.get_float_data();
+    auto input_data = as_float_data(input);
+    auto weight_data = as_float_data(weight);
+    std::vector<float> bias_data;
+    if (!bias_spec.is_none()) {
+      bias_data = as_float_data(bias_spec);
+    }
     auto& ref_data = output.get_ref_float_data();
     ref_data.resize(M * N, 0.0f);
 
@@ -346,8 +380,7 @@ static void mm_reference_impl(TestCase& test_case) {
         for (int64_t k = 0; k < K; ++k) {
           sum += input_data[m * K + k] * weight_data[n * K + k];
         }
-        if (!bias_spec.is_none()) {
-          auto& bias_data = bias_spec.get_float_data();
+        if (!bias_data.empty()) {
           sum += bias_data[n];
         }
         ref_data[m * N + n] = sum;
