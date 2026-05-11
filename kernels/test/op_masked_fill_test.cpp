@@ -245,10 +245,8 @@ TEST_F(OpMaskedFillTest, BroadcastTest) {
   EXPECT_TENSOR_CLOSE(out, tf.make({2, 2}, /*data=*/{3, 2, 3, 8}));
 }
 
+#ifndef USE_ATEN_LIB
 TEST_F(OpMaskedFillTest, MismatchedOutputShapesDies) {
-  if (torch::executor::testing::SupportedFeatures::get()->is_aten) {
-    GTEST_SKIP() << "ATen kernel can handle mismatched output shape";
-  }
   TensorFactory<ScalarType::Int> tf;
   TensorFactory<ScalarType::Bool> tf_bool;
 
@@ -266,6 +264,7 @@ TEST_F(OpMaskedFillTest, MismatchedOutputShapesDies) {
   ET_EXPECT_KERNEL_FAILURE(
       context_, op_masked_fill_scalar_out(a, b, /*value=*/0, out));
 }
+#endif
 
 TEST_F(OpMaskedFillTest, BroadcastDimSizeIsOneAB) {
   TensorFactory<ScalarType::Float> tf;

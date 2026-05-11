@@ -281,10 +281,8 @@ TEST_F(OpIndexSelectOutTest, AllDtypesSupported) {
 
 // In this test we are gonnna find if our select function support non-empty
 // tensor input and empty-size tensor output.
+#ifndef USE_ATEN_LIB
 TEST_F(OpIndexSelectOutTest, NonEmptyInputEmptyOutputWithMismatchDimDies) {
-  if (torch::executor::testing::SupportedFeatures::get()->is_aten) {
-    GTEST_SKIP() << "ATen kernel can handle out with mismatched dimensions";
-  }
   TensorFactory<ScalarType::Int> tf;
   TensorFactory<ScalarType::Long> tfl;
   Tensor x = tf.make({10}, {0, 1, 2, 3, 4, 5, 6, 7, 8, 9});
@@ -299,6 +297,7 @@ TEST_F(OpIndexSelectOutTest, NonEmptyInputEmptyOutputWithMismatchDimDies) {
   ET_EXPECT_KERNEL_FAILURE(
       context_, op_index_select_out(x, /*dim=*/0, /*index=*/index, out));
 }
+#endif
 
 // This test focuses on the support for empty tensor (dim() > 0) input and empty
 // tensor output
@@ -355,10 +354,8 @@ TEST_F(OpIndexSelectOutTest, MismatchedDtypesDies) {
       context_, op_index_select_out(x, /*dim=*/0, /*index=*/index, out));
 }
 
+#ifndef USE_ATEN_LIB
 TEST_F(OpIndexSelectOutTest, OutMatchNumelLackDimAtEndDies) {
-  if (torch::executor::testing::SupportedFeatures::get()->is_aten) {
-    GTEST_SKIP() << "ATen kernel can handle out with mismatched dimensions";
-  }
   TensorFactory<ScalarType::Int> tf;
   TensorFactory<ScalarType::Long> tfl;
 
@@ -372,11 +369,10 @@ TEST_F(OpIndexSelectOutTest, OutMatchNumelLackDimAtEndDies) {
   ET_EXPECT_KERNEL_FAILURE(
       context_, op_index_select_out(x, /*dim=*/0, /*index=*/index, out));
 }
+#endif
 
+#ifndef USE_ATEN_LIB
 TEST_F(OpIndexSelectOutTest, OutMatchNumelExtraDimAtFrontDies) {
-  if (torch::executor::testing::SupportedFeatures::get()->is_aten) {
-    GTEST_SKIP() << "ATen kernel can handle out with mismatched dimensions";
-  }
   TensorFactory<ScalarType::Int> tf;
   TensorFactory<ScalarType::Long> tfl;
 
@@ -390,11 +386,10 @@ TEST_F(OpIndexSelectOutTest, OutMatchNumelExtraDimAtFrontDies) {
   ET_EXPECT_KERNEL_FAILURE(
       context_, op_index_select_out(x, /*dim=*/0, /*index=*/index, out));
 }
+#endif
 
+#ifndef USE_ATEN_LIB
 TEST_F(OpIndexSelectOutTest, OutSizeMismatchDimDies) {
-  if (torch::executor::testing::SupportedFeatures::get()->is_aten) {
-    GTEST_SKIP() << "ATen kernel can handle out with mismatched dimensions";
-  }
   TensorFactory<ScalarType::Int> tf;
   TensorFactory<ScalarType::Long> tfl;
 
@@ -408,6 +403,7 @@ TEST_F(OpIndexSelectOutTest, OutSizeMismatchDimDies) {
   ET_EXPECT_KERNEL_FAILURE(
       context_, op_index_select_out(x, /*dim=*/2, /*index=*/index, out));
 }
+#endif
 
 TEST_F(OpIndexSelectOutTest, IndexWithInvalidDtypeDies) {
   TensorFactory<ScalarType::Int> tf;

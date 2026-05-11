@@ -280,20 +280,17 @@ TEST_F(OpMaxUnaryOutTest, EmptyFloatingInput) {
 #undef TEST_ENTRY
 }
 
+#ifndef USE_ATEN_LIB
 TEST_F(OpMaxOutTest, MismatchedDimensionsDies) {
-  if (torch::executor::testing::SupportedFeatures::get()->is_aten) {
-    GTEST_SKIP() << "ATen kernel test fails";
-  }
 #define TEST_ENTRY(ctype, dtype) \
   test_max_out_invalid_dimensions<ScalarType::dtype>();
   ET_FORALL_REAL_TYPES_AND(Bool, TEST_ENTRY);
 #undef TEST_ENTRY
 }
+#endif
 
+#ifndef USE_ATEN_LIB
 TEST_F(OpMaxOutTest, MismatchedDTypesDies) {
-  if (torch::executor::testing::SupportedFeatures::get()->is_aten) {
-    GTEST_SKIP() << "ATen kernel test fails";
-  }
   TensorFactory<ScalarType::Float> tf_float;
   TensorFactory<ScalarType::Long> tf_long;
 
@@ -313,6 +310,7 @@ TEST_F(OpMaxOutTest, MismatchedDTypesDies) {
       context_,
       op_max_dim_max(self, /*dim=*/-1, /*keepdim=*/true, max, max_indices));
 }
+#endif
 
 TEST_F(OpMaxOutTest, AllRealInputLongOutputPasses) {
 #define TEST_ENTRY(ctype, dtype) test_max_out_dtype<ScalarType::dtype>();

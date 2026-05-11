@@ -158,10 +158,8 @@ TEST_F(OpLogSoftmaxOutTest, NonContiguous) {
   test_dtype_noncontiguous_dim<float, ScalarType::Float>();
 }
 
+#ifndef USE_ATEN_LIB
 TEST_F(OpLogSoftmaxOutTest, MismatchedDimensionsDies) {
-  if (SupportedFeatures::get()->is_aten) {
-    GTEST_SKIP() << "ATen currently supports mismatched dimensions";
-  }
 
   TensorFactory<ScalarType::Float> tff;
 
@@ -175,11 +173,10 @@ TEST_F(OpLogSoftmaxOutTest, MismatchedDimensionsDies) {
   ET_EXPECT_KERNEL_FAILURE(
       context_, op_log_softmax_out(x, /*dim=*/3, /*half_to_float*/ false, out));
 }
+#endif
 
+#ifndef USE_ATEN_LIB
 TEST_F(OpLogSoftmaxOutTest, MismatchedDimensionSizeDies) {
-  if (SupportedFeatures::get()->is_aten) {
-    GTEST_SKIP() << "ATen currently supports mismatched dimension size";
-  }
 
   TensorFactory<ScalarType::Float> tf;
 
@@ -192,6 +189,7 @@ TEST_F(OpLogSoftmaxOutTest, MismatchedDimensionSizeDies) {
       context_,
       op_log_softmax_out(x, /*dim=*/1, /*half_to_float*/ false, wrong_out));
 }
+#endif
 
 TEST_F(OpLogSoftmaxOutTest, TestWithLargeNumber) {
   if (!SupportedFeatures::get()->op_log_softmax_dtype_double) {

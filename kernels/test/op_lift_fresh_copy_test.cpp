@@ -67,15 +67,14 @@ TEST_F(OpLiftFreshCopyTest, EmptyInputSupported) {
 #undef TEST_ENTRY
 }
 
+#ifndef USE_ATEN_LIB
 TEST_F(OpLiftFreshCopyTest, MismatchedSizesDie) {
-  if (torch::executor::testing::SupportedFeatures::get()->is_aten) {
-    GTEST_SKIP() << "ATen kernel can handle mismatched sizes";
-  }
   TensorFactory<ScalarType::Int> tf;
   Tensor self = tf.make(/*sizes=*/{3, 1, 1, 2}, /*data=*/{1, 2, 3, 4, 5, 6});
   Tensor out = tf.zeros({3, 2, 1, 1});
   ET_EXPECT_KERNEL_FAILURE(context_, op_lift_fresh_copy_out(self, out));
 }
+#endif
 
 TEST_F(OpLiftFreshCopyTest, MismatchedDTypeDie) {
   TensorFactory<ScalarType::Int> tf_in;

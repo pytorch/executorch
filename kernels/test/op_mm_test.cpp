@@ -134,10 +134,8 @@ TEST_F(OpMmOutTest, MismatchedDimensionsDies) {
   EXPECT_TENSOR_EQ(op_mm_out(x, right_y, out), expected);
 }
 
+#ifndef USE_ATEN_LIB
 TEST_F(OpMmOutTest, MismatchedDimensionSizeDies) {
-  if (torch::executor::testing::SupportedFeatures::get()->is_aten) {
-    GTEST_SKIP() << "ATen kernel can handle mismatched dimension size";
-  }
   TensorFactory<ScalarType::Int> tf;
   Tensor x = tf.full({2, 2}, 3);
 
@@ -152,11 +150,10 @@ TEST_F(OpMmOutTest, MismatchedDimensionSizeDies) {
   ET_EXPECT_KERNEL_FAILURE(context_, op_mm_out(x, right_y, wrong_out));
   ET_EXPECT_KERNEL_FAILURE(context_, op_mm_out(x, wrong_y, right_out));
 }
+#endif
 
+#ifndef USE_ATEN_LIB
 TEST_F(OpMmOutTest, WrongOutShapeDies) {
-  if (torch::executor::testing::SupportedFeatures::get()->is_aten) {
-    GTEST_SKIP() << "ATen kernel can handle wrong out shape";
-  }
   TensorFactory<ScalarType::Int> tf;
   Tensor x = tf.ones({10, 3});
 
@@ -170,6 +167,7 @@ TEST_F(OpMmOutTest, WrongOutShapeDies) {
 
   EXPECT_TENSOR_EQ(op_mm_out(x, y, right_out), tf.full({10, 4}, 3));
 }
+#endif
 
 TEST_F(OpMmOutTest, DynamicShapeUpperBoundSameAsExpected) {
   TensorFactory<ScalarType::Float> tf;
