@@ -1,3 +1,4 @@
+load("@fbsource//tools/build_defs:platform_defs.bzl", "APPLE", "IOS", "MACOSX")
 load("@fbsource//xplat/executorch/build:runtime_wrapper.bzl", "runtime")
 
 GEN_KERNEL_BACKEND_DEPS = [
@@ -52,6 +53,73 @@ def define_common_targets():
             "//executorch/extension/tensor:tensor",
             "//executorch/extension/llm/runner:runner_lib",
             "//pytorch/tokenizers:headers",
+        ],
+    )
+
+    _ANE_MACOS_COMPILER_FLAGS = [
+        "-g0",
+        "-Oz",
+        "-fexceptions",
+        "-frtti",
+        "-Wno-deprecated-declarations",
+        "-Wno-global-constructors",
+        "-Wno-error",
+        "-Wno-nonportable-include-path",
+    ]
+
+    runtime.cxx_library(
+        name = "ane_text_main_lib",
+        srcs = ["ane_text_runner.cpp"],
+        apple_sdks = (IOS, MACOSX),
+        compiler_flags = _ANE_MACOS_COMPILER_FLAGS,
+        visibility = ["PUBLIC"],
+        deps = [
+            "//executorch/extension/llm/runner:runner_lib",
+            "//executorch/extension/module:module",
+            "//executorch/extension/tensor:tensor",
+            "//executorch/extension/threadpool:cpuinfo_utils",
+            "//executorch/extension/threadpool:threadpool",
+            "//executorch/runtime/core:core",
+            "//pytorch/tokenizers:headers",
+        ] + select({
+            "DEFAULT": [],
+            "ovr_config//os:iphoneos": [
+                "//executorch/backends/apple/coreml:coreml",
+            ],
+        }),
+        exported_deps = [] + select({
+            "DEFAULT": [],
+            "ovr_config//os:iphoneos": [
+                "//executorch/backends/apple/coreml:coreml",
+            ],
+        }),
+        external_deps = [
+            "gflags",
+        ],
+        preprocessor_flags = ["-DET_USE_THREADPOOL", "-DENABLE_XNNPACK_SHARED_WORKSPACE"],
+    )
+
+    runtime.cxx_binary(
+        name = "ane_text_main",
+        deps = [
+            ":ane_text_main_lib",
+        ] + _KERNEL_BACKEND_DEPS + GEN_KERNEL_BACKEND_DEPS + _get_torchao_lowbit_deps() + select({
+            "DEFAULT": [],
+            "ovr_config//os:macos": [
+                "//executorch/backends/apple/coreml:coreml",
+            ],
+        }),
+        visibility = ["PUBLIC"],
+    )
+
+    runtime.cxx_library(
+        name = "ane_text_main_ios_lib",
+        apple_sdks = (IOS,),
+        platforms = (APPLE,),
+        visibility = ["PUBLIC"],
+        deps = [
+            ":ane_text_main_lib",
+            "//xplat/cria/benchmark:ios_benchmark_main_lib",
         ],
     )
 

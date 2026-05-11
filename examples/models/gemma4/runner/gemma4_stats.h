@@ -226,7 +226,7 @@ struct Gemma4Stats {
     char line[256];
     int64_t rss_kb = 0;
     while (fgets(line, sizeof(line), f)) {
-      if (sscanf(line, "VmRSS: %ld kB", &rss_kb) == 1) {
+      if (sscanf(line, "VmRSS: %lld kB", (long long*)&rss_kb) == 1) {
         break;
       }
     }
