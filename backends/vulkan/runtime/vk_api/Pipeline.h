@@ -157,6 +157,14 @@ class ComputePipeline final {
     VkPipelineLayout pipeline_layout;
     VkShaderModule shader_module;
     SpecVarList specialization_constants;
+    // Optional: when nonzero, the pipeline is created with
+    // VkPipelineShaderStageRequiredSubgroupSizeCreateInfo chained into the
+    // shader stage pNext, locking the subgroup size to this value. Must be a
+    // power of two within [adapter.min_subgroup_size(),
+    // adapter.max_subgroup_size()] and the adapter must support
+    // VK_EXT_subgroup_size_control with VK_SHADER_STAGE_COMPUTE_BIT in the
+    // required_subgroup_size_stages mask. 0 = no requirement.
+    uint32_t required_subgroup_size = 0u;
   };
 
   explicit ComputePipeline(VkDevice device, VkPipeline handle);
@@ -280,6 +288,9 @@ class ComputePipelineCache final {
         }
         seed = utils::hash_combine(seed, new_seed);
       }
+
+      seed = utils::hash_combine(
+          seed, std::hash<uint32_t>()(descriptor.required_subgroup_size));
 
       return seed;
     }

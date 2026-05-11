@@ -33,19 +33,17 @@ utils::uvec3 pick_q8ta_conv2d_pw_global_wg_size(
   const uint32_t H = graph->size_at<uint32_t>(-2, output);
   const uint32_t C = graph->size_at<uint32_t>(-3, output);
 
-  // The 4W4C shader processes tiles of:
-  // - TILE_N4=2 groups of 4 output channels (8 channels per thread)
-  // - TILE_M4=1 groups of 4 widths (4 widths per thread)
-  // - 1 height per thread
-  constexpr uint32_t TILE_N4 = 2;
+  // Each thread covers a 4-width x 4-channel output block.
+  // Tile constants must match TILE_M4 / TILE_N4 in q8ta_conv2d_pw.glsl.
+  constexpr uint32_t TILE_N4 = 1;
   constexpr uint32_t TILE_M4 = 1;
 
   const uint32_t C4 = utils::div_up_4(C);
   const uint32_t W4 = utils::div_up_4(W);
 
   // Global workgroup size:
-  // x = output channels / (TILE_N4 * 4) = C4 / TILE_N4
-  // y = width / (TILE_M4 * 4) = W4 / TILE_M4
+  // x = output channels / (TILE_N4 * 4) = C4 / TILE_N4 = C4
+  // y = width / (TILE_M4 * 4) = W4 / TILE_M4 = W4
   // z = height
   return {utils::div_up(C4, TILE_N4), utils::div_up(W4, TILE_M4), H};
 }

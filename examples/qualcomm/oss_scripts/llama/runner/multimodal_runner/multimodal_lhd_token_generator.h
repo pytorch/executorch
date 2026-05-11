@@ -108,6 +108,9 @@ class MultimodalLhdTokenGenerator
       AttentionSinkRopeRunner* attention_sink_rope_runner) override;
 
  private:
+  // Bring base class's virtual prepare_io into scope so the overload below
+  // does not hide it (-Woverloaded-virtual).
+  using TokenGenerator<T>::prepare_io;
   /**
    * @brief Fill in I/O buffers with prompt token and position.
    * @param cur_token Current token.

@@ -415,14 +415,13 @@ def input_quantization_type(
     return dequantize_input_val.dtype
 
 
-def output_quantization_type(
-    node: Node, output_index: int | None = None
-) -> torch.dtype | None:
+def output_quantization_type(node: Node, output_index: int) -> torch.dtype | None:
     """Return the quantization output datatype of the QDQ quantized `node`.
 
     :param node: The compute node.
     :param output_index: If the `node` has multiple outputs and therefore multiple `getitem` nodes follow it, the
-                          index selects the output.
+                          index selects the output. If no `getitem` nodes follow it, the operator
+                          produces only 1 output (most common case), and the value `0` must be used.
     :return: The output quantization datatype of the QDQ quantized `node`, or `None` if the graph does not follow the
               QDQ pattern or some metadata is incomplete or an invalid input index is given.
 
@@ -441,11 +440,13 @@ def output_quantization_type(
                                             │ <returned type>
     """
     users = list(node.users)
-    if len(users) == 1:
-        if not _is_quantize(quantize_node := users[0]):
+    if len(users) == 1 and _is_quantize(quantize_node := users[0]):
+        # Basic QDQ case.
+        if output_index != 0:
+            # There is only 1 output. Cannot access non-zero index.
             return None
 
-    else:  # Multiple users
+    else:  # Only `getitem` nodes should follow.
         if not isinstance(output_index, int):
             return None  # Invalid index.
         if not all(user.target == operator.getitem for user in users):

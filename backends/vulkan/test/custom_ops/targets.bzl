@@ -6,14 +6,13 @@ load(
     "vulkan_spv_shader_lib",
 )
 
-def define_custom_op_test_binary(custom_op_name, extra_deps = [], src_file = None):
+def define_custom_op_test_binary(custom_op_name, extra_deps = [], src_file = None, include_torch = False):
     deps_list = [
         ":prototyping_utils",
         ":operator_implementations",
         ":custom_ops_shaderlib",
         "//executorch/backends/vulkan:vulkan_graph_runtime",
-        runtime.external_dep_location("libtorch"),
-    ] + extra_deps
+    ] + ([runtime.external_dep_location("libtorch")] if include_torch else []) + extra_deps
 
     src_file_str = src_file if src_file else "{}.cpp".format(custom_op_name)
 
@@ -99,6 +98,7 @@ def define_common_targets(is_fbcode = False):
     define_custom_op_test_binary("test_q8ta_conv2d_dw")
     define_custom_op_test_binary("test_q8ta_linear")
     define_custom_op_test_binary("test_q8ta_conv2d_transposed")
+    define_custom_op_test_binary("test_q8ta_pixel_shuffle")
     define_custom_op_test_binary("test_mm")
     define_custom_op_test_binary("test_conv2d_pw")
     define_custom_op_test_binary("test_conv2d_dw")
