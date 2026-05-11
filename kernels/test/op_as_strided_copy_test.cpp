@@ -196,15 +196,14 @@ TEST_F(OpAsStridedCopyOutTest, AllScalarInputOutputSupport) {
 #undef TEST_ENTRY
 }
 
+#ifndef USE_ATEN_LIB
 TEST_F(OpAsStridedCopyOutTest, InvalidParametersDies) {
-  if (torch::executor::testing::SupportedFeatures::get()->is_aten) {
-    GTEST_SKIP() << "ATen kernel can handle invalid parameter";
-  }
 #define TEST_ENTRY(ctype, dtype) \
   test_as_strided_copy_out_invalid_parameters<ScalarType::dtype>();
   ET_FORALL_REAL_TYPES_AND(Bool, TEST_ENTRY);
 #undef TEST_ENTRY
 }
+#endif
 
 TEST_F(OpAsStridedCopyOutTest, MismatchedInputDtypesDies) {
   TensorFactory<ScalarType::Byte> tf_byte;

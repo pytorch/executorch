@@ -177,13 +177,12 @@ TEST_F(OpCatOutTest, SmokeDim1) {
   EXPECT_TENSOR_EQ(out, expected);
 }
 
+#ifndef USE_ATEN_LIB
 TEST_F(OpCatOutTest, SixteenBitFloatSupport) {
-  if (torch::executor::testing::SupportedFeatures::get()->is_aten) {
-    GTEST_SKIP() << "Test Half/BF16 support only for ExecuTorch mode";
-  }
   test_16bit_dtype<ScalarType::Half>();
   test_16bit_dtype<ScalarType::BFloat16>();
 }
+#endif
 
 TEST_F(OpCatOutTest, ComplexSupport) {
 #define RUN_COMPLEX_TEST(ctype, dtype) \
@@ -245,10 +244,8 @@ TEST_F(OpCatOutTest, AllDtypesSupported) {
   // for those types.
 }
 
+#ifndef USE_ATEN_LIB
 TEST_F(OpCatOutTest, EmptyInputTensorShapeIgnored) {
-  if (torch::executor::testing::SupportedFeatures::get()->is_aten) {
-    GTEST_SKIP() << "ATen kernel doesn't ignore empty input tensor shape";
-  }
   TensorFactory<ScalarType::Int> tf;
 
   // An empty tensor with a shape totally different from the non-empty inputs.
@@ -265,6 +262,7 @@ TEST_F(OpCatOutTest, EmptyInputTensorShapeIgnored) {
   op_cat_out(ArrayRef<Tensor>(inputs.data(), inputs.size()), /*dim=*/0, out);
   // Success if it doesn't assert on the weird-shaped empty input.
 }
+#endif
 
 TEST_F(OpCatOutTest, DimBounds) {
   TensorFactory<ScalarType::Int> tf;
@@ -329,10 +327,8 @@ TEST_F(OpCatOutTest, MismatchedDtypesDies) {
           ArrayRef<Tensor>(inputs.data(), inputs.size()), /*dim=*/0, out));
 }
 
+#ifndef USE_ATEN_LIB
 TEST_F(OpCatOutTest, MismatchedDimensionsDies) {
-  if (torch::executor::testing::SupportedFeatures::get()->is_aten) {
-    GTEST_SKIP() << "ATen kernel can handle mismatched dimensions";
-  }
   TensorFactory<ScalarType::Int> tf;
   Tensor out = tf.zeros({2, 2});
 
@@ -344,11 +340,10 @@ TEST_F(OpCatOutTest, MismatchedDimensionsDies) {
       op_cat_out(
           ArrayRef<Tensor>(inputs.data(), inputs.size()), /*dim=*/0, out));
 }
+#endif
 
+#ifndef USE_ATEN_LIB
 TEST_F(OpCatOutTest, MismatchedDimensionSizeDies) {
-  if (torch::executor::testing::SupportedFeatures::get()->is_aten) {
-    GTEST_SKIP() << "ATen kernel can handle mismatched dimension size";
-  }
   TensorFactory<ScalarType::Int> tf;
   Tensor out = tf.zeros({2, 2});
 
@@ -361,11 +356,10 @@ TEST_F(OpCatOutTest, MismatchedDimensionSizeDies) {
       op_cat_out(
           ArrayRef<Tensor>(inputs.data(), inputs.size()), /*dim=*/0, out));
 }
+#endif
 
+#ifndef USE_ATEN_LIB
 TEST_F(OpCatOutTest, WrongOutShapeDies) {
-  if (torch::executor::testing::SupportedFeatures::get()->is_aten) {
-    GTEST_SKIP() << "ATen kernel can handle wrong out shape";
-  }
   TensorFactory<ScalarType::Int> tf;
 
   // Should be {4, 3} to match the inputs when calling cat() with dim 0.
@@ -381,6 +375,7 @@ TEST_F(OpCatOutTest, WrongOutShapeDies) {
       op_cat_out(
           ArrayRef<Tensor>(inputs.data(), inputs.size()), /*dim=*/0, out));
 }
+#endif
 
 /* %python
 import torch

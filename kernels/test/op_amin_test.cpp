@@ -258,30 +258,26 @@ void OpAminOutTest::test_amin_out_dtype<ScalarType::Bool>() {
   // clang-format on
 }
 
+#ifndef USE_ATEN_LIB
 TEST_F(OpAminOutTest, InvalidDimensionListDies) {
-  if (torch::executor::testing::SupportedFeatures::get()->is_aten) {
-    GTEST_SKIP() << "ATen kernel test fails";
-  }
 #define TEST_ENTRY(ctype, dtype) \
   test_amin_out_invalid_dimensions<ScalarType::dtype>();
   ET_FORALL_REAL_TYPES_AND(Bool, TEST_ENTRY);
 #undef TEST_ENTRY
 }
+#endif
 
+#ifndef USE_ATEN_LIB
 TEST_F(OpAminOutTest, InvalidShapeDies) {
-  if (torch::executor::testing::SupportedFeatures::get()->is_aten) {
-    GTEST_SKIP() << "ATen kernel test fails";
-  }
 #define TEST_ENTRY(ctype, dtype) \
   test_amin_out_invalid_shape<ScalarType::dtype>();
   ET_FORALL_REAL_TYPES_AND(Bool, TEST_ENTRY);
 #undef TEST_ENTRY
 }
+#endif
 
+#ifndef USE_ATEN_LIB
 TEST_F(OpAminOutTest, MismatchedDTypesDies) {
-  if (torch::executor::testing::SupportedFeatures::get()->is_aten) {
-    GTEST_SKIP() << "ATen kernel test fails";
-  }
   TensorFactory<ScalarType::Float> tf_float;
   TensorFactory<ScalarType::Int> tf_int;
 
@@ -307,6 +303,7 @@ TEST_F(OpAminOutTest, MismatchedDTypesDies) {
   ET_EXPECT_KERNEL_FAILURE(
       context_, op_amin_out(in, dim_list, /*keepdim=*/true, out));
 }
+#endif
 
 TEST_F(OpAminOutTest, AllRealInputOutputPasses) {
 #define TEST_ENTRY(ctype, dtype) test_amin_out_dtype<ScalarType::dtype>();

@@ -458,10 +458,8 @@ TEST_F(OpToDimOrderCopyTest, HardcodeFloatConvertInt) {
   ET_FORALL_FLOATHBF16_TYPES(TEST_ENTRY);
 }
 
+#ifndef USE_ATEN_LIB
 TEST_F(OpToDimOrderCopyTest, MismatchedSizesDie) {
-  if (torch::executor::testing::SupportedFeatures::get()->is_aten) {
-    GTEST_SKIP() << "ATen kernel can handle mismatched sizes";
-  }
   TensorFactory<ScalarType::Int> tf;
   Tensor input = tf.make(/*sizes=*/{3, 1, 1, 2}, /*data=*/{1, 2, 3, 4, 5, 6});
   Tensor out = tf.zeros({3, 2, 1, 1});
@@ -479,14 +477,13 @@ TEST_F(OpToDimOrderCopyTest, MismatchedSizesDie) {
           dim_order,
           out));
 }
+#endif
 
 // Only contiguous memory is supported, the memory type MemoryFormat::Contiguous
 // should not be allowed. The function is expected death if using the illegal
 // memory format.
+#ifndef USE_ATEN_LIB
 TEST_F(OpToDimOrderCopyTest, MismatchedMemoryFormatDies) {
-  if (torch::executor::testing::SupportedFeatures::get()->is_aten) {
-    GTEST_SKIP() << "ATen kernel can handle non contiguous memory formats";
-  }
   TensorFactory<ScalarType::Float> tf_in;
   TensorFactory<ScalarType::Float> tf_out;
   Tensor input =
@@ -511,12 +508,11 @@ TEST_F(OpToDimOrderCopyTest, MismatchedMemoryFormatDies) {
           dim_order,
           out));
 }
+#endif
 
 // Only blocking data transfer supported
+#ifndef USE_ATEN_LIB
 TEST_F(OpToDimOrderCopyTest, MismatchedBlockingDie) {
-  if (torch::executor::testing::SupportedFeatures::get()->is_aten) {
-    GTEST_SKIP() << "ATen kernel can handle non blocking data transfer";
-  }
   TensorFactory<ScalarType::Int> tf;
   Tensor input = tf.make(/*sizes=*/{3, 1, 1, 2}, /*data=*/{1, 2, 3, 4, 5, 6});
   Tensor out = tf.zeros(/*sizes=*/{3, 1, 1, 2});
@@ -535,6 +531,7 @@ TEST_F(OpToDimOrderCopyTest, MismatchedBlockingDie) {
           dim_order,
           out));
 }
+#endif
 
 TEST_F(OpToDimOrderCopyTest, DynamicShapeUpperBoundSameAsExpected) {
   test_dynamic_shape(

@@ -217,10 +217,8 @@ TEST_F(OpEmbeddingOutTest, WeightWrongDimensionsDies) {
           out));
 }
 
+#ifndef USE_ATEN_LIB
 TEST_F(OpEmbeddingOutTest, WrongOutShapeDies) {
-  if (torch::executor::testing::SupportedFeatures::get()->is_aten) {
-    GTEST_SKIP() << "ATen kernel can handle wrong out shape";
-  }
   TensorFactory<ScalarType::Float> tff;
   // clang-format off
   Tensor weight = tff.make(
@@ -253,6 +251,7 @@ TEST_F(OpEmbeddingOutTest, WrongOutShapeDies) {
             wrong_out));
   }
 }
+#endif
 
 TEST_F(OpEmbeddingOutTest, UnmatchedOutTypeDie) {
   TensorFactory<ScalarType::Float> tff;
