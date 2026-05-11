@@ -113,10 +113,8 @@ TEST_F(OpArangeOutTest, FloatNumberNotEqualIntSupport) {
   EXPECT_TENSOR_EQ(out, expected);
 }
 
+#ifndef USE_ATEN_LIB
 TEST_F(OpArangeOutTest, OutDimUnsupportedDie) {
-  if (torch::executor::testing::SupportedFeatures::get()->is_aten) {
-    GTEST_SKIP() << "ATen kernel can handle mismatched out dim";
-  }
   TensorFactory<ScalarType::Float> tf;
 
   Scalar end = Scalar(5);
@@ -126,6 +124,7 @@ TEST_F(OpArangeOutTest, OutDimUnsupportedDie) {
   // out.dim() should be 1, not 2
   ET_EXPECT_KERNEL_FAILURE(context_, op_arange_out(end, out));
 }
+#endif
 
 TEST_F(OpArangeOutTest, DynamicShapeUpperBoundSameAsExpected) {
   TensorFactory<ScalarType::Float> tf;
@@ -149,10 +148,8 @@ TEST_F(OpArangeOutTest, DynamicShapeUpperBoundLargerThanExpected) {
   EXPECT_TENSOR_CLOSE(out, expected_result);
 }
 
+#ifdef USE_ATEN_LIB
 TEST_F(OpArangeOutTest, DynamicShapeUnbound) {
-  if (!torch::executor::testing::SupportedFeatures::get()->is_aten) {
-    GTEST_SKIP() << "Dynamic Unbound not supported";
-  }
   TensorFactory<ScalarType::Float> tf;
 
   Tensor expected_result = tf.make({5}, {0, 1, 2, 3, 4});
@@ -162,6 +159,7 @@ TEST_F(OpArangeOutTest, DynamicShapeUnbound) {
   Tensor ret = op_arange_out(Scalar(5), out);
   EXPECT_TENSOR_CLOSE(out, expected_result);
 }
+#endif
 
 /// A generic smoke test that works for any dtype that supports  zeros().
 TEST_F(OpArangeStartOutTest, AllRealHBF16DtypesSupported) {
@@ -195,10 +193,8 @@ TEST_F(OpArangeStartOutTest, FloatNumberNotEqualIntSupport) {
   EXPECT_TENSOR_EQ(out, expected);
 }
 
+#ifndef USE_ATEN_LIB
 TEST_F(OpArangeStartOutTest, OutDimUnsupportedDie) {
-  if (torch::executor::testing::SupportedFeatures::get()->is_aten) {
-    GTEST_SKIP() << "ATen kernel can handle mismatched out dim";
-  }
   TensorFactory<ScalarType::Float> tf;
 
   Scalar start = Scalar(0);
@@ -211,6 +207,7 @@ TEST_F(OpArangeStartOutTest, OutDimUnsupportedDie) {
   ET_EXPECT_KERNEL_FAILURE(
       context_, op_arange_start_out(start, end, step, out));
 }
+#endif
 
 TEST_F(OpArangeStartOutTest, DynamicShapeUpperBoundSameAsExpected) {
   TensorFactory<ScalarType::Float> tf;
@@ -234,10 +231,8 @@ TEST_F(OpArangeStartOutTest, DynamicShapeUpperBoundLargerThanExpected) {
   EXPECT_TENSOR_CLOSE(out, expected_result);
 }
 
+#ifdef USE_ATEN_LIB
 TEST_F(OpArangeStartOutTest, DynamicShapeUnbound) {
-  if (!torch::executor::testing::SupportedFeatures::get()->is_aten) {
-    GTEST_SKIP() << "Dynamic Unbound not supported";
-  }
   TensorFactory<ScalarType::Float> tf;
 
   Tensor expected_result = tf.make({5}, {0, 1, 2, 3, 4});
@@ -247,6 +242,7 @@ TEST_F(OpArangeStartOutTest, DynamicShapeUnbound) {
   Tensor ret = op_arange_start_out(Scalar(0), Scalar(5), Scalar(1), out);
   EXPECT_TENSOR_CLOSE(out, expected_result);
 }
+#endif
 
 TEST_F(OpArangeStartOutTest, StartOut) {
   TensorFactory<ScalarType::Float> tf;

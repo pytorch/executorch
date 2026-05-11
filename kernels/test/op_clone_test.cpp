@@ -72,14 +72,13 @@ class OpCloneTest : public OperatorTest {
 };
 
 // regular test for clone.out
+#ifndef USE_ATEN_LIB
 TEST_F(OpCloneTest, AllDtypesSupported) {
-  if (torch::executor::testing::SupportedFeatures::get()->is_aten) {
-    GTEST_SKIP() << "ATen kernel test fails";
-  }
 #define TEST_ENTRY(ctype, dtype) test_dtype<ctype, ScalarType::dtype>();
   ET_FORALL_REAL_TYPES_AND(Bool, TEST_ENTRY);
 #undef TEST_ENTRY
 }
+#endif
 
 TEST_F(OpCloneTest, EmptyInputSupported) {
 #define TEST_ENTRY(ctype, dtype) test_empty_input<ctype, ScalarType::dtype>();
@@ -87,10 +86,8 @@ TEST_F(OpCloneTest, EmptyInputSupported) {
 #undef TEST_ENTRY
 }
 
+#ifndef USE_ATEN_LIB
 TEST_F(OpCloneTest, MismatchedSizesDie) {
-  if (torch::executor::testing::SupportedFeatures::get()->is_aten) {
-    GTEST_SKIP() << "ATen kernel can handle mismatched sizes";
-  }
   TensorFactory<ScalarType::Int> tf;
   Tensor input = tf.make(/*sizes=*/{3, 1, 1, 2}, /*data=*/{1, 2, 3, 4, 5, 6});
   Tensor out = tf.zeros({3, 2, 1, 1});
@@ -98,6 +95,7 @@ TEST_F(OpCloneTest, MismatchedSizesDie) {
       context_,
       op_clone_out(input, /*memory_format=*/executorch::aten::nullopt, out));
 }
+#endif
 
 TEST_F(OpCloneTest, MismatchedTypesDie) {
   TensorFactory<ScalarType::Int> tf_in;
@@ -113,10 +111,8 @@ TEST_F(OpCloneTest, MismatchedTypesDie) {
 // Only contiguous memory is supported, the memory type other than nullopt or
 // MemoryFormat::Contiguous should not be allowed. The function is expected
 // depth if using the illegal memory format.
+#ifndef USE_ATEN_LIB
 TEST_F(OpCloneTest, MismatchedMemoryFormatDie) {
-  if (torch::executor::testing::SupportedFeatures::get()->is_aten) {
-    GTEST_SKIP() << "ATen kernel can handle non contiguous memory formats";
-  }
   TensorFactory<ScalarType::Float> tf_in;
   TensorFactory<ScalarType::Float> tf_out;
   Tensor input =
@@ -127,6 +123,7 @@ TEST_F(OpCloneTest, MismatchedMemoryFormatDie) {
       op_clone_out(
           input, static_cast<executorch::aten::MemoryFormat>(55), out));
 }
+#endif
 
 TEST_F(OpCloneTest, SimpleGeneratedCase) {
   TensorFactory<ScalarType::Float> tf;

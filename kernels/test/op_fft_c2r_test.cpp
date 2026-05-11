@@ -159,11 +159,8 @@ TEST_F(OpFftC2rOutTest, MultipleDims) {
 #undef TEST_ENTRY
 }
 
+#ifndef USE_ATEN_LIB
 TEST_F(OpFftC2rOutTest, InvalidNorm) {
-  if (torch::executor::testing::SupportedFeatures::get()->is_aten) {
-    GTEST_SKIP() << "ATen MKL path does not validate norm";
-    return;
-  }
   auto invalid_norm = [this](int64_t norm) {
     test_dtype<float, ScalarType::Float, /* expect_failure = */ true>(norm);
   };
@@ -172,12 +169,10 @@ TEST_F(OpFftC2rOutTest, InvalidNorm) {
   ET_EXPECT_KERNEL_FAILURE(context_, invalid_norm(-1));
   ET_EXPECT_KERNEL_FAILURE(context_, invalid_norm(9999999));
 }
+#endif
 
+#ifndef USE_ATEN_LIB
 TEST_F(OpFftC2rOutTest, InvalidDim) {
-  if (torch::executor::testing::SupportedFeatures::get()->is_aten) {
-    GTEST_SKIP() << "ATen fails UBSAN";
-    return;
-  }
   auto negative_dim = [this]() {
     test_dtype<float, ScalarType::Float, /* expect_failure = */ true>(0, -1);
     test_dtype<float, ScalarType::Float, /* expect_failure = */ true>(0, 3);
@@ -185,3 +180,4 @@ TEST_F(OpFftC2rOutTest, InvalidDim) {
   };
   ET_EXPECT_KERNEL_FAILURE(context_, negative_dim());
 }
+#endif

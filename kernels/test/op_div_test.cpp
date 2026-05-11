@@ -426,10 +426,8 @@ TEST_F(OpDivOutTest, BroadcastDimSizeMissingBA) {
 // Death Tests
 //
 
+#ifndef USE_ATEN_LIB
 TEST_F(OpDivOutTest, MismatchedShapesDies) {
-  if (torch::executor::testing::SupportedFeatures::get()->is_aten) {
-    GTEST_SKIP() << "ATen kernel can handle mismatched shapes";
-  }
   TensorFactory<ScalarType::Int> tf_int;
   TensorFactory<ScalarType::Float> tf_float;
 
@@ -439,6 +437,7 @@ TEST_F(OpDivOutTest, MismatchedShapesDies) {
 
   ET_EXPECT_KERNEL_FAILURE(context_, op_div_out(a, b, out));
 }
+#endif
 
 TEST_F(OpDivOutTest, AllNonFloatOutputDTypeDies) {
 #define TEST_ENTRY(ctype, dtype) \

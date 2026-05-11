@@ -98,10 +98,8 @@ class OpAnyOutTest : public OperatorTest {
   }
 };
 
+#ifndef USE_ATEN_LIB
 TEST_F(OpAnyOutTest, MismatchedDimensionsDies) {
-  if (torch::executor::testing::SupportedFeatures::get()->is_aten) {
-    GTEST_SKIP() << "ATen kernel can handle mismatched dimensions";
-  }
   TensorFactory<ScalarType::Float> tff;
   const std::vector<int32_t> size{2, 2};
 
@@ -110,6 +108,7 @@ TEST_F(OpAnyOutTest, MismatchedDimensionsDies) {
 
   ET_EXPECT_KERNEL_FAILURE(context_, op_any_all_out(in, out));
 }
+#endif
 
 TEST_F(OpAnyOutTest, InvalidDtypeDies) {
 #define TEST_ENTRY(ctype, dtype) \
