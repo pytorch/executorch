@@ -103,10 +103,8 @@ class OpCumSumOutTest : public OperatorTest {
   }
 };
 
+#ifndef USE_ATEN_LIB
 TEST_F(OpCumSumOutTest, MismatchedDimensionsDies) {
-  if (torch::executor::testing::SupportedFeatures::get()->is_aten) {
-    GTEST_SKIP() << "ATen kernel can handle mismatched dimensions";
-  }
   TensorFactory<ScalarType::Float> tff;
 
   Tensor in = tff.make({1, 3}, {0, 1, 2});
@@ -124,6 +122,7 @@ TEST_F(OpCumSumOutTest, MismatchedDimensionsDies) {
   ET_EXPECT_KERNEL_FAILURE(
       context_, op_cumsum_out(in, /*dim=*/1, enforced_dtype, wrong_out));
 }
+#endif
 
 /* A generic smoke test that works for the supported dtypes with
  * enforced_dtype specified.

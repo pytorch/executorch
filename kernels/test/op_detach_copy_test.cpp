@@ -87,15 +87,14 @@ TEST_F(OpDetachCopyOutTest, AllScalarInputOutputSupport) {
 }
 
 // Mismatched shape tests.
+#ifndef USE_ATEN_LIB
 TEST_F(OpDetachCopyOutTest, MismatchedShapesDies) {
-  if (torch::executor::testing::SupportedFeatures::get()->is_aten) {
-    GTEST_SKIP() << "ATen kernel can handle mismatched shapes";
-  }
 #define TEST_ENTRY(ctype, dtype) \
   test_detach_copy_out_invalid_shape<ScalarType::dtype>();
   ET_FORALL_REAL_TYPES_AND(Bool, TEST_ENTRY);
 #undef TEST_ENTRY
 }
+#endif
 
 TEST_F(OpDetachCopyOutTest, MismatchedInputDtypesDies) {
   TensorFactory<ScalarType::Byte> tf_byte;

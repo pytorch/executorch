@@ -359,13 +359,12 @@ TEST_F(OpClampOutTest, DoubleTensors) {
 // int, floating point.
 //
 
+#ifndef USE_ATEN_LIB
 TEST_F(OpClampOutTest, ByteTensorNegativeClampDies) {
-  if (torch::executor::testing::SupportedFeatures::get()->is_aten) {
-    GTEST_SKIP() << "ATen kernel can handle negative clamp on byte tensor";
-  }
   // Cannot be represented by a uint8_t.
   expect_bad_clamp_value_dies<ScalarType::Byte>(-1);
 }
+#endif
 
 TEST_F(OpClampOutTest, ByteTensorTooLargeClampDies) {
   // Cannot be represented by a uint8_t.

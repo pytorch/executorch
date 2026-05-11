@@ -95,10 +95,8 @@ TEST_F(OpBitwiseNotOutTest, BoolInputOutputSupport) {
 }
 
 // Mismatched shape tests.
+#ifndef USE_ATEN_LIB
 TEST_F(OpBitwiseNotOutTest, MismatchedShapesDies) {
-  if (torch::executor::testing::SupportedFeatures::get()->is_aten) {
-    GTEST_SKIP() << "ATen kernel can handle mismatched shapes";
-  }
   TensorFactory<ScalarType::Int> tf;
 
   Tensor a = tf.ones(/*sizes=*/{4});
@@ -106,6 +104,7 @@ TEST_F(OpBitwiseNotOutTest, MismatchedShapesDies) {
 
   ET_EXPECT_KERNEL_FAILURE(context_, op_bitwise_not_out(a, out));
 }
+#endif
 
 TEST_F(OpBitwiseNotOutTest, AllFloatInputDTypeDies) {
 #define TEST_ENTRY(ctype, dtype) \

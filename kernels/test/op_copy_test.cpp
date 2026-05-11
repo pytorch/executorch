@@ -204,10 +204,8 @@ TEST_F(OpCopyTest, ResizeOutDie) {
 }
 #endif
 
+#ifndef USE_ATEN_LIB
 TEST_F(OpCopyTest, MismatchedSizesDie) {
-  if (torch::executor::testing::SupportedFeatures::get()->is_aten) {
-    GTEST_SKIP() << "ATen kernel can handle mismatched sizes";
-  }
   TensorFactory<ScalarType::Int> tf;
   Tensor self = tf.make(/*sizes=*/{3, 1, 1, 2}, /*data=*/{1, 2, 3, 4, 5, 6});
   Tensor src = tf.make(/*sizes=*/{3, 1, 1, 2}, /*data=*/{1, 2, 3, 4, 5, 6});
@@ -215,6 +213,7 @@ TEST_F(OpCopyTest, MismatchedSizesDie) {
   Tensor out = tf.zeros({3, 2, 1, 1});
   ET_EXPECT_KERNEL_FAILURE(context_, op_copy_out(self, src, non_blocking, out));
 }
+#endif
 
 TEST_F(OpCopyTest, MismatchedSrcOutTypesDie) {
   TensorFactory<ScalarType::Int> tf_in;
@@ -229,10 +228,8 @@ TEST_F(OpCopyTest, MismatchedSrcOutTypesDie) {
 // Only contiguous memory is supported, the memory type other than nullopt or
 // MemoryFormat::Contiguous should not be allowed. The function is expected
 // depth if using the illegal memory format.
+#ifndef USE_ATEN_LIB
 TEST_F(OpCopyTest, BlockingDie) {
-  if (torch::executor::testing::SupportedFeatures::get()->is_aten) {
-    GTEST_SKIP() << "ATen kernel can handle non-contiguous memory formats";
-  }
   TensorFactory<ScalarType::Float> tf_in;
   TensorFactory<ScalarType::Float> tf_out;
   Tensor self = tf_in.make(/*sizes=*/{3, 1, 1, 2}, /*data=*/{1, 2, 3, 4, 5, 6});
@@ -241,6 +238,7 @@ TEST_F(OpCopyTest, BlockingDie) {
   Tensor out = tf_out.zeros({3, 1, 1, 2});
   ET_EXPECT_KERNEL_FAILURE(context_, op_copy_out(self, src, non_blocking, out));
 }
+#endif
 
 TEST_F(OpCopyTest, DynamicShapeUpperBoundSameAsExpected) {
   test_dynamic_shape(

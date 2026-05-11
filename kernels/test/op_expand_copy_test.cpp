@@ -215,10 +215,8 @@ TEST_F(OpExpandOutTest, BadOutDataTypeGoodShapeDeath) {
       context_, op_expand_copy_out(a, {dims.data(), dims.size()}, false, out));
 }
 
+#ifndef USE_ATEN_LIB
 TEST_F(OpExpandOutTest, BadOutShapeGoodDataTypeDeath) {
-  if (torch::executor::testing::SupportedFeatures::get()->is_aten) {
-    GTEST_SKIP() << "ATen kernel can handle this";
-  }
   TensorFactory<ScalarType::Int> tf;
   Tensor a = tf.make(/*sizes*/ {1, 2}, /*data=*/{42, 96});
   Tensor out = tf.ones({2, 6, 4});
@@ -228,6 +226,7 @@ TEST_F(OpExpandOutTest, BadOutShapeGoodDataTypeDeath) {
   ET_EXPECT_KERNEL_FAILURE(
       context_, op_expand_copy_out(a, {dims.data(), dims.size()}, false, out));
 }
+#endif
 
 TEST_F(OpExpandOutTest, SingleToMany) {
   TensorFactory<ScalarType::Int> tf;
@@ -313,10 +312,8 @@ TEST_F(OpExpandOutTest, ResizedOutput) {
 }
 #endif
 
+#ifndef USE_ATEN_LIB
 TEST_F(OpExpandOutTest, ImplicitTrue) {
-  if (torch::executor::testing::SupportedFeatures::get()->is_aten) {
-    GTEST_SKIP() << "ATen kernel can handle this";
-  }
   TensorFactory<ScalarType::Int> tf;
   Tensor a = tf.ones({2, 2});
   Tensor out = tf.zeros({2, 2});
@@ -325,6 +322,7 @@ TEST_F(OpExpandOutTest, ImplicitTrue) {
   ET_EXPECT_KERNEL_FAILURE(
       context_, op_expand_copy_out(a, {dims.data(), dims.size()}, true, out));
 }
+#endif
 
 /* %python
 import torch

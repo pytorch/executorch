@@ -462,10 +462,8 @@ TEST_F(OpConstantPadNDOutTest, TooManyPaddingElementsFail) {
       context_, op_constant_pad_nd_out(self, padding_ref, 0, out));
 }
 
+#ifndef USE_ATEN_LIB
 TEST_F(OpConstantPadNDOutTest, IncorrectOutputShapeFail) {
-  if (SupportedFeatures::get()->is_aten) {
-    GTEST_SKIP() << "ATen kernel can handle reshape output";
-  }
 
   TensorFactory<ScalarType::Float> tf;
 
@@ -481,5 +479,6 @@ TEST_F(OpConstantPadNDOutTest, IncorrectOutputShapeFail) {
   ET_EXPECT_KERNEL_FAILURE(
       context_, op_constant_pad_nd_out(self, padding_ref, 0, out));
 }
+#endif
 
 GENERATE_SCALAR_OVERFLOW_TESTS(OpConstantPadNDOutTest)
