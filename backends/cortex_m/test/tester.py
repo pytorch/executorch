@@ -6,11 +6,13 @@
 
 from collections.abc import Callable
 from dataclasses import dataclass
-from typing import Any
+from functools import partial
+from typing import Any, Optional
 
 import torch
 from executorch.backends.arm.test.common import get_u55_compile_spec
 from executorch.backends.arm.test.tester.arm_tester import Serialize
+from executorch.backends.cortex_m.compile_config import CortexMCompileConfig
 from executorch.backends.cortex_m.passes.cortex_m_pass_manager import CortexMPassManager
 from executorch.backends.cortex_m.quantizer.quantizer import CortexMQuantizer
 from executorch.backends.test.harness import Tester as TesterBase
@@ -48,9 +50,12 @@ class CortexMToEdge(ToEdge):
 
 
 class CortexMRunPasses(RunPasses):
-    def __init__(self):
+    def __init__(self, config: Optional[CortexMCompileConfig] = None):
+        config = config or CortexMCompileConfig()
+        # The base RunPasses constructs the pass manager as `cls(ep, pass_list)`.
+        # Pre-bind the config so it flows through that 2-arg call.
         super().__init__(
-            CortexMPassManager,
+            partial(CortexMPassManager, config=config),  # type: ignore[arg-type]
             CortexMPassManager.pass_list,
         )
 
@@ -73,12 +78,20 @@ cortex_m_stage_classes = {
 
 
 class CortexMTester(TesterBase):
-    def __init__(self, module, example_inputs):
+    def __init__(
+        self,
+        module,
+        example_inputs,
+        config: Optional[CortexMCompileConfig] = None,
+    ):
         if callable(example_inputs):
             resolved_example_inputs = example_inputs()
         else:
             resolved_example_inputs = example_inputs
-        super().__init__(module, resolved_example_inputs, cortex_m_stage_classes)
+        config = config or CortexMCompileConfig()
+        stage_classes = dict(cortex_m_stage_classes)
+        stage_classes[StageType.RUN_PASSES] = lambda: CortexMRunPasses(config=config)
+        super().__init__(module, resolved_example_inputs, stage_classes)
 
     def test_dialect(
         self,

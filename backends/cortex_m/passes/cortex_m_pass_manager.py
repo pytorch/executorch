@@ -11,6 +11,7 @@ from executorch.backends.arm._passes import (
     FoldAndAnnotateQParamsPass,
     ScalarsToAttributePass,
 )
+from executorch.backends.cortex_m.compile_config import CortexMCompileConfig
 from executorch.backends.transforms.remove_getitem_op import RemoveGetItemPass
 from executorch.backends.transforms.replace_scalar_with_tensor import (
     ReplaceScalarWithTensorArgPass,
@@ -57,7 +58,10 @@ class CortexMPassManager(PassManager):
     ]
 
     def __init__(
-        self, exported_program, passes: Optional[list[PassClass]] = None
+        self,
+        exported_program,
+        passes: Optional[list[PassClass]] = None,
+        config: Optional[CortexMCompileConfig] = None,
     ) -> None:
         super().__init__(passes=[])
         self.exported_program = exported_program
@@ -65,6 +69,7 @@ class CortexMPassManager(PassManager):
         self.passes: list[PassClass] = (  # type: ignore[assignment]
             passes if passes is not None else self.pass_list  # type: ignore[assignment]
         )
+        self.config: CortexMCompileConfig = config or CortexMCompileConfig()
 
     def transform_for_annotation(self, model):
         passes = self.pass_list_transform_for_annotation

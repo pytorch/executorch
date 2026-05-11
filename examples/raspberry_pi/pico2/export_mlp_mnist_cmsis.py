@@ -24,6 +24,7 @@ import os
 
 import torch
 
+from executorch.backends.cortex_m.compile_config import CortexMCompileConfig
 from executorch.backends.cortex_m.passes.cortex_m_pass_manager import CortexMPassManager
 from executorch.backends.cortex_m.quantizer.quantizer import CortexMQuantizer
 from executorch.exir import EdgeCompileConfig, ExecutorchBackendConfig, to_edge
@@ -94,7 +95,10 @@ def export_to_pte(quantized_model, example_input, output_path: str):
     logger.info("Edge program created")
 
     logger.info("Applying Cortex-M optimization passes...")
-    pass_manager = CortexMPassManager(edge_program.exported_program())
+    pass_manager = CortexMPassManager(
+        edge_program.exported_program(),
+        config=CortexMCompileConfig(cpu="cortex-m33"),
+    )
     transformed_ep = pass_manager.transform()
 
     edge_program = to_edge(transformed_ep, compile_config=edge_config)
