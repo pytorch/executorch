@@ -140,11 +140,8 @@ TEST_F(OpFillTest, MismatchedOtherPropertiesDies) {
   ET_EXPECT_KERNEL_FAILURE(context_, op_fill_tensor_out(self, other3, out));
 }
 
+#ifndef USE_ATEN_LIB
 TEST_F(OpFillTest, MismatchedOutputShapesDies) {
-  // Skip ATen test since it supports `self` and `out` having different shapes.
-  if (torch::executor::testing::SupportedFeatures::get()->is_aten) {
-    GTEST_SKIP() << "ATen kernel can handle mismatched output shape";
-  }
 
   TensorFactory<ScalarType::Int> tf;
 
@@ -155,6 +152,7 @@ TEST_F(OpFillTest, MismatchedOutputShapesDies) {
   // Assert `out` can't be filled due to incompatible shapes.
   ET_EXPECT_KERNEL_FAILURE(context_, op_fill_scalar_out(self, 0, out));
 }
+#endif
 
 TEST_F(OpFillTest, MismatchedOutputDtypeDies) {
   TensorFactory<ScalarType::Byte> tf_byte;

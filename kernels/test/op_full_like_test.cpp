@@ -104,15 +104,14 @@ TEST_F(OpFullLikeTest, AllDtypeOutputPasses) {
 #undef TEST_ENTRY
 }
 
+#ifndef USE_ATEN_LIB
 TEST_F(OpFullLikeTest, MismatchedShapeDies) {
-  if (torch::executor::testing::SupportedFeatures::get()->is_aten) {
-    GTEST_SKIP() << "ATen kernel can handle mismatched shapes";
-  }
 #define TEST_ENTRY(ctype, dtype) \
   test_full_like_out_mismatched_shape<ScalarType::dtype>();
   ET_FORALL_REAL_TYPES_AND(Bool, TEST_ENTRY);
 #undef TEST_ENTRY
 }
+#endif
 
 TEST_F(OpFullLikeTest, SimpleGeneratedCase) {
   TensorFactory<ScalarType::Float> tf;

@@ -125,10 +125,8 @@ TEST_F(OpMinimumOutTest, MismatchedOutputShapesDies) {
       context_, op_minimum_out(tf.ones({2, 2}), tf.ones({3, 3}), out));
 }
 
+#ifndef USE_ATEN_LIB
 TEST_F(OpMinimumOutTest, MismatchedOutputShapeWithSingletonDies) {
-  if (torch::executor::testing::SupportedFeatures::get()->is_aten) {
-    GTEST_SKIP() << "ATen kernel can handle mismatched output shape";
-  }
   // First argument is singleton but second and output has different shape.
   TensorFactory<ScalarType::Float> tf;
   Tensor out = tf.zeros({4, 4});
@@ -136,6 +134,7 @@ TEST_F(OpMinimumOutTest, MismatchedOutputShapeWithSingletonDies) {
   ET_EXPECT_KERNEL_FAILURE(
       context_, op_minimum_out(tf.ones({1, 1}), tf.ones({3, 3}), out));
 }
+#endif
 
 /* %python
 import torch

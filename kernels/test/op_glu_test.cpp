@@ -170,15 +170,14 @@ TEST_F(OpGluOutTest, InfinityAndNANTest) {
           /*sizes=*/out_sizes, /*data=*/{INFINITY, -INFINITY, NAN, NAN}));
 }
 
+#ifndef USE_ATEN_LIB
 TEST_F(OpGluOutTest, MismatchedShapesDies) {
-  if (torch::executor::testing::SupportedFeatures::get()->is_aten) {
-    GTEST_SKIP() << "ATen kernel can handle mismatched shapes";
-  }
 #define TEST_ENTRY(ctype, dtype) \
   test_glu_out_mismatched_shape<ScalarType::dtype>();
   ET_FORALL_FLOAT_TYPES(TEST_ENTRY);
 #undef TEST_ENTRY
 }
+#endif
 
 TEST_F(OpGluOutTest, InvalidDimDies) {
 #define TEST_ENTRY(ctype, dtype) test_glu_out_invalid_dim<ScalarType::dtype>();

@@ -432,12 +432,11 @@ TEST_F(OpIndexTensorOutTest, IndicesWithNullTensorsSupported) {
   run_test_cases(x, /*indices=*/indices2, expected2);
 }
 
+#ifndef USE_ATEN_LIB
 TEST_F(OpIndexTensorOutTest, IndicesWithOnlyNullTensorsSupported) {
-  if (torch::executor::testing::SupportedFeatures::get()->is_aten) {
-    GTEST_SKIP() << "ATen kernel test fails";
-  }
   test_indices_with_only_null_tensors_enumerate_in_types();
 }
+#endif
 
 TEST_F(OpIndexTensorOutTest, TooManyNullIndices) {
   TensorFactory<ScalarType::Double> tf;
@@ -451,10 +450,8 @@ TEST_F(OpIndexTensorOutTest, TooManyNullIndices) {
       "Indexing too many dimensions");
 }
 
+#ifndef USE_ATEN_LIB
 TEST_F(OpIndexTensorOutTest, EmptyIndicesSupported) {
-  if (torch::executor::testing::SupportedFeatures::get()->is_aten) {
-    GTEST_SKIP() << "ATen kernel test fails";
-  }
   TensorFactory<ScalarType::Float> tf;
 
   // Using empty tensors as input.
@@ -467,6 +464,7 @@ TEST_F(OpIndexTensorOutTest, EmptyIndicesSupported) {
   // Success if it doesn't assert on the weird-shaped empty input and the
   // ret is still a empty array
 }
+#endif
 
 //
 // Test that all dtypes are supported
@@ -621,10 +619,8 @@ TEST_F(OpIndexTensorOutTest, InvalidIndicesShapesDies) {
       context_, op_index_tensor_out(x, indices, out), "");
 }
 
+#ifndef USE_ATEN_LIB
 TEST_F(OpIndexTensorOutTest, InvalidIndicesShapeDies2) {
-  if (torch::executor::testing::SupportedFeatures::get()->is_aten) {
-    GTEST_SKIP() << "";
-  }
   TensorFactory<ScalarType::Float> tf;
   TensorFactory<ScalarType::Long> tfl;
 
@@ -640,6 +636,7 @@ TEST_F(OpIndexTensorOutTest, InvalidIndicesShapeDies2) {
   ET_EXPECT_KERNEL_FAILURE_WITH_MSG(
       context_, op_index_tensor_out(x, indices, out), "");
 }
+#endif
 
 //
 // Dynamic Shape Tests

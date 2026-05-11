@@ -91,10 +91,8 @@ TEST_F(OpLeScalarOutTest, BoolInputDtype) {
 }
 
 // Mismatched shape tests.
+#ifndef USE_ATEN_LIB
 TEST_F(OpLeScalarOutTest, MismatchedInOutShapesDies) {
-  if (torch::executor::testing::SupportedFeatures::get()->is_aten) {
-    GTEST_SKIP() << "ATen kernel can handle mismatched shapes";
-  }
   TensorFactory<ScalarType::Int> tf_int;
   TensorFactory<ScalarType::Bool> tf_bool;
 
@@ -104,6 +102,7 @@ TEST_F(OpLeScalarOutTest, MismatchedInOutShapesDies) {
 
   ET_EXPECT_KERNEL_FAILURE(context_, op_le_scalar_out(a, other, out));
 }
+#endif
 
 TEST_F(OpLeScalarOutTest, DynamicOutShapeTest) {
   TensorFactory<ScalarType::Int> tf;
@@ -134,10 +133,8 @@ TEST_F(OpLeTensorOutTest, AllDtypesSupported) {
 #undef TEST_ENTRY
 }
 
+#ifndef USE_ATEN_LIB
 TEST_F(OpLeTensorOutTest, MismatchedInShapesDies) {
-  if (torch::executor::testing::SupportedFeatures::get()->is_aten) {
-    GTEST_SKIP() << "ATen kernel can handle mismatched shapes";
-  }
   TensorFactory<ScalarType::Int> tf_int;
   TensorFactory<ScalarType::Bool> tf_bool;
 
@@ -147,11 +144,10 @@ TEST_F(OpLeTensorOutTest, MismatchedInShapesDies) {
 
   ET_EXPECT_KERNEL_FAILURE(context_, op_le_tensor_out(a, b, out));
 }
+#endif
 
+#ifndef USE_ATEN_LIB
 TEST_F(OpLeTensorOutTest, MismatchedInOutShapesDies) {
-  if (torch::executor::testing::SupportedFeatures::get()->is_aten) {
-    GTEST_SKIP() << "ATen kernel can handle mismatched shapes";
-  }
   TensorFactory<ScalarType::Int> tf_int;
   TensorFactory<ScalarType::Bool> tf_bool;
 
@@ -161,6 +157,7 @@ TEST_F(OpLeTensorOutTest, MismatchedInOutShapesDies) {
 
   ET_EXPECT_KERNEL_FAILURE(context_, op_le_tensor_out(a, b, out));
 }
+#endif
 
 TEST_F(OpLeTensorOutTest, DynamicOutShapeTest) {
   TensorFactory<ScalarType::Int> tf;

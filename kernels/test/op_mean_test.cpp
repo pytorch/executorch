@@ -262,10 +262,8 @@ void OpMeanOutTest::
   test_mean_dim_out_bool<ScalarType::Double>();
 }
 
+#ifndef USE_ATEN_LIB
 TEST_F(OpMeanOutTest, InvalidDimensionListDies) {
-  if (torch::executor::testing::SupportedFeatures::get()->is_aten) {
-    GTEST_SKIP() << "ATen kernel test fails";
-  }
   // Use a two layer switch to hanldle each possible data pair
 #define TEST_KERNEL(INPUT_CTYPE, INPUT_DTYPE, OUTPUT_CTYPE, OUTPUT_DTYPE) \
   test_mean_dim_out_invalid_dimensions<                                   \
@@ -279,11 +277,10 @@ TEST_F(OpMeanOutTest, InvalidDimensionListDies) {
 #undef TEST_ENTRY
 #undef TEST_KERNEL
 }
+#endif
 
+#ifndef USE_ATEN_LIB
 TEST_F(OpMeanOutTest, InvalidShapeDies) {
-  if (torch::executor::testing::SupportedFeatures::get()->is_aten) {
-    GTEST_SKIP() << "ATen kernel test fails";
-  }
   // Use a two layer switch to hanldle each possible data pair
 #define TEST_KERNEL(INPUT_CTYPE, INPUT_DTYPE, OUTPUT_CTYPE, OUTPUT_DTYPE) \
   test_mean_dim_out_invalid_shape<                                        \
@@ -297,11 +294,10 @@ TEST_F(OpMeanOutTest, InvalidShapeDies) {
 #undef TEST_ENTRY
 #undef TEST_KERNEL
 }
+#endif
 
+#ifndef USE_ATEN_LIB
 TEST_F(OpMeanOutTest, MismatchedDTypesDies) {
-  if (torch::executor::testing::SupportedFeatures::get()->is_aten) {
-    GTEST_SKIP() << "ATen kernel test fails";
-  }
   TensorFactory<ScalarType::Float> tf_float;
   TensorFactory<ScalarType::Int> tf_int;
 
@@ -336,6 +332,7 @@ TEST_F(OpMeanOutTest, MismatchedDTypesDies) {
       context_,
       op_mean_out(self, optional_dim_list, /*keepdim=*/true, dtype, out));
 }
+#endif
 
 TEST_F(OpMeanOutTest, AllRealInputFloatOutputPasses) {
   // Use a two layer switch to hanldle each possible data pair
@@ -350,10 +347,8 @@ TEST_F(OpMeanOutTest, AllRealInputFloatOutputPasses) {
 #undef TEST_KERNEL
 }
 
+#ifndef USE_ATEN_LIB
 TEST_F(OpMeanOutTest, HalfSupport) {
-  if (torch::executor::testing::SupportedFeatures::get()->is_aten) {
-    GTEST_SKIP() << "Test Half support only for ExecuTorch mode";
-  }
 #define TEST_ENTRY(ctype, dtype) \
   test_mean_dim_out_dtype<ScalarType::dtype, ScalarType::Half>();
   ET_FORALL_REALH_TYPES(TEST_ENTRY);
@@ -364,6 +359,7 @@ TEST_F(OpMeanOutTest, HalfSupport) {
   ET_FORALL_FLOATH_TYPES(TEST_ENTRY);
 #undef TEST_ENTRY
 }
+#endif
 
 TEST_F(OpMeanOutTest, InfinityAndNANTest) {
   TensorFactory<ScalarType::Float> tf_float;

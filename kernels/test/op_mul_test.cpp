@@ -429,10 +429,8 @@ TEST_F(OpMulOutTest, OptimizedPathIgnoresLeading1Dimensions) {
 }
 
 // Mismatched shape tests.
+#ifndef USE_ATEN_LIB
 TEST_F(OpMulOutTest, MismatchedNonBroadcastableInputShapesDies) {
-  if (SupportedFeatures::get()->is_aten) {
-    GTEST_SKIP() << "ATen currently supports mismatched shapes";
-  }
 
   TensorFactory<ScalarType::Int> tf;
 
@@ -447,6 +445,7 @@ TEST_F(OpMulOutTest, MismatchedNonBroadcastableInputShapesDies) {
   // the test process.
   ET_EXPECT_KERNEL_FAILURE(context_, op_mul_out(a, b, out));
 }
+#endif
 
 // Broadcast tensor b's size to tensor a's size
 TEST_F(OpMulOutTest, BroadcastA2BTest) {
@@ -518,10 +517,8 @@ TEST_F(OpMulOutTest, AllComplexDtypesSupported) {
 #undef TEST_ENTRY
 }
 
+#ifndef USE_ATEN_LIB
 TEST_F(OpMulOutTest, MismatchedOutputShapesDies) {
-  if (SupportedFeatures::get()->is_aten) {
-    GTEST_SKIP() << "ATen currently supports mismatched shapes";
-  }
 
   TensorFactory<ScalarType::Int> tf;
 
@@ -538,6 +535,7 @@ TEST_F(OpMulOutTest, MismatchedOutputShapesDies) {
   // and kill the test process.
   ET_EXPECT_KERNEL_FAILURE(context_, op_mul_out(a, b, out));
 }
+#endif
 
 TEST_F(OpMulOutTest, BroadcastDimSizeIsOneAB) {
   TensorFactory<ScalarType::Float> tf;

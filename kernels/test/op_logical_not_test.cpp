@@ -103,10 +103,8 @@ class OpLogicalNotOutTest : public OperatorTest {
   }
 };
 
+#ifndef USE_ATEN_LIB
 TEST_F(OpLogicalNotOutTest, MismatchedDimensionsDies) {
-  if (torch::executor::testing::SupportedFeatures::get()->is_aten) {
-    GTEST_SKIP() << "ATen kernel can handle mismatched dimensions";
-  }
   TensorFactory<ScalarType::Float> tff;
   const std::vector<int32_t> size{2, 2};
 
@@ -115,6 +113,7 @@ TEST_F(OpLogicalNotOutTest, MismatchedDimensionsDies) {
 
   ET_EXPECT_KERNEL_FAILURE(context_, op_logical_not_out(in, out));
 }
+#endif
 
 TEST_F(OpLogicalNotOutTest, AllTypePasses) {
 // Use a two layer switch to hanldle each possible data pair
