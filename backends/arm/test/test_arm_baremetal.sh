@@ -96,6 +96,19 @@ test_pytest_models_no_target() {
     echo "${TEST_SUITE_NAME}: PASS"
 }
 
+# ----------------------------------------------
+# -------- ExportRecipe construction tests -----
+# ----------------------------------------------
+test_pytest_recipes() {
+    echo "${TEST_SUITE_NAME}: Run pytest for Arm ExportRecipe construction"
+
+    # Construction-only suite. Per-target tests guard themselves via SkipTest
+    # when the corresponding SDK piece (Vela, libvgf, ...) isn't installed, so
+    # this command is safe on both the no-deps and full-SDK runners.
+    pytest "${PYTEST_RETRY_ARGS[@]}" --verbose --color=yes --numprocesses=auto --durations=10 backends/arm/test/recipes
+    echo "${TEST_SUITE_NAME}: PASS"
+}
+
 # -------------------------------------
 # -------- TOSA specific tests --------
 # -------------------------------------

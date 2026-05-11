@@ -355,6 +355,7 @@ jobs:
           - test_arm_baremetal: test_pytest_ops_ethos_u85
           - test_arm_baremetal: test_pytest_models_ethos_u85
           - test_arm_baremetal: test_run_ethos_u85
+          - test_arm_baremetal: test_pytest_recipes
           - test_arm_baremetal: test_smaller_stories_llama
           - test_arm_baremetal: test_memory_allocation
       fail-fast: false
