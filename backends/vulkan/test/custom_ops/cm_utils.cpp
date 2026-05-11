@@ -20,6 +20,8 @@ namespace executorch {
 namespace vulkan {
 namespace prototyping {
 
+#ifdef VK_KHR_cooperative_matrix
+
 static std::string componentTypeToString(VkComponentTypeKHR type) {
   switch (type) {
     case VK_COMPONENT_TYPE_FLOAT16_KHR:
@@ -63,6 +65,8 @@ static std::string scopeToString(VkScopeKHR scope) {
       return "unknown(" + std::to_string(static_cast<int>(scope)) + ")";
   }
 }
+
+#endif /* VK_KHR_cooperative_matrix */
 
 void queryCooperativeMatrixProperties() {
 #ifdef VK_KHR_cooperative_matrix
