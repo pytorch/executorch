@@ -276,20 +276,17 @@ TEST_F(OpMinUnaryOutTest, EmptyFloatingInput) {
 #undef TEST_ENTRY
 }
 
+#ifndef USE_ATEN_LIB
 TEST_F(OpMinOutTest, MismatchedDimensionsDies) {
-  if (torch::executor::testing::SupportedFeatures::get()->is_aten) {
-    GTEST_SKIP() << "ATen kernel test fails";
-  }
 #define TEST_ENTRY(ctype, dtype) \
   test_min_out_invalid_dimensions<ScalarType::dtype>();
   ET_FORALL_REAL_TYPES_AND(Bool, TEST_ENTRY);
 #undef TEST_ENTRY
 }
+#endif
 
+#ifndef USE_ATEN_LIB
 TEST_F(OpMinOutTest, MismatchedDTypesDies) {
-  if (torch::executor::testing::SupportedFeatures::get()->is_aten) {
-    GTEST_SKIP() << "ATen kernel test fails";
-  }
   TensorFactory<ScalarType::Float> tf_float;
   TensorFactory<ScalarType::Long> tf_long;
 
@@ -309,6 +306,7 @@ TEST_F(OpMinOutTest, MismatchedDTypesDies) {
       context_,
       op_min_dim_min(in, /*dim=*/-1, /*keepdim=*/true, min, min_indices));
 }
+#endif
 
 TEST_F(OpMinOutTest, AllRealInputLongOutputPasses) {
 #define TEST_ENTRY(ctype, dtype) test_min_out_dtype<ScalarType::dtype>();

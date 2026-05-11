@@ -155,10 +155,8 @@ TEST_F(OpFloorDivideTest, MismatchedInputShapesDies) {
   ET_EXPECT_KERNEL_FAILURE(context_, op_floor_divide_out(a, b, out));
 }
 
+#ifndef USE_ATEN_LIB
 TEST_F(OpFloorDivideTest, MismatchedOutputShapesDies) {
-  if (torch::executor::testing::SupportedFeatures::get()->is_aten) {
-    GTEST_SKIP() << "ATen kernel can handle mismatched output shape";
-  }
   TensorFactory<ScalarType::Int> tf;
 
   const std::vector<int32_t> sizes = {2, 2};
@@ -174,6 +172,7 @@ TEST_F(OpFloorDivideTest, MismatchedOutputShapesDies) {
   // kill the test process.
   ET_EXPECT_KERNEL_FAILURE(context_, op_floor_divide_out(a, b, out));
 }
+#endif
 
 // DISABLED: Dynamic shape not supported
 TEST_F(OpFloorDivideTest, DISABLED_BroadcastDimSizeIsOneAB) {

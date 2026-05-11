@@ -133,10 +133,8 @@ TEST_F(OpLogitOutTest, AllRealInputDoubleOutputSupportEpsSet) {
 }
 
 // Mismatched shape tests.
+#ifndef USE_ATEN_LIB
 TEST_F(OpLogitOutTest, MismatchedShapesDies) {
-  if (torch::executor::testing::SupportedFeatures::get()->is_aten) {
-    GTEST_SKIP() << "ATen kernel can handle mismatched shapes";
-  }
   TensorFactory<ScalarType::Int> tf;
   TensorFactory<ScalarType::Float> tf_out;
 
@@ -145,6 +143,7 @@ TEST_F(OpLogitOutTest, MismatchedShapesDies) {
 
   ET_EXPECT_KERNEL_FAILURE(context_, op_logit_out(a, 0, out));
 }
+#endif
 
 TEST_F(OpLogitOutTest, AllNonFloatOutputDTypeDies) {
 #define TEST_ENTRY(ctype, dtype) \
