@@ -637,13 +637,6 @@ jobs:
         # To run cortex_m tests
         pytest --config-file=backends/arm/test/pytest.ini backends/cortex_m/test
 
-  test-riscv:
-    name: test-riscv
-    uses: ./.github/workflows/_test_riscv.yml
-    permissions:
-      id-token: write
-      contents: read
-
   android:
     uses: ./.github/workflows/_android.yml
     permissions:
