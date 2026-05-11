@@ -39,7 +39,7 @@ set(CMAKE_STRIP
 )
 
 # Sysroot installed by the apt package gcc-riscv64-linux-gnu.
-set(CMAKE_SYSROOT "/usr/${_RISCV_TRIPLE}")
+set(CMAKE_SYSROOT "")
 set(CMAKE_FIND_ROOT_PATH "${CMAKE_SYSROOT}")
 set(CMAKE_FIND_ROOT_PATH_MODE_PROGRAM NEVER)
 set(CMAKE_FIND_ROOT_PATH_MODE_LIBRARY ONLY)
