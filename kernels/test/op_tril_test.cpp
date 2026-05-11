@@ -758,11 +758,8 @@ TEST_F(OpTrilTest, InvalidInputShapesDies) {
   ET_EXPECT_KERNEL_FAILURE(context_, op_tril_out(self2, 0, out2));
 }
 
+#ifndef USE_ATEN_LIB
 TEST_F(OpTrilTest, MismatchedOutputShapesDies) {
-  // Skip ATen test since it supports `self` and `out` having different shapes.
-  if (torch::executor::testing::SupportedFeatures::get()->is_aten) {
-    GTEST_SKIP() << "ATen kernel can handle mismatched output shape";
-  }
 
   TensorFactory<ScalarType::Int> tf;
 
@@ -773,6 +770,7 @@ TEST_F(OpTrilTest, MismatchedOutputShapesDies) {
   // Assert `out` can't be filled due to incompatible shapes.
   ET_EXPECT_KERNEL_FAILURE(context_, op_tril_out(self, 0, out));
 }
+#endif
 
 TEST_F(OpTrilTest, MismatchedOutputDtypeDies) {
   TensorFactory<ScalarType::Byte> tf_byte;
@@ -786,11 +784,8 @@ TEST_F(OpTrilTest, MismatchedOutputDtypeDies) {
   ET_EXPECT_KERNEL_FAILURE(context_, op_tril_out(self, 0, out));
 }
 
+#ifndef USE_ATEN_LIB
 TEST_F(OpTrilTest, InvalidTensorDims) {
-  // Skip ATen test since it supports `self` and `out` having different shapes.
-  if (torch::executor::testing::SupportedFeatures::get()->is_aten) {
-    GTEST_SKIP() << "ATen kernel can handle mismatched output shape";
-  }
 
   TensorFactory<ScalarType::Int> tf;
 
@@ -802,3 +797,4 @@ TEST_F(OpTrilTest, InvalidTensorDims) {
   // Assert `out` can't be filled due to too many tensor dims.
   ET_EXPECT_KERNEL_FAILURE(context_, op_tril_out(self, 0, out));
 }
+#endif

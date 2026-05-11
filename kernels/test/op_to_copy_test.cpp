@@ -426,10 +426,8 @@ TEST_F(OpToTest, HardcodeFloatConvertInt) {
   ET_FORALL_FLOATHBF16_TYPES(TEST_ENTRY);
 }
 
+#ifndef USE_ATEN_LIB
 TEST_F(OpToTest, MismatchedSizesDie) {
-  if (torch::executor::testing::SupportedFeatures::get()->is_aten) {
-    GTEST_SKIP() << "ATen kernel can handle mismatched sizes";
-  }
   TensorFactory<ScalarType::Int> tf;
   Tensor input = tf.make(/*sizes=*/{3, 1, 1, 2}, /*data=*/{1, 2, 3, 4, 5, 6});
   Tensor out = tf.zeros({3, 2, 1, 1});
@@ -441,14 +439,13 @@ TEST_F(OpToTest, MismatchedSizesDie) {
           executorch::aten::MemoryFormat::Contiguous,
           out));
 }
+#endif
 
 // Only contiguous memory is supported, the memory type MemoryFormat::Contiguous
 // should not be allowed. The function is expected death if using the illegal
 // memory format.
+#ifndef USE_ATEN_LIB
 TEST_F(OpToTest, MismatchedMemoryFormatDies) {
-  if (torch::executor::testing::SupportedFeatures::get()->is_aten) {
-    GTEST_SKIP() << "ATen kernel can handle non contiguous memory formats";
-  }
   TensorFactory<ScalarType::Float> tf_in;
   TensorFactory<ScalarType::Float> tf_out;
   Tensor input =
@@ -471,12 +468,11 @@ TEST_F(OpToTest, MismatchedMemoryFormatDies) {
           out),
       input);
 }
+#endif
 
 // Only blocking data transfer supported
+#ifndef USE_ATEN_LIB
 TEST_F(OpToTest, MismatchedBlockingDie) {
-  if (torch::executor::testing::SupportedFeatures::get()->is_aten) {
-    GTEST_SKIP() << "ATen kernel can handle non blocking data transfer";
-  }
   TensorFactory<ScalarType::Int> tf;
   Tensor input = tf.make(/*sizes=*/{3, 1, 1, 2}, /*data=*/{1, 2, 3, 4, 5, 6});
   Tensor out = tf.zeros(/*sizes=*/{3, 1, 1, 2});
@@ -488,6 +484,7 @@ TEST_F(OpToTest, MismatchedBlockingDie) {
           executorch::aten::MemoryFormat::Contiguous,
           out));
 }
+#endif
 
 TEST_F(OpToTest, DynamicShapeUpperBoundSameAsExpected) {
   test_dynamic_shape(

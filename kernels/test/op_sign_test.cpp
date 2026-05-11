@@ -43,19 +43,16 @@ class OpSignTest : public OperatorTest {
   }
 };
 
+#ifndef USE_ATEN_LIB
 TEST_F(OpSignTest, ETSanityCheckFloat) {
-  if (torch::executor::testing::SupportedFeatures::get()->is_aten) {
-    GTEST_SKIP() << "ATen returns 0 on NAN input";
-  }
 #define TEST_ENTRY(ctype, dtype) test_et_dtype<ctype, ScalarType::dtype>();
   ET_FORALL_FLOATHBF16_TYPES(TEST_ENTRY);
 #undef TEST_ENTRY
 }
+#endif
 
+#ifdef USE_ATEN_LIB
 TEST_F(OpSignTest, ATenSanityCheckFloat) {
-  if (!torch::executor::testing::SupportedFeatures::get()->is_aten) {
-    GTEST_SKIP() << "ET returns NAN on NAN input";
-  }
   TensorFactory<ScalarType::Float> tf;
 
   Tensor in = tf.make({1, 7}, {-INFINITY, -3., -1.5, 0., 1.5, NAN, INFINITY});
@@ -67,6 +64,7 @@ TEST_F(OpSignTest, ATenSanityCheckFloat) {
   EXPECT_TENSOR_EQ(out, ret);
   EXPECT_TENSOR_CLOSE(out, expected);
 }
+#endif
 
 TEST_F(OpSignTest, SanityCheckBool) {
   TensorFactory<ScalarType::Bool> tf;

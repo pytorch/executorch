@@ -306,10 +306,8 @@ class OpSumOutTest : public OperatorTest {
   }
 };
 
+#ifndef USE_ATEN_LIB
 TEST_F(OpSumOutTest, InvalidDimensionListDies) {
-  if (torch::executor::testing::SupportedFeatures::get()->is_aten) {
-    GTEST_SKIP() << "ATen kernel test fails";
-  }
   // Use a two layer switch to hanldle each possible data pair
 #define TEST_KERNEL(INPUT_CTYPE, INPUT_DTYPE, OUTPUT_CTYPE, OUTPUT_DTYPE) \
   test_sum_dim_out_invalid_dimensions<                                    \
@@ -323,11 +321,10 @@ TEST_F(OpSumOutTest, InvalidDimensionListDies) {
 #undef TEST_ENTRY
 #undef TEST_KERNEL
 }
+#endif
 
+#ifndef USE_ATEN_LIB
 TEST_F(OpSumOutTest, InvalidShapeDies) {
-  if (torch::executor::testing::SupportedFeatures::get()->is_aten) {
-    GTEST_SKIP() << "ATen kernel test fails";
-  }
   // Use a two layer switch to hanldle each possible data pair
 #define TEST_KERNEL(INPUT_CTYPE, INPUT_DTYPE, OUTPUT_CTYPE, OUTPUT_DTYPE) \
   test_sum_dim_out_invalid_shape<                                         \
@@ -341,11 +338,10 @@ TEST_F(OpSumOutTest, InvalidShapeDies) {
 #undef TEST_ENTRY
 #undef TEST_KERNEL
 }
+#endif
 
+#ifndef USE_ATEN_LIB
 TEST_F(OpSumOutTest, MismatchedDTypesDies) {
-  if (torch::executor::testing::SupportedFeatures::get()->is_aten) {
-    GTEST_SKIP() << "ATen kernel test fails";
-  }
   TensorFactory<ScalarType::Float> tf_float;
   TensorFactory<ScalarType::Int> tf_int;
 
@@ -374,6 +370,7 @@ TEST_F(OpSumOutTest, MismatchedDTypesDies) {
       op_sum_intlist_out(
           self, optional_dim_list, /*keepdim=*/true, dtype, out));
 }
+#endif
 
 TEST_F(OpSumOutTest, AllRealInputRealOutputPasses) {
   // Use a two layer switch to hanldle each possible data pair

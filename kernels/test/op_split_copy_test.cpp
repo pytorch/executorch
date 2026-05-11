@@ -473,10 +473,8 @@ TEST_F(OpSplitCopyTensorOutTest, WrongNumOutputEntriesDies) {
   }
 }
 
+#ifndef USE_ATEN_LIB
 TEST_F(OpSplitCopyTensorOutTest, WrongOutputShapeDies) {
-  if (torch::executor::testing::SupportedFeatures::get()->is_aten) {
-    GTEST_SKIP() << "ATen kernel can handle wrong out shape";
-  }
   TensorFactory<ScalarType::Int> tf;
   TensorListFactory<ScalarType::Int> tlf;
 
@@ -557,6 +555,7 @@ TEST_F(OpSplitCopyTensorOutTest, WrongOutputShapeDies) {
         context_, op_split_copy_tensor_out(input, split_size, dim, out));
   }
 }
+#endif
 
 TEST_F(OpSplitCopyTensorOutTest, DynamicShapeUpperBoundSameAsExpected) {
   test_dynamic_shape(
