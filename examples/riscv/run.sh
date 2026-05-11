@@ -64,8 +64,9 @@ runner="${build_dir}/executor_runner"
 if file "${runner}" | grep -q "RISC-V"; then
     echo "[run.sh] runner is a RISC-V ELF: $(file -b "${runner}")"
 else
-    echo "[run.sh] WARNING: ${runner} does not look like a RISC-V ELF"
+    echo "[run.sh] ERROR: ${runner} does not look like a RISC-V ELF"
     file "${runner}"
+    exit 1
 fi
 
 if ${build_only}; then
@@ -75,7 +76,7 @@ fi
 
 echo "[run.sh] Step 3/3: run under ${qemu}"
 hash "${qemu}" 2>/dev/null || {
-    echo "[run.sh] ${qemu} not found on PATH; install with examples/riscv/setup.sh" >&2
+    echo "[run.sh] ERROR: ${qemu} not found on PATH; install with examples/riscv/setup.sh" >&2
     exit 1
 }
 
@@ -99,9 +100,9 @@ if grep -q "Test_result: PASS" "${log_file}"; then
     echo "[run.sh] Bundled I/O check PASSED"
     exit 0
 elif grep -q "Test_result: FAIL" "${log_file}"; then
-    echo "[run.sh] Bundled I/O check FAILED"
+    echo "[run.sh] ERROR: Bundled I/O check FAILED"
     exit 1
 else
-    echo "[run.sh] No Test_result line found in QEMU output"
+    echo "[run.sh] ERROR: No Test_result line found in QEMU output"
     exit 1
 fi
