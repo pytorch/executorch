@@ -592,46 +592,41 @@ class SharedQspecQuantizer(Quantizer, QuantizerReporterUser):
         node_order = {node: index for index, node in enumerate(root_node.graph.nodes)}
         ordered_nodes = sorted(shared_nodes, key=lambda node: node_order.get(node, 0))
 
+        # Ensure the root node is the first one in the graph.
+        root_node = ordered_nodes[0]
+
         if len(adjacent_qspecs) > 0:
-            if len(adjacent_qspecs) > 1:
-                logger.warning(
-                    f"Multiple adjacent quantization specs found for {', '.join([n.name for n in ordered_nodes])}, all nodes will share the input quantization spec of {root_node.name}."
-                )
-
             root_node_float_inputs = self._get_input_nodes_with_float_output(root_node)
-            if len(root_node_float_inputs) == 0:
-                self.report_reject(
-                    ordered_nodes,
-                    "Couldn't find any floating point input to base shared quantization spec on.",
+            if len(root_node_float_inputs) > 0:
+
+                root_node_first_input = root_node_float_inputs[0]
+                shared_qspec = SharedQuantizationSpec(
+                    (root_node_first_input, root_node)
                 )
+                for node in shared_nodes:
+                    input_qspec_map: dict[Node, Optional[QuantizationSpec]] = {
+                        n: shared_qspec  # type: ignore[misc]
+                        for n in self._get_input_nodes_with_float_output(node)
+                    }
+                    if len(self._get_user_nodes_with_float_input(node)) == 0:
+                        output_qspec = None
+                    else:
+                        output_qspec = shared_qspec
+                    _mark_node_as_quantized(
+                        node, input_qspec_map, output_qspec, is_quantized=True
+                    )
+
+                root_node.meta[Q_ANNOTATION_KEY].input_qspec_map[
+                    root_node_first_input
+                ] = adjacent_qspecs[0]
+                self.report_accept(ordered_nodes)
                 return
-            root_node_first_input = root_node_float_inputs[0]
 
-            shared_qspec = SharedQuantizationSpec((root_node_first_input, root_node))
-            for node in shared_nodes:
-                input_qspec_map: dict[Node, Optional[QuantizationSpec]] = {
-                    n: shared_qspec  # type: ignore[misc]
-                    for n in self._get_input_nodes_with_float_output(node)
-                }
-                if len(self._get_user_nodes_with_float_input(node)) == 0:
-                    output_qspec = None
-                else:
-                    output_qspec = shared_qspec
-                _mark_node_as_quantized(
-                    node, input_qspec_map, output_qspec, is_quantized=True
-                )
-
-            root_node.meta[Q_ANNOTATION_KEY].input_qspec_map[root_node_first_input] = (
-                adjacent_qspecs[0]
-            )
-            self.report_accept(ordered_nodes)
-
-        else:
-            self.report_reject(
-                ordered_nodes,
-                "Couldn't find any adjacent quantization spec to base shared quantization spec on. You may however quantize these nodes manually if required.",
-            )
-            return
+        self.report_reject(
+            ordered_nodes,
+            "All inputs and outputs to these nodes are non-quantized.",
+        )
+        return
 
     def annotate(self, model: torch.fx.GraphModule) -> None:  # type: ignore[override]
         for node in model.graph.nodes:

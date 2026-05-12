@@ -6,14 +6,25 @@
 # This file defines ops aliases for shorter and more readable test description. List is sorted alphabetically.
 # When finding a missing alias, add it at the correct place.
 
+import operator
+
 import torch
 from executorch.exir.dialects._ops import ops as exir_ops
 
+Abs = exir_ops.edge.aten.abs.default
 AvgPool2D = exir_ops.edge.aten.avg_pool2d.default
 Bmm = exir_ops.edge.aten.bmm.default
+Convolution = exir_ops.edge.aten.convolution.default
+DequantizePerChannel = exir_ops.edge.quantized_decomposed.dequantize_per_channel.default
+DequantizePerTensor = exir_ops.edge.quantized_decomposed.dequantize_per_tensor.default
 ExecutorchDelegateCall = torch.ops.higher_order.executorch_call_delegate
+GetItem = operator.getitem
 HardTanh = exir_ops.edge.aten.hardtanh.default
 HardTanh_ = exir_ops.edge.aten.hardtanh_.default
+MaxPool2DWithIndices = exir_ops.edge.aten.max_pool2d_with_indices.default
+QuantizePerChannel = exir_ops.edge.quantized_decomposed.quantize_per_channel.default
+QuantizePerTensor = exir_ops.edge.quantized_decomposed.quantize_per_tensor.default
+Relu = exir_ops.edge.aten.relu.default
 Slice = exir_ops.edge.aten.slice.Tensor
 SliceCopy = exir_ops.edge.aten.slice_copy.Tensor
 Softmax = exir_ops.edge.aten._softmax.default
