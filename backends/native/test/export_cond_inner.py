@@ -22,10 +22,10 @@ import os
 import sys
 
 import torch
-from torch.export import export
 
 from executorch.exir import EdgeCompileConfig, to_edge
 from executorch.exir._serialize._flatbuffer_program import _program_to_flatbuffer
+from torch.export import export
 
 
 class CondModel(torch.nn.Module):
@@ -39,9 +39,7 @@ class CondModel(torch.nn.Module):
 
 
 def main() -> int:
-    out_path = os.environ.get(
-        "NATIVE_COND_INNER_PATH", "/tmp/native_cond_inner.fbb"
-    )
+    out_path = os.environ.get("NATIVE_COND_INNER_PATH", "/tmp/native_cond_inner.fbb")
 
     print("=== Exporting CondModel to raw flatbuffer Program ===")
     ep = export(

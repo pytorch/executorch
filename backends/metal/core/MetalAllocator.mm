@@ -69,7 +69,7 @@ MetalAllocator::~MetalAllocator() {
             BufferRegistry::ResidencyClass::Permanent) {
       ET_LOG(Error,
              "MetalAllocator dtor: Permanent External entry for ptr %p "
-             "leaked (caller forgot unregisterExternalPermanent); "
+             "leaked (caller forgot unregisterExternalBuffer); "
              "residency-set entry retained until process exit",
              ptr);
     }
@@ -147,7 +147,7 @@ void MetalAllocator::free(void* ptr) {
     // Transient externals: never alloc-time-pinned (per-CB binds covered
     //   them); free() drops the wrapper, no residency call needed.
     // Permanent externals: alloc-time-pinned. The proper unpin path is
-    //   unregisterExternalPermanent(ptr), which calls unpin AND removes
+    //   unregisterExternalBuffer(ptr), which calls unpin AND removes
     //   from the registry. If the caller went through free() directly
     //   without first unregistering, the residency entry leaks until
     //   process exit (~ResidencyManager teardown). Log a warning so the
@@ -159,7 +159,7 @@ void MetalAllocator::free(void* ptr) {
       ET_LOG(
           Error,
           "MetalAllocator::free: Permanent External entry for ptr %p "
-          "freed without prior unregisterExternalPermanent(); residency "
+          "freed without prior unregisterExternalBuffer(); residency "
           "entry leaks until process exit",
           ptr);
     }
@@ -180,7 +180,7 @@ bool MetalAllocator::registerExternalBuffer(
     // Re-registration must request the same residency class as the
     // existing entry. A Transient → Permanent (or vice-versa) silent
     // upgrade would skip the residency_->pin call below; a later
-    // unregisterExternalPermanent(ptr) would then attempt to unpin a
+    // unregisterExternalBuffer(ptr) would then attempt to unpin a
     // buffer that was never pinned → fatal underflow in
     // ResidencyManager::unpinLocked. Better to fail loudly at the
     // mismatched-register call site than crash later.
@@ -247,45 +247,62 @@ bool MetalAllocator::registerExternalBuffer(
   return true;
 }
 
-void MetalAllocator::unregisterExternalPermanent(void* ptr) {
+void MetalAllocator::unregisterExternalBuffer(void* ptr) {
+  // FATAL on caller-bug inputs. Unlike free() (which is libc-style
+  // forgiving for null and unknown pointers), unregister is an explicit
+  // teardown call paired with registerExternalBuffer() — mismatched calls
+  // are logic errors that should surface immediately rather than silently
+  // mask resource leaks or double-frees.
+  ET_CHECK_MSG(
+      ptr != nullptr,
+      "MetalAllocator::unregisterExternalBuffer: ptr is null");
+
   const auto* entry = buffers_.find(ptr);
-  if (!entry) {
-    // Not registered — idempotent no-op.
-    return;
-  }
-  if (entry->residency_class != BufferRegistry::ResidencyClass::Permanent) {
-    ET_LOG(Error,
-           "MetalAllocator::unregisterExternalPermanent: ptr %p was "
-           "registered as Transient, not Permanent; skipping (caller bug)",
-           ptr);
-    return;
-  }
+  ET_CHECK_MSG(
+      entry != nullptr,
+      "MetalAllocator::unregisterExternalBuffer: ptr=%p is not registered",
+      ptr);
 
-  id<MTLBuffer> buf = entry->mtl;
+  const bool is_external =
+      entry->origin == BufferRegistry::Origin::ExternalAliased ||
+      entry->origin == BufferRegistry::Origin::ExternalCopied;
+  ET_CHECK_MSG(
+      is_external,
+      "MetalAllocator::unregisterExternalBuffer: ptr=%p is not an External "
+      "entry (origin=%d). Pool/Heap allocations use free(); Subregion "
+      "entries use unregisterSubregion().",
+      ptr, static_cast<int>(entry->origin));
 
-  // Debug-mode enforcement: refcount must equal
-  // exactly 1 — the registration's own pin. Refcount > 1 means an
-  // in-flight CB on some stream still references this buffer; calling
-  // unpin now would yank it out of the residency set during in-flight
-  // GPU work → undefined behavior on MTL4. Caller MUST sync all streams
-  // that may have bound `ptr` before unregistering.
+  if (entry->residency_class == BufferRegistry::ResidencyClass::Permanent) {
+    id<MTLBuffer> buf = entry->mtl;
+
+    // Debug-mode enforcement: refcount must equal
+    // exactly 1 — the registration's own pin. Refcount > 1 means an
+    // in-flight CB on some stream still references this buffer; calling
+    // unpin now would yank it out of the residency set during in-flight
+    // GPU work → undefined behavior on MTL4. Caller MUST sync all streams
+    // that may have bound `ptr` before unregistering.
 #if !defined(NDEBUG)
-  if (residency_) {
-    int rc = residency_->refcountForTesting(buf);
-    ET_DCHECK_MSG(
-        rc == 1,
-        "unregisterExternalPermanent: ptr=%p refcount=%d (expected 1). "
-        "In-flight CB still binds this buffer; sync all streams first.",
-        ptr, rc);
-  }
+    if (residency_) {
+      int rc = residency_->refcountForTesting(buf);
+      ET_DCHECK_MSG(
+          rc == 1,
+          "unregisterExternalBuffer: ptr=%p refcount=%d (expected 1). "
+          "In-flight CB still binds this buffer; sync all streams first.",
+          ptr, rc);
+    }
 #endif
 
-  if (residency_) residency_->unpin(buf);
+    if (residency_) residency_->unpin(buf);
+  }
+  // Transient externals: never alloc-time-pinned, nothing to unpin.
 
-  // Drop from the registry. This mirrors the External-branch logic in
-  // free() but skips the leak warning since we did the proper unpin.
+  // Drop from the registry. For Permanent entries this mirrors the proper
+  // unpin path; for Transient entries this is just the wrapper drop
+  // (equivalent to free() for an External entry).
   (void)buffers_.remove(ptr);
-  ET_LOG(Debug, "MetalAllocator::unregisterExternalPermanent: %p", ptr);
+  ET_LOG(Debug, "MetalAllocator::unregisterExternalBuffer: %p (class=%d)",
+         ptr, static_cast<int>(entry->residency_class));
 }
 
 //===----------------------------------------------------------------------===//

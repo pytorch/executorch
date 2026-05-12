@@ -29,7 +29,7 @@ bool CpuRuntime::can_run(const OpDescriptor& op) const {
 
 std::unique_ptr<Engine> CpuRuntime::instantiate() {
   InstanceId id = next_instance_id_.fetch_add(1, std::memory_order_relaxed);
-  return std::make_unique<CpuEngine>(ctx_, id);
+  return std::make_unique<CpuEngine>(ctx_, id, accept_io_directly_);
 }
 
 } // namespace native

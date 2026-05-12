@@ -19,8 +19,8 @@
  *   module.load(opts);
  */
 
-#include <executorch/runtime/backend/options.h>
 #include <executorch/runtime/backend/backend_options_map.h>
+#include <executorch/runtime/backend/options.h>
 
 #include <cstdio>
 #include <cstdlib>

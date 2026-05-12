@@ -31,10 +31,10 @@ import os
 import sys
 
 import torch
-from torch.export import export
+from executorch.backends.native.partitioner import NativePartitioner
 
 from executorch.exir import EdgeCompileConfig, to_edge_transform_and_lower
-from executorch.backends.native.partitioner import NativePartitioner
+from torch.export import export
 
 
 class TriProviderModel(torch.nn.Module):
@@ -53,10 +53,7 @@ def main() -> int:
     # Deterministic inputs so the C++ side reproduces them exactly.
     x = torch.tensor([[0.0, 1.0, 2.0, 3.0]])  # (1, 4)
     w = torch.tensor(
-        [[0.1, 0.2, 0.3],
-         [0.4, 0.5, 0.6],
-         [0.7, 0.8, 0.9],
-         [1.0, 1.1, 1.2]]
+        [[0.1, 0.2, 0.3], [0.4, 0.5, 0.6], [0.7, 0.8, 0.9], [1.0, 1.1, 1.2]]
     )  # (4, 3)
 
     print("=== Exporting TriProviderModel (delegated to NativeBackend) ===")
@@ -78,9 +75,7 @@ def main() -> int:
         f.write(et.buffer)
     print(f"  Saved {out_path} ({len(et.buffer)} bytes)")
 
-    ref_bytes = (
-        eager_out.detach().contiguous().to(torch.float32).numpy().tobytes()
-    )
+    ref_bytes = eager_out.detach().contiguous().to(torch.float32).numpy().tobytes()
     with open(ref_path, "wb") as f:
         f.write(ref_bytes)
     print(f"  Saved reference output {ref_path} ({len(ref_bytes)} bytes)")

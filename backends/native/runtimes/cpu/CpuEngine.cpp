@@ -148,6 +148,13 @@ CpuEngine::~CpuEngine() = default;
     out_claims[i] = AllocClaim::Claimed;
     if (req.kind != MemoryKind::DeviceMirror)
       continue;
+    // If we're simulating an accelerator with its own memory
+    // (accept_io_directly_=false), don't UMA-alias to the host
+    // partner — fall through to fresh arena allocation. This makes
+    // the test scenario actually exercise the cross-engine copy
+    // (TransferStep memcpy in upload/download_*_host).
+    if (!accept_io_directly_)
+      continue;
     void* p = partner_host_ptr_for(req.host_mirror_value_id);
     if (p) {
       alias_ptr[i] = p;
@@ -483,31 +490,29 @@ std::unique_ptr<Event> CpuEngine::make_event() {
   HostBuffer* hb = it->second;
   void* dst_ptr = hb->host_ptr();
 
-  // Stable-alias model: Aliasing buffers' pointer was set once at
-  // allocate_buffers (or bind_inputs) and equals host_src_ptr by
-  // invariant.
+  // Stable-alias model (production CPU): Aliasing buffers' pointer was
+  // set once at allocate_buffers (or bind_inputs) and equals
+  // host_src_ptr by invariant — the TransferStep is metadata-only.
+  //
+  // Decline-IO mode (fake_accel and other simulated accelerators):
+  // allocate_buffers skipped the partner-aliasing path, so the buffer
+  // points into our own arena instead of the caller's memory. Treat
+  // this like Owned mode and memcpy the bytes in.
   if (hb->mode() == HostBuffer::Mode::Aliasing) {
-    if (dst_ptr != host_src_ptr) {
+    if (dst_ptr == host_src_ptr) {
+      if (signal) {
+        signal->prepare_signal();
+        signal->signal_complete();
+      }
       ET_LOG(
-          Error,
-          "cpu: upload_from_host: Aliasing buffer pointer %p != "
-          "host_src_ptr %p (stable-alias invariant violated)",
-          dst_ptr,
-          host_src_ptr);
-      if (signal)
-        signal->signal_failed(::executorch::runtime::Error::Internal);
-      return ::executorch::runtime::Error::Internal;
+          Debug,
+          "[mem] cpu: upload_from_host caller_ptr=%p bytes=%zu (alias unchanged, metadata-only)",
+          host_src_ptr,
+          nbytes);
+      return ::executorch::runtime::Error::Ok;
     }
-    if (signal) {
-      signal->prepare_signal();
-      signal->signal_complete();
-    }
-    ET_LOG(
-        Debug,
-        "[mem] cpu: upload_from_host caller_ptr=%p bytes=%zu (alias unchanged, metadata-only)",
-        host_src_ptr,
-        nbytes);
-    return ::executorch::runtime::Error::Ok;
+    // Pointers differ → fall through to memcpy below. Expected for
+    // accept_io_directly=false runtimes.
   }
   // Owned mode: memcpy bytes into the buffer's storage.
   if (nbytes > 0) {
@@ -567,28 +572,24 @@ std::unique_ptr<Event> CpuEngine::make_event() {
   HostBuffer* hb = it->second;
   void* src_ptr = hb->host_ptr();
 
+  // Symmetric to upload_from_host: aliased buffer with matching ptr is
+  // a no-op; aliased buffer with differing ptr (decline-IO mode) falls
+  // through to memcpy.
   if (hb->mode() == HostBuffer::Mode::Aliasing) {
-    if (src_ptr != host_dst_ptr) {
+    if (src_ptr == host_dst_ptr) {
+      if (signal) {
+        signal->prepare_signal();
+        signal->signal_complete();
+      }
       ET_LOG(
-          Error,
-          "cpu: download_to_host: Aliasing buffer pointer %p != "
-          "host_dst_ptr %p (stable-alias invariant violated)",
-          src_ptr,
-          host_dst_ptr);
-      if (signal)
-        signal->signal_failed(::executorch::runtime::Error::Internal);
-      return ::executorch::runtime::Error::Internal;
+          Debug,
+          "[mem] cpu: download_to_host caller_ptr=%p bytes=%zu (alias unchanged, metadata-only)",
+          host_dst_ptr,
+          nbytes);
+      return ::executorch::runtime::Error::Ok;
     }
-    if (signal) {
-      signal->prepare_signal();
-      signal->signal_complete();
-    }
-    ET_LOG(
-        Debug,
-        "[mem] cpu: download_to_host caller_ptr=%p bytes=%zu (alias unchanged, metadata-only)",
-        host_dst_ptr,
-        nbytes);
-    return ::executorch::runtime::Error::Ok;
+    // Pointers differ → fall through to memcpy below. Expected for
+    // accept_io_directly=false runtimes.
   }
   if (nbytes > 0) {
     std::memcpy(host_dst_ptr, src_ptr, nbytes);

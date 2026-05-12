@@ -27,10 +27,10 @@ import os
 import sys
 
 import torch
-from torch.export import export
+from executorch.backends.native.partitioner import NativePartitioner
 
 from executorch.exir import EdgeCompileConfig, to_edge_transform_and_lower
-from executorch.backends.native.partitioner import NativePartitioner
+from torch.export import export
 
 
 class InplaceModel(torch.nn.Module):
@@ -43,9 +43,7 @@ class InplaceModel(torch.nn.Module):
 
 
 def main() -> int:
-    out_path = os.environ.get(
-        "NATIVE_INPLACE_PTE_PATH", "/tmp/native_inplace.pte"
-    )
+    out_path = os.environ.get("NATIVE_INPLACE_PTE_PATH", "/tmp/native_inplace.pte")
 
     model = InplaceModel().eval()
     example = torch.tensor([-2.0, -1.0, 0.0, 1.0, 2.0])

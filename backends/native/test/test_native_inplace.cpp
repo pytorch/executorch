@@ -33,15 +33,15 @@ using ::executorch::runtime::Error;
 
 int main() {
   const char* env_pte = std::getenv("ET_TESTING_MODEL_PATH");
-  std::string pte_path = env_pte
-      ? std::string(env_pte)
-      : std::string("/tmp/native_inplace.pte");
+  std::string pte_path =
+      env_pte ? std::string(env_pte) : std::string("/tmp/native_inplace.pte");
 
   printf("=== test_native_inplace ===\n");
   printf("  Loading: %s\n", pte_path.c_str());
 
   Module module(pte_path);
-  Error load_err = module.load(native_test_util::load_options_for_compute_unit());
+  Error load_err =
+      module.load(native_test_util::load_options_for_compute_unit());
   if (load_err != Error::Ok) {
     fprintf(stderr, "ERROR: load() failed: %d\n", static_cast<int>(load_err));
     return 1;
@@ -54,8 +54,10 @@ int main() {
   std::vector<::executorch::runtime::EValue> inputs = {x};
   auto result = module.forward(inputs);
   if (!result.ok()) {
-    fprintf(stderr, "ERROR: forward() failed: %d\n",
-            static_cast<int>(result.error()));
+    fprintf(
+        stderr,
+        "ERROR: forward() failed: %d\n",
+        static_cast<int>(result.error()));
     return 2;
   }
   printf("  forward() OK\n");
@@ -74,9 +76,11 @@ int main() {
   const float expected[] = {0.0f, 0.0f, 2.0f, 4.0f, 6.0f};
 
   printf("  Output:  ");
-  for (size_t i = 0; i < numel; ++i) printf(" %.2f", p[i]);
+  for (size_t i = 0; i < numel; ++i)
+    printf(" %.2f", p[i]);
   printf("\n  Expect:  ");
-  for (size_t i = 0; i < numel; ++i) printf(" %.2f", expected[i]);
+  for (size_t i = 0; i < numel; ++i)
+    printf(" %.2f", expected[i]);
   printf("\n");
 
   if (numel != 5) {
@@ -85,8 +89,12 @@ int main() {
   }
   for (size_t i = 0; i < numel; ++i) {
     if (std::abs(p[i] - expected[i]) > 1e-5f) {
-      fprintf(stderr, "ERROR: output[%zu]=%.4f, expected %.4f\n",
-              i, p[i], expected[i]);
+      fprintf(
+          stderr,
+          "ERROR: output[%zu]=%.4f, expected %.4f\n",
+          i,
+          p[i],
+          expected[i]);
       return 3;
     }
   }

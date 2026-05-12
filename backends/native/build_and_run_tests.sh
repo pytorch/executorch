@@ -94,6 +94,7 @@ TEST_BIN_INPLACE="${CMAKE_OUT}/test_native_inplace"
 TEST_BIN_DYN="${CMAKE_OUT}/test_native_dyn_shapes"
 TEST_BIN_COND="${CMAKE_OUT}/test_native_cond"
 TEST_BIN_COND_INNER="${CMAKE_OUT}/test_native_cond_inner"
+TEST_BIN_ROUTER_PHASES="${CMAKE_OUT}/test_router_phases"
 
 CHAIN_PTE="${NATIVE_CHAIN_PTE_PATH:-/tmp/native_chain.pte}"
 CHAIN_REF="${NATIVE_CHAIN_REF_PATH:-/tmp/native_chain.ref}"
@@ -135,7 +136,7 @@ echo
 if [[ ! -d "${CMAKE_OUT}" ]]; then
     echo "  cmake-out missing — running fresh configure..."
 fi
-echo "=== Step 1a/21: cmake configure (regenerates build system if stale) ==="
+echo "=== Step 1a/22: cmake configure (regenerates build system if stale) ==="
 CMAKE_PREFIX_PATH="$(python -c 'from distutils.sysconfig import get_python_lib; print(get_python_lib())')"
 cmake \
     -DCMAKE_PREFIX_PATH="${CMAKE_PREFIX_PATH}" \
@@ -147,11 +148,11 @@ cmake \
     -B "${CMAKE_OUT}"
 
 echo
-echo "=== Step 1b/21: incremental build of test binaries ==="
+echo "=== Step 1b/22: incremental build of test binaries ==="
 cmake --build "${CMAKE_OUT}" -j 16 --config Release \
-    --target test_native_simple test_native_linear test_native_scalar test_native_chain test_native_tri_provider test_native_stateful test_native_inplace test_native_dyn_shapes test_native_cond test_native_cond_inner
+    --target test_native_simple test_native_linear test_native_scalar test_native_chain test_native_tri_provider test_native_stateful test_native_inplace test_native_dyn_shapes test_native_cond test_native_cond_inner test_router_phases
 
-for bin in "${TEST_BIN_SIMPLE}" "${TEST_BIN_LINEAR}" "${TEST_BIN_SCALAR}" "${TEST_BIN_CHAIN}" "${TEST_BIN_TRI}" "${TEST_BIN_STATEFUL}" "${TEST_BIN_INPLACE}" "${TEST_BIN_DYN}" "${TEST_BIN_COND}" "${TEST_BIN_COND_INNER}"; do
+for bin in "${TEST_BIN_SIMPLE}" "${TEST_BIN_LINEAR}" "${TEST_BIN_SCALAR}" "${TEST_BIN_CHAIN}" "${TEST_BIN_TRI}" "${TEST_BIN_STATEFUL}" "${TEST_BIN_INPLACE}" "${TEST_BIN_DYN}" "${TEST_BIN_COND}" "${TEST_BIN_COND_INNER}" "${TEST_BIN_ROUTER_PHASES}"; do
     if [[ ! -x "${bin}" ]]; then
         echo "ERROR: ${bin} not found after build." >&2
         exit 1
@@ -160,7 +161,7 @@ done
 
 # 2. Export the simple model.
 echo
-echo "=== Step 2/21: exporting TinyAdd to ${SIMPLE_PTE} ==="
+echo "=== Step 2/22: exporting TinyAdd to ${SIMPLE_PTE} ==="
 NATIVE_SIMPLE_PTE_PATH="${SIMPLE_PTE}" python "${EXPORT_SIMPLE_PY}"
 if [[ ! -f "${SIMPLE_PTE}" ]]; then
     echo "ERROR: simple export did not produce ${SIMPLE_PTE}" >&2
@@ -169,12 +170,12 @@ fi
 
 # 3. Run the simple test.
 echo
-echo "=== Step 3/21: running test_native_simple ==="
+echo "=== Step 3/22: running test_native_simple ==="
 ET_TESTING_MODEL_PATH="${SIMPLE_PTE}" "${TEST_BIN_SIMPLE}"
 
 # 4. Export the linear MLP (writes both .pte and reference output).
 echo
-echo "=== Step 4/21: exporting ConstantyModel to ${LINEAR_PTE} (+ ref ${LINEAR_REF}) ==="
+echo "=== Step 4/22: exporting ConstantyModel to ${LINEAR_PTE} (+ ref ${LINEAR_REF}) ==="
 NATIVE_LINEAR_PTE_PATH="${LINEAR_PTE}" \
 NATIVE_LINEAR_REF_PATH="${LINEAR_REF}" \
     python "${EXPORT_LINEAR_PY}"
@@ -189,14 +190,14 @@ fi
 
 # 5. Run the linear test.
 echo
-echo "=== Step 5/21: running test_native_linear (exercises upload_constants) ==="
+echo "=== Step 5/22: running test_native_linear (exercises upload_constants) ==="
 ET_TESTING_MODEL_PATH="${LINEAR_PTE}" \
 NATIVE_LINEAR_REF_PATH="${LINEAR_REF}" \
     "${TEST_BIN_LINEAR}"
 
 # 6. Export the scalar model.
 echo
-echo "=== Step 6/21: exporting ScalarAddModel to ${SCALAR_PTE} (+ ref ${SCALAR_REF}) ==="
+echo "=== Step 6/22: exporting ScalarAddModel to ${SCALAR_PTE} (+ ref ${SCALAR_REF}) ==="
 NATIVE_SCALAR_PTE_PATH="${SCALAR_PTE}" \
 NATIVE_SCALAR_REF_PATH="${SCALAR_REF}" \
     python "${EXPORT_SCALAR_PY}"
@@ -211,13 +212,13 @@ fi
 
 # 7. Run the scalar test.
 echo
-echo "=== Step 7/21: running test_native_scalar (exercises aten::add.Scalar) ==="
+echo "=== Step 7/22: running test_native_scalar (exercises aten::add.Scalar) ==="
 ET_TESTING_MODEL_PATH="${SCALAR_PTE}" \
 NATIVE_SCALAR_REF_PATH="${SCALAR_REF}" \
     "${TEST_BIN_SCALAR}"
 
 echo
-echo "=== Step 8/21: exporting ChainModel to ${CHAIN_PTE} (+ ref ${CHAIN_REF}) ==="
+echo "=== Step 8/22: exporting ChainModel to ${CHAIN_PTE} (+ ref ${CHAIN_REF}) ==="
 NATIVE_CHAIN_PTE_PATH="${CHAIN_PTE}" \
 NATIVE_CHAIN_REF_PATH="${CHAIN_REF}" \
     python "${EXPORT_CHAIN_PY}"
@@ -231,13 +232,13 @@ if [[ ! -f "${CHAIN_REF}" ]]; then
 fi
 
 echo
-echo "=== Step 9/21: running test_native_chain (chain of unary ops; in-place + multi-op segment) ==="
+echo "=== Step 9/22: running test_native_chain (chain of unary ops; in-place + multi-op segment) ==="
 ET_TESTING_MODEL_PATH="${CHAIN_PTE}" \
 NATIVE_CHAIN_REF_PATH="${CHAIN_REF}" \
     "${TEST_BIN_CHAIN}"
 
 echo
-echo "=== Step 10/21: exporting TriProviderModel to ${TRI_PTE} (+ ref ${TRI_REF}) ==="
+echo "=== Step 10/22: exporting TriProviderModel to ${TRI_PTE} (+ ref ${TRI_REF}) ==="
 NATIVE_TRI_PTE_PATH="${TRI_PTE}" \
 NATIVE_TRI_REF_PATH="${TRI_REF}" \
     python "${EXPORT_TRI_PY}"
@@ -251,58 +252,63 @@ if [[ ! -f "${TRI_REF}" ]]; then
 fi
 
 echo
-echo "=== Step 11/21: running test_native_tri_provider (fake_accel + metal + cpu in one plan) ==="
+echo "=== Step 11/22: running test_native_tri_provider (fake_accel + metal + cpu in one plan) ==="
 ET_TESTING_MODEL_PATH="${TRI_PTE}" \
 NATIVE_TRI_REF_PATH="${TRI_REF}" \
     "${TEST_BIN_TRI}"
 
 
 echo
-echo "=== Step 12/21: exporting StatefulAdd to ${STATEFUL_PTE} ==="
+echo "=== Step 12/22: exporting StatefulAdd to ${STATEFUL_PTE} ==="
 NATIVE_STATEFUL_PTE_PATH="${STATEFUL_PTE}" python "${EXPORT_STATEFUL_PY}"
 if [[ ! -f "${STATEFUL_PTE}" ]]; then echo "ERROR: stateful export failed" >&2; exit 1; fi
 
 echo
-echo "=== Step 13/21: running test_native_stateful (mutable buffer across calls) ==="
+echo "=== Step 13/22: running test_native_stateful (mutable buffer across calls) ==="
 ET_TESTING_MODEL_PATH="${STATEFUL_PTE}" "${TEST_BIN_STATEFUL}"
 
 echo
-echo "=== Step 14/21: exporting InplaceModel to ${INPLACE_PTE} ==="
+echo "=== Step 14/22: exporting InplaceModel to ${INPLACE_PTE} ==="
 NATIVE_INPLACE_PTE_PATH="${INPLACE_PTE}" python "${EXPORT_INPLACE_PY}"
 if [[ ! -f "${INPLACE_PTE}" ]]; then echo "ERROR: inplace export failed" >&2; exit 1; fi
 
 echo
-echo "=== Step 15/21: running test_native_inplace (explicit add_/mul_/relu_) ==="
+echo "=== Step 15/22: running test_native_inplace (explicit add_/mul_/relu_) ==="
 ET_TESTING_MODEL_PATH="${INPLACE_PTE}" "${TEST_BIN_INPLACE}"
 
 echo
-echo "=== Step 16/21: exporting DynModel to ${DYN_PTE} ==="
+echo "=== Step 16/22: exporting DynModel to ${DYN_PTE} ==="
 NATIVE_DYN_PTE_PATH="${DYN_PTE}" python "${EXPORT_DYN_PY}"
 if [[ ! -f "${DYN_PTE}" ]]; then echo "ERROR: dyn export failed" >&2; exit 1; fi
 
 echo
-echo "=== Step 17/21: running test_native_dyn_shapes (batch={1,3,5,8}) ==="
+echo "=== Step 17/22: running test_native_dyn_shapes (batch={1,3,5,8}) ==="
 ET_TESTING_MODEL_PATH="${DYN_PTE}" "${TEST_BIN_DYN}"
 
 
 echo
-echo "=== Step 18/21: exporting CondModel to ${COND_PTE} ==="
+echo "=== Step 18/22: exporting CondModel to ${COND_PTE} ==="
 NATIVE_COND_PTE_PATH="${COND_PTE}" python "${EXPORT_COND_PY}"
 if [[ ! -f "${COND_PTE}" ]]; then echo "ERROR: cond export failed" >&2; exit 1; fi
 
 echo
-echo "=== Step 19/21: running test_native_cond (torch.cond, both branches) ==="
+echo "=== Step 19/22: running test_native_cond (torch.cond, both branches) ==="
 ET_TESTING_MODEL_PATH="${COND_PTE}" "${TEST_BIN_COND}"
 
 
 echo
-echo "=== Step 20/21: exporting raw cond inner program to ${COND_INNER_FBB} ==="
+echo "=== Step 20/22: exporting raw cond inner program to ${COND_INNER_FBB} ==="
 NATIVE_COND_INNER_PATH="${COND_INNER_FBB}" python "${EXPORT_COND_INNER_PY}"
 if [[ ! -f "${COND_INNER_FBB}" ]]; then echo "ERROR: cond inner export failed" >&2; exit 1; fi
 
 echo
-echo "=== Step 21/21: running test_native_cond_inner (bypass: cond into NativeBackend init) ==="
+echo "=== Step 21/22: running test_native_cond_inner (bypass: cond into NativeBackend init) ==="
 NATIVE_COND_INNER_PATH="${COND_INNER_FBB}" "${TEST_BIN_COND_INNER}"
+
+
+echo
+echo "=== Step 22/22: running test_router_phases (per-phase unit tests against cond inner fixture) ==="
+NATIVE_ROUTER_PHASES_FIXTURE_PATH="${COND_INNER_FBB}" "${TEST_BIN_ROUTER_PHASES}"
 
 echo
 echo "=== build_and_run_tests.sh: ALL PASS ==="

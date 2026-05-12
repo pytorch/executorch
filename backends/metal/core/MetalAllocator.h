@@ -91,27 +91,41 @@ class MetalAllocator {
   //     CBs. Suitable for typical AOTI inputs/outputs.
   //   ResidencyClass::Permanent — pin into the residency set at register
   //     time; stays resident until the caller explicitly invokes
-  //     unregisterExternalPermanent(ptr). Suitable for long-lived
+  //     unregisterExternalBuffer(ptr). Suitable for long-lived
   //     model weights / scratch that the caller wants to keep resident
   //     across many CBs without per-CB churn.
+  //
+  // Cleanup: call unregisterExternalBuffer(ptr) — works for both
+  // residency classes (routes internally). free(ptr) also accepts
+  // External entries for backward compat / auto-registered entries
+  // (see bufferForPtr).
   bool registerExternalBuffer(
       void* ptr,
       size_t bytes,
       bool strict_zero_copy = false,
       ResidencyClass residency_class = ResidencyClass::Transient);
 
-  // Unregister an entry that was registered with ResidencyClass::Permanent.
-  // Drops the long-lived residency pin and removes the entry from the
-  // registry. Caller MUST ensure NO in-flight CB on ANY stream still
-  // binds `ptr` or any subregion of it before calling — otherwise the
-  // GPU may dereference a buffer that's been removed from the residency
-  // set (debug builds DCHECK that the global refcount equals exactly 1
-  // at unregister time, since the registration's pin is the only
-  // expected contributor).
+  // Unregister an entry previously registered via registerExternalBuffer
+  // (or auto-registered via bufferForPtr). Routes by ResidencyClass:
+  //   Transient — drops the MTLBuffer wrapper; nothing to unpin (transient
+  //               externals never had an alloc-time pin).
+  //   Permanent — drops the long-lived residency pin AND removes the
+  //               registry entry. Caller MUST ensure NO in-flight CB on
+  //               ANY stream still binds `ptr` (or any subregion of it)
+  //               before calling — otherwise the GPU may dereference a
+  //               buffer that's been removed from the residency set.
+  //               Debug builds DCHECK that the global residency refcount
+  //               equals exactly 1 at unregister time (the registration's
+  //               own pin is the only expected contributor).
   //
-  // No-op if `ptr` isn't registered. Logs Error and skips if the entry
-  // exists but isn't Permanent (caller bug).
-  void unregisterExternalPermanent(void* ptr);
+  // FATAL on caller bug:
+  //   - `ptr` is null or not registered (call site has a logic error).
+  //   - `ptr` is registered but with a non-External Origin (e.g., a Pool
+  //     or Subregion entry — those have their own cleanup paths).
+  //
+  // The caller's underlying memory is NOT touched — only the MTLBuffer
+  // wrapper and (for Permanent) the residency pin are released.
+  void unregisterExternalBuffer(void* ptr);
 
   //===--------------------------------------------------------------------===//
   // Subregion API — child_ptr is registered as a sub-buffer view of an

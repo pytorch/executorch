@@ -17,9 +17,9 @@
  * .ref path: NATIVE_SCALAR_REF_PATH (default /tmp/native_scalar.ref)
  */
 
+#include <executorch/backends/native/test/test_options_util.h>
 #include <executorch/extension/module/module.h>
 #include <executorch/extension/tensor/tensor.h>
-#include <executorch/backends/native/test/test_options_util.h>
 
 #include <cmath>
 #include <cstdio>
@@ -59,7 +59,8 @@ int main() {
   ref_file.read(reinterpret_cast<char*>(ref_data.data()), ref_bytes);
 
   Module module(pte_path);
-  Error load_err = module.load(native_test_util::load_options_for_compute_unit());
+  Error load_err =
+      module.load(native_test_util::load_options_for_compute_unit());
   if (load_err != Error::Ok) {
     fprintf(stderr, "ERROR: load() failed: %d\n", static_cast<int>(load_err));
     return 1;
@@ -74,9 +75,10 @@ int main() {
   std::vector<::executorch::runtime::EValue> inputs = {x};
   auto result = module.forward(inputs);
   if (!result.ok()) {
-    fprintf(stderr,
-            "ERROR: forward() failed: %d\n",
-            static_cast<int>(result.error()));
+    fprintf(
+        stderr,
+        "ERROR: forward() failed: %d\n",
+        static_cast<int>(result.error()));
     return 2;
   }
   printf("  forward() OK\n");
@@ -90,25 +92,33 @@ int main() {
   const float* out_ptr = out_tensor.const_data_ptr<float>();
   size_t numel = static_cast<size_t>(out_tensor.numel());
   if (numel != ref_count) {
-    fprintf(stderr,
-            "ERROR: output numel=%zu does not match reference numel=%zu\n",
-            numel, ref_count);
+    fprintf(
+        stderr,
+        "ERROR: output numel=%zu does not match reference numel=%zu\n",
+        numel,
+        ref_count);
     return 3;
   }
 
   printf("  Output (%zu elems):", numel);
-  for (size_t i = 0; i < numel; ++i) printf(" %.4f", out_ptr[i]);
+  for (size_t i = 0; i < numel; ++i)
+    printf(" %.4f", out_ptr[i]);
   printf("\n  Reference:        ");
-  for (size_t i = 0; i < numel; ++i) printf(" %.4f", ref_data[i]);
+  for (size_t i = 0; i < numel; ++i)
+    printf(" %.4f", ref_data[i]);
   printf("\n");
 
   const float kTol = 1e-5f;
   for (size_t i = 0; i < numel; ++i) {
     float diff = std::abs(out_ptr[i] - ref_data[i]);
     if (diff > kTol) {
-      fprintf(stderr,
-              "ERROR: output[%zu]=%.6f, reference %.6f (diff %.6f)\n",
-              i, out_ptr[i], ref_data[i], diff);
+      fprintf(
+          stderr,
+          "ERROR: output[%zu]=%.6f, reference %.6f (diff %.6f)\n",
+          i,
+          out_ptr[i],
+          ref_data[i],
+          diff);
       return 3;
     }
   }

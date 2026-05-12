@@ -20,10 +20,10 @@ import os
 import sys
 
 import torch
-from torch.export import export
+from executorch.backends.native.partitioner import NativePartitioner
 
 from executorch.exir import EdgeCompileConfig, to_edge_transform_and_lower
-from executorch.backends.native.partitioner import NativePartitioner
+from torch.export import export
 
 
 class ScalarAddModel(torch.nn.Module):
@@ -34,12 +34,8 @@ class ScalarAddModel(torch.nn.Module):
 
 
 def main() -> int:
-    out_path = os.environ.get(
-        "NATIVE_SCALAR_PTE_PATH", "/tmp/native_scalar.pte"
-    )
-    ref_path = os.environ.get(
-        "NATIVE_SCALAR_REF_PATH", "/tmp/native_scalar.ref"
-    )
+    out_path = os.environ.get("NATIVE_SCALAR_PTE_PATH", "/tmp/native_scalar.pte")
+    ref_path = os.environ.get("NATIVE_SCALAR_REF_PATH", "/tmp/native_scalar.ref")
 
     model = ScalarAddModel().eval()
 
@@ -63,9 +59,7 @@ def main() -> int:
         f.write(et.buffer)
     print(f"  Saved {out_path} ({len(et.buffer)} bytes)")
 
-    ref_bytes = (
-        eager_out.detach().contiguous().to(torch.float32).numpy().tobytes()
-    )
+    ref_bytes = eager_out.detach().contiguous().to(torch.float32).numpy().tobytes()
     with open(ref_path, "wb") as f:
         f.write(ref_bytes)
     print(f"  Saved reference output {ref_path} ({len(ref_bytes)} bytes)")

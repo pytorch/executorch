@@ -83,7 +83,7 @@ class BufferRegistry {
     // alloc() and registerExternalBuffer().
     Transient,
     // Buffer is pinned at registration and stays in the residency set
-    // until unregisterExternalPermanent() runs. Used for long-lived
+    // until unregisterExternalBuffer() runs. Used for long-lived
     // model weights / input scratch that the caller wants resident
     // across many CBs without per-CB churn.
     Permanent,

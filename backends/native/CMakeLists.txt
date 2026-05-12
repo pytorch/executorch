@@ -19,12 +19,22 @@
 
 set(_portable_backend_v2__srcs
     ${CMAKE_CURRENT_SOURCE_DIR}/NativeBackend.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/NativeBackendRegistry.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/NativeBackendValueInit.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/NativeBackendBuffers.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/NativeBackendExecute.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/core/RuntimeRegistry.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/runtimes/cpu/CpuEngine.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/runtimes/cpu/CpuRuntime.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/runtimes/cpu/CpuOps.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/runtimes/host_pool/HostPoolEngine.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/routers/GreedyRouter.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/routers/GreedyRouterAssignment.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/routers/GreedyRouterPlanning.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/routers/GreedyRouterAllocs.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/routers/GreedyRouterTransfers.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/routers/GreedyRouterCompile.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/routers/GreedyRouterControlFlow.cpp
 )
 
 # Apple-only Metal provider. Depends on the metal_v2 lib (defined in

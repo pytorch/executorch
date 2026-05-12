@@ -30,9 +30,9 @@
  *   4 — reference file missing or malformed
  */
 
+#include <executorch/backends/native/test/test_options_util.h>
 #include <executorch/extension/module/module.h>
 #include <executorch/extension/tensor/tensor.h>
-#include <executorch/backends/native/test/test_options_util.h>
 
 #include <cmath>
 #include <cstdio>
@@ -64,10 +64,11 @@ int main() {
   }
   std::streamsize ref_bytes = ref_file.tellg();
   if (ref_bytes <= 0 || (ref_bytes % sizeof(float)) != 0) {
-    fprintf(stderr,
-            "ERROR: reference file %s has invalid size %lld\n",
-            ref_path.c_str(),
-            static_cast<long long>(ref_bytes));
+    fprintf(
+        stderr,
+        "ERROR: reference file %s has invalid size %lld\n",
+        ref_path.c_str(),
+        static_cast<long long>(ref_bytes));
     return 4;
   }
   ref_file.seekg(0, std::ios::beg);
@@ -76,7 +77,8 @@ int main() {
   ref_file.read(reinterpret_cast<char*>(ref_data.data()), ref_bytes);
 
   Module module(pte_path);
-  Error load_err = module.load(native_test_util::load_options_for_compute_unit());
+  Error load_err =
+      module.load(native_test_util::load_options_for_compute_unit());
   if (load_err != Error::Ok) {
     fprintf(stderr, "ERROR: load() failed: %d\n", static_cast<int>(load_err));
     return 1;
@@ -91,9 +93,10 @@ int main() {
   std::vector<::executorch::runtime::EValue> inputs = {x};
   auto result = module.forward(inputs);
   if (!result.ok()) {
-    fprintf(stderr,
-            "ERROR: forward() failed: %d\n",
-            static_cast<int>(result.error()));
+    fprintf(
+        stderr,
+        "ERROR: forward() failed: %d\n",
+        static_cast<int>(result.error()));
     return 2;
   }
   printf("  forward() OK\n");
@@ -108,10 +111,11 @@ int main() {
   size_t numel = static_cast<size_t>(out_tensor.numel());
 
   if (numel != ref_count) {
-    fprintf(stderr,
-            "ERROR: output numel=%zu does not match reference numel=%zu\n",
-            numel,
-            ref_count);
+    fprintf(
+        stderr,
+        "ERROR: output numel=%zu does not match reference numel=%zu\n",
+        numel,
+        ref_count);
     return 3;
   }
 
@@ -131,9 +135,14 @@ int main() {
   for (size_t i = 0; i < numel; ++i) {
     float diff = std::abs(out_ptr[i] - ref_data[i]);
     if (diff > kTol) {
-      fprintf(stderr,
-              "ERROR: output[%zu]=%.6f, reference %.6f (diff %.6f, tol %.6f)\n",
-              i, out_ptr[i], ref_data[i], diff, kTol);
+      fprintf(
+          stderr,
+          "ERROR: output[%zu]=%.6f, reference %.6f (diff %.6f, tol %.6f)\n",
+          i,
+          out_ptr[i],
+          ref_data[i],
+          diff,
+          kTol);
       return 3;
     }
   }

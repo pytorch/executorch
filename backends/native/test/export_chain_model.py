@@ -24,10 +24,10 @@ import os
 import sys
 
 import torch
-from torch.export import export
+from executorch.backends.native.partitioner import NativePartitioner
 
 from executorch.exir import EdgeCompileConfig, to_edge_transform_and_lower
-from executorch.backends.native.partitioner import NativePartitioner
+from torch.export import export
 
 
 class ChainModel(torch.nn.Module):
@@ -41,12 +41,8 @@ class ChainModel(torch.nn.Module):
 
 
 def main() -> int:
-    out_path = os.environ.get(
-        "NATIVE_CHAIN_PTE_PATH", "/tmp/native_chain.pte"
-    )
-    ref_path = os.environ.get(
-        "NATIVE_CHAIN_REF_PATH", "/tmp/native_chain.ref"
-    )
+    out_path = os.environ.get("NATIVE_CHAIN_PTE_PATH", "/tmp/native_chain.pte")
+    ref_path = os.environ.get("NATIVE_CHAIN_REF_PATH", "/tmp/native_chain.ref")
 
     model = ChainModel().eval()
     a = torch.tensor([[0.1, 0.2, 0.3, 0.4]])
@@ -70,9 +66,7 @@ def main() -> int:
         f.write(et.buffer)
     print(f"  Saved {out_path} ({len(et.buffer)} bytes)")
 
-    ref_bytes = (
-        eager_out.detach().contiguous().to(torch.float32).numpy().tobytes()
-    )
+    ref_bytes = eager_out.detach().contiguous().to(torch.float32).numpy().tobytes()
     with open(ref_path, "wb") as f:
         f.write(ref_bytes)
     print(f"  Saved reference output {ref_path} ({len(ref_bytes)} bytes)")

@@ -39,15 +39,15 @@ using ::executorch::runtime::Error;
 
 int main() {
   const char* env_pte = std::getenv("ET_TESTING_MODEL_PATH");
-  std::string pte_path = env_pte
-      ? std::string(env_pte)
-      : std::string("/tmp/native_dyn.pte");
+  std::string pte_path =
+      env_pte ? std::string(env_pte) : std::string("/tmp/native_dyn.pte");
 
   printf("=== test_native_dyn_shapes ===\n");
   printf("  Loading: %s\n", pte_path.c_str());
 
   Module module(pte_path);
-  Error load_err = module.load(native_test_util::load_options_for_compute_unit());
+  Error load_err =
+      module.load(native_test_util::load_options_for_compute_unit());
   if (load_err != Error::Ok) {
     fprintf(stderr, "ERROR: load() failed: %d\n", static_cast<int>(load_err));
     return 1;
@@ -61,8 +61,11 @@ int main() {
     std::vector<::executorch::runtime::EValue> inputs = {x};
     auto result = module.forward(inputs);
     if (!result.ok()) {
-      fprintf(stderr, "ERROR: forward(B=%d) failed: %d\n",
-              B, static_cast<int>(result.error()));
+      fprintf(
+          stderr,
+          "ERROR: forward(B=%d) failed: %d\n",
+          B,
+          static_cast<int>(result.error()));
       return 2;
     }
     const auto& outputs = result.get();
@@ -87,14 +90,17 @@ int main() {
       return 3;
     }
     if (numel != static_cast<size_t>(B) * 4) {
-      fprintf(stderr, "ERROR: B=%d: numel=%zu, expected %d\n",
-              B, numel, B * 4);
+      fprintf(stderr, "ERROR: B=%d: numel=%zu, expected %d\n", B, numel, B * 4);
       return 3;
     }
     for (size_t i = 0; i < numel; ++i) {
       if (std::abs(p[i] - 4.0f) > 1e-5f) {
-        fprintf(stderr, "ERROR: B=%d: output[%zu]=%.4f, expected 4.0\n",
-                B, i, p[i]);
+        fprintf(
+            stderr,
+            "ERROR: B=%d: output[%zu]=%.4f, expected 4.0\n",
+            B,
+            i,
+            p[i]);
         return 3;
       }
     }

@@ -36,15 +36,15 @@ using ::executorch::runtime::Error;
 
 int main() {
   const char* env_pte = std::getenv("ET_TESTING_MODEL_PATH");
-  std::string pte_path = env_pte
-      ? std::string(env_pte)
-      : std::string("/tmp/native_stateful.pte");
+  std::string pte_path =
+      env_pte ? std::string(env_pte) : std::string("/tmp/native_stateful.pte");
 
   printf("=== test_native_stateful ===\n");
   printf("  Loading: %s\n", pte_path.c_str());
 
   Module module(pte_path);
-  Error load_err = module.load(native_test_util::load_options_for_compute_unit());
+  Error load_err =
+      module.load(native_test_util::load_options_for_compute_unit());
   if (load_err != Error::Ok) {
     fprintf(stderr, "ERROR: load() failed: %d\n", static_cast<int>(load_err));
     return 1;
@@ -59,14 +59,19 @@ int main() {
     std::vector<::executorch::runtime::EValue> inputs = {x};
     auto result = module.forward(inputs);
     if (!result.ok()) {
-      fprintf(stderr,
-              "ERROR: forward() call %d failed: %d\n",
-              call, static_cast<int>(result.error()));
+      fprintf(
+          stderr,
+          "ERROR: forward() call %d failed: %d\n",
+          call,
+          static_cast<int>(result.error()));
       return 2;
     }
     const auto& outputs = result.get();
     if (outputs.empty() || !outputs[0].isTensor()) {
-      fprintf(stderr, "ERROR: call %d: expected at least one tensor output\n", call);
+      fprintf(
+          stderr,
+          "ERROR: call %d: expected at least one tensor output\n",
+          call);
       return 3;
     }
     auto out = outputs[0].toTensor();
@@ -74,17 +79,22 @@ int main() {
     size_t numel = static_cast<size_t>(out.numel());
 
     printf("  call %d output:", call);
-    for (size_t i = 0; i < numel; ++i) printf(" %.2f", p[i]);
+    for (size_t i = 0; i < numel; ++i)
+      printf(" %.2f", p[i]);
     printf("\n");
 
     // Expect every element == call (1, 2, 3, ...).
     float expected = static_cast<float>(call);
     for (size_t i = 0; i < numel; ++i) {
       if (std::abs(p[i] - expected) > 1e-5f) {
-        fprintf(stderr,
-                "ERROR: call %d output[%zu]=%.4f, expected %.4f "
-                "(mutable buffer not preserved across calls?)\n",
-                call, i, p[i], expected);
+        fprintf(
+            stderr,
+            "ERROR: call %d output[%zu]=%.4f, expected %.4f "
+            "(mutable buffer not preserved across calls?)\n",
+            call,
+            i,
+            p[i],
+            expected);
         return 3;
       }
     }

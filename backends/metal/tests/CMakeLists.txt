@@ -78,7 +78,7 @@ et_cxx_test(
 )
 
 # test_metal_allocator — covers Units 6/9/10: alloc/free origins,
-# ResidencyClass, unregisterExternalPermanent, subregions, heap pin.
+# ResidencyClass, unregisterExternalBuffer, subregions, heap pin.
 et_cxx_test(
   metal_v2_test_metal_allocator SOURCES test_metal_allocator.mm EXTRA_LIBS
   metal_v2

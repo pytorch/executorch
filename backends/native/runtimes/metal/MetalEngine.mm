@@ -42,6 +42,19 @@ MetalEngine::MetalEngine(MetalRuntime* provider, InstanceId id)
 MetalEngine::~MetalEngine() {
   // Drain any in-flight work before tearing down owned buffers.
   drain();
+  // Drop every external registration we made (Transient direct-IO
+  // binds + Permanent constant uploads). Required to avoid
+  // MetalAllocator's leak warning at process shutdown ("Permanent
+  // External entries the caller forgot to unregister"). The
+  // underlying memory is owned by FreeableBuffer / inline storage /
+  // caller buffers and released independently; here we just drop the
+  // allocator's MTLBuffer wrappers + residency pins.
+  if (stream_) {
+    for (void* ptr : our_registrations_) {
+      stream_->allocator().unregisterExternalBuffer(ptr);
+    }
+    our_registrations_.clear();
+  }
   owned_buffers_.clear();
 }
 
@@ -262,13 +275,22 @@ runtime::Error MetalEngine::upload_constants(
       runtime::FreeableBuffer fb = std::move(fb_result.get());
       void* ptr = const_cast<void*>(fb.data());
       size_t bytes = fb.size();
-      stream_->allocator().registerExternalBuffer(ptr, bytes);
+      // Constants live for the engine's lifetime — register Permanent
+      // so they're pinned into the residency set once instead of
+      // re-pinned per CB. Tracked in our_registrations_
+      // and unregistered in ~MetalEngine.
+      stream_->allocator().registerExternalBuffer(
+          ptr,
+          bytes,
+          /*strict_zero_copy=*/false,
+          metal_v2::MetalAllocator::ResidencyClass::Permanent);
+      our_registrations_.insert(ptr);
       (void)stream_->allocator().bufferMtlForPtr(ptr, bytes);
       buf = MetalBuffer::alias_ndm(
           stream_, std::move(fb), MemoryKind::DeviceOnly);
       ET_LOG(
           Debug,
-          "[mem] metal: upload_constants[%zu] value_id=%u key='%.*s' bytes=%zu host_ptr=%p (zero-copy NDM alias)",
+          "[mem] metal: upload_constants[%zu] value_id=%u key='%.*s' bytes=%zu host_ptr=%p (zero-copy NDM alias, Permanent)",
           i, req.value_id,
           static_cast<int>(req.ndm_key.size()), req.ndm_key.data(),
           bytes, ptr);
@@ -278,12 +300,17 @@ runtime::Error MetalEngine::upload_constants(
       // lifetime — plain alias is enough.
       void* ptr = const_cast<uint8_t*>(req.inline_data.data());
       size_t bytes = req.inline_data.size();
-      stream_->allocator().registerExternalBuffer(ptr, bytes);
+      stream_->allocator().registerExternalBuffer(
+          ptr,
+          bytes,
+          /*strict_zero_copy=*/false,
+          metal_v2::MetalAllocator::ResidencyClass::Permanent);
+      our_registrations_.insert(ptr);
       (void)stream_->allocator().bufferMtlForPtr(ptr, bytes);
       buf = MetalBuffer::alias(stream_, ptr, bytes, MemoryKind::DeviceOnly);
       ET_LOG(
           Debug,
-          "[mem] metal: upload_constants[%zu] value_id=%u bytes=%zu host_ptr=%p (zero-copy inline alias)",
+          "[mem] metal: upload_constants[%zu] value_id=%u bytes=%zu host_ptr=%p (zero-copy inline alias, Permanent)",
           i, req.value_id, bytes, ptr);
     } else {
       ET_LOG(
@@ -320,7 +347,26 @@ runtime::Error MetalEngine::bind_one_(
   auto it = value_to_buffer_.find(value_id);
   if (it != value_to_buffer_.end()) {
     MetalBuffer* mb = it->second;
-    if (mb->mode() == MetalBuffer::Mode::Aliasing) {
+    void* old_ptr = mb->host_ptr();
+    bool ptr_changed = (old_ptr != host_ptr);
+    bool size_grew = mb->size_bytes() < nbytes;
+
+    if (mb->mode() != MetalBuffer::Mode::Aliasing) {
+      // Owned mode: memcpy into pool storage. Pool buffer size is fixed
+      // at allocate-time; we only memcpy if it covers nbytes.
+      void* dst = mb->host_ptr();
+      if (dst && nbytes > 0) std::memcpy(dst, host_ptr, nbytes);
+      if (dst) {
+        central_t.unsafeGetTensorImpl()->set_data(dst);
+      }
+      ET_LOG(Debug,
+             "[mem] metal: bind dst=%u host_ptr=%p bytes=%zu (memcpy into pool storage)",
+             value_id, host_ptr, nbytes);
+      return runtime::Error::Ok;
+    }
+    if (!ptr_changed && !size_grew) {
+      // Same ptr, size still fits: cheapest path. Re-register is a
+      // no-op cache hit on the existing entry.
       if (!stream_->allocator().registerExternalBuffer(
               host_ptr, nbytes, /*strict_zero_copy=*/true)) {
         ET_LOG(Error,
@@ -336,15 +382,38 @@ runtime::Error MetalEngine::bind_one_(
              value_id, host_ptr, nbytes);
       return runtime::Error::Ok;
     }
-    void* dst = mb->host_ptr();
-    if (dst && nbytes > 0) std::memcpy(dst, host_ptr, nbytes);
-    if (dst) {
-      central_t.unsafeGetTensorImpl()->set_data(dst);
+    // Aliasing buffer with ptr change OR size growth: drop the stale
+    // registration via the new MetalAllocator::unregisterExternalBuffer
+    // API (works for Transient — older code only had Permanent
+    // unregister). Then fall through to lazy-allocate at the new
+    // ptr/size. Without this, dynamic-shape models hit
+    // bufferForPtr "registered entry only covers N bytes".
+    ET_LOG(
+        Debug,
+        "[mem] metal: bind dst=%u dropping stale buffer (had ptr=%p %zu bytes, need ptr=%p %zu bytes)",
+        value_id, old_ptr, mb->size_bytes(), host_ptr, nbytes);
+    if (old_ptr && our_registrations_.erase(old_ptr) > 0) {
+      stream_->allocator().unregisterExternalBuffer(old_ptr);
     }
-    ET_LOG(Debug,
-           "[mem] metal: bind dst=%u host_ptr=%p bytes=%zu (memcpy into pool storage)",
-           value_id, host_ptr, nbytes);
-    return runtime::Error::Ok;
+    value_to_buffer_.erase(it);
+    // Fall through to lazy-allocate below with the new ptr/size.
+  }
+  // Cross-vid collision defense: the new host_ptr might be the OLD ptr
+  // of ANOTHER vid that hasn't been re-bound yet this execute (common
+  // with std::vector heap reuse where vid A's new ptr lands at vid B's
+  // recently-freed prior ptr). Drop our tracking + unregister; vid B's
+  // own bind_one_ will re-register fresh later in this execute.
+  if (our_registrations_.erase(host_ptr) > 0) {
+    stream_->allocator().unregisterExternalBuffer(host_ptr);
+    // Also drop any value_to_buffer_ entry pointing at this ptr — its
+    // buffer is now invalid; the owning vid's next bind will rebuild.
+    for (auto vit = value_to_buffer_.begin(); vit != value_to_buffer_.end();) {
+      if (vit->second && vit->second->host_ptr() == host_ptr) {
+        vit = value_to_buffer_.erase(vit);
+      } else {
+        ++vit;
+      }
+    }
   }
 
   if (stream_->allocator().registerExternalBuffer(
@@ -353,6 +422,7 @@ runtime::Error MetalEngine::bind_one_(
         stream_, host_ptr, nbytes, MemoryKind::DeviceMirror);
     value_to_buffer_[value_id] = mb;
     owned_buffers_.emplace_back(mb);
+    our_registrations_.insert(host_ptr);
     central_t.unsafeGetTensorImpl()->set_data(host_ptr);
     ET_LOG(Debug,
            "[mem] metal: bind dst=%u host_ptr=%p bytes=%zu (Aliasing wrap, DeviceMirror)",
@@ -411,19 +481,19 @@ runtime::Error MetalEngine::set_io_bindings(
     runtime::Span<const OutputBinding> graph_outputs) {
   io_input_bindings_.clear();
   for (size_t i = 0; i < graph_inputs.size(); ++i) {
-    auto it = host_to_mirror_id_.find(graph_inputs[i].value_id);
-    if (it != host_to_mirror_id_.end()) {
-      io_input_bindings_.push_back(
-          {static_cast<uint32_t>(i), it->second});
-    }
+    uint32_t vid = graph_inputs[i].value_id;
+    auto it = host_to_mirror_id_.find(vid);
+    uint32_t internal_vid = (it != host_to_mirror_id_.end()) ? it->second : vid;
+    // Direct-handled IO (no pre-allocated mirror) binds via vid itself;
+    // bind_one_ lazy-allocates an aliasing MetalBuffer on first call.
+    io_input_bindings_.push_back({static_cast<uint32_t>(i), internal_vid});
   }
   io_output_bindings_.clear();
   for (size_t i = 0; i < graph_outputs.size(); ++i) {
-    auto it = host_to_mirror_id_.find(graph_outputs[i].value_id);
-    if (it != host_to_mirror_id_.end()) {
-      io_output_bindings_.push_back(
-          {static_cast<uint32_t>(i), it->second});
-    }
+    uint32_t vid = graph_outputs[i].value_id;
+    auto it = host_to_mirror_id_.find(vid);
+    uint32_t internal_vid = (it != host_to_mirror_id_.end()) ? it->second : vid;
+    io_output_bindings_.push_back({static_cast<uint32_t>(i), internal_vid});
   }
   return runtime::Error::Ok;
 }

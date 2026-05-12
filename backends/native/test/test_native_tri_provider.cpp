@@ -90,19 +90,28 @@ int main() {
   // Match deterministic inputs from export_tri_model.py.
   std::vector<float> x_data = {0.0f, 1.0f, 2.0f, 3.0f};
   std::vector<float> w_data = {
-      0.1f, 0.2f, 0.3f,
-      0.4f, 0.5f, 0.6f,
-      0.7f, 0.8f, 0.9f,
-      1.0f, 1.1f, 1.2f,
+      0.1f,
+      0.2f,
+      0.3f,
+      0.4f,
+      0.5f,
+      0.6f,
+      0.7f,
+      0.8f,
+      0.9f,
+      1.0f,
+      1.1f,
+      1.2f,
   };
   auto x = from_blob(x_data.data(), {1, 4});
   auto w = from_blob(w_data.data(), {4, 3});
 
   auto result = module.forward({x, w});
   if (!result.ok()) {
-    fprintf(stderr,
-            "ERROR: forward() failed: %d\n",
-            static_cast<int>(result.error()));
+    fprintf(
+        stderr,
+        "ERROR: forward() failed: %d\n",
+        static_cast<int>(result.error()));
     return 2;
   }
   printf("  forward() OK\n");
@@ -116,25 +125,33 @@ int main() {
   const float* out_ptr = out_tensor.const_data_ptr<float>();
   size_t numel = static_cast<size_t>(out_tensor.numel());
   if (numel != ref_count) {
-    fprintf(stderr,
-            "ERROR: output numel=%zu does not match reference numel=%zu\n",
-            numel, ref_count);
+    fprintf(
+        stderr,
+        "ERROR: output numel=%zu does not match reference numel=%zu\n",
+        numel,
+        ref_count);
     return 3;
   }
 
   printf("  Output (%zu elems):", numel);
-  for (size_t i = 0; i < numel; ++i) printf(" %.4f", out_ptr[i]);
+  for (size_t i = 0; i < numel; ++i)
+    printf(" %.4f", out_ptr[i]);
   printf("\n  Reference:        ");
-  for (size_t i = 0; i < numel; ++i) printf(" %.4f", ref_data[i]);
+  for (size_t i = 0; i < numel; ++i)
+    printf(" %.4f", ref_data[i]);
   printf("\n");
 
   const float kTol = 1e-4f;
   for (size_t i = 0; i < numel; ++i) {
     float diff = std::abs(out_ptr[i] - ref_data[i]);
     if (diff > kTol) {
-      fprintf(stderr,
-              "ERROR: output[%zu]=%.6f, reference %.6f (diff %.6f)\n",
-              i, out_ptr[i], ref_data[i], diff);
+      fprintf(
+          stderr,
+          "ERROR: output[%zu]=%.6f, reference %.6f (diff %.6f)\n",
+          i,
+          out_ptr[i],
+          ref_data[i],
+          diff);
       return 3;
     }
   }

@@ -25,10 +25,10 @@ import os
 import sys
 
 import torch
-from torch.export import export
+from executorch.backends.native.partitioner import NativePartitioner
 
 from executorch.exir import EdgeCompileConfig, to_edge_transform_and_lower
-from executorch.backends.native.partitioner import NativePartitioner
+from torch.export import export
 
 
 class StatefulAdd(torch.nn.Module):
@@ -42,9 +42,7 @@ class StatefulAdd(torch.nn.Module):
 
 
 def main() -> int:
-    out_path = os.environ.get(
-        "NATIVE_STATEFUL_PTE_PATH", "/tmp/native_stateful.pte"
-    )
+    out_path = os.environ.get("NATIVE_STATEFUL_PTE_PATH", "/tmp/native_stateful.pte")
 
     model = StatefulAdd().eval()
     example = torch.ones(2, 3)

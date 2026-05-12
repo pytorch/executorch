@@ -70,8 +70,11 @@ class CpuCompiledSegment final : public CompiledSegment {
  */
 class CpuEngine final : public DeviceEngine {
  public:
-  explicit CpuEngine(CpuRuntimeContext& ctx, InstanceId id)
-      : ctx_(ctx), id_(id) {}
+  explicit CpuEngine(
+      CpuRuntimeContext& ctx,
+      InstanceId id,
+      bool accept_io_directly = true)
+      : ctx_(ctx), id_(id), accept_io_directly_(accept_io_directly) {}
 
   ~CpuEngine() override;
 
@@ -120,11 +123,17 @@ class CpuEngine final : public DeviceEngine {
   // Returning true avoids a redundant DeviceMirror alloc and a no-op
   // IO TransferStep per execute. CpuEngine then receives bind_inputs /
   // bind_outputs for these vids and wraps caller's pointer.
+  // CpuEngine reads/writes through host-addressable memory. By default
+  // it claims graph IO directly (no mirror, no TransferStep). Pass
+  // accept_io_directly=false to simulate an accelerator that has its
+  // own memory — the router will then emit IO TransferSteps around
+  // segments compute-routed to this engine. (Used by fake_accel for
+  // routing tests; production CPU instance uses the default true.)
   bool handles_input_directly(uint32_t /*vid*/) const override {
-    return true;
+    return accept_io_directly_;
   }
   bool handles_output_directly(uint32_t /*vid*/) const override {
-    return true;
+    return accept_io_directly_;
   }
 
   // CpuEngine overrides these so cross-runtime transfer steps where
@@ -161,6 +170,10 @@ class CpuEngine final : public DeviceEngine {
  private:
   CpuRuntimeContext& ctx_;
   InstanceId id_;
+  // See ctor — when false, decline to claim graph IO via
+  // handles_input/output_directly; the router emits explicit
+  // TransferSteps around our segments.
+  bool accept_io_directly_ = true;
 
   // Single contiguous arena that backs every Owned (non-IO,
   // non-mirror) Buffer returned by allocate_buffers. Each Buffer's

@@ -30,8 +30,8 @@
  * /tmp/native_cond_inner.fbb), produced by export_cond_inner.py.
  */
 
-#include <executorch/runtime/backend/interface.h>
 #include <executorch/runtime/backend/backend_init_context.h>
+#include <executorch/runtime/backend/interface.h>
 #include <executorch/runtime/core/array_ref.h>
 #include <executorch/runtime/core/error.h>
 #include <executorch/runtime/core/freeable_buffer.h>
@@ -52,17 +52,16 @@ using ::executorch::runtime::CompileSpec;
 using ::executorch::runtime::DelegateHandle;
 using ::executorch::runtime::Error;
 using ::executorch::runtime::FreeableBuffer;
+using ::executorch::runtime::get_backend_class;
 using ::executorch::runtime::MemoryAllocator;
 using ::executorch::runtime::Span;
-using ::executorch::runtime::get_backend_class;
 
 int main() {
   ::executorch::runtime::runtime_init();
 
   const char* env_path = std::getenv("NATIVE_COND_INNER_PATH");
-  std::string path = env_path
-      ? std::string(env_path)
-      : std::string("/tmp/native_cond_inner.fbb");
+  std::string path = env_path ? std::string(env_path)
+                              : std::string("/tmp/native_cond_inner.fbb");
 
   printf("=== test_native_cond_inner ===\n");
   printf("  Inner program: %s\n", path.c_str());
@@ -101,7 +100,8 @@ int main() {
 
   // BackendInitContext needs a MemoryAllocator. Use a 1 MiB scratch.
   std::vector<uint8_t> scratch(1 * 1024 * 1024);
-  MemoryAllocator allocator(static_cast<uint32_t>(scratch.size()), scratch.data());
+  MemoryAllocator allocator(
+      static_cast<uint32_t>(scratch.size()), scratch.data());
   BackendInitContext ctx(&allocator);
 
   // Empty CompileSpec list (init takes ArrayRef, not Span).
@@ -110,9 +110,10 @@ int main() {
   // Init.
   auto handle_result = backend->init(ctx, &processed, compile_specs);
   if (!handle_result.ok()) {
-    fprintf(stderr,
-            "ERROR: NativeBackend::init() failed: %d\n",
-            static_cast<int>(handle_result.error()));
+    fprintf(
+        stderr,
+        "ERROR: NativeBackend::init() failed: %d\n",
+        static_cast<int>(handle_result.error()));
     std::free(data);
     return 3;
   }

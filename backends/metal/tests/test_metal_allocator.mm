@@ -11,7 +11,8 @@
 //   - alloc / free round-trips for Pool and Heap origins
 //   - registerExternalBuffer with Transient (default) — NO alloc-time pin
 //   - registerExternalBuffer with Permanent — alloc-time pin
-//   - unregisterExternalPermanent — unpin; idempotent; warn on Transient
+//   - unregisterExternalBuffer — unpin (Permanent) / drop wrapper (Transient);
+//                                fatal on caller bug (null/unknown/non-External)
 //   - Subregion API: registerSubregion / unregisterSubregion
 //   - Heap: enableHeap → pinHeap
 //   - ~MetalAllocator: walks registry; logs leak warning on missed Permanent
@@ -134,23 +135,46 @@ TEST_F(MetalAllocatorTest, RegisterExternalPermanentPinsAtRegister) {
   ASSERT_NE(entry, nullptr);
   EXPECT_EQ(entry->residency_class, BufferRegistry::ResidencyClass::Permanent);
   EXPECT_EQ(allocator_->residency()->refcountForTesting(entry->mtl), 1);
-  allocator_->unregisterExternalPermanent(backing.data());
+  allocator_->unregisterExternalBuffer(backing.data());
 }
 
-TEST_F(MetalAllocatorTest, UnregisterExternalPermanentUnpinsAndRemoves) {
+TEST_F(MetalAllocatorTest, UnregisterExternalBufferUnpinsAndRemovesPermanent) {
   if (!allocator_->residency()->isEnabled()) GTEST_SKIP();
   std::vector<float> backing(64, 0.0f);
   ASSERT_TRUE(allocator_->registerExternalBuffer(
       backing.data(), 64 * sizeof(float), false,
       MetalAllocator::ResidencyClass::Permanent));
   ASSERT_NE(allocator_->findEntry(backing.data()), nullptr);
-  allocator_->unregisterExternalPermanent(backing.data());
+  allocator_->unregisterExternalBuffer(backing.data());
   EXPECT_EQ(allocator_->findEntry(backing.data()), nullptr);
 }
 
-TEST_F(MetalAllocatorTest, UnregisterExternalPermanentIdempotentOnUnknownPtr) {
+TEST_F(MetalAllocatorTest, UnregisterExternalBufferRemovesTransient) {
+  std::vector<float> backing(64, 0.0f);
+  ASSERT_TRUE(allocator_->registerExternalBuffer(
+      backing.data(), 64 * sizeof(float)));
+  ASSERT_NE(allocator_->findEntry(backing.data()), nullptr);
+  allocator_->unregisterExternalBuffer(backing.data());
+  EXPECT_EQ(allocator_->findEntry(backing.data()), nullptr);
+}
+
+// Caller bug: unregistering a pointer that was never registered is a
+// hard fatal (ET_CHECK_MSG aborts). Verify via gtest death test.
+// (Empty regex matches any abort — ET_CHECK_MSG's message goes through
+// the executorch log facility, not raw stderr, so we can't pattern-match
+// the specific text portably across log backends.)
+TEST_F(MetalAllocatorTest, UnregisterExternalBufferAbortsOnUnknownPtr) {
   void* fake = reinterpret_cast<void*>(0xDEADBEEFul);
-  allocator_->unregisterExternalPermanent(fake);  // no-op, no crash
+  EXPECT_DEATH(allocator_->unregisterExternalBuffer(fake), "");
+}
+
+// Caller bug: unregisterExternalBuffer on a Pool/Heap allocation (which
+// should use free() instead) is a hard fatal.
+TEST_F(MetalAllocatorTest, UnregisterExternalBufferAbortsOnPoolEntry) {
+  void* p = allocator_->alloc(1024);
+  ASSERT_NE(p, nullptr);
+  EXPECT_DEATH(allocator_->unregisterExternalBuffer(p), "");
+  allocator_->free(p);
 }
 
 // --- Subregion API ------------------------------------------------------

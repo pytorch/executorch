@@ -14,6 +14,7 @@
 
 #include <memory>
 #include <unordered_map>
+#include <unordered_set>
 #include <utility>
 #include <vector>
 
@@ -122,10 +123,35 @@ class MetalEngine final : public DeviceEngine {
 
   // Build internal IO bindings: walk graph IO; for each (idx, vid)
   // that has a DeviceMirror this engine claimed (host_to_mirror_id_),
-  // record (idx, mirror_id).
+  // record (idx, mirror_id). Direct-handled IO (no mirror) records
+  // (idx, vid) so bind_one_ can lazily wrap the caller's pointer.
   ::executorch::runtime::Error set_io_bindings(
       ::executorch::runtime::Span<const InputBinding> graph_inputs,
       ::executorch::runtime::Span<const OutputBinding> graph_outputs) override;
+
+  // Direct-handle graph INPUTS: on Apple-Silicon UMA we wrap the
+  // caller's host pointer in a fresh aliasing MetalBuffer per execute.
+  // Skips the router-side DeviceMirror allocation + per-execute
+  // input TransferStep.
+  //
+  // Inputs only — NOT outputs. Reason: at bind_outputs time we only
+  // see the caller's current output Tensor sizes, but the kernel
+  // determines the actual output bytes during compute. With dynamic
+  // shapes (B=1 → B=5), bind sees 48 bytes from the prior call's
+  // resize_tensor while the kernel needs 80 — bufferForPtr asserts.
+  // For outputs, the mirror+TransferStep path remains: router
+  // pre-allocates at tensor_nbytes_max so the kernel always fits.
+  //
+  // Dynamic shapes: bind_one_ tracks all our registerExternalBuffer
+  // calls in our_registrations_ and uses the new
+  // MetalAllocator::unregisterExternalBuffer to cleanly drop the prior
+  // entry before re-registering at a new size or ptr.
+  bool handles_input_directly(uint32_t /*vid*/) const override {
+    return true;
+  }
+  bool handles_output_directly(uint32_t /*vid*/) const override {
+    return false;
+  }
 
   // Cross-runtime moves: only the device side overrides these.
   ::executorch::runtime::Error upload_from_host(
@@ -202,6 +228,17 @@ class MetalEngine final : public DeviceEngine {
     uint32_t graph_idx;
     uint32_t internal_vid;
   };
+  // Set of host pointers we currently hold registerExternalBuffer
+  // entries for. Includes both per-execute IO direct-handling binds
+  // (via bind_one_) and engine-lifetime constant uploads (via
+  // upload_constants — those use ResidencyClass::Permanent). bind_one_
+  // mutates this set during normal operation (drop+re-register on
+  // size grow / ptr change / cross-vid collision); upload_constants
+  // is insert-only. ~MetalEngine walks the set and calls
+  // unregisterExternalBuffer(ptr) for each — this is what avoids
+  // MetalAllocator's "Permanent External entries the caller forgot
+  // to unregister" leak warning at process shutdown.
+  std::unordered_set<void*> our_registrations_;
   std::vector<IoBinding> io_input_bindings_;
   std::vector<IoBinding> io_output_bindings_;
 };

@@ -38,10 +38,22 @@ class CpuRuntime final : public Runtime {
   // Test/dev constructor: override the registered name and restrict ops.
   // If supported_ops is empty, behaves like the default ("accept all
   // registered ops"). If non-empty, only ops in the set are accepted.
+  //
+  // accept_io_directly: when false, this CpuRuntime won't claim graph
+  // IO via handles_input_directly / handles_output_directly. The router
+  // will then emit explicit IO TransferSteps around its segments —
+  // useful for routing tests where you want to demonstrate the
+  // cross-engine IO path (e.g., "fake_accel" simulating a real
+  // accelerator that has its own memory). The actual CPU engine still
+  // reads from host-addressable memory either way; the flag only
+  // affects routing decisions.
   CpuRuntime(
       std::string_view name,
-      std::unordered_set<std::string> supported_ops)
-      : name_(name), supported_ops_(std::move(supported_ops)) {}
+      std::unordered_set<std::string> supported_ops,
+      bool accept_io_directly = true)
+      : name_(name),
+        supported_ops_(std::move(supported_ops)),
+        accept_io_directly_(accept_io_directly) {}
 
   ~CpuRuntime() override = default;
 
@@ -68,6 +80,9 @@ class CpuRuntime final : public Runtime {
   // Empty = accept any op the portable kernel registry can dispatch.
   // Non-empty = only the listed names.
   std::unordered_set<std::string> supported_ops_;
+  // See ctor doc — when false, decline to claim graph IO so the router
+  // emits explicit IO TransferSteps around our segments.
+  bool accept_io_directly_ = true;
 };
 
 } // namespace native
