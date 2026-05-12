@@ -231,11 +231,11 @@ class NeutronBackend(BackendDetails):
             )
             tflite_model, io_formats = EdgeProgramToIRConverter().convert_program(
                 edge_program,
-                neutron_target_spec=NeutronTargetSpec(target),
-                conversion_config=conversion_config,
-                custom_delegation_options=CustomDelegationOptions(
-                    use_new_flow_neutron_c=use_new_flow_neutron_c
+                neutron_target_spec=NeutronTargetSpec(
+                    target, use_new_flow_neutron_c=use_new_flow_neutron_c
                 ),
+                conversion_config=conversion_config,
+                custom_delegation_options=CustomDelegationOptions(),
             )
 
             neutron_model = NeutronConverterManager(dump_kernel_selection_code).convert(
