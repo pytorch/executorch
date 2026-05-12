@@ -1,5 +1,5 @@
 (user-pathways)=
-# Find Your Path in ExecuTorch
+# Find Your Path
 
 **ExecuTorch** serves a wide range of users — from ML engineers taking their first steps in on-device inference, to embedded systems developers targeting bare-metal microcontrollers, to researchers pushing the boundaries of LLM deployment. This page helps you navigate directly to the content most relevant to your experience level, goals, and target platform.
 
