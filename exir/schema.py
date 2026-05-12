@@ -269,6 +269,18 @@ class Operator:
 
 
 @dataclass
+class NonConstBufferDevice:
+    """Maps a non-constant buffer to the device where it should be allocated."""
+
+    # Index into the non_const_buffer_sizes list.
+    buffer_idx: int = 0
+    # The device type for this buffer (CPU, CUDA, etc.).
+    device_type: DeviceType = DeviceType.CPU
+    # The device index for multi-device scenarios (e.g., cuda:0, cuda:1).
+    device_index: int = 0
+
+
+@dataclass
 class ExecutionPlan:
     name: str
     container_meta_type: ContainerMetadata
@@ -283,6 +295,9 @@ class ExecutionPlan:
     # Runtime should use the len(constant_buffer) as the ground truch of
     # constant memory buffer size, and ignore non_const_buffer_sizes[0].
     non_const_buffer_sizes: List[int]
+    # Per-buffer device mapping. Each entry maps a non-constant buffer to the
+    # device where it should be allocated. For CPU-only programs, this is empty.
+    non_const_buffer_device: Optional[List[NonConstBufferDevice]] = None
 
 
 @dataclass
