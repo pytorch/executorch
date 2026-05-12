@@ -78,6 +78,46 @@ inline bool tensor_is_default_or_channels_last_dim_order(at::Tensor t) {
   return ret_val;
 }
 
+namespace {
+
+// Same-rank semantic layout match (dim_order labels, else strides with
+// size-1 dims skipped). Used when the legacy format-family check fails.
+bool two_tensors_semantic_same_layout(
+    const executorch::aten::Tensor& a,
+    const executorch::aten::Tensor& b) {
+  if (a.dim() != b.dim()) {
+    return false;
+  }
+  const int ndim = static_cast<int>(a.dim());
+  executorch::aten::DimOrderType order_a[kTensorDimensionLimit];
+  executorch::aten::DimOrderType order_b[kTensorDimensionLimit];
+  if (get_dim_order(a, order_a, a.dim()) != Error::Ok ||
+      get_dim_order(b, order_b, b.dim()) != Error::Ok) {
+    return false;
+  }
+  bool labels_match = true;
+  for (int i = 0; i < ndim; ++i) {
+    if (order_a[i] != order_b[i]) {
+      labels_match = false;
+      break;
+    }
+  }
+  if (labels_match) {
+    return true;
+  }
+  for (int i = 0; i < ndim; ++i) {
+    if (a.size(i) == 1 && b.size(i) == 1) {
+      continue;
+    }
+    if (a.stride(i) != b.stride(i)) {
+      return false;
+    }
+  }
+  return true;
+}
+
+} // namespace
+
 bool tensors_have_same_dim_order(
     const executorch::aten::ArrayRef<executorch::aten::Tensor> tensor_list) {
   if (tensor_list.size() < 2) {
@@ -110,12 +150,50 @@ bool tensors_have_same_dim_order(
         is_channels_last_dim_order(other_dim_order, tensor_list[i].dim());
   }
 
-  ET_CHECK_OR_RETURN_FALSE(
-      all_contiguous || all_channels_last,
-      "%zd input tensors have different dim orders",
-      tensor_list.size());
+  if (all_contiguous || all_channels_last) {
+    return true;
+  }
 
-  return all_contiguous || all_channels_last;
+  const executorch::aten::Tensor& ref = tensor_list[0];
+  const bool ref_contiguous =
+      is_contiguous_dim_order(first_dim_order, ref.dim());
+  const bool ref_channels_last =
+      is_channels_last_dim_order(first_dim_order, ref.dim());
+
+  for (size_t i = 1; i < tensor_list.size(); ++i) {
+    const executorch::aten::Tensor& t = tensor_list[i];
+    if (t.dim() == ref.dim()) {
+      if (!two_tensors_semantic_same_layout(ref, t)) {
+        ET_LOG(
+            Error,
+            "%zd input tensors have different dim orders",
+            tensor_list.size());
+        return false;
+      }
+    } else {
+      if (get_dim_order(t, other_dim_order, t.dim()) != Error::Ok) {
+        ET_LOG(
+            Error,
+            "%zd input tensors have different dim orders",
+            tensor_list.size());
+        return false;
+      }
+      const bool t_contiguous =
+          is_contiguous_dim_order(other_dim_order, t.dim());
+      const bool t_channels_last =
+          is_channels_last_dim_order(other_dim_order, t.dim());
+      const bool ok = (ref_contiguous && t_contiguous) ||
+          (ref_channels_last && t_channels_last);
+      if (!ok) {
+        ET_LOG(
+            Error,
+            "%zd input tensors have different dim orders",
+            tensor_list.size());
+        return false;
+      }
+    }
+  }
+  return true;
 }
 
 namespace internal {
