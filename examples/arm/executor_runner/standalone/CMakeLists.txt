@@ -86,6 +86,50 @@ set(EXECUTORCH_SKIP_ARM_EXECUTOR_RUNNER
     CACHE BOOL "" FORCE
 )
 
+# examples/arm/executor_runner/CMakeLists.txt generates the runner-specific
+# portable-op registration based on the PTE or an explicit select-ops list.
+# Avoid feeding those cache entries into the top-level ExecuTorch configure,
+# otherwise executorch_core auto-right-sizes MAX_KERNEL_NUM from the runner's
+# placeholder/selective build inputs even though the runner also links
+# quantized/cortex-m registration libraries.
+set(_arm_runner_selective_cache_vars
+    EXECUTORCH_SELECT_OPS_LIST EXECUTORCH_SELECT_OPS_MODEL
+    EXECUTORCH_SELECT_OPS_YAML
+)
+foreach(_arm_runner_cache_var IN LISTS _arm_runner_selective_cache_vars)
+  if(DEFINED CACHE{${_arm_runner_cache_var}})
+    get_property(
+      _arm_runner_cache_type
+      CACHE ${_arm_runner_cache_var}
+      PROPERTY TYPE
+    )
+    if(NOT _arm_runner_cache_type OR _arm_runner_cache_type STREQUAL
+                                     "UNINITIALIZED"
+    )
+      set(_arm_runner_cache_type STRING)
+    endif()
+    set(_arm_runner_saved_type_${_arm_runner_cache_var}
+        "${_arm_runner_cache_type}"
+    )
+    set(_arm_runner_saved_value_${_arm_runner_cache_var}
+        "${${_arm_runner_cache_var}}"
+    )
+    set(_arm_runner_saved_defined_${_arm_runner_cache_var} TRUE)
+    set(${_arm_runner_cache_var}
+        ""
+        CACHE ${_arm_runner_cache_type} "" FORCE
+    )
+  endif()
+endforeach()
+
+if(NOT DEFINED CACHE{MAX_KERNEL_NUM} AND NOT DEFINED MAX_KERNEL_NUM)
+  set(MAX_KERNEL_NUM
+      2000
+      CACHE STRING
+            "Maximum number of kernels registered by the standalone Arm runner"
+  )
+endif()
+
 # Pull ExecuTorch in-tree so all required targets (delegates, kernels, runner
 # util, etc.) are built from this checkout.
 add_subdirectory(
@@ -99,6 +143,15 @@ if(ARM_EXECUTOR_RUNNER_SKIP_INSTALL_RULES)
     unset(CMAKE_SKIP_INSTALL_RULES)
   endif()
 endif()
+
+foreach(_arm_runner_cache_var IN LISTS _arm_runner_selective_cache_vars)
+  if(_arm_runner_saved_defined_${_arm_runner_cache_var})
+    set(${_arm_runner_cache_var}
+        "${_arm_runner_saved_value_${_arm_runner_cache_var}}"
+        CACHE ${_arm_runner_saved_type_${_arm_runner_cache_var}} "" FORCE
+    )
+  endif()
+endforeach()
 
 add_subdirectory(
   ${EXECUTORCH_ROOT}/examples/arm/executor_runner

@@ -550,10 +550,10 @@ Run cmake -S ${runner_source_dir} -B ${build_dir} -DEXECUTORCH_ROOT=${et_root_di
 EOF
         exit 1
     fi
-    ensure_runner_build_dir
     if [[ ${target} == *"vgf"* ]]; then
         require_cache_bool EXECUTORCH_BUILD_VGF ON
     else
+        ensure_runner_build_dir
         require_cache_bool EXECUTORCH_BUILD_ARM_BAREMETAL ON
         require_cache_bool EXECUTORCH_BAREMETAL_SKIP_INSTALL OFF
         require_cache_value ETHOSU_TARGET_NPU_CONFIG "${target}"
