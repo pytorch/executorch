@@ -39,6 +39,14 @@ Error LpaiContext::MakeConfig(std::vector<const QnnContext_Config_t*>& config) {
     config.push_back(&context_config_[i]);
   }
 
+#ifdef __hexagon__
+  QnnContext_Config_t adsp_context_config;
+  adsp_context_config.option = QNN_CONTEXT_CONFIG_PERSISTENT_BINARY;
+  adsp_context_config.isPersistentBinary = 1;
+  context_config_.push_back(adsp_context_config);
+  config.push_back(&context_config_.back());
+#endif
+
   config.push_back(nullptr);
   return Error::Ok;
 }

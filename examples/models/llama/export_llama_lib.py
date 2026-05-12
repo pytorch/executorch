@@ -1035,6 +1035,8 @@ def _to_edge_and_lower_llama_arm(
         partitioners.append(
             get_ethosu_partitioner(
                 llm_config.backend.ethosu.target,
+                llm_config.backend.ethosu.system_config,
+                llm_config.backend.ethosu.memory_mode,
             )
         )
         modelname = f"ethosu_{modelname}"

@@ -603,7 +603,9 @@ class TestFusionPasses(TestFusionPassesBase):
             op=exir_ops.edge.aten.full.default, args=([out_dim, in_dim], 1)
         )
         bias = builder.call_operator(
-            op=exir_ops.edge.aten.full.default, args=([out_dim], 1)
+            op=exir_ops.edge.aten.full.default,
+            args=([out_dim], 1),
+            kwargs={"dtype": torch.int32},
         )
         weight_zero_point = builder.call_operator(
             op=exir_ops.edge.aten.full.default, args=([in_dim], 0)

@@ -91,7 +91,7 @@ class AOTITorchCudaRandTest : public ::testing::Test {
 // aoti_torch_cuda_rand tests
 // ----------------------------------------------------------------------------
 
-// Basic float32 rand: produces a tensor in [0, 1).
+// Basic float32 rand: produces a tensor in [0, 1) to match torch.rand.
 TEST_F(AOTITorchCudaRandTest, RandFloat32Basic) {
   std::vector<int64_t> sizes = {4, 8};
   int64_t numel = 4 * 8;
@@ -144,7 +144,9 @@ TEST_F(AOTITorchCudaRandTest, RandDefaultDtypeIsFloat) {
   EXPECT_EQ(out->numel(), 16);
 }
 
-// BFloat16 rand: values must lie in [0, 1).
+// BFloat16 rand: values must lie in [0, 1) to match torch.rand. Note that
+// bfloat16 has only 8 mantissa bits so a float in [0, 1) close to 1.0 may
+// round-up to bfloat16 1.0; we accept that as PyTorch does.
 TEST_F(AOTITorchCudaRandTest, RandBFloat16Basic) {
   std::vector<int64_t> sizes = {32};
   int64_t numel = 32;
@@ -171,7 +173,7 @@ TEST_F(AOTITorchCudaRandTest, RandBFloat16Basic) {
   for (int64_t i = 0; i < numel; ++i) {
     float v = bfloat16_bits_to_float(host[i]);
     EXPECT_GE(v, 0.0f) << "bf16 value at " << i << " < 0";
-    EXPECT_LT(v, 1.0f) << "bf16 value at " << i << " >= 1";
+    EXPECT_LE(v, 1.0f) << "bf16 value at " << i << " > 1";
   }
 }
 
@@ -287,7 +289,8 @@ TEST_F(AOTITorchCudaRandTest, RandTwoCallsProduceDifferentValues) {
 // aoti_torch_cuda_randint_low_out tests
 // ----------------------------------------------------------------------------
 
-// Basic randint into a pre-allocated int64 tensor; values lie in [low, high).
+// Basic randint into a pre-allocated int64 tensor; values lie in [low, high)
+// to match torch.randint semantics.
 TEST_F(AOTITorchCudaRandTest, RandintBasicRange) {
   std::vector<int64_t> sizes = {32};
   int64_t numel = 32;

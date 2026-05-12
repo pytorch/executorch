@@ -263,6 +263,22 @@ class Atan(torch.nn.Module):
         return torch.atan(x)
 
 
+class Atan2(torch.nn.Module):
+    def __init__(self):
+        super().__init__()
+
+    def forward(self, x, y):
+        return torch.atan2(x, y)
+
+
+class Atan2MultiNode(torch.nn.Module):
+    def __init__(self):
+        super().__init__()
+
+    def forward(self, x1, y1, x2, y2):
+        return torch.atan2(x1, y1), torch.atan2(x2, y2)
+
+
 class AvgPool1D(torch.nn.Module):
     def __init__(self):
         super().__init__()

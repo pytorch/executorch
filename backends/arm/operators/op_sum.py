@@ -46,7 +46,7 @@ class SumVisitor(NodeVisitor):
         dim = int(inputs[1].number % len(input_shape))
 
         attr = ts.TosaSerializerAttribute()
-        attr.ReduceSumAttribute(tensor.dim_order.index(dim))
+        attr.ReduceSumAttribute(dim)
 
         self._serialize_operator(
             node,

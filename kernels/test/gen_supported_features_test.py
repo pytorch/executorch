@@ -8,7 +8,7 @@
 import unittest
 
 import yaml
-from executorch.kernels.test.gen_supported_features import (  # type: ignore[import-not-found]
+from executorch.kernels.test.gen_supported_features import (  # type: ignore[import]
     generate_definition,
     generate_header,
 )

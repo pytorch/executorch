@@ -20,6 +20,7 @@ from executorch.backends.qualcomm._passes import (
     ConvertSquareToPow,
     DecomposeAcos,
     DecomposeAny,
+    DecomposeAtan2,
     DecomposeBinaryAlpha,
     DecomposeCDist,
     DecomposeColIm,
@@ -104,6 +105,7 @@ def get_capture_program_passes():
         (ConvertBmmToMatmul, False),
         (DecomposeAcos, True),
         (DecomposeAny, True),
+        (DecomposeAtan2, True),
         (DecomposeColIm, True),
         (DecomposeLogVariants, True),
         (DecomposeMaxPool3d, True),
@@ -226,6 +228,7 @@ class QnnPassManager(PassManager):
         self.add_pass(RecomposeRmsNorm(quantization_capture=True))
         self.add_pass(ReplaceArangeArgs())
         self.add_pass(DecomposeAcos())
+        self.add_pass(DecomposeAtan2())
         self.add_pass(DecomposeBinaryAlpha())
         self.add_pass(DecomposeCDist())
         self.add_pass(DecomposeMaxPool3d(quantization_capture=True))

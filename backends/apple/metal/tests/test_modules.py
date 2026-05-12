@@ -27,6 +27,7 @@ import torch
 from executorch.backends.apple.metal.metal_backend import MetalBackend
 from executorch.backends.apple.metal.metal_partitioner import MetalPartitioner
 from executorch.exir import to_edge_transform_and_lower
+from executorch.exir.backend.compile_spec_schema import CompileSpec
 from torch import nn
 from torch.export import export
 from torch.nn.attention import SDPBackend
@@ -959,21 +960,25 @@ def quantize_model(model: nn.Module, qlinear: str, qlinear_group_size: int = 32)
 
 
 def export_model_to_metal(
-    model: nn.Module, example_inputs: Tuple[torch.Tensor, ...]
+    model: nn.Module,
+    example_inputs: Tuple[torch.Tensor, ...],
+    codesign_identity: Optional[str] = None,
 ) -> Any:
     """Export model through the Metal backend pipeline."""
     method_name = "forward"
+
+    compile_specs = [MetalBackend.generate_method_name_compile_spec(method_name)]
+    if codesign_identity:
+        compile_specs.append(
+            CompileSpec("codesign_identity", codesign_identity.encode("utf-8"))
+        )
 
     with torch.nn.attention.sdpa_kernel([SDPBackend.MATH]), torch.no_grad():
         aten_dialect = export(model, example_inputs, strict=False)
 
         edge_program = to_edge_transform_and_lower(
             aten_dialect,
-            partitioner=[
-                MetalPartitioner(
-                    [MetalBackend.generate_method_name_compile_spec(method_name)]
-                )
-            ],
+            partitioner=[MetalPartitioner(compile_specs)],
         )
 
     executorch_program = edge_program.to_executorch()
@@ -1325,6 +1330,23 @@ class TestMetalBackendModules(unittest.TestCase):
             # Locally, use a temporary directory that gets cleaned up
             with tempfile.TemporaryDirectory() as tmpdir:
                 run_test_in_directory(Path(tmpdir))
+
+    @unittest.skipIf(SKIP_EXPORT_TESTS, SKIP_REASON)
+    @unittest.skipIf(not IS_MACOS, "codesign requires macOS")
+    def test_codesign_export(self):
+        """Test that export with codesign_identity='-' signs the .so and succeeds."""
+        model, example_inputs = get_model_and_inputs("add", dtype=torch.float32)
+        # codesign -f -s - runs during export; check=True means CalledProcessError
+        # is raised (and the test fails) if signing fails.
+        program = export_model_to_metal(model, example_inputs, codesign_identity="-")
+        self.assertGreater(len(program.buffer), 0)
+
+    @unittest.skipIf(SKIP_EXPORT_TESTS, SKIP_REASON)
+    def test_export_without_codesign(self):
+        """Test that export without codesign_identity skips signing."""
+        model, example_inputs = get_model_and_inputs("add", dtype=torch.float32)
+        program = export_model_to_metal(model, example_inputs)
+        self.assertGreater(len(program.buffer), 0)
 
 
 # =============================================================================

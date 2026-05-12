@@ -19,6 +19,7 @@ _setup_msg="please refer to ${et_root_dir}/examples/arm/setup.sh to properly ins
 
 elf_file=""
 data_file=""
+bundle_file=""
 target="ethos-u55-128"
 timeout="600"
 etrecord_file=""
@@ -29,6 +30,7 @@ help() {
     echo "Options:"
     echo "  --elf=<ELF_FILE>         elf file to run"
     echo "  --data=<FILE>@<ADDRESS>  Place a file in memory at this address, useful to emulate a PTE flashed into memory instead as part of the code."
+    echo "  --bundle=<BPTE_FILE>     Bundled program (.bpte) to load via semihosting. Required for cortex-m targets; the FVP launches a semihosting executor_runner that reads the bundle from the host filesystem and checks the embedded reference outputs."
     echo "  --target=<TARGET>        Target to build and run for Default: ${target}"
     echo "  --timeout=<TIME_IN_SEC>  Maximum target runtime, used to detect hanging, might need to be higer on large models Default: ${timeout}"
     echo "  --etrecord=<FILE>        If ETDump is used you can supply a ETRecord file matching the PTE"
@@ -41,6 +43,7 @@ for arg in "$@"; do
       -h|--help) help ;;
       --elf=*) elf_file="${arg#*=}";;
       --data=*) data_file="--data ${arg#*=}";;
+      --bundle=*) bundle_file="${arg#*=}";;
       --target=*) target="${arg#*=}";;
       --timeout=*) timeout="${arg#*=}";;
       --etrecord=*) etrecord_file="${arg#*=}";;
@@ -52,7 +55,9 @@ done
 
 elf_file=$(realpath ${elf_file})
 
-if [[ ${target} == *"ethos-u55"*  ]]; then
+# cortex-m55 is the only Cortex-M CPU on the Corstone-300 board today;
+# cortex-m85 lives on Corstone-320, so it falls through to the SSE-320 FVP.
+if [[ ${target} == *"ethos-u55"* || ${target} == cortex-m55* ]]; then
     fvp_model=FVP_Corstone_SSE-300_Ethos-U55
 else
     fvp_model=FVP_Corstone_SSE-320
@@ -71,7 +76,12 @@ hash ${fvp_model} \
 
 
 [[ ! -f $elf_file ]] && { echo "[${BASH_SOURCE[0]}]: Unable to find executor_runner elf: ${elf_file}"; exit 1; }
-num_macs=$(echo ${target} | cut -d - -f 3)
+if [[ ${target} == cortex-m* ]]; then
+    # Cortex-M CPU-only; the NPU is unused but the FVP still needs a value.
+    num_macs=128
+else
+    num_macs=$(echo ${target} | cut -d - -f 3)
+fi
 
 echo "--------------------------------------------------------------------------------"
 echo "Running ${elf_file} for ${target} run with FVP:${fvp_model} num_macs:${num_macs} timeout:${timeout}"
@@ -97,7 +107,44 @@ if [[ -n "${trace_file}" ]]; then
     extra_args_u85+=(-C "mps4_board.subsystem.ethosu.extra_args=--pmu-trace ${trace_file}")
 fi
 
-if [[ ${target} == *"ethos-u55"*  ]]; then
+if [[ ${target} == cortex-m* ]]; then
+    [[ -z "${bundle_file}" ]] \
+        && { echo "[${BASH_SOURCE[0]}] --bundle=<BPTE_FILE> is required for cortex-m targets"; exit 1; }
+    bundle_file=$(realpath "${bundle_file}")
+    bundle_dir=$(dirname "${bundle_file}")
+    bundle_name=$(basename "${bundle_file}")
+    # Bundled-IO runner needs -i to point at a real file even though
+    # inputs come from the bundle.
+    dd if=/dev/zero of="${bundle_dir}/fvp_dummy_input.bin" bs=4 count=1 2>/dev/null
+    ${nobuf} ${fvp_model}                                              \
+        -C ethosu.num_macs=${num_macs}                                 \
+        -C mps3_board.visualisation.disable-visualisation=1            \
+        -C mps3_board.telnetterminal0.start_telnet=0                   \
+        -C mps3_board.uart0.out_file='-'                               \
+        -C mps3_board.uart0.shutdown_on_eot=1                          \
+        -C cpu0.semihosting-enable=1                                   \
+        -C cpu0.semihosting-stack_base=0                               \
+        -C cpu0.semihosting-heap_limit=0                               \
+        -C "cpu0.semihosting-cwd=${bundle_dir}"                        \
+        -C "ethosu.extra_args=--fast"                                  \
+        -C "cpu0.semihosting-cmd_line=executor_runner -m ${bundle_name} -i fvp_dummy_input.bin -o out" \
+        -a "${elf_file}"                                               \
+        --timelimit ${timeout} 2>&1 | sed 's/\r$//' | tee ${log_file} || true
+    echo "[${BASH_SOURCE[0]}] Simulation complete, $?"
+    if grep -q "Test_result: PASS" "${log_file}"; then
+        echo "[${BASH_SOURCE[0]}] Bundled I/O check PASSED for ${bundle_name}"
+        rm "${log_file}"
+        exit 0
+    elif grep -q "Test_result: FAIL" "${log_file}"; then
+        echo "[${BASH_SOURCE[0]}] Bundled I/O check FAILED for ${bundle_name}"
+        rm "${log_file}"
+        exit 1
+    else
+        echo "[${BASH_SOURCE[0]}] No Test_result line found in FVP output for ${bundle_name}"
+        rm "${log_file}"
+        exit 1
+    fi
+elif [[ ${target} == *"ethos-u55"*  ]]; then
     ${nobuf} ${fvp_model}                                   \
         -C ethosu.num_macs=${num_macs}                      \
         -C mps3_board.visualisation.disable-visualisation=1 \

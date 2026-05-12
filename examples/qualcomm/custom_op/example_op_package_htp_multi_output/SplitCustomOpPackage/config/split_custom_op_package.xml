@@ -1,0 +1,76 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+Copyright (c) Qualcomm Innovation Center, Inc.
+All rights reserved
+
+This source code is licensed under the BSD-style license found in the
+LICENSE file in the root directory of this source tree.
+-->
+<OpDefCollection
+        PackageName="SplitCustomOpPackage"
+        Domain="aisw"
+        Version="1.0"
+>
+    <OpDefList>
+        <OpDef>
+            <Name>SplitCustomOp</Name>
+            <Description>
+                <Content>
+                    SplitCustomOp splits the input tensor in half along the last
+                    dimension and returns two output tensors of equal size:
+                    output 0 is input[..., :C//2], output 1 is input[..., C//2:].
+                </Content>
+            </Description>
+
+            <Input>
+                <Name>input</Name>
+                <Description>
+                    <Content>input activation tensor; last dimension must be even</Content>
+                </Description>
+                <Mandatory>true</Mandatory>
+                <Datatype>QNN_DATATYPE_FLOAT_32</Datatype>
+                <Datatype>QNN_DATATYPE_UFIXED_POINT_8</Datatype>
+                <Shape>
+                    <Rank>4D</Rank>
+                    <Layout>NHWC</Layout>
+                    <Text>a tensor of 4 dimensions; C (last dim) must be even</Text>
+                </Shape>
+            </Input>
+
+            <Output>
+                <Name>first_half</Name>
+                <Description>
+                    <Content>input[..., :C//2]</Content>
+                </Description>
+                <Mandatory>true</Mandatory>
+                <Datatype>QNN_DATATYPE_FLOAT_32</Datatype>
+                <Datatype>QNN_DATATYPE_UFIXED_POINT_8</Datatype>
+                <Shape>
+                    <Rank>4D</Rank>
+                    <Layout>NHWC</Layout>
+                    <Text>same as input with last dimension halved</Text>
+                </Shape>
+            </Output>
+
+            <Output>
+                <Name>second_half</Name>
+                <Description>
+                    <Content>input[..., C//2:]</Content>
+                </Description>
+                <Mandatory>true</Mandatory>
+                <Datatype>QNN_DATATYPE_FLOAT_32</Datatype>
+                <Datatype>QNN_DATATYPE_UFIXED_POINT_8</Datatype>
+                <Shape>
+                    <Rank>4D</Rank>
+                    <Layout>NHWC</Layout>
+                    <Text>same as input with last dimension halved</Text>
+                </Shape>
+            </Output>
+
+            <!--This Op is implemented on these Backends-->
+            <SupportedBackend>HTP</SupportedBackend>
+        </OpDef>
+
+    </OpDefList>
+
+</OpDefCollection>
