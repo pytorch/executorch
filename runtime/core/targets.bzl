@@ -91,7 +91,7 @@ def define_common_targets():
         exported_deps = [
             ":core",
             ":memory_allocator",
-            "//executorch/runtime/core/portable_type:portable_type",
+            "//executorch/runtime/core/exec_aten:lib",
         ],
         visibility = ["PUBLIC"],
     )
