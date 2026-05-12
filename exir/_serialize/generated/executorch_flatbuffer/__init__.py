@@ -31,7 +31,6 @@ from . import KernelCall
 from . import KernelTypes
 from . import MoveCall
 from . import NamedData
-from . import NonConstBufferDevice
 from . import Null
 from . import Operator
 from . import OptionalTensorList
@@ -76,7 +75,6 @@ __all__ = [
     "KernelTypes",
     "MoveCall",
     "NamedData",
-    "NonConstBufferDevice",
     "Null",
     "Operator",
     "OptionalTensorList",

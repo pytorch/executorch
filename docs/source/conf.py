@@ -18,6 +18,8 @@
 # add these directories to sys.path here. If the directory is relative to the
 # documentation root, use os.path.abspath to make it absolute, like shown here.
 #
+
+
 import glob
 import os
 import shutil
@@ -27,8 +29,10 @@ from typing import Any
 import pytorch_sphinx_theme2  # type: ignore[import-not-found]
 
 # To let us import ./custom_directives.py
+
 sys.path.insert(0, os.path.abspath("."))
 # -- Project information -----------------------------------------------------
+
 
 project = "ExecuTorch"
 copyright = "2024, ExecuTorch"
@@ -40,6 +44,7 @@ author = "ExecuTorch Contributors"
 # Add any Sphinx extension module names here, as strings. They can be
 # extensions coming with Sphinx (named 'sphinx.ext.*') or your custom
 # ones.
+
 
 import os
 import sys
@@ -78,6 +83,7 @@ html_favicon = "_static/img/executorch-chip-logo.svg"
 
 # Import executorch version
 # Adopted from PyTorch docs pattern
+
 from executorch import version as et_version  # type: ignore[attr-defined]
 
 executorch_version = str(et_version.__version__)
@@ -85,6 +91,7 @@ executorch_version = str(et_version.__version__)
 # Check if this is a release build from environment variable
 # The workflow sets RELEASE=true for tagged releases, RELEASE=false otherwise
 # We need to properly parse the string as a boolean (any non-empty string is truthy in Python)
+
 RELEASE = os.environ.get("RELEASE", "false").lower() == "true"
 
 # The version info for the project you're documenting, acts as replacement for
@@ -92,20 +99,23 @@ RELEASE = os.environ.get("RELEASE", "false").lower() == "true"
 # built documents.
 #
 # The short X.Y version.
+
 version = "main"
 # The full version, including alpha/beta/rc tags.
+
 release = "main"
 
 # Customized html_title here.
 # Default is " ".join(project, release, "documentation") if not set
+
 if RELEASE:
     # Turn 0.8.0a0+a90e907 into 0.8
     # Note: the release candidates should no longer have the aHASH suffix, but in any
     # case we wish to leave only major.minor, even for rc builds.
+
     version = ".".join(executorch_version.split("+")[0].split(".")[:2])
     html_title = " ".join((project, version, "documentation"))
     release = version
-
 switcher_version = "main" if not RELEASE else version
 
 print(f"executorch_version: {executorch_version}")
@@ -153,13 +163,14 @@ for i in range(len(sphinx_gallery_conf["examples_dirs"])):
     source_dir = sphinx_gallery_conf["examples_dirs"][i]
 
     # Create gallery dirs if it doesn't exist
+
     os.makedirs(gallery_dir, exist_ok=True)
 
     # Copy .md files from source dir to gallery dir
+
     for f in glob.glob(os.path.join(source_dir, "*.md")):
 
         shutil.copyfile(f, gallery_dir)
-
 source_suffix = [".rst", ".md"]
 
 
@@ -171,6 +182,7 @@ autodoc_typehints = "none"
 # List of patterns, relative to source directory, that match files and
 # directories to ignore when looking for source files.
 # This pattern also affects html_static_path and html_extra_path.
+
 exclude_patterns = ["_build", "Thumbs.db", ".DS_Store", "tutorial-template.md"]
 exclude_patterns += sphinx_gallery_conf["examples_dirs"]
 exclude_patterns += ["*/index.rst"]
@@ -178,6 +190,7 @@ exclude_patterns += ["*/index.rst"]
 # autosectionlabel throws warnings if section names are duplicated.
 # The following tells autosectionlabel to not throw a warning for
 # duplicated section names that are in different documents.
+
 autosectionlabel_prefix_document = True
 
 # -- Options for HTML output -------------------------------------------------
@@ -185,6 +198,8 @@ autosectionlabel_prefix_document = True
 # The theme to use for HTML and HTML Help pages.  See the documentation for
 # a list of builtin themes.
 #
+
+
 html_theme = "pytorch_sphinx_theme2"
 html_theme_path = [pytorch_sphinx_theme2.get_html_theme_path()]
 
@@ -192,6 +207,7 @@ html_theme_path = [pytorch_sphinx_theme2.get_html_theme_path()]
 # further.  For a list of options available for each theme, see the
 # documentation.
 #
+
 
 html_theme_options = {
     "logo": {
@@ -262,13 +278,18 @@ html_context = {
 # Add any paths that contain custom static files (such as style sheets) here,
 # relative to this directory. They are copied after the builtin static files,
 # so a file named "default.css" will overwrite the builtin "default.css".
+
 html_static_path = ["_static"]
 
+html_css_files = ["navbar.css"]
+
 # Add custom 404 page for GitHub Pages
+
 html_additional_pages = {"404": "404.html"}
 
 
 # Example configuration for intersphinx: refer to the Python standard library.
+
 intersphinx_mapping = {
     "python": ("https://docs.python.org/", None),
     "numpy": ("https://numpy.org/doc/stable/", None),
@@ -276,6 +297,7 @@ intersphinx_mapping = {
 }
 
 # Redirects for moved pages
+
 redirects = {
     "getting-started-setup": "getting-started.html",
     "export-overview": "using-executorch-export.html",
@@ -303,6 +325,7 @@ redirects = {
 }
 
 # Custom directives defintions to create cards on main landing page
+
 
 from custom_directives import (  # type: ignore[import-not-found]
     CustomCardEnd,
