@@ -67,6 +67,9 @@ WebGPUGraph::~WebGPUGraph() {
     }
   }
   for (auto& d : dispatches_) {
+    if (d.pipeline) {
+      wgpuComputePipelineRelease(d.pipeline);
+    }
     if (d.bind_group) {
       wgpuBindGroupRelease(d.bind_group);
     }
