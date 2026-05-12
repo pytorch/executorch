@@ -280,6 +280,67 @@ def test_fuse_constant_args_tosa_INT_cat_uses_top_level_arg_qparams() -> None:
     ] == ["aten_cat_default_fused_const"]
 
 
+def test_fuse_constant_args_fuses_chains_without_recompile() -> None:
+    builder = ProgramBuilder()
+    weight_data = torch.arange(6, dtype=torch.float32).reshape(2, 3)
+    x_data = torch.ones(2, 3)
+    weight = builder.placeholder(
+        "weight",
+        weight_data,
+        input_kind=InputKind.CONSTANT_TENSOR,
+    )
+    x = builder.placeholder("x", x_data)
+    view = builder.call_operator(
+        exir_ops.edge.aten.view_copy.default,
+        (weight, [3, 2]),
+    )
+    permute = builder.call_operator(
+        exir_ops.edge.aten.permute_copy.default,
+        (view, [1, 0]),
+    )
+    const_add = builder.call_operator(
+        exir_ops.edge.aten.add.Tensor,
+        (permute, 2.0),
+    )
+    runtime_add = builder.call_operator(
+        exir_ops.edge.aten.add.Tensor,
+        (const_add, x),
+    )
+    builder.output([runtime_add])
+
+    exported_program = builder.get_program()
+    graph_module = exported_program.graph_module
+
+    pass_result = FuseConstantArgsPass(exported_program)(graph_module)
+    assert pass_result is not None
+
+    call_targets = [
+        node.target
+        for node in pass_result.graph_module.graph.nodes
+        if node.op == "call_function"
+    ]
+    assert exir_ops.edge.aten.view_copy.default not in call_targets
+    assert exir_ops.edge.aten.permute_copy.default not in call_targets
+    assert call_targets.count(exir_ops.edge.aten.add.Tensor) == 1
+
+    graph_args = []
+    for node in pass_result.graph_module.graph.nodes:
+        if node.op != "placeholder":
+            continue
+        if node.name == "x":
+            graph_args.append(x_data)
+        elif node.name in exported_program.state_dict:
+            graph_args.append(exported_program.state_dict[node.name])
+        else:
+            graph_args.append(cast(torch.Tensor, exported_program.constants[node.name]))
+
+    actual = pass_result.graph_module(*graph_args)
+    if isinstance(actual, (list, tuple)):
+        actual = actual[0]
+    expected = weight_data.view(3, 2).permute(1, 0) + 2.0 + x_data
+    torch.testing.assert_close(actual, expected)
+
+
 def test_fuse_constant_args_identifies_tosa_dialect_targets() -> None:
     class FakeTosaTarget:
         def __str__(self) -> str:

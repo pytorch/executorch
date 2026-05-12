@@ -149,10 +149,14 @@ vkapi::DescriptorSet Context::get_descriptor_set(
 
   spec_constants.append(additional_constants);
 
+  const uint32_t resolved_required_subgroup_size =
+      vkapi::resolve_required_subgroup_size(shader_descriptor, adapter_p_);
+
   VkPipeline pipeline = pipeline_cache().retrieve(
       {pipeline_layout_cache().retrieve(shader_layout, push_constants_size),
        shader_cache().retrieve(shader_descriptor),
-       spec_constants});
+       spec_constants,
+       resolved_required_subgroup_size});
 
   cmd_.bind_pipeline(pipeline, pipeline_layout, local_workgroup_size);
 
@@ -315,8 +319,14 @@ VkPipeline Context::get_shader_pipeline(
 
   spec_constants.append(additional_constants);
 
+  const uint32_t resolved_required_subgroup_size =
+      vkapi::resolve_required_subgroup_size(shader, adapter_p_);
+
   VkPipeline pipeline = pipeline_cache().retrieve(
-      {pipeline_layout, shader_cache().retrieve(shader), spec_constants});
+      {pipeline_layout,
+       shader_cache().retrieve(shader),
+       spec_constants,
+       resolved_required_subgroup_size});
 
   return pipeline;
 }

@@ -825,10 +825,20 @@ void ComputeGraph::register_pipeline_to_create(
 
   spec_constants.append(spec_vars);
 
+  // Resolve any shader-declared required subgroup size into a concrete value
+  // so the pre-built pipeline matches the one created at dispatch time. The
+  // shared helper throws ShaderNotSupportedError when the adapter cannot honor
+  // the requirement; let it propagate so a stale unused pipeline doesn't sit
+  // in the cache while dispatch later throws on the same shader.
+  const uint32_t resolved_required_subgroup_size =
+      vkapi::resolve_required_subgroup_size(
+          shader_info, context()->adapter_ptr());
+
   const vkapi::ComputePipelineCache::Key desc = {
       context()->pipeline_layout_cache().retrieve(shader_layout, pc_offset),
       context()->shader_cache().retrieve(shader_info),
-      spec_constants};
+      spec_constants,
+      resolved_required_subgroup_size};
 
   if (context_->pipeline_cache().contains(desc)) {
     return;
