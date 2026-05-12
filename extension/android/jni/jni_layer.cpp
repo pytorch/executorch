@@ -363,6 +363,8 @@ class ExecuTorchJni : public facebook::jni::HybridClass<ExecuTorchJni> {
 
     std::vector<EValue> evalues;
     std::vector<TensorPtr> tensors;
+    std::vector<std::unique_ptr<std::string>> strings;
+    std::vector<std::unique_ptr<executorch::aten::ArrayRef<char>>> string_refs;
 
     static const auto typeCodeField =
         JEValue::javaClassStatic()->getField<jint>("mTypeCode");
@@ -373,6 +375,17 @@ class ExecuTorchJni : public facebook::jni::HybridClass<ExecuTorchJni> {
       if (typeCode == JEValue::kTypeCodeTensor) {
         tensors.emplace_back(JEValue::JEValueToTensorImpl(jevalue));
         evalues.emplace_back(tensors.back());
+      } else if (typeCode == JEValue::kTypeCodeString) {
+        static const auto toStrMethod =
+            JEValue::javaClassStatic()
+                ->getMethod<facebook::jni::local_ref<jstring>()>("toStr");
+        auto jstr = toStrMethod(jevalue);
+        auto str = std::make_unique<std::string>(jstr->toStdString());
+        auto ref = std::make_unique<executorch::aten::ArrayRef<char>>(
+            str->data(), str->size());
+        evalues.emplace_back(ref.get());
+        strings.push_back(std::move(str));
+        string_refs.push_back(std::move(ref));
       } else if (typeCode == JEValue::kTypeCodeInt) {
         static const auto toIntMethod =
             JEValue::javaClassStatic()->getMethod<jlong()>("toInt");
