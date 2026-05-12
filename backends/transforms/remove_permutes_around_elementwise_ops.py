@@ -50,6 +50,7 @@ class RemovePermutesAroundElementwiseOps(ExportPass):
         # Ops that require special handling.
         exir_ops.edge.aten.cat.default,
         exir_ops.edge.aten.mean.dim,
+        exir_ops.edge.aten.sum.dim_IntList,
         exir_ops.edge.aten.slice_copy.Tensor,
     }
 
@@ -161,7 +162,10 @@ class RemovePermutesAroundElementwiseOps(ExportPass):
     def is_node_permutable(self, node: torch.fx.Node) -> bool:
         if node.target not in self.permutable_ops:
             return False
-        if node.target == exir_ops.edge.aten.mean.dim:
+        if node.target in (
+            exir_ops.edge.aten.mean.dim,
+            exir_ops.edge.aten.sum.dim_IntList,
+        ):
             # keepdim should be True.
             if len(node.args) >= 3:
                 if not node.args[2]:
@@ -236,7 +240,10 @@ class RemovePermutesAroundElementwiseOps(ExportPass):
         for node in subgraph.nodes:
             if node.target == exir_ops.edge.aten.cat.default:
                 self.update_cat(node, subgraph.start_permute)
-            elif node.target == exir_ops.edge.aten.mean.dim:
+            elif node.target in (
+                exir_ops.edge.aten.mean.dim,
+                exir_ops.edge.aten.sum.dim_IntList,
+            ):
                 self.update_mean_dim(node, subgraph.start_permute)
             elif node.target == exir_ops.edge.aten.slice_copy.Tensor:
                 self.update_slice_copy(node, subgraph.start_permute)

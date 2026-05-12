@@ -127,7 +127,7 @@ ET_NODISCARD Error XNNExecutor::prepare_args(Span<EValue*> args) {
           xnn_status_to_string(status));
     }
   }
-  // // Propagate Input Shape and Memory Plan for increased allocation
+  // Propagate Input Shape and Memory Plan for increased allocation
   status = xnn_reshape_runtime(runtime_.get());
 
   ET_CHECK_OR_RETURN_ERROR(
@@ -135,6 +135,12 @@ ET_NODISCARD Error XNNExecutor::prepare_args(Span<EValue*> args) {
       Internal,
       "Internal Error: Propagating input shapes failed with code: %s",
       xnn_status_to_string(status));
+
+  // Resize output tensors.
+  Error err = resize_outputs(args);
+  if (err != Error::Ok) {
+    return err;
+  }
 
   return Error::Ok;
 }
@@ -188,14 +194,7 @@ ET_NODISCARD Error XNNExecutor::forward(BackendExecutionContext& context) {
 }
 
 /**
- * Prepares the outputs for ExecuTorch
- *
- * Resizes the output tensors based on the output shapes returned by
- * the xnnpack runtime.
- *
- * Note: For arg_max pooling, we recast the output index tensor. Since
- * XNNPACK gives the index tensor to us as int32, we need to convert it
- * back to int64 for ExecuTorch.
+ * Resizes output tensors to match XNNPACK's computed shapes.
  */
 ET_NODISCARD Error XNNExecutor::resize_outputs(Span<EValue*> args) const {
   size_t output_idx_start = input_ids_.size();
@@ -239,6 +238,22 @@ ET_NODISCARD Error XNNExecutor::resize_outputs(Span<EValue*> args) const {
       ET_LOG(Error, "Failed to resize output tensor for XNNExecutor");
       return err;
     }
+  }
+
+  return Error::Ok;
+}
+
+/**
+ * Converts output data types after XNNPACK execution.
+ *
+ * For arg_max pooling, XNNPACK outputs int32 index tensors that need
+ * to be converted to int64 for ExecuTorch.
+ */
+ET_NODISCARD Error XNNExecutor::convert_outputs(Span<EValue*> args) const {
+  size_t output_idx_start = input_ids_.size();
+  for (size_t i = output_idx_start; i < externals_.size(); ++i) {
+    uint32_t ext_id = externals_[i].id;
+    Tensor* out_tensor = &args[ext_id]->toTensor();
 
     // Output datatype is int64. However, XNNPACK doesn't support
     // int64. This means that the data was put into this tensor

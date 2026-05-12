@@ -7,6 +7,7 @@
 
 # Please refer to README.md in the same folder for more information.
 
+import math
 from typing import Any, Dict, Optional, Tuple, Union
 
 import torch
@@ -20,7 +21,11 @@ from executorch.examples.models.llama.attention import (
 )
 from executorch.examples.models.llama.feed_forward import FeedForward, LoRAFeedForward
 from executorch.examples.models.llama.model_args import ModelArgs
-from executorch.examples.models.llama.norm import RMSNorm
+from executorch.examples.models.llama.norm import (
+    RMSNorm,
+    RMSNormWithInputScale,
+    ScalelessRMSNorm,
+)
 from executorch.examples.models.llama.rope import Rope
 from torch import nn
 
@@ -49,6 +54,26 @@ def _is_kv_shared_layer(
         return False
     first_shared = n_layers - num_kv_shared_layers
     return layer_idx >= first_shared and first_shared > 0
+
+
+class NormPreservingResidualConnection(nn.Module):
+    def __init__(
+        self, dim: int, init_scale: float, temperature: float = 0.3, eps: float = 1e-3
+    ):
+        super().__init__()
+        self.eps = eps
+        self.temperature = temperature
+        p = max(0.0 + eps, min(1.0 - eps, init_scale))
+        init_param = math.log(p / (1.0 - p)) * temperature
+        self.gate = nn.Parameter(torch.full((dim,), init_param))
+
+    def forward(self, stream: torch.Tensor, branch: torch.Tensor) -> torch.Tensor:
+        dtype = stream.dtype
+        w = self.gate.view(*([1] * (stream.ndim - 1)), -1).float()
+        beta = torch.sigmoid(w / self.temperature)
+        alpha_sq = torch.sigmoid(-w / self.temperature) * (1.0 + beta)
+        alpha = torch.sqrt(torch.clamp(alpha_sq, min=self.eps))
+        return (alpha * stream.float() + beta * branch.float()).to(dtype)
 
 
 class ConditionalFeedForward(nn.Module):
@@ -99,7 +124,11 @@ class MOEFeedForward(nn.Module):
 
 class TransformerBlock(nn.Module):
     def __init__(
-        self, args: ModelArgs, attention: Attention, mlp_type: str = "default"
+        self,
+        args: ModelArgs,
+        attention: Attention,
+        mlp_type: str = "default",
+        layer_id: int = 0,
     ):
         """
         Transformer block with support for pre-norm and post-norm.
@@ -110,6 +139,7 @@ class TransformerBlock(nn.Module):
                 the attention type is registered in the ATTENTION_REGISTRY.
             mlp_type (str): MLP type for this layer. "default" for standard
                 FFN, "skip" for no FFN block.
+            layer_id (int): layer index, used for residual gate initialization.
         """
         super().__init__()
         self.use_kv_cache = args.use_kv_cache
@@ -118,6 +148,7 @@ class TransformerBlock(nn.Module):
         self.head_dim = args.head_dim
         self.attention = attention
         self.mlp_type = mlp_type.lower()
+        self.use_residual_gate = args.use_residual_gate
 
         assert (
             args.hidden_dim is not None
@@ -150,6 +181,20 @@ class TransformerBlock(nn.Module):
                 add_unit_offset=args.rms_norm_add_unit_offset,
             )
 
+        if args.use_residual_gate:
+            attn_init = 1.0 / (2 * layer_id + 1) if layer_id > 0 else 0.5
+            ffn_init = 1.0 / (2 * layer_id + 2)
+            self.add_attn = NormPreservingResidualConnection(
+                dim=args.dim, init_scale=attn_init
+            )
+            self.add_ffn = NormPreservingResidualConnection(
+                dim=args.dim, init_scale=ffn_init
+            )
+            self.post_attn_norm = ScalelessRMSNorm(args.dim, eps=args.norm_eps)
+
+        if args.use_ffn_learnable_scales and self.mlp_type != "skip":
+            self.post_ffn_norm = RMSNormWithInputScale(args.dim, eps=args.norm_eps)
+
     @classmethod
     def from_type(cls, layer_id, args, rope) -> "TransformerBlock":
         """
@@ -169,21 +214,38 @@ class TransformerBlock(nn.Module):
             mlp_type = args.mlp_type[layer_id]
         cls = ATTENTION_REGISTRY[args.attention_type]
         attention = cls(args, layer_id, rope, **args.attention_kwargs)
-        return TransformerBlock(args, attention, mlp_type=mlp_type)
+        return TransformerBlock(args, attention, mlp_type=mlp_type, layer_id=layer_id)
 
     def forward(self, x, freqs_cos, freqs_sin, attn_options: ForwardOptions):  # x: 1xN
         h, attn_options_update = self.attention(
             self.attention_norm(x), freqs_cos, freqs_sin, **attn_options
         )
         if not isinstance(self.attention, AttentionSkip):
-            h = x + h
+            if self.use_residual_gate:
+                if hasattr(self, "post_attn_norm"):
+                    h = self.post_attn_norm(h)
+                h = self.add_attn(stream=x, branch=h)
+            else:
+                h = x + h
 
         if self.mlp_type == "skip":
             out = h
         elif hasattr(self, "block_sparse_moe"):
-            out = h + self.block_sparse_moe(self.ffn_norm(h))
+            ffn_out = self.block_sparse_moe(self.ffn_norm(h))
+            if hasattr(self, "post_ffn_norm"):
+                ffn_out = self.post_ffn_norm(ffn_out)
+            if self.use_residual_gate:
+                out = self.add_ffn(stream=h, branch=ffn_out)
+            else:
+                out = h + ffn_out
         else:
-            out = h + self.feed_forward(self.ffn_norm(h))
+            ffn_out = self.feed_forward(self.ffn_norm(h))
+            if hasattr(self, "post_ffn_norm"):
+                ffn_out = self.post_ffn_norm(ffn_out)
+            if self.use_residual_gate:
+                out = self.add_ffn(stream=h, branch=ffn_out)
+            else:
+                out = h + ffn_out
         return out, attn_options_update
 
 
@@ -371,7 +433,9 @@ def construct_transformer(model_args: ModelArgs) -> Transformer:
             and model_args.layer_types[layer_id] == "skip_attention"
         ):
             attention = AttentionSkip()
-            transformer_block = TransformerBlock(model_args, attention)
+            transformer_block = TransformerBlock(
+                model_args, attention, layer_id=layer_id
+            )
             layers.append(transformer_block)
         elif (
             model_args.layer_types
@@ -386,13 +450,17 @@ def construct_transformer(model_args: ModelArgs) -> Transformer:
             attention = linear_cls(
                 model_args, layer_id, rope, **model_args.attention_kwargs
             )
-            transformer_block = TransformerBlock(model_args, attention)
+            transformer_block = TransformerBlock(
+                model_args, attention, layer_id=layer_id
+            )
             layers.append(transformer_block)
         else:
             attention = cls(
                 model_args, layer_id, rope, **model_args.attention_kwargs
             )  # pyre-ignore[45]
-            transformer_block = TransformerBlock(model_args, attention)
+            transformer_block = TransformerBlock(
+                model_args, attention, layer_id=layer_id
+            )
             layers.append(transformer_block)
 
     return Transformer(model_args, layers, rope)
