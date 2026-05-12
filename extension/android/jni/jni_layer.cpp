@@ -380,6 +380,13 @@ class ExecuTorchJni : public facebook::jni::HybridClass<ExecuTorchJni> {
             JEValue::javaClassStatic()
                 ->getMethod<facebook::jni::local_ref<jstring>()>("toStr");
         auto jstr = toStrMethod(jevalue);
+        if (!jstr) {
+          jni_helper::throwExecutorchException(
+              static_cast<uint32_t>(Error::InvalidArgument),
+              "String EValue input at index " + std::to_string(i) +
+                  " is null");
+          return {};
+        }
         auto str = std::make_unique<std::string>(jstr->toStdString());
         auto ref = std::make_unique<executorch::aten::ArrayRef<char>>(
             str->data(), str->size());
@@ -398,6 +405,12 @@ class ExecuTorchJni : public facebook::jni::HybridClass<ExecuTorchJni> {
         static const auto toBoolMethod =
             JEValue::javaClassStatic()->getMethod<jboolean()>("toBool");
         evalues.emplace_back(static_cast<bool>(toBoolMethod(jevalue)));
+      } else {
+        std::stringstream ss;
+        ss << "Unsupported input EValue type code: " << typeCode;
+        jni_helper::throwExecutorchException(
+            static_cast<uint32_t>(Error::InvalidArgument), ss.str());
+        return {};
       }
     }
 
