@@ -14,8 +14,6 @@
 #include <executorch/backends/webgpu/runtime/WebGPUDevice.h>
 #include <webgpu/wgpu.h>
 
-#include <executorch/runtime/platform/assert.h>
-
 #include <cstring>
 #include <stdexcept>
 
@@ -69,11 +67,23 @@ WebGPUGraph::~WebGPUGraph() {
     }
   }
   for (auto& d : dispatches_) {
-    if (d.pipeline) {
-      wgpuComputePipelineRelease(d.pipeline);
-    }
     if (d.bind_group) {
       wgpuBindGroupRelease(d.bind_group);
+    }
+  }
+  for (auto& [_, shader] : shader_cache_) {
+    if (shader) {
+      wgpuShaderModuleRelease(shader);
+    }
+  }
+  for (auto& [_, pipeline] : pipeline_cache_) {
+    if (pipeline) {
+      wgpuComputePipelineRelease(pipeline);
+    }
+  }
+  for (auto& [_, bgl] : bgl_cache_) {
+    if (bgl) {
+      wgpuBindGroupLayoutRelease(bgl);
     }
   }
 }
@@ -137,14 +147,13 @@ void WebGPUGraph::build(
         if (constant_id >= 0 || mem_obj_id < 0) {
           tensor_mem_obj_ids_[i] = -1;
           WGPUBufferDescriptor buf_desc = {};
-          ET_CHECK_MSG(tensor.nbytes > 0, "Tensor has zero bytes");
-          buf_desc.size = tensor.nbytes;
+          buf_desc.size = std::max(tensor.nbytes, size_t(4));
           buf_desc.usage = WGPUBufferUsage_Storage | WGPUBufferUsage_CopyDst |
               WGPUBufferUsage_CopySrc;
           buf_desc.mappedAtCreation = false;
           tensor.buffer = wgpuDeviceCreateBuffer(device_, &buf_desc);
 
-          if (constant_id >= 0 && constant_data) {
+          if (constant_id >= 0 && constant_data && tensor.nbytes > 0) {
             const auto* constants = graph->constants();
             if (constants &&
                 constant_id < static_cast<int>(constants->size())) {
@@ -193,8 +202,7 @@ void WebGPUGraph::build(
   shared_buffers_.resize(shared_buffer_sizes_.size(), nullptr);
   for (size_t id = 0; id < shared_buffer_sizes_.size(); id++) {
     WGPUBufferDescriptor buf_desc = {};
-    ET_CHECK_MSG(shared_buffer_sizes_[id] > 0, "Shared buffer has zero bytes");
-    buf_desc.size = shared_buffer_sizes_[id];
+    buf_desc.size = std::max(shared_buffer_sizes_[id], size_t(4));
     buf_desc.usage = WGPUBufferUsage_Storage | WGPUBufferUsage_CopyDst |
         WGPUBufferUsage_CopySrc;
     buf_desc.mappedAtCreation = false;
@@ -222,13 +230,18 @@ void WebGPUGraph::build(
 
       // Create staging buffer for output readback
       WGPUBufferDescriptor staging_desc = {};
-      ET_CHECK_MSG(tensors_[oid].nbytes > 0, "Output tensor has zero bytes");
-      staging_desc.size = tensors_[oid].nbytes;
+      staging_desc.size = std::max(tensors_[oid].nbytes, size_t(4));
       staging_desc.usage = WGPUBufferUsage_MapRead | WGPUBufferUsage_CopyDst;
       staging_desc.mappedAtCreation = false;
       output_staging_buffers_.push_back(
           wgpuDeviceCreateBuffer(device_, &staging_desc));
     }
+  }
+
+  for (size_t i = 0; i < output_ids_.size(); i++) {
+    int oid = output_ids_[i];
+    output_copies_.push_back(
+        {tensors_[oid].buffer, output_staging_buffers_[i], tensors_[oid].nbytes});
   }
 
   // Phase 3: Build operator dispatch chain
@@ -255,9 +268,70 @@ void WebGPUGraph::build(
   }
 }
 
+WGPUShaderModule WebGPUGraph::get_or_create_shader(
+    const std::string& key,
+    const char* wgsl_source) {
+  auto it = shader_cache_.find(key);
+  if (it != shader_cache_.end()) {
+    return it->second;
+  }
+
+  WGPUShaderSourceWGSL wgsl_desc = {};
+  wgsl_desc.chain.sType = WGPUSType_ShaderSourceWGSL;
+  wgsl_desc.code = {wgsl_source, WGPU_STRLEN};
+
+  WGPUShaderModuleDescriptor shader_desc = {};
+  shader_desc.nextInChain = &wgsl_desc.chain;
+  WGPUShaderModule shader = wgpuDeviceCreateShaderModule(device_, &shader_desc);
+
+  shader_cache_[key] = shader;
+  return shader;
+}
+
+WGPUComputePipeline WebGPUGraph::get_or_create_pipeline(
+    const std::string& key,
+    WGPUShaderModule shader,
+    WGPUPipelineLayout layout) {
+  auto it = pipeline_cache_.find(key);
+  if (it != pipeline_cache_.end()) {
+    return it->second;
+  }
+
+  WGPUComputePipelineDescriptor pipeline_desc = {};
+  pipeline_desc.layout = layout;
+  pipeline_desc.compute.module = shader;
+  pipeline_desc.compute.entryPoint = {"main", WGPU_STRLEN};
+  WGPUComputePipeline pipeline =
+      wgpuDeviceCreateComputePipeline(device_, &pipeline_desc);
+
+  pipeline_cache_[key] = pipeline;
+  return pipeline;
+}
+
+WGPUBindGroupLayout WebGPUGraph::get_or_create_bgl(
+    const std::string& key,
+    const WGPUBindGroupLayoutEntry* entries,
+    uint32_t count) {
+  auto it = bgl_cache_.find(key);
+  if (it != bgl_cache_.end()) {
+    return it->second;
+  }
+
+  WGPUBindGroupLayoutDescriptor bgl_desc = {};
+  bgl_desc.entryCount = count;
+  bgl_desc.entries = entries;
+  WGPUBindGroupLayout bgl = wgpuDeviceCreateBindGroupLayout(device_, &bgl_desc);
+
+  bgl_cache_[key] = bgl;
+  return bgl;
+}
+
 void WebGPUGraph::copy_inputs(
     const std::vector<std::pair<const void*, size_t>>& inputs) {
   for (size_t i = 0; i < inputs.size() && i < input_ids_.size(); i++) {
+    if (inputs[i].second == 0) {
+      continue;
+    }
     int tid = input_ids_[i];
     const auto& tensor = tensors_[tid];
     wgpuQueueWriteBuffer(
@@ -266,43 +340,89 @@ void WebGPUGraph::copy_inputs(
 }
 
 void WebGPUGraph::execute() {
-  WGPUCommandEncoderDescriptor enc_desc = {};
-  WGPUCommandEncoder encoder =
-      wgpuDeviceCreateCommandEncoder(device_, &enc_desc);
+  const size_t n = dispatches_.size();
+  const size_t chunk = execute_config_.chunk_size;
 
-  WGPUComputePassDescriptor pass_desc = {};
-  WGPUComputePassEncoder pass =
-      wgpuCommandEncoderBeginComputePass(encoder, &pass_desc);
+  if (chunk == 0 || n <= chunk) {
+    WGPUCommandEncoderDescriptor enc_desc = {};
+    WGPUCommandEncoder encoder =
+        wgpuDeviceCreateCommandEncoder(device_, &enc_desc);
 
-  for (const auto& dispatch : dispatches_) {
-    wgpuComputePassEncoderSetPipeline(pass, dispatch.pipeline);
-    wgpuComputePassEncoderSetBindGroup(
-        pass, 0, dispatch.bind_group, 0, nullptr);
-    wgpuComputePassEncoderDispatchWorkgroups(
-        pass, dispatch.workgroup_count_x, 1, 1);
+    WGPUComputePassDescriptor pass_desc = {};
+    WGPUComputePassEncoder pass =
+        wgpuCommandEncoderBeginComputePass(encoder, &pass_desc);
+
+    for (const auto& dispatch : dispatches_) {
+      wgpuComputePassEncoderSetPipeline(pass, dispatch.pipeline);
+      wgpuComputePassEncoderSetBindGroup(
+          pass, 0, dispatch.bind_group, 0, nullptr);
+      wgpuComputePassEncoderDispatchWorkgroups(
+          pass, dispatch.workgroup_count_x, 1, 1);
+    }
+
+    wgpuComputePassEncoderEnd(pass);
+    wgpuComputePassEncoderRelease(pass);
+
+    for (const auto& copy : output_copies_) {
+      wgpuCommandEncoderCopyBufferToBuffer(
+          encoder, copy.src_buffer, 0, copy.staging_buffer, 0, copy.nbytes);
+    }
+
+    WGPUCommandBufferDescriptor cmd_desc = {};
+    WGPUCommandBuffer cmd = wgpuCommandEncoderFinish(encoder, &cmd_desc);
+    wgpuQueueSubmit(queue_, 1, &cmd);
+
+    wgpuCommandBufferRelease(cmd);
+    wgpuCommandEncoderRelease(encoder);
+    return;
   }
 
-  wgpuComputePassEncoderEnd(pass);
-  wgpuComputePassEncoderRelease(pass);
+  const size_t first_chunk = execute_config_.initial_chunk_size > 0
+      ? execute_config_.initial_chunk_size
+      : chunk;
 
-  // Copy outputs to staging buffers
-  for (size_t i = 0; i < output_ids_.size(); i++) {
-    int oid = output_ids_[i];
-    wgpuCommandEncoderCopyBufferToBuffer(
-        encoder,
-        tensors_[oid].buffer,
-        0,
-        output_staging_buffers_[i],
-        0,
-        tensors_[oid].nbytes);
+  size_t start = 0;
+  size_t current_chunk = first_chunk;
+
+  while (start < n) {
+    size_t end = std::min(start + current_chunk, n);
+
+    WGPUCommandEncoderDescriptor enc_desc = {};
+    WGPUCommandEncoder encoder =
+        wgpuDeviceCreateCommandEncoder(device_, &enc_desc);
+
+    WGPUComputePassDescriptor pass_desc = {};
+    WGPUComputePassEncoder pass =
+        wgpuCommandEncoderBeginComputePass(encoder, &pass_desc);
+
+    for (size_t i = start; i < end; i++) {
+      wgpuComputePassEncoderSetPipeline(pass, dispatches_[i].pipeline);
+      wgpuComputePassEncoderSetBindGroup(
+          pass, 0, dispatches_[i].bind_group, 0, nullptr);
+      wgpuComputePassEncoderDispatchWorkgroups(
+          pass, dispatches_[i].workgroup_count_x, 1, 1);
+    }
+
+    wgpuComputePassEncoderEnd(pass);
+    wgpuComputePassEncoderRelease(pass);
+
+    if (end == n) {
+      for (const auto& copy : output_copies_) {
+        wgpuCommandEncoderCopyBufferToBuffer(
+            encoder, copy.src_buffer, 0, copy.staging_buffer, 0, copy.nbytes);
+      }
+    }
+
+    WGPUCommandBufferDescriptor cmd_desc = {};
+    WGPUCommandBuffer cmd = wgpuCommandEncoderFinish(encoder, &cmd_desc);
+    wgpuQueueSubmit(queue_, 1, &cmd);
+
+    wgpuCommandBufferRelease(cmd);
+    wgpuCommandEncoderRelease(encoder);
+
+    start = end;
+    current_chunk = chunk;
   }
-
-  WGPUCommandBufferDescriptor cmd_desc = {};
-  WGPUCommandBuffer cmd = wgpuCommandEncoderFinish(encoder, &cmd_desc);
-  wgpuQueueSubmit(queue_, 1, &cmd);
-
-  wgpuCommandBufferRelease(cmd);
-  wgpuCommandEncoderRelease(encoder);
 }
 
 namespace {
@@ -325,24 +445,36 @@ void buffer_map_callback(
 } // namespace
 
 void WebGPUGraph::copy_outputs(std::vector<std::pair<void*, size_t>>& outputs) {
-  for (size_t i = 0; i < outputs.size() && i < output_staging_buffers_.size();
-       i++) {
-    MapCallbackData cb_data;
+  const size_t count =
+      std::min(outputs.size(), output_staging_buffers_.size());
+
+  std::vector<MapCallbackData> cb_data(count);
+
+  for (size_t i = 0; i < count; i++) {
+    if (outputs[i].second == 0) {
+      cb_data[i].done = true;
+      cb_data[i].status = WGPUMapAsyncStatus_Success;
+      continue;
+    }
     WGPUBufferMapCallbackInfo cb_info = {};
     cb_info.mode = WGPUCallbackMode_AllowSpontaneous;
     cb_info.callback = buffer_map_callback;
-    cb_info.userdata1 = &cb_data;
+    cb_info.userdata1 = &cb_data[i];
     wgpuBufferMapAsync(
         output_staging_buffers_[i],
         WGPUMapMode_Read,
         0,
         outputs[i].second,
         cb_info);
+  }
 
-    // Poll until the map callback fires.
-    wgpuDevicePoll(device_, true, nullptr);
+  wgpuDevicePoll(device_, true, nullptr);
 
-    if (cb_data.status == WGPUMapAsyncStatus_Success) {
+  for (size_t i = 0; i < count; i++) {
+    if (outputs[i].second == 0) {
+      continue;
+    }
+    if (cb_data[i].status == WGPUMapAsyncStatus_Success) {
       const void* mapped = wgpuBufferGetConstMappedRange(
           output_staging_buffers_[i], 0, outputs[i].second);
       std::memcpy(outputs[i].first, mapped, outputs[i].second);
@@ -377,6 +509,8 @@ WebGPUMemoryStats WebGPUGraph::memory_stats() const {
   }
   stats.uniform_buffer_bytes = uniform_buffer_bytes_;
   stats.num_dispatches = static_cast<int>(dispatches_.size());
+  stats.num_cached_pipelines = static_cast<int>(pipeline_cache_.size());
+  stats.num_cached_shaders = static_cast<int>(shader_cache_.size());
   return stats;
 }
 
