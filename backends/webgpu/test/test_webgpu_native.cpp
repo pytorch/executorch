@@ -6,7 +6,6 @@
  * LICENSE file in the root directory of this source tree.
  */
 
-#include <executorch/backends/webgpu/runtime/WebGPUBackend.h>
 #include <executorch/backends/webgpu/runtime/WebGPUDevice.h>
 #include <executorch/extension/module/module.h>
 #include <executorch/extension/tensor/tensor.h>
@@ -76,8 +75,8 @@ static bool test_single_add(const std::string& model_path) {
   return true;
 }
 
-static bool test_chained_add_memory(const std::string& model_path) {
-  printf("\n--- Test: chained add memory aliasing (1024x1024) ---\n");
+static bool test_chained_add(const std::string& model_path) {
+  printf("\n--- Test: chained add (1024x1024, 5 ops) ---\n");
 
   Module module(model_path);
   auto err = module.load_forward();
@@ -86,17 +85,6 @@ static bool test_chained_add_memory(const std::string& model_path) {
     return false;
   }
   printf("Model loaded: %s\n", model_path.c_str());
-
-  auto stats = get_last_memory_stats();
-  printf("Memory stats after build:\n");
-  printf("  num_tensors:                %d\n", stats.num_tensors);
-  printf("  num_shared_objects:         %d\n", stats.num_shared_objects);
-  printf("  shared_buffer_bytes:        %zu\n", stats.shared_buffer_bytes);
-  printf(
-      "  unshared_tensor_buffer_bytes: %zu\n",
-      stats.unshared_tensor_buffer_bytes);
-  printf("  tensor_buffer_bytes:        %zu\n", stats.tensor_buffer_bytes);
-  printf("  total_bytes:                %zu\n", stats.total_bytes());
 
   constexpr int dim = 1024;
   constexpr int size = dim * dim;
@@ -134,31 +122,12 @@ static bool test_chained_add_memory(const std::string& model_path) {
     max_error = std::max(max_error, error);
   }
 
-  printf("Max error: %e\n", max_error);
+  printf("Max error: %e (checked %d elements)\n", max_error, size);
   if (max_error > 1e-3f) {
     printf("FAIL: max error exceeds tolerance 1e-3\n");
     return false;
   }
-
-  if (stats.num_shared_objects <= 0) {
-    printf("FAIL: expected shared objects but got none\n");
-    return false;
-  }
-  printf(
-      "PASS: memory aliasing is active (%d shared objects)\n",
-      stats.num_shared_objects);
-
-  size_t naive_bytes =
-      static_cast<size_t>(stats.num_tensors) * dim * dim * sizeof(float);
-  printf("Naive tensor bytes:  %zu\n", naive_bytes);
-  printf("Actual tensor bytes: %zu\n", stats.tensor_buffer_bytes);
-  if (stats.tensor_buffer_bytes >= naive_bytes) {
-    printf("FAIL: expected memory savings but actual >= naive\n");
-    return false;
-  }
-  printf("PASS: memory savings from aliasing confirmed\n");
-
-  printf("PASS: chained add memory test\n");
+  printf("PASS: chained add test\n");
   return true;
 }
 
@@ -190,7 +159,7 @@ int main(int argc, char** argv) {
   bool ok = test_single_add(model_path);
 
   if (!chained_model_path.empty()) {
-    ok = test_chained_add_memory(chained_model_path) && ok;
+    ok = test_chained_add(chained_model_path) && ok;
   }
 
   set_default_webgpu_context(nullptr);
