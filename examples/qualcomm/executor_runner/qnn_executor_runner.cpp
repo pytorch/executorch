@@ -29,6 +29,7 @@
 #include <executorch/runtime/platform/log.h>
 #include <executorch/runtime/platform/runtime.h>
 
+#include <c10/util/safe_numerics.h>
 #include <gflags/gflags.h>
 
 #include <chrono>
@@ -613,11 +614,19 @@ int main(int argc, char** argv) {
         auto output_tensor = outputs[output_index].toTensor();
         size_t nbytes = output_tensor.nbytes();
         if (!expected_output_shapes.empty()) {
-          nbytes = std::accumulate(
-              expected_output_shapes[output_index].begin(),
-              expected_output_shapes[output_index].end(),
-              executorch::runtime::elementSize(output_tensor.scalar_type()),
-              std::multiplies<int>());
+          size_t computed = static_cast<size_t>(
+              executorch::runtime::elementSize(output_tensor.scalar_type()));
+          for (int32_t dim : expected_output_shapes[output_index]) {
+            ET_CHECK_MSG(
+                dim >= 0,
+                "Negative dimension %d in expected output shape",
+                dim);
+            ET_CHECK_MSG(
+                !c10::mul_overflows(
+                    computed, static_cast<size_t>(dim), &computed),
+                "Overflow computing expected output nbytes");
+          }
+          nbytes = computed;
         }
         auto output_file_name = FLAGS_output_folder_path + "/output_" +
             std::to_string(inference_index) + "_" +

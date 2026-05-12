@@ -102,6 +102,7 @@ Runner<T>::Runner(
     std::unique_ptr<tokenizers::Tokenizer> tokenizer,
     std::unique_ptr<executorch::extension::Module> attention_sink_rope_module)
     : module_(std::move(module)),
+      attention_sink_rope_module_(std::move(attention_sink_rope_module)),
       ngram_(ngram),
       window_(window),
       gcap_(gcap),
@@ -111,8 +112,7 @@ Runner<T>::Runner(
       temperature_(temperature),
       eval_mode_(static_cast<EvalMode>(eval_mode)),
       shared_buffer_(shared_buffer),
-      tokenizer_(std::move(tokenizer)),
-      attention_sink_rope_module_(std::move(attention_sink_rope_module)) {
+      tokenizer_(std::move(tokenizer)) {
   stats_.reset();
 
   if (decoder_model_version == "llama2") {

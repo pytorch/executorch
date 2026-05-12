@@ -271,7 +271,7 @@ unsigned char* ethosu_fast_scratch = dedicated_sram;
 }
 #endif
 
-void et_pal_init(void) {
+[[maybe_unused]] void et_pal_init(void) {
   // Enable ARM PMU Clock
   ARM_PMU_Enable();
   DCB->DEMCR |= DCB_DEMCR_TRCENA_Msk; // Trace enable
@@ -287,7 +287,7 @@ void et_pal_init(void) {
  * be implemnted in some way.
  */
 
-ET_NORETURN void et_pal_abort(void) {
+[[maybe_unused]] ET_NORETURN void et_pal_abort(void) {
 #if !defined(SEMIHOSTING)
   __builtin_trap();
 #else
@@ -295,11 +295,11 @@ ET_NORETURN void et_pal_abort(void) {
 #endif
 }
 
-et_timestamp_t et_pal_current_ticks(void) {
+[[maybe_unused]] et_timestamp_t et_pal_current_ticks(void) {
   return ARM_PMU_Get_CCNTR();
 }
 
-et_tick_ratio_t et_pal_ticks_to_ns_multiplier(void) {
+[[maybe_unused]] et_tick_ratio_t et_pal_ticks_to_ns_multiplier(void) {
   // Since we don't know the CPU freq for your target and justs cycles in the
   // FVP for et_pal_current_ticks() we return a conversion ratio of 1
   return {1, 1};
@@ -308,7 +308,7 @@ et_tick_ratio_t et_pal_ticks_to_ns_multiplier(void) {
 /**
  * Emit a log message via platform output (serial port, console, etc).
  */
-void et_pal_emit_log_message(
+[[maybe_unused]] void et_pal_emit_log_message(
     ET_UNUSED et_timestamp_t timestamp,
     et_pal_log_level_t level,
     const char* filename,
@@ -332,11 +332,12 @@ void et_pal_emit_log_message(
  * Currenyly not used.
  */
 
-void* et_pal_allocate(ET_UNUSED size_t size) {
+[[maybe_unused]] void* et_pal_allocate(ET_UNUSED size_t size) {
   return nullptr;
 }
 
-void et_pal_free(ET_UNUSED void* ptr) {}
+// cppcheck-suppress constParameterPointer
+[[maybe_unused]] void et_pal_free(ET_UNUSED void* ptr) {}
 
 namespace {
 
@@ -389,7 +390,7 @@ class Box {
   }
 
  private:
-  alignas(T) uint8_t mem[sizeof(T)];
+  alignas(T) uint8_t mem[sizeof(T)] = {};
   bool has_value = false;
 
   T* ptr() {
@@ -402,7 +403,7 @@ class Box {
 };
 
 template <typename ValueType>
-void fill_tensor_with_default_value(Tensor& tensor) {
+[[maybe_unused]] void fill_tensor_with_default_value(Tensor& tensor) {
   ValueType fill_value{};
   if constexpr (std::is_same_v<ValueType, bool>) {
     fill_value = true;
@@ -420,7 +421,6 @@ Error prepare_input_tensors(
     const std::vector<std::pair<char*, size_t>>& input_buffers) {
   MethodMeta method_meta = method.method_meta();
   size_t num_inputs = method_meta.num_inputs();
-  size_t num_allocated = 0;
 
 #if defined(SEMIHOSTING)
   ET_CHECK_OR_RETURN_ERROR(
@@ -469,8 +469,8 @@ Error prepare_input_tensors(
       }
     }
 
-    // If input_buffers.size <= 0, we don't have any input, fill it with 1's.
-    if (input_buffers.size() <= 0) {
+    // If there are no input buffers, fill inputs with 1s.
+    if (input_buffers.empty()) {
       if (input_evalues[i].isTensor()) {
         Tensor& tensor = input_evalues[i].toTensor();
         switch (tensor.scalar_type()) {
@@ -489,7 +489,7 @@ Error prepare_input_tensors(
             break;
         }
       } else {
-        printf("Input[%d]: Not Tensor\n", i);
+        printf("Input[%zu]: Not Tensor\n", i);
       }
     }
   }
@@ -522,6 +522,7 @@ std::pair<char*, size_t> read_binary_file(
         Fatal,
         "Failed to allocate input file size:%lu",
         static_cast<unsigned long>(file_size));
+    fclose(fp);
     return std::make_pair(nullptr, 0);
   }
   auto read_size = fread(buffer, 1, file_size, fp);
@@ -562,7 +563,7 @@ struct RunnerContext {
 #if defined(ET_EVENT_TRACER_ENABLED)
   Box<ETDumpGen> etdump_gen;
 #if defined(ET_DUMP_INTERMEDIATE_OUTPUTS) || defined(ET_DUMP_OUTPUTS)
-  void* debug_buffer;
+  void* debug_buffer = nullptr;
 #endif
 #endif
 #if defined(SEMIHOSTING)
@@ -701,7 +702,7 @@ void runner_init(
   ctx.debug_buffer = ctx.method_allocator->allocate(ET_DEBUG_BUFFER_SIZE, 16);
   if (ctx.debug_buffer != nullptr) {
     Span<uint8_t> debug_buffer_span(
-        (uint8_t*)ctx.debug_buffer, ET_DEBUG_BUFFER_SIZE);
+        reinterpret_cast<uint8_t*>(ctx.debug_buffer), ET_DEBUG_BUFFER_SIZE);
 
     Result<bool> result =
         ctx.etdump_gen.value().set_debug_buffer(debug_buffer_span);
@@ -973,8 +974,24 @@ void print_outputs(RunnerContext& ctx) {
       snprintf(out_filename, 255, "%s-%d.bin", ctx.output_basename, i);
       ET_LOG(Info, "Writing output to file: %s", out_filename);
       FILE* out_file = fopen(out_filename, "wb");
-      auto written_size =
+      if (out_file == nullptr) {
+        ET_LOG(
+            Error,
+            "Could not open output file %s (errno: %d)",
+            out_filename,
+            errno);
+        continue;
+      }
+      const size_t written_size =
           fwrite(tensor.const_data_ptr<char>(), 1, tensor.nbytes(), out_file);
+      if (written_size != tensor.nbytes()) {
+        ET_LOG(
+            Error,
+            "Failed to write whole output file %s, wrote %lu of %lu bytes",
+            out_filename,
+            static_cast<unsigned long>(written_size),
+            static_cast<unsigned long>(tensor.nbytes()));
+      }
       fclose(out_file);
 #endif //! defined(SEMIHOSTING)
     } else {
@@ -983,6 +1000,7 @@ void print_outputs(RunnerContext& ctx) {
   }
 }
 
+// cppcheck-suppress constParameterReference
 void write_etdump(RunnerContext& ctx) {
 #if defined(ET_EVENT_TRACER_ENABLED)
 #if !defined(SEMIHOSTING)
@@ -992,14 +1010,15 @@ void write_etdump(RunnerContext& ctx) {
   if (result.buf != nullptr && result.size > 0) {
     // On a device with no file system we can't just write it out
     // to the file-system so we base64 encode it and dump it on the log.
-    bool dump_outputs = false;
     int mode = base64_enc_modifier_padding | base64_dec_modifier_skipspace;
     size_t etdump_len = result.size;
     size_t encoded_etdump_len = base64_encoded_size(etdump_len, mode);
     size_t base64buffer_len = encoded_etdump_len;
+    const char* debug_buffer_flag = "";
 #if defined(ET_DUMP_INTERMEDIATE_OUTPUTS) || defined(ET_DUMP_OUTPUTS)
     // Make base64 buffer fit both so it can be reused istead of allocating two
     // buffers.
+    bool dump_outputs = false;
     size_t outputdump_len = 0;
     size_t encoded_outputdump_len = 0;
     if (ctx.debug_buffer != nullptr) {
@@ -1025,29 +1044,35 @@ void write_etdump(RunnerContext& ctx) {
     uint8_t* encoded_buf = reinterpret_cast<uint8_t*>(
         ctx.method_allocator->allocate(base64buffer_len + 1));
     if (encoded_buf != nullptr) {
-      int ret;
-      const char* debug_buffer_flag = "";
       printf("#[RUN THIS]\n");
 #if defined(ET_DUMP_INTERMEDIATE_OUTPUTS) || defined(ET_DUMP_OUTPUTS)
       if (dump_outputs) {
-        ret = base64_encode(
+        const int encode_debug_status = base64_encode(
             encoded_buf,
-            (uint8_t*)ctx.debug_buffer,
+            reinterpret_cast<uint8_t*>(ctx.debug_buffer),
             &encoded_outputdump_len,
             &outputdump_len,
             mode);
+        ET_CHECK_MSG(
+            encode_debug_status == BASE64_EOK,
+            "base64 encoding debug_buffer failed: %s",
+            base64_strerror(encode_debug_status));
         encoded_buf[encoded_outputdump_len] = 0x00; // Ensure null termination
         printf("# Writing debug_buffer.bin [base64]\n");
         printf("echo \"%s\" | base64 -d >debug_buffer.bin\n", encoded_buf);
         debug_buffer_flag = "--debug_buffer_path debug_buffer.bin";
       }
 #endif
-      ret = base64_encode(
+      const int encode_etdump_status = base64_encode(
           encoded_buf,
-          (uint8_t*)result.buf,
+          reinterpret_cast<const uint8_t*>(result.buf),
           &encoded_etdump_len,
           &etdump_len,
           mode);
+      ET_CHECK_MSG(
+          encode_etdump_status == BASE64_EOK,
+          "base64 encoding etdump failed: %s",
+          base64_strerror(encode_etdump_status));
       encoded_buf[encoded_etdump_len] = 0x00; // Ensure null termination
       printf("# Writing etdump.bin [base64]\n");
       printf("echo \"%s\" | base64 -d >etdump.bin\n", encoded_buf);
@@ -1076,8 +1101,17 @@ void write_etdump(RunnerContext& ctx) {
         "Writing etdump debug_buffer to file: %s",
         etdump_output_filename);
     FILE* f = fopen(etdump_output_filename, "w+");
-    fwrite((uint8_t*)ctx.debug_buffer, 1, outputdump_len, f);
-    fclose(f);
+    if (f == nullptr) {
+      ET_LOG(
+          Error,
+          "Could not open etdump debug buffer file %s (errno: %d)",
+          etdump_output_filename,
+          errno);
+    } else {
+      fwrite(
+          reinterpret_cast<uint8_t*>(ctx.debug_buffer), 1, outputdump_len, f);
+      fclose(f);
+    }
   }
 #endif
 
@@ -1089,14 +1123,25 @@ void write_etdump(RunnerContext& ctx) {
     const char* etdump_filename = "etdump.bin";
     ET_LOG(Info, "Writing etdump to file: %s", etdump_filename);
     FILE* f = fopen(etdump_filename, "w+");
-    fwrite((uint8_t*)result.buf, 1, result.size, f);
-    fclose(f);
+    if (f == nullptr) {
+      ET_LOG(
+          Error,
+          "Could not open etdump file %s (errno: %d)",
+          etdump_filename,
+          errno);
+    } else {
+      fwrite(reinterpret_cast<uint8_t*>(result.buf), 1, result.size, f);
+      fclose(f);
+    }
     free(result.buf);
   }
 #endif // !defined(SEMIHOSTING)
 #endif // defined(ET_EVENT_TRACER_ENABLED)
 }
 
+// cppcheck-suppress constParameterReference
+// ET_BUNDLE_IO verification passes ctx.method into devtools/bundled_program
+// helpers, which currently require a non-const Method&.
 bool verify_result(RunnerContext& ctx, const void* model_pte) {
   bool model_ok = false;
 #if defined(ET_BUNDLE_IO)
@@ -1225,21 +1270,21 @@ int main(int argc, const char* argv[]) {
 
   /* parse input parameters */
   for (int i = 0; i < argc; i++) {
-    size_t nbr_inputs = 0;
     if (std::strcmp(argv[i], "-i") == 0) {
       // input file, read the data into memory
       const char* input_tensor_filename = argv[++i];
+      const size_t nbr_inputs = input_buffers.size() + 1;
       ET_LOG(
           Info,
-          "Reading input tensor %d from file %s",
-          ++nbr_inputs,
+          "Reading input tensor %zu from file %s",
+          nbr_inputs,
           input_tensor_filename);
       auto [buffer, buffer_size] = read_binary_file(
           input_tensor_filename, ctx.input_file_allocator.value());
       if (buffer == nullptr) {
         ET_LOG(
             Error,
-            "Reading input tensor %d from file %s ERROR Out of memory",
+            "Reading input tensor %zu from file %s ERROR Out of memory",
             nbr_inputs,
             input_tensor_filename);
         _exit(1);

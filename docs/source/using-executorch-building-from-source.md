@@ -49,7 +49,7 @@ portability details.
    conda activate executorch
    ```
 
-> **_NOTE:_** Addition Windows Setup
+> **_NOTE:_** Additional Windows Setup
 >
 > ExecuTorch requires symlinks to be enabled to build the Python components. To enable symlinks, run the following command before cloning the repository. Missing symlinks will manifest as an error related to `version.py` when running `pip install .`. See [src/README.md](https://github.com/pytorch/executorch/blob/main/src/README.md) for more information.
 > ```bash
@@ -129,7 +129,7 @@ When user code is not using CMake, the runtime can be built standalone and linke
 | Use Case                   | How to Build                                                                       |
 | :------------------------- | :--------------------------------------------------------------------------------- |
 | C++ with user CMake        | Use CMake `add_subdirectory`.                                                      |
-| C++ without user CMake     | Bulild ExecuTorch standalone with CMake. Link libraries with user build.           |
+| C++ without user CMake     | Build ExecuTorch standalone with CMake. Link libraries with user build.            |
 | Android with Java/Kotlin   | Use [scripts/build_android_libraries.sh](#cross-compiling-for-android).            |
 | Android with C++           | Follow C++ build steps, [cross-compile for Android](#cross-compiling-for-android). |
 | iOS                        | Use [scripts/build_ios_frameworks.sh](#cross-compiling-for-ios).                   |
@@ -142,7 +142,6 @@ When building as a submodule as part of a user CMake build, ExecuTorch CMake opt
 
 CMake configuration for standalone runtime build:
 ```bash
-mkdir cmake-out
 cmake -B cmake-out --preset [preset] [options]
 cmake --build cmake-out -j10
 ```
@@ -161,6 +160,7 @@ Preset values for common scenarios are listed below. Using a platform preset is 
  * `linux` - Build features and backends for Linux targets.
  * `llm` - Build Large Language Model-specific features.
  * `profiling` - Build the ExecuTorch runtime with profiling enabled.
+ * `windows` - Build features and backends for Windows targets.
  * `zephyr` - Build for Zephyr RTOS.
 
 User CMake:
@@ -171,7 +171,7 @@ set(EXECUTORCH_BUILD_PRESET_FILE ${CMAKE_SOURCE_DIR}/executorch/tools/cmake/pres
 Standalone build:
 ```bash
 # Configure the build with the ios preset.
-cmake .. --preset ios
+cmake -B cmake-out --preset ios
 ```
 
 #### Build Options
@@ -187,7 +187,7 @@ set(EXECUTORCH_BUILD_XNNPACK ON)
 
 Standalone build:
 ```bash
-cmake -DEXECUTORCH_BUILD_XNNPACK=ON
+cmake -B cmake-out -DEXECUTORCH_BUILD_XNNPACK=ON
 ```
 
 ##### Build Type
@@ -196,7 +196,7 @@ The CMake build is typically set to `Debug` or `Release`. For production use or 
 
 ```bash
 # Specify build type during CMake configuration
-cmake .. -DCMAKE_BUILD_TYPE=Release
+cmake -B cmake-out -DCMAKE_BUILD_TYPE=Release
 ```
 
 ##### Backends
@@ -216,7 +216,7 @@ Typically, each hardware backend exposes a CMake option to control whether the b
 
 ```bash
 # Build the XNNPACK and Vulkan backends.
-cmake .. -DEXECUTORCH_BUILD_XNNPACK=ON -DEXECUTORCH_BUILD_VULKAN=ON
+cmake -B cmake-out -DEXECUTORCH_BUILD_XNNPACK=ON -DEXECUTORCH_BUILD_VULKAN=ON
 ```
 
 ##### Extensions
@@ -237,7 +237,7 @@ ExecuTorch extensions provide optional functionality outside of the core runtime
 
  ```
 # Enable the data loader extension.
-cmake .. -DEXECUTORCH_BUILD_EXTENSION_DATA_LOADER=ON
+cmake -B cmake-out -DEXECUTORCH_BUILD_EXTENSION_DATA_LOADER=ON
  ```
 
 ##### Logging
@@ -249,7 +249,7 @@ Logging is enabled by default in debug builds and disabled in release. When enab
 
  ```
 # Enable logging at debug
-cmake .. -DEXECUTORCH_ENABLE_LOGGING=ON -DEXECUTORCH_LOG_LEVEL=debug
+cmake -B cmake-out -DEXECUTORCH_ENABLE_LOGGING=ON -DEXECUTORCH_LOG_LEVEL=debug
  ```
 
 ### Building
@@ -269,7 +269,7 @@ cd executorch
 cmake --build cmake-out -j9
 ```
 
-> **_TIP:_** For faster rebuilds, consider installing ccache (see [Compiler Cache section](#compiler-cache-ccache) above). On first builds, ccache populates its cache. Subsequent builds with the same compiler flags can be significantly faster.
+> **_TIP:_** For faster rebuilds, consider installing ccache (see [Compiler Cache section](#compiler-cache-ccache) below). On first builds, ccache populates its cache. Subsequent builds with the same compiler flags can be significantly faster.
 
 <hr/>
 
@@ -298,8 +298,6 @@ To link against the runtime from outside of the CMake ecosystem, the runtime can
     `-Wl,-force_load` or `-Wl,--whole-archive`. It contains load-time functions
     that automatically register the kernels, but linkers will often prune those
     functions by default because there are no direct calls to them.
-  `libportable_kernels.a`, so the program may use any of the operators it
-  implements.
 
 Backends typically introduce additional targets. See backend-specific documentation for more details.
 
@@ -352,7 +350,9 @@ To use the ExecuTorch runtime from native Android C++ code, the runtime can be c
 For direct cross-compilation, the ExecuTorch runtime can be configured to build with the NDK toolchain:
 ```bash
 # point -DCMAKE_TOOLCHAIN_FILE to the location where ndk is installed
-cmake -DCMAKE_TOOLCHAIN_FILE=$ANDROID_NDK/build/cmake/android.toolchain.cmake -DANDROID_ABI=arm64-v8a ..
+cmake -B cmake-out \
+  -DCMAKE_TOOLCHAIN_FILE=$ANDROID_NDK/build/cmake/android.toolchain.cmake \
+  -DANDROID_ABI=arm64-v8a
 ```
 
 <hr/>
