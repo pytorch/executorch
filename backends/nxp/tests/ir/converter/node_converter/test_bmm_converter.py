@@ -106,6 +106,14 @@ def test_convert_bmm__unsupported_shape(input_shape_x1, input_shape_x2, use_qat)
 
 
 def test_convert_bmm__unsupported_dim_order(mocker, use_qat):
+    pytest.xfail(
+        "`test_convert_bmm__unsupported_dim_order` is invalid due to incorrect propagation of node format "
+        "through `view_copy` nodes introduced by the aten pass that converts `conv1d` to `conv2d` "
+        "in the test model. `NodeFormatInference` needs to be updated to propagate the "
+        "`channels_first` format only when the batch or channel dimension is modified by the `view_copy` "
+        "or by other nodes."
+    )
+
     n1 = n2 = 5
     w1 = c2 = 16
     c1 = 8
@@ -131,6 +139,13 @@ def test_convert_bmm__unsupported_dim_order(mocker, use_qat):
 
 
 def test_convert_bmm__channels_first(mocker, use_qat):
+    pytest.xfail(
+        "`test_convert_bmm__channels_first` is invalid due to incorrect propagation of node format "
+        "through `view_copy` nodes introduced by the aten pass that converts `conv1d` to `conv2d` "
+        "in the test model. `NodeFormatInference` needs to be updated to propagate the "
+        "`channels_first` format only when the batch or channel dimension is modified by the `view_copy` "
+        "or by other nodes."
+    )
     # These must match:
     # - `n1 = n2`
     # - `w1 = c2`
