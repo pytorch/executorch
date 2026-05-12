@@ -4,14 +4,22 @@
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
 
-"""Int4Tensor F.linear dispatch for CUDA.
+"""Int4Tensor F.linear dispatch for CUDA — runs at eager / export trace time.
 
-Decode (M<=4): Custom op ``executorch_cuda::int4_plain_mm`` — in eager this
-               dequants + calls F.linear; in .pte runtime the C shim runs a
-               W4A8 dp4a matvec kernel.
-Prefill (M>4): Inline dequant + F.linear — AOTI compiles this into the .so
-               using inductor's own cuBLAS codegen, so no explicit cuBLAS
-               dependency in our shim library.
+This module overrides Int4Tensor's F.linear dispatch so that torch.export
+traces through our custom op and dequant logic instead of torchao's default
+(mslk/tinygemm). The code here executes during eager inference and during
+AOTI export tracing — it does NOT run at .pte runtime.
+
+At .pte runtime, the captured graph is executed by the AOTI-generated .so:
+  - The custom op ``executorch_cuda::int4_plain_mm`` maps to a C shim that
+    runs the W4A8 dp4a matvec kernel (backends/cuda/runtime/shims/).
+  - The inline dequant + F.linear is compiled by inductor into fused Triton
+    dequant + cuBLAS matmul kernels.
+
+Dispatch strategy (determines what gets captured in the export graph):
+  Decode (M<=4): Custom op ``executorch_cuda::int4_plain_mm``
+  Prefill (M>4): Inline dequant + F.linear (standard PyTorch ops)
 
 Import this module before using nn.Linear with Int4Tensor weights::
 

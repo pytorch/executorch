@@ -7,10 +7,18 @@
 
 """Tests for Int4Tensor F.linear dispatch via int4_dispatch.
 
+These tests validate the eager / trace-time dispatch path — the same code
+that torch.export traces through when building the AOTI graph. They do NOT
+test the .pte runtime C shim (dp4a kernel); that is covered by
+test_aoti_torch_cuda_int4_plain_mm.cpp (C++ unit tests) and
+test_cuda_pipeline.py::TestCudaExport (end-to-end export + lower).
+
 The API contract: after importing int4_dispatch, F.linear and nn.Linear
 with Int4Tensor weights produce numerically correct results. Tests verify
-this across decode (M=1), prefill (M>1), batched (3D), bias, group sizes,
-and symmetric/asymmetric quantization.
+this across decode (M<=4), prefill (M>4), batched (3D), bias, group sizes,
+and symmetric/asymmetric quantization. Correctness is measured as mean
+relative error against the unquantized bf16 reference (not per-element
+atol/rtol, which is too strict for INT4 quantization noise).
 
 Usage:
   python -m pytest backends/cuda/tests/test_int4_dispatch.py -v

@@ -130,6 +130,9 @@ __global__ void __launch_bounds__(MV_THREADS)
 
   float sum = 0.0f;
 
+  int32_t prev_g = -1;
+  float ws = 0.0f, wz = 0.0f;
+
   for (int32_t i = lane_id; i < K_half_16; i += MV_WARP_SIZE) {
     uint4 packed16 = __ldg(&qrow16[i]);
     int32_t k_base = i * 32;
@@ -140,6 +143,12 @@ __global__ void __launch_bounds__(MV_THREADS)
       uint32_t packed = words[w];
       int32_t k_word = k_base + w * 8;
       int32_t g = k_word >> gs_shift;
+
+      if (g != prev_g) {
+        ws = __bfloat162float(__ldg(&scale_base[g * scale_stride]));
+        wz = __bfloat162float(__ldg(&zero_base[g * scale_stride]));
+        prev_g = g;
+      }
 
       int32_t vi_lo = packed & 0x0F0F0F0F;
       int32_t vi_hi = (packed >> 4) & 0x0F0F0F0F;
@@ -156,8 +165,6 @@ __global__ void __launch_bounds__(MV_THREADS)
       int32_t dp = __dp4a(vi_lo, a_even, 0);
       dp = __dp4a(vi_hi, a_odd, dp);
 
-      float ws = __bfloat162float(__ldg(&scale_base[g * scale_stride]));
-      float wz = __bfloat162float(__ldg(&zero_base[g * scale_stride]));
       float a_scale = qb->d;
 
       int32_t a_sum8 = __dp4a(0x01010101, a_even, 0);
@@ -212,6 +219,11 @@ void _int4_plain_mm_cuda(
   int32_t N = qdata.size(0);
 
   ET_CHECK(A.dtype() == c10::ScalarType::BFloat16);
+  ET_CHECK(
+      qdata.dtype() == c10::ScalarType::Byte ||
+      qdata.dtype() == c10::ScalarType::Char);
+  ET_CHECK(scale.dtype() == c10::ScalarType::BFloat16);
+  ET_CHECK(zero.dtype() == c10::ScalarType::BFloat16);
   ET_CHECK(A.dim() == 2);
   ET_CHECK(qdata.dim() == 2);
   ET_CHECK(qdata.size(1) == K / 2);
