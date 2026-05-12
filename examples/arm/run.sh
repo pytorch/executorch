@@ -230,7 +230,7 @@ function check_setup () {
     [[ -f ${preset_file} ]] \
         || { echo "Could not find ${preset_file} file, ${_setup_msg}"; return 1; }
 
-    if [[ "${auto_configure}" == true ]]; then
+    if [[ "${auto_configure}" == true && ${target} != *"TOSA"* ]]; then
         if ! command -v "${toolchain}" >/dev/null 2>&1; then
             echo "Could not find ${toolchain} toolchain on PATH, ${_setup_msg}"
             return 1
