@@ -11,6 +11,7 @@ reference output, emitting ``Test_result: PASS`` on success.
 """
 
 import argparse
+import logging
 from pathlib import Path
 
 import torch
@@ -75,7 +76,15 @@ def main() -> None:
         action="store_true",
         help="Produce an 8-bit quantized model",
     )
+    parser.add_argument(
+        "--verbose",
+        action="store_true",
+        help="Enable XNNPACK partitioner DEBUG logging and dump the lowered graph",
+    )
     args = parser.parse_args()
+
+    if args.verbose:
+        logging.basicConfig(level=logging.DEBUG)
 
     if args.output is None:
         args.output = Path(f"{args.model}_riscv.bpte")
@@ -100,7 +109,8 @@ def main() -> None:
         from executorch.backends.xnnpack.partition.xnnpack_partitioner import (
             XnnpackPartitioner,
         )
-        partitioners.append(XnnpackPartitioner())
+
+        partitioners.append(XnnpackPartitioner(verbose=args.verbose))
 
     compile_config = None
     if args.quantize:
@@ -120,6 +130,11 @@ def main() -> None:
         f"[aot_riscv] model={args.model} xnnpack={args.xnnpack} "
         f"quantize={args.quantize} delegated_nodes={delegated}"
     )
+
+    if args.verbose:
+        from executorch.exir.backend.utils import print_delegated_graph
+
+        print_delegated_graph(edge.exported_program().graph_module)
 
     et_program = edge.to_executorch()
 

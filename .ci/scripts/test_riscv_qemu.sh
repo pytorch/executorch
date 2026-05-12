@@ -17,6 +17,7 @@ et_root_dir=$(realpath "${script_dir}/../..")
 model="add"
 xnnpack=false
 quantize=false
+verbose=false
 
 usage() {
     cat <<EOF
@@ -34,6 +35,7 @@ for arg in "$@"; do
         --model=*) model="${arg#*=}" ;;
         --xnnpack) xnnpack=true ;;
         --quantize) quantize=true ;;
+        --verbose) verbose=true ;;
         -h|--help) usage; exit 0 ;;
         *) echo "Unknown option: $arg" >&2; usage; exit 1 ;;
     esac
@@ -45,6 +47,9 @@ if ${xnnpack}; then
 fi
 if ${quantize}; then
     run_extra_args+=(--quantize)
+fi
+if ${verbose}; then
+    run_extra_args+=(--verbose)
 fi
 
 bash "${et_root_dir}/examples/riscv/setup.sh"
