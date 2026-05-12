@@ -57,7 +57,8 @@ class MetalMTL3Backend : public IComputeBackend,
   // prior pending write. The HazardTracker tells us when via the bool.
   // When the encoder is serial (default), MTL3 auto-serializes dispatches
   // and we can ignore the hint.
-  void dispatchHazardAware(uvec3 grid, uvec3 block, bool insertBarrierBefore) override;
+  void dispatchHazardAware(uvec3 grid, uvec3 block, bool insertBarrierBefore)
+      override;
   void endEncoder() override;
   void commit() override;
   void wait() override;
@@ -79,11 +80,11 @@ class MetalMTL3Backend : public IComputeBackend,
   // Lazily create encoder_ on commandBuffer_.
   void ensureEncoder();
 
-  id<MTLDevice> device_;          // borrowed
-  id<MTLCommandQueue> queue_;     // borrowed
+  id<MTLDevice> device_; // borrowed
+  id<MTLCommandQueue> queue_; // borrowed
 
-  id<MTLCommandBuffer> commandBuffer_ = nil;       // retained
-  id<MTLComputeCommandEncoder> encoder_ = nil;     // retained
+  id<MTLCommandBuffer> commandBuffer_ = nil; // retained
+  id<MTLComputeCommandEncoder> encoder_ = nil; // retained
   id<MTLCommandBuffer> inFlightCommandBuffer_ = nil; // retained
 
   // Pending completion handlers — attached to the next CB at commit

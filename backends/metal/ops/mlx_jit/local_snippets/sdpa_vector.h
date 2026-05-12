@@ -45,7 +45,7 @@
 //    keep the LATER definition. Since the body's helpers ultimately call
 //    `instantiate_kernel(...)` (which is no-op'd here), the net AOT-output
 //    is empty either way.
-#undef  instantiate_kernel
+#undef instantiate_kernel
 #define instantiate_kernel(...)
 #define instantiate_sdpa_vector(...)
 #define instantiate_sdpa_vector_aggregation(...)

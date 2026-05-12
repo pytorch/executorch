@@ -70,6 +70,37 @@ CpuEngine::~CpuEngine() = default;
   if (requests.size() != out_claims.size()) {
     return ::executorch::runtime::Error::InvalidArgument;
   }
+  // Materialize TensorImpls for any router-minted DeviceMirror vids
+  // before validation. The host partner (host_mirror_value_id) was
+  // initialized from the flatbuffer, so its TensorImpl is the source
+  // of truth for shape/dtype.
+  for (const auto& req : requests) {
+    if (req.kind != MemoryKind::DeviceMirror)
+      continue;
+    if (req.host_mirror_value_id == kInvalidValueId)
+      continue;
+    if (req.value_id >= values.size() ||
+        req.host_mirror_value_id >= values.size()) {
+      ET_LOG(
+          Error,
+          "CpuEngine::allocate_buffers: DeviceMirror vid=%u or partner=%u out of range",
+          req.value_id,
+          req.host_mirror_value_id);
+      return ::executorch::runtime::Error::InvalidArgument;
+    }
+    if (!values[req.host_mirror_value_id].isTensor()) {
+      ET_LOG(
+          Error,
+          "CpuEngine::allocate_buffers: DeviceMirror vid=%u host partner=%u is not a tensor",
+          req.value_id,
+          req.host_mirror_value_id);
+      return ::executorch::runtime::Error::InvalidArgument;
+    }
+    if (!values[req.value_id].isTensor()) {
+      mirror_tensor_metas_.push_back(materialize_mirror_tensor(
+          values, req.value_id, req.host_mirror_value_id));
+    }
+  }
   // Validate inputs.
   for (size_t i = 0; i < requests.size(); ++i) {
     const auto& req = requests[i];
@@ -87,7 +118,8 @@ CpuEngine::~CpuEngine() = default;
   // Non-null iff some prior engine (HostPool) already claimed the host
   // half and wrote its data_ptr.
   auto partner_host_ptr_for = [&](uint32_t host_vid) -> void* {
-    if (host_vid == kInvalidValueId) return nullptr;
+    if (host_vid == kInvalidValueId)
+      return nullptr;
     if (host_vid >= values.size() || !values[host_vid].isTensor()) {
       return nullptr;
     }
@@ -95,7 +127,7 @@ CpuEngine::~CpuEngine() = default;
   };
 
   // CPU is the "device" runtime in this design; it claims DeviceMirror
-  // and DeviceOnly requests in its own list. HostMirror / HostOnly are
+  // and DeviceOnly requests in its own list. HostMirror / HostExtern are
   // declined (they go to HostPool).
   //
   // For DeviceMirror: alias to host partner if available (UMA collapse,
@@ -108,21 +140,21 @@ CpuEngine::~CpuEngine() = default;
   std::vector<size_t> alias_bytes(requests.size(), 0);
   for (size_t i = 0; i < requests.size(); ++i) {
     const auto& req = requests[i];
-    if (req.kind == MemoryKind::HostOnly ||
+    if (req.kind == MemoryKind::HostExtern ||
         req.kind == MemoryKind::HostMirror) {
       out_claims[i] = AllocClaim::Declined;
       continue;
     }
     out_claims[i] = AllocClaim::Claimed;
-    if (req.kind != MemoryKind::DeviceMirror) continue;
+    if (req.kind != MemoryKind::DeviceMirror)
+      continue;
     void* p = partner_host_ptr_for(req.host_mirror_value_id);
     if (p) {
       alias_ptr[i] = p;
       // Compute alias byte count from the host partner's tensor.
       if (req.host_mirror_value_id < values.size() &&
           values[req.host_mirror_value_id].isTensor()) {
-        alias_bytes[i] =
-            values[req.host_mirror_value_id].toTensor().nbytes();
+        alias_bytes[i] = values[req.host_mirror_value_id].toTensor().nbytes();
       }
     }
   }
@@ -132,8 +164,10 @@ CpuEngine::~CpuEngine() = default;
   std::unordered_map<int32_t, void*> group_alias_src;
   for (size_t i = 0; i < requests.size(); ++i) {
     const auto& req = requests[i];
-    if (out_claims[i] != AllocClaim::Claimed) continue;
-    if (alias_ptr[i] == nullptr) continue;
+    if (out_claims[i] != AllocClaim::Claimed)
+      continue;
+    if (alias_ptr[i] == nullptr)
+      continue;
     auto it = group_alias_max.find(req.mem_obj_id);
     if (it == group_alias_max.end() || alias_bytes[i] > it->second) {
       group_alias_max[req.mem_obj_id] = alias_bytes[i];
@@ -143,10 +177,13 @@ CpuEngine::~CpuEngine() = default;
   // Extend alias to fitting non-aliased group members.
   for (size_t i = 0; i < requests.size(); ++i) {
     const auto& req = requests[i];
-    if (out_claims[i] != AllocClaim::Claimed) continue;
-    if (alias_ptr[i] != nullptr) continue;
+    if (out_claims[i] != AllocClaim::Claimed)
+      continue;
+    if (alias_ptr[i] != nullptr)
+      continue;
     auto it = group_alias_src.find(req.mem_obj_id);
-    if (it == group_alias_src.end()) continue;
+    if (it == group_alias_src.end())
+      continue;
     if (values[req.value_id].toTensor().nbytes() <=
         group_alias_max[req.mem_obj_id]) {
       alias_ptr[i] = it->second;
@@ -158,8 +195,10 @@ CpuEngine::~CpuEngine() = default;
   std::unordered_map<void*, HostBuffer*> alias_dedup;
   for (size_t i = 0; i < requests.size(); ++i) {
     const auto& req = requests[i];
-    if (out_claims[i] != AllocClaim::Claimed) continue;
-    if (alias_ptr[i] == nullptr) continue;
+    if (out_claims[i] != AllocClaim::Claimed)
+      continue;
+    if (alias_ptr[i] == nullptr)
+      continue;
     HostBuffer* hb_raw = nullptr;
     auto it = alias_dedup.find(alias_ptr[i]);
     if (it != alias_dedup.end()) {
@@ -175,10 +214,8 @@ CpuEngine::~CpuEngine() = default;
     }
     value_to_buffer_[req.value_id] = hb_raw;
     // Host-addressable: write data_ptr into central EValue.
-    values[req.value_id]
-        .toTensor()
-        .unsafeGetTensorImpl()
-        ->set_data(alias_ptr[i]);
+    values[req.value_id].toTensor().unsafeGetTensorImpl()->set_data(
+        alias_ptr[i]);
     ET_LOG(
         Debug,
         "[mem] cpu: value_id=%u kind=%s bytes=%zu alias=%p",
@@ -189,15 +226,21 @@ CpuEngine::~CpuEngine() = default;
   }
 
   // Arena: per-group MAX over claimed, non-aliased members; packed
-  // sequentially.
+  // sequentially. Skip mem_obj_id < 0 (unplanned/dynamic): for those
+  // we defer allocation to resize_tensor.
   std::unordered_map<int32_t, size_t> group_caps;
   for (size_t i = 0; i < requests.size(); ++i) {
     const auto& req = requests[i];
-    if (out_claims[i] != AllocClaim::Claimed) continue;
-    if (alias_ptr[i] != nullptr) continue;
+    if (out_claims[i] != AllocClaim::Claimed)
+      continue;
+    if (alias_ptr[i] != nullptr)
+      continue;
+    if (req.mem_obj_id < 0)
+      continue;
     size_t nb = values[req.value_id].toTensor().nbytes();
     auto& cur = group_caps[req.mem_obj_id];
-    if (nb > cur) cur = nb;
+    if (nb > cur)
+      cur = nb;
   }
   constexpr size_t kAlignment = 16;
   auto align_up = [](size_t v) {
@@ -207,9 +250,14 @@ CpuEngine::~CpuEngine() = default;
   std::unordered_map<int32_t, size_t> group_offsets;
   for (size_t i = 0; i < requests.size(); ++i) {
     const auto& req = requests[i];
-    if (out_claims[i] != AllocClaim::Claimed) continue;
-    if (alias_ptr[i] != nullptr) continue;
-    if (group_offsets.count(req.mem_obj_id)) continue;
+    if (out_claims[i] != AllocClaim::Claimed)
+      continue;
+    if (alias_ptr[i] != nullptr)
+      continue;
+    if (req.mem_obj_id < 0)
+      continue; // deferred to resize_tensor
+    if (group_offsets.count(req.mem_obj_id))
+      continue;
     size_t off = align_up(arena_total);
     group_offsets[req.mem_obj_id] = off;
     arena_total = off + group_caps[req.mem_obj_id];
@@ -219,17 +267,35 @@ CpuEngine::~CpuEngine() = default;
     size_t alloc_bytes = align_up(arena_total);
     arena_.reset(
         static_cast<uint8_t*>(std::aligned_alloc(kAlignment, alloc_bytes)));
-    if (!arena_) return ::executorch::runtime::Error::MemoryAllocationFailed;
+    if (!arena_)
+      return ::executorch::runtime::Error::MemoryAllocationFailed;
     arena_size_ = alloc_bytes;
-    ET_LOG(Debug, "[mem] cpu: arena %zu bytes at %p", arena_size_, arena_.get());
+    ET_LOG(
+        Debug, "[mem] cpu: arena %zu bytes at %p", arena_size_, arena_.get());
   }
 
-  // Hand out arena Buffers. Dedup by mem_obj_id.
+  // Hand out arena Buffers. Dedup by mem_obj_id. mem_obj_id < 0 is
+  // unplanned/dynamic: claim ownership but defer allocation to
+  // resize_tensor (insert nullptr placeholder so resize_tensor knows
+  // this vid is ours).
   std::unordered_map<int32_t, HostBuffer*> mem_obj_buffers;
   for (size_t i = 0; i < requests.size(); ++i) {
     const auto& req = requests[i];
-    if (out_claims[i] != AllocClaim::Claimed) continue;
-    if (alias_ptr[i] != nullptr) continue;
+    if (out_claims[i] != AllocClaim::Claimed)
+      continue;
+    if (alias_ptr[i] != nullptr)
+      continue;
+
+    if (req.mem_obj_id < 0) {
+      value_to_buffer_[req.value_id] = nullptr;
+      ET_LOG(
+          Debug,
+          "[mem] cpu: value_id=%u kind=%s mem_obj_id=%d (deferred to resize_tensor)",
+          req.value_id,
+          to_string(req.kind),
+          req.mem_obj_id);
+      continue;
+    }
 
     HostBuffer* hb_raw = nullptr;
     auto it = mem_obj_buffers.find(req.mem_obj_id);
@@ -240,135 +306,139 @@ CpuEngine::~CpuEngine() = default;
       size_t off = group_offsets[req.mem_obj_id];
       std::unique_ptr<HostBuffer> hb(
           HostBuffer::alias(arena_.get() + off, cap, req.kind));
-      if (!hb) return ::executorch::runtime::Error::MemoryAllocationFailed;
+      if (!hb)
+        return ::executorch::runtime::Error::MemoryAllocationFailed;
       hb_raw = hb.get();
       mem_obj_buffers[req.mem_obj_id] = hb_raw;
       owned_buffers_.push_back(std::move(hb));
     }
     value_to_buffer_[req.value_id] = hb_raw;
-    values[req.value_id]
-        .toTensor()
-        .unsafeGetTensorImpl()
-        ->set_data(hb_raw->host_ptr());
+    values[req.value_id].toTensor().unsafeGetTensorImpl()->set_data(
+        hb_raw->host_ptr());
     ET_LOG(
         Debug,
         "[mem] cpu: value_id=%u kind=%s mem_obj_id=%d host_ptr=%p",
-        req.value_id, to_string(req.kind), req.mem_obj_id, hb_raw->host_ptr());
+        req.value_id,
+        to_string(req.kind),
+        req.mem_obj_id,
+        hb_raw->host_ptr());
   }
   return ::executorch::runtime::Error::Ok;
 }
 
 ::executorch::runtime::Error CpuEngine::upload_constants(
-    const ::executorch::runtime::NamedDataMap& ndm,
+    const ::executorch::runtime::NamedDataMap* ndm,
     ::executorch::runtime::Span<const ConstRequest> requests) {
   for (size_t i = 0; i < requests.size(); ++i) {
     const auto& req = requests[i];
-    auto data_result = ndm.get_data(req.ndm_key);
-    if (!data_result.ok()) {
+    HostBuffer* raw = nullptr;
+    std::unique_ptr<HostBuffer> hb;
+    if (!req.ndm_key.empty()) {
+      // NDM-stored: fetch the FreeableBuffer and alias it.
+      if (!ndm)
+        return ::executorch::runtime::Error::InvalidArgument;
+      auto data_result = ndm->get_data(req.ndm_key);
+      if (!data_result.ok()) {
+        ET_LOG(
+            Error,
+            "CpuEngine: upload_constants NDM key '%.*s' not found (value_id=%u)",
+            static_cast<int>(req.ndm_key.size()),
+            req.ndm_key.data(),
+            req.value_id);
+        return data_result.error();
+      }
+      size_t bytes = data_result.get().size();
+      void* ptr = const_cast<void*>(data_result.get().data());
+      hb.reset(HostBuffer::alias_ndm(
+          std::move(data_result.get()), MemoryKind::DeviceOnly));
+      raw = hb.get();
       ET_LOG(
-          Error,
-          "CpuEngine: upload_constants NDM key '%.*s' not found (value_id=%u)",
+          Debug,
+          "[mem] cpu: upload_constants[%zu] value_id=%u key='%.*s' bytes=%zu host_ptr=%p (zero-copy NDM alias)",
+          i,
+          req.value_id,
           static_cast<int>(req.ndm_key.size()),
           req.ndm_key.data(),
+          bytes,
+          ptr);
+    } else if (!req.inline_data.empty()) {
+      // Inline: bytes live in the program's constant_buffer, owned by
+      // the Module's processed FreeableBuffer for the lifetime of the
+      // delegate. Plain Aliasing wrapper — no extra ownership needed.
+      void* ptr = const_cast<uint8_t*>(req.inline_data.data());
+      size_t bytes = req.inline_data.size();
+      hb.reset(HostBuffer::alias(ptr, bytes, MemoryKind::DeviceOnly));
+      raw = hb.get();
+      ET_LOG(
+          Debug,
+          "[mem] cpu: upload_constants[%zu] value_id=%u bytes=%zu host_ptr=%p (zero-copy inline alias)",
+          i,
+          req.value_id,
+          bytes,
+          ptr);
+    } else {
+      ET_LOG(
+          Error,
+          "CpuEngine: upload_constants[%zu] value_id=%u has neither ndm_key nor inline_data",
+          i,
           req.value_id);
-      return data_result.error();
+      return ::executorch::runtime::Error::InvalidArgument;
     }
-    size_t bytes = data_result.get().size();
-    void* ptr = const_cast<void*>(data_result.get().data());
-    std::unique_ptr<HostBuffer> hb(HostBuffer::alias_ndm(
-        std::move(data_result.get()), MemoryKind::DeviceOnly));
-    HostBuffer* raw = hb.get();
+    if (!raw)
+      return ::executorch::runtime::Error::MemoryAllocationFailed;
     value_to_buffer_[req.value_id] = raw;
-    ET_LOG(
-        Debug,
-        "[mem] cpu: upload_constants[%zu] value_id=%u key='%.*s' bytes=%zu host_ptr=%p (zero-copy NDM alias)",
-        i,
-        req.value_id,
-        static_cast<int>(req.ndm_key.size()),
-        req.ndm_key.data(),
-        bytes,
-        ptr);
     owned_buffers_.push_back(std::move(hb));
   }
   return ::executorch::runtime::Error::Ok;
 }
 
-::executorch::runtime::Error CpuEngine::bind_one_(
-    ::executorch::runtime::EValue& central_ev,
+std::unique_ptr<Event> CpuEngine::make_event() {
+  return std::make_unique<CpuEvent>();
+}
+
+::executorch::runtime::Error CpuEngine::resize_tensor(
+    ::executorch::runtime::Span<::executorch::runtime::EValue> values,
     uint32_t value_id,
-    const ::executorch::runtime::EValue& caller_ev) {
-  if (!caller_ev.isTensor() || !central_ev.isTensor()) {
+    ::executorch::runtime::ArrayRef<::executorch::aten::SizesType> new_sizes) {
+  if (value_id >= values.size() || !values[value_id].isTensor()) {
     return ::executorch::runtime::Error::InvalidArgument;
   }
-  auto& caller_t = caller_ev.toTensor();
-  void* host_ptr = caller_t.mutable_data_ptr();
-  size_t nbytes = caller_t.nbytes();
-  if (!host_ptr) return ::executorch::runtime::Error::InvalidArgument;
+  auto it = value_to_buffer_.find(value_id);
+  if (it == value_to_buffer_.end()) {
+    ET_LOG(
+        Error, "cpu: resize_tensor: vid=%u not owned by CpuEngine", value_id);
+    return ::executorch::runtime::Error::InvalidArgument;
+  }
 
-  // Resize central TensorImpl to caller's actual shape.
-  auto& central_t = central_ev.toTensor();
-  if (auto e = ::executorch::runtime::resize_tensor(central_t, caller_t.sizes());
+  auto& central_t = values[value_id].toTensor();
+  size_t new_nbytes = bytes_for_sizes(central_t.scalar_type(), new_sizes);
+
+  HostBuffer* hb = it->second;
+  bool need_alloc = (hb == nullptr) || (hb->size_bytes() < new_nbytes);
+  if (need_alloc) {
+    constexpr size_t kAlignment = 16;
+    std::unique_ptr<HostBuffer> fresh(
+        HostBuffer::allocate(new_nbytes, kAlignment, MemoryKind::DeviceMirror));
+    if (!fresh) {
+      return ::executorch::runtime::Error::MemoryAllocationFailed;
+    }
+    hb = fresh.get();
+    value_to_buffer_[value_id] = hb;
+    owned_buffers_.push_back(std::move(fresh));
+    ET_LOG(
+        Debug,
+        "[mem] cpu: resize_tensor vid=%u allocated %zu bytes at %p",
+        value_id,
+        new_nbytes,
+        hb->host_ptr());
+  }
+
+  if (auto e = ::executorch::runtime::resize_tensor(central_t, new_sizes);
       e != ::executorch::runtime::Error::Ok) {
     return e;
   }
-
-  auto it = value_to_buffer_.find(value_id);
-  if (it != value_to_buffer_.end()) {
-    HostBuffer* hb = it->second;
-    hb->re_alias(host_ptr, nbytes);
-    central_t.unsafeGetTensorImpl()->set_data(host_ptr);
-    ET_LOG(
-        Debug,
-        "[mem] cpu: bind dst=%u host_ptr=%p bytes=%zu (re-aliased)",
-        value_id,
-        host_ptr,
-        nbytes);
-    return ::executorch::runtime::Error::Ok;
-  }
-
-  std::unique_ptr<HostBuffer> hb(
-      HostBuffer::alias(host_ptr, nbytes, MemoryKind::DeviceMirror));
-  if (!hb)
-    return ::executorch::runtime::Error::MemoryAllocationFailed;
-  HostBuffer* raw = hb.get();
-  value_to_buffer_[value_id] = raw;
-  owned_buffers_.push_back(std::move(hb));
-  central_t.unsafeGetTensorImpl()->set_data(host_ptr);
-  ET_LOG(
-      Debug,
-      "[mem] cpu: bind dst=%u host_ptr=%p bytes=%zu (Aliasing wrap, DeviceMirror)",
-      value_id,
-      host_ptr,
-      nbytes);
+  central_t.unsafeGetTensorImpl()->set_data(hb->host_ptr());
   return ::executorch::runtime::Error::Ok;
-}
-
-::executorch::runtime::Error CpuEngine::bind_inputs(
-    ::executorch::runtime::Span<::executorch::runtime::EValue> values,
-    ::executorch::runtime::Span<const ::executorch::runtime::EValue> caller_evs,
-    ::executorch::runtime::Span<const uint32_t> value_ids) {
-  if (caller_evs.size() != value_ids.size())
-    return ::executorch::runtime::Error::InvalidArgument;
-  for (size_t i = 0; i < value_ids.size(); ++i) {
-    uint32_t vid = value_ids[i];
-    if (vid >= values.size())
-      return ::executorch::runtime::Error::InvalidArgument;
-    if (auto e = bind_one_(values[vid], vid, caller_evs[i]);
-        e != ::executorch::runtime::Error::Ok)
-      return e;
-  }
-  return ::executorch::runtime::Error::Ok;
-}
-
-::executorch::runtime::Error CpuEngine::bind_outputs(
-    ::executorch::runtime::Span<::executorch::runtime::EValue> values,
-    ::executorch::runtime::Span<const ::executorch::runtime::EValue> caller_evs,
-    ::executorch::runtime::Span<const uint32_t> value_ids) {
-  return bind_inputs(values, caller_evs, value_ids);
-}
-
-std::unique_ptr<Event> CpuEngine::make_event() {
-  return std::make_unique<CpuEvent>();
 }
 
 ::executorch::runtime::Error CpuEngine::upload_from_host(
@@ -566,12 +636,15 @@ std::unique_ptr<Event> CpuEngine::make_event() {
   // automatically — no separate verify_segment_bindings pass needed.
   auto refresh = [&](uint32_t vid_orig) {
     uint32_t vid = seg->remap(vid_orig);
-    if (vid >= values.size() || !values[vid].isTensor()) return;
+    if (vid >= values.size() || !values[vid].isTensor())
+      return;
     auto bit = value_to_buffer_.find(vid);
-    if (bit == value_to_buffer_.end()) return;
+    if (bit == value_to_buffer_.end())
+      return;
     void* p = bit->second ? bit->second->host_ptr() : nullptr;
     auto* impl = values[vid].toTensor().unsafeGetTensorImpl();
-    if (impl->data() != p) impl->set_data(p);
+    if (impl->data() != p)
+      impl->set_data(p);
   };
 
   // Drive ops via the existing portable kernel registry.
@@ -596,8 +669,10 @@ std::unique_ptr<Event> CpuEngine::make_event() {
         op.num_outputs());
 
     // Refresh data_ptrs for this op's args.
-    for (size_t i = 0; i < op.num_inputs(); ++i) refresh(op.input(i));
-    for (size_t i = 0; i < op.num_outputs(); ++i) refresh(op.output(i));
+    for (size_t i = 0; i < op.num_inputs(); ++i)
+      refresh(op.input(i));
+    for (size_t i = 0; i < op.num_outputs(); ++i)
+      refresh(op.output(i));
 
     auto handler =
         ::executorch::backends::portable::cpu_op_registry().try_get_op_fn(

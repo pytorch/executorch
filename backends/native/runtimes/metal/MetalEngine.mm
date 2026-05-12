@@ -85,6 +85,31 @@ runtime::Error MetalEngine::allocate_buffers(
   if (requests.size() != out_claims.size()) {
     return runtime::Error::InvalidArgument;
   }
+  // Materialize TensorImpls for any router-minted DeviceMirror vids
+  // before validation. The host partner (host_mirror_value_id) was
+  // initialized from the flatbuffer, so its TensorImpl is the source
+  // of truth for shape/dtype.
+  for (const auto& req : requests) {
+    if (req.kind != MemoryKind::DeviceMirror) continue;
+    if (req.host_mirror_value_id == kInvalidValueId) continue;
+    if (req.value_id >= values.size() ||
+        req.host_mirror_value_id >= values.size()) {
+      ET_LOG(Error,
+             "MetalEngine::allocate_buffers: DeviceMirror vid=%u or partner=%u out of range",
+             req.value_id, req.host_mirror_value_id);
+      return runtime::Error::InvalidArgument;
+    }
+    if (!values[req.host_mirror_value_id].isTensor()) {
+      ET_LOG(Error,
+             "MetalEngine::allocate_buffers: DeviceMirror vid=%u host partner=%u is not a tensor",
+             req.value_id, req.host_mirror_value_id);
+      return runtime::Error::InvalidArgument;
+    }
+    if (!values[req.value_id].isTensor()) {
+      mirror_tensor_metas_.push_back(materialize_mirror_tensor(
+          values, req.value_id, req.host_mirror_value_id));
+    }
+  }
   for (size_t i = 0; i < requests.size(); ++i) {
     const auto& req = requests[i];
     if (req.value_id >= values.size() || !values[req.value_id].isTensor()) {
@@ -106,7 +131,7 @@ runtime::Error MetalEngine::allocate_buffers(
   };
 
   // Metal claims DeviceMirror and DeviceOnly. Declines HostMirror /
-  // HostOnly (HostPool handles those).
+  // HostExtern (HostPool handles those).
   //
   // For DeviceMirror: try zero-copy alias collapse with the host
   // partner's pointer (UMA fast path); fall back to fresh pool
@@ -122,12 +147,29 @@ runtime::Error MetalEngine::allocate_buffers(
   for (size_t i = 0; i < requests.size(); ++i) {
     const auto& req = requests[i];
 
-    if (req.kind == MemoryKind::HostOnly ||
+    if (req.kind == MemoryKind::HostExtern ||
         req.kind == MemoryKind::HostMirror) {
       out_claims[i] = AllocClaim::Declined;
       continue;
     }
     out_claims[i] = AllocClaim::Claimed;
+
+    // Record host->mirror mapping (used by set_io_bindings) even if
+    // we defer allocation below.
+    if (req.kind == MemoryKind::DeviceMirror &&
+        req.host_mirror_value_id != Engine::kInvalidValueId) {
+      host_to_mirror_id_[req.host_mirror_value_id] = req.value_id;
+    }
+
+    // mem_obj_id < 0: unplanned/dynamic. Defer to resize_tensor;
+    // record ownership via nullptr placeholder.
+    if (req.mem_obj_id < 0) {
+      value_to_buffer_[req.value_id] = nullptr;
+      ET_LOG(Debug,
+             "[mem] metal: value_id=%u kind=%s mem_obj_id=%d (deferred to resize_tensor)",
+             req.value_id, to_string(req.kind), req.mem_obj_id);
+      continue;
+    }
 
     // mem_obj_id cache hit.
     auto it = mem_obj_buffers.find(req.mem_obj_id);
@@ -199,39 +241,60 @@ runtime::Error MetalEngine::allocate_buffers(
 }
 
 runtime::Error MetalEngine::upload_constants(
-    const runtime::NamedDataMap& ndm,
+    const runtime::NamedDataMap* ndm,
     runtime::Span<const ConstRequest> requests) {
   if (!stream_) return runtime::Error::InvalidState;
   for (size_t i = 0; i < requests.size(); ++i) {
     const auto& req = requests[i];
-    auto fb_result = ndm.get_data(req.ndm_key);
-    if (!fb_result.ok()) {
+    MetalBuffer* buf = nullptr;
+    if (!req.ndm_key.empty()) {
+      if (!ndm) return runtime::Error::InvalidArgument;
+      auto fb_result = ndm->get_data(req.ndm_key);
+      if (!fb_result.ok()) {
+        ET_LOG(
+            Error,
+            "MetalEngine: upload_constants NDM key '%.*s' not found (value_id=%u)",
+            static_cast<int>(req.ndm_key.size()),
+            req.ndm_key.data(),
+            req.value_id);
+        return fb_result.error();
+      }
+      runtime::FreeableBuffer fb = std::move(fb_result.get());
+      void* ptr = const_cast<void*>(fb.data());
+      size_t bytes = fb.size();
+      stream_->allocator().registerExternalBuffer(ptr, bytes);
+      (void)stream_->allocator().bufferMtlForPtr(ptr, bytes);
+      buf = MetalBuffer::alias_ndm(
+          stream_, std::move(fb), MemoryKind::DeviceOnly);
+      ET_LOG(
+          Debug,
+          "[mem] metal: upload_constants[%zu] value_id=%u key='%.*s' bytes=%zu host_ptr=%p (zero-copy NDM alias)",
+          i, req.value_id,
+          static_cast<int>(req.ndm_key.size()), req.ndm_key.data(),
+          bytes, ptr);
+    } else if (!req.inline_data.empty()) {
+      // Inline constant from program.constant_buffer. Bytes are owned
+      // by the Module's processed FreeableBuffer for the delegate
+      // lifetime — plain alias is enough.
+      void* ptr = const_cast<uint8_t*>(req.inline_data.data());
+      size_t bytes = req.inline_data.size();
+      stream_->allocator().registerExternalBuffer(ptr, bytes);
+      (void)stream_->allocator().bufferMtlForPtr(ptr, bytes);
+      buf = MetalBuffer::alias(stream_, ptr, bytes, MemoryKind::DeviceOnly);
+      ET_LOG(
+          Debug,
+          "[mem] metal: upload_constants[%zu] value_id=%u bytes=%zu host_ptr=%p (zero-copy inline alias)",
+          i, req.value_id, bytes, ptr);
+    } else {
       ET_LOG(
           Error,
-          "MetalEngine: upload_constants NDM key '%.*s' not found (value_id=%u)",
-          static_cast<int>(req.ndm_key.size()),
-          req.ndm_key.data(),
-          req.value_id);
-      return fb_result.error();
+          "MetalEngine: upload_constants[%zu] value_id=%u has neither ndm_key nor inline_data",
+          i, req.value_id);
+      return runtime::Error::InvalidArgument;
     }
-    runtime::FreeableBuffer fb = std::move(fb_result.get());
-    void* ptr = const_cast<void*>(fb.data());
-    size_t bytes = fb.size();
-    stream_->allocator().registerExternalBuffer(ptr, bytes);
-    (void)stream_->allocator().bufferMtlForPtr(ptr, bytes);
-    auto* buf = MetalBuffer::alias_ndm(
-        stream_, std::move(fb), MemoryKind::DeviceOnly);
+    if (!buf) return runtime::Error::MemoryAllocationFailed;
     owned_buffers_.emplace_back(buf);
     value_to_buffer_[req.value_id] = buf;
-    ET_LOG(
-        Debug,
-        "[mem] metal: upload_constants[%zu] value_id=%u key='%.*s' bytes=%zu host_ptr=%p (zero-copy NDM alias)",
-        i,
-        req.value_id,
-        static_cast<int>(req.ndm_key.size()),
-        req.ndm_key.data(),
-        bytes,
-        ptr);
   }
   return runtime::Error::Ok;
 }
@@ -313,15 +376,14 @@ runtime::Error MetalEngine::bind_one_(
 
 runtime::Error MetalEngine::bind_inputs(
     runtime::Span<runtime::EValue> values,
-    runtime::Span<const runtime::EValue> caller_evs,
-    runtime::Span<const uint32_t> value_ids) {
-  if (caller_evs.size() != value_ids.size())
-    return runtime::Error::InvalidArgument;
-  for (size_t i = 0; i < value_ids.size(); ++i) {
-    uint32_t vid = value_ids[i];
-    if (vid >= values.size())
+    runtime::Span<runtime::EValue* const> input_args) {
+  for (const auto& b : io_input_bindings_) {
+    if (b.graph_idx >= input_args.size()) continue;
+    if (b.internal_vid >= values.size())
       return runtime::Error::InvalidArgument;
-    if (auto e = bind_one_(values[vid], vid, caller_evs[i]);
+    if (!input_args[b.graph_idx]) continue;
+    if (auto e = bind_one_(values[b.internal_vid], b.internal_vid,
+                           *input_args[b.graph_idx]);
         e != runtime::Error::Ok)
       return e;
   }
@@ -330,13 +392,88 @@ runtime::Error MetalEngine::bind_inputs(
 
 runtime::Error MetalEngine::bind_outputs(
     runtime::Span<runtime::EValue> values,
-    runtime::Span<const runtime::EValue> caller_evs,
-    runtime::Span<const uint32_t> value_ids) {
-  return bind_inputs(values, caller_evs, value_ids);
+    runtime::Span<runtime::EValue* const> output_args) {
+  for (const auto& b : io_output_bindings_) {
+    if (b.graph_idx >= output_args.size()) continue;
+    if (b.internal_vid >= values.size())
+      return runtime::Error::InvalidArgument;
+    if (!output_args[b.graph_idx]) continue;
+    if (auto e = bind_one_(values[b.internal_vid], b.internal_vid,
+                           *output_args[b.graph_idx]);
+        e != runtime::Error::Ok)
+      return e;
+  }
+  return runtime::Error::Ok;
+}
+
+runtime::Error MetalEngine::set_io_bindings(
+    runtime::Span<const InputBinding> graph_inputs,
+    runtime::Span<const OutputBinding> graph_outputs) {
+  io_input_bindings_.clear();
+  for (size_t i = 0; i < graph_inputs.size(); ++i) {
+    auto it = host_to_mirror_id_.find(graph_inputs[i].value_id);
+    if (it != host_to_mirror_id_.end()) {
+      io_input_bindings_.push_back(
+          {static_cast<uint32_t>(i), it->second});
+    }
+  }
+  io_output_bindings_.clear();
+  for (size_t i = 0; i < graph_outputs.size(); ++i) {
+    auto it = host_to_mirror_id_.find(graph_outputs[i].value_id);
+    if (it != host_to_mirror_id_.end()) {
+      io_output_bindings_.push_back(
+          {static_cast<uint32_t>(i), it->second});
+    }
+  }
+  return runtime::Error::Ok;
 }
 
 std::unique_ptr<Event> MetalEngine::make_event() {
   return std::make_unique<MetalEvent>();
+}
+
+runtime::Error MetalEngine::resize_tensor(
+    runtime::Span<runtime::EValue> values,
+    uint32_t value_id,
+    runtime::ArrayRef<::executorch::aten::SizesType> new_sizes) {
+  if (!stream_) return runtime::Error::InvalidState;
+  if (value_id >= values.size() || !values[value_id].isTensor()) {
+    return runtime::Error::InvalidArgument;
+  }
+  auto it = value_to_buffer_.find(value_id);
+  if (it == value_to_buffer_.end()) {
+    ET_LOG(Error,
+           "metal: resize_tensor: vid=%u not owned by MetalEngine",
+           value_id);
+    return runtime::Error::InvalidArgument;
+  }
+
+  auto& central_t = values[value_id].toTensor();
+  size_t new_nbytes = bytes_for_sizes(central_t.scalar_type(), new_sizes);
+
+  MetalBuffer* mb = it->second;
+  bool need_alloc = (mb == nullptr) || (mb->size_bytes() < new_nbytes);
+  if (need_alloc) {
+    void* ptr = stream_->allocator().alloc(new_nbytes);
+    if (!ptr) return runtime::Error::MemoryAllocationFailed;
+    (void)stream_->allocator().bufferMtlForPtr(ptr, new_nbytes);
+    mb = MetalBuffer::allocate(
+        stream_, ptr, new_nbytes, MemoryKind::DeviceMirror);
+    value_to_buffer_[value_id] = mb;
+    owned_buffers_.emplace_back(mb);
+    ET_LOG(Debug,
+           "[mem] metal: resize_tensor vid=%u allocated %zu bytes at %p",
+           value_id, new_nbytes, mb->host_ptr());
+  }
+
+  if (auto e = runtime::resize_tensor(central_t, new_sizes);
+      e != runtime::Error::Ok) {
+    return e;
+  }
+  if (void* hp = mb->host_ptr()) {
+    central_t.unsafeGetTensorImpl()->set_data(hp);
+  }
+  return runtime::Error::Ok;
 }
 
 runtime::Error MetalEngine::upload_from_host(

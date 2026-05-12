@@ -55,7 +55,7 @@ class HazardTracker {
   // Subregion entries pass the parent's MTLBuffer here so two views into
   // the same workspace correctly detect overlap.
   struct Range {
-    id<MTLBuffer> parent_mtl;  // borrowed
+    id<MTLBuffer> parent_mtl; // borrowed
     size_t lo;
     size_t hi;
   };
@@ -65,7 +65,7 @@ class HazardTracker {
   // Cumulative across the tracker's lifetime.
   struct BarrierStats {
     uint64_t inserted = 0;
-    uint64_t skipped  = 0;
+    uint64_t skipped = 0;
   };
 
   HazardTracker() = default;
@@ -101,14 +101,20 @@ class HazardTracker {
   // doesn't have a hazard with prior dispatches.
   void reset();
 
-  const BarrierStats& barrierStats() const { return stats_; }
+  const BarrierStats& barrierStats() const {
+    return stats_;
+  }
 
   // Debug-only accessors used by MetalCommandRecorder's debug log dump.
   // The vectors returned reflect the ranges as currently stored (pending
   // lists are flat; writers are flattened on demand from the per-parent
   // index).
-  const std::vector<Range>& pendingInputs() const { return pending_inputs_; }
-  const std::vector<Range>& pendingOutputs() const { return pending_outputs_; }
+  const std::vector<Range>& pendingInputs() const {
+    return pending_inputs_;
+  }
+  const std::vector<Range>& pendingOutputs() const {
+    return pending_outputs_;
+  }
   std::vector<Range> writersSnapshot() const;
 
  private:

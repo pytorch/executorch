@@ -98,8 +98,8 @@ class IComputeBackend {
   // MTL4 backend: honors the flag (Metal 4 has NO automatic hazard tracking;
   //               without explicit barriers, dispatches in the same encoder
   //               run concurrently and silently produce wrong numerics).
-  virtual void dispatchHazardAware(
-      uvec3 grid, uvec3 block, bool insertBarrierBefore) = 0;
+  virtual void
+  dispatchHazardAware(uvec3 grid, uvec3 block, bool insertBarrierBefore) = 0;
 
   //===--------------------------------------------------------------------===//
   // Encoder lifecycle

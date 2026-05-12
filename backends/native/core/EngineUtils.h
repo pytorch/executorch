@@ -15,6 +15,7 @@
 
 #include <executorch/runtime/core/error.h>
 #include <executorch/runtime/core/evalue.h>
+#include <executorch/runtime/core/exec_aten/util/tensor_util.h>
 #include <executorch/runtime/core/span.h>
 #include <executorch/runtime/platform/log.h>
 
@@ -135,8 +136,10 @@ inline std::unordered_map<int32_t, size_t> compute_mem_obj_capacity(
   std::unordered_map<int32_t, size_t> caps;
   for (size_t i = 0; i < requests.size(); ++i) {
     const auto& req = requests[i];
-    if (req.role != BufferRole::Internal)
+    if (req.kind == MemoryKind::HostExtern)
       continue;
+    if (req.mem_obj_id < 0)
+      continue; // unplanned/dynamic; engine defers via resize_tensor
     if (req.value_id >= values.size() || !values[req.value_id].isTensor()) {
       continue; // caller will surface the error in its own validation pass
     }
@@ -197,28 +200,32 @@ inline ArenaLayout compute_arena_layout(
   std::unordered_map<int32_t, size_t> group_caps;
   for (size_t i = 0; i < requests.size(); ++i) {
     const auto& req = requests[i];
-    if (req.role != BufferRole::Internal) continue;
+    if (req.kind == MemoryKind::HostExtern)
+      continue;
     if (req.host_mirror_value_id != Engine::kInvalidValueId &&
         partner_host_ptr_for(req.host_mirror_value_id) != nullptr) {
       continue;
     }
-    if (req.value_id >= values.size() ||
-        !values[req.value_id].isTensor()) continue;
+    if (req.value_id >= values.size() || !values[req.value_id].isTensor())
+      continue;
     size_t nb = values[req.value_id].toTensor().nbytes();
     auto& cur = group_caps[req.mem_obj_id];
-    if (nb > cur) cur = nb;
+    if (nb > cur)
+      cur = nb;
   }
 
   // Lay out arena slots, one per non-aliased, non-deferred group.
   for (size_t i = 0; i < requests.size(); ++i) {
     const auto& req = requests[i];
-    if (req.role != BufferRole::Internal) continue;
+    if (req.kind == MemoryKind::HostExtern)
+      continue;
     if (req.host_mirror_value_id != Engine::kInvalidValueId &&
         partner_host_ptr_for(req.host_mirror_value_id) != nullptr) {
       continue;
     }
     auto cit = group_caps.find(req.mem_obj_id);
-    if (cit == group_caps.end()) continue;
+    if (cit == group_caps.end())
+      continue;
     auto it = layout.group_offsets.find(req.mem_obj_id);
     if (it == layout.group_offsets.end()) {
       size_t off = align_up(layout.total_bytes);
@@ -232,6 +239,113 @@ inline ArenaLayout compute_arena_layout(
     }
   }
   return layout;
+}
+
+/**
+ * Decode a JumpFalseStep predicate EValue to a host-side bool. Returns
+ * Error::InvalidProgram for malformed predicates. Accepts:
+ *   - Bool scalar: passthrough.
+ *   - Bool tensor: returns false if any element is false; true otherwise
+ *     (matches ET's parse_cond_value semantics).
+ */
+inline ::executorch::runtime::Result<bool> parse_cond_value(
+    const ::executorch::runtime::EValue& cond) {
+  if (cond.isTensor()) {
+    const auto& t = cond.toTensor();
+    if (t.scalar_type() != ::executorch::aten::ScalarType::Bool) {
+      ET_LOG(
+          Error,
+          "parse_cond_value: expected Bool tensor, got dtype %d",
+          static_cast<int>(t.scalar_type()));
+      return ::executorch::runtime::Error::InvalidProgram;
+    }
+    const bool* data = t.const_data_ptr<bool>();
+    if (!data) {
+      ET_LOG(Error, "parse_cond_value: predicate tensor has null data_ptr");
+      return ::executorch::runtime::Error::InvalidProgram;
+    }
+    const size_t n = static_cast<size_t>(t.numel());
+    for (size_t i = 0; i < n; ++i) {
+      if (!data[i])
+        return false;
+    }
+    return true;
+  } else if (cond.isBool()) {
+    return cond.toBool();
+  }
+  ET_LOG(
+      Error,
+      "parse_cond_value: predicate EValue is neither Bool nor Tensor[Bool]");
+  return ::executorch::runtime::Error::InvalidProgram;
+}
+
+/**
+ * Storage for a TensorImpl that a backend engine materializes for a
+ * router-minted mirror value_id. The engine must keep this alive for
+ * the lifetime of the EValue that wraps it.
+ */
+struct TensorImplStorage {
+  std::unique_ptr<::executorch::aten::SizesType[]> sizes;
+  std::unique_ptr<::executorch::aten::DimOrderType[]> dim_order;
+  std::unique_ptr<::executorch::aten::StridesType[]> strides;
+  std::unique_ptr<::executorch::aten::TensorImpl> impl;
+};
+
+/**
+ * Materialize a Tensor EValue at values[dst_vid] mirroring the shape
+ * and dtype from values[src_vid] (which must already be a Tensor).
+ * data_ptr is left null; the engine populates it after allocating.
+ *
+ * Returns the storage backing the new TensorImpl. The engine MUST
+ * keep this storage alive for as long as values[dst_vid] is used.
+ *
+ * Used by DeviceEngine implementations when they claim a DeviceMirror
+ * AllocRequest: the router minted dst_vid past the end of the graph
+ * value space, so the central EValue array has no Tensor for it; the
+ * engine builds one here using the host partner's metadata.
+ */
+inline TensorImplStorage materialize_mirror_tensor(
+    ::executorch::runtime::Span<::executorch::runtime::EValue> values,
+    uint32_t dst_vid,
+    uint32_t src_vid) {
+  auto& src = values[src_vid].toTensor();
+  auto* src_impl = src.unsafeGetTensorImpl();
+  size_t dim = src.dim();
+  TensorImplStorage tm;
+  tm.sizes.reset(new ::executorch::aten::SizesType[dim]);
+  tm.dim_order.reset(new ::executorch::aten::DimOrderType[dim]);
+  tm.strides.reset(new ::executorch::aten::StridesType[dim]);
+  for (size_t i = 0; i < dim; ++i) {
+    tm.sizes[i] = src.size(i);
+    tm.dim_order[i] = src_impl->dim_order()[i];
+    tm.strides[i] = src.strides()[i];
+  }
+  tm.impl.reset(new ::executorch::aten::TensorImpl(
+      src.scalar_type(),
+      static_cast<ssize_t>(dim),
+      tm.sizes.get(),
+      /*data=*/nullptr,
+      tm.dim_order.get(),
+      tm.strides.get(),
+      ::executorch::aten::TensorShapeDynamism::DYNAMIC_BOUND));
+  values[dst_vid] =
+      ::executorch::runtime::EValue(::executorch::aten::Tensor(tm.impl.get()));
+  return tm;
+}
+
+/**
+ * Compute byte count for a contiguous tensor of `dtype` with `sizes`.
+ * Used by Engine::resize_tensor implementations to size a Buffer
+ * before reallocating.
+ */
+inline size_t bytes_for_sizes(
+    ::executorch::aten::ScalarType dtype,
+    ::executorch::runtime::ArrayRef<::executorch::aten::SizesType> sizes) {
+  size_t numel = 1;
+  for (size_t i = 0; i < sizes.size(); ++i) {
+    numel *= static_cast<size_t>(sizes[i]);
+  }
+  return numel * ::executorch::runtime::elementSize(dtype);
 }
 
 } // namespace native

@@ -442,6 +442,6 @@ template [[host_name("bmm_bf16")]] kernel void bmm<bfloat>(device const bfloat*,
   return source;
 }
 
-}  // namespace metal_v2
-}  // namespace backends
-}  // namespace executorch
+} // namespace metal_v2
+} // namespace backends
+} // namespace executorch

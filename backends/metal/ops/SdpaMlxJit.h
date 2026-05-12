@@ -27,8 +27,8 @@
 //===----------------------------------------------------------------------===//
 
 #include <executorch/backends/metal/core/MetalStream.h>
-#include <executorch/backends/metal/ops/registry/OpUtils.h>
 #include <executorch/backends/metal/ops/mlx_jit/KernelLoader.h>
+#include <executorch/backends/metal/ops/registry/OpUtils.h>
 #include <executorch/runtime/platform/log.h>
 
 #include <cmath>
@@ -51,36 +51,38 @@ namespace sdpa_mlx_jit {
 // All ints are 4B; alignment of int64[3] requires 8B alignment, satisfied by
 // the 56B prefix being a multiple of 8.
 struct AttnParamsHost {
-  int B;            // batch size
-  int H;            // number of query heads
-  int D;            // head dim
-  int qL;           // query sequence length
-  int kL;           // key/value sequence length
-  int gqa_factor;   // qH / kvH
-  float scale;      // attention scale
-  int NQ;           // number of query blocks (ceil(qL/BQ))
-  int NK;           // number of K/V blocks
-  int NQ_aligned;   // qL / BQ (truncated)
-  int NK_aligned;   // kL / BK (truncated)
-  int qL_rem;       // qL - NQ_aligned * BQ
-  int kL_rem;       // kL - NK_aligned * BK
-  int qL_off;       // kL - qL (causal sliding offset)
-  int64_t Q_strides[3];  // Q strides over (B, H, L); D axis stride = 1
-  int64_t K_strides[3];  // K strides over (B, H, L); D axis stride = 1
+  int B; // batch size
+  int H; // number of query heads
+  int D; // head dim
+  int qL; // query sequence length
+  int kL; // key/value sequence length
+  int gqa_factor; // qH / kvH
+  float scale; // attention scale
+  int NQ; // number of query blocks (ceil(qL/BQ))
+  int NK; // number of K/V blocks
+  int NQ_aligned; // qL / BQ (truncated)
+  int NK_aligned; // kL / BK (truncated)
+  int qL_rem; // qL - NQ_aligned * BQ
+  int kL_rem; // kL - NK_aligned * BK
+  int qL_off; // kL - qL (causal sliding offset)
+  int64_t Q_strides[3]; // Q strides over (B, H, L); D axis stride = 1
+  int64_t K_strides[3]; // K strides over (B, H, L); D axis stride = 1
   int64_t V_strides[3];
   int64_t O_strides[3];
 };
-static_assert(sizeof(AttnParamsHost) == 152,
-              "AttnParamsHost layout must match MLX upstream AttnParams "
-              "(steel/attn/params.h)");
+static_assert(
+    sizeof(AttnParamsHost) == 152,
+    "AttnParamsHost layout must match MLX upstream AttnParams "
+    "(steel/attn/params.h)");
 
 // Single int64[3] = 24 bytes.
 struct AttnMaskParamsHost {
-  int64_t M_strides[3];  // mask strides over (B, H, qL); kL axis stride = 1
+  int64_t M_strides[3]; // mask strides over (B, H, qL); kL axis stride = 1
 };
-static_assert(sizeof(AttnMaskParamsHost) == 24,
-              "AttnMaskParamsHost layout must match MLX upstream "
-              "AttnMaskParams");
+static_assert(
+    sizeof(AttnMaskParamsHost) == 24,
+    "AttnMaskParamsHost layout must match MLX upstream "
+    "AttnMaskParams");
 
 //===----------------------------------------------------------------------===//
 // Common utilities
@@ -89,9 +91,12 @@ static_assert(sizeof(AttnMaskParamsHost) == 24,
 // Map ScalarType → JitDtype for SDPA inputs (fp32/fp16/bf16 only).
 inline mlx_jit::JitDtype toJitDtype(executorch::aten::ScalarType dt) {
   switch (dt) {
-    case executorch::aten::ScalarType::Float:    return mlx_jit::JitDtype::Float32;
-    case executorch::aten::ScalarType::Half:     return mlx_jit::JitDtype::Float16;
-    case executorch::aten::ScalarType::BFloat16: return mlx_jit::JitDtype::BFloat16;
+    case executorch::aten::ScalarType::Float:
+      return mlx_jit::JitDtype::Float32;
+    case executorch::aten::ScalarType::Half:
+      return mlx_jit::JitDtype::Float16;
+    case executorch::aten::ScalarType::BFloat16:
+      return mlx_jit::JitDtype::BFloat16;
     default:
       ET_CHECK_MSG(false, "sdpa_mlx_jit: unsupported dtype %d", int(dt));
       return mlx_jit::JitDtype::Float32;
@@ -101,7 +106,7 @@ inline mlx_jit::JitDtype toJitDtype(executorch::aten::ScalarType dt) {
 // MLX uses get_type_string for vector kernel names ("float", "float16_t",
 // "bfloat16_t") — same as our JitDtype template arg name.
 inline const char* vectorKernelTypeName(mlx_jit::JitDtype d) {
-  return mlx_jit::typeToTemplateArg(d);  // "float" / "float16_t" / "bfloat16_t"
+  return mlx_jit::typeToTemplateArg(d); // "float" / "float16_t" / "bfloat16_t"
 }
 
 // Stride helpers for [B, H, L, D] tensors with D-axis stride == 1.
@@ -121,70 +126,39 @@ inline int64_t seqStride(const executorch::aten::Tensor& t) {
 // MLX scaled_dot_product_attention.cpp:343-348 (single-pass) and 432-437
 // (2-pass pass 1). Both share the same `sdpa_vector*_<type>_<D>_<V>` core.
 inline std::string buildVectorKernelName(
-    const char* kernel_kind,  // "sdpa_vector" or "sdpa_vector_2pass_1"
-    mlx_jit::JitDtype dtype, int D, int V) {
+    const char* kernel_kind, // "sdpa_vector" or "sdpa_vector_2pass_1"
+    mlx_jit::JitDtype dtype,
+    int D,
+    int V) {
   std::ostringstream s;
-  s << kernel_kind << "_" << vectorKernelTypeName(dtype)
-    << "_" << D << "_" << V;
+  s << kernel_kind << "_" << vectorKernelTypeName(dtype) << "_" << D << "_"
+    << V;
   return s.str();
 }
 
-// MLX scaled_dot_product_attention.cpp:374-378 (single-pass).
-inline std::string buildVectorHashSuffix(
-    bool has_mask, bool bool_mask,
-    bool query_transposed, bool do_causal, bool has_sinks) {
-  std::ostringstream s;
-  s << (has_mask ? (bool_mask ? "_boolmask" : "_floatmask") : "_nomask")
-    << (query_transposed ? "_qt" : "_qnt")
-    << (do_causal ? "_c" : "_nc")
-    << (has_sinks ? "_sinks" : "_nosinks");
-  return s.str();
-}
-
-// MLX scaled_dot_product_attention.cpp:518-522 (2-pass pass 1) — same
-// suffix as single-pass but with a "_<blocks>" tail since `blocks` is an
-// int FC and distinct values get distinct PSOs.
-inline std::string buildVector2PassHashSuffix(
-    bool has_mask, bool bool_mask,
-    bool query_transposed, bool do_causal, bool has_sinks, int blocks) {
-  std::ostringstream s;
-  s << (has_mask ? (bool_mask ? "_boolmask" : "_floatmask") : "_nomask")
-    << (query_transposed ? "_qt" : "_qnt")
-    << (do_causal ? "_c" : "_nc")
-    << (has_sinks ? "_sinks_" : "_nosinks_")
-    << blocks;
-  return s.str();
-}
+//===----------------------------------------------------------------------===//
+// Steel attention kernel name builder (still needed by call sites).
+//===----------------------------------------------------------------------===//
 
 // MLX scaled_dot_product_attention.cpp:222-238.
 inline std::string buildSteelKernelName(
     bool useNax,
-    mlx_jit::JitDtype dtype, mlx_jit::JitDtype maskNameDtype,
-    int BQ, int BK, int BD, int WM, int WN) {
+    mlx_jit::JitDtype dtype,
+    mlx_jit::JitDtype maskNameDtype,
+    int BQ,
+    int BK,
+    int BD,
+    int WM,
+    int WN) {
   // Both NAX and non-NAX kernel names share the "steel_attention_" prefix;
   // routing happens inside the snippet (Snippets::steel_attention vs
   // steel_attention_nax) so only the LIBRARY differs, not the symbol.
   // MLX upstream uses the same prefix for both.
   (void)useNax;
   std::ostringstream s;
-  s << "steel_attention_" << mlx_jit::typeToName(dtype)
-    << "_bq" << BQ << "_bk" << BK << "_bd" << BD
-    << "_wm" << WM << "_wn" << WN
-    << "_mask" << mlx_jit::typeToName(maskNameDtype);
-  return s.str();
-}
-
-// MLX scaled_dot_product_attention.cpp:240-253. align_Q / align_K vary by
-// shape; has_mask / do_causal / has_sinks come from the call.
-inline std::string buildSteelHashSuffix(
-    bool align_Q, bool align_K,
-    bool has_mask, bool do_causal, bool has_sinks) {
-  std::ostringstream s;
-  s << "_align_Q_" << (align_Q ? 't' : 'n')
-    << "_align_K_" << (align_K ? 't' : 'n')
-    << "_has_mask_" << (has_mask ? 't' : 'n')
-    << "_do_causal_" << (do_causal ? 't' : 'n')
-    << "_has_sinks_" << (has_sinks ? 't' : 'n');
+  s << "steel_attention_" << mlx_jit::typeToName(dtype) << "_bq" << BQ << "_bk"
+    << BK << "_bd" << BD << "_wm" << WM << "_wn" << WN << "_mask"
+    << mlx_jit::typeToName(maskNameDtype);
   return s.str();
 }
 
@@ -194,8 +168,12 @@ inline std::string buildSteelHashSuffix(
 
 // Vector single-pass FC slots 20-25.
 inline MetalKernelCompiler::FunctionConstants makeVectorFCs(
-    bool has_mask, bool query_transposed, bool do_causal,
-    bool bool_mask, bool float_mask, bool has_sinks) {
+    bool has_mask,
+    bool query_transposed,
+    bool do_causal,
+    bool bool_mask,
+    bool float_mask,
+    bool has_sinks) {
   return MetalKernelCompiler::FunctionConstants{
       /*bools=*/{
           {20, has_mask},
@@ -211,8 +189,13 @@ inline MetalKernelCompiler::FunctionConstants makeVectorFCs(
 
 // Vector 2-pass-1 adds slot 26 (`blocks`, int).
 inline MetalKernelCompiler::FunctionConstants makeVector2PassFCs(
-    bool has_mask, bool query_transposed, bool do_causal,
-    bool bool_mask, bool float_mask, bool has_sinks, int blocks) {
+    bool has_mask,
+    bool query_transposed,
+    bool do_causal,
+    bool bool_mask,
+    bool float_mask,
+    bool has_sinks,
+    int blocks) {
   return MetalKernelCompiler::FunctionConstants{
       /*bools=*/{
           {20, has_mask},
@@ -222,7 +205,8 @@ inline MetalKernelCompiler::FunctionConstants makeVector2PassFCs(
           {24, float_mask},
           {25, has_sinks},
       },
-      /*ints=*/{
+      /*ints=*/
+      {
           {26, blocks},
       },
   };
@@ -230,8 +214,11 @@ inline MetalKernelCompiler::FunctionConstants makeVector2PassFCs(
 
 // Steel attention FC slots 200/201/300/301/302.
 inline MetalKernelCompiler::FunctionConstants makeSteelFCs(
-    bool align_Q, bool align_K,
-    bool has_mask, bool do_causal, bool has_sinks) {
+    bool align_Q,
+    bool align_K,
+    bool has_mask,
+    bool do_causal,
+    bool has_sinks) {
   return MetalKernelCompiler::FunctionConstants{
       /*bools=*/{
           {200, align_Q},
@@ -275,7 +262,7 @@ inline void dispatchSdpaVectorViaMlxJit(
     const executorch::aten::Tensor& Q,
     const executorch::aten::Tensor& K,
     const executorch::aten::Tensor& V,
-    const executorch::aten::Tensor* mask,  // nullable
+    const executorch::aten::Tensor* mask, // nullable
     executorch::aten::Tensor& O,
     float scale,
     bool do_causal,
@@ -292,8 +279,8 @@ inline void dispatchSdpaVectorViaMlxJit(
   const int qL = static_cast<int>(Q.sizes()[2]);
 
   const bool has_mask = (mask != nullptr);
-  const bool bool_mask = has_mask &&
-      mask->scalar_type() == executorch::aten::ScalarType::Bool;
+  const bool bool_mask =
+      has_mask && mask->scalar_type() == executorch::aten::ScalarType::Bool;
   const bool float_mask = has_mask && !bool_mask;
   // Q layout: row_contiguous iff strides == default contiguous strides for
   // [B, Hq, qL, D]. Equivalent test: stride[2] == D AND stride[1] == qL*D
@@ -302,31 +289,40 @@ inline void dispatchSdpaVectorViaMlxJit(
   const int64_t expected_s2 = D;
   const int64_t expected_s1 = static_cast<int64_t>(qL) * D;
   const int64_t expected_s0 = static_cast<int64_t>(Hq) * qL * D;
-  const bool query_row_contig =
-      (Q.strides()[3] == 1) && (Q.strides()[2] == expected_s2) &&
-      (Q.strides()[1] == expected_s1) && (Q.strides()[0] == expected_s0);
+  const bool query_row_contig = (Q.strides()[3] == 1) &&
+      (Q.strides()[2] == expected_s2) && (Q.strides()[1] == expected_s1) &&
+      (Q.strides()[0] == expected_s0);
   const bool query_transposed = !query_row_contig;
-  const bool has_sinks = false;  // sinks unsupported in v0
+  const bool has_sinks = false; // sinks unsupported in v0
 
-  const std::string kname =
-      buildVectorKernelName("sdpa_vector", jdt, D, Vdim);
-  const std::string hashName = kname + buildVectorHashSuffix(
-      has_mask, bool_mask, query_transposed, do_causal, has_sinks);
+  const std::string kname = buildVectorKernelName("sdpa_vector", jdt, D, Vdim);
   const auto fcs = makeVectorFCs(
       has_mask, query_transposed, do_causal, bool_mask, float_mask, has_sinks);
 
-  ET_LOG(Debug,
-         "dispatchSdpaVectorViaMlxJit: B=%d Hq=%d qL=%d D=%d V=%d kL=%d "
-         "gqa=%d dtype=%s has_mask=%d (bool=%d) qt=%d causal=%d kname=%s",
-         B, Hq, qL, D, Vdim, N, gqa_factor, dtypeSuffix(dtype),
-         int(has_mask), int(bool_mask), int(query_transposed), int(do_causal),
-         kname.c_str());
+  ET_LOG(
+      Debug,
+      "dispatchSdpaVectorViaMlxJit: B=%d Hq=%d qL=%d D=%d V=%d kL=%d "
+      "gqa=%d dtype=%s has_mask=%d (bool=%d) qt=%d causal=%d kname=%s",
+      B,
+      Hq,
+      qL,
+      D,
+      Vdim,
+      N,
+      gqa_factor,
+      dtypeSuffix(dtype),
+      int(has_mask),
+      int(bool_mask),
+      int(query_transposed),
+      int(do_causal),
+      kname.c_str());
 
   auto pso = mlx_jit::shared(stream->compiler())
-                 .getSdpaVectorKernel(kname, hashName, fcs, jdt, D, Vdim);
-  ET_CHECK_MSG(pso != nil,
-               "dispatchSdpaVectorViaMlxJit: PSO acquisition failed for '%s'",
-               kname.c_str());
+                 .getSdpaVectorKernel(kname, fcs, jdt, D, Vdim);
+  ET_CHECK_MSG(
+      pso != nil,
+      "dispatchSdpaVectorViaMlxJit: PSO acquisition failed for '%s'",
+      kname.c_str());
 
   // Bind buffers + dispatch.
   auto d = stream->recorder().beginDispatch(pso);
@@ -350,19 +346,21 @@ inline void dispatchSdpaVectorViaMlxJit(
     d.setInput(mask_slot, mask->const_data_ptr(), mask->nbytes());
     // Mask strides: int32 per kernel signature.
     const int nd = mask->dim();
-    int32_t kv_stride =
-        (nd >= 1 && mask->sizes()[nd - 1] > 1) ? int32_t(mask->strides()[nd - 1]) : 0;
-    int32_t q_stride =
-        (nd >= 2 && mask->sizes()[nd - 2] > 1) ? int32_t(mask->strides()[nd - 2]) : 0;
-    int32_t h_stride =
-        (nd >= 3 && mask->sizes()[nd - 3] > 1) ? int32_t(mask->strides()[nd - 3]) : 0;
+    int32_t kv_stride = (nd >= 1 && mask->sizes()[nd - 1] > 1)
+        ? int32_t(mask->strides()[nd - 1])
+        : 0;
+    int32_t q_stride = (nd >= 2 && mask->sizes()[nd - 2] > 1)
+        ? int32_t(mask->strides()[nd - 2])
+        : 0;
+    int32_t h_stride = (nd >= 3 && mask->sizes()[nd - 3] > 1)
+        ? int32_t(mask->strides()[nd - 3])
+        : 0;
     d.setBytes<int32_t>(13, kv_stride);
     d.setBytes<int32_t>(14, q_stride);
     d.setBytes<int32_t>(15, h_stride);
   }
   // sinks slots 16/17: FC-gated to has_sinks=false → unused; do not bind.
-  d.run(uvec3{uint32_t(B * Hq), uint32_t(qL), 1u},
-        uvec3{1024u, 1u, 1u});
+  d.run(uvec3{uint32_t(B * Hq), uint32_t(qL), 1u}, uvec3{1024u, 1u, 1u});
 }
 
 //===----------------------------------------------------------------------===//
@@ -394,18 +392,24 @@ inline int chooseVector2PassBlocks(char devc, int N, int n_simds) {
   if (devc == 's') {
     blocks = 64;
     if (N > 1024 && n_simds > 4) {
-      if (N <= 8192) blocks = 128;
-      else if (N <= 32768) blocks = 256;
-      else if (N <= 65536) blocks = 512;
-      else blocks = 1024;
+      if (N <= 8192)
+        blocks = 128;
+      else if (N <= 32768)
+        blocks = 256;
+      else if (N <= 65536)
+        blocks = 512;
+      else
+        blocks = 1024;
     }
   } else if (devc == 'd') {
     blocks = 128;
     if (n_simds <= 2 && N > 8192) {
       blocks = 256;
     } else if (n_simds >= 6) {
-      if (N >= 16384 && N < 65536) blocks = 512;
-      else if (N >= 65536) blocks = 1024;
+      if (N >= 16384 && N < 65536)
+        blocks = 512;
+      else if (N >= 65536)
+        blocks = 1024;
     }
   } else {
     blocks = (n_simds >= 4) ? 64 : 32;
@@ -418,7 +422,7 @@ inline void dispatchSdpaVector2PassViaMlxJit(
     const executorch::aten::Tensor& Q,
     const executorch::aten::Tensor& K,
     const executorch::aten::Tensor& V,
-    const executorch::aten::Tensor* mask,  // nullable
+    const executorch::aten::Tensor* mask, // nullable
     executorch::aten::Tensor& O,
     float scale,
     bool do_causal,
@@ -439,15 +443,15 @@ inline void dispatchSdpaVector2PassViaMlxJit(
   const int blocks = chooseVector2PassBlocks(arch_suffix, N, n_simds);
 
   const bool has_mask = (mask != nullptr);
-  const bool bool_mask = has_mask &&
-      mask->scalar_type() == executorch::aten::ScalarType::Bool;
+  const bool bool_mask =
+      has_mask && mask->scalar_type() == executorch::aten::ScalarType::Bool;
   const bool float_mask = has_mask && !bool_mask;
   const int64_t expected_s2 = D;
   const int64_t expected_s1 = static_cast<int64_t>(qL) * D;
   const int64_t expected_s0 = static_cast<int64_t>(Hq) * qL * D;
-  const bool query_row_contig =
-      (Q.strides()[3] == 1) && (Q.strides()[2] == expected_s2) &&
-      (Q.strides()[1] == expected_s1) && (Q.strides()[0] == expected_s0);
+  const bool query_row_contig = (Q.strides()[3] == 1) &&
+      (Q.strides()[2] == expected_s2) && (Q.strides()[1] == expected_s1) &&
+      (Q.strides()[0] == expected_s0);
   const bool query_transposed = !query_row_contig;
   const bool has_sinks = false;
 
@@ -457,39 +461,52 @@ inline void dispatchSdpaVector2PassViaMlxJit(
   size_t element_size = 4;
   switch (dtype) {
     case executorch::aten::ScalarType::Half:
-    case executorch::aten::ScalarType::BFloat16: element_size = 2; break;
-    default: element_size = 4; break;
+    case executorch::aten::ScalarType::BFloat16:
+      element_size = 2;
+      break;
+    default:
+      element_size = 4;
+      break;
   }
   const size_t total_elems_per_thread = size_t(B) * Hq * qL * blocks;
-  const size_t intermediate_bytes = total_elems_per_thread * Vdim * element_size;
+  const size_t intermediate_bytes =
+      total_elems_per_thread * Vdim * element_size;
   const size_t partials_bytes = total_elems_per_thread * sizeof(float);
 
   void* intermediate_ptr = stream->allocator().alloc(intermediate_bytes);
   void* sums_ptr = stream->allocator().alloc(partials_bytes);
   void* maxs_ptr = stream->allocator().alloc(partials_bytes);
-  ET_CHECK_MSG(intermediate_ptr && sums_ptr && maxs_ptr,
-               "dispatchSdpaVector2PassViaMlxJit: scratch allocation failed");
+  ET_CHECK_MSG(
+      intermediate_ptr && sums_ptr && maxs_ptr,
+      "dispatchSdpaVector2PassViaMlxJit: scratch allocation failed");
 
   // ---- Pass 1 ----
   const std::string p1_kname =
       buildVectorKernelName("sdpa_vector_2pass_1", jdt, D, Vdim);
-  const std::string p1_hashName = p1_kname + buildVector2PassHashSuffix(
-      has_mask, bool_mask, query_transposed, do_causal, has_sinks, blocks);
   const auto p1_fcs = makeVector2PassFCs(
-      has_mask, query_transposed, do_causal, bool_mask, float_mask, has_sinks,
+      has_mask,
+      query_transposed,
+      do_causal,
+      bool_mask,
+      float_mask,
+      has_sinks,
       blocks);
 
-  ET_LOG(Debug,
-         "dispatchSdpaVector2PassViaMlxJit: pass1 N=%d blocks=%d n_simds=%d "
-         "kname=%s",
-         N, blocks, n_simds, p1_kname.c_str());
+  ET_LOG(
+      Debug,
+      "dispatchSdpaVector2PassViaMlxJit: pass1 N=%d blocks=%d n_simds=%d "
+      "kname=%s",
+      N,
+      blocks,
+      n_simds,
+      p1_kname.c_str());
 
   auto p1_pso = mlx_jit::shared(stream->compiler())
-                    .getSdpaVector2PassKernel1(
-                        p1_kname, p1_hashName, p1_fcs, jdt, D, Vdim);
-  ET_CHECK_MSG(p1_pso != nil,
-               "dispatchSdpaVector2PassViaMlxJit: pass1 PSO failed for '%s'",
-               p1_kname.c_str());
+                    .getSdpaVector2PassKernel1(p1_kname, p1_fcs, jdt, D, Vdim);
+  ET_CHECK_MSG(
+      p1_pso != nil,
+      "dispatchSdpaVector2PassViaMlxJit: pass1 PSO failed for '%s'",
+      p1_kname.c_str());
 
   auto d1 = stream->recorder().beginDispatch(p1_pso);
   d1.setInput(0, Q.const_data_ptr(), Q.nbytes());
@@ -508,42 +525,49 @@ inline void dispatchSdpaVector2PassViaMlxJit(
     const uint32_t mask_slot = bool_mask ? 13u : 14u;
     d1.setInput(mask_slot, mask->const_data_ptr(), mask->nbytes());
     const int nd = mask->dim();
-    int32_t kv_stride =
-        (nd >= 1 && mask->sizes()[nd - 1] > 1) ? int32_t(mask->strides()[nd - 1]) : 0;
-    int32_t q_stride =
-        (nd >= 2 && mask->sizes()[nd - 2] > 1) ? int32_t(mask->strides()[nd - 2]) : 0;
-    int32_t h_stride =
-        (nd >= 3 && mask->sizes()[nd - 3] > 1) ? int32_t(mask->strides()[nd - 3]) : 0;
+    int32_t kv_stride = (nd >= 1 && mask->sizes()[nd - 1] > 1)
+        ? int32_t(mask->strides()[nd - 1])
+        : 0;
+    int32_t q_stride = (nd >= 2 && mask->sizes()[nd - 2] > 1)
+        ? int32_t(mask->strides()[nd - 2])
+        : 0;
+    int32_t h_stride = (nd >= 3 && mask->sizes()[nd - 3] > 1)
+        ? int32_t(mask->strides()[nd - 3])
+        : 0;
     d1.setBytes<int32_t>(15, kv_stride);
     d1.setBytes<int32_t>(16, q_stride);
     d1.setBytes<int32_t>(17, h_stride);
   }
-  d1.run(uvec3{uint32_t(Hkv), uint32_t(B), uint32_t(blocks)},
-         uvec3{32u, uint32_t(gqa_factor), uint32_t(qL)});
+  d1.run(
+      uvec3{uint32_t(Hkv), uint32_t(B), uint32_t(blocks)},
+      uvec3{32u, uint32_t(gqa_factor), uint32_t(qL)});
 
   // ---- Pass 2 ----
   std::ostringstream p2_kn;
   p2_kn << "sdpa_vector_2pass_2_" << vectorKernelTypeName(jdt) << "_" << Vdim;
   const std::string p2_kname = p2_kn.str();
 
-  ET_LOG(Debug,
-         "dispatchSdpaVector2PassViaMlxJit: pass2 kname=%s blocks=%d",
-         p2_kname.c_str(), blocks);
+  ET_LOG(
+      Debug,
+      "dispatchSdpaVector2PassViaMlxJit: pass2 kname=%s blocks=%d",
+      p2_kname.c_str(),
+      blocks);
 
   auto p2_pso = mlx_jit::shared(stream->compiler())
                     .getSdpaVector2PassKernel2(p2_kname, jdt, Vdim);
-  ET_CHECK_MSG(p2_pso != nil,
-               "dispatchSdpaVector2PassViaMlxJit: pass2 PSO failed for '%s'",
-               p2_kname.c_str());
+  ET_CHECK_MSG(
+      p2_pso != nil,
+      "dispatchSdpaVector2PassViaMlxJit: pass2 PSO failed for '%s'",
+      p2_kname.c_str());
 
-  stream->recorder().beginDispatch(p2_pso)
+  stream->recorder()
+      .beginDispatch(p2_pso)
       .setInput(0, intermediate_ptr, intermediate_bytes)
       .setInput(1, sums_ptr, partials_bytes)
       .setInput(2, maxs_ptr, partials_bytes)
       .setOutput(3, O.mutable_data_ptr(), O.nbytes())
       .setBytes<int32_t>(4, blocks)
-      .run(uvec3{uint32_t(B * Hq), uint32_t(qL), 1u},
-           uvec3{1024u, 1u, 1u});
+      .run(uvec3{uint32_t(B * Hq), uint32_t(qL), 1u}, uvec3{1024u, 1u, 1u});
 
   // Scratch buffers must outlive the dispatch — schedule them for free
   // after the next sync. allocator().free() defers reclamation until the
@@ -575,7 +599,7 @@ inline void dispatchSteelAttentionViaMlxJit(
     const executorch::aten::Tensor& Q,
     const executorch::aten::Tensor& K,
     const executorch::aten::Tensor& V,
-    const executorch::aten::Tensor* mask,  // nullable
+    const executorch::aten::Tensor* mask, // nullable
     executorch::aten::Tensor& O,
     float scale,
     bool do_causal,
@@ -618,33 +642,42 @@ inline void dispatchSteelAttentionViaMlxJit(
     }
   }
 
-  const std::string kname = buildSteelKernelName(
-      useNax, jdt, maskNameDtype, BQ, BK, BD, WM, WN);
-  const std::string hashName = kname + buildSteelHashSuffix(
-      align_Q, align_K, has_mask, do_causal, has_sinks);
-  const auto fcs = makeSteelFCs(align_Q, align_K, has_mask, do_causal, has_sinks);
+  const std::string kname =
+      buildSteelKernelName(useNax, jdt, maskNameDtype, BQ, BK, BD, WM, WN);
+  const auto fcs =
+      makeSteelFCs(align_Q, align_K, has_mask, do_causal, has_sinks);
 
-  ET_LOG(Debug,
-         "dispatchSteelAttentionViaMlxJit: B=%d H=%d qL=%d kL=%d D=%d "
-         "tile=(BQ=%d,BK=%d,BD=%d) useNax=%d dtype=%s causal=%d kname=%s",
-         B, H, qL, kL, D, BQ, BK, BD, int(useNax),
-         dtypeSuffix(dtype), int(do_causal), kname.c_str());
+  ET_LOG(
+      Debug,
+      "dispatchSteelAttentionViaMlxJit: B=%d H=%d qL=%d kL=%d D=%d "
+      "tile=(BQ=%d,BK=%d,BD=%d) useNax=%d dtype=%s causal=%d kname=%s",
+      B,
+      H,
+      qL,
+      kL,
+      D,
+      BQ,
+      BK,
+      BD,
+      int(useNax),
+      dtypeSuffix(dtype),
+      int(do_causal),
+      kname.c_str());
 
   id<MTLComputePipelineState> pso = nil;
   if (useNax) {
     pso = mlx_jit::shared(stream->compiler())
               .getSteelAttentionNaxKernel(
-                  kname, hashName, fcs, jdt, maskTypeArg,
-                  BQ, BK, BD, WM, WN);
+                  kname, fcs, jdt, maskTypeArg, BQ, BK, BD, WM, WN);
   } else {
     pso = mlx_jit::shared(stream->compiler())
               .getSteelAttentionKernel(
-                  kname, hashName, fcs, jdt, maskTypeArg,
-                  BQ, BK, BD, WM, WN);
+                  kname, fcs, jdt, maskTypeArg, BQ, BK, BD, WM, WN);
   }
-  ET_CHECK_MSG(pso != nil,
-               "dispatchSteelAttentionViaMlxJit: PSO failed for '%s'",
-               kname.c_str());
+  ET_CHECK_MSG(
+      pso != nil,
+      "dispatchSteelAttentionViaMlxJit: PSO failed for '%s'",
+      kname.c_str());
 
   // Compose AttnParams.
   const int NQ = (qL + BQ - 1) / BQ;
@@ -653,11 +686,17 @@ inline void dispatchSteelAttentionViaMlxJit(
   const int NK_aligned = kL / BK;
 
   AttnParamsHost params{
-      /*B=*/B, /*H=*/H, /*D=*/D,
-      /*qL=*/qL, /*kL=*/kL,
-      /*gqa_factor=*/gqa_factor, /*scale=*/scale,
-      /*NQ=*/NQ, /*NK=*/NK,
-      /*NQ_aligned=*/NQ_aligned, /*NK_aligned=*/NK_aligned,
+      /*B=*/B,
+      /*H=*/H,
+      /*D=*/D,
+      /*qL=*/qL,
+      /*kL=*/kL,
+      /*gqa_factor=*/gqa_factor,
+      /*scale=*/scale,
+      /*NQ=*/NQ,
+      /*NK=*/NK,
+      /*NQ_aligned=*/NQ_aligned,
+      /*NK_aligned=*/NK_aligned,
       /*qL_rem=*/(qL - NQ_aligned * BQ),
       /*kL_rem=*/(kL - NK_aligned * BK),
       /*qL_off=*/(kL - qL),
@@ -683,11 +722,12 @@ inline void dispatchSteelAttentionViaMlxJit(
     d.setInput(6, mask->const_data_ptr(), mask->nbytes());
   }
   // sinks slot 7: FC-gated to has_sinks=false → unused; do not bind.
-  d.run(uvec3{uint32_t(NQ), uint32_t(H), uint32_t(B)},
-        uvec3{32u, uint32_t(WM), uint32_t(WN)});
+  d.run(
+      uvec3{uint32_t(NQ), uint32_t(H), uint32_t(B)},
+      uvec3{32u, uint32_t(WM), uint32_t(WN)});
 }
 
-}  // namespace sdpa_mlx_jit
-}  // namespace metal_v2
-}  // namespace backends
-}  // namespace executorch
+} // namespace sdpa_mlx_jit
+} // namespace metal_v2
+} // namespace backends
+} // namespace executorch

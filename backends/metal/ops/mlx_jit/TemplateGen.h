@@ -36,23 +36,28 @@ namespace detail {
 // which is `1`/`0` — but MSL accepts those equally for `bool` non-type
 // template args. Keep the same default-streaming behavior as MLX.)
 inline void appendArg(std::ostringstream& os, bool first, const char* a) {
-  if (!first) os << ", ";
+  if (!first)
+    os << ", ";
   os << a;
 }
-inline void appendArg(std::ostringstream& os, bool first, const std::string& a) {
-  if (!first) os << ", ";
+inline void
+appendArg(std::ostringstream& os, bool first, const std::string& a) {
+  if (!first)
+    os << ", ";
   os << a;
 }
 inline void appendArg(std::ostringstream& os, bool first, std::string_view a) {
-  if (!first) os << ", ";
+  if (!first)
+    os << ", ";
   os << a;
 }
 template <typename T>
 inline void appendArg(std::ostringstream& os, bool first, const T& a) {
-  if (!first) os << ", ";
+  if (!first)
+    os << ", ";
   os << a;
 }
-}  // namespace detail
+} // namespace detail
 
 // Returns the explicit-instantiation directive as a string.
 //   makeInstantiation("steel_gemm_fused_nax_nn_bf16_..._bm64_bn128_...",
@@ -78,8 +83,8 @@ std::string makeInstantiation(
   return out.str();
 }
 
-}  // namespace TemplateGen
-}  // namespace mlx_jit
-}  // namespace metal_v2
-}  // namespace backends
-}  // namespace executorch
+} // namespace TemplateGen
+} // namespace mlx_jit
+} // namespace metal_v2
+} // namespace backends
+} // namespace executorch

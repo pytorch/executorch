@@ -34,8 +34,11 @@
 // SDK availability: macOS 15+ or iOS 18+. Both branches are required because
 // ResidencyManager and similar classes are reachable from iOS-only TUs.
 #if !defined(ET_METAL4_AVAILABLE)
-#if (defined(__MAC_OS_X_VERSION_MAX_ALLOWED) && __MAC_OS_X_VERSION_MAX_ALLOWED >= 150000) || \
-    (defined(__IPHONE_OS_VERSION_MAX_ALLOWED) && __IPHONE_OS_VERSION_MAX_ALLOWED >= 180000)
+#if (                                            \
+    defined(__MAC_OS_X_VERSION_MAX_ALLOWED) &&   \
+    __MAC_OS_X_VERSION_MAX_ALLOWED >= 150000) || \
+    (defined(__IPHONE_OS_VERSION_MAX_ALLOWED) && \
+     __IPHONE_OS_VERSION_MAX_ALLOWED >= 180000)
 #define ET_METAL4_AVAILABLE 1
 #else
 #define ET_METAL4_AVAILABLE 0

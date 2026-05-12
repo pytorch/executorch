@@ -22,4 +22,4 @@ int32_t aoti_torch_dtype_float16() {
   return 5;
 }
 
-}  // extern "C"
+} // extern "C"

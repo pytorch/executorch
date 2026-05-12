@@ -38,8 +38,7 @@ from functools import partial
 from typing import Any, Dict, final, List
 
 import torch
-
-from executorch.exir._serialize._program import PTEFile, serialize_pte_binary
+from executorch.exir._serialize._flatbuffer_program import _program_to_flatbuffer
 
 from executorch.exir.backend.backend_details import (
     BackendDetails,
@@ -47,7 +46,6 @@ from executorch.exir.backend.backend_details import (
     ExportedProgram,
     PreprocessResult,
 )
-from executorch.exir.backend.utils import DelegateMappingBuilder
 from executorch.exir.emit import emit_program
 from executorch.exir.memory_planning import greedy, MemoryPlanningAlgorithmSuite
 from executorch.exir.passes import MemoryPlanningPass, SpecPropPass
@@ -87,8 +85,8 @@ def _build_backend_inplace_ops() -> Dict[Any, Any]:
     """
     from executorch.exir.dialects._ops import ops as _edge_ops
     from executorch.exir.passes.reinplace import (
-        DEFAULT_INPLACEABLE_OPS,
         build_inplace_registry_for,
+        DEFAULT_INPLACEABLE_OPS,
     )
 
     edge = _edge_ops.edge.aten
@@ -100,33 +98,55 @@ def _build_backend_inplace_ops() -> Dict[Any, Any]:
     # functional one).
     pairs = [
         # ------- pointwise unary -------
-        ("relu", ["default"]), ("relu6", ["default"]),
-        ("sigmoid", ["default"]), ("tanh", ["default"]),
-        ("exp", ["default"]), ("expm1", ["default"]),
-        ("log", ["default"]), ("log1p", ["default"]),
-        ("log2", ["default"]), ("log10", ["default"]),
-        ("neg", ["default"]), ("abs", ["default"]),
-        ("sqrt", ["default"]), ("rsqrt", ["default"]),
-        ("reciprocal", ["default"]), ("square", ["default"]),
-        ("cos", ["default"]), ("sin", ["default"]),
-        ("tan", ["default"]), ("cosh", ["default"]),
-        ("sinh", ["default"]), ("asin", ["default"]),
-        ("acos", ["default"]), ("atan", ["default"]),
-        ("asinh", ["default"]), ("acosh", ["default"]),
+        ("relu", ["default"]),
+        ("relu6", ["default"]),
+        ("sigmoid", ["default"]),
+        ("tanh", ["default"]),
+        ("exp", ["default"]),
+        ("expm1", ["default"]),
+        ("log", ["default"]),
+        ("log1p", ["default"]),
+        ("log2", ["default"]),
+        ("log10", ["default"]),
+        ("neg", ["default"]),
+        ("abs", ["default"]),
+        ("sqrt", ["default"]),
+        ("rsqrt", ["default"]),
+        ("reciprocal", ["default"]),
+        ("square", ["default"]),
+        ("cos", ["default"]),
+        ("sin", ["default"]),
+        ("tan", ["default"]),
+        ("cosh", ["default"]),
+        ("sinh", ["default"]),
+        ("asin", ["default"]),
+        ("acos", ["default"]),
+        ("atan", ["default"]),
+        ("asinh", ["default"]),
+        ("acosh", ["default"]),
         ("atanh", ["default"]),
-        ("erf", ["default"]), ("erfc", ["default"]),
+        ("erf", ["default"]),
+        ("erfc", ["default"]),
         ("sign", ["default"]),
-        ("ceil", ["default"]), ("floor", ["default"]),
-        ("round", ["default"]), ("trunc", ["default"]),
+        ("ceil", ["default"]),
+        ("floor", ["default"]),
+        ("round", ["default"]),
+        ("trunc", ["default"]),
         ("frac", ["default"]),
-        ("silu", ["default"]), ("gelu", ["default"]),
-        ("elu", ["default"]), ("leaky_relu", ["default"]),
-        ("hardtanh", ["default"]), ("hardsigmoid", ["default"]),
+        ("silu", ["default"]),
+        ("gelu", ["default"]),
+        ("elu", ["default"]),
+        ("leaky_relu", ["default"]),
+        ("hardtanh", ["default"]),
+        ("hardsigmoid", ["default"]),
         ("hardswish", ["default"]),
-        ("logical_not", ["default"]), ("bitwise_not", ["default"]),
+        ("logical_not", ["default"]),
+        ("bitwise_not", ["default"]),
         # ------- binary -------
-        ("add", ["Tensor", "Scalar"]), ("sub", ["Tensor", "Scalar"]),
-        ("mul", ["Tensor", "Scalar"]), ("div", ["Tensor", "Scalar"]),
+        ("add", ["Tensor", "Scalar"]),
+        ("sub", ["Tensor", "Scalar"]),
+        ("mul", ["Tensor", "Scalar"]),
+        ("div", ["Tensor", "Scalar"]),
         # `pow.Tensor_Scalar` (Tensor self, Scalar exp) is what `square_`
         # decomposes to. Schema-matching finds its in-place counterpart
         # `pow_.Scalar` (overload name differs from functional).
@@ -134,7 +154,8 @@ def _build_backend_inplace_ops() -> Dict[Any, Any]:
         ("remainder", ["Tensor", "Scalar"]),
         ("fmod", ["Tensor", "Scalar"]),
         ("atan2", ["default"]),
-        ("logical_and", ["default"]), ("logical_or", ["default"]),
+        ("logical_and", ["default"]),
+        ("logical_or", ["default"]),
         ("logical_xor", ["default"]),
         ("bitwise_and", ["Tensor", "Scalar"]),
         ("bitwise_or", ["Tensor", "Scalar"]),
@@ -149,9 +170,11 @@ def _build_backend_inplace_ops() -> Dict[Any, Any]:
         ("masked_scatter", ["default"]),
         # ------- misc -------
         ("fill", ["Scalar", "Tensor"]),
-        ("clamp", ["default"]), ("clamp_min", ["default"]),
+        ("clamp", ["default"]),
+        ("clamp_min", ["default"]),
         ("clamp_max", ["default"]),
-        ("addcmul", ["default"]), ("addcdiv", ["default"]),
+        ("addcmul", ["default"]),
+        ("addcdiv", ["default"]),
         ("lerp", ["Scalar", "Tensor"]),
     ]
 
@@ -261,9 +284,7 @@ class NativeBackend(BackendDetails):
                 reinplace_pass as _et_reinplace_pass,
             )
 
-            program = _et_reinplace_pass(
-                program, ops_to_inplace=BACKEND_INPLACE_OPS
-            )
+            program = _et_reinplace_pass(program, ops_to_inplace=BACKEND_INPLACE_OPS)
             # ET's reinplace_pass copies meta["val"] to the new in-place
             # node but not meta["spec"]. Re-run SpecPropPass so the new
             # nodes have specs that downstream passes can read.
@@ -292,7 +313,6 @@ class NativeBackend(BackendDetails):
             # planner walks specs by identity, so a shared spec yields a
             # single allocation. No wasted slot, no runtime override
             # needed (the .pte naturally reports both at the same offset).
-            import torch
 
             sig = program.graph_signature
             nodes_by_name = {n.name: n for n in program.graph_module.graph.nodes}
@@ -323,7 +343,13 @@ class NativeBackend(BackendDetails):
                 # Alias: src now shares buf's spec object.
                 src_node.meta["spec"] = buf_spec
 
-        # Step 4: External constants pass — tag weights for NDM storage.
+        # Step 4: External constants pass — tag named parameters/buffers
+        # for NDM storage. The stock pass deliberately skips lifted
+        # tensor constants ("they are closer to code than data"). We
+        # used to override that to force lifted constants to NDM, but
+        # the runtime now supports inline constants directly via
+        # Engine::ConstRequest.inline_data + Graph::tensor_inline_data,
+        # so we keep the stock semantics.
         from executorch.exir.passes.external_constants_pass import (
             external_constants_pass,
         )
@@ -349,7 +375,6 @@ class NativeBackend(BackendDetails):
             )
 
         # Step 6: Emit the program.
-        delegate_mapping_builder = DelegateMappingBuilder(generated_identifiers=True)
         emitter_output = emit_program(program)
 
         # Step 7: Build named data store from external constants.
@@ -357,17 +382,28 @@ class NativeBackend(BackendDetails):
 
         named_data_store = NamedDataStore()
         if emitter_output.external_constant_buffer:
-            for tag, fqn_to_idx in emitter_output.external_constant_map.items():
+            for _tag, fqn_to_idx in emitter_output.external_constant_map.items():
                 for fqn, idx in fqn_to_idx.items():
                     data = emitter_output.external_constant_buffer[idx]
                     named_data_store.add_named_data(fqn, data)
 
-        # Step 8: Serialize to bytes.
-        pte_file = PTEFile(
-            program=emitter_output.program,
-            mutable_data=emitter_output.mutable_data,
-        )
-        serialized_bytes = bytes(serialize_pte_binary(pte_file))
+        # Step 8: Serialize the inner program to bytes.
+        #
+        # We deliberately do NOT use serialize_pte_binary here, because
+        # it extracts constants from program.constant_buffer into a
+        # separate constant_segment of the OUTER PTE file — which makes
+        # the inner program's constant_buffer empty when the runtime
+        # parses it. The constant data would end up in segments that
+        # the delegate has no view into.
+        #
+        # _program_to_flatbuffer is the lower-level serializer that
+        # keeps program.constant_buffer in place. The runtime's
+        # Graph::tensor_inline_data() reads directly from
+        # program->constant_buffer()->Get(idx), so inline lifted
+        # constants reach Engine::upload_constants via the inline_data
+        # path on ConstRequest.
+        fb_result = _program_to_flatbuffer(emitter_output.program)
+        serialized_bytes = bytes(fb_result.data)
 
         return PreprocessResult(
             processed_bytes=serialized_bytes,

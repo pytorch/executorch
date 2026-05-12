@@ -104,9 +104,11 @@ const char* steel_attention_nax();
 // wrapper. Provides MLX's affine-quantized linear kernel templates:
 //   affine_qmv_fast<T, group_size, bits, batched>      — decode fast path
 //   affine_qmv<T, group_size, bits, batched>           — decode generic
-//   affine_qmv_quad<T, group_size, bits, D, batched>   — decode quad path (D∈{64,128})
-//   affine_qmm_t<T, group_size, bits, aligned_N, BM=32, BK=32, BN=32>
-//                                                      — prefill, weight-transposed
+//   affine_qmv_quad<T, group_size, bits, D, batched>   — decode quad path
+//   (D∈{64,128}) affine_qmm_t<T, group_size, bits, aligned_N, BM=32, BK=32,
+//   BN=32>
+//                                                      — prefill,
+//                                                      weight-transposed
 //   affine_qvm<...>, affine_qmm_n<...>, affine_qmm_t_splitk<...>, ...
 // Paired with utils() (transitively included). NO function constants —
 // alignment + symmetric/asym are baked into the kernel name & template.

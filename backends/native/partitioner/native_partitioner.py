@@ -62,9 +62,35 @@ class NativeSupportedOperators(OperatorSupportBase):
         # Skip placeholder and output nodes - they shouldn't be partitioned
         if node.op in ("placeholder", "output", "get_attr"):
             return False
-
-        # NativeBackend supports all call_function ops via CPU fallback
-        return node.op == "call_function"
+        if node.op != "call_function":
+            return False
+        # TODO(native): Claim HOPs (cond, while_loop, scan, ...) so the
+        # delegate's inner program is byte-equivalent to ET stock emit
+        # (modulo preserved ops + reinplace), including JumpFalseCall +
+        # branch instructions. Today we skip them so they stay at the
+        # outer level and run through ET's standard control-flow
+        # executor; ops INSIDE the branches still get partitioned via
+        # to_backend's recursive is_submodule=True path.
+        #
+        # To claim HOPs we'd need:
+        #   1. Pre-populate `val` on the branch-graph `get_attr` nodes
+        #      so the wrap step's get_attr→placeholder conversion in
+        #      fuse_as_graphmodule produces a valid placeholder. ARM
+        #      does this in
+        #      backends/arm/operator_support/control_flow_support.py
+        #      (_submodules_fully_partitioned).
+        #   2. Make NativeBackend.preprocess HOP-aware: SpecPropPass,
+        #      MemoryPlanningPass, ConstraintBasedSymShapeEvalPass,
+        #      and emit_program all need to recursively walk branch
+        #      graphs. Today they crash with `'ProxyValue' has no
+        #      attribute 'graph'` when they hit a cond.
+        #   3. Make our runtime Graph adapter resolve the nested branch
+        #      programs that emit_program inlines under JumpFalseCall.
+        # ARM's stack of control-flow passes (control_flow_const_inline.py
+        # etc.) is the reference implementation.
+        if isinstance(node.target, torch._ops.HigherOrderOperator):
+            return False
+        return True
 
 
 @final

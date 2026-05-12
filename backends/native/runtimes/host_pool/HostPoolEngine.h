@@ -29,9 +29,10 @@ namespace native {
  * device-side mirrors.
  *
  * In the bid auction model, HostPool is the fallback claimant: it
- * claims every HostMirror / HostOnly request not previously claimed by
+ * claims every HostMirror request not previously claimed by
  * a device engine (typical case: a CUDA engine offering pinned host
- * memory; otherwise HostPool wins). HostPool declines DeviceMirror /
+ * memory; otherwise HostPool wins). HostPool always claims HostExtern
+ * (graph IO; not biddable). HostPool declines DeviceMirror /
  * DeviceOnly requests.
  *
  * Does not run kernels. compile_segment / execute return NotSupported.
@@ -49,7 +50,7 @@ class HostPoolEngine final : public Engine {
       ::executorch::runtime::Span<const uint32_t> /*input_value_ids*/,
       ::executorch::runtime::Span<const uint32_t> /*output_value_ids*/,
       ::executorch::runtime::Span<const std::pair<uint32_t, uint32_t>>
-          /*value_remap*/) override {
+      /*value_remap*/) override {
     return ::executorch::runtime::Error::NotSupported;
   }
 
@@ -59,7 +60,7 @@ class HostPoolEngine final : public Engine {
       ::executorch::runtime::Span<AllocClaim> out_claims) override;
 
   ::executorch::runtime::Error upload_constants(
-      const ::executorch::runtime::NamedDataMap& /*ndm*/,
+      const ::executorch::runtime::NamedDataMap* /*ndm*/,
       ::executorch::runtime::Span<const ConstRequest> /*requests*/) override {
     return ::executorch::runtime::Error::NotSupported;
   }
@@ -68,35 +69,33 @@ class HostPoolEngine final : public Engine {
     return std::make_unique<CpuEvent>();
   }
 
-  // Per-execute IO binding. Re-aliases the host HostBuffer for each
-  // value_id to caller's storage; sets data_ptr on the central EValue.
+  // Per-execute IO binding. NativeBackend fans out to every engine;
+  // each engine self-filters via its internal io_*_bindings_ table.
   ::executorch::runtime::Error bind_inputs(
       ::executorch::runtime::Span<::executorch::runtime::EValue> values,
-      ::executorch::runtime::Span<const ::executorch::runtime::EValue>
-          caller_evs,
-      ::executorch::runtime::Span<const uint32_t> value_ids) override;
+      ::executorch::runtime::Span<::executorch::runtime::EValue* const>
+          input_args) override;
 
   ::executorch::runtime::Error bind_outputs(
       ::executorch::runtime::Span<::executorch::runtime::EValue> values,
-      ::executorch::runtime::Span<const ::executorch::runtime::EValue>
-          caller_evs,
-      ::executorch::runtime::Span<const uint32_t> value_ids) override;
+      ::executorch::runtime::Span<::executorch::runtime::EValue* const>
+          output_args) override;
 
-  // Host re-alias path: read source data_ptr from EValue; copy or
-  // skip-if-same into the host destination Buffer's storage.
-  ::executorch::runtime::Error upload_from_host(
-      ::executorch::runtime::EValue& host_src_ev,
-      ::executorch::runtime::EValue& dev_dst_ev,
-      uint32_t dev_dst_value_id,
-      ::executorch::runtime::Span<Event* const> wait_for,
-      Event* signal) override;
+  // Build internal IO bindings: HostPool always claims all HostExtern
+  // requests (graph IO), so it owns all (graph_io_idx, vid) pairs.
+  ::executorch::runtime::Error set_io_bindings(
+      ::executorch::runtime::Span<const InputBinding> graph_inputs,
+      ::executorch::runtime::Span<const OutputBinding> graph_outputs) override;
 
-  ::executorch::runtime::Error download_to_host(
-      ::executorch::runtime::EValue& dev_src_ev,
-      uint32_t dev_src_value_id,
-      ::executorch::runtime::EValue& host_dst_ev,
-      ::executorch::runtime::Span<Event* const> wait_for,
-      Event* signal) override;
+  // Dynamic-shape resize: lazily allocate (or grow) the HostBuffer for
+  // value_id to fit new_sizes. Reuses an existing buffer if it has
+  // enough capacity; otherwise allocates a fresh Owned HostBuffer of
+  // the new size and replaces the old one.
+  ::executorch::runtime::Error resize_tensor(
+      ::executorch::runtime::Span<::executorch::runtime::EValue> values,
+      uint32_t value_id,
+      ::executorch::runtime::ArrayRef<::executorch::aten::SizesType> new_sizes)
+      override;
 
   ::executorch::runtime::Error execute(
       CompiledSegment* /*segment*/,
@@ -110,7 +109,9 @@ class HostPoolEngine final : public Engine {
     return ::executorch::runtime::Error::Ok;
   }
 
-  InstanceId id() const override { return id_; }
+  InstanceId id() const override {
+    return id_;
+  }
 
   void drain() override {}
 
@@ -123,7 +124,9 @@ class HostPoolEngine final : public Engine {
   // this chunk. Allocated once at allocate_buffers; freed at
   // ~HostPoolEngine.
   struct AlignedFree {
-    void operator()(uint8_t* p) const noexcept { std::free(p); }
+    void operator()(uint8_t* p) const noexcept {
+      std::free(p);
+    }
   };
   std::unique_ptr<uint8_t[], AlignedFree> arena_;
   size_t arena_size_ = 0;
@@ -135,6 +138,16 @@ class HostPoolEngine final : public Engine {
   // allocate_buffers, bind_inputs, bind_outputs.
   std::unordered_map<uint32_t, HostBuffer*> value_to_buffer_;
 
+  // Internal IO bindings populated by set_io_bindings. Each entry maps
+  // (graph_io_idx -> internal vid this engine binds for that slot).
+  // For HostPool the internal vid IS the graph IO vid (no remap).
+  struct IoBinding {
+    uint32_t graph_idx;
+    uint32_t internal_vid;
+  };
+  std::vector<IoBinding> io_input_bindings_;
+  std::vector<IoBinding> io_output_bindings_;
+
   // Helper: re-alias (or allocate fresh Aliasing) the HostBuffer for
   // value_id to caller_ptr; sets data_ptr on the central EValue.
   ::executorch::runtime::Error bind_one_(
@@ -143,6 +156,6 @@ class HostPoolEngine final : public Engine {
       const ::executorch::runtime::EValue& caller_ev);
 };
 
-}  // namespace native
-}  // namespace backends
-}  // namespace executorch
+} // namespace native
+} // namespace backends
+} // namespace executorch

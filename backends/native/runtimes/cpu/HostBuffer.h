@@ -46,24 +46,22 @@ class HostBuffer : public Buffer {
   static HostBuffer* allocate(
       size_t bytes,
       size_t alignment,
-      MemoryKind kind = MemoryKind::HostOnly) {
+      MemoryKind kind = MemoryKind::HostMirror) {
     void* mem = std::aligned_alloc(
         alignment, ((bytes + alignment - 1) / alignment) * alignment);
     return new HostBuffer(Mode::Owned, mem, bytes, kind);
   }
 
   // Mode::Aliasing — wrap a caller-owned pointer.
-  static HostBuffer* alias(
-      void* ptr,
-      size_t bytes,
-      MemoryKind kind = MemoryKind::HostOnly) {
+  static HostBuffer*
+  alias(void* ptr, size_t bytes, MemoryKind kind = MemoryKind::HostExtern) {
     return new HostBuffer(Mode::Aliasing, ptr, bytes, kind);
   }
 
   // Mode::NdmAlias — wrap a FreeableBuffer (move-in; held until ~HostBuffer).
   static HostBuffer* alias_ndm(
       ::executorch::runtime::FreeableBuffer&& fb,
-      MemoryKind kind = MemoryKind::HostOnly) {
+      MemoryKind kind = MemoryKind::DeviceOnly) {
     void* ptr = const_cast<void*>(fb.data());
     size_t bytes = fb.size();
     auto* hb = new HostBuffer(Mode::NdmAlias, ptr, bytes, kind);

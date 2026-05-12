@@ -35,14 +35,22 @@ class HostPoolRuntime final : public Runtime {
   HostPoolRuntime() = default;
   ~HostPoolRuntime() override = default;
 
-  std::string_view name() const override { return "host"; }
+  std::string_view name() const override {
+    return "host";
+  }
 
-  bool is_available_on_device() const override { return true; }
+  bool is_available_on_device() const override {
+    return true;
+  }
 
   // HostPool is an allocator only — it does not execute kernels.
-  bool can_run(const OpDescriptor& /*op*/) const override { return false; }
+  bool can_run(const OpDescriptor& /*op*/) const override {
+    return false;
+  }
 
-  RuntimeContext& context() override { return ctx_; }
+  RuntimeContext& context() override {
+    return ctx_;
+  }
 
   std::unique_ptr<Engine> instantiate() override {
     InstanceId id = next_instance_id_.fetch_add(1, std::memory_order_relaxed);
@@ -54,6 +62,6 @@ class HostPoolRuntime final : public Runtime {
   std::atomic<InstanceId> next_instance_id_{0};
 };
 
-}  // namespace native
-}  // namespace backends
-}  // namespace executorch
+} // namespace native
+} // namespace backends
+} // namespace executorch

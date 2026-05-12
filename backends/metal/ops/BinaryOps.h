@@ -33,12 +33,14 @@ class BinaryOp : public MetalOp {
   }
 
   std::vector<SizesType> computeOutputShape(
-      ::executorch::runtime::Span<::executorch::runtime::EValue*> inputs) const override;
+      ::executorch::runtime::Span<::executorch::runtime::EValue*> inputs)
+      const override;
 
   void dispatch(
       MetalStream* stream,
       ::executorch::runtime::Span<::executorch::runtime::EValue*> inputs,
-      ::executorch::runtime::Span<::executorch::runtime::EValue*> outputs) override;
+      ::executorch::runtime::Span<::executorch::runtime::EValue*> outputs)
+      override;
 
  protected:
   const char* kernelSource() const override;

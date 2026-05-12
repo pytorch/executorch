@@ -23,9 +23,8 @@ namespace native {
  * see only Buffer*.
  *
  * Ownership: Buffers are owned by their Runtime's RuntimeContext (its
- * pool). Engine::allocate returns a non-owning Buffer*. The Plan records
- * which Engine allocated which Buffer (Plan::value_owner); on destruction
- * asks each Engine to release.
+ * pool). Engine::allocate returns a non-owning Buffer*. Engines own
+ * Buffer lifetime; nothing outside the engine tracks per-vid storage.
  *
  * Each Buffer carries a MemoryKind (the addressing contract under which
  * it was allocated). The kind is set at construction by the backend in
@@ -39,9 +38,9 @@ namespace native {
  * NDM-aliased constants, or a pool slot) is the concrete subclass's
  * responsibility.
  *
- * Physical addressability is derivable: HostOnly/HostMirror live in
- * host RAM; DeviceMirror/DeviceOnly live in the owning Engine's
- * runtime address space (consult Plan::value_owner if needed).
+ * Physical addressability is derivable from MemoryKind: HostExtern /
+ * HostMirror live in host RAM; DeviceMirror / DeviceOnly live in the
+ * owning Engine's runtime address space.
  */
 class Buffer {
  public:
@@ -55,7 +54,7 @@ class Buffer {
   }
 
   // Non-null iff host-addressable. Runtime-defined per allocation:
-  //  - HostOnly / HostMirror: always non-null.
+  //  - HostExtern / HostMirror: always non-null.
   //  - DeviceMirror: non-null on UMA (where the pair is collapsed) or
   //    when the provider deliberately exposes the device side as host
   //    addressable; nullptr on discrete GPU pairs (caller must use
@@ -67,7 +66,7 @@ class Buffer {
   }
 
  protected:
-  Buffer(size_t bytes, MemoryKind kind = MemoryKind::HostOnly)
+  Buffer(size_t bytes, MemoryKind kind = MemoryKind::HostMirror)
       : size_bytes_(bytes), kind_(kind) {}
 
   // Allow derived classes (e.g., recycled HostBuffer slots) to re-set size

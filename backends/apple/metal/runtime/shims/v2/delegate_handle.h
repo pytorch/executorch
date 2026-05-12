@@ -59,7 +59,7 @@ using AOTInductorModelUpdateConstantsFromBlobFunc = AOTIRuntimeError (*)(
     AOTInductorModelContainerHandle container_handle,
     const uint8_t* weight_blob_ptr);
 
-}  // extern "C"
+} // extern "C"
 
 struct AOTIDelegateHandle {
   void* so_handle;
@@ -75,6 +75,6 @@ struct AOTIDelegateHandle {
   AOTInductorModelUpdateConstantsFromBlobFunc update_constants_from_blob;
 };
 
-}  // namespace metal
-}  // namespace backends
-}  // namespace executorch
+} // namespace metal
+} // namespace backends
+} // namespace executorch

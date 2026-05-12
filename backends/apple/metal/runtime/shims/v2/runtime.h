@@ -30,7 +30,7 @@ typedef void* MTLDevice_t;
 
 namespace executorch::backends::metal_v2 {
 class MetalStream;
-}  // namespace executorch::backends::metal_v2
+} // namespace executorch::backends::metal_v2
 
 namespace executorch {
 namespace backends {
@@ -72,6 +72,6 @@ void* get_metal_device();
 // metal_backend.cpp from v1 calls this via the mangled symbol.
 void synchronize_metal_stream();
 
-}  // namespace metal
-}  // namespace backends
-}  // namespace executorch
+} // namespace metal
+} // namespace backends
+} // namespace executorch

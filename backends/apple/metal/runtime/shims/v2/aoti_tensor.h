@@ -132,8 +132,8 @@ AOTITorchError aoti_torch_get_device_type(
     AOTITensorHandle tensor,
     int32_t* ret_device_type);
 
-}  // extern "C"
+} // extern "C"
 
-}  // namespace metal
-}  // namespace backends
-}  // namespace executorch
+} // namespace metal
+} // namespace backends
+} // namespace executorch

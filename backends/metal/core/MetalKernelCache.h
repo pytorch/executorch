@@ -101,7 +101,9 @@ class MetalKernelCache {
   // inserting `lib` first if `key` is absent. On a lost race the
   // returned library is the winner (NOT `lib`), so callers always end
   // up with the canonical entry without a second findLibrary call.
-  id<MTLLibrary> insertOrFindLibrary(const std::string& key, id<MTLLibrary> lib);
+  id<MTLLibrary> insertOrFindLibrary(
+      const std::string& key,
+      id<MTLLibrary> lib);
 
   //===--------------------------------------------------------------------===//
   // Raw PSO sub-store (per-shape JIT path; no wrapper).
@@ -113,7 +115,8 @@ class MetalKernelCache {
   void insertPso(const std::string& key, id<MTLComputePipelineState> pso);
   // Insert-or-find: same semantics as insertOrFindLibrary, for PSOs.
   id<MTLComputePipelineState> insertOrFindPso(
-      const std::string& key, id<MTLComputePipelineState> pso);
+      const std::string& key,
+      id<MTLComputePipelineState> pso);
 
   //===--------------------------------------------------------------------===//
   // Test-only: drop everything. Production code never calls this — entries

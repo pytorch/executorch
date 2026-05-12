@@ -66,8 +66,8 @@
 #endif
 
 #include <atomic>
-#include <cstdint>
 #include <cstddef>
+#include <cstdint>
 #include <mutex>
 #include <unordered_map>
 
@@ -118,7 +118,9 @@ class ResidencyManager {
   // C++ symbol names → linker mismatch when one TU is ARC and another
   // is MRC). Pinning to __unsafe_unretained makes both sides agree.
   void pinBatch(id<MTLBuffer> const __unsafe_unretained* buffers, size_t count);
-  void unpinBatch(id<MTLBuffer> const __unsafe_unretained* buffers, size_t count);
+  void unpinBatch(
+      id<MTLBuffer> const __unsafe_unretained* buffers,
+      size_t count);
 
   // One-shot pin/unpin of an MTLHeap. NOT refcounted. Pair them.
   void pinHeap(id<MTLHeap> heap);
@@ -147,11 +149,15 @@ class ResidencyManager {
 #if ET_METAL4_AVAILABLE
   // MTL4 queue uses a different protocol (id<MTL4CommandQueue>).
   // Overload is gated on availability.
-  void addQueueResidency(id<MTL4CommandQueue> queue) API_AVAILABLE(macos(26.0), ios(26.0));
-  void removeQueueResidency(id<MTL4CommandQueue> queue) API_AVAILABLE(macos(26.0), ios(26.0));
+  void addQueueResidency(id<MTL4CommandQueue> queue)
+      API_AVAILABLE(macos(26.0), ios(26.0));
+  void removeQueueResidency(id<MTL4CommandQueue> queue)
+      API_AVAILABLE(macos(26.0), ios(26.0));
 #endif
 
-  bool isEnabled() const { return enabled_; }
+  bool isEnabled() const {
+    return enabled_;
+  }
 
   //===--------------------------------------------------------------------===//
   // Debug accessors. NOT for production code paths.

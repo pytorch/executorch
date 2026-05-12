@@ -37,8 +37,10 @@ namespace backends {
 namespace metal_v2 {
 
 class MetalBufferPool {
-public:
-  explicit MetalBufferPool(id<MTLDevice> device, size_t maxBytes = 256 * 1024 * 1024);
+ public:
+  explicit MetalBufferPool(
+      id<MTLDevice> device,
+      size_t maxBytes = 256 * 1024 * 1024);
   ~MetalBufferPool();
 
   /// Acquire a buffer of at least `size` bytes
@@ -55,10 +57,14 @@ public:
   void clear();
 
   /// Current bytes in pool
-  size_t cachedBytes() const { return cachedBytes_; }
+  size_t cachedBytes() const {
+    return cachedBytes_;
+  }
 
   /// Maximum bytes the pool will hold before evicting LRU entries.
-  size_t maxBytes() const { return maxBytes_; }
+  size_t maxBytes() const {
+    return maxBytes_;
+  }
 
   /// Update the cap. If new cap < current cachedBytes_, evicts LRU until
   /// under cap. Useful when caller knows memory budget at init.
@@ -70,7 +76,7 @@ public:
   /// If total prewarmed bytes exceeds maxBytes_, oldest entries get evicted.
   void prewarm(const std::vector<size_t>& sizes);
 
-private:
+ private:
   void evictOldest();
 
   id<MTLDevice> device_;
@@ -82,12 +88,12 @@ private:
     size_t size;
   };
 
-  std::list<PoolEntry> lruList_;  // newest at front
+  std::list<PoolEntry> lruList_; // newest at front
   std::multimap<size_t, std::list<PoolEntry>::iterator> sizeMap_;
 
-  static constexpr size_t kMaxHeadroom = 32768;  // 32KB
+  static constexpr size_t kMaxHeadroom = 32768; // 32KB
 };
 
-}  // namespace metal_v2
-}  // namespace backends
-}  // namespace executorch
+} // namespace metal_v2
+} // namespace backends
+} // namespace executorch

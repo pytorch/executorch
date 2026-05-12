@@ -9,6 +9,7 @@
 #pragma once
 
 #include <executorch/backends/native/core/Engine.h>
+#include <executorch/backends/native/core/EngineUtils.h>
 #include <executorch/backends/native/runtimes/cpu/CpuEvent.h>
 #include <executorch/backends/native/runtimes/cpu/CpuRuntimeContext.h>
 #include <executorch/backends/native/runtimes/cpu/HostBuffer.h>
@@ -67,7 +68,7 @@ class CpuCompiledSegment final : public CompiledSegment {
  * registry. All work-issuing methods complete before returning; events
  * transition to Complete or Failed in-place.
  */
-class CpuEngine final : public Engine {
+class CpuEngine final : public DeviceEngine {
  public:
   explicit CpuEngine(CpuRuntimeContext& ctx, InstanceId id)
       : ctx_(ctx), id_(id) {}
@@ -87,39 +88,44 @@ class CpuEngine final : public Engine {
       ::executorch::runtime::Span<::executorch::runtime::EValue> values,
       ::executorch::runtime::Span<AllocClaim> out_claims) override;
 
+  // Dynamic-shape resize: lazily allocate (or grow) the HostBuffer for
+  // value_id. Reuses an existing Owned buffer if it has enough
+  // capacity; otherwise allocates a fresh Owned HostBuffer.
+  ::executorch::runtime::Error resize_tensor(
+      ::executorch::runtime::Span<::executorch::runtime::EValue> values,
+      uint32_t value_id,
+      ::executorch::runtime::ArrayRef<::executorch::aten::SizesType> new_sizes)
+      override;
+
   ::executorch::runtime::Error upload_constants(
-      const ::executorch::runtime::NamedDataMap& ndm,
+      const ::executorch::runtime::NamedDataMap* ndm,
       ::executorch::runtime::Span<const ConstRequest> requests) override;
 
   std::unique_ptr<Event> make_event() override;
 
-  // Per-execute IO binding: re-alias the engine's HostBuffer for each
-  // value_id to caller's storage. For the first call, allocates a
-  // fresh Aliasing HostBuffer; subsequent calls re-target in place.
-  ::executorch::runtime::Error bind_inputs(
-      ::executorch::runtime::Span<::executorch::runtime::EValue> values,
-      ::executorch::runtime::Span<const ::executorch::runtime::EValue>
-          caller_evs,
-      ::executorch::runtime::Span<const uint32_t> value_ids) override;
-
-  ::executorch::runtime::Error bind_outputs(
-      ::executorch::runtime::Span<::executorch::runtime::EValue> values,
-      ::executorch::runtime::Span<const ::executorch::runtime::EValue>
-          caller_evs,
-      ::executorch::runtime::Span<const uint32_t> value_ids) override;
+  // CpuEngine reads graph IO via the central EValue's data_ptr (set
+  // per-execute by HostPool's bind_inputs/bind_outputs on the
+  // HostExtern wrapper). It does NOT need its own per-execute IO
+  // binding, so it does not override bind_inputs/bind_outputs/
+  // set_io_bindings (default no-op from base Engine).
 
   // CPU is host hardware: it can read/write any host pointer directly.
-  // Graph IO already has a HostMirror/HostOnly Buffer on the host pool
-  // that bind_inputs/bind_outputs re-aliases to the caller's pointer
-  // each execute. CPU's compiled segment references the original IO
-  // vid (no remap), and CpuEngine::execute's refresh() silently no-ops
-  // when the vid isn't in value_to_buffer_, preserving the caller's
+  // Graph IO already has a HostExtern Buffer on the host pool that
+  // bind_inputs/bind_outputs re-aliases to the caller's pointer each
+  // execute. CPU's compiled segment references the original IO vid (no
+  // remap), and CpuEngine::execute's refresh() silently no-ops when
+  // the vid isn't in value_to_buffer_, preserving the caller's
   // data_ptr that the host pool wrote onto values[vid].
   //
-  // Opting out avoids a redundant DeviceMirror alloc and a no-op IO
-  // TransferStep per execute.
-  bool wants_input_mirror(uint32_t /*vid*/) const override { return false; }
-  bool wants_output_mirror(uint32_t /*vid*/) const override { return false; }
+  // Returning true avoids a redundant DeviceMirror alloc and a no-op
+  // IO TransferStep per execute. CpuEngine then receives bind_inputs /
+  // bind_outputs for these vids and wraps caller's pointer.
+  bool handles_input_directly(uint32_t /*vid*/) const override {
+    return true;
+  }
+  bool handles_output_directly(uint32_t /*vid*/) const override {
+    return true;
+  }
 
   // CpuEngine overrides these so cross-runtime transfer steps where
   // CPU is the device side can resolve internally. Bytes flow via host
@@ -163,7 +169,9 @@ class CpuEngine final : public Engine {
   // owned_buffers_ so destruction order frees Aliasing HostBuffers
   // first, then the arena.
   struct AlignedFree {
-    void operator()(uint8_t* p) const noexcept { std::free(p); }
+    void operator()(uint8_t* p) const noexcept {
+      std::free(p);
+    }
   };
   std::unique_ptr<uint8_t[], AlignedFree> arena_;
   size_t arena_size_ = 0;
@@ -171,6 +179,11 @@ class CpuEngine final : public Engine {
   // Owns all Buffers allocated via allocate_buffers / upload_constants /
   // bind_inputs / bind_outputs. Released at ~CpuEngine.
   std::vector<std::unique_ptr<HostBuffer>> owned_buffers_;
+
+  // Owns TensorImpl + sizes/dim_order/strides storage for any
+  // router-minted mirror value_ids this engine claims (DeviceMirror
+  // requests). Materialized in allocate_buffers.
+  std::vector<TensorImplStorage> mirror_tensor_metas_;
 
   // Per-engine value_id → Buffer table. Indexes EVERY Buffer this
   // engine owns (intermediates, mirrors, constants, IO-bound).
@@ -187,13 +200,6 @@ class CpuEngine final : public Engine {
   ::executorch::runtime::Error check_dependencies_(
       ::executorch::runtime::Span<Event* const> wait_for,
       Event* signal);
-
-  // Helper: re-alias (or allocate fresh Aliasing) the HostBuffer for
-  // value_id to caller_ptr; sets data_ptr on the central EValue.
-  ::executorch::runtime::Error bind_one_(
-      ::executorch::runtime::EValue& central_ev,
-      uint32_t value_id,
-      const ::executorch::runtime::EValue& caller_ev);
 };
 
 } // namespace native

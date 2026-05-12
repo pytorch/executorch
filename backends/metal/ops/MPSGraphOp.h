@@ -8,12 +8,12 @@
 
 #pragma once
 
-#include <executorch/backends/metal/core/MpsInterop.h>  // for ET_METAL_USE_MPSGRAPH
+#include <executorch/backends/metal/core/MpsInterop.h> // for ET_METAL_USE_MPSGRAPH
 
 #if ET_METAL_USE_MPSGRAPH
 
-#include <executorch/backends/metal/ops/registry/MetalOp.h>
 #include <executorch/backends/metal/core/MetalStream.h>
+#include <executorch/backends/metal/ops/registry/MetalOp.h>
 
 #import <Metal/Metal.h>
 #import <MetalPerformancePrimitives/MetalPerformancePrimitives.h>
@@ -62,7 +62,8 @@ class MPSGraphOp : public MetalOp {
   void dispatch(
       MetalStream* stream,
       ::executorch::runtime::Span<::executorch::runtime::EValue*> inputs,
-      ::executorch::runtime::Span<::executorch::runtime::EValue*> outputs) override final;
+      ::executorch::runtime::Span<::executorch::runtime::EValue*> outputs)
+      override final;
 
   // MPSGraph ops don't ship MSL kernel source.
   const char* kernelSource() const override {
@@ -85,7 +86,9 @@ class MPSGraphOp : public MetalOp {
   // Compute a human-readable cache key. Used only for log messages on cache
   // miss — the actual cache is keyed on a packed binary ShapeKey (below) for
   // perf. Subclasses can override to add op-specific signature info.
-  virtual std::string cacheKey(::executorch::runtime::Span<::executorch::runtime::EValue*> inputs, ::executorch::runtime::Span<::executorch::runtime::EValue*> outputs);
+  virtual std::string cacheKey(
+      ::executorch::runtime::Span<::executorch::runtime::EValue*> inputs,
+      ::executorch::runtime::Span<::executorch::runtime::EValue*> outputs);
 
  private:
   // Binary cache key: packs (dtype, dim, sizes...) for each input then
@@ -111,7 +114,9 @@ class MPSGraphOp : public MetalOp {
       return static_cast<size_t>(h);
     }
   };
-  static ShapeKey packShapes(::executorch::runtime::Span<::executorch::runtime::EValue*> inputs, ::executorch::runtime::Span<::executorch::runtime::EValue*> outputs);
+  static ShapeKey packShapes(
+      ::executorch::runtime::Span<::executorch::runtime::EValue*> inputs,
+      ::executorch::runtime::Span<::executorch::runtime::EValue*> outputs);
 
   std::unordered_map<ShapeKey, CachedGraph, ShapeKeyHash> cache_;
   // Memo of the last looked-up entry. Most inference loops call dispatch
@@ -145,7 +150,8 @@ class MPSGraphMatMulOp : public MPSGraphOp {
   // the base resizeOutput falls back to inputs[0]'s shape ([M, K]) and the
   // last (N - K) elements of the output are never written.
   std::vector<runtime::etensor::Tensor::SizesType> computeOutputShape(
-      ::executorch::runtime::Span<::executorch::runtime::EValue*> inputs) const override {
+      ::executorch::runtime::Span<::executorch::runtime::EValue*> inputs)
+      const override {
     if (inputs.size() < 2 || !inputs[0]->isTensor() || !inputs[1]->isTensor()) {
       return {};
     }
@@ -160,7 +166,10 @@ class MPSGraphMatMulOp : public MPSGraphOp {
   }
 
  protected:
-  CachedGraph buildGraph(::executorch::runtime::Span<::executorch::runtime::EValue*> inputs, ::executorch::runtime::Span<::executorch::runtime::EValue*> outputs) override;
+  CachedGraph buildGraph(
+      ::executorch::runtime::Span<::executorch::runtime::EValue*> inputs,
+      ::executorch::runtime::Span<::executorch::runtime::EValue*> outputs)
+      override;
 };
 
 } // namespace metal_v2

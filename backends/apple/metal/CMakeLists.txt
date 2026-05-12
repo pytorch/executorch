@@ -40,16 +40,18 @@ set(_aoti_metal_sources
     runtime/shims/utils.cpp
 )
 
-# AOTI shim layer: choose between v1 (vendored MLX qmv_fast for int4,
-# legacy stream/encoding/buffer-mgmt shims) and v2 (routes through
-# metal_v2::MetalStream + MetalOpRegistry → AffineQuantizedLinearOp,
-# SDPAOp with NAX / qmm_t / qmm_t_splitk dispatch + per-CB residency).
+# AOTI shim layer: choose between v1 (vendored MLX qmv_fast for int4, legacy
+# stream/encoding/buffer-mgmt shims) and v2 (routes through
+# metal_v2::MetalStream + MetalOpRegistry → AffineQuantizedLinearOp, SDPAOp with
+# NAX / qmm_t / qmm_t_splitk dispatch + per-CB residency).
 #
-# v1 and v2 shim files share extern "C" symbol names (intentionally —
-# PTE files lower against the same AOTI shim ABI). They CANNOT coexist
-# in the same build; this if/else picks one.
+# v1 and v2 shim files share extern "C" symbol names (intentionally — PTE files
+# lower against the same AOTI shim ABI). They CANNOT coexist in the same build;
+# this if/else picks one.
 if(EXECUTORCH_USE_METAL_V2)
-  list(APPEND _aoti_metal_sources
+  list(
+    APPEND
+    _aoti_metal_sources
     runtime/metal_backend_v2.cpp
     runtime/shims/v2/aoti_tensor.cpp
     runtime/shims/v2/aoti_dtype_stubs.cpp
@@ -58,7 +60,9 @@ if(EXECUTORCH_USE_METAL_V2)
     runtime/shims/v2/aoti_fallback_op.mm
   )
 else()
-  list(APPEND _aoti_metal_sources
+  list(
+    APPEND
+    _aoti_metal_sources
     runtime/metal_backend.cpp
     runtime/shims/memory.cpp
     runtime/shims/et_metal.mm
@@ -110,10 +114,10 @@ endif()
 
 target_link_options(metal_backend PUBLIC -Wl,-export_dynamic)
 
-# Under the v2 shim path, metal_backend depends on the metal_v2 lib
-# (defined in backends/metal/) for MetalStream, MetalOpRegistry,
-# AffineQuantizedLinearOp, etc. PRIVATE link so it doesn't propagate
-# through install exports of metal_backend's downstream consumers.
+# Under the v2 shim path, metal_backend depends on the metal_v2 lib (defined in
+# backends/metal/) for MetalStream, MetalOpRegistry, AffineQuantizedLinearOp,
+# etc. PRIVATE link so it doesn't propagate through install exports of
+# metal_backend's downstream consumers.
 if(EXECUTORCH_USE_METAL_V2)
   target_link_libraries(metal_backend PRIVATE metal_v2)
 endif()

@@ -10,8 +10,8 @@
 // the metal_* C ABI in runtime.h so this file has no Metal/Metal.h
 // dependency.
 
-#include <executorch/backends/aoti/utils.h>
 #include <executorch/backends/aoti/slim/factory/from_blob.h>
+#include <executorch/backends/aoti/utils.h>
 #include <executorch/backends/apple/metal/runtime/shims/v2/aoti_tensor.h>
 #include <executorch/backends/apple/metal/runtime/shims/v2/runtime.h>
 #include <executorch/runtime/platform/log.h>
@@ -30,9 +30,9 @@ namespace executorch {
 namespace backends {
 namespace metal {
 extern "C" AOTITorchError validate_dtype(int32_t dtype);
-}  // namespace metal
-}  // namespace backends
-}  // namespace executorch
+} // namespace metal
+} // namespace backends
+} // namespace executorch
 
 namespace executorch {
 namespace backends {
@@ -126,7 +126,7 @@ static AOTITorchError register_tracked_tensor(
   return Error::Ok;
 }
 
-}  // namespace
+} // namespace
 
 // Tensor lifecycle.
 
@@ -176,8 +176,8 @@ AOTITorchError aoti_torch_create_tensor_from_blob_v2(
       slim::makeArrayRef(strides),
       dtype_to_c10_scalar_type(dtype));
 
-  return register_tracked_tensor(adjusted_data, std::move(t), NOT_OWN,
-                                 ret_new_tensor);
+  return register_tracked_tensor(
+      adjusted_data, std::move(t), NOT_OWN, ret_new_tensor);
 }
 
 AOTITorchError aoti_torch_create_owned_tensor_from_blob_v2(
@@ -206,8 +206,8 @@ AOTITorchError aoti_torch_create_owned_tensor_from_blob_v2(
       slim::makeArrayRef(strides),
       dtype_to_c10_scalar_type(dtype));
 
-  return register_tracked_tensor(data, std::move(t), /*initial_refcount=*/1,
-                                 ret_new_tensor);
+  return register_tracked_tensor(
+      data, std::move(t), /*initial_refcount=*/1, ret_new_tensor);
 }
 
 AOTITorchError aoti_torch_empty_strided(
@@ -234,7 +234,9 @@ AOTITorchError aoti_torch_empty_strided(
     ET_CHECK_OR_RETURN_ERROR(
         sizes_ptr[i] >= 0,
         InvalidArgument,
-        "negative size at dim %d: %lld", i, (long long)sizes_ptr[i]);
+        "negative size at dim %d: %lld",
+        i,
+        (long long)sizes_ptr[i]);
     if (__builtin_mul_overflow(numel, sizes_ptr[i], &numel)) {
       ET_LOG(Error, "numel overflow on shape product");
       return Error::InvalidArgument;
@@ -255,8 +257,11 @@ AOTITorchError aoti_torch_empty_strided(
       dtype);
   int64_t nbytes;
   if (__builtin_mul_overflow(numel, (int64_t)element_size, &nbytes)) {
-    ET_LOG(Error, "byte-count overflow for numel=%lld element_size=%zu",
-        (long long)numel, element_size);
+    ET_LOG(
+        Error,
+        "byte-count overflow for numel=%lld element_size=%zu",
+        (long long)numel,
+        element_size);
     return Error::InvalidArgument;
   }
 
@@ -267,7 +272,7 @@ AOTITorchError aoti_torch_empty_strided(
       ET_LOG(Error, "Failed to allocate %lld bytes on Metal", nbytes);
       return Error::MemoryAllocationFailed;
     }
-  } else if (device_type == 0) {  // cpu
+  } else if (device_type == 0) { // cpu
     int result = posix_memalign(&ptr, 16, nbytes);
     ET_CHECK_OR_RETURN_ERROR(
         result == 0,
@@ -294,8 +299,8 @@ AOTITorchError aoti_torch_empty_strided(
       slim::makeArrayRef(strides),
       dtype_to_c10_scalar_type(dtype));
 
-  return register_tracked_tensor(ptr, std::move(t), /*initial_refcount=*/1,
-                                 ret_new_tensor);
+  return register_tracked_tensor(
+      ptr, std::move(t), /*initial_refcount=*/1, ret_new_tensor);
 }
 
 AOTITorchError aoti_torch_delete_tensor_object(AOTITensorHandle tensor) {
@@ -330,7 +335,11 @@ AOTITorchError aoti_torch_delete_tensor_object(AOTITensorHandle tensor) {
     } else if (ref_count > 1) {
       memory_to_n_tensor[data_ptr] = ref_count - 1;
     } else {
-      ET_LOG(Error, "Invalid reference count %d for memory %p", ref_count, data_ptr);
+      ET_LOG(
+          Error,
+          "Invalid reference count %d for memory %p",
+          ref_count,
+          data_ptr);
       return Error::Internal;
     }
   }
@@ -376,16 +385,14 @@ AOTITorchError aoti_torch_copy_(
   // Same-schema fast path: identical rank, dtype, sizes, AND strides.
   // Without the size check, two non-contiguous tensors with matching
   // strides but different element layouts would silently miscopy.
-  bool same_schema =
-      self->dim() == src->dim() && self->dtype() == src->dtype();
+  bool same_schema = self->dim() == src->dim() && self->dtype() == src->dtype();
   if (same_schema) {
     auto self_sizes = self->sizes();
     auto src_sizes = src->sizes();
     auto self_strides = self->strides();
     auto src_strides = src->strides();
     for (size_t i = 0; i < self->dim(); i++) {
-      if (self_sizes[i] != src_sizes[i] ||
-          self_strides[i] != src_strides[i]) {
+      if (self_sizes[i] != src_sizes[i] || self_strides[i] != src_strides[i]) {
         same_schema = false;
         break;
       }
@@ -479,7 +486,8 @@ AOTITorchError aoti_torch__reinterpret_tensor(
         adj_it == memory_to_n_tensor.end(),
         InvalidArgument,
         "_reinterpret_tensor: address %p (= %p + offset) already tracked",
-        adjusted_data, data_ptr);
+        adjusted_data,
+        data_ptr);
     ET_CHECK_OR_RETURN_ERROR(
         metal_buffer_nocopy(adjusted_data, (*ret_new_tensor)->nbytes()),
         Internal,
@@ -584,7 +592,8 @@ void cleanup_memory() {
 // tracked by metal_is_device_pointer.
 
 AOTITorchError aoti_torch_mps_malloc(void** buffer, size_t num_bytes) {
-  if (!buffer) return Error::InvalidArgument;
+  if (!buffer)
+    return Error::InvalidArgument;
   // Bump 0-byte requests to 1 byte. Lets create_tensor_from_blob_v2
   // (which requires non-null data) handle 0-element tensors. The tensor's
   // nbytes() comes from its shape, so the GPU never reads/writes the
@@ -595,7 +604,8 @@ AOTITorchError aoti_torch_mps_malloc(void** buffer, size_t num_bytes) {
 }
 
 AOTITorchError aoti_torch_mps_free(void* ptr) {
-  if (ptr) metal_deallocate_buffer(ptr);
+  if (ptr)
+    metal_deallocate_buffer(ptr);
   return Error::Ok;
 }
 
@@ -605,7 +615,8 @@ AOTITorchError aoti_torch_mps_memcpy(
     size_t bytes_read,
     size_t data_size,
     uint8_t* constants_start) {
-  if (!buffer || !constants_start) return Error::InvalidArgument;
+  if (!buffer || !constants_start)
+    return Error::InvalidArgument;
 
   auto* dst = static_cast<uint8_t*>(buffer) + constant_offset;
   std::memcpy(dst, constants_start + bytes_read, data_size);
@@ -629,10 +640,12 @@ AOTITorchError aoti_torch_mps_copy_buffer(
     size_t data_size,
     size_t src_offset,
     size_t dst_offset) {
-  if (!src_buffer || !dst_buffer) return Error::InvalidArgument;
+  if (!src_buffer || !dst_buffer)
+    return Error::InvalidArgument;
   auto* src = static_cast<uint8_t*>(src_buffer) + src_offset;
   auto* dst = static_cast<uint8_t*>(dst_buffer) + dst_offset;
-  if (metal_is_device_pointer(src_buffer) || metal_is_device_pointer(dst_buffer)) {
+  if (metal_is_device_pointer(src_buffer) ||
+      metal_is_device_pointer(dst_buffer)) {
     synchronize_metal_stream();
   }
   std::memcpy(dst, src, data_size);
@@ -644,7 +657,7 @@ AOTITorchError aoti_torch_mps_copy_buffer(
 
 __attribute__((__visibility__("default"))) int32_t
 aoti_torch_device_type_mps() {
-  return 13;  // c10/core/DeviceType.h::MPS
+  return 13; // c10/core/DeviceType.h::MPS
 }
 
 AOTITorchError aoti_torch_get_device_type(
@@ -658,8 +671,8 @@ AOTITorchError aoti_torch_get_device_type(
   return Error::Ok;
 }
 
-}  // extern "C"
+} // extern "C"
 
-}  // namespace metal
-}  // namespace backends
-}  // namespace executorch
+} // namespace metal
+} // namespace backends
+} // namespace executorch

@@ -48,9 +48,11 @@ struct StackTensorView {
 
   ETensor makeView(const Tensor& s) {
     const size_t dim = static_cast<size_t>(s.dim());
-    ET_CHECK_MSG(dim <= kMaxTensorDim,
+    ET_CHECK_MSG(
+        dim <= kMaxTensorDim,
         "StackTensorView: tensor rank %zu exceeds kMaxTensorDim=%zu",
-        dim, kMaxTensorDim);
+        dim,
+        kMaxTensorDim);
     for (size_t i = 0; i < dim; ++i) {
       sizes[i] = static_cast<SizesType>(s.sizes()[i]);
       strides[i] = static_cast<StridesType>(s.strides()[i]);
@@ -81,6 +83,6 @@ struct StackTensorView {
   StackTensorView& operator=(const StackTensorView&) = delete;
 };
 
-}  // namespace metal
-}  // namespace backends
-}  // namespace executorch
+} // namespace metal
+} // namespace backends
+} // namespace executorch

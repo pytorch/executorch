@@ -8,8 +8,8 @@
 
 #include <executorch/backends/native/routers/GreedyRouter.h>
 
-#include <executorch/backends/native/ir/GraphTypes.h>
 #include <executorch/backends/native/core/OpDescriptor.h>
+#include <executorch/backends/native/ir/GraphTypes.h>
 
 #include <executorch/runtime/core/exec_aten/util/scalar_type_util.h>
 #include <executorch/runtime/platform/log.h>
@@ -74,6 +74,7 @@ Result<Plan> GreedyRouter::route(
   Plan plan;
   plan.providers.assign(providers.begin(), providers.end());
   plan.instances.assign(instances.begin(), instances.end());
+  plan.max_hops = options.max_hops;
 
   // ---- 1. Per-instruction provider assignment ---------------------------
   //
@@ -94,8 +95,8 @@ Result<Plan> GreedyRouter::route(
   struct ControlInstr {
     uint32_t source_pc;
     InstructionKind kind;
-    JumpFalseInfo jf;   // valid iff kind == JumpFalse
-    MoveInfo mv;        // valid iff kind == Move
+    JumpFalseInfo jf; // valid iff kind == JumpFalse
+    MoveInfo mv; // valid iff kind == Move
   };
   std::vector<ControlInstr> control_instrs;
 
@@ -172,9 +173,10 @@ Result<Plan> GreedyRouter::route(
   std::vector<PendingSegment> segments;
 
   for (uint32_t i = 0; i < assignments.size(); ++i) {
-    if (assignments[i] == kSkipNonKernel) continue; // CF-2 break
-    bool start_new = segments.empty()
-        || segments.back().provider_idx != assignments[i]
+    if (assignments[i] == kSkipNonKernel)
+      continue; // CF-2 break
+    bool start_new = segments.empty() ||
+        segments.back().provider_idx != assignments[i]
         // Previous instruction was a non-Kernel break.
         || (i > 0 && assignments[i - 1] == kSkipNonKernel);
     if (start_new) {
@@ -275,8 +277,10 @@ Result<Plan> GreedyRouter::route(
 
   std::unordered_map<uint32_t, int> value_home_provider;
   for (uint32_t i = 0; i < graph.num_values(); ++i) {
-    if (graph.value_type(i) != ValueType::Tensor) continue;
-    if (graph.tensor_constant_data_key(i) != nullptr) continue; // constant
+    if (graph.value_type(i) != ValueType::Tensor)
+      continue;
+    if (graph.is_constant(i))
+      continue; // constant
     if (io_ids.count(i) > 0) {
       value_home_provider[i] = 0; // graph IO → host
       continue;
@@ -290,10 +294,12 @@ Result<Plan> GreedyRouter::route(
     }
     auto cit = value_consumer_providers.find(i);
     if (cit != value_consumer_providers.end()) {
-      for (int c : cit->second) touching.insert(c);
+      for (int c : cit->second)
+        touching.insert(c);
     }
 
-    if (touching.empty()) continue; // truly unused
+    if (touching.empty())
+      continue; // truly unused
     value_home_provider[i] = (touching.size() == 1) ? *touching.begin() : 0;
   }
 
@@ -323,22 +329,26 @@ Result<Plan> GreedyRouter::route(
   uint32_t next_mirror_id = static_cast<uint32_t>(graph.num_values());
 
   auto needs_mirror_on = [&](uint32_t v, int p) -> bool {
-    if (graph.value_type(v) != ValueType::Tensor) return false;
-    if (graph.tensor_constant_data_key(v) != nullptr) return false;
+    if (graph.value_type(v) != ValueType::Tensor)
+      return false;
+    if (graph.is_constant(v))
+      return false;
     auto hit = value_home_provider.find(v);
-    if (hit == value_home_provider.end()) return false;
-    if (hit->second == p) return false;
+    if (hit == value_home_provider.end())
+      return false;
+    if (hit->second == p)
+      return false;
 
     // For graph IO, defer to the engine: it may be able to consume the
     // host pool's IO Buffer directly (e.g., CPU; UMA Metal with
     // newBufferWithBytesNoCopy) and skip the mirror entirely. Default
-    // is true (safe), so engines that haven't overridden behave as
-    // they do today.
+    // is false (router mints a mirror), so engines that haven't
+    // overridden behave conservatively.
     if (graph_input_ids.count(v)) {
-      return instances[p]->wants_input_mirror(v);
+      return !instances[p]->handles_input_directly(v);
     }
     if (graph_output_ids.count(v)) {
-      return instances[p]->wants_output_mirror(v);
+      return !instances[p]->handles_output_directly(v);
     }
     // Non-IO cross-runtime intermediate: always mirror.
     return true;
@@ -347,18 +357,25 @@ Result<Plan> GreedyRouter::route(
   for (size_t s = 0; s < segments.size(); ++s) {
     int cur = segments[s].provider_idx;
     auto handle = [&](uint32_t v) {
-      if (!needs_mirror_on(v, cur)) return;
+      if (!needs_mirror_on(v, cur))
+        return;
       auto key = std::make_pair(v, cur);
-      if (mirror_table.count(key)) return; // already minted for this (v, cur)
+      if (mirror_table.count(key))
+        return; // already minted for this (v, cur)
       uint32_t mid = next_mirror_id++;
       mirror_table[key] = mid;
       ET_LOG(
           Debug,
           "[mem] router: minted mirror seg=%zu value_id=%u -> mirror_id=%u (%s)",
-          s, v, mid, std::string(providers[cur]->name()).c_str());
+          s,
+          v,
+          mid,
+          std::string(providers[cur]->name()).c_str());
     };
-    for (uint32_t v : segments[s].input_value_ids) handle(v);
-    for (uint32_t v : segments[s].output_value_ids) handle(v);
+    for (uint32_t v : segments[s].input_value_ids)
+      handle(v);
+    for (uint32_t v : segments[s].output_value_ids)
+      handle(v);
   }
 
   // ---- 7. Emit const-plans + alloc-plans for intermediates ------------
@@ -376,25 +393,6 @@ Result<Plan> GreedyRouter::route(
   plan.alloc_plans.assign(providers.size(), {});
   plan.const_plans.assign(providers.size(), {});
 
-  // Helper: compute the MemoryKind to stamp on a host-slot AllocRequest
-  // for value v. If any non-host provider produces or consumes v, the
-  // host alloc is a HostMirror (will be paired with a device-side
-  // DeviceMirror via mirror_values). Otherwise it is HostOnly.
-  auto host_kind_for = [&](uint32_t v) -> MemoryKind {
-    auto pit = value_producer_seg.find(v);
-    if (pit != value_producer_seg.end() &&
-        segments[pit->second].provider_idx != 0) {
-      return MemoryKind::HostMirror;
-    }
-    auto cit = value_consumer_providers.find(v);
-    if (cit != value_consumer_providers.end()) {
-      for (int c : cit->second) {
-        if (c != 0) return MemoryKind::HostMirror;
-      }
-    }
-    return MemoryKind::HostOnly;
-  };
-
   // (provider_idx, mem_obj_id) -> sentinel to track if mem_obj_id already
   // emitted for this provider (so we emit at most one AllocRequest per
   // (provider, mem_obj_id) group).
@@ -409,7 +407,7 @@ Result<Plan> GreedyRouter::route(
       continue;
 
     if (const char* key = graph.tensor_constant_data_key(i); key != nullptr) {
-      // Constant. Schedule upload on every consuming provider.
+      // NDM-stored constant. Schedule upload on every consuming provider.
       if (!ndm) {
         ET_LOG(Error, "GreedyRouter: constant '%s' needs NDM", key);
         return Error::InvalidArgument;
@@ -422,13 +420,37 @@ Result<Plan> GreedyRouter::route(
         continue;
       }
       for (int p : it->second) {
-        plan.const_plans[p].push_back(
-            Engine::ConstRequest{/*value_id=*/i, /*ndm_key=*/key});
+        plan.const_plans[p].push_back(Engine::ConstRequest{
+            /*value_id=*/i,
+            /*ndm_key=*/key,
+            /*inline_data=*/{}});
         ET_LOG(
             Debug,
             "[mem] router: const-plan value_id=%u key='%s' provider=%d (%s)",
             i,
             key,
+            p,
+            std::string(providers[p]->name()).c_str());
+      }
+      continue;
+    }
+
+    // Inline constant: bytes live in program.constant_buffer (not
+    // promoted to NDM by AOT). Schedule upload with the inline data
+    // span; the engine aliases it without an NDM lookup.
+    if (auto inline_bytes = graph.tensor_inline_data(i);
+        !inline_bytes.empty()) {
+      auto it = value_consumer_providers.find(i);
+      if (it == value_consumer_providers.end())
+        continue;
+      for (int p : it->second) {
+        plan.const_plans[p].push_back(Engine::ConstRequest{
+            /*value_id=*/i, /*ndm_key=*/{}, /*inline_data=*/inline_bytes});
+        ET_LOG(
+            Debug,
+            "[mem] router: const-plan value_id=%u inline bytes=%zu provider=%d (%s)",
+            i,
+            inline_bytes.size(),
             p,
             std::string(providers[p]->name()).c_str());
       }
@@ -460,8 +482,11 @@ Result<Plan> GreedyRouter::route(
     Engine::AllocRequest req;
     req.value_id = i;
     req.mem_obj_id = mem_id;
-    req.role = BufferRole::Internal;
-    req.kind = (home_p == 0) ? host_kind_for(i) : MemoryKind::DeviceOnly;
+    // Intermediates with home == host always have at least one non-host
+    // touching runtime (HostPool can't compute), so they are always
+    // HostMirror. Intermediates with home == device runtime are
+    // DeviceOnly.
+    req.kind = (home_p == 0) ? MemoryKind::HostMirror : MemoryKind::DeviceOnly;
     plan.alloc_plans[home_p].push_back(req);
     ET_LOG(
         Debug,
@@ -487,8 +512,9 @@ Result<Plan> GreedyRouter::route(
   {
     std::vector<std::pair<std::pair<uint32_t, int>, uint32_t>> entries(
         mirror_table.begin(), mirror_table.end());
-    std::sort(entries.begin(), entries.end(),
-        [](const auto& a, const auto& b) { return a.second < b.second; });
+    std::sort(entries.begin(), entries.end(), [](const auto& a, const auto& b) {
+      return a.second < b.second;
+    });
     for (const auto& kv : entries) {
       uint32_t v = kv.first.first;
       int dst_p = kv.first.second;
@@ -497,23 +523,20 @@ Result<Plan> GreedyRouter::route(
       req.value_id = v_mirror;
       req.mem_obj_id = graph.mem_obj_id(v);
       req.host_mirror_value_id = v;
-      req.role = BufferRole::Internal;
       req.kind = MemoryKind::DeviceMirror;
       plan.alloc_plans[dst_p].push_back(req);
-      plan.mirror_values.push_back({v_mirror, v});
     }
   }
 
-  // Add IO destination requests on the host provider (slot 0). Use
-  // graph.mem_obj_id so backends and device-side mirrors stay
-  // consistent: if the planner assigned a slot, allocate normally; if
-  // not (-1), backends defer to bind_io.
+  // Add IO destination requests on the host provider (slot 0). Graph IO
+  // is always HostExtern (caller-owned per-execute storage; HostPool
+  // wraps via Aliasing HostBuffer). mem_obj_id is preserved for
+  // diagnostics; HostPool ignores it for HostExtern.
   for (size_t i = 0; i < graph.num_input_ids(); ++i) {
     Engine::AllocRequest req;
     req.value_id = graph.input_id(i);
     req.mem_obj_id = graph.mem_obj_id(req.value_id);
-    req.role = BufferRole::Input;
-    req.kind = host_kind_for(req.value_id);
+    req.kind = MemoryKind::HostExtern;
     plan.alloc_plans[0].push_back(req);
     ET_LOG(
         Debug,
@@ -526,8 +549,7 @@ Result<Plan> GreedyRouter::route(
     Engine::AllocRequest req;
     req.value_id = graph.output_id(i);
     req.mem_obj_id = graph.mem_obj_id(req.value_id);
-    req.role = BufferRole::Output;
-    req.kind = host_kind_for(req.value_id);
+    req.kind = MemoryKind::HostExtern;
     plan.alloc_plans[0].push_back(req);
     ET_LOG(
         Debug,
@@ -598,18 +620,22 @@ Result<Plan> GreedyRouter::route(
   // -------- Boundary lookup helpers (O(log N)) --------
   auto previous_producer_seg = [&](uint32_t v, size_t s) -> int {
     auto it = writers_per_value.find(v);
-    if (it == writers_per_value.end()) return -1;
+    if (it == writers_per_value.end())
+      return -1;
     const auto& vec = it->second;
     auto lit = std::lower_bound(vec.begin(), vec.end(), s);
-    if (lit == vec.begin()) return -1;
+    if (lit == vec.begin())
+      return -1;
     return static_cast<int>(*(lit - 1));
   };
   auto next_consumer_seg = [&](uint32_t v, size_t s) -> int {
     auto it = readers_per_value.find(v);
-    if (it == readers_per_value.end()) return -1;
+    if (it == readers_per_value.end())
+      return -1;
     const auto& vec = it->second;
     auto uit = std::upper_bound(vec.begin(), vec.end(), s);
-    if (uit == vec.end()) return -1;
+    if (uit == vec.end())
+      return -1;
     return static_cast<int>(*uit);
   };
 
@@ -618,7 +644,7 @@ Result<Plan> GreedyRouter::route(
   // Pure check against home + constant consumer info; does NOT inspect
   // alloc_plans state.
   auto value_already_on = [&](uint32_t v, int p) -> bool {
-    if (graph.tensor_constant_data_key(v) != nullptr) {
+    if (graph.is_constant(v)) {
       auto it = value_consumer_providers.find(v);
       return it != value_consumer_providers.end() && it->second.count(p) > 0;
     }
@@ -631,14 +657,18 @@ Result<Plan> GreedyRouter::route(
   // already natively on dst_p, or nullopt for non-tensor / zero-byte
   // values). Pure lookup — never mints; the MirrorPlanner already
   // produced every (v, dst_p) entry that any segment needs.
-  auto lookup_mirror = [&](uint32_t v, int dst_p, size_t s)
-      -> std::optional<uint32_t> {
-    if (graph.value_type(v) != ValueType::Tensor) return std::nullopt;
-    if (graph.tensor_nbytes_max(v) == 0) return std::nullopt;
-    if (value_already_on(v, dst_p)) return v;
+  auto lookup_mirror =
+      [&](uint32_t v, int dst_p, size_t s) -> std::optional<uint32_t> {
+    if (graph.value_type(v) != ValueType::Tensor)
+      return std::nullopt;
+    if (graph.tensor_nbytes_max(v) == 0)
+      return std::nullopt;
+    if (value_already_on(v, dst_p))
+      return v;
 
     auto it = mirror_table.find({v, dst_p});
-    if (it == mirror_table.end()) return std::nullopt; // shouldn't happen
+    if (it == mirror_table.end())
+      return std::nullopt; // shouldn't happen
     uint32_t existing = it->second;
 
     // Record the seg_remap (deduped — same (v, mirror) pair may
@@ -663,15 +693,18 @@ Result<Plan> GreedyRouter::route(
   // by their producer).
   auto lookup_mirror_and_upload = [&](uint32_t v, int dst_p, size_t s) {
     // Host-canonical invariant: uploads always target a non-host runtime.
-    if (dst_p == kHostIdx) return;
+    if (dst_p == kHostIdx)
+      return;
     auto m = lookup_mirror(v, dst_p, s);
-    if (!m.has_value()) return;
-    if (*m == v) return; // natively on dst_p; bind direct, no transfer
+    if (!m.has_value())
+      return;
+    if (*m == v)
+      return; // natively on dst_p; bind direct, no transfer
     // Constants are immutable + already on every consuming runtime via
     // upload_constants at init; never need per-execute re-upload.
-    if (graph.tensor_constant_data_key(v) != nullptr) return;
-    seg_transfers[s].push_back(
-        {v, *m, /*src_p=*/kHostIdx, /*dst_p=*/dst_p});
+    if (graph.is_constant(v))
+      return;
+    seg_transfers[s].push_back({v, *m, /*src_p=*/kHostIdx, /*dst_p=*/dst_p});
     ET_LOG(
         Debug,
         "[mem] router: input-boundary upload seg=%zu v=%u -> mirror=%u (%s)",
@@ -685,13 +718,19 @@ Result<Plan> GreedyRouter::route(
   // mutated bytes into v's host buffer. The mirror MUST already exist
   // in mirror_table.
   auto ensure_post_download = [&](uint32_t v, int src_p, size_t s) {
-    // Host-canonical invariant: downloads always source from a non-host runtime.
-    if (src_p == kHostIdx) return;
-    if (graph.value_type(v) != ValueType::Tensor) return;
-    if (graph.tensor_nbytes_max(v) == 0) return;
-    if (graph.tensor_constant_data_key(v) != nullptr) return; // constants are immutable
+    // Host-canonical invariant: downloads always source from a non-host
+    // runtime.
+    if (src_p == kHostIdx)
+      return;
+    if (graph.value_type(v) != ValueType::Tensor)
+      return;
+    if (graph.tensor_nbytes_max(v) == 0)
+      return;
+    if (graph.is_constant(v))
+      return; // constants are immutable
     auto it = mirror_table.find({v, src_p});
-    if (it == mirror_table.end()) return; // v is natively on src_p; no mirror to drain
+    if (it == mirror_table.end())
+      return; // v is natively on src_p; no mirror to drain
     seg_post_transfers[s].push_back(
         {it->second, v, /*src_p=*/src_p, /*dst_p=*/kHostIdx});
     ET_LOG(
@@ -713,10 +752,12 @@ Result<Plan> GreedyRouter::route(
       // Constants are pre-uploaded to every consuming runtime at init;
       // the segment binds to the per-runtime constant buffer directly
       // (no remap, no per-execute transfer).
-      if (graph.tensor_constant_data_key(v) != nullptr) continue;
+      if (graph.is_constant(v))
+        continue;
       // Native binding on cur (homed there or graph IO on host with cur
       // == host): bind direct, no mirror, no transfer.
-      if (value_already_on(v, cur)) continue;
+      if (value_already_on(v, cur))
+        continue;
 
       int prev = previous_producer_seg(v, s);
       int prev_runtime =
@@ -737,25 +778,28 @@ Result<Plan> GreedyRouter::route(
       lookup_mirror_and_upload(v, cur, s);
     }
 
-    // ---- OUTPUT BOUNDARY: drain each output value back to host where needed. ----
+    // ---- OUTPUT BOUNDARY: drain each output value back to host where needed.
+    // ----
     for (uint32_t v : seg.output_value_ids) {
-      if (graph.tensor_constant_data_key(v) != nullptr) continue;
+      if (graph.is_constant(v))
+        continue;
       // Native binding on cur: kernel writes directly to v's Buffer on
       // cur. No mirror, no pre-upload, no post-download.
-      if (value_already_on(v, cur)) continue;
+      if (value_already_on(v, cur))
+        continue;
 
       // v is NOT homed on cur. Look up the mirror on cur (already
       // minted by Phase 6) for the kernel to write into.
       auto m = lookup_mirror(v, cur, s);
-      if (!m.has_value() || *m == v) continue;
+      if (!m.has_value() || *m == v)
+        continue;
 
       // Pre-segment re-alias upload (host -> cur mirror) so the
       // mirror's underlying Buffer is bound to v's CURRENT host_ptr
       // each execute. Skip-if-same on UMA makes this a no-op when the
       // pointer didn't change. Required for graph IO whose host_ptr
       // changes per bind_outputs / bind_inputs call.
-      seg_transfers[s].push_back(
-          {v, *m, /*src_p=*/kHostIdx, /*dst_p=*/cur});
+      seg_transfers[s].push_back({v, *m, /*src_p=*/kHostIdx, /*dst_p=*/cur});
       ET_LOG(
           Debug,
           "[mem] router: output-boundary pre-upload seg=%zu v=%u -> mirror=%u (%s)",
@@ -774,10 +818,12 @@ Result<Plan> GreedyRouter::route(
       int next = next_consumer_seg(v, s);
       bool need_post_download = false;
       if (next < 0) {
-        if (graph_output_ids.count(v) > 0) need_post_download = true;
+        if (graph_output_ids.count(v) > 0)
+          need_post_download = true;
       } else {
         int next_runtime = segments[next].provider_idx;
-        if (next_runtime != cur) need_post_download = true;
+        if (next_runtime != cur)
+          need_post_download = true;
       }
       if (need_post_download) {
         ensure_post_download(v, cur, s);
@@ -875,8 +921,7 @@ Result<Plan> GreedyRouter::route(
       ts.dst_idx = static_cast<RuntimeIndex>(xfer.dst_provider_idx);
       ts.source_pc = seg_first_pc;
       // Transfer is issued on the device side (non-host slot of the pair).
-      RuntimeIndex issuing =
-          (ts.src_idx == 0) ? ts.dst_idx : ts.src_idx;
+      RuntimeIndex issuing = (ts.src_idx == 0) ? ts.dst_idx : ts.src_idx;
       ts.signal = alloc_signal(issuing);
       last_signal_per_inst[issuing] = ts.signal;
       plan.steps.emplace_back(std::move(ts));
@@ -897,8 +942,7 @@ Result<Plan> GreedyRouter::route(
       ts.src_idx = static_cast<RuntimeIndex>(xfer.src_provider_idx);
       ts.dst_idx = static_cast<RuntimeIndex>(xfer.dst_provider_idx);
       ts.source_pc = seg_first_pc;
-      RuntimeIndex issuing =
-          (ts.src_idx == 0) ? ts.dst_idx : ts.src_idx;
+      RuntimeIndex issuing = (ts.src_idx == 0) ? ts.dst_idx : ts.src_idx;
       ts.signal = alloc_signal(issuing);
       last_signal_per_inst[issuing] = ts.signal;
       plan.steps.emplace_back(std::move(ts));
@@ -934,18 +978,22 @@ Result<Plan> GreedyRouter::route(
     // PredicateLocator §6.3 case-3 path; a follow-up CL implements
     // mirror minting.
     auto predicate_is_host = [&](uint32_t pred_vid) -> bool {
-      if (pred_vid >= graph.num_values()) return false;
+      if (pred_vid >= graph.num_values())
+        return false;
       // Constant / graph IO / no-producer values default to host.
-      if (graph.tensor_constant_data_key(pred_vid) != nullptr) return true;
-      if (io_ids.count(pred_vid) > 0) return true;
+      if (graph.is_constant(pred_vid))
+        return true;
+      if (io_ids.count(pred_vid) > 0)
+        return true;
       auto pit = value_producer_seg.find(pred_vid);
-      if (pit == value_producer_seg.end()) return true; // placeholder
+      if (pit == value_producer_seg.end())
+        return true; // placeholder
       // Producer is host?
       return segments[pit->second].provider_idx == 0
           // Or the value's home is host (so a post-Compute download
           // already exists in plan.steps for it).
-          || (value_home_provider.count(pred_vid) > 0
-              && value_home_provider[pred_vid] == 0);
+          || (value_home_provider.count(pred_vid) > 0 &&
+              value_home_provider[pred_vid] == 0);
     };
 
     for (const auto& ci : control_instrs) {
@@ -976,10 +1024,14 @@ Result<Plan> GreedyRouter::route(
     size_t step_i = 0;
     size_t ctrl_i = 0;
     auto step_pc = [&](const Step& s) -> uint32_t {
-      if (auto* cs = std::get_if<ComputeStep>(&s)) return cs->source_pc;
-      if (auto* ts = std::get_if<TransferStep>(&s)) return ts->source_pc;
-      if (auto* jf = std::get_if<JumpFalseStep>(&s)) return jf->source_pc;
-      if (auto* ms = std::get_if<MoveStep>(&s)) return ms->source_pc;
+      if (auto* cs = std::get_if<ComputeStep>(&s))
+        return cs->source_pc;
+      if (auto* ts = std::get_if<TransferStep>(&s))
+        return ts->source_pc;
+      if (auto* jf = std::get_if<JumpFalseStep>(&s))
+        return jf->source_pc;
+      if (auto* ms = std::get_if<MoveStep>(&s))
+        return ms->source_pc;
       return kNoSourcePc;
     };
     while (step_i < plan.steps.size() || ctrl_i < control_instrs.size()) {
@@ -1054,13 +1106,14 @@ Result<Plan> GreedyRouter::route(
     for (size_t si = 0; si < plan.steps.size(); ++si) {
       const auto& s = plan.steps[si];
       if (auto* cs = std::get_if<ComputeStep>(&s)) {
-        if (cs->runtime_idx != 0) continue; // non-host; not directly visible
+        if (cs->runtime_idx != 0)
+          continue; // non-host; not directly visible
         // The segment with this source_pc produces these outputs.
         // segments was indexed by segment number, not source_pc; find
         // the segment that starts at cs->source_pc.
         for (const auto& seg : segments) {
-          if (!seg.instruction_indices.empty()
-              && seg.instruction_indices.front() == cs->source_pc) {
+          if (!seg.instruction_indices.empty() &&
+              seg.instruction_indices.front() == cs->source_pc) {
             for (uint32_t v : seg.output_value_ids) {
               host_visible_producer[v] = si;
             }
@@ -1086,10 +1139,9 @@ Result<Plan> GreedyRouter::route(
       const auto& s = plan.steps[si];
       if (auto* cs = std::get_if<ComputeStep>(&s)) {
         for (const auto& seg : segments) {
-          if (!seg.instruction_indices.empty()
-              && seg.instruction_indices.front() == cs->source_pc) {
-            out.assign(
-                seg.input_value_ids.begin(), seg.input_value_ids.end());
+          if (!seg.instruction_indices.empty() &&
+              seg.instruction_indices.front() == cs->source_pc) {
+            out.assign(seg.input_value_ids.begin(), seg.input_value_ids.end());
             break;
           }
         }
@@ -1103,8 +1155,10 @@ Result<Plan> GreedyRouter::route(
 
     auto step_signal = [&](size_t si) -> EventId {
       const auto& s = plan.steps[si];
-      if (auto* cs = std::get_if<ComputeStep>(&s)) return cs->signal;
-      if (auto* ts = std::get_if<TransferStep>(&s)) return ts->signal;
+      if (auto* cs = std::get_if<ComputeStep>(&s))
+        return cs->signal;
+      if (auto* ts = std::get_if<TransferStep>(&s))
+        return ts->signal;
       // MoveStep / JumpFalseStep have no signal (host-synchronous).
       return kNoEvent;
     };
@@ -1116,12 +1170,16 @@ Result<Plan> GreedyRouter::route(
       while (!work.empty()) {
         uint32_t v = work.back();
         work.pop_back();
-        if (!visited.insert(v).second) continue;
+        if (!visited.insert(v).second)
+          continue;
         auto pit = host_visible_producer.find(v);
-        if (pit == host_visible_producer.end()) continue;
+        if (pit == host_visible_producer.end())
+          continue;
         EventId sig = step_signal(pit->second);
-        if (sig != kNoEvent) sigs.insert(sig);
-        for (uint32_t in : step_input_values(pit->second)) work.push_back(in);
+        if (sig != kNoEvent)
+          sigs.insert(sig);
+        for (uint32_t in : step_input_values(pit->second))
+          work.push_back(in);
       }
       return std::vector<EventId>(sigs.begin(), sigs.end());
     };
@@ -1147,7 +1205,8 @@ Result<Plan> GreedyRouter::route(
     std::vector<size_t> pc_to_step(n_instr, kUnresolvedStep);
     for (size_t si = 0; si < plan.steps.size(); ++si) {
       uint32_t pc = step_pc(plan.steps[si]);
-      if (pc == kNoSourcePc || pc >= n_instr) continue;
+      if (pc == kNoSourcePc || pc >= n_instr)
+        continue;
       // Keep the earliest step at this PC.
       if (pc_to_step[pc] == kUnresolvedStep || pc_to_step[pc] > si) {
         pc_to_step[pc] = si;
@@ -1191,10 +1250,9 @@ Result<Plan> GreedyRouter::route(
   if (options.dump_trace) {
     ET_LOG(
         Info,
-        "GreedyRouter: %zu segments / %zu steps / %zu mirror values",
+        "GreedyRouter: %zu segments / %zu steps",
         segments.size(),
-        plan.steps.size(),
-        plan.mirror_values.size());
+        plan.steps.size());
   }
 
   return plan;

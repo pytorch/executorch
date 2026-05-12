@@ -17,6 +17,9 @@
 #include <executorch/runtime/kernel/operator_registry.h>
 #include <executorch/runtime/platform/log.h>
 
+#include <cstring>
+#include <string>
+
 namespace executorch {
 namespace backends {
 namespace portable {
@@ -32,15 +35,56 @@ namespace {
 
 /// Convention for default dispatch: op full_name → ET kernel name.
 ///
-/// Post-lowering, ET's IR carries op names already in `.out` form
-/// (either name="aten::X.out" overload="" or name="aten::X" overload="out",
-/// both producing full_name "aten::X.out"). The default resolver is the
-/// identity — the op name IS the kernel name.
+/// The IR's full_name is `<base>` or `<base>.<overload>` (e.g.,
+/// "aten::add", "aten::add.Tensor", "aten::add.Scalar", or already
+/// "aten::add.out"). ET's portable kernel registry exposes kernels by
+/// their `.out` form: typically "<base>.out" for tensor-tensor /
+/// default variants and "<base>.<overload>_out" for scalar variants
+/// (e.g., "aten::add.out", "aten::add.Scalar_out").
+///
+/// This resolver maps any of those input shapes to the right ET
+/// kernel name:
+///   - Already ends in ".out" / "_out"             → identity.
+///   - Ends in ".Tensor" or ".default"             → strip suffix, append
+///   ".out".
+///   - Ends in ".Scalar" / ".Tensor_Scalar" / etc. → strip leading dot, append
+///   "_out"
+///                                                    (e.g., "aten::add.Scalar"
+///                                                    →
+///                                                    "aten::add.Scalar_out").
+///   - Bare name (no dot after "::")               → append ".out".
 ///
 /// In-place ops (aten::X_) and special-case ops (aten::copy_, ...) are
 /// expected to have explicit registrations and never reach this resolver.
 std::string default_kernel_name_for(const std::string& op_name) {
-  return op_name;
+  auto ends_with = [](const std::string& s, const char* suffix) {
+    size_t n = std::strlen(suffix);
+    return s.size() >= n && s.compare(s.size() - n, n, suffix) == 0;
+  };
+
+  // Already an ET kernel name.
+  if (ends_with(op_name, ".out") || ends_with(op_name, "_out")) {
+    return op_name;
+  }
+  // Tensor-tensor / default → "<base>.out".
+  if (ends_with(op_name, ".Tensor")) {
+    return op_name.substr(0, op_name.size() - std::strlen(".Tensor")) + ".out";
+  }
+  if (ends_with(op_name, ".default")) {
+    return op_name.substr(0, op_name.size() - std::strlen(".default")) + ".out";
+  }
+  // Anything else with an overload suffix: convert ".<overload>" to
+  // ".<overload>_out" (e.g., "aten::add.Scalar" -> "aten::add.Scalar_out").
+  // We detect "this is an overload-suffixed name" by checking if the
+  // last "." is after the last "::" (i.e., not part of the namespace).
+  size_t last_dot = op_name.rfind('.');
+  size_t last_colon = op_name.rfind(':');
+  if (last_dot != std::string::npos &&
+      (last_colon == std::string::npos || last_dot > last_colon)) {
+    return op_name + "_out";
+  }
+  // Bare name (no overload).
+  return op_name + ".out";
 }
 
 /// Generic kernel dispatch - passes args + dummy return slot to kernel
@@ -100,12 +144,27 @@ void dispatch_kernel(
 /// Default dispatcher used by CpuOpDispatcher when no explicit handler
 /// is registered. Computes the ET kernel name via
 /// `default_kernel_name_for` and delegates to `dispatch_kernel`.
+///
+/// Always passes `pass_return_as_kernel_out=true` because:
+///   - For functional IR ops (e.g., aten::add.Tensor), the IR's last
+///     arg is the return slot which the kernel uses as `out`.
+///   - For .out-form IR ops (e.g., aten::add.out), the IR's last arg
+///     is already the `out` slot, and the kernel's return slot is
+///     trailing — same shape.
+/// In both cases the kernel stack is [args..., out (= IR's last),
+/// dummy return]. Aliasing of the IR's out vid to its source via the
+/// AOT memory planner is what makes the functional form behave
+/// correctly per the in-place / out-variant semantic.
 void default_dispatch(
     CpuGraph& graph,
     const std::vector<ValueRef>& args,
     const std::string& op_name) {
   std::string kernel_name = default_kernel_name_for(op_name);
-  dispatch_kernel(graph, args, kernel_name.c_str());
+  dispatch_kernel(
+      graph,
+      args,
+      kernel_name.c_str(),
+      /*pass_return_as_kernel_out=*/true);
 }
 
 /// Dispatch for aten::copy_. Routes to ET's 3-arg in-place
@@ -170,11 +229,11 @@ void dispatch_copy_inplace(CpuGraph& graph, const std::vector<ValueRef>& args) {
 // Op Registration - maps op names to kernel names
 //===----------------------------------------------------------------------===//
 
-#define CPU_DISPATCH_OP(op_name, kernel_name)                           \
-  CPU_REGISTER_OP(                                                      \
-      op_name, [](CpuGraph& graph, const std::vector<ValueRef>& args) { \
-        dispatch_kernel(graph, args, kernel_name,                       \
-                        /*pass_return_as_kernel_out=*/true);            \
+#define CPU_DISPATCH_OP(op_name, kernel_name)                              \
+  CPU_REGISTER_OP(                                                         \
+      op_name, [](CpuGraph& graph, const std::vector<ValueRef>& args) {    \
+        dispatch_kernel(                                                   \
+            graph, args, kernel_name, /*pass_return_as_kernel_out=*/true); \
       })
 
 REGISTER_CPU_OPERATORS {
@@ -184,8 +243,8 @@ REGISTER_CPU_OPERATORS {
   // Out-variant ops (aten::add, aten::mm, aten::clone, ...) are NOT
   // listed here — they fall through to the default. Adding a new
   // out-variant op requires no code change.
-  cpu_op_registry().set_default_handler(default_dispatch,
-                                        default_kernel_name_for);
+  cpu_op_registry().set_default_handler(
+      default_dispatch, default_kernel_name_for);
 
   // ===========================================================
   // In-place op dispatches
@@ -253,54 +312,56 @@ REGISTER_CPU_OPERATORS {
   // 4-arg IR matches the .out kernel's (self, other, alpha, out)
   // signature directly.
   cpu_op_registry().register_op(
-      "aten::add_.Tensor",
-      [](CpuGraph& g, const std::vector<ValueRef>& a) {
-        dispatch_kernel(g, a, "aten::add.out", /*pass_return_as_kernel_out=*/true);
+      "aten::add_.Tensor", [](CpuGraph& g, const std::vector<ValueRef>& a) {
+        dispatch_kernel(
+            g, a, "aten::add.out", /*pass_return_as_kernel_out=*/true);
       });
   cpu_op_registry().register_op(
-      "aten::sub_.Tensor",
-      [](CpuGraph& g, const std::vector<ValueRef>& a) {
-        dispatch_kernel(g, a, "aten::sub.out", /*pass_return_as_kernel_out=*/true);
+      "aten::sub_.Tensor", [](CpuGraph& g, const std::vector<ValueRef>& a) {
+        dispatch_kernel(
+            g, a, "aten::sub.out", /*pass_return_as_kernel_out=*/true);
       });
   cpu_op_registry().register_op(
-      "aten::mul_.Tensor",
-      [](CpuGraph& g, const std::vector<ValueRef>& a) {
-        dispatch_kernel(g, a, "aten::mul.out", /*pass_return_as_kernel_out=*/true);
+      "aten::mul_.Tensor", [](CpuGraph& g, const std::vector<ValueRef>& a) {
+        dispatch_kernel(
+            g, a, "aten::mul.out", /*pass_return_as_kernel_out=*/true);
       });
   cpu_op_registry().register_op(
-      "aten::div_.Tensor",
-      [](CpuGraph& g, const std::vector<ValueRef>& a) {
-        dispatch_kernel(g, a, "aten::div.out", /*pass_return_as_kernel_out=*/true);
+      "aten::div_.Tensor", [](CpuGraph& g, const std::vector<ValueRef>& a) {
+        dispatch_kernel(
+            g, a, "aten::div.out", /*pass_return_as_kernel_out=*/true);
       });
   cpu_op_registry().register_op(
-      "aten::atan2_",
-      [](CpuGraph& g, const std::vector<ValueRef>& a) {
-        dispatch_kernel(g, a, "aten::atan2.out", /*pass_return_as_kernel_out=*/true);
+      "aten::atan2_", [](CpuGraph& g, const std::vector<ValueRef>& a) {
+        dispatch_kernel(
+            g, a, "aten::atan2.out", /*pass_return_as_kernel_out=*/true);
       });
   cpu_op_registry().register_op(
-      "aten::logical_and_",
-      [](CpuGraph& g, const std::vector<ValueRef>& a) {
-        dispatch_kernel(g, a, "aten::logical_and.out", /*pass_return_as_kernel_out=*/true);
+      "aten::logical_and_", [](CpuGraph& g, const std::vector<ValueRef>& a) {
+        dispatch_kernel(
+            g, a, "aten::logical_and.out", /*pass_return_as_kernel_out=*/true);
       });
   cpu_op_registry().register_op(
-      "aten::logical_or_",
-      [](CpuGraph& g, const std::vector<ValueRef>& a) {
-        dispatch_kernel(g, a, "aten::logical_or.out", /*pass_return_as_kernel_out=*/true);
+      "aten::logical_or_", [](CpuGraph& g, const std::vector<ValueRef>& a) {
+        dispatch_kernel(
+            g, a, "aten::logical_or.out", /*pass_return_as_kernel_out=*/true);
       });
   cpu_op_registry().register_op(
-      "aten::logical_xor_",
-      [](CpuGraph& g, const std::vector<ValueRef>& a) {
-        dispatch_kernel(g, a, "aten::logical_xor.out", /*pass_return_as_kernel_out=*/true);
+      "aten::logical_xor_", [](CpuGraph& g, const std::vector<ValueRef>& a) {
+        dispatch_kernel(
+            g, a, "aten::logical_xor.out", /*pass_return_as_kernel_out=*/true);
       });
 
   // pow_.Scalar(Tensor self, Scalar exp): the in-place form `square_`
   // decomposes into. Its .out kernel is named `pow.Tensor_Scalar_out`
   // (different overload-name convention: `_.Scalar` ↔ `.Tensor_Scalar_out`).
   cpu_op_registry().register_op(
-      "aten::pow_.Scalar",
-      [](CpuGraph& g, const std::vector<ValueRef>& a) {
-        dispatch_kernel(g, a, "aten::pow.Tensor_Scalar_out",
-                        /*pass_return_as_kernel_out=*/true);
+      "aten::pow_.Scalar", [](CpuGraph& g, const std::vector<ValueRef>& a) {
+        dispatch_kernel(
+            g,
+            a,
+            "aten::pow.Tensor_Scalar_out",
+            /*pass_return_as_kernel_out=*/true);
       });
 
   // Misc — unambiguous (single overload).
@@ -345,18 +406,22 @@ REGISTER_CPU_OPERATORS {
   // when AOT inserts an implicit cast. Reaches our backend because it's
   // not an in-place op.
   cpu_op_registry().register_op(
-      "aten::_to_copy.out",
-      [](CpuGraph& g, const std::vector<ValueRef>& a) {
+      "aten::_to_copy.out", [](CpuGraph& g, const std::vector<ValueRef>& a) {
         // IR op IS the kernel (no remap). Args already include the
         // return slot per emit's convention; no extra dummy needed.
-        dispatch_kernel(g, a, "aten::_to_copy.out",
-                        /*pass_return_as_kernel_out=*/false);
+        dispatch_kernel(
+            g,
+            a,
+            "aten::_to_copy.out",
+            /*pass_return_as_kernel_out=*/false);
       });
   cpu_op_registry().register_op(
-      "aten::clone.out",
-      [](CpuGraph& g, const std::vector<ValueRef>& a) {
-        dispatch_kernel(g, a, "aten::clone.out",
-                        /*pass_return_as_kernel_out=*/false);
+      "aten::clone.out", [](CpuGraph& g, const std::vector<ValueRef>& a) {
+        dispatch_kernel(
+            g,
+            a,
+            "aten::clone.out",
+            /*pass_return_as_kernel_out=*/false);
       });
 
   // ===========================================================

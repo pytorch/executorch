@@ -18,7 +18,8 @@
 //   - Refresh-on-hit logic for ExternalCopied entries (so stack-local
 //     std::vector data passed via In{} stays correct on subsequent calls).
 // What does NOT live here:
-//   - The buffer pool itself (still owned by MetalAllocator as MetalBufferPool).
+//   - The buffer pool itself (still owned by MetalAllocator as
+//   MetalBufferPool).
 //     The registry is told "this came from the pool" via Origin::Pool, but
 //     it doesn't know how to acquire/release pool buffers — the caller does.
 //   - Residency-set membership (an MTL4-side concern on MetalAllocator).
@@ -132,7 +133,9 @@ class BufferRegistry {
   id<MTLBuffer> findBuffer(void* ptr) const;
 
   // Returns true if the registry has an entry for ptr.
-  bool contains(void* ptr) const { return map_.count(ptr) > 0; }
+  bool contains(void* ptr) const {
+    return map_.count(ptr) > 0;
+  }
 
   // Remove and return the entry. The returned Entry's __strong mtl
   // carries the +1 that the registry held; ARC releases it on scope exit.
@@ -158,7 +161,9 @@ class BufferRegistry {
   // typically called from MetalStream::~MetalStream after pool teardown).
   void clear();
 
-  size_t size() const { return map_.size(); }
+  size_t size() const {
+    return map_.size();
+  }
 
  private:
   std::unordered_map<void*, Entry> map_;

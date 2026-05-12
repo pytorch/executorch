@@ -24,7 +24,7 @@ namespace backends {
 namespace metal_v2 {
 
 class MetalHeap {
-public:
+ public:
   MetalHeap(id<MTLDevice> device, size_t size, bool aliasable = false);
   ~MetalHeap();
 
@@ -35,10 +35,14 @@ public:
   id<MTLBuffer> allocBuffer(size_t size);
 
   /// Get current used size
-  size_t usedSize() const { return usedSize_; }
+  size_t usedSize() const {
+    return usedSize_;
+  }
 
   /// Get total heap size
-  size_t totalSize() const { return totalSize_; }
+  size_t totalSize() const {
+    return totalSize_;
+  }
 
   /// Native MTLHeap handle (borrowed; nil when ctor failed). Exposed so
   /// MetalAllocator can pass it to ResidencyManager::pinHeap at
@@ -49,14 +53,16 @@ public:
   /// for correctness; per-CB pin/unpin on heap-vended buffers becomes
   /// redundant but is left in place (uniformly refcounted) per the
   /// "don't skip in v1" tradeoff in the design doc.
-  id<MTLHeap> nativeHeap() const { return heap_; }
+  id<MTLHeap> nativeHeap() const {
+    return heap_;
+  }
 
-private:
+ private:
   id<MTLHeap> heap_;
   size_t totalSize_;
   size_t usedSize_ = 0;
 };
 
-}  // namespace metal_v2
-}  // namespace backends
-}  // namespace executorch
+} // namespace metal_v2
+} // namespace backends
+} // namespace executorch

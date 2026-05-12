@@ -34,12 +34,11 @@ set(_mlx_jit_module_dir
     CACHE INTERNAL "ops/mlx_jit/ source directory"
 )
 # Submodule lives at backends/mlx/third-party/mlx/. From this file
-# (backends/metal/MlxJit.cmake) that's one level up then back down
-# through mlx/third-party/mlx.
+# (backends/metal/MlxJit.cmake) that's one level up then back down through
+# mlx/third-party/mlx.
 get_filename_component(
   _mlx_submodule_root_default
-  "${CMAKE_CURRENT_LIST_DIR}/../mlx/third-party/mlx"
-  ABSOLUTE
+  "${CMAKE_CURRENT_LIST_DIR}/../mlx/third-party/mlx" ABSOLUTE
 )
 set(_mlx_jit_submodule_dir
     ${_mlx_submodule_root_default}
@@ -50,12 +49,11 @@ set(_mlx_jit_snippet_script
     CACHE INTERNAL "Script that generates per-snippet .cpp from MLX headers"
 )
 
-# The set of MLX header subpaths (under kernels/, no .h suffix) we vendor as
-# JIT snippets. Kept in sync with ops/mlx_jit/Snippets.h declarations.
-# basename(SUBPATH) becomes the function name in mlx_jit::Snippets:: e.g.
-#   utils                                       -> utils()
-#   steel/gemm/gemm                             -> gemm()
-#   steel/gemm/kernels/steel_gemm_fused_nax     -> steel_gemm_fused_nax()
+# The set of MLX header subpaths (under kernels/, no .h suffix) we vendor as JIT
+# snippets. Kept in sync with ops/mlx_jit/Snippets.h declarations.
+# basename(SUBPATH) becomes the function name in mlx_jit::Snippets:: e.g. utils
+# -> utils() steel/gemm/gemm                             -> gemm()
+# steel/gemm/kernels/steel_gemm_fused_nax     -> steel_gemm_fused_nax()
 set(_mlx_jit_snippet_subpaths
     utils
     steel/gemm/gemm
@@ -67,8 +65,8 @@ set(_mlx_jit_snippet_subpaths
     CACHE INTERNAL "MLX header subpaths to vendor as JIT snippets"
 )
 
-# Local-source snippets: vendored from files in our own tree (e.g. thin
-# wrappers that #include from MLX with macros redefined). Format:
+# Local-source snippets: vendored from files in our own tree (e.g. thin wrappers
+# that #include from MLX with macros redefined). Format:
 # "subpath_for_function_name|absolute_path_to_source_file" pairs.
 set(_mlx_jit_local_snippets
     "gemv|${_mlx_jit_module_dir}/local_snippets/gemv.h"
@@ -80,10 +78,10 @@ set(_mlx_jit_local_snippets
     CACHE INTERNAL "Local snippet sources (basename|abs_path)"
 )
 
-# Append the metal_v2 mlx_jit sources (generated snippets + KernelLoader.mm)
-# to the caller-provided source list variable. Outputs are written to
-# ${CMAKE_BINARY_DIR}/mlx_jit_snippets/ so multiple consumers in the same
-# build tree share a single set of generated files.
+# Append the metal_v2 mlx_jit sources (generated snippets + KernelLoader.mm) to
+# the caller-provided source list variable. Outputs are written to
+# ${CMAKE_BINARY_DIR}/mlx_jit_snippets/ so multiple consumers in the same build
+# tree share a single set of generated files.
 function(add_metal_v2_mlx_jit_sources OUT_VAR)
   set(_out_dir ${CMAKE_BINARY_DIR}/mlx_jit_snippets)
   set(_added)
@@ -95,13 +93,14 @@ function(add_metal_v2_mlx_jit_sources OUT_VAR)
     set(_snippet_input
         ${_mlx_jit_submodule_dir}/mlx/backend/metal/kernels/${_subpath}.h
     )
-    get_property(_already_defined GLOBAL PROPERTY _MLX_JIT_${_snippet_name}_DEFINED)
+    get_property(
+      _already_defined GLOBAL PROPERTY _MLX_JIT_${_snippet_name}_DEFINED
+    )
     if(NOT _already_defined)
       add_custom_command(
         OUTPUT ${_snippet_cpp}
-        COMMAND
-          bash ${_mlx_jit_snippet_script} ${_out_dir}
-          ${_mlx_jit_submodule_dir} ${_subpath}
+        COMMAND bash ${_mlx_jit_snippet_script} ${_out_dir}
+                ${_mlx_jit_submodule_dir} ${_subpath}
         DEPENDS ${_mlx_jit_snippet_script} ${_snippet_input}
         COMMENT "Generating MLX JIT snippet ${_snippet_name} from ${_subpath}.h"
         VERBATIM
@@ -119,15 +118,17 @@ function(add_metal_v2_mlx_jit_sources OUT_VAR)
     list(GET _pair 0 _snippet_name)
     list(GET _pair 1 _snippet_input)
     set(_snippet_cpp ${_out_dir}/${_snippet_name}.cpp)
-    get_property(_already_defined GLOBAL PROPERTY _MLX_JIT_${_snippet_name}_DEFINED)
+    get_property(
+      _already_defined GLOBAL PROPERTY _MLX_JIT_${_snippet_name}_DEFINED
+    )
     if(NOT _already_defined)
       add_custom_command(
         OUTPUT ${_snippet_cpp}
-        COMMAND
-          bash ${_mlx_jit_snippet_script} ${_out_dir}
-          ${_mlx_jit_submodule_dir} ${_snippet_name} ${_snippet_input}
+        COMMAND bash ${_mlx_jit_snippet_script} ${_out_dir}
+                ${_mlx_jit_submodule_dir} ${_snippet_name} ${_snippet_input}
         DEPENDS ${_mlx_jit_snippet_script} ${_snippet_input}
-        COMMENT "Generating MLX JIT snippet ${_snippet_name} from ${_snippet_input}"
+        COMMENT
+          "Generating MLX JIT snippet ${_snippet_name} from ${_snippet_input}"
         VERBATIM
       )
       set_property(GLOBAL PROPERTY _MLX_JIT_${_snippet_name}_DEFINED TRUE)
@@ -135,21 +136,20 @@ function(add_metal_v2_mlx_jit_sources OUT_VAR)
     list(APPEND _added ${_snippet_cpp})
   endforeach()
 
-  # KernelLoader.mm — implements typeToName / KernelLoader::getDenseGemmKernel
-  # / getDenseNaxKernel / getSplitKKernel / getSplitKNaxKernel /
+  # KernelLoader.mm — implements typeToName / KernelLoader::getDenseGemmKernel /
+  # getDenseNaxKernel / getSplitKKernel / getSplitKNaxKernel /
   # getSplitKAccumKernel and the mlx_jit::shared() singleton accessor.
   set(_loader_mm ${_mlx_jit_module_dir}/KernelLoader.mm)
   list(APPEND _added ${_loader_mm})
 
-  # Match the rest of metal_v2's manual-retain build: KernelLoader.mm has
-  # to be compiled without ARC. The .mm extension auto-resolves to OBJCXX
-  # — we deliberately do NOT set LANGUAGE OBJCXX here because that would
-  # force callers to pre-enable_language(OBJCXX); the existing
-  # backends/apple/metal/CMakeLists.txt doesn't (and doesn't need to —
-  # the file-extension dispatch handles it on Apple platforms).
+  # Match the rest of metal_v2's manual-retain build: KernelLoader.mm has to be
+  # compiled without ARC. The .mm extension auto-resolves to OBJCXX — we
+  # deliberately do NOT set LANGUAGE OBJCXX here because that would force
+  # callers to pre-enable_language(OBJCXX); the existing
+  # backends/apple/metal/CMakeLists.txt doesn't (and doesn't need to — the
+  # file-extension dispatch handles it on Apple platforms).
   set_source_files_properties(
-    ${_loader_mm}
-    PROPERTIES COMPILE_FLAGS "-fno-objc-arc"
+    ${_loader_mm} PROPERTIES COMPILE_FLAGS "-fno-objc-arc"
   )
 
   set(${OUT_VAR}

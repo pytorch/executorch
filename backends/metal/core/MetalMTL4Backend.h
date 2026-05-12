@@ -69,9 +69,10 @@ class MetalMTL4Backend : public IComputeBackend {
   //             the buffer (must be called before any dispatch) so
   //             advanced callers can raise the cap.
   static constexpr size_t kDefaultScalarScratchBytes = 4u << 20;
-  MetalMTL4Backend(id<MTLDevice> device,
-                   ResidencyManager* residency,
-                   size_t scalarScratchBytes = kDefaultScalarScratchBytes)
+  MetalMTL4Backend(
+      id<MTLDevice> device,
+      ResidencyManager* residency,
+      size_t scalarScratchBytes = kDefaultScalarScratchBytes)
       API_AVAILABLE(macos(26.0), ios(26.0));
   ~MetalMTL4Backend() override API_AVAILABLE(macos(26.0), ios(26.0));
 
@@ -79,15 +80,17 @@ class MetalMTL4Backend : public IComputeBackend {
   MetalMTL4Backend& operator=(const MetalMTL4Backend&) = delete;
 
   // True iff setupMTL4 in the constructor succeeded fully.
-  bool isReady() const { return mtl4Queue_ != nil; }
+  bool isReady() const {
+    return mtl4Queue_ != nil;
+  }
 
   // ---- IComputeBackend (per-dispatch encoding) ----
   void setKernel(MetalKernel* kernel) override;
   void setBuffer(id<MTLBuffer> buf, size_t offset, uint32_t slot) override;
   void setBytes(const void* ptr, size_t size, uint32_t slot) override;
   void dispatch(uvec3 grid, uvec3 block) override;
-  void dispatchHazardAware(
-      uvec3 grid, uvec3 block, bool insertBarrierBefore) override;
+  void dispatchHazardAware(uvec3 grid, uvec3 block, bool insertBarrierBefore)
+      override;
 
   // ---- IComputeBackend (encoder lifecycle) ----
   void endEncoder() override;
@@ -116,8 +119,8 @@ class MetalMTL4Backend : public IComputeBackend {
   void addQueueResidency(id<MTLResidencySet> set);
 
  private:
-  id<MTLDevice> device_;       // borrowed
-  ResidencyManager* residency_;// borrowed; nullptr if no residency set
+  id<MTLDevice> device_; // borrowed
+  ResidencyManager* residency_; // borrowed; nullptr if no residency set
 
   // MTL4 dispatch state (all retained where applicable).
   id<MTL4CommandQueue> mtl4Queue_ = nil;
@@ -135,7 +138,6 @@ class MetalMTL4Backend : public IComputeBackend {
   id<MTLSharedEvent> mtl4CompletionEvent_ = nil;
   uint64_t mtl4CompletionValue_ = 0;
 
-
   // MTL4 shader compiler (lazy-created on first compile call). Lives
   // here so MTL4-specific objects stay with the MTL4 backend.
   id<MTL4Compiler> mtl4Compiler_ = nil;
@@ -145,7 +147,7 @@ class MetalMTL4Backend : public IComputeBackend {
   std::vector<std::function<void()>> pendingCompletionHandlers_;
 };
 
-#endif  // ET_METAL4_ENABLE
+#endif // ET_METAL4_ENABLE
 
 } // namespace metal_v2
 } // namespace backends

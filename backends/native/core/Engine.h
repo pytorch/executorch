@@ -9,11 +9,10 @@
 #pragma once
 
 #include <executorch/backends/native/core/Buffer.h>
-#include <executorch/backends/native/core/BufferRole.h>
 #include <executorch/backends/native/core/Event.h>
-#include <executorch/backends/native/ir/GraphTypes.h> // reuse existing Graph
 #include <executorch/backends/native/core/MemoryKind.h>
 #include <executorch/backends/native/core/RuntimeContext.h>
+#include <executorch/backends/native/ir/GraphTypes.h> // reuse existing Graph
 
 #include <executorch/runtime/core/error.h>
 #include <executorch/runtime/core/evalue.h>
@@ -25,12 +24,25 @@
 #include <cstdint>
 #include <limits>
 #include <memory>
-#include <utility>
 #include <string_view>
+#include <utility>
 
 namespace executorch {
 namespace backends {
 namespace native {
+
+/**
+ * Per-input/output binding (router output). Defined here so that Engine
+ * can take Span<const InputBinding> in set_io_bindings without pulling
+ * in Plan.h (Plan.h already depends on Engine.h).
+ */
+struct InputBinding {
+  uint32_t value_id;
+};
+
+struct OutputBinding {
+  uint32_t value_id;
+};
 
 /**
  * Per-program backend-private compiled state. Holds whatever the runtime
@@ -53,11 +65,12 @@ class CompiledSegment {
  * Ownership model:
  *   - The Engine owns every Buffer it allocated (intermediates, mirrors,
  *     constants, IO-bound). It releases all of them in its destructor.
- *   - NativeBackend never holds Buffer* directly. It tracks one piece of
- *     cross-engine state: value_owner[vid] → RuntimeIndex (which engine
- *     claimed this vid). All other coordination happens via the EValue
- *     array (where engines write data_ptr for host-addressable buffers
- *     they own) and via value_id parameters on the per-execute APIs.
+ *     them all in its destructor.
+ *   - NativeBackend never holds Buffer* directly. It tracks no per-vid
+ *     storage state. All cross-engine coordination happens via the
+ *     central EValue array (where engines write data_ptr for
+ *     host-addressable buffers they own) and via value_id parameters
+ *     on the per-execute APIs.
  *
  * All work-issuing methods are async-by-default. They return immediately
  * after enqueueing on the appropriate internal queue and signal the
@@ -96,25 +109,34 @@ class Engine {
 
   struct AllocRequest {
     uint32_t value_id; // index into `values` for this request
-    int32_t mem_obj_id; // AOT memory-planner slot id. Multiple requests
-                        // sharing the same id MAY share storage (the
-                        // planner determined their lifetimes don't
-                        // overlap). The field's semantics are pure
-                        // grouping; "is this graph IO?" is in `role`.
+
+    // AOT memory-planner slot id. Two regimes:
+    //   mem_obj_id >= 0 : Planned. Multiple requests sharing the same
+    //                     id MAY share storage (the planner determined
+    //                     their lifetimes don't overlap). The engine
+    //                     groups by id and sizes one Buffer per group.
+    //   mem_obj_id <  0 : Unplanned. No AOT-known size; the vid is
+    //                     dynamic-shaped or unbounded. The engine
+    //                     defers allocation: claim the request without
+    //                     allocating storage; allocate lazily on the
+    //                     first resize_tensor() call (or first use).
+    int32_t mem_obj_id;
 
     // Addressing contract this allocation must satisfy. The router
-    // stamps this on every emitted request; the backend interprets
-    // it to choose an allocation strategy:
+    // stamps this on every emitted request; the backend dispatches on
+    // this enum alone (no other gating fields):
     //
-    //   HostOnly      : plain host allocation. Only HostPoolEngine is
-    //                   asked for this.
+    //   HostExtern    : caller-owned host storage. Only HostPoolEngine
+    //                   handles it (allocates a thin Aliasing wrapper
+    //                   re-pointed per execute by bind_inputs /
+    //                   bind_outputs). Used for graph IO. Not biddable.
     //   HostMirror    : host side of a mirror pair. Bid-eligible — a
     //                   device engine may claim it (e.g., CUDA pinned
     //                   host via cudaMallocHost; Metal Shared on UMA);
     //                   HostPool is the fallback claimant.
     //   DeviceMirror  : device side of a mirror pair. Allocated by the
-    //                   compute provider the router targeted. The
-    //                   companion HostMirror is referenced by
+    //                   targeted device engine. The companion
+    //                   HostMirror is referenced by
     //                   host_mirror_value_id; the engine reads
     //                   values[host_mirror_value_id].toTensor()
     //                   .data_ptr() to find the host pointer (set by
@@ -122,21 +144,12 @@ class Engine {
     //                   The provider MAY collapse the pair into one
     //                   physical allocation (UMA) by aliasing the
     //                   host-side buffer's host_ptr (zero-copy) when
-    //                   that pointer is non-null and the engine claimed
-    //                   the HostMirror request too.
+    //                   that pointer is non-null.
     //   DeviceOnly    : owned-by-this-runtime allocation. The provider
     //                   chooses the allocator (e.g., cudaMalloc,
     //                   MTLPrivate). No host contract; host_ptr() may
     //                   be null.
-    MemoryKind kind = MemoryKind::HostOnly;
-
-    // Why this allocation exists (orthogonal to addressing). Today's
-    // model: graph IO never reaches allocate_buffers — IO is handled
-    // exclusively via per-execute bind_inputs/bind_outputs. role
-    // typically equals BufferRole::Internal for AllocRequests; Constant
-    // requests are used for constants if needed. Kept as a field for
-    // diagnostics and future extensibility.
-    BufferRole role = BufferRole::Internal;
+    MemoryKind kind = MemoryKind::HostExtern;
 
     // For DeviceMirror requests: the value_id of the host-side partner
     // in the mirror pair. The engine reads
@@ -148,19 +161,21 @@ class Engine {
     uint32_t host_mirror_value_id = kInvalidValueId;
   };
 
-  // Returned per-request from allocate_buffers. The engine reports
-  // whether it claimed each request; declined requests fall through to
-  // the next bidder (HostPool is the floor for HostMirror/HostOnly).
+  // Capability comment for HostMirror/HostExtern below.
+
   enum class AllocClaim : uint8_t {
-    Claimed,    // engine owns this buffer; populated values[vid] if
-                // host-addressable (writes data_ptr for kernels to read).
-    Declined,   // engine refuses; only valid for HostMirror/HostOnly
-                // (HostPool will claim). For DeviceMirror/DeviceOnly,
-                // declining is a router/init bug.
+    Claimed, // engine owns this buffer; populated values[vid] if
+             // host-addressable (writes data_ptr for kernels to read).
+    Declined, // engine refuses; only valid for HostMirror/HostExtern
+              // (HostPool will claim). For DeviceMirror/DeviceOnly,
+              // declining is a router/init bug.
   };
 
   // Bid auction over storage requests. Engine claims requests it wants
-  // and declines others.
+  // and declines others. Today only HostMirror is biddable (engines may
+  // claim, HostPool floors); HostExtern is HostPool-only; DeviceMirror /
+  // DeviceOnly are dispatched only to the targeted device engine and
+  // must be Claimed.
   //
   // For each Claimed request:
   //   - The engine internally allocates a Buffer and inserts
@@ -187,88 +202,82 @@ class Engine {
       ::executorch::runtime::Span<::executorch::runtime::EValue> values,
       ::executorch::runtime::Span<AllocClaim> out_claims) = 0;
 
-  // Per-execute IO binding. NativeBackend buckets the graph's input
-  // values per owning engine (using value_owner) and calls bind_inputs
-  // once per engine with that engine's bucket.
+  // Per-execute IO binding. Called by NativeBackend on every engine,
+  // ONCE per execute (not bucketed). The engine self-filters via its
+  // internal IO bindings table built at init-time by set_io_bindings.
   //
-  // Parameters (parallel spans):
-  //   values        : the central DelegateInstance EValue array (mutable;
-  //                   engine updates values[value_ids[i]]: resizes the
-  //                   TensorImpl shape to caller_evs[i].sizes(); sets
-  //                   data_ptr to caller's pointer for host-addressable
-  //                   buffers).
-  //   caller_evs[i] : caller's EValue (carrying real data_ptr / shape)
-  //                   that drives binding for value_ids[i].
-  //   value_ids[i]  : the vid in this engine's namespace (the host vid
-  //                   if this is the host-pool / host-claiming engine,
-  //                   or a mirror_id if this is a device engine that
-  //                   owns a mirror of the graph input).
+  // input_args[i] is the caller's EValue for graph input i (same
+  // ordering as Plan::inputs). The engine walks its stored bindings
+  // to find which (graph_idx, internal_vid) pairs to act on.
   //
-  // The engine internally:
-  //   1. Re-aliases (or allocates fresh) its Buffer for value_ids[i] to
-  //      caller's storage. Updates its internal value→Buffer table.
-  //   2. Resizes values[value_ids[i]] TensorImpl to caller's shape.
-  //   3. If the resulting Buffer is host-addressable, sets data_ptr on
-  //      values[value_ids[i]] TensorImpl to caller's pointer.
-  //
-  // Default returns NotImplemented; engines that own no IO bindings
-  // for any vid (i.e., never receive a non-empty bucket) inherit the
-  // default safely.
+  // Default: empty internal bindings table -> no-op. Engines that own
+  // any IO override these.
   virtual ::executorch::runtime::Error bind_inputs(
       ::executorch::runtime::Span<::executorch::runtime::EValue> /*values*/,
-      ::executorch::runtime::Span<const ::executorch::runtime::EValue>
-          /*caller_evs*/,
-      ::executorch::runtime::Span<const uint32_t> /*value_ids*/) {
-    return ::executorch::runtime::Error::NotImplemented;
+      ::executorch::runtime::Span<::executorch::runtime::EValue* const>
+      /*input_args*/) {
+    return ::executorch::runtime::Error::Ok;
   }
 
   // Symmetric to bind_inputs for graph outputs.
   virtual ::executorch::runtime::Error bind_outputs(
       ::executorch::runtime::Span<::executorch::runtime::EValue> /*values*/,
-      ::executorch::runtime::Span<const ::executorch::runtime::EValue>
-          /*caller_evs*/,
-      ::executorch::runtime::Span<const uint32_t> /*value_ids*/) {
-    return ::executorch::runtime::Error::NotImplemented;
+      ::executorch::runtime::Span<::executorch::runtime::EValue* const>
+      /*output_args*/) {
+    return ::executorch::runtime::Error::Ok;
   }
 
-  // Capability queries: should the router mint an engine-side mirror
-  // for a graph input / graph output that this engine touches? Called
-  // per (engine, graph IO vid) at route time.
+  // Per-program IO setup. Called once after allocate_buffers and
+  // upload_constants. Each engine inspects the graph IO lists, decides
+  // which it owns (via its own claimed AllocRequests + its
+  // handles_*_directly responses), and stores its internal IO bindings
+  // table. Cross-engine bookkeeping does not exist; each engine is
+  // self-sufficient.
   //
-  // Return true (default):
-  //   - Router mints a DeviceMirror for this (vid, engine) pair.
-  //   - AllocPlanner emits a DeviceMirror AllocRequest on this engine
-  //     paired back to the host vid via host_mirror_value_id.
-  //   - TransferPlanner emits a pre-segment upload (input) and/or
-  //     post-segment download (output) TransferStep.
+  // Default: no-op (engine owns no IO bindings, e.g., CpuEngine which
+  // resolves graph IO via the central EValue's data_ptr at execute
+  // time).
+  virtual ::executorch::runtime::Error set_io_bindings(
+      ::executorch::runtime::Span<const InputBinding> /*graph_inputs*/,
+      ::executorch::runtime::Span<const OutputBinding> /*graph_outputs*/) {
+    return ::executorch::runtime::Error::Ok;
+  }
+
+  // Capability queries: does this engine handle the caller's pointer
+  // for a graph IO vid directly, instead of asking the router to mint
+  // a separate device-side mirror? Called per (engine, graph IO vid)
+  // at route time. The two paths are mutually exclusive per vid.
+  //
+  // Return false (default — router mints a mirror):
+  //   - Router emits a DeviceMirror AllocRequest on this engine paired
+  //     to the host-side HostExtern via host_mirror_value_id.
+  //   - Router emits a per-execute TransferStep (upload for inputs;
+  //     download for outputs) that moves bytes between the host
+  //     wrapper and the device mirror.
   //   - The compiled segment references the mirror_id (via value_remap).
+  //   - bind_inputs / bind_outputs is NOT called on this engine for
+  //     this vid; the TransferStep handles per-execute byte movement.
   //
-  // Return false:
-  //   - No DeviceMirror is minted; no upload/download TransferStep is
-  //     emitted; the compiled segment references the original IO vid
-  //     directly.
-  //   - The host pool's IO Buffer (re-aliased per execute by the host
-  //     pool's bind_inputs/bind_outputs to the caller's data_ptr) is
-  //     the only allocation for this IO.
-  //   - The engine takes responsibility for resolving the original vid
-  //     at execute time (typically by reading values[vid].toTensor()
-  //     .data_ptr() and wrapping the host pointer into its own Buffer
-  //     view, with whatever alignment fallback the engine needs).
-  //
-  // Defaults to true for safety. Engines opt out per IO once they've
-  // wired up the execute-side resolve.
+  // Return true (engine wraps caller pointer directly):
+  //   - No DeviceMirror is minted; no TransferStep is emitted.
+  //   - bind_inputs / bind_outputs IS called on this engine for this
+  //     vid per execute; the engine wraps the caller's pointer into
+  //     its own Buffer view (e.g., MTLBuffer via
+  //     newBufferWithBytesNoCopy on UMA, with whatever alignment
+  //     fallback the engine needs).
   //
   // Use cases:
-  //   - CpuEngine / UMA Metal: may opt out when the caller's pointer
+  //   - CpuEngine / UMA Metal: return true when the caller's pointer
   //     is directly consumable (zero-copy alias of host bytes).
-  //   - Discrete GPU (CUDA, Vulkan, Intel Mac Metal): always opts in
-  //     (must copy bytes into device-owned VRAM).
-  virtual bool wants_input_mirror(uint32_t /*graph_input_value_id*/) const {
-    return true;
+  //   - Discrete GPU (CUDA, Vulkan, Intel Mac Metal): return false
+  //     (must copy bytes into device-owned VRAM via TransferStep).
+  virtual bool handles_input_directly(uint32_t /*graph_input_value_id*/) const {
+    return false;
   }
 
-  virtual bool wants_output_mirror(uint32_t /*graph_output_value_id*/) const {
-    return true;
+  virtual bool handles_output_directly(
+      uint32_t /*graph_output_value_id*/) const {
+    return false;
   }
 
   // Materialize one or more graph constants on this runtime;
@@ -292,13 +301,27 @@ class Engine {
   // router emits per-provider ConstRequest lists during planning;
   // route() never calls this method). Symmetric to allocate_buffers /
   // alloc_plans.
+  // Constants come from one of two sources, mutually exclusive:
+  //   1. NDM-stored: ndm_key is non-empty; engine fetches bytes via
+  //      ndm.get_data(ndm_key). Used for named parameters/buffers
+  //      that the AOT externalized.
+  //   2. Inline: ndm_key is empty AND inline_data is non-empty; the
+  //      bytes live in the program's constant_buffer flatbuffer
+  //      region, kept alive by the Module's processed FreeableBuffer.
+  //      Used for AOT-lifted constants (e.g., literals) that ET keeps
+  //      "close to code" rather than promoting to NDM.
+  // The engine aliases the source bytes (zero-copy) for host-resident
+  // runtimes; for discrete-VRAM runtimes it copies once into device
+  // memory.
   struct ConstRequest {
-    uint32_t value_id;            // graph value to bind to
-    std::string_view ndm_key;     // key in the NamedDataMap
+    uint32_t value_id; // graph value to bind to
+    std::string_view ndm_key; // NDM key, or empty for inline
+    ::executorch::runtime::Span<const uint8_t>
+        inline_data; // inline bytes, or empty
   };
 
   virtual ::executorch::runtime::Error upload_constants(
-      const ::executorch::runtime::NamedDataMap& ndm,
+      const ::executorch::runtime::NamedDataMap* ndm,
       ::executorch::runtime::Span<const ConstRequest> requests) = 0;
 
   // Provide the storage backing one Event slot. Called once per slot at
@@ -307,59 +330,10 @@ class Engine {
 
   //=== Async work issuance + sync helpers ===================================
   //
-  // Public hot-path API: `execute` (intra-runtime kernel dispatch) and the
-  // host↔device pair `upload_from_host` / `download_to_host` (cross-runtime
-  // moves between CPU and a device runtime).
-  //
-  // The transfer methods only ever live on the **device** Engine:
-  //   * upload_from_host:  CPU produced a value, this device consumes it.
-  //   * download_to_host:  this device produced a value, CPU consumes it.
-  // CpuEngine / HostPoolEngine never have these called against them when
-  // the device side is non-host (NativeBackend dispatches to the device
-  // engine). HostPool does override them for host↔host fallback paths.
-  //
-  // We never need a runtime↔runtime path because v1 has at most one
-  // non-host runtime. Any transfer between two non-host runtimes (future)
-  // would route through host as two steps.
-
-  // Make the engine's Buffer for `dev_dst_value_id` reflect host_src_ev's
-  // data_ptr by the time `signal` reaches Complete. The engine resolves
-  // its own Buffer internally from dev_dst_value_id; the host pointer
-  // is read from host_src_ev.toTensor().mutable_data_ptr().
-  //
-  // Implementation strategy is the runtime's call:
-  //   - Host-addressable runtimes (CPU, Apple-Silicon Metal) typically
-  //     see "alias unchanged" (the bound Buffer already points at the
-  //     host source's storage from allocate_buffers / bind_inputs).
-  //     Returns immediately after signaling.
-  //   - Discrete GPU (Vulkan): real copy from host_ptr into pre-
-  //     allocated VRAM via vkCmdCopyBuffer.
-  //
-  // Also propagates shape from src to dst's TensorImpl before signaling
-  // (per the shape-on-event contract).
-  //
-  // Default: NotImplemented. Override in non-host engines.
-  virtual ::executorch::runtime::Error upload_from_host(
-      ::executorch::runtime::EValue& /*host_src_ev*/,
-      ::executorch::runtime::EValue& /*dev_dst_ev*/,
-      uint32_t /*dev_dst_value_id*/,
-      ::executorch::runtime::Span<Event* const> /*wait_for*/,
-      Event* /*signal*/) {
-    return ::executorch::runtime::Error::NotImplemented;
-  }
-
-  // Symmetric: make host_dst_ev's data_ptr reflect the engine's Buffer
-  // for `dev_src_value_id`. Engine resolves its own Buffer internally.
-  //
-  // Default: NotImplemented. Override in non-host engines.
-  virtual ::executorch::runtime::Error download_to_host(
-      ::executorch::runtime::EValue& /*dev_src_ev*/,
-      uint32_t /*dev_src_value_id*/,
-      ::executorch::runtime::EValue& /*host_dst_ev*/,
-      ::executorch::runtime::Span<Event* const> /*wait_for*/,
-      Event* /*signal*/) {
-    return ::executorch::runtime::Error::NotImplemented;
-  }
+  // Public hot-path API: `execute` (intra-runtime kernel dispatch). The
+  // host<->device transfer pair (`upload_from_host` / `download_to_host`)
+  // lives on DeviceEngine (see below); the host-canonical invariant
+  // means HostPool never needs them.
 
   // Inputs guaranteed on this runtime; outputs MUST end up here.
   // values: the DelegateInstance's EValue array (carries dtype/shape and
@@ -393,10 +367,89 @@ class Engine {
   // Stable per-Engine id within this Engine's RuntimeContext.
   virtual InstanceId id() const = 0;
 
+  // Update the shape (and underlying storage capacity) of a vid this
+  // engine claims. Mirrors ET's resize_tensor pattern lifted to the
+  // engine layer.
+  //
+  // Parameters:
+  //   values    : the central DelegateInstance EValue array. The engine
+  //               reads values[value_id]'s TensorImpl for dtype/dim_order
+  //               and updates its shape and data_ptr.
+  //   value_id  : vid this engine owns.
+  //   new_sizes : the desired tensor shape.
+  //
+  // After this returns Ok:
+  //   values[value_id].toTensor().sizes() == new_sizes.
+  //   The underlying Buffer can hold at least
+  //   sizeof(dtype) * numel(new_sizes) bytes.
+  //   data_ptr on the TensorImpl reflects current storage location
+  //   (may have changed if reallocation was required).
+  //
+  // Use cases:
+  //   - Producer kernel determines a dynamic output shape and calls
+  //     this on its own engine before writing.
+  //   - TransferStep upload/download: destination engine resizes its
+  //     buffer to match source shape before the byte move.
+  //   - Lazy allocation: a vid with mem_obj_id < 0 (unplanned, no AOT
+  //     bound) is allocated on first resize_tensor call.
+  //
+  // Default: NotSupported. Engines that participate in dynamic shapes
+  // must override.
+  virtual ::executorch::runtime::Error resize_tensor(
+      ::executorch::runtime::Span<::executorch::runtime::EValue> /*values*/,
+      uint32_t /*value_id*/,
+      ::executorch::runtime::ArrayRef<::executorch::aten::SizesType>
+      /*new_sizes*/) {
+    return ::executorch::runtime::Error::NotSupported;
+  }
+
   // Drain in-flight work *issued by this Engine only*. Blocks until
   // every currently outstanding submission this Engine has issued via
   // copy_*/execute reaches a terminal state. Idempotent.
   virtual void drain() = 0;
+};
+
+/**
+ * DeviceEngine adds the host<->device transfer methods. By the
+ * host-canonical invariant, every TransferStep has either src or dst
+ * on the host runtime; the non-host side is always a DeviceEngine.
+ *
+ * NativeBackend's TransferStep dispatch casts the non-host engine to
+ * DeviceEngine* and calls the appropriate direction. HostPoolEngine
+ * inherits Engine directly (it never runs as a device).
+ */
+class DeviceEngine : public Engine {
+ public:
+  // Make the engine's Buffer for `dev_dst_value_id` reflect host_src_ev's
+  // data_ptr by the time `signal` reaches Complete. The engine resolves
+  // its own Buffer internally from dev_dst_value_id; the host pointer
+  // is read from host_src_ev.toTensor().mutable_data_ptr().
+  //
+  // Implementation strategy is the runtime's call:
+  //   - Host-addressable runtimes (CPU, Apple-Silicon Metal) typically
+  //     see "alias unchanged" (the bound Buffer already points at the
+  //     host source's storage from allocate_buffers / bind_inputs).
+  //     Returns immediately after signaling.
+  //   - Discrete GPU (Vulkan, CUDA): real copy from host_ptr into
+  //     pre-allocated VRAM.
+  //
+  // Also propagates shape from src to dst's TensorImpl before signaling
+  // (per the shape-on-event contract).
+  virtual ::executorch::runtime::Error upload_from_host(
+      ::executorch::runtime::EValue& host_src_ev,
+      ::executorch::runtime::EValue& dev_dst_ev,
+      uint32_t dev_dst_value_id,
+      ::executorch::runtime::Span<Event* const> wait_for,
+      Event* signal) = 0;
+
+  // Symmetric: make host_dst_ev's data_ptr reflect the engine's Buffer
+  // for `dev_src_value_id`. Engine resolves its own Buffer internally.
+  virtual ::executorch::runtime::Error download_to_host(
+      ::executorch::runtime::EValue& dev_src_ev,
+      uint32_t dev_src_value_id,
+      ::executorch::runtime::EValue& host_dst_ev,
+      ::executorch::runtime::Span<Event* const> wait_for,
+      Event* signal) = 0;
 };
 
 } // namespace native

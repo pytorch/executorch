@@ -29,13 +29,13 @@
 
 // 1. Pull in the shared MLX headers gemv.metal needs (also brings in
 //    defines.h's `instantiate_kernel` macro). Both are #pragma once.
-#include "mlx/backend/metal/kernels/utils.h"
 #include "mlx/backend/metal/kernels/steel/utils.h"
+#include "mlx/backend/metal/kernels/utils.h"
 
 // 2. Now suppress the AOT instantiation macros so the body of
 //    gemv.metal doesn't generate static [[host_name(...)]] entries
 //    for the runtime metal compiler.
-#undef  instantiate_kernel
+#undef instantiate_kernel
 #define instantiate_kernel(...)
 #define instantiate_gemv_helper(...)
 #define instantiate_gemv_blocks(...)

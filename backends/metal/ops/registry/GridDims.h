@@ -32,12 +32,24 @@ getBlockDims(int dim0, int dim1, int dim2, int maxPow2 = 10) {
   int sum = 0;
   while (true) {
     int presum = sum;
-    if (dim0 >= (1 << (pows[0] + 1))) { pows[0]++; sum++; }
-    if (sum == maxPow2) break;
-    if (dim1 >= (1 << (pows[1] + 1))) { pows[1]++; sum++; }
-    if (sum == maxPow2) break;
-    if (dim2 >= (1 << (pows[2] + 1))) { pows[2]++; sum++; }
-    if (sum == presum || sum == maxPow2) break;
+    if (dim0 >= (1 << (pows[0] + 1))) {
+      pows[0]++;
+      sum++;
+    }
+    if (sum == maxPow2)
+      break;
+    if (dim1 >= (1 << (pows[1] + 1))) {
+      pows[1]++;
+      sum++;
+    }
+    if (sum == maxPow2)
+      break;
+    if (dim2 >= (1 << (pows[2] + 1))) {
+      pows[2]++;
+      sum++;
+    }
+    if (sum == presum || sum == maxPow2)
+      break;
   }
   return std::make_tuple<uint32_t, uint32_t, uint32_t>(
       1u << pows[0], 1u << pows[1], 1u << pows[2]);
@@ -47,10 +59,13 @@ getBlockDims(int dim0, int dim1, int dim2, int maxPow2 = 10) {
 // in uint32_t. Use this when numel > UINT32_MAX would overflow a 1-D grid.
 // Mirrors MLX's get_2d_grid_dims_common (without strides).
 inline std::pair<uint32_t, uint32_t> get2DGridDims(
-    uint64_t numel, uint64_t workPerThread = 1) {
+    uint64_t numel,
+    uint64_t workPerThread = 1) {
   uint64_t threads = (numel + workPerThread - 1) / workPerThread;
-  if (threads == 0) return {1u, 1u};
-  if (threads <= UINT32_MAX) return {static_cast<uint32_t>(threads), 1u};
+  if (threads == 0)
+    return {1u, 1u};
+  if (threads <= UINT32_MAX)
+    return {static_cast<uint32_t>(threads), 1u};
   uint64_t gy = (threads + UINT32_MAX - 1) / UINT32_MAX;
   uint64_t gx = (threads + gy - 1) / gy;
   if (gx > UINT32_MAX || gy > UINT32_MAX) {
@@ -68,14 +83,19 @@ inline int workPerThread(exec_aten::ScalarType dtype) {
   switch (dtype) {
     case ScalarType::Bool:
     case ScalarType::Byte:
-    case ScalarType::Char:  return 8;  // 1-byte: 8 elems = 8 bytes
+    case ScalarType::Char:
+      return 8; // 1-byte: 8 elems = 8 bytes
     case ScalarType::Short:
-    case ScalarType::Half:  return 8;  // 2-byte: 8 elems = 16 bytes
+    case ScalarType::Half:
+      return 8; // 2-byte: 8 elems = 16 bytes
     case ScalarType::Int:
-    case ScalarType::Float: return 4;  // 4-byte: 4 elems = 16 bytes
+    case ScalarType::Float:
+      return 4; // 4-byte: 4 elems = 16 bytes
     case ScalarType::Long:
-    case ScalarType::Double: return 2; // 8-byte: 2 elems = 16 bytes
-    default: return 4;
+    case ScalarType::Double:
+      return 2; // 8-byte: 2 elems = 16 bytes
+    default:
+      return 4;
   }
 }
 

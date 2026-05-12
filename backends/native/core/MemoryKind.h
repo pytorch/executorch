@@ -39,34 +39,35 @@ namespace native {
  * EventSlots, completely separate from buffers.
  */
 enum class MemoryKind : uint8_t {
-  // Only the host runtime addresses this buffer. Runtime chooses the
-  // allocator (e.g., aligned malloc, hugepages).
-  HostOnly = 0,
+  // Caller-owned host storage, wrapped per-execute via bind_inputs /
+  // bind_outputs. Used for graph IO. Not biddable: only HostPool
+  // handles it (allocates a thin Aliasing HostBuffer; the underlying
+  // bytes belong to the caller). No arena slot.
+  HostExtern = 0,
 
-  // Host side of a host↔device mirror pair. Both host code and the
-  // paired device runtime see this value, accessed via the pair. The
-  // partner DeviceMirror may share storage with this buffer (UMA
-  // collapse) or be a distinct physical allocation linked by
-  // per-execute copies.
+  // Host side of a host↔device mirror pair. Delegate-allocated at init
+  // (arena-backed). Biddable: any engine may claim (e.g., a CUDA engine
+  // could allocate as cudaMallocHost for pinning); HostPool floors. The
+  // partner DeviceMirror may share storage (UMA collapse) or be a
+  // distinct physical allocation linked by per-execute copies.
   HostMirror = 1,
 
   // Device side of a host↔device mirror pair. Symmetric counterpart of
-  // HostMirror.
+  // HostMirror. Single allocator: the targeted device engine.
   DeviceMirror = 2,
 
-  // Only the owning provider's runtime addresses this buffer. Runtime
-  // chooses the allocator (e.g., cudaMalloc for a GPU intermediate;
-  // cudaMallocHost for a KV cache the GPU reads via DMA without
-  // staging; MTLStorageModePrivate or MTLStorageModeShared on Metal).
-  // The host has no contract guarantee that host_ptr() is non-null;
-  // backends MAY still expose one for diagnostics on UMA platforms.
+  // Only the owning provider's runtime addresses this buffer. Single
+  // allocator: the targeted device engine. Runtime chooses the
+  // allocator (e.g., cudaMalloc, MTLStorageModePrivate). The host has
+  // no contract guarantee that host_ptr() is non-null; backends MAY
+  // still expose one for diagnostics on UMA platforms.
   DeviceOnly = 3,
 };
 
 inline const char* to_string(MemoryKind k) {
   switch (k) {
-    case MemoryKind::HostOnly:
-      return "HostOnly";
+    case MemoryKind::HostExtern:
+      return "HostExtern";
     case MemoryKind::HostMirror:
       return "HostMirror";
     case MemoryKind::DeviceMirror:

@@ -40,6 +40,98 @@ MetalKernelCompiler::~MetalKernelCompiler() {
   // compiled kernels for the process lifetime.
 }
 
+//===----------------------------------------------------------------------===//
+// Private helpers — shared by compile() and getOrCompilePsoFromSource().
+//===----------------------------------------------------------------------===//
+
+id<MTLLibrary> MetalKernelCompiler::compileLibrary(
+    NSString* sourceStr, const char* keyForLog) {
+  MTLCompileOptions* options = [[MTLCompileOptions alloc] init];
+
+  // Metal 4: math mode. Match MLX's MSL build flags (-fno-fast-math but
+  // NO Precise floating-point function override). Setting
+  // mathFloatingPointFunctions=Precise forces the compiler to use the
+  // strictest (slowest) implementations of transcendentals AND
+  // restricts FMA fusion in matmul kernels — costing ~30% on Apple9+
+  // NAX matmul vs MLX's default. We retain MathModeSafe (no-fast-math
+  // for IEEE-correct numerics) but allow the compiler to pick its
+  // standard (non-Precise) intrinsics.
+#if ET_METAL4_AVAILABLE
+  if (@available(macOS 15.0, iOS 18.0, *)) {
+    options.mathMode = MTLMathModeSafe;
+    // mathFloatingPointFunctions intentionally LEFT AT DEFAULT
+    // (MTLMathFloatingPointFunctionsFast / unset) to match MLX's build.
+  }
+#endif
+
+  NSError* error = nil;
+  id<MTLLibrary> library =
+      [device_ newLibraryWithSource:sourceStr options:options error:&error];
+
+  // A non-nil NSError can accompany a valid library object — Apple
+  // uses error to surface warnings as well as failures. Only the
+  // null-result is a real failure; the error object's content is
+  // logged for diagnostics either way.
+  if (!library) {
+    ET_LOG(Error,
+           "MetalKernelCompiler: failed to compile shader '%s': %s",
+           keyForLog,
+           error ? [[error localizedDescription] UTF8String] : "unknown");
+    return nil;
+  }
+  if (error) {
+    ET_LOG(Info,
+           "MetalKernelCompiler: shader '%s' compiled with diagnostics: %s",
+           keyForLog,
+           [[error localizedDescription] UTF8String]);
+  }
+  return library;
+}
+
+id<MTLFunction> MetalKernelCompiler::resolveFunction(
+    id<MTLLibrary> library,
+    NSString* funcName,
+    const FunctionConstants* constants,
+    const char* keyForLog) {
+  // Function constants: bind each (index, value) at PSO creation so the MSL
+  // compiler can DCE branches that depend on them. The same kernel function
+  // produces a different PSO per (source, name, constants) tuple.
+  if (constants && !constants->empty()) {
+    MTLFunctionConstantValues* fcv = [[MTLFunctionConstantValues alloc] init];
+    for (auto& [idx, val] : constants->bools) {
+      bool v = val;
+      [fcv setConstantValue:&v type:MTLDataTypeBool atIndex:idx];
+    }
+    for (auto& [idx, val] : constants->ints) {
+      int32_t v = val;
+      [fcv setConstantValue:&v type:MTLDataTypeInt atIndex:idx];
+    }
+    NSError* fcErr = nil;
+    id<MTLFunction> function = [library newFunctionWithName:funcName
+                                            constantValues:fcv
+                                                     error:&fcErr];
+    if (!function) {
+      ET_LOG(Error,
+             "MetalKernelCompiler: failed to specialize '%s' (%s) with %zu "
+             "bool + %zu int constants: %s",
+             [funcName UTF8String], keyForLog,
+             constants->bools.size(), constants->ints.size(),
+             fcErr ? [[fcErr localizedDescription] UTF8String] : "unknown");
+      return nil;
+    }
+    return function;
+  }
+
+  id<MTLFunction> function = [library newFunctionWithName:funcName];
+  if (!function) {
+    ET_LOG(Error,
+           "MetalKernelCompiler: function '%s' not found in '%s'",
+           [funcName UTF8String], keyForLog);
+    return nil;
+  }
+  return function;
+}
+
 bool MetalKernelCompiler::loadBinaryArchive(const char* path) {
 #if ET_METAL4_AVAILABLE
   if (@available(macOS 11.0, iOS 14.0, *)) {
@@ -109,87 +201,20 @@ std::unique_ptr<MetalKernel> MetalKernelCompiler::compile(
 
   @autoreleasepool {
     NSString* sourceStr = [NSString stringWithUTF8String:source];
-    NSError* error = nil;
 
-    MTLCompileOptions* options = [[MTLCompileOptions alloc] init];
-
-    // Metal 4: math mode. Match MLX's MSL build flags (-fno-fast-math but
-    // NO Precise floating-point function override). Setting
-    // mathFloatingPointFunctions=Precise forces the compiler to use the
-    // strictest (slowest) implementations of transcendentals AND
-    // restricts FMA fusion in matmul kernels — costing ~30% on Apple9+
-    // NAX matmul vs MLX's default. We retain MathModeSafe (no-fast-math
-    // for IEEE-correct numerics) but allow the compiler to pick its
-    // standard (non-Precise) intrinsics.
-#if ET_METAL4_AVAILABLE
-    if (@available(macOS 15.0, iOS 18.0, *)) {
-      options.mathMode = MTLMathModeSafe;
-      // mathFloatingPointFunctions intentionally LEFT AT DEFAULT
-      // (MTLMathFloatingPointFunctionsFast / unset) to match MLX's build.
-    }
-#endif
-
-    id<MTLLibrary> library = [device_ newLibraryWithSource:sourceStr options:options error:&error];
-
-    // A non-nil NSError can accompany a valid library object — Apple
-    // uses error to surface warnings as well as failures. Only the
-    // null-result is a real failure; the error object's content is
-    // logged for diagnostics either way.
-    if (!library) {
-      ET_LOG(Error, "MetalKernelCompiler: failed to compile shader: %s",
-             error ? [[error localizedDescription] UTF8String] : "unknown");
-      return nullptr;
-    }
-    if (error) {
-      ET_LOG(Info, "MetalKernelCompiler: shader compiled with diagnostics: %s",
-             [[error localizedDescription] UTF8String]);
-      error = nil;  // reset for next API call
-    }
+    id<MTLLibrary> library = compileLibrary(sourceStr, functionName);
+    if (!library) return nullptr;
 
     NSString* funcName = [NSString stringWithUTF8String:functionName];
-    // Function constants: bind each (index, value) at PSO creation so the MSL
-    // compiler can DCE branches that depend on them. The same kernel function
-    // produces a different PSO per (source, name, constants) tuple — the
-    // cache key above captures all three.
-    // NOTE: fcv lifetime is intentionally hoisted outside the if-block so the
-    // MTL4 path below can also pass it via funcDesc.constantValues. Without
-    // this, MTL4 PSO creation fails for FC-aware kernels with the validation
-    // error "function ... cannot be used to build a pipeline state. Use
-    // newFunctionWithName:constantValues:..." (because the unspecialized
-    // function reference is what gets used).
-    id<MTLFunction> function = nil;
-    MTLFunctionConstantValues* fcv = nil;
-    if (constants && !constants->empty()) {
-      fcv = [[MTLFunctionConstantValues alloc] init];
-      for (auto& [idx, val] : constants->bools) {
-        bool v = val;
-        [fcv setConstantValue:&v type:MTLDataTypeBool atIndex:idx];
-      }
-      for (auto& [idx, val] : constants->ints) {
-        int32_t v = val;
-        [fcv setConstantValue:&v type:MTLDataTypeInt atIndex:idx];
-      }
-      NSError* fcErr = nil;
-      function = [library newFunctionWithName:funcName
-                              constantValues:fcv
-                                       error:&fcErr];
-      if (!function) {
-        ET_LOG(Error,
-               "MetalKernelCompiler: failed to specialize '%s' with %zu "
-               "bool + %zu int constants: %s",
-               functionName, constants->bools.size(),
-               constants->ints.size(),
-               fcErr ? [[fcErr localizedDescription] UTF8String] : "unknown");
-        return nullptr;
-      }
-    } else {
-      function = [library newFunctionWithName:funcName];
-    }
-
-    if (!function) {
-      ET_LOG(Error, "MetalKernelCompiler: function '%s' not found", functionName);
-      return nullptr;
-    }
+    id<MTLFunction> function =
+        resolveFunction(library, funcName, constants, functionName);
+    if (!function) return nullptr;
+    // Whether FCs were applied to `function`. Used below to bypass the
+    // MTL4 fast path for FC-aware kernels (MTL4LibraryFunctionDescriptor
+    // doesn't accept FC values, so it'd resolve to the unspecialized
+    // function and PSO creation would fail). Same predicate that
+    // resolveFunction uses internally.
+    const bool hasFcs = (constants && !constants->empty());
 
 #if ET_METAL4_ENABLE
     // ----- Metal 4 dispatch path -----
@@ -213,7 +238,7 @@ std::unique_ptr<MetalKernel> MetalKernelCompiler::compile(
           // uses the already-specialized `function` directly).
           // TODO: track native MTL4 FC support and remove this fall-through
           // once Apple ships it. Filing as a metal_v2 follow-up.
-          if (fcv) {
+          if (hasFcs) {
             ET_LOG(Info,
                    "MetalKernelCompiler: '%s' has function constants — "
                    "skipping MTL4 path (no FC support), using standard PSO.",
@@ -259,6 +284,7 @@ std::unique_ptr<MetalKernel> MetalKernelCompiler::compile(
     pipelineDesc.label = funcName;
 
     id<MTLComputePipelineState> pipeline = nil;
+    NSError* error = nil;
 
 #if ET_METAL4_AVAILABLE
     // Try to load from binary archive first (fast path)
@@ -349,38 +375,13 @@ id<MTLComputePipelineState> MetalKernelCompiler::getOrCompilePsoFromSource(
   id<MTLLibrary> library = shared.findLibrary(libraryCacheKey);
 
   @autoreleasepool {
-    NSError* error = nil;
     if (!library) {
       std::string source = sourceFactory();
       NSString* sourceStr = [NSString stringWithUTF8String:source.c_str()];
 
-      MTLCompileOptions* options = [[MTLCompileOptions alloc] init];
-#if ET_METAL4_AVAILABLE
-      if (@available(macOS 15.0, iOS 18.0, *)) {
-        // Same math-mode as the big-source compile() path: MathModeSafe
-        // (no fast-math) but allow the compiler to pick its standard
-        // (non-Precise) intrinsics. Required to match MLX's MSL build flags.
-        options.mathMode = MTLMathModeSafe;
-      }
-#endif
-      library = [device_ newLibraryWithSource:sourceStr options:options error:&error];
+      library = compileLibrary(sourceStr, libraryCacheKey.c_str());
+      if (!library) return nil;
 
-      if (!library) {
-        ET_LOG(Error,
-               "MetalKernelCompiler::getOrCompilePsoFromSource: failed to "
-               "compile library '%s': %s",
-               libraryCacheKey.c_str(),
-               error ? [[error localizedDescription] UTF8String] : "unknown");
-        return nil;
-      }
-      if (error) {
-        ET_LOG(Info,
-               "MetalKernelCompiler::getOrCompilePsoFromSource: library '%s' "
-               "compiled with diagnostics: %s",
-               libraryCacheKey.c_str(),
-               [[error localizedDescription] UTF8String]);
-        error = nil;
-      }
       // Cache is ARC-managed: insertOrFindLibrary atomically inserts our
       // local +1 (releasing it on a lost race via the returned canonical
       // entry). Reassigning `library` to the return value picks up the
@@ -394,41 +395,9 @@ id<MTLComputePipelineState> MetalKernelCompiler::getOrCompilePsoFromSource(
 
     // ---- Function lookup (with optional FCs) ----
     NSString* funcName = [NSString stringWithUTF8String:functionName.c_str()];
-    id<MTLFunction> function = nil;
-    MTLFunctionConstantValues* fcv = nil;
-    if (constants && !constants->empty()) {
-      fcv = [[MTLFunctionConstantValues alloc] init];
-      for (auto& [idx, val] : constants->bools) {
-        bool v = val;
-        [fcv setConstantValue:&v type:MTLDataTypeBool atIndex:idx];
-      }
-      for (auto& [idx, val] : constants->ints) {
-        int32_t v = val;
-        [fcv setConstantValue:&v type:MTLDataTypeInt atIndex:idx];
-      }
-      NSError* fcErr = nil;
-      function = [library newFunctionWithName:funcName
-                              constantValues:fcv
-                                       error:&fcErr];
-      if (!function) {
-        ET_LOG(Error,
-               "MetalKernelCompiler::getOrCompilePsoFromSource: failed to "
-               "specialize '%s' in '%s' with %zu bool + %zu int constants: %s",
-               functionName.c_str(), libraryCacheKey.c_str(),
-               constants->bools.size(), constants->ints.size(),
-               fcErr ? [[fcErr localizedDescription] UTF8String] : "unknown");
-        return nil;
-      }
-    } else {
-      function = [library newFunctionWithName:funcName];
-      if (!function) {
-        ET_LOG(Error,
-               "MetalKernelCompiler::getOrCompilePsoFromSource: function '%s' "
-               "not found in library '%s'",
-               functionName.c_str(), libraryCacheKey.c_str());
-        return nil;
-      }
-    }
+    id<MTLFunction> function =
+        resolveFunction(library, funcName, constants, libraryCacheKey.c_str());
+    if (!function) return nil;
 
     // ---- PSO creation ----
     NSError* psoErr = nil;

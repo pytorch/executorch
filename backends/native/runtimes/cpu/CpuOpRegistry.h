@@ -160,8 +160,7 @@ class CpuOpDispatcher final {
       CpuGraph&,
       const std::vector<ValueRef>&,
       const std::string& op_name)>;
-  using NameResolver =
-      std::function<std::string(const std::string& op_name)>;
+  using NameResolver = std::function<std::string(const std::string& op_name)>;
 
   /// Register an explicit handler. Overrides the default for `name`.
   void register_op(
@@ -184,7 +183,11 @@ class CpuOpDispatcher final {
   /// handler is installed AND ET has the resolved kernel, OR ANY
   /// explicitly-registered overload's full_name starts with `name + "."`
   /// (so router's base-name can_run probe finds explicit overload-keyed
-  /// registrations).
+  /// registrations). The default_resolver_ is responsible for mapping
+  /// IR op names (with overload suffixes like ".Tensor", ".Scalar",
+  /// ".default", or no suffix) to the actual ET kernel name (typically
+  /// ending in ".out" or ".Scalar_out"), so a single resolver call
+  /// covers all the common forms.
   bool has_op(const std::string& name) const {
     if (underlying_.has_op(name)) {
       return true;
@@ -193,7 +196,8 @@ class CpuOpDispatcher final {
     // matches registered "aten::add_.Tensor"). Cheap linear scan.
     const std::string prefix = name + ".";
     for (const auto& kv : underlying_.table()) {
-      if (kv.first.compare(0, prefix.size(), prefix) == 0) return true;
+      if (kv.first.compare(0, prefix.size(), prefix) == 0)
+        return true;
     }
     if (!default_dispatcher_ || !default_resolver_) {
       return false;
@@ -201,15 +205,14 @@ class CpuOpDispatcher final {
     std::string kernel_name = default_resolver_(name);
     return torch::executor::hasOpsFn(
         kernel_name.c_str(),
-        ::executorch::runtime::ArrayRef<
-            ::executorch::runtime::TensorMeta>());
+        ::executorch::runtime::ArrayRef<::executorch::runtime::TensorMeta>());
   }
 
   /// Dtype-aware overload; for now defers to underlying for explicitly
   /// registered ops and ignores dtype for default-handled ops (ET's
   /// kernel registry does its own dtype matching).
-  bool has_op(const std::string& name,
-              executorch::aten::ScalarType dtype) const {
+  bool has_op(const std::string& name, executorch::aten::ScalarType dtype)
+      const {
     if (underlying_.has_op(name, dtype)) {
       return true;
     }
@@ -231,10 +234,10 @@ class CpuOpDispatcher final {
     }
     auto dispatcher = default_dispatcher_;
     std::string captured = name;
-    return [dispatcher, captured](
-               CpuGraph& g, const std::vector<ValueRef>& args) {
-      dispatcher(g, args, captured);
-    };
+    return
+        [dispatcher, captured](CpuGraph& g, const std::vector<ValueRef>& args) {
+          dispatcher(g, args, captured);
+        };
   }
 
  private:

@@ -21,7 +21,7 @@
 // Prefer including the focused header(s) you actually need; this file
 // is a single-include catch-all when several are required at once.
 
+#include <executorch/backends/metal/core/MetalDeviceInfo.h>
 #include <executorch/backends/metal/ops/registry/Elementwise.h>
 #include <executorch/backends/metal/ops/registry/GridDims.h>
-#include <executorch/backends/metal/core/MetalDeviceInfo.h>
 #include <executorch/backends/metal/ops/registry/StrideUtils.h>

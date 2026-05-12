@@ -22,6 +22,6 @@ namespace native {
  */
 class HostPoolRuntimeContext final : public RuntimeContext {};
 
-}  // namespace native
-}  // namespace backends
-}  // namespace executorch
+} // namespace native
+} // namespace backends
+} // namespace executorch

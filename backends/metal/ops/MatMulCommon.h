@@ -11,7 +11,7 @@
 #include <executorch/backends/metal/core/MetalStream.h>
 #include <executorch/backends/metal/ops/registry/OpUtils.h>
 
-#include <algorithm>  // std::max
+#include <algorithm> // std::max
 #include <cstdint>
 
 #import <Metal/Metal.h>
@@ -25,16 +25,19 @@ namespace metal_v2 {
 // constexpr to keep ODR-safe.
 
 struct MatMulThresholds {
-  int simdMNK;       // min M,N,K to pick Simd over Tiled/Naive
-  int gemvMK;        // min M (or N for gemv_t) to use the simdgroup gemv path
+  int simdMNK; // min M,N,K to pick Simd over Tiled/Naive
+  int gemvMK; // min M (or N for gemv_t) to use the simdgroup gemv path
 };
 
 constexpr MatMulThresholds thresholdsForTier(DeviceTier tier) {
   switch (tier) {
-    case DeviceTier::Phone:    return {32, 16};
-    case DeviceTier::MacUltra: return {64, 32};
+    case DeviceTier::Phone:
+      return {32, 16};
+    case DeviceTier::MacUltra:
+      return {64, 32};
     case DeviceTier::MacBase:
-    default:                   return {48, 24};
+    default:
+      return {48, 24};
   }
 }
 
@@ -56,7 +59,8 @@ inline bool tf32Enabled() {
       // Explicit env-var setting wins regardless of compile-time default.
       return strcmp(env, "1") == 0 || strcmp(env, "true") == 0;
     }
-#if defined(EXECUTORCH_METAL_TF32_DEFAULT_ENABLED) && (EXECUTORCH_METAL_TF32_DEFAULT_ENABLED + 0 != 0)
+#if defined(EXECUTORCH_METAL_TF32_DEFAULT_ENABLED) && \
+    (EXECUTORCH_METAL_TF32_DEFAULT_ENABLED + 0 != 0)
     return true;
 #else
     return false;
@@ -64,7 +68,6 @@ inline bool tf32Enabled() {
   }();
   return enabled;
 }
-
 
 // dtype family classifier matching MLX's GEMM_TPARAM_MACRO usage.
 // MLX branches between complex64, float32, and "half/bfloat" (everything
@@ -89,9 +92,9 @@ inline bool isFloat32(executorch::aten::ScalarType dtype) {
 //===----------------------------------------------------------------------===//
 
 struct AddmmTilePick {
-  const char* tile_suffix;  // e.g. "64_32_32_2_2_" — kept for logging only
+  const char* tile_suffix; // e.g. "64_32_32_2_2_" — kept for logging only
   int BM, BN, BK;
-  uvec3 grid;               // (ceildiv(N,BN), ceildiv(M,BM), batch)
+  uvec3 grid; // (ceildiv(N,BN), ceildiv(M,BM), batch)
   // Threads per threadgroup. Computed from (WM*WN)*32 — most tiles use
   // 4 simdgroups (128 threads); the (1,2) tile uses 2 (64 threads).
   int block_threads = 128;
@@ -106,27 +109,32 @@ enum class MatMulTileShape {
   S_64_64_16_2_2,
   // (64, 32, 32, 2, 2) — MLX `nt` and `'d' small fp32 nn`. Our `Simd_BN32`.
   S_64_32_32_2_2,
-  // (64, 64, 16, 1, 2) — MLX `'d' large modest-K half/bf` & `'d' small half/bf nn`
+  // (64, 64, 16, 1, 2) — MLX `'d' large modest-K half/bf` & `'d' small half/bf
+  // nn`
   // & `'g'/'p' half/bf non-nt`. Our `Simd_W12`.
   S_64_64_16_1_2,
-  // (32, 64, 16, 1, 2) — MLX `'d' large nn-deep-K half/bf` & `'d' small fp32 nt`.
+  // (32, 64, 16, 1, 2) — MLX `'d' large nn-deep-K half/bf` & `'d' small fp32
+  // nt`.
   // Real tile (was substituted by Simd_M32 before Phase A).
   S_32_64_16_1_2,
 };
 
 inline AddmmTilePick pickAddmmTile(
-    int32_t M, int32_t N, int32_t K,
+    int32_t M,
+    int32_t N,
+    int32_t K,
     int32_t batch = 1,
     bool transposed_NN_only = false,
     // New args (all defaulted to stay source-compatible):
-    executorch::aten::ScalarType dtype =
-        executorch::aten::ScalarType::Float,
+    executorch::aten::ScalarType dtype = executorch::aten::ScalarType::Float,
     DeviceTier tier = DeviceTier::MacBase) {
   AddmmTilePick t{};
   if (transposed_NN_only) {
     // NT/TN: only 64x64x16 has tile instantiations.
     t.tile_suffix = "64_64_16_2_2_";
-    t.BM = 64; t.BN = 64; t.BK = 16;
+    t.BM = 64;
+    t.BN = 64;
+    t.BK = 16;
     t.grid = uvec3((N + 63) / 64, (M + 63) / 64, batch);
     return t;
   }
@@ -136,11 +144,15 @@ inline AddmmTilePick pickAddmmTile(
     // store (the rest of the original ladder).
     if (M >= 2 && N >= 64 && K >= 16) {
       t.tile_suffix = "32_64_32_1_4_";
-      t.BM = 32; t.BN = 64; t.BK = 32;
+      t.BM = 32;
+      t.BN = 64;
+      t.BK = 32;
       t.grid = uvec3((N + 63) / 64, (M + 31) / 32, batch);
     } else {
       t.tile_suffix = "64_64_16_2_2_";
-      t.BM = 64; t.BN = 64; t.BK = 16;
+      t.BM = 64;
+      t.BN = 64;
+      t.BK = 16;
       t.grid = uvec3((N + 63) / 64, (M + 63) / 64, batch);
     }
     return t;
@@ -199,29 +211,37 @@ inline AddmmTilePick pickAddmmTile(
   switch (shape) {
     case MatMulTileShape::S_64_64_16_2_2:
       t.tile_suffix = "64_64_16_2_2_";
-      t.BM = 64; t.BN = 64; t.BK = 16;
+      t.BM = 64;
+      t.BN = 64;
+      t.BK = 16;
       t.grid = uvec3((N + 63) / 64, (M + 63) / 64, batch);
       t.block_threads = 128;
       break;
     case MatMulTileShape::S_64_32_32_2_2:
       t.tile_suffix = "64_32_32_2_2_";
-      t.BM = 64; t.BN = 32; t.BK = 32;
+      t.BM = 64;
+      t.BN = 32;
+      t.BK = 32;
       t.grid = uvec3((N + 31) / 32, (M + 63) / 64, batch);
       t.block_threads = 128;
       break;
     case MatMulTileShape::S_64_64_16_1_2:
       t.tile_suffix = "64_64_16_1_2_";
-      t.BM = 64; t.BN = 64; t.BK = 16;
+      t.BM = 64;
+      t.BN = 64;
+      t.BK = 16;
       t.grid = uvec3((N + 63) / 64, (M + 63) / 64, batch);
-      t.block_threads = 64;  // WM*WN*32 = 1*2*32
+      t.block_threads = 64; // WM*WN*32 = 1*2*32
       break;
     case MatMulTileShape::S_32_64_16_1_2:
       // Phase A: real (32, 64, 16, 1, 2) tile (BM=32, BN=64, BK=16, 1×2
       // simd layout). 64 threads/tg.
       t.tile_suffix = "32_64_16_1_2_";
-      t.BM = 32; t.BN = 64; t.BK = 16;
+      t.BM = 32;
+      t.BN = 64;
+      t.BK = 16;
       t.grid = uvec3((N + 63) / 64, (M + 31) / 32, batch);
-      t.block_threads = 64;  // WM*WN*32 = 1*2*32
+      t.block_threads = 64; // WM*WN*32 = 1*2*32
       break;
   }
   return t;
@@ -234,6 +254,6 @@ inline int32_t pickSwizzleLog(uvec3 grid) {
   return (grid.y >= 4 && grid.x >= 4) ? 2 : 0;
 }
 
-}  // namespace metal_v2
-}  // namespace backends
-}  // namespace executorch
+} // namespace metal_v2
+} // namespace backends
+} // namespace executorch

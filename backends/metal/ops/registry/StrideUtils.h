@@ -130,12 +130,16 @@ inline std::vector<int64_t> makeContiguousStrides(ArrayRef<SizesType> shape) {
 inline bool isColContiguous(const Tensor& t) {
   auto sizes = t.sizes();
   auto strides = t.strides();
-  if (sizes.size() != strides.size()) return false;
-  if (sizes.empty()) return true;
+  if (sizes.size() != strides.size())
+    return false;
+  if (sizes.empty())
+    return true;
   int64_t expected = 1;
   for (size_t i = 0; i < sizes.size(); ++i) {
-    if (sizes[i] == 1) continue;
-    if (strides[i] != expected) return false;
+    if (sizes[i] == 1)
+      continue;
+    if (strides[i] != expected)
+      return false;
     expected *= sizes[i];
   }
   return true;

@@ -27,10 +27,10 @@ import os
 import sys
 
 import torch
-from torch.export import export
+from executorch.backends.native.partitioner import NativePartitioner
 
 from executorch.exir import EdgeCompileConfig, to_edge_transform_and_lower
-from executorch.backends.native.partitioner import NativePartitioner
+from torch.export import export
 
 
 class TinyAdd(torch.nn.Module):
@@ -44,7 +44,7 @@ def main() -> int:
     model = TinyAdd().eval()
     example = (torch.randn(1, 4), torch.randn(1, 4))
 
-    print(f"=== Exporting TinyAdd (delegated to NativeBackend) ===")
+    print("=== Exporting TinyAdd (delegated to NativeBackend) ===")
     with torch.no_grad():
         eager_out = model(*example)
     print(f"  Eager output shape: {tuple(eager_out.shape)}")
@@ -65,7 +65,7 @@ def main() -> int:
     # Surface the operator list so we can see what landed in the delegate
     # (vs at the top level).
     prog = et._emitter_output.program
-    for ep_i, plan in enumerate(prog.execution_plan):
+    for _ep_i, plan in enumerate(prog.execution_plan):
         for i, op in enumerate(plan.operators):
             ovl = op.overload if op.overload else ""
             full = f"{op.name}.{ovl}" if ovl else op.name

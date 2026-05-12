@@ -23,8 +23,9 @@ namespace metal_v2 {
 //   inputs[1]  wq         Tensor [N, K*nbit/8]  uint8 packed weight
 //   inputs[2]  ws         Tensor [N, K/group_size]  scales (same dtype as x)
 //   inputs[3]  wz         Tensor or None      [N, K/group_size] biases
-//                                             (None → symmetric, allocates zeros)
-//                                             NOTE: this is MLX's "biases"
+//                                             (None → symmetric, allocates
+//                                             zeros) NOTE: this is MLX's
+//                                             "biases"
 //                                             (-scale*zero_point precomputed),
 //                                             matching v1's op_linear_4bit.mm
 //                                             convention.
@@ -52,25 +53,28 @@ class AffineQuantizedLinearOp : public MetalOp {
   }
 
   bool supports(ScalarType dtype) const override {
-    return dtype == ScalarType::Float ||
-           dtype == ScalarType::Half ||
-           dtype == ScalarType::BFloat16;
+    return dtype == ScalarType::Float || dtype == ScalarType::Half ||
+        dtype == ScalarType::BFloat16;
   }
 
   std::vector<SizesType> computeOutputShape(
-      ::executorch::runtime::Span<::executorch::runtime::EValue*> inputs) const override;
+      ::executorch::runtime::Span<::executorch::runtime::EValue*> inputs)
+      const override;
 
   void dispatch(
       MetalStream* stream,
       ::executorch::runtime::Span<::executorch::runtime::EValue*> inputs,
-      ::executorch::runtime::Span<::executorch::runtime::EValue*> outputs) override;
+      ::executorch::runtime::Span<::executorch::runtime::EValue*> outputs)
+      override;
 
  protected:
   // JIT-only — per-shape source assembled at dispatch via
   // ops/mlx_jit/KernelLoader. Base-class big-source path unused.
-  const char* kernelSource() const override { return ""; }
+  const char* kernelSource() const override {
+    return "";
+  }
 };
 
-}  // namespace metal_v2
-}  // namespace backends
-}  // namespace executorch
+} // namespace metal_v2
+} // namespace backends
+} // namespace executorch

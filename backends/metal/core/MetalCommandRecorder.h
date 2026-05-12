@@ -13,14 +13,16 @@
 // MetalStream.
 // Owns:
 //   - IComputeBackend* backend_       : MTL3 dispatch path (always)
-//   - MetalMTL4Backend* mtl4Backend_  : MTL4 dispatch path (lazy; ET_METAL4_ENABLE)
+//   - MetalMTL4Backend* mtl4Backend_  : MTL4 dispatch path (lazy;
+//   ET_METAL4_ENABLE)
 //   - psoWrapCache_                   : raw-PSO → MetalKernel wrappers for
 //                                       the dispatch(PSO, ...) overload
 //   - dispatchCount_, hasPendingWork_, flushInterval_  : auto-flush counters
 // Borrows (non-owning, set at construction):
 //   - id<MTLDevice>           : for backend construction
 //   - id<MTLCommandQueue>     : passed to MTL3 backend
-//   - MetalAllocator*         : for setInput/setOutput → bufferForPtr resolution
+//   - MetalAllocator*         : for setInput/setOutput → bufferForPtr
+//   resolution
 //   - MetalKernelCompiler*    : for setMTL4Backend wiring at ctor
 //   - HazardTracker*          : for trackInput/trackOutput on every bind +
 //                               needsBarrierForPending on every dispatch
@@ -105,7 +107,9 @@ class MetalCommandRecorder {
 
   // Public API takes raw (pointer, count) instead of std::span to
   // avoid imposing C++20 on every header consumer.
-  void declareSideDoorBinds(id<MTLBuffer> const __unsafe_unretained* bufs, size_t count);
+  void declareSideDoorBinds(
+      id<MTLBuffer> const __unsafe_unretained* bufs,
+      size_t count);
 
   //===--------------------------------------------------------------------===//
   // Scoped bind+dispatch (RAII).
@@ -120,9 +124,7 @@ class MetalCommandRecorder {
   class [[nodiscard]] Dispatch {
    public:
     Dispatch(Dispatch&& other) noexcept
-        : recorder_(other.recorder_),
-          kernel_(other.kernel_),
-          pso_(other.pso_) {
+        : recorder_(other.recorder_), kernel_(other.kernel_), pso_(other.pso_) {
       other.recorder_ = nullptr;
       other.kernel_ = nullptr;
       other.pso_ = nil;
@@ -166,18 +168,22 @@ class MetalCommandRecorder {
     Dispatch& setBytes(uint32_t slot, const void* ptr, size_t bytes);
     template <typename T>
     Dispatch& setBytes(uint32_t slot, const T& value) {
-      static_assert(std::is_trivially_copyable<T>::value,
-                    "setBytes<T>: T must be trivially copyable");
+      static_assert(
+          std::is_trivially_copyable<T>::value,
+          "setBytes<T>: T must be trivially copyable");
       return setBytes(slot, &value, sizeof(value));
     }
     template <typename T>
     Dispatch& setVectorBytes(uint32_t slot, const std::vector<T>& v) {
-      static_assert(std::is_trivially_copyable<T>::value,
-                    "setVectorBytes<T>: T must be trivially copyable");
+      static_assert(
+          std::is_trivially_copyable<T>::value,
+          "setVectorBytes<T>: T must be trivially copyable");
       return setBytes(slot, v.data(), v.size() * sizeof(T));
     }
-    Dispatch& setInputBuffer(uint32_t slot, id<MTLBuffer> buf, size_t off, size_t sz);
-    Dispatch& setOutputBuffer(uint32_t slot, id<MTLBuffer> buf, size_t off, size_t sz);
+    Dispatch&
+    setInputBuffer(uint32_t slot, id<MTLBuffer> buf, size_t off, size_t sz);
+    Dispatch&
+    setOutputBuffer(uint32_t slot, id<MTLBuffer> buf, size_t off, size_t sz);
 
     void run(uvec3 grid, uvec3 block);
 
@@ -194,7 +200,9 @@ class MetalCommandRecorder {
   };
 
   Dispatch beginDispatch(MetalKernel* kernel) {
-    ET_CHECK_MSG(kernel != nullptr, "MetalCommandRecorder::beginDispatch: kernel is null");
+    ET_CHECK_MSG(
+        kernel != nullptr,
+        "MetalCommandRecorder::beginDispatch: kernel is null");
     return Dispatch{this, kernel};
   }
   Dispatch beginDispatch(id<MTLComputePipelineState> pso) {
@@ -208,10 +216,15 @@ class MetalCommandRecorder {
 
   void flush();
   void wait();
-  void sync() { flush(); wait(); }
+  void sync() {
+    flush();
+    wait();
+  }
 
   void setFlushInterval(int dispatches);
-  int flushInterval() const { return flushInterval_; }
+  int flushInterval() const {
+    return flushInterval_;
+  }
 
   // Close the active compute encoder (if any). Used by MpsInterop before
   // handing the legacy command buffer off to MPSGraph so pending typed-
@@ -225,15 +238,21 @@ class MetalCommandRecorder {
   //===--------------------------------------------------------------------===//
 
   using BarrierStats = HazardTracker::BarrierStats;
-  const BarrierStats& barrierStats() const { return hazards_->barrierStats(); }
+  const BarrierStats& barrierStats() const {
+    return hazards_->barrierStats();
+  }
 
   //===--------------------------------------------------------------------===//
   // Accessors needed by MpsInterop / cross-component wiring
   //===--------------------------------------------------------------------===//
 
-  IComputeBackend* mtl3Backend() { return backend_.get(); }
+  IComputeBackend* mtl3Backend() {
+    return backend_.get();
+  }
 #if ET_METAL4_ENABLE
-  MetalMTL4Backend* mtl4Backend() { return mtl4Backend_.get(); }
+  MetalMTL4Backend* mtl4Backend() {
+    return mtl4Backend_.get();
+  }
 #endif
 
   // Backend dispatch routes — public so MpsInterop / Stream can grab the
@@ -246,7 +265,9 @@ class MetalCommandRecorder {
 
   // Number of distinct MTLBuffers recorded in the current per-CB binds_
   // vector (after dedup). Used by tests to verify the side-door contract.
-  size_t boundBufferCountForTesting() const { return binds_.size(); }
+  size_t boundBufferCountForTesting() const {
+    return binds_.size();
+  }
 
   // True iff `buf` is recorded in the current per-CB binds_ vector.
   bool isBoundForTesting(id<MTLBuffer> buf) const {
@@ -254,14 +275,16 @@ class MetalCommandRecorder {
   }
 
  private:
-  // Internal typed setters \u2014 callable only via the friended Dispatch class.
-  // External callers must use beginDispatch(...).setX(...).run(...).
+  // Internal typed setters \u2014 callable only via the friended Dispatch
+  // class. External callers must use beginDispatch(...).setX(...).run(...).
   void setInput(uint32_t slot, const void* ptr, size_t size);
   void setOutput(uint32_t slot, void* ptr, size_t size);
   void setInOut(uint32_t slot, void* ptr, size_t size);
   void setBytes(uint32_t slot, const void* ptr, size_t size);
-  void setInputBuffer(uint32_t slot, id<MTLBuffer> buf, size_t offset, size_t size);
-  void setOutputBuffer(uint32_t slot, id<MTLBuffer> buf, size_t offset, size_t size);
+  void
+  setInputBuffer(uint32_t slot, id<MTLBuffer> buf, size_t offset, size_t size);
+  void
+  setOutputBuffer(uint32_t slot, id<MTLBuffer> buf, size_t offset, size_t size);
 
   // Internal: record `buf` in the per-CB binds_ vector, deduplicating
   // against bound_buffers_. Identity-keyed by (__bridge void*)id; no
@@ -288,7 +311,9 @@ class MetalCommandRecorder {
   // Marks pending work so the next flush() doesn't early-return on
   // hasPendingWork_=false. Called by MpsInterop after committing MPS-only
   // work on the legacy queue. Friend so the API doesn't leak publicly.
-  void noteMpsWorkPending() { hasPendingWork_ = true; }
+  void noteMpsWorkPending() {
+    hasPendingWork_ = true;
+  }
 
   friend class Dispatch;
   friend class MpsInterop;
@@ -301,9 +326,9 @@ class MetalCommandRecorder {
   HazardTracker* hazards_;
 
   // Owned.
-  std::unique_ptr<IComputeBackend> backend_;  // MTL3 (always present)
+  std::unique_ptr<IComputeBackend> backend_; // MTL3 (always present)
 #if ET_METAL4_ENABLE
-  std::unique_ptr<MetalMTL4Backend> mtl4Backend_;  // lazy, may be null
+  std::unique_ptr<MetalMTL4Backend> mtl4Backend_; // lazy, may be null
   // Cached: non-null iff useMTL4() && mtl4Backend_ && mtl4Backend_->isReady()
   // at construction time. Use this at hot-path call sites to dispatch on
   // the MTL4 backend; falls back to backend_ (MTL3) when null. Saves the
@@ -324,7 +349,7 @@ class MetalCommandRecorder {
     void* key;
     std::unique_ptr<MetalKernel> kernel;
   };
-  std::list<PsoEntry> psoWrapLru_;  // newest at front
+  std::list<PsoEntry> psoWrapLru_; // newest at front
   std::unordered_map<void*, std::list<PsoEntry>::iterator> psoWrapIndex_;
 
   // Auto-flush counters.

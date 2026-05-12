@@ -96,7 +96,8 @@ class MetalBuffer : public Buffer {
     return mb;
   }
 
-  ~MetalBuffer() override; // defined in MetalBuffer.mm to call stream_->allocator().free()
+  ~MetalBuffer()
+      override; // defined in MetalBuffer.mm to call stream_->allocator().free()
 
   void* host_ptr() override {
     return ptr_;

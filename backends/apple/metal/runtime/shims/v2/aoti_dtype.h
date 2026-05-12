@@ -38,7 +38,8 @@ inline size_t dtype_to_bytes(int32_t dtype) {
 inline std::vector<int64_t> compute_contiguous_strides(
     const std::vector<int64_t>& sizes) {
   std::vector<int64_t> strides(sizes.size());
-  if (sizes.empty()) return strides;
+  if (sizes.empty())
+    return strides;
   int64_t stride = 1;
   for (ssize_t i = static_cast<ssize_t>(sizes.size()) - 1; i >= 0; --i) {
     strides[i] = stride;
@@ -52,6 +53,6 @@ inline std::vector<int64_t> compute_contiguous_strides(
 // dispatch (aoti_kernel.mm) is rank-agnostic and not subject to this.
 constexpr size_t kMaxTensorDim = 8;
 
-}  // namespace metal
-}  // namespace backends
-}  // namespace executorch
+} // namespace metal
+} // namespace backends
+} // namespace executorch

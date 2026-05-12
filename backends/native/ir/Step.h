@@ -8,8 +8,8 @@
 
 #pragma once
 
-#include <executorch/backends/native/core/Event.h>
 #include <executorch/backends/native/core/Engine.h>
+#include <executorch/backends/native/core/Event.h>
 #include <executorch/backends/native/core/RuntimeId.h>
 
 #include <executorch/runtime/core/span.h>
@@ -32,15 +32,13 @@ namespace native {
  *
  * See CONTROL_FLOW_DESIGN.md §5, §8.
  */
-inline constexpr size_t kUnresolvedStep =
-    std::numeric_limits<size_t>::max();
+inline constexpr size_t kUnresolvedStep = std::numeric_limits<size_t>::max();
 
 /**
  * Source-PC sentinel meaning "no source PC" (for synthesized steps the
  * router emitted with no underlying instruction, e.g. a host-pool prep).
  */
-inline constexpr uint32_t kNoSourcePc =
-    std::numeric_limits<uint32_t>::max();
+inline constexpr uint32_t kNoSourcePc = std::numeric_limits<uint32_t>::max();
 
 /**
  * One unit of issued work. Carries dense RuntimeIndex (not opaque

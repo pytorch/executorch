@@ -8,10 +8,10 @@
 
 #pragma once
 
-#include <executorch/backends/native/ir/GraphTypes.h>
 #include <executorch/backends/native/core/Engine.h>
-#include <executorch/backends/native/ir/Plan.h>
 #include <executorch/backends/native/core/Runtime.h>
+#include <executorch/backends/native/ir/GraphTypes.h>
+#include <executorch/backends/native/ir/Plan.h>
 
 #include <executorch/runtime/core/named_data_map.h>
 #include <executorch/runtime/core/result.h>
@@ -23,6 +23,12 @@ namespace native {
 
 struct RouterOptions {
   bool dump_trace = false;
+
+  // Maximum control-flow hops the executor walks before declaring a
+  // malformed back-edge (matches ET's method.cpp guard). Programs with
+  // tight, well-bounded loops can lower this in stress tests; the
+  // default is generous.
+  size_t max_hops = 10'000'000;
 };
 
 /**
@@ -39,7 +45,9 @@ class Router {
       const ::executorch::backends::portable::Graph& graph,
       ::executorch::runtime::Span<Runtime* const> providers,
       ::executorch::runtime::Span<Engine* const> instances,
-      const ::executorch::runtime::NamedDataMap* ndm, // for constant validation; uploads are driven post-route by NativeBackend
+      const ::executorch::runtime::NamedDataMap*
+          ndm, // for constant validation; uploads are driven post-route by
+               // NativeBackend
       const RouterOptions& options) = 0;
 };
 

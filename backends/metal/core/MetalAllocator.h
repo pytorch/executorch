@@ -119,7 +119,10 @@ class MetalAllocator {
   //===--------------------------------------------------------------------===//
 
   bool registerSubregion(
-      void* child_ptr, void* parent_ptr, size_t offset, size_t size);
+      void* child_ptr,
+      void* parent_ptr,
+      size_t offset,
+      size_t size);
   void unregisterSubregion(void* child_ptr);
 
   //===--------------------------------------------------------------------===//
@@ -159,17 +162,21 @@ class MetalAllocator {
   //===--------------------------------------------------------------------===//
 
   void enableHeap(size_t heapSizeBytes, bool aliasable = false);
-  bool heapEnabled() const { return useHeap_; }
+  bool heapEnabled() const {
+    return useHeap_;
+  }
 
   //===--------------------------------------------------------------------===//
   // Pool tuning
   //===--------------------------------------------------------------------===//
 
   void setPoolCapacity(size_t bytes) {
-    if (pool_) pool_->setMaxBytes(bytes);
+    if (pool_)
+      pool_->setMaxBytes(bytes);
   }
   void prewarm(const std::vector<size_t>& sizes) {
-    if (pool_) pool_->prewarm(sizes);
+    if (pool_)
+      pool_->prewarm(sizes);
   }
 
   //===--------------------------------------------------------------------===//
@@ -187,12 +194,16 @@ class MetalAllocator {
   //                          the last handler fires).
   //===--------------------------------------------------------------------===//
 
-  ResidencyManager* residency() { return residency_.get(); }
-  std::shared_ptr<ResidencyManager> residencyShared() { return residency_; }
+  ResidencyManager* residency() {
+    return residency_.get();
+  }
+  std::shared_ptr<ResidencyManager> residencyShared() {
+    return residency_;
+  }
 
  private:
-  id<MTLDevice> device_;             // borrowed
-  HazardTracker* hazards_;           // borrowed; may be nullptr in tests
+  id<MTLDevice> device_; // borrowed
+  HazardTracker* hazards_; // borrowed; may be nullptr in tests
 
   // Owned subsystems.
   BufferRegistry buffers_;

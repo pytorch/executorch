@@ -26,20 +26,24 @@ namespace backends {
 namespace metal_v2 {
 
 class MetalKernel {
-public:
+ public:
   MetalKernel(id<MTLComputePipelineState> pipeline, const char* name);
   ~MetalKernel();
 
-  const char* name() const { return name_.c_str(); }
+  const char* name() const {
+    return name_.c_str();
+  }
   uvec3 maxThreadsPerThreadgroup() const;
 
-  id<MTLComputePipelineState> pipeline() const { return pipeline_; }
+  id<MTLComputePipelineState> pipeline() const {
+    return pipeline_;
+  }
 
-private:
+ private:
   id<MTLComputePipelineState> pipeline_;
   std::string name_;
 };
 
-}  // namespace metal_v2
-}  // namespace backends
-}  // namespace executorch
+} // namespace metal_v2
+} // namespace backends
+} // namespace executorch

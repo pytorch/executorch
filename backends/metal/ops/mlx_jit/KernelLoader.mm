@@ -87,16 +87,15 @@ void resetForTesting() {
 
 id<MTLComputePipelineState> KernelLoader::getDenseGemmKernel(
     const std::string& kernelName,
-    const std::string& hashName,
     const MetalKernelCompiler::FunctionConstants& fcs,
     JitDtype outDtype,
     bool transpose_a, bool transpose_b,
     int bm, int bn, int bk, int wm, int wn) {
   // libraryCacheKey == kernelName so identical (tile, dtype, layout)
   // dispatches reuse the compiled MTLLibrary across PSOs (which differ
-  // by FC values). PSO cache key includes hashName + fcs fingerprint
-  // inside getOrCompilePsoFromSource.
-  std::string psoKey = kernelName + "::" + hashName + fcs.fingerprint();
+  // by FC values). PSO cache key is auto-derived from
+  // (libraryCacheKey, functionName, fcs.fingerprint()) inside
+  // getOrCompilePsoFromSource.
   // Source factory: only invoked on library cache miss.
   auto factory = [=]() {
     std::ostringstream src;
@@ -126,7 +125,6 @@ id<MTLComputePipelineState> KernelLoader::getDenseGemmKernel(
 
 id<MTLComputePipelineState> KernelLoader::getDenseNaxKernel(
     const std::string& kernelName,
-    const std::string& hashName,
     const MetalKernelCompiler::FunctionConstants& fcs,
     JitDtype outDtype,
     bool transpose_a, bool transpose_b,
@@ -198,7 +196,6 @@ id<MTLComputePipelineState> KernelLoader::getSplitKKernel(
 
 id<MTLComputePipelineState> KernelLoader::getSplitKNaxKernel(
     const std::string& kernelName,
-    const std::string& hashName,
     const MetalKernelCompiler::FunctionConstants& fcs,
     JitDtype outDtype,
     bool transpose_a, bool transpose_b,
@@ -337,7 +334,6 @@ id<MTLComputePipelineState> KernelLoader::getGemvTKernel(
 // (slot 26 `blocks` is 2-pass-only)
 id<MTLComputePipelineState> KernelLoader::getSdpaVectorKernel(
     const std::string& kernelName,
-    const std::string& hashName,
     const MetalKernelCompiler::FunctionConstants& fcs,
     JitDtype dtype, int D, int V) {
   auto factory = [=]() {
@@ -359,7 +355,6 @@ id<MTLComputePipelineState> KernelLoader::getSdpaVectorKernel(
 // Same template family as sdpa_vector but with FC slot 26 (`blocks`) added.
 id<MTLComputePipelineState> KernelLoader::getSdpaVector2PassKernel1(
     const std::string& kernelName,
-    const std::string& hashName,
     const MetalKernelCompiler::FunctionConstants& fcs,
     JitDtype dtype, int D, int V) {
   auto factory = [=]() {
@@ -410,7 +405,6 @@ id<MTLComputePipelineState> KernelLoader::getSdpaVector2PassKernel2(
 
 id<MTLComputePipelineState> KernelLoader::getSteelAttentionKernel(
     const std::string& kernelName,
-    const std::string& hashName,
     const MetalKernelCompiler::FunctionConstants& fcs,
     JitDtype dtype, JitDtype maskDtype,
     int BQ, int BK, int BD, int WM, int WN) {
@@ -434,7 +428,6 @@ id<MTLComputePipelineState> KernelLoader::getSteelAttentionKernel(
 
 id<MTLComputePipelineState> KernelLoader::getSteelAttentionNaxKernel(
     const std::string& kernelName,
-    const std::string& hashName,
     const MetalKernelCompiler::FunctionConstants& fcs,
     JitDtype dtype, JitDtype maskDtype,
     int BQ, int BK, int BD, int WM, int WN) {

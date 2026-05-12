@@ -9,7 +9,7 @@
 /**
  * Single-shot smoke test: load a .pte and execute one forward pass.
  *
- * Used by backends/native/run_simple_test.sh as a focused smoke test —
+ * Used by backends/native/build_and_run_tests.sh as a focused smoke test —
  * verifies build + AOT + runtime load + single execute end-to-end. The
  * existing test_model.cpp at the repo root runs a multi-threaded stress
  * test that's better suited to a different kind of validation; this one
@@ -24,6 +24,7 @@
  *   3   — output assertion failed
  */
 
+#include <executorch/backends/native/test/test_options_util.h>
 #include <executorch/extension/module/module.h>
 #include <executorch/extension/tensor/tensor.h>
 
@@ -45,7 +46,8 @@ int main() {
 
   Module module(pte_path);
 
-  Error load_err = module.load();
+  Error load_err =
+      module.load(native_test_util::load_options_for_compute_unit());
   if (load_err != Error::Ok) {
     fprintf(stderr, "ERROR: load() failed: %d\n", static_cast<int>(load_err));
     return 1;
@@ -62,9 +64,10 @@ int main() {
 
   auto result = module.forward({a, b});
   if (!result.ok()) {
-    fprintf(stderr,
-            "ERROR: forward() failed: %d\n",
-            static_cast<int>(result.error()));
+    fprintf(
+        stderr,
+        "ERROR: forward() failed: %d\n",
+        static_cast<int>(result.error()));
     return 2;
   }
   printf("  forward() OK\n");
@@ -77,18 +80,25 @@ int main() {
   auto out_tensor = outputs[0].toTensor();
   const float* out_ptr = out_tensor.const_data_ptr<float>();
 
-  printf("  Output: [%.2f, %.2f, %.2f, %.2f]\n",
-         out_ptr[0], out_ptr[1], out_ptr[2], out_ptr[3]);
+  printf(
+      "  Output: [%.2f, %.2f, %.2f, %.2f]\n",
+      out_ptr[0],
+      out_ptr[1],
+      out_ptr[2],
+      out_ptr[3]);
   printf("  Expected: [11.00, 22.00, 33.00, 44.00]\n");
 
   // Tolerance check on element-wise sum.
   const float expected[] = {11.0f, 22.0f, 33.0f, 44.0f};
   for (int i = 0; i < 4; ++i) {
     if (std::abs(out_ptr[i] - expected[i]) > 1e-5f) {
-      fprintf(stderr,
-              "ERROR: output[%d]=%.6f, expected %.6f (diff %.6f)\n",
-              i, out_ptr[i], expected[i],
-              std::abs(out_ptr[i] - expected[i]));
+      fprintf(
+          stderr,
+          "ERROR: output[%d]=%.6f, expected %.6f (diff %.6f)\n",
+          i,
+          out_ptr[i],
+          expected[i],
+          std::abs(out_ptr[i] - expected[i]));
       return 3;
     }
   }

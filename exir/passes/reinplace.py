@@ -110,7 +110,9 @@ def find_inplace_overload(functional_op: Any) -> Optional[Any]:
         return None
     # Schema name format: "aten::pow" or "namespace::op".
     name = schema.name
-    namespace, base = (name.split("::", 1) + [""])[:2] if "::" in name else ("aten", name)
+    namespace, base = (
+        (name.split("::", 1) + [""])[:2] if "::" in name else ("aten", name)
+    )
     if namespace != "aten":
         return None
     inplace_pkg = getattr(torch.ops.aten, base + "_", None)
@@ -246,9 +248,7 @@ def reinplace_pass(
     Returns:
         The (possibly mutated) ExportedProgram.
     """
-    registry = (
-        ops_to_inplace if ops_to_inplace is not None else DEFAULT_INPLACEABLE_OPS
-    )
+    registry = ops_to_inplace if ops_to_inplace is not None else DEFAULT_INPLACEABLE_OPS
 
     seen_nodes: Set[torch.fx.Node] = set()
     # Get all placeholders
@@ -283,9 +283,7 @@ def reinplace_pass(
                     break
             if all_safe:
                 with ep.graph.inserting_before(node):
-                    new_node = ep.graph.call_function(
-                        target.inplace_op, args=node.args
-                    )
+                    new_node = ep.graph.call_function(target.inplace_op, args=node.args)
                     new_node.meta["val"] = node.meta["val"]
                     node.replace_all_uses_with(new_node)
                     ep.graph.erase_node(node)

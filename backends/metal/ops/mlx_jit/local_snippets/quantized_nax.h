@@ -12,7 +12,7 @@
 
 #include "mlx/backend/metal/kernels/utils.h"
 
-#undef  instantiate_kernel
+#undef instantiate_kernel
 #define instantiate_kernel(...)
 #define instantiate_quantized(...)
 #define instantiate_quantized_batched(...)

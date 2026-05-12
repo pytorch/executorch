@@ -20,24 +20,28 @@ namespace metal_v2 {
 
 class AddMMOp : public MetalOp {
  public:
-  const char* name() const override { return "aten::addmm"; }
+  const char* name() const override {
+    return "aten::addmm";
+  }
 
   bool supports(ScalarType dtype) const override {
     return isFloatingPoint(dtype);
   }
 
   std::vector<SizesType> computeOutputShape(
-      ::executorch::runtime::Span<::executorch::runtime::EValue*> inputs) const override;
+      ::executorch::runtime::Span<::executorch::runtime::EValue*> inputs)
+      const override;
 
   void dispatch(
       MetalStream* stream,
       ::executorch::runtime::Span<::executorch::runtime::EValue*> inputs,
-      ::executorch::runtime::Span<::executorch::runtime::EValue*> outputs) override;
+      ::executorch::runtime::Span<::executorch::runtime::EValue*> outputs)
+      override;
 
  protected:
   const char* kernelSource() const override;
 };
 
-}  // namespace metal_v2
-}  // namespace backends
-}  // namespace executorch
+} // namespace metal_v2
+} // namespace backends
+} // namespace executorch

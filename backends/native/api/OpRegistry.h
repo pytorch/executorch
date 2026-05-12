@@ -72,7 +72,7 @@ using OpFunction = std::function<void(Graph&, const std::vector<ValueRef>&)>;
 template <typename Graph>
 struct OpRegistration {
   OpFunction<Graph> fn;
-  std::vector<executorch::aten::ScalarType> supported_dtypes;  // Empty = all
+  std::vector<executorch::aten::ScalarType> supported_dtypes; // Empty = all
 };
 
 /**
@@ -97,7 +97,8 @@ class OperatorRegistry final {
       const std::string& name,
       OpFunction<Graph> fn,
       std::initializer_list<executorch::aten::ScalarType> dtypes = {}) {
-    table_[name] = {std::move(fn), std::vector<executorch::aten::ScalarType>(dtypes)};
+    table_[name] = {
+        std::move(fn), std::vector<executorch::aten::ScalarType>(dtypes)};
   }
 
   /**
@@ -110,7 +111,8 @@ class OperatorRegistry final {
   /**
    * Check if an op supports a specific dtype.
    */
-  bool has_op(const std::string& name, executorch::aten::ScalarType dtype) const {
+  bool has_op(const std::string& name, executorch::aten::ScalarType dtype)
+      const {
     auto it = table_.find(name);
     if (it == table_.end()) {
       return false;
@@ -118,7 +120,7 @@ class OperatorRegistry final {
 
     const auto& dtypes = it->second.supported_dtypes;
     if (dtypes.empty()) {
-      return true;  // No constraints = all supported
+      return true; // No constraints = all supported
     }
 
     for (auto d : dtypes) {
@@ -183,12 +185,12 @@ class OperatorRegisterInit final {
  *       MY_BACKEND_REGISTER_OP(aten.add.Tensor, add_impl);
  *   }
  */
-#define REGISTER_OPERATORS(backend_name) \
-  static void _register_##backend_name##_ops(); \
+#define REGISTER_OPERATORS(backend_name)                              \
+  static void _register_##backend_name##_ops();                       \
   static const ::executorch::backends::portable::OperatorRegisterInit \
-      _##backend_name##_reg(&_register_##backend_name##_ops); \
+      _##backend_name##_reg(&_register_##backend_name##_ops);         \
   static void _register_##backend_name##_ops()
 
-}  // namespace portable
-}  // namespace backends
-}  // namespace executorch
+} // namespace portable
+} // namespace backends
+} // namespace executorch

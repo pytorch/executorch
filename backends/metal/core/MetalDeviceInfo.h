@@ -37,15 +37,16 @@ namespace metal_v2 {
 // different tile sizes / thresholds per device class. Mirrors v1's
 // MatMulConfig::forDevice but lifted to a generic helper.
 enum class DeviceTier {
-  Phone,    // iPhone, iPad
-  MacBase,  // M-series base / Pro
+  Phone, // iPhone, iPad
+  MacBase, // M-series base / Pro
   MacUltra, // M-series Max / Ultra
 };
 
 // Pure helper — caller passes [[device name] UTF8String] to keep this
 // function free of Metal imports.
 inline DeviceTier getDeviceTierFromName(const char* deviceName) {
-  if (deviceName == nullptr) return DeviceTier::MacBase;
+  if (deviceName == nullptr)
+    return DeviceTier::MacBase;
   // Order matters: check Ultra/Max before generic substring matches.
   if (std::strstr(deviceName, "Ultra") || std::strstr(deviceName, "Max")) {
     return DeviceTier::MacUltra;

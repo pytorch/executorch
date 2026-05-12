@@ -29,7 +29,7 @@
 // Note: steel_attention.h has no #pragma once. The .metal file below
 // already #includes it — don't double-include here.
 
-#undef  instantiate_kernel
+#undef instantiate_kernel
 #define instantiate_kernel(...)
 #define instantiate_attn(...)
 #define instantiate_attn_shapes_helper(...)

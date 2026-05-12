@@ -76,13 +76,15 @@ class CpuEvent final : public Event {
   // ~1–10 μs (kernel context switch). Used by CpuEngine::wait().
   void wait_until_settled() override {
     // Fast path 1: already settled, no synchronization needed.
-    if (status() != EventStatus::Pending) return;
+    if (status() != EventStatus::Pending)
+      return;
 
     // Fast path 2: short bounded spin. Captures producers that
     // signal within a few hundred nanoseconds of our call.
     constexpr int kSpinIters = 256;
     for (int i = 0; i < kSpinIters; ++i) {
-      if (status() != EventStatus::Pending) return;
+      if (status() != EventStatus::Pending)
+        return;
 #if defined(__x86_64__) || defined(_M_X64)
       __builtin_ia32_pause();
 #elif defined(__aarch64__)

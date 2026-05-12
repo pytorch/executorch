@@ -31,7 +31,8 @@ class ReluOp : public MetalOp {
   void dispatch(
       MetalStream* stream,
       ::executorch::runtime::Span<::executorch::runtime::EValue*> inputs,
-      ::executorch::runtime::Span<::executorch::runtime::EValue*> outputs) override;
+      ::executorch::runtime::Span<::executorch::runtime::EValue*> outputs)
+      override;
 
  protected:
   const char* kernelSource() const override;

@@ -16,16 +16,17 @@
  * See PORTABLE_BACKEND_API_PROPOSAL.md (§3, §6) for the architecture.
  */
 
-#include <executorch/backends/native/ir/Plan.h>
-#include <executorch/backends/native/core/RuntimeRegistry.h>
+#include <executorch/backends/native/core/EngineUtils.h>
 #include <executorch/backends/native/core/Router.h>
+#include <executorch/backends/native/core/RuntimeRegistry.h>
+#include <executorch/backends/native/ir/Plan.h>
 #include <executorch/backends/native/ir/Step.h>
+#include <executorch/backends/native/routers/GreedyRouter.h>
 #include <executorch/backends/native/runtimes/cpu/CpuRuntime.h>
 #include <executorch/backends/native/runtimes/host_pool/HostPoolRuntime.h>
-#include <executorch/backends/native/routers/GreedyRouter.h>
 #include <executorch/runtime/core/exec_aten/util/tensor_util.h>
 
-#ifdef NATIVE_HAS_METAL
+#ifdef ET_NATIVE_HAS_METAL
 #include <executorch/backends/native/runtimes/metal/MetalRuntime.h>
 #endif
 
@@ -50,6 +51,7 @@
 #include <limits>
 #include <memory>
 #include <new>
+#include <sstream>
 #include <string>
 #include <unordered_map>
 #include <unordered_set>
@@ -85,9 +87,6 @@ using ::executorch::aten::TensorImpl;
 
 using ::executorch::backends::portable::Graph;
 
-constexpr RuntimeIndex kInvalidRuntimeIdx =
-    std::numeric_limits<RuntimeIndex>::max();
-
 /**
  * Per-program state held across init/execute/destroy. One per loaded
  * delegate. See DelegateInstance in §6 of the design doc.
@@ -115,7 +114,7 @@ struct DelegateInstance {
   // TensorImpl::data_ptr is updated by engines (during allocate_buffers
   // and bind_inputs/bind_outputs) for host-addressable buffers, and
   // refreshed at dispatch time per op-arg from each engine's internal
-  // value_to_buffer_ table.
+  // value->Buffer table.
   std::vector<EValue> values;
 
   // Frozen routing decision.
@@ -134,20 +133,6 @@ struct DelegateInstance {
 
   bool poisoned = false;
 
-  // value_id → which Engine claimed this vid during materialize_buffers
-  // (or kInvalidRuntimeIdx if the vid has no AllocRequest, e.g. a
-  // scalar EValue or a constant tracked engine-internally). Sized to
-  // d->values.size(). The single piece of cross-engine bookkeeping
-  // NativeBackend retains.
-  std::vector<RuntimeIndex> value_owner;
-
-  // graph_input_or_output_vid → list of (mirror_id, owning_engine_idx)
-  // for each device-side mirror of that vid. Built once at end of
-  // init() by walking plan.mirror_values + value_owner. Used by
-  // bind_inputs / bind_outputs to bucket per-engine IO work in O(1).
-  std::unordered_map<uint32_t, std::vector<std::pair<uint32_t, RuntimeIndex>>>
-      mirror_index;
-
   ~DelegateInstance() {
     // Drain (no-op for CPU; matters when GPU instances are present).
     for (auto* inst : plan.instances) {
@@ -159,51 +144,70 @@ struct DelegateInstance {
   }
 };
 
-// Build the default ProviderSet. Slot 0 is reserved for HostPoolRuntime —
-// the canonical home for boundary values (graph IO, cross-runtime
-// intermediates). HostPool is allocator-only (can_run() == false), so
-// the router never assigns ops to it. Compute providers occupy slots 1+.
+// Build the default ProviderSet. Only the host pool is registered
+// eagerly — it's cheap, has no device init, and is needed by every
+// program (it owns graph IO and cross-runtime intermediates).
+//
+// Compute providers (CPU, Metal, fake_accel) are constructed LAZILY by
+// the per-init lazy_*_runtime() singletons below, and only when the
+// load-time `compute_unit` option allows them. This avoids paying
+// device init costs (MTLDevice creation, etc.) for loads that don't
+// use that compute unit.
 std::vector<std::unique_ptr<Runtime>> make_default_runtimes() {
   std::vector<std::unique_ptr<Runtime>> ps;
   ps.push_back(std::make_unique<HostPoolRuntime>());
+  return ps;
+}
 
-  const char* fake = std::getenv("NATIVE_USE_FAKE_ACCEL");
-  if (fake && fake[0] == '1') {
-    ET_LOG(
-        Info,
-        "NativeBackend: registering CpuRuntime(\"fake_accel\") for routing tests");
+// Lazy CPU singleton. Always available; the only conditioning is the
+// load-time `compute_unit` option (caller decides whether to invoke).
+Runtime* lazy_cpu_runtime() {
+  static auto cpu = std::make_unique<CpuRuntime>();
+  return cpu.get();
+}
+
+// Lazy "fake_accel" singleton — a CpuRuntime restricted to add/mul
+// for routing tests. Opted in via compute_unit="fake_accel".
+Runtime* lazy_fake_accel_runtime() {
+  static auto fake = []() {
     std::unordered_set<std::string> allow = {
         "aten::add",
         "aten::add.Tensor",
         "aten::mul",
         "aten::mul.Tensor",
     };
-    ps.push_back(std::make_unique<CpuRuntime>("fake_accel", std::move(allow)));
-    // Real CPU appended below as fallback.
-  }
-
-#ifdef NATIVE_HAS_METAL
-  if (!fake || fake[0] != '1') {
-    const char* disable_metal = std::getenv("NATIVE_DISABLE_METAL");
-    if (!disable_metal || disable_metal[0] != '1') {
-      auto metal = std::make_unique<MetalRuntime>();
-      if (metal->stream_ready()) {
-        ET_LOG(Info, "NativeBackend: registering MetalRuntime");
-        ps.push_back(std::move(metal));
-      } else {
-        ET_LOG(
-            Info,
-            "NativeBackend: MetalRuntime unavailable; CPU-only mode");
-      }
-    }
-  }
-#endif
-
-  // Real CPU always last so it serves as fallback for ops no specialised
-  // non-host provider accepted.
-  ps.push_back(std::make_unique<CpuRuntime>());
-  return ps;
+    auto r = std::make_unique<CpuRuntime>("fake_accel", std::move(allow));
+    ET_LOG(
+        Info,
+        "NativeBackend: registering CpuRuntime(\"fake_accel\") (lazy; routing-test scaffolding)");
+    return r;
+  }();
+  return fake.get();
 }
+
+#ifdef ET_NATIVE_HAS_METAL
+// Lazy Metal singleton. Constructed (and the MTLDevice initialized) on
+// the first init() that allows Metal via compute_unit. Returns nullptr
+// if Metal compiled in but its stream couldn't initialize (no Metal-
+// capable device).
+//
+// Function-local static defers construction until the first call
+// (Meyers singleton; thread-safe in C++11+). Once constructed, the
+// MetalRuntime lives until process exit.
+Runtime* lazy_metal_runtime() {
+  static std::unique_ptr<MetalRuntime> metal =
+      []() -> std::unique_ptr<MetalRuntime> {
+    auto m = std::make_unique<MetalRuntime>();
+    if (!m->stream_ready()) {
+      ET_LOG(Info, "NativeBackend: MetalRuntime unavailable");
+      return nullptr;
+    }
+    ET_LOG(Info, "NativeBackend: registering MetalRuntime (lazy)");
+    return m;
+  }();
+  return metal.get();
+}
+#endif
 
 // Process-wide RuntimeRegistry. Constructed once on first call (Meyers
 // singleton; thread-safe in C++11+); lives until process exit.
@@ -329,8 +333,8 @@ Error initialize_values(
         size_t cnt = items.size();
         EValue** evalp_list = runtime_alloc->allocateList<EValue*>(cnt);
         std::optional<::executorch::aten::Tensor>* opt_list =
-            runtime_alloc->allocateList<
-                std::optional<::executorch::aten::Tensor>>(cnt);
+            runtime_alloc
+                ->allocateList<std::optional<::executorch::aten::Tensor>>(cnt);
         if (!evalp_list || !opt_list) {
           return Error::MemoryAllocationFailed;
         }
@@ -340,7 +344,8 @@ Error initialize_values(
           if (vidx == -1) {
             if (!none_ev) {
               void* mem = runtime_alloc->allocateInstance<EValue>();
-              if (!mem) return Error::MemoryAllocationFailed;
+              if (!mem)
+                return Error::MemoryAllocationFailed;
               none_ev = new (mem) EValue();
             }
             evalp_list[j] = none_ev;
@@ -368,76 +373,17 @@ Error initialize_values(
   return Error::Ok;
 }
 
-// Materialize EValues for router-minted mirror value_ids. Each mirror
-// inherits dtype/shape/strides from its host-side value_id. data_ptr
-// stays null; engines populate it when they claim the mirror_id at
-// allocate_buffers time (host-addressable case) or leave it null
-// (discrete-GPU case).
-Error materialize_mirror_values(DelegateInstance* d) {
-  if (d->plan.mirror_values.empty())
-    return Error::Ok;
-
-  for (const auto& mv : d->plan.mirror_values) {
-    if (mv.mirror_id >= d->values.size()) {
-      ET_LOG(
-          Error,
-          "materialize_mirror_values: mirror_id=%u >= values.size()=%zu",
-          mv.mirror_id,
-          d->values.size());
-      return Error::InvalidState;
-    }
-    if (mv.source_value_id >= d->values.size() ||
-        !d->values[mv.source_value_id].isTensor()) {
-      ET_LOG(
-          Error,
-          "materialize_mirror_values: source value_id=%u is not a tensor",
-          mv.source_value_id);
-      return Error::InvalidProgram;
-    }
-
-    auto& src = d->values[mv.source_value_id].toTensor();
-    auto* src_impl = src.unsafeGetTensorImpl();
-    size_t dim = src.dim();
-
-    DelegateInstance::TensorMeta tm;
-    tm.sizes.reset(new SizesType[dim]);
-    tm.dim_order.reset(new DimOrderType[dim]);
-    tm.strides.reset(new StridesType[dim]);
-    for (size_t i = 0; i < dim; ++i) {
-      tm.sizes[i] = src.size(i);
-      tm.dim_order[i] = src_impl->dim_order()[i];
-      tm.strides[i] = src.strides()[i];
-    }
-    tm.impl.reset(new TensorImpl(
-        src.scalar_type(),
-        static_cast<ssize_t>(dim),
-        tm.sizes.get(),
-        /*data=*/nullptr,
-        tm.dim_order.get(),
-        tm.strides.get(),
-        ::executorch::aten::TensorShapeDynamism::DYNAMIC_BOUND));
-
-    d->values[mv.mirror_id] = EValue(Tensor(tm.impl.get()));
-    d->tensor_metas.push_back(std::move(tm));
-  }
-  return Error::Ok;
-}
-
-// Bid-auction allocation pass. Walks each provider's alloc_plan in
-// provider index order (HostPool slot 0 first, then non-host engines).
-// Each engine claims requests it wants; declined requests fall through
-// to subsequent engines (HostPool is the floor for HostMirror/HostOnly).
+// Drives each provider's allocate_buffers from the per-provider
+// alloc_plan the router emitted. Engines internally allocate Buffers,
+// populate their value->Buffer tables, and (for host-addressable
+// Buffers) write data_ptr onto the central EValue array. NativeBackend
+// keeps no per-vid bookkeeping.
 //
-// Engines internally:
-//   - Allocate a Buffer for each claimed vid.
-//   - Insert (vid → Buffer*) into their own value_to_buffer_ table.
-//   - For host-addressable Buffers, set data_ptr on values[vid].
-//
-// NativeBackend records value_owner[vid] = runtime_idx for each Claimed
-// request and asserts no AllocRequest's vid is left unowned.
+// Validates per-claim that DeviceMirror / DeviceOnly requests were
+// Claimed; declining one is a contract violation (router routed a
+// dynamic-shape vid to a non-dynamic engine, or engine misbehaved).
+// Init fails immediately with a descriptive error.
 Error materialize_buffers(DelegateInstance* d) {
-  d->value_owner.assign(d->values.size(), kInvalidRuntimeIdx);
-
   for (size_t p = 0; p < d->plan.alloc_plans.size(); ++p) {
     auto& reqs = d->plan.alloc_plans[p];
     if (reqs.empty())
@@ -455,40 +401,33 @@ Error materialize_buffers(DelegateInstance* d) {
     if (err != Error::Ok)
       return err;
 
-    for (size_t i = 0; i < claims.size(); ++i) {
-      if (claims[i] != Engine::AllocClaim::Claimed) continue;
-      uint32_t vid = reqs[i].value_id;
-      if (vid >= d->value_owner.size()) {
-        ET_LOG(Error,
-               "materialize_buffers: vid=%u out of range (value_owner.size=%zu)",
-               vid, d->value_owner.size());
-        return Error::InvalidState;
-      }
-      // First-claim-wins: a UMA collapse engine may claim a HostMirror
-      // request that HostPool would have claimed in the next pass; we
-      // record the FIRST claimer. If a subsequent engine also claims
-      // (which shouldn't happen by protocol), we keep the first.
-      if (d->value_owner[vid] == kInvalidRuntimeIdx) {
-        d->value_owner[vid] = static_cast<RuntimeIndex>(p);
-      }
-    }
-  }
-
-  // Assert no AllocRequest's vid was left unowned.
-  for (size_t p = 0; p < d->plan.alloc_plans.size(); ++p) {
-    for (const auto& req : d->plan.alloc_plans[p]) {
-      if (req.value_id >= d->value_owner.size() ||
-          d->value_owner[req.value_id] == kInvalidRuntimeIdx) {
-        ET_LOG(Error,
-               "materialize_buffers: vid=%u (kind=%s) was not claimed by any "
-               "engine — router/init bug",
-               req.value_id, to_string(req.kind));
-        return Error::InvalidState;
+    // Validate: DeviceMirror / DeviceOnly requests are non-negotiable.
+    // An engine that can't honor one (e.g., no resize_tensor support
+    // for a mem_obj_id < 0 dynamic vid) must Decline so we can fail
+    // init with a clear diagnostic rather than crash at execute time.
+    for (size_t i = 0; i < reqs.size(); ++i) {
+      const auto& req = reqs[i];
+      bool requires_claim =
+          (req.kind == MemoryKind::DeviceMirror ||
+           req.kind == MemoryKind::DeviceOnly);
+      if (requires_claim && claims[i] != Engine::AllocClaim::Claimed) {
+        ET_LOG(
+            Error,
+            "materialize_buffers: provider %zu declined %s request for "
+            "value_id=%u (mem_obj_id=%d). DeviceMirror/DeviceOnly are "
+            "non-negotiable; the engine must Claim or fail allocate_buffers. "
+            "If this is a mem_obj_id<0 dynamic vid, the engine likely lacks "
+            "resize_tensor support and the router shouldn't have routed it here.",
+            p,
+            to_string(req.kind),
+            req.value_id,
+            req.mem_obj_id);
+        return Error::NotSupported;
       }
     }
   }
 
-  ET_LOG(Debug, "[mem] materialize_buffers: bid auction complete");
+  ET_LOG(Debug, "[mem] materialize_buffers: complete");
   return Error::Ok;
 }
 
@@ -501,33 +440,48 @@ Error materialize_buffers(DelegateInstance* d) {
 // alias on CPU / Apple-Silicon Metal; device-side load on discrete
 // GPU). Engines track lifetime and value→Buffer mapping internally;
 // nothing leaves through this API.
-Error upload_constants(DelegateInstance* d, const ::executorch::runtime::NamedDataMap* ndm) {
-  if (d->plan.const_plans.empty()) return Error::Ok;
-  // If any provider has constants to upload, ndm must be present.
+Error upload_constants(
+    DelegateInstance* d,
+    const ::executorch::runtime::NamedDataMap* ndm) {
+  if (d->plan.const_plans.empty())
+    return Error::Ok;
+  // ndm is required only if any request needs NDM lookup. Inline-only
+  // requests (ndm_key empty, inline_data set) don't touch the NDM.
+  bool any_ndm_needed = false;
   for (const auto& reqs : d->plan.const_plans) {
-    if (!reqs.empty() && !ndm) {
-      ET_LOG(
-          Error,
-          "upload_constants: const_plans non-empty but NamedDataMap is null");
-      return Error::InvalidArgument;
+    for (const auto& req : reqs) {
+      if (!req.ndm_key.empty()) {
+        any_ndm_needed = true;
+        break;
+      }
     }
+    if (any_ndm_needed)
+      break;
+  }
+  if (any_ndm_needed && !ndm) {
+    ET_LOG(
+        Error,
+        "upload_constants: const_plans contain NDM-keyed requests but NamedDataMap is null");
+    return Error::InvalidArgument;
   }
   for (size_t p = 0; p < d->plan.const_plans.size(); ++p) {
     const auto& reqs = d->plan.const_plans[p];
-    if (reqs.empty()) continue;
+    if (reqs.empty())
+      continue;
     if (p >= d->plan.instances.size() || !d->plan.instances[p]) {
       return Error::InvalidState;
     }
     Engine* inst = d->plan.instances[p];
     auto err = inst->upload_constants(
-        *ndm,
-        Span<const Engine::ConstRequest>(reqs.data(), reqs.size()));
+        ndm, Span<const Engine::ConstRequest>(reqs.data(), reqs.size()));
     if (err != Error::Ok) {
       ET_LOG(
           Error,
           "upload_constants: provider %zu (%s) failed (%zu requests)",
           p,
-          d->plan.providers[p] ? std::string(d->plan.providers[p]->name()).c_str() : "?",
+          d->plan.providers[p]
+              ? std::string(d->plan.providers[p]->name()).c_str()
+              : "?",
           reqs.size());
       return err;
     }
@@ -541,68 +495,28 @@ Error upload_constants(DelegateInstance* d, const ::executorch::runtime::NamedDa
           static_cast<int>(req.ndm_key.size()),
           req.ndm_key.data(),
           p,
-          d->plan.providers[p] ? std::string(d->plan.providers[p]->name()).c_str() : "?");
+          d->plan.providers[p]
+              ? std::string(d->plan.providers[p]->name()).c_str()
+              : "?");
     }
   }
   return Error::Ok;
 }
 
-// Per-execute IO binding: bucket caller args per owning engine
-// (using value_owner + mirror_index), then batch-call each engine's
-// bind_inputs.
+// Per-execute IO binding: fan out to every engine. Each engine
+// self-filters via its internal io_*_bindings_ table built at
+// init-time by set_io_bindings.
 Error bind_inputs(DelegateInstance* d, Span<EValue*> args) {
   size_t n_in = d->plan.inputs.size();
-  size_t n_engines = d->plan.instances.size();
-
-  // Per-engine buckets.
-  std::vector<std::vector<EValue>> caller_buckets(n_engines);
-  std::vector<std::vector<uint32_t>> vid_buckets(n_engines);
-
-  for (size_t i = 0; i < n_in && i < args.size(); ++i) {
-    const auto& ib = d->plan.inputs[i];
-    uint32_t vid = ib.value_id;
-    if (vid >= d->values.size()) return Error::InvalidArgument;
-    if (!args[i]->isTensor() || !d->values[vid].isTensor())
+  size_t in_count = std::min(n_in, args.size());
+  Span<EValue* const> input_args(args.data(), in_count);
+  for (Engine* inst : d->plan.instances) {
+    if (!inst)
       continue;
-    void* caller_ptr = args[i]->toTensor().mutable_data_ptr();
-    if (!caller_ptr) continue;
-
-    // Host-side bucket (the engine that claimed vid in materialize_buffers).
-    RuntimeIndex host_owner = (vid < d->value_owner.size())
-        ? d->value_owner[vid] : kInvalidRuntimeIdx;
-    if (host_owner == kInvalidRuntimeIdx) {
-      // No AllocRequest for this vid (router didn't emit one). Default
-      // to HostPool — IO must live somewhere.
-      host_owner = kHostIdx;
-    }
-    if (host_owner < n_engines) {
-      caller_buckets[host_owner].push_back(*args[i]);
-      vid_buckets[host_owner].push_back(vid);
-    }
-
-    // Mirror-side buckets.
-    auto mit = d->mirror_index.find(vid);
-    if (mit != d->mirror_index.end()) {
-      for (const auto& [mirror_id, eng_idx] : mit->second) {
-        if (eng_idx >= n_engines) continue;
-        caller_buckets[eng_idx].push_back(*args[i]);
-        vid_buckets[eng_idx].push_back(mirror_id);
-      }
-    }
-  }
-
-  // Dispatch per engine.
-  for (size_t e = 0; e < n_engines; ++e) {
-    if (vid_buckets[e].empty()) continue;
-    Engine* inst = d->plan.instances[e];
-    if (!inst) continue;
     auto err = inst->bind_inputs(
-        Span<EValue>(d->values.data(), d->values.size()),
-        Span<const EValue>(
-            caller_buckets[e].data(), caller_buckets[e].size()),
-        Span<const uint32_t>(
-            vid_buckets[e].data(), vid_buckets[e].size()));
-    if (err != Error::Ok) return err;
+        Span<EValue>(d->values.data(), d->values.size()), input_args);
+    if (err != Error::Ok)
+      return err;
   }
   return Error::Ok;
 }
@@ -610,92 +524,28 @@ Error bind_inputs(DelegateInstance* d, Span<EValue*> args) {
 Error bind_outputs(DelegateInstance* d, Span<EValue*> args) {
   size_t n_in = d->plan.inputs.size();
   size_t n_out = d->plan.outputs.size();
-  size_t n_engines = d->plan.instances.size();
-
-  std::vector<std::vector<EValue>> caller_buckets(n_engines);
-  std::vector<std::vector<uint32_t>> vid_buckets(n_engines);
-
-  for (size_t i = 0; i < n_out && (n_in + i) < args.size(); ++i) {
-    const auto& ob = d->plan.outputs[i];
-    uint32_t vid = ob.value_id;
-    if (vid >= d->values.size()) return Error::InvalidArgument;
-
-    EValue* arg_ev = args[n_in + i];
-    if (!arg_ev || !arg_ev->isTensor() || !d->values[vid].isTensor())
+  if (args.size() < n_in)
+    return Error::InvalidArgument;
+  size_t out_count = std::min(n_out, args.size() - n_in);
+  Span<EValue* const> output_args(args.data() + n_in, out_count);
+  for (Engine* inst : d->plan.instances) {
+    if (!inst)
       continue;
-    void* caller_ptr = arg_ev->toTensor().mutable_data_ptr();
-    if (!caller_ptr) continue;
-
-    RuntimeIndex host_owner = (vid < d->value_owner.size())
-        ? d->value_owner[vid] : kInvalidRuntimeIdx;
-    if (host_owner == kInvalidRuntimeIdx) {
-      host_owner = kHostIdx;
-    }
-    if (host_owner < n_engines) {
-      caller_buckets[host_owner].push_back(*arg_ev);
-      vid_buckets[host_owner].push_back(vid);
-    }
-
-    auto mit = d->mirror_index.find(vid);
-    if (mit != d->mirror_index.end()) {
-      for (const auto& [mirror_id, eng_idx] : mit->second) {
-        if (eng_idx >= n_engines) continue;
-        caller_buckets[eng_idx].push_back(*arg_ev);
-        vid_buckets[eng_idx].push_back(mirror_id);
-      }
-    }
-  }
-
-  for (size_t e = 0; e < n_engines; ++e) {
-    if (vid_buckets[e].empty()) continue;
-    Engine* inst = d->plan.instances[e];
-    if (!inst) continue;
     auto err = inst->bind_outputs(
-        Span<EValue>(d->values.data(), d->values.size()),
-        Span<const EValue>(
-            caller_buckets[e].data(), caller_buckets[e].size()),
-        Span<const uint32_t>(
-            vid_buckets[e].data(), vid_buckets[e].size()));
-    if (err != Error::Ok) return err;
+        Span<EValue>(d->values.data(), d->values.size()), output_args);
+    if (err != Error::Ok)
+      return err;
   }
   return Error::Ok;
 }
 
 inline Event* resolve_event(DelegateInstance* d, EventId id) {
-  if (id == kNoEvent || id >= d->plan.events.size()) return nullptr;
+  if (id == kNoEvent || id >= d->plan.events.size())
+    return nullptr;
   return d->plan.events[id].event.get();
 }
 
-::executorch::runtime::Result<bool> parse_cond_value(const EValue& cond) {
-  if (cond.isTensor()) {
-    const auto& t = cond.toTensor();
-    if (t.scalar_type() != ScalarType::Bool) {
-      ET_LOG(
-          Error,
-          "parse_cond_value: expected Bool tensor, got dtype %d",
-          static_cast<int>(t.scalar_type()));
-      return Error::InvalidProgram;
-    }
-    const bool* data = t.const_data_ptr<bool>();
-    if (!data) {
-      ET_LOG(Error, "parse_cond_value: predicate tensor has null data_ptr");
-      return Error::InvalidProgram;
-    }
-    const size_t n = static_cast<size_t>(t.numel());
-    for (size_t i = 0; i < n; ++i) {
-      if (!data[i]) return false;
-    }
-    return true;
-  } else if (cond.isBool()) {
-    return cond.toBool();
-  }
-  ET_LOG(
-      Error,
-      "parse_cond_value: predicate EValue is neither Bool nor Tensor[Bool]");
-  return Error::InvalidProgram;
-}
-
-constexpr size_t kMaxHops = 10'000'000;
+constexpr RuntimeIndex kHostIdx = 0;
 
 Error execute_step(DelegateInstance* d, const Step& step) {
   return std::visit(
@@ -708,7 +558,8 @@ Error execute_step(DelegateInstance* d, const Step& step) {
               "bug; jumps must be handled in the PC walker");
           return Error::Internal;
         } else if constexpr (std::is_same_v<T, MoveStep>) {
-          if (s.src_value_id == s.dst_value_id) return Error::Ok;
+          if (s.src_value_id == s.dst_value_id)
+            return Error::Ok;
           d->values[s.dst_value_id] = d->values[s.src_value_id];
           ET_LOG(
               Debug,
@@ -720,7 +571,8 @@ Error execute_step(DelegateInstance* d, const Step& step) {
           std::vector<Event*> waits_storage;
           waits_storage.reserve(s.wait_for.size());
           for (EventId id : s.wait_for) {
-            if (Event* e = resolve_event(d, id)) waits_storage.push_back(e);
+            if (Event* e = resolve_event(d, id))
+              waits_storage.push_back(e);
           }
           Span<Event* const> waits(waits_storage.data(), waits_storage.size());
           Event* signal = resolve_event(d, s.signal);
@@ -763,12 +615,13 @@ Error execute_step(DelegateInstance* d, const Step& step) {
                 xfer_bytes);
             // Direction-specific dispatch: the device (non-host) Engine
             // owns the cross-runtime move. Engine resolves its own
-            // Buffer internally from the value_id.
+            // Buffer internally from the value_id. By host-canonical
+            // invariant, the non-host side is always a DeviceEngine.
             if (s.src_idx == kHostIdx && s.dst_idx != kHostIdx) {
-              return dst_inst->upload_from_host(
+              return static_cast<DeviceEngine*>(dst_inst)->upload_from_host(
                   src_ev, dst_ev, s.dst_value_id, waits, signal);
             } else if (s.dst_idx == kHostIdx && s.src_idx != kHostIdx) {
-              return src_inst->download_to_host(
+              return static_cast<DeviceEngine*>(src_inst)->download_to_host(
                   src_ev, s.src_value_id, dst_ev, waits, signal);
             } else {
               ET_LOG(
@@ -820,24 +673,115 @@ class NativeBackend final : public ::executorch::runtime::BackendInterface {
       return Error::MemoryAllocationFailed;
     auto* d = new (mem) DelegateInstance();
 
-    d->graph = std::make_unique<Graph>(plans->Get(0));
+    d->graph = std::make_unique<Graph>(plans->Get(0), program);
 
     // Borrow the process-wide registry (constructed lazily on first
     // call). DelegateInstance does not own Runtimes or RuntimeContexts;
     // it only owns the per-program Engines below.
     auto& registry = native_runtime_registry();
 
+    // Read load-time backend option "compute_unit" if provided.
+    // Value is a `|`-separated list of compute units to enable:
+    //   - unset / "auto"    : enable cpu + metal (the standard set)
+    //   - "cpu"             : cpu only (host pool always retained)
+    //   - "metal"           : metal only (requires ET_NATIVE_HAS_METAL
+    //                         compile flag; otherwise no compute provider)
+    //   - "cpu|metal"       : both, explicit form
+    //   - "fake_accel"      : routing-test scaffolding (CpuRuntime
+    //                         restricted to add/mul); rarely used
+    // Unknown unit names are ignored (logged) so unrecognized values
+    // don't silently broaden the set; if no recognized units result,
+    // we fall back to "auto" so the load doesn't produce an empty plan.
+    //
+    // The host pool is always retained — it isn't a compute unit, it
+    // serves graph IO and host-pool allocations regardless of target.
+    const char* compute_unit_filter = nullptr;
+    {
+      auto r = ctx.get_runtime_spec<const char*>("compute_unit");
+      if (r.ok()) {
+        compute_unit_filter = r.get();
+      }
+    }
+    // Parse the `|`-separated allowlist into a small set of unit names.
+    // "auto" (or empty) means "use the standard set" (cpu + metal).
+    // C++ stdlib has no string split; std::getline with a stringstream
+    // and a custom delimiter is the idiomatic stdlib idiom.
+    std::unordered_set<std::string> allowed_units;
+    bool accept_all = (compute_unit_filter == nullptr);
+    if (compute_unit_filter) {
+      std::stringstream ss(compute_unit_filter);
+      std::string tok;
+      while (std::getline(ss, tok, '|')) {
+        if (tok == "auto") {
+          accept_all = true;
+        } else if (!tok.empty()) {
+          allowed_units.insert(std::move(tok));
+        }
+      }
+      if (allowed_units.empty() && !accept_all) {
+        ET_LOG(
+            Info,
+            "[options] compute_unit='%s': no recognized units; defaulting to auto",
+            compute_unit_filter);
+        accept_all = true;
+      }
+    }
+    auto unit_allowed = [&](const char* name) -> bool {
+      if (accept_all)
+        return true;
+      return allowed_units.count(name) > 0;
+    };
+
     auto avail = registry.available();
-    d->owned_instances.reserve(avail.size());
+    // Build the candidate-providers list:
+    //   1. Host pool (always; from the eager registry).
+    //   2. Optional fake_accel (only if explicitly requested via
+    //      compute_unit).
+    //   3. Metal (lazy; only if compile flag set AND compute_unit
+    //      allows it AND device init succeeds).
+    //   4. CPU (lazy; the universal fallback; only if compute_unit
+    //      allows it).
+    //
+    // Ordering matters: the router prefers earlier providers when
+    // multiple can_run an op. So we put more specialized providers
+    // (fake_accel, Metal) ahead of CPU. CPU is always last so it can
+    // serve as the catch-all fallback for any op the others reject.
+    std::vector<Runtime*> candidate_providers(avail.begin(), avail.end());
+    // 2. fake_accel (opt-in only — never enabled by "auto"; routing
+    //    tests must request it explicitly).
+    if (allowed_units.count("fake_accel") > 0) {
+      candidate_providers.push_back(lazy_fake_accel_runtime());
+    }
+#ifdef ET_NATIVE_HAS_METAL
+    // 3. Metal.
+    if (unit_allowed("metal")) {
+      if (auto* m = lazy_metal_runtime()) {
+        candidate_providers.push_back(m);
+      }
+    }
+#endif
+    // 4. CPU last (always-available fallback when allowed).
+    if (unit_allowed("cpu")) {
+      candidate_providers.push_back(lazy_cpu_runtime());
+    }
+
+    d->owned_instances.reserve(candidate_providers.size());
     std::vector<Engine*> raw_instances;
-    raw_instances.reserve(avail.size());
+    raw_instances.reserve(candidate_providers.size());
     std::vector<Runtime*> raw_providers;
-    raw_providers.reserve(avail.size());
-    for (auto* p : avail) {
+    raw_providers.reserve(candidate_providers.size());
+    for (auto* p : candidate_providers) {
       auto inst = p->instantiate();
       raw_instances.push_back(inst.get());
       raw_providers.push_back(p);
       d->owned_instances.push_back(std::move(inst));
+    }
+    if (compute_unit_filter) {
+      ET_LOG(
+          Info,
+          "[options] compute_unit='%s': %zu provider(s) active",
+          compute_unit_filter,
+          raw_providers.size());
     }
 
     GreedyRouter router;
@@ -854,18 +798,88 @@ class NativeBackend final : public ::executorch::runtime::BackendInterface {
     }
     d->plan = std::move(plan_result.get());
 
+    // Post-route summary: surface the partition decision so it's
+    // visible without enabling Debug logging. Each step is one of:
+    //   ComputeStep    — segment of N kernel instructions on a runtime
+    //   TransferStep   — host<->device byte movement
+    //   JumpFalseStep  — host-side conditional jump
+    //   MoveStep       — host-side EValue assignment
+    {
+      ET_LOG(
+          Info,
+          "[router] partition: %zu providers, %zu steps",
+          d->plan.providers.size(),
+          d->plan.steps.size());
+      auto provider_name = [&](RuntimeIndex p) -> std::string {
+        if (p < d->plan.providers.size() && d->plan.providers[p]) {
+          return std::string(d->plan.providers[p]->name());
+        }
+        return "?";
+      };
+      for (size_t i = 0; i < d->plan.providers.size(); ++i) {
+        std::string name = provider_name(static_cast<RuntimeIndex>(i));
+        ET_LOG(Info, "[router]   provider[%zu]: %s", i, name.c_str());
+      }
+      for (size_t i = 0; i < d->plan.steps.size(); ++i) {
+        std::visit(
+            [&](auto&& s) {
+              using T = std::decay_t<decltype(s)>;
+              if constexpr (std::is_same_v<T, ComputeStep>) {
+                std::string name = provider_name(s.runtime_idx);
+                ET_LOG(
+                    Info,
+                    "[router]   step[%zu]: ComputeStep on provider[%u] (%s), source_pc=%u",
+                    i,
+                    s.runtime_idx,
+                    name.c_str(),
+                    s.source_pc);
+              } else if constexpr (std::is_same_v<T, TransferStep>) {
+                std::string sn = provider_name(s.src_idx);
+                std::string dn = provider_name(s.dst_idx);
+                ET_LOG(
+                    Info,
+                    "[router]   step[%zu]: TransferStep src=provider[%u](%s) vid=%u -> dst=provider[%u](%s) vid=%u",
+                    i,
+                    s.src_idx,
+                    sn.c_str(),
+                    s.src_value_id,
+                    s.dst_idx,
+                    dn.c_str(),
+                    s.dst_value_id);
+              } else if constexpr (std::is_same_v<T, JumpFalseStep>) {
+                ET_LOG(
+                    Info,
+                    "[router]   step[%zu]: JumpFalseStep pred_vid=%u dst_step=%zu",
+                    i,
+                    s.pred_value_id,
+                    s.dst_step_idx);
+              } else if constexpr (std::is_same_v<T, MoveStep>) {
+                ET_LOG(
+                    Info,
+                    "[router]   step[%zu]: MoveStep vid %u -> %u",
+                    i,
+                    s.src_value_id,
+                    s.dst_value_id);
+              }
+            },
+            d->plan.steps[i]);
+      }
+    }
+
     size_t num_orig = d->graph->num_values();
     size_t total_size = num_orig;
-    for (const auto& mv : d->plan.mirror_values) {
-      total_size = std::max<size_t>(total_size, mv.mirror_id + 1);
+    // Engines materialize TensorImpls for any router-minted mirror
+    // value_ids in their allocate_buffers; we just need the central
+    // EValue array sized to fit them. Walk every alloc_plan to find
+    // the highest value_id any engine will touch.
+    for (const auto& plan : d->plan.alloc_plans) {
+      for (const auto& req : plan) {
+        total_size = std::max<size_t>(total_size, req.value_id + 1);
+      }
     }
     d->values.reserve(total_size);
     d->values.resize(total_size);
     if (auto e = initialize_values(d, runtime_alloc); e != Error::Ok) {
-      d->~DelegateInstance();
-      return e;
-    }
-    if (auto e = materialize_mirror_values(d); e != Error::Ok) {
       d->~DelegateInstance();
       return e;
     }
@@ -879,13 +893,20 @@ class NativeBackend final : public ::executorch::runtime::BackendInterface {
       return e;
     }
 
-    // Precompute mirror_index for fast IO bucketing.
-    for (const auto& mv : d->plan.mirror_values) {
-      RuntimeIndex eng = (mv.mirror_id < d->value_owner.size())
-          ? d->value_owner[mv.mirror_id] : kInvalidRuntimeIdx;
-      if (eng == kInvalidRuntimeIdx) continue;
-      d->mirror_index[mv.source_value_id].push_back(
-          {mv.mirror_id, eng});
+    // Inform every engine of the graph IO bindings so each can build
+    // its internal IO table for per-execute bind_inputs / bind_outputs.
+    for (Engine* inst : d->plan.instances) {
+      if (!inst)
+        continue;
+      auto err = inst->set_io_bindings(
+          Span<const InputBinding>(
+              d->plan.inputs.data(), d->plan.inputs.size()),
+          Span<const OutputBinding>(
+              d->plan.outputs.data(), d->plan.outputs.size()));
+      if (err != Error::Ok) {
+        d->~DelegateInstance();
+        return err;
+      }
     }
 
     ET_LOG(
@@ -918,10 +939,9 @@ class NativeBackend final : public ::executorch::runtime::BackendInterface {
     size_t pc = 0;
     size_t hops = 0;
     while (pc < d->plan.steps.size()) {
-      if (++hops > kMaxHops) {
+      if (++hops > d->plan.max_hops) {
         ET_LOG(
-            Error,
-            "NativeBackend: kMaxHops exceeded — malformed back edge?");
+            Error, "NativeBackend: max_hops exceeded — malformed back edge?");
         first_err = Error::InvalidProgram;
         break;
       }
@@ -938,14 +958,17 @@ class NativeBackend final : public ::executorch::runtime::BackendInterface {
           break;
         }
         for (EventId id : jf->wait_for) {
-          if (id >= d->plan.events.size()) continue;
+          if (id >= d->plan.events.size())
+            continue;
           auto& slot = d->plan.events[id];
           if (slot.event && slot.owner) {
             Error e = slot.owner->wait(slot.event.get());
-            if (e != Error::Ok && first_err == Error::Ok) first_err = e;
+            if (e != Error::Ok && first_err == Error::Ok)
+              first_err = e;
           }
         }
-        if (first_err != Error::Ok) break;
+        if (first_err != Error::Ok)
+          break;
 
         if (jf->pred_value_id >= d->values.size()) {
           first_err = Error::InvalidState;
@@ -974,9 +997,12 @@ class NativeBackend final : public ::executorch::runtime::BackendInterface {
         break;
       }
       EventId sig = kNoEvent;
-      if (auto* cs = std::get_if<ComputeStep>(&step)) sig = cs->signal;
-      else if (auto* ts = std::get_if<TransferStep>(&step)) sig = ts->signal;
-      if (sig != kNoEvent) observed_signals.push_back(sig);
+      if (auto* cs = std::get_if<ComputeStep>(&step))
+        sig = cs->signal;
+      else if (auto* ts = std::get_if<TransferStep>(&step))
+        sig = ts->signal;
+      if (sig != kNoEvent)
+        observed_signals.push_back(sig);
 
       ++pc;
     }
@@ -984,12 +1010,15 @@ class NativeBackend final : public ::executorch::runtime::BackendInterface {
     std::unordered_set<EventId> observed_set(
         observed_signals.begin(), observed_signals.end());
     for (EventId id : d->plan.terminal_events) {
-      if (id >= d->plan.events.size()) continue;
-      if (observed_set.count(id) == 0) continue;
+      if (id >= d->plan.events.size())
+        continue;
+      if (observed_set.count(id) == 0)
+        continue;
       auto& slot = d->plan.events[id];
       if (slot.event && slot.owner) {
         Error e = slot.owner->wait(slot.event.get());
-        if (e != Error::Ok && first_err == Error::Ok) first_err = e;
+        if (e != Error::Ok && first_err == Error::Ok)
+          first_err = e;
       }
     }
 
@@ -998,7 +1027,19 @@ class NativeBackend final : public ::executorch::runtime::BackendInterface {
       return first_err;
     }
 
-    // Per-output post-execute pass (unchanged from before).
+    // Per-output post-execute pass:
+    //   1. Non-tensor outputs (scalars, lists): copy the EValue to the
+    //      caller's slot.
+    //   2. Tensor outputs: propagate computed shape onto the caller's
+    //      tensor (caller may have passed a stale shape; the kernel
+    //      may have produced a different one).
+    //
+    // No memcpy fallback: by protocol, bind_outputs aliased the host
+    // buffer to the caller's pointer, and downloads (if any) wrote
+    // through that alias, so values[vid].data_ptr == caller_t.data_ptr
+    // always at this point. A mismatch is a bind/transfer bug; we log
+    // and report Error::Internal rather than silently memcpy from
+    // possibly-stale storage.
     size_t n_in = d->plan.inputs.size();
     size_t n_out = d->plan.outputs.size();
     for (size_t i = 0; i < n_out && (n_in + i) < args.size(); ++i) {
@@ -1020,7 +1061,16 @@ class NativeBackend final : public ::executorch::runtime::BackendInterface {
         const void* sp = host_t.const_data_ptr();
         void* dp = caller_t.mutable_data_ptr();
         if (sp && dp && sp != dp) {
-          std::memcpy(dp, sp, host_t.nbytes());
+          ET_LOG(
+              Error,
+              "NativeBackend: output vid=%u: bind/transfer alias broken "
+              "(host_ptr=%p != caller_ptr=%p). Engine wrote to internal "
+              "storage instead of caller's buffer.",
+              vid,
+              sp,
+              dp);
+          d->poisoned = true;
+          return Error::Internal;
         }
       }
     }

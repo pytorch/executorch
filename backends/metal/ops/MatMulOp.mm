@@ -28,41 +28,32 @@ namespace metal_v2 {
 
 using runtime::Error;
 //===----------------------------------------------------------------------===//
-// File layout (~2k lines):
-//   §1  HOST-SIDE OP CLASSES                                  (this section)
-//        §1a  shared host helpers (FCs, tile pickers)         lines ~60-150
-//        §1b  MatMulOp     — aten::mm / linear (un-fused)     lines ~155-370
-//        §1c  AddMMOp      — aten::addmm (matmul + bias)
-//        §1d  BAddBMMOp    — aten::baddbmm (3D matmul + bias)
-//        §1e  BatchedMatMulOp — aten::bmm
-//   §2  KERNEL SOURCE STRING (matmulKernelSource)             lines ~370-1440
-//        Single Metal raw-string literal compiled at runtime via
-//        MetalKernelCompiler. Internal layout (free helpers, then kernels):
-//          §2a  applesimd::frag_coord / swizzle_tile          (Apple lane mapping)
-//          §2b  Epilogue functors (None, AxpbyBias)
-//          §2c  storeFragWithEpilogue (per-lane bounds-safe store)
-//          §2d  simdMMAKTile (one K-tile of MMA, mixed-precision)
-//          §2e  BlockLoader (cooperative tile load; from TileLoad.h)
-//          §2f  matmul_naive / matmul_tiled                   (small/medium fallbacks)
-//          §2g  matmul_simd_addmm_t                           (the unified SIMD-MMA kernel —
-//                handles both un-fused matmul AND fused matmul+bias via the
-//                use_out_source / do_axpby function constants — see §2g header
-//                comment for the full FC matrix)
-//          §2h  gemv / gemv_t                                  (M=1 / N=1 fast paths)
-//          §2i  matmul_tensor_ops                              (Apple9+ tensor_ops::matmul2d)
-//          §2j  bmm_<dtype>                                    (small-batch naive batched)
-//          §2k  template [[host_name]] instantiations          (PSO entry points)
-//   §3  KERNEL-SOURCE ACCESSORS  (kernelSource() one-liners)   lines ~1440 onward
-// All four op classes share the same matmulKernelSource(); the unified
-// matmul_simd_addmm_t is the workhorse — its (align_M, align_N, align_K,
-// use_out_source, do_axpby) function-constant tuple specializes it per
-// dispatch (~32 PSO variants per (tile, layout, dtype)).
-// Function constants (declared at top of MSL string, indices 0-4):
-//   0: align_M       — M % BM == 0   (DCEs un-aligned safe-load paths)
-//   1: align_N       — N % BN == 0
-//   2: align_K       — K % BK == 0
-//   3: use_out_source — true ⇒ apply bias epilogue; false ⇒ identity
-//   4: do_axpby      — true ⇒ use kernel-passed alpha/beta; false ⇒ alpha=beta=1
+// File layout (~1k lines, host-side only).
+//
+// MSL kernel source lives in MatMulKernels.metal.h (extracted because the
+// raw-string MSL was ~1k lines and drowned out the C++ host code here).
+// Shared MLX-JIT helpers live in MatMulMlxJit.h. Tier-shared utilities
+// live in MatMulCommon.h.
+//
+//   §1  computeOutputShape                                    line  72
+//   §2  kernelTypePrefix                                      line 101
+//   §3  selectKernel                                          line 139
+//   §4  Anon-namespace helpers
+//        §4a  next_pow2                                       line 283
+//        §4b  Per-shape JIT dispatch helpers                  lines 292-513
+//             (dispatchSimdSplitKPartialViaMlxJit and the
+//              SIMD-fused MLX JIT helper used by dispatch())
+//   §5  Member dispatch helpers
+//        §5a  dispatchSplitK         (SIMD split-K)           line 522
+//        §5b  dispatchSplitKNAX      (NAX split-K)            line 608
+//        §5c  dispatchDenseNAX       (MLX dense NAX)          line 723
+//   §6  dispatch  (entry point; routes to selectKernel + helper) line 830
+//   §7  kernelSource accessor (returns matmulKernelSource())     line 1046
+//
+// All four matmul-family op classes (MatMul / AddMM / BAddBMM /
+// BatchedMatMul) share matmulKernelSource() — see MatMulKernels.metal.h
+// for the FC matrix and §2g (matmul_simd_addmm_t, the unified workhorse
+// kernel).
 //===----------------------------------------------------------------------===//
 
 //===----------------------------------------------------------------------===//
@@ -299,8 +290,6 @@ using mlx_jit_helpers::GEMMSplitKParamsHost;
 using mlx_jit_helpers::GEMMAddMMParamsHost;
 using mlx_jit_helpers::toJitDtype;
 using mlx_jit_helpers::buildBaseName;
-using mlx_jit_helpers::buildFusedHashSuffix;
-using mlx_jit_helpers::buildSplitKNaxHashSuffix;
 using mlx_jit_helpers::makeMlxFusedFCs;
 using mlx_jit_helpers::makeMlxSplitKNaxFCs;
 
@@ -452,8 +441,6 @@ inline void dispatchSimdViaMlxJit(
   const bool align_N = (N % BN) == 0;
   const bool align_K = (K % BK) == 0;
 
-  const std::string hashName = baseName + buildFusedHashSuffix(
-      has_batch, use_out_source, do_axpby, align_M, align_N, align_K);
   const auto fcs = makeMlxFusedFCs(
       has_batch, use_out_source, do_axpby, align_M, align_N, align_K);
 
@@ -464,7 +451,7 @@ inline void dispatchSimdViaMlxJit(
          transpose_a, transpose_b, swizzle_log, baseName.c_str());
 
   auto pso = mlx_jit::shared(stream->compiler())
-                 .getDenseGemmKernel(baseName, hashName, fcs, jdt,
+                 .getDenseGemmKernel(baseName, fcs, jdt,
                                      transpose_a, transpose_b,
                                      BM, BN, BK, WM, WN);
   ET_CHECK_MSG(pso != nil,
@@ -655,12 +642,10 @@ void MatMulOp::dispatchSplitKNAX(
     const bool align_M = (M % BM) == 0;
     const bool align_N = (N % BN) == 0;
     const bool align_K = (K % BK) == 0;
-    const std::string hashName = baseName + buildSplitKNaxHashSuffix(
-        align_M, align_N, align_K);
     const auto fcs = makeMlxSplitKNaxFCs(align_M, align_N);
 
     auto pso = mlx_jit::shared(stream->compiler())
-                   .getSplitKNaxKernel(baseName, hashName, fcs, jdtOut,
+                   .getSplitKNaxKernel(baseName, fcs, jdtOut,
                                        /*ta=*/false, /*tb=*/false,
                                        BM, BN, BK, WM, WN);
     ET_CHECK_MSG(pso != nil,
@@ -769,9 +754,6 @@ void MatMulOp::dispatchDenseNAX(
   const bool align_N = (N % BN) == 0;
   const bool align_K = (K % BK) == 0;
 
-  const std::string hashName = baseName + buildFusedHashSuffix(
-      has_batch, use_out_source, do_axpby, align_M, align_N, align_K);
-
   const auto fcs = makeMlxFusedFCs(
       has_batch, use_out_source, do_axpby, align_M, align_N, align_K);
 
@@ -783,7 +765,7 @@ void MatMulOp::dispatchDenseNAX(
 
   // ---- Acquire PSO via the free-function singleton ----
   auto pso = mlx_jit::shared(stream->compiler())
-                 .getDenseNaxKernel(baseName, hashName, fcs, jdt,
+                 .getDenseNaxKernel(baseName, fcs, jdt,
                                     /*ta=*/false, /*tb=*/false,
                                     BM, BN, BK, WM, WN);
   ET_CHECK_MSG(pso != nil,

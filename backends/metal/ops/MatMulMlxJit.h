@@ -25,9 +25,9 @@
 //===----------------------------------------------------------------------===//
 
 #include <executorch/backends/metal/core/MetalStream.h>
-#include <executorch/backends/metal/ops/registry/OpUtils.h>
 #include <executorch/backends/metal/ops/MatMulCommon.h>
 #include <executorch/backends/metal/ops/mlx_jit/KernelLoader.h>
+#include <executorch/backends/metal/ops/registry/OpUtils.h>
 #include <executorch/runtime/platform/log.h>
 
 #include <cstdint>
@@ -63,8 +63,9 @@ struct GEMMParamsHost {
   int gemm_k_iterations_aligned;
   int batch_ndim;
 };
-static_assert(sizeof(GEMMParamsHost) == 72,
-              "GEMMParamsHost layout must match MLX upstream GEMMParams");
+static_assert(
+    sizeof(GEMMParamsHost) == 72,
+    "GEMMParamsHost layout must match MLX upstream GEMMParams");
 
 // 13 ints, all 4B aligned → 52B (struct alignment = 4).
 struct GEMMSplitKParamsHost {
@@ -82,9 +83,10 @@ struct GEMMSplitKParamsHost {
   int swizzle_log;
   int gemm_k_iterations_aligned;
 };
-static_assert(sizeof(GEMMSplitKParamsHost) == 52,
-              "GEMMSplitKParamsHost layout must match MLX upstream "
-              "GEMMSpiltKParams");
+static_assert(
+    sizeof(GEMMSplitKParamsHost) == 52,
+    "GEMMSplitKParamsHost layout must match MLX upstream "
+    "GEMMSpiltKParams");
 
 // GEMMAddMMParams: 2 ints + 1 int64 + 2 floats. Layout:
 //   ldc(4) fdc(4) [pad(0 — int64 aligned to 8 already after 8B of ints)]
@@ -96,9 +98,10 @@ struct GEMMAddMMParamsHost {
   float alpha;
   float beta;
 };
-static_assert(sizeof(GEMMAddMMParamsHost) == 24,
-              "GEMMAddMMParamsHost layout must match MLX upstream "
-              "GEMMAddMMParams");
+static_assert(
+    sizeof(GEMMAddMMParamsHost) == 24,
+    "GEMMAddMMParamsHost layout must match MLX upstream "
+    "GEMMAddMMParams");
 
 //===----------------------------------------------------------------------===//
 // Common naming + FC-tuple helpers (mirror MLX matmul.cpp:217-254).
@@ -108,9 +111,12 @@ static_assert(sizeof(GEMMAddMMParamsHost) == 24,
 // supported (matches MLX's matmul-kernel coverage).
 inline mlx_jit::JitDtype toJitDtype(executorch::aten::ScalarType dt) {
   switch (dt) {
-    case executorch::aten::ScalarType::Float:    return mlx_jit::JitDtype::Float32;
-    case executorch::aten::ScalarType::Half:     return mlx_jit::JitDtype::Float16;
-    case executorch::aten::ScalarType::BFloat16: return mlx_jit::JitDtype::BFloat16;
+    case executorch::aten::ScalarType::Float:
+      return mlx_jit::JitDtype::Float32;
+    case executorch::aten::ScalarType::Half:
+      return mlx_jit::JitDtype::Float16;
+    case executorch::aten::ScalarType::BFloat16:
+      return mlx_jit::JitDtype::BFloat16;
     default:
       ET_CHECK_MSG(false, "mlx_jit_helpers: unsupported dtype %d", int(dt));
       return mlx_jit::JitDtype::Float32;
@@ -119,52 +125,33 @@ inline mlx_jit::JitDtype toJitDtype(executorch::aten::ScalarType dt) {
 
 // MLX kernel name builder (matches matmul.cpp:217-228).
 inline std::string buildBaseName(
-    const char* prefix,         // "steel_gemm_fused", "steel_gemm_fused_nax", ...
-    bool transpose_a, bool transpose_b,
-    const char* a_tname,        // type_to_name(a)
-    const char* out_tname,      // type_to_name(out)
-    int bm, int bn, int bk, int wm, int wn) {
+    const char* prefix, // "steel_gemm_fused", "steel_gemm_fused_nax", ...
+    bool transpose_a,
+    bool transpose_b,
+    const char* a_tname, // type_to_name(a)
+    const char* out_tname, // type_to_name(out)
+    int bm,
+    int bn,
+    int bk,
+    int wm,
+    int wn) {
   std::ostringstream s;
-  s << prefix << "_"
-    << (transpose_a ? 't' : 'n')
-    << (transpose_b ? 't' : 'n')
-    << "_" << a_tname
-    << "_" << out_tname
-    << "_bm" << bm << "_bn" << bn << "_bk" << bk
-    << "_wm" << wm << "_wn" << wn;
-  return s.str();
-}
-
-// MLX hash-name suffix for fused (NAX or SIMD) matmul (matmul.cpp:246-252).
-inline std::string buildFusedHashSuffix(
-    bool has_batch, bool use_out_source, bool do_axpby,
-    bool align_M, bool align_N, bool align_K) {
-  std::ostringstream s;
-  s << "_has_batch_" << (has_batch ? 't' : 'n')
-    << "_use_out_source_" << (use_out_source ? 't' : 'n')
-    << "_do_axpby_" << (do_axpby ? 't' : 'n')
-    << "_align_M_" << (align_M ? 't' : 'n')
-    << "_align_N_" << (align_N ? 't' : 'n')
-    << "_align_K_" << (align_K ? 't' : 'n');
-  return s.str();
-}
-
-// MLX hash-name suffix for split-K NAX (matmul.cpp:728-730).
-inline std::string buildSplitKNaxHashSuffix(
-    bool align_M, bool align_N, bool align_K) {
-  std::ostringstream s;
-  s << "_align_M_" << (align_M ? 't' : 'n')
-    << "_align_N_" << (align_N ? 't' : 'n')
-    << "_align_K_" << (align_K ? 't' : 'n');
+  s << prefix << "_" << (transpose_a ? 't' : 'n') << (transpose_b ? 't' : 'n')
+    << "_" << a_tname << "_" << out_tname << "_bm" << bm << "_bn" << bn << "_bk"
+    << bk << "_wm" << wm << "_wn" << wn;
   return s.str();
 }
 
 // FC tuple for MLX dense fused matmul (slots 10/100/110/200/201/202).
 inline MetalKernelCompiler::FunctionConstants makeMlxFusedFCs(
-    bool has_batch, bool use_out_source, bool do_axpby,
-    bool align_M, bool align_N, bool align_K) {
+    bool has_batch,
+    bool use_out_source,
+    bool do_axpby,
+    bool align_M,
+    bool align_N,
+    bool align_K) {
   return MetalKernelCompiler::FunctionConstants{{
-      {10,  has_batch},
+      {10, has_batch},
       {100, use_out_source},
       {110, do_axpby},
       {200, align_M},
@@ -176,7 +163,8 @@ inline MetalKernelCompiler::FunctionConstants makeMlxFusedFCs(
 // FC tuple for MLX split-K NAX (slots 200/201; align_K is per-tile
 // dispatched at runtime in the kernel, not an FC).
 inline MetalKernelCompiler::FunctionConstants makeMlxSplitKNaxFCs(
-    bool align_M, bool align_N) {
+    bool align_M,
+    bool align_N) {
   return MetalKernelCompiler::FunctionConstants{{
       {200, align_M},
       {201, align_N},
@@ -216,53 +204,81 @@ inline void dispatchGemmViaMlxJit(
     MetalStream* stream,
     const executorch::aten::Tensor& A,
     const executorch::aten::Tensor& B,
-    const executorch::aten::Tensor* bias,        // nullable
+    const executorch::aten::Tensor* bias, // nullable
     executorch::aten::Tensor& C,
-    int32_t M, int32_t K, int32_t N,
-    int32_t batch,                               // 1 for non-batched
-    int BM, int BN, int BK, int WM, int WN,
+    int32_t M,
+    int32_t K,
+    int32_t N,
+    int32_t batch, // 1 for non-batched
+    int BM,
+    int BN,
+    int BK,
+    int WM,
+    int WN,
     int32_t swizzle_log,
-    bool transpose_a, bool transpose_b,
-    int32_t bias_stride_m,                       // ldc; ignored if !bias
-    int32_t bias_stride_b,                       // batch_stride_c; ignored if !bias
-    float alpha,                                 // ignored if !bias
-    float beta,                                  // ignored if !bias
+    bool transpose_a,
+    bool transpose_b,
+    int32_t bias_stride_m, // ldc; ignored if !bias
+    int32_t bias_stride_b, // batch_stride_c; ignored if !bias
+    float alpha, // ignored if !bias
+    float beta, // ignored if !bias
     executorch::aten::ScalarType dtype) {
   const auto jdt = toJitDtype(dtype);
   const char* tname = mlx_jit::typeToName(jdt);
 
   const std::string baseName = buildBaseName(
-      "steel_gemm_fused", transpose_a, transpose_b,
-      tname, tname, BM, BN, BK, WM, WN);
+      "steel_gemm_fused",
+      transpose_a,
+      transpose_b,
+      tname,
+      tname,
+      BM,
+      BN,
+      BK,
+      WM,
+      WN);
 
   const bool use_out_source = (bias != nullptr);
-  const bool do_axpby =
-      use_out_source && ((alpha != 1.0f) || (beta != 1.0f));
-  const bool has_batch = false;  // we use GEMMParams.batch_stride_* instead
+  const bool do_axpby = use_out_source && ((alpha != 1.0f) || (beta != 1.0f));
+  const bool has_batch = false; // we use GEMMParams.batch_stride_* instead
   const bool align_M = (M % BM) == 0;
   const bool align_N = (N % BN) == 0;
   const bool align_K = (K % BK) == 0;
 
-  const std::string hashName = baseName + buildFusedHashSuffix(
-      has_batch, use_out_source, do_axpby, align_M, align_N, align_K);
   const auto fcs = makeMlxFusedFCs(
       has_batch, use_out_source, do_axpby, align_M, align_N, align_K);
 
-  ET_LOG(Debug,
-         "dispatchGemmViaMlxJit: M=%d K=%d N=%d batch=%d dtype=%s "
-         "tile=(%d,%d,%d,%d,%d) ta=%d tb=%d use_out_source=%d "
-         "do_axpby=%d swizzle_log=%d kname=%s",
-         M, K, N, batch, dtypeSuffix(dtype), BM, BN, BK, WM, WN,
-         transpose_a, transpose_b, int(use_out_source), int(do_axpby),
-         swizzle_log, baseName.c_str());
+  ET_LOG(
+      Debug,
+      "dispatchGemmViaMlxJit: M=%d K=%d N=%d batch=%d dtype=%s "
+      "tile=(%d,%d,%d,%d,%d) ta=%d tb=%d use_out_source=%d "
+      "do_axpby=%d swizzle_log=%d kname=%s",
+      M,
+      K,
+      N,
+      batch,
+      dtypeSuffix(dtype),
+      BM,
+      BN,
+      BK,
+      WM,
+      WN,
+      transpose_a,
+      transpose_b,
+      int(use_out_source),
+      int(do_axpby),
+      swizzle_log,
+      baseName.c_str());
 
-  auto pso = mlx_jit::shared(stream->compiler())
-                 .getDenseGemmKernel(baseName, hashName, fcs, jdt,
-                                     transpose_a, transpose_b,
-                                     BM, BN, BK, WM, WN);
-  ET_CHECK_MSG(pso != nil,
-               "dispatchGemmViaMlxJit: getDenseGemmKernel returned nil "
-               "for '%s'", baseName.c_str());
+  auto pso =
+      mlx_jit::shared(stream->compiler())
+          .getDenseGemmKernel(
+              baseName, fcs, jdt, transpose_a, transpose_b, BM, BN, BK, WM, WN);
+  ET_CHECK_MSG(
+      pso != nil,
+      "dispatchGemmViaMlxJit: getDenseGemmKernel returned nil "
+      "for '%s'",
+      baseName.c_str());
 
   // ---- GEMMParams ----
   // Leading dims for NN row-major layout:
@@ -289,9 +305,14 @@ inline void dispatchGemmViaMlxJit(
   const int64_t bsd = (batch > 1) ? int64_t(M) * int64_t(N) : 0;
 
   GEMMParamsHost params{
-      /*M=*/M, /*N=*/N, /*K=*/K,
-      /*lda=*/lda, /*ldb=*/ldb, /*ldd=*/ldd,
-      /*tiles_n=*/tilesN, /*tiles_m=*/tilesM,
+      /*M=*/M,
+      /*N=*/N,
+      /*K=*/K,
+      /*lda=*/lda,
+      /*ldb=*/ldb,
+      /*ldd=*/ldd,
+      /*tiles_n=*/tilesN,
+      /*tiles_m=*/tilesM,
       /*batch_stride_a=*/bsa,
       /*batch_stride_b=*/bsb,
       /*batch_stride_d=*/bsd,
@@ -354,21 +375,21 @@ inline void dispatchGemmViaMlxJit(
 // Buffer ABI (gemv.metal:438-507):
 //   0  mat (B)               9   batch_ndim
 //   1  in_vec (A_row)        10  batch_shape*  (skipped, batch_ndim=0)
-//   2  bias                  11  vector_batch_stride*  (must bind, kernel reads [0])
-//   3  out_vec (C)           12  matrix_batch_stride*  (must bind, kernel reads [0])
-//   4  in_vec_size (K)       13  bias_batch_stride*    (skipped, kDoAxpby=false)
-//   5  out_vec_size (N)      14  bias_stride           (skipped, kDoAxpby=false)
-//   6  matrix_ld (N)
-//   7  alpha                 (skipped, kDoAxpby=false)
-//   8  beta                  (skipped, kDoAxpby=false)
+//   2  bias                  11  vector_batch_stride*  (must bind, kernel reads
+//   [0]) 3  out_vec (C)           12  matrix_batch_stride*  (must bind, kernel
+//   reads [0]) 4  in_vec_size (K)       13  bias_batch_stride*    (skipped,
+//   kDoAxpby=false) 5  out_vec_size (N)      14  bias_stride (skipped,
+//   kDoAxpby=false) 6  matrix_ld (N) 7  alpha                 (skipped,
+//   kDoAxpby=false) 8  beta                  (skipped, kDoAxpby=false)
 // kDoNCBatch=false + batch_ndim=0 path: kernel reads vector_batch_stride[0]
 // and matrix_batch_stride[0] — we bind a zero int64 at each slot.
 inline void dispatchGemvTViaMlxJit(
     MetalStream* stream,
-    const executorch::aten::Tensor& A,   // [1, K] = a row vector
-    const executorch::aten::Tensor& B,   // [K, N]
-    executorch::aten::Tensor& C,         // [1, N]
-    int32_t K, int32_t N,
+    const executorch::aten::Tensor& A, // [1, K] = a row vector
+    const executorch::aten::Tensor& B, // [K, N]
+    executorch::aten::Tensor& C, // [1, N]
+    int32_t K,
+    int32_t N,
     executorch::aten::ScalarType dtype) {
   const auto jdt = toJitDtype(dtype);
   const char* tname = mlx_jit::typeToName(jdt);
@@ -378,9 +399,11 @@ inline void dispatchGemvTViaMlxJit(
   const int out_vec_len = N;
   int sm, sn;
   if (in_vec_len >= 8192 && out_vec_len >= 2048) {
-    sm = 4; sn = 8;
+    sm = 4;
+    sn = 8;
   } else {
-    sm = 8; sn = 4;
+    sm = 8;
+    sn = 4;
   }
   int bn;
   if (out_vec_len >= 2048) {
@@ -397,39 +420,56 @@ inline void dispatchGemvTViaMlxJit(
   const int n_out_per_tgp = bn * sn * tn;
 
   std::ostringstream kn;
-  kn << "gemv_t_" << tname
-     << "_bm" << bm << "_bn" << bn
-     << "_sm" << sm << "_sn" << sn
-     << "_tm" << tm << "_tn" << tn
-     << "_nc0_axpby0";
+  kn << "gemv_t_" << tname << "_bm" << bm << "_bn" << bn << "_sm" << sm << "_sn"
+     << sn << "_tm" << tm << "_tn" << tn << "_nc0_axpby0";
   const std::string kernelName = kn.str();
 
-  ET_LOG(Debug,
-         "dispatchGemvTViaMlxJit: K=%d N=%d dtype=%s tile=(bm=%d,bn=%d,"
-         "sm=%d,sn=%d,tm=%d,tn=%d) n_out_per_tgp=%d kname=%s",
-         K, N, dtypeSuffix(dtype),
-         bm, bn, sm, sn, tm, tn, n_out_per_tgp, kernelName.c_str());
+  ET_LOG(
+      Debug,
+      "dispatchGemvTViaMlxJit: K=%d N=%d dtype=%s tile=(bm=%d,bn=%d,"
+      "sm=%d,sn=%d,tm=%d,tn=%d) n_out_per_tgp=%d kname=%s",
+      K,
+      N,
+      dtypeSuffix(dtype),
+      bm,
+      bn,
+      sm,
+      sn,
+      tm,
+      tn,
+      n_out_per_tgp,
+      kernelName.c_str());
 
   auto pso = mlx_jit::shared(stream->compiler())
-                 .getGemvTKernel(kernelName, jdt,
-                                 bm, bn, sm, sn, tm, tn,
-                                 /*nc_batch=*/false, /*axpby=*/false);
-  ET_CHECK_MSG(pso != nil,
-               "dispatchGemvTViaMlxJit: getGemvTKernel returned nil for '%s'",
-               kernelName.c_str());
+                 .getGemvTKernel(
+                     kernelName,
+                     jdt,
+                     bm,
+                     bn,
+                     sm,
+                     sn,
+                     tm,
+                     tn,
+                     /*nc_batch=*/false,
+                     /*axpby=*/false);
+  ET_CHECK_MSG(
+      pso != nil,
+      "dispatchGemvTViaMlxJit: getGemvTKernel returned nil for '%s'",
+      kernelName.c_str());
 
   // Bindings.
   const int64_t zero64 = 0;
-  stream->recorder().beginDispatch(pso)
-      .setInput(0, B.const_data_ptr(), B.nbytes())      // mat
-      .setInput(1, A.const_data_ptr(), A.nbytes())      // in_vec
+  stream->recorder()
+      .beginDispatch(pso)
+      .setInput(0, B.const_data_ptr(), B.nbytes()) // mat
+      .setInput(1, A.const_data_ptr(), A.nbytes()) // in_vec
       // slot 2 (bias) FC-gated to kDoAxpby=false → unused; do not bind.
-      .setOutput(3, C.mutable_data_ptr(), C.nbytes())   // out_vec
-      .setBytes<int32_t>(4, K)                          // in_vec_size
-      .setBytes<int32_t>(5, N)                          // out_vec_size
-      .setBytes<int32_t>(6, N)                          // matrix_ld (B is [K,N] row-major → ld = N)
+      .setOutput(3, C.mutable_data_ptr(), C.nbytes()) // out_vec
+      .setBytes<int32_t>(4, K) // in_vec_size
+      .setBytes<int32_t>(5, N) // out_vec_size
+      .setBytes<int32_t>(6, N) // matrix_ld (B is [K,N] row-major → ld = N)
       // slots 7/8 (alpha/beta) FC-gated to kDoAxpby=false → unused.
-      .setBytes<int32_t>(9, 0)                          // batch_ndim
+      .setBytes<int32_t>(9, 0) // batch_ndim
       // slot 10 (batch_shape*) — kernel only reads when kDoNCBatch=true
       //   (false here) → don't bind.
       // slots 11/12: kernel reads vector_batch_stride[0] and
@@ -455,10 +495,11 @@ inline void dispatchGemvTViaMlxJit(
 
 inline void dispatchGemvViaMlxJit(
     MetalStream* stream,
-    const executorch::aten::Tensor& A,   // [M, K]
-    const executorch::aten::Tensor& B,   // [K, 1] = column vector
-    executorch::aten::Tensor& C,         // [M, 1]
-    int32_t M, int32_t K,
+    const executorch::aten::Tensor& A, // [M, K]
+    const executorch::aten::Tensor& B, // [K, 1] = column vector
+    executorch::aten::Tensor& C, // [M, 1]
+    int32_t M,
+    int32_t K,
     executorch::aten::ScalarType dtype) {
   const auto jdt = toJitDtype(dtype);
   const char* tname = mlx_jit::typeToName(jdt);
@@ -470,9 +511,12 @@ inline void dispatchGemvViaMlxJit(
   int sm = 1, sn = 32;
   int bn = 1;
   if (in_vec_len <= 64) {
-    bm = 1; sm = 8; sn = 4;
+    bm = 1;
+    sm = 8;
+    sn = 4;
   } else if (in_vec_len >= 16 * out_vec_len) {
-    bm = 1; bn = 8;
+    bm = 1;
+    bn = 8;
   }
   int tm = (out_vec_len < 4) ? 1 : 4;
   int tn = 4;
@@ -480,36 +524,53 @@ inline void dispatchGemvViaMlxJit(
   const int n_out_per_tgp = bm * sm * tm;
 
   std::ostringstream kn;
-  kn << "gemv_" << tname
-     << "_bm" << bm << "_bn" << bn
-     << "_sm" << sm << "_sn" << sn
-     << "_tm" << tm << "_tn" << tn
-     << "_nc0_axpby0";
+  kn << "gemv_" << tname << "_bm" << bm << "_bn" << bn << "_sm" << sm << "_sn"
+     << sn << "_tm" << tm << "_tn" << tn << "_nc0_axpby0";
   const std::string kernelName = kn.str();
 
-  ET_LOG(Debug,
-         "dispatchGemvViaMlxJit: M=%d K=%d dtype=%s tile=(bm=%d,bn=%d,"
-         "sm=%d,sn=%d,tm=%d,tn=%d) n_out_per_tgp=%d kname=%s",
-         M, K, dtypeSuffix(dtype),
-         bm, bn, sm, sn, tm, tn, n_out_per_tgp, kernelName.c_str());
+  ET_LOG(
+      Debug,
+      "dispatchGemvViaMlxJit: M=%d K=%d dtype=%s tile=(bm=%d,bn=%d,"
+      "sm=%d,sn=%d,tm=%d,tn=%d) n_out_per_tgp=%d kname=%s",
+      M,
+      K,
+      dtypeSuffix(dtype),
+      bm,
+      bn,
+      sm,
+      sn,
+      tm,
+      tn,
+      n_out_per_tgp,
+      kernelName.c_str());
 
   auto pso = mlx_jit::shared(stream->compiler())
-                 .getGemvKernel(kernelName, jdt,
-                                bm, bn, sm, sn, tm, tn,
-                                /*nc_batch=*/false, /*axpby=*/false);
-  ET_CHECK_MSG(pso != nil,
-               "dispatchGemvViaMlxJit: getGemvKernel returned nil for '%s'",
-               kernelName.c_str());
+                 .getGemvKernel(
+                     kernelName,
+                     jdt,
+                     bm,
+                     bn,
+                     sm,
+                     sn,
+                     tm,
+                     tn,
+                     /*nc_batch=*/false,
+                     /*axpby=*/false);
+  ET_CHECK_MSG(
+      pso != nil,
+      "dispatchGemvViaMlxJit: getGemvKernel returned nil for '%s'",
+      kernelName.c_str());
 
   const int64_t zero64 = 0;
-  stream->recorder().beginDispatch(pso)
-      .setInput(0, A.const_data_ptr(), A.nbytes())      // mat
-      .setInput(1, B.const_data_ptr(), B.nbytes())      // in_vec
-      .setOutput(3, C.mutable_data_ptr(), C.nbytes())   // out_vec
-      .setBytes<int32_t>(4, K)                          // in_vec_size
-      .setBytes<int32_t>(5, M)                          // out_vec_size
-      .setBytes<int32_t>(6, K)                          // matrix_ld (A is [M,K] row-major → ld = K)
-      .setBytes<int32_t>(9, 0)                          // batch_ndim
+  stream->recorder()
+      .beginDispatch(pso)
+      .setInput(0, A.const_data_ptr(), A.nbytes()) // mat
+      .setInput(1, B.const_data_ptr(), B.nbytes()) // in_vec
+      .setOutput(3, C.mutable_data_ptr(), C.nbytes()) // out_vec
+      .setBytes<int32_t>(4, K) // in_vec_size
+      .setBytes<int32_t>(5, M) // out_vec_size
+      .setBytes<int32_t>(6, K) // matrix_ld (A is [M,K] row-major → ld = K)
+      .setBytes<int32_t>(9, 0) // batch_ndim
       .setBytes(11, &zero64, sizeof(zero64))
       .setBytes(12, &zero64, sizeof(zero64))
       .run(
@@ -517,7 +578,7 @@ inline void dispatchGemvViaMlxJit(
           uvec3{32u, uint32_t(bn), uint32_t(bm)});
 }
 
-}  // namespace mlx_jit_helpers
-}  // namespace metal_v2
-}  // namespace backends
-}  // namespace executorch
+} // namespace mlx_jit_helpers
+} // namespace metal_v2
+} // namespace backends
+} // namespace executorch

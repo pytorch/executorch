@@ -11,17 +11,17 @@
 #include <executorch/backends/metal/core/HazardTracker.h>
 #include <executorch/backends/metal/core/MetalAllocator.h>
 #include <executorch/backends/metal/core/MetalCommandRecorder.h>
+#include <executorch/backends/metal/core/MetalConfig.h> // ET_METAL4_AVAILABLE / ET_METAL4_ENABLE
 #include <executorch/backends/metal/core/MetalKernel.h>
-#include <executorch/backends/metal/core/MetalConfig.h>  // ET_METAL4_AVAILABLE / ET_METAL4_ENABLE
 #include <executorch/backends/metal/core/MetalKernelCompiler.h>
 #include <executorch/backends/metal/core/MetalTypes.h>
-#include <executorch/backends/metal/core/MpsInterop.h>  // for ET_METAL_USE_MPSGRAPH
+#include <executorch/backends/metal/core/MpsInterop.h> // for ET_METAL_USE_MPSGRAPH
 
-#import <Metal/Metal.h>
 #import <Foundation/Foundation.h>
+#import <Metal/Metal.h>
 
-#include <cstdlib>  // for getenv
-#include <cstring>  // for strcmp
+#include <cstdlib> // for getenv
+#include <cstring> // for strcmp
 #include <memory>
 
 namespace executorch {
@@ -53,7 +53,8 @@ int defaultFlushIntervalForArchSuffix(char suffix);
 //   2. compiler_   : MetalKernelCompiler
 //   3. hazards_    : HazardTracker      (borrowed by allocator_ and recorder_)
 //   4. allocator_  : MetalAllocator     (borrows hazards_)
-//   5. recorder_   : MetalCommandRecorder (borrows allocator_, compiler_, hazards_)
+//   5. recorder_   : MetalCommandRecorder (borrows allocator_, compiler_,
+//   hazards_)
 //   6. mpsInterop_ : MpsInterop
 //
 // Canonical use:
@@ -109,17 +110,33 @@ class MetalStream {
   // Subsystem accessors
   //===--------------------------------------------------------------------===//
 
-  MetalAllocator&        allocator() { return *allocator_; }
-  const MetalAllocator&  allocator() const { return *allocator_; }
-  MetalCommandRecorder&  recorder()  { return *recorder_; }
-  const MetalCommandRecorder& recorder() const { return *recorder_; }
-  MetalKernelCompiler*   compiler()  { return compiler_.get(); }
+  MetalAllocator& allocator() {
+    return *allocator_;
+  }
+  const MetalAllocator& allocator() const {
+    return *allocator_;
+  }
+  MetalCommandRecorder& recorder() {
+    return *recorder_;
+  }
+  const MetalCommandRecorder& recorder() const {
+    return *recorder_;
+  }
+  MetalKernelCompiler* compiler() {
+    return compiler_.get();
+  }
 #if ET_METAL_USE_MPSGRAPH
-  MpsInterop&            mps()       { return *mpsInterop_; }
-  const MpsInterop&      mps() const { return *mpsInterop_; }
+  MpsInterop& mps() {
+    return *mpsInterop_;
+  }
+  const MpsInterop& mps() const {
+    return *mpsInterop_;
+  }
 #endif
 
-  id<MTLDevice>          device() const { return device_; }
+  id<MTLDevice> device() const {
+    return device_;
+  }
 
   //===--------------------------------------------------------------------===//
   // Cross-subsystem orchestration
@@ -128,9 +145,16 @@ class MetalStream {
   //   GPU-completed.
   //===--------------------------------------------------------------------===//
 
-  void flush() { recorder_->flush(); }
-  void wait() { recorder_->wait(); }
-  void sync() { flush(); wait(); }
+  void flush() {
+    recorder_->flush();
+  }
+  void wait() {
+    recorder_->wait();
+  }
+  void sync() {
+    flush();
+    wait();
+  }
 
  private:
   // Device flush interval based on architecture. Used by ctor to seed the
@@ -140,12 +164,12 @@ class MetalStream {
   // Owned subsystems (in construction order):
   id<MTLDevice> device_;
   id<MTLCommandQueue> queue_;
-  std::unique_ptr<MetalKernelCompiler>  compiler_;
-  std::unique_ptr<HazardTracker>        hazards_;
-  std::unique_ptr<MetalAllocator>       allocator_;
+  std::unique_ptr<MetalKernelCompiler> compiler_;
+  std::unique_ptr<HazardTracker> hazards_;
+  std::unique_ptr<MetalAllocator> allocator_;
   std::unique_ptr<MetalCommandRecorder> recorder_;
 #if ET_METAL_USE_MPSGRAPH
-  std::unique_ptr<MpsInterop>           mpsInterop_;
+  std::unique_ptr<MpsInterop> mpsInterop_;
 #endif
 };
 

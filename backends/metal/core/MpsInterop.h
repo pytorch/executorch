@@ -11,8 +11,9 @@
 //===----------------------------------------------------------------------===//
 // MpsInterop — MPSGraph interop.
 // MPSGraph requires a legacy id<MTLCommandBuffer>. When ET_METAL_USE_MPSGRAPH
-// is on, MetalStream owns an MpsInterop and exposes encodeWithLegacyCommandBuffer
-// for ops (currently MPSGraphOp) that need to encode MPSGraph work.
+// is on, MetalStream owns an MpsInterop and exposes
+// encodeWithLegacyCommandBuffer for ops (currently MPSGraphOp) that need to
+// encode MPSGraph work.
 //===----------------------------------------------------------------------===//
 // Build-time gate
 //===----------------------------------------------------------------------===//
@@ -37,7 +38,7 @@
 
 #if ET_METAL_USE_MPSGRAPH && ET_METAL4_ENABLE
 #error \
-"ET_METAL_USE_MPSGRAPH and ET_METAL4_ENABLE are mutually exclusive. " \
+    "ET_METAL_USE_MPSGRAPH and ET_METAL4_ENABLE are mutually exclusive. " \
 "MPSGraph requires the legacy MTLCommandBuffer model, which is " \
 "incompatible with MTL4. Build with one or the other (or neither)."
 #endif
@@ -100,7 +101,7 @@ class MpsInterop {
       size_t side_door_binds_count = 0);
 
  private:
-  MetalCommandRecorder* recorder_;  // borrowed
+  MetalCommandRecorder* recorder_; // borrowed
 };
 
 } // namespace metal_v2

@@ -211,8 +211,8 @@ enum class InstructionKind : uint8_t {
  * Decoded JumpFalseCall payload. Backing-agnostic.
  */
 struct JumpFalseInfo {
-  uint32_t cond_value_id;     // EValue index whose value is the predicate
-  uint32_t destination_pc;    // Source-PC of the jump target
+  uint32_t cond_value_id; // EValue index whose value is the predicate
+  uint32_t destination_pc; // Source-PC of the jump target
 };
 
 /**
@@ -331,8 +331,10 @@ class OperatorCall {
  */
 class Graph {
  public:
-  explicit Graph(const executorch_flatbuffer::ExecutionPlan* plan)
-      : plan_(plan) {
+  explicit Graph(
+      const executorch_flatbuffer::ExecutionPlan* plan,
+      const executorch_flatbuffer::Program* program = nullptr)
+      : plan_(plan), program_(program) {
     // Precompute input/output value_id sets for O(1) value_kind lookup.
     if (auto* in = plan_->inputs()) {
       input_ids_.reserve(in->size());
@@ -513,6 +515,26 @@ class Graph {
   // Returns NDM key (FQN) for an external constant tensor, or nullptr
   // if the tensor isn't an NDM-stored constant.
   const char* tensor_constant_data_key(uint32_t value_id) const;
+
+  // Returns the raw bytes of an inline constant (stored in the
+  // program's constant_buffer field), or an empty span if the tensor
+  // isn't an inline constant. Inline constants are constants the AOT
+  // didn't promote to NDM (e.g., literals lifted into _lifted_tensor_*
+  // placeholders). Mutually exclusive with tensor_constant_data_key:
+  // a constant is either NDM-stored (key != nullptr) or inline
+  // (this returns non-empty), never both.
+  ::executorch::runtime::Span<const uint8_t> tensor_inline_data(
+      uint32_t value_id) const;
+
+  // True if the tensor is a constant of either flavor (NDM-stored or
+  // inline). Use this for "is this an immutable constant?" filtering
+  // checks in the router; the source matters only at upload time.
+  bool is_constant(uint32_t value_id) const {
+    if (tensor_constant_data_key(value_id) != nullptr)
+      return true;
+    return !tensor_inline_data(value_id).empty();
+  }
+
   // dtype-size × prod(sizes); 0 if not a tensor or sizes empty.
   size_t tensor_nbytes_max(uint32_t value_id) const;
 
@@ -632,8 +654,8 @@ class Graph {
   }
 
   // Get OperatorCall for op in chain
-  // PRECONDITION: instruction_kind(chain_idx, op_idx) == InstructionKind::Kernel.
-  // Use instruction_kind() first to dispatch on kind.
+  // PRECONDITION: instruction_kind(chain_idx, op_idx) ==
+  // InstructionKind::Kernel. Use instruction_kind() first to dispatch on kind.
   OperatorCall get_op(size_t chain_idx, size_t op_idx) const {
     auto chains = plan_->chains();
     ET_CHECK_MSG(
@@ -684,11 +706,16 @@ class Graph {
     auto instr = instrs->Get(op_idx);
     using IA = executorch_flatbuffer::InstructionArguments;
     switch (instr->instr_args_type()) {
-      case IA::KernelCall:    return InstructionKind::Kernel;
-      case IA::JumpFalseCall: return InstructionKind::JumpFalse;
-      case IA::MoveCall:      return InstructionKind::Move;
-      case IA::FreeCall:      return InstructionKind::Free;
-      case IA::DelegateCall:  return InstructionKind::Delegate;
+      case IA::KernelCall:
+        return InstructionKind::Kernel;
+      case IA::JumpFalseCall:
+        return InstructionKind::JumpFalse;
+      case IA::MoveCall:
+        return InstructionKind::Move;
+      case IA::FreeCall:
+        return InstructionKind::Free;
+      case IA::DelegateCall:
+        return InstructionKind::Delegate;
       default:
         ET_CHECK_MSG(
             false,
@@ -772,6 +799,11 @@ class Graph {
 
  private:
   const executorch_flatbuffer::ExecutionPlan* plan_;
+  // Optional reference to the parent Program, needed only for
+  // tensor_inline_data() (which dereferences program_->constant_buffer).
+  // Pre-existing constructions that pass only the plan get nullptr and
+  // tensor_inline_data() returns empty for them.
+  const executorch_flatbuffer::Program* program_;
   // Precomputed at construction for O(1) value_kind lookup.
   std::unordered_set<uint32_t> input_ids_;
   std::unordered_set<uint32_t> output_ids_;
@@ -802,8 +834,10 @@ inline const char* OperatorCall::overload() const {
 inline std::string OperatorCall::full_name() const {
   const char* base = name();
   const char* ovl = overload();
-  if (!base) return {};
-  if (!ovl || *ovl == '\0') return std::string(base);
+  if (!base)
+    return {};
+  if (!ovl || *ovl == '\0')
+    return std::string(base);
   std::string s;
   s.reserve(std::strlen(base) + 1 + std::strlen(ovl));
   s.append(base);
@@ -953,6 +987,32 @@ inline const char* Graph::tensor_constant_data_key(uint32_t value_id) const {
   return (fqn && fqn->size() > 0) ? fqn->c_str() : nullptr;
 }
 
+inline ::executorch::runtime::Span<const uint8_t> Graph::tensor_inline_data(
+    uint32_t value_id) const {
+  if (!program_)
+    return {};
+  auto* t = detail::tensor_or_null(value_meta(value_id));
+  if (!t)
+    return {};
+  uint32_t idx = static_cast<uint32_t>(t->data_buffer_idx());
+  // Index 0 is reserved (placeholder for "no inline data"). External
+  // constants also have idx == 0; they're handled by
+  // tensor_constant_data_key.
+  if (idx == 0)
+    return {};
+  auto* buffers = program_->constant_buffer();
+  if (!buffers || idx >= buffers->size())
+    return {};
+  auto* buf = buffers->Get(idx);
+  if (!buf)
+    return {};
+  auto* storage = buf->storage();
+  if (!storage || storage->size() == 0)
+    return {};
+  return ::executorch::runtime::Span<const uint8_t>(
+      storage->data(), storage->size());
+}
+
 inline size_t Graph::tensor_nbytes_max(uint32_t value_id) const {
   auto* t = detail::tensor_or_null(value_meta(value_id));
   if (!t || !t->sizes())
@@ -982,8 +1042,8 @@ inline ::executorch::runtime::Span<const int64_t> Graph::int_list_member_ids(
       : ::executorch::runtime::Span<const int64_t>{};
 }
 
-inline ::executorch::runtime::Span<const int32_t>
-Graph::tensor_list_member_ids(uint32_t value_id) const {
+inline ::executorch::runtime::Span<const int32_t> Graph::tensor_list_member_ids(
+    uint32_t value_id) const {
   auto* val = value_meta(value_id);
   ET_CHECK_MSG(
       val &&
@@ -997,14 +1057,12 @@ Graph::tensor_list_member_ids(uint32_t value_id) const {
   // table { items: [int]; }. Cast to either to access items().
   const flatbuffers::Vector<int32_t>* items = nullptr;
   if (val->val_type() == executorch_flatbuffer::KernelTypes::TensorList) {
-    items =
-        static_cast<const executorch_flatbuffer::TensorList*>(val->val())
-            ->items();
+    items = static_cast<const executorch_flatbuffer::TensorList*>(val->val())
+                ->items();
   } else {
-    items =
-        static_cast<const executorch_flatbuffer::OptionalTensorList*>(
-            val->val())
-            ->items();
+    items = static_cast<const executorch_flatbuffer::OptionalTensorList*>(
+                val->val())
+                ->items();
   }
   return items
       ? ::executorch::runtime::Span<const int32_t>(items->data(), items->size())

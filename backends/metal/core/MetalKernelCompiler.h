@@ -53,7 +53,7 @@ namespace metal_v2 {
 class MetalMTL4Backend;
 
 class MetalKernelCompiler {
-public:
+ public:
   explicit MetalKernelCompiler(id<MTLDevice> device);
   ~MetalKernelCompiler();
 
@@ -73,7 +73,9 @@ public:
     std::vector<std::pair<uint32_t, bool>> bools;
     std::vector<std::pair<uint32_t, int32_t>> ints;
 
-    bool empty() const { return bools.empty() && ints.empty(); }
+    bool empty() const {
+      return bools.empty() && ints.empty();
+    }
 
     // Short, deterministic suffix for the PSO cache key. Format:
     //   "@<idx><val>,..." for bools (val == '0'/'1')
@@ -81,7 +83,8 @@ public:
     // The two sections are kept separate so a 1-bit bool and a 1-int are
     // distinguishable in the cache key.
     std::string fingerprint() const {
-      if (empty()) return std::string{};
+      if (empty())
+        return std::string{};
       std::string s;
       if (!bools.empty()) {
         s += "@";
@@ -146,7 +149,9 @@ public:
   bool saveBinaryArchive(const char* path);
 
   /// Check if binary archive is loaded
-  bool hasBinaryArchive() const { return binaryArchive_ != nil; }
+  bool hasBinaryArchive() const {
+    return binaryArchive_ != nil;
+  }
 
   // The MTL4Compiler lives on MetalMTL4Backend (the architecturally-
   // correct owner of MTL4-specific resources). MetalStream calls this
@@ -165,7 +170,27 @@ public:
 #endif
   }
 
-private:
+ private:
+  // Compile MSL `sourceStr` into an MTLLibrary using the shared
+  // MTLCompileOptions setup (MathModeSafe; non-Precise float intrinsics
+  // to match MLX). Returns nil on failure (logs error). `keyForLog` is
+  // included in error / diagnostic messages to identify the caller.
+  id<MTLLibrary> compileLibrary(NSString* sourceStr, const char* keyForLog);
+
+  // Look up `funcName` in `library`. If `constants` is non-null and
+  // non-empty, applies them via newFunctionWithName:constantValues:error:
+  // (so the MSL compiler can DCE FC-controlled branches at PSO creation);
+  // otherwise uses the plain newFunctionWithName:. Returns nil on failure
+  // (logs error). `keyForLog` is included in error messages.
+  // Callers that need to know whether FCs were applied can check
+  // `(constants && !constants->empty())` directly — same condition this
+  // method uses internally.
+  id<MTLFunction> resolveFunction(
+      id<MTLLibrary> library,
+      NSString* funcName,
+      const FunctionConstants* constants,
+      const char* keyForLog);
+
   id<MTLDevice> device_;
   id<MTLBinaryArchive> binaryArchive_;
   // No per-instance kernel cache — MetalKernelCache (process-wide singleton)
@@ -182,6 +207,6 @@ private:
 #endif
 };
 
-}  // namespace metal_v2
-}  // namespace backends
-}  // namespace executorch
+} // namespace metal_v2
+} // namespace backends
+} // namespace executorch
