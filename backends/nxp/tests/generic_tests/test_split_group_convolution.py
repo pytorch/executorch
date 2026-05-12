@@ -8,8 +8,8 @@ from copy import deepcopy
 
 import numpy as np
 import torch
-
 from executorch.backends.nxp.aten_passes.neutron_aten_pass_manager import (
+    ConvertConv1dToConv2dPass,
     NeutronAtenPassManager,
 )
 from executorch.backends.nxp.aten_passes.split_group_convolution import (
@@ -23,6 +23,7 @@ from executorch.backends.nxp.tests.executorch_pipeline import (
     get_random_calibration_inputs,
     neutron_target_spec,
     to_model_input_spec,
+    to_quantized_edge_program,
 )
 from executorch.backends.nxp.tests.executors import graph_contains_any_of_ops
 from executorch.backends.nxp.tests.models import (
@@ -151,15 +152,23 @@ class TestSplitGroupConvolution(unittest.TestCase):
             in_channels=input_shape[1],
             out_channels=8
             * group,  # Make sure the output channels are multiple of 8, so the `cat` can be delegated.
-            group=group,
+            groups=group,
             stride=1,
         )
         graph_module = torch.export.export(module, example_input).module()
         original_module = deepcopy(graph_module)
 
+        # `ConvertConv1dToConv2dPass` is needed to convert `conv1d` to `conv2d`.
+        # The 1d variant is not supported.
         modified_module = NeutronAtenPassManager(
-            neutron_target_spec, [SplitGroupConvolution()]
+            neutron_target_spec, [SplitGroupConvolution(), ConvertConv1dToConv2dPass()]
         )(graph_module).graph_module
+
+        # Verify that the behavior has not changed.
+        input_data = (torch.randn(input_shape, dtype=torch.float32),)
+        outputs_before = [o.detach().numpy() for o in original_module(*input_data)]
+        outputs_after = [o.detach().numpy() for o in modified_module(*input_data)]
+        assert np.allclose(outputs_before, outputs_after, atol=2.0e-7)
 
         # Make sure the fusion worked.
         original_nodes = list(original_module.graph.nodes)
@@ -169,22 +178,28 @@ class TestSplitGroupConvolution(unittest.TestCase):
         assert original_nodes[3].target == torch.ops.aten.conv1d.default
         assert original_nodes[3].args[-1] == group
 
-        assert len(modified_nodes) == 4 + group * 4
+        # 4... `x`, `output`, `split`, `cat`
+        # 6... `conv1d`, `conv_w`, `conv_b`, `getitem`, `squeeze`, `unsqueeze`
+        assert len(modified_nodes) == 4 + group * 6
         assert modified_nodes[1].target == torch.ops.aten.split.default
-        for node in modified_nodes[2 + 3 * group : 4 + 3 * group]:
-            assert node.target == torch.ops.aten.conv1d.default
+
+        # number of nodes that end up at the beginning:
+        # `x`, `split`, group * `conv_b`, group * `getitem`, `conv_w`, `unsqueeze`
+        start_idx = 2 * group + 4
+        # in between convs: `squeeze`, `conv_w`, `unsqueeze`
+        every_nth = 4
+        # at the end: `cat`, `unsqueeze`, `output`
+        end_idx = len(modified_nodes) - 3
+        for node in modified_nodes[start_idx:end_idx:every_nth]:
+            assert node.target == torch.ops.aten.conv2d.default
             assert node.args[-1] == 1  # Groups.
         assert modified_nodes[-2].target == torch.ops.aten.cat.default
 
-        # Verify that the behavior has not changed.
-        input_data = torch.randn(input_shape, dtype=torch.float32)
-        out1 = original_module(input_data).detach().numpy()
-        out2 = modified_module(input_data).detach().numpy()
-        assert np.allclose(out1, out2, atol=2.0e-7)
-
         # Make sure the graph can be correctly quantized and lowered to edge.
-        ep = _quantize_and_lower_module(
-            modified_module, tuple(input_shape), is_qat=is_qat
+        # `to_quantized_edge_program` has to be used so edge passes are run
+        # and `unsqueeze`/`squeeze` is converted to `view_copy`
+        ep = to_quantized_edge_program(
+            module, tuple(input_shape), use_qat=is_qat
         ).exported_program()
         nodes = list(ep.graph.nodes)
         assert nodes[-5].name == "lowered_module_0"
