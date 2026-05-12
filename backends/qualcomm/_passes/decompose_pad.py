@@ -29,7 +29,6 @@ class DecomposePad(ExportPass):
 
     _PAD_TARGETS = {
         torch.ops.aten.pad.default,
-        exir_ops.edge.aten.pad.default,
     }
 
     _PAD_OPS = {

@@ -8,6 +8,7 @@ from .annotate_avg_pool1d import AnnotateAvgPool1D
 from .annotate_quant_attrs import AnnotateQuantAttrs
 from .annotate_stack import AnnotateStack
 from .annotate_unbind import AnnotateUnbind
+from .build_quant_io import BuildQuantIo
 from .canonicalize_conv import CanonicalizeConv
 from .convert_bmm_to_matmul import ConvertBmmToMatmul
 from .convert_linear_to_conv2d import ConvertLinearToConv2d
@@ -73,6 +74,7 @@ __all__ = [
     AnnotateQuantAttrs,
     AnnotateStack,
     AnnotateUnbind,
+    BuildQuantIo,
     CanonicalizeConv,
     ConvertBmmToMatmul,
     ConvertLinearToConv2d,

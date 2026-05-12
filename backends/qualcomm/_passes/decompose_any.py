@@ -4,6 +4,8 @@
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
 
+import re
+
 import torch
 from executorch.exir import to_edge
 from executorch.exir.pass_base import ExportPass, PassResult
@@ -33,13 +35,13 @@ class DecomposeAny(ExportPass):
     Decompose for math equivalent op.
     """
 
-    def __init__(self, quantization_capture=False) -> None:
+    def __init__(self) -> None:
         super().__init__()
 
     def call(self, graph_module: torch.fx.GraphModule) -> PassResult:
         graph = graph_module.graph
         for node in graph.nodes:
-            if "any.dim" in str(node.target):
+            if re.search(r"any\.(dim|default)", str(node.target)):
                 dim = node.args[1] if len(node.args) > 1 else None
                 keepdim = node.args[2] if len(node.args) > 2 else False
                 model = Any(dim, keepdim)

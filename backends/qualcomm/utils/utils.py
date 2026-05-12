@@ -321,7 +321,7 @@ def get_decomp_table(passes_job) -> Dict[torch._ops.OperatorBase, Callable]:
             skip_decomp_op
             for skip_decomp_op in skip_decompositions
             if skip_decomp_op
-            not in AnnotateStack.decomp_ops + AnnotateUnbind.decomp_ops
+            not in AnnotateStack._SOURCE_OPS + AnnotateUnbind._SOURCE_OPS
         ]
     remove_decompositions(source_decompositions, skip_decompositions)
 
