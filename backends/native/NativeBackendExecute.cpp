@@ -22,7 +22,14 @@ namespace native {
 Error bind_inputs(DelegateInstance* d, Span<EValue*> args) {
   size_t n_in = d->plan.inputs.size();
   size_t in_count = std::min(n_in, args.size());
-  Span<EValue* const> input_args(args.data(), in_count);
+  // Convert from upstream Span<EValue*> to engine-facing
+  // Span<const EValue* const>. The reinterpret_cast is needed because
+  // C++ doesn't permit implicit conversion from EValue** to
+  // const EValue* const* (the standard "T** to const T**" footgun).
+  // Safe because we only feed engines that promise input immutability
+  // (per Engine::bind_inputs INPUT IMMUTABILITY contract).
+  Span<const EValue* const> input_args(
+      reinterpret_cast<const EValue* const*>(args.data()), in_count);
   for (Engine* inst : d->plan.instances) {
     if (!inst)
       continue;

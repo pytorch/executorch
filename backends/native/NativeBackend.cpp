@@ -175,7 +175,7 @@ class NativeBackend final : public ::executorch::runtime::BackendInterface {
     std::vector<Runtime*> raw_providers;
     raw_providers.reserve(candidate_providers.size());
     for (auto* p : candidate_providers) {
-      auto inst = p->instantiate();
+      auto inst = p->instantiate(*d->graph);
       raw_instances.push_back(inst.get());
       raw_providers.push_back(p);
       d->owned_instances.push_back(std::move(inst));

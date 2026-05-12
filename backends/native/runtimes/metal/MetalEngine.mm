@@ -34,8 +34,12 @@ namespace native {
 namespace metal_v2_ns = ::executorch::backends::metal_v2;
 namespace runtime = ::executorch::runtime;
 
-MetalEngine::MetalEngine(MetalRuntime* provider, InstanceId id)
-    : provider_(provider),
+MetalEngine::MetalEngine(
+    const ::executorch::backends::portable::Graph& graph,
+    MetalRuntime* provider,
+    InstanceId id)
+    : DeviceEngine(graph),
+      provider_(provider),
       stream_(provider ? provider->stream() : nullptr),
       id_(id) {}
 
@@ -71,11 +75,11 @@ runtime::Error MetalEngine::check_dependencies_(
 }
 
 runtime::Result<CompiledSegment*> MetalEngine::compile_segment(
-    const ::executorch::backends::portable::Graph& graph,
     runtime::Span<const uint32_t> instruction_indices,
     runtime::Span<const uint32_t> /*input_value_ids*/,
     runtime::Span<const uint32_t> /*output_value_ids*/,
     runtime::Span<const std::pair<uint32_t, uint32_t>> value_remap) {
+  const auto& graph = graph_;
   std::vector<uint32_t> idxs(
       instruction_indices.begin(), instruction_indices.end());
   std::unordered_map<uint32_t, uint32_t> remap;
@@ -91,8 +95,8 @@ runtime::Result<CompiledSegment*> MetalEngine::compile_segment(
 }
 
 runtime::Error MetalEngine::allocate_buffers(
-    runtime::Span<const AllocRequest> requests,
     runtime::Span<runtime::EValue> values,
+    runtime::Span<const AllocRequest> requests,
     runtime::Span<AllocClaim> out_claims) {
   if (!stream_) return runtime::Error::InvalidState;
   if (requests.size() != out_claims.size()) {
@@ -446,7 +450,8 @@ runtime::Error MetalEngine::bind_one_(
 
 runtime::Error MetalEngine::bind_inputs(
     runtime::Span<runtime::EValue> values,
-    runtime::Span<runtime::EValue* const> input_args) {
+    runtime::Span<const runtime::EValue* const>
+input_args) {
   for (const auto& b : io_input_bindings_) {
     if (b.graph_idx >= input_args.size()) continue;
     if (b.internal_vid >= values.size())
@@ -498,7 +503,7 @@ runtime::Error MetalEngine::set_io_bindings(
   return runtime::Error::Ok;
 }
 
-std::unique_ptr<Event> MetalEngine::make_event() {
+std::unique_ptr<Event> MetalEngine::make_event() const {
   return std::make_unique<MetalEvent>();
 }
 
@@ -547,7 +552,7 @@ runtime::Error MetalEngine::resize_tensor(
 }
 
 runtime::Error MetalEngine::upload_from_host(
-    runtime::EValue& host_src_ev,
+    const runtime::EValue& host_src_ev,
     runtime::EValue& dev_dst_ev,
     uint32_t dev_dst_value_id,
     runtime::Span<Event* const> wait_for,
@@ -563,9 +568,9 @@ runtime::Error MetalEngine::upload_from_host(
     return runtime::Error::InvalidArgument;
   }
 
-  auto& src_t = host_src_ev.toTensor();
+  const auto& src_t = host_src_ev.toTensor();
   auto& dst_t = dev_dst_ev.toTensor();
-  void* host_src_ptr = src_t.mutable_data_ptr();
+  const void* host_src_ptr = src_t.const_data_ptr();
   size_t nbytes = src_t.nbytes();
 
   if (auto e = runtime::resize_tensor(dst_t, src_t.sizes());
@@ -624,7 +629,7 @@ runtime::Error MetalEngine::upload_from_host(
 }
 
 runtime::Error MetalEngine::download_to_host(
-    runtime::EValue& dev_src_ev,
+    const runtime::EValue& dev_src_ev,
     uint32_t dev_src_value_id,
     runtime::EValue& host_dst_ev,
     runtime::Span<Event* const> wait_for,
@@ -640,7 +645,7 @@ runtime::Error MetalEngine::download_to_host(
     return runtime::Error::InvalidArgument;
   }
 
-  auto& src_t = dev_src_ev.toTensor();
+  const auto& src_t = dev_src_ev.toTensor();
   auto& dst_t = host_dst_ev.toTensor();
   void* host_dst_ptr = dst_t.mutable_data_ptr();
   size_t nbytes = src_t.nbytes();
@@ -691,7 +696,7 @@ runtime::Error MetalEngine::download_to_host(
 }
 
 runtime::Error MetalEngine::execute(
-    CompiledSegment* segment,
+    const CompiledSegment* segment,
     runtime::Span<runtime::EValue> values,
     runtime::Span<Event* const> wait_for,
     Event* signal) {
@@ -701,7 +706,7 @@ runtime::Error MetalEngine::execute(
     return e;
   }
 
-  auto* seg = static_cast<MetalCompiledSegment*>(segment);
+  const auto* seg = static_cast<const MetalCompiledSegment*>(segment);
   if (!seg) return runtime::Error::InvalidArgument;
   const auto* graph = seg->graph();
   if (!graph) return runtime::Error::InvalidState;
@@ -771,7 +776,7 @@ runtime::Error MetalEngine::execute(
   return runtime::Error::Ok;
 }
 
-runtime::Error MetalEngine::wait(Event* event) {
+runtime::Error MetalEngine::wait(Event* event) const {
   if (!event) return runtime::Error::Ok;
   while (true) {
     auto s = event->status();

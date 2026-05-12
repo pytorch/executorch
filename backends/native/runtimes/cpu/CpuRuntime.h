@@ -71,7 +71,8 @@ class CpuRuntime final : public Runtime {
     return ctx_;
   }
 
-  std::unique_ptr<Engine> instantiate() override;
+  std::unique_ptr<Engine> instantiate(
+      const ::executorch::backends::portable::Graph& graph) override;
 
  private:
   CpuRuntimeContext ctx_;

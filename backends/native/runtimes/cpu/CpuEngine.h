@@ -71,15 +71,18 @@ class CpuCompiledSegment final : public CompiledSegment {
 class CpuEngine final : public DeviceEngine {
  public:
   explicit CpuEngine(
+      const ::executorch::backends::portable::Graph& graph,
       CpuRuntimeContext& ctx,
       InstanceId id,
       bool accept_io_directly = true)
-      : ctx_(ctx), id_(id), accept_io_directly_(accept_io_directly) {}
+      : DeviceEngine(graph),
+        ctx_(ctx),
+        id_(id),
+        accept_io_directly_(accept_io_directly) {}
 
   ~CpuEngine() override;
 
   ::executorch::runtime::Result<CompiledSegment*> compile_segment(
-      const ::executorch::backends::portable::Graph& graph,
       ::executorch::runtime::Span<const uint32_t> instruction_indices,
       ::executorch::runtime::Span<const uint32_t> input_value_ids,
       ::executorch::runtime::Span<const uint32_t> output_value_ids,
@@ -87,8 +90,8 @@ class CpuEngine final : public DeviceEngine {
           value_remap) override;
 
   ::executorch::runtime::Error allocate_buffers(
-      ::executorch::runtime::Span<const AllocRequest> requests,
       ::executorch::runtime::Span<::executorch::runtime::EValue> values,
+      ::executorch::runtime::Span<const AllocRequest> requests,
       ::executorch::runtime::Span<AllocClaim> out_claims) override;
 
   // Dynamic-shape resize: lazily allocate (or grow) the HostBuffer for
@@ -104,7 +107,7 @@ class CpuEngine final : public DeviceEngine {
       const ::executorch::runtime::NamedDataMap* ndm,
       ::executorch::runtime::Span<const ConstRequest> requests) override;
 
-  std::unique_ptr<Event> make_event() override;
+  std::unique_ptr<Event> make_event() const override;
 
   // CpuEngine reads graph IO via the central EValue's data_ptr (set
   // per-execute by HostPool's bind_inputs/bind_outputs on the
@@ -140,26 +143,26 @@ class CpuEngine final : public DeviceEngine {
   // CPU is the device side can resolve internally. Bytes flow via host
   // pointers (the value's storage on this engine is host-addressable).
   ::executorch::runtime::Error upload_from_host(
-      ::executorch::runtime::EValue& host_src_ev,
+      const ::executorch::runtime::EValue& host_src_ev,
       ::executorch::runtime::EValue& dev_dst_ev,
       uint32_t dev_dst_value_id,
       ::executorch::runtime::Span<Event* const> wait_for,
       Event* signal) override;
 
   ::executorch::runtime::Error download_to_host(
-      ::executorch::runtime::EValue& dev_src_ev,
+      const ::executorch::runtime::EValue& dev_src_ev,
       uint32_t dev_src_value_id,
       ::executorch::runtime::EValue& host_dst_ev,
       ::executorch::runtime::Span<Event* const> wait_for,
       Event* signal) override;
 
   ::executorch::runtime::Error execute(
-      CompiledSegment* segment,
+      const CompiledSegment* segment,
       ::executorch::runtime::Span<::executorch::runtime::EValue> values,
       ::executorch::runtime::Span<Event* const> wait_for,
       Event* signal) override;
 
-  ::executorch::runtime::Error wait(Event* event) override;
+  ::executorch::runtime::Error wait(Event* event) const override;
 
   InstanceId id() const override {
     return id_;

@@ -69,7 +69,8 @@ class MetalRuntime final : public Runtime {
     return ctx_;
   }
 
-  std::unique_ptr<Engine> instantiate() override;
+  std::unique_ptr<Engine> instantiate(
+      const ::executorch::backends::portable::Graph& graph) override;
 
   // Used by MetalEngine to obtain the stream we own.
   ::executorch::backends::metal_v2::MetalStream* stream() {

@@ -59,8 +59,13 @@ class Runtime {
   virtual RuntimeContext& context() = 0;
 
   // Per-program factory. Holds non-owning RuntimeContext& from this
-  // Runtime.
-  virtual std::unique_ptr<Engine> instantiate() = 0;
+  // Runtime; receives `graph` which the Engine stores by reference for
+  // its lifetime. The caller MUST keep `graph` alive at least as long
+  // as the returned Engine (NativeBackend's DelegateInstance enforces
+  // this via member declaration order: Graph first, Engines after, so
+  // Engines tear down before the Graph does).
+  virtual std::unique_ptr<Engine> instantiate(
+      const ::executorch::backends::portable::Graph& graph) = 0;
 
  private:
   friend class RuntimeRegistry;

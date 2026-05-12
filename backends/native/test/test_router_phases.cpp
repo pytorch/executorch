@@ -143,8 +143,8 @@ static bool load_fixture(Fixture& f, const char* path) {
   f.cpu_runtime = std::make_unique<CpuRuntime>();
   f.providers = {f.host_runtime.get(), f.cpu_runtime.get()};
 
-  f.owned_engines.push_back(f.host_runtime->instantiate());
-  f.owned_engines.push_back(f.cpu_runtime->instantiate());
+  f.owned_engines.push_back(f.host_runtime->instantiate(*f.graph));
+  f.owned_engines.push_back(f.cpu_runtime->instantiate(*f.graph));
   for (auto& e : f.owned_engines)
     f.engines.push_back(e.get());
 

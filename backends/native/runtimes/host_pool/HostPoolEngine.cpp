@@ -22,8 +22,8 @@ namespace backends {
 namespace native {
 
 ::executorch::runtime::Error HostPoolEngine::allocate_buffers(
-    ::executorch::runtime::Span<const AllocRequest> requests,
     ::executorch::runtime::Span<::executorch::runtime::EValue> values,
+    ::executorch::runtime::Span<const AllocRequest> requests,
     ::executorch::runtime::Span<AllocClaim> out_claims) {
   if (requests.size() != out_claims.size()) {
     return ::executorch::runtime::Error::InvalidArgument;
@@ -296,8 +296,8 @@ namespace native {
 
 ::executorch::runtime::Error HostPoolEngine::bind_inputs(
     ::executorch::runtime::Span<::executorch::runtime::EValue> values,
-    ::executorch::runtime::Span<::executorch::runtime::EValue* const>
-        input_args) {
+    ::executorch::runtime::Span<const ::executorch::runtime::EValue* const>
+input_args) {
   for (const auto& b : io_input_bindings_) {
     if (b.graph_idx >= input_args.size())
       continue;

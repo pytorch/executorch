@@ -48,7 +48,6 @@ Error compile_and_emit_steps(RouterContext& ctx) {
         outs.size(),
         ctx.seg_remaps[s].size());
     auto r = inst->compile_segment(
-        graph,
         Span<const uint32_t>(
             seg.instruction_indices.data(), seg.instruction_indices.size()),
         Span<const uint32_t>(ins.data(), ins.size()),

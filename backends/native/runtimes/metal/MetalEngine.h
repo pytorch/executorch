@@ -76,11 +76,13 @@ class MetalCompiledSegment final : public CompiledSegment {
  */
 class MetalEngine final : public DeviceEngine {
  public:
-  MetalEngine(MetalRuntime* provider, InstanceId id);
+  MetalEngine(
+      const ::executorch::backends::portable::Graph& graph,
+      MetalRuntime* provider,
+      InstanceId id);
   ~MetalEngine() override;
 
   ::executorch::runtime::Result<CompiledSegment*> compile_segment(
-      const ::executorch::backends::portable::Graph& graph,
       ::executorch::runtime::Span<const uint32_t> instruction_indices,
       ::executorch::runtime::Span<const uint32_t> input_value_ids,
       ::executorch::runtime::Span<const uint32_t> output_value_ids,
@@ -88,8 +90,8 @@ class MetalEngine final : public DeviceEngine {
           value_remap) override;
 
   ::executorch::runtime::Error allocate_buffers(
-      ::executorch::runtime::Span<const AllocRequest> requests,
       ::executorch::runtime::Span<::executorch::runtime::EValue> values,
+      ::executorch::runtime::Span<const AllocRequest> requests,
       ::executorch::runtime::Span<AllocClaim> out_claims) override;
 
   // Dynamic-shape resize: lazily allocate (or grow) the MetalBuffer
@@ -105,7 +107,7 @@ class MetalEngine final : public DeviceEngine {
       const ::executorch::runtime::NamedDataMap* ndm,
       ::executorch::runtime::Span<const ConstRequest> requests) override;
 
-  std::unique_ptr<Event> make_event() override;
+  std::unique_ptr<Event> make_event() const override;
 
   // Per-execute IO binding. Re-aliases the engine's MetalBuffer for
   // each owned mirror_id to caller's storage. Tries zero-copy via
@@ -113,8 +115,8 @@ class MetalEngine final : public DeviceEngine {
   // alignment refusal. Self-filtered via internal io_*_bindings_.
   ::executorch::runtime::Error bind_inputs(
       ::executorch::runtime::Span<::executorch::runtime::EValue> values,
-      ::executorch::runtime::Span<::executorch::runtime::EValue* const>
-          input_args) override;
+      ::executorch::runtime::Span<const ::executorch::runtime::EValue* const>
+input_args) override;
 
   ::executorch::runtime::Error bind_outputs(
       ::executorch::runtime::Span<::executorch::runtime::EValue> values,
@@ -155,26 +157,26 @@ class MetalEngine final : public DeviceEngine {
 
   // Cross-runtime moves: only the device side overrides these.
   ::executorch::runtime::Error upload_from_host(
-      ::executorch::runtime::EValue& host_src_ev,
+      const ::executorch::runtime::EValue& host_src_ev,
       ::executorch::runtime::EValue& dev_dst_ev,
       uint32_t dev_dst_value_id,
       ::executorch::runtime::Span<Event* const> wait_for,
       Event* signal) override;
 
   ::executorch::runtime::Error download_to_host(
-      ::executorch::runtime::EValue& dev_src_ev,
+      const ::executorch::runtime::EValue& dev_src_ev,
       uint32_t dev_src_value_id,
       ::executorch::runtime::EValue& host_dst_ev,
       ::executorch::runtime::Span<Event* const> wait_for,
       Event* signal) override;
 
   ::executorch::runtime::Error execute(
-      CompiledSegment* segment,
+      const CompiledSegment* segment,
       ::executorch::runtime::Span<::executorch::runtime::EValue> values,
       ::executorch::runtime::Span<Event* const> wait_for,
       Event* signal) override;
 
-  ::executorch::runtime::Error wait(Event* event) override;
+  ::executorch::runtime::Error wait(Event* event) const override;
 
   InstanceId id() const override {
     return id_;

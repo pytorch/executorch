@@ -34,8 +34,8 @@ Error materialize_buffers(DelegateInstance* d) {
 
     std::vector<Engine::AllocClaim> claims(reqs.size());
     auto err = inst->allocate_buffers(
-        Span<const Engine::AllocRequest>(reqs.data(), reqs.size()),
         Span<EValue>(d->values.data(), d->values.size()),
+        Span<const Engine::AllocRequest>(reqs.data(), reqs.size()),
         Span<Engine::AllocClaim>(claims.data(), claims.size()));
     if (err != Error::Ok)
       return err;

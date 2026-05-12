@@ -43,12 +43,12 @@ namespace {
 CpuEngine::~CpuEngine() = default;
 
 ::executorch::runtime::Result<CompiledSegment*> CpuEngine::compile_segment(
-    const ::executorch::backends::portable::Graph& graph,
     ::executorch::runtime::Span<const uint32_t> instruction_indices,
     ::executorch::runtime::Span<const uint32_t> /*input_value_ids*/,
     ::executorch::runtime::Span<const uint32_t> /*output_value_ids*/,
     ::executorch::runtime::Span<const std::pair<uint32_t, uint32_t>>
         value_remap) {
+  const auto& graph = graph_;
   std::vector<uint32_t> idxs(
       instruction_indices.begin(), instruction_indices.end());
   std::unordered_map<uint32_t, uint32_t> remap;
@@ -64,8 +64,8 @@ CpuEngine::~CpuEngine() = default;
 }
 
 ::executorch::runtime::Error CpuEngine::allocate_buffers(
-    ::executorch::runtime::Span<const AllocRequest> requests,
     ::executorch::runtime::Span<::executorch::runtime::EValue> values,
+    ::executorch::runtime::Span<const AllocRequest> requests,
     ::executorch::runtime::Span<AllocClaim> out_claims) {
   if (requests.size() != out_claims.size()) {
     return ::executorch::runtime::Error::InvalidArgument;
@@ -399,7 +399,7 @@ CpuEngine::~CpuEngine() = default;
   return ::executorch::runtime::Error::Ok;
 }
 
-std::unique_ptr<Event> CpuEngine::make_event() {
+std::unique_ptr<Event> CpuEngine::make_event() const {
   return std::make_unique<CpuEvent>();
 }
 
@@ -449,7 +449,7 @@ std::unique_ptr<Event> CpuEngine::make_event() {
 }
 
 ::executorch::runtime::Error CpuEngine::upload_from_host(
-    ::executorch::runtime::EValue& host_src_ev,
+    const ::executorch::runtime::EValue& host_src_ev,
     ::executorch::runtime::EValue& dev_dst_ev,
     uint32_t dev_dst_value_id,
     ::executorch::runtime::Span<Event* const> wait_for,
@@ -465,9 +465,9 @@ std::unique_ptr<Event> CpuEngine::make_event() {
     return ::executorch::runtime::Error::InvalidArgument;
   }
 
-  auto& src_t = host_src_ev.toTensor();
+  const auto& src_t = host_src_ev.toTensor();
   auto& dst_t = dev_dst_ev.toTensor();
-  void* host_src_ptr = src_t.mutable_data_ptr();
+  const void* host_src_ptr = src_t.const_data_ptr();
   size_t nbytes = src_t.nbytes();
 
   if (auto e = ::executorch::runtime::resize_tensor(dst_t, src_t.sizes());
@@ -531,7 +531,7 @@ std::unique_ptr<Event> CpuEngine::make_event() {
 }
 
 ::executorch::runtime::Error CpuEngine::download_to_host(
-    ::executorch::runtime::EValue& dev_src_ev,
+    const ::executorch::runtime::EValue& dev_src_ev,
     uint32_t dev_src_value_id,
     ::executorch::runtime::EValue& host_dst_ev,
     ::executorch::runtime::Span<Event* const> wait_for,
@@ -547,7 +547,7 @@ std::unique_ptr<Event> CpuEngine::make_event() {
     return ::executorch::runtime::Error::InvalidArgument;
   }
 
-  auto& src_t = dev_src_ev.toTensor();
+  const auto& src_t = dev_src_ev.toTensor();
   auto& dst_t = host_dst_ev.toTensor();
   void* host_dst_ptr = dst_t.mutable_data_ptr();
   size_t nbytes = src_t.nbytes();
@@ -613,7 +613,7 @@ std::unique_ptr<Event> CpuEngine::make_event() {
 }
 
 ::executorch::runtime::Error CpuEngine::execute(
-    CompiledSegment* segment,
+    const CompiledSegment* segment,
     ::executorch::runtime::Span<::executorch::runtime::EValue> values,
     ::executorch::runtime::Span<Event* const> wait_for,
     Event* signal) {
@@ -623,7 +623,7 @@ std::unique_ptr<Event> CpuEngine::make_event() {
     return e;
   }
 
-  auto* seg = static_cast<CpuCompiledSegment*>(segment);
+  const auto* seg = static_cast<const CpuCompiledSegment*>(segment);
   if (!seg) {
     return ::executorch::runtime::Error::InvalidArgument;
   }
@@ -712,7 +712,7 @@ std::unique_ptr<Event> CpuEngine::make_event() {
   return ::executorch::runtime::Error::Ok;
 }
 
-::executorch::runtime::Error CpuEngine::wait(Event* event) {
+::executorch::runtime::Error CpuEngine::wait(Event* event) const {
   if (!event)
     return ::executorch::runtime::Error::Ok;
   event->wait_until_settled();

@@ -48,9 +48,10 @@ bool MetalRuntime::can_run(const OpDescriptor& op) const {
   // what the metal_v2 ops default to).
 }
 
-std::unique_ptr<Engine> MetalRuntime::instantiate() {
+std::unique_ptr<Engine> MetalRuntime::instantiate(
+    const ::executorch::backends::portable::Graph& graph) {
   InstanceId id = next_instance_id_.fetch_add(1, std::memory_order_relaxed);
-  return std::make_unique<MetalEngine>(this, id);
+  return std::make_unique<MetalEngine>(graph, this, id);
 }
 
 }  // namespace native

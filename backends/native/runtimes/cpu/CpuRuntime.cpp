@@ -27,9 +27,10 @@ bool CpuRuntime::can_run(const OpDescriptor& op) const {
   return ::executorch::backends::portable::cpu_op_registry().has_op(name);
 }
 
-std::unique_ptr<Engine> CpuRuntime::instantiate() {
+std::unique_ptr<Engine> CpuRuntime::instantiate(
+    const ::executorch::backends::portable::Graph& graph) {
   InstanceId id = next_instance_id_.fetch_add(1, std::memory_order_relaxed);
-  return std::make_unique<CpuEngine>(ctx_, id, accept_io_directly_);
+  return std::make_unique<CpuEngine>(graph, ctx_, id, accept_io_directly_);
 }
 
 } // namespace native

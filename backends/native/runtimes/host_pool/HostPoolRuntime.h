@@ -52,9 +52,10 @@ class HostPoolRuntime final : public Runtime {
     return ctx_;
   }
 
-  std::unique_ptr<Engine> instantiate() override {
+  std::unique_ptr<Engine> instantiate(
+      const ::executorch::backends::portable::Graph& graph) override {
     InstanceId id = next_instance_id_.fetch_add(1, std::memory_order_relaxed);
-    return std::make_unique<HostPoolEngine>(ctx_, id);
+    return std::make_unique<HostPoolEngine>(graph, ctx_, id);
   }
 
  private:

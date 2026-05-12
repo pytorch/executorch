@@ -81,11 +81,52 @@ class CompiledSegment {
  */
 class Engine {
  public:
+  // Per-program construction. Engine stores the Graph reference for its
+  // lifetime; the orchestrator (NativeBackend / DelegateInstance) MUST
+  // keep the Graph alive at least as long as this Engine. NativeBackend's
+  // DelegateInstance enforces this by declaring its Engines AFTER the
+  // Graph member so Engines are torn down first (reverse declaration
+  // order in the destructor).
+  explicit Engine(const ::executorch::backends::portable::Graph& graph)
+      : graph_(graph) {}
   virtual ~Engine() = default;
+
+  // Read-only accessor for the engine's program graph. Available from
+  // construction onward; usable in any subsequent method (including
+  // pre-route hooks like handles_*_directly).
+  const ::executorch::backends::portable::Graph& graph() const {
+    return graph_;
+  }
+
+  // Lifecycle of an Engine instance (per delegate program):
+  //   1. Runtime::instantiate(graph)   — Engine constructed; graph_
+  //                                      stored and valid for the
+  //                                      engine's lifetime.
+  //   2. handles_*_directly(vid)       — called by router during route(),
+  //                                      pre-compile_segment. Engine may
+  //                                      consult graph() for per-vid
+  //                                      policy (dtype, dynamism, etc.).
+  //   3. compile_segment               — one per kernel segment.
+  //   4. allocate_buffers              — post-route.
+  //   5. upload_constants              — post-route, after allocate_buffers.
+  //   6. set_io_bindings               — post-route, after upload_constants.
+  //   7. bind_inputs / bind_outputs    — per-execute.
+  //   8. execute                       — per-execute.
+  //   9. wait                          — per-execute (or any time after 6).
+  //  10. drain                         — at engine destruction.
+  //
+  // Capability discipline at the API surface:
+  //   graph()             — read-only schema (immutable AOT metadata).
+  //                         Never gives access to runtime EValue state.
+  //   Span<EValue> values — mutable runtime state; passed only to
+  //                         methods that legitimately read/write it
+  //                         (allocate_buffers, bind_*, execute,
+  //                         resize_tensor). Methods that don't take it
+  //                         are non-mutating w.r.t. the central array.
 
   // Compile a contiguous run of instructions. Encodes ICB / shaders /
   // pipelines as appropriate. Returned CompiledSegment* is owned by
-  // Engine. SYNCHRONOUS (init-time only).
+  // Engine. SYNCHRONOUS (init-time only). Graph reached via graph().
   //
   // value_remap: optional rewrite from "graph value_id" to "value_id this
   // segment should look up in the engine's internal value→Buffer table."
@@ -95,7 +136,6 @@ class Engine {
   // engine's mirror Buffer). The mapping is applied per op-arg at execute
   // time. Pass an empty Span for single-runtime / no-rewrite case.
   virtual ::executorch::runtime::Result<CompiledSegment*> compile_segment(
-      const ::executorch::backends::portable::Graph& graph,
       ::executorch::runtime::Span<const uint32_t> instruction_indices,
       ::executorch::runtime::Span<const uint32_t> input_value_ids,
       ::executorch::runtime::Span<const uint32_t> output_value_ids,
@@ -197,9 +237,12 @@ class Engine {
   // DeviceMirror claim earlier in the same batch, etc.).
   //
   // SYNCHRONOUS (init-time only).
+  // values is passed first by convention (mutable runtime state — the
+  // capability — leads); requests is the per-call input list; out_claims
+  // is the engine's accept/decline reply.
   virtual ::executorch::runtime::Error allocate_buffers(
-      ::executorch::runtime::Span<const AllocRequest> requests,
       ::executorch::runtime::Span<::executorch::runtime::EValue> values,
+      ::executorch::runtime::Span<const AllocRequest> requests,
       ::executorch::runtime::Span<AllocClaim> out_claims) = 0;
 
   // Per-execute IO binding. Called by NativeBackend on every engine,
@@ -212,9 +255,20 @@ class Engine {
   //
   // Default: empty internal bindings table -> no-op. Engines that own
   // any IO override these.
+  //
+  // INPUT IMMUTABILITY: input_args is Span<const EValue* const> —
+  // both the array of pointers and the EValues they point to are
+  // const. Engines may read caller_t.const_data_ptr() / .nbytes() /
+  // .sizes() but MUST NOT mutate the caller's input Tensor's data,
+  // shape, or storage. PyTorch contract: model inputs are immutable
+  // from the engine's view. The pointer obtained from a const Tensor's
+  // mutable_data_ptr() (which is const-callable in ET because it
+  // doesn't mutate the Tensor's own state) is used only for aliasing
+  // (the kernel reads through the alias) or for memcpy-from-source in
+  // pool-fallback paths — never for memcpy-into-source.
   virtual ::executorch::runtime::Error bind_inputs(
       ::executorch::runtime::Span<::executorch::runtime::EValue> /*values*/,
-      ::executorch::runtime::Span<::executorch::runtime::EValue* const>
+      ::executorch::runtime::Span<const ::executorch::runtime::EValue* const>
       /*input_args*/) {
     return ::executorch::runtime::Error::Ok;
   }
@@ -325,8 +379,9 @@ class Engine {
       ::executorch::runtime::Span<const ConstRequest> requests) = 0;
 
   // Provide the storage backing one Event slot. Called once per slot at
-  // Plan construction.
-  virtual std::unique_ptr<Event> make_event() = 0;
+  // Plan construction. const: just constructs an Event; no engine-state
+  // mutation.
+  virtual std::unique_ptr<Event> make_event() const = 0;
 
   //=== Async work issuance + sync helpers ===================================
   //
@@ -335,7 +390,6 @@ class Engine {
   // lives on DeviceEngine (see below); the host-canonical invariant
   // means HostPool never needs them.
 
-  // Inputs guaranteed on this runtime; outputs MUST end up here.
   // values: the DelegateInstance's EValue array (carries dtype/shape and
   // scalar inputs). The engine looks up tensor storage backings from its
   // own internal value→Buffer table (populated by allocate_buffers,
@@ -354,15 +408,18 @@ class Engine {
   // known after the GPU runs must register a completion handler that
   // updates the output TensorImpls' shape arrays AND THEN signals the
   // event last.
+  //
+  // segment is engine-owned and immutable post-compile_segment.
   virtual ::executorch::runtime::Error execute(
-      CompiledSegment* segment,
+      const CompiledSegment* segment,
       ::executorch::runtime::Span<::executorch::runtime::EValue> values,
       ::executorch::runtime::Span<Event* const> wait_for,
       Event* signal) = 0;
 
   // Block CPU until event signals. Returns Error::Ok iff event reaches
   // EventStatus::Complete; returns the stored error if Failed/Poisoned.
-  virtual ::executorch::runtime::Error wait(Event* event) = 0;
+  // const: doesn't mutate engine state — just polls/waits the event.
+  virtual ::executorch::runtime::Error wait(Event* event) const = 0;
 
   // Stable per-Engine id within this Engine's RuntimeContext.
   virtual InstanceId id() const = 0;
@@ -407,6 +464,12 @@ class Engine {
   // every currently outstanding submission this Engine has issued via
   // copy_*/execute reaches a terminal state. Idempotent.
   virtual void drain() = 0;
+
+ protected:
+  // Stored at construction; valid for the engine's lifetime. NEVER null.
+  // Reference (not pointer) so the type system enforces "engine always
+  // has a graph" — derived classes must initialize via base ctor.
+  const ::executorch::backends::portable::Graph& graph_;
 };
 
 /**
@@ -420,10 +483,12 @@ class Engine {
  */
 class DeviceEngine : public Engine {
  public:
+  using Engine::Engine; // inherit explicit Engine(const Graph&) ctor
+
   // Make the engine's Buffer for `dev_dst_value_id` reflect host_src_ev's
   // data_ptr by the time `signal` reaches Complete. The engine resolves
   // its own Buffer internally from dev_dst_value_id; the host pointer
-  // is read from host_src_ev.toTensor().mutable_data_ptr().
+  // is read from host_src_ev.toTensor().data_ptr().
   //
   // Implementation strategy is the runtime's call:
   //   - Host-addressable runtimes (CPU, Apple-Silicon Metal) typically
@@ -436,7 +501,7 @@ class DeviceEngine : public Engine {
   // Also propagates shape from src to dst's TensorImpl before signaling
   // (per the shape-on-event contract).
   virtual ::executorch::runtime::Error upload_from_host(
-      ::executorch::runtime::EValue& host_src_ev,
+      const ::executorch::runtime::EValue& host_src_ev,
       ::executorch::runtime::EValue& dev_dst_ev,
       uint32_t dev_dst_value_id,
       ::executorch::runtime::Span<Event* const> wait_for,
@@ -445,7 +510,7 @@ class DeviceEngine : public Engine {
   // Symmetric: make host_dst_ev's data_ptr reflect the engine's Buffer
   // for `dev_src_value_id`. Engine resolves its own Buffer internally.
   virtual ::executorch::runtime::Error download_to_host(
-      ::executorch::runtime::EValue& dev_src_ev,
+      const ::executorch::runtime::EValue& dev_src_ev,
       uint32_t dev_src_value_id,
       ::executorch::runtime::EValue& host_dst_ev,
       ::executorch::runtime::Span<Event* const> wait_for,

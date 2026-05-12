@@ -39,13 +39,15 @@ namespace native {
  */
 class HostPoolEngine final : public Engine {
  public:
-  explicit HostPoolEngine(HostPoolRuntimeContext& ctx, InstanceId id)
-      : ctx_(ctx), id_(id) {}
+  explicit HostPoolEngine(
+      const ::executorch::backends::portable::Graph& graph,
+      HostPoolRuntimeContext& ctx,
+      InstanceId id)
+      : Engine(graph), ctx_(ctx), id_(id) {}
 
   ~HostPoolEngine() override = default;
 
   ::executorch::runtime::Result<CompiledSegment*> compile_segment(
-      const ::executorch::backends::portable::Graph& /*graph*/,
       ::executorch::runtime::Span<const uint32_t> /*instruction_indices*/,
       ::executorch::runtime::Span<const uint32_t> /*input_value_ids*/,
       ::executorch::runtime::Span<const uint32_t> /*output_value_ids*/,
@@ -55,8 +57,8 @@ class HostPoolEngine final : public Engine {
   }
 
   ::executorch::runtime::Error allocate_buffers(
-      ::executorch::runtime::Span<const AllocRequest> requests,
       ::executorch::runtime::Span<::executorch::runtime::EValue> values,
+      ::executorch::runtime::Span<const AllocRequest> requests,
       ::executorch::runtime::Span<AllocClaim> out_claims) override;
 
   ::executorch::runtime::Error upload_constants(
@@ -65,7 +67,7 @@ class HostPoolEngine final : public Engine {
     return ::executorch::runtime::Error::NotSupported;
   }
 
-  std::unique_ptr<Event> make_event() override {
+  std::unique_ptr<Event> make_event() const override {
     return std::make_unique<CpuEvent>();
   }
 
@@ -73,8 +75,8 @@ class HostPoolEngine final : public Engine {
   // each engine self-filters via its internal io_*_bindings_ table.
   ::executorch::runtime::Error bind_inputs(
       ::executorch::runtime::Span<::executorch::runtime::EValue> values,
-      ::executorch::runtime::Span<::executorch::runtime::EValue* const>
-          input_args) override;
+      ::executorch::runtime::Span<const ::executorch::runtime::EValue* const>
+input_args) override;
 
   ::executorch::runtime::Error bind_outputs(
       ::executorch::runtime::Span<::executorch::runtime::EValue> values,
@@ -98,14 +100,14 @@ class HostPoolEngine final : public Engine {
       override;
 
   ::executorch::runtime::Error execute(
-      CompiledSegment* /*segment*/,
+      const CompiledSegment* /*segment*/,
       ::executorch::runtime::Span<::executorch::runtime::EValue> /*values*/,
       ::executorch::runtime::Span<Event* const> /*wait_for*/,
       Event* /*signal*/) override {
     return ::executorch::runtime::Error::NotSupported;
   }
 
-  ::executorch::runtime::Error wait(Event* /*event*/) override {
+  ::executorch::runtime::Error wait(Event* /*event*/) const override {
     return ::executorch::runtime::Error::Ok;
   }
 
