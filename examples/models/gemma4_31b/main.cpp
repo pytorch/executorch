@@ -6,12 +6,12 @@
  * LICENSE file in the root directory of this source tree.
  */
 
-// Gemma 4 31B-IT runner for the CUDA ExecuTorch backend.
+// Gemma 4 31B-IT runner for ExecuTorch.
 //
-// Drives the prefill + decode methods produced by export.py.
-// The exported model performs Gumbel-max sampling on-device and returns a
-// single float token ID per call, so this runner only has to feed tokens
-// in and decode them via the HuggingFace tokenizer.
+// Supports two backends:
+//   CUDA  — two methods (prefill + decode), on-device Gumbel-max sampling,
+//           temperature as a third input.
+//   MLX   — single "forward" method, returns logits, host-side greedy argmax.
 
 #include <gflags/gflags.h>
 
@@ -82,6 +82,7 @@ using ::executorch::runtime::EValue;
 
 using SizesType = executorch::aten::SizesType;
 
+// Read a sampled token ID from a scalar float output (CUDA path).
 static uint64_t read_token(const executorch::aten::Tensor& output) {
   const void* ptr = output.const_data_ptr();
   float val = 0.0f;
@@ -108,6 +109,25 @@ static uint64_t read_token(const executorch::aten::Tensor& output) {
 #endif
 
   return static_cast<uint64_t>(llrintf(val));
+}
+
+// Greedy argmax over the last token's logits (MLX path).
+static uint64_t argmax_last_token(const executorch::aten::Tensor& logits) {
+  int32_t ndim = logits.dim();
+  int64_t V = logits.size(ndim - 1);
+  int64_t T = (ndim >= 2) ? logits.size(ndim - 2) : 1;
+  const float* data = logits.const_data_ptr<float>();
+  const float* last = data + (T - 1) * V;
+
+  uint64_t best = 0;
+  float best_val = last[0];
+  for (int64_t i = 1; i < V; i++) {
+    if (last[i] > best_val) {
+      best_val = last[i];
+      best = static_cast<uint64_t>(i);
+    }
+  }
+  return best;
 }
 
 int main(int argc, char** argv) {
@@ -143,8 +163,7 @@ int main(int argc, char** argv) {
     return 1;
   }
 
-  // Module: share_memory_arenas=true so prefill and decode see the same
-  // KV-cache memory (we exported with share_mutable_buffers=True).
+  // Module
   std::vector<std::string> data_files;
   if (!FLAGS_data_path.empty()) {
     data_files.push_back(FLAGS_data_path);
@@ -165,6 +184,16 @@ int main(int argc, char** argv) {
     return 1;
   }
 
+  int64_t max_prefill_chunk = (*metadata_result)[llm::kMaxSeqLen] - 1;
+  {
+    auto get_result = module->get("get_max_prefill_chunk");
+    if (get_result.ok()) {
+      max_prefill_chunk = get_result->toScalar().to<int64_t>();
+    }
+  }
+
+  auto S = [](int64_t v) -> SizesType { return static_cast<SizesType>(v); };
+
 #ifdef EXECUTORCH_BUILD_CUDA
   if (FLAGS_cuda_graph) {
     executorch::runtime::BackendOptions<2> cuda_opts;
@@ -172,38 +201,11 @@ int main(int argc, char** argv) {
     executorch::runtime::set_option("CudaBackend", cuda_opts.view());
     printf("CUDA graph enabled for decode method\n");
   }
-
-  // Cross-method per-FQN weight sharing: prefill + decode share the same
-  // weight tensors and (more importantly) the same KV-cache buffers, so
-  // without this flag we would allocate them twice. MUST be set before
-  // load_method.
   {
     executorch::runtime::BackendOptions<1> backend_options;
-    auto set_err =
-        backend_options.set_option("weight_sharing_across_methods", true);
-    if (set_err != Error::Ok) {
-      ET_LOG(
-          Error,
-          "Failed to construct weight_sharing_across_methods option: %d",
-          static_cast<int>(set_err));
-      return 1;
-    }
-    auto opt_err =
-        executorch::runtime::set_option("CudaBackend", backend_options.view());
-    if (opt_err != Error::Ok) {
-      ET_LOG(
-          Error,
-          "Failed to enable weight_sharing_across_methods: %d",
-          static_cast<int>(opt_err));
-      return 1;
-    }
+    backend_options.set_option("weight_sharing_across_methods", true);
+    executorch::runtime::set_option("CudaBackend", backend_options.view());
   }
-#else
-  if (FLAGS_cuda_graph) {
-    ET_LOG(Info, "--cuda_graph ignored on non-CUDA build");
-  }
-#endif
-
   printf("Loading methods...\n");
   if (module->load_method("prefill") != Error::Ok) {
     ET_LOG(Error, "Failed to load prefill method");
@@ -213,6 +215,18 @@ int main(int argc, char** argv) {
     ET_LOG(Error, "Failed to load decode method");
     return 1;
   }
+  float temp_val =
+      FLAGS_temperature <= 0.0 ? 1e-6f : static_cast<float>(FLAGS_temperature);
+  auto temp_tensor =
+      from_blob(&temp_val, {1}, executorch::aten::ScalarType::Float);
+#else
+  printf("Loading model...\n");
+  if (module->load_method("forward") != Error::Ok) {
+    ET_LOG(Error, "Failed to load forward method");
+    return 1;
+  }
+#endif
+
   stats.model_load_end_ms = llm::time_in_ms();
 
 #ifdef EXECUTORCH_BUILD_CUDA
@@ -223,7 +237,7 @@ int main(int argc, char** argv) {
   auto eos_ids = llm::get_eos_ids(tokenizer.get(), module.get());
   eos_ids.insert(static_cast<uint64_t>(FLAGS_eos_id));
 
-  // Read prompt from file or flag
+  // Read prompt
   std::string prompt_text = FLAGS_prompt;
   if (!FLAGS_prompt_file.empty()) {
     std::ifstream f(FLAGS_prompt_file);
@@ -260,37 +274,14 @@ int main(int argc, char** argv) {
 
   stats.inference_start_ms = llm::time_in_ms();
 
-  auto S = [](int64_t v) -> SizesType { return static_cast<SizesType>(v); };
-
-#ifdef EXECUTORCH_BUILD_CUDA
-  // CUDA build: model fuses the sampler. Pass temperature as a third input.
-  float temp_val =
-      FLAGS_temperature <= 0.0 ? 1e-6f : static_cast<float>(FLAGS_temperature);
-  auto temp_tensor =
-      from_blob(&temp_val, {1}, executorch::aten::ScalarType::Float);
-#endif
-
   // ---------------------------------------------------------------
   // Prefill (chunked to respect ring-buffer KV cache limit)
   // ---------------------------------------------------------------
-  // Sliding layers use a ring buffer sized to 2×sliding_window. A single
-  // prefill call must not exceed this size, otherwise index_copy_ with
-  // wrapped indices produces non-deterministic results on CUDA.
-  int64_t max_prefill_chunk = (*metadata_result)[llm::kMaxSeqLen] - 1;
-  {
-    auto get_result = module->get("get_max_prefill_chunk");
-    if (get_result.ok()) {
-      max_prefill_chunk = get_result->toScalar().to<int64_t>();
-    }
-  }
-
   uint64_t cur_token = 0;
   int64_t prefill_pos = 0;
   while (prefill_pos < num_prompt_tokens) {
     int64_t chunk_len =
         std::min(num_prompt_tokens - prefill_pos, max_prefill_chunk);
-
-    std::string run_method = (chunk_len == 1) ? "decode" : "prefill";
 
     std::vector<int64_t> token_data(
         prompt_tokens.begin() + prefill_pos,
@@ -306,20 +297,29 @@ int main(int argc, char** argv) {
     auto pos_tensor = from_blob(
         pos_data.data(), {S(chunk_len)}, executorch::aten::ScalarType::Long);
 
-    std::vector<EValue> prefill_inputs;
-    prefill_inputs.push_back(EValue(tokens_tensor));
-    prefill_inputs.push_back(EValue(pos_tensor));
+    std::vector<EValue> inputs;
+    inputs.push_back(EValue(tokens_tensor));
+    inputs.push_back(EValue(pos_tensor));
+
 #ifdef EXECUTORCH_BUILD_CUDA
-    prefill_inputs.push_back(EValue(temp_tensor));
+    inputs.push_back(EValue(temp_tensor));
+    std::string method = (chunk_len == 1) ? "decode" : "prefill";
+#else
+    std::string method = "forward";
 #endif
 
-    auto prefill_result = module->execute(run_method, prefill_inputs);
-    if (prefill_result.error() != Error::Ok) {
-      ET_LOG(
-          Error, "%s failed at pos %" PRId64, run_method.c_str(), prefill_pos);
+    auto result = module->execute(method, inputs);
+    if (result.error() != Error::Ok) {
+      ET_LOG(Error, "%s failed at pos %" PRId64, method.c_str(), prefill_pos);
       return 1;
     }
-    cur_token = read_token(prefill_result.get()[0].toTensor());
+
+#ifdef EXECUTORCH_BUILD_CUDA
+    cur_token = read_token(result.get()[0].toTensor());
+#else
+    cur_token = argmax_last_token(result.get()[0].toTensor());
+#endif
+
     prefill_pos += chunk_len;
   }
 
@@ -333,9 +333,6 @@ int main(int argc, char** argv) {
       num_prompt_tokens * 1000.0 / prefill_ms);
 
 #ifdef EXECUTORCH_BUILD_CUDA
-  // Synchronize CUDA device to ensure prefill's writes to shared mutable
-  // buffers (KV cache) are visible to the decode method, which may run on
-  // a different CUDA stream.
   cudaDeviceSynchronize();
 #endif
 
@@ -355,21 +352,28 @@ int main(int argc, char** argv) {
     decode_token_data[0] = static_cast<int64_t>(cur_token);
     decode_pos_data[0] = pos;
 
-    std::vector<EValue> decode_inputs;
-    decode_inputs.push_back(EValue(decode_tokens));
-    decode_inputs.push_back(EValue(decode_pos));
+    std::vector<EValue> inputs;
+    inputs.push_back(EValue(decode_tokens));
+    inputs.push_back(EValue(decode_pos));
+
 #ifdef EXECUTORCH_BUILD_CUDA
-    decode_inputs.push_back(EValue(temp_tensor));
+    inputs.push_back(EValue(temp_tensor));
+    auto result = module->execute("decode", inputs);
+#else
+    auto result = module->execute("forward", inputs);
 #endif
 
-    auto decode_result = module->execute("decode", decode_inputs);
-    if (decode_result.error() != Error::Ok) {
+    if (result.error() != Error::Ok) {
       ET_LOG(Error, "Decode step %d failed", step);
       return 1;
     }
 
     prev_token = cur_token;
-    cur_token = read_token(decode_result.get()[0].toTensor());
+#ifdef EXECUTORCH_BUILD_CUDA
+    cur_token = read_token(result.get()[0].toTensor());
+#else
+    cur_token = argmax_last_token(result.get()[0].toTensor());
+#endif
 
     if (step == 0) {
       stats.first_token_ms = llm::time_in_ms();

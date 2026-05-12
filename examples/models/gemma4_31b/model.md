@@ -102,6 +102,8 @@ Decoder norms per layer: `input_layernorm`, `post_attention_layernorm`,
 
 ## Methods exported (`export.py`)
 
+### CUDA (`--backend cuda`)
+
 | Method    | Input                                                      | Output (sampled) |
 |-----------|------------------------------------------------------------|------------------|
 | `decode`  | tokens `(1, 1)` + input_pos `(1,)` + temperature `(1,)`    | `(1, 1)` float   |
@@ -112,6 +114,20 @@ Both methods share the same KV-cache buffers via
 `emit_mutable_buffer_names=True`. The exported program performs Gumbel-max
 sampling on-device and returns a single token ID per call so the C++ runner
 only has to feed tokens.
+
+### MLX (`--backend mlx`)
+
+| Method    | Input                                    | Output           |
+|-----------|------------------------------------------|------------------|
+| `forward` | tokens `(1, T)` + input_pos `(T,)`, T∈[1, min(max_seq_len-1, 2×sliding_window)] | `(1, T, V)` logits |
+
+Single method with dynamic sequence length. No on-device sampling — the
+C++ runner performs greedy argmax on the host. Int4Tensor weights are
+converted to IntxUnpackedToInt8Tensor at pack time so the default
+`dequantize_affine → linear` dispatch produces the pattern MLX's
+`QuantizedLinearHandler` fuses into `QuantizedMatmulNode`.
+
+### Shared
 
 Prefill length is capped to the ring-buffer KV cache size
 (`2 × sliding_window`) to avoid duplicate wrapped indices in
@@ -130,9 +146,11 @@ Modules in `quant/`:
   `IntxUnpackedToInt8Tensor`) from fp weights.
 - **Serialization**: callers use torchao's safetensors integration
   (`torchao.prototype.safetensors`) directly — no wrapper module needed.
-- **Pack** (`pack.py` + `pack_cuda.py`): `pack_model` groups weights by
-  parent module, `pack_one` handles single weights. Per-module packers
-  dispatch by module type (`nn.Linear`, `nn.Embedding`, extensible for MoE).
+- **Pack** (`pack.py` + `pack_cuda.py` + `pack_mlx.py`): `pack_model` groups
+  weights by parent module, `pack_one` handles single weights. Per-module
+  packers dispatch by module type (`nn.Linear`, `nn.Embedding`). CUDA passes
+  Int4Tensor through (dispatch handled by `int4_dispatch.py`); MLX converts
+  Int4Tensor → IntxUnpackedToInt8Tensor and regroups per-axis embeddings.
 - **GGUF** (`gguf.py`): `unpack_gguf_tensor` / `iter_gguf_tensors` for
   loading community-quantized GGUF files (Q4_K, Q6_K).
 
@@ -145,11 +163,12 @@ quantize_and_save.py                    export.py / inference.py
      |                                       |
   quantize_weight()                     load (torchao safetensors)
      |                                       |
-  Int4Tensor / IntxUnpacked             Int4Tensor / IntxUnpacked (used directly)
+  Int4Tensor / IntxUnpacked             pack for backend:
      |                                       |
-  save (torchao safetensors)            int4_dispatch routes to int4_plain_mm
-     |                                       |
-  model.safetensors                     dp4a decode / dequant+cuBLAS prefill
+  save (torchao safetensors)            CUDA: Int4Tensor passed through
+     |                                    → int4_dispatch → dp4a / dequant+cuBLAS
+  model.safetensors                     MLX:  Int4Tensor → IntxUnpacked(int4)
+                                          → dequantize_affine → QuantizedMatmulNode
 ```
 
 `embed_tokens` and `lm_head` start tied; they are untied before
