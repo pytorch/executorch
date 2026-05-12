@@ -10,7 +10,6 @@ import logging
 import os
 import random
 import subprocess
-
 import tempfile
 import time
 import traceback
@@ -64,11 +63,11 @@ def check_exception(msg):
     return partial(_check, msg)
 
 
-# extend this for backend agnostic tests
+# extend this to tests that are agnostic across SoCs.
 def default_property():
     @dataclass
     class Property:
-        soc_model: str = "SM8750"
+        soc_model: str = "SM8850"
 
     return Property()
 

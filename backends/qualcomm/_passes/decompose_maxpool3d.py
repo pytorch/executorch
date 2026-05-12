@@ -94,13 +94,19 @@ class DecomposeMaxPool3d(ExportPass):
                         dilation *= 3
 
                 ceil_mode = node.args[5] if num_args > 5 else False
-                return_indices = node.args[6] if num_args > 6 else False
+                # since the indices output might not be connected
+                # only traverse getitem user and check if any of them referring to the indices
+                return_indices = (
+                    any(user.args[1] == 1 for user in node.users)
+                    if len(node.meta["val"]) > 1
+                    else False
+                )
                 if return_indices:
                     warnings.warn(
-                        "[QNN Delegate Op Builder]: The case return_indices=True is not be support, fallback",
+                        "[QNN Delegate Op Builder]: The case return_indices=True is not supported, fallback",
                         stacklevel=1,
                     )
-                    return
+                    continue
 
                 model = ModelMaxPool3D(
                     filter_size, stride, padding, dilation, return_indices, ceil_mode
