@@ -242,4 +242,4 @@ TEST_F(DeviceAllocatorTest, RegisteringSameDeviceTypeTwiceAborts) {
       register_device_allocator(&another_allocator),
       "Allocator already registered");
 }
-#endif  // GTEST_HAS_DEATH_TEST
+#endif // GTEST_HAS_DEATH_TEST
