@@ -20,13 +20,17 @@ build_dir="${et_root_dir}/cmake-out-riscv"
 output_dir="${et_root_dir}/riscv_test"
 qemu="qemu-riscv64-static"
 qemu_timeout="600"
+model="add"
 xnnpack=false
+quantize=false
 
 usage() {
     cat <<EOF
 Usage: $(basename "$0") [options]
 Options:
+  --model=<NAME>          Which model to export and run (default: ${model})
   --xnnpack               Enable the XNNPACK backend (AOT partitioner + runtime)
+  --quantize              Produce an 8-bit quantized model
   --build_only            Only export and cross-compile; do not invoke QEMU
   --build_dir=<DIR>       CMake build directory (default: ${build_dir})
   --output_dir=<DIR>      Directory for the exported .bpte (default: ${output_dir})
@@ -38,7 +42,9 @@ EOF
 
 for arg in "$@"; do
     case $arg in
+        --model=*) model="${arg#*=}" ;;
         --xnnpack) xnnpack=true ;;
+        --quantize) quantize=true ;;
         --build_only) build_only=true ;;
         --build_dir=*) build_dir="${arg#*=}" ;;
         --output_dir=*) output_dir="${arg#*=}" ;;
@@ -50,14 +56,17 @@ for arg in "$@"; do
 done
 
 mkdir -p "${output_dir}"
-bpte_path="${output_dir}/add_riscv.bpte"
+bpte_path="${output_dir}/${model}_riscv.bpte"
 
 echo "[run.sh] Step 1/3: AOT export on host"
 aot_extra_args=()
 if ${xnnpack}; then
     aot_extra_args+=(--xnnpack)
 fi
-python "${script_dir}/aot_riscv.py" "${aot_extra_args[@]}" --output "${bpte_path}"
+if ${quantize}; then
+    aot_extra_args+=(--quantize)
+fi
+python "${script_dir}/aot_riscv.py" --model "${model}" "${aot_extra_args[@]}" --output "${bpte_path}"
 
 echo "[run.sh] Step 2/3: cross-compile executor_runner for riscv64-linux"
 cmake_extra_args=()
@@ -99,9 +108,15 @@ export QEMU_LD_PREFIX="${QEMU_LD_PREFIX:-/usr/riscv64-linux-gnu}"
 log_file=$(mktemp)
 trap 'rm -f "${log_file}"' EXIT
 
+runner_extra_args=()
+if ${quantize}; then
+    runner_extra_args+=(--bundleio_rtol=0.1 --bundleio_atol=0.25)
+fi
+
 set +e
 timeout --signal=KILL "${qemu_timeout}" "${qemu}" "${runner}" \
     --model_path="${bpte_path}" \
+    "${runner_extra_args[@]}" \
     2>&1 | tee "${log_file}"
 qemu_status=${PIPESTATUS[0]}
 set -e

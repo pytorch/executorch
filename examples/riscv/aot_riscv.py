@@ -3,11 +3,11 @@
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
 
-"""AOT export for the RISC-V Phase 1.0 smoke test.
+"""AOT export for the RISC-V smoke test.
 
-Exports a trivial ``torch.add`` module to a BundledProgram (.bpte) that the
-portable executor_runner can load on a riscv64 target and verify against the
-embedded reference output, emitting ``Test_result: PASS`` on success.
+Exports a small model to a BundledProgram (.bpte) that the portable
+executor_runner can load on a riscv64 target and verify against the embedded
+reference output, emitting ``Test_result: PASS`` on success.
 """
 
 import argparse
@@ -28,47 +28,101 @@ class AddModule(torch.nn.Module):
         return x + y
 
 
+def build_add():
+    model = AddModule().eval()
+    example_inputs = (torch.ones(1, 4), torch.full((1, 4), 2.0))
+    test_inputs = [
+        (torch.ones(1, 4), torch.full((1, 4), 2.0)),
+        (torch.full((1, 4), 3.0), torch.full((1, 4), 4.0)),
+    ]
+    return model, example_inputs, test_inputs, True
+
+
+def build_mv2():
+    from torchvision.models import mobilenet_v2, MobileNet_V2_Weights
+
+    model = mobilenet_v2(weights=MobileNet_V2_Weights.DEFAULT).eval()
+    torch.manual_seed(0)
+    example_inputs = (torch.randn(1, 3, 224, 224),)
+    test_inputs = [example_inputs]
+    return model, example_inputs, test_inputs, False
+
+
+MODELS = {"add": build_add, "mv2": build_mv2}
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument(
+        "--model",
+        choices=sorted(MODELS),
+        default="add",
+        help="Which model to export",
+    )
+    parser.add_argument(
         "--output",
         type=Path,
-        default=Path("add_riscv.bpte"),
-        help="Output .bpte path",
+        default=None,
+        help="Output .bpte path (default: <model>_riscv.bpte)",
     )
     parser.add_argument(
         "--xnnpack",
         action="store_true",
         help="Lower through the XNNPACK partitioner",
     )
+    parser.add_argument(
+        "--quantize",
+        action="store_true",
+        help="Produce an 8-bit quantized model",
+    )
     args = parser.parse_args()
 
-    model = AddModule().eval()
-    example_inputs = (torch.ones(1, 4), torch.full((1, 4), 2.0))
+    if args.output is None:
+        args.output = Path(f"{args.model}_riscv.bpte")
 
-    exported = export(model, example_inputs)
+    model, example_inputs, test_inputs, strict = MODELS[args.model]()
+
+    if args.quantize:
+        from executorch.examples.xnnpack import MODEL_NAME_TO_OPTIONS, QuantType
+        from executorch.examples.xnnpack.quantization.utils import quantize
+
+        if args.model not in MODEL_NAME_TO_OPTIONS:
+            parser.error(f"No XNNPACK quantization recipe for model {args.model!r}")
+        quant_type = MODEL_NAME_TO_OPTIONS[args.model].quantization
+        if quant_type == QuantType.NONE:
+            parser.error(f"Quantization recipe for {args.model!r} is NONE")
+        ep = export(model, example_inputs, strict=strict)
+        model = quantize(ep.module(), example_inputs, quant_type)
+
+    exported = export(model, example_inputs, strict=strict)
     partitioners = []
     if args.xnnpack:
         from executorch.backends.xnnpack.partition.xnnpack_partitioner import (
             XnnpackPartitioner,
         )
-
         partitioners.append(XnnpackPartitioner())
 
-    edge = to_edge_transform_and_lower(exported, partitioner=partitioners)
+    compile_config = None
+    if args.quantize:
+        from executorch.exir import EdgeCompileConfig
+
+        compile_config = EdgeCompileConfig(_check_ir_validity=False)
+
+    edge = to_edge_transform_and_lower(
+        exported, partitioner=partitioners, compile_config=compile_config
+    )
     delegated = sum(
         1
         for n in edge.exported_program().graph.nodes
         if n.op == "call_function" and "call_delegate" in str(n.target)
     )
-    print(f"[aot_riscv] xnnpack={args.xnnpack} delegated_nodes={delegated}")
+    print(
+        f"[aot_riscv] model={args.model} xnnpack={args.xnnpack} "
+        f"quantize={args.quantize} delegated_nodes={delegated}"
+    )
 
     et_program = edge.to_executorch()
 
-    test_inputs = [
-        (torch.ones(1, 4), torch.full((1, 4), 2.0)),
-        (torch.full((1, 4), 3.0), torch.full((1, 4), 4.0)),
-    ]
     test_suite = MethodTestSuite(
         method_name="forward",
         test_cases=[

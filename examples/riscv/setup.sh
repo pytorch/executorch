@@ -10,6 +10,8 @@
 
 set -eu
 
+script_dir=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" &> /dev/null && pwd)
+
 if ! command -v apt-get >/dev/null 2>&1; then
     echo "[$(basename "$0")] this setup script targets Debian/Ubuntu (apt-get not found)" >&2
     exit 1
@@ -30,6 +32,7 @@ ${SUDO} apt-get install -y --no-install-recommends \
     libc6-dev-riscv64-cross \
     cmake \
     file \
+    ca-certificates \
     qemu-user-static
 
 if [[ -n "${GCC_VERSION+x}" ]]; then
@@ -39,3 +42,6 @@ fi
 
 riscv64-linux-gnu-gcc --version | head -n1
 qemu-riscv64-static --version | head -n1
+
+# Some python packages also need to be installed
+pip install -r "${script_dir}/requirements.txt"
