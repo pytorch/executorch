@@ -49,7 +49,6 @@ from executorch.examples.models.gemma4.text_decoder import (
     apply_rotary_emb,
     Gemma4KVCache,
     Gemma4MLP,
-    precompute_freqs_cis,
     RMSNorm,
     RMSNormNoWeight,
 )
@@ -255,21 +254,22 @@ class Gemma4Attention(nn.Module):
         # Precomputed RoPE table for this layer (per-layer because head_dim
         # and theta differ between sliding and full attention). For full
         # attention layers we pass freq_base_dim=head_dim so the zero-padded
-        # inv_freq matches HF's "proportional" partial RoPE.
+        # On-the-fly RoPE: store only inv_freq, compute cos/sin per forward.
+        # Saves memory vs precomputed [max_seq_len, head_dim] tables.
         if self.is_sliding:
             rotary_dim = self.head_dim
-            freq_base_dim = None
         else:
             rotary_dim = int(self.head_dim * self.partial_rotary)
-            freq_base_dim = self.head_dim
-        freqs_cos, freqs_sin = precompute_freqs_cis(
-            rotary_dim,
-            config.max_seq_len,
-            theta=self.rope_theta,
-            freq_base_dim=freq_base_dim,
+        rope_angles = rotary_dim // 2
+        inv_freq_rotated = 1.0 / (
+            self.rope_theta ** (torch.arange(0, rotary_dim, 2).float() / self.head_dim)
         )
-        self.register_buffer("freqs_cos", freqs_cos, persistent=False)
-        self.register_buffer("freqs_sin", freqs_sin, persistent=False)
+        nope_angles = self.head_dim // 2 - rope_angles
+        if nope_angles > 0:
+            inv_freq = torch.cat([inv_freq_rotated, torch.zeros(nope_angles)])
+        else:
+            inv_freq = inv_freq_rotated
+        self.register_buffer("inv_freq", inv_freq, persistent=False)
 
         # KV cache. Sliding layers use a ring buffer (2x window) to save
         # memory; full layers use a flat buffer (max_seq_len).
@@ -316,10 +316,11 @@ class Gemma4Attention(nn.Module):
         k = k.transpose(1, 2)
         v = v.transpose(1, 2)
 
-        # RoPE on Q and K only (V is not rotated). cos/sin are gathered for
-        # the current positions to avoid baking the full table into the graph.
-        cos = self.freqs_cos[input_pos]
-        sin = self.freqs_sin[input_pos]
+        # RoPE on Q and K only (V is not rotated). cos/sin computed on the fly.
+        freqs = torch.outer(input_pos.float(), self.inv_freq)
+        emb = torch.cat((freqs, freqs), dim=-1)
+        cos = torch.cos(emb)
+        sin = torch.sin(emb)
         q, k = apply_rotary_emb(q, k, cos, sin)
 
         # Update cache and read back full K/V.
@@ -533,8 +534,7 @@ class Gemma4_31B(nn.Module):
         # and not in the checkpoint — those are the "expected" missing keys.
         runtime_prefixes = (
             ".kv_cache.",
-            ".freqs_cos",
-            ".freqs_sin",
+            ".inv_freq",
             "embed_normalizer",
             "logit_softcap",
             "cache_positions",
@@ -675,19 +675,7 @@ def materialize_runtime_buffers(
 
     for layer in model.layers:
         attn = layer.self_attn
-        if attn.is_sliding:
-            rotary_dim, freq_base_dim = attn.head_dim, None
-        else:
-            rotary_dim = int(attn.head_dim * attn.partial_rotary)
-            freq_base_dim = attn.head_dim
-        cos, sin = precompute_freqs_cis(
-            rotary_dim,
-            config.max_seq_len,
-            theta=attn.rope_theta,
-            freq_base_dim=freq_base_dim,
-        )
-        attn.register_buffer("freqs_cos", cos.to(device), persistent=False)
-        attn.register_buffer("freqs_sin", sin.to(device), persistent=False)
+        attn.inv_freq = attn.inv_freq.to(device)
 
     model.register_buffer(
         "embed_normalizer",

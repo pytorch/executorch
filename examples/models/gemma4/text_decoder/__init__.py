@@ -10,7 +10,6 @@ from .gemma4_attention import (  # noqa: F401
     apply_rotary_emb,
     apply_rotary_emb_single,
     Gemma4KVCache,
-    precompute_freqs_cis,
     rotate_half,
 )
 from .gemma4_config import Gemma4Config  # noqa: F401

@@ -105,7 +105,7 @@ Decoder norms per layer: `input_layernorm`, `post_attention_layernorm`,
 | Method    | Input                                                      | Output (sampled) |
 |-----------|------------------------------------------------------------|------------------|
 | `decode`  | tokens `(1, 1)` + input_pos `(1,)` + temperature `(1,)`    | `(1, 1)` float   |
-| `prefill` | tokens `(1, T)` + input_pos `(T,)` + temperature `(1,)`, T∈[2, min(max_seq_len-1, 2×sliding_window)] | `(1, 1)` float   |
+| `prefill` | tokens `(1, T)` + input_pos `(T,)` + temperature `(1,)`, T∈[5, min(max_seq_len-1, 2×sliding_window)] | `(1, 1)` float   |
 
 Both methods share the same KV-cache buffers via
 `MemoryPlanningPass(share_mutable_buffers=True)` and
@@ -145,11 +145,11 @@ quantize_and_save.py                    export.py / inference.py
      |                                       |
   quantize_weight()                     load (torchao safetensors)
      |                                       |
-  Int4Tensor / IntxUnpacked             Int4Tensor / IntxUnpacked
+  Int4Tensor / IntxUnpacked             Int4Tensor / IntxUnpacked (used directly)
      |                                       |
-  save (torchao safetensors)            pack_model()
+  save (torchao safetensors)            int4_dispatch routes to int4_plain_mm
      |                                       |
-  model.safetensors                     Int4TilePackedTo4dTensor (runtime)
+  model.safetensors                     dp4a decode / dequant+cuBLAS prefill
 ```
 
 `embed_tokens` and `lm_head` start tied; they are untied before
@@ -159,18 +159,17 @@ lossless for index lookup).
 
 ## Runtime buffer materialization
 
-After weight loading (via `pack_model()` or `from_hf_checkpoint()`), the
-model's KV caches, RoPE tables, and scalar constants are still on the meta
-device. `materialize_runtime_buffers(model, dtype, device)` in `model.py`
-replaces them with real tensors:
+After weight loading (via `from_hf_checkpoint()`), the model's KV caches,
+RoPE inv_freq buffers, and scalar constants are still on the meta device.
+`materialize_runtime_buffers(model, dtype, device)` in `model.py` replaces
+them with real tensors:
 
 - KV caches → zeros in `dtype` (bf16 for inference, bf16 for export)
-- RoPE tables → computed per-layer (sliding vs full, different θ and head_dim)
+- `inv_freq` → moved to target device (cos/sin computed on the fly per forward)
 - `embed_normalizer`, `logit_softcap`, `cache_positions` → scalar constants
 
 Called by `export.py` (device="cpu" for tracing) and `inference.py`
-(device="cuda" for eager execution). Having one function avoids duplicating
-the RoPE computation and constant setup across scripts.
+(device="cuda" for eager execution).
 
 ## Customizations vs. vLLM / transformers reference
 
@@ -183,9 +182,10 @@ These exist solely to make the model exportable / efficient under ExecuTorch:
   via modulo and the attention mask reconstructs which slots are valid.
   Full-attention layers use a flat `Gemma4KVCache` sized to `max_seq_len`.
   Both use `index_copy_(dim=2, ...)` for trace-friendly updates.
-- **Per-layer RoPE tables** registered as `persistent=False` buffers (sliding
-  uses full RoPE, full uses proportional partial RoPE — head_dim and θ
-  differ, so the table is not shared).
+- **On-the-fly RoPE**: stores only `inv_freq` per layer, computes cos/sin
+  via `torch.outer(positions, inv_freq)` each forward. Saves memory vs
+  precomputed `[max_seq_len, head_dim]` tables (sliding uses full RoPE,
+  full uses proportional partial RoPE — head_dim and θ differ).
 - **On-device Gumbel-max sampling** so the exported program emits a token
   rather than a full logits tensor — keeps the runner GPU↔CPU traffic to a
   single float per step.
@@ -198,6 +198,6 @@ These exist solely to make the model exportable / efficient under ExecuTorch:
 The numerically-sensitive math primitives are imported from
 `examples.models.gemma4.text_decoder` and shared with the Gemma 4 E2B/E4B
 example: `RMSNorm`, `RMSNormNoWeight`, `Gemma4MLP`, `Gemma4KVCache`,
-`precompute_freqs_cis`, `apply_rotary_emb`. The 31B-specific pieces
-(attention with K=V branch, decoder layer, top-level model with softcap +
-sampling, checkpoint loader) live in `model.py`.
+`apply_rotary_emb`. The 31B-specific pieces (attention with K=V branch,
+decoder layer, top-level model with softcap + sampling, checkpoint loader)
+live in `model.py`.
