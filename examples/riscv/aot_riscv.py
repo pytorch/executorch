@@ -49,7 +49,38 @@ def build_mv2():
     return model, example_inputs, test_inputs, False
 
 
-MODELS = {"add": build_add, "mv2": build_mv2}
+def build_mobilebert():
+    from transformers import MobileBertConfig, MobileBertModel
+
+    config = MobileBertConfig(
+        vocab_size=1024,
+        hidden_size=128,
+        embedding_size=64,
+        num_hidden_layers=2,
+        num_attention_heads=2,
+        intermediate_size=128,
+        intra_bottleneck_size=32,
+    )
+
+    class Wrapper(torch.nn.Module):
+        def __init__(self):
+            super().__init__()
+            self.model = MobileBertModel(config).eval()
+
+        def forward(self, input_ids):
+            return self.model(input_ids).last_hidden_state
+
+    model = Wrapper().eval()
+    example_inputs = (torch.tensor([[1, 2, 3, 4, 5, 6, 7, 8]]),)
+    test_inputs = [example_inputs]
+    return model, example_inputs, test_inputs, False
+
+
+MODELS = {
+    "add": build_add,
+    "mv2": build_mv2,
+    "mobilebert": build_mobilebert,
+}
 
 
 def main() -> None:
