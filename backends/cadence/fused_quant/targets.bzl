@@ -46,3 +46,15 @@ def define_common_targets():
         ],
         visibility = ["PUBLIC"],
     )
+
+    runtime.cxx_library(
+        name = "op_hardswish",
+        srcs = ["op_hardswish.cpp"],
+        exported_headers = ["op_hardswish.h"],
+        platforms = CXX,
+        deps = [
+            ":quant_utils",
+            "//executorch/runtime/kernel:kernel_includes",
+        ],
+        visibility = ["PUBLIC"],
+    )
