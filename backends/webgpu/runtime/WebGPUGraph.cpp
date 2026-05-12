@@ -241,7 +241,9 @@ void WebGPUGraph::build(
   for (size_t i = 0; i < output_ids_.size(); i++) {
     int oid = output_ids_[i];
     output_copies_.push_back(
-        {tensors_[oid].buffer, output_staging_buffers_[i], tensors_[oid].nbytes});
+        {tensors_[oid].buffer,
+         output_staging_buffers_[i],
+         tensors_[oid].nbytes});
   }
 
   // Phase 3: Build operator dispatch chain
@@ -445,8 +447,7 @@ void buffer_map_callback(
 } // namespace
 
 void WebGPUGraph::copy_outputs(std::vector<std::pair<void*, size_t>>& outputs) {
-  const size_t count =
-      std::min(outputs.size(), output_staging_buffers_.size());
+  const size_t count = std::min(outputs.size(), output_staging_buffers_.size());
 
   std::vector<MapCallbackData> cb_data(count);
 
