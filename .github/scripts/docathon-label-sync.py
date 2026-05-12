@@ -13,7 +13,7 @@ def main() -> None:
     pull_request_number = int(sys.argv[1])
 
     g = Github(token)
-    repo = g.get_repo(os.environ.get("GITHUB_REPOSITORY", "pytorch/executorch"))
+    repo = g.get_repo(f"{repo_owner}/{repo_name}")
     pull_request = repo.get_pull(pull_request_number)
     pull_request_body = pull_request.body
     # PR without description
