@@ -71,6 +71,9 @@ function install_vulkan_sdk_macos() {
     fi
 
     log_step "vulkan" "Extracting Vulkan SDK installer"
+    rm -rf \
+        "vulkansdk-macOS-${vulkan_sdk_version}.app" \
+        "vulkansdk-macos-${vulkan_sdk_version}.app"
     unzip -q -o "${vulkan_sdk_zip_file}"
 
     local vulkan_sdk_app_path=""
@@ -91,14 +94,32 @@ function install_vulkan_sdk_macos() {
 
     local install_root="$(cd "${root_dir}" && pwd)/${vulkan_sdk_base_dir}/${vulkan_sdk_version}"
     mkdir -p "${install_root}"
-    local vulkan_sdk_root="${root_dir}/${vulkan_sdk_base_dir}"
 
     log_step "vulkan" "Installing Vulkan SDK (${vulkan_sdk_version}) to ${install_root}"
-    ${vulkan_sdk_installer} --root "${install_root}" --accept-licenses --default-answer --confirm-command install
+    "${vulkan_sdk_installer}" --root "${install_root}" --accept-licenses --default-answer --confirm-command install
+}
+
+function validate_vulkan_sdk_installation() {
+    if [[ ! -d "${root_dir}/${vulkan_sdk_bin_dir}" ]]; then
+        return 1
+    fi
+
+    vulkan_sdk_bin_path="$(cd "${root_dir}/${vulkan_sdk_bin_dir}" && pwd)"
+    if [[ ! -x "${vulkan_sdk_bin_path}/glslc" ]]; then
+        return 1
+    fi
+
+    "${vulkan_sdk_bin_path}/glslc" --version > /dev/null 2>&1
 }
 
 function setup_vulkan_sdk() {
     cd "${root_dir}"
+
+    if validate_vulkan_sdk_installation; then
+        log_step "vulkan" "Reusing Vulkan SDK at ${root_dir}/${vulkan_sdk_base_dir}/${vulkan_sdk_version}"
+        log_step "vulkan" "Vulkan SDK validation (glslc) succeeded"
+        return
+    fi
 
     if [[ "${os_name}" == "Darwin" ]]; then
         install_vulkan_sdk_macos
@@ -117,11 +138,11 @@ function setup_vulkan_sdk() {
         exit 1
     fi
 
-    if ${vulkan_sdk_bin_path}/glslc --version > /dev/null 2>&1; then
+    if "${vulkan_sdk_bin_path}/glslc" --version > /dev/null 2>&1; then
         log_step "vulkan" "Vulkan SDK validation (glslc) succeeded"
     else
         log_step "vulkan" "Error: Vulkan SDK validation failed"
-        ${vulkan_sdk_bin_path}/glslc --version
+        "${vulkan_sdk_bin_path}/glslc" --version
         exit 1
     fi
 }
@@ -143,7 +164,7 @@ function setup_path_vulkan() {
     vulkan_sdk_arch_root="$(cd "${vulkan_sdk_arch_root}" && pwd)"
     vulkan_sdk_bin_path="$(cd "${vulkan_sdk_bin_dir}" && pwd)"
 
-    append_env_in_setup_path PATH ${vulkan_sdk_bin_path}
+    append_env_in_setup_path PATH "${vulkan_sdk_bin_path}"
     if [[ "${OS:-}" == "Darwin" ]]; then
         prepend_env_in_setup_path DYLD_LIBRARY_PATH "${vulkan_sdk_arch_root}/lib"
         local moltenvk_icd_path="${vulkan_sdk_arch_root}/share/vulkan/icd.d/MoltenVK_icd.json"
