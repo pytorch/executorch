@@ -147,7 +147,9 @@ class DeviceAllocatorTest : public ::testing::Test {
 
   static void SetUpTestSuite() {
     executorch::runtime::runtime_init();
-    register_device_allocator(&cuda_allocator());
+    if (get_device_allocator(DeviceType::CUDA) == nullptr) {
+      register_device_allocator(&cuda_allocator());
+    }
   }
 
   void SetUp() override {
