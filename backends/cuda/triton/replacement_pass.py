@@ -27,6 +27,8 @@ EDGE_TO_TRITON_KERNELS = {
     exir_ops.edge.aten.topk.default: triton.topk,
 }
 
+_SPLITK_LKV_THRESHOLD = 2048
+
 
 class ReplaceEdgeOpWithTritonOpPass(PassBase):
     """
@@ -83,6 +85,34 @@ class ReplaceEdgeOpWithTritonOpPass(PassBase):
     # for rows larger than this threshold.
     _TOPK_MAX_N = 4096
 
+    @staticmethod
+    def _pick_sdpa_kernel(node: Node):
+        """Choose between standard SDPA and split-K flash-decoding.
+
+        Split-K partitions the KV sequence across many CTAs for better GPU
+        utilization at decode time (L_q=1). It wins when L_kv is large
+        (full-attention KV caches) but loses to the standard kernel for
+        small L_kv (sliding-window ring buffers) due to the overhead of
+        allocating partial buffers and running the reduction kernel.
+        """
+        q_shape = node.args[0].meta["val"].shape
+        k_shape = node.args[1].meta["val"].shape
+        L_q, D = q_shape[2], q_shape[3]
+        L_kv = k_shape[2]
+
+        if (
+            isinstance(L_q, int)
+            and L_q == 1
+            and isinstance(L_kv, int)
+            and L_kv > _SPLITK_LKV_THRESHOLD
+            and D > 0
+            and (D & (D - 1)) == 0  # power of 2
+        ):
+            logger.info(f"Using split-K decode SDPA (L_kv={L_kv}, D={D})")
+            return triton.sdpa_decode_splitk
+
+        return triton.sdpa
+
     def _should_replace_node(self, node: Node) -> bool:
         """
         Check if a node should be replaced with a Triton kernel.
@@ -127,6 +157,9 @@ class ReplaceEdgeOpWithTritonOpPass(PassBase):
             raise ValueError(f"No replacement kernel found for {target}")
 
         triton_kernel_fn = EDGE_TO_TRITON_KERNELS[target]
+
+        if target == exir_ops.edge.aten.scaled_dot_product_attention.default:
+            triton_kernel_fn = self._pick_sdpa_kernel(node)
 
         # Create a new node with the Triton kernel
         with graph_module.graph.inserting_before(node):
