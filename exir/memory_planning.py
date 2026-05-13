@@ -1207,9 +1207,9 @@ _CPU_KEY: tuple[DeviceType, int] = (DeviceType.CPU, 0)
 
 
 def _partition_specs_by_device(
-    all_specs: set[TensorSpec],
+    all_specs: list[TensorSpec],
     enable_non_cpu_memory_planning: bool,
-) -> dict[tuple[DeviceType, int], set[TensorSpec]]:
+) -> dict[tuple[DeviceType, int], list[TensorSpec]]:
     """Partition specs by (device_type, device_index).
 
     Different device indices on the same device type (e.g. CUDA:0 vs CUDA:1)
@@ -1217,8 +1217,11 @@ def _partition_specs_by_device(
 
     When ``enable_non_cpu_memory_planning`` is False (legacy), all specs are
     placed into a single CPU:0 bucket regardless of their device attribute.
+
+    Insertion order is preserved within each partition because order-sensitive
+    algorithms (e.g. greedy with bisect.insort) rely on it for stable tie-breaking.
     """
-    specs_by_device: dict[tuple[DeviceType, int], set[TensorSpec]] = defaultdict(set)
+    specs_by_device: dict[tuple[DeviceType, int], list[TensorSpec]] = defaultdict(list)
     if not enable_non_cpu_memory_planning:
         specs_by_device[_CPU_KEY] = all_specs
         return specs_by_device
@@ -1227,7 +1230,7 @@ def _partition_specs_by_device(
     has_pre_assigned_mem_id = False
     for spec in all_specs:
         device_key = (spec.device, spec.device_index)
-        specs_by_device[device_key].add(spec)
+        specs_by_device[device_key].append(spec)
         if spec.device != DeviceType.CPU:
             has_non_cpu_specs = True
         if spec.mem_id is not None:
@@ -1308,9 +1311,11 @@ def apply_algo(
     # Extract the nodes and their lifespans from the graph_module
     _ = update_all_tensors_lifetime(graph_module, graph_signature)
 
-    # Collect and materialize specs into a set so we can iterate multiple
-    # times and partition by device.
-    all_specs: set[TensorSpec] = set(
+    # Collect specs into an ordered list so we can iterate multiple times and
+    # partition by device.  Order matters: order-sensitive algorithms (e.g.
+    # greedy with bisect.insort) rely on insertion order for stable tie-breaking,
+    # and `collect_specs_from_nodes` already deduplicates via its `dedup` flag.
+    all_specs: list[TensorSpec] = list(
         collect_specs_from_nodes(
             graph_module.graph.nodes,
             graph_signature,
