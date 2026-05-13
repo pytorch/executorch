@@ -24,6 +24,7 @@ build_type="Release"
 build_devtools=OFF
 build_with_etdump=OFF
 is_linux_musl=0
+target_cpu=""
 
 help() {
     echo "Usage: $(basename $0) [options]"
@@ -33,6 +34,7 @@ help() {
     echo "  --devtools                Build Devtools libs"
     echo "  --etdump                  Adds Devtools etdump support to track timing, etdump area will be base64 encoded in the log"
     echo "  --toolchain=<TOOLCHAIN>   Toolchain can be specified (arm-none-eabi-gcc, arm-zephyr-eabi-gcc, aarch64-linux-musl-gcc). Default: ${toolchain}"
+    echo "  --target_cpu=<CPU>        Override the toolchain's default TARGET_CPU (e.g. cortex-m4). Switching target_cpu reuses the same cmake-out dir, so clear ${et_build_root}/cmake-out first to avoid stale per-CPU artifacts. Default: unset (toolchain default)."
     exit 0
 }
 
@@ -44,6 +46,7 @@ for arg in "$@"; do
       --devtools) build_devtools=ON ;;
       --etdump) build_with_etdump=ON ;;
       --toolchain=*) toolchain="${arg#*=}";;
+      --target_cpu=*) target_cpu="${arg#*=}";;
       *)
       ;;
     esac
@@ -86,6 +89,10 @@ cmake_args=(
     -DEXECUTORCH_BUILD_DEVTOOLS=${build_devtools}
     -DEXECUTORCH_BUILD_ARM_ETDUMP=${build_with_etdump}
 )
+
+if [[ -n "${target_cpu}" ]]; then
+    cmake_args+=(-DTARGET_CPU=${target_cpu})
+fi
 
 if [[ ${is_linux_musl} -eq 1 ]]; then
     if [[ -z "${MUSL_TOOLCHAIN_ROOT:-}" ]]; then
