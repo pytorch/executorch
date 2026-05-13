@@ -15,10 +15,7 @@ from pathlib import Path
 
 import torch
 from executorch.devtools import BundledProgram
-from executorch.devtools.bundled_program.config import (
-    MethodTestCase,
-    MethodTestSuite,
-)
+from executorch.devtools.bundled_program.config import MethodTestCase, MethodTestSuite
 from executorch.devtools.bundled_program.serialize import (
     serialize_from_bundled_program_to_flatbuffer,
 )
