@@ -622,7 +622,16 @@ class _Emitter(torch.fx.Interpreter):
         return _AbstractValue(len(self.emitter_state.values) - 1, tensor)
 
     def _emit_spec(self, spec: ValueSpec) -> _EmitterValue:
-        """Given the provided spec constructs the corresponding EValue from it and then emits it."""
+        """Given the provided spec constructs the corresponding EValue from it and then emits it.
+
+        If `spec` was already emitted earlier (e.g., because two FX
+        nodes share the same TensorSpec object — typically because the
+        planner's `_alias_inplace_result_specs` aliased an in-place
+        op's result onto its mutated input), reuse the existing
+        value_id. This keeps the invariant "one TensorSpec ↔ one
+        Value" so downstream emit doesn't create duplicate Values for
+        aliased FX nodes.
+        """
 
         def _process(spec: LeafValueSpec) -> _AbstractValue:
             if isinstance(spec, (list, tuple)):
@@ -641,6 +650,25 @@ class _Emitter(torch.fx.Interpreter):
                 self.node,
                 f"Invalid node spec expected TensorSpec received {spec}",
             )
+
+            # Spec was already emitted — reuse the existing Value so
+            # two FX nodes sharing one TensorSpec also share one
+            # value_id in the lowered IR.
+            existing_id = self.emitter_state.spec2id_dict.get(spec)
+            if existing_id is not None:
+                existing_evalue = self.emitter_state.values[existing_id]
+                # Both insertion sites for `spec2id_dict` (this method
+                # and the placeholder emitter) only register ids whose
+                # EValue wraps a `Tensor` (built via
+                # `_tensor_spec_to_evalue` from a `TensorSpec`).
+                self._internal_assert_emitter(
+                    isinstance(existing_evalue.val, Tensor),
+                    self.node,
+                    f"spec2id_dict entry for TensorSpec must point to a "
+                    f"Tensor EValue, got "
+                    f"{type(existing_evalue.val).__name__}",
+                )
+                return _AbstractValue(existing_id, existing_evalue.val)
 
             ret = self._emit_evalue(self._tensor_spec_to_evalue(spec))  # pyre-ignore
             self.emitter_state.spec2id_dict[spec] = ret.id  # pyre-ignore
@@ -2019,6 +2047,14 @@ class _TopLevelEmitter(_Emitter):
             else self._constant_to_evalue(spec, None)
         )
         value = self._emit_evalue(evalue)
+
+        # Populate spec2id_dict so downstream `_emit_spec` calls (e.g.,
+        # for in-place op result FX nodes whose spec was aliased onto
+        # this placeholder's spec by the planner's
+        # `_alias_inplace_result_specs`) reuse this placeholder's
+        # value_id rather than creating a new Value.
+        if isinstance(spec, TensorSpec):
+            self.emitter_state.spec2id_dict[spec] = value.id
 
         # Only user inputs should remain as inputs.
         if is_user_input:
