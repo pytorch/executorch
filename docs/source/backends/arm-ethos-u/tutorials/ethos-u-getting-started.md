@@ -199,7 +199,7 @@ In this tutorial you have learned how to use ExecuTorch to export a PyTorch mode
 
 To learn more, check out the [ExecuTorch on Arm Practical Labs](https://github.com/arm-education/executorch_on_arm_labs) series. This series provides a structured entry-point to developing with ExecuTorch on Arm, across both CPU and Ethos-U NPU.
 
-For quick learning paths showcasing short tutorials: 
+For quick learning paths showcasing short tutorials:
 
 - [Run Llama3 on Raspberry Pi 5 with ExecuTorch](https://learn.arm.com/learning-paths/embedded-and-microcontrollers/rpi-llama3/)
 - [Visualize Ethos-U NPU Performance on FVP](https://learn.arm.com/learning-paths/embedded-and-microcontrollers/visualizing-ethos-u-performance/)
