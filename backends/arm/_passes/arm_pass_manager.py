@@ -150,7 +150,6 @@ from executorch.backends.arm._passes.arm_pass import ArmPass
 from executorch.backends.arm.common.arm_compile_spec import ArmCompileSpec
 from executorch.backends.arm.common.pipeline_config import (
     ArmPassPipelineConfig,
-    FuseDuplicateUsersConfig,
     SoftmaxDecompositionConfig,
 )
 from executorch.backends.arm.tosa.specification import (
@@ -237,9 +236,6 @@ class ArmPassManager(PassManager):
                 pass
             case SoftmaxDecompositionConfig.STABLE:
                 skip_set.add(DecomposeMaskedFillPass)
-
-        if config.fuse_duplicate_users is FuseDuplicateUsersConfig.DISABLED:
-            skip_set.add(FuseDuplicateUsersPass)
 
         self._skip_pass_types = tuple(skip_set)
         skip_names = [skipped_pass.__name__ for skipped_pass in self._skip_pass_types]
@@ -403,9 +399,6 @@ class ArmPassManager(PassManager):
                 ConvertToClampPass(),
                 DecomposeTOSAUnsupportedClampPass(),
                 DecomposeGroupNormPass(),
-                DecomposeGruPass(),
-                DecomposeLstmPass(),
-                DecomposeRnnPass(),
                 DecomposeLayerNormPass(),
                 DecomposeVarPass(),
                 DecomposeMeanDimPass(exported_program.graph_module, self.tosa_spec),
