@@ -9,6 +9,7 @@ This example demonstrates how to export and run LLMs using the MLX delegate for 
 - **KV Cache**: Efficient KV cache implementation for autoregressive generation
 - **Custom Ops**: Uses `mlx::custom_sdpa` and `mlx::kv_cache_update` for optimal execution on MLX
 - **Pybindings**: Run inference using ExecuTorch Python bindings
+- **Gemma 4**: Text-only export and run flow supports processor-backed checkpoints such as `google/gemma-4-E2B-it`
 
 ## Requirements
 
@@ -52,6 +53,24 @@ python -m executorch.backends.mlx.examples.llm.export_llm_hf \
     --use-custom-kv-cache \
     --qlinear 4w \
     --qembedding 4w
+
+# Gemma 4 text-only export
+python -m executorch.backends.mlx.examples.llm.export_llm_hf \
+    --model-id "google/gemma-4-E2B-it" \
+    --output gemma4_hf_int4.pte \
+    --use-custom-sdpa \
+    --use-custom-kv-cache \
+    --qlinear 4w
+```
+
+Gemma 4 support is currently validated for the text-only path using
+`--use-custom-sdpa --use-custom-kv-cache --qlinear 4w`.
+
+Validated with `transformers` commit
+`61461a7bcb458db7cf6eeea49678b9ab776a7821`:
+
+```bash
+pip install -U "transformers @ git+https://github.com/huggingface/transformers.git@61461a7bcb458db7cf6eeea49678b9ab776a7821"
 ```
 
 ### Options
@@ -81,12 +100,24 @@ python -m executorch.backends.mlx.examples.llm.run_llm_hf \
     --prompt "Explain quantum computing in simple terms"
 ```
 
+Gemma 4 checkpoints may use `AutoProcessor` instead of `AutoTokenizer`; `run_llm_hf` now supports both paths automatically for text-only prompts.
+
+Validated Gemma 4 run command:
+
+```bash
+python -m executorch.backends.mlx.examples.llm.run_llm_hf \
+    --pte gemma4_hf_int4.pte \
+    --model-id google/gemma-4-E2B-it \
+    --prompt "What is the capital of France?" \
+    --max-new-tokens 50
+```
+
 ### Options
 
 | Option | Default | Description |
 |--------|---------|-------------|
 | `--pte` | `llama_hf.pte` | Path to .pte file |
-| `--model-id` | `unsloth/Llama-3.2-1B-Instruct` | HuggingFace model ID (for tokenizer) |
+| `--model-id` | `unsloth/Llama-3.2-1B-Instruct` | HuggingFace model ID (for tokenizer or processor) |
 | `--prompt` | `The quick brown fox` | Input prompt |
 | `--max-new-tokens` | `50` | Maximum tokens to generate |
 
