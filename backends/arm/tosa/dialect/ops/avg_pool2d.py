@@ -136,7 +136,7 @@ def compute_avg_pool2d_output_shape(
     pad: List[IntLikeType] | List[int],
     op: str = "AVG_POOL2D",
 ) -> List[IntLikeType]:
-    """Compute the output shape for NCHW avg-pool."""
+    """Compute the output shape for NHWC avg-pool."""
 
     if x.dim() != 4:
         raise TosaValueError(f"{op} requires a 4D tensor, got {x.dim()}D", op=op)

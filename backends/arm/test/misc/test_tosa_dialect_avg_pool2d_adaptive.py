@@ -19,6 +19,27 @@ from executorch.exir.dialects._ops import ops as exir_ops
 from torch._subclasses.fake_tensor import FakeTensorMode
 
 
+def test_avg_pool2d_tosa_non_square_kernel_output_shape():
+    with TosaLoweringContext(
+        TosaSpecification.create_from_string("TOSA-1.0+FP")
+    ), FakeTensorMode() as mode:
+        x = mode.from_tensor(torch.randn((1, 20, 20, 8), dtype=torch.float32))
+        input_zp = mode.from_tensor(torch.zeros((1,), dtype=torch.float32))
+        output_zp = mode.from_tensor(torch.zeros((1,), dtype=torch.float32))
+
+        output = exir_ops.backend.tosa.AVG_POOL2D.default(
+            x,
+            input_zp,
+            output_zp,
+            [2, 3],
+            [2, 1],
+            [1, 1, 0, 0],
+            torch.float32,
+        )
+
+        assert tuple(output.shape) == (1, 11, 18, 8)
+
+
 def test_avg_pool2d_adaptive_tosa_INT():
     sample_inputs = [
         (
