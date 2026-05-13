@@ -60,11 +60,18 @@ def get_input_node(node: torch.fx.Node, input_index: int) -> torch.fx.Node:
 
 def normalize_mean_dims(mean_dims: Sequence[int] | int | None, rank: int) -> List[int]:
     """Return mean dims as non-negative indices for the given rank."""
+    if rank <= 0:
+        raise ValueError(f"Expected rank > 0, got {rank}")
     if mean_dims is None:
         return list(range(rank))
     if isinstance(mean_dims, int):
         mean_dims = [mean_dims]
-    return [dim % rank for dim in mean_dims]
+    normalized_dims = []
+    for dim in mean_dims:
+        if dim < -rank or dim >= rank:
+            raise ValueError(f"Dimension out of range: {dim} for rank {rank}")
+        normalized_dims.append(dim % rank)
+    return normalized_dims
 
 
 def get_relu_fused_node(node: torch.fx.Node) -> Optional[torch.fx.Node]:

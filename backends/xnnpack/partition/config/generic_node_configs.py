@@ -517,20 +517,30 @@ class MeanDimConfig(GenericNodePartitionerConfig):
             return False
 
         input_rank = get_input_node(node, 0).meta["val"].dim()
+        if input_rank != 4:
+            why(
+                node,
+                reason=f"mean.dim only supports averaging 4D tensors, got tensor of rank {input_rank}",
+            )
+            return False
+
+        # This path lowers mean.dim to XNNPACK Global Average Pooling, which
+        # cannot encode an explicit dtype override.
+        if node.kwargs.get("dtype") is not None:
+            why(node, reason="mean.dim does not support dtype")
+            return False
+
         keepdim = len(node.args) >= 3 and bool(node.args[2])
-        dims = normalize_mean_dims(node.args[1], input_rank)
+        try:
+            dims = normalize_mean_dims(node.args[1], input_rank)
+        except ValueError as error:
+            why(node, reason=f"mean.dim has invalid dims: {error}")
+            return False
 
         if sorted(dims) != [2, 3]:
             why(
                 node,
                 reason="mean.dim only supports averaging 4D tensors across the innermost dimensions",
-            )
-            return False
-
-        if input_rank != 4:
-            why(
-                node,
-                reason=f"mean.dim only supports averaging 4D tensors, got tensor of rank {input_rank}",
             )
             return False
 

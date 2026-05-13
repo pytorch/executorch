@@ -58,6 +58,13 @@ class MeanDim(NodeVisitor):
             len(input_shape) == 4, "Require input to mean.dim be 4 dimensional"
         )
 
+        # This visitor serializes mean.dim as Global Average Pooling, which has
+        # no field for an explicit dtype override.
+        check_or_raise(
+            node.kwargs.get("dtype") is None,
+            "XNNPACK does not support mean.dim with dtype",
+        )
+
         # mean dims
         mean_dims = normalize_mean_dims(node.args[1], len(input_shape))
         check_or_raise(

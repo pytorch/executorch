@@ -16,14 +16,18 @@ class TestMeanDim(unittest.TestCase):
         torch._dynamo.reset()
 
     class MeanDim(torch.nn.Module):
-        def __init__(self, dims, keepdim=True):
+        def __init__(self, dims, keepdim=True, dtype=None):
             super().__init__()
             self.dims = dims
             self.keepdim = keepdim
+            self.dtype = dtype
 
         def forward(self, x):
             y = x + x
-            z = torch.mean(y, self.dims, keepdim=self.keepdim)
+            if self.dtype is None:
+                z = torch.mean(y, self.dims, keepdim=self.keepdim)
+            else:
+                z = torch.mean(y, self.dims, keepdim=self.keepdim, dtype=self.dtype)
             return z
 
     def _test_mean_dim(self, inputs, dims=(-1, -2)):
@@ -82,6 +86,16 @@ class TestMeanDim(unittest.TestCase):
         inputs = (torch.randn(1, 5, 4, 4),)
         (
             Tester(self.MeanDim((-1, -2), keepdim=False), inputs)
+            .export()
+            .check_count({"torch.ops.aten.mean.dim": 1})
+            .to_edge_transform_and_lower()
+            .check_count({"executorch_exir_dialects_edge__ops_aten_mean_dim": 1})
+        )
+
+    def test_fp32_mean_dim_unsupported_dtype(self):
+        inputs = (torch.randn(1, 5, 4, 4),)
+        (
+            Tester(self.MeanDim((-1, -2), dtype=torch.float64), inputs)
             .export()
             .check_count({"torch.ops.aten.mean.dim": 1})
             .to_edge_transform_and_lower()
