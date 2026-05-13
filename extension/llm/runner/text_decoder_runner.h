@@ -23,7 +23,8 @@ class ET_EXPERIMENTAL TextDecoderRunner {
   explicit TextDecoderRunner(
       Module* module,
       IOManager* io_manager,
-      std::string method_name = "forward");
+      std::string method_name = "forward",
+      std::unique_ptr<Sampler> sampler = nullptr);
 
   virtual ~TextDecoderRunner() = default;
 
@@ -71,14 +72,20 @@ class ET_EXPERIMENTAL TextDecoderRunner {
 
   /**
    * Sample the next token from the logits tensor.
-   * @param logits_tensor The logits tensor.
-   * @param temperature The temperature parameter used to control randomness in
-   * sampling.
-   * @return The next token.
+   * If a Sampler was passed in the constructor, it is reused (its temperature
+   * will be updated to match the argument). Otherwise a temporary Sampler is
+   * created per call.
+   * @note Not thread-safe when a Sampler is injected; callers must serialize
+   *       access to this method.
    */
   inline int32_t logits_to_token(
       const executorch::aten::Tensor& logits_tensor,
       const float temperature = 0.0f) {
+    if (sampler_) {
+      sampler_->set_temperature(temperature);
+      return ::executorch::extension::llm::sample_from_logits(
+          logits_tensor, *sampler_);
+    }
     return ::executorch::extension::llm::logits_to_token(
         logits_tensor, temperature);
   }
@@ -94,6 +101,7 @@ class ET_EXPERIMENTAL TextDecoderRunner {
   Module* module_;
   IOManager* io_manager_;
   std::string method_name_;
+  std::unique_ptr<Sampler> sampler_;
 };
 
 } // namespace llm

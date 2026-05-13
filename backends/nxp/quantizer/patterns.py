@@ -880,7 +880,7 @@ class MulTensorPattern(QuantizationPattern):
     Basic quantization for all inputs and output.
     """
 
-    def partition_types(self) -> list[torch.nn.Module]:
+    def partition_types(self) -> list[OpOverload]:
         return [torch.ops.aten.mul.Tensor]
 
     def get_anchors(
