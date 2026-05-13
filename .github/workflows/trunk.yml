@@ -174,11 +174,11 @@ jobs:
           echo "---- ${TARGET} Board ${BOARD} FVP setup ----"
           run_command_block_from_readme "${ZEPHYR_SAMPLES_README_PATH}" "<!-- RUN setup_${BOARD}_fvp -->"
 
-          echo "---- ${TARGET} Create PTE ----"
-          run_command_block_from_readme "${ZEPHYR_SAMPLES_README_PATH}" "<!-- RUN test_${TARGET}_generate_pte -->"
-
           echo "---- ${TARGET} Build and run ----"
           run_command_block_from_readme "${ZEPHYR_SAMPLES_README_PATH}" "<!-- RUN test_${TARGET}_build_and_run -->"
+
+          echo "---- ${TARGET} Build and run Separate PTE ----"
+          run_command_block_from_readme "${ZEPHYR_SAMPLES_README_PATH}" "<!-- RUN test_${TARGET}_generate_pte -->"
         done
 
         # MV2 Ethos-U sample (NPU targets only — skips cortex-m55)
