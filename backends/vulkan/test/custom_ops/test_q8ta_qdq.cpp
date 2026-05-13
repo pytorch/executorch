@@ -39,14 +39,18 @@ TestCase create_test_case_from_config(
   TestCase test_case;
 
   // Create a descriptive name for the test case
-  // Format: ACCU/PERF  I=N,C,H,W  Tex_FP->Buf_Quant
-  std::string shape_str = shape_string(config.shape);
-  std::string test_name = config.test_case_name + "  I=" + shape_str + "  " +
-      repr_str(storage_type, fp_memory_layout) + "->" +
+  // QDQ: fp input -> int8 staging -> fp output (label as f32->f32)
+  std::string prefix = config.test_case_name; // "ACCU" or "PERF"
+  std::string storage_str = repr_str(storage_type, fp_memory_layout) + "->" +
       repr_str(utils::kBuffer, quantized_memory_layout);
-  if (!impl_selector.empty()) {
-    test_name += " [" + impl_selector + "]";
-  }
+  std::string suffix = impl_selector.empty() ? "" : "[" + impl_selector + "]";
+  std::string test_name = make_test_label(
+      prefix,
+      dtype_short(input_dtype),
+      dtype_short(input_dtype),
+      shape_bracket(config.shape),
+      storage_str,
+      suffix);
   test_case.set_name(test_name);
 
   // Set the operator name for the test case

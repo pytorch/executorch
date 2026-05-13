@@ -39,11 +39,18 @@ TestCase create_test_case_from_config(
   TestCase test_case;
 
   // Create a descriptive name for the test case
-  std::string shape_str = shape_string(config.shape);
-  std::string test_name = config.test_case_name + "  I=" + shape_str + "  " +
-      repr_str(storage_type, fp_memory_layout) + "->" +
+  // Q-clone-DQ: fp input transitions through int8 layouts and back to fp.
+  // Label dtype-wise as i8->i8 since the clone happens in the quantized domain.
+  std::string prefix = config.test_case_name; // "ACCU" or "PERF"
+  std::string storage_str = repr_str(storage_type, fp_memory_layout) + "->" +
       repr_str(utils::kBuffer, inp_quant_layout) + "->" +
       repr_str(utils::kBuffer, outp_quant_layout);
+  std::string test_name = make_test_label(
+      prefix,
+      dtype_short(vkapi::kChar),
+      dtype_short(vkapi::kChar),
+      shape_bracket(config.shape),
+      storage_str);
   test_case.set_name(test_name);
 
   // Set the operator name for the test case
