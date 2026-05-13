@@ -59,9 +59,8 @@ static TestCase create_conv2d_dw_test_case(
       config.dims.H > kRefDimSizeLimit || config.dims.W > kRefDimSizeLimit;
 
   std::string prefix = is_perf ? "PERF" : "ACCU";
-  std::string storage_str = storage_type_abbrev(storage_type);
-  std::string layout_str = layout_abbrev(memory_layout);
-  std::string dtype_str = (dtype == vkapi::kHalf) ? "f16" : "f32";
+  std::string storage_str = repr_str(storage_type, memory_layout);
+  std::string dtype_str = dtype_short(dtype);
   std::string bias_str = config.has_bias ? "+bias" : "";
 
   int64_t H_out = calc_out_size(
@@ -76,22 +75,27 @@ static TestCase create_conv2d_dw_test_case(
       config.stride.w,
       config.padding.w,
       config.dilation.w);
+  (void)H_out;
+  (void)W_out;
 
+  // groups for depthwise conv2d == number of input channels
   std::string shape = "[" + std::to_string(config.dims.N) + "," +
       std::to_string(config.dims.C) + "," + std::to_string(config.dims.H) +
       "," + std::to_string(config.dims.W) + "] k" +
-      std::to_string(config.kernel.h) + "x" + std::to_string(config.kernel.w) +
-      " s" + std::to_string(config.stride.h) + " p" +
-      std::to_string(config.padding.h) + " d" +
-      std::to_string(config.dilation.h) + "->[" +
-      std::to_string(config.dims.N) + "," + std::to_string(config.dims.C) +
-      "," + std::to_string(H_out) + "," + std::to_string(W_out) + "]";
+      std::to_string(config.kernel.h) + " s" + std::to_string(config.stride.h) +
+      " p" + std::to_string(config.padding.h) + " d" +
+      std::to_string(config.dilation.h) + " g" + std::to_string(config.dims.C);
 
-  std::string selector_str =
-      impl_selector.empty() ? "" : " [" + impl_selector + "]";
+  std::string suffix = bias_str;
+  if (!impl_selector.empty()) {
+    if (!suffix.empty()) {
+      suffix += " ";
+    }
+    suffix += "[" + impl_selector + "]";
+  }
 
-  std::string name = prefix + "  conv2d_dw" + bias_str + " " + shape + "  " +
-      storage_str + "(" + layout_str + ") " + dtype_str + selector_str;
+  std::string name =
+      make_test_label(prefix, dtype_str, dtype_str, shape, storage_str, suffix);
 
   test_case.set_name(name);
   test_case.set_operator_name("test_etvk.test_conv2d_dw.default");

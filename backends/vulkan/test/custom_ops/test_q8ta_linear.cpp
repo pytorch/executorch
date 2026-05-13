@@ -34,12 +34,26 @@ static TestCase create_test_case_from_config(
     const std::string& impl_selector = "") {
   TestCase test_case;
 
-  std::string dtype_str = (input_dtype == vkapi::kFloat) ? "Float" : "Half";
-
-  std::string test_name = config.test_case_name + "_Buffer_" + dtype_str;
-  if (!impl_selector.empty()) {
-    test_name += " [" + impl_selector + "]";
+  bool is_perf = config.M >= kRefDimSizeLimit || config.K >= kRefDimSizeLimit ||
+      config.N >= kRefDimSizeLimit;
+  std::string prefix = is_perf ? "PERF" : "ACCU";
+  std::string dtype_str = dtype_short(input_dtype);
+  std::string shape_str = "[" + std::to_string(config.M) + "," +
+      std::to_string(config.K) + "]x[" + std::to_string(config.N) + "," +
+      std::to_string(config.K) + "]";
+  std::string storage_str = repr_str(utils::kBuffer, utils::kWidthPacked);
+  std::string suffix;
+  if (!config.has_bias) {
+    suffix = "no_bias";
   }
+  if (!impl_selector.empty()) {
+    if (!suffix.empty()) {
+      suffix += " ";
+    }
+    suffix += "[" + impl_selector + "]";
+  }
+  std::string test_name = make_test_label(
+      prefix, dtype_str, dtype_str, shape_str, storage_str, suffix);
   test_case.set_name(test_name);
 
   test_case.set_operator_name("test_etvk.test_q8ta_linear.default");

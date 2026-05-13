@@ -38,19 +38,18 @@ static TestCase create_conv2d_pw_test_case(
       config.W > kRefDimSizeLimit;
 
   std::string prefix = is_perf ? "PERF" : "ACCU";
-  std::string storage_str = storage_type_abbrev(storage_type);
-  std::string layout_str = layout_abbrev(memory_layout);
-  std::string dtype_str = (dtype == vkapi::kHalf) ? "f16" : "f32";
+  std::string storage_str = repr_str(storage_type, memory_layout);
+  std::string dtype_str = dtype_short(dtype);
   std::string bias_str = config.has_bias ? "+bias" : "";
 
+  // Pointwise conv2d: kernel 1x1, stride 1, pad 0, dilation 1, groups 1
   std::string shape = "[" + std::to_string(config.N) + "," +
       std::to_string(config.C_in) + "," + std::to_string(config.H) + "," +
-      std::to_string(config.W) + "]->[" + std::to_string(config.N) + "," +
-      std::to_string(config.C_out) + "," + std::to_string(config.H) + "," +
-      std::to_string(config.W) + "]";
+      std::to_string(config.W) + "]x[" + std::to_string(config.C_out) + "," +
+      std::to_string(config.C_in) + ",1,1] s1 p0 d1 g1";
 
-  std::string name = prefix + "  conv2d_pw" + bias_str + " " + shape + "  " +
-      storage_str + "(" + layout_str + ") " + dtype_str;
+  std::string name = make_test_label(
+      prefix, dtype_str, dtype_str, shape, storage_str, bias_str);
 
   test_case.set_name(name);
   test_case.set_operator_name("test_etvk.test_conv2d_pw.default");

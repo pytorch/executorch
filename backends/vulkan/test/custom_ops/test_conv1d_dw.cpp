@@ -37,8 +37,8 @@ static TestCase create_conv1d_dw_test_case(
   bool is_perf = config.C > kRefDimSizeLimit || config.L > kRefDimSizeLimit;
 
   std::string prefix = is_perf ? "PERF" : "ACCU";
-  std::string storage_str = storage_type_abbrev(storage_type);
-  std::string dtype_str = (dtype == vkapi::kHalf) ? "f16" : "f32";
+  std::string storage_str = storage_type_abbrev(storage_type) + "(HP)";
+  std::string dtype_str = dtype_short(dtype);
   std::string bias_str = config.has_bias ? "+bias" : "";
 
   int64_t L_out =
@@ -46,13 +46,13 @@ static TestCase create_conv1d_dw_test_case(
           config.stride +
       1;
 
-  std::string name = prefix + "  conv1d_dw" + bias_str + " [" +
-      std::to_string(config.N) + "," + std::to_string(config.C) + "," +
-      std::to_string(config.L) + "] K=" + std::to_string(config.K) +
-      " s=" + std::to_string(config.stride) +
-      " p=" + std::to_string(config.padding) +
-      " d=" + std::to_string(config.dilation) + "  " + storage_str + "(HP) " +
-      dtype_str;
+  std::string shape = "[" + std::to_string(config.N) + "," +
+      std::to_string(config.C) + "," + std::to_string(config.L) + "] k" +
+      std::to_string(config.K) + " s" + std::to_string(config.stride) + " p" +
+      std::to_string(config.padding) + " d" + std::to_string(config.dilation);
+
+  std::string name = make_test_label(
+      prefix, dtype_str, dtype_str, shape, storage_str, bias_str);
 
   test_case.set_name(name);
   test_case.set_operator_name("test_etvk.test_conv1d_dw.default");
