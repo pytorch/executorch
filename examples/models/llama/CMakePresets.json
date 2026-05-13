@@ -94,7 +94,7 @@
             "name": "llama-mlx",
             "displayName": "Build Llama runner with MLX backend",
             "configurePreset": "llama-mlx",
-            "targets": ["llama_main"]
+            "targets": ["llama_main", "lfm25_formatter_helper"]
         }
     ],
     "workflowPresets": [

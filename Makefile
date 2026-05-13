@@ -91,7 +91,7 @@
 #
 # ==============================================================================
 
-.PHONY: voxtral-cuda voxtral-cpu voxtral-metal voxtral-mlx voxtral_realtime-cuda voxtral_realtime-cpu voxtral_realtime-metal voxtral_realtime-mlx voxtral_tts-cpu voxtral_tts-cuda whisper-cuda whisper-cuda-debug whisper-cpu whisper-metal parakeet-cuda parakeet-cuda-debug parakeet-cpu parakeet-metal parakeet-mlx parakeet-vulkan dinov2-cuda dinov2-cuda-debug sortformer-cuda sortformer-cpu silero-vad-cpu llama-cuda llama-cuda-debug llama-cpu lfm_2_5-mlx llava-cpu gemma3-cuda gemma3-cpu gemma4_31b-cuda qwen3_5_moe-cuda qwen3_5_moe-metal clean help
+.PHONY: voxtral-cuda voxtral-cpu voxtral-metal voxtral-mlx voxtral_realtime-cuda voxtral_realtime-cpu voxtral_realtime-metal voxtral_realtime-mlx voxtral_tts-cpu voxtral_tts-cuda whisper-cuda whisper-cuda-debug whisper-cpu whisper-metal parakeet-cuda parakeet-cuda-debug parakeet-cpu parakeet-metal parakeet-mlx parakeet-vulkan dinov2-cuda dinov2-cuda-debug sortformer-cuda sortformer-cpu silero-vad-cpu llama-cuda llama-cuda-debug llama-cpu lfm_2_5-mlx lfm_2_5_formatter-mlx llava-cpu gemma3-cuda gemma3-cpu gemma4_31b-cuda qwen3_5_moe-cuda qwen3_5_moe-metal clean help
 
 help:
 	@echo "This Makefile adds targets to build runners for various models on various backends. Run using \`make <target>\`. Available targets:"
@@ -123,7 +123,8 @@ help:
 	@echo "  llama-cuda          - Build Llama runner with CUDA backend"
 	@echo "  llama-cuda-debug    - Build Llama runner with CUDA backend (debug mode)"
 	@echo "  llama-cpu           - Build Llama runner with CPU backend"
-	@echo "  lfm_2_5-mlx         - Build LFM2.5 runner with MLX backend"
+	@echo "  lfm_2_5-mlx         - Build LFM2.5 runner (llama_main) with MLX backend"
+	@echo "  lfm_2_5_formatter-mlx - Build LFM2.5 persistent formatter helper (lfm25_formatter_helper) with MLX backend"
 	@echo "  llava-cpu           - Build Llava runner with CPU backend"
 	@echo "  gemma3-cuda         - Build Gemma3 runner with CUDA backend"
 	@echo "  gemma3-cpu          - Build Gemma3 runner with CPU backend"
@@ -376,11 +377,20 @@ llama-cuda-debug:
 lfm_2_5-mlx:
 	@echo "==> Building and installing ExecuTorch with MLX..."
 	cmake --workflow --preset mlx-release
-	@echo "==> Building LFM2.5 runner with MLX..."
+	@echo "==> Building LFM2.5 runner + persistent formatter helper with MLX..."
 	cd examples/models/llama && cmake --workflow --preset llama-mlx
 	@echo ""
 	@echo "✓ Build complete!"
-	@echo "  Binary: cmake-out/examples/models/llama/llama_main"
+	@echo "  Binaries:"
+	@echo "    cmake-out/examples/models/llama/llama_main"
+	@echo "    cmake-out/examples/models/llama/lfm25_formatter_helper"
+
+# Same workflow as lfm_2_5-mlx; named target for the macOS ExecuWhisper
+# integration which only needs the persistent formatter helper. Both targets
+# rely on the `llama-mlx` build preset, which already lists
+# `lfm25_formatter_helper` alongside `llama_main`.
+lfm_2_5_formatter-mlx: lfm_2_5-mlx
+	@echo "  Helper: cmake-out/examples/models/llama/lfm25_formatter_helper"
 
 llava-cpu:
 	@echo "==> Building and installing ExecuTorch..."
