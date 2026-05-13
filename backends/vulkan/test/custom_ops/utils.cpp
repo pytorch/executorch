@@ -190,12 +190,11 @@ void ValueSpec::generate_tensor_data(int seed) {
     case vkapi::kHalf: {
       half_data.resize(num_elements);
       if (data_gen_type == DataGenType::RANDOM) {
-        // Generate random float data first, then convert to half
+        // Generate random float data first, then convert to IEEE 754 half.
         std::vector<float> temp_data(num_elements);
         generate_random_float_data(temp_data, -1.0f, 1.0f, seed);
         for (size_t i = 0; i < temp_data.size(); ++i) {
-          // Simple conversion to uint16_t representation of half
-          half_data[i] = static_cast<uint16_t>(temp_data[i] * 32767.0f);
+          half_data[i] = float_to_half(temp_data[i]);
         }
       } else if (data_gen_type == DataGenType::RANDOM_SCALES) {
         // Generate random scales in float, then convert to proper fp16
@@ -211,10 +210,7 @@ void ValueSpec::generate_tensor_data(int seed) {
       } else if (data_gen_type == DataGenType::RANDINT4) {
         generate_randint_half_data(half_data, -8, 7, seed);
       } else if (data_gen_type == DataGenType::ONES) {
-        std::fill(
-            half_data.begin(),
-            half_data.end(),
-            static_cast<uint16_t>(32767)); // 1.0 in half
+        std::fill(half_data.begin(), half_data.end(), float_to_half(1.0f));
       } else if (data_gen_type == DataGenType::ZEROS) {
         std::fill(
             half_data.begin(),
@@ -536,7 +532,7 @@ float ValueSpec::get_element(size_t index) const {
     case vkapi::kFloat:
       return index < float_data.size() ? float_data[index] : 0.0f;
     case vkapi::kHalf:
-      return index < half_data.size() ? (half_data[index] / 32767.0f) : 0.0f;
+      return index < half_data.size() ? half_to_float(half_data[index]) : 0.0f;
     case vkapi::kInt:
       return index < int32_data.size() ? static_cast<float>(int32_data[index])
                                        : 0.0f;
@@ -690,12 +686,22 @@ void generate_zeros_data(std::vector<float>& data) {
 bool ValueSpec::validate_against_reference(
     float abs_tolerance,
     float rel_tolerance) const {
-  // Only validate float tensors as specified in requirements
-  if (dtype != vkapi::kFloat || !is_tensor()) {
-    return true; // Skip validation for non-float or non-tensor types
+  if (!is_tensor() || (dtype != vkapi::kFloat && dtype != vkapi::kHalf)) {
+    return true; // Skip validation for unsupported dtypes
   }
 
-  const auto& computed_data = get_float_data();
+  // For kHalf, materialize the GPU output as float so the same tolerance
+  // machinery can compare against the (always-float) reference data.
+  std::vector<float> half_as_float;
+  if (dtype == vkapi::kHalf) {
+    const auto& half_bits = get_half_data();
+    half_as_float.resize(half_bits.size());
+    for (size_t i = 0; i < half_bits.size(); ++i) {
+      half_as_float[i] = half_to_float(half_bits[i]);
+    }
+  }
+  const std::vector<float>& computed_data =
+      (dtype == vkapi::kHalf) ? half_as_float : get_float_data();
   const auto& reference_data = get_ref_float_data();
 
   // Skip validation if no reference data is available

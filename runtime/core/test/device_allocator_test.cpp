@@ -231,6 +231,9 @@ TEST_F(DeviceAllocatorTest, RegistrySingletonInstance) {
   EXPECT_EQ(&instance1, &instance2);
 }
 
+// EXPECT_DEATH requires gtest death-test support, which is unavailable on
+// platforms without fork() (e.g. iOS).  Skip on those platforms.
+#if GTEST_HAS_DEATH_TEST
 TEST_F(DeviceAllocatorTest, RegisteringSameDeviceTypeTwiceAborts) {
   // The fixture has already registered cuda_allocator() for CUDA; attempting
   // to register a second allocator for the same device type must abort.
@@ -239,3 +242,4 @@ TEST_F(DeviceAllocatorTest, RegisteringSameDeviceTypeTwiceAborts) {
       register_device_allocator(&another_allocator),
       "Allocator already registered");
 }
+#endif // GTEST_HAS_DEATH_TEST

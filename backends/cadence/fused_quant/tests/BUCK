@@ -24,3 +24,14 @@ runtime.cxx_test(
         "//executorch/runtime/core/exec_aten/testing_util:tensor_util",
     ],
 )
+
+runtime.cxx_test(
+    name = "test_op_relu",
+    srcs = ["test_op_relu.cpp"],
+    platforms = CXX,
+    deps = [
+        "//executorch/backends/cadence/fused_quant:op_relu",
+        "//executorch/kernels/test:gtest_utils",
+        "//executorch/runtime/core/exec_aten/testing_util:tensor_util",
+    ],
+)
