@@ -235,13 +235,14 @@ Error TextLLMRunner::generate(
   // Set ignore_eos based on config
   text_token_generator_->set_ignore_eos(config.ignore_eos);
 
+  // Use the configuration's temperature
+  float resolved_temp =
+      temperature_ == -1.0f ? config.temperature : temperature_;
+
   // Generate max_new_tokens - 1 because prefill already generated 1 token.
   auto generate_result = text_token_generator_->generate(
-      prompt_tokens,
-      pos_,
-      max_new_tokens - 1,
-      temperature_ == -1.0f ? config.temperature : temperature_,
-      wrapped_callback);
+      prompt_tokens, pos_, max_new_tokens - 1, resolved_temp, wrapped_callback);
+
   if (!generate_result.ok()) {
     return generate_result.error();
   }
