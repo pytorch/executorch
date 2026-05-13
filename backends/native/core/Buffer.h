@@ -22,9 +22,9 @@ namespace native {
  * VulkanBuffer) are private to each runtime; the router and executor
  * see only Buffer*.
  *
- * Ownership: Buffers are owned by their Runtime's RuntimeContext (its
- * pool). Engine::allocate returns a non-owning Buffer*. Engines own
- * Buffer lifetime; nothing outside the engine tracks per-vid storage.
+ * Ownership: Buffers are owned by the Engine that allocated them.
+ * Engine::allocate returns a non-owning Buffer*. Engines own Buffer
+ * lifetime; nothing outside the engine tracks per-vid storage.
  *
  * Each Buffer carries a MemoryKind (the addressing contract under which
  * it was allocated). The kind is set at construction by the backend in

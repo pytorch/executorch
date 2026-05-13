@@ -11,7 +11,7 @@
 #include <executorch/backends/native/core/Engine.h>
 #include <executorch/backends/native/runtimes/cpu/CpuEvent.h>
 #include <executorch/backends/native/runtimes/cpu/HostBuffer.h>
-#include <executorch/backends/native/runtimes/host_pool/HostPoolRuntimeContext.h>
+#include <executorch/backends/native/core/Engine.h>
 
 #include <cstdlib>
 #include <memory>
@@ -41,9 +41,8 @@ class HostPoolEngine final : public Engine {
  public:
   explicit HostPoolEngine(
       const ::executorch::backends::portable::Graph& graph,
-      HostPoolRuntimeContext& ctx,
       InstanceId id)
-      : Engine(graph), ctx_(ctx), id_(id) {}
+      : Engine(graph), id_(id) {}
 
   ~HostPoolEngine() override = default;
 
@@ -118,7 +117,6 @@ input_args) override;
   void drain() override {}
 
  private:
-  HostPoolRuntimeContext& ctx_;
   InstanceId id_;
 
   // Single contiguous arena that backs every Owned (non-IO) Buffer

@@ -10,7 +10,6 @@
 
 #include <executorch/backends/native/core/Runtime.h>
 #include <executorch/backends/native/runtimes/host_pool/HostPoolEngine.h>
-#include <executorch/backends/native/runtimes/host_pool/HostPoolRuntimeContext.h>
 
 #include <atomic>
 #include <memory>
@@ -28,7 +27,7 @@ namespace native {
  * Conventionally lives at slot 0 of Plan::providers / Plan::instances.
  * Compute providers (CpuRuntime, MetalRuntime, ...) get per-runtime
  * device-side mirrors of these host buffers via
- * Engine::AllocRequest::mirror_partner.
+ * Engine::AllocRequest::host_mirror_value_id.
  */
 class HostPoolRuntime final : public Runtime {
  public:
@@ -48,18 +47,13 @@ class HostPoolRuntime final : public Runtime {
     return false;
   }
 
-  RuntimeContext& context() override {
-    return ctx_;
-  }
-
   std::unique_ptr<Engine> instantiate(
       const ::executorch::backends::portable::Graph& graph) override {
     InstanceId id = next_instance_id_.fetch_add(1, std::memory_order_relaxed);
-    return std::make_unique<HostPoolEngine>(graph, ctx_, id);
+    return std::make_unique<HostPoolEngine>(graph, id);
   }
 
  private:
-  HostPoolRuntimeContext ctx_;
   std::atomic<InstanceId> next_instance_id_{0};
 };
 

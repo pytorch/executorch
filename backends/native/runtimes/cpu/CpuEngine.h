@@ -11,7 +11,7 @@
 #include <executorch/backends/native/core/Engine.h>
 #include <executorch/backends/native/core/EngineUtils.h>
 #include <executorch/backends/native/runtimes/cpu/CpuEvent.h>
-#include <executorch/backends/native/runtimes/cpu/CpuRuntimeContext.h>
+#include <executorch/backends/native/core/Engine.h>
 #include <executorch/backends/native/runtimes/cpu/HostBuffer.h>
 
 #include <cstdlib>
@@ -72,11 +72,9 @@ class CpuEngine final : public DeviceEngine {
  public:
   explicit CpuEngine(
       const ::executorch::backends::portable::Graph& graph,
-      CpuRuntimeContext& ctx,
       InstanceId id,
       bool accept_io_directly = true)
       : DeviceEngine(graph),
-        ctx_(ctx),
         id_(id),
         accept_io_directly_(accept_io_directly) {}
 
@@ -171,7 +169,6 @@ class CpuEngine final : public DeviceEngine {
   void drain() override {} // CPU is synchronous; no in-flight work.
 
  private:
-  CpuRuntimeContext& ctx_;
   InstanceId id_;
   // See ctor — when false, decline to claim graph IO via
   // handles_input/output_directly; the router emits explicit

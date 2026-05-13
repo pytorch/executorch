@@ -65,10 +65,6 @@ class MetalRuntime final : public Runtime {
 
   bool can_run(const OpDescriptor& op) const override;
 
-  RuntimeContext& context() override {
-    return ctx_;
-  }
-
   std::unique_ptr<Engine> instantiate(
       const ::executorch::backends::portable::Graph& graph) override;
 
@@ -78,13 +74,7 @@ class MetalRuntime final : public Runtime {
   }
 
  private:
-  // Tag-only RuntimeContext (we don't carry any per-Runtime state in
-  // it; the MetalStream IS the per-Runtime state and is held directly
-  // on this class).
-  struct MetalRuntimeContext : public RuntimeContext {};
-
   std::unique_ptr<::executorch::backends::metal_v2::MetalStream> stream_;
-  MetalRuntimeContext ctx_;
   std::atomic<InstanceId> next_instance_id_{0};
 };
 

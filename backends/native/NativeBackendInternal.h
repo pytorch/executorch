@@ -71,17 +71,17 @@ using ::executorch::backends::portable::Graph;
  * Per-program state held across init/execute/destroy. One per loaded
  * delegate. See DelegateInstance in §6 of the design doc.
  *
- * Note: the RuntimeRegistry (and the Runtimes / RuntimeContexts it
- * owns) lives at process scope, not on this struct — see
- * native_runtime_registry() in NativeBackendRegistry.cpp. Only the
- * per-program Engines (`owned_instances`) and routing state (`graph`,
- * `plan`, `values`, etc.) are owned here.
+ * Note: the RuntimeRegistry (and the Runtimes it owns) lives at process
+ * scope, not on this struct — see native_runtime_registry() in
+ * NativeBackendRegistry.cpp. Only the per-program Engines
+ * (`owned_instances`) and routing state (`graph`, `plan`, `values`,
+ * etc.) are owned here.
  */
 struct DelegateInstance {
   // Per-program Engines. One per available process-wide Runtime,
-  // produced by Runtime::instantiate() at init. Engines hold a
-  // non-owning reference to their Runtime's process-wide
-  // RuntimeContext.
+  // produced by Runtime::instantiate(graph) at init. Each Engine
+  // holds its Runtime's typed shared state (e.g., Metal stream)
+  // directly via constructor injection from its concrete Runtime.
   std::vector<std::unique_ptr<Engine>> owned_instances;
 
   // Parsed program — wrapped behind Graph. Downstream code reaches the

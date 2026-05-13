@@ -80,8 +80,8 @@ class NativeBackend final : public ::executorch::runtime::BackendInterface {
     d->graph = std::make_unique<Graph>(plans->Get(0), program);
 
     // Borrow the process-wide registry (constructed lazily on first
-    // call). DelegateInstance does not own Runtimes or RuntimeContexts;
-    // it only owns the per-program Engines below.
+    // call). DelegateInstance does not own Runtimes; it only owns the
+    // per-program Engines below.
     auto& registry = native_runtime_registry();
 
     // Read load-time backend option "compute_unit" if provided.

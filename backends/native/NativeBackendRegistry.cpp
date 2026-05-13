@@ -101,14 +101,14 @@ Runtime* lazy_metal_runtime() {
 // Process-wide RuntimeRegistry. Constructed once on first call (Meyers
 // singleton; thread-safe in C++11+); lives until process exit.
 //
-// The Runtimes it owns — and the RuntimeContexts they own (kernel
-// caches, JIT artifacts, GPU command queues, etc., once non-trivial
-// runtimes land) — are therefore shared across every DelegateInstance
-// in the process. Per-program state still lives on each
-// DelegateInstance's `owned_instances` (the Engines).
+// The Runtimes it owns — including any per-Runtime shared state they
+// hold directly (Metal stream, future kernel caches / JIT artifacts) —
+// are therefore shared across every DelegateInstance in the process.
+// Per-program state still lives on each DelegateInstance's
+// `owned_instances` (the Engines).
 //
-// Contract for non-trivial RuntimeContext state added later: must be
-// safe for concurrent reads + occasional writes from multiple
+// Contract for non-trivial per-Runtime shared state added later: must
+// be safe for concurrent reads + occasional writes from multiple
 // delegate threads (see threading model in design doc).
 RuntimeRegistry& native_runtime_registry() {
   static RuntimeRegistry registry(make_default_runtimes());

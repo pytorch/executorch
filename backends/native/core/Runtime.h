@@ -11,7 +11,6 @@
 #include <executorch/backends/native/core/Engine.h>
 #include <executorch/backends/native/core/MemoryKind.h>
 #include <executorch/backends/native/core/OpDescriptor.h>
-#include <executorch/backends/native/core/RuntimeContext.h>
 #include <executorch/backends/native/core/RuntimeId.h>
 
 #include <executorch/runtime/core/result.h>
@@ -54,16 +53,15 @@ class Runtime {
   // OpDescriptor and the return type are designed to grow non-breakingly.
   virtual bool can_run(const OpDescriptor& op) const = 0;
 
-  // Process-wide state (pools, kernel caches, command stream).
-  // Lazy-initialized on first instantiate(); lives until process exit.
-  virtual RuntimeContext& context() = 0;
-
-  // Per-program factory. Holds non-owning RuntimeContext& from this
-  // Runtime; receives `graph` which the Engine stores by reference for
-  // its lifetime. The caller MUST keep `graph` alive at least as long
-  // as the returned Engine (NativeBackend's DelegateInstance enforces
-  // this via member declaration order: Graph first, Engines after, so
-  // Engines tear down before the Graph does).
+  // Per-program factory. Receives `graph` which the Engine stores by
+  // reference for its lifetime. The caller MUST keep `graph` alive at
+  // least as long as the returned Engine (NativeBackend's
+  // DelegateInstance enforces this via member declaration order:
+  // Graph first, Engines after, so Engines tear down before the Graph
+  // does). Concrete Runtimes may pass typed shared state (kernel
+  // caches, command streams, etc.) to their Engine subclass through
+  // their own constructor signature; there is no neutral abstract
+  // shared-state base.
   virtual std::unique_ptr<Engine> instantiate(
       const ::executorch::backends::portable::Graph& graph) = 0;
 

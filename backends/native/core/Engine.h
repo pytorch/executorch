@@ -11,7 +11,10 @@
 #include <executorch/backends/native/core/Buffer.h>
 #include <executorch/backends/native/core/Event.h>
 #include <executorch/backends/native/core/MemoryKind.h>
-#include <executorch/backends/native/core/RuntimeContext.h>
+// Stable per-Engine id within a single Runtime. Used by
+// SubmissionTracker to scope drain() to a single Engine's submissions.
+// Defined here (formerly in RuntimeContext.h) since Engine is the only
+// API surface that returns it.
 #include <executorch/backends/native/ir/GraphTypes.h> // reuse existing Graph
 
 #include <executorch/runtime/core/error.h>
@@ -30,6 +33,10 @@
 namespace executorch {
 namespace backends {
 namespace native {
+
+// Stable per-Engine id within a single Runtime. Used by
+// SubmissionTracker to scope drain() to a single Engine's submissions.
+using InstanceId = uint32_t;
 
 /**
  * Per-input/output binding (router output). Defined here so that Engine
@@ -421,7 +428,7 @@ class Engine {
   // const: doesn't mutate engine state — just polls/waits the event.
   virtual ::executorch::runtime::Error wait(Event* event) const = 0;
 
-  // Stable per-Engine id within this Engine's RuntimeContext.
+  // Stable per-Engine id within this Engine's owning Runtime.
   virtual InstanceId id() const = 0;
 
   // Update the shape (and underlying storage capacity) of a vid this

@@ -9,7 +9,7 @@
 #pragma once
 
 #include <executorch/backends/native/core/Runtime.h>
-#include <executorch/backends/native/runtimes/cpu/CpuRuntimeContext.h>
+#include <executorch/backends/native/core/Engine.h>
 
 #include <atomic>
 #include <memory>
@@ -67,15 +67,10 @@ class CpuRuntime final : public Runtime {
 
   bool can_run(const OpDescriptor& op) const override;
 
-  RuntimeContext& context() override {
-    return ctx_;
-  }
-
   std::unique_ptr<Engine> instantiate(
       const ::executorch::backends::portable::Graph& graph) override;
 
  private:
-  CpuRuntimeContext ctx_;
   std::atomic<InstanceId> next_instance_id_{0};
   std::string_view name_ = "cpu";
   // Empty = accept any op the portable kernel registry can dispatch.
