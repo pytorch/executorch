@@ -164,9 +164,9 @@ def _get_example_input(
             case torch.contiguous_format:
                 sample = torch.ones(spec.shape, dtype=spec.dtype)
             case torch.channels_last:
-                sample = torch.ones(spec.shape, dtype=spec.dtype).to(
-                    memory_format=torch.channels_last
-                )
+                sample = torch.ones(spec.shape, dtype=spec.dtype)
+                if len(spec.shape) >= 4:
+                    sample = sample.to(memory_format=torch.channels_last)
             case _:
                 raise ValueError(f"Unsupported dim_order: {spec.dim_order}")
         # noinspection PyUnboundLocalVariable

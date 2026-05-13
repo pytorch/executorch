@@ -334,7 +334,9 @@ def _run_python_program(
                         list(spec.shape)
                     )
                     sample = np.moveaxis(sample.reshape(channels_last_shape), -1, 1)
-                    sample = torch.tensor(sample).to(memory_format=torch.channels_last)
+                    sample = torch.tensor(sample)
+                    if len(spec.shape) >= 4:
+                        sample = sample.to(memory_format=torch.channels_last)
 
                 case _:
                     raise ValueError(f"Unsupported dim_order: {spec.dim_order}")
