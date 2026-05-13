@@ -474,6 +474,13 @@ struct ValueSpec {
 // TestCase
 //
 
+// Default per-execute() wall-clock target used by the probe-then-scale logic
+// in execute_test_cases(). Picked generously enough that even an under-sized
+// chained_dispatches factor (the probe runs at governor-pinned clock and
+// underestimates the boost-clock latency) still drives sustained GPU
+// activity during measurement.
+constexpr int kDefaultTargetExecuteTimeUs = 100000;
+
 class TestCase {
  public:
   TestCase()
@@ -524,6 +531,28 @@ class TestCase {
     return shader_filter_;
   }
 
+  // Manual override for the number of times the op is dispatched per
+  // graph.execute() (a.k.a. chained_dispatches). If > 0, the framework uses
+  // this directly and skips the probe phase. 0 (the default) means adaptive
+  // (probe-then-scale).
+  void set_op_invocations_per_execute(int n) {
+    op_invocations_per_execute_ = n;
+  }
+  int get_op_invocations_per_execute() const {
+    return op_invocations_per_execute_;
+  }
+
+  // Target single-execute duration in microseconds. Used only when the
+  // manual chained_dispatches override is not set. Default
+  // kDefaultTargetExecuteTimeUs, picked generously enough to mitigate Adreno
+  // DCVS governor pinning during the probe.
+  void set_target_execute_time_us(int us) {
+    target_execute_time_us_ = us;
+  }
+  int get_target_execute_time_us() const {
+    return target_execute_time_us_;
+  }
+
   void add_input_spec(const ValueSpec& spec) {
     inputs_.push_back(spec);
   }
@@ -567,6 +596,8 @@ class TestCase {
     abs_tolerance_ = 2e-3f;
     rel_tolerance_ = 1e-3f;
     shader_filter_ = kDefaultShaderFilter;
+    op_invocations_per_execute_ = 0;
+    target_execute_time_us_ = kDefaultTargetExecuteTimeUs;
   }
 
  private:
@@ -577,6 +608,8 @@ class TestCase {
   float abs_tolerance_;
   float rel_tolerance_;
   std::vector<std::string> shader_filter_;
+  int op_invocations_per_execute_ = 0; // 0 = adaptive
+  int target_execute_time_us_ = kDefaultTargetExecuteTimeUs;
 };
 
 //
@@ -799,24 +832,35 @@ int64_t default_flop_calculator(const TestCase& test_case);
 
 using ReferenceComputeFunc = std::function<void(TestCase&)>;
 
+// Runs a measurement at the given chained_dispatches factor (how many times
+// the op is stacked inside one graph.execute()). This is a primitive; the
+// probe-then-scale orchestration lives in execute_test_cases().
+//
+// write_outputs controls whether the graph's staging output buffers are copied
+// back into test_case.outputs() at the end of the run. The probe path needs
+// write_outputs=true so the correctness check has a clean single-dispatch
+// reference. The benchmarking path passes write_outputs=false to avoid the
+// per-iter GPU->CPU copy cost.
 BenchmarkResult execute_test_case(
     TestCase& test_case,
-    int warmup_runs = 3,
-    int benchmark_runs = 10);
+    int warmup_runs = 1,
+    int benchmark_runs = 1,
+    int chained_dispatches = 1,
+    bool write_outputs = true);
 
 TestResult execute_test_cases(
     std::function<std::vector<TestCase>()> test_case_generator,
     FlopCalculatorFunc flop_calculator,
     const std::string& operation_name = "Operation",
-    int warmup_runs = 3,
-    int benchmark_runs = 10,
+    int warmup_runs = 1,
+    int benchmark_runs = 1,
     ReferenceComputeFunc reference_compute_func = nullptr);
 
 TestResult execute_test_cases(
     std::function<std::vector<TestCase>()> test_case_generator,
     const std::string& operation_name = "Operation",
-    int warmup_runs = 3,
-    int benchmark_runs = 10,
+    int warmup_runs = 1,
+    int benchmark_runs = 1,
     ReferenceComputeFunc reference_compute_func = nullptr);
 
 //
@@ -868,8 +912,14 @@ void compute_weight_sums_4bit_grouped(
 uint16_t float_to_half(float value);
 float half_to_float(uint16_t half_val);
 
-// Setup compute graph based on TestCase and operation name
-ComputeGraph setup_compute_graph(TestCase& test_case, std::string op_name);
+// Setup compute graph based on TestCase and operation name. The op function
+// is invoked op_invocations_per_execute times so that one graph.execute()
+// dispatches the op that many times (Google Benchmark-style stacking). The
+// output set_output_value() calls still happen once at the end.
+ComputeGraph setup_compute_graph(
+    TestCase& test_case,
+    std::string op_name,
+    int op_invocations_per_execute = 1);
 
 } // namespace prototyping
 } // namespace vulkan

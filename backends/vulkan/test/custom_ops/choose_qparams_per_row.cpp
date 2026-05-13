@@ -351,8 +351,8 @@ int main(int argc, char* argv[]) {
       generate_choose_qparams_per_channel_test_cases,
       choose_qparams_per_channel_flop_calculator,
       "ChooseQParamsPerChannel",
-      0,
-      10,
+      /*warmup_runs = */ 1,
+      /*benchmark_runs = */ 1,
       ref_fn);
 
   return 0;

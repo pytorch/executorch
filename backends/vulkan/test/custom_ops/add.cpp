@@ -157,8 +157,8 @@ int main(int argc, char* argv[]) {
       generate_add_test_cases,
       add_flop_calculator,
       "Add",
-      3,
-      10,
+      /*warmup_runs = */ 1,
+      /*benchmark_runs = */ 1,
       add_reference_compute);
 
   return 0;

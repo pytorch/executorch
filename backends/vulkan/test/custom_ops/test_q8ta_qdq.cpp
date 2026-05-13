@@ -369,13 +369,8 @@ int main(int argc, char* argv[]) {
       generate_q_dq_8bit_test_cases,
 #endif
       "QDQ8Bit",
-#ifdef DEBUG_MODE
-      0,
-      1,
-#else
-      3,
-      10,
-#endif
+      /*warmup_runs = */ 1,
+      /*benchmark_runs = */ 1,
       ref_fn);
 
   return 0;

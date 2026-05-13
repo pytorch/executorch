@@ -612,13 +612,8 @@ int main(int argc, char* argv[]) {
 #endif
       quantized_conv2d_flop_calculator,
       "QuantizedConv2dPW",
-#ifdef DEBUG_MODE
-      0,
-      1,
-#else
-      5,
-      25,
-#endif
+      /*warmup_runs = */ 1,
+      /*benchmark_runs = */ 1,
       ref_fn);
 
   return 0;

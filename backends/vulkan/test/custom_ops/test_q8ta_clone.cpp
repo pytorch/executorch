@@ -331,13 +331,8 @@ int main(int argc, char* argv[]) {
       generate_q8ta_clone_test_cases,
 #endif
       "Q8taClone",
-#ifdef DEBUG_MODE
-      0,
-      1,
-#else
-      3,
-      10,
-#endif
+      /*warmup_runs = */ 1,
+      /*benchmark_runs = */ 1,
       ref_fn);
 
   return 0;

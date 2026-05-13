@@ -566,7 +566,12 @@ int main(int argc, char* argv[]) {
   ReferenceComputeFunc ref_fn = reference_impl;
 
   auto results = execute_test_cases(
-      generate_mm_test_cases, mm_flop_calculator, "MatMul", 3, 10, ref_fn);
+      generate_mm_test_cases,
+      mm_flop_calculator,
+      "MatMul",
+      /*warmup_runs = */ 1,
+      /*benchmark_runs = */ 1,
+      ref_fn);
 
   return 0;
 }

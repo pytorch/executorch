@@ -296,8 +296,8 @@ int main(int /*argc*/, char* /*argv*/[]) {
   auto results = execute_test_cases(
       generate_all_cases,
       "Q8taPixelShuffle",
-      3, // warmup
-      10, // benchmark
+      /*warmup_runs = */ 1,
+      /*benchmark_runs = */ 1,
       ref_fn);
 
   return 0;

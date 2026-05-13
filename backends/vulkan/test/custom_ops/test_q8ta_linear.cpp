@@ -351,8 +351,8 @@ int main(int argc, char* argv[]) {
       generate_q8ta_linear_test_cases,
       q8ta_linear_flop_calculator,
       "Q8taLinear",
-      3,
-      10,
+      /*warmup_runs = */ 1,
+      /*benchmark_runs = */ 1,
       ref_fn);
 
   return 0;

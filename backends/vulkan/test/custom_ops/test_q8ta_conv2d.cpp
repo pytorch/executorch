@@ -734,13 +734,8 @@ int main(int argc, char* argv[]) {
 #endif
       quantized_conv2d_flop_calculator,
       "QuantizedConv2dQ8ToQ8To",
-#ifdef DEBUG_MODE
-      0,
-      1,
-#else
-      3,
-      10,
-#endif
+      /*warmup_runs = */ 1,
+      /*benchmark_runs = */ 1,
       ref_fn);
 
   return 0;

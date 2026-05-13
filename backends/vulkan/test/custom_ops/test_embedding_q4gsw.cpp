@@ -503,8 +503,8 @@ int main(int argc, char** argv) {
   auto results = execute_test_cases(
       generate_test_cases,
       "embedding_q4gsw",
-      /* warmup_runs */ 3,
-      /* benchmark_runs */ 10,
+      /*warmup_runs = */ 1,
+      /*benchmark_runs = */ 1,
       embedding_4bit_reference);
 
   results.print_summary();

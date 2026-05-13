@@ -259,8 +259,8 @@ int main(int argc, char* argv[]) {
       generate_conv1d_dw_test_cases,
       conv1d_dw_flop_calculator,
       "Conv1dDW",
-      3,
-      10,
+      /*warmup_runs = */ 1,
+      /*benchmark_runs = */ 1,
       ref_fn);
 
   return 0;

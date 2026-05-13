@@ -240,8 +240,8 @@ int main(int argc, char* argv[]) {
       generate_conv1d_pw_test_cases,
       conv1d_pw_flop_calculator,
       "Conv1dPW",
-      3,
-      10,
+      /*warmup_runs = */ 1,
+      /*benchmark_runs = */ 1,
       ref_fn);
 
   return 0;
