@@ -45,18 +45,23 @@ static TestCase create_test_case_from_config(
       : utils::kChannelsPacked;
 
   // Create test case name
-  // Format: ACCU/PERF  OC->IC  I=H,W  g=groups  k=kernel  Tex(CP)->Buf(4C1W)
   std::string prefix = config.test_case_name.substr(0, 4); // "ACCU" or "PERF"
-  std::string test_name = prefix + "  " + std::to_string(config.channels.out) +
-      "->" + std::to_string(config.channels.in) + "  " +
-      "I=" + std::to_string(config.input_size.h) + "," +
-      std::to_string(config.input_size.w) + "  " +
-      "g=" + std::to_string(config.groups) + "  " +
-      "k=" + std::to_string(config.kernel.h) + "  " +
-      repr_str(utils::kBuffer, int8_memory_layout);
-  if (!impl_selector.empty()) {
-    test_name += " [" + impl_selector + "]";
-  }
+  std::string dtype_str = dtype_short(input_dtype);
+  std::string in_shape = "[1," + std::to_string(config.channels.in) + "," +
+      std::to_string(config.input_size.h) + "," +
+      std::to_string(config.input_size.w) + "]";
+  std::string weight_shape = "[" + std::to_string(config.channels.out) + "," +
+      std::to_string(config.channels.in / config.groups) + "," +
+      std::to_string(config.kernel.h) + "," + std::to_string(config.kernel.w) +
+      "]";
+  std::string shape_str = in_shape + "x" + weight_shape + " s" +
+      std::to_string(config.stride.h) + " p" +
+      std::to_string(config.padding.h) + " d" +
+      std::to_string(config.dilation.h) + " g" + std::to_string(config.groups);
+  std::string storage_str = repr_str(utils::kBuffer, int8_memory_layout);
+  std::string suffix = impl_selector.empty() ? "" : "[" + impl_selector + "]";
+  std::string test_name = make_test_label(
+      prefix, dtype_str, dtype_str, shape_str, storage_str, suffix);
   test_case.set_name(test_name);
 
   // Set the operator name for the test case - use the unified test operator

@@ -115,7 +115,35 @@ void embedding_4bit_reference(TestCase& tc) {
 
 TestCase create_test_case(const EmbeddingConfig& config) {
   TestCase test_case;
-  test_case.set_name(config.test_case_name);
+
+  // Compute the output shape for label: indices_shape + [embed_dim]
+  std::vector<int64_t> output_shape_for_label = config.indices_shape;
+  output_shape_for_label.push_back(config.embed_dim);
+
+  // Treat any case that uses the large llama vocab/embed sizes as PERF.
+  // Otherwise default to ACCU (no PERF distinction is exercised by this op).
+  bool is_perf = config.vocab_size > 1024 || config.embed_dim > 1024;
+  std::string prefix = is_perf ? "PERF" : "ACCU";
+
+  std::string in_dtype = dtype_short(vkapi::kInt); // indices are i32
+  std::string out_dtype = dtype_short(config.dtype);
+
+  std::string storage_str = repr_str(config.storage_type, utils::kWidthPacked);
+
+  std::string shape_str = shape_bracket(config.indices_shape) + "x[" +
+      std::to_string(config.vocab_size) + "," +
+      std::to_string(config.embed_dim) + "]";
+  shape_str += " g" + std::to_string(config.group_size);
+  if (config.is_linear_weight) {
+    shape_str += " lw";
+  }
+  std::string suffix;
+  if (config.scales_dtype == vkapi::kFloat) {
+    suffix = "[f32_scales]";
+  }
+  std::string name = make_test_label(
+      prefix, in_dtype, out_dtype, shape_str, storage_str, suffix);
+  test_case.set_name(name);
   test_case.set_operator_name("et_vk.embedding_q4gsw.default");
   test_case.set_shader_filter({});
 

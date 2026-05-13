@@ -43,13 +43,20 @@ struct PixelShuffleConfig {
 TestCase create_test_case_from_config(const PixelShuffleConfig& config) {
   TestCase test_case;
 
-  std::string shape_str = shape_string(config.in_shape);
-  std::string qp_label = config.same_qparams ? "same_qp" : "diff_qp";
-  std::string layout_label =
-      "[" + config.in_layout + "->" + config.out_layout + "]";
-  std::string test_name = config.test_case_name + "  In=" + shape_str +
-      "  r=" + std::to_string(config.upscale_factor) + "  " + qp_label + "  " +
-      layout_label;
+  std::string prefix = config.test_case_name; // "ACCU" or "PERF"
+  std::string shape_str = shape_bracket(config.in_shape) +
+      " r=" + std::to_string(config.upscale_factor);
+  // Storage section captures the layout transition between int8 layouts.
+  std::string storage_str =
+      "Buf(" + config.in_layout + ")->Buf(" + config.out_layout + ")";
+  std::string suffix = config.same_qparams ? "[same_qp]" : "[diff_qp]";
+  std::string test_name = make_test_label(
+      prefix,
+      dtype_short(vkapi::kChar),
+      dtype_short(vkapi::kChar),
+      shape_str,
+      storage_str,
+      suffix);
   test_case.set_name(test_name);
 
   std::string operator_name = "test_etvk." + config.op_name + ".default";

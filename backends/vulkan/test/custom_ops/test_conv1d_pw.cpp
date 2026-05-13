@@ -35,15 +35,17 @@ static TestCase create_conv1d_pw_test_case(
       config.C_out > kRefDimSizeLimit || config.L > kRefDimSizeLimit;
 
   std::string prefix = is_perf ? "PERF" : "ACCU";
-  std::string storage_str = storage_type_abbrev(storage_type);
-  std::string dtype_str = (dtype == vkapi::kHalf) ? "f16" : "f32";
+  std::string storage_str = storage_type_abbrev(storage_type) + "(HP)";
+  std::string dtype_str = dtype_short(dtype);
 
   std::string bias_str = config.has_bias ? "+bias" : "";
 
-  std::string name = prefix + "  conv1d_pw" + bias_str + " [" +
-      std::to_string(config.N) + "," + std::to_string(config.C_in) + "," +
-      std::to_string(config.L) + "]x[" + std::to_string(config.C_out) + "," +
-      std::to_string(config.C_in) + ",1]  " + storage_str + "(HP) " + dtype_str;
+  std::string shape = "[" + std::to_string(config.N) + "," +
+      std::to_string(config.C_in) + "," + std::to_string(config.L) + "]x[" +
+      std::to_string(config.C_out) + "," + std::to_string(config.C_in) + ",1]";
+
+  std::string name = make_test_label(
+      prefix, dtype_str, dtype_str, shape, storage_str, bias_str);
 
   test_case.set_name(name);
   test_case.set_operator_name("test_etvk.test_conv1d_pw.default");

@@ -50,12 +50,21 @@ TestCase create_test_case_from_config(
   TestCase test_case;
 
   // Create a descriptive name for the test case
-  std::string storage_str =
-      (storage_type == utils::kTexture3D) ? "Texture3D" : "Buffer";
-  std::string dtype_str = (input_dtype == vkapi::kFloat) ? "Float" : "Half";
-
-  std::string test_name =
-      config.test_case_name + "_" + storage_str + "_" + dtype_str;
+  bool is_perf =
+      !(config.M < kRefDimSizeLimit && config.K < kRefDimSizeLimit &&
+        config.N < kRefDimSizeLimit);
+  std::string prefix = is_perf ? "PERF" : "ACCU";
+  std::string dtype_str = dtype_short(input_dtype);
+  std::string shape_str = "[" + std::to_string(config.M) + "," +
+      std::to_string(config.K) + "]x[" + std::to_string(config.N) + "," +
+      std::to_string(config.K) + "] g" + std::to_string(config.group_size);
+  std::string storage_str = repr_str(storage_type, utils::kWidthPacked);
+  std::string suffix = "[" + config.op_name + "]";
+  if (!config.has_bias) {
+    suffix += " no_bias";
+  }
+  std::string test_name = make_test_label(
+      prefix, dtype_str, dtype_str, shape_str, storage_str, suffix);
   test_case.set_name(test_name);
 
   // Set the operator name for the test case
