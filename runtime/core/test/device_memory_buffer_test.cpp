@@ -176,8 +176,7 @@ TEST_F(DeviceMemoryBufferTest, CreateUsesDefaultAlignmentWhenUnspecified) {
   auto result = DeviceMemoryBuffer::create(1024, DeviceType::CUDA, 0);
   ASSERT_TRUE(result.ok());
   EXPECT_EQ(
-      g_mock_cuda.last_allocate_alignment_,
-      DeviceAllocator::kDefaultAlignment);
+      g_mock_cuda.last_allocate_alignment_, DeviceAllocator::kDefaultAlignment);
 }
 
 TEST_F(DeviceMemoryBufferTest, CreateForwardsCustomAlignmentToAllocator) {
