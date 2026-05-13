@@ -116,6 +116,33 @@ macro(load_build_preset)
   # try to determine a preset file.
 endmacro()
 
+# Presets may cache boolean literals like OFF as STRING values before the final
+# cache type is known. Treat CMake false literals as disabled while keeping real
+# selectors and paths enabled.
+function(is_nonfalse_cmake_string VALUE OUT_VAR)
+  string(TOUPPER "${VALUE}" _value_upper)
+  if("${VALUE}" STREQUAL ""
+     OR "${_value_upper}" STREQUAL "0"
+     OR "${_value_upper}" STREQUAL "FALSE"
+     OR "${_value_upper}" STREQUAL "OFF"
+     OR "${_value_upper}" STREQUAL "NO"
+     OR "${_value_upper}" STREQUAL "N"
+     OR "${_value_upper}" STREQUAL "IGNORE"
+     OR "${_value_upper}" STREQUAL "NOTFOUND"
+     OR "${_value_upper}" MATCHES ".*-NOTFOUND$"
+  )
+    set(${OUT_VAR}
+        FALSE
+        PARENT_SCOPE
+    )
+  else()
+    set(${OUT_VAR}
+        TRUE
+        PARENT_SCOPE
+    )
+  endif()
+endfunction()
+
 # Check if the required options are set.
 function(is_option_enabled NAME OUT_VAR)
   if(NOT DEFINED ${NAME} AND NOT DEFINED CACHE{${NAME}})
@@ -151,30 +178,18 @@ function(is_option_enabled NAME OUT_VAR)
         )
       endif()
     else()
-      if(NOT "${${NAME}}" STREQUAL "")
-        set(${OUT_VAR}
-            TRUE
-            PARENT_SCOPE
-        )
-      else()
-        set(${OUT_VAR}
-            FALSE
-            PARENT_SCOPE
-        )
-      endif()
+      is_nonfalse_cmake_string("${${NAME}}" _string_option_enabled)
+      set(${OUT_VAR}
+          ${_string_option_enabled}
+          PARENT_SCOPE
+      )
     endif()
   else()
-    if("${${NAME}}")
-      set(${OUT_VAR}
-          TRUE
-          PARENT_SCOPE
-      )
-    else()
-      set(${OUT_VAR}
-          FALSE
-          PARENT_SCOPE
-      )
-    endif()
+    is_nonfalse_cmake_string("${${NAME}}" _string_option_enabled)
+    set(${OUT_VAR}
+        ${_string_option_enabled}
+        PARENT_SCOPE
+    )
   endif()
 endfunction()
 

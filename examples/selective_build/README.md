@@ -24,9 +24,15 @@ cmake --build . -j8
 
 ### CMake Options
 
-The example commands above show use of the EXECUTORCH_SELECT_OPS_MODEL option to select operators used in a PTE file, but there are
-several ways to provide the operator list. The options can be passed to CMake in the same way (during configuration) and are mutually
-exclusive, meaning that only one of these options should be chosen.
+The example commands above show use of the `EXECUTORCH_SELECT_OPS_MODEL`
+option to select operators used in a PTE file, but there are several ways to
+provide the operator list. These options can be passed to CMake in the same
+way during configuration, either individually or in combination. When multiple
+selectors are provided, ExecuTorch merges them into a single
+`selected_operators.yaml` file. A common pattern is to use
+`EXECUTORCH_SELECT_OPS_MODEL` for model-derived metadata and
+`EXECUTORCH_SELECT_OPS_LIST` for additional operators that must remain
+available.
 
  * `EXECUTORCH_SELECT_OPS_MODEL`: Select operators used in a .PTE file. Takes a path to the file.
  * `EXECUTORCH_SELECT_OPS_YAML`: Provide a list of operators from a .yml file, typically generated with the `codegen/tools/gen_oplist.py` script. See this script for usage information.
@@ -42,9 +48,15 @@ aten,aten::clone.out"
 
 #### DType-Selective Build
 
-To further reduce binary size, ExecuTorch can specialize the individual operators for only the dtypes (data types) used. For example, if
-the model only calls add with 32-bit floating point tensors, it can drop parts of the code that handle integer tensors or other floating point types. This option is controlled by passing `-DEXECUTORCH_DTYPE_SELECTIVE_BUILD=ON` to CMake. It is only supported in conjunction
-with the `EXECUTORCH_SELECT_OPS_MODEL` option and is not yet supported for other modes. It is recommended to enable this option when using `EXECUTORCH_SELECT_OPS_MODEL` as it provides significant size savings on top of the kernel selective build.
+To further reduce binary size, ExecuTorch can specialize the individual
+operators for only the dtypes (data types) used. For example, if the model only
+calls add with 32-bit floating point tensors, it can drop parts of the code
+that handle integer tensors or other floating point types. This option is
+controlled by passing `-DEXECUTORCH_ENABLE_DTYPE_SELECTIVE_BUILD=ON` to CMake.
+It is only supported when model-derived metadata is available, typically via
+`EXECUTORCH_SELECT_OPS_MODEL`. It is recommended to enable this option when
+using `EXECUTORCH_SELECT_OPS_MODEL` as it provides significant size savings on
+top of the kernel selective build.
 
 ### How it Works
 
@@ -106,7 +118,7 @@ gen_selected_ops(
   OPS_FROM_MODEL
   "${EXECUTORCH_SELECT_OPS_MODEL}"
   DTYPE_SELECTIVE_BUILD
-  "${EXECUTORCH_DTYPE_SELECTIVE_BUILD}"
+  "${EXECUTORCH_ENABLE_DTYPE_SELECTIVE_BUILD}"
 )
 
 generate_bindings_for_kernels(
@@ -117,7 +129,7 @@ generate_bindings_for_kernels(
   CUSTOM_OPS_YAML
   "${_custom_ops_yaml}"
   DTYPE_SELECTIVE_BUILD
-  "${EXECUTORCH_DTYPE_SELECTIVE_BUILD}"
+  "${EXECUTORCH_ENABLE_DTYPE_SELECTIVE_BUILD}"
 )
 
 gen_operators_lib(
@@ -128,7 +140,7 @@ gen_operators_lib(
   DEPS
   executorch_core
   DTYPE_SELECTIVE_BUILD
-  "${EXECUTORCH_DTYPE_SELECTIVE_BUILD}"
+  "${EXECUTORCH_ENABLE_DTYPE_SELECTIVE_BUILD}"
 )
 ```
 
