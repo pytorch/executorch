@@ -479,12 +479,14 @@ class TestCase {
   TestCase()
       : abs_tolerance_(2e-3f),
         rel_tolerance_(1e-3f),
-        shader_filter_(kDefaultShaderFilter) {}
+        shader_filter_(kDefaultShaderFilter),
+        op_invocations_per_execute_(1) {}
   TestCase(const std::string& name)
       : name_(name),
         abs_tolerance_(2e-3f),
         rel_tolerance_(1e-3f),
-        shader_filter_(kDefaultShaderFilter) {}
+        shader_filter_(kDefaultShaderFilter),
+        op_invocations_per_execute_(1) {}
 
   void set_name(const std::string& name) {
     name_ = name;
@@ -567,6 +569,40 @@ class TestCase {
     abs_tolerance_ = 2e-3f;
     rel_tolerance_ = 1e-3f;
     shader_filter_ = kDefaultShaderFilter;
+    op_invocations_per_execute_ = 1;
+  }
+
+  // Stack N copies of the op into one graph.execute() call.
+  //
+  // The framework constructs the compute graph by invoking the operator's
+  // dispatch function N times, each call sharing the same input and output
+  // ValueRefs. The driver inserts implicit write-after-write memory barriers
+  // between consecutive dispatches of the same shader writing to the same
+  // output, so behavior is correct (the output is overwritten N times with
+  // bit-identical data).
+  //
+  // Why this exists: on devices with aggressive DVFS / DCVS governors (e.g.
+  // Adreno 740), a single op invocation per graph.execute() does not produce
+  // sustained enough GPU activity to force the governor to escalate to boost
+  // clock. PERF numbers measured in that regime reflect governor-pinned state
+  // rather than actual hardware throughput. Stacking N copies of the op into
+  // one execute() drives sustained GPU activity high enough to escalate the
+  // governor, so reported PERF numbers track real peak throughput.
+  //
+  // When to use: set this to a large value (e.g. 100) for PERF cases that are
+  // governor-sensitive. ACCU cases should leave it at the default of 1 -
+  // stacking gives the same numeric output but is wasted work for correctness
+  // checks.
+  //
+  // Per-shader and per-op-invocation reported timings remain in
+  // "per-op-invocation" units regardless of N; stacking is invisible to the
+  // numbers printed in PERF rows.
+  void set_op_invocations_per_execute(int n) {
+    VK_CHECK_COND(n >= 1, "op_invocations_per_execute must be >= 1, got ", n);
+    op_invocations_per_execute_ = n;
+  }
+  int op_invocations_per_execute() const {
+    return op_invocations_per_execute_;
   }
 
  private:
@@ -577,6 +613,7 @@ class TestCase {
   float abs_tolerance_;
   float rel_tolerance_;
   std::vector<std::string> shader_filter_;
+  int op_invocations_per_execute_;
 };
 
 //

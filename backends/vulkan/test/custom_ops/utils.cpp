@@ -1423,7 +1423,14 @@ ComputeGraph setup_compute_graph(TestCase& test_case, std::string op_name) {
   std::vector<ValueRef> op_args = input_values;
   op_args.insert(op_args.end(), output_values.begin(), output_values.end());
 
-  opFn(graph, op_args);
+  // Stack op_invocations_per_execute() copies of the op into the graph. All
+  // copies share the same input/output ValueRefs; the driver inserts implicit
+  // WAW barriers between consecutive dispatches writing to the same output.
+  // Default of 1 preserves single-invocation behavior.
+  const int n_invocations = test_case.op_invocations_per_execute();
+  for (int i = 0; i < n_invocations; ++i) {
+    opFn(graph, op_args);
+  }
 
   for (size_t i = 0; i < output_values.size(); ++i) {
     graph.set_output_value(output_values[i]);
@@ -1501,6 +1508,16 @@ execute_test_case(TestCase& test_case, int warmup_runs, int benchmark_runs) {
     graph.execute();
   }
 
+  // Number of stacked op invocations per graph.execute(). For N>1, the
+  // graph contains N copies of the op; per-shader timestamps come back
+  // N-per-shader-per-execute, and the per-execute wall-clock covers all N
+  // invocations. Per-invocation reported timings are obtained by dividing
+  // the per-execute time by N. The per-shader iter_timings_us vector
+  // naturally averages across (benchmark_runs * N) entries, so per-shader
+  // numbers are already in per-invocation units without extra division.
+  const int n_invocations = test_case.op_invocations_per_execute();
+  const float inv_n_invocations = 1.0f / static_cast<float>(n_invocations);
+
   // Benchmark runs - collect individual iteration timings
   float total_cpu_time_us = 0.0f;
   float total_gpu_time_us = 0.0f;
@@ -1540,7 +1557,10 @@ execute_test_case(TestCase& test_case, int warmup_runs, int benchmark_runs) {
             shader_result.end_time_ns - shader_result.start_time_ns;
         float duration_us = static_cast<float>(duration_ns) / 1000.0f;
         gpu_time_us += duration_us;
-        // Store per-shader timing with work group sizes
+        // Store per-shader timing with work group sizes. Each iteration
+        // contributes N entries per shader (one per stacked dispatch);
+        // ShaderTiming::get_avg_time_us averages over all of them, which
+        // naturally produces a per-op-invocation number.
         result.add_shader_timing(
             shader_result.kernel_name,
             duration_us,
@@ -1550,12 +1570,19 @@ execute_test_case(TestCase& test_case, int warmup_runs, int benchmark_runs) {
     }
     total_gpu_time_us += gpu_time_us;
 
-    // Add the appropriate timing based on the flag
+    // Per-iter timing fed into iter_timings is normalized to a single op
+    // invocation by dividing the per-execute time by N. This keeps the
+    // headline "Mean" timing and the GFLOP/s calculation in per-invocation
+    // units regardless of stacking depth. For N=1 the division is a no-op.
     float iter_time_us = use_gpu_timestamps() ? gpu_time_us : cpu_time_us;
+    iter_time_us *= inv_n_invocations;
     result.add_iter_timing(iter_time_us);
   }
 
-  // Calculate averages for display
+  // Per-execute averages (wall-clock for the whole graph.execute(), which
+  // covers all N stacked invocations). These remain in per-execute units so
+  // that CPU dispatch overhead amortization across stacked invocations is
+  // visible when N>1.
   float avg_cpu_time_us = total_cpu_time_us / benchmark_runs;
   float avg_gpu_time_us = total_gpu_time_us / benchmark_runs;
 
@@ -1570,6 +1597,14 @@ execute_test_case(TestCase& test_case, int warmup_runs, int benchmark_runs) {
               << avg_gpu_time_us << " μs" << std::endl;
     std::cout << "  Using " << (use_gpu_timestamps() ? "GPU" : "CPU")
               << " timing for result" << std::endl;
+    if (n_invocations > 1) {
+      std::cout << "  (" << n_invocations
+                << " invocations per execute, per-invocation: " << std::fixed
+                << std::setprecision(3)
+                << (use_gpu_timestamps() ? avg_gpu_time_us : avg_cpu_time_us) *
+              inv_n_invocations
+                << " μs)" << std::endl;
+    }
   }
 
   // Copy output data from the graph's staging buffers

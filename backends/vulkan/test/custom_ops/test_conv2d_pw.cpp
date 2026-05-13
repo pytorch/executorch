@@ -114,6 +114,9 @@ static TestCase create_conv2d_pw_test_case(
 
   test_case.set_shader_filter({"nchw_to", "to_nchw", "view_copy"});
 
+  // Stack op invocations per execute() so the GPU governor escalates to boost.
+  test_case.set_op_invocations_per_execute(25);
+
   return test_case;
 }
 

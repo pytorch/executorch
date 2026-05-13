@@ -90,6 +90,9 @@ TestCase create_test_case_from_config(
   test_case.add_output_spec(scale_out);
   test_case.add_output_spec(zero_point_out);
 
+  // Stack op invocations per execute() so the GPU governor escalates to boost.
+  test_case.set_op_invocations_per_execute(100);
+
   return test_case;
 }
 
