@@ -10,7 +10,7 @@ from dataclasses import dataclass
 from enum import auto, Enum
 from typing import Optional
 
-import cmsis_nn  # type: ignore[import-untyped]
+import cmsis_nn  # type: ignore[import-not-found, import-untyped]
 
 
 class CortexM(Enum):
