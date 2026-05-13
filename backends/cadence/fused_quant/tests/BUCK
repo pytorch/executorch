@@ -35,3 +35,14 @@ runtime.cxx_test(
         "//executorch/runtime/core/exec_aten/testing_util:tensor_util",
     ],
 )
+
+runtime.cxx_test(
+    name = "test_op_hardswish",
+    srcs = ["test_op_hardswish.cpp"],
+    platforms = CXX,
+    deps = [
+        "//executorch/backends/cadence/fused_quant:op_hardswish",
+        "//executorch/kernels/test:gtest_utils",
+        "//executorch/runtime/core/exec_aten/testing_util:tensor_util",
+    ],
+)

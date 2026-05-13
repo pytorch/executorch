@@ -20,6 +20,7 @@ def _make_shape_env(
 ) -> tuple[ShapeEnv, torch.SymInt]:
     shape_env = ShapeEnv()
     symint = shape_env.create_symintnode(sympy.Symbol(symbol_name), hint=hint)
+    assert isinstance(symint, torch.SymInt)
     shape_env.constrain_symbol_range(
         symint.node.expr,
         compiler_min=compiler_min,

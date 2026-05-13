@@ -4,7 +4,7 @@
 # LICENSE file in the root directory of this source tree.
 
 
-import executorch.backends.arm.tosa.dialect  # noqa: unused
+import executorch.backends.arm.tosa.dialect  # noqa: F401
 import pytest
 import torch
 from executorch.backends.arm.tosa.dialect.lib import TosaValueError

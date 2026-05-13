@@ -1284,7 +1284,7 @@ int main(int argc, const char* argv[]) {
       if (buffer == nullptr) {
         ET_LOG(
             Error,
-            "Reading input tensor %zu from file %s ERROR Out of memory",
+            "Reading input tensor %zu from file %s failed.",
             nbr_inputs,
             input_tensor_filename);
         _exit(1);
@@ -1296,10 +1296,7 @@ int main(int argc, const char* argv[]) {
       auto [buffer, buffer_size] =
           read_binary_file(pte_filename, ctx.input_file_allocator.value());
       if (buffer == nullptr) {
-        ET_LOG(
-            Error,
-            "Reading pte model from file %s ERROR Out of memory",
-            pte_filename);
+        ET_LOG(Error, "Reading pte model from file %s failed.", pte_filename);
         _exit(1);
       }
 

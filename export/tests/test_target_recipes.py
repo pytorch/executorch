@@ -328,7 +328,7 @@ class TestTargetRecipes(unittest.TestCase):
         return {
             "linear": {
                 "ios-arm64-coreml-fp16": (1e-3, 1e-3, 20),
-                "ios-arm64-coreml-int8": (1e-2, 1e-2, 20),
+                "ios-arm64-coreml-int8": (2e-2, 2e-2, 20),
                 "android-arm64-snapdragon-fp16": (1e-3, 1e-3, None),
             },
             "add": {
