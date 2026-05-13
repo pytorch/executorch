@@ -249,6 +249,9 @@ static TestCase create_mm_test_case(
   // Filter out layout conversion shaders from timing
   test_case.set_shader_filter({"nchw_to", "to_nchw", "view_copy"});
 
+  // Stack op invocations per execute() so the GPU governor escalates to boost.
+  test_case.set_op_invocations_per_execute(10);
+
   return test_case;
 }
 

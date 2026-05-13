@@ -97,6 +97,9 @@ TestCase create_test_case_from_config(
   // operations being tested, not overhead
   test_case.set_shader_filter(kLayoutOnlyShaderFilter);
 
+  // Stack op invocations per execute() so the GPU governor escalates to boost.
+  test_case.set_op_invocations_per_execute(100);
+
   return test_case;
 }
 

@@ -171,6 +171,9 @@ TestCase create_test_case(const EmbeddingConfig& config) {
       output_shape, config.dtype, config.storage_type, utils::kWidthPacked);
   test_case.add_output_spec(output);
 
+  // Stack op invocations per execute() so the GPU governor escalates to boost.
+  test_case.set_op_invocations_per_execute(100);
+
   return test_case;
 }
 

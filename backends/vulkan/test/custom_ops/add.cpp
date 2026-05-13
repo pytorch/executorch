@@ -84,6 +84,10 @@ std::vector<TestCase> generate_add_test_cases() {
         test_case.add_input_spec(input_b);
         test_case.add_output_spec(output);
 
+        // Stack op invocations per execute() so the GPU governor escalates to
+        // boost.
+        test_case.set_op_invocations_per_execute(100);
+
         test_cases.push_back(test_case);
       }
     }

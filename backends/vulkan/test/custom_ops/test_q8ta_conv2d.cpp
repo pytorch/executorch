@@ -202,6 +202,9 @@ static TestCase create_test_case_from_config(
       "q8ta_dequantize",
   });
 
+  // Stack op invocations per execute() so the GPU governor escalates to boost.
+  test_case.set_op_invocations_per_execute(10);
+
   return test_case;
 }
 
