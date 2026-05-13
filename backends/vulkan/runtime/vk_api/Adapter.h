@@ -139,6 +139,13 @@ class Adapter final {
     return physical_device_.device_type;
   }
 
+  // Driver-reported physical device type. Use device_type() above for
+  // vendor-specific quirks; this for capability-tier decisions.
+  inline bool is_integrated_gpu() const {
+    return physical_device_.properties.deviceType ==
+        VK_PHYSICAL_DEVICE_TYPE_INTEGRATED_GPU;
+  }
+
   // Queue Management
 
   Queue request_queue();
@@ -252,6 +259,17 @@ class Adapter final {
 #endif /* VK_NV_cooperative_matrix2 */
   }
 
+  inline bool supports_cooperative_matrix() const {
+#if defined(ETVK_FORCE_NO_EXTENSIONS)
+    return false;
+#elif defined(VK_KHR_cooperative_matrix)
+    return physical_device_.cooperative_matrix_features.cooperativeMatrix ==
+        VK_TRUE;
+#else
+    return false;
+#endif /* VK_KHR_cooperative_matrix */
+  }
+
   inline bool supports_int16_shader_types() {
 #ifdef ETVK_FORCE_NO_EXTENSIONS
     return false;
@@ -285,6 +303,106 @@ class Adapter final {
     return physical_device_.min_ubo_alignment;
   }
 
+  // Subgroup properties
+
+  inline uint32_t subgroup_size() const {
+    return physical_device_.subgroup_size;
+  }
+
+  inline bool supports_subgroup_compute_basic() const {
+    return (physical_device_.supported_subgroup_ops &
+            VK_SUBGROUP_FEATURE_BASIC_BIT) != 0 &&
+        (physical_device_.supported_subgroup_stages &
+         VK_SHADER_STAGE_COMPUTE_BIT) != 0;
+  }
+
+  inline bool supports_subgroup_compute_shuffle() const {
+    return (physical_device_.supported_subgroup_ops &
+            VK_SUBGROUP_FEATURE_SHUFFLE_BIT) != 0 &&
+        (physical_device_.supported_subgroup_stages &
+         VK_SHADER_STAGE_COMPUTE_BIT) != 0;
+  }
+
+  inline bool supports_subgroup_compute_ballot() const {
+    return (physical_device_.supported_subgroup_ops &
+            VK_SUBGROUP_FEATURE_BALLOT_BIT) != 0 &&
+        (physical_device_.supported_subgroup_stages &
+         VK_SHADER_STAGE_COMPUTE_BIT) != 0;
+  }
+
+  inline bool supports_subgroup_compute_vote() const {
+    return (physical_device_.supported_subgroup_ops &
+            VK_SUBGROUP_FEATURE_VOTE_BIT) != 0 &&
+        (physical_device_.supported_subgroup_stages &
+         VK_SHADER_STAGE_COMPUTE_BIT) != 0;
+  }
+
+  inline bool supports_subgroup_compute_arithmetic() const {
+    return (physical_device_.supported_subgroup_ops &
+            VK_SUBGROUP_FEATURE_ARITHMETIC_BIT) != 0 &&
+        (physical_device_.supported_subgroup_stages &
+         VK_SHADER_STAGE_COMPUTE_BIT) != 0;
+  }
+
+  inline bool supports_subgroup_compute_shuffle_relative() const {
+    return (physical_device_.supported_subgroup_ops &
+            VK_SUBGROUP_FEATURE_SHUFFLE_RELATIVE_BIT) != 0 &&
+        (physical_device_.supported_subgroup_stages &
+         VK_SHADER_STAGE_COMPUTE_BIT) != 0;
+  }
+
+  inline bool supports_subgroup_compute_clustered() const {
+    return (physical_device_.supported_subgroup_ops &
+            VK_SUBGROUP_FEATURE_CLUSTERED_BIT) != 0 &&
+        (physical_device_.supported_subgroup_stages &
+         VK_SHADER_STAGE_COMPUTE_BIT) != 0;
+  }
+
+  inline bool supports_subgroup_compute_quad() const {
+    return (physical_device_.supported_subgroup_ops &
+            VK_SUBGROUP_FEATURE_QUAD_BIT) != 0 &&
+        (physical_device_.supported_subgroup_stages &
+         VK_SHADER_STAGE_COMPUTE_BIT) != 0;
+  }
+
+  // Subgroup size control (VK_EXT_subgroup_size_control / Vulkan 1.3 core).
+
+  inline uint32_t min_subgroup_size() const {
+    return physical_device_.min_subgroup_size;
+  }
+
+  inline uint32_t max_subgroup_size() const {
+    return physical_device_.max_subgroup_size;
+  }
+
+  inline bool supports_subgroup_size_control() const {
+#ifdef ETVK_FORCE_NO_EXTENSIONS
+    return false;
+#endif
+#ifdef VK_EXT_subgroup_size_control
+    return physical_device_.supports_subgroup_size_control;
+#else
+    return false;
+#endif /* VK_EXT_subgroup_size_control */
+  }
+
+  inline bool supports_compute_full_subgroups() const {
+#ifdef ETVK_FORCE_NO_EXTENSIONS
+    return false;
+#endif
+#ifdef VK_EXT_subgroup_size_control
+    return physical_device_.supports_compute_full_subgroups;
+#else
+    return false;
+#endif /* VK_EXT_subgroup_size_control */
+  }
+
+  inline bool supports_required_subgroup_size_for_compute() const {
+    return supports_subgroup_size_control() &&
+        (physical_device_.required_subgroup_size_stages &
+         VK_SHADER_STAGE_COMPUTE_BIT) != 0;
+  }
+
   inline uint32_t max_texture2d_dim() const {
     return physical_device_.properties.limits.maxImageDimension2D;
   }
@@ -311,6 +429,16 @@ class Adapter final {
   std::string stringize() const;
   friend std::ostream& operator<<(std::ostream&, const Adapter&);
 };
+
+// Resolve the shader-declared required subgroup size into a concrete value
+// (or 0 = no requirement) given the adapter capabilities. Throws
+// ShaderNotSupportedError when the shader declares a required subgroup size
+// but the adapter cannot honor it (extension unsupported, or value out of
+// the adapter's [min, max] range). Silent fallback would create a
+// correctness/perf landmine, so callers must be prepared for this throw.
+uint32_t resolve_required_subgroup_size(
+    const ShaderInfo& shader,
+    Adapter* adapter);
 
 } // namespace vkapi
 } // namespace vkcompute

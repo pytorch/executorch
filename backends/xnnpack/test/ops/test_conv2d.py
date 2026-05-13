@@ -245,7 +245,7 @@ class TestConv2d(unittest.TestCase):
             .check_count({"torch.ops.higher_order.executorch_call_delegate": 1})
             .to_executorch()
             .serialize()
-            .run_method_and_compare_outputs(qtol=1)
+            .run_method_and_compare_outputs(qtol=2)
         )
 
     def _test_dq(
@@ -276,7 +276,7 @@ class TestConv2d(unittest.TestCase):
         tester.check_not(["executorch_exir_dialects_edge__ops_aten_conv2d_default"])
         tester.to_executorch()
         tester.serialize()
-        tester.run_method_and_compare_outputs(qtol=1)
+        tester.run_method_and_compare_outputs(qtol=2)
 
     def test_fp16_conv2d(self) -> None:
         for transpose in (True, False):

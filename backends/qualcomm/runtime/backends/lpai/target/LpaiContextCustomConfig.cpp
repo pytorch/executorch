@@ -15,13 +15,15 @@ namespace qnn {
 std::vector<QnnContext_CustomConfig_t>
 LpaiContextCustomConfig::CreateContextCustomConfig() {
   std::vector<QnnContext_CustomConfig_t> ret;
-  QnnLpaiContext_CustomConfig_t* p_custom_config = nullptr;
 
+#ifndef __hexagon__
+  QnnLpaiContext_CustomConfig_t* p_custom_config = nullptr;
   // TODO: support graph based execution in island mode
   p_custom_config = AllocContextCustomConfig();
   p_custom_config->option = QNN_LPAI_CONTEXT_SET_CFG_ENABLE_ISLAND;
   p_custom_config->config = nullptr;
   ret.push_back(static_cast<QnnContext_CustomConfig_t>(p_custom_config));
+#endif
   return ret;
 }
 

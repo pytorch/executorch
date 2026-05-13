@@ -10,12 +10,9 @@ package org.pytorch.executorch.extension.llm;
 
 import com.facebook.jni.HybridData;
 import com.facebook.jni.annotations.DoNotStrip;
-import java.io.Closeable;
 import java.nio.ByteBuffer;
 import java.util.List;
-import java.util.concurrent.locks.ReentrantLock;
 import org.pytorch.executorch.ExecuTorchRuntime;
-import org.pytorch.executorch.ExecutorchRuntimeException;
 import org.pytorch.executorch.annotations.Experimental;
 
 /**
@@ -25,15 +22,13 @@ import org.pytorch.executorch.annotations.Experimental;
  * <p>Warning: These APIs are experimental and subject to change without notice
  */
 @Experimental
-public class LlmModule implements Closeable {
+public class LlmModule {
 
   public static final int MODEL_TYPE_TEXT = 1;
   public static final int MODEL_TYPE_TEXT_VISION = 2;
   public static final int MODEL_TYPE_MULTIMODAL = 2;
 
   private final HybridData mHybridData;
-  private final ReentrantLock mLock = new ReentrantLock();
-  private boolean mDestroyed = false;
   private static final int DEFAULT_SEQ_LEN = 128;
   private static final boolean DEFAULT_ECHO = true;
   private static final float DEFAULT_TEMPERATURE = -1.0f;
@@ -190,41 +185,8 @@ public class LlmModule implements Closeable {
         config.getLoadMode());
   }
 
-  private void checkNotDestroyed() {
-    if (mDestroyed) throw new IllegalStateException("LlmModule has been destroyed");
-  }
-
-  /**
-   * Releases native resources. Callers must ensure no other methods are in-flight. Call {@link
-   * #stop()} and wait for {@link #generate(String, LlmCallback)} to return before calling this
-   * method.
-   */
-  @Override
-  public void close() {
-    if (mLock.tryLock()) {
-      try {
-        if (mLock.getHoldCount() > 1) {
-          throw new IllegalStateException(
-              "Cannot close module from within a callback during execution");
-        }
-        if (!mDestroyed) {
-          mDestroyed = true;
-          mHybridData.resetNative();
-        }
-      } finally {
-        mLock.unlock();
-      }
-    } else {
-      throw new IllegalStateException("Cannot close module while method is executing");
-    }
-  }
-
-  /**
-   * @deprecated Use {@link #close()} instead.
-   */
-  @Deprecated
   public void resetNative() {
-    close();
+    mHybridData.resetNative();
   }
 
   /**
@@ -233,8 +195,8 @@ public class LlmModule implements Closeable {
    * @param prompt Input prompt
    * @param llmCallback callback object to receive results.
    */
-  public void generate(String prompt, LlmCallback llmCallback) {
-    generate(
+  public int generate(String prompt, LlmCallback llmCallback) {
+    return generate(
         prompt,
         DEFAULT_SEQ_LEN,
         llmCallback,
@@ -251,8 +213,8 @@ public class LlmModule implements Closeable {
    * @param seqLen sequence length
    * @param llmCallback callback object to receive results.
    */
-  public void generate(String prompt, int seqLen, LlmCallback llmCallback) {
-    generate(
+  public int generate(String prompt, int seqLen, LlmCallback llmCallback) {
+    return generate(
         null,
         0,
         0,
@@ -273,8 +235,8 @@ public class LlmModule implements Closeable {
    * @param llmCallback callback object to receive results
    * @param echo indicate whether to echo the input prompt or not (text completion vs chat)
    */
-  public void generate(String prompt, LlmCallback llmCallback, boolean echo) {
-    generate(
+  public int generate(String prompt, LlmCallback llmCallback, boolean echo) {
+    return generate(
         null,
         0,
         0,
@@ -296,8 +258,9 @@ public class LlmModule implements Closeable {
    * @param llmCallback callback object to receive results
    * @param echo indicate whether to echo the input prompt or not (text completion vs chat)
    */
-  public void generate(String prompt, int seqLen, LlmCallback llmCallback, boolean echo) {
-    generate(prompt, seqLen, llmCallback, echo, DEFAULT_TEMPERATURE, DEFAULT_BOS, DEFAULT_EOS);
+  public int generate(String prompt, int seqLen, LlmCallback llmCallback, boolean echo) {
+    return generate(
+        prompt, seqLen, llmCallback, echo, DEFAULT_TEMPERATURE, DEFAULT_BOS, DEFAULT_EOS);
   }
 
   /**
@@ -311,28 +274,7 @@ public class LlmModule implements Closeable {
    * @param numBos number of BOS tokens to prepend
    * @param numEos number of EOS tokens to append
    */
-  public void generate(
-      String prompt,
-      int seqLen,
-      LlmCallback llmCallback,
-      boolean echo,
-      float temperature,
-      int numBos,
-      int numEos) {
-    mLock.lock();
-    try {
-      checkNotDestroyed();
-      int err = generateNative(prompt, seqLen, llmCallback, echo, temperature, numBos, numEos);
-      if (err != 0) {
-        throw ExecutorchRuntimeException.makeExecutorchException(err, "Failed to generate");
-      }
-    } finally {
-      mLock.unlock();
-    }
-  }
-
-  @DoNotStrip
-  private native int generateNative(
+  public native int generate(
       String prompt,
       int seqLen,
       LlmCallback llmCallback,
@@ -348,13 +290,13 @@ public class LlmModule implements Closeable {
    * @param config the config for generation
    * @param llmCallback callback object to receive results
    */
-  public void generate(String prompt, LlmGenerationConfig config, LlmCallback llmCallback) {
+  public int generate(String prompt, LlmGenerationConfig config, LlmCallback llmCallback) {
     int seqLen = config.getSeqLen();
     boolean echo = config.isEcho();
     float temperature = config.getTemperature();
     int numBos = config.getNumBos();
     int numEos = config.getNumEos();
-    generate(null, 0, 0, 0, prompt, seqLen, llmCallback, echo, temperature, numBos, numEos);
+    return generate(null, 0, 0, 0, prompt, seqLen, llmCallback, echo, temperature, numBos, numEos);
   }
 
   /**
@@ -369,7 +311,7 @@ public class LlmModule implements Closeable {
    * @param llmCallback callback object to receive results.
    * @param echo indicate whether to echo the input prompt or not (text completion vs chat)
    */
-  public void generate(
+  public int generate(
       int[] image,
       int width,
       int height,
@@ -378,7 +320,7 @@ public class LlmModule implements Closeable {
       int seqLen,
       LlmCallback llmCallback,
       boolean echo) {
-    generate(
+    return generate(
         image,
         width,
         height,
@@ -405,7 +347,7 @@ public class LlmModule implements Closeable {
    * @param echo indicate whether to echo the input prompt or not (text completion vs chat)
    * @param temperature temperature for sampling (use negative value to use module default)
    */
-  public void generate(
+  public int generate(
       int[] image,
       int width,
       int height,
@@ -415,7 +357,7 @@ public class LlmModule implements Closeable {
       LlmCallback llmCallback,
       boolean echo,
       float temperature) {
-    generate(
+    return generate(
         image,
         width,
         height,
@@ -444,7 +386,7 @@ public class LlmModule implements Closeable {
    * @param numBos number of BOS tokens to prepend
    * @param numEos number of EOS tokens to append
    */
-  public void generate(
+  public int generate(
       int[] image,
       int width,
       int height,
@@ -456,22 +398,10 @@ public class LlmModule implements Closeable {
       float temperature,
       int numBos,
       int numEos) {
-    mLock.lock();
-    try {
-      checkNotDestroyed();
-      if (image != null) {
-        int nativeResult = prefillImagesInput(image, width, height, channels);
-        if (nativeResult != 0) {
-          throw ExecutorchRuntimeException.makeExecutorchException(nativeResult, "Prefill failed");
-        }
-      }
-      int err = generateNative(prompt, seqLen, llmCallback, echo, temperature, numBos, numEos);
-      if (err != 0) {
-        throw ExecutorchRuntimeException.makeExecutorchException(err, "Failed to generate");
-      }
-    } finally {
-      mLock.unlock();
+    if (image != null) {
+      prefillImages(image, width, height, channels);
     }
+    return generate(prompt, seqLen, llmCallback, echo, temperature, numBos, numEos);
   }
 
   /**
@@ -481,20 +411,16 @@ public class LlmModule implements Closeable {
    * @param width Input image width
    * @param height Input image height
    * @param channels Input image number of channels
-   * @throws ExecutorchRuntimeException if the prefill failed
+   * @return 0 on success
+   * @throws RuntimeException if the prefill failed
    */
   @Experimental
-  public void prefillImages(int[] image, int width, int height, int channels) {
-    mLock.lock();
-    try {
-      checkNotDestroyed();
-      int nativeResult = prefillImagesInput(image, width, height, channels);
-      if (nativeResult != 0) {
-        throw ExecutorchRuntimeException.makeExecutorchException(nativeResult, "Prefill failed");
-      }
-    } finally {
-      mLock.unlock();
+  public long prefillImages(int[] image, int width, int height, int channels) {
+    int nativeResult = prefillImagesInput(image, width, height, channels);
+    if (nativeResult != 0) {
+      throw new RuntimeException("Prefill failed with error code: " + nativeResult);
     }
+    return 0;
   }
 
   /**
@@ -514,40 +440,34 @@ public class LlmModule implements Closeable {
    */
   @Experimental
   public void prefillImages(ByteBuffer image, int width, int height, int channels) {
-    mLock.lock();
+    if (!image.isDirect()) {
+      throw new IllegalArgumentException("Input ByteBuffer must be direct.");
+    }
+    long expectedBytes;
     try {
-      checkNotDestroyed();
-      if (!image.isDirect()) {
-        throw new IllegalArgumentException("Input ByteBuffer must be direct.");
-      }
-      long expectedBytes;
-      try {
-        long pixels = Math.multiplyExact((long) width, (long) height);
-        expectedBytes = Math.multiplyExact(pixels, (long) channels);
-      } catch (ArithmeticException ex) {
-        throw new IllegalArgumentException(
-            "width*height*channels is too large and overflows the allowed range.", ex);
-      }
-      if (width <= 0
-          || height <= 0
-          || channels <= 0
-          || expectedBytes > Integer.MAX_VALUE
-          || image.remaining() < expectedBytes) {
-        throw new IllegalArgumentException(
-            "ByteBuffer remaining ("
-                + image.remaining()
-                + ") must be at least width*height*channels ("
-                + expectedBytes
-                + ").");
-      }
-      // slice() so that getDirectBufferAddress on the native side returns a pointer
-      // starting at the current position, not the base address.
-      int nativeResult = prefillImagesInputBuffer(image.slice(), width, height, channels);
-      if (nativeResult != 0) {
-        throw ExecutorchRuntimeException.makeExecutorchException(nativeResult, "Prefill failed");
-      }
-    } finally {
-      mLock.unlock();
+      long pixels = Math.multiplyExact((long) width, (long) height);
+      expectedBytes = Math.multiplyExact(pixels, (long) channels);
+    } catch (ArithmeticException ex) {
+      throw new IllegalArgumentException(
+          "width*height*channels is too large and overflows the allowed range.", ex);
+    }
+    if (width <= 0
+        || height <= 0
+        || channels <= 0
+        || expectedBytes > Integer.MAX_VALUE
+        || image.remaining() < expectedBytes) {
+      throw new IllegalArgumentException(
+          "ByteBuffer remaining ("
+              + image.remaining()
+              + ") must be at least width*height*channels ("
+              + expectedBytes
+              + ").");
+    }
+    // slice() so that getDirectBufferAddress on the native side returns a pointer
+    // starting at the current position, not the base address.
+    int nativeResult = prefillImagesInputBuffer(image.slice(), width, height, channels);
+    if (nativeResult != 0) {
+      throw new RuntimeException("Prefill failed with error code: " + nativeResult);
     }
   }
 
@@ -571,57 +491,49 @@ public class LlmModule implements Closeable {
    */
   @Experimental
   public void prefillNormalizedImage(ByteBuffer image, int width, int height, int channels) {
-    mLock.lock();
+    if (!image.isDirect()) {
+      throw new IllegalArgumentException("Input ByteBuffer must be direct.");
+    }
+    if (image.order() != java.nio.ByteOrder.nativeOrder()) {
+      throw new IllegalArgumentException(
+          "Input ByteBuffer must use native byte order (ByteOrder.nativeOrder()).");
+    }
+    if (image.position() % Float.BYTES != 0) {
+      throw new IllegalArgumentException(
+          "Input ByteBuffer position (" + image.position() + ") must be 4-byte aligned.");
+    }
+    final long expectedBytes;
     try {
-      checkNotDestroyed();
-      if (!image.isDirect()) {
-        throw new IllegalArgumentException("Input ByteBuffer must be direct.");
-      }
-      if (image.order() != java.nio.ByteOrder.nativeOrder()) {
+      int wh = Math.multiplyExact(width, height);
+      long whc = Math.multiplyExact((long) wh, (long) channels);
+      long totalBytes = Math.multiplyExact(whc, (long) Float.BYTES);
+      if (totalBytes > Integer.MAX_VALUE) {
         throw new IllegalArgumentException(
-            "Input ByteBuffer must use native byte order (ByteOrder.nativeOrder()).");
+            "ByteBuffer size (width*height*channels*4) exceeds Integer.MAX_VALUE bytes: "
+                + totalBytes);
       }
-      if (image.position() % Float.BYTES != 0) {
-        throw new IllegalArgumentException(
-            "Input ByteBuffer position (" + image.position() + ") must be 4-byte aligned.");
-      }
-      final long expectedBytes;
-      try {
-        int wh = Math.multiplyExact(width, height);
-        long whc = Math.multiplyExact((long) wh, (long) channels);
-        long totalBytes = Math.multiplyExact(whc, (long) Float.BYTES);
-        if (totalBytes > Integer.MAX_VALUE) {
-          throw new IllegalArgumentException(
-              "ByteBuffer size (width*height*channels*4) exceeds Integer.MAX_VALUE bytes: "
-                  + totalBytes);
-        }
-        expectedBytes = totalBytes;
-      } catch (ArithmeticException e) {
-        throw new IllegalArgumentException(
-            "Overflow while computing width*height*channels*4 for ByteBuffer size.", e);
-      }
-      if (width <= 0 || height <= 0 || channels <= 0 || image.remaining() < expectedBytes) {
-        throw new IllegalArgumentException(
-            "ByteBuffer remaining ("
-                + image.remaining()
-                + ") must be at least width*height*channels*4 ("
-                + expectedBytes
-                + ").");
-      }
-      if (image.remaining() % Float.BYTES != 0) {
-        throw new IllegalArgumentException(
-            "ByteBuffer remaining ("
-                + image.remaining()
-                + ") must be a multiple of 4 (float size).");
-      }
-      // slice() so that getDirectBufferAddress on the native side returns a pointer
-      // starting at the current position, not the base address.
-      int nativeResult = prefillNormalizedImagesInputBuffer(image.slice(), width, height, channels);
-      if (nativeResult != 0) {
-        throw ExecutorchRuntimeException.makeExecutorchException(nativeResult, "Prefill failed");
-      }
-    } finally {
-      mLock.unlock();
+      expectedBytes = totalBytes;
+    } catch (ArithmeticException e) {
+      throw new IllegalArgumentException(
+          "Overflow while computing width*height*channels*4 for ByteBuffer size.", e);
+    }
+    if (width <= 0 || height <= 0 || channels <= 0 || image.remaining() < expectedBytes) {
+      throw new IllegalArgumentException(
+          "ByteBuffer remaining ("
+              + image.remaining()
+              + ") must be at least width*height*channels*4 ("
+              + expectedBytes
+              + ").");
+    }
+    if (image.remaining() % Float.BYTES != 0) {
+      throw new IllegalArgumentException(
+          "ByteBuffer remaining (" + image.remaining() + ") must be a multiple of 4 (float size).");
+    }
+    // slice() so that getDirectBufferAddress on the native side returns a pointer
+    // starting at the current position, not the base address.
+    int nativeResult = prefillNormalizedImagesInputBuffer(image.slice(), width, height, channels);
+    if (nativeResult != 0) {
+      throw new RuntimeException("Prefill failed with error code: " + nativeResult);
     }
   }
 
@@ -640,20 +552,16 @@ public class LlmModule implements Closeable {
    * @param width Input image width
    * @param height Input image height
    * @param channels Input image number of channels
-   * @throws ExecutorchRuntimeException if the prefill failed
+   * @return 0 on success
+   * @throws RuntimeException if the prefill failed
    */
   @Experimental
-  public void prefillImages(float[] image, int width, int height, int channels) {
-    mLock.lock();
-    try {
-      checkNotDestroyed();
-      int nativeResult = prefillNormalizedImagesInput(image, width, height, channels);
-      if (nativeResult != 0) {
-        throw ExecutorchRuntimeException.makeExecutorchException(nativeResult, "Prefill failed");
-      }
-    } finally {
-      mLock.unlock();
+  public long prefillImages(float[] image, int width, int height, int channels) {
+    int nativeResult = prefillNormalizedImagesInput(image, width, height, channels);
+    if (nativeResult != 0) {
+      throw new RuntimeException("Prefill failed with error code: " + nativeResult);
     }
+    return 0;
   }
 
   private native int prefillNormalizedImagesInput(
@@ -666,20 +574,16 @@ public class LlmModule implements Closeable {
    * @param batch_size Input batch size
    * @param n_bins Input number of bins
    * @param n_frames Input number of frames
-   * @throws ExecutorchRuntimeException if the prefill failed
+   * @return 0 on success
+   * @throws RuntimeException if the prefill failed
    */
   @Experimental
-  public void prefillAudio(byte[] audio, int batch_size, int n_bins, int n_frames) {
-    mLock.lock();
-    try {
-      checkNotDestroyed();
-      int nativeResult = prefillAudioInput(audio, batch_size, n_bins, n_frames);
-      if (nativeResult != 0) {
-        throw ExecutorchRuntimeException.makeExecutorchException(nativeResult, "Prefill failed");
-      }
-    } finally {
-      mLock.unlock();
+  public long prefillAudio(byte[] audio, int batch_size, int n_bins, int n_frames) {
+    int nativeResult = prefillAudioInput(audio, batch_size, n_bins, n_frames);
+    if (nativeResult != 0) {
+      throw new RuntimeException("Prefill failed with error code: " + nativeResult);
     }
+    return 0;
   }
 
   private native int prefillAudioInput(byte[] audio, int batch_size, int n_bins, int n_frames);
@@ -691,20 +595,16 @@ public class LlmModule implements Closeable {
    * @param batch_size Input batch size
    * @param n_bins Input number of bins
    * @param n_frames Input number of frames
-   * @throws ExecutorchRuntimeException if the prefill failed
+   * @return 0 on success
+   * @throws RuntimeException if the prefill failed
    */
   @Experimental
-  public void prefillAudio(float[] audio, int batch_size, int n_bins, int n_frames) {
-    mLock.lock();
-    try {
-      checkNotDestroyed();
-      int nativeResult = prefillAudioInputFloat(audio, batch_size, n_bins, n_frames);
-      if (nativeResult != 0) {
-        throw ExecutorchRuntimeException.makeExecutorchException(nativeResult, "Prefill failed");
-      }
-    } finally {
-      mLock.unlock();
+  public long prefillAudio(float[] audio, int batch_size, int n_bins, int n_frames) {
+    int nativeResult = prefillAudioInputFloat(audio, batch_size, n_bins, n_frames);
+    if (nativeResult != 0) {
+      throw new RuntimeException("Prefill failed with error code: " + nativeResult);
     }
+    return 0;
   }
 
   private native int prefillAudioInputFloat(
@@ -717,20 +617,16 @@ public class LlmModule implements Closeable {
    * @param batch_size Input batch size
    * @param n_channels Input number of channels
    * @param n_samples Input number of samples
-   * @throws ExecutorchRuntimeException if the prefill failed
+   * @return 0 on success
+   * @throws RuntimeException if the prefill failed
    */
   @Experimental
-  public void prefillRawAudio(byte[] audio, int batch_size, int n_channels, int n_samples) {
-    mLock.lock();
-    try {
-      checkNotDestroyed();
-      int nativeResult = prefillRawAudioInput(audio, batch_size, n_channels, n_samples);
-      if (nativeResult != 0) {
-        throw ExecutorchRuntimeException.makeExecutorchException(nativeResult, "Prefill failed");
-      }
-    } finally {
-      mLock.unlock();
+  public long prefillRawAudio(byte[] audio, int batch_size, int n_channels, int n_samples) {
+    int nativeResult = prefillRawAudioInput(audio, batch_size, n_channels, n_samples);
+    if (nativeResult != 0) {
+      throw new RuntimeException("Prefill failed with error code: " + nativeResult);
     }
+    return 0;
   }
 
   private native int prefillRawAudioInput(
@@ -740,20 +636,16 @@ public class LlmModule implements Closeable {
    * Prefill the KV cache with the given text prompt.
    *
    * @param prompt The text prompt to prefill.
-   * @throws ExecutorchRuntimeException if the prefill failed
+   * @return 0 on success
+   * @throws RuntimeException if the prefill failed
    */
   @Experimental
-  public void prefillPrompt(String prompt) {
-    mLock.lock();
-    try {
-      checkNotDestroyed();
-      int nativeResult = prefillTextInput(prompt);
-      if (nativeResult != 0) {
-        throw ExecutorchRuntimeException.makeExecutorchException(nativeResult, "Prefill failed");
-      }
-    } finally {
-      mLock.unlock();
+  public long prefillPrompt(String prompt) {
+    int nativeResult = prefillTextInput(prompt);
+    if (nativeResult != 0) {
+      throw new RuntimeException("Prefill failed with error code: " + nativeResult);
     }
+    return 0;
   }
 
   // returns status
@@ -764,18 +656,7 @@ public class LlmModule implements Closeable {
    *
    * <p>The startPos will be reset to 0.
    */
-  public void resetContext() {
-    mLock.lock();
-    try {
-      checkNotDestroyed();
-      resetContextNative();
-    } finally {
-      mLock.unlock();
-    }
-  }
-
-  @DoNotStrip
-  private native void resetContextNative();
+  public native void resetContext();
 
   /** Stop current generate() before it finishes. */
   @DoNotStrip
@@ -783,19 +664,5 @@ public class LlmModule implements Closeable {
 
   /** Force loading the module. Otherwise the model is loaded during first generate(). */
   @DoNotStrip
-  public void load() {
-    mLock.lock();
-    try {
-      checkNotDestroyed();
-      int err = loadNative();
-      if (err != 0) {
-        throw ExecutorchRuntimeException.makeExecutorchException(err, "Failed to load model");
-      }
-    } finally {
-      mLock.unlock();
-    }
-  }
-
-  @DoNotStrip
-  private native int loadNative();
+  public native int load();
 }

@@ -4,6 +4,7 @@
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
 
+import subprocess
 import typing
 from typing import Any, Dict, final, List
 
@@ -35,6 +36,7 @@ class MetalBackend(AotiBackend, BackendDetails):
             "aoti_torch_mps_convolution": None,
             "aoti_torch_mps_mm_out": None,
             "at::_ops::_scaled_dot_product_attention_math_for_mps::call": None,
+            "at::_ops::_scaled_dot_product_attention_math_for_mps_v2::call": None,
             "torchao::_linear_fp_act_4bit_weight": None,
             "at::_ops::topk::call": None,
             "metal::gather_qmv": None,
@@ -101,3 +103,16 @@ class MetalBackend(AotiBackend, BackendDetails):
         inductor_configs["aot_inductor.custom_ops_to_c_shims"] = custom_c_shims
 
         return inductor_configs
+
+    @classmethod
+    def codesign_so(cls, so_path: str, compile_specs: List[CompileSpec]) -> None:
+        """Sign the compiled .so for macOS Hardened Runtime compatibility.
+
+        Only signs if a ``codesign_identity`` compile spec is provided.
+        Pass ``"-"`` for ad-hoc signing or a Developer ID for distribution.
+        """
+        for spec in compile_specs:
+            if spec.key == "codesign_identity":
+                identity = spec.value.decode("utf-8")
+                subprocess.run(["codesign", "-f", "-s", identity, so_path], check=True)
+                return

@@ -54,7 +54,9 @@ class LlmModuleInstrumentationTest : LlmCallback {
   @Test
   @Throws(IOException::class, URISyntaxException::class)
   fun testGenerate() {
-    llmModule.load()
+    val loadResult = llmModule.load()
+    // Check that the model can be load successfully
+    assertEquals(OK.toLong(), loadResult.toLong())
 
     llmModule.generate(TEST_PROMPT, SEQ_LEN, this@LlmModuleInstrumentationTest)
     assertEquals(results.size.toLong(), SEQ_LEN.toLong())
@@ -271,26 +273,11 @@ class LlmModuleInstrumentationTest : LlmCallback {
     }
   }
 
-  // --- Lifecycle tests ---
-
-  @Test
-  fun testUseAfterCloseThrows() {
-    llmModule.close()
-    assertThrows(IllegalStateException::class.java) {
-      llmModule.generate(TEST_PROMPT, SEQ_LEN, this@LlmModuleInstrumentationTest)
-    }
-  }
-
-  @Test
-  fun testCloseIsIdempotent() {
-    llmModule.close()
-    llmModule.close()
-  }
-
   companion object {
     private const val TEST_FILE_NAME = "/stories.pte"
     private const val TOKENIZER_FILE_NAME = "/tokenizer.bin"
     private const val TEST_PROMPT = "Hello"
+    private const val OK = 0x00
     private const val SEQ_LEN = 32
   }
 }

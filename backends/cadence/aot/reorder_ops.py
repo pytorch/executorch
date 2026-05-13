@@ -11,13 +11,14 @@
 
 from collections import defaultdict
 from math import prod
-from typing import DefaultDict, List, Tuple
+from typing import Callable, cast, DefaultDict, List, Tuple
 
 import torch
 import torch.fx
 from executorch.backends.cadence.aot.compiler_utils import get_placeholders, get_shape
 from executorch.backends.cadence.aot.pass_utils import (
     CadencePassAttribute,
+    get_arg,
     get_overload_packet,
     register_cadence_pass,
     RemoveOrReplacePassInterface,
@@ -639,6 +640,259 @@ class PostponePermuteOpBelowSqueezeOrUnsqueezeLikeView(
     _SharedPostponePermuteOpBelowSqueezeOrUnsqueezeLikeView
 ):
     pass
+
+
+@register_cadence_pass(CadencePassAttribute(opt_level=1))
+class MoveSliceBeforePermutePass(RemoveOrReplacePassInterface):
+    """Move slice_copy ops before permute_copy to reduce permute data volume.
+
+    Rewrites permute(input, perm) -> slice(dim=D) into
+    slice(input, dim=perm[D]) -> permute(sliced, perm), so the permute
+    operates on a smaller tensor.
+
+    Scans slice nodes and matches upstream permutes. This also handles
+    chained cases (permute -> slice -> slice) in one pass: each slice
+    independently checks its input for a permute.
+
+    Cost model: dim-0 slices are nop-eligible (zero-copy pointer offset
+    after MakeSliceAndCatDimOutermostPass).  Moving such a slice loses the
+    nop, so we only move it when the permute savings outweigh the nop loss,
+    i.e. when the slice removes more than half the data (full > 2 * sliced).
+    Non-dim-0 slices have no nop opportunity, so any permute savings is
+    pure win.
+    """
+
+    STRIDED_SLICE_COST_FACTOR: int = 2
+
+    @property
+    def targets(self) -> list[EdgeOpOverload]:
+        return [exir_ops.edge.aten.slice_copy.Tensor]
+
+    def maybe_remove_or_replace(self, node: torch.fx.Node) -> bool:
+        permute_node = get_arg(node, "input", torch.fx.Node)
+        if permute_node.target != exir_ops.edge.aten.permute_copy.default:
+            return False
+
+        if len(permute_node.users) != 1:
+            return False
+
+        perm = cast(list[int], permute_node.args[1])
+        permute_input = permute_node.args[0]
+        assert isinstance(permute_input, torch.fx.Node)
+
+        slice_dim = get_arg(node, "dim", int)
+
+        full_size = prod(permute_node.meta["val"].shape)
+        sliced_size = prod(node.meta["val"].shape)
+        if slice_dim == 0 and full_size <= self.STRIDED_SLICE_COST_FACTOR * sliced_size:
+            return False
+
+        new_dim = perm[slice_dim]
+        graph = node.graph
+
+        with graph.inserting_before(permute_node):
+            new_slice_args = (
+                permute_input,
+                new_dim,
+                get_arg(node, "start"),
+                get_arg(node, "end"),
+                get_arg(node, "step", int),
+            )
+            new_slice = graph.create_node(
+                "call_function",
+                exir_ops.edge.aten.slice_copy.Tensor,
+                args=new_slice_args,
+            )
+            new_slice.meta["val"] = exir_ops.edge.aten.slice_copy.Tensor(
+                permute_input.meta["val"], *new_slice_args[1:]
+            )
+            new_permute = graph.create_node(
+                "call_function",
+                exir_ops.edge.aten.permute_copy.default,
+                args=(new_slice, perm),
+            )
+            new_permute.meta["val"] = exir_ops.edge.aten.permute_copy.default(
+                new_slice.meta["val"], perm
+            )
+
+        node.replace_all_uses_with(new_permute)
+        return True
+
+
+@register_cadence_pass(CadencePassAttribute(opt_level=1))
+class PropagateSlice(RemoveOrReplacePassInterface):
+    """Propagate slice_copy before element-wise ops when the cost model
+    indicates it reduces total data movement.
+
+    Supported ops (extensible via dispatch table):
+        - quantize_per_tensor: unary element-wise
+        - dequantize_per_tensor: unary element-wise
+        - add.Tensor: binary with broadcast — slices non-broadcasting inputs
+        - mul.Tensor: binary with broadcast — slices non-broadcasting inputs
+
+    Handles any slice dim and any step size.
+    """
+
+    def __init__(self) -> None:
+        super().__init__()
+        elementwise_targets = [
+            exir_ops.edge.quantized_decomposed.quantize_per_tensor.default,
+            exir_ops.edge.cadence.quantize_per_tensor.default,
+            exir_ops.edge.quantized_decomposed.dequantize_per_tensor.default,
+            exir_ops.edge.cadence.dequantize_per_tensor.default,
+        ]
+        binary_targets = [
+            exir_ops.edge.aten.add.Tensor,
+            exir_ops.edge.aten.mul.Tensor,
+        ]
+        self._dispatch: dict[
+            EdgeOpOverload,
+            tuple[
+                Callable[[torch.fx.Node, torch.fx.Node], bool],
+                Callable[[torch.fx.Node, torch.fx.Node], bool],
+            ],
+        ] = {}
+        for t in elementwise_targets:
+            self._dispatch[t] = (
+                self._should_swap_elementwise,
+                self._swap_elementwise_slice,
+            )
+
+        for t in binary_targets:
+            self._dispatch[t] = (
+                self._should_swap_binary_elementwise,
+                self._swap_binary_elementwise_slice,
+            )
+
+    @property
+    def targets(self) -> list[EdgeOpOverload]:
+        return [exir_ops.edge.aten.slice_copy.Tensor]
+
+    def _should_swap_elementwise(
+        self, op_node: torch.fx.Node, slice_node: torch.fx.Node
+    ) -> bool:
+        full_size = prod(op_node.meta["val"].shape)
+        sliced_size = prod(slice_node.meta["val"].shape)
+        return sliced_size < full_size
+
+    def _swap_elementwise_slice(
+        self, op_node: torch.fx.Node, slice_node: torch.fx.Node
+    ) -> bool:
+        op_input = get_arg(op_node, "input", torch.fx.Node)
+        graph = slice_node.graph
+
+        slice_dim = get_arg(slice_node, "dim", int)
+        slice_start = get_arg(slice_node, "start")
+        slice_end = get_arg(slice_node, "end")
+        slice_step = get_arg(slice_node, "step", int)
+
+        with graph.inserting_before(op_node):
+            new_slice = graph.call_function(
+                exir_ops.edge.aten.slice_copy.Tensor,
+                args=(op_input, slice_dim, slice_start, slice_end, slice_step),
+            )
+            new_slice.meta["val"] = exir_ops.edge.aten.slice_copy.Tensor(
+                op_input.meta["val"], slice_dim, slice_start, slice_end, slice_step
+            )
+
+            new_args = list(op_node.args)
+            new_args[0] = new_slice
+            target = cast(EdgeOpOverload, op_node.target)
+            new_op = graph.call_function(
+                target,
+                args=tuple(new_args),
+                kwargs=op_node.kwargs,
+            )
+            new_op.meta["val"] = target(
+                new_slice.meta["val"],
+                *[
+                    a.meta["val"] if isinstance(a, torch.fx.Node) else a
+                    for a in new_args[1:]
+                ],
+                **{
+                    k: v.meta["val"] if isinstance(v, torch.fx.Node) else v
+                    for k, v in op_node.kwargs.items()
+                },
+            )
+
+        slice_node.replace_all_uses_with(new_op)
+        graph.erase_node(slice_node)
+        graph.erase_node(op_node)
+        return True
+
+    def _should_swap_binary_elementwise(
+        self, op_node: torch.fx.Node, slice_node: torch.fx.Node
+    ) -> bool:
+        lhs, rhs = op_node.args[0], op_node.args[1]
+        assert isinstance(lhs, torch.fx.Node) and isinstance(rhs, torch.fx.Node)
+        if lhs.meta["val"].shape == rhs.meta["val"].shape:
+            return False
+        full_size = prod(op_node.meta["val"].shape)
+        sliced_size = prod(slice_node.meta["val"].shape)
+        return sliced_size < full_size
+
+    def _swap_binary_elementwise_slice(
+        self, op_node: torch.fx.Node, slice_node: torch.fx.Node
+    ) -> bool:
+        lhs, rhs = op_node.args[0], op_node.args[1]
+        assert isinstance(lhs, torch.fx.Node) and isinstance(rhs, torch.fx.Node)
+        graph = slice_node.graph
+
+        slice_dim = get_arg(slice_node, "dim", int)
+        slice_start = get_arg(slice_node, "start")
+        slice_end = get_arg(slice_node, "end")
+        slice_step = get_arg(slice_node, "step", int)
+
+        output_shape = op_node.meta["val"].shape
+
+        new_args = list(op_node.args)
+        with graph.inserting_before(op_node):
+            for i, inp in enumerate([lhs, rhs]):
+                if inp.meta["val"].shape[slice_dim] == output_shape[slice_dim]:
+                    new_slice = graph.call_function(
+                        exir_ops.edge.aten.slice_copy.Tensor,
+                        args=(inp, slice_dim, slice_start, slice_end, slice_step),
+                    )
+                    new_slice.meta["val"] = exir_ops.edge.aten.slice_copy.Tensor(
+                        inp.meta["val"], slice_dim, slice_start, slice_end, slice_step
+                    )
+                    new_args[i] = new_slice
+
+            target = cast(EdgeOpOverload, op_node.target)
+            new_op = graph.call_function(
+                target,
+                args=tuple(new_args),
+                kwargs=op_node.kwargs,
+            )
+            new_op.meta["val"] = target(
+                *[
+                    a.meta["val"] if isinstance(a, torch.fx.Node) else a
+                    for a in new_args
+                ],
+                **{
+                    k: v.meta["val"] if isinstance(v, torch.fx.Node) else v
+                    for k, v in op_node.kwargs.items()
+                },
+            )
+
+        slice_node.replace_all_uses_with(new_op)
+        graph.erase_node(slice_node)
+        graph.erase_node(op_node)
+        return True
+
+    def maybe_remove_or_replace(self, node: torch.fx.Node) -> bool:
+        parent = get_arg(node, "input", torch.fx.Node)
+        if len(parent.users) != 1:
+            return False
+        if not isinstance(parent.target, EdgeOpOverload):
+            return False
+
+        entry = self._dispatch.get(parent.target)
+        if entry is None:
+            return False
+
+        should_swap, do_swap = entry
+        return should_swap(parent, node) and do_swap(parent, node)
 
 
 # The following class consolidates functions to reoder ops (i.e., either hoist

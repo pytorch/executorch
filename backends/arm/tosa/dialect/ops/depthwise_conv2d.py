@@ -39,15 +39,16 @@ def DEPTHWISE_CONV2D(
     )
 
     torch_pad = [pad[0], pad[2]]
-    kernel_h, kernel_w = weight.shape[0], weight.shape[2]
-    C_out = weight.shape[1] * x.shape[1]
+    # Weight format is [KH, KW, IC, M], where C_out = IC * M.
+    kernel_h, kernel_w = weight.shape[0], weight.shape[1]
+    C_out = weight.shape[2] * weight.shape[3]
     N = x.shape[0]
-    H_in, W_in = x.shape[2:]
+    H_in, W_in = x.shape[1], x.shape[2]
     H_out = math.floor(
         (H_in + 2 * torch_pad[0] - dilation[0] * (kernel_h - 1) - 1) / stride[0] + 1
     )
     W_out = math.floor(
         (W_in + 2 * torch_pad[1] - dilation[1] * (kernel_w - 1) - 1) / stride[1] + 1
     )
-    output_shape = [N, C_out, H_out, W_out]
+    output_shape = [N, H_out, W_out, C_out]
     return torch.empty(size=output_shape, dtype=output_dtype)

@@ -32,33 +32,41 @@ class RMSNorm(torch.nn.Module):
         self.weight = nn.Parameter(torch.ones(dim))
 
     def _norm(self, x):
-        """
-        Apply the RMSNorm normalization to the input tensor.
-
-        Args:
-            x (torch.Tensor): The input tensor.
-
-        Returns:
-            torch.Tensor: The normalized tensor.
-
-        """
         return x * torch.rsqrt((x * x).mean(-1, keepdim=True) + self.eps)
 
     def forward(self, x):
-        """
-        Forward pass through the RMSNorm layer.
-
-        Args:
-            x (torch.Tensor): The input tensor.
-
-        Returns:
-            torch.Tensor: The output tensor after applying RMSNorm.
-
-        """
         output = self._norm(x.float()).type_as(x)
         if self.add_unit_offset:
             return output * (1.0 + self.weight.float()).type_as(x)
         return output * self.weight.type_as(x)
+
+
+class ScalelessRMSNorm(torch.nn.RMSNorm):
+    """RMSNorm with weight hardcoded to ones and not trainable.
+
+    Equivalent to a scaleless RMSNorm (no learnable scaling) but implemented as a
+    torch.nn.RMSNorm so the op composes/decomposes cleanly for backends like QNN
+    instead of being expressed as a hand-rolled decomposition.
+    """
+
+    def __init__(self, dim: int, eps: float = 1e-6):
+        super().__init__(dim, eps)
+        self.dim = dim
+        with torch.no_grad():
+            self.weight.fill_(1.0)
+        self.weight.requires_grad = False
+
+
+class RMSNormWithInputScale(torch.nn.Module):
+    def __init__(self, dim: int, eps: float = 1e-5):
+        super().__init__()
+        self.eps = eps
+        self.dim = dim
+        self.weight = torch.nn.Parameter(torch.ones(dim))
+
+    def forward(self, x):
+        scaled = self.weight * x
+        return F.rms_norm(scaled, (self.dim,), None, self.eps)
 
 
 class RMSNormGated(nn.Module):

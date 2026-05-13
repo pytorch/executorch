@@ -82,6 +82,20 @@ def define_common_targets():
         visibility = ["PUBLIC"],
     )
 
+    runtime.cxx_library(
+        name = "device_allocator",
+        srcs = ["device_allocator.cpp"],
+        exported_headers = [
+            "device_allocator.h",
+        ],
+        exported_deps = [
+            ":core",
+            ":memory_allocator",
+            "//executorch/runtime/core/exec_aten:lib",
+        ],
+        visibility = ["PUBLIC"],
+    )
+
     for aten_mode in get_aten_mode_options():
         aten_suffix = ("_aten" if aten_mode else "")
         runtime.cxx_library(

@@ -62,7 +62,6 @@ from . import (  # noqa
     op_tosa_shapes,
     op_tosa_slice,
     op_tosa_table,
-    op_tosa_transpose,
     op_tosa_transpose_conv2d,
     op_view,
     op_where,

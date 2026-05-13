@@ -21,6 +21,7 @@
 #include <vector>
 
 using ::executorch::aten::ScalarType;
+using ::executorch::extension::llm::Audio;
 using ::executorch::extension::llm::Image;
 using ::executorch::extension::llm::MultimodalInput;
 
@@ -67,6 +68,51 @@ inline std::vector<std::string> load_raw_files(
     input_files.insert(input_files.end(), line_files.begin(), line_files.end());
   }
   return input_files;
+}
+
+void load_audio(
+    const std::string& audio_path,
+    Audio& audio,
+    const std::vector<int32_t>& expected_size,
+    const ScalarType& expected_dtype) {
+  const size_t n = expected_size.size();
+  ET_CHECK_MSG(n >= 3, "expected dim should at least be 3, but got %zu", n);
+  const int32_t batch_size = expected_size[n - 3];
+  const int32_t n_bins = expected_size[n - 2];
+  const int32_t n_frames = expected_size[n - 1];
+
+  size_t num_elems = std::accumulate(
+      expected_size.begin(),
+      expected_size.end(),
+      size_t{1},
+      std::multiplies<size_t>());
+
+  std::streamsize expected_length = num_elems * sizeof(float);
+
+  std::ifstream file(audio_path, std::ios::binary | std::ios::ate);
+  ET_CHECK_MSG(
+      file.is_open(), "Failed to open input file: %s", audio_path.c_str());
+
+  std::streamsize file_size = file.tellg();
+  ET_CHECK_MSG(
+      file_size == expected_length,
+      "Input audio size mismatch. file bytes: %ld, expected bytes: %zu (file: "
+      "%s)",
+      file_size,
+      expected_length,
+      audio_path.c_str());
+  file.seekg(0, std::ios::beg);
+  std::vector<float> buffer(num_elems);
+  file.read(reinterpret_cast<char*>(buffer.data()), expected_length);
+  file.close();
+
+  audio = Audio(std::move(buffer), batch_size, n_bins, n_frames);
+  ET_LOG(
+      Info,
+      "audio Batch Size: %" PRId32 ", N_bins: %" PRId32 ", Frames: %" PRId32,
+      audio.get_batch_size(),
+      audio.get_n_bins(),
+      audio.get_n_frames());
 }
 
 void load_image(

@@ -248,11 +248,19 @@ def get_tosa_partitioner(version: str):
     return TOSAPartitioner(compile_spec)
 
 
-def get_ethosu_partitioner(target: str):
+def get_ethosu_partitioner(
+    target: str,
+    system_config: Optional[str] = None,
+    memory_mode: Optional[str] = None,
+):
     from executorch.backends.arm.ethosu.compile_spec import EthosUCompileSpec
     from executorch.backends.arm.ethosu.partitioner import EthosUPartitioner
 
-    compile_spec = EthosUCompileSpec(target)
+    compile_spec = EthosUCompileSpec(
+        target,
+        system_config=None if system_config == "default" else system_config,
+        memory_mode=None if memory_mode == "default" else memory_mode,
+    )
 
     return EthosUPartitioner(compile_spec)
 
