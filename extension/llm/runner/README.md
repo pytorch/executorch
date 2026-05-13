@@ -89,6 +89,44 @@ MultimodalRunner Supported Model Architecture:
 
 ## Quick Start
 
+## Chat Templates (Jinja2)
+
+The runner supports any **HuggingFace / vLLM-style Jinja2 chat template**.
+The implementation is built on Jinja2Cpp and accepts the same templates that
+[vLLM ships](https://github.com/vllm-project/vllm/tree/main/examples) or the
+`chat_template` field exposed by HuggingFace `tokenizer_config.json` files.
+
+### Universal Jinja Support
+
+You can point `--chat_template_file` at any `.jinja` file from:
+- HuggingFace tokenizer configs (`tokenizer_config.json` → `chat_template`).
+- vLLM's example templates: <https://github.com/vllm-project/vllm/tree/main/examples>
+- Your own custom Jinja2 chat templates.
+
+The template is rendered with the standard variables expected by HuggingFace:
+`messages`, `bos_token`, `eos_token`, `add_generation_prompt`, `tools`,
+`tool_choice`, and `date_string`. Templates that don't use these variables
+will simply ignore them.
+
+### Quick example
+
+```bash
+# Download a chat template from HuggingFace or vLLM's examples directory:
+curl -L -o llama3.2_chat.jinja \
+  https://raw.githubusercontent.com/vllm-project/vllm/main/examples/tool_chat_template_llama3.2_pythonic.jinja
+
+cmake-out/examples/models/llama/llama_main \
+  --model_path=<model.pte> \
+  --tokenizer_path=<tokenizer.json> \
+  --chat_template_file=llama3.2_chat.jinja \
+  --prompt="Hello"
+```
+
+Notes:
+- Match the template to the model family (e.g., Llama templates for Llama models).
+- For clean text output, pass `--echo=false` so prompt formatting tokens are not printed.
+- `--chat_template_file` always takes precedence over `--chat_format`.
+
 ### TextLLMRunner Example
 
 ```cpp
@@ -173,26 +211,9 @@ The LLM Runner framework provides Python bindings for easy integration with Pyth
 Build the Python bindings as part of the ExecuTorch build:
 
 ```bash
-# Option 1: Use the install script (includes pybindings by default)
+# Build from source with Python bindings enabled:
+# In executorch root directory
 bash install_executorch.sh
-
-# Option 2: Build with CMake directly
-cmake -B cmake-out \
-  -DEXECUTORCH_BUILD_PYBIND=ON \
-  -DCMAKE_INSTALL_PREFIX=cmake-out \
-  cmake/
-cmake --build cmake-out -j$(nproc) --target install
-
-# Option 3: pip install from source (includes pybindings)
-pip install -e . --no-build-isolation
-```
-
-The key CMake flag is `EXECUTORCH_BUILD_PYBIND=ON`, which builds the `_llm_runner` extension module providing `TextLLMRunner`, `MultimodalRunner`, `GenerationConfig`, and related classes.
-
-Verify the installation:
-
-```python
-from executorch.extension.llm.runner import TextLLMRunner, GenerationConfig
 ```
 
 ### Quick Start Examples
@@ -201,7 +222,7 @@ from executorch.extension.llm.runner import TextLLMRunner, GenerationConfig
 
 ```python
 from executorch.extension.llm.runner import (
-    GenerationConfig, MultimodalRunner, 
+    GenerationConfig, MultimodalRunner,
     make_text_input, make_image_input, make_audio_input
 )
 import torch
@@ -246,7 +267,7 @@ runner.generate(inputs, config, token_callback, stats_callback)
 ```python
 from executorch.extension.llm.runner import (
     MultimodalRunner, GenerationConfig,
-    make_text_input, make_token_input, make_image_input, 
+    make_text_input, make_token_input, make_image_input,
     make_audio_input, make_raw_audio_input
 )
 import torch
@@ -314,8 +335,8 @@ inputs_hf = processor(prompt, image, return_tensors="pt")
 # Generate using HF inputs directly
 config = GenerationConfig(max_new_tokens=100, temperature=0.7)
 runner.generate_hf(
-    inputs_hf, 
-    config, 
+    inputs_hf,
+    config,
     image_token_id=processor.tokenizer.convert_tokens_to_ids("<image>"),
     token_callback=lambda token: print(token, end='', flush=True)
 )
@@ -330,13 +351,13 @@ class ChatSession:
     def __init__(self, model_path: str, tokenizer_path: str):
         self.runner = MultimodalRunner(model_path, tokenizer_path)
         self.config = GenerationConfig(max_new_tokens=150, temperature=0.7, echo=False)
-        
+
     def send_message(self, message: str) -> str:
         """Send a message and get response"""
         inputs = [make_text_input(message)]
         response = self.runner.generate_text(inputs, self.config)
         return response
-        
+
     def send_multimodal(self, text: str, image_tensor: torch.Tensor) -> str:
         """Send text + image and get response"""
         inputs = [
@@ -345,7 +366,7 @@ class ChatSession:
         ]
         response = self.runner.generate_text(inputs, self.config)
         return response
-        
+
     def reset_conversation(self):
         """Reset the conversation state"""
         self.runner.reset()
@@ -388,7 +409,7 @@ config.max_new_tokens = 50
 #### MultimodalInput Types
 ```python
 from executorch.extension.llm.runner import (
-    MultimodalInput, make_text_input, make_token_input, 
+    MultimodalInput, make_text_input, make_token_input,
     make_image_input, make_audio_input
 )
 
@@ -424,25 +445,25 @@ def detailed_stats_callback(stats):
     print(f"\n=== Generation Statistics ===")
     print(f"Prompt tokens: {stats.num_prompt_tokens}")
     print(f"Generated tokens: {stats.num_generated_tokens}")
-    
+
     # Timing breakdown
     model_load_time = stats.model_load_end_ms - stats.model_load_start_ms
     if model_load_time > 0:
         print(f"Model load time: {model_load_time}ms")
-    
+
     inference_time = stats.inference_end_ms - stats.inference_start_ms
     if inference_time > 0:
         print(f"Total inference time: {inference_time}ms")
-        
+
         # Calculate throughput
         tokens_per_sec = stats.num_generated_tokens * 1000 / inference_time
         print(f"Generation speed: {tokens_per_sec:.1f} tokens/sec")
-    
+
     # Time to first token
     if stats.first_token_ms > stats.inference_start_ms:
         ttft = stats.first_token_ms - stats.inference_start_ms
         print(f"Time to first token: {ttft}ms")
-    
+
     # Export to JSON for logging
     json_stats = stats.to_json_string()
     print(f"JSON stats: {json_stats}")
@@ -459,17 +480,17 @@ import torch
 
 try:
     runner = MultimodalRunner("model.pte", "tokenizer.bin")
-    
+
     # Invalid image tensor will raise RuntimeError
     invalid_image = torch.rand(2, 224, 224, 3)  # Wrong number of dimensions
     inputs = [make_image_input(invalid_image)]
-    
+
     config = GenerationConfig(max_new_tokens=50)
     runner.generate_text(inputs, config)
-    
+
 except RuntimeError as e:
     print(f"Generation failed: {e}")
-    
+
 except FileNotFoundError as e:
     print(f"Model or tokenizer file not found: {e}")
 ```
