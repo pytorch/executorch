@@ -204,7 +204,6 @@ class FuseConstantArgsPass(ArmPass):
                         f"{[input_node.name for input_node in input_nodes]}"
                     )
                     modified |= did_fuse
-                    graph_module.recompile()  # Recompile needed to catch chains of constant ops
                     input_nodes_to_maybe_delete.update(input_nodes)
             except Exception as e:
                 logger.warning(
