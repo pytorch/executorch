@@ -8,6 +8,9 @@
 
 #include <executorch/backends/qualcomm/aot/wrappers/TensorWrapper.h>
 
+#include <c10/util/safe_numerics.h>
+#include <executorch/runtime/platform/assert.h>
+
 #include <atomic>
 #include <cstring>
 #include <limits>
@@ -181,8 +184,14 @@ std::shared_ptr<TensorWrapper> CreateTensorWrapper(
     const void* data,
     bool copy_data) {
   if (bytes == 0) {
-    bytes = std::accumulate(
-        dims, dims + rank, GetDataTypeSize(data_type), std::multiplies<>());
+    std::uint32_t computed_bytes = GetDataTypeSize(data_type);
+    for (std::uint32_t i = 0; i < rank; ++i) {
+      ET_CHECK_MSG(
+          !c10::mul_overflows(computed_bytes, dims[i], &computed_bytes),
+          "Overflow computing tensor byte size for tensor of rank %u",
+          rank);
+    }
+    bytes = computed_bytes;
   }
   return std::make_shared<TensorWrapper>(
       tensor_name,
