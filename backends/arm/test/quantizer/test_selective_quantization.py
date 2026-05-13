@@ -16,6 +16,7 @@ from executorch.backends.arm.quantizer.quantization_config import QuantizationCo
 from executorch.backends.arm.test import common
 from executorch.backends.arm.test.tester.test_pipeline import QuantizationPipeline
 from executorch.backends.arm.tosa import TosaSpecification
+from executorch.backends.cortex_m.test.tester import ramp_tensor
 from torchvision import models, transforms  # type: ignore[import-untyped]
 from torchvision.ops.misc import Conv2dNormActivation  # type: ignore[import-untyped]
 
@@ -136,6 +137,20 @@ mv3.eval()
 normalize = transforms.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225])
 
 
+class SharedBufferEmbeddingLinearConstantFold(torch.nn.Module):
+
+    def __init__(self):
+        super().__init__()
+        self.shared = torch.nn.Embedding(4, 4)
+        self.lm_head = torch.nn.Linear(4, 4, bias=False)
+        self.lm_head.weight = self.shared.weight
+
+    def forward(self, ids, x):
+        y0 = self.shared(ids).sum(dim=1)
+        z = self.lm_head(x)
+        return y0 + z
+
+
 def test_mv3_selective_quant_int16_tosa_INT():
     model = mv3
     inputs = (normalize(torch.randn(1, 3, 224, 224)),)
@@ -208,4 +223,34 @@ def test_mv3_io_quant_tosa_INT():
         output_qspecs={get_symmetric_quantization_config().output_activation: 1},
     )
 
+    pipeline.run()
+
+
+def test_multiple_folded_get_attr():
+    """In torchao/quantization/pt2e/constant_fold.py:constant_fold, get_attr
+    node targets are deleted as soon as there is one get_attr node w/o users
+    using the target.
+
+    If there are multiple get_attr nodes refering the same target such as in
+    this test, the function crashes if no workaround is present.
+
+    """
+
+    model = SharedBufferEmbeddingLinearConstantFold()
+    example_inputs = (
+        torch.tensor([[0, 1]], dtype=torch.long),
+        ramp_tensor(-2, 2, (1, 4)),
+    )
+
+    quantizer = get_quantizer()
+    quantizer.set_module_type(torch.nn.Embedding, None)
+
+    pipeline = QuantizationPipeline(
+        model,
+        example_inputs,
+        quantizer=quantizer,
+        qspecs=None,
+        input_qspecs=None,
+        output_qspecs=None,
+    )
     pipeline.run()
