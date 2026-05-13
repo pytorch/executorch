@@ -39,6 +39,7 @@ from executorch.backends.cortex_m.passes.replace_quant_nodes_pass import (
     ReplaceQuantNodesPass,
 )
 from executorch.backends.cortex_m.quantizer.quantizer import CortexMQuantizer
+from executorch.backends.cortex_m.target_config import CortexMTargetConfig
 from executorch.devtools import BundledProgram, generate_etrecord
 from executorch.devtools.backend_debug import get_delegation_info
 from executorch.devtools.bundled_program.config import MethodTestCase, MethodTestSuite
@@ -465,7 +466,16 @@ TARGETS = [
     "TOSA-1.0+INT",
     "TOSA-1.0+FP",
     "TOSA-1.0+INT+int16",
-    "cortex-m55+int8",
+    "cortex-m0",
+    "cortex-m0plus",
+    "cortex-m3",
+    "cortex-m4",
+    "cortex-m7",
+    "cortex-m23",
+    "cortex-m33",
+    "cortex-m35p",
+    "cortex-m55",
+    "cortex-m85",
 ]
 
 
@@ -566,7 +576,7 @@ def _get_args():
         required=False,
         default="ethos-u55-128",
         choices=TARGETS,
-        help=f"Target backend. For delegated models: Ethos-U/VGF/TOSA variants. For non-delegated: cortex-m55+int8 (CMSIS-NN portable kernels). Valid targets: {TARGETS}",
+        help=f"Target backend. For delegated models: Ethos-U/VGF/TOSA variants. For non-delegated: cortex-m<variant> (CMSIS-NN portable kernels). Valid targets: {TARGETS}",
     )
     # TODO: Remove --evaluate and --evaluate_config completely after a suitable time.
     # They are deprecated and no longer functional in this script.
@@ -860,9 +870,13 @@ def _to_edge_cortex_m(
     model: GraphModule,
     example_inputs: Tuple[torch.Tensor],
     calibration_samples: Optional[List[Tuple[torch.Tensor, ...]]],
+    target_config: CortexMTargetConfig,
 ):
     """Cortex-M/CMSIS-NN compilation path with no delegation."""
-    logging.info("Using Cortex-M/CMSIS-NN compilation path (no delegation)")
+    logging.info(
+        f"Using Cortex-M/CMSIS-NN compilation path for cpu={target_config.cpu.name} "
+        f"backend={target_config.backend.name}"
+    )
 
     def _to_channels_last(x):
         if isinstance(x, torch.Tensor):
@@ -915,7 +929,9 @@ def _to_edge_cortex_m(
         ),
     )
 
-    pass_manager = CortexMPassManager(edge.exported_program())
+    pass_manager = CortexMPassManager(
+        edge.exported_program(), target_config=target_config
+    )
     edge._edge_programs["forward"] = pass_manager.transform()
 
     return model_quant, edge
@@ -1007,11 +1023,12 @@ def main() -> None:  # noqa: C901
     else:
         quant_mode = None
 
-    if args.target == "cortex-m55+int8":
+    if args.target.startswith("cortex-m"):
         # Cortex-M path: CMSIS-NN portable kernels, no delegation
+        target_config = CortexMTargetConfig.from_target_string(args.target)
         if args.delegate:
             logging.warning(
-                "--delegate is ignored for target 'cortex-m55+int8' "
+                f"--delegate is ignored for target {args.target!r} "
                 "(this target does not use delegated ops)."
             )
             args.delegate = False
@@ -1021,6 +1038,7 @@ def main() -> None:  # noqa: C901
             model,
             example_inputs,
             calibration_samples,
+            target_config,
         )
     elif args.delegate:
         # As we can target multiple output encodings, one must
