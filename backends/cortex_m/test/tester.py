@@ -12,9 +12,9 @@ from typing import Any, Optional
 import torch
 from executorch.backends.arm.test.common import get_u55_compile_spec
 from executorch.backends.arm.test.tester.arm_tester import Serialize
-from executorch.backends.cortex_m.compile_config import CortexMCompileConfig
 from executorch.backends.cortex_m.passes.cortex_m_pass_manager import CortexMPassManager
 from executorch.backends.cortex_m.quantizer.quantizer import CortexMQuantizer
+from executorch.backends.cortex_m.target_config import CortexM, CortexMTargetConfig
 from executorch.backends.test.harness import Tester as TesterBase
 from executorch.backends.test.harness.stages import (
     Export,
@@ -50,12 +50,12 @@ class CortexMToEdge(ToEdge):
 
 
 class CortexMRunPasses(RunPasses):
-    def __init__(self, config: Optional[CortexMCompileConfig] = None):
-        config = config or CortexMCompileConfig()
+    def __init__(self, target_config: Optional[CortexMTargetConfig] = None):
+        target_config = target_config or CortexMTargetConfig(cpu=CortexM.M55)
         # The base RunPasses constructs the pass manager as `cls(ep, pass_list)`.
-        # Pre-bind the config so it flows through that 2-arg call.
+        # Pre-bind the target_config so it flows through that 2-arg call.
         super().__init__(
-            partial(CortexMPassManager, config=config),  # type: ignore[arg-type]
+            partial(CortexMPassManager, target_config=target_config),  # type: ignore[arg-type]
             CortexMPassManager.pass_list,  # type: ignore[arg-type]
         )
 
@@ -82,17 +82,19 @@ class CortexMTester(TesterBase):
         self,
         module,
         example_inputs,
-        config: Optional[CortexMCompileConfig] = None,
+        target_config: Optional[CortexMTargetConfig] = None,
     ):
         if callable(example_inputs):
             resolved_example_inputs = example_inputs()
         else:
             resolved_example_inputs = example_inputs
-        config = config or CortexMCompileConfig()
+        target_config = target_config or CortexMTargetConfig(cpu=CortexM.M55)
         stage_classes: dict[StageType, Callable[..., Any]] = dict(
             cortex_m_stage_classes
         )
-        stage_classes[StageType.RUN_PASSES] = lambda: CortexMRunPasses(config=config)
+        stage_classes[StageType.RUN_PASSES] = lambda: CortexMRunPasses(
+            target_config=target_config
+        )
         super().__init__(module, resolved_example_inputs, stage_classes)
 
     def test_dialect(
