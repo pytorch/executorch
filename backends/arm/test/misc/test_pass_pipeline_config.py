@@ -29,14 +29,13 @@ def test_pipeline_config_override_outside_compile_spec():
     override_compile_spec = TosaCompileSpec(
         TosaSpecification.create_from_string("TOSA-1.00+INT")
     )
-    override_config = ArmPassPipelineConfig()
-    override_config.disable_fuse_duplicate_users()
+    override_config = ArmPassPipelineConfig(softmax=SoftmaxDecompositionConfig.STABLE)
     override_compile_spec.set_pass_pipeline_config(override_config)
     override_manager = ArmPassManager(override_compile_spec)
     skip_passes = override_manager._skip_pass_types
 
-    assert FuseDuplicateUsersPass in skip_passes
-    assert DecomposeSoftmaxPass not in skip_passes
+    assert FuseDuplicateUsersPass not in skip_passes
+    assert DecomposeMaskedFillPass in skip_passes
 
 
 def test_softmax_config_masked_no_target():
