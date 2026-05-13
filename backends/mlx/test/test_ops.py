@@ -4274,6 +4274,8 @@ _BINARY_OP_TESTS = [
     {"op_name": "equal",         "op_fn": torch.eq, "shapes": [(2, 3, 4), (10,)], "dtypes": [torch.float32]},
     {"op_name": "not_equal",     "op_fn": torch.ne, "shapes": [(2, 3, 4), (10,)], "dtypes": [torch.float32]},
     # logical
+    {"op_name": "bitwise_and_bool", "op_fn": torch.bitwise_and, "shapes": _SHAPES_3, "dtypes": [torch.bool], "input_fn_a": _bool_input_fn(), "input_fn_b": _bool_input_fn()},
+    {"op_name": "bitwise_and_int",  "op_fn": torch.bitwise_and, "shapes": _SHAPES_3, "dtypes": [torch.int32, torch.int64], "input_fn_a": _int_input_fn(0, 256), "input_fn_b": _int_input_fn(0, 256)},
     {"op_name": "logical_and",   "op_fn": torch.logical_and, "shapes": [(2, 3, 4), (10,), (4, 8)], "dtypes": [torch.bool], "input_fn_a": _bool_input_fn(), "input_fn_b": _bool_input_fn()},
     {"op_name": "logical_or",    "op_fn": torch.logical_or,  "shapes": [(2, 3, 4), (10,), (4, 8)], "dtypes": [torch.bool], "input_fn_a": _bool_input_fn(), "input_fn_b": _bool_input_fn()},
 ]
@@ -4284,6 +4286,51 @@ for _entry in _BINARY_OP_TESTS:
     _cls = _make_binary_op_test(**_entry)
     register_test(_cls)
     globals()[_cls.__name__] = _cls
+
+
+class BitwiseAndScalarModel(nn.Module):
+    def __init__(self, scalar):
+        super().__init__()
+        self.scalar = scalar
+
+    def forward(self, a: torch.Tensor) -> torch.Tensor:
+        return torch.bitwise_and(a, self.scalar)
+
+
+@register_test
+class BitwiseAndScalarTest(OpTestCase):
+    """Test case for aten.bitwise_and op (Tensor_Scalar variant)."""
+
+    name = "bitwise_and_scalar"
+
+    def __init__(
+        self,
+        shape: Tuple[int, ...],
+        dtype: torch.dtype,
+        scalar,
+    ):
+        self.shape = shape
+        self.dtype = dtype
+        self.scalar = scalar
+        shape_str = "x".join(str(s) for s in shape)
+        dtype_str = str(dtype).replace("torch.", "")
+        self.name = f"bitwise_and_scalar_{shape_str}_{dtype_str}"
+
+    @classmethod
+    def get_test_configs(cls) -> List["BitwiseAndScalarTest"]:
+        return [
+            cls(shape=(16,), dtype=torch.bool, scalar=True),
+            cls(shape=(4, 4), dtype=torch.int32, scalar=7),
+            cls(shape=(2, 3, 4), dtype=torch.int64, scalar=13),
+        ]
+
+    def create_inputs(self) -> Tuple[torch.Tensor, ...]:
+        if self.dtype == torch.bool:
+            return _bool_input_fn()(self.shape, self.dtype)
+        return _int_input_fn(0, 256)(self.shape, self.dtype)
+
+    def create_model(self) -> nn.Module:
+        return BitwiseAndScalarModel(self.scalar)
 
 
 @register_test
