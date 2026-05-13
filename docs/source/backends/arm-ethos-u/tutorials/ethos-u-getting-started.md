@@ -201,10 +201,10 @@ To learn more, check out the [ExecuTorch on Arm Practical Labs](https://github.c
 
 For quick learning paths showcasing short tutorials:
 
-[Run LLama3 on Raspberry Pi 5 with ExecuTorch](https://learn.arm.com/learning-paths/embedded-and-microcontrollers/rpi-llama3/)
-[Visualize Ethos-U NPU Performance on FVP](https://learn.arm.com/learning-paths/embedded-and-microcontrollers/visualizing-ethos-u-performance/)
-[Image Classification with ExecuTorch on NXP i.MX 93 (Ethos-U65)](https://learn.arm.com/learning-paths/embedded-and-microcontrollers/observing-ethos-u-on-nxp/)
-[Image Classification with ExecuTorch on Alif E8 DevKit (Ethos-U85)](https://learn.arm.com/learning-paths/embedded-and-microcontrollers/alif-image-classification/)
+- [Run LLama3 on Raspberry Pi 5 with ExecuTorch](https://learn.arm.com/learning-paths/embedded-and-microcontrollers/rpi-llama3/)
+- [Visualize Ethos-U NPU Performance on FVP](https://learn.arm.com/learning-paths/embedded-and-microcontrollers/visualizing-ethos-u-performance/)
+- [Image Classification with ExecuTorch on NXP i.MX 93 (Ethos-U65)](https://learn.arm.com/learning-paths/embedded-and-microcontrollers/observing-ethos-u-on-nxp/)
+- [Image Classification with ExecuTorch on Alif E8 DevKit (Ethos-U85)](https://learn.arm.com/learning-paths/embedded-and-microcontrollers/alif-image-classification/)
 
 ## FAQs
 
