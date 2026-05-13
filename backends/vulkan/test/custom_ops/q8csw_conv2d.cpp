@@ -716,8 +716,8 @@ int main(int argc, char* argv[]) {
       generate_quantized_conv2d_test_cases,
       quantized_conv2d_flop_calculator,
       "QuantizedConv2d",
-      0,
-      10,
+      /*warmup_runs = */ 1,
+      /*benchmark_runs = */ 1,
       ref_fn);
 
   return 0;
