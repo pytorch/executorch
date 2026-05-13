@@ -15,8 +15,16 @@ namespace executorch::extension::llm {
 class ET_EXPERIMENTAL MultimodalDecoderRunner
     : public executorch::extension::llm::TextDecoderRunner {
  public:
-  explicit MultimodalDecoderRunner(Module* module, IOManager* io_manager)
-      : TextDecoderRunner(module, io_manager) {}
+  explicit MultimodalDecoderRunner(
+      Module* module,
+      IOManager* io_manager,
+      std::string method_name = "forward",
+      std::unique_ptr<Sampler> sampler = nullptr)
+      : TextDecoderRunner(
+            module,
+            io_manager,
+            std::move(method_name),
+            std::move(sampler)) {}
 
   /**
    * Step the LLM Decoder with the given tokens and start position.
