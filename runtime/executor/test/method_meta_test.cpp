@@ -74,6 +74,10 @@ class MethodMetaTest : public ::testing::Test {
   void SetUp() override {
     load_program(std::getenv("ET_MODULE_ADD_PATH"), "add");
     load_program(std::getenv("ET_MODULE_STATEFUL_PATH"), "stateful");
+    const char* device_path = std::getenv("ET_MODULE_ADD_WITH_DEVICE_PATH");
+    if (device_path != nullptr) {
+      load_program(device_path, "add_with_device");
+    }
   }
 
  private:
@@ -192,6 +196,27 @@ TEST_F(MethodMetaTest, MethodMetaAttribute) {
   ASSERT_EQ(bad_access.error(), Error::InvalidArgument);
 }
 
+TEST_F(MethodMetaTest, MemoryPlannedBufferDeviceDefaultsCpu) {
+  Result<MethodMeta> method_meta = programs_["add"]->method_meta("forward");
+  ASSERT_EQ(method_meta.error(), Error::Ok);
+
+  // CPU-only model: all buffers should default to CPU device.
+  size_t num_buffers = method_meta->num_memory_planned_buffers();
+  ASSERT_GT(num_buffers, 0);
+
+  for (size_t i = 0; i < num_buffers; ++i) {
+    auto device = method_meta->memory_planned_buffer_device(i);
+    ASSERT_TRUE(device.ok());
+    EXPECT_EQ(device->type(), executorch::runtime::etensor::DeviceType::CPU);
+    EXPECT_EQ(device->index(), 0);
+  }
+
+  // Out of range returns error.
+  EXPECT_EQ(
+      method_meta->memory_planned_buffer_device(num_buffers).error(),
+      Error::InvalidArgument);
+}
+
 TEST_F(MethodMetaTest, TensorInfoSizeOverflow) {
   // Create sizes that will cause overflow when multiplied
   std::vector<int32_t> overflow_sizes = {
@@ -213,4 +238,31 @@ TEST_F(MethodMetaTest, TensorInfoSizeOverflow) {
           false, // is_memory_planned
           executorch::aten::string_view{nullptr, 0}),
       "");
+}
+
+TEST_F(MethodMetaTest, MethodMetaBufferDeviceReturnsCudaForDeviceBuffer) {
+  ASSERT_NE(programs_.find("add_with_device"), programs_.end())
+      << "ET_MODULE_ADD_WITH_DEVICE_PATH env var not set";
+  Result<MethodMeta> method_meta =
+      programs_["add_with_device"]->method_meta("forward");
+  ASSERT_EQ(method_meta.error(), Error::Ok);
+
+  // ModuleAddWithDevice exports with enable_non_cpu_memory_planning=True.
+  // The model delegates add(a,b) to CUDA, producing:
+  //   non_const_buffer_sizes: [0, 48]  (index 0 reserved)
+  //   non_const_buffer_device: [{buffer_idx=1, device_type=CUDA,
+  //   device_index=0}]
+  // So there is exactly 1 planned buffer (user-facing index 0), on CUDA.
+  ASSERT_EQ(method_meta->num_memory_planned_buffers(), 1);
+
+  // Buffer 0 should be CUDA device.
+  auto device = method_meta->memory_planned_buffer_device(0);
+  ASSERT_TRUE(device.ok());
+  EXPECT_EQ(device->type(), executorch::runtime::etensor::DeviceType::CUDA);
+  EXPECT_EQ(device->index(), 0);
+
+  // Out of range should return error.
+  EXPECT_EQ(
+      method_meta->memory_planned_buffer_device(1).error(),
+      Error::InvalidArgument);
 }
