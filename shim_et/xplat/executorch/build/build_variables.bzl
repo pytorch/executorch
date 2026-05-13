@@ -36,7 +36,6 @@ PROGRAM_NO_PRIM_OPS_SRCS = [
     "method.cpp",
     "method_meta.cpp",
     "program.cpp",
-    "program_validation.cpp",
     "tensor_parser_exec_aten.cpp",
 ]
 
@@ -357,6 +356,7 @@ EXTENSION_RUNNER_UTIL_SRCS = [
 ]
 
 EXTENSION_LLM_RUNNER_SRCS = [
+    "extension/llm/runner/jinja_chat_formatter.cpp",
     "extension/llm/runner/llm_runner_helper.cpp",
     "extension/llm/runner/multimodal_prefiller.cpp",
     "extension/llm/runner/multimodal_runner.cpp",
@@ -476,7 +476,6 @@ XNNPACK_BACKEND_BUCK_SRCS = [
     "runtime/XNNPACKBackend.cpp",
     "runtime/XNNWeightsCache.cpp",
     "runtime/XNNWorkspaceManager.cpp",
-    "runtime/XnnpackBackendOptions.cpp",
     "runtime/profiling/XNNProfiler.cpp",
 ]
 
