@@ -34,12 +34,19 @@ TestCase create_test_case_from_config(
   TestCase test_case;
 
   // Create a descriptive name for the test case
-  std::string shape_str = shape_string(config.shape);
-  std::string test_name = config.test_case_name + "  I=" + shape_str + "  " +
-      repr_str(utils::kBuffer, quant_layout);
-  if (const_b) {
-    test_name += "  const_b";
-  }
+  // q8ta binary: i8->i8, two inputs added together (same shape)
+  std::string prefix = config.test_case_name; // "ACCU" or "PERF"
+  std::string shape_bracket_str = shape_bracket(config.shape);
+  std::string shape_str = shape_bracket_str + "+" + shape_bracket_str;
+  std::string storage_str = repr_str(utils::kBuffer, quant_layout);
+  std::string suffix = const_b ? "[const_b]" : "";
+  std::string test_name = make_test_label(
+      prefix,
+      dtype_short(input_dtype),
+      dtype_short(input_dtype),
+      shape_str,
+      storage_str,
+      suffix);
   test_case.set_name(test_name);
 
   // Set the operator name for the test case

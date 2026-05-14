@@ -45,20 +45,12 @@ std::vector<TestCase> generate_add_test_cases() {
         TestCase test_case;
 
         // Create a descriptive name for the test case
-        std::string size_str = "";
-        for (size_t i = 0; i < sizes.size(); ++i) {
-          size_str += std::to_string(sizes[i]);
-          if (i < sizes.size() - 1)
-            size_str += "x";
-        }
-
-        std::string storage_str =
-            (storage_type == utils::kTexture3D) ? "Texture3D" : "Buffer";
-        std::string dtype_str = (data_type == vkapi::kFloat) ? "Float" : "Half";
-
-        // Add data generation type to the name for clarity
-        std::string test_name =
-            "Add_" + size_str + "_" + storage_str + "_" + dtype_str;
+        std::string shape_str =
+            shape_bracket(sizes) + "+" + shape_bracket(sizes);
+        std::string storage_str = repr_str(storage_type, utils::kWidthPacked);
+        std::string dtype_str = dtype_short(data_type);
+        std::string test_name = make_test_label(
+            "ACCU", dtype_str, dtype_str, shape_str, storage_str);
         test_case.set_name(test_name);
 
         // Set the operator name for the test case

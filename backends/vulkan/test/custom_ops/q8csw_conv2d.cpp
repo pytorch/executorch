@@ -27,12 +27,27 @@ TestCase create_test_case_from_config(
   TestCase test_case;
 
   // Create a descriptive name for the test case
-  std::string storage_str =
-      (storage_type == utils::kTexture3D) ? "Texture3D" : "Buffer";
-  std::string dtype_str = (input_dtype == vkapi::kFloat) ? "Float" : "Half";
-
-  std::string test_name =
-      config.test_case_name + "_" + storage_str + "_" + dtype_str;
+  bool is_perf = config.channels.out > kRefDimSizeLimit ||
+      config.channels.in > kRefDimSizeLimit ||
+      config.input_size.h > kRefDimSizeLimit ||
+      config.input_size.w > kRefDimSizeLimit;
+  std::string prefix = is_perf ? "PERF" : "ACCU";
+  std::string dtype_str = dtype_short(input_dtype);
+  std::string in_shape = "[1," + std::to_string(config.channels.in) + "," +
+      std::to_string(config.input_size.h) + "," +
+      std::to_string(config.input_size.w) + "]";
+  std::string weight_shape = "[" + std::to_string(config.channels.out) + "," +
+      std::to_string(config.channels.in / config.groups) + "," +
+      std::to_string(config.kernel.h) + "," + std::to_string(config.kernel.w) +
+      "]";
+  std::string shape_str = in_shape + "x" + weight_shape + " s" +
+      std::to_string(config.stride.h) + " p" +
+      std::to_string(config.padding.h) + " d" +
+      std::to_string(config.dilation.h) + " g" + std::to_string(config.groups);
+  std::string storage_str = repr_str(storage_type, utils::kChannelsPacked);
+  std::string suffix = "[" + config.op_name + "]";
+  std::string test_name = make_test_label(
+      prefix, dtype_str, dtype_str, shape_str, storage_str, suffix);
   test_case.set_name(test_name);
 
   // Set the operator name for the test case

@@ -65,15 +65,23 @@ static TestCase create_test_case_from_config(
 
   // Create test case name
   std::string prefix = config.test_case_name.substr(0, 4);
-  std::string test_name = prefix + "  " + std::to_string(config.channels.in) +
-      "->" + std::to_string(config.channels.out) + "  " +
-      "I=" + std::to_string(config.input_size.h) + "," +
-      std::to_string(config.input_size.w) + "  " +
-      "g=" + std::to_string(config.groups) + "  " +
-      "k=" + std::to_string(config.kernel.h) + "  " +
-      "op=" + std::to_string(output_pad_h) + "," +
-      std::to_string(output_pad_w) + "  " +
-      repr_str(utils::kBuffer, int8_memory_layout);
+  std::string dtype_str = dtype_short(input_dtype);
+  std::string in_shape = "[1," + std::to_string(config.channels.in) + "," +
+      std::to_string(config.input_size.h) + "," +
+      std::to_string(config.input_size.w) + "]";
+  std::string weight_shape = "[" + std::to_string(config.channels.out) + "," +
+      std::to_string(config.channels.in / config.groups) + "," +
+      std::to_string(config.kernel.h) + "," + std::to_string(config.kernel.w) +
+      "]";
+  std::string shape_str = in_shape + "x" + weight_shape + " s" +
+      std::to_string(config.stride.h) + " p" +
+      std::to_string(config.padding.h) + " d" +
+      std::to_string(config.dilation.h) + " g" + std::to_string(config.groups) +
+      " op=" + std::to_string(output_pad_h) + "," +
+      std::to_string(output_pad_w);
+  std::string storage_str = repr_str(utils::kBuffer, int8_memory_layout);
+  std::string test_name =
+      make_test_label(prefix, dtype_str, dtype_str, shape_str, storage_str);
   test_case.set_name(test_name);
 
   test_case.set_operator_name("test_etvk.test_q8ta_conv2d_transposed.default");
