@@ -2185,9 +2185,10 @@ class TestEmit(unittest.TestCase):
             ExecutorBackendPartitioner()
         ).to_executorch()
 
-        # Check that there is only one delegate because two methods are exactly the same
+        # Check that there are two delegates now because the
+        # passes might apply differently due to per-method config support.
         self.assertEqual(
-            len(edge_program_manager.executorch_program.backend_delegate_data), 1
+            len(edge_program_manager.executorch_program.backend_delegate_data), 2
         )
 
     def test_delegate_deduplicate_with_different_compile_specs(self) -> None:
@@ -2710,7 +2711,7 @@ class TestEmit(unittest.TestCase):
         )
         lowered = edge.to_backend(DevicePartitioner())
         et_prog = lowered.to_executorch(
-            config=ExecutorchBackendConfig(enable_non_cpu_memory_planning=True),
+            config=ExecutorchBackendConfig(memory_planning_pass=MemoryPlanningPass(enable_non_cpu_memory_planning=True)),
         )
         program = et_prog._emitter_output.program
 
@@ -2741,7 +2742,7 @@ class TestEmit(unittest.TestCase):
             compile_config=EdgeCompileConfig(_check_ir_validity=False),
         )
         et_prog = edge.to_executorch(
-            config=ExecutorchBackendConfig(enable_non_cpu_memory_planning=True),
+            config=ExecutorchBackendConfig(memory_planning_pass=MemoryPlanningPass(enable_non_cpu_memory_planning=True)),
         )
         program = et_prog._emitter_output.program
 
