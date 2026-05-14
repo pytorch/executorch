@@ -227,9 +227,8 @@ def _quantize_fused_conv_bias(
         if input_dequant.target in unsqueeze_targets:
             input_dequant = input_dequant.args[0]
 
-        assert (
-            input_dequant.target == dq_per_tensor
-        ), f"Expected dequantize_per_tensor, got {input_dequant.target}"
+        if input_dequant.target != dq_per_tensor:
+            continue
 
         bias_val = bias_node.meta.get("val")
         dequant_val = (
