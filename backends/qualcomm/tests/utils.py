@@ -436,9 +436,38 @@ class TestQNN(unittest.TestCase):
                     # ok, assuming the user give a relative path to cwd
                     build_folder = os.path.join(os.getcwd(), self.build_folder)
 
+                env_runner = os.environ.get("QNN_EXECUTOR_RUNNER")
+                runner_from_env = bool(env_runner and env_runner.strip())
+                if runner_from_env:
+                    qnn_executor_runner = os.path.abspath(env_runner.strip())
+                else:
+                    qnn_executor_runner = os.path.join(
+                        build_folder,
+                        "examples/qualcomm/executor_runner/qnn_executor_runner",
+                    )
+                if not os.path.isfile(qnn_executor_runner):
+                    if runner_from_env:
+                        raise FileNotFoundError(
+                            f"QNN_EXECUTOR_RUNNER is set to {qnn_executor_runner!r} "
+                            "but no file exists at that path. Update the "
+                            "environment variable to point at the built "
+                            "qnn_executor_runner binary."
+                        )
+                    raise FileNotFoundError(
+                        f"qnn_executor_runner not found at {qnn_executor_runner!r}. "
+                        "Set the QNN_EXECUTOR_RUNNER environment variable to the "
+                        "built binary, or build it via CMake so it appears at "
+                        f"{build_folder}/examples/qualcomm/executor_runner/qnn_executor_runner."
+                    )
+                if not os.access(qnn_executor_runner, os.X_OK):
+                    raise PermissionError(
+                        f"{qnn_executor_runner!r} exists but is not executable. "
+                        "Run `chmod +x` on the binary or rebuild it."
+                    )
+
                 cmd = [
                     # qnn_executor_runner
-                    f"{build_folder}/examples/qualcomm/executor_runner/qnn_executor_runner",
+                    qnn_executor_runner,
                     "--model_path",
                     pte_fname,
                     "--input_list_path",

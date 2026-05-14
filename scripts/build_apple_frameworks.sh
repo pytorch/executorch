@@ -335,6 +335,17 @@ done
 rm -rf "$FRAMEWORK_EXECUTORCH_HEADERS_PATH"
 rm -rf "$FRAMEWORK_EXECUTORCH_LLM_HEADERS_PATH"
 
+echo "Generating Swift test fixtures (requires CoreML python deps)"
+
+cd "$SOURCE_ROOT_DIR"
+python3 extension/apple/ExecuTorch/__tests__/resources/generate_coreml_test_models.py
+
+# SwiftPM requires resources to live under the test target's path. Copy the
+# fixtures into the ObjC test target's directory so they're physically present.
+cp -f extension/apple/ExecuTorch/__tests__/resources/add.pte             extension/apple/ExecuTorch/__tests__/ObjC/add.pte
+cp -f extension/apple/ExecuTorch/__tests__/resources/add_coreml.pte      extension/apple/ExecuTorch/__tests__/ObjC/add_coreml.pte
+cp -f extension/apple/ExecuTorch/__tests__/resources/add_mul_coreml.pte  extension/apple/ExecuTorch/__tests__/ObjC/add_mul_coreml.pte
+
 echo "Running tests"
 
 cd "$SOURCE_ROOT_DIR"

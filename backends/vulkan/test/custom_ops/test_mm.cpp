@@ -67,9 +67,8 @@ static TestCase create_mm_test_case(
       config.N > kRefDimSizeLimit;
 
   std::string prefix = is_perf ? "PERF" : "ACCU";
-  std::string storage_str = storage_type_abbrev(storage_type);
-  std::string layout_str = layout_abbrev(memory_layout);
-  std::string dtype_str = (dtype == vkapi::kHalf) ? "f16" : "f32";
+  std::string storage_str = repr_str(storage_type, memory_layout);
+  std::string dtype_str = dtype_short(dtype);
 
   // Determine op type string
   std::string op_type;
@@ -97,11 +96,13 @@ static TestCase create_mm_test_case(
         "]x[" + std::to_string(config.K) + "," + std::to_string(config.N) + "]";
   }
 
-  std::string name = prefix + "  " + op_type + " " + shape + "  " +
-      storage_str + "(" + layout_str + ") " + dtype_str;
+  std::string suffix = "[" + op_type + "]";
   if (config.impl_selector != "default") {
-    name += " [" + config.impl_selector + "]";
+    suffix += " [" + config.impl_selector + "]";
   }
+
+  std::string name =
+      make_test_label(prefix, dtype_str, dtype_str, shape, storage_str, suffix);
 
   test_case.set_name(name);
 
@@ -566,7 +567,12 @@ int main(int argc, char* argv[]) {
   ReferenceComputeFunc ref_fn = reference_impl;
 
   auto results = execute_test_cases(
-      generate_mm_test_cases, mm_flop_calculator, "MatMul", 3, 10, ref_fn);
+      generate_mm_test_cases,
+      mm_flop_calculator,
+      "MatMul",
+      /*warmup_runs = */ 1,
+      /*benchmark_runs = */ 1,
+      ref_fn);
 
   return 0;
 }
