@@ -59,7 +59,6 @@ target_include_directories(
   extension_llm_runner
   PRIVATE $<TARGET_PROPERTY:jinja2cpp,INTERFACE_INCLUDE_DIRECTORIES>
 )
-target_compile_definitions(extension_llm_runner PUBLIC EXECUTORCH_USE_JINJA2CPP)
 set_target_properties(
   extension_llm_runner PROPERTIES POSITION_INDEPENDENT_CODE ON
 )
@@ -122,19 +121,23 @@ if(EXECUTORCH_BUILD_PYBIND)
                         portable_lib ${TORCH_PYTHON_LIBRARY} ${TORCH_LIBRARIES}
   )
 
-  # Set properties for the Python extension
   set_target_properties(
     _llm_runner
     PROPERTIES POSITION_INDEPENDENT_CODE ON
                CXX_VISIBILITY_PRESET "hidden"
                INTERPROCEDURAL_OPTIMIZATION TRUE
+               CXX_STANDARD 20
   )
   if(APPLE)
-    set(RPATH "@loader_path/../../pybindings")
+    set(RPATH
+        "@loader_path/../../pybindings;@loader_path/../../../../torch/lib"
+    )
   else()
-    set(RPATH "$ORIGIN/../../pybindings")
+    set(RPATH "$ORIGIN/../../pybindings:$ORIGIN/../../../../torch/lib")
   endif()
-  set_target_properties(_llm_runner PROPERTIES INSTALL_RPATH ${RPATH})
+  set_target_properties(
+    _llm_runner PROPERTIES BUILD_RPATH "${RPATH}" INSTALL_RPATH "${RPATH}"
+  )
   # Add include directories
   target_include_directories(
     _llm_runner PRIVATE ${_common_include_directories} ${TORCH_INCLUDE_DIRS}

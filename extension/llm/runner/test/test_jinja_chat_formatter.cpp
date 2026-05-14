@@ -198,14 +198,7 @@ TEST(JinjaChatFormatter, Llama32ModelTokens) {
   EXPECT_EQ(tokens.stop_tokens.size(), 2);
 }
 
-// Universal Jinja support: any HuggingFace / vLLM-style template string
-// (passed via fromString or fromFile) should work, not just the embedded
-// Llama3/Gemma3 templates. This validates the renderer with a generic
-// HuggingFace-style template that uses the standard `messages`,
-// `bos_token`, and `add_generation_prompt` variables.
 TEST(JinjaChatFormatter, UniversalJinjaGenericTemplate) {
-  // Generic chat template inspired by HuggingFace tokenizer_config.json
-  // examples. Uses only standard Jinja2 features and standard chat variables.
   const std::string generic_template =
       "{{ bos_token }}"
       "{%- for message in messages -%}"
@@ -227,13 +220,6 @@ TEST(JinjaChatFormatter, UniversalJinjaGenericTemplate) {
   EXPECT_THAT(result, HasSubstr("<|assistant|>"));
 }
 
-// Universal Jinja support: templates that reference `tools` (e.g. vLLM's
-// tool_chat_template_*.jinja files) should not crash even when no tools
-// are passed. The formatter injects `tools = []` (an empty list) so that
-// truthy/none checks evaluate consistently. With our normalization,
-// `tools is not none` is rewritten to `tools` (a truthy check), which means
-// an empty list (no tools) is treated as "no tools available" — matching
-// the typical template intent.
 TEST(JinjaChatFormatter, UniversalJinjaToolsAwareTemplate) {
   const std::string tools_template =
       "{%- if tools is not none -%}"
@@ -246,17 +232,9 @@ TEST(JinjaChatFormatter, UniversalJinjaToolsAwareTemplate) {
   ChatConversation conv;
   conv.add_generation_prompt = false;
 
-  // tools defaults to [] (empty list). After normalization this is a
-  // truthy check, so the empty-list (no tools) branch should be selected.
   EXPECT_EQ(formatter->formatConversation(conv), "no_tools");
 }
 
-// Universal Jinja support: a template using "not tools is none" (semantically
-// "tools is not none") should now safely evaluate without skipping the
-// "no tools" branch. This guards the regression where the normalizer mapped
-// "not tools is none" -> "not tools", which incorrectly evaluated to true
-// for an empty list and would have rendered a tool block when none was
-// intended.
 TEST(JinjaChatFormatter, UniversalJinjaNormalizedNotToolsIsNone) {
   const std::string template_str =
       "{%- if not tools is none -%}defined{%- else -%}none{%- endif -%}";
@@ -265,8 +243,6 @@ TEST(JinjaChatFormatter, UniversalJinjaNormalizedNotToolsIsNone) {
   ChatConversation conv;
   conv.add_generation_prompt = false;
 
-  // tools = [] is falsy after normalization (`not tools is none` -> `tools`).
-  // The "else" branch should be selected (no tools available).
   EXPECT_EQ(formatter->formatConversation(conv), "none");
 }
 

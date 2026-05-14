@@ -9,6 +9,7 @@ FetchContent_Declare(
   jinja2cpp
   GIT_REPOSITORY https://github.com/jinja2cpp/Jinja2Cpp.git
   GIT_TAG 1.3.2
+  GIT_SHALLOW TRUE
   GIT_SUBMODULES_RECURSE TRUE
 )
 

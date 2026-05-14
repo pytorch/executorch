@@ -24,6 +24,8 @@ class JinjaChatFormatter {
  public:
   static std::unique_ptr<JinjaChatFormatter> fromTemplate(
       ChatTemplateType type);
+  // fromString/fromFile infer only the model family from template syntax.
+  // Llama3 and Llama3.2 share template markers and token defaults today.
   static std::unique_ptr<JinjaChatFormatter> fromString(
       const std::string& template_str);
   static std::unique_ptr<JinjaChatFormatter> fromFile(const std::string& path);
