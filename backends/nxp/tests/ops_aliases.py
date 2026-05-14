@@ -36,6 +36,7 @@ Softmax = exir_ops.edge.aten._softmax.default
 Squeeze = exir_ops.edge.aten.squeeze.default
 SqueezeDim = exir_ops.edge.aten.squeeze.dim
 SqueezeDims = exir_ops.edge.aten.squeeze.dims
+SubTensor = exir_ops.edge.aten.sub.Tensor
 Unsqueeze = exir_ops.edge.aten.unsqueeze.default
 UpsampleBilinear2D = exir_ops.edge.aten.upsample_bilinear2d.vec
 UpsampleNearest2D = exir_ops.edge.aten.upsample_nearest2d.vec
