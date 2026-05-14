@@ -640,13 +640,8 @@ int main(int argc, char* argv[]) {
 #endif
       quantized_conv2d_dw_flop_calculator,
       "QuantizedDepthwiseInt8Conv2d",
-#ifdef DEBUG_MODE
-      0,
-      1,
-#else
-      5,
-      40,
-#endif
+      /*warmup_runs = */ 1,
+      /*benchmark_runs = */ 1,
       ref_fn);
 
   return 0;

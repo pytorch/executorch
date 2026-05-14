@@ -588,13 +588,8 @@ int main(int argc, char* argv[]) {
 #endif
       quantized_conv2d_transposed_flop_calculator,
       "QuantizedTransposedConv2d",
-#ifdef DEBUG_MODE
-      0,
-      1,
-#else
-      3,
-      10,
-#endif
+      /*warmup_runs = */ 1,
+      /*benchmark_runs = */ 1,
       ref_fn);
 
   return 0;
