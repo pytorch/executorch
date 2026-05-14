@@ -633,6 +633,52 @@ class TestQNNFloatingPointOperator(TestQNN):
                         index += 1
                         self.lower_module_and_test_output(module, sample_input)
 
+    def test_qnn_backend_div_mode(self):
+        test_comb = [
+            {
+                QCOM_MODULE: [
+                    DivMode(rounding_mode=None),  # noqa: F405
+                    DivMode(rounding_mode="trunc"),  # noqa: F405
+                    DivMode(rounding_mode="floor"),  # noqa: F405
+                ],
+                QCOM_SAMPLE_INPUTS: [
+                    (
+                        torch.tensor([7.0, 5.0, -3.0, 8.0, 1.0, 9.0]).reshape(2, 3),
+                        torch.tensor([2.0, 3.0, 2.0, 5.0, 4.0, 2.0]).reshape(2, 3),
+                    ),
+                ],
+            },
+        ]
+
+        index = 0
+        for comb in test_comb:
+            for module in comb[QCOM_MODULE]:
+                for sample_input in comb[QCOM_SAMPLE_INPUTS]:
+                    with self.subTest(i=index):
+                        index += 1
+                        self.lower_module_and_test_output(module, sample_input)
+
+    def test_qnn_backend_div_scalar_mode(self):
+        test_comb = [
+            {
+                QCOM_MODULE: [
+                    DivScalarMode(scalar=2.0, rounding_mode="trunc"),  # noqa: F405
+                    DivScalarMode(scalar=3.0, rounding_mode="floor"),  # noqa: F405
+                ],
+                QCOM_SAMPLE_INPUTS: [
+                    (torch.tensor([7.0, 5.0, -3.0, 8.0, 1.0, 9.0]).reshape(2, 3),),
+                ],
+            },
+        ]
+
+        index = 0
+        for comb in test_comb:
+            for module in comb[QCOM_MODULE]:
+                for sample_input in comb[QCOM_SAMPLE_INPUTS]:
+                    with self.subTest(i=index):
+                        index += 1
+                        self.lower_module_and_test_output(module, sample_input)
+
     def test_qnn_backend_einsum_outer_product(self):
         module = EinsumOuterProduct()  # noqa: F405
         x = torch.randn(5)
@@ -3433,6 +3479,54 @@ class TestQNNQuantizedOperator(TestQNN):
         sample_input = (torch.randn(4),)
         module = self.get_qdq_module(module, sample_input)
         self.lower_module_and_test_output(module, sample_input)
+
+    def test_qnn_backend_div_mode(self):
+        test_comb = [
+            {
+                QCOM_MODULE: [
+                    DivMode(rounding_mode=None),  # noqa: F405
+                    DivMode(rounding_mode="trunc"),  # noqa: F405
+                    DivMode(rounding_mode="floor"),  # noqa: F405
+                ],
+                QCOM_SAMPLE_INPUTS: [
+                    (
+                        torch.tensor([7.0, 5.0, -3.0, 8.0, 1.0, 9.0]).reshape(2, 3),
+                        torch.tensor([2.0, 3.0, 2.0, 5.0, 4.0, 2.0]).reshape(2, 3),
+                    ),
+                ],
+            },
+        ]
+
+        index = 0
+        for comb in test_comb:
+            for module in comb[QCOM_MODULE]:
+                for sample_input in comb[QCOM_SAMPLE_INPUTS]:
+                    with self.subTest(i=index):
+                        index += 1
+                        qdq_module = self.get_qdq_module(module, sample_input)
+                        self.lower_module_and_test_output(qdq_module, sample_input)
+
+    def test_qnn_backend_div_scalar_mode(self):
+        test_comb = [
+            {
+                QCOM_MODULE: [
+                    DivScalarMode(scalar=2.0, rounding_mode="trunc"),  # noqa: F405
+                    DivScalarMode(scalar=3.0, rounding_mode="floor"),  # noqa: F405
+                ],
+                QCOM_SAMPLE_INPUTS: [
+                    (torch.tensor([7.0, 5.0, -3.0, 8.0, 1.0, 9.0]).reshape(2, 3),),
+                ],
+            },
+        ]
+
+        index = 0
+        for comb in test_comb:
+            for module in comb[QCOM_MODULE]:
+                for sample_input in comb[QCOM_SAMPLE_INPUTS]:
+                    with self.subTest(i=index):
+                        index += 1
+                        qdq_module = self.get_qdq_module(module, sample_input)
+                        self.lower_module_and_test_output(qdq_module, sample_input)
 
     def test_qnn_backend_einsum_outer_product(self):
         module = EinsumOuterProduct()  # noqa: F405

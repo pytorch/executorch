@@ -19,6 +19,7 @@ from .decompose_atan2 import DecomposeAtan2
 from .decompose_binary_alpha import DecomposeBinaryAlpha
 from .decompose_cdist import DecomposeCDist
 from .decompose_col_im import DecomposeColIm
+from .decompose_div_mode import DecomposeDivMode
 from .decompose_einsum import DecomposeEinsum
 from .decompose_expm1 import DecomposeExpM1
 from .decompose_fill import DecomposeFill
@@ -81,6 +82,7 @@ __all__ = [
     DecomposeBinaryAlpha,
     DecomposeCDist,
     DecomposeColIm,
+    DecomposeDivMode,
     DecomposeEinsum,
     DecomposeExpM1,
     DecomposeFill,
