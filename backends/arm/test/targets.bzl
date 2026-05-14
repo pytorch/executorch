@@ -37,6 +37,7 @@ def define_arm_tests():
         "ops/test_cos.py",
         "ops/test_to_copy.py",
         "ops/test_exp.py",
+        "ops/test_reciprocal.py",
     ]
 
     # Quantization
