@@ -1,5 +1,6 @@
 # Copyright (c) Meta Platforms, Inc. and affiliates.
 # All rights reserved.
+# Copyright 2026 Arm Limited and/or its affiliates.
 #
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
@@ -12,22 +13,35 @@
 # clone and install FACTO by running pip install . from the FACTO source
 # directory. Then, from the executorch root directory, run the following:
 #
-# python -m unittest backends.test.operators.test_facto.FactoTestsXNNPACK
+# python -m unittest backends.test.facto.test_facto.FactoTestsXNNPACK
+#
+# Useful environment variables:
+# FACTO_OPS="abs.default,acos.default" limits generated tests to selected ops.
+# FACTO_MAX_CASES=10 limits the number of generated cases per op.
 #
 
 import copy
+import fnmatch
 import functools
+import os
 import traceback
 import unittest
 from typing import Any, Callable, Sequence
 
 import torch
-from executorch.backends.test.harness.tester import Tester as TesterBase
+from executorch.backends.test.harness.tester import Tester as BackendTester
 from executorch.backends.xnnpack.test.tester.tester import Tester as XnnpackTester
-from facto.inputgen.argtuple.gen import ArgumentTupleGenerator
-from facto.inputgen.specs.model import ConstraintProducer as cp, Spec
-from facto.inputgen.utils.random_manager import random_manager
-from facto.specdb.db import SpecDictDB
+
+try:
+    from facto.inputgen.argtuple.gen import ArgumentTupleGenerator
+    from facto.inputgen.specs.model import ConstraintProducer as cp, Spec
+    from facto.inputgen.utils.random_manager import random_manager
+    from facto.specdb.db import SpecDictDB
+except ImportError as exc:
+    raise ImportError(
+        "FACTO is required to run generated operator tests. Install it with "
+        "`pip install -e backends/cadence/utils/FACTO`."
+    ) from exc
 from torch._ops import OpOverload
 
 from .facto_specs import ExtraSpecDB
@@ -53,6 +67,30 @@ RUNTIME_INPUT_NAMES = {
     "tensor",
     "other",
 }
+
+
+TesterFactory = Callable[[torch.nn.Module, tuple[Any, ...]], BackendTester]
+
+
+def _facto_max_cases() -> int | None:
+    max_cases = os.environ.get("FACTO_MAX_CASES")
+    if max_cases is None:
+        return None
+    return int(max_cases)
+
+
+def _selected_op_names() -> list[str]:
+    op_patterns = os.environ.get("FACTO_OPS")
+    if op_patterns is None or not op_patterns.strip():
+        return list(CombinedSpecDB.keys())
+
+    patterns = [pattern.strip() for pattern in op_patterns.split(",")]
+    patterns = [pattern for pattern in patterns if pattern]
+    return [
+        op_name
+        for op_name in CombinedSpecDB.keys()
+        if any(fnmatch.fnmatch(op_name, pattern) for pattern in patterns)
+    ]
 
 
 def _patch_spec(spec: Spec) -> Spec:
@@ -139,12 +177,14 @@ def get_module_for_op(op: OpOverload):
 
 
 class FactoTestsBase(unittest.TestCase):
-    def __init__(self, tester_factory: Callable[[], TesterBase], *args, **kwargs):
+    __test__ = False
+
+    def __init__(self, tester_factory: TesterFactory, *args, **kwargs):
         super().__init__(*args, **kwargs)
         self._tester_factory = tester_factory
 
-    @staticmethod
-    def _generate_test(op_name: str) -> None:
+    @classmethod
+    def _generate_test(cls, op_name: str) -> None:
         # Find the torch op with the given name.
         sections = op_name.split(".")
         torch_op = functools.reduce(getattr, sections, torch.ops.aten)
@@ -154,7 +194,7 @@ class FactoTestsBase(unittest.TestCase):
         def test_body(self):
             self._test_op(torch_op)
 
-        setattr(FactoTestsBase, test_name, test_body)
+        setattr(cls, test_name, test_body)
 
     @staticmethod
     def get_runtime_input_count(spec: Spec):
@@ -180,6 +220,27 @@ class FactoTestsBase(unittest.TestCase):
     def setUp(self):
         torch.set_printoptions(threshold=3)
 
+    def _patch_spec_for_backend(self, spec: Spec, op_name: str) -> Spec:
+        return spec
+
+    def _should_skip_case(self, posargs: Sequence[Any]) -> bool:
+        return False
+
+    def _run_delegated_case(self, tester: BackendTester) -> None:
+        tester.to_executorch().serialize().run_method_and_compare_outputs()
+
+    def _should_fail_on_failures(self) -> bool:
+        return False
+
+    def _count_as_test_failures(
+        self,
+        *,
+        eager_fail_count: int,
+        export_fail_count: int,
+        fail_count: int,
+    ) -> int:
+        return fail_count
+
     def _test_op(self, op: OpOverload) -> None:  # noqa: C901
         random_manager.seed(0)
 
@@ -194,27 +255,29 @@ class FactoTestsBase(unittest.TestCase):
         if op_name not in CombinedSpecDB:
             raise ValueError(f"Operator {op_name} not found in SpecDictDB.")
         spec = _patch_spec(CombinedSpecDB[op_name])
+        spec = self._patch_spec_for_backend(spec, op_name)
 
         runtime_input_count = FactoTestsBase.get_runtime_input_count(spec)
 
         print(f"Op: {op_name}, {runtime_input_count} runtime inputs")
 
         # Run test cases
+        eager_fail_count = 0
+        export_fail_count = 0
         success_count_delegated = 0
         success_count_undelegated = 0
         fail_count = 0
 
-        i = 0
-        for posargs, inkwargs, _ in ArgumentTupleGenerator(spec).gen():
-            i += 1
+        max_cases = _facto_max_cases()
+        for case_index, (posargs, inkwargs, _) in enumerate(
+            ArgumentTupleGenerator(spec).gen()
+        ):
+            if max_cases is not None and case_index >= max_cases:
+                break
 
             try:
-                if isinstance(posargs[0], torch.Tensor):
-                    # Temporary for getting around XNN crashes (https://github.com/pytorch/executorch/issues/10960).
-                    # TODO Re-enable when resolved.
-                    if posargs[0].dtype in {torch.int8, torch.uint8}:
-                        print("Skipping (u)int8 case.")
-                        continue
+                if self._should_skip_case(posargs):
+                    continue
 
                 module_cls = get_module_for_op(op)
                 model = module_cls(
@@ -226,6 +289,7 @@ class FactoTestsBase(unittest.TestCase):
                 try:
                     model(*posargs[:runtime_input_count])
                 except Exception as e:
+                    eager_fail_count += 1
                     print(f"Eager execution failed: {e}")
                     continue
 
@@ -237,6 +301,7 @@ class FactoTestsBase(unittest.TestCase):
                 try:
                     tester.export()
                 except Exception:
+                    export_fail_count += 1
                     print("Export failed.")
                     continue
 
@@ -250,11 +315,7 @@ class FactoTestsBase(unittest.TestCase):
 
                 # Only run the runtime test if the op was delegated.
                 if is_delegated:
-                    (
-                        tester.to_executorch()
-                        .serialize()
-                        .run_method_and_compare_outputs()
-                    )
+                    self._run_delegated_case(tester)
 
                 if is_delegated:
                     success_count_delegated += 1
@@ -277,25 +338,54 @@ class FactoTestsBase(unittest.TestCase):
         print(
             f"  {success_count_delegated} DELEGATED, {success_count_undelegated} UNDELEGATED"
         )
+        print(f"  {eager_fail_count} EAGER_FAILED, {export_fail_count} EXPORT_FAILED")
 
-
-# Programatically generate tests for each operator.
-for op_name in CombinedSpecDB.keys():
-    FactoTestsBase._generate_test(op_name)
+        counted_failures = self._count_as_test_failures(
+            eager_fail_count=eager_fail_count,
+            export_fail_count=export_fail_count,
+            fail_count=fail_count,
+        )
+        if counted_failures and self._should_fail_on_failures():
+            self.fail(
+                f"{op_name}: {counted_failures} FACTO-generated case(s) failed "
+                f"(runtime={fail_count}, export={export_fail_count}, "
+                f"eager={eager_fail_count})."
+            )
 
 
 # TODO Figure out where to put these
 class FactoTestsXNNPACK(FactoTestsBase):
+    __test__ = True
+
     def __init__(self, *args, **kwargs):
         super().__init__(XnnpackTester, *args, **kwargs)
+
+    def _should_skip_case(self, posargs: Sequence[Any]) -> bool:
+        if isinstance(posargs[0], torch.Tensor):
+            # Temporary for getting around XNN crashes
+            # (https://github.com/pytorch/executorch/issues/10960).
+            # TODO Re-enable when resolved.
+            if posargs[0].dtype in {torch.int8, torch.uint8}:
+                print("Skipping (u)int8 case.")
+                return True
+        return False
+
+
+for op_name in _selected_op_names():
+    FactoTestsXNNPACK._generate_test(op_name)
 
 
 try:
     from executorch.backends.apple.coreml.test.tester import CoreMLTester
 
     class FactoTestsCoreML(FactoTestsBase):
+        __test__ = True
+
         def __init__(self, *args, **kwargs):
             super().__init__(CoreMLTester, *args, **kwargs)
+
+    for op_name in _selected_op_names():
+        FactoTestsCoreML._generate_test(op_name)
 
 except:
     print("Skipping Core ML facto tests as Core ML AOT is not available.")
