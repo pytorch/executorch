@@ -1015,6 +1015,11 @@
     - arg_meta: null
       kernel_name: torch::executor::var_correction_out
 
+- op: var_mean.correction_out
+  kernels:
+    - arg_meta: null
+      kernel_name: torch::executor::var_mean_correction_out
+
 - op: var.out
   kernels:
     - arg_meta: null

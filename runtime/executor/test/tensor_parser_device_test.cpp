@@ -122,7 +122,7 @@ class TensorParserDeviceTest : public ::testing::Test {
  protected:
   static void SetUpTestSuite() {
     executorch::runtime::runtime_init();
-    register_device_allocator(DeviceType::CUDA, &g_mock_cuda);
+    register_device_allocator(&g_mock_cuda);
   }
 
   void SetUp() override {

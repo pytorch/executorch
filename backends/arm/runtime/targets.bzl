@@ -15,6 +15,7 @@ def define_common_targets():
         srcs = [
             "EthosUBackend.cpp",
             "EthosUBackend_Cortex_M.cpp",
+            "EthosUBackend_IoMemcpy.cpp",
         ],
         headers = ["EthosUBackend_Internal.h"],
         compatible_with = ["ovr_config//cpu:arm32-embedded", "ovr_config//cpu:arm32-embedded-fpu"],
@@ -29,7 +30,7 @@ def define_common_targets():
             "//executorch/runtime/backend:interface",
             ":vela_bin_stream",
             "//executorch/runtime/core:core",
-            "fbsource//third-party/ethos-u-core-driver:core_driver",
+            "fbsource//third-party/ethos-u-core-driver:core_driver_headers_only",
         ],
     )
     runtime.cxx_library(
@@ -59,7 +60,7 @@ def define_common_targets():
         deps = [
             "//executorch/runtime/backend:interface",
             "//executorch/runtime/core:core",
-            "fbsource//third-party/arm-vgf-library/v0.8.0/src:vgf",
+            "fbsource//third-party/arm-vgf-library/v0.9.0/src:vgf",
             "fbsource//third-party/vulkan-headers-1.4.343/v1.4.343/src:volk_arm",
             "fbsource//third-party/vulkan-headers-1.4.343/v1.4.343/src:vulkan-headers",
         ],

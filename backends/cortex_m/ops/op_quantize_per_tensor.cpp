@@ -27,7 +27,7 @@ using KernelRuntimeContext = torch::executor::KernelRuntimeContext;
 namespace {
 
 /**
- * Asserts that the parameters are valid for float to int8 quantization.
+ * Asserts that the parameters are valid for float to int8/int16 quantization.
  */
 void check_quantize_args(
     const Tensor& input,
@@ -41,32 +41,37 @@ void check_quantize_args(
       "input.scalar_type() %" PRId8 " is not float type",
       static_cast<int8_t>(input.scalar_type()));
 
-  // Check output dtype is int8
+  // Check output dtype matches dtype param (Char/int8 or Short/int16)
   ET_CHECK_MSG(
-      out.scalar_type() == ScalarType::Char,
-      "out.scalar_type() %" PRId8 " is not int8 (Char)",
-      static_cast<int8_t>(out.scalar_type()));
-
-  // Check dtype is int8
+      dtype == ScalarType::Char || dtype == ScalarType::Short,
+      "dtype %" PRId8 " is not int8 (Char) or int16 (Short)",
+      static_cast<int8_t>(dtype));
   ET_CHECK_MSG(
-      dtype == ScalarType::Char,
-      "dtype %" PRId8 " is not int8 (Char)",
+      out.scalar_type() == dtype,
+      "out.scalar_type() %" PRId8 " does not match dtype %" PRId8,
+      static_cast<int8_t>(out.scalar_type()),
       static_cast<int8_t>(dtype));
 
-  // Validate quant_min and quant_max for int8
-  int32_t quant_min_lower_bound = std::numeric_limits<int8_t>::min();
-  int32_t quant_max_upper_bound = std::numeric_limits<int8_t>::max();
+  // Validate quant_min and quant_max bounds per dtype
+  int32_t quant_min_lower_bound, quant_max_upper_bound;
+  if (dtype == ScalarType::Char) {
+    quant_min_lower_bound = std::numeric_limits<int8_t>::min();
+    quant_max_upper_bound = std::numeric_limits<int8_t>::max();
+  } else { // Short
+    quant_min_lower_bound = std::numeric_limits<int16_t>::min();
+    quant_max_upper_bound = std::numeric_limits<int16_t>::max();
+  }
 
   ET_CHECK_MSG(
       quant_min >= quant_min_lower_bound,
-      "quant_min out of bound for int8, expected quant_min_lower_bound: %" PRId32
+      "quant_min out of bound, expected quant_min_lower_bound: %" PRId32
       " actual quant_min: %" PRId64,
       quant_min_lower_bound,
       quant_min);
 
   ET_CHECK_MSG(
       quant_max <= quant_max_upper_bound,
-      "quant_max out of bound for int8, expected quant_max_upper_bound: %" PRId32
+      "quant_max out of bound, expected quant_max_upper_bound: %" PRId32
       " actual quant_max: %" PRId64,
       quant_max_upper_bound,
       quant_max);
@@ -120,99 +125,153 @@ Tensor& quantize_per_tensor_out(
 
   // Get pointers to input and output data
   const float* input_data = input.const_data_ptr<float>();
-  int8_t* out_data = out.mutable_data_ptr<int8_t>();
   const size_t numel = input.numel();
 
   size_t i = 0;
 
+  if (dtype == ScalarType::Char) {
+    int8_t* out_data = out.mutable_data_ptr<int8_t>();
+
 #if defined(HAS_HELIUM_SIMD)
-  // Helium MVE implementation for float32 to int8 quantization
-  static uint8x16_t voffset{
-      0x0,
-      0x8,
-      0x4,
-      0xC,
-      0x1,
-      0x9,
-      0x5,
-      0xD,
-      0x2,
-      0xA,
-      0x6,
-      0xE,
-      0x3,
-      0xB,
-      0x7,
-      0xF};
+    // Helium MVE implementation for float32 to int8 quantization
+    static uint8x16_t voffset{
+        0x0,
+        0x8,
+        0x4,
+        0xC,
+        0x1,
+        0x9,
+        0x5,
+        0xD,
+        0x2,
+        0xA,
+        0x6,
+        0xE,
+        0x3,
+        0xB,
+        0x7,
+        0xF};
 
-  float32x4_t inv_scale_vec = vdupq_n_f32(inv_scale);
+    float32x4_t inv_scale_vec = vdupq_n_f32(inv_scale);
 
-  // Magic number for float to int conversion, round to nearest even integer
-  // int magic_round(float f): interpret_as_int32(f + magic_float) - magic_int
-  // where,
-  //    magic_float = 12582912.0f = (2 ** 23 + 2 ** 22) = (1.5 * 2 ** 23)
-  //    magic_int = 1262485504 = 0x4B400000 = bit_pattern_as_int32(magic_float)
+    // Magic number for float to int conversion, round to nearest even integer
+    // int magic_round(float f): interpret_as_int32(f + magic_float) - magic_int
+    // where,
+    //    magic_float = 12582912.0f = (2 ** 23 + 2 ** 22) = (1.5 * 2 ** 23)
+    //    magic_int = 1262485504 = 0x4B400000 =
+    //    bit_pattern_as_int32(magic_float)
 
-  float magic_float = 12582912.0f;
-  int32_t magic_int = 1262485504;
+    float magic_float = 12582912.0f;
+    int32_t magic_int = 1262485504;
 
-  float32x4_t vmagic_float = vdupq_n_f32(magic_float);
-  int32x4_t vmagic_int_less_zp =
-      vdupq_n_s32(magic_int - static_cast<int32_t>(zp));
+    float32x4_t vmagic_float = vdupq_n_f32(magic_float);
+    int32x4_t vmagic_int_less_zp =
+        vdupq_n_s32(magic_int - static_cast<int32_t>(zp));
 
-  int16x8_t vqmin = vdupq_n_s16(qmin);
-  int16x8_t vqmax = vdupq_n_s16(qmax);
+    int16x8_t vqmin = vdupq_n_s16(qmin);
+    int16x8_t vqmax = vdupq_n_s16(qmax);
 
-  // TODO: Measure performnce, we are spilling
-  for (; i + 15 < numel; i += 16) {
-    float32x4_t in_0123 = vldrwq_f32(input_data + 0);
-    float32x4_t in_4567 = vldrwq_f32(input_data + 4);
-    float32x4_t in_89AB = vldrwq_f32(input_data + 8);
-    float32x4_t in_CDEF = vldrwq_f32(input_data + 12);
+    // TODO: Measure performnce, we are spilling
+    for (; i + 15 < numel; i += 16) {
+      float32x4_t in_0123 = vldrwq_f32(input_data + 0);
+      float32x4_t in_4567 = vldrwq_f32(input_data + 4);
+      float32x4_t in_89AB = vldrwq_f32(input_data + 8);
+      float32x4_t in_CDEF = vldrwq_f32(input_data + 12);
 
-    float32x4_t outf_0123 = vfmaq_f32(vmagic_float, in_0123, inv_scale_vec);
-    float32x4_t outf_4567 = vfmaq_f32(vmagic_float, in_4567, inv_scale_vec);
-    float32x4_t outf_89AB = vfmaq_f32(vmagic_float, in_89AB, inv_scale_vec);
-    float32x4_t outf_CDEF = vfmaq_f32(vmagic_float, in_CDEF, inv_scale_vec);
+      float32x4_t outf_0123 = vfmaq_f32(vmagic_float, in_0123, inv_scale_vec);
+      float32x4_t outf_4567 = vfmaq_f32(vmagic_float, in_4567, inv_scale_vec);
+      float32x4_t outf_89AB = vfmaq_f32(vmagic_float, in_89AB, inv_scale_vec);
+      float32x4_t outf_CDEF = vfmaq_f32(vmagic_float, in_CDEF, inv_scale_vec);
 
-    int32x4_t out_0123 =
-        vsubq_s32(vreinterpretq_s32_f32(outf_0123), vmagic_int_less_zp);
-    int32x4_t out_4567 =
-        vsubq_s32(vreinterpretq_s32_f32(outf_4567), vmagic_int_less_zp);
-    int32x4_t out_89AB =
-        vsubq_s32(vreinterpretq_s32_f32(outf_89AB), vmagic_int_less_zp);
-    int32x4_t out_CDEF =
-        vsubq_s32(vreinterpretq_s32_f32(outf_CDEF), vmagic_int_less_zp);
+      int32x4_t out_0123 =
+          vsubq_s32(vreinterpretq_s32_f32(outf_0123), vmagic_int_less_zp);
+      int32x4_t out_4567 =
+          vsubq_s32(vreinterpretq_s32_f32(outf_4567), vmagic_int_less_zp);
+      int32x4_t out_89AB =
+          vsubq_s32(vreinterpretq_s32_f32(outf_89AB), vmagic_int_less_zp);
+      int32x4_t out_CDEF =
+          vsubq_s32(vreinterpretq_s32_f32(outf_CDEF), vmagic_int_less_zp);
 
-    int16x8_t out_04152637;
-    int16x8_t out_8C9DAEBF;
-    out_04152637 = vmovnbq_s32(out_04152637, out_0123);
-    out_04152637 = vmovntq_s32(out_04152637, out_4567);
-    out_8C9DAEBF = vmovnbq_s32(out_8C9DAEBF, out_89AB);
-    out_8C9DAEBF = vmovntq_s32(out_8C9DAEBF, out_CDEF);
+      int16x8_t out_04152637;
+      int16x8_t out_8C9DAEBF;
+      out_04152637 = vmovnbq_s32(out_04152637, out_0123);
+      out_04152637 = vmovntq_s32(out_04152637, out_4567);
+      out_8C9DAEBF = vmovnbq_s32(out_8C9DAEBF, out_89AB);
+      out_8C9DAEBF = vmovntq_s32(out_8C9DAEBF, out_CDEF);
 
-    int16x8_t out_04152637_clamped =
-        vminq_s16(vmaxq_s16(out_04152637, vqmin), vqmax);
-    int16x8_t out_8C9DAEBF_clamped =
-        vminq_s16(vmaxq_s16(out_8C9DAEBF, vqmin), vqmax);
+      int16x8_t out_04152637_clamped =
+          vminq_s16(vmaxq_s16(out_04152637, vqmin), vqmax);
+      int16x8_t out_8C9DAEBF_clamped =
+          vminq_s16(vmaxq_s16(out_8C9DAEBF, vqmin), vqmax);
 
-    int8x16_t out_084C195D2A6E3B7F;
-    out_084C195D2A6E3B7F =
-        vmovnbq_s16(out_084C195D2A6E3B7F, out_04152637_clamped);
-    out_084C195D2A6E3B7F =
-        vmovntq_s16(out_084C195D2A6E3B7F, out_8C9DAEBF_clamped);
+      int8x16_t out_084C195D2A6E3B7F;
+      out_084C195D2A6E3B7F =
+          vmovnbq_s16(out_084C195D2A6E3B7F, out_04152637_clamped);
+      out_084C195D2A6E3B7F =
+          vmovntq_s16(out_084C195D2A6E3B7F, out_8C9DAEBF_clamped);
 
-    vstrbq_scatter_offset_s8(out_data, voffset, out_084C195D2A6E3B7F);
-    input_data += 16;
-    out_data += 16;
-  }
+      vstrbq_scatter_offset_s8(out_data, voffset, out_084C195D2A6E3B7F);
+      input_data += 16;
+      out_data += 16;
+    }
 #endif // defined(HAS_HELIUM_SIMD)
 
-  for (; i < numel; i++) {
-    *out_data =
-        quantize_val<int8_t, float>(inv_scale, zp, *input_data, qmin, qmax);
-    input_data++;
-    out_data++;
+    for (; i < numel; i++) {
+      *out_data =
+          quantize_val<int8_t, float>(inv_scale, zp, *input_data, qmin, qmax);
+      input_data++;
+      out_data++;
+    }
+  } else { // ScalarType::Short — int16
+    int16_t* out_data = out.mutable_data_ptr<int16_t>();
+
+#if defined(HAS_HELIUM_SIMD)
+    // Helium MVE implementation for float32 to int16 quantization, processing
+    // 8 elements per iteration. Uses the same magic-number rounding trick as
+    // the int8 path. Output goes through vstrhq_s32 (narrow int32->int16
+    // sequential store), so no deinterleave dance is needed.
+    float magic_float = 12582912.0f;
+    int32_t magic_int = 1262485504;
+
+    float32x4_t inv_scale_vec = vdupq_n_f32(inv_scale);
+    float32x4_t vmagic_float = vdupq_n_f32(magic_float);
+    int32x4_t vmagic_int_less_zp =
+        vdupq_n_s32(magic_int - static_cast<int32_t>(zp));
+
+    int32x4_t vqmin = vdupq_n_s32(qmin);
+    int32x4_t vqmax = vdupq_n_s32(qmax);
+
+    for (; i + 7 < numel; i += 8) {
+      float32x4_t in_0123 = vldrwq_f32(input_data + 0);
+      float32x4_t in_4567 = vldrwq_f32(input_data + 4);
+
+      float32x4_t outf_0123 = vfmaq_f32(vmagic_float, in_0123, inv_scale_vec);
+      float32x4_t outf_4567 = vfmaq_f32(vmagic_float, in_4567, inv_scale_vec);
+
+      int32x4_t out_0123 =
+          vsubq_s32(vreinterpretq_s32_f32(outf_0123), vmagic_int_less_zp);
+      int32x4_t out_4567 =
+          vsubq_s32(vreinterpretq_s32_f32(outf_4567), vmagic_int_less_zp);
+
+      // Clamp at int32 width before narrowing.
+      out_0123 = vminq_s32(vmaxq_s32(out_0123, vqmin), vqmax);
+      out_4567 = vminq_s32(vmaxq_s32(out_4567, vqmin), vqmax);
+
+      // Narrow store: low 16 bits of each int32 lane stored sequentially.
+      vstrhq_s32(out_data + 0, out_0123);
+      vstrhq_s32(out_data + 4, out_4567);
+
+      input_data += 8;
+      out_data += 8;
+    }
+#endif // defined(HAS_HELIUM_SIMD)
+
+    for (; i < numel; i++) {
+      *out_data =
+          quantize_val<int16_t, float>(inv_scale, zp, *input_data, qmin, qmax);
+      input_data++;
+      out_data++;
+    }
   }
 
   return out;

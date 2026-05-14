@@ -18,9 +18,9 @@ DeviceAllocatorRegistry& DeviceAllocatorRegistry::instance() {
   return registry;
 }
 
-void DeviceAllocatorRegistry::register_allocator(
-    etensor::DeviceType type,
-    DeviceAllocator* alloc) {
+void DeviceAllocatorRegistry::register_allocator(DeviceAllocator* alloc) {
+  ET_CHECK_MSG(alloc != nullptr, "Cannot register a null allocator");
+  auto type = alloc->device_type();
   auto index = static_cast<size_t>(type);
   ET_CHECK_MSG(
       index < etensor::kNumDeviceTypes,
@@ -44,10 +44,8 @@ DeviceAllocator* DeviceAllocatorRegistry::get_allocator(
 
 // Convenience free functions
 
-void register_device_allocator(
-    etensor::DeviceType type,
-    DeviceAllocator* alloc) {
-  DeviceAllocatorRegistry::instance().register_allocator(type, alloc);
+void register_device_allocator(DeviceAllocator* alloc) {
+  DeviceAllocatorRegistry::instance().register_allocator(alloc);
 }
 
 DeviceAllocator* get_device_allocator(etensor::DeviceType type) {
