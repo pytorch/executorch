@@ -13,7 +13,8 @@ namespace executorch::runtime {
 Result<DeviceMemoryBuffer> DeviceMemoryBuffer::create(
     size_t size,
     etensor::DeviceType type,
-    etensor::DeviceIndex index) {
+    etensor::DeviceIndex index,
+    size_t alignment) {
   DeviceAllocator* allocator = get_device_allocator(type);
   if (allocator == nullptr) {
     ET_LOG(
@@ -23,7 +24,7 @@ Result<DeviceMemoryBuffer> DeviceMemoryBuffer::create(
     return Error::NotFound;
   }
 
-  auto result = allocator->allocate(size, index);
+  auto result = allocator->allocate(size, index, alignment);
   if (!result.ok()) {
     return result.error();
   }

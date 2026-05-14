@@ -13,6 +13,8 @@
 #include <executorch/backends/qualcomm/runtime/backends/gpu/GpuDevice.h>
 #include <executorch/backends/qualcomm/runtime/backends/htp/HtpBackend.h>
 #include <executorch/backends/qualcomm/runtime/backends/htp/HtpDevice.h>
+#include <executorch/backends/qualcomm/runtime/backends/lpai/LpaiBackend.h>
+#include <executorch/backends/qualcomm/runtime/backends/lpai/LpaiDevice.h>
 
 #include <string>
 
@@ -42,7 +44,8 @@ Error QnnBackendUnifiedRegistry::GetOrCreateBackendBundle(
 
   // Extract relevant parameters from options for creation and validation
   std::string current_lib_path = options->library_path()->str();
-  QnnExecuTorchLogLevel current_log_level = get_option(options->log_level());
+  QnnExecuTorchLogLevel current_log_level =
+      get_option(options->log_level(), QNN_RUNTIME_LOG_LEVEL);
   QnnExecuTorchBackendType backend_type =
       options->backend_options()->backend_type();
 
@@ -54,6 +57,10 @@ Error QnnBackendUnifiedRegistry::GetOrCreateBackendBundle(
       }
       case QnnExecuTorchBackendType::kGpuBackend: {
         current_lib_path = gpu_library_name_;
+        break;
+      }
+      case QnnExecuTorchBackendType::kLpaiBackend: {
+        current_lib_path = lpai_library_name_;
         break;
       }
       case QnnExecuTorchBackendType::kDspBackend:
@@ -116,6 +123,16 @@ Error QnnBackendUnifiedRegistry::GetOrCreateBackendBundle(
       backend = std::make_unique<GpuBackend>(
           implementation.get(), logger.get(), gpu_options);
       device = std::make_unique<GpuDevice>(implementation.get(), logger.get());
+      break;
+    }
+    case QnnExecuTorchBackendType::kLpaiBackend: {
+      auto lpai_options = options->backend_options()->lpai_options();
+      backend = std::make_unique<LpaiBackend>(
+          implementation.get(),
+          logger.get(),
+          options->soc_info(),
+          lpai_options);
+      device = std::make_unique<LpaiDevice>(implementation.get(), logger.get());
       break;
     }
     case QnnExecuTorchBackendType::kDspBackend:

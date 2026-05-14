@@ -7,6 +7,9 @@ from numbers import Number
 from typing import Tuple, Union
 
 import torch
+from executorch.backends.arm.quantizer.arm_quantizer import (
+    get_symmetric_a16w8_quantization_config,
+)
 
 from executorch.backends.arm.test import common
 
@@ -260,6 +263,25 @@ def test_clamp_vgf_quant(test_data):
 aten_op_tensor = [
     "torch.ops.aten.clamp.Tensor",
 ]
+
+
+@common.parametrize("test_data", test_data_suite)
+@common.SkipIfNoModelConverter
+def test_clamp_vgf_quant_a16w8(test_data):
+    input_tensor, min_val, max_val = test_data()
+    model = Clamp(min_val, max_val)
+    pipeline = VgfPipeline[input_t](
+        model,
+        (input_tensor,),
+        aten_op,
+        exir_op,
+        quantize=True,
+        tosa_extensions=["int16"],
+    )
+    pipeline.quantizer.set_global(get_symmetric_a16w8_quantization_config())
+    pipeline.run()
+
+
 exir_op_tensor = "executorch_exir_dialects_edge__ops_aten_clamp_Tensor"
 
 test_data_suite_tensor_FP = {

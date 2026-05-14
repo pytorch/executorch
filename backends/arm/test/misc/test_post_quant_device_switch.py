@@ -196,7 +196,7 @@ def _to_meta_inputs(
 
 
 @pytest.mark.parametrize("case", _TEST_CASES, ids=[case.name for case in _TEST_CASES])
-def test_post_quant_device_switch_no_target(case: MetaRetraceCase) -> None:
+def test_post_quant_device_switch(case: MetaRetraceCase) -> None:
     """This test tests that moving a model to another device after quantiation
     works.
     """

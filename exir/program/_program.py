@@ -59,7 +59,7 @@ from executorch.exir.passes.insert_write_back_for_buffers_pass import (
 from executorch.exir.passes.normalize_view_copy_base_pass import (
     NormalizeViewCopyBasePass,
 )
-from executorch.exir.passes.propagate_device_pass import PropagateDevicePass
+from executorch.exir.passes.propagate_device_pass import PropagateDevicePass, PropagateDeviceConfig
 from executorch.exir.passes.quant_fusion_pass import quant_fusion_and_const_prop_pass
 from executorch.exir.passes.reinplace import reinplace_pass
 from executorch.exir.passes.remove_graph_asserts_pass import (
@@ -843,16 +843,24 @@ def edge_to_executorch_passes(
     Returns a list of passes to lower from edge to executorch.
     Get the pre memory planning passes based on the method name, if the pass is not in the dict, use the default pass.
     """
+    # Handle propagate device config
+    propagate_device_config = config.propagate_device_config
+    if isinstance(propagate_device_config, dict):
+        device_cfg = propagate_device_config.get(name, PropagateDeviceConfig())
+    else:
+        device_cfg = propagate_device_config
+
     passes: List[PassType] = [
         # ExecuTorch backend ops are unable to handle unbacked symints. So after
         # this pass, passes cannot be Interpreter-based, because it will fail if
         # there exists an unbacked symint operation.
         *config.passes,
         SpecPropPass(),
+        # By default instantiate the pass without arguments since we compare object ids later
         PropagateDevicePass(
-            skip_h2d_for_method_inputs=config.skip_h2d_for_method_inputs,
-            skip_d2h_for_method_outputs=config.skip_d2h_for_method_outputs,
-        ),
+            skip_h2d_for_method_inputs=device_cfg.skip_h2d_for_method_inputs,
+            skip_d2h_for_method_outputs=device_cfg.skip_d2h_for_method_outputs,
+        ) if device_cfg.skip_h2d_for_method_inputs or device_cfg.skip_d2h_for_method_outputs else PropagateDevicePass(),
         EdgeToBackendOpsPass(),
         RemoveGraphAssertsPass(),
     ] + pre_memory_planning_passes(config, name)
@@ -1084,7 +1092,7 @@ def _sanity_check_graph_for_non_decomp_ops(
                     logging.warning(warning_str)
 
 
-def _remove_invalid_ops_for_not_decompose(
+def _remove_invalid_ops_for_not_decompose(  # noqa: C901
     preserve_ops: List[torch._ops.OpOverload],
 ) -> List[torch._ops.OpOverload]:
     _logged_warnings = set()
@@ -1122,6 +1130,16 @@ def _remove_invalid_ops_for_not_decompose(
                 return False
 
             if native_schema.aliased_return_names() != [None]:
+                log_warning(
+                    f"Op {op} was requested for preservation by partitioner.  This request is ignored because it aliases output."
+                )
+                return False
+
+        # Fallback: torchgen does not detect alias annotations on ops
+        # returning lists of aliased tensors (e.g. split.Tensor returns
+        # Tensor(a)[]). Check op._schema.returns directly.
+        for ret in schema.returns:
+            if ret.alias_info is not None:
                 log_warning(
                     f"Op {op} was requested for preservation by partitioner.  This request is ignored because it aliases output."
                 )
@@ -1791,12 +1809,6 @@ class EdgeProgramManager:
                 )
             else:
                 memory_planning_pass = config.memory_planning_pass
-            # Propagate enable_non_cpu_memory_planning from the top-level config
-            # to the pass instance so that device-aware partitioning is applied.
-            if hasattr(memory_planning_pass, "enable_non_cpu_memory_planning"):
-                memory_planning_pass.enable_non_cpu_memory_planning = (
-                    config.enable_non_cpu_memory_planning
-                )
             # TODO(jakeszwe): Follow up with compiler on if the deepcopy is necessary and if so how to make it work
             if hasattr(memory_planning_pass, "run"):
                 new_gm_res = memory_planning_pass.run(new_gm, new_signature)

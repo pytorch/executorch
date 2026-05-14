@@ -247,7 +247,7 @@ TEST_F(MethodMetaTest, MethodMetaBufferDeviceReturnsCudaForDeviceBuffer) {
       programs_["add_with_device"]->method_meta("forward");
   ASSERT_EQ(method_meta.error(), Error::Ok);
 
-  // ModuleAddWithDevice exports with enable_non_cpu_memory_planning=True.
+  // ModuleAddWithDevice exports with memory_planning_pass=MemoryPlanningPass(enable_non_cpu_memory_planning=True).
   // The model delegates add(a,b) to CUDA, producing:
   //   non_const_buffer_sizes: [0, 48]  (index 0 reserved)
   //   non_const_buffer_device: [{buffer_idx=1, device_type=CUDA,
