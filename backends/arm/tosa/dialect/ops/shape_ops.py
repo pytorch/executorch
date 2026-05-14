@@ -171,3 +171,18 @@ def MUL_SHAPE(
     """
 
     return _combine_shapes(shape1, shape2, lambda a, b: a * b)
+
+
+@register_fake_tosa_op(
+    "MOD_SHAPE(SymInt[] shape1, SymInt[] shape2) -> SymInt[]",  # schema
+    TosaSpecification.all_profiles_for_version("1.1"),
+)
+def MOD_SHAPE(
+    shape1: list[IntLikeType],
+    shape2: list[IntLikeType],
+) -> list[IntLikeType]:
+    """MOD_SHAPE operator computes the element-wise modulo of the first shape
+    tensor by the second.
+    """
+
+    return _combine_shapes(shape1, shape2, lambda a, b: a % b)

@@ -24,7 +24,7 @@ except ModuleNotFoundError:
     del logging
 
 import torch
-from executorch.exir import ExecutorchBackendConfig, to_edge
+from executorch.exir import EdgeCompileConfig, ExecutorchBackendConfig, to_edge
 from executorch.exir.capture._capture import patch_forward
 from executorch.exir.dialects._ops import ops as exir_ops
 from executorch.exir.memory_planning import (
@@ -46,6 +46,7 @@ from executorch.exir.passes import (  # noqa
     SpecPropPass,
     ToOutVarPass,
 )
+from executorch.exir.passes.reinplace import DEFAULT_INPLACEABLE_OPS, reinplace_pass
 from executorch.exir.passes.sym_shape_eval_pass import ConstraintBasedSymShapeEvalPass
 from executorch.exir.schema import DeviceType
 from executorch.exir.tensor import TensorSpec
@@ -676,51 +677,69 @@ class TestMisc(unittest.TestCase):
 
         et = to_edge(export(model, inputs, strict=True)).to_executorch()
 
-        # The mutable buffer (5x5 float32 = 100 bytes) should not be double allocated.
-        # The input and output of copy_ should share the same memory location.
-        values = et.executorch_program.execution_plan[0].values
-        expected_buffer_size = 5 * 5 * 4  # 5x5 float32
+        # The mutable buffer (5x5 float32 = 100 bytes) should not be
+        # double allocated. After the upstream emit dedup
+        # (`_emit_spec` reusing value_id when two FX nodes share a
+        # TensorSpec via the planner's `_alias_inplace_result_specs`),
+        # the `copy_` writeback's "out" arg uses the SAME value_id as
+        # its "self" arg (the buffer), rather than creating a separate
+        # Value at the same (mem_id, offset).
+        execution_plan = et.executorch_program.execution_plan[0]
+        values = execution_plan.values
 
-        # Collect all tensor allocations by their (memory_id, offset) and track sizes
-        # Size is computed from tensor's sizes and scalar_type, not from allocation_info
-        # (memory_offset_low/high are low/high 32-bit parts of a 64-bit offset, not bounds)
-        scalar_type_sizes = {
-            0: 1,  # BYTE
-            1: 1,  # CHAR
-            2: 2,  # SHORT
-            3: 4,  # INT
-            4: 8,  # LONG
-            5: 2,  # HALF
-            6: 4,  # FLOAT
-            7: 8,  # DOUBLE
-        }
-        offset_to_indices = {}
-        for i, val in enumerate(values):
-            tensor = val.val
-            if hasattr(tensor, "allocation_info") and tensor.allocation_info:
-                alloc = tensor.allocation_info
-                # Compute tensor size from sizes and scalar_type
-                num_elements = 1
-                for dim in tensor.sizes:
-                    num_elements *= dim
-                element_size = scalar_type_sizes.get(int(tensor.scalar_type), 4)
-                size = num_elements * element_size
-                key = (alloc.memory_id, alloc.memory_offset)
-                if key not in offset_to_indices:
-                    offset_to_indices[key] = {"indices": [], "size": size}
-                offset_to_indices[key]["indices"].append(i)
+        # Find the `copy_` writeback instruction.
+        copy_instructions = []
+        for chain in execution_plan.chains:
+            for ins in chain.instructions:
+                inner = ins.instr_args
+                if hasattr(inner, "op_index"):
+                    op = execution_plan.operators[inner.op_index]
+                    if op.name == "aten::copy_":
+                        copy_instructions.append(inner)
+        self.assertEqual(
+            len(copy_instructions),
+            1,
+            "Expected exactly one copy_ writeback for the buffer mutation",
+        )
 
-        # Find shared allocations matching the mutable buffer size (before/after copy_)
-        mutable_buffer_shares = [
-            info
-            for info in offset_to_indices.values()
-            if len(info["indices"]) == 2 and info["size"] == expected_buffer_size
+        # For an in-place copy_(self, src, ..., out), self (arg 0) and
+        # out (the emitted synthetic last arg) must share a value_id
+        # per the `(a!)` schema annotation. Emit's spec2id_dict
+        # dedup enforces this.
+        copy_args = list(copy_instructions[0].args)
+        self.assertEqual(
+            copy_args[0],
+            copy_args[-1],
+            f"copy_'s out arg should reference the same value_id as its "
+            f"self arg (buffer) via emit dedup. args={copy_args}",
+        )
+
+        # Additionally verify no distinct second Value at the buffer's
+        # (mem_id, offset): after dedup, the buffer occupies its slot alone.
+        buffer_value_id = copy_args[0]
+        buffer_val = values[buffer_value_id].val
+        self.assertTrue(
+            hasattr(buffer_val, "allocation_info") and buffer_val.allocation_info,
+            "Buffer value should have allocation_info",
+        )
+        buffer_alloc = buffer_val.allocation_info
+        duplicates_at_buffer_slot = [
+            i
+            for i, val in enumerate(values)
+            if i != buffer_value_id
+            and hasattr(val.val, "allocation_info")
+            and val.val.allocation_info
+            and val.val.allocation_info.memory_id == buffer_alloc.memory_id
+            and val.val.allocation_info.memory_offset == buffer_alloc.memory_offset
         ]
         self.assertEqual(
-            len(mutable_buffer_shares),
-            1,
-            f"Expected exactly one shared allocation of size {expected_buffer_size} "
-            f"with 2 values (copy_ input/output), found: {mutable_buffer_shares}",
+            duplicates_at_buffer_slot,
+            [],
+            f"Expected no other Values at the buffer's allocation "
+            f"(mem_id={buffer_alloc.memory_id}, "
+            f"offset={buffer_alloc.memory_offset}); emit dedup should "
+            f"collapse placeholder + writeback into one value_id. "
+            f"Found duplicates at indices: {duplicates_at_buffer_slot}",
         )
 
     def test_mutable_buffers_infinite_lifespan(self) -> None:
@@ -763,6 +782,147 @@ class TestMisc(unittest.TestCase):
                     or val.allocation_info.memory_offset_low >= memory_size
                 )
                 self.assertTrue(not_overlapping)
+
+    def test_custom_inplace_op_memory_aliasing(self) -> None:
+        """Memory planning correctly handles in-place ops registered via
+        the ``ops_to_inplace`` extension API (i.e. outside
+        ``DEFAULT_INPLACEABLE_OPS``).
+
+        Uses the HF-static-cache pattern: ``index_copy_`` updates two
+        mutable buffers (``keys``, ``values``). We:
+          1. Preserve ``index_copy`` through edge lowering.
+          2. Manually call ``reinplace_pass`` with a custom set that
+             includes ``index_copy`` (the in-place form is
+             auto-derived).
+          3. Lower with ``run_reinplace_pass=False`` (the pass already
+             ran).
+
+        Then assert that no other planned tensor's allocation overlaps
+        either buffer's storage region. This pins the schema-driven
+        ``_alias_inplace_result_specs`` path for non-default ops: the
+        ``index_copy_`` result spec must be aliased to the buffer's
+        spec, otherwise the planner would carve out a separate
+        allocation that could land inside the buffer's slot.
+        """
+        max_batch_size, num_heads, max_cache_len, head_dim = 1, 2, 4, 8
+
+        class HFStyleStaticCache(torch.nn.Module):
+            def __init__(self):
+                super().__init__()
+                self.register_buffer(
+                    "keys",
+                    torch.zeros((max_batch_size, num_heads, max_cache_len, head_dim)),
+                )
+                self.register_buffer(
+                    "values",
+                    torch.zeros((max_batch_size, num_heads, max_cache_len, head_dim)),
+                )
+
+            def forward(
+                self,
+                key_states: torch.Tensor,
+                value_states: torch.Tensor,
+                cache_position: torch.Tensor,
+            ) -> Tuple[torch.Tensor, torch.Tensor]:
+                self.keys.index_copy_(2, cache_position, key_states)
+                self.values.index_copy_(2, cache_position, value_states)
+                return self.keys, self.values
+
+        model = HFStyleStaticCache()
+        key_states = torch.full((max_batch_size, num_heads, 1, head_dim), 1.0)
+        value_states = torch.full((max_batch_size, num_heads, 1, head_dim), 2.0)
+        cache_position = torch.tensor([1])
+
+        exported_program = export(
+            model, (key_states, value_states, cache_position), strict=True
+        )
+
+        edge = to_edge(
+            exported_program,
+            compile_config=EdgeCompileConfig(
+                _check_ir_validity=False,
+                preserve_ops=[torch.ops.aten.index_copy.default],
+            ),
+        )
+
+        # Manually run reinplace_pass with a custom set that
+        # includes the (non-default) index_copy edge op. The in-place
+        # form is auto-derived by name + schema match.
+        custom_set = DEFAULT_INPLACEABLE_OPS | {
+            exir_ops.edge.aten.index_copy.default,
+        }
+        edge_program = reinplace_pass(
+            edge.exported_program(), ops_to_inplace=custom_set
+        )
+        # Sanity: both updates are now in-place.
+        inplace_nodes = [
+            n
+            for n in edge_program.graph.nodes
+            if n.op == "call_function" and "index_copy_" in str(n.target)
+        ]
+        self.assertEqual(
+            len(inplace_nodes),
+            2,
+            "Both buffer updates should be reinplaced before lowering",
+        )
+
+        # Lower with run_reinplace_pass=False — the pass already ran
+        # with our custom set above. Memory planning should now
+        # correctly alias the index_copy_ result spec onto the buffer
+        # placeholder spec via _alias_inplace_result_specs.
+        et = edge.to_executorch(
+            ExecutorchBackendConfig(
+                emit_mutable_buffer_names=True,
+                run_reinplace_pass=False,
+            )
+        )
+
+        execution_plan = et.executorch_program.execution_plan[0]
+        values = execution_plan.values
+
+        # Collect the keys / values buffer Values by FQN.
+        buffer_value_ids: dict[str, int] = {}
+        for i, value in enumerate(values):
+            val = value.val
+            extra = getattr(val, "extra_tensor_info", None)
+            fqn = getattr(extra, "fully_qualified_name", None) if extra else None
+            if fqn in ("keys", "values"):
+                buffer_value_ids[fqn] = i
+
+        self.assertEqual(
+            set(buffer_value_ids.keys()),
+            {"keys", "values"},
+            "Both keys and values buffers should appear in the program "
+            "with their FQN",
+        )
+
+        # For each buffer, verify no other planned Value's allocation
+        # overlaps the buffer's memory region.
+        for fqn, vid in buffer_value_ids.items():
+            buf_alloc = values[vid].val.allocation_info
+            self.assertIsNotNone(buf_alloc, f"Buffer {fqn} should have allocation_info")
+            buf_base = buf_alloc.memory_offset_low
+            # 4 bytes per float32 element.
+            num_elements = max_batch_size * num_heads * max_cache_len * head_dim
+            buf_end = buf_base + num_elements * 4
+
+            for j, other in enumerate(values):
+                if j == vid:
+                    continue
+                other_alloc = getattr(other.val, "allocation_info", None)
+                if other_alloc is None:
+                    continue
+                if other_alloc.memory_id != buf_alloc.memory_id:
+                    continue
+                offset = other_alloc.memory_offset_low
+                overlaps = buf_base <= offset < buf_end
+                self.assertFalse(
+                    overlaps,
+                    f"Value {j} (alloc offset={offset}) overlaps the "
+                    f"{fqn} buffer's region [{buf_base}, {buf_end}) — "
+                    "the in-place index_copy_ result spec was not "
+                    "correctly aliased to the buffer spec",
+                )
 
     def test_constants_not_memory_planned(self) -> None:
         class Simple(torch.nn.Module):

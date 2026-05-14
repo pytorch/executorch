@@ -3,7 +3,7 @@ load(
     "ANDROID",
 )
 load("@fbsource//xplat/executorch/build:runtime_wrapper.bzl", "runtime")
-load("@fbsource//xplat/executorch/backends/qualcomm/qnn_version.bzl", "get_qnn_library_version")
+load("@fbsource//xplat/executorch/backends/qualcomm/third-party:third_party_libs.bzl", "qnn_third_party_dep")
 
 def define_common_targets():
     """Defines targets that should be shared between fbcode and xplat.
@@ -23,8 +23,8 @@ def define_common_targets():
         platforms = [ANDROID],
         visibility = ["PUBLIC"],
         deps = [
-            "fbsource//third-party/qualcomm/qnn/qnn-{0}:api".format(get_qnn_library_version()),
-            "fbsource//third-party/qualcomm/qnn/qnn-{0}:app_sources".format(get_qnn_library_version()),
+            qnn_third_party_dep("api"),
+            qnn_third_party_dep("app_sources"),
             "//executorch/runtime/backend:interface",
             "//executorch/runtime/core:core",
         ],

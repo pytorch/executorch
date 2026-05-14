@@ -147,6 +147,28 @@ def define_common_targets():
     )
 
     runtime.cxx_library(
+        name = "op_quantized_depthwise_conv1d_ncl",
+        srcs = ["op_quantized_depthwise_conv1d_ncl.cpp"],
+        platforms = CXX,
+        deps = [
+            ":op_quantized_conv1d_ncl",
+            "//executorch/runtime/kernel:kernel_includes",
+        ],
+        visibility = ["PUBLIC"],
+    )
+
+    runtime.cxx_library(
+        name = "op_quantized_depthwise_conv1d_nlc",
+        srcs = ["op_quantized_depthwise_conv1d_nlc.cpp"],
+        platforms = CXX,
+        deps = [
+            ":op_quantized_conv1d_nlc",
+            "//executorch/runtime/kernel:kernel_includes",
+        ],
+        visibility = ["PUBLIC"],
+    )
+
+    runtime.cxx_library(
         name = "op_quantized_conv2d",
         srcs = ["op_quantized_conv2d.cpp"],
         exported_headers = ["op_quantized_conv2d.h"],

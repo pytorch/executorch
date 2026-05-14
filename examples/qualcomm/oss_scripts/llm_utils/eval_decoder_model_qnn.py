@@ -14,12 +14,13 @@ from typing import Optional, Union
 import numpy as np
 
 import torch
-from executorch.examples.models.llama.evaluate.eager_eval import EagerEvalWrapper
-
-from executorch.examples.qualcomm.utils import (
-    make_output_dir,
+from executorch.backends.qualcomm.export_utils import (
+    QnnConfig,
     setup_common_args_and_variables,
 )
+from executorch.examples.models.llama.evaluate.eager_eval import EagerEvalWrapper
+
+from executorch.examples.qualcomm.utils import make_output_dir
 
 from lm_eval.evaluator import simple_evaluate
 from pytorch_tokenizers import get_tokenizer
@@ -110,21 +111,23 @@ class QNNRunnerEvalWrapper(EagerEvalWrapper):
         super().__init__(None, tokenizer, max_seq_length)
         import getpass
 
-        from executorch.examples.qualcomm.utils import SimpleADB
+        from executorch.backends.qualcomm.export_utils import SimpleADB
 
         self._model = model
         self.output_dir = output_dir
         self.quant_attrs = quant_attrs
         workspace = f"/data/local/tmp/{getpass.getuser()}/executorch/meta_llama"
-        self.adb = SimpleADB(
-            qnn_sdk=os.getenv("QNN_SDK_ROOT"),
-            build_path=build_folder,
-            pte_path=model,
-            workspace=workspace,
-            device_id=device,
-            host_id=host,
+        qnn_config = QnnConfig(
+            build_folder=build_folder,
+            device=device,
+            host=host,
             soc_model=soc_model,
             target=target,
+        )
+        self.adb = SimpleADB(
+            qnn_config=qnn_config,
+            pte_path=model,
+            workspace=workspace,
         )
         self.adb.push()
 
@@ -196,7 +199,7 @@ def gen_eval_wrapper(
         return QNNRunnerEvalWrapper(
             model=model,
             tokenizer=tokenizer,
-            soc_model=args.model,
+            soc_model=args.soc_model,
             device=args.device,
             host=args.host,
             max_seq_length=args.max_seq_len - 1,

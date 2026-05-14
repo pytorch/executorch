@@ -54,7 +54,7 @@ class SDPACustom(torch.nn.Module):
                 q,
                 k,
                 v,
-                input_pos[0].item(),
+                0,  # start_pos: unused when mask is provided (is_causal=False)
                 mask,  # Attention mask
                 0,  # dropout probability. Ignored by the code
                 False,  # is_causal
@@ -69,7 +69,7 @@ class SDPACustom(torch.nn.Module):
                 0,  # dropout probability. Ignored by the code
                 True,  # is_causal
             )
-        return output.view(bsz, seqlen, self.dim).to(dtype=input_dtype)
+        return output.reshape(bsz, seqlen, self.dim).to(dtype=input_dtype)
 
 
 def _replace_sdpa_with_custom_op(
@@ -168,7 +168,7 @@ class QuantizedSDPA(torch.nn.Module):
                 q_quantized,
                 k_quantized,
                 v_quantized,
-                start_pos,
+                0,  # start_pos: unused when mask is provided (is_causal=False)
                 mask,
                 0,
                 False,
@@ -198,7 +198,7 @@ class QuantizedSDPA(torch.nn.Module):
                 v_scale_fp32,
             )
 
-        return output.view(bsz, seqlen, self.dim)
+        return output.reshape(bsz, seqlen, self.dim)
 
 
 def _update_attention_module_with_quantized_sdpa(
