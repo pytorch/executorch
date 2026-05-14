@@ -393,6 +393,8 @@ jobs:
         echo "::endgroup::"
 
         echo "::group::Test ${{ matrix.model }}"
+        export PYTHONFAULTHANDLER=1
+        export PYTHONUNBUFFERED=1
         python .ci/scripts/test_huggingface_optimum_model.py --model ${{ matrix.model }} --quantize --recipe xnnpack
         echo "::endgroup::"
 
