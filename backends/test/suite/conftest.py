@@ -27,10 +27,9 @@ def pytest_collection_modifyitems(config, items):
             flow = callspec.params.get("test_runner")
             if isinstance(flow, TestFlow):
                 test_name = item.originalname or item.name
-                if flow.should_skip_test(test_name):
-                    item.add_marker(
-                        pytest.mark.skip(reason=f"Skipped by {flow.name} skip_patterns")
-                    )
+                should_skip, reason = flow.should_skip_test(test_name, callspec.params)
+                if should_skip:
+                    item.add_marker(pytest.mark.skip(reason))
 
         item_path = str(getattr(item, "path", ""))
         for suite_prefix, timeout_s in FLOW_TEST_CASE_TIMEOUTS.items():

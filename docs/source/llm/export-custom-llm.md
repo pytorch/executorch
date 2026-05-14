@@ -1,9 +1,16 @@
 # Exporting custom LLMs
 
-If you have your own PyTorch model that is an LLM, this guide will show you how to manually export and lower to ExecuTorch, with many of the same optimizations as covered in the previous `export_llm` guide.
+If you have your own PyTorch model that is an LLM, this guide shows how to
+manually export and lower it to ExecuTorch. Use this flow when your model is not
+covered by the native [`export_llm`](export-llm.md) API, is not directly handled
+by [Optimum ExecuTorch](export-llm-optimum.md), or needs model-specific changes
+before it can use the standard ExecuTorch LLM runtime.
 
 This example uses Karpathy’s [nanoGPT](https://github.com/karpathy/nanoGPT), which is a minimal implementation of
-GPT-2 124M. This guide is applicable to other language models, as ExecuTorch is model-invariant.
+GPT-2 124M. The same manual export pattern applies broadly to PyTorch models.
+However, exporting a `.pte` file and running that file with the stock LLM runners
+are separate steps. To use the LLM runners, the exported model must also follow
+the runtime contract described below.
 
 
 ## Exporting to ExecuTorch (basic)
@@ -84,6 +91,165 @@ To export, run the script with `python export_nanogpt.py` (or python3, as approp
 For more information, see [Exporting to ExecuTorch](../tutorials/export-to-executorch-tutorial) <!-- @lint-ignore --> and
 [torch.export](https://pytorch.org/docs/stable/export.html).
 
+## Using the LLM runners with a custom model
+
+The exported `.pte` file can be loaded directly through the ExecuTorch runtime,
+but many text-generation applications use the higher-level LLM runners described
+in [Running LLMs with C++](run-with-c-plus-plus.md). These runners handle
+tokenization, prefill, decode, sampling, and streaming output. To use them with a
+custom model, shape the model boundary around autoregressive text generation:
+
+A KV cache stores previous attention key and value tensors so decode can append
+new tokens without recomputing attention over the full context.
+
+- The model should accept token IDs as the primary input.
+- If the model uses a KV cache, it should also accept a position input, often
+  named `input_pos` or `start_pos`.
+- The model should return a single logits tensor that the runner can sample from.
+- The tokenizer file and BOS/EOS token IDs should match the model.
+- Cache tensors should normally be model-owned buffers, not extra inputs and
+  outputs passed through the runner.
+
+A typical runner-compatible forward signature looks like:
+
+```python
+def forward(
+    self,
+    tokens: torch.Tensor,
+    input_pos: torch.Tensor,
+) -> torch.Tensor:
+    ...
+    return logits
+```
+
+Models without a KV cache may expose only the token input, but generation will
+usually be much slower because the model recomputes attention over the full
+context on each decode step.
+
+The runner also reads metadata from the `.pte` file. At minimum, include the
+values that describe sequence limits, KV cache behavior, and tokenizer
+termination:
+
+- `get_max_seq_len`: maximum number of tokens processed by one model invocation.
+- `get_max_context_len`: maximum context length remembered by the model.
+- `use_kv_cache`: whether the model has an internal KV cache.
+- `enable_dynamic_shape`: whether prefill can use dynamic sequence lengths.
+- `get_bos_id` and `get_eos_ids`: token IDs used by the runner.
+
+For example:
+
+```python
+metadata = {
+    "get_bos_id": bos_id,
+    "get_eos_ids": [eos_id],
+    "get_max_seq_len": max_seq_len,
+    "get_max_context_len": max_context_len,
+    "use_kv_cache": True,
+    "enable_dynamic_shape": True,
+}
+```
+
+When manually exporting, serialize this metadata as constant methods. Constant
+methods are named values in the `.pte` file that the runner can query at load
+time:
+
+```python
+edge_manager = to_edge(
+    traced_model,
+    constant_methods=metadata,
+    compile_config=edge_config,
+)
+```
+
+If your model needs additional runtime inputs, such as explicit cache tensors,
+attention masks, encoder outputs, or cross-attention state, the default text LLM
+runner is probably not the right boundary. In that case, either wrap the model so
+that those values are stored inside the module, or build a custom runner or
+`IOManager` for the model-specific input and output protocol. An `IOManager` is
+the runner component that prepares model inputs and processes model outputs for
+prefill and decode.
+
+Encoder-decoder models, such as translation models from Fairseq, are a common
+case where this distinction matters. ExecuTorch can run the exported program,
+but the stock text-generation runner is oriented around decoder-only generation.
+If the model is supported by Optimum ExecuTorch, prefer that path. Otherwise,
+decide whether to wrap the model into the runner-compatible shape or expose a
+custom runtime interface.
+
+## Adapting attention and KV cache
+
+Optimized LLM exports work well in ExecuTorch when attention and decode state are
+structured in an export-friendly way. The important design choice is to keep the
+runtime interface simple while moving mutable decode state into the module.
+
+The optimized transformer implementations in ExecuTorch preserve a few
+properties that are useful to keep in a custom model:
+
+- The exported graph is static enough for `torch.export`: tensor operations are
+  traceable, and generation state does not depend on Python-side mutation.
+- The runner boundary stays small: tokens and optional position go in, logits
+  come out, and metadata describes how to drive generation.
+- KV cache state is stored in model buffers and updated by tensor position.
+- Attention is factored so standard scaled dot product attention (SDPA) can be
+  replaced by optimized or backend-specific SDPA implementations when the tensor
+  layout matches.
+- Large compute patterns, such as linear layers and attention, stay recognizable
+  to backend partitioners.
+
+For KV cache support:
+
+- Register key and value caches as module buffers so they are part of the
+  exported program state.
+- Update cache entries using the tensor position passed to the model, rather than
+  Python-side counters or data-dependent control flow.
+- Keep cache shapes predictable. Backends and custom operators often rely on
+  fixed cache layout assumptions.
+- Return logits only. The default runner does not expect cache tensors as model
+  outputs.
+- Reset or reinitialize cache state through the runner/runtime lifecycle, not by
+  changing Python attributes during generation.
+
+For attention:
+
+- Prefer standard `torch.nn.functional.scaled_dot_product_attention` or an
+  equivalent module boundary that can later be swapped for backend-specific
+  attention.
+- Keep query, key, value, mask, and cache shapes explicit and stable.
+- First make the model exportable and correct, then apply SDPA, cache,
+  quantization, and backend transforms for the targets you care about.
+
+ExecuTorch includes optimized SDPA and cache-update custom operators used by the
+Llama export flow. You can leverage those paths when your model's attention
+layout matches the expected query/key/value/cache conventions. If your attention
+layout is different, it is usually better to adapt the module boundary first
+than to force the custom operator into an incompatible shape.
+
+## Reusing LLM components
+
+You do not need to copy the Llama implementation to build a custom model. The
+`extension/llm` tree contains reusable pieces that are useful when adapting a
+model for export:
+
+- [`extension/llm/modules`](https://github.com/pytorch/executorch/tree/main/extension/llm/modules)
+  contains export-friendly modules.
+- [`KVCache`](https://github.com/pytorch/executorch/blob/main/extension/llm/modules/kv_cache.py)
+  provides an export-friendly cache implementation adapted from torchtune.
+- [`MultiHeadAttention`](https://github.com/pytorch/executorch/blob/main/extension/llm/modules/attention.py)
+  factors SDPA out of the attention module so it can be replaced with optimized
+  implementations.
+- [`examples/models/llama/source_transformation`](https://github.com/pytorch/executorch/tree/main/examples/models/llama/source_transformation)
+  shows how the Llama flow swaps in custom SDPA, custom KV cache, quantized KV
+  cache, and backend-specific attention variants.
+
+These components are most useful as building blocks and reference
+implementations. Keep your model architecture readable and close to the original
+PyTorch version first, then replace individual pieces only when they improve
+export compatibility, runner compatibility, or backend performance.
+
+If you are authoring or fine-tuning a transformer model from scratch, also look
+at [torchtune](https://github.com/pytorch/torchtune). Several ExecuTorch LLM
+modules are adapted from torchtune modules with changes for export and inference.
+
 ## Backend delegation
 
 While ExecuTorch provides a portable, cross-platform implementation for all
@@ -109,6 +275,35 @@ not delegated are executed by ExecuTorch's default operator implementations.
 To delegate the exported model to a specific backend, we need to import its
 partitioner as well as edge compile config from ExecuTorch codebase first, then
 call `to_edge_transform_and_lower`.
+
+If you also added runner metadata earlier, pass the same metadata through the
+`constant_methods` argument in this call so the delegated `.pte` keeps the same
+runner-visible values.
+
+For custom LLMs, backend performance depends on how much of the model graph the
+backend can recognize and delegate. Keep the following in mind when adapting the
+model:
+
+- Inspect delegated and non-delegated operators after lowering with
+  `get_delegation_info()`.
+- Prefer linear and attention patterns that leave model weights visible as
+  constants to the partitioner.
+- Be careful with dynamic shapes inside delegated subgraphs. Dynamic prefill can
+  be useful, but not every dynamic pattern is backend-friendly.
+- Export separate `.pte` files for different targets, such as XNNPACK for CPU
+  and Core ML for Apple devices.
+
+When targeting XNNPACK, use the XNNPACK partitioner and quantization flow. For
+details, see the [XNNPACK backend overview](../backends/xnnpack/xnnpack-overview.md),
+[XNNPACK quantization](../backends/xnnpack/xnnpack-quantization.md), and
+[XNNPACK troubleshooting](../backends/xnnpack/xnnpack-troubleshooting.md).
+
+When targeting Core ML, follow the Core ML backend configuration and validate on
+the target Apple OS and hardware. Stateful KV cache and fused SDPA support can be
+backend- and OS-version dependent. For details, see the
+[Core ML backend overview](../backends/coreml/coreml-overview.md),
+[Core ML partitioner](../backends/coreml/coreml-partitioner.md), and
+[Core ML troubleshooting](../backends/coreml/coreml-troubleshooting.md).
 
 Here's an example of how to delegate nanoGPT to XNNPACK (if you're deploying to an Android phone for instance):
 

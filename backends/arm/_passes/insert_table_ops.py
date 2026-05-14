@@ -278,11 +278,12 @@ class InsertTableOpsPass(ArmPass):
                     out_quantargs=output_qparams[0],
                 )
                 # Register buffer in self.exported_program.state_dict
+                # b_ prefix is important to be recognized as a constant in RemovePermutesAroundElementwiseOps
                 const_table_node = create_constant_placeholder(
                     exp_program=self.exported_program,
                     graph=node.graph,
                     kind=InputKind.BUFFER,
-                    name=node.name + "_table_constant",
+                    name="b_" + node.name + "_table_constant",
                     data=buffer,
                     persistent_buffer=True,
                 )
