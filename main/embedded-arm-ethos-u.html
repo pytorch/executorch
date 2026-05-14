@@ -9,7 +9,7 @@
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" /><meta name="generator" content="Docutils 0.18.1: http://docutils.sourceforge.net/" />
 
-    <title>&lt;no title&gt; &#8212; ExecuTorch main documentation</title>
+    <title>Arm Ethos-U Backend &#8212; ExecuTorch main documentation</title>
   
   
   
@@ -1775,7 +1775,7 @@ document.write(`
      aria-label="Section Navigation">
   <p class="bd-links__title" role="heading" aria-level="1">Section Navigation</p>
   <div class="bd-toc-item navbar-nav"><p aria-level="2" class="caption" role="heading"><span class="caption-text">Edge Platforms</span></p>
-<ul class="nav bd-sidenav">
+<ul class="current nav bd-sidenav">
 <li class="toctree-l1 has-children"><a class="reference internal" href="android-section.html">Android</a><details><summary><span class="toctree-toggle" role="presentation"><i class="fa-solid fa-chevron-down"></i></span></summary><ul>
 <li class="toctree-l2"><a class="reference internal" href="using-executorch-android.html">Using ExecuTorch on Android</a></li>
 <li class="toctree-l2 has-children"><a class="reference internal" href="android-backends.html">Backends</a><details><summary><span class="toctree-toggle" role="presentation"><i class="fa-solid fa-chevron-down"></i></span></summary><ul>
@@ -1838,16 +1838,19 @@ document.write(`
 <li class="toctree-l2"><a class="reference internal" href="raspberry_pi_llama_tutorial.html">ExecuTorch on Raspberry Pi</a></li>
 </ul>
 </details></li>
-<li class="toctree-l1 has-children"><a class="reference internal" href="embedded-section.html">Embedded Systems</a><details><summary><span class="toctree-toggle" role="presentation"><i class="fa-solid fa-chevron-down"></i></span></summary><ul>
+<li class="toctree-l1 current active has-children"><a class="reference internal" href="embedded-section.html">Embedded Systems</a><details open="open"><summary><span class="toctree-toggle" role="presentation"><i class="fa-solid fa-chevron-down"></i></span></summary><ul class="current">
 <li class="toctree-l2"><a class="reference internal" href="executorch-runtime-api-reference.html">Runtime API Reference</a></li>
 <li class="toctree-l2"><a class="reference internal" href="running-a-model-cpp-tutorial.html">Detailed C++ Runtime APIs Tutorial</a></li>
 <li class="toctree-l2"><a class="reference internal" href="extension-module.html">Running an ExecuTorch Model Using the Module Extension in C++</a></li>
 <li class="toctree-l2"><a class="reference internal" href="extension-tensor.html">Managing Tensor Memory in C++</a></li>
 <li class="toctree-l2"><a class="reference internal" href="using-executorch-cpp.html">Using ExecuTorch with C++</a></li>
 <li class="toctree-l2"><a class="reference internal" href="using-executorch-building-from-source.html">Building from Source</a></li>
-<li class="toctree-l2 has-children"><a class="reference internal" href="embedded-backends.html">Backends</a><details><summary><span class="toctree-toggle" role="presentation"><i class="fa-solid fa-chevron-down"></i></span></summary><ul>
+<li class="toctree-l2 current active has-children"><a class="reference internal" href="embedded-backends.html">Backends</a><details open="open"><summary><span class="toctree-toggle" role="presentation"><i class="fa-solid fa-chevron-down"></i></span></summary><ul class="current">
 <li class="toctree-l3"><a class="reference internal" href="embedded-arm-cortex-m.html">Arm Cortex-M Backend</a></li>
 <li class="toctree-l3"><a class="reference internal" href="embedded-cadence.html">Cadence Xtensa Backend</a></li>
+<li class="toctree-l3 current active has-children"><a class="current reference internal" href="#">Arm Ethos-U Backend</a><details open="open"><summary><span class="toctree-toggle" role="presentation"><i class="fa-solid fa-chevron-down"></i></span></summary><ul class="simple">
+</ul>
+</details></li>
 <li class="toctree-l3 has-children"><a class="reference internal" href="embedded-nxp.html">NXP eIQ Neutron Backend</a><details><summary><span class="toctree-toggle" role="presentation"><i class="fa-solid fa-chevron-down"></i></span></summary><ul class="simple">
 </ul>
 </details></li>
@@ -1908,7 +1911,7 @@ document.write(`
     
     <li class="breadcrumb-item"><a href="embedded-backends.html" class="nav-link">Backends</a></li>
     
-    <li class="breadcrumb-item active" aria-current="page">&lt;no title&gt;</li>
+    <li class="breadcrumb-item active" aria-current="page">Arm Ethos-U Backend</li>
   </ul>
 </nav>
 </div>
@@ -1968,7 +1971,7 @@ document.write(`
     </div>
     
     <div itemprop="itemListElement" itemscope itemtype="https://schema.org/ListItem">
-      <meta itemprop="name" content="&lt;no title&gt;">
+      <meta itemprop="name" content="Arm Ethos-U Backend">
       <meta itemprop="position" content="4">
     </div>
   </div>
@@ -1982,7 +1985,273 @@ document.write(`
 <div id="searchbox"></div>
                 <article class="bd-article">
                   
-  
+  <section id="arm-ethos-u-backend">
+<h1>Arm Ethos-U Backend<a class="headerlink" href="#arm-ethos-u-backend" title="Link to this heading">#</a></h1>
+<p>The Arm® Ethos™-U backend targets Edge/IoT-type AI use-cases by enabling optimal execution of quantized models on
+<a class="reference external" href="https://www.arm.com/products/silicon-ip-cpu/ethos/ethos-u55">Arm® Ethos™-U55 NPU</a>, <a class="reference external" href="https://www.arm.com/products/silicon-ip-cpu/ethos/ethos-u65">Arm® Ethos™-U65 NPU</a>, and
+<a class="reference external" href="https://www.arm.com/products/silicon-ip-cpu/ethos/ethos-u85">Arm® Ethos™-U85 NPU</a>, leveraging <a class="reference external" href="https://www.mlplatform.org/tosa/">TOSA</a> and the
+<a class="reference external" href="https://pypi.org/project/ethos-u-vela/">ethos-u-vela</a> graph compiler. This document is a technical reference for using the Ethos-U backend, for a top level view with code examples
+please refer to the <a class="reference internal" href="#tutorials/ethos-u-getting-started.md"><span class="xref myst">Arm Ethos-U Backend Tutorial</span></a>.</p>
+<section id="features">
+<h2>Features<a class="headerlink" href="#features" title="Link to this heading">#</a></h2>
+<ul class="simple">
+<li><p>Wide operator support for delegating large parts of models to highly optimized and low power Ethos-U NPUs.</p></li>
+<li><p>A quantizer that optimizes quantization for the NPU target.</p></li>
+<li><p>Example runtime integration for easy hardware bringup.</p></li>
+</ul>
+</section>
+<section id="target-requirements">
+<h2>Target Requirements<a class="headerlink" href="#target-requirements" title="Link to this heading">#</a></h2>
+<p>The target system must include an Ethos-U NPU.</p>
+</section>
+<section id="development-requirements">
+<h2>Development Requirements<a class="headerlink" href="#development-requirements" title="Link to this heading">#</a></h2>
+<div class="admonition tip">
+<p class="admonition-title">Tip</p>
+<p>All requirements can be downloaded using <code class="docutils literal notranslate"><span class="pre">examples/arm/setup.sh</span> <span class="pre">--i-agree-to-the-contained-eula</span></code> and added to the path using
+<code class="docutils literal notranslate"><span class="pre">source</span> <span class="pre">examples/arm/arm-scratch/setup_path.sh</span></code>. Note that this means accepting the End-User License Agreements (EULA:s) required for using the downloaded software.</p>
+</div>
+<p>For the AOT flow, compilation of a model to <code class="docutils literal notranslate"><span class="pre">.pte</span></code> format using the Ethos-U backend, the requirements are:</p>
+<ul class="simple">
+<li><p><a class="reference external" href="https://www.mlplatform.org/tosa/software.html">TOSA Serialization Library</a> for serializing the Exir IR graph into TOSA IR.</p></li>
+<li><p><a class="reference external" href="https://pypi.org/project/ethos-u-vela/">Ethos-U Vela graph compiler</a> for compiling TOSA flatbuffers into an Ethos-U command stream.</p></li>
+</ul>
+<p>And for building and running the example application available in <code class="docutils literal notranslate"><span class="pre">examples/arm/executor_runner/</span></code>:</p>
+<ul class="simple">
+<li><p><a class="reference external" href="https://developer.arm.com/Tools%20and%20Software/GNU%20Toolchain">Arm GNU Toolchain</a> for cross compilation.</p></li>
+<li><p><a class="reference external" href="https://developer.arm.com/documentation/100966/1128/Arm--Corstone-SSE-300-FVP">Arm® Corstone™ SSE-300 FVP</a> for testing on a Arm® Cortex®-M55+Ethos-U55 reference design.</p></li>
+<li><p><a class="reference external" href="https://developer.arm.com/documentation/109760/0000/SSE-320-FVP">Arm® Corstone™ SSE-320 FVP</a> for testing on a Arm® Cortex®-M85+Ethos-U85 reference design.</p></li>
+</ul>
+<p>Fixed Virtual Platforms (FVPs) are freely available emulators provided by Arm for easy embedded development without the need for a physical development board.</p>
+</section>
+<section id="using-the-arm-ethos-u-backend">
+<h2>Using the Arm Ethos-U Backend<a class="headerlink" href="#using-the-arm-ethos-u-backend" title="Link to this heading">#</a></h2>
+<p>The main configuration point for the lowering is the <code class="docutils literal notranslate"><span class="pre">EthosUCompileSpec</span></code> consumed by the partitioner and quantizer.
+The full user-facing API is documented below.</p>
+<div class="highlight-python notranslate"><div class="highlight"><pre><span></span><span class="k">class</span><span class="w"> </span><span class="nc">EthosUCompileSpec</span><span class="p">(</span><span class="n">target</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span> <span class="n">system_config</span><span class="p">:</span> <span class="nb">str</span> <span class="o">|</span> <span class="kc">None</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span> <span class="n">memory_mode</span><span class="p">:</span> <span class="nb">str</span> <span class="o">|</span> <span class="kc">None</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span> <span class="n">extra_flags</span><span class="p">:</span> <span class="nb">list</span><span class="p">[</span><span class="nb">str</span><span class="p">]</span> <span class="o">|</span> <span class="kc">None</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span> <span class="n">config_ini</span><span class="p">:</span> <span class="nb">str</span> <span class="o">|</span> <span class="kc">None</span> <span class="o">=</span> <span class="s1">&#39;Arm/vela.ini&#39;</span><span class="p">)</span>
+</pre></div>
+</div>
+<p>Normalise Ethos-U compile configuration and compiler flags.</p>
+<p>Args:</p>
+<ul class="simple">
+<li><p><strong>target (str)</strong>: Ethos-U accelerator configuration (for example,
+<code class="docutils literal notranslate"><span class="pre">&quot;ethos-u55-128&quot;</span></code>).</p></li>
+<li><p><strong>system_config (str | None)</strong>: System configuration name from the Vela
+config file. Defaults based on <code class="docutils literal notranslate"><span class="pre">target</span></code> when omitted.</p></li>
+<li><p><strong>memory_mode (str | None)</strong>: Memory mode selection from the Vela config
+file. Defaults based on <code class="docutils literal notranslate"><span class="pre">target</span></code> when omitted.</p></li>
+<li><p><strong>extra_flags (list[str] | None)</strong>: Additional command-line flags for
+Vela.</p></li>
+<li><p><strong>config_ini (str | None)</strong>: Path to a Vela .ini configuration file.
+Defaults to <code class="docutils literal notranslate"><span class="pre">&quot;Arm/vela.ini&quot;</span></code>.</p></li>
+</ul>
+<div class="highlight-python notranslate"><div class="highlight"><pre><span></span><span class="k">def</span><span class="w"> </span><span class="nf">EthosUCompileSpec</span><span class="o">.</span><span class="n">dump_debug_info</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">debug_mode</span><span class="p">:</span> <span class="n">executorch</span><span class="o">.</span><span class="n">backends</span><span class="o">.</span><span class="n">arm</span><span class="o">.</span><span class="n">common</span><span class="o">.</span><span class="n">arm_compile_spec</span><span class="o">.</span><span class="n">ArmCompileSpec</span><span class="o">.</span><span class="n">DebugMode</span> <span class="o">|</span> <span class="kc">None</span><span class="p">):</span>
+</pre></div>
+</div>
+<p>Dump debugging information into the intermediates path.</p>
+<p>Args:</p>
+<ul class="simple">
+<li><p><strong>debug_mode</strong>: The debug mode to use for dumping debug information.</p></li>
+</ul>
+<div class="highlight-python notranslate"><div class="highlight"><pre><span></span><span class="k">def</span><span class="w"> </span><span class="nf">EthosUCompileSpec</span><span class="o">.</span><span class="n">dump_intermediate_artifacts_to</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">output_path</span><span class="p">:</span> <span class="nb">str</span> <span class="o">|</span> <span class="kc">None</span><span class="p">):</span>
+</pre></div>
+</div>
+<p>Sets a path for dumping intermediate results during such as tosa and
+pte.</p>
+<p>Args:</p>
+<ul class="simple">
+<li><p><strong>output_path</strong>: Path to dump intermediate results to.</p></li>
+</ul>
+<div class="highlight-python notranslate"><div class="highlight"><pre><span></span><span class="k">def</span><span class="w"> </span><span class="nf">EthosUCompileSpec</span><span class="o">.</span><span class="n">get_output_order_workaround</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">bool</span><span class="p">:</span>
+</pre></div>
+</div>
+<p>Gets whether the output order workaround is being applied.</p>
+<div class="highlight-python notranslate"><div class="highlight"><pre><span></span><span class="k">def</span><span class="w"> </span><span class="nf">EthosUCompileSpec</span><span class="o">.</span><span class="n">set_output_order_workaround</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">output_order_workaround</span><span class="p">:</span> <span class="nb">bool</span><span class="p">):</span>
+</pre></div>
+</div>
+<p>Sets whether to apply the output order workaround.</p>
+<p>Args:</p>
+<ul class="simple">
+<li><p><strong>output_order_workaround</strong>: Boolean indicating whether to apply the workaround.</p></li>
+</ul>
+<div class="highlight-python notranslate"><div class="highlight"><pre><span></span><span class="k">def</span><span class="w"> </span><span class="nf">EthosUCompileSpec</span><span class="o">.</span><span class="n">set_pass_pipeline_config</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">config</span><span class="p">:</span> <span class="n">executorch</span><span class="o">.</span><span class="n">backends</span><span class="o">.</span><span class="n">arm</span><span class="o">.</span><span class="n">common</span><span class="o">.</span><span class="n">pipeline_config</span><span class="o">.</span><span class="n">ArmPassPipelineConfig</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
+</pre></div>
+</div>
+<p>Sets the configuration that controls how the Arm pass pipeline should
+behave. Subclasses may override to tweak defaults for specific targets.</p>
+<p>Args:</p>
+<ul class="simple">
+<li><p><strong>config</strong>: The custom ArmPassPipelineConfig to set.</p></li>
+</ul>
+<section id="partitioner-api">
+<h3>Partitioner API<a class="headerlink" href="#partitioner-api" title="Link to this heading">#</a></h3>
+<p>See <a class="reference internal" href="#arm-ethos-u-partitioner.md"><span class="xref myst">Partitioner API</span></a> for more information of the Partitioner API.</p>
+</section>
+</section>
+<section id="quantization">
+<h2>Quantization<a class="headerlink" href="#quantization" title="Link to this heading">#</a></h2>
+<p>Since the Ethos-U backend is integer-only, all operators intended be executed on the NPU needs to be quantized. The Ethos-U quantizer supports
+<a class="reference external" href="https://docs.pytorch.org/ao/main/tutorials_source/pt2e_quant_ptq.html">Post Training Quantization (PT2E)</a>  and
+<a class="reference external" href="https://docs.pytorch.org/ao/main/tutorials_source/pt2e_quant_qat.html">Quantization-Aware Training (QAT)</a> quantization.</p>
+<p>For more information on quantization, see <a class="reference internal" href="#arm-ethos-u-quantization.md"><span class="xref myst">Quantization</span></a> <!-- @lint-ignore --></p>
+</section>
+<section id="runtime-integration">
+<h2>Runtime Integration<a class="headerlink" href="#runtime-integration" title="Link to this heading">#</a></h2>
+<p>An example runtime application is available in <a class="reference external" href="https://github.com/pytorch/executorch/blob/main/examples/arm/executor_runner/">examples/arm/executor_runner</a>, and the steps requried for building and deploying it on a FVP it is explained in the previously mentioned <a class="reference internal" href="#tutorials/ethos-u-getting-started.md"><span class="xref myst">Arm Ethos-U Backend Tutorial</span></a>.
+The example application is recommended to use for testing basic functionality of your lowered models, as well as a starting point for developing runtime integrations for your own targets.
+For an in-depth explanation of the architecture of the executor_runner and the steps required for doing such an integration, please refer to <a class="reference external" href="https://github.com/pytorch/executorch/blob/main/examples/arm/ethos-u-porting-guide.md">Ethos-U porting guide</a>.</p>
+<section id="example-image-classification-flow">
+<h3>Example: Image classification flow<a class="headerlink" href="#example-image-classification-flow" title="Link to this heading">#</a></h3>
+<p><a class="reference external" href="https://github.com/pytorch/executorch/tree/main/examples/arm/image_classification_example_ethos_u"><code class="docutils literal notranslate"><span class="pre">examples/arm/image_classification_example_ethos_u</span></code></a>
+contains a complete DeiT-based export and runtime walkthrough. The README shows
+how to run <code class="docutils literal notranslate"><span class="pre">model_export/export_deit.py</span></code>, build the sample firmware, and convert
+test images into C arrays so the workflow described in this guide can be tried
+end to end.</p>
+</section>
+<section id="ethos-u-memory-modes">
+<h3>Ethos-U memory modes<a class="headerlink" href="#ethos-u-memory-modes" title="Link to this heading">#</a></h3>
+<p>The Ethos-U NPU provides two distinct memory interfaces:</p>
+<ul class="simple">
+<li><p>One interface for <strong>low-latency, high-bandwidth memory</strong>.</p>
+<ul>
+<li><p>On all Ethos-U NPUs(Ethos-U55, Ethos-U65, Ethos-U85), the low-latency memory is usually the SRAM of the SoC.</p></li>
+</ul>
+</li>
+<li><p>One interface for <strong>higher-latency, lower-bandwidth memory</strong>, typically external (off-chip) memory.</p>
+<ul>
+<li><p>On a low-power microcontroller, the external memory is usually Flash.</p></li>
+<li><p>On systems with Arm® Cortex™-A and a rich operating system, the external memory is typically DRAM.</p></li>
+</ul>
+</li>
+</ul>
+<p>When running an inference, the Ethos-U compiler and Ethos-U driver make use of three logical memory regions:</p>
+<ul class="simple">
+<li><p>Ethos-U scratch buffer - a contiguous block of memory used by the NPU to store the intermediate tensors produced and consumed during inference.</p></li>
+<li><p>Neural Network - a contiguous block of memory holding constant data such as weights, biases, quantization parameters required to run an inference.</p></li>
+<li><p>Ethos-U fast scratch buffer - a contiguous block of memory, assumed to reside in on-chip memory in order to hide the higher latency/lower bandwidth of external memory. Only applicable for Ethos-U65 and Ethos-U85 on systems
+with Cortex-A and the external memory is assumed to be DRAM.</p></li>
+</ul>
+<p>The placement of the scratch buffer and the Neural Network determine the memory mode to be used in the <code class="docutils literal notranslate"><span class="pre">EthosUCompileSpec</span></code> and when building the executor_runner. Three different memory modes are supported:</p>
+<div class="pst-scrollable-table-container"><table class="table">
+<thead>
+<tr class="row-odd"><th class="head"><p>Memory Mode</p></th>
+<th class="head"><p>Ethos-U Scratch Buffer Placement</p></th>
+<th class="head"><p>Neural Network Placement</p></th>
+<th class="head"><p>When to Use</p></th>
+<th class="head"><p>Trade-off</p></th>
+</tr>
+</thead>
+<tbody>
+<tr class="row-even"><td><p><strong>SRAM-Only</strong></p></td>
+<td><p>On-chip SRAM</p></td>
+<td><p>On-chip SRAM</p></td>
+<td><p>When the ML model, the Ethos-U scratch buffer and the wider software stack fit within the SRAM of the SoC</p></td>
+<td><p>Limited by SRAM size; often not feasible for larger NNs</p></td>
+</tr>
+<tr class="row-odd"><td><p><strong>Shared-SRAM</strong></p></td>
+<td><p>On-chip SRAM</p></td>
+<td><p>External memory (Flash/DRAM)</p></td>
+<td><p>Most common mode on Cortex-M and Ethos-U systems; balances good performance and SRAM usage</p></td>
+<td><p>Requires enough SRAM to hold the largest intermediate tensor</p></td>
+</tr>
+<tr class="row-even"><td><p><strong>Dedicated-SRAM</strong></p></td>
+<td><p>External memory</p></td>
+<td><p>External memory (Flash/DRAM)</p></td>
+<td><p>Most common mode for Cortex-A and Ethos-U systems. For very large models where the peak intermediates cannot fit in SRAM</p></td>
+<td><p>Need high-bandwidth external memory to deliver good performance</p></td>
+</tr>
+</tbody>
+</table>
+</div>
+<p>Here is an in-depth explanation of the different modes:</p>
+<section id="sram-only-memory-mode">
+<h4>1. Sram-Only Memory Mode<a class="headerlink" href="#sram-only-memory-mode" title="Link to this heading">#</a></h4>
+<ul class="simple">
+<li><p>Ethos-U scratch buffer resides in the SRAM.</p></li>
+<li><p>Neural Network resides in the SRAM.</p></li>
+<li><p>Ethos-U fast scratch buffer is not used.</p></li>
+<li><p>Characteristics:</p>
+<ul>
+<li><p>Provides the best performance since all the memory traffic passes via the low-latency/high-bandwidth memory.</p></li>
+<li><p>The performance uplift is especially noticeable on memory-bound workloads on the external interface.</p></li>
+<li><p>Available on Ethos-U55, Ethos-U65 and Ethos-U85.</p></li>
+</ul>
+</li>
+<li><p>Limitations:</p>
+<ul>
+<li><p>Embedded SoCs often have limited SRAM and NNs are becoming larger. This memory mode may be unsuitable for a system running a big model relative to the amount of SRAM available on the SoC.
+Below, you can see a visual representation of the placement of the two logical memory regions for the Sram Only configuration.</p></li>
+</ul>
+</li>
+</ul>
+<p><img alt="" src="backend-arm-ethos-u-sram_only.png" /></p>
+</section>
+<section id="shared-sram-memory-mode">
+<h4>2. Shared-Sram Memory Mode<a class="headerlink" href="#shared-sram-memory-mode" title="Link to this heading">#</a></h4>
+<ul class="simple">
+<li><p>Ethos-U scratch buffer resides in the SRAM.</p></li>
+<li><p>Neural Network resides in the External memory.</p></li>
+<li><p>Ethos-U fast scratch buffer is not used.</p></li>
+<li><p>Characteristics:</p>
+<ul>
+<li><p>Intermediate tensors are stored in the SRAM, leveraging its low-latency and high-bandwidth.</p></li>
+<li><p>The Ethos-U compiler can prefetch weights from the external memory to the SRAM ahead of time so that when the NPU needs the data, it will already be avaialbe in the on-chip memory.</p></li>
+<li><p>In this mode, the external interface is Read-Only, the on-chip memory interface is Read/Write</p></li>
+<li><p>Shared-Sram offers great balance between performance and low SRAM usage.</p></li>
+<li><p>Available on Ethos-U55, Ethos-U65 and Ethos-U85.</p></li>
+</ul>
+</li>
+<li><p>Limitations:</p>
+<ul>
+<li><p>You need to have enough space in the SRAM to hold the peak intermediate tensor.
+Below, you can see a visual representation of the placement of the two logical memory regions for the Shared_Sram configuration.</p></li>
+</ul>
+</li>
+</ul>
+<p><img alt="" src="backend-arm-ethos-u-shared_sram.png" /></p>
+</section>
+<section id="dedicated-sram-memory-mode">
+<h4>3. Dedicated-Sram Memory Mode<a class="headerlink" href="#dedicated-sram-memory-mode" title="Link to this heading">#</a></h4>
+<ul class="simple">
+<li><p>Ethos-U scratch buffer resides in the External memory.</p></li>
+<li><p>Neural Network resides in the External memory.</p></li>
+<li><p>Ethos-U fast scratch buffer resides in the on-chip memory.</p></li>
+<li><p>Characteristics:</p>
+<ul>
+<li><p>Used when the peak intermediate tensor is too big to fit into the on-chip memory.</p></li>
+<li><p>Enables silicon acceleration of large models.</p></li>
+<li><p>The NPU stores the results from the intermediate computations in the external memory.</p></li>
+<li><p>The dedicated SRAM acts as a software managed cache, improving performance by pre-fetching frequently accessed tensors to the on-chip memory.</p></li>
+<li><p>Available on Ethos-U65 and Ethos-U85.</p></li>
+</ul>
+</li>
+<li><p>Limitations:</p>
+<ul>
+<li><p>The SRAM space must be dedicated exculisely to the Ethos-U(the host processor should not access it).</p></li>
+<li><p>Not available on Ethos-U55.
+Below, you can see a visual representation of the placement of the two logical memory regions for the Shared_Sram configuration.</p></li>
+</ul>
+</li>
+</ul>
+<p><img alt="" src="backend-arm-ethos-u-dedicated_sram.png" /></p>
+<p>The memory modes are defined within the <a class="reference external" href="https://gitlab.arm.com/artificial-intelligence/ethos-u/ethos-u-vela/-/blob/main/ethosu/config_files/Arm/vela.ini?ref_type=heads">vela.ini file</a>. When you install
+ExecuTorch for the Ethos-U backend, you automatically install the compiler containing the vela.ini file so you can directly create a compile specification with these memory modes.</p>
+</section>
+</section>
+</section>
+<section id="reference">
+<h2>Reference<a class="headerlink" href="#reference" title="Link to this heading">#</a></h2>
+<p><strong>→<a class="reference internal" href="backends/arm-ethos-u/arm-ethos-u-partitioner.html"><span class="doc">Partitioner API</span></a> — Partitioner options.</strong></p>
+<p><strong>→<a class="reference internal" href="backends/arm-ethos-u/arm-ethos-u-quantization.html"><span class="doc">Quantization</span></a> — Supported quantization schemes.</strong></p>
+<p><strong>→<a class="reference internal" href="backends/arm-ethos-u/arm-ethos-u-troubleshooting.html"><span class="doc">Arm Ethos-U Troubleshooting</span></a> — Troubleshooting and common issues.</strong></p>
+<p><strong>→<a class="reference internal" href="backends/arm-ethos-u/tutorials/arm-ethos-u-tutorials.html"><span class="doc">Arm Ethos-U Backend Tutorials</span></a> — Tutorials.</strong></p>
+<p><strong>→<a class="reference internal" href="backends/arm-ethos-u/U55_op_support.html"><span class="doc">EdgeIR Operator support for the U55 backend</span></a> — Ethos-U55 supported operators.</strong></p>
+<p><strong>→<a class="reference internal" href="backends/arm-ethos-u/U85_op_support.html"><span class="doc">EdgeIR Operator support for the U85 backend</span></a> — Ethos-U85 supported operators.</strong></p>
+<div class="toctree-wrapper compound">
+</div>
+</section>
+</section>
+
 
                 </article>
               
@@ -2099,9 +2368,27 @@ document.write(`
     <i class="fa-solid fa-list"></i> On this page
   </div>
   <nav class="bd-toc-nav page-toc" aria-labelledby="pst-page-navigation-heading-2">
-    <ul class="simple visible nav section-nav flex-column">
+    <ul class="visible nav section-nav flex-column">
+<li class="toc-h2 nav-item toc-entry"><a class="reference internal nav-link" href="#features">Features</a></li>
+<li class="toc-h2 nav-item toc-entry"><a class="reference internal nav-link" href="#target-requirements">Target Requirements</a></li>
+<li class="toc-h2 nav-item toc-entry"><a class="reference internal nav-link" href="#development-requirements">Development Requirements</a></li>
+<li class="toc-h2 nav-item toc-entry"><a class="reference internal nav-link" href="#using-the-arm-ethos-u-backend">Using the Arm Ethos-U Backend</a><ul class="visible nav section-nav flex-column">
+<li class="toc-h3 nav-item toc-entry"><a class="reference internal nav-link" href="#partitioner-api">Partitioner API</a></li>
 </ul>
-
+</li>
+<li class="toc-h2 nav-item toc-entry"><a class="reference internal nav-link" href="#quantization">Quantization</a></li>
+<li class="toc-h2 nav-item toc-entry"><a class="reference internal nav-link" href="#runtime-integration">Runtime Integration</a><ul class="visible nav section-nav flex-column">
+<li class="toc-h3 nav-item toc-entry"><a class="reference internal nav-link" href="#example-image-classification-flow">Example: Image classification flow</a></li>
+<li class="toc-h3 nav-item toc-entry"><a class="reference internal nav-link" href="#ethos-u-memory-modes">Ethos-U memory modes</a><ul class="nav section-nav flex-column">
+<li class="toc-h4 nav-item toc-entry"><a class="reference internal nav-link" href="#sram-only-memory-mode">1. Sram-Only Memory Mode</a></li>
+<li class="toc-h4 nav-item toc-entry"><a class="reference internal nav-link" href="#shared-sram-memory-mode">2. Shared-Sram Memory Mode</a></li>
+<li class="toc-h4 nav-item toc-entry"><a class="reference internal nav-link" href="#dedicated-sram-memory-mode">3. Dedicated-Sram Memory Mode</a></li>
+</ul>
+</li>
+</ul>
+</li>
+<li class="toc-h2 nav-item toc-entry"><a class="reference internal nav-link" href="#reference">Reference</a></li>
+</ul>
   </nav></div>
     
        <div class="sidebar-secondary-item">
@@ -2322,11 +2609,11 @@ document.write(`
     {
        "@context": "https://schema.org",
        "@type": "Article",
-       "name": "\u003cno title\u003e",
-       "headline": "\u003cno title\u003e",
+       "name": "Arm Ethos-U Backend",
+       "headline": "Arm Ethos-U Backend",
        "description": "PyTorch Documentation. Explore PyTorch, an open-source machine learning library that accelerates the path from research prototyping to production deployment.",
        "url": "/embedded-arm-ethos-u.html",
-       "articleBody": "",
+       "articleBody": "Arm Ethos-U Backend# The Arm\u00ae Ethos\u2122-U backend targets Edge/IoT-type AI use-cases by enabling optimal execution of quantized models on Arm\u00ae Ethos\u2122-U55 NPU, Arm\u00ae Ethos\u2122-U65 NPU, and Arm\u00ae Ethos\u2122-U85 NPU, leveraging TOSA and the ethos-u-vela graph compiler. This document is a technical reference for using the Ethos-U backend, for a top level view with code examples please refer to the Arm Ethos-U Backend Tutorial. Features# Wide operator support for delegating large parts of models to highly optimized and low power Ethos-U NPUs. A quantizer that optimizes quantization for the NPU target. Example runtime integration for easy hardware bringup. Target Requirements# The target system must include an Ethos-U NPU. Development Requirements# Tip All requirements can be downloaded using examples/arm/setup.sh --i-agree-to-the-contained-eula and added to the path using source examples/arm/arm-scratch/setup_path.sh. Note that this means accepting the End-User License Agreements (EULA:s) required for using the downloaded software. For the AOT flow, compilation of a model to .pte format using the Ethos-U backend, the requirements are: TOSA Serialization Library for serializing the Exir IR graph into TOSA IR. Ethos-U Vela graph compiler for compiling TOSA flatbuffers into an Ethos-U command stream. And for building and running the example application available in examples/arm/executor_runner/: Arm GNU Toolchain for cross compilation. Arm\u00ae Corstone\u2122 SSE-300 FVP for testing on a Arm\u00ae Cortex\u00ae-M55+Ethos-U55 reference design. Arm\u00ae Corstone\u2122 SSE-320 FVP for testing on a Arm\u00ae Cortex\u00ae-M85+Ethos-U85 reference design. Fixed Virtual Platforms (FVPs) are freely available emulators provided by Arm for easy embedded development without the need for a physical development board. Using the Arm Ethos-U Backend# The main configuration point for the lowering is the EthosUCompileSpec consumed by the partitioner and quantizer. The full user-facing API is documented below. class EthosUCompileSpec(target: str, system_config: str | None = None, memory_mode: str | None = None, extra_flags: list[str] | None = None, config_ini: str | None = \u0027Arm/vela.ini\u0027) Normalise Ethos-U compile configuration and compiler flags. Args: target (str): Ethos-U accelerator configuration (for example, \"ethos-u55-128\"). system_config (str | None): System configuration name from the Vela config file. Defaults based on target when omitted. memory_mode (str | None): Memory mode selection from the Vela config file. Defaults based on target when omitted. extra_flags (list[str] | None): Additional command-line flags for Vela. config_ini (str | None): Path to a Vela .ini configuration file. Defaults to \"Arm/vela.ini\". def EthosUCompileSpec.dump_debug_info(self, debug_mode: executorch.backends.arm.common.arm_compile_spec.ArmCompileSpec.DebugMode | None): Dump debugging information into the intermediates path. Args: debug_mode: The debug mode to use for dumping debug information. def EthosUCompileSpec.dump_intermediate_artifacts_to(self, output_path: str | None): Sets a path for dumping intermediate results during such as tosa and pte. Args: output_path: Path to dump intermediate results to. def EthosUCompileSpec.get_output_order_workaround(self) -\u003e bool: Gets whether the output order workaround is being applied. def EthosUCompileSpec.set_output_order_workaround(self, output_order_workaround: bool): Sets whether to apply the output order workaround. Args: output_order_workaround: Boolean indicating whether to apply the workaround. def EthosUCompileSpec.set_pass_pipeline_config(self, config: executorch.backends.arm.common.pipeline_config.ArmPassPipelineConfig) -\u003e None: Sets the configuration that controls how the Arm pass pipeline should behave. Subclasses may override to tweak defaults for specific targets. Args: config: The custom ArmPassPipelineConfig to set. Partitioner API# See Partitioner API for more information of the Partitioner API. Quantization# Since the Ethos-U backend is integer-only, all operators intended be executed on the NPU needs to be quantized. The Ethos-U quantizer supports Post Training Quantization (PT2E) and Quantization-Aware Training (QAT) quantization. For more information on quantization, see Quantization Runtime Integration# An example runtime application is available in examples/arm/executor_runner, and the steps requried for building and deploying it on a FVP it is explained in the previously mentioned Arm Ethos-U Backend Tutorial. The example application is recommended to use for testing basic functionality of your lowered models, as well as a starting point for developing runtime integrations for your own targets. For an in-depth explanation of the architecture of the executor_runner and the steps required for doing such an integration, please refer to Ethos-U porting guide. Example: Image classification flow# examples/arm/image_classification_example_ethos_u contains a complete DeiT-based export and runtime walkthrough. The README shows how to run model_export/export_deit.py, build the sample firmware, and convert test images into C arrays so the workflow described in this guide can be tried end to end. Ethos-U memory modes# The Ethos-U NPU provides two distinct memory interfaces: One interface for low-latency, high-bandwidth memory. On all Ethos-U NPUs(Ethos-U55, Ethos-U65, Ethos-U85), the low-latency memory is usually the SRAM of the SoC. One interface for higher-latency, lower-bandwidth memory, typically external (off-chip) memory. On a low-power microcontroller, the external memory is usually Flash. On systems with Arm\u00ae Cortex\u2122-A and a rich operating system, the external memory is typically DRAM. When running an inference, the Ethos-U compiler and Ethos-U driver make use of three logical memory regions: Ethos-U scratch buffer - a contiguous block of memory used by the NPU to store the intermediate tensors produced and consumed during inference. Neural Network - a contiguous block of memory holding constant data such as weights, biases, quantization parameters required to run an inference. Ethos-U fast scratch buffer - a contiguous block of memory, assumed to reside in on-chip memory in order to hide the higher latency/lower bandwidth of external memory. Only applicable for Ethos-U65 and Ethos-U85 on systems with Cortex-A and the external memory is assumed to be DRAM. The placement of the scratch buffer and the Neural Network determine the memory mode to be used in the EthosUCompileSpec and when building the executor_runner. Three different memory modes are supported: Memory Mode Ethos-U Scratch Buffer Placement Neural Network Placement When to Use Trade-off SRAM-Only On-chip SRAM On-chip SRAM When the ML model, the Ethos-U scratch buffer and the wider software stack fit within the SRAM of the SoC Limited by SRAM size; often not feasible for larger NNs Shared-SRAM On-chip SRAM External memory (Flash/DRAM) Most common mode on Cortex-M and Ethos-U systems; balances good performance and SRAM usage Requires enough SRAM to hold the largest intermediate tensor Dedicated-SRAM External memory External memory (Flash/DRAM) Most common mode for Cortex-A and Ethos-U systems. For very large models where the peak intermediates cannot fit in SRAM Need high-bandwidth external memory to deliver good performance Here is an in-depth explanation of the different modes: 1. Sram-Only Memory Mode# Ethos-U scratch buffer resides in the SRAM. Neural Network resides in the SRAM. Ethos-U fast scratch buffer is not used. Characteristics: Provides the best performance since all the memory traffic passes via the low-latency/high-bandwidth memory. The performance uplift is especially noticeable on memory-bound workloads on the external interface. Available on Ethos-U55, Ethos-U65 and Ethos-U85. Limitations: Embedded SoCs often have limited SRAM and NNs are becoming larger. This memory mode may be unsuitable for a system running a big model relative to the amount of SRAM available on the SoC. Below, you can see a visual representation of the placement of the two logical memory regions for the Sram Only configuration. 2. Shared-Sram Memory Mode# Ethos-U scratch buffer resides in the SRAM. Neural Network resides in the External memory. Ethos-U fast scratch buffer is not used. Characteristics: Intermediate tensors are stored in the SRAM, leveraging its low-latency and high-bandwidth. The Ethos-U compiler can prefetch weights from the external memory to the SRAM ahead of time so that when the NPU needs the data, it will already be avaialbe in the on-chip memory. In this mode, the external interface is Read-Only, the on-chip memory interface is Read/Write Shared-Sram offers great balance between performance and low SRAM usage. Available on Ethos-U55, Ethos-U65 and Ethos-U85. Limitations: You need to have enough space in the SRAM to hold the peak intermediate tensor. Below, you can see a visual representation of the placement of the two logical memory regions for the Shared_Sram configuration. 3. Dedicated-Sram Memory Mode# Ethos-U scratch buffer resides in the External memory. Neural Network resides in the External memory. Ethos-U fast scratch buffer resides in the on-chip memory. Characteristics: Used when the peak intermediate tensor is too big to fit into the on-chip memory. Enables silicon acceleration of large models. The NPU stores the results from the intermediate computations in the external memory. The dedicated SRAM acts as a software managed cache, improving performance by pre-fetching frequently accessed tensors to the on-chip memory. Available on Ethos-U65 and Ethos-U85. Limitations: The SRAM space must be dedicated exculisely to the Ethos-U(the host processor should not access it). Not available on Ethos-U55. Below, you can see a visual representation of the placement of the two logical memory regions for the Shared_Sram configuration. The memory modes are defined within the vela.ini file. When you install ExecuTorch for the Ethos-U backend, you automatically install the compiler containing the vela.ini file so you can directly create a compile specification with these memory modes. Reference# \u2192Partitioner API \u2014 Partitioner options. \u2192Quantization \u2014 Supported quantization schemes. \u2192Arm Ethos-U Troubleshooting \u2014 Troubleshooting and common issues. \u2192Arm Ethos-U Backend Tutorials \u2014 Tutorials. \u2192EdgeIR Operator support for the U55 backend \u2014 Ethos-U55 supported operators. \u2192EdgeIR Operator support for the U85 backend \u2014 Ethos-U85 supported operators.",
        "author": {
          "@type": "Organization",
          "name": "PyTorch Contributors",
