@@ -3,7 +3,7 @@ load(
     "ANDROID",
 )
 load("@fbsource//xplat/executorch/build:runtime_wrapper.bzl", "get_oss_build_kwargs", "runtime")
-load("@fbsource//xplat/executorch/backends/qualcomm/qnn_version.bzl", "get_qnn_library_version")
+load("@fbsource//xplat/executorch/backends/qualcomm/third-party:third_party_libs.bzl", "qnn_third_party_dep")
 
 def define_common_targets():
     runtime.cxx_library(
@@ -24,7 +24,7 @@ def define_common_targets():
             "//executorch/extension/llm/runner:stats",
             "//executorch/extension/tensor:tensor",
              "//executorch/kernels/quantized:generated_lib",
-            "fbsource//third-party/qualcomm/qnn/qnn-{0}:api".format(get_qnn_library_version()),
+            qnn_third_party_dep("api"),
         ],
         exported_deps = [
             "//executorch/extension/module:module",

@@ -1,10 +1,11 @@
 # Copyright (c) Meta Platforms, Inc. and affiliates.
 # All rights reserved.
+# Copyright 2026 Arm Limited and/or its affiliates.
 #
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
 
-from typing import cast, Dict, List
+from typing import cast, Dict
 
 import torch
 from executorch.backends.xnnpack.operators.node_visitor import (
@@ -18,16 +19,17 @@ from executorch.backends.xnnpack.serialization.xnnpack_graph_schema import (
     XNNGraph,
     XNode,
 )
+from executorch.backends.xnnpack.utils.utils import normalize_mean_dims
 from executorch.backends.xnnpack.utils.xnnpack_constants import XNN_FLAG_KEEP_DIMS
 
 
 @register_node_visitor
 class MeanDim(NodeVisitor):
     """
-    XNNPACK only supports a special case of mean dim in which the operation can be written
-    as Global Average Pooling. In order to be handled by xnnpack the input tensor must be 4d,
-    the dimensions to reduce must be the two innermost (-1, -2) or (-2, -1). and the flag
-    for keepdim must be set to True.
+    XNNPACK only supports the special case of mean.dim that can be lowered
+    to Global Average Pooling. The input tensor must be 4D, keepdim must be
+    True, and the reduced dimensions must normalize to [2, 3] (for example
+    [2, 3], [3, 2], [-1, -2], or [-2, -1]).
     """
 
     target = "aten.mean.dim"
@@ -51,10 +53,22 @@ class MeanDim(NodeVisitor):
         # output
         output_id = vals_to_ids[node]
 
-        # mean dims
-        mean_dims = cast(List[int], node.args[1])
+        input_shape = get_tensor_value(xnn_graph.xvalues[input_id]).dims
         check_or_raise(
-            mean_dims == [-1, -2] or mean_dims == [-2, -1],
+            len(input_shape) == 4, "Require input to mean.dim be 4 dimensional"
+        )
+
+        # This visitor serializes mean.dim as Global Average Pooling, which has
+        # no field for an explicit dtype override.
+        check_or_raise(
+            node.kwargs.get("dtype") is None,
+            "XNNPACK does not support mean.dim with dtype",
+        )
+
+        # mean dims
+        mean_dims = normalize_mean_dims(node.args[1], len(input_shape))
+        check_or_raise(
+            sorted(mean_dims) == [2, 3],
             "XNNPACK only supports mean.dim across the innermost dimensions",
         )
 
@@ -62,11 +76,6 @@ class MeanDim(NodeVisitor):
         check_or_raise(
             len(node.args) == 3 and bool(node.args[2]),
             "XNNPACK only supports mean.dim that keeps dims",
-        )
-
-        input_shape = get_tensor_value(xnn_graph.xvalues[input_id]).dims
-        check_or_raise(
-            len(input_shape) == 4, "Require input to mean.dim be 4 dimensional"
         )
 
         ser_node = XNode(
