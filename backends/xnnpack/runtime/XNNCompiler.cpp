@@ -10,6 +10,7 @@
 #include <executorch/backends/xnnpack/runtime/XNNHeader.h>
 #include <executorch/backends/xnnpack/serialization/schema_generated.h>
 #include <executorch/extension/threadpool/threadpool.h>
+#include <executorch/runtime/core/span.h>
 #include <executorch/runtime/executor/pte_data_map.h>
 #include <xnnpack.h>
 #include <string>
@@ -29,6 +30,7 @@ using executorch::runtime::Error;
 using executorch::runtime::FreeableBuffer;
 using executorch::runtime::MemoryAllocator;
 using executorch::runtime::Result;
+using executorch::runtime::Span;
 
 /*
  * Provide compile-time allocation.
@@ -178,12 +180,12 @@ when the tensor has no associated constant data.
 Result<const uint8_t*> getConstantDataPtr(
     uint32_t buffer_idx,
     GraphPtr flatbuffer_graph,
-    const uint8_t* constant_data_ptr,
+    Span<const uint8_t> constant_data,
     const NamedDataMap* named_data_map,
     std::vector<FreeableBuffer>& freeable_buffers,
     XNNWeightsCache* weights_cache) {
   if (buffer_idx) {
-    if (!constant_data_ptr) {
+    if (!constant_data.data()) {
       // TODO(T172265611): Remove constant_buffer in flatbuffer path after BC
       // window
       auto* cb = flatbuffer_graph->constant_buffer();
@@ -223,7 +225,14 @@ Result<const uint8_t*> getConstantDataPtr(
           constant_data_offset, fb_xnnpack::ConstantDataOffset::VT_NAMED_KEY);
       // If there is no tensor name
       if (!has_named_key) {
-        return constant_data_ptr + offset;
+        ET_CHECK_OR_RETURN_ERROR(
+            offset <= constant_data.size(),
+            InvalidProgram,
+            "constant_data offset %" PRIu64
+            " out of bounds for constant_data of size %zu",
+            offset,
+            constant_data.size());
+        return constant_data.data() + offset;
       } else {
         ET_CHECK_OR_RETURN_ERROR(
             constant_data_offset->named_key() != nullptr,
@@ -264,14 +273,14 @@ Result<const uint8_t*> getConstantDataPtr(
 Result<const uint8_t*> getConstantDataPtr(
     const fb_xnnpack::XNNTensorValue* tensor_value,
     GraphPtr flatbuffer_graph,
-    const uint8_t* constant_data_ptr,
+    Span<const uint8_t> constant_data,
     const NamedDataMap* named_data_map,
     std::vector<FreeableBuffer>& freeable_buffers,
     XNNWeightsCache* weights_cache) {
   return getConstantDataPtr(
       tensor_value->constant_buffer_idx(),
       flatbuffer_graph,
-      constant_data_ptr,
+      constant_data,
       named_data_map,
       freeable_buffers,
       weights_cache);
@@ -287,7 +296,7 @@ Error defineTensor(
     std::unordered_map<uint32_t, uint32_t>& remapped_ids,
     ValuePtr value,
     GraphPtr flatbuffer_graph,
-    const uint8_t* constant_data_ptr,
+    Span<const uint8_t> constant_data,
     std::vector<uint32_t>& input_ids,
     std::vector<uint32_t>& output_ids,
     CompileAllocator& allocator,
@@ -344,7 +353,7 @@ Error defineTensor(
   auto buffer_result = getConstantDataPtr(
       tensor_value,
       flatbuffer_graph,
-      constant_data_ptr,
+      constant_data,
       named_data_map,
       freeable_buffers,
       weights_cache);
@@ -499,7 +508,7 @@ Error defineTensor(
           auto scale_result = getConstantDataPtr(
               qparams->scale_buffer_idx(),
               flatbuffer_graph,
-              constant_data_ptr,
+              constant_data,
               named_data_map,
               freeable_buffers,
               weights_cache);
@@ -545,7 +554,7 @@ Error defineTensor(
           auto scale_data_result = getConstantDataPtr(
               qparams->scale_buffer_idx(),
               flatbuffer_graph,
-              constant_data_ptr,
+              constant_data,
               named_data_map,
               freeable_buffers,
               weights_cache);
@@ -1979,8 +1988,9 @@ ET_NODISCARD Error XNNCompiler::compileModel(
     const NamedDataMap* named_data_map) {
   Result<XNNHeader> header = XNNHeader::Parse(buffer_pointer, num_bytes);
   const uint8_t* flatbuffer_data = nullptr;
-  const uint8_t* constant_data = nullptr;
+  const uint8_t* constant_data_ptr = nullptr;
   size_t flatbuffer_size = 0;
+  size_t constant_data_size = 0;
   CompileAllocator compile_allocator;
 
   // Header status can only either be Error::Ok or Error::NotFound
@@ -1988,8 +1998,9 @@ ET_NODISCARD Error XNNCompiler::compileModel(
     flatbuffer_data = reinterpret_cast<const uint8_t*>(buffer_pointer) +
         header->flatbuffer_offset;
     flatbuffer_size = header->flatbuffer_size;
-    constant_data = reinterpret_cast<const uint8_t*>(buffer_pointer) +
+    constant_data_ptr = reinterpret_cast<const uint8_t*>(buffer_pointer) +
         header->constant_data_offset;
+    constant_data_size = header->constant_data_size;
   } else if (header.error() == Error::NotFound) {
     flatbuffer_data = reinterpret_cast<const uint8_t*>(buffer_pointer);
     flatbuffer_size = num_bytes;
@@ -2074,6 +2085,7 @@ ET_NODISCARD Error XNNCompiler::compileModel(
   std::vector<uint32_t> input_ids;
   std::vector<uint32_t> output_ids;
   Error err = Error::Ok;
+  Span<const uint8_t> constant_data(constant_data_ptr, constant_data_size);
   for (auto value : *flatbuffer_graph->xvalues()) {
     err = defineTensor(
         subgraph.get(),
