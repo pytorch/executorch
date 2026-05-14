@@ -364,6 +364,42 @@ Result<int64_t> MethodMeta::memory_planned_buffer_size(size_t index) const {
   return size;
 }
 
+Result<etensor::Device> MethodMeta::memory_planned_buffer_device(
+    size_t index) const {
+  auto num_buffers = this->num_memory_planned_buffers();
+  ET_CHECK_OR_RETURN_ERROR(
+      index < num_buffers,
+      InvalidArgument,
+      "index %zu out of range. num_buffers: %zu",
+      index,
+      num_buffers);
+
+  // The non_const_buffer_device field is optional and only present when the
+  // program contains non-CPU buffers. For CPU-only programs (or legacy PTE
+  // files), this field is null and all buffers default to CPU.
+  auto* buffer_devices = s_plan_->non_const_buffer_device();
+  if (buffer_devices == nullptr) {
+    return etensor::Device{etensor::DeviceType::CPU, 0};
+  }
+
+  // The sparse list only contains entries for non-CPU buffers.
+  // buffer_idx uses the same indexing as non_const_buffer_sizes (1-based,
+  // with index 0 reserved). The user-facing index is 0-based, so we
+  // compare against index + 1.
+  const auto internal_idx = static_cast<int32_t>(index + 1);
+  for (size_t i = 0; i < buffer_devices->size(); ++i) {
+    auto entry = buffer_devices->Get(i);
+    if (entry->buffer_idx() == internal_idx) {
+      return etensor::Device{
+          static_cast<etensor::DeviceType>(entry->device_type()),
+          static_cast<etensor::DeviceIndex>(entry->device_index())};
+    }
+  }
+
+  // Not found in the sparse list — this buffer is on CPU.
+  return etensor::Device{etensor::DeviceType::CPU, 0};
+}
+
 bool MethodMeta::uses_backend(const char* backend_name) const {
   ET_CHECK_MSG(backend_name, "backend name is null");
   const auto delegates = s_plan_->delegates();
