@@ -36,6 +36,12 @@ using torch::executor::util::FileDataLoader;
 constexpr size_t kDefaultNonConstMemBytes = 32 * 1024U;
 constexpr size_t kDefaultRuntimeMemBytes = 32 * 1024U;
 
+// ET_ENABLE_DEPRECATED_CONSTANT_BUFFER is 1 by default, and
+// set to 0 in the root CMakeLists.txt for OSS builds.
+#ifndef ET_ENABLE_DEPRECATED_CONSTANT_BUFFER
+#define ET_ENABLE_DEPRECATED_CONSTANT_BUFFER 1
+#endif
+
 class MethodTest : public ::testing::Test {
  protected:
   void load_program(const char* path, const char* module_name) {
@@ -81,9 +87,11 @@ class MethodTest : public ::testing::Test {
         std::getenv("ET_MODULE_DYNAMIC_CAT_UNALLOCATED_IO_PATH"), "cat");
     load_program(std::getenv("ET_MODULE_ADD_MUL_PATH"), "add_mul");
     load_program(std::getenv("ET_MODULE_STATEFUL_PATH"), "stateful");
+#if ET_ENABLE_DEPRECATED_CONSTANT_BUFFER
     load_program(
         std::getenv("DEPRECATED_ET_MODULE_LINEAR_CONSTANT_BUFFER_PATH"),
         "linear_constant_buffer");
+#endif
 
     load_program(
         std::getenv("ET_MODULE_ADD_MUL_PROGRAM_PATH"), "add_mul_program");
@@ -310,6 +318,31 @@ TEST_F(MethodTest, AliasedIOTest) {
   }
 }
 
+TEST_F(MethodTest, SetInputRejectsOverflowingSizes) {
+  // The "cat" model (ModuleDynamicCatUnallocatedIO) has a 2D input.
+  // set_input validates numel/nbytes overflow before resize_tensor.
+  ManagedMemoryManager mmm(kDefaultNonConstMemBytes, kDefaultRuntimeMemBytes);
+  Result<Method> method = programs_["cat"]->load_method("forward", &mmm.get());
+  ASSERT_EQ(method.error(), Error::Ok);
+
+  // Create a 2D tensor with enormous sizes. On 32-bit platforms the numel
+  // multiplication overflows; on 64-bit the resize bounds check rejects it.
+  int32_t sizes[2] = {2000000000, 2000000000};
+  uint8_t dim_order[2] = {0, 1};
+  int32_t strides[2] = {1, 1};
+  executorch::aten::TensorImpl impl(
+      executorch::aten::ScalarType::Float,
+      2,
+      sizes,
+      nullptr,
+      dim_order,
+      strides);
+
+  auto input_err =
+      method->set_input(EValue(executorch::aten::Tensor(&impl)), 0);
+  EXPECT_NE(input_err, Error::Ok);
+}
+
 TEST_F(MethodTest, ConstantSegmentTest) {
   // Execute model with constants stored in segment.
   ManagedMemoryManager mmm(kDefaultNonConstMemBytes, kDefaultRuntimeMemBytes);
@@ -337,6 +370,7 @@ TEST_F(MethodTest, ConstantSegmentTest) {
   ASSERT_EQ(err, Error::Ok);
 }
 
+#if ET_ENABLE_DEPRECATED_CONSTANT_BUFFER
 TEST_F(MethodTest, ConstantBufferTest) {
   // Execute model with constants stored in the program flatbuffer.
   ManagedMemoryManager mmm(kDefaultNonConstMemBytes, kDefaultRuntimeMemBytes);
@@ -363,6 +397,7 @@ TEST_F(MethodTest, ConstantBufferTest) {
   Error err = method->execute();
   ASSERT_EQ(err, Error::Ok);
 }
+#endif // ET_ENABLE_DEPRECATED_CONSTANT_BUFFER
 
 TEST_F(MethodTest, ProgramDataSeparationTest) {
   ManagedMemoryManager mmm(kDefaultNonConstMemBytes, kDefaultRuntimeMemBytes);

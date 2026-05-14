@@ -13,7 +13,7 @@ To configure log level when building from source, specify `EXECUTORCH_ENABLE_LOG
 See [Building from Source](using-executorch-building-from-source.md) for more information.
 
 ```
-cmake -b cmake-out -DEXECUTORCH_ENABLE_LOGGING=ON -DEXECUTORCH_LOG_LEVEL=DEBUG ...
+cmake -B cmake-out -DEXECUTORCH_ENABLE_LOGGING=ON -DEXECUTORCH_LOG_LEVEL=DEBUG ...
 ```
 
 ## Platform Abstraction Layer (PAL)

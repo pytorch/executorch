@@ -325,7 +325,7 @@ class StaticAttentionTest(unittest.TestCase):
             static_config, input_len, cache_len, batch_size=batch_size
         )
         example_inputs = (
-            torch.zeros(batch_size, input_len),
+            torch.zeros(batch_size, input_len, dtype=torch.long),
             {
                 "masks": mgr.masks,
                 "freqs_cos_override": mgr.freqs_cos[:input_len],
@@ -350,7 +350,7 @@ class StaticAttentionTest(unittest.TestCase):
             static_config, input_len, cache_len, batch_size=1
         )
         example_inputs = (
-            torch.zeros(1, input_len),
+            torch.zeros(1, input_len, dtype=torch.long),
             {
                 "masks": mgr.masks,
                 "freqs_cos_override": mgr.freqs_cos[:input_len],
