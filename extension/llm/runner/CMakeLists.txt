@@ -56,12 +56,10 @@ list(APPEND runner_deps kernels_util_all_deps)
 target_link_libraries(extension_llm_runner PUBLIC ${runner_deps})
 target_link_libraries(extension_llm_runner PRIVATE $<LINK_ONLY:jinja2cpp>)
 target_include_directories(
-  extension_llm_runner PRIVATE
-  $<TARGET_PROPERTY:jinja2cpp,INTERFACE_INCLUDE_DIRECTORIES>
+  extension_llm_runner
+  PRIVATE $<TARGET_PROPERTY:jinja2cpp,INTERFACE_INCLUDE_DIRECTORIES>
 )
-target_compile_definitions(
-  extension_llm_runner PUBLIC EXECUTORCH_USE_JINJA2CPP
-)
+target_compile_definitions(extension_llm_runner PUBLIC EXECUTORCH_USE_JINJA2CPP)
 set_target_properties(
   extension_llm_runner PROPERTIES POSITION_INDEPENDENT_CODE ON
 )

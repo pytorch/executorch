@@ -1,3 +1,11 @@
+/*
+ * Copyright (c) Meta Platforms, Inc. and affiliates.
+ * All rights reserved.
+ *
+ * This source code is licensed under the BSD-style license found in the
+ * LICENSE file in the root directory of this source tree.
+ */
+
 #include <executorch/extension/llm/runner/jinja_chat_formatter.h>
 
 #include <jinja2cpp/reflected_value.h>
@@ -15,10 +23,10 @@
 namespace executorch::extension::llm {
 namespace {
 
-std::string readFileToString(const std::filesystem::path& path) {
+std::string readFileToString(const std::string& path) {
   std::ifstream file(path);
   if (!file) {
-    throw std::runtime_error("Failed to open template file: " + path.string());
+    throw std::runtime_error("Failed to open template file: " + path);
   }
   std::ostringstream buffer;
   buffer << file.rdbuf();
@@ -44,6 +52,8 @@ std::string normalizeTemplate(std::string input) {
   // (truthy when tools is defined and non-null), so we map it to a simple
   // truthy check on `tools`. Mapping to "not tools" was a bug that would
   // skip tool blocks for non-empty tools lists.
+  // Keep longer `tools is ... none` patterns before the shorter
+  // `tools is none` patterns to avoid partial replacements.
   constexpr std::array<std::pair<std::string_view, std::string_view>, 10>
       replacements = {{
           {"tools = none", "tools = []"},
@@ -55,7 +65,8 @@ std::string normalizeTemplate(std::string input) {
           {"tools is none", "not tools"},
           {"tools is None", "not tools"},
           {"messages[1:]", "messages_tail"},
-          {"{ \"output\": message.content } | tojson", "message.content | tojson"},
+          {"{ \"output\": message.content } | tojson",
+           "message.content | tojson"},
       }};
   // Handle special case that can't be constexpr due to escape sequence
   const std::pair<std::string, std::string> gemmaReplacement = {
@@ -87,9 +98,10 @@ ChatTemplateType detectTemplateType(const std::string& template_str) {
 }
 
 std::string toLower(std::string value) {
-  std::transform(value.begin(), value.end(), value.begin(), [](unsigned char c) {
-    return static_cast<char>(std::tolower(c));
-  });
+  std::transform(
+      value.begin(), value.end(), value.begin(), [](unsigned char c) {
+        return static_cast<char>(std::tolower(c));
+      });
   return value;
 }
 
@@ -129,8 +141,9 @@ JinjaChatFormatter::JinjaChatFormatter(
     const std::string& template_str,
     ChatTemplateType type)
     : template_str_(template_str), type_(type) {
-  auto tokens_it = kModelTokens.find(type_);
-  if (tokens_it != kModelTokens.end()) {
+  const auto& model_tokens = getModelTokens();
+  auto tokens_it = model_tokens.find(type_);
+  if (tokens_it != model_tokens.end()) {
     model_tokens_ = tokens_it->second;
   }
   includes_bos_ = templateIncludesBos(template_str_, model_tokens_);
@@ -139,8 +152,7 @@ JinjaChatFormatter::JinjaChatFormatter(
   auto load_result = compiled_template_->Load(normalized_template);
   if (!load_result) {
     throw std::runtime_error(
-        "Failed to parse chat template: " +
-        load_result.error().ToString());
+        "Failed to parse chat template: " + load_result.error().ToString());
   }
 }
 
@@ -148,8 +160,9 @@ JinjaChatFormatter::~JinjaChatFormatter() = default;
 
 std::unique_ptr<JinjaChatFormatter> JinjaChatFormatter::fromTemplate(
     ChatTemplateType type) {
-  auto it = kEmbeddedTemplates.find(type);
-  if (it == kEmbeddedTemplates.end()) {
+  const auto& embedded_templates = getEmbeddedTemplates();
+  auto it = embedded_templates.find(type);
+  if (it == embedded_templates.end()) {
     throw std::runtime_error("Unsupported embedded chat template type.");
   }
   return std::unique_ptr<JinjaChatFormatter>(
@@ -164,7 +177,7 @@ std::unique_ptr<JinjaChatFormatter> JinjaChatFormatter::fromString(
 }
 
 std::unique_ptr<JinjaChatFormatter> JinjaChatFormatter::fromFile(
-    const std::filesystem::path& path) {
+    const std::string& path) {
   return fromString(readFileToString(path));
 }
 
@@ -202,6 +215,7 @@ std::string JinjaChatFormatter::formatConversation(
   // Templates that don't use these will simply ignore them.
   params["tools"] = jinja2::ValuesList();
   params["tool_choice"] = jinja2::Value();
+  // HuggingFace templates use a fixed date in their own regression fixtures.
   params["date_string"] = std::string("26 Jul 2024");
   params["chat_template_kwargs"] = jinja2::ValuesMap();
 

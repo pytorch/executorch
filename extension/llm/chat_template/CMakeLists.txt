@@ -14,31 +14,30 @@ FetchContent_Declare(
 
 set(JINJA2CPP_BUILD_TESTS
     OFF
-    CACHE BOOL ""
-          FORCE
+    CACHE BOOL "" FORCE
 )
 set(JINJA2CPP_BUILD_SHARED
     OFF
-    CACHE BOOL ""
-          FORCE
+    CACHE BOOL "" FORCE
 )
 set(JINJA2CPP_INSTALL
     OFF
-    CACHE BOOL ""
-          FORCE
+    CACHE BOOL "" FORCE
 )
 # Enable PCRE2-based regex lookahead support in Jinja2Cpp. This must be set
-# BEFORE FetchContent_MakeAvailable(jinja2cpp) so it propagates to the
-# Jinja2Cpp configure step.
+# BEFORE FetchContent_MakeAvailable(jinja2cpp) so it propagates to the Jinja2Cpp
+# configure step.
 set(SUPPORT_REGEX_LOOKAHEAD
     ON
-    CACHE BOOL ""
-          FORCE
+    CACHE BOOL "" FORCE
 )
 
 FetchContent_MakeAvailable(jinja2cpp)
 if(NOT TARGET jinja2cpp)
   message(FATAL_ERROR "Jinja2Cpp target not found after FetchContent.")
+endif()
+if(APPLE)
+  target_compile_options(jinja2cpp PRIVATE -Wno-shorten-64-to-32)
 endif()
 
 if(DEFINED jinja2cpp_SOURCE_DIR)
@@ -57,9 +56,8 @@ if(DEFINED jinja2cpp_SOURCE_DIR)
       foreach(_dir IN LISTS _include_dirs)
         if(EXISTS "${_dir}/nonstd/${header_name}")
           file(MAKE_DIRECTORY "${dest_root}/nonstd")
-          file(
-            COPY "${_dir}/nonstd/${header_name}"
-            DESTINATION "${dest_root}/nonstd"
+          file(COPY "${_dir}/nonstd/${header_name}"
+               DESTINATION "${dest_root}/nonstd"
           )
           set(_copied TRUE)
           break()
@@ -67,9 +65,8 @@ if(DEFINED jinja2cpp_SOURCE_DIR)
       endforeach()
     endif()
     if(NOT _copied)
-      set(
-        _fallback_path
-        "${CMAKE_BINARY_DIR}/_deps/${dep_name}-src/include/nonstd/${header_name}"
+      set(_fallback_path
+          "${CMAKE_BINARY_DIR}/_deps/${dep_name}-src/include/nonstd/${header_name}"
       )
       if(EXISTS "${_fallback_path}")
         file(MAKE_DIRECTORY "${dest_root}/nonstd")
@@ -78,31 +75,21 @@ if(DEFINED jinja2cpp_SOURCE_DIR)
     endif()
   endfunction()
 
-  set(_jinja2cpp_nonstd_root
-      "${jinja2cpp_SOURCE_DIR}/thirdparty/nonstd"
-  )
+  set(_jinja2cpp_nonstd_root "${jinja2cpp_SOURCE_DIR}/thirdparty/nonstd")
   executorch_copy_nonstd_header(
-    expected-lite
-    nonstd::expected-lite
-    expected.hpp
+    expected-lite nonstd::expected-lite expected.hpp
     "${_jinja2cpp_nonstd_root}/expected-lite/include"
   )
   executorch_copy_nonstd_header(
-    variant-lite
-    nonstd::variant-lite
-    variant.hpp
+    variant-lite nonstd::variant-lite variant.hpp
     "${_jinja2cpp_nonstd_root}/variant-lite/include"
   )
   executorch_copy_nonstd_header(
-    optional-lite
-    nonstd::optional-lite
-    optional.hpp
+    optional-lite nonstd::optional-lite optional.hpp
     "${_jinja2cpp_nonstd_root}/optional-lite/include"
   )
   executorch_copy_nonstd_header(
-    string-view-lite
-    nonstd::string-view-lite
-    string_view.hpp
+    string-view-lite nonstd::string-view-lite string_view.hpp
     "${_jinja2cpp_nonstd_root}/string-view-lite/include"
   )
 endif()
@@ -110,7 +97,6 @@ endif()
 # Install the chat_templates.h header so that downstream consumers of the
 # installed ExecuTorch SDK can include
 # <executorch/extension/llm/chat_template/chat_templates.h>.
-install(
-  FILES chat_templates.h
-  DESTINATION include/executorch/extension/llm/chat_template
+install(FILES chat_templates.h
+        DESTINATION include/executorch/extension/llm/chat_template
 )
