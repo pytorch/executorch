@@ -10,7 +10,7 @@
 /backends/cortex_m @rascani
 /backends/example @JacobSzwejbka @larryliu0820
 /backends/mediatek @neuropilot-captain
-/backends/qualcomm @chunit-quic @haowhsu-quic @shewu-quic @winskuo-quic @abhinaykukkadapu
+/backends/qualcomm @chunit-quic @haowhsu-quic @shewu-quic @winskuo-quic @abhinaykukkadapu @psiddh
 /backends/test
 /backends/transforms @kimishpatel
 /backends/vulkan @SS-JIA
@@ -32,7 +32,7 @@
 /examples/mediatek
 /examples/models @lucylq @jackzhxng
 /examples/portable @larryliu0820 @manuelcandales
-/examples/qualcomm @abhinaykukkadapu
+/examples/qualcomm @abhinaykukkadapu @psiddh
 /examples/selective_build @lucylq @larryliu0820 @JacobSzwejbka
 /examples/xnnpack @digantdesai @mcr229
 /examples/nxp @robert-kalmar
@@ -40,8 +40,8 @@
 /exir/backend @kimishpatel @JacobSzwejbka
 /exir @JacobSzwejbka @larryliu0820
 
-/extension/android @kirklandsign
-/extension/android_test @kirklandsign
+/extension/android @kirklandsign @psiddh
+/extension/android_test @kirklandsign @psiddh
 /extension/apple @shoumikhin
 /extension/aten_util @JacobSzwejbka
 /extension/benchmark @Gasoonjia
@@ -92,4 +92,4 @@ CMakePresets.json @larryliu0820 @kirklandsign
 
 # Tribal knowledge base ---------------------------------------------------------
 /.wiki/ @abhinaykukkadapu
-/.claude/skills/ @abhinaykukkadapu
+/.claude/skills/ @abhinaykukkadapu @psiddh
