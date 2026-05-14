@@ -12,6 +12,7 @@
 
 #include <c10/util/safe_numerics.h>
 
+#include <executorch/runtime/core/device_allocator.h>
 #include <executorch/runtime/core/exec_aten/util/tensor_util.h>
 
 namespace executorch {
@@ -25,6 +26,9 @@ namespace {
  * ensures that they are managed together and have the same lifetime as the
  * Tensor. When the Tensor is destroyed, the Storage structure ensures
  * proper cleanup of the associated metadata and data if needed.
+ *
+ * For device tensors, the data pointer points to device memory; the deleter
+ * is responsible for freeing it through the appropriate DeviceAllocator.
  */
 struct Storage final {
   executorch::aten::TensorImpl tensor_impl;
@@ -47,6 +51,11 @@ struct Storage final {
         strides(std::move(strides)),
         deleter(std::move(deleter)) {}
 
+  Storage(const Storage&) = delete;
+  Storage& operator=(const Storage&) = delete;
+  Storage(Storage&&) = delete;
+  Storage& operator=(Storage&&) = delete;
+
   ~Storage() {
     if (deleter) {
       deleter(tensor_impl.mutable_data());
@@ -63,7 +72,9 @@ TensorPtr make_tensor_ptr(
     std::vector<executorch::aten::StridesType> strides,
     executorch::aten::ScalarType type,
     executorch::aten::TensorShapeDynamism dynamism,
-    std::function<void(void*)> deleter) {
+    std::function<void(void*)> deleter,
+    runtime::etensor::DeviceType device_type,
+    runtime::etensor::DeviceIndex device_index) {
   const auto dim = sizes.size();
   ET_CHECK_MSG(
       dim_order.empty() || dim_order.size() == dim,
@@ -111,17 +122,25 @@ TensorPtr make_tensor_ptr(
       data,
       dim_order.data(),
       strides.data(),
-      dim > 0 ? dynamism : executorch::aten::TensorShapeDynamism::STATIC);
+      dim > 0 ? dynamism : executorch::aten::TensorShapeDynamism::STATIC,
+      device_type,
+      device_index);
   auto storage = std::make_shared<Storage>(
       std::move(tensor_impl),
       std::move(sizes),
       std::move(dim_order),
       std::move(strides),
       std::move(deleter));
-  const auto tensor_ptr = &storage->tensor;
+  const auto raw_tensor_ptr = &storage->tensor;
   return std::shared_ptr<executorch::aten::Tensor>(
-      std::move(storage), tensor_ptr);
+      std::move(storage), raw_tensor_ptr);
 #else
+  ET_CHECK_MSG(
+      device_type == runtime::etensor::DeviceType::CPU,
+      "USE_ATEN_LIB build does not support non-CPU device tensors via make_tensor_ptr; "
+      "got device_type=%d. Use the ExecuTorch portable build for device tensor support.",
+      static_cast<int>(device_type));
+  (void)device_index;
   auto options = c10::TensorOptions()
                      .dtype(c10::scalarTypeToTypeMeta(type))
                      .device(c10::kCPU);
@@ -270,6 +289,121 @@ runtime::Error resize_tensor_ptr(
       executorch::aten::ArrayRef<executorch::aten::SizesType>(
           sizes.data(), sizes.size()));
 }
+
+// ---- Device tensor helpers ----
+//
+// These helpers are only meaningful in the ExecuTorch portable build.
+// USE_ATEN_LIB cannot create on-device tensors via make_tensor_ptr, so cloning
+// to/from a device tensor is intentionally unsupported in that build.
+
+#ifndef USE_ATEN_LIB
+
+TensorPtr clone_tensor_ptr_to_device(
+    const TensorPtr& cpu_tensor,
+    runtime::etensor::DeviceType device_type,
+    runtime::etensor::DeviceIndex device_index) {
+  ET_CHECK_MSG(
+      device_type != runtime::etensor::DeviceType::CPU,
+      "Target device must not be CPU; use clone_tensor_ptr for CPU-to-CPU copies.");
+
+  auto* allocator = runtime::get_device_allocator(device_type);
+  ET_CHECK_MSG(
+      allocator != nullptr,
+      "No device allocator registered for device type %d",
+      static_cast<int>(device_type));
+
+  const auto nbytes = cpu_tensor->nbytes();
+  const auto* cpu_data = cpu_tensor->const_data_ptr();
+  ET_CHECK_MSG(cpu_data != nullptr, "Source tensor has no data.");
+
+  auto result = allocator->allocate(nbytes, device_index);
+  ET_CHECK_MSG(result.ok(), "Failed to allocate device memory.");
+  void* device_data = result.get();
+
+  auto err = allocator->copy_host_to_device(
+      device_data, cpu_data, nbytes, device_index);
+  ET_CHECK_MSG(err == runtime::Error::Ok, "Host-to-device copy failed.");
+
+  std::vector<executorch::aten::SizesType> sizes(
+      cpu_tensor->sizes().begin(), cpu_tensor->sizes().end());
+  std::vector<executorch::aten::DimOrderType> dim_order(
+      cpu_tensor->dim_order().begin(), cpu_tensor->dim_order().end());
+  std::vector<executorch::aten::StridesType> strides(
+      cpu_tensor->strides().begin(), cpu_tensor->strides().end());
+
+  return make_tensor_ptr(
+      std::move(sizes),
+      device_data,
+      std::move(dim_order),
+      std::move(strides),
+      cpu_tensor->scalar_type(),
+      cpu_tensor->shape_dynamism(),
+      [allocator, device_index](void* ptr) {
+        allocator->deallocate(ptr, device_index);
+      },
+      device_type,
+      device_index);
+}
+
+TensorPtr clone_tensor_ptr_to_cpu(const TensorPtr& device_tensor) {
+  const auto nbytes = device_tensor->nbytes();
+  const auto* device_data = device_tensor->const_data_ptr();
+  ET_CHECK_MSG(device_data != nullptr, "Source device tensor has no data.");
+
+  const auto device_type = device_tensor->unsafeGetTensorImpl()->device_type();
+  const auto device_index =
+      device_tensor->unsafeGetTensorImpl()->device_index();
+  ET_CHECK_MSG(
+      device_type != runtime::etensor::DeviceType::CPU,
+      "Source tensor is already on CPU.");
+
+  auto* allocator = runtime::get_device_allocator(device_type);
+  ET_CHECK_MSG(
+      allocator != nullptr,
+      "No device allocator registered for device type %d",
+      static_cast<int>(device_type));
+
+  std::vector<uint8_t> cpu_data(nbytes);
+
+  auto err = allocator->copy_device_to_host(
+      cpu_data.data(), device_data, nbytes, device_index);
+  ET_CHECK_MSG(err == runtime::Error::Ok, "Device-to-host copy failed.");
+
+  std::vector<executorch::aten::SizesType> sizes(
+      device_tensor->sizes().begin(), device_tensor->sizes().end());
+  std::vector<executorch::aten::DimOrderType> dim_order(
+      device_tensor->dim_order().begin(), device_tensor->dim_order().end());
+  std::vector<executorch::aten::StridesType> strides(
+      device_tensor->strides().begin(), device_tensor->strides().end());
+
+  return make_tensor_ptr(
+      std::move(sizes),
+      std::move(cpu_data),
+      std::move(dim_order),
+      std::move(strides),
+      device_tensor->scalar_type());
+}
+
+#else // USE_ATEN_LIB
+
+TensorPtr clone_tensor_ptr_to_device(
+    const TensorPtr& /*cpu_tensor*/,
+    runtime::etensor::DeviceType /*device_type*/,
+    runtime::etensor::DeviceIndex /*device_index*/) {
+  ET_CHECK_MSG(
+      false,
+      "clone_tensor_ptr_to_device is not supported in USE_ATEN_LIB builds; "
+      "make_tensor_ptr cannot create on-device aten tensors.");
+}
+
+TensorPtr clone_tensor_ptr_to_cpu(const TensorPtr& /*device_tensor*/) {
+  ET_CHECK_MSG(
+      false,
+      "clone_tensor_ptr_to_cpu is not supported in USE_ATEN_LIB builds; "
+      "make_tensor_ptr cannot create on-device aten tensors.");
+}
+
+#endif // USE_ATEN_LIB
 
 } // namespace extension
 } // namespace executorch
