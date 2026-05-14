@@ -338,6 +338,85 @@ class TestCoreMLPartitioner(unittest.TestCase):
                 torch.allclose(et_outputs, eager_outputs, atol=1e-02, rtol=1e-02)
             )
 
+    def test_unsupported_dtype_uint8_user_input_falls_back(self):
+        """
+        Regression test for https://github.com/pytorch/executorch/issues/11686.
+
+        coremltools' converter aborts with a ``KeyError`` from
+        ``TORCH_DTYPE_TO_MIL_DTYPE`` when a user-input placeholder uses an
+        unsupported dtype.  The partitioner must reject any node whose user
+        inputs trip that map so the op falls back to the portable backend.
+        """
+
+        class Model(torch.nn.Module):
+            def forward(self, x):
+                return torch.abs(x)
+
+        ep = torch.export.export(
+            Model().eval(),
+            (torch.randint(0, 255, (1, 10)).to(torch.uint8),),
+            strict=True,
+        )
+        edge = executorch.exir.to_edge_transform_and_lower(
+            ep, partitioner=[CoreMLPartitioner()]
+        )
+
+        op_names = [
+            n.target.__name__
+            for n in edge.exported_program().graph.nodes
+            if n.op == "call_function"
+        ]
+        self.assertNotIn("executorch_call_delegate", op_names)
+        self.assertIn("aten.abs.default", op_names)
+
+    def test_unsupported_dtype_supported_user_input_is_delegated(self):
+        """Positive guard: a graph whose user inputs are all valid CoreML
+        dtypes should still be delegated.  This catches the failure mode
+        where a too-aggressive dtype check rejects fp32 graphs."""
+
+        class Model(torch.nn.Module):
+            def forward(self, x):
+                return torch.abs(x)
+
+        ep = torch.export.export(Model().eval(), (torch.randn(1, 10),), strict=True)
+        edge = executorch.exir.to_edge_transform_and_lower(
+            ep, partitioner=[CoreMLPartitioner()]
+        )
+        op_names = [
+            n.target.__name__
+            for n in edge.exported_program().graph.nodes
+            if n.op == "call_function"
+        ]
+        self.assertIn("executorch_call_delegate", op_names)
+        self.assertNotIn("aten.abs.default", op_names)
+
+    def test_unsupported_dtype_mixed_user_inputs(self):
+        """A graph with one supported user input (fp32) and one unsupported
+        (uint8) — only the ops that consume the bad input should fall back."""
+
+        class Model(torch.nn.Module):
+            def forward(self, x_fp32, x_uint8):
+                a = torch.relu(x_fp32)
+                b = torch.abs(x_uint8)
+                return a, b
+
+        ep = torch.export.export(
+            Model().eval(),
+            (torch.randn(4, 4), torch.randint(0, 255, (4, 4)).to(torch.uint8)),
+            strict=True,
+        )
+        edge = executorch.exir.to_edge_transform_and_lower(
+            ep, partitioner=[CoreMLPartitioner()]
+        )
+        op_names = [
+            n.target.__name__
+            for n in edge.exported_program().graph.nodes
+            if n.op == "call_function"
+        ]
+        # The fp32 branch (relu) is delegated; the uint8 branch (abs) falls back.
+        self.assertIn("executorch_call_delegate", op_names)
+        self.assertIn("aten.abs.default", op_names)
+
     def test_deprecation_warning_for_to_backend_workflow(self):
         """
         Test that the deprecated to_edge + to_backend workflow shows a deprecation warning.
@@ -435,5 +514,8 @@ if __name__ == "__main__":
     test_runner.test_lower_full_graph()
     # test_runner.test_symint_arg()
     test_runner.test_take_over_constant_data_false()
+    test_runner.test_unsupported_dtype_uint8_user_input_falls_back()
+    test_runner.test_unsupported_dtype_supported_user_input_is_delegated()
+    test_runner.test_unsupported_dtype_mixed_user_inputs()
     test_runner.test_deprecation_warning_for_to_backend_workflow()
     test_runner.test_no_warning_for_to_edge_transform_and_lower_workflow()
