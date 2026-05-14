@@ -141,7 +141,7 @@ JinjaChatFormatter::JinjaChatFormatter(
     const std::string& template_str,
     ChatTemplateType type)
     : template_str_(template_str), type_(type) {
-  const auto& model_tokens = getModelTokens();
+  const auto& model_tokens = ::executorch::extension::llm::getModelTokens();
   auto tokens_it = model_tokens.find(type_);
   if (tokens_it != model_tokens.end()) {
     model_tokens_ = tokens_it->second;
