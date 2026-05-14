@@ -12,19 +12,20 @@ Computer vision deployments depend on the boundary between the app and the expor
 
 ExecuTorch runs the graph that you export. It does not infer image layout, resize policy, label mappings, or task-specific post-processing from the model file.
 
-## Put preprocessing in the model when it must be identical
+## Choose where preprocessing runs
 
-For many CV models, resize, dtype conversion, and normalization should behave exactly the same in test code and in the app. If the operations are exportable and do not rely on platform image APIs, wrap the PyTorch module before export.
+Treat preprocessing placement as part of the backend contract. Keep platform-dependent image work, such as decoding, orientation handling, resizing, cropping, and UI-driven transforms, in the app. Put tensor-only preprocessing in the exported graph when matching the PyTorch reference exactly is more important and the operations are supported by the target backend.
 
-This example accepts `uint8` `NCHW` RGB input, converts it to `float32`, resizes it, center-crops it, normalizes it, and then calls the image classifier.
+For Core ML deployments, fixed-shape model inputs are often preferable. The Core ML backend documentation notes that true dynamic shapes use `RangeDim` and fall back to CPU or GPU instead of the Apple Neural Engine (ANE). When targeting the ANE, resize or crop images with iOS image APIs before tensor creation, or use enumerated shapes when the model needs a finite set of input sizes. See {doc}`backends/coreml/coreml-partitioner` for details.
+
+This example accepts already resized and cropped `float32` `NCHW` RGB input in `[0, 1]`, normalizes it, and then calls the image classifier.
 
 ```python
 import torch
 from torch import nn
-import torch.nn.functional as F
 
 
-class ImageClassifierWithPreprocess(nn.Module):
+class ImageClassifierWithNormalization(nn.Module):
     def __init__(self, model: nn.Module) -> None:
         super().__init__()
         self.model = model
@@ -38,26 +39,18 @@ class ImageClassifierWithPreprocess(nn.Module):
         )
 
     def forward(self, image: torch.Tensor) -> torch.Tensor:
-        image = image.to(dtype=torch.float32).div(255.0)
-        image = F.interpolate(
-            image,
-            size=(256, 256),
-            mode="bilinear",
-            align_corners=False,
-        )
-        image = image[:, :, 16:240, 16:240]
         image = (image - self.mean) / self.std
         return self.model(image)
 
 
-wrapped_model = ImageClassifierWithPreprocess(model).eval()
-sample_inputs = (torch.zeros(1, 3, 320, 320, dtype=torch.uint8),)
+wrapped_model = ImageClassifierWithNormalization(model).eval()
+sample_inputs = (torch.zeros(1, 3, 224, 224, dtype=torch.float32),)
 exported_program = torch.export.export(wrapped_model, sample_inputs)
 ```
 
-Keep preprocessing outside the model when it is better owned by the application, such as camera orientation, EXIF handling, platform-native decoding, user-selected crop rectangles, or UI-specific resizing. In that case, validate the app-side preprocessing against the same PyTorch preprocessing used during export.
+Validate app-side preprocessing against the same PyTorch preprocessing used during export. For example, if the app resizes and crops before creating the tensor, keep a small reference test that compares the packed tensor or final model output with the PyTorch path.
 
-If the model expects a crop after resizing, keep that policy in exactly one place. A fixed center crop can be implemented in the wrapper with tensor slicing after `interpolate`; camera- or UI-dependent crops are usually easier to apply before packing pixels into the input tensor.
+If the model expects a crop after resizing, keep that policy in exactly one place. A fixed center crop can be implemented in the wrapper for backends where those tensor operations preserve the desired delegation. Camera- or UI-dependent crops, and iOS/Core ML paths that should keep ANE-friendly static shapes, are usually better handled before packing pixels into the input tensor.
 
 ## Convert images to tensors in app code
 
@@ -65,7 +58,7 @@ Most mobile image APIs expose decoded pixels as interleaved rows. Most PyTorch v
 
 ### Android
 
-The following Kotlin helper resizes a `Bitmap`, reads RGB pixels, applies ImageNet-style normalization, and packs the result as `NCHW` `float32` data for `Tensor.fromBlob`.
+For production Android preprocessing, handle decoding, EXIF orientation, and camera-specific transforms before packing pixels into the input tensor. The following Kotlin helper keeps the layout conversion explicit: it resizes a `Bitmap`, reads RGB pixels, applies ImageNet-style normalization, and packs the result as `NCHW` `float32` data for `Tensor.fromBlob`.
 
 ```kotlin
 import android.graphics.Bitmap
@@ -75,7 +68,7 @@ fun bitmapToNchwTensor(
     bitmap: Bitmap,
     size: Int,
     mean: FloatArray = floatArrayOf(0.485f, 0.456f, 0.406f),
-    std: FloatArray = floatArrayOf(0.229f, 0.224f, 0.225f),
+    std: FloatArray = floatArrayOf(0.229f, 0.224f, 0.225f)
 ): Tensor {
     val resized = Bitmap.createScaledBitmap(bitmap, size, size, true)
     val pixels = IntArray(size * size)
@@ -101,17 +94,20 @@ If the exported model accepts `uint8` image bytes instead, use `Tensor.fromBlobU
 
 ```kotlin
 val inputBytes = ByteArray(3 * width * height)
+// Pack bytes in the same layout expected by the model. For NCHW RGB,
+// write all red values, then green values, then blue values.
 val inputTensor = Tensor.fromBlobUnsigned(
     inputBytes,
-    longArrayOf(1, 3, height.toLong(), width.toLong()),
+    longArrayOf(1, 3, height.toLong(), width.toLong())
 )
 ```
 
 ### iOS
 
-The following Swift helper draws a `UIImage` into an RGB buffer, normalizes it, and creates a channels-first `Tensor<Float>`.
+For production iOS preprocessing, prefer platform image APIs and Accelerate, such as vImage for resizing and color conversion and vDSP for normalization, especially for camera frames or other hot paths. The following Swift helper keeps the layout conversion explicit so the tensor contract is easy to inspect: it draws a `UIImage` into a fixed-size RGB buffer, uses vDSP to normalize RGB channels, and creates a channels-first `Tensor<Float>`.
 
 ```swift
+import Accelerate
 import CoreGraphics
 import ExecuTorch
 import UIKit
@@ -122,7 +118,8 @@ func imageToNchwTensor(
   mean: [Float] = [0.485, 0.456, 0.406],
   std: [Float] = [0.229, 0.224, 0.225]
 ) -> Tensor<Float>? {
-  guard let cgImage = image.cgImage else {
+  guard size > 0, mean.count == 3, std.count == 3,
+        let cgImage = image.cgImage else {
     return nil
   }
 
@@ -151,23 +148,32 @@ func imageToNchwTensor(
     return nil
   }
 
+  let count = vDSP_Length(pixelCount)
   var input = [Float](repeating: 0, count: 3 * pixelCount)
-  for i in 0..<pixelCount {
-    let base = 4 * i
-    let r = Float(rgba[base]) / 255.0
-    let g = Float(rgba[base + 1]) / 255.0
-    let b = Float(rgba[base + 2]) / 255.0
+  rgba.withUnsafeBufferPointer { rgbaBuffer in
+    input.withUnsafeMutableBufferPointer { inputBuffer in
+      guard let rgbaBase = rgbaBuffer.baseAddress,
+            let inputBase = inputBuffer.baseAddress else {
+        return
+      }
 
-    input[i] = (r - mean[0]) / std[0]
-    input[pixelCount + i] = (g - mean[1]) / std[1]
-    input[2 * pixelCount + i] = (b - mean[2]) / std[2]
+      for channel in 0..<3 {
+        let source = rgbaBase.advanced(by: channel)
+        let destination = inputBase.advanced(by: channel * pixelCount)
+        var scale = 1.0 / (255.0 * std[channel])
+        var bias = -mean[channel] / std[channel]
+
+        vDSP_vfltu8(source, 4, destination, 1, count)
+        vDSP_vsmsa(destination, 1, &scale, &bias, destination, 1, count)
+      }
+    }
   }
 
   return Tensor<Float>(input, shape: [1, 3, size, size])
 }
 ```
 
-If your model is exported for `NHWC`, keep the same decoded pixels but pack them in row-major `[height, width, channels]` order and use shape `[1, height, width, 3]`.
+On either platform, if your model is exported for `NHWC`, keep the same decoded pixels but pack them in row-major `[height, width, channels]` order and use shape `[1, height, width, 3]`.
 
 ## Decode common CV outputs
 
