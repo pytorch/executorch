@@ -23,6 +23,7 @@ def _make_symint(
 ) -> torch.SymInt:
     """Create a symbolic dimension backed by the provided ShapeEnv."""
     symint = shape_env.create_symintnode(sympy.Symbol(symbol), hint=hint)
+    assert isinstance(symint, torch.SymInt)
     symbol_expr = symint.node.expr
     shape_env.constrain_symbol_range(symbol_expr, compiler_min=min, compiler_max=max)
     return symint

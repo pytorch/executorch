@@ -189,6 +189,9 @@ if(NOT EXECUTORCH_ENABLE_PROGRAM_VERIFICATION)
   add_definitions(-DET_ENABLE_PROGRAM_VERIFICATION=0)
 endif()
 
+# Disable the deprecated constant_buffer path.
+add_definitions(-DET_ENABLE_DEPRECATED_CONSTANT_BUFFER=0)
+
 if(EXECUTORCH_ENABLE_EVENT_TRACER)
   add_definitions(-DET_EVENT_TRACER_ENABLED)
 endif()

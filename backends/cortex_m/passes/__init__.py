@@ -36,6 +36,7 @@ _ensure_cortex_m_dependencies()
 from .activation_fusion_pass import ActivationFusionPass  # noqa
 from .clamp_hardswish_pass import ClampHardswishPass  # noqa
 from .convert_to_cortex_m_pass import ConvertToCortexMPass  # noqa
+from .cortex_m_pass import CortexMPass  # noqa
 from .decompose_hardswish_pass import DecomposeHardswishPass  # noqa
 from .decompose_mean_pass import DecomposeMeanPass  # noqa
 from .quantized_clamp_activation_pass import QuantizedClampActivationPass  # noqa
