@@ -380,6 +380,11 @@ jobs:
 
         ARM_TEST=${{ matrix.test_arm_baremetal }}
 
+        # Output test report on pytest runs so that github can surface failing tests.
+        if [[ -n "${RUNNER_TEST_RESULTS_DIR:-}" ]]; then
+              export PYTEST_ADDOPTS="--junit-xml=${RUNNER_TEST_RESULTS_DIR}/${ARM_TEST}.xml ${PYTEST_ADDOPTS:-}"
+        fi
+
         # Test test_arm_baremetal.sh with test
         backends/arm/test/test_arm_baremetal.sh "${ARM_TEST}"
 
@@ -414,6 +419,11 @@ jobs:
         sudo sysctl fs.inotify.max_user_watches=1048576 # 1024 * 1024
 
         ARM_TEST=${{ matrix.test_arm_baremetal }}
+
+        # Output test report on pytest runs so that github can surface failing tests.
+        if [[ -n "${RUNNER_TEST_RESULTS_DIR:-}" ]]; then
+          export PYTEST_ADDOPTS="--junit-xml=${RUNNER_TEST_RESULTS_DIR}/${ARM_TEST}.xml ${PYTEST_ADDOPTS:-}"
+        fi
 
         backends/arm/test/test_arm_baremetal.sh "${ARM_TEST}"
 

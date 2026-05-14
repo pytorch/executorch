@@ -8,11 +8,16 @@
 
 #import "ExecuTorchModule.h"
 
+#import "ExecuTorchBackendOption.h"
+#import "ExecuTorchBackendOptionsMap.h"
+#import "ExecuTorchBackendOptionsMap+Internal.h"
 #import "ExecuTorchError.h"
 #import "ExecuTorchUtils.h"
 
 #import <executorch/extension/module/module.h>
 #import <executorch/extension/tensor/tensor.h>
+#import <executorch/runtime/backend/backend_options_map.h>
+#import <executorch/runtime/backend/options.h>
 
 using namespace executorch::extension;
 using namespace executorch::runtime;
@@ -247,6 +252,27 @@ static inline ExecuTorchValue *toExecuTorchValue(EValue value) NS_RETURNS_RETAIN
   std::unique_ptr<Module> _module;
   NSMutableDictionary<NSString *, NSMutableArray<ExecuTorchValue *> *> *_inputs;
   NSMutableDictionary<NSString *, NSMutableArray<ExecuTorchValue *> *> *_outputs;
+  // Strong reference to the most recently passed BackendOptionsMap. The
+  // C++ Module borrows a pointer into the map's underlying C++ storage and
+  // dereferences it during lazy load_method calls (triggered by forward),
+  // so the ObjC wrapper must keep it alive. ARC handles the lifetime.
+  //
+  // INVARIANT: this ivar is only ever overwritten with another non-nil
+  // BackendOptionsMap, and never reset to nil while `_module` is alive.
+  // Resetting to nil would release the C++ map while `_module` still holds
+  // a borrowed pointer into it.
+  //
+  // THREAD SAFETY: like the rest of `ExecuTorchModule`, write access here
+  // is not thread-safe. The ARC retain/release on assignment is non-atomic
+  // for direct ivars; serialize `loadWithOptions:` calls externally if you
+  // share a `Module` across threads.
+  //
+  // TODO: remove this ivar once the C++ Module owns its LoadBackendOptionsMap
+  // by value (today it borrows a raw pointer). With owned options the ObjC
+  // wrapper has nothing to retain, the thread-safety caveat above goes
+  // away, and -loadMethod:options: / -loadWithOptions: stop needing a
+  // custom lifetime contract between the bindings and the C++ layer.
+  ExecuTorchBackendOptionsMap *_loadedBackendOptions;
 }
 
 - (instancetype)initWithFilePath:(NSString *)filePath
@@ -315,6 +341,80 @@ static inline ExecuTorchValue *toExecuTorchValue(EValue value) NS_RETURNS_RETAIN
 - (BOOL)loadMethod:(NSString *)methodName
              error:(NSError **)error {
   const auto errorCode = _module->load_method(methodName.UTF8String);
+  if (errorCode != Error::Ok) {
+    if (error) {
+      *error = ExecuTorchErrorWithCode((ExecuTorchErrorCode)errorCode);
+    }
+    return NO;
+  }
+  return YES;
+}
+
+- (BOOL)loadWithOptions:(ExecuTorchBackendOptionsMap *)options
+           verification:(ExecuTorchVerification)verification
+                  error:(NSError **)error {
+  NSParameterAssert(options);
+  // Retain the options object so the C++ borrowed pointer it contains stays
+  // valid for the lifetime of any methods loaded with these options.
+  // (Methods load lazily during forward(), so the borrow may outlive this
+  // call.) See ExecuTorchBackendOptionsMap.h for the lifetime contract.
+  //
+  // No rollback on failure: Module::load updates its backend_options_ raw
+  // pointer BEFORE attempting load_internal, so after a failed call the
+  // C++ side already references `options`. The ObjC retain therefore
+  // always matches what C++ points at, even on the failure path — a
+  // two-phase commit here would instead leave C++ pointing at a map the
+  // wrapper no longer retains. See:
+  // https://github.com/pytorch/executorch/blob/6412f55a54dd3ce1f4ed220a3e96ee19b8f37967/extension/module/module.cpp#L192-L197
+  //
+  // TODO: once Module::load is made transactional (i.e. it only commits
+  // `backend_options_` after load_internal succeeds), replace the
+  // unconditional assignment below with a proper two-phase commit that
+  // only overwrites _loadedBackendOptions on success. This removes the
+  // "match C++'s unconditional write" workaround documented above.
+  _loadedBackendOptions = options;
+  const auto errorCode = _module->load(*[options cppMap],
+                                        static_cast<Program::Verification>(verification));
+  if (errorCode != Error::Ok) {
+    if (error) {
+      *error = ExecuTorchErrorWithCode((ExecuTorchErrorCode)errorCode);
+    }
+    return NO;
+  }
+  return YES;
+}
+
+- (BOOL)loadWithOptions:(ExecuTorchBackendOptionsMap *)options
+                  error:(NSError **)error {
+  return [self loadWithOptions:options
+                  verification:ExecuTorchVerificationMinimal
+                         error:error];
+}
+
+- (BOOL)loadMethod:(NSString *)methodName
+           options:(ExecuTorchBackendOptionsMap *)options
+             error:(NSError **)error {
+  NSParameterAssert(options);
+  // Do NOT assign to _loadedBackendOptions here. Module::load_method
+  // consumes `backend_options` synchronously within this call — it is
+  // passed through to program_->load_method and is not cached on the
+  // Module. Only Module::load(backend_options, ...) stores the pointer
+  // (via backend_options_). ARC keeps `options` alive for the call
+  // duration via the parameter, so no ivar retention is needed here.
+  // See:
+  //   load_method: https://github.com/pytorch/executorch/blob/6412f55a54dd3ce1f4ed220a3e96ee19b8f37967/extension/module/module.cpp#L353-L409
+  //   load (stores backend_options_): https://github.com/pytorch/executorch/blob/6412f55a54dd3ce1f4ed220a3e96ee19b8f37967/extension/module/module.cpp#L195
+  //
+  // Overwriting _loadedBackendOptions would release any map previously
+  // installed by -loadWithOptions:, but the C++ Module's backend_options_
+  // raw pointer would still reference that released map's storage — a
+  // use-after-free on the next lazy load_method. The XCTest
+  // testMixedLoadWithOptionsAndLoadMethodWithOptionsOnMultiMethodModel
+  // pins this invariant via a weak reference.
+  const auto errorCode = _module->load_method(methodName.UTF8String,
+                                               /*planned_memory=*/nullptr,
+                                               /*event_tracer=*/nullptr,
+                                               [options cppMap]);
   if (errorCode != Error::Ok) {
     if (error) {
       *error = ExecuTorchErrorWithCode((ExecuTorchErrorCode)errorCode);

@@ -14,6 +14,7 @@
 #include <unordered_map>
 #include <vector>
 
+#include <c10/util/safe_numerics.h>
 #include <executorch/runtime/core/exec_aten/util/scalar_type_util.h>
 #include <executorch/runtime/core/span.h>
 #include <executorch/runtime/executor/method.h>
@@ -54,16 +55,32 @@ class StaticKVCache {
         style_(style),
         input_ptrs_(n_caches_),
         output_ptrs_(n_caches_) {
-    size_t total_cache_len = std::accumulate(
-        cache_lengths_.begin(), cache_lengths_.end(), size_t(0));
-    cache_data_size_ = total_cache_len * n_heads_per_cache_ * head_dim_;
-    update_data_size_ =
-        n_caches_ * n_heads_per_cache_ * max_input_len_ * head_dim_;
+    size_t total_cache_len = 0;
+    for (size_t cache_len : cache_lengths_) {
+      ET_CHECK_MSG(
+          !c10::add_overflows(total_cache_len, cache_len, &total_cache_len),
+          "Overflow summing cache lengths");
+    }
+    ET_CHECK_MSG(
+        !c10::mul_overflows(
+            total_cache_len, n_heads_per_cache_, &cache_data_size_) &&
+            !c10::mul_overflows(cache_data_size_, head_dim_, &cache_data_size_),
+        "Overflow computing cache_data_size_");
+    ET_CHECK_MSG(
+        !c10::mul_overflows(
+            n_caches_, n_heads_per_cache_, &update_data_size_) &&
+            !c10::mul_overflows(
+                update_data_size_, max_input_len_, &update_data_size_) &&
+            !c10::mul_overflows(
+                update_data_size_, head_dim_, &update_data_size_),
+        "Overflow computing update_data_size_");
 
     cache_data_ = allocator_.allocate(cache_data_size_);
     update_data_ = allocator_.allocate(update_data_size_);
     ET_CHECK(cache_data_ != nullptr);
     ET_CHECK(update_data_ != nullptr);
+    std::fill(cache_data_, cache_data_ + cache_data_size_, T(0));
+    std::fill(update_data_, update_data_ + update_data_size_, T(0));
     init_ptrs();
   }
 
@@ -186,6 +203,7 @@ class StaticKVCache {
    */
   void reset() {
     std::fill(cache_pos_.begin(), cache_pos_.end(), 0);
+    std::fill(cache_data_, cache_data_ + cache_data_size_, T(0));
   }
 
  private:
@@ -613,6 +631,10 @@ class StaticAttentionIOManager {
         return config_.generate_full_logits ? input_len - 1 : 0;
       }
       std::copy(&tokens[i], &tokens[i + batch_len], input_buffer.begin());
+      if (batch_len < input_len) {
+        std::fill(
+            input_buffer.begin() + batch_len, input_buffer.end(), TokenT(0));
+      }
       if (!config_.generate_full_logits && config_.last_valid_token_pos_index) {
         last_valid_token_pos_ = batch_len - 1;
         set_input(
