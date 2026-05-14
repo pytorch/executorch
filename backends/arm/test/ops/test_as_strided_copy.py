@@ -52,7 +52,7 @@ def _make_case(
 delegated_cases = {
     "reshape_2d": lambda: _make_case((4, 6), (3, 8)),
     "flatten": lambda: _make_case((2, 3, 4), (6, 4)),
-    "expand_rank": lambda: _make_case((2, 3, 4), (2, 3, 4)),
+    "expand_rank": lambda: _make_case((2, 3, 4), (1, 2, 3, 4)),
 }
 
 unsupported_cases = {
@@ -67,11 +67,12 @@ unsupported_cases = {
         contiguous_strides((4, 4)),
         4,
     ),
+    "noop": lambda: _make_case((2, 3, 4), (2, 3, 4)),  # Single noop is not delegated
 }
 
 
 @common.parametrize("test_data", delegated_cases)
-def test_as_strided_copy_tosa_FP(test_data):
+def test_as_strided_tosa_FP(test_data):
     tensor, size, stride = test_data()
     module = AsStridedCopyModule(size, stride)
     pipeline = TosaPipelineFP[input_t](
@@ -83,7 +84,7 @@ def test_as_strided_copy_tosa_FP(test_data):
 
 
 @common.parametrize("test_data", delegated_cases)
-def test_as_strided_copy_tosa_INT(test_data):
+def test_as_strided_tosa_INT(test_data):
     tensor, size, stride = test_data()
     module = AsStridedCopyModule(size, stride)
     pipeline = TosaPipelineINT[input_t](
@@ -96,7 +97,7 @@ def test_as_strided_copy_tosa_INT(test_data):
 
 @common.parametrize("test_data", delegated_cases)
 @common.SkipIfNoModelConverter
-def test_as_strided_copy_vgf_no_quant(test_data):
+def test_as_strided_vgf_no_quant(test_data):
     tensor, size, stride = test_data()
     module = AsStridedCopyModule(size, stride)
     pipeline = VgfPipeline[input_t](
@@ -111,7 +112,7 @@ def test_as_strided_copy_vgf_no_quant(test_data):
 
 @common.parametrize("test_data", delegated_cases)
 @common.SkipIfNoModelConverter
-def test_as_strided_copy_vgf_quant(test_data):
+def test_as_strided_vgf_quant(test_data):
     tensor, size, stride = test_data()
     module = AsStridedCopyModule(size, stride)
     pipeline = VgfPipeline[input_t](
@@ -124,7 +125,7 @@ def test_as_strided_copy_vgf_quant(test_data):
 
 
 @common.parametrize("test_data", unsupported_cases)
-def test_as_strided_copy_not_delegated(test_data):
+def test_as_strided_no_target_not_delegated(test_data):
     tensor, size, stride, *rest = test_data()
     storage_offset = rest[0] if rest else 0
     module = AsStridedCopyModule(size, stride, storage_offset=storage_offset)

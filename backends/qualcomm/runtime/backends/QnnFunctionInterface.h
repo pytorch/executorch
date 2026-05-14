@@ -65,6 +65,8 @@ class QnnInterface {
   DEFINE_SHIM_FUNCTION_INTERFACE(graph_finalize, graphFinalize);
   DEFINE_SHIM_FUNCTION_INTERFACE(graph_execute, graphExecute);
   DEFINE_SHIM_FUNCTION_INTERFACE(graph_retrieve, graphRetrieve);
+  DEFINE_SHIM_FUNCTION_INTERFACE(graph_set_config, graphSetConfig);
+  DEFINE_SHIM_FUNCTION_INTERFACE(graph_get_property, graphGetProperty);
   // --------- QnnLog ---------
   DEFINE_SHIM_FUNCTION_INTERFACE(log_create, logCreate);
   DEFINE_SHIM_FUNCTION_INTERFACE(log_free, logFree);

@@ -6,6 +6,7 @@
 
 
 import re
+import textwrap
 from abc import ABC, abstractmethod
 from enum import IntEnum, unique
 from typing import Callable, Dict, List, Optional, Sequence, Set, Tuple
@@ -424,3 +425,76 @@ class QuantRecipe:
             rows.append(["..."] * len(headers))
 
         return tabulate(rows, headers=headers, tablefmt="grid")
+
+    def to_source(self) -> str:
+        """
+        Serializes this QuantRecipe into a Python source string at zero indentation.
+        """
+
+        def _dtype(d: QuantDtype) -> str:
+            return f"QuantDtype.{d.name}"
+
+        def _granularity(g: QuantGranularity) -> str:
+            return f"QuantGranularity.{g.name}"
+
+        def _comments(note: str) -> str:
+            lines = note.strip().splitlines() if note.strip() else []
+            return "".join(f"# {ln}\n" for ln in lines)
+
+        indent = "\t"
+
+        def _args(*lines: str) -> str:
+            return "".join(f"{indent}{ln},\n" for ln in lines)
+
+        strategy_blocks: List[str] = []
+        for strategy in self._strategies:
+            extra_kwargs_flag = (
+                [f"extra_kwargs={strategy.extra_kwargs!r}"]
+                if strategy.extra_kwargs
+                else []
+            )
+            if isinstance(strategy, ByNodeTarget):
+                targets_repr = ", ".join(
+                    f"torch.ops.{t._overloadpacket._qualified_op_name.replace('::', '.')}.{t._overloadname}"
+                    for t in sorted(strategy.targets, key=lambda t: str(t))
+                )
+                args = _args(
+                    f"{{{targets_repr}}}",
+                    _dtype(strategy.quant_dtype),
+                    str(strategy.is_qat),
+                    "act_observer=MinMaxObserver",
+                    f"granularity={_granularity(strategy.granularity)}",
+                    *extra_kwargs_flag,
+                    f"act_symmetric={strategy.act_symmetric}",
+                    f"note={strategy.note!r}",
+                )
+                call = f".add_node_target(\n{args})"
+            elif isinstance(strategy, ByNameRegex):
+                patterns_repr = ", ".join(f'r"{p}"' for p in sorted(strategy.patterns))
+                args = _args(
+                    f"{{{patterns_repr}}}",
+                    _dtype(strategy.quant_dtype),
+                    str(strategy.is_qat),
+                    "act_observer=MinMaxObserver",
+                    f"granularity={_granularity(strategy.granularity)}",
+                    *extra_kwargs_flag,
+                    f"act_symmetric={strategy.act_symmetric}",
+                    f"note={strategy.note!r}",
+                )
+                call = f".add_regex(\n{args})"
+            else:
+                continue
+
+            strategy_blocks.append(_comments(strategy.note) + call)
+
+        header_args = _args(
+            "self.default_quant_dtype",
+            str(self._default_is_qat),
+            "act_observer=MinMaxObserver",
+            f"granularity={_granularity(self._default_granularity)}",
+            "verbose=verbose",
+        )
+        header = f"QuantRecipe(\n{header_args})"
+        chained = "\n".join(strategy_blocks)
+        body = header + "\n" + chained
+        return "(\n" + textwrap.indent(body, indent) + "\n)"

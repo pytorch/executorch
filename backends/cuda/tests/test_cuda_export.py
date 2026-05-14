@@ -11,7 +11,7 @@ import torch
 from executorch.backends.cuda.cuda_backend import CudaBackend
 from executorch.backends.cuda.cuda_partitioner import CudaPartitioner
 from executorch.examples.models.toy_model import SdpaModule
-from executorch.exir import EdgeCompileConfig, to_edge_transform_and_lower
+from executorch.exir import EdgeCompileConfig, schema, to_edge_transform_and_lower
 from executorch.exir.backend.compile_spec_schema import CompileSpec
 from torch.export import export
 
@@ -341,7 +341,6 @@ class TestCudaExport(unittest.TestCase):
         will copy data to GPU device at runtime. Device info tagging is the first
         step toward full device-aware memory allocation.
         """
-        from executorch.exir import schema
 
         class AddModule(torch.nn.Module):
             def forward(self, x: torch.Tensor, y: torch.Tensor) -> torch.Tensor:
@@ -355,7 +354,7 @@ class TestCudaExport(unittest.TestCase):
         edge_program_manager = self._export_to_cuda_with_lower(module, inputs)
         self.assertIsNotNone(edge_program_manager, "CUDA export failed")
 
-        # Convert to ExecutorTorch and access the serialized program
+        # Convert to ExecuTorch and access the serialized program
         et_prog = edge_program_manager.to_executorch()
         program = et_prog._emitter_output.program
 
@@ -387,9 +386,9 @@ class TestCudaExport(unittest.TestCase):
         self.assertEqual(
             len(cpu_tensors),
             0,
-            "All tensors are on CUDA device..",
+            f"Expecteed no CPU tensors for delegate inputs, but found {len(cpu_tensors)}",
         )
-        self.assertGreater(
+        self.assertEqual(
             len(cuda_tensors),
             3,
             "Expected CUDA tensors for delegate outputs",

@@ -155,6 +155,47 @@ TEST(ATenBridgeTest, AliasTensorPtrToATenTensor) {
   EXPECT_EQ(at_tensor.const_data_ptr(), et_tensor_ptr->const_data_ptr());
 }
 
+// 0-dim (scalar) tensors legitimately have empty sizes/strides arrays whose
+// `.data()` may return nullptr. Regression test for T270603238: ensure
+// check_tensor_meta does not abort on valid 0-dim tensors. We pass nullptr
+// explicitly for sizes/dim_order/strides because std::vector::data() on an
+// empty vector is implementation-defined (libstdc++/libc++ may return a
+// non-null sentinel) — using nullptr makes the regression deterministic
+// across STL implementations.
+TEST(ATenBridgeTest, AliasETensorToATenTensorZeroDim) {
+  auto at_tensor = at::scalar_tensor(42.0f);
+  ASSERT_EQ(at_tensor.dim(), 0);
+  auto dtype = torchToExecuTorchScalarType(at_tensor.options().dtype());
+  torch::executor::TensorImpl tensor_impl(
+      dtype,
+      /*dim=*/0,
+      /*sizes=*/nullptr,
+      /*data=*/nullptr,
+      /*dim_order=*/nullptr,
+      /*strides=*/nullptr);
+  torch::executor::Tensor etensor(&tensor_impl);
+  alias_etensor_to_attensor(at_tensor, etensor);
+  EXPECT_EQ(at_tensor.const_data_ptr(), etensor.const_data_ptr());
+}
+
+TEST(ATenBridgeTest, AliasATTensorToETensorZeroDim) {
+  auto at_tensor = at::scalar_tensor(7);
+  ASSERT_EQ(at_tensor.dim(), 0);
+  auto dtype = torchToExecuTorchScalarType(at_tensor.options().dtype());
+  std::vector<uint8_t> etensor_data(at_tensor.nbytes());
+  torch::executor::TensorImpl tensor_impl(
+      dtype,
+      /*dim=*/0,
+      /*sizes=*/nullptr,
+      etensor_data.data(),
+      /*dim_order=*/nullptr,
+      /*strides=*/nullptr);
+  torch::executor::Tensor etensor(&tensor_impl);
+  auto aliased_at_tensor = alias_attensor_to_etensor(etensor);
+  EXPECT_EQ(aliased_at_tensor.dim(), 0);
+  EXPECT_EQ(aliased_at_tensor.const_data_ptr(), etensor_data.data());
+}
+
 TEST(ATenBridgeTest, AliasATTensorToETensorChannelsLast) {
   auto at_tensor = at::randn({2, 3, 4, 5}).to(at::MemoryFormat::ChannelsLast);
   std::vector<Tensor::SizesType> sizes(

@@ -183,13 +183,13 @@ struct GenerationConfig {
   int32_t num_eos = 0;             // Number of EOS tokens to add
 
   // Helper method to resolve the actual max_new_tokens based on constraints
-  int32_t resolve_max_new_tokens(int32_t max_context_len, int32_t num_prompt_tokens) const;
+  int32_t resolve_max_new_tokens(int64_t max_context_len, int64_t num_tokens_occupied) const;
 };
 ```
 
 The `resolve_max_new_tokens` method handles the logic of determining how many tokens can be generated based on:
 - The model's maximum context length
-- The number of tokens in the prompt
+- The number of token positions already occupied in the context window
 - The user-specified maximum sequence length and maximum new tokens
 
 ### Implementation Components
