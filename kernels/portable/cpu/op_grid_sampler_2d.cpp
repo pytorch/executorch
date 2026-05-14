@@ -10,6 +10,8 @@
 #include <executorch/kernels/portable/cpu/util/grid_sampler_2d_util.h>
 #include <executorch/runtime/kernel/kernel_includes.h>
 
+#include <type_traits>
+
 namespace torch {
 namespace executor {
 namespace native {
@@ -19,6 +21,22 @@ using executorch::aten::SizesType;
 using std::optional;
 
 namespace {
+
+// For half-precision inputs, all internal math (source-index computation,
+// interpolation weight subtractions like `ix_se - ix` which are prone to
+// catastrophic cancellation, and weighted-sum accumulation) is done in fp32.
+// Loads and stores stay in the tensor's dtype. The speed cost is negligible
+// (a handful of fp16↔fp32 conversions per output element) and the precision
+// win is material: fp16 has only ~10 bits of mantissa, so subtracting nearby
+// pixel coordinates can round to values that are meaningfully off, producing
+// visibly wrong interpolation weights.
+template <typename CTYPE>
+using AccType = std::conditional_t<
+    std::is_same_v<CTYPE, executorch::aten::Half> ||
+        std::is_same_v<CTYPE, executorch::aten::BFloat16>,
+    float,
+    CTYPE>;
+
 template <typename CTYPE>
 void grid_sample_2d_bilinear_kernel_impl_nchw(
     const Tensor& in,
@@ -26,6 +44,7 @@ void grid_sample_2d_bilinear_kernel_impl_nchw(
     GridSamplerPadding padding_mode,
     bool align_corners,
     Tensor& out) {
+  using ACC = AccType<CTYPE>;
   const auto in_data = in.const_data_ptr<CTYPE>();
   auto out_data = out.mutable_data_ptr<CTYPE>();
 
@@ -59,13 +78,14 @@ void grid_sample_2d_bilinear_kernel_impl_nchw(
           // grid[n, h, w] contains (x, y)
           const int64_t grid_idx =
               grid_offset + h * grid.strides()[1] + w * grid.strides()[2];
-          const CTYPE x = grid_data[grid_idx];
-          const CTYPE y = grid_data[grid_idx + grid.strides()[3]];
+          const ACC x = static_cast<ACC>(grid_data[grid_idx]);
+          const ACC y =
+              static_cast<ACC>(grid_data[grid_idx + grid.strides()[3]]);
 
-          // Compute source coordinates in pixel space
-          const CTYPE ix = grid_sampler_compute_source_index(
+          // Compute source coordinates in pixel space (in ACC precision).
+          const ACC ix = grid_sampler_compute_source_index(
               x, inp_W, padding_mode, align_corners);
-          const CTYPE iy = grid_sampler_compute_source_index(
+          const ACC iy = grid_sampler_compute_source_index(
               y, inp_H, padding_mode, align_corners);
 
           // Get corner pixel coordinates
@@ -78,40 +98,46 @@ void grid_sample_2d_bilinear_kernel_impl_nchw(
           const int64_t ix_se = ix_nw + 1;
           const int64_t iy_se = iy_nw + 1;
 
-          // Get interpolation weights
-          const CTYPE nw_weight = (ix_se - ix) * (iy_se - iy);
-          const CTYPE ne_weight = (ix - ix_sw) * (iy_sw - iy);
-          const CTYPE sw_weight = (ix_ne - ix) * (iy - iy_ne);
-          const CTYPE se_weight = (ix - ix_nw) * (iy - iy_nw);
+          // Interpolation weights. For half inputs these are computed in
+          // fp32 — the subtractions `ix_se - ix` otherwise suffer
+          // catastrophic cancellation in fp16 for interior pixels.
+          const ACC nw_weight = (ix_se - ix) * (iy_se - iy);
+          const ACC ne_weight = (ix - ix_sw) * (iy_sw - iy);
+          const ACC sw_weight = (ix_ne - ix) * (iy - iy_ne);
+          const ACC se_weight = (ix - ix_nw) * (iy - iy_nw);
 
-          // Compute output value for this channel
-          CTYPE out_val = 0;
+          // Accumulate the weighted sum in ACC precision.
+          ACC out_val = 0;
 
           // Add contribution from each corner if within bounds
           if (padding_mode == GridSamplerPadding::Zeros) {
             // For zeros padding, only sample if within bounds
             if (within_bounds_2d(iy_nw, ix_nw, inp_H, inp_W)) {
-              out_val += in_data
-                             [in_channel_offset + iy_nw * in.strides()[2] +
-                              ix_nw * in.strides()[3]] *
+              out_val += static_cast<ACC>(
+                             in_data
+                                 [in_channel_offset + iy_nw * in.strides()[2] +
+                                  ix_nw * in.strides()[3]]) *
                   nw_weight;
             }
             if (within_bounds_2d(iy_ne, ix_ne, inp_H, inp_W)) {
-              out_val += in_data
-                             [in_channel_offset + iy_ne * in.strides()[2] +
-                              ix_ne * in.strides()[3]] *
+              out_val += static_cast<ACC>(
+                             in_data
+                                 [in_channel_offset + iy_ne * in.strides()[2] +
+                                  ix_ne * in.strides()[3]]) *
                   ne_weight;
             }
             if (within_bounds_2d(iy_sw, ix_sw, inp_H, inp_W)) {
-              out_val += in_data
-                             [in_channel_offset + iy_sw * in.strides()[2] +
-                              ix_sw * in.strides()[3]] *
+              out_val += static_cast<ACC>(
+                             in_data
+                                 [in_channel_offset + iy_sw * in.strides()[2] +
+                                  ix_sw * in.strides()[3]]) *
                   sw_weight;
             }
             if (within_bounds_2d(iy_se, ix_se, inp_H, inp_W)) {
-              out_val += in_data
-                             [in_channel_offset + iy_se * in.strides()[2] +
-                              ix_se * in.strides()[3]] *
+              out_val += static_cast<ACC>(
+                             in_data
+                                 [in_channel_offset + iy_se * in.strides()[2] +
+                                  ix_se * in.strides()[3]]) *
                   se_weight;
             }
           } else {
@@ -126,28 +152,33 @@ void grid_sample_2d_bilinear_kernel_impl_nchw(
             const int64_t iy_sw_safe = clip_coordinates(iy_sw, inp_H);
             const int64_t ix_se_safe = clip_coordinates(ix_se, inp_W);
             const int64_t iy_se_safe = clip_coordinates(iy_se, inp_H);
-            out_val = in_data
-                          [in_channel_offset + iy_nw_safe * in.strides()[2] +
-                           ix_nw_safe * in.strides()[3]] *
+            out_val =
+                static_cast<ACC>(
+                    in_data
+                        [in_channel_offset + iy_nw_safe * in.strides()[2] +
+                         ix_nw_safe * in.strides()[3]]) *
                     nw_weight +
-                in_data
+                static_cast<ACC>(
+                    in_data
                         [in_channel_offset + iy_ne_safe * in.strides()[2] +
-                         ix_ne_safe * in.strides()[3]] *
+                         ix_ne_safe * in.strides()[3]]) *
                     ne_weight +
-                in_data
+                static_cast<ACC>(
+                    in_data
                         [in_channel_offset + iy_sw_safe * in.strides()[2] +
-                         ix_sw_safe * in.strides()[3]] *
+                         ix_sw_safe * in.strides()[3]]) *
                     sw_weight +
-                in_data
+                static_cast<ACC>(
+                    in_data
                         [in_channel_offset + iy_se_safe * in.strides()[2] +
-                         ix_se_safe * in.strides()[3]] *
+                         ix_se_safe * in.strides()[3]]) *
                     se_weight;
           }
 
           // Write output in NCHW order
           const int64_t out_idx =
               out_channel_offset + h * out.strides()[2] + w * out.strides()[3];
-          out_data[out_idx] = out_val;
+          out_data[out_idx] = static_cast<CTYPE>(out_val);
         }
       }
     }

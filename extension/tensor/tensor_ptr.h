@@ -14,6 +14,7 @@
 #include <vector>
 
 #include <c10/macros/Macros.h>
+#include <c10/util/safe_numerics.h>
 #include <executorch/runtime/core/error.h>
 #include <executorch/runtime/core/exec_aten/exec_aten.h>
 #include <executorch/runtime/core/exec_aten/util/scalar_type_util.h>
@@ -109,15 +110,28 @@ inline TensorPtr make_tensor_ptr(
     executorch::aten::ScalarType type = deduced_type,
     executorch::aten::TensorShapeDynamism dynamism =
         executorch::aten::TensorShapeDynamism::DYNAMIC_BOUND) {
+  auto numel_result = executorch::aten::safe_numel(sizes.data(), sizes.size());
   ET_CHECK_MSG(
-      data.size() ==
-          executorch::aten::compute_numel(sizes.data(), sizes.size()),
+      numel_result.ok(),
+      "safe_numel failed: %d",
+      static_cast<int>(numel_result.error()));
+  ET_CHECK_MSG(
+      data.size() == static_cast<size_t>(numel_result.get()),
       "Data size does not match tensor size.");
   if (type != deduced_type) {
     ET_CHECK_MSG(
         runtime::canCast(deduced_type, type),
         "Cannot cast deduced type to specified type.");
-    std::vector<uint8_t> casted_data(data.size() * aten::elementSize(type));
+    size_t casted_bytes = 0;
+    ET_CHECK_MSG(
+        !c10::mul_overflows(
+            data.size(),
+            static_cast<size_t>(aten::elementSize(type)),
+            &casted_bytes),
+        "casted_data size overflow: %zu elements * %zu bytes/element",
+        data.size(),
+        static_cast<size_t>(aten::elementSize(type)));
+    std::vector<uint8_t> casted_data(casted_bytes);
 
     // Create a minimal context for error handling in ET_SWITCH
     struct {
@@ -358,8 +372,13 @@ inline TensorPtr make_tensor_ptr(
   const auto same_rank = sizes.size() == static_cast<size_t>(tensor.dim());
   const auto same_shape = same_rank &&
       std::equal(sizes.begin(), sizes.end(), tensor.sizes().begin());
-  const auto element_count =
-      executorch::aten::compute_numel(sizes.data(), sizes.size());
+  auto element_count_result =
+      executorch::aten::safe_numel(sizes.data(), sizes.size());
+  ET_CHECK_MSG(
+      element_count_result.ok(),
+      "safe_numel failed: %d",
+      static_cast<int>(element_count_result.error()));
+  const auto element_count = element_count_result.get();
   const auto parent_element_count = tensor.numel();
   ET_CHECK_MSG(
       element_count <= parent_element_count,
