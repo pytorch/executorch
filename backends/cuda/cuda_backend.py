@@ -226,6 +226,8 @@ class CudaBackend(AotiBackend, BackendDetails):
             "at::_ops::_weight_int4pack_mm::call": None,
             "at::_ops::sort_stable::call": None,
             "aoti_torch_cuda_randint_low_out": None,
+            "executorch_cuda::int4_plain_mm": None,
+            "aoti_torch_cuda_int4_plain_mm": None,
         }
 
     @classmethod
@@ -297,6 +299,20 @@ class CudaBackend(AotiBackend, BackendDetails):
             "max_autotune_conv_backends": "TRITON",
             "aot_inductor.emit_multi_arch_kernel": emit_multi_arch_kernel,
         }
+
+        try:
+            import torch
+
+            options["aot_inductor.custom_ops_to_c_shims"] = {
+                torch.ops.executorch_cuda.int4_plain_mm.default: [
+                    "AOTITorchError aoti_torch_cuda_int4_plain_mm("
+                    "AtenTensorHandle, AtenTensorHandle, AtenTensorHandle, "
+                    "AtenTensorHandle, int64_t, AtenTensorHandle*)"
+                ],
+            }
+        except AttributeError:
+            # int4_dispatch.py not imported — op not registered, skip C shim mapping
+            pass
 
         # Parse compile_specs to check for platform
 

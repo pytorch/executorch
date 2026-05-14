@@ -8,11 +8,11 @@
 
 package org.pytorch.executorch;
 
-import android.util.Log;
 import com.facebook.jni.HybridData;
 import com.facebook.jni.annotations.DoNotStrip;
 import com.facebook.soloader.nativeloader.NativeLoader;
 import com.facebook.soloader.nativeloader.SystemDelegate;
+import java.io.Closeable;
 import java.util.HashMap;
 import java.util.Map;
 import java.util.concurrent.locks.Lock;
@@ -25,7 +25,7 @@ import org.pytorch.executorch.annotations.Experimental;
  * <p>Warning: These APIs are experimental and subject to change without notice
  */
 @Experimental
-public class Module {
+public class Module implements Closeable {
 
   static {
     if (!NativeLoader.isInitialized()) {
@@ -130,11 +130,10 @@ public class Module {
    * @return return value from the method.
    */
   public EValue[] execute(String methodName, EValue... inputs) {
+    mLock.lock();
     try {
-      mLock.lock();
       if (!mHybridData.isValid()) {
-        Log.e("ExecuTorch", "Attempt to use a destroyed module");
-        return new EValue[0];
+        throw new IllegalStateException("Module has been destroyed");
       }
       return executeNative(methodName, inputs);
     } finally {
@@ -151,17 +150,17 @@ public class Module {
    * synchronous, and will block until the method is loaded. Therefore, it is recommended to call
    * this on a background thread. However, users need to make sure that they don't execute before
    * this function returns.
-   *
-   * @return the Error code if there was an error loading the method
    */
-  public int loadMethod(String methodName) {
+  public void loadMethod(String methodName) {
+    mLock.lock();
     try {
-      mLock.lock();
       if (!mHybridData.isValid()) {
-        Log.e("ExecuTorch", "Attempt to use a destroyed module");
-        return 0x2; // InvalidState
+        throw new IllegalStateException("Module has been destroyed");
       }
-      return loadMethodNative(methodName);
+      int errorCode = loadMethodNative(methodName);
+      if (errorCode != 0) {
+        throw new ExecutorchRuntimeException(errorCode, "Failed to load method: " + methodName);
+      }
     } finally {
       mLock.unlock();
     }
@@ -184,8 +183,20 @@ public class Module {
    *
    * @return name of methods in this Module
    */
+  public String[] getMethods() {
+    mLock.lock();
+    try {
+      if (!mHybridData.isValid()) {
+        throw new IllegalStateException("Module has been destroyed");
+      }
+      return getMethodsNative();
+    } finally {
+      mLock.unlock();
+    }
+  }
+
   @DoNotStrip
-  public native String[] getMethods();
+  private native String[] getMethodsNative();
 
   /**
    * Get the corresponding @MethodMetadata for a method
@@ -194,11 +205,19 @@ public class Module {
    * @return @MethodMetadata for this method
    */
   public MethodMetadata getMethodMetadata(String name) {
-    MethodMetadata methodMetadata = mMethodMetadata.get(name);
-    if (methodMetadata == null) {
-      throw new IllegalArgumentException("method " + name + " does not exist for this module");
+    mLock.lock();
+    try {
+      if (!mHybridData.isValid()) {
+        throw new IllegalStateException("Module has been destroyed");
+      }
+      MethodMetadata methodMetadata = mMethodMetadata.get(name);
+      if (methodMetadata == null) {
+        throw new IllegalArgumentException("method " + name + " does not exist for this module");
+      }
+      return methodMetadata;
+    } finally {
+      mLock.unlock();
     }
-    return methodMetadata;
   }
 
   @DoNotStrip
@@ -210,7 +229,15 @@ public class Module {
 
   /** Retrieve the in-memory log buffer, containing the most recent ExecuTorch log entries. */
   public String[] readLogBuffer() {
-    return readLogBufferNative();
+    mLock.lock();
+    try {
+      if (!mHybridData.isValid()) {
+        throw new IllegalStateException("Module has been destroyed");
+      }
+      return readLogBufferNative();
+    } finally {
+      mLock.unlock();
+    }
   }
 
   @DoNotStrip
@@ -224,8 +251,20 @@ public class Module {
    * @return true if the etdump was successfully written, false otherwise.
    */
   @Experimental
+  public boolean etdump() {
+    mLock.lock();
+    try {
+      if (!mHybridData.isValid()) {
+        throw new IllegalStateException("Module has been destroyed");
+      }
+      return etdumpNative();
+    } finally {
+      mLock.unlock();
+    }
+  }
+
   @DoNotStrip
-  public native boolean etdump();
+  private native boolean etdumpNative();
 
   /**
    * Dump the ExecuTorch ETDump file to {@code outputPath}.
@@ -258,15 +297,19 @@ public class Module {
   public void destroy() {
     if (mLock.tryLock()) {
       try {
-        mHybridData.resetNative();
+        if (mHybridData.isValid()) {
+          mHybridData.resetNative();
+        }
       } finally {
         mLock.unlock();
       }
     } else {
-      Log.w(
-          "ExecuTorch",
-          "Destroy was called while the module was in use. Resources will not be immediately"
-              + " released.");
+      throw new IllegalStateException("Cannot destroy module while method is executing");
     }
+  }
+
+  @Override
+  public void close() {
+    destroy();
   }
 }

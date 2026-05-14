@@ -8,6 +8,14 @@ def define_common_targets():
     """
 
     runtime.cxx_test(
+        name = "device_memory_buffer_test",
+        srcs = ["device_memory_buffer_test.cpp"],
+        deps = [
+            "//executorch/runtime/core:device_memory_buffer",
+        ],
+    )
+
+    runtime.cxx_test(
         name = "span_test",
         srcs = ["span_test.cpp"],
         deps = [
