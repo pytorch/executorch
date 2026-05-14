@@ -321,12 +321,15 @@ std::unique_ptr<Module::PlannedMemory> Module::make_planned_memory_with_devices(
   const size_t num_buffers = method_meta.num_memory_planned_buffers();
   planned->planned_buffers.reserve(num_buffers);
   planned->planned_spans.reserve(num_buffers);
+  planned->device_buffers.reserve(num_buffers);
+  planned->planned_devices.reserve(num_buffers);
 
   for (size_t i = 0; i < num_buffers; ++i) {
     auto size = method_meta.memory_planned_buffer_size(i);
     ET_CHECK_MSG(size.ok(), "Failed to get buffer size for index %zu", i);
     auto device = method_meta.memory_planned_buffer_device(i);
     ET_CHECK_MSG(device.ok(), "Failed to get buffer device for index %zu", i);
+    planned->planned_devices.push_back(device.get());
 
     if (device->is_cpu()) {
       planned->planned_buffers.emplace_back(size.get());
@@ -347,9 +350,13 @@ std::unique_ptr<Module::PlannedMemory> Module::make_planned_memory_with_devices(
     }
   }
 
-  planned->planned_memory =
-      std::make_unique<runtime::HierarchicalAllocator>(runtime::Span(
-          planned->planned_spans.data(), planned->planned_spans.size()));
+  // HierarchicalAllocator owns the per-buffer Device metadata so the
+  // MemoryManager can later expose it via planned_buffer_devices().
+  planned->planned_memory = std::make_unique<runtime::HierarchicalAllocator>(
+      runtime::Span<runtime::Span<uint8_t>>(
+          planned->planned_spans.data(), planned->planned_spans.size()),
+      runtime::Span<const runtime::etensor::Device>(
+          planned->planned_devices.data(), planned->planned_devices.size()));
   return planned;
 }
 
@@ -427,24 +434,10 @@ runtime::Error Module::load_method(
             "share_memory_arenas. Please disable share_memory_arenas "
             "when using models with device-planned memory.");
 
-        // Device-aware path: allocate CPU and device buffers, build metadata.
+        // Device-aware path: allocate CPU and device buffers. The device
+        // span is owned by the HierarchicalAllocator inside PlannedMemory.
         method_holder.planned_memory = make_planned_memory_with_devices(meta);
-
-        // Build per-buffer device type array for MemoryManager metadata.
-        for (size_t i = 0; i < meta.num_memory_planned_buffers(); ++i) {
-          auto dev = meta.memory_planned_buffer_device(i);
-          method_holder.buffer_devices.push_back(
-              dev.ok() ? dev->type() : runtime::etensor::DeviceType::CPU);
-        }
         planned_memory = method_holder.planned_memory->planned_memory.get();
-
-        method_holder.memory_manager = std::make_unique<runtime::MemoryManager>(
-            memory_allocator_.get(),
-            planned_memory,
-            temp_allocator_.get(),
-            runtime::Span<const runtime::etensor::DeviceType>(
-                method_holder.buffer_devices.data(),
-                method_holder.buffer_devices.size()));
       } else if (!share_memory_arenas_) {
         auto sizes_res = get_mem_planned_buffer_sizes(method_name);
         ET_CHECK_OK_OR_RETURN_ERROR(sizes_res.error());
@@ -470,10 +463,8 @@ runtime::Error Module::load_method(
       }
     }
 
-    if (!method_holder.memory_manager) {
-      method_holder.memory_manager = std::make_unique<runtime::MemoryManager>(
-          memory_allocator_.get(), planned_memory, temp_allocator_.get());
-    }
+    method_holder.memory_manager = std::make_unique<runtime::MemoryManager>(
+        memory_allocator_.get(), planned_memory, temp_allocator_.get());
     auto res_method = program_->load_method(
         method_name.c_str(),
         method_holder.memory_manager.get(),

@@ -1,5 +1,5 @@
 # Copyright (c) Meta Platforms, Inc. and affiliates.
-# Copyright 2024-2025 NXP
+# Copyright 2024-2026 NXP
 # All rights reserved.
 #
 # This source code is licensed under the BSD-style license found in the
@@ -10,7 +10,7 @@
 import itertools
 from collections import OrderedDict
 from collections.abc import Iterable
-from typing import Any, Dict, List, Tuple, Type
+from typing import Any, Callable, Dict, Type
 
 import torch
 from executorch.backends.nxp.aten_passes.fuse_batch_norm_with_linear_pass import (
@@ -30,8 +30,10 @@ from torch.fx.passes.utils.source_matcher_utils import (
     check_subgraphs_connected,
     SourcePartition,
 )
+
 from torchao.quantization.pt2e import (
     move_exported_model_to_eval,
+    move_exported_model_to_train,
     ObserverOrFakeQuantize,
 )
 from torchao.quantization.pt2e.quantize_pt2e import (
@@ -42,7 +44,7 @@ from torchao.quantization.pt2e.quantize_pt2e import (
 from torchao.quantization.pt2e.quantizer.quantizer import Q_ANNOTATION_KEY, Quantizer
 
 
-def is_annotated(nodes: List[fx.Node]) -> bool:
+def is_annotated(nodes: list[fx.Node]) -> bool:
     annotated = False
     for node in nodes:
         annotated = annotated or (
@@ -64,8 +66,8 @@ def no_outside_users(fused_partition) -> bool:
 
 
 def get_bias_qparams(
-    obs_or_fqs: List[ObserverOrFakeQuantize],
-) -> Tuple[torch.Tensor, torch.Tensor]:
+    obs_or_fqs: list[ObserverOrFakeQuantize],
+) -> tuple[torch.Tensor, torch.Tensor]:
     act_scale, _ = obs_or_fqs[0].calculate_qparams()
     weight_scale, _ = obs_or_fqs[1].calculate_qparams()
     bias_scale = act_scale * weight_scale
@@ -73,9 +75,39 @@ def get_bias_qparams(
     return bias_scale, bias_zero_point
 
 
+def get_bias_qparams_transp_conv(
+    obs_or_fqs: list[ObserverOrFakeQuantize],
+    out_channels: int | None = None,
+) -> tuple[torch.Tensor, torch.Tensor]:
+    act_scale, _ = obs_or_fqs[0].calculate_qparams()
+    weight_scale, _ = obs_or_fqs[1].calculate_qparams()
+
+    # In some cases (e.g. transposed convolution with `groups > 1`), the weight
+    # qparams length may not match the bias length. For example, with
+    # `in_channels = 16` and `groups = 2`, weight qparams have length 8
+    # (`in_channels / groups`), while bias qparams are length 16.
+    #
+    # If this happens, repeat (pad) the weight qparams so they match
+    # `out_channels`, e.g. [w1, w2, w3] -> [w1, w2, w3, w1, w2, w3, ...].
+    if out_channels is not None:
+        weight_scale = weight_scale.flatten()
+        if weight_scale.numel() != out_channels:
+            if out_channels % weight_scale.numel() != 0:
+                raise RuntimeError(
+                    "Weight qparams cannot be repeated if not divisible by `out_channels`."
+                )
+            weight_scale = weight_scale.repeat(out_channels // weight_scale.numel())
+
+        act_scale = act_scale.flatten()[0]
+
+    bias_scale = act_scale * weight_scale
+    bias_zero_point = torch.zeros_like(bias_scale, dtype=torch.int64)
+    return bias_scale, bias_zero_point
+
+
 def get_aten_node_target_partitions(
     graph: torch.fx.Graph,
-    wanted_original_aten_op: List[OpOverload],
+    wanted_original_aten_op: list[OpOverload],
 ):
     """
     Args:
@@ -87,7 +119,7 @@ def get_aten_node_target_partitions(
         that correspond to the list of nodes that were decomposed from the given
         aten ops.
     """
-    modules: Dict[Type, Dict[str, List[torch.fx.Node]]] = {}
+    modules: Dict[Type, Dict[str, list[torch.fx.Node]]] = {}
 
     for node in graph.nodes:
         # The metadata source_fn should contain a tuple of a unique name for the
@@ -107,7 +139,7 @@ def get_aten_node_target_partitions(
         partition.append(node)
 
     def make_partition(
-        nodes: List[torch.fx.Node], module_type: Type
+        nodes: list[torch.fx.Node], module_type: Type
     ) -> SourcePartition:
         input_nodes = set()
         output_nodes = set()
@@ -132,7 +164,7 @@ def get_aten_node_target_partitions(
             list(params),  # type: ignore[arg-type]
         )
 
-    ret: Dict[Type[Any], List[SourcePartition]] = {}
+    ret: Dict[Type[Any], list[SourcePartition]] = {}
 
     for k, v in modules.items():
         ret[k] = [make_partition(partition, k) for partition in v.values()]
@@ -140,7 +172,7 @@ def get_aten_node_target_partitions(
     return ret
 
 
-def _partitions_sequential(partitions: Tuple[SourcePartition]) -> bool:
+def _partitions_sequential(partitions: tuple[SourcePartition]) -> bool:
     prev_partition = None
     for partition in partitions:
         if prev_partition is not None and not check_subgraphs_connected(
@@ -153,9 +185,9 @@ def _partitions_sequential(partitions: Tuple[SourcePartition]) -> bool:
 
 def find_sequential_partitions_aten(
     gm: torch.fx.GraphModule,
-    partition_types: List[Any],
+    partition_types: list[Any],
 ):
-    typed_partitions: OrderedDict[Any, List[SourcePartition]] = OrderedDict()
+    typed_partitions: OrderedDict[Any, list[SourcePartition]] = OrderedDict()
     for partition_type in partition_types:
         partitions = get_aten_node_target_partitions(gm.graph, [partition_type])
         typed_partitions[partition_type] = list(
@@ -176,16 +208,17 @@ def calibrate_and_quantize(
     calibration_inputs: Iterable[tuple[torch.Tensor, ...]],
     quantizer: Quantizer,
     is_qat: bool = False,
+    train_fn: Callable[[torch.fx.GraphModule], None] | None = None,
 ) -> fx.GraphModule:
     """Quantize the provided model.
 
     :param model: Aten model (or it's GraphModule representation) to quantize.
-    :param calibration_inputs: Either a tuple of calibration input tensors where each element corresponds to a model
-                                input. Or an iterator over such tuples.
+    :param calibration_inputs: An iterator over tuples of calibration input tensors where each tensor corresponds to a
+                                model input.
     :param quantizer: Quantizer to use.
     :param is_qat: Whether quantization is done using Quantization Aware Training (QAT) or not.
                     Note: In QAT mode, training is not performed. Only calibration (in eval mode) is done.
-
+    :param train_fn: Optional training function to be called during QAT.
     :return: Quantized GraphModule.
     """
 
@@ -195,12 +228,20 @@ def calibrate_and_quantize(
     if is_qat:
         m = prepare_qat_pt2e(model, quantizer)
         m = AddSimulatedLinearBatchNormFusionQATPass()(m).graph_module
+
+        if train_fn:
+            m = move_exported_model_to_train(m)
+            train_fn(m)
+
         m = move_exported_model_to_eval(m)
+        m = RemoveSimulatedLinearBatchNormFusionQATPass()(m).graph_module
+        m = FuseBatchNormWithLinearPass()(m).graph_module
     else:
         m = prepare_pt2e(model, quantizer)
 
-    for data in calibration_inputs:
-        m(*data)
+    if not is_qat or (is_qat and not train_fn):
+        for data in calibration_inputs:
+            m(*data)
 
     if is_qat:
         m = RemoveSimulatedLinearBatchNormFusionQATPass()(m).graph_module
@@ -208,6 +249,9 @@ def calibrate_and_quantize(
 
     m = convert_pt2e(m)
 
-    m = QuantizeFusedConvBnBiasAtenPass(default_zero_bias=True)(m).graph_module
+    if is_qat:
+        m = QuantizeFusedConvBnBiasAtenPass(
+            default_zero_bias=False, symmetric_quant=True
+        )(m).graph_module
 
     return m

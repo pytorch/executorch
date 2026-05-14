@@ -683,8 +683,12 @@ class Module {
   struct PlannedMemory {
     std::vector<std::vector<uint8_t>> planned_buffers;
     std::vector<runtime::Span<uint8_t>> planned_spans;
-    std::unique_ptr<runtime::HierarchicalAllocator> planned_memory;
     std::vector<runtime::DeviceMemoryBuffer> device_buffers;
+    /// Per-buffer Device (type + index) metadata used by
+    /// HierarchicalAllocator. Owns the storage backing the device span the
+    /// allocator references, so it must outlive `planned_memory`.
+    std::vector<runtime::etensor::Device> planned_devices;
+    std::unique_ptr<runtime::HierarchicalAllocator> planned_memory;
   };
   std::unique_ptr<PlannedMemory> make_planned_memory(
       const std::vector<size_t>& buffer_sizes);
@@ -701,7 +705,6 @@ class Module {
     std::unique_ptr<PlannedMemory> planned_memory;
     std::unique_ptr<runtime::MemoryManager> memory_manager;
     std::unique_ptr<Method> method;
-    std::vector<runtime::etensor::DeviceType> buffer_devices;
   };
 
   std::string file_path_;

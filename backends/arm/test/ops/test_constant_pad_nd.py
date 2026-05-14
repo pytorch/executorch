@@ -9,6 +9,9 @@ from typing import Tuple
 
 import torch
 import torch.nn.functional as F
+from executorch.backends.arm.quantizer.arm_quantizer import (
+    get_symmetric_a16w8_quantization_config,
+)
 from executorch.backends.arm.test import common
 from executorch.backends.arm.test.tester.test_pipeline import (
     TosaPipelineFP,
@@ -207,4 +210,20 @@ def test_constant_pad_nd_vgf_quant(test_data: Tuple):
         exir_op,
         quantize=True,
     )
+    pipeline.run()
+
+
+@common.parametrize("test_data", test_data_suite)
+@common.SkipIfNoModelConverter
+def test_constant_pad_nd_vgf_quant_a16w8(test_data: Tuple):
+    inp, padding, value, mode = test_data()
+    pipeline = VgfPipeline[input_t1](
+        ConstantPadND(padding, value, mode),
+        (inp,),
+        aten_op,
+        exir_op,
+        quantize=True,
+        tosa_extensions=["int16"],
+    )
+    pipeline.quantizer.set_global(get_symmetric_a16w8_quantization_config())
     pipeline.run()
