@@ -9,7 +9,9 @@
 import copy
 import logging
 import operator
-from typing import Optional
+from typing import Optional, Union, Dict
+from dataclasses import dataclass
+from torch.fx._compatibility import compatibility
 
 # Import to register the et_copy ops so torch.ops.et_copy is available.
 import executorch.exir.passes._device_copy_ops_registry  # noqa: F401
@@ -28,6 +30,33 @@ logger: logging.Logger = logging.getLogger(__name__)
 # Partitioners that target a specific device should include a CompileSpec entry
 # with this key and a value encoding the device string (e.g., b"cuda:0").
 TARGET_DEVICE_COMPILE_SPEC_KEY = "target_device"
+
+@compatibility(is_backward_compatible=False)
+@dataclass
+class PropagateDeviceConfig:
+    # When True, method-level input tensors that feed directly into a device
+    # delegate are NOT wrapped with _h2d_copy. The user must provide tensors
+    # already on the target device. Useful for pipelines where inputs are
+    # pre-staged on GPU.
+    # A dict can be used to set per-method values, keyed by method name.
+    skip_h2d_for_method_inputs: Union[bool, Dict[str, bool]] = False
+
+    # When True, device delegate outputs that are directly method outputs
+    # are NOT wrapped with _d2h_copy. The method outputs stay on device.
+    # Useful for cross-method GPU pipelines where the next method consumes
+    # GPU tensors directly.
+    # A dict can be used to set per-method values, keyed by method name.
+    skip_d2h_for_method_outputs: Union[bool, Dict[str, bool]] = False
+
+    def __hash__(self):
+        return hash((str(self.skip_h2d_for_method_inputs), str(self.skip_d2h_for_method_outputs)))
+
+    def __eq__(self, other: object) -> bool:
+        if not isinstance(other, PropagateDeviceConfig):
+            return False
+        return (self.skip_h2d_for_method_inputs == other.skip_h2d_for_method_inputs and
+                self.skip_d2h_for_method_outputs == other.skip_d2h_for_method_outputs)
+
 
 
 def _parse_device_spec_value(value: bytes) -> tuple[schema.DeviceType, int]:
