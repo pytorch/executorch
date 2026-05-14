@@ -9,10 +9,13 @@ import os
 from multiprocessing.connection import Client
 
 import torch
+from executorch.backends.qualcomm.export_utils import (
+    QnnConfig,
+    setup_common_args_and_variables,
+    SimpleADB,
+)
 from executorch.backends.qualcomm.serialization.qc_schema import QcomChipset
-
 from executorch.backends.qualcomm.utils.utils import (
-    ExecutorchBackendConfig,
     from_context_binary,
     generate_htp_compiler_spec,
     generate_qnn_executorch_compiler_spec,
@@ -22,14 +25,13 @@ from executorch.examples.qualcomm.qaihub_scripts.utils.utils import (
     gen_pte_from_ctx_bin,
     get_encoding,
 )
-from executorch.examples.qualcomm.utils import (
-    setup_common_args_and_variables,
-    SimpleADB,
-)
+from executorch.exir.capture._config import ExecutorchBackendConfig
 from executorch.exir.passes.memory_planning_pass import MemoryPlanningPass
 
 
 def main(args):
+    qnn_config = QnnConfig.load_config(args.config_file if args.config_file else args)
+
     os.makedirs(args.artifact, exist_ok=True)
 
     target_names = (
@@ -50,7 +52,7 @@ def main(args):
         use_multi_contexts=True,
     )
     compiler_specs = generate_qnn_executorch_compiler_spec(
-        soc_model=getattr(QcomChipset, args.model),
+        soc_model=getattr(QcomChipset, args.soc_model),
         backend_options=backend_options,
         is_from_context_binary=True,
     )
@@ -66,7 +68,7 @@ def main(args):
 
     if args.pre_gen_pte is None:
         # create custom operators as context loader
-        soc_model = get_soc_to_chipset_map()[args.model]
+        soc_model = get_soc_to_chipset_map()[args.soc_model]
         bundle_programs = [
             from_context_binary(
                 ctx_path=f"{args.context_binaries}/{target}",
@@ -95,15 +97,10 @@ def main(args):
         return
 
     adb = SimpleADB(
-        qnn_sdk=os.getenv("QNN_SDK_ROOT"),
-        build_path=args.build_folder,
+        qnn_config=qnn_config,
         pte_path=pte_files,
         workspace=f"/data/local/tmp/executorch/{pte_name}",
-        device_id=args.device,
-        host_id=args.host,
-        soc_model=args.model,
         runner="examples/qualcomm/qaihub_scripts/llama/qaihub_llama3_8b_runner",
-        target=args.target,
     )
     output_file = "result.txt"
     pos_embs_file = ["freq_cos", "freq_sin"]
@@ -164,8 +161,7 @@ def main(args):
         freq = (freq / scale + offset).clip(min=0, max=65535).detach()
         freq.to(dtype=torch.uint16).numpy().tofile(custom_files[-1])
 
-    if not args.skip_push:
-        adb.push(files=custom_files)
+    adb.push(files=custom_files)
     adb.execute(custom_runner_cmd=runner_cmds)
     adb.pull(args.artifact, callback=post_process)
     if args.ip and args.port != -1:
