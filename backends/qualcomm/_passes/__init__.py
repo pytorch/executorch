@@ -21,6 +21,7 @@ from .decompose_cdist import DecomposeCDist
 from .decompose_col_im import DecomposeColIm
 from .decompose_einsum import DecomposeEinsum
 from .decompose_expm1 import DecomposeExpM1
+from .decompose_fill import DecomposeFill
 from .decompose_floor_divide import DecomposeFloorDivide
 from .decompose_glu import DecomposeGlu
 from .decompose_linalg_vector_norm import DecomposeLinalgVectorNorm
@@ -80,6 +81,7 @@ __all__ = [
     DecomposeColIm,
     DecomposeEinsum,
     DecomposeExpM1,
+    DecomposeFill,
     DecomposeFloorDivide,
     DecomposeGlu,
     DecomposeLinalgVectorNorm,

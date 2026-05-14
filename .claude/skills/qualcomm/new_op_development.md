@@ -210,7 +210,7 @@ class DecomposeMyOp(ExportPass):
         return PassResult(graph_module, True)
 ```
 
-**Critical rules:** (1) handle both dialects via `EdgeOpOverload` check, (2) `copy_meta` on every new node, (3) lift scalars to tensors in edge dialect with `get_const_node`, (4) cache constants with `const_cache`, (5) for bool-output nodes use `callback=lambda m: {**m, "val": m["val"].to(torch.bool)}` in `create_node`.
+**Critical rules:** (1) handle both dialects via `EdgeOpOverload` check, (2) `copy_meta` on every new node, (3) lift scalars to tensors in edge dialect with `get_const_node`, (4) cache constants with `const_cache`, (5) for bool-output nodes use `callback=lambda m: {**m, "val": m["val"].to(torch.bool)}` in `create_node`, (6) **never pass kwargs** (like `dtype`/`device`) to `graph.create_node` for ATen ops — the ATen IR requires kwargs to be empty (`prepare_pt2e` asserts this); instead rely on `copy_meta` which propagates dtype/device via the FakeTensor in `node.meta["val"]`.
 
 ### Approach C: Built-in Decomposition Table
 **Ref:** `_passes/decompose_triu.py`. Uses `make_fx` + `get_decompositions`. Only works if PyTorch has a registered decomp.
