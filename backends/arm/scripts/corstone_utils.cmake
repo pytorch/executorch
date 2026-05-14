@@ -90,20 +90,6 @@ function(add_corstone_subdirectory SYSTEM_CONFIG ETHOS_SDK_PATH)
   else()
     message(FATAL_ERROR "Unsupported SYSTEM_CONFIG ${SYSTEM_CONFIG}.")
   endif()
-  if(MEMORY_MODE MATCHES "Dedicated_Sram")
-    target_compile_definitions(
-      ethosu_target_common INTERFACE ETHOSU_MODEL=1 ETHOSU_ARENA=1
-    )
-  elseif(MEMORY_MODE MATCHES "Shared_Sram" OR MEMORY_MODE MATCHES "Sram_Only")
-    target_compile_definitions(
-      ethosu_target_common INTERFACE ETHOSU_MODEL=1 ETHOSU_ARENA=0
-    )
-  else()
-    message(
-      FATAL_ERROR
-        "Unsupported MEMORY_MODE ${MEMORY_MODE}. Memory_mode can be Shared_Sram, Sram_Only or Dedicated_Sram(applicable for the Ethos-U65 and Ethos-U85)"
-    )
-  endif()
 endfunction()
 
 function(configure_timing_adapters SYSTEM_CONFIG MEMORY_MODE)

@@ -121,8 +121,8 @@ def get_u55_compile_spec(
 def get_u85_compile_spec(
     macs: int = 128,
     system_config="Ethos_U85_SYS_DRAM_Mid",
-    memory_mode="Shared_Sram",
-    extra_flags="--output-format=raw --arena-cache-size=2097152",
+    memory_mode="Dedicated_Sram_384KB",
+    extra_flags="--output-format=raw",
     custom_path: Optional[str] = None,
     config: Optional[str] = None,
     tosa_debug_mode: EthosUCompileSpec.DebugMode | None = None,
