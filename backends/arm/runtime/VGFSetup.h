@@ -1,5 +1,5 @@
 /*
- * Copyright 2025 Arm Limited and/or its affiliates.
+ * Copyright 2025-2026 Arm Limited and/or its affiliates.
  *
  * This source code is licensed under the BSD-style license found in the
  * LICENSE file in the root directory of this source tree.
@@ -58,7 +58,10 @@ class VgfRepr {
   /*
    * Process a VGF ready for execution, allocate necessary Vulkan objects.
    */
-  bool process_vgf(const char* vgf_data, ArrayRef<CompileSpec> specs);
+  bool process_vgf(
+      const char* vgf_data,
+      size_t vgf_size,
+      ArrayRef<CompileSpec> specs);
 
   /*
    * Execute the VGF we've previously processed.

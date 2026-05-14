@@ -36,6 +36,7 @@ const std::vector<ScalarTypeTestData> kAllScalarTypes = {
     {ScalarType::Short, 2, 2, "Short", false, true, true, false},
     {ScalarType::Int, 3, 4, "Int", false, true, true, false},
     {ScalarType::Long, 4, 8, "Long", false, true, true, false},
+    {ScalarType::Half, 5, 2, "Half", true, false, false, false},
     {ScalarType::Float, 6, 4, "Float", true, false, false, false},
     {ScalarType::Bool, 11, 1, "Bool", false, false, true, true},
     {ScalarType::BFloat16, 15, 2, "BFloat16", true, false, false, false},
@@ -128,6 +129,10 @@ TEST_F(ScalarTypeConstantsTest, KLongConstant) {
   EXPECT_EQ(kLong, ScalarType::Long);
 }
 
+TEST_F(ScalarTypeConstantsTest, KHalfConstant) {
+  EXPECT_EQ(kHalf, ScalarType::Half);
+}
+
 TEST_F(ScalarTypeConstantsTest, KFloatConstant) {
   EXPECT_EQ(kFloat, ScalarType::Float);
 }
@@ -185,6 +190,10 @@ TEST_F(ElementSizeConsistencyTest, LongMatchesSizeofInt64) {
   EXPECT_EQ(elementSize(ScalarType::Long), sizeof(int64_t));
 }
 
+TEST_F(ElementSizeConsistencyTest, HalfIs2Bytes) {
+  EXPECT_EQ(elementSize(ScalarType::Half), 2);
+}
+
 TEST_F(ElementSizeConsistencyTest, FloatMatchesSizeofFloat) {
   EXPECT_EQ(elementSize(ScalarType::Float), sizeof(float));
 }
@@ -195,4 +204,30 @@ TEST_F(ElementSizeConsistencyTest, BoolMatchesSizeofBool) {
 
 TEST_F(ElementSizeConsistencyTest, BFloat16MatchesSizeofBFloat16) {
   EXPECT_EQ(elementSize(ScalarType::BFloat16), sizeof(BFloat16));
+}
+
+// =============================================================================
+// isValidScalarType Tests
+// =============================================================================
+
+class IsValidScalarTypeTest : public ::testing::Test {};
+
+TEST_F(IsValidScalarTypeTest, HalfIsValid) {
+  EXPECT_TRUE(isValidScalarType(ScalarType::Half));
+}
+
+TEST_F(IsValidScalarTypeTest, AllSupportedTypesAreValid) {
+  EXPECT_TRUE(isValidScalarType(ScalarType::Byte));
+  EXPECT_TRUE(isValidScalarType(ScalarType::Char));
+  EXPECT_TRUE(isValidScalarType(ScalarType::Short));
+  EXPECT_TRUE(isValidScalarType(ScalarType::Int));
+  EXPECT_TRUE(isValidScalarType(ScalarType::Long));
+  EXPECT_TRUE(isValidScalarType(ScalarType::Half));
+  EXPECT_TRUE(isValidScalarType(ScalarType::Float));
+  EXPECT_TRUE(isValidScalarType(ScalarType::Bool));
+  EXPECT_TRUE(isValidScalarType(ScalarType::BFloat16));
+}
+
+TEST_F(IsValidScalarTypeTest, UndefinedIsNotValid) {
+  EXPECT_FALSE(isValidScalarType(ScalarType::Undefined));
 }

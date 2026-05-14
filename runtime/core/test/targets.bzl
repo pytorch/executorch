@@ -92,6 +92,16 @@ def define_common_targets():
     )
 
     runtime.cxx_test(
+        name = "device_allocator_test",
+        srcs = [
+            "device_allocator_test.cpp",
+        ],
+        deps = [
+            "//executorch/runtime/core:device_allocator",
+        ],
+    )
+
+    runtime.cxx_test(
         name = "hierarchical_allocator_test",
         srcs = [
             "hierarchical_allocator_test.cpp",

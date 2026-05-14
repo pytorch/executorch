@@ -47,7 +47,7 @@ def _get_mask_buffer(graph_module: fx.GraphModule) -> torch.Tensor:
     return buffers["mask"]
 
 
-def test_replace_inf_and_limit_values_no_target_clamps_inf_constants():
+def test_replace_inf_and_limit_values_clamps_inf_constants():
     """Trace a module with infinities, run ReplaceInfAndLimitValuesPass, and
     expect the buffer and scalar literals to be clamped to ±255 with no
     infinities left.
@@ -64,7 +64,7 @@ def test_replace_inf_and_limit_values_no_target_clamps_inf_constants():
     assert sorted(_get_add_constants(result.graph_module)) == [-255, 255]
 
 
-def test_replace_inf_and_limit_values_no_target_respects_disallowed_nodes():
+def test_replace_inf_and_limit_values_respects_disallowed_nodes():
     """When nodes opt out of transforms, running the pass in TFA mode should
     leave the mask buffer untouched while still clamping scalar literals to
     ±255.
