@@ -246,6 +246,18 @@ TEST(JinjaChatFormatter, UniversalJinjaNormalizedNotToolsIsNone) {
   EXPECT_EQ(formatter->formatConversation(conv), "none");
 }
 
+TEST(JinjaChatFormatter, UniversalJinjaToolOutputObjectLiteral) {
+  const std::string template_str =
+      R"({%- for message in messages -%}{{ { "output": message.content } | tojson }}{%- endfor -%})";
+
+  auto formatter = JinjaChatFormatter::fromString(template_str);
+  ChatConversation conv;
+  conv.add_generation_prompt = false;
+  conv.messages.push_back(ChatMessage{"tool", "done"});
+
+  EXPECT_EQ(formatter->formatConversation(conv), R"({"output":"done"})");
+}
+
 TEST(JinjaChatFormatter, VllmLlama32PythonicToolTemplate) {
   // Mirrors vLLM's examples/tool_chat_template_llama3.2_pythonic.jinja.
   const std::string template_str = R"({{- bos_token }}

@@ -35,6 +35,8 @@ class JinjaChatFormatter {
   std::string format(
       const std::string& prompt,
       const std::string& system_prompt = "") const;
+  // Custom templates whose tokens cannot be inferred should use
+  // formatConversation() so the caller can provide bos/eos tokens explicitly.
   std::string formatConversation(const ChatConversation& conversation) const;
 
   bool includesBos() const {

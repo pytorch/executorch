@@ -66,7 +66,7 @@ std::string normalizeTemplate(std::string input) {
           {"tools is None", "not tools"},
           {"messages[1:]", "messages_tail"},
           {"{ \"output\": message.content } | tojson",
-           "message.content | tojson"},
+           "message.tool_output | tojson"},
       }};
   // Handle special case that can't be constexpr due to escape sequence
   const std::pair<std::string, std::string> gemmaReplacement = {
@@ -126,6 +126,12 @@ struct TypeReflection<executorch::extension::llm::ChatMessage>
         {"content",
          [](const executorch::extension::llm::ChatMessage& msg) {
            return jinja2::Reflect(msg.content);
+         }},
+        {"tool_output",
+         [](const executorch::extension::llm::ChatMessage& msg) {
+           jinja2::ValuesMap output;
+           output["output"] = msg.content;
+           return output;
          }},
     };
     return accessors;
