@@ -26,9 +26,8 @@ TEST(JinjaChatFormatter, Llama3SingleMessage) {
   // but no trailing \n\n at the end due to the {%- endif -%} stripping.
   const std::string expected =
       "<|begin_of_text|><|start_header_id|>system<|end_header_id|>\n\n" +
-      system_prompt +
-      "<|eot_id|><|start_header_id|>user<|end_header_id|>\n\n" + prompt +
-      "<|eot_id|><|start_header_id|>assistant<|end_header_id|>";
+      system_prompt + "<|eot_id|><|start_header_id|>user<|end_header_id|>\n\n" +
+      prompt + "<|eot_id|><|start_header_id|>assistant<|end_header_id|>";
 
   EXPECT_EQ(formatter->format(prompt, system_prompt), expected);
 }
@@ -50,7 +49,8 @@ TEST(JinjaChatFormatter, Llama3WithoutSystemPrompt) {
   EXPECT_THAT(result, HasSubstr("<|begin_of_text|>"));
   EXPECT_THAT(result, HasSubstr("<|start_header_id|>user<|end_header_id|>"));
   EXPECT_THAT(result, HasSubstr("Hello!"));
-  EXPECT_THAT(result, HasSubstr("<|start_header_id|>assistant<|end_header_id|>"));
+  EXPECT_THAT(
+      result, HasSubstr("<|start_header_id|>assistant<|end_header_id|>"));
   // Should not contain system header when no system prompt
   EXPECT_THAT(result, ::testing::Not(HasSubstr("<|start_header_id|>system")));
 }
@@ -101,7 +101,8 @@ TEST(JinjaChatFormatter, FormatConversationMultiTurn) {
   EXPECT_THAT(result, HasSubstr("Hello"));
   EXPECT_THAT(result, HasSubstr("Hi there!"));
   EXPECT_THAT(result, HasSubstr("How are you?"));
-  EXPECT_THAT(result, HasSubstr("<|start_header_id|>assistant<|end_header_id|>"));
+  EXPECT_THAT(
+      result, HasSubstr("<|start_header_id|>assistant<|end_header_id|>"));
 }
 
 TEST(JinjaChatFormatter, FromStringLlama3Template) {
@@ -179,7 +180,8 @@ TEST(JinjaChatFormatter, Llama32SingleMessage) {
   EXPECT_THAT(result, HasSubstr("<|begin_of_text|>"));
   EXPECT_THAT(result, HasSubstr("<|start_header_id|>user<|end_header_id|>"));
   EXPECT_THAT(result, HasSubstr("Hello!"));
-  EXPECT_THAT(result, HasSubstr("<|start_header_id|>assistant<|end_header_id|>"));
+  EXPECT_THAT(
+      result, HasSubstr("<|start_header_id|>assistant<|end_header_id|>"));
 }
 
 TEST(JinjaChatFormatter, Llama32IncludesBos) {
@@ -266,5 +268,4 @@ TEST(JinjaChatFormatter, UniversalJinjaNormalizedNotToolsIsNone) {
   // tools = [] is falsy after normalization (`not tools is none` -> `tools`).
   // The "else" branch should be selected (no tools available).
   EXPECT_EQ(formatter->formatConversation(conv), "none");
-}
 }

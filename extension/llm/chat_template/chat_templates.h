@@ -1,3 +1,11 @@
+/*
+ * Copyright (c) Meta Platforms, Inc. and affiliates.
+ * All rights reserved.
+ *
+ * This source code is licensed under the BSD-style license found in the
+ * LICENSE file in the root directory of this source tree.
+ */
+
 #pragma once
 
 #include <string>
@@ -15,23 +23,29 @@ enum class ChatTemplateType {
   Custom,
 };
 
-constexpr std::string_view kLlama3Template = R"({{ bos_token }}{%- for message in messages -%}<|start_header_id|>{{ message.role }}<|end_header_id|>
+constexpr std::string_view kLlama3Template =
+    R"({{ bos_token }}{%- for message in messages -%}<|start_header_id|>{{ message.role }}<|end_header_id|>
 
 {{ message.content }}<|eot_id|>{%- endfor -%}{%- if add_generation_prompt -%}<|start_header_id|>assistant<|end_header_id|>
 
 {%- endif -%})";
 
-constexpr std::string_view kGemma3Template = R"({{ bos_token }}{%- for message in messages -%}{%- if message.role == 'assistant' -%}<start_of_turn>model
+constexpr std::string_view kGemma3Template =
+    R"({{ bos_token }}{%- for message in messages -%}{%- if message.role == 'assistant' -%}<start_of_turn>model
 {%- else -%}<start_of_turn>{{ message.role }}
 {%- endif -%}{{ message.content }}<end_of_turn>{%- endfor -%}{%- if add_generation_prompt -%}<start_of_turn>model
 {%- endif -%})";
 
-inline const std::unordered_map<ChatTemplateType, std::string_view>
-    kEmbeddedTemplates = {
-        {ChatTemplateType::Llama3, kLlama3Template},
-        {ChatTemplateType::Llama32, kLlama3Template},
-        {ChatTemplateType::Gemma3, kGemma3Template},
-    };
+inline const std::unordered_map<ChatTemplateType, std::string_view>&
+getEmbeddedTemplates() {
+  static const std::unordered_map<ChatTemplateType, std::string_view>
+      embedded_templates = {
+          {ChatTemplateType::Llama3, kLlama3Template},
+          {ChatTemplateType::Llama32, kLlama3Template},
+          {ChatTemplateType::Gemma3, kGemma3Template},
+      };
+  return embedded_templates;
+}
 
 struct ModelTokens {
   std::string bos_token;
@@ -39,13 +53,22 @@ struct ModelTokens {
   std::vector<std::string> stop_tokens;
 };
 
-inline const std::unordered_map<ChatTemplateType, ModelTokens> kModelTokens = {
-    {ChatTemplateType::Llama3,
-     {"<|begin_of_text|>", "<|eot_id|>", {"<|eot_id|>", "<|end_of_text|>"}}},
-    {ChatTemplateType::Llama32,
-     {"<|begin_of_text|>", "<|eot_id|>", {"<|eot_id|>", "<|end_of_text|>"}}},
-    {ChatTemplateType::Gemma3,
-     {"<bos>", "<end_of_turn>", {"<end_of_turn>", "<eos>"}}},
-};
+inline const std::unordered_map<ChatTemplateType, ModelTokens>&
+getModelTokens() {
+  static const std::unordered_map<ChatTemplateType, ModelTokens> model_tokens =
+      {
+          {ChatTemplateType::Llama3,
+           {"<|begin_of_text|>",
+            "<|eot_id|>",
+            {"<|eot_id|>", "<|end_of_text|>"}}},
+          {ChatTemplateType::Llama32,
+           {"<|begin_of_text|>",
+            "<|eot_id|>",
+            {"<|eot_id|>", "<|end_of_text|>"}}},
+          {ChatTemplateType::Gemma3,
+           {"<bos>", "<end_of_turn>", {"<end_of_turn>", "<eos>"}}},
+      };
+  return model_tokens;
+}
 
 } // namespace executorch::extension::llm

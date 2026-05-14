@@ -1,9 +1,16 @@
+/*
+ * Copyright (c) Meta Platforms, Inc. and affiliates.
+ * All rights reserved.
+ *
+ * This source code is licensed under the BSD-style license found in the
+ * LICENSE file in the root directory of this source tree.
+ */
+
 #pragma once
 
 #include <executorch/extension/llm/chat_template/chat_templates.h>
 #include <executorch/extension/llm/runner/chat_types.h>
 
-#include <filesystem>
 #include <memory>
 #include <string>
 
@@ -15,11 +22,11 @@ namespace executorch::extension::llm {
 
 class JinjaChatFormatter {
  public:
-  static std::unique_ptr<JinjaChatFormatter> fromTemplate(ChatTemplateType type);
+  static std::unique_ptr<JinjaChatFormatter> fromTemplate(
+      ChatTemplateType type);
   static std::unique_ptr<JinjaChatFormatter> fromString(
       const std::string& template_str);
-  static std::unique_ptr<JinjaChatFormatter> fromFile(
-      const std::filesystem::path& path);
+  static std::unique_ptr<JinjaChatFormatter> fromFile(const std::string& path);
 
   ~JinjaChatFormatter();
 
