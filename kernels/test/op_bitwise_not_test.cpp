@@ -155,8 +155,8 @@ TEST_F(OpBitwiseNotOutTest, DynamicShapeUpperBoundLargerThanExpected) {
   EXPECT_TENSOR_EQ(out, expected);
 }
 
-TEST_F(OpBitwiseNotOutTest, DynamicShapeUnbound) {
-  GTEST_SKIP() << "Dynamic shape unbound not supported";
+// DISABLED: Dynamic shape unbound not supported
+TEST_F(OpBitwiseNotOutTest, DISABLED_DynamicShapeUnbound) {
   /* %python
   out_args = "{1, 1}, torch::executor::TensorShapeDynamism::DYNAMIC_UNBOUND"
   %rewrite(unary_op) */

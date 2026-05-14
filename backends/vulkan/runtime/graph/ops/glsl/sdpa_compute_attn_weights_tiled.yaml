@@ -6,9 +6,12 @@
 
 sdpa_compute_attn_weights_tiled:
   parameter_names_with_default_values:
-    DTYPE: float
+    IN_DTYPE: float
+    OUT_DTYPE: float
     IO_STORAGE: texture3d
     K_CACHE_STORAGE: texture3d
+    MODE: llm
+    HAS_BIAS: false
     TILE_M4: 1
     TILE_K4: 1
     TILE_N4: 1
@@ -19,8 +22,39 @@ sdpa_compute_attn_weights_tiled:
         - parameter_values: [texture3d, texture3d]
         - parameter_values: [buffer, texture3d]
         - parameter_values: [buffer, buffer]
-    DTYPE:
-      - VALUE: float
-      - VALUE: half
+    combination1:
+      parameter_names: [IN_DTYPE, OUT_DTYPE]
+      combos:
+        - parameter_values: [float, float]
+          suffix: float
+        - parameter_values: [half, half]
+          suffix: half
   shader_variants:
     - NAME: sdpa_compute_attn_weights_tiled
+    - NAME: fused_sdpa_qk_tiled
+      MODE: fused
+      OUT_DTYPE: float
+      generate_variant_forall:
+        combination:
+          parameter_names: [IO_STORAGE, K_CACHE_STORAGE]
+          combos:
+            - parameter_values: [texture3d, texture3d]
+            - parameter_values: [buffer, texture3d]
+            - parameter_values: [buffer, buffer]
+        IN_DTYPE:
+          - VALUE: float
+          - VALUE: half
+    - NAME: fused_sdpa_qk_tiled_bias
+      MODE: fused
+      OUT_DTYPE: float
+      HAS_BIAS: true
+      generate_variant_forall:
+        combination:
+          parameter_names: [IO_STORAGE, K_CACHE_STORAGE]
+          combos:
+            - parameter_values: [texture3d, texture3d]
+            - parameter_values: [buffer, texture3d]
+            - parameter_values: [buffer, buffer]
+        IN_DTYPE:
+          - VALUE: float
+          - VALUE: half

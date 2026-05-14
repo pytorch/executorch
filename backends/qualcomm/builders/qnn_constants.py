@@ -39,6 +39,13 @@ class OpCast:
 
 
 @dataclass(init=False, frozen=True)
+class OpChannelShuffle:
+    op_name: str = "ChannelShuffle"
+    param_num_groups: str = "num_groups"
+    param_axis: str = "axis"
+
+
+@dataclass(init=False, frozen=True)
 class OpConcat:
     op_name: str = "Concat"
     param_axis: str = "axis"

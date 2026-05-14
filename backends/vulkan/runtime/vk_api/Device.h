@@ -60,6 +60,12 @@ struct PhysicalDevice final {
   VkPhysicalDeviceCooperativeMatrix2FeaturesNV cooperative_matrix2_features;
 #endif /* VK_NV_cooperative_matrix2 */
 
+#ifdef VK_EXT_subgroup_size_control
+  VkPhysicalDeviceSubgroupSizeControlFeaturesEXT subgroup_size_control_features;
+  VkPhysicalDeviceSubgroupSizeControlPropertiesEXT
+      subgroup_size_control_properties;
+#endif /* VK_EXT_subgroup_size_control */
+
   // Available GPU queues
   std::vector<VkQueueFamilyProperties> queue_families;
 
@@ -74,6 +80,22 @@ struct PhysicalDevice final {
   bool has_timestamps;
   float timestamp_period;
   size_t min_ubo_alignment;
+
+  // Subgroup properties (queried via VkPhysicalDeviceSubgroupProperties).
+  // Populated from VK_VERSION_1_1+ devices; otherwise left at safe defaults.
+  uint32_t subgroup_size;
+  VkSubgroupFeatureFlags supported_subgroup_ops;
+  VkShaderStageFlags supported_subgroup_stages;
+
+  // Subgroup size control (VK_EXT_subgroup_size_control / Vulkan 1.3 core).
+  // Populated only if the extension/feature is supported; default to safe
+  // values otherwise. min/max set to subgroup_size when the extension is
+  // missing so callers can use the same range queries unconditionally.
+  uint32_t min_subgroup_size;
+  uint32_t max_subgroup_size;
+  VkShaderStageFlags required_subgroup_size_stages;
+  bool supports_subgroup_size_control;
+  bool supports_compute_full_subgroups;
 
   // Device identity
   std::string device_name;

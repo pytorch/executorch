@@ -106,6 +106,13 @@ Setup:
 ./examples/arm/setup.sh --disable-ethos-u-deps --enable-mlsdk-deps
 ```
 
+This is the default setup path and installs the MLSDK components from pip.
+Developers who need local source builds can use:
+
+```
+./backends/arm/scripts/setup-mlsdk-from-source.sh
+```
+
 The current flow lowers to TOSA and converts to VGF for use in external projects,
 so the `executor_runner` is not typically used here.
 
@@ -155,7 +162,7 @@ scp -P 2222 arm_test/cmake-out/executor_runner root@127.0.0.1:/tmp/
 Create a PTE file:
 
 ```
-python3 -m examples.arm.aot_arm_compiler \
+python3 -m backends.arm.scripts.aot_arm_compiler \
   --model_name examples/arm/example_modules/add.py \
   --delegate \
   --quantize \
@@ -242,10 +249,15 @@ Some tests, with `u55`, `u85` and `vgf` in the name require external dependencie
   ```
 
 In addition, some model tests in the Arm backend require third-party libraries or packages.
-To run these tests, you need to install the required dependencies by running the script `examples/arm/setup.sh` with the flag `--setup-test-dependency`.
+To run these tests, install the required dependencies directly:
 
-Please note that installing model test dependencies is a standalone process. When using the `--setup-test-dependency` flag,
-the script will install only the necessary dependencies for model tests, skipping all other setup procedures.
+```
+bash backends/arm/scripts/install_models_for_test.sh
+```
+
+Installing model test dependencies is a standalone process. The script installs
+only the dependencies needed for model tests, skipping all other setup
+procedures.
 
 ## Using git hooks
 

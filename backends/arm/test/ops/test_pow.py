@@ -145,13 +145,18 @@ x_fail = {
     "exp_two": "TOSA constraints: If x <0 .",
 }
 
+x_fail_FP = {
+    "exp_two": "TOSA constraints: If x <0 .",
+    "exp_zero": "MLETORCH-2041 : Invalid inputs.",
+}
+
 
 @common.parametrize(
     "test_data",
     Pow_TensorScalar.test_data
     | Pow_TensorScalar.test_data_fp16
     | Pow_TensorScalar.test_data_bf16,
-    xfails=x_fail,
+    xfails=x_fail_FP,
     strict=False,
 )
 def test_pow_tensor_scalar_tosa_FP(test_data: Pow_TensorScalar.input_t):
@@ -207,7 +212,7 @@ def test_pow_tensor_scalar_u85_INT(test_data: Pow_TensorScalar.input_t):
 @common.parametrize(
     "test_data",
     Pow_TensorScalar.test_data | Pow_TensorScalar.test_data_fp16,
-    x_fail,
+    x_fail_FP,
     strict=False,
 )
 @common.SkipIfNoModelConverter

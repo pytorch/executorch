@@ -281,8 +281,9 @@ def layout_declare_buffer(
     dtype: str,
     precision: str = "PRECISION",
     is_scalar_array: bool = True,
+    vec_size: int = 4,
 ) -> str:
-    array_type = buffer_gvec_type(dtype, 4)
+    array_type = buffer_gvec_type(dtype, vec_size)
     if is_scalar_array:
         array_type = buffer_scalar_type(dtype)
 
@@ -341,6 +342,7 @@ def layout_declare_tensor(
     storage_type: str,
     is_scalar_array: bool = True,
     precision: str = "PRECISION",
+    vec_size: int = 4,
 ) -> str:
     assert storage_type.lower() in ["buffer", "texture3d", "texture2d"]
 
@@ -357,6 +359,7 @@ def layout_declare_tensor(
             dtype,
             precision,
             is_scalar_array=is_scalar_array,
+            vec_size=vec_size,
         )
 
     # Create image/sampler binding
@@ -785,6 +788,10 @@ class SPVGenerator:
                     "generate_variant_forall", None
                 )
 
+                reserved_yaml_keys = {
+                    "generate_variant_forall",
+                }
+
                 for variant in params_dict["shader_variants"]:
                     default_iterated_params_names = set(
                         default_iterated_params.keys()
@@ -797,7 +804,7 @@ class SPVGenerator:
                         variant_params_names
                         - default_iterated_params_names
                         - params_names
-                        - {"generate_variant_forall"}
+                        - reserved_yaml_keys
                     )
                     assert len(invalid_keys) == 0
 
@@ -813,7 +820,7 @@ class SPVGenerator:
                         for combination in variant_combinations:
                             default_params_copy = copy.deepcopy(default_params)
                             for key in variant:
-                                if key != "generate_variant_forall":
+                                if key not in reserved_yaml_keys:
                                     default_params_copy[key] = variant[key]
 
                             variant_name = variant["NAME"]
@@ -842,7 +849,8 @@ class SPVGenerator:
                     else:
                         default_params_copy = copy.deepcopy(default_params)
                         for key in variant:
-                            default_params_copy[key] = variant[key]
+                            if key not in reserved_yaml_keys:
+                                default_params_copy[key] = variant[key]
 
                         self.shader_template_params[template_name].append(
                             default_params_copy
@@ -1026,6 +1034,27 @@ class SPVGenerator:
                 print(f"template_file_path: {template_file_path}")
                 output_text = preprocess(input_text, codegen_params)
 
+            # If the shader yaml declared a SUBGROUP_SIZE template parameter,
+            # embed it into the generated GLSL as a comment. getShaderInfo()
+            # parses it back out alongside TILE_SIZE, WEIGHT_STORAGE, etc.,
+            # avoiding a side-channel name -> value map.
+            subgroup_size = codegen_params.get("SUBGROUP_SIZE")
+            if subgroup_size is not None:
+                try:
+                    subgroup_size_int = int(subgroup_size)
+                except (TypeError, ValueError) as e:
+                    raise RuntimeError(
+                        f"Shader variant {src_file_name!r} declared "
+                        f"SUBGROUP_SIZE={subgroup_size!r}, which is not "
+                        f"parseable as an integer. Fix the SUBGROUP_SIZE "
+                        f"value in the shader's yaml."
+                    ) from e
+                if subgroup_size_int > 0:
+                    output_text = (
+                        f"// REQUIRED_SUBGROUP_SIZE = {subgroup_size_int}\n"
+                        + output_text
+                    )
+
             included_files = get_glsl_includes(output_text)
 
             with codecs.open(gen_out_path, "w", encoding="utf-8") as output_file:
@@ -1184,6 +1213,12 @@ class ShaderInfo:
     requires_integer_dot_product_ext: bool = False
     requires_shader_int64_ext: bool = False
     requires_shader_float64_ext: bool = False
+    # Subgroup size requirement (matches the C++ ShaderInfo encoding):
+    #   0  = no requirement
+    #   >0 = literal fixed size; sourced from the shader yaml's
+    #        `SUBGROUP_SIZE` template parameter (single source of truth for
+    #        both GLSL substitution and the Vulkan pipeline pin).
+    required_subgroup_size: int = 0
 
 
 def getName(filePath: str) -> str:
@@ -1206,6 +1241,17 @@ def findTileSizes(lineStr: str) -> List[int]:
     if matches is None:
         raise AssertionError("matches is None in findTileSizes")
     return [int(matches.group(1)), int(matches.group(2)), int(matches.group(3))]
+
+
+def isRequiredSubgroupSizeLine(lineStr: str) -> bool:
+    return re.search(r"^// REQUIRED_SUBGROUP_SIZE = ", lineStr) is not None
+
+
+def findRequiredSubgroupSize(lineStr: str) -> int:
+    matches = re.search(r"^// REQUIRED_SUBGROUP_SIZE = ([0-9]+)", lineStr)
+    if matches is None:
+        raise AssertionError("matches is None in findRequiredSubgroupSize")
+    return int(matches.group(1))
 
 
 def isWeightStorageTypeLine(lineStr: str) -> bool:
@@ -1281,6 +1327,8 @@ def getShaderInfo(srcFilePath: str) -> ShaderInfo:  # noqa: C901
                 shader_info.layouts.append(determineDescriptorType(line))
             if isTileSizeLine(line):
                 shader_info.tile_size = findTileSizes(line)
+            if isRequiredSubgroupSizeLine(line):
+                shader_info.required_subgroup_size = findRequiredSubgroupSize(line)
             if isWeightStorageTypeLine(line):
                 shader_info.weight_storage_type = getWeightStorageType(line)
             if isBiasStorageTypeLine(line):
@@ -1378,6 +1426,7 @@ def generateShaderInfoStr(shader_info: ShaderInfo, name: str, sizeBytes: int) ->
         to_cpp_str(shader_info.requires_integer_dot_product_ext),
         to_cpp_str(shader_info.requires_shader_int64_ext),
         to_cpp_str(shader_info.requires_shader_float64_ext),
+        str(shader_info.required_subgroup_size),
     ]
 
     shader_info_str = textwrap.indent(
@@ -1406,7 +1455,9 @@ def generateShaderDispatchStr(shader_info: ShaderInfo, name: str) -> str:
 
 
 def genCppFiles(
-    spv_files: Dict[str, str], cpp_header_path: str, cpp_src_file_path: str
+    spv_files: Dict[str, str],
+    cpp_header_path: str,
+    cpp_src_file_path: str,
 ) -> None:
     spv_bin_strs = []
     register_shader_info_strs = []

@@ -4,6 +4,7 @@
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
 
+import argparse
 import getpass
 import json
 import logging
@@ -12,6 +13,12 @@ import subprocess
 from multiprocessing.connection import Client
 
 import torch
+from executorch.backends.qualcomm.export_utils import (
+    get_backend_type,
+    QnnConfig,
+    setup_common_args_and_variables,
+    SimpleADB,
+)
 
 from executorch.backends.qualcomm.quantizer.quantizer import QuantDtype
 
@@ -19,14 +26,7 @@ from executorch.examples.qualcomm.oss_scripts.llm_utils.qnn_decoder_model_manage
     get_qnn_llm_edge_manager,
     HUGGING_FACE_REPO_IDS,
 )
-
-from executorch.examples.qualcomm.utils import (
-    get_backend_type,
-    make_output_dir,
-    parse_skip_delegation_node,
-    setup_common_args_and_variables,
-    SimpleADB,
-)
+from executorch.examples.qualcomm.utils import make_output_dir
 
 from transformers import AutoTokenizer
 
@@ -37,8 +37,7 @@ logging.getLogger().setLevel(logging.INFO)
 PTE_FILENAME = "qwen_qnn_q16"
 
 
-def compile(args):  # noqa: C901
-    skip_node_id_set, skip_node_op_set = parse_skip_delegation_node(args)
+def compile(args: argparse.Namespace, qnn_config: QnnConfig):  # noqa: C901
 
     # ensure the working directory exist.
     os.makedirs(args.artifact, exist_ok=True)
@@ -76,12 +75,14 @@ def compile(args):  # noqa: C901
             args.calibration_limit,
             args.prompt,
             tokenizer_json_path,
-            get_backend_type(args.backend),
-            args.model,
+            get_backend_type(qnn_config.backend),
+            qnn_config.soc_model,
         )
 
     manager.to_edge_transform_and_lower_to_qnn(
-        args.model, skip_node_id_set, skip_node_op_set
+        qnn_config.soc_model,
+        qnn_config.skip_delegate_node_ids,
+        qnn_config.skip_delegate_node_ops,
     )
     if args.ptq:
         logits_quant_attrs = manager.get_logits_quant_attrs()
@@ -96,7 +97,7 @@ def compile(args):  # noqa: C901
     manager.to_executorch(args.artifact, PTE_FILENAME)
 
 
-def inference(args):
+def inference(args: argparse, qnn_config: QnnConfig):
     workspace = f"/data/local/tmp/{getpass.getuser()}/executorch/{PTE_FILENAME}"
     pte_path = f"{args.artifact}/{PTE_FILENAME}.pte"
     # collect output data
@@ -151,15 +152,10 @@ def inference(args):
             ]
         )
         adb = SimpleADB(
-            qnn_sdk=os.getenv("QNN_SDK_ROOT"),
-            build_path=f"{args.build_folder}",
+            qnn_config=qnn_config,
             pte_path=pte_path,
             workspace=workspace,
-            device_id=args.device,
-            host_id=args.host,
-            soc_model=args.model,
             runner="examples/models/llama/llama_main",
-            target=args.target,
         )
         # No pregen inputs, input_list is not required
         adb.push(inputs=[], input_list="", files=[tokenizer_json_path])
@@ -182,16 +178,15 @@ def inference(args):
 
 
 def main(args):
-    if args.compile_only and args.pre_gen_pte:
-        raise RuntimeError("Cannot set both compile_only and pre_gen_pte as true")
+    qnn_config = QnnConfig.load_config(args.config_file if args.config_file else args)
 
     if args.compile_only:
-        compile(args)
+        compile(args, qnn_config)
     elif args.pre_gen_pte:
-        inference(args)
+        inference(args, qnn_config)
     else:
-        compile(args)
-        inference(args)
+        compile(args, qnn_config)
+        inference(args, qnn_config)
 
 
 if __name__ == "__main__":
@@ -254,7 +249,7 @@ if __name__ == "__main__":
 
     try:
         args = parser.parse_args()
-        args.validate(args)
+
         if args.artifact is None:
             args.artifact = args.decoder_model
         main(args)
