@@ -107,8 +107,7 @@ function setup_toolchain() {
 
     if [[ ! -e "${toolchain_archive}" ]]; then
         log_step "toolchain" "Downloading ${toolchain_dir} toolchain"
-        curl --output "${toolchain_archive}" -L "${toolchain_url}"
-        verify_md5 ${toolchain_md5_checksum} "${toolchain_archive}" || exit 1
+        download_with_retry "toolchain" "${toolchain_url}" "${toolchain_archive}" "${toolchain_md5_checksum}" || exit 1
     fi
 
     log_step "toolchain" "Installing ${toolchain_dir} toolchain"

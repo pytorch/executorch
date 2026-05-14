@@ -44,7 +44,8 @@ class MemoryManager final {
    *     must agree with the corresponding
    *     `MethodMeta::num_memory_planned_buffers()` and
    *     `MethodMeta::memory_planned_buffer_size(N)` values, which are embedded
-   *     in the Program.
+   *     in the Program. For device-aware programs, the per-buffer device
+   *     metadata is owned by the HierarchicalAllocator as well.
    * @param[in] temp_allocator The allocator to use when allocating temporary
    *     data during kernel or delegate execution. Must outlive the Method that
    *     uses it. May be `nullptr` if the Method does not use kernels or
@@ -58,32 +59,6 @@ class MemoryManager final {
       : method_allocator_(method_allocator),
         planned_memory_(planned_memory),
         temp_allocator_(temp_allocator) {
-    ET_CHECK_MSG(
-        method_allocator != temp_allocator,
-        "method allocator cannot be the same as temp allocator");
-  }
-
-  /**
-   * Constructs a new MemoryManager with per-buffer device metadata.
-   *
-   * @param[in] method_allocator Same as above.
-   * @param[in] planned_memory Same as above. May contain a mix of CPU and
-   *     device pointers — HierarchicalAllocator only does pointer arithmetic,
-   *     so device pointers are valid.
-   * @param[in] temp_allocator Same as above.
-   * @param[in] planned_buffer_devices One entry per planned memory buffer
-   *     (same count as planned_memory buffers), indicating the device type for
-   *     each buffer. For CPU-only programs, use the 3-arg constructor instead.
-   */
-  MemoryManager(
-      MemoryAllocator* method_allocator,
-      HierarchicalAllocator* planned_memory,
-      MemoryAllocator* temp_allocator,
-      Span<const etensor::DeviceType> planned_buffer_devices)
-      : method_allocator_(method_allocator),
-        planned_memory_(planned_memory),
-        temp_allocator_(temp_allocator),
-        planned_buffer_devices_(planned_buffer_devices) {
     ET_CHECK_MSG(
         method_allocator != temp_allocator,
         "method allocator cannot be the same as temp allocator");
@@ -136,25 +111,30 @@ class MemoryManager final {
   /**
    * Returns per-buffer device metadata. One entry per planned memory buffer,
    * same count as planned_memory buffers. Empty if no device metadata was
-   * provided (CPU-only program).
+   * provided (CPU-only program) or if `planned_memory` is null.
+   *
+   * This is a thin wrapper around
+   * `HierarchicalAllocator::planned_buffer_devices()`.
    */
-  Span<const etensor::DeviceType> planned_buffer_devices() const {
-    return planned_buffer_devices_;
+  Span<const etensor::Device> planned_buffer_devices() const {
+    if (planned_memory_ == nullptr) {
+      return {};
+    }
+    return planned_memory_->planned_buffer_devices();
   }
 
   /**
-   * Returns true if any planned buffer is on a non-CPU device.
-   * When false, the memory setup is CPU-only and follows the legacy path.
+   * Returns true if any planned buffer has device metadata attached.
+   * When false, the memory setup is CPU-only.
    */
   bool has_device_memory() const {
-    return planned_buffer_devices_.size() > 0;
+    return planned_buffer_devices().size() > 0;
   }
 
  private:
   MemoryAllocator* method_allocator_;
   HierarchicalAllocator* planned_memory_;
   MemoryAllocator* temp_allocator_;
-  Span<const etensor::DeviceType> planned_buffer_devices_;
 };
 
 } // namespace runtime

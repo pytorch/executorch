@@ -25,6 +25,9 @@ runtime.python_library(
         "//executorch/backends/arm:common",
         "//executorch/backends/arm/tosa:utils",
         "//executorch/backends/arm/tosa/dialect:lib",
+        "//executorch/backends/transforms:fuse_cascaded_transpose_or_permute_ops",
+        "//executorch/backends/transforms:postpone_permute_below_squeeze_view",
+        "//executorch/backends/transforms:remove_permutes_around_elementwise_ops",
         "//executorch/exir:lib",
     ],
 )

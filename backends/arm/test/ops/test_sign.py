@@ -22,17 +22,17 @@ exir_op = "executorch_exir_dialects_edge__ops_aten__sign_default"
 input_t1 = Tuple[torch.Tensor]
 
 test_data_suite = {
-    "zeros": torch.zeros(3, 5),
-    "ones": torch.ones(4, 4),
-    "neg_ones": -torch.ones(4, 4),
-    "mixed_signs": torch.tensor([[-2.0, -1.0, 0.0, 1.0, 2.0]]),
-    "positive_ramp": torch.arange(0.1, 1.1, 0.2),
-    "negative_ramp": torch.arange(-1.0, -0.1, 0.2),
-    "small_values": torch.tensor(
+    "zeros": lambda: torch.zeros(3, 5),
+    "ones": lambda: torch.ones(4, 4),
+    "neg_ones": lambda: -torch.ones(4, 4),
+    "mixed_signs": lambda: torch.tensor([[-2.0, -1.0, 0.0, 1.0, 2.0]]),
+    "positive_ramp": lambda: torch.arange(0.1, 1.1, 0.2),
+    "negative_ramp": lambda: torch.arange(-1.0, -0.1, 0.2),
+    "small_values": lambda: torch.tensor(
         [-1e-3, 0.0, 1e-3]
     ),  # Only values > observer's .eps are of interest.
-    "rand": torch.rand(10, 10) - 0.5,
-    "rand_alt_shape": torch.rand(10, 3, 5) - 0.5,
+    "rand": lambda: torch.rand(10, 10) - 0.5,
+    "rand_alt_shape": lambda: torch.rand(10, 3, 5) - 0.5,
 }
 
 
@@ -45,7 +45,7 @@ class Sign(torch.nn.Module):
 def test_sign_tosa_FP(test_data: Tuple):
     pipeline = TosaPipelineFP[input_t1](
         Sign(),
-        (test_data,),
+        (test_data(),),
         aten_op=aten_op,
         exir_op=exir_op,
     )
@@ -55,7 +55,7 @@ def test_sign_tosa_FP(test_data: Tuple):
 @common.parametrize("test_data", test_data_suite)
 def test_sign_tosa_INT(test_data: Tuple):
     pipeline = TosaPipelineINT[input_t1](
-        Sign(), (test_data,), aten_op=[], exir_op=exir_op, frobenius_threshold=None
+        Sign(), (test_data(),), aten_op=[], exir_op=exir_op, frobenius_threshold=None
     )
     pipeline.run()
 
@@ -66,7 +66,7 @@ def test_sign_tosa_INT(test_data: Tuple):
 def test_sign_u55_INT(test_data: Tuple):
     pipeline = EthosU55PipelineINT[input_t1](
         Sign(),
-        (test_data,),
+        (test_data(),),
         aten_ops=[],
         exir_ops=exir_op,
     )
@@ -78,7 +78,7 @@ def test_sign_u55_INT(test_data: Tuple):
 def test_sign_u85_INT(test_data: Tuple):
     pipeline = EthosU85PipelineINT[input_t1](
         Sign(),
-        (test_data,),
+        (test_data(),),
         aten_ops=[],
         exir_ops=exir_op,
     )
@@ -90,7 +90,7 @@ def test_sign_u85_INT(test_data: Tuple):
 def test_sign_vgf_no_quant(test_data: Tuple):
     pipeline = VgfPipeline[input_t1](
         Sign(),
-        (test_data,),
+        (test_data(),),
         aten_op=aten_op,
         exir_op=exir_op,
         quantize=False,
@@ -103,7 +103,7 @@ def test_sign_vgf_no_quant(test_data: Tuple):
 def test_sign_vgf_quant(test_data: Tuple):
     pipeline = VgfPipeline[input_t1](
         Sign(),
-        (test_data,),
+        (test_data(),),
         aten_op=[],
         exir_op=exir_op,
         quantize=True,
