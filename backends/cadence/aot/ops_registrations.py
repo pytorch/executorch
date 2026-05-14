@@ -233,10 +233,16 @@ lib.define(
     "quantized_conv2d_nhwc.out(Tensor input, Tensor weight, Tensor bias, int[] stride, SymInt[] padding, int[] dilation, int groups, int input_zero_point, Tensor weight_zero_point, Tensor bias_scale, float out_scale, int out_zero_point, Tensor out_multiplier, Tensor out_shift, *, Tensor(a!) out) -> Tensor(a!)"
 )
 lib.define(
-    "quantized_conv2d_nhwc.per_tensor(Tensor input, Tensor weight, Tensor bias, int[] stride, SymInt[] padding, int[] dilation, int groups, int input_zero_point, int weight_zero_point, float bias_scale, float out_scale, int out_zero_point, int out_multiplier, int out_shift) -> (Tensor Z)"
+    "quantized_conv2d_nhwc.per_tensor(Tensor input, Tensor weight, Tensor bias, int[] stride, SymInt[] padding, int[] dilation, int groups, int input_zero_point, int weight_zero_point, float bias_scale, float out_scale, int out_zero_point, int out_multiplier, int out_shift, Tensor? offset=None) -> (Tensor Z)"
 )
 lib.define(
-    "quantized_conv2d_nhwc.per_tensor_out(Tensor input, Tensor weight, Tensor bias, int[] stride, SymInt[] padding, int[] dilation, int groups, int input_zero_point, int weight_zero_point, float bias_scale, float out_scale, int out_zero_point, int out_multiplier, int out_shift, *, Tensor(a!) out) -> Tensor(a!)"
+    "quantized_conv2d_nhwc.per_tensor_out(Tensor input, Tensor weight, Tensor bias, int[] stride, SymInt[] padding, int[] dilation, int groups, int input_zero_point, int weight_zero_point, float bias_scale, float out_scale, int out_zero_point, int out_multiplier, int out_shift, Tensor? offset=None, *, Tensor(a!) out) -> Tensor(a!)"
+)
+lib.define(
+    "quantized_conv2d_depthwise_nhwc(Tensor input, Tensor weight, Tensor bias, int[] stride, SymInt[] padding, int[] dilation, int groups, int input_zero_point, int weight_zero_point, float bias_scale, float out_scale, int out_zero_point, int out_multiplier, int out_shift) -> (Tensor Z)"
+)
+lib.define(
+    "quantized_conv2d_depthwise_nhwc.out(Tensor input, Tensor weight, Tensor bias, int[] stride, SymInt[] padding, int[] dilation, int groups, int input_zero_point, int weight_zero_point, float bias_scale, float out_scale, int out_zero_point, int out_multiplier, int out_shift, *, Tensor(a!) out) -> Tensor(a!)"
 )
 lib.define(
     "quantized_conv1d_ncl(Tensor input, Tensor weight, Tensor bias, int[] stride, SymInt[] padding, int[] dilation, int groups, int input_zero_point, Tensor weight_zero_point, Tensor bias_scale, float out_scale, int out_zero_point, Tensor out_multiplier, Tensor out_shift) -> (Tensor Z)"
@@ -257,10 +263,22 @@ lib.define(
     "quantized_conv1d_nlc.out(Tensor input, Tensor weight, Tensor bias, int[] stride, SymInt[] padding, int[] dilation, int groups, int input_zero_point, Tensor weight_zero_point, Tensor bias_scale, float out_scale, int out_zero_point, Tensor out_multiplier, Tensor out_shift, *, Tensor(a!) out) -> Tensor(a!)"
 )
 lib.define(
-    "quantized_conv1d_nlc.per_tensor(Tensor input, Tensor weight, Tensor bias, int[] stride, SymInt[] padding, int[] dilation, int groups, int input_zero_point, int weight_zero_point, float bias_scale, float out_scale, int out_zero_point, int out_multiplier, int out_shift) -> (Tensor Z)"
+    "quantized_conv1d_nlc.per_tensor(Tensor input, Tensor weight, Tensor bias, int[] stride, SymInt[] padding, int[] dilation, int groups, int input_zero_point, int weight_zero_point, float bias_scale, float out_scale, int out_zero_point, int out_multiplier, int out_shift, Tensor? offset=None) -> (Tensor Z)"
 )
 lib.define(
-    "quantized_conv1d_nlc.per_tensor_out(Tensor input, Tensor weight, Tensor bias, int[] stride, SymInt[] padding, int[] dilation, int groups, int input_zero_point, int weight_zero_point, float bias_scale, float out_scale, int out_zero_point, int out_multiplier, int out_shift, *, Tensor(a!) out) -> Tensor(a!)"
+    "quantized_conv1d_nlc.per_tensor_out(Tensor input, Tensor weight, Tensor bias, int[] stride, SymInt[] padding, int[] dilation, int groups, int input_zero_point, int weight_zero_point, float bias_scale, float out_scale, int out_zero_point, int out_multiplier, int out_shift, Tensor? offset=None, *, Tensor(a!) out) -> Tensor(a!)"
+)
+lib.define(
+    "quantized_depthwise_conv1d_ncl.per_tensor(Tensor input, Tensor weight, Tensor bias, int[] stride, SymInt[] padding, int[] dilation, int groups, int input_zero_point, int weight_zero_point, float bias_scale, float out_scale, int out_zero_point, int out_multiplier, int out_shift) -> (Tensor Z)"
+)
+lib.define(
+    "quantized_depthwise_conv1d_ncl.per_tensor_out(Tensor input, Tensor weight, Tensor bias, int[] stride, SymInt[] padding, int[] dilation, int groups, int input_zero_point, int weight_zero_point, float bias_scale, float out_scale, int out_zero_point, int out_multiplier, int out_shift, *, Tensor(a!) out) -> Tensor(a!)"
+)
+lib.define(
+    "quantized_depthwise_conv1d_nlc.per_tensor(Tensor input, Tensor weight, Tensor bias, int[] stride, SymInt[] padding, int[] dilation, int groups, int input_zero_point, int weight_zero_point, float bias_scale, float out_scale, int out_zero_point, int out_multiplier, int out_shift) -> (Tensor Z)"
+)
+lib.define(
+    "quantized_depthwise_conv1d_nlc.per_tensor_out(Tensor input, Tensor weight, Tensor bias, int[] stride, SymInt[] padding, int[] dilation, int groups, int input_zero_point, int weight_zero_point, float bias_scale, float out_scale, int out_zero_point, int out_multiplier, int out_shift, *, Tensor(a!) out) -> Tensor(a!)"
 )
 lib.define(
     "quantized_conv2d_nchw(Tensor input, Tensor weight, Tensor bias, int[] stride, SymInt[] padding, int[] dilation, int groups, int input_zero_point, Tensor weight_zero_point, Tensor bias_scale, float out_scale, int out_zero_point, Tensor out_multiplier, Tensor out_shift) -> (Tensor Z)"
@@ -689,11 +707,11 @@ lib.define(
 )
 
 lib.define(
-    "quantized_w8a32_gru(Tensor inputs, Tensor hidden, Tensor weights_inputs, float w_i_scale, Tensor weights_hidden, float w_h_scale, Tensor bias_inputs, float b_i_scale, Tensor bias_hidden, float b_h_scale) -> Tensor"
+    "quantized_w8a32_gru(Tensor inputs, Tensor hidden, Tensor weights_inputs, float w_i_scale, Tensor weights_hidden, float w_h_scale, Tensor bias_inputs, float b_scale, Tensor bias_hidden) -> Tensor"
 )
 
 lib.define(
-    "quantized_w8a32_gru.out(Tensor inputs, Tensor hidden, Tensor weights_inputs, float w_i_scale, Tensor weights_hidden, float w_h_scale, Tensor bias_inputs, float b_i_scale, Tensor bias_hidden, float b_h_scale, *, Tensor(a!) out) -> Tensor(a!)"
+    "quantized_w8a32_gru.out(Tensor inputs, Tensor hidden, Tensor weights_inputs, float w_i_scale, Tensor weights_hidden, float w_h_scale, Tensor bias_inputs, float b_scale, Tensor bias_hidden, *, Tensor(a!) out) -> Tensor(a!)"
 )
 
 lib.define(
@@ -754,6 +772,9 @@ def quantize_per_tensor_meta(
     quant_max: int,
     dtype: torch.dtype,
 ) -> torch.Tensor:
+    torch._check(
+        input.dtype in (torch.float32, torch.bfloat16), lambda: "expected float dtype"
+    )
     return input.new_empty(input.size(), dtype=dtype)
 
 
@@ -766,6 +787,9 @@ def quantize_per_tensor_asym8s_meta(
     quant_max: int,
     dtype: torch.dtype,
 ) -> torch.Tensor:
+    torch._check(
+        input.dtype in (torch.float32, torch.bfloat16), lambda: "expected float dtype"
+    )
     return input.new_empty(input.size(), dtype=dtype)
 
 
@@ -778,6 +802,9 @@ def quantize_per_tensor_asym8u_meta(
     quant_max: int,
     dtype: torch.dtype,
 ) -> torch.Tensor:
+    torch._check(
+        input.dtype in (torch.float32, torch.bfloat16), lambda: "expected float dtype"
+    )
     return input.new_empty(input.size(), dtype=dtype)
 
 
@@ -790,6 +817,9 @@ def quantize_per_tensor_asym16s_meta(
     quant_max: int,
     dtype: torch.dtype,
 ) -> torch.Tensor:
+    torch._check(
+        input.dtype in (torch.float32, torch.bfloat16), lambda: "expected float dtype"
+    )
     return input.new_empty(input.size(), dtype=dtype)
 
 
@@ -802,6 +832,9 @@ def quantize_per_tensor_asym16u_meta(
     quant_max: int,
     dtype: torch.dtype,
 ) -> torch.Tensor:
+    torch._check(
+        input.dtype in (torch.float32, torch.bfloat16), lambda: "expected float dtype"
+    )
     return input.new_empty(input.size(), dtype=dtype)
 
 
@@ -814,6 +847,9 @@ def quantize_per_tensor_asym32s_meta(
     quant_max: int,
     dtype: torch.dtype,
 ) -> torch.Tensor:
+    torch._check(
+        input.dtype in (torch.float32, torch.bfloat16), lambda: "expected float dtype"
+    )
     return input.new_empty(input.size(), dtype=dtype)
 
 
@@ -838,6 +874,9 @@ def dequantize_per_tensor_asym8s_meta(
     quant_max: int,
     dtype: torch.dtype,
 ) -> torch.Tensor:
+    torch._check(
+        input.dtype in (torch.int8, torch.uint8), lambda: "expected 8-bit dtype"
+    )
     return input.new_empty(input.size(), dtype=torch.float)
 
 
@@ -850,6 +889,9 @@ def dequantize_per_tensor_asym8u_meta(
     quant_max: int,
     dtype: torch.dtype,
 ) -> torch.Tensor:
+    torch._check(
+        input.dtype in (torch.int8, torch.uint8), lambda: "expected 8-bit dtype"
+    )
     return input.new_empty(input.size(), dtype=torch.float)
 
 
@@ -900,6 +942,7 @@ def quantized_add_meta(
     out_scale: float,
     out_zero_point: int,
 ) -> torch.Tensor:
+    torch._check(X.dtype == Y.dtype, lambda: "expected same dtype")
 
     # Determine output shape by broadcasting X and Y
     out_size = torch.broadcast_shapes(X.size(), Y.size())
@@ -933,6 +976,7 @@ def quantized_add_per_tensor_meta(
     out_scale: float,
     out_zero_point: int,
 ) -> torch.Tensor:
+    torch._check(X.dtype == Y.dtype, lambda: "expected same dtype")
 
     out_size = torch.broadcast_shapes(X.size(), Y.size())
     return X.new_empty(out_size, dtype=X.dtype)
@@ -949,6 +993,9 @@ def quantized_add_asym8sxasym8s_asym8s_per_tensor_meta(
     out_scale: float,
     out_zero_point: int,
 ) -> torch.Tensor:
+    torch._check(X.dtype in (torch.int8, torch.uint8), lambda: "expected 8-bit dtype")
+    torch._check(Y.dtype in (torch.int8, torch.uint8), lambda: "expected 8-bit dtype")
+    torch._check(X.dtype == Y.dtype, lambda: "expected same dtype")
     out_size = torch.broadcast_shapes(X.size(), Y.size())
     return X.new_empty(out_size, dtype=X.dtype)
 
@@ -964,6 +1011,9 @@ def quantized_add_asym8uxasym8u_asym8u_per_tensor_meta(
     out_scale: float,
     out_zero_point: int,
 ) -> torch.Tensor:
+    torch._check(X.dtype in (torch.int8, torch.uint8), lambda: "expected 8-bit dtype")
+    torch._check(Y.dtype in (torch.int8, torch.uint8), lambda: "expected 8-bit dtype")
+    torch._check(X.dtype == Y.dtype, lambda: "expected same dtype")
     out_size = torch.broadcast_shapes(X.size(), Y.size())
     return X.new_empty(out_size, dtype=X.dtype)
 
@@ -980,6 +1030,8 @@ def quantized_linear_meta(
     out_zero_point: int,
     offset: Optional[torch.Tensor],
 ) -> torch.Tensor:
+    torch._check(bias.dtype == torch.int32, lambda: "expected int32")
+    torch._check(weight.dim() == 2, lambda: "expected 2D tensor")
     # src comes in shape [leading_dims, in_dim]
     # weight comes in shape [out_dim, in_dim]
     # output comes in empty with shape [leading_dims, out_dim]
@@ -1002,6 +1054,8 @@ def quantized_linear_per_tensor_meta(
     out_zero_point: torch.SymInt,
     offset: Optional[torch.Tensor],
 ) -> torch.Tensor:
+    torch._check(bias.dtype == torch.int32, lambda: "expected int32")
+    torch._check(weight.dim() == 2, lambda: "expected 2D tensor")
     # src comes in shape [leading_dims, in_dim]
     # weight comes in shape [out_dim, in_dim]
     # output comes in empty with shape [leading_dims, out_dim]
@@ -1024,6 +1078,12 @@ def quantized_linear_asym8sxasym8s_asym8s_per_tensor_meta(
     out_zero_point: int,
     offset: Optional[torch.Tensor],
 ) -> torch.Tensor:
+    torch._check(src.dtype in (torch.int8, torch.uint8), lambda: "expected 8-bit dtype")
+    torch._check(
+        weight.dtype in (torch.int8, torch.uint8), lambda: "expected 8-bit dtype"
+    )
+    torch._check(bias.dtype == torch.int32, lambda: "expected int32")
+    torch._check(weight.dim() == 2, lambda: "expected 2D tensor")
     # src comes in shape [leading_dims, in_dim]
     # weight comes in shape [out_dim, in_dim]
     # output comes in empty with shape [leading_dims, out_dim]
@@ -1046,6 +1106,12 @@ def quantized_linear_asym8uxasym8u_asym8u_per_tensor_meta(
     out_zero_point: int,
     offset: Optional[torch.Tensor],
 ) -> torch.Tensor:
+    torch._check(src.dtype in (torch.int8, torch.uint8), lambda: "expected 8-bit dtype")
+    torch._check(
+        weight.dtype in (torch.int8, torch.uint8), lambda: "expected 8-bit dtype"
+    )
+    torch._check(bias.dtype == torch.int32, lambda: "expected int32")
+    torch._check(weight.dim() == 2, lambda: "expected 2D tensor")
     # src comes in shape [leading_dims, in_dim]
     # weight comes in shape [out_dim, in_dim]
     # output comes in empty with shape [leading_dims, out_dim]
@@ -1073,6 +1139,7 @@ def quantized_conv2d_nhwc_meta(
     out_multiplier: torch.Tensor,
     out_shift: torch.Tensor,
 ) -> torch.Tensor:
+    torch._check(bias.dtype == torch.int32, lambda: "expected int32")
     in_size = input.shape
     # Assert that the input tensor has at least 3 dimensions, and at most 6
     assert len(in_size) > 2
@@ -1125,6 +1192,7 @@ def quantized_conv1d_ncl_meta(
     out_multiplier: torch.Tensor,
     out_shift: torch.Tensor,
 ) -> torch.Tensor:
+    torch._check(bias.dtype == torch.int32, lambda: "expected int32")
     # NCL format: input is [N, C, L], weight is [OC, IC/groups, K]
     out_channels, _, kernel_size = weight.shape
 
@@ -1162,6 +1230,7 @@ def quantized_conv1d_ncl_per_tensor_meta(
     out_multiplier: int,
     out_shift: int,
 ) -> torch.Tensor:
+    torch._check(bias.dtype == torch.int32, lambda: "expected int32")
     # NCL format: input is [N, C, L], weight is [OC, IC/groups, K]
     out_channels, _, kernel_size = weight.shape
 
@@ -1199,6 +1268,7 @@ def quantized_conv1d_nlc_meta(
     out_multiplier: torch.Tensor,
     out_shift: torch.Tensor,
 ) -> torch.Tensor:
+    torch._check(bias.dtype == torch.int32, lambda: "expected int32")
     # NLC format: input is [N, L, C], weight is [OC, K, IC/groups]
     out_channels, kernel_size, _ = weight.shape
 
@@ -1235,7 +1305,9 @@ def quantized_conv1d_nlc_per_tensor_meta(
     output_zero_point: int,
     out_multiplier: int,
     out_shift: int,
+    offset: Optional[torch.Tensor] = None,
 ) -> torch.Tensor:
+    torch._check(bias.dtype == torch.int32, lambda: "expected int32")
     # NLC format: input is [N, L, C], weight is [OC, K, IC/groups]
     out_channels, kernel_size, _ = weight.shape
 
@@ -1243,6 +1315,80 @@ def quantized_conv1d_nlc_per_tensor_meta(
     assert len(in_size) == 3
 
     # Compute the output tensor size for 1D conv (NLC format, channel_last=True)
+    output_size = get_conv1d_output_size(
+        in_size,
+        out_channels,
+        stride[-1],
+        padding[-1],
+        dilation[-1],
+        kernel_size,
+        True,
+    )
+
+    return input.new_empty(output_size, dtype=input.dtype)
+
+
+@register_fake("cadence::quantized_depthwise_conv1d_ncl.per_tensor")
+def quantized_depthwise_conv1d_ncl_per_tensor_meta(
+    input: torch.Tensor,
+    weight: torch.Tensor,
+    bias: torch.Tensor,
+    stride: Tuple[int],
+    padding: Tuple[int],
+    dilation: Tuple[int],
+    groups: int,
+    in_zero_point: int,
+    weight_zero_point: int,
+    bias_scale: float,
+    output_scale: float,
+    output_zero_point: int,
+    out_multiplier: int,
+    out_shift: int,
+) -> torch.Tensor:
+    torch._check(bias.dtype == torch.int32, lambda: "expected int32")
+    # NCL format: input is [N, C, L], weight is [OC, IC/groups, K]
+    out_channels, _, kernel_size = weight.shape
+
+    in_size = input.shape
+    assert len(in_size) == 3
+
+    output_size = get_conv1d_output_size(
+        in_size,
+        out_channels,
+        stride[-1],
+        padding[-1],
+        dilation[-1],
+        kernel_size,
+        False,
+    )
+
+    return input.new_empty(output_size, dtype=input.dtype)
+
+
+@register_fake("cadence::quantized_depthwise_conv1d_nlc.per_tensor")
+def quantized_depthwise_conv1d_nlc_per_tensor_meta(
+    input: torch.Tensor,
+    weight: torch.Tensor,
+    bias: torch.Tensor,
+    stride: Tuple[int],
+    padding: Tuple[int],
+    dilation: Tuple[int],
+    groups: int,
+    in_zero_point: int,
+    weight_zero_point: int,
+    bias_scale: float,
+    output_scale: float,
+    output_zero_point: int,
+    out_multiplier: int,
+    out_shift: int,
+) -> torch.Tensor:
+    torch._check(bias.dtype == torch.int32, lambda: "expected int32")
+    # NLC format: input is [N, L, C], weight is [OC, K, IC/groups]
+    out_channels, kernel_size, _ = weight.shape
+
+    in_size = input.shape
+    assert len(in_size) == 3
+
     output_size = get_conv1d_output_size(
         in_size,
         out_channels,
@@ -1273,6 +1419,7 @@ def quantized_conv2d_nchw_meta(
     out_multiplier: torch.Tensor,
     out_shift: torch.Tensor,
 ) -> torch.Tensor:
+    torch._check(bias.dtype == torch.int32, lambda: "expected int32")
     out_channels, _, *kernel_size = weight.shape
 
     in_size = input.shape
@@ -1317,6 +1464,7 @@ def quantized_conv2d_nchw_per_tensor_meta(
     out_multiplier: int,
     out_shift: int,
 ) -> torch.Tensor:
+    torch._check(bias.dtype == torch.int32, lambda: "expected int32")
     out_channels, _, *kernel_size = weight.shape
 
     in_size = input.shape
@@ -1360,7 +1508,9 @@ def quantized_conv2d_nhwc_per_tensor_meta(
     output_zero_point: int,
     out_multiplier: int,
     out_shift: int,
+    offset: Optional[torch.Tensor] = None,
 ) -> torch.Tensor:
+    torch._check(bias.dtype == torch.int32, lambda: "expected int32")
     in_size = input.shape
     # Assert that the input tensor has at least 3 dimensions, and at most 6
     assert len(in_size) > 2
@@ -2020,6 +2170,50 @@ def quantized_conv2d_nhwc_depthwise_asym8uxsym8u_asym8u_per_tensor_meta(
     return input.new_empty(output_size, dtype=input.dtype)
 
 
+@register_fake("cadence::quantized_conv2d_depthwise_nhwc")
+def quantized_conv2d_depthwise_nhwc_meta(
+    input: torch.Tensor,
+    weight: torch.Tensor,
+    bias: torch.Tensor,
+    stride: Tuple[int],
+    padding: Tuple[int],
+    dilation: Tuple[int],
+    groups: int,
+    in_zero_point: int,
+    weight_zero_point: int,
+    bias_scale: float,
+    output_scale: float,
+    output_zero_point: int,
+    out_multiplier: int,
+    out_shift: int,
+) -> torch.Tensor:
+    torch._check(bias.dtype == torch.int32, lambda: "expected int32")
+    in_size = input.shape
+    assert len(in_size) > 2
+    assert len(in_size) < 6
+    # Depthwise weight is always [*kernel_size, OC]:
+    # 2D: [KH, KW, OC], 1D: [K, OC]
+    *kernel_size, out_channels = weight.shape
+
+    output_size = (
+        get_conv1d_output_size(
+            in_size,
+            out_channels,
+            stride[-1],
+            padding[-1],
+            dilation[-1],
+            kernel_size[0],
+            True,
+        )
+        if len(in_size) == 3
+        else get_conv2d_output_size(
+            in_size, out_channels, stride, padding, dilation, kernel_size, True
+        )
+    )
+
+    return input.new_empty(output_size, dtype=input.dtype)
+
+
 @register_fake("cadence::quantized_layer_norm")
 def quantized_layer_norm_meta(
     input: torch.Tensor,
@@ -2032,6 +2226,8 @@ def quantized_layer_norm_meta(
     output_scale: float,
     output_zero_point: int,
 ) -> torch.Tensor:
+    torch._check(weight.dtype == torch.float32, lambda: "expected float32")
+    torch._check(bias.dtype == torch.float32, lambda: "expected float32")
     return input.new_empty(input.size(), dtype=input.dtype)
 
 
@@ -2047,6 +2243,8 @@ def quantized_layer_norm_per_tensor_meta(
     output_scale: float,
     output_zero_point: int,
 ) -> torch.Tensor:
+    torch._check(weight.dtype == torch.float32, lambda: "expected float32")
+    torch._check(bias.dtype == torch.float32, lambda: "expected float32")
     return input.new_empty(input.size(), dtype=input.dtype)
 
 
@@ -2073,6 +2271,9 @@ def quantized_matmul_meta(
     out_zero_point: int,
     transposed: bool = False,
 ) -> torch.Tensor:
+    torch._check(X.dtype == Y.dtype, lambda: "expected same dtype")
+    torch._check(X.dim() >= 2, lambda: "expected at least 2D tensor")
+    torch._check(Y.dim() >= 2, lambda: "expected at least 2D tensor")
     X_size = list(X.size())
     Y_size = list(Y.size())
 
@@ -2116,6 +2317,11 @@ def quantized_matmul_asym8sxasym8s_asym8s_meta(
     out_zero_point: int,
     transposed: bool = False,
 ) -> torch.Tensor:
+    torch._check(X.dtype in (torch.int8, torch.uint8), lambda: "expected 8-bit dtype")
+    torch._check(Y.dtype in (torch.int8, torch.uint8), lambda: "expected 8-bit dtype")
+    torch._check(X.dtype == Y.dtype, lambda: "expected same dtype")
+    torch._check(X.dim() >= 2, lambda: "expected at least 2D tensor")
+    torch._check(Y.dim() >= 2, lambda: "expected at least 2D tensor")
     X_size = list(X.size())
     Y_size = list(Y.size())
 
@@ -2159,6 +2365,11 @@ def quantized_matmul_asym8uxasym8u_asym8u_meta(
     out_zero_point: int,
     transposed: bool = False,
 ) -> torch.Tensor:
+    torch._check(X.dtype in (torch.int8, torch.uint8), lambda: "expected 8-bit dtype")
+    torch._check(Y.dtype in (torch.int8, torch.uint8), lambda: "expected 8-bit dtype")
+    torch._check(X.dtype == Y.dtype, lambda: "expected same dtype")
+    torch._check(X.dim() >= 2, lambda: "expected at least 2D tensor")
+    torch._check(Y.dim() >= 2, lambda: "expected at least 2D tensor")
     X_size = list(X.size())
     Y_size = list(Y.size())
 
@@ -2200,6 +2411,7 @@ def im2row_meta(
     in_zero_point: torch.Tensor,
     channel_last: bool = False,
 ) -> torch.Tensor:
+    torch._check(3 <= input.dim() <= 4, lambda: "expected 3-4D tensor")
     output_size = get_im2row_output_size(
         input, kernel_size, dilation, padding, stride, channel_last
     )
@@ -2216,6 +2428,7 @@ def im2row_per_tensor_meta(
     in_zero_point: int,
     channel_last: bool = False,
 ) -> torch.Tensor:
+    torch._check(3 <= input.dim() <= 4, lambda: "expected 3-4D tensor")
     output_size = get_im2row_output_size(
         input, kernel_size, dilation, padding, stride, channel_last
     )
@@ -2293,6 +2506,9 @@ def quantized_relu_asym8s_asym8s_per_tensor_meta(
     out_multiplier: int,
     out_shift: int,
 ) -> torch.Tensor:
+    torch._check(
+        input.dtype in (torch.int8, torch.uint8), lambda: "expected 8-bit dtype"
+    )
     return input.new_empty(input.size(), dtype=input.dtype)
 
 
@@ -2304,6 +2520,9 @@ def quantized_relu_asym8u_asym8u_per_tensor_meta(
     out_multiplier: int,
     out_shift: int,
 ) -> torch.Tensor:
+    torch._check(
+        input.dtype in (torch.int8, torch.uint8), lambda: "expected 8-bit dtype"
+    )
     return input.new_empty(input.size(), dtype=input.dtype)
 
 
@@ -2393,8 +2612,12 @@ def quantized_max_pool2d_nhwc_meta(
 def fully_connected_meta(
     src: torch.Tensor,
     weight: torch.Tensor,
-    bias: torch.Tensor,
+    bias: Optional[torch.Tensor] = None,
 ) -> torch.Tensor:
+    torch._check(
+        src.dtype in (torch.float32, torch.bfloat16), lambda: "expected float dtype"
+    )
+    torch._check(src.size(0) == 1, lambda: "expected batch size of 1")
     # src comes in shape [leading_dims, in_dim]
     # weight comes in shape [out_dim, in_dim]
     # output comes in empty with shape [leading_dims, out_dim]
@@ -2417,6 +2640,9 @@ def quantized_fully_connected_meta(
     out_zero_point: int,
     offset: Optional[torch.Tensor],
 ) -> torch.Tensor:
+    torch._check(bias.dtype == torch.int32, lambda: "expected int32")
+    torch._check(weight.dim() == 2, lambda: "expected 2D tensor")
+    torch._check(src.size(0) == 1, lambda: "expected batch size of 1")
     # src comes in shape [leading_dims, in_dim]
     # weight comes in shape [out_dim, in_dim]
     # output comes in empty with shape [leading_dims, out_dim]
@@ -2440,6 +2666,9 @@ def quantized_fully_connected_per_tensor_meta(
     out_zero_point: int,
     offset: Optional[torch.Tensor],
 ) -> torch.Tensor:
+    torch._check(bias.dtype == torch.int32, lambda: "expected int32")
+    torch._check(weight.dim() == 2, lambda: "expected 2D tensor")
+    torch._check(src.size(0) == 1, lambda: "expected batch size of 1")
     # src comes in shape [leading_dims, in_dim]
     # weight comes in shape [out_dim, in_dim]
     # output comes in empty with shape [leading_dims, out_dim]
@@ -2463,6 +2692,13 @@ def quantized_fully_connected_asym8sxasym8s_asym8s_per_tensor_meta(
     out_zero_point: int,
     offset: Optional[torch.Tensor],
 ) -> torch.Tensor:
+    torch._check(src.dtype in (torch.int8, torch.uint8), lambda: "expected 8-bit dtype")
+    torch._check(
+        weight.dtype in (torch.int8, torch.uint8), lambda: "expected 8-bit dtype"
+    )
+    torch._check(bias.dtype == torch.int32, lambda: "expected int32")
+    torch._check(weight.dim() == 2, lambda: "expected 2D tensor")
+    torch._check(src.size(0) == 1, lambda: "expected batch size of 1")
     # src comes in shape [leading_dims, in_dim]
     # weight comes in shape [out_dim, in_dim]
     # output comes in empty with shape [leading_dims, out_dim]
@@ -2486,6 +2722,13 @@ def quantized_fully_connected_asym8uxasym8u_asym8u_per_tensor_meta(
     out_zero_point: int,
     offset: Optional[torch.Tensor],
 ) -> torch.Tensor:
+    torch._check(src.dtype in (torch.int8, torch.uint8), lambda: "expected 8-bit dtype")
+    torch._check(
+        weight.dtype in (torch.int8, torch.uint8), lambda: "expected 8-bit dtype"
+    )
+    torch._check(bias.dtype == torch.int32, lambda: "expected int32")
+    torch._check(weight.dim() == 2, lambda: "expected 2D tensor")
+    torch._check(src.size(0) == 1, lambda: "expected batch size of 1")
     # src comes in shape [leading_dims, in_dim]
     # weight comes in shape [out_dim, in_dim]
     # output comes in empty with shape [leading_dims, out_dim]
@@ -2507,6 +2750,7 @@ def conv1d_meta(
     dilation: Tuple[int],
     groups: int,
 ) -> torch.Tensor:
+    torch._check(input.dtype == torch.float32, lambda: "expected float32")
     # Validate tensor dimensions
     assert len(input.shape) == 3, f"Conv1d expects 3D input, got {len(input.shape)}D"
     assert len(weight.shape) == 3, f"Conv1d expects 3D weight, got {len(weight.shape)}D"
@@ -2553,6 +2797,7 @@ def conv2d_meta(
     dilation: Tuple[int],
     groups: int,
 ) -> torch.Tensor:
+    torch._check(input.dtype == torch.float32, lambda: "expected float32")
     assert (
         len(weight.shape) == 4
     ), f"Conv2d expects a 4D weight, got {len(weight.shape)}D"
@@ -2577,6 +2822,7 @@ def conv3d_meta(
     dilation: Tuple[int, int, int],
     groups: int,
 ) -> torch.Tensor:
+    torch._check(input.dtype == torch.float32, lambda: "expected float32")
     assert (
         len(weight.shape) == 5
     ), f"Conv3d expects a 5D weight, got {len(weight.shape)}D"
@@ -2745,6 +2991,7 @@ def avg_pool2d_meta(
     in_zero_point: Optional[torch.Tensor] = None,
     channel_last: bool = False,
 ) -> torch.Tensor:
+    torch._check(input.dim() == 4, lambda: "expected 4D tensor")
     # Use torch native meta kernels when operator semantics are similar
     return torch._meta_registrations.meta_avg_pool2d(
         input,
@@ -2844,6 +3091,8 @@ def rope_meta(
     cos_tensor: torch.Tensor,
     pos: Optional[torch.Tensor],
 ) -> torch.Tensor:
+    torch._check(sin_tensor.dtype == torch.float32, lambda: "expected float32")
+    torch._check(cos_tensor.dtype == torch.float32, lambda: "expected float32")
     input_shape = list(input.shape)
     assert (
         len(input_shape) in (4, 5) and input_shape[0] == 1
@@ -2871,6 +3120,8 @@ def rope_rotate_stacked_halves_meta(
     cos_tensor: torch.Tensor,
     pos: Optional[torch.Tensor],
 ) -> torch.Tensor:
+    torch._check(sin_tensor.dtype == torch.float32, lambda: "expected float32")
+    torch._check(cos_tensor.dtype == torch.float32, lambda: "expected float32")
     input_shape = list(input.shape)
     assert (
         len(input_shape) in (4, 5) and input_shape[0] == 1
@@ -2938,6 +3189,8 @@ def roi_align_box_processor_meta(
     sampling_ratio: int,
     aligned: bool,
 ) -> torch.Tensor:
+    torch._check(rois.dim() == 2, lambda: "expected 2D tensor")
+    torch._check(rois.size(1) == 5, lambda: "expected dim[1] == 5")
     return rois.new_empty((rois.shape[0], 80), dtype=torch.uint8)
 
 
@@ -2987,6 +3240,9 @@ def sdpa_bitwise_mask_gen_meta(
     mask: torch.Tensor,
     threshold: float,
 ) -> torch.Tensor:
+    torch._check(
+        mask.dtype in (torch.float32, torch.bool), lambda: "expected float32 or bool"
+    )
     # Expect mask to be a float/bool tensor with last dimension representing sequence length
     assert mask.dim() >= 1, "mask must have at least 1 dimension"
     mask_shape = list(mask.shape)
@@ -3060,11 +3316,20 @@ def quantized_w8a32_gru_meta(
     weights_hidden: torch.Tensor,
     w_h_scale: float,
     bias_inputs: torch.Tensor,
-    b_i_scale: float,
+    b_scale: float,
     bias_hidden: torch.Tensor,
-    b_h_scale: float,
 ) -> torch.Tensor:
-    return hidden.new_empty((2, *hidden.shape), dtype=torch.float32)
+    seq_len = inputs.shape[1]
+    assert seq_len == 1
+    # inputs comes in shape [batch, seq_len, input_size]
+    # hidden comes in shape [batch, seq_len, hidden_size]
+    # weights_inputs comes in shape [3 * hidden_size, input_size]
+    # weights_hidden comes in shape [3 * hidden_size, hidden_size]
+    # output comes in empty with shape [2, batch, seq_len, hidden_size]
+    # The first dimension stacks the output and the new hidden state
+    return hidden.new_empty(
+        (2, inputs.shape[0], inputs.shape[1], hidden.shape[-1]), dtype=torch.float32
+    )
 
 
 @register_fake("cadence::slice_scatter_")

@@ -30,15 +30,15 @@ function(fetch_ethos_u_content ETHOS_SDK_PATH ET_DIR_PATH)
   execute_process(
     COMMAND
       bash -c
-      "pwd && source backends/arm/scripts/utils.sh && patch_repo ${ETHOS_SDK_PATH} ${ethos_u_base_rev} ${patch_dir}"
-    WORKING_DIRECTORY ${ET_DIR_PATH} COMMAND_ECHO STDOUT
+      "source backends/arm/scripts/utils.sh && patch_repo ${ETHOS_SDK_PATH} ${ethos_u_base_rev} ${patch_dir}"
+    WORKING_DIRECTORY ${ET_DIR_PATH}
   )
   # Get ethos_u externals only if core_platform folder does not already exist.
   if(NOT EXISTS "${ETHOS_SDK_PATH}/core_platform")
     execute_process(
       COMMAND ${PYTHON_EXECUTABLE} fetch_externals.py -c
               ${ethos_u_base_tag}.json fetch
-      WORKING_DIRECTORY ${ETHOS_SDK_PATH} COMMAND_ECHO STDOUT
+      WORKING_DIRECTORY ${ETHOS_SDK_PATH}
     )
   endif()
   # Patch core_software to remove unused projects.
@@ -46,16 +46,16 @@ function(fetch_ethos_u_content ETHOS_SDK_PATH ET_DIR_PATH)
   execute_process(
     COMMAND
       bash -c
-      "pwd && source backends/arm/scripts/utils.sh && patch_repo ${ETHOS_SDK_PATH}/core_software ${core_software_base_rev} ${patch_dir}"
-    WORKING_DIRECTORY ${ET_DIR_PATH} COMMAND_ECHO STDOUT
+      "source backends/arm/scripts/utils.sh && patch_repo ${ETHOS_SDK_PATH}/core_software ${core_software_base_rev} ${patch_dir}"
+    WORKING_DIRECTORY ${ET_DIR_PATH}
   )
   # Always patch the core_platform repo since this is fast enough.
   set(core_platform_base_rev "26.02")
   execute_process(
     COMMAND
       bash -c
-      "pwd && source backends/arm/scripts/utils.sh && patch_repo ${ETHOS_SDK_PATH}/core_platform ${core_platform_base_rev} ${patch_dir}"
-    WORKING_DIRECTORY ${ET_DIR_PATH} COMMAND_ECHO STDOUT
+      "source backends/arm/scripts/utils.sh && patch_repo ${ETHOS_SDK_PATH}/core_platform ${core_platform_base_rev} ${patch_dir}"
+    WORKING_DIRECTORY ${ET_DIR_PATH}
   )
 endfunction()
 

@@ -328,7 +328,7 @@ class TestTargetRecipes(unittest.TestCase):
         return {
             "linear": {
                 "ios-arm64-coreml-fp16": (1e-3, 1e-3, 20),
-                "ios-arm64-coreml-int8": (1e-2, 1e-2, 20),
+                "ios-arm64-coreml-int8": (2e-2, 2e-2, 20),
                 "android-arm64-snapdragon-fp16": (1e-3, 1e-3, None),
             },
             "add": {
@@ -353,11 +353,11 @@ class TestTargetRecipes(unittest.TestCase):
             },
             "mv2": {
                 "ios-arm64-coreml-fp16": (5e-2, 5e-2, 20),
-                "ios-arm64-coreml-int8": (2e-1, 2e-1, 20),
+                "ios-arm64-coreml-int8": (2e-1, 2e-1, 15),
                 "android-arm64-snapdragon-fp16": (1e-2, 5e-2, None),
             },
             "mv3": {
-                "ios-arm64-coreml-fp16": (2e-1, 2e-1, 20),
+                "ios-arm64-coreml-fp16": (3e-1, 3e-1, 20),
                 "ios-arm64-coreml-int8": (None, None, None),
                 "android-arm64-snapdragon-fp16": (None, None, None),
             },

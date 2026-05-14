@@ -1,0 +1,13 @@
+{
+    "soc_model" : "SM8750",
+    "build_folder" : "build-android",
+    "backend" : "htp",
+    "target" : "aarch64-android",
+    "online_prepare" : false,
+    "shared_buffer" : false,
+    "dump_intermediate_outputs" : false,
+    "profile_level" : 0,
+    "enable_x86_64" : false,
+    "compile_only" : true,
+    "seed" : 42
+}
