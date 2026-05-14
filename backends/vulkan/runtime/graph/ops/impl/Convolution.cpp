@@ -11,6 +11,7 @@
 #include <executorch/backends/vulkan/runtime/graph/ops/OperatorRegistry.h>
 
 #include <executorch/backends/vulkan/runtime/graph/ops/impl/Common.h>
+#include <executorch/backends/vulkan/runtime/graph/ops/impl/Conv2dGemm.h>
 #include <executorch/backends/vulkan/runtime/graph/ops/impl/Staging.h>
 
 #include <executorch/backends/vulkan/runtime/graph/ops/utils/StagingUtils.h>
@@ -460,6 +461,27 @@ void add_conv2d_node(
 
   if (method == Conv2dMethod::Depthwise) {
     return conv2d_dw_impl(
+        graph,
+        in,
+        weight_data,
+        bias,
+        stride,
+        padding,
+        dilation,
+        out,
+        clamp_out,
+        out_min_val,
+        out_max_val);
+  }
+
+  // EXPERIMENTAL: route the general SlidingWindow case through the im2col
+  // + GEMM implementation. The im2col path picks an im2col intermediate
+  // storage (buffer / texture2d / texture3d) per device and consistently
+  // outperforms the legacy conv2d shader on the depth-estimator hotspots.
+  // Transposed conv keeps using the legacy path because conv2d_gemm_impl
+  // doesn't support it yet.
+  if (method == Conv2dMethod::SlidingWindow) {
+    return conv2d_gemm_impl(
         graph,
         in,
         weight_data,
