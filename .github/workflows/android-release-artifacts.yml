@@ -53,6 +53,9 @@ jobs:
         run: |
           VERSION="${{ inputs.version }}"
           FLAVOR="${{ inputs.flavor }}"
+          if [ -z "$FLAVOR" ]; then
+            FLAVOR="xnnpack"
+          fi
           if [ -z "$VERSION" ]; then
             echo "No version name specified. Will create a snapshot AAR"
             echo "should-skip=false" >> $GITHUB_OUTPUT
@@ -115,9 +118,10 @@ jobs:
         fi
 
         FLAVOR="${{ inputs.flavor }}"
-        if [ ! -z "$FLAVOR" ]; then
-          GRADLE_ARGS+=" -Dflavor=${FLAVOR}"
+        if [ -z "$FLAVOR" ]; then
+          FLAVOR="xnnpack"
         fi
+        GRADLE_ARGS+=" -Dflavor=${FLAVOR}"
 
         if [[ "$FLAVOR" == "vulkan" || "$FLAVOR" == "all" || -z "$FLAVOR" ]]; then
           curl -O https://sdk.lunarg.com/sdk/download/1.4.321.1/linux/vulkansdk-linux-x86_64-1.4.321.1.tar.xz

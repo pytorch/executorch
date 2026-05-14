@@ -7,6 +7,9 @@ from typing import Callable, Dict, Tuple
 
 import pytest
 import torch
+from executorch.backends.arm.quantizer.arm_quantizer import (
+    get_symmetric_a16w8_quantization_config,
+)
 from executorch.backends.arm.test import common
 
 from executorch.backends.arm.test.tester.test_pipeline import (
@@ -156,4 +159,19 @@ def test_tril_vgf_quant(test_module):
         Tril.exir_op_where,
         quantize=True,
     )
+    pipeline.run()
+
+
+@common.parametrize("test_module", test_data)
+@common.SkipIfNoModelConverter
+def test_tril_vgf_quant_a16w8(test_module):
+    pipeline = VgfPipeline[input_t](
+        test_module(),
+        test_module().get_inputs(),
+        TRIL_DECOMP_OP,
+        Tril.exir_op_where,
+        quantize=True,
+        tosa_extensions=["int16"],
+    )
+    pipeline.quantizer.set_global(get_symmetric_a16w8_quantization_config())
     pipeline.run()

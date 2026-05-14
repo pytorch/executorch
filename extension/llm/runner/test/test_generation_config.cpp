@@ -20,19 +20,19 @@ TEST_F(GenerationConfigTest, TestResolveMaxNewTokensBothDefault) {
   GenerationConfig config;
   // Default values: seq_len = -1, max_new_tokens = -1
 
-  // max_context_len = 100, num_prompt_tokens = 20
-  // Expected: max_context_len - num_prompt_tokens = 100 - 20 = 80
+  // max_context_len = 100, num_tokens_occupied = 20
+  // Expected: max_context_len - num_tokens_occupied = 100 - 20 = 80
   EXPECT_EQ(config.resolve_max_new_tokens(100, 20), 80);
 
-  // max_context_len = 50, num_prompt_tokens = 30
-  // Expected: max_context_len - num_prompt_tokens = 50 - 30 = 20
+  // max_context_len = 50, num_tokens_occupied = 30
+  // Expected: max_context_len - num_tokens_occupied = 50 - 30 = 20
   EXPECT_EQ(config.resolve_max_new_tokens(50, 30), 20);
 
-  // Edge case: num_prompt_tokens equals max_context_len
+  // Edge case: num_tokens_occupied equals max_context_len
   // Expected: 0 (no tokens left)
   EXPECT_EQ(config.resolve_max_new_tokens(40, 40), 0);
 
-  // Edge case: num_prompt_tokens exceeds max_context_len
+  // Edge case: num_tokens_occupied exceeds max_context_len
   // Expected: 0 (no tokens left, and we ensure non-negative result)
   EXPECT_EQ(config.resolve_max_new_tokens(30, 50), 0);
 }
@@ -43,17 +43,17 @@ TEST_F(GenerationConfigTest, TestResolveMaxNewTokensOnlyMaxNewTokens) {
   config.seq_len = -1;
   config.max_new_tokens = 25;
 
-  // max_context_len = 100, num_prompt_tokens = 20
+  // max_context_len = 100, num_tokens_occupied = 20
   // Available tokens: 100 - 20 = 80
   // Expected: min(max_new_tokens, available) = min(25, 80) = 25
   EXPECT_EQ(config.resolve_max_new_tokens(100, 20), 25);
 
-  // max_context_len = 50, num_prompt_tokens = 40
+  // max_context_len = 50, num_tokens_occupied = 40
   // Available tokens: 50 - 40 = 10
   // Expected: min(max_new_tokens, available) = min(25, 10) = 10
   EXPECT_EQ(config.resolve_max_new_tokens(50, 40), 10);
 
-  // Edge case: num_prompt_tokens equals max_context_len
+  // Edge case: num_tokens_occupied equals max_context_len
   // Available tokens: 0
   // Expected: 0 (no tokens left)
   EXPECT_EQ(config.resolve_max_new_tokens(40, 40), 0);
@@ -65,21 +65,21 @@ TEST_F(GenerationConfigTest, TestResolveMaxNewTokensOnlySeqLen) {
   config.seq_len = 50;
   config.max_new_tokens = -1;
 
-  // max_context_len = 100, num_prompt_tokens = 20
+  // max_context_len = 100, num_tokens_occupied = 20
   // Effective seq_len: min(seq_len, max_context_len) = min(50, 100) = 50
-  // Expected: effective_seq_len - num_prompt_tokens = 50 - 20 = 30
+  // Expected: effective_seq_len - num_tokens_occupied = 50 - 20 = 30
   EXPECT_EQ(config.resolve_max_new_tokens(100, 20), 30);
 
-  // max_context_len = 40, num_prompt_tokens = 20
+  // max_context_len = 40, num_tokens_occupied = 20
   // Effective seq_len: min(seq_len, max_context_len) = min(50, 40) = 40
-  // Expected: effective_seq_len - num_prompt_tokens = 40 - 20 = 20
+  // Expected: effective_seq_len - num_tokens_occupied = 40 - 20 = 20
   EXPECT_EQ(config.resolve_max_new_tokens(40, 20), 20);
 
-  // Edge case: num_prompt_tokens equals effective seq_len
+  // Edge case: num_tokens_occupied equals effective seq_len
   // Expected: 0 (no tokens left)
   EXPECT_EQ(config.resolve_max_new_tokens(100, 50), 0);
 
-  // Edge case: num_prompt_tokens exceeds effective seq_len
+  // Edge case: num_tokens_occupied exceeds effective seq_len
   // Expected: 0 (no tokens left, and we ensure non-negative result)
   EXPECT_EQ(config.resolve_max_new_tokens(100, 60), 0);
 }
@@ -90,19 +90,19 @@ TEST_F(GenerationConfigTest, TestResolveMaxNewTokensBothSpecified) {
   config.seq_len = 50;
   config.max_new_tokens = 25;
 
-  // max_context_len = 100, num_prompt_tokens = 20
+  // max_context_len = 100, num_tokens_occupied = 20
   // Effective seq_len: min(seq_len, max_context_len) = min(50, 100) = 50
-  // Available tokens: effective_seq_len - num_prompt_tokens = 50 - 20 = 30
+  // Available tokens: effective_seq_len - num_tokens_occupied = 50 - 20 = 30
   // Expected: min(max_new_tokens, available) = min(25, 30) = 25
   EXPECT_EQ(config.resolve_max_new_tokens(100, 20), 25);
 
-  // max_context_len = 40, num_prompt_tokens = 20
+  // max_context_len = 40, num_tokens_occupied = 20
   // Effective seq_len: min(seq_len, max_context_len) = min(50, 40) = 40
-  // Available tokens: effective_seq_len - num_prompt_tokens = 40 - 20 = 20
+  // Available tokens: effective_seq_len - num_tokens_occupied = 40 - 20 = 20
   // Expected: min(max_new_tokens, available) = min(25, 20) = 20
   EXPECT_EQ(config.resolve_max_new_tokens(40, 20), 20);
 
-  // Edge case: num_prompt_tokens equals effective seq_len
+  // Edge case: num_tokens_occupied equals effective seq_len
   // Available tokens: 0
   // Expected: 0 (no tokens left)
   EXPECT_EQ(config.resolve_max_new_tokens(40, 40), 0);

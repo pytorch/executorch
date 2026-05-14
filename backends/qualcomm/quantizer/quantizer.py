@@ -8,6 +8,16 @@ from enum import IntEnum, unique
 from functools import partial
 from typing import Callable, Dict, List, Optional, Sequence, Set, Tuple
 
+# To support quantize op lowering in AOT
+try:
+    import executorch.kernels.quantized  # noqa[F401]
+except:
+    import logging
+
+    logging.info(
+        "Failed to load quantized_aot_lib. To run on LPAI backend, please make sure that quantized_aot_lib is accessible."
+    )
+    del logging
 import torch
 from executorch.backends.qualcomm._passes.qnn_pass_manager import QnnPassManager
 

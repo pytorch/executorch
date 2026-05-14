@@ -21,7 +21,7 @@ using torch::executor::testing::TensorFactory;
 // Test op
 using cortex_m::native::dequantize_per_tensor_out;
 
-void test_dtype() {
+void test_dtype_int8() {
   TensorFactory<ScalarType::Char> tf;
 
   Tensor input = tf.full({3, 5}, 4);
@@ -50,6 +50,38 @@ void test_dtype() {
   EXPECT_TENSOR_EQ(out, expected);
 }
 
+void test_dtype_int16() {
+  TensorFactory<ScalarType::Short> tf;
+
+  // Shape sized to exercise the MVE int16 path (8-element chunks via
+  // vldrhq_gather_shifted_offset_s16 + vmovlbq/vmovltq deinterleave).
+  Tensor input = tf.full({4, 4}, 4);
+  double scale = 0.5;
+
+  int64_t zero_point = 1000;
+  int64_t quant_min = -32768;
+  int64_t quant_max = 32767;
+
+  TensorFactory<ScalarType::Float> tfo;
+  Tensor out = tfo.zeros({4, 4});
+  // (4 - 1000) * 0.5 = -498
+  Tensor expected = tfo.full({4, 4}, -498.0);
+
+  KernelRuntimeContext ctx;
+  dequantize_per_tensor_out(
+      ctx,
+      input,
+      scale,
+      zero_point,
+      quant_min,
+      quant_max,
+      ScalarType::Short,
+      out);
+
+  EXPECT_TENSOR_EQ(out, expected);
+}
+
 TEST(OpDequantizeOutTest, AllDtypesSupported) {
-  test_dtype();
+  test_dtype_int8();
+  test_dtype_int16();
 }

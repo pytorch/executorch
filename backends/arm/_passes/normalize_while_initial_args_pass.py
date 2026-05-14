@@ -1,4 +1,4 @@
-# Copyright 2025 Arm Limited and/or its affiliates.
+# Copyright 2025-2026 Arm Limited and/or its affiliates.
 #
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
@@ -82,6 +82,8 @@ class NormalizeWhileInitialArgsPass(ArmPass):
         new_carried = tuple(carried_inputs + additional_inputs)
         node.update_arg(2, new_carried)
         node.update_arg(3, ())
+        # annotate node so later keying of captured vs loop‐carried args is possible
+        node.meta["additional_inputs"] = additional_inputs
 
         body_module_name = str(cast(Node, node.args[1]).target)
         body_module = cast(GraphModule, graph_module.get_submodule(body_module_name))  # type: ignore

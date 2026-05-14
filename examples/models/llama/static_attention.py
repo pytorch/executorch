@@ -15,6 +15,7 @@ from executorch.examples.models.llama.attention import (
 )
 from executorch.examples.models.llama.lora import LoRALinear
 from executorch.examples.models.llama.model_args import ModelArgs
+from executorch.examples.models.llama.norm import ScalelessRMSNorm
 from executorch.examples.models.llama.rope import Rope
 
 
@@ -797,6 +798,7 @@ class StaticAttention(Attention):
         self.attention_qkv_bias = config.attention_qkv_bias
         self.use_qk_norm = config.use_qk_norm
         self.qk_norm_before_rope = config.qk_norm_before_rope
+        self.scale_query_by = getattr(config, "scale_query_by", 1.0)
         self.split_mha = split_mha
         self.is_kv_shared_layer = is_kv_shared_layer
         self.num_kv_shared_layers = config.num_kv_shared_layers
@@ -896,11 +898,18 @@ class StaticAttention(Attention):
 
     def _init_qk_norms(self, config: ModelArgs, is_kv_shared_layer: bool) -> None:
         if self.use_qk_norm:
-            self.q_norm = torch.nn.RMSNorm(self.head_dim, config.norm_eps)
-            if is_kv_shared_layer:
-                self.k_norm = nn.Identity()
+            if getattr(config, "qk_norm_affine", True):
+                self.q_norm = torch.nn.RMSNorm(self.head_dim, config.norm_eps)
+                if is_kv_shared_layer:
+                    self.k_norm = nn.Identity()
+                else:
+                    self.k_norm = torch.nn.RMSNorm(self.head_dim, config.norm_eps)
             else:
-                self.k_norm = torch.nn.RMSNorm(self.head_dim, config.norm_eps)
+                self.q_norm = ScalelessRMSNorm(self.head_dim, eps=config.norm_eps)
+                if is_kv_shared_layer:
+                    self.k_norm = nn.Identity()
+                else:
+                    self.k_norm = ScalelessRMSNorm(self.head_dim, eps=config.norm_eps)
         else:
             self.q_norm = torch.nn.Identity()
             self.k_norm = torch.nn.Identity()
@@ -928,6 +937,18 @@ class StaticAttention(Attention):
                 "contains LoRALinear modules. Use split_mha=False instead."
             )
 
+        if getattr(other, "use_attn_o_gate", False) or getattr(
+            other, "use_attn_o_norm", False
+        ):
+            raise ValueError(
+                "StaticAttention does not support use_attn_o_gate or use_attn_o_norm. "
+                "These features require AttentionMHA."
+            )
+
+        qk_norm_affine = (
+            hasattr(other.q_norm_fn, "weight") if other.use_qk_norm else True
+        )
+
         config = ModelArgs(
             dim=other.dim,
             n_layers=1,  # Not used in attention layer
@@ -939,8 +960,10 @@ class StaticAttention(Attention):
             attention_qkv_bias=other.attention_qkv_bias,
             use_qk_norm=other.use_qk_norm,
             qk_norm_before_rope=other.qk_norm_before_rope,
+            qk_norm_affine=qk_norm_affine,
             norm_eps=other.q_norm_fn.eps if other.use_qk_norm else 1e-5,
             num_kv_shared_layers=getattr(other, "num_kv_shared_layers", 0),
+            scale_query_by=getattr(other, "scale_query_by", 1.0),
         )
 
         instance = cls(
@@ -1078,7 +1101,7 @@ class StaticAttention(Attention):
             before_rope (bool, optional): Whether to apply normalization before RoPE. Defaults to False.
         """
         if self.use_qk_norm and before_rope == self.qk_norm_before_rope:
-            qs = [self.q_norm(q) for q in qs]
+            qs = [self.q_norm(q) * self.scale_query_by for q in qs]
             if ks is not None:
                 ks = [self.k_norm(k) for k in ks]
         return qs, ks
@@ -1306,12 +1329,12 @@ class StaticAttention(Attention):
             q = q.view(bsz, seq_len, self.n_heads, self.head_dim).transpose(1, 2)
 
             if self.use_qk_norm and self.qk_norm_before_rope:
-                q = self.q_norm(q)
+                q = self.q_norm(q) * self.scale_query_by
 
             q = self.rope(q, freqs_cos, freqs_sin)
 
             if self.use_qk_norm and not self.qk_norm_before_rope:
-                q = self.q_norm(q)
+                q = self.q_norm(q) * self.scale_query_by
 
             k, v = shared_kv
         else:
@@ -1320,14 +1343,14 @@ class StaticAttention(Attention):
             v = v.view(bsz, seq_len, self.n_kv_heads, self.head_dim).transpose(1, 2)
 
             if self.use_qk_norm and self.qk_norm_before_rope:
-                q = self.q_norm(q)
+                q = self.q_norm(q) * self.scale_query_by
                 k = self.k_norm(k)
 
             q = self.rope(q, freqs_cos, freqs_sin)
             k = self.rope(k, freqs_cos, freqs_sin)
 
             if self.use_qk_norm and not self.qk_norm_before_rope:
-                q = self.q_norm(q)
+                q = self.q_norm(q) * self.scale_query_by
                 k = self.k_norm(k)
 
             k, out_cache_state = self.k_caches[0].update(
@@ -1430,14 +1453,17 @@ class StaticAttention(Attention):
         if other.use_qk_norm:
             self.use_qk_norm = True
             self.qk_norm_before_rope = other.qk_norm_before_rope
-            self.q_norm = rms_norm_class(other.q_norm_fn.dim, other.q_norm_fn.eps).to(
-                other.q_norm_fn.weight.dtype
-            )
-            self.q_norm.load_state_dict(other.q_norm_fn.state_dict())
+            self.scale_query_by = getattr(other, "scale_query_by", 1.0)
+            if hasattr(other.q_norm_fn, "weight"):
+                self.q_norm = rms_norm_class(
+                    other.q_norm_fn.dim, other.q_norm_fn.eps
+                ).to(other.q_norm_fn.weight.dtype)
+                self.q_norm.load_state_dict(other.q_norm_fn.state_dict())
             if (
                 not self.is_kv_shared_layer
                 and hasattr(other, "k_norm_fn")
                 and other.k_norm_fn is not None
+                and hasattr(other.k_norm_fn, "weight")
             ):
                 self.k_norm = rms_norm_class(
                     other.k_norm_fn.dim, other.k_norm_fn.eps
