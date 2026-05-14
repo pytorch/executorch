@@ -226,7 +226,8 @@ template <typename T, int D, int V = D>
 #define INSTANTIATE_SDPA_VECTOR_HEADS(DTYPE)        \
   INSTANTIATE_SDPA_VECTOR(DTYPE, 64, 64);           \
   INSTANTIATE_SDPA_VECTOR(DTYPE, 96, 96);           \
-  INSTANTIATE_SDPA_VECTOR(DTYPE, 128, 128);
+  INSTANTIATE_SDPA_VECTOR(DTYPE, 128, 128);         \
+  INSTANTIATE_SDPA_VECTOR(DTYPE, 256, 256);
 
 INSTANTIATE_SDPA_VECTOR_HEADS(float);
 INSTANTIATE_SDPA_VECTOR_HEADS(bfloat);
@@ -250,6 +251,21 @@ ETMetalShaderLibrary* get_sdpa_shader_library() {
 
 extern "C" {
 
+// Forward declaration of the implementation shared by both v1 and v2.
+static AOTITorchError sdpa_mps_impl(
+    AOTITensorHandle query,
+    AOTITensorHandle key,
+    AOTITensorHandle value,
+    AOTITensorHandle* attn_mask,
+    double dropout_p,
+    int32_t is_causal,
+    AOTITensorHandle* dropout_mask,
+    double* scale,
+    int32_t enable_gqa,
+    AOTITensorHandle* ret0,
+    AOTITensorHandle* ret1);
+
+// v1: Original signature without enable_gqa (for old .pte files).
 AOTITorchError aoti_torch_mps__scaled_dot_product_attention_math_for_mps(
     AOTITensorHandle query,
     AOTITensorHandle key,
@@ -259,6 +275,41 @@ AOTITorchError aoti_torch_mps__scaled_dot_product_attention_math_for_mps(
     int32_t is_causal,
     AOTITensorHandle* dropout_mask,
     double* scale,
+    AOTITensorHandle* ret0,
+    AOTITensorHandle* ret1) {
+  return sdpa_mps_impl(
+      query, key, value, attn_mask, dropout_p, is_causal,
+      dropout_mask, scale, /*enable_gqa=*/0, ret0, ret1);
+}
+
+// v2: New signature with enable_gqa (for new .pte files).
+AOTITorchError aoti_torch_mps__scaled_dot_product_attention_math_for_mps_v2(
+    AOTITensorHandle query,
+    AOTITensorHandle key,
+    AOTITensorHandle value,
+    AOTITensorHandle* attn_mask,
+    double dropout_p,
+    int32_t is_causal,
+    AOTITensorHandle* dropout_mask,
+    double* scale,
+    int32_t enable_gqa,
+    AOTITensorHandle* ret0,
+    AOTITensorHandle* ret1) {
+  return sdpa_mps_impl(
+      query, key, value, attn_mask, dropout_p, is_causal,
+      dropout_mask, scale, enable_gqa, ret0, ret1);
+}
+
+static AOTITorchError sdpa_mps_impl(
+    AOTITensorHandle query,
+    AOTITensorHandle key,
+    AOTITensorHandle value,
+    AOTITensorHandle* attn_mask,
+    double dropout_p,
+    int32_t is_causal,
+    AOTITensorHandle* dropout_mask,
+    double* scale,
+    int32_t enable_gqa,
     AOTITensorHandle* ret0,
     AOTITensorHandle* ret1) {
 
@@ -430,11 +481,11 @@ AOTITorchError aoti_torch_mps__scaled_dot_product_attention_math_for_mps(
         throw std::runtime_error("Unsupported dtype for Metal SDPA kernel");
       }
 
-      // Select head_dim - must match exactly one of the supported sizes (64, 96, 128)
+      // Select head_dim - must match exactly one of the supported sizes (64, 96, 128, 256)
       int64_t head_dim = headSize;
-      if (head_dim != 64 && head_dim != 96 && head_dim != 128) {
-        ET_LOG(Error, "aoti_torch_mps__scaled_dot_product_attention_math_for_mps: Unsupported head_dim %lld (must be 64, 96, or 128)", head_dim);
-        throw std::runtime_error("Unsupported head_dim for Metal SDPA kernel - must be exactly 64, 96, or 128");
+      if (head_dim != 64 && head_dim != 96 && head_dim != 128 && head_dim != 256) {
+        ET_LOG(Error, "aoti_torch_mps__scaled_dot_product_attention_math_for_mps: Unsupported head_dim %lld (must be 64, 96, 128, or 256)", head_dim);
+        throw std::runtime_error("Unsupported head_dim for Metal SDPA kernel - must be exactly 64, 96, 128, or 256");
       }
 
       std::string kernel_name = "sdpa_vector_" + type_name + "_" + std::to_string(head_dim) + "_" + std::to_string(head_dim);

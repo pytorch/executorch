@@ -9,6 +9,7 @@
 // A llama 3.2 runner that includes preprocessing and post processing
 // logic. The module takes in a string as input and emits a string as output.
 
+#include <c10/util/safe_numerics.h>
 #include <executorch/examples/models/llama/runner/runner.h>
 #include <executorch/examples/models/llama/tokenizer/llama_tiktoken.h>
 #include <executorch/examples/qualcomm/oss_scripts/llama/runner/client_mem.h>
@@ -101,6 +102,7 @@ Runner<T>::Runner(
     std::unique_ptr<tokenizers::Tokenizer> tokenizer,
     std::unique_ptr<executorch::extension::Module> attention_sink_rope_module)
     : module_(std::move(module)),
+      attention_sink_rope_module_(std::move(attention_sink_rope_module)),
       ngram_(ngram),
       window_(window),
       gcap_(gcap),
@@ -110,8 +112,7 @@ Runner<T>::Runner(
       temperature_(temperature),
       eval_mode_(static_cast<EvalMode>(eval_mode)),
       shared_buffer_(shared_buffer),
-      tokenizer_(std::move(tokenizer)),
-      attention_sink_rope_module_(std::move(attention_sink_rope_module)) {
+      tokenizer_(std::move(tokenizer)) {
   stats_.reset();
 
   if (decoder_model_version == "llama2") {
@@ -433,8 +434,11 @@ Error Runner<T>::generate_from_prompt_or_file(
   }
   int num_prompt_tokens = prompt_tokens.size();
   ET_CHECK_MSG(num_prompt_tokens >= 1, "Expected at least 1 prompt token");
+  int64_t end_pos = 0;
   ET_CHECK_MSG(
-      cur_pos_ + num_prompt_tokens < seq_len,
+      !c10::add_overflows(
+          cur_pos_, static_cast<int64_t>(num_prompt_tokens), &end_pos) &&
+          end_pos < static_cast<int64_t>(seq_len),
       "sequence length exceeded - please increase the seq_len value");
 
   // Prompt Processor first

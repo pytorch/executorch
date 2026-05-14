@@ -12,6 +12,7 @@
 #include <cstdint>
 
 #include <c10/util/irange.h>
+#include <c10/util/safe_numerics.h>
 
 #include <executorch/runtime/core/exec_aten/util/dim_order_util.h>
 #include <executorch/runtime/core/exec_aten/util/scalar_type_util.h>
@@ -39,6 +40,32 @@ ssize_t compute_numel(const TensorImpl::SizesType* sizes, ssize_t dim) {
         static_cast<ssize_t>(sizes[i]),
         i);
     numel *= sizes[i];
+  }
+  return numel;
+}
+
+::executorch::runtime::Result<ssize_t> safe_numel(
+    const TensorImpl::SizesType* sizes,
+    ssize_t dim) {
+  ET_CHECK_OR_RETURN_ERROR(
+      dim == 0 || sizes != nullptr,
+      InvalidArgument,
+      "Sizes must be provided for non-scalar tensors");
+  ssize_t numel = 1;
+  for (const auto i : c10::irange(dim)) {
+    ET_CHECK_OR_RETURN_ERROR(
+        sizes[i] >= 0,
+        InvalidArgument,
+        "Size must be non-negative, got %zd at dimension %zd",
+        static_cast<ssize_t>(sizes[i]),
+        i);
+    ssize_t next_numel;
+    ET_CHECK_OR_RETURN_ERROR(
+        !c10::mul_overflows(numel, static_cast<ssize_t>(sizes[i]), &next_numel),
+        InvalidArgument,
+        "Overflow computing numel at dimension %zd",
+        i);
+    numel = next_numel;
   }
   return numel;
 }
@@ -120,7 +147,11 @@ Error TensorImpl::internal_resize_contiguous(ArrayRef<SizesType> new_sizes) {
       // TODO(T175194371): Unbounded dynamic tensor resizing is not yet
       // supported: treat them as upper-bounded.
     case TensorShapeDynamism::DYNAMIC_UNBOUND: {
-      const auto new_numel = compute_numel(new_sizes.data(), dim_);
+      auto new_numel_result = safe_numel(new_sizes.data(), dim_);
+      if (!new_numel_result.ok()) {
+        return new_numel_result.error();
+      }
+      const auto new_numel = new_numel_result.get();
 
       ET_CHECK_OR_RETURN_ERROR(
           static_cast<size_t>(new_numel) <= numel_bound_,

@@ -18,6 +18,7 @@ using executorch::runtime::HierarchicalAllocator;
 using executorch::runtime::MemoryAllocator;
 using executorch::runtime::MemoryManager;
 using executorch::runtime::Span;
+using executorch::runtime::etensor::Device;
 using executorch::runtime::etensor::DeviceType;
 
 TEST(MemoryManagerTest, MinimalCtor) {
@@ -107,26 +108,45 @@ TEST(MemoryManagerTest, ThreeArgCtorHasNoDeviceMemory) {
   EXPECT_EQ(mm.planned_buffer_devices().size(), 0);
 }
 
-TEST(MemoryManagerTest, FourArgCtorWithDeviceMetadata) {
+TEST(MemoryManagerTest, DelegatesDeviceMetadataToHierarchicalAllocator) {
   MemoryAllocator method_allocator(0, nullptr);
-  HierarchicalAllocator planned_memory({});
   MemoryAllocator temp_allocator(0, nullptr);
 
-  // 3 buffers: CPU, CUDA, CPU
-  DeviceType devices[] = {DeviceType::CPU, DeviceType::CUDA, DeviceType::CPU};
-  Span<const DeviceType> device_span(devices, 3);
+  // 4 buffers: cpu:0, cpu:0, cuda:0, cuda:1. CPU buffers come first because
+  // the runtime always sets up host-side planned memory before any device
+  // buffers. The two CUDA entries use distinct indices to verify per-buffer
+  // index tracking.
+  constexpr size_t n_buffers = 4;
+  uint8_t mem0[4];
+  uint8_t mem1[4];
+  uint8_t mem2[4];
+  uint8_t mem3[4];
+  Span<uint8_t> buffers[n_buffers]{
+      {mem0, sizeof(mem0)},
+      {mem1, sizeof(mem1)},
+      {mem2, sizeof(mem2)},
+      {mem3, sizeof(mem3)},
+  };
+  Device devices[] = {
+      Device(DeviceType::CPU, 0),
+      Device(DeviceType::CPU, 0),
+      Device(DeviceType::CUDA, 0),
+      Device(DeviceType::CUDA, 1),
+  };
+  Span<const Device> device_span(devices, n_buffers);
 
-  MemoryManager mm(
-      &method_allocator, &planned_memory, &temp_allocator, device_span);
+  HierarchicalAllocator planned_memory({buffers, n_buffers}, device_span);
+  MemoryManager mm(&method_allocator, &planned_memory, &temp_allocator);
 
   EXPECT_EQ(mm.method_allocator(), &method_allocator);
   EXPECT_EQ(mm.planned_memory(), &planned_memory);
   EXPECT_EQ(mm.temp_allocator(), &temp_allocator);
   EXPECT_TRUE(mm.has_device_memory());
-  EXPECT_EQ(mm.planned_buffer_devices().size(), 3);
-  EXPECT_EQ(mm.planned_buffer_devices()[0], DeviceType::CPU);
-  EXPECT_EQ(mm.planned_buffer_devices()[1], DeviceType::CUDA);
-  EXPECT_EQ(mm.planned_buffer_devices()[2], DeviceType::CPU);
+  EXPECT_EQ(mm.planned_buffer_devices().size(), n_buffers);
+  EXPECT_EQ(mm.planned_buffer_devices()[0], Device(DeviceType::CPU, 0));
+  EXPECT_EQ(mm.planned_buffer_devices()[1], Device(DeviceType::CPU, 0));
+  EXPECT_EQ(mm.planned_buffer_devices()[2], Device(DeviceType::CUDA, 0));
+  EXPECT_EQ(mm.planned_buffer_devices()[3], Device(DeviceType::CUDA, 1));
 }
 
 TEST(MemoryManagerTest, MinimalCtorHasNoDeviceMemory) {
