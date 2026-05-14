@@ -118,6 +118,9 @@ std::ostream& operator<<(std::ostream& out, const VulkanExtension result) {
     case VulkanExtension::SHADER_FLOAT64:
       out << "shaderFloat64";
       break;
+    case VulkanExtension::SUBGROUP_SIZE_CONTROL:
+      out << "VK_EXT_subgroup_size_control (compute stage required size)";
+      break;
   }
   return out;
 }

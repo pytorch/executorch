@@ -21,6 +21,7 @@ build_root_test_dir="${et_root_dir}/arm_test/arm_semihosting_executor_runner_cor
 
 select_ops_list="\
 aten::add.out,\
+aten::clamp.out,\
 aten::mul.out,\
 aten::convolution.out,\
 dim_order_ops::_clone_dim_order.out,\

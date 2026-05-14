@@ -81,6 +81,7 @@ void CudaAllocator::deallocate(void* ptr, DeviceIndex index) {
   }
 }
 
+// TODO(gasoonjia): Add support for async copy
 Error CudaAllocator::copy_host_to_device(
     void* dst,
     const void* src,
@@ -114,6 +115,7 @@ Error CudaAllocator::copy_host_to_device(
   return Error::Ok;
 }
 
+// TODO(gasoonjia): Add support for async copy
 Error CudaAllocator::copy_device_to_host(
     void* dst,
     const void* src,

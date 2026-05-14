@@ -77,7 +77,22 @@ def define_common_targets():
         ],
         exported_deps = [
             ":core",
+            "//executorch/runtime/core/exec_aten:lib",
             "//executorch/runtime/core/portable_type/c10/c10:c10",
+        ],
+        visibility = ["PUBLIC"],
+    )
+
+    runtime.cxx_library(
+        name = "device_allocator",
+        srcs = ["device_allocator.cpp"],
+        exported_headers = [
+            "device_allocator.h",
+        ],
+        exported_deps = [
+            ":core",
+            ":memory_allocator",
+            "//executorch/runtime/core/exec_aten:lib",
         ],
         visibility = ["PUBLIC"],
     )
@@ -140,22 +155,6 @@ def define_common_targets():
             ],
             visibility = ["//executorch/..."],
         )
-
-    runtime.cxx_library(
-        name = "device_allocator",
-        srcs = ["device_allocator.cpp"],
-        exported_headers = [
-            "device_allocator.h",
-        ],
-        exported_deps = [
-            ":core",
-            "//executorch/runtime/core/portable_type:portable_type",
-        ],
-        deps = [
-            "//executorch/runtime/platform:platform",
-        ],
-        visibility = ["PUBLIC"],
-    )
 
     runtime.cxx_library(
         name = "device_memory_buffer",

@@ -12,12 +12,34 @@ from executorch.backends.xnnpack.test.tester.tester import Quantize
 from torchvision import models
 
 
+class DynamicInceptionV3(torch.nn.Module):
+    def __init__(self):
+        super().__init__()
+        self.model = models.inception_v3(weights="IMAGENET1K_V1").eval()
+
+    def forward(self, x):
+        x = torch.nn.functional.interpolate(
+            x,
+            size=(224, 224),
+            mode="bilinear",
+            align_corners=True,
+            antialias=False,
+        )
+        return self.model(x)
+
+
 class TestInceptionV3(unittest.TestCase):
     def setUp(self):
         torch._dynamo.reset()
 
     ic3 = models.inception_v3(weights="IMAGENET1K_V1").eval()  # noqa
     model_inputs = (torch.randn(1, 3, 224, 224),)
+    dynamic_shapes = (
+        {
+            2: torch.export.Dim("height", min=224, max=455),
+            3: torch.export.Dim("width", min=224, max=455),
+        },
+    )
 
     all_operators = {
         "executorch_exir_dialects_edge__ops_aten_addmm_default",
@@ -78,6 +100,17 @@ class TestInceptionV3(unittest.TestCase):
             .to_edge_transform_and_lower()
             .check(["torch.ops.higher_order.executorch_call_delegate"])
             .check_not(list(ops_after_quantization))
+            .to_executorch()
+            .serialize()
+            .run_method_and_compare_outputs()
+        )
+
+    def test_fp32_ic3_dynamic(self):
+        (
+            Tester(DynamicInceptionV3(), self.model_inputs, self.dynamic_shapes)
+            .export()
+            .to_edge_transform_and_lower()
+            .check(["torch.ops.higher_order.executorch_call_delegate"])
             .to_executorch()
             .serialize()
             .run_method_and_compare_outputs()

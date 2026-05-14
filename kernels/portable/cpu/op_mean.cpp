@@ -45,6 +45,36 @@ Tensor& mean_dim_out(
       InvalidArgument,
       out);
 
+  // Fast path: contiguous tensor, single innermost dim reduction, same dtype.
+  // Bypasses generic MapReduceOverDimListPlan to use a tight vectorizable loop.
+  if (in.numel() > 0 && dim_list.has_value() && dim_list.value().size() == 1 &&
+      in.scalar_type() == out.scalar_type()) {
+    const int64_t d = dim_list.value()[0] < 0 ? dim_list.value()[0] + in.dim()
+                                              : dim_list.value()[0];
+    if (d >= 0 && d < in.dim() && d == in.dim() - 1 &&
+        tensor_is_contiguous(in)) {
+      const int64_t reduce_size = in.size(d);
+      const int64_t outer_size = in.numel() / reduce_size;
+
+      // @lint-ignore CLANGTIDY facebook-hte-CArray
+      static constexpr const char op_name[] = "mean.out";
+      ET_SWITCH_FLOATHBF16_TYPES(in.scalar_type(), ctx, op_name, CTYPE, [&] {
+        const CTYPE* in_data = in.const_data_ptr<CTYPE>();
+        CTYPE* out_data = out.mutable_data_ptr<CTYPE>();
+        const CTYPE denom = static_cast<CTYPE>(reduce_size);
+        for (int64_t i = 0; i < outer_size; i++) {
+          const CTYPE* row = in_data + i * reduce_size;
+          CTYPE acc = 0;
+          for (int64_t j = 0; j < reduce_size; j++) {
+            acc += row[j];
+          }
+          out_data[i] = acc / denom;
+        }
+      });
+      return out;
+    }
+  }
+
   std::optional<MapReduceOverDimListPlan> plan;
   if (in.numel() > 0) {
     plan.emplace(in, dim_list);
