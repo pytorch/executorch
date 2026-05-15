@@ -79,6 +79,9 @@ Writes `model.pte` and `model.ptd` into `--output-dir`.
 
 ## Eager inference
 
+The prompt is automatically wrapped with the Gemma 4 IT chat template.
+Pass `--raw-prompt` to skip template wrapping for pre-formatted input.
+
 ```bash
 python examples/models/gemma4_31b/inference.py \
     --prequantized ./gemma4_31b_int4 \
@@ -108,6 +111,9 @@ make gemma4_31b-cuda
 The binary lands at `cmake-out/examples/models/gemma4_31b/gemma4_31b_runner`.
 
 ## Run the .pte
+
+The prompt is automatically wrapped with the Gemma 4 IT chat template.
+Pass `--raw_prompt` to skip template wrapping for pre-formatted input.
 
 ```bash
 ./gemma4_31b_runner \

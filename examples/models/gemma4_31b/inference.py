@@ -13,6 +13,11 @@ Two input paths:
 Packs for the target backend (--backend cuda), materializes runtime buffers,
 optionally compiles with ``torch.compile``, and generates text autoregressively.
 
+Gemma 4 31B-IT is instruction-tuned and requires chat-template formatting.
+The ``--prompt`` is automatically wrapped with the Gemma 4 chat template
+(``<|turn>user\\n{prompt}<turn|>\\n<|turn>model\\n<|channel>thought\\n<channel|>``; BOS is prepended separately).
+Pass ``--raw-prompt`` to skip template wrapping (e.g., for pre-formatted input).
+
 Usage:
     python inference.py \\
         --prequantized ./gemma4_31b_int4 \\
@@ -61,6 +66,17 @@ def _move_to_cuda(model, config) -> None:
             parent.register_buffer(parts[-1], buf.to("cuda"), persistent=False)
 
     materialize_runtime_buffers(model, dtype=torch.bfloat16, device="cuda")
+
+
+def apply_chat_template(prompt: str) -> str:
+    """Wrap a user prompt in the Gemma 4 IT chat template.
+
+    Does not include BOS — ``generate()`` prepends it at the token-ID level.
+    """
+    return (
+        "<|turn>user\n" + prompt
+        + "<turn|>\n<|turn>model\n<|channel>thought\n<channel|>"
+    )
 
 
 def generate(
@@ -156,6 +172,11 @@ def main() -> None:
         help="KV cache length to allocate for this run.",
     )
     parser.add_argument(
+        "--raw-prompt",
+        action="store_true",
+        help="Skip chat-template wrapping (use if the prompt is already formatted).",
+    )
+    parser.add_argument(
         "--no-compile",
         action="store_true",
         help="Skip torch.compile (slower, but easier to debug).",
@@ -204,6 +225,8 @@ def main() -> None:
     # Gemma 4 EOS tokens (from generation_config.json: ids 1, 50, 106).
     eos_token_ids = {1, 50, 106}
 
+    prompt = args.prompt if args.raw_prompt else apply_chat_template(args.prompt)
+
     print(f"\nPrompt: {args.prompt}")
     print("-" * 40)
 
@@ -211,7 +234,7 @@ def main() -> None:
     output = generate(
         model,
         tokenizer,
-        args.prompt,
+        prompt,
         max_new_tokens=args.max_new_tokens,
         temperature=args.temperature,
         eos_token_ids=eos_token_ids,
