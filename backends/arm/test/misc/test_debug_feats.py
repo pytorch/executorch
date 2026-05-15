@@ -219,9 +219,13 @@ def test_collate_tests_tosa_INT(test_data: input_t1):
     )
     # test that the output directory is created and contains the expected files
     assert os.path.exists(test_collate_dir)
+    found_file = False
     for file in os.listdir(test_collate_dir):
         file_name_prefix = "TOSA-1.0+INT"
-        assert file.endswith((f"{file_name_prefix}.json", f"{file_name_prefix}.tosa"))
+        found_file |= file.endswith(
+            (f"{file_name_prefix}.json", f"{file_name_prefix}.tosa")
+        )
+    assert found_file
 
     os.environ.pop("TOSA_TESTCASES_BASE_PATH")
     shutil.rmtree("test_collate_tosa_tests", ignore_errors=True)

@@ -12,6 +12,7 @@ Shared KV cache utilities for MLX delegate examples.
 Provides reusable KV cache implementations optimized for the MLX backend:
 """
 
+import inspect
 from typing import Tuple
 
 import torch
@@ -19,6 +20,73 @@ import torch.nn as nn
 
 # Import MLX custom ops to register mlx::kv_cache_update
 from executorch.backends.mlx import custom_ops as _mlx_custom_ops  # noqa: F401
+
+
+def resolve_hf_text_config(config):
+    """Return the text config for multimodal HF models, or the config itself."""
+    if hasattr(config, "get_text_config"):
+        return config.get_text_config()
+    return getattr(config, "text_config", config)
+
+
+def resolve_hf_cache_layout(config):
+    """
+    Return per-cache-layer metadata for HuggingFace hybrid/static caches.
+
+    Some models such as Gemma 4 use different KV geometries depending on the
+    attention layer type. Match the upstream `transformers` hybrid cache layout
+    so our replacement cache allocates the same number of layers with the same
+    `(num_heads, head_dim)` for each backing cache entry.
+    """
+    text_config = resolve_hf_text_config(config)
+    layer_types = getattr(text_config, "layer_types", None)
+
+    if layer_types is None:
+        if getattr(text_config, "sliding_window", None) is not None:
+            layer_types = [
+                "sliding_attention" for _ in range(text_config.num_hidden_layers)
+            ]
+        else:
+            layer_types = [
+                "full_attention" for _ in range(text_config.num_hidden_layers)
+            ]
+    else:
+        layer_types = list(layer_types)
+
+    if hasattr(text_config, "num_kv_shared_layers"):
+        layer_types = layer_types[: -text_config.num_kv_shared_layers]
+
+    if hasattr(text_config, "global_head_dim"):
+        head_dims = [
+            (
+                text_config.global_head_dim
+                if layer_type == "full_attention"
+                else text_config.head_dim
+            )
+            for layer_type in layer_types
+        ]
+        num_heads = [
+            (
+                text_config.num_global_key_value_heads
+                if layer_type == "full_attention"
+                and getattr(text_config, "attention_k_eq_v", False)
+                else text_config.num_key_value_heads
+            )
+            for layer_type in layer_types
+        ]
+    else:
+        head_dim = getattr(
+            text_config,
+            "head_dim",
+            text_config.hidden_size // text_config.num_attention_heads,
+        )
+        num_head = getattr(
+            text_config, "num_key_value_heads", text_config.num_attention_heads
+        )
+        head_dims = [head_dim for _ in layer_types]
+        num_heads = [num_head for _ in layer_types]
+
+    return layer_types, num_heads, head_dims
 
 
 class KVCache(nn.Module):
@@ -326,14 +394,13 @@ class HFStaticCache(StaticCache):
             device: Device for cache tensors (default: None = CPU)
             dtype: Data type for cache tensors (default: torch.float32)
         """
-        # Resolve dimensions from config BEFORE calling parent
-        num_layers = config.num_hidden_layers
-        num_heads = getattr(config, "num_key_value_heads", config.num_attention_heads)
-        head_dim = getattr(
-            config, "head_dim", config.hidden_size // config.num_attention_heads
-        )
+        # Resolve dimensions from the text config before calling parent. Multimodal
+        # configs like Gemma 4 expose transformer dims under text_config.
+        text_config = resolve_hf_text_config(config)
+        layer_types, num_heads, head_dims = resolve_hf_cache_layout(config)
+        num_model_layers = text_config.num_hidden_layers
         actual_max_cache_len = max_cache_len or getattr(
-            config, "max_position_embeddings", 2048
+            text_config, "max_position_embeddings", 2048
         )
 
         # Initialize parent StaticCache with required arguments
@@ -344,19 +411,50 @@ class HFStaticCache(StaticCache):
             device=device,
             dtype=dtype,
         )
-        # Call early_initialization to ensure parent's layers are fully initialized
-        self.early_initialization(
-            batch_size=max_batch_size,
-            num_heads=num_heads,
-            head_dim=head_dim,
-            dtype=dtype,
-            device=device,
-        )
+        # Newer HF cache implementations already support per-layer layouts in
+        # early_initialization(). Keep that path for Gemma 4, and only fall
+        # back to manual layer initialization for the older CI-pinned API.
+        try:
+            self.early_initialization(
+                batch_size=max_batch_size,
+                num_heads=num_heads,
+                head_dim=head_dims,
+                dtype=dtype,
+                device=device,
+            )
+        except TypeError:
+            for layer, layer_num_heads, layer_head_dim in zip(
+                self.layers, num_heads, head_dims
+            ):
+                fake_keys_tensor = torch.zeros(
+                    (max_batch_size, layer_num_heads, 0, layer_head_dim),
+                    dtype=dtype,
+                    device=device,
+                )
+                lazy_init_sig = inspect.signature(layer.lazy_initialization)
+                # Older pinned HF caches take a single fake tensor, while newer
+                # versions expect both key_states and value_states separately.
+                if len(lazy_init_sig.parameters) == 1:
+                    layer.lazy_initialization(fake_keys_tensor)
+                else:
+                    fake_values_tensor = torch.zeros(
+                        (max_batch_size, layer_num_heads, 0, layer_head_dim),
+                        dtype=dtype,
+                        device=device,
+                    )
+                    layer.lazy_initialization(fake_keys_tensor, fake_values_tensor)
+
+        # Some models (for example Gemma 4) only allocate cache entries for the
+        # non-shared KV layers. Mirror the parent StaticCache layout exactly so
+        # layer_idx values passed to update() line up with our backing cache.
+        num_cache_layers = len(self.layers)
 
         # Store dimensions as instance attributes
-        self.num_layers = num_layers
+        self.num_model_layers = num_model_layers
+        self.num_layers = num_cache_layers
+        self.layer_types = layer_types
         self.num_heads = num_heads
-        self.head_dim = head_dim
+        self.head_dim = head_dims
 
         # Create KVCache wrappers for each layer - these use mlx::kv_cache_update
         # Named 'kv_cache' to match optimum-executorch's ETCustomStaticCache pattern
@@ -365,12 +463,12 @@ class HFStaticCache(StaticCache):
                 KVCache(
                     max_batch_size=max_batch_size,
                     max_context_length=actual_max_cache_len,
-                    n_heads=num_heads,
-                    head_dim=head_dim,
+                    n_heads=layer_num_heads,
+                    head_dim=layer_head_dim,
                     enable_dynamic_shape=True,
                     dtype=dtype,
                 )
-                for _ in range(num_layers)
+                for layer_num_heads, layer_head_dim in zip(num_heads, head_dims)
             ]
         )
 
@@ -394,18 +492,31 @@ class HFStaticCache(StaticCache):
             key_states: New key states [batch_size, num_heads, seq_len, head_dim]
             value_states: New value states [batch_size, num_heads, seq_len, head_dim]
             layer_idx: Index of the layer to update
-            cache_kwargs: Dictionary containing 'cache_position' tensor with start position
+            cache_kwargs: Optional dictionary containing 'cache_position' tensor
+                with start position. Newer HF StaticCache callers seed
+                `self.layers[layer_idx].cumulative_length` directly and do not
+                pass cache_kwargs.
 
         Returns:
             Tuple of (key_cache, value_cache) for the full cache after update
         """
-        assert (
-            cache_kwargs is not None
-        ), "cache_kwargs must be provided with 'cache_position'"
-        cache_position = cache_kwargs.get("cache_position")
-        assert (
-            cache_position is not None
-        ), "cache_position must be provided in cache_kwargs"
+        if cache_kwargs is not None:
+            cache_position = cache_kwargs.get("cache_position")
+        else:
+            cache_position = None
+
+        if cache_position is None:
+            # Current HF ExecuTorch wrappers copy the requested cache position
+            # into each StaticCache layer's cumulative_length before forward().
+            if hasattr(self.layers[layer_idx], "cumulative_length"):
+                cache_position = self.layers[layer_idx].cumulative_length
+            else:
+                raise RuntimeError(
+                    "cache_position was not provided and the pinned "
+                    "transformers StaticCache layer does not expose "
+                    "cumulative_length"
+                )
+
         assert isinstance(
             cache_position, torch.Tensor
         ), "cache_position must be a tensor"

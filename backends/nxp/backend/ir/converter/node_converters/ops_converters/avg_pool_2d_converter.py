@@ -71,7 +71,7 @@ class AvgPool2dConverter(NodeConverter):
 
             supported_types = [torch.int8, torch.uint8]
             if not NodeConverter.uses_quantization_type_for_io(
-                node, supported_types, [0]
+                node, supported_types, [0], [0]
             ):
                 return False
 

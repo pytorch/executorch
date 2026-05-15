@@ -6,9 +6,6 @@
 import logging
 
 from executorch.backends.arm.common.arm_compile_spec import ArmCompileSpec
-from executorch.backends.arm.common.pipeline_config import (  # noqa: unused
-    ArmPassPipelineConfig,
-)
 from executorch.backends.arm.tosa import (  # type: ignore[import-not-found]
     TosaSpecification,
 )

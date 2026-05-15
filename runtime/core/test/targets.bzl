@@ -8,6 +8,14 @@ def define_common_targets():
     """
 
     runtime.cxx_test(
+        name = "device_memory_buffer_test",
+        srcs = ["device_memory_buffer_test.cpp"],
+        deps = [
+            "//executorch/runtime/core:device_memory_buffer",
+        ],
+    )
+
+    runtime.cxx_test(
         name = "span_test",
         srcs = ["span_test.cpp"],
         deps = [
@@ -42,7 +50,7 @@ def define_common_targets():
             "//executorch/runtime/core:core",
         ],
     )
-    
+
     runtime.cxx_test(
         name = "event_tracer_test",
         srcs = [
@@ -80,6 +88,16 @@ def define_common_targets():
         deps = [
             "//executorch/runtime/core:memory_allocator",
             "//executorch/runtime/core/portable_type/c10/c10:c10",
+        ],
+    )
+
+    runtime.cxx_test(
+        name = "device_allocator_test",
+        srcs = [
+            "device_allocator_test.cpp",
+        ],
+        deps = [
+            "//executorch/runtime/core:device_allocator",
         ],
     )
 
