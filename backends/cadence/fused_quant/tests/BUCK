@@ -68,3 +68,14 @@ runtime.cxx_test(
         "//executorch/runtime/core/exec_aten/testing_util:tensor_util",
     ],
 )
+
+runtime.cxx_test(
+    name = "test_op_convolution",
+    srcs = ["test_op_convolution.cpp"],
+    platforms = CXX,
+    deps = [
+        "//executorch/backends/cadence/fused_quant:op_convolution",
+        "//executorch/kernels/test:gtest_utils",
+        "//executorch/runtime/core/exec_aten/testing_util:tensor_util",
+    ],
+)
