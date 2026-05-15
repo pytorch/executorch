@@ -12,6 +12,32 @@ OpenVINO backend supports the following hardware:
 
 For more information on the supported hardware, please refer to [OpenVINO System Requirements](https://docs.openvino.ai/2025/about-openvino/release-notes-openvino/system-requirements.html) page.
 
+## Quick Start (pip wheel)
+
+On Linux, the OpenVINO backend is included in the ExecuTorch pip wheel. Install the OpenVINO runtime to activate it:
+
+```bash
+pip install executorch[openvino]
+```
+
+The backend automatically discovers the OpenVINO C library from the pip-installed package — no `LD_LIBRARY_PATH` setup is needed.
+
+If auto-discovery fails (e.g. non-standard install), you can point to the library explicitly:
+
+```bash
+export OPENVINO_LIB_PATH=$(python3 -c "import openvino, os; print(os.path.join(os.path.dirname(openvino.__file__), 'libs', 'libopenvino_c.so'))")
+```
+
+Verify the backend is available:
+
+```python
+from executorch.extension.pybindings.portable_lib import (
+    _get_registered_backend_names,
+)
+print(_get_registered_backend_names())
+# Should include 'OpenvinoBackend'
+```
+
 ## Directory Structure
 
 ```
@@ -24,6 +50,7 @@ executorch
 │           ├── __init__.py
 │           └── quantizer.py
 │       ├── runtime
+│           ├── OpenvinoApi.h
 │           ├── OpenvinoBackend.cpp
 │           └── OpenvinoBackend.h
 │       ├── scripts

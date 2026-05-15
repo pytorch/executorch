@@ -1,0 +1,169 @@
+name: Pico2 Build Validation
+
+on:
+  push:
+    branches: [main, release/*]
+    paths:
+      - examples/raspberry_pi/pico2/**
+      - backends/cortex_m/**
+      - .ci/scripts/**
+      - examples/arm/**
+      - .github/workflows/test-pico2-build.yml
+  schedule:
+    # Run daily at 3 AM UTC to catch upstream breakages
+    - cron: '0 3 * * *'
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event_name }}-${{ github.event.pull_request.number || github.sha }}
+  cancel-in-progress: true
+
+jobs:
+  test-pico2-fp32-build:
+    name: test-pico2-fp32-build
+    uses: pytorch/test-infra/.github/workflows/linux_job_v2.yml@main
+    permissions:
+      id-token: write
+      contents: read
+    with:
+      runner: linux.2xlarge.memory
+      docker-image: ci-image:executorch-ubuntu-22.04-arm-sdk
+      submodules: 'recursive'
+      ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
+      timeout: 120
+      script: |
+        set -euo pipefail
+        # Activate conda environment from the docker image
+        CONDA_ENV=$(conda env list --json | jq -r ".envs | .[-1]")
+        conda activate "${CONDA_ENV}"
+
+        source .ci/scripts/utils.sh
+        install_executorch "--use-pt-pinned-commit"
+
+        # Install ARM baremetal toolchain
+        .ci/scripts/setup-arm-baremetal-tools.sh
+        source examples/arm/arm-scratch/setup_path.sh
+
+        echo "=== Step 1: Export FP32 model ==="
+        cd examples/raspberry_pi/pico2
+        python export_mlp_mnist.py
+        test -f balanced_tiny_mlp_mnist.pte
+        echo "FP32 model exported: $(ls -la balanced_tiny_mlp_mnist.pte)"
+        cd -
+
+        echo "=== Step 2: Build FP32 firmware ==="
+        ./examples/raspberry_pi/pico2/build_firmware_pico.sh --model=balanced_tiny_mlp_mnist.pte
+
+        echo "=== Step 3: Validate FP32 artifacts ==="
+        ELF_FILE=examples/raspberry_pi/pico2/build/executorch_pico.elf
+        UF2_FILE=examples/raspberry_pi/pico2/build/executorch_pico.uf2
+
+        test -f "${ELF_FILE}" || { echo "FAIL: .elf not found"; exit 1; }
+        test -f "${UF2_FILE}" || { echo "FAIL: .uf2 not found"; exit 1; }
+
+        echo "--- Section sizes ---"
+        arm-none-eabi-size -A "${ELF_FILE}"
+
+        echo "--- Section headers ---"
+        arm-none-eabi-objdump -h "${ELF_FILE}"
+
+        echo "--- Key symbols ---"
+        arm-none-eabi-nm --print-size --size-sort --radix=d "${ELF_FILE}" | tail -20
+
+        # Validate binary fits in Pico2 memory using aggregated totals:
+        #   flash = text + data (4MB = 4194304 bytes)
+        #   SRAM  = data + bss  (520KB = 532480 bytes)
+        eval $(arm-none-eabi-size "${ELF_FILE}" | awk 'NR==2 {printf "TEXT_SIZE=%d DATA_SIZE=%d BSS_SIZE=%d", $1, $2, $3}')
+
+        FLASH_USED=$((TEXT_SIZE + DATA_SIZE))
+        SRAM_USED=$((DATA_SIZE + BSS_SIZE))
+        echo "FP32 binary: text=${TEXT_SIZE} data=${DATA_SIZE} bss=${BSS_SIZE} => flash=${FLASH_USED} sram=${SRAM_USED}"
+
+        if [ "${FLASH_USED}" -gt 4194304 ]; then
+          echo "FAIL: flash usage (${FLASH_USED}) exceeds 4MB"
+          exit 1
+        fi
+        if [ "${SRAM_USED}" -gt 532480 ]; then
+          echo "FAIL: SRAM usage (${SRAM_USED}) exceeds 520KB"
+          exit 1
+        fi
+        echo "PASS: FP32 firmware fits in Pico2 memory (SRAM: ${SRAM_USED}/532480, Flash: ${FLASH_USED}/4194304)"
+
+  test-pico2-cmsis-build:
+    name: test-pico2-cmsis-nn-build
+    uses: pytorch/test-infra/.github/workflows/linux_job_v2.yml@main
+    permissions:
+      id-token: write
+      contents: read
+    with:
+      runner: linux.2xlarge.memory
+      docker-image: ci-image:executorch-ubuntu-22.04-arm-sdk
+      submodules: 'recursive'
+      ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
+      timeout: 120
+      script: |
+        set -euo pipefail
+        # Activate conda environment from the docker image
+        CONDA_ENV=$(conda env list --json | jq -r ".envs | .[-1]")
+        conda activate "${CONDA_ENV}"
+
+        source .ci/scripts/utils.sh
+        install_executorch "--use-pt-pinned-commit"
+
+        # Install ARM baremetal toolchain
+        .ci/scripts/setup-arm-baremetal-tools.sh
+        source examples/arm/arm-scratch/setup_path.sh
+
+        echo "=== Step 1: Export INT8 CMSIS-NN model ==="
+        cd examples/raspberry_pi/pico2
+        python export_mlp_mnist_cmsis.py
+        test -f balanced_tiny_mlp_mnist_cmsis.pte
+        echo "INT8 model exported: $(ls -la balanced_tiny_mlp_mnist_cmsis.pte)"
+        cd -
+
+        echo "=== Step 2: Build CMSIS-NN firmware ==="
+        ./examples/raspberry_pi/pico2/build_firmware_pico.sh --cmsis --model=balanced_tiny_mlp_mnist_cmsis.pte
+
+        echo "=== Step 3: Validate CMSIS-NN artifacts ==="
+        ELF_FILE=examples/raspberry_pi/pico2/build/executorch_pico.elf
+        UF2_FILE=examples/raspberry_pi/pico2/build/executorch_pico.uf2
+
+        test -f "${ELF_FILE}" || { echo "FAIL: .elf not found"; exit 1; }
+        test -f "${UF2_FILE}" || { echo "FAIL: .uf2 not found"; exit 1; }
+
+        echo "--- Section sizes ---"
+        arm-none-eabi-size -A "${ELF_FILE}"
+
+        echo "--- Section headers ---"
+        arm-none-eabi-objdump -h "${ELF_FILE}"
+
+        echo "--- Key symbols ---"
+        arm-none-eabi-nm --print-size --size-sort --radix=d "${ELF_FILE}" | tail -20
+
+        # Verify CMSIS-NN symbols are linked
+        CMSIS_NN_SYMBOLS=$(arm-none-eabi-nm "${ELF_FILE}" | grep -E '(cmsis_nn|arm_nn)' || true)
+        if [ -n "${CMSIS_NN_SYMBOLS}" ]; then
+          echo "PASS: CMSIS-NN symbols found in binary"
+          printf '%s\n' "${CMSIS_NN_SYMBOLS}" | head -20
+        else
+          echo "FAIL: No CMSIS-NN symbols detected — cortex_m backend may not be linked correctly"
+          exit 1
+        fi
+
+        # Validate binary fits in Pico2 memory using aggregated totals:
+        #   flash = text + data (4MB = 4194304 bytes)
+        #   SRAM  = data + bss  (520KB = 532480 bytes)
+        eval $(arm-none-eabi-size "${ELF_FILE}" | awk 'NR==2 {printf "TEXT_SIZE=%d DATA_SIZE=%d BSS_SIZE=%d", $1, $2, $3}')
+
+        FLASH_USED=$((TEXT_SIZE + DATA_SIZE))
+        SRAM_USED=$((DATA_SIZE + BSS_SIZE))
+        echo "CMSIS-NN binary: text=${TEXT_SIZE} data=${DATA_SIZE} bss=${BSS_SIZE} => flash=${FLASH_USED} sram=${SRAM_USED}"
+
+        if [ "${FLASH_USED}" -gt 4194304 ]; then
+          echo "FAIL: flash usage (${FLASH_USED}) exceeds 4MB"
+          exit 1
+        fi
+        if [ "${SRAM_USED}" -gt 532480 ]; then
+          echo "FAIL: SRAM usage (${SRAM_USED}) exceeds 520KB"
+          exit 1
+        fi
+        echo "PASS: CMSIS-NN firmware fits in Pico2 memory (SRAM: ${SRAM_USED}/532480, Flash: ${FLASH_USED}/4194304)"

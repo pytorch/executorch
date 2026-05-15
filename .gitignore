@@ -16,8 +16,10 @@ cmake-android-out/
 cmake-ios-out/
 cmake-out*
 cmake-out-android/
+backends/webgpu/third-party/
 build-android/
 build-x86/
+build-direct/
 dist/
 arm-scratch/
 executorch.egg-info
@@ -74,5 +76,7 @@ xcuserdata/
 *.dll
 *.pyd
 
+
 # Agents
 .claude/*.local.*
+extension/pybindings/mlx.metallib

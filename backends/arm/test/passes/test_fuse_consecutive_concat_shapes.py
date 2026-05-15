@@ -10,7 +10,7 @@ from executorch.backends.arm.tosa.specification import (
     TosaLoweringContext,
     TosaSpecification,
 )
-from executorch.backends.cadence.aot.graph_builder import GraphBuilder
+from executorch.backends.test.graph_builder import GraphBuilder
 from executorch.exir.dialects._ops import ops as exir_ops
 from executorch.exir.pass_base import ExportPass
 from torch.fx import GraphModule
@@ -83,7 +83,7 @@ def _run_fuse_pass(graph_module: GraphModule):
     return graph_module
 
 
-def test_fuse_consecutive_concat_shapes_no_target_flattens_nested_concat_inputs():
+def test_fuse_consecutive_concat_shapes_flattens_nested_concat_inputs():
     graph_module = _graph_module_with_nested_concat()
     graph_module = _run_fuse_pass(graph_module)
 
@@ -99,7 +99,7 @@ def test_fuse_consecutive_concat_shapes_no_target_flattens_nested_concat_inputs(
     )
 
 
-def test_fuse_consecutive_concat_shapes_no_target_leaves_flat_concat_unchanged():
+def test_fuse_consecutive_concat_shapes_leaves_flat_concat_unchanged():
     graph_module = _graph_module_with_flat_concat()
     graph_module = _run_fuse_pass(graph_module)
 

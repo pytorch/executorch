@@ -177,9 +177,9 @@ void quantized_conv1d_nlc(
         ww,                                                      \
         wc,                                                      \
         ow,                                                      \
-        stride[0],                                               \
-        padding[0],                                              \
-        dilation[0],                                             \
+        stride[stride.size() - 1],                               \
+        padding[padding.size() - 1],                             \
+        dilation[dilation.size() - 1],                           \
         groups,                                                  \
         in_zero_point,                                           \
         weight_zero_point,                                       \
@@ -256,6 +256,7 @@ void quantized_conv1d_nlc(
     int64_t output_zero_point,
     __ET_UNUSED int64_t out_multiplier,
     __ET_UNUSED int64_t out_shift,
+    __ET_UNUSED const ::executorch::aten::optional<Tensor>& offset,
     Tensor& out) {
   (void)ctx;
   quantized_conv1d_nlc(

@@ -206,6 +206,18 @@ lintrunner init
 Then run `lintrunner` from the root of the repo to see its suggestions, or run
 `lintrunner -a` to automatically apply the suggestions.
 
+### Git Hooks
+
+A pre-commit hook runs lintrunner automatically on every commit. Install it with:
+
+```
+git config core.hooksPath .githooks
+```
+
+This is also done automatically by `./install_executorch.sh`. If lintrunner
+auto-fixes files, the commit will be blocked so you can review the changes with
+`git diff` before re-committing.
+
 ### Python Style
 
 ExecuTorch Python code follows the style used by the PyTorch core project.
@@ -308,6 +320,25 @@ CI is run automatically on all pull requests. However, if you want to run tests 
 - The `sh test/build_size_test.sh` script will compile the C++runtime along with portable kernels.
 - The `test/run_oss_cpp_tests.sh` script will build and run C++ tests locally
 - Running `pytest` from the root directory will run Python tests locally. Make sure to run this after finishing [Dev Install](#dev-install).
+
+To build C++ tests manually with CMake, run the following from the repository root:
+
+```bash
+cmake . -Bcmake-out -DCMAKE_INSTALL_PREFIX=cmake-out -DEXECUTORCH_BUILD_TESTS=ON
+cmake --build cmake-out -j9 --target install
+```
+
+You can then use `ctest` to list or run individual C++ tests directly:
+
+```bash
+ctest --test-dir cmake-out -N
+ctest --test-dir cmake-out -R <test_name_regex> --output-on-failure
+```
+
+This workflow is useful when you want to rerun one test, attach a debugger to a
+test binary under `cmake-out`, or keep a build directory around for quick rebuild
+cycles. Add the same `-DEXECUTORCH_BUILD_*` options used by
+`test/run_oss_cpp_tests.sh` when the test needs optional kernels or extensions.
 
 ### Writing Tests
 To help keep code quality high, ExecuTorch uses a combination of unit tests and

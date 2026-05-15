@@ -74,10 +74,18 @@ or masked-scatter like the original non-realtime Voxtral).
 
 ## Memory Footprint
 
-Decoder KV cache: 26 layers × 2 (K, V) × 4096 × 8 × 128 × bytes_per_elem.
-fp32: ≈ 832 MB, bf16: ≈ 416 MB. Encoder KV caches (streaming):
-32 layers × 2 × 1500 × 32 × 64 × bytes_per_elem. fp32: ≈ 786 MB,
-bf16: ≈ 393 MB.
+Decoder KV cache depends on mode:
+- **Offline:** flat buffer sized by `max_seq_len` (default 4096).
+  26 layers × 2 × 4096 × 8 × 128 × bytes_per_elem.
+  fp32: ≈ 832 MB, bf16: ≈ 416 MB.
+- **Streaming:** ring buffer sized to 2× `sliding_window` (default 8192
+  → 16384 slots; `--sliding-window 2048` → 4096 slots).
+  26 layers × 2 × 2×sliding_window × 8 × 128 × bytes_per_elem.
+  sw=8192 fp32: ≈ 3.3 GB, bf16: ≈ 1.7 GB.
+  sw=2048 fp32: ≈ 832 MB, bf16: ≈ 416 MB.
+
+Encoder KV caches (streaming only): 32 layers × 2 × 1500 × 32 × 64 ×
+bytes_per_elem. fp32: ≈ 786 MB, bf16: ≈ 393 MB.
 
 Runtime memory = model weights (from `.pte`) + KV caches + working
 memory. Weight sizes depend on quantization: ~16 GB (fp32), ~8 GB
@@ -103,7 +111,7 @@ VoxtralRealtimeModel
       attention_norm: RMSNorm
       attention: LMAttention
         wq/wk/wv/wo: Linear (no bias)
-        kv_cache: KVCache (XNNPACK) or StaticKVCache (Metal/CUDA)
+        kv_cache: streaming: RingKVCache/StandardRingKVCache; offline: KVCache/StaticKVCache
         sdpa: SDPA (XNNPACK) or MetalSDPA (Metal) or StandardSDPA (CUDA)
       ffn_norm: RMSNorm
       ada_rms_norm_t_cond: Sequential(Linear, GELU, Linear)
@@ -117,8 +125,8 @@ StreamingAudioEncoderExport
   layers: 32x CausalEncoderLayer (shared from encoder.layers)
   enc_norm: RMSNorm (shared from encoder.norm)
   adapter: AudioLanguageAdapter (shared from model.adapter)
-  kv_caches: 32x EncoderRingKVCache (XNNPACK) or StandardEncoderRingKVCache (Metal/CUDA)
-  sdpa: SDPA (XNNPACK) or MetalSDPA (Metal, transpose_kv=True) or StandardSDPA (CUDA, transpose_kv=True)
+  kv_caches: 32x RingKVCache (XNNPACK) or StandardRingKVCache (Metal/CUDA)
+  sdpa: SDPA (XNNPACK) or MetalSDPA (Metal) or StandardSDPA (CUDA)
   inv_freq: RoPE inverse frequencies (owned, on-the-fly computation)
 ```
 
@@ -145,23 +153,36 @@ flag (e.g., `"xnnpack"`, `"metal"`, `"cuda"`, `"portable"`).
 
 ### KV cache
 
-**XNNPACK/Portable:** `KVCache` with `[B, S, H, D]` layout. Uses
-`torch.ops.llama.update_cache(value, cache, start_pos)` which mutates
-the cache in-place. This avoids the `index_put_` + `copy_` pattern that
-triggers a `requires_grad` bug in `SpecPropPass` during `to_executorch()`.
-The `[B, S, H, D]` layout matches what `update_cache` and `custom_sdpa`
-expect, so there are no transposes between cache update and attention.
+The decoder KV cache depends on the export mode:
 
-**Metal/CUDA:** `StaticKVCache` with `[B, H, S, D]` layout. Uses `index_copy_`
-for cache updates, which is compatible with `torch.export` and AOTI.
+**Streaming (`--streaming`):** Ring buffer KV cache for unlimited
+duration. The model's `params.json` specifies `sliding_window: 8192`
+for the decoder (overridable via `--sliding-window`). Each query attends
+to only the last `sliding_window` positions; old entries are overwritten
+when the buffer wraps. Position tracking is analytic (no mutable state).
+Sliding window masks are computed each step via `create_causal_mask`.
+
+- XNNPACK/Portable: `RingKVCache` with `[B, S, H, D]` layout, using
+  `torch.ops.llama.update_cache_with_indices` for scatter writes.
+- Metal/CUDA: `StandardRingKVCache` with `[B, H, S, D]` layout, using
+  `index_copy_` on dim=2 with wrapped indices.
+
+**Offline (default):** Flat KV cache bounded by `max_seq_len` (default
+4096). Full causal attention — each query attends to all prior positions.
+
+- XNNPACK/Portable: `KVCache` with `[B, S, H, D]` layout, using
+  `torch.ops.llama.update_cache`.
+- Metal/CUDA: `StaticKVCache` with `[B, H, S, D]` layout, using
+  `index_copy_`.
 
 ### SDPA
 
 `SDPA` is its own module (not inline code), making it swappable for
 backend-specific implementations.
 
-**XNNPACK/Portable:** `SDPA` uses `torch.ops.llama.custom_sdpa` — a
-fused kernel with causal masking via `start_pos` + `is_causal=True`.
+**XNNPACK/Portable:** `SDPA` uses `torch.ops.llama.custom_sdpa`.
+In streaming mode, receives a sliding window mask from the ring cache.
+In offline mode, uses `is_causal=True` with no explicit mask.
 Handles GQA expansion internally and upcasts to float32.
 
 **Metal:** `MetalSDPA` uses `torch.ops.aten._scaled_dot_product_attention_math_for_mps`
@@ -169,27 +190,34 @@ which handles GQA natively (the kernel infers the group ratio from differing
 Q vs K/V head counts), avoiding the memory bandwidth overhead of
 `repeat_interleave`. Uses explicit additive attention masks
 that must match the Q/K/V dtype (the kernel reads masks as `device T*`).
-Used for both decoder (GQA, `transpose_kv=False`) and streaming encoder
-(no GQA, `transpose_kv=True`).
+Both streaming and offline use `[B, H, S, D]` KV layout
+(`StandardRingKVCache` and `StaticKVCache` share this layout), so
+`transpose_kv=False` in all cases.
 
 **CUDA:** `StandardSDPA` uses `F.scaled_dot_product_attention` with
-`repeat_interleave` for GQA expansion (32 query heads / 8 KV heads = 4x).
-Uses boolean attention masks (`True`=attend, `False`=masked) as required
-by the Triton SDPA kernel. The CUDA backend's Triton SDPA replacement
-pass optimizes the attention kernel at compile time.
+`enable_gqa=True`. Uses boolean attention masks (`True`=attend,
+`False`=masked) as required by the Triton SDPA kernel. Same
+`[B, H, S, D]` KV layout as Metal.
 
 ### Attention layout
 
-**XNNPACK/Portable:** Q/K/V projections produce `[B, T, H, D]` via
-`.view()`. RoPE operates on `[B, T, H, D]`. `KVCache` stores
-`[B, S, H, D]`. `SDPA` (custom_sdpa) receives both in this layout — no
-`transpose(1, 2)` in the attention hot path. This eliminates the need for
-`RemoveRedundantTransposes` post-export pass that Llama/optimum-executorch
-require when using `[B, H, S, D]` attention with `[B, S, H, D]` cache.
+Q/K/V projections produce `[B, T, H, D]` via `.view()`. RoPE operates
+on `[B, T, H, D]`.
 
-**Metal/CUDA:** Q/K/V projections still produce `[B, T, H, D]`, but
-`StaticKVCache` stores `[B, H, S, D]` and `MetalSDPA`/`StandardSDPA` transpose q to
-`[B, H, T, D]` for the SDPA kernel, then transpose back.
+**XNNPACK/Portable:** Both `KVCache` (offline) and `RingKVCache`
+(streaming) use `[B, S, H, D]`. `SDPA` (custom_sdpa) receives Q and
+KV cache in this layout — no `transpose(1, 2)` in the attention hot path.
+
+**Metal/CUDA:** Both `StandardRingKVCache` (streaming) and `StaticKVCache`
+(offline) use `[B, H, S, D]` layout. `MetalSDPA`/`StandardSDPA` only
+transpose Q from `[B, T, H, D]` to `[B, H, T, D]` — KV is already in
+the expected layout.
+
+### RoPE
+
+RoPE frequencies are computed on-the-fly using stored `inv_freq`
+(same pattern as the streaming encoder), enabling unlimited position
+indices without a precomputed table bound.
 
 ### Adaptive RMSNorm
 
@@ -227,15 +255,15 @@ mel_chunk (1, 128, 8) + enc_input_pos (4,)
 -> audio_embeds (1, 1, 3072)
 ```
 
-**XNNPACK/Portable:** Uses `EncoderRingKVCache` (`update_cache_with_indices`
+**XNNPACK/Portable:** Uses `RingKVCache` (`update_cache_with_indices`
 custom op) and `SDPA` (`custom_sdpa`).
 
-**Metal:** Uses `StandardEncoderRingKVCache` (`index_copy_`-based ring
-buffer) and `MetalSDPA` (native MPS SDPA kernel with `transpose_kv=True`).
+**Metal:** Uses `StandardRingKVCache` (`index_copy_`-based ring
+buffer) and `MetalSDPA` (native MPS SDPA kernel).
 Masks are created in the model dtype to match the kernel's `device T*` expectation.
 
-**CUDA:** Uses `StandardEncoderRingKVCache` and `StandardSDPA`
-(`F.scaled_dot_product_attention` with `transpose_kv=True` and explicit
+**CUDA:** Uses `StandardRingKVCache` and `StandardSDPA`
+(`F.scaled_dot_product_attention` with explicit
 sliding window masks).
 
 ### Streaming decode loop
@@ -270,7 +298,7 @@ encoder — verified to within fp32 precision (max diff < 2e-5).
 ### Encoder KV cache
 
 Each of the 32 encoder transformer layers gets its own ring buffer KV
-cache (`EncoderRingKVCache` for XNNPACK/Portable, `StandardEncoderRingKVCache`
+cache (`RingKVCache` for XNNPACK/Portable, `StandardRingKVCache`
 for Metal/CUDA) that overwrites old entries when the window is exceeded,
 enabling streaming of arbitrary length audio.
 

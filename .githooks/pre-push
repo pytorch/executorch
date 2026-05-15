@@ -1,0 +1,9 @@
+#!/usr/bin/env bash
+
+# Delegate to local pre-push hook if present (e.g., ARM backend).
+# .githooks/ is set as core.hooksPath, so git won't look in .git/hooks/
+# automatically. This passthrough ensures local hooks still run.
+local_hook="$(git rev-parse --git-dir)/hooks/pre-push"
+if [ -x "$local_hook" ]; then
+    "$local_hook" "$@"
+fi

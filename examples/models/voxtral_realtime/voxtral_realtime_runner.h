@@ -108,6 +108,10 @@ class VoxtralRealtimeRunner {
   // Streaming transcription delay in steps (read from model metadata).
   int64_t delay_tokens_ = 6;
 
+  // Decoder sliding window (from model metadata). 0 means the model uses
+  // a flat KV cache (old .pte files); >0 means ring buffer (new .pte files).
+  int64_t sliding_window_ = 0;
+
   // Tokenizer special tokens
   uint64_t bos_id_ = 1;
   uint64_t eos_id_ = 2;

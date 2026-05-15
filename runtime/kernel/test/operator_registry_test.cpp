@@ -387,6 +387,59 @@ TEST_F(OperatorRegistryTest, RegisterTwoKernels) {
   ASSERT_EQ(val_2, 50);
 }
 
+TEST_F(OperatorRegistryTest, GetOpFunctionUsesProvidedKernelList) {
+  std::array<char, kKernelKeyBufSize> buf{};
+  Error err = make_kernel_key(
+      {{ScalarType::Long, {0, 1, 2, 3}}}, buf.data(), buf.size());
+  ASSERT_EQ(err, Error::Ok);
+  KernelKey long_key = KernelKey(buf.data());
+
+  std::array<Kernel, 2> kernels = {
+      Kernel(
+          "test::provided_kernel_list",
+          KernelKey{},
+          [](KernelRuntimeContext& context, Span<EValue*> stack) {
+            (void)context;
+            *(stack[0]) = Scalar(50);
+          }),
+      Kernel(
+          "test::provided_kernel_list",
+          long_key,
+          [](KernelRuntimeContext& context, Span<EValue*> stack) {
+            (void)context;
+            *(stack[0]) = Scalar(100);
+          }),
+  };
+  Span<const Kernel> kernels_span(kernels.data(), kernels.size());
+
+  std::array<Tensor::DimOrderType, 4> dims = {0, 1, 2, 3};
+  auto dim_order_type = Span<Tensor::DimOrderType>(dims.data(), dims.size());
+  std::array<TensorMeta, 1> long_meta = {
+      TensorMeta(ScalarType::Long, dim_order_type)};
+  Span<const TensorMeta> long_kernel_key(long_meta.data(), long_meta.size());
+
+  auto run_kernel = [](OpFunction func) {
+    EValue value = Scalar(0);
+    std::array<EValue*, 1> stack = {&value};
+    KernelRuntimeContext context{};
+    func(context, Span<EValue*>(stack.data(), stack.size()));
+    return value.toScalar().to<int64_t>();
+  };
+
+  Result<OpFunction> specialized_func = get_op_function_from_registry(
+      "test::provided_kernel_list", long_kernel_key, kernels_span);
+  ASSERT_EQ(specialized_func.error(), Error::Ok);
+  EXPECT_EQ(run_kernel(*specialized_func), 100);
+
+  std::array<TensorMeta, 1> float_meta = {
+      TensorMeta(ScalarType::Float, dim_order_type)};
+  Span<const TensorMeta> float_kernel_key(float_meta.data(), float_meta.size());
+  Result<OpFunction> fallback_func = get_op_function_from_registry(
+      "test::provided_kernel_list", float_kernel_key, kernels_span);
+  ASSERT_EQ(fallback_func.error(), Error::Ok);
+  EXPECT_EQ(run_kernel(*fallback_func), 50);
+}
+
 TEST_F(OperatorRegistryTest, DoubleRegisterKernelsDies) {
   std::array<char, kKernelKeyBufSize> buf_long_contiguous;
   Error err = make_kernel_key(

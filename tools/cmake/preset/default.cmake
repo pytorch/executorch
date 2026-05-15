@@ -121,6 +121,7 @@ define_overridable_option(
   EXECUTORCH_BUILD_EXTENSION_APPLE "Build the Apple extension" BOOL OFF
 )
 define_overridable_option(EXECUTORCH_BUILD_MPS "Build the MPS backend" BOOL OFF)
+define_overridable_option(EXECUTORCH_BUILD_MLX "Build the MLX backend" BOOL OFF)
 define_overridable_option(
   EXECUTORCH_BUILD_NEURON "Build the backends/mediatek directory" BOOL OFF
 )
@@ -166,6 +167,9 @@ define_overridable_option(
 )
 define_overridable_option(
   EXECUTORCH_BUILD_VULKAN "Build the Vulkan backend" BOOL OFF
+)
+define_overridable_option(
+  EXECUTORCH_BUILD_WEBGPU "Build the WebGPU backend" BOOL OFF
 )
 define_overridable_option(
   EXECUTORCH_BUILD_PORTABLE_OPS "Build portable_ops library" BOOL ON

@@ -158,8 +158,9 @@ def export_svg(
                 pydot.Edge(cur_pydot_node, user_pydot_node, dir="forward")
             )
 
-    pydot_graph.write_svg(f"{path}/{title}.svg")
-    print(f"Intermediate debugger graph saved at: {path}/{title}.svg")
+    svg_file_path = os.path.join(path, f"{title}.svg")
+    pydot_graph.write_svg(svg_file_path)
+    print(f"Intermediate debugger graph saved at: {svg_file_path}")
 
 
 def export_csv(
@@ -180,7 +181,8 @@ def export_csv(
         node_info_list.append(node_info)
 
     # Writing to a CSV file
-    with open(f"{path}/{title}.csv", mode="w", newline="") as csv_file:
+    csv_file_path = os.path.join(path, f"{title}.csv")
+    with open(csv_file_path, mode="w", newline="") as csv_file:
         fieldnames = [
             "name",
             "op_code",
@@ -198,7 +200,7 @@ def export_csv(
         writer.writeheader()
         writer.writerows(node_info_list)
 
-    print(f"Intermediate debugger csv saved at: {path}/{title}.csv")
+    print(f"Intermediate debugger csv saved at: {csv_file_path}")
 
 
 def export_raw(

@@ -331,7 +331,7 @@ Example:
         "--device", choices=["CPU", "GPU"], default="CPU", help="Target device"
     )
     parser.add_argument(
-        "--dtype", choices=["fp16", "fp32"], default="fp16", help="Model dtype"
+        "--dtype", choices=["fp16", "fp32", "int8"], default="fp16", help="Model dtype"
     )
     parser.add_argument(
         "--output_dir", type=str, default="./lcm_outputs", help="Output directory"

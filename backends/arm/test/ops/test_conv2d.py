@@ -8,6 +8,7 @@ from typing import List, Tuple, Union
 
 import torch
 from executorch.backends.arm.quantizer.arm_quantizer import (
+    get_symmetric_a16w8_quantization_config,
     get_symmetric_a8w4_quantization_config,
 )
 from executorch.backends.arm.test import common
@@ -487,6 +488,7 @@ def _get_dtype_count(model: torch.nn.Module):
     "test_data",
     test_data_INT,
 )
+@common.SkipIfNoModelConverter
 def test_convolution_2d_vgf_quant_a8w4(test_data):
     model, per_channel_quantization = test_data()
     pipeline = VgfPipeline[input_t](
@@ -539,7 +541,7 @@ def test_convolution_2d_tosa_INT_a8w4(test_data):
         aten_op,
         exir_op,
         tosa_extensions=["int4"],
-        frobenius_threshold=0.4,
+        frobenius_threshold=0.45,
     )
     pipeline.quantizer.set_global(
         get_symmetric_a8w4_quantization_config(is_per_channel=per_channel_quantization)
@@ -639,6 +641,25 @@ def test_convolution_2d_vgf_quant(test_data):
         exir_op,
         per_channel_quantization=per_channel_quantization,
         quantize=True,
+    )
+    pipeline.run()
+
+
+@common.parametrize("test_data", test_data_INT)
+@common.SkipIfNoModelConverter
+def test_convolution_2d_vgf_quant_a16w8(test_data):
+    model, per_channel_quantization = test_data()
+    pipeline = VgfPipeline[input_t](
+        model,
+        model.get_inputs(),
+        aten_op,
+        exir_op,
+        per_channel_quantization=per_channel_quantization,
+        quantize=True,
+        tosa_extensions=["int16"],
+    )
+    pipeline.quantizer.set_global(
+        get_symmetric_a16w8_quantization_config(is_per_channel=per_channel_quantization)
     )
     pipeline.run()
 

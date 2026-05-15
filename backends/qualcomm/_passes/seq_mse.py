@@ -11,8 +11,10 @@ import torchao
 from executorch.backends.qualcomm.quantizer.observers.per_block_param_observer import (
     PerBlockParamObserver,
 )
+from executorch.backends.qualcomm.quantizer.observers.per_channel_param_observer import (
+    PerChannelParamObserver,
+)
 from executorch.exir.pass_base import ExportPass, PassResult
-from torchao.quantization.pt2e import PerChannelMinMaxObserver
 
 
 class SeqMseModule(torch.nn.Module):
@@ -97,7 +99,7 @@ class SeqMseModule(torch.nn.Module):
 
     def _fake_quant(self, scale, zero_point):
         dispatcher = {
-            PerChannelMinMaxObserver: self._per_channel_qdq,
+            PerChannelParamObserver: self._per_channel_qdq,
             PerBlockParamObserver: self._per_block_qdq,
         }
         return dispatcher[type(self.observer)](scale, zero_point)

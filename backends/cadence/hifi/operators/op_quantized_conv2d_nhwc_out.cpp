@@ -17,6 +17,7 @@ using Tensor = executorch::aten::Tensor;
 using KernelRuntimeContext = torch::executor::KernelRuntimeContext;
 using ScalarType = executorch::aten::ScalarType;
 using ::executorch::aten::IntArrayRef;
+using ::executorch::aten::optional;
 
 namespace impl {
 namespace HiFi {
@@ -300,7 +301,7 @@ void xa_opt_quantized_conv2d_nhwc(
       return;
     }
 
-    if (groups == input_channels) {
+    if (is_depthwise) {
       WORD32 channels_multiplier = out_channels / input_channels;
 
       scratch_size = xa_nn_conv2d_depthwise_getsize(
@@ -359,6 +360,27 @@ void xa_opt_quantized_conv2d_nhwc(
       return;
     }
   }
+
+  // Fallback to generic grouped conv for cases not handled by nnlib
+  // (e.g. grouped conv with 4D weight where is_depthwise is false)
+  ::impl::generic::native::quantized_conv2d_nhwc_per_tensor_out(
+      ctx,
+      input,
+      weight,
+      bias,
+      stride,
+      padding,
+      dilation,
+      groups,
+      in_zero_point,
+      weight_zero_point,
+      bias_scale,
+      output_scale,
+      output_zero_point,
+      0, // out_multiplier (unused)
+      0, // out_shift (unused)
+      optional<Tensor>(), // offset (unused)
+      out);
 }
 
 void quantized_conv2d_nhwc(
@@ -548,6 +570,7 @@ void quantized_conv2d_nhwc_per_tensor_out(
     int64_t output_zero_point,
     __ET_UNUSED int64_t out_multiplier,
     __ET_UNUSED int64_t out_shift,
+    const optional<Tensor>& offset,
     Tensor& out) {
   // Handle W8A16 heterogeneous type (int16_t activations, int8_t weights)
   if (out.scalar_type() == ::executorch::aten::ScalarType::Short &&
@@ -569,6 +592,7 @@ void quantized_conv2d_nhwc_per_tensor_out(
         output_zero_point,
         out_multiplier,
         out_shift,
+        offset,
         out);
     return;
   }

@@ -169,15 +169,37 @@ def update_features(aten_op):
         # Guard and assert ops
         torch.ops.aten._assert_scalar.default,
         torch.ops.aten.sym_constrain_range_for_size.default,
-        # copy.default is a no-op when src dtype matches dst dtype; removed by
-        # RemoveRedundantOpsTransform before execution.
-        exir_ops.edge.aten.copy.default,
     ]
 )
 def register_ephemeral_ops():
     return OpFeatures(
         inputs_storage=utils.ANY_STORAGE,
         supports_resize=True,
+    )
+
+
+def _check_copy_is_noop(node: torch.fx.Node) -> bool:
+    """Only support copy.default when it's a no-op (same dtype and shape)."""
+    src = node.args[1]
+    if not isinstance(src, torch.fx.Node):
+        return False
+    src_val = src.meta.get("val")
+    dst_val = node.meta.get("val")
+    if src_val is None or dst_val is None:
+        return False
+    return src_val.dtype == dst_val.dtype and src_val.shape == dst_val.shape
+
+
+@update_features(
+    [
+        exir_ops.edge.aten.copy.default,
+    ]
+)
+def register_copy_op():
+    return OpFeatures(
+        inputs_storage=utils.ANY_STORAGE,
+        supports_resize=True,
+        are_node_inputs_supported_fn=_check_copy_is_noop,
     )
 
 
@@ -193,6 +215,7 @@ def register_ephemeral_ops():
         exir_ops.edge.aten.exp.default,
         exir_ops.edge.aten.gelu.default,
         exir_ops.edge.aten.hardshrink.default,
+        exir_ops.edge.aten.hardswish.default,
         exir_ops.edge.aten.hardtanh.default,
         exir_ops.edge.aten.neg.default,
         exir_ops.edge.aten.relu.default,
@@ -584,6 +607,25 @@ def register_q8ta_add():
 def register_q8ta_relu():
     return OpFeatures(
         inputs_storage=utils.PACKED_INT8_BUFFER,
+        supports_resize=True,
+    )
+
+
+# =============================================================================
+# Q8taPixelShuffle.cpp
+# =============================================================================
+
+
+@update_features(exir_ops.edge.et_vk.q8ta_pixel_shuffle.default)
+def register_q8ta_pixel_shuffle():
+    # The fused kernel is restricted to the channels-packed family
+    # (PACKED_INT8_4W4C, PACKED_INT8_4C1W, PACKED_INT8_CONV2D), all of which
+    # share packed_dim=C. See add_q8ta_pixel_shuffle_node in Q8taPixelShuffle.cpp
+    # for the runtime assertion. The surrounding q8ta_conv2d ops produce
+    # PACKED_INT8_4W4C on this model, so the partitioner can route through this
+    # op without inserting layout-transition q8ta_clone dispatches.
+    return OpFeatures(
+        inputs_storage=utils.PACKED_INT8_CHANNELS_PACKED_BUFFER,
         supports_resize=True,
     )
 
@@ -1049,6 +1091,20 @@ def register_sdpa_cpp_ops():
 
 
 # =============================================================================
+# SDPA.cpp (fused SDPA entry point)
+# =============================================================================
+
+
+@update_features("et_vk::sdpa")
+def register_general_sdpa():
+    return OpFeatures(
+        inputs_storage=utils.CONTIGUOUS_ANY,
+        inputs_dtypes=utils.FP_T,
+        supports_resize=True,
+    )
+
+
+# =============================================================================
 # RotaryEmbedding.cpp
 # =============================================================================
 
@@ -1057,6 +1113,32 @@ def register_sdpa_cpp_ops():
 def register_apply_rotary_emb():
     return OpFeatures(
         inputs_storage=utils.CONTIGUOUS_ANY,
+        inputs_dtypes=utils.FP_T,
+        supports_resize=True,
+        supports_highdim=True,
+    )
+
+
+@update_features(exir_ops.edge.et_vk.apply_rotary_emb_hf.default)
+def register_apply_rotary_emb_hf():
+    return OpFeatures(
+        inputs_storage=utils.CONTIGUOUS_ANY,
+        inputs_dtypes=utils.FP_T,
+        supports_resize=True,
+        supports_highdim=True,
+    )
+
+
+@update_features(exir_ops.edge.et_vk.apply_rotary_emb_interleaved.default)
+def register_apply_rotary_emb_interleaved():
+    return OpFeatures(
+        # freqs_cis is pinned to buffer storage so the shader can compute a
+        # flat [N, C] linear address regardless of the tensor's declared rank
+        # (callers commonly pass 4D [1, N, C/2, 2] without a preceding view).
+        inputs_storage=[
+            utils.CONTIGUOUS_ANY,  # x
+            utils.CONTIGUOUS_BUFFER,  # freqs_cis
+        ],
         inputs_dtypes=utils.FP_T,
         supports_resize=True,
         supports_highdim=True,
@@ -1095,7 +1177,7 @@ def register_permute_copy():
 @update_features(exir_ops.edge.aten.view_copy.default)
 def register_view_copy():
     return OpFeatures(
-        inputs_storage=utils.ANY_STORAGE,
+        inputs_storage=utils.ANY_STORAGE_INCL_PACKED_INT8,
         inputs_dtypes=utils.FP_INT_BOOL_T,
         supports_resize=True,
         supports_highdim=True,
@@ -1150,7 +1232,7 @@ def register_unsqueeze_copy():
 @update_features(exir_ops.edge.aten.clone.default)
 def register_clone():
     return OpFeatures(
-        inputs_storage=utils.ANY_STORAGE,
+        inputs_storage=utils.ANY_STORAGE_INCL_PACKED_INT8,
         inputs_dtypes=utils.FP_INT_BOOL_T,
         supports_resize=True,
         supports_highdim=True,
@@ -1160,7 +1242,7 @@ def register_clone():
 @update_features(exir_ops.edge.dim_order_ops._clone_dim_order.default)
 def register_clone_dim_order():
     return OpFeatures(
-        inputs_storage=utils.ANY_STORAGE,
+        inputs_storage=utils.ANY_STORAGE_INCL_PACKED_INT8,
         inputs_dtypes=utils.FP_INT_BOOL_T,
         supports_resize=True,
         supports_highdim=True,
@@ -1174,7 +1256,7 @@ def register_clone_dim_order():
 @update_features(exir_ops.edge.aten.alias_copy.default)
 def register_alias_copy():
     return OpFeatures(
-        inputs_storage=utils.ANY_STORAGE,
+        inputs_storage=utils.ANY_STORAGE_INCL_PACKED_INT8,
         inputs_dtypes=utils.FP_INT_BOOL_T,
         supports_resize=True,
         supports_highdim=True,
@@ -1443,6 +1525,20 @@ def register_upsample_cpp_ops():
 
 
 # =============================================================================
+# PixelShuffle.cpp
+# =============================================================================
+
+
+@update_features(exir_ops.edge.aten.pixel_shuffle.default)
+def register_pixel_shuffle():
+    return OpFeatures(
+        inputs_storage=utils.ANY_STORAGE,
+        inputs_dtypes=utils.FP_T,
+        supports_resize=True,
+    )
+
+
+# =============================================================================
 # GridPriors.cpp
 # =============================================================================
 
@@ -1567,6 +1663,21 @@ def register_native_group_norm():
 def register_native_layer_norm():
     return OpFeatures(
         inputs_storage=utils.ANY_STORAGE,
+        inputs_dtypes=utils.FP_T,
+        supports_prepacking=True,
+        supports_resize=True,
+    )
+
+
+# =============================================================================
+# RmsNorm.cpp
+# =============================================================================
+
+
+@update_features(exir_ops.edge.et_vk.rms_norm.default)
+def register_rms_norm():
+    return OpFeatures(
+        inputs_storage=utils.CONTIGUOUS_ANY,
         inputs_dtypes=utils.FP_T,
         supports_prepacking=True,
         supports_resize=True,

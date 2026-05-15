@@ -23,6 +23,7 @@ find_package(gflags REQUIRED)
 
 # Find executorch libraries
 list(APPEND CMAKE_FIND_ROOT_PATH ${CMAKE_CURRENT_BINARY_DIR}/../../..)
+
 find_package(executorch CONFIG REQUIRED FIND_ROOT_PATH_BOTH)
 get_target_property(_executorch_imported executorch IMPORTED)
 if(NOT _executorch_imported)
@@ -42,9 +43,14 @@ endif()
 
 # CPU-only builds need quantized and custom ops
 if(NOT EXECUTORCH_BUILD_CUDA)
-  list(APPEND link_libraries quantized_ops_lib custom_ops)
-  executorch_target_link_options_shared_lib(quantized_ops_lib)
-  executorch_target_link_options_shared_lib(custom_ops)
+  if(TARGET quantized_ops_lib)
+    list(APPEND link_libraries quantized_ops_lib)
+    executorch_target_link_options_shared_lib(quantized_ops_lib)
+  endif()
+  if(TARGET custom_ops)
+    list(APPEND link_libraries custom_ops)
+    executorch_target_link_options_shared_lib(custom_ops)
+  endif()
 endif()
 
 # XNNPACK
@@ -91,6 +97,12 @@ if(EXECUTORCH_BUILD_METAL)
   executorch_target_link_options_shared_lib(metal_backend)
 endif()
 
+# Link MLX delegate
+if(TARGET mlxdelegate)
+  list(APPEND link_libraries mlxdelegate mlx)
+  executorch_target_link_options_shared_lib(mlxdelegate)
+endif()
+
 if(EXECUTORCH_BUILD_VULKAN)
   list(APPEND link_libraries vulkan_backend)
   executorch_target_link_options_shared_lib(vulkan_backend)
@@ -102,6 +114,11 @@ if(NOT CMAKE_BUILD_TYPE STREQUAL "Debug")
   if(NOT APPLE AND NOT MSVC)
     target_link_options(parakeet_runner PRIVATE "LINKER:-s")
   endif()
+endif()
+
+# Copy MLX metallib for runtime if MLX delegate is enabled
+if(TARGET mlxdelegate)
+  executorch_target_copy_mlx_metallib(parakeet_runner)
 endif()
 
 target_include_directories(

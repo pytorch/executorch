@@ -19,6 +19,7 @@ from executorch.backends.cadence.aot.fuse_ops import (
 from executorch.backends.cadence.aot.pass_utils import (
     CadencePassAttribute,
     create_cadence_pass_filter,
+    EdgePassesConfig,
     register_cadence_pass,
 )
 
@@ -101,9 +102,12 @@ def get_passes_in_default_order() -> list[Type[ExportPass]]:
 def apply_exir_ops_passes(
     opt_level: int,
     edge_prog_manager: EdgeProgramManager,
+    edge_passes_config: Optional[EdgePassesConfig] = None,
 ) -> EdgeProgramManager:
     passes = get_passes_in_default_order()
-    pass_filter = create_cadence_pass_filter(opt_level)
+    pass_filter = create_cadence_pass_filter(
+        opt_level, edge_passes_config=edge_passes_config
+    )
     cadence_passes = [
         (
             lambda graph_module, filtered_pass=filtered_pass: filtered_pass()(

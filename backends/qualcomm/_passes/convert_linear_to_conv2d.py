@@ -8,6 +8,7 @@ import torch
 from executorch.backends.qualcomm._passes.utils import append_qdq, copy_meta
 from executorch.backends.qualcomm.builders.utils import get_parameter, set_parameter
 from executorch.exir.pass_base import ExportPass, PassResult
+from executorch.exir.passes import dead_code_elimination_pass
 from torch.fx import GraphModule
 from torchao.quantization.pt2e.utils import get_new_attr_name_with_prefix
 
@@ -227,6 +228,5 @@ class ConvertLinearToConv2d(ExportPass):
                     node.replace_all_uses_with(y)
                     graph.erase_node(node)
 
-        graph.eliminate_dead_code()
-        graph_module.recompile()
+        dead_code_elimination_pass(graph_module)
         return PassResult(graph_module, True)

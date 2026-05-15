@@ -46,7 +46,9 @@ from torch.fx.passes.operator_support import OperatorSupportBase
 
 # pyre-ignore
 ops_not_to_decompose = [
+    torch.ops.aten.hardswish.default,
     torch.ops.aten.upsample_nearest2d.vec,
+    torch.ops.aten.pixel_shuffle.default,
 ]
 
 logger: logging.Logger = logging.getLogger("")

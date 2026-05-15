@@ -234,6 +234,15 @@ bool registry_has_op_function(
     Span<const TensorMeta> meta_list = {});
 
 /**
+ * Returns the operator with a given name and TensorMeta list from the provided
+ * kernel list instead of the global registry.
+ */
+::executorch::runtime::Result<OpFunction> get_op_function_from_registry(
+    const char* name,
+    Span<const TensorMeta> meta_list,
+    Span<const Kernel> kernel_list);
+
+/**
  * Returns all registered kernels.
  */
 Span<const Kernel> get_registered_kernels();

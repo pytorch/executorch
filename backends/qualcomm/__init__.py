@@ -1,6 +1,18 @@
 import os
 
+import torch
+
 from .scripts.download_qnn_sdk import install_qnn_sdk, is_linux_x86, QNN_ZIP_URL
+
+try:
+    import cpuinfo
+
+    info = cpuinfo.get_cpu_info()
+    vendor = info.get("vendor_id_raw", "").lower()
+    if "amd" in vendor:
+        torch.backends.mkldnn.enabled = False
+except ImportError:
+    raise ImportError("Please install the cpuinfo with pip install py-cpuinfo.")
 
 
 env_flag = os.getenv("EXECUTORCH_BUILDING_WHEEL", "0").lower()

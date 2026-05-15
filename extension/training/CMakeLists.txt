@@ -94,3 +94,18 @@ install(
   INCLUDES
   DESTINATION ${_common_include_directories}
 )
+
+# Headers
+install(
+  DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}/module
+  DESTINATION ${CMAKE_INSTALL_INCLUDEDIR}/executorch/extension/training
+  FILES_MATCHING
+  PATTERN "*.h"
+)
+
+install(
+  DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}/optimizer
+  DESTINATION ${CMAKE_INSTALL_INCLUDEDIR}/executorch/extension/training
+  FILES_MATCHING
+  PATTERN "*.h"
+)

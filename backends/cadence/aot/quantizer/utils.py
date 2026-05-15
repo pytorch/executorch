@@ -170,10 +170,6 @@ def get_bias_qparams(
     return bias_scale, bias_zero_point
 
 
-def get_conv_args(arg, first_val: int) -> List[fx.Node]:
-    return arg if len(arg) == 2 else [first_val, arg[0]]
-
-
 def get_aten_node_target_partitions(
     graph: torch.fx.Graph,
     wanted_original_aten_op: List[OpOverload],

@@ -7,13 +7,16 @@
 pack_fp_linear_weight:
   parameter_names_with_default_values:
     DTYPE: float
+    BUF_DTYPE: float
     PACKED_STORAGE: texture2d
   generate_variant_forall:
-    PACKED_STORAGE:
-      - VALUE: texture2d
-      - VALUE: buffer
-    DTYPE:
-      - VALUE: float
-      - VALUE: half
+    combination:
+      parameter_names: [PACKED_STORAGE, DTYPE, BUF_DTYPE]
+      combos:
+        - parameter_values: [texture2d, float, float]
+        - parameter_values: [texture2d, half, half]
+        - parameter_values: [texture2d, half, float]
+        - parameter_values: [buffer, float, float]
+        - parameter_values: [buffer, half, half]
   shader_variants:
     - NAME: pack_fp_linear_weight

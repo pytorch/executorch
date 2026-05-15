@@ -278,9 +278,14 @@ fbcode_target(_kind = runtime.python_test,
         "source_transformation/test_attention_sink.py",
     ],
     supports_static_listing = False,
+    preload_deps = [
+        "//executorch/extension/llm/custom_ops:custom_ops_aot_lib",
+        "//executorch/extension/llm/custom_ops:custom_ops_aot_py",
+    ],
     deps = [
         "fbsource//third-party/pypi/parameterized:parameterized",
         "//caffe2:torch",
+        "//executorch/extension/pybindings:portable_lib",
         ":export_library",
     ],
 )

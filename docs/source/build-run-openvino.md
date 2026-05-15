@@ -35,10 +35,32 @@ For more information on the supported hardware, please refer to [OpenVINO System
 
 ## Instructions for Building OpenVINO Backend
 
+### Quick Start (pip wheel, Linux)
+
+The easiest way to use the OpenVINO backend is via the prebuilt pip wheel:
+
+```bash
+pip install executorch[openvino]
+```
+
+The backend automatically discovers the OpenVINO C library from the pip-installed
+package — no environment variable setup is needed.
+
+See the [OpenVINO backend README](../../backends/openvino/README.md) for verification steps and troubleshooting.
+
+### Building from Source
+
+If you need a custom build (different platform, custom configuration, etc.), follow the instructions below.
+
 ### Prerequisites
 
-Before you begin, ensure you have openvino installed and configured on your system:
+Before you begin, ensure you have the OpenVINO runtime installed and configured on your system. For most users, we recommend installing it via pip:
 
+```bash
+pip install "openvino>=2025.1.0,<2026.0.0"
+```
+
+Alternatively, you can build OpenVINO from source or follow the official [OpenVINO installation guide](https://docs.openvino.ai/2025/get-started/install-openvino.html) for platform-specific options:
 
 ```bash
 git clone https://github.com/openvinotoolkit/openvino.git
@@ -54,8 +76,7 @@ cmake --install build --prefix <your_preferred_install_location>
 cd <your_preferred_install_location>
 source setupvars.sh
 ```
-Note: The OpenVINO backend is not yet supported with the current OpenVINO release packages. It is recommended to build from source. The instructions for using OpenVINO release packages will be added soon.
-For more information about OpenVINO build, refer to the [OpenVINO Build Instructions](https://github.com/openvinotoolkit/openvino/blob/master/docs/dev/build_linux.md).
+For more information about building OpenVINO from source, refer to the [OpenVINO Build Instructions](https://github.com/openvinotoolkit/openvino/blob/master/docs/dev/build_linux.md).
 
 ### Setup
 

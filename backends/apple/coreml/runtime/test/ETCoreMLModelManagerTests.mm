@@ -10,6 +10,7 @@
 #import <ETCoreMLAsset.h>
 #import <ETCoreMLAssetManager.h>
 #import <ETCoreMLModel.h>
+#import <ETCoreMLModelCache.h>
 #import <ETCoreMLModelManager.h>
 #import <MLModel_Prewarm.h>
 #import <XCTest/XCTest.h>
@@ -97,7 +98,7 @@ using namespace executorchcoreml;
 - (void)testAddModelExecution {
     NSURL *modelURL = [[self class] bundledResourceWithName:@"add_coreml_all" extension:@"bin"];
     XCTAssertNotNil(modelURL);
-    
+
     NSError *localError = nil;
     NSData *data = [NSData dataWithContentsOfURL:modelURL];
     MLModelConfiguration *configuration = [[MLModelConfiguration alloc] init];
@@ -108,7 +109,7 @@ using namespace executorchcoreml;
     int y = 50;
     // add_coreml_all does the following operation.
     int z = x + y;
-    
+
     NSArray<MLMultiArray *> *inputs = [ETCoreMLTestUtils inputsForModel:model repeatedValues:@[@(x), @(y)] error:&localError];
     XCTAssertNotNil(inputs);
     MLMultiArray *output = [ETCoreMLTestUtils filledMultiArrayWithShape:inputs[0].shape dataType:inputs[0].dataType repeatedValue:@(0) error:&localError];
@@ -127,7 +128,7 @@ using namespace executorchcoreml;
 - (void)testMulModelExecution {
     NSURL *modelURL = [[self class] bundledResourceWithName:@"mul_coreml_all" extension:@"bin"];
     XCTAssertNotNil(modelURL);
-    
+
     NSError *localError = nil;
     NSData *data = [NSData dataWithContentsOfURL:modelURL];
     MLModelConfiguration *configuration = [[MLModelConfiguration alloc] init];
@@ -150,6 +151,293 @@ using namespace executorchcoreml;
         XCTAssertEqual(value.integerValue, x * y);
     }
 }
+
+#pragma mark - Cache-based Path Tests
+
+- (void)testModelLoadAndUnloadWithCache {
+    NSURL *modelURL = [[self class] bundledResourceWithName:@"add_coreml_all" extension:@"bin"];
+    NSError *localError = nil;
+    XCTAssertNotNil(modelURL);
+
+    // Create a separate cache for this test
+    NSURL *cacheURL = [self.testDirectoryURL URLByAppendingPathComponent:@"model_cache"];
+    ETCoreMLModelCache *cache = [[ETCoreMLModelCache alloc] initWithCacheRootDirectory:cacheURL];
+    XCTAssertTrue(cache.isReady, @"Cache should be ready: %@", cache.initializationError);
+
+    NSData *data = [NSData dataWithContentsOfURL:modelURL];
+    MLModelConfiguration *configuration = [[MLModelConfiguration alloc] init];
+    configuration.computeUnits = MLComputeUnitsAll;
+
+    ModelHandle *handle = [self.modelManager loadModelFromAOTData:data
+                                                    configuration:configuration
+                                                       methodName:nil
+                                                     functionName:nil
+                                                            cache:cache
+                                                            error:&localError];
+    XCTAssertTrue(handle != NULL, @"Model should load successfully with cache: %@", localError);
+    XCTAssertTrue([self.modelManager unloadModelWithHandle:handle]);
+    XCTAssertFalse([self.modelManager unloadModelWithHandle:handle]);
+}
+
+- (void)testModelHandleWithCache {
+    NSURL *modelURL = [[self class] bundledResourceWithName:@"add_coreml_all" extension:@"bin"];
+    NSError *localError = nil;
+    XCTAssertNotNil(modelURL);
+
+    NSURL *cacheURL = [self.testDirectoryURL URLByAppendingPathComponent:@"model_cache"];
+    ETCoreMLModelCache *cache = [[ETCoreMLModelCache alloc] initWithCacheRootDirectory:cacheURL];
+    XCTAssertTrue(cache.isReady, @"Cache should be ready: %@", cache.initializationError);
+
+    NSData *data = [NSData dataWithContentsOfURL:modelURL];
+    MLModelConfiguration *configuration = [[MLModelConfiguration alloc] init];
+    configuration.computeUnits = MLComputeUnitsAll;
+
+    ModelHandle *handle = [self.modelManager loadModelFromAOTData:data
+                                                    configuration:configuration
+                                                       methodName:nil
+                                                     functionName:nil
+                                                            cache:cache
+                                                            error:&localError];
+    XCTAssertTrue(handle != NULL, @"Model should load with cache: %@", localError);
+
+    ETCoreMLModel *model = [self.modelManager modelWithHandle:handle];
+    XCTAssertNotNil(model.mlModel);
+    XCTAssertTrue(model.identifier.length > 0);
+    XCTAssertEqual(model.orderedInputNames.count, 2);
+    XCTAssertEqual(model.orderedOutputNames.count, 1);
+}
+
+- (void)testModelPrewarmWithCache {
+    NSURL *modelURL = [[self class] bundledResourceWithName:@"add_coreml_all" extension:@"bin"];
+    NSError *localError = nil;
+    XCTAssertNotNil(modelURL);
+
+    NSURL *cacheURL = [self.testDirectoryURL URLByAppendingPathComponent:@"model_cache"];
+    ETCoreMLModelCache *cache = [[ETCoreMLModelCache alloc] initWithCacheRootDirectory:cacheURL];
+    XCTAssertTrue(cache.isReady, @"Cache should be ready: %@", cache.initializationError);
+
+    NSData *data = [NSData dataWithContentsOfURL:modelURL];
+    MLModelConfiguration *configuration = [[MLModelConfiguration alloc] init];
+    configuration.computeUnits = MLComputeUnitsAll;
+
+    ModelHandle *handle = [self.modelManager loadModelFromAOTData:data
+                                                    configuration:configuration
+                                                       methodName:nil
+                                                     functionName:nil
+                                                            cache:cache
+                                                            error:&localError];
+    XCTAssertTrue(handle != NULL, @"Model should load with cache: %@", localError);
+    XCTAssertTrue([self.modelManager prewarmModelWithHandle:handle error:&localError], @"Prewarm should succeed: %@", localError);
+}
+
+- (void)testAddModelExecutionWithCache {
+    NSURL *modelURL = [[self class] bundledResourceWithName:@"add_coreml_all" extension:@"bin"];
+    XCTAssertNotNil(modelURL);
+
+    NSError *localError = nil;
+    NSURL *cacheURL = [self.testDirectoryURL URLByAppendingPathComponent:@"model_cache"];
+    ETCoreMLModelCache *cache = [[ETCoreMLModelCache alloc] initWithCacheRootDirectory:cacheURL];
+    XCTAssertTrue(cache.isReady, @"Cache should be ready: %@", cache.initializationError);
+
+    NSData *data = [NSData dataWithContentsOfURL:modelURL];
+    MLModelConfiguration *configuration = [[MLModelConfiguration alloc] init];
+    configuration.computeUnits = MLComputeUnitsAll;
+
+    ModelHandle *handle = [self.modelManager loadModelFromAOTData:data
+                                                    configuration:configuration
+                                                       methodName:nil
+                                                     functionName:nil
+                                                            cache:cache
+                                                            error:&localError];
+    XCTAssertTrue(handle != NULL, @"Model should load with cache: %@", localError);
+
+    ETCoreMLModel *model = [self.modelManager modelWithHandle:handle];
+    int x = 20;
+    int y = 50;
+    int z = x + y;
+
+    NSArray<MLMultiArray *> *inputs = [ETCoreMLTestUtils inputsForModel:model repeatedValues:@[@(x), @(y)] error:&localError];
+    XCTAssertNotNil(inputs);
+    MLMultiArray *output = [ETCoreMLTestUtils filledMultiArrayWithShape:inputs[0].shape dataType:inputs[0].dataType repeatedValue:@(0) error:&localError];
+    NSArray<MLMultiArray *> *args = [inputs arrayByAddingObject:output];
+
+    XCTAssertTrue([self.modelManager executeModelWithHandle:handle
+                                                       args:args
+                                             loggingOptions:executorchcoreml::ModelLoggingOptions()
+                                                eventLogger:nullptr
+                                                      error:&localError]);
+    for (NSUInteger i = 0; i < output.count; i++) {
+        NSNumber *value = [output objectAtIndexedSubscript:i];
+        XCTAssertEqual(value.integerValue, z);
+    }
+}
+
+- (void)testMulModelExecutionWithCache {
+    NSURL *modelURL = [[self class] bundledResourceWithName:@"mul_coreml_all" extension:@"bin"];
+    XCTAssertNotNil(modelURL);
+
+    NSError *localError = nil;
+    NSURL *cacheURL = [self.testDirectoryURL URLByAppendingPathComponent:@"model_cache"];
+    ETCoreMLModelCache *cache = [[ETCoreMLModelCache alloc] initWithCacheRootDirectory:cacheURL];
+    XCTAssertTrue(cache.isReady, @"Cache should be ready: %@", cache.initializationError);
+
+    NSData *data = [NSData dataWithContentsOfURL:modelURL];
+    MLModelConfiguration *configuration = [[MLModelConfiguration alloc] init];
+    configuration.computeUnits = MLComputeUnitsAll;
+
+    ModelHandle *handle = [self.modelManager loadModelFromAOTData:data
+                                                    configuration:configuration
+                                                       methodName:nil
+                                                     functionName:nil
+                                                            cache:cache
+                                                            error:&localError];
+    XCTAssertTrue(handle != NULL, @"Model should load with cache: %@", localError);
+
+    ETCoreMLModel *model = [self.modelManager modelWithHandle:handle];
+    int x = 20;
+    int y = 50;
+
+    NSArray<MLMultiArray *> *inputs = [ETCoreMLTestUtils inputsForModel:model repeatedValues:@[@(x), @(y)] error:&localError];
+    XCTAssertNotNil(inputs);
+    MLMultiArray *output = [ETCoreMLTestUtils filledMultiArrayWithShape:inputs[0].shape dataType:inputs[0].dataType repeatedValue:@(0) error:&localError];
+    NSArray<MLMultiArray *> *args = [inputs arrayByAddingObject:output];
+
+    XCTAssertTrue([self.modelManager executeModelWithHandle:handle
+                                                       args:args
+                                             loggingOptions:executorchcoreml::ModelLoggingOptions()
+                                                eventLogger:nullptr
+                                                      error:&localError]);
+    for (NSUInteger i = 0; i < output.count; i++) {
+        NSNumber *value = [output objectAtIndexedSubscript:i];
+        XCTAssertEqual(value.integerValue, x * y);
+    }
+}
+
+- (void)testCacheHitOnReload {
+    NSURL *modelURL = [[self class] bundledResourceWithName:@"add_coreml_all" extension:@"bin"];
+    NSError *localError = nil;
+    XCTAssertNotNil(modelURL);
+
+    NSURL *cacheURL = [self.testDirectoryURL URLByAppendingPathComponent:@"model_cache"];
+    ETCoreMLModelCache *cache = [[ETCoreMLModelCache alloc] initWithCacheRootDirectory:cacheURL];
+    XCTAssertTrue(cache.isReady, @"Cache should be ready: %@", cache.initializationError);
+
+    NSData *data = [NSData dataWithContentsOfURL:modelURL];
+    MLModelConfiguration *configuration = [[MLModelConfiguration alloc] init];
+    configuration.computeUnits = MLComputeUnitsAll;
+
+    // Load model first time (cold cache)
+    ModelHandle *handle1 = [self.modelManager loadModelFromAOTData:data
+                                                     configuration:configuration
+                                                        methodName:nil
+                                                      functionName:nil
+                                                             cache:cache
+                                                             error:&localError];
+    XCTAssertTrue(handle1 != NULL, @"First load should succeed: %@", localError);
+
+    ETCoreMLModel *model1 = [self.modelManager modelWithHandle:handle1];
+    NSString *identifier = model1.identifier;
+
+    // Unload
+    XCTAssertTrue([self.modelManager unloadModelWithHandle:handle1]);
+
+    // Load model second time (should hit cache)
+    ModelHandle *handle2 = [self.modelManager loadModelFromAOTData:data
+                                                     configuration:configuration
+                                                        methodName:nil
+                                                      functionName:nil
+                                                             cache:cache
+                                                             error:&localError];
+    XCTAssertTrue(handle2 != NULL, @"Second load should succeed from cache: %@", localError);
+
+    ETCoreMLModel *model2 = [self.modelManager modelWithHandle:handle2];
+    XCTAssertEqualObjects(model2.identifier, identifier, @"Identifier should match");
+
+    // Verify model still works
+    int x = 10;
+    int y = 20;
+    NSArray<MLMultiArray *> *inputs = [ETCoreMLTestUtils inputsForModel:model2 repeatedValues:@[@(x), @(y)] error:&localError];
+    XCTAssertNotNil(inputs);
+    MLMultiArray *output = [ETCoreMLTestUtils filledMultiArrayWithShape:inputs[0].shape dataType:inputs[0].dataType repeatedValue:@(0) error:&localError];
+    NSArray<MLMultiArray *> *args = [inputs arrayByAddingObject:output];
+
+    XCTAssertTrue([self.modelManager executeModelWithHandle:handle2
+                                                       args:args
+                                             loggingOptions:executorchcoreml::ModelLoggingOptions()
+                                                eventLogger:nullptr
+                                                      error:&localError]);
+    for (NSUInteger i = 0; i < output.count; i++) {
+        NSNumber *value = [output objectAtIndexedSubscript:i];
+        XCTAssertEqual(value.integerValue, x + y);
+    }
+}
+
+- (void)testMultipleModelsWithSameCache {
+    NSURL *addModelURL = [[self class] bundledResourceWithName:@"add_coreml_all" extension:@"bin"];
+    NSURL *mulModelURL = [[self class] bundledResourceWithName:@"mul_coreml_all" extension:@"bin"];
+    XCTAssertNotNil(addModelURL);
+    XCTAssertNotNil(mulModelURL);
+
+    NSError *localError = nil;
+    NSURL *cacheURL = [self.testDirectoryURL URLByAppendingPathComponent:@"model_cache"];
+    ETCoreMLModelCache *cache = [[ETCoreMLModelCache alloc] initWithCacheRootDirectory:cacheURL];
+    XCTAssertTrue(cache.isReady, @"Cache should be ready: %@", cache.initializationError);
+
+    NSData *addData = [NSData dataWithContentsOfURL:addModelURL];
+    NSData *mulData = [NSData dataWithContentsOfURL:mulModelURL];
+    MLModelConfiguration *configuration = [[MLModelConfiguration alloc] init];
+    configuration.computeUnits = MLComputeUnitsAll;
+
+    // Load both models using the same cache
+    ModelHandle *addHandle = [self.modelManager loadModelFromAOTData:addData
+                                                       configuration:configuration
+                                                          methodName:nil
+                                                        functionName:nil
+                                                               cache:cache
+                                                               error:&localError];
+    XCTAssertTrue(addHandle != NULL, @"Add model should load: %@", localError);
+
+    ModelHandle *mulHandle = [self.modelManager loadModelFromAOTData:mulData
+                                                       configuration:configuration
+                                                          methodName:nil
+                                                        functionName:nil
+                                                               cache:cache
+                                                               error:&localError];
+    XCTAssertTrue(mulHandle != NULL, @"Mul model should load: %@", localError);
+
+    // Verify both models work correctly
+    ETCoreMLModel *addModel = [self.modelManager modelWithHandle:addHandle];
+    ETCoreMLModel *mulModel = [self.modelManager modelWithHandle:mulHandle];
+
+    int x = 5;
+    int y = 3;
+
+    // Test add model
+    NSArray<MLMultiArray *> *addInputs = [ETCoreMLTestUtils inputsForModel:addModel repeatedValues:@[@(x), @(y)] error:&localError];
+    MLMultiArray *addOutput = [ETCoreMLTestUtils filledMultiArrayWithShape:addInputs[0].shape dataType:addInputs[0].dataType repeatedValue:@(0) error:&localError];
+    NSArray<MLMultiArray *> *addArgs = [addInputs arrayByAddingObject:addOutput];
+
+    XCTAssertTrue([self.modelManager executeModelWithHandle:addHandle
+                                                       args:addArgs
+                                             loggingOptions:executorchcoreml::ModelLoggingOptions()
+                                                eventLogger:nullptr
+                                                      error:&localError]);
+    XCTAssertEqual([addOutput objectAtIndexedSubscript:0].integerValue, x + y);
+
+    // Test mul model
+    NSArray<MLMultiArray *> *mulInputs = [ETCoreMLTestUtils inputsForModel:mulModel repeatedValues:@[@(x), @(y)] error:&localError];
+    MLMultiArray *mulOutput = [ETCoreMLTestUtils filledMultiArrayWithShape:mulInputs[0].shape dataType:mulInputs[0].dataType repeatedValue:@(0) error:&localError];
+    NSArray<MLMultiArray *> *mulArgs = [mulInputs arrayByAddingObject:mulOutput];
+
+    XCTAssertTrue([self.modelManager executeModelWithHandle:mulHandle
+                                                       args:mulArgs
+                                             loggingOptions:executorchcoreml::ModelLoggingOptions()
+                                                eventLogger:nullptr
+                                                      error:&localError]);
+    XCTAssertEqual([mulOutput objectAtIndexedSubscript:0].integerValue, x * y);
+}
+
+#pragma mark - Autorelease Pool Tests
 
 // See https://github.com/pytorch/executorch/pull/10465
 - (void)testAutoreleasepoolError {

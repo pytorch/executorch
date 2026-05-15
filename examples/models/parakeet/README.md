@@ -25,7 +25,7 @@ python export_parakeet_tdt.py --audio /path/to/audio.wav
 | Argument | Description |
 |----------|-------------|
 | `--output-dir` | Output directory for exports (default: `./parakeet_tdt_exports`) |
-| `--backend` | Backend for acceleration: `portable`, `xnnpack`, `metal`, `cuda`, `cuda-windows` (default: `xnnpack`) |
+| `--backend` | Backend for acceleration: `portable`, `xnnpack`, `vulkan`, `metal`, `mlx`, `cuda`, `cuda-windows` (default: `xnnpack`) |
 | `--dtype` | Data type: `fp32`, `bf16`, `fp16` (default: `fp32`). Metal backend supports `fp32` and `bf16` only (no `fp16`). |
 | `--audio` | Path to audio file for transcription test |
 
@@ -39,24 +39,25 @@ The export script supports quantizing encoder and decoder linear layers using [t
 
 | Argument | Description |
 |----------|-------------|
-| `--qlinear_encoder` | Quantization config for encoder linear layers: `4w`, `8w`, `8da4w`, `8da8w`, `fpa4w` |
-| `--qlinear_encoder_group_size` | Group size for encoder linear quantization (default: 32) |
+| `--qlinear_encoder` | Quantization config for encoder linear layers: `4w`, `8w`, `8da4w`, `8da8w`, `fpa4w`, `nvfp4` |
+| `--qlinear_encoder_group_size` | Group size for encoder linear quantization (default: auto) |
 | `--qlinear_encoder_packing_format` | Packing format for encoder: `tile_packed_to_4d` |
-| `--qlinear` | Quantization config for decoder linear layers: `4w`, `8w`, `8da4w`, `8da8w`, `fpa4w` |
-| `--qlinear_group_size` | Group size for decoder linear quantization (default: 32) |
+| `--qlinear` | Quantization config for decoder linear layers: `4w`, `8w`, `8da4w`, `8da8w`, `fpa4w`, `nvfp4` |
+| `--qlinear_group_size` | Group size for decoder linear quantization (default: auto) |
 | `--qlinear_packing_format` | Packing format for decoder: `tile_packed_to_4d` |
-| `--qembedding` | Quantization config for decoder embedding layer: `4w`, `8w` |
-| `--qembedding_group_size` | Group size for embedding quantization (default: 0 = per-axis) |
+| `--qembedding` | Quantization config for decoder embedding layer: `4w`, `8w`, `nvfp4` |
+| `--qembedding_group_size` | Group size for embedding quantization (default: auto) |
 
 #### Quantization Configs
 
 | Config | Description | Backends |
 |--------|-------------|----------|
-| `4w` | 4-bit weight only quantization | CUDA |
-| `8w` | 8-bit weight only quantization | CUDA |
-| `8da4w` | 8-bit dynamic activation, 4-bit weight | CUDA |
-| `8da8w` | 8-bit dynamic activation, 8-bit weight | CUDA |
+| `4w` | 4-bit weight only quantization | CUDA, MLX, XNNPACK (embedding only) |
+| `8w` | 8-bit weight only quantization | CUDA, MLX, XNNPACK (embedding only) |
+| `8da4w` | 8-bit dynamic activation, 4-bit weight | Vulkan, XNNPACK |
+| `8da8w` | 8-bit dynamic activation, 8-bit weight | XNNPACK |
 | `fpa4w` | Floating point activation, 4-bit weight | Metal |
+| `nvfp4` | 4-bit weight only quantization using NVIDIA's FP4 dtype | MLX |
 
 #### Example: Dynamic Quantization for XNNPACK
 
@@ -69,6 +70,21 @@ python export_parakeet_tdt.py \
     --qlinear_group_size 32 \
     --output-dir ./parakeet_quantized_xnnpack
 ```
+
+#### Example: Dynamic Quantization for Vulkan
+
+```bash
+python export_parakeet_tdt.py \
+    --backend vulkan \
+    --qlinear_encoder 8da4w \
+    --qlinear_encoder_group_size 32 \
+    --qlinear 8da4w \
+    --qlinear_group_size 32 \
+    --vulkan_force_fp16 \
+    --output-dir ./parakeet_quantized_vulkan
+```
+
+An additional `--vulkan_force_fp16` flag is available to have the Vulkan backend internally downcast FP32 tensors to FP16 within the Vulkan backend, forcing half-precision computation. Note that input/output tensors are still FP32, and the delegate will automatically convert them to/from FP16 upon entering and exiting the delegate. This will significantly improve latency but may slightly reduce transcription accuracy.
 
 #### Example: 4-bit Weight Quantization with Tile Packing for CUDA
 
@@ -171,6 +187,36 @@ python export_parakeet_tdt.py --backend cuda-windows --output-dir ./parakeet_cud
 This generates:
 - `model.pte` - The compiled Parakeet TDT model
 - `aoti_cuda_blob.ptd` - CUDA kernel blob required at runtime
+
+### MLX Export
+
+Export with MLX backend (bf16, int4 quantized, group size 128):
+```bash
+python export_parakeet_tdt.py \
+    --backend mlx \
+    --dtype bf16 \
+    --qlinear_encoder 4w \
+    --qlinear_encoder_group_size 128 \
+    --qlinear 4w \
+    --qlinear_group_size 128 \
+    --output-dir ./parakeet_mlx_4w
+```
+
+Export with MLX backend (bf16, NVFP4 quantized):
+```bash
+python export_parakeet_tdt.py \
+    --backend mlx \
+    --dtype bf16 \
+    --qlinear_encoder nvfp4 \
+    --qlinear nvfp4 \
+    --qembedding 4w \
+    --output-dir ./parakeet_mlx_nvfp4
+```
+
+> **Note:** Although MLX supports NVFP4 embedding quantization, Parakeet's embedding layer has dimensions not divisible by 16, which is incompatible with NVFP4. Use `4w` for embeddings instead.
+
+This generates:
+- `model.pte` - The compiled model with MLX delegate (~470 MB)
 - `tokenizer.model` - SentencePiece tokenizer
 
 ## C++ Runner
@@ -186,8 +232,14 @@ make parakeet-cpu
 # Metal build (macOS)
 make parakeet-metal
 
+# Vulkan build (Linux / Android)
+make parakeet-vulkan
+
 # CUDA build (Linux)
 make parakeet-cuda
+
+# MLX build (macOS)
+make parakeet-mlx
 ```
 
 On Windows (PowerShell), use CMake workflow presets directly:
@@ -216,12 +268,24 @@ DYLD_LIBRARY_PATH=/usr/lib ./cmake-out/examples/models/parakeet/parakeet_runner 
   --audio_path /path/to/audio.wav \
   --tokenizer_path examples/models/parakeet/parakeet_metal/tokenizer.model
 
+# Vulkan
+./cmake-out/examples/models/parakeet/parakeet_runner \
+  --model_path examples/models/parakeet/parakeet_vulkan/model.pte \
+  --audio_path /path/to/audio.wav \
+  --tokenizer_path examples/models/parakeet/parakeet_vulkan/tokenizer.model
+
 # CUDA (include .ptd data file)
 ./cmake-out/examples/models/parakeet/parakeet_runner \
   --model_path examples/models/parakeet/parakeet_cuda/model.pte \
   --data_path examples/models/parakeet/parakeet_cuda/aoti_cuda_blob.ptd \
   --audio_path /path/to/audio.wav \
   --tokenizer_path examples/models/parakeet/parakeet_cuda/tokenizer.model
+
+# MLX
+./cmake-out/examples/models/parakeet/parakeet_runner \
+  --model_path examples/models/parakeet/parakeet_mlx_4w/model.pte \
+  --audio_path /path/to/audio.wav \
+  --tokenizer_path examples/models/parakeet/parakeet_mlx_4w/tokenizer.model
 ```
 
 Windows (PowerShell):

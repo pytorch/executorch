@@ -6,6 +6,8 @@
  * LICENSE file in the root directory of this source tree.
  */
 
+#include <cinttypes> // @donotremove
+
 #include <c10/util/safe_numerics.h>
 #include <executorch/runtime/core/error.h>
 #include <executorch/runtime/core/exec_aten/exec_aten.h>
@@ -58,13 +60,20 @@ Result<size_t> calculate_nbytes(
     executorch::aten::ScalarType scalar_type) {
   size_t n = 1;
   for (size_t i = 0; i < sizes.size(); i++) {
+    ET_CHECK_OR_RETURN_ERROR(
+        sizes[i] >= 0,
+        InvalidProgram,
+        "Invalid size[%zu]: %" PRId32 ". Size must not be negative",
+        i,
+        sizes[i]);
     size_t next_n;
     bool overflow =
         c10::mul_overflows(n, static_cast<size_t>(sizes[i]), &next_n);
     ET_CHECK_OR_RETURN_ERROR(
         !overflow,
         InvalidArgument,
-        "Invalid size[%zu]: %d. Potentially overflowed, expect to be 0 or n: %zu",
+        "Invalid size[%zu]: %" PRId32
+        ". Potentially overflowed, expect to be 0 or n: %zu",
         i,
         sizes[i],
         n);
@@ -186,6 +195,12 @@ Result<TensorInfo> MethodMeta::input_tensor_meta(size_t index) const {
   auto input_index = s_plan_->inputs()->Get(index);
   // input_index was already validated by input_tag().
   auto tensor_value = s_plan_->values()->Get(input_index)->val_as_Tensor();
+  ET_CHECK_OR_RETURN_ERROR(
+      tensor_value != nullptr && tensor_value->sizes() != nullptr &&
+          tensor_value->dim_order() != nullptr,
+      InvalidProgram,
+      "Null tensor metadata for input %zu",
+      index);
   return TensorInfo::create(
       Span<const int32_t>(
           tensor_value->sizes()->data(), tensor_value->sizes()->size()),
@@ -237,7 +252,12 @@ Result<TensorInfo> MethodMeta::output_tensor_meta(size_t index) const {
   auto output_index = s_plan_->outputs()->Get(index);
   // output_index was already validated by output_tag().
   auto tensor_value = s_plan_->values()->Get(output_index)->val_as_Tensor();
-
+  ET_CHECK_OR_RETURN_ERROR(
+      tensor_value != nullptr && tensor_value->sizes() != nullptr &&
+          tensor_value->dim_order() != nullptr,
+      InvalidProgram,
+      "Null tensor metadata for output %zu",
+      index);
   return TensorInfo::create(
       Span<const int32_t>(
           tensor_value->sizes()->data(), tensor_value->sizes()->size()),
@@ -257,7 +277,10 @@ size_t MethodMeta::num_attributes() const {
     auto value = values->Get(i);
     if (value->val_type() == executorch_flatbuffer::KernelTypes::Tensor) {
       auto tensor_value = value->val_as_Tensor();
-      if (tensor_value->extra_tensor_info() != nullptr &&
+      if (tensor_value != nullptr &&
+          tensor_value->extra_tensor_info() != nullptr &&
+          tensor_value->extra_tensor_info()->fully_qualified_name() !=
+              nullptr &&
           tensor_value->extra_tensor_info()->fully_qualified_name()->c_str() !=
               nullptr) {
         ++counter;
@@ -274,10 +297,19 @@ Result<TensorInfo> MethodMeta::attribute_tensor_meta(size_t index) const {
     auto value = values->Get(i);
     if (value->val_type() == executorch_flatbuffer::KernelTypes::Tensor) {
       auto tensor_value = value->val_as_Tensor();
-      if (tensor_value->extra_tensor_info() != nullptr &&
+      if (tensor_value != nullptr &&
+          tensor_value->extra_tensor_info() != nullptr &&
+          tensor_value->extra_tensor_info()->fully_qualified_name() !=
+              nullptr &&
           tensor_value->extra_tensor_info()->fully_qualified_name()->c_str() !=
               nullptr) {
         if (counter == index) {
+          ET_CHECK_OR_RETURN_ERROR(
+              tensor_value->sizes() != nullptr &&
+                  tensor_value->dim_order() != nullptr,
+              InvalidProgram,
+              "Null tensor metadata for attribute %zu",
+              index);
           auto t_name =
               tensor_value->extra_tensor_info()->fully_qualified_name();
           // Count constant returns as memory planned
@@ -322,7 +354,50 @@ Result<int64_t> MethodMeta::memory_planned_buffer_size(size_t index) const {
       num_buffers);
   // Index zero is reserved internally, and we hide it from users. Adjust the
   // provided index to point to one of the actual buffers.
-  return s_plan_->non_const_buffer_sizes()->Get(index + 1);
+  int64_t size = s_plan_->non_const_buffer_sizes()->Get(index + 1);
+  ET_CHECK_OR_RETURN_ERROR(
+      size >= 0,
+      InvalidProgram,
+      "memory_planned_buffer_size(%zu) has invalid negative size: %" PRId64,
+      index,
+      size);
+  return size;
+}
+
+Result<etensor::Device> MethodMeta::memory_planned_buffer_device(
+    size_t index) const {
+  auto num_buffers = this->num_memory_planned_buffers();
+  ET_CHECK_OR_RETURN_ERROR(
+      index < num_buffers,
+      InvalidArgument,
+      "index %zu out of range. num_buffers: %zu",
+      index,
+      num_buffers);
+
+  // The non_const_buffer_device field is optional and only present when the
+  // program contains non-CPU buffers. For CPU-only programs (or legacy PTE
+  // files), this field is null and all buffers default to CPU.
+  auto* buffer_devices = s_plan_->non_const_buffer_device();
+  if (buffer_devices == nullptr) {
+    return etensor::Device{etensor::DeviceType::CPU, 0};
+  }
+
+  // The sparse list only contains entries for non-CPU buffers.
+  // buffer_idx uses the same indexing as non_const_buffer_sizes (1-based,
+  // with index 0 reserved). The user-facing index is 0-based, so we
+  // compare against index + 1.
+  const auto internal_idx = static_cast<int32_t>(index + 1);
+  for (size_t i = 0; i < buffer_devices->size(); ++i) {
+    auto entry = buffer_devices->Get(i);
+    if (entry->buffer_idx() == internal_idx) {
+      return etensor::Device{
+          static_cast<etensor::DeviceType>(entry->device_type()),
+          static_cast<etensor::DeviceIndex>(entry->device_index())};
+    }
+  }
+
+  // Not found in the sparse list — this buffer is on CPU.
+  return etensor::Device{etensor::DeviceType::CPU, 0};
 }
 
 bool MethodMeta::uses_backend(const char* backend_name) const {

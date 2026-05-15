@@ -5,10 +5,10 @@
  * LICENSE file in the root directory of this source tree.
  */
 
-#include <list>
-#include <numeric>
+#include <cinttypes>
 using namespace std;
 
+#include <c10/util/safe_numerics.h>
 #include <executorch/runtime/backend/interface.h>
 #include <executorch/runtime/core/error.h>
 #include <executorch/runtime/core/evalue.h>
@@ -88,7 +88,14 @@ void vkml_free_basics(
 
 class VGFBackend final : public ::executorch::runtime::BackendInterface {
  public:
-  VGFBackend() {
+  VGFBackend() = default;
+
+  // Lazy Vulkan init — runs on first use, not in the constructor.
+  void ensure_initialized() {
+    if (is_initialized_) {
+      return;
+    }
+
     VkResult result;
 
     // Fetch basic vulkan objects once
@@ -122,6 +129,7 @@ class VGFBackend final : public ::executorch::runtime::BackendInterface {
 
   bool is_available() const override {
     ET_LOG(Info, "Checking VGFBackend is available");
+    const_cast<VGFBackend*>(this)->ensure_initialized();
     if (!is_initialized_) {
       return false;
     }
@@ -134,6 +142,7 @@ class VGFBackend final : public ::executorch::runtime::BackendInterface {
       ArrayRef<CompileSpec> compile_specs) const override {
     ET_LOG(Info, "Entered VGF init");
 
+    const_cast<VGFBackend*>(this)->ensure_initialized();
     if (!is_initialized_) {
       ET_LOG(
           Error,
@@ -148,7 +157,8 @@ class VGFBackend final : public ::executorch::runtime::BackendInterface {
     new (repr) VgfRepr(
         vk_instance, vk_physical_device, vk_device, vk_queue, vk_command_pool);
 
-    auto valid_vgf = repr->process_vgf(vgf_data, compile_specs);
+    auto valid_vgf =
+        repr->process_vgf(vgf_data, processed->size(), compile_specs);
     if (!valid_vgf) {
       ET_LOG(Error, "Failed to process VGF blob.");
       return Error::Internal;
@@ -181,8 +191,18 @@ class VGFBackend final : public ::executorch::runtime::BackendInterface {
       if (!io->is_input)
         continue;
 
-      size_t io_size = accumulate(
-          io->size.begin(), io->size.end(), io->elt_size, std::multiplies<>());
+      size_t io_size = io->elt_size;
+      for (int64_t dim : io->size) {
+        ET_CHECK_OR_RETURN_ERROR(
+            dim >= 0,
+            InvalidArgument,
+            "Negative dimension in IO size: %" PRId64,
+            dim);
+        ET_CHECK_OR_RETURN_ERROR(
+            !c10::mul_overflows(io_size, static_cast<size_t>(dim), &io_size),
+            InvalidArgument,
+            "Overflow computing IO buffer size");
+      }
 
       void* data;
       if (!repr->map_io(io, &data)) {
@@ -216,8 +236,18 @@ class VGFBackend final : public ::executorch::runtime::BackendInterface {
       if (io->is_input)
         continue;
 
-      size_t io_size = accumulate(
-          io->size.begin(), io->size.end(), io->elt_size, std::multiplies<>());
+      size_t io_size = io->elt_size;
+      for (int64_t dim : io->size) {
+        ET_CHECK_OR_RETURN_ERROR(
+            dim >= 0,
+            InvalidArgument,
+            "Negative dimension in IO size: %" PRId64,
+            dim);
+        ET_CHECK_OR_RETURN_ERROR(
+            !c10::mul_overflows(io_size, static_cast<size_t>(dim), &io_size),
+            InvalidArgument,
+            "Overflow computing IO buffer size");
+      }
 
       void* data;
       if (!repr->map_io(io, &data)) {
@@ -333,6 +363,16 @@ VkResult vkml_allocate_basics(
     return result;
   }
   volkLoadInstance(*instance);
+
+  // Bail out if the driver lacks ARM tensor/datagraph extensions.
+  if (!vkCreateTensorARM) {
+    ET_LOG(
+        Error,
+        "Vulkan driver does not support ARM tensor extensions (VK_ARM_tensors)");
+    vkDestroyInstance(*instance, nullptr);
+    *instance = VK_NULL_HANDLE;
+    return VK_ERROR_FEATURE_NOT_PRESENT;
+  }
 
   // Pick first GPU
   uint32_t gpu_count = 0;
