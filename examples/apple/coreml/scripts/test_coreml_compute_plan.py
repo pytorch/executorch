@@ -6,17 +6,15 @@
 
 import os
 import shutil
-import sys
 import tempfile
 import unittest
 from collections import Counter
 
 import coremltools as ct
 import torch
+from coremltools.models.utils import MultiFunctionDescriptor, save_multifunction
 
-sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-
-from coreml_compute_plan import (  # noqa: E402
+from executorch.examples.apple.coreml.scripts.coreml_compute_plan import (
     _COMPUTE_UNIT_CHOICES,
     _device_name,
     analyze_one,
@@ -119,6 +117,48 @@ class TestAnalyzeOne(unittest.TestCase):
         suffixes = {name.split(".")[-1] for name in op_types}
         for expected in ("matmul", "relu", "add", "reduce_sum"):
             self.assertIn(expected, suffixes, f"missing op {expected}: {suffixes}")
+
+
+class TestAnalyzeOneMultifunction(unittest.TestCase):
+    """Verify analyze_one walks every function of a multifunction .mlpackage.
+
+    coremltools 9.0's MLComputePlan.load_from_path only exposes usage for
+    the default function, so analyze_one re-projects each function through
+    MultiFunctionDescriptor to surface plans for the rest.
+    """
+
+    @classmethod
+    def setUpClass(cls):
+        cls.tmpdir = tempfile.mkdtemp()
+        single = _build_small_mlpackage(cls.tmpdir)
+        desc = MultiFunctionDescriptor()
+        desc.add_function(
+            single, src_function_name="main", target_function_name="prefill"
+        )
+        desc.add_function(
+            single, src_function_name="main", target_function_name="decode"
+        )
+        desc.default_function_name = "prefill"
+        cls.multi = os.path.join(cls.tmpdir, "multi.mlpackage")
+        save_multifunction(desc, cls.multi)
+
+    @classmethod
+    def tearDownClass(cls):
+        shutil.rmtree(cls.tmpdir, ignore_errors=True)
+
+    def test_reports_every_function(self):
+        rows = analyze_one(self.multi, ct.ComputeUnit.CPU_ONLY)
+        fnames = {fname for fname, _, _ in rows}
+        self.assertEqual(fnames, {"prefill", "decode"})
+
+    def test_each_function_lowers_the_same_ops(self):
+        rows = analyze_one(self.multi, ct.ComputeUnit.CPU_ONLY)
+        per_fn: dict = {}
+        for fname, op_name, _ in rows:
+            per_fn.setdefault(fname, set()).add(op_name.split(".")[-1])
+        for fname in ("prefill", "decode"):
+            self.assertIn("matmul", per_fn.get(fname, set()), f"{fname} missing matmul")
+            self.assertIn("relu", per_fn.get(fname, set()), f"{fname} missing relu")
 
 
 if __name__ == "__main__":
