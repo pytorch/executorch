@@ -3,10 +3,13 @@
   const state = OBS.state;
   const { escapeHtml } = OBS.utils;
 
+  // Restore pinned state from localStorage
+  let sidebarPinned = false;
+  try { sidebarPinned = localStorage.getItem('obs_sidebar_pinned') === '1'; } catch(e) {}
+
   function renderLayout() {
     const icon = state.theme === 'dark' ? '☀️' : '🌙';
     OBS.app.innerHTML = `
-      <div class="header-trigger"></div>
       <header>
         <div class="header-content">
           <h1>${escapeHtml(state.data.title || 'Observatory Report')}</h1>
@@ -22,7 +25,13 @@
       </header>
       <div class="container">
         <div class="index-pane-trigger"></div>
-        <nav class="index-pane">
+        <button class="sidebar-toggle-btn ${sidebarPinned ? 'open' : ''}"
+                id="sidebar-toggle-btn"
+                onclick="toggleSidebar()"
+                title="${sidebarPinned ? 'Close panel' : 'Open panel'}">
+          ${sidebarPinned ? '&#8249;' : '&#8250;'}
+        </button>
+        <nav class="index-pane ${sidebarPinned ? 'pinned' : ''}" id="index-pane">
           <div class="index-header" id="index-header">
             <h2>Collected Graphs (${(state.data.records || []).length})</h2>
           </div>
@@ -33,6 +42,20 @@
     `;
     updateIndexHeader();
   }
+
+  window.toggleSidebar = function() {
+    sidebarPinned = !sidebarPinned;
+    try { localStorage.setItem('obs_sidebar_pinned', sidebarPinned ? '1' : '0'); } catch(e) {}
+
+    const pane = document.getElementById('index-pane');
+    const btn  = document.getElementById('sidebar-toggle-btn');
+    if (pane) pane.classList.toggle('pinned', sidebarPinned);
+    if (btn)  {
+      btn.classList.toggle('open', sidebarPinned);
+      btn.innerHTML = sidebarPinned ? '&#8249;' : '&#8250;';
+      btn.title = sidebarPinned ? 'Close panel' : 'Open panel';
+    }
+  };
 
   function updateIndexHeader() {
     const header = document.getElementById('index-header');
