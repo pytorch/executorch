@@ -94,3 +94,15 @@ def define_common_targets():
         ],
         visibility = ["PUBLIC"],
     )
+
+    runtime.cxx_library(
+        name = "op_convolution_channels_last",
+        srcs = ["op_convolution_channels_last.cpp"],
+        exported_headers = ["op_convolution_channels_last.h"],
+        platforms = CXX,
+        deps = [
+            ":quant_utils",
+            "//executorch/runtime/kernel:kernel_includes",
+        ],
+        visibility = ["PUBLIC"],
+    )
