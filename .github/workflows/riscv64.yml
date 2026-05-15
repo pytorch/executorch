@@ -1,0 +1,30 @@
+name: RISC-V
+
+on:
+  push:
+    branches:
+      - main
+      - release/*
+    tags:
+      - ciflow/trunk/*
+  pull_request:
+    paths:
+      - .github/workflows/riscv64.yml
+      - .ci/scripts/test_riscv_qemu.sh
+      - tools/cmake/preset/riscv64_linux.cmake
+      - examples/riscv/**
+  workflow_dispatch:
+  schedule:
+    - cron: '0 10 * * *'  # Runs daily at 2 AM PST
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.sha }}-${{ github.event_name == 'workflow_dispatch' }}-${{ github.event_name == 'schedule' }}
+  cancel-in-progress: true
+
+jobs:
+  test-riscv:
+    name: test-riscv
+    uses: ./.github/workflows/_test_riscv.yml
+    permissions:
+      id-token: write
+      contents: read
