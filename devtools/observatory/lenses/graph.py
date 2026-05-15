@@ -47,6 +47,11 @@ class GraphLens(Lens):
 
     @classmethod
     def observe(cls, artifact: Any, context: ObservationContext) -> Any:
+
+        graph_config = context.config.get("graph", {})
+        if not graph_config.get("enabled", True):
+            return None
+
         graph_module = cls._to_graph_module(artifact)
         if graph_module is None:
             return None

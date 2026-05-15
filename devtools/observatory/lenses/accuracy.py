@@ -479,14 +479,19 @@ class AccuracyLens(Lens):
 
     @classmethod
     def observe(cls, artifact: Any, context: ObservationContext) -> Any:
+
+        acc_config = context.config.get("accuracy", {})
+        if not acc_config.get("enabled", True):
+            return None
+
         record_name = context.shared_state.get("record_name", "")
 
         # Lazily configure evaluator on first "Exported Float" record
         if record_name == "Exported Float" and cls._evaluator is None:
             cls._configure_from_float_model(artifact)
 
-        acc_config = context.config.get("accuracy", {})
         evaluator = acc_config.get("evaluator") or cls._evaluator
+
         if not evaluator:
             return None
 

@@ -63,6 +63,10 @@ class StackTraceLens(Lens):
 
     @classmethod
     def observe(cls, artifact: Any, context: ObservationContext) -> Any:
+        stacktrace_config = context.config.get("stacktrace", {})
+        if not stacktrace_config.get("enabled", True):
+            return None
+
         try:
             return cls._get_stack_trace()
         except Exception as exc:

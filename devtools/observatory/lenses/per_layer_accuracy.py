@@ -430,6 +430,10 @@ class PerLayerAccuracyLens(Lens):
 
     @classmethod
     def observe(cls, artifact: Any, context: ObservationContext) -> Any:
+        acc_config = context.config.get("accuracy", {})
+        if not acc_config.get("enabled", True):
+            return None
+
         graph_module = cls._to_graph_module(artifact)
         if graph_module is None:
             return None

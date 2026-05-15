@@ -36,6 +36,10 @@ class MetadataLens(Lens):
 
     @classmethod
     def observe(cls, artifact: Any, context: ObservationContext) -> Any:
+        metadata_config = context.config.get("metadata", {})
+        if not metadata_config.get("enabled", True):
+            return None
+
         artifact_type = str(type(artifact).__name__)
         node_count: Any = "N/A"
 
