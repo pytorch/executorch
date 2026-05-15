@@ -815,6 +815,12 @@ document.write(`
               </li>
             
               <li class=" ">
+                <a class="nav-link dropdown-item nav-internal" href="working-with-cv-models.html">
+                  Working with Computer Vision Models
+                </a>
+              </li>
+            
+              <li class=" ">
                 <a class="nav-link dropdown-item nav-internal" href="kernel-library-advanced.html">
                   Kernel Library Deep Dive
                 </a>
@@ -1461,6 +1467,12 @@ document.write(`
               </li>
             
               <li class=" ">
+                <a class="nav-link dropdown-item nav-internal" href="working-with-cv-models.html">
+                  Working with Computer Vision Models
+                </a>
+              </li>
+            
+              <li class=" ">
                 <a class="nav-link dropdown-item nav-internal" href="kernel-library-advanced.html">
                   Kernel Library Deep Dive
                 </a>
@@ -1783,6 +1795,7 @@ document.write(`
 </ul>
 </details></li>
 <li class="toctree-l1"><a class="reference internal" href="using-executorch-export.html">Model Export and Lowering</a></li>
+<li class="toctree-l1"><a class="reference internal" href="working-with-cv-models.html">Working with Computer Vision Models</a></li>
 <li class="toctree-l1 has-children"><a class="reference internal" href="kernel-library-advanced.html">Kernel Library Deep Dive</a><details><summary><span class="toctree-toggle" role="presentation"><i class="fa-solid fa-chevron-down"></i></span></summary><ul>
 <li class="toctree-l2"><a class="reference internal" href="kernel-library-overview.html">Overview of ExecuTorch’s Kernel Libraries</a></li>
 <li class="toctree-l2"><a class="reference internal" href="kernel-library-custom-aten-kernel.html">Kernel Registration</a></li>
@@ -1932,6 +1945,17 @@ document.write(`
 <li><p>Dynamic Shapes &amp; Advanced Model Features</p></li>
 </ul>
 </section>
+<section id="computer-vision-models">
+<h2>Computer Vision Models<a class="headerlink" href="#computer-vision-models" title="Link to this heading">#</a></h2>
+<p>Patterns for image model preprocessing, tensor layout, and task-specific output decoding.</p>
+<p><strong>→ <a class="reference internal" href="working-with-cv-models.html"><span class="doc">Working with Computer Vision Models</span></a> — Working with computer vision models</strong></p>
+<p>Key topics:</p>
+<ul class="simple">
+<li><p>Resize, crop, dtype conversion, and normalization placement</p></li>
+<li><p>Android and iOS image-to-tensor conversion</p></li>
+<li><p>Classifier, segmentation, detection, and instance segmentation outputs</p></li>
+</ul>
+</section>
 <section id="kernel-library">
 <h2>Kernel Library<a class="headerlink" href="#kernel-library" title="Link to this heading">#</a></h2>
 <p>Deep dive into ExecuTorch’s kernel implementation and customization.</p>
@@ -1991,7 +2015,7 @@ document.write(`
 <h2>Next Steps<a class="headerlink" href="#next-steps" title="Link to this heading">#</a></h2>
 <p>After exploring advanced topics:</p>
 <ul class="simple">
-<li><p><strong><span class="xref std std-doc">tools-sdk-section</span></strong> - Developer tools for debugging and profiling</p></li>
+<li><p><strong><a class="reference internal" href="tools-section.html"><span class="doc">Tools</span></a></strong> - Developer tools for debugging and profiling</p></li>
 <li><p><strong><a class="reference internal" href="api-section.html"><span class="doc">API</span></a></strong> - Complete API reference documentation</p></li>
 </ul>
 <div class="toctree-wrapper compound">
@@ -2118,6 +2142,7 @@ document.write(`
     <ul class="visible nav section-nav flex-column">
 <li class="toc-h2 nav-item toc-entry"><a class="reference internal nav-link" href="#quantization-optimization">Quantization &amp; Optimization</a></li>
 <li class="toc-h2 nav-item toc-entry"><a class="reference internal nav-link" href="#model-export">Model Export</a></li>
+<li class="toc-h2 nav-item toc-entry"><a class="reference internal nav-link" href="#computer-vision-models">Computer Vision Models</a></li>
 <li class="toc-h2 nav-item toc-entry"><a class="reference internal nav-link" href="#kernel-library">Kernel Library</a></li>
 <li class="toc-h2 nav-item toc-entry"><a class="reference internal nav-link" href="#backend-delegates">Backend &amp; Delegates</a></li>
 <li class="toc-h2 nav-item toc-entry"><a class="reference internal nav-link" href="#runtime-integration">Runtime &amp; Integration</a></li>
@@ -2349,7 +2374,7 @@ document.write(`
        "headline": "Advanced",
        "description": "PyTorch Documentation. Explore PyTorch, an open-source machine learning library that accelerates the path from research prototyping to production deployment.",
        "url": "/advanced-topics-section.html",
-       "articleBody": "Advanced# Deep dive into ExecuTorch\u2019s advanced features for optimization, customization, and integration. This section covers advanced concepts for developers who need to customize ExecuTorch for specific use cases, optimize performance, or integrate with custom hardware backends. Quantization \u0026 Optimization# Techniques for model compression and performance optimization. \u2192 Quantization \u0026 Optimization \u2014 Quantization strategies and performance optimization Key topics: Quantization strategies and techniques Performance profiling and optimization Model Export# Learn the core ExecuTorch workflow, exporting PyTorch models to the .pte format for edge deployment. \u2192 Model Export and Lowering - Model Export \u0026 Lowering Key topics: Export and Lowering Workflow Hardware Backend Selection \u0026 Optimization Dynamic Shapes \u0026 Advanced Model Features Kernel Library# Deep dive into ExecuTorch\u2019s kernel implementation and customization. \u2192 Kernel Library Deep Dive \u2014 Kernel library deep dive and customization Key topics: Kernel library architecture Custom kernel implementation Selective build and optimization Backend \u0026 Delegates# \u2192 Backend \u0026 Delegates \u2014 Backend delegate integration Key topics: Learn how to integrate Backend Delegate into ExecuTorch and more XNNPACK Delegate Internals Debugging Delegation Runtime \u0026 Integration# Advanced runtime features and backend integration. \u2192 Runtime \u0026 Integration \u2014 Runtime customization and backend integration Key topics: Backend delegate implementation Platform abstraction layer Custom runtime integration Compiler \u0026 IR# Advanced compiler features and intermediate representation details. \u2192 Compiler \u0026 IR \u2014 Compiler passes and IR specification Key topics: Custom compiler passes Memory planning strategies Backend dialect and EXIR Ops set definition File Formats# ExecuTorch file format specifications and internals. \u2192 File Formats \u2014 PTE and PTD file format specifications Key topics: PTE file format internals PTD file format specification Custom file format handling Next Steps# After exploring advanced topics: tools-sdk-section - Developer tools for debugging and profiling API - Complete API reference documentation",
+       "articleBody": "Advanced# Deep dive into ExecuTorch\u2019s advanced features for optimization, customization, and integration. This section covers advanced concepts for developers who need to customize ExecuTorch for specific use cases, optimize performance, or integrate with custom hardware backends. Quantization \u0026 Optimization# Techniques for model compression and performance optimization. \u2192 Quantization \u0026 Optimization \u2014 Quantization strategies and performance optimization Key topics: Quantization strategies and techniques Performance profiling and optimization Model Export# Learn the core ExecuTorch workflow, exporting PyTorch models to the .pte format for edge deployment. \u2192 Model Export and Lowering - Model Export \u0026 Lowering Key topics: Export and Lowering Workflow Hardware Backend Selection \u0026 Optimization Dynamic Shapes \u0026 Advanced Model Features Computer Vision Models# Patterns for image model preprocessing, tensor layout, and task-specific output decoding. \u2192 Working with Computer Vision Models \u2014 Working with computer vision models Key topics: Resize, crop, dtype conversion, and normalization placement Android and iOS image-to-tensor conversion Classifier, segmentation, detection, and instance segmentation outputs Kernel Library# Deep dive into ExecuTorch\u2019s kernel implementation and customization. \u2192 Kernel Library Deep Dive \u2014 Kernel library deep dive and customization Key topics: Kernel library architecture Custom kernel implementation Selective build and optimization Backend \u0026 Delegates# \u2192 Backend \u0026 Delegates \u2014 Backend delegate integration Key topics: Learn how to integrate Backend Delegate into ExecuTorch and more XNNPACK Delegate Internals Debugging Delegation Runtime \u0026 Integration# Advanced runtime features and backend integration. \u2192 Runtime \u0026 Integration \u2014 Runtime customization and backend integration Key topics: Backend delegate implementation Platform abstraction layer Custom runtime integration Compiler \u0026 IR# Advanced compiler features and intermediate representation details. \u2192 Compiler \u0026 IR \u2014 Compiler passes and IR specification Key topics: Custom compiler passes Memory planning strategies Backend dialect and EXIR Ops set definition File Formats# ExecuTorch file format specifications and internals. \u2192 File Formats \u2014 PTE and PTD file format specifications Key topics: PTE file format internals PTD file format specification Custom file format handling Next Steps# After exploring advanced topics: Tools - Developer tools for debugging and profiling API - Complete API reference documentation",
        "author": {
          "@type": "Organization",
          "name": "PyTorch Contributors",
