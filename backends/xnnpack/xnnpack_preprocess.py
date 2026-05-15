@@ -140,6 +140,7 @@ class XnnpackBackend(BackendDetails):
                 passes.append(ConvertToLinearPass)
 
         passes = passes if len(passes) > 0 else None
+
         # XNNPACK Delegate Specific Passes
         ep = XNNPACKPassManager(ep, passes=passes).transform()
         graph_module = ep.graph_module

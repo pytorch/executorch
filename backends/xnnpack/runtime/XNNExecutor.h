@@ -14,6 +14,7 @@
 #include <executorch/runtime/backend/interface.h>
 #include <executorch/runtime/core/error.h>
 #include <executorch/runtime/core/exec_aten/util/tensor_util.h>
+#include <executorch/runtime/core/freeable_buffer.h>
 
 #include <xnnpack.h>
 #include <memory>
@@ -26,6 +27,10 @@ namespace delegate {
 
 class XNNExecutor {
  private:
+  // For XNN constant data that isn't packed (PreLU weights, for example),
+  // we need to hold onto the buffers to keep them alive.
+  std::vector<executorch::runtime::FreeableBuffer> unpacked_buffers_;
+
   std::unique_ptr<xnn_runtime, decltype(&xnn_delete_runtime)> runtime_{
       nullptr,
       &xnn_delete_runtime};
