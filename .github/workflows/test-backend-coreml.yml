@@ -16,6 +16,9 @@ concurrency:
   group: ${{ github.workflow }}--${{ github.event.pull_request.number || github.sha }}-${{ github.event_name == 'workflow_dispatch' }}
   cancel-in-progress: true
 
+permissions:
+  contents: read
+
 jobs:
   # Emits PR diff file list; non-PR events emit '*' so the per-job
   # `if:` short-circuits via `event_name != 'pull_request'`. This

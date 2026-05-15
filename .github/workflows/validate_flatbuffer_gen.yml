@@ -7,6 +7,9 @@ on:
       - "schema/**"
       - "exir/_serialize/generated/executorch_flatbuffer/**"
 
+permissions:
+  contents: read
+
 jobs:
   exir-flatbuffer:
     runs-on: ubuntu-latest
