@@ -9,7 +9,7 @@ def main() -> None:
     token = os.environ.get("GITHUB_TOKEN")
 
     repo_owner = "pytorch"
-    repo_name = "pytorch"
+    repo_name = "executorch"
     pull_request_number = int(sys.argv[1])
 
     g = Github(token)

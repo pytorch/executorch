@@ -9,6 +9,7 @@
 #pragma once
 
 #include <executorch/runtime/core/exec_aten/exec_aten.h>
+#include <executorch/runtime/core/portable_type/device.h>
 #include <executorch/runtime/core/result.h>
 #include <executorch/runtime/core/span.h>
 #include <executorch/runtime/core/tag.h>
@@ -233,6 +234,19 @@ class MethodMeta final {
    * @returns The size in bytes on success, or an error on failure.
    */
   Result<int64_t> memory_planned_buffer_size(size_t index) const;
+
+  /**
+   * Get the device placement for the specified memory-planned buffer.
+   *
+   * For CPU-only programs (no non_const_buffer_device in the PTE), all buffers
+   * default to Device{CPU, 0}. For programs with device annotations, returns
+   * the device type and index that the buffer should be allocated on.
+   *
+   * @param[in] index The index of the buffer to look up (0-based, same
+   *     indexing as memory_planned_buffer_size()).
+   * @returns The Device on success, or an error on failure.
+   */
+  Result<etensor::Device> memory_planned_buffer_device(size_t index) const;
 
   /**
    * Check to see if a backend is used in this method.
