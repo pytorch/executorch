@@ -96,13 +96,15 @@ A new, review-focused Observatory implementation is available under:
 
 `backends/qualcomm/debugger/observatory`
 
-Use the Observatory CLI to wrap any Qualcomm AOT export script. Use `--lens_recipe=accuracy`
-to enable accuracy lenses.
+Use the Observatory CLI to wrap any Qualcomm AOT export script. Pass
+one or more lens recipes via `--lens-recipe` (space-separated):
+`accuracy` enables per-stage / per-layer accuracy lenses; `adb`
+enables device info, transfer summary, and inference log capture.
 
 ```bash
 python -m executorch.backends.qualcomm.debugger.observatory \
     --output-html obs_report.html \
-    --lens_recipe=accuracy \
+    --lens-recipe accuracy \
     {original script and args}
 ```
 
@@ -111,7 +113,7 @@ For example:
 ```bash
 python -m executorch.backends.qualcomm.debugger.observatory \
     --output-html obs_report.html \
-    --lens_recipe=accuracy \
+    --lens-recipe accuracy --lens-recipe adb \
     examples/qualcomm/oss_scripts/mobilevit_v2.py \
     --backend htp --model SM8650 -d ./imagenet-mini-val/ -b build-android/ --compile_only
 ```

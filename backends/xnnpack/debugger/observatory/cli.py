@@ -10,9 +10,9 @@ Collection mode (default):
     python -m executorch.backends.xnnpack.debugger.observatory \\
         [--output-html PATH] [--output-json PATH] SCRIPT [SCRIPT_ARGS...]
 
-With accuracy debugging:
+With one or more lens recipes (repeat the flag or comma-separate):
     python -m executorch.backends.xnnpack.debugger.observatory \\
-        --lens_recipe=accuracy SCRIPT [SCRIPT_ARGS...]
+        --lens-recipe accuracy SCRIPT [SCRIPT_ARGS...]
 
 Visualize mode (JSON -> HTML):
     python -m executorch.backends.xnnpack.debugger.observatory visualize \\
@@ -22,6 +22,25 @@ Visualize mode (JSON -> HTML):
 from __future__ import annotations
 
 import sys
+
+
+_RECIPE_CHOICES = ["accuracy"]
+
+
+def _parse_recipe_values(values):
+    recipes: set = set()
+    for v in values or []:
+        for token in str(v).split(","):
+            token = token.strip()
+            if not token:
+                continue
+            if token not in _RECIPE_CHOICES:
+                raise SystemExit(
+                    "argument --lens-recipe: invalid choice: "
+                    f"{token!r} (choose from {', '.join(repr(c) for c in _RECIPE_CHOICES)})"
+                )
+            recipes.add(token)
+    return recipes
 
 
 def main():
@@ -42,12 +61,18 @@ def main():
         prog="python -m executorch.backends.xnnpack.debugger.observatory"
     )
     parser.add_argument(
-        "--lens_recipe",
-        choices=["accuracy"],
-        default=None,
-        help="Lens recipe to enable (e.g. accuracy)",
+        "--lens-recipe",
+        action="append",
+        default=[],
+        metavar="RECIPE",
+        help=(
+            "Lens recipe to enable. Repeat the flag or comma-separate to "
+            "enable multiple. "
+            f"Choices: {', '.join(_RECIPE_CHOICES)}"
+        ),
     )
     args = parser.parse_args(sys.argv[1:])
+    recipes = _parse_recipe_values(args.lens_recipe)
 
     from executorch.devtools.observatory.observatory import Observatory
     from executorch.devtools.observatory.lenses.pipeline_graph_collector import (
@@ -59,7 +84,7 @@ def main():
     PipelineGraphCollectorLens.register_backend_patches(install_xnnpack_patches)
     Observatory.register_lens(PipelineGraphCollectorLens)
 
-    if args.lens_recipe == "accuracy":
+    if "accuracy" in recipes:
         from executorch.devtools.observatory.lenses.accuracy import AccuracyLens
 
         Observatory.register_lens(AccuracyLens)

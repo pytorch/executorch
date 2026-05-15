@@ -13,14 +13,27 @@ python -m executorch.backends.qualcomm.debugger.observatory \
     [--output-html PATH] [--output-json PATH] SCRIPT [SCRIPT_ARGS...]
 ```
 
-### With accuracy debugging
+### With one or more lens recipes
+
+Repeat the flag or comma-separate the values:
 
 ```bash
 python -m executorch.backends.qualcomm.debugger.observatory \
-    --lens_recipe=accuracy \
+    --lens-recipe adb --lens-recipe accuracy \
     [--output-html PATH] [--output-json PATH] \
     SCRIPT [SCRIPT_ARGS...]
+
+python -m executorch.backends.qualcomm.debugger.observatory \
+    --lens-recipe adb,accuracy \
+    SCRIPT [SCRIPT_ARGS...]
 ```
+
+Available recipes:
+
+- `accuracy` — `AccuracyLens` + `PerLayerAccuracyLens` (per-stage and
+  per-layer accuracy on the graph).
+- `adb` — `AdbLens` (device info, transfer summary, inference command +
+  logs with logcat/dmesg). See the *ADB lens* section below.
 
 ### Visualize mode (JSON → HTML, no re-execution)
 
@@ -43,7 +56,7 @@ source $QNN_SDK_ROOT/bin/envsetup.sh
 python -m executorch.backends.qualcomm.debugger.observatory \
     --output-html /tmp/obs_vit/report.html \
     --output-json /tmp/obs_vit/report.json \
-    --lens_recipe=accuracy \
+    --lens-recipe accuracy \
     examples/qualcomm/scripts/torchvision_vit.py \
     -m SM8650 -b ./build-android \
     --dataset imagenet-mini-val/ \
@@ -56,7 +69,7 @@ python -m executorch.backends.qualcomm.debugger.observatory \
 ```bash
 python -m executorch.backends.qualcomm.debugger.observatory \
     --output-html /tmp/obs_roberta/report.html \
-    --lens_recipe=accuracy \
+    --lens-recipe accuracy \
     examples/qualcomm/oss_scripts/roberta.py \
     -m SM8650 -b ./build-android \
     -H mlgtw-linux -s <device_serial> \
@@ -97,7 +110,7 @@ Dataset: Wikipedia sentences (`wikisent2.txt`). Pass with `-d <path>`.
 Common flags: `-m <SOC_MODEL>` (e.g. `SM8650`), `-b <build_folder>`, `-H <host>`,
 `-s <device_serial>`, `-a <artifact_dir>`, `--compile_only`.
 
-## Accuracy lenses (`--lens_recipe=accuracy`)
+## Accuracy lenses (`--lens-recipe accuracy`)
 
 Registers `AccuracyLens` and `PerLayerAccuracyLens` (with QNN dataset patches) on top of the
 default `PipelineGraphCollectorLens`. These produce:
@@ -108,6 +121,44 @@ default `PipelineGraphCollectorLens`. These produce:
 
 QNN dataset patches (`lenses/qnn_dataset_patches.py`) wire the on-device inference output back
 into the accuracy lens so metrics reflect true QNN outputs, not emulated CPU results.
+
+## ADB lens (`--lens-recipe adb`)
+
+Captures the device-side life of a QNN run by patching `SimpleADB`:
+every `push`, `pull`, and the inference invocation is recorded with
+exit code, duration, and (for the inference) full stdout. The HTML
+report gains:
+
+- A **Device Info** dashboard block (serial, host, soc, htp arch,
+  workspace, build path).
+- A compact **Transfers** dashboard block (one row per push/pull
+  group) so 20+ file transfers do not crowd out the inference detail.
+- A left-panel **`adb.execute`** record per inference call, showing
+  the full `qnn_executor_runner ...` command with one-click copy, a
+  scrollable log with errors highlighted in red, and collapsible
+  `logcat -d` / `adb shell dmesg` panels fetched after the run.
+
+Config (override via `Observatory.enable_context(config={"adb": {...}})`):
+
+| Key | Default | Effect |
+|---|---|---|
+| `enabled` | `True` | Master switch. `False` disables patching. |
+| `forward_to_stdout` | `True` | Tee captured inference stdout to terminal. |
+| `max_stdout_bytes` | `4 * 1024 * 1024` | Cap on captured streams. |
+| `fetch_logcat` | `"auto"` | `"auto"`: only after `execute()`; `True`/`False` force. |
+| `fetch_dmesg` | `"auto"` | Same shape as `fetch_logcat`. |
+
+Example combining both recipes:
+
+```bash
+python -m executorch.backends.qualcomm.debugger.observatory \
+    --output-html /tmp/obs/report.html \
+    --lens-recipe accuracy --lens-recipe adb \
+    examples/qualcomm/oss_scripts/swin_transformer.py \
+    -m SM8850 -b ./build-android \
+    --dataset imagenet-mini-val/ \
+    -H weilhuan-linux -s <device_serial>
+```
 
 ## Two-step workflow
 
