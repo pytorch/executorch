@@ -376,6 +376,7 @@ class ExportedProgramSerializer(export_serialize.ExportedProgramSerializer):
 
 _KNOWN_FUNCTIONS_MAP = {
     "executorch.exir.memory.view": exir.memory.view,
+    "executorch.exir.memory.select": exir.memory.select,
 }
 
 

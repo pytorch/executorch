@@ -28,6 +28,7 @@
 
 EXECUTORCH_SRCS = [
     "kernels/prim_ops/et_copy_index.cpp",
+    "kernels/prim_ops/et_select.cpp",
     "kernels/prim_ops/et_view.cpp",
     "kernels/prim_ops/register_prim_ops.cpp",
 ]

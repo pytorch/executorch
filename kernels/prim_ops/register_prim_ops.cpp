@@ -7,6 +7,7 @@
  */
 
 #include <executorch/kernels/prim_ops/et_copy_index.h>
+#include <executorch/kernels/prim_ops/et_select.h>
 #include <executorch/kernels/prim_ops/et_view.h>
 #include <executorch/runtime/core/evalue.h>
 #include <executorch/runtime/kernel/kernel_includes.h>
@@ -661,6 +662,12 @@ static Kernel prim_ops[] = {
     defined(INCLUDE_EXECUTORCH_PRIM_ET_VIEW_DEFAULT)
     // executorch_prim::et_view.default(Tensor, int[]) -> Tensor
     Kernel("executorch_prim::et_view.default", et_view),
+#endif
+
+#if !defined(EXECUTORCH_ENABLE_PRIM_OPS_SELECTIVE_BUILD) || \
+    defined(INCLUDE_EXECUTORCH_PRIM_ET_SELECT_DEFAULT)
+    // executorch_prim::et_select.default(Tensor, int, int) -> Tensor
+    Kernel("executorch_prim::et_select.default", et_select),
 #endif
 
 };
