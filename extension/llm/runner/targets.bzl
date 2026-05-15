@@ -68,6 +68,7 @@ def define_common_targets():
             visibility = ["PUBLIC"],
             exported_deps = [
                 ":text_decoder_runner" + aten_suffix,
+                "//executorch/extension/llm/sampler:sampler" + aten_suffix,
                 "//pytorch/tokenizers:headers",
                 "//executorch/extension/module:module" + aten_suffix,
                 "//executorch/extension/tensor:tensor" + aten_suffix,

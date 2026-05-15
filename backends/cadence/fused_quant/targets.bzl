@@ -58,3 +58,15 @@ def define_common_targets():
         ],
         visibility = ["PUBLIC"],
     )
+
+    runtime.cxx_library(
+        name = "op_bmm",
+        srcs = ["op_bmm.cpp"],
+        exported_headers = ["op_bmm.h"],
+        platforms = CXX,
+        deps = [
+            ":quant_utils",
+            "//executorch/runtime/kernel:kernel_includes",
+        ],
+        visibility = ["PUBLIC"],
+    )
