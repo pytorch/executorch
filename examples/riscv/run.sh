@@ -111,6 +111,10 @@ hash "${qemu}" 2>/dev/null || {
 # linker (ld-linux-riscv64-lp64d.so.1) referenced in the ELF resolves.
 export QEMU_LD_PREFIX="${QEMU_LD_PREFIX:-/usr/riscv64-linux-gnu}"
 
+if [[ -n "${QEMU_CPU+x}" ]]; then
+    echo "[run.sh] QEMU_CPU=${QEMU_CPU}"
+fi
+
 log_file=$(mktemp)
 trap 'rm -f "${log_file}"' EXIT
 
