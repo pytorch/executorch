@@ -32,6 +32,11 @@ class Var(torch.nn.Module):
         ),
     }
 
+    test_parameters_ethosu = {
+        "var_4d_keep_dim_0_correction": lambda: (torch.randn(1, 50, 10, 20), True, 0),
+        "var_4d_keep_dim_1_correction": lambda: (torch.randn(1, 30, 15, 20), True, 1),
+    }
+
     def __init__(self, keepdim: bool = True, correction: int = 0):
         super().__init__()
         self.keepdim = keepdim
@@ -170,7 +175,7 @@ def test_var_dim_tosa_INT_no_dim(test_data: Tuple):
     pipeline.run()
 
 
-@common.parametrize("test_data", Var.test_parameters)
+@common.parametrize("test_data", Var.test_parameters_ethosu)
 @common.XfailIfNoCorstone300
 def test_var_dim_u55_INT_no_dim(test_data: Tuple):
     test_data, keepdim, correction = test_data()
@@ -183,7 +188,7 @@ def test_var_dim_u55_INT_no_dim(test_data: Tuple):
     pipeline.run()
 
 
-@common.parametrize("test_data", Var.test_parameters)
+@common.parametrize("test_data", Var.test_parameters_ethosu)
 @common.XfailIfNoCorstone320
 def test_var_dim_u85_INT_no_dim(test_data: Tuple):
     test_data, keepdim, correction = test_data()
@@ -220,6 +225,36 @@ def test_var_dim_vgf_quant_no_dim(test_data: Tuple):
         [],
         [],
         quantize=True,
+    )
+    pipeline.run()
+
+
+@common.parametrize("test_data", Var.test_parameters_ethosu)
+@common.XfailIfNoCorstone300
+def test_var_a16w8_u55_INT(test_data: Tuple):
+    test_data, keepdim, correction = test_data()
+    pipeline = EthosU55PipelineINT[input_t1](
+        Var(keepdim, correction),
+        (test_data,),
+        aten_ops=[],
+        exir_ops=[],
+        a16w8_quantization=True,
+        symmetric_io_quantization=True,
+    )
+    pipeline.run()
+
+
+@common.parametrize("test_data", Var.test_parameters_ethosu)
+@common.XfailIfNoCorstone320
+def test_var_a16w8_u85_INT(test_data: Tuple):
+    test_data, keepdim, correction = test_data()
+    pipeline = EthosU85PipelineINT[input_t1](
+        Var(keepdim, correction),
+        (test_data,),
+        aten_ops=[],
+        exir_ops=[],
+        a16w8_quantization=True,
+        symmetric_io_quantization=True,
     )
     pipeline.run()
 
