@@ -1,9 +1,8 @@
 /**
  * ExecuTorch LLM extension for Android.
  *
- * <p>This package provides Java bindings for running large language models (LLMs)
- * on Android using ExecuTorch. It supports text generation, tokenization,
- * and streaming token callbacks.
+ * <p>This package provides Java bindings for running large language models (LLMs) on Android using
+ * ExecuTorch. It supports text generation, tokenization, and streaming token callbacks.
  *
  * <h2>Quick Start</h2>
  *
@@ -32,18 +31,21 @@
  * <h2>Key Classes</h2>
  *
  * <ul>
- *   <li>{@link org.pytorch.executorch.extension.llm.LlmModule} — load and run an LLM</li>
- *   <li>{@link org.pytorch.executorch.extension.llm.LlmModuleConfig} — configure model paths and settings</li>
- *   <li>{@link org.pytorch.executorch.extension.llm.LlmGenerationConfig} — control generation (temperature, seq length)</li>
+ *   <li>{@link org.pytorch.executorch.extension.llm.LlmModule} — load and run an LLM
+ *   <li>{@link org.pytorch.executorch.extension.llm.LlmModuleConfig} — configure model paths and
+ *       settings
+ *   <li>{@link org.pytorch.executorch.extension.llm.LlmGenerationConfig} — control generation
+ *       (temperature, seq length)
  * </ul>
  *
  * <h2>More Resources</h2>
  *
  * <ul>
- *   <li><a href="https://github.com/pytorch/executorch/tree/main/examples/demo-apps/android/LlamaDemo">
- *       Llama Android Demo App</a> — full working app with UI</li>
- *   <li><a href="https://pytorch.org/executorch/main/using-executorch-android.html">
- *       Using ExecuTorch on Android</a></li>
+ *   <li><a
+ *       href="https://github.com/meta-pytorch/executorch-examples/tree/main/llm/android/LlamaDemo">
+ *       Llama Android Demo App</a> — full working app with UI
+ *   <li><a href="https://pytorch.org/executorch/main/using-executorch-android.html">Using
+ *       ExecuTorch on Android</a>
  * </ul>
  */
 package org.pytorch.executorch.extension.llm;

@@ -116,7 +116,7 @@ repositories {
 }
 
 android.libraryVariants.all { variant ->
-    task("generate${variant.name.capitalize()}Javadoc", type: Javadoc) {
+    task("generate${variant.name.substring(0, 1).toUpperCase()}${variant.name.substring(1)}Javadoc", type: Javadoc) {
         source = variant.javaCompileProvider.get().source
         classpath += project.files(android.getBootClasspath().join(File.pathSeparator))
         classpath += variant.javaCompileProvider.get().classpath

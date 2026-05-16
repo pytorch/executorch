@@ -1,9 +1,9 @@
 /**
  * ExecuTorch Android Java API.
  *
- * <p>This package provides Java bindings for running ExecuTorch models on Android.
- * Use these classes to load a {@code .pte} model file and run inference directly
- * from your Java or Kotlin Android app — no C++ required.
+ * <p>This package provides Java bindings for running ExecuTorch models on Android. Use these
+ * classes to load a {@code .pte} model file and run inference directly from your Java or Kotlin
+ * Android app — no C++ required.
  *
  * <h2>Quick Start</h2>
  *
@@ -39,21 +39,19 @@
  * <h2>Key Classes</h2>
  *
  * <ul>
- *   <li>{@link org.pytorch.executorch.Module} — load and run a {@code .pte} model</li>
- *   <li>{@link org.pytorch.executorch.Tensor} — create input tensors and read outputs</li>
- *   <li>{@link org.pytorch.executorch.EValue} — wrap inputs and unwrap outputs</li>
- *   <li>{@link org.pytorch.executorch.DType} — supported data types (FLOAT, INT32, etc.)</li>
+ *   <li>{@link org.pytorch.executorch.Module} — load and run a {@code .pte} model
+ *   <li>{@link org.pytorch.executorch.Tensor} — create input tensors and read outputs
+ *   <li>{@link org.pytorch.executorch.EValue} — wrap inputs and unwrap outputs
+ *   <li>{@link org.pytorch.executorch.DType} — supported data types (FLOAT, INT32, etc.)
  * </ul>
  *
  * <h2>More Resources</h2>
  *
  * <ul>
- *   <li><a href="https://pytorch.org/executorch/main/using-executorch-android.html">
- *       Using ExecuTorch on Android</a> — full setup guide, AAR install, build from source</li>
- *   <li><a href="https://github.com/pytorch/executorch/tree/main/examples/demo-apps/android">
- *       Android Demo Apps</a> — working example apps you can build and run immediately</li>
- *   <li><a href="https://pytorch.org/executorch/main/cross-compilation-for-android.html">
- *       Cross Compilation for Android</a> — using C++ APIs from Android native code</li>
+ *   <li><a href="https://pytorch.org/executorch/main/using-executorch-android.html">Using
+ *       ExecuTorch on Android</a> — full setup guide, AAR install, build from source
+ *   <li><a href="https://github.com/meta-pytorch/executorch-examples">Android Demo Apps</a> —
+ *       working example apps you can build and run immediately
  * </ul>
  */
 package org.pytorch.executorch;
