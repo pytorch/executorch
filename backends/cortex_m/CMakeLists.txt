@@ -23,7 +23,7 @@ include(FetchContent)
 
 # CMSIS-NN configuration with dynamic path detection
 set(CMSIS_NN_VERSION
-    "098d54a61e3e04e2b60e9010e871eef036ac5ae3"
+    "d933672e7ca97eec70ef43230baee7b20c2a28ae"
     CACHE STRING "CMSIS-NN version to download"
 )
 set(CMSIS_NN_LOCAL_PATH

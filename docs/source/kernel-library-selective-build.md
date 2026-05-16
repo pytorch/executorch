@@ -47,7 +47,7 @@ Note that `EXECUTORCH_SELECT_OPS_YAML`, `EXECUTORCH_SELECT_OPS_LIST`, and `EXECU
 
 As an example, to build with only operators used in mv2_xnnpack_fp32.pte, the CMake build can be configured as follows.
 ```
-cmake .. -DEXECUTORCH_SELECT_OPS_MODEL=mv2_xnnpack_fp32.pte
+cmake -B cmake-out -DEXECUTORCH_SELECT_OPS_MODEL=mv2_xnnpack_fp32.pte
 ```
 
 ## APIs

@@ -199,6 +199,12 @@ TEST_F(ProgramTest, BadMagicFailsToLoad) {
 #define ET_ENABLE_PROGRAM_VERIFICATION 1
 #endif
 
+// ET_ENABLE_DEPRECATED_CONSTANT_BUFFER is 1 by default, and
+// set to 0 in the root CMakeLists.txt for OSS builds.
+#ifndef ET_ENABLE_DEPRECATED_CONSTANT_BUFFER
+#define ET_ENABLE_DEPRECATED_CONSTANT_BUFFER 1
+#endif
+
 #if ET_ENABLE_PROGRAM_VERIFICATION
 
 TEST_F(ProgramTest, VerificationCatchesTruncation) {
@@ -522,6 +528,7 @@ TEST_F(ProgramTest, LoadConstantSegmentWhenConstantBufferExists) {
       Program::HeaderStatus::CompatibleVersion);
 
   Result<Program> program = Program::load(&linear_loader.get());
+#if ET_ENABLE_DEPRECATED_CONSTANT_BUFFER
   ASSERT_EQ(program.error(), Error::Ok);
 
   const executorch_flatbuffer::Program* flatbuffer_program =
@@ -532,6 +539,11 @@ TEST_F(ProgramTest, LoadConstantSegmentWhenConstantBufferExists) {
 
   // The constant buffer should exist.
   EXPECT_GE(flatbuffer_program->constant_buffer()->size(), 1);
+#else
+  // The deprecated in-flatbuffer constant_buffer path is disabled; loading a
+  // PTE that relies on it must be rejected.
+  EXPECT_EQ(program.error(), Error::InvalidProgram);
+#endif
 }
 
 TEST_F(ProgramTest, LoadFromMutableSegment) {
@@ -706,6 +718,12 @@ TEST_F(ProgramTest, GetOutputFlatteningEncodingWithMissingContainerMetaType) {
   auto empty_segments = builder.CreateVector(
       std::vector<flatbuffers::Offset<executorch_flatbuffer::DataSegment>>{});
 
+  // Placeholder constant_segment.
+  auto constant_segment = executorch_flatbuffer::CreateSubsegmentOffsets(
+      builder,
+      /*segment_index=*/0,
+      builder.CreateVector(std::vector<uint64_t>{0}));
+
   // Build the Program
   auto program = executorch_flatbuffer::CreateProgram(
       builder,
@@ -713,7 +731,8 @@ TEST_F(ProgramTest, GetOutputFlatteningEncodingWithMissingContainerMetaType) {
       execution_plans,
       empty_constant_buffer,
       empty_backend_data,
-      empty_segments);
+      empty_segments,
+      constant_segment);
 
   builder.Finish(program, executorch_flatbuffer::ProgramIdentifier());
 
@@ -788,13 +807,19 @@ TEST_F(ProgramTest, GetOutputFlatteningEncodingWithMissingEncodedOutStr) {
   auto empty_segments = builder.CreateVector(
       std::vector<flatbuffers::Offset<executorch_flatbuffer::DataSegment>>{});
 
+  auto constant_segment = executorch_flatbuffer::CreateSubsegmentOffsets(
+      builder,
+      /*segment_index=*/0,
+      builder.CreateVector(std::vector<uint64_t>{0}));
+
   auto program = executorch_flatbuffer::CreateProgram(
       builder,
       0,
       execution_plans,
       empty_constant_buffer,
       empty_backend_data,
-      empty_segments);
+      empty_segments,
+      constant_segment);
 
   builder.Finish(program, executorch_flatbuffer::ProgramIdentifier());
 
@@ -837,6 +862,11 @@ TEST_F(ProgramTest, NullPlanNameDoesNotCrash) {
               flatbuffers::Offset<executorch_flatbuffer::BackendDelegate>>{}),
       builder.CreateVector(std::vector<int64_t>{0}));
 
+  auto constant_segment = executorch_flatbuffer::CreateSubsegmentOffsets(
+      builder,
+      /*segment_index=*/0,
+      builder.CreateVector(std::vector<uint64_t>{0}));
+
   auto program = executorch_flatbuffer::CreateProgram(
       builder,
       0,
@@ -851,7 +881,8 @@ TEST_F(ProgramTest, NullPlanNameDoesNotCrash) {
               executorch_flatbuffer::BackendDelegateInlineData>>{}),
       builder.CreateVector(
           std::vector<
-              flatbuffers::Offset<executorch_flatbuffer::DataSegment>>{}));
+              flatbuffers::Offset<executorch_flatbuffer::DataSegment>>{}),
+      constant_segment);
 
   builder.Finish(program, executorch_flatbuffer::ProgramIdentifier());
 
@@ -866,6 +897,7 @@ TEST_F(ProgramTest, NullPlanNameDoesNotCrash) {
   EXPECT_EQ(p->method_meta("forward").error(), Error::InvalidArgument);
 }
 
+#if ET_ENABLE_DEPRECATED_CONSTANT_BUFFER
 TEST_F(ProgramTest, GetConstantBufferDataRejectsOversizedRequest) {
   const char* path =
       std::getenv("DEPRECATED_ET_MODULE_LINEAR_CONSTANT_BUFFER_PATH");
@@ -881,3 +913,4 @@ TEST_F(ProgramTest, GetConstantBufferDataRejectsOversizedRequest) {
 
   EXPECT_EQ(data.error(), Error::InvalidArgument);
 }
+#endif // ET_ENABLE_DEPRECATED_CONSTANT_BUFFER
