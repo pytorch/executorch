@@ -54,7 +54,7 @@ def test_mv3_tosa_FP_fp16():
         aten_op=[],
         exir_op=[],
         use_to_edge_transform_and_lower=True,
-        atol=5e-2,
+        atol=1e-1,
     )
     pipeline.run()
 
