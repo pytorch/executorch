@@ -28,6 +28,7 @@ from __future__ import annotations
 import logging
 import re
 import threading
+import contextlib
 from dataclasses import dataclass, field
 from typing import Any, Callable, Dict, List, Optional
 
@@ -117,7 +118,25 @@ def _scan_error_lines(text: str) -> List[int]:
 
 
 class AdbLens(Lens):
-    """Lens that records ``SimpleADB`` activity for the run."""
+    """Lens that records ``SimpleADB`` activity for the run.
+
+    Region structure (cf. RFC §4.5):
+
+        Session "<script-name>"
+        ├── quantization/             (pipeline_graph_collector, AOT)
+        ├── edge/                     (pipeline_graph_collector, AOT)
+        └── device/                   (this lens; on-device runtime work)
+              ├── adb.execute #1
+              ├── adb.execute #2
+              └── ...
+
+    The ``device`` region is opened lazily on the first patched
+    ``SimpleADB`` operation (push / pull / execute) via
+    ``_ensure_device_region`` and closed in ``on_session_end``. Each
+    inference record (``adb.execute #N``) lives directly under
+    ``device`` rather than getting its own per-call region — every
+    region holds more than one Record by design.
+    """
 
     _lock = threading.Lock()
 
@@ -125,6 +144,8 @@ class AdbLens(Lens):
     _config: Dict[str, Any] = {}
     _patches_installed: bool = False
     _install_patches: Optional[Callable[[], None]] = None
+    _enter_context_fn: Optional[Callable[..., Any]] = None
+    _device_stack: Optional["contextlib.ExitStack"] = None
 
     _raw_events: List[Dict[str, Any]] = []
     _device_info: List[Dict[str, Any]] = []
@@ -175,6 +196,13 @@ class AdbLens(Lens):
         if not cls._enabled:
             return {"enabled": False}
 
+        # Capture the framework's enter_context callable so the lens can
+        # lazily open a top-level "device" region on the first patched
+        # SimpleADB operation. The region is closed in on_session_end.
+        from executorch.devtools.observatory import Observatory
+
+        cls._enter_context_fn = Observatory.enter_context
+
         if cls._install_patches is not None and not cls._patches_installed:
             cls._install_patches()
             cls._patches_installed = True
@@ -201,6 +229,33 @@ class AdbLens(Lens):
             if is_installed():
                 uninstall_adb_patches()
             cls._patches_installed = False
+            # Close the lazy "device" region (if any) before the framework
+            # tears down the outer Session. Idempotent: no-op when never
+            # opened (e.g., a CLI run with no on-device inference).
+            if cls._device_stack is not None:
+                try:
+                    cls._device_stack.close()
+                except Exception as exc:
+                    logging.warning(
+                        "[AdbLens] failed to close device region: %s", exc
+                    )
+                cls._device_stack = None
+            cls._enter_context_fn = None
+
+    @classmethod
+    def _ensure_device_region(cls) -> None:
+        """Lazy-open the top-level ``device`` Region on first ADB activity.
+
+        Idempotent: subsequent calls are no-ops once the region is open.
+        Called from ``note_simple_adb`` so every patched SimpleADB
+        operation (push / pull / execute) lands inside the region.
+        """
+
+        if not cls._enabled or cls._enter_context_fn is None:
+            return
+        if cls._device_stack is None:
+            cls._device_stack = contextlib.ExitStack()
+            cls._device_stack.enter_context(cls._enter_context_fn("device"))
 
     @classmethod
     def observe(cls, artifact: Any, context: ObservationContext) -> Any:
@@ -475,6 +530,9 @@ class AdbLens(Lens):
     def note_simple_adb(cls, instance: Any) -> None:
         if not cls._enabled:
             return
+        # Open the lazy "device" Region on the first patched ADB call,
+        # so every record produced from now on is grouped under it.
+        cls._ensure_device_region()
         info = _summarize_simple_adb(instance)
         key = (info.get("host"), info.get("device_serial"))
         with cls._lock:
