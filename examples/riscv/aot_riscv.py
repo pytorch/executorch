@@ -76,10 +76,41 @@ def build_mobilebert():
     return model, example_inputs, test_inputs, False
 
 
+def build_llama2():
+    # Use the executorch native Transformer (matches MODEL_NAME_TO_MODEL["llama2"]
+    # in examples/models/__init__.py). Unlike HF LlamaModel, RoPE freqs are
+    # precomputed buffers and just sliced at forward time, so no
+    # torch.arange()/Long causal mask is built per forward — which is what
+    # the PT2E XNNPACK quantizer trips over on HF Llama.
+    from executorch.examples.models.llama.llama_transformer import (
+        construct_transformer,
+    )
+    from executorch.examples.models.llama.model_args import ModelArgs
+
+    seq_len = 8
+    args = ModelArgs(
+        dim=128,
+        n_layers=2,
+        n_heads=4,
+        n_kv_heads=2,            # GQA: kv_heads < n_heads exercises the GQA path
+        vocab_size=1024,
+        hidden_dim=256,          # SwiGLU FFN: gate + up projections at this width
+        max_seq_len=seq_len,
+        max_context_len=seq_len,
+        rope_theta=10000.0,
+    )
+    torch.manual_seed(0)
+    model = construct_transformer(args).eval()
+    example_inputs = (torch.tensor([[1, 2, 3, 4, 5, 6, 7, 8]], dtype=torch.long),)
+    test_inputs = [example_inputs]
+    return model, example_inputs, test_inputs, False
+
+
 MODELS = {
     "add": build_add,
     "mv2": build_mv2,
     "mobilebert": build_mobilebert,
+    "llama2": build_llama2,
 }
 
 

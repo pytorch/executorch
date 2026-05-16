@@ -36,6 +36,9 @@ jobs:
           - { model: mobilebert, xnnpack: false, quantize: false }
           - { model: mobilebert, xnnpack: true,  quantize: false }
           - { model: mobilebert, xnnpack: true,  quantize: true }
+          - { model: llama2,     xnnpack: false, quantize: false }
+          - { model: llama2,     xnnpack: true,  quantize: false }
+          - { model: llama2,     xnnpack: true,  quantize: true }
     permissions:
       id-token: write
       contents: read
