@@ -10,6 +10,45 @@ This lens installs monkey-patches on framework-level functions to transparently
 capture graph artifacts at each stage of the export → quantize → lower pipeline.
 All patches are installed on session start and removed on session end.
 
+Region structure (cf. RFC §4.5):
+
+    Session "<script-name>"        ← outermost (opened by CLI / user wrapper)
+    ├── quantization/              ← top-level coarse stage; aten-graph work
+    │   ├── prepare_pt2e/          ← per-call regions
+    │   │     └── record  Annotated Model
+    │   └── convert_pt2e/
+    │         ├── record  Calibrated Model
+    │         └── record  Quantized Model
+    └── edge/                      ← top-level coarse stage; edge-dialect work
+        ├── to_edge_transform_and_lower/
+        │     └── record  EdgeProgramManager EP   (+ Pre-EdgeTransform/<method>)
+        └── etrecord/              ← lazy nested region under edge; opens on
+            │                        first ETRecord.add_* call
+            ├── exported_program/
+            │     └── record  ETRecord Exported/<method>
+            ├── edge_dialect_program/
+            │     └── record  ETRecord Edge/<method>
+            └── extra_export_modules/
+                  └── record  ETRecord Extra/<module>
+
+`quantization` and `edge` are **sibling** top-level regions (not nested).
+Annotated/Calibrated/Quantized models are aten graphs (not edge dialect),
+so they live under `quantization`. `to_edge_transform_and_lower` and the
+ETRecord operations live under `edge`.
+
+Because the runtime region stack holds only one chain at a time, the lens
+opens these top-level regions **lazily** through transition helpers:
+`_transition_to_quantization` opens quantization (closing edge+etrecord if
+they were open from a backward transition). `_transition_to_edge` closes
+quantization (if open) and opens edge. `_ensure_etrecord_region` ensures
+edge is open and then opens the nested etrecord region. All open stacks
+are closed in `on_session_end`.
+
+Lens lifecycle hooks fire **once** per CLI invocation: `on_session_start`
+records the framework's `enter_context`/`collect` callables and installs
+patches; `on_session_end` closes any open transition stacks and restores
+patches.
+
 Collection points (in pipeline order):
   1. torch.export.export        → "Exported Float" (ExportedProgram)
   2. prepare_pt2e               → "Annotated Model" (GraphModule with observers)
@@ -31,6 +70,7 @@ Patching strategy:
 
 from __future__ import annotations
 
+import contextlib
 import logging
 from typing import Any, Callable, Dict, List, Optional
 
@@ -43,6 +83,10 @@ class PipelineGraphCollectorLens(Lens):
     _installed: bool = False
     _originals: Dict[str, Any] = {}
     _collect_fn: Optional[Callable[[str, Any], None]] = None
+    _enter_context_fn: Optional[Callable[..., Any]] = None
+    _quantization_stack: Optional[contextlib.ExitStack] = None
+    _edge_stack: Optional[contextlib.ExitStack] = None
+    _etrecord_stack: Optional[contextlib.ExitStack] = None
     # Cross-lens contract for AccuracyLens fallback dataset.
     _last_calibration_dataset: Optional[list] = None
     # Backend-specific patch installers registered via register_backend_patches().
@@ -57,9 +101,10 @@ class PipelineGraphCollectorLens(Lens):
         """Register a backend-specific patch installer.
 
         The installer receives the lens class and should use cls._originals,
-        cls._collect_fn, and cls._set_accuracy_fallback_dataset() for
-        standard integration. It may also append to cls._backend_uninstallers
-        to register cleanup logic.
+        cls._collect_fn, cls._enter_context_fn, and
+        cls._set_accuracy_fallback_dataset() for standard integration.
+        It may also append to cls._backend_uninstallers to register cleanup
+        logic.
         """
         if installer not in cls._backend_patch_installers:
             cls._backend_patch_installers.append(installer)
@@ -76,6 +121,13 @@ class PipelineGraphCollectorLens(Lens):
         from ..observatory import Observatory
 
         cls._collect_fn = Observatory.collect
+        cls._enter_context_fn = Observatory.enter_context
+
+        # Top-level "quantization" and "edge" regions are opened lazily by
+        # the transition helpers (`_transition_to_quantization`,
+        # `_transition_to_edge`). The "etrecord" nested region inside edge
+        # is opened lazily on the first ETRecord.add_* call.
+
         # Install backend-agnostic patches first.
         cls._install_quantizer_patches()
         cls._install_edge_lower_patch()
@@ -114,6 +166,59 @@ class PipelineGraphCollectorLens(Lens):
         return AnalysisResult()
 
     @classmethod
+    def _transition_to_quantization(cls) -> None:
+        """Ensure the top-level `quantization` region is the active sibling.
+
+        Closes edge+etrecord if they were open from a previous transition
+        (rare backward order; supported defensively).
+        """
+
+        if cls._enter_context_fn is None:
+            return
+        if cls._etrecord_stack is not None:
+            cls._etrecord_stack.close()
+            cls._etrecord_stack = None
+        if cls._edge_stack is not None:
+            cls._edge_stack.close()
+            cls._edge_stack = None
+        if cls._quantization_stack is None:
+            cls._quantization_stack = contextlib.ExitStack()
+            cls._quantization_stack.enter_context(
+                cls._enter_context_fn("quantization")
+            )
+
+    @classmethod
+    def _transition_to_edge(cls) -> None:
+        """Ensure the top-level `edge` region is the active sibling.
+
+        Closes the `quantization` region first (if it was open). Idempotent
+        when edge is already open.
+        """
+
+        if cls._enter_context_fn is None:
+            return
+        if cls._quantization_stack is not None:
+            cls._quantization_stack.close()
+            cls._quantization_stack = None
+        if cls._edge_stack is None:
+            cls._edge_stack = contextlib.ExitStack()
+            cls._edge_stack.enter_context(cls._enter_context_fn("edge"))
+
+    @classmethod
+    def _ensure_etrecord_region(cls) -> None:
+        """Lazy-open the nested `etrecord` region inside `edge`.
+
+        Guarantees that `edge` is the active top-level region first
+        (calls `_transition_to_edge`), then opens `etrecord` as its child.
+        Idempotent when etrecord is already open.
+        """
+
+        cls._transition_to_edge()
+        if cls._etrecord_stack is None and cls._enter_context_fn is not None:
+            cls._etrecord_stack = contextlib.ExitStack()
+            cls._etrecord_stack.enter_context(cls._enter_context_fn("etrecord"))
+
+    @classmethod
     def _set_accuracy_fallback_dataset(cls, dataset: Any, source: str) -> None:
         """Store dataset for AccuracyLens fallback.
 
@@ -150,6 +255,7 @@ class PipelineGraphCollectorLens(Lens):
             cls._originals["prepare_pt2e"] = original_prepare
 
             def patched_prepare_pt2e(model, *args, **kwargs):
+                cls._transition_to_quantization()
                 result = original_prepare(model, *args, **kwargs)
                 try:
                     cls._collect_fn("Annotated Model", result)
@@ -168,6 +274,7 @@ class PipelineGraphCollectorLens(Lens):
             cls._originals["convert_pt2e"] = original_convert
 
             def patched_convert_pt2e(model, *args, **kwargs):
+                cls._transition_to_quantization()
                 try:
                     cls._collect_fn("Calibrated Model", model)
                 except Exception as exc:
@@ -203,7 +310,7 @@ class PipelineGraphCollectorLens(Lens):
     def _install_edge_lower_patch(cls) -> None:
         try:
             import executorch.exir.program._program as program_module
-            import executorch.exir as exir_module 
+            import executorch.exir as exir_module
 
             def _collect_pre_edge_transform_inputs(args, kwargs):
                 programs = kwargs.get("programs")
@@ -233,11 +340,14 @@ class PipelineGraphCollectorLens(Lens):
 
             def _make_patched_to_edge_transform_and_lower(original_fn):
                 def patched_to_edge_transform_and_lower(*args, **kwargs):
+                    cls._transition_to_edge()
                     _collect_pre_edge_transform_inputs(args, kwargs)
                     kwargs["generate_etrecord"] = True
                     result = original_fn(*args, **kwargs)
                     try:
-                        cls._collect_fn("EdgeProgramManager EP", result.exported_program())
+                        cls._collect_fn(
+                            "EdgeProgramManager EP", result.exported_program()
+                        )
                     except Exception as exc:
                         logging.debug(
                             "[PipelineGraphCollector] collect skipped (EdgeProgramManager EP): %s",
@@ -292,6 +402,7 @@ class PipelineGraphCollectorLens(Lens):
 
         def _wrap_add_exported_program(original):
             def wrapped(self, exported_program):
+                cls._ensure_etrecord_region()
                 result = original(self, exported_program)
                 if exported_program is None:
                     return result
@@ -306,6 +417,7 @@ class PipelineGraphCollectorLens(Lens):
 
         def _wrap_add_edge_dialect_program(original):
             def wrapped(self, edge_dialect_program):
+                cls._ensure_etrecord_region()
                 result = original(self, edge_dialect_program)
                 processed = getattr(self, "edge_dialect_program", None)
                 if isinstance(processed, dict):
@@ -319,6 +431,7 @@ class PipelineGraphCollectorLens(Lens):
 
         def _wrap_add_extra_export_modules(original):
             def wrapped(self, extra_recorded_export_modules):
+                cls._ensure_etrecord_region()
                 result = original(self, extra_recorded_export_modules)
                 graph_map = getattr(self, "graph_map", {}) or {}
                 for module_name, program in graph_map.items():
@@ -388,6 +501,7 @@ class PipelineGraphCollectorLens(Lens):
 
         cls._originals.clear()
         cls._collect_fn = None
+        cls._enter_context_fn = None
         cls._last_calibration_dataset = None
         for uninstaller in cls._backend_uninstallers:
             try:
@@ -396,5 +510,38 @@ class PipelineGraphCollectorLens(Lens):
                 logging.warning(
                     "[PipelineGraphCollector] Backend uninstall failed: %s", exc
                 )
+
+        # Close any open transition regions in reverse-nesting order:
+        # innermost etrecord first, then edge, then quantization. Whichever
+        # of edge / quantization is currently active gets closed; the other
+        # is already None.
+        if cls._etrecord_stack is not None:
+            try:
+                cls._etrecord_stack.close()
+            except Exception as exc:
+                logging.warning(
+                    "[PipelineGraphCollector] Failed to close etrecord region: %s",
+                    exc,
+                )
+            cls._etrecord_stack = None
+        if cls._edge_stack is not None:
+            try:
+                cls._edge_stack.close()
+            except Exception as exc:
+                logging.warning(
+                    "[PipelineGraphCollector] Failed to close edge region: %s",
+                    exc,
+                )
+            cls._edge_stack = None
+        if cls._quantization_stack is not None:
+            try:
+                cls._quantization_stack.close()
+            except Exception as exc:
+                logging.warning(
+                    "[PipelineGraphCollector] Failed to close quantization region: %s",
+                    exc,
+                )
+            cls._quantization_stack = None
+
         cls._installed = False
         logging.info("[PipelineGraphCollector] Uninstalled all patches")

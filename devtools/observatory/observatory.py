@@ -226,20 +226,27 @@ class Observatory:
 
         cls._config_stack.append(context_config)
 
-        if push_region and is_outermost:
-            cls._open_session(effective_name)
-
+        # Push the Region onto the stack BEFORE firing on_session_start so
+        # that any lens-side `enter_context` calls in the hook see this
+        # frame as an outer Region (not as a fresh outermost — which would
+        # recurse into _open_session).
         if push_region:
             cls._region_stack.append(effective_name)
+
+        if push_region and is_outermost:
+            cls._open_session(effective_name)
 
         try:
             yield
         finally:
+            # Mirror the order in reverse: close Session first (firing
+            # on_session_end while the region is still on the stack so the
+            # lens can clean up its own nested regions), then pop.
+            if push_region and is_outermost:
+                cls._close_session(effective_name)
             if push_region:
                 cls._region_stack.pop()
             cls._config_stack.pop()
-            if push_region and is_outermost:
-                cls._close_session(effective_name)
 
     @classmethod
     @contextmanager
