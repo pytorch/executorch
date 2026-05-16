@@ -195,11 +195,14 @@
             z-index: 200;
         }
 
-        /* Index Pane (Sidebar) */
+        /* Index Pane (Sidebar)
+           Starts below the sticky header (z-index: 200) so the index
+           header (which carries Tree-view / Select-items toggles) is
+           never obscured. The pane itself sits at z-index: 199. */
         .index-pane {
             position: fixed;
             left: 0;
-            top: 0;
+            top: 60px;
             bottom: 0;
             width: 300px;
             background: var(--bg-secondary);
@@ -211,6 +214,12 @@
             transform: translateX(-100%);
             transition: transform 0.25s ease, box-shadow 0.25s ease;
             box-shadow: none;
+        }
+
+        /* When the sticky header is hidden the pane reclaims the full
+           viewport. */
+        body:has(header.hidden) .index-pane {
+            top: 0;
         }
 
         /* Show when trigger zone or pane itself is hovered, or pinned open */
