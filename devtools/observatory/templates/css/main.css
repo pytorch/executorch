@@ -432,3 +432,43 @@
         .toast.toast-error {
             border-left: 4px solid var(--error-color);
         }
+
+        /* Tree-view region grouping in the left panel (RFC §4.5).
+           A region header is a clickable row showing the region name; its
+           caret indicates collapsed/expanded state. Children indent one
+           level for every nesting depth. */
+        .region-header {
+            display: flex;
+            align-items: center;
+            padding: 0.35rem 0.75rem;
+            cursor: pointer;
+            font-size: 0.85rem;
+            font-weight: 600;
+            color: var(--accent-color);
+            background: var(--bg-tertiary);
+            border-top: 1px solid var(--border-color);
+            user-select: none;
+        }
+        .region-header:hover {
+            background: var(--bg-code);
+        }
+        .region-caret {
+            display: inline-block;
+            width: 0.9rem;
+            margin-right: 0.35rem;
+            font-size: 0.7rem;
+            color: var(--text-secondary);
+        }
+        .region-name {
+            flex: 1;
+            text-overflow: ellipsis;
+            overflow: hidden;
+            white-space: nowrap;
+        }
+        ul.region-children {
+            list-style: none;
+            margin: 0;
+            padding: 0;
+            border-left: 2px solid var(--border-color);
+            margin-left: 0.5rem;
+        }

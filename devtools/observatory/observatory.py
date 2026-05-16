@@ -521,6 +521,8 @@ class Observatory:
             serialized = {
                 "name": record.name,
                 "timestamp": datetime.fromtimestamp(record.timestamp).strftime("%Y-%m-%d %H:%M:%S"),
+                "session_id": record.session_id,
+                "region_stack": list(record.region_stack),
                 "views": {},
                 "badges": [],
                 "diff_index": {},
