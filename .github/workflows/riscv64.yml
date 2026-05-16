@@ -39,6 +39,9 @@ jobs:
           - { model: llama2,     xnnpack: false, quantize: false }
           - { model: llama2,     xnnpack: true,  quantize: false }
           - { model: llama2,     xnnpack: true,  quantize: true }
+          - { model: resnet18,   xnnpack: false, quantize: false }
+          - { model: resnet18,   xnnpack: true,  quantize: false }
+          - { model: resnet18,   xnnpack: true,  quantize: true }
     permissions:
       id-token: write
       contents: read

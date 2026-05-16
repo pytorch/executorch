@@ -106,11 +106,22 @@ def build_llama2():
     return model, example_inputs, test_inputs, False
 
 
+def build_resnet18():
+    from torchvision.models import resnet18, ResNet18_Weights
+
+    model = resnet18(weights=ResNet18_Weights.DEFAULT).eval()
+    torch.manual_seed(0)
+    example_inputs = (torch.randn(1, 3, 224, 224),)
+    test_inputs = [example_inputs]
+    return model, example_inputs, test_inputs, False
+
+
 MODELS = {
     "add": build_add,
     "mv2": build_mv2,
     "mobilebert": build_mobilebert,
     "llama2": build_llama2,
+    "resnet18": build_resnet18,
 }
 
 
