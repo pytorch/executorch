@@ -6,13 +6,33 @@
 
 """Observatory runtime core.
 
+Worldview (cf. RFC §4.4 / §4.5):
+
+  Region   lightweight named scope from `Observatory.enter_context(name, ...)`;
+           can nest; pure labelling (no lens hooks at region boundaries).
+  Session  heavyweight scope; emerges automatically from the outermost
+           Region. Lens `on_session_start` / `on_session_end` fire here.
+  Record   one `Observatory.collect(name, artifact)` item; carries
+           `session_id` + `region_stack` snapshot.
+  Archive  one Observatory invocation: `sessions[]` + `records[]`.
+  Report   derived analysis (HTML / JSON) over the Archive.
+
 Lifecycle summary:
-1. Runtime capture: `observe -> digest`.
+1. Runtime: `observe` then `digest` per `collect()`.
 2. Analysis: per-lens `analyze(records, config)`.
 3. Assembly: merge frontend blocks + graph assets/layers.
 4. Rendering/export: JSON and HTML reports.
 
 The runtime enforces strict typed interfaces from `interfaces.py`.
+
+`enter_context(region_name=None, config=None)` is the primary entry API.
+- Outermost (region stack empty on entry): if `region_name` is omitted, an
+  auto-generated default name (`"default"`, `"default-2"`, …) is used. Pushes
+  a Region and opens a Session (fires `on_session_start`).
+- Inner (region stack non-empty on entry): if `region_name` is omitted, the
+  call is a config-only override — the region stack and Session are unchanged.
+- `enable_context(...)` is preserved as a thin alias that opens an unnamed
+  outermost / config-only inner block, matching the semantics above.
 """
 
 from __future__ import annotations
@@ -42,6 +62,7 @@ from .interfaces import (
     ObservationContext,
     RecordAnalysis,
     RecordDigest,
+    Session,
     SessionResult,
     ViewList,
     validate_view_list,
@@ -81,14 +102,30 @@ class _NonFiniteFloatAsStringJSONEncoder(json.JSONEncoder):
 
 
 class Observatory:
-    """Global registry for collecting and rendering observability artifacts."""
+    """Global registry: opens a Session, accumulates Records into an Archive,
+    and emits a Report on export.
+
+    Class-level state (per-process; reset via `clear()`):
+        _records: time-ordered Records keyed by deduplicated name.
+        _ignored_graphs: substrings that suppress matching `collect()` calls.
+        _session_result: legacy SessionResult plus the per-Session list.
+        _sessions: ordered dict of Session by id (insertion = display order).
+        _active_session_id: name of the currently-open Session (or None).
+        _lens_registry: ordered list of registered Lens classes.
+        _lenses_initialized: flag for one-time default-lens registration.
+        _config_stack: Context frames (one per `enter_context` call).
+        _region_stack: active Region names; outermost first, innermost last.
+    """
 
     _records: Dict[str, RecordDigest] = {}
     _ignored_graphs: Set[str] = set()
     _session_result: SessionResult = SessionResult()
+    _sessions: Dict[str, Session] = {}
+    _active_session_id: Optional[str] = None
     _lens_registry: List[Type[Lens]] = []
     _lenses_initialized: bool = False
     _config_stack: List[Dict[str, Any]] = []
+    _region_stack: List[str] = []
 
     @classmethod
     def register_lens(cls, lens_cls: Type[Lens], append=True) -> None:
@@ -126,13 +163,33 @@ class Observatory:
 
     @classmethod
     @contextmanager
-    def enable_context(cls, config: Optional[Dict[str, Any]] = None) -> ContextManager[None]:
-        """Enable observation context with nested config overrides.
+    def enter_context(
+        cls,
+        region_name: Optional[str] = None,
+        config: Optional[Dict[str, Any]] = None,
+    ) -> ContextManager[None]:
+        """Push a Region onto the runtime stack (and a Session at outermost).
 
-        Session hooks run once per outermost context:
-        1. On first enter, auto-collection patches are installed and
-           `on_session_start` hooks are called.
-        2. On last exit, `on_session_end` hooks are called and patches removed.
+        Behaviour by call position:
+        1. Outermost (region stack empty on entry):
+           - With ``region_name``: pushes the named Region and opens a Session
+             with the same ``id`` and ``name``.
+           - Without ``region_name``: auto-generates a non-duplicating default
+             ("default", "default-2", ...), pushes it as a Region, and opens
+             a Session with that name.
+        2. Inner (region stack non-empty on entry):
+           - With ``region_name``: pushes a labelled Region; the active
+             Session is unchanged (regions do not fire lens session hooks).
+           - Without ``region_name``: config-only override - the config frame
+             is pushed but no Region is added to the stack.
+
+        Lens lifecycle: ``on_session_start`` / ``on_session_end`` fire only
+        at Session boundaries (outermost-region entry/exit). Inner Regions
+        are pure labelling.
+
+        Notes:
+            ``region_name`` must be unique within an Archive. Re-using a name
+            for a sibling outermost block raises ``RuntimeError``.
         """
 
         cls._ensure_default_lenses()
@@ -150,34 +207,100 @@ class Observatory:
         parent_config = cls._config_stack[-1] if cls._config_stack else {}
         context_config = merge_config_dict(parent_config, config or {})
 
-        is_outermost_start = len(cls._config_stack) == 0
-        cls._config_stack.append(context_config)
-        hook_ctx = ObservationContext(config=context_config)
+        is_outermost = len(cls._region_stack) == 0
+        push_region = region_name is not None or is_outermost
 
-        if is_outermost_start:
-            for lens in cls._lens_registry:
-                try:
-                    data = lens.on_session_start(hook_ctx)
-                    if data:
-                        cls._session_result.start_data[lens.get_name()] = data
-                except Exception as exc:
-                    logging.error("[Observatory] Lens %s failed on_session_start: %s", lens, exc)
+        if push_region:
+            if region_name is None:
+                # Outermost without name: auto-generate a non-duplicating default.
+                effective_name = cls._next_default_session_name()
+            else:
+                effective_name = region_name
+                if is_outermost and effective_name in cls._sessions:
+                    raise RuntimeError(
+                        f"Session name {effective_name!r} already used in this archive."
+                    )
+        else:
+            # Inner without name: config-only override.
+            effective_name = None
+
+        cls._config_stack.append(context_config)
+
+        if push_region and is_outermost:
+            cls._open_session(effective_name)
+
+        if push_region:
+            cls._region_stack.append(effective_name)
 
         try:
             yield
         finally:
-            is_outermost_end = len(cls._config_stack) == 1
-
-            if is_outermost_end:
-                for lens in cls._lens_registry:
-                    try:
-                        data = lens.on_session_end(hook_ctx)
-                        if data:
-                            cls._session_result.end_data[lens.get_name()] = data
-                    except Exception as exc:
-                        logging.error("[Observatory] Lens %s failed on_session_end: %s", lens, exc)
-
+            if push_region:
+                cls._region_stack.pop()
             cls._config_stack.pop()
+            if push_region and is_outermost:
+                cls._close_session(effective_name)
+
+    @classmethod
+    @contextmanager
+    def enable_context(cls, config: Optional[Dict[str, Any]] = None) -> ContextManager[None]:
+        """Backwards-compatible alias for ``enter_context`` without a name.
+
+        Outermost call opens an auto-named Session; nested calls are
+        config-only overrides. Prefer ``enter_context(region_name, config)``
+        for new code so the tree view picks up labelled regions.
+        """
+
+        with cls.enter_context(region_name=None, config=config):
+            yield
+
+    @classmethod
+    def _next_default_session_name(cls) -> str:
+        """Return the next non-duplicating default Session name."""
+
+        if "default" not in cls._sessions:
+            return "default"
+        n = 2
+        while f"default-{n}" in cls._sessions:
+            n += 1
+        return f"default-{n}"
+
+    @classmethod
+    def _open_session(cls, name: str) -> None:
+        """Open a Session and fire `on_session_start` on every active lens."""
+
+        active_config = cls._config_stack[-1] if cls._config_stack else {}
+        hook_ctx = ObservationContext(config=active_config)
+        session = Session(id=name, name=name, start_ts=time.time())
+        for lens in cls._lens_registry:
+            try:
+                data = lens.on_session_start(hook_ctx)
+                if data:
+                    session.start_data[lens.get_name()] = data
+                    cls._session_result.start_data[lens.get_name()] = data
+            except Exception as exc:
+                logging.error("[Observatory] Lens %s failed on_session_start: %s", lens, exc)
+        cls._sessions[name] = session
+        cls._session_result.sessions.append(session)
+        cls._active_session_id = name
+
+    @classmethod
+    def _close_session(cls, name: str) -> None:
+        """Fire `on_session_end` on every active lens and close the Session."""
+
+        active_config = cls._config_stack[-1] if cls._config_stack else {}
+        hook_ctx = ObservationContext(config=active_config)
+        session = cls._sessions[name]
+        for lens in cls._lens_registry:
+            try:
+                data = lens.on_session_end(hook_ctx)
+                if data:
+                    session.end_data[lens.get_name()] = data
+                    cls._session_result.end_data[lens.get_name()] = data
+            except Exception as exc:
+                logging.error("[Observatory] Lens %s failed on_session_end: %s", lens, exc)
+        session.end_ts = time.time()
+        cls._active_session_id = None
 
     @classmethod
     def _get_current_context(cls) -> Optional[ObservationContext]:
@@ -223,7 +346,12 @@ class Observatory:
         ctx = ObservationContext(config=active_config)
         ctx.shared_state["record_name"] = name
 
-        record = RecordDigest(name=name, timestamp=datetime.now().timestamp())
+        record = RecordDigest(
+            name=name,
+            timestamp=datetime.now().timestamp(),
+            session_id=cls._active_session_id or "",
+            region_stack=list(cls._region_stack),
+        )
         t_start = time.perf_counter()
 
         for lens in cls._lens_registry:
@@ -256,6 +384,10 @@ class Observatory:
 
         cls._records.clear()
         cls._session_result = SessionResult()
+        cls._sessions.clear()
+        cls._active_session_id = None
+        cls._region_stack.clear()
+        cls._config_stack.clear()
 
         for lens in cls._lens_registry:
             try:

@@ -8,14 +8,30 @@
 
 This module is the source-of-truth contract for:
 1. Frontend view composition (`ViewList` + typed blocks/specs).
-2. Runtime record/session objects (`ObservationContext`, `RecordDigest`, etc.).
+2. Runtime record/session objects (`ObservationContext`, `RecordDigest`,
+   `Session`).
 3. Analyze-phase graph layer contribution via fx_viewer payload types.
 
-Architecture model:
-1. Runtime phase (`observe`/`digest`) captures raw record data.
-2. Analyze phase (`analyze`) computes global and per-record derived data.
-3. Frontend phase (`Frontend.*`) maps typed data into renderable view blocks.
+Worldview (cf. RFC §4.4 / §4.5):
 
+  Region   lightweight named scope from `Observatory.enter_context(name, ...)`;
+           can nest; pure labelling (no lens hooks fire at region boundaries).
+  Session  the heavyweight scope; emerges automatically from the *outermost*
+           Region; lens `on_session_start` / `on_session_end` fire at Session
+           boundaries.
+  Record   one `Observatory.collect(name, artifact)` item; carries `session_id`
+           + `region_stack` (snapshot at collect time); stored time-ordered.
+  Archive  one Observatory invocation: `sessions[]` + `records[]`; the only
+           thing persisted raw (`--output-archive`).
+  Report   derived output: `analyze` runs once per archive, then per-session
+           `Frontend.dashboard` renders Report (HTML) and Report (JSON).
+
+Architecture model:
+1. Runtime phase (`observe` then `digest`): produce one Record per
+   `collect()` call, tagged with the active session_id and region_stack.
+2. Analyze phase (`analyze`): pure-data, runs once per archive over all
+   records + sessions.
+3. Frontend phase (`Frontend.*`): per-session dashboard + per-record views.
 """
 
 from __future__ import annotations
@@ -565,20 +581,68 @@ class ObservationContext:
 
 @dataclass
 class RecordDigest:
-    """Persistent observation item.
+    """One Record. The canonical persisted unit produced by `collect()`.
 
-    This is the canonical persisted unit produced by runtime capture.
+    Fields:
+        name: Display name (deduplicated to "name #2", "name #3" on collision).
+        timestamp: Seconds since epoch at the moment `collect()` fires.
+        session_id: Active session at collect time. Equals the outermost
+            region_name on the runtime stack.
+        region_stack: Snapshot of the active region path at collect time;
+            outermost first. Used by the left-panel tree-view to group
+            records under collapsible region nodes.
+        data: Per-lens digest map keyed by `lens.get_name()`.
     """
 
     name: str
     timestamp: float
+    session_id: str = ""
+    region_stack: List[str] = field(default_factory=list)
     data: Dict[str, Serializable] = field(default_factory=dict)
 
 
 @dataclass
-class SessionResult:
-    """Session start/end data from lens hooks."""
+class Session:
+    """Heavyweight scope opened by an outermost `enter_context` call.
 
+    A Session begins when an outermost `Observatory.enter_context(...)` is
+    entered and ends when that outermost block exits. Lens `on_session_start`
+    and `on_session_end` hooks fire at Session boundaries (not at inner
+    Regions).
+
+    Fields:
+        id: Unique session identifier within an archive. Equals `name` for
+            single-archive runs; prefixed `<archive_label>:<name>` when
+            loaded via `--compare`.
+        name: Human-facing label (the outermost region_name, or an
+            auto-generated default like "default" / "default-2").
+        start_ts: Seconds since epoch when the Session opened.
+        end_ts: Seconds since epoch when the Session closed (None while open).
+        start_data: Per-lens payload from `on_session_start`, keyed by
+            `lens.get_name()`.
+        end_data: Per-lens payload from `on_session_end`.
+    """
+
+    id: str
+    name: str
+    start_ts: float
+    end_ts: Optional[float] = None
+    start_data: Dict[str, Serializable] = field(default_factory=dict)
+    end_data: Dict[str, Serializable] = field(default_factory=dict)
+
+
+@dataclass
+class SessionResult:
+    """Aggregate of all Sessions in an Archive.
+
+    Wraps an ordered list of `Session` instances plus the legacy flat
+    `start_data`/`end_data` views. The flat views are unions across all
+    sessions (last-write-wins on collision) and exist for transitional
+    compatibility with code paths that have not yet migrated to the
+    per-Session model.
+    """
+
+    sessions: List[Session] = field(default_factory=list)
     start_data: Dict[str, Serializable] = field(default_factory=dict)
     end_data: Dict[str, Serializable] = field(default_factory=dict)
 
