@@ -24,6 +24,7 @@ model="add"
 xnnpack=false
 quantize=false
 verbose=false
+verbose_xnnpack=false
 
 usage() {
     cat <<EOF
@@ -33,6 +34,7 @@ Options:
   --xnnpack               Enable the XNNPACK backend (AOT partitioner + runtime)
   --quantize              Produce an 8-bit quantized model
   --verbose               Enable XNNPACK partitioner DEBUG logging and dump the lowered graph
+  --verbose-xnnpack       Build XNNPACK with XNN_LOG_LEVEL=4 to log microkernel dispatch at runtime
   --build_only            Only export and cross-compile; do not invoke QEMU
   --build_dir=<DIR>       CMake build directory (default: ${build_dir})
   --output_dir=<DIR>      Directory for the exported .bpte (default: ${output_dir})
@@ -48,6 +50,7 @@ for arg in "$@"; do
         --xnnpack) xnnpack=true ;;
         --quantize) quantize=true ;;
         --verbose) verbose=true ;;
+        --verbose-xnnpack) verbose_xnnpack=true ;;
         --build_only) build_only=true ;;
         --build_dir=*) build_dir="${arg#*=}" ;;
         --output_dir=*) output_dir="${arg#*=}" ;;
@@ -78,6 +81,9 @@ echo "[run.sh] Step 2/3: cross-compile executor_runner for riscv64-linux"
 cmake_extra_args=()
 if ${xnnpack}; then
     cmake_extra_args+=(-DEXECUTORCH_BUILD_XNNPACK=ON)
+fi
+if ${verbose_xnnpack}; then
+    cmake_extra_args+=(-DEXECUTORCH_XNNPACK_LOG_LEVEL=4 -DEXECUTORCH_BUILD_RISCV_ETDUMP=ON)
 fi
 cmake -S "${et_root_dir}" -B "${build_dir}" \
     --preset riscv64-linux \
@@ -115,13 +121,20 @@ if [[ -n "${QEMU_CPU+x}" ]]; then
     echo "[run.sh] QEMU_CPU=${QEMU_CPU}"
 fi
 
-log_file=$(mktemp)
-trap 'rm -f "${log_file}"' EXIT
-
 runner_extra_args=()
 if ${quantize}; then
     runner_extra_args+=(--bundleio_rtol=0.1 --bundleio_atol=0.25)
 fi
+etdump_path=""
+if ${verbose_xnnpack}; then
+    etdump_path="${output_dir}/${model}_riscv.etdump"
+    rm -f "${etdump_path}"
+    runner_extra_args+=(--etdump_path="${etdump_path}")
+fi
+
+# etdump_summary.py reads the XNN_LOG_LEVEL=4 registrations.
+log_file="${output_dir}/${model}_riscv.run.log"
+rm -f "${log_file}"
 
 set +e
 timeout --signal=KILL "${qemu_timeout}" "${qemu}" "${runner}" \
@@ -132,6 +145,12 @@ qemu_status=${PIPESTATUS[0]}
 set -e
 
 echo "[run.sh] qemu exit status: ${qemu_status}"
+
+if [[ -n "${etdump_path}" && -f "${etdump_path}" ]]; then
+    python "${script_dir}/etdump_summary.py" "${etdump_path}" \
+        --run-log "${log_file}" \
+        --json "${etdump_path}.json" || true
+fi
 
 if grep -q "Test_result: PASS" "${log_file}"; then
     echo "[run.sh] Bundled I/O check PASSED"

@@ -18,15 +18,18 @@ model="add"
 xnnpack=false
 quantize=false
 verbose=false
+verbose_xnnpack=false
 
 usage() {
     cat <<EOF
 Usage: $(basename "$0") [options]
 Options:
-  --model=<NAME>  Which model to export and run (default: add)
-  --xnnpack       Enable the XNNPACK backend (AOT partitioner + runtime)
-  --quantize      Produce an 8-bit quantized model
-  -h, --help      Show this help
+  --model=<NAME>     Which model to export and run (default: add)
+  --xnnpack          Enable the XNNPACK backend (AOT partitioner + runtime)
+  --quantize         Produce an 8-bit quantized model
+  --verbose          Enable XNNPACK partitioner DEBUG logging and dump the lowered graph
+  --verbose-xnnpack  Build XNNPACK with XNN_LOG_LEVEL=4 to log microkernel dispatch
+  -h, --help         Show this help
 EOF
 }
 
@@ -36,6 +39,7 @@ for arg in "$@"; do
         --xnnpack) xnnpack=true ;;
         --quantize) quantize=true ;;
         --verbose) verbose=true ;;
+        --verbose-xnnpack) verbose_xnnpack=true ;;
         -h|--help) usage; exit 0 ;;
         *) echo "Unknown option: $arg" >&2; usage; exit 1 ;;
     esac
@@ -50,6 +54,9 @@ if ${quantize}; then
 fi
 if ${verbose}; then
     run_extra_args+=(--verbose)
+fi
+if ${verbose_xnnpack}; then
+    run_extra_args+=(--verbose-xnnpack)
 fi
 
 bash "${et_root_dir}/examples/riscv/setup.sh"
