@@ -82,9 +82,7 @@ def build_llama2():
     # precomputed buffers and just sliced at forward time, so no
     # torch.arange()/Long causal mask is built per forward — which is what
     # the PT2E XNNPACK quantizer trips over on HF Llama.
-    from executorch.examples.models.llama.llama_transformer import (
-        construct_transformer,
-    )
+    from executorch.examples.models.llama.llama_transformer import construct_transformer
     from executorch.examples.models.llama.model_args import ModelArgs
 
     seq_len = 8
@@ -92,9 +90,9 @@ def build_llama2():
         dim=128,
         n_layers=2,
         n_heads=4,
-        n_kv_heads=2,            # GQA: kv_heads < n_heads exercises the GQA path
+        n_kv_heads=2,  # GQA: kv_heads < n_heads exercises the GQA path
         vocab_size=1024,
-        hidden_dim=256,          # SwiGLU FFN: gate + up projections at this width
+        hidden_dim=256,  # SwiGLU FFN: gate + up projections at this width
         max_seq_len=seq_len,
         max_context_len=seq_len,
         rope_theta=10000.0,
