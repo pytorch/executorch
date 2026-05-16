@@ -675,7 +675,29 @@ def materialize_runtime_buffers(
 
     for layer in model.layers:
         attn = layer.self_attn
-        attn.inv_freq = attn.inv_freq.to(device)
+        if attn.is_sliding:
+            rotary_dim = attn.head_dim
+        else:
+            rotary_dim = int(attn.head_dim * attn.partial_rotary)
+        rope_angles = rotary_dim // 2
+        inv_freq_rotated = 1.0 / (
+            attn.rope_theta
+            ** (
+                torch.arange(0, rotary_dim, 2, device=device, dtype=torch.float32)
+                / attn.head_dim
+            )
+        )
+        nope_angles = attn.head_dim // 2 - rope_angles
+        if nope_angles > 0:
+            inv_freq = torch.cat(
+                [
+                    inv_freq_rotated,
+                    torch.zeros(nope_angles, device=device, dtype=torch.float32),
+                ]
+            )
+        else:
+            inv_freq = inv_freq_rotated
+        attn.register_buffer("inv_freq", inv_freq, persistent=False)
 
     model.register_buffer(
         "embed_normalizer",
