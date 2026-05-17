@@ -69,6 +69,58 @@ from .interfaces import (
 )
 
 
+def _resolve_lens_class(lens_name: str) -> Optional[Type[Lens]]:
+    """Resolve a Lens class by its public ``get_name()`` value.
+
+    Used by ``Observatory.compare_archives`` to lazily register any
+    non-default lenses whose digests appear in the loaded archives,
+    so analyze + frontend hooks run during compare-mode rendering.
+    The lookup table covers the framework-level lenses plus the
+    Qualcomm-specific AdbLens; backend-only lenses are imported lazily
+    so this module remains importable even when the relevant backend
+    extras are not installed.
+    """
+
+    if lens_name == "accuracy":
+        from .lenses.accuracy import AccuracyLens
+
+        return AccuracyLens
+    if lens_name == "per_layer_accuracy":
+        from .lenses.per_layer_accuracy import PerLayerAccuracyLens
+
+        return PerLayerAccuracyLens
+    if lens_name == "pipeline_graph_collector":
+        from .lenses.pipeline_graph_collector import PipelineGraphCollectorLens
+
+        return PipelineGraphCollectorLens
+    if lens_name == "graph":
+        from .lenses.graph import GraphLens
+
+        return GraphLens
+    if lens_name == "graph_color":
+        from .lenses.graph_color import GraphColorLens
+
+        return GraphColorLens
+    if lens_name == "metadata":
+        from .lenses.metadata import MetadataLens
+
+        return MetadataLens
+    if lens_name == "stack_trace":
+        from .lenses.stack_trace import StackTraceLens
+
+        return StackTraceLens
+    if lens_name == "adb":
+        try:
+            from executorch.backends.qualcomm.debugger.observatory.lenses.adb import (
+                AdbLens,
+            )
+
+            return AdbLens
+        except Exception:
+            return None
+    return None
+
+
 class _NonFiniteFloatAsStringJSONEncoder(json.JSONEncoder):
     """JSON encoder that emits non-finite floats as strings."""
 
@@ -746,3 +798,160 @@ class Observatory:
             f.write(html_content)
 
         logging.info("[Observatory] Generated HTML report at %s from %s", html_path, json_path)
+
+    @staticmethod
+    def compare_archives(
+        archive_paths: List[str],
+        labels: List[str],
+        html_path: str,
+        title: str = "Observatory Compare",
+        config: Optional[Dict[str, Any]] = None,
+    ) -> None:
+        """Render an HTML report that overlays multiple archives side-by-side.
+
+        Each archive's records and sessions are loaded and prefixed with the
+        provided `labels[i]` so the combined report carries top-level Region
+        groups like ``XNNPACK/mv2`` / ``Qualcomm/mobilenet_v2`` (cf. RFC §4.5).
+        Record `name` is prefixed only in the JSON storage layer for
+        uniqueness; the HTML left panel renders display names without the
+        prefix when in tree view (the prefix only appears as the section
+        title above each archive's sessions).
+
+        Args:
+            archive_paths: List of Archive (JSON) file paths to overlay.
+            labels: One label per archive; each is prepended to record
+                names, ``session_id``, and ``region_stack`` entries.
+                Must have the same length as ``archive_paths``.
+            html_path: Destination Report (HTML) path.
+            title: HTML page title.
+            config: Optional analysis config passed to lenses.
+        """
+
+        if len(archive_paths) != len(labels):
+            raise ValueError(
+                f"compare_archives: got {len(archive_paths)} archives but "
+                f"{len(labels)} labels"
+            )
+        if len(archive_paths) < 2:
+            raise ValueError(
+                "compare_archives: need at least 2 archives to compare"
+            )
+
+        merged_records: List[RecordDigest] = []
+        merged_session = SessionResult()
+        seen_record_names: Set[str] = set()
+
+        for path, label in zip(archive_paths, labels):
+            with open(path, "r", encoding="utf-8") as f:
+                data = json.load(f)
+
+            for raw in data["records"]:
+                # Prefix the record name + session_id with the archive label
+                # so identically-named pipeline records (e.g. "Annotated Model")
+                # don't collide across archives.
+                rec = RecordDigest(**raw)
+                prefixed_name = f"{label}/{rec.name}"
+                # Tolerate name collisions across archives by adding
+                # an integer suffix (matches the deduplication scheme
+                # used at collect-time).
+                if prefixed_name in seen_record_names:
+                    n = 2
+                    while f"{prefixed_name} #{n}" in seen_record_names:
+                        n += 1
+                    prefixed_name = f"{prefixed_name} #{n}"
+                seen_record_names.add(prefixed_name)
+
+                rec.name = prefixed_name
+                rec.session_id = (
+                    f"{label}/{rec.session_id}" if rec.session_id else label
+                )
+                # Make the archive label the new outermost Region so the
+                # tree view shows one collapsible group per archive.
+                rec.region_stack = [label] + list(rec.region_stack or [])
+                # The graph lens digest carries a `graph_ref` that the
+                # report-payload assembly expects to equal the record name.
+                # Update it to match the prefixed name.
+                graph_digest = rec.data.get("graph")
+                if isinstance(graph_digest, dict) and "graph_ref" in graph_digest:
+                    graph_digest["graph_ref"] = prefixed_name
+                merged_records.append(rec)
+
+            # Merge per-archive Session metadata. Each archive's sessions
+            # are appended with their ids prefixed; the legacy flat
+            # start_data/end_data dicts are also merged on namespaced keys
+            # so existing dashboard frontends keep rendering.
+            session_payload = data.get("session") or {}
+            archive_sessions = session_payload.get("sessions") or []
+            for s in archive_sessions:
+                s_dict = dict(s)
+                original_id = s_dict.get("id") or s_dict.get("name") or label
+                s_dict["id"] = f"{label}/{original_id}"
+                if "name" in s_dict:
+                    s_dict["name"] = f"{label}/{s_dict['name']}"
+                merged_session.sessions.append(Session(**s_dict))
+
+            for lens, payload in (session_payload.get("start_data") or {}).items():
+                merged_session.start_data[f"{label}/{lens}"] = payload
+            for lens, payload in (session_payload.get("end_data") or {}).items():
+                merged_session.end_data[f"{label}/{lens}"] = payload
+
+        # Index merged records back into the global state so the existing
+        # report-payload pipeline can use them.
+        Observatory.clear()
+        for rec in merged_records:
+            Observatory._records[rec.name] = rec
+        Observatory._session_result = merged_session
+
+        Observatory._ensure_default_lenses()
+        # Register any non-default lenses that produced digests in the
+        # loaded archives so their analyze + frontend hooks run during
+        # report assembly. Without this, accuracy / per_layer_accuracy /
+        # adb sections (and any backend-specific lenses) would be missing
+        # from the comparison HTML even though their digests are present
+        # in the archives.
+        digest_lens_names: Set[str] = set()
+        for rec in merged_records:
+            digest_lens_names.update(rec.data.keys())
+        registered = {l.get_name() for l in Observatory._lens_registry}
+        for missing in digest_lens_names - registered:
+            try:
+                lens_cls = _resolve_lens_class(missing)
+            except Exception as exc:
+                logging.warning(
+                    "[Observatory] compare: could not resolve lens %r: %s",
+                    missing,
+                    exc,
+                )
+                continue
+            if lens_cls is not None:
+                Observatory.register_lens(lens_cls)
+
+        payload = Observatory._generate_report_payload(
+            merged_records,
+            merged_session,
+            config or {},
+            Observatory._lens_registry,
+        )
+        payload["title"] = title
+        payload["generated_at"] = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        payload["compare_archives"] = [
+            {"path": p, "label": l} for p, l in zip(archive_paths, labels)
+        ]
+
+        from .html_template import get_html_template
+
+        json_data = json.dumps(payload, cls=_NonFiniteFloatAsStringJSONEncoder).replace(
+            "</", "<\\/"
+        )
+        payload_str, is_compressed = Observatory._compress_payload(json_data)
+        html_content = get_html_template(title, payload_str, is_compressed=is_compressed)
+
+        os.makedirs(os.path.dirname(html_path) or ".", exist_ok=True)
+        with open(html_path, "w", encoding="utf-8") as f:
+            f.write(html_content)
+
+        logging.info(
+            "[Observatory] Compare report: %s (archives: %s)",
+            html_path,
+            ", ".join(f"{l}={p}" for p, l in zip(archive_paths, labels)),
+        )

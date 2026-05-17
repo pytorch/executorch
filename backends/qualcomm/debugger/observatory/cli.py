@@ -57,7 +57,7 @@ def main():
     if len(sys.argv) > 1 and sys.argv[1] == "visualize":
         parser = make_visualize_parser()
         args = parser.parse_args(sys.argv[2:])
-        run_visualize(args.input_json, args.output_html)
+        run_visualize(args.input_archive, args.output_html)
         return
 
     parser = make_collect_parser(
@@ -109,7 +109,11 @@ def main():
         Observatory.register_lens(AdbLens)
 
     run_observatory(
-        args.script, args.script_args, Observatory, args.output_html, args.output_json
+        args.script,
+        args.script_args,
+        Observatory,
+        args.output_html,
+        args.output_archive,
     )
 
 

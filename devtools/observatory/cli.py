@@ -8,11 +8,20 @@
 
 Collection mode (default):
     python -m executorch.devtools.observatory \\
-        [--output-html PATH] [--output-json PATH] SCRIPT [SCRIPT_ARGS...]
+        [--output-html PATH] [--output-archive PATH] SCRIPT [SCRIPT_ARGS...]
 
-Visualize mode (JSON -> HTML, no script execution):
+Visualize mode (Archive JSON -> HTML, no script execution):
     python -m executorch.devtools.observatory visualize \\
-        --input-json report.json --output-html report.html
+        --input-archive report.json --output-html report.html
+
+Compare mode (overlay multiple Archives into one HTML report):
+    python -m executorch.devtools.observatory compare \\
+        --input-archive xnnpack.json --label XNNPACK/mv2 \\
+        --input-archive qualcomm.json --label Qualcomm/mobilenet_v2 \\
+        --output-html cross_backend.html [--title "..."]
+
+`--output-archive` / `--input-archive` are the canonical names; the older
+`--output-json` / `--input-json` are accepted as aliases (RFC §4.5).
 """
 
 from __future__ import annotations
@@ -38,7 +47,7 @@ def make_collect_parser(prog=None):
     parse_args, e.g.::
 
         parser = make_collect_parser(prog="my-backend")
-        parser.add_argument("--lense_recipe", choices=["accuracy"])
+        parser.add_argument("--lens-recipe", action="append")
         args = parser.parse_args(sys.argv[1:])
     """
     parser = argparse.ArgumentParser(
@@ -46,7 +55,13 @@ def make_collect_parser(prog=None):
         description="Run a script under Observatory and export reports.",
     )
     parser.add_argument("--output-html", default=None, help="HTML report output path")
-    parser.add_argument("--output-json", default=None, help="JSON report output path")
+    parser.add_argument(
+        "--output-archive",
+        "--output-json",
+        default=None,
+        dest="output_archive",
+        help="Archive (JSON) output path. --output-json is an alias.",
+    )
     parser.add_argument("script", help="Script to run under Observatory")
     parser.add_argument(
         "script_args",
@@ -60,11 +75,60 @@ def make_visualize_parser(prog=None):
     """Create the argparse parser for visualize mode."""
     parser = argparse.ArgumentParser(
         prog=prog,
-        description="Generate an HTML report from an existing JSON export.",
+        description="Generate an HTML report from an existing Archive (JSON).",
     )
-    parser.add_argument("--input-json", required=True, help="Input JSON report path")
+    parser.add_argument(
+        "--input-archive",
+        "--input-json",
+        required=True,
+        dest="input_archive",
+        help="Input Archive (JSON) path. --input-json is an alias.",
+    )
     parser.add_argument(
         "--output-html", required=True, help="Output HTML report path"
+    )
+    return parser
+
+
+def make_compare_parser(prog=None):
+    """Create the argparse parser for compare mode (multi-Archive overlay).
+
+    Each ``--input-archive`` must be paired with a corresponding
+    ``--label`` so the resulting Report (HTML) can group records under
+    one top-level Region per archive (cf. RFC §4.5).
+    """
+    parser = argparse.ArgumentParser(
+        prog=prog,
+        description=(
+            "Overlay multiple Archive (JSON) files into a single Report "
+            "(HTML). Records, sessions, and region_stack values are "
+            "prefixed with the corresponding --label so identically-named "
+            "pipeline records (e.g. 'Annotated Model') stay distinct."
+        ),
+    )
+    parser.add_argument(
+        "--input-archive",
+        action="append",
+        required=True,
+        dest="input_archives",
+        help="Archive JSON to include (repeat for each archive).",
+    )
+    parser.add_argument(
+        "--label",
+        action="append",
+        required=True,
+        dest="labels",
+        help="Display label for the previous --input-archive (repeat per archive).",
+    )
+    parser.add_argument(
+        "--output-html",
+        required=True,
+        help="Destination Report (HTML) path.",
+    )
+    parser.add_argument(
+        "--title",
+        default="Observatory Compare",
+        help="Page title for the rendered HTML.",
     )
     return parser
 
@@ -200,11 +264,58 @@ def run_observatory(
 # ---------------------------------------------------------------------------
 
 
+def run_compare(
+    input_archives: list[str],
+    labels: list[str],
+    output_html: str,
+    title: str = "Observatory Compare",
+) -> None:
+    """Load multiple Archives and render a side-by-side Report (HTML)."""
+    if len(input_archives) != len(labels):
+        logging.error(
+            "[Observatory CLI] compare: %d --input-archive values but %d --label values"
+            " (must match 1:1).",
+            len(input_archives),
+            len(labels),
+        )
+        sys.exit(1)
+    for path in input_archives:
+        if not os.path.isfile(path):
+            logging.error("[Observatory CLI] compare: archive not found: %s", path)
+            sys.exit(1)
+
+    from .observatory import Observatory
+
+    Observatory.clear()
+    Observatory.compare_archives(
+        archive_paths=input_archives,
+        labels=labels,
+        html_path=output_html,
+        title=title,
+    )
+    logging.info(
+        "[Observatory CLI] compare: html=%s from %d archives",
+        output_html,
+        len(input_archives),
+    )
+
+
 def main():
     if len(sys.argv) > 1 and sys.argv[1] == "visualize":
         parser = make_visualize_parser()
         args = parser.parse_args(sys.argv[2:])
-        run_visualize(args.input_json, args.output_html)
+        run_visualize(args.input_archive, args.output_html)
+        return
+
+    if len(sys.argv) > 1 and sys.argv[1] == "compare":
+        parser = make_compare_parser()
+        args = parser.parse_args(sys.argv[2:])
+        run_compare(
+            input_archives=args.input_archives,
+            labels=args.labels,
+            output_html=args.output_html,
+            title=args.title,
+        )
         return
 
     parser = make_collect_parser()
@@ -217,7 +328,11 @@ def main():
     Observatory.register_lens(PipelineGraphCollectorLens)
 
     run_observatory(
-        args.script, args.script_args, Observatory, args.output_html, args.output_json
+        args.script,
+        args.script_args,
+        Observatory,
+        args.output_html,
+        args.output_archive,
     )
 
 
