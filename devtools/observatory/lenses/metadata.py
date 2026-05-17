@@ -100,7 +100,14 @@ class MetadataLens(Lens):
         return AnalysisResult(per_record_data=per_record)
 
     class MetadataFrontend(Frontend):
-        def dashboard(self, start, end, analysis, records) -> Optional[ViewList]:
+        def dashboard(
+            self, start, end, analysis, records, **_kw
+        ) -> Optional[ViewList]:
+            # `start` is the merged session_start payload across all
+            # sessions in the archive; for compare mode it carries the
+            # most recently loaded archive's run-wide info. Lenses that
+            # want per-archive metadata blocks can read `_kw["all_sessions"]`
+            # and emit one block per archive.
             return ViewList(
                 blocks=[
                     TableBlock(

@@ -639,6 +639,14 @@ class Observatory:
             serialized_records.append(serialized)
 
         dashboard_views = {}
+        # Per RFC §4.5 the dashboard hook gains optional session-aware
+        # kw-only args (`session`, `session_records`, `all_sessions`,
+        # `all_records`, `pair_sessions`, `pair_records`). The framework
+        # still calls `dashboard(...)` once per lens per archive (today's
+        # behavior); lenses that want per-session breakouts can read the
+        # new kw-only args and synthesize multiple blocks. In compare
+        # mode the merged session metadata is passed via `all_sessions`.
+        sessions_list = list(session.sessions) if session.sessions else []
         for lens in lens_registry:
             lens_name = lens.get_name()
             frontend = lens.get_frontend_spec()
@@ -649,6 +657,10 @@ class Observatory:
                 session.end_data.get(lens_name, {}),
                 analysis_results.get(lens_name, AnalysisResult()).global_data,
                 records,
+                session=sessions_list[0] if sessions_list else None,
+                session_records=records,
+                all_sessions=sessions_list,
+                all_records=records,
             )
             if dashboard_view:
                 dashboard_views[lens_name] = dashboard_view

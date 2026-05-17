@@ -504,26 +504,44 @@ class Frontend:
         end: Dict[str, Any],
         analysis: Dict[str, Any],
         records: List[Any],
+        *,
+        session: Optional["Session"] = None,
+        session_records: Optional[List[Any]] = None,
+        all_sessions: Optional[List["Session"]] = None,
+        all_records: Optional[List[Any]] = None,
+        pair_sessions: Optional[Dict[str, Any]] = None,
+        pair_records: Optional[Dict[str, Any]] = None,
     ) -> Optional[ViewList]:
         """Build dashboard-level block list for one lens.
 
-        Python-side inputs:
-        1. `start` <- `SessionResult.start_data[lens_name]`.
-        2. `end` <- `SessionResult.end_data[lens_name]`.
+        Python-side inputs (positional, backward-compatible):
+        1. `start` <- merged `SessionResult.start_data[lens_name]` across all
+           sessions in the archive (last-write-wins on collision).
+        2. `end` <- merged `SessionResult.end_data[lens_name]` (last-write-wins).
         3. `analysis` <- `AnalysisResult.global_data` (this lens).
-        4. `records` <- collected `RecordDigest` list.
+        4. `records` <- collected `RecordDigest` list (full archive).
+
+        Optional session-aware inputs (keyword-only, RFC §4.5):
+        1. `session` <- the active `Session` when this dashboard call is being
+           rendered per-session. ``None`` for archive-level (flat) rendering.
+        2. `session_records` <- subset of `records` whose `session_id` matches
+           ``session.id``.
+        3. `all_sessions` <- full list of `Session` objects in the archive.
+        4. `all_records` <- mirror of `records`; provided for symmetry with
+           `session_records`.
+        5. `pair_sessions` / `pair_records` <- in compare mode, dicts keyed by
+           un-prefixed name mapping to a list of ``(archive_label, Session|
+           RecordDigest)`` pairs. ``None`` outside compare mode.
+
+        Lenses that don't need session awareness can ignore the kw-only args
+        and rely on the original positional ones; the framework calls
+        dashboard once per archive in that case (today's behavior).
 
         Render dataflow:
         1. Return `ViewList(blocks=[...])`.
         2. Blocks are serialized into report payload.
         3. For `CustomBlock`, JS callback receives:
            `fn(container, block.record.args, {start,end,records}, analysis_results[lens_name])`.
-
-        Args:
-            start: Session start payload from `on_session_start`.
-            end: Session end payload from `on_session_end`.
-            analysis: Lens global analysis payload.
-            records: Serialized record list for context-aware summaries.
         """
         return None
 

@@ -553,7 +553,13 @@ class AdbLens(Lens):
             end: Dict[str, Any],
             analysis: Dict[str, Any],
             records: List[Any],
+            **_kw: Any,
         ) -> Optional[ViewList]:
+            # The merged `end` payload carries device_info / transfers /
+            # raw_events for the run; in compare mode it represents the
+            # last-loaded archive (by `compare_archives` merge order).
+            # Compare-aware breakouts can be added by reading
+            # `_kw["all_sessions"]` for per-archive `end_data` payloads.
             if not end:
                 return None
             if not end.get("enabled", True):
