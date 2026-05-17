@@ -447,13 +447,30 @@ class TestCoreMLPartitioner(unittest.TestCase):
         for name, model, example_inputs in cases:
             with self.subTest(name=name):
                 ep = torch.export.export(model, example_inputs, strict=True)
-                executorch.exir.to_edge_transform_and_lower(
+                edge = executorch.exir.to_edge_transform_and_lower(
                     ep,
                     partitioner=[CoreMLPartitioner()],
                     compile_config=executorch.exir.EdgeCompileConfig(
                         _check_ir_validity=False
                     ),
                 )
+
+                # A partitioner regression that silently drops the op back to
+                # the portable backend would still let `to_edge_transform_and_lower`
+                # succeed, so explicitly require that the CoreML delegate was
+                # used and that the resulting program can also reach
+                # to_executorch() without an additional crash.
+                call_targets = [
+                    node.target.__name__
+                    for node in edge.exported_program().graph.nodes
+                    if node.op == "call_function"
+                ]
+                self.assertIn(
+                    "executorch_call_delegate",
+                    call_targets,
+                    msg=f"{name}: lowered to portable instead of CoreML delegate",
+                )
+                edge.to_executorch()
 
     def test_deprecation_warning_for_to_backend_workflow(self):
         """
