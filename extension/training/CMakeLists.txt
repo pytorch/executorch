@@ -50,7 +50,7 @@ target_compile_options(train_xor PUBLIC ${_common_compile_options})
 
 if(EXECUTORCH_BUILD_PYBIND)
   # Pybind library.
-  set(_pybind_training_dep_libs ${TORCH_PYTHON_LIBRARY} etdump executorch util
+  set(_pybind_training_dep_libs ${TORCH_PYTHON_LIBRARY} etdump executorch_prim_ops util
                                 torch extension_training
   )
 

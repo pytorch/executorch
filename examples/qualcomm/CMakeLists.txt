@@ -33,7 +33,7 @@ find_package(absl REQUIRED NO_CMAKE_FIND_ROOT_PATH)
 # Find prebuilt libraries. executorch package should contain portable_ops_lib,
 # etdump, bundled_program.
 find_package(executorch CONFIG REQUIRED)
-target_compile_options(executorch INTERFACE -DET_EVENT_TRACER_ENABLED)
+target_compile_options(executorch_prim_ops INTERFACE -DET_EVENT_TRACER_ENABLED)
 
 set(_common_compile_options -Wno-deprecated-declarations -fPIC)
 
@@ -53,7 +53,7 @@ generate_bindings_for_kernels(
   ${EXECUTORCH_ROOT}/kernels/portable/functions.yaml
 )
 gen_operators_lib(
-  LIB_NAME "full_portable_ops_lib" KERNEL_LIBS portable_kernels DEPS executorch
+  LIB_NAME "full_portable_ops_lib" KERNEL_LIBS portable_kernels DEPS executorch_prim_ops
 )
 target_compile_options(
   full_portable_ops_lib INTERFACE -DET_EVENT_TRACER_ENABLED

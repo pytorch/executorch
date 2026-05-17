@@ -117,7 +117,7 @@ if(CONFIG_EXECUTORCH)
   # List of all ExecuTorch targets that need flag correction
   set(EXECUTORCH_TARGETS_TO_FIX
       executorch_core
-      executorch
+      executorch_prim_ops
       portable_ops_lib
       portable_kernels
       optimized_portable_kernels

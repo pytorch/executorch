@@ -36,11 +36,11 @@ if(EXECUTORCH_CADENCE_CPU_RUNNER)
   # Find prebuilt libraries. executorch package should contain portable_ops_lib,
   # etdump, bundled_program.
   find_package(executorch CONFIG REQUIRED)
-  executorch_target_link_options_shared_lib(executorch)
+  executorch_target_link_options_shared_lib(executorch_prim_ops)
   executorch_target_link_options_shared_lib(portable_ops_lib)
 
   target_include_directories(
-    executorch INTERFACE ${_common_include_directories}
+    executorch_prim_ops INTERFACE ${_common_include_directories}
   )
 
   find_package(
@@ -51,7 +51,7 @@ if(EXECUTORCH_CADENCE_CPU_RUNNER)
     cadence_runner
     ${EXECUTORCH_ROOT}/examples/devtools/example_runner/example_runner.cpp
   )
-  target_compile_options(executorch INTERFACE -DET_EVENT_TRACER_ENABLED)
+  target_compile_options(executorch_prim_ops INTERFACE -DET_EVENT_TRACER_ENABLED)
 
   target_include_directories(
     etdump INTERFACE ${CMAKE_CURRENT_BINARY_DIR}/../../devtools/include
@@ -65,7 +65,7 @@ if(EXECUTORCH_CADENCE_CPU_RUNNER)
 
   target_link_libraries(
     cadence_runner
-    executorch
+    executorch_prim_ops
     gflags
     etdump
     extension_data_loader

@@ -39,10 +39,10 @@ set(_common_include_directories ${EXECUTORCH_ROOT}/..)
 # Find prebuilt libraries. executorch package should contain portable_ops_lib,
 # etdump, bundled_program.
 find_package(executorch CONFIG REQUIRED)
-executorch_target_link_options_shared_lib(executorch)
+executorch_target_link_options_shared_lib(executorch_prim_ops)
 executorch_target_link_options_shared_lib(portable_ops_lib)
 
-target_include_directories(executorch INTERFACE ${_common_include_directories})
+target_include_directories(executorch_prim_ops INTERFACE ${_common_include_directories})
 
 find_package(
   gflags REQUIRED PATHS ${CMAKE_CURRENT_BINARY_DIR}/../../third-party
@@ -50,7 +50,7 @@ find_package(
 
 add_executable(example_runner example_runner/example_runner.cpp)
 target_compile_options(
-  executorch INTERFACE -DET_EVENT_TRACER_ENABLED -DET_BUNDLE_IO_ENABLED
+  executorch_prim_ops INTERFACE -DET_EVENT_TRACER_ENABLED -DET_BUNDLE_IO_ENABLED
 )
 
 target_include_directories(
@@ -59,7 +59,7 @@ target_include_directories(
 )
 target_link_libraries(
   example_runner
-  executorch
+  executorch_prim_ops
   gflags
   etdump
   extension_data_loader

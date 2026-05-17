@@ -52,7 +52,7 @@ add_library(
 target_link_libraries(
   etdump
   PUBLIC flatccrt
-  PRIVATE executorch
+  PRIVATE executorch_prim_ops
 )
 target_include_directories(
   etdump

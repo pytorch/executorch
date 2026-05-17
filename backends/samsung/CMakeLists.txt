@@ -156,7 +156,7 @@ if(${ANDROID})
     PRIVATE enn_logging
             enn_backend
             gflags
-            executorch
+            executorch_prim_ops
             extension_data_loader
             portable_ops_lib
             android
