@@ -737,27 +737,40 @@ _LENS_ADB_CSS = """
   font-family: var(--font-mono, "SFMono-Regular", Consolas, monospace);
   font-size: 12px;
 }
-.adb-log-row {
-  display: flex;
+.adb-log-pre {
+  border: 1px solid var(--border-color, #d0d7de);
+  border-radius: 4px;
+  background: var(--bg-tertiary, #f6f8fa);
+  max-height: 480px;
+  overflow: auto;
+  font-family: var(--font-mono, "SFMono-Regular", Consolas, monospace);
+  font-size: 12px;
+  margin: 0;
+  padding: 0;
+  counter-reset: ln;
+}
+.adb-log-pre > span {
+  display: block;
+  counter-increment: ln;
+  padding-left: 3.5em;
+  position: relative;
   white-space: pre;
+  line-height: 18px;
 }
-.adb-log-row.adb-log-error {
-  background: rgba(203, 36, 49, 0.10);
-  color: var(--error-color, #cb2431);
-}
-.adb-log-num {
-  flex: 0 0 48px;
+.adb-log-pre > span::before {
+  content: counter(ln);
+  position: absolute;
+  left: 0;
+  width: 3.2em;
   text-align: right;
-  padding: 0 8px 0 4px;
+  padding-right: 0.3em;
   color: var(--text-secondary, #6a737d);
   user-select: none;
   border-right: 1px solid var(--border-color, #d0d7de);
 }
-.adb-log-text {
-  flex: 1;
-  padding: 0 8px;
-  white-space: pre-wrap;
-  word-break: break-all;
+.adb-log-error {
+  background: rgba(203, 36, 49, 0.10);
+  color: var(--error-color, #cb2431);
 }
 .adb-section { margin-top: 12px; }
 .adb-section-title {
@@ -849,27 +862,25 @@ _LENS_ADB_JS = r"""
     b.addEventListener("click", onclick);
     return b;
   }
+  // ------------------------------------------------------------------ Log renderer
+  function _escL(s) {
+    return String(s == null ? "" : s)
+      .replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+  }
+
   function renderLog(text, errorLines) {
-    var box = document.createElement("div");
-    box.className = "adb-log-container";
-    var errSet = {};
-    (errorLines || []).forEach(function (n) { errSet[n] = true; });
-    var lines = (text || "").split("\n");
-    var max = lines.length;
-    if (max > 0 && lines[max - 1] === "") max--;
-    var frag = document.createDocumentFragment();
-    for (var i = 0; i < max; i++) {
-      var row = document.createElement("div");
-      row.className = "adb-log-row" + (errSet[i + 1] ? " adb-log-error" : "");
-      var num = document.createElement("span");
-      num.className = "adb-log-num"; num.textContent = String(i + 1);
-      var t = document.createElement("span");
-      t.className = "adb-log-text"; t.textContent = lines[i];
-      row.appendChild(num); row.appendChild(t);
-      frag.appendChild(row);
+    var raw  = (text || "").split("\n");
+    var n    = (raw.length > 0 && raw[raw.length - 1] === "") ? raw.length - 1 : raw.length;
+    var errs = new Set(errorLines || []);
+    var pre  = document.createElement("pre");
+    pre.className = "adb-log-pre";
+    var parts = [];
+    for (var i = 0; i < n; i++) {
+      var cls = errs.has(i + 1) ? ' class="adb-log-error"' : '';
+      parts.push('<span' + cls + '>' + _escL(raw[i]) + '</span>');
     }
-    box.appendChild(frag);
-    return box;
+    pre.innerHTML = parts.join("");
+    return pre;
   }
 
   window.renderAdbExecute = function (container, args, ctx, analysis) {
@@ -989,7 +1000,10 @@ _LENS_ADB_JS = r"""
       (g.events || []).forEach(function (ev) {
         var line = (ev.argv || []).join(" ") + "  exit=" + ev.exit_code + "  " + fmtDuration(ev.duration_s);
         if (ev.argv_info && ev.argv_info.bytes != null) line += "  " + fmtBytes(ev.argv_info.bytes);
-        inner += "<div class='adb-log-row" + (ev.exit_code !== 0 ? " adb-log-error" : "") + "'><span class='adb-log-num'></span><span class='adb-log-text'>" + escapeHtml(line) + "</span></div>";
+        var rowStyle = ev.exit_code !== 0
+          ? "padding:0 8px;line-height:18px;background:rgba(203,36,49,0.10);color:var(--error-color,#cb2431);"
+          : "padding:0 8px;line-height:18px;";
+        inner += "<div style='" + rowStyle + "'>" + escapeHtml(line) + "</div>";
       });
       detail.innerHTML = inner || "<div style='padding:6px;color:var(--text-secondary)'>(no events)</div>";
       td.appendChild(detail);
