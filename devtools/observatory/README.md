@@ -10,17 +10,35 @@ Debugging model compilation issues is often too manual. When something goes wron
 
 Observatory closes this gap by providing a consistent, automated workflow from data capture to presentation.
 
+## Vocabulary (RFC §4.4-4.5)
+
+Five nouns describe everything Observatory does:
+
+| Term | What it is |
+|------|-----------|
+| **Region** | A lightweight named scope opened by `Observatory.enter_context(region_name, config=None)`. Regions can nest. Records produced inside a Region are tagged with that name in their `region_stack`. **No lens hooks fire at Region boundaries** — Regions are pure labelling for grouping records in the UI tree view. |
+| **Session** | A heavyweight scope. A Session begins when an *outermost* `enter_context` is entered and ends when that block exits. Lens `on_session_start` / `on_session_end` fire here. The Session's `name` equals the outermost `region_name`. |
+| **Record** | One item from `Observatory.collect(name, artifact)`. Carries `name`, `timestamp`, `session_id`, `region_stack` (snapshot at collect time), and lens-specific `digests`. Stored time-ordered. |
+| **Archive** | One Observatory invocation's full state: a flat list of one or more Sessions plus every Record produced under them. The only thing Observatory persists raw. Serializes to a single JSON file via `--output-archive` (alias `--output-json`). |
+| **Report** | The derived output. `analyze` runs once per archive, then `Frontend.dashboard` / `Frontend.record` render Report (HTML) for human reviewers and Report (JSON) for LLMs / CI / dashboards. |
+
+`enter_context(region_name=None, config=None)` is the primary entry API. Outermost calls open a Session named after the Region (or auto-named `default` / `default-2` ... if no `region_name` is given). Inner calls without a `region_name` are **config-only overrides** — they do not push a Region or open a Session.
+
 ## The workflow
 
 ```
 capture  -->  store  -->  analyze  -->  visualize  -->  share
+   ↓             ↓            ↓             ↓           ↓
+ collect     Archive      analyze /     Report       attach to
+ (per       (sessions[]   Frontend      (HTML +      issue / PR /
+  Record)    + records[]) hooks         JSON)        email
 ```
 
-1. **Capture**: Observatory wraps your export script and automatically collects graph snapshots at each compilation stage (export, quantize, lower).
-2. **Store**: Raw data is persisted as structured JSON for later re-analysis.
-3. **Analyze**: Each lens processes the collected data into findings, comparisons, and derived insights.
-4. **Visualize**: Results are assembled into an interactive HTML report with multiple view types.
-5. **Share**: The report is a single self-contained HTML file. Send it, attach it to a bug report, or host it on GitHub Pages.
+1. **Capture**: Observatory wraps your export script. Built-in lenses (e.g. `pipeline_graph_collector`) install monkey-patches that call `collect(...)` at each compilation stage; you can also call `Observatory.collect(...)` directly anywhere in your code.
+2. **Store**: Records + per-Session metadata are persisted as a single Archive (JSON) for later re-analysis or comparison.
+3. **Analyze**: Each lens processes the Archive into findings, comparisons, and derived insights.
+4. **Visualize**: Results are assembled into an interactive HTML report (Report (HTML)) with multiple view types.
+5. **Share**: The Report is a single self-contained HTML file. Send it, attach it to a bug report, or host it on GitHub Pages.
 
 ## What you get
 
@@ -29,7 +47,8 @@ A standalone HTML report containing:
 - **Graph View**: Interactive fx_viewer graphs with color-coded overlays (accuracy error, op type, etc.)
 - **Table View**: Key-value summaries, per-record metrics, cross-record comparisons
 - **Compare View**: Side-by-side graph comparison with synchronized selection
-- **Dashboard**: Session-level summary with badges and navigation
+- **Session Dashboard**: Per-Session summary with badges and navigation
+- **Tree-view toggle (left panel)**: Switch between flat time-ordered records and a collapsible tree grouped by `region_stack` (e.g. AOT-stage groups from `pipeline_graph_collector`)
 
 ## Quick start
 
@@ -39,22 +58,24 @@ Point the CLI at any ExecuTorch export script:
 ```bash
 python -m executorch.devtools.observatory SCRIPT [SCRIPT_ARGS...]
 ```
-Use `--output-html` / `--output-json` to set output paths explicitly:
+Use `--output-html` / `--output-archive` to set output paths explicitly:
 
 ```bash
 python -m executorch.devtools.observatory \
     --output-html /tmp/obs/report.html \
-    --output-json /tmp/obs/report.json \
+    --output-archive /tmp/obs/report.json \
     examples/qualcomm/oss_scripts/swin_v2_t.py \
     --model SM8650 -b ./build-android -d imagenet-mini/val -a ./swin_v2_t
 ```
 
-Use backend-specific observatory cli for additional customized lenses and hooks (for example, xnnpack backend with per-layer accuracy analysis)
+> `--output-json` is accepted as an alias of `--output-archive`; both write the Archive (JSON).
+
+Use a backend-specific observatory CLI for additional customised lenses and hooks (for example, xnnpack with per-layer accuracy):
 
 ```bash
 python -m executorch.backends.xnnpack.debugger.observatory \
     --output-html /tmp/obs/report.html \
-    --lense_recipe=accuracy \
+    --lens-recipe accuracy \
     examples/xnnpack/aot_compiler.py \
     --model_name=mv2 --delegate --quantize --output_dir /tmp/mv2
 ```
@@ -64,8 +85,22 @@ python -m executorch.backends.xnnpack.debugger.observatory \
 > name directly: `examples.xnnpack.aot_compiler`
 
 This produces:
-- `/tmp/obs/report.html` (interactive report)
-- `/tmp/obs/report.json` (raw data, path auto-derived from HTML path)
+- `/tmp/obs/report.html` (interactive Report (HTML))
+- `/tmp/obs/report.json` (Archive (JSON), path auto-derived from HTML path)
+
+### Compare archives across backends
+
+Overlay two Archive (JSON) files into one Report (HTML). Each archive's records and sessions are prefixed with the corresponding `--label` so identically-named pipeline stages stay distinct:
+
+```bash
+python -m executorch.devtools.observatory compare \
+    --input-archive xnnpack/mv2/observatory_report.json --label XNNPACK/mv2 \
+    --input-archive qualcomm/mobilenet_v2/observatory_report.json --label Qualcomm/mobilenet_v2 \
+    --output-html cross_backend.html \
+    --title "MobileNetV2 — XNNPACK vs Qualcomm"
+```
+
+In the resulting Report, toggle the **🌳 Tree** view in the left panel to see one collapsible region per archive, then `Select` one record from each tree and click `Compare` for a side-by-side graph diff.
 
 ### Python API
 
@@ -76,17 +111,22 @@ from executorch.devtools.observatory import Observatory, observe_pass
 pass_a = observe_pass(SomePass())
 
 Observatory.clear()
-with Observatory.enable_context():
-    # Auto: Lenses can auto-insert collection points by monkey patching when entering context
-    # Manual: Insert the collection point anywhere
+with Observatory.enter_context("debug_run"):       # opens Session "debug_run"
+    # Auto: lenses can auto-insert collection points by monkey-patching when entering context
+    # Manual: insert the collection point anywhere
     Observatory.collect("step_0", graph_module)
 
-    # observe_pass: auto-collects input and output graphs
-    result = pass_a(graph_module)
-    # collects "SomePass/input" and "SomePass/output"
+    with Observatory.enter_context("quantize"):    # nested Region (no new Session)
+        Observatory.collect("after_prepare", graph_module)
+        # observe_pass: auto-collects input and output graphs
+        result = pass_a(graph_module)
+        # collects "SomePass/input" and "SomePass/output"
 
 Observatory.export_html_report("/tmp/report.html")
+Observatory.export_json("/tmp/report.json")        # also `Observatory.export_archive`
 ```
+
+> `Observatory.enable_context(...)` (no `region_name`) is preserved as a thin alias of `enter_context()` — it auto-opens a `default` Session at the outermost call and acts as a config-only override at inner levels.
 
 ## Core concepts
 

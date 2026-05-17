@@ -1,6 +1,6 @@
 # Observatory Technical Reference
 
-This document contains the detailed contract tables, API references, and performance notes for Observatory internals. For an introduction and usage guide, see [README.md](README.md).
+This document contains the detailed contract tables, API references, and performance notes for Observatory internals. For an introduction and usage guide, see [README.md](README.md). For the worldview vocabulary (Region / Session / Record / Archive / Report), see RFC §4.4-4.5.
 
 ## 1. Contract Tables
 
@@ -11,13 +11,15 @@ frontend rendering, and custom JS callbacks.
 
 | Stage | Entrypoint / Signature | Primary input | Primary output | Output JSON path |
 | --- | --- | --- | --- | --- |
-| Runtime capture | `Observatory.collect(name: str, artifact: Any)` | `artifact`, `ObservationContext(config, shared_state)` | `RecordDigest(name, timestamp, data)` | `records[i].digests` |
-| Session hooks | `Lens.on_session_start/end(context)` | `ObservationContext` | lens-scoped session payload | `session.start_data[lens]`, `session.end_data[lens]` |
+| Region/Session boundary | `Observatory.enter_context(region_name=None, config=None)` | optional name, optional config | pushes Region; outermost call opens a Session and fires `on_session_start` | `sessions[]` (per-Session metadata persisted by the framework) |
+| Runtime capture | `Observatory.collect(name: str, artifact: Any)` | `artifact`, `ObservationContext(config, shared_state)` | `RecordDigest(name, timestamp, session_id, region_stack, data)` | `records[i].digests`, `records[i].session_id`, `records[i].region_stack` |
+| Session hooks | `Lens.on_session_start/end(context)` | `ObservationContext` | lens-scoped session payload | `session.start_data[lens]`, `session.end_data[lens]` (merged across sessions in compare mode) |
 | Analyze | `Lens.analyze(records, config) -> AnalysisResult` | `List[RecordDigest]`, merged config | `global_data`, `per_record_data[name]` | `analysis_results[lens]` |
 | Graph merge | `GraphHub.add_analysis_layers(graph_ref, lens_name, record_analysis)` | `RecordAnalysis.graph_layers` | namespaced layer map | `graph_layers[graph_ref]["<lens>/<key>"]` |
 | Frontend assembly | `Frontend.dashboard(...)`, `Frontend.record(...)` | digest/session/analysis values | `ViewList(blocks=[...])` | `dashboard[lens]`, `records[i].views[lens]` |
 | Browser render | `renderMain()/renderUnifiedView()` | full report payload | DOM sections / graph viewers | runtime only |
 | Custom JS invoke | `fn(container, args, context, analysis)` | block spec + runtime context | user DOM changes | runtime only |
+| Compare-mode merge | `Observatory.compare_archives(archive_paths, labels, html_path, ...)` | list of Archive (JSON) paths + per-archive labels | merged Report (HTML) with prefixed names / sessions / region_stack; lazy-registers any non-default lenses present in archive digests | runtime only (writes HTML directly) |
 
 ### 1.2 Lens Lifecycle Signatures by Stage
 
@@ -38,7 +40,7 @@ frontend rendering, and custom JS callbacks.
 | Method | Signature | Python-side argument source | Serialized destination |
 | --- | --- | --- | --- |
 | `resources` | `resources() -> Dict[str, str]` | lens frontend implementation | `resources.js[]`, `resources.css[]` |
-| `dashboard` | `dashboard(start, end, analysis, records) -> Optional[ViewList]` | `start=session.start_data[lens]`, `end=session.end_data[lens]`, `analysis=analysis_results[lens].global_data`, `records=List[RecordDigest]` | `dashboard[lens]` |
+| `dashboard` | `dashboard(start, end, analysis, records, *, session=None, session_records=None, all_sessions=None, all_records=None, pair_sessions=None, pair_records=None) -> Optional[ViewList]` | `start=session.start_data[lens]`, `end=session.end_data[lens]`, `analysis=analysis_results[lens].global_data`, `records=List[RecordDigest]`. Kw-only args expose Region/Session metadata (RFC §4.5) for opt-in per-session breakouts; in compare mode `pair_sessions` / `pair_records` carry the per-archive pair maps. | `dashboard[lens]` |
 | `record` | `record(digest, analysis, context) -> Optional[ViewList]` | `digest=record.data[lens]`, `analysis={"global": global_data, "record": per_record_data[name].data}`, `context={"index", "name"}` | `records[i].views[lens]` |
 | `check_badges` | `check_badges(digest, analysis) -> List[Dict[str, str]]` | current digest + `global_data` | `records[i].badges[]` |
 | `check_index_diffs` | `check_index_diffs(prev_digest, curr_digest, analysis) -> Dict[str, str]` | previous/current digest + `global_data` | `records[i].diff_index` |
@@ -63,10 +65,13 @@ frontend rendering, and custom JS callbacks.
 
 | Python object | Produced in Python stage | JSON path in report | JS access pattern |
 | --- | --- | --- | --- |
-| `RecordDigest` | `collect` | `records[i]` | `state.data.records[i]` |
+| `RecordDigest` (incl. `session_id`, `region_stack`) | `collect` | `records[i]` | `state.data.records[i]` |
+| `RecordDigest.region_stack` | `collect` (snapshot of active regions) | `records[i].region_stack[]` | `state.data.records[i].region_stack[]` (used by tree-view toggle) |
+| `RecordDigest.session_id` | `collect` (active session at collect time) | `records[i].session_id` | `state.data.records[i].session_id` |
 | `RecordDigest.data[lens]` | `digest` | `records[i].digests[lens]` | `context.record.digests[lens]` in record custom JS |
-| `SessionResult.start_data[lens]` | `on_session_start` | `session.start_data[lens]` | dashboard custom context `start` |
-| `SessionResult.end_data[lens]` | `on_session_end` | `session.end_data[lens]` | dashboard custom context `end` |
+| `Session` (id, name, start_ts, end_ts, start_data, end_data) | `_open_session` / `_close_session` | `session.sessions[]` (list) | dashboard kw-only `all_sessions` argument |
+| `SessionResult.start_data[lens]` (merged across all sessions) | `on_session_start` | `session.start_data[lens]` | dashboard custom context `start` |
+| `SessionResult.end_data[lens]` (merged across all sessions) | `on_session_end` | `session.end_data[lens]` | dashboard custom context `end` |
 | `AnalysisResult.global_data` | `analyze` | `analysis_results[lens].global_data` | `analysis.global_data` in custom JS |
 | `AnalysisResult.per_record_data[name].data` | `analyze` | `analysis_results[lens].per_record_data[name].data` | `analysis.per_record_data?.[recordName]?.data` |
 | `AnalysisResult.per_record_data[name].graph_layers` | `analyze` | merged into `graph_layers[graph_ref]` | included via viewer `extensions` |
@@ -182,7 +187,7 @@ This implementation is intentionally graph-native and typed.
 
 ##### Phase 1: Runtime Capture
 
-1. User enters `Observatory.enable_context(...)`.
+1. User enters `Observatory.enter_context(...)`.
 2. Lenses run `observe()` and `digest()` during `collect(name, artifact)`.
 3. Output is persisted as `RecordDigest`.
 
@@ -237,7 +242,7 @@ JS modules under `templates/js`:
 
 #### 5. Auto-Collection Architecture (ETRecord)
 
-1. `enable_context` installs ETRecord wrappers.
+1. `enter_context` installs ETRecord wrappers.
 2. Wrapped ETRecord calls invoke `Observatory.collect(...)` transparently.
 3. No manual observe points are required for ETRecord graph capture.
 4. Wrappers are restored on outermost context exit.
@@ -261,25 +266,42 @@ Import:
 from executorch.backends.qualcomm.debugger.observatory import Observatory
 ```
 
-#### 2. Session Lifecycle
+#### 2. Region/Session Lifecycle
 
-##### `Observatory.enable_context(config: dict | None = None)`
+##### `Observatory.enter_context(region_name: str | None = None, config: dict | None = None)`
 
-Context manager enabling collection.
+Context manager pushing a Region onto the runtime stack. Outermost calls
+also open a Session and fire `on_session_start`.
 
-Behavior:
+Behavior (RFC §4.5):
 
 1. Registers default lenses lazily on first use.
-2. Installs ETRecord auto-collection wrappers on outermost entry.
-3. Calls `on_session_start` hooks on outermost entry.
-4. Calls `on_session_end` hooks on outermost exit.
-5. Uninstalls ETRecord wrappers on outermost exit.
+2. **Outermost entry** (region stack empty when entering):
+   * with `region_name`: pushes a named Region; opens a Session with
+     the same `id` / `name`; fires every active lens's
+     `on_session_start`.
+   * without `region_name`: auto-generates a non-duplicating default
+     ("default", "default-2", ...); opens a Session named accordingly.
+3. **Inner entry** (region stack non-empty):
+   * with `region_name`: pushes a labelled Region under the active
+     Session (no new Session, no lens hooks).
+   * without `region_name`: **config-only override** -- pushes the
+     config frame but does *not* push a Region. Useful for
+     phase-specific lens tweaks within a Session.
+4. On outermost exit: fires `on_session_end`; closes the Session.
+5. The legacy alias `Observatory.enable_context(config=None)` is preserved
+   and forwards to `enter_context()` (no name argument).
 
 Example:
 
 ```python
-with Observatory.enable_context(config={"profiling": {"enabled": True}}):
-    ...
+with Observatory.enter_context("debug_run", config={"profiling": {"enabled": True}}):
+    Observatory.collect("a", gm)              # region_stack=["debug_run"]
+    with Observatory.enter_context("quantize"):
+        Observatory.collect("b", gm)          # region_stack=["debug_run", "quantize"]
+    with Observatory.enter_context(config={"adb": {"enabled": False}}):
+        # No region_name -> config-only; region_stack stays ["debug_run"].
+        Observatory.collect("c", gm)
 ```
 
 ##### Nested config behavior
@@ -359,7 +381,7 @@ model = M().eval()
 graph = torch.fx.symbolic_trace(model)
 
 Observatory.clear()
-with Observatory.enable_context():
+with Observatory.enter_context():
     Observatory.collect("step_0", graph)
 
 Observatory.export_html_report("/tmp/observatory_report.html")
