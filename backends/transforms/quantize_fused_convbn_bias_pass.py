@@ -238,6 +238,8 @@ def _quantize_fused_conv_bias(
         )
 
         quant_min = -(2**31) + 1 if use_symmetric_quantization else -(2**31)
+        if len(weight_dequant.args) < 2:
+            continue
         if isinstance(weight_dequant.args[1], torch.fx.node.Node):
             weight_scale = get_weight_scale_tensor(weight_dequant.args[1])
             bias_scale = input_dequant.args[1] * weight_scale
