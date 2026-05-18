@@ -35,6 +35,7 @@ def trace(
         model.eval()
 
     decomp_table = torch.export.default_decompositions()
+    ops_to_keep = [*(ops_to_keep or []), torch.ops.aten._safe_softmax.default]
     # pyre-fixme[6]: For 1st argument expected `Dict[typing.Callable[..., typing.Any
     remove_decompositions(decomp_table, ops_to_keep)
     program = torch.export.export(model, inputs, strict=strict).run_decompositions(

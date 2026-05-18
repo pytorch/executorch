@@ -50,6 +50,7 @@ from executorch.backends.mlx.serialization.mlx_graph_schema import (
     AsStridedNode,
     AsTypeNode,
     Atan2Node,
+    BitwiseAndNode,
     BitwiseInvertNode,
     BroadcastToNode,
     CeilNode,
@@ -481,7 +482,14 @@ _BINARY_OPS: List[Tuple[List[Any], Any, str, bool]] = [
     ([torch.ops.aten.minimum.default], MinimumNode, "aten.minimum", False),
     ([torch.ops.aten.atan2.default], Atan2Node, "aten.atan2", False),
     ([torch.ops.aten.logaddexp.default], LogAddExpNode, "aten.logaddexp", False),
+    ([torch.ops.aten.logical_and.default], LogicalAndNode, "aten.logical_and", False),
     ([torch.ops.aten.logical_or.default], LogicalOrNode, "aten.logical_or", False),
+    (
+        [torch.ops.aten.bitwise_and.Tensor, torch.ops.aten.bitwise_and.Scalar],
+        BitwiseAndNode,
+        "aten.bitwise_and",
+        True,
+    ),
     (
         [torch.ops.aten.lt.Tensor, torch.ops.aten.lt.Scalar],
         LessNode,
@@ -3140,34 +3148,6 @@ def _bitwise_not_handler(P: MLXProgramBuilder, n: Node) -> Slot:
         raise NotImplementedError(
             f"aten.bitwise_not on dtype {x_meta.dtype} is not supported for MLX lowering"
         )
-    return out
-
-
-@REGISTRY.register(
-    target=[torch.ops.aten.logical_and.default, torch.ops.aten.bitwise_and.Tensor]
-)
-def _logical_and_handler(P: MLXProgramBuilder, n: Node) -> Slot:
-    """Handle aten.logical_and / aten.bitwise_and on bool tensors."""
-    args = P.args(n)
-    require_args(args, 2, 2, "aten.logical_and/bitwise_and")
-    require_kwargs(P.kwargs(n), set(), "aten.logical_and/bitwise_and")
-
-    # bitwise_and is only equivalent to logical_and for bool tensors.
-    if n.target == torch.ops.aten.bitwise_and.Tensor:
-        dtype = n.args[0].meta.get("val", None)
-        if dtype is not None and hasattr(dtype, "dtype") and dtype.dtype != torch.bool:
-            raise ValueError(
-                f"aten.bitwise_and on non-bool dtype {dtype.dtype} is not supported; "
-                "only bool tensors can be lowered via LogicalAndNode"
-            )
-    out = P.make_or_get_slot(n)
-    P.emit(
-        LogicalAndNode(
-            a=P.slot_to_tid(args[0]),
-            b=P.slot_to_tid(args[1]),
-            out=P.slot_to_tid(out),
-        )
-    )
     return out
 
 

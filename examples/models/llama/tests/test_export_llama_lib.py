@@ -7,6 +7,8 @@
 
 import unittest
 
+import torch
+
 from executorch.devtools.backend_debug import get_delegation_info
 
 try:
@@ -28,7 +30,11 @@ from executorch.examples.models.llama.export_llama_lib import (
     build_args_parser,
     get_quantizer_and_quant_params,
 )
-from executorch.extension.llm.export.config.llm_config import LlmConfig, Pt2eQuantize
+from executorch.extension.llm.export.config.llm_config import (
+    LlmConfig,
+    Pt2eQuantize,
+    VgfQuantizeScope,
+)
 
 UNWANTED_OPS = [
     "aten_permute_copy_default",
@@ -111,3 +117,49 @@ class ExportLlamaLibTest(unittest.TestCase):
         self.assertIsNone(quant_dtype)
         self.assertEqual(len(quantizers), 1)
         self.assertIsInstance(quantizers[0], VgfQuantizer)
+        self.assertIsNotNone(quantizers[0].global_config)
+        self.assertEqual(quantizers[0].module_type_config, {})
+
+    @unittest.skipUnless(HAS_ARM_BACKEND, "ARM backend not available")
+    def test_get_quantizer_and_quant_params_returns_vgf_linear_quantizer(self):
+        llm_config = LlmConfig()
+        llm_config.backend.vgf.enabled = True
+        llm_config.backend.vgf.compile_spec = "TOSA-1.0+INT"
+        llm_config.backend.vgf.quantize_scope = VgfQuantizeScope.linear
+        llm_config.quantization.pt2e_quantize = Pt2eQuantize.vgf_8a8w
+
+        _pt2e_quant_params, quantizers, _quant_dtype = get_quantizer_and_quant_params(
+            llm_config
+        )
+
+        self.assertEqual(len(quantizers), 1)
+        self.assertIsInstance(quantizers[0], VgfQuantizer)
+        self.assertIsNone(quantizers[0].global_config)
+        self.assertIn(torch.nn.Linear, quantizers[0].module_type_config)
+
+    @unittest.skipUnless(HAS_ARM_BACKEND, "ARM backend not available")
+    def test_vgf_16a8w_requires_int16_compile_spec_extension(self):
+        llm_config = LlmConfig()
+        llm_config.backend.vgf.enabled = True
+        llm_config.backend.vgf.compile_spec = "TOSA-1.0+INT"
+        llm_config.backend.vgf.quantize_scope = VgfQuantizeScope.linear
+        llm_config.quantization.pt2e_quantize = Pt2eQuantize.vgf_16a8w
+
+        with self.assertRaisesRegex(ValueError, "INT16 support"):
+            get_quantizer_and_quant_params(llm_config)
+
+    @unittest.skipUnless(HAS_ARM_BACKEND, "ARM backend not available")
+    def test_vgf_16a8w_accepts_int16_compile_spec_extension(self):
+        llm_config = LlmConfig()
+        llm_config.backend.vgf.enabled = True
+        llm_config.backend.vgf.compile_spec = "TOSA-1.0+INT+int16"
+        llm_config.backend.vgf.quantize_scope = VgfQuantizeScope.linear
+        llm_config.quantization.pt2e_quantize = Pt2eQuantize.vgf_16a8w
+
+        _pt2e_quant_params, quantizers, _quant_dtype = get_quantizer_and_quant_params(
+            llm_config
+        )
+
+        self.assertEqual(len(quantizers), 1)
+        self.assertIsInstance(quantizers[0], VgfQuantizer)
+        self.assertIn(torch.nn.Linear, quantizers[0].module_type_config)

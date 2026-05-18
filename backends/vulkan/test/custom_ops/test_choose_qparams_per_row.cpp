@@ -37,13 +37,19 @@ TestCase create_test_case_from_config(
     vkapi::ScalarType input_dtype) {
   TestCase test_case;
 
-  // Create a descriptive name for the test case
-  std::string storage_str =
-      (storage_type == utils::kTexture3D) ? "Texture3D" : "Buffer";
-  std::string dtype_str = (input_dtype == vkapi::kFloat) ? "Float" : "Half";
-
+  // Create a descriptive name for the test case. Op produces (scale, zero_pt)
+  // per row; the "output" is conceptually i8 quantization params.
+  bool is_perf =
+      !(config.num_channels < kRefDimSizeLimit &&
+        config.channel_size < kRefDimSizeLimit);
+  std::string prefix = is_perf ? "PERF" : "ACCU";
+  std::string in_dtype = dtype_short(input_dtype);
+  std::string out_dtype = "f32,i8"; // pair: (scale, zero_point)
+  std::string shape_str = "[" + std::to_string(config.num_channels) + "," +
+      std::to_string(config.channel_size) + "]";
+  std::string storage_str = repr_str(storage_type, utils::kWidthPacked);
   std::string test_name =
-      config.test_case_name + "_" + storage_str + "_" + dtype_str;
+      make_test_label(prefix, in_dtype, out_dtype, shape_str, storage_str);
   test_case.set_name(test_name);
 
   // Set the operator name for the test case
@@ -351,8 +357,8 @@ int main(int argc, char* argv[]) {
       generate_choose_qparams_per_channel_test_cases,
       choose_qparams_per_channel_flop_calculator,
       "ChooseQParamsPerChannel",
-      0,
-      10,
+      /*warmup_runs = */ 1,
+      /*benchmark_runs = */ 1,
       ref_fn);
 
   return 0;
