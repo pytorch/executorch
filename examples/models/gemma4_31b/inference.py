@@ -75,7 +75,8 @@ def apply_chat_template(prompt: str) -> str:
     Does not include BOS — ``generate()`` prepends it at the token-ID level.
     """
     return (
-        "<|turn>user\n" + prompt
+        "<|turn>user\n"
+        + prompt
         + "<turn|>\n<|turn>model\n<|channel>thought\n<channel|>"
     )
 
