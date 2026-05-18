@@ -367,8 +367,10 @@ def get_vgf_quantizer(
     compile_spec: Optional[str],
     compiler_flags: Optional[List[str]],
     pt2e_quantize: str,
+    quantize_scope: str,
 ):
     from executorch.backends.arm.quantizer.arm_quantizer import (
+        get_symmetric_a16w8_quantization_config,
         get_symmetric_quantization_config,
         VgfQuantizer,
     )
@@ -379,8 +381,22 @@ def get_vgf_quantizer(
     quantizer = VgfQuantizer(compile_spec_obj)
 
     if pt2e_quantize == "vgf_8a8w":
-        quantizer.set_global(get_symmetric_quantization_config())
+        quantization_config = get_symmetric_quantization_config()
+    elif pt2e_quantize == "vgf_16a8w":
+        if not compile_spec_obj.tosa_spec.support_extension("int16"):
+            raise ValueError(
+                "vgf_16a8w requires a VGF compile spec with INT16 support, "
+                "for example TOSA-1.0+INT+int16."
+            )
+        quantization_config = get_symmetric_a16w8_quantization_config()
     else:
         raise ValueError(f"Unsupported quantizer specification {pt2e_quantize}")
+
+    if quantize_scope == "full":
+        quantizer.set_global(quantization_config)
+    elif quantize_scope == "linear":
+        quantizer.set_module_type(torch.nn.Linear, quantization_config)
+    else:
+        raise ValueError(f"Unsupported VGF quantization scope {quantize_scope}")
 
     return quantizer

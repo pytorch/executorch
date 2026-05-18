@@ -666,6 +666,7 @@ class SPVGenerator:
         glslc_path: Optional[str],
         glslc_flags: str = "",
         replace_u16vecn: bool = False,
+        auto_use_mediump: bool = False,
     ) -> None:
         if isinstance(src_dir_paths, str):
             self.src_dir_paths = [src_dir_paths]
@@ -681,6 +682,7 @@ class SPVGenerator:
         if "-Os" in self.glslc_flags_no_opt:
             self.glslc_flags_no_opt.remove("-Os")
         self.replace_u16vecn = replace_u16vecn
+        self.auto_use_mediump = auto_use_mediump
 
         self.src_files: Dict[str, str] = {}
         self.template_yaml_files: List[str] = []
@@ -864,6 +866,18 @@ class SPVGenerator:
         shader_params = copy.deepcopy(self.env)
         for key, value in variant_params.items():
             shader_params[key] = value
+
+        # Downgrade PRECISION to mediump for pure half-precision variants.
+        dtype_params = [
+            value for key, value in shader_params.items() if key.endswith("DTYPE")
+        ]
+        if (
+            self.auto_use_mediump
+            and dtype_params
+            and all(dtype == "half" for dtype in dtype_params)
+            and shader_params.get("PRECISION") == "highp"
+        ):
+            shader_params["PRECISION"] = "mediump"
 
         return shader_params
 
@@ -1527,6 +1541,7 @@ def main(argv: List[str]) -> int:
     parser.add_argument("-o", "--output-path", required=True, help="")
     parser.add_argument("-f", "--force-rebuild", action="store_true", default=False)
     parser.add_argument("--replace-u16vecn", action="store_true", default=False)
+    parser.add_argument("--auto-use-mediump", action="store_true", default=False)
     parser.add_argument("--optimize_size", action="store_true", help="")
     parser.add_argument("--optimize", action="store_true", help="")
     parser.add_argument("--spv_debug", action="store_true", default=False)
@@ -1571,6 +1586,7 @@ def main(argv: List[str]) -> int:
         options.glslc_path,
         glslc_flags=glslc_flags_str,
         replace_u16vecn=options.replace_u16vecn,
+        auto_use_mediump=options.auto_use_mediump,
     )
     output_spv_files = shader_generator.generateSPV(
         options.output_path,

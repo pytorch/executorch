@@ -33,6 +33,36 @@ logger = logging.getLogger(__name__)
 logger.setLevel(get_coreml_log_level(default_level=logging.INFO))
 
 
+# Ops that the CoreML partitioner must always reject regardless of their
+# arguments.  Each entry is annotated with the upstream issue that motivates
+# it so future readers can tell when an entry is safe to drop.
+_UNSUPPORTED_OP_TARGETS = frozenset(
+    [
+        # https://github.com/apple/coremltools/issues/2565 — diagonal has a
+        # CoreML correctness bug.
+        torch.ops.aten.diagonal.default,
+        torch.ops.aten.diagonal_copy.default,
+        exir_ops.edge.aten.diagonal.default,
+        exir_ops.edge.aten.diagonal_copy.default,
+        # https://github.com/apple/coremltools/issues/2569 — acosh / asinh
+        # are not implemented in coremltools.
+        torch.ops.aten.acosh.default,
+        exir_ops.edge.aten.acosh.default,
+        torch.ops.aten.asinh.default,
+        exir_ops.edge.aten.asinh.default,
+        # https://github.com/pytorch/executorch/issues/11722 — only
+        # ``aten.rand.default`` actually reaches an unimplemented branch in
+        # coremltools 9.0 ("not enough values to unpack (expected 5, got 1)"
+        # raised from the rand handler).  ``randn`` / ``rand_like`` /
+        # ``randn_like`` / ``randint`` lower cleanly today, so we leave them
+        # delegated.  Verified locally against coremltools 9.0 / Python 3.10
+        # by lowering each op in isolation.
+        torch.ops.aten.rand.default,
+        exir_ops.edge.aten.rand.default,
+    ]
+)
+
+
 def _is_view_op(op: torch._ops.OpOverload) -> bool:
     schema = op._schema
     if len(schema.arguments) == 0:
@@ -92,27 +122,13 @@ class _OperatorsSupportedForCoreMLBackend(OperatorSupportBase):
             )
             return True
 
-        # https://github.com/apple/coremltools/issues/2565
-        if node.target in [
-            torch.ops.aten.diagonal.default,
-            torch.ops.aten.diagonal_copy.default,
-            exir_ops.edge.aten.diagonal.default,
-            exir_ops.edge.aten.diagonal_copy.default,
-        ]:
+        # Ops that are unsupported by CoreML purely on the basis of their
+        # target — no per-arg conditions to check.  Grouped by upstream issue
+        # so the comment trail still points at the underlying coremltools /
+        # executorch bug for each entry.
+        if node.target in _UNSUPPORTED_OP_TARGETS:
             self.log_once(
-                "torch.ops.aten.diagonal.default has a bug in CoreML.  Overriding op support."
-            )
-            return True
-
-        # https://github.com/apple/coremltools/issues/2569
-        if node.target in [
-            torch.ops.aten.acosh.default,
-            exir_ops.edge.aten.acosh.default,
-            torch.ops.aten.asinh.default,
-            exir_ops.edge.aten.asinh.default,
-        ]:
-            self.log_once(
-                "torch.ops.aten.{acosh, asinh}.default is not supported by CoreML.  Overriding op support."
+                f"{node.target} is not supported by CoreML.  Overriding op support."
             )
             return True
 
