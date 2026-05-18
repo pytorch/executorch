@@ -314,6 +314,20 @@
       }
     },
     {
+      "name": "riscv64-linux",
+      "displayName": "Build ExecuTorch for riscv64 Linux (cross-compile)",
+      "inherits": ["common"],
+      "cacheVariables": {
+        "EXECUTORCH_BUILD_PRESET_FILE": "${sourceDir}/tools/cmake/preset/riscv64_linux.cmake",
+        "CMAKE_TOOLCHAIN_FILE": "${sourceDir}/examples/riscv/riscv64-linux-gnu-toolchain.cmake"
+      },
+      "condition": {
+        "lhs": "${hostSystemName}",
+        "type": "equals",
+        "rhs": "Linux"
+      }
+    },
+    {
       "name": "mlx",
       "displayName": "Build MLX delegate",
       "inherits": ["common"],
