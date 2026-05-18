@@ -567,6 +567,43 @@ class PerLayerAccuracyLens(Lens):
         }
 
     @classmethod
+    def _build_context_extension(
+        cls,
+        rows: List[Dict[str, Any]],
+    ) -> GraphExtension:
+        """Umbrella extension carrying identity/context fields once per node.
+
+        Each metric extension stores only its own value, so the per-node
+        identity (target_node, anchor_node, shapes, topo indices, key_kind,
+        from_node_root, numel_compared, sparse_match_key) lives here exactly
+        once instead of being duplicated four times across the metric
+        extensions.
+        """
+        ext = GraphExtension(
+            id="ctx",
+            name="Per-Layer Accuracy Context",
+        )
+        for row in rows:
+            node_id = str(row["target_node"])
+            ext.add_node_data(
+                node_id,
+                {
+                    "sparse_match_key": row.get("match_key", ""),
+                    "key_kind": row.get("key_kind", ""),
+                    "from_node_root": row.get("from_node_root", ""),
+                    "anchor_node": row.get("anchor_node", ""),
+                    "target_node": row.get("target_node", ""),
+                    "anchor_topo_index": row.get("anchor_topo_index", -1),
+                    "target_topo_index": row.get("target_topo_index", -1),
+                    "numel_compared": row.get("numel_compared", 0),
+                    "anchor_shape": row.get("anchor_shape", "n/a"),
+                    "target_shape": row.get("target_shape", "n/a"),
+                },
+            )
+        ext.set_sync_key("sparse_match_key")
+        return ext
+
+    @classmethod
     def _build_metric_extension(
         cls,
         rows: List[Dict[str, Any]],
@@ -581,23 +618,13 @@ class PerLayerAccuracyLens(Lens):
         ext = GraphExtension(id=metric_name, name=str(spec["name"]))
         for row in rows:
             node_id = str(row["target_node"])
-            info = {
-                "sparse_match_key": row.get("match_key", ""),
-                "key_kind": row.get("key_kind", ""),
-                "from_node_root": row.get("from_node_root", ""),
-                "anchor_node": row.get("anchor_node", ""),
-                "target_node": row.get("target_node", ""),
-                "anchor_topo_index": row.get("anchor_topo_index", -1),
-                "target_topo_index": row.get("target_topo_index", -1),
-                "numel_compared": row.get("numel_compared", 0),
-                "anchor_shape": row.get("anchor_shape", "n/a"),
-                "target_shape": row.get("target_shape", "n/a"),
-                "psnr": cls._safe_float(row.get("psnr", 0.0)),
-                "cosine_sim": cls._safe_float(row.get("cosine_sim", 0.0)),
-                "mse": cls._safe_float(row.get("mse", 0.0)),
-                "abs_err": cls._safe_float(row.get("abs_err", 0.0)),
-            }
-            ext.add_node_data(node_id, info)
+            ext.add_node_data(
+                node_id,
+                {
+                    "sparse_match_key": row.get("match_key", ""),
+                    metric_name: cls._safe_float(row.get(metric_name, 0.0)),
+                },
+            )
 
         ext.set_sync_key("sparse_match_key")
 
@@ -611,13 +638,16 @@ class PerLayerAccuracyLens(Lens):
             primary_label = str(spec["label"])
             return [f"{primary_label}={_format_metric_value(primary)}"]
 
+        # All metric extensions opt into label formatters; the run-time LRU
+        # in the JS canvas (cap = MAX_LABEL_EXTENSIONS = 2) keeps at most two
+        # active at once, and the build-time bbox reservation in
+        # FXGraphExporter sizes nodes for two label rows.
         ext.set_label_formatter(_label_formatter)
 
         def _tooltip_formatter(d: Dict[str, Any]) -> List[str]:
             primary = cls._safe_float(d.get(metric_name, 0.0))
             primary_label = str(spec["label"])
             return [
-                f"target_node={d.get('target_node', 'n/a')}",
                 f"match_key={d.get('sparse_match_key', '')}",
                 f"{primary_label}={_format_metric_value(primary, tooltip=True)}",
             ]
@@ -674,6 +704,12 @@ class PerLayerAccuracyLens(Lens):
         metric_ranges = PerLayerAccuracyLens._aggregate_metric_ranges(records)
         if metric_ranges:
             result.global_data["metric_ranges"] = metric_ranges
+        # Stash json_report_top_n so json_report can read it from analysis.global_data
+        # without touching the live config stack (which may be empty at render time).
+        top_n = int(
+            (config.get("per_layer_accuracy") or {}).get("json_report_top_n", 10)
+        )
+        result.global_data["json_report_top_n"] = top_n
 
         for record in records:
             digest = record.data.get("per_layer_accuracy")
@@ -691,11 +727,18 @@ class PerLayerAccuracyLens(Lens):
                 }
             )
 
+            # Identity context, contributed once per node, regardless of which
+            # metric layers the user has active. Replaces the per-metric-ext
+            # duplication of identity fields.
+            analysis.add_graph_layer(
+                "ctx", PerLayerAccuracyLens._build_context_extension(rows)
+            )
+
             for metric_name in ("cosine_sim", "psnr", "mse", "abs_err"):
                 r = metric_ranges.get(metric_name)
                 fixed_range = (r[0], r[1]) if r else None
                 metric_ext = PerLayerAccuracyLens._build_metric_extension(
-                    rows, metric_name, fixed_range=fixed_range
+                    rows, metric_name, fixed_range=fixed_range,
                 )
                 analysis.add_graph_layer(metric_name, metric_ext)
 
@@ -924,7 +967,10 @@ class PerLayerAccuracyLens(Lens):
                     id="per_layer_accuracy_graph",
                     title="Per-layer Accuracy Graph",
                     graph_ref=graph_ref,
-                    default_layers=[f"{lens_name}/cosine_sim"],
+                    default_layers=[
+                        f"{lens_name}/ctx",
+                        f"{lens_name}/cosine_sim",
+                    ],
                     default_color_by=f"{lens_name}/cosine_sim",
                     compare=GraphCompareSpec(
                         default_sync={
@@ -954,6 +1000,73 @@ class PerLayerAccuracyLens(Lens):
                     {"label": "PLA", "class": "badge", "title": "Per-layer accuracy"}
                 ]
             return []
+
+        def json_report(
+            self, session, session_records, analysis
+        ) -> Optional[Dict[str, Any]]:
+            """Machine-readable per-layer accuracy summary for Report (JSON).
+
+            Finds the first target record in ``session_records`` that carries
+            per-layer row data, then returns:
+
+            - ``anchor``/``target``: record names
+            - ``n_layers``: number of matched layer pairs
+            - ``sample_source``: how the sample index was chosen
+            - ``metric_ranges``: {metric: [min, max]} from the archive-wide analysis
+            - ``worst_layers``: {metric: [top-N rows sorted worst-first]}
+
+            Top-N depth is controlled by
+            ``config["per_layer_accuracy"]["json_report_top_n"]`` (default 10).
+            ``config`` is passed via ``analyze()`` → ``analysis.global_data``
+            so the value is available even when called outside a live
+            ``Observatory.enable_context`` block.
+            """
+            target_record = next(
+                (
+                    r
+                    for r in session_records or []
+                    if isinstance(r.data.get("per_layer_accuracy"), dict)
+                    and r.data["per_layer_accuracy"].get("rows")
+                ),
+                None,
+            )
+            if target_record is None:
+                return None
+
+            digest = target_record.data["per_layer_accuracy"]
+            rows = digest.get("rows") or []
+            global_data = analysis.global_data or {}
+            metric_ranges = global_data.get("metric_ranges") or {}
+            top_n = int(global_data.get("json_report_top_n", 10))
+
+            worst: Dict[str, Any] = {}
+            for metric in ("psnr", "cosine_sim", "mse", "abs_err"):
+                ranked = [r for r in rows if isinstance(r.get(metric), (int, float))]
+                # psnr / cosine_sim: lower == worse (ascending sort = worst first)
+                # mse / abs_err: higher == worse (descending sort = worst first)
+                reverse = metric in ("mse", "abs_err")
+                ranked.sort(key=lambda r: r[metric], reverse=reverse)
+                entry = []
+                for r in ranked[:top_n]:
+                    # Layer identity: prefer the human-readable from_node_root;
+                    # fall back to the target_node id for unrooted nodes.
+                    layer_id = r.get("from_node_root") or r.get("target_node", "?")
+                    row: Dict[str, Any] = {"layer": layer_id}
+                    for m in ("psnr", "cosine_sim", "mse", "abs_err"):
+                        v = r.get(m)
+                        if isinstance(v, (int, float)):
+                            row[m] = round(float(v), 4)
+                    entry.append(row)
+                worst[metric] = entry
+
+            return {
+                "anchor": digest.get("anchor_record"),
+                "target": target_record.name,
+                "n_layers": len(rows),
+                "sample_source": digest.get("sample_source"),
+                "metric_ranges": metric_ranges,
+                "worst_layers": worst,
+            }
 
     @staticmethod
     def get_frontend_spec() -> Frontend:

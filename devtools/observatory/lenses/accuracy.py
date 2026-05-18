@@ -743,6 +743,68 @@ class _AccuracyFrontend(Frontend):
             ]
         )
 
+    def json_report(self, session, session_records, analysis) -> Optional[Dict[str, Any]]:
+        """Aggregate accuracy metrics across the session's records.
+
+        Each numeric primary metric contributes a ``mean``, ``min``, ``max``,
+        and ``worst_record`` (the record name where the metric was lowest,
+        indicating the worst quality sample for that metric).
+        Internal ``_*`` keys, ``_min``/``_max`` per-sample stats, and
+        ``_worst_idx`` indices are excluded.
+        """
+        sums: Dict[str, float] = {}
+        counts: Dict[str, int] = {}
+        mins: Dict[str, float] = {}
+        maxs: Dict[str, float] = {}
+        worst: Dict[str, str] = {}
+        measured = 0
+        # Error metrics: higher value = worse quality → worst_record = argmax.
+        # Quality metrics (psnr, cosine_sim, top_k, ...): lower = worse → argmin.
+        _ERROR_METRICS = {"mse", "abs_err"}
+
+        for rec in session_records or []:
+            digest = rec.data.get("accuracy")
+            if not isinstance(digest, dict):
+                continue
+            measured += 1
+            for k, v in digest.items():
+                if not isinstance(v, (int, float)) or isinstance(v, bool):
+                    continue
+                if k.startswith("_"):
+                    continue
+                if k.endswith(("_min", "_max", "_worst_idx")):
+                    continue
+                sums[k] = sums.get(k, 0.0) + float(v)
+                counts[k] = counts.get(k, 0) + 1
+                if float(v) < mins.get(k, float("inf")):
+                    mins[k] = float(v)
+                    # Quality metric (psnr, cosine_sim, ...): lower = worse.
+                    if k not in _ERROR_METRICS:
+                        worst[k] = rec.name
+                if float(v) > maxs.get(k, float("-inf")):
+                    maxs[k] = float(v)
+                    # Error metric (mse, abs_err, ...): higher = worse.
+                    if k in _ERROR_METRICS:
+                        worst[k] = rec.name
+
+        if measured == 0:
+            return None
+
+        return {
+            "records_measured": measured,
+            "metrics": {
+                k: {
+                    "mean": round(sums[k] / counts[k], 4),
+                    "min": round(mins[k], 4),
+                    "max": round(maxs[k], 4),
+                    # For quality metrics (psnr etc.): min = worst.
+                    # For error metrics (mse etc.): max = worst.
+                    "worst_record": worst[k],
+                }
+                for k in sorted(sums)
+            },
+        }
+
     def record(
         self, digest: Any, analysis: Dict[str, Any], context: Dict[str, Any]
     ) -> Optional[ViewList]:
