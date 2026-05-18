@@ -2,6 +2,8 @@
 
 This document contains the detailed contract tables, API references, and performance notes for Observatory internals. For an introduction and usage guide, see [README.md](README.md). For the worldview vocabulary (Region / Session / Record / Archive / Report), see RFC §4.4-4.5.
 
+> **See also: [RFC_SESSIONS.md](RFC_SESSIONS.md)** — Sessions are now a first-class addressable unit, with Archive as a separate grouping above them in compare mode. The legacy flat `SessionResult.start_data` / `end_data` mirrors and the singleton "Run Dashboard" panel are gone; `Frontend.dashboard` is now `(session, session_records, analysis)` and is invoked once per `(Session, lens)` pair.
+
 ## 1. Contract Tables
 
 The tables below define the actual contracts across lens code, report JSON,
@@ -40,7 +42,7 @@ frontend rendering, and custom JS callbacks.
 | Method | Signature | Python-side argument source | Serialized destination |
 | --- | --- | --- | --- |
 | `resources` | `resources() -> Dict[str, str]` | lens frontend implementation | `resources.js[]`, `resources.css[]` |
-| `dashboard` | `dashboard(start, end, analysis, records, *, session=None, session_records=None, all_sessions=None, all_records=None, pair_sessions=None, pair_records=None) -> Optional[ViewList]` | `start=session.start_data[lens]`, `end=session.end_data[lens]`, `analysis=analysis_results[lens].global_data`, `records=List[RecordDigest]`. Kw-only args expose Region/Session metadata (RFC §4.5) for opt-in per-session breakouts; in compare mode `pair_sessions` / `pair_records` carry the per-archive pair maps. | `dashboard[lens]` |
+| `dashboard` | `dashboard(session, session_records, analysis) -> Optional[ViewList]` | Framework calls once per `(Session, lens)` pair. `session` is the active `Session` (carries `id`, `name`, `archive`, `start_ts`, `end_ts`, per-lens `start_data` / `end_data`); `session_records` is `[r for r in records if r.session_id == session.id]`; `analysis` is the `AnalysisResult` for this lens. See [RFC_SESSIONS.md](RFC_SESSIONS.md) for the full contract. | `dashboard[lens][session_id]` |
 | `record` | `record(digest, analysis, context) -> Optional[ViewList]` | `digest=record.data[lens]`, `analysis={"global": global_data, "record": per_record_data[name].data}`, `context={"index", "name"}` | `records[i].views[lens]` |
 | `check_badges` | `check_badges(digest, analysis) -> List[Dict[str, str]]` | current digest + `global_data` | `records[i].badges[]` |
 | `check_index_diffs` | `check_index_diffs(prev_digest, curr_digest, analysis) -> Dict[str, str]` | previous/current digest + `global_data` | `records[i].diff_index` |
@@ -69,20 +71,22 @@ frontend rendering, and custom JS callbacks.
 | `RecordDigest.region_stack` | `collect` (snapshot of active regions) | `records[i].region_stack[]` | `state.data.records[i].region_stack[]` (used by tree-view toggle) |
 | `RecordDigest.session_id` | `collect` (active session at collect time) | `records[i].session_id` | `state.data.records[i].session_id` |
 | `RecordDigest.data[lens]` | `digest` | `records[i].digests[lens]` | `context.record.digests[lens]` in record custom JS |
-| `Session` (id, name, start_ts, end_ts, start_data, end_data) | `_open_session` / `_close_session` | `session.sessions[]` (list) | dashboard kw-only `all_sessions` argument |
-| `SessionResult.start_data[lens]` (merged across all sessions) | `on_session_start` | `session.start_data[lens]` | dashboard custom context `start` |
-| `SessionResult.end_data[lens]` (merged across all sessions) | `on_session_end` | `session.end_data[lens]` | dashboard custom context `end` |
+| `Session` (id, name, archive, start_ts, end_ts, start_data, end_data) | `_open_session` / `_close_session` | `sessions[]` (top-level flat list) | `state.data.sessions[]`; lookup by `id` |
+| `Session.start_data[lens]` | `on_session_start` returns | `sessions[i].start_data[lens]` | `context.session.start_data[lens]` in dashboard custom JS |
+| `Session.end_data[lens]` | `on_session_end` returns | `sessions[i].end_data[lens]` | `context.session.end_data[lens]` in dashboard custom JS |
+| `Archive` grouping (label + member session_ids) | derived at payload assembly | `archives[]` (top-level) | `state.data.archives[]`; drives compare-mode N-column sidebar |
+| `ViewList` for a `(lens, session)` pair | `Frontend.dashboard(session, session_records, analysis)` | `dashboard[lens][session_id].blocks` | `state.data.dashboard[lens][sessionId].blocks` |
 | `AnalysisResult.global_data` | `analyze` | `analysis_results[lens].global_data` | `analysis.global_data` in custom JS |
 | `AnalysisResult.per_record_data[name].data` | `analyze` | `analysis_results[lens].per_record_data[name].data` | `analysis.per_record_data?.[recordName]?.data` |
 | `AnalysisResult.per_record_data[name].graph_layers` | `analyze` | merged into `graph_layers[graph_ref]` | included via viewer `extensions` |
-| `ViewList` | frontend callbacks | `dashboard[lens].blocks` / `records[i].views[lens].blocks` | `getLensBlocks(record, lensName)` |
+| `ViewList` for a record view | `Frontend.record(digest, analysis, context)` | `records[i].views[lens].blocks` | `getLensBlocks(record, lensName)` |
 
 ### 1.6 Custom JS Callback Signatures
 
 | Callback stage | Invocation site | Signature | `context` shape |
 | --- | --- | --- | --- |
 | Record block render | `renderRecordBlock(..., context={ index, record }, analysis)` | `fn(container, args, context, analysis)` | `{ index: number, record: SerializedRecord }` |
-| Dashboard block render | `renderDashboard(..., context={ start, end, records }, analysis)` | `fn(container, args, context, analysis)` | `{ start: object, end: object, records: SerializedRecord[] }` |
+| Dashboard block render | `renderSessionDashboard(..., context={ session, records }, analysis)` | `fn(container, args, context, analysis)` | `{ session: SerializedSession, records: SerializedRecord[] }` (records pre-filtered to the session) |
 | Compare render (`mode="custom"`) | `renderCustomCompare(..., context, analysis)` | `fn(container, args, context, analysis)` | `{ indices, names, records, blocks, lens, block_id }` |
 
 | Callback arg | Runtime value | Source contract |
@@ -226,7 +230,7 @@ This implementation is intentionally graph-native and typed.
 ##### 3.3 GraphView Consumption
 
 1. `GraphBlock.record.graph_ref` resolves base graph.
-2. `graph_layers[graph_ref]` provides merged overlay layers.
+2. `graph_layers[graph_ref]` provides merged extension layers.
 3. Compare mode renders side-by-side viewers with optional selection sync.
 
 #### 4. UI Runtime Topology
