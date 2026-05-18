@@ -83,7 +83,6 @@ def _is_arg_min_max_over_flattened_input(node: torch.fx.Node) -> bool:
     return dim is None
 
 
-
 def _is_view_op(op: torch._ops.OpOverload) -> bool:
     schema = op._schema
     if len(schema.arguments) == 0:
