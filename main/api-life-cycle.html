@@ -1992,58 +1992,103 @@ communicate state to developers.</p>
   <tr>
    <td><strong>Language</strong>
    </td>
+   <td><strong>API state</strong>
+   </td>
    <td><strong>Code</strong>
    </td>
    <td><strong>Documentation</strong>
    </td>
   </tr>
   <tr>
+   <td>All
+   </td>
+   <td>Stable
+   </td>
+   <td>
+<p>No annotation is required. APIs are considered stable if they are not marked as
+experimental or deprecated.</p>
+   </td>
+   <td>
+<p>No warning is required.</p>
+   </td>
+  </tr>
+  <tr>
+   <td>All
+   </td>
+   <td>Deleted
+   </td>
+   <td>
+<p>Remove the API from code after the deprecation period has passed.</p>
+   </td>
+   <td>
+<p>Remove references to the deleted API from documentation.</p>
+   </td>
+  </tr>
+  <tr>
    <td>Python
+   </td>
+   <td>Deprecated
    </td>
    <td>
 <p>Use the
 <a href="https://github.com/pytorch/executorch/blob/main/exir/_warnings.py">executorch.exir._warnings.deprecated</a>
 decorator.</p>
-<p>
-Use the
-<a href="https://github.com/pytorch/executorch/blob/main/exir/_warnings.py">executorch.exir._warnings.experimental</a>
-decorator.
    </td>
    <td>
-<p>Use <code>.. warning::</code> in the docstrings of deprecated and experimental
-APIs. See
+<p>Use <code>.. warning::</code> in the docstring. Clearly point to the
+replacement API when one exists.</p>
+   </td>
+  </tr>
+  <tr>
+   <td>Python
+   </td>
+   <td>Experimental
+   </td>
+   <td>
+<p>Use the
+<a href="https://github.com/pytorch/executorch/blob/main/exir/_warnings.py">executorch.exir._warnings.experimental</a>
+decorator.</p>
+   </td>
+   <td>
+<p>Use <code>.. warning::</code> in the docstring. State that the API is
+experimental and may change or be removed without notice. See
 <a href="https://github.com/pytorch/pytorch/blob/main/torch/nn/utils/stateless.py#L176">example
 usage</a>.</p>
-</ul>
    </td>
   </tr>
   <tr>
    <td>C++
    </td>
+   <td>Deprecated
+   </td>
    <td>
 <p>Use the <code>ET_DEPRECATED</code> annotation macro. See <a href="https://github.com/pytorch/executorch/blob/main/runtime/executor/program.h#L92">example usage</a>.</p>
-<p>
-<p>
-Use the <code>ET_EXPERIMENTAL</code> annotation macro.
-</ul>
    </td>
    <td>
 <p>Start Doxygen comments with <code>DEPRECATED:</code> See
 <a href="https://github.com/pytorch/executorch/blob/main/runtime/executor/program.h#L164">example
 usage</a>.</p>
-<p>
-<p>
-Start Doxygen comments with <code>EXPERIMENTAL:</code>.
+   </td>
+  </tr>
+  <tr>
+   <td>C++
+   </td>
+   <td>Experimental
+   </td>
+   <td>
+<p>Use the <code>ET_EXPERIMENTAL</code> annotation macro.</p>
+   </td>
+   <td>
+<p>Start Doxygen comments with <code>EXPERIMENTAL:</code>.</p>
    </td>
   </tr>
   <tr>
    <td>Java
    </td>
+   <td>Deprecated
+   </td>
    <td>
 <p>Use <a href="https://docs.oracle.com/javase/9/docs/api/java/lang/Deprecated.html">java.lang.Deprecated</a>.</p>
-<p>
-<p>
-<p>Use <a href="https://cs.android.com/androidx/platform/frameworks/support/+/androidx-main:docs/api_guidelines/annotations.md">androidx.annotation.RequiresOptIn</a>.</p>
    </td>
    <td>
 <p>
@@ -2051,6 +2096,17 @@ Start Doxygen comments with <code>EXPERIMENTAL:</code>.
 * @deprecated Use {@link #newMethod()} instead.
 */
 </code></pre>
+   </td>
+  </tr>
+  <tr>
+   <td>Java
+   </td>
+   <td>Experimental
+   </td>
+   <td>
+<p>Use <a href="https://cs.android.com/androidx/platform/frameworks/support/+/androidx-main:docs/api_guidelines/annotations.md">androidx.annotation.RequiresOptIn</a>.</p>
+   </td>
+   <td>
 <p>
 <pre><code>/**
 * Warning: This API is experimental.
@@ -2060,12 +2116,11 @@ Start Doxygen comments with <code>EXPERIMENTAL:</code>.
   <tr>
    <td>Objective-C
    </td>
+   <td>Deprecated
+   </td>
    <td>
 <p>
 <code>__attribute__((deprecated("Use newMethod instead")));</code>
-<p>
-<p>
-<code>__attribute__((deprecated("This API is experimental and may change without notice.")));</code>
    </td>
    <td>
 <p>
@@ -2074,6 +2129,18 @@ Start Doxygen comments with <code>EXPERIMENTAL:</code>.
 * @deprecated Use `newMethod` instead.
 */
 </code></pre>
+   </td>
+  </tr>
+  <tr>
+   <td>Objective-C
+   </td>
+   <td>Experimental
+   </td>
+   <td>
+<p>
+<code>__attribute__((deprecated("This API is experimental and may change without notice.")));</code>
+   </td>
+   <td>
 <p>
 <pre><code>
 /**
@@ -2085,16 +2152,27 @@ Start Doxygen comments with <code>EXPERIMENTAL:</code>.
   <tr>
    <td>Swift
    </td>
+   <td>Deprecated
+   </td>
    <td>
 <p>
 <code>@available(*, deprecated, message: "Use newMethod instead")</code>
-<p>
-<p>
-<code>@available(*, message: "This API is experimental")</code>
    </td>
    <td>
 <p>
 <code>/// - Warning: Deprecated. Use `newMethod()` instead.</code>
+   </td>
+  </tr>
+  <tr>
+   <td>Swift
+   </td>
+   <td>Experimental
+   </td>
+   <td>
+<p>
+<code>@available(*, message: "This API is experimental")</code>
+   </td>
+   <td>
 <p>
 <code>/// - Warning: This API is experimental.</code>
    </td>
@@ -2463,7 +2541,7 @@ be <em>deleted</em> in 1.5.x or later.</p>
        "headline": "API Life Cycle and Deprecation Policy",
        "description": "PyTorch Documentation. Explore PyTorch, an open-source machine learning library that accelerates the path from research prototyping to production deployment.",
        "url": "/api-life-cycle.html",
-       "articleBody": "API Life Cycle and Deprecation Policy# API Life Cycle# Each API of ExecuTorch falls into one of the following life cycle states: Experimental APIs in this stage are under active development and may change or be removed at any time. That said, the expectation is that we will eventually promote it to Stable, unless sufficient negative signals have been collected from the community or better alternatives have been found. Experimental APIs will be clearly marked (see the \u201cHow to Mark API State\u201d section below). Experimental APIs may be changed or removed without notice, and developers should expect no stability guarantees. Stable APIs are considered to be Stable if they are not marked as Experimental or Deprecated. APIs in this stage have been thoroughly tested and are considered ready for production use. The recommended best practice is to not deprecate stable APIs. When writing an API, write it in such a way that it doesn\u2019t need to be deprecated in the future. Stable APIs can be changed, but not in a breaking way. If breaking changes have to be made, Stable APIs will always transition to Deprecated before being broken/removed from the library. Deprecated APIs in this stage are no longer recommended for use and will be removed in a future version of ExecuTorch. Deprecated APIs will be clearly marked (see the \u201cHow to Mark API State\u201d section below). Deprecated APIs will remain functional for at least the deprecation period (see the \u201cDeprecation Period\u201d section below) to allow developers time to migrate to alternative APIs. Deleted APIs whose removal are made permanent. Cleaned up from both code and documentation. Deprecation Policy# Follow these steps to deprecate and remove an API: Discuss the change and collect initial feedback. Clearly mark the API deprecated in code and documentation (See \u201cHow to Mark API State\u201d below). Listen to user feedback after the first release that deprecates the API. Users who weren\u2019t involved in the original discussion may have good arguments for not deprecating or removing the API. Once the deprecation period has passed, the API may be removed (See \u201cDeprecation Period\u201d below). Be sure to also remove references from the documentation. We also use deprecation as a way to make breaking changes to an existing interface: for example, if adding a non-optional parameter to a method. To do this without breaking existing users: In a single commit: Create a new API that meets the new requirements. Deprecate the old API and recommend that users move to the new API. Migrate use cases from the old API to the new API. Delete the old API after the deprecation period. How to Mark API State# When possible, the ExecuTorch code uses language-standard ways to annotate API lifecycle state in the code. This makes it easier for IDEs and other tools to communicate state to developers. Language Code Documentation Python Use the executorch.exir._warnings.deprecated decorator. Use the executorch.exir._warnings.experimental decorator. Use .. warning:: in the docstrings of deprecated and experimental APIs. See example usage. C++ Use the ET_DEPRECATED annotation macro. See example usage. Use the ET_EXPERIMENTAL annotation macro. Start Doxygen comments with DEPRECATED: See example usage. Start Doxygen comments with EXPERIMENTAL:. Java Use java.lang.Deprecated. Use androidx.annotation.RequiresOptIn. /** * @deprecated Use {@link #newMethod()} instead. */ /** * Warning: This API is experimental. */ Objective-C __attribute__((deprecated(\"Use newMethod instead\"))); __attribute__((deprecated(\"This API is experimental and may change without notice.\"))); /** * @deprecated Use `newMethod` instead. */ /** * @experimental This API is experimental. */ Swift @available(*, deprecated, message: \"Use newMethod instead\") @available(*, message: \"This API is experimental\") /// - Warning: Deprecated. Use `newMethod()` instead. /// - Warning: This API is experimental. The annotations would trigger static and/or runtime warning that contains at least these information: Clearly point to the non-deprecated alternative to migrate to, or be clear if there is no alternative; Specify the earliest version in which the API may actually be removed (See \u201cDeprecation Period\u201d below). Deprecation Period# Here we recommend waiting for at least 2 minor releases before the removal. For example, if a function is marked as deprecated in release 1.3.x, then it can be deleted in 1.5.x or later.",
+       "articleBody": "API Life Cycle and Deprecation Policy# API Life Cycle# Each API of ExecuTorch falls into one of the following life cycle states: Experimental APIs in this stage are under active development and may change or be removed at any time. That said, the expectation is that we will eventually promote it to Stable, unless sufficient negative signals have been collected from the community or better alternatives have been found. Experimental APIs will be clearly marked (see the \u201cHow to Mark API State\u201d section below). Experimental APIs may be changed or removed without notice, and developers should expect no stability guarantees. Stable APIs are considered to be Stable if they are not marked as Experimental or Deprecated. APIs in this stage have been thoroughly tested and are considered ready for production use. The recommended best practice is to not deprecate stable APIs. When writing an API, write it in such a way that it doesn\u2019t need to be deprecated in the future. Stable APIs can be changed, but not in a breaking way. If breaking changes have to be made, Stable APIs will always transition to Deprecated before being broken/removed from the library. Deprecated APIs in this stage are no longer recommended for use and will be removed in a future version of ExecuTorch. Deprecated APIs will be clearly marked (see the \u201cHow to Mark API State\u201d section below). Deprecated APIs will remain functional for at least the deprecation period (see the \u201cDeprecation Period\u201d section below) to allow developers time to migrate to alternative APIs. Deleted APIs whose removal are made permanent. Cleaned up from both code and documentation. Deprecation Policy# Follow these steps to deprecate and remove an API: Discuss the change and collect initial feedback. Clearly mark the API deprecated in code and documentation (See \u201cHow to Mark API State\u201d below). Listen to user feedback after the first release that deprecates the API. Users who weren\u2019t involved in the original discussion may have good arguments for not deprecating or removing the API. Once the deprecation period has passed, the API may be removed (See \u201cDeprecation Period\u201d below). Be sure to also remove references from the documentation. We also use deprecation as a way to make breaking changes to an existing interface: for example, if adding a non-optional parameter to a method. To do this without breaking existing users: In a single commit: Create a new API that meets the new requirements. Deprecate the old API and recommend that users move to the new API. Migrate use cases from the old API to the new API. Delete the old API after the deprecation period. How to Mark API State# When possible, the ExecuTorch code uses language-standard ways to annotate API lifecycle state in the code. This makes it easier for IDEs and other tools to communicate state to developers. Language API state Code Documentation All Stable No annotation is required. APIs are considered stable if they are not marked as experimental or deprecated. No warning is required. All Deleted Remove the API from code after the deprecation period has passed. Remove references to the deleted API from documentation. Python Deprecated Use the executorch.exir._warnings.deprecated decorator. Use .. warning:: in the docstring. Clearly point to the replacement API when one exists. Python Experimental Use the executorch.exir._warnings.experimental decorator. Use .. warning:: in the docstring. State that the API is experimental and may change or be removed without notice. See example usage. C++ Deprecated Use the ET_DEPRECATED annotation macro. See example usage. Start Doxygen comments with DEPRECATED: See example usage. C++ Experimental Use the ET_EXPERIMENTAL annotation macro. Start Doxygen comments with EXPERIMENTAL:. Java Deprecated Use java.lang.Deprecated. /** * @deprecated Use {@link #newMethod()} instead. */ Java Experimental Use androidx.annotation.RequiresOptIn. /** * Warning: This API is experimental. */ Objective-C Deprecated __attribute__((deprecated(\"Use newMethod instead\"))); /** * @deprecated Use `newMethod` instead. */ Objective-C Experimental __attribute__((deprecated(\"This API is experimental and may change without notice.\"))); /** * @experimental This API is experimental. */ Swift Deprecated @available(*, deprecated, message: \"Use newMethod instead\") /// - Warning: Deprecated. Use `newMethod()` instead. Swift Experimental @available(*, message: \"This API is experimental\") /// - Warning: This API is experimental. The annotations would trigger static and/or runtime warning that contains at least these information: Clearly point to the non-deprecated alternative to migrate to, or be clear if there is no alternative; Specify the earliest version in which the API may actually be removed (See \u201cDeprecation Period\u201d below). Deprecation Period# Here we recommend waiting for at least 2 minor releases before the removal. For example, if a function is marked as deprecated in release 1.3.x, then it can be deleted in 1.5.x or later.",
        "author": {
          "@type": "Organization",
          "name": "PyTorch Contributors",
