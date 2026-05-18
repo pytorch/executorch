@@ -53,6 +53,8 @@ class Module {
     MmapUseMlock,
     /// Use memory locking and ignore errors.
     MmapUseMlockIgnoreErrors,
+    /// Use mmap with madvise(MADV_WILLNEED | MADV_SEQUENTIAL) hints.
+    MmapUseMadvise,
   };
 
   /**
