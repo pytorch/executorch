@@ -36,7 +36,10 @@ import time
 import torch
 
 from executorch.examples.models.gemma4_31b.export import load_prequantized_model
-from executorch.examples.models.gemma4_31b.model import Gemma4_31B, materialize_runtime_buffers
+from executorch.examples.models.gemma4_31b.model import (
+    Gemma4_31B,
+    materialize_runtime_buffers,
+)
 
 
 def _move_to_cuda(model, config) -> None:
