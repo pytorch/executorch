@@ -113,7 +113,7 @@ def install_optional_example_requirements(use_pytorch_nightly):
     print("Installing torch domain libraries")
     DOMAIN_LIBRARIES = [
         ("torchvision==0.27.0" if use_pytorch_nightly else "torchvision"),
-        ("torchaudio==2.12.0" if use_pytorch_nightly else "torchaudio"),
+        ("torchaudio==2.11.0" if use_pytorch_nightly else "torchaudio"),
     ]
     # Then install domain libraries
     subprocess.run(
