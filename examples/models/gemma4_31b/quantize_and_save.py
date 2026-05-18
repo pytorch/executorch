@@ -114,8 +114,36 @@ def main() -> None:
         print("Untying embed_tokens / lm_head...")
         model.lm_head.weight = nn.Parameter(model.embed_tokens.weight.clone())
 
+    # Detach vision submodules BEFORE calling quantize_model so the existing
+    # recipe \u2014 which matches `.*\.weight` \u2014 never sees them. The text-decoder
+    # path below remains bitwise-identical to its pre-vision behavior. Vision
+    # is processed separately as bf16 + INT8 PE-table only. Vision is mandatory
+    # for Gemma 4 31B \u2014 the attribute lookups below will raise AttributeError
+    # if the model was somehow built without vision (shouldn't happen).
+    vision_tower = model.vision_tower
+    embed_vision = model.embed_vision
+    del model.vision_tower
+    del model.embed_vision
+
     print(f"Quantizing with recipe '{args.quant_recipe}'...")
     state_dict = quantize_model(model, recipe, verbose=True)
+
+    # Vision-side state dict \u2014 always saved (vision is mandatory).
+    from executorch.examples.models.gemma4_31b.quant.pack_vision_cuda import (
+        collect_vision_state_dict,
+        quantize_vision_position_table,
+    )
+
+    print("Quantizing vision PE table (bf16 -> int8 per-channel)...")
+    quantize_vision_position_table(vision_tower, verbose=True)
+    vision_state = collect_vision_state_dict(vision_tower, embed_vision)
+    # Sanity: keys never collide with text-decoder keys (different prefixes).
+    assert not (set(vision_state) & set(state_dict)), (
+        "Vision state dict keys collide with text-decoder keys; "
+        "this should never happen given the disjoint prefixes."
+    )
+    state_dict.update(vision_state)
+    print(f"  Added {len(vision_state)} vision tensors to checkpoint")
 
     os.makedirs(args.output, exist_ok=True)
     safetensors_path = os.path.join(args.output, "model.safetensors")

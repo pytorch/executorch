@@ -42,7 +42,14 @@ A prequantized checkpoint (sensitive recipe) is available on HuggingFace:
 huggingface-cli download SocialLocalMobile/gemma-4-31B-it-HQQ-INT4 --local-dir gemma-4-31B-it-HQQ-INT4
 ```
 
-> **Note**: This checkpoint is intended for development and testing of the
+A vision-enabled prequantized checkpoint (same recipe + vision tower
+weights for image+text inference) is also available:
+
+```bash
+huggingface-cli download gasoonjia/gemma-4-31B-it-HQQ-INT4-vision --local-dir gemma-4-31B-it-HQQ-INT4-vision
+```
+
+> **Note**: These checkpoints are intended for development and testing of the
 > ExecuTorch CUDA export pipeline. Output quality has not been formally
 > evaluated against the base model.
 

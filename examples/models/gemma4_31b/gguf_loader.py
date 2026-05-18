@@ -4,6 +4,10 @@
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
 
+# DEPRECATED: This loader is text-only. Gemma 4 31B is multimodal-by-default;
+# the GGUF path will fail at vision attach. Use --prequantized or --model-dir
+# for full multimodal support.
+
 """Load a GGUF file into a Gemma 4 31B model.
 
 Streams tensors one at a time via ``iter_gguf_tensors`` for low peak
@@ -158,4 +162,8 @@ def load_gguf_model(
     model.eval()
 
     print(f"Model: {config.num_hidden_layers} layers, hidden={config.hidden_size}")
+    if not hasattr(model, "vision_tower"):
+        raise NotImplementedError(
+            "GGUF loader doesn't support vision yet — use --prequantized or --model-dir"
+        )
     return model, config

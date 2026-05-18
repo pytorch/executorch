@@ -21,6 +21,7 @@ import unittest
 
 import torch
 import torch.nn as nn
+from executorch.examples.models.gemma4.vision_tower import Gemma4VisionConfig
 
 from executorch.examples.models.gemma4_31b.model import (
     Gemma4_31B,
@@ -44,6 +45,19 @@ from torchao.prototype.safetensors.safetensors_support import (
 # ---------------------------------------------------------------------------
 # Shared fixtures — imported by test_cuda_pipeline.py.
 
+TINY_VISION_CONFIG = Gemma4VisionConfig(
+    hidden_size=32,
+    intermediate_size=64,
+    num_hidden_layers=1,
+    num_attention_heads=2,
+    num_key_value_heads=2,
+    head_dim=16,
+    patch_size=4,
+    pooling_kernel_size=2,
+    position_embedding_size=16,
+    standardize=True,
+)
+
 TINY_CONFIG = Gemma4_31BConfig(
     vocab_size=256,
     hidden_size=128,
@@ -63,6 +77,7 @@ TINY_CONFIG = Gemma4_31BConfig(
     final_logit_softcapping=30.0,
     tie_word_embeddings=True,
     sliding_window=16,
+    vision_config=TINY_VISION_CONFIG,
     max_seq_len=64,
 )
 
@@ -99,6 +114,7 @@ class MockTokenizer:
 
 def config_dict() -> dict:
     cfg = TINY_CONFIG
+    vc = cfg.vision_config
     return {
         "vocab_size": cfg.vocab_size,
         "hidden_size": cfg.hidden_size,
@@ -123,12 +139,34 @@ def config_dict() -> dict:
         "tie_word_embeddings": cfg.tie_word_embeddings,
         "sliding_window": cfg.sliding_window,
         "layer_types": cfg.layer_types,
+        "vision_config": {
+            "hidden_size": vc.hidden_size,
+            "intermediate_size": vc.intermediate_size,
+            "num_hidden_layers": vc.num_hidden_layers,
+            "num_attention_heads": vc.num_attention_heads,
+            "num_key_value_heads": vc.num_key_value_heads,
+            "head_dim": vc.head_dim,
+            "hidden_activation": vc.hidden_activation,
+            "rms_norm_eps": vc.rms_norm_eps,
+            "patch_size": vc.patch_size,
+            "pooling_kernel_size": vc.pooling_kernel_size,
+            "position_embedding_size": vc.position_embedding_size,
+            "max_position_embeddings": vc.max_position_embeddings,
+            "rope_parameters": {"rope_theta": vc.rope_theta},
+            "standardize": vc.standardize,
+            "use_clipped_linears": vc.use_clipped_linears,
+            "default_output_length": vc.default_output_length,
+        },
     }
 
 
 def build_random_tiny_model() -> Gemma4_31B:
     torch.manual_seed(42)
     model = Gemma4_31B(TINY_CONFIG)
+    # Vision is mandatory for construction; the text-decoder quantization
+    # tests below detach it before quantizing (mirroring quantize_and_save.py).
+    del model.vision_tower
+    del model.embed_vision
     model.to(dtype=torch.bfloat16)
     for p in model.parameters():
         if p.device.type != "meta":
@@ -304,6 +342,22 @@ class TestGgufKeyMapping(unittest.TestCase):
         from executorch.examples.models.gemma4_31b.gguf_loader import gguf_to_model_key
 
         self.assertIsNone(gguf_to_model_key("rope_freqs.weight"))
+
+
+class TestVisionConfigRequired(unittest.TestCase):
+    def test_from_hf_config_raises_when_vision_config_missing(self):
+        """Gemma 4 31B is multimodal-by-default \u2014 a config.json missing the
+        ``vision_config`` block must be treated as a corrupt checkpoint and
+        ``Gemma4_31BConfig.from_hf_config`` must raise."""
+        # Reuse the text-only tiny config but strip the vision_config block.
+        cfg_payload = config_dict()
+        cfg_payload.pop("vision_config", None)
+        with tempfile.TemporaryDirectory() as d:
+            cfg_path = os.path.join(d, "config.json")
+            with open(cfg_path, "w") as f:
+                json.dump(cfg_payload, f)
+            with self.assertRaises(ValueError):
+                Gemma4_31BConfig.from_hf_config(cfg_path)
 
 
 if __name__ == "__main__":

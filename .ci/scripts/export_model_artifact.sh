@@ -203,9 +203,20 @@ case "$HF_MODEL" in
     PREPROCESSOR_FEATURE_SIZE=""
     PREPROCESSOR_OUTPUT=""
     ;;
+  gasoonjia/gemma-4-31B-it-HQQ-INT4-vision)
+    # Vision-aware prequant of Gemma 4 31B (image+text). Same export path
+    # as the text-only checkpoint; the export script auto-detects the
+    # vision_config from the prequantized checkpoint.
+    MODEL_NAME="gemma4_31b"
+    TASK=""
+    MAX_SEQ_LEN=""
+    EXTRA_PIP=""
+    PREPROCESSOR_FEATURE_SIZE=""
+    PREPROCESSOR_OUTPUT=""
+    ;;
   *)
     echo "Error: Unsupported model '$HF_MODEL'"
-    echo "Supported models: mistralai/Voxtral-Mini-3B-2507, mistralai/Voxtral-Mini-4B-Realtime-2602, openai/whisper-{small, medium, large, large-v2, large-v3, large-v3-turbo}, google/gemma-3-4b-it, Qwen/Qwen3-0.6B, nvidia/diar_streaming_sortformer_4spk-v2, nvidia/parakeet-tdt, facebook/dinov2-small-imagenet1k-1-layer, SocialLocalMobile/Qwen3.5-35B-A3B-HQQ-INT4, SocialLocalMobile/gemma-4-31B-it-HQQ-INT4"
+    echo "Supported models: mistralai/Voxtral-Mini-3B-2507, mistralai/Voxtral-Mini-4B-Realtime-2602, openai/whisper-{small, medium, large, large-v2, large-v3, large-v3-turbo}, google/gemma-3-4b-it, Qwen/Qwen3-0.6B, nvidia/diar_streaming_sortformer_4spk-v2, nvidia/parakeet-tdt, facebook/dinov2-small-imagenet1k-1-layer, SocialLocalMobile/Qwen3.5-35B-A3B-HQQ-INT4, SocialLocalMobile/gemma-4-31B-it-HQQ-INT4, gasoonjia/gemma-4-31B-it-HQQ-INT4-vision"
     exit 1
     ;;
 esac
