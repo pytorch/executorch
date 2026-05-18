@@ -44,6 +44,7 @@ from torchao.quantization.pt2e.quantizer import Quantizer
 
 from .qconfig import (
     get_16a16w_qnn_ptq_config,
+    get_16a2w_qnn_ptq_config,
     get_16a4w_qnn_ptq_config,
     get_16a4w_qnn_qat_config,
     get_16a8w_qnn_ptq_config,
@@ -69,6 +70,7 @@ get_default_16bit_qnn_ptq_config = get_16a16w_qnn_ptq_config
 __all__ = [
     "QnnQuantizer",
     "QuantDtype",
+    "get_16a2w_qnn_ptq_config",
     "get_16a4w_qnn_ptq_config",
     "get_16a8w_qnn_ptq_config",
     "get_16a8w_qnn_qat_config",
@@ -94,6 +96,7 @@ class QuantDtype(IntEnum):
     use_8a8w = 4
     use_8a4w = 5
     use_fp16a8w = 6
+    use_16a2w = 7
 
 
 QUANT_CONFIG_DICT = {
@@ -122,6 +125,15 @@ QUANT_CONFIG_DICT = {
             get_ptq_per_channel_quant_config,
             act_dtype=torch.uint16,
             weight_dtype=torch.int4,
+        ),
+        None,
+    ),
+    (QuantDtype.use_16a2w, False): (
+        get_16a2w_qnn_ptq_config,
+        partial(
+            get_ptq_per_channel_quant_config,
+            act_dtype=torch.uint16,
+            weight_dtype=torch.int2,
         ),
         None,
     ),
