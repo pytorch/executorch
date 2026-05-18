@@ -822,6 +822,78 @@ _LENS_ADB_CSS = """
   display: none;
 }
 .adb-transfer-detail.adb-show { display: block; }
+.adb-section-header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 12px;
+  font-weight: 600;
+  margin: 4px 0;
+  color: var(--text-secondary, #6a737d);
+}
+.adb-streams-table {
+  border: 1px solid var(--border-color, #d0d7de);
+  border-radius: 4px;
+  overflow: hidden;
+}
+.adb-stream-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 5px 8px;
+  font-size: 12px;
+  border-bottom: 1px solid var(--border-color, #d0d7de);
+}
+.adb-stream-row:last-child { border-bottom: none; }
+.adb-stream-name {
+  flex: 1;
+  font-family: var(--font-mono, "SFMono-Regular", Consolas, monospace);
+  color: var(--text-primary, #24292f);
+}
+.adb-stream-meta {
+  font-size: 11px;
+  color: var(--text-secondary, #6a737d);
+  white-space: nowrap;
+}
+.adb-stream-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 9999;
+  display: flex;
+  flex-direction: column;
+  background: var(--bg-primary, #fff);
+}
+.adb-stream-overlay-bar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 12px;
+  border-bottom: 1px solid var(--border-color, #d0d7de);
+  background: var(--bg-tertiary, #f6f8fa);
+  flex-shrink: 0;
+}
+.adb-stream-overlay-title {
+  flex: 1;
+  font-size: 13px;
+  font-weight: 600;
+  font-family: var(--font-mono, "SFMono-Regular", Consolas, monospace);
+}
+.adb-stream-overlay-meta {
+  font-size: 11px;
+  color: var(--text-secondary, #6a737d);
+}
+.adb-stream-overlay-body {
+  flex: 1;
+  overflow: auto;
+  margin: 0;
+  padding: 8px 12px;
+  font-family: var(--font-mono, "SFMono-Regular", Consolas, monospace);
+  font-size: 12px;
+  line-height: 1.5;
+  white-space: pre;
+  background: var(--bg-code, #f6f8fa);
+  color: var(--text-primary, #24292f);
+}
 """
 
 
@@ -847,9 +919,9 @@ _LENS_ADB_JS = r"""
     return m + "m " + sec + "s";
   }
   function copy(text, btn) {
+    var orig = btn ? btn.textContent : "";
     var done = function () {
       if (!btn) return;
-      var orig = btn.textContent;
       btn.textContent = "Copied";
       setTimeout(function () { btn.textContent = orig; }, 1200);
     };
@@ -889,6 +961,69 @@ _LENS_ADB_JS = r"""
     return pre;
   }
 
+  // -------------------------------------------------------- Stream overlay / row
+  function _lineCount(text) {
+    var lines = (text || "").split("\n");
+    return (lines.length > 0 && lines[lines.length - 1] === "") ? lines.length - 1 : lines.length;
+  }
+
+  function openStreamOverlay(title, text) {
+    var overlay = document.createElement("div");
+    overlay.className = "adb-stream-overlay";
+
+    var bar = document.createElement("div");
+    bar.className = "adb-stream-overlay-bar";
+
+    var titleEl = document.createElement("span");
+    titleEl.className = "adb-stream-overlay-title";
+    titleEl.textContent = title;
+    bar.appendChild(titleEl);
+
+    var metaEl = document.createElement("span");
+    metaEl.className = "adb-stream-overlay-meta";
+    metaEl.textContent = _lineCount(text) + " lines";
+    bar.appendChild(metaEl);
+
+    bar.appendChild(makeButton("Copy", function (e) { copy(text, e.currentTarget); }));
+    bar.appendChild(makeButton("Close [Esc]", function () { close(); }));
+    overlay.appendChild(bar);
+
+    var pre = document.createElement("pre");
+    pre.className = "adb-stream-overlay-body";
+    pre.textContent = text || "(empty)";
+    overlay.appendChild(pre);
+
+    function close() {
+      document.body.style.overflow = "";
+      document.removeEventListener("keydown", onKey);
+      document.body.removeChild(overlay);
+    }
+    function onKey(e) { if (e.key === "Escape") close(); }
+    document.addEventListener("keydown", onKey);
+    document.body.style.overflow = "hidden";
+    document.body.appendChild(overlay);
+  }
+
+  function makeStreamRow(title, text, statusNote) {
+    var row = document.createElement("div");
+    row.className = "adb-stream-row";
+
+    var nameEl = document.createElement("span");
+    nameEl.className = "adb-stream-name";
+    nameEl.textContent = title + (statusNote ? " \u2014 " + statusNote : "");
+    row.appendChild(nameEl);
+
+    if (text) {
+      var metaEl = document.createElement("span");
+      metaEl.className = "adb-stream-meta";
+      metaEl.textContent = _lineCount(text) + " lines";
+      row.appendChild(metaEl);
+      row.appendChild(makeButton("Copy", function (e) { copy(text, e.currentTarget); }));
+      row.appendChild(makeButton("View", function () { openStreamOverlay(nameEl.textContent, text); }));
+    }
+    return row;
+  }
+
   window.renderAdbExecute = function (container, args, ctx, analysis) {
     var ev = (args && args.event) || {};
     container.innerHTML = "";
@@ -921,40 +1056,40 @@ _LENS_ADB_JS = r"""
     }
     container.appendChild(cmdRow);
 
-    var logHeader = document.createElement("div");
-    logHeader.className = "adb-section-title";
-    logHeader.style.display = "flex";
-    logHeader.style.alignItems = "center";
-    logHeader.style.gap = "8px";
-    logHeader.innerHTML = "<span>Inference stdout</span>";
-    var copyLog = makeButton("Copy raw log", function (e) { copy(ev.stdout || "", e.currentTarget); });
-    logHeader.appendChild(copyLog);
-    container.appendChild(logHeader);
-    container.appendChild(renderLog(ev.stdout || "", ev.error_lines || []));
+    var stdoutSec = document.createElement("div");
+    stdoutSec.className = "adb-section";
+    var stdoutHeader = document.createElement("div");
+    stdoutHeader.className = "adb-section-header";
+    var stdoutLabel = document.createElement("span");
+    stdoutLabel.textContent = "Inference stdout";
+    stdoutHeader.appendChild(stdoutLabel);
+    stdoutHeader.appendChild(makeButton("Copy", function (e) { copy(ev.stdout || "", e.currentTarget); }));
+    stdoutSec.appendChild(stdoutHeader);
+    stdoutSec.appendChild(renderLog(ev.stdout || "", ev.error_lines || []));
+    container.appendChild(stdoutSec);
 
-    function makeStreamSection(title, text, status, marker) {
-      if (!text && !status) return null;
-      var sec = document.createElement("div");
-      sec.className = "adb-section";
-      var title_el = document.createElement("div");
-      title_el.className = "adb-section-title";
-      var statusText = (status && status !== "ok") ? " — " + status : "";
-      title_el.innerHTML = "<span>" + escapeHtml(title) + escapeHtml(statusText) + "</span>";
-      var copyBtn = makeButton("Copy", function (e) { copy(text || "", e.currentTarget); });
-      copyBtn.style.marginLeft = "8px";
-      title_el.style.display = "flex";
-      title_el.style.alignItems = "center";
-      title_el.appendChild(copyBtn);
-      sec.appendChild(title_el);
-      if (text) {
-        sec.appendChild(renderLog(text, []));
-      }
-      return sec;
+    var streamsData = [
+      { title: "logcat -d", text: ev.logcat, status: ev.logcat_status },
+      { title: "adb shell dmesg", text: ev.dmesg, status: ev.dmesg_status },
+    ];
+    var anyStream = streamsData.some(function (s) { return s.text || s.status; });
+    if (anyStream) {
+      var streamsSec = document.createElement("div");
+      streamsSec.className = "adb-section";
+      var streamsTitle = document.createElement("div");
+      streamsTitle.className = "adb-section-title";
+      streamsTitle.textContent = "Streams";
+      streamsSec.appendChild(streamsTitle);
+      var streamsTable = document.createElement("div");
+      streamsTable.className = "adb-streams-table";
+      streamsData.forEach(function (s) {
+        if (!s.text && !s.status) return;
+        var statusNote = (s.status && s.status !== "ok") ? s.status : "";
+        streamsTable.appendChild(makeStreamRow(s.title, s.text, statusNote));
+      });
+      streamsSec.appendChild(streamsTable);
+      container.appendChild(streamsSec);
     }
-    var logcatSec = makeStreamSection("logcat -d", ev.logcat, ev.logcat_status, "logcat");
-    if (logcatSec) container.appendChild(logcatSec);
-    var dmesgSec = makeStreamSection("adb shell dmesg", ev.dmesg, ev.dmesg_status, "dmesg");
-    if (dmesgSec) container.appendChild(dmesgSec);
 
     if (ev.related_pulls && ev.related_pulls.length) {
       var pulls = document.createElement("div");
