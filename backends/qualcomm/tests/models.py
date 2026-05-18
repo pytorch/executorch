@@ -1039,6 +1039,17 @@ class CumSum(torch.nn.Module):
         return x.cumsum(dim=0)
 
 
+class Diagonal(torch.nn.Module):
+    def __init__(self, offset=0, dim1=0, dim2=1):
+        super().__init__()
+        self.offset = offset
+        self.dim1 = dim1
+        self.dim2 = dim2
+
+    def forward(self, x):
+        return torch.diagonal(x, offset=self.offset, dim1=self.dim1, dim2=self.dim2)
+
+
 class Div(torch.nn.Module):
     def __init__(self):
         super().__init__()
