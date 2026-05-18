@@ -395,6 +395,62 @@ public abstract class <span class="typeNameLabel"><a href=Tensor.html>Tensor</a>
                                         </tr>
                                         
                                         <tr id="i31" class="rowColor">
+                                            <td class="colFirst"><code>void</code>
+                                            </td>
+                                            <th class="colSecond" scope="row"><code><a href=Tensor.html#copyDataInto(FloatBuffer)>copyDataInto</a>(<a href=https://developer.android.com/reference/kotlin/java/nio/FloatBuffer.html>FloatBuffer</a> dst) </code>
+                                            </th>
+                                            <td class="colLast">Copies the tensor's data into a caller-provided <a href=https://developer.android.com/reference/kotlin/java/nio/FloatBuffer.html>FloatBuffer</a>, avoiding the per-call <code>{@code float[]}</code> allocation that <a href=Tensor.html#getDataAsFloatArray()>getDataAsFloatArray</a> performs.</td>
+                                        </tr>
+                                        
+                                        <tr id="i32" class="altColor">
+                                            <td class="colFirst"><code>void</code>
+                                            </td>
+                                            <th class="colSecond" scope="row"><code><a href=Tensor.html#copyDataInto(ByteBuffer)>copyDataInto</a>(<a href=https://developer.android.com/reference/kotlin/java/nio/ByteBuffer.html>ByteBuffer</a> dst) </code>
+                                            </th>
+                                            <td class="colLast">Copies the tensor's data into a caller-provided <a href=https://developer.android.com/reference/kotlin/java/nio/ByteBuffer.html>ByteBuffer</a>, avoiding the per-call <code>{@code byte[]}</code> allocation that <a href=Tensor.html#getDataAsByteArray()>getDataAsByteArray</a> performs.</td>
+                                        </tr>
+                                        
+                                        <tr id="i33" class="rowColor">
+                                            <td class="colFirst"><code>void</code>
+                                            </td>
+                                            <th class="colSecond" scope="row"><code><a href=Tensor.html#copyDataIntoUnsigned(ByteBuffer)>copyDataIntoUnsigned</a>(<a href=https://developer.android.com/reference/kotlin/java/nio/ByteBuffer.html>ByteBuffer</a> dst) </code>
+                                            </th>
+                                            <td class="colLast">Copies the tensor's data into a caller-provided <a href=https://developer.android.com/reference/kotlin/java/nio/ByteBuffer.html>ByteBuffer</a>, avoiding the per-call <code>{@code byte[]}</code> allocation that <a href=Tensor.html#getDataAsUnsignedByteArray()>getDataAsUnsignedByteArray</a> performs.</td>
+                                        </tr>
+                                        
+                                        <tr id="i34" class="altColor">
+                                            <td class="colFirst"><code>void</code>
+                                            </td>
+                                            <th class="colSecond" scope="row"><code><a href=Tensor.html#copyDataInto(IntBuffer)>copyDataInto</a>(<a href=https://developer.android.com/reference/kotlin/java/nio/IntBuffer.html>IntBuffer</a> dst) </code>
+                                            </th>
+                                            <td class="colLast">Copies the tensor's data into a caller-provided <a href=https://developer.android.com/reference/kotlin/java/nio/IntBuffer.html>IntBuffer</a>, avoiding the per-call <code>{@code * int[]}</code> allocation that <a href=Tensor.html#getDataAsIntArray()>getDataAsIntArray</a> performs.</td>
+                                        </tr>
+                                        
+                                        <tr id="i35" class="rowColor">
+                                            <td class="colFirst"><code>void</code>
+                                            </td>
+                                            <th class="colSecond" scope="row"><code><a href=Tensor.html#copyDataInto(LongBuffer)>copyDataInto</a>(<a href=https://developer.android.com/reference/kotlin/java/nio/LongBuffer.html>LongBuffer</a> dst) </code>
+                                            </th>
+                                            <td class="colLast">Copies the tensor's data into a caller-provided <a href=https://developer.android.com/reference/kotlin/java/nio/LongBuffer.html>LongBuffer</a>, avoiding the per-call <code>{@code long[]}</code> allocation that <a href=Tensor.html#getDataAsLongArray()>getDataAsLongArray</a> performs.</td>
+                                        </tr>
+                                        
+                                        <tr id="i36" class="altColor">
+                                            <td class="colFirst"><code>void</code>
+                                            </td>
+                                            <th class="colSecond" scope="row"><code><a href=Tensor.html#copyDataInto(DoubleBuffer)>copyDataInto</a>(<a href=https://developer.android.com/reference/kotlin/java/nio/DoubleBuffer.html>DoubleBuffer</a> dst) </code>
+                                            </th>
+                                            <td class="colLast">Copies the tensor's data into a caller-provided <a href=https://developer.android.com/reference/kotlin/java/nio/DoubleBuffer.html>DoubleBuffer</a>, avoiding the per-call <code>{@code double[]}</code> allocation that <a href=Tensor.html#getDataAsDoubleArray()>getDataAsDoubleArray</a> performs.</td>
+                                        </tr>
+                                        
+                                        <tr id="i37" class="rowColor">
+                                            <td class="colFirst"><code>void</code>
+                                            </td>
+                                            <th class="colSecond" scope="row"><code><a href=Tensor.html#copyDataInto(ShortBuffer)>copyDataInto</a>(<a href=https://developer.android.com/reference/kotlin/java/nio/ShortBuffer.html>ShortBuffer</a> dst) </code>
+                                            </th>
+                                            <td class="colLast">Copies the tensor's data into a caller-provided <a href=https://developer.android.com/reference/kotlin/java/nio/ShortBuffer.html>ShortBuffer</a>, avoiding the per-call <code>{@code short[]}</code> allocation that <a href=Tensor.html#getDataAsShortArray()>getDataAsShortArray</a> performs.</td>
+                                        </tr>
+                                        
+                                        <tr id="i38" class="altColor">
                                             <td class="colFirst"><code><a href=https://kotlinlang.org/api/latest/jvm/stdlib/kotlin/-array/index.html>Array</a>&lt;long&gt;</code>
                                             </td>
                                             <th class="colSecond" scope="row"><code><a href=Tensor.html#getDataAsLongArray()>getDataAsLongArray</a>() </code>
@@ -402,7 +458,7 @@ public abstract class <span class="typeNameLabel"><a href=Tensor.html>Tensor</a>
                                             <td class="colLast"></td>
                                         </tr>
                                         
-                                        <tr id="i32" class="altColor">
+                                        <tr id="i39" class="rowColor">
                                             <td class="colFirst"><code><a href=https://kotlinlang.org/api/latest/jvm/stdlib/kotlin/-array/index.html>Array</a>&lt;double&gt;</code>
                                             </td>
                                             <th class="colSecond" scope="row"><code><a href=Tensor.html#getDataAsDoubleArray()>getDataAsDoubleArray</a>() </code>
@@ -410,7 +466,7 @@ public abstract class <span class="typeNameLabel"><a href=Tensor.html>Tensor</a>
                                             <td class="colLast"></td>
                                         </tr>
                                         
-                                        <tr id="i33" class="rowColor">
+                                        <tr id="i40" class="altColor">
                                             <td class="colFirst"><code><a href=https://kotlinlang.org/api/latest/jvm/stdlib/kotlin/-array/index.html>Array</a>&lt;byte&gt;</code>
                                             </td>
                                             <th class="colSecond" scope="row"><code><a href=Tensor.html#toByteArray()>toByteArray</a>() </code>
@@ -418,7 +474,7 @@ public abstract class <span class="typeNameLabel"><a href=Tensor.html>Tensor</a>
                                             <td class="colLast">Serializes a <code>{@code Tensor}</code> into a byte array.</td>
                                         </tr>
                                         
-                                        <tr id="i34" class="altColor">
+                                        <tr id="i41" class="rowColor">
                                             <td class="colFirst"><code>static <a href=Tensor.html>Tensor</a></code>
                                             </td>
                                             <th class="colSecond" scope="row"><code><a href=Tensor.html#fromByteArray(Array)>fromByteArray</a>(<a href=https://kotlinlang.org/api/latest/jvm/stdlib/kotlin/-array/index.html>Array</a>&lt;byte&gt; bytes) </code>
@@ -1181,6 +1237,174 @@ public abstract class <span class="typeNameLabel"><a href=Tensor.html>Tensor</a>
                                         <h4>getDataAsFloatArray</h4>
                                         <pre class="methodSignature"> <a href=https://kotlinlang.org/api/latest/jvm/stdlib/kotlin/-array/index.html>Array</a>&lt;float&gt; <a href=Tensor.html#getDataAsFloatArray()>getDataAsFloatArray</a>()</pre>
                                         <div class="block"></div>
+                                        
+                                        <!-- TODO missing return annotation -->
+                                    </li>
+                                </ul>
+                                
+                                <a id="copyDataInto(FloatBuffer)">
+                                    <!--   -->
+                                </a>
+                                <ul class=
+                                              "blockList"
+                                          >
+                                    <li class="blockList">
+                                        <h4>copyDataInto</h4>
+                                        <pre class="methodSignature"> void <a href=Tensor.html#copyDataInto(FloatBuffer)>copyDataInto</a>(<a href=https://developer.android.com/reference/kotlin/java/nio/FloatBuffer.html>FloatBuffer</a> dst)</pre>
+                                        <div class="block"><p>Copies the tensor's data into a caller-provided <a href=https://developer.android.com/reference/kotlin/java/nio/FloatBuffer.html>FloatBuffer</a>, avoiding the per-call <code>{@code float[]}</code> allocation that <a href=Tensor.html#getDataAsFloatArray()>getDataAsFloatArray</a> performs. The destinationbuffer's position is advanced by the number of elements written; its content from the startingposition must have at least <a href=Tensor.html#numel()>numel</a> elements of remaining capacity.</p><p>Useful in steady-state inference loops where the same output tensor shape is read everyframe: pre-allocate a <code>{@code FloatBuffer}</code> once (e.g. via <a href=Tensor.html#allocateFloatBuffer(int)>allocateFloatBuffer</a>) andreuse it across calls.</p><p>Supported by float32 (zero-copy bulk put) and float16 (per-element half→float widening,matching <a href=Tensor.html#getDataAsFloatArray()>getDataAsFloatArray</a> on that subclass). For raw fp16 bits without widening,use <a href=Tensor.html#copyDataInto(ShortBuffer)>copyDataInto</a>.</p></div>
+                                        
+                                        <dl>
+                                            <dt><span class="paramLabel">Parameters:</span></dt>
+                                            
+                                            
+                                            <dd><code>dst</code> - the destination buffer; must have remaining capacity <code>{@code &gt;=}</code><a href=Tensor.html#numel()>numel</a>.</dd>
+                                            
+                                            
+                                        </dl>
+                                        
+                                        <!-- TODO missing return annotation -->
+                                    </li>
+                                </ul>
+                                
+                                <a id="copyDataInto(ByteBuffer)">
+                                    <!--   -->
+                                </a>
+                                <ul class=
+                                              "blockList"
+                                          >
+                                    <li class="blockList">
+                                        <h4>copyDataInto</h4>
+                                        <pre class="methodSignature"> void <a href=Tensor.html#copyDataInto(ByteBuffer)>copyDataInto</a>(<a href=https://developer.android.com/reference/kotlin/java/nio/ByteBuffer.html>ByteBuffer</a> dst)</pre>
+                                        <div class="block"><p>Copies the tensor's data into a caller-provided <a href=https://developer.android.com/reference/kotlin/java/nio/ByteBuffer.html>ByteBuffer</a>, avoiding the per-call <code>{@code byte[]}</code> allocation that <a href=Tensor.html#getDataAsByteArray()>getDataAsByteArray</a> performs.</p></div>
+                                        
+                                        <dl>
+                                            <dt><span class="paramLabel">Parameters:</span></dt>
+                                            
+                                            
+                                            <dd><code>dst</code> - the destination buffer; must have remaining capacity <code>{@code &gt;=}</code><a href=Tensor.html#numel()>numel</a>.</dd>
+                                            
+                                            
+                                        </dl>
+                                        
+                                        <!-- TODO missing return annotation -->
+                                    </li>
+                                </ul>
+                                
+                                <a id="copyDataIntoUnsigned(ByteBuffer)">
+                                    <!--   -->
+                                </a>
+                                <ul class=
+                                              "blockList"
+                                          >
+                                    <li class="blockList">
+                                        <h4>copyDataIntoUnsigned</h4>
+                                        <pre class="methodSignature"> void <a href=Tensor.html#copyDataIntoUnsigned(ByteBuffer)>copyDataIntoUnsigned</a>(<a href=https://developer.android.com/reference/kotlin/java/nio/ByteBuffer.html>ByteBuffer</a> dst)</pre>
+                                        <div class="block"><p>Copies the tensor's data into a caller-provided <a href=https://developer.android.com/reference/kotlin/java/nio/ByteBuffer.html>ByteBuffer</a>, avoiding the per-call <code>{@code byte[]}</code> allocation that <a href=Tensor.html#getDataAsUnsignedByteArray()>getDataAsUnsignedByteArray</a> performs. The bytes carrythe raw uint8 bits — Java's signed <code>{@code byte}</code> representation, with values <code>{@code &gt;127}</code> appearing negative; reinterpret with <code>{@code &amp; 0xFF}</code> when reading.</p></div>
+                                        
+                                        <dl>
+                                            <dt><span class="paramLabel">Parameters:</span></dt>
+                                            
+                                            
+                                            <dd><code>dst</code> - the destination buffer; must have remaining capacity <code>{@code &gt;=}</code><a href=Tensor.html#numel()>numel</a>.</dd>
+                                            
+                                            
+                                        </dl>
+                                        
+                                        <!-- TODO missing return annotation -->
+                                    </li>
+                                </ul>
+                                
+                                <a id="copyDataInto(IntBuffer)">
+                                    <!--   -->
+                                </a>
+                                <ul class=
+                                              "blockList"
+                                          >
+                                    <li class="blockList">
+                                        <h4>copyDataInto</h4>
+                                        <pre class="methodSignature"> void <a href=Tensor.html#copyDataInto(IntBuffer)>copyDataInto</a>(<a href=https://developer.android.com/reference/kotlin/java/nio/IntBuffer.html>IntBuffer</a> dst)</pre>
+                                        <div class="block"><p>Copies the tensor's data into a caller-provided <a href=https://developer.android.com/reference/kotlin/java/nio/IntBuffer.html>IntBuffer</a>, avoiding the per-call <code>{@code * int[]}</code> allocation that <a href=Tensor.html#getDataAsIntArray()>getDataAsIntArray</a> performs.</p></div>
+                                        
+                                        <dl>
+                                            <dt><span class="paramLabel">Parameters:</span></dt>
+                                            
+                                            
+                                            <dd><code>dst</code> - the destination buffer; must have remaining capacity <code>{@code &gt;=}</code><a href=Tensor.html#numel()>numel</a>.</dd>
+                                            
+                                            
+                                        </dl>
+                                        
+                                        <!-- TODO missing return annotation -->
+                                    </li>
+                                </ul>
+                                
+                                <a id="copyDataInto(LongBuffer)">
+                                    <!--   -->
+                                </a>
+                                <ul class=
+                                              "blockList"
+                                          >
+                                    <li class="blockList">
+                                        <h4>copyDataInto</h4>
+                                        <pre class="methodSignature"> void <a href=Tensor.html#copyDataInto(LongBuffer)>copyDataInto</a>(<a href=https://developer.android.com/reference/kotlin/java/nio/LongBuffer.html>LongBuffer</a> dst)</pre>
+                                        <div class="block"><p>Copies the tensor's data into a caller-provided <a href=https://developer.android.com/reference/kotlin/java/nio/LongBuffer.html>LongBuffer</a>, avoiding the per-call <code>{@code long[]}</code> allocation that <a href=Tensor.html#getDataAsLongArray()>getDataAsLongArray</a> performs.</p></div>
+                                        
+                                        <dl>
+                                            <dt><span class="paramLabel">Parameters:</span></dt>
+                                            
+                                            
+                                            <dd><code>dst</code> - the destination buffer; must have remaining capacity <code>{@code &gt;=}</code><a href=Tensor.html#numel()>numel</a>.</dd>
+                                            
+                                            
+                                        </dl>
+                                        
+                                        <!-- TODO missing return annotation -->
+                                    </li>
+                                </ul>
+                                
+                                <a id="copyDataInto(DoubleBuffer)">
+                                    <!--   -->
+                                </a>
+                                <ul class=
+                                              "blockList"
+                                          >
+                                    <li class="blockList">
+                                        <h4>copyDataInto</h4>
+                                        <pre class="methodSignature"> void <a href=Tensor.html#copyDataInto(DoubleBuffer)>copyDataInto</a>(<a href=https://developer.android.com/reference/kotlin/java/nio/DoubleBuffer.html>DoubleBuffer</a> dst)</pre>
+                                        <div class="block"><p>Copies the tensor's data into a caller-provided <a href=https://developer.android.com/reference/kotlin/java/nio/DoubleBuffer.html>DoubleBuffer</a>, avoiding the per-call <code>{@code double[]}</code> allocation that <a href=Tensor.html#getDataAsDoubleArray()>getDataAsDoubleArray</a> performs.</p></div>
+                                        
+                                        <dl>
+                                            <dt><span class="paramLabel">Parameters:</span></dt>
+                                            
+                                            
+                                            <dd><code>dst</code> - the destination buffer; must have remaining capacity <code>{@code &gt;=}</code><a href=Tensor.html#numel()>numel</a>.</dd>
+                                            
+                                            
+                                        </dl>
+                                        
+                                        <!-- TODO missing return annotation -->
+                                    </li>
+                                </ul>
+                                
+                                <a id="copyDataInto(ShortBuffer)">
+                                    <!--   -->
+                                </a>
+                                <ul class=
+                                              "blockList"
+                                          >
+                                    <li class="blockList">
+                                        <h4>copyDataInto</h4>
+                                        <pre class="methodSignature"> void <a href=Tensor.html#copyDataInto(ShortBuffer)>copyDataInto</a>(<a href=https://developer.android.com/reference/kotlin/java/nio/ShortBuffer.html>ShortBuffer</a> dst)</pre>
+                                        <div class="block"><p>Copies the tensor's data into a caller-provided <a href=https://developer.android.com/reference/kotlin/java/nio/ShortBuffer.html>ShortBuffer</a>, avoiding the per-call <code>{@code short[]}</code> allocation that <a href=Tensor.html#getDataAsShortArray()>getDataAsShortArray</a> performs. For float16 tensorsthis writes the raw 16-bit half-precision bits with no widening; use <a href=Tensor.html#copyDataInto(FloatBuffer)></a> if you want the values widened to fp32.</p></div>
+                                        
+                                        <dl>
+                                            <dt><span class="paramLabel">Parameters:</span></dt>
+                                            
+                                            
+                                            <dd><code>dst</code> - the destination buffer; must have remaining capacity <code>{@code &gt;=}</code><a href=Tensor.html#numel()>numel</a>.</dd>
+                                            
+                                            
+                                        </dl>
                                         
                                         <!-- TODO missing return annotation -->
                                     </li>
