@@ -110,7 +110,7 @@ set(_aoti_cuda_shim_sources runtime/shims/memory.cpp
 # Only build CUDA shims when CUDA language/toolchain is available.
 if(CMAKE_CUDA_COMPILER)
   list(APPEND _aoti_cuda_shim_sources runtime/shims/int4mm.cu
-       runtime/shims/sort.cu runtime/shims/rand.cu
+       runtime/shims/sort.cu
   )
 endif()
 
@@ -152,7 +152,7 @@ endif()
 # retention.
 if(_cuda_is_msvc_toolchain)
   target_link_libraries(
-    aoti_cuda_shims PRIVATE cuda_platform CUDA::cudart CUDA::curand
+    aoti_cuda_shims PRIVATE cuda_platform CUDA::cudart
                             ${CMAKE_DL_LIBS}
   )
   # Link object library directly so symbols are pulled exactly once while
@@ -163,7 +163,7 @@ else()
     aoti_cuda_shims
     PRIVATE cuda_platform
     PUBLIC -Wl,--whole-archive aoti_common_shims_slim -Wl,--no-whole-archive
-           CUDA::cudart CUDA::curand ${CMAKE_DL_LIBS}
+           CUDA::cudart ${CMAKE_DL_LIBS}
   )
 endif()
 
@@ -176,6 +176,74 @@ install(
   EXPORT ExecuTorchTargets
   DESTINATION lib
 )
+
+# CUDA-specific AOTI sampler shim symbols (rand/randint via curand). Split out
+# of aoti_cuda_shims so the curand fatbin (~3.5MB precalc tables + Philox
+# kernels per arch) and the CUDA::curand dependency are only paid by the
+# small set of consumers that actually use them (e.g. qwen3_5_moe). Other
+# CUDA examples (voxtral, parakeet, whisper, dinov2, ...) link only
+# aoti_cuda_shims and stay small.
+if(CMAKE_CUDA_COMPILER)
+  add_library(aoti_cuda_sampler_shims SHARED runtime/shims/rand.cu)
+
+  # Match aoti_cuda_shims preprocessor defines for symbol export.
+  target_compile_definitions(aoti_cuda_sampler_shims PRIVATE CUDA_AVAILABLE=1)
+  if(WIN32)
+    target_compile_definitions(
+      aoti_cuda_sampler_shims PRIVATE EXPORT_AOTI_FUNCTIONS
+    )
+    if(_cuda_is_windows_msvc)
+      set_target_properties(
+        aoti_cuda_sampler_shims PROPERTIES WINDOWS_EXPORT_ALL_SYMBOLS OFF
+      )
+    endif()
+  endif()
+
+  target_include_directories(
+    aoti_cuda_sampler_shims
+    PUBLIC ${CUDAToolkit_INCLUDE_DIRS} $<BUILD_INTERFACE:${EXECUTORCH_ROOT}>
+           $<INSTALL_INTERFACE:include>
+  )
+
+  target_compile_options(
+    aoti_cuda_sampler_shims
+    PUBLIC "$<$<COMPILE_LANGUAGE:CXX>:${_cuda_cxx_compile_options}>"
+  )
+
+  if(_cuda_export_dynamic_option)
+    target_link_options(
+      aoti_cuda_sampler_shims PUBLIC ${_cuda_export_dynamic_option}
+    )
+  endif()
+
+  # rand.cu calls into slim helpers (empty_strided, getCurrentCUDAStream,
+  # SlimTensor) which are linked into aoti_cuda_shims. Depend on that target
+  # so we resolve those symbols from the already-loaded shims library
+  # instead of duplicating slim's static archive into both DLLs.
+  if(_cuda_is_msvc_toolchain)
+    target_link_libraries(
+      aoti_cuda_sampler_shims
+      PRIVATE cuda_platform CUDA::cudart CUDA::curand ${CMAKE_DL_LIBS}
+              aoti_cuda_shims
+    )
+  else()
+    target_link_libraries(
+      aoti_cuda_sampler_shims
+      PRIVATE cuda_platform
+      PUBLIC CUDA::cudart CUDA::curand ${CMAKE_DL_LIBS} aoti_cuda_shims
+    )
+  endif()
+
+  if(NOT _cuda_is_msvc_toolchain)
+    executorch_target_link_options_shared_lib(aoti_cuda_sampler_shims)
+  endif()
+
+  install(
+    TARGETS aoti_cuda_sampler_shims
+    EXPORT ExecuTorchTargets
+    DESTINATION lib
+  )
+endif()
 
 # CUDA backend implementation
 set(_aoti_cuda_backend_sources runtime/cuda_backend.cpp)
