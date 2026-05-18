@@ -66,6 +66,10 @@ DEFINE_int32(max_new_tokens, 128, "Maximum tokens to generate.");
 DEFINE_int32(bos_id, 2, "BOS token id to prepend (Gemma convention: 2).");
 DEFINE_int32(eos_id, 1, "EOS token id (Gemma convention: 1).");
 DEFINE_bool(
+    raw_prompt,
+    false,
+    "Skip chat-template wrapping (use if the prompt is already formatted).");
+DEFINE_bool(
     cuda_graph,
     false,
     "Enable CUDA graph capture for the decode method. CUDA only.");
@@ -230,6 +234,14 @@ int main(int argc, char** argv) {
     }
     prompt_text = std::string(
         (std::istreambuf_iterator<char>(f)), std::istreambuf_iterator<char>());
+  }
+
+  // Wrap with Gemma 4 IT chat template unless --raw_prompt is set.
+  // BOS is prepended separately below; this adds the turn structure and the
+  // empty thought block required by the instruction-tuned model.
+  if (!FLAGS_raw_prompt) {
+    prompt_text = "<|turn>user\n" + prompt_text +
+        "<turn|>\n<|turn>model\n<|channel>thought\n<channel|>";
   }
 
   // Encode prompt
