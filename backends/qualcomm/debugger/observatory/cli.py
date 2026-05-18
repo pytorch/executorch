@@ -16,9 +16,17 @@ With one or more lens recipes (repeat the flag or comma-separate):
     python -m executorch.backends.qualcomm.debugger.observatory \\
         --lens-recipe adb,accuracy SCRIPT [SCRIPT_ARGS...]
 
-Visualize mode (JSON -> HTML):
+Visualize mode (Archive JSON -> HTML, no script execution):
     python -m executorch.backends.qualcomm.debugger.observatory visualize \\
-        --input-json report.json --output-html report.html
+        --input-archive report.json --output-html report.html \\
+        [--lens-recipe adb] [--lens-recipe accuracy]
+
+Compare mode (overlay multiple Archives into one HTML report):
+    python -m executorch.backends.qualcomm.debugger.observatory compare \\
+        --input-archive a.json --label A \\
+        --input-archive b.json --label B \\
+        --output-html compare.html [--title "..."] \\
+        [--lens-recipe adb,accuracy]
 """
 
 from __future__ import annotations
@@ -27,6 +35,8 @@ import sys
 
 
 _RECIPE_CHOICES = ["accuracy", "adb"]
+
+_PROG = "python -m executorch.backends.qualcomm.debugger.observatory"
 
 
 def _parse_recipe_values(values):
@@ -46,23 +56,80 @@ def _parse_recipe_values(values):
     return recipes
 
 
+def _register_render_lenses(Observatory, recipes):
+    """Register lens frontends for visualize/compare (no collection-time patches)."""
+    if "accuracy" in recipes:
+        from executorch.devtools.observatory.lenses.accuracy import AccuracyLens
+
+        Observatory.register_lens(AccuracyLens)
+
+        from executorch.devtools.observatory.lenses.per_layer_accuracy import (
+            PerLayerAccuracyLens,
+        )
+
+        Observatory.register_lens(PerLayerAccuracyLens)
+
+    if "adb" in recipes:
+        from .lenses.adb import AdbLens
+
+        Observatory.register_lens(AdbLens)
+
+
 def main():
     from executorch.devtools.observatory.cli import (
         make_collect_parser,
+        make_compare_parser,
         make_visualize_parser,
+        run_compare,
         run_observatory,
         run_visualize,
     )
 
     if len(sys.argv) > 1 and sys.argv[1] == "visualize":
-        parser = make_visualize_parser()
+        parser = make_visualize_parser(prog=f"{_PROG} visualize")
+        parser.add_argument(
+            "--lens-recipe",
+            action="append",
+            default=[],
+            metavar="RECIPE",
+            help=(
+                "Pre-register lens(es) before rendering (auto-discovery runs "
+                "regardless; this flag adds explicit control). "
+                f"Choices: {', '.join(_RECIPE_CHOICES)}"
+            ),
+        )
         args = parser.parse_args(sys.argv[2:])
-        run_visualize(args.input_archive, args.output_html)
+        recipes = _parse_recipe_values(args.lens_recipe)
+        setup_fn = (lambda obs: _register_render_lenses(obs, recipes)) if recipes else None
+        run_visualize(args.input_archive, args.output_html, setup_fn=setup_fn)
         return
 
-    parser = make_collect_parser(
-        prog="python -m executorch.backends.qualcomm.debugger.observatory"
-    )
+    if len(sys.argv) > 1 and sys.argv[1] == "compare":
+        parser = make_compare_parser(prog=f"{_PROG} compare")
+        parser.add_argument(
+            "--lens-recipe",
+            action="append",
+            default=[],
+            metavar="RECIPE",
+            help=(
+                "Pre-register lens(es) before rendering (auto-discovery runs "
+                "regardless; this flag adds explicit control). "
+                f"Choices: {', '.join(_RECIPE_CHOICES)}"
+            ),
+        )
+        args = parser.parse_args(sys.argv[2:])
+        recipes = _parse_recipe_values(args.lens_recipe)
+        setup_fn = (lambda obs: _register_render_lenses(obs, recipes)) if recipes else None
+        run_compare(
+            input_archives=args.input_archives,
+            labels=args.labels,
+            output_html=args.output_html,
+            title=args.title,
+            setup_fn=setup_fn,
+        )
+        return
+
+    parser = make_collect_parser(prog=_PROG)
     parser.add_argument(
         "--lens-recipe",
         action="append",

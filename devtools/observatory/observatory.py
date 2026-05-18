@@ -788,6 +788,20 @@ class Observatory:
         session = SessionResult(**data["session"])
 
         Observatory._ensure_default_lenses()
+        digest_lens_names: Set[str] = set()
+        for rec in records:
+            digest_lens_names.update(rec.data.keys())
+        registered = {l.get_name() for l in Observatory._lens_registry}
+        for missing in digest_lens_names - registered:
+            try:
+                lens_cls = _resolve_lens_class(missing)
+            except Exception as exc:
+                logging.warning(
+                    "[Observatory] visualize: could not resolve lens %r: %s", missing, exc
+                )
+                continue
+            if lens_cls is not None:
+                Observatory.register_lens(lens_cls)
         payload = Observatory._generate_report_payload(
             records,
             session,

@@ -133,7 +133,7 @@ def make_compare_parser(prog=None):
     return parser
 
 
-def run_visualize(input_json: str, output_html: str) -> None:
+def run_visualize(input_json: str, output_html: str, *, setup_fn=None) -> None:
     if not os.path.isfile(input_json):
         logging.error("[Observatory CLI] Input JSON not found: %s", input_json)
         sys.exit(1)
@@ -141,6 +141,8 @@ def run_visualize(input_json: str, output_html: str) -> None:
     from .observatory import Observatory
 
     Observatory.clear()
+    if setup_fn is not None:
+        setup_fn(Observatory)
     Observatory.generate_html_from_json(input_json, output_html)
     logging.info(
         "[Observatory CLI] visualize: html=%s from json=%s", output_html, input_json
@@ -269,6 +271,8 @@ def run_compare(
     labels: list[str],
     output_html: str,
     title: str = "Observatory Compare",
+    *,
+    setup_fn=None,
 ) -> None:
     """Load multiple Archives and render a side-by-side Report (HTML)."""
     if len(input_archives) != len(labels):
@@ -287,6 +291,8 @@ def run_compare(
     from .observatory import Observatory
 
     Observatory.clear()
+    if setup_fn is not None:
+        setup_fn(Observatory)
     Observatory.compare_archives(
         archive_paths=input_archives,
         labels=labels,
