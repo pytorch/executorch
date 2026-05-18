@@ -28,11 +28,11 @@ The prebuilt ExecuTorch runtime, backend, and kernels are available as a [Swift 
 
 #### Xcode
 
-In Xcode, go to `File > Add Package Dependencies`. Paste the URL of the [ExecuTorch repo](https://github.com/pytorch/executorch) into the search bar and select it. Make sure to change the branch name to the desired ExecuTorch version in format "swiftpm-<version>", (e.g. "swiftpm-1.0.0"), or a branch name in format "swiftpm-<version>.<year_month_date>" (e.g. "swiftpm-1.1.0-20251101") for a [nightly build](https://ossci-ios.s3.amazonaws.com/list.html) on a specific date.
+In Xcode, go to `File > Add Package Dependencies`. Paste the URL of the [ExecuTorch repo](https://github.com/pytorch/executorch) into the search bar and select it. Change the dependency rule to a branch named for the desired ExecuTorch version (e.g., `swiftpm-1.0.0`), or use a branch name in the format `swiftpm-<version>.<year_month_day>` for a [nightly build](https://ossci-ios.s3.amazonaws.com/list.html) on a specific date (e.g., `swiftpm-1.1.0.20251101`).
 
 ![](_static/img/swiftpm_xcode1.png)
 
-Then select which ExecuTorch framework should link against which target.
+Then select the ExecuTorch products that your app needs. For a simple app using the XNNPACK backend, link the app target against `executorch`, `backend_xnnpack`, and `kernels_optimized`. The `executorch` product provides the core runtime; for Core ML, MPS, or other execution paths, choose the matching backend and kernel products from the product list above.
 
 ![](_static/img/swiftpm_xcode2.png)
 
