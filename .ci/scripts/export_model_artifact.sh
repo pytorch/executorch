@@ -480,12 +480,17 @@ if [ "$MODEL_NAME" = "gemma4_31b" ]; then
 
   # Sanity check: run inference on the prequantized model
   echo "::group::Inference sanity check"
-  python -m executorch.examples.models.gemma4_31b.inference \
+  INFERENCE_OUTPUT=$(python -m executorch.examples.models.gemma4_31b.inference \
       --prequantized "$LOCAL_MODEL_DIR" \
       --prompt "What is the capital of France?" \
       --max-new-tokens 32 \
       --temperature 0 \
-      --no-compile
+      --no-compile 2>&1)
+  echo "$INFERENCE_OUTPUT"
+  if ! echo "$INFERENCE_OUTPUT" | grep -q "Paris"; then
+    echo "ERROR: Inference sanity check failed — expected 'Paris' in output"
+    exit 1
+  fi
   echo "::endgroup::"
 
   # Copy tokenizer for the runner
