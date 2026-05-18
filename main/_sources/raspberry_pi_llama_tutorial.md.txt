@@ -65,7 +65,7 @@ cd executorch
 
 ```bash
 # Create conda environment
-conda create -yn executorch python=3.10.0
+conda create -yn executorch python=3.10
 conda activate executorch
 
 # Upgrade pip
