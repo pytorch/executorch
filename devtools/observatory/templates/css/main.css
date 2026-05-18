@@ -481,3 +481,62 @@
             border-left: 2px solid var(--border-color);
             margin-left: 0.5rem;
         }
+
+        /* Compare-mode n-column layout: when the report aggregates
+           multiple archives, the sidebar becomes an N-column grid with
+           one column per archive. Each column carries its archive label
+           as a sticky header and lists that archive's sessions, dashboard
+           links, and (region-tree or flat) records.
+
+           In single-archive reports `.index-list` keeps its default
+           single-column flow -- the grid styles below only apply when
+           the renderer adds the `compare-mode` class. */
+        .index-list.compare-mode {
+            display: grid;
+            grid-template-columns: repeat(var(--archive-cols, 1), minmax(0, 1fr));
+            gap: 0.5rem;
+            padding: 0.5rem;
+            align-items: start;
+        }
+        .archive-column {
+            list-style: none;
+            display: flex;
+            flex-direction: column;
+            min-width: 0;
+            background: var(--bg-primary);
+            border: 1px solid var(--border-color);
+            border-radius: 6px;
+            overflow: hidden;
+        }
+        .archive-column-header {
+            padding: 0.45rem 0.75rem;
+            font-size: 0.85rem;
+            font-weight: 700;
+            background: var(--bg-tertiary);
+            border-bottom: 1px solid var(--border-color);
+            color: var(--text-primary);
+            position: sticky;
+            top: 0;
+            z-index: 1;
+            text-overflow: ellipsis;
+            overflow: hidden;
+            white-space: nowrap;
+        }
+        ul.archive-sessions {
+            list-style: none;
+            margin: 0;
+            padding: 0.4rem;
+            min-width: 0;
+        }
+        /* Tightened items inside columns -- the column itself provides
+           the visual separation so per-item shadows/margins look heavy. */
+        .archive-column .index-item {
+            margin-bottom: 0.2rem;
+            font-size: 0.82rem;
+            box-shadow: none;
+            background: var(--bg-tertiary);
+        }
+        .archive-column .session-dashboard-link {
+            margin-bottom: 0.3rem;
+            font-weight: 600;
+        }

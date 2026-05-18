@@ -314,22 +314,58 @@
     return html;
   }
 
+  function _renderArchiveColumn(archive, sessions, records, useTree) {
+    const sessionsInArchive = sessions.filter((s) => s.archive === archive.label);
+    let inner = '';
+    sessionsInArchive.forEach((session) => {
+      inner += _renderSessionDashboardLink(session);
+      inner += useTree
+        ? renderIndexTree(records, session.id)
+        : renderIndexFlat(records, session.id);
+    });
+    return `
+      <li class="archive-column">
+        <div class="archive-column-header" title="${escapeHtml(archive.label)}">${escapeHtml(archive.label)}</div>
+        <ul class="archive-sessions">${inner}</ul>
+      </li>
+    `;
+  }
+
   function renderIndex() {
     const list = document.getElementById('index-list');
     if (!list) return;
 
     const records = state.data.records || [];
     const sessions = state.data.sessions || [];
+    const archives = state.data.archives || [];
     const useTree = treeView && records.some((r) => Array.isArray(r.region_stack) && r.region_stack.length > 0);
 
     if (sessions.length === 0) {
       // Defensive fallback: payloads without a sessions list (very old
       // archives) render as a single ungrouped list.
+      list.classList.remove('compare-mode');
+      list.style.removeProperty('--archive-cols');
       list.innerHTML = useTree ? renderIndexTree(records) : renderIndexFlat(records);
       updateIndexHeader();
       return;
     }
 
+    // Compare mode: more than one archive => N-column grid, one per archive.
+    if (archives.length > 1) {
+      list.classList.add('compare-mode');
+      list.style.setProperty('--archive-cols', String(archives.length));
+      let html = '';
+      archives.forEach((archive) => {
+        html += _renderArchiveColumn(archive, sessions, records, useTree);
+      });
+      list.innerHTML = html;
+      updateIndexHeader();
+      return;
+    }
+
+    // Single-archive: flat list of session dashboards + records.
+    list.classList.remove('compare-mode');
+    list.style.removeProperty('--archive-cols');
     let html = '';
     sessions.forEach((session) => {
       html += _renderSessionDashboardLink(session);
