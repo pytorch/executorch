@@ -290,11 +290,28 @@ class AdbLens(Lens):
         Idempotent: subsequent calls are no-ops once the region is open.
         Called from ``note_simple_adb`` so every patched SimpleADB
         operation (push / pull / execute) lands inside the region.
+
+        Defensive belt-and-braces: also tells PipelineGraphCollectorLens
+        to close any open AOT regions first, so device ends up as a
+        session-root sibling even when user code never reaches
+        ``to_executorch`` (e.g. compile-only paths, or scripts that
+        push an .so before AOT finishes).
         """
 
         if not cls._enabled or cls._enter_context_fn is None:
             return
         if cls._device_stack is None:
+            try:
+                from executorch.devtools.observatory.lenses.pipeline_graph_collector import (
+                    PipelineGraphCollectorLens,
+                )
+
+                PipelineGraphCollectorLens.close_aot_regions()
+            except Exception as exc:  # noqa: BLE001 -- best effort
+                logging.debug(
+                    "[AdbLens] could not close AOT regions before opening device: %s",
+                    exc,
+                )
             cls._device_stack = contextlib.ExitStack()
             cls._device_stack.enter_context(cls._enter_context_fn("device"))
 

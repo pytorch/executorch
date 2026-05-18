@@ -74,7 +74,57 @@ import contextlib
 import logging
 from typing import Any, Callable, Dict, List, Optional
 
-from ..interfaces import AnalysisResult, Lens, ObservationContext, RecordDigest
+from ..interfaces import (
+    AnalysisResult,
+    Frontend,
+    Lens,
+    ObservationContext,
+    RecordDigest,
+    TableBlock,
+    TableRecordSpec,
+    ViewList,
+)
+
+
+class _PipelineGraphCollectorFrontend(Frontend):
+    """Lightweight session-level summary: how many records each region holds.
+
+    The collector itself does not produce per-record digest data (it just
+    captures graphs that the GraphLens then renders), so the dashboard is
+    intentionally minimal — a single table that helps users see at a glance
+    how many records were collected under each AOT region (quantization,
+    edge, etrecord, ...) plus any other regions an embedding script opens.
+    """
+
+    def dashboard(self, session, session_records, analysis) -> Optional[ViewList]:
+        if not session_records:
+            return None
+
+        per_region: Dict[str, int] = {}
+        total = 0
+        for rec in session_records:
+            stack = rec.region_stack or []
+            # Use the innermost region (the closest enclosing label) so
+            # records under nested regions like ``edge/etrecord`` count
+            # toward ``etrecord`` rather than ``edge``.
+            label = stack[-1] if stack else "(unscoped)"
+            per_region[label] = per_region.get(label, 0) + 1
+            total += 1
+
+        data: Dict[str, Any] = {"total_records": total}
+        for region in sorted(per_region):
+            data[region] = per_region[region]
+
+        return ViewList(
+            blocks=[
+                TableBlock(
+                    id="pipeline_graph_summary",
+                    title="Pipeline Graphs",
+                    record=TableRecordSpec(data=data),
+                    order=10,
+                )
+            ]
+        )
 
 
 class PipelineGraphCollectorLens(Lens):
@@ -131,6 +181,7 @@ class PipelineGraphCollectorLens(Lens):
         # Install backend-agnostic patches first.
         cls._install_quantizer_patches()
         cls._install_edge_lower_patch()
+        cls._install_to_executorch_patch()
         cls._install_etrecord_patches()
         # Install backend-specific patches registered via register_backend_patches().
         for installer in cls._backend_patch_installers:
@@ -164,6 +215,10 @@ class PipelineGraphCollectorLens(Lens):
     @staticmethod
     def analyze(records: List[RecordDigest], config: Dict[str, Any]) -> AnalysisResult:
         return AnalysisResult()
+
+    @staticmethod
+    def get_frontend_spec() -> Frontend:
+        return _PipelineGraphCollectorFrontend()
 
     @classmethod
     def _transition_to_quantization(cls) -> None:
@@ -217,6 +272,48 @@ class PipelineGraphCollectorLens(Lens):
         if cls._etrecord_stack is None and cls._enter_context_fn is not None:
             cls._etrecord_stack = contextlib.ExitStack()
             cls._etrecord_stack.enter_context(cls._enter_context_fn("etrecord"))
+
+    @classmethod
+    def close_aot_regions(cls) -> None:
+        """Close every open AOT region (etrecord, edge, quantization).
+
+        Called after ``to_executorch`` returns -- the natural AOT to runtime
+        boundary -- so subsequent on-device work (e.g. AdbLens opening a
+        ``device`` region) lands as a session-root sibling rather than as
+        a child of the still-open ``edge`` region.
+
+        Idempotent. Lenses that begin a runtime region (AdbLens) also call
+        this defensively so compile-only paths that skip ``to_executorch``
+        still get correct scoping.
+        """
+
+        if cls._etrecord_stack is not None:
+            try:
+                cls._etrecord_stack.close()
+            except Exception as exc:
+                logging.warning(
+                    "[PipelineGraphCollector] failed to close etrecord region: %s",
+                    exc,
+                )
+            cls._etrecord_stack = None
+        if cls._edge_stack is not None:
+            try:
+                cls._edge_stack.close()
+            except Exception as exc:
+                logging.warning(
+                    "[PipelineGraphCollector] failed to close edge region: %s",
+                    exc,
+                )
+            cls._edge_stack = None
+        if cls._quantization_stack is not None:
+            try:
+                cls._quantization_stack.close()
+            except Exception as exc:
+                logging.warning(
+                    "[PipelineGraphCollector] failed to close quantization region: %s",
+                    exc,
+                )
+            cls._quantization_stack = None
 
     @classmethod
     def _set_accuracy_fallback_dataset(cls, dataset: Any, source: str) -> None:
@@ -373,6 +470,39 @@ class PipelineGraphCollectorLens(Lens):
             )
 
     # ------------------------------------------------------------------
+    # Patch: EdgeProgramManager.to_executorch
+    # No data is collected here -- the patch only marks the AOT->runtime
+    # boundary. After to_executorch returns, all open AOT regions
+    # (quantization, edge, etrecord) are closed so subsequent on-device
+    # work (AdbLens "device" region, custom user regions) lands as a
+    # session-root sibling rather than nesting under "edge".
+    # ------------------------------------------------------------------
+
+    @classmethod
+    def _install_to_executorch_patch(cls) -> None:
+        try:
+            from executorch.exir.program._program import EdgeProgramManager
+
+            original = EdgeProgramManager.to_executorch
+            cls._originals["EdgeProgramManager.to_executorch"] = original
+
+            def patched_to_executorch(self, *args, **kwargs):
+                try:
+                    return original(self, *args, **kwargs)
+                finally:
+                    cls.close_aot_regions()
+
+            EdgeProgramManager.to_executorch = patched_to_executorch
+            logging.info(
+                "[PipelineGraphCollector] Installed patch: EdgeProgramManager.to_executorch"
+            )
+        except Exception as exc:
+            logging.warning(
+                "[PipelineGraphCollector] Failed to patch EdgeProgramManager.to_executorch: %s",
+                exc,
+            )
+
+    # ------------------------------------------------------------------
     # Patch: ETRecord methods
     # Auto-collects graph observations when ETRecord APIs are called.
     # Absorbed from the former auto_collect.py module.
@@ -480,6 +610,11 @@ class PipelineGraphCollectorLens(Lens):
                     for i, module in enumerate([program_module, exir_module]):
                         if str(i) == key[-1]:
                             module.to_edge_transform_and_lower = original
+
+                elif key == "EdgeProgramManager.to_executorch":
+                    from executorch.exir.program._program import EdgeProgramManager
+
+                    EdgeProgramManager.to_executorch = original
 
                 elif key.startswith("ETRecord."):
                     try:
