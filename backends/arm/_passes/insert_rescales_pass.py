@@ -18,6 +18,7 @@ from executorch.backends.arm._passes.fold_qdq_with_annotated_qparams_pass import
 
 from executorch.backends.arm._passes.quant_args import QuantArgs
 from executorch.backends.arm.constants import DQ_OPS, Q_OPS
+from executorch.backends.arm.tosa.mapping import TosaSpecialDtype
 from executorch.exir.dialects._ops import ops as exir_ops
 from executorch.exir.pass_base import ExportPass, PassResult
 from torch.fx import GraphModule, Node
@@ -48,6 +49,8 @@ class InsertRescalePass(ArmPass):
             if not isinstance(meta_val, torch.Tensor):
                 continue
             if meta_val.dtype != torch.uint8:
+                continue
+            if node.meta.get(TosaSpecialDtype.meta_key()) == TosaSpecialDtype.FP4E2M1:
                 continue
             if node.op in ("placeholder", "output"):
                 continue

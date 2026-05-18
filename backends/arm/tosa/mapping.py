@@ -35,6 +35,7 @@ UNSUPPORTED_DTYPES = (
 class TosaSpecialDtype(Enum):
     """Special TOSA dtypes not natively expressed in PyTorch."""
 
+    FP4E2M1 = ts.DType.FP4E2M1
     INT48 = ts.DType.INT48
     INT4 = ts.DType.INT4
     SHAPE = ts.DType.SHAPE
@@ -102,6 +103,7 @@ def map_dtype(data_type: torch.dtype) -> Any:
         torch.float8_e4m3fn: ts.DType.FP8E4M3,
         torch.float8_e5m2: ts.DType.FP8E5M2,
         torch.float8_e8m0fnu: ts.DType.FP8UE8M0,
+        torch.float4_e2m1fn_x2: ts.DType.FP4E2M1,
         torch.int8: ts.DType.INT8,
         # TOSA uses signless int8; unsigned semantics are expressed via RESCALE.
         torch.uint8: ts.DType.INT8,
@@ -156,8 +158,10 @@ def extract_tensor_meta(meta):
         raise ValueError(
             f"Expected first value in node.meta['val'] to be FakeTensor, got {val.__class__}"
         )
-    dtype = map_dtype(val.dtype)
     shape = tuple(val.size())
+    if special_dtype == TosaSpecialDtype.FP4E2M1 and val.dtype == torch.uint8:
+        shape = (*shape[:-1], shape[-1] * 2)
+    dtype = map_dtype(val.dtype)
 
     return (dtype, shape)
 
@@ -248,6 +252,9 @@ class TosaArg:
                     tosa_spec.support_extension("fp8e5m2")
                     or tosa_spec.support_extension("mxfp")
                 ):
+                    return False
+            case ts.DType.FP4E2M1:
+                if not tosa_spec.support_extension("mxfp"):
                     return False
 
         return True

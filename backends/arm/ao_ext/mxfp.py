@@ -32,7 +32,11 @@ class MXFPOpConfig(AOBaseConfig):
         return 32
 
     def __post_init__(self) -> None:
-        if self.weight_dtype not in (torch.float8_e4m3fn, torch.float8_e5m2):
+        if self.weight_dtype not in (
+            torch.float4_e2m1fn_x2,
+            torch.float8_e4m3fn,
+            torch.float8_e5m2,
+        ):
             raise ValueError(f"Unsupported weight_dtype: {self.weight_dtype}")
         if not isinstance(self.weight_scaling_mode, ScaleCalculationMode):
             raise ValueError(

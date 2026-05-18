@@ -28,18 +28,37 @@ def _validate_block_size(block_size: int) -> None:
         )
 
 
+def _get_payload_dtype(data: torch.Tensor) -> torch.dtype:
+    if data.dtype == torch.uint8:
+        return torch.float4_e2m1fn_x2
+    return data.dtype
+
+
+def _get_logical_last_dim(data: torch.Tensor) -> int:
+    last_dim = data.shape[-1]
+    if _get_payload_dtype(data) == torch.float4_e2m1fn_x2:
+        return last_dim * 2
+    return last_dim
+
+
 def _validate_dtypes(
     A_data: torch.Tensor,
     A_scale: torch.Tensor,
     B_data: torch.Tensor,
     B_scale: torch.Tensor,
 ) -> None:
-    if A_data.dtype not in (torch.float8_e4m3fn, torch.float8_e5m2):
+    A_dtype = _get_payload_dtype(A_data)
+    B_dtype = _get_payload_dtype(B_data)
+    if A_dtype not in (
+        torch.float4_e2m1fn_x2,
+        torch.float8_e4m3fn,
+        torch.float8_e5m2,
+    ):
         raise TosaValueError(
             f"Unsupported A_data dtype {A_data.dtype}",
             op="MATMUL_T_BLOCK_SCALED",
         )
-    if B_data.dtype != A_data.dtype:
+    if B_dtype != A_dtype:
         raise TosaValueError(
             f"B_data dtype {B_data.dtype} must match A_data dtype {A_data.dtype}",
             op="MATMUL_T_BLOCK_SCALED",
@@ -64,8 +83,10 @@ def _validate_shapes(
             op="MATMUL_T_BLOCK_SCALED",
         )
 
-    N, H, C = A_data.shape
-    D, W, Cb = B_data.shape
+    N, H = A_data.shape[:2]
+    D, W = B_data.shape[:2]
+    C = _get_logical_last_dim(A_data)
+    Cb = _get_logical_last_dim(B_data)
     if C != Cb:
         raise TosaValueError(
             f"A_data last dim {C} must match B_data last dim {Cb}",

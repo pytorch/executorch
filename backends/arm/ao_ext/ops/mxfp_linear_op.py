@@ -23,6 +23,19 @@ MXFP_TOSA_LIB.define(
 )
 
 
+def _get_mx_elem_dtype(weight_qdata: torch.Tensor) -> torch.dtype:
+    if weight_qdata.dtype == torch.uint8:
+        return torch.float4_e2m1fn_x2
+    return weight_qdata.dtype
+
+
+def _get_num_input_features(weight_qdata: torch.Tensor) -> int:
+    num_input_features = weight_qdata.shape[-1]
+    if _get_mx_elem_dtype(weight_qdata) == torch.float4_e2m1fn_x2:
+        num_input_features *= 2
+    return num_input_features
+
+
 @torch.library.register_fake("tosa_mxfp::linear", lib=MXFP_TOSA_LIB)  # type: ignore[misc]
 def _mxfp_linear_fake(
     input: torch.Tensor,
@@ -39,15 +52,16 @@ def _mxfp_linear_fake(
         raise ValueError(
             f"Expected weight_qdata batch dim to be 1, got {weight_qdata.shape[0]}"
         )
-    if input.shape[-1] != weight_qdata.shape[-1]:
+    num_input_features = _get_num_input_features(weight_qdata)
+    if input.shape[-1] != num_input_features:
         raise ValueError(
             f"Input last dim {input.shape[-1]} must match linear in_features "
-            f"{weight_qdata.shape[-1]}"
+            f"{num_input_features}"
         )
     expected_scale_shape = (
         1,
         weight_qdata.shape[1],
-        weight_qdata.shape[-1] // block_size,
+        num_input_features // block_size,
     )
     if tuple(weight_scale.shape) != expected_scale_shape:
         raise ValueError(
@@ -92,17 +106,19 @@ def _mxfp_linear_cpu(
     if weight_qdata.ndim != 3 or weight_scale.ndim != 3:
         raise ValueError("Expected rank-3 weight tensors for MXFP linear")
 
+    elem_dtype = _get_mx_elem_dtype(weight_qdata)
+
     # Cast the input to block-scaled format and back again to match the
     # expected input format of the TOSA
     dequantized_input = _cast_to_block_scaled_cpu_ref(
         input,
-        weight_qdata.dtype,
+        elem_dtype,
         block_size,
     )
     dequantized_weight = to_dtype(
         weight_qdata,
         weight_scale,
-        weight_qdata.dtype,
+        elem_dtype,
         block_size,
         torch.float32,
     )

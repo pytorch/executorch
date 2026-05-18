@@ -13,8 +13,20 @@ from executorch.backends.arm._passes.arm_pass_utils import (
     create_node,
     get_first_fake_tensor,
 )
+from executorch.backends.arm.tosa.mapping import TosaSpecialDtype
 from executorch.exir.dialects._ops import ops as exir_ops
 from executorch.exir.pass_base import ExportPass, PassResult
+
+
+def _get_block_scaled_payload_dtype(qdata: torch.Tensor) -> torch.dtype:
+    if qdata.dtype == torch.uint8:
+        return torch.float4_e2m1fn_x2
+    return qdata.dtype
+
+
+def _mark_fp4_payload(node: torch.fx.Node, payload_dtype: torch.dtype) -> None:
+    if payload_dtype == torch.float4_e2m1fn_x2:
+        node.meta[TosaSpecialDtype.meta_key()] = TosaSpecialDtype.FP4E2M1
 
 
 class RewriteMXFPLinearPass(ArmPass):
@@ -90,6 +102,8 @@ class RewriteMXFPLinearPass(ArmPass):
         input_fake = get_first_fake_tensor(input_node)
         weight_qdata_fake = get_first_fake_tensor(weight_qdata_node)
         weight_scale_fake = get_first_fake_tensor(weight_scale_node)
+        weight_dtype = _get_block_scaled_payload_dtype(weight_qdata_fake)
+        _mark_fp4_payload(weight_qdata_node, weight_dtype)
 
         batches = reduce(operator.mul, input_fake.shape[:-1], 1)
         input_reshape_shape = [1, batches, input_fake.shape[-1]]
@@ -109,13 +123,13 @@ class RewriteMXFPLinearPass(ArmPass):
             graph=graph,
             op_target=exir_ops.backend.tosa.CAST_TO_BLOCK_SCALED.default,
             args=(input_reshaped, block_size),
-            kwargs={"output_dtype": weight_qdata_fake.dtype},
+            kwargs={"output_dtype": weight_dtype},
             from_node=mxfp_linear_node,
         )
         cast_node.meta["val"] = exir_ops.backend.tosa.CAST_TO_BLOCK_SCALED.default(
             get_first_fake_tensor(input_reshaped),
             block_size,
-            output_dtype=weight_qdata_fake.dtype,
+            output_dtype=weight_dtype,
         )
 
         input_qdata_node = create_node(
@@ -126,6 +140,7 @@ class RewriteMXFPLinearPass(ArmPass):
             from_node=mxfp_linear_node,
         )
         input_qdata_node.meta["val"] = cast_node.meta["val"][0]
+        _mark_fp4_payload(input_qdata_node, weight_dtype)
 
         input_scale_node = create_node(
             graph=graph,

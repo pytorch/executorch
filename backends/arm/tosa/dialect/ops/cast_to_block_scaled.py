@@ -62,12 +62,20 @@ def CAST_TO_BLOCK_SCALED(
         )
 
     scale_tensor_dtype = torch.float8_e8m0fnu
-    if output_dtype not in (torch.float8_e4m3fn, torch.float8_e5m2):
+    if output_dtype not in (
+        torch.float4_e2m1fn_x2,
+        torch.float8_e4m3fn,
+        torch.float8_e5m2,
+    ):
         raise TosaValueError(
             f"Unsupported block-scaled output dtype {output_dtype}",
             op="CAST_TO_BLOCK_SCALED",
         )
     scale_shape = (*input.shape[:-1], input.shape[-1] // block_size)
-    output_data = torch.empty_like(input, dtype=output_dtype)
+    if output_dtype == torch.float4_e2m1fn_x2:
+        output_shape = (*input.shape[:-1], input.shape[-1] // 2)
+        output_data = input.new_empty(output_shape, dtype=torch.uint8)
+    else:
+        output_data = torch.empty_like(input, dtype=output_dtype)
     output_scale = input.new_empty(scale_shape, dtype=scale_tensor_dtype)
     return output_data, output_scale
