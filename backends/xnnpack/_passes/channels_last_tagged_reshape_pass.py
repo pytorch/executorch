@@ -398,8 +398,11 @@ class ChannelsLastTaggedReshapePass(XNNPACKPass):
             is_dynamic_input = is_dynamic_qdq(input_node)
 
             if is_dynamic_input:
-                # Trace back to original source node
-                while getattr(input_node, "args", None):
+                # Trace back to original source node. Stop if args[0] is not
+                # a Node (e.g., immutable_list from cat).
+                while getattr(input_node, "args", None) and isinstance(
+                    input_node.args[0], torch.fx.Node
+                ):
                     input_node = input_node.args[0]
 
             with graph_module.graph.inserting_after(input_node):
@@ -505,7 +508,13 @@ class ChannelsLastTaggedReshapePass(XNNPACKPass):
             elif self.requires_nhwc_input(node):
                 # Nodes which enter this branch are ones that require their
                 # first input to be nhwc. This makes this node's output nhwc too
-                self.input_to_nhwc(graph_module, node.args[0], node)
+                if isinstance(node.args[0], (list, tuple)):
+                    # Ops like cat have a list of tensors as args[0].
+                    for arg in node.args[0]:
+                        if isinstance(arg, torch.fx.Node):
+                            self.input_to_nhwc(graph_module, arg, node)
+                else:
+                    self.input_to_nhwc(graph_module, node.args[0], node)
                 for input_node in node.all_input_nodes[1:]:
                     if (
                         input_node.op == "placeholder"

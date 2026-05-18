@@ -122,8 +122,27 @@ def generate_context_binary(
         shell=True,
         executable="/bin/bash",
         capture_output=True,
+        text=True,
+        env=_qnn_subprocess_env(qnn_sdk, target),
     )
-    assert os.path.isfile(f"{artifact_dir}/model_ctx.bin"), print(result.stderr)
+    assert os.path.isfile(f"{artifact_dir}/model_ctx.bin"), (
+        f"Failed to generate context binary at {artifact_dir}/model_ctx.bin. "
+        f"returncode={result.returncode}\n"
+        f"stdout:\n{result.stdout}\n"
+        f"stderr:\n{result.stderr}"
+    )
+
+
+def _qnn_subprocess_env(qnn_sdk: str, target: str) -> Dict[str, str]:
+    """Return an env dict with LD_LIBRARY_PATH set so QNN SDK prebuilt
+    binaries (e.g. qnn-context-binary-utility) can resolve their bundled
+    libc++.so.1, which is shipped at $QNN_SDK_ROOT/lib/<target>/.
+    """
+    env = os.environ.copy()
+    qnn_lib_dir = f"{qnn_sdk}/lib/{target}"
+    existing = env.get("LD_LIBRARY_PATH", "")
+    env["LD_LIBRARY_PATH"] = f"{qnn_lib_dir}:{existing}" if existing else qnn_lib_dir
+    return env
 
 
 def validate_context_binary(ctx_bin: bytes):
@@ -149,8 +168,15 @@ def validate_context_binary(ctx_bin: bytes):
             shell=True,
             executable="/bin/bash",
             capture_output=True,
+            text=True,
+            env=_qnn_subprocess_env(qnn_sdk, target),
         )
-        assert os.path.isfile(f"{tmp_dir}/ctx.json"), print(result.stderr)
+        assert os.path.isfile(f"{tmp_dir}/ctx.json"), (
+            f"qnn-context-binary-utility failed to produce ctx.json. "
+            f"returncode={result.returncode}\n"
+            f"stdout:\n{result.stdout}\n"
+            f"stderr:\n{result.stderr}"
+        )
 
 
 class TestQNN(unittest.TestCase):
@@ -436,9 +462,38 @@ class TestQNN(unittest.TestCase):
                     # ok, assuming the user give a relative path to cwd
                     build_folder = os.path.join(os.getcwd(), self.build_folder)
 
+                env_runner = os.environ.get("QNN_EXECUTOR_RUNNER")
+                runner_from_env = bool(env_runner and env_runner.strip())
+                if runner_from_env:
+                    qnn_executor_runner = os.path.abspath(env_runner.strip())
+                else:
+                    qnn_executor_runner = os.path.join(
+                        build_folder,
+                        "examples/qualcomm/executor_runner/qnn_executor_runner",
+                    )
+                if not os.path.isfile(qnn_executor_runner):
+                    if runner_from_env:
+                        raise FileNotFoundError(
+                            f"QNN_EXECUTOR_RUNNER is set to {qnn_executor_runner!r} "
+                            "but no file exists at that path. Update the "
+                            "environment variable to point at the built "
+                            "qnn_executor_runner binary."
+                        )
+                    raise FileNotFoundError(
+                        f"qnn_executor_runner not found at {qnn_executor_runner!r}. "
+                        "Set the QNN_EXECUTOR_RUNNER environment variable to the "
+                        "built binary, or build it via CMake so it appears at "
+                        f"{build_folder}/examples/qualcomm/executor_runner/qnn_executor_runner."
+                    )
+                if not os.access(qnn_executor_runner, os.X_OK):
+                    raise PermissionError(
+                        f"{qnn_executor_runner!r} exists but is not executable. "
+                        "Run `chmod +x` on the binary or rebuild it."
+                    )
+
                 cmd = [
                     # qnn_executor_runner
-                    f"{build_folder}/examples/qualcomm/executor_runner/qnn_executor_runner",
+                    qnn_executor_runner,
                     "--model_path",
                     pte_fname,
                     "--input_list_path",

@@ -547,7 +547,7 @@ jobs:
         setup_script_args=""
         if [[ ${{ matrix.os}} == "bare_metal" ]]; then
           toolchain_prefix=arm-none-eabi-
-          threshold="111000" # 111 KiB
+          threshold="118000" # GCC 15.2 baseline: 115868 bytes, 2026-05-13
           toolchain_cmake=examples/arm/ethos-u-setup/arm-none-eabi-gcc.cmake
         elif [[ ${{ matrix.os}} == "zephyr-preset" ]]; then
           setup_script_args="--target-toolchain zephyr"
@@ -1489,11 +1489,11 @@ jobs:
         .ci/scripts/setup-linux.sh --build-tool "cmake"
 
         # Custom operator tests
-        PYTHON_EXECUTABLE=python bash backends/vulkan/test/custom_ops/build_and_run.sh add
-        ./cmake-out/backends/vulkan/test/custom_ops/q8csw_linear
-        ./cmake-out/backends/vulkan/test/custom_ops/q8csw_conv2d
-        ./cmake-out/backends/vulkan/test/custom_ops/q4gsw_linear
-        ./cmake-out/backends/vulkan/test/custom_ops/choose_qparams_per_row
+        PYTHON_EXECUTABLE=python bash backends/vulkan/test/custom_ops/build_and_run.sh test_add
+        ./cmake-out/backends/vulkan/test/custom_ops/test_q8csw_linear
+        ./cmake-out/backends/vulkan/test/custom_ops/test_q8csw_conv2d
+        ./cmake-out/backends/vulkan/test/custom_ops/test_q4gsw_linear
+        ./cmake-out/backends/vulkan/test/custom_ops/test_choose_qparams_per_row
         ./cmake-out/backends/vulkan/test/custom_ops/test_q8ta_qdq
         ./cmake-out/backends/vulkan/test/custom_ops/test_q8ta_clone
         ./cmake-out/backends/vulkan/test/custom_ops/test_q8ta_binary

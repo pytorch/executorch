@@ -501,12 +501,26 @@ jobs:
             name: "gemma3-1b"
         use-custom: [false, true]
         qconfig: ["4w", "nvfp4"]
+        runner: ["macos-14-xlarge"]
+        include:
+          - model:
+              id: "google/gemma-4-E2B-it"
+              name: "gemma4-e2b"
+            use-custom: true
+            qconfig: "4w"
+            runner: "macos-15-xlarge"
+          - model:
+              id: "google/gemma-4-E2B-it"
+              name: "gemma4-e2b"
+            use-custom: false
+            qconfig: "4w"
+            runner: "macos-15-xlarge"
     uses: pytorch/test-infra/.github/workflows/macos_job.yml@main
     secrets: inherit
     with:
       default-packages: ""
       job-name: test-mlx-llm-${{ matrix.model.name }}${{ matrix.use-custom && '-custom' || '' }}-${{ matrix.qconfig }}
-      runner: macos-14-xlarge
+      runner: ${{ matrix.runner }}
       python-version: "3.12"
       submodules: recursive
       ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
@@ -521,10 +535,14 @@ jobs:
         MODEL_NAME="${{ matrix.model.name }}"
         USE_CUSTOM="${{ matrix.use-custom }}"
         QCONFIG="${{ matrix.qconfig }}"
-
         CUSTOM_ARGS=""
         if [ "${USE_CUSTOM}" = "true" ]; then
           CUSTOM_ARGS="--use-custom-sdpa --use-custom-kv-cache"
+        fi
+
+        QEMBEDDING_ARGS="--qembedding ${QCONFIG}"
+        if [ "${MODEL_ID}" = "google/gemma-4-E2B-it" ]; then
+          QEMBEDDING_ARGS=""
         fi
 
         echo "::group::Install ExecuTorch and configure MLX build"
@@ -537,6 +555,13 @@ jobs:
         ${CONDA_RUN} huggingface-cli login --token $SECRET_EXECUTORCH_HF_TOKEN
         OPTIMUM_ET_VERSION=$(cat .ci/docker/ci_commit_pins/optimum-executorch.txt)
         ${CONDA_RUN} pip install transformers "optimum-executorch @ git+https://github.com/huggingface/optimum-executorch.git@${OPTIMUM_ET_VERSION}"
+        if [ "${MODEL_ID}" = "google/gemma-4-E2B-it" ]; then
+          # Gemma 4 requires a newer Transformers build than the CI-wide
+          # optimum-executorch pin currently brings in. Keep this pinned to the
+          # locally validated commit instead of floating on Transformers HEAD.
+          GEMMA4_TRANSFORMERS_COMMIT=61461a7bcb458db7cf6eeea49678b9ab776a7821
+          ${CONDA_RUN} pip install -U "transformers @ git+https://github.com/huggingface/transformers.git@${GEMMA4_TRANSFORMERS_COMMIT}"
+        fi
         echo "::endgroup::"
 
         ${CONDA_RUN} pip list
@@ -546,7 +571,7 @@ jobs:
           --model-id "${MODEL_ID}" \
           --output /tmp/${MODEL_NAME}.pte \
           --qlinear ${QCONFIG} \
-          --qembedding ${QCONFIG} \
+          ${QEMBEDDING_ARGS} \
           ${CUSTOM_ARGS}
         echo "::endgroup::"
 
