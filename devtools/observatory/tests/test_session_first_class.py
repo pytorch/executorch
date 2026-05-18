@@ -157,6 +157,42 @@ def test_session_payloads_land_per_session():
         assert s.end_data == {"probe": {"hello": "end"}}
 
 
+def test_archive_param_propagates_to_session_archive():
+    """``enter_context(archive=...)`` stamps the new Session's ``archive``
+    field; without ``region_name`` the archive label is also used as the
+    default session name (so the dashboard sidebar gets a real label)."""
+    with Observatory.enter_context(archive="alpha-archive"):
+        Observatory.collect("rec", object())
+
+    sessions = Observatory._session_result.sessions
+    assert len(sessions) == 1
+    assert sessions[0].archive == "alpha-archive"
+    assert sessions[0].name == "alpha-archive"
+    assert sessions[0].id == "alpha-archive"
+
+
+def test_archive_param_kept_when_region_name_explicit():
+    """When ``region_name`` is provided, it wins as the session name; the
+    ``archive`` value still propagates to ``Session.archive``."""
+    with Observatory.enter_context("explicit_session", archive="my-archive"):
+        Observatory.collect("rec", object())
+
+    sessions = Observatory._session_result.sessions
+    assert sessions[0].name == "explicit_session"
+    assert sessions[0].archive == "my-archive"
+
+
+def test_enable_context_forwards_archive():
+    """The CLI uses ``enable_context``; verify it threads ``archive``
+    through to the resulting Session."""
+    with Observatory.enable_context(archive="cli-archive"):
+        Observatory.collect("rec", object())
+
+    sessions = Observatory._session_result.sessions
+    assert sessions[0].archive == "cli-archive"
+    assert sessions[0].name == "cli-archive"
+
+
 # ---------------------------------------------------------------------------
 # Payload contract: archives + sessions + dashboard[lens][session_id]
 # ---------------------------------------------------------------------------
@@ -258,25 +294,22 @@ def test_load_archive_sessions_reads_new_shape():
     assert sr.sessions[0].start_data == {"x": 1}
 
 
-def test_load_archive_sessions_reads_legacy_nested_shape():
-    """Old archives nested sessions under a top-level ``session`` key and
-    omitted ``archive``. The shim must lift them and synthesize the field."""
+def test_load_archive_sessions_synthesizes_archive_when_missing():
+    """Legacy archives written before Session.archive existed have no
+    ``archive`` field in their session entries; ``_load_archive_sessions``
+    fills it from ``default_archive`` so compare_archives can stamp every
+    loaded session with its archive label."""
     legacy = {
-        "session": {
-            "sessions": [
-                {
-                    "id": "old",
-                    "name": "old",
-                    "start_ts": 0.0,
-                    "end_ts": 1.0,
-                    "start_data": {},
-                    "end_data": {},
-                }
-            ],
-            # The legacy flat dicts still exist on disk in old archives.
-            "start_data": {"foo": 1},
-            "end_data": {},
-        }
+        "sessions": [
+            {
+                "id": "old",
+                "name": "old",
+                "start_ts": 0.0,
+                "end_ts": 1.0,
+                "start_data": {},
+                "end_data": {},
+            }
+        ]
     }
     sr = Observatory._load_archive_sessions(legacy, default_archive="legacy_archive")
     assert len(sr.sessions) == 1

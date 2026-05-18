@@ -10,7 +10,7 @@ running on-device jobs).
 
 ```bash
 python -m executorch.backends.qualcomm.debugger.observatory \
-    [--output-html PATH] [--output-json PATH] SCRIPT [SCRIPT_ARGS...]
+    [--output-html PATH] [--output-archive PATH] SCRIPT [SCRIPT_ARGS...]
 ```
 
 ### With one or more lens recipes
@@ -20,7 +20,7 @@ Repeat the flag or comma-separate the values:
 ```bash
 python -m executorch.backends.qualcomm.debugger.observatory \
     --lens-recipe adb --lens-recipe accuracy \
-    [--output-html PATH] [--output-json PATH] \
+    [--output-html PATH] [--output-archive PATH] \
     SCRIPT [SCRIPT_ARGS...]
 
 python -m executorch.backends.qualcomm.debugger.observatory \
@@ -39,7 +39,7 @@ Available recipes:
 
 ```bash
 python -m executorch.backends.qualcomm.debugger.observatory visualize \
-    --input-json report.json --output-html report.html
+    --input-archive report.json --output-html report.html
 ```
 
 ## Qualcomm examples
@@ -55,7 +55,7 @@ source $QNN_SDK_ROOT/bin/envsetup.sh
 
 python -m executorch.backends.qualcomm.debugger.observatory \
     --output-html /tmp/obs_vit/report.html \
-    --output-json /tmp/obs_vit/report.json \
+    --output-archive /tmp/obs_vit/report.json \
     --lens-recipe accuracy \
     examples/qualcomm/scripts/torchvision_vit.py \
     -m SM8650 -b ./build-android \
@@ -199,14 +199,14 @@ Collect on-device in CI, visualize locally without re-running:
 # Step 1 — collect (e.g., in CI with device attached)
 python -m executorch.backends.qualcomm.debugger.observatory \
     --output-html /tmp/obs/report.html \
-    --output-json /tmp/obs/report.json \
+    --output-archive /tmp/obs/report.json \
     examples/qualcomm/scripts/torchvision_vit.py \
     -m SM8650 -b ./build-android -d imagenet-mini-val/ \
     -H mlgtw-linux -s <device_serial> -a /tmp/obs
 
 # Step 2 — re-generate HTML from JSON (e.g., locally after lens update)
 python -m executorch.backends.qualcomm.debugger.observatory visualize \
-    --input-json /tmp/obs/report.json \
+    --input-archive /tmp/obs/report.json \
     --output-html /tmp/obs/report_v2.html
 ```
 

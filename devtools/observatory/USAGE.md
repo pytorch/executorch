@@ -30,7 +30,7 @@ python -m executorch.devtools.observatory \
     --model SM8650 -b ./build-android -d imagenet-mini/val -a ./swin_v2_t
 ```
 
-> `--output-json` is accepted as an alias of `--output-archive`.
+> Use `--archive LABEL` to name this Archive. ``LABEL`` becomes ``Session.archive`` for every session this run produces and -- when no inner ``enter_context(region_name=...)`` is opened -- also names the default session in the dashboard sidebar.
 
 Use a backend-specific observatory CLI for additional customised lenses and hooks (qualcomm shown):
 
@@ -61,7 +61,7 @@ python -m executorch.backends.qualcomm.debugger.observatory visualize \
 ```
 
 Options:
-- `--input-archive` — path to the Archive (JSON) file (required). `--input-json` is an alias.
+- `--input-archive` — path to the Archive (JSON) file (required).
 - `--output-html` — path for the generated HTML file (required).
 
 ## 3. Compare Archives Across Backends or Runs (Compare Mode)

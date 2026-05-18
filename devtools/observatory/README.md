@@ -19,7 +19,7 @@ Five nouns describe everything Observatory does:
 | **Region** | A lightweight named scope opened by `Observatory.enter_context(region_name, config=None)`. Regions can nest. Records produced inside a Region are tagged with that name in their `region_stack`. **No lens hooks fire at Region boundaries** — Regions are pure labelling for grouping records in the UI tree view. |
 | **Session** | A heavyweight scope. A Session begins when an *outermost* `enter_context` is entered and ends when that block exits. Lens `on_session_start` / `on_session_end` fire here. The Session's `name` equals the outermost `region_name`. |
 | **Record** | One item from `Observatory.collect(name, artifact)`. Carries `name`, `timestamp`, `session_id`, `region_stack` (snapshot at collect time), and lens-specific `digests`. Stored time-ordered. |
-| **Archive** | One Observatory invocation's full state: a flat list of one or more Sessions plus every Record produced under them. The only thing Observatory persists raw. Serializes to a single JSON file via `--output-archive` (alias `--output-json`). |
+| **Archive** | One Observatory invocation's full state: a flat list of one or more Sessions plus every Record produced under them. The only thing Observatory persists raw. Serializes to a single JSON file via `--output-archive`. The archive label (set by `--archive`) becomes `Session.archive` and drives compare-mode column grouping. |
 | **Report** | The derived output. `analyze` runs once per archive, then `Frontend.dashboard` / `Frontend.record` render Report (HTML) for human reviewers and Report (JSON) for LLMs / CI / dashboards. |
 
 `enter_context(region_name=None, config=None)` is the primary entry API. Outermost calls open a Session named after the Region (or auto-named `default` / `default-2` ... if no `region_name` is given). Inner calls without a `region_name` are **config-only overrides** — they do not push a Region or open a Session.
@@ -68,7 +68,7 @@ python -m executorch.devtools.observatory \
     --model SM8650 -b ./build-android -d imagenet-mini/val -a ./swin_v2_t
 ```
 
-> `--output-json` is accepted as an alias of `--output-archive`; both write the Archive (JSON).
+> Use `--archive LABEL` to name this Archive (drives compare-mode column grouping and -- when no inner `enter_context(region_name=...)` is opened by the script -- also names the default session).
 
 Use a backend-specific observatory CLI for additional customised lenses and hooks (for example, xnnpack with per-layer accuracy):
 
@@ -175,7 +175,7 @@ python -m executorch.devtools.observatory script.py ...
 
 # Step 2: re-visualize (e.g., locally)
 python -m executorch.devtools.observatory visualize \
-    --input-json observatory_report.json --output-html report.html
+    --input-archive observatory_report.json --output-html report.html
 ```
 
 ### Fx-Viewer

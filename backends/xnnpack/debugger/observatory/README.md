@@ -8,7 +8,7 @@ XNNPack-specific Observatory CLI that wraps `devtools/observatory` with XNNPack 
 
 ```bash
 python -m executorch.backends.xnnpack.debugger.observatory \
-    [--output-html PATH] [--output-json PATH] SCRIPT [SCRIPT_ARGS...]
+    [--output-html PATH] [--output-archive PATH] SCRIPT [SCRIPT_ARGS...]
 ```
 
 ### With accuracy debugging
@@ -16,7 +16,7 @@ python -m executorch.backends.xnnpack.debugger.observatory \
 ```bash
 python -m executorch.backends.xnnpack.debugger.observatory \
     --lense_recipe=accuracy \
-    [--output-html PATH] [--output-json PATH] \
+    [--output-html PATH] [--output-archive PATH] \
     SCRIPT [SCRIPT_ARGS...]
 ```
 
@@ -24,7 +24,7 @@ python -m executorch.backends.xnnpack.debugger.observatory \
 
 ```bash
 python -m executorch.backends.xnnpack.debugger.observatory visualize \
-    --input-json report.json --output-html report.html
+    --input-archive report.json --output-html report.html
 ```
 
 ## XNNPack examples
@@ -96,13 +96,13 @@ Collect in one environment, visualize in another:
 # Step 1 — collect
 python -m executorch.backends.xnnpack.debugger.observatory \
     --output-html /tmp/mv2/report.html \
-    --output-json /tmp/mv2/report.json \
+    --output-archive /tmp/mv2/report.json \
     examples/xnnpack/aot_compiler.py \
     --model_name=mv2 --delegate --quantize --output_dir /tmp/mv2
 
 # Step 2 — re-generate HTML from JSON (e.g., after lens code update)
 python -m executorch.backends.xnnpack.debugger.observatory visualize \
-    --input-json /tmp/mv2/report.json \
+    --input-archive /tmp/mv2/report.json \
     --output-html /tmp/mv2/report_v2.html
 ```
 

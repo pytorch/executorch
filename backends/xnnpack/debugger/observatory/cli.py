@@ -8,7 +8,8 @@
 
 Collection mode (default):
     python -m executorch.backends.xnnpack.debugger.observatory \\
-        [--output-html PATH] [--output-json PATH] SCRIPT [SCRIPT_ARGS...]
+        [--output-html PATH] [--output-archive PATH] [--archive LABEL] \\
+        SCRIPT [SCRIPT_ARGS...]
 
 With one or more lens recipes (repeat the flag or comma-separate):
     python -m executorch.backends.xnnpack.debugger.observatory \\
@@ -25,6 +26,10 @@ Compare mode (overlay multiple Archives into one HTML report):
         --input-archive b.json --label B \\
         --output-html compare.html [--title "..."] \\
         [--lens-recipe accuracy]
+
+``--archive`` sets ``Session.archive`` and (when the user script does not
+open its own outermost ``enter_context(region_name=...)``) names the
+default session for the dashboard sidebar.
 """
 
 from __future__ import annotations
@@ -163,6 +168,7 @@ def main():
         Observatory,
         args.output_html,
         args.output_archive,
+        archive=args.archive,
     )
 
 

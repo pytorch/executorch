@@ -8,7 +8,8 @@
 
 Collection mode (default):
     python -m executorch.devtools.observatory \\
-        [--output-html PATH] [--output-archive PATH] SCRIPT [SCRIPT_ARGS...]
+        [--output-html PATH] [--output-archive PATH] [--archive LABEL] \\
+        SCRIPT [SCRIPT_ARGS...]
 
 Visualize mode (Archive JSON -> HTML, no script execution):
     python -m executorch.devtools.observatory visualize \\
@@ -20,8 +21,9 @@ Compare mode (overlay multiple Archives into one HTML report):
         --input-archive qualcomm.json --label Qualcomm/mobilenet_v2 \\
         --output-html cross_backend.html [--title "..."]
 
-`--output-archive` / `--input-archive` are the canonical names; the older
-`--output-json` / `--input-json` are accepted as aliases (RFC §4.5).
+``--archive`` sets ``Session.archive`` and -- when the user script does not
+open its own outermost ``enter_context(region_name=...)`` -- also names the
+session for the dashboard sidebar. Defaults to ``"default"``.
 """
 
 from __future__ import annotations
@@ -57,10 +59,20 @@ def make_collect_parser(prog=None):
     parser.add_argument("--output-html", default=None, help="HTML report output path")
     parser.add_argument(
         "--output-archive",
-        "--output-json",
         default=None,
         dest="output_archive",
-        help="Archive (JSON) output path. --output-json is an alias.",
+        help="Archive (JSON) output path.",
+    )
+    parser.add_argument(
+        "--archive",
+        default=None,
+        dest="archive",
+        help=(
+            "Archive label. Becomes Session.archive for every session this "
+            "run produces and -- when the user script does not open a named "
+            "outermost region -- the default session name as well. Drives "
+            "compare-mode column grouping. Defaults to 'default'."
+        ),
     )
     parser.add_argument("script", help="Script to run under Observatory")
     parser.add_argument(
@@ -79,10 +91,9 @@ def make_visualize_parser(prog=None):
     )
     parser.add_argument(
         "--input-archive",
-        "--input-json",
         required=True,
         dest="input_archive",
-        help="Input Archive (JSON) path. --input-json is an alias.",
+        help="Input Archive (JSON) path.",
     )
     parser.add_argument(
         "--output-html", required=True, help="Output HTML report path"
@@ -133,9 +144,9 @@ def make_compare_parser(prog=None):
     return parser
 
 
-def run_visualize(input_json: str, output_html: str, *, setup_fn=None) -> None:
-    if not os.path.isfile(input_json):
-        logging.error("[Observatory CLI] Input JSON not found: %s", input_json)
+def run_visualize(input_archive: str, output_html: str, *, setup_fn=None) -> None:
+    if not os.path.isfile(input_archive):
+        logging.error("[Observatory CLI] Input archive not found: %s", input_archive)
         sys.exit(1)
 
     from .observatory import Observatory
@@ -143,9 +154,11 @@ def run_visualize(input_json: str, output_html: str, *, setup_fn=None) -> None:
     Observatory.clear()
     if setup_fn is not None:
         setup_fn(Observatory)
-    Observatory.generate_html_from_json(input_json, output_html)
+    Observatory.generate_html_from_json(input_archive, output_html)
     logging.info(
-        "[Observatory CLI] visualize: html=%s from json=%s", output_html, input_json
+        "[Observatory CLI] visualize: html=%s from archive=%s",
+        output_html,
+        input_archive,
     )
 
 
@@ -189,24 +202,25 @@ def run_observatory(
     script_argv: list[str],
     Observatory,
     output_html: str | None = None,
-    output_json: str | None = None,
+    output_archive: str | None = None,
+    archive: str | None = None,
 ) -> None:
     """Shared run logic for all CLIs."""
     sys.argv = [script_path] + script_argv
 
     if output_html is None:
         output_html = "observatory_report.html"
-    if output_json is None:
+    if output_archive is None:
         if output_html.endswith(".html"):
-            output_json = output_html[:-5] + ".json"
+            output_archive = output_html[:-5] + ".json"
         else:
-            output_json = "observatory_report.json"
+            output_archive = "observatory_report.json"
 
     title = f"Observatory: {os.path.basename(script_path)}"
     mode, target, pkg_root = _resolve_run_mode(script_path)
 
     try:
-        with Observatory.enable_context(config={}):
+        with Observatory.enable_context(config={}, archive=archive):
             if mode == "module":
                 if pkg_root is not None and pkg_root not in sys.path:
                     sys.path.insert(0, pkg_root)
@@ -245,15 +259,15 @@ def run_observatory(
         )
     finally:
         os.makedirs(os.path.dirname(output_html) or ".", exist_ok=True)
-        os.makedirs(os.path.dirname(output_json) or ".", exist_ok=True)
-        Observatory.export_json(output_json)
+        os.makedirs(os.path.dirname(output_archive) or ".", exist_ok=True)
+        Observatory.export_json(output_archive)
         Observatory.export_html_report(output_html, title=title, config={})
         collected = Observatory.list_collected()
         if collected:
             logging.info(
-                "[Observatory CLI] Reports: html=%s json=%s (%d records: %s)",
+                "[Observatory CLI] Reports: html=%s archive=%s (%d records: %s)",
                 output_html,
-                output_json,
+                output_archive,
                 len(collected),
                 ", ".join(collected),
             )
@@ -339,6 +353,7 @@ def main():
         Observatory,
         args.output_html,
         args.output_archive,
+        archive=args.archive,
     )
 
 

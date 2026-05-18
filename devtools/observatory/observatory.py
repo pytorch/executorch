@@ -219,6 +219,7 @@ class Observatory:
         cls,
         region_name: Optional[str] = None,
         config: Optional[Dict[str, Any]] = None,
+        archive: Optional[str] = None,
     ) -> ContextManager[None]:
         """Push a Region onto the runtime stack (and a Session at outermost).
 
@@ -226,14 +227,21 @@ class Observatory:
         1. Outermost (region stack empty on entry):
            - With ``region_name``: pushes the named Region and opens a Session
              with the same ``id`` and ``name``.
-           - Without ``region_name``: auto-generates a non-duplicating default
+           - Without ``region_name`` but with ``archive``: opens a Session
+             named after the archive (``archive`` becomes both ``Session.id``
+             and ``Session.name``).
+           - Without either: auto-generates a non-duplicating default
              ("default", "default-2", ...), pushes it as a Region, and opens
              a Session with that name.
         2. Inner (region stack non-empty on entry):
            - With ``region_name``: pushes a labelled Region; the active
              Session is unchanged (regions do not fire lens session hooks).
            - Without ``region_name``: config-only override - the config frame
-             is pushed but no Region is added to the stack.
+             is pushed but no Region is added to the stack. ``archive`` is
+             ignored at inner level (it is a Session-level concept).
+
+        ``archive`` propagates to ``Session.archive`` and drives the
+        compare-mode N-column sidebar. Defaults to ``"default"``.
 
         Lens lifecycle: ``on_session_start`` / ``on_session_end`` fire only
         at Session boundaries (outermost-region entry/exit). Inner Regions
@@ -264,8 +272,17 @@ class Observatory:
 
         if push_region:
             if region_name is None:
-                # Outermost without name: auto-generate a non-duplicating default.
-                effective_name = cls._next_default_session_name()
+                if is_outermost and archive:
+                    # Outermost without region_name but with archive: name
+                    # the session after the archive so dashboards have a
+                    # meaningful header.
+                    effective_name = archive
+                    if effective_name in cls._sessions:
+                        raise RuntimeError(
+                            f"Session name {effective_name!r} already used in this archive."
+                        )
+                else:
+                    effective_name = cls._next_default_session_name()
             else:
                 effective_name = region_name
                 if is_outermost and effective_name in cls._sessions:
@@ -286,7 +303,7 @@ class Observatory:
             cls._region_stack.append(effective_name)
 
         if push_region and is_outermost:
-            cls._open_session(effective_name)
+            cls._open_session(effective_name, archive=archive or "default")
 
         try:
             yield
@@ -302,15 +319,21 @@ class Observatory:
 
     @classmethod
     @contextmanager
-    def enable_context(cls, config: Optional[Dict[str, Any]] = None) -> ContextManager[None]:
-        """Backwards-compatible alias for ``enter_context`` without a name.
+    def enable_context(
+        cls,
+        config: Optional[Dict[str, Any]] = None,
+        archive: Optional[str] = None,
+    ) -> ContextManager[None]:
+        """Open the outermost Region+Session with no explicit ``region_name``.
 
-        Outermost call opens an auto-named Session; nested calls are
-        config-only overrides. Prefer ``enter_context(region_name, config)``
-        for new code so the tree view picks up labelled regions.
+        Used by the CLI to wrap a user script. ``archive`` becomes the
+        ``Session.archive`` field and -- when no inner script-level
+        ``enter_context(region_name=...)`` is opened -- also the default
+        session name. Without ``archive``, falls back to the auto-generated
+        ``"default"`` / ``"default-2"`` pattern.
         """
 
-        with cls.enter_context(region_name=None, config=config):
+        with cls.enter_context(region_name=None, config=config, archive=archive):
             yield
 
     @classmethod
@@ -787,28 +810,21 @@ class Observatory:
 
     @staticmethod
     def _load_archive_sessions(data: Dict[str, Any], default_archive: str = "default") -> SessionResult:
-        """Load Session objects from archive JSON, with forward-compat for the
-        legacy ``session: {sessions, start_data, end_data}`` shape.
+        """Load Session objects from the archive's ``sessions`` list.
 
-        New shape: ``data["sessions"]`` is a flat list of Session dicts (each
-        carrying ``archive`` plus per-session ``start_data``/``end_data``).
-
-        Legacy shape: ``data["session"]`` carried the inner ``sessions`` list
-        plus the now-removed flat dicts. Old archives are read by lifting
-        ``data["session"]["sessions"]`` and synthesizing ``archive`` from
-        ``default_archive``.
+        Each entry must conform to the post-RFC shape:
+        ``{id, name, archive, start_ts, end_ts, start_data, end_data}``.
+        Missing ``archive`` falls back to ``default_archive`` so multi-archive
+        merging in :meth:`compare_archives` can stamp every loaded Session
+        with its archive label even when the source archive was written
+        before the field existed in code.
         """
         result = SessionResult()
-        sessions_raw = data.get("sessions")
-        if sessions_raw is None:
-            legacy = data.get("session") or {}
-            sessions_raw = legacy.get("sessions") or []
-        for s in sessions_raw or []:
-            sd = dict(s)
+        sessions_raw = data.get("sessions") or []
+        allowed = {"id", "name", "archive", "start_ts", "end_ts", "start_data", "end_data"}
+        for s in sessions_raw:
+            sd = {k: v for k, v in dict(s).items() if k in allowed}
             sd.setdefault("archive", default_archive)
-            # Drop any unknown fields the old format may have carried.
-            allowed = {"id", "name", "archive", "start_ts", "end_ts", "start_data", "end_data"}
-            sd = {k: v for k, v in sd.items() if k in allowed}
             result.sessions.append(Session(**sd))
         return result
 
