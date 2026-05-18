@@ -153,7 +153,13 @@ class RewriteConvPass(ArmPass):
             output_dtype = node.meta["val"].dtype
             bias_data = torch.zeros(size=(output_channels,), dtype=output_dtype)
 
-        with graph_module.graph.inserting_after(weight_node):
+        # Constant placeholders must appear before user-input placeholders in
+        # the graph. Insert the synthetic bias at the first placeholder slot
+        # instead of near the conv node.
+        first_placeholder = next(
+            n for n in graph_module.graph.nodes if n.op == "placeholder"
+        )
+        with graph_module.graph.inserting_before(first_placeholder):
             bias_node = create_constant_placeholder(
                 self.exported_program,
                 graph=graph_module.graph,

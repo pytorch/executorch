@@ -251,25 +251,7 @@ class Gemma4Attention(nn.Module):
         self.k_norm = RMSNorm(self.head_dim, eps=config.rms_norm_eps)
         self.v_norm = RMSNormNoWeight(self.head_dim, eps=config.rms_norm_eps)
 
-        # Precomputed RoPE table for this layer (per-layer because head_dim
-        # and theta differ between sliding and full attention). For full
-        # attention layers we pass freq_base_dim=head_dim so the zero-padded
-        # On-the-fly RoPE: store only inv_freq, compute cos/sin per forward.
-        # Saves memory vs precomputed [max_seq_len, head_dim] tables.
-        if self.is_sliding:
-            rotary_dim = self.head_dim
-        else:
-            rotary_dim = int(self.head_dim * self.partial_rotary)
-        rope_angles = rotary_dim // 2
-        inv_freq_rotated = 1.0 / (
-            self.rope_theta ** (torch.arange(0, rotary_dim, 2).float() / self.head_dim)
-        )
-        nope_angles = self.head_dim // 2 - rope_angles
-        if nope_angles > 0:
-            inv_freq = torch.cat([inv_freq_rotated, torch.zeros(nope_angles)])
-        else:
-            inv_freq = inv_freq_rotated
-        self.register_buffer("inv_freq", inv_freq, persistent=False)
+        self.register_buffer("inv_freq", self._compute_inv_freq(), persistent=False)
 
         # KV cache. Sliding layers use a ring buffer (2x window) to save
         # memory; full layers use a flat buffer (max_seq_len).
@@ -288,6 +270,30 @@ class Gemma4Attention(nn.Module):
                 head_dim=self.head_dim,
                 use_index_copy=True,
             )
+
+    def _compute_inv_freq(self, device: Optional[torch.device] = None) -> torch.Tensor:
+        """Compute RoPE inverse-frequency table for this layer."""
+        if self.is_sliding:
+            rotary_dim = self.head_dim
+        else:
+            rotary_dim = int(self.head_dim * self.partial_rotary)
+        rope_angles = rotary_dim // 2
+        inv_freq_rotated = 1.0 / (
+            self.rope_theta
+            ** (
+                torch.arange(0, rotary_dim, 2, device=device, dtype=torch.float32)
+                / self.head_dim
+            )
+        )
+        nope_angles = self.head_dim // 2 - rope_angles
+        if nope_angles > 0:
+            return torch.cat(
+                [
+                    inv_freq_rotated,
+                    torch.zeros(nope_angles, device=device, dtype=torch.float32),
+                ]
+            )
+        return inv_freq_rotated
 
     def forward(
         self,
@@ -675,7 +681,9 @@ def materialize_runtime_buffers(
 
     for layer in model.layers:
         attn = layer.self_attn
-        attn.inv_freq = attn.inv_freq.to(device)
+        attn.register_buffer(
+            "inv_freq", attn._compute_inv_freq(device=device), persistent=False
+        )
 
     model.register_buffer(
         "embed_normalizer",

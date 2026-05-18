@@ -151,6 +151,13 @@ set(FLATCC_INSTALL
     CACHE BOOL ""
 )
 add_subdirectory(flatcc)
+if(CMAKE_C_COMPILER_ID STREQUAL "GNU"
+   AND CMAKE_C_COMPILER_VERSION VERSION_GREATER_EQUAL 15
+)
+  target_compile_options(
+    flatccrt PRIVATE -Wno-error=unterminated-string-initialization
+  )
+endif()
 # Unfortunately flatcc writes libs directly in to the source tree [1]. So to
 # ensure the target lib is created last, force flatcc_cli to build first.
 #
