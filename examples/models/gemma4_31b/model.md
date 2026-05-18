@@ -119,13 +119,16 @@ only has to feed tokens.
 
 | Method    | Input                                    | Output           |
 |-----------|------------------------------------------|------------------|
-| `forward` | tokens `(1, T)` + input_pos `(T,)`, T∈[1, min(max_seq_len-1, 2×sliding_window)] | `(1, T, V)` logits |
+| `forward` | tokens `(1, T)` + input_pos `(T,)`, T∈[1, min(max_seq_len-1, 2×sliding_window)] | `(1, V)` logits |
 
-Single method with dynamic sequence length. No on-device sampling — the
-C++ runner performs greedy argmax on the host. Int4Tensor weights are
-converted to IntxUnpackedToInt8Tensor at pack time so the default
-`dequantize_affine → linear` dispatch produces the pattern MLX's
-`QuantizedLinearHandler` fuses into `QuantizedMatmulNode`.
+Single method with dynamic sequence length. Only the last token's logits
+are returned. The C++ runner samples on the host via `logits_to_token`
+with temperature support. Int4Tensor weights are converted to
+IntxUnpackedToInt8Tensor at pack time so the default `dequantize_affine →
+linear` dispatch produces the pattern MLX's `QuantizedLinearHandler` fuses
+into `QuantizedMatmulNode`. Source transforms (`mlx_source_transformations.py`)
+replace generic PyTorch ops with `mlx.rope`, `mlx.kv_cache_update`, and
+`mlx.custom_sdpa` for optimized Metal kernels.
 
 ### Shared
 
@@ -200,14 +203,17 @@ These exist solely to make the model exportable / efficient under ExecuTorch:
   `2 × sliding_window`) saves memory for long sequences — positions wrap
   via modulo and the attention mask reconstructs which slots are valid.
   Full-attention layers use a flat `Gemma4KVCache` sized to `max_seq_len`.
-  Both use `index_copy_(dim=2, ...)` for trace-friendly updates.
+  CUDA uses `index_copy_` for trace-friendly updates; MLX source transforms
+  replace both caches with `mlx.kv_cache_update`-backed equivalents.
 - **On-the-fly RoPE**: stores only `inv_freq` per layer, computes cos/sin
   via `torch.outer(positions, inv_freq)` each forward. Saves memory vs
   precomputed `[max_seq_len, head_dim]` tables (sliding uses full RoPE,
   full uses proportional partial RoPE — head_dim and θ differ).
-- **On-device Gumbel-max sampling** so the exported program emits a token
-  rather than a full logits tensor — keeps the runner GPU↔CPU traffic to a
-  single float per step.
+- **Last-logits-only**: `lm_head` always runs on `x[:, -1, :]`, avoiding a
+  `(1, T, 262144)` matmul during prefill.
+- **On-device Gumbel-max sampling** (CUDA) so the exported program emits a
+  token rather than logits — keeps GPU↔CPU traffic to a single float per
+  step. MLX samples on the host via `logits_to_token`.
 - **Final-logit softcap baked into the graph**, applied before sampling.
 - **Meta-device construction + assign-load** keeps peak memory small enough
   to load the 31B-parameter checkpoint on one machine.

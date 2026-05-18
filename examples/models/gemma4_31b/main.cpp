@@ -176,6 +176,9 @@ int main(int argc, char** argv) {
 
   auto S = [](int64_t v) -> SizesType { return static_cast<SizesType>(v); };
 
+  float temp_val =
+      FLAGS_temperature <= 0.0 ? 1e-6f : static_cast<float>(FLAGS_temperature);
+
 #ifdef EXECUTORCH_BUILD_CUDA
   if (FLAGS_cuda_graph) {
     executorch::runtime::BackendOptions<2> cuda_opts;
@@ -197,8 +200,6 @@ int main(int argc, char** argv) {
     ET_LOG(Error, "Failed to load decode method");
     return 1;
   }
-  float temp_val =
-      FLAGS_temperature <= 0.0 ? 1e-6f : static_cast<float>(FLAGS_temperature);
   auto temp_tensor =
       from_blob(&temp_val, {1}, executorch::aten::ScalarType::Float);
 #else
@@ -302,10 +303,8 @@ int main(int argc, char** argv) {
 #ifdef EXECUTORCH_BUILD_CUDA
     cur_token = read_token(result.get()[0].toTensor());
 #else
-    cur_token = static_cast<uint64_t>(llm::logits_to_token(
-        result.get()[0].toTensor(),
-        FLAGS_temperature <= 0.0 ? 0.0f
-                                 : static_cast<float>(FLAGS_temperature)));
+    cur_token = static_cast<uint64_t>(
+        llm::logits_to_token(result.get()[0].toTensor(), temp_val));
 #endif
 
     prefill_pos += chunk_len;
@@ -360,10 +359,8 @@ int main(int argc, char** argv) {
 #ifdef EXECUTORCH_BUILD_CUDA
     cur_token = read_token(result.get()[0].toTensor());
 #else
-    cur_token = static_cast<uint64_t>(llm::logits_to_token(
-        result.get()[0].toTensor(),
-        FLAGS_temperature <= 0.0 ? 0.0f
-                                 : static_cast<float>(FLAGS_temperature)));
+    cur_token = static_cast<uint64_t>(
+        llm::logits_to_token(result.get()[0].toTensor(), temp_val));
 #endif
 
     if (step == 0) {

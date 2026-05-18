@@ -91,13 +91,13 @@ class TestMlxPipeline(unittest.TestCase):
 
         tokens = torch.randint(0, TINY_CONFIG.vocab_size, (1, 1))
         input_pos = torch.tensor([0], dtype=torch.long)
+        temp = torch.tensor([1e-6], dtype=torch.float32)
 
         with torch.no_grad():
-            out = model(tokens, input_pos, None)
+            out = model(tokens, input_pos, temp)
 
-        self.assertEqual(out.shape[-1], TINY_CONFIG.vocab_size)
+        self.assertEqual(out.shape, torch.Size([1, 1]))
         self.assertFalse(torch.isnan(out).any())
-        self.assertFalse(torch.isinf(out).any())
 
     def test_multi_token_forward(self):
         model = build_random_tiny_model()
@@ -119,11 +119,52 @@ class TestMlxPipeline(unittest.TestCase):
         seq_len = 4
         tokens = torch.randint(0, TINY_CONFIG.vocab_size, (1, seq_len))
         input_pos = torch.arange(seq_len, dtype=torch.long)
+        temp = torch.tensor([1e-6], dtype=torch.float32)
 
         with torch.no_grad():
-            out = model(tokens, input_pos, None)
+            out = model(tokens, input_pos, temp)
 
-        self.assertEqual(out.shape, torch.Size([1, seq_len, TINY_CONFIG.vocab_size]))
+        self.assertEqual(out.shape, torch.Size([1, 1]))
+        self.assertFalse(torch.isnan(out).any())
+
+    def test_source_transforms_forward(self):
+        """Model produces valid output after MLX source transforms."""
+        model = build_random_tiny_model()
+        model.lm_head.weight = nn.Parameter(model.embed_tokens.weight.clone())
+        state_dict = quantize_model(model, TINY_SENSITIVE_RECIPE)
+
+        with torch.device("meta"):
+            model = Gemma4_31B(TINY_CONFIG)
+        model.lm_head.weight = nn.Parameter(model.embed_tokens.weight.clone())
+        pack_model(model, state_dict, DEFAULT_MLX_PACKERS)
+        model.eval()
+
+        from executorch.examples.models.gemma4_31b.mlx_source_transformations import (
+            mlx_source_transformations,
+        )
+        from executorch.examples.models.gemma4_31b.model import (
+            materialize_runtime_buffers,
+        )
+
+        mlx_source_transformations(model, dtype=torch.bfloat16)
+        materialize_runtime_buffers(model, dtype=torch.bfloat16)
+
+        # Single-token decode
+        tokens = torch.randint(0, TINY_CONFIG.vocab_size, (1, 1))
+        input_pos = torch.tensor([0], dtype=torch.long)
+        temp = torch.tensor([1e-6], dtype=torch.float32)
+        with torch.no_grad():
+            out = model(tokens, input_pos, temp)
+        self.assertEqual(out.shape, torch.Size([1, 1]))
+        self.assertFalse(torch.isnan(out).any())
+
+        # Multi-token prefill
+        seq_len = 4
+        tokens = torch.randint(0, TINY_CONFIG.vocab_size, (1, seq_len))
+        input_pos = torch.arange(seq_len, dtype=torch.long)
+        with torch.no_grad():
+            out = model(tokens, input_pos, temp)
+        self.assertEqual(out.shape, torch.Size([1, 1]))
         self.assertFalse(torch.isnan(out).any())
 
     def test_export_to_pte(self):

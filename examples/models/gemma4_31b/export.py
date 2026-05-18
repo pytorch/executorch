@@ -294,9 +294,9 @@ def _strip_sampler_from_forward(model: Gemma4_31B) -> None:
         for layer in self.layers:
             x = layer(x, input_pos, sliding_mask, full_mask)
         x = self.norm(x)
-        logits = self.lm_head(x).float()
+        last = self.lm_head(x[:, -1, :]).float()
         cap = self.logit_softcap.float()
-        return torch.tanh(logits / cap) * cap
+        return torch.tanh(last / cap) * cap
 
     model.forward = types.MethodType(_clean_forward, model)
 
@@ -323,6 +323,12 @@ def _export_mlx(model: Gemma4_31B, config: Gemma4_31BConfig, output_dir: str) ->
     from torch.export import Dim, export
 
     _strip_sampler_from_forward(model)
+
+    from executorch.examples.models.gemma4_31b.mlx_source_transformations import (
+        mlx_source_transformations,
+    )
+
+    mlx_source_transformations(model, dtype=torch.bfloat16)
     materialize_runtime_buffers(model, dtype=torch.bfloat16)
 
     max_prefill = min(config.max_seq_len - 1, config.sliding_window * 2)

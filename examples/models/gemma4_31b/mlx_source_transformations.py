@@ -1,0 +1,134 @@
+# Copyright (c) Meta Platforms, Inc. and affiliates.
+# All rights reserved.
+#
+# This source code is licensed under the BSD-style license found in the
+# LICENSE file in the root directory of this source tree.
+
+"""MLX source transformations for Gemma 4 31B-IT.
+
+Replaces the generic PyTorch ops in the model with MLX custom ops that lower
+to optimized Metal kernels:
+
+- ``torch.ops.mlx.rope`` for rotary position embeddings
+- ``torch.ops.mlx.kv_cache_update`` for KV cache scatter (via MLX cache modules)
+- ``torch.ops.mlx.custom_sdpa`` for scaled dot-product attention with GQA
+
+Applied at export time before ``torch.export`` — the model code in ``model.py``
+stays backend-agnostic.
+"""
+
+import executorch.backends.mlx.custom_ops  # noqa: F401 — registers mlx:: ops
+import torch
+import torch.nn as nn
+from executorch.backends.mlx.llm.cache import (
+    KVCache as MLXKVCache,
+    RingBufferKVCache as MLXRingKVCache,
+)
+
+
+def _replace_attention_forward(attn: nn.Module) -> None:
+    """Replace a Gemma4Attention's forward with one that uses MLX custom ops."""
+    import types
+
+    def _mlx_forward(
+        self, x: torch.Tensor, input_pos: torch.Tensor, attn_mask: torch.Tensor
+    ) -> torch.Tensor:
+        B, T, _ = x.shape
+        start_pos = input_pos[0].item()
+
+        q = self.q_proj(x).view(B, T, self.n_heads, self.head_dim)
+        raw_k = self.k_proj(x).view(B, T, self.n_kv_heads, self.head_dim)
+        if self.k_eq_v:
+            raw_v = raw_k
+        else:
+            raw_v = self.v_proj(x).view(B, T, self.n_kv_heads, self.head_dim)
+
+        q = self.q_norm(q)
+        k = self.k_norm(raw_k)
+        v = self.v_norm(raw_v)
+
+        q = q.transpose(1, 2)
+        k = k.transpose(1, 2)
+        v = v.transpose(1, 2)
+
+        # RoPE via mlx::rope. For proportional partial RoPE (full-attention
+        # layers), pass precomputed frequencies since mlx.rope's built-in
+        # frequency computation uses dims as the denominator, but Gemma 4
+        # uses head_dim.
+        if self.is_sliding:
+            q = torch.ops.mlx.rope(
+                q, self.head_dim, start_pos, False, self.rope_theta, 1.0, None
+            )
+            k = torch.ops.mlx.rope(
+                k, self.head_dim, start_pos, False, self.rope_theta, 1.0, None
+            )
+        else:
+            freqs = torch.outer(input_pos.float(), self.inv_freq)
+            q = torch.ops.mlx.rope(q, self.head_dim, start_pos, False, 0.0, 0.0, freqs)
+            k = torch.ops.mlx.rope(k, self.head_dim, start_pos, False, 0.0, 0.0, freqs)
+
+        k_cache, v_cache = self.kv_cache.update(start_pos, k, v)
+
+        if self.is_sliding:
+            sdpa_mask = self.kv_cache.create_sliding_window_mask(start_pos, T)
+            y = torch.ops.mlx.custom_sdpa(
+                q,
+                k_cache,
+                v_cache,
+                start_pos=self.kv_cache.buffer_size - T,
+                attn_mask=sdpa_mask,
+                dropout_p=0.0,
+                is_causal=False,
+                scale=self.scaling,
+            )
+        else:
+            y = torch.ops.mlx.custom_sdpa(
+                q,
+                k_cache,
+                v_cache,
+                start_pos=start_pos,
+                dropout_p=0.0,
+                is_causal=True,
+                scale=self.scaling,
+            )
+
+        y = y.transpose(1, 2).contiguous().view(B, T, self.n_heads * self.head_dim)
+        return self.o_proj(y)
+
+    attn.forward = types.MethodType(_mlx_forward, attn)
+
+
+def mlx_source_transformations(
+    model: nn.Module,
+    dtype: torch.dtype = torch.bfloat16,
+) -> None:
+    """Apply MLX source transformations to a Gemma 4 31B model in-place.
+
+    Replaces KV caches with MLX-optimized versions and rewrites attention
+    forward methods to use ``mlx.rope``, ``mlx.kv_cache_update``, and
+    ``mlx.custom_sdpa``.
+    """
+    config = model.config
+
+    for layer in model.layers:
+        attn = layer.self_attn
+
+        if attn.is_sliding:
+            attn.kv_cache = MLXRingKVCache(
+                max_batch_size=1,
+                max_context_length=config.sliding_window,
+                n_heads=attn.n_kv_heads,
+                head_dim=attn.head_dim,
+                dtype=dtype,
+            )
+        else:
+            attn.kv_cache = MLXKVCache(
+                max_batch_size=1,
+                max_context_length=config.max_seq_len,
+                n_heads=attn.n_kv_heads,
+                head_dim=attn.head_dim,
+                enable_dynamic_shape=True,
+                dtype=dtype,
+            )
+
+        _replace_attention_forward(attn)
