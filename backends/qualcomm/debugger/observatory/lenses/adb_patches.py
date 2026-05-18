@@ -214,7 +214,7 @@ def _wrapped_execute(
     from .adb import AdbLens
 
     AdbLens.note_simple_adb(self)
-    AdbLens.begin_inference()
+    AdbLens.begin_inference(simple_adb=self)
     _push_phase("execute")
 
     status = "pass"

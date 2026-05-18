@@ -134,19 +134,50 @@ report gains:
 - A compact **Transfers** dashboard block (one row per push/pull
   group) so 20+ file transfers do not crowd out the inference detail.
 - A left-panel **`adb.execute`** record per inference call, showing
-  the full `qnn_executor_runner ...` command with one-click copy, a
-  scrollable log with errors highlighted in red, and collapsible
-  `logcat -d` / `adb shell dmesg` panels fetched after the run.
+  the full `qnn_executor_runner ...` command with one-click copy and a
+  scrollable log with errors highlighted in red. `logcat` and `dmesg`
+  appear as a compact two-row table; the **View** button opens the raw
+  text in a full-screen overlay (Esc closes) so the record itself
+  renders instantly even for multi-megabyte streams.
 
-Config (override via `Observatory.enable_context(config={"adb": {...}})`):
+### Inference-window scoping (default)
+
+`logcat` and `dmesg` are scoped to the inference's time window rather
+than dumping the whole ring buffer. This is what `tradefed` / CTS do
+and what a professional debugger expects: each `adb.execute` record
+carries only the on-device messages produced *while that command
+ran*, with no cross-talk between sibling inferences and no
+unrelated context from before the test session.
+
+How it works:
+
+1. At `begin_inference` the lens issues a single
+   `adb shell "date '+%m-%d %H:%M:%S.000'; cat /proc/uptime"`. The
+   wall clock anchors the logcat fetch; the uptime anchors the
+   dmesg fetch.
+2. After the inference exits, the lens runs
+   `logcat -d -t '<device-ts>'` (a native logcat flag, no host-side
+   filtering needed) and a full `dmesg` dump that is then post-
+   filtered in Python to lines whose `[<seconds>.<frac>]` prefix is
+   at or after the captured uptime. Post-filtering keeps it
+   portable across the busybox / toybox `dmesg` variants on
+   embedded Android that lack a native `--since`.
+3. If the marker capture fails (some stripped shells reject the
+   format string or have no `/proc/uptime`), that stream falls
+   back to a full dump for the affected record and its status is
+   marked `ok (full, fallback)`.
+
+### Config
+
+Override via `Observatory.enable_context(config={"adb": {...}})`.
 
 | Key | Default | Effect |
 |---|---|---|
-| `enabled` | `True` | Master switch. `False` disables patching. |
-| `forward_to_stdout` | `True` | Tee captured inference stdout to terminal. |
-| `max_stdout_bytes` | `4 * 1024 * 1024` | Cap on captured streams. |
-| `fetch_logcat` | `"auto"` | `"auto"`: only after `execute()`; `True`/`False` force. |
-| `fetch_dmesg` | `"auto"` | Same shape as `fetch_logcat`. |
+| `enabled` | `True` | Master switch. `False` disables patching and recording entirely. |
+| `forward_to_stdout` | `True` | Tee captured inference stdout to the host terminal. |
+| `max_stdout_bytes` | `4 * 1024 * 1024` | Cap on captured streams (stdout, logcat, dmesg). Excess is truncated from the tail with a marker. |
+| `fetch_logcat` | `"windowed"` | Window-scope `logcat` to the inference (see above). Other values: `"full"` (legacy: dump the whole ring buffer); `"off"` (skip). Legacy `True` / `"auto"` map to `"windowed"`; `False` maps to `"off"` — note that `True` no longer means "full". |
+| `fetch_dmesg` | `"windowed"` | Same shape as `fetch_logcat`. Windowed mode reads `/proc/uptime` once at `begin_inference` and post-filters the dmesg output to lines emitted at or after that uptime. |
 
 Example combining both recipes:
 

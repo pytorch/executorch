@@ -15,12 +15,53 @@ Per-record (one ``adb.execute`` record per inference call):
 1. Status badge, full ``qnn_executor_runner`` command (copyable),
    exit code, duration.
 2. Scrollable monospace log of stdout with error lines highlighted.
-3. Optional ``logcat -d`` and ``dmesg`` panels collected after the
-   inference exits.
+3. Optional ``logcat`` and ``dmesg`` panels collected after the
+   inference exits (compact rows in the record; the full text opens
+   in a full-screen overlay on demand to avoid blocking layout).
 
 The lens uses ``adb_patches.install_adb_patches`` to wrap
 ``SimpleADB`` for the duration of the Observatory session. Patches are
 removed on ``on_session_end`` and on lens ``clear``.
+
+Config (override via ``Observatory.enable_context(config={"adb": {...}})``):
+
+================== ===================== =======================================
+Key                Default               Effect
+================== ===================== =======================================
+enabled            ``True``              Master switch. ``False`` disables
+                                         all patching and recording.
+forward_to_stdout  ``True``              Tee captured inference stdout to the
+                                         host terminal.
+max_stdout_bytes   ``4*1024*1024``       Cap on captured streams (stdout +
+                                         logcat + dmesg). Truncated from the
+                                         tail with a marker.
+fetch_logcat       ``"windowed"``        ``"windowed"`` (== ``True``, default):
+                                         scope ``logcat -d -t <start>`` to
+                                         the inference window using the
+                                         device wall clock captured at
+                                         ``begin_inference``. ``"full"`` dumps
+                                         the entire ring buffer (the legacy
+                                         behaviour, kept as an escape hatch
+                                         for cases where pre-test context
+                                         matters). ``"off"`` (== ``False``)
+                                         skips the fetch.
+fetch_dmesg        ``"windowed"``        Same shape as ``fetch_logcat``.
+                                         Windowed mode reads ``/proc/uptime``
+                                         on the device at
+                                         ``begin_inference`` and post-filters
+                                         the dmesg dump to lines whose
+                                         ``[<seconds>.<frac>]`` prefix is at
+                                         or after the captured uptime --
+                                         portable across busybox/toybox
+                                         dmesg variants that lack
+                                         ``--since``.
+================== ===================== =======================================
+
+The legacy values ``True`` / ``False`` / ``"auto"`` for ``fetch_logcat`` /
+``fetch_dmesg`` remain valid: ``True`` and ``"auto"`` map to
+``"windowed"``, ``False`` maps to ``"off"``. Note that ``True`` no longer
+means "full dump" -- use the explicit ``"full"`` value if that is what
+you want.
 """
 
 from __future__ import annotations
@@ -373,9 +414,13 @@ class AdbLens(Lens):
                     return
 
     @classmethod
-    def begin_inference(cls) -> None:
+    def begin_inference(cls, simple_adb: Any = None) -> None:
         if not cls._enabled:
             return
+        # Capture the device wall clock + uptime BEFORE we mark
+        # ``events_before``, so the marker fetch itself does not get
+        # attributed to this inference's event range.
+        logcat_ts, dmesg_uptime = cls._capture_window_marker(simple_adb)
         with cls._lock:
             cls._execute_seq += 1
             cls._active_inference = {
@@ -384,7 +429,42 @@ class AdbLens(Lens):
                 "t0": _perf_now(),
                 "events_before": len(cls._raw_events),
                 "last_capture": None,
+                "device_logcat_ts": logcat_ts,
+                "device_dmesg_uptime": dmesg_uptime,
             }
+
+    @classmethod
+    def _capture_window_marker(cls, simple_adb: Any) -> tuple:
+        """Read the device's current wall clock and uptime in a single shell call.
+
+        Returns ``(logcat_ts, dmesg_uptime)`` where either may be ``None``
+        if the read failed or the device shell does not understand the
+        format string. A failure here is non-fatal -- the windowed fetch
+        will silently fall back to a full dump for that inference.
+        """
+        if simple_adb is None:
+            return (None, None)
+        out: List[str] = []
+        try:
+            simple_adb._adb(
+                ["shell", "date '+%m-%d %H:%M:%S.000'; cat /proc/uptime"],
+                output_callback=lambda r: out.append(getattr(r, "stdout", "") or ""),
+            )
+        except BaseException as exc:  # noqa: BLE001 -- best effort
+            logging.warning("[AdbLens] window-marker capture failed: %s", exc)
+            return (None, None)
+
+        lines = "".join(out).strip().splitlines()
+        logcat_ts: Optional[str] = None
+        dmesg_uptime: Optional[float] = None
+        if len(lines) >= 1 and re.match(r"^\d{2}-\d{2} \d{2}:\d{2}:\d{2}\.\d{3}$", lines[0].strip()):
+            logcat_ts = lines[0].strip()
+        if len(lines) >= 2:
+            try:
+                dmesg_uptime = float(lines[1].split()[0])
+            except (ValueError, IndexError):
+                dmesg_uptime = None
+        return (logcat_ts, dmesg_uptime)
 
     @classmethod
     def end_inference(cls, *, status: str, error: Optional[str]) -> None:
@@ -446,15 +526,30 @@ class AdbLens(Lens):
             error=error,
         )
         with cls._lock:
+            prev = cls._active_inference or {}
             cls._active_inference = event.to_digest()
             cls._active_inference["__event__"] = event
+            cls._active_inference["device_logcat_ts"] = prev.get("device_logcat_ts")
+            cls._active_inference["device_dmesg_uptime"] = prev.get("device_dmesg_uptime")
 
     @classmethod
     def maybe_fetch_logcat_dmesg(cls, simple_adb: Any, adb_runner: Callable) -> None:
-        """Fetch logcat / dmesg post-execute when config allows.
+        """Fetch ``logcat`` / ``dmesg`` post-execute when config allows.
 
-        ``adb_runner`` is the wrapped ``_adb`` that records events under
-        the appropriate phase.
+        Modes (per stream, configured via ``fetch_logcat`` / ``fetch_dmesg``):
+
+        * ``"windowed"`` (default) -- scope to the inference time window
+          using the device clock + uptime captured at ``begin_inference``.
+          Logcat uses ``logcat -d -t '<device-ts>'`` natively; dmesg is
+          dumped fully and post-filtered by its ``[<seconds>]`` prefix.
+          If the window-marker capture failed (rare; embedded shells
+          without a sane ``date`` / ``/proc/uptime``), this stream falls
+          back to ``"full"``.
+        * ``"full"`` -- dump the entire ring buffer (legacy behaviour).
+        * ``"off"`` -- skip the fetch entirely.
+
+        ``adb_runner`` is the wrapped ``_adb`` that records the fetch
+        events under the appropriate phase.
         """
         if not cls._enabled or cls._active_inference is None:
             cls._publish_active_inference()
@@ -468,29 +563,42 @@ class AdbLens(Lens):
 
         from . import adb_patches
 
-        do_logcat = _resolve_auto(cls._config.get("fetch_logcat", "auto"), True)
-        do_dmesg = _resolve_auto(cls._config.get("fetch_dmesg", "auto"), True)
+        max_bytes = int(cls._config.get("max_stdout_bytes", _DEFAULT_MAX_STDOUT_BYTES))
+        logcat_mode = _resolve_fetch_mode(cls._config.get("fetch_logcat", "windowed"))
+        dmesg_mode = _resolve_fetch_mode(cls._config.get("fetch_dmesg", "windowed"))
 
-        if do_logcat:
+        device_ts = active.get("device_logcat_ts")
+        device_uptime = active.get("device_dmesg_uptime")
+
+        if logcat_mode != "off":
+            effective = logcat_mode
+            if effective == "windowed" and not device_ts:
+                effective = "full"  # marker missing -- best effort
+            cmd = (
+                ["shell", f"logcat -d -t '{device_ts}'"]
+                if effective == "windowed"
+                else ["logcat", "-d"]
+            )
             adb_patches._push_phase("logcat")
             try:
                 buf: List[str] = []
                 adb_runner(
                     simple_adb,
-                    ["logcat", "-d"],
+                    cmd,
                     output_callback=lambda r: buf.append(getattr(r, "stdout", "") or ""),
                 )
-                event.logcat = _truncate(
-                    "".join(buf), int(cls._config.get("max_stdout_bytes", _DEFAULT_MAX_STDOUT_BYTES))
-                )
-                event.logcat_status = "ok"
+                event.logcat = _truncate("".join(buf), max_bytes)
+                event.logcat_status = "ok" if effective == logcat_mode else f"ok ({effective}, fallback)"
             except BaseException as exc:
                 event.logcat_status = f"failed: {exc!r}"
                 logging.warning("[AdbLens] logcat fetch failed: %s", exc)
             finally:
                 adb_patches._pop_phase()
 
-        if do_dmesg:
+        if dmesg_mode != "off":
+            effective = dmesg_mode
+            if effective == "windowed" and device_uptime is None:
+                effective = "full"
             adb_patches._push_phase("dmesg")
             try:
                 buf2: List[str] = []
@@ -499,10 +607,10 @@ class AdbLens(Lens):
                     ["shell", "dmesg"],
                     output_callback=lambda r: buf2.append(getattr(r, "stdout", "") or ""),
                 )
-                event.dmesg = _truncate(
-                    "".join(buf2), int(cls._config.get("max_stdout_bytes", _DEFAULT_MAX_STDOUT_BYTES))
-                )
-                event.dmesg_status = "ok"
+                raw = "".join(buf2)
+                text = _filter_dmesg_by_uptime(raw, device_uptime) if effective == "windowed" else raw
+                event.dmesg = _truncate(text, max_bytes)
+                event.dmesg_status = "ok" if effective == dmesg_mode else f"ok ({effective}, fallback)"
             except BaseException as exc:
                 event.dmesg_status = f"failed: {exc!r}"
                 logging.warning("[AdbLens] dmesg fetch failed: %s", exc)
@@ -672,6 +780,53 @@ def _resolve_auto(value: Any, auto_default: bool) -> bool:
     if isinstance(value, str) and value.lower() == "auto":
         return auto_default
     return bool(value)
+
+
+_DMESG_UPTIME_RE = re.compile(r"^\[\s*([0-9]+\.[0-9]+)\]")
+
+
+def _resolve_fetch_mode(value: Any) -> str:
+    """Resolve ``fetch_logcat`` / ``fetch_dmesg`` to one of the canonical modes.
+
+    Returns one of ``"windowed"``, ``"full"``, ``"off"``.
+
+    Accepts the new explicit string values and the legacy boolean / "auto"
+    forms for backwards compatibility:
+    ``True`` and ``"auto"`` -> ``"windowed"`` (the new default);
+    ``False`` -> ``"off"``.
+    """
+    if isinstance(value, bool):
+        return "windowed" if value else "off"
+    if isinstance(value, str):
+        v = value.strip().lower()
+        if v in ("windowed", "window", "auto"):
+            return "windowed"
+        if v in ("full", "all"):
+            return "full"
+        if v in ("off", "none", "false", "no"):
+            return "off"
+    return "windowed"
+
+
+def _filter_dmesg_by_uptime(text: str, start_uptime: float) -> str:
+    """Drop dmesg lines whose ``[<seconds>.<frac>]`` prefix is older than
+    ``start_uptime`` (seconds since boot). Lines without the standard prefix
+    are kept unchanged so callers do not silently lose unparseable output.
+    """
+    if not text or start_uptime is None:
+        return text or ""
+    kept: List[str] = []
+    for line in text.splitlines():
+        m = _DMESG_UPTIME_RE.match(line)
+        if m is None:
+            kept.append(line)
+            continue
+        try:
+            if float(m.group(1)) >= start_uptime:
+                kept.append(line)
+        except ValueError:
+            kept.append(line)
+    return "\n".join(kept)
 
 
 def _utc_now() -> float:
