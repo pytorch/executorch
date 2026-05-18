@@ -7,6 +7,26 @@
   let sidebarPinned = false;
   try { sidebarPinned = localStorage.getItem('obs_sidebar_pinned') === '1'; } catch(e) {}
 
+  // Width constants for push-layout sidebar.
+  // Single-archive mode uses SIDEBAR_SINGLE_W; compare mode gives each
+  // archive column ARCHIVE_COL_W px, so the panel expands with N archives.
+  const SIDEBAR_SINGLE_W = 300;
+  const ARCHIVE_COL_W    = 200;
+
+  function _sidebarTargetWidth() {
+    const archives = (state.data && state.data.archives) || [];
+    if (archives.length <= 1) return SIDEBAR_SINGLE_W;
+    const natural = archives.length * ARCHIVE_COL_W + (archives.length - 1) * 8 + 16;
+    return Math.min(natural, Math.round(window.innerWidth * 0.5));
+  }
+
+  // Writes --sidebar-w on :root, which drives both .index-pane width and
+  // .sidebar-toggle-btn left via CSS variable.
+  function _applySidebarWidth(open) {
+    const w = open ? _sidebarTargetWidth() : 0;
+    document.documentElement.style.setProperty('--sidebar-w', w + 'px');
+  }
+
   function renderLayout() {
     const icon = state.theme === 'dark' ? '☀️' : '🌙';
     OBS.app.innerHTML = `
@@ -24,7 +44,6 @@
         </div>
       </header>
       <div class="container">
-        <div class="index-pane-trigger"></div>
         <button class="sidebar-toggle-btn ${sidebarPinned ? 'open' : ''}"
                 id="sidebar-toggle-btn"
                 onclick="toggleSidebar()"
@@ -40,6 +59,7 @@
         <main id="main-pane" class="main-pane"></main>
       </div>
     `;
+    _applySidebarWidth(sidebarPinned);
     updateIndexHeader();
   }
 
@@ -49,6 +69,7 @@
 
     const pane = document.getElementById('index-pane');
     const btn  = document.getElementById('sidebar-toggle-btn');
+    _applySidebarWidth(sidebarPinned);
     if (pane) pane.classList.toggle('pinned', sidebarPinned);
     if (btn)  {
       btn.classList.toggle('open', sidebarPinned);
@@ -354,6 +375,9 @@
     if (archives.length > 1) {
       list.classList.add('compare-mode');
       list.style.setProperty('--archive-cols', String(archives.length));
+      // Re-compute panel width if sidebar is already open (archive count may
+      // have changed when loading a compare report).
+      if (sidebarPinned) _applySidebarWidth(true);
       let html = '';
       archives.forEach((archive) => {
         html += _renderArchiveColumn(archive, sessions, records, useTree);
@@ -366,6 +390,7 @@
     // Single-archive: flat list of session dashboards + records.
     list.classList.remove('compare-mode');
     list.style.removeProperty('--archive-cols');
+    if (sidebarPinned) _applySidebarWidth(true);
     let html = '';
     sessions.forEach((session) => {
       html += _renderSessionDashboardLink(session);

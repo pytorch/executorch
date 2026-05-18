@@ -143,7 +143,7 @@
         /* Sidebar toggle tab — always-visible click target on left edge */
         .sidebar-toggle-btn {
             position: fixed;
-            left: 0;
+            left: var(--sidebar-w, 0);
             top: 50%;
             transform: translateY(-50%);
             z-index: 210;
@@ -171,7 +171,6 @@
             box-shadow: 3px 0 12px var(--shadow);
             width: 26px;
         }
-        .sidebar-toggle-btn.open { left: 300px; }
         [data-theme="dark"] .sidebar-toggle-btn {
             background: var(--header-bg);
             border-color: rgba(255,255,255,0.15);
@@ -187,48 +186,29 @@
 
         /* Sidebar trigger zone — invisible strip on left edge (hover fallback) */
         .index-pane-trigger {
-            position: fixed;
-            left: 0;
-            top: 0;
-            bottom: 0;
-            width: 12px;
-            z-index: 200;
+            display: none;
         }
 
         /* Index Pane (Sidebar)
-           Starts below the sticky header (z-index: 200) so the index
-           header (which carries Tree-view / Select-items toggles) is
-           never obscured. The pane itself sits at z-index: 199. */
+           In-flow flex child of .container — not a fixed overlay.
+           Width transitions between 0 (closed) and var(--sidebar-w) (open).
+           The toggle button position is driven by the same --sidebar-w variable. */
         .index-pane {
-            position: fixed;
-            left: 0;
-            top: 60px;
-            bottom: 0;
-            width: 300px;
+            flex-shrink: 0;
+            width: 0;
+            overflow: hidden;
             background: var(--bg-secondary);
             border-right: 1px solid var(--border-color);
             display: flex;
             flex-direction: column;
-            flex-shrink: 0;
-            z-index: 199;
-            transform: translateX(-100%);
-            transition: transform 0.25s ease, box-shadow 0.25s ease;
-            box-shadow: none;
+            transition: width 0.25s ease;
         }
-
-        /* When the sticky header is hidden the pane reclaims the full
-           viewport. */
-        body:has(header.hidden) .index-pane {
-            top: 0;
-        }
-
-        /* Show when trigger zone or pane itself is hovered, or pinned open */
-        .index-pane-trigger:hover ~ .index-pane,
-        .index-pane:hover,
         .index-pane.pinned {
-            transform: translateX(0);
-            box-shadow: 4px 0 16px var(--shadow);
+            width: var(--sidebar-w, 300px);
+            overflow-y: auto;
+            overflow-x: hidden;
         }
+        /* header.hidden: full-height is handled by flex; no top offset needed */
         
         .index-header {
             padding: 1rem;
@@ -493,7 +473,8 @@
            the renderer adds the `compare-mode` class. */
         .index-list.compare-mode {
             display: grid;
-            grid-template-columns: repeat(var(--archive-cols, 1), minmax(0, 1fr));
+            grid-template-columns: repeat(var(--archive-cols, 1), 200px);
+            overflow-x: auto;
             gap: 0.5rem;
             padding: 0.5rem;
             align-items: start;
