@@ -517,6 +517,111 @@ class TensorTest {
   }
 
   @Test
+  fun testCopyDataIntoInt32_overflow() {
+    val tensor = Tensor.fromBlob(intArrayOf(1, 2, 3, 4), longArrayOf(4))
+    val dst = Tensor.allocateIntBuffer(2)
+    assertThatThrownBy { tensor.copyDataInto(dst) }
+        .isInstanceOf(java.nio.BufferOverflowException::class.java)
+  }
+
+  @Test
+  fun testCopyDataIntoInt64_overflow() {
+    val tensor = Tensor.fromBlob(longArrayOf(1, 2, 3, 4), longArrayOf(4))
+    val dst = Tensor.allocateLongBuffer(2)
+    assertThatThrownBy { tensor.copyDataInto(dst) }
+        .isInstanceOf(java.nio.BufferOverflowException::class.java)
+  }
+
+  @Test
+  fun testCopyDataIntoFloat64_overflow() {
+    val tensor = Tensor.fromBlob(doubleArrayOf(1.0, 2.0, 3.0, 4.0), longArrayOf(4))
+    val dst = Tensor.allocateDoubleBuffer(2)
+    assertThatThrownBy { tensor.copyDataInto(dst) }
+        .isInstanceOf(java.nio.BufferOverflowException::class.java)
+  }
+
+  @Test
+  fun testCopyDataIntoInt8_overflow() {
+    val tensor = Tensor.fromBlob(byteArrayOf(1, 2, 3, 4), longArrayOf(4))
+    val dst = Tensor.allocateByteBuffer(2)
+    assertThatThrownBy { tensor.copyDataInto(dst) }
+        .isInstanceOf(java.nio.BufferOverflowException::class.java)
+  }
+
+  @Test
+  fun testCopyDataIntoUnsignedUInt8_overflow() {
+    val tensor = Tensor.fromBlobUnsigned(byteArrayOf(1, 2, 3, 4), longArrayOf(4))
+    val dst = Tensor.allocateByteBuffer(2)
+    assertThatThrownBy { tensor.copyDataIntoUnsigned(dst) }
+        .isInstanceOf(java.nio.BufferOverflowException::class.java)
+  }
+
+  @Test
+  fun testCopyDataIntoFloat16RawBits_overflow() {
+    val halfBits =
+        shortArrayOf(0x0000.toShort(), 0x3C00.toShort(), 0x4000.toShort(), 0xC000.toShort())
+    val tensor = Tensor.fromBlob(halfBits, longArrayOf(4))
+    val dst = Tensor.allocateHalfBuffer(2)
+    assertThatThrownBy { tensor.copyDataInto(dst) }
+        .isInstanceOf(java.nio.BufferOverflowException::class.java)
+  }
+
+  @Test
+  fun testCopyDataIntoFloat16_writesAtDstPosition() {
+    // 0x3C00=1.0, 0x4000=2.0, 0x4200=3.0, 0x4400=4.0
+    val halfBits =
+        shortArrayOf(0x3C00.toShort(), 0x4000.toShort(), 0x4200.toShort(), 0x4400.toShort())
+    val tensor = Tensor.fromBlob(halfBits, longArrayOf(4))
+
+    // Pre-fill a larger buffer; the fp16 widening path should write at the
+    // current position and advance it, not overwrite from index 0.
+    val dst = Tensor.allocateFloatBuffer(8)
+    dst.put(floatArrayOf(-1f, -1f))
+    assertEquals(2, dst.position())
+    tensor.copyDataInto(dst)
+    assertEquals(6, dst.position())
+    dst.rewind()
+    assertEquals(-1f.toDouble(), dst.get().toDouble(), 0.0)
+    assertEquals(-1f.toDouble(), dst.get().toDouble(), 0.0)
+    assertEquals(1.0, dst.get().toDouble(), 0.0)
+    assertEquals(2.0, dst.get().toDouble(), 0.0)
+    assertEquals(3.0, dst.get().toDouble(), 0.0)
+    assertEquals(4.0, dst.get().toDouble(), 0.0)
+  }
+
+  @Test
+  fun testCopyDataInto_emptyTensor() {
+    val floatTensor = Tensor.fromBlob(floatArrayOf(), longArrayOf(0))
+    val floatDst = Tensor.allocateFloatBuffer(4)
+    floatDst.put(floatArrayOf(7f, 8f))
+    assertEquals(2, floatDst.position())
+    floatTensor.copyDataInto(floatDst)
+    assertEquals(2, floatDst.position())
+
+    // Same for the fp16 widening path, whose explicit remaining() check is
+    // worth exercising at zero.
+    val halfTensor = Tensor.fromBlob(shortArrayOf(), longArrayOf(0))
+    val halfWidenDst = Tensor.allocateFloatBuffer(2)
+    halfTensor.copyDataInto(halfWidenDst)
+    assertEquals(0, halfWidenDst.position())
+  }
+
+  @Test
+  fun testCopyDataInto_rejectsReadOnlyBuffer() {
+    val tensor = Tensor.fromBlob(floatArrayOf(1f, 2f, 3f, 4f), longArrayOf(4))
+    val dst = Tensor.allocateFloatBuffer(4).asReadOnlyBuffer()
+    assertThatThrownBy { tensor.copyDataInto(dst) }
+        .isInstanceOf(java.nio.ReadOnlyBufferException::class.java)
+
+    // fp16 widening path uses element-by-element put, which also rejects.
+    val halfTensor =
+        Tensor.fromBlob(shortArrayOf(0x3C00.toShort(), 0x4000.toShort()), longArrayOf(2))
+    val halfWidenDst = Tensor.allocateFloatBuffer(2).asReadOnlyBuffer()
+    assertThatThrownBy { halfTensor.copyDataInto(halfWidenDst) }
+        .isInstanceOf(java.nio.ReadOnlyBufferException::class.java)
+  }
+
+  @Test
   fun testIllegalArguments() {
     val data = floatArrayOf(Float.MIN_VALUE, 0f, 0.1f, Float.MAX_VALUE)
     val shapeWithNegativeValues = longArrayOf(-1, 2)
