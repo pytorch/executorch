@@ -189,6 +189,9 @@ if(NOT EXECUTORCH_ENABLE_PROGRAM_VERIFICATION)
   add_definitions(-DET_ENABLE_PROGRAM_VERIFICATION=0)
 endif()
 
+# Disable the deprecated constant_buffer path.
+add_definitions(-DET_ENABLE_DEPRECATED_CONSTANT_BUFFER=0)
+
 if(EXECUTORCH_ENABLE_EVENT_TRACER)
   add_definitions(-DET_EVENT_TRACER_ENABLED)
 endif()
@@ -1124,6 +1127,8 @@ if(EXECUTORCH_BUILD_EXTENSION_TRAINING)
 endif()
 
 if(EXECUTORCH_BUILD_EXTENSION_LLM_RUNNER)
+  add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/extension/memory_allocator)
+  list(APPEND _executorch_extensions extension_memory_allocator)
   add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/extension/llm/runner)
   list(APPEND _executorch_extensions extension_llm_runner)
 endif()
@@ -1152,6 +1157,11 @@ endif()
 if(EXECUTORCH_BUILD_VULKAN)
   add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/backends/vulkan)
   list(APPEND _executorch_backends vulkan_backend vulkan_schema)
+endif()
+
+if(EXECUTORCH_BUILD_WEBGPU)
+  add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/backends/webgpu)
+  list(APPEND _executorch_backends webgpu_backend)
 endif()
 
 if(EXECUTORCH_BUILD_VGF)

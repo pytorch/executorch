@@ -1402,6 +1402,15 @@ exec_logical_or(const LogicalOrNode& n, ExecutionState& st, StreamOrDevice s) {
       n.out, logical_or(st.const_tensor_ref(n.a), st.const_tensor_ref(n.b), s));
 }
 
+inline void exec_bitwise_and(
+    const BitwiseAndNode& n,
+    ExecutionState& st,
+    StreamOrDevice s) {
+  st.set_tensor(
+      n.out,
+      bitwise_and(st.const_tensor_ref(n.a), st.const_tensor_ref(n.b), s));
+}
+
 inline void exec_tri(const TriNode& n, ExecutionState& st, StreamOrDevice s) {
   int rows = resolve_int(n.n, st);
   int cols = resolve_int(n.m, st);
@@ -1733,6 +1742,13 @@ inline void exec_all(const AllNode& n, ExecutionState& st, StreamOrDevice s) {
   }
 }
 
+inline void exec_roll(const RollNode& n, ExecutionState& st, StreamOrDevice s) {
+  const auto& x = st.const_tensor_ref(n.x);
+  auto shifts = to_shape(n.shift, st);
+  std::vector<int> axes(n.axes.begin(), n.axes.end());
+  st.set_tensor(n.out, roll(x, shifts, axes, s));
+}
+
 inline void
 exec_repeat(const RepeatNode& n, ExecutionState& st, StreamOrDevice s) {
   const auto& x = st.const_tensor_ref(n.x);
@@ -2045,6 +2061,9 @@ class Interpreter {
       case OpCode::LOGICAL_OR:
         ops::exec_logical_or(std::get<LogicalOrNode>(instr.node), st, s);
         break;
+      case OpCode::BITWISE_AND:
+        ops::exec_bitwise_and(std::get<BitwiseAndNode>(instr.node), st, s);
+        break;
       case OpCode::TRI:
         ops::exec_tri(std::get<TriNode>(instr.node), st, s);
         break;
@@ -2209,6 +2228,9 @@ class Interpreter {
         break;
       case OpCode::REPEAT:
         ops::exec_repeat(std::get<RepeatNode>(instr.node), st, s);
+        break;
+      case OpCode::ROLL:
+        ops::exec_roll(std::get<RollNode>(instr.node), st, s);
         break;
       case OpCode::SORT:
         ops::exec_sort(std::get<SortNode>(instr.node), st, s);

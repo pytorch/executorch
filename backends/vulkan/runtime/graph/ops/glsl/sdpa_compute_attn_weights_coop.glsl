@@ -15,8 +15,12 @@
 $if IO_STORAGE == "buffer":
   #define OUTPUT_BUFFER
   #define INPUT_BUFFER
+  #define ATTN_WEIGHTS_BUFFER
 $if K_CACHE_STORAGE == "buffer":
   #define K_CACHE_BUFFER
+
+#define Q_LAYOUT DHSB
+#define K_LAYOUT DHSB
 
 #define TILE_K4 ${TILE_K4}
 #define TILE_N4 ${TILE_N4}
@@ -34,11 +38,11 @@ layout(std430) buffer;
 #include "common.glslh"
 
 ${layout_declare_tensor(B, "w", "t_attn_weights", DTYPE, IO_STORAGE, is_scalar_array=False)}
-${layout_declare_tensor(B, "r", "t_q_projected", DTYPE, IO_STORAGE, is_scalar_array=False)}
-${layout_declare_tensor(B, "r", "t_k_cache", DTYPE, K_CACHE_STORAGE, is_scalar_array=False)}
+${layout_declare_tensor(B, "r", "t_q", DTYPE, IO_STORAGE, is_scalar_array=False)}
+${layout_declare_tensor(B, "r", "t_k", DTYPE, K_CACHE_STORAGE, is_scalar_array=False)}
 
-${layout_declare_ubo(B, "ivec4", "q_projected_sizes")}
-${layout_declare_ubo(B, "ivec4", "k_cache_sizes")}
+${layout_declare_ubo(B, "ivec4", "q_sizes")}
+${layout_declare_ubo(B, "ivec4", "k_sizes")}
 ${layout_declare_ubo(B, "int", "input_pos")}
 
 layout(local_size_x_id = 0, local_size_y_id = 1, local_size_z_id = 2) in;
@@ -75,18 +79,20 @@ void main() {
   // 1.
   const int s = 0;
 
+  // head dimension
+  const int D = q_sizes.x;
   // texel size of head_dim, over which the dot product is accumulated
-  const int D4 = div_up_4(q_projected_sizes.x);
+  const int D4 = div_up_4(D);
   // number of Q heads
-  const int Q_H = q_projected_sizes.y;
+  const int Q_H = q_sizes.y;
   // sequence length
-  const int S = q_projected_sizes.z;
+  const int S = q_sizes.z;
   const int S_aligned = align_up_4(S);
 
   // number of K/V heads
-  const int KV_H = k_cache_sizes.y;
+  const int KV_H = k_sizes.y;
   // Max context length
-  const int C = k_cache_sizes.z;
+  const int C = k_sizes.z;
   const int C4 = div_up_4(C);
 
   int kv_h = q_h;
@@ -126,8 +132,9 @@ void main() {
         s,
         q_h,
         D4,
-        Q_H,
-        S);
+        D,
+        S,
+        Q_H);
 
       load_k_cache_tile_with_checks(
         w_tile,
@@ -135,6 +142,7 @@ void main() {
         c,
         kv_h,
         D4,
+        D,
         context_len,
         C,
         KV_H);

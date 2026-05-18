@@ -12,6 +12,7 @@ import com.facebook.jni.HybridData;
 import com.facebook.jni.annotations.DoNotStrip;
 import com.facebook.soloader.nativeloader.NativeLoader;
 import com.facebook.soloader.nativeloader.SystemDelegate;
+import java.io.Closeable;
 import java.util.HashMap;
 import java.util.Map;
 import java.util.concurrent.locks.Lock;
@@ -24,7 +25,7 @@ import org.pytorch.executorch.annotations.Experimental;
  * <p>Warning: These APIs are experimental and subject to change without notice
  */
 @Experimental
-public class Module {
+public class Module implements Closeable {
 
   static {
     if (!NativeLoader.isInitialized()) {
@@ -266,6 +267,28 @@ public class Module {
   private native boolean etdumpNative();
 
   /**
+   * Dump the ExecuTorch ETDump file to {@code outputPath}.
+   *
+   * @param outputPath absolute path to write the etdump file to.
+   * @return true if the etdump was successfully written, false otherwise.
+   */
+  @Experimental
+  public boolean etdump(String outputPath) {
+    mLock.lock();
+    try {
+      if (!mHybridData.isValid()) {
+        throw new IllegalStateException("Module has been destroyed");
+      }
+      return etdumpToNative(outputPath);
+    } finally {
+      mLock.unlock();
+    }
+  }
+
+  @DoNotStrip
+  private native boolean etdumpToNative(String outputPath);
+
+  /**
    * Explicitly destroys the native Module object. Calling this method is not required, as the
    * native object will be destroyed when this object is garbage-collected. However, the timing of
    * garbage collection is not guaranteed, so proactively calling {@code destroy} can free memory
@@ -274,12 +297,19 @@ public class Module {
   public void destroy() {
     if (mLock.tryLock()) {
       try {
-        mHybridData.resetNative();
+        if (mHybridData.isValid()) {
+          mHybridData.resetNative();
+        }
       } finally {
         mLock.unlock();
       }
     } else {
       throw new IllegalStateException("Cannot destroy module while method is executing");
     }
+  }
+
+  @Override
+  public void close() {
+    destroy();
   }
 }

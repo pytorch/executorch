@@ -92,7 +92,8 @@ class NeutronConverterManager:
         )
         cctx.compilationOpts.fetchConstantsToSRAM = fetch_constants_to_sram
         cctx.compilationOpts.dumpKernelSelectionCode = self.dump_kernel_selection_code
-        cctx.compilationOpts.useNewFlowNeutronC = use_new_flow_neutron_c
+        if hasattr(cctx.compilationOpts, "useNewFlowNeutronC"):
+            cctx.compilationOpts.useNewFlowNeutronC = use_new_flow_neutron_c
 
         # Try to use multiprocessing for isolation, but fall back to direct execution
         # if the environment doesn't support it (e.g., in sandcastle/build environments)

@@ -12,6 +12,7 @@ import android.os.Handler;
 import android.os.HandlerThread;
 import android.os.Looper;
 import android.os.Message;
+import android.util.Log;
 import org.pytorch.executorch.extension.llm.LlmCallback;
 import org.pytorch.executorch.extension.llm.LlmModule;
 
@@ -90,17 +91,18 @@ class LlmModelRunnerHandler extends Handler {
       int status = 0;
       try {
         mLlmModelRunner.mModule.load();
-      } catch (org.pytorch.executorch.ExecutorchRuntimeException e) {
-        status = e.getErrorCode();
       } catch (Exception e) {
-        status = -1;
+        status =
+            (e instanceof org.pytorch.executorch.ExecutorchRuntimeException)
+                ? ((org.pytorch.executorch.ExecutorchRuntimeException) e).getErrorCode()
+                : -1;
       }
       mLlmModelRunner.mCallback.onModelLoaded(status);
     } else if (msg.what == MESSAGE_GENERATE) {
       try {
         mLlmModelRunner.mModule.generate((String) msg.obj, mLlmModelRunner);
       } catch (Exception e) {
-        android.util.Log.e("LlmModelRunner", "generate() failed", e);
+        Log.e("LlmModelRunner", "generate() failed", e);
       }
       mLlmModelRunner.mCallback.onGenerationStopped();
     }
