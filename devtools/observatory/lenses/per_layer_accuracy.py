@@ -691,8 +691,7 @@ class PerLayerAccuracyLens(Lens):
                 }
             )
 
-            for metric_name in ("cosine_sim",):
-                # TODO other options "psnr"  "mse", "abs_err"
+            for metric_name in ("cosine_sim", "psnr", "mse", "abs_err"):
                 r = metric_ranges.get(metric_name)
                 fixed_range = (r[0], r[1]) if r else None
                 metric_ext = PerLayerAccuracyLens._build_metric_extension(

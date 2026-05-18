@@ -226,8 +226,8 @@ def test_per_layer_accuracy_observe_analyze_and_frontend_defaults() -> None:
         assert view is not None
         graph_blocks = [b for b in view.blocks if getattr(b, "type", "") == "graph"]
         assert graph_blocks
-        assert graph_blocks[0].record.default_color_by == "per_layer_accuracy/psnr"
-        assert "per_layer_accuracy/psnr" in graph_blocks[0].record.default_layers
+        assert graph_blocks[0].record.default_color_by == "per_layer_accuracy/cosine_sim"
+        assert "per_layer_accuracy/cosine_sim" in graph_blocks[0].record.default_layers
         html_blocks = [b for b in view.blocks if getattr(b, "type", "") == "html"]
         assert html_blocks
         assert html_blocks[0].id == "per_layer_accuracy_metrics_table"

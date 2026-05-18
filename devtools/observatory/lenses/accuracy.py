@@ -698,6 +698,51 @@ class AccuracyLens(Lens):
 
 
 class _AccuracyFrontend(Frontend):
+    def dashboard(self, session, session_records, analysis) -> Optional[ViewList]:
+        """Aggregate accuracy metrics across the session's records.
+
+        Reports the count of records with accuracy data plus the mean of
+        each numeric primary metric (psnr, mse, cosine_sim, top_k, ...).
+        Internal ``_*`` keys, ``_worst_idx`` suffixes and per-sample
+        ``_min`` / ``_max`` variants are excluded from the aggregate.
+        """
+        sums: Dict[str, float] = {}
+        counts: Dict[str, int] = {}
+        records_with_data = 0
+
+        for rec in session_records or []:
+            digest = rec.data.get("accuracy")
+            if not isinstance(digest, dict):
+                continue
+            records_with_data += 1
+            for k, v in digest.items():
+                if not isinstance(v, (int, float)) or isinstance(v, bool):
+                    continue
+                if k.startswith("_"):
+                    continue
+                if k.endswith("_min") or k.endswith("_max") or k.endswith("_worst_idx"):
+                    continue
+                sums[k] = sums.get(k, 0.0) + float(v)
+                counts[k] = counts.get(k, 0) + 1
+
+        if records_with_data == 0:
+            return None
+
+        summary: Dict[str, Any] = {"records_measured": records_with_data}
+        for metric in sorted(sums.keys()):
+            summary[f"{metric}_mean"] = round(sums[metric] / counts[metric], 4)
+
+        return ViewList(
+            blocks=[
+                TableBlock(
+                    id="accuracy_session_summary",
+                    title="Accuracy Summary",
+                    record=TableRecordSpec(data=summary),
+                    order=20,
+                )
+            ]
+        )
+
     def record(
         self, digest: Any, analysis: Dict[str, Any], context: Dict[str, Any]
     ) -> Optional[ViewList]:
