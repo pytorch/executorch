@@ -122,8 +122,27 @@ def generate_context_binary(
         shell=True,
         executable="/bin/bash",
         capture_output=True,
+        text=True,
+        env=_qnn_subprocess_env(qnn_sdk, target),
     )
-    assert os.path.isfile(f"{artifact_dir}/model_ctx.bin"), print(result.stderr)
+    assert os.path.isfile(f"{artifact_dir}/model_ctx.bin"), (
+        f"Failed to generate context binary at {artifact_dir}/model_ctx.bin. "
+        f"returncode={result.returncode}\n"
+        f"stdout:\n{result.stdout}\n"
+        f"stderr:\n{result.stderr}"
+    )
+
+
+def _qnn_subprocess_env(qnn_sdk: str, target: str) -> Dict[str, str]:
+    """Return an env dict with LD_LIBRARY_PATH set so QNN SDK prebuilt
+    binaries (e.g. qnn-context-binary-utility) can resolve their bundled
+    libc++.so.1, which is shipped at $QNN_SDK_ROOT/lib/<target>/.
+    """
+    env = os.environ.copy()
+    qnn_lib_dir = f"{qnn_sdk}/lib/{target}"
+    existing = env.get("LD_LIBRARY_PATH", "")
+    env["LD_LIBRARY_PATH"] = f"{qnn_lib_dir}:{existing}" if existing else qnn_lib_dir
+    return env
 
 
 def validate_context_binary(ctx_bin: bytes):
@@ -149,8 +168,15 @@ def validate_context_binary(ctx_bin: bytes):
             shell=True,
             executable="/bin/bash",
             capture_output=True,
+            text=True,
+            env=_qnn_subprocess_env(qnn_sdk, target),
         )
-        assert os.path.isfile(f"{tmp_dir}/ctx.json"), print(result.stderr)
+        assert os.path.isfile(f"{tmp_dir}/ctx.json"), (
+            f"qnn-context-binary-utility failed to produce ctx.json. "
+            f"returncode={result.returncode}\n"
+            f"stdout:\n{result.stdout}\n"
+            f"stderr:\n{result.stderr}"
+        )
 
 
 class TestQNN(unittest.TestCase):
