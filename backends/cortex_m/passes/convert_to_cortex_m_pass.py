@@ -7,10 +7,12 @@
 
 import executorch.backends.cortex_m.ops.operators  # noqa
 
+import cmsis_nn  # type: ignore[import-not-found, import-untyped]
 import torch
 import torch.fx
 from executorch.backends.arm._passes.arm_pass_utils import get_first_fake_tensor
 from executorch.backends.cortex_m.passes.passes_utils import quantize_multiplier_aot
+from executorch.backends.cortex_m.target_config import CortexM, CortexMTargetConfig
 
 from executorch.backends.transforms.utils import (
     create_constant_placeholder,
@@ -20,6 +22,7 @@ from executorch.backends.transforms.utils import (
 
 from executorch.backends.xnnpack._passes.xnnpack_pass import XNNPACKPass
 from executorch.exir.dialects._ops import ops as exir_ops
+from torch.export import ExportedProgram
 from torch.export.graph_signature import InputKind
 from torch.fx.passes.infra.pass_manager import PassResult
 
@@ -33,21 +36,35 @@ class ConvertToCortexMPass(XNNPACKPass):
     by call_operator.
     """
 
-    def _compute_kernel_sum(self, weights, bias, input_offset, weight_offset):
-        """
-        Computes the precomputed kernel sum term (bias optional)
-            a * sum_j(wij + b) + ci
+    def __init__(
+        self,
+        exported_program: ExportedProgram,
+        target_config: CortexMTargetConfig | None = None,
+    ) -> None:
+        super().__init__(exported_program)
+        # Default mirrors CortexMPassManager: MVE-capable M55 (the previous
+        # behavior for any caller that constructs the pass without a config).
+        self._target_config = target_config or CortexMTargetConfig(cpu=CortexM.M55)
 
-        for i = (1, ..., n), where j indexes the input activations.
+    @property
+    def target_config(self) -> CortexMTargetConfig:
+        return self._target_config
+
+    def _compute_kernel_sum(self, weights, bias_int32, neg_input_zp, neg_weight_zp):
+        """Precompute the MVE kernel_sum term:  a * sum_j(wij + b) + ci
+
+        Where `a = -input_zp` and `b = -weight_zp` per CMSIS-NN convention.
+        Parameter names use the `neg_*_zp` form to keep that sign explicit at
+        every call site. Bias is optional; pass None for an unbiased Linear.
         """
         weights_transposed = weights.T
         weights_int32 = weights_transposed.to(torch.int32)
-        offset_weights = weights_int32 + weight_offset
+        offset_weights = weights_int32 + neg_weight_zp
         kernel_sum = torch.sum(offset_weights, dim=0, keepdim=True, dtype=torch.int32)
-        kernel_sum_offset = kernel_sum * input_offset
+        kernel_sum_offset = kernel_sum * neg_input_zp
 
-        if bias is not None:
-            kernel_sum_offset += bias
+        if bias_int32 is not None:
+            kernel_sum_offset += bias_int32
 
         return kernel_sum_offset
 
@@ -96,37 +113,58 @@ class ConvertToCortexMPass(XNNPACKPass):
         output_min = node.meta["output_qparams"][0].qmin
         output_max = node.meta["output_qparams"][0].qmax
 
+        # CMSIS-NN's FC path treats weights as per-tensor symmetric (single
+        # `filter_offset`, single multiplier/shift). The non-zero-weight-zp
+        # paths in `arm_nn_vec_mat_mult_t_s8.c` exist but are untested in this
+        # backend — fail loudly if the quantizer ever produces asymmetric
+        # weights so we don't silently land on that codepath.
+        if weight_zp != 0:
+            raise NotImplementedError(
+                f"cortex_m::quantized_linear assumes symmetric weight "
+                f"quantization (weight_zp == 0); got weight_zp={weight_zp}"
+            )
+
         quantized_multiplier, quantized_shift = quantize_multiplier_aot(
             (input_scale * weight_scale) / output_scale
         )
 
-        # TODO: Add support for configuring the backend to support other extensions.
-        # Kernel sum is only used in the CMSIS-NN implementation for the MVE extension,
-        # so this should be optional.
+        # CMSIS-NN's MVE `arm_fully_connected_s8` path reads a precomputed
+        # kernel_sum (input_offset×sum(weight) + bias) from ctx.buf and
+        # ignores the bias argument. The DSP and scalar paths do the opposite
+        # — they read the bias argument at runtime and ignore ctx.buf
+        # (see arm_nn_vec_mat_mult_t_s8.c). Pick the right input format here
+        # based on the target ISA so the runtime gets exactly what it expects.
         weights = node.args[1]
         weights_tensor = get_param_tensor(self.exported_program, weights)
+        bias_node = node.args[2] if len(node.args) > 2 else None
         bias_tensor = (
-            get_param_tensor(self.exported_program, node.args[2])
-            if len(node.args) > 2
+            get_param_tensor(self.exported_program, bias_node)
+            if bias_node is not None
             else None
         )
-        kernel_sum_tensor = self._compute_kernel_sum(
-            weights_tensor, bias_tensor, -input_zp, -weight_zp
-        )
-        with node.graph.inserting_after(weights):
-            kernel_sum = create_constant_placeholder(
-                self.exported_program,
-                node.graph,
-                node.name + "_kernel_sum",
-                InputKind.PARAMETER,
-                kernel_sum_tensor,
+
+        if self.target_config.backend == cmsis_nn.Backend.MVE:
+            kernel_sum_tensor = self._compute_kernel_sum(
+                weights_tensor, bias_tensor, -input_zp, -weight_zp
             )
+            with node.graph.inserting_after(weights):
+                kernel_sum_arg = create_constant_placeholder(
+                    self.exported_program,
+                    node.graph,
+                    node.name + "_kernel_sum",
+                    InputKind.PARAMETER,
+                    kernel_sum_tensor,
+                )
+            bias_arg = None
+        else:
+            kernel_sum_arg = None
+            bias_arg = bias_node
 
         args = (
             node.args[0],
             weights,
-            None,
-            kernel_sum,
+            bias_arg,
+            kernel_sum_arg,
             -input_zp,
             -weight_zp,
             output_zp,
