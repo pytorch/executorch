@@ -17,6 +17,9 @@ from executorch.backends.nxp.tests.executors import (
     ToChannelLastPreprocess,
 )
 from executorch.backends.nxp.tests.graph_verifier import DetailedGraphVerifier
+from executorch.backends.nxp.tests.model_output_comparator import (
+    NumericalStatsOutputComparator,
+)
 from executorch.backends.nxp.tests.nsys_testing import lower_run_compare
 from executorch.backends.nxp.tests.ops_aliases import (
     ExecutorchDelegateCall,
@@ -279,6 +282,25 @@ class TestMaxPool2DNewNeutronFlow:
         input_shape = (2, 4, 6, 7)  # The old flow limited the batch size to 1.
         model = MaxPool2dModule()
         self.assert_delegated(model, input_shape, mocker)
+
+    def test__basic_nsys_inference_qat(self, mocker):
+        input_shape = (2, 11, 7, 16)  # The old flow limited the batch size to 1.
+        model = MaxPool2dModule()
+        comparator = NumericalStatsOutputComparator()
+        graph_verifier = DetailedGraphVerifier(
+            mocker,
+            expected_delegated_ops={MaxPool2DWithIndices: 1, GetItem: 1},
+            expected_non_delegated_ops={},
+        )
+
+        lower_run_compare(
+            model,
+            input_shape,
+            graph_verifier,
+            output_comparator=comparator,
+            use_new_flow_neutron_c=True,
+            use_qat=True,
+        )
 
     def test__kernel_size_limit(self, mocker):
         kernel_size = (1, 4096)
