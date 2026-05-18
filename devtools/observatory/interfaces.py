@@ -560,8 +560,37 @@ class Frontend:
         """
         return None
 
-    def check_badges(self, digest: Any, analysis: Dict[str, Any]) -> List[Dict[str, str]]:
-        return []
+    def json_report(
+        self,
+        session: "Session",
+        session_records: List["RecordDigest"],
+        analysis: "AnalysisResult",
+    ) -> Optional[Dict[str, Any]]:
+        """Lens-summarised per-session view for Report (JSON).
+
+        The framework calls ``json_report`` once per (Session, lens) pair,
+        mirroring the ``dashboard`` call structure. Results land at
+        ``report["lenses"][lens_name][session.archive][session.id]``.
+        Lenses that don't override return ``None`` and contribute nothing
+        to the report — their key does not appear at all (no ghost keys).
+
+        Returned dicts must be JSON-serialisable (no dataclasses; plain
+        primitives, lists, and dicts only). Use
+        ``_NonFiniteFloatAsStringJSONEncoder``-safe values (i.e. finite
+        floats or ``None`` for missing data) to survive serialisation.
+
+        Args:
+            session: The active Session. Read ``session.archive``,
+                ``session.id``, ``session.start_data``, etc. as needed.
+            session_records: Subset of records whose ``session_id``
+                matches ``session.id``.
+            analysis: ``AnalysisResult`` for this lens (archive-scoped).
+
+        Returns:
+            A JSON-serialisable dict, or ``None`` to omit this lens from
+            the Report (JSON) entirely for this session.
+        """
+        return None
 
     def check_index_diffs(
         self,

@@ -74,6 +74,18 @@ def make_collect_parser(prog=None):
             "compare-mode column grouping. Defaults to 'default'."
         ),
     )
+    parser.add_argument(
+        "--output-report-json",
+        default=None,
+        dest="output_report_json",
+        help=(
+            "Report (JSON) output path. Writes a lens-summarised derived "
+            "view suitable for CI / LLM triage. Requires at least one lens "
+            "to override Frontend.json_report; lenses that don't override "
+            "contribute nothing. Distinct from --output-archive (the raw "
+            "lossless Archive). Omit to skip."
+        ),
+    )
     parser.add_argument("script", help="Script to run under Observatory")
     parser.add_argument(
         "script_args",
@@ -141,6 +153,12 @@ def make_compare_parser(prog=None):
         default="Observatory Compare",
         help="Page title for the rendered HTML.",
     )
+    parser.add_argument(
+        "--output-report-json",
+        default=None,
+        dest="output_report_json",
+        help="Optional Report (JSON) output path for this compare report.",
+    )
     return parser
 
 
@@ -204,6 +222,7 @@ def run_observatory(
     output_html: str | None = None,
     output_archive: str | None = None,
     archive: str | None = None,
+    output_report_json: str | None = None,
 ) -> None:
     """Shared run logic for all CLIs."""
     sys.argv = [script_path] + script_argv
@@ -262,6 +281,9 @@ def run_observatory(
         os.makedirs(os.path.dirname(output_archive) or ".", exist_ok=True)
         Observatory.export_json(output_archive)
         Observatory.export_html_report(output_html, title=title, config={})
+        if output_report_json:
+            os.makedirs(os.path.dirname(output_report_json) or ".", exist_ok=True)
+            Observatory.export_report_json(output_report_json, title=title)
         collected = Observatory.list_collected()
         if collected:
             logging.info(
@@ -287,6 +309,7 @@ def run_compare(
     title: str = "Observatory Compare",
     *,
     setup_fn=None,
+    output_report_json: str | None = None,
 ) -> None:
     """Load multiple Archives and render a side-by-side Report (HTML)."""
     if len(input_archives) != len(labels):
@@ -313,6 +336,11 @@ def run_compare(
         html_path=output_html,
         title=title,
     )
+    if output_report_json:
+        os.makedirs(os.path.dirname(output_report_json) or ".", exist_ok=True)
+        # config is not threaded through compare mode (compare_archives drives
+        # analysis). Pass None so export_report_json uses an empty config.
+        Observatory.export_report_json(output_report_json, title=title, config=None)
     logging.info(
         "[Observatory CLI] compare: html=%s from %d archives",
         output_html,
@@ -335,6 +363,7 @@ def main():
             labels=args.labels,
             output_html=args.output_html,
             title=args.title,
+            output_report_json=args.output_report_json,
         )
         return
 
@@ -354,6 +383,7 @@ def main():
         args.output_html,
         args.output_archive,
         archive=args.archive,
+        output_report_json=args.output_report_json,
     )
 
 

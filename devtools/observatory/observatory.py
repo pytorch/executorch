@@ -715,18 +715,7 @@ class Observatory:
 
         # Build top-level archive grouping. ``archives`` preserves first-seen
         # order; for a single-archive run there is exactly one entry.
-        archive_order: List[str] = []
-        archive_to_session_ids: Dict[str, List[str]] = {}
-        for s in sessions_list:
-            archive = s.archive or "default"
-            if archive not in archive_to_session_ids:
-                archive_order.append(archive)
-                archive_to_session_ids[archive] = []
-            archive_to_session_ids[archive].append(s.id)
-
-        archives_payload = [
-            {"label": a, "session_ids": archive_to_session_ids[a]} for a in archive_order
-        ]
+        archives_payload = cls._build_archives_payload(sessions_list)
         sessions_payload = [asdict(s) for s in sessions_list]
 
         payload = {
@@ -809,6 +798,25 @@ class Observatory:
         logging.info("[Observatory] Exported raw data to %s", output_path)
 
     @staticmethod
+    def _build_archives_payload(sessions_list: List["Session"]) -> List[Dict[str, Any]]:
+        """Build the ``archives`` list shared by both HTML and JSON report builders.
+
+        Returns a list of ``{label, session_ids}`` dicts preserving first-seen
+        archive order. For single-archive runs there is exactly one entry.
+        """
+        archive_order: List[str] = []
+        archive_to_session_ids: Dict[str, List[str]] = {}
+        for s in sessions_list:
+            archive = s.archive or "default"
+            if archive not in archive_to_session_ids:
+                archive_order.append(archive)
+                archive_to_session_ids[archive] = []
+            archive_to_session_ids[archive].append(s.id)
+        return [
+            {"label": a, "session_ids": archive_to_session_ids[a]} for a in archive_order
+        ]
+
+    @staticmethod
     def _load_archive_sessions(data: Dict[str, Any], default_archive: str = "default") -> SessionResult:
         """Load Session objects from the archive's ``sessions`` list.
 
@@ -827,6 +835,114 @@ class Observatory:
             sd.setdefault("archive", default_archive)
             result.sessions.append(Session(**sd))
         return result
+
+    @classmethod
+    def _generate_json_report_payload(
+        cls,
+        records: List[RecordDigest],
+        session: "SessionResult",
+        config: Dict[str, Any],
+        lens_registry: List[Type[Lens]],
+        title: str = "Observatory Report",
+    ) -> Dict[str, Any]:
+        """Build the Report (JSON) payload: a lens-summarised per-session view.
+
+        Parallel to ``_generate_report_payload`` but produces a lightweight
+        structured dict (no HTML blocks, no graph assets). The ``lenses``
+        block is keyed ``lenses[lens_name][archive_label][session_id]``.
+        """
+
+        analysis_results: Dict[str, AnalysisResult] = {
+            lens.get_name(): lens.analyze(records, config) for lens in lens_registry
+        }
+
+        sessions_list = list(session.sessions) if session.sessions else []
+        archives_payload = cls._build_archives_payload(sessions_list)
+        # Stripped sessions view: identity and timing only.
+        # Per-lens start_data/end_data are in the Archive; consumers that
+        # need them load the Archive rather than the Report (JSON).
+        sessions_payload = [
+            {
+                "id": s.id,
+                "name": s.name,
+                "archive": s.archive or "default",
+                "start_ts": s.start_ts,
+                "end_ts": s.end_ts,
+            }
+            for s in sessions_list
+        ]
+
+        records_by_session: Dict[str, List[RecordDigest]] = {}
+        for r in records:
+            records_by_session.setdefault(r.session_id, []).append(r)
+
+        lenses_block: Dict[str, Dict[str, Dict[str, Any]]] = {}
+        for s in sessions_list:
+            s_records = records_by_session.get(s.id, [])
+            archive_label = s.archive or "default"
+            for lens in lens_registry:
+                lens_name = lens.get_name()
+                frontend = lens.get_frontend_spec()
+                try:
+                    result = frontend.json_report(
+                        s,
+                        s_records,
+                        analysis_results.get(lens_name, AnalysisResult()),
+                    )
+                except Exception as exc:
+                    logging.error(
+                        "[Observatory] json_report failed for lens %s: %s",
+                        lens_name,
+                        exc,
+                    )
+                    continue
+                if result is None:
+                    continue
+                lenses_block.setdefault(lens_name, {}).setdefault(archive_label, {})[s.id] = result
+
+        return {
+            "title": title,
+            "generated_at": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+            "archives": archives_payload,
+            "sessions": sessions_payload,
+            "lenses": lenses_block,
+        }
+
+    @classmethod
+    def export_report_json(
+        cls,
+        output_path: str,
+        title: str = "Observatory Report",
+        config: Optional[Dict[str, Any]] = None,
+    ) -> None:
+        """Export a Report (JSON) summarising collected records via lens hooks.
+
+        Unlike ``export_json`` (which writes the raw Archive), this writes a
+        derived, lens-summarised view suitable for CI dashboards, LLM-driven
+        test triage, and regression-detection tooling.
+
+        Lenses contribute by overriding ``Frontend.json_report``. Lenses that
+        return ``None`` (the default) contribute nothing and do not appear in
+        the output.
+        """
+        if not cls._records:
+            logging.warning("[Observatory] No records collected, skipping report JSON export")
+            return
+
+        cls._ensure_default_lenses()
+        payload = cls._generate_json_report_payload(
+            list(cls._records.values()),
+            cls._session_result,
+            config or {},
+            cls._lens_registry,
+            title=title,
+        )
+
+        os.makedirs(os.path.dirname(output_path) or ".", exist_ok=True)
+        with open(output_path, "w", encoding="utf-8") as f:
+            json.dump(payload, f, indent=2, cls=_NonFiniteFloatAsStringJSONEncoder)
+
+        logging.info("[Observatory] Exported Report (JSON) to %s", output_path)
 
     @staticmethod
     def generate_html_from_json(

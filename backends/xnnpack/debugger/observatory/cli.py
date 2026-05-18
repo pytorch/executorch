@@ -123,6 +123,7 @@ def main():
             output_html=args.output_html,
             title=args.title,
             setup_fn=setup_fn,
+            output_report_json=args.output_report_json,
         )
         return
 
@@ -169,6 +170,7 @@ def main():
         args.output_html,
         args.output_archive,
         archive=args.archive,
+        output_report_json=args.output_report_json,
     )
 
 
