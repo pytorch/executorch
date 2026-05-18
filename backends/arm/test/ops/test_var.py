@@ -141,6 +141,18 @@ class VarCorrection(torch.nn.Module):
         return x.var(dim=self.dim, keepdim=self.keepdim, correction=self.correction)
 
 
+# Var parameters that pass on Ethos-U hardware (keepdim=True only)
+var_test_parameters_hw = {
+    "var_4d_keep_dim_0_correction": lambda: (torch.randn(1, 50, 10, 20), True, 0),
+    "var_4d_keep_dim_1_correction": lambda: (torch.randn(1, 30, 15, 20), True, 1),
+}
+
+a16w8_var_test_parameters = {
+    "var_4d_keep_dim_0_correction": lambda: (torch.randn(1, 50, 10, 20), True, 0),
+    "var_4d_keep_dim_1_correction": lambda: (torch.randn(1, 30, 15, 20), True, 1),
+}
+
+
 ##########
 ## Var ###
 ##########
@@ -170,7 +182,7 @@ def test_var_dim_tosa_INT_no_dim(test_data: Tuple):
     pipeline.run()
 
 
-@common.parametrize("test_data", Var.test_parameters)
+@common.parametrize("test_data", var_test_parameters_hw)
 @common.XfailIfNoCorstone300
 def test_var_dim_u55_INT_no_dim(test_data: Tuple):
     test_data, keepdim, correction = test_data()
@@ -183,7 +195,7 @@ def test_var_dim_u55_INT_no_dim(test_data: Tuple):
     pipeline.run()
 
 
-@common.parametrize("test_data", Var.test_parameters)
+@common.parametrize("test_data", var_test_parameters_hw)
 @common.XfailIfNoCorstone320
 def test_var_dim_u85_INT_no_dim(test_data: Tuple):
     test_data, keepdim, correction = test_data()
@@ -220,6 +232,36 @@ def test_var_dim_vgf_quant_no_dim(test_data: Tuple):
         [],
         [],
         quantize=True,
+    )
+    pipeline.run()
+
+
+@common.parametrize("test_data", a16w8_var_test_parameters)
+@common.XfailIfNoCorstone300
+def test_var_a16w8_u55_INT(test_data: Tuple):
+    test_data, keepdim, correction = test_data()
+    pipeline = EthosU55PipelineINT[input_t1](
+        Var(keepdim, correction),
+        (test_data,),
+        aten_ops=[],
+        exir_ops=[],
+        a16w8_quantization=True,
+        symmetric_io_quantization=True,
+    )
+    pipeline.run()
+
+
+@common.parametrize("test_data", a16w8_var_test_parameters)
+@common.XfailIfNoCorstone320
+def test_var_a16w8_u85_INT(test_data: Tuple):
+    test_data, keepdim, correction = test_data()
+    pipeline = EthosU85PipelineINT[input_t1](
+        Var(keepdim, correction),
+        (test_data,),
+        aten_ops=[],
+        exir_ops=[],
+        a16w8_quantization=True,
+        symmetric_io_quantization=True,
     )
     pipeline.run()
 
