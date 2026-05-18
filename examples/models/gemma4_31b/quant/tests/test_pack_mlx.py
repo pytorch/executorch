@@ -159,12 +159,15 @@ class TestPackEmbeddingForMlx(unittest.TestCase):
         self.assertEqual(module.weight.shape, torch.Size([50, 256]))
         self.assertEqual(module.weight.data.block_size, (1, 128))
 
-    def test_rejects_int4(self):
+    def test_int4_converts_to_intx(self):
+        from torchao.quantization import IntxUnpackedToInt8Tensor
+
         module = nn.Embedding(100, 64)
         config = QuantConfig(bits=4, group_size=32, symmetric=True, method="min_max")
         w = quantize_weight(torch.randn(100, 64, dtype=torch.bfloat16), config)
-        with self.assertRaises(ValueError):
-            pack_embedding_for_mlx(module, {"weight": w})
+        pack_embedding_for_mlx(module, {"weight": w})
+        self.assertIsInstance(module.weight.data, IntxUnpackedToInt8Tensor)
+        self.assertEqual(module.weight.shape, torch.Size([100, 64]))
 
 
 class TestPackModelMlx(unittest.TestCase):

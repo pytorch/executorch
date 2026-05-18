@@ -91,6 +91,10 @@ def _regroup_intx(w: torch.Tensor, new_gs: int) -> torch.Tensor:
     from torchao.quantization import IntxUnpackedToInt8Tensor
 
     old_gs = w.block_size[-1]
+    if old_gs % new_gs != 0:
+        raise ValueError(
+            f"new group_size {new_gs} must evenly divide old group_size {old_gs}"
+        )
     repeat_factor = old_gs // new_gs
     N = w.qdata.shape[0]
     n_groups = w.qdata.shape[-1] // new_gs
@@ -147,10 +151,7 @@ def pack_embedding_for_mlx(module: nn.Module, weights: dict[str, torch.Tensor]) 
 
     w = weights["weight"]
     if isinstance(w, Int4Tensor):
-        raise ValueError(
-            "Only 8-bit embedding quantization is supported on MLX. "
-            "INT4 does not implement the embedding op."
-        )
+        w = _int4_to_intx_unpacked(w)
     if isinstance(w, IntxUnpackedToInt8Tensor):
         gs = w.block_size[-1]
         K = w.qdata.shape[-1]

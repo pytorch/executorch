@@ -18,6 +18,7 @@
 #include <executorch/extension/llm/runner/llm_runner_helper.h>
 #include <executorch/extension/llm/runner/stats.h>
 #include <executorch/extension/llm/runner/util.h>
+#include <executorch/extension/llm/sampler/util.h>
 #include <executorch/extension/module/module.h>
 #include <executorch/extension/tensor/tensor.h>
 #include <executorch/runtime/backend/interface.h>
@@ -111,25 +112,6 @@ static uint64_t read_token(const executorch::aten::Tensor& output) {
   return static_cast<uint64_t>(llrintf(val));
 }
 
-// Greedy argmax over the last token's logits (MLX path).
-static uint64_t argmax_last_token(const executorch::aten::Tensor& logits) {
-  int32_t ndim = logits.dim();
-  int64_t V = logits.size(ndim - 1);
-  int64_t T = (ndim >= 2) ? logits.size(ndim - 2) : 1;
-  const float* data = logits.const_data_ptr<float>();
-  const float* last = data + (T - 1) * V;
-
-  uint64_t best = 0;
-  float best_val = last[0];
-  for (int64_t i = 1; i < V; i++) {
-    if (last[i] > best_val) {
-      best_val = last[i];
-      best = static_cast<uint64_t>(i);
-    }
-  }
-  return best;
-}
-
 int main(int argc, char** argv) {
   gflags::ParseCommandLineFlags(&argc, &argv, true);
 
@@ -220,6 +202,9 @@ int main(int argc, char** argv) {
   auto temp_tensor =
       from_blob(&temp_val, {1}, executorch::aten::ScalarType::Float);
 #else
+  if (FLAGS_cuda_graph) {
+    ET_LOG(Info, "--cuda_graph ignored on non-CUDA build");
+  }
   printf("Loading model...\n");
   if (module->load_method("forward") != Error::Ok) {
     ET_LOG(Error, "Failed to load forward method");
@@ -317,7 +302,10 @@ int main(int argc, char** argv) {
 #ifdef EXECUTORCH_BUILD_CUDA
     cur_token = read_token(result.get()[0].toTensor());
 #else
-    cur_token = argmax_last_token(result.get()[0].toTensor());
+    cur_token = static_cast<uint64_t>(llm::logits_to_token(
+        result.get()[0].toTensor(),
+        FLAGS_temperature <= 0.0 ? 0.0f
+                                 : static_cast<float>(FLAGS_temperature)));
 #endif
 
     prefill_pos += chunk_len;
@@ -372,7 +360,10 @@ int main(int argc, char** argv) {
 #ifdef EXECUTORCH_BUILD_CUDA
     cur_token = read_token(result.get()[0].toTensor());
 #else
-    cur_token = argmax_last_token(result.get()[0].toTensor());
+    cur_token = static_cast<uint64_t>(llm::logits_to_token(
+        result.get()[0].toTensor(),
+        FLAGS_temperature <= 0.0 ? 0.0f
+                                 : static_cast<float>(FLAGS_temperature)));
 #endif
 
     if (step == 0) {
