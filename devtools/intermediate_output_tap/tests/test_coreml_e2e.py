@@ -23,6 +23,7 @@ ModelArgs — no checkpoint download required) producing two tables:
 
 import math
 import os
+import platform
 import sys
 import tempfile
 import types
@@ -81,6 +82,23 @@ def _assert_df_quality(
                 f"mean mismatch for {row['node_name']}: "
                 f"aot={aot_mean}, rt={rt_mean}",
             )
+
+
+def _macos_version() -> tuple[int, int]:
+    """Return (major, minor) macOS version, or (0, 0) on non-macOS."""
+    if sys.platform != "darwin":
+        return (0, 0)
+    release = platform.mac_ver()[0]
+    if not release:
+        return (0, 0)
+    parts = release.split(".")
+    major = int(parts[0]) if parts and parts[0].isdigit() else 0
+    minor = int(parts[1]) if len(parts) > 1 and parts[1].isdigit() else 0
+    return (major, minor)
+
+
+# iOS18 CoreML models require macOS 15+ to execute at runtime.
+_MACOS_SUPPORTS_IOS18_RUNTIME = _macos_version() >= (15, 0)
 
 
 def _print_df(df: pd.DataFrame, header: str) -> None:
@@ -240,6 +258,16 @@ class CoreMLEndToEndTest(unittest.TestCase):
         with tempfile.TemporaryDirectory() as temp_dir:
             pte_path = os.path.join(temp_dir, "model.pte")
             et_program.save(pte_path)
+
+            # iOS18-targeted CoreML models require macOS 15+ at runtime; on
+            # older macOS we exercise AOT lowering + .pte serialization only
+            # and skip runtime execution and the AOT-vs-runtime comparison.
+            if not _MACOS_SUPPORTS_IOS18_RUNTIME:
+                self.skipTest(
+                    "Skipping runtime portion: iOS18 CoreML models require "
+                    f"macOS 15+, found macOS {platform.mac_ver()[0] or 'unknown'}"
+                )
+
             rt = Runtime.get()
             program = rt.load_program(pte_path, verification=Verification.Minimal)
             method = program.load_method("forward")

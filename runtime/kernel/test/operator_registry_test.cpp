@@ -440,6 +440,69 @@ TEST_F(OperatorRegistryTest, GetOpFunctionUsesProvidedKernelList) {
   EXPECT_EQ(run_kernel(*fallback_func), 50);
 }
 
+TEST_F(OperatorRegistryTest, ProvidedKernelListMissCanFallBackToGlobal) {
+  std::array<char, kKernelKeyBufSize> buf{};
+  Error err = make_kernel_key(
+      {{ScalarType::Long, {0, 1, 2, 3}}}, buf.data(), buf.size());
+  ASSERT_EQ(err, Error::Ok);
+  KernelKey long_key = KernelKey(buf.data());
+
+  Kernel global_kernel = Kernel(
+      "test::provided_kernel_list_global_fallback",
+      KernelKey{},
+      [](KernelRuntimeContext& context, Span<EValue*> stack) {
+        (void)context;
+        *(stack[0]) = Scalar(50);
+      });
+  err = register_kernels({&global_kernel, 1});
+  ASSERT_EQ(err, Error::Ok);
+
+  Kernel scoped_kernel = Kernel(
+      "test::provided_kernel_list_global_fallback",
+      long_key,
+      [](KernelRuntimeContext& context, Span<EValue*> stack) {
+        (void)context;
+        *(stack[0]) = Scalar(100);
+      });
+  Span<const Kernel> scoped_registry(&scoped_kernel, 1);
+
+  std::array<Tensor::DimOrderType, 4> dims = {0, 1, 2, 3};
+  auto dim_order_type = Span<Tensor::DimOrderType>(dims.data(), dims.size());
+  std::array<TensorMeta, 1> long_meta = {
+      TensorMeta(ScalarType::Long, dim_order_type)};
+  Span<const TensorMeta> long_kernel_key(long_meta.data(), long_meta.size());
+
+  std::array<TensorMeta, 1> float_meta = {
+      TensorMeta(ScalarType::Float, dim_order_type)};
+  Span<const TensorMeta> float_kernel_key(float_meta.data(), float_meta.size());
+
+  auto run_kernel = [](OpFunction func) {
+    EValue value = Scalar(0);
+    std::array<EValue*, 1> stack = {&value};
+    KernelRuntimeContext context{};
+    func(context, Span<EValue*>(stack.data(), stack.size()));
+    return value.toScalar().to<int64_t>();
+  };
+
+  Result<OpFunction> scoped_func = get_op_function_from_registry(
+      "test::provided_kernel_list_global_fallback",
+      long_kernel_key,
+      scoped_registry);
+  ASSERT_EQ(scoped_func.error(), Error::Ok);
+  EXPECT_EQ(run_kernel(*scoped_func), 100);
+
+  Result<OpFunction> scoped_miss = get_op_function_from_registry(
+      "test::provided_kernel_list_global_fallback",
+      float_kernel_key,
+      scoped_registry);
+  ASSERT_EQ(scoped_miss.error(), Error::OperatorMissing);
+
+  Result<OpFunction> global_func = get_op_function_from_registry(
+      "test::provided_kernel_list_global_fallback", float_kernel_key);
+  ASSERT_EQ(global_func.error(), Error::Ok);
+  EXPECT_EQ(run_kernel(*global_func), 50);
+}
+
 TEST_F(OperatorRegistryTest, DoubleRegisterKernelsDies) {
   std::array<char, kKernelKeyBufSize> buf_long_contiguous;
   Error err = make_kernel_key(
