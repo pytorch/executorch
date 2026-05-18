@@ -44,9 +44,9 @@ class RMSNorm(torch.nn.Module):
 class ScalelessRMSNorm(torch.nn.RMSNorm):
     """RMSNorm with weight hardcoded to ones and not trainable.
 
-    Equivalent to a scaleless RMSNorm (no learnable scaling) but implemented as a
-    torch.nn.RMSNorm so the op composes/decomposes cleanly for backends like QNN
-    instead of being expressed as a hand-rolled decomposition.
+    Subclasses torch.nn.RMSNorm so backends (QNN) see a proper RMSNorm op for
+    lowering, but overrides forward with the explicit fp32 decomposition to
+    stay numerically identical to the rlformers reference during eager execution.
     """
 
     def __init__(self, dim: int, eps: float = 1e-6):
@@ -55,6 +55,15 @@ class ScalelessRMSNorm(torch.nn.RMSNorm):
         with torch.no_grad():
             self.weight.fill_(1.0)
         self.weight.requires_grad = False
+
+    def forward(self, x):
+        if torch.compiler.is_compiling():
+            return super().forward(x)
+        x_float = x.float()
+        return (
+            x_float
+            * torch.rsqrt((x_float * x_float).mean(-1, keepdim=True) + self.eps)
+        ).type_as(x)
 
 
 class RMSNormCoreML(torch.nn.Module):
