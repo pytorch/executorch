@@ -186,34 +186,34 @@ ssh -p 2222 root@127.0.0.1 -t "/tmp/executor_runner -model_path /tmp/add_arm_del
 
 There are two approaches for running the tests for the Arm backend. This section will explain these two approaches:
 
-### Using test_arm_baremetal.sh
+### Using test_arm_backend.sh
 
-The backend provides a script `backends/arm/test/test_arm_baremetal.sh`, which is used in the `trunk` CI workflow.
+The backend provides a script `backends/arm/test/test_arm_backend.sh`, which is used in the `trunk` CI workflow.
 This approach is useful for checking your change against this workflow on your own machine.
 These scripts also install the necessary dependencies to run the tests.
 Below is an overview of some of the testing options this script provides:
 
 | Command                                              | Description                                                  |
 | ---------------------------------------------------- | ------------------------------------------------------------ |
-| `test_arm_baremetal.sh test_pytest_ops_no_target`    | Runs operator unit tests for non-target specific use-cases.  |
-| `test_arm_baremetal.sh test_pytest_models_no_target` | Runs model unit tests for non-target specific use-cases.     |
-| `test_arm_baremetal.sh test_pytest_ops_tosa`         | Runs operator unit tests for TOSA specific use-cases.        |
-| `test_arm_baremetal.sh test_pytest_models_tosa`      | Runs model unit tests for TOSA specific use-cases.           |
-| `test_arm_baremetal.sh test_run_tosa`                | Runs end-to-end unit tests for TOSA specific use-cases.      |
-| `test_arm_baremetal.sh test_pytest_ops_ethos_u55`    | Runs operator unit tests for Ethos-U55 specific use-cases.   |
-| `test_arm_baremetal.sh test_pytest_models_ethos_u55` | Runs model unit tests for Ethos-U55 specific use-cases.      |
-| `test_arm_baremetal.sh test_run_ethos_u55`           | Runs end-to-end unit tests for Ethos-U55 specific use-cases. |
-| `test_arm_baremetal.sh test_pytest_ops_ethos_u85`    | Runs operator unit tests for Ethos-U85 specific use-cases.   |
-| `test_arm_baremetal.sh test_pytest_models_ethos_u85` | Runs model unit tests for Ethos-U85 specific use-cases.      |
-| `test_arm_baremetal.sh test_run_ethos_u85`           | Runs end-to-end unit tests for Ethos-U85 specific use-cases. |
-| `test_arm_baremetal.sh test_pytest_ops_vkml`         | Runs operator unit tests for VGF specific use-cases.         |
-| `test_arm_baremetal.sh test_pytest_models_vkml`      | Runs model unit tests for VGF specific use-cases.            |
-| `test_arm_baremetal.sh test_run_vkml`                | Runs end-to-end unit tests for VGF specific use-cases.       |
-| `test_arm_baremetal.sh test_model_smollm2-135M`      | Runs some models with Corstone FVP.                          |
-| `test_arm_baremetal.sh test_smaller_stories_llama`   | Runs E2E model tests on Corstone FVP.                        |
-| `test_arm_baremetal.sh test_memory_allocation`       | Runs memory allocation tests for Ethos-U specific targets    |
+| `test_arm_backend.sh test_pytest_ops_no_target`    | Runs operator unit tests for non-target specific use-cases.  |
+| `test_arm_backend.sh test_pytest_models_no_target` | Runs model unit tests for non-target specific use-cases.     |
+| `test_arm_backend.sh test_pytest_ops_tosa`         | Runs operator unit tests for TOSA specific use-cases.        |
+| `test_arm_backend.sh test_pytest_models_tosa`      | Runs model unit tests for TOSA specific use-cases.           |
+| `test_arm_backend.sh test_run_tosa`                | Runs end-to-end unit tests for TOSA specific use-cases.      |
+| `test_arm_backend.sh test_pytest_ops_ethos_u55`    | Runs operator unit tests for Ethos-U55 specific use-cases.   |
+| `test_arm_backend.sh test_pytest_models_ethos_u55` | Runs model unit tests for Ethos-U55 specific use-cases.      |
+| `test_arm_backend.sh test_run_ethos_u55`           | Runs end-to-end unit tests for Ethos-U55 specific use-cases. |
+| `test_arm_backend.sh test_pytest_ops_ethos_u85`    | Runs operator unit tests for Ethos-U85 specific use-cases.   |
+| `test_arm_backend.sh test_pytest_models_ethos_u85` | Runs model unit tests for Ethos-U85 specific use-cases.      |
+| `test_arm_backend.sh test_run_ethos_u85`           | Runs end-to-end unit tests for Ethos-U85 specific use-cases. |
+| `test_arm_backend.sh test_pytest_ops_vkml`         | Runs operator unit tests for VGF specific use-cases.         |
+| `test_arm_backend.sh test_pytest_models_vkml`      | Runs model unit tests for VGF specific use-cases.            |
+| `test_arm_backend.sh test_run_vkml`                | Runs end-to-end unit tests for VGF specific use-cases.       |
+| `test_arm_backend.sh test_model_smollm2-135M`      | Runs some models with Corstone FVP.                          |
+| `test_arm_backend.sh test_smaller_stories_llama`   | Runs E2E model tests on Corstone FVP.                        |
+| `test_arm_backend.sh test_memory_allocation`       | Runs memory allocation tests for Ethos-U specific targets    |
 
-For more information, please refer to the `backends/arm/test/test_arm_baremetal.sh` script.
+For more information, please refer to the `backends/arm/test/test_arm_backend.sh` script.
 
 ### Using pytest
 
