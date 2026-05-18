@@ -82,7 +82,12 @@ class DeviceMemoryBufferTest : public ::testing::Test {
  protected:
   static void SetUpTestSuite() {
     executorch::runtime::runtime_init();
-    register_device_allocator(&g_mock_cuda);
+    // On platforms like AppleMac xctest, the same process may be reused
+    // across test invocations, so the static registry persists and
+    // re-registering would abort. Only register once.
+    if (get_device_allocator(DeviceType::CUDA) == nullptr) {
+      register_device_allocator(&g_mock_cuda);
+    }
   }
 
   void SetUp() override {

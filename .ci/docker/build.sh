@@ -84,6 +84,11 @@ case "${IMAGE_NAME}" in
     CUDA_VERSION=12.8
     SKIP_PYTORCH=yes
     ;;
+  executorch-ubuntu-24.04-gcc14)
+    LINTRUNNER=""
+    OS_VERSION=24.04
+    GCC_VERSION=14
+    ;;
   *)
     echo "Invalid image name ${IMAGE_NAME}"
     exit 1

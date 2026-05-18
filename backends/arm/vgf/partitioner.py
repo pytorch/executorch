@@ -34,3 +34,4 @@ class VgfPartitioner(TOSAPartitioner):
         self.additional_checks = additional_checks
         self.tosa_spec = compile_spec.tosa_spec
         self._custom_partition_ops: set[torch._ops.OpOverload] = set()
+        self.intermediate_path = compile_spec._get_intermediate_path()
