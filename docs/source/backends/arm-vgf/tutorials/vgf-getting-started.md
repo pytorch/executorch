@@ -168,9 +168,9 @@ To produce a pte file equivalent to the one above, run
 `python -m backends.arm.scripts.aot_arm_compiler --model_name=add --delegate --quantize --output=simple_example.pte --target=vgf`
 ```
 
-### Runtime:
+## Runtime
 
-## Build executor runtime
+### Build executor runtime
 
 After the AOT compilation flow is done, we can build the executor runner target. For this tutorial, the default runner can be used. Build it with the following configuration:
 
@@ -200,7 +200,7 @@ The block diagram below demonstrates, at the high level, how the various build a
 ![](arm-delegate-runtime-build.svg)
 
 
-## Deploying and running on device
+### Deploying and running on device
 
 Since we are using the Vulkan emulation layer, we can run the executor runner with the VGF delegate on the host machine:
 
