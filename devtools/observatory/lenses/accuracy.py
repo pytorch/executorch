@@ -747,8 +747,10 @@ class _AccuracyFrontend(Frontend):
         """Aggregate accuracy metrics across the session's records.
 
         Each numeric primary metric contributes a ``mean``, ``min``, ``max``,
-        and ``worst_record`` (the record name where the metric was lowest,
-        indicating the worst quality sample for that metric).
+        and ``worst_record`` — the record name where the metric was most
+        unfavorable: minimum for quality metrics (psnr, cosine_sim, top_k)
+        where lower = worse quality, and maximum for error metrics (mse,
+        abs_err) where higher = worse quality.
         Internal ``_*`` keys, ``_min``/``_max`` per-sample stats, and
         ``_worst_idx`` indices are excluded.
         """

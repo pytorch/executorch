@@ -109,6 +109,41 @@ python -m executorch.backends.qualcomm.debugger.observatory visualize \
 This separates the persisted Archive from the rendered Report (HTML), which can
 be re-run on demand (e.g. comparing models between two history commits).
 
+## 4a. Report (JSON) for CI and LLM triage
+
+Add `--output-report-json PATH` to any collection or compare invocation to write a
+machine-readable derived summary alongside the HTML report:
+
+```bash
+python -m executorch.backends.qualcomm.debugger.observatory \
+    --output-archive artifacts/report.json \
+    --output-html artifacts/report.html \
+    --output-report-json artifacts/report.summary.json \
+    --lens-recipe accuracy --lens-recipe adb \
+    --archive qualcomm/swin_v2 \
+    my_export_script.py --output_dir artifacts/
+```
+
+The resulting `report.summary.json` contains:
+
+```jsonc
+{
+  "archives": [...],
+  "sessions": [{ "id", "name", "archive", "start_ts", "end_ts" }],
+  "lenses": {
+    "accuracy": { "<archive>": { "<session_id>": { "records_measured", "metrics": {...} } } },
+    "per_layer_accuracy": { "<archive>": { "<session_id>": { "anchor", "target", "worst_layers", ... } } }
+  }
+}
+```
+
+Unlike the Archive (which is raw and lossless), the Report (JSON) is derived and
+semantic — suited for CI threshold checks, LLM failure-analysis prompts, and
+dashboard time-series ingestion. Lenses that do not override `Frontend.json_report`
+contribute nothing; the key simply does not appear.
+
+See [RFC_SESSIONS.md §4a](RFC_SESSIONS.md) for the complete payload spec.
+
 ## 5. Disabling Lenses via Config
 
 When using the Observatory Python API directly, pass a config dict to

@@ -37,7 +37,7 @@ capture  -->  store  -->  analyze  -->  visualize  -->  share
 1. **Capture**: Observatory wraps your export script. Built-in lenses (e.g. `pipeline_graph_collector`) install monkey-patches that call `collect(...)` at each compilation stage; you can also call `Observatory.collect(...)` directly anywhere in your code.
 2. **Store**: Records + per-Session metadata are persisted as a single Archive (JSON) for later re-analysis or comparison.
 3. **Analyze**: Each lens processes the Archive into findings, comparisons, and derived insights.
-4. **Visualize**: Results are assembled into an interactive HTML report (Report (HTML)) with multiple view types.
+4. **Visualize**: Results are assembled into an interactive HTML report (Report (HTML)) with multiple view types. Use `--output-report-json` to also emit a Report (JSON) — a lens-summarised dict suitable for CI threshold checks, LLM-driven triage, and dashboard time-series ingestion (see [USAGE.md §4a](USAGE.md)).
 5. **Share**: The Report is a single self-contained HTML file. Send it, attach it to a bug report, or host it on GitHub Pages.
 
 ## What you get

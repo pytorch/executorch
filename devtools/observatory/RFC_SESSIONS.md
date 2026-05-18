@@ -96,6 +96,74 @@ Archive
 
 There is no flat `start_data` / `end_data` in the archive either. `Observatory._load_archive_sessions` reads both the new shape and the legacy nested `session: {sessions, ...}` shape (forward-compat for previously-written archives) and synthesises an `archive` field for legacy entries.
 
+## 4a. Report (JSON), `--output-report-json`
+
+A third optional derived output alongside the HTML report. Intended for CI dashboards, LLM-driven regression triage, and automated comparison tooling. Produced by `Observatory.export_report_json`.
+
+**Shape:**
+
+```jsonc
+{
+  "title": "...",
+  "generated_at": "...",
+  "archives": [                              // same grouping as HTML report
+    { "label": "default", "session_ids": ["default"] }
+  ],
+  "sessions": [                              // identity+timing only (no start_data/end_data)
+    { "id": "default", "name": "default", "archive": "default",
+      "start_ts": 1731.123, "end_ts": 1734.456 }
+  ],
+  "lenses": {                                // lens -> archive -> session_id -> lens dict
+    "accuracy": {
+      "default": {
+        "default": {
+          "records_measured": 5,
+          "metrics": {
+            "psnr":      { "mean": 38.5,  "min": 30.1, "max": 42.0,
+                           "worst_record": "Quantized Model" },
+            "cosine_sim":{ "mean": 0.998, "min": 0.991, "max": 0.999,
+                           "worst_record": "Quantized Model" },
+            "mse":       { "mean": 0.02,  "min": 0.005, "max": 0.05,
+                           "worst_record": "Quantized Model" }
+          }
+        }
+      }
+    },
+    "per_layer_accuracy": {
+      "default": {
+        "default": {
+          "anchor": "Exported Float",
+          "target": "Quantized Model",
+          "n_layers": 142,
+          "sample_source": "accuracy.worst[mse]",
+          "metric_ranges": { "psnr": [10.0, 50.0], "cosine_sim": [0.5, 1.0] },
+          "worst_layers": {
+            "psnr": [
+              { "layer": "layer_3", "psnr": 12.5, "cosine_sim": 0.85, "mse": 0.5 }
+              // top-N by metric, worst-first
+            ]
+          }
+        }
+      }
+    }
+  }
+}
+```
+
+**`worst_record` semantics for `accuracy`:** the record whose metric value was most unfavorable. For quality metrics (psnr, cosine_sim, top_k) this is the record with the *minimum* value; for error metrics (mse, abs_err) this is the record with the *maximum* value.
+
+**`worst_layers` sort order for `per_layer_accuracy`:** psnr/cosine_sim sorted ascending (lower = worse); mse/abs_err sorted descending (higher = worse). Depth controlled by `config["per_layer_accuracy"]["json_report_top_n"]` (default 10).
+
+**Lens hook:** lenses contribute by overriding `Frontend.json_report(session, session_records, analysis) -> Optional[Dict]`. Returning `None` opts out — no ghost keys appear. See `devtools/observatory/lenses/accuracy.py` and `devtools/observatory/lenses/per_layer_accuracy.py` for reference implementations.
+
+**Distinguishing the three outputs:**
+
+| Output | Flag | What it contains | For whom |
+|---|---|---|---|
+| Archive | `--output-archive` | Raw records + sessions, lossless | Re-visualization, compare |
+| Report (HTML) | `--output-html` | Interactive HTML with graphs, lens panels | Human reviewers |
+| Report (JSON) | `--output-report-json` | Lens-summarised semantic dicts | CI, LLMs, dashboards |
+
 ## 5. Lens contract
 
 ```python
