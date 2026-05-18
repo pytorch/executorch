@@ -275,6 +275,7 @@ executorch::runtime::Error QnnExecuTorchBackend::get_option(
     executorch::runtime::BackendOptionContext& context,
     executorch::runtime::Span<executorch::runtime::BackendOption>&
         backend_options) {
+  std::lock_guard<std::mutex> guard(runtime_option_mutex_);
   size_t matches = backend_options.size();
   for (size_t i = 0; i < backend_options.size(); ++i) {
     // Set the value to what was stored by set_option

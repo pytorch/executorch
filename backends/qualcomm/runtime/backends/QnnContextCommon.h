@@ -39,14 +39,13 @@ class QnnContext {
         device_(device),
         cache_(cache),
         qnn_dlc_manager_(qnn_dlc_manager),
-        profile_level_(profile_level),
         is_htp_backend_(
             implementation->GetQnnInterface().GetBackendId() ==
             QNN_BACKEND_ID_HTP),
         need_to_profile_(
             profile_level != QnnExecuTorchProfileLevel::kProfileOff) {
     qnn_profiler_ =
-        std::make_unique<QnnProfile>(implementation_, backend_, profile_level_);
+        std::make_unique<QnnProfile>(implementation_, backend_, profile_level);
   }
 
   virtual ~QnnContext();
@@ -95,7 +94,6 @@ class QnnContext {
   QnnContextCustomProtocol qnn_context_custom_protocol_;
   QnnDlcManager* qnn_dlc_manager_;
 
-  QnnExecuTorchProfileLevel profile_level_;
   std::unique_ptr<QnnProfile> qnn_profiler_;
   bool is_htp_backend_;
   bool need_to_profile_;

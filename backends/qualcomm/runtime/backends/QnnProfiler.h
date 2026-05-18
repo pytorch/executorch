@@ -27,7 +27,7 @@ class QnnProfile {
       const QnnExecuTorchProfileLevel& profile_level);
   ~QnnProfile();
   Qnn_ErrorHandle_t ProfileData(executorch::runtime::EventTracer* event_tracer);
-  Qnn_ErrorHandle_t ProfileDataToFile(const std::string profile_filename);
+  Qnn_ErrorHandle_t ProfileDataToFile(const std::string& profile_filename);
 
   Qnn_ProfileHandle_t GetHandle() {
     return handle_;

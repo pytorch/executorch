@@ -195,7 +195,7 @@ Qnn_ErrorHandle_t QnnProfile::ProfileData(
 }
 
 Qnn_ErrorHandle_t QnnProfile::ProfileDataToFile(
-    const std::string profile_filename) {
+    const std::string& profile_filename) {
   if (handle_ == nullptr) {
     QNN_EXECUTORCH_LOG_WARN(
         "Profile handle is null, skipping ProfileDataToFile");
