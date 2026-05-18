@@ -50,6 +50,23 @@ TEST_F(ModuleTest, TestLoad) {
   EXPECT_TRUE(module.is_loaded());
 }
 
+TEST_F(ModuleTest, TestLoadMmapUseMadvise) {
+  Module module(model_path_, Module::LoadMode::MmapUseMadvise);
+
+  EXPECT_FALSE(module.is_loaded());
+  const auto error = module.load();
+  EXPECT_EQ(error, Error::Ok);
+  EXPECT_TRUE(module.is_loaded());
+
+  auto tensor = make_tensor_ptr({2, 2}, {1.f, 2.f, 3.f, 4.f});
+
+  const auto result = module.execute("forward", {tensor, tensor, 1.0});
+  EXPECT_EQ(result.error(), Error::Ok);
+
+  const auto expected = make_tensor_ptr({2, 2}, {2.f, 4.f, 6.f, 8.f});
+  EXPECT_TENSOR_CLOSE(result->at(0).toTensor(), *expected.get());
+}
+
 TEST_F(ModuleTest, TestLoadNonExistent) {
   Module module("/path/to/nonexistent/file.pte");
   const auto error = module.load();
