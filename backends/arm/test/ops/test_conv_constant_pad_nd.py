@@ -25,15 +25,31 @@ exir_op = "executorch_exir_dialects_edge__ops_aten_pad_default"
 input_t1 = Tuple[torch.Tensor]  # Input x
 
 test_data_suite = {
-    "4dim_last1dim": (torch.rand(1, 1, 16, 16), (1, 1, 0, 0, 0, 0, 0, 0), 1),
-    "4dim_last2dim": (torch.rand(1, 1, 16, 16), (1, 0, 1, 0, 0, 0, 0, 0), 2),
-    "4dim_last3dim": (torch.rand(1, 1, 16, 16), (1, 1, 0, 2, 0, 2, 0, 0), 3),
-    "4dim_last4dim": (torch.rand(1, 1, 16, 16), (1, 0, 1, 1, 0, 2, 0, 2), 4),
-    "3dim_last1dim": (torch.rand(1, 1, 16), (1, 1, 0, 0, 0, 0), 1),
-    "3dim_last2dim": (torch.rand(1, 1, 16), (1, 0, 1, 1, 0, 0), 2),
-    "3dim_last3dim": (torch.rand(1, 1, 16), (1, 0, 1, 0, 1, 1), 3),
-    "2dim_last1dim": (torch.rand(1, 1, 16), (1, 1, 0, 0), 1),
-    "2dim_last2dim": (torch.rand(1, 1, 16), (1, 0, 1, 1), 2),
+    "4dim_last1dim": lambda: (
+        torch.rand(1, 1, 16, 16),
+        (1, 1, 0, 0, 0, 0, 0, 0),
+        1,
+    ),
+    "4dim_last2dim": lambda: (
+        torch.rand(1, 1, 16, 16),
+        (1, 0, 1, 0, 0, 0, 0, 0),
+        2,
+    ),
+    "4dim_last3dim": lambda: (
+        torch.rand(1, 1, 16, 16),
+        (1, 1, 0, 2, 0, 2, 0, 0),
+        3,
+    ),
+    "4dim_last4dim": lambda: (
+        torch.rand(1, 1, 16, 16),
+        (1, 0, 1, 1, 0, 2, 0, 2),
+        4,
+    ),
+    "3dim_last1dim": lambda: (torch.rand(1, 1, 16), (1, 1, 0, 0, 0, 0), 1),
+    "3dim_last2dim": lambda: (torch.rand(1, 1, 16), (1, 0, 1, 1, 0, 0), 2),
+    "3dim_last3dim": lambda: (torch.rand(1, 1, 16), (1, 0, 1, 0, 1, 1), 3),
+    "2dim_last1dim": lambda: (torch.rand(1, 1, 16), (1, 1, 0, 0), 1),
+    "2dim_last2dim": lambda: (torch.rand(1, 1, 16), (1, 0, 1, 1), 2),
 }
 """Tests conv + pad."""
 
@@ -91,7 +107,7 @@ class ConstantPadND(torch.nn.Module):
 
 @common.parametrize("test_data", test_data_suite)
 def test_constant_pad_nd_tosa_FP(test_data: Tuple):
-    test_data, padding, value = test_data
+    test_data, padding, value = test_data()
     pipeline = TosaPipelineFP[input_t1](
         ConstantPadND(padding, value),
         (test_data,),
@@ -103,7 +119,7 @@ def test_constant_pad_nd_tosa_FP(test_data: Tuple):
 
 @common.parametrize("test_data", test_data_suite)
 def test_constant_pad_nd_tosa_INT(test_data: Tuple):
-    test_data, padding, value = test_data
+    test_data, padding, value = test_data()
     pipeline = TosaPipelineINT[input_t1](
         ConstantPadND(padding, value),
         (test_data,),
@@ -118,7 +134,7 @@ def test_constant_pad_nd_tosa_INT(test_data: Tuple):
 @common.parametrize("test_data", test_data_suite)
 @common.SkipIfNoModelConverter
 def test_constant_pad_nd_vgf_no_quant(test_data: Tuple):
-    test_data, padding, value = test_data
+    test_data, padding, value = test_data()
     pipeline = VgfPipeline[input_t1](
         ConstantPadND(padding, value),
         (test_data,),
@@ -132,7 +148,7 @@ def test_constant_pad_nd_vgf_no_quant(test_data: Tuple):
 @common.parametrize("test_data", test_data_suite)
 @common.SkipIfNoModelConverter
 def test_constant_pad_nd_vgf_quant(test_data: Tuple):
-    test_data, padding, value = test_data
+    test_data, padding, value = test_data()
     pipeline = VgfPipeline[input_t1](
         ConstantPadND(padding, value),
         (test_data,),

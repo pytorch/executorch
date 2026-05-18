@@ -1,5 +1,6 @@
 # Copyright (c) Meta Platforms, Inc. and affiliates.
 # All rights reserved.
+# Copyright 2026 Arm Limited and/or its affiliates.
 #
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
@@ -20,7 +21,7 @@ from executorch.backends.xnnpack.utils.quant_utils import (
     is_quant,
     tag_as_implicit_q_dq,
 )
-from executorch.backends.xnnpack.utils.utils import get_input_node
+from executorch.backends.xnnpack.utils.utils import get_input_node, normalize_mean_dims
 from executorch.exir.backend.canonical_partitioners.config_partitioner import (
     format_target_name,
 )
@@ -515,22 +516,38 @@ class MeanDimConfig(GenericNodePartitionerConfig):
         if not self.check_common_constraints(node, ep):
             return False
 
-        dims = node.args[1]
-        output_dims = node.meta["val"].dim()
+        input_rank = get_input_node(node, 0).meta["val"].dim()
+        if input_rank != 4:
+            why(
+                node,
+                reason=f"mean.dim only supports averaging 4D tensors, got tensor of rank {input_rank}",
+            )
+            return False
 
-        if dims not in ([-2, -1], [-1, -2]):
+        # This path lowers mean.dim to XNNPACK Global Average Pooling, which
+        # cannot encode an explicit dtype override.
+        if node.kwargs.get("dtype") is not None:
+            why(node, reason="mean.dim does not support dtype")
+            return False
+
+        keepdim = len(node.args) >= 3 and bool(node.args[2])
+        try:
+            dims = normalize_mean_dims(node.args[1], input_rank)
+        except ValueError as error:
+            why(node, reason=f"mean.dim has invalid dims: {error}")
+            return False
+
+        if sorted(dims) != [2, 3]:
             why(
                 node,
                 reason="mean.dim only supports averaging 4D tensors across the innermost dimensions",
             )
             return False
 
-        if output_dims != 4:
-            why(
-                node,
-                reason=f"mean.dim only supports averaging 4D tensors, got tensor of rank {output_dims}",
-            )
+        if not keepdim:
+            why(node, reason="mean.dim only supports keepdim=True")
             return False
+
         return True
 
     def supported_precision_types(self) -> List[ConfigPrecisionType]:

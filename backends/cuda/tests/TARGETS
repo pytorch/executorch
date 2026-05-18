@@ -1,6 +1,7 @@
 load("@fbsource//xplat/executorch/build:runtime_wrapper.bzl", "runtime")
 load("@fbcode_macros//build_defs:python_unittest.bzl", "python_unittest")
 load("@fbcode_macros//build_defs:python_unittest_remote_gpu.bzl", "python_unittest_remote_gpu")
+load("@fbcode_macros//build_defs/lib:re_test_utils.bzl", "re_test_utils")
 
 oncall("executorch")
 
@@ -22,6 +23,11 @@ python_unittest_remote_gpu(
         "//executorch/examples/models/toy_model:toy_model",
     ],
     keep_gpu_sections = True,
+    remote_execution = re_test_utils.remote_execution(
+        subplatform = "A100",
+        mig = "false",
+        platform = "gpu-remote-execution",
+    ),
 )
 
 python_unittest(

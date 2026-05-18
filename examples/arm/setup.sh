@@ -22,6 +22,7 @@ enable_baremetal_toolchain=1
 target_toolchain=""
 enable_fvps=1
 enable_vela=1
+enable_cortex_m=1
 enable_model_converter=0   # model-converter tool for VGF output
 enable_vgf_lib=0  # vgf reader - runtime backend dependency
 enable_emulation_layer=0  # Vulkan layer driver - emulates Vulkan ML extensions
@@ -48,6 +49,7 @@ OPTION_LIST=(
   "--target-toolchain Select toolchain: gnu (default), zephyr, or linux-musl"
   "--enable-fvps Enable FVP setup"
   "--enable-vela Enable VELA setup"
+  "--disable-cortex-m-deps Do not setup what is needed for Cortex-M"
   "--enable-model-converter Enable MLSDK model converter setup"
   "--enable-vgf-lib Enable MLSDK vgf library setup"
   "--enable-emulation-layer Enable MLSDK Vulkan emulation layer"
@@ -123,6 +125,10 @@ function check_options() {
                 enable_vela=1
                 shift
                 ;;
+            --disable-cortex-m-deps)
+                enable_cortex_m=0
+                shift
+                ;;
             --enable-model-converter)
                 enable_model_converter=1
                 shift
@@ -182,11 +188,6 @@ function check_options() {
                 enable_vulkan_sdk=1
                 shift
                 ;;
-            --setup-test-dependency)
-                log_step "deps" "Installing test dependency..."
-                source $et_dir/backends/arm/scripts/install_models_for_test.sh
-                exit 0
-                ;;
             --help)
                 print_usage "$@"
                 exit 0
@@ -209,6 +210,11 @@ function setup_root_dir() {
 function setup_ethos_u_tools() {
     log_step "ethos-u-tools" "Installing Ethos-U Python tooling"
     CMAKE_POLICY_VERSION_MINIMUM=3.5 BUILD_PYBIND=1 pip install --no-dependencies -r $et_dir/backends/arm/requirements-arm-ethos-u.txt
+}
+
+function setup_cortex_m_tools() {
+    log_step "cortex-m-tools" "Installing Cortex-M Python tooling"
+    pip install --no-dependencies -r $et_dir/backends/cortex_m/requirements-cortex-m.txt
 }
 
 function setup_mlsdk_dependencies() {
@@ -299,6 +305,7 @@ if [[ $is_script_sourced -eq 0 ]]; then
              "root=${root_dir}, target-toolchain=${target_toolchain:-<default>}"
     log_step "options" \
              "ethos-u: fvps=${enable_fvps}, toolchain=${enable_baremetal_toolchain}, vela=${enable_vela} | " \
+             "cortex-m: deps=${enable_cortex_m} | " \
              "mlsdk: model-converter=${enable_model_converter}, vgf-lib=${enable_vgf_lib}, " \
                     "emu-layer=${enable_emulation_layer}, vulkan-sdk=${enable_vulkan_sdk}"
 
@@ -347,6 +354,11 @@ if [[ $is_script_sourced -eq 0 ]]; then
     if [[ "${enable_vela}" -eq 1 ]]; then
         log_step "deps" "Installing Ethos-U Vela compiler"
         setup_ethos_u_tools
+    fi
+
+    if [[ "${enable_cortex_m}" -eq 1 ]]; then
+        log_step "deps" "Installing Cortex-M CMSIS-NN tooling"
+        setup_cortex_m_tools
     fi
 
     log_step "main" "Setup complete"
