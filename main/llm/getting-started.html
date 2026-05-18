@@ -783,6 +783,12 @@ document.write(`
               </li>
             
               <li class=" ">
+                <a class="nav-link dropdown-item nav-internal" href="run-on-android.html">
+                  Running LLMs on Android
+                </a>
+              </li>
+            
+              <li class=" ">
                 <a class="nav-link dropdown-item nav-internal" href="run-on-ios.html">
                   Running LLMs on iOS
                 </a>
@@ -1435,6 +1441,12 @@ document.write(`
               </li>
             
               <li class=" ">
+                <a class="nav-link dropdown-item nav-internal" href="run-on-android.html">
+                  Running LLMs on Android
+                </a>
+              </li>
+            
+              <li class=" ">
                 <a class="nav-link dropdown-item nav-internal" href="run-on-ios.html">
                   Running LLMs on iOS
                 </a>
@@ -1794,6 +1806,7 @@ document.write(`
 <li class="toctree-l1"><a class="reference internal" href="export-custom-llm.html">Exporting custom LLMs</a></li>
 <li class="toctree-l1"><a class="reference internal" href="run-with-c-plus-plus.html">Running LLMs with C++</a></li>
 <li class="toctree-l1"><a class="reference internal" href="build-run-llama3-qualcomm-ai-engine-direct-backend.html">Run Llama 3 3B Instruct on Android (with Qualcomm AI Engine Direct Backend)</a></li>
+<li class="toctree-l1"><a class="reference internal" href="run-on-android.html">Running LLMs on Android</a></li>
 <li class="toctree-l1"><a class="reference internal" href="run-on-ios.html">Running LLMs on iOS</a></li>
 </ul>
 </div>
@@ -1925,9 +1938,9 @@ other components. We hope this project serves as a useful guide in your journey 
 <h3>Running<a class="headerlink" href="#running" title="Link to this heading">#</a></h3>
 <ul class="simple">
 <li><p><a class="reference internal" href="run-with-c-plus-plus.html"><span class="std std-doc">Running with C++</span></a></p></li>
-<li><p><a class="reference external" href="https://github.com/meta-pytorch/executorch-examples/tree/main/llm/android">Running on Android (XNNPack)</a></p></li>
+<li><p><a class="reference internal" href="run-on-android.html"><span class="std std-doc">Running on Android</span></a></p></li>
 <li><p><a class="reference internal" href="build-run-llama3-qualcomm-ai-engine-direct-backend.html"><span class="std std-doc">Running on Android (Qualcomm)</span></a></p></li>
-<li><p><a class="reference external" href="https://github.com/meta-pytorch/executorch-examples/tree/main/llm/apple">Running on iOS</a></p></li>
+<li><p><a class="reference internal" href="run-on-ios.html"><span class="std std-doc">Running on iOS</span></a></p></li>
 </ul>
 </section>
 </section>
@@ -2281,7 +2294,7 @@ other components. We hope this project serves as a useful guide in your journey 
        "headline": "Deploying LLMs to ExecuTorch",
        "description": "PyTorch Documentation. Explore PyTorch, an open-source machine learning library that accelerates the path from research prototyping to production deployment.",
        "url": "/llm/getting-started.html",
-       "articleBody": "Deploying LLMs to ExecuTorch# ExecuTorch is designed to support all types of machine learning models, and LLMs are no exception. In this section we demonstrate how to leverage ExecuTorch to performantly run state of the art LLMs on-device out of the box with our provided export LLM APIs, acceleration backends, quantization libraries, tokenizers, and more. We encourage users to use this project as a starting point and adapt it to their specific needs, which includes creating your own versions of the tokenizer, sampler, acceleration backends, and other components. We hope this project serves as a useful guide in your journey with LLMs and ExecuTorch. Prerequisites# To follow this guide, you\u2019ll need to install ExecuTorch. Please see Setting Up ExecuTorch. Next steps# Deploying LLMs to ExecuTorch can be boiled down to a two-step process: (1) exporting the LLM to a .pte file and (2) running the .pte file using our C++ APIs or Swift/Java bindings. Exporting# Exporting LLMs - Export using ExecuTorch\u2019s native export_llm API with advanced optimizations Exporting LLMs with Optimum - Export Hugging Face models with broader architecture support Exporting custom LLMs Running# Running with C++ Running on Android (XNNPack) Running on Android (Qualcomm) Running on iOS",
+       "articleBody": "Deploying LLMs to ExecuTorch# ExecuTorch is designed to support all types of machine learning models, and LLMs are no exception. In this section we demonstrate how to leverage ExecuTorch to performantly run state of the art LLMs on-device out of the box with our provided export LLM APIs, acceleration backends, quantization libraries, tokenizers, and more. We encourage users to use this project as a starting point and adapt it to their specific needs, which includes creating your own versions of the tokenizer, sampler, acceleration backends, and other components. We hope this project serves as a useful guide in your journey with LLMs and ExecuTorch. Prerequisites# To follow this guide, you\u2019ll need to install ExecuTorch. Please see Setting Up ExecuTorch. Next steps# Deploying LLMs to ExecuTorch can be boiled down to a two-step process: (1) exporting the LLM to a .pte file and (2) running the .pte file using our C++ APIs or Swift/Java bindings. Exporting# Exporting LLMs - Export using ExecuTorch\u2019s native export_llm API with advanced optimizations Exporting LLMs with Optimum - Export Hugging Face models with broader architecture support Exporting custom LLMs Running# Running with C++ Running on Android Running on Android (Qualcomm) Running on iOS",
        "author": {
          "@type": "Organization",
          "name": "PyTorch Contributors",

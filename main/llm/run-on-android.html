@@ -2,14 +2,14 @@
 <!DOCTYPE html>
 
 
-<html lang="en" data-content_root="./" >
+<html lang="en" data-content_root="../" >
 
   <head>
   <meta name="robots" content="noindex">
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" /><meta name="generator" content="Docutils 0.18.1: http://docutils.sourceforge.net/" />
 
-    <title>Intro &#8212; ExecuTorch main documentation</title>
+    <title>Running LLMs on Android &#8212; ExecuTorch main documentation</title>
   
   
   
@@ -19,50 +19,50 @@
   </script>
   
   <!-- Loaded before other Sphinx assets -->
-  <link href="_static/styles/theme.css?digest=dfe6caa3a7d634c4db9b" rel="stylesheet" />
-<link href="_static/styles/bootstrap.css?digest=dfe6caa3a7d634c4db9b" rel="stylesheet" />
-<link href="_static/styles/pydata-sphinx-theme.css?digest=dfe6caa3a7d634c4db9b" rel="stylesheet" />
+  <link href="../_static/styles/theme.css?digest=dfe6caa3a7d634c4db9b" rel="stylesheet" />
+<link href="../_static/styles/bootstrap.css?digest=dfe6caa3a7d634c4db9b" rel="stylesheet" />
+<link href="../_static/styles/pydata-sphinx-theme.css?digest=dfe6caa3a7d634c4db9b" rel="stylesheet" />
 
   
-  <link href="_static/vendor/fontawesome/6.5.2/css/all.min.css?digest=dfe6caa3a7d634c4db9b" rel="stylesheet" />
-  <link rel="preload" as="font" type="font/woff2" crossorigin href="_static/vendor/fontawesome/6.5.2/webfonts/fa-solid-900.woff2" />
-<link rel="preload" as="font" type="font/woff2" crossorigin href="_static/vendor/fontawesome/6.5.2/webfonts/fa-brands-400.woff2" />
-<link rel="preload" as="font" type="font/woff2" crossorigin href="_static/vendor/fontawesome/6.5.2/webfonts/fa-regular-400.woff2" />
+  <link href="../_static/vendor/fontawesome/6.5.2/css/all.min.css?digest=dfe6caa3a7d634c4db9b" rel="stylesheet" />
+  <link rel="preload" as="font" type="font/woff2" crossorigin href="../_static/vendor/fontawesome/6.5.2/webfonts/fa-solid-900.woff2" />
+<link rel="preload" as="font" type="font/woff2" crossorigin href="../_static/vendor/fontawesome/6.5.2/webfonts/fa-brands-400.woff2" />
+<link rel="preload" as="font" type="font/woff2" crossorigin href="../_static/vendor/fontawesome/6.5.2/webfonts/fa-regular-400.woff2" />
 
-    <link rel="stylesheet" type="text/css" href="_static/pygments.css?v=8f2a1f02" />
-    <link rel="stylesheet" type="text/css" href="_static/css/theme.css?v=72e443bf" />
-    <link rel="stylesheet" type="text/css" href="_static/copybutton.css?v=76b2166b" />
-    <link rel="stylesheet" type="text/css" href="_static/sg_gallery.css?v=61a4c737" />
-    <link rel="stylesheet" type="text/css" href="_static/sg_gallery-binder.css?v=f4aeca0c" />
-    <link rel="stylesheet" type="text/css" href="_static/sg_gallery-dataframe.css?v=2082cf3c" />
-    <link rel="stylesheet" type="text/css" href="_static/sg_gallery-rendered-html.css?v=1277b6f3" />
-    <link rel="stylesheet" type="text/css" href="_static/sphinx-design.min.css?v=95c83b7e" />
-    <link rel="stylesheet" type="text/css" href="_static/navbar.css?v=67b2d36d" />
+    <link rel="stylesheet" type="text/css" href="../_static/pygments.css?v=8f2a1f02" />
+    <link rel="stylesheet" type="text/css" href="../_static/css/theme.css?v=72e443bf" />
+    <link rel="stylesheet" type="text/css" href="../_static/copybutton.css?v=76b2166b" />
+    <link rel="stylesheet" type="text/css" href="../_static/sg_gallery.css?v=61a4c737" />
+    <link rel="stylesheet" type="text/css" href="../_static/sg_gallery-binder.css?v=f4aeca0c" />
+    <link rel="stylesheet" type="text/css" href="../_static/sg_gallery-dataframe.css?v=2082cf3c" />
+    <link rel="stylesheet" type="text/css" href="../_static/sg_gallery-rendered-html.css?v=1277b6f3" />
+    <link rel="stylesheet" type="text/css" href="../_static/sphinx-design.min.css?v=95c83b7e" />
+    <link rel="stylesheet" type="text/css" href="../_static/navbar.css?v=67b2d36d" />
   
   <!-- Pre-loaded scripts that we'll load fully later -->
-  <link rel="preload" as="script" href="_static/scripts/bootstrap.js?digest=dfe6caa3a7d634c4db9b" />
-<link rel="preload" as="script" href="_static/scripts/pydata-sphinx-theme.js?digest=dfe6caa3a7d634c4db9b" />
-  <script src="_static/vendor/fontawesome/6.5.2/js/all.min.js?digest=dfe6caa3a7d634c4db9b"></script>
+  <link rel="preload" as="script" href="../_static/scripts/bootstrap.js?digest=dfe6caa3a7d634c4db9b" />
+<link rel="preload" as="script" href="../_static/scripts/pydata-sphinx-theme.js?digest=dfe6caa3a7d634c4db9b" />
+  <script src="../_static/vendor/fontawesome/6.5.2/js/all.min.js?digest=dfe6caa3a7d634c4db9b"></script>
 
-    <script src="_static/documentation_options.js?v=a8da1a53"></script>
-    <script src="_static/doctools.js?v=888ff710"></script>
-    <script src="_static/sphinx_highlight.js?v=dc90522c"></script>
-    <script src="_static/clipboard.min.js?v=a7894cd8"></script>
-    <script src="_static/copybutton.js?v=f281be69"></script>
-    <script src="_static/design-tabs.js?v=f930bc37"></script>
-    <script>DOCUMENTATION_OPTIONS.pagename = 'intro-section';</script>
+    <script src="../_static/documentation_options.js?v=a8da1a53"></script>
+    <script src="../_static/doctools.js?v=888ff710"></script>
+    <script src="../_static/sphinx_highlight.js?v=dc90522c"></script>
+    <script src="../_static/clipboard.min.js?v=a7894cd8"></script>
+    <script src="../_static/copybutton.js?v=f281be69"></script>
+    <script src="../_static/design-tabs.js?v=f930bc37"></script>
+    <script>DOCUMENTATION_OPTIONS.pagename = 'llm/run-on-android';</script>
     <script>
         DOCUMENTATION_OPTIONS.theme_version = '0.15.4';
         DOCUMENTATION_OPTIONS.theme_switcher_json_url = 'https://docs.pytorch.org/executorch/executorch-versions.json';
         DOCUMENTATION_OPTIONS.theme_switcher_version_match = 'main';
         DOCUMENTATION_OPTIONS.show_version_warning_banner = true;
         </script>
-    <link rel="canonical" href="https://docs.pytorch.org/executorch/stable/intro-section.html" />
-    <link rel="icon" href="_static/executorch-chip-logo.svg"/>
-    <link rel="index" title="Index" href="genindex.html" />
-    <link rel="search" title="Search" href="search.html" />
-    <link rel="next" title="ExecuTorch Overview" href="intro-overview.html" />
-    <link rel="prev" title="Welcome to the ExecuTorch Documentation" href="index.html" />
+    <link rel="canonical" href="https://docs.pytorch.org/executorch/stable/llm/run-on-android.html" />
+    <link rel="icon" href="../_static/executorch-chip-logo.svg"/>
+    <link rel="index" title="Index" href="../genindex.html" />
+    <link rel="search" title="Search" href="../search.html" />
+    <link rel="next" title="Running LLMs on iOS" href="run-on-ios.html" />
+    <link rel="prev" title="Run Llama 3 3B Instruct on Android (with Qualcomm AI Engine Direct Backend)" href="build-run-llama3-qualcomm-ai-engine-direct-backend.html" />
 
   <meta name="viewport" content="width=device-width, initial-scale=1"/>
   <meta name="docsearch:language" content="en"/>
@@ -122,13 +122,13 @@
 </style>
 
 
-<link rel="stylesheet" type="text/css" href="_static/css/theme.css" crossorigin="anonymous">
-<script type="text/javascript" src="_static/js/theme.js"></script>
+<link rel="stylesheet" type="text/css" href="../_static/css/theme.css" crossorigin="anonymous">
+<script type="text/javascript" src="../_static/js/theme.js"></script>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Montserrat:wght@300;400&display=swap" rel="stylesheet">
 <meta property="og:image" content="https://docs.pytorch.org/docs/stable/_static/img/pytorch_seo.png" />
-<link rel="stylesheet" href="_static/webfonts/all.min.css" crossorigin="anonymous">
+<link rel="stylesheet" href="../_static/webfonts/all.min.css" crossorigin="anonymous">
 <meta http-equiv="Content-Security-Policy"
   content="default-src * 'unsafe-inline' 'unsafe-eval' data: blob:; style-src * 'unsafe-inline'; script-src * 'unsafe-inline' 'unsafe-eval' blob:;">
 <meta name="pytorch_project" content="">
@@ -308,7 +308,7 @@
     keyboard_shortcut: ""
   };
 </script>
-<script type="text/javascript" src="_static/js/runllm-widget.js"></script>
+<script type="text/javascript" src="../_static/js/runllm-widget.js"></script>
 
 
   <meta name="viewport" content="width=device-width, initial-scale=1"/>
@@ -348,7 +348,7 @@
     <div class="search-button__overlay"></div>
     <div class="search-button__search-container">
 <form class="bd-search d-flex align-items-center"
-      action="search.html"
+      action="../search.html"
       method="get">
   <i class="fa-solid fa-magnifying-glass"></i>
   <input type="search"
@@ -392,13 +392,13 @@
   
 
 
-<a class="navbar-brand logo" href="index.html">
+<a class="navbar-brand logo" href="../index.html">
   
     
-    <img src="_static/img/et-logo.png" class="logo__image only-light" alt="ExecuTorch - Home"/>
+    <img src="../_static/img/et-logo.png" class="logo__image only-light" alt="ExecuTorch - Home"/>
     
     
-    <script>document.write(`<img src="_static/img/et-logo.png" class="logo__image only-dark" alt="ExecuTorch - Home"/>`);</script>
+    <script>document.write(`<img src="../_static/img/et-logo.png" class="logo__image only-dark" alt="ExecuTorch - Home"/>`);</script>
     
   
 </a>
@@ -424,13 +424,13 @@
   
 
 
-<a class="navbar-brand logo" href="index.html">
+<a class="navbar-brand logo" href="../index.html">
   
     
-    <img src="_static/img/et-logo.png" class="logo__image only-light" alt="ExecuTorch - Home"/>
+    <img src="../_static/img/et-logo.png" class="logo__image only-light" alt="ExecuTorch - Home"/>
     
     
-    <script>document.write(`<img src="_static/img/et-logo.png" class="logo__image only-dark" alt="ExecuTorch - Home"/>`);</script>
+    <script>document.write(`<img src="../_static/img/et-logo.png" class="logo__image only-dark" alt="ExecuTorch - Home"/>`);</script>
     
   
 </a>
@@ -492,36 +492,36 @@ document.write(`
   <ul class="bd-navbar-elements navbar-nav">
     
     
-      <li class="nav-item dropdown current active">
+      <li class="nav-item dropdown">
         
           
           <div class="nav-item-with-toggle">
-            <a class="nav-link nav-internal active" href="#">
+            <a class="nav-link nav-internal" href="../intro-section.html">
               Intro
             </a>
           </div>
           <ul class="dropdown-menu" id="dropdown-1">
             
               <li class=" ">
-                <a class="nav-link dropdown-item nav-internal" href="intro-overview.html">
+                <a class="nav-link dropdown-item nav-internal" href="../intro-overview.html">
                   ExecuTorch Overview
                 </a>
               </li>
             
               <li class=" ">
-                <a class="nav-link dropdown-item nav-internal" href="intro-how-it-works.html">
+                <a class="nav-link dropdown-item nav-internal" href="../intro-how-it-works.html">
                   How ExecuTorch Works
                 </a>
               </li>
             
               <li class=" ">
-                <a class="nav-link dropdown-item nav-internal" href="getting-started-architecture.html">
+                <a class="nav-link dropdown-item nav-internal" href="../getting-started-architecture.html">
                   Architecture and Components
                 </a>
               </li>
             
               <li class=" ">
-                <a class="nav-link dropdown-item nav-internal" href="concepts.html">
+                <a class="nav-link dropdown-item nav-internal" href="../concepts.html">
                   Concepts
                 </a>
               </li>
@@ -534,26 +534,26 @@ document.write(`
         
           
           <div class="nav-item-with-toggle">
-            <a class="nav-link nav-internal" href="quick-start-section.html">
+            <a class="nav-link nav-internal" href="../quick-start-section.html">
               Quick Start
             </a>
           </div>
           <ul class="dropdown-menu" id="dropdown-2">
             
               <li class=" ">
-                <a class="nav-link dropdown-item nav-internal" href="getting-started.html">
+                <a class="nav-link dropdown-item nav-internal" href="../getting-started.html">
                   Getting Started with ExecuTorch
                 </a>
               </li>
             
               <li class=" ">
-                <a class="nav-link dropdown-item nav-internal" href="using-executorch-export.html">
+                <a class="nav-link dropdown-item nav-internal" href="../using-executorch-export.html">
                   Model Export and Lowering
                 </a>
               </li>
             
               <li class=" ">
-                <a class="nav-link dropdown-item nav-internal" href="using-executorch-building-from-source.html">
+                <a class="nav-link dropdown-item nav-internal" href="../using-executorch-building-from-source.html">
                   Building from Source
                 </a>
               </li>
@@ -566,26 +566,26 @@ document.write(`
         
           
           <div class="nav-item-with-toggle">
-            <a class="nav-link nav-internal" href="user-pathways.html">
+            <a class="nav-link nav-internal" href="../user-pathways.html">
               Find Your Path
             </a>
           </div>
           <ul class="dropdown-menu" id="dropdown-3">
             
               <li class=" ">
-                <a class="nav-link dropdown-item nav-internal" href="pathway-beginner.html">
+                <a class="nav-link dropdown-item nav-internal" href="../pathway-beginner.html">
                   Beginner Pathway
                 </a>
               </li>
             
               <li class=" ">
-                <a class="nav-link dropdown-item nav-internal" href="pathway-quickstart.html">
+                <a class="nav-link dropdown-item nav-internal" href="../pathway-quickstart.html">
                   Quick Start Pathway
                 </a>
               </li>
             
               <li class=" ">
-                <a class="nav-link dropdown-item nav-internal" href="pathway-advanced.html">
+                <a class="nav-link dropdown-item nav-internal" href="../pathway-advanced.html">
                   Advanced Pathway
                 </a>
               </li>
@@ -598,38 +598,38 @@ document.write(`
         
           
           <div class="nav-item-with-toggle">
-            <a class="nav-link nav-internal" href="edge-platforms-section.html">
+            <a class="nav-link nav-internal" href="../edge-platforms-section.html">
               Edge
             </a>
           </div>
           <ul class="dropdown-menu" id="dropdown-4">
             
               <li class=" ">
-                <a class="nav-link dropdown-item nav-internal" href="android-section.html">
+                <a class="nav-link dropdown-item nav-internal" href="../android-section.html">
                   Android
                 </a>
               </li>
             
               <li class=" ">
-                <a class="nav-link dropdown-item nav-internal" href="ios-section.html">
+                <a class="nav-link dropdown-item nav-internal" href="../ios-section.html">
                   iOS
                 </a>
               </li>
             
               <li class=" ">
-                <a class="nav-link dropdown-item nav-internal" href="desktop-section.html">
+                <a class="nav-link dropdown-item nav-internal" href="../desktop-section.html">
                   Desktop & Laptop Platforms
                 </a>
               </li>
             
               <li class=" ">
-                <a class="nav-link dropdown-item nav-internal" href="embedded-section.html">
+                <a class="nav-link dropdown-item nav-internal" href="../embedded-section.html">
                   Embedded Systems
                 </a>
               </li>
             
               <li class=" ">
-                <a class="nav-link dropdown-item nav-internal" href="using-executorch-troubleshooting.html">
+                <a class="nav-link dropdown-item nav-internal" href="../using-executorch-troubleshooting.html">
                   Profiling and Debugging
                 </a>
               </li>
@@ -642,92 +642,92 @@ document.write(`
         
           
           <div class="nav-item-with-toggle">
-            <a class="nav-link nav-internal" href="backends-section.html">
+            <a class="nav-link nav-internal" href="../backends-section.html">
               Backends
             </a>
           </div>
           <ul class="dropdown-menu" id="dropdown-5">
             
               <li class=" ">
-                <a class="nav-link dropdown-item nav-internal" href="backends/xnnpack/xnnpack-overview.html">
+                <a class="nav-link dropdown-item nav-internal" href="../backends/xnnpack/xnnpack-overview.html">
                   XNNPACK Backend
                 </a>
               </li>
             
               <li class=" ">
-                <a class="nav-link dropdown-item nav-internal" href="backends/cuda/cuda-overview.html">
+                <a class="nav-link dropdown-item nav-internal" href="../backends/cuda/cuda-overview.html">
                   CUDA Backend
                 </a>
               </li>
             
               <li class=" ">
-                <a class="nav-link dropdown-item nav-internal" href="backends/coreml/coreml-overview.html">
+                <a class="nav-link dropdown-item nav-internal" href="../backends/coreml/coreml-overview.html">
                   Core ML Backend
                 </a>
               </li>
             
               <li class=" ">
-                <a class="nav-link dropdown-item nav-internal" href="backends/mps/mps-overview.html">
+                <a class="nav-link dropdown-item nav-internal" href="../backends/mps/mps-overview.html">
                   MPS Backend
                 </a>
               </li>
             
               <li class=" ">
-                <a class="nav-link dropdown-item nav-internal" href="backends/vulkan/vulkan-overview.html">
+                <a class="nav-link dropdown-item nav-internal" href="../backends/vulkan/vulkan-overview.html">
                   Vulkan Backend
                 </a>
               </li>
             
               <li class=" ">
-                <a class="nav-link dropdown-item nav-internal" href="backends-qualcomm.html">
+                <a class="nav-link dropdown-item nav-internal" href="../backends-qualcomm.html">
                   Qualcomm AI Engine Backend
                 </a>
               </li>
             
               <li class=" ">
-                <a class="nav-link dropdown-item nav-internal" href="backends-mediatek.html">
+                <a class="nav-link dropdown-item nav-internal" href="../backends-mediatek.html">
                   MediaTek Backend
                 </a>
               </li>
             
               <li class=" ">
-                <a class="nav-link dropdown-item nav-internal" href="backends/arm-ethos-u/arm-ethos-u-overview.html">
+                <a class="nav-link dropdown-item nav-internal" href="../backends/arm-ethos-u/arm-ethos-u-overview.html">
                   Arm Ethos-U Backend
                 </a>
               </li>
             
               <li class=" ">
-                <a class="nav-link dropdown-item nav-internal" href="backends/arm-cortex-m/arm-cortex-m-overview.html">
+                <a class="nav-link dropdown-item nav-internal" href="../backends/arm-cortex-m/arm-cortex-m-overview.html">
                   Arm Cortex-M Backend
                 </a>
               </li>
             
               <li class=" ">
-                <a class="nav-link dropdown-item nav-internal" href="backends/arm-vgf/arm-vgf-overview.html">
+                <a class="nav-link dropdown-item nav-internal" href="../backends/arm-vgf/arm-vgf-overview.html">
                   Arm VGF Backend
                 </a>
               </li>
             
               <li class=" ">
-                <a class="nav-link dropdown-item nav-internal" href="build-run-openvino.html">
+                <a class="nav-link dropdown-item nav-internal" href="../build-run-openvino.html">
                   Building and Running ExecuTorch with OpenVINO Backend
                 </a>
               </li>
             
               <li class=" ">
-                <a class="nav-link dropdown-item nav-internal" href="backends/nxp/nxp-overview.html">
+                <a class="nav-link dropdown-item nav-internal" href="../backends/nxp/nxp-overview.html">
                   NXP eIQ Neutron Backend
                 </a>
               </li>
             
               <li class=" ">
-                <a class="nav-link dropdown-item nav-internal" href="backends-cadence.html">
+                <a class="nav-link dropdown-item nav-internal" href="../backends-cadence.html">
                   Cadence Xtensa Backend
                 </a>
               </li>
             
               <li class=" ">
-                <a class="nav-link dropdown-item nav-internal" href="backends/samsung/samsung-overview.html">
+                <a class="nav-link dropdown-item nav-internal" href="../backends/samsung/samsung-overview.html">
                   Samsung Exynos Backend
                 </a>
               </li>
@@ -736,60 +736,60 @@ document.write(`
         
       </li>
     
-      <li class="nav-item dropdown">
+      <li class="nav-item dropdown current active">
         
           
           <div class="nav-item-with-toggle">
-            <a class="nav-link nav-internal" href="llm/working-with-llms.html">
+            <a class="nav-link nav-internal active" href="working-with-llms.html">
               LLMs
             </a>
           </div>
           <ul class="dropdown-menu" id="dropdown-6">
             
               <li class=" ">
-                <a class="nav-link dropdown-item nav-internal" href="llm/getting-started.html">
+                <a class="nav-link dropdown-item nav-internal" href="getting-started.html">
                   Deploying LLMs to ExecuTorch
                 </a>
               </li>
             
               <li class=" ">
-                <a class="nav-link dropdown-item nav-internal" href="llm/export-llm.html">
+                <a class="nav-link dropdown-item nav-internal" href="export-llm.html">
                   Exporting LLMs
                 </a>
               </li>
             
               <li class=" ">
-                <a class="nav-link dropdown-item nav-internal" href="llm/export-llm-optimum.html">
+                <a class="nav-link dropdown-item nav-internal" href="export-llm-optimum.html">
                   Exporting LLMs with HuggingFace’s Optimum ExecuTorch
                 </a>
               </li>
             
               <li class=" ">
-                <a class="nav-link dropdown-item nav-internal" href="llm/export-custom-llm.html">
+                <a class="nav-link dropdown-item nav-internal" href="export-custom-llm.html">
                   Exporting custom LLMs
                 </a>
               </li>
             
               <li class=" ">
-                <a class="nav-link dropdown-item nav-internal" href="llm/run-with-c-plus-plus.html">
+                <a class="nav-link dropdown-item nav-internal" href="run-with-c-plus-plus.html">
                   Running LLMs with C++
                 </a>
               </li>
             
               <li class=" ">
-                <a class="nav-link dropdown-item nav-internal" href="llm/build-run-llama3-qualcomm-ai-engine-direct-backend.html">
+                <a class="nav-link dropdown-item nav-internal" href="build-run-llama3-qualcomm-ai-engine-direct-backend.html">
                   Run Llama 3 3B Instruct on Android (with Qualcomm AI Engine Direct Backend)
                 </a>
               </li>
             
               <li class=" ">
-                <a class="nav-link dropdown-item nav-internal" href="llm/run-on-android.html">
+                <a class="nav-link dropdown-item nav-internal" href="#">
                   Running LLMs on Android
                 </a>
               </li>
             
               <li class=" ">
-                <a class="nav-link dropdown-item nav-internal" href="llm/run-on-ios.html">
+                <a class="nav-link dropdown-item nav-internal" href="run-on-ios.html">
                   Running LLMs on iOS
                 </a>
               </li>
@@ -802,56 +802,56 @@ document.write(`
         
           
           <div class="nav-item-with-toggle">
-            <a class="nav-link nav-internal" href="advanced-topics-section.html">
+            <a class="nav-link nav-internal" href="../advanced-topics-section.html">
               Advanced
             </a>
           </div>
           <ul class="dropdown-menu" id="dropdown-7">
             
               <li class=" ">
-                <a class="nav-link dropdown-item nav-internal" href="quantization-optimization.html">
+                <a class="nav-link dropdown-item nav-internal" href="../quantization-optimization.html">
                   Quantization & Optimization
                 </a>
               </li>
             
               <li class=" ">
-                <a class="nav-link dropdown-item nav-internal" href="using-executorch-export.html">
+                <a class="nav-link dropdown-item nav-internal" href="../using-executorch-export.html">
                   Model Export and Lowering
                 </a>
               </li>
             
               <li class=" ">
-                <a class="nav-link dropdown-item nav-internal" href="working-with-cv-models.html">
+                <a class="nav-link dropdown-item nav-internal" href="../working-with-cv-models.html">
                   Working with Computer Vision Models
                 </a>
               </li>
             
               <li class=" ">
-                <a class="nav-link dropdown-item nav-internal" href="kernel-library-advanced.html">
+                <a class="nav-link dropdown-item nav-internal" href="../kernel-library-advanced.html">
                   Kernel Library Deep Dive
                 </a>
               </li>
             
               <li class=" ">
-                <a class="nav-link dropdown-item nav-internal" href="backend-delegate-advanced.html">
+                <a class="nav-link dropdown-item nav-internal" href="../backend-delegate-advanced.html">
                   Backend & Delegates
                 </a>
               </li>
             
               <li class=" ">
-                <a class="nav-link dropdown-item nav-internal" href="runtime-integration-advanced.html">
+                <a class="nav-link dropdown-item nav-internal" href="../runtime-integration-advanced.html">
                   Runtime & Integration
                 </a>
               </li>
             
               <li class=" ">
-                <a class="nav-link dropdown-item nav-internal" href="compiler-ir-advanced.html">
+                <a class="nav-link dropdown-item nav-internal" href="../compiler-ir-advanced.html">
                   Compiler & IR
                 </a>
               </li>
             
               <li class=" ">
-                <a class="nav-link dropdown-item nav-internal" href="file-formats-advanced.html">
+                <a class="nav-link dropdown-item nav-internal" href="../file-formats-advanced.html">
                   File Formats
                 </a>
               </li>
@@ -864,68 +864,68 @@ document.write(`
         
           
           <div class="nav-item-with-toggle">
-            <a class="nav-link nav-internal" href="tools-section.html">
+            <a class="nav-link nav-internal" href="../tools-section.html">
               Tools
             </a>
           </div>
           <ul class="dropdown-menu" id="dropdown-8">
             
               <li class=" ">
-                <a class="nav-link dropdown-item nav-internal" href="devtools-overview.html">
+                <a class="nav-link dropdown-item nav-internal" href="../devtools-overview.html">
                   Introduction to the ExecuTorch Developer Tools
                 </a>
               </li>
             
               <li class=" ">
-                <a class="nav-link dropdown-item nav-internal" href="bundled-io.html">
+                <a class="nav-link dropdown-item nav-internal" href="../bundled-io.html">
                   Bundled Program – a Tool for ExecuTorch Model Validation
                 </a>
               </li>
             
               <li class=" ">
-                <a class="nav-link dropdown-item nav-internal" href="etrecord.html">
+                <a class="nav-link dropdown-item nav-internal" href="../etrecord.html">
                   Prerequisite | ETRecord - ExecuTorch Record
                 </a>
               </li>
             
               <li class=" ">
-                <a class="nav-link dropdown-item nav-internal" href="etdump.html">
+                <a class="nav-link dropdown-item nav-internal" href="../etdump.html">
                   Prerequisite | ETDump - ExecuTorch Dump
                 </a>
               </li>
             
               <li class=" ">
-                <a class="nav-link dropdown-item nav-internal" href="runtime-profiling.html">
+                <a class="nav-link dropdown-item nav-internal" href="../runtime-profiling.html">
                   Profiling Models in ExecuTorch
                 </a>
               </li>
             
               <li class=" ">
-                <a class="nav-link dropdown-item nav-internal" href="model-debugging.html">
+                <a class="nav-link dropdown-item nav-internal" href="../model-debugging.html">
                   Debugging Models in ExecuTorch
                 </a>
               </li>
             
               <li class=" ">
-                <a class="nav-link dropdown-item nav-internal" href="model-inspector.html">
+                <a class="nav-link dropdown-item nav-internal" href="../model-inspector.html">
                   Inspector APIs
                 </a>
               </li>
             
               <li class=" ">
-                <a class="nav-link dropdown-item nav-internal" href="memory-planning-inspection.html">
+                <a class="nav-link dropdown-item nav-internal" href="../memory-planning-inspection.html">
                   Memory Planning Inspection in ExecuTorch
                 </a>
               </li>
             
               <li class=" ">
-                <a class="nav-link dropdown-item nav-internal" href="devtools-tutorial.html">
+                <a class="nav-link dropdown-item nav-internal" href="../devtools-tutorial.html">
                   Developer Tools Usage Tutorials
                 </a>
               </li>
             
               <li class=" ">
-                <a class="nav-link dropdown-item nav-internal" href="visualize.html">
+                <a class="nav-link dropdown-item nav-internal" href="../visualize.html">
                   Visualize a Model using ModelExplorer
                 </a>
               </li>
@@ -946,13 +946,13 @@ document.write(`
         <ul id="pst-nav-more-links" class="dropdown-menu">
           
             <li class="">
-              <a class="nav-link dropdown-item nav-internal" href="api-section.html">
+              <a class="nav-link dropdown-item nav-internal" href="../api-section.html">
                 API
               </a>
             </li>
           
             <li class="">
-              <a class="nav-link dropdown-item nav-internal" href="support-section.html">
+              <a class="nav-link dropdown-item nav-internal" href="../support-section.html">
                 Support
               </a>
             </li>
@@ -984,7 +984,7 @@ document.write(`
         <div class="navbar-item">
   
 <form class="bd-search d-flex align-items-center"
-      action="search.html"
+      action="../search.html"
       method="get">
   <i class="fa-solid fa-magnifying-glass"></i>
   <input type="search"
@@ -1150,36 +1150,36 @@ document.write(`
   <ul class="bd-navbar-elements navbar-nav">
     
     
-      <li class="nav-item dropdown current active">
+      <li class="nav-item dropdown">
         
           
           <div class="nav-item-with-toggle">
-            <a class="nav-link nav-internal active" href="#">
+            <a class="nav-link nav-internal" href="../intro-section.html">
               Intro
             </a>
           </div>
           <ul class="dropdown-menu" id="dropdown-1">
             
               <li class=" ">
-                <a class="nav-link dropdown-item nav-internal" href="intro-overview.html">
+                <a class="nav-link dropdown-item nav-internal" href="../intro-overview.html">
                   ExecuTorch Overview
                 </a>
               </li>
             
               <li class=" ">
-                <a class="nav-link dropdown-item nav-internal" href="intro-how-it-works.html">
+                <a class="nav-link dropdown-item nav-internal" href="../intro-how-it-works.html">
                   How ExecuTorch Works
                 </a>
               </li>
             
               <li class=" ">
-                <a class="nav-link dropdown-item nav-internal" href="getting-started-architecture.html">
+                <a class="nav-link dropdown-item nav-internal" href="../getting-started-architecture.html">
                   Architecture and Components
                 </a>
               </li>
             
               <li class=" ">
-                <a class="nav-link dropdown-item nav-internal" href="concepts.html">
+                <a class="nav-link dropdown-item nav-internal" href="../concepts.html">
                   Concepts
                 </a>
               </li>
@@ -1192,26 +1192,26 @@ document.write(`
         
           
           <div class="nav-item-with-toggle">
-            <a class="nav-link nav-internal" href="quick-start-section.html">
+            <a class="nav-link nav-internal" href="../quick-start-section.html">
               Quick Start
             </a>
           </div>
           <ul class="dropdown-menu" id="dropdown-2">
             
               <li class=" ">
-                <a class="nav-link dropdown-item nav-internal" href="getting-started.html">
+                <a class="nav-link dropdown-item nav-internal" href="../getting-started.html">
                   Getting Started with ExecuTorch
                 </a>
               </li>
             
               <li class=" ">
-                <a class="nav-link dropdown-item nav-internal" href="using-executorch-export.html">
+                <a class="nav-link dropdown-item nav-internal" href="../using-executorch-export.html">
                   Model Export and Lowering
                 </a>
               </li>
             
               <li class=" ">
-                <a class="nav-link dropdown-item nav-internal" href="using-executorch-building-from-source.html">
+                <a class="nav-link dropdown-item nav-internal" href="../using-executorch-building-from-source.html">
                   Building from Source
                 </a>
               </li>
@@ -1224,26 +1224,26 @@ document.write(`
         
           
           <div class="nav-item-with-toggle">
-            <a class="nav-link nav-internal" href="user-pathways.html">
+            <a class="nav-link nav-internal" href="../user-pathways.html">
               Find Your Path
             </a>
           </div>
           <ul class="dropdown-menu" id="dropdown-3">
             
               <li class=" ">
-                <a class="nav-link dropdown-item nav-internal" href="pathway-beginner.html">
+                <a class="nav-link dropdown-item nav-internal" href="../pathway-beginner.html">
                   Beginner Pathway
                 </a>
               </li>
             
               <li class=" ">
-                <a class="nav-link dropdown-item nav-internal" href="pathway-quickstart.html">
+                <a class="nav-link dropdown-item nav-internal" href="../pathway-quickstart.html">
                   Quick Start Pathway
                 </a>
               </li>
             
               <li class=" ">
-                <a class="nav-link dropdown-item nav-internal" href="pathway-advanced.html">
+                <a class="nav-link dropdown-item nav-internal" href="../pathway-advanced.html">
                   Advanced Pathway
                 </a>
               </li>
@@ -1256,38 +1256,38 @@ document.write(`
         
           
           <div class="nav-item-with-toggle">
-            <a class="nav-link nav-internal" href="edge-platforms-section.html">
+            <a class="nav-link nav-internal" href="../edge-platforms-section.html">
               Edge
             </a>
           </div>
           <ul class="dropdown-menu" id="dropdown-4">
             
               <li class=" ">
-                <a class="nav-link dropdown-item nav-internal" href="android-section.html">
+                <a class="nav-link dropdown-item nav-internal" href="../android-section.html">
                   Android
                 </a>
               </li>
             
               <li class=" ">
-                <a class="nav-link dropdown-item nav-internal" href="ios-section.html">
+                <a class="nav-link dropdown-item nav-internal" href="../ios-section.html">
                   iOS
                 </a>
               </li>
             
               <li class=" ">
-                <a class="nav-link dropdown-item nav-internal" href="desktop-section.html">
+                <a class="nav-link dropdown-item nav-internal" href="../desktop-section.html">
                   Desktop & Laptop Platforms
                 </a>
               </li>
             
               <li class=" ">
-                <a class="nav-link dropdown-item nav-internal" href="embedded-section.html">
+                <a class="nav-link dropdown-item nav-internal" href="../embedded-section.html">
                   Embedded Systems
                 </a>
               </li>
             
               <li class=" ">
-                <a class="nav-link dropdown-item nav-internal" href="using-executorch-troubleshooting.html">
+                <a class="nav-link dropdown-item nav-internal" href="../using-executorch-troubleshooting.html">
                   Profiling and Debugging
                 </a>
               </li>
@@ -1300,92 +1300,92 @@ document.write(`
         
           
           <div class="nav-item-with-toggle">
-            <a class="nav-link nav-internal" href="backends-section.html">
+            <a class="nav-link nav-internal" href="../backends-section.html">
               Backends
             </a>
           </div>
           <ul class="dropdown-menu" id="dropdown-5">
             
               <li class=" ">
-                <a class="nav-link dropdown-item nav-internal" href="backends/xnnpack/xnnpack-overview.html">
+                <a class="nav-link dropdown-item nav-internal" href="../backends/xnnpack/xnnpack-overview.html">
                   XNNPACK Backend
                 </a>
               </li>
             
               <li class=" ">
-                <a class="nav-link dropdown-item nav-internal" href="backends/cuda/cuda-overview.html">
+                <a class="nav-link dropdown-item nav-internal" href="../backends/cuda/cuda-overview.html">
                   CUDA Backend
                 </a>
               </li>
             
               <li class=" ">
-                <a class="nav-link dropdown-item nav-internal" href="backends/coreml/coreml-overview.html">
+                <a class="nav-link dropdown-item nav-internal" href="../backends/coreml/coreml-overview.html">
                   Core ML Backend
                 </a>
               </li>
             
               <li class=" ">
-                <a class="nav-link dropdown-item nav-internal" href="backends/mps/mps-overview.html">
+                <a class="nav-link dropdown-item nav-internal" href="../backends/mps/mps-overview.html">
                   MPS Backend
                 </a>
               </li>
             
               <li class=" ">
-                <a class="nav-link dropdown-item nav-internal" href="backends/vulkan/vulkan-overview.html">
+                <a class="nav-link dropdown-item nav-internal" href="../backends/vulkan/vulkan-overview.html">
                   Vulkan Backend
                 </a>
               </li>
             
               <li class=" ">
-                <a class="nav-link dropdown-item nav-internal" href="backends-qualcomm.html">
+                <a class="nav-link dropdown-item nav-internal" href="../backends-qualcomm.html">
                   Qualcomm AI Engine Backend
                 </a>
               </li>
             
               <li class=" ">
-                <a class="nav-link dropdown-item nav-internal" href="backends-mediatek.html">
+                <a class="nav-link dropdown-item nav-internal" href="../backends-mediatek.html">
                   MediaTek Backend
                 </a>
               </li>
             
               <li class=" ">
-                <a class="nav-link dropdown-item nav-internal" href="backends/arm-ethos-u/arm-ethos-u-overview.html">
+                <a class="nav-link dropdown-item nav-internal" href="../backends/arm-ethos-u/arm-ethos-u-overview.html">
                   Arm Ethos-U Backend
                 </a>
               </li>
             
               <li class=" ">
-                <a class="nav-link dropdown-item nav-internal" href="backends/arm-cortex-m/arm-cortex-m-overview.html">
+                <a class="nav-link dropdown-item nav-internal" href="../backends/arm-cortex-m/arm-cortex-m-overview.html">
                   Arm Cortex-M Backend
                 </a>
               </li>
             
               <li class=" ">
-                <a class="nav-link dropdown-item nav-internal" href="backends/arm-vgf/arm-vgf-overview.html">
+                <a class="nav-link dropdown-item nav-internal" href="../backends/arm-vgf/arm-vgf-overview.html">
                   Arm VGF Backend
                 </a>
               </li>
             
               <li class=" ">
-                <a class="nav-link dropdown-item nav-internal" href="build-run-openvino.html">
+                <a class="nav-link dropdown-item nav-internal" href="../build-run-openvino.html">
                   Building and Running ExecuTorch with OpenVINO Backend
                 </a>
               </li>
             
               <li class=" ">
-                <a class="nav-link dropdown-item nav-internal" href="backends/nxp/nxp-overview.html">
+                <a class="nav-link dropdown-item nav-internal" href="../backends/nxp/nxp-overview.html">
                   NXP eIQ Neutron Backend
                 </a>
               </li>
             
               <li class=" ">
-                <a class="nav-link dropdown-item nav-internal" href="backends-cadence.html">
+                <a class="nav-link dropdown-item nav-internal" href="../backends-cadence.html">
                   Cadence Xtensa Backend
                 </a>
               </li>
             
               <li class=" ">
-                <a class="nav-link dropdown-item nav-internal" href="backends/samsung/samsung-overview.html">
+                <a class="nav-link dropdown-item nav-internal" href="../backends/samsung/samsung-overview.html">
                   Samsung Exynos Backend
                 </a>
               </li>
@@ -1394,60 +1394,60 @@ document.write(`
         
       </li>
     
-      <li class="nav-item dropdown">
+      <li class="nav-item dropdown current active">
         
           
           <div class="nav-item-with-toggle">
-            <a class="nav-link nav-internal" href="llm/working-with-llms.html">
+            <a class="nav-link nav-internal active" href="working-with-llms.html">
               LLMs
             </a>
           </div>
           <ul class="dropdown-menu" id="dropdown-6">
             
               <li class=" ">
-                <a class="nav-link dropdown-item nav-internal" href="llm/getting-started.html">
+                <a class="nav-link dropdown-item nav-internal" href="getting-started.html">
                   Deploying LLMs to ExecuTorch
                 </a>
               </li>
             
               <li class=" ">
-                <a class="nav-link dropdown-item nav-internal" href="llm/export-llm.html">
+                <a class="nav-link dropdown-item nav-internal" href="export-llm.html">
                   Exporting LLMs
                 </a>
               </li>
             
               <li class=" ">
-                <a class="nav-link dropdown-item nav-internal" href="llm/export-llm-optimum.html">
+                <a class="nav-link dropdown-item nav-internal" href="export-llm-optimum.html">
                   Exporting LLMs with HuggingFace’s Optimum ExecuTorch
                 </a>
               </li>
             
               <li class=" ">
-                <a class="nav-link dropdown-item nav-internal" href="llm/export-custom-llm.html">
+                <a class="nav-link dropdown-item nav-internal" href="export-custom-llm.html">
                   Exporting custom LLMs
                 </a>
               </li>
             
               <li class=" ">
-                <a class="nav-link dropdown-item nav-internal" href="llm/run-with-c-plus-plus.html">
+                <a class="nav-link dropdown-item nav-internal" href="run-with-c-plus-plus.html">
                   Running LLMs with C++
                 </a>
               </li>
             
               <li class=" ">
-                <a class="nav-link dropdown-item nav-internal" href="llm/build-run-llama3-qualcomm-ai-engine-direct-backend.html">
+                <a class="nav-link dropdown-item nav-internal" href="build-run-llama3-qualcomm-ai-engine-direct-backend.html">
                   Run Llama 3 3B Instruct on Android (with Qualcomm AI Engine Direct Backend)
                 </a>
               </li>
             
               <li class=" ">
-                <a class="nav-link dropdown-item nav-internal" href="llm/run-on-android.html">
+                <a class="nav-link dropdown-item nav-internal" href="#">
                   Running LLMs on Android
                 </a>
               </li>
             
               <li class=" ">
-                <a class="nav-link dropdown-item nav-internal" href="llm/run-on-ios.html">
+                <a class="nav-link dropdown-item nav-internal" href="run-on-ios.html">
                   Running LLMs on iOS
                 </a>
               </li>
@@ -1460,56 +1460,56 @@ document.write(`
         
           
           <div class="nav-item-with-toggle">
-            <a class="nav-link nav-internal" href="advanced-topics-section.html">
+            <a class="nav-link nav-internal" href="../advanced-topics-section.html">
               Advanced
             </a>
           </div>
           <ul class="dropdown-menu" id="dropdown-7">
             
               <li class=" ">
-                <a class="nav-link dropdown-item nav-internal" href="quantization-optimization.html">
+                <a class="nav-link dropdown-item nav-internal" href="../quantization-optimization.html">
                   Quantization & Optimization
                 </a>
               </li>
             
               <li class=" ">
-                <a class="nav-link dropdown-item nav-internal" href="using-executorch-export.html">
+                <a class="nav-link dropdown-item nav-internal" href="../using-executorch-export.html">
                   Model Export and Lowering
                 </a>
               </li>
             
               <li class=" ">
-                <a class="nav-link dropdown-item nav-internal" href="working-with-cv-models.html">
+                <a class="nav-link dropdown-item nav-internal" href="../working-with-cv-models.html">
                   Working with Computer Vision Models
                 </a>
               </li>
             
               <li class=" ">
-                <a class="nav-link dropdown-item nav-internal" href="kernel-library-advanced.html">
+                <a class="nav-link dropdown-item nav-internal" href="../kernel-library-advanced.html">
                   Kernel Library Deep Dive
                 </a>
               </li>
             
               <li class=" ">
-                <a class="nav-link dropdown-item nav-internal" href="backend-delegate-advanced.html">
+                <a class="nav-link dropdown-item nav-internal" href="../backend-delegate-advanced.html">
                   Backend & Delegates
                 </a>
               </li>
             
               <li class=" ">
-                <a class="nav-link dropdown-item nav-internal" href="runtime-integration-advanced.html">
+                <a class="nav-link dropdown-item nav-internal" href="../runtime-integration-advanced.html">
                   Runtime & Integration
                 </a>
               </li>
             
               <li class=" ">
-                <a class="nav-link dropdown-item nav-internal" href="compiler-ir-advanced.html">
+                <a class="nav-link dropdown-item nav-internal" href="../compiler-ir-advanced.html">
                   Compiler & IR
                 </a>
               </li>
             
               <li class=" ">
-                <a class="nav-link dropdown-item nav-internal" href="file-formats-advanced.html">
+                <a class="nav-link dropdown-item nav-internal" href="../file-formats-advanced.html">
                   File Formats
                 </a>
               </li>
@@ -1522,68 +1522,68 @@ document.write(`
         
           
           <div class="nav-item-with-toggle">
-            <a class="nav-link nav-internal" href="tools-section.html">
+            <a class="nav-link nav-internal" href="../tools-section.html">
               Tools
             </a>
           </div>
           <ul class="dropdown-menu" id="dropdown-8">
             
               <li class=" ">
-                <a class="nav-link dropdown-item nav-internal" href="devtools-overview.html">
+                <a class="nav-link dropdown-item nav-internal" href="../devtools-overview.html">
                   Introduction to the ExecuTorch Developer Tools
                 </a>
               </li>
             
               <li class=" ">
-                <a class="nav-link dropdown-item nav-internal" href="bundled-io.html">
+                <a class="nav-link dropdown-item nav-internal" href="../bundled-io.html">
                   Bundled Program – a Tool for ExecuTorch Model Validation
                 </a>
               </li>
             
               <li class=" ">
-                <a class="nav-link dropdown-item nav-internal" href="etrecord.html">
+                <a class="nav-link dropdown-item nav-internal" href="../etrecord.html">
                   Prerequisite | ETRecord - ExecuTorch Record
                 </a>
               </li>
             
               <li class=" ">
-                <a class="nav-link dropdown-item nav-internal" href="etdump.html">
+                <a class="nav-link dropdown-item nav-internal" href="../etdump.html">
                   Prerequisite | ETDump - ExecuTorch Dump
                 </a>
               </li>
             
               <li class=" ">
-                <a class="nav-link dropdown-item nav-internal" href="runtime-profiling.html">
+                <a class="nav-link dropdown-item nav-internal" href="../runtime-profiling.html">
                   Profiling Models in ExecuTorch
                 </a>
               </li>
             
               <li class=" ">
-                <a class="nav-link dropdown-item nav-internal" href="model-debugging.html">
+                <a class="nav-link dropdown-item nav-internal" href="../model-debugging.html">
                   Debugging Models in ExecuTorch
                 </a>
               </li>
             
               <li class=" ">
-                <a class="nav-link dropdown-item nav-internal" href="model-inspector.html">
+                <a class="nav-link dropdown-item nav-internal" href="../model-inspector.html">
                   Inspector APIs
                 </a>
               </li>
             
               <li class=" ">
-                <a class="nav-link dropdown-item nav-internal" href="memory-planning-inspection.html">
+                <a class="nav-link dropdown-item nav-internal" href="../memory-planning-inspection.html">
                   Memory Planning Inspection in ExecuTorch
                 </a>
               </li>
             
               <li class=" ">
-                <a class="nav-link dropdown-item nav-internal" href="devtools-tutorial.html">
+                <a class="nav-link dropdown-item nav-internal" href="../devtools-tutorial.html">
                   Developer Tools Usage Tutorials
                 </a>
               </li>
             
               <li class=" ">
-                <a class="nav-link dropdown-item nav-internal" href="visualize.html">
+                <a class="nav-link dropdown-item nav-internal" href="../visualize.html">
                   Visualize a Model using ModelExplorer
                 </a>
               </li>
@@ -1596,50 +1596,50 @@ document.write(`
         
           
           <div class="nav-item-with-toggle">
-            <a class="nav-link nav-internal" href="api-section.html">
+            <a class="nav-link nav-internal" href="../api-section.html">
               API
             </a>
           </div>
           <ul class="dropdown-menu" id="dropdown-9">
             
               <li class=" ">
-                <a class="nav-link dropdown-item nav-internal" href="export-to-executorch-api-reference.html">
+                <a class="nav-link dropdown-item nav-internal" href="../export-to-executorch-api-reference.html">
                   Export API Reference
                 </a>
               </li>
             
               <li class=" ">
-                <a class="nav-link dropdown-item nav-internal" href="executorch-runtime-api-reference.html">
+                <a class="nav-link dropdown-item nav-internal" href="../executorch-runtime-api-reference.html">
                   Runtime API Reference
                 </a>
               </li>
             
               <li class=" ">
-                <a class="nav-link dropdown-item nav-internal" href="runtime-python-api-reference.html">
+                <a class="nav-link dropdown-item nav-internal" href="../runtime-python-api-reference.html">
                   Runtime Python API Reference
                 </a>
               </li>
             
               <li class=" ">
-                <a class="nav-link dropdown-item nav-internal" href="api-life-cycle.html">
+                <a class="nav-link dropdown-item nav-internal" href="../api-life-cycle.html">
                   API Life Cycle and Deprecation Policy
                 </a>
               </li>
             
               <li class=" ">
-                <a class="nav-link dropdown-item nav-internal" href="extension-module.html">
+                <a class="nav-link dropdown-item nav-internal" href="../extension-module.html">
                   Running an ExecuTorch Model Using the Module Extension in C++
                 </a>
               </li>
             
               <li class=" ">
-                <a class="nav-link dropdown-item nav-internal" href="extension-tensor.html">
+                <a class="nav-link dropdown-item nav-internal" href="../extension-tensor.html">
                   Managing Tensor Memory in C++
                 </a>
               </li>
             
               <li class=" ">
-                <a class="nav-link dropdown-item nav-internal" href="running-a-model-cpp-tutorial.html">
+                <a class="nav-link dropdown-item nav-internal" href="../running-a-model-cpp-tutorial.html">
                   Detailed C++ Runtime APIs Tutorial
                 </a>
               </li>
@@ -1652,26 +1652,26 @@ document.write(`
         
           
           <div class="nav-item-with-toggle">
-            <a class="nav-link nav-internal" href="support-section.html">
+            <a class="nav-link nav-internal" href="../support-section.html">
               Support
             </a>
           </div>
           <ul class="dropdown-menu" id="dropdown-10">
             
               <li class=" ">
-                <a class="nav-link dropdown-item nav-internal" href="using-executorch-faqs.html">
+                <a class="nav-link dropdown-item nav-internal" href="../using-executorch-faqs.html">
                   Frequently Asked Questions
                 </a>
               </li>
             
               <li class=" ">
-                <a class="nav-link dropdown-item nav-internal" href="using-executorch-troubleshooting.html">
+                <a class="nav-link dropdown-item nav-internal" href="../using-executorch-troubleshooting.html">
                   Profiling and Debugging
                 </a>
               </li>
             
               <li class=" ">
-                <a class="nav-link dropdown-item nav-internal" href="contributing.html">
+                <a class="nav-link dropdown-item nav-internal" href="../contributing.html">
                   Contributing to ExecuTorch
                 </a>
               </li>
@@ -1708,7 +1708,7 @@ document.write(`
           <div class="navbar-item">
   
 <form class="bd-search d-flex align-items-center"
-      action="search.html"
+      action="../search.html"
       method="get">
   <i class="fa-solid fa-magnifying-glass"></i>
   <input type="search"
@@ -1798,12 +1798,16 @@ document.write(`
 <nav class="bd-docs-nav bd-links"
      aria-label="Section Navigation">
   <p class="bd-links__title" role="heading" aria-level="1">Section Navigation</p>
-  <div class="bd-toc-item navbar-nav"><p aria-level="2" class="caption" role="heading"><span class="caption-text">Introduction Topics</span></p>
-<ul class="nav bd-sidenav">
-<li class="toctree-l1"><a class="reference internal" href="intro-overview.html">ExecuTorch Overview</a></li>
-<li class="toctree-l1"><a class="reference internal" href="intro-how-it-works.html">How ExecuTorch Works</a></li>
-<li class="toctree-l1"><a class="reference internal" href="getting-started-architecture.html">Architecture and Components</a></li>
-<li class="toctree-l1"><a class="reference internal" href="concepts.html">Concepts</a></li>
+  <div class="bd-toc-item navbar-nav"><p aria-level="2" class="caption" role="heading"><span class="caption-text">Working with LLMs</span></p>
+<ul class="current nav bd-sidenav">
+<li class="toctree-l1"><a class="reference internal" href="getting-started.html">Deploying LLMs to ExecuTorch</a></li>
+<li class="toctree-l1"><a class="reference internal" href="export-llm.html">Exporting LLMs</a></li>
+<li class="toctree-l1"><a class="reference internal" href="export-llm-optimum.html">Exporting LLMs with HuggingFace’s Optimum ExecuTorch</a></li>
+<li class="toctree-l1"><a class="reference internal" href="export-custom-llm.html">Exporting custom LLMs</a></li>
+<li class="toctree-l1"><a class="reference internal" href="run-with-c-plus-plus.html">Running LLMs with C++</a></li>
+<li class="toctree-l1"><a class="reference internal" href="build-run-llama3-qualcomm-ai-engine-direct-backend.html">Run Llama 3 3B Instruct on Android (with Qualcomm AI Engine Direct Backend)</a></li>
+<li class="toctree-l1 current active"><a class="current reference internal" href="#">Running LLMs on Android</a></li>
+<li class="toctree-l1"><a class="reference internal" href="run-on-ios.html">Running LLMs on iOS</a></li>
 </ul>
 </div>
 </nav></div>
@@ -1837,11 +1841,14 @@ document.write(`
   <ul class="bd-breadcrumbs">
     
     <li class="breadcrumb-item breadcrumb-home">
-      <a href="index.html" class="nav-link" aria-label="Home">
+      <a href="../index.html" class="nav-link" aria-label="Home">
         <i class="fa-solid fa-home"></i>
       </a>
     </li>
-    <li class="breadcrumb-item active" aria-current="page">Intro</li>
+    
+    <li class="breadcrumb-item"><a href="working-with-llms.html" class="nav-link">LLMs</a></li>
+    
+    <li class="breadcrumb-item active" aria-current="page">Running...</li>
   </ul>
 </nav>
 </div>
@@ -1883,8 +1890,14 @@ document.write(`
   <div style="display:none;" itemscope itemtype="https://schema.org/BreadcrumbList">
     
     <div itemprop="itemListElement" itemscope itemtype="https://schema.org/ListItem">
-      <meta itemprop="name" content="Intro">
+      <link itemprop="item" href="working-with-llms.html">
+      <meta itemprop="name" content="LLMs">
       <meta itemprop="position" content="1">
+    </div>
+    
+    <div itemprop="itemListElement" itemscope itemtype="https://schema.org/ListItem">
+      <meta itemprop="name" content="Running LLMs on Android">
+      <meta itemprop="position" content="2">
     </div>
   </div>
 
@@ -1897,48 +1910,181 @@ document.write(`
 <div id="searchbox"></div>
                 <article class="bd-article">
                   
-  <section id="intro">
-<span id="intro-section"></span><h1>Intro<a class="headerlink" href="#intro" title="Link to this heading">#</a></h1>
-<p>Overview, architecture, and core concepts of ExecuTorch.</p>
-<p>ExecuTorch is PyTorch’s solution for training and inference on the Edge, providing portability, productivity, and performance for edge computing platforms.</p>
-<hr class="docutils" />
-<section id="new-to-executorch-start-here">
-<h2>New to ExecuTorch? Start Here<a class="headerlink" href="#new-to-executorch-start-here" title="Link to this heading">#</a></h2>
-<div class="sd-container-fluid sd-sphinx-override sd-mb-4 docutils">
-<div class="sd-row sd-row-cols-2 sd-row-cols-xs-2 sd-row-cols-sm-2 sd-row-cols-md-2 sd-row-cols-lg-2 sd-g-2 sd-g-xs-2 sd-g-sm-2 sd-g-md-2 sd-g-lg-2 docutils">
-<div class="sd-col sd-d-flex-row docutils">
-<div class="sd-card sd-sphinx-override sd-w-100 sd-shadow-sm sd-card-hover docutils">
-<div class="sd-card-body docutils">
-<div class="sd-card-title sd-font-weight-bold docutils">
-🟢 Beginner Pathway</div>
-<p class="sd-card-text">A structured, step-by-step learning sequence for engineers new to on-device deployment. Covers concepts, setup, export, and your first device deployment.</p>
-</div>
-<a class="sd-stretched-link sd-hide-link-text reference internal" href="pathway-beginner.html"><span class="doc">Beginner Pathway</span></a></div>
-</div>
-<div class="sd-col sd-d-flex-row docutils">
-<div class="sd-card sd-sphinx-override sd-w-100 sd-shadow-sm sd-card-hover docutils">
-<div class="sd-card-body docutils">
-<div class="sd-card-title sd-font-weight-bold docutils">
-🔀 Decision Matrix</div>
-<p class="sd-card-text">Route yourself to the right documentation based on your experience level, target platform, model status, and developer role.</p>
-</div>
-<a class="sd-stretched-link sd-hide-link-text reference internal" href="user-pathways.html"><span class="doc">Find Your Path</span></a></div>
-</div>
-</div>
+  <section id="running-llms-on-android">
+<h1>Running LLMs on Android<a class="headerlink" href="#running-llms-on-android" title="Link to this heading">#</a></h1>
+<p>ExecuTorch’s LLM-specific runtime components provide an experimental Java interface around the core C++ LLM runtime, available through the <code class="docutils literal notranslate"><span class="pre">executorch-android</span></code> AAR.</p>
+<section id="prerequisites">
+<h2>Prerequisites<a class="headerlink" href="#prerequisites" title="Link to this heading">#</a></h2>
+<p>Make sure you have a model and tokenizer files ready, as described in the prerequisites section of the <a class="reference internal" href="run-with-c-plus-plus.html"><span class="std std-doc">Running LLMs with C++</span></a> guide.</p>
+<p>To add the <code class="docutils literal notranslate"><span class="pre">executorch-android</span></code> library to your app, see <a class="reference internal" href="../using-executorch-android.html"><span class="std std-doc">Using ExecuTorch on Android</span></a>. The LLM runner classes are bundled inside the same AAR as the generic <code class="docutils literal notranslate"><span class="pre">Module</span></code> API.</p>
+</section>
+<section id="runtime-api">
+<h2>Runtime API<a class="headerlink" href="#runtime-api" title="Link to this heading">#</a></h2>
+<p>Once the <code class="docutils literal notranslate"><span class="pre">executorch-android</span></code> AAR is on your classpath, you can import the LLM runner classes from the <code class="docutils literal notranslate"><span class="pre">org.pytorch.executorch.extension.llm</span></code> package.</p>
+<section id="importing">
+<h3>Importing<a class="headerlink" href="#importing" title="Link to this heading">#</a></h3>
+<div class="highlight-java notranslate"><div class="highlight"><pre><span></span><span class="kn">import</span><span class="w"> </span><span class="nn">org.pytorch.executorch.extension.llm.LlmModule</span><span class="p">;</span>
+<span class="kn">import</span><span class="w"> </span><span class="nn">org.pytorch.executorch.extension.llm.LlmModuleConfig</span><span class="p">;</span>
+<span class="kn">import</span><span class="w"> </span><span class="nn">org.pytorch.executorch.extension.llm.LlmGenerationConfig</span><span class="p">;</span>
+<span class="kn">import</span><span class="w"> </span><span class="nn">org.pytorch.executorch.extension.llm.LlmCallback</span><span class="p">;</span>
+</pre></div>
 </div>
 </section>
-<hr class="docutils" />
-<section id="getting-started-with-executorch">
-<h2>Getting Started with ExecuTorch<a class="headerlink" href="#getting-started-with-executorch" title="Link to this heading">#</a></h2>
-<p>New to ExecuTorch? Start with these foundational topics:</p>
-<ul class="simple">
-<li><p><strong><a class="reference internal" href="intro-overview.html"><span class="doc">ExecuTorch Overview</span></a></strong> — High-level overview of ExecuTorch capabilities</p></li>
-<li><p><strong><a class="reference internal" href="intro-how-it-works.html"><span class="doc">How ExecuTorch Works</span></a></strong> — Technical overview of the ExecuTorch workflow</p></li>
-<li><p><strong><a class="reference internal" href="getting-started-architecture.html"><span class="doc">Architecture and Components</span></a></strong> — System architecture and components</p></li>
-<li><p><strong><a class="reference internal" href="concepts.html"><span class="doc">Concepts</span></a></strong> — Core concepts and terminology</p></li>
-</ul>
-<div class="toctree-wrapper compound">
+<section id="llmmodule">
+<h3>LlmModule<a class="headerlink" href="#llmmodule" title="Link to this heading">#</a></h3>
+<p>The <code class="docutils literal notranslate"><span class="pre">LlmModule</span></code> class provides a simple Java interface for loading a text-generation model, configuring its tokenizer, generating token streams, and stopping execution. It also supports multimodal models that accept image and audio inputs alongside a text prompt.</p>
+<p>This API is experimental and subject to change.</p>
+<section id="initialization">
+<h4>Initialization<a class="headerlink" href="#initialization" title="Link to this heading">#</a></h4>
+<p>Create an <code class="docutils literal notranslate"><span class="pre">LlmModule</span></code> by specifying paths to your serialized model (<code class="docutils literal notranslate"><span class="pre">.pte</span></code>) and tokenizer files. For text-only models, the simple constructor is enough:</p>
+<div class="highlight-java notranslate"><div class="highlight"><pre><span></span><span class="n">LlmModule</span><span class="w"> </span><span class="kd">module</span> <span class="err">=</span> <span class="nc">new</span><span class="w"> </span><span class="n">LlmModule</span><span class="p">(</span>
+<span class="w">    </span><span class="s">&quot;/data/local/tmp/llama-3.2-instruct.pte&quot;</span><span class="p">,</span>
+<span class="w">    </span><span class="s">&quot;/data/local/tmp/tokenizer.model&quot;</span><span class="p">,</span>
+<span class="w">    </span><span class="mf">0.8f</span><span class="p">);</span>
+</pre></div>
 </div>
+<p>For finer control (multimodal model type, BOS/EOS handling, supplementary data files, load mode), use <code class="docutils literal notranslate"><span class="pre">LlmModuleConfig</span></code> with the fluent builder:</p>
+<div class="highlight-java notranslate"><div class="highlight"><pre><span></span><span class="n">LlmModuleConfig</span><span class="w"> </span><span class="n">config</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">LlmModuleConfig</span><span class="p">.</span><span class="na">create</span><span class="p">()</span>
+<span class="w">    </span><span class="p">.</span><span class="na">modulePath</span><span class="p">(</span><span class="s">&quot;/data/local/tmp/llama-3.2-instruct.pte&quot;</span><span class="p">)</span>
+<span class="w">    </span><span class="p">.</span><span class="na">tokenizerPath</span><span class="p">(</span><span class="s">&quot;/data/local/tmp/tokenizer.model&quot;</span><span class="p">)</span>
+<span class="w">    </span><span class="p">.</span><span class="na">temperature</span><span class="p">(</span><span class="mf">0.8f</span><span class="p">)</span>
+<span class="w">    </span><span class="p">.</span><span class="na">modelType</span><span class="p">(</span><span class="n">LlmModuleConfig</span><span class="p">.</span><span class="na">MODEL_TYPE_TEXT</span><span class="p">)</span>
+<span class="w">    </span><span class="p">.</span><span class="na">loadMode</span><span class="p">(</span><span class="n">LlmModuleConfig</span><span class="p">.</span><span class="na">LOAD_MODE_MMAP</span><span class="p">)</span>
+<span class="w">    </span><span class="p">.</span><span class="na">build</span><span class="p">();</span>
+
+<span class="n">LlmModule</span><span class="w"> </span><span class="kd">module</span> <span class="err">=</span> <span class="nc">new</span><span class="w"> </span><span class="n">LlmModule</span><span class="p">(</span><span class="n">config</span><span class="p">);</span>
+</pre></div>
+</div>
+<p>Available load modes are <code class="docutils literal notranslate"><span class="pre">LOAD_MODE_FILE</span></code>, <code class="docutils literal notranslate"><span class="pre">LOAD_MODE_MMAP</span></code> (default), <code class="docutils literal notranslate"><span class="pre">LOAD_MODE_MMAP_USE_MLOCK</span></code>, and <code class="docutils literal notranslate"><span class="pre">LOAD_MODE_MMAP_USE_MLOCK_IGNORE_ERRORS</span></code>. Available model types are <code class="docutils literal notranslate"><span class="pre">MODEL_TYPE_TEXT</span></code>, <code class="docutils literal notranslate"><span class="pre">MODEL_TYPE_TEXT_VISION</span></code>, and <code class="docutils literal notranslate"><span class="pre">MODEL_TYPE_MULTIMODAL</span></code>.</p>
+<p>Construction itself is lightweight and does not load the program data immediately.</p>
+</section>
+<section id="loading">
+<h4>Loading<a class="headerlink" href="#loading" title="Link to this heading">#</a></h4>
+<p>Explicitly load the model before generation to avoid paying the load cost during your first <code class="docutils literal notranslate"><span class="pre">generate</span></code> call.</p>
+<div class="highlight-java notranslate"><div class="highlight"><pre><span></span><span class="kt">int</span><span class="w"> </span><span class="n">status</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="kd">module</span><span class="err">.</span><span class="nc">load</span><span class="p">();</span>
+<span class="k">if</span><span class="w"> </span><span class="p">(</span><span class="n">status</span><span class="w"> </span><span class="o">!=</span><span class="w"> </span><span class="mi">0</span><span class="p">)</span><span class="w"> </span><span class="p">{</span>
+<span class="w">  </span><span class="c1">// Handle load failure (status is an ExecuTorch runtime error code).</span>
+<span class="p">}</span>
+</pre></div>
+</div>
+<p>If you skip this step, the model is loaded lazily on the first <code class="docutils literal notranslate"><span class="pre">generate</span></code> call.</p>
+</section>
+<section id="generating">
+<h4>Generating<a class="headerlink" href="#generating" title="Link to this heading">#</a></h4>
+<p>Generate tokens from a text prompt by passing an <code class="docutils literal notranslate"><span class="pre">LlmCallback</span></code> that receives each token as it is produced. The same callback also receives a JSON-encoded statistics string when generation completes.</p>
+<div class="highlight-java notranslate"><div class="highlight"><pre><span></span><span class="n">LlmCallback</span><span class="w"> </span><span class="n">callback</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="k">new</span><span class="w"> </span><span class="n">LlmCallback</span><span class="p">()</span><span class="w"> </span><span class="p">{</span>
+<span class="w">  </span><span class="nd">@Override</span>
+<span class="w">  </span><span class="kd">public</span><span class="w"> </span><span class="kt">void</span><span class="w"> </span><span class="nf">onResult</span><span class="p">(</span><span class="n">String</span><span class="w"> </span><span class="n">token</span><span class="p">)</span><span class="w"> </span><span class="p">{</span>
+<span class="w">    </span><span class="c1">// Called once per generated token. Append to your UI buffer here.</span>
+<span class="w">    </span><span class="n">System</span><span class="p">.</span><span class="na">out</span><span class="p">.</span><span class="na">print</span><span class="p">(</span><span class="n">token</span><span class="p">);</span>
+<span class="w">  </span><span class="p">}</span>
+
+<span class="w">  </span><span class="nd">@Override</span>
+<span class="w">  </span><span class="kd">public</span><span class="w"> </span><span class="kt">void</span><span class="w"> </span><span class="nf">onStats</span><span class="p">(</span><span class="n">String</span><span class="w"> </span><span class="n">statsJson</span><span class="p">)</span><span class="w"> </span><span class="p">{</span>
+<span class="w">    </span><span class="c1">// Called once when generation finishes. See extension/llm/runner/stats.h</span>
+<span class="w">    </span><span class="c1">// for the field definitions.</span>
+<span class="w">    </span><span class="n">System</span><span class="p">.</span><span class="na">out</span><span class="p">.</span><span class="na">println</span><span class="p">(</span><span class="s">&quot;\n&quot;</span><span class="w"> </span><span class="o">+</span><span class="w"> </span><span class="n">statsJson</span><span class="p">);</span>
+<span class="w">  </span><span class="p">}</span>
+
+<span class="w">  </span><span class="nd">@Override</span>
+<span class="w">  </span><span class="kd">public</span><span class="w"> </span><span class="kt">void</span><span class="w"> </span><span class="nf">onError</span><span class="p">(</span><span class="kt">int</span><span class="w"> </span><span class="n">errorCode</span><span class="p">,</span><span class="w"> </span><span class="n">String</span><span class="w"> </span><span class="n">message</span><span class="p">)</span><span class="w"> </span><span class="p">{</span>
+<span class="w">    </span><span class="c1">// Called if the runtime reports an error during generation.</span>
+<span class="w">  </span><span class="p">}</span>
+<span class="p">};</span>
+
+<span class="kd">module</span><span class="err">.</span><span class="nc">generate</span><span class="p">(</span><span class="s">&quot;Once upon a time&quot;</span><span class="p">,</span><span class="w"> </span><span class="n">callback</span><span class="p">);</span>
+</pre></div>
+</div>
+<p>For full control over generation parameters, use <code class="docutils literal notranslate"><span class="pre">LlmGenerationConfig</span></code>:</p>
+<div class="highlight-java notranslate"><div class="highlight"><pre><span></span><span class="n">LlmGenerationConfig</span><span class="w"> </span><span class="n">genConfig</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">LlmGenerationConfig</span><span class="p">.</span><span class="na">create</span><span class="p">()</span>
+<span class="w">    </span><span class="p">.</span><span class="na">seqLen</span><span class="p">(</span><span class="mi">2048</span><span class="p">)</span>
+<span class="w">    </span><span class="p">.</span><span class="na">temperature</span><span class="p">(</span><span class="mf">0.8f</span><span class="p">)</span>
+<span class="w">    </span><span class="p">.</span><span class="na">echo</span><span class="p">(</span><span class="kc">false</span><span class="p">)</span>
+<span class="w">    </span><span class="p">.</span><span class="na">build</span><span class="p">();</span>
+
+<span class="kd">module</span><span class="err">.</span><span class="nc">generate</span><span class="p">(</span><span class="s">&quot;Once upon a time&quot;</span><span class="p">,</span><span class="w"> </span><span class="n">genConfig</span><span class="p">,</span><span class="w"> </span><span class="n">callback</span><span class="p">);</span>
+</pre></div>
+</div>
+<p><code class="docutils literal notranslate"><span class="pre">LlmGenerationConfig</span></code> exposes <code class="docutils literal notranslate"><span class="pre">echo</span></code>, <code class="docutils literal notranslate"><span class="pre">maxNewTokens</span></code>, <code class="docutils literal notranslate"><span class="pre">seqLen</span></code>, <code class="docutils literal notranslate"><span class="pre">temperature</span></code>, <code class="docutils literal notranslate"><span class="pre">numBos</span></code>, <code class="docutils literal notranslate"><span class="pre">numEos</span></code>, and <code class="docutils literal notranslate"><span class="pre">warming</span></code>. Defaults match the C++ <code class="docutils literal notranslate"><span class="pre">GenerationConfig</span></code> documented in <a class="reference internal" href="run-with-c-plus-plus.html"><span class="std std-doc">Running LLMs with C++</span></a>.</p>
+</section>
+<section id="stopping-generation">
+<h4>Stopping Generation<a class="headerlink" href="#stopping-generation" title="Link to this heading">#</a></h4>
+<p>If you need to interrupt a long-running generation, call <code class="docutils literal notranslate"><span class="pre">stop()</span></code> from another thread (or from inside the <code class="docutils literal notranslate"><span class="pre">onResult</span></code> callback):</p>
+<div class="highlight-java notranslate"><div class="highlight"><pre><span></span><span class="kd">module</span><span class="err">.</span><span class="nc">stop</span><span class="p">();</span>
+</pre></div>
+</div>
+<p>Generation also runs synchronously on the calling thread, so make sure you invoke <code class="docutils literal notranslate"><span class="pre">generate()</span></code> off the main thread (for example, on a <code class="docutils literal notranslate"><span class="pre">HandlerThread</span></code> or via a <code class="docutils literal notranslate"><span class="pre">java.util.concurrent.Executor</span></code>).</p>
+</section>
+<section id="resetting">
+<h4>Resetting<a class="headerlink" href="#resetting" title="Link to this heading">#</a></h4>
+<p>To clear the prefilled tokens from the KV cache and reset the start position to 0, call:</p>
+<div class="highlight-java notranslate"><div class="highlight"><pre><span></span><span class="kd">module</span><span class="err">.</span><span class="nc">resetContext</span><span class="p">();</span>
+</pre></div>
+</div>
+<p>This is the equivalent of <code class="docutils literal notranslate"><span class="pre">reset()</span></code> on the iOS runner and <code class="docutils literal notranslate"><span class="pre">reset()</span></code> on the C++ <code class="docutils literal notranslate"><span class="pre">IRunner</span></code>.</p>
+</section>
+</section>
+<section id="multimodal-inputs">
+<h3>Multimodal Inputs<a class="headerlink" href="#multimodal-inputs" title="Link to this heading">#</a></h3>
+<p>For models declared as <code class="docutils literal notranslate"><span class="pre">MODEL_TYPE_TEXT_VISION</span></code> or <code class="docutils literal notranslate"><span class="pre">MODEL_TYPE_MULTIMODAL</span></code>, image and audio data are provided through dedicated prefill methods. After prefilling all modalities, call <code class="docutils literal notranslate"><span class="pre">generate()</span></code> with the text prompt to produce the response.</p>
+<section id="images">
+<h4>Images<a class="headerlink" href="#images" title="Link to this heading">#</a></h4>
+<p>Raw uint8 pixel data in CHW order can be supplied as an <code class="docutils literal notranslate"><span class="pre">int[]</span></code>, or as a direct <code class="docutils literal notranslate"><span class="pre">ByteBuffer</span></code> to avoid JNI array copies:</p>
+<div class="highlight-java notranslate"><div class="highlight"><pre><span></span><span class="c1">// As int[]</span>
+<span class="kt">int</span><span class="o">[]</span><span class="w"> </span><span class="n">pixels</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="p">...;</span><span class="w">       </span><span class="c1">// length == channels * height * width</span>
+<span class="kd">module</span><span class="err">.</span><span class="nc">prefillImages</span><span class="p">(</span><span class="n">pixels</span><span class="p">,</span><span class="w"> </span><span class="cm">/*width=*/</span><span class="mi">336</span><span class="p">,</span><span class="w"> </span><span class="cm">/*height=*/</span><span class="mi">336</span><span class="p">,</span><span class="w"> </span><span class="cm">/*channels=*/</span><span class="mi">3</span><span class="p">);</span>
+
+<span class="c1">// As direct ByteBuffer (preferred for large images)</span>
+<span class="n">ByteBuffer</span><span class="w"> </span><span class="n">buffer</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">ByteBuffer</span><span class="p">.</span><span class="na">allocateDirect</span><span class="p">(</span><span class="mi">3</span><span class="w"> </span><span class="o">*</span><span class="w"> </span><span class="mi">336</span><span class="w"> </span><span class="o">*</span><span class="w"> </span><span class="mi">336</span><span class="p">);</span>
+<span class="n">buffer</span><span class="p">.</span><span class="na">put</span><span class="p">(</span><span class="n">rawBytes</span><span class="p">).</span><span class="na">rewind</span><span class="p">();</span>
+<span class="kd">module</span><span class="err">.</span><span class="nc">prefillImages</span><span class="p">(</span><span class="n">buffer</span><span class="p">,</span><span class="w"> </span><span class="mi">336</span><span class="p">,</span><span class="w"> </span><span class="mi">336</span><span class="p">,</span><span class="w"> </span><span class="mi">3</span><span class="p">);</span>
+</pre></div>
+</div>
+<p>Pre-normalized float pixel data is also supported, both as a <code class="docutils literal notranslate"><span class="pre">float[]</span></code> and as a direct <code class="docutils literal notranslate"><span class="pre">ByteBuffer</span></code> in native byte order:</p>
+<div class="highlight-java notranslate"><div class="highlight"><pre><span></span><span class="kt">float</span><span class="o">[]</span><span class="w"> </span><span class="n">normalized</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="p">...;</span><span class="w">  </span><span class="c1">// length == channels * height * width</span>
+<span class="kd">module</span><span class="err">.</span><span class="nc">prefillImages</span><span class="p">(</span><span class="n">normalized</span><span class="p">,</span><span class="w"> </span><span class="mi">336</span><span class="p">,</span><span class="w"> </span><span class="mi">336</span><span class="p">,</span><span class="w"> </span><span class="mi">3</span><span class="p">);</span>
+
+<span class="n">ByteBuffer</span><span class="w"> </span><span class="n">floatBuffer</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">ByteBuffer</span>
+<span class="w">    </span><span class="p">.</span><span class="na">allocateDirect</span><span class="p">(</span><span class="mi">3</span><span class="w"> </span><span class="o">*</span><span class="w"> </span><span class="mi">336</span><span class="w"> </span><span class="o">*</span><span class="w"> </span><span class="mi">336</span><span class="w"> </span><span class="o">*</span><span class="w"> </span><span class="n">Float</span><span class="p">.</span><span class="na">BYTES</span><span class="p">)</span>
+<span class="w">    </span><span class="p">.</span><span class="na">order</span><span class="p">(</span><span class="n">ByteOrder</span><span class="p">.</span><span class="na">nativeOrder</span><span class="p">());</span>
+<span class="c1">// fill floatBuffer with normalized values, then:</span>
+<span class="kd">module</span><span class="err">.</span><span class="nc">prefillNormalizedImage</span><span class="p">(</span><span class="n">floatBuffer</span><span class="p">,</span><span class="w"> </span><span class="mi">336</span><span class="p">,</span><span class="w"> </span><span class="mi">336</span><span class="p">,</span><span class="w"> </span><span class="mi">3</span><span class="p">);</span>
+</pre></div>
+</div>
+</section>
+<section id="audio">
+<h4>Audio<a class="headerlink" href="#audio" title="Link to this heading">#</a></h4>
+<p>Preprocessed audio features (for example mel spectrograms produced by a Whisper preprocessor) can be supplied as <code class="docutils literal notranslate"><span class="pre">byte[]</span></code> or <code class="docutils literal notranslate"><span class="pre">float[]</span></code>:</p>
+<div class="highlight-java notranslate"><div class="highlight"><pre><span></span><span class="kd">module</span><span class="err">.</span><span class="nc">prefillAudio</span><span class="p">(</span><span class="n">features</span><span class="p">,</span><span class="w"> </span><span class="cm">/*batchSize=*/</span><span class="mi">1</span><span class="p">,</span><span class="w"> </span><span class="cm">/*nBins=*/</span><span class="mi">128</span><span class="p">,</span><span class="w"> </span><span class="cm">/*nFrames=*/</span><span class="mi">3000</span><span class="p">);</span>
+</pre></div>
+</div>
+<p>Raw audio samples can be supplied with <code class="docutils literal notranslate"><span class="pre">prefillRawAudio</span></code>:</p>
+<div class="highlight-java notranslate"><div class="highlight"><pre><span></span><span class="kd">module</span><span class="err">.</span><span class="nc">prefillRawAudio</span><span class="p">(</span><span class="n">samples</span><span class="p">,</span><span class="w"> </span><span class="cm">/*batchSize=*/</span><span class="mi">1</span><span class="p">,</span><span class="w"> </span><span class="cm">/*nChannels=*/</span><span class="mi">1</span><span class="p">,</span><span class="w"> </span><span class="cm">/*nSamples=*/</span><span class="mi">16000</span><span class="p">);</span>
+</pre></div>
+</div>
+</section>
+<section id="generating-with-multimodal-prefill">
+<h4>Generating with Multimodal Prefill<a class="headerlink" href="#generating-with-multimodal-prefill" title="Link to this heading">#</a></h4>
+<p>After prefilling each modality, run <code class="docutils literal notranslate"><span class="pre">generate()</span></code> with the text prompt as usual:</p>
+<div class="highlight-java notranslate"><div class="highlight"><pre><span></span><span class="kd">module</span><span class="err">.</span><span class="nc">prefillImages</span><span class="p">(</span><span class="n">pixels</span><span class="p">,</span><span class="w"> </span><span class="mi">336</span><span class="p">,</span><span class="w"> </span><span class="mi">336</span><span class="p">,</span><span class="w"> </span><span class="mi">3</span><span class="p">);</span>
+<span class="kd">module</span><span class="err">.</span><span class="nc">generate</span><span class="p">(</span><span class="s">&quot;What&#39;s in this image?&quot;</span><span class="p">,</span><span class="w"> </span><span class="n">callback</span><span class="p">);</span>
+</pre></div>
+</div>
+<p>For text-vision models, a convenience overload accepts the image and prompt together:</p>
+<div class="highlight-java notranslate"><div class="highlight"><pre><span></span><span class="kd">module</span><span class="err">.</span><span class="nc">generate</span><span class="p">(</span>
+<span class="w">    </span><span class="n">pixels</span><span class="p">,</span><span class="w"> </span><span class="cm">/*width=*/</span><span class="mi">336</span><span class="p">,</span><span class="w"> </span><span class="cm">/*height=*/</span><span class="mi">336</span><span class="p">,</span><span class="w"> </span><span class="cm">/*channels=*/</span><span class="mi">3</span><span class="p">,</span>
+<span class="w">    </span><span class="s">&quot;What&#39;s in this image?&quot;</span><span class="p">,</span>
+<span class="w">    </span><span class="cm">/*seqLen=*/</span><span class="mi">768</span><span class="p">,</span>
+<span class="w">    </span><span class="n">callback</span><span class="p">,</span>
+<span class="w">    </span><span class="cm">/*echo=*/</span><span class="kc">false</span><span class="p">);</span>
+</pre></div>
+</div>
+</section>
+</section>
+</section>
+<section id="demo">
+<h2>Demo<a class="headerlink" href="#demo" title="Link to this heading">#</a></h2>
+<p>See the <a class="reference external" href="https://github.com/meta-pytorch/executorch-examples/tree/main/llm/android/LlamaDemo">Llama Android demo app</a> in <code class="docutils literal notranslate"><span class="pre">executorch-examples</span></code> for an end-to-end project that wires <code class="docutils literal notranslate"><span class="pre">LlmModule</span></code>, <code class="docutils literal notranslate"><span class="pre">LlmCallback</span></code>, and a <code class="docutils literal notranslate"><span class="pre">HandlerThread</span></code> into a chat UI.</p>
 </section>
 </section>
 
@@ -1985,20 +2131,20 @@ document.write(`
 
 <div class="prev-next-area">
     <a class="left-prev"
-       href="index.html"
+       href="build-run-llama3-qualcomm-ai-engine-direct-backend.html"
        title="previous page">
       <i class="fa-solid fa-angle-left"></i>
       <div class="prev-next-info">
         <p class="prev-next-subtitle">previous</p>
-        <p class="prev-next-title">Welcome to the ExecuTorch Documentation</p>
+        <p class="prev-next-title">Run Llama 3 3B Instruct on Android (with Qualcomm AI Engine Direct Backend)</p>
       </div>
     </a>
     <a class="right-next"
-       href="intro-overview.html"
+       href="run-on-ios.html"
        title="next page">
       <div class="prev-next-info">
         <p class="prev-next-subtitle">next</p>
-        <p class="prev-next-title">ExecuTorch Overview</p>
+        <p class="prev-next-title">Running LLMs on iOS</p>
       </div>
       <i class="fa-solid fa-angle-right"></i>
     </a>
@@ -2024,20 +2170,20 @@ document.write(`
                   
 <div class="prev-next-area">
     <a class="left-prev"
-       href="index.html"
+       href="build-run-llama3-qualcomm-ai-engine-direct-backend.html"
        title="previous page">
       <i class="fa-solid fa-angle-left"></i>
       <div class="prev-next-info">
         <p class="prev-next-subtitle">previous</p>
-        <p class="prev-next-title">Welcome to the ExecuTorch Documentation</p>
+        <p class="prev-next-title">Run Llama 3 3B Instruct on Android (with Qualcomm AI Engine Direct Backend)</p>
       </div>
     </a>
     <a class="right-next"
-       href="intro-overview.html"
+       href="run-on-ios.html"
        title="next page">
       <div class="prev-next-info">
         <p class="prev-next-subtitle">next</p>
-        <p class="prev-next-title">ExecuTorch Overview</p>
+        <p class="prev-next-title">Running LLMs on iOS</p>
       </div>
       <i class="fa-solid fa-angle-right"></i>
     </a>
@@ -2059,8 +2205,26 @@ document.write(`
   </div>
   <nav class="bd-toc-nav page-toc" aria-labelledby="pst-page-navigation-heading-2">
     <ul class="visible nav section-nav flex-column">
-<li class="toc-h2 nav-item toc-entry"><a class="reference internal nav-link" href="#new-to-executorch-start-here">New to ExecuTorch? Start Here</a></li>
-<li class="toc-h2 nav-item toc-entry"><a class="reference internal nav-link" href="#getting-started-with-executorch">Getting Started with ExecuTorch</a></li>
+<li class="toc-h2 nav-item toc-entry"><a class="reference internal nav-link" href="#prerequisites">Prerequisites</a></li>
+<li class="toc-h2 nav-item toc-entry"><a class="reference internal nav-link" href="#runtime-api">Runtime API</a><ul class="visible nav section-nav flex-column">
+<li class="toc-h3 nav-item toc-entry"><a class="reference internal nav-link" href="#importing">Importing</a></li>
+<li class="toc-h3 nav-item toc-entry"><a class="reference internal nav-link" href="#llmmodule">LlmModule</a><ul class="nav section-nav flex-column">
+<li class="toc-h4 nav-item toc-entry"><a class="reference internal nav-link" href="#initialization">Initialization</a></li>
+<li class="toc-h4 nav-item toc-entry"><a class="reference internal nav-link" href="#loading">Loading</a></li>
+<li class="toc-h4 nav-item toc-entry"><a class="reference internal nav-link" href="#generating">Generating</a></li>
+<li class="toc-h4 nav-item toc-entry"><a class="reference internal nav-link" href="#stopping-generation">Stopping Generation</a></li>
+<li class="toc-h4 nav-item toc-entry"><a class="reference internal nav-link" href="#resetting">Resetting</a></li>
+</ul>
+</li>
+<li class="toc-h3 nav-item toc-entry"><a class="reference internal nav-link" href="#multimodal-inputs">Multimodal Inputs</a><ul class="nav section-nav flex-column">
+<li class="toc-h4 nav-item toc-entry"><a class="reference internal nav-link" href="#images">Images</a></li>
+<li class="toc-h4 nav-item toc-entry"><a class="reference internal nav-link" href="#audio">Audio</a></li>
+<li class="toc-h4 nav-item toc-entry"><a class="reference internal nav-link" href="#generating-with-multimodal-prefill">Generating with Multimodal Prefill</a></li>
+</ul>
+</li>
+</ul>
+</li>
+<li class="toc-h2 nav-item toc-entry"><a class="reference internal nav-link" href="#demo">Demo</a></li>
 </ul>
   </nav></div>
     
@@ -2068,7 +2232,7 @@ document.write(`
 
   
   <div class="tocsection editthispage">
-    <a href="https://github.com/pytorch/executorch/edit/main/docs/source/intro-section.md">
+    <a href="https://github.com/pytorch/executorch/edit/main/docs/source/llm/run-on-android.md">
       <i class="fa-solid fa-pencil"></i>
       
       
@@ -2082,7 +2246,7 @@ document.write(`
     
        <div class="sidebar-secondary-item">
     <div class="tocsection sourcelink">
-      <a href="_sources/intro-section.md.txt">
+      <a href="../_sources/llm/run-on-android.md.txt">
         <i class="fa-solid fa-file-lines"></i> Show Source
       </a>
     </div>
@@ -2106,8 +2270,8 @@ document.write(`
   </div>
   
   <!-- Scripts loaded after <body> so the DOM is not blocked -->
-  <script src="_static/scripts/bootstrap.js?digest=dfe6caa3a7d634c4db9b"></script>
-<script src="_static/scripts/pydata-sphinx-theme.js?digest=dfe6caa3a7d634c4db9b"></script>
+  <script src="../_static/scripts/bootstrap.js?digest=dfe6caa3a7d634c4db9b"></script>
+<script src="../_static/scripts/pydata-sphinx-theme.js?digest=dfe6caa3a7d634c4db9b"></script>
 
   
 
@@ -2235,7 +2399,7 @@ document.write(`
 <div class="cookie-banner-wrapper">
   <div class="container">
     <p class="gdpr-notice">To analyze traffic and optimize your experience, we serve cookies on this site. By clicking or navigating, you agree to allow our usage of cookies. As the current maintainers of this site, Facebook’s Cookies Policy applies. Learn more, including about available controls: <a href="https://www.facebook.com/policies/cookies/">Cookies Policy</a>.</p>
-    <img class="close-button" src="_static/img/pytorch-x.svg">
+    <img class="close-button" src="../_static/img/pytorch-x.svg">
   </div>
 </div>
   
@@ -2282,11 +2446,11 @@ document.write(`
     {
        "@context": "https://schema.org",
        "@type": "Article",
-       "name": "Intro",
-       "headline": "Intro",
+       "name": "Running LLMs on Android",
+       "headline": "Running LLMs on Android",
        "description": "PyTorch Documentation. Explore PyTorch, an open-source machine learning library that accelerates the path from research prototyping to production deployment.",
-       "url": "/intro-section.html",
-       "articleBody": "Intro# Overview, architecture, and core concepts of ExecuTorch. ExecuTorch is PyTorch\u2019s solution for training and inference on the Edge, providing portability, productivity, and performance for edge computing platforms. New to ExecuTorch? Start Here# \ud83d\udfe2 Beginner Pathway A structured, step-by-step learning sequence for engineers new to on-device deployment. Covers concepts, setup, export, and your first device deployment. Beginner Pathway \ud83d\udd00 Decision Matrix Route yourself to the right documentation based on your experience level, target platform, model status, and developer role. Find Your Path Getting Started with ExecuTorch# New to ExecuTorch? Start with these foundational topics: ExecuTorch Overview \u2014 High-level overview of ExecuTorch capabilities How ExecuTorch Works \u2014 Technical overview of the ExecuTorch workflow Architecture and Components \u2014 System architecture and components Concepts \u2014 Core concepts and terminology",
+       "url": "/llm/run-on-android.html",
+       "articleBody": "Running LLMs on Android# ExecuTorch\u2019s LLM-specific runtime components provide an experimental Java interface around the core C++ LLM runtime, available through the executorch-android AAR. Prerequisites# Make sure you have a model and tokenizer files ready, as described in the prerequisites section of the Running LLMs with C++ guide. To add the executorch-android library to your app, see Using ExecuTorch on Android. The LLM runner classes are bundled inside the same AAR as the generic Module API. Runtime API# Once the executorch-android AAR is on your classpath, you can import the LLM runner classes from the org.pytorch.executorch.extension.llm package. Importing# import org.pytorch.executorch.extension.llm.LlmModule; import org.pytorch.executorch.extension.llm.LlmModuleConfig; import org.pytorch.executorch.extension.llm.LlmGenerationConfig; import org.pytorch.executorch.extension.llm.LlmCallback; LlmModule# The LlmModule class provides a simple Java interface for loading a text-generation model, configuring its tokenizer, generating token streams, and stopping execution. It also supports multimodal models that accept image and audio inputs alongside a text prompt. This API is experimental and subject to change. Initialization# Create an LlmModule by specifying paths to your serialized model (.pte) and tokenizer files. For text-only models, the simple constructor is enough: LlmModule module = new LlmModule( \"/data/local/tmp/llama-3.2-instruct.pte\", \"/data/local/tmp/tokenizer.model\", 0.8f); For finer control (multimodal model type, BOS/EOS handling, supplementary data files, load mode), use LlmModuleConfig with the fluent builder: LlmModuleConfig config = LlmModuleConfig.create() .modulePath(\"/data/local/tmp/llama-3.2-instruct.pte\") .tokenizerPath(\"/data/local/tmp/tokenizer.model\") .temperature(0.8f) .modelType(LlmModuleConfig.MODEL_TYPE_TEXT) .loadMode(LlmModuleConfig.LOAD_MODE_MMAP) .build(); LlmModule module = new LlmModule(config); Available load modes are LOAD_MODE_FILE, LOAD_MODE_MMAP (default), LOAD_MODE_MMAP_USE_MLOCK, and LOAD_MODE_MMAP_USE_MLOCK_IGNORE_ERRORS. Available model types are MODEL_TYPE_TEXT, MODEL_TYPE_TEXT_VISION, and MODEL_TYPE_MULTIMODAL. Construction itself is lightweight and does not load the program data immediately. Loading# Explicitly load the model before generation to avoid paying the load cost during your first generate call. int status = module.load(); if (status != 0) { // Handle load failure (status is an ExecuTorch runtime error code). } If you skip this step, the model is loaded lazily on the first generate call. Generating# Generate tokens from a text prompt by passing an LlmCallback that receives each token as it is produced. The same callback also receives a JSON-encoded statistics string when generation completes. LlmCallback callback = new LlmCallback() { @Override public void onResult(String token) { // Called once per generated token. Append to your UI buffer here. System.out.print(token); } @Override public void onStats(String statsJson) { // Called once when generation finishes. See extension/llm/runner/stats.h // for the field definitions. System.out.println(\"\\n\" + statsJson); } @Override public void onError(int errorCode, String message) { // Called if the runtime reports an error during generation. } }; module.generate(\"Once upon a time\", callback); For full control over generation parameters, use LlmGenerationConfig: LlmGenerationConfig genConfig = LlmGenerationConfig.create() .seqLen(2048) .temperature(0.8f) .echo(false) .build(); module.generate(\"Once upon a time\", genConfig, callback); LlmGenerationConfig exposes echo, maxNewTokens, seqLen, temperature, numBos, numEos, and warming. Defaults match the C++ GenerationConfig documented in Running LLMs with C++. Stopping Generation# If you need to interrupt a long-running generation, call stop() from another thread (or from inside the onResult callback): module.stop(); Generation also runs synchronously on the calling thread, so make sure you invoke generate() off the main thread (for example, on a HandlerThread or via a java.util.concurrent.Executor). Resetting# To clear the prefilled tokens from the KV cache and reset the start position to 0, call: module.resetContext(); This is the equivalent of reset() on the iOS runner and reset() on the C++ IRunner. Multimodal Inputs# For models declared as MODEL_TYPE_TEXT_VISION or MODEL_TYPE_MULTIMODAL, image and audio data are provided through dedicated prefill methods. After prefilling all modalities, call generate() with the text prompt to produce the response. Images# Raw uint8 pixel data in CHW order can be supplied as an int[], or as a direct ByteBuffer to avoid JNI array copies: // As int[] int[] pixels = ...; // length == channels * height * width module.prefillImages(pixels, /*width=*/336, /*height=*/336, /*channels=*/3); // As direct ByteBuffer (preferred for large images) ByteBuffer buffer = ByteBuffer.allocateDirect(3 * 336 * 336); buffer.put(rawBytes).rewind(); module.prefillImages(buffer, 336, 336, 3); Pre-normalized float pixel data is also supported, both as a float[] and as a direct ByteBuffer in native byte order: float[] normalized = ...; // length == channels * height * width module.prefillImages(normalized, 336, 336, 3); ByteBuffer floatBuffer = ByteBuffer .allocateDirect(3 * 336 * 336 * Float.BYTES) .order(ByteOrder.nativeOrder()); // fill floatBuffer with normalized values, then: module.prefillNormalizedImage(floatBuffer, 336, 336, 3); Audio# Preprocessed audio features (for example mel spectrograms produced by a Whisper preprocessor) can be supplied as byte[] or float[]: module.prefillAudio(features, /*batchSize=*/1, /*nBins=*/128, /*nFrames=*/3000); Raw audio samples can be supplied with prefillRawAudio: module.prefillRawAudio(samples, /*batchSize=*/1, /*nChannels=*/1, /*nSamples=*/16000); Generating with Multimodal Prefill# After prefilling each modality, run generate() with the text prompt as usual: module.prefillImages(pixels, 336, 336, 3); module.generate(\"What\u0027s in this image?\", callback); For text-vision models, a convenience overload accepts the image and prompt together: module.generate( pixels, /*width=*/336, /*height=*/336, /*channels=*/3, \"What\u0027s in this image?\", /*seqLen=*/768, callback, /*echo=*/false); Demo# See the Llama Android demo app in executorch-examples for an end-to-end project that wires LlmModule, LlmCallback, and a HandlerThread into a chat UI.",
        "author": {
          "@type": "Organization",
          "name": "PyTorch Contributors",
@@ -2295,7 +2459,7 @@ document.write(`
        "image": "https://pytorch.org/docs/stable/_static/img/pytorch_seo.png",
        "mainEntityOfPage": {
          "@type": "WebPage",
-         "@id": "/intro-section.html"
+         "@id": "/llm/run-on-android.html"
        },
        "datePublished": "2023-01-01T00:00:00Z",
        "dateModified": "2023-01-01T00:00:00Z"
