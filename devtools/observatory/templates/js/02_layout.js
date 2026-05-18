@@ -216,13 +216,34 @@
     return html;
   }
 
-  function renderIndexFlat(records) {
-    let html = `
-      <li class="index-item ${state.activeRecordIndex === -1 ? 'active' : ''}" onclick="selectRecord(-1)">
-        <span>📊 Run Dashboard</span>
+  function _isActiveSession(sessionId) {
+    const a = state.activeRecordIndex;
+    if (a && typeof a === 'object' && a.sessionDashboard === sessionId) return true;
+    // Sentinel: -1 means "first session" (the default landing).
+    if (a === -1) {
+      const first = (state.data.sessions || [])[0];
+      return Boolean(first && first.id === sessionId);
+    }
+    return false;
+  }
+
+  function _renderSessionDashboardLink(session) {
+    const active = _isActiveSession(session.id) ? 'active' : '';
+    const label = session.name || session.id || '(unnamed session)';
+    return `
+      <li class="index-item session-dashboard-link ${active}"
+          onclick="selectSession('${escapeHtml(session.id)}')">
+        <span>📊 Session Dashboard: ${escapeHtml(label)}</span>
       </li>
     `;
-    records.forEach((rec, idx) => {
+  }
+
+  function renderIndexFlat(records, sessionFilter) {
+    let html = '';
+    const filtered = sessionFilter
+      ? records.map((r, i) => ({rec: r, idx: i})).filter(x => x.rec.session_id === sessionFilter)
+      : records.map((r, i) => ({rec: r, idx: i}));
+    filtered.forEach(({rec, idx}) => {
       html += renderRecordItem(rec, idx, false);
     });
     return html;
@@ -235,12 +256,8 @@
   // adjacent records is suppressed in tree view (renderRecordItem
   // receives treeMode=true) since adjacent records in the records[]
   // array may not be visually adjacent under the tree.
-  function renderIndexTree(records) {
-    let html = `
-      <li class="index-item ${state.activeRecordIndex === -1 ? 'active' : ''}" onclick="selectRecord(-1)">
-        <span>📊 Run Dashboard</span>
-      </li>
-    `;
+  function renderIndexTree(records, sessionFilter) {
+    let html = '';
 
     // Walk records preserving order. Track open region path; when the
     // next record's region_stack differs, close the differing tail and
@@ -267,6 +284,7 @@
     }
 
     records.forEach((rec, idx) => {
+      if (sessionFilter && rec.session_id !== sessionFilter) return;
       const stack = Array.isArray(rec.region_stack) ? rec.region_stack : [];
 
       // Compute longest matching prefix between openPath and stack.
@@ -283,16 +301,12 @@
       // Open the new tail.
       for (let i = common; i < stack.length; i++) {
         openPath.push(stack[i]);
-        const fullKey = openPath.join('/');
+        // Scope collapsed-region keys by session so two sessions with
+        // identical region names keep independent open/closed state.
+        const fullKey = (sessionFilter ? sessionFilter + '::' : '') + openPath.join('/');
         openRegion(stack[i], fullKey);
       }
 
-      // If any region in the current open path is collapsed, the record
-      // is hidden; we still emit it so the count and indices line up,
-      // but the parent <ul style="display:none"> hides it visually.
-      // Selection-mode checkboxes still render correctly (they live
-      // inside the per-record <li> and the <ul> visibility hides them
-      // alongside the record).
       html += renderRecordItem(rec, idx, true);
     });
 
@@ -305,9 +319,23 @@
     if (!list) return;
 
     const records = state.data.records || [];
+    const sessions = state.data.sessions || [];
     const useTree = treeView && records.some((r) => Array.isArray(r.region_stack) && r.region_stack.length > 0);
 
-    list.innerHTML = useTree ? renderIndexTree(records) : renderIndexFlat(records);
+    if (sessions.length === 0) {
+      // Defensive fallback: payloads without a sessions list (very old
+      // archives) render as a single ungrouped list.
+      list.innerHTML = useTree ? renderIndexTree(records) : renderIndexFlat(records);
+      updateIndexHeader();
+      return;
+    }
+
+    let html = '';
+    sessions.forEach((session) => {
+      html += _renderSessionDashboardLink(session);
+      html += useTree ? renderIndexTree(records, session.id) : renderIndexFlat(records, session.id);
+    });
+    list.innerHTML = html;
     updateIndexHeader();
   }
 

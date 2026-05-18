@@ -96,11 +96,22 @@
     renderMain();
   }
 
+  function selectSession(sessionId) {
+    if (state.selectionMode) {
+      state.selectionMode = false;
+      state.selectedIndices.clear();
+    }
+    state.activeRecordIndex = { sessionDashboard: sessionId };
+    renderIndex();
+    renderMain();
+  }
+
   OBS.actions = {
     setTheme,
     toggleTheme,
     showCompareView,
     selectRecord,
+    selectSession,
     toggleSelectionMode,
     toggleSelectAll,
     toggleSelect,
@@ -110,6 +121,7 @@
   window.toggleTheme = toggleTheme;
   window.showCompareView = showCompareView;
   window.selectRecord = selectRecord;
+  window.selectSession = selectSession;
   window.toggleSelectionMode = toggleSelectionMode;
   window.toggleSelectAll = toggleSelectAll;
   window.toggleSelect = toggleSelect;

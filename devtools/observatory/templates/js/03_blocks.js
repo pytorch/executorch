@@ -250,24 +250,53 @@
     container.appendChild(section);
   }
 
-  function renderDashboard(container) {
-    container.innerHTML = '<h2>Run Dashboard</h2>';
+  function _formatSessionTs(ts) {
+    if (!Number.isFinite(ts)) return '';
+    try {
+      return new Date(ts * 1000).toLocaleString();
+    } catch (_) { return String(ts); }
+  }
+
+  function _formatDuration(start, end) {
+    if (!Number.isFinite(start) || !Number.isFinite(end)) return '';
+    const s = end - start;
+    if (s < 60) return s.toFixed(1) + 's';
+    const m = Math.floor(s / 60);
+    return m + 'm ' + (s - m * 60).toFixed(0) + 's';
+  }
+
+  function renderSessionDashboard(container, sessionId) {
+    const sessions = (state.data.sessions || []);
+    const session = sessions.find((s) => s.id === sessionId)
+      || sessions[0]
+      || { id: '', name: '(no session)', archive: '', start_data: {}, end_data: {} };
+
+    const startStr = _formatSessionTs(session.start_ts);
+    const endStr = _formatSessionTs(session.end_ts);
+    const durStr = _formatDuration(session.start_ts, session.end_ts);
+    const meta = [
+      session.archive ? `Archive: ${escapeHtml(session.archive)}` : '',
+      startStr ? `Started: ${escapeHtml(startStr)}` : '',
+      endStr ? `Ended: ${escapeHtml(endStr)}` : '',
+      durStr ? `Duration: ${escapeHtml(durStr)}` : '',
+    ].filter(Boolean).join(' &middot; ');
+
+    container.innerHTML = `<h2>Session Dashboard: ${escapeHtml(session.name || session.id || '')}</h2>`
+      + (meta ? `<div class="session-meta" style="font-size:12px;color:var(--text-secondary);margin:-6px 0 12px 0;">${meta}</div>` : '');
 
     const dashboard = state.data.dashboard || {};
+    const sessionRecords = (state.data.records || []).filter((r) => r.session_id === session.id);
     let hasContent = false;
 
-    for (const [lensName, viewList] of Object.entries(dashboard)) {
+    for (const [lensName, perSession] of Object.entries(dashboard)) {
+      const viewList = perSession && perSession[session.id];
       const blocks = Array.isArray(viewList && viewList.blocks)
         ? viewList.blocks.slice().sort((a, b) => Number(a.order || 0) - Number(b.order || 0))
         : [];
       if (blocks.length === 0) continue;
 
       const analysis = state.data.analysis_results && state.data.analysis_results[lensName];
-      const context = {
-        start: (state.data.session && state.data.session.start_data && state.data.session.start_data[lensName]) || {},
-        end: (state.data.session && state.data.session.end_data && state.data.session.end_data[lensName]) || {},
-        records: state.data.records || [],
-      };
+      const context = { session: session, records: sessionRecords };
 
       for (const block of blocks) {
         renderRecordBlock(container, lensName, block, context, analysis);
@@ -275,7 +304,7 @@
       }
     }
 
-    if (!hasContent) container.innerHTML += '<p>No dashboard data available.</p>';
+    if (!hasContent) container.innerHTML += '<p>No dashboard data available for this session.</p>';
   }
 
   function renderTableCompare(content, entries) {
@@ -658,11 +687,17 @@
     }
 
     if (state.activeRecordIndex === -1) {
-      renderDashboard(container);
+      // Sentinel: first available session's dashboard.
+      const first = (state.data.sessions || [])[0];
+      renderSessionDashboard(container, first ? first.id : '');
       return;
     }
 
     if (typeof state.activeRecordIndex === 'object' && state.activeRecordIndex !== null) {
+      if (typeof state.activeRecordIndex.sessionDashboard === 'string') {
+        renderSessionDashboard(container, state.activeRecordIndex.sessionDashboard);
+        return;
+      }
       const indices = state.activeRecordIndex.pool
         ? state.activeRecordIndex.pool
         : [state.activeRecordIndex.base, state.activeRecordIndex.new].filter((x) => Number.isInteger(x));
@@ -675,7 +710,7 @@
 
   OBS.render = {
     renderMain,
-    renderDashboard,
+    renderSessionDashboard,
     renderUnifiedView,
     mountGraphViewer,
     warmCompareInstances,

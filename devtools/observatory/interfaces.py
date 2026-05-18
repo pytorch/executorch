@@ -115,9 +115,10 @@ class CustomRecordSpec:
        - Record view path: `{ index, record }`
          - `index`: record index in report payload.
          - `record`: full serialized record object from report payload.
-       - Dashboard path: `{ start, end, records }`
-         - `start`/`end`: lens session payloads.
-         - `records`: full serialized records list.
+       - Dashboard path: `{ session, records }`
+         - `session`: full serialized Session object (id, name, archive,
+           start_ts, end_ts, start_data, end_data).
+         - `records`: records belonging to this session.
     4. `analysis`: `report.analysis_results[lens_name]` object:
        `{ global_data, per_record_data }`.
 
@@ -500,48 +501,34 @@ class Frontend:
 
     def dashboard(
         self,
-        start: Dict[str, Any],
-        end: Dict[str, Any],
-        analysis: Dict[str, Any],
-        records: List[Any],
-        *,
-        session: Optional["Session"] = None,
-        session_records: Optional[List[Any]] = None,
-        all_sessions: Optional[List["Session"]] = None,
-        all_records: Optional[List[Any]] = None,
-        pair_sessions: Optional[Dict[str, Any]] = None,
-        pair_records: Optional[Dict[str, Any]] = None,
+        session: "Session",
+        session_records: List["RecordDigest"],
+        analysis: "AnalysisResult",
     ) -> Optional[ViewList]:
-        """Build dashboard-level block list for one lens.
+        """Build dashboard-level block list for one lens, scoped to one Session.
 
-        Python-side inputs (positional, backward-compatible):
-        1. `start` <- merged `SessionResult.start_data[lens_name]` across all
-           sessions in the archive (last-write-wins on collision).
-        2. `end` <- merged `SessionResult.end_data[lens_name]` (last-write-wins).
-        3. `analysis` <- `AnalysisResult.global_data` (this lens).
-        4. `records` <- collected `RecordDigest` list (full archive).
+        The framework calls ``dashboard`` once per (Session, lens) pair. A
+        report with N sessions and L lenses produces up to N×L dashboard
+        invocations; results are stored as
+        ``payload["dashboard"][lens_name][session.id] = ViewList``.
 
-        Optional session-aware inputs (keyword-only, RFC §4.5):
-        1. `session` <- the active `Session` when this dashboard call is being
-           rendered per-session. ``None`` for archive-level (flat) rendering.
-        2. `session_records` <- subset of `records` whose `session_id` matches
-           ``session.id``.
-        3. `all_sessions` <- full list of `Session` objects in the archive.
-        4. `all_records` <- mirror of `records`; provided for symmetry with
-           `session_records`.
-        5. `pair_sessions` / `pair_records` <- in compare mode, dicts keyed by
-           un-prefixed name mapping to a list of ``(archive_label, Session|
-           RecordDigest)`` pairs. ``None`` outside compare mode.
+        Args:
+            session: The active Session. Read per-lens payloads from
+                ``session.start_data[lens_name]`` and
+                ``session.end_data[lens_name]``.
+            session_records: The subset of records whose ``session_id`` matches
+                ``session.id``.
+            analysis: ``AnalysisResult`` for this lens (archive-scoped).
 
-        Lenses that don't need session awareness can ignore the kw-only args
-        and rely on the original positional ones; the framework calls
-        dashboard once per archive in that case (today's behavior).
+        Returns:
+            ``ViewList`` of dashboard blocks for this session, or ``None`` to
+            render no dashboard for the session.
 
         Render dataflow:
         1. Return `ViewList(blocks=[...])`.
-        2. Blocks are serialized into report payload.
+        2. Blocks are serialized into the report payload under the session id.
         3. For `CustomBlock`, JS callback receives:
-           `fn(container, block.record.args, {start,end,records}, analysis_results[lens_name])`.
+           ``fn(container, block.record.args, {session, records}, analysis_results[lens_name])``.
         """
         return None
 
@@ -630,10 +617,14 @@ class Session:
 
     Fields:
         id: Unique session identifier within an archive. Equals `name` for
-            single-archive runs; prefixed `<archive_label>:<name>` when
-            loaded via `--compare`.
+            single-archive runs; prefixed `<archive_label>/<name>` when
+            loaded via `compare_archives`.
         name: Human-facing label (the outermost region_name, or an
             auto-generated default like "default" / "default-2").
+        archive: Top-level grouping label. ``"default"`` for single-archive
+            collection runs; the ``--label`` value for sessions loaded via
+            `compare_archives`. The HTML report renders one column per
+            distinct archive.
         start_ts: Seconds since epoch when the Session opened.
         end_ts: Seconds since epoch when the Session closed (None while open).
         start_data: Per-lens payload from `on_session_start`, keyed by
@@ -645,6 +636,7 @@ class Session:
     name: str
     start_ts: float
     end_ts: Optional[float] = None
+    archive: str = "default"
     start_data: Dict[str, Serializable] = field(default_factory=dict)
     end_data: Dict[str, Serializable] = field(default_factory=dict)
 
@@ -653,16 +645,12 @@ class Session:
 class SessionResult:
     """Aggregate of all Sessions in an Archive.
 
-    Wraps an ordered list of `Session` instances plus the legacy flat
-    `start_data`/`end_data` views. The flat views are unions across all
-    sessions (last-write-wins on collision) and exist for transitional
-    compatibility with code paths that have not yet migrated to the
-    per-Session model.
+    A simple ordered list of `Session` instances. Per-session lens payloads
+    live on each `Session.start_data` / `Session.end_data`; there is no
+    flat archive-level mirror.
     """
 
     sessions: List[Session] = field(default_factory=list)
-    start_data: Dict[str, Serializable] = field(default_factory=dict)
-    end_data: Dict[str, Serializable] = field(default_factory=dict)
 
 
 @dataclass

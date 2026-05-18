@@ -325,18 +325,17 @@ class Observatory:
         return f"default-{n}"
 
     @classmethod
-    def _open_session(cls, name: str) -> None:
+    def _open_session(cls, name: str, archive: str = "default") -> None:
         """Open a Session and fire `on_session_start` on every active lens."""
 
         active_config = cls._config_stack[-1] if cls._config_stack else {}
         hook_ctx = ObservationContext(config=active_config)
-        session = Session(id=name, name=name, start_ts=time.time())
+        session = Session(id=name, name=name, archive=archive, start_ts=time.time())
         for lens in cls._lens_registry:
             try:
                 data = lens.on_session_start(hook_ctx)
                 if data:
                     session.start_data[lens.get_name()] = data
-                    cls._session_result.start_data[lens.get_name()] = data
             except Exception as exc:
                 logging.error("[Observatory] Lens %s failed on_session_start: %s", lens, exc)
         cls._sessions[name] = session
@@ -355,7 +354,6 @@ class Observatory:
                 data = lens.on_session_end(hook_ctx)
                 if data:
                     session.end_data[lens.get_name()] = data
-                    cls._session_result.end_data[lens.get_name()] = data
             except Exception as exc:
                 logging.error("[Observatory] Lens %s failed on_session_end: %s", lens, exc)
         session.end_ts = time.time()
@@ -518,8 +516,10 @@ class Observatory:
         for record in serialized_records:
             for view in (record.get("views") or {}).values():
                 _encode_blocks(view.get("blocks") or [])
-        for view in dashboard.values():
-            _encode_blocks(view.get("blocks") or [])
+        # Dashboard is keyed lens -> session_id -> view; iterate one extra level.
+        for per_session in dashboard.values():
+            for view in per_session.values():
+                _encode_blocks(view.get("blocks") or [])
 
     @staticmethod
     def _compress_payload(json_data: str, threshold: int = 8192) -> tuple:
@@ -638,32 +638,31 @@ class Observatory:
 
             serialized_records.append(serialized)
 
-        dashboard_views = {}
-        # Per RFC §4.5 the dashboard hook gains optional session-aware
-        # kw-only args (`session`, `session_records`, `all_sessions`,
-        # `all_records`, `pair_sessions`, `pair_records`). The framework
-        # still calls `dashboard(...)` once per lens per archive (today's
-        # behavior); lenses that want per-session breakouts can read the
-        # new kw-only args and synthesize multiple blocks. In compare
-        # mode the merged session metadata is passed via `all_sessions`.
+        # Per RFC §4.5: dashboard is invoked once per (Session, lens) pair.
+        # Result shape: dashboard[lens_name][session_id] = {"blocks": [...]}.
+        # A report with N sessions and L lenses produces up to N×L calls.
+        # Each lens receives the active Session object plus the records
+        # whose ``session_id`` matches that session.
         sessions_list = list(session.sessions) if session.sessions else []
-        for lens in lens_registry:
-            lens_name = lens.get_name()
-            frontend = lens.get_frontend_spec()
-            dashboard_view = cls._safe_frontend_call(
-                lens_name,
-                frontend.dashboard,
-                session.start_data.get(lens_name, {}),
-                session.end_data.get(lens_name, {}),
-                analysis_results.get(lens_name, AnalysisResult()).global_data,
-                records,
-                session=sessions_list[0] if sessions_list else None,
-                session_records=records,
-                all_sessions=sessions_list,
-                all_records=records,
-            )
-            if dashboard_view:
-                dashboard_views[lens_name] = dashboard_view
+        records_by_session: Dict[str, List[RecordDigest]] = {}
+        for r in records:
+            records_by_session.setdefault(r.session_id, []).append(r)
+
+        dashboard_views: Dict[str, Dict[str, Any]] = {}
+        for s in sessions_list:
+            s_records = records_by_session.get(s.id, [])
+            for lens in lens_registry:
+                lens_name = lens.get_name()
+                frontend = lens.get_frontend_spec()
+                view = cls._safe_frontend_call(
+                    lens_name,
+                    frontend.dashboard,
+                    s,
+                    s_records,
+                    analysis_results.get(lens_name, AnalysisResult()),
+                )
+                if view:
+                    dashboard_views.setdefault(lens_name, {})[s.id] = view
 
         graph_payload = graph_hub.build_payload()
         graph_assets = graph_payload["graph_assets"]
@@ -691,6 +690,22 @@ class Observatory:
                     exc,
                 )
 
+        # Build top-level archive grouping. ``archives`` preserves first-seen
+        # order; for a single-archive run there is exactly one entry.
+        archive_order: List[str] = []
+        archive_to_session_ids: Dict[str, List[str]] = {}
+        for s in sessions_list:
+            archive = s.archive or "default"
+            if archive not in archive_to_session_ids:
+                archive_order.append(archive)
+                archive_to_session_ids[archive] = []
+            archive_to_session_ids[archive].append(s.id)
+
+        archives_payload = [
+            {"label": a, "session_ids": archive_to_session_ids[a]} for a in archive_order
+        ]
+        sessions_payload = [asdict(s) for s in sessions_list]
+
         payload = {
             "resources": resources,
             "records": serialized_records,
@@ -705,10 +720,8 @@ class Observatory:
                 }
                 for key, value in analysis_results.items()
             },
-            "session": {
-                "start_data": session.start_data,
-                "end_data": session.end_data,
-            },
+            "archives": archives_payload,
+            "sessions": sessions_payload,
             "graph_assets": graph_assets,
             "graph_layers": graph_layers,
         }
@@ -763,7 +776,7 @@ class Observatory:
 
         data = {
             "records": [asdict(r) for r in cls._records.values()],
-            "session": asdict(cls._session_result),
+            "sessions": [asdict(s) for s in cls._session_result.sessions],
         }
 
         os.makedirs(os.path.dirname(output_path) or ".", exist_ok=True)
@@ -771,6 +784,33 @@ class Observatory:
             json.dump(data, f, indent=2, cls=_NonFiniteFloatAsStringJSONEncoder)
 
         logging.info("[Observatory] Exported raw data to %s", output_path)
+
+    @staticmethod
+    def _load_archive_sessions(data: Dict[str, Any], default_archive: str = "default") -> SessionResult:
+        """Load Session objects from archive JSON, with forward-compat for the
+        legacy ``session: {sessions, start_data, end_data}`` shape.
+
+        New shape: ``data["sessions"]`` is a flat list of Session dicts (each
+        carrying ``archive`` plus per-session ``start_data``/``end_data``).
+
+        Legacy shape: ``data["session"]`` carried the inner ``sessions`` list
+        plus the now-removed flat dicts. Old archives are read by lifting
+        ``data["session"]["sessions"]`` and synthesizing ``archive`` from
+        ``default_archive``.
+        """
+        result = SessionResult()
+        sessions_raw = data.get("sessions")
+        if sessions_raw is None:
+            legacy = data.get("session") or {}
+            sessions_raw = legacy.get("sessions") or []
+        for s in sessions_raw or []:
+            sd = dict(s)
+            sd.setdefault("archive", default_archive)
+            # Drop any unknown fields the old format may have carried.
+            allowed = {"id", "name", "archive", "start_ts", "end_ts", "start_data", "end_data"}
+            sd = {k: v for k, v in sd.items() if k in allowed}
+            result.sessions.append(Session(**sd))
+        return result
 
     @staticmethod
     def generate_html_from_json(
@@ -785,7 +825,7 @@ class Observatory:
             data = json.load(f)
 
         records = [RecordDigest(**r) for r in data["records"]]
-        session = SessionResult(**data["session"])
+        session = Observatory._load_archive_sessions(data)
 
         Observatory._ensure_default_lenses()
         digest_lens_names: Set[str] = set()
@@ -835,19 +875,21 @@ class Observatory:
     ) -> None:
         """Render an HTML report that overlays multiple archives side-by-side.
 
-        Each archive's records and sessions are loaded and prefixed with the
-        provided `labels[i]` so the combined report carries top-level Region
-        groups like ``XNNPACK/mv2`` / ``Qualcomm/mobilenet_v2`` (cf. RFC §4.5).
-        Record `name` is prefixed only in the JSON storage layer for
-        uniqueness; the HTML left panel renders display names without the
-        prefix when in tree view (the prefix only appears as the section
-        title above each archive's sessions).
+        Each archive contributes one or more Sessions; the ``label`` becomes
+        the ``archive`` field on every Session loaded from that archive. The
+        HTML report renders one column per distinct archive, with each
+        column listing its sessions and their records.
+
+        Record names and session ids are prefixed with ``<label>/`` for
+        cross-archive uniqueness; ``region_stack`` is preserved as-is
+        (archive grouping lives one level above region trees in the
+        rendered UI, not duplicated inside them).
 
         Args:
-            archive_paths: List of Archive (JSON) file paths to overlay.
-            labels: One label per archive; each is prepended to record
-                names, ``session_id``, and ``region_stack`` entries.
-                Must have the same length as ``archive_paths``.
+            archive_paths: Archive (JSON) file paths to overlay.
+            labels: One label per archive; becomes ``Session.archive``
+                and is also used as the prefix for record names and
+                session ids. Must align 1:1 with ``archive_paths``.
             html_path: Destination Report (HTML) path.
             title: HTML page title.
             config: Optional analysis config passed to lenses.
@@ -872,14 +914,11 @@ class Observatory:
                 data = json.load(f)
 
             for raw in data["records"]:
-                # Prefix the record name + session_id with the archive label
-                # so identically-named pipeline records (e.g. "Annotated Model")
-                # don't collide across archives.
                 rec = RecordDigest(**raw)
                 prefixed_name = f"{label}/{rec.name}"
-                # Tolerate name collisions across archives by adding
-                # an integer suffix (matches the deduplication scheme
-                # used at collect-time).
+                # Tolerate name collisions across archives by adding an
+                # integer suffix (matches the deduplication scheme used
+                # at collect-time).
                 if prefixed_name in seen_record_names:
                     n = 2
                     while f"{prefixed_name} #{n}" in seen_record_names:
@@ -891,35 +930,27 @@ class Observatory:
                 rec.session_id = (
                     f"{label}/{rec.session_id}" if rec.session_id else label
                 )
-                # Make the archive label the new outermost Region so the
-                # tree view shows one collapsible group per archive.
-                rec.region_stack = [label] + list(rec.region_stack or [])
                 # The graph lens digest carries a `graph_ref` that the
                 # report-payload assembly expects to equal the record name.
-                # Update it to match the prefixed name.
                 graph_digest = rec.data.get("graph")
                 if isinstance(graph_digest, dict) and "graph_ref" in graph_digest:
                     graph_digest["graph_ref"] = prefixed_name
+                # Per-layer accuracy carries an analogous graph_ref.
+                pla_digest = rec.data.get("per_layer_accuracy")
+                if isinstance(pla_digest, dict) and "graph_ref" in pla_digest:
+                    pla_digest["graph_ref"] = prefixed_name
                 merged_records.append(rec)
 
-            # Merge per-archive Session metadata. Each archive's sessions
-            # are appended with their ids prefixed; the legacy flat
-            # start_data/end_data dicts are also merged on namespaced keys
-            # so existing dashboard frontends keep rendering.
-            session_payload = data.get("session") or {}
-            archive_sessions = session_payload.get("sessions") or []
+            # Each archive's sessions become Session objects with
+            # ``archive=label`` so the renderer groups them in their column.
+            archive_sessions = Observatory._load_archive_sessions(
+                data, default_archive=label
+            ).sessions
             for s in archive_sessions:
-                s_dict = dict(s)
-                original_id = s_dict.get("id") or s_dict.get("name") or label
-                s_dict["id"] = f"{label}/{original_id}"
-                if "name" in s_dict:
-                    s_dict["name"] = f"{label}/{s_dict['name']}"
-                merged_session.sessions.append(Session(**s_dict))
-
-            for lens, payload in (session_payload.get("start_data") or {}).items():
-                merged_session.start_data[f"{label}/{lens}"] = payload
-            for lens, payload in (session_payload.get("end_data") or {}).items():
-                merged_session.end_data[f"{label}/{lens}"] = payload
+                s.archive = label
+                s.id = f"{label}/{s.id}"
+                s.name = f"{label}/{s.name}"
+                merged_session.sessions.append(s)
 
         # Index merged records back into the global state so the existing
         # report-payload pipeline can use them.
@@ -960,9 +991,6 @@ class Observatory:
         )
         payload["title"] = title
         payload["generated_at"] = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-        payload["compare_archives"] = [
-            {"path": p, "label": l} for p, l in zip(archive_paths, labels)
-        ]
 
         from .html_template import get_html_template
 
