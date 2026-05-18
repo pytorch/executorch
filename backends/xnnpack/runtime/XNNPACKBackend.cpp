@@ -110,7 +110,8 @@ class XnnpackBackend final
         executor,
         weights_cache_.get(),
         workspace_ptr,
-        named_data_map);
+        named_data_map,
+        use_weight_cache);
     // This backend does not need its processed data after compiling the model.
     processed->Free();
 
