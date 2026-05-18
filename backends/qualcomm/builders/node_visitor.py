@@ -90,12 +90,14 @@ q_ops = {
     exir_ops.edge.quantized_decomposed.quantize_per_channel.default,
     exir_ops.edge.quantized_decomposed.quantize_per_tensor.default,
     exir_ops.edge.quantized_decomposed.quantize_per_tensor.tensor,
+    exir_ops.edge.quantized_decomposed.quantize_per_channel_group.default,
 }
 
 dq_ops = {
     exir_ops.edge.quantized_decomposed.dequantize_per_tensor.default,
     exir_ops.edge.quantized_decomposed.dequantize_per_tensor.tensor,
     exir_ops.edge.quantized_decomposed.dequantize_per_channel.default,
+    exir_ops.edge.quantized_decomposed.dequantize_per_channel_group.default,
 }
 
 
@@ -307,6 +309,8 @@ class NodeVisitor:
         per_block_encoding = {
             exir_ops.edge.torchao.quantize_affine.default,
             exir_ops.edge.torchao.dequantize_affine.default,
+            exir_ops.edge.quantized_decomposed.quantize_per_channel_group.default,
+            exir_ops.edge.quantized_decomposed.dequantize_per_channel_group.default,
         }
         if quant_attrs[QCOM_ENCODING] in per_block_encoding:
             return self.make_qnn_per_block_config(node, quant_attrs)
