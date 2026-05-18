@@ -43,6 +43,15 @@ class ViewerController {
             highlightGroups: new Map(),
         };
         
+        // Seed the LRU for the initial active set before the first graph
+        // computation.  Without this, labelLru is empty and no labels render
+        // on first paint even when default_layers includes label-bearing exts.
+        initialExtensions.forEach(extId => {
+            if (this.store.extensionHasLabels(extId)) {
+                this.store.recordLabelActivation(extId);
+            }
+        });
+
         // Initial computation of the virtual graph
         this.store.computeActiveGraph(this.state.activeExtensions, this.state.colorBy);
     }
@@ -70,6 +79,7 @@ class ViewerController {
 
     setState(newState, options = {}) {
         const prev = this.snapshotState();
+        const prevActive = new Set(this.state.activeExtensions || []);
 
         const patch = { ...newState };
         if ('theme' in patch && !('themeName' in patch)) {
@@ -80,11 +90,26 @@ class ViewerController {
         }
 
         Object.assign(this.state, patch);
-        
+
         // If graph structure or color changed, we must recompute and update UI
         if ('activeExtensions' in patch || 'colorBy' in patch) {
+            // Sync the label LRU with the new active set: newly-activated
+            // label-bearing extensions get pushed (oldest evicted at cap),
+            // newly-deactivated ones drop out.
+            const nextActive = this.state.activeExtensions;
+            prevActive.forEach((extId) => {
+                if (!nextActive.has(extId)) {
+                    this.store.recordLabelDeactivation(extId);
+                }
+            });
+            nextActive.forEach((extId) => {
+                if (!prevActive.has(extId) && this.store.extensionHasLabels(extId)) {
+                    this.store.recordLabelActivation(extId);
+                }
+            });
+
             this.store.computeActiveGraph(this.state.activeExtensions, this.state.colorBy);
-            
+
             if (this.viewer.minimapRenderer) {
                 this.viewer.minimapRenderer.generateThumbnail();
             }

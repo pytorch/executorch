@@ -135,18 +135,20 @@ class CanvasRenderer {
     detectHover(graphX, graphY) {
         let nearestNode = null;
         let nearestEdge = null;
-        
+
         for (let i = 0; i < this.viewer.store.baseData.nodes.length; i++) {
             const node = this.viewer.store.baseData.nodes[i];
+            const active = this.viewer.store.activeNodeMap.get(node.id) || node;
             const w = node.width;
-            const h = node.height;
+            const h = this._visualHeight(active);
+            const top = node.y - node.height / 2;
             if (graphX >= node.x - w/2 && graphX <= node.x + w/2 &&
-                graphY >= node.y - h/2 && graphY <= node.y + h/2) {
+                graphY >= top && graphY <= top + h) {
                 nearestNode = node.id;
-                break; 
+                break;
             }
         }
-        
+
         if (!nearestNode) {
             const transform = this.viewer.controller.transform;
             const hoverDist = 5 / transform.k;
@@ -160,7 +162,11 @@ class CanvasRenderer {
                 const w = this.viewer.store.activeNodeMap.get(edge.w);
                 let min_d = Infinity;
                 if (edge.points && edge.points.length > 0) {
-                    for (let j = 0; j < edge.points.length - 1; j++) {
+                    const start = this._effectiveSourceStart(edge) || edge.points[0];
+                    const a = start;
+                    const b = edge.points.length > 1 ? edge.points[1] : edge.points[0];
+                    min_d = Math.min(min_d, this.distToSegment({x: graphX, y: graphY}, a, b));
+                    for (let j = 1; j < edge.points.length - 1; j++) {
                         const d = this.distToSegment({x: graphX, y: graphY}, edge.points[j], edge.points[j+1]);
                         min_d = Math.min(min_d, d);
                     }
@@ -183,6 +189,42 @@ class CanvasRenderer {
         let t = ((p.x - v.x) * (w.x - v.x) + (p.y - v.y) * (w.y - v.y)) / l2;
         t = Math.max(0, Math.min(1, t));
         return Math.hypot(p.x - (v.x + t * (w.x - v.x)), p.y - (v.y + t * (w.y - v.y)));
+    }
+
+    /**
+     * Visual height of a node's drawn rect. Sized for the actual count of
+     * label_append entries (LRU-filtered upstream in graph_data_store), but
+     * clamped to never exceed the Python-reserved layout slot (`node.height`).
+     * Floor at one base label line so empty-label nodes still draw a sane rect.
+     */
+    _visualHeight(node) {
+        const layout = this.viewer.store.layoutConstants;
+        const labelLines = (node && node.label_append) ? node.label_append.length : 0;
+        const desired = (1 + labelLines) * layout.line_height + layout.y_padding;
+        const floor = layout.line_height + layout.y_padding;
+        const ceiling = node && node.height ? node.height : desired;
+        return Math.max(floor, Math.min(desired, ceiling));
+    }
+
+    /**
+     * Y-coordinate of the bottom edge of the drawn rect. Top of the rect is
+     * the layout-authoritative `node.y - node.height/2`; bottom floats with
+     * the active label count. Used to re-anchor source-side edge endpoints.
+     */
+    _visualBottom(node) {
+        return node.y - node.height / 2 + this._visualHeight(node);
+    }
+
+    /**
+     * Source-side edge attach point: the polyline's first waypoint with the y
+     * shifted to the source node's current visual bottom. Target-side
+     * endpoint is unchanged (top of next-layer node is fixed).
+     */
+    _effectiveSourceStart(edge) {
+        if (!edge.points || edge.points.length === 0) return null;
+        const source = this.viewer.store.activeNodeMap.get(edge.v);
+        if (!source) return { x: edge.points[0].x, y: edge.points[0].y };
+        return { x: edge.points[0].x, y: this._visualBottom(source) };
     }
 
     render() {
@@ -274,7 +316,8 @@ class CanvasRenderer {
             ctx.beginPath();
             let midX = 0, midY = 0;
             if (edge.points && edge.points.length > 0) {
-                ctx.moveTo(edge.points[0].x, edge.points[0].y);
+                const start = this._effectiveSourceStart(edge) || edge.points[0];
+                ctx.moveTo(start.x, start.y);
                 for (let i = 1; i < edge.points.length; i++) {
                     ctx.lineTo(edge.points[i].x, edge.points[i].y);
                 }
@@ -387,8 +430,11 @@ class CanvasRenderer {
                 ctx.fillStyle = renderedFill;
             }
 
-            ctx.fillRect(node.x - node.width/2, node.y - node.height/2, node.width, node.height);
-            
+            const layout = this.viewer.store.layoutConstants;
+            const visH = this._visualHeight(node);
+            const rectTop = node.y - node.height / 2;
+            ctx.fillRect(node.x - node.width/2, rectTop, node.width, visH);
+
             if (isSelected || isPreview || isHovered) {
                 ctx.strokeStyle = theme.edgeHover;
                 if (isSelected || isPreview) {
@@ -401,10 +447,10 @@ class CanvasRenderer {
                 } else {
                     ctx.setLineDash([]);
                 }
-                ctx.strokeRect(node.x - node.width/2, node.y - node.height/2, node.width, node.height);
+                ctx.strokeRect(node.x - node.width/2, rectTop, node.width, visH);
                 ctx.setLineDash([]);
             }
-            
+
             ctx.fillStyle = node.fill_color
                 ? (fxReadableTextColor(renderedFill) || theme.text)
                 : theme.text;
@@ -412,13 +458,16 @@ class CanvasRenderer {
             if (node.label_append && node.label_append.length > 0) {
                 allLines = allLines.concat(node.label_append);
             }
-            
-            const lineHeight = 16;
-            const startY = node.y - ((allLines.length - 1) * lineHeight) / 2;
-            
+
+            const lineHeight = layout.line_height;
+            // Anchor label rows to the top of the visible rect; previous code
+            // centered around node.y, which drifted off the visible rect once
+            // the rect started shrinking from full layout slot.
+            const startY = rectTop + (layout.y_padding / 2) + lineHeight / 2;
+
             for (let i = 0; i < allLines.length; i++) {
-                if (i === 0) ctx.font = 'bold 14px sans-serif';
-                else ctx.font = '12px sans-serif';
+                if (i === 0) ctx.font = `bold ${layout.base_font_px}px sans-serif`;
+                else ctx.font = `${layout.ext_font_px}px sans-serif`;
                 ctx.fillText(allLines[i], node.x, startY + (i * lineHeight));
             }
 
@@ -441,11 +490,13 @@ class CanvasRenderer {
                 nodeIds.forEach((id) => {
                     const node = this.viewer.store.activeNodeMap.get(id);
                     if (!node) return;
+                    const visH = this._visualHeight(node);
+                    const rectTop = node.y - node.height / 2;
                     ctx.strokeRect(
                         node.x - node.width / 2 - outerOffset,
-                        node.y - node.height / 2 - outerOffset,
+                        rectTop - outerOffset,
                         node.width + outerOffset * 2,
-                        node.height + outerOffset * 2
+                        visH + outerOffset * 2
                     );
                 });
             });
@@ -534,7 +585,7 @@ class CanvasRenderer {
         
         const padding = 8 / transform.k;
         const tw = maxW + padding * 2;
-        const lineHeight = 16 / transform.k;
+        const lineHeight = this.viewer.store.layoutConstants.line_height / transform.k;
         const th = (tooltipLines.length * lineHeight) + padding * 2;
 
         const viewLeft = -transform.x / transform.k;

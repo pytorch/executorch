@@ -206,16 +206,21 @@ class UIManager {
         if (!this.layersMenu) return;
         this.layerCheckboxes.clear();
         this.colorByRadios.clear();
+        this.layerLabelBadges = new Map();
         const radioName = `fx-color-by-${this.viewer.containerId || 'viewer'}`;
 
         let layersHtml = '';
         if (this.controls.layers) {
             layersHtml += `<div style="padding: 5px; font-weight: bold; border-bottom: 1px solid #ccc;">Extensions</div>`;
             for (const [extId, extData] of Object.entries(this.viewer.store.extensions)) {
+                const labelable = !!extData.has_label_formatter;
+                const badge = labelable
+                    ? `<span class="fx-label-badge" data-ext="${fxEsc(extId)}" style="display:none; margin-left:4px; padding:0 4px; font-size:9px; font-weight:600; border:1px solid currentColor; border-radius:3px; opacity:0.7;" title="Label visible on canvas">L</span>`
+                    : '';
                 layersHtml += `
                     <label style="display: block; padding: 5px; cursor: pointer;">
                         <input type="checkbox" class="fx-layer-checkbox" value="${fxEsc(extId)}">
-                        ${fxEsc(extData.name)}
+                        ${fxEsc(extData.name)}${badge}
                     </label>
                 `;
             }
@@ -242,6 +247,9 @@ class UIManager {
         }
 
         this.layersMenu.innerHTML = layersHtml;
+        this.layersMenu.querySelectorAll('.fx-label-badge').forEach(span => {
+            this.layerLabelBadges.set(span.getAttribute('data-ext'), span);
+        });
         this.layersMenu.querySelectorAll('.fx-layer-checkbox').forEach(cb => {
             this.layerCheckboxes.set(cb.value, cb);
             cb.onchange = (e) => {
@@ -270,6 +278,12 @@ class UIManager {
         if (this.layerCheckboxes.size > 0) {
             this.layerCheckboxes.forEach((checkbox, extId) => {
                 checkbox.checked = state.activeExtensions.has(extId);
+            });
+        }
+        if (this.layerLabelBadges && this.layerLabelBadges.size > 0) {
+            const lru = this.viewer.store.labelLru;
+            this.layerLabelBadges.forEach((span, extId) => {
+                span.style.display = lru.has(extId) ? '' : 'none';
             });
         }
         if (this.colorByRadios.size > 0) {

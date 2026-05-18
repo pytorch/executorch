@@ -4,16 +4,61 @@ class GraphDataStore {
         this.baseData = payload.base;
         this.extensions = payload.extensions || {};
 
+        // Layout/font constants. Sourced from payload.layout (Python emits
+        // FXGraphExporter._layout_constants_payload); fall back to historical
+        // hard-coded values if missing so older payloads still render.
+        const fallback = {
+            line_height: 16,
+            y_padding: 20,
+            x_padding: 20,
+            char_width: 7,
+            min_width: 100,
+            base_font_px: 14,
+            ext_font_px: 12,
+            max_label_extensions: 2,
+        };
+        this.layoutConstants = { ...fallback, ...(payload.layout || {}) };
+
+        // LRU queue of extension ids whose label_append currently contributes
+        // to canvas rendering. Cap = layoutConstants.max_label_extensions.
+        // JS Set preserves insertion order; we delete + re-insert to bump,
+        // and shift the oldest out on overflow.
+        this.labelLru = new Set();
+
         // The pre-computed array/map of active Virtual Nodes
         this.activeNodes = [];
         this.activeNodeMap = new Map();
-        
+
         // Structural Topology (never changes when toggling extensions)
         this.adjList = new Map();
         this.revAdjList = new Map();
         this.graphBounds = { minX: Infinity, maxX: -Infinity, minY: Infinity, maxY: -Infinity, width: 0, height: 0 };
-        
+
         this._initTopology();
+    }
+
+    /** True if extension `extId` declares a label formatter on the Python side. */
+    extensionHasLabels(extId) {
+        const ext = this.extensions[extId];
+        return !!(ext && ext.has_label_formatter);
+    }
+
+    /** Move extId to the front of the LRU; evict oldest if over capacity. */
+    recordLabelActivation(extId) {
+        if (!this.extensionHasLabels(extId)) return;
+        if (this.labelLru.has(extId)) {
+            this.labelLru.delete(extId);
+        }
+        this.labelLru.add(extId);
+        const cap = this.layoutConstants.max_label_extensions;
+        while (this.labelLru.size > cap) {
+            const oldest = this.labelLru.values().next().value;
+            this.labelLru.delete(oldest);
+        }
+    }
+
+    recordLabelDeactivation(extId) {
+        this.labelLru.delete(extId);
     }
     
     _initTopology() {
@@ -58,7 +103,7 @@ class GraphDataStore {
             let eMinX = Infinity, eMaxX = -Infinity, eMinY = Infinity, eMaxY = -Infinity;
             const v = this.baseData.nodes.find(n => n.id === edge.v);
             const w = this.baseData.nodes.find(n => n.id === edge.w);
-            
+
             if (edge.points && edge.points.length > 0) {
                 edge.points.forEach(p => {
                     eMinX = Math.min(eMinX, p.x); eMaxX = Math.max(eMaxX, p.x);
@@ -68,8 +113,20 @@ class GraphDataStore {
                 eMinX = Math.min(v.x, w.x); eMaxX = Math.max(v.x, w.x);
                 eMinY = Math.min(v.y, w.y); eMaxY = Math.max(v.y, w.y);
             }
+
+            // _effectiveSourceStart may shift edge.points[0].y upward (smaller
+            // y) to the source node's visual-bottom, which is above the layout-
+            // bottom.  The worst-case delta is source.height - (line_height +
+            // y_padding) when 0 label lines are active.  Widen eMinY to ensure
+            // the hover AABB still covers that substituted region.
+            if (v) {
+                const lc = this.layoutConstants;
+                const slack = Math.max(0, v.height - (lc.line_height + lc.y_padding));
+                eMinY -= slack;
+            }
+
             edge.bounds = { minX: eMinX, maxX: eMaxX, minY: eMinY, maxY: eMaxY };
-            
+
             if (this.adjList.has(edge.v)) this.adjList.get(edge.v).push(edge);
             if (this.revAdjList.has(edge.w)) this.revAdjList.get(edge.w).push(edge);
         });
@@ -104,7 +161,7 @@ class GraphDataStore {
                     }
                 }
                 
-                if (extNode.label_append) {
+                if (extNode.label_append && this.labelLru.has(extId)) {
                     label_append.push(...extNode.label_append);
                 }
                 
@@ -151,6 +208,12 @@ class GraphDataStore {
             nodes: extensionPayload.nodes && typeof extensionPayload.nodes === 'object'
                 ? extensionPayload.nodes
                 : (previous.nodes || {}),
+            sync_keys: Array.isArray(extensionPayload.sync_keys)
+                ? extensionPayload.sync_keys
+                : (previous.sync_keys || []),
+            has_label_formatter: typeof extensionPayload.has_label_formatter === 'boolean'
+                ? extensionPayload.has_label_formatter
+                : !!previous.has_label_formatter,
         };
     }
 

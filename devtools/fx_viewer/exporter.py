@@ -53,11 +53,18 @@ class FXGraphExporter:
     _NODE_X_PADDING = 20
     _NODE_LINE_HEIGHT = 16
     _NODE_Y_PADDING = 20
+    _NODE_BASE_FONT_PX = 14
+    _NODE_EXT_FONT_PX = 12
     _LAYOUT_XSPACE = 50
     _LAYOUT_YSPACE = 30
     _DUMMY_SIZE_X = 100  # dummy nodes (from fast-sugiyama) occupy no real width/height
     _DUMMY_SIZE_Y = 30  # dummy nodes (from fast-sugiyama) occupy no real width/height
     _SPINE_COHESION_ITER = 20
+    # JS canvas LRU enforces the same cap. Layout reserves vertical space for
+    # the two extensions whose label formatters produce the most text per node,
+    # so any active subset of size <= _MAX_LABEL_EXTENSIONS fits without
+    # overlap. The constant is also emitted to the JS via _layout_constants_payload.
+    _MAX_LABEL_EXTENSIONS = 2
 
     def _default_base_label(self, node: GraphNode) -> str:
         target = str(node.info.get("target") or node.info.get("op") or "")
@@ -236,6 +243,55 @@ class FXGraphExporter:
             result,
             context=f"extension '{extension.id}' label formatter(node='{node_id}')",
         )
+
+    @classmethod
+    def _select_top_label_extensions(
+        cls,
+        per_ext_lines: dict[str, list[str]],
+    ) -> list[str]:
+        """Pick label lines from at most ``_MAX_LABEL_EXTENSIONS`` extensions.
+
+        For layout sizing only. Selects the extensions whose label formatter
+        produces the largest text (sum of character lengths across the
+        extension's lines for that node) and concatenates their lines. The JS
+        canvas LRU caps the same number of extensions at run time, so any
+        active subset fits within the reserved bbox.
+        """
+        if not per_ext_lines:
+            return []
+        if len(per_ext_lines) <= cls._MAX_LABEL_EXTENSIONS:
+            flat: list[str] = []
+            for lines in per_ext_lines.values():
+                flat.extend(lines)
+            return flat
+        ranked = sorted(
+            per_ext_lines.values(),
+            key=lambda lns: sum(len(s) for s in lns),
+            reverse=True,
+        )[: cls._MAX_LABEL_EXTENSIONS]
+        flat = []
+        for lines in ranked:
+            flat.extend(lines)
+        return flat
+
+    @classmethod
+    def _layout_constants_payload(cls) -> dict[str, Any]:
+        """Layout/font constants embedded into ``payload.layout`` for the JS runtime.
+
+        Single source of truth for sizing. Any drift between Python build-time
+        layout and JS render-time drawing is eliminated by reading these values
+        on the JS side instead of hard-coding them in the canvas renderer.
+        """
+        return {
+            "line_height": cls._NODE_LINE_HEIGHT,
+            "y_padding": cls._NODE_Y_PADDING,
+            "x_padding": cls._NODE_X_PADDING,
+            "char_width": cls._NODE_CHAR_WIDTH,
+            "min_width": cls._NODE_MIN_WIDTH,
+            "base_font_px": cls._NODE_BASE_FONT_PX,
+            "ext_font_px": cls._NODE_EXT_FONT_PX,
+            "max_label_extensions": cls._MAX_LABEL_EXTENSIONS,
+        }
 
     @classmethod
     def _compute_node_box_size(
@@ -619,10 +675,14 @@ class FXGraphExporter:
     def _compute_layout(self, nodes: dict[str, GraphNode], edges: list[GraphEdge]) -> None:
         ext_label_lines_by_node: dict[str, list[str]] = {}
         for node_id in nodes:
-            ext_lines: list[str] = []
+            per_ext_lines: dict[str, list[str]] = {}
             for ext in self.extensions:
-                ext_lines.extend(self._ext_label_lines_for_layout(ext, node_id))
-            ext_label_lines_by_node[node_id] = ext_lines
+                lines = self._ext_label_lines_for_layout(ext, node_id)
+                if lines:
+                    per_ext_lines[ext.id] = lines
+            ext_label_lines_by_node[node_id] = self._select_top_label_extensions(
+                per_ext_lines
+            )
 
         self._compute_layout_with_ext_lines(
             nodes,
@@ -695,7 +755,9 @@ class FXGraphExporter:
         else:
             active_layer_ids = [layer_id for layer_id in include_layers if layer_id in ext_payloads]
 
-        ext_label_lines_by_node: dict[str, list[str]] = {node_id: [] for node_id in nodes}
+        per_node_per_ext: dict[str, dict[str, list[str]]] = {
+            node_id: {} for node_id in nodes
+        }
         for layer_id in active_layer_ids:
             layer_payload = ext_payloads.get(layer_id)
             if not isinstance(layer_payload, dict):
@@ -704,11 +766,16 @@ class FXGraphExporter:
             if not isinstance(layer_nodes, dict):
                 continue
             for node_id, node_payload in layer_nodes.items():
-                if node_id not in ext_label_lines_by_node or not isinstance(node_payload, dict):
+                if node_id not in per_node_per_ext or not isinstance(node_payload, dict):
                     continue
-                ext_label_lines_by_node[node_id].extend(
-                    cls._coerce_str_lines(node_payload.get("label_append"))
-                )
+                lines = cls._coerce_str_lines(node_payload.get("label_append"))
+                if lines:
+                    per_node_per_ext[node_id][layer_id] = lines
+
+        ext_label_lines_by_node: dict[str, list[str]] = {
+            node_id: cls._select_top_label_extensions(per_ext_lines)
+            for node_id, per_ext_lines in per_node_per_ext.items()
+        }
 
         cls._compute_layout_with_ext_lines(
             nodes,
@@ -769,7 +836,11 @@ class FXGraphExporter:
         self._compute_layout(nodes, edges)
         base_payload = self._build_base_payload(nodes, edges)
         extensions_payload = self._build_extensions_payload()
-        payload = GraphPayload(base=base_payload, extensions=extensions_payload)
+        payload = GraphPayload(
+            base=base_payload,
+            extensions=extensions_payload,
+            layout=self._layout_constants_payload(),
+        )
         return asdict(payload)
 
     def export_json(self, output_path: str):

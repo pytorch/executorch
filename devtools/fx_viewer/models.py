@@ -57,9 +57,11 @@ class GraphExtensionPayload:
     legend: list[dict[str, str]] = field(default_factory=list)
     nodes: dict[str, GraphExtensionNodePayload] = field(default_factory=dict)
     sync_keys: list[str] = field(default_factory=list)
+    has_label_formatter: bool = False
 
 
 @dataclass
 class GraphPayload:
     base: BaseGraphPayload
     extensions: dict[str, GraphExtensionPayload]
+    layout: dict[str, Any] = field(default_factory=dict)

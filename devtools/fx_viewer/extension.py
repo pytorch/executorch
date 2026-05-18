@@ -129,6 +129,7 @@ class GraphExtension:
             legend=legend,
             nodes=compiled_nodes,
             sync_keys=list(self.sync_keys),
+            has_label_formatter=self.label_formatter is not None,
         )
 
     def build(self) -> Dict[str, Any]:
