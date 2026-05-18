@@ -39,9 +39,7 @@ import os
 
 import torch
 import torch.nn as nn
-
 from executorch.examples.models.voxtral_realtime.model import load_model
-
 from executorch.exir import (
     EdgeCompileConfig,
     ExecutorchBackendConfig,
@@ -112,6 +110,7 @@ def _export_decoder_and_embedding(
     qlinear_group_size,
     qlinear_packing_format,
     qembedding,
+    qembedding_group_size,
     device="cpu",
 ):
     """Export text_decoder and token_embedding into programs dict."""
@@ -157,6 +156,7 @@ def _export_decoder_and_embedding(
         quantize_model_(
             tok_emb,
             qembedding_config=qembedding,
+            qembedding_group_size=qembedding_group_size,
         )
 
     tok_seq_dim = Dim("tok_seq_len", min=1, max=max_seq_len)
@@ -174,12 +174,13 @@ def export_all(
     model,
     max_seq_len,
     qlinear_encoder=None,
-    qlinear_encoder_group_size=32,
+    qlinear_encoder_group_size=None,
     qlinear_encoder_packing_format=None,
     qlinear=None,
-    qlinear_group_size=32,
+    qlinear_group_size=None,
     qlinear_packing_format=None,
     qembedding=None,
+    qembedding_group_size=None,
     backend="xnnpack",
 ):
     """Export all three model components with per-component quantization."""
@@ -236,6 +237,7 @@ def export_all(
         qlinear_group_size,
         qlinear_packing_format,
         qembedding,
+        qembedding_group_size,
         device,
     )
 
@@ -259,12 +261,13 @@ def export_streaming(
     max_seq_len,
     max_enc_len=750,
     qlinear_encoder=None,
-    qlinear_encoder_group_size=32,
+    qlinear_encoder_group_size=None,
     qlinear_encoder_packing_format=None,
     qlinear=None,
-    qlinear_group_size=32,
+    qlinear_group_size=None,
     qlinear_packing_format=None,
     qembedding=None,
+    qembedding_group_size=None,
     backend="xnnpack",
 ):
     """Export streaming model components with per-component quantization."""
@@ -317,6 +320,7 @@ def export_streaming(
         qlinear_group_size,
         qlinear_packing_format,
         qembedding,
+        qembedding_group_size,
         device,
     )
 
@@ -375,8 +379,10 @@ def _linear_bias_decomposition(input, weight, bias=None):
     return out
 
 
-def lower_to_executorch(programs, metadata, backend="xnnpack"):
+def lower_to_executorch(programs, metadata, backend="xnnpack", codesign_identity=None):
     """Lower exported programs to ExecuTorch."""
+    transform_passes = None
+
     if backend == "xnnpack":
         from executorch.backends.xnnpack.partition.xnnpack_partitioner import (
             XnnpackDynamicallyQuantizedPartitioner,
@@ -391,6 +397,7 @@ def lower_to_executorch(programs, metadata, backend="xnnpack"):
     elif backend == "metal":
         from executorch.backends.apple.metal.metal_backend import MetalBackend
         from executorch.backends.apple.metal.metal_partitioner import MetalPartitioner
+        from executorch.exir.backend.compile_spec_schema import CompileSpec
 
         print("\nLowering to ExecuTorch with Metal...")
 
@@ -405,6 +412,10 @@ def lower_to_executorch(programs, metadata, backend="xnnpack"):
         partitioner = {}
         for key in programs:
             compile_specs = [MetalBackend.generate_method_name_compile_spec(key)]
+            if codesign_identity:
+                compile_specs.append(
+                    CompileSpec("codesign_identity", codesign_identity.encode("utf-8"))
+                )
             partitioner[key] = [MetalPartitioner(compile_specs)]
     elif backend in ("cuda", "cuda-windows"):
         from executorch.backends.cuda.cuda_backend import CudaBackend
@@ -430,12 +441,20 @@ def lower_to_executorch(programs, metadata, backend="xnnpack"):
             if backend == "cuda-windows":
                 compile_specs.append(CompileSpec("platform", b"windows"))
             partitioner[key] = [CudaPartitioner(compile_specs)]
+    elif backend == "mlx":
+        from executorch.backends.mlx.partitioner import MLXPartitioner
+        from executorch.backends.mlx.passes import get_default_passes
+
+        print("\nLowering to ExecuTorch with MLX...")
+        partitioner = {key: [MLXPartitioner()] for key in programs}
+        transform_passes = get_default_passes()
     else:
         print("\nLowering to ExecuTorch (portable)...")
         partitioner = []
 
     et_prog = to_edge_transform_and_lower(
         programs,
+        transform_passes=transform_passes,
         partitioner=partitioner,
         compile_config=EdgeCompileConfig(
             _check_ir_validity=False,
@@ -470,7 +489,7 @@ def main():
     parser.add_argument(
         "--backend",
         default="xnnpack",
-        choices=["portable", "xnnpack", "metal", "cuda", "cuda-windows"],
+        choices=["portable", "xnnpack", "mlx", "metal", "cuda", "cuda-windows"],
         help="Backend for acceleration (default: xnnpack)",
     )
     parser.add_argument(
@@ -493,13 +512,13 @@ def main():
     parser.add_argument(
         "--qlinear",
         default=None,
-        choices=["4w", "8w", "8da4w", "8da8w", "fpa4w"],
+        choices=["4w", "8w", "8da4w", "8da8w", "fpa4w", "nvfp4"],
         help="Quantize decoder linear layers.",
     )
     parser.add_argument(
         "--qlinear-group-size",
         type=int,
-        default=32,
+        default=None,
         help="Group size for decoder linear quantization (default: 32).",
     )
     parser.add_argument(
@@ -511,13 +530,13 @@ def main():
     parser.add_argument(
         "--qlinear-encoder",
         default=None,
-        choices=["4w", "8w", "8da4w", "8da8w", "fpa4w"],
+        choices=["4w", "8w", "8da4w", "8da8w", "fpa4w", "nvfp4"],
         help="Quantize encoder linear layers (separate from decoder).",
     )
     parser.add_argument(
         "--qlinear-encoder-group-size",
         type=int,
-        default=32,
+        default=None,
         help="Group size for encoder linear quantization (default: 32).",
     )
     parser.add_argument(
@@ -529,8 +548,14 @@ def main():
     parser.add_argument(
         "--qembedding",
         default=None,
-        choices=["8w"],
-        help="Quantize embedding layers (8-bit weight-only).",
+        choices=["4w", "8w", "nvfp4"],
+        help="Quantize embedding layers.",
+    )
+    parser.add_argument(
+        "--qembedding-group-size",
+        type=int,
+        default=None,
+        help="Group size for embedding quantization (default: 0 = per-channel).",
     )
     parser.add_argument(
         "--streaming",
@@ -556,6 +581,13 @@ def main():
         default="fp32",
         choices=["fp32", "bf16"],
         help="Model dtype (default: fp32).",
+    )
+    parser.add_argument(
+        "--codesign-identity",
+        default=None,
+        help="macOS code signing identity for the Metal backend .so. "
+        "Use '-' for ad-hoc or a Developer ID for notarized apps. "
+        "If omitted, the .so is not signed.",
     )
     args = parser.parse_args()
     backend_for_export = "cuda" if args.backend == "cuda-windows" else args.backend
@@ -605,6 +637,7 @@ def main():
         "qlinear_group_size": args.qlinear_group_size,
         "qlinear_packing_format": args.qlinear_packing_format,
         "qembedding": args.qembedding,
+        "qembedding_group_size": args.qembedding_group_size,
         "backend": backend_for_export,
     }
     if args.streaming:
@@ -617,7 +650,12 @@ def main():
     metadata["delay_tokens"] = args.delay_tokens
 
     # Lower
-    et = lower_to_executorch(programs, metadata, backend=args.backend)
+    et = lower_to_executorch(
+        programs,
+        metadata,
+        backend=args.backend,
+        codesign_identity=args.codesign_identity,
+    )
 
     # Save
     pte_path = os.path.join(args.output_dir, "model.pte")

@@ -15,6 +15,8 @@ from executorch.backends.cadence.aot.pass_utils import get_arg
 from executorch.backends.cadence.aot.quantizer.patterns import (
     AddmmPattern,
     AddPattern,
+    AddReluPattern0,
+    AddReluPattern1,
     BmmPattern,
     CatPattern,
     Conv1dPattern,
@@ -42,6 +44,7 @@ from executorch.backends.cadence.aot.quantizer.utils import (
     find_sequential_partitions_aten,
     quantize_tensor_multiplier,
 )
+from executorch.backends.cadence.aot.utils import is_depthwise_conv
 from executorch.exir.pass_base import ExportPass
 from torch import fx
 from torch.fx import GraphModule
@@ -62,6 +65,7 @@ ConvReluPatterns = (
     Conv2dReluPattern0,
     Conv2dReluPattern1,
 )
+AddReluPatterns = (AddReluPattern0, AddReluPattern1)
 
 
 def get_args_and_kwargs_add(
@@ -242,9 +246,8 @@ def get_args_and_kwargs_cat(
     inputs_inputs: List[fx.Node], other_inputs: List[fx.Node], op_node: fx.Node
 ) -> Tuple[Tuple[ArgsType], Dict[str, ArgsType]]:
     args = tuple([inputs_inputs] + other_inputs)
-    dim = op_node.args[1] if len(op_node.args) > 1 else 0
-    # pyre-fixme[6]: Incompatible parameter type
-    kwargs = {"dim": int(dim)}
+    dim = get_arg(op_node, "dim", int)
+    kwargs = {"dim": dim}
     return args, kwargs
 
 
@@ -402,7 +405,7 @@ def get_args_and_kwargs_softmax(
     args = (
         inputs_inputs[0],
         mask_tensor,
-        op_node.args[1],
+        get_arg(op_node, "dim", int),
         mask_type,
         pos_tensor,
         in_scale,
@@ -425,14 +428,10 @@ def get_args_and_kwargs_mixed_w8a32_conv(
     op_node: fx.Node,
 ) -> Tuple[Tuple[ArgsType, ...], Dict[str, ArgsType]]:
     # Stride, padding, dilation, groups not supported yet
-    if len(op_node.args) > 3:
-        assert op_node.args[3] == [1]  # Stride
-    if len(op_node.args) > 4:
-        assert op_node.args[4] == [0]  # Padding
-    if len(op_node.args) > 5:
-        assert op_node.args[5] == [1]  # Dilation
-    if len(op_node.args) > 6:
-        assert op_node.args[6] == 1  # Groups
+    assert get_arg(op_node, "stride", list[int]) == [1]  # Stride
+    assert get_arg(op_node, "padding", list[int]) == [0]  # Padding
+    assert get_arg(op_node, "dilation", list[int]) == [1]  # Dilation
+    assert get_arg(op_node, "groups", int) == 1  # Groups
 
     assert len(dequants_weights) == 1
     assert len(dequants_biases) == 1
@@ -443,26 +442,36 @@ def get_args_and_kwargs_mixed_w8a32_conv(
         torch.ops.aten.permute.default,
         (other_inputs[0], [0, 2, 1]),  # NCL -> NLC
     )
-    assert "val" in other_inputs[0].meta, "Missing val metadata on input node"
-    original_val = other_inputs[0].meta["val"]
-    assert original_val.fake_mode is not None, "fake_mode is None on input node"
-    with original_val.fake_mode:
-        transposed_inputs.meta["val"] = torch.ops.aten.permute.default(
-            original_val, [0, 2, 1]
-        )
+    # Propagate val metadata for transposed_inputs
+    if "val" in other_inputs[0].meta:
+        original_val = other_inputs[0].meta["val"]
+        fake_mode = original_val.fake_mode
+        if fake_mode is not None:
+            with fake_mode:
+                transposed_val = torch.ops.aten.permute.default(original_val, [0, 2, 1])
+            transposed_inputs.meta["val"] = transposed_val
+        else:
+            transposed_inputs.meta["val"] = torch.ops.aten.permute.default(
+                original_val, [0, 2, 1]
+            )
     copy_node_metadata(transposed_inputs, other_inputs[0])
 
     transposed_weights = graph_module.graph.call_function(
         torch.ops.aten.permute.default,
         (weights_inputs[0], [2, 0, 1]),  # NCL -> LNC
     )
-    assert "val" in weights_inputs[0].meta, "Missing val metadata on weight node"
-    original_val = weights_inputs[0].meta["val"]
-    assert original_val.fake_mode is not None, "fake_mode is None on weight node"
-    with original_val.fake_mode:
-        transposed_weights.meta["val"] = torch.ops.aten.permute.default(
-            original_val, [2, 0, 1]
-        )
+    # Propagate val metadata for transposed_weights
+    if "val" in weights_inputs[0].meta:
+        original_val = weights_inputs[0].meta["val"]
+        fake_mode = original_val.fake_mode
+        if fake_mode is not None:
+            with fake_mode:
+                transposed_val = torch.ops.aten.permute.default(original_val, [2, 0, 1])
+            transposed_weights.meta["val"] = transposed_val
+        else:
+            transposed_weights.meta["val"] = torch.ops.aten.permute.default(
+                original_val, [2, 0, 1]
+            )
     copy_node_metadata(transposed_weights, weights_inputs[0])
 
     args = (
@@ -516,12 +525,10 @@ def get_args_and_kwargs_mixed_w8a32_gru(
 ) -> Tuple[Tuple[ArgsType, ...], Dict[str, ArgsType]]:
     # Stride, padding, dilation, groups not supported yet
 
-    assert len(dequants_weights) == 2
     assert len(dequants_biases) == 2
     w_i_scale = dequants_weights[0].args[1]
     w_h_scale = dequants_weights[1].args[1]
-    b_i_scale = dequants_biases[0].args[1]
-    b_h_scale = dequants_biases[1].args[1]
+    b_scale = dequants_biases[0].args[1]
 
     args = (
         other_inputs[0],
@@ -531,9 +538,8 @@ def get_args_and_kwargs_mixed_w8a32_gru(
         weights_inputs[1],
         w_h_scale,
         bias_inputs[0],
-        b_i_scale,
+        b_scale,
         bias_inputs[1],
-        b_h_scale,
     )
     kwargs = {}
 
@@ -613,7 +619,20 @@ class QuantFusion(ExportPass):
                         inputs_inputs + weights_inputs + other_inputs + bias_inputs
                     )
                     kwargs = {}
-                    if isinstance(pattern, AddPattern):
+                    if isinstance(pattern, AddReluPatterns):
+                        # For AddReLU, we are fusing Add+ReLU.
+                        # The quantized_add op performs requantization,
+                        # so the relu is implicit in the output quant params.
+                        check_out_zero_point_is_min_range(
+                            quant_node.args[2], quant_node.args[5]
+                        )
+                        args, kwargs = get_args_and_kwargs_add(
+                            graph_module,
+                            inputs_inputs,
+                            dequants_inputs,
+                            quant_node,
+                        )
+                    elif isinstance(pattern, AddPattern):
                         args, kwargs = get_args_and_kwargs_add(
                             graph_module,
                             inputs_inputs,
@@ -763,8 +782,23 @@ class QuantFusion(ExportPass):
                             op_node,
                         )
 
+                    # Determine the replacement op, routing depthwise conv1d
+                    # to the dedicated depthwise operator.
+                    replacement_op = pattern.replacement_op()
+                    if (
+                        replacement_op
+                        == torch.ops.cadence.quantized_conv1d_ncl.per_tensor
+                    ):
+                        groups = kwargs.get("groups", 1)
+                        # NCL format: input shape is [N, C, L]
+                        in_channels = args[0].meta["val"].shape[1]
+                        if is_depthwise_conv(groups, in_channels):
+                            replacement_op = (
+                                torch.ops.cadence.quantized_depthwise_conv1d_ncl.per_tensor
+                            )
+
                     fused = graph_module.graph.call_function(
-                        pattern.replacement_op(),
+                        replacement_op,
                         args,
                         kwargs,
                     )

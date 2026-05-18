@@ -31,31 +31,29 @@ class DecomposeLogVariants(ExportPass):
     def __init__(self) -> None:
         super().__init__()
         self._dispatcher = {
-            # Edge dialect (post-to_edge) - FP
+            # Edge dialect (post-to_edge)
             exir_ops.edge.aten.log10.default: partial(self._decompose_log_n, n=10),
             exir_ops.edge.aten.log2.default: partial(self._decompose_log_n, n=2),
             exir_ops.edge.aten.log1p.default: partial(self._decompose_log_p, p=1),
-            # ATen dialect (pre-to_edge) - Quantized
+            # ATen dialect (pre-to_edge)
             torch.ops.aten.log10.default: partial(self._decompose_log_n, n=10),
             torch.ops.aten.log2.default: partial(self._decompose_log_n, n=2),
             torch.ops.aten.log1p.default: partial(self._decompose_log_p, p=1),
         }
 
-    def _decompose_log_n(self, node, graph, graph_module, n):
+    def _decompose_log_n(self, node, graph, graph_module, const_cache, n):
         input_node = node.args[0]
         is_edge = node.target in self._EDGE_OPS
 
         if is_edge:
             log_op = exir_ops.edge.aten.log.default
             div_op = exir_ops.edge.aten.div.Tensor
-            div_arg = get_const_node(
-                graph,
-                graph_module,
-                f"_log_base_{n}_constant",
-                math.log(n),
-                node,
-            )
-
+            attr_name = f"_log_base_{n}_constant"
+            if attr_name not in const_cache:
+                const_cache[attr_name] = get_const_node(
+                    graph, graph_module, attr_name, math.log(n), node
+                )
+            div_arg = const_cache[attr_name]
         else:
             log_op = torch.ops.aten.log.default
             div_op = torch.ops.aten.div.Tensor
@@ -74,21 +72,19 @@ class DecomposeLogVariants(ExportPass):
         for user in node.users.copy():
             user.replace_input_with(node, div_node)
 
-    def _decompose_log_p(self, node, graph, graph_module, p):
+    def _decompose_log_p(self, node, graph, graph_module, const_cache, p):
         input_node = node.args[0]
         is_edge = node.target in self._EDGE_OPS
 
         if is_edge:
             add_op = exir_ops.edge.aten.add.Tensor
             log_op = exir_ops.edge.aten.log.default
-            add_arg = get_const_node(
-                graph,
-                graph_module,
-                f"_log1p_addend_{p}_constant",
-                p,
-                node,
-            )
-
+            attr_name = f"_log1p_addend_{p}_constant"
+            if attr_name not in const_cache:
+                const_cache[attr_name] = get_const_node(
+                    graph, graph_module, attr_name, p, node
+                )
+            add_arg = const_cache[attr_name]
         else:
             add_op = torch.ops.aten.add.Tensor
             log_op = torch.ops.aten.log.default
@@ -107,10 +103,11 @@ class DecomposeLogVariants(ExportPass):
 
     def call(self, graph_module: torch.fx.GraphModule) -> PassResult:
         graph = graph_module.graph
+        const_cache = {}
 
         for node in list(graph.nodes):
             if node.target in self._dispatcher:
-                self._dispatcher[node.target](node, graph, graph_module)
+                self._dispatcher[node.target](node, graph, graph_module, const_cache)
 
         graph.eliminate_dead_code()
         graph_module.recompile()

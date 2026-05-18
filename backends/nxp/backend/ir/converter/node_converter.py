@@ -12,6 +12,11 @@ import torch
 from executorch.backends.nxp.backend.custom_delegation_options import (
     CustomDelegationOptions,
 )
+from executorch.backends.nxp.backend.edge_helper import (
+    input_quantization_type,
+    output_quantization_type,
+)
+from executorch.backends.nxp.backend.ir import logger as logger
 from executorch.backends.nxp.backend.ir.conversion_context import ConversionContext
 from executorch.backends.nxp.backend.ir.converter.builder.aten_model_builder_director import (
     AtenModelBuilderDirector,
@@ -308,3 +313,135 @@ class NodeConverter(ABC):
                 t_operator.tmp_outputs.append(self.builder.tensor_for_name(tensor_name))
 
         return t_operator
+
+    @staticmethod
+    def uses_quantization_type_for_inputs(
+        node: Node,
+        supported_types: list[torch.dtype],
+        input_indices: list[int | tuple[int, int]],
+    ) -> bool:
+        """Check if `node` uses the QDQ quantization schema and inputs on the provided indices use a quantization type
+            that is in `supported_types`.
+
+        :param node: The compute node.
+        :param supported_types: List of supported quantization types.
+        :param input_indices: List of indices into the `node.args`, or tuples of 2 indices into `node.args[idx1][idx2]`.
+                               If empty, no type checking is performed and `True` is returned.
+        :return: True, if the `node` is QDQ quantized and has quantization input types in `supported_types`.
+        """
+        return all(
+            input_quantization_type(node, input_index) in supported_types
+            for input_index in input_indices
+        )
+
+    @staticmethod
+    def uses_quantization_type_for_outputs(
+        node: Node,
+        supported_types: list[torch.dtype],
+        output_indices: list[int],
+    ):
+        """Check if `node` uses the QDQ quantization schema and outputs on the provided indices use a quantization type
+            that is in `supported_types`.
+
+        :param node: The compute node.
+        :param supported_types: List of supported quantization types.
+        :param output_indices: If the `node` has multiple outputs and therefore multiple `getitem` nodes follow it, the
+                                indices select the outputs to be checked. If no `getitem` nodes follow it, the operator
+                                produces only 1 output (most common case), and the value `[0]` must be used.
+                                If empty, no type checking is performed and `True` is returned.
+        :return: True, if the `node` is QDQ quantized and has quantization output types in `supported_types`.
+        """
+        return all(
+            output_quantization_type(node, output_index) in supported_types
+            for output_index in output_indices
+        )
+
+    @staticmethod
+    def uses_quantization_type_for_io(
+        node: Node,
+        supported_types: list[torch.dtype],
+        input_indices: list[int | tuple[int, int]],
+        output_indices: list[int],
+    ):
+        """Check if `node` uses the QDQ quantization schema and inputs and outputs on the provided indices use a
+            quantization type that is in `supported_types`.
+
+        :param node: The compute node.
+        :param supported_types: List of supported quantization types.
+        :param input_indices: List of indices into the `node.args`, or tuples of 2 indices into `node.args[idx1][idx2]`.
+                               If empty, no input type checking is performed.
+        :param output_indices: If the `node` has multiple outputs and therefore multiple `getitem` nodes follow it, the
+                                indices select the outputs to be checked. If no `getitem` nodes follow it, the operator
+                                produces only 1 output (most common case), and the value `[0]` must be used.
+                                If empty, no output type checking is performed.
+        :return: True, if the `node` is QDQ quantized and has quantization input types in `supported_types`.
+        """
+        return NodeConverter.uses_quantization_type_for_inputs(
+            node, supported_types, input_indices
+        ) and NodeConverter.uses_quantization_type_for_outputs(
+            node, supported_types, output_indices
+        )
+
+    @staticmethod
+    def uses_shape_broadcasting(node: Node) -> bool:
+        """Determine if given PyTorch fx Node uses shape broadcasting for it's input nodes or not.
+
+        :param node: PyTorch fx Node with 'all_input_nodes' initialized.
+        :return: True, if the node uses shape broadcasting for it's input nodes.
+                 False otherwise.
+        """
+
+        if node.all_input_nodes is None:
+            logger.e(
+                logger.Code.INTERNAL_ERROR,
+                "node_converter.uses_shape_broadcasting(): 'all_input_nodes' are None!",
+            )
+
+        if len(node.all_input_nodes) == 0:
+            logger.e(
+                logger.Code.INTERNAL_ERROR,
+                "node_converter.uses_shape_broadcasting(): Operator has no inputs!",
+            )
+
+        first_input_shape = node.all_input_nodes[0].meta["val"].shape
+
+        return any(
+            input_tensor.meta["val"].shape != first_input_shape
+            for input_tensor in node.all_input_nodes[1:]
+        )
+
+    @staticmethod
+    def at_least_one_input_shape_matches_the_output_shape(node: Node) -> bool:
+        """Determine if given PyTorch fx Node uses at least one input shape broadcasting for it's input nodes or not.
+
+        :param node: PyTorch fx Node with 'all_input_nodes' initialized.
+        :return: True, if at least one input has the same shape as the output node.
+                 False otherwise.
+        """
+
+        if node.all_input_nodes is None:
+            logger.e(
+                logger.Code.INTERNAL_ERROR,
+                "node_converter.at_least_one_input_shape_matches_the_output_shape(): 'all_input_nodes' are None!",
+            )
+
+        if len(node.all_input_nodes) == 0:
+            logger.e(
+                logger.Code.INTERNAL_ERROR,
+                "node_converter.at_least_one_input_shape_matches_the_output_shape(): Operator has no inputs!",
+            )
+
+        output_shape = node.meta["val"].shape
+
+        return any(
+            input_tensor.meta["val"].shape == output_shape
+            for input_tensor in node.all_input_nodes
+        )
+
+    @staticmethod
+    def _node_inputs_ranks_not_equal(node) -> bool:
+        first_input_shape = node.all_input_nodes[0].meta["val"].shape
+        return not all(
+            len(input_node.meta["val"].shape) == len(first_input_shape)
+            for input_node in node.all_input_nodes[1:]
+        )

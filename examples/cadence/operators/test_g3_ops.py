@@ -16,9 +16,7 @@ from executorch.backends.cadence.aot.export_example import export_and_run_model
 class ATenOpTestCases(unittest.TestCase):
     def run_and_verify(self, model: nn.Module, inputs: Tuple[Any, ...]) -> None:
         model.eval()
-        export_and_run_model(
-            model, inputs, file_name=self._testMethodName, run_and_compare=False
-        )
+        export_and_run_model(model, inputs, file_name=self._testMethodName)
 
     # pyre-ignore[16]: Module `parameterized.parameterized` has no attribute `expand`.
     @parameterized.expand([*facto_util.facto_testcase_gen("add.Tensor")])

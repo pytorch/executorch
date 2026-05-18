@@ -11,7 +11,7 @@ import torch
 from executorch.backends.cuda.cuda_backend import CudaBackend
 from executorch.backends.cuda.cuda_partitioner import CudaPartitioner
 from executorch.examples.models.toy_model import SdpaModule
-from executorch.exir import EdgeCompileConfig, to_edge_transform_and_lower
+from executorch.exir import EdgeCompileConfig, schema, to_edge_transform_and_lower
 from executorch.exir.backend.compile_spec_schema import CompileSpec
 from torch.export import export
 
@@ -324,4 +324,72 @@ class TestCudaExport(unittest.TestCase):
         self.assertIsNotNone(
             edge_program_manager,
             "SDPA kernel export with triton_kernel_mode=OFF failed",
+        )
+
+    def test_device_info_propagated_to_cuda_delegate_outputs(self):
+        """
+        Test that device info is correctly propagated from export to serialization
+        for CUDA delegate outputs.
+
+        This verifies the device propagation flow:
+        1. CudaPartitioner adds target_device="cuda:0" CompileSpec
+        2. PropagateDevicePass sets TensorSpec.device = CUDA for delegate outputs
+        3. Emitter serializes device info into ExtraTensorInfo.device_type
+        4. Serialized tensors have device_type = DeviceType.CUDA
+
+        Note: At this stage, the tensor memory is still on CPU. The CUDA backend
+        will copy data to GPU device at runtime. Device info tagging is the first
+        step toward full device-aware memory allocation.
+        """
+
+        class AddModule(torch.nn.Module):
+            def forward(self, x: torch.Tensor, y: torch.Tensor) -> torch.Tensor:
+                return x + y
+
+        module = AddModule()
+        module.eval()
+        inputs = (torch.randn(2, 3), torch.randn(2, 3))
+
+        # Export to CUDA with full pipeline
+        edge_program_manager = self._export_to_cuda_with_lower(module, inputs)
+        self.assertIsNotNone(edge_program_manager, "CUDA export failed")
+
+        # Convert to ExecuTorch and access the serialized program
+        et_prog = edge_program_manager.to_executorch()
+        program = et_prog._emitter_output.program
+
+        # Get the execution plan and verify delegate exists
+        plan = program.execution_plan[0]
+        self.assertGreater(
+            len(plan.delegates),
+            0,
+            "Expected at least one delegate in the execution plan",
+        )
+
+        # Count tensors by device type
+        cpu_tensors = []
+        cuda_tensors = []
+
+        for value in plan.values:
+            if isinstance(value.val, schema.Tensor):
+                tensor = value.val
+                if (
+                    tensor.extra_tensor_info is not None
+                    and tensor.extra_tensor_info.device_type == schema.DeviceType.CUDA
+                ):
+                    cuda_tensors.append(tensor)
+                else:
+                    # Either no extra_tensor_info or device_type is CPU (default)
+                    cpu_tensors.append(tensor)
+
+        # Both input and output tensors should be on CUDA device for now.
+        self.assertEqual(
+            len(cpu_tensors),
+            0,
+            f"Expecteed no CPU tensors for delegate inputs, but found {len(cpu_tensors)}",
+        )
+        self.assertEqual(
+            len(cuda_tensors),
+            3,
+            "Expected CUDA tensors for delegate outputs",
         )

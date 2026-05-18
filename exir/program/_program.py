@@ -59,6 +59,7 @@ from executorch.exir.passes.insert_write_back_for_buffers_pass import (
 from executorch.exir.passes.normalize_view_copy_base_pass import (
     NormalizeViewCopyBasePass,
 )
+from executorch.exir.passes.propagate_device_pass import PropagateDevicePass
 from executorch.exir.passes.quant_fusion_pass import quant_fusion_and_const_prop_pass
 from executorch.exir.passes.reinplace import reinplace_pass
 from executorch.exir.passes.remove_graph_asserts_pass import (
@@ -848,6 +849,7 @@ def edge_to_executorch_passes(
         # there exists an unbacked symint operation.
         *config.passes,
         SpecPropPass(),
+        PropagateDevicePass(),
         EdgeToBackendOpsPass(),
         RemoveGraphAssertsPass(),
     ] + pre_memory_planning_passes(config, name)
@@ -1079,7 +1081,7 @@ def _sanity_check_graph_for_non_decomp_ops(
                     logging.warning(warning_str)
 
 
-def _remove_invalid_ops_for_not_decompose(
+def _remove_invalid_ops_for_not_decompose(  # noqa: C901
     preserve_ops: List[torch._ops.OpOverload],
 ) -> List[torch._ops.OpOverload]:
     _logged_warnings = set()
@@ -1117,6 +1119,16 @@ def _remove_invalid_ops_for_not_decompose(
                 return False
 
             if native_schema.aliased_return_names() != [None]:
+                log_warning(
+                    f"Op {op} was requested for preservation by partitioner.  This request is ignored because it aliases output."
+                )
+                return False
+
+        # Fallback: torchgen does not detect alias annotations on ops
+        # returning lists of aliased tensors (e.g. split.Tensor returns
+        # Tensor(a)[]). Check op._schema.returns directly.
+        for ret in schema.returns:
+            if ret.alias_info is not None:
                 log_warning(
                     f"Op {op} was requested for preservation by partitioner.  This request is ignored because it aliases output."
                 )
@@ -1786,6 +1798,12 @@ class EdgeProgramManager:
                 )
             else:
                 memory_planning_pass = config.memory_planning_pass
+            # Propagate enable_non_cpu_memory_planning from the top-level config
+            # to the pass instance so that device-aware partitioning is applied.
+            if hasattr(memory_planning_pass, "enable_non_cpu_memory_planning"):
+                memory_planning_pass.enable_non_cpu_memory_planning = (
+                    config.enable_non_cpu_memory_planning
+                )
             # TODO(jakeszwe): Follow up with compiler on if the deepcopy is necessary and if so how to make it work
             if hasattr(memory_planning_pass, "run"):
                 new_gm_res = memory_planning_pass.run(new_gm, new_signature)

@@ -178,7 +178,12 @@ def define_common_targets(is_fbcode = False):
                 "//executorch/runtime/executor:program",
                 "//executorch/extension/data_loader:file_data_loader",
             ],
-            env = modules_env,
+            env = dict(
+                modules_env,
+                **{
+                    "ET_MODULE_ADD_WITH_DEVICE_PATH": "$(location fbcode//executorch/test/models:exported_program_with_device_info[ModuleAddWithDevice.pte])",
+                }
+            ),
         )
 
         runtime.cxx_test(
@@ -311,4 +316,20 @@ def define_common_targets(is_fbcode = False):
                 "//executorch/schema:program",
             ],
             env = modules_env,
+        )
+
+        runtime.cxx_test(
+            name = "tensor_parser_device_test",
+            srcs = [
+                "tensor_parser_device_test.cpp",
+            ],
+            deps = [
+                ":managed_memory_manager",
+                "//executorch/runtime/executor:program",
+                "//executorch/extension/data_loader:file_data_loader",
+                "//executorch/schema:program",
+            ],
+            env = {
+                "ET_MODULE_ADD_WITH_DEVICE_PATH": "$(location fbcode//executorch/test/models:exported_program_with_device_info[ModuleAddWithDevice.pte])",
+            },
         )

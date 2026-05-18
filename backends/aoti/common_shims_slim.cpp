@@ -134,6 +134,10 @@ int32_t aoti_torch_dtype_int8() {
   return 1; // ScalarType::Char
 }
 
+int32_t aoti_torch_dtype_uint8() {
+  return 0; // ScalarType::Byte
+}
+
 int32_t aoti_torch_dtype_bool() {
   return 11; // ScalarType::Bool
 }

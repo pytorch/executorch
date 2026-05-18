@@ -1,4 +1,4 @@
-# Copyright 2025 Arm Limited and/or its affiliates.
+# Copyright 2025-2026 Arm Limited and/or its affiliates.
 #
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
@@ -37,7 +37,11 @@ def convert_image_to_c_array(
     img = resize_and_crop_center(img, image_size)
     # NumPy arrays are stored in channels-last format. Convert to channels-first.
     img_channels_first = np.transpose(img, (2, 0, 1))
-    data = np.array(img_channels_first, dtype=np.float32) / 255.0
+    # The PIL Image function returns the image represented in the range [0;255].
+    # However, the NN was trained on fp32 numbers in the range [-1;1].
+    # To pass from [0;255] to [-1;1], we divide by 127.5(the middle of the range)
+    # and subtract 1.
+    data = np.array(img_channels_first, dtype=np.float32) / 127.5 - 1
     data = data.flatten()
     # Format as C array
     array_lines = []
