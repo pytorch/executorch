@@ -65,6 +65,8 @@ class TableOps:
         exir_ops.edge.aten.pow.Tensor_Scalar,
         exir_ops.edge.aten.gelu.default,
         exir_ops.edge.aten.elu.default,
+        exir_ops.edge.aten.selu.default,
+        exir_ops.edge.aten.celu.default,
         exir_ops.edge.aten.remainder.Scalar,
     }
 
@@ -100,9 +102,11 @@ class TableOps:
                         x, approximate=approximate
                     ).flatten()
                 case exir_ops.edge.aten.elu.default:
-                    input_alpha = cast(int, node.kwargs["alpha"])
-                    return lambda x: torch.nn.functional.elu(
-                        x, alpha=input_alpha
+                    input_alpha = cast(float, node.meta["float_alpha"])
+                    input_scale = cast(float, node.meta.get("float_input_scale", 1.0))
+                    scale = cast(float, node.meta.get("float_scale", 1.0))
+                    return lambda x: torch.ops.aten.elu.default(
+                        x, input_alpha, scale, input_scale
                     ).flatten()
                 case exir_ops.edge.aten.remainder.Scalar:
                     divisor = cast(float | int, node.args[1])
