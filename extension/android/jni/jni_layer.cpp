@@ -284,8 +284,18 @@ class ExecuTorchJni : public facebook::jni::HybridClass<ExecuTorchJni> {
 #else
     auto etdump_gen = nullptr;
 #endif
-    module_ = std::make_unique<Module>(
-        modelPath->toStdString(), load_mode, std::move(etdump_gen));
+    try {
+      module_ = std::make_unique<Module>(
+          modelPath->toStdString(), load_mode, std::move(etdump_gen));
+    } catch (const std::exception& e) {
+      executorch::jni_helper::throwExecutorchException(
+          static_cast<uint32_t>(Error::Internal),
+          std::string("Failed to create Module: ") + e.what());
+    } catch (...) {
+      executorch::jni_helper::throwExecutorchException(
+          static_cast<uint32_t>(Error::Internal),
+          "Failed to create Module: unknown native error");
+    }
 
 #ifdef ET_USE_THREADPOOL
     // Default to using cores/2 threadpool threads. The long-term plan is to
@@ -385,6 +395,12 @@ class ExecuTorchJni : public facebook::jni::HybridClass<ExecuTorchJni> {
         static const auto toBoolMethod =
             JEValue::javaClassStatic()->getMethod<jboolean()>("toBool");
         evalues.emplace_back(static_cast<bool>(toBoolMethod(jevalue)));
+      } else {
+        std::stringstream ss;
+        ss << "Unsupported input EValue type code: " << typeCode;
+        jni_helper::throwExecutorchException(
+            static_cast<uint32_t>(Error::InvalidArgument), ss.str());
+        return {};
       }
     }
 
@@ -545,9 +561,9 @@ class ExecuTorchJni : public facebook::jni::HybridClass<ExecuTorchJni> {
         makeNativeMethod("readLogBufferNative", ExecuTorchJni::readLogBuffer),
         makeNativeMethod(
             "readLogBufferStaticNative", ExecuTorchJni::readLogBufferStatic),
-        makeNativeMethod("etdump", ExecuTorchJni::etdump),
+        makeNativeMethod("etdumpNative", ExecuTorchJni::etdump),
         makeNativeMethod("etdumpToNative", ExecuTorchJni::etdumpTo),
-        makeNativeMethod("getMethods", ExecuTorchJni::getMethods),
+        makeNativeMethod("getMethodsNative", ExecuTorchJni::getMethods),
         makeNativeMethod("getUsedBackends", ExecuTorchJni::getUsedBackends),
     });
   }

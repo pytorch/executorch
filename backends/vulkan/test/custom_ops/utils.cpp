@@ -17,6 +17,20 @@ namespace executorch {
 namespace vulkan {
 namespace prototyping {
 
+namespace {
+
+// Upper bound on the auto-sized chained_dispatches factor. Caps the factor
+// when an op is fast enough that target_us / probe_us would otherwise
+// exceed this; past this point, stacking more dispatches doesn't materially
+// improve measurement precision.
+constexpr int kMaxChainedDispatches = 200;
+
+// Floor for probe_us to avoid division-by-zero / a runaway chained_dispatches
+// factor when an op finishes faster than the wall clock can resolve.
+constexpr float kMinProbeTimeUs = 1.0f;
+
+} // namespace
+
 int get_seed() {
   static int seed = 42;
   return seed++;
@@ -1342,7 +1356,10 @@ int64_t default_flop_calculator(const TestCase& test_case) {
   return total_elements;
 }
 
-ComputeGraph setup_compute_graph(TestCase& test_case, std::string op_name) {
+ComputeGraph setup_compute_graph(
+    TestCase& test_case,
+    std::string op_name,
+    int op_invocations_per_execute) {
   GraphConfig config;
   config.enable_querypool = true;
   ComputeGraph graph(config);
@@ -1423,7 +1440,12 @@ ComputeGraph setup_compute_graph(TestCase& test_case, std::string op_name) {
   std::vector<ValueRef> op_args = input_values;
   op_args.insert(op_args.end(), output_values.begin(), output_values.end());
 
-  opFn(graph, op_args);
+  // Invoke the op op_invocations_per_execute times to stack dispatches per
+  // graph.execute(). The output set_output_value() calls below still happen
+  // exactly once.
+  for (int i = 0; i < op_invocations_per_execute; ++i) {
+    opFn(graph, op_args);
+  }
 
   for (size_t i = 0; i < output_values.size(); ++i) {
     graph.set_output_value(output_values[i]);
@@ -1432,8 +1454,12 @@ ComputeGraph setup_compute_graph(TestCase& test_case, std::string op_name) {
 }
 
 // Test execution utilities
-BenchmarkResult
-execute_test_case(TestCase& test_case, int warmup_runs, int benchmark_runs) {
+BenchmarkResult execute_test_case(
+    TestCase& test_case,
+    int warmup_runs,
+    int benchmark_runs,
+    int chained_dispatches,
+    bool write_outputs) {
   BenchmarkResult result(
       test_case.name().empty() ? "unnamed_test_case" : test_case.name());
 
@@ -1442,9 +1468,11 @@ execute_test_case(TestCase& test_case, int warmup_runs, int benchmark_runs) {
     api::context()->initialize_querypool();
   }
 
-  // Create the compute graph for this test case using setup_compute_graph
-  ComputeGraph graph =
-      setup_compute_graph(test_case, test_case.operator_name());
+  // Build the measurement graph with the requested chained_dispatches factor.
+  // The caller (typically execute_test_cases) decides what it should be —
+  // this function is a pure "run at the given chained_dispatches" primitive.
+  ComputeGraph graph = setup_compute_graph(
+      test_case, test_case.operator_name(), chained_dispatches);
 
   // Prepare the graph
   graph.prepare();
@@ -1505,6 +1533,8 @@ execute_test_case(TestCase& test_case, int warmup_runs, int benchmark_runs) {
   float total_cpu_time_us = 0.0f;
   float total_gpu_time_us = 0.0f;
 
+  const float chained_dispatches_f = static_cast<float>(chained_dispatches);
+
   for (int run = 0; run < benchmark_runs; ++run) {
     // Measure CPU time for each execute() call
     auto cpu_start = std::chrono::high_resolution_clock::now();
@@ -1513,7 +1543,10 @@ execute_test_case(TestCase& test_case, int warmup_runs, int benchmark_runs) {
 
     auto cpu_duration = std::chrono::duration_cast<std::chrono::microseconds>(
         cpu_end - cpu_start);
-    float cpu_time_us = static_cast<float>(cpu_duration.count());
+    // Each execute() ran chained_dispatches op invocations; report
+    // per-invocation time.
+    float cpu_time_us =
+        static_cast<float>(cpu_duration.count()) / chained_dispatches_f;
     total_cpu_time_us += cpu_time_us;
 
     // Collect per-shader GPU timing - get raw shader results to preserve
@@ -1540,7 +1573,10 @@ execute_test_case(TestCase& test_case, int warmup_runs, int benchmark_runs) {
             shader_result.end_time_ns - shader_result.start_time_ns;
         float duration_us = static_cast<float>(duration_ns) / 1000.0f;
         gpu_time_us += duration_us;
-        // Store per-shader timing with work group sizes
+        // Per-shader sample is already one querypool entry per dispatch (at
+        // chained_dispatches>1 we get that many entries per shader), so do NOT
+        // divide here — the aggregator (get_avg_time_us) averages across them
+        // naturally.
         result.add_shader_timing(
             shader_result.kernel_name,
             duration_us,
@@ -1548,6 +1584,9 @@ execute_test_case(TestCase& test_case, int warmup_runs, int benchmark_runs) {
             shader_result.metadata.local_workgroup_size);
       }
     }
+    // gpu_time_us aggregates chained_dispatches worth of shader runs; divide
+    // it down to per-invocation time.
+    gpu_time_us /= chained_dispatches_f;
     total_gpu_time_us += gpu_time_us;
 
     // Add the appropriate timing based on the flag
@@ -1572,30 +1611,34 @@ execute_test_case(TestCase& test_case, int warmup_runs, int benchmark_runs) {
               << " timing for result" << std::endl;
   }
 
-  // Copy output data from the graph's staging buffers
-  for (size_t i = 0; i < test_case.num_outputs(); ++i) {
-    ValueSpec& output_spec = test_case.outputs()[i];
+  // Copy output data from the graph's staging buffers. The benchmarking path
+  // skips this work since it doesn't need correctness data — the probe pass
+  // has already populated test_case.outputs() at chained_dispatches=1.
+  if (write_outputs) {
+    for (size_t i = 0; i < test_case.num_outputs(); ++i) {
+      ValueSpec& output_spec = test_case.outputs()[i];
 
-    if (output_spec.is_tensor() && i < graph.outputs().size()) {
-      const auto& output_ref = graph.outputs()[i];
+      if (output_spec.is_tensor() && i < graph.outputs().size()) {
+        const auto& output_ref = graph.outputs()[i];
 
-      // Ensure output data vector is properly sized
-      size_t data_numel = output_spec.numel();
-      output_spec.resize_data(data_numel);
+        // Ensure output data vector is properly sized
+        size_t data_numel = output_spec.numel();
+        output_spec.resize_data(data_numel);
 
-      // Get mutable data pointer for the output
-      void* data_ptr = output_spec.get_mutable_data_ptr();
+        // Get mutable data pointer for the output
+        void* data_ptr = output_spec.get_mutable_data_ptr();
 
-      if (data_ptr != nullptr) {
-        // Copy data from staging buffer to output spec
-        graph.maybe_cast_and_copy_from_staging(
-            output_ref.staging, data_ptr, data_numel, output_spec.dtype);
-      }
+        if (data_ptr != nullptr) {
+          // Copy data from staging buffer to output spec
+          graph.maybe_cast_and_copy_from_staging(
+              output_ref.staging, data_ptr, data_numel, output_spec.dtype);
+        }
 
-      // Print output tensor data if output printing is enabled
-      if (print_output()) {
-        std::string output_name = "Output[" + std::to_string(i) + "]";
-        print_valuespec_data(output_spec, output_name);
+        // Print output tensor data if output printing is enabled
+        if (print_output()) {
+          std::string output_name = "Output[" + std::to_string(i) + "]";
+          print_valuespec_data(output_spec, output_name);
+        }
       }
     }
   }
@@ -1706,7 +1749,57 @@ TestResult execute_test_cases(
       BenchmarkResult result;
       bool shader_not_supported = false;
       try {
-        result = execute_test_case(test_case, warmup_runs, benchmark_runs);
+        // Always run a probe pass at chained_dispatches=1 with
+        // write_outputs=true. This populates test_case.outputs() for the
+        // downstream correctness check with a clean single-dispatch result,
+        // and also gives us probe_us for adaptive sizing of the measurement
+        // run's chained_dispatches.
+        //
+        // probe_then_scale (Google Benchmark style): size chained_dispatches
+        // so each measurement execute() takes ~target_us. Tiny ops get a
+        // large factor (driving GPU governor escalation); heavy ops get a
+        // small factor (bounded wall time). Caveat: on Adreno 740 the probe
+        // runs at the DCVS-pinned clock (~220 MHz), so probe_us is inflated
+        // and the computed factor comes out under-sized for boost clock — but
+        // the default target is generous enough that an under-sized factor
+        // still drives sustained activity.
+        BenchmarkResult probe_result = execute_test_case(
+            test_case,
+            /*warmup_runs=*/1,
+            /*benchmark_runs=*/1,
+            /*chained_dispatches=*/1,
+            /*write_outputs=*/true);
+        float probe_us = probe_result.get_avg_time_us();
+        if (probe_us < kMinProbeTimeUs) {
+          probe_us = kMinProbeTimeUs;
+        }
+
+        int chained_dispatches;
+        const int manual_n = test_case.get_op_invocations_per_execute();
+        if (manual_n > 0) {
+          chained_dispatches = manual_n;
+        } else {
+          const int target_us = test_case.get_target_execute_time_us();
+          chained_dispatches =
+              std::max(1, static_cast<int>(target_us / probe_us));
+          chained_dispatches =
+              std::min(chained_dispatches, kMaxChainedDispatches);
+        }
+        if (debugging()) {
+          std::cout << "[probe] " << test_case.name()
+                    << ": probe_us=" << probe_us
+                    << ", chained_dispatches=" << chained_dispatches
+                    << std::endl;
+        }
+
+        // Measurement pass: chained_dispatches stacking, skip output copy
+        // since the probe already wrote the correctness data.
+        result = execute_test_case(
+            test_case,
+            warmup_runs,
+            benchmark_runs,
+            chained_dispatches,
+            /*write_outputs=*/false);
         result.set_operator_name(test_case.operator_name());
       } catch (const vkcompute::vkapi::ShaderNotSupportedError&) {
         result = BenchmarkResult(
