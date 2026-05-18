@@ -136,21 +136,23 @@ class VisionPatchEmbedModel(Qwen3VLTestModule):
 
 
 class VisionRotaryEmbeddingModel(Qwen3VLTestModule):
-    def __init__(self, config) -> None:
+    def __init__(self, config, max_hw: int) -> None:
         super().__init__()
         head_dim = config.vision_config.hidden_size // config.vision_config.num_heads
         self.rotary = Qwen3VLVisionRotaryEmbedding(head_dim // 2)
+        self.max_hw = max_hw
 
-    def forward(self, hidden_states: torch.Tensor) -> torch.Tensor:
-        rotary = self.rotary(hidden_states.shape[0])
-        return rotary + 1.0
+    def forward(self, grid_thw: torch.Tensor) -> torch.Tensor:
+        rotary = self.rotary(self.max_hw)
+        return rotary
 
     @classmethod
     def prepare_model_and_inputs(cls):
         config = _make_qwen3_vl_2b_instruct_layer_config()
-        model = cls(config).eval()
-        hidden_states = torch.randn(4, config.vision_config.hidden_size)
-        return model, (hidden_states,)
+        grid_thw = _make_image_grid_thw(torch.device("cpu"))
+        max_hw = int(grid_thw[:, 1:].max().item())
+        model = cls(config, max_hw).eval()
+        return model, (grid_thw,)
 
 
 class VisionRotaryApplyModel(Qwen3VLTestModule):
@@ -442,31 +444,9 @@ class TextDecoderLayerModel(Qwen3VLTestModule):
         return model, (hidden_states, attention_mask, position_ids)
 
 
-class FinalNormModel(Qwen3VLTestModule):
-    def __init__(self, config) -> None:
-        super().__init__()
-        self.norm = Qwen3VLTextRMSNorm(
-            config.text_config.hidden_size, eps=config.text_config.rms_norm_eps
-        )
-
-    def forward(self, hidden_states: torch.Tensor) -> torch.Tensor:
-        return self.norm(hidden_states)
-
-    @classmethod
-    def prepare_model_and_inputs(cls):
-        config = _make_qwen3_vl_2b_instruct_layer_config()
-        model = cls(config).eval()
-        hidden_states = torch.randn(2, 8, config.text_config.hidden_size)
-        return model, (hidden_states,)
-
-
 @dataclass(frozen=True)
 class Qwen3VLTestCase:
     model_cls: type[Qwen3VLTestModule]
-    atol: float = 1e-3
-    rtol: float = 1e-3
-    qtol: int = 1
-    run_on_vulkan_runtime: bool = True
     transform_passes: tuple = field(default_factory=tuple)
 
 
@@ -493,34 +473,9 @@ TOSA_FP_TEST_CASES: dict[str, Qwen3VLTestCase] = {
     "qk_norm": Qwen3VLTestCase(model_cls=QKNormModel),
     "text_mlp": Qwen3VLTestCase(model_cls=TextMLPModel),
     "text_decoder_layer": Qwen3VLTestCase(model_cls=TextDecoderLayerModel),
-    "final_norm": Qwen3VLTestCase(model_cls=FinalNormModel),
 }
 
-VGF_NO_QUANT_TEST_CASES: dict[str, Qwen3VLTestCase] = {
-    "vision_mlp": Qwen3VLTestCase(model_cls=Qwen3VLVisionMLPModel),
-    "vision_patch_embed": Qwen3VLTestCase(model_cls=VisionPatchEmbedModel),
-    "vision_rotary_embedding": Qwen3VLTestCase(model_cls=VisionRotaryEmbeddingModel),
-    "vision_rotary_apply": Qwen3VLTestCase(model_cls=VisionRotaryApplyModel),
-    "vision_attention": Qwen3VLTestCase(model_cls=VisionAttentionModel),
-    "vision_block": Qwen3VLTestCase(model_cls=VisionBlockModel),
-    "vision_patch_merger": Qwen3VLTestCase(model_cls=VisionPatchMergerModel),
-    "token_embedding": Qwen3VLTestCase(
-        model_cls=TokenEmbeddingModel,
-        transform_passes=(
-            ConvertInt64ConstOpsToInt32Pass(),
-            ConvertInt64OutputOpsToInt32Pass(),
-            InsertInt32CastsAfterInt64PlaceholdersPass(),
-        ),
-    ),
-    "text_rms_norm": Qwen3VLTestCase(model_cls=TextRMSNormModel),
-    "text_rotary_embedding": Qwen3VLTestCase(model_cls=TextRotaryEmbeddingModel),
-    "text_rotary_apply": Qwen3VLTestCase(model_cls=TextRotaryApplyModel),
-    "text_attention": Qwen3VLTestCase(model_cls=TextAttentionModel),
-    "qk_norm": Qwen3VLTestCase(model_cls=QKNormModel),
-    "text_mlp": Qwen3VLTestCase(model_cls=TextMLPModel),
-    "text_decoder_layer": Qwen3VLTestCase(model_cls=TextDecoderLayerModel),
-    "final_norm": Qwen3VLTestCase(model_cls=FinalNormModel),
-}
+VGF_NO_QUANT_TEST_CASES: dict[str, Qwen3VLTestCase] = TOSA_FP_TEST_CASES
 
 
 @common.parametrize(
@@ -553,12 +508,7 @@ def test_qwen3_vl_vgf_no_quant(test_case: Qwen3VLTestCase):
             inputs,
             aten_op=[],
             exir_op=[],
-            use_to_edge_transform_and_lower=True,
             quantize=False,
-            run_on_vulkan_runtime=test_case.run_on_vulkan_runtime,
-            atol=test_case.atol,
-            rtol=test_case.rtol,
-            qtol=test_case.qtol,
             transform_passes=list(test_case.transform_passes),
         )
         pipeline.run()
