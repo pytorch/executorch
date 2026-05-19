@@ -392,25 +392,13 @@ int main(int argc, char** argv) {
   std::vector<float> audio_data =
       ::executorch::extension::llm::load_wav_audio_data(FLAGS_audio_path);
   ET_LOG(Info, "Loaded %zu audio samples", audio_data.size());
-  const auto original_audio_size = audio_data.size();
-  const size_t hop_length_samples = 160;
-  const size_t padding =
-      (hop_length_samples - (audio_data.size() % hop_length_samples)) %
-      hop_length_samples;
-  if (padding != 0) {
-    audio_data.resize(audio_data.size() + padding, 0.0f);
-    ET_LOG(
-        Info,
-        "Padded audio to %zu samples for preprocessor export shape",
-        audio_data.size());
-  }
 
   auto audio_tensor = from_blob(
       audio_data.data(),
       {static_cast<::executorch::aten::SizesType>(audio_data.size())},
       ::executorch::aten::ScalarType::Float);
   std::vector<int64_t> audio_len_data = {
-      static_cast<int64_t>(original_audio_size)};
+      static_cast<int64_t>(audio_data.size())};
   auto audio_len_tensor = from_blob(
       audio_len_data.data(), {1}, ::executorch::aten::ScalarType::Long);
 
