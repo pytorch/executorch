@@ -224,6 +224,10 @@ int main(int argc, char** argv) {
 
   auto eos_ids = llm::get_eos_ids(tokenizer.get(), module.get());
   eos_ids.insert(static_cast<uint64_t>(FLAGS_eos_id));
+  auto turn_ids = tokenizer->encode("<turn|>", /*bos=*/0, /*eos=*/0);
+  if (turn_ids.ok() && turn_ids->size() == 1) {
+    eos_ids.insert(turn_ids.get()[0]);
+  }
 
   // Read prompt
   std::string prompt_text = FLAGS_prompt;
