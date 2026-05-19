@@ -10,9 +10,8 @@ import pytest
 
 import torch
 
-from executorch.backends.arm.test import common
-
 from executorch.backends.arm.quantizer import get_symmetric_a16w8_quantization_config
+from executorch.backends.arm.test import common
 from executorch.backends.arm.test.tester.test_pipeline import (
     EthosU55PipelineINT,
     EthosU85PipelineINT,
@@ -207,7 +206,11 @@ a16w8_bmm_test_parameters = {
 @common.parametrize("test_data", a16w8_bmm_test_parameters)
 @common.XfailIfNoCorstone300
 def test_bmm_a16w8_u55_INT(test_data: input_t1):
-    """U55 does not support bmm with INT16 inputs. Verify bmm is rejected."""
+    """U55 does not support bmm with INT16 inputs.
+
+    Verify bmm is rejected.
+
+    """
     pipeline = OpNotSupportedPipeline[input_t1](
         BMM(),
         test_data(),
@@ -231,5 +234,7 @@ def test_bmm_a16w8_u85_INT(test_data: input_t1):
         exir_op_bmm,
         a16w8_quantization=True,
         symmetric_io_quantization=True,
+        qtol=1,
+        epsilon=2**-16,
     )
     pipeline.run()

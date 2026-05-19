@@ -70,6 +70,17 @@ runtime::Result<std::unique_ptr<runtime::DataLoader>> make_data_loader(
           std::move(*res_mlock_ignore));
       break;
     }
+    case Module::LoadMode::MmapUseMadvise: {
+      auto res_madvise = MmapDataLoader::from(
+          file_path.c_str(), MmapDataLoader::MlockConfig::UseMadvise);
+      if (!res_madvise.ok()) {
+        return res_madvise.error();
+      }
+      data_loader =
+          std::make_unique<std::remove_reference_t<decltype(*res_madvise)>>(
+              std::move(*res_madvise));
+      break;
+    }
   }
   return data_loader;
 }
