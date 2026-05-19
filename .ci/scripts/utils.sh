@@ -132,6 +132,9 @@ install_pytorch_and_domains() {
     # (e.g. executorch's requirements-ci.txt).
     pip install -r requirements-build.txt
     git submodule update --init --recursive
+    if [[ "$(uname -m)" == "aarch64" ]]; then
+      export BUILD_IGNORE_SVE_UNAVAILABLE=1
+    fi
     USE_DISTRIBUTED=1 python setup.py bdist_wheel
     pip install "$(echo dist/*.whl)"
 

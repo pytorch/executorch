@@ -29,8 +29,9 @@ from executorch.exir import ExportedProgram
 
 from executorch.exir.dialects._ops import ops as exir_ops
 
-from executorch.exir.pass_base import ExportPass, PassResult
+from executorch.exir.pass_base import ExportPass, NodeMetadata, PassResult, ProxyValue
 from torch.fx import GraphModule, Node
+from torch.utils import _pytree as pytree
 
 
 def _get_special_dtype(qspec: QuantArgs) -> TosaSpecialDtype | None:
@@ -133,6 +134,42 @@ class FoldAndAnnotateQParamsPass(ArmPass):
     ) -> None:
         super().__init__(*args, **kwargs)
         self.exported_program = exported_program
+
+    def _call_quantized_bmm_without_fake_kernel(
+        self,
+        args: tuple[ProxyValue, ...],
+        kwargs: dict,
+        meta: NodeMetadata,
+    ) -> ProxyValue:
+        old_val = meta.data["val"]
+        output_qparams = meta.data.get("output_qparams", {})
+        dtype = (
+            next(iter(output_qparams.values())).dtype
+            if len(output_qparams) > 0
+            else old_val.dtype
+        )
+        res_data = torch.empty_like(old_val, dtype=dtype)
+
+        args_proxy, kwargs_proxy = pytree.tree_map_only(
+            ProxyValue, lambda x: x.proxy, (args, kwargs)
+        )
+        res_proxy = self.tracer.create_proxy(
+            "call_function",
+            exir_ops.edge.aten.bmm.default,
+            args_proxy,
+            kwargs_proxy,
+        )
+        res_proxy.node.meta.update(meta.data)
+        self.tracer.set_metadata(res_proxy.node, res_data)
+        return ProxyValue(res_data, res_proxy)
+
+    def call_operator(self, op, args, kwargs, meta):
+        if (
+            op == exir_ops.edge.aten.bmm.default
+            and len(meta.data.get("input_qparams", {})) > 0
+        ):
+            return self._call_quantized_bmm_without_fake_kernel(args, kwargs, meta)
+        return super().call_operator(op, args, kwargs, meta)
 
     def _extract_input_params(
         self, arg_list: list[Node]
