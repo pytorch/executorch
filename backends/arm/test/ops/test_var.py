@@ -241,9 +241,7 @@ def test_var_dim_vgf_quant_no_dim(test_data: Tuple):
     pipeline.run()
 
 
-@common.parametrize("test_data", 
-                   
-                   )
+@common.parametrize("test_data", a16w8_var_test_parameters)
 @common.XfailIfNoCorstone300
 def test_var_a16w8_u55_INT(test_data: Tuple):
     test_data, keepdim, correction = test_data()
