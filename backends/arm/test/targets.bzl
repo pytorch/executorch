@@ -43,6 +43,7 @@ def define_arm_tests():
         "ops/test_conv1d.py",
         "ops/test_gelu.py",
         "ops/test_bmm.py",
+        "ops/test_split.py",
     ]
 
     # Quantization
