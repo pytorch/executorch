@@ -51,10 +51,7 @@ def _replace_attention_forward(attn: nn.Module) -> None:
         k = k.transpose(1, 2)
         v = v.transpose(1, 2)
 
-        # RoPE via mlx::rope. For proportional partial RoPE (full-attention
-        # layers), pass precomputed frequencies since mlx.rope's built-in
-        # frequency computation uses dims as the denominator, but Gemma 4
-        # uses head_dim.
+        # RoPE via mlx::rope.
         if self.is_sliding:
             q = torch.ops.mlx.rope(
                 q, self.head_dim, start_pos, False, self.rope_theta, 1.0, None
@@ -63,9 +60,15 @@ def _replace_attention_forward(attn: nn.Module) -> None:
                 k, self.head_dim, start_pos, False, self.rope_theta, 1.0, None
             )
         else:
-            freqs = torch.outer(input_pos.float(), self.inv_freq)
-            q = torch.ops.mlx.rope(q, self.head_dim, start_pos, False, 0.0, 0.0, freqs)
-            k = torch.ops.mlx.rope(k, self.head_dim, start_pos, False, 0.0, 0.0, freqs)
+            # Full-attention layers use proportional partial RoPE: only
+            # rotary_dim out of head_dim dimensions are rotated. Pass
+            # dims=rotary_dim and the non-zero frequencies as 1D freqs.
+            # MLX computes inv_freq = 1/freqs internally.
+            rotary_dim = int(self.head_dim * self.partial_rotary)
+            rotary_inv_freq = self.inv_freq[: rotary_dim // 2]
+            mlx_freqs = 1.0 / rotary_inv_freq
+            q = torch.ops.mlx.rope(q, rotary_dim, start_pos, False, 0.0, 1.0, mlx_freqs)
+            k = torch.ops.mlx.rope(k, rotary_dim, start_pos, False, 0.0, 1.0, mlx_freqs)
 
         k_cache, v_cache = self.kv_cache.update(start_pos, k, v)
 
