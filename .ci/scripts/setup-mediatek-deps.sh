@@ -14,7 +14,7 @@ install_neuropilot() {
   echo "Start installing neuropilot."
   mkdir -p "${MEDIATEK_INSTALLATION_DIR}"
 
-  curl -Lo /tmp/neuropilot-express.tar.gz "https://s3.ap-southeast-1.amazonaws.com/mediatek.neuropilot.com/06302508-4c94-4bf2-9789-b0ee44e83e27.gz"
+  curl -Lo /tmp/neuropilot-express.tar.gz --retry 3 --retry-all-errors "https://s3.ap-southeast-1.amazonaws.com/mediatek.neuropilot.com/06302508-4c94-4bf2-9789-b0ee44e83e27.gz"
   echo "Finishing downloading neuropilot sdk."
   tar zxvf /tmp/neuropilot-express.tar.gz --strip-components=1 --directory "${MEDIATEK_INSTALLATION_DIR}"
   echo "Finishing unzip neuropilot sdk."
@@ -33,7 +33,7 @@ setup_neuropilot() {
 }
 
 setup_calibration_data() {
-  curl -Lo /tmp/imagenette2-160.tgz https://s3.amazonaws.com/fast-ai-imageclas/imagenette2-160.tgz
+  curl -Lo /tmp/imagenette2-160.tgz --retry 3 --retry-all-errors https://s3.amazonaws.com/fast-ai-imageclas/imagenette2-160.tgz
   tar zxvf /tmp/imagenette2-160.tgz --strip-components=1 --directory "${MEDIATEK_INSTALLATION_DIR}"
 }
 

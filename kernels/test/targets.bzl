@@ -115,7 +115,16 @@ def define_common_targets():
     runtime.cxx_library(
         name = "supported_features_header",
         srcs = [],
-        exported_headers = {"supported_features.h": ":supported_feature_header_gen[supported_features.h]"},
+        exported_headers = {
+            "supported_features.h": ":supported_feature_header_gen[supported_features.h]",
+            "supported_features_skip.h": "supported_features_skip.h",
+        },
+        # Set EXECUTORCH_INTERNAL=1 for fbcode-internal builds so the
+        # ET_SKIP_IF helper in supported_features_skip.h compiles to an
+        # early `return;` instead of GTEST_SKIP. This avoids TestX's
+        # "ConsistentlySkipping" / broken-test signal. OSS builds keep
+        # the canonical GTEST_SKIP behavior. See header for context.
+        exported_preprocessor_flags = [] if runtime.is_oss else ["-DEXECUTORCH_INTERNAL=1"],
         visibility = [
             "//executorch/kernels/...",
         ],

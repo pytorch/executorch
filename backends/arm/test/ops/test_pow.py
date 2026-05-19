@@ -147,7 +147,6 @@ x_fail = {
 
 x_fail_FP = {
     "exp_two": "TOSA constraints: If x <0 .",
-    "exp_zero": "MLETORCH-2041 : Invalid inputs.",
 }
 
 

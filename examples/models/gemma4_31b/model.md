@@ -165,7 +165,7 @@ RoPE inv_freq buffers, and scalar constants are still on the meta device.
 them with real tensors:
 
 - KV caches → zeros in `dtype` (bf16 for inference, bf16 for export)
-- `inv_freq` → moved to target device (cos/sin computed on the fly per forward)
+- `inv_freq` → recomputed on target device (cos/sin computed on the fly per forward)
 - `embed_normalizer`, `logit_softcap`, `cache_positions` → scalar constants
 
 Called by `export.py` (device="cpu" for tracing) and `inference.py`
