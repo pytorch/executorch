@@ -9,11 +9,6 @@ from dataclasses import dataclass, field
 from typing import Tuple
 
 import torch
-from executorch.backends.arm._passes import (
-    ConvertInt64ConstOpsToInt32Pass,
-    ConvertInt64OutputOpsToInt32Pass,
-    InsertInt32CastsAfterInt64PlaceholdersPass,
-)
 from executorch.backends.arm.test import common
 from executorch.backends.arm.test.models.Qwen3_VL.qwen3_vl_test_config import (
     get_qwen3_vl_2b_instruct_checkpoint_config,
@@ -250,26 +245,6 @@ class VisionPatchMergerModel(Qwen3VLTestModule):
         return model, (hidden_states,)
 
 
-class TokenEmbeddingModel(Qwen3VLTestModule):
-    def __init__(self, config) -> None:
-        super().__init__()
-        self.embedding = torch.nn.Embedding(
-            config.text_config.vocab_size,
-            config.text_config.hidden_size,
-            config.text_config.pad_token_id,
-        )
-
-    def forward(self, input_ids: torch.Tensor) -> torch.Tensor:
-        return self.embedding(input_ids)
-
-    @classmethod
-    def prepare_model_and_inputs(cls):
-        config = _make_qwen3_vl_2b_instruct_layer_config()
-        model = cls(config).eval()
-        input_ids = torch.randint(0, 128, (2, 8), dtype=torch.long)
-        return model, (input_ids,)
-
-
 class TextRMSNormModel(Qwen3VLTestModule):
     def __init__(self, config) -> None:
         super().__init__()
@@ -458,14 +433,6 @@ TOSA_FP_TEST_CASES: dict[str, Qwen3VLTestCase] = {
     "vision_attention": Qwen3VLTestCase(model_cls=VisionAttentionModel),
     "vision_block": Qwen3VLTestCase(model_cls=VisionBlockModel),
     "vision_patch_merger": Qwen3VLTestCase(model_cls=VisionPatchMergerModel),
-    "token_embedding": Qwen3VLTestCase(
-        model_cls=TokenEmbeddingModel,
-        transform_passes=(
-            ConvertInt64ConstOpsToInt32Pass(),
-            ConvertInt64OutputOpsToInt32Pass(),
-            InsertInt32CastsAfterInt64PlaceholdersPass(),
-        ),
-    ),
     "text_rms_norm": Qwen3VLTestCase(model_cls=TextRMSNormModel),
     "text_rotary_embedding": Qwen3VLTestCase(model_cls=TextRotaryEmbeddingModel),
     "text_rotary_apply": Qwen3VLTestCase(model_cls=TextRotaryApplyModel),

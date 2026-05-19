@@ -14,9 +14,9 @@ def get_qwen3_vl_2b_instruct_checkpoint_config() -> Qwen3VLConfig:
     text_config = Qwen3VLTextConfig(
         attention_bias=False,
         attention_dropout=0.0,
-        bos_token_id=151643,
+        bos_token_id=151643,  # type: ignore[call-arg]
         dtype="bfloat16",
-        eos_token_id=151645,
+        eos_token_id=151645,  # type: ignore[call-arg]
         head_dim=128,
         hidden_act="silu",
         hidden_size=2048,
@@ -33,7 +33,7 @@ def get_qwen3_vl_2b_instruct_checkpoint_config() -> Qwen3VLConfig:
             "rope_type": "default",  # type: ignore[dict-item]
             "rope_theta": 5_000_000,  # type: ignore[dict-item]
         },
-        tie_word_embeddings=True,
+        tie_word_embeddings=True,  # type: ignore[call-arg]
         use_cache=True,
         vocab_size=151936,
     )
