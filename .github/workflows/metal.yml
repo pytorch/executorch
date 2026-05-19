@@ -360,7 +360,15 @@ jobs:
         mv -v "${RUNNER_ARTIFACT_DIR}/wheels"/*.whl "${WHEEL_DIR}/"
         rmdir "${RUNNER_ARTIFACT_DIR}/wheels"
         ls -lah "${WHEEL_DIR}"
-        ${CONDA_RUN} ./install_executorch.sh --prebuilt-wheel-dir "${WHEEL_DIR}"
+        # --minimal: skip install_optional_example_requirements (transformers,
+        # datasets==3.6.0, torchsr, torchtune, timm). The e2e runner build and
+        # test_model_e2e.sh's audio/image setup do not need any of those, and
+        # pre-installing the pinned datasets==3.6.0 collides with
+        # test_model_e2e.sh's own `pip install datasets` (no pin) — the older
+        # pinned version requires librosa for librispeech audio decode, which
+        # is not in any requirements file. Matches the original test-model-
+        # metal-e2e behavior, which did not run install_executorch.sh at all.
+        ${CONDA_RUN} ./install_executorch.sh --prebuilt-wheel-dir "${WHEEL_DIR}" --minimal
         echo "::endgroup::"
 
         ${CONDA_RUN} bash .ci/scripts/test_model_e2e.sh metal "${{ matrix.model.repo }}/${{ matrix.model.name }}" "${{ matrix.quant }}" "${RUNNER_ARTIFACT_DIR}"
