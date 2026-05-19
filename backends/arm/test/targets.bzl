@@ -40,6 +40,7 @@ def define_arm_tests():
         "ops/test_reciprocal.py",
         "ops/test_mean_dim.py",
         "ops/test_var.py",
+        "ops/test_conv1d.py",
     ]
 
     # Quantization
