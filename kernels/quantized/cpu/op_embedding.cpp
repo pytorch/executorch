@@ -200,7 +200,7 @@ void resize_out_tensor(
     const Tensor& indices,
     Tensor& out) {
   executorch::aten::SizesType expected_output_size[kTensorDimensionLimit];
-  for (size_t i = 0; i < indices.dim(); i++) {
+  for (ssize_t i = 0; i < indices.dim(); i++) {
     expected_output_size[i] = indices.size(i);
   }
   const size_t embedding_dim = weight.size(1);
