@@ -68,7 +68,7 @@ all() { # Run all tests
     # ----
     # That is executed
     echo "${TEST_SUITE_NAME}: Run all tests"
-    grep "^test_" backends/arm/test/test_arm_backend.sh | sed 's/([^)]*)[[:space:]]*{*//g' | sed "s|^|$0 |" | sh
+    grep "^test_" backends/arm/test/test_arm_backend.sh | sed 's/([^)]*)[[:space:]]*{*//g' | sed "s|^|$0 |" | sh -e
     echo "${TEST_SUITE_NAME}: PASS"
 }
 
