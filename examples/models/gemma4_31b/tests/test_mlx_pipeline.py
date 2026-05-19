@@ -168,6 +168,58 @@ class TestMlxPipeline(unittest.TestCase):
         self.assertEqual(out.shape, torch.Size([1, TINY_CONFIG.vocab_size]))
         self.assertFalse(torch.isnan(out).any())
 
+    def test_source_transforms_use_mlx_ops(self):
+        """Verify the traced graph contains the expected MLX custom ops.
+
+        Each attention layer should produce:
+          - 2× ``mlx.rope`` (q and k)
+          - 2× ``mlx.kv_cache_update`` (k and v)
+          - 1× ``mlx.custom_sdpa``
+        """
+        from executorch.examples.models.gemma4_31b.mlx_source_transformations import (
+            mlx_source_transformations,
+        )
+        from executorch.examples.models.gemma4_31b.model import (
+            materialize_runtime_buffers,
+        )
+        from torch.export import Dim, export
+
+        model = build_random_tiny_model()
+        model.lm_head.weight = nn.Parameter(model.embed_tokens.weight.clone())
+        state_dict = quantize_model(model, TINY_SENSITIVE_RECIPE)
+
+        with torch.device("meta"):
+            model = Gemma4_31B(TINY_CONFIG)
+        model.lm_head.weight = nn.Parameter(model.embed_tokens.weight.clone())
+        pack_model(model, state_dict, DEFAULT_MLX_PACKERS)
+        model.eval()
+
+        mlx_source_transformations(model, dtype=torch.bfloat16)
+        materialize_runtime_buffers(model, dtype=torch.bfloat16)
+
+        # Trace with dynamic seq_len matching the MLX export shape.
+        seq_dim = Dim("seq", min=1, max=8)
+        ep = export(
+            model,
+            (torch.tensor([[1, 2]]), torch.tensor([0, 1])),
+            dynamic_shapes=({1: seq_dim}, {0: seq_dim}),
+            strict=True,
+        )
+
+        op_counts = {"rope": 0, "kv_cache_update": 0, "custom_sdpa": 0}
+        for node in ep.graph.nodes:
+            if node.op != "call_function":
+                continue
+            name = str(node.target)
+            for op in op_counts:
+                if f"mlx.{op}" in name:
+                    op_counts[op] += 1
+
+        n_layers = TINY_CONFIG.num_hidden_layers
+        self.assertEqual(op_counts["rope"], 2 * n_layers, f"got {op_counts}")
+        self.assertEqual(op_counts["kv_cache_update"], 2 * n_layers, f"got {op_counts}")
+        self.assertEqual(op_counts["custom_sdpa"], n_layers, f"got {op_counts}")
+
     def test_export_to_pte(self):
         """Full export: quantize → pack → export with MLXPartitioner."""
         try:

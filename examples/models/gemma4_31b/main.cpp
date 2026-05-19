@@ -6,12 +6,14 @@
  * LICENSE file in the root directory of this source tree.
  */
 
-// Gemma 4 31B-IT runner for ExecuTorch.
-//
-// Supports two backends:
-//   CUDA  — two methods (prefill + decode), on-device Gumbel-max sampling,
-//           temperature as a third input.
-//   MLX   — single "forward" method, returns logits, host-side greedy argmax.
+// Gemma 4 31B-IT runner for ExecuTorch. Supports two backends:
+//   CUDA  — exports ``prefill`` (T>=2, dynamic) + ``decode`` (T=1, static)
+//           methods sharing KV-cache buffers; on-device Gumbel-max sampling
+//           with temperature passed as a third input; returns a scalar
+//           float token id.
+//   MLX   — exports a single ``forward`` method with dynamic seq_len;
+//           returns last-token logits; the runner samples on the host via
+//           ``llm::logits_to_token`` with the same temperature semantics.
 
 #include <gflags/gflags.h>
 
@@ -311,17 +313,23 @@ int main(int argc, char** argv) {
   }
 
   stats.prompt_eval_end_ms = llm::time_in_ms();
-  double prefill_ms =
-      static_cast<double>(stats.prompt_eval_end_ms - stats.inference_start_ms);
-  printf(
-      "Prefill: %" PRId64 " tokens in %.1f ms (%.1f tok/s)\n",
-      num_prompt_tokens,
-      prefill_ms,
-      num_prompt_tokens * 1000.0 / prefill_ms);
+  // First generated token came from the last prefill chunk; TTFT is prefill.
+  stats.first_token_ms = stats.prompt_eval_end_ms;
 
 #ifdef EXECUTORCH_BUILD_CUDA
   cudaDeviceSynchronize();
 #endif
+
+  // Print the first generated token (from the last prefill chunk).
+  // Use the last prompt token as the streaming-decode prefix so any BPE
+  // partial-character handling stays correct.
+  {
+    auto first_str = tokenizer->decode(prompt_tokens.back(), cur_token);
+    if (first_str.ok()) {
+      printf("%s", first_str->c_str());
+      fflush(stdout);
+    }
+  }
 
   // ---------------------------------------------------------------
   // Decode loop
@@ -335,7 +343,8 @@ int main(int argc, char** argv) {
       decode_pos_data.data(), {1}, executorch::aten::ScalarType::Long);
 
   uint64_t prev_token = cur_token;
-  for (int32_t step = 0; step < FLAGS_max_new_tokens; step++) {
+  bool hit_eos = eos_ids.find(cur_token) != eos_ids.end();
+  for (int32_t step = 0; step < FLAGS_max_new_tokens && !hit_eos; step++) {
     decode_token_data[0] = static_cast<int64_t>(cur_token);
     decode_pos_data[0] = pos;
 
@@ -362,10 +371,6 @@ int main(int argc, char** argv) {
     cur_token = static_cast<uint64_t>(
         llm::logits_to_token(result.get()[0].toTensor(), temp_val));
 #endif
-
-    if (step == 0) {
-      stats.first_token_ms = llm::time_in_ms();
-    }
     pos++;
 
     auto decode_str = tokenizer->decode(prev_token, cur_token);
@@ -374,25 +379,12 @@ int main(int argc, char** argv) {
       fflush(stdout);
     }
 
-    if (eos_ids.find(cur_token) != eos_ids.end()) {
-      printf("\n");
-      break;
-    }
+    hit_eos = eos_ids.find(cur_token) != eos_ids.end();
   }
-
-  stats.inference_end_ms = llm::time_in_ms();
   printf("\n");
 
-  int64_t num_generated = pos - num_prompt_tokens;
-  stats.num_generated_tokens = num_generated;
-  double decode_ms =
-      static_cast<double>(stats.inference_end_ms - stats.prompt_eval_end_ms);
-  printf(
-      "Decode: %" PRId64 " tokens in %.1f ms (%.1f tok/s)\n",
-      num_generated,
-      decode_ms,
-      num_generated * 1000.0 / decode_ms);
-  printf("Prompt tokens: %" PRId64 "\n", num_prompt_tokens);
+  stats.inference_end_ms = llm::time_in_ms();
+  stats.num_generated_tokens = pos - num_prompt_tokens;
 
 #ifdef EXECUTORCH_BUILD_CUDA
   cudaMemGetInfo(&gpu_free_bytes, &gpu_total_bytes);
