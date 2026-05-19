@@ -26,6 +26,7 @@ jobs:
     name: test-riscv
     uses: ./.github/workflows/_test_riscv.yml
     strategy:
+      fail-fast: false
       matrix:
         include:
           - { model: add,        xnnpack: false, quantize: false }
@@ -50,5 +51,5 @@ jobs:
       xnnpack: ${{ matrix.xnnpack }}
       quantize: ${{ matrix.quantize }}
       # XNNPACK requires GCC 14+
-      gcc-version: ${{ matrix.xnnpack && 14 }}
-      docker-image: ${{ matrix.xnnpack && 'ci-image:executorch-ubuntu-24.04-gcc14' }}
+      gcc-version: ${{ matrix.xnnpack && 14 || 11 }}
+      docker-image: ${{ matrix.xnnpack && 'ci-image:executorch-ubuntu-24.04-gcc14' || 'ci-image:executorch-ubuntu-22.04-gcc11' }}

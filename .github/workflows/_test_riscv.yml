@@ -53,4 +53,4 @@ jobs:
         install_executorch "--use-pt-pinned-commit"
 
         export GCC_VERSION=${{ inputs.gcc-version }}
-        bash .ci/scripts/test_riscv_qemu.sh --model="${{ inputs.model }}" ${{ inputs.xnnpack && '--xnnpack' }} ${{ inputs.quantize && '--quantize' }}
+        bash .ci/scripts/test_riscv_qemu.sh --model="${{ inputs.model }}" ${{ inputs.xnnpack && '--xnnpack' || '' }} ${{ inputs.quantize && '--quantize' || '' }}
