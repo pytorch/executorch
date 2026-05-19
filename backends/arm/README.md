@@ -138,8 +138,10 @@ The delegated Python API flow is:
 For complete examples of that flow, including quantization and target-specific
 compile specs, see:
 
-- `docs/source/backends/arm-ethos-u/tutorials/ethos-u-getting-started.md`
-- `docs/source/backends/arm-vgf/tutorials/vgf-getting-started.md`
+- [Arm Ethos-U tutorial](https://docs.pytorch.org/executorch/stable/backends/arm-ethos-u/tutorials/ethos-u-getting-started.html)
+- [Arm VGF tutorial](https://docs.pytorch.org/executorch/stable/backends/arm-vgf/tutorials/vgf-getting-started.html)
+- [Arm Cortex-M backend overview](https://docs.pytorch.org/executorch/stable/backends/arm-cortex-m/arm-cortex-m-overview.html)
+- [Ethos-U porting guide](https://github.com/pytorch/executorch/blob/main/examples/arm/ethos-u-porting-guide.md)
 
 Additional examples are available in `examples/arm`.
 
