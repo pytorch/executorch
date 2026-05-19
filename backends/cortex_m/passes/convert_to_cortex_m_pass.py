@@ -24,11 +24,11 @@ from executorch.backends.transforms.utils import (
     is_param_node,
 )
 from executorch.exir.dialects._ops import ops as exir_ops
+from executorch.exir.passes import make_alloc_node
+from torch._subclasses.fake_tensor import FakeTensorMode
+
 from torch.export.graph_signature import InputKind
 from torch.fx.passes.infra.pass_manager import PassResult
-
-UNINITIALIZED_ALLOC_ARGS = (((0,), torch.uint8),)
-""" Args of alloc are overwritten with planned size at a later point."""
 
 
 class ConvertToCortexMPass(CortexMPass):
@@ -39,6 +39,15 @@ class ConvertToCortexMPass(CortexMPass):
     Used for ops which require changes to input tensors which is not supported
     by call_operator.
     """
+
+    def _uninitialized_scratch(self):
+        """Create an unitialized alloc node to be initialize at a later point."""
+        with FakeTensorMode() as mode:
+            return make_alloc_node(
+                self.exported_program.graph_module,
+                mode.from_tensor(torch.empty(0)),
+                None,
+            )
 
     def _compute_kernel_sum(self, weights, bias, input_offset, weight_offset):
         """
@@ -246,11 +255,7 @@ class ConvertToCortexMPass(CortexMPass):
             )
 
         with node.graph.inserting_before(node):
-            scratch = node.graph.call_function(
-                exir.memory.alloc,
-                args=UNINITIALIZED_ALLOC_ARGS,
-                kwargs={},
-            )
+            scratch = self._uninitialized_scratch()
 
         if use_depthwise_conv:
             # Compute depth_multiplier for depthwise convolution
@@ -299,13 +304,19 @@ class ConvertToCortexMPass(CortexMPass):
             )
             return exir_ops.edge.cortex_m.quantized_conv2d.default, new_args
 
-    def _set_scratch_buffer_size(self, node: torch.fx.Node) -> None:
+    def _initialize_scratch_buffer_size(self, node: torch.fx.Node) -> None:
+        """For nodes with a registered buffer size function for node.target, set the buffer sizes
+        of the last n args, which should be exir.memory.alloc nodes. For nodes without a
+        registered function, do nothing.
+        """
+
         scratch_buffer_sizes = required_cmsis_nn_buffer_sizes(
             node, self.target_config.backend
         )
         if scratch_buffer_sizes is None:
             return
 
+        # Assume that scratch_buffer_sizes are given from left to right in the call signature of node.target.
         for i, scratch_buffer_size in enumerate(reversed(scratch_buffer_sizes)):
             scratch_arg = node.args[-(i + 1)]
             if (
@@ -400,16 +411,8 @@ class ConvertToCortexMPass(CortexMPass):
             )
 
         with node.graph.inserting_before(node):
-            scratch = node.graph.call_function(
-                exir.memory.alloc,
-                args=UNINITIALIZED_ALLOC_ARGS,
-                kwargs={},
-            )
-            output_scratch = node.graph.call_function(
-                exir.memory.alloc,
-                args=UNINITIALIZED_ALLOC_ARGS,
-                kwargs={},
-            )
+            scratch = self._uninitialized_scratch()
+            output_scratch = self._uninitialized_scratch()
 
         new_args = (
             x,
@@ -466,11 +469,7 @@ class ConvertToCortexMPass(CortexMPass):
                 )
 
         with node.graph.inserting_before(node):
-            scratch = node.graph.call_function(
-                exir.memory.alloc,
-                args=UNINITIALIZED_ALLOC_ARGS,
-                kwargs={},
-            )
+            scratch = self._uninitialized_scratch()
 
         args = (
             lhs_node,
@@ -517,7 +516,7 @@ class ConvertToCortexMPass(CortexMPass):
                     args=args,
                     kwargs={},
                 )
-                self._set_scratch_buffer_size(cortex_m_op)
+                self._initialize_scratch_buffer_size(cortex_m_op)
 
                 node.replace_all_uses_with(cortex_m_op)
                 graph_module.graph.erase_node(node)
