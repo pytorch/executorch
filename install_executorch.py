@@ -191,6 +191,16 @@ def _parse_args() -> argparse.Namespace:
         help="Only installs necessary dependencies for core executorch and skips "
         " packages necessary for running example scripts.",
     )
+    parser.add_argument(
+        "--prebuilt-wheel-dir",
+        type=str,
+        default=None,
+        help="Install ExecuTorch from prebuilt wheels in this directory "
+        "(produced by .ci/scripts/build_macos_wheels.sh) instead of "
+        "building the C++ extensions from source. Skips the slow "
+        "`pip install .` step. PyTorch and other Python-only "
+        "dependencies are still installed normally.",
+    )
     allowed_optional_dependencies = ["cortex_m", "ethos_u", "vgf", "openvino"]
     parser.add_argument(
         "--optional-dependency",
@@ -216,6 +226,24 @@ def main(args):
         clean()
         return
 
+    if args.prebuilt_wheel_dir is not None:
+        prebuilt_wheel_dir = os.path.abspath(args.prebuilt_wheel_dir)
+        if not os.path.isdir(prebuilt_wheel_dir):
+            logger.error(
+                f"--prebuilt-wheel-dir {prebuilt_wheel_dir} is not a directory"
+            )
+            sys.exit(1)
+        if args.editable:
+            logger.error("--prebuilt-wheel-dir is incompatible with --editable")
+            sys.exit(1)
+        if args.optional_dependency:
+            logger.error(
+                "--prebuilt-wheel-dir is not yet supported with --optional-dependency"
+            )
+            sys.exit(1)
+    else:
+        prebuilt_wheel_dir = None
+
     check_and_update_submodules()
     # This option is used in CI to make sure that PyTorch build from the pinned commit
     # is used instead of nightly. CI jobs wouldn't be able to catch regression from the
@@ -223,7 +251,7 @@ def main(args):
     use_pytorch_nightly = not args.use_pt_pinned_commit
 
     # Step 1: Install core dependencies first
-    install_requirements(use_pytorch_nightly)
+    install_requirements(use_pytorch_nightly, prebuilt_wheel_dir=prebuilt_wheel_dir)
 
     # Step 2: Install build dependencies for optional dependencies
     # They need to be installed before optional dependencies due to --no-build-isolation
@@ -239,29 +267,48 @@ def main(args):
         subprocess.run(cmd, check=True)
 
     # Step 3: Install core package
-    package_spec = "."
-    if args.optional_dependency:
-        extras = ",".join(dict.fromkeys(args.optional_dependency))
-        package_spec = f".[{extras}]"
-    cmd = (
-        [
-            sys.executable,
-            "-m",
-            "pip",
-            "install",
-        ]
-        + (["--editable"] if args.editable else [])
-        + [
-            package_spec,
-            "--no-build-isolation",
-            "-v",
-        ]
-    )
-    subprocess.run(cmd, check=True)
+    if prebuilt_wheel_dir is not None:
+        # Locate the executorch wheel produced by build_macos_wheels.sh and
+        # install it in place of `pip install .`. We use sorted+unique-match
+        # semantics so any unexpected stray wheel surfaces as an error rather
+        # than getting silently picked up.
+        executorch_wheel = _find_executorch_wheel(prebuilt_wheel_dir)
+        cmd = [sys.executable, "-m", "pip", "install", executorch_wheel]
+        subprocess.run(cmd, check=True)
+    else:
+        package_spec = "."
+        if args.optional_dependency:
+            extras = ",".join(dict.fromkeys(args.optional_dependency))
+            package_spec = f".[{extras}]"
+        cmd = (
+            [
+                sys.executable,
+                "-m",
+                "pip",
+                "install",
+            ]
+            + (["--editable"] if args.editable else [])
+            + [
+                package_spec,
+                "--no-build-isolation",
+                "-v",
+            ]
+        )
+        subprocess.run(cmd, check=True)
 
     # Step 4: Extra (optional) packages that is only useful for running examples.
     if not args.minimal:
         install_optional_example_requirements(use_pytorch_nightly)
+
+
+def _find_executorch_wheel(wheel_dir):
+    pattern = os.path.join(wheel_dir, "executorch-*.whl")
+    matches = sorted(glob.glob(pattern))
+    if len(matches) != 1:
+        raise FileNotFoundError(
+            f"Expected exactly one wheel matching {pattern}, found {matches}"
+        )
+    return matches[0]
 
 
 if __name__ == "__main__":

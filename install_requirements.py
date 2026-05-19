@@ -31,7 +31,17 @@ TORCH_URL_BASE = "https://download.pytorch.org/whl/test"
 # SUPPORTED_CUDA_VERSIONS in install_utils.py if needed.
 
 
-def install_requirements(use_pytorch_nightly):
+def install_torch_and_dev_requirements(use_pytorch_nightly):
+    """Install PyTorch and Python-only build/runtime dependencies.
+
+    This is the subset of :func:`install_requirements` that does NOT build
+    any C++ extensions. It is the single source of truth for the pinned
+    PyTorch version and the contents of ``requirements-dev.txt``. CI
+    helper scripts that produce wheels via ``pip wheel`` (for example
+    ``.ci/scripts/build_macos_wheels.sh``) MUST call this function rather
+    than duplicating the pip command, so that bumping the pinned torch
+    version here is immediately effective everywhere.
+    """
     # Skip pip install on Intel macOS if using nightly.
     if use_pytorch_nightly and is_intel_mac_os():
         print(
@@ -70,6 +80,31 @@ def install_requirements(use_pytorch_nightly):
         check=True,
     )
 
+
+def install_requirements(use_pytorch_nightly, prebuilt_wheel_dir=None):
+    """Install ExecuTorch's runtime/build requirements.
+
+    If ``prebuilt_wheel_dir`` is provided, the local-source builds for
+    ``third-party/ao`` and ``extension/llm/tokenizers`` are replaced with
+    ``pip install`` of the matching ``*.whl`` files from that directory.
+    The PyTorch + ``requirements-dev.txt`` step still runs (it is a fast
+    pip download and is required for downstream consumers).
+    """
+    install_torch_and_dev_requirements(use_pytorch_nightly)
+
+    if prebuilt_wheel_dir is not None:
+        # Install ao + tokenizers from prebuilt wheels rather than building them
+        # from source. Wheels are matched by setuptools-style distribution name.
+        wheel_specs = []
+        wheel_specs.append(_find_wheel(prebuilt_wheel_dir, "torchao"))
+        if sys.platform != "win32":
+            wheel_specs.append(_find_wheel(prebuilt_wheel_dir, "pytorch_tokenizers"))
+        subprocess.run(
+            [sys.executable, "-m", "pip", "install", *wheel_specs],
+            check=True,
+        )
+        return
+
     LOCAL_REQUIREMENTS = [
         "third-party/ao",  # We need the latest kernels for fast iteration, so not relying on pypi.
     ] + (
@@ -104,6 +139,24 @@ def install_requirements(use_pytorch_nightly):
         env=new_env,
         check=True,
     )
+
+
+def _find_wheel(wheel_dir, dist_name):
+    """Return the absolute path of the single ``*.whl`` matching ``dist_name``.
+
+    A wheel filename starts with ``{normalized_dist_name}-{version}-...``,
+    where the normalized name uses underscores. ``dist_name`` should be passed
+    in the underscore form (e.g. ``torchao``, ``pytorch_tokenizers``).
+    """
+    import glob
+
+    pattern = os.path.join(wheel_dir, f"{dist_name}-*.whl")
+    matches = sorted(glob.glob(pattern))
+    if len(matches) != 1:
+        raise FileNotFoundError(
+            f"Expected exactly one wheel matching {pattern}, found {matches}"
+        )
+    return matches[0]
 
 
 def install_optional_example_requirements(use_pytorch_nightly):
