@@ -155,7 +155,7 @@ int main(int argc, char** argv) {
   auto module = std::make_unique<Module>(
       FLAGS_model_path,
       data_files,
-      Module::LoadMode::File,
+      Module::LoadMode::Mmap,
       /*event_tracer=*/nullptr,
       /*memory_allocator=*/nullptr,
       /*temp_allocator=*/nullptr,
