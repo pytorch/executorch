@@ -190,8 +190,24 @@ int main(int argc, char** argv) {
   }
   {
     executorch::runtime::BackendOptions<1> backend_options;
-    backend_options.set_option("weight_sharing_across_methods", true);
-    executorch::runtime::set_option("CudaBackend", backend_options.view());
+    auto set_err =
+        backend_options.set_option("weight_sharing_across_methods", true);
+    if (set_err != Error::Ok) {
+      ET_LOG(
+          Error,
+          "Failed to set weight_sharing_across_methods: %d",
+          static_cast<int>(set_err));
+      return 1;
+    }
+    auto opt_err =
+        executorch::runtime::set_option("CudaBackend", backend_options.view());
+    if (opt_err != Error::Ok) {
+      ET_LOG(
+          Error,
+          "Failed to enable weight_sharing_across_methods: %d",
+          static_cast<int>(opt_err));
+      return 1;
+    }
   }
   printf("Loading methods...\n");
   if (module->load_method("prefill") != Error::Ok) {
