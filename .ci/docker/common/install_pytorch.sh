@@ -30,6 +30,9 @@ install_pytorch_and_domains() {
   if [[ "$(uname -m)" == "aarch64" ]]; then
     export BUILD_IGNORE_SVE_UNAVAILABLE=1
   fi
+  if [[ -n "${PYTORCH_BUILD_MAX_JOBS:-}" ]]; then
+    export MAX_JOBS="${PYTORCH_BUILD_MAX_JOBS}"
+  fi
   # Then build and install PyTorch
   conda_run python setup.py bdist_wheel
   pip_install "$(echo dist/*.whl)"
