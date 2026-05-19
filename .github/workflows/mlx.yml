@@ -60,6 +60,7 @@ jobs:
           backends/mlx/test/test_passes.py \
           backends/mlx/test/test_pattern_utils.py \
           backends/mlx/test/test_partitioner.py \
+          examples/models/gemma4_31b/tests/test_mlx_pipeline.py \
           -v
         echo "::endgroup::"
 
