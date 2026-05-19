@@ -19,6 +19,16 @@ from executorch.exir.passes import MemoryPlanningPass
 from torch.export import Dim, export
 
 
+HOP_LENGTH_SAMPLES = 160
+
+
+def pad_audio_to_hop_size(audio: torch.Tensor) -> torch.Tensor:
+    padding = (-audio.shape[-1]) % HOP_LENGTH_SAMPLES
+    if padding == 0:
+        return audio
+    return torch.nn.functional.pad(audio, (0, padding))
+
+
 def load_audio(audio_path: str, sample_rate: int = 16000) -> torch.Tensor:
     """Load audio file and resample to target sample rate."""
 
@@ -179,7 +189,8 @@ def transcribe_executorch(audio_path: str, model, et_buffer) -> str:
         preprocessor_method = program.load_method("preprocessor")
         audio_1d = audio.squeeze(0)
         audio_len = torch.tensor([audio_1d.shape[0]], dtype=torch.int64)
-        proc_result = preprocessor_method.execute([audio_1d, audio_len])
+        padded_audio = pad_audio_to_hop_size(audio_1d)
+        proc_result = preprocessor_method.execute([padded_audio, audio_len])
         mel = proc_result[0]
         mel_len = proc_result[1].item()
 
@@ -360,8 +371,17 @@ def export_all(
         preprocessor_wrapper,
         (sample_audio, sample_length),
         dynamic_shapes={
-            # min=1600 samples = 0.1 sec @ 16kHz, max aligned with encoder limit
-            "audio": {0: Dim("audio_len", min=1600, max=max_audio_samples)},
+            # min=10 frames = 0.1 sec @ 16kHz, max aligned with encoder limit.
+            # PyTorch 2.12 cannot prove the preprocessor's hop-size guard from
+            # a plain min/max range, so express the input length in hop units.
+            "audio": {
+                0: HOP_LENGTH_SAMPLES
+                * Dim(
+                    "audio_frames",
+                    min=10,
+                    max=max_audio_samples // HOP_LENGTH_SAMPLES,
+                )
+            },
             "length": {},
         },
         strict=False,
