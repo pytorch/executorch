@@ -290,9 +290,8 @@ def _strip_sampler_from_forward(model: Gemma4_31B) -> None:
 
     def _clean_forward(self, tokens, input_pos):
         x = self.embed_tokens(tokens) * self.embed_normalizer
-        sliding_mask, full_mask = self._build_masks(input_pos)
         for layer in self.layers:
-            x = layer(x, input_pos, sliding_mask, full_mask)
+            x = layer(x, input_pos)
         x = self.norm(x)
         last = self.lm_head(x[:, -1, :]).float()
         cap = self.logit_softcap.float()

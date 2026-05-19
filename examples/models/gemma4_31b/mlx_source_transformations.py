@@ -30,9 +30,7 @@ def _replace_attention_forward(attn: nn.Module) -> None:
     """Replace a Gemma4Attention's forward with one that uses MLX custom ops."""
     import types
 
-    def _mlx_forward(
-        self, x: torch.Tensor, input_pos: torch.Tensor, attn_mask: torch.Tensor
-    ) -> torch.Tensor:
+    def _mlx_forward(self, x: torch.Tensor, input_pos: torch.Tensor) -> torch.Tensor:
         B, T, _ = x.shape
         start_pos = input_pos[0].item()
 
@@ -101,6 +99,30 @@ def _replace_attention_forward(attn: nn.Module) -> None:
     attn.forward = types.MethodType(_mlx_forward, attn)
 
 
+def _replace_layer_forward(layer: nn.Module) -> None:
+    """Replace Gemma4DecoderLayer's forward to remove mask parameters."""
+    import types
+
+    def _mlx_layer_forward(
+        self, x: torch.Tensor, input_pos: torch.Tensor
+    ) -> torch.Tensor:
+        residual = x
+        h = self.input_layernorm(x)
+        h = self.self_attn(h, input_pos)
+        h = self.post_attention_layernorm(h)
+        x = residual + h
+
+        residual = x
+        h = self.pre_feedforward_layernorm(x)
+        h = self.mlp(h)
+        h = self.post_feedforward_layernorm(h)
+        x = residual + h
+
+        return x * self.layer_scalar
+
+    layer.forward = types.MethodType(_mlx_layer_forward, layer)
+
+
 def mlx_source_transformations(
     model: nn.Module,
     dtype: torch.dtype = torch.bfloat16,
@@ -108,8 +130,9 @@ def mlx_source_transformations(
     """Apply MLX source transformations to a Gemma 4 31B model in-place.
 
     Replaces KV caches with MLX-optimized versions and rewrites attention
-    forward methods to use ``mlx.rope``, ``mlx.kv_cache_update``, and
-    ``mlx.custom_sdpa``.
+    and layer forward methods to use ``mlx.rope``, ``mlx.kv_cache_update``,
+    and ``mlx.custom_sdpa``. Removes model-level ``_build_masks`` — each
+    MLX attention builds its own mask internally via ``custom_sdpa``.
     """
     config = model.config
 
@@ -135,3 +158,4 @@ def mlx_source_transformations(
             )
 
         _replace_attention_forward(attn)
+        _replace_layer_forward(layer)
