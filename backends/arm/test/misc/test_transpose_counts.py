@@ -9,7 +9,10 @@ from typing import Any, Tuple
 import torch
 
 from executorch.backends.arm.test import common
-from executorch.backends.arm.test.tester.test_pipeline import TosaPipelineFP
+from executorch.backends.arm.test.tester.test_pipeline import (
+    TosaPipelineFP,
+    TosaPipelineINT,
+)
 
 
 InputT = Tuple[Any, ...]
@@ -330,6 +333,17 @@ class Model10DwConvBatchNormLinearCat(torch.nn.Module):
         return torch.cat((a, b), dim=-1)
 
 
+class PermuteSiluPermute(torch.nn.Module):
+    def __init__(self):
+        super().__init__()
+        self.silu = torch.nn.SiLU()
+
+    def forward(self, x: torch.Tensor):
+        x = torch.permute(x, [0, 2, 3, 1])
+        x = self.silu(x)
+        return torch.permute(x, [0, 3, 1, 2])
+
+
 cases = {
     "conv1d_rank2": TransposeCountCase(Conv1dModule(), (torch.randn(2, 8),), 2),
     "conv1d_rank3": TransposeCountCase(Conv1dModule(), (torch.randn(1, 2, 8),), 2),
@@ -458,6 +472,14 @@ cases = {
     ),
 }
 
+cases_int = {
+    "permute_silu_permute": TransposeCountCase(
+        PermuteSiluPermute(),
+        (torch.randn(1, 2, 3, 4),),
+        0,
+    ),
+}
+
 
 cases_channels_last = {
     "conv2d_rank4_channels_last": TransposeCountCase(
@@ -531,9 +553,16 @@ cases_channels_last = {
 }
 
 
-@common.parametrize("case", cases)
+@common.parametrize("case", cases | cases_int)
 def test_transpose_counts_tosa_FP(case: TransposeCountCase) -> None:
     pipeline = TosaPipelineFP[InputT](case.module, case.inputs, aten_op=[])
+    pipeline.count_tosa_ops({"TRANSPOSE": case.expected_transposes})
+    pipeline.run()
+
+
+@common.parametrize("case", cases_int)
+def test_transpose_counts_tosa_INT(case: TransposeCountCase) -> None:
+    pipeline = TosaPipelineINT[InputT](case.module, case.inputs, aten_op=[])
     pipeline.count_tosa_ops({"TRANSPOSE": case.expected_transposes})
     pipeline.run()
 

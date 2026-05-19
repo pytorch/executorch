@@ -17,9 +17,9 @@ MODEL=$1
 script_dir=$(realpath "$(dirname "${BASH_SOURCE[0]}")")
 et_root_dir=$(realpath "${script_dir}/../..")
 
-# Quantization is the default for the cortex-m55+int8 target; run.sh's
+# Quantization is the default for the cortex-m55 target; run.sh's
 # arg parser only recognizes --no_quantize, so we omit any explicit flag.
 bash "${et_root_dir}/examples/arm/run.sh" \
     --model_name="${MODEL}" \
-    --target=cortex-m55+int8 \
+    --target=cortex-m55 \
     --bundleio

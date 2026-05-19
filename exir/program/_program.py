@@ -1798,6 +1798,12 @@ class EdgeProgramManager:
                 )
             else:
                 memory_planning_pass = config.memory_planning_pass
+            # Propagate enable_non_cpu_memory_planning from the top-level config
+            # to the pass instance so that device-aware partitioning is applied.
+            if hasattr(memory_planning_pass, "enable_non_cpu_memory_planning"):
+                memory_planning_pass.enable_non_cpu_memory_planning = (
+                    config.enable_non_cpu_memory_planning
+                )
             # TODO(jakeszwe): Follow up with compiler on if the deepcopy is necessary and if so how to make it work
             if hasattr(memory_planning_pass, "run"):
                 new_gm_res = memory_planning_pass.run(new_gm, new_signature)

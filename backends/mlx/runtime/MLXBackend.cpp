@@ -19,7 +19,6 @@
 #include <mlx/mlx.h>
 
 #include <cstring>
-#include <iostream>
 #include <limits>
 #include <memory>
 #include <mutex>
@@ -285,6 +284,13 @@ class MLXBackend final : public ::executorch::runtime::BackendInterface {
         processed->Free();
       }
       return Error::InvalidProgram;
+    } catch (...) {
+      ET_LOG(Error, "Failed to load MLX program: unknown non-std exception");
+      handle->~MLXHandle();
+      if (processed != nullptr) {
+        processed->Free();
+      }
+      return Error::InvalidProgram;
     }
 
     return handle;
@@ -415,6 +421,9 @@ class MLXBackend final : public ::executorch::runtime::BackendInterface {
       return Error::Ok;
     } catch (const std::exception& e) {
       ET_LOG(Error, "MLX execute failed: %s", e.what());
+      return Error::Internal;
+    } catch (...) {
+      ET_LOG(Error, "MLX execute failed: unknown non-std exception");
       return Error::Internal;
     }
   }

@@ -10,6 +10,7 @@
 #include <cstdint>
 #include <cstring>
 #include <memory>
+#include <sstream>
 #include <string>
 #include <unordered_map>
 #include <vector>
@@ -148,103 +149,117 @@ class ExecuTorchLlmJni : public facebook::jni::HybridClass<ExecuTorchLlmJni> {
       jint num_bos = 0,
       jint num_eos = 0,
       jint load_mode = 1) {
-    temperature_ = temperature;
-    num_bos_ = num_bos;
-    num_eos_ = num_eos;
+    try {
+      temperature_ = temperature;
+      num_bos_ = num_bos;
+      num_eos_ = num_eos;
 #if defined(ET_USE_THREADPOOL)
-    // Reserve 1 thread for the main thread.
-    int32_t num_performant_cores =
-        ::executorch::extension::cpuinfo::get_num_performant_cores() - 1;
-    if (num_performant_cores > 0) {
-      ET_LOG(Info, "Resetting threadpool to %d threads", num_performant_cores);
-      ::executorch::extension::threadpool::get_threadpool()
-          ->_unsafe_reset_threadpool(num_performant_cores);
-    }
+      // Reserve 1 thread for the main thread.
+      int32_t num_performant_cores =
+          ::executorch::extension::cpuinfo::get_num_performant_cores() - 1;
+      if (num_performant_cores > 0) {
+        ET_LOG(
+            Info, "Resetting threadpool to %d threads", num_performant_cores);
+        ::executorch::extension::threadpool::get_threadpool()
+            ->_unsafe_reset_threadpool(num_performant_cores);
+      }
 #endif
 
-    model_type_category_ = model_type_category;
-    auto cpp_load_mode = load_mode_from_int(load_mode);
-    std::vector<std::string> data_files_vector;
-    if (model_type_category == MODEL_TYPE_CATEGORY_MULTIMODAL) {
-      runner_ = llm::create_multimodal_runner(
-          model_path->toStdString().c_str(),
-          llm::load_tokenizer(tokenizer_path->toStdString()),
-          std::nullopt,
-          cpp_load_mode);
-    } else if (model_type_category == MODEL_TYPE_CATEGORY_LLM) {
-      if (data_files != nullptr) {
-        // Convert Java List<String> to C++ std::vector<string>
-        auto list_class = facebook::jni::findClassStatic("java/util/List");
-        auto size_method = list_class->getMethod<jint()>("size");
-        auto get_method =
-            list_class->getMethod<facebook::jni::local_ref<jobject>(jint)>(
-                "get");
+      model_type_category_ = model_type_category;
+      auto cpp_load_mode = load_mode_from_int(load_mode);
+      std::vector<std::string> data_files_vector;
+      if (model_type_category == MODEL_TYPE_CATEGORY_MULTIMODAL) {
+        runner_ = llm::create_multimodal_runner(
+            model_path->toStdString().c_str(),
+            llm::load_tokenizer(tokenizer_path->toStdString()),
+            std::nullopt,
+            cpp_load_mode);
+      } else if (model_type_category == MODEL_TYPE_CATEGORY_LLM) {
+        if (data_files != nullptr) {
+          // Convert Java List<String> to C++ std::vector<string>
+          auto list_class = facebook::jni::findClassStatic("java/util/List");
+          auto size_method = list_class->getMethod<jint()>("size");
+          auto get_method =
+              list_class->getMethod<facebook::jni::local_ref<jobject>(jint)>(
+                  "get");
 
-        jint size = size_method(data_files);
-        for (jint i = 0; i < size; ++i) {
-          auto str_obj = get_method(data_files, i);
-          auto jstr = facebook::jni::static_ref_cast<jstring>(str_obj);
-          data_files_vector.push_back(jstr->toStdString());
+          jint size = size_method(data_files);
+          for (jint i = 0; i < size; ++i) {
+            auto str_obj = get_method(data_files, i);
+            auto jstr = facebook::jni::static_ref_cast<jstring>(str_obj);
+            data_files_vector.push_back(jstr->toStdString());
+          }
         }
-      }
-      runner_ = executorch::extension::llm::create_text_llm_runner(
-          model_path->toStdString(),
-          llm::load_tokenizer(tokenizer_path->toStdString()),
-          data_files_vector,
-          /*temperature=*/-1.0f,
-          /*event_tracer=*/nullptr,
-          /*method_name=*/"forward",
-          cpp_load_mode);
+        runner_ = executorch::extension::llm::create_text_llm_runner(
+            model_path->toStdString(),
+            llm::load_tokenizer(tokenizer_path->toStdString()),
+            data_files_vector,
+            /*temperature=*/-1.0f,
+            /*event_tracer=*/nullptr,
+            /*method_name=*/"forward",
+            cpp_load_mode);
 #if defined(EXECUTORCH_BUILD_QNN)
-    } else if (model_type_category == MODEL_TYPE_QNN_LLAMA) {
-      std::unique_ptr<executorch::extension::Module> module =
-          std::make_unique<executorch::extension::Module>(
-              model_path->toStdString().c_str(),
-              data_files_vector,
-              cpp_load_mode);
-      std::string decoder_model = "llama3"; // use llama3 for now
-      // Using 8bit as default since this meta is introduced with 16bit kv io
-      // support and older models only have 8bit kv io.
-      example::KvBitWidth kv_bitwidth = example::KvBitWidth::kWidth8;
-      if (module->method_names()->count("get_kv_io_bit_width") > 0) {
-        kv_bitwidth = static_cast<example::KvBitWidth>(
-            module->get("get_kv_io_bit_width").get().toScalar().to<int64_t>());
-      }
+      } else if (model_type_category == MODEL_TYPE_QNN_LLAMA) {
+        std::unique_ptr<executorch::extension::Module> module =
+            std::make_unique<executorch::extension::Module>(
+                model_path->toStdString().c_str(),
+                data_files_vector,
+                cpp_load_mode);
+        std::string decoder_model = "llama3"; // use llama3 for now
+        // Using 8bit as default since this meta is introduced with 16bit kv io
+        // support and older models only have 8bit kv io.
+        example::KvBitWidth kv_bitwidth = example::KvBitWidth::kWidth8;
+        if (module->method_names()->count("get_kv_io_bit_width") > 0) {
+          kv_bitwidth = static_cast<example::KvBitWidth>(
+              module->get("get_kv_io_bit_width")
+                  .get()
+                  .toScalar()
+                  .to<int64_t>());
+        }
 
-      if (kv_bitwidth == example::KvBitWidth::kWidth8) {
-        runner_ = std::make_unique<example::Runner<uint8_t>>(
-            std::move(module),
-            decoder_model.c_str(),
-            model_path->toStdString().c_str(),
-            tokenizer_path->toStdString().c_str(),
-            "",
-            "",
-            temperature_);
-      } else if (kv_bitwidth == example::KvBitWidth::kWidth16) {
-        runner_ = std::make_unique<example::Runner<uint16_t>>(
-            std::move(module),
-            decoder_model.c_str(),
-            model_path->toStdString().c_str(),
-            tokenizer_path->toStdString().c_str(),
-            "",
-            "",
-            temperature_);
-      } else {
-        ET_CHECK_MSG(
-            false,
-            "Unsupported kv bitwidth: %ld",
-            static_cast<int64_t>(kv_bitwidth));
-      }
-      model_type_category_ = MODEL_TYPE_CATEGORY_LLM;
+        if (kv_bitwidth == example::KvBitWidth::kWidth8) {
+          runner_ = std::make_unique<example::Runner<uint8_t>>(
+              std::move(module),
+              decoder_model.c_str(),
+              model_path->toStdString().c_str(),
+              tokenizer_path->toStdString().c_str(),
+              "",
+              "",
+              temperature_);
+        } else if (kv_bitwidth == example::KvBitWidth::kWidth16) {
+          runner_ = std::make_unique<example::Runner<uint16_t>>(
+              std::move(module),
+              decoder_model.c_str(),
+              model_path->toStdString().c_str(),
+              tokenizer_path->toStdString().c_str(),
+              "",
+              "",
+              temperature_);
+        } else {
+          ET_CHECK_MSG(
+              false,
+              "Unsupported kv bitwidth: %ld",
+              static_cast<int64_t>(kv_bitwidth));
+        }
+        model_type_category_ = MODEL_TYPE_CATEGORY_LLM;
 #endif
 #if defined(EXECUTORCH_BUILD_MEDIATEK)
-    } else if (model_type_category == MODEL_TYPE_MEDIATEK_LLAMA) {
-      runner_ = std::make_unique<MTKLlamaRunner>(
-          model_path->toStdString().c_str(),
-          tokenizer_path->toStdString().c_str());
-      // Interpret the model type as LLM
-      model_type_category_ = MODEL_TYPE_CATEGORY_LLM;
+      } else if (model_type_category == MODEL_TYPE_MEDIATEK_LLAMA) {
+        runner_ = std::make_unique<MTKLlamaRunner>(
+            model_path->toStdString().c_str(),
+            tokenizer_path->toStdString().c_str());
+        // Interpret the model type as LLM
+        model_type_category_ = MODEL_TYPE_CATEGORY_LLM;
 #endif
+      }
+    } catch (const std::exception& e) {
+      executorch::jni_helper::throwExecutorchException(
+          static_cast<uint32_t>(Error::Internal),
+          std::string("Failed to create LlmModule: ") + e.what());
+    } catch (...) {
+      executorch::jni_helper::throwExecutorchException(
+          static_cast<uint32_t>(Error::Internal),
+          "Failed to create LlmModule: unknown native error");
     }
   }
 
@@ -595,29 +610,28 @@ class ExecuTorchLlmJni : public facebook::jni::HybridClass<ExecuTorchLlmJni> {
   jint load() {
     if (!runner_) {
       std::stringstream ss;
-      ss << "Invalid model type category: " << model_type_category_
-         << ". Valid values are: " << MODEL_TYPE_CATEGORY_LLM << " or "
-         << MODEL_TYPE_CATEGORY_MULTIMODAL;
+      ss << "Model runner was not created. model_type_category="
+         << model_type_category_
+         << ". Valid values: " << MODEL_TYPE_CATEGORY_LLM << " (LLM), "
+         << MODEL_TYPE_CATEGORY_MULTIMODAL << " (Multimodal)";
       executorch::jni_helper::throwExecutorchException(
-          static_cast<uint32_t>(Error::InvalidArgument), ss.str().c_str());
-      return -1;
+          static_cast<uint32_t>(Error::InvalidState), ss.str().c_str());
+      return static_cast<jint>(Error::InvalidState);
     }
-    int result = static_cast<jint>(runner_->load());
-    if (result != 0) {
-      std::stringstream ss;
-      ss << "Failed to load runner: [" << result << "]";
+    const auto load_result = static_cast<jint>(runner_->load());
+    if (load_result != static_cast<jint>(Error::Ok)) {
       executorch::jni_helper::throwExecutorchException(
-          static_cast<uint32_t>(result), ss.str().c_str());
+          static_cast<uint32_t>(load_result), "Failed to load model runner");
     }
-    return result;
+    return load_result;
   }
 
   static void registerNatives() {
     registerHybrid({
         makeNativeMethod("initHybrid", ExecuTorchLlmJni::initHybrid),
-        makeNativeMethod("generate", ExecuTorchLlmJni::generate),
-        makeNativeMethod("stop", ExecuTorchLlmJni::stop),
-        makeNativeMethod("load", ExecuTorchLlmJni::load),
+        makeNativeMethod("generateNative", ExecuTorchLlmJni::generate),
+        makeNativeMethod("stopNative", ExecuTorchLlmJni::stop),
+        makeNativeMethod("loadNative", ExecuTorchLlmJni::load),
         makeNativeMethod(
             "prefillImagesInput", ExecuTorchLlmJni::prefill_images_input),
         makeNativeMethod(
@@ -638,7 +652,7 @@ class ExecuTorchLlmJni : public facebook::jni::HybridClass<ExecuTorchLlmJni> {
             "prefillRawAudioInput", ExecuTorchLlmJni::prefill_raw_audio_input),
         makeNativeMethod(
             "prefillTextInput", ExecuTorchLlmJni::prefill_text_input),
-        makeNativeMethod("resetContext", ExecuTorchLlmJni::reset_context),
+        makeNativeMethod("resetContextNative", ExecuTorchLlmJni::reset_context),
     });
   }
 };

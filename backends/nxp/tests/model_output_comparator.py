@@ -91,7 +91,13 @@ class AllCloseOutputComparator(BaseOutputComparator):
             assert np.any(
                 cpu_tensor
             ), "Output tensor contains only zeros. This is suspicious."
-            assert np.allclose(cpu_tensor, npu_tensor, atol=self.atol)
+            all_close = np.allclose(cpu_tensor, npu_tensor, atol=self.atol)
+            if not all_close:
+                max_diff = np.abs(cpu_tensor - npu_tensor).max()
+                print(
+                    f"NPU output doesn't match reference. Maximum absolute difference: {max_diff}"
+                )
+            assert all_close
 
 
 def _default_postprocess_fn(outputs: np.ndarray, _: str):

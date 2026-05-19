@@ -4,7 +4,7 @@ The Arm&reg; Ethos&trade;-U backend targets Edge/IoT-type AI use-cases by enabli
 [Arm&reg; Ethos&trade;-U55 NPU](https://www.arm.com/products/silicon-ip-cpu/ethos/ethos-u55), [Arm&reg; Ethos&trade;-U65 NPU](https://www.arm.com/products/silicon-ip-cpu/ethos/ethos-u65), and
 [Arm&reg; Ethos&trade;-U85 NPU](https://www.arm.com/products/silicon-ip-cpu/ethos/ethos-u85), leveraging [TOSA](https://www.mlplatform.org/tosa/) and the
 [ethos-u-vela](https://pypi.org/project/ethos-u-vela/) graph compiler. This document is a technical reference for using the Ethos-U backend, for a top level view with code examples
-please refer to the [Arm Ethos-U Backend Tutorial](tutorials/ethos-u-getting-started.md).
+please refer to the [Arm Ethos-U Backend Tutorial](tutorials/ethos-u-getting-started.md). <!-- @lint-ignore -->
 
 ## Features
 
@@ -111,7 +111,7 @@ For more information on quantization, see [Quantization](arm-ethos-u-quantizatio
 
 ## Runtime Integration
 
-An example runtime application is available in [examples/arm/executor_runner](https://github.com/pytorch/executorch/blob/main/examples/arm/executor_runner/), and the steps requried for building and deploying it on a FVP it is explained in the previously mentioned [Arm Ethos-U Backend Tutorial](tutorials/ethos-u-getting-started.md).
+An example runtime application is available in [examples/arm/executor_runner](https://github.com/pytorch/executorch/blob/main/examples/arm/executor_runner/), and the steps requried for building and deploying it on a FVP it is explained in the previously mentioned [Arm Ethos-U Backend Tutorial](tutorials/ethos-u-getting-started.md). <!-- @lint-ignore -->
 The example application is recommended to use for testing basic functionality of your lowered models, as well as a starting point for developing runtime integrations for your own targets.
 For an in-depth explanation of the architecture of the executor_runner and the steps required for doing such an integration, please refer to [Ethos-U porting guide](https://github.com/pytorch/executorch/blob/main/examples/arm/ethos-u-porting-guide.md).
 
@@ -209,7 +209,7 @@ ExecuTorch for the Ethos-U backend, you automatically install the compiler conta
 
 **→{doc}`/backends/arm-ethos-u/arm-ethos-u-troubleshooting` — Troubleshooting and common issues.**
 
-**→{doc}`/backends/arm-ethos-u/tutorials/arm-ethos-u-tutorials` — Tutorials.**
+**→{doc}`/backends/arm-ethos-u/tutorials/ethos-u-getting-started` — Getting started tutorial.**
 
 **→{doc}`/backends/arm-ethos-u/U55_op_support` — Ethos-U55 supported operators.**
 
@@ -224,7 +224,7 @@ ExecuTorch for the Ethos-U backend, you automatically install the compiler conta
 arm-ethos-u-partitioner
 arm-ethos-u-quantization
 arm-ethos-u-troubleshooting
-tutorials/arm-ethos-u-tutorials
+tutorials/ethos-u-getting-started
 U55_op_support
 U85_op_support
 ```
