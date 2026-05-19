@@ -342,4 +342,15 @@ test_address_sanitizer() {
 }
 
 
-${TEST_SUITE}
+if [[ -z "${TEST_SUITE}" ]]; then
+    echo "Missing test suite name."
+    exit 1
+elif [[ ! "${TEST_SUITE}" =~ ^[a-zA-Z_][a-zA-Z0-9_]*$ ]]; then
+    echo "Invalid test suite name: ${TEST_SUITE}"
+    exit 1
+elif ! declare -F -- "${TEST_SUITE}" > /dev/null; then
+    echo "Unknown test suite: ${TEST_SUITE}"
+    exit 1
+fi
+
+"${TEST_SUITE}"
