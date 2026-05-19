@@ -59,12 +59,16 @@ fi
 
 # Forward to install_executorch.sh. Honor ${CONDA_RUN} if set (matches the
 # convention used in metal.yml and friends).
+#
+# NOTE: The macos_job.yml reusable workflow runs scripts with `set -u`, which
+# makes "${EXTRA_ARGS[@]}" error when the array is empty ("unbound variable").
+# Use the `${arr[@]+"${arr[@]}"}` idiom to expand to nothing in that case.
 if [[ -n "${CONDA_RUN:-}" ]]; then
   ${CONDA_RUN} ./install_executorch.sh \
     --prebuilt-wheel-dir "${WHEEL_DIR}" \
-    "${EXTRA_ARGS[@]}"
+    ${EXTRA_ARGS[@]+"${EXTRA_ARGS[@]}"}
 else
   ./install_executorch.sh \
     --prebuilt-wheel-dir "${WHEEL_DIR}" \
-    "${EXTRA_ARGS[@]}"
+    ${EXTRA_ARGS[@]+"${EXTRA_ARGS[@]}"}
 fi
