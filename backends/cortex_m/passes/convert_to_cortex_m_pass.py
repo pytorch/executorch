@@ -40,7 +40,7 @@ class ConvertToCortexMPass(CortexMPass):
     by call_operator.
     """
 
-    def _uninitialized_scratch(self):
+    def _create_uninitialized_alloc_node(self):
         """Create an unitialized alloc node to be initialize at a later point."""
         with FakeTensorMode() as mode:
             return make_alloc_node(
@@ -255,7 +255,7 @@ class ConvertToCortexMPass(CortexMPass):
             )
 
         with node.graph.inserting_before(node):
-            scratch = self._uninitialized_scratch()
+            scratch = self._create_uninitialized_alloc_node()
 
         if use_depthwise_conv:
             # Compute depth_multiplier for depthwise convolution
@@ -304,7 +304,7 @@ class ConvertToCortexMPass(CortexMPass):
             )
             return exir_ops.edge.cortex_m.quantized_conv2d.default, new_args
 
-    def _initialize_scratch_buffer_size(self, node: torch.fx.Node) -> None:
+    def _initialize_alloc_node_size(self, node: torch.fx.Node) -> None:
         """For nodes with a registered buffer size function for node.target, set the buffer sizes
         of the last n args, which should be exir.memory.alloc nodes. For nodes without a
         registered function, do nothing.
@@ -411,8 +411,8 @@ class ConvertToCortexMPass(CortexMPass):
             )
 
         with node.graph.inserting_before(node):
-            scratch = self._uninitialized_scratch()
-            output_scratch = self._uninitialized_scratch()
+            scratch = self._create_uninitialized_alloc_node()
+            output_scratch = self._create_uninitialized_alloc_node()
 
         new_args = (
             x,
@@ -469,7 +469,7 @@ class ConvertToCortexMPass(CortexMPass):
                 )
 
         with node.graph.inserting_before(node):
-            scratch = self._uninitialized_scratch()
+            scratch = self._create_uninitialized_alloc_node()
 
         args = (
             lhs_node,
@@ -516,7 +516,7 @@ class ConvertToCortexMPass(CortexMPass):
                     args=args,
                     kwargs={},
                 )
-                self._initialize_scratch_buffer_size(cortex_m_op)
+                self._initialize_alloc_node_size(cortex_m_op)
 
                 node.replace_all_uses_with(cortex_m_op)
                 graph_module.graph.erase_node(node)
