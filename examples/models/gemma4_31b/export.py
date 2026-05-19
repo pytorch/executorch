@@ -279,27 +279,6 @@ def _export_cuda(model: Gemma4_31B, config: Gemma4_31BConfig, output_dir: str) -
     print("Done.")
 
 
-def _strip_sampler_from_forward(model: Gemma4_31B) -> None:
-    """Replace forward with a ``(tokens, input_pos) → logits`` variant.
-
-    MLX samples on the host, so the on-device Gumbel-max sampler and its
-    temperature input are dead code.  Stripping them produces a cleaner
-    exported graph.
-    """
-    import types
-
-    def _clean_forward(self, tokens, input_pos):
-        x = self.embed_tokens(tokens) * self.embed_normalizer
-        for layer in self.layers:
-            x = layer(x, input_pos)
-        x = self.norm(x)
-        last = self.lm_head(x[:, -1, :]).float()
-        cap = self.logit_softcap.float()
-        return torch.tanh(last / cap) * cap
-
-    model.forward = types.MethodType(_clean_forward, model)
-
-
 def _export_mlx(model: Gemma4_31B, config: Gemma4_31BConfig, output_dir: str) -> None:
     """Export to .pte via torch.export + MLX backend.
 
@@ -313,6 +292,10 @@ def _export_mlx(model: Gemma4_31B, config: Gemma4_31BConfig, output_dir: str) ->
 
     from executorch.backends.mlx import MLXPartitioner
     from executorch.backends.mlx.passes import get_default_passes
+
+    from executorch.examples.models.gemma4_31b.mlx_source_transformations import (
+        mlx_source_transformations,
+    )
     from executorch.exir import (
         EdgeCompileConfig,
         ExecutorchBackendConfig,
@@ -320,12 +303,6 @@ def _export_mlx(model: Gemma4_31B, config: Gemma4_31BConfig, output_dir: str) ->
     )
     from executorch.exir.passes import MemoryPlanningPass
     from torch.export import Dim, export
-
-    _strip_sampler_from_forward(model)
-
-    from executorch.examples.models.gemma4_31b.mlx_source_transformations import (
-        mlx_source_transformations,
-    )
 
     mlx_source_transformations(model, dtype=torch.bfloat16)
     materialize_runtime_buffers(model, dtype=torch.bfloat16)

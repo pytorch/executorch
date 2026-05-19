@@ -149,22 +149,23 @@ class TestMlxPipeline(unittest.TestCase):
         mlx_source_transformations(model, dtype=torch.bfloat16)
         materialize_runtime_buffers(model, dtype=torch.bfloat16)
 
+        # After source transforms: signature is (tokens, input_pos) → (B, 1, V)
         # Single-token decode
         tokens = torch.randint(0, TINY_CONFIG.vocab_size, (1, 1))
         input_pos = torch.tensor([0], dtype=torch.long)
-        temp = torch.tensor([1e-6], dtype=torch.float32)
         with torch.no_grad():
-            out = model(tokens, input_pos, temp)
-        self.assertEqual(out.shape, torch.Size([1, 1]))
+            out = model(tokens, input_pos)
+        self.assertEqual(out.shape, torch.Size([1, TINY_CONFIG.vocab_size]))
         self.assertFalse(torch.isnan(out).any())
+        self.assertFalse(torch.isinf(out).any())
 
         # Multi-token prefill
         seq_len = 4
         tokens = torch.randint(0, TINY_CONFIG.vocab_size, (1, seq_len))
         input_pos = torch.arange(seq_len, dtype=torch.long)
         with torch.no_grad():
-            out = model(tokens, input_pos, temp)
-        self.assertEqual(out.shape, torch.Size([1, 1]))
+            out = model(tokens, input_pos)
+        self.assertEqual(out.shape, torch.Size([1, TINY_CONFIG.vocab_size]))
         self.assertFalse(torch.isnan(out).any())
 
     def test_export_to_pte(self):

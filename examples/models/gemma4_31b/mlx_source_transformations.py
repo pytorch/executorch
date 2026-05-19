@@ -123,16 +123,45 @@ def _replace_layer_forward(layer: nn.Module) -> None:
     layer.forward = types.MethodType(_mlx_layer_forward, layer)
 
 
+def _replace_model_forward(model: nn.Module) -> None:
+    """Replace the top-level Gemma4_31B forward with a sampler-free, mask-free
+    ``(tokens, input_pos) → (B, 1, V)`` variant.
+
+    MLX samples on the host, so the on-device sampler and temperature input
+    are dropped.  Each MLX attention builds its own mask via ``custom_sdpa``,
+    so ``_build_masks`` and the per-layer mask arguments are removed.
+    """
+    import types
+
+    def _mlx_model_forward(
+        self, tokens: torch.Tensor, input_pos: torch.Tensor
+    ) -> torch.Tensor:
+        x = self.embed_tokens(tokens) * self.embed_normalizer
+        for layer in self.layers:
+            x = layer(x, input_pos)
+        x = self.norm(x)
+        last = self.lm_head(x[:, -1, :]).float()
+        cap = self.logit_softcap.float()
+        return torch.tanh(last / cap) * cap
+
+    model.forward = types.MethodType(_mlx_model_forward, model)
+
+
 def mlx_source_transformations(
     model: nn.Module,
     dtype: torch.dtype = torch.bfloat16,
 ) -> None:
     """Apply MLX source transformations to a Gemma 4 31B model in-place.
 
-    Replaces KV caches with MLX-optimized versions and rewrites attention
-    and layer forward methods to use ``mlx.rope``, ``mlx.kv_cache_update``,
-    and ``mlx.custom_sdpa``. Removes model-level ``_build_masks`` — each
-    MLX attention builds its own mask internally via ``custom_sdpa``.
+    Self-contained MLX adaptation. After calling this, the model has
+    signature ``(tokens, input_pos) → (B, 1, V)`` logits — no temperature,
+    no sampler, no attention masks.
+
+    - Replaces KV caches with MLX-optimized versions using ``mlx.kv_cache_update``
+    - Rewrites attention forward to use ``mlx.rope`` and ``mlx.custom_sdpa``
+    - Rewrites layer forward to drop mask parameters (each attention builds
+      its own mask via ``custom_sdpa``)
+    - Rewrites model forward to drop the sampler and ``_build_masks``
     """
     config = model.config
 
@@ -159,3 +188,5 @@ def mlx_source_transformations(
 
         _replace_attention_forward(attn)
         _replace_layer_forward(layer)
+
+    _replace_model_forward(model)
