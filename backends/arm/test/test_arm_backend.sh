@@ -267,7 +267,7 @@ test_run_vkml() {
 }
 
 # ------------------------------------
-# -------- Miscelaneous tests --------
+# -------- Miscellaneous tests -------
 # ------------------------------------
 test_model_smollm2_135M() {
     echo "${TEST_SUITE_NAME}: Test SmolLM2-135M on Ethos-U85"
