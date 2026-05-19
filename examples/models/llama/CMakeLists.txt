@@ -261,3 +261,55 @@ elseif(UNIX)
   set_target_properties(llama_main PROPERTIES LINK_FLAGS "-Wl,-rpath='$ORIGIN'")
 endif()
 # Windows doesn't need rpath - DLLs are found via standard Windows search order
+
+# -------------------------------------------------------------------------- #
+# LFM2.5 formatter helper (persistent companion process)
+#
+# Long-lived sibling of llama_main that wraps the same TextLLMRunner with a
+# JSON-line stdin/stdout protocol. The macOS ExecuWhisper app keeps this
+# binary warm across requests so the formatter model is loaded once per
+# session. Build with `make lfm_2_5_formatter-mlx` from the repo root, or
+# `cmake --workflow --preset llama-mlx` from this directory.
+# -------------------------------------------------------------------------- #
+
+set(_formatter_helper_srcs
+    lfm25_formatter_helper.cpp lfm25_formatter_helper_protocol.cpp
+)
+set(_formatter_helper_include_directories
+    ${_common_include_directories} ${EXECUTORCH_ROOT}/third-party/json/include
+)
+
+add_executable(lfm25_formatter_helper ${_formatter_helper_srcs})
+
+if(CMAKE_BUILD_TYPE STREQUAL "Release" OR CMAKE_BUILD_TYPE STREQUAL
+                                          "MinSizeRel"
+)
+  target_link_options_gc_sections(lfm25_formatter_helper)
+  if(NOT APPLE)
+    target_link_options(lfm25_formatter_helper PRIVATE "LINKER:-s")
+  endif()
+endif()
+
+target_include_directories(
+  lfm25_formatter_helper PUBLIC ${_formatter_helper_include_directories}
+)
+target_link_libraries(
+  lfm25_formatter_helper PUBLIC llama_runner ${link_libraries}
+)
+target_compile_options(
+  lfm25_formatter_helper PUBLIC ${_common_compile_options}
+)
+
+if(TARGET mlxdelegate)
+  executorch_target_copy_mlx_metallib(lfm25_formatter_helper)
+endif()
+
+if(APPLE)
+  target_link_options(
+    lfm25_formatter_helper PRIVATE -Wl,-rpath,@loader_path
+  )
+elseif(UNIX)
+  set_target_properties(
+    lfm25_formatter_helper PROPERTIES LINK_FLAGS "-Wl,-rpath='$ORIGIN'"
+  )
+endif()
