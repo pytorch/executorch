@@ -15,5 +15,5 @@ source "$(dirname "${BASH_SOURCE[0]}")/utils.sh"
 pip_install -r requirements-lintrunner.txt
 
 # Install google-java-format
-curl -L --retry 3 https://github.com/google/google-java-format/releases/download/v1.23.0/google-java-format_linux-x86-64 > /opt/google-java-format
+curl -L --retry 3 --retry-all-errors https://github.com/google/google-java-format/releases/download/v1.23.0/google-java-format_linux-x86-64 > /opt/google-java-format
 chmod +x /opt/google-java-format
