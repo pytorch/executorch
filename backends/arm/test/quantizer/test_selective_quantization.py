@@ -7,6 +7,7 @@
 from typing import Dict
 
 import torch
+
 from executorch.backends.arm.quantizer import (
     get_symmetric_a16w8_quantization_config,
     get_symmetric_quantization_config,
@@ -16,13 +17,17 @@ from executorch.backends.arm.quantizer.quantization_config import QuantizationCo
 from executorch.backends.arm.test import common
 from executorch.backends.arm.test.tester.test_pipeline import QuantizationPipeline
 from executorch.backends.arm.tosa import TosaSpecification
+from executorch.backends.test.harness.stages import StageType
+from torchao.quantization.pt2e.quantizer.quantizer import Q_ANNOTATION_KEY
 from torchvision import models, transforms  # type: ignore[import-untyped]
 from torchvision.ops.misc import Conv2dNormActivation  # type: ignore[import-untyped]
 
 
-def get_quantizer():
+def get_quantizer(use_composable_quantizer: bool = False):
     tosa_spec = TosaSpecification.create_from_string("TOSA-1.0+INT")
-    quantizer = TOSAQuantizer(tosa_spec)
+    quantizer = TOSAQuantizer(
+        tosa_spec, use_composable_quantizer=use_composable_quantizer
+    )
     quantizer.set_global(get_symmetric_quantization_config())
     return quantizer
 
@@ -51,6 +56,25 @@ class Add(torch.nn.Module):
 
     def forward(self, x: torch.Tensor, y: torch.Tensor) -> torch.Tensor:
         return x + y
+
+
+class Cat(torch.nn.Module):
+
+    def forward(self, x: torch.Tensor, y: torch.Tensor) -> torch.Tensor:
+        return torch.cat((x, y), dim=1)
+
+
+class LinearGraphTail(torch.nn.Module):
+
+    def __init__(self):
+        super().__init__()
+        self.linear = torch.nn.Linear(10, 10)
+
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        x = self.linear(x)
+        x = torch.relu(x)
+        x = torch.sigmoid(x)
+        return torch.neg(x)
 
 
 class AddSoftmaxAdd(torch.nn.Module):
@@ -129,6 +153,75 @@ def test_selective_quant_module_type_tosa_INT(model):
     )
 
     pipeline.run()
+
+
+def test_selective_quant_cat_node_target_none_tosa_INT():
+    model = Cat()
+    inputs = (torch.randn(1, 2, 4), torch.randn(1, 3, 4))
+
+    quantizer = get_quantizer(use_composable_quantizer=True)
+    quantizer.set_node_target(torch.ops.aten.cat.default, None)
+
+    pipeline = QuantizationPipeline[tuple[torch.Tensor, torch.Tensor]](
+        model,
+        inputs,
+        quantizer=quantizer,
+        qspecs={
+            "aten.cat.default": {
+                None: 1,
+            },
+        },
+    )
+
+    pipeline.run()
+
+
+def test_composable_io_none_skips_global_tosa_INT():
+    model = Add()
+    inputs = (torch.randn(1, 10), torch.randn(1, 10))
+
+    quantizer = get_quantizer(use_composable_quantizer=True)
+    quantizer.set_io(None)
+
+    pipeline = QuantizationPipeline[tuple[torch.Tensor, torch.Tensor]](
+        model,
+        inputs,
+        quantizer=quantizer,
+        input_qspecs={None: 2},
+        output_qspecs={None: 1},
+    )
+
+    pipeline.run()
+
+
+def test_composable_global_none_linear_graph_tail_tosa_INT():
+    model = LinearGraphTail()
+    inputs = (torch.randn(1, 10),)
+
+    quantizer = get_quantizer(use_composable_quantizer=True)
+    quantizer.set_global(None)
+
+    pipeline = QuantizationPipeline[tuple[torch.Tensor]](
+        model,
+        inputs,
+        quantizer=quantizer,
+        qspecs={
+            "aten.linear.default": {None: 1},
+            "aten.relu.default": {None: 1},
+            "aten.sigmoid.default": {None: 1},
+            "aten.neg.default": {None: 1},
+        },
+    )
+
+    pipeline.run()
+
+    graph = pipeline.tester.get_graph(StageType.QUANTIZE)
+    unannotated_nodes = [
+        node.name
+        for node in graph.nodes
+        if node.op == "call_function" and Q_ANNOTATION_KEY not in node.meta
+    ]
+    assert not unannotated_nodes
 
 
 mv3 = models.mobilenet_v3_small(weights=models.MobileNet_V3_Small_Weights)
