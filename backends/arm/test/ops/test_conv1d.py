@@ -416,6 +416,7 @@ def test_conv1d_a16w8_u55_INT(test_data):
     )
     pipeline.run()
 
+
 @common.parametrize("test_data", test_data_INT)
 @common.XfailIfNoCorstone320
 def test_conv1d_a16w8_u85_INT(test_data):

@@ -12,8 +12,8 @@ from typing import cast
 
 import torch
 import torch.fx
+from executorch.backends.transforms.permute_pass_utils import get_arg
 from executorch.exir.dialects._ops import ops as exir_ops
-from executorch.exir.dialects.edge._ops import EdgeOpOverload
 from executorch.exir.pass_base import ExportPass, PassResult
 
 
@@ -39,23 +39,146 @@ class RemovePermutesAroundElementwiseOps(ExportPass):
         constant_edges_in: set[tuple[torch.fx.Node, torch.fx.Node]] = field(
             default_factory=set
         )
+        # Per-node expected end permutation (may differ from end_permute
+        # when the subgraph contains rank-changing views).
+        node_end_permute: dict[torch.fx.Node, list[int]] = field(default_factory=dict)
+        # Per-node expected start permutation for upstream traversal.
+        node_start_permute: dict[torch.fx.Node, list[int]] = field(default_factory=dict)
 
-    # Ops explicitly listed as permutable. This includes non-pointwise ops
-    # that need special dimension-argument handling (cat, mean, sum, slice)
-    # and quantize/dequantize ops not tagged as pointwise in ATen.
-    # In addition to this set, any op tagged with torch.Tag.pointwise is
-    # automatically considered permutable (see is_node_permutable).
-    permutable_ops: set[EdgeOpOverload] = {
-        exir_ops.edge.quantized_decomposed.quantize_per_tensor.default,
-        exir_ops.edge.quantized_decomposed.dequantize_per_tensor.default,
-        # Ops that require special handling of dimension arguments.
-        exir_ops.edge.aten.cat.default,
-        exir_ops.edge.aten.mean.dim,
-        exir_ops.edge.aten.sum.dim_IntList,
-        exir_ops.edge.aten.slice_copy.Tensor,
-    }
+    def __init__(self, extra_permutable_ops: set | None = None) -> None:
+        super().__init__()
+        self._permutable_ops = {
+            exir_ops.edge.aten.add.Tensor,
+            exir_ops.edge.aten.mul.Tensor,
+            exir_ops.edge.aten.sub.Tensor,
+            exir_ops.edge.aten.hardtanh.default,
+            exir_ops.edge.aten.clamp.default,
+            exir_ops.edge.aten.cat.default,
+            exir_ops.edge.aten.mean.dim,
+            exir_ops.edge.aten.sum.dim_IntList,
+            exir_ops.edge.aten.slice_copy.Tensor,
+        }
+        try:
+            self._permutable_ops.add(
+                exir_ops.edge.quantized_decomposed.quantize_per_tensor.default
+            )
+            self._permutable_ops.add(
+                exir_ops.edge.quantized_decomposed.dequantize_per_tensor.default
+            )
+        except AttributeError:
+            pass
+        if extra_permutable_ops:
+            self._permutable_ops |= extra_permutable_ops
+        self._sq_unsq_cache: dict[torch.fx.Node, bool] = {}
 
-    def call(self, graph_module: torch.fx.GraphModule) -> PassResult:
+    _VIEW_OPS = (
+        exir_ops.edge.aten.view_copy.default,
+        exir_ops.edge.aten.view.default,
+    )
+
+    _UNSQUEEZE_OPS = (exir_ops.edge.aten.unsqueeze_copy.default,)
+
+    _SQUEEZE_OPS = (exir_ops.edge.aten.squeeze_copy.dim,)
+
+    @staticmethod
+    def _find_extra_one(longer: list[int], shorter: list[int]) -> int:
+        """If longer has exactly one more element of value 1, return its index. Else -1."""
+        if len(longer) != len(shorter) + 1:
+            return -1
+        for i in range(len(shorter)):
+            if longer[i] != shorter[i]:
+                if longer[i] == 1 and shorter[i:] == longer[i + 1 :]:
+                    return i
+                return -1
+        return len(shorter) if longer[-1] == 1 else -1
+
+    def _is_squeeze_unsqueeze_view(self, node: torch.fx.Node) -> bool:
+        """Check if a node is a squeeze, unsqueeze, or view_copy that only
+        adds or removes a single dim of size 1."""
+        if node in self._sq_unsq_cache:
+            return self._sq_unsq_cache[node]
+        result = self._check_squeeze_unsqueeze_view(node)
+        self._sq_unsq_cache[node] = result
+        return result
+
+    def _check_squeeze_unsqueeze_view(self, node: torch.fx.Node) -> bool:
+        if node.target in self._UNSQUEEZE_OPS or node.target in self._SQUEEZE_OPS:
+            return True
+        if node.target not in self._VIEW_OPS:
+            return False
+        if node.meta.get("val") is None:
+            return False
+        inp = node.args[0]
+        if not isinstance(inp, torch.fx.Node) or inp.meta.get("val") is None:
+            return False
+        in_shape = inp.meta["val"].shape
+        out_shape = node.meta["val"].shape
+        if len(out_shape) == len(in_shape) + 1:
+            return self._find_extra_one(out_shape, in_shape) != -1
+        if len(in_shape) == len(out_shape) + 1:
+            return self._find_extra_one(in_shape, out_shape) != -1
+        return False
+
+    def _adapt_permute_across_view(
+        self, permute: list[int], node: torch.fx.Node
+    ) -> list[int] | None:
+        """Adjust a permutation across a squeeze/unsqueeze boundary.
+
+        Adapts from input-rank to output-rank space (downstream direction).
+        Returns the adjusted permutation, or None if not possible.
+        """
+        # Handle explicit unsqueeze_copy(dim)
+        if node.target in self._UNSQUEEZE_OPS:
+            dim = cast(int, node.args[1])
+            rank = len(permute)
+            index = dim if dim >= 0 else dim + rank + 1
+            new_perm = [x + 1 if x >= index else x for x in permute]
+            new_perm.insert(index, index)
+            return new_perm
+
+        # Handle explicit squeeze_copy(dim)
+        if node.target in self._SQUEEZE_OPS:
+            dim = cast(int, node.args[1])
+            rank = len(permute)
+            index = dim if dim >= 0 else dim + rank
+            # index is a POSITION in the tensor; the permutation VALUE at
+            # that position is the logical dim being removed.
+            squeezed_value = permute[index]
+            new_perm = [
+                x - 1 if x > squeezed_value else x
+                for x in permute
+                if x != squeezed_value
+            ]
+            return new_perm
+
+        # Handle view_copy (squeeze/unsqueeze-like reshape)
+        inp = node.args[0]
+        assert isinstance(inp, torch.fx.Node)
+        in_shape = inp.meta["val"].shape
+        out_shape = node.meta["val"].shape
+
+        if len(out_shape) == len(in_shape) + 1:
+            # unsqueeze: insert identity mapping at the new dim
+            index = self._find_extra_one(out_shape, in_shape)
+            new_perm = [x + 1 if x >= index else x for x in permute]
+            new_perm.insert(index, index)
+            return new_perm
+        elif len(in_shape) == len(out_shape) + 1:
+            # squeeze via view_copy: find the squeezed dim and remove it
+            index = self._find_extra_one(in_shape, out_shape)
+            # index is a POSITION in in_shape; the permutation VALUE at
+            # that position is the logical dim being removed.
+            squeezed_value = permute[index]
+            new_perm = [
+                x - 1 if x > squeezed_value else x
+                for x in permute
+                if x != squeezed_value
+            ]
+            return new_perm
+        return None
+
+    def call(self, graph_module: torch.fx.GraphModule) -> PassResult:  # noqa: C901
+        self._sq_unsq_cache.clear()
         subgraphs_found: list[RemovePermutesAroundElementwiseOps.Subgraph] = []
         processed_nodes: set[torch.fx.Node] = set()
         for node in graph_module.graph.find_nodes(
@@ -67,18 +190,56 @@ class RemovePermutesAroundElementwiseOps(ExportPass):
             # Expected end permutation for the subgraph.
             end_permute = [start_permute.index(i) for i in range(len(start_permute))]
 
+            # Try direct users first (same-rank matching)
             for user in node.users:
-                if user.target not in self.permutable_ops and not self._is_pointwise(
-                    user.target
-                ):
+                if not self.is_node_permutable(user):
                     continue
-                # Create a separate subgraph for each user since there may be cases
-                # where only a portion of the users are permutable.
                 subgraph = self.Subgraph(start_permute, end_permute)
                 if self.visit(user, subgraph, processed_nodes):
                     subgraphs_found.append(subgraph)
-                    for node in subgraph.nodes:
-                        processed_nodes.add(node)
+                    for n in subgraph.nodes:
+                        processed_nodes.add(n)
+
+            # Also try: permute → view(squeeze/unsqueeze) → chain → ...
+            # If the permute's sole user is a squeeze/unsqueeze view,
+            # adapt the permutation across the view and search for a
+            # matching end permute at the new rank.
+            users = list(node.users.keys())
+            if (
+                len(users) == 1
+                and self._is_squeeze_unsqueeze_view(users[0])
+                and node not in processed_nodes
+            ):
+                view_node = users[0]
+                adapted_start = self._adapt_permute_across_view(
+                    start_permute, view_node
+                )
+                if adapted_start is not None:
+                    adapted_end = [
+                        adapted_start.index(i) for i in range(len(adapted_start))
+                    ]
+                    for view_user in view_node.users:
+                        if not self.is_node_permutable(view_user):
+                            continue
+                        subgraph = self.Subgraph(adapted_start, adapted_end)
+                        # Include the view in the subgraph
+                        subgraph.nodes.add(view_node)
+                        subgraph.node_end_permute[view_node] = adapted_end
+                        # Use the ORIGINAL start_permute for the view node
+                        # so update_view_copy can remap its shape correctly
+                        subgraph.node_start_permute[view_node] = start_permute
+                        # The start permute feeds into the view
+                        subgraph.edges_in.add((node, view_node))
+                        if self.visit(
+                            view_user,
+                            subgraph,
+                            processed_nodes,
+                            adapted_end,
+                            adapted_start,
+                        ):
+                            subgraphs_found.append(subgraph)
+                            for n in subgraph.nodes:
+                                processed_nodes.add(n)
 
         modified = False
         for subgraph in subgraphs_found:
@@ -97,40 +258,86 @@ class RemovePermutesAroundElementwiseOps(ExportPass):
         node: torch.fx.Node,
         subgraph: Subgraph,
         processed_nodes: set[torch.fx.Node],
+        current_end_permute: list[int] | None = None,
+        current_start_permute: list[int] | None = None,
     ) -> bool:
+        if current_end_permute is None:
+            current_end_permute = subgraph.end_permute
+        if current_start_permute is None:
+            current_start_permute = subgraph.start_permute
+
         if node in subgraph.nodes:
             return True
         if node in processed_nodes or not self.is_node_permutable(node):
             return False
         subgraph.nodes.add(node)
+        subgraph.node_end_permute[node] = current_end_permute
+        subgraph.node_start_permute[node] = current_start_permute
+
+        # If this is a squeeze/unsqueeze view, adapt permutations for
+        # traversal across the rank change boundary.
+        downstream_end = current_end_permute
+        downstream_start = current_start_permute
+        if self._is_squeeze_unsqueeze_view(node):
+            # Adapt start permute for downstream (input-rank → output-rank)
+            adapted_start = self._adapt_permute_across_view(current_start_permute, node)
+            if adapted_start is None:
+                return False
+            downstream_start = adapted_start
+
+            # Derive end permute as the inverse of adapted start to ensure
+            # consistency.  Computing start and end independently via
+            # _adapt_permute_across_view can produce mismatched results for
+            # squeeze views because the formula differs for "forward" vs
+            # "inverse" permutations.
+            downstream_end = [adapted_start.index(i) for i in range(len(adapted_start))]
 
         # Traverse downstream:
         for user in node.users:
-            # Output should either go to a matching permute or another permutable op.
             if user.target == exir_ops.edge.aten.permute_copy.default:
-                if self.get_permutation(user) != subgraph.end_permute:
+                user_perm = self.get_permutation(user)
+                if user_perm == downstream_end:
+                    subgraph.edges_out.add((node, user))
+                else:
+                    # Check if permute → view(squeeze/unsqueeze) forms an
+                    # end boundary at a different rank.
+                    user_users = list(user.users.keys())
+                    if len(user_users) == 1 and self._is_squeeze_unsqueeze_view(
+                        user_users[0]
+                    ):
+                        view_after = user_users[0]
+                        # Adapt the start permute across the view and derive
+                        # the expected end permute as its inverse.
+                        adapted_start_after = self._adapt_permute_across_view(
+                            downstream_start, view_after
+                        )
+                        if adapted_start_after is not None:
+                            adapted = [
+                                adapted_start_after.index(i)
+                                for i in range(len(adapted_start_after))
+                            ]
+                            if user_perm == adapted:
+                                # Include both the permute and the view as end edges
+                                subgraph.edges_out.add((node, user))
+                                # Mark the view for inclusion so it gets preserved
+                                continue
                     return False
-                subgraph.edges_out.add((node, user))
             elif user.op == "output":
-                # Graph output requires the data in its original layout.
-                # Removing permutes here would silently change the output
-                # format, so treat this as an invalid subgraph boundary.
                 return False
-            elif not self.visit(user, subgraph, processed_nodes):
+            elif not self.visit(
+                user, subgraph, processed_nodes, downstream_end, downstream_start
+            ):
                 return False
 
         # Traverse upstream:
         for inp in node.all_input_nodes:
-            # Input should either come from a matching permute or another permutable op.
             if inp.target == exir_ops.edge.aten.permute_copy.default:
-                if self.get_permutation(inp) != subgraph.start_permute:
+                if self.get_permutation(inp) != current_start_permute:
                     return False
                 subgraph.edges_in.add((inp, node))
             elif self._is_constant(inp):
-                # Only accept the constant if we can insert a compensating
-                # permute or view. Otherwise reject the subgraph.
                 const_rank = self._get_node_rank(inp)
-                permute_rank = len(subgraph.end_permute)
+                permute_rank = len(current_end_permute)
                 if const_rank is None:
                     return False
                 if const_rank > permute_rank:
@@ -138,7 +345,13 @@ class RemovePermutesAroundElementwiseOps(ExportPass):
                 if const_rank < permute_rank and inp.meta.get("val") is None:
                     return False
                 subgraph.constant_edges_in.add((inp, node))
-            elif not self.visit(inp, subgraph, processed_nodes):
+            elif not self.visit(
+                inp,
+                subgraph,
+                processed_nodes,
+                current_end_permute,
+                current_start_permute,
+            ):
                 return False
 
         return True
@@ -146,13 +359,19 @@ class RemovePermutesAroundElementwiseOps(ExportPass):
     def _is_constant(self, node: torch.fx.Node) -> bool:
         """Check if a node's value is available at compile time.
         Only considers direct constants (get_attr, parameter/buffer/constant
-        placeholders) — does not recurse into call_function chains to avoid
-        stack overflow on deep graphs."""
+        placeholders, full ops producing scalar constants) — does not recurse
+        into call_function chains to avoid stack overflow on deep graphs."""
         if node.op == "get_attr":
             return True
         if node.op == "placeholder":
             target = str(node.target)
             return target.startswith(("b_", "p_", "c_"))
+        # full.default creates scalar constants (e.g. epsilon in LayerNorm)
+        if (
+            node.op == "call_function"
+            and node.target == exir_ops.edge.aten.full.default
+        ):
+            return True
         return False
 
     def _get_node_rank(self, node: torch.fx.Node) -> int | None:
@@ -171,27 +390,53 @@ class RemovePermutesAroundElementwiseOps(ExportPass):
         return False
 
     def is_node_permutable(self, node: torch.fx.Node) -> bool:
-        if node.target in self.permutable_ops:
-            # Special-case validation for dim-based ops.
+        if node.target in self._permutable_ops:
             if node.target in (
                 exir_ops.edge.aten.mean.dim,
                 exir_ops.edge.aten.sum.dim_IntList,
             ):
-                # keepdim should be True.
-                if len(node.args) >= 3:
-                    if not node.args[2]:
-                        return False
-                elif "keepdim" in node.kwargs:
-                    if not node.kwargs["keepdim"]:
-                        return False
-                else:
-                    # Default keepdim is False.
+                if not get_arg(node, "keepdim", bool):
                     return False
             return True
-        # Accept any op tagged as pointwise in ATen (elementwise).
+        if self._is_squeeze_unsqueeze_view(node):
+            return True
         return self._is_pointwise(node.target)
 
-    def permute_subgraph(self, subgraph: Subgraph) -> None:
+    def permute_subgraph(self, subgraph: Subgraph) -> None:  # noqa: C901
+        # Handle dimension related node arguments FIRST, before
+        # bypassing permutes (which changes node inputs/metadata).
+        for node in subgraph.nodes:
+            node_start_perm = subgraph.node_start_permute.get(
+                node, subgraph.start_permute
+            )
+            if node.target == exir_ops.edge.aten.cat.default:
+                self.update_cat(node, node_start_perm)
+            elif node.target in (
+                exir_ops.edge.aten.mean.dim,
+                exir_ops.edge.aten.sum.dim_IntList,
+            ):
+                self.update_mean_dim(node, node_start_perm)
+            elif node.target == exir_ops.edge.aten.slice_copy.Tensor:
+                self.update_slice_copy(node, node_start_perm)
+            elif node.target in self._VIEW_OPS:
+                self.update_view_copy(node, node_start_perm)
+            elif node.target in self._UNSQUEEZE_OPS:
+                # unsqueeze dim is in output space (rank + 1)
+                dim = cast(int, node.args[1])
+                rank = len(node_start_perm)
+                index = dim if dim >= 0 else dim + rank + 1
+                if index < rank:
+                    node.update_arg(1, node_start_perm[index])
+                else:
+                    # Inserting at or beyond existing dims — position unchanged
+                    node.update_arg(1, index)
+            elif node.target in self._SQUEEZE_OPS:
+                # squeeze dim is in input space (rank)
+                dim = cast(int, node.args[1])
+                rank = len(node_start_perm)
+                index = dim if dim >= 0 else dim + rank
+                node.update_arg(1, node_start_perm[index])
+
         # Skip incoming permutes.
         for inp, out in subgraph.edges_in:
             assert inp.target == exir_ops.edge.aten.permute_copy.default
@@ -201,38 +446,30 @@ class RemovePermutesAroundElementwiseOps(ExportPass):
                 out.replace_input_with(inp, cast(torch.fx.Node, inp.kwargs["input"]))
 
         # Insert compensating permute on constant inputs.
-        # Since the subgraph's start permutes are being removed, the subgraph
-        # will operate in the un-permuted (original) layout. Constants that
-        # were in the permuted layout need end_permute (the inverse of
-        # start_permute) to convert back to the original layout.
         for const_node, user_node in subgraph.constant_edges_in:
             graph = const_node.graph
             const_rank = self._get_node_rank(const_node)
-            permute_rank = len(subgraph.end_permute)
+            # Use the node-specific end_permute for the correct rank
+            node_end_perm = subgraph.node_end_permute.get(
+                user_node, subgraph.end_permute
+            )
+            permute_rank = len(node_end_perm)
 
             with graph.inserting_after(const_node):
                 if const_rank is not None and const_rank == permute_rank:
                     new_node = graph.create_node(
                         "call_function",
                         exir_ops.edge.aten.permute_copy.default,
-                        args=(const_node, subgraph.end_permute),
+                        args=(const_node, node_end_perm),
                     )
                 elif (
                     const_rank is not None
                     and const_rank < permute_rank
                     and const_node.meta.get("val") is not None
                 ):
-                    # Rank mismatch (e.g. rank-1 bias with rank-4 permute).
-                    # The constant is broadcastable and its shape is smaller
-                    # than the permute rank, so we can't apply the permute
-                    # directly. Instead, use view_copy to rearrange the
-                    # shape according to the end_permute restricted to
-                    # the trailing dimensions.
                     original_shape = list(const_node.meta["val"].shape)
-                    # Pad shape to match permute rank for reordering
                     padded = [1] * (permute_rank - const_rank) + original_shape
-                    target_shape = [padded[d] for d in subgraph.end_permute]
-                    # Strip leading 1s back to original rank
+                    target_shape = [padded[d] for d in node_end_perm]
                     target_shape = target_shape[permute_rank - const_rank :]
                     new_node = graph.create_node(
                         "call_function",
@@ -240,7 +477,6 @@ class RemovePermutesAroundElementwiseOps(ExportPass):
                         args=(const_node, target_shape),
                     )
                 else:
-                    # Cannot determine rank or handle this case; skip.
                     continue
             user_node.replace_input_with(const_node, new_node)
 
@@ -248,18 +484,6 @@ class RemovePermutesAroundElementwiseOps(ExportPass):
         for inp, out in subgraph.edges_out:
             assert out.target == exir_ops.edge.aten.permute_copy.default
             out.replace_all_uses_with(inp)
-
-        # Handle dimension related node arguments.
-        for node in subgraph.nodes:
-            if node.target == exir_ops.edge.aten.cat.default:
-                self.update_cat(node, subgraph.start_permute)
-            elif node.target in (
-                exir_ops.edge.aten.mean.dim,
-                exir_ops.edge.aten.sum.dim_IntList,
-            ):
-                self.update_mean_dim(node, subgraph.start_permute)
-            elif node.target == exir_ops.edge.aten.slice_copy.Tensor:
-                self.update_slice_copy(node, subgraph.start_permute)
 
     def update_cat(self, node: torch.fx.Node, start_permute: list[int]) -> None:
         if len(node.args) >= 2:
@@ -286,6 +510,44 @@ class RemovePermutesAroundElementwiseOps(ExportPass):
             node.update_arg(1, start_permute[cast(int, node.args[1])])
         else:
             node.update_kwarg("dim", start_permute[cast(int, node.kwargs["dim"])])
+
+    def update_view_copy(self, node: torch.fx.Node, start_permute: list[int]) -> None:
+        """Adjust view_copy shape arg after permute removal.
+
+        After removing the start permute, the view's input is in the original
+        (un-permuted) layout. Recompute the view's target shape accordingly.
+        """
+        if node.meta.get("val") is None:
+            return
+        inp = node.args[0]
+        if not isinstance(inp, torch.fx.Node) or inp.meta.get("val") is None:
+            return
+
+        in_shape = inp.meta["val"].shape
+        out_shape = node.meta["val"].shape
+
+        # Compute un-permuted input shape
+        inverse_permute = [start_permute.index(i) for i in range(len(start_permute))]
+        unpermuted_in = [in_shape[inverse_permute[i]] for i in range(len(in_shape))]
+
+        if len(out_shape) == len(in_shape) + 1:
+            # unsqueeze: find the inserted dim in the permuted output,
+            # then determine where it goes in the un-permuted layout
+            index = self._find_extra_one(out_shape, in_shape)
+            if index != -1:
+                new_shape = list(unpermuted_in)
+                new_shape.insert(index, 1)
+                node.update_arg(1, new_shape)
+        elif len(in_shape) == len(out_shape) + 1:
+            # squeeze: find the removed dim in the permuted input,
+            # map it to the un-permuted position, and remove it
+            index = self._find_extra_one(in_shape, out_shape)
+            if index != -1:
+                # Map the squeezed dim from permuted to un-permuted space
+                unpermuted_index = start_permute[index]
+                new_shape = list(unpermuted_in)
+                del new_shape[unpermuted_index]
+                node.update_arg(1, new_shape)
 
     def get_permutation(self, permute_node: torch.fx.Node) -> list[int] | None:
         assert permute_node.target == exir_ops.edge.aten.permute_copy.default

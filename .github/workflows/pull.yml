@@ -717,10 +717,10 @@ jobs:
     strategy:
       matrix:
         include:
-          - test_arm_baremetal: test_pytest_ops_no_target
-          - test_arm_baremetal: test_pytest_ops_tosa
-          - test_arm_baremetal: test_pytest_models_tosa
-          - test_arm_baremetal: test_run_tosa
+          - test_arm_backend: test_pytest_ops_no_target
+          - test_arm_backend: test_pytest_ops_tosa
+          - test_arm_backend: test_pytest_models_tosa
+          - test_arm_backend: test_run_tosa
       fail-fast: false
     with:
       runner: linux.2xlarge
@@ -738,10 +738,10 @@ jobs:
 
         .ci/scripts/setup-arm-baremetal-tools.sh --disable-ethos-u-deps
 
-        ARM_TEST=${{ matrix.test_arm_baremetal }}
+        ARM_TEST=${{ matrix.test_arm_backend }}
 
-        # Test test_arm_baremetal.sh with test
-        backends/arm/test/test_arm_baremetal.sh "${ARM_TEST}"
+        # Test test_arm_backend.sh with test
+        backends/arm/test/test_arm_backend.sh "${ARM_TEST}"
 
   test-llama-runner-qnn-linux:
     name: test-llama-runner-qnn-linux
