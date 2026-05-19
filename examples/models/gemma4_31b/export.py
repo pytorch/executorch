@@ -193,7 +193,7 @@ def _pack_for_backend(model: nn.Module, path: str, backend: str) -> None:
 def _build_vision_encoder_wrapper(
     model: Gemma4_31B, config: Gemma4_31BConfig
 ) -> nn.Module:
-    from executorch.examples.models.gemma4.vision_tower import Gemma4_31BVisionTower
+    from executorch.examples.models.gemma4_31b.vision_tower import Gemma4_31BVisionTower
 
     with torch.device("meta"):
         wrapper = Gemma4_31BVisionTower(config.vision_config, config.hidden_size)

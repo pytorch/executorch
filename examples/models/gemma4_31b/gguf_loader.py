@@ -4,20 +4,30 @@
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
 
-# DEPRECATED: This loader is text-only. Gemma 4 31B is multimodal-by-default;
-# the GGUF path will fail at vision attach. Use --prequantized or --model-dir
-# for full multimodal support.
-
 """Load a GGUF file into a Gemma 4 31B model.
 
 Streams tensors one at a time via ``iter_gguf_tensors`` for low peak
 memory, remaps GGUF names to model FQNs, handles tied embed/lm_head,
 and packs for the target backend.
 
+Community GGUFs typically pack the text decoder only (no vision tower
+weights). For multimodal inference, pass a directory of HF bf16
+safetensors via ``vision_safetensors_dir``; the loader will populate
+``vision_tower.*`` / ``embed_vision.*`` from that checkpoint after the
+GGUF stream completes.
+
 Usage:
+    # Text-only:
     model, config = load_gguf_model("model.gguf", backend="cuda")
+
+    # Multimodal (text from GGUF, vision from HF bf16):
+    model, config = load_gguf_model(
+        "model.gguf", backend="cuda",
+        vision_safetensors_dir="/path/to/gemma-4-31B",
+    )
 """
 
+import os
 from typing import Optional
 
 import torch
@@ -98,10 +108,75 @@ def _validate_no_meta(model):
         p.requires_grad_(False)
 
 
+def _load_vision_from_hf(
+    model,
+    config,
+    vision_safetensors_dir: str,
+) -> None:
+    """Populate ``vision_tower.*`` / ``embed_vision.*`` from an HF bf16 checkpoint.
+
+    Streams the safetensors shards on CPU, filters to vision keys via the
+    shared HF→model remap, then assigns the result with
+    ``load_state_dict(..., assign=True)`` so that meta-device vision params
+    become real bf16 tensors. Non-vision keys in the shard are ignored.
+    """
+    from executorch.examples.models.gemma4_31b.model import (
+        _hf_to_model_key,
+        _VISION_PREFIXES,
+    )
+    from safetensors import safe_open
+
+    index_path = os.path.join(
+        vision_safetensors_dir, "model.safetensors.index.json"
+    )
+    if os.path.exists(index_path):
+        import json as _json
+
+        with open(index_path, "r") as f:
+            index = _json.load(f)
+        shard_files = sorted(set(index["weight_map"].values()))
+    elif os.path.exists(os.path.join(vision_safetensors_dir, "model.safetensors")):
+        shard_files = ["model.safetensors"]
+    else:
+        raise FileNotFoundError(
+            f"No safetensors checkpoint in {vision_safetensors_dir}"
+        )
+
+    vision_state: dict[str, torch.Tensor] = {}
+    for shard_file in shard_files:
+        shard_path = os.path.join(vision_safetensors_dir, shard_file)
+        with safe_open(shard_path, framework="pt", device="cpu") as f:
+            for ckpt_key in f.keys():
+                norm = ckpt_key
+                if norm.startswith("model.language_model."):
+                    continue  # text decoder lives in GGUF
+                if not norm.startswith(_VISION_PREFIXES):
+                    continue
+                model_key = _hf_to_model_key(ckpt_key)
+                if model_key is None:
+                    continue
+                vision_state[model_key] = f.get_tensor(ckpt_key)
+
+    if not vision_state:
+        raise ValueError(
+            f"No vision_tower/embed_vision keys found in {vision_safetensors_dir}."
+        )
+
+    missing, unexpected = model.load_state_dict(
+        vision_state, strict=False, assign=True
+    )
+    print(
+        f"  Vision: loaded {len(vision_state)} tensors from {vision_safetensors_dir}"
+    )
+    if unexpected:
+        print(f"  WARNING: unexpected vision keys: {sorted(unexpected)[:5]}")
+
+
 def load_gguf_model(
     gguf_path: str,
     max_seq_len: int = 4096,
     backend: str = "cuda",
+    vision_safetensors_dir: Optional[str] = None,
 ) -> tuple:
     """Load a GGUF file, remap keys, and pack for the target backend.
 
@@ -112,6 +187,11 @@ def load_gguf_model(
     needs gather, which ``Int4TilePackedTo4dTensor`` does not support),
     while ``lm_head`` keeps the original Q4_K quantization (``nn.Linear``
     matmul via tinygemm).
+
+    If ``vision_safetensors_dir`` is provided, vision_tower / embed_vision
+    weights are loaded from that HF bf16 checkpoint after the GGUF stream
+    completes. Without it, vision params stay on meta and the model is
+    text-only.
 
     Returns ``(model, config)``.
     """
@@ -128,6 +208,15 @@ def load_gguf_model(
         raise ValueError(f"Unsupported backend: {backend!r}. Supported: 'cuda'.")
 
     config = Gemma4_31BConfig(max_seq_len=max_seq_len)
+    if vision_safetensors_dir is not None:
+        # Bring in vision_config (and any vision-relevant text overrides) from
+        # the HF config.json so that vision_tower / embed_vision are
+        # instantiated with matching dims.
+        hf_config = Gemma4_31BConfig.from_hf_config(
+            os.path.join(vision_safetensors_dir, "config.json")
+        )
+        hf_config.max_seq_len = max_seq_len
+        config = hf_config
 
     print("Building model on meta device...")
     with torch.device("meta"):
@@ -158,12 +247,18 @@ def load_gguf_model(
     _resolve_tied_lm_head(model, embed_quant, packers)
     del embed_quant
 
-    _validate_no_meta(model)
+    if vision_safetensors_dir is not None:
+        print(f"Loading vision_tower + embed_vision from {vision_safetensors_dir}...")
+        _load_vision_from_hf(model, config, vision_safetensors_dir)
+        _validate_no_meta(model)
+    else:
+        # Text-only: skip meta-device validation so the (still-meta) vision
+        # submodules don't trip the check. The caller is responsible for not
+        # invoking vision_tower / embed_vision in this mode.
+        for p in model.parameters():
+            p.requires_grad_(False)
+
     model.eval()
 
     print(f"Model: {config.num_hidden_layers} layers, hidden={config.hidden_size}")
-    if not hasattr(model, "vision_tower"):
-        raise NotImplementedError(
-            "GGUF loader doesn't support vision yet — use --prequantized or --model-dir"
-        )
     return model, config

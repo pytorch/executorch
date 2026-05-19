@@ -76,7 +76,7 @@ extern "C" void et_pal_emit_log_message(
 // guard its implementation block, so including it twice in the same TU
 // with the impl macro defined produces redefinition errors.
 #define STB_IMAGE_RESIZE_IMPLEMENTATION
-#include <executorch/examples/models/gemma4_31b/image_utils.h>
+#include <executorch/examples/models/gemma4/image_utils.h>
 #endif
 
 DEFINE_string(model_path, "", "Model .pte file path.");
@@ -443,9 +443,9 @@ int main(int argc, char** argv) {
       return 1;
     }
 
-    executorch::examples::gemma4_31b::ImageData image_data;
+    executorch::examples::gemma4::ImageData image_data;
     try {
-      image_data = executorch::examples::gemma4_31b::patchify_rgb_image(
+      image_data = executorch::examples::gemma4::patchify_rgb_image(
           img_data, img_w, img_h, FLAGS_max_vision_soft_tokens);
     } catch (const std::exception& e) {
       ET_LOG(Error, "patchify_rgb_image failed: %s", e.what());
@@ -460,8 +460,8 @@ int main(int argc, char** argv) {
         img_h,
         image_data.num_valid_patches,
         FLAGS_max_vision_soft_tokens *
-            executorch::examples::gemma4_31b::kPoolingKernel *
-            executorch::examples::gemma4_31b::kPoolingKernel);
+            executorch::examples::gemma4::kPoolingKernel *
+            executorch::examples::gemma4::kPoolingKernel);
 
     // ---------- Run vision_encoder ----------
     auto ve_result = module->execute(

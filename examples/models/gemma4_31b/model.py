@@ -50,7 +50,7 @@ from executorch.examples.models.gemma4.text_decoder import (
     Gemma4KVCache,
     Gemma4MLP,
 )
-from executorch.examples.models.gemma4.vision_tower import (
+from executorch.examples.models.gemma4_31b.vision_tower import (
     Gemma4_31BVisionTower,
     Gemma4MultimodalEmbedder,
     Gemma4VisionConfig,

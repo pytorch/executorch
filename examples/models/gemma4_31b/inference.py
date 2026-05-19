@@ -9,6 +9,8 @@
 Three input paths:
   --prequantized <dir>   Load a quantized checkpoint (from quantize_and_save.py).
   --gguf <file>          Load a GGUF file (e.g., Q4_K_M from the community).
+                         Text-only by default; pair with ``--vision-from-hf``
+                         to also load the vision tower from an HF bf16 dir.
   --bf16 <dir>           Load the bf16 HF safetensors checkpoint via from_hf_checkpoint.
 
 Gemma 4 31B-IT is instruction-tuned and requires chat-template formatting.
@@ -41,6 +43,13 @@ Usage:
         --gguf ./gemma-4-31B-it-Q4_K_M.gguf \\
         --tokenizer-path ./tokenizer.json \\
         --prompt "Hello"
+
+    # GGUF + vision: text decoder from GGUF, vision tower from HF bf16.
+    python inference.py \\
+        --gguf ./gemma-4-31B-it-Q4_K_S.gguf \\
+        --vision-from-hf /path/to/gemma-4-31B \\
+        --image-path ./some_image.png \\
+        --prompt "Describe this image."
 """
 
 import argparse
@@ -77,6 +86,11 @@ def _move_to_cuda(model, config) -> None:
     ``materialize_runtime_buffers``.
     """
     for name, p in model.named_parameters():
+        if p.device.type == "meta":
+            # Param wasn't materialized (e.g. GGUF text-only run leaves
+            # vision_tower / embed_vision on meta). Skip — the caller is
+            # responsible for not touching these submodules.
+            continue
         parts = name.rsplit(".", 1)
         parent = model.get_submodule(parts[0]) if len(parts) > 1 else model
         setattr(
@@ -181,7 +195,7 @@ def _build_vision_encoder(model, config):
     on the meta device (so its freshly-built children take no real allocation),
     then swap in the loaded modules so parameter identity is preserved.
     """
-    from executorch.examples.models.gemma4.vision_tower import Gemma4_31BVisionTower
+    from executorch.examples.models.gemma4_31b.vision_tower import Gemma4_31BVisionTower
 
     # When ``model`` has been wrapped by ``torch.compile`` we still want the
     # raw underlying modules — torch.compile proxies attribute access to
@@ -408,6 +422,16 @@ def main() -> None:
         ),
     )
     parser.add_argument(
+        "--vision-from-hf",
+        default=None,
+        help=(
+            "Path to an HF bf16 checkpoint dir (e.g. /path/to/gemma-4-31B) to "
+            "load vision_tower + embed_vision from. Only meaningful with "
+            "--gguf + --image-path: community GGUFs are text-only, so the "
+            "vision weights must come from an HF checkpoint."
+        ),
+    )
+    parser.add_argument(
         "--max-vision-soft-tokens",
         type=int,
         default=280,
@@ -422,10 +446,16 @@ def main() -> None:
     if args.backend == "cuda" and not torch.cuda.is_available():
         parser.error("CUDA is required for the cuda backend.")
 
-    if args.image_path and args.gguf:
+    if args.image_path and args.gguf and not args.vision_from_hf:
         parser.error(
-            "--image-path is only supported with --prequantized "
-            "(GGUF text-only loader has no vision tower)."
+            "--image-path with --gguf requires --vision-from-hf <hf_bf16_dir>: "
+            "community GGUFs do not pack vision_tower weights, so they must "
+            "come from an HF bf16 checkpoint."
+        )
+    if args.vision_from_hf and not args.gguf:
+        parser.error(
+            "--vision-from-hf only applies to --gguf (other sources already "
+            "include vision weights)."
         )
 
     # ---- Tokenizer ----
@@ -450,7 +480,10 @@ def main() -> None:
         from executorch.examples.models.gemma4_31b.gguf_loader import load_gguf_model
 
         model, config = load_gguf_model(
-            args.gguf, args.max_seq_len, backend=args.backend
+            args.gguf,
+            args.max_seq_len,
+            backend=args.backend,
+            vision_safetensors_dir=args.vision_from_hf,
         )
     elif args.bf16:
         model, config = Gemma4_31B.from_hf_checkpoint(

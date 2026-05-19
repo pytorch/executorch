@@ -47,7 +47,7 @@ import tempfile
 
 import pytest
 import torch
-from executorch.examples.models.gemma4.vision_tower import Gemma4VisionConfig
+from executorch.examples.models.gemma4_31b.vision_tower import Gemma4VisionConfig
 
 from executorch.examples.models.gemma4_31b.model import (
     Gemma4_31B,

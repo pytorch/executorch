@@ -45,7 +45,7 @@ _REPO_ROOT = "/home/gasoonjia/executorch"
 if _REPO_ROOT not in sys.path:
     sys.path.insert(0, _REPO_ROOT)
 
-from executorch.examples.models.gemma4.vision_tower import (  # noqa: E402
+from executorch.examples.models.gemma4_31b.vision_tower import (  # noqa: E402
     Gemma4_31BVisionTower,
     Gemma4VisionConfig,
     hf_vision_key_map,
