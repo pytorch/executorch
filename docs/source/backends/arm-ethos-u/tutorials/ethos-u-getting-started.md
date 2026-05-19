@@ -196,7 +196,6 @@ The example application is by default built with an input of ones, so the expect
 ## Takeaways
 
 In this tutorial you have learned how to use ExecuTorch to export a PyTorch model to an executable that can run on an embedded target, and then run that executable on simulated hardware.
-
 To learn more, check out the [ExecuTorch on Arm Practical Labs](https://github.com/arm-education/executorch_on_arm_labs) series. This series provides a structured entry-point to developing with ExecuTorch on Arm, across both CPU and Ethos-U NPU.
 
 For quick learning paths showcasing short tutorials:
