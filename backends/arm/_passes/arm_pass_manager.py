@@ -97,6 +97,7 @@ from executorch.backends.arm._passes import (
     DecomposeVarPass,
     DecomposeWhereScalarOtherPass,
     DecorateFp32toInt32CastingPass,
+    DeduplicateGetAttrPass,
     EnsureUniqueOutputNodesPass,
     FoldAndAnnotateQParamsPass,
     FuseBatchNorm2dPass,
@@ -651,6 +652,7 @@ class ArmPassManager(PassManager):
                 [
                     ReplaceInfAndLimitValuesPass(tfa_pass=True),
                     DecomposeMaskedFillPass(tfa_pass=True),
+                    DeduplicateGetAttrPass(tfa_pass=True),
                 ]
             )
 
