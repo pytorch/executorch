@@ -16,8 +16,7 @@ from executorch.examples.models.gemma4_31b.quant.pack_mlx import (
     _int4_to_intx_unpacked,
     _mlx_group_size,
     DEFAULT_MLX_PACKERS,
-    pack_embedding_for_mlx,
-    pack_linear_for_mlx,
+    pack_for_mlx,
 )
 from executorch.examples.models.gemma4_31b.quant.quantize import (
     dequantize_weight,
@@ -108,7 +107,7 @@ class TestPackLinearForMlx(unittest.TestCase):
         module = nn.Linear(128, 64, bias=False)
         config = QuantConfig(bits=4, group_size=32, symmetric=True, method="min_max")
         w = quantize_weight(torch.randn(64, 128, dtype=torch.bfloat16), config)
-        pack_linear_for_mlx(module, {"weight": w})
+        pack_for_mlx(module, {"weight": w})
 
         self.assertIsInstance(module.weight.data, IntxUnpackedToInt8Tensor)
         self.assertEqual(module.weight.shape, torch.Size([64, 128]))
@@ -121,10 +120,28 @@ class TestPackLinearForMlx(unittest.TestCase):
         config = QuantConfig(bits=8, group_size=32, symmetric=True, method="min_max")
         w = quantize_weight(torch.randn(64, 128, dtype=torch.bfloat16), config)
         self.assertIsInstance(w, IntxUnpackedToInt8Tensor)
-        pack_linear_for_mlx(module, {"weight": w})
+        pack_for_mlx(module, {"weight": w})
 
         self.assertIsInstance(module.weight.data, IntxUnpackedToInt8Tensor)
         self.assertEqual(module.weight.shape, torch.Size([64, 128]))
+
+    def test_regroup_preserves_dequant(self):
+        """Linear with non-standard group_size regroups and dequantizes correctly."""
+        torch.manual_seed(0)
+        weight = torch.randn(64, 256, dtype=torch.bfloat16)
+        config = QuantConfig(bits=8, group_size=256, symmetric=True, method="min_max")
+        w = quantize_weight(weight, config)
+        before = dequantize_weight(w, torch.float32)
+
+        module = nn.Linear(256, 64, bias=False)
+        pack_for_mlx(module, {"weight": w})
+
+        self.assertEqual(module.weight.data.block_size, (1, 128))
+        after = dequantize_weight(module.weight.data, torch.float32)
+        self.assertTrue(
+            torch.allclose(before, after, atol=1e-5),
+            f"max diff: {(before - after).abs().max():.6g}",
+        )
 
 
 class TestMlxGroupSize(unittest.TestCase):
@@ -148,14 +165,14 @@ class TestPackEmbeddingForMlx(unittest.TestCase):
         module = nn.Embedding(100, 64)
         config = QuantConfig(bits=8, group_size=32, symmetric=True, method="min_max")
         w = quantize_weight(torch.randn(100, 64, dtype=torch.bfloat16), config)
-        pack_embedding_for_mlx(module, {"weight": w})
+        pack_for_mlx(module, {"weight": w})
         self.assertEqual(module.weight.shape, torch.Size([100, 64]))
 
     def test_per_axis_regroups(self):
         module = nn.Embedding(50, 256)
         config = QuantConfig(bits=8, group_size=256, symmetric=True, method="min_max")
         w = quantize_weight(torch.randn(50, 256, dtype=torch.bfloat16), config)
-        pack_embedding_for_mlx(module, {"weight": w})
+        pack_for_mlx(module, {"weight": w})
         self.assertEqual(module.weight.shape, torch.Size([50, 256]))
         self.assertEqual(module.weight.data.block_size, (1, 128))
 
@@ -165,7 +182,7 @@ class TestPackEmbeddingForMlx(unittest.TestCase):
         module = nn.Embedding(100, 64)
         config = QuantConfig(bits=4, group_size=32, symmetric=True, method="min_max")
         w = quantize_weight(torch.randn(100, 64, dtype=torch.bfloat16), config)
-        pack_embedding_for_mlx(module, {"weight": w})
+        pack_for_mlx(module, {"weight": w})
         self.assertIsInstance(module.weight.data, IntxUnpackedToInt8Tensor)
         self.assertEqual(module.weight.shape, torch.Size([100, 64]))
 

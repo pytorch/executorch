@@ -116,35 +116,17 @@ def _regroup_intx(w: torch.Tensor, new_gs: int) -> torch.Tensor:
 
 
 # ---------------------------------------------------------------------------
-# Per-module packers
+# Per-module packer
 
 
-def pack_linear_for_mlx(module: nn.Module, weights: dict[str, torch.Tensor]) -> None:
-    """Pack a quantized ``nn.Linear`` for MLX.
+def pack_for_mlx(module: nn.Module, weights: dict[str, torch.Tensor]) -> None:
+    """Pack a quantized weight for MLX.
 
-    ``IntxUnpackedToInt8Tensor`` passes through (already produces the
-    ``dequantize_affine → linear`` pattern MLX expects).
     ``Int4Tensor`` is converted to ``IntxUnpackedToInt8Tensor`` so the
-    default dispatch produces the right pattern instead of calling
-    CUDA-specific mslk kernels.
-    """
-    from torchao.quantization import IntxUnpackedToInt8Tensor
-    from torchao.quantization.quantize_.workflows.int4.int4_tensor import Int4Tensor
-
-    w = weights["weight"]
-    if isinstance(w, Int4Tensor):
-        w = _int4_to_intx_unpacked(w)
-    elif not isinstance(w, IntxUnpackedToInt8Tensor):
-        raise ValueError(f"Unsupported weight type: {type(w).__name__}")
-    module.weight = nn.Parameter(w, requires_grad=False)
-
-
-def pack_embedding_for_mlx(module: nn.Module, weights: dict[str, torch.Tensor]) -> None:
-    """Pack a quantized ``nn.Embedding`` for MLX.
-
-    Regroups to a compatible group_size when needed (e.g. per-axis
-    group_size=5376 → group_size=128) since MLX's ``parse_dequant_node``
-    only accepts group_size in {32, 64, 128}.
+    default dispatch produces the ``dequantize_affine → linear`` pattern
+    MLX expects.  Regroups to a compatible group_size when needed (e.g.
+    per-axis group_size=5376 → group_size=128) since MLX's
+    ``parse_dequant_node`` only accepts group_size in {32, 64, 128}.
     """
     from torchao.quantization import IntxUnpackedToInt8Tensor
     from torchao.quantization.quantize_.workflows.int4.int4_tensor import Int4Tensor
@@ -162,8 +144,8 @@ def pack_embedding_for_mlx(module: nn.Module, weights: dict[str, torch.Tensor]) 
 
 
 DEFAULT_MLX_PACKERS: dict[type, ModulePackerFn] = {
-    nn.Linear: pack_linear_for_mlx,
-    nn.Embedding: pack_embedding_for_mlx,
+    nn.Linear: pack_for_mlx,
+    nn.Embedding: pack_for_mlx,
 }
 
 
