@@ -19,7 +19,7 @@ from executorch.exir.backend.test.op_partitioner_demo import (
 from executorch.exir.dialects._ops import ops as exir_ops
 from executorch.exir.error import ExportError, InternalError
 from executorch.exir.lowered_backend_module import get_lowered_submodules
-from executorch.exir.pass_base import ExportPass
+from executorch.exir.pass_base import ExportPass, PassResult
 from executorch.exir.passes import MemoryPlanningPass
 from executorch.exir.program._program import (
     _transform,
@@ -36,6 +36,7 @@ from executorch.extension.pybindings.portable_lib import (
 )
 from torch._export.verifier import Verifier
 from torch.export import Dim, export, ExportedProgram
+from torch.export.exported_program import InputKind
 from torch.export._trace import _export
 from torch.fx.passes.infra.pass_manager import PassManager
 
@@ -930,6 +931,284 @@ class TestProgramManagers(unittest.TestCase):
         et = edge.to_executorch()
         with self.assertRaises(ValueError):
             _ = et.save("/tmp/test_save.pt")
+
+    def test_transform_keep_lifted_false_fuses_constants(self):
+        """Test that transform with keep_lifted=False allows passes to fuse constants."""
+
+        for const_type in ("buffer", "parameter"):
+            with self.subTest(const_type=const_type):
+                self._test_transform_keep_lifted_false_fuses_constants(const_type)
+
+    def _test_transform_keep_lifted_false_fuses_constants(self, const_type):
+        use_param = const_type == "parameter"
+
+        class TwoConstants(torch.nn.Module):
+            def __init__(self):
+                super().__init__()
+                if use_param:
+                    self.c1 = torch.nn.Parameter(torch.tensor([2.0]))
+                    self.c2 = torch.nn.Parameter(torch.tensor([3.0]))
+                else:
+                    self.register_buffer("c1", torch.tensor([2.0]))
+                    self.register_buffer("c2", torch.tensor([3.0]))
+
+            def forward(self, x, y):
+                return (x + y) * self.c1 * self.c2
+
+        class FuseConstantMulPass(ExportPass):
+            """Fuses two consecutive multiplications by constants into one."""
+
+            def _remove_attr(self, graph_module, name):
+                if name in graph_module._buffers:
+                    del graph_module._buffers[name]
+                elif name in graph_module._parameters:
+                    del graph_module._parameters[name]
+
+            def call(self, graph_module):
+                graph = graph_module.graph
+                mul_target = exir_ops.edge.aten.mul.Tensor
+                for node in graph.find_nodes(op="call_function", target=mul_target):
+                    lhs, rhs = node.args[0], node.args[1]
+                    if lhs.op != "call_function" or lhs.target != mul_target:
+                        continue
+                    inner_lhs, inner_rhs = lhs.args[0], lhs.args[1]
+                    if inner_rhs.op != "get_attr" or rhs.op != "get_attr":
+                        continue
+
+                    c1 = getattr(graph_module, inner_rhs.target)
+                    c2 = getattr(graph_module, rhs.target)
+                    fused_name = "fused_constant"
+                    setattr(graph_module, fused_name, c1 * c2)
+
+                    with graph.inserting_before(node):
+                        fused_node = graph.get_attr(fused_name)
+                        fused_node.meta = dict(rhs.meta)
+                        new_mul = graph.call_function(mul_target, (inner_lhs, fused_node), {})
+                        new_mul.meta = dict(node.meta)
+
+                    node.replace_all_uses_with(new_mul)
+                    graph.erase_node(node)
+                    if len(lhs.users) == 0:
+                        graph.erase_node(lhs)
+                    if len(rhs.users) == 0:
+                        graph.erase_node(rhs)
+                        self._remove_attr(graph_module, rhs.target)
+                    if len(inner_rhs.users) == 0:
+                        graph.erase_node(inner_rhs)
+                        self._remove_attr(graph_module, inner_rhs.target)
+
+                graph.lint()
+                graph_module.recompile()
+                return PassResult(graph_module, True)
+
+        model = TwoConstants()
+        inp = (torch.tensor([5.0]), torch.tensor([1.0]))
+        expected = model(*inp)
+
+        program = export(model, inp, strict=True)
+        edge = to_edge(program)
+
+        original_ep = edge.exported_program()
+        original_const_count = sum(
+            1
+            for s in original_ep.graph_signature.input_specs
+            if s.kind != InputKind.USER_INPUT
+        )
+        self.assertEqual(original_const_count, 2)
+
+        transformed_edge = edge.transform(
+            [FuseConstantMulPass()], keep_lifted=False
+        )
+
+        transformed_ep = transformed_edge.exported_program()
+
+        new_buffer_count = sum(
+            1
+            for s in transformed_ep.graph_signature.input_specs
+            if s.kind == InputKind.BUFFER
+        )
+        self.assertEqual(new_buffer_count, 1)
+        self.assertEqual(len(transformed_ep.state_dict), 1)
+
+        user_input_count = sum(
+            1
+            for s in transformed_ep.graph_signature.input_specs
+            if s.kind == InputKind.USER_INPUT
+        )
+        self.assertEqual(user_input_count, 2)
+
+        result = transformed_ep.module()(*inp)
+        self.assertTrue(torch.allclose(result, expected))
+
+    def test_transform_keep_lifted_false_adds_constant(self):
+        """Test that transform with keep_lifted=False allows passes to add new constants."""
+
+        for const_type in ("buffer", "parameter"):
+            with self.subTest(const_type=const_type):
+                self._test_transform_keep_lifted_false_adds_constant(const_type)
+
+    def _test_transform_keep_lifted_false_adds_constant(self, const_type):
+        use_param = const_type == "parameter"
+
+        class OneConstant(torch.nn.Module):
+            def __init__(self):
+                super().__init__()
+                if use_param:
+                    self.c1 = torch.nn.Parameter(torch.tensor([2.0]))
+                else:
+                    self.register_buffer("c1", torch.tensor([2.0]))
+
+            def forward(self, x, y):
+                return (x + y) * self.c1
+
+        class AddConstantPass(ExportPass):
+            """Adds a new constant and multiplies the result by it."""
+
+            def call(self, graph_module):
+                graph = graph_module.graph
+                output_node = graph.output_node()
+                result_node = output_node.args[0][0]
+
+                new_const = torch.tensor([3.0])
+                setattr(graph_module, "added_constant", new_const)
+
+                with graph.inserting_before(output_node):
+                    const_node = graph.get_attr("added_constant")
+                    const_node.meta = dict(result_node.meta)
+                    mul_target = exir_ops.edge.aten.mul.Tensor
+                    new_mul = graph.call_function(mul_target, (result_node, const_node), {})
+                    new_mul.meta = dict(result_node.meta)
+
+                output_node.args = ((new_mul,),)
+                graph.lint()
+                graph_module.recompile()
+                return PassResult(graph_module, True)
+
+        model = OneConstant()
+        inp = (torch.tensor([5.0]), torch.tensor([1.0]))
+
+        program = export(model, inp, strict=True)
+        edge = to_edge(program)
+
+        original_ep = edge.exported_program()
+        original_const_count = sum(
+            1
+            for s in original_ep.graph_signature.input_specs
+            if s.kind != InputKind.USER_INPUT
+        )
+        self.assertEqual(original_const_count, 1)
+
+        transformed_edge = edge.transform(
+            [AddConstantPass()], keep_lifted=False
+        )
+        transformed_ep = transformed_edge.exported_program()
+
+        new_buffer_count = sum(
+            1
+            for s in transformed_ep.graph_signature.input_specs
+            if s.kind == InputKind.BUFFER
+        )
+        self.assertEqual(new_buffer_count, 2)
+        self.assertEqual(len(transformed_ep.state_dict), 2)
+
+        user_input_count = sum(
+            1
+            for s in transformed_ep.graph_signature.input_specs
+            if s.kind == InputKind.USER_INPUT
+        )
+        self.assertEqual(user_input_count, 2)
+
+        result = transformed_ep.module()(*inp)
+        expected = (torch.tensor([5.0]) + torch.tensor([1.0])) * 2.0 * 3.0
+        self.assertTrue(torch.allclose(result, expected))
+
+    def test_transform_keep_lifted_false_removes_constant(self):
+        """Test that transform with keep_lifted=False allows passes to remove constants."""
+
+        for const_type in ("buffer", "parameter"):
+            with self.subTest(const_type=const_type):
+                self._test_transform_keep_lifted_false_removes_constant(const_type)
+
+    def _test_transform_keep_lifted_false_removes_constant(self, const_type):
+        use_param = const_type == "parameter"
+
+        class TwoConstants(torch.nn.Module):
+            def __init__(self):
+                super().__init__()
+                if use_param:
+                    self.c1 = torch.nn.Parameter(torch.tensor([2.0]))
+                    self.c2 = torch.nn.Parameter(torch.tensor([3.0]))
+                else:
+                    self.register_buffer("c1", torch.tensor([2.0]))
+                    self.register_buffer("c2", torch.tensor([3.0]))
+
+            def forward(self, x, y):
+                return (x + y) * self.c1 + self.c2
+
+        class RemoveAddConstantPass(ExportPass):
+            """Removes the add-constant and just returns (x + y) * c1."""
+
+            def _remove_attr(self, graph_module, name):
+                if name in graph_module._buffers:
+                    del graph_module._buffers[name]
+                elif name in graph_module._parameters:
+                    del graph_module._parameters[name]
+
+            def call(self, graph_module):
+                graph = graph_module.graph
+                add_target = exir_ops.edge.aten.add.Tensor
+                for node in graph.find_nodes(op="call_function", target=add_target):
+                    lhs, rhs = node.args[0], node.args[1]
+                    if rhs.op != "get_attr":
+                        continue
+                    node.replace_all_uses_with(lhs)
+                    graph.erase_node(node)
+                    if len(rhs.users) == 0:
+                        rhs_target = rhs.target
+                        graph.erase_node(rhs)
+                        self._remove_attr(graph_module, rhs_target)
+
+                graph.lint()
+                graph_module.recompile()
+                return PassResult(graph_module, True)
+
+        model = TwoConstants()
+        inp = (torch.tensor([5.0]), torch.tensor([1.0]))
+
+        program = export(model, inp, strict=True)
+        edge = to_edge(program)
+
+        original_ep = edge.exported_program()
+        original_const_count = sum(
+            1
+            for s in original_ep.graph_signature.input_specs
+            if s.kind != InputKind.USER_INPUT
+        )
+        self.assertEqual(original_const_count, 2)
+
+        transformed_edge = edge.transform(
+            [RemoveAddConstantPass()], keep_lifted=False
+        )
+        transformed_ep = transformed_edge.exported_program()
+
+        new_buffer_count = sum(
+            1
+            for s in transformed_ep.graph_signature.input_specs
+            if s.kind == InputKind.BUFFER
+        )
+        self.assertEqual(new_buffer_count, 1)
+        self.assertEqual(len(transformed_ep.state_dict), 1)
+
+        user_input_count = sum(
+            1
+            for s in transformed_ep.graph_signature.input_specs
+            if s.kind == InputKind.USER_INPUT
+        )
+        self.assertEqual(user_input_count, 2)
+
+        result = transformed_ep.module()(*inp)
+        expected = (torch.tensor([5.0]) + torch.tensor([1.0])) * 2.0
+        self.assertTrue(torch.allclose(result, expected))
 
     def test__transform_override_verifiers(self):
         """Test that _transform can override verifiers in the exported program."""

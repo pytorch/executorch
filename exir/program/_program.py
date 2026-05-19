@@ -224,6 +224,7 @@ def _transform(
     self,
     *passes: PassType,
     override_verifiers: None | list[Type[Verifier]] = None,
+    keep_lifted: bool = True
 ) -> "ExportedProgram":
     """
     Transforms the program according to the provided passes.
@@ -243,14 +244,15 @@ def _transform(
     ), f"Expected all passes to be of PassType, not list or Verifier. Use override_verifiers kwarg instead. Got: {list(passes)}"
 
     return _transform_with_pass_manager(
-        self, PassManager(list(passes)), override_verifiers
+        self, PassManager(list(passes)), override_verifiers, keep_lifted
     )
 
 
 def _transform_with_pass_manager(
-    self,
+    self: "ExportedProgram",
     pass_manager: PassManager,
     override_verifiers: None | list[Type[Verifier]] = None,
+    keep_lifted: bool = True
 ) -> "ExportedProgram":
     """
     Transforms the program using the provided pass_manager.
@@ -260,20 +262,48 @@ def _transform_with_pass_manager(
         pass_manager: An instance of PassManager to apply transformations.
         override_verifiers: Optional list of verifier classes to use instead of the default verifiers.
             This is needed if the transforms yields illegal graph that the default verifier cannot handle.
+        keep_lifted: If True, does not lower constants from exported program state dict/constants/buffers into the
+            graph module. Else, it does, which is useful for passes which need to modify constants.
 
     Returns:
         ExportedProgram: A new ExportedProgram with the transformations applied, or self if no changes were made
     """
-    res = pass_manager(self.graph_module)
-    transformed_gm = res.graph_module if res is not None else self.graph_module
-    assert transformed_gm is not None
+    if keep_lifted:
+        graph_module = self.graph_module
+    else:
+        graph_module = self.module()
+
+    res = pass_manager(graph_module)
+    transformed_gm = res.graph_module
 
     if transformed_gm is self.graph_module and not res.modified:
         return self
 
-    return _update_exported_program_graph_module(
-        self, transformed_gm, override_verifiers
-    )
+
+    if keep_lifted:
+        return _update_exported_program_graph_module(
+            self, transformed_gm, override_verifiers
+        )
+    else:
+        # Lift the constants from the graph module back
+        # into the exported program
+        ep = copy.deepcopy(self)
+        ep._graph_module = transformed_gm
+        ep.graph_signature.input_specs = [
+            s for s in ep.graph_signature.input_specs
+            if s.kind == InputKind.USER_INPUT
+        ]
+        # Clear stale state before re-lifting: lift_constant_tensor_pass only
+        # appends new BUFFER entries and never removes existing ones, so we must
+        # start from a clean slate to avoid duplicates from the original signature.
+        ep._state_dict.clear()
+        ep._constants.clear()
+        ep._range_constraints = _get_updated_range_constraints(transformed_gm)
+        lift_constant_tensor_pass(ep)
+        verifiers = override_verifiers or [self.verifier]
+        for verifier in verifiers:
+            verifier()(ep.graph_module)
+        return ep
 
 
 def _update_exported_program_graph_module(
@@ -1606,6 +1636,7 @@ class EdgeProgramManager:
         self,
         passes: Union[Sequence[PassType], Dict[str, Sequence[PassType]], PassManager],
         compile_config: Optional[EdgeCompileConfig] = None,
+        keep_lifted: bool = True
     ) -> "EdgeProgramManager":
         """
         Transforms the program according to the provided passes.
@@ -1658,11 +1689,11 @@ class EdgeProgramManager:
 
             # Depending on the passes parameter, call the corresponding transform function.
             if passes_seq is not None:
-                new_programs[name] = _transform(program, *passes_seq)
+                new_programs[name] = _transform(program, *passes_seq, keep_lifted=keep_lifted)
             elif passes_dict is not None:
-                new_programs[name] = _transform(program, *passes_dict[name])
+                new_programs[name] = _transform(program, *passes_dict[name], keep_lifted=keep_lifted)
             elif pass_manager is not None:
-                new_programs[name] = _transform_with_pass_manager(program, pass_manager)
+                new_programs[name] = _transform_with_pass_manager(program, pass_manager, keep_lifted=keep_lifted)
 
             # Verify the correctness of model graph after each transformation.
             EXIREdgeDialectVerifier(edge_compile_config=compile_config)(
