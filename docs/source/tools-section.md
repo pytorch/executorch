@@ -13,7 +13,7 @@ In this section, explore ExecuTorch's comprehensive developer tools for profilin
 - {doc}`model-inspector` — Model Inspector
 - {doc}`memory-planning-inspection` — Memory Planning Inspection
 - {doc}`devtools-tutorial` — Development Utilities
-- {doc}`visualize` — Model Visualization
+- [Model Visualization](visualize.md) — Visualize exported models as computational graphs
 
 ```{toctree}
 :hidden:
@@ -29,4 +29,5 @@ model-debugging
 model-inspector
 memory-planning-inspection
 devtools-tutorial
-visualize
+Model Visualization <visualize>
+```

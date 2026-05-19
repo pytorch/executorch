@@ -28,6 +28,21 @@ from coremltools.converters.mil.mil import types
 from executorch.exir.dim_order_utils import get_memory_format
 
 
+_IOS18_QUANT_HINT = (
+    "ExecuTorch hint: pass `compile_specs=CoreMLBackend.generate_compile_specs("
+    "minimum_deployment_target=ct.target.iOS18)` (or higher) to "
+    "`CoreMLPartitioner` when lowering models that use `quantize_(...)`."
+)
+
+
+def _raise_with_executorch_hint(err: Exception) -> "BaseException":
+    """Re-raise a coremltools quantization error with ExecuTorch-specific guidance."""
+    msg = str(err)
+    if "iOS18" in msg or "iOS 18" in msg:
+        raise ValueError(f"{msg}\n{_IOS18_QUANT_HINT}") from err
+    raise err
+
+
 # https://github.com/apple/coremltools/pull/2563
 @register_torch_op(override=False)
 def split_copy(context, node):
@@ -159,12 +174,15 @@ def dequantize_affine(context, node):
             f"Unsupported quantization range: {quant_min} to {quant_max}.  CoreML only supports 4-bit and 8-bit quantization."
         )
 
-    output = _utils._construct_constexpr_dequant_op(
-        int_data.astype(quantized_np_dtype),
-        zero_point,
-        scale,
-        name=node.name,
-    )
+    try:
+        output = _utils._construct_constexpr_dequant_op(
+            int_data.astype(quantized_np_dtype),
+            zero_point,
+            scale,
+            name=node.name,
+        )
+    except ValueError as e:
+        _raise_with_executorch_hint(e)
     context.add(output, node.name)
 
 
@@ -211,9 +229,12 @@ def dequantize_codebook(context, node):
             f"Core ML ignores output_dtype {out_np_dtype} on torchao.dequantize_affine and instead uses the native precision."
         )
 
-    output = _utils._construct_constexpr_lut_op(
-        codes.astype(np.int8),
-        codebook,
-        name=node.name,
-    )
+    try:
+        output = _utils._construct_constexpr_lut_op(
+            codes.astype(np.int8),
+            codebook,
+            name=node.name,
+        )
+    except ValueError as e:
+        _raise_with_executorch_hint(e)
     context.add(output, node.name)

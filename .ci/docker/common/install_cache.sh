@@ -34,7 +34,7 @@ install_ubuntu() {
 
 install_binary() {
   echo "Downloading sccache binary from S3 repo"
-  curl --retry 3 https://s3.amazonaws.com/ossci-linux/sccache -o /opt/cache/bin/sccache
+  curl --retry 3 --retry-all-errors https://s3.amazonaws.com/ossci-linux/sccache -o /opt/cache/bin/sccache
   chmod +x /opt/cache/bin/sccache
 }
 
