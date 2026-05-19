@@ -88,8 +88,10 @@ jobs:
         set -eux
 
         echo "::group::Setup ExecuTorch (from prebuilt wheels)"
-        PYTHON_EXECUTABLE=python EXECUTORCH_BUILD_KERNELS_TORCHAO=1 TORCHAO_BUILD_EXPERIMENTAL_MPS=1 \
-          bash .ci/scripts/install_executorch_from_wheels.sh
+        # Build-time flags (EXECUTORCH_BUILD_KERNELS_TORCHAO,
+        # TORCHAO_BUILD_EXPERIMENTAL_MPS, etc.) are baked into the prebuilt
+        # wheels by the build-metal-wheels job and are NOT re-applied here.
+        bash .ci/scripts/install_executorch_from_wheels.sh
         echo "::endgroup::"
 
         echo "::group::Build Metal Runtime"
@@ -116,8 +118,8 @@ jobs:
         set -eux
 
         echo "::group::Setup ExecuTorch (from prebuilt wheels)"
-        PYTHON_EXECUTABLE=python EXECUTORCH_BUILD_KERNELS_TORCHAO=1 TORCHAO_BUILD_EXPERIMENTAL_MPS=1 \
-          bash .ci/scripts/install_executorch_from_wheels.sh
+        # Build-time flags are baked into the prebuilt wheels by build-metal-wheels.
+        bash .ci/scripts/install_executorch_from_wheels.sh
         echo "::endgroup::"
 
         # Isolate Inductor cache per job to prevent PCH conflicts
@@ -260,8 +262,8 @@ jobs:
         # the exported model. We re-add wheels under wheels/ at the end so
         # the downstream e2e job (which only has one download-artifact slot)
         # can install from the same artifact it pulls the .pte from.
-        PYTHON_EXECUTABLE=python EXECUTORCH_BUILD_KERNELS_TORCHAO=1 TORCHAO_BUILD_EXPERIMENTAL_MPS=1 \
-          bash .ci/scripts/install_executorch_from_wheels.sh
+        # Build-time flags are baked into the prebuilt wheels by build-metal-wheels.
+        bash .ci/scripts/install_executorch_from_wheels.sh
         WHEEL_CACHE="${RUNNER_TEMP}/prebuilt_executorch_wheels"
         echo "::endgroup::"
 

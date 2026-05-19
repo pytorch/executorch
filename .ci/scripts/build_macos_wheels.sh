@@ -52,8 +52,19 @@ git submodule update --init --recursive
 # We need torch installed before invoking `pip wheel` on the local sources
 # because their build hooks `import torch`. Single source of truth for the
 # pinned torch version + requirements-dev.txt is install_requirements.py.
+#
+# IMPORTANT: pass use_pytorch_nightly=True. Despite the name, this is the
+# branch that pins torch to a specific version (currently torch==2.11.0).
+# The =False branch assumes torch was already installed from a pinned
+# commit by an earlier docker layer, which is NOT true on a fresh macOS
+# conda env. Passing False here would cause pip to resolve `torch` to
+# whatever is newest (e.g. 2.12.0), the executorch wheel would be linked
+# against that, and the consumer job — which DOES pin torch via
+# install_executorch.sh's default path — would then end up with a
+# different torch at runtime, producing a libtorch_cpu ABI mismatch
+# (Symbol not found: torch::Library::_def(...c10::headeronly::Tag...)).
 PYTHON="${PYTHON_EXECUTABLE:-python}"
-"${PYTHON}" -c "from install_requirements import install_torch_and_dev_requirements; install_torch_and_dev_requirements(use_pytorch_nightly=False)"
+"${PYTHON}" -c "from install_requirements import install_torch_and_dev_requirements; install_torch_and_dev_requirements(use_pytorch_nightly=True)"
 
 # Build torchao wheel. install_requirements.py sets USE_CPP/CMAKE_POLICY_VERSION_MINIMUM
 # based on EXECUTORCH_BUILD_KERNELS_TORCHAO; replicate that here so the produced
