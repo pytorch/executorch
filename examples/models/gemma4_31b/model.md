@@ -102,6 +102,8 @@ Decoder norms per layer: `input_layernorm`, `post_attention_layernorm`,
 
 ## Methods exported (`export.py`)
 
+### CUDA (`--backend cuda`)
+
 | Method    | Input                                                      | Output (sampled) |
 |-----------|------------------------------------------------------------|------------------|
 | `decode`  | tokens `(1, 1)` + input_pos `(1,)` + temperature `(1,)`    | `(1, 1)` float   |
@@ -112,6 +114,23 @@ Both methods share the same KV-cache buffers via
 `emit_mutable_buffer_names=True`. The exported program performs Gumbel-max
 sampling on-device and returns a single token ID per call so the C++ runner
 only has to feed tokens.
+
+### MLX (`--backend mlx`)
+
+| Method    | Input                                    | Output           |
+|-----------|------------------------------------------|------------------|
+| `forward` | tokens `(1, T)` + input_pos `(T,)`, T∈[1, min(max_seq_len-1, 2×sliding_window)] | `(1, V)` logits |
+
+Single method with dynamic sequence length. Only the last token's logits
+are returned. The C++ runner samples on the host via `logits_to_token`
+with temperature support. Int4Tensor weights are converted to
+IntxUnpackedToInt8Tensor at pack time so the default `dequantize_affine →
+linear` dispatch produces the pattern MLX's `QuantizedLinearHandler` fuses
+into `QuantizedMatmulNode`. Source transforms (`mlx_source_transformations.py`)
+replace generic PyTorch ops with `mlx.rope`, `mlx.kv_cache_update`, and
+`mlx.custom_sdpa` for optimized Metal kernels.
+
+### Shared
 
 Prefill length is capped to the ring-buffer KV cache size
 (`2 × sliding_window`) to avoid duplicate wrapped indices in
@@ -130,9 +149,11 @@ Modules in `quant/`:
   `IntxUnpackedToInt8Tensor`) from fp weights.
 - **Serialization**: callers use torchao's safetensors integration
   (`torchao.prototype.safetensors`) directly — no wrapper module needed.
-- **Pack** (`pack.py` + `pack_cuda.py`): `pack_model` groups weights by
-  parent module, `pack_one` handles single weights. Per-module packers
-  dispatch by module type (`nn.Linear`, `nn.Embedding`, extensible for MoE).
+- **Pack** (`pack.py` + `pack_cuda.py` + `pack_mlx.py`): `pack_model` groups
+  weights by parent module, `pack_one` handles single weights. Per-module
+  packers dispatch by module type (`nn.Linear`, `nn.Embedding`). CUDA passes
+  Int4Tensor through (dispatch handled by `int4_dispatch.py`); MLX converts
+  Int4Tensor → IntxUnpackedToInt8Tensor and regroups per-axis embeddings.
 - **GGUF** (`gguf.py`): `unpack_gguf_tensor` / `iter_gguf_tensors` for
   loading community-quantized GGUF files (Q4_K, Q6_K).
 
@@ -145,11 +166,12 @@ quantize_and_save.py                    export.py / inference.py
      |                                       |
   quantize_weight()                     load (torchao safetensors)
      |                                       |
-  Int4Tensor / IntxUnpacked             Int4Tensor / IntxUnpacked (used directly)
+  Int4Tensor / IntxUnpacked             pack for backend:
      |                                       |
-  save (torchao safetensors)            int4_dispatch routes to int4_plain_mm
-     |                                       |
-  model.safetensors                     dp4a decode / dequant+cuBLAS prefill
+  save (torchao safetensors)            CUDA: Int4Tensor passed through
+     |                                    → int4_dispatch → dp4a / dequant+cuBLAS
+  model.safetensors                     MLX:  Int4Tensor → IntxUnpacked(int4)
+                                          → dequantize_affine → QuantizedMatmulNode
 ```
 
 `embed_tokens` and `lm_head` start tied; they are untied before
@@ -181,14 +203,17 @@ These exist solely to make the model exportable / efficient under ExecuTorch:
   `2 × sliding_window`) saves memory for long sequences — positions wrap
   via modulo and the attention mask reconstructs which slots are valid.
   Full-attention layers use a flat `Gemma4KVCache` sized to `max_seq_len`.
-  Both use `index_copy_(dim=2, ...)` for trace-friendly updates.
+  CUDA uses `index_copy_` for trace-friendly updates; MLX source transforms
+  replace both caches with `mlx.kv_cache_update`-backed equivalents.
 - **On-the-fly RoPE**: stores only `inv_freq` per layer, computes cos/sin
   via `torch.outer(positions, inv_freq)` each forward. Saves memory vs
   precomputed `[max_seq_len, head_dim]` tables (sliding uses full RoPE,
   full uses proportional partial RoPE — head_dim and θ differ).
-- **On-device Gumbel-max sampling** so the exported program emits a token
-  rather than a full logits tensor — keeps the runner GPU↔CPU traffic to a
-  single float per step.
+- **Last-logits-only**: `lm_head` always runs on `x[:, -1, :]`, avoiding a
+  `(1, T, 262144)` matmul during prefill.
+- **On-device Gumbel-max sampling** (CUDA) so the exported program emits a
+  token rather than logits — keeps GPU↔CPU traffic to a single float per
+  step. MLX samples on the host via `logits_to_token`.
 - **Final-logit softcap baked into the graph**, applied before sampling.
 - **Meta-device construction + assign-load** keeps peak memory small enough
   to load the 31B-parameter checkpoint on one machine.

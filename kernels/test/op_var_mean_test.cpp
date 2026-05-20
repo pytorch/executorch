@@ -9,6 +9,7 @@
 #include <executorch/kernels/test/FunctionHeaderWrapper.h> // Declares the operator
 #include <executorch/kernels/test/TestUtil.h>
 #include <executorch/kernels/test/supported_features.h>
+#include <executorch/kernels/test/supported_features_skip.h>
 #include <executorch/runtime/core/exec_aten/exec_aten.h>
 #include <executorch/runtime/core/exec_aten/testing_util/tensor_factory.h>
 #include <executorch/runtime/core/exec_aten/testing_util/tensor_util.h>
@@ -385,9 +386,9 @@ TEST_F(OpVarMeanCorrectionOutTest, SmokeTest) {
 }
 
 TEST_F(OpVarMeanCorrectionOutTest, KeepDim) {
-  if (torch::executor::testing::SupportedFeatures::get()->is_aten) {
-    GTEST_SKIP() << "ATen supports fewer dtypes";
-  }
+  ET_SKIP_IF(
+      torch::executor::testing::SupportedFeatures::get()->is_aten,
+      "ATen supports fewer dtypes");
 #define TEST_KERNEL(INPUT_CTYPE, INPUT_DTYPE, OUTPUT_CTYPE, OUTPUT_DTYPE) \
   test_keepdim<ScalarType::INPUT_DTYPE, ScalarType::OUTPUT_DTYPE>();
 
@@ -400,9 +401,9 @@ TEST_F(OpVarMeanCorrectionOutTest, KeepDim) {
 }
 
 TEST_F(OpVarMeanCorrectionOutTest, KeepDim_Aten) {
-  if (!torch::executor::testing::SupportedFeatures::get()->is_aten) {
-    GTEST_SKIP() << "ATen-specific variant of test case";
-  }
+  ET_SKIP_IF(
+      !torch::executor::testing::SupportedFeatures::get()->is_aten,
+      "ATen-specific variant of test case");
 #define TEST_ENTRY(CTYPE, DTYPE) \
   test_keepdim<ScalarType::DTYPE, ScalarType::DTYPE>();
 
@@ -411,9 +412,9 @@ TEST_F(OpVarMeanCorrectionOutTest, KeepDim_Aten) {
 }
 
 TEST_F(OpVarMeanCorrectionOutTest, MultipleDims) {
-  if (torch::executor::testing::SupportedFeatures::get()->is_aten) {
-    GTEST_SKIP() << "ATen supports fewer dtypes";
-  }
+  ET_SKIP_IF(
+      torch::executor::testing::SupportedFeatures::get()->is_aten,
+      "ATen supports fewer dtypes");
 #define TEST_KERNEL(INPUT_CTYPE, INPUT_DTYPE, OUTPUT_CTYPE, OUTPUT_DTYPE) \
   test_multiple_dims<ScalarType::INPUT_DTYPE, ScalarType::OUTPUT_DTYPE>();
 
@@ -426,9 +427,9 @@ TEST_F(OpVarMeanCorrectionOutTest, MultipleDims) {
 }
 
 TEST_F(OpVarMeanCorrectionOutTest, MultipleDims_Aten) {
-  if (!torch::executor::testing::SupportedFeatures::get()->is_aten) {
-    GTEST_SKIP() << "ATen-specific variant of test case";
-  }
+  ET_SKIP_IF(
+      !torch::executor::testing::SupportedFeatures::get()->is_aten,
+      "ATen-specific variant of test case");
 #define TEST_ENTRY(CTYPE, DTYPE) \
   test_multiple_dims<ScalarType::DTYPE, ScalarType::DTYPE>();
 
@@ -437,9 +438,9 @@ TEST_F(OpVarMeanCorrectionOutTest, MultipleDims_Aten) {
 }
 
 TEST_F(OpVarMeanCorrectionOutTest, NegativeDim) {
-  if (torch::executor::testing::SupportedFeatures::get()->is_aten) {
-    GTEST_SKIP() << "ATen supports fewer dtypes";
-  }
+  ET_SKIP_IF(
+      torch::executor::testing::SupportedFeatures::get()->is_aten,
+      "ATen supports fewer dtypes");
 #define TEST_KERNEL(INPUT_CTYPE, INPUT_DTYPE, OUTPUT_CTYPE, OUTPUT_DTYPE) \
   test_negative_dim<ScalarType::INPUT_DTYPE, ScalarType::OUTPUT_DTYPE>();
 
@@ -452,9 +453,9 @@ TEST_F(OpVarMeanCorrectionOutTest, NegativeDim) {
 }
 
 TEST_F(OpVarMeanCorrectionOutTest, NegativeDim_Aten) {
-  if (!torch::executor::testing::SupportedFeatures::get()->is_aten) {
-    GTEST_SKIP() << "ATen-specific variant of test case";
-  }
+  ET_SKIP_IF(
+      !torch::executor::testing::SupportedFeatures::get()->is_aten,
+      "ATen-specific variant of test case");
 #define TEST_ENTRY(CTYPE, DTYPE) \
   test_negative_dim<ScalarType::DTYPE, ScalarType::DTYPE>();
 
@@ -463,9 +464,9 @@ TEST_F(OpVarMeanCorrectionOutTest, NegativeDim_Aten) {
 }
 
 TEST_F(OpVarMeanCorrectionOutTest, NullAndEmptyDimList) {
-  if (torch::executor::testing::SupportedFeatures::get()->is_aten) {
-    GTEST_SKIP() << "ATen supports fewer dtypes";
-  }
+  ET_SKIP_IF(
+      torch::executor::testing::SupportedFeatures::get()->is_aten,
+      "ATen supports fewer dtypes");
 #define TEST_KERNEL(INPUT_CTYPE, INPUT_DTYPE, OUTPUT_CTYPE, OUTPUT_DTYPE) \
   test_null_and_empty_dim_list<                                           \
       ScalarType::INPUT_DTYPE,                                            \
@@ -480,9 +481,9 @@ TEST_F(OpVarMeanCorrectionOutTest, NullAndEmptyDimList) {
 }
 
 TEST_F(OpVarMeanCorrectionOutTest, NullAndEmptyDimList_Aten) {
-  if (!torch::executor::testing::SupportedFeatures::get()->is_aten) {
-    GTEST_SKIP() << "ATen-specific variant of test case";
-  }
+  ET_SKIP_IF(
+      !torch::executor::testing::SupportedFeatures::get()->is_aten,
+      "ATen-specific variant of test case");
 #define TEST_ENTRY(CTYPE, DTYPE) \
   test_null_and_empty_dim_list<ScalarType::DTYPE, ScalarType::DTYPE>();
 
@@ -491,9 +492,9 @@ TEST_F(OpVarMeanCorrectionOutTest, NullAndEmptyDimList_Aten) {
 }
 
 TEST_F(OpVarMeanCorrectionOutTest, InvalidDimensionListDies) {
-  if (torch::executor::testing::SupportedFeatures::get()->is_aten) {
-    GTEST_SKIP() << "ATen kernel test fails";
-  }
+  ET_SKIP_IF(
+      torch::executor::testing::SupportedFeatures::get()->is_aten,
+      "ATen kernel test fails");
 #define TEST_KERNEL(INPUT_CTYPE, INPUT_DTYPE, OUTPUT_CTYPE, OUTPUT_DTYPE) \
   test_invalid_dimensions<ScalarType::INPUT_DTYPE, ScalarType::OUTPUT_DTYPE>();
 
@@ -506,9 +507,9 @@ TEST_F(OpVarMeanCorrectionOutTest, InvalidDimensionListDies) {
 }
 
 TEST_F(OpVarMeanCorrectionOutTest, InvalidDTypeDies) {
-  if (torch::executor::testing::SupportedFeatures::get()->is_aten) {
-    GTEST_SKIP() << "ATen kernel test fails";
-  }
+  ET_SKIP_IF(
+      torch::executor::testing::SupportedFeatures::get()->is_aten,
+      "ATen kernel test fails");
   TensorFactory<ScalarType::Float> tf_float;
   TensorFactory<ScalarType::Int> tf_int;
 

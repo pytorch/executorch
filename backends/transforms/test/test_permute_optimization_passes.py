@@ -122,15 +122,12 @@ class FuseCascadedTransposeOrPermuteOpsTest(unittest.TestCase):
         permute1 = builder.call_operator(
             op=exir_ops.edge.aten.permute_copy.default, args=(x, [0, 2, 3, 1])
         )
-        # permute2 reverses permute1 => identity
         permute2 = builder.call_operator(
             op=exir_ops.edge.aten.permute_copy.default, args=(permute1, [0, 3, 1, 2])
         )
-        # permute3: different permutation
         permute3 = builder.call_operator(
             op=exir_ops.edge.aten.permute_copy.default, args=(permute1, [0, 2, 1, 3])
         )
-        # permute4 -> permute5: chained
         permute4 = builder.call_operator(
             op=exir_ops.edge.aten.permute_copy.default, args=(permute1, [3, 2, 0, 1])
         )
@@ -149,6 +146,168 @@ class FuseCascadedTransposeOrPermuteOpsTest(unittest.TestCase):
             result.graph_module,
             [torch.randn(2, 3, 4, 5)],
             "FuseCascadedTransposeOrPermuteOps",
+        )
+
+    def test_permute_view_permute_fuse(self) -> None:
+        """permute_3D([0,2,1]) → view(unsqueeze) → permute_4D([0,2,3,1]) should
+        be replaced with a single view_copy (permutations cancel out)."""
+        builder = GraphBuilder()
+        x_data = torch.randn(1, 40, 18)
+        x = builder.placeholder("x", x_data)
+        p1 = builder.call_operator(
+            op=exir_ops.edge.aten.permute_copy.default, args=(x, [0, 2, 1])
+        )
+        v = builder.call_operator(
+            op=exir_ops.edge.aten.view_copy.default, args=(p1, [1, 18, 1, 40])
+        )
+        p2 = builder.call_operator(
+            op=exir_ops.edge.aten.permute_copy.default, args=(v, [0, 2, 3, 1])
+        )
+        builder.output([p2])
+        original = builder.get_graph_module()
+        gm_before = copy.deepcopy(original)
+
+        p = FuseCascadedTransposeOrPermuteOps()
+        result = cast(PassResult, p(original))
+        self.assertTrue(result.modified)
+        gm = result.graph_module
+
+        self.assertEqual(count_node(gm, exir_ops.edge.aten.permute_copy.default), 0)
+        self.assertEqual(count_node(gm, exir_ops.edge.aten.view_copy.default), 1)
+        validate_numerics(
+            gm_before,
+            gm,
+            [x_data],
+            "FuseCascadedAcrossView",
+        )
+
+    def test_permute_view_squeeze_permute_fuse(self) -> None:
+        """permute_4D → view(squeeze) → permute_3D should fuse when
+        the combined permutation is identity."""
+        builder = GraphBuilder()
+        x_data = torch.randn(1, 1, 40, 18)
+        x = builder.placeholder("x", x_data)
+        # NHWC-like permute
+        p1 = builder.call_operator(
+            op=exir_ops.edge.aten.permute_copy.default, args=(x, [0, 3, 1, 2])
+        )
+        # Squeeze dim 2 (size 1)
+        v = builder.call_operator(
+            op=exir_ops.edge.aten.view_copy.default, args=(p1, [1, 18, 40])
+        )
+        # Inverse 3D permute
+        p2 = builder.call_operator(
+            op=exir_ops.edge.aten.permute_copy.default, args=(v, [0, 2, 1])
+        )
+        builder.output([p2])
+        original = builder.get_graph_module()
+        gm_before = copy.deepcopy(original)
+
+        p = FuseCascadedTransposeOrPermuteOps()
+        result = cast(PassResult, p(original))
+        self.assertTrue(result.modified)
+        gm = result.graph_module
+
+        self.assertEqual(count_node(gm, exir_ops.edge.aten.permute_copy.default), 0)
+        validate_numerics(
+            gm_before,
+            gm,
+            [x_data],
+            "FuseCascadedSqueezeView",
+        )
+
+    def test_transpose_view_permute_fuse(self) -> None:
+        """transpose → view(unsqueeze) → permute should fuse when combined
+        permutations cancel out."""
+        builder = GraphBuilder()
+        x_data = torch.randn(1, 40, 18)
+        x = builder.placeholder("x", x_data)
+        t1 = builder.call_operator(
+            op=exir_ops.edge.aten.transpose_copy.int, args=(x, 1, 2)
+        )
+        v = builder.call_operator(
+            op=exir_ops.edge.aten.view_copy.default, args=(t1, [1, 18, 1, 40])
+        )
+        p2 = builder.call_operator(
+            op=exir_ops.edge.aten.permute_copy.default, args=(v, [0, 2, 3, 1])
+        )
+        builder.output([p2])
+        original = builder.get_graph_module()
+        gm_before = copy.deepcopy(original)
+
+        p = FuseCascadedTransposeOrPermuteOps()
+        result = cast(PassResult, p(original))
+        self.assertTrue(result.modified)
+        gm = result.graph_module
+
+        self.assertEqual(count_node(gm, exir_ops.edge.aten.permute_copy.default), 0)
+        self.assertEqual(count_node(gm, exir_ops.edge.aten.transpose_copy.int), 0)
+        validate_numerics(
+            gm_before,
+            gm,
+            [x_data],
+            "FuseTransposeViewPermute",
+        )
+
+    def test_no_fuse_non_squeeze_view(self) -> None:
+        """permute → view (not squeeze/unsqueeze, changes shape) → permute
+        should NOT fuse."""
+        builder = GraphBuilder()
+        x_data = torch.randn(1, 6, 8)
+        x = builder.placeholder("x", x_data)
+        p1 = builder.call_operator(
+            op=exir_ops.edge.aten.permute_copy.default, args=(x, [0, 2, 1])
+        )
+        # This view reshapes 8x6 → 4x12, NOT a squeeze/unsqueeze
+        v = builder.call_operator(
+            op=exir_ops.edge.aten.view_copy.default, args=(p1, [1, 4, 12])
+        )
+        p2 = builder.call_operator(
+            op=exir_ops.edge.aten.permute_copy.default, args=(v, [0, 2, 1])
+        )
+        builder.output([p2])
+        original = builder.get_graph_module()
+
+        p = FuseCascadedTransposeOrPermuteOps()
+        result = cast(PassResult, p(original))
+        # The view is not a squeeze/unsqueeze so cross-view fusion should not fire
+        self.assertFalse(result.modified)
+        self.assertEqual(
+            count_node(result.graph_module, exir_ops.edge.aten.permute_copy.default), 2
+        )
+
+    def test_no_fuse_non_cancelling_across_view(self) -> None:
+        """permute → view(unsqueeze) → permute where combined permutations
+        are NOT identity should NOT be fused away."""
+        builder = GraphBuilder()
+        x_data = torch.randn(1, 40, 18)
+        x = builder.placeholder("x", x_data)
+        p1 = builder.call_operator(
+            op=exir_ops.edge.aten.permute_copy.default, args=(x, [0, 2, 1])
+        )
+        v = builder.call_operator(
+            op=exir_ops.edge.aten.view_copy.default, args=(p1, [1, 18, 1, 40])
+        )
+        # This permute does NOT cancel with p1
+        p2 = builder.call_operator(
+            op=exir_ops.edge.aten.permute_copy.default, args=(v, [0, 1, 3, 2])
+        )
+        builder.output([p2])
+        original = builder.get_graph_module()
+        gm_before = copy.deepcopy(original)
+
+        p = FuseCascadedTransposeOrPermuteOps()
+        result = cast(PassResult, p(original))
+        # Should NOT have removed both permutes
+        self.assertFalse(result.modified)
+        self.assertEqual(
+            count_node(result.graph_module, exir_ops.edge.aten.permute_copy.default), 2
+        )
+        validate_numerics(
+            gm_before,
+            result.graph_module,
+            [x_data],
+            "FuseNonCancellingAcrossView",
         )
 
 
@@ -250,7 +409,6 @@ class PostponePermuteBelowSqueezeViewTest(unittest.TestCase):
 
         self.assertEqual(count_node(gm, exir_ops.edge.aten.view_copy.default), 2)
         self.assertEqual(count_node(gm, exir_ops.edge.aten.permute_copy.default), 2)
-        # Verify order: views before permutes
         targets = get_compute_nodes(gm)
         view_indices = [
             i
@@ -350,7 +508,6 @@ class PostponePermuteBelowSqueezeViewTest(unittest.TestCase):
             count_node(result.graph_module, exir_ops.edge.aten.permute_copy.default),
             2,
         )
-        # Order unchanged: view, permute, view, permute
         targets = get_compute_nodes(result.graph_module)
         self.assertEqual(targets[0], exir_ops.edge.aten.view_copy.default)
         self.assertEqual(targets[1], exir_ops.edge.aten.permute_copy.default)
@@ -368,6 +525,67 @@ class ReplaceNopTransposeOrPermuteWithViewTest(unittest.TestCase):
             placeholders=(x,),
             op=exir_ops.edge.aten.transpose_copy.int,
             args=(x, 1, 3),
+        )
+        gm_before = copy.deepcopy(gm)
+
+        p = ReplaceNopTransposeOrPermuteWithViewPass()
+        result = cast(PassResult, p(gm))
+        self.assertTrue(result.modified)
+        gm_after = result.graph_module
+        self.assertEqual(
+            count_node(gm_after, exir_ops.edge.aten.permute_copy.default), 0
+        )
+        self.assertEqual(count_node(gm_after, exir_ops.edge.aten.view_copy.default), 1)
+        validate_numerics(
+            gm_before, gm_after, [x], "ReplaceNopTransposeOrPermuteWithViewPass"
+        )
+
+    def test_replace_nop_transpose_with_view_int(self) -> None:
+        x = torch.randint(low=0, high=100, size=(2, 1, 5), dtype=torch.int64)
+        gm = single_op_builder(
+            placeholders=(x,),
+            op=exir_ops.edge.aten.transpose_copy.int,
+            args=(x, 1, 0),
+        )
+        gm_before = copy.deepcopy(gm)
+
+        p = ReplaceNopTransposeOrPermuteWithViewPass()
+        result = cast(PassResult, p(gm))
+        self.assertTrue(result.modified)
+        gm_after = result.graph_module
+        self.assertEqual(count_node(gm_after, exir_ops.edge.aten.transpose_copy.int), 0)
+        self.assertEqual(count_node(gm_after, exir_ops.edge.aten.view_copy.default), 1)
+        validate_numerics(
+            gm_before, gm_after, [x], "ReplaceNopTransposeOrPermuteWithViewPass"
+        )
+
+    def test_replace_nop_permute_5d(self) -> None:
+        x = torch.randn(3, 1, 3, 1, 4)
+        gm = single_op_builder(
+            placeholders=(x,),
+            op=exir_ops.edge.aten.permute_copy.default,
+            args=(x, [0, 2, 4, 1, 3]),
+        )
+        gm_before = copy.deepcopy(gm)
+
+        p = ReplaceNopTransposeOrPermuteWithViewPass()
+        result = cast(PassResult, p(gm))
+        self.assertTrue(result.modified)
+        gm_after = result.graph_module
+        self.assertEqual(
+            count_node(gm_after, exir_ops.edge.aten.permute_copy.default), 0
+        )
+        self.assertEqual(count_node(gm_after, exir_ops.edge.aten.view_copy.default), 1)
+        validate_numerics(
+            gm_before, gm_after, [x], "ReplaceNopTransposeOrPermuteWithViewPass"
+        )
+
+    def test_replace_nop_permute_3d(self) -> None:
+        x = torch.randn(1, 3, 4)
+        gm = single_op_builder(
+            placeholders=(x,),
+            op=exir_ops.edge.aten.permute_copy.default,
+            args=(x, [1, 2, 0]),
         )
         gm_before = copy.deepcopy(gm)
 
@@ -779,65 +997,4 @@ class RemovePermutesAcrossViewTest(unittest.TestCase):
             result.graph_module,
             [x_data],
             "permute_unsqueeze_copy_neg_dim_mul_squeeze_copy_permute",
-        )
-
-    def test_replace_nop_transpose_with_view_int(self) -> None:
-        x = torch.randint(low=0, high=100, size=(2, 1, 5), dtype=torch.int64)
-        gm = single_op_builder(
-            placeholders=(x,),
-            op=exir_ops.edge.aten.transpose_copy.int,
-            args=(x, 1, 0),
-        )
-        gm_before = copy.deepcopy(gm)
-
-        p = ReplaceNopTransposeOrPermuteWithViewPass()
-        result = cast(PassResult, p(gm))
-        self.assertTrue(result.modified)
-        gm_after = result.graph_module
-        self.assertEqual(count_node(gm_after, exir_ops.edge.aten.transpose_copy.int), 0)
-        self.assertEqual(count_node(gm_after, exir_ops.edge.aten.view_copy.default), 1)
-        validate_numerics(
-            gm_before, gm_after, [x], "ReplaceNopTransposeOrPermuteWithViewPass"
-        )
-
-    def test_replace_nop_permute_5d(self) -> None:
-        x = torch.randn(3, 1, 3, 1, 4)
-        gm = single_op_builder(
-            placeholders=(x,),
-            op=exir_ops.edge.aten.permute_copy.default,
-            args=(x, [0, 2, 4, 1, 3]),
-        )
-        gm_before = copy.deepcopy(gm)
-
-        p = ReplaceNopTransposeOrPermuteWithViewPass()
-        result = cast(PassResult, p(gm))
-        self.assertTrue(result.modified)
-        gm_after = result.graph_module
-        self.assertEqual(
-            count_node(gm_after, exir_ops.edge.aten.permute_copy.default), 0
-        )
-        self.assertEqual(count_node(gm_after, exir_ops.edge.aten.view_copy.default), 1)
-        validate_numerics(
-            gm_before, gm_after, [x], "ReplaceNopTransposeOrPermuteWithViewPass"
-        )
-
-    def test_replace_nop_permute_3d(self) -> None:
-        x = torch.randn(1, 3, 4)
-        gm = single_op_builder(
-            placeholders=(x,),
-            op=exir_ops.edge.aten.permute_copy.default,
-            args=(x, [1, 2, 0]),
-        )
-        gm_before = copy.deepcopy(gm)
-
-        p = ReplaceNopTransposeOrPermuteWithViewPass()
-        result = cast(PassResult, p(gm))
-        self.assertTrue(result.modified)
-        gm_after = result.graph_module
-        self.assertEqual(
-            count_node(gm_after, exir_ops.edge.aten.permute_copy.default), 0
-        )
-        self.assertEqual(count_node(gm_after, exir_ops.edge.aten.view_copy.default), 1)
-        validate_numerics(
-            gm_before, gm_after, [x], "ReplaceNopTransposeOrPermuteWithViewPass"
         )
