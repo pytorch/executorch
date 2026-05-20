@@ -76,6 +76,9 @@ init_sccache() {
   # This is the remote cache bucket
   export SCCACHE_BUCKET=ossci-compiler-cache-circleci-v2
   export SCCACHE_S3_KEY_PREFIX=executorch
+  export SCCACHE_REGION=us-east-1
+  export AWS_REGION=us-east-1
+  export AWS_DEFAULT_REGION=us-east-1
   export SCCACHE_IDLE_TIMEOUT=0
   export SCCACHE_ERROR_LOG=/tmp/sccache_error.log
   export RUST_LOG=sccache::server=error

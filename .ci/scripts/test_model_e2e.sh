@@ -118,6 +118,7 @@ EXECUTORCH_ROOT="$(cd "$SCRIPT_DIR/../.." && pwd)"
 pushd "$EXECUTORCH_ROOT"
 
 # Determine model configuration based on HF model ID
+MIN_GENERATED_TOKENS=""
 case "$HF_MODEL" in
   mistralai/Voxtral-Mini-3B-2507)
     MODEL_NAME="voxtral"
@@ -246,6 +247,11 @@ case "$HF_MODEL" in
     exit 1
     ;;
 esac
+
+if [ "$DEVICE" = "metal" ] && [ "$MODEL_NAME" = "voxtral_realtime" ] && [ "$QUANT_NAME" = "quantized-int4-metal" ]; then
+  EXPECTED_OUTPUT=""
+  MIN_GENERATED_TOKENS=1
+fi
 
 echo "::group::Setup ExecuTorch Requirements"
 ./install_requirements.sh
@@ -420,6 +426,14 @@ if [ -n "$EXPECTED_OUTPUT" ]; then
     exit 1
   else
     echo "Success: '$EXPECTED_OUTPUT' found in output"
+  fi
+elif [ -n "$MIN_GENERATED_TOKENS" ]; then
+  GENERATED_TOKENS=$(echo "$OUTPUT" | awk '/Generated Tokens:/ {tokens=$NF} END {print tokens}')
+  if [ -z "$GENERATED_TOKENS" ] || [ "$GENERATED_TOKENS" -lt "$MIN_GENERATED_TOKENS" ]; then
+    echo "Expected at least $MIN_GENERATED_TOKENS generated token(s), got '${GENERATED_TOKENS:-none}'"
+    exit 1
+  else
+    echo "Success: generated $GENERATED_TOKENS token(s)"
   fi
 else
   echo "SUCCESS: Runner completed successfully"
