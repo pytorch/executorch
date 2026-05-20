@@ -413,3 +413,16 @@ def to_2tuple(value):
     if len(value) == 1:
         return (value[0], value[0])
     return tuple(value)
+
+
+def permute_fake_tensor_metadata(
+    fake_tensor: FakeTensor, permute_dims: tuple[int, ...]
+) -> FakeTensor:
+    permuted_shape = tuple(fake_tensor.shape[dim] for dim in permute_dims)
+    meta_tensor = torch.empty(
+        permuted_shape,
+        dtype=fake_tensor.dtype,
+        device="meta",
+        requires_grad=fake_tensor.requires_grad,
+    )
+    return FakeTensor(fake_tensor.fake_mode, meta_tensor, fake_tensor.fake_device)

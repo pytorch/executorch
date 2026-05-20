@@ -25,10 +25,17 @@ class HtpContext : public QnnContext {
       QnnDevice* device,
       QnnBackendCache* cache,
       const QnnExecuTorchHtpBackendOptions* htp_options,
-      QnnDlcManager* qnn_dlc_manager)
-      : QnnContext(implementation, backend, device, cache, qnn_dlc_manager) {
-    htp_context_custom_config_ =
-        std::make_unique<HtpContextCustomConfig>(this, htp_options);
+      QnnDlcManager* qnn_dlc_manager,
+      const QnnExecuTorchProfileLevel& profile_level)
+      : QnnContext(
+            implementation,
+            backend,
+            device,
+            cache,
+            qnn_dlc_manager,
+            profile_level) {
+    htp_context_custom_config_ = std::make_unique<HtpContextCustomConfig>(
+        this, htp_options, profile_level);
   }
   ~HtpContext() {}
 

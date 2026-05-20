@@ -14,6 +14,7 @@ from executorch.exir.dialects._ops import ops as exir_ops
 Abs = exir_ops.edge.aten.abs.default
 AvgPool2D = exir_ops.edge.aten.avg_pool2d.default
 Bmm = exir_ops.edge.aten.bmm.default
+ConstantPadND = exir_ops.edge.aten.constant_pad_nd.default
 Convolution = exir_ops.edge.aten.convolution.default
 DequantizePerChannel = exir_ops.edge.quantized_decomposed.dequantize_per_channel.default
 DequantizePerTensor = exir_ops.edge.quantized_decomposed.dequantize_per_tensor.default

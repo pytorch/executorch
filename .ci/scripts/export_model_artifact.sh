@@ -195,9 +195,17 @@ case "$HF_MODEL" in
     PREPROCESSOR_FEATURE_SIZE=""
     PREPROCESSOR_OUTPUT=""
     ;;
+  SocialLocalMobile/gemma-4-31B-it-HQQ-INT4)
+    MODEL_NAME="gemma4_31b"
+    TASK=""
+    MAX_SEQ_LEN=""
+    EXTRA_PIP=""
+    PREPROCESSOR_FEATURE_SIZE=""
+    PREPROCESSOR_OUTPUT=""
+    ;;
   *)
     echo "Error: Unsupported model '$HF_MODEL'"
-    echo "Supported models: mistralai/Voxtral-Mini-3B-2507, mistralai/Voxtral-Mini-4B-Realtime-2602, openai/whisper-{small, medium, large, large-v2, large-v3, large-v3-turbo}, google/gemma-3-4b-it, Qwen/Qwen3-0.6B, nvidia/diar_streaming_sortformer_4spk-v2, nvidia/parakeet-tdt, facebook/dinov2-small-imagenet1k-1-layer, SocialLocalMobile/Qwen3.5-35B-A3B-HQQ-INT4"
+    echo "Supported models: mistralai/Voxtral-Mini-3B-2507, mistralai/Voxtral-Mini-4B-Realtime-2602, openai/whisper-{small, medium, large, large-v2, large-v3, large-v3-turbo}, google/gemma-3-4b-it, Qwen/Qwen3-0.6B, nvidia/diar_streaming_sortformer_4spk-v2, nvidia/parakeet-tdt, facebook/dinov2-small-imagenet1k-1-layer, SocialLocalMobile/Qwen3.5-35B-A3B-HQQ-INT4, SocialLocalMobile/gemma-4-31B-it-HQQ-INT4"
     exit 1
     ;;
 esac
@@ -451,6 +459,50 @@ if [ "$MODEL_NAME" = "qwen3_5_moe" ]; then
     echo "       — this would prevent the model from being exported on a 24 GB consumer GPU."
     exit 1
   fi
+
+  test -f "${OUTPUT_DIR}/model.pte"
+  test -f "${OUTPUT_DIR}/aoti_cuda_blob.ptd"
+  ls -al "${OUTPUT_DIR}"
+
+  exit 0
+fi
+
+# Gemma 4 31B uses a prequantized checkpoint and custom export script
+if [ "$MODEL_NAME" = "gemma4_31b" ]; then
+  pip install safetensors huggingface_hub gguf
+
+  # Download prequantized model outside OUTPUT_DIR to avoid uploading on failure
+  LOCAL_MODEL_DIR=$(mktemp -d)
+  INDUCTOR_CACHE=$(mktemp -d)
+  trap 'rm -rf "$LOCAL_MODEL_DIR" "$INDUCTOR_CACHE"' EXIT
+
+  python -c "from huggingface_hub import snapshot_download; snapshot_download('${HF_MODEL}', local_dir='${LOCAL_MODEL_DIR}')"
+
+  # Sanity check: run inference on the prequantized model
+  echo "::group::Inference sanity check"
+  INFERENCE_OUTPUT=$(python -m executorch.examples.models.gemma4_31b.inference \
+      --prequantized "$LOCAL_MODEL_DIR" \
+      --prompt "What is the capital of France?" \
+      --max-new-tokens 32 \
+      --temperature 0 \
+      --no-compile 2>&1)
+  echo "$INFERENCE_OUTPUT"
+  if ! echo "$INFERENCE_OUTPUT" | grep -q "Paris"; then
+    echo "ERROR: Inference sanity check failed — expected 'Paris' in output"
+    exit 1
+  fi
+  echo "::endgroup::"
+
+  # Copy tokenizer for the runner
+  cp "$LOCAL_MODEL_DIR/tokenizer.json" "${OUTPUT_DIR}/tokenizer.json"
+
+  # Export to .pte/.ptd (short cache dir avoids objcopy symbol length issues)
+  echo "::group::Export"
+  TORCHINDUCTOR_CACHE_DIR="$INDUCTOR_CACHE" \
+  python -m executorch.examples.models.gemma4_31b.export \
+      --prequantized "$LOCAL_MODEL_DIR" \
+      --output-dir "${OUTPUT_DIR}"
+  echo "::endgroup::"
 
   test -f "${OUTPUT_DIR}/model.pte"
   test -f "${OUTPUT_DIR}/aoti_cuda_blob.ptd"
