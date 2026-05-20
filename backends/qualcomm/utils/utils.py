@@ -16,6 +16,7 @@ import executorch.backends.qualcomm.python.PyQnnManagerAdaptor as PyQnnManagerAd
 import executorch.exir as exir
 import torch
 
+from executorch.backends.qualcomm.export_utils import preprocess_binary
 from executorch.backends.qualcomm._passes import AnnotateStack, AnnotateUnbind
 from executorch.backends.qualcomm._passes.qnn_pass_manager import QnnPassManager
 
@@ -875,12 +876,6 @@ def from_context_binary(  # noqa: C901
             ret[t.GetName()] = torch.zeros(tuple(t.GetDims()), dtype=dtype_torch)
 
         return ret
-
-    def preprocess_binary(ctx_bin, compiler_specs):
-        qnn_mgr = PyQnnManagerAdaptor.QnnManager(
-            generate_qnn_executorch_option(compiler_specs),
-        )
-        return bytes(qnn_mgr.MakeBinaryInfo(ctx_bin))
 
     # dummy compiler spec would be fine, since we're not compiling
     backend_options = generate_htp_compiler_spec(use_fp16=False)

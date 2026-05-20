@@ -75,13 +75,6 @@ def get_logger():
     return logging.LoggerAdapter(logger, extra={"prefix": "QNN_BACKEND"})
 
 
-def preprocess_binary(ctx_bin, compiler_specs):
-    qnn_mgr = PyQnnManagerAdaptor.QnnManager(
-        generate_qnn_executorch_option(compiler_specs),
-    )
-    return bytes(qnn_mgr.MakeBinaryInfo(ctx_bin))
-
-
 def get_io_info(pte_path, compiler_specs):
     dtype_map = {}
     for type_map in (QNN_QUANT_TYPE_MAP, QNN_TENSOR_TYPE_MAP):
