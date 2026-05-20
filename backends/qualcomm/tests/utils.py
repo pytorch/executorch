@@ -8,7 +8,6 @@ import os
 import subprocess
 import tempfile
 import unittest
-from pathlib import Path
 from typing import Callable, Dict, List, Optional, OrderedDict, Tuple
 
 import numpy as np
@@ -220,7 +219,6 @@ class TestQNN(unittest.TestCase):
     inference_speed_output_path = "outputs/inference_speed.txt"
     static_llm_eval_method = ""
     direct_build_folder: str = ""
-    dsp_heap_profile_filename = "htp_heap_usage.txt"
 
     @classmethod
     def setUpClass(cls):
@@ -361,7 +359,6 @@ class TestQNN(unittest.TestCase):
         save_inference_speed: bool = False,
         expected_compared_events: int = -1,
         qnn_intermediate_debugger: QNNIntermediateDebugger = None,
-        save_heap_result: bool = False,
     ):
         with tempfile.TemporaryDirectory() as tmp_dir:
             (
@@ -413,29 +410,6 @@ class TestQNN(unittest.TestCase):
                 )
                 self.assertTrue(
                     len(inspector.to_dataframe().index) >= expected_profile_events
-                )
-
-            def validate_heap_profile():
-                file_path = f"{tmp_dir}/{self.dsp_heap_profile_filename}"
-                self.assertTrue(
-                    Path(file_path).exists(), f"File not found: {file_path}"
-                )
-                with open(file_path, "r") as f:
-                    values = [
-                        int(line.split(",")[1].strip()) for line in f if line.strip()
-                    ]
-                self.assertEqual(len(values), 2, f"Expected 2 entries, got {values}")
-                before, after = values
-                difference = after - before
-
-                print(f"before_context_created: {before} bytes")
-                print(f"after_context_freed: {after} bytes")
-                print(f"difference: {difference:.2f} bytes")
-
-                self.assertGreaterEqual(
-                    after,
-                    before,
-                    "after_context_freed should be >= before_context_created",
                 )
 
             def validate_intermediate_tensor():
@@ -627,11 +601,6 @@ class TestQNN(unittest.TestCase):
                     adb.extra_cmds += (
                         f" --performance_output_path {self.inference_speed_output_path}"
                     )
-
-                if save_heap_result:
-                    adb.extra_cmds += (
-                        f" --heap_profiling_path {self.dsp_heap_profile_filename}"
-                    )
                 adb.execute(custom_runner_cmd=f"rm -rf {adb.output_folder}")
                 adb.execute(method_index=method_index, output_callback=output_callback)
                 adb.pull(host_output_path=tmp_dir, callback=post_process)
@@ -651,12 +620,6 @@ class TestQNN(unittest.TestCase):
                         f"{tmp_dir}/{self.inference_speed_output_path}", "r"
                     ) as f:
                         self.inference_speed = float(f.read())
-                if save_heap_result:
-                    adb.pull_heap_output(
-                        f"{adb.workspace}/{self.dsp_heap_profile_filename}",
-                        f"{tmp_dir}/{self.dsp_heap_profile_filename}",
-                        callback=validate_heap_profile,
-                    )
 
     def lower_module_and_test_output(
         self,

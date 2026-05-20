@@ -71,8 +71,7 @@ std::unique_ptr<BackendConfigParameters> QnnBackendFactory::Create(
           qnn_device_ptr,
           backend_params->qnn_backend_cache_ptr_.get(),
           htp_options,
-          qnn_dlc_manager,
-          get_option(options->profile_level(), QNN_RUNTIME_PROFILE_LEVEL));
+          qnn_dlc_manager);
 
       backend_params->qnn_graph_ptr_ = std::make_unique<HtpGraph>(
           implementation_ptr,
