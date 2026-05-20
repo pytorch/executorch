@@ -22,67 +22,6 @@ from torch.library import impl
 
 aten = torch.ops.aten
 
-
-def _define_llama_custom_op_schemas():
-    custom_ops_schema_lib = torch.library.Library("llama", "FRAGMENT")
-    custom_ops_schema_lib.define(
-        "sdpa_with_kv_cache(Tensor query, Tensor key, Tensor value, Tensor(a!) key_cache, "
-        "Tensor(b!) value_cache, SymInt start_pos, SymInt seq_len, Tensor? attn_mask=None, "
-        "float drpout_p=0.0, bool is_causal=False, float? scale=None) -> Tensor"
-    )
-    custom_ops_schema_lib.define(
-        "sdpa_with_kv_cache.out(Tensor query, Tensor key, Tensor value, Tensor(a!) key_cache, "
-        "Tensor(b!) value_cache, SymInt start_pos, SymInt seq_len, Tensor? attn_mask=None, "
-        "float drpout_p=0.0, bool is_causal=False, float? scale=None, *, Tensor(c!) out) -> Tensor(c!)"
-    )
-    custom_ops_schema_lib.define(
-        "custom_sdpa(Tensor query, Tensor key, Tensor value, SymInt start_pos, "
-        "Tensor? attn_mask=None, float drpout_p=0.0, bool is_causal=False, "
-        "float? scale=None) -> Tensor"
-    )
-    custom_ops_schema_lib.define(
-        "custom_sdpa.out(Tensor query, Tensor key, Tensor value, SymInt start_pos, "
-        "Tensor? attn_mask=None, float drpout_p=0.0, bool is_causal=False, "
-        "float? scale=None, *, Tensor(a!) out) -> Tensor(a!)"
-    )
-    custom_ops_schema_lib.define(
-        "update_cache(Tensor value, Tensor(a!) cache, SymInt start_pos) -> Tensor"
-    )
-    custom_ops_schema_lib.define(
-        "update_cache.out(Tensor value, Tensor(a!) cache, "
-        "SymInt start_pos, *, Tensor(b!) out) -> Tensor(b!)"
-    )
-    custom_ops_schema_lib.define(
-        "update_cache_with_indices(Tensor value, Tensor(a!) cache, "
-        "SymInt start_pos, Tensor indices) -> Tensor"
-    )
-    custom_ops_schema_lib.define(
-        "update_cache_with_indices.out(Tensor value, Tensor(a!) cache, "
-        "SymInt start_pos, Tensor indices, *, Tensor(b!) out) -> Tensor(b!)"
-    )
-    custom_ops_schema_lib.define(
-        "custom_quantized_sdpa(Tensor query, Tensor key, Tensor value, SymInt start_pos, "
-        "Tensor? attn_mask=None, float drpout_p=0.0, bool is_causal=False, "
-        "float? scale=None, Tensor? q_zero_points=None, Tensor? q_scales=None, "
-        "Tensor? k_zero_points=None, Tensor? k_scales=None, Tensor? v_zero_points=None, "
-        "Tensor? v_scales=None, bool is_seq_at_dim_2=False) -> Tensor"
-    )
-    custom_ops_schema_lib.define(
-        "custom_quantized_sdpa.out(Tensor query, Tensor key, Tensor value, SymInt start_pos, "
-        "Tensor? attn_mask=None, float drpout_p=0.0, bool is_causal=False, "
-        "float? scale=None, Tensor? q_zero_points=None, Tensor? q_scales=None, "
-        "Tensor? k_zero_points=None, Tensor? k_scales=None, Tensor? v_zero_points=None, "
-        "Tensor? v_scales=None, bool is_seq_at_dim_2=False, *, Tensor(a!) out) -> Tensor(a!)"
-    )
-    custom_ops_schema_lib.define("fast_hadamard_transform(Tensor mat) -> Tensor")
-    custom_ops_schema_lib.define(
-        "fast_hadamard_transform.out(Tensor mat, *, Tensor(a!) out) -> Tensor(a!)"
-    )
-    return custom_ops_schema_lib
-
-
-_custom_ops_schema_lib = None
-
 try:
     op = torch.ops.llama.sdpa_with_kv_cache.default
     assert op is not None
@@ -104,15 +43,7 @@ except:
 
     assert len(libs) == 1, f"Expected 1 library but got {len(libs)}"
     logging.info(f"Loading custom ops library: {libs[0]}")
-    try:
-        torch.ops.load_library(libs[0])
-    except OSError as e:
-        logging.warning(
-            "Could not load custom ops library %s; using Python schema definitions: %s",
-            libs[0],
-            e,
-        )
-        _custom_ops_schema_lib = _define_llama_custom_op_schemas()
+    torch.ops.load_library(libs[0])
     op = torch.ops.llama.sdpa_with_kv_cache.default
     assert op is not None
     op2 = torch.ops.llama.fast_hadamard_transform.default
