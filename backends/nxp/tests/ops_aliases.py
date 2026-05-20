@@ -27,6 +27,7 @@ MulTensor = exir_ops.edge.aten.mul.Tensor
 QuantizePerChannel = exir_ops.edge.quantized_decomposed.quantize_per_channel.default
 QuantizePerTensor = exir_ops.edge.quantized_decomposed.quantize_per_tensor.default
 Relu = exir_ops.edge.aten.relu.default
+Sigmoid = exir_ops.edge.aten.sigmoid.default
 Slice = exir_ops.edge.aten.slice.Tensor
 SliceCopy = exir_ops.edge.aten.slice_copy.Tensor
 Softmax = exir_ops.edge.aten._softmax.default
