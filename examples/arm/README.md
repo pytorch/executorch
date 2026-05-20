@@ -23,10 +23,6 @@ this can be changed with --et_build_root=<FOLDER>
 `aot_arm_compiler.py` is used to convert a Python model or a saved .pt model to a PTE file and is used by `run.sh`
 and other test script but can also be used directly.
 
-If you prefer to use the ExecuTorch API, there is also the `ethos_u_minimal_example.ipynb` notebook example.
-This shows the workflow if you prefer to integrate a python torch.export and ExecuTorch flow directly into your
-model codebase. This is particularly useful if you want to perform more complex training, such as quantization
-aware training using the ArmQuantizer.
 
 ## Create a PTE file for Arm backends
 
