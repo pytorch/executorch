@@ -12,7 +12,7 @@ from typing import cast
 
 import torch
 import torch.fx
-from executorch.backends.transforms.permute_pass_utils import get_arg
+from executorch.backends.transforms.permute_pass_utils import get_arg, set_arg
 from executorch.exir.dialects._ops import ops as exir_ops
 from executorch.exir.pass_base import ExportPass, PassResult
 
@@ -106,11 +106,8 @@ class RemovePermutesAroundElementwiseOps(ExportPass):
             return True
         if node.target not in self._VIEW_OPS:
             return False
-        if node.meta.get("val") is None:
-            return False
         inp = node.args[0]
-        if not isinstance(inp, torch.fx.Node) or inp.meta.get("val") is None:
-            return False
+        assert isinstance(inp, torch.fx.Node)
         in_shape = inp.meta["val"].shape
         out_shape = node.meta["val"].shape
         if len(out_shape) == len(in_shape) + 1:
@@ -377,9 +374,9 @@ class RemovePermutesAroundElementwiseOps(ExportPass):
     def _get_node_rank(self, node: torch.fx.Node) -> int | None:
         """Return the tensor rank of a node's output, or None if unknown."""
         val = node.meta.get("val")
-        if val is not None and hasattr(val, "shape"):
-            return len(val.shape)
-        return None
+        if val is None:
+            return None
+        return len(val.shape)
 
     @staticmethod
     def _is_pointwise(target) -> bool:
@@ -432,10 +429,8 @@ class RemovePermutesAroundElementwiseOps(ExportPass):
                     node.update_arg(1, index)
             elif node.target in self._SQUEEZE_OPS:
                 # squeeze dim is in input space (rank)
-                dim = cast(int, node.args[1])
-                rank = len(node_start_perm)
-                index = dim if dim >= 0 else dim + rank
-                node.update_arg(1, node_start_perm[index])
+                dim = get_arg(node, "dim", int)
+                set_arg(node, "dim", node_start_perm[dim])
 
         # Skip incoming permutes.
         for inp, out in subgraph.edges_in:
@@ -486,30 +481,16 @@ class RemovePermutesAroundElementwiseOps(ExportPass):
             out.replace_all_uses_with(inp)
 
     def update_cat(self, node: torch.fx.Node, start_permute: list[int]) -> None:
-        if len(node.args) >= 2:
-            node.update_arg(1, start_permute[cast(int, node.args[1])])
-        elif "dim" in node.kwargs:
-            node.update_kwarg("dim", start_permute[cast(int, node.kwargs["dim"])])
-        else:
-            # Default cat dim is 0.
-            node.update_kwarg("dim", start_permute[0])
+        dim = get_arg(node, "dim", int)
+        set_arg(node, "dim", start_permute[dim])
 
     def update_mean_dim(self, node: torch.fx.Node, start_permute: list[int]) -> None:
-        if len(node.args) >= 2:
-            node.update_arg(
-                1, [start_permute[dim] for dim in cast(list[int], node.args[1])]
-            )
-        else:
-            node.update_kwarg(
-                "dim",
-                [start_permute[dim] for dim in cast(list[int], node.kwargs["dim"])],
-            )
+        dims = get_arg(node, "dim")
+        set_arg(node, "dim", [start_permute[d] for d in cast(list[int], dims)])
 
     def update_slice_copy(self, node: torch.fx.Node, start_permute: list[int]) -> None:
-        if len(node.args) >= 2:
-            node.update_arg(1, start_permute[cast(int, node.args[1])])
-        else:
-            node.update_kwarg("dim", start_permute[cast(int, node.kwargs["dim"])])
+        dim = get_arg(node, "dim", int)
+        set_arg(node, "dim", start_permute[dim])
 
     def update_view_copy(self, node: torch.fx.Node, start_permute: list[int]) -> None:
         """Adjust view_copy shape arg after permute removal.
@@ -517,11 +498,8 @@ class RemovePermutesAroundElementwiseOps(ExportPass):
         After removing the start permute, the view's input is in the original
         (un-permuted) layout. Recompute the view's target shape accordingly.
         """
-        if node.meta.get("val") is None:
-            return
         inp = node.args[0]
-        if not isinstance(inp, torch.fx.Node) or inp.meta.get("val") is None:
-            return
+        assert isinstance(inp, torch.fx.Node)
 
         in_shape = inp.meta["val"].shape
         out_shape = node.meta["val"].shape
