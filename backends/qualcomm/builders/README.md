@@ -518,6 +518,7 @@ The following PyTorch operators are supported through decomposition or annotatio
 | `aten.remainder.Scalar`, `aten.remainder.Tensor` | `DecomposeRemainder` |
 | `aten.roll` | `DecomposeRoll` |
 | `aten.silu` | `DecomposeSilu` |
+| `aten.tan` | `DecomposeTan` |
 | `aten.threshold` | `DecomposeThreshold` |
 | `aten.triu` | `DecomposeTriu` |
 | `aten.trunc` | `DecomposeTrunc` |
