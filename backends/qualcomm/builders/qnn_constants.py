@@ -505,6 +505,13 @@ class OpQuantize:
 
 
 @dataclass(init=False, frozen=True)
+class OpRandomNormalLike:
+    op_name: str = "RandomNormalLike"
+    param_mean: str = "mean"
+    param_scale: str = "scale"
+
+
+@dataclass(init=False, frozen=True)
 class OpRandomUniformLike:
     op_name: str = "RandomUniformLike"
     param_low: str = "low"

@@ -1809,24 +1809,6 @@ class TestQNNFloatingPointOperator(TestQNN):
                         index += 1
                         self.lower_module_and_test_output(module, sample_input)
 
-    def test_qnn_backend_rand(self):
-        sample_inputs = [
-            (torch.randn(3, 4, 5),),
-            (torch.randn(2, 8),),
-            (
-                torch.randn(
-                    10,
-                ),
-            ),
-            (torch.randn(1, 3, 32, 32),),
-        ]
-        for i, sample_input in enumerate(sample_inputs):
-            with self.subTest(i=i):
-                module = Rand()  # noqa: F405
-                self.lower_module_and_test_output(
-                    module, sample_input, assert_output_equal=False
-                )
-
     def test_qnn_backend_reciprocal(self):
         module = Reciprocal()  # noqa: F405
         sample_input = (torch.randn([2, 2, 2, 2]),)
@@ -4566,6 +4548,7 @@ class TestQNNQuantizedOperator(TestQNN):
                         self.lower_module_and_test_output(module, sample_input)
 
     def test_qnn_backend_rand(self):
+        module = Rand()  # noqa: F405
         sample_inputs = [
             (torch.randn(3, 4, 5),),
             (torch.randn(2, 8),),
@@ -4578,10 +4561,28 @@ class TestQNNQuantizedOperator(TestQNN):
         ]
         for i, sample_input in enumerate(sample_inputs):
             with self.subTest(i=i):
-                module = Rand()  # noqa: F405
-                module = self.get_qdq_module(module, sample_input)
+                qdq_module = self.get_qdq_module(module, sample_input)
                 self.lower_module_and_test_output(
-                    module, sample_input, assert_output_equal=False
+                    qdq_module, sample_input, assert_output_equal=False
+                )
+
+    def test_qnn_backend_randn(self):
+        module = Randn()  # noqa: F405
+        sample_inputs = [
+            (torch.randn(3, 4, 5),),
+            (torch.randn(2, 8),),
+            (
+                torch.randn(
+                    10,
+                ),
+            ),
+            (torch.randn(1, 3, 32, 32),),
+        ]
+        for i, sample_input in enumerate(sample_inputs):
+            with self.subTest(i=i):
+                qdq_module = self.get_qdq_module(module, sample_input)
+                self.lower_module_and_test_output(
+                    qdq_module, sample_input, assert_output_equal=False
                 )
 
     def test_qnn_backend_reciprocal(self):
