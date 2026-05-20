@@ -1,7 +1,7 @@
 # Gemma 4 31B-IT
 
 Text-only export of Google's Gemma 4 31B-IT to ExecuTorch with INT4/INT8
-weight quantization. Currently supports the CUDA backend.
+weight quantization. Supports CUDA and MLX (Apple Silicon) backends.
 
 For architecture and design notes see [model.md](model.md).
 
@@ -67,6 +67,8 @@ recipe. Writes `model.safetensors`, `config.json`, and `tokenizer.json` into
 
 ## Export to ExecuTorch
 
+### CUDA
+
 ```bash
 python examples/models/gemma4_31b/export.py \
     --prequantized ./gemma4_31b_int4 \
@@ -75,7 +77,20 @@ python examples/models/gemma4_31b/export.py \
     --backend cuda
 ```
 
-Writes `model.pte` and `model.ptd` into `--output-dir`.
+### MLX (Apple Silicon)
+
+```bash
+python examples/models/gemma4_31b/export.py \
+    --prequantized ./gemma4_31b_int4 \
+    --output-dir ./gemma4_31b_exports_mlx \
+    --max-seq-len 4096 \
+    --backend mlx
+```
+
+The same quantized checkpoint works for both backends. MLX exports a single
+method with dynamic sequence length and host-side sampling.
+
+Writes `model.pte` (and optionally `model.ptd`) into `--output-dir`.
 
 ## Eager inference
 
@@ -105,7 +120,8 @@ model produces sensible text.
 ## Build the runner
 
 ```bash
-make gemma4_31b-cuda
+make gemma4_31b-cuda   # Linux — CUDA backend
+make gemma4_31b-mlx    # macOS — MLX backend (Apple Silicon)
 ```
 
 The binary lands at `cmake-out/examples/models/gemma4_31b/gemma4_31b_runner`.

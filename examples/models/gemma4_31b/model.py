@@ -470,20 +470,17 @@ class Gemma4_31B(nn.Module):
         self,
         tokens: torch.LongTensor,
         input_pos: torch.LongTensor,
-        temperature: Optional[torch.Tensor] = None,
+        temperature: torch.Tensor,
     ) -> torch.Tensor:
         """Run the model.
 
         Args:
             tokens: (B, T) token IDs.
             input_pos: (T,) absolute positions for RoPE / KV cache.
-            temperature: optional 1-D float tensor controlling on-device sampling.
-                When provided, returns sampled tokens (B, 1) via Gumbel-max;
-                when None (e.g. eager eval), returns full logits (B, T, V) with
-                soft-capping applied so callers see post-cap values.
+            temperature: 1-D float tensor for Gumbel-max sampling.
 
         Returns:
-            (B, 1) token IDs when sampling, else (B, T, V) float32 logits.
+            (B, 1) sampled token IDs as float.
         """
         x = self.embed_tokens(tokens) * self.embed_normalizer
 
@@ -492,13 +489,6 @@ class Gemma4_31B(nn.Module):
             x = layer(x, input_pos, sliding_mask, full_mask)
 
         x = self.norm(x)
-
-        if temperature is None:
-            logits = self.lm_head(x).float()
-            cap = self.logit_softcap.float()
-            return torch.tanh(logits / cap) * cap
-
-        # Decode-time fast path: only materialize logits for the last token.
         last = self.lm_head(x[:, -1, :]).float()
         cap = self.logit_softcap.float()
         last = torch.tanh(last / cap) * cap

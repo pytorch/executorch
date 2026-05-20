@@ -150,7 +150,7 @@ jobs:
 
         # Run Gemma 4 31B tests (quant unit tests + pipeline integration tests)
         pip install gguf
-        python -m pytest examples/models/gemma4_31b/quant/tests/ examples/models/gemma4_31b/tests/ -v -o "addopts="
+        python -m pytest examples/models/gemma4_31b/quant/tests/ examples/models/gemma4_31b/tests/ --ignore=examples/models/gemma4_31b/tests/test_mlx_pipeline.py -v -o "addopts="
 
   export-model-cuda-artifact:
     name: export-model-cuda-artifact

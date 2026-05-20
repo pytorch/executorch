@@ -104,6 +104,15 @@ def _is_noop_expand(node: torch.fx.node.Node) -> bool:
     return all(m == 1 for m in multiples) and not changes_rank
 
 
+def _is_noop_squeeze(node: torch.fx.Node) -> bool:
+    if node.target != exir_ops.edge.aten.squeeze_copy.dims:
+        return False
+    else:
+        input_tensor = get_first_fake_tensor(ensure_type(torch.fx.Node, node.args[0]))
+        output_tensor = get_first_fake_tensor(node)
+        return input_tensor.shape == output_tensor.shape
+
+
 def _is_view_copy(node: torch.fx.node.Node) -> bool:
     return node.target == exir_ops.edge.aten.view_copy.default
 
@@ -388,6 +397,7 @@ class TOSAPartitioner(Partitioner):
                 or _is_noop_expand(node)
                 or _is_noop_detach_copy(node)
                 or _is_noop_to_dim_order_copy(node)
+                or _is_noop_squeeze(node)
                 or _is_view_copy(node)
                 or _is_noop_as_strided_copy(node)
                 or node.target in Q_OPS

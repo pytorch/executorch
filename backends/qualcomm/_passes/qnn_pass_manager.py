@@ -37,6 +37,7 @@ from executorch.backends.qualcomm._passes import (
     DecomposeRemainder,
     DecomposeRoll,
     DecomposeSilu,
+    DecomposeTan,
     DecomposeThreshold,
     DecomposeTriu,
     DecomposeTrunc,
@@ -112,6 +113,7 @@ def get_capture_program_passes():
         (DecomposeMinMaxDim, True),
         (DecomposePad, True),
         (DecomposeRemainder, True),
+        (DecomposeTan, True),
         (DecomposeTrunc, True),
         (ExpandBroadcastTensorShape, True),
         (FixedLinearKeepDim, True),
@@ -236,6 +238,7 @@ class QnnPassManager(PassManager):
         self.add_pass(DecomposeScaledDotProductAttention())
         self.add_pass(DecomposeRoll())
         self.add_pass(DecomposeSilu())
+        self.add_pass(DecomposeTan())
         self.add_pass(DecomposeThreshold())
         self.add_pass(DecomposeTriu())
         self.add_pass(DecomposeTrunc())

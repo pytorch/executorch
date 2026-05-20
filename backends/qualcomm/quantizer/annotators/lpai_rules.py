@@ -272,6 +272,8 @@ class ColIm(GeneralOpDef):
         torch.ops.aten.zeros_like.default,
         torch.ops.aten.ones.default,
         torch.ops.aten.ones_like.default,
+        torch.ops.aten.rand.default,
+        torch.ops.aten.randn.default,
     ],
     qnn_op=None,
 )
