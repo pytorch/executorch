@@ -32,11 +32,15 @@ class DecomposeIntPowPass(ArmPass):
         x = args[0]
         exp = args[1]
 
-        # Handle zero first and return early
         if exp == 0:
-            # return a tensor of ones with the same shape as x
-            return super().call_operator(
+            zeros = super().call_operator(
+                exir_ops.edge.aten.sub.Tensor, (x, x), {}, meta, True
+            )
+            ones = super().call_operator(
                 exir_ops.edge.aten.full_like.default, (x, 1), {}, meta, True
+            )
+            return super().call_operator(
+                exir_ops.edge.aten.add.Tensor, (zeros, ones), {}, meta, True
             )
 
         if not isinstance(exp, int):

@@ -321,6 +321,8 @@ redirects = {
     "llm/llama-demo-android": "../using-executorch-android.html",
     "tutorial-arm-ethos-u": "backends/arm-ethos-u/tutorials/ethos-u-getting-started.html",
     "tutorial-arm-vgf": "backends/arm-vgf/tutorials/vgf-getting-started.html",
+    "backends/arm-ethos-u/tutorials/arm-ethos-u-tutorials": "ethos-u-getting-started.html",
+    "backends/arm-vgf/tutorials/arm-vgf-tutorials": "vgf-getting-started.html",
     "visualization": "visualize.html",
 }
 
