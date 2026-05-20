@@ -116,6 +116,33 @@ Developers who need local source builds can use:
 The current flow lowers to TOSA and converts to VGF for use in external projects,
 so the `executor_runner` is not typically used here.
 
+### Compiling models with the Python API
+
+Use the Python API as the primary way to compile your own models. It lets you
+keep model construction, export inputs, quantization, custom passes, and artifact
+generation in your application code. The `aot_arm_compiler.py` script is useful
+for simple examples and smoke tests, but production code should call the
+ExecuTorch and Arm backend APIs directly.
+
+The delegated Python API flow is:
+
+1. Prepare the model and representative example inputs.
+2. Create a target-specific Arm compile spec.
+3. Export the model with `torch.export.export`.
+4. Optionally quantize with the target-specific Arm quantizer and re-export the
+   quantized graph.
+5. Create the matching Arm partitioner from the compile spec.
+6. Lower with `to_edge_transform_and_lower`.
+7. Convert to an ExecuTorch program and save the PTE file.
+
+For complete examples of that flow, including quantization and target-specific
+compile specs, see:
+
+- `docs/source/backends/arm-ethos-u/tutorials/ethos-u-getting-started.md`
+- `docs/source/backends/arm-vgf/tutorials/vgf-getting-started.md`
+
+Additional examples are available in `examples/arm`.
+
 ### Direct Drive (experimental, Ethos-U85 on Linux) workflow
 
 Direct Drive enables execution on Ethos-U85 via the Linux driver stack.
@@ -159,7 +186,8 @@ scp -P 2222 arm_test/cmake-out/executor_runner root@127.0.0.1:/tmp/
 
 #### Direct Drive model (PTE) workflow
 
-Create a PTE file:
+For a quick test with the example `add` model,
+`aot_arm_compiler.py` can be used:
 
 ```
 python3 -m backends.arm.scripts.aot_arm_compiler \
@@ -170,16 +198,30 @@ python3 -m backends.arm.scripts.aot_arm_compiler \
   --direct_drive
 ```
 
+For production use, the Python API described in
+[Compiling models with the Python API](#compiling-models-with-the-python-api)
+should be used. Use an Ethos-U85 target and set the Direct Drive `extra_flags` when creating the `EthosUCompileSpec`:
+
+```python
+compile_spec = EthosUCompileSpec(
+    target="ethos-u85-256",
+    extra_flags=["--separate-io-regions", "--cop-format=COP2"],
+)
+```
+
+Then save the generated program as e.g. `model.pte` or
+update the copy and run commands below to match your output file name.
+
 Copy the `executor_runner` binary and the generated PTE file to the running FVP:
 
 ```
-scp -P 2222 arm_test/cmake-out/executor_runner add_arm_delegate_ethos-u85-256.pte root@127.0.0.1:/tmp/
+scp -P 2222 arm_test/cmake-out/executor_runner model.pte root@127.0.0.1:/tmp/
 ```
 
 Run the model on the FVP:
 
 ```
-ssh -p 2222 root@127.0.0.1 -t "/tmp/executor_runner -model_path /tmp/add_arm_delegate_ethos-u85-256.pte -num_executions 1"
+ssh -p 2222 root@127.0.0.1 -t "/tmp/executor_runner -model_path /tmp/model.pte -num_executions 1"
 ```
 
 ## Testing

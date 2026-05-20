@@ -9,14 +9,12 @@ import traceback
 from abc import abstractmethod
 from typing import Any, List, Optional, Set, Type
 
-import torch
 from executorch.backends.arm.constants import DISALLOW_TFA_META_KEY
 from executorch.backends.arm.tosa.mapping import TosaSpecialDtype
 from executorch.exir.dialects._ops import ops as exir_ops
 from executorch.exir.pass_base import ExportPass, NodeMetadata, ProxyValue
 from torch.fx import GraphModule
 from torch.fx.passes.infra.pass_base import PassResult
-from torch.utils import _pytree as pytree
 
 
 class ArmPass(ExportPass):
@@ -81,13 +79,6 @@ class ArmPass(ExportPass):
             )
 
     def call_operator(self, op, args, kwargs, meta, updated: Optional[bool] = False):
-        if (
-            op == exir_ops.edge.aten.bmm.default
-            and isinstance(meta, NodeMetadata)
-            and len(meta.data.get("input_qparams", {})) > 0
-        ):
-            return self._call_quantized_bmm_without_fake_kernel(op, args, kwargs, meta)
-
         if not updated:
             return super().call_operator(op, args, kwargs, meta)
 
@@ -99,35 +90,6 @@ class ArmPass(ExportPass):
         old_stack_trace = new_meta.get("stack_trace", "")
         new_meta["stack_trace"] = f"{old_stack_trace}\n{traceback.format_stack()[-2]}"
         return super().call_operator(op, args, kwargs, NodeMetadata(new_meta))
-
-    def _call_quantized_bmm_without_fake_kernel(
-        self,
-        op,
-        args: tuple[ProxyValue, ...],
-        kwargs: dict[str, Any],
-        meta: NodeMetadata,
-    ) -> ProxyValue:
-        old_val = meta.data["val"]
-        output_qparams = meta.data.get("output_qparams", {})
-        dtype = (
-            next(iter(output_qparams.values())).dtype
-            if len(output_qparams) > 0
-            else old_val.dtype
-        )
-        res_data = torch.empty_like(old_val, dtype=dtype)
-
-        args_proxy, kwargs_proxy = pytree.tree_map_only(
-            ProxyValue, lambda x: x.proxy, (args, kwargs)
-        )
-        res_proxy = self.tracer.create_proxy(
-            "call_function",
-            op,
-            args_proxy,
-            kwargs_proxy,
-        )
-        res_proxy.node.meta.update(meta.data)
-        self.tracer.set_metadata(res_proxy.node, res_data)
-        return ProxyValue(res_data, res_proxy)
 
     def call_submodule(
         self, graph_module: GraphModule, inputs: tuple[Any, ...]
