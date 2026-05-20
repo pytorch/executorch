@@ -209,7 +209,7 @@ ExecuTorch for the Ethos-U backend, you automatically install the compiler conta
 
 **→{doc}`/backends/arm-ethos-u/arm-ethos-u-troubleshooting` — Troubleshooting and common issues.**
 
-**→{doc}`/backends/arm-ethos-u/tutorials/arm-ethos-u-tutorials` — Tutorials.**
+**→{doc}`/backends/arm-ethos-u/tutorials/ethos-u-getting-started` — Getting started tutorial.**
 
 **→{doc}`/backends/arm-ethos-u/U55_op_support` — Ethos-U55 supported operators.**
 
@@ -224,7 +224,7 @@ ExecuTorch for the Ethos-U backend, you automatically install the compiler conta
 arm-ethos-u-partitioner
 arm-ethos-u-quantization
 arm-ethos-u-troubleshooting
-tutorials/arm-ethos-u-tutorials
+tutorials/ethos-u-getting-started
 U55_op_support
 U85_op_support
 ```
