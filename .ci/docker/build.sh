@@ -97,10 +97,6 @@ esac
 TORCH_VERSION=$(cat ci_commit_pins/pytorch.txt)
 BUILD_DOCS=1
 
-if [[ "${GCC_VERSION:-}" == "11" && -z "${SKIP_PYTORCH:-}" ]]; then
-  PYTORCH_BUILD_MAX_JOBS=6
-fi
-
 # Copy requirements-lintrunner.txt from root to here
 cp ../../requirements-lintrunner.txt ./
 
@@ -113,7 +109,6 @@ docker build \
   --build-arg "PYTHON_VERSION=${PYTHON_VERSION}" \
   --build-arg "MINICONDA_VERSION=${MINICONDA_VERSION}" \
   --build-arg "TORCH_VERSION=${TORCH_VERSION}" \
-  --build-arg "PYTORCH_BUILD_MAX_JOBS=${PYTORCH_BUILD_MAX_JOBS:-}" \
   --build-arg "BUCK2_VERSION=${BUCK2_VERSION}" \
   --build-arg "LINTRUNNER=${LINTRUNNER:-}" \
   --build-arg "BUILD_DOCS=${BUILD_DOCS}" \

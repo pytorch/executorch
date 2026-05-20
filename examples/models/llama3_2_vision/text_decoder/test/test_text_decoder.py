@@ -69,6 +69,7 @@ class TextDecoderTest(unittest.TestCase):
                 encoder,
                 model.get_example_inputs(),
                 kwargs=model.get_example_kwarg_inputs(),
+                dynamic_shapes=model.get_dynamic_shapes(),
                 strict=True,
             )
         with tempfile.TemporaryDirectory() as tmpdir:
