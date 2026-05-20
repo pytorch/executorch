@@ -40,6 +40,7 @@ jobs:
             backend: portable
       fail-fast: false
     with:
+      default-packages: ""
       runner: macos-m1-stable
       python-version: '3.11'
       submodules: 'recursive'
@@ -275,6 +276,7 @@ jobs:
           - build-tool: cmake
       fail-fast: false
     with:
+      default-packages: ""
       runner: macos-m1-stable
       python-version: '3.11'
       submodules: 'recursive'
@@ -297,6 +299,7 @@ jobs:
           - build-tool: cmake
       fail-fast: false
     with:
+      default-packages: ""
       runner: macos-m1-stable
       python-version: '3.11'
       submodules: 'recursive'
@@ -346,14 +349,14 @@ jobs:
     strategy:
       matrix:
         include:
-          - test_arm_baremetal: test_pytest_ops_ethos_u55
-          - test_arm_baremetal: test_pytest_models_ethos_u55
-          - test_arm_baremetal: test_run_ethos_u55
-          - test_arm_baremetal: test_pytest_ops_ethos_u85
-          - test_arm_baremetal: test_pytest_models_ethos_u85
-          - test_arm_baremetal: test_run_ethos_u85
-          - test_arm_baremetal: test_smaller_stories_llama
-          - test_arm_baremetal: test_memory_allocation
+          - test_arm_backend: test_pytest_ops_ethos_u55
+          - test_arm_backend: test_pytest_models_ethos_u55
+          - test_arm_backend: test_run_ethos_u55
+          - test_arm_backend: test_pytest_ops_ethos_u85
+          - test_arm_backend: test_pytest_models_ethos_u85
+          - test_arm_backend: test_run_ethos_u85
+          - test_arm_backend: test_smaller_stories_llama
+          - test_arm_backend: test_memory_allocation
       fail-fast: false
     with:
       runner: linux.2xlarge.memory
@@ -375,10 +378,15 @@ jobs:
         # Hopefully this is high enough for this setup.
         sudo sysctl fs.inotify.max_user_watches=1048576 # 1024 * 1024
 
-        ARM_TEST=${{ matrix.test_arm_baremetal }}
+        ARM_TEST=${{ matrix.test_arm_backend }}
 
-        # Test test_arm_baremetal.sh with test
-        backends/arm/test/test_arm_baremetal.sh "${ARM_TEST}"
+        # Output test report on pytest runs so that github can surface failing tests.
+        if [[ -n "${RUNNER_TEST_RESULTS_DIR:-}" ]]; then
+              export PYTEST_ADDOPTS="--junit-xml=${RUNNER_TEST_RESULTS_DIR}/${ARM_TEST}.xml ${PYTEST_ADDOPTS:-}"
+        fi
+
+        # Test test_arm_backend.sh with test
+        backends/arm/test/test_arm_backend.sh "${ARM_TEST}"
 
   test-arm-backend-vkml:
     name: test-arm-backend-vkml
@@ -389,7 +397,7 @@ jobs:
     strategy:
       matrix:
         include:
-          - test_arm_baremetal: test_pytest_ops_vkml
+          - test_arm_backend: test_pytest_ops_vkml
       fail-fast: false
     with:
       runner: linux.2xlarge.memory
@@ -410,9 +418,14 @@ jobs:
         # Hopefully this is high enough for this setup.
         sudo sysctl fs.inotify.max_user_watches=1048576 # 1024 * 1024
 
-        ARM_TEST=${{ matrix.test_arm_baremetal }}
+        ARM_TEST=${{ matrix.test_arm_backend }}
 
-        backends/arm/test/test_arm_baremetal.sh "${ARM_TEST}"
+        # Output test report on pytest runs so that github can surface failing tests.
+        if [[ -n "${RUNNER_TEST_RESULTS_DIR:-}" ]]; then
+          export PYTEST_ADDOPTS="--junit-xml=${RUNNER_TEST_RESULTS_DIR}/${ARM_TEST}.xml ${PYTEST_ADDOPTS:-}"
+        fi
+
+        backends/arm/test/test_arm_backend.sh "${ARM_TEST}"
 
   test-arm-ootb-linux:
     name: test-arm-ootb-linux
@@ -457,6 +470,7 @@ jobs:
     name: test-coreml-delegate
     uses: pytorch/test-infra/.github/workflows/macos_job.yml@main
     with:
+      default-packages: ""
       runner: macos-14-xlarge
       python-version: '3.11'
       submodules: 'recursive'
@@ -475,6 +489,7 @@ jobs:
     name: test-static-llama-ane
     uses: pytorch/test-infra/.github/workflows/macos_job.yml@main
     with:
+      default-packages: ""
       runner: macos-m1-stable
       python-version: '3.11'
       submodules: 'recursive'
@@ -497,6 +512,7 @@ jobs:
     name: test-llama-torchao-lowbit
     uses: pytorch/test-infra/.github/workflows/macos_job.yml@main
     with:
+      default-packages: ""
       runner: macos-m1-stable
       python-version: '3.11'
       submodules: 'recursive'
@@ -581,6 +597,7 @@ jobs:
         mode: [mps, coreml, xnnpack+custom+quantize_kv]
       fail-fast: false
     with:
+      default-packages: ""
       runner: macos-m1-stable
       python-version: '3.11'
       submodules: 'recursive'
@@ -667,6 +684,7 @@ jobs:
       matrix:
         model: ["gemma3-4b"] # llava gives segfault so not covering.
     with:
+      default-packages: ""
       secrets-env: EXECUTORCH_HF_TOKEN
       runner: macos-15-xlarge
       python-version: '3.11'
@@ -754,6 +772,7 @@ jobs:
         model: [dl3, edsr, efficient_sam, emformer_join, emformer_transcribe, ic3, ic4, mobilebert, mv2, mv3, resnet50, vit, w2l]
       fail-fast: false
     with:
+      default-packages: ""
       runner: macos-m1-stable
       python-version: '3.11'
       submodules: 'recursive'
@@ -793,6 +812,7 @@ jobs:
     strategy:
       fail-fast: false
     with:
+      default-packages: ""
       runner: macos-m1-stable
       python-version: '3.11'
       submodules: 'recursive'
@@ -932,6 +952,7 @@ jobs:
         ]
       fail-fast: false
     with:
+      default-packages: ""
       secrets-env: EXECUTORCH_HF_TOKEN
       runner: macos-15-xlarge
       python-version: '3.11'

@@ -364,11 +364,6 @@ def set_node_arg(node: torch.fx.Node, i: int | str, value):
         raise RuntimeError("Invalid type")
 
 
-def get_output_dim_orders(graph_module):
-    output_node = graph_module.graph.output_node()
-    return [get_first_fake_tensor(node).dim_order() for node in output_node.args[0]]
-
-
 def is_nested_control_flow_graph(graph_module: GraphModule) -> bool:
     """Returns True if graph_module is a nested control-flow graph."""
 
@@ -418,3 +413,16 @@ def to_2tuple(value):
     if len(value) == 1:
         return (value[0], value[0])
     return tuple(value)
+
+
+def permute_fake_tensor_metadata(
+    fake_tensor: FakeTensor, permute_dims: tuple[int, ...]
+) -> FakeTensor:
+    permuted_shape = tuple(fake_tensor.shape[dim] for dim in permute_dims)
+    meta_tensor = torch.empty(
+        permuted_shape,
+        dtype=fake_tensor.dtype,
+        device="meta",
+        requires_grad=fake_tensor.requires_grad,
+    )
+    return FakeTensor(fake_tensor.fake_mode, meta_tensor, fake_tensor.fake_device)

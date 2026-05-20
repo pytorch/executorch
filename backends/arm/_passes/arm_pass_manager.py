@@ -75,6 +75,7 @@ from executorch.backends.arm._passes import (
     DecomposeMaxPool2dPass,
     DecomposeMeanDimPass,
     DecomposeNotEqualPass,
+    DecomposePermuteForU55Pass,
     DecomposeQuantNodesPass,
     DecomposeRemainderPass,
     DecomposeRnnPass,
@@ -96,6 +97,7 @@ from executorch.backends.arm._passes import (
     DecomposeVarPass,
     DecomposeWhereScalarOtherPass,
     DecorateFp32toInt32CastingPass,
+    DeduplicateGetAttrPass,
     EnsureUniqueOutputNodesPass,
     FoldAndAnnotateQParamsPass,
     FuseBatchNorm2dPass,
@@ -124,6 +126,7 @@ from executorch.backends.arm._passes import (
     RemoveGetItemPass,
     RemoveGraphAssertsPass,
     RemoveNoopPass,
+    RemovePermutesAroundElementwiseTosaOps,
     ReplaceInfAndLimitValuesPass,
     ReplaceScalarWithTensorByProfilePass,
     RewriteAvgPool2dPass,
@@ -148,7 +151,6 @@ from executorch.backends.arm._passes.arm_pass import ArmPass
 from executorch.backends.arm.common.arm_compile_spec import ArmCompileSpec
 from executorch.backends.arm.common.pipeline_config import (
     ArmPassPipelineConfig,
-    FuseDuplicateUsersConfig,
     SoftmaxDecompositionConfig,
 )
 from executorch.backends.arm.tosa.specification import (
@@ -163,9 +165,6 @@ from executorch.backends.transforms.postpone_permute_below_squeeze_view import (
     PostponePermuteOpBelowSqueezeOrUnsqueezeLikeView,
 )
 
-from executorch.backends.transforms.remove_permutes_around_elementwise_ops import (
-    RemovePermutesAroundElementwiseOps,
-)
 from executorch.exir import ExportedProgram
 from executorch.exir.pass_base import ExportPass
 from executorch.exir.pass_manager import PassManager
@@ -238,9 +237,6 @@ class ArmPassManager(PassManager):
                 pass
             case SoftmaxDecompositionConfig.STABLE:
                 skip_set.add(DecomposeMaskedFillPass)
-
-        if config.fuse_duplicate_users is FuseDuplicateUsersConfig.DISABLED:
-            skip_set.add(FuseDuplicateUsersPass)
 
         self._skip_pass_types = tuple(skip_set)
         skip_names = [skipped_pass.__name__ for skipped_pass in self._skip_pass_types]
@@ -404,9 +400,6 @@ class ArmPassManager(PassManager):
                 ConvertToClampPass(),
                 DecomposeTOSAUnsupportedClampPass(),
                 DecomposeGroupNormPass(),
-                DecomposeGruPass(),
-                DecomposeLstmPass(),
-                DecomposeRnnPass(),
                 DecomposeLayerNormPass(),
                 DecomposeVarPass(),
                 DecomposeMeanDimPass(exported_program.graph_module, self.tosa_spec),
@@ -438,6 +431,7 @@ class ArmPassManager(PassManager):
                 ConvertSplitToSlicePass(),
                 QuantizeClampArgumentsPass(),
                 RemoveGetItemPass(),
+                FuseBatchNorm2dPass(exported_program),
                 DecomposeBatchNormNoStatsPass(),
                 DecomposeLogitPass(),
                 DecomposeMaskedFillPass(),
@@ -501,7 +495,6 @@ class ArmPassManager(PassManager):
                 RewriteBoolBitwiseToLogicalPass(),
                 DecomposeRemainderPass(),
                 DecomposeDivTensorModePass(),
-                FuseBatchNorm2dPass(exported_program),
                 ConvertMmToBmmPass(),
                 DecomposeGluPass(),
                 DecomposeDivPass(),
@@ -525,6 +518,7 @@ class ArmPassManager(PassManager):
                 DecomposeSumPass(),
                 InsertTableOpsPass(exported_program),
                 RemoveNoopPass(),
+                InsertDataLayoutCastsPass(),
             ]
         )
 
@@ -536,13 +530,14 @@ class ArmPassManager(PassManager):
                 RewriteConvPass(exported_program),
                 RewriteMatmulPass(),
                 RewritePadPass(),
-                RewriteSlicePass(),
                 FuseViewCopyTransformPass(),
-                RemovePermutesAroundElementwiseOps(),
+                RemovePermutesAroundElementwiseTosaOps(),
                 PostponePermuteOpBelowSqueezeOrUnsqueezeLikeView(),
                 FuseCascadedTransposeOrPermuteOps(),
                 ConvertPermuteSingletonToViewPass(),
                 RewriteHighRankSingletonPermutePass(),
+                DecomposePermuteForU55Pass(),
+                RewriteSlicePass(),
                 InsertConstShapesPass(),
             ]
         )
@@ -556,7 +551,6 @@ class ArmPassManager(PassManager):
                 EnsureUniqueOutputNodesPass(),
                 RemoveNoopPass(),
                 InsertRescalePass(),
-                InsertDataLayoutCastsPass(),
             ]
         )
 
@@ -658,6 +652,7 @@ class ArmPassManager(PassManager):
                 [
                     ReplaceInfAndLimitValuesPass(tfa_pass=True),
                     DecomposeMaskedFillPass(tfa_pass=True),
+                    DeduplicateGetAttrPass(tfa_pass=True),
                 ]
             )
 

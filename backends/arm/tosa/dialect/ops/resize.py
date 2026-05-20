@@ -52,7 +52,9 @@ def _get_output_dtype(
 
 def _validate_resize_parameters(scale, border, resize_mode):
     def in_int16_range(values):
-        return all((x >= -(2**15)) and (x <= 2**15 - 1) for x in values)
+        return all(
+            (x >= -(2**15)) and (x <= 2**15 - 1) for x in values if isinstance(x, int)
+        )
 
     if not in_int16_range(scale):
         raise TosaValueError("scale is out of the int16 range", op="RESIZE")

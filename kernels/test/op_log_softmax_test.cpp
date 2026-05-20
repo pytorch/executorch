@@ -9,6 +9,7 @@
 #include <executorch/kernels/test/FunctionHeaderWrapper.h> // Declares the operator
 #include <executorch/kernels/test/TestUtil.h>
 #include <executorch/kernels/test/supported_features.h>
+#include <executorch/kernels/test/supported_features_skip.h>
 #include <executorch/runtime/core/exec_aten/exec_aten.h>
 #include <executorch/runtime/core/exec_aten/testing_util/tensor_factory.h>
 #include <executorch/runtime/core/exec_aten/testing_util/tensor_util.h>
@@ -145,9 +146,9 @@ TEST_F(OpLogSoftmaxOutTest, Smoke) {
 }
 
 TEST_F(OpLogSoftmaxOutTest, AllDtypesSupported) {
-  if (!SupportedFeatures::get()->op_log_softmax_dtype_double) {
-    GTEST_SKIP() << "This kernel does not support dtype double";
-  }
+  ET_SKIP_IF(
+      !SupportedFeatures::get()->op_log_softmax_dtype_double,
+      "This kernel does not support dtype double");
 
 #define TEST_ENTRY(ctype, dtype) test_dtype<ctype, ScalarType::dtype>();
   ET_FORALL_FLOATHBF16_TYPES(TEST_ENTRY)
@@ -159,9 +160,9 @@ TEST_F(OpLogSoftmaxOutTest, NonContiguous) {
 }
 
 TEST_F(OpLogSoftmaxOutTest, MismatchedDimensionsDies) {
-  if (SupportedFeatures::get()->is_aten) {
-    GTEST_SKIP() << "ATen currently supports mismatched dimensions";
-  }
+  ET_SKIP_IF(
+      SupportedFeatures::get()->is_aten,
+      "ATen currently supports mismatched dimensions");
 
   TensorFactory<ScalarType::Float> tff;
 
@@ -177,9 +178,9 @@ TEST_F(OpLogSoftmaxOutTest, MismatchedDimensionsDies) {
 }
 
 TEST_F(OpLogSoftmaxOutTest, MismatchedDimensionSizeDies) {
-  if (SupportedFeatures::get()->is_aten) {
-    GTEST_SKIP() << "ATen currently supports mismatched dimension size";
-  }
+  ET_SKIP_IF(
+      SupportedFeatures::get()->is_aten,
+      "ATen currently supports mismatched dimension size");
 
   TensorFactory<ScalarType::Float> tf;
 
@@ -194,13 +195,13 @@ TEST_F(OpLogSoftmaxOutTest, MismatchedDimensionSizeDies) {
 }
 
 TEST_F(OpLogSoftmaxOutTest, TestWithLargeNumber) {
-  if (!SupportedFeatures::get()->op_log_softmax_dtype_double) {
-    GTEST_SKIP() << "This kernel does not support dtype double";
-  }
+  ET_SKIP_IF(
+      !SupportedFeatures::get()->op_log_softmax_dtype_double,
+      "This kernel does not support dtype double");
 
-  if (SupportedFeatures::get()->is_aten) {
-    GTEST_SKIP() << "ATen does not support mixing float and double";
-  }
+  ET_SKIP_IF(
+      SupportedFeatures::get()->is_aten,
+      "ATen does not support mixing float and double");
 
   TensorFactory<ScalarType::Double> tf;
 
@@ -229,13 +230,12 @@ TEST_F(OpLogSoftmaxOutTest, TestWithLargeNumber) {
 }
 
 TEST_F(OpLogSoftmaxOutTest, NegativeDim) {
-  if (!SupportedFeatures::get()->op_log_softmax_dtype_double) {
-    GTEST_SKIP() << "This kernel does not support dtype double";
-  }
+  ET_SKIP_IF(
+      !SupportedFeatures::get()->op_log_softmax_dtype_double,
+      "This kernel does not support dtype double");
 
-  if (SupportedFeatures::get()->is_aten) {
-    GTEST_SKIP() << "ATen does not support negative dim";
-  }
+  ET_SKIP_IF(
+      SupportedFeatures::get()->is_aten, "ATen does not support negative dim");
 
   TensorFactory<ScalarType::Float> tf;
 
@@ -421,8 +421,8 @@ TEST_F(OpLogSoftmaxOutTest, DynamicShapeUpperBoundLargerThanExpected) {
   EXPECT_TENSOR_CLOSE(out, expected_result);
 }
 
-TEST_F(OpLogSoftmaxOutTest, DynamicShapeUnbound) {
-  GTEST_SKIP() << "Dynamic shape not supported";
+// DISABLED: Dynamic shape not supported
+TEST_F(OpLogSoftmaxOutTest, DISABLED_DynamicShapeUnbound) {
   TensorFactory<ScalarType::Float> tf;
 
   Tensor x = tf.make(
@@ -472,7 +472,7 @@ TEST_F(OpLogSoftmaxOutTest, DoubleCase) {
   if (!SupportedFeatures::get()->op_log_softmax_dtype_double) {
     // For optimized kernels, we expect the call above to fail gracefully
     expect_failure();
-    GTEST_SKIP() << "This kernel does not support dtype double";
+    ET_SKIP_IF(true, "This kernel does not support dtype double");
   }
 
   // Verify output dimensions

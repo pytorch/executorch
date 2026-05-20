@@ -51,10 +51,10 @@ west build -b mps3/corstone300/fvp modules/lib/executorch/zephyr/samples/hello-e
 Prepare the Cortex-M55 PTE model
 <!-- RUN test_cortex-m55_generate_pte -->
 ```
-python -m modules.lib.executorch.backends.arm.scripts.aot_arm_compiler --model_name=modules/lib/executorch/zephyr/samples/hello-executorch/models/add.py --quantize --target=cortex-m55+int8 --output=add_m55.pte
+python -m modules.lib.executorch.backends.arm.scripts.aot_arm_compiler --model_name=modules/lib/executorch/zephyr/samples/hello-executorch/models/add.py --quantize --target=cortex-m55 --output=add_m55.pte
 ```
 
-`--target=cortex-m55+int8` selects the Cortex-M/CMSIS-NN portable kernel path (no NPU delegation). This produces a `.pte` optimized for Cortex-M55 with INT8 quantization.
+`--target=cortex-m55` plus `--quantize` selects the Cortex-M/CMSIS-NN portable kernel path (no NPU delegation). This produces a `.pte` optimized for Cortex-M55 with INT8 quantization.
 
 
 #### Build and run
@@ -129,10 +129,10 @@ export PATH=$PATH:~/STMicroelectronics/STM32Cube/STM32CubeProgrammer/bin
 
 Prepare the Cortex-M55 PTE model
 ```
-python -m modules.lib.executorch.backends.arm.scripts.aot_arm_compiler --model_name=modules/lib/executorch/zephyr/samples/hello-executorch/models/add.py --quantize --target=cortex-m55+int8 --output=add_m55.pte
+python -m modules.lib.executorch.backends.arm.scripts.aot_arm_compiler --model_name=modules/lib/executorch/zephyr/samples/hello-executorch/models/add.py --quantize --target=cortex-m55 --output=add_m55.pte
 ```
 
-`--target=cortex-m55+int8` selects the Cortex-M/CMSIS-NN portable kernel path (no NPU delegation). This produces a `.pte` optimized for Cortex-M55 with INT8 quantization.
+`--target=cortex-m55` plus `--quantize` selects the Cortex-M/CMSIS-NN portable kernel path (no NPU delegation). This produces a `.pte` optimized for Cortex-M55 with INT8 quantization.
 
 #### Build and run
 

@@ -8,11 +8,16 @@
 
 #import "ExecuTorchModule.h"
 
+#import "ExecuTorchBackendOption.h"
+#import "ExecuTorchBackendOptionsMap.h"
+#import "ExecuTorchBackendOptionsMap+Internal.h"
 #import "ExecuTorchError.h"
 #import "ExecuTorchUtils.h"
 
 #import <executorch/extension/module/module.h>
 #import <executorch/extension/tensor/tensor.h>
+#import <executorch/runtime/backend/backend_options_map.h>
+#import <executorch/runtime/backend/options.h>
 
 using namespace executorch::extension;
 using namespace executorch::runtime;
@@ -315,6 +320,53 @@ static inline ExecuTorchValue *toExecuTorchValue(EValue value) NS_RETURNS_RETAIN
 - (BOOL)loadMethod:(NSString *)methodName
              error:(NSError **)error {
   const auto errorCode = _module->load_method(methodName.UTF8String);
+  if (errorCode != Error::Ok) {
+    if (error) {
+      *error = ExecuTorchErrorWithCode((ExecuTorchErrorCode)errorCode);
+    }
+    return NO;
+  }
+  return YES;
+}
+
+- (BOOL)loadWithOptions:(ExecuTorchBackendOptionsMap *)options
+           verification:(ExecuTorchVerification)verification
+                  error:(NSError **)error {
+  NSParameterAssert(options);
+  // Module deep-copies the LoadBackendOptionsMap on the C++ side, so we
+  // do not need to retain `options` past this call. ARC releases the
+  // wrapper when the parameter goes out of scope and the Module's owned
+  // copy keeps lazy load_method paths working.
+  const auto errorCode = _module->load(*[options cppMap],
+                                        static_cast<Program::Verification>(verification));
+  if (errorCode != Error::Ok) {
+    if (error) {
+      *error = ExecuTorchErrorWithCode((ExecuTorchErrorCode)errorCode);
+    }
+    return NO;
+  }
+  return YES;
+}
+
+- (BOOL)loadWithOptions:(ExecuTorchBackendOptionsMap *)options
+                  error:(NSError **)error {
+  return [self loadWithOptions:options
+                  verification:ExecuTorchVerificationMinimal
+                         error:error];
+}
+
+- (BOOL)loadMethod:(NSString *)methodName
+           options:(ExecuTorchBackendOptionsMap *)options
+             error:(NSError **)error {
+  NSParameterAssert(options);
+  // load_method consumes `options` synchronously: the cppMap pointer is
+  // passed through to program_->load_method and is not cached on the C++
+  // Module. ARC keeps `options` alive for the duration of this call via
+  // the parameter, so no extra retention is needed here.
+  const auto errorCode = _module->load_method(methodName.UTF8String,
+                                               /*planned_memory=*/nullptr,
+                                               /*event_tracer=*/nullptr,
+                                               [options cppMap]);
   if (errorCode != Error::Ok) {
     if (error) {
       *error = ExecuTorchErrorWithCode((ExecuTorchErrorCode)errorCode);
