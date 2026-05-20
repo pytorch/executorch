@@ -518,7 +518,7 @@ fi
 
 DEVICE_ARG=""
 if [ "$DEVICE" = "cuda" ] || [ "$DEVICE" = "cuda-windows" ]; then
-  DEVICE_ARG="--device cuda"
+  DEVICE_ARG="--device cuda:0"
 elif [ "$DEVICE" = "metal" ]; then
   DEVICE_ARG="--device mps"
 fi
