@@ -6,7 +6,6 @@
  * LICENSE file in the root directory of this source tree.
  */
 
-#include <executorch/backends/qualcomm/runtime/backends/htp/HtpContext.h>
 #include <executorch/backends/qualcomm/runtime/backends/htp/HtpContextCustomConfig.h>
 
 namespace executorch {
