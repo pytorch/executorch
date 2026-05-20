@@ -360,8 +360,8 @@ def export_all(
         preprocessor_wrapper,
         (sample_audio, sample_length),
         dynamic_shapes={
-            # min=10 frames = 0.1 sec @ 16kHz, max aligned with encoder limit.
-            "audio": {0: Dim.AUTO(min=1600, max=max_audio_samples)},
+            # min=1600 samples = 0.1 sec @ 16kHz, max aligned with encoder limit
+            "audio": {0: Dim("audio_len", min=1600, max=max_audio_samples)},
             "length": {},
         },
         strict=False,
