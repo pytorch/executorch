@@ -65,8 +65,6 @@ class TableOps:
         exir_ops.edge.aten.pow.Tensor_Scalar,
         exir_ops.edge.aten.gelu.default,
         exir_ops.edge.aten.elu.default,
-        exir_ops.edge.aten.selu.default,
-        exir_ops.edge.aten.celu.default,
         exir_ops.edge.aten.remainder.Scalar,
     }
 
