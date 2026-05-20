@@ -432,6 +432,12 @@ class TestQNN(unittest.TestCase):
                 print(f"after_context_freed: {after} bytes")
                 print(f"difference: {difference:.2f} bytes")
 
+                self.assertGreaterEqual(
+                    after,
+                    before,
+                    "after_context_freed should be >= before_context_created",
+                )
+
             def validate_intermediate_tensor():
                 qnn_intermediate_debugger.setup_inspector(
                     etdump_path=etdump_path,

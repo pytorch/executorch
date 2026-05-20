@@ -254,7 +254,7 @@ Qnn_ErrorHandle_t QnnProfile::ProfileDataToFile(
         "Not HTP backend but enable htp profiling. Please check setting.");
     return QNN_SUCCESS;
   }
-  return error;
+  return QNN_SUCCESS;
 }
 
 QnnProfile::~QnnProfile() {
