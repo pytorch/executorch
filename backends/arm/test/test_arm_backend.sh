@@ -254,14 +254,17 @@ test_pytest_models_vkml() {
 test_run_vkml() {
     echo "${TEST_SUITE_NAME}: Test VKML delegate examples with run.sh"
 
+    source backends/arm/test/setup_testing_vkml.sh
+
     echo "${TEST_SUITE_NAME}: Test VKML"
     out_folder="arm_test/test_run"
+    vkml_build_dir="${build_root_test_dir}"
 
-    examples/arm/run.sh --et_build_root=${out_folder} --target=vgf --model_name=add --output=${out_folder}/runner
-    examples/arm/run.sh --et_build_root=${out_folder} --target=vgf --model_name=mul --output=${out_folder}/runner
+    examples/arm/run.sh --build-dir="${vkml_build_dir}" --et_build_root=${out_folder} --target=vgf --model_name=add --output=${out_folder}/runner
+    examples/arm/run.sh --build-dir="${vkml_build_dir}" --et_build_root=${out_folder} --target=vgf --model_name=mul --output=${out_folder}/runner
 
-    examples/arm/run.sh --et_build_root=${out_folder} --target=vgf --model_name=qadd --output=${out_folder}/runner
-    examples/arm/run.sh --et_build_root=${out_folder} --target=vgf --model_name=qops --output=${out_folder}/runner
+    examples/arm/run.sh --build-dir="${vkml_build_dir}" --et_build_root=${out_folder} --target=vgf --model_name=qadd --output=${out_folder}/runner
+    examples/arm/run.sh --build-dir="${vkml_build_dir}" --et_build_root=${out_folder} --target=vgf --model_name=qops --output=${out_folder}/runner
 
     echo "${TEST_SUITE_NAME}: PASS"
 }

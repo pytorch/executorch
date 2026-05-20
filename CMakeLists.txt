@@ -160,6 +160,23 @@ announce_configured_options(BUILD_TESTING)
 load_build_preset()
 include(${PROJECT_SOURCE_DIR}/tools/cmake/preset/default.cmake)
 
+# Keep bare-metal installs enabled only when ExecuTorch owns the top-level
+# build. Standalone consumers (e.g., the runner) set
+# EXECUTORCH_BAREMETAL_SKIP_INSTALL=ON but still add ExecuTorch as a subproject,
+# which cannot satisfy our install() export dependencies until their own targets
+# are configured.
+if(DEFINED EXECUTORCH_BAREMETAL_SKIP_INSTALL
+   AND EXECUTORCH_BAREMETAL_SKIP_INSTALL
+   AND NOT (CMAKE_SOURCE_DIR STREQUAL PROJECT_SOURCE_DIR)
+)
+  set(CMAKE_SKIP_INSTALL_RULES
+      ON
+      CACHE BOOL
+            "Skip install() rules when ExecuTorch is consumed as a subproject"
+            FORCE
+  )
+endif()
+
 # Enable ccache if available
 find_program(CCACHE_PROGRAM ccache)
 if(CCACHE_PROGRAM)
