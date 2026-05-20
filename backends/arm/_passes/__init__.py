@@ -70,6 +70,7 @@ from .decompose_logit_pass import DecomposeLogitPass  # noqa
 from .decompose_lstm_pass import DecomposeLstmPass  # noqa
 from .decompose_masked_fill_pass import DecomposeMaskedFillPass  # noqa
 from .decompose_matmul import DecomposeMatmulPass  # noqa
+from .decompose_max_pool1d_pass import DecomposeMaxPool1dPass  # noqa
 from .decompose_maxpool2d_with_dilation_pass import DecomposeMaxPool2dPass  # noqa
 from .decompose_meandim_pass import DecomposeMeanDimPass  # noqa
 from .decompose_ne_pass import DecomposeNotEqualPass  # noqa

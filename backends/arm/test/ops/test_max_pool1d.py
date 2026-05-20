@@ -88,7 +88,6 @@ def test_max_pool2d_tosa_FP_decomposed(test_data: Callable):
 
 
 @common.parametrize("test_data", test_data_suite_all)
-@pytest.mark.xfail(reason="MaxPool1D not yet supported", strict=False)
 def test_max_pool2d_tosa_INT_decomposed(test_data: Callable):
     """Test max_pool1d with TOSA INT pipeline (quantized)."""
     test_data, model_params = test_data()
