@@ -15,8 +15,6 @@ import executorch.backends.qualcomm.python.PyQnnManagerAdaptor as PyQnnManagerAd
 
 import executorch.exir as exir
 import torch
-
-from executorch.backends.qualcomm.export_utils import preprocess_binary
 from executorch.backends.qualcomm._passes import AnnotateStack, AnnotateUnbind
 from executorch.backends.qualcomm._passes.qnn_pass_manager import QnnPassManager
 
@@ -25,6 +23,8 @@ from executorch.backends.qualcomm.builders.node_visitor import (
     QNN_TENSOR_TYPE_MAP,
 )
 from executorch.backends.qualcomm.builders.qnn_constants import OpContextLoader
+
+from executorch.backends.qualcomm.export_utils import preprocess_binary
 from executorch.backends.qualcomm.partition.qnn_partitioner import (
     generate_qnn_executorch_option,
     get_skip_decomp_table,
