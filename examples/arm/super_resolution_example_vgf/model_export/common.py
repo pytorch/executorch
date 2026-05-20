@@ -273,11 +273,17 @@ def _load_checkpointed_swin2sr(
         raise ValueError(
             "--checkpoint-revision is required when --checkpoint is a remote Hugging Face model id."
         )
-    model = Swin2SRForImageSuperResolution.from_pretrained(  # nosec B615
-        checkpoint,
-        revision=checkpoint_revision,
-        local_files_only=local_files_only,
-    ).eval()
+    if checkpoint_revision is None:
+        model = Swin2SRForImageSuperResolution.from_pretrained(  # nosec B615
+            checkpoint,
+            local_files_only=local_files_only,
+        ).eval()
+    else:
+        model = Swin2SRForImageSuperResolution.from_pretrained(  # nosec B615
+            checkpoint,
+            revision=checkpoint_revision,
+            local_files_only=local_files_only,
+        ).eval()
     return Swin2SRWrapper(model)
 
 

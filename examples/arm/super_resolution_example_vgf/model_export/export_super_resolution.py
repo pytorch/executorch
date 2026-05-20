@@ -30,7 +30,7 @@ if __package__ is None or __package__ == "":
     import sys
 
     sys.path.append(str(Path(__file__).resolve().parent))
-    from common import (  # type: ignore[no-redef]
+    from common import (  # type: ignore[import-not-found, no-redef]
         create_model_bundle,
         evaluate_super_resolution_model,
         load_calibration_inputs,
@@ -259,7 +259,7 @@ def main() -> None:
         artifact_dir.mkdir(parents=True, exist_ok=True)
         compile_spec.dump_intermediate_artifacts_to(str(artifact_dir))
 
-    calibration_samples: list[tuple[torch.Tensor]] | None = None
+    calibration_samples: list[tuple[torch.Tensor]] = []
     if quantize:
         quantized_ops_library = ensure_quantized_ops_loaded()
         if quantized_ops_library is not None:
@@ -299,17 +299,18 @@ def main() -> None:
     evaluation_metrics: dict[str, float] | None = None
     if eval_loader is not None:
         eval_module = exported_program.module(check_guards=False)
-        evaluation_metrics = evaluate_super_resolution_model(
+        metrics = evaluate_super_resolution_model(
             eval_module,
             eval_loader,
             torch.device("cpu"),
         )
-        write_json(metrics_path, evaluation_metrics)
+        evaluation_metrics = metrics
+        write_json(metrics_path, metrics)
         print(
             "Evaluation metrics: "
-            f"l1={evaluation_metrics['l1']:.6f} "
-            f"psnr={evaluation_metrics['psnr']:.4f} "
-            f"ssim={evaluation_metrics['ssim']:.4f}"
+            f"l1={metrics['l1']:.6f} "
+            f"psnr={metrics['psnr']:.4f} "
+            f"ssim={metrics['ssim']:.4f}"
         )
 
     partitioner = VgfPartitioner(compile_spec)
@@ -345,7 +346,7 @@ def main() -> None:
             "upscale": bundle.upscale,
             "window_size": bundle.window_size,
             "quantization_mode": args.quantization_mode,
-            "num_calibration_samples": len(calibration_samples or []),
+            "num_calibration_samples": len(calibration_samples),
             "num_eval_samples": (
                 int(evaluation_metrics["num_samples"])
                 if evaluation_metrics is not None
