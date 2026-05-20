@@ -1,5 +1,6 @@
 # Copyright (c) Meta Platforms, Inc. and affiliates.
 # All rights reserved.
+# Copyright 2026 Arm Limited and/or its affiliates.
 #
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
@@ -292,6 +293,8 @@ scalar_type_table: Dict[torch.dtype, ScalarType] = {
     torch.qint32: ScalarType.QINT32,
     torch.bfloat16: ScalarType.BFLOAT16,
     torch.quint4x2: ScalarType.QUINT4x2,
+    torch.float8_e5m2: ScalarType.FLOAT8E5M2,
+    torch.float8_e4m3fn: ScalarType.FLOAT8E4M3FN,
     torch.uint16: ScalarType.UINT16,
     torch.uint32: ScalarType.UINT32,
 }
