@@ -42,6 +42,11 @@ jobs:
         .ci/scripts/unittest-linux.sh --build-tool "${{ inputs.build-tool }}" --build-mode "${{ inputs.build-mode }}" --editable "${{ inputs.editable }}"
 
   macos:
+    # Skip the macOS leg when build-tool is buck2: the cmake-mode `unittest`
+    # and `unittest-editable` already exercise macOS, and buck2-on-macOS
+    # adds no unique coverage. Symmetric to the `windows:` `if:` below
+    # which skips the buck2 build for the same reason on Windows.
+    if: ${{ inputs.build-tool == 'cmake' }}
     uses: pytorch/test-infra/.github/workflows/macos_job.yml@main
     with:
       default-packages: ""

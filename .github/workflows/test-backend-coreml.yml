@@ -10,6 +10,14 @@ on:
     tags:
       - ciflow/nightly/*
   pull_request:
+    paths:
+      - .github/workflows/test-backend-coreml.yml
+      - .github/workflows/_test_backend.yml
+      - backends/apple/coreml/**
+      - examples/apple/coreml/**
+      - extension/apple/**
+      - .ci/scripts/setup-macos.sh
+      - .ci/scripts/setup-conda.sh
   workflow_dispatch:
 
 concurrency:
