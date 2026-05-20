@@ -29,14 +29,22 @@ jobs:
 
   test-coreml:
     needs: changed-files
-    # Path-gated: skip on PRs that don't touch CoreML source. Non-PR
-    # events (push to main, schedule, workflow_dispatch, ciflow tag)
-    # bypass the gate and always run.
+    # Path-gated. Calls _test_backend.yml which on macOS runs:
+    #   - .ci/scripts/test_backend.sh "${suite}" "${flow}"
+    #     (suites: models, operators; flows: coreml, coreml_static_int8)
+    #   - .ci/scripts/setup-macos.sh --build-tool cmake --editable true
+    #   - pytest backends/test/suite/${SUITE}/ -m "flow_${FLOW}"
+    # Test exercises:
+    #   - backends/apple/coreml/** (compiler, partition, quantizer, runtime)
+    #   - backends/test/suite/** (the pytest framework + flow registration)
+    #   - .ci/scripts/{test_backend,setup-macos}.sh
+    # Workflow self-edits (this file or _test_backend.yml) trigger the job.
     if: |
       github.event_name != 'pull_request' ||
       contains(needs.changed-files.outputs.changed-files, 'backends/apple/coreml') ||
-      contains(needs.changed-files.outputs.changed-files, 'examples/apple/coreml') ||
-      contains(needs.changed-files.outputs.changed-files, 'extension/apple/coreml') ||
+      contains(needs.changed-files.outputs.changed-files, 'backends/test/suite') ||
+      contains(needs.changed-files.outputs.changed-files, '.ci/scripts/test_backend.sh') ||
+      contains(needs.changed-files.outputs.changed-files, '.ci/scripts/setup-macos.sh') ||
       contains(needs.changed-files.outputs.changed-files, '.github/workflows/test-backend-coreml.yml') ||
       contains(needs.changed-files.outputs.changed-files, '.github/workflows/_test_backend.yml')
     uses: ./.github/workflows/_test_backend.yml

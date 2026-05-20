@@ -479,14 +479,23 @@ jobs:
 
   test-coreml-delegate:
     needs: changed-files
-    # Path-gated: PRs that don't touch any CoreML source skip this job.
-    # Non-PR events (push to main, schedule, workflow_dispatch, ciflow
-    # tag) bypass the gate and always run.
+    # Path-gated. Test exercises:
+    #   - backends/apple/coreml/scripts/build_all.sh (and build_tests, run_tests,
+    #     install_requirements; everything under backends/apple/coreml/**)
+    #   - examples/apple/coreml/scripts/build_executor_runner.sh +
+    #     examples/apple/coreml/scripts/export.py + examples/apple/coreml/executor_runner/**
+    #   - .ci/scripts/setup-macos.sh / setup-conda.sh (CI setup)
+    # Cross-cutting changes (runtime/, kernels/, exir/, install_executorch.py)
+    # may also break this test but are intentionally NOT in the filter —
+    # those still run on main push and would balloon the gate. Workflow
+    # self-edits trigger the job via .github/workflows/trunk.yml.
     if: |
       github.event_name != 'pull_request' ||
       contains(needs.changed-files.outputs.changed-files, 'backends/apple/coreml') ||
       contains(needs.changed-files.outputs.changed-files, 'examples/apple/coreml') ||
-      contains(needs.changed-files.outputs.changed-files, 'extension/apple/coreml')
+      contains(needs.changed-files.outputs.changed-files, '.ci/scripts/setup-macos.sh') ||
+      contains(needs.changed-files.outputs.changed-files, '.ci/scripts/setup-conda.sh') ||
+      contains(needs.changed-files.outputs.changed-files, '.github/workflows/trunk.yml')
     name: test-coreml-delegate
     uses: pytorch/test-infra/.github/workflows/macos_job.yml@main
     with:
@@ -507,14 +516,24 @@ jobs:
 
   test-static-llama-ane:
     needs: changed-files
-    # Path-gated: ANE = Apple Neural Engine = CoreML compute unit. Skip
-    # on PRs that don't touch CoreML or llama source.
+    # Path-gated. Test exercises:
+    #   - examples/apple/coreml/llama/{export,export_static_llm_coreml,run_static_llm}.py
+    #   - backends/apple/coreml/{compiler,partition,scripts/install_requirements.sh}
+    #   - examples/models/llama/** (transitively imported: llama_transformer,
+    #     model_args, rope, static_attention, norm, runner.generation,
+    #     install_requirements.sh)
+    #   - extension/llm/{export,tokenizers}/** (LlmConfig + pytorch_tokenizers)
+    #   - .ci/scripts/{test_ane_static_llama,utils}.sh
     if: |
       github.event_name != 'pull_request' ||
       contains(needs.changed-files.outputs.changed-files, 'backends/apple/coreml') ||
       contains(needs.changed-files.outputs.changed-files, 'examples/apple/coreml') ||
       contains(needs.changed-files.outputs.changed-files, 'examples/models/llama') ||
-      contains(needs.changed-files.outputs.changed-files, 'extension/llm')
+      contains(needs.changed-files.outputs.changed-files, 'extension/llm/export') ||
+      contains(needs.changed-files.outputs.changed-files, 'extension/llm/tokenizers') ||
+      contains(needs.changed-files.outputs.changed-files, '.ci/scripts/test_ane_static_llama.sh') ||
+      contains(needs.changed-files.outputs.changed-files, '.ci/scripts/utils.sh') ||
+      contains(needs.changed-files.outputs.changed-files, '.github/workflows/trunk.yml')
     name: test-static-llama-ane
     uses: pytorch/test-infra/.github/workflows/macos_job.yml@main
     with:
@@ -619,16 +638,30 @@ jobs:
 
   test-llama-runner-macos:
     needs: changed-files
-    # Path-gated: matrix has mps, coreml, xnnpack+custom+quantize_kv
-    # cells. Run if any of those backends OR llama source OR llm
-    # extension changed.
+    # Path-gated. 3-cell matrix: mps / coreml / xnnpack+custom+quantize_kv.
+    # Whole-job gate (matrix cells can't be individually if'd). Test
+    # exercises:
+    #   - examples/models/llama/** (model + llama_main runner + cmake presets)
+    #   - .ci/scripts/test_llama.sh (the entry script)
+    #   - extension/llm/{export,tokenizers,runner,custom_ops,sampler}/**
+    #     (export_llm + pytorch_tokenizers + runner C++ + custom ops for
+    #     CUSTOM=ON xnnpack mode)
+    #   - backends/apple/coreml/** (coreml mode), backends/apple/mps/**
+    #     (mps mode), backends/xnnpack/** (xnnpack mode)
     if: |
       github.event_name != 'pull_request' ||
       contains(needs.changed-files.outputs.changed-files, 'backends/apple/coreml') ||
       contains(needs.changed-files.outputs.changed-files, 'backends/apple/mps') ||
       contains(needs.changed-files.outputs.changed-files, 'backends/xnnpack') ||
       contains(needs.changed-files.outputs.changed-files, 'examples/models/llama') ||
-      contains(needs.changed-files.outputs.changed-files, 'extension/llm')
+      contains(needs.changed-files.outputs.changed-files, 'extension/llm/export') ||
+      contains(needs.changed-files.outputs.changed-files, 'extension/llm/tokenizers') ||
+      contains(needs.changed-files.outputs.changed-files, 'extension/llm/runner') ||
+      contains(needs.changed-files.outputs.changed-files, 'extension/llm/custom_ops') ||
+      contains(needs.changed-files.outputs.changed-files, 'extension/llm/sampler') ||
+      contains(needs.changed-files.outputs.changed-files, '.ci/scripts/test_llama.sh') ||
+      contains(needs.changed-files.outputs.changed-files, '.ci/scripts/setup-macos.sh') ||
+      contains(needs.changed-files.outputs.changed-files, '.github/workflows/trunk.yml')
     name: test-llama-runner-mac
     uses: pytorch/test-infra/.github/workflows/macos_job.yml@main
     strategy:
@@ -806,12 +839,24 @@ jobs:
 
   test-models-macos-coreml:
     needs: changed-files
-    # Path-gated: 13-model CoreML matrix. Skip on PRs that don't touch
-    # CoreML source.
+    # Path-gated. 13-model matrix runs `test_model.sh ${MODEL} cmake
+    # coreml-pybind`, which calls examples.apple.coreml.scripts.export
+    # for each model. Test exercises:
+    #   - backends/apple/coreml/{compiler,partition,quantizer}/**
+    #   - examples/apple/coreml/scripts/export.py
+    #   - examples/models/<model>/** (model definitions)
+    #   - .ci/scripts/{test_model,setup-macos,utils}.sh
+    # Note: examples/models/** is broad but the 13 individual model dirs
+    # would be unwieldy; this filter accepts that ANY example-model
+    # change runs the CoreML matrix.
     if: |
       github.event_name != 'pull_request' ||
       contains(needs.changed-files.outputs.changed-files, 'backends/apple/coreml') ||
-      contains(needs.changed-files.outputs.changed-files, 'examples/apple/coreml')
+      contains(needs.changed-files.outputs.changed-files, 'examples/apple/coreml') ||
+      contains(needs.changed-files.outputs.changed-files, 'examples/models') ||
+      contains(needs.changed-files.outputs.changed-files, '.ci/scripts/test_model.sh') ||
+      contains(needs.changed-files.outputs.changed-files, '.ci/scripts/setup-macos.sh') ||
+      contains(needs.changed-files.outputs.changed-files, '.github/workflows/trunk.yml')
     name: test-models-macos-coreml
     uses: pytorch/test-infra/.github/workflows/macos_job.yml@main
     strategy:
@@ -855,10 +900,26 @@ jobs:
 
   test-models-macos-mps:
     needs: changed-files
-    # Path-gated: skip on PRs that don't touch MPS source.
+    # Path-gated. Inline loop runs `test_model.sh ${MODEL} cmake mps`
+    # for 6 models (mv3, ic4, resnet50, edsr, mobilebert, w2l), which
+    # calls examples.apple.mps.scripts.mps_example. Test exercises:
+    #   - backends/apple/mps/**
+    #   - examples/apple/mps/scripts/{mps_example,bench_utils}.py
+    #   - examples/models/<model>/**
+    #   - devtools/{bundled_program,etrecord}/**
+    #   - extension/llm/export/config/llm_config.py (imported by mps_example)
+    #   - .ci/scripts/{test_model,setup-macos}.sh
     if: |
       github.event_name != 'pull_request' ||
-      contains(needs.changed-files.outputs.changed-files, 'backends/apple/mps')
+      contains(needs.changed-files.outputs.changed-files, 'backends/apple/mps') ||
+      contains(needs.changed-files.outputs.changed-files, 'examples/apple/mps') ||
+      contains(needs.changed-files.outputs.changed-files, 'examples/models') ||
+      contains(needs.changed-files.outputs.changed-files, 'devtools/bundled_program') ||
+      contains(needs.changed-files.outputs.changed-files, 'devtools/etrecord') ||
+      contains(needs.changed-files.outputs.changed-files, 'extension/llm/export') ||
+      contains(needs.changed-files.outputs.changed-files, '.ci/scripts/test_model.sh') ||
+      contains(needs.changed-files.outputs.changed-files, '.ci/scripts/setup-macos.sh') ||
+      contains(needs.changed-files.outputs.changed-files, '.github/workflows/trunk.yml')
     name: test-models-macos-mps
     uses: pytorch/test-infra/.github/workflows/macos_job.yml@main
     strategy:
@@ -974,18 +1035,27 @@ jobs:
 
   test-huggingface-transformers-macos:
     needs: changed-files
-    # Path-gated: only the CoreML configs of this matrix actually run
-    # on macOS (xnnpack configs are commented out per audit). Skip on
-    # PRs that don't touch CoreML source. The fork gate stays as the
-    # secondary requirement (this job needs HF token).
+    # Path-gated. Test exercises:
+    #   - .ci/scripts/test_huggingface_optimum_model.py (the entry driver)
+    #   - .ci/docker/ci_commit_pins/optimum-executorch.txt (pin to test)
+    #   - extension/llm/runner/** (loads + runs the .pte)
+    #   - backends/apple/coreml/** (the CoreML-delegated .pte requires
+    #     CoreML runtime to load; export itself is delegated to
+    #     pip-installed optimum-executorch, NOT this repo)
+    #   - install_executorch.py / install_requirements.py (build the wheel
+    #     containing CoreML runtime)
     # NB: Don't run this on fork PRs because they won't have access to the secret and would fail anyway
     if: |
       !github.event.pull_request.head.repo.fork &&
       (
         github.event_name != 'pull_request' ||
         contains(needs.changed-files.outputs.changed-files, 'backends/apple/coreml') ||
-        contains(needs.changed-files.outputs.changed-files, 'examples/apple/coreml') ||
-        contains(needs.changed-files.outputs.changed-files, 'extension/llm')
+        contains(needs.changed-files.outputs.changed-files, 'extension/llm/runner') ||
+        contains(needs.changed-files.outputs.changed-files, '.ci/scripts/test_huggingface_optimum_model.py') ||
+        contains(needs.changed-files.outputs.changed-files, '.ci/docker/ci_commit_pins/optimum-executorch.txt') ||
+        contains(needs.changed-files.outputs.changed-files, 'install_executorch.py') ||
+        contains(needs.changed-files.outputs.changed-files, 'install_requirements.py') ||
+        contains(needs.changed-files.outputs.changed-files, '.github/workflows/trunk.yml')
       )
     name: test-huggingface-transformers-macos
     uses: pytorch/test-infra/.github/workflows/macos_job.yml@main

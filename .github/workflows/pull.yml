@@ -1522,15 +1522,28 @@ jobs:
 
   test-coreml-bc-macos:
     needs: changed-files
-    # Path-gated: backward-compatibility check against pinned old commits.
-    # Only relevant when CoreML source actually changes. Skip on every
-    # other PR. Non-PR events bypass the gate (HUD signal on main push,
-    # nightly safety net on schedule).
+    # Path-gated. Backward-compatibility check: exports a toy `add` model
+    # at an OLD ET commit (v1.0.0), then loads the resulting .pte using
+    # CURRENT-HEAD CoreML runtime via pybindings. The PR diff vs current
+    # HEAD is what GitHub path-filters against, so the gate cares about
+    # paths exercised at CURRENT HEAD only:
+    #   - .ci/scripts/test_coreml_bc.sh, .ci/scripts/utils.sh
+    #   - backends/apple/coreml/runtime/** (the runtime that loads the
+    #     old pte; AOT compiler/partition aren't exercised at HEAD here)
+    #   - install_executorch.{py,sh}, install_requirements.{py,sh} (used
+    #     to build the current-HEAD wheel)
+    # Include broader backends/apple/coreml as a safety net since AOT
+    # changes to current HEAD could regress the runtime contract.
     if: |
       github.event_name != 'pull_request' ||
       contains(needs.changed-files.outputs.changed-files, 'backends/apple/coreml') ||
-      contains(needs.changed-files.outputs.changed-files, 'examples/apple/coreml') ||
-      contains(needs.changed-files.outputs.changed-files, 'extension/apple/coreml')
+      contains(needs.changed-files.outputs.changed-files, '.ci/scripts/test_coreml_bc.sh') ||
+      contains(needs.changed-files.outputs.changed-files, '.ci/scripts/utils.sh') ||
+      contains(needs.changed-files.outputs.changed-files, 'install_executorch.py') ||
+      contains(needs.changed-files.outputs.changed-files, 'install_executorch.sh') ||
+      contains(needs.changed-files.outputs.changed-files, 'install_requirements.py') ||
+      contains(needs.changed-files.outputs.changed-files, 'install_requirements.sh') ||
+      contains(needs.changed-files.outputs.changed-files, '.github/workflows/pull.yml')
     name: test-coreml-bc-macos (${{ matrix.runner }})
     uses: pytorch/test-infra/.github/workflows/macos_job.yml@main
     permissions:
