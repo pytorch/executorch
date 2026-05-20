@@ -48,15 +48,13 @@ class LlmModuleConversationHistoryTest {
   fun setUp() {
     val pteFile = File(getTestFilePath(TEST_FILE_NAME))
     requireNotNull(javaClass.getResourceAsStream(TEST_FILE_NAME)) {
-          "Test resource $TEST_FILE_NAME not found; did android_test_setup.sh run?"
-        }
-        .use { pteStream -> FileUtils.copyInputStreamToFile(pteStream, pteFile) }
+      "Test resource $TEST_FILE_NAME not found; did android_test_setup.sh run?"
+    }.use { pteStream -> FileUtils.copyInputStreamToFile(pteStream, pteFile) }
 
     val tokenizerFile = File(getTestFilePath(TOKENIZER_FILE_NAME))
     requireNotNull(javaClass.getResourceAsStream(TOKENIZER_FILE_NAME)) {
-          "Test resource $TOKENIZER_FILE_NAME not found; did android_test_setup.sh run?"
-        }
-        .use { tokenizerStream -> FileUtils.copyInputStreamToFile(tokenizerStream, tokenizerFile) }
+      "Test resource $TOKENIZER_FILE_NAME not found; did android_test_setup.sh run?"
+    }.use { tokenizerStream -> FileUtils.copyInputStreamToFile(tokenizerStream, tokenizerFile) }
 
     llmModule =
         LlmModule(getTestFilePath(TEST_FILE_NAME), getTestFilePath(TOKENIZER_FILE_NAME), 0.0f)
