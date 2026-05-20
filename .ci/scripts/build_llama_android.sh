@@ -15,8 +15,12 @@ if [[ -z "${PYTHON_EXECUTABLE:-}" ]]; then
 fi
 which "${PYTHON_EXECUTABLE}"
 
-install_executorch_and_backend_lib() {
-  echo "Installing executorch and xnnpack backend"
+build_llama_android() {
+  echo "Building llama runner for Android..."
+  pushd extension/llm/tokenizers
+  echo "Updating tokenizers submodule"
+  git submodule update --init
+  popd
   clean_executorch_install_folders
   mkdir cmake-android-out
   ANDROID_NDK=${ANDROID_NDK:-/opt/ndk}
@@ -26,30 +30,10 @@ install_executorch_and_backend_lib() {
     -DBUCK2="${BUCK2}" \
     -DCMAKE_TOOLCHAIN_FILE="${ANDROID_NDK}/build/cmake/android.toolchain.cmake" \
     -DANDROID_ABI="${ANDROID_ABI}" \
-    -DCMAKE_INSTALL_PREFIX=cmake-android-out \
     -DCMAKE_BUILD_TYPE=Release \
     -DXNNPACK_ENABLE_ARM_BF16=OFF \
     -Bcmake-android-out .
 
-  cmake --build cmake-android-out -j4 --target install --config Release
+  cmake --build cmake-android-out -j4 --target llama_main --config Release
 }
-
-build_llama_runner() {
-    echo "Building llama runner for Android..."
-    pushd extension/llm/tokenizers
-    echo "Updating tokenizers submodule"
-    git submodule update --init
-    popd
-    ANDROID_ABI=arm64-v8a
-    cmake -DBUCK2="${BUCK2}" \
-    -DBUILD_TESTING=OFF \
-    -DCMAKE_TOOLCHAIN_FILE="$ANDROID_NDK"/build/cmake/android.toolchain.cmake  \
-    -DANDROID_ABI="${ANDROID_ABI}" \
-    -DCMAKE_INSTALL_PREFIX=cmake-android-out \
-    -DCMAKE_BUILD_TYPE=Release \
-    -Bcmake-android-out/examples/models/llama examples/models/llama
-
-    cmake --build cmake-android-out/examples/models/llama -j4 --config Release
-}
-install_executorch_and_backend_lib
-build_llama_runner
+build_llama_android

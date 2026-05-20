@@ -15,80 +15,40 @@
 # ~~~
 # It should also be cmake-lint clean.
 #
-cmake_minimum_required(VERSION 3.24) # 3.24 is required for WHOLE_ARCHIVE
-project(llama_runner)
+cmake_minimum_required(VERSION 3.24)
 
-# Duplicating options as root CMakeLists.txt
-option(EXECUTORCH_BUILD_KERNELS_OPTIMIZED "Build the optimized kernels" OFF)
-
-include(CMakeDependentOption)
-#
-# pthreadpool: build pthreadpool library. Disable on unsupported platforms
-#
-cmake_dependent_option(
-  EXECUTORCH_BUILD_PTHREADPOOL "Build pthreadpool library." ON
-  "NOT EXECUTORCH_BUILD_ARM_BAREMETAL" OFF
-)
-#
-# cpuinfo: build cpuinfo library. Disable on unsupported platforms
-#
-cmake_dependent_option(
-  EXECUTORCH_BUILD_CPUINFO "Build cpuinfo library." ON
-  "NOT EXECUTORCH_BUILD_ARM_BAREMETAL" OFF
-)
+# When included as part of the root ExecuTorch build (EXCLUDE_FROM_ALL),
+# required targets like extension_llm_runner are already defined. If they're
+# missing, the user configured without the right options. Provide a clear
+# build-time error rather than a confusing "target not found".
+if(NOT TARGET extension_llm_runner)
+  file(
+    WRITE ${CMAKE_CURRENT_BINARY_DIR}/_llama_missing_deps.cmake
+    "message(FATAL_ERROR \"llama_main requires EXECUTORCH_BUILD_EXTENSION_LLM_RUNNER=ON (enabled by the 'llm' preset)\")\n"
+  )
+  add_custom_target(
+    llama_main COMMAND ${CMAKE_COMMAND} -P
+                       ${CMAKE_CURRENT_BINARY_DIR}/_llama_missing_deps.cmake
+  )
+  return()
+endif()
 
 option(EXECUTORCH_BUILD_KERNELS_TORCHAO_MPS "Build the torchao MPS kernels" OFF)
-
-if(NOT PYTHON_EXECUTABLE)
-  set(PYTHON_EXECUTABLE python3)
-endif()
-
-set(EXECUTORCH_ROOT ${CMAKE_CURRENT_SOURCE_DIR}/../../..)
-set(TORCH_ROOT ${EXECUTORCH_ROOT}/third-party/pytorch)
-
-include(${EXECUTORCH_ROOT}/tools/cmake/Utils.cmake)
-
-if(NOT PYTHON_EXECUTABLE)
-  resolve_python_executable()
-endif()
-
-if(NOT CMAKE_CXX_STANDARD)
-  set(CMAKE_CXX_STANDARD 17)
-  # Can't set to 11 due to executor_runner.cpp make_unique
-endif()
-
-if(CMAKE_TOOLCHAIN_FILE MATCHES ".*(iOS|ios\.toolchain)\.cmake$")
-  set(CMAKE_TOOLCHAIN_IOS ON)
-else()
-  set(CMAKE_TOOLCHAIN_IOS OFF)
-endif()
-
-set(_common_compile_options -Wno-deprecated-declarations -fPIC)
-
-# Let files say "include <executorch/path/to/header.h>".
-set(_common_include_directories ${EXECUTORCH_ROOT}/..)
-
-# For some reason android build is not able to find where gflags is and hence
-# cannot find corresponding .cmake file
-set(gflags_DIR ${CMAKE_CURRENT_BINARY_DIR}/../../../third-party/gflags)
-find_package(gflags REQUIRED)
 
 #
 # llama_main: test binary to run llama, with tokenizer and sampler integrated
 #
-
-# find `executorch` libraries. CMAKE_PREFIX_PATH would work for host
-# compilation, but CMAKE_FIND_ROOT_PATH appears to be necessary for
-# cross-compiling (e.g., to Android) to work as well.
-list(APPEND CMAKE_FIND_ROOT_PATH ${CMAKE_CURRENT_BINARY_DIR}/../../..)
-find_package(executorch CONFIG REQUIRED FIND_ROOT_PATH_BOTH)
-executorch_target_link_options_shared_lib(executorch)
 
 # llama_runner library
 add_subdirectory(runner)
 
 set(link_libraries executorch gflags)
 set(_srcs main.cpp)
+
+# Whole-archive linking for libraries with load-time constructors is handled
+# automatically: executorch_target_link_options_shared_lib() (called during
+# target creation in the root build) bakes -force_load / --whole-archive into
+# each target's INTERFACE_LINK_OPTIONS, so simply listing them here is enough.
 
 if(TARGET optimized_native_cpu_ops_lib)
   list(
@@ -100,28 +60,20 @@ if(TARGET optimized_native_cpu_ops_lib)
     cpublas
     eigen_blas
   )
-  executorch_target_link_options_shared_lib(optimized_native_cpu_ops_lib)
 else()
   list(APPEND link_libraries portable_ops_lib portable_kernels)
-  executorch_target_link_options_shared_lib(portable_ops_lib)
 endif()
 
 # quantized_ops_lib: Register quantized op kernels into the runtime
 if(TARGET quantized_ops_lib)
   list(APPEND link_libraries quantized_kernels quantized_ops_lib)
-  get_target_property(_quantized_imported quantized_ops_lib IMPORTED)
-  if(NOT _quantized_imported)
-    executorch_target_link_options_shared_lib(quantized_ops_lib)
-  endif()
 endif()
 
 if(TARGET custom_ops)
-  executorch_target_link_options_shared_lib(custom_ops)
   list(APPEND link_libraries custom_ops)
 endif()
 
 if(TARGET torchao_ops_executorch)
-  executorch_target_link_options_shared_lib(torchao_ops_executorch)
   list(APPEND link_libraries torchao_ops_executorch)
 endif()
 
@@ -135,58 +87,42 @@ if(EXECUTORCH_BUILD_KERNELS_TORCHAO_MPS)
         ${CMAKE_CURRENT_SOURCE_DIR}/../../../third-party/ao/torchao/experimental/ops/mps
         ${CMAKE_CURRENT_BINARY_DIR}/../../../third-party/ao/torchao/experimental/ops/mps
       )
-      executorch_target_link_options_shared_lib(torchao_ops_mps_executorch)
       list(APPEND link_libraries torchao_ops_mps_executorch)
     endif()
   endif()
 endif()
 
-set(XNNPACK_ROOT ${CMAKE_CURRENT_SOURCE_DIR}/../../../backends/xnnpack)
 # Extra compile option and include dir for pthreadpool
 if(EXECUTORCH_BUILD_PTHREADPOOL)
   list(APPEND link_libraries extension_threadpool pthreadpool)
-  list(APPEND _common_include_directories
-       ${XNNPACK_ROOT}/third-party/pthreadpool/include
-  )
 endif()
 
 # Extra sources for cpuinfo
 if(EXECUTORCH_BUILD_CPUINFO)
-  list(APPEND link_libraries extension_threadpool cpuinfo)
-  list(APPEND _common_include_directories
-       ${XNNPACK_ROOT}/third-party/cpuinfo/include
-  )
+  list(APPEND link_libraries cpuinfo)
 endif()
 
 # XNNPACK
 if(TARGET xnnpack_backend)
-  set(xnnpack_backend_libs xnnpack_backend XNNPACK xnnpack-microkernels-prod)
+  list(APPEND link_libraries xnnpack_backend XNNPACK xnnpack-microkernels-prod)
   if(TARGET kleidiai)
-    list(APPEND xnnpack_backend_libs kleidiai)
+    list(APPEND link_libraries kleidiai)
   endif()
-  list(APPEND link_libraries ${xnnpack_backend_libs})
-  executorch_target_link_options_shared_lib(xnnpack_backend)
 endif()
 
 # CUDA backend
 if(EXECUTORCH_BUILD_CUDA)
-  find_package(CUDAToolkit REQUIRED)
   list(APPEND link_libraries aoti_cuda_backend)
-  if(NOT MSVC)
-    executorch_target_link_options_shared_lib(aoti_cuda_backend)
-  endif()
 endif()
 
 # Vulkan backend
 if(TARGET vulkan_backend)
   list(APPEND link_libraries vulkan_backend)
-  executorch_target_link_options_shared_lib(vulkan_backend)
 endif()
 
 # Qnn backend
 if(TARGET qnn_executorch_backend)
   list(APPEND link_libraries qnn_executorch_backend)
-  executorch_target_link_options_shared_lib(qnn_executorch_backend)
 endif()
 
 # MPS backend
@@ -200,24 +136,19 @@ if(TARGET mpsdelegate)
     "-weak_framework MetalPerformanceShadersGraph"
     "-weak_framework Metal"
   )
-  executorch_target_link_options_shared_lib(mpsdelegate)
 endif()
 
 # MLX backend
 if(TARGET mlxdelegate)
   list(APPEND link_libraries mlxdelegate mlx)
-  executorch_target_link_options_shared_lib(mlxdelegate)
 endif()
 
 # Openvino backend
 if(TARGET openvino_backend)
-  find_package(OpenVINO REQUIRED)
   list(APPEND link_libraries openvino_backend)
-  executorch_target_link_options_shared_lib(openvino_backend)
 endif()
 
 if(TARGET coremldelegate)
-  find_library(SQLITE_LIBRARY sqlite3)
   list(
     APPEND
     link_libraries
@@ -227,7 +158,6 @@ if(TARGET coremldelegate)
     "-framework CoreML"
     "-framework Accelerate"
   )
-  executorch_target_link_options_shared_lib(coremldelegate)
 endif()
 
 # This one is needed for cpuinfo where it uses android specific log lib

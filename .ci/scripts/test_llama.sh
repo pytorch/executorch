@@ -149,35 +149,21 @@ fi
 
 which "${PYTHON_EXECUTABLE}"
 
-cmake_install_executorch_libraries() {
-    echo "Installing libexecutorch.a, libextension_module.so, libportable_ops_lib.a"
-    rm -rf cmake-out
-    retry cmake --preset llm \
-        -DEXECUTORCH_BUILD_TESTS=ON \
-        -DBUILD_TESTING=OFF \
-        -DCMAKE_INSTALL_PREFIX=cmake-out \
-        -DCMAKE_BUILD_TYPE="$CMAKE_BUILD_TYPE" \
-        -DEXECUTORCH_BUILD_QNN="$QNN" \
-        -DEXECUTORCH_ENABLE_LOGGING=ON \
-        -DQNN_SDK_ROOT="$QNN_SDK_ROOT"
-    cmake --build cmake-out -j9 --target install --config "$CMAKE_BUILD_TYPE"
-}
-
-cmake_build_llama_runner() {
+cmake_build_llama() {
     echo "Building llama runner"
     pushd extension/llm/tokenizers
     echo "Updating tokenizers submodule"
     git submodule update --init
     popd
-    dir="examples/models/llama"
-    if [[ "$CMAKE_BUILD_TYPE" == "Debug" ]]; then
-        PRESET="llama-debug"
-    else
-        PRESET="llama-release"
-    fi
-    pushd "${dir}"
-    cmake --workflow --preset "${PRESET}"
-    popd
+    rm -rf cmake-out
+    retry cmake --preset llm \
+        -DEXECUTORCH_BUILD_TESTS=ON \
+        -DBUILD_TESTING=OFF \
+        -DCMAKE_BUILD_TYPE="$CMAKE_BUILD_TYPE" \
+        -DEXECUTORCH_BUILD_QNN="$QNN" \
+        -DEXECUTORCH_ENABLE_LOGGING=ON \
+        -DQNN_SDK_ROOT="$QNN_SDK_ROOT"
+    cmake --build cmake-out -j9 --target llama_main --config "$CMAKE_BUILD_TYPE"
 }
 
 cleanup_files() {
@@ -269,8 +255,7 @@ if [[ "${BUILD_TOOL}" == "buck2" ]]; then
   # shellcheck source=/dev/null
   $BUCK run examples/models/llama:main -- ${RUNTIME_ARGS} > result.txt
 elif [[ "${BUILD_TOOL}" == "cmake" ]]; then
-  cmake_install_executorch_libraries
-  cmake_build_llama_runner
+  cmake_build_llama
   # Run llama runner
   NOW=$(date +"%H:%M:%S")
   echo "Starting to run llama runner at ${NOW}"
