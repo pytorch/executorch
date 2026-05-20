@@ -15,12 +15,8 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-  # Lists files changed in the triggering pull_request via gh api. For
-  # non-PR events (push, schedule, workflow_dispatch, tag) the reusable
-  # emits '*' so any `contains(...)` check below evaluates false; the
-  # `event_name != 'pull_request'` short-circuit in each gated job's
-  # `if:` clause is what allows non-PR events through unconditionally.
-  # That preserves HUD signal on every main push.
+  # Emits PR diff file list; non-PR events emit '*' so the per-job
+  # `if:` short-circuits via `event_name != 'pull_request'`.
   changed-files:
     name: Get changed files
     uses: ./.github/workflows/_get-changed-files.yml
@@ -1522,18 +1518,6 @@ jobs:
 
   test-coreml-bc-macos:
     needs: changed-files
-    # Path-gated. Backward-compatibility check: exports a toy `add` model
-    # at an OLD ET commit (v1.0.0), then loads the resulting .pte using
-    # CURRENT-HEAD CoreML runtime via pybindings. The PR diff vs current
-    # HEAD is what GitHub path-filters against, so the gate cares about
-    # paths exercised at CURRENT HEAD only:
-    #   - .ci/scripts/test_coreml_bc.sh, .ci/scripts/utils.sh
-    #   - backends/apple/coreml/runtime/** (the runtime that loads the
-    #     old pte; AOT compiler/partition aren't exercised at HEAD here)
-    #   - install_executorch.{py,sh}, install_requirements.{py,sh} (used
-    #     to build the current-HEAD wheel)
-    # Include broader backends/apple/coreml as a safety net since AOT
-    # changes to current HEAD could regress the runtime contract.
     if: |
       github.event_name != 'pull_request' ||
       contains(needs.changed-files.outputs.changed-files, 'backends/apple/coreml') ||
