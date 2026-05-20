@@ -1,4 +1,4 @@
-name: RISC-V
+name: Test RISC-V Backend
 
 on:
   push:
