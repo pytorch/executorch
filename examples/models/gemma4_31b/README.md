@@ -17,7 +17,7 @@ both export and eager inference:
 | `quantize_and_save.py` | bf16 HF checkpoint → quantized checkpoint (one-time) | — | ~30 GB CPU |
 | `export.py --prequantized <dir>` | quantized checkpoint → `model.pte` + `model.ptd` (multimodal 4-method contract) | yes (runner-time) | ~24 GB CPU + CUDA for packing |
 | `inference.py --prequantized <dir>` | quantized checkpoint → eager generation under `torch.compile` | `--image-path` | ~24 GB GPU |
-| `inference.py --gguf <file>` | GGUF text decoder → eager generation (text-only by default; pair with `--vision-from-hf` for image input) | `--image-path` + `--vision-from-hf` | ~24 GB GPU |
+| `inference.py --gguf <file>` | GGUF text decoder + auto-loaded vision tower → eager generation | `--image-path` | ~24 GB GPU |
 | `inference.py --bf16 <dir>` | full bf16 HF safetensors → eager generation (debug only; ~62 GB) | `--image-path` | ~62 GB CPU + ~62 GB GPU |
 | `export.py --model-dir <hf>` | one-shot bf16 → quantize → export (no intermediate file) | — (text-only path) | ~30 GB CPU + CUDA for packing |
 
@@ -138,7 +138,14 @@ prefill on `inputs_embeds` → decode.
 ### GGUF
 
 GGUF files from the community (e.g., Q4_K_M, Q4_K_S) can also be used
-directly:
+directly. Community GGUFs pack the text decoder only, so the vision
+tower is auto-loaded from an HF bf16 directory resolved in this order:
+
+  1. `GEMMA4_31B_HF_DIR` environment variable
+  2. Well-known default `/home/gasoonjia/models/gemma-4-31B`
+
+If neither resolves to a valid HF safetensors checkpoint, the loader
+raises with instructions for setting one up.
 
 ```bash
 python examples/models/gemma4_31b/inference.py \
@@ -150,16 +157,14 @@ python examples/models/gemma4_31b/inference.py \
 Useful before spending the export+lowering time to confirm the quantized
 model produces sensible text.
 
-### GGUF + image (vision tower from HF bf16)
+### GGUF + image
 
-Community GGUFs pack the text decoder only — the vision tower must come
-from an HF bf16 checkpoint. Pair `--gguf` with `--vision-from-hf <hf_dir>`
-to enable image input on the GGUF path:
+The vision tower is auto-loaded from the resolved HF bf16 directory —
+no additional flag required:
 
 ```bash
 python examples/models/gemma4_31b/inference.py \
     --gguf ./gemma-4-31B-it-Q4_K_S.gguf \
-    --vision-from-hf /path/to/gemma-4-31B \
     --tokenizer-path /path/to/gemma-4-31B/tokenizer.json \
     --image-path docs/source/_static/img/et-logo.png \
     --prompt "Describe this image." \
@@ -170,6 +175,7 @@ python examples/models/gemma4_31b/inference.py \
 
 The text decoder runs in Q4_K from the GGUF; the vision tower +
 multimodal embedder run in bf16 loaded from the HF safetensors shards.
+Override the auto-resolved HF dir with `GEMMA4_31B_HF_DIR=/path/to/dir`.
 
 ## Build the runner
 

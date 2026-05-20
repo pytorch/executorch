@@ -6,11 +6,13 @@
 
 """Eager inference on Gemma 4 31B-IT (CUDA + torch.compile).
 
-Three input paths:
+Three input paths (all produce a full text + vision model):
   --prequantized <dir>   Load a quantized checkpoint (from quantize_and_save.py).
   --gguf <file>          Load a GGUF file (e.g., Q4_K_M from the community).
-                         Text-only by default; pair with ``--vision-from-hf``
-                         to also load the vision tower from an HF bf16 dir.
+                         The vision tower is sourced automatically from an
+                         HF bf16 directory resolved by the GGUF loader
+                         (env var ``GEMMA4_31B_HF_DIR`` or the well-known
+                         default ``/home/gasoonjia/models/gemma-4-31B``).
   --bf16 <dir>           Load the bf16 HF safetensors checkpoint via from_hf_checkpoint.
 
 Gemma 4 31B-IT is instruction-tuned and requires chat-template formatting.
@@ -44,10 +46,9 @@ Usage:
         --tokenizer-path ./tokenizer.json \\
         --prompt "Hello"
 
-    # GGUF + vision: text decoder from GGUF, vision tower from HF bf16.
+    # GGUF + image: vision tower auto-loaded from the HF bf16 dir.
     python inference.py \\
         --gguf ./gemma-4-31B-it-Q4_K_S.gguf \\
-        --vision-from-hf /path/to/gemma-4-31B \\
         --image-path ./some_image.png \\
         --prompt "Describe this image."
 """
@@ -87,9 +88,10 @@ def _move_to_cuda(model, config) -> None:
     """
     for name, p in model.named_parameters():
         if p.device.type == "meta":
-            # Param wasn't materialized (e.g. GGUF text-only run leaves
-            # vision_tower / embed_vision on meta). Skip — the caller is
-            # responsible for not touching these submodules.
+            # All checkpoints (prequant / GGUF / bf16) now produce a fully
+            # materialized text + vision model, so this branch should not
+            # trigger in normal use. Kept defensively so a partially-loaded
+            # model still moves what it can rather than crashing here.
             continue
         parts = name.rsplit(".", 1)
         parent = model.get_submodule(parts[0]) if len(parts) > 1 else model
@@ -422,16 +424,6 @@ def main() -> None:
         ),
     )
     parser.add_argument(
-        "--vision-from-hf",
-        default=None,
-        help=(
-            "Path to an HF bf16 checkpoint dir (e.g. /path/to/gemma-4-31B) to "
-            "load vision_tower + embed_vision from. Only meaningful with "
-            "--gguf + --image-path: community GGUFs are text-only, so the "
-            "vision weights must come from an HF checkpoint."
-        ),
-    )
-    parser.add_argument(
         "--max-vision-soft-tokens",
         type=int,
         default=280,
@@ -445,18 +437,6 @@ def main() -> None:
 
     if args.backend == "cuda" and not torch.cuda.is_available():
         parser.error("CUDA is required for the cuda backend.")
-
-    if args.image_path and args.gguf and not args.vision_from_hf:
-        parser.error(
-            "--image-path with --gguf requires --vision-from-hf <hf_bf16_dir>: "
-            "community GGUFs do not pack vision_tower weights, so they must "
-            "come from an HF bf16 checkpoint."
-        )
-    if args.vision_from_hf and not args.gguf:
-        parser.error(
-            "--vision-from-hf only applies to --gguf (other sources already "
-            "include vision weights)."
-        )
 
     # ---- Tokenizer ----
     if args.tokenizer_path:
@@ -483,7 +463,6 @@ def main() -> None:
             args.gguf,
             args.max_seq_len,
             backend=args.backend,
-            vision_safetensors_dir=args.vision_from_hf,
         )
     elif args.bf16:
         model, config = Gemma4_31B.from_hf_checkpoint(

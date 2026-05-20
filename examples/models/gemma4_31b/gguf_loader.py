@@ -10,27 +10,67 @@ Streams tensors one at a time via ``iter_gguf_tensors`` for low peak
 memory, remaps GGUF names to model FQNs, handles tied embed/lm_head,
 and packs for the target backend.
 
-Community GGUFs typically pack the text decoder only (no vision tower
-weights). For multimodal inference, pass a directory of HF bf16
-safetensors via ``vision_safetensors_dir``; the loader will populate
-``vision_tower.*`` / ``embed_vision.*`` from that checkpoint after the
-GGUF stream completes.
+Community GGUFs pack the text decoder only (no vision tower weights),
+so the loader always sources ``vision_tower.*`` / ``embed_vision.*``
+from an HF bf16 safetensors directory and produces a full multimodal
+model. The vision directory is resolved automatically in this order:
+
+  1. ``GEMMA4_31B_HF_DIR`` environment variable
+  2. Well-known default ``/home/gasoonjia/models/gemma-4-31B``
+
+If neither resolves to a valid HF checkpoint, a clear error is raised.
 
 Usage:
-    # Text-only:
     model, config = load_gguf_model("model.gguf", backend="cuda")
-
-    # Multimodal (text from GGUF, vision from HF bf16):
-    model, config = load_gguf_model(
-        "model.gguf", backend="cuda",
-        vision_safetensors_dir="/path/to/gemma-4-31B",
-    )
 """
 
 import os
 from typing import Optional
 
 import torch
+
+# Well-known default HF bf16 checkpoint directory for vision tower weights.
+# Used when ``GEMMA4_31B_HF_DIR`` is not set.
+_DEFAULT_HF_DIR = "/home/gasoonjia/models/gemma-4-31B"
+
+
+def _is_valid_hf_dir(path: str) -> bool:
+    """An HF dir is valid if it contains a safetensors index or single shard."""
+    if not path or not os.path.isdir(path):
+        return False
+    return os.path.exists(
+        os.path.join(path, "model.safetensors.index.json")
+    ) or os.path.exists(os.path.join(path, "model.safetensors"))
+
+
+def _resolve_vision_dir() -> str:
+    """Resolve the HF bf16 checkpoint dir used to source vision weights.
+
+    Resolution order:
+      1. ``GEMMA4_31B_HF_DIR`` environment variable
+      2. Well-known default ``/home/gasoonjia/models/gemma-4-31B``
+
+    Raises ``FileNotFoundError`` with a clear message if neither resolves.
+    """
+    env_dir = os.environ.get("GEMMA4_31B_HF_DIR")
+    if env_dir:
+        if _is_valid_hf_dir(env_dir):
+            return env_dir
+        raise FileNotFoundError(
+            f"GEMMA4_31B_HF_DIR is set to {env_dir!r} but no HF bf16 "
+            f"safetensors checkpoint was found there. Expected "
+            f"model.safetensors.index.json or model.safetensors."
+        )
+    if _is_valid_hf_dir(_DEFAULT_HF_DIR):
+        return _DEFAULT_HF_DIR
+    raise FileNotFoundError(
+        "GGUF text decoder loaded successfully but vision_tower could not be "
+        f"populated: community GGUFs do not pack vision weights. Place a "
+        f"Gemma 4 31B HF bf16 checkpoint at {_DEFAULT_HF_DIR!r} or set the "
+        f"GEMMA4_31B_HF_DIR environment variable to a directory containing "
+        f"model.safetensors(.index.json)."
+    )
+
 
 # GGUF pattern → model FQN pattern. ``{}`` is the layer index.
 _KEY_MAP = {
@@ -176,7 +216,6 @@ def load_gguf_model(
     gguf_path: str,
     max_seq_len: int = 4096,
     backend: str = "cuda",
-    vision_safetensors_dir: Optional[str] = None,
 ) -> tuple:
     """Load a GGUF file, remap keys, and pack for the target backend.
 
@@ -188,10 +227,9 @@ def load_gguf_model(
     while ``lm_head`` keeps the original Q4_K quantization (``nn.Linear``
     matmul via tinygemm).
 
-    If ``vision_safetensors_dir`` is provided, vision_tower / embed_vision
-    weights are loaded from that HF bf16 checkpoint after the GGUF stream
-    completes. Without it, vision params stay on meta and the model is
-    text-only.
+    Vision tower / multimodal embedder weights are sourced from an HF
+    bf16 checkpoint resolved via :func:`_resolve_vision_dir`. The
+    returned model is always a full multimodal (text + vision) model.
 
     Returns ``(model, config)``.
     """
@@ -207,16 +245,18 @@ def load_gguf_model(
     else:
         raise ValueError(f"Unsupported backend: {backend!r}. Supported: 'cuda'.")
 
-    config = Gemma4_31BConfig(max_seq_len=max_seq_len)
-    if vision_safetensors_dir is not None:
-        # Bring in vision_config (and any vision-relevant text overrides) from
-        # the HF config.json so that vision_tower / embed_vision are
-        # instantiated with matching dims.
-        hf_config = Gemma4_31BConfig.from_hf_config(
-            os.path.join(vision_safetensors_dir, "config.json")
-        )
-        hf_config.max_seq_len = max_seq_len
-        config = hf_config
+    # Resolve the HF dir up front: fail fast (before the multi-minute GGUF
+    # stream) if vision weights cannot be located.
+    vision_safetensors_dir = _resolve_vision_dir()
+    print(f"Vision weights will be loaded from {vision_safetensors_dir}")
+
+    # Bring in vision_config (and any vision-relevant text overrides) from
+    # the HF config.json so that vision_tower / embed_vision are
+    # instantiated with matching dims.
+    config = Gemma4_31BConfig.from_hf_config(
+        os.path.join(vision_safetensors_dir, "config.json")
+    )
+    config.max_seq_len = max_seq_len
 
     print("Building model on meta device...")
     with torch.device("meta"):
@@ -247,16 +287,9 @@ def load_gguf_model(
     _resolve_tied_lm_head(model, embed_quant, packers)
     del embed_quant
 
-    if vision_safetensors_dir is not None:
-        print(f"Loading vision_tower + embed_vision from {vision_safetensors_dir}...")
-        _load_vision_from_hf(model, config, vision_safetensors_dir)
-        _validate_no_meta(model)
-    else:
-        # Text-only: skip meta-device validation so the (still-meta) vision
-        # submodules don't trip the check. The caller is responsible for not
-        # invoking vision_tower / embed_vision in this mode.
-        for p in model.parameters():
-            p.requires_grad_(False)
+    print(f"Loading vision_tower + embed_vision from {vision_safetensors_dir}...")
+    _load_vision_from_hf(model, config, vision_safetensors_dir)
+    _validate_no_meta(model)
 
     model.eval()
 
