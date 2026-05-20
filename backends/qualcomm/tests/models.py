@@ -875,6 +875,31 @@ class Conv3dSequential(torch.nn.Module):
         return self.second(self.first(x))
 
 
+class ConvFull(torch.nn.Module):
+    def __init__(self, fill, full_shape):
+        super().__init__()
+        self.conv = torch.nn.Conv2d(8, 16, 3, padding=1)
+        self.fill = fill
+        self.full_shape = full_shape
+
+    def forward(self, x):
+        y = self.conv(x)
+        c = torch.full(self.full_shape, self.fill, dtype=y.dtype)
+        return torch.cat([y, c], dim=1)
+
+
+class ConvFullLike(torch.nn.Module):
+    def __init__(self, fill):
+        super().__init__()
+        self.conv = torch.nn.Conv2d(8, 16, 3, padding=1)
+        self.fill = fill
+
+    def forward(self, x):
+        y = self.conv(x)
+        c = torch.full_like(y, self.fill)
+        return torch.cat([y, c], dim=1)
+
+
 class ConvTranspose1dSingle(torch.nn.Module):
     def __init__(self, bias=True, dilation=1):
         super().__init__()
