@@ -110,7 +110,7 @@ jobs:
       secrets-env: EXECUTORCH_HF_TOKEN
       runner: ${{ contains(matrix.model, 'Qwen3.5-35B-A3B') && 'linux.aws.a100' || 'linux.g5.4xlarge.nvidia.gpu' }}
       gpu-arch-type: cuda
-      gpu-arch-version: "12.6"
+      gpu-arch-version: "13.0"
       use-custom-docker-registry: false
       submodules: recursive
       upload-artifact: model-${{ matrix.model_safe }}-${{ matrix.quant }}
@@ -158,7 +158,7 @@ jobs:
       timeout: 90
       runner: ${{ contains(matrix.model, 'Qwen3.5-35B-A3B') && 'linux.aws.a100' || 'linux.g5.4xlarge.nvidia.gpu' }}
       gpu-arch-type: cuda
-      gpu-arch-version: "12.6"
+      gpu-arch-version: "13.0"
       use-custom-docker-registry: false
       submodules: recursive
       download-artifact: model-${{ matrix.model_safe }}-${{ matrix.quant }}

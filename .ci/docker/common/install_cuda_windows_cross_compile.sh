@@ -17,6 +17,7 @@ declare -A CUDA_DRIVER_MAP=(
     ["12.6"]="12.6.3:561.17"
     ["12.8"]="12.8.1:572.61"
     ["12.9"]="12.9.1:576.57"
+    ["13.0"]="13.0.2:"
 )
 
 install_mingw() {
@@ -76,14 +77,19 @@ install_windows_cuda() {
     CUDA_VERSION=$(echo "${CUDA_INFO}" | cut -d: -f1)
     CUDA_DRIVER_VERSION=$(echo "${CUDA_INFO}" | cut -d: -f2)
 
-    echo "Using CUDA ${CUDA_VERSION} with driver ${CUDA_DRIVER_VERSION}"
+    if [ -n "${CUDA_DRIVER_VERSION}" ]; then
+        echo "Using CUDA ${CUDA_VERSION} with driver ${CUDA_DRIVER_VERSION}"
+        CUDA_INSTALLER="cuda_${CUDA_VERSION}_${CUDA_DRIVER_VERSION}_windows.exe"
+    else
+        echo "Using CUDA ${CUDA_VERSION}"
+        CUDA_INSTALLER="cuda_${CUDA_VERSION}_windows.exe"
+    fi
 
     echo "Installing Windows CUDA toolkit ${CUDA_VERSION}..."
 
     mkdir -p "${INSTALL_DIR}"
     cd "${INSTALL_DIR}"
 
-    CUDA_INSTALLER="cuda_${CUDA_VERSION}_${CUDA_DRIVER_VERSION}_windows.exe"
     CUDA_URL="https://developer.download.nvidia.com/compute/cuda/${CUDA_VERSION}/local_installers/${CUDA_INSTALLER}"
 
     # Check if already downloaded and extracted
