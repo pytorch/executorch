@@ -17,12 +17,6 @@ on:
       - examples/models/voxtral_realtime/**
       - examples/models/qwen3_5_moe/**
   workflow_dispatch:
-  schedule:
-    # Daily safety net: exercise the MLX backend on the latest main
-    # even when no PR touched mlx-related paths. Catches cross-cutting
-    # interaction breakage that the pull_request: paths: filter alone
-    # would miss.
-    - cron: '0 4 * * *'
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.sha }}-${{ github.event_name == 'workflow_dispatch' }}

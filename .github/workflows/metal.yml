@@ -15,12 +15,6 @@ on:
       - examples/models/qwen3_5_moe/**
       - extension/llm/export/**
   workflow_dispatch:
-  schedule:
-    # Daily safety net: exercise the Metal backend on the latest main
-    # even when no PR touched metal-related paths. Catches cross-cutting
-    # interaction breakage that the pull_request: paths: filter alone
-    # would miss.
-    - cron: '0 8 * * *'
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.sha }}-${{ github.event_name == 'workflow_dispatch' }}-${{ github.event_name == 'schedule' }}

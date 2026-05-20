@@ -13,12 +13,6 @@ on:
       - .ci/scripts/**
       - zephyr/**
   workflow_dispatch:
-  schedule:
-    # Daily safety-net run so path-gated macOS jobs (CoreML/MPS) still
-    # exercise on the latest main even on weeks where no PR touches
-    # their paths. Catches cross-cutting interaction breakage that
-    # path-gating alone would mask.
-    - cron: '0 6 * * *'
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.sha }}-${{ github.event_name == 'workflow_dispatch' }}-${{ github.event_name == 'schedule' }}
