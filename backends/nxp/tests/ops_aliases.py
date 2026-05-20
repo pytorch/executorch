@@ -22,6 +22,7 @@ ExecutorchDelegateCall = torch.ops.higher_order.executorch_call_delegate
 GetItem = operator.getitem
 HardTanh = exir_ops.edge.aten.hardtanh.default
 HardTanh_ = exir_ops.edge.aten.hardtanh_.default
+LeakyRelu = exir_ops.edge.aten.leaky_relu.default
 MaxPool2DWithIndices = exir_ops.edge.aten.max_pool2d_with_indices.default
 MulTensor = exir_ops.edge.aten.mul.Tensor
 QuantizePerChannel = exir_ops.edge.quantized_decomposed.quantize_per_channel.default
