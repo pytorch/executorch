@@ -15,8 +15,8 @@ using namespace std;
 using executorch::runtime::ArrayRef;
 using executorch::runtime::CompileSpec;
 
-// We use the platform and runtime environment provided by the Vulkan delegate
-#include <executorch/backends/vulkan/runtime/vk_api/vk_api.h>
+// Volk meta-loader provides Vulkan function pointers (ARM tensor extensions, etc.)
+#include <volk.h>
 
 namespace executorch {
 namespace backends {
