@@ -727,8 +727,7 @@ bool VgfRepr::process_vgf(
   VkDataGraphPipelineCreateInfoARM graph_pipeline_info{
       .sType = VK_STRUCTURE_TYPE_DATA_GRAPH_PIPELINE_CREATE_INFO_ARM,
       .pNext = &shader_info,
-      .flags = VK_PIPELINE_CREATE_2_FAIL_ON_PIPELINE_COMPILE_REQUIRED_BIT |
-          VK_PIPELINE_CREATE_2_EARLY_RETURN_ON_FAILURE_BIT_KHR,
+      .flags = VK_PIPELINE_CREATE_2_EARLY_RETURN_ON_FAILURE_BIT_KHR,
       .layout = vk_pipeline_layout,
       .resourceInfoCount = static_cast<uint32_t>(data_graph_resources.size()),
       .pResourceInfos = data_graph_resources.data(),

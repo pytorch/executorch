@@ -78,6 +78,16 @@ $ python3 -m backends.arm.scripts.aot_arm_compiler --model_name=mv2 --target=eth
 
 `aot_arm_compiler.py` is called from the scripts below so you don't need to, but it can be useful to do by hand in some cases.
 
+## Host VGF example applications
+
+The Arm examples directory also contains host-side VGF reference flows for
+specific tasks:
+
+- `examples/arm/image_classification_example_vgf` for DEiT image
+  classification.
+- `examples/arm/super_resolution_example_vgf` for Swin2SR image
+  super-resolution.
+
 
 ## ExecuTorch on Arm Ethos-U55/U65 and U85
 
