@@ -148,6 +148,10 @@ jobs:
         # Run Qwen 3.5 MoE tests (quantize roundtrip + TurboQuant KV cache + sampler)
         python -m pytest examples/models/qwen3_5_moe/test_quantize_roundtrip.py examples/models/qwen3_5_moe/test_turboquant.py examples/models/qwen3_5_moe/test_sampler.py -v -o "addopts="
 
+        # Run Gemma 4 31B tests (quant unit tests + pipeline integration tests)
+        pip install gguf
+        python -m pytest examples/models/gemma4_31b/quant/tests/ examples/models/gemma4_31b/tests/ --ignore=examples/models/gemma4_31b/tests/test_mlx_pipeline.py -v -o "addopts="
+
   export-model-cuda-artifact:
     name: export-model-cuda-artifact
     # Skip this job if the pull request is from a fork (HuggingFace secrets are not available)
@@ -181,6 +185,8 @@ jobs:
             name: "dinov2-small-imagenet1k-1-layer"
           - repo: "SocialLocalMobile"
             name: "Qwen3.5-35B-A3B-HQQ-INT4"
+          - repo: "SocialLocalMobile"
+            name: "gemma-4-31B-it-HQQ-INT4"
         quant:
           - "non-quantized"
           - "quantized-int4-tile-packed"
@@ -199,6 +205,15 @@ jobs:
           - model:
               repo: "SocialLocalMobile"
               name: "Qwen3.5-35B-A3B-HQQ-INT4"
+            quant: "quantized-int4-weight-only"
+          # Gemma 4 31B uses a prequantized checkpoint, only tile-packed
+          - model:
+              repo: "SocialLocalMobile"
+              name: "gemma-4-31B-it-HQQ-INT4"
+            quant: "non-quantized"
+          - model:
+              repo: "SocialLocalMobile"
+              name: "gemma-4-31B-it-HQQ-INT4"
             quant: "quantized-int4-weight-only"
           # Voxtral Realtime only supports int4-tile-packed on CUDA
           - model:
@@ -254,7 +269,7 @@ jobs:
     with:
       timeout: 90
       secrets-env: EXECUTORCH_HF_TOKEN
-      runner: ${{ matrix.model.name == 'Qwen3.5-35B-A3B-HQQ-INT4' && 'linux.aws.a100' || 'linux.g5.4xlarge.nvidia.gpu' }}
+      runner: ${{ (matrix.model.name == 'Qwen3.5-35B-A3B-HQQ-INT4' || matrix.model.name == 'gemma-4-31B-it-HQQ-INT4') && 'linux.aws.a100' || 'linux.g5.4xlarge.nvidia.gpu' }}
       gpu-arch-type: cuda
       gpu-arch-version: 12.6
       use-custom-docker-registry: false
@@ -311,6 +326,8 @@ jobs:
             name: "dinov2-small-imagenet1k-1-layer"
           - repo: "SocialLocalMobile"
             name: "Qwen3.5-35B-A3B-HQQ-INT4"
+          - repo: "SocialLocalMobile"
+            name: "gemma-4-31B-it-HQQ-INT4"
         quant:
           - "non-quantized"
           - "quantized-int4-tile-packed"
@@ -329,6 +346,15 @@ jobs:
           - model:
               repo: "SocialLocalMobile"
               name: "Qwen3.5-35B-A3B-HQQ-INT4"
+            quant: "quantized-int4-weight-only"
+          # Gemma 4 31B uses a prequantized checkpoint, only tile-packed
+          - model:
+              repo: "SocialLocalMobile"
+              name: "gemma-4-31B-it-HQQ-INT4"
+            quant: "non-quantized"
+          - model:
+              repo: "SocialLocalMobile"
+              name: "gemma-4-31B-it-HQQ-INT4"
             quant: "quantized-int4-weight-only"
           # Voxtral Realtime only supports int4-tile-packed on CUDA
           - model:
@@ -378,7 +404,7 @@ jobs:
             quant: "non-quantized"
     with:
       timeout: 90
-      runner: ${{ matrix.model.name == 'Qwen3.5-35B-A3B-HQQ-INT4' && 'linux.aws.a100' || 'linux.g5.4xlarge.nvidia.gpu' }}
+      runner: ${{ (matrix.model.name == 'Qwen3.5-35B-A3B-HQQ-INT4' || matrix.model.name == 'gemma-4-31B-it-HQQ-INT4') && 'linux.aws.a100' || 'linux.g5.4xlarge.nvidia.gpu' }}
       gpu-arch-type: cuda
       gpu-arch-version: 12.6
       use-custom-docker-registry: false

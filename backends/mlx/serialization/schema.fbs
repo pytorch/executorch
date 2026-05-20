@@ -579,6 +579,12 @@ table LogicalOrNode {
     out: Tid (required);
 }
 
+table BitwiseAndNode {
+    a: Tid (required);
+    b: Tid (required);
+    out: Tid (required);
+}
+
 // Triangular matrix ops
 table TriNode {
     out: Tid (required);
@@ -1130,7 +1136,8 @@ union OpNode {
     ScanNode,
     MetalKernelNode,
     BitwiseInvertNode,
-    RollNode
+    RollNode,
+    BitwiseAndNode
     // BC: Add new op nodes here (append only)
 }
 

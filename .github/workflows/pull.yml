@@ -547,7 +547,7 @@ jobs:
         setup_script_args=""
         if [[ ${{ matrix.os}} == "bare_metal" ]]; then
           toolchain_prefix=arm-none-eabi-
-          threshold="111000" # 111 KiB
+          threshold="118000" # GCC 15.2 baseline: 115868 bytes, 2026-05-13
           toolchain_cmake=examples/arm/ethos-u-setup/arm-none-eabi-gcc.cmake
         elif [[ ${{ matrix.os}} == "zephyr-preset" ]]; then
           setup_script_args="--target-toolchain zephyr"
@@ -717,10 +717,10 @@ jobs:
     strategy:
       matrix:
         include:
-          - test_arm_baremetal: test_pytest_ops_no_target
-          - test_arm_baremetal: test_pytest_ops_tosa
-          - test_arm_baremetal: test_pytest_models_tosa
-          - test_arm_baremetal: test_run_tosa
+          - test_arm_backend: test_pytest_ops_no_target
+          - test_arm_backend: test_pytest_ops_tosa
+          - test_arm_backend: test_pytest_models_tosa
+          - test_arm_backend: test_run_tosa
       fail-fast: false
     with:
       runner: linux.2xlarge
@@ -738,10 +738,10 @@ jobs:
 
         .ci/scripts/setup-arm-baremetal-tools.sh --disable-ethos-u-deps
 
-        ARM_TEST=${{ matrix.test_arm_baremetal }}
+        ARM_TEST=${{ matrix.test_arm_backend }}
 
-        # Test test_arm_baremetal.sh with test
-        backends/arm/test/test_arm_baremetal.sh "${ARM_TEST}"
+        # Test test_arm_backend.sh with test
+        backends/arm/test/test_arm_backend.sh "${ARM_TEST}"
 
   test-llama-runner-qnn-linux:
     name: test-llama-runner-qnn-linux
@@ -1489,11 +1489,11 @@ jobs:
         .ci/scripts/setup-linux.sh --build-tool "cmake"
 
         # Custom operator tests
-        PYTHON_EXECUTABLE=python bash backends/vulkan/test/custom_ops/build_and_run.sh add
-        ./cmake-out/backends/vulkan/test/custom_ops/q8csw_linear
-        ./cmake-out/backends/vulkan/test/custom_ops/q8csw_conv2d
-        ./cmake-out/backends/vulkan/test/custom_ops/q4gsw_linear
-        ./cmake-out/backends/vulkan/test/custom_ops/choose_qparams_per_row
+        PYTHON_EXECUTABLE=python bash backends/vulkan/test/custom_ops/build_and_run.sh test_add
+        ./cmake-out/backends/vulkan/test/custom_ops/test_q8csw_linear
+        ./cmake-out/backends/vulkan/test/custom_ops/test_q8csw_conv2d
+        ./cmake-out/backends/vulkan/test/custom_ops/test_q4gsw_linear
+        ./cmake-out/backends/vulkan/test/custom_ops/test_choose_qparams_per_row
         ./cmake-out/backends/vulkan/test/custom_ops/test_q8ta_qdq
         ./cmake-out/backends/vulkan/test/custom_ops/test_q8ta_clone
         ./cmake-out/backends/vulkan/test/custom_ops/test_q8ta_binary

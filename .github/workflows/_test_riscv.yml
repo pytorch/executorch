@@ -1,0 +1,32 @@
+name: Test RISC-V QEMU smoke
+
+permissions:
+  id-token: write
+  contents: read
+
+on:
+  workflow_call:
+    inputs:
+      timeout:
+        description: 'Per-job timeout in minutes'
+        required: false
+        type: number
+        default: 30
+
+jobs:
+  run:
+    uses: pytorch/test-infra/.github/workflows/linux_job_v2.yml@main
+    with:
+      runner: linux.2xlarge
+      docker-image: ci-image:executorch-ubuntu-22.04-gcc11
+      submodules: 'recursive'
+      ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
+      timeout: ${{ inputs.timeout }}
+      script: |
+        CONDA_ENV=$(conda env list --json | jq -r ".envs | .[-1]")
+        conda activate "${CONDA_ENV}"
+
+        source .ci/scripts/utils.sh
+        install_executorch "--use-pt-pinned-commit"
+
+        bash .ci/scripts/test_riscv_qemu.sh

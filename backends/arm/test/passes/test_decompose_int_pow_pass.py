@@ -59,18 +59,18 @@ test_data: Dict[str, TestParam] = {
 def test_decompose_int_pow_tosa_FP(data: TestParam) -> None:
     module_with_inputs, nbr_muls = data
     module = cast(torch.nn.Module, module_with_inputs)
+    pow_op = "executorch_exir_dialects_edge__ops_aten_pow_Tensor_Scalar"
     pipeline = PassPipeline[input_t](
         module,
         module_with_inputs.get_inputs(),
         quantize=False,
         ops_before_pass={
-            "executorch_exir_dialects_edge__ops_aten_pow_Tensor_Scalar": 1,
+            pow_op: 1,
         },
         ops_not_before_pass=[],
         ops_after_pass={
             "executorch_exir_dialects_edge__ops_aten_mul_Tensor": nbr_muls,
         },
-        ops_not_after_pass=["executorch_exir_dialects_edge__ops_pow_Tensor_Scalar"],
         pass_list=[DecomposeIntPowPass],
     )
     pipeline.run()

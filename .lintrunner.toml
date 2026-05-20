@@ -361,6 +361,7 @@ include_patterns = [
     'devtools/visualization/**/*.py',
     'docs/**/*.py',
     # 'examples/**/*.py',
+    'examples/arm/**/*.py',
     'examples/openvino/**/*.py',
     # 'exir/**/*.py',
     # 'extension/**/*.py',

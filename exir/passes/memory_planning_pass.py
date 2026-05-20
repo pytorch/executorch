@@ -153,6 +153,7 @@ class MemoryPlanningPass(PassBase):
         alloc_mutable_buffers: bool = True,
         share_mutable_buffers: bool = False,
         alignment: int = ALIGNMENT,
+        enable_non_cpu_memory_planning: bool = False,
     ) -> None:
         r"""
         alloc_graph_input/alloc_graph_output will have 4 different combinations
@@ -173,6 +174,7 @@ class MemoryPlanningPass(PassBase):
         self.alloc_mutable_buffers = alloc_mutable_buffers
         self.share_mutable_buffers = share_mutable_buffers
         self.alignment = alignment
+        self.enable_non_cpu_memory_planning = enable_non_cpu_memory_planning
         self.state = _MemoryPlanningState()
 
     def _set_alloc_node_spec(self, graph_module: torch.fx.GraphModule) -> None:
@@ -250,6 +252,7 @@ class MemoryPlanningPass(PassBase):
             # If mutable buffers are shared, then do not allocate them in the
             # main memory planning algo; they are allocated in run_multimethod.
             self.alloc_mutable_buffers and not self.share_mutable_buffers,
+            self.enable_non_cpu_memory_planning,
         )
 
         if self.share_mutable_buffers and graph_signature is not None:

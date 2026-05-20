@@ -22,6 +22,7 @@ from executorch.backends.cadence.aot.memory_planning import (
     print_memory_planning_info,
 )
 from executorch.backends.cadence.aot.quantizer.fusion_pass import QuantFusion
+from executorch.backends.cadence.aot.quantizer.passes.fuse_ops import FuseQATConvBN
 from executorch.backends.cadence.aot.quantizer.quantizer import (
     CadenceDefaultQuantizer,
     CadenceQuantizer,
@@ -37,9 +38,10 @@ from executorch.exir import (
     ExecutorchBackendConfig,
     ExecutorchProgramManager,
 )
+from executorch.exir.pass_manager import PassManager
 from executorch.exir.passes import ToOutVarPass
 from executorch.exir.passes.sym_shape_eval_pass import ConstraintBasedSymShapeEvalPass
-from executorch.exir.program._program import _transform, to_edge
+from executorch.exir.program._program import to_edge
 from torch.export.exported_program import ExportedProgram
 from torchao.quantization.pt2e.quantize_pt2e import convert_pt2e
 
@@ -162,13 +164,17 @@ def apply_pre_edge_transform_passes(
     which will instantiate a default quantizer for you if needed.
     Returns an ExportedProgram with the fused model.
     """
-    # Get patterns and apply fusion of dq -> op -> q to qop
     # pyre-ignore[16]: no attribute
     patterns = [q.pattern for q in quantizer.quantizers]
-    fused_program = _transform(converted_program, QuantFusion(patterns))
+    PassManager(
+        [
+            FuseQATConvBN(converted_program),
+            QuantFusion(patterns),
+        ]
+    )(converted_program.graph_module)
 
     # Apply torch ops passes (e.g., ReplaceMulTensorWithMulAndFullOpsPass)
-    fused_program = apply_torch_ops_passes(fused_program)
+    fused_program = apply_torch_ops_passes(converted_program)
 
     return fused_program
 

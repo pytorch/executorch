@@ -349,14 +349,14 @@ jobs:
     strategy:
       matrix:
         include:
-          - test_arm_baremetal: test_pytest_ops_ethos_u55
-          - test_arm_baremetal: test_pytest_models_ethos_u55
-          - test_arm_baremetal: test_run_ethos_u55
-          - test_arm_baremetal: test_pytest_ops_ethos_u85
-          - test_arm_baremetal: test_pytest_models_ethos_u85
-          - test_arm_baremetal: test_run_ethos_u85
-          - test_arm_baremetal: test_smaller_stories_llama
-          - test_arm_baremetal: test_memory_allocation
+          - test_arm_backend: test_pytest_ops_ethos_u55
+          - test_arm_backend: test_pytest_models_ethos_u55
+          - test_arm_backend: test_run_ethos_u55
+          - test_arm_backend: test_pytest_ops_ethos_u85
+          - test_arm_backend: test_pytest_models_ethos_u85
+          - test_arm_backend: test_run_ethos_u85
+          - test_arm_backend: test_smaller_stories_llama
+          - test_arm_backend: test_memory_allocation
       fail-fast: false
     with:
       runner: linux.2xlarge.memory
@@ -378,10 +378,15 @@ jobs:
         # Hopefully this is high enough for this setup.
         sudo sysctl fs.inotify.max_user_watches=1048576 # 1024 * 1024
 
-        ARM_TEST=${{ matrix.test_arm_baremetal }}
+        ARM_TEST=${{ matrix.test_arm_backend }}
 
-        # Test test_arm_baremetal.sh with test
-        backends/arm/test/test_arm_baremetal.sh "${ARM_TEST}"
+        # Output test report on pytest runs so that github can surface failing tests.
+        if [[ -n "${RUNNER_TEST_RESULTS_DIR:-}" ]]; then
+              export PYTEST_ADDOPTS="--junit-xml=${RUNNER_TEST_RESULTS_DIR}/${ARM_TEST}.xml ${PYTEST_ADDOPTS:-}"
+        fi
+
+        # Test test_arm_backend.sh with test
+        backends/arm/test/test_arm_backend.sh "${ARM_TEST}"
 
   test-arm-backend-vkml:
     name: test-arm-backend-vkml
@@ -392,7 +397,7 @@ jobs:
     strategy:
       matrix:
         include:
-          - test_arm_baremetal: test_pytest_ops_vkml
+          - test_arm_backend: test_pytest_ops_vkml
       fail-fast: false
     with:
       runner: linux.2xlarge.memory
@@ -413,9 +418,14 @@ jobs:
         # Hopefully this is high enough for this setup.
         sudo sysctl fs.inotify.max_user_watches=1048576 # 1024 * 1024
 
-        ARM_TEST=${{ matrix.test_arm_baremetal }}
+        ARM_TEST=${{ matrix.test_arm_backend }}
 
-        backends/arm/test/test_arm_baremetal.sh "${ARM_TEST}"
+        # Output test report on pytest runs so that github can surface failing tests.
+        if [[ -n "${RUNNER_TEST_RESULTS_DIR:-}" ]]; then
+          export PYTEST_ADDOPTS="--junit-xml=${RUNNER_TEST_RESULTS_DIR}/${ARM_TEST}.xml ${PYTEST_ADDOPTS:-}"
+        fi
+
+        backends/arm/test/test_arm_backend.sh "${ARM_TEST}"
 
   test-arm-ootb-linux:
     name: test-arm-ootb-linux
