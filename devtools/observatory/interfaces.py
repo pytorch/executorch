@@ -602,6 +602,10 @@ class Frontend:
     ) -> Dict[str, str]:
         return {}
 
+    def check_badges(self, digest: Any, analysis: Dict[str, Any]) -> List[Dict[str, str]]:
+        return []
+
+
 
 @dataclass
 class ObservationContext:
