@@ -52,6 +52,9 @@ function(gen_vulkan_shader_lib_cpp shaders_path)
       list(APPEND GEN_SPV_ARGS "--replace-u16vecn")
     endif()
   endif()
+  if(EXECUTORCH_VULKAN_USE_MEDIUMP_FOR_FP16)
+    list(APPEND GEN_SPV_ARGS "--auto-use-mediump")
+  endif()
 
   # Add nthreads argument for shader compilation
   if(DEFINED EXECUTORCH_VULKAN_SHADER_COMPILE_NTHREADS)

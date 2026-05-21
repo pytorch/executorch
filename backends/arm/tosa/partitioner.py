@@ -16,6 +16,7 @@ be delegated to the TOSA backend. Use this module to:
 import logging
 import operator
 from itertools import count
+from pathlib import Path
 from typing import Callable, cast, List, Optional, Sequence, Tuple
 
 import torch
@@ -103,6 +104,15 @@ def _is_noop_expand(node: torch.fx.node.Node) -> bool:
     return all(m == 1 for m in multiples) and not changes_rank
 
 
+def _is_noop_squeeze(node: torch.fx.Node) -> bool:
+    if node.target != exir_ops.edge.aten.squeeze_copy.dims:
+        return False
+    else:
+        input_tensor = get_first_fake_tensor(ensure_type(torch.fx.Node, node.args[0]))
+        output_tensor = get_first_fake_tensor(node)
+        return input_tensor.shape == output_tensor.shape
+
+
 def _is_view_copy(node: torch.fx.node.Node) -> bool:
     return node.target == exir_ops.edge.aten.view_copy.default
 
@@ -177,6 +187,7 @@ class TOSAPartitioner(Partitioner):
         self.tosa_spec = compile_spec.tosa_spec
         self.additional_checks = additional_checks
         self._custom_partition_ops: set[torch._ops.OpOverload] = set()
+        self.intermediate_path = compile_spec._get_intermediate_path()
 
     def register_custom_partition_op(self, op: torch._ops.OpOverload) -> None:
         """Register a custom op to be considered supported by this
@@ -386,6 +397,7 @@ class TOSAPartitioner(Partitioner):
                 or _is_noop_expand(node)
                 or _is_noop_detach_copy(node)
                 or _is_noop_to_dim_order_copy(node)
+                or _is_noop_squeeze(node)
                 or _is_view_copy(node)
                 or _is_noop_as_strided_copy(node)
                 or node.target in Q_OPS
@@ -430,6 +442,13 @@ class TOSAPartitioner(Partitioner):
         partition_tags = {tag: self.delegation_spec for tag in tags}
 
         tag_constant_data(exported_program)
+        if self.intermediate_path is not None and logger.level <= logging.INFO:
+            intermediate_path = Path(self.intermediate_path)
+            intermediate_path.mkdir(parents=True, exist_ok=True)
+            file_handler = logging.FileHandler(
+                intermediate_path / "partition_report.txt"
+            )
+            logger.addHandler(file_handler)
         logger.info(f"The following nodes were rejected for {self.tosa_spec}:")
         logger.info("\n" + reporter.get_table_report())
         logger.info("(Placeholders and outputs are not included in this list)")
@@ -466,11 +485,13 @@ class TOSAPartitioner(Partitioner):
             torch.ops.aten.pad.default,
         }
         ops_to_not_decompose_if_fp = {
+            torch.ops.aten.celu.default,
             torch.ops.aten.eye.default,
             torch.ops.aten.logit.default,
             torch.ops.aten.linear.default,
             torch.ops.aten.linspace.default,
             torch.ops.aten.pad.default,
+            torch.ops.aten.selu.default,
         }
         ops_to_not_decompose_always = {
             torch.ops.aten.logit.default,

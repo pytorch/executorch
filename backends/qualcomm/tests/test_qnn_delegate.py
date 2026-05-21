@@ -8,6 +8,7 @@ import io
 import itertools
 import json
 import logging
+import operator
 import subprocess
 import sys
 import tempfile
@@ -33,6 +34,7 @@ from executorch.backends.qualcomm.export_utils import (
     make_quantizer,
     setup_common_args_and_variables,
 )
+from executorch.backends.qualcomm.quantizer.rules import Q_ANNOTATION_KEY
 from executorch.backends.qualcomm.serialization.qc_schema import (
     QnnExecuTorchBackendType,
     QnnExecuTorchHtpPerformanceMode,
@@ -97,6 +99,7 @@ from executorch.examples.models.torchvision_vit.model import TorchVisionViTModel
 from executorch.examples.models.wav2letter import Wav2LetterModel
 from executorch.exir import to_edge
 from executorch.exir.backend.backend_api import disable_validation
+from torchao.quantization.pt2e.quantizer import SharedQuantizationSpec
 
 
 class TestQNNFloatingPointOperator(TestQNN):
@@ -117,7 +120,7 @@ class TestQNNFloatingPointOperator(TestQNN):
             debug=False,
             saver=False,
             online_prepare=TestQNN.online_prepare,
-            dump_intermediate_outputs=TestQNN.dump_intermediate_outputs,
+            dump_intermediate_outputs=False,
             profile_level=TestQNN.profile_level,
             shared_buffer=TestQNN.shared_buffer,
         )
@@ -1730,12 +1733,16 @@ class TestQNNFloatingPointOperator(TestQNN):
 
     def test_qnn_backend_pixel_shuffle(self):
         module = PixelShuffle(2)  # noqa: F405
-        sample_input = (torch.ones([2, 4, 3, 3]),)
+        sample_input = (
+            torch.arange(2 * 4 * 3 * 3, dtype=torch.float32).reshape(2, 4, 3, 3),
+        )
         self.lower_module_and_test_output(module, sample_input)
 
     def test_qnn_backend_pixel_unshuffle(self):
         module = PixelUnshuffle(2)  # noqa: F405
-        sample_input = (torch.ones([2, 2, 6, 6]),)
+        sample_input = (
+            torch.arange(2 * 2 * 6 * 6, dtype=torch.float32).reshape(2, 2, 6, 6),
+        )
         self.lower_module_and_test_output(module, sample_input)
 
     def test_qnn_backend_pow_tensor_scalar(self):
@@ -1801,24 +1808,6 @@ class TestQNNFloatingPointOperator(TestQNN):
                     with self.subTest(i=index):
                         index += 1
                         self.lower_module_and_test_output(module, sample_input)
-
-    def test_qnn_backend_rand(self):
-        sample_inputs = [
-            (torch.randn(3, 4, 5),),
-            (torch.randn(2, 8),),
-            (
-                torch.randn(
-                    10,
-                ),
-            ),
-            (torch.randn(1, 3, 32, 32),),
-        ]
-        for i, sample_input in enumerate(sample_inputs):
-            with self.subTest(i=i):
-                module = Rand()  # noqa: F405
-                self.lower_module_and_test_output(
-                    module, sample_input, assert_output_equal=False
-                )
 
     def test_qnn_backend_reciprocal(self):
         module = Reciprocal()  # noqa: F405
@@ -1941,6 +1930,52 @@ class TestQNNFloatingPointOperator(TestQNN):
         sample_input = (torch.randn([3, 4]),)
         self.lower_module_and_test_output(module, sample_input)
 
+    def test_qnn_backend_scatter_src(self):
+        test_comb = [
+            {
+                QCOM_MODULE: [ScatterSrc(dim=1)],  # noqa: F405
+                QCOM_SAMPLE_INPUTS: [
+                    (
+                        torch.zeros(3, 5),
+                        torch.tensor(
+                            [[0, 1, 2, 3, 4], [4, 3, 2, 1, 0], [1, 0, 3, 4, 2]],
+                            dtype=torch.int64,
+                        ),
+                        torch.rand(3, 5),
+                    ),
+                    (
+                        torch.zeros(3, 5, dtype=torch.float16),
+                        torch.tensor(
+                            [[0, 1, 2, 3, 4], [4, 3, 2, 1, 0], [1, 0, 3, 4, 2]],
+                            dtype=torch.int64,
+                        ),
+                        torch.rand(3, 5, dtype=torch.float16),
+                    ),
+                ],
+            },
+            {
+                QCOM_MODULE: [ScatterSrc(dim=0)],  # noqa: F405
+                QCOM_SAMPLE_INPUTS: [
+                    (
+                        torch.zeros(3, 5),
+                        torch.tensor(
+                            [[2, 1, 0, 1, 2], [0, 2, 1, 2, 0], [1, 0, 2, 0, 1]],
+                            dtype=torch.int64,
+                        ),
+                        torch.rand(3, 5),
+                    ),
+                ],
+            },
+        ]
+
+        index = 0
+        for comb in test_comb:
+            for module in comb[QCOM_MODULE]:
+                for sample_input in comb[QCOM_SAMPLE_INPUTS]:
+                    with self.subTest(i=index):
+                        index += 1
+                        self.lower_module_and_test_output(module, sample_input)
+
     def test_qnn_backend_rsqrt(self):
         module = Rsqrt()  # noqa: F405
         sample_input = (torch.abs(torch.randn([3, 4])),)
@@ -2061,6 +2096,11 @@ class TestQNNFloatingPointOperator(TestQNN):
     def test_qnn_backend_swapaxes(self):
         module = SwapAxes(0, 1)  # noqa: F405
         sample_input = (torch.randn([1, 2, 3, 4]),)
+        self.lower_module_and_test_output(module, sample_input)
+
+    def test_qnn_backend_tan(self):
+        module = Tan()  # noqa: F405
+        sample_input = (torch.rand(2, 5, 1, 3) * 2 - 1,)
         self.lower_module_and_test_output(module, sample_input)
 
     def test_qnn_backend_tanh(self):
@@ -2212,7 +2252,7 @@ class TestQNNFloatingPointModel(TestQNN):
             debug=False,
             saver=False,
             online_prepare=TestQNN.online_prepare,
-            dump_intermediate_outputs=TestQNN.dump_intermediate_outputs,
+            dump_intermediate_outputs=False,
             profile_level=TestQNN.profile_level,
             shared_buffer=TestQNN.shared_buffer,
         )
@@ -2344,6 +2384,17 @@ class TestQNNFloatingPointModel(TestQNN):
         )
         self.lower_module_and_test_output(module, sample_input)
 
+    def test_qnn_backend_full_layout_transformed(self):
+        full_shape = (1, 16, 4, 6)
+        module = ConvFull(0.5, full_shape)  # noqa: F405
+        sample_input = (torch.randn(1, 8, 4, 6),)
+        self.lower_module_and_test_output(module, sample_input)
+
+    def test_qnn_backend_full_like_layout_transformed(self):
+        module = ConvFullLike(0.5)  # noqa: F405
+        sample_input = (torch.randn(1, 8, 4, 6),)
+        self.lower_module_and_test_output(module, sample_input)
+
     # TODO: Create a new UT class for passes specific checks
     def test_qnn_backend_lift_add_tensor(self):
         module = LiftAddTensor()  # noqa: F405
@@ -2456,7 +2507,7 @@ class TestQNNQuantizedOperator(TestQNN):
             debug=False,
             saver=False,
             online_prepare=TestQNN.online_prepare,
-            dump_intermediate_outputs=TestQNN.dump_intermediate_outputs,
+            dump_intermediate_outputs=False,
             profile_level=TestQNN.profile_level,
             shared_buffer=TestQNN.shared_buffer,
         )
@@ -4302,15 +4353,183 @@ class TestQNNQuantizedOperator(TestQNN):
 
     def test_qnn_backend_pixel_shuffle(self):
         module = PixelShuffle(2)  # noqa: F405
-        sample_input = (torch.ones([2, 4, 3, 3]),)
+        sample_input = (
+            torch.arange(2 * 4 * 3 * 3, dtype=torch.float32).reshape(2, 4, 3, 3),
+        )
         module = self.get_qdq_module(module, sample_input)
         self.lower_module_and_test_output(module, sample_input)
 
     def test_qnn_backend_pixel_unshuffle(self):
         module = PixelUnshuffle(2)  # noqa: F405
-        sample_input = (torch.ones([2, 2, 6, 6]),)
+        sample_input = (
+            torch.arange(2 * 2 * 6 * 6, dtype=torch.float32).reshape(2, 2, 6, 6),
+        )
         module = self.get_qdq_module(module, sample_input)
         self.lower_module_and_test_output(module, sample_input)
+
+    def _prepare_module_for_qparam_assertions(self, module, sample_input):
+        backend = get_backend_type(self.backend)
+        quantizer = make_quantizer(
+            quant_dtype=QuantDtype.use_8a8w,
+            custom_annotations=(),
+            per_channel_conv=True,
+            per_channel_linear=False,
+            per_channel_embedding=False,
+            backend=backend,
+            soc_model=self.soc_model,
+        )
+        return prepare_pt2e(
+            torch.export.export(module, sample_input, strict=True).module(),
+            quantizer,
+        )
+
+    def _assert_prepared_nodes_share_qparams(
+        self, module, sample_input, target_tokens
+    ) -> list[torch.fx.Node]:
+        prepared = self._prepare_module_for_qparam_assertions(module, sample_input)
+        matching_nodes = [
+            node
+            for node in prepared.graph.nodes
+            if node.op == "call_function"
+            and any(target_token in str(node.target) for target_token in target_tokens)
+        ]
+
+        self.assertGreater(
+            len(matching_nodes),
+            0,
+            f"Failed to find node matching any of {target_tokens}",
+        )
+        for node in matching_nodes:
+            self.assertIsInstance(
+                node.meta[Q_ANNOTATION_KEY].output_qspec,
+                SharedQuantizationSpec,
+            )
+
+        return matching_nodes
+
+    def test_qnn_backend_pixel_shuffle_unshuffle_share_qparams(self):
+        test_cases = [
+            (
+                "pixel_shuffle",
+                PixelShuffle(2),  # noqa: F405
+                (torch.arange(2 * 4 * 3 * 3, dtype=torch.float32).reshape(2, 4, 3, 3),),
+                torch.ops.aten.pixel_shuffle.default,
+            ),
+            (
+                "pixel_unshuffle",
+                PixelUnshuffle(2),  # noqa: F405
+                (torch.arange(2 * 2 * 6 * 6, dtype=torch.float32).reshape(2, 2, 6, 6),),
+                torch.ops.aten.pixel_unshuffle.default,
+            ),
+        ]
+
+        for name, module, sample_input, target in test_cases:
+            with self.subTest(name=name):
+                prepared = self._prepare_module_for_qparam_assertions(
+                    module, sample_input
+                )
+                for node in prepared.graph.nodes:
+                    if node.op == "call_function" and node.target == target:
+                        self.assertIsInstance(
+                            node.meta[Q_ANNOTATION_KEY].output_qspec,
+                            SharedQuantizationSpec,
+                        )
+                        break
+                else:
+                    self.fail(f"Failed to find {target} in prepared graph")
+
+    def test_qnn_backend_value_preserving_ops_share_qparams(self):
+        test_cases = [
+            (
+                "channel_shuffle",
+                ChannelShuffle(2),  # noqa: F405
+                (torch.randn(1, 4, 3, 3),),
+                ("aten.channel_shuffle",),
+            ),
+            (
+                "permute",
+                Permute([0, 2, 3, 1]),  # noqa: F405
+                (torch.randn(2, 3, 4, 5),),
+                ("aten.permute",),
+            ),
+            (
+                "pixel_shuffle",
+                PixelShuffle(2),  # noqa: F405
+                (torch.arange(2 * 4 * 3 * 3, dtype=torch.float32).reshape(2, 4, 3, 3),),
+                ("aten.pixel_shuffle",),
+            ),
+            (
+                "pixel_unshuffle",
+                PixelUnshuffle(2),  # noqa: F405
+                (torch.arange(2 * 2 * 6 * 6, dtype=torch.float32).reshape(2, 2, 6, 6),),
+                ("aten.pixel_unshuffle",),
+            ),
+            (
+                "repeat",
+                Repeat(),  # noqa: F405
+                (torch.randn(2, 2, 2, 2),),
+                ("aten.repeat",),
+            ),
+            (
+                "expand_as",
+                ExpandAs(),  # noqa: F405
+                (torch.randn(3, 4),),
+                ("aten.expand",),
+            ),
+            (
+                "reshape",
+                Reshape(),  # noqa: F405
+                (torch.randn(3, 4),),
+                ("aten.reshape", "aten.view"),
+            ),
+        ]
+
+        for name, module, sample_input, target_tokens in test_cases:
+            with self.subTest(name=name):
+                self._assert_prepared_nodes_share_qparams(
+                    module, sample_input, target_tokens
+                )
+
+    def test_qnn_backend_split_with_sizes_copy_share_qparams(self):
+        class SplitWithSizesCopy(torch.nn.Module):
+            def forward(self, x):
+                out = torch.ops.aten.split_with_sizes_copy.default(x, [2, 2], 1)
+                return out[0] + out[1]
+
+        backend = get_backend_type(self.backend)
+        sample_input = (
+            torch.arange(2 * 4 * 3 * 3, dtype=torch.float32).reshape(2, 4, 3, 3),
+        )
+        quantizer = make_quantizer(
+            quant_dtype=QuantDtype.use_8a8w,
+            custom_annotations=(),
+            per_channel_conv=True,
+            per_channel_linear=False,
+            per_channel_embedding=False,
+            backend=backend,
+            soc_model=self.soc_model,
+        )
+        prepared = prepare_pt2e(
+            torch.export.export(
+                SplitWithSizesCopy(), sample_input, strict=True
+            ).module(),
+            quantizer,
+        )
+
+        getitem_count = 0
+        for node in prepared.graph.nodes:
+            if (
+                node.op == "call_function"
+                and node.target == operator.getitem
+                and node.args[0].target == torch.ops.aten.split_with_sizes_copy.default
+            ):
+                self.assertIsInstance(
+                    node.meta[Q_ANNOTATION_KEY].output_qspec,
+                    SharedQuantizationSpec,
+                )
+                getitem_count += 1
+
+        self.assertGreater(getitem_count, 0)
 
     def test_qnn_backend_pow_tensor_scalar(self):
         test_comb = [
@@ -4380,6 +4599,7 @@ class TestQNNQuantizedOperator(TestQNN):
                         self.lower_module_and_test_output(module, sample_input)
 
     def test_qnn_backend_rand(self):
+        module = Rand()  # noqa: F405
         sample_inputs = [
             (torch.randn(3, 4, 5),),
             (torch.randn(2, 8),),
@@ -4392,10 +4612,28 @@ class TestQNNQuantizedOperator(TestQNN):
         ]
         for i, sample_input in enumerate(sample_inputs):
             with self.subTest(i=i):
-                module = Rand()  # noqa: F405
-                module = self.get_qdq_module(module, sample_input)
+                qdq_module = self.get_qdq_module(module, sample_input)
                 self.lower_module_and_test_output(
-                    module, sample_input, assert_output_equal=False
+                    qdq_module, sample_input, assert_output_equal=False
+                )
+
+    def test_qnn_backend_randn(self):
+        module = Randn()  # noqa: F405
+        sample_inputs = [
+            (torch.randn(3, 4, 5),),
+            (torch.randn(2, 8),),
+            (
+                torch.randn(
+                    10,
+                ),
+            ),
+            (torch.randn(1, 3, 32, 32),),
+        ]
+        for i, sample_input in enumerate(sample_inputs):
+            with self.subTest(i=i):
+                qdq_module = self.get_qdq_module(module, sample_input)
+                self.lower_module_and_test_output(
+                    qdq_module, sample_input, assert_output_equal=False
                 )
 
     def test_qnn_backend_reciprocal(self):
@@ -4529,6 +4767,45 @@ class TestQNNQuantizedOperator(TestQNN):
         sample_input = (torch.abs(torch.randn([3, 4])),)
         module = self.get_qdq_module(module, sample_input)
         self.lower_module_and_test_output(module, sample_input)
+
+    def test_qnn_backend_scatter_src(self):
+        test_comb = [
+            {
+                QCOM_MODULE: [ScatterSrc(dim=1)],  # noqa: F405
+                QCOM_SAMPLE_INPUTS: [
+                    (
+                        torch.zeros(3, 5),
+                        torch.tensor(
+                            [[0, 1, 2, 3, 4], [4, 3, 2, 1, 0], [1, 0, 3, 4, 2]],
+                            dtype=torch.int64,
+                        ),
+                        torch.rand(3, 5),
+                    ),
+                ],
+            },
+            {
+                QCOM_MODULE: [ScatterSrc(dim=0)],  # noqa: F405
+                QCOM_SAMPLE_INPUTS: [
+                    (
+                        torch.zeros(3, 5),
+                        torch.tensor(
+                            [[2, 1, 0, 1, 2], [0, 2, 1, 2, 0], [1, 0, 2, 0, 1]],
+                            dtype=torch.int64,
+                        ),
+                        torch.rand(3, 5),
+                    ),
+                ],
+            },
+        ]
+
+        index = 0
+        for comb in test_comb:
+            for module in comb[QCOM_MODULE]:
+                for sample_input in comb[QCOM_SAMPLE_INPUTS]:
+                    with self.subTest(i=index):
+                        index += 1
+                        qdq_module = self.get_qdq_module(module, sample_input)
+                        self.lower_module_and_test_output(qdq_module, sample_input)
 
     def test_qnn_backend_sdpa(self):
         modules = [
@@ -4664,6 +4941,12 @@ class TestQNNQuantizedOperator(TestQNN):
     def test_qnn_backend_swapaxes(self):
         module = SwapAxes(0, 1)  # noqa: F405
         sample_input = (torch.randn([1, 2, 3, 4]),)
+        module = self.get_qdq_module(module, sample_input)
+        self.lower_module_and_test_output(module, sample_input)
+
+    def test_qnn_backend_tan(self):
+        module = Tan()  # noqa: F405
+        sample_input = (torch.rand(2, 5, 1, 3) * 2 - 1,)
         module = self.get_qdq_module(module, sample_input)
         self.lower_module_and_test_output(module, sample_input)
 
@@ -4835,7 +5118,7 @@ class TestQNNQuantizedModel(TestQNN):
             debug=False,
             saver=False,
             online_prepare=TestQNN.online_prepare,
-            dump_intermediate_outputs=TestQNN.dump_intermediate_outputs,
+            dump_intermediate_outputs=False,
             profile_level=TestQNN.profile_level,
             shared_buffer=TestQNN.shared_buffer,
         )
@@ -5095,6 +5378,19 @@ class TestQNNQuantizedModel(TestQNN):
         module = self.get_qdq_module(module, sample_input)
         self.lower_module_and_test_output(module, sample_input)
 
+    def test_qnn_backend_full_layout_transformed(self):
+        full_shape = (1, 16, 4, 6)
+        module = ConvFull(0.5, full_shape)  # noqa: F405
+        sample_input = (torch.randn(1, 8, 4, 6),)
+        module = self.get_qdq_module(module, sample_input)
+        self.lower_module_and_test_output(module, sample_input)
+
+    def test_qnn_backend_full_like_layout_transformed(self):
+        module = ConvFullLike(0.5)  # noqa: F405
+        sample_input = (torch.randn(1, 8, 4, 6),)
+        module = self.get_qdq_module(module, sample_input)
+        self.lower_module_and_test_output(module, sample_input)
+
     @unittest.skipIf(is_qnn_sdk_version_less_than("2.35"), "UT pass after QNN 2.35")
     def test_qnn_backend_masked_softmax(self):
         if self.enable_x86_64:
@@ -5308,7 +5604,6 @@ class TestQNNFloatingPointUtils(TestQNN):
     def setUp(self):
         TestQNN.atol = 1e-1
         TestQNN.rtol = 1e-1
-        TestQNN.dump_intermediate_outputs = False
         TestQNN.enable_profile = False
         TestQNN.shared_buffer = False
         backend_options = generate_htp_compiler_spec(use_fp16=True)
@@ -5347,7 +5642,6 @@ class TestQNNFloatingPointUtils(TestQNN):
         )
 
     def test_qnn_backend_dump_intermediate_outputs_topk(self):
-        TestQNN.dump_intermediate_outputs = True
         backend_options = generate_htp_compiler_spec(use_fp16=True)
         TestQNN.compiler_specs = generate_qnn_executorch_compiler_spec(
             soc_model=self.chipset_table[TestQNN.soc_model],
@@ -5360,12 +5654,10 @@ class TestQNNFloatingPointUtils(TestQNN):
             module,
             sample_input,
             expected_partitions=1,
-            expected_intermediate_events=7,
-            expected_compared_events=5,
+            expected_compared_events=3,
         )
 
     def test_qnn_backend_dump_intermediate_outputs_simple_model(self):
-        TestQNN.dump_intermediate_outputs = True
         backend_options = generate_htp_compiler_spec(use_fp16=True)
         TestQNN.compiler_specs = generate_qnn_executorch_compiler_spec(
             soc_model=self.chipset_table[TestQNN.soc_model],
@@ -5378,8 +5670,7 @@ class TestQNNFloatingPointUtils(TestQNN):
             module,
             sample_input,
             expected_partitions=1,
-            expected_intermediate_events=20,
-            expected_compared_events=16,
+            expected_compared_events=14,
         )
 
     def test_qnn_backend_skip_node_id(self):
@@ -5527,6 +5818,42 @@ class TestQNNFloatingPointUtils(TestQNN):
             expected_profile_events=30,
         )
         TestQNN.profile_level = 0
+
+    def test_qnn_backend_runtime_option_heap_profile(self):
+        module = SimpleModel()  # noqa: F405
+        sample_input = (torch.ones(1, 32, 28, 28), torch.ones(1, 32, 28, 28))
+
+        backend_options = generate_htp_compiler_spec(
+            use_fp16=True,
+            use_multi_contexts=True,
+        )
+
+        compiler_specs = generate_qnn_executorch_compiler_spec(
+            soc_model=self.chipset_table[TestQNN.soc_model],
+            backend_options=backend_options,
+            profile_level=2,  # if 0 for closing heap profiling
+        )
+
+        pass_jobs = get_capture_program_passes()
+        split_graph_pass, setting = self.split_graph(4)
+        pass_jobs[split_graph_pass] = setting
+        dep_table = get_passes_dependency_for_capture_program()
+        dep_table[split_graph_pass] = [FoldQDQ]
+
+        edge_prog_mgr = to_edge_transform_and_lower_to_qnn(
+            module=module,
+            inputs=sample_input,
+            compiler_specs=compiler_specs,
+            dep_table=dep_table,
+            passes_job=pass_jobs,
+        )
+        exec_prog = edge_prog_mgr.to_executorch()
+        self.verify_output(
+            module,
+            sample_input,
+            exec_prog,
+            save_heap_result=True,
+        )
 
     def test_qnn_backend_runtime_option_htp_performance(self):
         backend_options = generate_htp_compiler_spec(use_fp16=True)
@@ -5937,7 +6264,6 @@ class TestQNNQuantizedUtils(TestQNN):
                 raise ValueError("Backend is not implemented yet")
         TestQNN.atol = 1e-1
         TestQNN.rtol = 1
-        TestQNN.dump_intermediate_outputs = False
         TestQNN.enable_profile = False
         TestQNN.shared_buffer = False
         backend_options = generate_htp_compiler_spec(use_fp16=False)
@@ -5977,7 +6303,6 @@ class TestQNNQuantizedUtils(TestQNN):
         )
 
     def test_qnn_backend_dump_intermediate_outputs_simple_model(self):
-        TestQNN.dump_intermediate_outputs = True
         backend_options = generate_htp_compiler_spec(use_fp16=False)
         TestQNN.compiler_specs = generate_qnn_executorch_compiler_spec(
             soc_model=self.chipset_table[TestQNN.soc_model],
@@ -5991,13 +6316,11 @@ class TestQNNQuantizedUtils(TestQNN):
             module,
             sample_input,
             expected_partitions=1,
-            expected_intermediate_events=21,
             expected_compared_events=14,
         )
 
     def test_qnn_backend_dump_intermediate_outputs_topk(self):
         torch.manual_seed(8)
-        TestQNN.dump_intermediate_outputs = True
         backend_options = generate_htp_compiler_spec(use_fp16=False)
         TestQNN.compiler_specs = generate_qnn_executorch_compiler_spec(
             soc_model=self.chipset_table[TestQNN.soc_model],
@@ -6011,8 +6334,7 @@ class TestQNNQuantizedUtils(TestQNN):
             module,
             sample_input,
             expected_partitions=1,
-            expected_intermediate_events=9,
-            expected_compared_events=5,
+            expected_compared_events=3,
         )
 
     def test_qnn_backend_dynamic_shape(self):
@@ -6431,6 +6753,43 @@ class TestQNNQuantizedUtils(TestQNN):
             expected_profile_events=30,
         )
         TestQNN.profile_level = 0
+
+    def test_qnn_backend_runtime_option_heap_profile(self):
+        module = SimpleModel()  # noqa: F405
+        sample_input = (torch.ones(1, 32, 28, 28), torch.ones(1, 32, 28, 28))
+        module1 = self.get_qdq_module(module, sample_input)
+
+        backend_options = generate_htp_compiler_spec(
+            use_fp16=False,
+            use_multi_contexts=True,
+        )
+
+        compiler_specs = generate_qnn_executorch_compiler_spec(
+            soc_model=self.chipset_table[TestQNN.soc_model],
+            backend_options=backend_options,
+            profile_level=2,  # if 0 for closing heap profiling
+        )
+
+        pass_jobs = get_capture_program_passes()
+        split_graph_pass, setting = self.split_graph(4)
+        pass_jobs[split_graph_pass] = setting
+        dep_table = get_passes_dependency_for_capture_program()
+        dep_table[split_graph_pass] = [FoldQDQ]
+
+        edge_prog_mgr = to_edge_transform_and_lower_to_qnn(
+            module=module1,
+            inputs=sample_input,
+            compiler_specs=compiler_specs,
+            dep_table=dep_table,
+            passes_job=pass_jobs,
+        )
+        exec_prog = edge_prog_mgr.to_executorch()
+        self.verify_output(
+            module1,
+            sample_input,
+            exec_prog,
+            save_heap_result=True,
+        )
 
     def test_qnn_backend_runtime_option_htp_performance(self):
         backend_options = generate_htp_compiler_spec(use_fp16=False)
@@ -9490,9 +9849,7 @@ class TestUtilsScript(TestQNN):
             else:
                 svg_path = msg["svg_path"]
                 csv_path = msg["csv_path"]
-                min_accepted = 235
-                max_accepted = 241
-                # Having a +- 3 tolerance, expecting 238 events
+                expected_accepted_events = 234
                 assert os.path.exists(svg_path), f"Unable to find SVG file: {svg_path}"
                 assert os.path.exists(csv_path), f"Unable to find CSV file: {csv_path}"
 
@@ -9504,19 +9861,23 @@ class TestUtilsScript(TestQNN):
                     for row in reader:
                         if len(row) > index and row[index].strip().upper() == "TRUE":
                             csv_valid_count += 1
-                # We assume csv_valid_count == compared_events, since all compared events meet metric's threshold
-                assert (
-                    min_accepted <= csv_valid_count <= max_accepted
-                ), f"Expected CSV events with valid score is outside of expected range, number of valid score events found: {csv_valid_count}"
+                # We assume csv_valid_count == expected_accepted_events, since all compared events meet metric's threshold
+                self.assertEqual(
+                    expected_accepted_events,
+                    csv_valid_count,
+                    msg=f"Expected CSV events: {expected_accepted_events}, found: {csv_valid_count}.",
+                )
 
                 svg_valid_count = 0
                 with open(svg_path, "r", encoding="utf-8") as svg_file:
                     for line in svg_file:
                         svg_valid_count += line.count("is_valid_score=True")
-                # We assume svg_valid_count == compared_events, since all compared events meet metric's threshold
-                assert (
-                    min_accepted <= svg_valid_count <= max_accepted
-                ), f"Expected SVG events with valid score is outside of expected range, number of valid score events found: {svg_valid_count}"
+                # We assume svg_valid_count == expected_accepted_events, since all compared events meet metric's threshold
+                self.assertEqual(
+                    expected_accepted_events,
+                    svg_valid_count,
+                    msg=f"Expected SVG events: {expected_accepted_events}, found: {svg_valid_count}.",
+                )
                 print(
                     f"CSV valid count: {csv_valid_count}. SVG valid count: {svg_valid_count}"
                 )
@@ -9674,7 +10035,6 @@ def setup_environment():
     TestQNN.oss_repo = args.oss_repo
     TestQNN.shared_buffer = args.shared_buffer
     TestQNN.enable_x86_64 = args.enable_x86_64
-    TestQNN.dump_intermediate_outputs = args.dump_intermediate_outputs
     TestQNN.compile_only = args.compile_only
     TestQNN.pre_gen_pte = args.pre_gen_pte
     TestQNN.llama_artifacts = args.llama_artifacts

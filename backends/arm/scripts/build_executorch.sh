@@ -88,6 +88,7 @@ cmake_args=(
     -DCMAKE_BUILD_TYPE=${build_type}
     -DEXECUTORCH_BUILD_DEVTOOLS=${build_devtools}
     -DEXECUTORCH_BUILD_ARM_ETDUMP=${build_with_etdump}
+    -DEXECUTORCH_BAREMETAL_SKIP_INSTALL=OFF
 )
 
 if [[ -n "${target_cpu}" ]]; then
@@ -115,7 +116,7 @@ parallel_jobs="$(get_parallel_jobs)"
 if [[ ${is_linux_musl} -eq 1 ]]; then
     cmake --build ${et_build_dir} -j"${parallel_jobs}" --target executorch_delegate_ethos_u executor_runner --config ${build_type} --
 else
-    cmake --build ${et_build_dir} -j"${parallel_jobs}" --target install --config ${build_type} --
+    cmake --build ${et_build_dir} -j"${parallel_jobs}" --config ${build_type}
 fi
 
 set +x

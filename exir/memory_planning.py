@@ -30,7 +30,12 @@ from executorch.exir import memory
 from executorch.exir.control_flow import while_loop as exir_while
 from executorch.exir.delegate import executorch_call_delegate
 from executorch.exir.error import internal_assert, InternalError
-from executorch.exir.operator.convert import is_inplace_variant, is_out_variant
+from executorch.exir.operator.convert import (
+    is_inplace_variant,
+    is_out_variant,
+    output_to_aliased_input_map,
+    unwrap_op_overload,
+)
 from executorch.exir.schema import DeviceType, NonConstBufferDevice, TensorShapeDynamism
 from executorch.exir.tensor import TensorSpec
 from torch import fx
@@ -302,13 +307,137 @@ def _is_out_var_node(node: torch.fx.Node) -> bool:
 
 
 def _is_inplace_node(node: torch.fx.Node) -> bool:
-    return (
-        node.op == "call_function"
-        and isinstance(node.target, torch._ops.OpOverload)
-        and is_inplace_variant(
-            node.target._schema.name, node.target._schema.overload_name
+    if node.op != "call_function":
+        return False
+    target = node.target
+    if not isinstance(target, torch._ops.OpOverload) and not isinstance(
+        getattr(target, "_op", None), torch._ops.OpOverload
+    ):
+        return False
+    op = unwrap_op_overload(target)
+    return is_inplace_variant(op._schema.name, op._schema.overload_name)
+
+
+def _alias_inplace_result_specs(node: torch.fx.Node) -> None:  # noqa: C901
+    """Alias an in-place op's result TensorSpec(s) onto the corresponding
+    input's spec.
+
+    In-place ops (schema kind == inplace) mutate one or more of their
+    inputs and return tensors that alias them, declared via the
+    ``Tensor(a!)`` schema annotation. To make the memory planner treat
+    result and aliased input as one storage, we copy the input's spec
+    object onto the output's ``node.meta["spec"]`` slot.
+
+    Output→input correspondence is computed via
+    ``output_to_aliased_input_map``, which matches each return's
+    write-alias set against the inputs that share it.
+
+    Gating:
+
+    - Only runs for in-place nodes (caller checks ``_is_inplace_node``).
+    - Multi-output in-place ops are supported when each return's alias
+      set matches exactly one input's alias set.
+    - Falls through silently when alias info is absent or unparseable,
+      preserving the original spec. ``logging.debug`` records each
+      early-return reason so silent regressions are observable.
+    """
+    target = node.target
+    op = unwrap_op_overload(target)
+
+    schema = op._schema
+    out_to_in = output_to_aliased_input_map(schema)
+    if not out_to_in:
+        logging.debug(
+            f"_alias_inplace_result_specs: schema for {op} declares no "
+            f"write-aliased outputs matching an input; skipping."
         )
-    )
+        return
+
+    # Normalize the current spec container into a list for uniform
+    # handling. Caller guarantees this node was identified as an
+    # in-place op with a meta spec (see `_is_inplace_node`), so an
+    # unrecognized container shape is a real bug — assert loudly so it
+    # surfaces in tests rather than silently disabling aliasing.
+    current = node.meta.get("spec")
+    if isinstance(current, TensorSpec):
+        out_specs_list: List[Optional[TensorSpec]] = [current]
+        return_container_kind = "scalar"
+    elif isinstance(current, (list, tuple)):
+        out_specs_list = list(current)
+        return_container_kind = type(current).__name__
+    else:
+        raise InternalError(
+            f"_alias_inplace_result_specs: in-place node {node.name} "
+            f"({op}) has unrecognized spec container of type "
+            f"{type(current).__name__!r}; expected TensorSpec, list, "
+            f"or tuple."
+        )
+
+    # Compute new spec for each return; None means "keep original".
+    # Mutated inputs are usually positional (the `Tensor(a!)` `self`
+    # arg), but custom ops may pass them via kwargs — fall back to
+    # `node.kwargs[arg_name]` in that case.
+    replacements: List[Optional[TensorSpec]] = [None] * len(out_specs_list)
+
+    for out_idx, in_idx in out_to_in.items():
+        if out_idx >= len(out_specs_list):
+            logging.debug(
+                f"_alias_inplace_result_specs: schema for {op} declares "
+                f"return {out_idx} but spec container has only "
+                f"{len(out_specs_list)} entries; skipping this return."
+            )
+            continue
+        # Resolve the mutated input. Prefer positional args, fall back
+        # to kwargs by argument name (custom ops may pass `Tensor(a!)`
+        # args via kwargs).
+        in_node: object
+        if in_idx < len(node.args):
+            in_node = node.args[in_idx]
+        else:
+            arg_name = (
+                schema.arguments[in_idx].name
+                if in_idx < len(schema.arguments)
+                else None
+            )
+            if arg_name is None or arg_name not in node.kwargs:
+                logging.debug(
+                    f"_alias_inplace_result_specs: schema for {op} "
+                    f"expects mutated input at position {in_idx} "
+                    f"(name={arg_name!r}) but it is supplied neither "
+                    f"positionally nor via kwargs; skipping."
+                )
+                continue
+            in_node = node.kwargs[arg_name]
+        if not isinstance(in_node, torch.fx.Node):
+            continue
+        # NOTE: alias unconditionally — including when the input is a
+        # placeholder (named buffer / mutable input). Skipping
+        # placeholders would leave a dangling out-arg on in-place op
+        # instructions whose self is a buffer; the runtime kernel
+        # writes to that out-arg's storage rather than mutating the
+        # buffer, producing incorrect results. The companion change in
+        # `_emit_spec` (emit/_emitter.py) deduplicates by spec identity
+        # so this aliasing doesn't produce two Values for the same FQN.
+        in_spec = in_node.meta.get("spec")
+        if not isinstance(in_spec, TensorSpec):
+            continue
+        replacements[out_idx] = in_spec
+
+    if not any(r is not None for r in replacements):
+        return
+
+    # Assemble the new spec container, preserving the original shape.
+    new_list = [
+        replacements[i] if replacements[i] is not None else out_specs_list[i]
+        for i in range(len(out_specs_list))
+    ]
+    if return_container_kind == "scalar":
+        if isinstance(new_list[0], TensorSpec):
+            node.meta["spec"] = new_list[0]
+    elif return_container_kind == "list":
+        node.meta["spec"] = list(new_list)
+    elif return_container_kind == "tuple":
+        node.meta["spec"] = tuple(new_list)
 
 
 def update_tensor_lifetime(
@@ -474,6 +603,11 @@ def collect_specs_from_nodes(  # noqa: C901
             continue
 
         if _is_inplace_node(node):
+            # Schema-driven: alias the in-place op's result spec(s) onto
+            # the corresponding mutated input's spec so the planner gives
+            # them the same allocation slot. See `_alias_inplace_result_specs`
+            # for the full rationale and gating rules.
+            _alias_inplace_result_specs(node)
             continue
 
         if _is_mutable_buffer(node, graph_signature) and ignore_mutable_buffers:

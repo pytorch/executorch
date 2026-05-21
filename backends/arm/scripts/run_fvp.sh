@@ -151,7 +151,7 @@ elif [[ ${target} == *"ethos-u55"*  ]]; then
         -C mps3_board.telnetterminal0.start_telnet=0        \
         -C mps3_board.uart0.out_file='-'                    \
         -C mps3_board.uart0.shutdown_on_eot=1               \
-        "${extra_args_u55[@]}"                              \
+        ${extra_args_u55[@]+"${extra_args_u55[@]}"}         \
         -a "${elf_file}"                                    \
         ${data_file}                                        \
         --timelimit ${timeout} 2>&1 | sed 's/\r$//' | tee ${log_file} || true # seconds
@@ -164,7 +164,7 @@ elif [[ ${target} == *"ethos-u85"*  ]]; then
         -C mps4_board.telnetterminal0.start_telnet=0        \
         -C mps4_board.uart0.out_file='-'                    \
         -C mps4_board.uart0.shutdown_on_eot=1               \
-        "${extra_args_u85[@]}"                              \
+        ${extra_args_u85[@]+"${extra_args_u85[@]}"}         \
         -a "${elf_file}"                                    \
         ${data_file}                                        \
         --timelimit ${timeout} 2>&1 | sed 's/\r$//' | tee ${log_file} || true # seconds
