@@ -270,18 +270,10 @@ class TextDecoder(Component):
                     QCOM_PASS_ARGS_KWARGS_DEFAULTS_KEY
                 ]["skip_node"] = {"tokens"}
 
-        with torch.no_grad():
-            if self.apply_embedding:
-                tok_embedding = torch.export.export(
-                    tok_embedding.eval(),
-                    tok_embedding.get_example_input(),
-                    strict=True,
-                ).module()
+        if tok_embedding is not None:
+            tok_embedding = tok_embedding.eval()
 
-            decoder = torch.export.export(
-                decoder.eval(), self.export_input, strict=True
-            ).module()
-        return tok_embedding, decoder
+        return tok_embedding, decoder.eval()
 
     def _get_model_instance(self) -> LlamaModel:
         if self.mode == Mode.PREFILL and self.control_args.model_mode == "kv":
@@ -668,6 +660,18 @@ class TextDecoder(Component):
         )
 
         with torch.no_grad():
+            # prepare tok embedding model for ptq
+            if self.apply_embedding:
+                self.tok_embedding = torch.export.export(
+                    self.tok_embedding,
+                    self.tok_embedding.get_example_input(),
+                    strict=True,
+                ).module()
+
+            # prepare decoder model for ptq
+            self.decoder = torch.export.export(
+                self.decoder, self.export_input, strict=True
+            ).module()
             if self.control_args.quant_recipe_suggestion:
                 graph_module = copy.deepcopy(self.decoder)
 
