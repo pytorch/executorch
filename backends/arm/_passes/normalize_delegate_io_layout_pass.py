@@ -11,6 +11,7 @@ from executorch.backends.arm._passes.arm_pass_utils import (
     create_node,
     get_first_fake_tensor,
     is_param_node,
+    permute_fake_tensor_metadata,
 )
 from executorch.exir import ExportedProgram
 from executorch.exir.dialects._ops import ops as exir_ops
@@ -63,8 +64,8 @@ class NormalizeDelegateIOLayoutPass(ArmPass):
                     args=(node, list(transpose_perm)),
                     from_node=node,
                 )
-                permute_node.meta["val"] = exir_ops.edge.aten.permute_copy.default(
-                    node.meta["val"], list(transpose_perm)
+                permute_node.meta["val"] = permute_fake_tensor_metadata(
+                    get_first_fake_tensor(node), transpose_perm
                 )
 
             users = [user for user in node.users if user != permute_node]
@@ -91,8 +92,8 @@ class NormalizeDelegateIOLayoutPass(ArmPass):
                     args=(arg, list(dim_order)),
                     from_node=arg,
                 )
-                permute_node.meta["val"] = exir_ops.edge.aten.permute_copy.default(
-                    output_fake, list(dim_order)
+                permute_node.meta["val"] = permute_fake_tensor_metadata(
+                    output_fake, dim_order
                 )
 
             return permute_node, True

@@ -251,6 +251,7 @@ Result<FreeableBuffer> MmapDataLoader::load(
 
   if (mlock_config_ == MlockConfig::UseMadvise) {
     madvise_pages_willneed_sequential(pages, map_size);
+    fcntl_rdadvise_apple(fd_, file_size_);
   }
 
   // The requested data is at an offset into the mapped pages.

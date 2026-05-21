@@ -228,9 +228,21 @@ case "$HF_MODEL" in
     AUDIO_FILE=""
     IMAGE_PATH=""
     ;;
+  SocialLocalMobile/gemma-4-31B-it-HQQ-INT4)
+    MODEL_NAME="gemma4_31b"
+    RUNNER_TARGET="gemma4_31b_runner"
+    RUNNER_PATH="gemma4_31b"
+    EXPECTED_OUTPUT="Paris"
+    PREPROCESSOR=""
+    TOKENIZER_URL=""
+    TOKENIZER_FILE="tokenizer.json"
+    AUDIO_URL=""
+    AUDIO_FILE=""
+    IMAGE_PATH=""
+    ;;
   *)
     echo "Error: Unsupported model '$HF_MODEL'"
-    echo "Supported models: mistralai/Voxtral-Mini-3B-2507, mistralai/Voxtral-Mini-4B-Realtime-2602, nvidia/diar_streaming_sortformer_4spk-v2, openai/whisper series (whisper-{small, medium, large, large-v2, large-v3, large-v3-turbo}), google/gemma-3-4b-it, Qwen/Qwen3-0.6B, nvidia/parakeet-tdt, facebook/dinov2-small-imagenet1k-1-layer, SocialLocalMobile/Qwen3.5-35B-A3B-HQQ-INT4"
+    echo "Supported models: mistralai/Voxtral-Mini-3B-2507, mistralai/Voxtral-Mini-4B-Realtime-2602, nvidia/diar_streaming_sortformer_4spk-v2, openai/whisper series (whisper-{small, medium, large, large-v2, large-v3, large-v3-turbo}), google/gemma-3-4b-it, Qwen/Qwen3-0.6B, nvidia/parakeet-tdt, facebook/dinov2-small-imagenet1k-1-layer, SocialLocalMobile/Qwen3.5-35B-A3B-HQQ-INT4, SocialLocalMobile/gemma-4-31B-it-HQQ-INT4"
     exit 1
     ;;
 esac
@@ -244,19 +256,19 @@ echo "::group::Prepare $MODEL_NAME Artifacts"
 
 
 # Download tokenizer files (skip for models that bundle tokenizer in export or do not use one)
-if [ "$MODEL_NAME" != "parakeet" ] && [ "$MODEL_NAME" != "voxtral_realtime" ] && [ "$MODEL_NAME" != "sortformer" ] && [ "$MODEL_NAME" != "dinov2" ] && [ "$MODEL_NAME" != "qwen3_5_moe" ]; then
+if [ "$MODEL_NAME" != "parakeet" ] && [ "$MODEL_NAME" != "voxtral_realtime" ] && [ "$MODEL_NAME" != "sortformer" ] && [ "$MODEL_NAME" != "dinov2" ] && [ "$MODEL_NAME" != "qwen3_5_moe" ] && [ "$MODEL_NAME" != "gemma4_31b" ]; then
   if [ "$TOKENIZER_FILE" != "" ]; then
-    curl -L $TOKENIZER_URL/$TOKENIZER_FILE -o $MODEL_DIR/$TOKENIZER_FILE
+    curl -L --retry 3 --retry-all-errors $TOKENIZER_URL/$TOKENIZER_FILE -o $MODEL_DIR/$TOKENIZER_FILE
   else
-    curl -L $TOKENIZER_URL/tokenizer.json -o $MODEL_DIR/tokenizer.json
-    curl -L $TOKENIZER_URL/tokenizer_config.json -o $MODEL_DIR/tokenizer_config.json
-    curl -L $TOKENIZER_URL/special_tokens_map.json -o $MODEL_DIR/special_tokens_map.json
+    curl -L --retry 3 --retry-all-errors $TOKENIZER_URL/tokenizer.json -o $MODEL_DIR/tokenizer.json
+    curl -L --retry 3 --retry-all-errors $TOKENIZER_URL/tokenizer_config.json -o $MODEL_DIR/tokenizer_config.json
+    curl -L --retry 3 --retry-all-errors $TOKENIZER_URL/special_tokens_map.json -o $MODEL_DIR/special_tokens_map.json
   fi
 fi
 
 # Download test files
 if [ "$AUDIO_URL" != "" ]; then
-  curl -L $AUDIO_URL -o ${MODEL_DIR}/$AUDIO_FILE
+  curl -L --retry 3 --retry-all-errors $AUDIO_URL -o ${MODEL_DIR}/$AUDIO_FILE
 elif [[ "$MODEL_NAME" == *whisper* ]] || [ "$MODEL_NAME" = "voxtral_realtime" ]; then
   if ! command -v ffmpeg >/dev/null; then
     if [ "$(uname -s)" = "Linux" ] && command -v apt-get >/dev/null; then
@@ -278,7 +290,7 @@ fi
 
 # Download test image for vision models
 if [ -n "${IMAGE_URL:-}" ]; then
-  curl -L "$IMAGE_URL" -o "${MODEL_DIR}/test_image.jpg"
+  curl -L --retry 3 --retry-all-errors "$IMAGE_URL" -o "${MODEL_DIR}/test_image.jpg"
 fi
 
 ls -al
@@ -366,6 +378,9 @@ EOF
     fi
     ;;
   qwen3_5_moe)
+    RUNNER_ARGS="$RUNNER_ARGS --tokenizer_path ${MODEL_DIR}/$TOKENIZER_FILE --prompt 'What is the capital of France?' --max_new_tokens 128 --temperature 0 --cuda_graph"
+    ;;
+  gemma4_31b)
     RUNNER_ARGS="$RUNNER_ARGS --tokenizer_path ${MODEL_DIR}/$TOKENIZER_FILE --prompt 'What is the capital of France?' --max_new_tokens 128 --temperature 0 --cuda_graph"
     ;;
   voxtral_realtime)
