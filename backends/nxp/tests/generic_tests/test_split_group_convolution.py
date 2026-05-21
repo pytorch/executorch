@@ -161,7 +161,8 @@ class TestSplitGroupConvolution(unittest.TestCase):
         # `ConvertConv1dToConv2dPass` is needed to convert `conv1d` to `conv2d`.
         # The 1d variant is not supported.
         modified_module = NeutronAtenPassManager(
-            neutron_target_spec, [SplitGroupConvolution(), ConvertConv1dToConv2dPass()]
+            neutron_target_spec,
+            [SplitGroupConvolution(), ConvertConv1dToConv2dPass(neutron_target_spec)],
         )(graph_module).graph_module
 
         # Verify that the behavior has not changed.

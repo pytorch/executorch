@@ -11,7 +11,7 @@ jobs:
     uses: pytorch/test-infra/.github/workflows/_claude-code.yml@main
     with:
       setup_script: |
-        pip install lintrunner==0.12.7 lintrunner-adapters==0.13.0
+        pip install lintrunner==0.12.7 lintrunner-adapters==0.14.0
         pip install -r requirements-lintrunner.txt
         lintrunner init
     permissions:
