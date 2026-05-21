@@ -52,6 +52,9 @@ jobs:
         source .ci/scripts/utils.sh
         install_executorch "--use-pt-pinned-commit"
 
+        # Allows failure in `echo | jq | while read` pipeline to bubble up and fail the workflow
+        set -o pipefail
+
         echo '${{ inputs.qemu-cpu }}' | jq -r '.[]' | while IFS= read -r qemu_cpu; do
           export QEMU_CPU="${qemu_cpu}"
           export GCC_VERSION=14
