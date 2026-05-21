@@ -4,7 +4,10 @@
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
 
+from typing import Optional
+
 import torch
+import torch.nn.functional as F
 from torch import nn
 
 
@@ -49,9 +52,20 @@ class LoRALinear(nn.Module):
                 state_dict[new_key] = state_dict.pop(old_key)
         super()._load_from_state_dict(state_dict, prefix, *args, **kwargs)
 
-    def forward(self, x: torch.Tensor) -> torch.Tensor:
+    def forward(
+        self,
+        x: torch.Tensor,
+        # Optional forward-arg LoRA tensors (CoreML LoRA-as-IO Path 2). When
+        # both are provided, they override the stored lora_a/lora_b for this
+        # call. Default behavior (None, None) is unchanged.
+        lora_a: Optional[torch.Tensor] = None,
+        lora_b: Optional[torch.Tensor] = None,
+    ) -> torch.Tensor:
         out = self.linear(x)
-        lora_out = self.lora_a(self.dropout(x))
-        lora_out = (self.alpha / self.rank) * self.lora_b(lora_out)
-
-        return out + lora_out
+        if lora_a is not None and lora_b is not None:
+            z = F.linear(self.dropout(x), lora_a)
+            z = (self.alpha / self.rank) * F.linear(z, lora_b)
+        else:
+            z = self.lora_a(self.dropout(x))
+            z = (self.alpha / self.rank) * self.lora_b(z)
+        return out + z

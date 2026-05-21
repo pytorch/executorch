@@ -64,5 +64,16 @@ class LoRAFeedForward(nn.Module):
             else nn.Linear(dim, hidden_dim, bias=False)
         )
 
-    def forward(self, x):
-        return self.w2(F.silu(self.w1(x)) * self.w3(x))
+    def forward(self, x, lora_blob=None):
+        # CoreML LoRA-as-IO Path-2: when `lora_blob` is provided, route per-
+        # projection slices to LoRALinear instances tagged with `_lora_key`.
+        # Default behavior (lora_blob=None) is unchanged.
+        def _call(linear, x_in):
+            if lora_blob is not None:
+                key = getattr(linear, "_lora_key", None)
+                if key is not None and key in lora_blob:
+                    a, b = lora_blob[key]
+                    return linear(x_in, a, b)
+            return linear(x_in)
+
+        return _call(self.w2, F.silu(_call(self.w1, x)) * _call(self.w3, x))

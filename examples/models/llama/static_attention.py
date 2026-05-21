@@ -1030,7 +1030,21 @@ class StaticAttention(Attention):
         if self.use_conv2d:
             x = x.reshape(bsz, -1, 1, dim).transpose(1, 3)
 
-        new_qs = [wq(x) for wq in self.wqs]
+        # CoreML LoRA-as-IO Path-2: when an upstream wrapper has stashed
+        # a per-key LoRA blob in attn_options, route per-projection slices
+        # to LoRALinear instances that have been tagged with `_lora_key`.
+        # Default behavior (no blob, or no `_lora_key`) is unchanged.
+        _lora_blob = kwargs.get("__lora_io_blob__")
+
+        def _lora_call(linear, x_in):
+            if _lora_blob is not None:
+                key = getattr(linear, "_lora_key", None)
+                if key is not None and key in _lora_blob:
+                    a, b = _lora_blob[key]
+                    return linear(x_in, a, b)
+            return linear(x_in)
+
+        new_qs = [_lora_call(wq, x) for wq in self.wqs]
 
         shared_kv = kwargs.get("shared_kv")
         if shared_kv is not None:
@@ -1040,8 +1054,8 @@ class StaticAttention(Attention):
             new_ks = []
             new_vs = []
         else:
-            new_ks = [wk(x) for wk in self.wks]
-            new_vs = [wv(x) for wv in self.wvs]
+            new_ks = [_lora_call(wk, x) for wk in self.wks]
+            new_vs = [_lora_call(wv, x) for wv in self.wvs]
 
         if self.use_conv2d:
 
@@ -1078,14 +1092,15 @@ class StaticAttention(Attention):
 
         if self.use_conv2d:
             y = (
-                self.wo(
-                    y.reshape(bsz, -1, 1, self.n_heads * self.head_dim).transpose(1, 3)
+                _lora_call(
+                    self.wo,
+                    y.reshape(bsz, -1, 1, self.n_heads * self.head_dim).transpose(1, 3),
                 )
                 .transpose(1, 3)
                 .reshape(bsz, -1, self.dim)
             )
         else:
-            y = self.wo(y)
+            y = _lora_call(self.wo, y)
 
         update = {"out_cache_state": out_cache_state}
         if kv_to_share is not None:
