@@ -30,7 +30,12 @@ from torch.export.exported_program import ExportedProgram
 
 def _tensor_to_numpy(tensor: torch.Tensor) -> np.ndarray:
     tensor = tensor.detach().cpu().contiguous()
-    if tensor.dtype in (torch.bfloat16, torch.float8_e4m3fn, torch.float8_e5m2):
+    if tensor.dtype in (
+        torch.bfloat16,
+        torch.float8_e4m3fn,
+        torch.float8_e5m2,
+        torch.float8_e8m0fnu,
+    ):
         try:
             import ml_dtypes  # type: ignore[import-not-found]
         except ImportError as e:
@@ -38,11 +43,11 @@ def _tensor_to_numpy(tensor: torch.Tensor) -> np.ndarray:
                 f"ml_dtypes is required to serialize {tensor.dtype} tensors for TOSA. "
                 "Have you run setup.sh?"
             ) from e
-
         ml_dtype_map = {
             torch.bfloat16: (torch.uint16, ml_dtypes.bfloat16),
             torch.float8_e4m3fn: (torch.uint8, ml_dtypes.float8_e4m3fn),
             torch.float8_e5m2: (torch.uint8, ml_dtypes.float8_e5m2),
+            torch.float8_e8m0fnu: (torch.uint8, ml_dtypes.float8_e8m0fnu),
         }
         storage_dtype, ml_dtype = ml_dtype_map[tensor.dtype]
         return tensor.view(storage_dtype).numpy().view(ml_dtype)
