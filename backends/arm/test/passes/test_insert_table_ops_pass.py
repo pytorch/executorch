@@ -17,29 +17,29 @@ from executorch.backends.arm.test.tester.test_pipeline import PassPipeline
 input_t = Tuple[torch.Tensor]  # Input x
 
 
-class Sigmoid(torch.nn.Module):
+class Tanh(torch.nn.Module):
     test_data: ClassVar[Dict[str, input_t]] = {
         "rand": (torch.rand(4),),
     }
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
-        return x.sigmoid()
+        return x.tanh()
 
 
-@common.parametrize("test_data", Sigmoid.test_data)
+@common.parametrize("test_data", Tanh.test_data)
 def test_insert_table_ops_tosa_INT(test_data: input_t) -> None:
-    module = Sigmoid()
+    module = Tanh()
     pipeline = PassPipeline[input_t](
         module,
         test_data,
         quantize=True,
-        ops_before_pass={"executorch_exir_dialects_edge__ops_aten_sigmoid_default": 1},
+        ops_before_pass={"executorch_exir_dialects_edge__ops_aten_tanh_default": 1},
         ops_after_pass={
             "executorch_exir_dialects_edge__ops_quantized_decomposed_quantize_per_tensor_default": 1,
             "executorch_exir_dialects_edge__ops_quantized_decomposed_dequantize_per_tensor_default": 1,
             "backend__ops_tosa_TABLE_default": 1,
         },
-        ops_not_after_pass=["executorch_exir_dialects_edge__ops_aten_sigmoid_default"],
+        ops_not_after_pass=["executorch_exir_dialects_edge__ops_aten_tanh_default"],
         pass_list=[FoldAndAnnotateQParamsPass],
         passes_with_exported_program=[InsertTableOpsPass],
     )
