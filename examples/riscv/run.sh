@@ -23,7 +23,7 @@ qemu_timeout="600"
 model="add"
 xnnpack=false
 quantize=false
-verbose=false
+debug_xnnpack=false
 verbose_xnnpack=false
 
 usage() {
@@ -33,8 +33,8 @@ Options:
   --model=<NAME>          Which model to export and run (default: ${model})
   --xnnpack               Enable the XNNPACK backend (AOT partitioner + runtime)
   --quantize              Produce an 8-bit quantized model
-  --verbose               Enable XNNPACK partitioner DEBUG logging and dump the lowered graph
   --verbose-xnnpack       Build XNNPACK with XNN_LOG_LEVEL=4 to log microkernel dispatch at runtime
+  --debug-xnnpack         Enable XNNPACK partitioner DEBUG logging and dump the lowered graph
   --build_only            Only export and cross-compile; do not invoke QEMU
   --build_dir=<DIR>       CMake build directory (default: ${build_dir})
   --output_dir=<DIR>      Directory for the exported .bpte (default: ${output_dir})
@@ -49,7 +49,7 @@ for arg in "$@"; do
         --model=*) model="${arg#*=}" ;;
         --xnnpack) xnnpack=true ;;
         --quantize) quantize=true ;;
-        --verbose) verbose=true ;;
+        --debug-xnnpack) debug_xnnpack=true ;;
         --verbose-xnnpack) verbose_xnnpack=true ;;
         --build_only) build_only=true ;;
         --build_dir=*) build_dir="${arg#*=}" ;;
@@ -72,8 +72,8 @@ fi
 if ${quantize}; then
     aot_extra_args+=(--quantize)
 fi
-if ${verbose}; then
-    aot_extra_args+=(--verbose)
+if ${debug_xnnpack}; then
+    aot_extra_args+=(--debug-xnnpack)
 fi
 python "${script_dir}/aot_riscv.py" --model "${model}" "${aot_extra_args[@]}" --output "${bpte_path}"
 
