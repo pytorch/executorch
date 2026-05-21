@@ -237,6 +237,17 @@ def get_registered_tosa_support_checks(
     return checks
 
 
+class MXOpsSupportList(OperatorSupportBase):
+    """Accept Arm MX custom ops when the active spec enables MX support."""
+
+    targets = (exir_ops.edge.tosa_mxfp.linear.default,)
+
+    def is_node_supported(
+        self, submodules: typing.Mapping[str, torch.nn.Module], node: fx.Node
+    ) -> bool:
+        return node.op == "call_function" and node.target in self.targets
+
+
 def tosa_support_factory(
     tosa_spec: TosaSpecification,
     exported_program: ExportedProgram,
@@ -271,6 +282,8 @@ def tosa_support_factory(
         positive_checks.append(TOSAProINTSupportList())
     elif tosa_spec.support_float():
         positive_checks.append(TOSAProFPSupportList())
+    if tosa_spec.support_extension("mxfp"):
+        positive_checks.append(MXOpsSupportList())
     # TODO: Refactor to use TOSAProSupportLists + negtive checks
     positive_checks += [
         check(tosa_spec, reporter)
@@ -748,6 +761,9 @@ class CheckMixedFloatingInputs(OperatorSupportBase):
             torch.ops.higher_order.while_loop,
             torch.ops.higher_order.cond,
         ):
+            return True
+
+        if node.target in MXOpsSupportList.targets:
             return True
 
         floating_dtypes = set()
