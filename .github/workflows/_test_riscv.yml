@@ -31,10 +31,6 @@ on:
         description: 'Configuration(s) for the CPU to emulate with QEMU, expecting a JSON array'
         required: true
         type: string
-      gcc-version:
-        description: 'The version of GCC to use'
-        required: false
-        type: number
       docker-image:
         description: 'The docker image to use for this job'
         required: false
@@ -45,7 +41,7 @@ jobs:
     uses: pytorch/test-infra/.github/workflows/linux_job_v2.yml@main
     with:
       runner: linux.2xlarge
-      docker-image: ${{ inputs.docker-image || 'ci-image:executorch-ubuntu-22.04-gcc11' }}
+      docker-image: ci-image:executorch-ubuntu-24.04-gcc14
       submodules: 'recursive'
       ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
       timeout: ${{ inputs.timeout }}
@@ -58,7 +54,7 @@ jobs:
 
         echo '${{ inputs.qemu-cpu }}' | jq -r '.[]' | while IFS= read -r qemu_cpu; do
           export QEMU_CPU="${qemu_cpu}"
-          export GCC_VERSION=${{ inputs.gcc-version }}
+          export GCC_VERSION=14
           bash .ci/scripts/test_riscv_qemu.sh \
             --model="${{ inputs.model }}" \
             ${{ inputs.xnnpack && '--xnnpack --verbose-xnnpack' || '' }} \
