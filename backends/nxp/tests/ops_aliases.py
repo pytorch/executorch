@@ -12,6 +12,7 @@ import torch
 from executorch.exir.dialects._ops import ops as exir_ops
 
 Abs = exir_ops.edge.aten.abs.default
+AdaptiveAvgPool2D = exir_ops.edge.aten._adaptive_avg_pool2d.default
 AvgPool2D = exir_ops.edge.aten.avg_pool2d.default
 Bmm = exir_ops.edge.aten.bmm.default
 ConstantPadND = exir_ops.edge.aten.constant_pad_nd.default
@@ -22,11 +23,13 @@ ExecutorchDelegateCall = torch.ops.higher_order.executorch_call_delegate
 GetItem = operator.getitem
 HardTanh = exir_ops.edge.aten.hardtanh.default
 HardTanh_ = exir_ops.edge.aten.hardtanh_.default
+LeakyRelu = exir_ops.edge.aten.leaky_relu.default
 MaxPool2DWithIndices = exir_ops.edge.aten.max_pool2d_with_indices.default
 MulTensor = exir_ops.edge.aten.mul.Tensor
 QuantizePerChannel = exir_ops.edge.quantized_decomposed.quantize_per_channel.default
 QuantizePerTensor = exir_ops.edge.quantized_decomposed.quantize_per_tensor.default
 Relu = exir_ops.edge.aten.relu.default
+Sigmoid = exir_ops.edge.aten.sigmoid.default
 Slice = exir_ops.edge.aten.slice.Tensor
 SliceCopy = exir_ops.edge.aten.slice_copy.Tensor
 Softmax = exir_ops.edge.aten._softmax.default

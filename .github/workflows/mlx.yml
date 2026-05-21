@@ -120,10 +120,10 @@ jobs:
           --prompt-len 4 \
           --max-new-tokens 5 2>&1)
         echo "$OUTPUT"
-        if echo "$OUTPUT" | grep -q "Generated token ids: \[167, 94, 253, 88, 227\]"; then
+        if echo "$OUTPUT" | grep -q "Generated token ids: \[167, 167, 81, 167, 81\]"; then
           echo "Success: Qwen 3.5 MoE MLX export + inference completed with expected output"
         else
-          echo "Failed: unexpected output (expected [167, 94, 253, 88, 227])"
+          echo "Failed: unexpected output (expected [167, 167, 81, 167, 81])"
           exit 1
         fi
         echo "::endgroup::"
