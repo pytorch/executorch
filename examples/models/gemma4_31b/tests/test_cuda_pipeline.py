@@ -108,30 +108,27 @@ class TestChunkedPrefill(unittest.TestCase):
         torch.manual_seed(0)
         prompt = torch.randint(0, config.vocab_size, (1, prompt_len), device="cuda")
 
+        temp = torch.tensor([1e-6], dtype=torch.float32, device="cuda")
+
         with torch.no_grad():
             for i in range(prompt_len):
                 tok = prompt[:, i : i + 1]
                 pos = torch.tensor([i], dtype=torch.long, device="cuda")
-                logits_seq = model_seq(tok, pos, None)
+                token_seq = model_seq(tok, pos, temp)
 
         with torch.no_grad():
             chunk1 = prompt[:, :buf_size]
             pos1 = torch.arange(buf_size, dtype=torch.long, device="cuda")
-            model_chunk(chunk1, pos1, None)
+            model_chunk(chunk1, pos1, temp)
 
             chunk2 = prompt[:, buf_size:]
             pos2 = torch.arange(buf_size, prompt_len, dtype=torch.long, device="cuda")
-            logits_chunk = model_chunk(chunk2, pos2, None)
+            token_chunk = model_chunk(chunk2, pos2, temp)
 
-        max_diff = (logits_seq[0, -1].float() - logits_chunk[0, -1].float()).abs().max()
-        self.assertTrue(
-            torch.allclose(
-                logits_seq[0, -1].float(),
-                logits_chunk[0, -1].float(),
-                atol=1e-2,
-                rtol=1e-3,
-            ),
-            f"Chunked prefill diverged: max_diff={max_diff:.4g}",
+        self.assertEqual(
+            int(token_seq.item()),
+            int(token_chunk.item()),
+            "Chunked prefill produced different token than sequential",
         )
 
 
