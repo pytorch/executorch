@@ -25,9 +25,7 @@ class ConvertELUParamsPass(ArmPass):
     @property
     def _passes_required_after(self) -> Set[Type[ExportPass]]:
         # Lazy import to avoid circular dependency between passes
-        from executorch.backends.arm._passes.insert_table_ops import (
-            InsertTableOpsPass,
-        )
+        from executorch.backends.arm._passes.insert_table_ops import InsertTableOpsPass
 
         return {InsertTableOpsPass}
 
