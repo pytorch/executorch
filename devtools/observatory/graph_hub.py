@@ -49,15 +49,14 @@ class GraphHub:
             payload = contribution.to_payload()
             namespaced_id = f"{lens_name}/{layer_key}"
 
-            slot[namespaced_id] = {
-                "name": payload.name,
-                "legend": payload.legend,
-                "sync_keys": payload.sync_keys,
-                "nodes": {
-                    node_id: asdict(node_payload)
-                    for node_id, node_payload in payload.nodes.items()
-                },
-            }
+            # asdict() forwards every GraphExtensionPayload field (and recurses
+            # into per-node GraphExtensionNodePayload) so the JS runtime sees
+            # the full schema — including `has_label_formatter`, which gates
+            # canvas label rendering and the layer panel's "L" badge.  The
+            # original `id` is replaced by `namespaced_id` because the dict
+            # key is authoritative on the JS side.
+            slot[namespaced_id] = asdict(payload)
+            slot[namespaced_id]["id"] = namespaced_id
 
     def get_asset(self, graph_ref: str) -> Dict[str, Any]:
         return self._graph_assets.get(graph_ref, {})
@@ -70,10 +69,22 @@ class GraphHub:
 
     @staticmethod
     def build_viewer_payload(graph_assets: Dict[str, Any], graph_layers: Dict[str, Any], graph_ref: str) -> Dict[str, Any]:
+        # Layout constants live alongside the JS hardcoded fallback in
+        # graph_data_store.js; sourcing them here from FXGraphExporter keeps
+        # Python (build-time bbox reservation) and JS (canvas rendering) on
+        # the same dimensions so labels never overflow their reserved slot.
+        from executorch.devtools.fx_viewer.exporter import FXGraphExporter
+
+        layout = FXGraphExporter._layout_constants_payload()
         asset = graph_assets.get(graph_ref, {})
         if not asset:
-            return {"base": {"legend": [], "nodes": [], "edges": []}, "extensions": {}}
+            return {
+                "base": {"legend": [], "nodes": [], "edges": []},
+                "extensions": {},
+                "layout": layout,
+            }
         return {
             "base": asset.get("base", {"legend": [], "nodes": [], "edges": []}),
             "extensions": graph_layers.get(graph_ref, {}),
+            "layout": layout,
         }

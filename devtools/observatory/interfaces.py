@@ -436,6 +436,8 @@ class GraphLayerContribution:
                 name=self.name_override or payload.name,
                 legend=payload.legend,
                 nodes=payload.nodes,
+                sync_keys=payload.sync_keys,
+                has_label_formatter=payload.has_label_formatter,
             )
 
         return payload
