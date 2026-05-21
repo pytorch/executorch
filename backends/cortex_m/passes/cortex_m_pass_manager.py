@@ -8,6 +8,7 @@ import inspect
 from typing import Any, Optional, Type
 
 from executorch.backends.arm._passes import (
+    DeduplicateGetAttrPass,
     FoldAndAnnotateQParamsPass,
     ScalarsToAttributePass,
 )
@@ -52,6 +53,7 @@ class CortexMPassManager(PassManager):
         ReplaceScalarWithTensorArgPass,
         ClampHardswishPass,
         DecomposeMeanPass,
+        DeduplicateGetAttrPass,
     ]
 
     def __init__(

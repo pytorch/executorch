@@ -169,14 +169,19 @@ class TestPerChannelConversion(unittest.TestCase):
                 atol=1.0,
             )
 
-            nodes = list(exported_program.graph.nodes)
+            conv_nodes = [
+                node
+                for node in exported_program.graph.nodes
+                if node.target == exir_ops.edge.aten.convolution.default
+            ]
+            assert len(conv_nodes) == 1
 
+            conv_node = conv_nodes[0]
             assert (
-                nodes[8].target
+                conv_node.args[1].target
                 == exir_ops.edge.quantized_decomposed.dequantize_per_channel.default
             )
             assert (
-                nodes[9].target
+                conv_node.args[2].target
                 == exir_ops.edge.quantized_decomposed.dequantize_per_channel.default
             )
-            assert nodes[10].target == exir_ops.edge.aten.convolution.default
