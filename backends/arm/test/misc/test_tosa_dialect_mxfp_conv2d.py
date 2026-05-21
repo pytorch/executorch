@@ -35,6 +35,26 @@ def test_conv2d_block_scaled_tosa_fp_mxfp() -> None:
     assert tuple(output.shape) == (1, 8, 8, 4)
 
 
+def test_conv2d_block_scaled_tosa_fp_mxfp4() -> None:
+    with TosaLoweringContext(
+        TosaSpecification.create_from_string("TOSA-1.1+FP+mxfp")
+    ), FakeTensorMode() as mode:
+        output = exir_ops.backend.tosa.CONV2D_BLOCK_SCALED.default(
+            mode.from_tensor(torch.zeros(1, 8, 8, 16, dtype=torch.uint8)),
+            mode.from_tensor(torch.randn(1, 8, 8, 1, dtype=torch.float8_e8m0fnu)),
+            mode.from_tensor(torch.zeros(4, 3, 3, 16, dtype=torch.uint8)),
+            mode.from_tensor(torch.randn(4, 3, 3, 1, dtype=torch.float8_e8m0fnu)),
+            mode.from_tensor(torch.randn(4, dtype=torch.float32)),
+            [1, 1],
+            [1, 1, 1, 1],
+            [1, 1],
+            32,
+        )
+
+    assert output.dtype == torch.float32
+    assert tuple(output.shape) == (1, 8, 8, 4)
+
+
 def test_conv2d_block_scaled_invalid_scale_shape() -> None:
     with TosaLoweringContext(
         TosaSpecification.create_from_string("TOSA-1.1+FP+mxfp")

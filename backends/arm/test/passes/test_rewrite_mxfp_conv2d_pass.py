@@ -9,6 +9,7 @@ import executorch.backends.arm.tosa.dialect  # noqa: F401
 import torch
 from executorch.backends.arm._passes.rewrite_mxfp_conv2d import RewriteMXFPConv2dPass
 from executorch.backends.arm.ao_ext import MXFPOpConfig, to_mxfp
+from executorch.backends.arm.tosa.mapping import TosaSpecialDtype
 from executorch.backends.arm.tosa.specification import (
     TosaLoweringContext,
     TosaSpecification,
@@ -40,6 +41,16 @@ def _is_conv2d(module: torch.nn.Module, _fqn: str) -> bool:
 def _targets(graph_module: torch.fx.GraphModule) -> list[object]:
     return [
         node.target for node in graph_module.graph.nodes if node.op == "call_function"
+    ]
+
+
+def _nodes_from_target(
+    graph_module: torch.fx.GraphModule, target_op
+) -> list[torch.fx.Node]:
+    return [
+        node
+        for node in graph_module.graph.nodes
+        if node.op == "call_function" and node.target == target_op
     ]
 
 
@@ -89,3 +100,37 @@ def test_rewrite_mxfp_conv2d_restores_output_shape() -> None:
 
     assert tuple(conv_node.meta["val"].shape) == (1, 5, 6, 8)
     assert tuple(output_node.meta["val"].shape) == (1, 8, 5, 6)
+
+
+def test_rewrite_mxfp4_conv2d_marks_payloads() -> None:
+    model = _Conv2dModule(bias=True).eval()
+    to_mxfp(
+        model,
+        MXFPOpConfig(weight_dtype=torch.float4_e2m1fn_x2),
+        filter_fn=_is_conv2d,
+    )
+    exported = export(model, (torch.randn(1, 32, 10, 12),), strict=False)
+    tosa_spec = TosaSpecification.create_from_string("TOSA-1.1+FP+mxfp")
+
+    with TosaLoweringContext(tosa_spec):
+        graph_module = (
+            RewriteMXFPConv2dPass(exported).call(exported.graph_module).graph_module
+        )
+
+    conv_node = _nodes_from_target(
+        graph_module, exir_ops.backend.tosa.CONV2D_BLOCK_SCALED.default
+    )[0]
+    input_qdata_node = conv_node.args[0]
+    weight_qdata_node = conv_node.args[2]
+
+    assert isinstance(input_qdata_node, torch.fx.Node)
+    assert isinstance(weight_qdata_node, torch.fx.Node)
+    assert tuple(input_qdata_node.meta["val"].shape) == (1, 10, 12, 16)
+    assert tuple(weight_qdata_node.meta["val"].shape) == (8, 3, 3, 16)
+    assert (
+        input_qdata_node.meta[TosaSpecialDtype.meta_key()] == TosaSpecialDtype.FP4E2M1
+    )
+    assert (
+        weight_qdata_node.meta[TosaSpecialDtype.meta_key()] == TosaSpecialDtype.FP4E2M1
+    )
+    assert tuple(conv_node.meta["val"].shape) == (1, 5, 6, 8)

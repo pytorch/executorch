@@ -23,6 +23,19 @@ def _validate_mxfp_support(tosa_spec: TosaSpecification) -> None:
         )
 
 
+def _get_payload_dtype(data: torch.Tensor) -> torch.dtype:
+    if data.dtype == torch.uint8:
+        return torch.float4_e2m1fn_x2
+    return data.dtype
+
+
+def _get_logical_channels(data: torch.Tensor) -> int:
+    channels = data.shape[-1]
+    if _get_payload_dtype(data) == torch.float4_e2m1fn_x2:
+        return channels * 2
+    return channels
+
+
 def _validate_conv2d_block_scaled_dtypes(
     input_data: torch.Tensor,
     input_scale: torch.Tensor,
@@ -30,12 +43,18 @@ def _validate_conv2d_block_scaled_dtypes(
     weight_scale: torch.Tensor,
     bias: torch.Tensor,
 ) -> None:
-    if input_data.dtype not in (torch.float8_e4m3fn, torch.float8_e5m2):
+    input_dtype = _get_payload_dtype(input_data)
+    weight_dtype = _get_payload_dtype(weight_data)
+    if input_dtype not in (
+        torch.float4_e2m1fn_x2,
+        torch.float8_e4m3fn,
+        torch.float8_e5m2,
+    ):
         raise TosaValueError(
             f"Unsupported input_data dtype {input_data.dtype}",
             op="CONV2D_BLOCK_SCALED",
         )
-    if weight_data.dtype != input_data.dtype:
+    if weight_dtype != input_dtype:
         raise TosaValueError(
             f"weight_data dtype {weight_data.dtype} must match input_data dtype {input_data.dtype}",
             op="CONV2D_BLOCK_SCALED",
@@ -80,8 +99,10 @@ def _validate_conv2d_block_scaled_shapes(
             op="CONV2D_BLOCK_SCALED",
         )
 
-    n, ih, iw, ic = input_data.shape
-    oc, kh, kw, weight_ic = weight_data.shape
+    n, ih, iw = input_data.shape[:3]
+    ic = _get_logical_channels(input_data)
+    oc, kh, kw = weight_data.shape[:3]
+    weight_ic = _get_logical_channels(weight_data)
     if ic != weight_ic:
         raise TosaValueError(
             f"input channels must match weight channels, but got {ic} and {weight_ic}",

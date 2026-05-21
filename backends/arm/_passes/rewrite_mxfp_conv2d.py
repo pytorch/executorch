@@ -24,6 +24,17 @@ from torch.export.graph_signature import InputKind
 from torch.fx import GraphModule, Node
 
 
+def _get_block_scaled_payload_dtype(qdata: torch.Tensor) -> torch.dtype:
+    if qdata.dtype == torch.uint8:
+        return torch.float4_e2m1fn_x2
+    return qdata.dtype
+
+
+def _mark_fp4_payload(node: torch.fx.Node, payload_dtype: torch.dtype) -> None:
+    if payload_dtype == torch.float4_e2m1fn_x2:
+        node.meta[TosaSpecialDtype.meta_key()] = TosaSpecialDtype.FP4E2M1
+
+
 def _set_tensor_meta(node: Node, fake_tensor: torch.Tensor) -> None:
     node.meta["val"] = fake_tensor
 
@@ -205,7 +216,10 @@ class RewriteMXFPConv2dPass(ArmPass):
             input_node = _require_fx_node(input_arg, name="input")
             weight_qdata_node = _require_fx_node(weight_qdata_arg, name="weight_qdata")
             weight_scale_node = _require_fx_node(weight_scale_arg, name="weight_scale")
-            weight_dtype = get_first_fake_tensor(weight_qdata_node).dtype
+            weight_dtype = _get_block_scaled_payload_dtype(
+                get_first_fake_tensor(weight_qdata_node)
+            )
+            _mark_fp4_payload(weight_qdata_node, weight_dtype)
             bias_node = (
                 _require_fx_node(bias_arg, name="bias")
                 if bias_arg is not None
@@ -255,6 +269,7 @@ class RewriteMXFPConv2dPass(ArmPass):
                     from_node=node,
                 )
                 _set_tensor_meta(input_qdata_node, cast_node.meta["val"][0])
+                _mark_fp4_payload(input_qdata_node, weight_dtype)
 
                 input_scale_node = create_node(
                     graph=graph,

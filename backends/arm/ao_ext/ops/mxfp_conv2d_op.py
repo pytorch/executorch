@@ -28,6 +28,19 @@ MXFP_TOSA_LIB.define(
 )
 
 
+def _get_mx_elem_dtype(weight_qdata: torch.Tensor) -> torch.dtype:
+    if weight_qdata.dtype == torch.uint8:
+        return torch.float4_e2m1fn_x2
+    return weight_qdata.dtype
+
+
+def _get_num_input_channels(weight_qdata: torch.Tensor) -> int:
+    num_input_channels = weight_qdata.shape[-1]
+    if _get_mx_elem_dtype(weight_qdata) == torch.float4_e2m1fn_x2:
+        num_input_channels *= 2
+    return num_input_channels
+
+
 def _conv2d_output_shape(
     input_shape: torch.Size,
     weight_shape: torch.Size,
@@ -77,22 +90,23 @@ def _mxfp_conv2d_fake(
         raise ValueError(
             f"Expected rank-4 weight_qdata for Conv2d, got {weight_qdata.ndim}"
         )
-    if weight_qdata.shape[-1] % block_size != 0:
+    num_input_channels = _get_num_input_channels(weight_qdata)
+    if num_input_channels % block_size != 0:
         raise ValueError(
-            f"Weight in_channels={weight_qdata.shape[-1]} must be divisible by "
+            f"Weight in_channels={num_input_channels} must be divisible by "
             f"{block_size=}"
         )
-    if input.shape[1] != weight_qdata.shape[-1]:
+    if input.shape[1] != num_input_channels:
         raise ValueError(
             f"Input channels {input.shape[1]} must match weight in_channels "
-            f"{weight_qdata.shape[-1]}"
+            f"{num_input_channels}"
         )
 
     expected_scale_shape = (
         weight_qdata.shape[0],
         weight_qdata.shape[1],
         weight_qdata.shape[2],
-        weight_qdata.shape[3] // block_size,
+        num_input_channels // block_size,
     )
     if tuple(weight_scale.shape) != expected_scale_shape:
         raise ValueError(
@@ -137,15 +151,17 @@ def _mxfp_conv2d_cpu(
     if len(dilation) != 2:
         raise ValueError(f"Expected dilation with 2 values, got {dilation}")
 
+    elem_dtype = _get_mx_elem_dtype(weight_qdata)
+
     input = _cast_to_block_scaled_cpu_ref(
         input.permute(0, 2, 3, 1),
-        weight_qdata.dtype,
+        elem_dtype,
         block_size,
     ).permute(0, 3, 1, 2)
     weight = to_dtype(
         weight_qdata,
         weight_scale,
-        weight_qdata.dtype,
+        elem_dtype,
         block_size,
         torch.float32,
     ).permute(0, 3, 1, 2)

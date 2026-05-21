@@ -8,14 +8,16 @@ import math
 from collections.abc import Callable
 from typing import Tuple
 
-import pytest
 import torch
 from executorch.backends.arm.ao_ext import MXFPOpConfig, to_mxfp
 from executorch.backends.arm.test import common
+from executorch.backends.arm.test.ops.mxfp.common import (
+    MXFPTosaPipelineFP,
+    MXFPVgfPipeline,
+)
 from executorch.backends.arm.test.tester.analyze_output_utils import (
     compare_rel_frobenius_and_cosine_similarity,
 )
-from executorch.backends.arm.test.tester.test_pipeline import TosaPipelineFP
 
 aten_op = "torch.ops.tosa_mxfp.conv2d.default"
 
@@ -190,6 +192,17 @@ test_data_fp = {
     ),
 }
 
+test_data_vgf_fp = test_data_fp
+
+# TODO: MLETORCH-2141
+_vgf_xfail_reason = (
+    "MXFP is not yet supported in the VGF toolchain. Enable this test when "
+    "toolchain support is available."
+)
+_vgf_xfails: dict[str, str | tuple[str, type[Exception]]] = {
+    test_case: _vgf_xfail_reason for test_case in test_data_vgf_fp
+}
+
 
 def _assert_weight_block_scales_differ(model: Conv2d) -> None:
     weight_scale = model.conv.weight_scale.to(torch.float32)
@@ -197,8 +210,111 @@ def _assert_weight_block_scales_differ(model: Conv2d) -> None:
     assert torch.unique(weight_scale).numel() > 1
 
 
+def _test_mxfp_conv2d_tosa_FP(
+    test_data,
+    config: MXFPOpConfig,
+    frobenius_threshold=0.08,
+    cosine_threshold=0.995,
+) -> None:
+    module, set_block_weights = test_data()
+    module = module.eval()
+
+    if set_block_weights:
+        module.set_block_test_weights()
+
+    test_input = module.get_inputs()
+
+    pipeline = MXFPTosaPipelineFP[input_t1](
+        module,
+        (test_input,),
+        aten_op,
+        filter_fn=_is_conv2d,
+        frobenius_threshold=frobenius_threshold,
+        cosine_threshold=cosine_threshold,
+        mxfp_config=config,
+        tosa_version="1.1",
+        tosa_extensions=["mxfp"],
+    )
+    pipeline.run()
+
+
 @common.parametrize("test_data", test_data_fp)
-def test_mxfp_conv2d_eager_cpu(test_data: Callable[[], tuple[Conv2d, bool]]) -> None:
+def test_mxfp8_conv2d_tosa_FP(
+    test_data: Callable[[], tuple[Conv2d, bool]],
+) -> None:
+    _test_mxfp_conv2d_tosa_FP(
+        test_data,
+        MXFPOpConfig(weight_dtype=torch.float8_e4m3fn),
+    )
+
+
+@common.parametrize("test_data", test_data_fp)
+def test_mxfp4_conv2d_tosa_FP(
+    test_data: Callable[[], tuple[Conv2d, bool]],
+) -> None:
+    _test_mxfp_conv2d_tosa_FP(
+        test_data,
+        MXFPOpConfig(weight_dtype=torch.float4_e2m1fn_x2),
+        frobenius_threshold=0.3,
+        cosine_threshold=0.95,
+    )
+
+
+def _test_mxfp_conv2d_vgf(
+    test_data,
+    config: MXFPOpConfig,
+    frobenius_threshold,
+    cosine_threshold,
+) -> None:
+    module, set_block_weights = test_data()
+    module = module.eval()
+
+    if set_block_weights:
+        module.set_block_test_weights()
+
+    test_input = module.get_inputs()
+
+    pipeline = MXFPVgfPipeline[input_t1](
+        module,
+        (test_input,),
+        aten_op,
+        filter_fn=_is_conv2d,
+        frobenius_threshold=frobenius_threshold,
+        cosine_threshold=cosine_threshold,
+        mxfp_config=config,
+        tosa_spec="TOSA-1.1+FP+mxfp",
+    )
+    pipeline.run()
+
+
+@common.parametrize("test_data", test_data_vgf_fp, xfails=_vgf_xfails)
+@common.SkipIfNoModelConverter
+def test_mxfp8_conv2d_vgf(test_data: Callable[[], tuple[Conv2d, bool]]) -> None:
+    _test_mxfp_conv2d_vgf(
+        test_data,
+        MXFPOpConfig(weight_dtype=torch.float8_e4m3fn),
+        frobenius_threshold=0.08,
+        cosine_threshold=0.995,
+    )
+
+
+@common.parametrize("test_data", test_data_vgf_fp, xfails=_vgf_xfails)
+@common.SkipIfNoModelConverter
+def test_mxfp4_conv2d_vgf(test_data: Callable[[], tuple[Conv2d, bool]]) -> None:
+    _test_mxfp_conv2d_vgf(
+        test_data,
+        MXFPOpConfig(weight_dtype=torch.float4_e2m1fn_x2),
+        frobenius_threshold=0.3,
+        cosine_threshold=0.95,
+    )
+
+
+def _test_mxfp_conv2d_eager_cpu(
+    test_data,
+    config: MXFPOpConfig,
+    frobenius_threshold=0.08,
+    cosine_threshold=0.995,
+) -> None:
     ref_model, set_block_weights = test_data()
     ref_model = ref_model.eval()
     if set_block_weights:
@@ -206,7 +322,7 @@ def test_mxfp_conv2d_eager_cpu(test_data: Callable[[], tuple[Conv2d, bool]]) -> 
     test_model = copy.deepcopy(ref_model).eval()
     test_input = ref_model.get_inputs()
 
-    to_mxfp(test_model, MXFPOpConfig(), filter_fn=_is_conv2d)
+    to_mxfp(test_model, config, filter_fn=_is_conv2d)
     if set_block_weights:
         _assert_weight_block_scales_differ(test_model)
 
@@ -217,31 +333,38 @@ def test_mxfp_conv2d_eager_cpu(test_data: Callable[[], tuple[Conv2d, bool]]) -> 
         ref_output,
         test_output,
         quantization_parameters=None,
-        frobenius_threshold=0.06,
-        cosine_threshold=0.995,
+        frobenius_threshold=frobenius_threshold,
+        cosine_threshold=cosine_threshold,
         clean_reference=False,
     )
 
 
-@pytest.mark.parametrize("bias", [True, False])
-def test_mxfp_conv2d_tosa_FP(bias: bool) -> None:
-    module = Conv2d(
-        input_shape=(1, 32, 9, 9),
-        out_channels=8,
-        kernel_size=3,
-        stride=2,
-        padding=1,
-        bias=bias,
-    ).eval()
-    test_input = module.get_inputs()
-    to_mxfp(module, MXFPOpConfig(), filter_fn=_is_conv2d)
+@common.parametrize("test_data", test_data_fp)
+def test_mxfp8_conv2d_eager_cpu(
+    test_data: Callable[[], tuple[Conv2d, bool]],
+) -> None:
+    """Check eager MXFP implementation.
 
-    pipeline = TosaPipelineFP[input_t1](
-        module,
-        (test_input,),
-        aten_op,
-        exir_op=[],
-        tosa_version="1.1",
-        tosa_extensions=["mxfp"],
+    The Arm lowering tests compare lowered output against the eager CPU
+    implementation, so the eager implementation must be accurate for it to be
+    used as a reference in other tests.
+
+    """
+    _test_mxfp_conv2d_eager_cpu(
+        test_data,
+        MXFPOpConfig(weight_dtype=torch.float8_e4m3fn),
+        frobenius_threshold=0.08,
+        cosine_threshold=0.995,
     )
-    pipeline.run()
+
+
+@common.parametrize("test_data", test_data_fp)
+def test_mxfp4_conv2d_eager_cpu(
+    test_data: Callable[[], tuple[Conv2d, bool]],
+) -> None:
+    _test_mxfp_conv2d_eager_cpu(
+        test_data,
+        MXFPOpConfig(weight_dtype=torch.float4_e2m1fn_x2),
+        frobenius_threshold=0.3,
+        cosine_threshold=0.95,
+    )

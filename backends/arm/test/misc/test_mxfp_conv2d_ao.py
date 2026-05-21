@@ -80,9 +80,34 @@ def test_mxfp_conv2d_quantize_supports_e5m2_weights() -> None:
     assert model.conv.weight_scale.dtype == torch.float8_e8m0fnu
 
 
-def test_mxfp_conv2d_export_preserves_custom_op() -> None:
+def test_mxfp_conv2d_quantize_supports_fp4_weights() -> None:
     model = Conv2dModule().eval()
-    to_mxfp(model, MXFPOpConfig())
+
+    to_mxfp(
+        model,
+        MXFPOpConfig(weight_dtype=torch.float4_e2m1fn_x2),
+    )
+
+    assert isinstance(model.conv, MXFPConv2dOp)
+    assert model.conv.weight_qdata.dtype == torch.uint8
+    assert model.conv.weight_scale.dtype == torch.float8_e8m0fnu
+    assert tuple(model.conv.weight_qdata.shape) == (
+        OUT_CHANNELS,
+        3,
+        3,
+        IN_CHANNELS // 2,
+    )
+    assert tuple(model.conv.weight_scale.shape) == (
+        OUT_CHANNELS,
+        3,
+        3,
+        IN_CHANNELS // 32,
+    )
+
+
+def _test_mxfp_conv2d_export_preserves_custom_op(config: MXFPOpConfig) -> None:
+    model = Conv2dModule().eval()
+    to_mxfp(model, config)
 
     exported = export(model, (torch.randn(1, IN_CHANNELS, 8, 8),), strict=False)
 
@@ -93,3 +118,53 @@ def test_mxfp_conv2d_export_preserves_custom_op() -> None:
     ]
 
     assert torch.ops.tosa_mxfp.conv2d.default in targets
+
+
+def test_mxfp8_e4m3_conv2d_export_preserves_custom_op() -> None:
+    _test_mxfp_conv2d_export_preserves_custom_op(
+        MXFPOpConfig(weight_dtype=torch.float8_e4m3fn)
+    )
+
+
+def test_mxfp4_conv2d_export_preserves_custom_op() -> None:
+    _test_mxfp_conv2d_export_preserves_custom_op(
+        MXFPOpConfig(weight_dtype=torch.float4_e2m1fn_x2)
+    )
+
+
+def test_mxfp_conv2d_cpu_impl_matches_ref() -> None:
+    ref_model = Conv2dModule().eval()
+    test_model = Conv2dModule().eval()
+    test_model.load_state_dict(ref_model.state_dict())
+
+    to_mxfp(test_model, MXFPOpConfig())
+
+    x = torch.linspace(-0.03, 0.03, IN_CHANNELS * 8 * 8).reshape(
+        1,
+        IN_CHANNELS,
+        8,
+        8,
+    )
+    test_output = test_model(x)
+    ref_output = ref_model(x)
+
+    torch.testing.assert_close(test_output, ref_output, rtol=0.1, atol=0.1)
+
+
+def test_mxfp4_conv2d_cpu_impl_matches_ref() -> None:
+    ref_model = Conv2dModule().eval()
+    test_model = Conv2dModule().eval()
+    test_model.load_state_dict(ref_model.state_dict())
+
+    to_mxfp(test_model, MXFPOpConfig(weight_dtype=torch.float4_e2m1fn_x2))
+
+    x = torch.linspace(-0.03, 0.03, IN_CHANNELS * 8 * 8).reshape(
+        1,
+        IN_CHANNELS,
+        8,
+        8,
+    )
+    test_output = test_model(x)
+    ref_output = ref_model(x)
+
+    torch.testing.assert_close(test_output, ref_output, rtol=0.5, atol=0.5)

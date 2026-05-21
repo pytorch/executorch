@@ -52,7 +52,7 @@ class Conv2dBlockScaledVisitor(NodeVisitor):
         validate_valid_dtype(
             self.target,
             [inputs[0], inputs[2]],
-            [ts.DType.FP8E4M3, ts.DType.FP8E5M2],
+            [ts.DType.FP4E2M1, ts.DType.FP8E4M3, ts.DType.FP8E5M2],
             self.tosa_spec,
         )
         validate_valid_dtype(
