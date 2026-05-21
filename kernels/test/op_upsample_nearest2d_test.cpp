@@ -8,6 +8,7 @@
 
 #include <executorch/kernels/test/FunctionHeaderWrapper.h> // Declares the operator
 #include <executorch/kernels/test/supported_features.h>
+#include <executorch/kernels/test/supported_features_skip.h>
 #include <executorch/runtime/core/exec_aten/exec_aten.h>
 #include <executorch/runtime/core/exec_aten/testing_util/tensor_factory.h>
 #include <executorch/runtime/core/exec_aten/testing_util/tensor_util.h>
@@ -266,10 +267,9 @@ TEST_F(OpUpsampleNearest2dTest, DType) {
 }
 
 TEST_F(OpUpsampleNearest2dTest, MismatchedOutputSizeDies) {
-  if (SupportedFeatures::get()->output_resize) {
-    GTEST_SKIP()
-        << "The current kernel supports implicitly resizing output tensor";
-  }
+  ET_SKIP_IF(
+      SupportedFeatures::get()->output_resize,
+      "The current kernel supports implicitly resizing output tensor");
   TensorFactory<ScalarType::Float> tf;
 
   const auto input = tf.ones({1, 1, 1, 2});
