@@ -41,7 +41,10 @@ def define_xnnpack():
             "XNNPACK/src/memory.c",
             "XNNPACK/src/mutex.c",
             "XNNPACK/src/normalization.c",
+            "XNNPACK/src/operator-delete.c",
             "XNNPACK/src/operator-utils.c",
+            "XNNPACK/src/operators/fingerprint_cache.c",
+            "XNNPACK/src/operators/fingerprint_id.c",
             "XNNPACK/src/reference/packing.cc",
         ],
         headers = get_xnnpack_headers(),
@@ -1039,7 +1042,7 @@ def define_xnnpack():
     native.cxx_library(
         name = "ukernels_avx512vnnigfni",
         srcs = select({
-            "DEFAULT": prod_srcs_for_arch_wrapper("avx512vnnifgni"),
+            "DEFAULT": prod_srcs_for_arch_wrapper("avx512vnnigfni"),
             "ovr_config//cpu:arm32": DEFAULT_DUMMY_SRC,
             "ovr_config//cpu:arm64": DEFAULT_DUMMY_SRC,
         }),
@@ -1068,6 +1071,7 @@ def define_xnnpack():
         "-mavxvnni",
         "-mf16c",
         "-mfma",
+        "-mgfni",
     ]
 
     # @lint-ignore BUCKLINT: native and fb_native are explicitly forbidden in fbcode.
@@ -1172,6 +1176,14 @@ def define_xnnpack():
             # "-DXNN_ENABLE_DWCONV_MULTIPLASS=0",
             "-DXNN_ENABLE_ARM_I8MM=1",
             "-DXNN_ENABLE_ARM_FP16_VECTOR=1",
+            "-DXNN_ENABLE_SSE=1",
+            "-DXNN_ENABLE_SSE2=1",
+            "-DXNN_ENABLE_SSSE3=1",
+            "-DXNN_ENABLE_SSE41=1",
+            "-DXNN_ENABLE_AVX=1",
+            "-DXNN_ENABLE_F16C=1",
+            "-DXNN_ENABLE_FMA3=1",
+            "-DXNN_ENABLE_AVX2=1",
             "-DXNN_ENABLE_AVX512F=1",
             "-DXNN_ENABLE_AVX512SKX=1",
             "-DXNN_ENABLE_AVX512VNNI=1",

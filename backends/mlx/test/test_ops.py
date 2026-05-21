@@ -855,6 +855,59 @@ class RepeatTest(OpTestCase):
         return (x,)
 
 
+class RollModel(nn.Module):
+    """Model that rolls a tensor along specified dimensions."""
+
+    def __init__(self, shifts: Tuple[int, ...], dims: Tuple[int, ...]):
+        super().__init__()
+        self.shifts = shifts
+        self.dims = dims
+
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        return torch.roll(x, shifts=self.shifts, dims=self.dims)
+
+
+@register_test
+class RollTest(OpTestCase):
+    """Test case for torch.roll()."""
+
+    name = "roll"
+    rtol = 1e-5
+    atol = 1e-5
+
+    def __init__(
+        self,
+        input_shape: Tuple[int, ...] = (4, 5),
+        shifts: Tuple[int, ...] = (1,),
+        dims: Tuple[int, ...] = (0,),
+    ):
+        self.input_shape = input_shape
+        self.shifts = shifts
+        self.dims = dims
+        shift_str = ",".join(str(s) for s in shifts)
+        dim_str = ",".join(str(d) for d in dims)
+        self.name = f"roll_shift({shift_str})_dim({dim_str})"
+
+    @classmethod
+    def get_test_configs(cls) -> List["RollTest"]:
+        return [
+            cls(input_shape=(8,), shifts=(2,), dims=(0,)),
+            cls(input_shape=(4, 5), shifts=(1,), dims=(0,)),
+            cls(input_shape=(4, 5), shifts=(-2,), dims=(1,)),
+            cls(input_shape=(3, 4, 5), shifts=(3,), dims=(2,)),
+            cls(input_shape=(3, 4, 5), shifts=(1, 2), dims=(0, 2)),
+            cls(input_shape=(3, 4, 5), shifts=(-1, -2, -3), dims=(0, 1, 2)),
+            cls(input_shape=(3, 4, 5), shifts=(2,), dims=(-1,)),
+        ]
+
+    def create_model(self) -> nn.Module:
+        return RollModel(self.shifts, self.dims)
+
+    def create_inputs(self) -> Tuple[torch.Tensor, ...]:
+        x = torch.randn(self.input_shape)
+        return (x,)
+
+
 class CatNModel(nn.Module):
     """Model that concatenates N tensors along a dimension."""
 
@@ -1750,6 +1803,82 @@ class RopeTest(OpTestCase):
         return (q, k, pos_tensor)
 
 
+class RopeCustomFreqsModel(nn.Module):
+    """Model that applies RoPE with custom 1D frequencies (partial rotary)."""
+
+    def __init__(self, dims: int = 32, head_dim: int = 64):
+        super().__init__()
+        self.dims = dims
+        self.head_dim = head_dim
+        # Simulate proportional RoPE: compute freqs for rotary dims only
+        inv_freq = 1.0 / (
+            500000.0 ** (torch.arange(0, dims, 2, dtype=torch.float32) / head_dim)
+        )
+        self.register_buffer("freqs", 1.0 / inv_freq, persistent=False)
+
+    def forward(
+        self,
+        q: torch.Tensor,
+        k: torch.Tensor,
+        pos_tensor: torch.Tensor,
+    ) -> Tuple[torch.Tensor, torch.Tensor]:
+        pos = pos_tensor.item()
+        q_rot = torch.ops.mlx.rope(q, self.dims, pos, False, 0.0, 1.0, self.freqs)
+        k_rot = torch.ops.mlx.rope(k, self.dims, pos, False, 0.0, 1.0, self.freqs)
+        return q_rot, k_rot
+
+
+@register_test
+class RopeCustomFreqsTest(OpTestCase):
+    """Test RoPE with custom 1D frequencies (partial rotary, like Gemma 4)."""
+
+    name = "rope_custom_freqs"
+    rtol = 1e-4
+    atol = 1e-4
+
+    def __init__(
+        self,
+        batch_size: int = 1,
+        num_heads: int = 8,
+        seq_len: int = 4,
+        head_dim: int = 64,
+        dims: int = 32,
+        pos: int = 0,
+    ):
+        self.batch_size = batch_size
+        self.num_heads = num_heads
+        self.seq_len = seq_len
+        self.head_dim = head_dim
+        self.dims = dims
+        self.pos = pos
+        self.name = "rope_custom_freqs"
+
+    @classmethod
+    def get_test_configs(cls) -> List["RopeCustomFreqsTest"]:
+        configs = [
+            cls(),
+            cls(pos=10),
+            cls(head_dim=128, dims=64),
+        ]
+        for cfg in configs:
+            parts = ["rope_custom_freqs"]
+            if cfg.pos > 0:
+                parts.append(f"pos{cfg.pos}")
+            if cfg.head_dim != 64:
+                parts.append(f"hd{cfg.head_dim}")
+            cfg.name = "_".join(parts)
+        return configs
+
+    def create_model(self) -> nn.Module:
+        return RopeCustomFreqsModel(dims=self.dims, head_dim=self.head_dim)
+
+    def create_inputs(self) -> Tuple[torch.Tensor, ...]:
+        q = torch.randn(self.batch_size, self.num_heads, self.seq_len, self.head_dim)
+        k = torch.randn(self.batch_size, self.num_heads, self.seq_len, self.head_dim)
+        pos_tensor = torch.tensor(self.pos, dtype=torch.int64)
+        return (q, k, pos_tensor)
+
+
 from executorch.backends.mlx.llm.cache import KVCache
 
 
@@ -1757,7 +1886,7 @@ class KVCacheModel(nn.Module):
     """
     Test model wrapping KVCache from cache.py.
 
-    This tests the ExecutorTorch llama KVCache-compatible interface that uses
+    This tests the ExecuTorch llama KVCache-compatible interface that uses
     the mlx::kv_cache_update op internally.
     """
 
@@ -1792,7 +1921,7 @@ class KVCacheModel(nn.Module):
 @register_test
 class KVCacheTest(OpTestCase):
     """
-    Test case for MLX KVCache with ExecutorTorch llama KVCache interface.
+    Test case for MLX KVCache with ExecuTorch llama KVCache interface.
 
     This verifies that KVCache:
     1. Accepts the ET llama KVCache update interface
@@ -4221,6 +4350,8 @@ _BINARY_OP_TESTS = [
     {"op_name": "equal",         "op_fn": torch.eq, "shapes": [(2, 3, 4), (10,)], "dtypes": [torch.float32]},
     {"op_name": "not_equal",     "op_fn": torch.ne, "shapes": [(2, 3, 4), (10,)], "dtypes": [torch.float32]},
     # logical
+    {"op_name": "bitwise_and_bool", "op_fn": torch.bitwise_and, "shapes": _SHAPES_3, "dtypes": [torch.bool], "input_fn_a": _bool_input_fn(), "input_fn_b": _bool_input_fn()},
+    {"op_name": "bitwise_and_int",  "op_fn": torch.bitwise_and, "shapes": _SHAPES_3, "dtypes": [torch.int32, torch.int64], "input_fn_a": _int_input_fn(0, 256), "input_fn_b": _int_input_fn(0, 256)},
     {"op_name": "logical_and",   "op_fn": torch.logical_and, "shapes": [(2, 3, 4), (10,), (4, 8)], "dtypes": [torch.bool], "input_fn_a": _bool_input_fn(), "input_fn_b": _bool_input_fn()},
     {"op_name": "logical_or",    "op_fn": torch.logical_or,  "shapes": [(2, 3, 4), (10,), (4, 8)], "dtypes": [torch.bool], "input_fn_a": _bool_input_fn(), "input_fn_b": _bool_input_fn()},
 ]
@@ -4231,6 +4362,51 @@ for _entry in _BINARY_OP_TESTS:
     _cls = _make_binary_op_test(**_entry)
     register_test(_cls)
     globals()[_cls.__name__] = _cls
+
+
+class BitwiseAndScalarModel(nn.Module):
+    def __init__(self, scalar):
+        super().__init__()
+        self.scalar = scalar
+
+    def forward(self, a: torch.Tensor) -> torch.Tensor:
+        return torch.bitwise_and(a, self.scalar)
+
+
+@register_test
+class BitwiseAndScalarTest(OpTestCase):
+    """Test case for aten.bitwise_and op (Tensor_Scalar variant)."""
+
+    name = "bitwise_and_scalar"
+
+    def __init__(
+        self,
+        shape: Tuple[int, ...],
+        dtype: torch.dtype,
+        scalar,
+    ):
+        self.shape = shape
+        self.dtype = dtype
+        self.scalar = scalar
+        shape_str = "x".join(str(s) for s in shape)
+        dtype_str = str(dtype).replace("torch.", "")
+        self.name = f"bitwise_and_scalar_{shape_str}_{dtype_str}"
+
+    @classmethod
+    def get_test_configs(cls) -> List["BitwiseAndScalarTest"]:
+        return [
+            cls(shape=(16,), dtype=torch.bool, scalar=True),
+            cls(shape=(4, 4), dtype=torch.int32, scalar=7),
+            cls(shape=(2, 3, 4), dtype=torch.int64, scalar=13),
+        ]
+
+    def create_inputs(self) -> Tuple[torch.Tensor, ...]:
+        if self.dtype == torch.bool:
+            return _bool_input_fn()(self.shape, self.dtype)
+        return _int_input_fn(0, 256)(self.shape, self.dtype)
+
+    def create_model(self) -> nn.Module:
+        return BitwiseAndScalarModel(self.scalar)
 
 
 @register_test

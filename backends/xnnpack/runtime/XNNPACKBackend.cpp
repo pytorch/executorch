@@ -91,8 +91,13 @@ class XnnpackBackend final
     auto workspace = workspace_result.get();
 
     bool use_weight_cache = options_.resolve_weight_cache(context);
+    // Hold the lock for the entire init-compile-finalize sequence to prevent
+    // concurrent inits from resetting is_finalized_ or overwriting
+    // named_data_map_ while compileModel is using the shared weights cache.
+    std::unique_lock<std::mutex> lock_weights_cache(
+        weights_cache_mutex_, std::defer_lock);
     if (use_weight_cache) {
-      const std::lock_guard<std::mutex> lock_weight_cache(weights_cache_mutex_);
+      lock_weights_cache.lock();
       weights_cache_->initialize_for_runtime(
           context.get_runtime_allocator(), named_data_map);
     }
@@ -110,7 +115,8 @@ class XnnpackBackend final
         executor,
         weights_cache_.get(),
         workspace_ptr,
-        named_data_map);
+        named_data_map,
+        use_weight_cache);
     // This backend does not need its processed data after compiling the model.
     processed->Free();
 

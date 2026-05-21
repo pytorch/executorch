@@ -17,7 +17,7 @@ This is done in the example depending on the board you build for so if you build
 Set up FVP paths and macs used, this will also set `shutdown_on_eot` so the FVP auto stops after it has run the example.
 
 Config Zephyr Corstone300 FVP
-<!-- RUN setup_corstone300_fvp -->
+<!-- RUN setup_corstone300 -->
 ```
 export FVP_ROOT=$PWD/modules/lib/executorch/examples/arm/arm-scratch/FVP-corstone300
 export ARMFVP_BIN_PATH=${FVP_ROOT}/models/Linux64_GCC-9.3
@@ -51,10 +51,10 @@ west build -b mps3/corstone300/fvp modules/lib/executorch/zephyr/samples/hello-e
 Prepare the Cortex-M55 PTE model
 <!-- RUN test_cortex-m55_generate_pte -->
 ```
-python -m modules.lib.executorch.backends.arm.scripts.aot_arm_compiler --model_name=modules/lib/executorch/zephyr/samples/hello-executorch/models/add.py --quantize --target=cortex-m55+int8 --output=add_m55.pte
+python -m modules.lib.executorch.backends.arm.scripts.aot_arm_compiler --model_name=modules/lib/executorch/zephyr/samples/hello-executorch/models/add.py --quantize --target=cortex-m55 --output=add_m55.pte
 ```
 
-`--target=cortex-m55+int8` selects the Cortex-M/CMSIS-NN portable kernel path (no NPU delegation). This produces a `.pte` optimized for Cortex-M55 with INT8 quantization.
+`--target=cortex-m55` plus `--quantize` selects the Cortex-M/CMSIS-NN portable kernel path (no NPU delegation). This produces a `.pte` optimized for Cortex-M55 with INT8 quantization.
 
 
 #### Build and run
@@ -72,7 +72,7 @@ west build -b mps3/corstone300/fvp modules/lib/executorch/zephyr/samples/hello-e
 Set up FVP paths, libs and macs used, this will also set `shutdown_on_eot` so the FVP auto stops after it has run the example.
 
 Config Zephyr Corstone320 FVP
-<!-- RUN setup_corstone320_fvp -->
+<!-- RUN setup_corstone320 -->
 ```
 export FVP_ROOT=$PWD/modules/lib/executorch/examples/arm/arm-scratch/FVP-corstone320
 export ARMFVP_BIN_PATH=${FVP_ROOT}/models/Linux64_GCC-9.3
@@ -129,10 +129,10 @@ export PATH=$PATH:~/STMicroelectronics/STM32Cube/STM32CubeProgrammer/bin
 
 Prepare the Cortex-M55 PTE model
 ```
-python -m modules.lib.executorch.backends.arm.scripts.aot_arm_compiler --model_name=modules/lib/executorch/zephyr/samples/hello-executorch/models/add.py --quantize --target=cortex-m55+int8 --output=add_m55.pte
+python -m modules.lib.executorch.backends.arm.scripts.aot_arm_compiler --model_name=modules/lib/executorch/zephyr/samples/hello-executorch/models/add.py --quantize --target=cortex-m55 --output=add_m55.pte
 ```
 
-`--target=cortex-m55+int8` selects the Cortex-M/CMSIS-NN portable kernel path (no NPU delegation). This produces a `.pte` optimized for Cortex-M55 with INT8 quantization.
+`--target=cortex-m55` plus `--quantize` selects the Cortex-M/CMSIS-NN portable kernel path (no NPU delegation). This produces a `.pte` optimized for Cortex-M55 with INT8 quantization.
 
 #### Build and run
 

@@ -174,11 +174,7 @@ def _parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--use-pt-pinned-commit",
         action="store_true",
-        help="install plain `torch` (whatever pip resolves by default; CI "
-        "uses this when torch is already built from source against the "
-        "pinned ref in pytorch.txt). Without this flag, install the specific "
-        "pinned version from the channel selected in torch_pin.py "
-        "(nightly / test / release).",
+        help="build from the pinned PyTorch commit instead of nightly",
     )
     parser.add_argument(
         "--editable",
@@ -195,7 +191,7 @@ def _parse_args() -> argparse.Namespace:
         help="Only installs necessary dependencies for core executorch and skips "
         " packages necessary for running example scripts.",
     )
-    allowed_optional_dependencies = ["ethos_u", "vgf", "openvino"]
+    allowed_optional_dependencies = ["cortex_m", "ethos_u", "vgf", "openvino"]
     parser.add_argument(
         "--optional-dependency",
         action="append",
@@ -221,16 +217,28 @@ def main(args):
         return
 
     check_and_update_submodules()
-    # By default install the specific pinned version from the channel selected
-    # in torch_pin.py. With --use-pt-pinned-commit, install plain `torch` (pip's
-    # default resolution); CI uses this when torch is already built from source
-    # against the pinned ref in pytorch.txt.
-    install_pinned_version = not args.use_pt_pinned_commit
+    # This option is used in CI to make sure that PyTorch build from the pinned commit
+    # is used instead of nightly. CI jobs wouldn't be able to catch regression from the
+    # latest PT commit otherwise
+    use_pytorch_nightly = not args.use_pt_pinned_commit
 
     # Step 1: Install core dependencies first
-    install_requirements(install_pinned_version)
+    install_requirements(use_pytorch_nightly)
 
-    # Step 2: Install core package
+    # Step 2: Install build dependencies for optional dependencies
+    # They need to be installed before optional dependencies due to --no-build-isolation
+    optional_build_dependencies: list[str] = []
+    for optional_dep in args.optional_dependency:
+        match optional_dep:
+            case "cortex_m":
+                optional_build_dependencies.extend(
+                    ["pybind11>=2.10", "scikit-build-core>=0.7"]
+                )
+    if len(optional_build_dependencies) > 0:
+        cmd = [sys.executable, "-m", "pip", "install", *optional_build_dependencies]
+        subprocess.run(cmd, check=True)
+
+    # Step 3: Install core package
     package_spec = "."
     if args.optional_dependency:
         extras = ",".join(dict.fromkeys(args.optional_dependency))
@@ -251,9 +259,9 @@ def main(args):
     )
     subprocess.run(cmd, check=True)
 
-    # Step 3: Extra (optional) packages that is only useful for running examples.
+    # Step 4: Extra (optional) packages that is only useful for running examples.
     if not args.minimal:
-        install_optional_example_requirements(install_pinned_version)
+        install_optional_example_requirements(use_pytorch_nightly)
 
 
 if __name__ == "__main__":

@@ -17,6 +17,7 @@ from executorch.backends.arm.test import common
 from executorch.backends.arm.test.tester.test_pipeline import (
     EthosU55PipelineINT,
     EthosU85PipelineINT,
+    OpNotSupportedPipeline,
     TosaPipelineFP,
     TosaPipelineINT,
     VgfPipeline,
@@ -39,6 +40,9 @@ test_data_suite = {
     "rank_3_large": lambda: (torch.rand(16, 64, 65), [1, 2, 0]),
     "reshape_large_1": lambda: (torch.rand(1, 1, 65537), [0, 2, 1]),
     "reshape_large_2": lambda: (torch.rand(65537, 1, 1), [1, 2, 0]),
+}
+
+test_data_suite_u55_reject = {
     "rank2_bool": lambda: (torch.randint(0, 2, (5, 5), dtype=torch.bool), [1, 0]),
 }
 
@@ -111,10 +115,19 @@ def test_permute_u55_INT(test_data):
         aten_op,
         exir_ops="executorch_exir_dialects_edge__ops_aten_permute_copy_default",
     )
-    if test_data[0].dtype == torch.bool:
-        pipeline.tester.use_portable_ops = True
-        pipeline.pop_stage("check_count.exir")
-        pipeline.pop_stage("check_not.exir")
+    pipeline.run()
+
+
+@common.parametrize("test_data", test_data_suite_u55_reject)
+def test_permute_u55_INT_not_delegated(test_data: torch.Tensor):
+    test_data, dims = test_data()
+    pipeline = OpNotSupportedPipeline[input_t1](
+        SimplePermute(dims=dims),
+        (test_data,),
+        non_delegated_ops={exir_op: 1},
+        quantize=True,
+        u55_subset=True,
+    )
     pipeline.run()
 
 

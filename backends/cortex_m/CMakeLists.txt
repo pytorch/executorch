@@ -23,7 +23,7 @@ include(FetchContent)
 
 # CMSIS-NN configuration with dynamic path detection
 set(CMSIS_NN_VERSION
-    "098d54a61e3e04e2b60e9010e871eef036ac5ae3"
+    "d933672e7ca97eec70ef43230baee7b20c2a28ae"
     CACHE STRING "CMSIS-NN version to download"
 )
 set(CMSIS_NN_LOCAL_PATH
@@ -48,6 +48,26 @@ else()
   )
 
   FetchContent_MakeAvailable(cmsis_nn)
+endif()
+
+if(TARGET cmsis-nn)
+  if(CMSIS_NN_LOCAL_PATH AND EXISTS "${CMSIS_NN_LOCAL_PATH}")
+    set(cmsis_nn_source_dir "${CMSIS_NN_LOCAL_PATH}")
+  else()
+    set(cmsis_nn_source_dir "${cmsis_nn_SOURCE_DIR}")
+  endif()
+  if(cmsis_nn_source_dir)
+    set(cmsis_nn_include_dir "${cmsis_nn_source_dir}/Include")
+    set_target_properties(
+      cmsis-nn
+      PROPERTIES
+        INTERFACE_INCLUDE_DIRECTORIES
+        "$<BUILD_INTERFACE:${cmsis_nn_include_dir}>;$<INSTALL_INTERFACE:${CMAKE_INSTALL_INCLUDEDIR}/cmsis-nn>"
+    )
+    install(DIRECTORY "${cmsis_nn_include_dir}/"
+            DESTINATION "${CMAKE_INSTALL_INCLUDEDIR}/cmsis-nn"
+    )
+  endif()
 endif()
 
 # Cortex-M ops kernel sources
