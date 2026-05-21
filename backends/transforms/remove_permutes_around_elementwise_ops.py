@@ -240,8 +240,8 @@ class RemovePermutesAroundElementwiseOps(ExportPass):
 
         modified = False
         for subgraph in subgraphs_found:
-            self.permute_subgraph(subgraph)
-            modified = True
+            if self.permute_subgraph(subgraph):
+                modified = True
 
         if modified:
             graph_module.graph.eliminate_dead_code()
@@ -399,7 +399,20 @@ class RemovePermutesAroundElementwiseOps(ExportPass):
             return True
         return self._is_pointwise(node.target)
 
-    def permute_subgraph(self, subgraph: Subgraph) -> None:  # noqa: C901
+    def permute_subgraph(self, subgraph: Subgraph) -> bool:  # noqa: C901
+        # Validate: every view_copy node's permutation rank must match its
+        # input tensor rank.  A mismatch can occur when a squeeze/unsqueeze
+        # view is reached via upstream traversal with a permutation that was
+        # already adapted to a different rank.  Applying the optimisation in
+        # this case would produce an invalid graph, so skip the subgraph.
+        for node in subgraph.nodes:
+            if node.target in self._VIEW_OPS:
+                perm = subgraph.node_start_permute.get(node, subgraph.start_permute)
+                inp = node.args[0]
+                if isinstance(inp, torch.fx.Node) and inp.meta.get("val") is not None:
+                    if len(perm) != len(inp.meta["val"].shape):
+                        return False
+
         # Handle dimension related node arguments FIRST, before
         # bypassing permutes (which changes node inputs/metadata).
         for node in subgraph.nodes:
@@ -479,6 +492,8 @@ class RemovePermutesAroundElementwiseOps(ExportPass):
         for inp, out in subgraph.edges_out:
             assert out.target == exir_ops.edge.aten.permute_copy.default
             out.replace_all_uses_with(inp)
+
+        return True
 
     def update_cat(self, node: torch.fx.Node, start_permute: list[int]) -> None:
         dim = get_arg(node, "dim", int)
