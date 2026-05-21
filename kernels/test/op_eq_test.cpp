@@ -9,6 +9,7 @@
 #include <executorch/kernels/test/FunctionHeaderWrapper.h> // Declares the operator
 #include <executorch/kernels/test/TestUtil.h>
 #include <executorch/kernels/test/supported_features.h>
+#include <executorch/kernels/test/supported_features_skip.h>
 #include <executorch/runtime/core/exec_aten/exec_aten.h>
 #include <executorch/runtime/core/exec_aten/testing_util/tensor_factory.h>
 #include <executorch/runtime/core/exec_aten/testing_util/tensor_util.h>
@@ -82,9 +83,9 @@ TEST_F(OpEqScalarOutTest, BoolInputDtype) {
 
 // Mismatched shape tests.
 TEST_F(OpEqScalarOutTest, MismatchedShapesDies) {
-  if (torch::executor::testing::SupportedFeatures::get()->is_aten) {
-    GTEST_SKIP() << "ATen kernel can handle mismatched shapes";
-  }
+  ET_SKIP_IF(
+      torch::executor::testing::SupportedFeatures::get()->is_aten,
+      "ATen kernel can handle mismatched shapes");
   TensorFactory<ScalarType::Int> tf_int;
   TensorFactory<ScalarType::Bool> tf_bool;
 
@@ -96,9 +97,9 @@ TEST_F(OpEqScalarOutTest, MismatchedShapesDies) {
 }
 
 TEST_F(OpEqScalarOutTest, AllRealOutputDTypes) {
-  if (torch::executor::testing::SupportedFeatures::get()->is_aten) {
-    GTEST_SKIP() << "ATen kernel can handle non-bool output dtype";
-  }
+  ET_SKIP_IF(
+      torch::executor::testing::SupportedFeatures::get()->is_aten,
+      "ATen kernel can handle non-bool output dtype");
 #define TEST_ENTRY(ctype, dtype) test_eq_all_output_dtypes<ScalarType::dtype>();
   ET_FORALL_REALHBF16_TYPES(TEST_ENTRY);
 #undef TEST_ENTRY
@@ -159,9 +160,9 @@ TEST_F(OpEqScalarOutTest, DynamicShapeUpperBoundLargerThanExpected) {
 }
 
 TEST_F(OpEqScalarOutTest, DynamicShapeUnbound) {
-  if (!torch::executor::testing::SupportedFeatures::get()->output_resize) {
-    GTEST_SKIP() << "Dynamic shape unbound not supported";
-  }
+  ET_SKIP_IF(
+      !torch::executor::testing::SupportedFeatures::get()->output_resize,
+      "Dynamic shape unbound not supported");
   /* %python
   out_args = "{1, 1}, torch::executor::TensorShapeDynamism::DYNAMIC_UNBOUND"
   %rewrite(unary_op_out_dtype) */
