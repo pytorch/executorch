@@ -245,6 +245,8 @@ void start_runner(
   };
   executorch::extension::llm::GenerationConfig config{
       true,
+      "",
+      "",
       false,
       -1,
       false,
