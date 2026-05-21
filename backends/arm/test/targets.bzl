@@ -23,7 +23,7 @@ def define_arm_tests():
         "ops/test_log10.py",
         "ops/test_max_pool1d.py",
         "ops/test_mul.py",
-        "ops/test_mxfp_linear.py",
+        "ops/mxfp/test_mxfp_linear.py",
         "ops/test_permute.py",
         "ops/test_rsqrt.py",
         "ops/test_slice.py",
@@ -57,6 +57,7 @@ def define_arm_tests():
         # "misc/test_evaluate_model.py",
         "misc/test_pass_pipeline_config.py",
         "misc/tosa_dialect/test_tosa_dialect_cast_to_block_scaled.py",
+        "misc/tosa_dialect/test_tosa_dialect_mxfp_linear.py",
         "misc/tosa_dialect/test_tosa_resize.py",
         "misc/test_tosa_spec.py",
         "misc/test_bn_relu_folding_qat.py",
@@ -77,10 +78,16 @@ def define_arm_tests():
     for test_file in test_files:
         test_file_name = paths.basename(test_file)
         test_name = test_file_name.replace("test_", "").replace(".py", "")
+        test_srcs = [test_file]
+        if test_file == "ops/mxfp/test_mxfp_linear.py":
+            test_srcs += [
+                "ops/mxfp/__init__.py",
+                "ops/mxfp/common.py",
+            ]
 
         python_pytest(
             name = test_name,
-            srcs = [test_file],
+            srcs = test_srcs,
             pytest_config = "pytest.ini",
             resources = ["conftest.py"],
             compile = "with-source",

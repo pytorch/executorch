@@ -55,6 +55,7 @@ from . import (  # noqa
     op_tosa_gather,
     op_tosa_identity,
     op_tosa_matmul,
+    op_tosa_matmul_t_block_scaled,
     op_tosa_max_pool2d,
     op_tosa_pad,
     op_tosa_rescale,
