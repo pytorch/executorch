@@ -16,7 +16,7 @@ install_swiftshader() {
 
   _tmp_archive="/tmp/${_swiftshader_archive}"
 
-  curl --silent --show-error --location --fail --retry 3 \
+  curl --silent --show-error --location --fail --retry 3 --retry-all-errors \
     --output "${_tmp_archive}" "$_https_amazon_aws/${_swiftshader_archive}"
 
   tar -C "${_swiftshader_dir}" -xzf "${_tmp_archive}"
@@ -35,7 +35,7 @@ install_vulkan_sdk() {
 
   _tmp_archive="/tmp/vulkansdk.tar.gz"
 
-  curl --silent --show-error --location --fail --retry 3 \
+  curl --silent --show-error --location --fail --retry 3 --retry-all-errors \
     --output "${_tmp_archive}" "${_vulkan_sdk_url}"
 
   tar -C "${_vulkan_sdk_dir}" -xJf "${_tmp_archive}"

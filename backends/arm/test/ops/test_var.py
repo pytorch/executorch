@@ -32,6 +32,11 @@ class Var(torch.nn.Module):
         ),
     }
 
+    test_parameters_ethosu = {
+        "var_4d_keep_dim_0_correction": lambda: (torch.randn(1, 50, 10, 20), True, 0),
+        "var_4d_keep_dim_1_correction": lambda: (torch.randn(1, 30, 15, 20), True, 1),
+    }
+
     def __init__(self, keepdim: bool = True, correction: int = 0):
         super().__init__()
         self.keepdim = keepdim

@@ -102,6 +102,28 @@ runtime.cxx_library(
 )
 
 runtime.cxx_library(
+    name = "op__device_copy",
+    srcs = [
+        "op__device_copy.cpp",
+    ],
+    # Constructor needed for op registration.
+    compiler_flags = ["-Wno-global-constructors"],
+    # @lint-ignore BUCKLINT: Avoid `link_whole=True` (https://fburl.com/avoid-link-whole)
+    link_whole = True,
+    supports_python_dlopen = True,
+    visibility = ["PUBLIC"],
+    deps = [
+        ":cuda_allocator",
+        "//executorch/extension/kernel_util:kernel_util",
+        "//executorch/runtime/core/exec_aten:lib",
+        "//executorch/runtime/kernel:kernel_includes",
+    ],
+    external_deps = [
+        ("cuda", None, "cuda-lazy"),
+    ],
+)
+
+runtime.cxx_library(
     name = "cuda_backend",
     srcs = [
         "cuda_backend.cpp",
@@ -120,6 +142,7 @@ runtime.cxx_library(
         ":cuda_platform",
         ":runtime_shims",
         ":cuda_allocator",
+        ":op__device_copy",
         ":cuda_platform",
         "//executorch/backends/aoti:aoti_common_slim",
         "//executorch/backends/aoti/slim/core:slimtensor",
