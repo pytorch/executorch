@@ -8,17 +8,9 @@ from typing import Set, Type
 import torch
 from executorch.backends.arm._passes import ArmPass
 from executorch.backends.arm._passes.arm_pass_utils import create_node
-from executorch.backends.arm._passes.insert_table_ops import InsertTableOpsPass
 from executorch.backends.arm.constants import DQ_OPS
 from executorch.exir.dialects._ops import ops as exir_ops
 from executorch.exir.pass_base import ExportPass, PassResult
-
-
-def _get_elu_parameter(args, kwargs, index, name):
-    if len(args) > index:
-        return args[index]
-
-    return kwargs.get(name, 1.0)
 
 
 class ConvertELUParamsPass(ArmPass):
@@ -29,6 +21,9 @@ class ConvertELUParamsPass(ArmPass):
     the original float values in the meta dict to be able to recover them later.
 
     """
+
+    # Lazy import to avoid circular dependency between passes
+    from executorch.backends.arm._passes.insert_table_ops import InsertTableOpsPass
 
     _passes_required_after: Set[Type[ExportPass]] = {InsertTableOpsPass}
 
@@ -75,7 +70,7 @@ class ConvertELUParamsPass(ArmPass):
                 )
                 replace_node.kwargs = updated_kwargs
 
-                # Save corret parameters
+                # Save correct parameters
                 replace_node.meta["float_alpha"] = alpha
                 replace_node.meta["float_scale"] = scale
                 replace_node.meta["float_input_scale"] = input_scale
