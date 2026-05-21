@@ -12,13 +12,36 @@ on:
         required: false
         type: number
         default: 30
+      model:
+        description: 'Which model to run. Possible values are: add, mv2 (mobilenetv2)'
+        required: false
+        type: string
+        default: 'add'
+      xnnpack:
+        description: 'Whether to enable XNNPACK'
+        required: false
+        type: boolean
+        default: false
+      quantize:
+        description: 'Produce an 8-bit quantized model'
+        required: false
+        type: boolean
+        default: false
+      gcc-version:
+        description: 'The version of GCC to use'
+        required: false
+        type: number
+      docker-image:
+        description: 'The docker image to use for this job'
+        required: false
+        type: string
 
 jobs:
   run:
     uses: pytorch/test-infra/.github/workflows/linux_job_v2.yml@main
     with:
       runner: linux.2xlarge
-      docker-image: ci-image:executorch-ubuntu-22.04-gcc11
+      docker-image: ${{ inputs.docker-image || 'ci-image:executorch-ubuntu-22.04-gcc11' }}
       submodules: 'recursive'
       ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
       timeout: ${{ inputs.timeout }}
@@ -29,4 +52,5 @@ jobs:
         source .ci/scripts/utils.sh
         install_executorch "--use-pt-pinned-commit"
 
-        bash .ci/scripts/test_riscv_qemu.sh
+        export GCC_VERSION=${{ inputs.gcc-version }}
+        bash .ci/scripts/test_riscv_qemu.sh --model="${{ inputs.model }}" ${{ inputs.xnnpack && '--xnnpack' || '' }} ${{ inputs.quantize && '--quantize' || '' }}

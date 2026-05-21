@@ -22,6 +22,7 @@ from typing import (
     Mapping,
     Optional,
     Sequence,
+    Set,
     Tuple,
     TypeAlias,
     TypedDict,
@@ -1025,6 +1026,7 @@ class Inspector:
             Callable[[Union[int, str], Union[int, float]], Union[int, float]]
         ] = None,
         enable_module_hierarchy: bool = False,
+        reference_graph_name: str = EDGE_DIALECT_GRAPH_KEY,
     ) -> None:
         r"""
         Initialize an `Inspector` instance with the underlying `EventBlock`\ s populated with data from the provided ETDump path or binary,
@@ -1040,6 +1042,7 @@ class Inspector:
             delegate_metadata_parser: Optional function to parse delegate metadata from an Profiling Event. Expected signature of the function is (delegate_metadata_list: List[bytes]) -> Union[List[str], Dict[str, Any]].
             delegate_time_scale_converter: Optional function to convert the time scale of delegate profiling data. If not given, use the conversion ratio of target_time_scale/source_time_scale.
             enable_module_hierarchy: Enable submodules in the operator graph. Defaults to False.
+            reference_graph_name: The reference graph used to consume ETRecord
 
         Returns:
             None
@@ -1104,9 +1107,9 @@ class Inspector:
         # Key str is method name; value is list of ProgramOutputs because of list of test cases
         self._reference_outputs: Dict[str, List[ProgramOutput]] = {}
         self._enable_module_hierarchy = enable_module_hierarchy
-        self._consume_etrecord()
+        self._consume_etrecord(reference_graph_name)
 
-    def _consume_etrecord(self) -> None:
+    def _consume_etrecord(self, reference_graph_name) -> None:
         """
         If an ETRecord is provided, connect it to the EventBlocks and populate the Event metadata.
 
@@ -1147,7 +1150,7 @@ class Inspector:
             enable_module_hierarchy=self._enable_module_hierarchy,
         )
         debug_handle_to_op_node_map = create_debug_handle_to_op_node_mapping(
-            self.op_graph_dict[EDGE_DIALECT_GRAPH_KEY],
+            self.op_graph_dict[reference_graph_name],
         )
         for event_block in self.event_blocks:
             for event in event_block.events:
@@ -1337,6 +1340,29 @@ class Inspector:
         Retrieve the runtime intermediate outputs(debug handles and intermediate values mappings)
         from the event blocks, along with the corresponding debug handles and op names mapping.
         """
+        # Collect debug handles already covered by fine-grained inner delegated
+        # events (i.e. delegated events with op_types and debug_data populated),
+        # grouped per backend. When such per-op intermediate outputs exist for a
+        # delegated subgraph, the wrapping DELEGATE_CALL event is redundant: its
+        # debug_handles span every internal handle.
+        inner_delegated_handles_by_backend: Dict[Optional[str], Set[int]] = defaultdict(
+            set
+        )
+        for event_block in self.event_blocks:
+            for event in event_block.events:
+                if (
+                    event.is_delegated_op
+                    and event.op_types
+                    and event.debug_data
+                    and event.debug_handles is not None
+                ):
+                    handles = event.debug_handles
+                    if isinstance(handles, int):
+                        handles = (handles,)
+                    inner_delegated_handles_by_backend[
+                        event.delegate_backend_name
+                    ].update(handles)
+
         debug_handle_to_output = {}
         debug_handle_to_op_names = {}
         for event_block in self.event_blocks:
@@ -1353,6 +1379,17 @@ class Inspector:
                     debug_handle = (debug_handle,)
                 else:
                     debug_handle = tuple(debug_handle)
+                # Skip a DELEGATE_CALL whose handles are already covered by
+                # fine-grained inner delegated events from the same backend
+                # (see comment above).
+                if event.name == "DELEGATE_CALL":
+                    backend_inner = inner_delegated_handles_by_backend.get(
+                        event.delegate_backend_name
+                    )
+                    if backend_inner and not set(debug_handle).isdisjoint(
+                        backend_inner
+                    ):
+                        continue
                 current_entry = debug_handle_to_output.get(
                     debug_handle, (-1, None, event.num_outputs)
                 )
