@@ -714,8 +714,8 @@ jobs:
         # Build QNN backend with Buck
         buck2 build //backends/qualcomm/...
 
-  unittest-arm-backend-with-no-deps:
-    name: unittest-arm-backend-with-no-deps
+  test-arm-backend-no-driver:
+    name: test-arm-backend-no-driver
     uses: pytorch/test-infra/.github/workflows/linux_job_v2.yml@main
     permissions:
       id-token: write
