@@ -22,10 +22,14 @@ class ConvertELUParamsPass(ArmPass):
 
     """
 
-    # Lazy import to avoid circular dependency between passes
-    from executorch.backends.arm._passes.insert_table_ops import InsertTableOpsPass
+    @property
+    def _passes_required_after(self) -> Set[Type[ExportPass]]:
+        # Lazy import to avoid circular dependency between passes
+        from executorch.backends.arm._passes.insert_table_ops import (
+            InsertTableOpsPass,
+        )
 
-    _passes_required_after: Set[Type[ExportPass]] = {InsertTableOpsPass}
+        return {InsertTableOpsPass}
 
     def call(self, graph_module: torch.fx.GraphModule):
         modified_graph = False
