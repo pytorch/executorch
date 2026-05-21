@@ -20,6 +20,7 @@ namespace extension {
 namespace ET_MODULE_NAMESPACE {
 
 using ET_MERGED_DATA_MAP_NAMESPACE::MergedDataMap;
+using ET_RUNTIME_NAMESPACE::Kernel;
 using ET_RUNTIME_NAMESPACE::MethodMeta;
 using ET_RUNTIME_NAMESPACE::Program;
 
@@ -406,7 +407,8 @@ runtime::Error Module::load_method(
     const std::string& method_name,
     runtime::HierarchicalAllocator* planned_memory,
     torch::executor::EventTracer* event_tracer,
-    const LoadBackendOptionsMap* backend_options) {
+    const LoadBackendOptionsMap* backend_options,
+    std::vector<Kernel> kernel_registry) {
   if (!is_method_loaded(method_name)) {
     ET_CHECK_OK_OR_RETURN_ERROR(load());
 
@@ -446,12 +448,16 @@ runtime::Error Module::load_method(
 
     method_holder.memory_manager = std::make_unique<runtime::MemoryManager>(
         memory_allocator_.get(), planned_memory, temp_allocator_.get());
+    method_holder.kernel_registry = std::move(kernel_registry);
     auto res_method = program_->load_method(
         method_name.c_str(),
         method_holder.memory_manager.get(),
         event_tracer ? event_tracer : this->event_tracer(),
         merged_data_map_.get(),
-        effective_backend_options);
+        effective_backend_options,
+        runtime::Span<const Kernel>(
+            method_holder.kernel_registry.data(),
+            method_holder.kernel_registry.size()));
     if (!res_method.ok()) {
       return res_method.error();
     }
