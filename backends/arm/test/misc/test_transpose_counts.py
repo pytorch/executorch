@@ -453,7 +453,7 @@ cases = {
         Model4ConvLstmLinearLayerNorm(), (torch.randn(2, 8, 32),), 3
     ),
     "model_5_dwconv_gelu_layernorm_avgpool": TransposeCountCase(
-        Model5DwConvGeluLayerNormAvgPool(), (torch.randn(1, 8, 16, 16),), 4
+        Model5DwConvGeluLayerNormAvgPool(), (torch.randn(1, 8, 16, 16),), 2
     ),
     "model_6_gru_linear": TransposeCountCase(
         Model6GruLinear(), (torch.randn(2, 16, 8),), 2
