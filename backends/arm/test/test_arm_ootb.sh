@@ -11,6 +11,8 @@ script_dir=$(cd -- "$( dirname -- "${BASH_SOURCE[0]}" )" &> /dev/null && pwd)
 et_root_dir=$(cd "${script_dir}/../../.." && pwd)
 ootb_requirements="${et_root_dir}/backends/arm/requirements-arm-ootb-test.txt"
 
+cd "${et_root_dir}"
+
 help() {
     echo "Usage:"
     echo " $0 [TESTNAME]"
