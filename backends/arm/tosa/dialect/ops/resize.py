@@ -10,6 +10,7 @@ from executorch.backends.arm.tosa.dialect.lib import TosaValueError
 from executorch.backends.arm.tosa.dialect.ops_registration import register_fake_tosa_op
 from executorch.backends.arm.tosa.resize_utils import (
     calculate_tosa_resize_output_hw,
+    get_tosa_resize_output_hw_validation_error,
     get_tosa_resize_validation_error,
 )
 
@@ -92,7 +93,9 @@ def RESIZE(
     H, W = input_shape[1], input_shape[2]
     _validate_resize_parameters((H, W), None, scale, offset, border, tosa_spec)
     output_hw = calculate_tosa_resize_output_hw((H, W), scale, offset, border)
-    _validate_resize_parameters((H, W), output_hw, scale, offset, border, tosa_spec)
+    validation_error = get_tosa_resize_output_hw_validation_error(output_hw)
+    if validation_error is not None:
+        raise TosaValueError(validation_error, op="RESIZE")
     if output_hw is None:
         scale_y_n, scale_y_d, scale_x_n, scale_x_d = scale
         offset_y, offset_x = offset
