@@ -25,6 +25,7 @@
 #define QNN_RUNTIME_LPAI_CLIENT_PERF_TYPE "qnn_runtime_lpai_client_perf_type"
 #define QNN_RUNTIME_LPAI_AFFINITY "qnn_runtime_lpai_affinity"
 #define QNN_RUNTIME_LPAI_CORE_SELECTION "qnn_runtime_lpai_core_selection"
+#define QNN_RUNTIME_HEAP_PROFILING_PATH "qnn_runtime_heap_profiling_path"
 
 #ifdef __cplusplus
 extern "C" {

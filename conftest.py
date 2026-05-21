@@ -1,5 +1,7 @@
 import sys
 
+import torch
+
 collect_ignore_glob: list[str] = []
 
 # Skip Apple tests on Windows. Note that some Core ML tests can run on Linux, as the AOT flow
@@ -10,3 +12,6 @@ if sys.platform == "win32":
     collect_ignore_glob += [
         "backends/apple/**",
     ]
+
+# Seed the run
+torch.manual_seed(42)

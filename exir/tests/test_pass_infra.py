@@ -1,5 +1,6 @@
 # Copyright (c) Meta Platforms, Inc. and affiliates.
 # All rights reserved.
+# Copyright 2026 Arm Limited and/or its affiliates.
 #
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
@@ -10,10 +11,11 @@ import unittest
 
 import torch
 from executorch.exir import to_edge
+from executorch.exir.pass_base import ExportPassBaseError, ProxyValue
 from executorch.exir.pass_manager import PassManager
 from executorch.exir.passes import ScalarToTensorPass
 from executorch.exir.passes.pass_registry import PassRegistry
-from torch.export import export
+from torch.export import Dim, export
 from torch.fx.passes.infra.pass_base import PassBase
 
 
@@ -178,3 +180,39 @@ class TestPassInfra(unittest.TestCase):
         for node in new_gm.graph.nodes:
             if node.target != "output":
                 self.assertIn("val", node.meta)
+
+
+class TestProxyValueSymbolicCoercions(unittest.TestCase):
+    @staticmethod
+    def _symbolic_values() -> tuple[torch.SymInt, torch.SymFloat]:
+        class ViewModule(torch.nn.Module):
+            def forward(self, x: torch.Tensor) -> torch.Tensor:
+                return x.view(x.size(0), -1)
+
+        exported = export(
+            ViewModule(),
+            (torch.randn(2, 3),),
+            dynamic_shapes=({0: Dim("batch", min=1, max=8)},),
+            strict=True,
+        )
+        gm = to_edge(exported).exported_program().graph_module
+        for node in gm.graph.nodes:
+            value = node.meta.get("val")
+            if isinstance(value, torch.SymInt):
+                return value, torch.sym_float(value)
+        raise AssertionError("Expected a symbolic scalar in exported graph metadata")
+
+    def test_rejects_implicit_symbolic_scalar_coercions(self) -> None:
+        sym_int, sym_float = self._symbolic_values()
+
+        with self.assertRaisesRegex(ExportPassBaseError, "boolean context"):
+            bool(ProxyValue(sym_int, torch.fx.Graph().placeholder("x")))
+
+        with self.assertRaisesRegex(ExportPassBaseError, "converted to int"):
+            int(ProxyValue(sym_int, torch.fx.Graph().placeholder("x")))
+
+        with self.assertRaisesRegex(ExportPassBaseError, "used in index context"):
+            ProxyValue(sym_int, torch.fx.Graph().placeholder("x")).__index__()
+
+        with self.assertRaisesRegex(ExportPassBaseError, "converted to float"):
+            float(ProxyValue(sym_float, torch.fx.Graph().placeholder("x")))
