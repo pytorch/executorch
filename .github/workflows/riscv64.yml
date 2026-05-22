@@ -43,6 +43,9 @@ jobs:
           - { model: resnet18,   xnnpack: false, quantize: false }
           - { model: resnet18,   xnnpack: true,  quantize: false }
           - { model: resnet18,   xnnpack: true,  quantize: true }
+          # No quantization for Yolo26
+          - { model: yolo26,   xnnpack: false, quantize: false }
+          - { model: yolo26,   xnnpack: true,  quantize: false }
     permissions:
       id-token: write
       contents: read
