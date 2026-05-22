@@ -228,22 +228,8 @@ case "$HF_MODEL" in
     AUDIO_FILE=""
     IMAGE_PATH=""
     ;;
-  SocialLocalMobile/gemma-4-31B-it-HQQ-INT4)
-    MODEL_NAME="gemma4_31b"
-    RUNNER_TARGET="gemma4_31b_runner"
-    RUNNER_PATH="gemma4_31b"
-    EXPECTED_OUTPUT="Paris"
-    PREPROCESSOR=""
-    TOKENIZER_URL=""
-    TOKENIZER_FILE="tokenizer.json"
-    AUDIO_URL=""
-    AUDIO_FILE=""
-    IMAGE_PATH=""
-    ;;
-  gasoonjia/gemma-4-31B-it-HQQ-INT4-vision)
+  gasoonjia/gemma-4-31B-it-HQQ-INT4)
     # Vision-enabled prequant of Gemma 4 31B (image+text smoke test).
-    # Reuses the same runner binary as the text-only variant; runner
-    # branches on --image_path to enable the vision encoder path.
     MODEL_NAME="gemma4_31b_vision"
     RUNNER_TARGET="gemma4_31b_runner"
     RUNNER_PATH="gemma4_31b"
@@ -262,7 +248,7 @@ case "$HF_MODEL" in
     ;;
   *)
     echo "Error: Unsupported model '$HF_MODEL'"
-    echo "Supported models: mistralai/Voxtral-Mini-3B-2507, mistralai/Voxtral-Mini-4B-Realtime-2602, nvidia/diar_streaming_sortformer_4spk-v2, openai/whisper series (whisper-{small, medium, large, large-v2, large-v3, large-v3-turbo}), google/gemma-3-4b-it, Qwen/Qwen3-0.6B, nvidia/parakeet-tdt, facebook/dinov2-small-imagenet1k-1-layer, SocialLocalMobile/Qwen3.5-35B-A3B-HQQ-INT4, SocialLocalMobile/gemma-4-31B-it-HQQ-INT4, gasoonjia/gemma-4-31B-it-HQQ-INT4-vision"
+    echo "Supported models: mistralai/Voxtral-Mini-3B-2507, mistralai/Voxtral-Mini-4B-Realtime-2602, nvidia/diar_streaming_sortformer_4spk-v2, openai/whisper series (whisper-{small, medium, large, large-v2, large-v3, large-v3-turbo}), google/gemma-3-4b-it, Qwen/Qwen3-0.6B, nvidia/parakeet-tdt, facebook/dinov2-small-imagenet1k-1-layer, SocialLocalMobile/Qwen3.5-35B-A3B-HQQ-INT4, gasoonjia/gemma-4-31B-it-HQQ-INT4"
     exit 1
     ;;
 esac

@@ -185,10 +185,8 @@ jobs:
             name: "dinov2-small-imagenet1k-1-layer"
           - repo: "SocialLocalMobile"
             name: "Qwen3.5-35B-A3B-HQQ-INT4"
-          - repo: "SocialLocalMobile"
-            name: "gemma-4-31B-it-HQQ-INT4"
           - repo: "gasoonjia"
-            name: "gemma-4-31B-it-HQQ-INT4-vision"
+            name: "gemma-4-31B-it-HQQ-INT4"
         quant:
           - "non-quantized"
           - "quantized-int4-tile-packed"
@@ -208,23 +206,14 @@ jobs:
               repo: "SocialLocalMobile"
               name: "Qwen3.5-35B-A3B-HQQ-INT4"
             quant: "quantized-int4-weight-only"
-          # Gemma 4 31B uses a prequantized checkpoint, only tile-packed
-          - model:
-              repo: "SocialLocalMobile"
-              name: "gemma-4-31B-it-HQQ-INT4"
-            quant: "non-quantized"
-          - model:
-              repo: "SocialLocalMobile"
-              name: "gemma-4-31B-it-HQQ-INT4"
-            quant: "quantized-int4-weight-only"
           # Gemma 4 31B vision uses a prequantized checkpoint, only tile-packed
           - model:
               repo: "gasoonjia"
-              name: "gemma-4-31B-it-HQQ-INT4-vision"
+              name: "gemma-4-31B-it-HQQ-INT4"
             quant: "non-quantized"
           - model:
               repo: "gasoonjia"
-              name: "gemma-4-31B-it-HQQ-INT4-vision"
+              name: "gemma-4-31B-it-HQQ-INT4"
             quant: "quantized-int4-weight-only"
           # Voxtral Realtime only supports int4-tile-packed on CUDA
           - model:
@@ -280,7 +269,7 @@ jobs:
     with:
       timeout: 90
       secrets-env: EXECUTORCH_HF_TOKEN
-      runner: ${{ (matrix.model.name == 'Qwen3.5-35B-A3B-HQQ-INT4' || matrix.model.name == 'gemma-4-31B-it-HQQ-INT4' || matrix.model.name == 'gemma-4-31B-it-HQQ-INT4-vision') && 'linux.aws.a100' || 'linux.g5.4xlarge.nvidia.gpu' }}
+      runner: ${{ (matrix.model.name == 'Qwen3.5-35B-A3B-HQQ-INT4' || matrix.model.name == 'gemma-4-31B-it-HQQ-INT4') && 'linux.aws.a100' || 'linux.g5.4xlarge.nvidia.gpu' }}
       gpu-arch-type: cuda
       gpu-arch-version: "13.0"
       use-custom-docker-registry: false
@@ -338,10 +327,8 @@ jobs:
             name: "dinov2-small-imagenet1k-1-layer"
           - repo: "SocialLocalMobile"
             name: "Qwen3.5-35B-A3B-HQQ-INT4"
-          - repo: "SocialLocalMobile"
-            name: "gemma-4-31B-it-HQQ-INT4"
           - repo: "gasoonjia"
-            name: "gemma-4-31B-it-HQQ-INT4-vision"
+            name: "gemma-4-31B-it-HQQ-INT4"
         quant:
           - "non-quantized"
           - "quantized-int4-tile-packed"
@@ -361,23 +348,14 @@ jobs:
               repo: "SocialLocalMobile"
               name: "Qwen3.5-35B-A3B-HQQ-INT4"
             quant: "quantized-int4-weight-only"
-          # Gemma 4 31B uses a prequantized checkpoint, only tile-packed
-          - model:
-              repo: "SocialLocalMobile"
-              name: "gemma-4-31B-it-HQQ-INT4"
-            quant: "non-quantized"
-          - model:
-              repo: "SocialLocalMobile"
-              name: "gemma-4-31B-it-HQQ-INT4"
-            quant: "quantized-int4-weight-only"
           # Gemma 4 31B vision uses a prequantized checkpoint, only tile-packed
           - model:
               repo: "gasoonjia"
-              name: "gemma-4-31B-it-HQQ-INT4-vision"
+              name: "gemma-4-31B-it-HQQ-INT4"
             quant: "non-quantized"
           - model:
               repo: "gasoonjia"
-              name: "gemma-4-31B-it-HQQ-INT4-vision"
+              name: "gemma-4-31B-it-HQQ-INT4"
             quant: "quantized-int4-weight-only"
           # Voxtral Realtime only supports int4-tile-packed on CUDA
           - model:
@@ -427,7 +405,7 @@ jobs:
             quant: "non-quantized"
     with:
       timeout: 90
-      runner: ${{ (matrix.model.name == 'Qwen3.5-35B-A3B-HQQ-INT4' || matrix.model.name == 'gemma-4-31B-it-HQQ-INT4' || matrix.model.name == 'gemma-4-31B-it-HQQ-INT4-vision') && 'linux.aws.a100' || 'linux.g5.4xlarge.nvidia.gpu' }}
+      runner: ${{ (matrix.model.name == 'Qwen3.5-35B-A3B-HQQ-INT4' || matrix.model.name == 'gemma-4-31B-it-HQQ-INT4') && 'linux.aws.a100' || 'linux.g5.4xlarge.nvidia.gpu' }}
       gpu-arch-type: cuda
       gpu-arch-version: "13.0"
       use-custom-docker-registry: false

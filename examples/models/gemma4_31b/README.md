@@ -46,7 +46,7 @@ A vision-enabled prequantized checkpoint (sensitive recipe + vision tower
 weights for image+text inference) is available on HuggingFace:
 
 ```bash
-huggingface-cli download gasoonjia/gemma-4-31B-it-HQQ-INT4-vision --local-dir gemma-4-31B-it-HQQ-INT4-vision
+huggingface-cli download gasoonjia/gemma-4-31B-it-HQQ-INT4 --local-dir gemma-4-31B-it-HQQ-INT4
 ```
 
 > **Note**: This checkpoint is intended for development and testing of the
