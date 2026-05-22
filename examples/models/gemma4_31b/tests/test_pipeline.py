@@ -21,7 +21,6 @@ import unittest
 
 import torch
 import torch.nn as nn
-from executorch.examples.models.gemma4_31b.vision_tower import Gemma4VisionConfig
 
 from executorch.examples.models.gemma4_31b.model import (
     Gemma4_31B,
@@ -34,6 +33,7 @@ from executorch.examples.models.gemma4_31b.quant import (
     QuantRecipe,
     QuantRule,
 )
+from executorch.examples.models.gemma4_31b.vision_tower import Gemma4VisionConfig
 from safetensors import safe_open
 from safetensors.torch import save_file
 from torchao.prototype.safetensors.safetensors_support import (

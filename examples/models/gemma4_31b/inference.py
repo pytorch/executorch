@@ -212,8 +212,9 @@ def _build_vision_encoder(model, config):
     return wrapper
 
 
-def _build_vision_input_ids(tokenizer, prompt: str, num_soft_tokens: int,
-                            bos_id: int = _BOS_ID) -> list[int]:
+def _build_vision_input_ids(
+    tokenizer, prompt: str, num_soft_tokens: int, bos_id: int = _BOS_ID
+) -> list[int]:
     """Build the chat-template token sequence for an image+text turn.
 
     Layout (matches ``main.cpp::build_vision_input_ids`` and the gemma4 HF
@@ -256,14 +257,14 @@ def generate_with_image(
 ) -> str:
     """Image+text generation. Mirrors the C++ runner flow in main.cpp:
 
-      1. Patchify image -> (pixel_values, pixel_position_ids).
-      2. vision_encoder(pixels, position_ids) -> (image_embeds, pooler_mask).
-      3. Build chat-template input_ids with ``num_soft_tokens`` image
-         placeholders.
-      4. embed_text(input_ids) -> text_embeds.
-      5. Splice image_embeds into text_embeds at ``<image>`` rows.
-      6. Single-shot prefill via model.forward(spliced, input_pos, temp).
-      7. Decode loop via model.decode_forward(token, input_pos, temp).
+    1. Patchify image -> (pixel_values, pixel_position_ids).
+    2. vision_encoder(pixels, position_ids) -> (image_embeds, pooler_mask).
+    3. Build chat-template input_ids with ``num_soft_tokens`` image
+       placeholders.
+    4. embed_text(input_ids) -> text_embeds.
+    5. Splice image_embeds into text_embeds at ``<image>`` rows.
+    6. Single-shot prefill via model.forward(spliced, input_pos, temp).
+    7. Decode loop via model.decode_forward(token, input_pos, temp).
     """
     from executorch.examples.models.gemma4.image_utils import preprocess_image
 

@@ -166,9 +166,7 @@ def _load_vision_from_hf(
     )
     from safetensors import safe_open
 
-    index_path = os.path.join(
-        vision_safetensors_dir, "model.safetensors.index.json"
-    )
+    index_path = os.path.join(vision_safetensors_dir, "model.safetensors.index.json")
     if os.path.exists(index_path):
         import json as _json
 
@@ -202,12 +200,8 @@ def _load_vision_from_hf(
             f"No vision_tower/embed_vision keys found in {vision_safetensors_dir}."
         )
 
-    missing, unexpected = model.load_state_dict(
-        vision_state, strict=False, assign=True
-    )
-    print(
-        f"  Vision: loaded {len(vision_state)} tensors from {vision_safetensors_dir}"
-    )
+    missing, unexpected = model.load_state_dict(vision_state, strict=False, assign=True)
+    print(f"  Vision: loaded {len(vision_state)} tensors from {vision_safetensors_dir}")
     if unexpected:
         print(f"  WARNING: unexpected vision keys: {sorted(unexpected)[:5]}")
 
