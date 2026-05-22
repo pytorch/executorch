@@ -3,16 +3,13 @@
 #include <cstdint>
 #include <string>
 
+#include <executorch/extension/asr/runner/transducer_runner.h>
+
 namespace parakeet {
 
-// Matches output type of tokenizers::Tokenizer methods
+// Use the shared Token type from the ASR runner.
+using Token = ::executorch::extension::asr::Token;
 using TokenId = uint64_t;
-
-struct Token {
-  TokenId id;
-  int64_t start_offset;
-  int64_t duration;
-};
 
 struct TokenWithTextInfo {
   TokenId id;

@@ -49,8 +49,6 @@ from executorch.examples.models.gemma4.text_decoder import (
     apply_rotary_emb,
     Gemma4KVCache,
     Gemma4MLP,
-    RMSNorm,
-    RMSNormNoWeight,
 )
 from executorch.examples.models.gemma4_31b.sampler import sample
 from torch.nn import functional as F
@@ -247,9 +245,11 @@ class Gemma4Attention(nn.Module):
         )
 
         # Q/K norm have learnable weight; V norm is weightless.
-        self.q_norm = RMSNorm(self.head_dim, eps=config.rms_norm_eps)
-        self.k_norm = RMSNorm(self.head_dim, eps=config.rms_norm_eps)
-        self.v_norm = RMSNormNoWeight(self.head_dim, eps=config.rms_norm_eps)
+        self.q_norm = nn.RMSNorm(self.head_dim, eps=config.rms_norm_eps)
+        self.k_norm = nn.RMSNorm(self.head_dim, eps=config.rms_norm_eps)
+        self.v_norm = nn.RMSNorm(
+            self.head_dim, eps=config.rms_norm_eps, elementwise_affine=False
+        )
 
         self.register_buffer("inv_freq", self._compute_inv_freq(), persistent=False)
 
@@ -364,14 +364,14 @@ class Gemma4DecoderLayer(nn.Module):
         self.self_attn = Gemma4Attention(config, layer_idx)
         self.mlp = Gemma4MLP(config.hidden_size, config.intermediate_size)
 
-        self.input_layernorm = RMSNorm(config.hidden_size, eps=config.rms_norm_eps)
-        self.post_attention_layernorm = RMSNorm(
+        self.input_layernorm = nn.RMSNorm(config.hidden_size, eps=config.rms_norm_eps)
+        self.post_attention_layernorm = nn.RMSNorm(
             config.hidden_size, eps=config.rms_norm_eps
         )
-        self.pre_feedforward_layernorm = RMSNorm(
+        self.pre_feedforward_layernorm = nn.RMSNorm(
             config.hidden_size, eps=config.rms_norm_eps
         )
-        self.post_feedforward_layernorm = RMSNorm(
+        self.post_feedforward_layernorm = nn.RMSNorm(
             config.hidden_size, eps=config.rms_norm_eps
         )
 
@@ -416,7 +416,7 @@ class Gemma4_31B(nn.Module):
         self.layers = nn.ModuleList(
             [Gemma4DecoderLayer(config, i) for i in range(config.num_hidden_layers)]
         )
-        self.norm = RMSNorm(config.hidden_size, eps=config.rms_norm_eps)
+        self.norm = nn.RMSNorm(config.hidden_size, eps=config.rms_norm_eps)
         # Held separately so it can be untied + quantized at export time.
         self.lm_head = nn.Linear(config.hidden_size, config.vocab_size, bias=False)
 

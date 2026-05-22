@@ -33,6 +33,14 @@ struct GenerationConfig {
   // Whether to echo the input prompt in the output
   bool echo = true;
 
+  // Grammar definition for constrained decoding (e.g. a JSON schema, regex,
+  // Lark CFG, or GBNF grammar). Empty string means no constraint.
+  std::string grammar;
+
+  // Grammar format: "json_schema", "regex", "lark", or "gbnf".
+  // Only used when grammar is non-empty.
+  std::string grammar_type;
+
   // Whether to ignore EOS token and continue generating until max_new_tokens
   bool ignore_eos = false;
 

@@ -1,4 +1,4 @@
-name: RISC-V
+name: Test RISC-V Backend
 
 on:
   push:
@@ -50,6 +50,17 @@ jobs:
       model: ${{ matrix.model }}
       xnnpack: ${{ matrix.xnnpack }}
       quantize: ${{ matrix.quantize }}
-      # XNNPACK requires GCC 14+
-      gcc-version: ${{ matrix.xnnpack && 14 || 11 }}
-      docker-image: ${{ matrix.xnnpack && 'ci-image:executorch-ubuntu-24.04-gcc14' || 'ci-image:executorch-ubuntu-22.04-gcc11' }}
+      # If XNNPACK, test with multiple RVV length, disabled otherwise
+      qemu-cpu: >-
+        ${{
+          case(
+            matrix.xnnpack, '[
+              "rv64,zba=true,zbb=true,zbs=true,v=true,vlen=128,elen=64,vext_spec=v1.0",
+              "rv64,zba=true,zbb=true,zbs=true,v=true,vlen=256,elen=64,vext_spec=v1.0",
+              "rv64,zba=true,zbb=true,zbs=true,v=true,vlen=512,elen=64,vext_spec=v1.0"
+            ]',
+            '[
+              "rv64,zba=true,zbb=true,zbs=true,v=false"
+            ]'
+          )
+        }}
