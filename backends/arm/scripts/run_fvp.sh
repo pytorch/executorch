@@ -55,9 +55,9 @@ done
 
 elf_file=$(realpath ${elf_file})
 
-# cortex-m55 is the only Cortex-M CPU on the Corstone-300 board today;
-# cortex-m85 lives on Corstone-320, so it falls through to the SSE-320 FVP.
-if [[ ${target} == *"ethos-u55"* || ${target} == cortex-m55* ]]; then
+# cortex-m85 lives on Corstone-320; all other Cortex-M variants run on
+# the Corstone-300 M55 (ISA superset).
+if [[ ${target} == *"ethos-u55"* || ${target} == cortex-m* && ${target} != cortex-m85* ]]; then
     fvp_model=FVP_Corstone_SSE-300_Ethos-U55
 else
     fvp_model=FVP_Corstone_SSE-320
