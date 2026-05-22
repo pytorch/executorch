@@ -632,7 +632,14 @@ def build_portable_lib(
     # Currently fbcode links all dependent libraries through shared
     # library, and it blocks users like unit tests to use kernel
     # implementation directly. So we enable this for xplat only.
-    compiler_flags = ["-Wno-missing-prototypes"]
+    # -Wno-missing-prototypes is Clang-only for C++; GCC (used by Zephyr ARM
+    # cross-compilation) rejects it with -Werror, so exclude it for Zephyr.
+    # OSS bypasses the select since ovr_config//os:zephyr is not in the OSS
+    # buck2 prelude.
+    compiler_flags = select({
+        "DEFAULT": ["-Wno-missing-prototypes"],
+        "ovr_config//os:zephyr": [],
+    }) if not runtime.is_oss else ["-Wno-missing-prototypes"]
     if not expose_operator_symbols and is_xplat():
         # Removing '-fvisibility=hidden' exposes operator symbols.
         # This allows operators to be called outside of the kernel registry.
@@ -678,7 +685,14 @@ def build_optimized_lib(name, oplist_header_name, portable_header_lib, feature =
     # Currently fbcode links all dependent libraries through shared
     # library, and it blocks users like unit tests to use kernel
     # implementation directly. So we enable this for xplat only.
-    compiler_flags = ["-Wno-missing-prototypes", "-Wno-pass-failed", "-Wno-global-constructors", "-Wno-shadow"]
+    # -Wno-missing-prototypes and -Wno-global-constructors are Clang-only for
+    # C++; GCC (used by Zephyr ARM cross-compilation) rejects them with
+    # -Werror, so exclude them for Zephyr. OSS bypasses the select since
+    # ovr_config//os:zephyr is not in the OSS buck2 prelude.
+    compiler_flags = select({
+        "DEFAULT": ["-Wno-missing-prototypes", "-Wno-pass-failed", "-Wno-global-constructors", "-Wno-shadow"],
+        "ovr_config//os:zephyr": ["-Wno-pass-failed", "-Wno-shadow"],
+    }) if not runtime.is_oss else ["-Wno-missing-prototypes", "-Wno-pass-failed", "-Wno-global-constructors", "-Wno-shadow"]
     if not expose_operator_symbols and is_xplat():
         # Removing '-fvisibility=hidden' exposes operator symbols.
         # This allows operators to be called outside of the kernel registry.
