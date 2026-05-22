@@ -49,7 +49,12 @@ function(fetch_ethos_u_content ETHOS_SDK_PATH ET_DIR_PATH)
       "source backends/arm/scripts/utils.sh && patch_repo ${ETHOS_SDK_PATH}/core_software ${core_software_base_rev} ${patch_dir}"
     WORKING_DIRECTORY ${ET_DIR_PATH}
   )
-  # Always patch the core_platform repo since this is fast enough.
+  # Always patch the core_platform repo since this is fast enough. TODO:
+  # examples/arm/ethos-u-setup/core_platform/0002-*.patch is a transient bridge
+  # that guards Armv8-M-only MPU init so the source compiles for non-Armv8-M
+  # Cortex-M cores. Once the same guard lands upstream in ethos-u/core_platform
+  # and ${core_platform_base_rev} is bumped past that commit, delete the 0002
+  # patch.
   set(core_platform_base_rev "26.02")
   execute_process(
     COMMAND

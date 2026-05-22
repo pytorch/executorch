@@ -157,10 +157,17 @@ fi
 mkdir -p "${output_folder}"
 output_folder=$(realpath ${output_folder})
 
-if [[ ${target} == *"ethos-u55"*  ]]; then
+if [[ ${target} =~ ^cortex-m([0-9]+(plus|p)?)(\+|$) ]]; then
+    # NPU isn't used at runtime, but core_platform's ethosu_get_architecture()
+    # parser rejects non-ethos-u strings — pass a dummy.
+    target_cpu="cortex-m${BASH_REMATCH[1]}"
+    npu_target_config="ethos-u55-128"
+elif [[ ${target} == *"ethos-u55"* ]]; then
     target_cpu=cortex-m55
+    npu_target_config="${target}"
 else
     target_cpu=cortex-m85
+    npu_target_config="${target}"
 fi
 echo "--------------------------------------------------------------------------------"
 echo "Build Arm ${toolchain/-gcc/} executor_runner for ${target} PTE: ${pte_file} using ${system_config} ${memory_mode} ${extra_build_flags} to '${output_folder}'"
@@ -194,7 +201,7 @@ cmake \
     -DCMAKE_BUILD_TYPE=${build_type}           \
     -DCMAKE_TOOLCHAIN_FILE=${toolchain_cmake}  \
     -DTARGET_CPU=${target_cpu}                 \
-    -DETHOSU_TARGET_NPU_CONFIG=${target}       \
+    -DETHOSU_TARGET_NPU_CONFIG=${npu_target_config} \
     -DEXECUTORCH_BUILD_PRESET_FILE=${preset_file} \
     -DEXECUTORCH_BAREMETAL_SKIP_INSTALL=OFF    \
     ${pte_data}                                \

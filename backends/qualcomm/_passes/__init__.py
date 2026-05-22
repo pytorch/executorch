@@ -31,6 +31,7 @@ from .decompose_pad import DecomposePad
 from .decompose_reciprocal import DecomposeReciprocal
 from .decompose_remainder import DecomposeRemainder
 from .decompose_roll import DecomposeRoll
+from .decompose_select_scatter import DecomposeSelectScatter
 from .decompose_silu import DecomposeSilu
 from .decompose_tan import DecomposeTan
 from .decompose_threshold import DecomposeThreshold
@@ -88,6 +89,7 @@ __all__ = [
     DecomposeReciprocal,
     DecomposeRemainder,
     DecomposeRoll,
+    DecomposeSelectScatter,
     DecomposeSilu,
     DecomposeTan,
     DecomposeThreshold,
