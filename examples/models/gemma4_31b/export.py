@@ -28,7 +28,6 @@ import os
 
 import torch
 import torch.nn as nn
-
 from executorch.examples.models.gemma4_31b.model import (
     Gemma4_31B,
     Gemma4_31BConfig,
@@ -157,7 +156,6 @@ def _export_cuda(model: Gemma4_31B, config: Gemma4_31BConfig, output_dir: str) -
     import gc
 
     import torch._inductor.config as inductor_config
-
     from executorch.backends.cuda.cuda_backend import CudaBackend
     from executorch.backends.cuda.cuda_partitioner import CudaPartitioner
     from executorch.exir import (
@@ -292,7 +290,6 @@ def _export_mlx(model: Gemma4_31B, config: Gemma4_31BConfig, output_dir: str) ->
 
     from executorch.backends.mlx import MLXPartitioner
     from executorch.backends.mlx.passes import get_default_passes
-
     from executorch.examples.models.gemma4_31b.mlx_source_transformations import (
         mlx_source_transformations,
     )
@@ -307,7 +304,9 @@ def _export_mlx(model: Gemma4_31B, config: Gemma4_31BConfig, output_dir: str) ->
     mlx_source_transformations(model, dtype=torch.bfloat16)
     materialize_runtime_buffers(model, dtype=torch.bfloat16)
 
-    max_prefill = min(config.max_seq_len - 1, config.sliding_window * 2)
+    # Hard-coded prefill chunk size for the MLX export to use less memory
+    # The runner is expected to chunk longer prompts into <= max_prefill segments.
+    max_prefill = 256
     seq_dim = Dim("seq_len", min=1, max=max_prefill)
 
     print(f"Exporting (T in [1, {max_prefill}])...")
