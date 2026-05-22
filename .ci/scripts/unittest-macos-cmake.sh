@@ -6,6 +6,12 @@
 # LICENSE file in the root directory of this source tree.
 set -eux
 
+# Keep AOTInductor precompiled headers scoped to this job. The default cache
+# location can persist across macOS self-hosted runner jobs and produce stale
+# PCH failures after PyTorch is reinstalled.
+export TORCHINDUCTOR_CACHE_DIR="$(mktemp -d "${RUNNER_TEMP:-/tmp}/torchinductor_cache_XXXXXX")"
+trap 'rm -rf "${TORCHINDUCTOR_CACHE_DIR}"' EXIT
+
 # Run pytest with coverage
 ${CONDA_RUN} pytest -n auto --cov=./ --cov-report=xml
 # Run gtest
