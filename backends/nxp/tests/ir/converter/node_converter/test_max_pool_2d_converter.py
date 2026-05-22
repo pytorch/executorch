@@ -302,17 +302,11 @@ class TestMaxPool2DNewNeutronFlow:
             use_qat=True,
         )
 
-    def test__kernel_size_limit(self, mocker):
-        kernel_size = (1, 4096)
+    def test__large_kernel_size(self, mocker):
+        kernel_size = (1, 5000)
         input_shape = (1, 4) + kernel_size
-        model = MaxPool2dModule(kernel_size)
+        model = MaxPool2dModule(kernel_size, stride=1)
         self.assert_delegated(model, input_shape, mocker)
-
-    def test__kernel_size_limit_exceeded(self):
-        kernel_size = (1, 4097)  # Exceeds the kernel size limit.
-        input_shape = (1, 4) + kernel_size
-        model = MaxPool2dModule(kernel_size)
-        self.assert_not_delegated(model, input_shape)
 
     def test__stride_limit__no_padding(self, mocker):
         stride = 4096

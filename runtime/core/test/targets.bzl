@@ -108,6 +108,7 @@ def define_common_targets():
         ],
         deps = [
             "//executorch/runtime/core:memory_allocator",
+            "//executorch/test/utils:utils",
         ],
     )
 

@@ -1,5 +1,6 @@
 # Copyright (c) Meta Platforms, Inc. and affiliates.
 # All rights reserved.
+# Copyright 2026 Arm Limited and/or its affiliates.
 #
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
@@ -67,32 +68,29 @@ def dim_order_from_stride(stride: Tuple[int]) -> Tuple[bytes]:
     Another example is: sizes = (1, 3, 1, 1) with strides = (3, 1, 3, 3), returned
     value is (0, 2, 3, 1)
     """
-    from torch.fx.experimental.symbolic_shapes import (
-        guard_or_false,
-        guard_size_oblivious,
-    )
+    from torch.fx.experimental.symbolic_shapes import guard_or_false, guard_or_true
 
-    for _, s in enumerate(stride):
-        if guard_or_false(s == 0):
-            raise ValueError("0 in strides is not supported for ExecuTorch.")
+    for s in stride:
+        torch._check(s != 0, lambda: "0 in strides is not supported for ExecuTorch.")
 
     class K(NamedTuple):
         stride: int
 
         def __lt__(self, other):
-            return guard_size_oblivious(self.stride < other.stride)
-
-        def __gt__(self, other):
-            return guard_size_oblivious(self.stride > other.stride)
-
-        def __le__(self, other):
-            return guard_size_oblivious(self.stride <= other.stride)
-
-        def __ge__(self, other):
-            return guard_size_oblivious(self.stride >= other.stride)
-
-        def __eq__(self, other):
-            return guard_size_oblivious(self.stride == other.stride)
+            # For backed/concrete strides this is practically a `<` operation.
+            # For unbacked, we return True if `<` is statically known, then
+            # try to answer symbolically with stride-ordering semantics:
+            #   u0 < u0           -> False
+            #   u0 < u1 (no info) -> DDE
+            #   u0 < 2 * u0       -> True   (divisibility)
+            #   1  < u0           -> True   (1 divides anything)
+            if guard_or_false(self.stride < other.stride):
+                return True  # statically known inequality
+            if guard_or_false(other.stride % self.stride == 0) and guard_or_true(
+                self.stride != other.stride
+            ):
+                return True  # symbolic inequality (e.g. u0 < 2048 * u0)
+            return self.stride < other.stride
 
     sorted_dims = [
         i[0] for i in sorted(enumerate(stride), key=lambda x: K(x[1]), reverse=True)
@@ -292,6 +290,8 @@ scalar_type_table: Dict[torch.dtype, ScalarType] = {
     torch.qint32: ScalarType.QINT32,
     torch.bfloat16: ScalarType.BFLOAT16,
     torch.quint4x2: ScalarType.QUINT4x2,
+    torch.float8_e5m2: ScalarType.FLOAT8E5M2,
+    torch.float8_e4m3fn: ScalarType.FLOAT8E4M3FN,
     torch.uint16: ScalarType.UINT16,
     torch.uint32: ScalarType.UINT32,
 }

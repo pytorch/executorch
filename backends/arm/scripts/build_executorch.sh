@@ -24,6 +24,7 @@ build_type="Release"
 build_devtools=OFF
 build_with_etdump=OFF
 is_linux_musl=0
+target_cpu=""
 
 help() {
     echo "Usage: $(basename $0) [options]"
@@ -33,6 +34,7 @@ help() {
     echo "  --devtools                Build Devtools libs"
     echo "  --etdump                  Adds Devtools etdump support to track timing, etdump area will be base64 encoded in the log"
     echo "  --toolchain=<TOOLCHAIN>   Toolchain can be specified (arm-none-eabi-gcc, arm-zephyr-eabi-gcc, aarch64-linux-musl-gcc). Default: ${toolchain}"
+    echo "  --target_cpu=<CPU>        Override the toolchain's default TARGET_CPU (e.g. cortex-m4). Switching target_cpu reuses the same cmake-out dir, so clear ${et_build_root}/cmake-out first to avoid stale per-CPU artifacts. Default: unset (toolchain default)."
     exit 0
 }
 
@@ -44,6 +46,7 @@ for arg in "$@"; do
       --devtools) build_devtools=ON ;;
       --etdump) build_with_etdump=ON ;;
       --toolchain=*) toolchain="${arg#*=}";;
+      --target_cpu=*) target_cpu="${arg#*=}";;
       *)
       ;;
     esac
@@ -85,7 +88,12 @@ cmake_args=(
     -DCMAKE_BUILD_TYPE=${build_type}
     -DEXECUTORCH_BUILD_DEVTOOLS=${build_devtools}
     -DEXECUTORCH_BUILD_ARM_ETDUMP=${build_with_etdump}
+    -DEXECUTORCH_BAREMETAL_SKIP_INSTALL=OFF
 )
+
+if [[ -n "${target_cpu}" ]]; then
+    cmake_args+=(-DTARGET_CPU=${target_cpu})
+fi
 
 if [[ ${is_linux_musl} -eq 1 ]]; then
     if [[ -z "${MUSL_TOOLCHAIN_ROOT:-}" ]]; then
@@ -108,7 +116,7 @@ parallel_jobs="$(get_parallel_jobs)"
 if [[ ${is_linux_musl} -eq 1 ]]; then
     cmake --build ${et_build_dir} -j"${parallel_jobs}" --target executorch_delegate_ethos_u executor_runner --config ${build_type} --
 else
-    cmake --build ${et_build_dir} -j"${parallel_jobs}" --target install --config ${build_type} --
+    cmake --build ${et_build_dir} -j"${parallel_jobs}" --config ${build_type}
 fi
 
 set +x

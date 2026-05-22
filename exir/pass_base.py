@@ -150,7 +150,32 @@ class ProxyValue:
         yield from self.data
 
     def __bool__(self) -> bool:
+        if isinstance(self.data, (torch.SymInt, torch.SymFloat, torch.SymBool)):
+            raise ExportPassBaseError(
+                "ProxyValue with symbolic data cannot be used in boolean context."
+            )
         return bool(self.data)
+
+    def __int__(self):
+        if isinstance(self.data, torch.SymInt):
+            raise ExportPassBaseError(
+                "ProxyValue with SymInt data cannot be converted to int."
+            )
+        return int(self.data)
+
+    def __float__(self):
+        if isinstance(self.data, torch.SymFloat):
+            raise ExportPassBaseError(
+                "ProxyValue with SymFloat data cannot be converted to float."
+            )
+        return float(self.data)
+
+    def __index__(self):
+        if isinstance(self.data, torch.SymInt):
+            raise ExportPassBaseError(
+                "ProxyValue with SymInt data cannot be used in index context."
+            )
+        return self.__int__()
 
 
 class ExportPassBaseError(RuntimeError):
