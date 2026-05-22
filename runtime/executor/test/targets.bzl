@@ -19,7 +19,6 @@ def define_common_targets(is_fbcode = False):
                 "//executorch/exir/backend/test/...",
                 "//executorch/runtime/backend/...",
                 "//executorch/extension/pybindings/...",
-                "//executorch/extension/module/test/...",
                 "//executorch/devtools/fb/runners/...",
                 "//executorch/test/...",
                 "//executorch/examples/...",
@@ -327,8 +326,6 @@ def define_common_targets(is_fbcode = False):
             deps = [
                 ":managed_memory_manager",
                 "//executorch/runtime/executor:program",
-                "//executorch/runtime/core:device_allocator",
-                "//executorch/runtime/core:device_memory_buffer",
                 "//executorch/extension/data_loader:file_data_loader",
                 "//executorch/schema:program",
             ],

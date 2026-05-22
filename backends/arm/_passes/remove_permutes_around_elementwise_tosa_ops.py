@@ -21,7 +21,7 @@ class RemovePermutesAroundElementwiseTosaOps(RemovePermutesAroundElementwiseOps)
             }
         )
 
-    def permute_subgraph(self, subgraph):
+    def permute_subgraph(self, subgraph) -> bool:
         # Original function will always permute constant nodes which is wrong for table ops
         # Remove constant tosa.TABLE edges before running full function
         new_constant_edges_in = set()
@@ -32,4 +32,4 @@ class RemovePermutesAroundElementwiseTosaOps(RemovePermutesAroundElementwiseOps)
                 new_constant_edges_in.add((const_node, user_node))
 
         subgraph.constant_edges_in = new_constant_edges_in
-        super().permute_subgraph(subgraph)
+        return super().permute_subgraph(subgraph)
