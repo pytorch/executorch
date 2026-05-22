@@ -162,7 +162,19 @@
   // separator (2-way compare summary) which only makes sense between
   // adjacent records in flat order — in tree view two consecutive
   // records can sit in different regions, so the diff is misleading.
-  function renderRecordItem(rec, idx, treeMode) {
+  // Compare-mode merge prepends `<archive_label>/` to every record name and
+  // session name (observatory.py compare_archives). Inside an archive column
+  // the label is already shown in the column header, so we strip it from the
+  // displayed text only — `rec.name` / `session.name` themselves stay
+  // prefixed because graph_ref resolution and the global record map depend
+  // on the unique name.
+  function _stripArchivePrefix(displayed, prefix) {
+    if (!prefix) return displayed;
+    const head = prefix + '/';
+    return displayed.startsWith(head) ? displayed.slice(head.length) : displayed;
+  }
+
+  function renderRecordItem(rec, idx, treeMode, displayPrefix) {
     const isSelected = state.selectedIndices.has(idx);
     const checkbox = state.selectionMode
       ? `<input type="checkbox" class="selection-checkbox" ${isSelected ? 'checked' : ''} onclick="toggleSelect(${idx}, event)" style="margin-right:0.5rem;">`
@@ -228,7 +240,7 @@
         <div style="display:flex;align-items:center;overflow:hidden;flex:1;">
           ${checkbox}
           <div style="flex:1;min-width:0;">
-            <div style="text-overflow:ellipsis;overflow:hidden;white-space:nowrap;">${escapeHtml(rec.name || '')}</div>
+            <div style="text-overflow:ellipsis;overflow:hidden;white-space:nowrap;">${escapeHtml(_stripArchivePrefix(rec.name || '', displayPrefix))}</div>
           </div>
         </div>
         <div class="badges">${badges}</div>
@@ -248,9 +260,10 @@
     return false;
   }
 
-  function _renderSessionDashboardLink(session) {
+  function _renderSessionDashboardLink(session, displayPrefix) {
     const active = _isActiveSession(session.id) ? 'active' : '';
-    const label = session.name || session.id || '(unnamed session)';
+    const rawLabel = session.name || session.id || '(unnamed session)';
+    const label = _stripArchivePrefix(rawLabel, displayPrefix);
     return `
       <li class="index-item session-dashboard-link ${active}"
           onclick="selectSession('${escapeHtml(session.id)}')">
@@ -259,13 +272,13 @@
     `;
   }
 
-  function renderIndexFlat(records, sessionFilter) {
+  function renderIndexFlat(records, sessionFilter, displayPrefix) {
     let html = '';
     const filtered = sessionFilter
       ? records.map((r, i) => ({rec: r, idx: i})).filter(x => x.rec.session_id === sessionFilter)
       : records.map((r, i) => ({rec: r, idx: i}));
     filtered.forEach(({rec, idx}) => {
-      html += renderRecordItem(rec, idx, false);
+      html += renderRecordItem(rec, idx, false, displayPrefix);
     });
     return html;
   }
@@ -277,7 +290,7 @@
   // adjacent records is suppressed in tree view (renderRecordItem
   // receives treeMode=true) since adjacent records in the records[]
   // array may not be visually adjacent under the tree.
-  function renderIndexTree(records, sessionFilter) {
+  function renderIndexTree(records, sessionFilter, displayPrefix) {
     let html = '';
 
     // Walk records preserving order. Track open region path; when the
@@ -328,7 +341,7 @@
         openRegion(stack[i], fullKey);
       }
 
-      html += renderRecordItem(rec, idx, true);
+      html += renderRecordItem(rec, idx, true, displayPrefix);
     });
 
     closeTo(0);
@@ -337,12 +350,13 @@
 
   function _renderArchiveColumn(archive, sessions, records, useTree) {
     const sessionsInArchive = sessions.filter((s) => s.archive === archive.label);
+    const displayPrefix = archive.label;
     let inner = '';
     sessionsInArchive.forEach((session) => {
-      inner += _renderSessionDashboardLink(session);
+      inner += _renderSessionDashboardLink(session, displayPrefix);
       inner += useTree
-        ? renderIndexTree(records, session.id)
-        : renderIndexFlat(records, session.id);
+        ? renderIndexTree(records, session.id, displayPrefix)
+        : renderIndexFlat(records, session.id, displayPrefix);
     });
     return `
       <li class="archive-column">
