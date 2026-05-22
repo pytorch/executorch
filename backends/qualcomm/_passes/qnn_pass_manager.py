@@ -36,6 +36,7 @@ from executorch.backends.qualcomm._passes import (
     DecomposeReciprocal,
     DecomposeRemainder,
     DecomposeRoll,
+    DecomposeSelectScatter,
     DecomposeSilu,
     DecomposeTan,
     DecomposeThreshold,
@@ -251,6 +252,7 @@ class QnnPassManager(PassManager):
         # TODO: Skip this pass for CPU backend (Dependency: Backend-aware passes manager)
         self.add_pass(DecomposeReciprocal())
         self.add_pass(DecomposeRemainder())
+        self.add_pass(DecomposeSelectScatter())
         self.add_pass(DecomposeLinalgVectorNorm(quantization_capture=True))
         self.add_pass(DecomposeLogVariants())
         self.add_pass(ReplaceInfValues())
@@ -266,6 +268,7 @@ class QnnPassManager(PassManager):
         self.add_pass(DecomposePad())
         self.add_pass(DecomposeScaledDotProductAttention())
         self.add_pass(DecomposeRoll())
+        self.add_pass(DecomposeSelectScatter())
         self.add_pass(DecomposeThreshold())
         self.add_pass(DecomposeTriu())
         self.add_pass(DecomposeLinalgVectorNorm(quantization_capture=True))
