@@ -122,6 +122,23 @@ using AOTInductorModelContainerUpdateUserManagedConstantBufferPairsFunc =
         bool use_inactive,
         bool validate_full_update);
 
+// Retrieves a constant's data size (storage bytes) by index. Required by
+// the weight-offload runtime to replicate AOTI's source-blob layout
+// without calling update_constants_from_blob.
+using AOTInductorModelContainerGetConstantDataSizeFunc = AOTIRuntimeError (*)(
+    AOTInductorModelContainerHandle container_handle,
+    size_t idx,
+    size_t* data_size);
+
+// Reports whether a constant is computed by AOTI's runtime const-folding.
+// Required by the weight-offload runtime to hard-fail at init if any
+// folded constant exists (run_const_fold reads other constants and would
+// see dummies in our pre-install model).
+using AOTInductorModelContainerGetConstantFromFoldedFunc = AOTIRuntimeError (*)(
+    AOTInductorModelContainerHandle container_handle,
+    size_t idx,
+    bool* from_folded);
+
 } // extern "C"
 
 // AOTI Delegate Handle structure
@@ -146,6 +163,12 @@ struct AOTIDelegateHandle {
   AOTInductorModelContainerExtractConstantsMapFunc extract_constants_map;
   AOTInductorModelContainerUpdateUserManagedConstantBufferPairsFunc
       update_user_managed_constant_buffer_pairs;
+
+  // Weight-offload-only function pointers. Optional for handles where
+  // offload is not enabled; cuda_backend.cpp::init dlsym's them only when
+  // the weight_offload compile spec is present, and hard-fails if missing.
+  AOTInductorModelContainerGetConstantDataSizeFunc get_constant_data_size;
+  AOTInductorModelContainerGetConstantFromFoldedFunc get_constant_from_folded;
 };
 
 } // namespace aoti

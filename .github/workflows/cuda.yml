@@ -136,6 +136,12 @@ jobs:
         cmake --workflow --preset default
         popd
 
+        # Build and run weight-offload tests (C++): host-level payload
+        # parser + CUDA-gated Session state machine.
+        pushd backends/cuda/runtime/weight_offload/tests
+        cmake --workflow --preset default
+        popd
+
         # Install flash-linear-attention for chunk_gated_delta_rule triton kernel tests
         pip install "flash-linear-attention==0.4.2"
 

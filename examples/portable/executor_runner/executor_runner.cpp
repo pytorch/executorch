@@ -34,12 +34,23 @@
 #include <executorch/extension/evalue_util/print_evalue.h>
 #include <executorch/extension/flat_tensor/flat_tensor_data_map.h>
 #include <executorch/extension/runner_util/inputs.h>
+#include <executorch/runtime/backend/backend_options_map.h>
+#include <executorch/runtime/backend/options.h>
 #include <executorch/runtime/core/event_tracer.h>
 #include <executorch/runtime/executor/method.h>
 #include <executorch/runtime/executor/program.h>
 #include <executorch/runtime/platform/log.h>
 #include <executorch/runtime/platform/platform.h>
 #include <executorch/runtime/platform/runtime.h>
+
+#include <array>
+#include <cerrno>
+#include <climits>
+#include <cstdlib>
+#include <cstring>
+#include <string_view>
+#include <unordered_set>
+#include <vector>
 #ifdef ET_EVENT_TRACER_ENABLED
 #include <executorch/devtools/etdump/etdump_flatcc.h>
 #endif // ET_EVENT_TRACER_ENABLED
@@ -86,6 +97,19 @@ DEFINE_int32(
     -1,
     "Number of CPU threads for inference. Defaults to -1, which implies we'll use a heuristic to derive the # of performant cores for a specific device.");
 
+DEFINE_string(
+    cuda_runtime_spec,
+    "",
+    "Comma-separated key=value pairs to pass to CudaBackend as "
+    "load-time runtime specs (read via "
+    "BackendInitContext::get_runtime_spec). Known CUDA runtime specs "
+    "are parsed by their declared type. Supported keys: "
+    "weight_offload_budget_mb (int), "
+    "_weight_offload_internal_budget_bytes (string). Unknown keys "
+    "hard-fail at parse. Duplicate keys hard-fail at parse. "
+    "Example: --cuda_runtime_spec=weight_offload_budget_mb=64. "
+    "Empty (default) means no specs are set.");
+
 #ifdef ET_BUNDLE_IO_ENABLED
 DEFINE_double(bundleio_rtol, 0.01, "Relative tolerance for bundled IO.");
 DEFINE_double(bundleio_atol, 0.01, "Absolute tolerance for bundled IO.");
@@ -101,11 +125,15 @@ using executorch::bundled_program::verify_method_outputs;
 using executorch::extension::BufferDataLoader;
 using executorch::extension::FileDataLoader;
 using executorch::extension::FlatTensorDataMap;
+using executorch::runtime::BackendOption;
 using executorch::runtime::DataLoader;
 using executorch::runtime::Error;
 using executorch::runtime::EValue;
 using executorch::runtime::EventTracer;
 using executorch::runtime::HierarchicalAllocator;
+using executorch::runtime::kMaxOptionKeyLength;
+using executorch::runtime::kMaxOptionValueLength;
+using executorch::runtime::LoadBackendOptionsMap;
 using executorch::runtime::MemoryAllocator;
 using executorch::runtime::MemoryManager;
 using executorch::runtime::Method;
@@ -117,6 +145,102 @@ using executorch::runtime::Tag;
 using executorch::runtime::TensorInfo;
 
 enum class PrintOutputMode { None, Summary, All };
+
+// ---------------------------------------------------------------------------
+// --cuda_runtime_spec parser
+// ---------------------------------------------------------------------------
+// Comma-separated key=value pairs. Key-aware: known CUDA runtime
+// specs are parsed by their declared type; unknown keys and
+// duplicate keys hard-fail at parse so the user sees the bad flag
+// instead of a silent type mismatch deep in init.
+namespace cuda_runtime_spec_parser {
+
+// The CUDA runtime accepts exactly these keys today. Adding a new key
+// here without a matching get_runtime_spec call in cuda_backend.cpp
+// just means the value silently does nothing; the reverse means the
+// runner can't drive the spec via the CLI.
+struct KnownSpec {
+  const char* key;
+  bool is_int; // false = string
+};
+constexpr KnownSpec kKnownCudaSpecs[] = {
+    {"weight_offload_budget_mb", true},
+    {"_weight_offload_internal_budget_bytes", false},
+};
+
+inline std::vector<BackendOption> parse_cuda_runtime_spec_string(
+    const std::string& spec_str) {
+  std::vector<BackendOption> out;
+  std::unordered_set<std::string> seen_keys;
+  std::string_view sv(spec_str);
+  while (!sv.empty()) {
+    auto comma = sv.find(',');
+    std::string_view pair =
+        (comma == std::string_view::npos) ? sv : sv.substr(0, comma);
+    auto eq = pair.find('=');
+    ET_CHECK_MSG(
+        eq != std::string_view::npos,
+        "malformed --cuda_runtime_spec entry '%s': expected key=value",
+        std::string(pair).c_str());
+    std::string key(pair.substr(0, eq));
+    std::string_view val_sv = pair.substr(eq + 1);
+
+    ET_CHECK_MSG(
+        seen_keys.insert(key).second,
+        "duplicate key '%s' in --cuda_runtime_spec",
+        key.c_str());
+
+    const KnownSpec* known = nullptr;
+    for (const auto& s : kKnownCudaSpecs) {
+      if (key == s.key) {
+        known = &s;
+        break;
+      }
+    }
+    ET_CHECK_MSG(
+        known != nullptr, "unknown --cuda_runtime_spec key '%s'", key.c_str());
+    ET_CHECK_MSG(
+        key.size() < kMaxOptionKeyLength,
+        "--cuda_runtime_spec key '%s' exceeds %zu bytes",
+        key.c_str(),
+        static_cast<size_t>(kMaxOptionKeyLength - 1));
+
+    BackendOption opt{};
+    std::memcpy(opt.key, key.data(), key.size());
+    opt.key[key.size()] = '\0';
+    if (known->is_int) {
+      std::string s(val_sv);
+      char* end = nullptr;
+      errno = 0;
+      long long parsed = std::strtoll(s.c_str(), &end, 10);
+      ET_CHECK_MSG(
+          errno == 0 && end == s.c_str() + s.size() && parsed >= INT_MIN &&
+              parsed <= INT_MAX,
+          "--cuda_runtime_spec key '%s' expects int, got '%s'",
+          key.c_str(),
+          s.c_str());
+      opt.value = static_cast<int>(parsed);
+    } else {
+      std::array<char, kMaxOptionValueLength> buf{};
+      ET_CHECK_MSG(
+          val_sv.size() < buf.size(),
+          "--cuda_runtime_spec key '%s' string value too long (max %zu bytes)",
+          key.c_str(),
+          buf.size() - 1);
+      std::memcpy(buf.data(), val_sv.data(), val_sv.size());
+      opt.value = buf;
+    }
+    out.push_back(std::move(opt));
+
+    if (comma == std::string_view::npos) {
+      break;
+    }
+    sv.remove_prefix(comma + 1);
+  }
+  return out;
+}
+
+} // namespace cuda_runtime_spec_parser
 
 /// Helper to manage resources for ETDump generation
 class EventTraceManager {
@@ -450,11 +574,35 @@ int main(int argc, char** argv) {
   // be used by a single thread at at time, but it can be reused.
   //
   EventTraceManager tracer;
+
+  // Build the per-load backend options map from --cuda_runtime_spec.
+  // Empty flag → nullptr; nothing changes for non-CUDA methods or
+  // for CUDA methods that don't need to drive runtime specs.
+  std::vector<BackendOption> cuda_opts;
+  LoadBackendOptionsMap load_backend_options;
+  const LoadBackendOptionsMap* load_backend_options_ptr = nullptr;
+  if (!FLAGS_cuda_runtime_spec.empty()) {
+    cuda_opts = cuda_runtime_spec_parser::parse_cuda_runtime_spec_string(
+        FLAGS_cuda_runtime_spec);
+    if (!cuda_opts.empty()) {
+      auto opts_err = load_backend_options.set_options(
+          "CudaBackend",
+          Span<BackendOption>(cuda_opts.data(), cuda_opts.size()));
+      ET_CHECK_MSG(
+          opts_err == Error::Ok,
+          "LoadBackendOptionsMap::set_options for CudaBackend failed "
+          "(error 0x%" PRIx32 ")",
+          static_cast<uint32_t>(opts_err));
+      load_backend_options_ptr = &load_backend_options;
+    }
+  }
+
   Result<Method> method = program->load_method(
       method_name,
       &memory_manager,
       tracer.get_event_tracer(),
-      ptd_data_map.get());
+      ptd_data_map.get(),
+      load_backend_options_ptr);
   const et_timestamp_t after_load = executorch::runtime::pal_current_ticks();
   ET_CHECK_MSG(
       method.ok(),

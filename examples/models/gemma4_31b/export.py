@@ -141,11 +141,14 @@ def export_and_lower(
     config: Gemma4_31BConfig,
     output_dir: str,
     backend: str = "cuda",
+    weight_offload: bool = False,
 ) -> None:
     """Export and lower the model to ExecuTorch for the given backend."""
     if backend == "cuda":
-        _export_cuda(model, config, output_dir)
+        _export_cuda(model, config, output_dir, weight_offload=weight_offload)
     elif backend == "mlx":
+        if weight_offload:
+            raise ValueError("weight_offload is only supported on the cuda backend.")
         _export_mlx(model, config, output_dir)
     else:
         raise ValueError(
@@ -153,7 +156,12 @@ def export_and_lower(
         )
 
 
-def _export_cuda(model: Gemma4_31B, config: Gemma4_31BConfig, output_dir: str) -> None:
+def _export_cuda(
+    model: Gemma4_31B,
+    config: Gemma4_31BConfig,
+    output_dir: str,
+    weight_offload: bool = False,
+) -> None:
     import gc
 
     import torch._inductor.config as inductor_config
@@ -222,7 +230,8 @@ def _export_cuda(model: Gemma4_31B, config: Gemma4_31BConfig, output_dir: str) -
                     [
                         CudaBackend.generate_method_name_compile_spec("decode"),
                         CompileSpec("low_memory_mode", b"ON"),
-                    ]
+                    ],
+                    weight_offload=weight_offload,
                 )
             ],
             "prefill": [
@@ -230,7 +239,8 @@ def _export_cuda(model: Gemma4_31B, config: Gemma4_31BConfig, output_dir: str) -
                     [
                         CudaBackend.generate_method_name_compile_spec("prefill"),
                         CompileSpec("low_memory_mode", b"ON"),
-                    ]
+                    ],
+                    weight_offload=weight_offload,
                 )
             ],
         },
@@ -418,6 +428,15 @@ def main() -> None:
         choices=list(_SUPPORTED_BACKENDS),
         help="Target backend for export.",
     )
+    parser.add_argument(
+        "--weight-offload",
+        action="store_true",
+        help=(
+            "Opt the CUDA backend into weight offloading: AOTI constants "
+            "stream from a bounded GPU pool backed by a pinned host mirror. "
+            "Only supported on --backend cuda."
+        ),
+    )
     args = parser.parse_args()
 
     if args.backend == "cuda" and not torch.cuda.is_available():
@@ -443,7 +462,13 @@ def main() -> None:
             backend=args.backend,
         )
 
-    export_and_lower(model, config, args.output_dir, backend=args.backend)
+    export_and_lower(
+        model,
+        config,
+        args.output_dir,
+        backend=args.backend,
+        weight_offload=args.weight_offload,
+    )
 
 
 if __name__ == "__main__":
