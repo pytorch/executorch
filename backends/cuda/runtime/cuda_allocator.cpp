@@ -19,10 +19,8 @@ using executorch::runtime::Result;
 using executorch::runtime::etensor::DeviceIndex;
 using executorch::runtime::etensor::DeviceType;
 
-Result<void*> CudaAllocator::allocate(
-    size_t nbytes,
-    DeviceIndex index,
-    size_t alignment) {
+Result<void*>
+CudaAllocator::allocate(size_t nbytes, DeviceIndex index, size_t alignment) {
   // index == -1 means "use the current CUDA device"; any value < -1 is invalid.
   ET_CHECK_OR_RETURN_ERROR(
       index >= -1,

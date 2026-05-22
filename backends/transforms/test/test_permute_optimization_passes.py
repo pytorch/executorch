@@ -998,3 +998,67 @@ class RemovePermutesAcrossViewTest(unittest.TestCase):
             [x_data],
             "permute_unsqueeze_copy_neg_dim_mul_squeeze_copy_permute",
         )
+
+    def test_upstream_view_rank_mismatch_no_crash(self) -> None:
+        """Regression test for IndexError when a squeeze/unsqueeze view_copy
+        is reached via upstream traversal with a permutation whose rank does
+        not match the view's input tensor rank.
+
+        Graph:
+            full([16, 128], 1.0)           x [1, 128, 16]
+                    |                            |
+            view_copy (unsqueeze 2D→3D)    permute [0, 2, 1]
+            [1, 16, 128]                   [1, 16, 128]
+                    \\                          /
+                     ---- add (3D) -----------
+                            |
+                      permute [0, 2, 1]
+                            |
+                         output
+
+        The view_copy (unsqueeze) is reached as an upstream input to `add`.
+        Its node_start_permute gets the 3D permutation [0, 2, 1], but its
+        input (the full op) is 2D.  Before the fix, update_view_copy would
+        crash with IndexError: tuple index out of range."""
+        builder = GraphBuilder()
+        x_data = torch.randn(1, 128, 16)
+        x = builder.placeholder("x", x_data)
+        # 2D constant — treated as compile-time constant by _is_constant
+        const_2d = builder.call_operator(
+            op=exir_ops.edge.aten.full.default, args=([16, 128], 1.0)
+        )
+        # Unsqueeze via view_copy: [16, 128] → [1, 16, 128]
+        view_unsq = builder.call_operator(
+            op=exir_ops.edge.aten.view_copy.default, args=(const_2d, [1, 16, 128])
+        )
+        # Start permute: [1, 128, 16] → [1, 16, 128]
+        p1 = builder.call_operator(
+            op=exir_ops.edge.aten.permute_copy.default, args=(x, [0, 2, 1])
+        )
+        # Add the permuted input with the unsqueezed constant
+        add = builder.call_operator(
+            op=exir_ops.edge.aten.add.Tensor, args=(p1, view_unsq)
+        )
+        # End permute: [1, 16, 128] → [1, 128, 16]
+        p2 = builder.call_operator(
+            op=exir_ops.edge.aten.permute_copy.default, args=(add, [0, 2, 1])
+        )
+        builder.output([p2])
+        original = builder.get_graph_module()
+        gm_before = copy.deepcopy(original)
+
+        # Should not crash, and should skip the subgraph due to rank mismatch
+        p = RemovePermutesAroundElementwiseOps()
+        result = cast(PassResult, p(original))
+        # The subgraph is skipped, so the graph should be unmodified
+        self.assertFalse(result.modified)
+        # Both permutes are preserved
+        self.assertEqual(
+            count_node(result.graph_module, exir_ops.edge.aten.permute_copy.default), 2
+        )
+        validate_numerics(
+            gm_before,
+            result.graph_module,
+            [x_data],
+            "upstream_view_rank_mismatch_no_crash",
+        )
