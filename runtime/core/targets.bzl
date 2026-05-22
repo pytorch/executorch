@@ -77,7 +77,6 @@ def define_common_targets():
         ],
         exported_deps = [
             ":core",
-            "//executorch/runtime/core/exec_aten:lib",
             "//executorch/runtime/core/portable_type/c10/c10:c10",
         ],
         visibility = ["PUBLIC"],
