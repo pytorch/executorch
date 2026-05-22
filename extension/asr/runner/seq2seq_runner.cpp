@@ -6,7 +6,7 @@
  * LICENSE file in the root directory of this source tree.
  */
 
-#include <executorch/extension/asr/runner/runner.h>
+#include <executorch/extension/asr/runner/seq2seq_runner.h>
 
 #include <inttypes.h>
 #include <algorithm>
@@ -31,7 +31,7 @@ constexpr const char* kSamplerMethodName = "sampler";
 
 } // namespace
 
-AsrRunner::AsrRunner(
+Seq2SeqRunner::Seq2SeqRunner(
     const std::string& module_path,
     std::optional<std::string> data_path,
     const std::string& tokenizer_path)
@@ -46,13 +46,13 @@ AsrRunner::AsrRunner(
   }
 }
 
-bool AsrRunner::is_loaded() const {
+bool Seq2SeqRunner::is_loaded() const {
   return module_ && encoder_method_loaded_ && decoder_method_loaded_ &&
       (!sampler_method_present_ || sampler_method_loaded_) && tokenizer_ &&
       tokenizer_->is_loaded() && !eos_token_ids_.empty();
 }
 
-Error AsrRunner::load_tokenizer() {
+Error Seq2SeqRunner::load_tokenizer() {
   if (tokenizer_ && tokenizer_->is_loaded()) {
     return Error::Ok;
   }
@@ -79,7 +79,7 @@ Error AsrRunner::load_tokenizer() {
   return Error::Ok;
 }
 
-Error AsrRunner::load() {
+Error Seq2SeqRunner::load() {
   if (is_loaded()) {
     return Error::Ok;
   }
@@ -163,9 +163,9 @@ Error AsrRunner::load() {
   return Error::Ok;
 }
 
-Result<std::vector<int64_t>> AsrRunner::transcribe(
+Result<std::vector<int64_t>> Seq2SeqRunner::transcribe(
     ::executorch::extension::TensorPtr preprocessed_features,
-    AsrTranscribeConfig config,
+    Seq2SeqTranscribeConfig config,
     std::function<void(const std::string&)> token_callback) {
   ET_CHECK_OR_RETURN_ERROR(
       config.max_new_tokens > 0,
@@ -289,8 +289,6 @@ Result<std::vector<int64_t>> AsrRunner::transcribe(
   decoder_inputs.emplace_back(decoder_input_ptr);
   decoder_inputs.emplace_back(encoder_output_ptr);
   decoder_inputs.emplace_back(cache_position_ptr);
-  // Add some green coloring for the first generated token
-  // token_callback("\033[1;32m");
   const bool use_sampler_method = sampler_method_loaded_;
   while (generated_tokens < config.max_new_tokens) {
     input_id = tokens.back();
@@ -366,8 +364,6 @@ Result<std::vector<int64_t>> AsrRunner::transcribe(
       break;
     }
   }
-  // Reset coloring
-  // token_callback("\033[0m");
   // Update stats and print report
   stats_.num_generated_tokens = generated_tokens;
   stats_.inference_end_ms = ::executorch::extension::llm::time_in_ms();

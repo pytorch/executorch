@@ -148,13 +148,13 @@ def main() -> None:
         help="Produce an 8-bit quantized model",
     )
     parser.add_argument(
-        "--verbose",
+        "--debug-xnnpack",
         action="store_true",
         help="Enable XNNPACK partitioner DEBUG logging and dump the lowered graph",
     )
     args = parser.parse_args()
 
-    if args.verbose:
+    if args.debug_xnnpack:
         logging.basicConfig(level=logging.DEBUG)
 
     if args.output is None:
@@ -181,7 +181,7 @@ def main() -> None:
             XnnpackPartitioner,
         )
 
-        partitioners.append(XnnpackPartitioner(verbose=args.verbose))
+        partitioners.append(XnnpackPartitioner(verbose=args.debug_xnnpack))
 
     compile_config = None
     if args.quantize:
@@ -202,7 +202,7 @@ def main() -> None:
         f"quantize={args.quantize} delegated_nodes={delegated}"
     )
 
-    if args.verbose:
+    if args.debug_xnnpack:
         from executorch.exir.backend.utils import print_delegated_graph
 
         print_delegated_graph(edge.exported_program().graph_module)
