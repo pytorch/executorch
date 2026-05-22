@@ -57,11 +57,7 @@ class TestDeviceName(unittest.TestCase):
         self.assertEqual(_device_name(None), "unknown")
 
     def test_known_device_classes(self):
-        from coremltools.models.compute_device import (
-            MLCPUComputeDevice,
-            MLGPUComputeDevice,
-            MLNeuralEngineComputeDevice,
-        )
+        from coremltools.models.compute_device import MLNeuralEngineComputeDevice
 
         # Don't construct the device classes directly (they wrap proxies that
         # may be unavailable in some envs); just confirm the type-mapping path
@@ -75,9 +71,7 @@ class TestDeviceName(unittest.TestCase):
 
 class TestComputeUnitChoices(unittest.TestCase):
     def test_includes_cpu_and_ne(self):
-        self.assertEqual(
-            _COMPUTE_UNIT_CHOICES["cpu_and_ne"], ct.ComputeUnit.CPU_AND_NE
-        )
+        self.assertEqual(_COMPUTE_UNIT_CHOICES["cpu_and_ne"], ct.ComputeUnit.CPU_AND_NE)
 
     def test_includes_all(self):
         self.assertEqual(_COMPUTE_UNIT_CHOICES["all"], ct.ComputeUnit.ALL)
