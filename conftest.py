@@ -1,3 +1,4 @@
+import hashlib
 import sys
 
 import torch
@@ -13,5 +14,8 @@ if sys.platform == "win32":
         "backends/apple/**",
     ]
 
-# Seed the run
-torch.manual_seed(42)
+
+def pytest_runtest_setup(item):
+    # Set a stable seed for each test based on a hash of the test name.
+    seed = int(hashlib.sha256(item.nodeid.encode()).hexdigest(), 16) % (2**32)
+    torch.manual_seed(seed)
