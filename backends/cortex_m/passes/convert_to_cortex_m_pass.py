@@ -5,9 +5,8 @@
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
 
-import executorch.backends.cortex_m.ops.operators  # noqa
-
 import cmsis_nn  # type: ignore[import-not-found, import-untyped]
+import executorch.backends.cortex_m.ops.operators  # noqa
 import torch
 import torch.fx
 from executorch.backends.arm._passes.arm_pass_utils import get_first_fake_tensor

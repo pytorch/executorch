@@ -107,9 +107,15 @@ def _variant(model_cls, cpu: CortexM, uses_kernel_sum: bool) -> _IsaVariant:
 test_variants = {
     "mve_bias": _variant(_SmallMagnitudeLinear, CortexM.M55, uses_kernel_sum=True),
     "dsp_bias": _variant(_SmallMagnitudeLinear, CortexM.M4, uses_kernel_sum=False),
-    "scalar_bias": _variant(_SmallMagnitudeLinear, CortexM.M0PLUS, uses_kernel_sum=False),
-    "mve_nobias": _variant(_SmallMagnitudeLinearNoBias, CortexM.M55, uses_kernel_sum=True),
-    "dsp_nobias": _variant(_SmallMagnitudeLinearNoBias, CortexM.M4, uses_kernel_sum=False),
+    "scalar_bias": _variant(
+        _SmallMagnitudeLinear, CortexM.M0PLUS, uses_kernel_sum=False
+    ),
+    "mve_nobias": _variant(
+        _SmallMagnitudeLinearNoBias, CortexM.M55, uses_kernel_sum=True
+    ),
+    "dsp_nobias": _variant(
+        _SmallMagnitudeLinearNoBias, CortexM.M4, uses_kernel_sum=False
+    ),
     "scalar_nobias": _variant(
         _SmallMagnitudeLinearNoBias, CortexM.M0PLUS, uses_kernel_sum=False
     ),
@@ -147,9 +153,13 @@ def test_aot_graph_shape_small_magnitude_linear(variant: _IsaVariant):
     module = tester.get_artifact(StageType.RUN_PASSES).exported_program().module()
     linear_target = exir_ops.edge.cortex_m.quantized_linear.default
     linear_nodes = [
-        n for n in module.graph.nodes if n.op == "call_function" and n.target == linear_target
+        n
+        for n in module.graph.nodes
+        if n.op == "call_function" and n.target == linear_target
     ]
-    assert len(linear_nodes) == 1, f"expected one quantized_linear node, got {len(linear_nodes)}"
+    assert (
+        len(linear_nodes) == 1
+    ), f"expected one quantized_linear node, got {len(linear_nodes)}"
     bias_arg, kernel_sum_arg = linear_nodes[0].args[2], linear_nodes[0].args[3]
 
     if variant.uses_kernel_sum:
@@ -160,7 +170,9 @@ def test_aot_graph_shape_small_magnitude_linear(variant: _IsaVariant):
         # bias is allowed to be None only if the source nn.Linear had bias=False.
         expects_bias = variant.case.model.fc.bias is not None
         if expects_bias:
-            assert bias_arg is not None, "non-MVE path with bias must forward bias to CMSIS-NN"
+            assert (
+                bias_arg is not None
+            ), "non-MVE path with bias must forward bias to CMSIS-NN"
 
 
 def test_implementation_small_magnitude_linear():
