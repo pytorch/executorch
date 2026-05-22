@@ -15,7 +15,10 @@
 #include <executorch/runtime/core/exec_aten/util/scalar_type_util.h>
 #include <executorch/runtime/core/exec_aten/util/tensor_util.h>
 #include <cctype>
+#include <cerrno>
 #include <cstdio>
+#include <cstdlib>
+#include <limits>
 
 #include <array>
 #include <atomic>
@@ -25,10 +28,12 @@
 #include <string>
 #include <string_view>
 #include <unordered_map>
+#include <unordered_set>
 #include <vector>
 
 // Include SlimTensor headers for CUDA backend
 #include <executorch/backends/aoti/slim/c10/core/Device.h>
+#include <executorch/backends/aoti/slim/c10/core/ScalarType.h>
 #include <executorch/backends/aoti/slim/c10/cuda/Exception.h>
 #include <executorch/backends/aoti/slim/core/slim_tensor.h>
 #include <executorch/backends/aoti/slim/core/storage.h>
@@ -45,6 +50,8 @@
 #include <executorch/backends/cuda/runtime/platform/platform.h>
 #include <executorch/backends/cuda/runtime/shims/memory.h>
 #include <executorch/backends/cuda/runtime/utils.h>
+#include <executorch/backends/cuda/runtime/weight_offload/payload.h>
+#include <executorch/backends/cuda/runtime/weight_offload/session.h>
 
 namespace executorch::backends::cuda {
 
@@ -261,6 +268,11 @@ class ET_EXPERIMENTAL CudaBackend final
     LOAD_OPTIONAL_SYMBOL(
         update_user_managed_constant_buffer_pairs,
         AOTInductorModelContainerUpdateUserManagedConstantBufferPairs);
+    LOAD_OPTIONAL_SYMBOL(
+        get_constant_data_size, AOTInductorModelContainerGetConstantDataSize);
+    LOAD_OPTIONAL_SYMBOL(
+        get_constant_from_folded,
+        AOTInductorModelContainerGetConstantFromFolded);
 #undef LOAD_OPTIONAL_SYMBOL
 
     return Error::Ok;
@@ -340,11 +352,16 @@ class ET_EXPERIMENTAL CudaBackend final
       ArrayRef<CompileSpec> compile_specs // This will be my empty list
   ) const override {
     std::string method_name;
+    bool weight_offload_enabled = false;
     for (const CompileSpec& spec : compile_specs) {
       if (std::strcmp(spec.key, "method_name") == 0) {
         method_name.assign(
             static_cast<const char*>(spec.value.buffer),
             spec.value.nbytes); // no nullptr guarantee, so pass size
+      } else if (
+          std::strcmp(spec.key, weight_offload::kEnableCompileSpecKey) == 0 &&
+          spec.value.nbytes > 0) {
+        weight_offload_enabled = true;
       }
     }
 
@@ -352,6 +369,111 @@ class ET_EXPERIMENTAL CudaBackend final
         method_name.empty() ? "so_blob" : method_name + "_so_blob";
 
     const NamedDataMap* named_data_map = context.get_named_data_map();
+
+    // EXPERIMENTAL weight-offload payload: parsed up front so a bad
+    // artifact hard-fails before we burn time loading the .so.
+    // Catalog validation happens AFTER constants are loaded (below)
+    // so the catalog's data_ptrs reflect the FINAL active handles
+    // — cross-method weight sharing can swap pointers during load.
+    //
+    // All diagnostics in the offload path go through
+    // ``fprintf(stderr, ...)`` rather than ``ET_LOG`` /
+    // ``ET_CHECK_OR_RETURN_ERROR``. The default ExecuTorch build
+    // sets ``ET_LOG_ENABLED=0``, which suppresses the diagnostic
+    // message those macros emit on failure (the early-return itself
+    // still happens). The offload opt-in contract is "loud at init"
+    // — both the success path and the hard-fail paths must produce
+    // stderr output that identifies the cause regardless of the
+    // logging build flag. Matches the probe-trace pattern in
+    // ``runtime/weight_offload/probe_op.cpp``.
+    //
+    // When the opt-in is absent the payload is ignored even if
+    // present in the NamedDataMap — no leakage from disabled state.
+    weight_offload::Payload offload_payload;
+    if (weight_offload_enabled) {
+      // Mutually exclusive with CUDA Graph for this method: graph
+      // Replay bypasses AOTI's ``run()`` entirely, so probe ops
+      // never fire and the offload Session has no way to swap
+      // weights in. Hard-fail at init so a stale config can't
+      // silently degrade to "graph replays with stale weights".
+      if (should_use_cuda_graph_for_method(method_name)) {
+        std::fprintf(
+            stderr,
+            "[ET_WEIGHT_OFFLOAD][ERROR] method '%s': offload and "
+            "enable_cuda_graph_for_method are mutually exclusive\n",
+            method_name.c_str());
+        return Error::InvalidArgument;
+      }
+
+      auto offload_key = weight_offload::named_data_key_for_method(method_name);
+      auto offload_buf = named_data_map->get_data(offload_key.c_str());
+      if (!offload_buf.ok()) {
+        std::fprintf(
+            stderr,
+            "[ET_WEIGHT_OFFLOAD][ERROR] enabled but payload missing at key "
+            "'%s' (error 0x%x)\n",
+            offload_key.c_str(),
+            static_cast<uint32_t>(offload_buf.error()));
+        return Error::Internal;
+      }
+      auto parsed = weight_offload::parse_payload(
+          offload_buf->data(), offload_buf->size(), method_name);
+      if (!parsed.ok()) {
+        std::fprintf(
+            stderr,
+            "[ET_WEIGHT_OFFLOAD][ERROR] payload parse failed for "
+            "method '%s' (error 0x%x)\n",
+            method_name.c_str(),
+            static_cast<uint32_t>(parsed.error()));
+        offload_buf->Free();
+        return Error::InvalidArgument;
+      }
+      offload_payload = std::move(parsed.get());
+      offload_buf->Free();
+
+      // Fail-fast on incompatible runtime modes BEFORE container
+      // creation / .so load / blob fetching — no point allocating
+      // GPU state for a config we'd throw away. pin_fqns dedup,
+      // device_index==0, and per-FQN metadata invariants are all
+      // enforced by the payload parser.
+      //
+      // Disallow shared-stream mode with offload. The shared stream
+      // (see create_shared_cuda_stream) is created on whichever
+      // device happened to be current at the time of the first
+      // create_shared_cuda_stream call; we have no way to verify
+      // that matches the device offload was set up on. Rather than
+      // silently corrupt on multi-GPU hosts, hard-fail at init.
+      if (is_using_shared_cuda_stream()) {
+        std::fprintf(
+            stderr,
+            "[ET_WEIGHT_OFFLOAD][ERROR] method '%s': offload + "
+            "use_shared_cuda_stream is unsupported (shared stream's "
+            "creation device may not match the offload device)\n",
+            method_name.c_str());
+        return Error::InvalidArgument;
+      }
+
+      // Bind the device BEFORE any subsequent CUDA work that this
+      // offload-enabled init does: create_with_device(..., "cuda",
+      // nullptr) uses the CURRENT device (see
+      // model_base.h:433-ish — AOTI parses the string and only
+      // overrides via explicit "cuda:N"), and the per-handle stream
+      // creation later in this function inherits the current device
+      // too. Without this, a process whose current device is not 0
+      // would silently land the container + stream on one GPU while
+      // dummies, pool, and payload assume device 0.
+      cudaError_t set_dev_err = cudaSetDevice(0);
+      if (set_dev_err != cudaSuccess) {
+        std::fprintf(
+            stderr,
+            "[ET_WEIGHT_OFFLOAD][ERROR] cudaSetDevice(0) failed for "
+            "method '%s': %s\n",
+            method_name.c_str(),
+            cudaGetErrorString(set_dev_err));
+        return Error::Internal;
+      }
+    }
+
     auto aoti_dso_buffer = named_data_map->get_data(so_blob_key.c_str());
     ET_CHECK_OR_RETURN_ERROR(
         aoti_dso_buffer.ok(),
@@ -396,7 +518,33 @@ class ET_EXPERIMENTAL CudaBackend final
 
     processed->Free();
 
-    // Create handle and load function pointers into it
+    // Create handle and load function pointers into it.
+    //
+    // Ownership note: every error path below does `delete handle;
+    // return Error::Internal;` without an explicit
+    // `AOTInductorModelContainerDelete(handle->container_handle)`.
+    // That mirrors the success-path destroy() at the bottom of this
+    // file (see the "AOTInductorModelContainerDelete does not work
+    // correctly with multiple .so files" note there) — the container
+    // is intentionally never deleted by CudaBackend; we leak the
+    // container in both success and error paths. The `delete handle`
+    // here frees only the C++ wrapper struct.
+    //
+    // Leak budget: ONE container per init() call that gets past
+    // container_create + load_function_pointers. Both success and
+    // error inits leak the same way; the per-process leak count is
+    // proportional to total init() calls (success + failure), not
+    // to error rate. The pre-offload init had a small per-init
+    // failure surface (mostly file IO + dlopen); offload widens it
+    // (constant-coverage check, AOTI<->payload data_size mismatch,
+    // dummy install, host-mirror alloc, pool/stream create, pinned
+    // alloc, ProbeRegistry collision). Hot-reload callers
+    // (re-init'ing the same model in a loop on init failure) should
+    // budget for a steady GPU leak of ~constants_size + a fixed
+    // per-container overhead per failed retry, and either retry
+    // with a fresh process or gate the retry rate accordingly. A
+    // proper fix lives upstream — see TODO(gasoonjia) at the
+    // destroy() site.
     cuda::CudaDelegateHandle* handle = new cuda::CudaDelegateHandle();
     handle->so_handle = lib_handle;
     handle->so_path = so_path.string();
@@ -415,19 +563,34 @@ class ET_EXPERIMENTAL CudaBackend final
 
     handle->container_handle = container_handle;
 
-    // Load constants. When weight_sharing_across_methods is enabled (opt-in
-    // via the kWeightSharingAcrossMethods runtime backend option set by the
-    // runner), use the per-weight FQN cache so methods that share weights
-    // (e.g. prefill/decode) avoid duplicate GPU allocations. Otherwise fall
-    // back to the legacy per-method blob load — required for models whose
-    // methods are independent sub-graphs that may have FQN collisions
-    // (e.g. parakeet).
-    if (is_weight_sharing_across_methods_enabled()) {
-      ET_CHECK_OK_OR_RETURN_ERROR(
-          load_constants_with_cache(handle, named_data_map, method_name));
+    // Load constants. For OFFLOAD-ENABLED methods, we SKIP
+    // update_constants_from_blob entirely and instead install 1-byte
+    // GPU dummies via update_user_managed_constant_buffer_pairs
+    // BEFORE any AOTI run. AOTI's container then has the dummies as
+    // its active constants; the probe op intercepts every read and
+    // routes through Session::serve, which serves from a pinned host
+    // mirror sourced directly from the _weights_blob NamedData entry
+    // (no GPU allocation for the constants at any point).
+    //
+    // For non-offload methods, the existing eager-load paths apply.
+    if (!weight_offload_enabled) {
+      if (is_weight_sharing_across_methods_enabled()) {
+        ET_CHECK_OK_OR_RETURN_ERROR(
+            load_constants_with_cache(handle, named_data_map, method_name));
+      } else {
+        ET_CHECK_OK_OR_RETURN_ERROR(
+            load_constants_legacy(handle, named_data_map, method_name));
+      }
     } else {
-      ET_CHECK_OK_OR_RETURN_ERROR(
-          load_constants_legacy(handle, named_data_map, method_name));
+      // Distinct tag (not the [ET_WEIGHT_OFFLOAD] success-summary
+      // prefix) so transport tests counting the success line aren't
+      // tripped up. Tests assert the exact "skipped" phrase to verify
+      // the eager-load path is bypassed.
+      std::fprintf(
+          stderr,
+          "[ET_WEIGHT_OFFLOAD_SKIP] skipped update_constants_from_blob "
+          "method=%s\n",
+          method_name.c_str());
     }
 
     // Use shared CUDA stream if enabled via options, otherwise create one.
@@ -455,6 +618,191 @@ class ET_EXPERIMENTAL CudaBackend final
           method_name.c_str());
     }
 
+    // EXPERIMENTAL: build the offload Session now that the compute
+    // stream is in place. Session owns the copy stream + pool + host
+    // mirror + dummies. AOTI's container has dummies installed in
+    // place of constants; the probe op intercepts every read and
+    // routes to Session::serve, which serves from a pinned host
+    // mirror sourced directly from the _weights_blob NamedData entry
+    // (no GPU constants are ever allocated).
+    if (weight_offload_enabled) {
+      // Thin shim: this scope owns the AOTI-handle-requiring checks
+      // (folded constants, schedule <-> catalog coverage, AOTI vs
+      // payload data_size cross-check) and hands the AOTI catalog +
+      // blob to Session::create, which owns dummy creation + AOTI
+      // install + budget resolution + host mirror + pool +
+      // ProbeRegistry registration.
+      auto catalog_res = weight_offload::walk_aoti_catalog(handle, method_name);
+      if (!catalog_res.ok()) {
+        delete handle;
+        return catalog_res.error();
+      }
+      auto catalog = std::move(catalog_res.get());
+
+      // Coverage: catalog.fqns set == unique(schedule).
+      std::unordered_set<std::string> schedule_fqns(
+          offload_payload.schedule.begin(), offload_payload.schedule.end());
+      for (const auto& f : catalog.fqns) {
+        if (schedule_fqns.find(f) == schedule_fqns.end()) {
+          std::fprintf(
+              stderr,
+              "[ET_WEIGHT_OFFLOAD][ERROR] method '%s': catalog FQN '%s' "
+              "not in schedule (missing probe coverage)\n",
+              method_name.c_str(),
+              f.c_str());
+          delete handle;
+          return Error::InvalidArgument;
+        }
+      }
+      for (const auto& f : schedule_fqns) {
+        if (catalog.fqn_to_index.find(f) == catalog.fqn_to_index.end()) {
+          std::fprintf(
+              stderr,
+              "[ET_WEIGHT_OFFLOAD][ERROR] method '%s': schedule FQN '%s' "
+              "not in AOTI catalog (folded or drift vs the .so)\n",
+              method_name.c_str(),
+              f.c_str());
+          delete handle;
+          return Error::InvalidArgument;
+        }
+      }
+      if (schedule_fqns.empty() && catalog.num_constants != 0) {
+        std::fprintf(
+            stderr,
+            "[ET_WEIGHT_OFFLOAD][ERROR] method '%s': schedule=[] but "
+            "container has %zu constants\n",
+            method_name.c_str(),
+            catalog.num_constants);
+        delete handle;
+        return Error::InvalidArgument;
+      }
+
+      // AOTI data_size vs payload nbytes: the only check that bridges
+      // the two independent sources (AOTI's compiled .so vs the .pte
+      // payload). The parser validated the payload internals; this
+      // catches pass <-> AOTI drift.
+      std::unordered_map<std::string, const weight_offload::ConstantMetadata*>
+          fqn_to_meta;
+      fqn_to_meta.reserve(offload_payload.constants_metadata.size());
+      for (const auto& m : offload_payload.constants_metadata) {
+        fqn_to_meta[m.fqn] = &m;
+      }
+      uint64_t total_data_size = 0;
+      for (size_t i = 0; i < catalog.num_constants; ++i) {
+        const auto& fqn = catalog.fqns[i];
+        const auto& m = *fqn_to_meta.at(fqn);
+        if (m.nbytes != static_cast<uint64_t>(catalog.data_sizes[i])) {
+          std::fprintf(
+              stderr,
+              "[ET_WEIGHT_OFFLOAD][ERROR] FQN '%s': AOTI data_size=%zu "
+              "vs payload nbytes=%llu (pass <-> AOTI drift)\n",
+              fqn.c_str(),
+              catalog.data_sizes[i],
+              static_cast<unsigned long long>(m.nbytes));
+          delete handle;
+          return Error::InvalidArgument;
+        }
+        total_data_size += static_cast<uint64_t>(catalog.data_sizes[i]);
+      }
+
+      // Fetch _weights_blob (RAII-released when this scope exits;
+      // Session::create copies into pinned host memory before
+      // returning so it's safe to drop after).
+      auto blob_key = std::string(method_name).empty()
+          ? std::string("weights_blob")
+          : method_name + "_weights_blob";
+      auto blob_buf = named_data_map->get_data(blob_key.c_str());
+      if (!blob_buf.ok()) {
+        std::fprintf(
+            stderr,
+            "[ET_WEIGHT_OFFLOAD][ERROR] method '%s': _weights_blob "
+            "'%s' not in named data map (0x%x)\n",
+            method_name.c_str(),
+            blob_key.c_str(),
+            static_cast<uint32_t>(blob_buf.error()));
+        delete handle;
+        return Error::Internal;
+      }
+      struct BlobGuard {
+        decltype(blob_buf)& b;
+        ~BlobGuard() {
+          if (b.ok()) {
+            b->Free();
+          }
+        }
+      } blob_guard{blob_buf};
+      if (total_data_size != blob_buf->size()) {
+        std::fprintf(
+            stderr,
+            "[ET_WEIGHT_OFFLOAD][ERROR] method '%s': _weights_blob size "
+            "mismatch (sum data_size=%llu vs blob=%zu)\n",
+            method_name.c_str(),
+            static_cast<unsigned long long>(total_data_size),
+            blob_buf->size());
+        delete handle;
+        return Error::Internal;
+      }
+
+      const size_t schedule_fqns_count = schedule_fqns.size();
+      const size_t catalog_constants = catalog.num_constants;
+      auto session_res = weight_offload::Session::create(
+          offload_payload,
+          handle,
+          std::move(catalog),
+          static_cast<const uint8_t*>(blob_buf->data()),
+          handle->get_cuda_stream(),
+          context);
+      if (!session_res.ok()) {
+        std::fprintf(
+            stderr,
+            "[ET_WEIGHT_OFFLOAD][ERROR] Session::create failed for "
+            "method '%s' (0x%x)\n",
+            method_name.c_str(),
+            static_cast<uint32_t>(session_res.error()));
+        delete handle;
+        return session_res.error();
+      }
+      handle->weight_offload_session = std::move(session_res.get());
+
+      std::fprintf(
+          stderr,
+          "[ET_WEIGHT_OFFLOAD] method=%s version=%u schedule_len=%zu "
+          "floor_bytes=%llu pinned=%zu validated_schedule_fqns=%zu "
+          "budget_bytes=%llu installed=%zu\n",
+          offload_payload.method_name.c_str(),
+          offload_payload.schema_version,
+          offload_payload.schedule.size(),
+          static_cast<unsigned long long>(offload_payload.floor_bytes),
+          offload_payload.pin_fqns.size(),
+          schedule_fqns_count,
+          static_cast<unsigned long long>(
+              handle->weight_offload_session->total_budget_bytes()),
+          catalog_constants);
+
+      static const bool trace_per_fqn =
+          std::getenv("EXECUTORCH_WEIGHT_OFFLOAD_TRACE") != nullptr;
+      if (trace_per_fqn) {
+        for (const auto& fqn : schedule_fqns) {
+          const auto& m = *fqn_to_meta.at(fqn);
+          std::fprintf(
+              stderr,
+              "[ET_WEIGHT_OFFLOAD_TRACE] fqn=%s dtype=%d nbytes=%llu "
+              "sizes=[",
+              m.fqn.c_str(),
+              m.dtype,
+              static_cast<unsigned long long>(m.nbytes));
+          for (size_t i = 0; i < m.sizes.size(); ++i) {
+            std::fprintf(
+                stderr,
+                "%s%lld",
+                i == 0 ? "" : ",",
+                static_cast<long long>(m.sizes[i]));
+          }
+          std::fprintf(stderr, "]\n");
+        }
+      }
+    }
+
     // Initialize CUDA graph state if enabled for this method.
     if (should_use_cuda_graph_for_method(method_name)) {
       handle->cuda_graph_state.phase = CudaGraphPhase::Warmup;
@@ -475,6 +823,26 @@ class ET_EXPERIMENTAL CudaBackend final
       DelegateHandle* handle_,
       Span<EValue*> args) const override {
     cuda::CudaDelegateHandle* handle = (cuda::CudaDelegateHandle*)handle_;
+
+    // Re-bind the device for offload-enabled handles. setCurrentCUDAStream
+    // below sets the stream-on-device association the framework reads
+    // back, but it does NOT call cudaSetDevice — and AOTI's kernel
+    // launches use the current device implicitly. A multi-GPU process
+    // whose current device changed between init and execute would
+    // otherwise launch kernels on the wrong GPU while the offload
+    // pool / dummies live on device 0. Offload is device-0-only
+    // today; lifting that requires storing the per-handle device.
+    if (handle->weight_offload_session != nullptr) {
+      cudaError_t set_dev_err = cudaSetDevice(0);
+      if (set_dev_err != cudaSuccess) {
+        ET_LOG(
+            Error,
+            "[ET_WEIGHT_OFFLOAD][ERROR] cudaSetDevice(0) failed in "
+            "execute(): %s",
+            cudaGetErrorString(set_dev_err));
+        return Error::Internal;
+      }
+    }
 
     size_t n_inputs;
     handle->get_num_inputs(handle->container_handle, &n_inputs);
@@ -852,6 +1220,14 @@ class ET_EXPERIMENTAL CudaBackend final
         cached_outputs_.erase(it);
       }
     }
+
+    // Tear down the offload Session FIRST so its destructor
+    // (unregister from ProbeRegistry + free pinned host bytes)
+    // runs while the CUDA stream and the .so are still around.
+    // Relying on ``delete handle`` ordering would also work today,
+    // but doing it explicitly here documents the dependency so a
+    // later refactor doesn't accidentally reshuffle teardown.
+    handle->weight_offload_session.reset();
 
     // The CUDA stream is managed by shared_ptr in the handle.
     // It will be automatically destroyed when the last handle using it

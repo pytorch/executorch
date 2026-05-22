@@ -36,6 +36,8 @@ runtime.cxx_library(
         "shims/rand.cu",
         "shims/sort.cu",
         "shims/tensor_attribute.cpp",
+        "weight_offload/probe_op.cpp",
+        "weight_offload/probe_registry.cpp",
     ],
     headers = [
         "shims/cuda_guard.h",
@@ -46,6 +48,8 @@ runtime.cxx_library(
         "shims/sort.h",
         "shims/tensor_attribute.h",
         "utils.h",
+        "weight_offload/probe_op.h",
+        "weight_offload/probe_registry.h",
     ],
     # @lint-ignore BUCKLINT: Avoid `link_whole=True` (https://fburl.com/avoid-link-whole)
     link_whole = True,
@@ -105,9 +109,12 @@ runtime.cxx_library(
     name = "cuda_backend",
     srcs = [
         "cuda_backend.cpp",
+        "weight_offload/session.cpp",
     ],
     headers = [
         "cuda_delegate_handle.h",
+        "weight_offload/payload.h",
+        "weight_offload/session.h",
     ],
     # @lint-ignore BUCKLINT: Avoid `link_whole=True` (https://fburl.com/avoid-link-whole)
     link_whole = True,

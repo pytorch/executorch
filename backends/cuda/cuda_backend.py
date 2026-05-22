@@ -228,6 +228,12 @@ class CudaBackend(AotiBackend, BackendDetails):
             "aoti_torch_cuda_randint_low_out": None,
             "executorch_cuda::int4_plain_mm": None,
             "aoti_torch_cuda_int4_plain_mm": None,
+            # Weight-offload probe op (EXPERIMENTAL). Whitelisted so
+            # AOTI's missing-fallback-kernel check doesn't fail when a
+            # graph contains probes; the actual symbol resolution
+            # happens at .so load time against ``libaoti_cuda_shims``.
+            "executorch_weight_offload::probe": None,
+            "aoti_torch_cuda_probe": None,
         }
 
     @classmethod
@@ -261,6 +267,60 @@ class CudaBackend(AotiBackend, BackendDetails):
         if triton_kernel_mode == "ON":
             passes.append(ReplaceEdgeOpWithTritonOpPass())
         return passes
+
+    @classmethod
+    def pre_aoti_transform_and_collect_named_data(
+        cls,
+        device_edge_program,
+        compile_specs: List[CompileSpec],
+    ):
+        """Wire weight offloading when the private opt-in compile spec
+        is set. Otherwise no-op.
+
+        When opted in, the pass writes a NamedData payload describing
+        the per-method probe schedule, floor budget, and constants
+        catalog. ``CudaBackend::init`` reads that payload, pre-installs
+        device dummies, skips AOTI's eager constant load, and builds a
+        ``Session`` that serves weights from a bounded GPU pool backed
+        by a host mirror (with optional pinned-resident weights).
+        """
+        # Cheap opt-in probe first — avoids importing the offload
+        # pass machinery for the (overwhelmingly common) non-offload
+        # export. The key string is duplicated against
+        # ``COMPILE_SPEC_KEY_ENABLE`` on purpose so this branch has
+        # no import dependency at all.
+        opt_in = any(
+            spec.key == "_weight_offload_internal_enable" and len(spec.value) > 0
+            for spec in compile_specs
+        )
+        if not opt_in:
+            return []
+
+        # Opt-in is set: the offload pass MUST be importable. A failing
+        # import here means a broken build, not a "skip and hope for
+        # the best" — the runtime would otherwise hard-fail at init
+        # with a "payload missing" error miles away from the actual
+        # cause.
+        from executorch.backends.cuda.passes.weight_offload_pass import (
+            _apply_weight_offload,
+            _serialize_payload,
+            named_data_key_for_method,
+            pin_fqns_from_specs,
+        )
+
+        method_name = cls.method_name_from_compile_specs(compile_specs)
+        pin_fqns = pin_fqns_from_specs(compile_specs)
+        payload = _apply_weight_offload(
+            device_edge_program,
+            method_name=method_name,
+            pin_fqns=pin_fqns,
+        )
+        blob = _serialize_payload(payload)
+        # Merge into the .pte rather than the external .ptd: the
+        # payload is metadata (a few KB at most) and the runtime
+        # parses it in ``init`` before any heavy data loading, so
+        # keeping it inline avoids dragging the .ptd open early.
+        return [(named_data_key_for_method(method_name), blob, 1, None)]
 
     @classmethod
     def get_aoti_compile_options(
@@ -312,6 +372,31 @@ class CudaBackend(AotiBackend, BackendDetails):
             }
         except AttributeError:
             # int4_dispatch.py not imported — op not registered, skip C shim mapping
+            pass
+
+        # Weight-offload probe op (EXPERIMENTAL). The op is defined in
+        # ``backends/cuda/passes/weight_offload_pass.py``; import it
+        # lazily so a build that excludes the offload pass still
+        # compiles. ``probe`` is registered unconditionally because the
+        # AOTI wrapper only emits the call when an FX-graph node
+        # references it, and the runtime symbol always exists in
+        # ``aoti_cuda_shims``.
+        try:
+            from executorch.backends.cuda.passes import (  # noqa: F401
+                weight_offload_pass,
+            )
+
+            shims = options.setdefault("aot_inductor.custom_ops_to_c_shims", {})
+            shims.setdefault(
+                torch.ops.executorch_weight_offload.probe.default,
+                [
+                    "AOTITorchError aoti_torch_cuda_probe("
+                    "AtenTensorHandle, int64_t, AtenTensorHandle*)"
+                ],
+            )
+        except AttributeError:
+            # weight_offload_pass importable but op not registered (e.g.
+            # torch.library shim missing in the running interpreter); skip.
             pass
 
         # Parse compile_specs to check for platform

@@ -148,6 +148,42 @@ class TestCudaExport(unittest.TestCase):
             ptd_files = [f for f in os.listdir(out_dir) if f.endswith(".ptd")]
             self.assertGreater(len(ptd_files), 0)
 
+    def test_export_with_weight_offload(self):
+        """--prequantized path with weight_offload=True wires the offload
+        payload into the .pte and the per-method ``_weights_blob`` entries
+        into a .ptd. The runtime path is exercised separately in the C++
+        offload test suite; this test only verifies the export artifacts."""
+        with tempfile.TemporaryDirectory() as ckpt_dir, tempfile.TemporaryDirectory() as out_dir:
+            save_checkpoint(ckpt_dir)
+            model, config = load_prequantized_model(
+                ckpt_dir, max_seq_len=TINY_CONFIG.max_seq_len
+            )
+            export_and_lower(model, config, out_dir, weight_offload=True)
+
+            pte_path = os.path.join(out_dir, "model.pte")
+            self.assertTrue(os.path.exists(pte_path))
+            with open(pte_path, "rb") as f:
+                pte_bytes = f.read()
+            # Metadata payload (schedule + constants_metadata + ETWO magic)
+            # is inlined into the .pte under a per-method named-data key.
+            self.assertIn(b"_weight_offload_payload", pte_bytes)
+            self.assertIn(b"ETWO", pte_bytes)
+
+            ptd_files = [f for f in os.listdir(out_dir) if f.endswith(".ptd")]
+            self.assertGreater(len(ptd_files), 0)
+            # _weights_blob entries (one per method) live in the .ptd.
+            blob_seen = False
+            for name in ptd_files:
+                with open(os.path.join(out_dir, name), "rb") as f:
+                    if b"_weights_blob" in f.read():
+                        blob_seen = True
+                        break
+            self.assertTrue(
+                blob_seen,
+                "expected at least one .ptd to contain a '_weights_blob' "
+                "named-data entry when weight_offload=True",
+            )
+
     def test_export_from_hf_checkpoint(self):
         """--model-dir path: load HF → quantize → pack → export."""
         with tempfile.TemporaryDirectory() as ckpt_dir, tempfile.TemporaryDirectory() as out_dir:

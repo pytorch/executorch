@@ -17,6 +17,16 @@ namespace executorch {
 namespace backends {
 namespace cuda {
 
+namespace weight_offload {
+// Forward declaration so this header can hold a
+// ``unique_ptr<Session>`` without dragging session.h's CUDA / slim
+// includes into every TU that touches the handle. The implicit
+// ``~CudaDelegateHandle`` instantiation requires Session to be
+// complete only at the actual delete site — currently just
+// ``cuda_backend.cpp``, which already includes ``session.h``.
+class Session;
+} // namespace weight_offload
+
 // Shared CUDA stream wrapper with proper RAII cleanup.
 // This ensures the stream is destroyed when all handles using it are destroyed.
 struct CudaStreamDeleter {
@@ -168,6 +178,23 @@ struct CudaDelegateHandle : public aoti::AOTIDelegateHandle {
 
   // CUDA graph state (warmup, capture, replay, static buffers)
   CudaGraphState cuda_graph_state;
+
+  // Weight offloading: per-handle Session that owns the pinned host
+  // mirror and the ProbeRegistry registrations for this method. Set
+  // by ``CudaBackend::init`` after the CUDA stream is in place
+  // (Session needs the stream for H2D copies). Reset explicitly
+  // first in ``CudaBackend::destroy`` so the
+  // ``ProbeRegistry::unregister`` + ``cudaFreeHost`` ordering is
+  // obvious, before the stream and the .so go away.
+  std::unique_ptr<weight_offload::Session> weight_offload_session;
+
+  // Out-of-line so the ``unique_ptr<Session>`` destructor sees the
+  // complete ``Session`` type. Defined in ``session.cpp``; without
+  // this declaration any TU that destroys a ``CudaDelegateHandle``
+  // without first including ``session.h`` would hit an
+  // incomplete-type compile error (or, worse on some compilers,
+  // silently UB).
+  ~CudaDelegateHandle();
 };
 
 } // namespace cuda
