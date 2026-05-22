@@ -1,0 +1,2572 @@
+
+<!DOCTYPE html>
+
+
+<html lang="en" data-content_root="./" >
+
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" /><meta name="generator" content="Docutils 0.18.1: http://docutils.sourceforge.net/" />
+
+    <title>Working with Computer Vision Models &#8212; ExecuTorch 1.3 documentation</title>
+  
+  
+  
+  <script data-cfasync="false">
+    document.documentElement.dataset.mode = localStorage.getItem("mode") || "";
+    document.documentElement.dataset.theme = localStorage.getItem("theme") || "";
+  </script>
+  
+  <!-- Loaded before other Sphinx assets -->
+  <link href="_static/styles/theme.css?digest=dfe6caa3a7d634c4db9b" rel="stylesheet" />
+<link href="_static/styles/bootstrap.css?digest=dfe6caa3a7d634c4db9b" rel="stylesheet" />
+<link href="_static/styles/pydata-sphinx-theme.css?digest=dfe6caa3a7d634c4db9b" rel="stylesheet" />
+
+  
+  <link href="_static/vendor/fontawesome/6.5.2/css/all.min.css?digest=dfe6caa3a7d634c4db9b" rel="stylesheet" />
+  <link rel="preload" as="font" type="font/woff2" crossorigin href="_static/vendor/fontawesome/6.5.2/webfonts/fa-solid-900.woff2" />
+<link rel="preload" as="font" type="font/woff2" crossorigin href="_static/vendor/fontawesome/6.5.2/webfonts/fa-brands-400.woff2" />
+<link rel="preload" as="font" type="font/woff2" crossorigin href="_static/vendor/fontawesome/6.5.2/webfonts/fa-regular-400.woff2" />
+
+    <link rel="stylesheet" type="text/css" href="_static/pygments.css?v=8f2a1f02" />
+    <link rel="stylesheet" type="text/css" href="_static/css/theme.css?v=72e443bf" />
+    <link rel="stylesheet" type="text/css" href="_static/copybutton.css?v=76b2166b" />
+    <link rel="stylesheet" type="text/css" href="_static/sg_gallery.css?v=61a4c737" />
+    <link rel="stylesheet" type="text/css" href="_static/sg_gallery-binder.css?v=f4aeca0c" />
+    <link rel="stylesheet" type="text/css" href="_static/sg_gallery-dataframe.css?v=2082cf3c" />
+    <link rel="stylesheet" type="text/css" href="_static/sg_gallery-rendered-html.css?v=1277b6f3" />
+    <link rel="stylesheet" type="text/css" href="_static/sphinx-design.min.css?v=95c83b7e" />
+    <link rel="stylesheet" type="text/css" href="_static/navbar.css?v=67b2d36d" />
+  
+  <!-- Pre-loaded scripts that we'll load fully later -->
+  <link rel="preload" as="script" href="_static/scripts/bootstrap.js?digest=dfe6caa3a7d634c4db9b" />
+<link rel="preload" as="script" href="_static/scripts/pydata-sphinx-theme.js?digest=dfe6caa3a7d634c4db9b" />
+  <script src="_static/vendor/fontawesome/6.5.2/js/all.min.js?digest=dfe6caa3a7d634c4db9b"></script>
+
+    <script src="_static/documentation_options.js?v=c55cb9cb"></script>
+    <script src="_static/doctools.js?v=888ff710"></script>
+    <script src="_static/sphinx_highlight.js?v=dc90522c"></script>
+    <script src="_static/clipboard.min.js?v=a7894cd8"></script>
+    <script src="_static/copybutton.js?v=f281be69"></script>
+    <script src="_static/design-tabs.js?v=f930bc37"></script>
+    <script>DOCUMENTATION_OPTIONS.pagename = 'working-with-cv-models';</script>
+    <script>
+        DOCUMENTATION_OPTIONS.theme_version = '0.15.4';
+        DOCUMENTATION_OPTIONS.theme_switcher_json_url = 'https://docs.pytorch.org/executorch/executorch-versions.json';
+        DOCUMENTATION_OPTIONS.theme_switcher_version_match = '1.3';
+        DOCUMENTATION_OPTIONS.show_version_warning_banner = true;
+        </script>
+    <link rel="canonical" href="https://docs.pytorch.org/executorch/stable/working-with-cv-models.html" />
+    <link rel="icon" href="_static/executorch-chip-logo.svg"/>
+    <link rel="index" title="Index" href="genindex.html" />
+    <link rel="search" title="Search" href="search.html" />
+    <link rel="next" title="Kernel Library Deep Dive" href="kernel-library-advanced.html" />
+    <link rel="prev" title="Profiling Models in ExecuTorch" href="runtime-profiling.html" />
+
+  <meta name="viewport" content="width=device-width, initial-scale=1"/>
+  <meta name="docsearch:language" content="en"/>
+
+<script src="https://code.jquery.com/jquery-3.7.1.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/list.js/2.3.1/list.min.js"></script>
+<script>
+  if (window.location.hostname === 'docs.pytorch.org' || window.location.hostname === 'docs-preview.pytorch.org') {
+    const script = document.createElement('script');
+    script.src = 'https://cmp.osano.com/16A0DbT9yDNIaQkvZ/31b1b91a-e0b6-47ea-bde2-7f2bd13dbe5c/osano.js?variant=one';
+    document.head.appendChild(script);
+  }
+</script>
+<script>
+  // Cookie banner for non-LF projects
+  document.addEventListener('DOMContentLoaded', function () {
+    // Hide cookie banner on local environments and LF owned docs
+    if (window.location.hostname === 'localhost' ||
+      window.location.hostname === '0.0.0.0' ||
+      window.location.hostname === '127.0.0.1' ||
+      window.location.hostname === 'docs.pytorch.org' ||
+      window.location.hostname === 'docs-preview.pytorch.org' ||
+      window.location.hostname.startsWith('192.168.')) {
+      const banner = document.querySelector('.cookie-banner-wrapper');
+      if (banner) {
+        banner.style.display = 'none';
+      }
+    }
+  });
+</script>
+<!-- Conditional CSS for header and footer height adjustment -->
+
+<style>
+  :root {
+    --header-height: 0px !important;
+    --header-height-desktop: 0px !important;
+  }
+  /* Ensure proper mobile layout when LF header is hidden */
+  @media (max-width: 960px) {
+    .bd-header {
+      top: 0 !important;
+      position: sticky !important;
+      z-index: 1020 !important;
+    }
+    .bd-main {
+      padding-top: 0 !important;
+      margin-top: 0 !important;
+    }
+    .bd-article-container {
+      padding-top: 0 !important;
+    }
+    .header-article__inner {
+      padding-top: 1rem !important;
+    }
+
+  }
+</style>
+
+
+<link rel="stylesheet" type="text/css" href="_static/css/theme.css" crossorigin="anonymous">
+<script type="text/javascript" src="_static/js/theme.js"></script>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Montserrat:wght@300;400&display=swap" rel="stylesheet">
+<meta property="og:image" content="https://docs.pytorch.org/docs/stable/_static/img/pytorch_seo.png" />
+<link rel="stylesheet" href="_static/webfonts/all.min.css" crossorigin="anonymous">
+<meta http-equiv="Content-Security-Policy"
+  content="default-src * 'unsafe-inline' 'unsafe-eval' data: blob:; style-src * 'unsafe-inline'; script-src * 'unsafe-inline' 'unsafe-eval' blob:;">
+<meta name="pytorch_project" content="">
+<!-- Google Tag Manager (noscript) -->
+<noscript><iframe src="https://www.googletagmanager.com/ns.html?id=GTM-T8XT4PS" height="0" width="0"
+    style="display:none;visibility:hidden"></iframe></noscript>
+<!-- End Google Tag Manager (noscript) -->
+<!-- Google Tag Manager -->
+<script>(function (w, d, s, l, i) {
+    w[l] = w[l] || []; w[l].push({
+      'gtm.start':
+        new Date().getTime(), event: 'gtm.js'
+    }); var f = d.getElementsByTagName(s)[0],
+      j = d.createElement(s), dl = l != 'dataLayer' ? '&l=' + l : ''; j.async = true; j.src =
+        'https://www.googletagmanager.com/gtm.js?id=' + i + dl; f.parentNode.insertBefore(j, f);
+    j.onload = function () {
+      window.dispatchEvent(new Event('gtm_loaded'));
+      console.log('GTM loaded successfully');
+    };
+  })(window, document, 'script', 'dataLayer', 'GTM-T8XT4PS');
+</script>
+<!-- End Google Tag Manager -->
+<!-- Facebook Pixel Code -->
+<script>
+  !function (f, b, e, v, n, t, s) {
+    if (f.fbq) return; n = f.fbq = function () {
+      n.callMethod ?
+        n.callMethod.apply(n, arguments) : n.queue.push(arguments)
+    };
+    if (!f._fbq) f._fbq = n; n.push = n; n.loaded = !0; n.version = '2.0';
+    n.queue = []; t = b.createElement(e); t.async = !0;
+    t.src = v; s = b.getElementsByTagName(e)[0];
+    s.parentNode.insertBefore(t, s)
+  }(window, document, 'script',
+    'https://connect.facebook.net/en_US/fbevents.js');
+  fbq('init', '243028289693773');
+  fbq('track', 'PageView');
+</script>
+<script>
+  document.documentElement.setAttribute('data-version', '1.3');
+</script>
+<noscript>
+  <img height="1" width="1" src="https://www.facebook.com/tr?id=243028289693773&ev=PageView&noscript=1" />
+</noscript>
+<script>
+  function gtag() {
+    window.dataLayer.push(arguments);
+  }
+</script>
+<!-- End Facebook Pixel Code -->
+<!-- Repository configuration for tutorials -->
+
+
+<!-- Script to Fix scrolling with fast fixed-duration animation -->
+<script>
+  document.addEventListener('DOMContentLoaded', function () {
+    const SCROLL_DURATION = 150; // Fixed duration in ms regardless of distance
+    let lockedTargetId = null; // Lock the TOC to this target until user scrolls manually
+    let isUpdatingToc = false; // Guard against infinite loops
+
+    function smoothScrollTo(targetY, duration, onComplete) {
+      const startY = window.pageYOffset;
+      const difference = targetY - startY;
+      const startTime = performance.now();
+
+      function step(currentTime) {
+        const elapsed = currentTime - startTime;
+        const progress = Math.min(elapsed / duration, 1);
+        // Ease-out cubic for smooth deceleration
+        const easeOut = 1 - Math.pow(1 - progress, 3);
+        window.scrollTo(0, startY + difference * easeOut);
+        if (progress < 1) {
+          requestAnimationFrame(step);
+        } else if (onComplete) {
+          onComplete();
+        }
+      }
+      requestAnimationFrame(step);
+    }
+
+    function updateTocHighlight(targetId) {
+      if (isUpdatingToc) return; // Prevent infinite loop
+      isUpdatingToc = true;
+
+      // Find the TOC link that points to this target
+      const tocNav = document.querySelector('.bd-toc-nav');
+      if (!tocNav) {
+        isUpdatingToc = false;
+        return;
+      }
+
+      // Remove active class from all TOC items
+      tocNav.querySelectorAll('.nav-link').forEach(link => {
+        link.classList.remove('active');
+        link.parentElement.classList.remove('active');
+      });
+
+      // Add active class to the matching link
+      const matchingLink = tocNav.querySelector(`a[href="#${CSS.escape(targetId)}"]`);
+      if (matchingLink) {
+        matchingLink.classList.add('active');
+        matchingLink.parentElement.classList.add('active');
+      }
+
+      // Use setTimeout to reset the guard after the current call stack
+      setTimeout(function() {
+        isUpdatingToc = false;
+      }, 0);
+    }
+
+    // Watch for ScrollSpy trying to change the active state and override it
+    const tocNav = document.querySelector('.bd-toc-nav');
+    if (tocNav) {
+      const observer = new MutationObserver(function(mutations) {
+        if (lockedTargetId && !isUpdatingToc) {
+          // Force our target to stay highlighted
+          updateTocHighlight(lockedTargetId);
+        }
+      });
+      observer.observe(tocNav, {
+        attributes: true,
+        attributeFilter: ['class'],
+        subtree: true
+      });
+    }
+
+    // Release the lock when user scrolls manually (not programmatically)
+    window.addEventListener('wheel', function() {
+      lockedTargetId = null;
+    });
+    window.addEventListener('touchmove', function() {
+      lockedTargetId = null;
+    });
+
+    document.querySelectorAll('a[href^="#"]').forEach(anchor => {
+      anchor.addEventListener('click', function (e) {
+        const targetId = this.getAttribute('href').substring(1);
+        if (!targetId) return; // Skip empty hash links
+        const targetElement = document.getElementById(targetId);
+
+        if (targetElement) {
+          e.preventDefault();
+
+          // Lock the TOC to this target
+          lockedTargetId = targetId;
+
+          const headerHeight =
+            (document.querySelector('.header-holder') ? document.querySelector('.header-holder').offsetHeight : 0) +
+            (document.querySelector('.bd-header') ? document.querySelector('.bd-header').offsetHeight : 0) + 20;
+
+          const targetPosition = targetElement.getBoundingClientRect().top + window.pageYOffset - headerHeight;
+
+          // Update TOC highlight immediately
+          updateTocHighlight(targetId);
+
+          smoothScrollTo(targetPosition, SCROLL_DURATION, function() {
+            // Keep it highlighted after scroll
+            updateTocHighlight(targetId);
+          });
+
+          // Update URL hash without scrolling
+          history.pushState(null, null, '#' + targetId);
+        }
+      });
+    });
+  });
+</script>
+
+<script async src="https://cse.google.com/cse.js?cx=e65585f8c3ea1440e"></script>
+<!-- RunLLM Widget Configuration -->
+
+<script>
+  window.runllmConfig = {
+    assistant_id: "1632",
+    name: "Assistant",
+    position: "BOTTOM_RIGHT",
+    keyboard_shortcut: ""
+  };
+</script>
+<script type="text/javascript" src="_static/js/runllm-widget.js"></script>
+
+
+  <meta name="viewport" content="width=device-width, initial-scale=1"/>
+  <meta name="docsearch:language" content="en"/>
+
+  </head>
+
+<body data-feedback-url="https://github.com/pytorch/executorch" class="pytorch-body">
+  
+  
+  
+  
+  <body data-bs-spy="scroll" data-bs-target=".bd-toc-nav" data-offset="180" data-bs-root-margin="0px 0px -60%" data-default-mode="">
+
+  
+  
+  <div id="pst-skip-link" class="skip-link d-print-none"><a href="#main-content">Skip to main content</a></div>
+
+  
+  <div id="pst-scroll-pixel-helper"></div>
+  
+  <button type="button" class="btn rounded-pill" id="pst-back-to-top">
+    <i class="fa-solid fa-arrow-up"></i>Back to top</button>
+
+  
+  <input type="checkbox"
+          class="sidebar-toggle"
+          id="pst-primary-sidebar-checkbox"/>
+  <label class="overlay overlay-primary" for="pst-primary-sidebar-checkbox"></label>
+  
+  <input type="checkbox"
+          class="sidebar-toggle"
+          id="pst-secondary-sidebar-checkbox"/>
+  <label class="overlay overlay-secondary" for="pst-secondary-sidebar-checkbox"></label>
+  
+  <div class="search-button__wrapper">
+    <div class="search-button__overlay"></div>
+    <div class="search-button__search-container">
+<form class="bd-search d-flex align-items-center"
+      action="search.html"
+      method="get">
+  <i class="fa-solid fa-magnifying-glass"></i>
+  <input type="search"
+         class="form-control"
+         name="q"
+         id="search-input"
+         placeholder="Search the docs ..."
+         aria-label="Search the docs ..."
+         autocomplete="off"
+         autocorrect="off"
+         autocapitalize="off"
+         spellcheck="false"/>
+  <span class="search-button__kbd-shortcut"><kbd class="kbd-shortcut__modifier">Ctrl</kbd>+<kbd>K</kbd></span>
+</form></div>
+  </div>
+
+  <div class="pst-async-banner-revealer d-none">
+  <aside id="bd-header-version-warning" class="d-none d-print-none" aria-label="Version warning"></aside>
+</div>
+
+  
+    <header class="bd-header navbar navbar-expand-lg bd-navbar d-print-none">
+
+<div class="bd-header__inner bd-page-width">
+  <button class="pst-navbar-icon sidebar-toggle primary-toggle" aria-label="Site navigation">
+    <span class="fa-solid fa-bars"></span>
+  </button>
+
+  
+  <div class="navbar-header-items__mobile-logo">
+    
+
+
+
+
+
+
+
+  
+  
+  
+
+
+<a class="navbar-brand logo" href="index.html">
+  
+    
+    <img src="_static/img/et-logo.png" class="logo__image only-light" alt="ExecuTorch - Home"/>
+    
+    
+    <script>document.write(`<img src="_static/img/et-logo.png" class="logo__image only-dark" alt="ExecuTorch - Home"/>`);</script>
+    
+  
+</a>
+  </div>
+
+  
+  
+  <div class=" navbar-header-items__start">
+    
+      
+      
+        <div class="navbar-item">
+          
+
+
+
+
+
+
+
+  
+  
+  
+
+
+<a class="navbar-brand logo" href="index.html">
+  
+    
+    <img src="_static/img/et-logo.png" class="logo__image only-light" alt="ExecuTorch - Home"/>
+    
+    
+    <script>document.write(`<img src="_static/img/et-logo.png" class="logo__image only-dark" alt="ExecuTorch - Home"/>`);</script>
+    
+  
+</a>
+        </div>
+      
+    
+      
+      
+        
+        <div class="navbar-item desktop-only-version">
+          
+<script>
+document.write(`
+  <div class="version-switcher__container dropdown">
+    <button id="pst-version-switcher-button-2"
+      type="button"
+      class="version-switcher__button btn btn-sm dropdown-toggle"
+      data-bs-toggle="dropdown"
+      aria-haspopup="listbox"
+      aria-controls="pst-version-switcher-list-2"
+      aria-label="Version switcher list"
+    >
+      Choose version  <!-- this text may get changed later by javascript -->
+      <span class="caret"></span>
+    </button>
+    <div id="pst-version-switcher-list-2"
+      class="version-switcher__menu dropdown-menu list-group-flush py-0"
+      role="listbox" aria-labelledby="pst-version-switcher-button-2">
+      <!-- dropdown will be populated by javascript on page load -->
+    </div>
+  </div>
+`);
+</script>
+        </div>
+      
+    
+  </div>
+  
+  <div class=" navbar-header-items">
+    
+    <div class="me-auto navbar-header-items__center">
+      
+        <div class="navbar-item">
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+<nav>
+  <ul class="bd-navbar-elements navbar-nav">
+    
+    
+      <li class="nav-item dropdown">
+        
+          
+          <div class="nav-item-with-toggle">
+            <a class="nav-link nav-internal" href="intro-section.html">
+              Intro
+            </a>
+          </div>
+          <ul class="dropdown-menu" id="dropdown-1">
+            
+              <li class=" ">
+                <a class="nav-link dropdown-item nav-internal" href="intro-overview.html">
+                  ExecuTorch Overview
+                </a>
+              </li>
+            
+              <li class=" ">
+                <a class="nav-link dropdown-item nav-internal" href="intro-how-it-works.html">
+                  How ExecuTorch Works
+                </a>
+              </li>
+            
+              <li class=" ">
+                <a class="nav-link dropdown-item nav-internal" href="getting-started-architecture.html">
+                  Architecture and Components
+                </a>
+              </li>
+            
+              <li class=" ">
+                <a class="nav-link dropdown-item nav-internal" href="concepts.html">
+                  Concepts
+                </a>
+              </li>
+            
+          </ul>
+        
+      </li>
+    
+      <li class="nav-item dropdown">
+        
+          
+          <div class="nav-item-with-toggle">
+            <a class="nav-link nav-internal" href="quick-start-section.html">
+              Quick Start
+            </a>
+          </div>
+          <ul class="dropdown-menu" id="dropdown-2">
+            
+              <li class=" ">
+                <a class="nav-link dropdown-item nav-internal" href="getting-started.html">
+                  Getting Started with ExecuTorch
+                </a>
+              </li>
+            
+              <li class=" ">
+                <a class="nav-link dropdown-item nav-internal" href="using-executorch-export.html">
+                  Model Export and Lowering
+                </a>
+              </li>
+            
+              <li class=" ">
+                <a class="nav-link dropdown-item nav-internal" href="using-executorch-building-from-source.html">
+                  Building from Source
+                </a>
+              </li>
+            
+          </ul>
+        
+      </li>
+    
+      <li class="nav-item dropdown">
+        
+          
+          <div class="nav-item-with-toggle">
+            <a class="nav-link nav-internal" href="user-pathways.html">
+              Find Your Path
+            </a>
+          </div>
+          <ul class="dropdown-menu" id="dropdown-3">
+            
+              <li class=" ">
+                <a class="nav-link dropdown-item nav-internal" href="pathway-beginner.html">
+                  Beginner Pathway
+                </a>
+              </li>
+            
+              <li class=" ">
+                <a class="nav-link dropdown-item nav-internal" href="pathway-quickstart.html">
+                  Quick Start Pathway
+                </a>
+              </li>
+            
+              <li class=" ">
+                <a class="nav-link dropdown-item nav-internal" href="pathway-advanced.html">
+                  Advanced Pathway
+                </a>
+              </li>
+            
+          </ul>
+        
+      </li>
+    
+      <li class="nav-item dropdown">
+        
+          
+          <div class="nav-item-with-toggle">
+            <a class="nav-link nav-internal" href="edge-platforms-section.html">
+              Edge
+            </a>
+          </div>
+          <ul class="dropdown-menu" id="dropdown-4">
+            
+              <li class=" ">
+                <a class="nav-link dropdown-item nav-internal" href="android-section.html">
+                  Android
+                </a>
+              </li>
+            
+              <li class=" ">
+                <a class="nav-link dropdown-item nav-internal" href="ios-section.html">
+                  iOS
+                </a>
+              </li>
+            
+              <li class=" ">
+                <a class="nav-link dropdown-item nav-internal" href="desktop-section.html">
+                  Desktop & Laptop Platforms
+                </a>
+              </li>
+            
+              <li class=" ">
+                <a class="nav-link dropdown-item nav-internal" href="embedded-section.html">
+                  Embedded Systems
+                </a>
+              </li>
+            
+              <li class=" ">
+                <a class="nav-link dropdown-item nav-internal" href="using-executorch-troubleshooting.html">
+                  Profiling and Debugging
+                </a>
+              </li>
+            
+          </ul>
+        
+      </li>
+    
+      <li class="nav-item dropdown">
+        
+          
+          <div class="nav-item-with-toggle">
+            <a class="nav-link nav-internal" href="backends-section.html">
+              Backends
+            </a>
+          </div>
+          <ul class="dropdown-menu" id="dropdown-5">
+            
+              <li class=" ">
+                <a class="nav-link dropdown-item nav-internal" href="backends/xnnpack/xnnpack-overview.html">
+                  XNNPACK Backend
+                </a>
+              </li>
+            
+              <li class=" ">
+                <a class="nav-link dropdown-item nav-internal" href="backends/cuda/cuda-overview.html">
+                  CUDA Backend
+                </a>
+              </li>
+            
+              <li class=" ">
+                <a class="nav-link dropdown-item nav-internal" href="backends/coreml/coreml-overview.html">
+                  Core ML Backend
+                </a>
+              </li>
+            
+              <li class=" ">
+                <a class="nav-link dropdown-item nav-internal" href="backends/mps/mps-overview.html">
+                  MPS Backend
+                </a>
+              </li>
+            
+              <li class=" ">
+                <a class="nav-link dropdown-item nav-internal" href="backends/vulkan/vulkan-overview.html">
+                  Vulkan Backend
+                </a>
+              </li>
+            
+              <li class=" ">
+                <a class="nav-link dropdown-item nav-internal" href="backends-qualcomm.html">
+                  Qualcomm AI Engine Backend
+                </a>
+              </li>
+            
+              <li class=" ">
+                <a class="nav-link dropdown-item nav-internal" href="backends-mediatek.html">
+                  MediaTek Backend
+                </a>
+              </li>
+            
+              <li class=" ">
+                <a class="nav-link dropdown-item nav-internal" href="backends/arm-ethos-u/arm-ethos-u-overview.html">
+                  Arm Ethos-U Backend
+                </a>
+              </li>
+            
+              <li class=" ">
+                <a class="nav-link dropdown-item nav-internal" href="backends/arm-cortex-m/arm-cortex-m-overview.html">
+                  Arm Cortex-M Backend
+                </a>
+              </li>
+            
+              <li class=" ">
+                <a class="nav-link dropdown-item nav-internal" href="backends/arm-vgf/arm-vgf-overview.html">
+                  Arm VGF Backend
+                </a>
+              </li>
+            
+              <li class=" ">
+                <a class="nav-link dropdown-item nav-internal" href="build-run-openvino.html">
+                  Building and Running ExecuTorch with OpenVINO Backend
+                </a>
+              </li>
+            
+              <li class=" ">
+                <a class="nav-link dropdown-item nav-internal" href="backends/nxp/nxp-overview.html">
+                  NXP eIQ Neutron Backend
+                </a>
+              </li>
+            
+              <li class=" ">
+                <a class="nav-link dropdown-item nav-internal" href="backends-cadence.html">
+                  Cadence Xtensa Backend
+                </a>
+              </li>
+            
+              <li class=" ">
+                <a class="nav-link dropdown-item nav-internal" href="backends/samsung/samsung-overview.html">
+                  Samsung Exynos Backend
+                </a>
+              </li>
+            
+          </ul>
+        
+      </li>
+    
+      <li class="nav-item dropdown">
+        
+          
+          <div class="nav-item-with-toggle">
+            <a class="nav-link nav-internal" href="llm/working-with-llms.html">
+              LLMs
+            </a>
+          </div>
+          <ul class="dropdown-menu" id="dropdown-6">
+            
+              <li class=" ">
+                <a class="nav-link dropdown-item nav-internal" href="llm/getting-started.html">
+                  Deploying LLMs to ExecuTorch
+                </a>
+              </li>
+            
+              <li class=" ">
+                <a class="nav-link dropdown-item nav-internal" href="llm/export-llm.html">
+                  Exporting LLMs
+                </a>
+              </li>
+            
+              <li class=" ">
+                <a class="nav-link dropdown-item nav-internal" href="llm/export-llm-optimum.html">
+                  Exporting LLMs with HuggingFace’s Optimum ExecuTorch
+                </a>
+              </li>
+            
+              <li class=" ">
+                <a class="nav-link dropdown-item nav-internal" href="llm/export-custom-llm.html">
+                  Exporting custom LLMs
+                </a>
+              </li>
+            
+              <li class=" ">
+                <a class="nav-link dropdown-item nav-internal" href="llm/run-with-c-plus-plus.html">
+                  Running LLMs with C++
+                </a>
+              </li>
+            
+              <li class=" ">
+                <a class="nav-link dropdown-item nav-internal" href="llm/build-run-llama3-qualcomm-ai-engine-direct-backend.html">
+                  Run Llama 3 3B Instruct on Android (with Qualcomm AI Engine Direct Backend)
+                </a>
+              </li>
+            
+              <li class=" ">
+                <a class="nav-link dropdown-item nav-internal" href="llm/run-on-android.html">
+                  Running LLMs on Android
+                </a>
+              </li>
+            
+              <li class=" ">
+                <a class="nav-link dropdown-item nav-internal" href="llm/run-on-ios.html">
+                  Running LLMs on iOS
+                </a>
+              </li>
+            
+          </ul>
+        
+      </li>
+    
+      <li class="nav-item dropdown">
+        
+          
+          <div class="nav-item-with-toggle">
+            <a class="nav-link nav-internal" href="advanced-topics-section.html">
+              Advanced
+            </a>
+          </div>
+          <ul class="dropdown-menu" id="dropdown-7">
+            
+              <li class=" ">
+                <a class="nav-link dropdown-item nav-internal" href="quantization-optimization.html">
+                  Quantization & Optimization
+                </a>
+              </li>
+            
+              <li class=" ">
+                <a class="nav-link dropdown-item nav-internal" href="using-executorch-export.html">
+                  Model Export and Lowering
+                </a>
+              </li>
+            
+              <li class=" ">
+                <a class="nav-link dropdown-item nav-internal" href="#">
+                  Working with Computer Vision Models
+                </a>
+              </li>
+            
+              <li class=" ">
+                <a class="nav-link dropdown-item nav-internal" href="kernel-library-advanced.html">
+                  Kernel Library Deep Dive
+                </a>
+              </li>
+            
+              <li class=" ">
+                <a class="nav-link dropdown-item nav-internal" href="backend-delegate-advanced.html">
+                  Backend & Delegates
+                </a>
+              </li>
+            
+              <li class=" ">
+                <a class="nav-link dropdown-item nav-internal" href="runtime-integration-advanced.html">
+                  Runtime & Integration
+                </a>
+              </li>
+            
+              <li class=" ">
+                <a class="nav-link dropdown-item nav-internal" href="compiler-ir-advanced.html">
+                  Compiler & IR
+                </a>
+              </li>
+            
+              <li class=" ">
+                <a class="nav-link dropdown-item nav-internal" href="file-formats-advanced.html">
+                  File Formats
+                </a>
+              </li>
+            
+          </ul>
+        
+      </li>
+    
+      <li class="nav-item dropdown">
+        
+          
+          <div class="nav-item-with-toggle">
+            <a class="nav-link nav-internal" href="tools-section.html">
+              Tools
+            </a>
+          </div>
+          <ul class="dropdown-menu" id="dropdown-8">
+            
+              <li class=" ">
+                <a class="nav-link dropdown-item nav-internal" href="devtools-overview.html">
+                  Introduction to the ExecuTorch Developer Tools
+                </a>
+              </li>
+            
+              <li class=" ">
+                <a class="nav-link dropdown-item nav-internal" href="bundled-io.html">
+                  Bundled Program – a Tool for ExecuTorch Model Validation
+                </a>
+              </li>
+            
+              <li class=" ">
+                <a class="nav-link dropdown-item nav-internal" href="etrecord.html">
+                  Prerequisite | ETRecord - ExecuTorch Record
+                </a>
+              </li>
+            
+              <li class=" ">
+                <a class="nav-link dropdown-item nav-internal" href="etdump.html">
+                  Prerequisite | ETDump - ExecuTorch Dump
+                </a>
+              </li>
+            
+              <li class=" ">
+                <a class="nav-link dropdown-item nav-internal" href="runtime-profiling.html">
+                  Profiling Models in ExecuTorch
+                </a>
+              </li>
+            
+              <li class=" ">
+                <a class="nav-link dropdown-item nav-internal" href="model-debugging.html">
+                  Debugging Models in ExecuTorch
+                </a>
+              </li>
+            
+              <li class=" ">
+                <a class="nav-link dropdown-item nav-internal" href="model-inspector.html">
+                  Inspector APIs
+                </a>
+              </li>
+            
+              <li class=" ">
+                <a class="nav-link dropdown-item nav-internal" href="memory-planning-inspection.html">
+                  Memory Planning Inspection in ExecuTorch
+                </a>
+              </li>
+            
+              <li class=" ">
+                <a class="nav-link dropdown-item nav-internal" href="devtools-tutorial.html">
+                  Developer Tools Usage Tutorials
+                </a>
+              </li>
+            
+              <li class=" ">
+                <a class="nav-link dropdown-item nav-internal" href="visualize.html">
+                  Visualize a Model using ModelExplorer
+                </a>
+              </li>
+            
+          </ul>
+        
+      </li>
+    
+
+    
+    
+      <li class="nav-item dropdown more-dropdown">
+        <div class="nav-item-with-toggle">
+          <span class="nav-link more-toggle" tabindex="0" role="button" aria-expanded="false" aria-controls="pst-nav-more-links">
+            More
+          </span>
+        </div>
+        <ul id="pst-nav-more-links" class="dropdown-menu">
+          
+            <li class="">
+              <a class="nav-link dropdown-item nav-internal" href="api-section.html">
+                API
+              </a>
+            </li>
+          
+            <li class="">
+              <a class="nav-link dropdown-item nav-internal" href="support-section.html">
+                Support
+              </a>
+            </li>
+          
+        </ul>
+      </li>
+    
+  </ul>
+</nav>
+</div>
+      
+    </div>
+    
+    
+    <div class="navbar-header-items__end">
+      
+      
+      
+        <div class="navbar-item"><!-- PyTorch.org site link - desktop only, two-line layout -->
+<!-- Note: The show_pytorch_org_link check is handled in layout.html's navbar_end block -->
+<a href="https://pytorch.org" class="pytorch-site-link nav-link nav-external" data-bs-toggle="tooltip" data-bs-placement="bottom" data-bs-title="Go to PyTorch.org">
+  <span class="pytorch-site-link-text">
+    <span>Go to</span>
+    <span>pytorch.org <i class="fa-solid fa-arrow-up-right-from-square external-icon"></i></span>
+  </span>
+</a></div>
+      
+      
+        <div class="navbar-item">
+  
+<form class="bd-search d-flex align-items-center"
+      action="search.html"
+      method="get">
+  <i class="fa-solid fa-magnifying-glass"></i>
+  <input type="search"
+         class="form-control"
+         name="q"
+         id="search-input"
+         placeholder="Search the docs ..."
+         aria-label="Search the docs ..."
+         autocomplete="off"
+         autocorrect="off"
+         autocapitalize="off"
+         spellcheck="false"/>
+  <span class="search-button__kbd-shortcut"><kbd class="kbd-shortcut__modifier">Ctrl</kbd>+<kbd>K</kbd></span>
+</form>
+</div>
+      
+        <div class="navbar-item">
+
+<script>
+document.write(`
+  <button class="btn btn-sm nav-link pst-navbar-icon theme-switch-button" title="light/dark" aria-label="light/dark" data-bs-placement="bottom" data-bs-toggle="tooltip">
+    <i class="theme-switch fa-solid fa-sun fa-lg" data-mode="light"></i>
+    <i class="theme-switch fa-solid fa-moon fa-lg" data-mode="dark"></i>
+    <i class="theme-switch fa-solid fa-circle-half-stroke fa-lg" data-mode="auto"></i>
+  </button>
+`);
+</script></div>
+      
+        <div class="navbar-item"><ul class="navbar-icon-links"
+    aria-label="Icon Links">
+        <li class="nav-item">
+          
+          
+          
+          
+          
+          
+          
+          
+          <a href="https://x.com/PyTorch" title="X" class="nav-link pst-navbar-icon" rel="noopener" target="_blank" data-bs-toggle="tooltip" data-bs-placement="bottom"><i class="fa-brands fa-x-twitter fa-lg" aria-hidden="true"></i>
+            <span class="sr-only">X</span></a>
+        </li>
+        <li class="nav-item">
+          
+          
+          
+          
+          
+          
+          
+          
+          <a href="https://github.com/pytorch/executorch" title="GitHub" class="nav-link pst-navbar-icon" rel="noopener" target="_blank" data-bs-toggle="tooltip" data-bs-placement="bottom"><i class="fa-brands fa-github fa-lg" aria-hidden="true"></i>
+            <span class="sr-only">GitHub</span></a>
+        </li>
+        <li class="nav-item">
+          
+          
+          
+          
+          
+          
+          
+          
+          <a href="https://discuss.pytorch.org/" title="Discourse" class="nav-link pst-navbar-icon" rel="noopener" target="_blank" data-bs-toggle="tooltip" data-bs-placement="bottom"><i class="fa-brands fa-discourse fa-lg" aria-hidden="true"></i>
+            <span class="sr-only">Discourse</span></a>
+        </li>
+        <li class="nav-item">
+          
+          
+          
+          
+          
+          
+          
+          
+          <a href="https://pypi.org/project/executorch" title="PyPi" class="nav-link pst-navbar-icon" rel="noopener" target="_blank" data-bs-toggle="tooltip" data-bs-placement="bottom"><i class="fa-brands fa-python fa-lg" aria-hidden="true"></i>
+            <span class="sr-only">PyPi</span></a>
+        </li>
+</ul></div>
+      
+    </div>
+    
+  </div>
+  
+  
+
+  
+    <button class="pst-navbar-icon sidebar-toggle secondary-toggle" aria-label="On this page">
+      <span class="fa-solid fa-outdent"></span>
+    </button>
+  
+</div>
+
+    </header>
+  
+
+  <div class="bd-container">
+    <div class="bd-container__inner bd-page-width">
+      
+      
+      
+      <div class="bd-sidebar-primary bd-sidebar">
+        
+
+
+
+
+  
+  <div class="sidebar-header-items sidebar-primary__section">
+    
+    
+    <div class="sidebar-header-items__start">
+      <div class="navbar-item">
+        
+<script>
+document.write(`
+  <div class="version-switcher__container dropdown">
+    <button id="pst-version-switcher-button-3"
+      type="button"
+      class="version-switcher__button btn btn-sm dropdown-toggle"
+      data-bs-toggle="dropdown"
+      aria-haspopup="listbox"
+      aria-controls="pst-version-switcher-list-3"
+      aria-label="Version switcher list"
+    >
+      Choose version  <!-- this text may get changed later by javascript -->
+      <span class="caret"></span>
+    </button>
+    <div id="pst-version-switcher-list-3"
+      class="version-switcher__menu dropdown-menu list-group-flush py-0"
+      role="listbox" aria-labelledby="pst-version-switcher-button-3">
+      <!-- dropdown will be populated by javascript on page load -->
+    </div>
+  </div>
+`);
+</script>
+      </div>
+    </div>
+    
+
+    
+    
+      <div class="sidebar-header-items__center">
+        
+          
+          
+            <div class="navbar-item">
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+<nav>
+  <ul class="bd-navbar-elements navbar-nav">
+    
+    
+      <li class="nav-item dropdown">
+        
+          
+          <div class="nav-item-with-toggle">
+            <a class="nav-link nav-internal" href="intro-section.html">
+              Intro
+            </a>
+          </div>
+          <ul class="dropdown-menu" id="dropdown-1">
+            
+              <li class=" ">
+                <a class="nav-link dropdown-item nav-internal" href="intro-overview.html">
+                  ExecuTorch Overview
+                </a>
+              </li>
+            
+              <li class=" ">
+                <a class="nav-link dropdown-item nav-internal" href="intro-how-it-works.html">
+                  How ExecuTorch Works
+                </a>
+              </li>
+            
+              <li class=" ">
+                <a class="nav-link dropdown-item nav-internal" href="getting-started-architecture.html">
+                  Architecture and Components
+                </a>
+              </li>
+            
+              <li class=" ">
+                <a class="nav-link dropdown-item nav-internal" href="concepts.html">
+                  Concepts
+                </a>
+              </li>
+            
+          </ul>
+        
+      </li>
+    
+      <li class="nav-item dropdown">
+        
+          
+          <div class="nav-item-with-toggle">
+            <a class="nav-link nav-internal" href="quick-start-section.html">
+              Quick Start
+            </a>
+          </div>
+          <ul class="dropdown-menu" id="dropdown-2">
+            
+              <li class=" ">
+                <a class="nav-link dropdown-item nav-internal" href="getting-started.html">
+                  Getting Started with ExecuTorch
+                </a>
+              </li>
+            
+              <li class=" ">
+                <a class="nav-link dropdown-item nav-internal" href="using-executorch-export.html">
+                  Model Export and Lowering
+                </a>
+              </li>
+            
+              <li class=" ">
+                <a class="nav-link dropdown-item nav-internal" href="using-executorch-building-from-source.html">
+                  Building from Source
+                </a>
+              </li>
+            
+          </ul>
+        
+      </li>
+    
+      <li class="nav-item dropdown">
+        
+          
+          <div class="nav-item-with-toggle">
+            <a class="nav-link nav-internal" href="user-pathways.html">
+              Find Your Path
+            </a>
+          </div>
+          <ul class="dropdown-menu" id="dropdown-3">
+            
+              <li class=" ">
+                <a class="nav-link dropdown-item nav-internal" href="pathway-beginner.html">
+                  Beginner Pathway
+                </a>
+              </li>
+            
+              <li class=" ">
+                <a class="nav-link dropdown-item nav-internal" href="pathway-quickstart.html">
+                  Quick Start Pathway
+                </a>
+              </li>
+            
+              <li class=" ">
+                <a class="nav-link dropdown-item nav-internal" href="pathway-advanced.html">
+                  Advanced Pathway
+                </a>
+              </li>
+            
+          </ul>
+        
+      </li>
+    
+      <li class="nav-item dropdown">
+        
+          
+          <div class="nav-item-with-toggle">
+            <a class="nav-link nav-internal" href="edge-platforms-section.html">
+              Edge
+            </a>
+          </div>
+          <ul class="dropdown-menu" id="dropdown-4">
+            
+              <li class=" ">
+                <a class="nav-link dropdown-item nav-internal" href="android-section.html">
+                  Android
+                </a>
+              </li>
+            
+              <li class=" ">
+                <a class="nav-link dropdown-item nav-internal" href="ios-section.html">
+                  iOS
+                </a>
+              </li>
+            
+              <li class=" ">
+                <a class="nav-link dropdown-item nav-internal" href="desktop-section.html">
+                  Desktop & Laptop Platforms
+                </a>
+              </li>
+            
+              <li class=" ">
+                <a class="nav-link dropdown-item nav-internal" href="embedded-section.html">
+                  Embedded Systems
+                </a>
+              </li>
+            
+              <li class=" ">
+                <a class="nav-link dropdown-item nav-internal" href="using-executorch-troubleshooting.html">
+                  Profiling and Debugging
+                </a>
+              </li>
+            
+          </ul>
+        
+      </li>
+    
+      <li class="nav-item dropdown">
+        
+          
+          <div class="nav-item-with-toggle">
+            <a class="nav-link nav-internal" href="backends-section.html">
+              Backends
+            </a>
+          </div>
+          <ul class="dropdown-menu" id="dropdown-5">
+            
+              <li class=" ">
+                <a class="nav-link dropdown-item nav-internal" href="backends/xnnpack/xnnpack-overview.html">
+                  XNNPACK Backend
+                </a>
+              </li>
+            
+              <li class=" ">
+                <a class="nav-link dropdown-item nav-internal" href="backends/cuda/cuda-overview.html">
+                  CUDA Backend
+                </a>
+              </li>
+            
+              <li class=" ">
+                <a class="nav-link dropdown-item nav-internal" href="backends/coreml/coreml-overview.html">
+                  Core ML Backend
+                </a>
+              </li>
+            
+              <li class=" ">
+                <a class="nav-link dropdown-item nav-internal" href="backends/mps/mps-overview.html">
+                  MPS Backend
+                </a>
+              </li>
+            
+              <li class=" ">
+                <a class="nav-link dropdown-item nav-internal" href="backends/vulkan/vulkan-overview.html">
+                  Vulkan Backend
+                </a>
+              </li>
+            
+              <li class=" ">
+                <a class="nav-link dropdown-item nav-internal" href="backends-qualcomm.html">
+                  Qualcomm AI Engine Backend
+                </a>
+              </li>
+            
+              <li class=" ">
+                <a class="nav-link dropdown-item nav-internal" href="backends-mediatek.html">
+                  MediaTek Backend
+                </a>
+              </li>
+            
+              <li class=" ">
+                <a class="nav-link dropdown-item nav-internal" href="backends/arm-ethos-u/arm-ethos-u-overview.html">
+                  Arm Ethos-U Backend
+                </a>
+              </li>
+            
+              <li class=" ">
+                <a class="nav-link dropdown-item nav-internal" href="backends/arm-cortex-m/arm-cortex-m-overview.html">
+                  Arm Cortex-M Backend
+                </a>
+              </li>
+            
+              <li class=" ">
+                <a class="nav-link dropdown-item nav-internal" href="backends/arm-vgf/arm-vgf-overview.html">
+                  Arm VGF Backend
+                </a>
+              </li>
+            
+              <li class=" ">
+                <a class="nav-link dropdown-item nav-internal" href="build-run-openvino.html">
+                  Building and Running ExecuTorch with OpenVINO Backend
+                </a>
+              </li>
+            
+              <li class=" ">
+                <a class="nav-link dropdown-item nav-internal" href="backends/nxp/nxp-overview.html">
+                  NXP eIQ Neutron Backend
+                </a>
+              </li>
+            
+              <li class=" ">
+                <a class="nav-link dropdown-item nav-internal" href="backends-cadence.html">
+                  Cadence Xtensa Backend
+                </a>
+              </li>
+            
+              <li class=" ">
+                <a class="nav-link dropdown-item nav-internal" href="backends/samsung/samsung-overview.html">
+                  Samsung Exynos Backend
+                </a>
+              </li>
+            
+          </ul>
+        
+      </li>
+    
+      <li class="nav-item dropdown">
+        
+          
+          <div class="nav-item-with-toggle">
+            <a class="nav-link nav-internal" href="llm/working-with-llms.html">
+              LLMs
+            </a>
+          </div>
+          <ul class="dropdown-menu" id="dropdown-6">
+            
+              <li class=" ">
+                <a class="nav-link dropdown-item nav-internal" href="llm/getting-started.html">
+                  Deploying LLMs to ExecuTorch
+                </a>
+              </li>
+            
+              <li class=" ">
+                <a class="nav-link dropdown-item nav-internal" href="llm/export-llm.html">
+                  Exporting LLMs
+                </a>
+              </li>
+            
+              <li class=" ">
+                <a class="nav-link dropdown-item nav-internal" href="llm/export-llm-optimum.html">
+                  Exporting LLMs with HuggingFace’s Optimum ExecuTorch
+                </a>
+              </li>
+            
+              <li class=" ">
+                <a class="nav-link dropdown-item nav-internal" href="llm/export-custom-llm.html">
+                  Exporting custom LLMs
+                </a>
+              </li>
+            
+              <li class=" ">
+                <a class="nav-link dropdown-item nav-internal" href="llm/run-with-c-plus-plus.html">
+                  Running LLMs with C++
+                </a>
+              </li>
+            
+              <li class=" ">
+                <a class="nav-link dropdown-item nav-internal" href="llm/build-run-llama3-qualcomm-ai-engine-direct-backend.html">
+                  Run Llama 3 3B Instruct on Android (with Qualcomm AI Engine Direct Backend)
+                </a>
+              </li>
+            
+              <li class=" ">
+                <a class="nav-link dropdown-item nav-internal" href="llm/run-on-android.html">
+                  Running LLMs on Android
+                </a>
+              </li>
+            
+              <li class=" ">
+                <a class="nav-link dropdown-item nav-internal" href="llm/run-on-ios.html">
+                  Running LLMs on iOS
+                </a>
+              </li>
+            
+          </ul>
+        
+      </li>
+    
+      <li class="nav-item dropdown">
+        
+          
+          <div class="nav-item-with-toggle">
+            <a class="nav-link nav-internal" href="advanced-topics-section.html">
+              Advanced
+            </a>
+          </div>
+          <ul class="dropdown-menu" id="dropdown-7">
+            
+              <li class=" ">
+                <a class="nav-link dropdown-item nav-internal" href="quantization-optimization.html">
+                  Quantization & Optimization
+                </a>
+              </li>
+            
+              <li class=" ">
+                <a class="nav-link dropdown-item nav-internal" href="using-executorch-export.html">
+                  Model Export and Lowering
+                </a>
+              </li>
+            
+              <li class=" ">
+                <a class="nav-link dropdown-item nav-internal" href="#">
+                  Working with Computer Vision Models
+                </a>
+              </li>
+            
+              <li class=" ">
+                <a class="nav-link dropdown-item nav-internal" href="kernel-library-advanced.html">
+                  Kernel Library Deep Dive
+                </a>
+              </li>
+            
+              <li class=" ">
+                <a class="nav-link dropdown-item nav-internal" href="backend-delegate-advanced.html">
+                  Backend & Delegates
+                </a>
+              </li>
+            
+              <li class=" ">
+                <a class="nav-link dropdown-item nav-internal" href="runtime-integration-advanced.html">
+                  Runtime & Integration
+                </a>
+              </li>
+            
+              <li class=" ">
+                <a class="nav-link dropdown-item nav-internal" href="compiler-ir-advanced.html">
+                  Compiler & IR
+                </a>
+              </li>
+            
+              <li class=" ">
+                <a class="nav-link dropdown-item nav-internal" href="file-formats-advanced.html">
+                  File Formats
+                </a>
+              </li>
+            
+          </ul>
+        
+      </li>
+    
+      <li class="nav-item dropdown">
+        
+          
+          <div class="nav-item-with-toggle">
+            <a class="nav-link nav-internal" href="tools-section.html">
+              Tools
+            </a>
+          </div>
+          <ul class="dropdown-menu" id="dropdown-8">
+            
+              <li class=" ">
+                <a class="nav-link dropdown-item nav-internal" href="devtools-overview.html">
+                  Introduction to the ExecuTorch Developer Tools
+                </a>
+              </li>
+            
+              <li class=" ">
+                <a class="nav-link dropdown-item nav-internal" href="bundled-io.html">
+                  Bundled Program – a Tool for ExecuTorch Model Validation
+                </a>
+              </li>
+            
+              <li class=" ">
+                <a class="nav-link dropdown-item nav-internal" href="etrecord.html">
+                  Prerequisite | ETRecord - ExecuTorch Record
+                </a>
+              </li>
+            
+              <li class=" ">
+                <a class="nav-link dropdown-item nav-internal" href="etdump.html">
+                  Prerequisite | ETDump - ExecuTorch Dump
+                </a>
+              </li>
+            
+              <li class=" ">
+                <a class="nav-link dropdown-item nav-internal" href="runtime-profiling.html">
+                  Profiling Models in ExecuTorch
+                </a>
+              </li>
+            
+              <li class=" ">
+                <a class="nav-link dropdown-item nav-internal" href="model-debugging.html">
+                  Debugging Models in ExecuTorch
+                </a>
+              </li>
+            
+              <li class=" ">
+                <a class="nav-link dropdown-item nav-internal" href="model-inspector.html">
+                  Inspector APIs
+                </a>
+              </li>
+            
+              <li class=" ">
+                <a class="nav-link dropdown-item nav-internal" href="memory-planning-inspection.html">
+                  Memory Planning Inspection in ExecuTorch
+                </a>
+              </li>
+            
+              <li class=" ">
+                <a class="nav-link dropdown-item nav-internal" href="devtools-tutorial.html">
+                  Developer Tools Usage Tutorials
+                </a>
+              </li>
+            
+              <li class=" ">
+                <a class="nav-link dropdown-item nav-internal" href="visualize.html">
+                  Visualize a Model using ModelExplorer
+                </a>
+              </li>
+            
+          </ul>
+        
+      </li>
+    
+      <li class="nav-item dropdown">
+        
+          
+          <div class="nav-item-with-toggle">
+            <a class="nav-link nav-internal" href="api-section.html">
+              API
+            </a>
+          </div>
+          <ul class="dropdown-menu" id="dropdown-9">
+            
+              <li class=" ">
+                <a class="nav-link dropdown-item nav-internal" href="export-to-executorch-api-reference.html">
+                  Export API Reference
+                </a>
+              </li>
+            
+              <li class=" ">
+                <a class="nav-link dropdown-item nav-internal" href="executorch-runtime-api-reference.html">
+                  Runtime API Reference
+                </a>
+              </li>
+            
+              <li class=" ">
+                <a class="nav-link dropdown-item nav-internal" href="runtime-python-api-reference.html">
+                  Runtime Python API Reference
+                </a>
+              </li>
+            
+              <li class=" ">
+                <a class="nav-link dropdown-item nav-internal" href="api-life-cycle.html">
+                  API Life Cycle and Deprecation Policy
+                </a>
+              </li>
+            
+              <li class=" ">
+                <a class="nav-link dropdown-item nav-internal" href="extension-module.html">
+                  Running an ExecuTorch Model Using the Module Extension in C++
+                </a>
+              </li>
+            
+              <li class=" ">
+                <a class="nav-link dropdown-item nav-internal" href="extension-tensor.html">
+                  Managing Tensor Memory in C++
+                </a>
+              </li>
+            
+              <li class=" ">
+                <a class="nav-link dropdown-item nav-internal" href="running-a-model-cpp-tutorial.html">
+                  Detailed C++ Runtime APIs Tutorial
+                </a>
+              </li>
+            
+          </ul>
+        
+      </li>
+    
+      <li class="nav-item dropdown">
+        
+          
+          <div class="nav-item-with-toggle">
+            <a class="nav-link nav-internal" href="support-section.html">
+              Support
+            </a>
+          </div>
+          <ul class="dropdown-menu" id="dropdown-10">
+            
+              <li class=" ">
+                <a class="nav-link dropdown-item nav-internal" href="using-executorch-faqs.html">
+                  Frequently Asked Questions
+                </a>
+              </li>
+            
+              <li class=" ">
+                <a class="nav-link dropdown-item nav-internal" href="using-executorch-troubleshooting.html">
+                  Profiling and Debugging
+                </a>
+              </li>
+            
+              <li class=" ">
+                <a class="nav-link dropdown-item nav-internal" href="contributing.html">
+                  Contributing to ExecuTorch
+                </a>
+              </li>
+            
+          </ul>
+        
+      </li>
+    
+
+    
+    
+  </ul>
+</nav>
+</div>
+          
+        
+      </div>
+    
+    
+    
+      <div class="sidebar-header-items__end">
+        
+        
+          <div class="navbar-item"><!-- PyTorch.org site link - desktop only, two-line layout -->
+<!-- Note: The show_pytorch_org_link check is handled in layout.html's navbar_end block -->
+<a href="https://pytorch.org" class="pytorch-site-link nav-link nav-external" data-bs-toggle="tooltip" data-bs-placement="bottom" data-bs-title="Go to PyTorch.org">
+  <span class="pytorch-site-link-text">
+    <span>Go to</span>
+    <span>pytorch.org <i class="fa-solid fa-arrow-up-right-from-square external-icon"></i></span>
+  </span>
+</a></div>
+        
+        
+          <div class="navbar-item">
+  
+<form class="bd-search d-flex align-items-center"
+      action="search.html"
+      method="get">
+  <i class="fa-solid fa-magnifying-glass"></i>
+  <input type="search"
+         class="form-control"
+         name="q"
+         id="search-input"
+         placeholder="Search the docs ..."
+         aria-label="Search the docs ..."
+         autocomplete="off"
+         autocorrect="off"
+         autocapitalize="off"
+         spellcheck="false"/>
+  <span class="search-button__kbd-shortcut"><kbd class="kbd-shortcut__modifier">Ctrl</kbd>+<kbd>K</kbd></span>
+</form>
+</div>
+        
+          <div class="navbar-item">
+
+<script>
+document.write(`
+  <button class="btn btn-sm nav-link pst-navbar-icon theme-switch-button" title="light/dark" aria-label="light/dark" data-bs-placement="bottom" data-bs-toggle="tooltip">
+    <i class="theme-switch fa-solid fa-sun fa-lg" data-mode="light"></i>
+    <i class="theme-switch fa-solid fa-moon fa-lg" data-mode="dark"></i>
+    <i class="theme-switch fa-solid fa-circle-half-stroke fa-lg" data-mode="auto"></i>
+  </button>
+`);
+</script></div>
+        
+          <div class="navbar-item"><ul class="navbar-icon-links"
+    aria-label="Icon Links">
+        <li class="nav-item">
+          
+          
+          
+          
+          
+          
+          
+          
+          <a href="https://x.com/PyTorch" title="X" class="nav-link pst-navbar-icon" rel="noopener" target="_blank" data-bs-toggle="tooltip" data-bs-placement="bottom"><i class="fa-brands fa-x-twitter fa-lg" aria-hidden="true"></i>
+            <span class="sr-only">X</span></a>
+        </li>
+        <li class="nav-item">
+          
+          
+          
+          
+          
+          
+          
+          
+          <a href="https://github.com/pytorch/executorch" title="GitHub" class="nav-link pst-navbar-icon" rel="noopener" target="_blank" data-bs-toggle="tooltip" data-bs-placement="bottom"><i class="fa-brands fa-github fa-lg" aria-hidden="true"></i>
+            <span class="sr-only">GitHub</span></a>
+        </li>
+        <li class="nav-item">
+          
+          
+          
+          
+          
+          
+          
+          
+          <a href="https://discuss.pytorch.org/" title="Discourse" class="nav-link pst-navbar-icon" rel="noopener" target="_blank" data-bs-toggle="tooltip" data-bs-placement="bottom"><i class="fa-brands fa-discourse fa-lg" aria-hidden="true"></i>
+            <span class="sr-only">Discourse</span></a>
+        </li>
+        <li class="nav-item">
+          
+          
+          
+          
+          
+          
+          
+          
+          <a href="https://pypi.org/project/executorch" title="PyPi" class="nav-link pst-navbar-icon" rel="noopener" target="_blank" data-bs-toggle="tooltip" data-bs-placement="bottom"><i class="fa-brands fa-python fa-lg" aria-hidden="true"></i>
+            <span class="sr-only">PyPi</span></a>
+        </li>
+</ul></div>
+        
+      </div>
+    
+  </div>
+  
+    <div class="sidebar-primary-items__start sidebar-primary__section">
+        <div class="sidebar-primary-item">
+<nav class="bd-docs-nav bd-links"
+     aria-label="Section Navigation">
+  <p class="bd-links__title" role="heading" aria-level="1">Section Navigation</p>
+  <div class="bd-toc-item navbar-nav"><p aria-level="2" class="caption" role="heading"><span class="caption-text">Advanced Topics</span></p>
+<ul class="current nav bd-sidenav">
+<li class="toctree-l1 has-children"><a class="reference internal" href="quantization-optimization.html">Quantization &amp; Optimization</a><details><summary><span class="toctree-toggle" role="presentation"><i class="fa-solid fa-chevron-down"></i></span></summary><ul>
+<li class="toctree-l2"><a class="reference internal" href="quantization-overview.html">Quantization Overview</a></li>
+
+<li class="toctree-l2"><a class="reference internal" href="runtime-profiling.html">Profiling Models in ExecuTorch</a></li>
+</ul>
+</details></li>
+<li class="toctree-l1"><a class="reference internal" href="using-executorch-export.html">Model Export and Lowering</a></li>
+<li class="toctree-l1 current active"><a class="current reference internal" href="#">Working with Computer Vision Models</a></li>
+<li class="toctree-l1 has-children"><a class="reference internal" href="kernel-library-advanced.html">Kernel Library Deep Dive</a><details><summary><span class="toctree-toggle" role="presentation"><i class="fa-solid fa-chevron-down"></i></span></summary><ul>
+<li class="toctree-l2"><a class="reference internal" href="kernel-library-overview.html">Overview of ExecuTorch’s Kernel Libraries</a></li>
+<li class="toctree-l2"><a class="reference internal" href="kernel-library-custom-aten-kernel.html">Kernel Registration</a></li>
+<li class="toctree-l2"><a class="reference internal" href="kernel-library-selective-build.html">Kernel Library Selective Build</a></li>
+</ul>
+</details></li>
+<li class="toctree-l1 has-children"><a class="reference internal" href="backend-delegate-advanced.html">Backend &amp; Delegates</a><details><summary><span class="toctree-toggle" role="presentation"><i class="fa-solid fa-chevron-down"></i></span></summary><ul>
+<li class="toctree-l2"><a class="reference internal" href="backend-delegates-integration.html">Integrating a Backend Delegate into ExecuTorch</a></li>
+<li class="toctree-l2"><a class="reference internal" href="backend-delegates-dependencies.html">Third-Party Dependency Management for Backend Delegates</a></li>
+<li class="toctree-l2"><a class="reference internal" href="compiler-delegate-and-partitioner.html">Understanding Backends and Delegates</a></li>
+<li class="toctree-l2"><a class="reference internal" href="debug-backend-delegate.html">Debugging Delegation</a></li>
+</ul>
+</details></li>
+<li class="toctree-l1 has-children"><a class="reference internal" href="runtime-integration-advanced.html">Runtime &amp; Integration</a><details><summary><span class="toctree-toggle" role="presentation"><i class="fa-solid fa-chevron-down"></i></span></summary><ul>
+<li class="toctree-l2"><a class="reference internal" href="runtime-platform-abstraction-layer.html">Runtime Platform Abstraction Layer (PAL)</a></li>
+<li class="toctree-l2"><a class="reference internal" href="portable-cpp-programming.html">Portable C++ Programming</a></li>
+</ul>
+</details></li>
+<li class="toctree-l1 has-children"><a class="reference internal" href="compiler-ir-advanced.html">Compiler &amp; IR</a><details><summary><span class="toctree-toggle" role="presentation"><i class="fa-solid fa-chevron-down"></i></span></summary><ul>
+<li class="toctree-l2"><a class="reference internal" href="compiler-custom-compiler-passes.html">Custom Compiler Passes and Partitioners</a></li>
+<li class="toctree-l2"><a class="reference internal" href="compiler-memory-planning.html">Memory Planning</a></li>
+<li class="toctree-l2"><a class="reference internal" href="ir-exir.html">Export IR Specification</a></li>
+<li class="toctree-l2"><a class="reference internal" href="ir-ops-set-definition.html">Definition of the Core ATen Operator Set</a></li>
+<li class="toctree-l2"><a class="reference internal" href="compiler-backend-dialect.html">Backend Dialect</a></li>
+</ul>
+</details></li>
+<li class="toctree-l1 has-children"><a class="reference internal" href="file-formats-advanced.html">File Formats</a><details><summary><span class="toctree-toggle" role="presentation"><i class="fa-solid fa-chevron-down"></i></span></summary><ul>
+<li class="toctree-l2"><a class="reference internal" href="pte-file-format.html"><code class="docutils literal notranslate"><span class="pre">.pte</span></code> file format</a></li>
+<li class="toctree-l2"><a class="reference internal" href="ptd-file-format.html"><code class="docutils literal notranslate"><span class="pre">.ptd</span></code> file format</a></li>
+</ul>
+</details></li>
+</ul>
+</div>
+</nav></div>
+    </div>
+  
+  
+  <div class="sidebar-primary-items__end sidebar-primary__section">
+  </div>
+
+
+
+<div id="rtd-footer-container"></div>
+      </div>
+      
+      <main id="main-content" class="bd-main" role="main">
+        
+        
+          <div class="bd-content">
+            <div class="bd-article-container">
+              
+              <div class="bd-header-article d-print-none">
+<div class="header-article-items header-article__inner">
+  
+    <div class="header-article-items__start">
+      
+        <div class="header-article-item">
+
+
+
+<nav aria-label="Breadcrumb" class="d-print-none">
+  <ul class="bd-breadcrumbs">
+    
+    <li class="breadcrumb-item breadcrumb-home">
+      <a href="index.html" class="nav-link" aria-label="Home">
+        <i class="fa-solid fa-home"></i>
+      </a>
+    </li>
+    
+    <li class="breadcrumb-item"><a href="advanced-topics-section.html" class="nav-link">Advanced</a></li>
+    
+    <li class="breadcrumb-item active" aria-current="page">Working...</li>
+  </ul>
+</nav>
+</div>
+      
+    </div>
+  
+  
+    <div class="header-article-items__end">
+      
+        <div class="header-article-item">
+<div class="rating">
+    Rate this Page
+    <div class="stars">
+        
+        <span class="star" data-behavior="tutorial-rating" data-count="1" data-value="1">★</span>
+        
+        <span class="star" data-behavior="tutorial-rating" data-count="2" data-value="2">★</span>
+        
+        <span class="star" data-behavior="tutorial-rating" data-count="3" data-value="3">★</span>
+        
+        <span class="star" data-behavior="tutorial-rating" data-count="4" data-value="4">★</span>
+        
+        <span class="star" data-behavior="tutorial-rating" data-count="5" data-value="5">★</span>
+        
+    </div>
+</div>
+</div>
+      
+    </div>
+  
+</div>
+</div>
+              
+              
+
+<div id="searchbox"></div>
+<div id="pytorch-article">
+  <!-- Hidden breadcrumb schema for SEO only -->
+  <div style="display:none;" itemscope itemtype="https://schema.org/BreadcrumbList">
+    
+    <div itemprop="itemListElement" itemscope itemtype="https://schema.org/ListItem">
+      <link itemprop="item" href="advanced-topics-section.html">
+      <meta itemprop="name" content="Advanced">
+      <meta itemprop="position" content="1">
+    </div>
+    
+    <div itemprop="itemListElement" itemscope itemtype="https://schema.org/ListItem">
+      <meta itemprop="name" content="Working with Computer Vision Models">
+      <meta itemprop="position" content="2">
+    </div>
+  </div>
+
+  
+  
+
+  
+              
+                
+<div id="searchbox"></div>
+                <article class="bd-article">
+                  
+  <section id="working-with-computer-vision-models">
+<span id="working-with-cv-models"></span><h1>Working with Computer Vision Models<a class="headerlink" href="#working-with-computer-vision-models" title="Link to this heading">#</a></h1>
+<p>Computer vision deployments depend on the boundary between the app and the exported program being precise. Before exporting, write down the tensor contract that your app will satisfy:</p>
+<ul class="simple">
+<li><p>input shape, including whether the model expects <code class="docutils literal notranslate"><span class="pre">NCHW</span></code> (<code class="docutils literal notranslate"><span class="pre">[batch,</span> <span class="pre">channels,</span> <span class="pre">height,</span> <span class="pre">width]</span></code>) or <code class="docutils literal notranslate"><span class="pre">NHWC</span></code> (<code class="docutils literal notranslate"><span class="pre">[batch,</span> <span class="pre">height,</span> <span class="pre">width,</span> <span class="pre">channels]</span></code>)</p></li>
+<li><p>input dtype, such as <code class="docutils literal notranslate"><span class="pre">float32</span></code> normalized image values or <code class="docutils literal notranslate"><span class="pre">uint8</span></code> image bytes</p></li>
+<li><p>color channel order, such as RGB or BGR</p></li>
+<li><p>resize, crop, and normalization rules</p></li>
+<li><p>output tensors and the post-processing expected for each task</p></li>
+</ul>
+<p>ExecuTorch runs the graph that you export. It does not infer image layout, resize policy, label mappings, or task-specific post-processing from the model file.</p>
+<section id="choose-where-preprocessing-runs">
+<h2>Choose where preprocessing runs<a class="headerlink" href="#choose-where-preprocessing-runs" title="Link to this heading">#</a></h2>
+<p>Treat preprocessing placement as part of the backend contract. Keep platform-dependent image work, such as decoding, orientation handling, resizing, cropping, and UI-driven transforms, in the app. Put tensor-only preprocessing in the exported graph when matching the PyTorch reference exactly is more important and the operations are supported by the target backend.</p>
+<p>For Core ML deployments, fixed-shape model inputs are often preferable. The Core ML backend documentation notes that true dynamic shapes use <code class="docutils literal notranslate"><span class="pre">RangeDim</span></code> and fall back to CPU or GPU instead of the Apple Neural Engine (ANE). When targeting the ANE, resize or crop images with iOS image APIs before tensor creation, or use enumerated shapes when the model needs a finite set of input sizes. See <a class="reference internal" href="backends/coreml/coreml-partitioner.html"><span class="doc">Partitioner API</span></a> for details.</p>
+<p>This example accepts already resized and cropped <code class="docutils literal notranslate"><span class="pre">float32</span></code> <code class="docutils literal notranslate"><span class="pre">NCHW</span></code> RGB input in <code class="docutils literal notranslate"><span class="pre">[0,</span> <span class="pre">1]</span></code>, normalizes it, and then calls the image classifier.</p>
+<div class="highlight-python notranslate"><div class="highlight"><pre><span></span><span class="kn">import</span><span class="w"> </span><span class="nn">torch</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">torch</span><span class="w"> </span><span class="kn">import</span> <span class="n">nn</span>
+
+
+<span class="k">class</span><span class="w"> </span><span class="nc">ImageClassifierWithNormalization</span><span class="p">(</span><span class="n">nn</span><span class="o">.</span><span class="n">Module</span><span class="p">):</span>
+    <span class="k">def</span><span class="w"> </span><span class="fm">__init__</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">model</span><span class="p">:</span> <span class="n">nn</span><span class="o">.</span><span class="n">Module</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
+        <span class="nb">super</span><span class="p">()</span><span class="o">.</span><span class="fm">__init__</span><span class="p">()</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">model</span> <span class="o">=</span> <span class="n">model</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">register_buffer</span><span class="p">(</span>
+            <span class="s2">&quot;mean&quot;</span><span class="p">,</span>
+            <span class="n">torch</span><span class="o">.</span><span class="n">tensor</span><span class="p">([</span><span class="mf">0.485</span><span class="p">,</span> <span class="mf">0.456</span><span class="p">,</span> <span class="mf">0.406</span><span class="p">],</span> <span class="n">dtype</span><span class="o">=</span><span class="n">torch</span><span class="o">.</span><span class="n">float32</span><span class="p">)</span><span class="o">.</span><span class="n">view</span><span class="p">(</span><span class="mi">1</span><span class="p">,</span> <span class="mi">3</span><span class="p">,</span> <span class="mi">1</span><span class="p">,</span> <span class="mi">1</span><span class="p">),</span>
+        <span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">register_buffer</span><span class="p">(</span>
+            <span class="s2">&quot;std&quot;</span><span class="p">,</span>
+            <span class="n">torch</span><span class="o">.</span><span class="n">tensor</span><span class="p">([</span><span class="mf">0.229</span><span class="p">,</span> <span class="mf">0.224</span><span class="p">,</span> <span class="mf">0.225</span><span class="p">],</span> <span class="n">dtype</span><span class="o">=</span><span class="n">torch</span><span class="o">.</span><span class="n">float32</span><span class="p">)</span><span class="o">.</span><span class="n">view</span><span class="p">(</span><span class="mi">1</span><span class="p">,</span> <span class="mi">3</span><span class="p">,</span> <span class="mi">1</span><span class="p">,</span> <span class="mi">1</span><span class="p">),</span>
+        <span class="p">)</span>
+
+    <span class="k">def</span><span class="w"> </span><span class="nf">forward</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">image</span><span class="p">:</span> <span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span><span class="p">:</span>
+        <span class="n">image</span> <span class="o">=</span> <span class="p">(</span><span class="n">image</span> <span class="o">-</span> <span class="bp">self</span><span class="o">.</span><span class="n">mean</span><span class="p">)</span> <span class="o">/</span> <span class="bp">self</span><span class="o">.</span><span class="n">std</span>
+        <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">model</span><span class="p">(</span><span class="n">image</span><span class="p">)</span>
+
+
+<span class="n">wrapped_model</span> <span class="o">=</span> <span class="n">ImageClassifierWithNormalization</span><span class="p">(</span><span class="n">model</span><span class="p">)</span><span class="o">.</span><span class="n">eval</span><span class="p">()</span>
+<span class="n">sample_inputs</span> <span class="o">=</span> <span class="p">(</span><span class="n">torch</span><span class="o">.</span><span class="n">zeros</span><span class="p">(</span><span class="mi">1</span><span class="p">,</span> <span class="mi">3</span><span class="p">,</span> <span class="mi">224</span><span class="p">,</span> <span class="mi">224</span><span class="p">,</span> <span class="n">dtype</span><span class="o">=</span><span class="n">torch</span><span class="o">.</span><span class="n">float32</span><span class="p">),)</span>
+<span class="n">exported_program</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">export</span><span class="o">.</span><span class="n">export</span><span class="p">(</span><span class="n">wrapped_model</span><span class="p">,</span> <span class="n">sample_inputs</span><span class="p">)</span>
+</pre></div>
+</div>
+<p>Validate app-side preprocessing against the same PyTorch preprocessing used during export. For example, if the app resizes and crops before creating the tensor, keep a small reference test that compares the packed tensor or final model output with the PyTorch path.</p>
+<p>If the model expects a crop after resizing, keep that policy in exactly one place. A fixed center crop can be implemented in the wrapper for backends where those tensor operations preserve the desired delegation. Camera- or UI-dependent crops, and iOS/Core ML paths that should keep ANE-friendly static shapes, are usually better handled before packing pixels into the input tensor.</p>
+</section>
+<section id="convert-images-to-tensors-in-app-code">
+<h2>Convert images to tensors in app code<a class="headerlink" href="#convert-images-to-tensors-in-app-code" title="Link to this heading">#</a></h2>
+<p>Most mobile image APIs expose decoded pixels as interleaved rows. Most PyTorch vision models expect channels-first tensors. If preprocessing stays in the app, explicitly pack pixels into the model’s expected layout.</p>
+<section id="android">
+<h3>Android<a class="headerlink" href="#android" title="Link to this heading">#</a></h3>
+<p>For production Android preprocessing, handle decoding, EXIF orientation, and camera-specific transforms before packing pixels into the input tensor. The following Kotlin helper keeps the layout conversion explicit: it resizes a <code class="docutils literal notranslate"><span class="pre">Bitmap</span></code>, reads RGB pixels, applies ImageNet-style normalization, and packs the result as <code class="docutils literal notranslate"><span class="pre">NCHW</span></code> <code class="docutils literal notranslate"><span class="pre">float32</span></code> data for <code class="docutils literal notranslate"><span class="pre">Tensor.fromBlob</span></code>.</p>
+<div class="highlight-kotlin notranslate"><div class="highlight"><pre><span></span><span class="k">import</span><span class="w"> </span><span class="nn">android.graphics.Bitmap</span>
+<span class="k">import</span><span class="w"> </span><span class="nn">org.pytorch.executorch.Tensor</span>
+
+<span class="kd">fun</span><span class="w"> </span><span class="nf">bitmapToNchwTensor</span><span class="p">(</span>
+<span class="w">    </span><span class="n">bitmap</span><span class="p">:</span><span class="w"> </span><span class="n">Bitmap</span><span class="p">,</span>
+<span class="w">    </span><span class="n">size</span><span class="p">:</span><span class="w"> </span><span class="kt">Int</span><span class="p">,</span>
+<span class="w">    </span><span class="n">mean</span><span class="p">:</span><span class="w"> </span><span class="n">FloatArray</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">floatArrayOf</span><span class="p">(</span><span class="m">0.485f</span><span class="p">,</span><span class="w"> </span><span class="m">0.456f</span><span class="p">,</span><span class="w"> </span><span class="m">0.406f</span><span class="p">),</span>
+<span class="w">    </span><span class="n">std</span><span class="p">:</span><span class="w"> </span><span class="n">FloatArray</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">floatArrayOf</span><span class="p">(</span><span class="m">0.229f</span><span class="p">,</span><span class="w"> </span><span class="m">0.224f</span><span class="p">,</span><span class="w"> </span><span class="m">0.225f</span><span class="p">)</span>
+<span class="p">):</span><span class="w"> </span><span class="n">Tensor</span><span class="w"> </span><span class="p">{</span>
+<span class="w">    </span><span class="kd">val</span><span class="w"> </span><span class="nv">resized</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">Bitmap</span><span class="p">.</span><span class="na">createScaledBitmap</span><span class="p">(</span><span class="n">bitmap</span><span class="p">,</span><span class="w"> </span><span class="n">size</span><span class="p">,</span><span class="w"> </span><span class="n">size</span><span class="p">,</span><span class="w"> </span><span class="kc">true</span><span class="p">)</span>
+<span class="w">    </span><span class="kd">val</span><span class="w"> </span><span class="nv">pixels</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">IntArray</span><span class="p">(</span><span class="n">size</span><span class="w"> </span><span class="o">*</span><span class="w"> </span><span class="n">size</span><span class="p">)</span>
+<span class="w">    </span><span class="n">resized</span><span class="p">.</span><span class="na">getPixels</span><span class="p">(</span><span class="n">pixels</span><span class="p">,</span><span class="w"> </span><span class="m">0</span><span class="p">,</span><span class="w"> </span><span class="n">size</span><span class="p">,</span><span class="w"> </span><span class="m">0</span><span class="p">,</span><span class="w"> </span><span class="m">0</span><span class="p">,</span><span class="w"> </span><span class="n">size</span><span class="p">,</span><span class="w"> </span><span class="n">size</span><span class="p">)</span>
+
+<span class="w">    </span><span class="kd">val</span><span class="w"> </span><span class="nv">input</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">FloatArray</span><span class="p">(</span><span class="m">3</span><span class="w"> </span><span class="o">*</span><span class="w"> </span><span class="n">size</span><span class="w"> </span><span class="o">*</span><span class="w"> </span><span class="n">size</span><span class="p">)</span>
+<span class="w">    </span><span class="k">for</span><span class="w"> </span><span class="p">(</span><span class="n">i</span><span class="w"> </span><span class="k">in</span><span class="w"> </span><span class="n">pixels</span><span class="p">.</span><span class="na">indices</span><span class="p">)</span><span class="w"> </span><span class="p">{</span>
+<span class="w">        </span><span class="kd">val</span><span class="w"> </span><span class="nv">pixel</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">pixels</span><span class="o">[</span><span class="n">i</span><span class="o">]</span>
+<span class="w">        </span><span class="kd">val</span><span class="w"> </span><span class="nv">r</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="p">((</span><span class="n">pixel</span><span class="w"> </span><span class="n">shr</span><span class="w"> </span><span class="m">16</span><span class="p">)</span><span class="w"> </span><span class="n">and</span><span class="w"> </span><span class="m">0</span><span class="n">xff</span><span class="p">)</span><span class="w"> </span><span class="o">/</span><span class="w"> </span><span class="m">255.0f</span>
+<span class="w">        </span><span class="kd">val</span><span class="w"> </span><span class="nv">g</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="p">((</span><span class="n">pixel</span><span class="w"> </span><span class="n">shr</span><span class="w"> </span><span class="m">8</span><span class="p">)</span><span class="w"> </span><span class="n">and</span><span class="w"> </span><span class="m">0</span><span class="n">xff</span><span class="p">)</span><span class="w"> </span><span class="o">/</span><span class="w"> </span><span class="m">255.0f</span>
+<span class="w">        </span><span class="kd">val</span><span class="w"> </span><span class="nv">b</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="p">(</span><span class="n">pixel</span><span class="w"> </span><span class="n">and</span><span class="w"> </span><span class="m">0</span><span class="n">xff</span><span class="p">)</span><span class="w"> </span><span class="o">/</span><span class="w"> </span><span class="m">255.0f</span>
+
+<span class="w">        </span><span class="n">input</span><span class="o">[</span><span class="n">i</span><span class="o">]</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="p">(</span><span class="n">r</span><span class="w"> </span><span class="o">-</span><span class="w"> </span><span class="n">mean</span><span class="o">[</span><span class="m">0</span><span class="o">]</span><span class="p">)</span><span class="w"> </span><span class="o">/</span><span class="w"> </span><span class="n">std</span><span class="o">[</span><span class="m">0</span><span class="o">]</span>
+<span class="w">        </span><span class="n">input</span><span class="o">[</span><span class="n">size</span><span class="w"> </span><span class="o">*</span><span class="w"> </span><span class="n">size</span><span class="w"> </span><span class="o">+</span><span class="w"> </span><span class="n">i</span><span class="o">]</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="p">(</span><span class="n">g</span><span class="w"> </span><span class="o">-</span><span class="w"> </span><span class="n">mean</span><span class="o">[</span><span class="m">1</span><span class="o">]</span><span class="p">)</span><span class="w"> </span><span class="o">/</span><span class="w"> </span><span class="n">std</span><span class="o">[</span><span class="m">1</span><span class="o">]</span>
+<span class="w">        </span><span class="n">input</span><span class="o">[</span><span class="m">2</span><span class="w"> </span><span class="o">*</span><span class="w"> </span><span class="n">size</span><span class="w"> </span><span class="o">*</span><span class="w"> </span><span class="n">size</span><span class="w"> </span><span class="o">+</span><span class="w"> </span><span class="n">i</span><span class="o">]</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="p">(</span><span class="n">b</span><span class="w"> </span><span class="o">-</span><span class="w"> </span><span class="n">mean</span><span class="o">[</span><span class="m">2</span><span class="o">]</span><span class="p">)</span><span class="w"> </span><span class="o">/</span><span class="w"> </span><span class="n">std</span><span class="o">[</span><span class="m">2</span><span class="o">]</span>
+<span class="w">    </span><span class="p">}</span>
+
+<span class="w">    </span><span class="k">return</span><span class="w"> </span><span class="n">Tensor</span><span class="p">.</span><span class="na">fromBlob</span><span class="p">(</span><span class="n">input</span><span class="p">,</span><span class="w"> </span><span class="n">longArrayOf</span><span class="p">(</span><span class="m">1</span><span class="p">,</span><span class="w"> </span><span class="m">3</span><span class="p">,</span><span class="w"> </span><span class="n">size</span><span class="p">.</span><span class="na">toLong</span><span class="p">(),</span><span class="w"> </span><span class="n">size</span><span class="p">.</span><span class="na">toLong</span><span class="p">()))</span>
+<span class="p">}</span>
+</pre></div>
+</div>
+<p>If the exported model accepts <code class="docutils literal notranslate"><span class="pre">uint8</span></code> image bytes instead, use <code class="docutils literal notranslate"><span class="pre">Tensor.fromBlobUnsigned(...)</span></code> and keep dtype conversion inside the exported graph.</p>
+<div class="highlight-kotlin notranslate"><div class="highlight"><pre><span></span><span class="kd">val</span><span class="w"> </span><span class="nv">inputBytes</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">ByteArray</span><span class="p">(</span><span class="m">3</span><span class="w"> </span><span class="o">*</span><span class="w"> </span><span class="n">width</span><span class="w"> </span><span class="o">*</span><span class="w"> </span><span class="n">height</span><span class="p">)</span>
+<span class="c1">// Pack bytes in the same layout expected by the model. For NCHW RGB,</span>
+<span class="c1">// write all red values, then green values, then blue values.</span>
+<span class="kd">val</span><span class="w"> </span><span class="nv">inputTensor</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">Tensor</span><span class="p">.</span><span class="na">fromBlobUnsigned</span><span class="p">(</span>
+<span class="w">    </span><span class="n">inputBytes</span><span class="p">,</span>
+<span class="w">    </span><span class="n">longArrayOf</span><span class="p">(</span><span class="m">1</span><span class="p">,</span><span class="w"> </span><span class="m">3</span><span class="p">,</span><span class="w"> </span><span class="n">height</span><span class="p">.</span><span class="na">toLong</span><span class="p">(),</span><span class="w"> </span><span class="n">width</span><span class="p">.</span><span class="na">toLong</span><span class="p">())</span>
+<span class="p">)</span>
+</pre></div>
+</div>
+</section>
+<section id="ios">
+<h3>iOS<a class="headerlink" href="#ios" title="Link to this heading">#</a></h3>
+<p>For production iOS preprocessing, prefer platform image APIs and Accelerate, such as vImage for resizing and color conversion and vDSP for normalization, especially for camera frames or other hot paths. The following Swift helper keeps the layout conversion explicit so the tensor contract is easy to inspect: it draws a <code class="docutils literal notranslate"><span class="pre">UIImage</span></code> into a fixed-size RGB buffer, uses vDSP to normalize RGB channels, and creates a channels-first <code class="docutils literal notranslate"><span class="pre">Tensor&lt;Float&gt;</span></code>.</p>
+<div class="highlight-swift notranslate"><div class="highlight"><pre><span></span><span class="kd">import</span><span class="w"> </span><span class="nc">Accelerate</span>
+<span class="kd">import</span><span class="w"> </span><span class="nc">CoreGraphics</span>
+<span class="kd">import</span><span class="w"> </span><span class="nc">ExecuTorch</span>
+<span class="kd">import</span><span class="w"> </span><span class="nc">UIKit</span>
+
+<span class="kd">func</span><span class="w"> </span><span class="nf">imageToNchwTensor</span><span class="p">(</span>
+<span class="w">  </span><span class="kc">_</span><span class="w"> </span><span class="n">image</span><span class="p">:</span><span class="w"> </span><span class="bp">UIImage</span><span class="p">,</span>
+<span class="w">  </span><span class="n">size</span><span class="p">:</span><span class="w"> </span><span class="nb">Int</span><span class="p">,</span>
+<span class="w">  </span><span class="n">mean</span><span class="p">:</span><span class="w"> </span><span class="p">[</span><span class="nb">Float</span><span class="p">]</span><span class="w"> </span><span class="p">=</span><span class="w"> </span><span class="p">[</span><span class="mf">0.485</span><span class="p">,</span><span class="w"> </span><span class="mf">0.456</span><span class="p">,</span><span class="w"> </span><span class="mf">0.406</span><span class="p">],</span>
+<span class="w">  </span><span class="n">std</span><span class="p">:</span><span class="w"> </span><span class="p">[</span><span class="nb">Float</span><span class="p">]</span><span class="w"> </span><span class="p">=</span><span class="w"> </span><span class="p">[</span><span class="mf">0.229</span><span class="p">,</span><span class="w"> </span><span class="mf">0.224</span><span class="p">,</span><span class="w"> </span><span class="mf">0.225</span><span class="p">]</span>
+<span class="p">)</span><span class="w"> </span><span class="p">-&gt;</span><span class="w"> </span><span class="n">Tensor</span><span class="p">&lt;</span><span class="nb">Float</span><span class="p">&gt;?</span><span class="w"> </span><span class="p">{</span>
+<span class="w">  </span><span class="k">guard</span><span class="w"> </span><span class="n">size</span><span class="w"> </span><span class="o">&gt;</span><span class="w"> </span><span class="mi">0</span><span class="p">,</span><span class="w"> </span><span class="n">mean</span><span class="p">.</span><span class="bp">count</span><span class="w"> </span><span class="p">==</span><span class="w"> </span><span class="mi">3</span><span class="p">,</span><span class="w"> </span><span class="n">std</span><span class="p">.</span><span class="bp">count</span><span class="w"> </span><span class="p">==</span><span class="w"> </span><span class="mi">3</span><span class="p">,</span>
+<span class="w">        </span><span class="kd">let</span><span class="w"> </span><span class="nv">cgImage</span><span class="w"> </span><span class="p">=</span><span class="w"> </span><span class="n">image</span><span class="p">.</span><span class="n">cgImage</span><span class="w"> </span><span class="k">else</span><span class="w"> </span><span class="p">{</span>
+<span class="w">    </span><span class="k">return</span><span class="w"> </span><span class="kc">nil</span>
+<span class="w">  </span><span class="p">}</span>
+
+<span class="w">  </span><span class="kd">let</span><span class="w"> </span><span class="nv">pixelCount</span><span class="w"> </span><span class="p">=</span><span class="w"> </span><span class="n">size</span><span class="w"> </span><span class="o">*</span><span class="w"> </span><span class="n">size</span>
+<span class="w">  </span><span class="kd">var</span><span class="w"> </span><span class="nv">rgba</span><span class="w"> </span><span class="p">=</span><span class="w"> </span><span class="p">[</span><span class="nb">UInt8</span><span class="p">](</span><span class="n">repeating</span><span class="p">:</span><span class="w"> </span><span class="mi">0</span><span class="p">,</span><span class="w"> </span><span class="bp">count</span><span class="p">:</span><span class="w"> </span><span class="n">pixelCount</span><span class="w"> </span><span class="o">*</span><span class="w"> </span><span class="mi">4</span><span class="p">)</span>
+<span class="w">  </span><span class="kd">let</span><span class="w"> </span><span class="nv">colorSpace</span><span class="w"> </span><span class="p">=</span><span class="w"> </span><span class="n">CGColorSpaceCreateDeviceRGB</span><span class="p">()</span>
+
+<span class="w">  </span><span class="kd">let</span><span class="w"> </span><span class="nv">didDraw</span><span class="w"> </span><span class="p">=</span><span class="w"> </span><span class="n">rgba</span><span class="p">.</span><span class="n">withUnsafeMutableBytes</span><span class="w"> </span><span class="p">{</span><span class="w"> </span><span class="n">buffer</span><span class="w"> </span><span class="p">-&gt;</span><span class="w"> </span><span class="nb">Bool</span><span class="w"> </span><span class="k">in</span>
+<span class="w">    </span><span class="k">guard</span><span class="w"> </span><span class="kd">let</span><span class="w"> </span><span class="nv">baseAddress</span><span class="w"> </span><span class="p">=</span><span class="w"> </span><span class="n">buffer</span><span class="p">.</span><span class="n">baseAddress</span><span class="p">,</span>
+<span class="w">          </span><span class="kd">let</span><span class="w"> </span><span class="nv">context</span><span class="w"> </span><span class="p">=</span><span class="w"> </span><span class="n">CGContext</span><span class="p">(</span>
+<span class="w">            </span><span class="n">data</span><span class="p">:</span><span class="w"> </span><span class="n">baseAddress</span><span class="p">,</span>
+<span class="w">            </span><span class="n">width</span><span class="p">:</span><span class="w"> </span><span class="n">size</span><span class="p">,</span>
+<span class="w">            </span><span class="n">height</span><span class="p">:</span><span class="w"> </span><span class="n">size</span><span class="p">,</span>
+<span class="w">            </span><span class="n">bitsPerComponent</span><span class="p">:</span><span class="w"> </span><span class="mi">8</span><span class="p">,</span>
+<span class="w">            </span><span class="n">bytesPerRow</span><span class="p">:</span><span class="w"> </span><span class="n">size</span><span class="w"> </span><span class="o">*</span><span class="w"> </span><span class="mi">4</span><span class="p">,</span>
+<span class="w">            </span><span class="n">space</span><span class="p">:</span><span class="w"> </span><span class="n">colorSpace</span><span class="p">,</span>
+<span class="w">            </span><span class="n">bitmapInfo</span><span class="p">:</span><span class="w"> </span><span class="n">CGImageAlphaInfo</span><span class="p">.</span><span class="n">premultipliedLast</span><span class="p">.</span><span class="n">rawValue</span><span class="w"> </span><span class="o">|</span>
+<span class="w">              </span><span class="n">CGBitmapInfo</span><span class="p">.</span><span class="n">byteOrder32Big</span><span class="p">.</span><span class="n">rawValue</span>
+<span class="w">          </span><span class="p">)</span><span class="w"> </span><span class="k">else</span><span class="w"> </span><span class="p">{</span>
+<span class="w">      </span><span class="k">return</span><span class="w"> </span><span class="kc">false</span>
+<span class="w">    </span><span class="p">}</span>
+<span class="w">    </span><span class="n">context</span><span class="p">.</span><span class="n">draw</span><span class="p">(</span><span class="n">cgImage</span><span class="p">,</span><span class="w"> </span><span class="k">in</span><span class="p">:</span><span class="w"> </span><span class="n">CGRect</span><span class="p">(</span><span class="n">x</span><span class="p">:</span><span class="w"> </span><span class="mi">0</span><span class="p">,</span><span class="w"> </span><span class="n">y</span><span class="p">:</span><span class="w"> </span><span class="mi">0</span><span class="p">,</span><span class="w"> </span><span class="n">width</span><span class="p">:</span><span class="w"> </span><span class="n">size</span><span class="p">,</span><span class="w"> </span><span class="n">height</span><span class="p">:</span><span class="w"> </span><span class="n">size</span><span class="p">))</span>
+<span class="w">    </span><span class="k">return</span><span class="w"> </span><span class="kc">true</span>
+<span class="w">  </span><span class="p">}</span>
+<span class="w">  </span><span class="k">guard</span><span class="w"> </span><span class="n">didDraw</span><span class="w"> </span><span class="k">else</span><span class="w"> </span><span class="p">{</span>
+<span class="w">    </span><span class="k">return</span><span class="w"> </span><span class="kc">nil</span>
+<span class="w">  </span><span class="p">}</span>
+
+<span class="w">  </span><span class="kd">let</span><span class="w"> </span><span class="nv">count</span><span class="w"> </span><span class="p">=</span><span class="w"> </span><span class="n">vDSP_Length</span><span class="p">(</span><span class="n">pixelCount</span><span class="p">)</span>
+<span class="w">  </span><span class="kd">var</span><span class="w"> </span><span class="nv">input</span><span class="w"> </span><span class="p">=</span><span class="w"> </span><span class="p">[</span><span class="nb">Float</span><span class="p">](</span><span class="n">repeating</span><span class="p">:</span><span class="w"> </span><span class="mi">0</span><span class="p">,</span><span class="w"> </span><span class="bp">count</span><span class="p">:</span><span class="w"> </span><span class="mi">3</span><span class="w"> </span><span class="o">*</span><span class="w"> </span><span class="n">pixelCount</span><span class="p">)</span>
+<span class="w">  </span><span class="n">rgba</span><span class="p">.</span><span class="n">withUnsafeBufferPointer</span><span class="w"> </span><span class="p">{</span><span class="w"> </span><span class="n">rgbaBuffer</span><span class="w"> </span><span class="k">in</span>
+<span class="w">    </span><span class="n">input</span><span class="p">.</span><span class="n">withUnsafeMutableBufferPointer</span><span class="w"> </span><span class="p">{</span><span class="w"> </span><span class="n">inputBuffer</span><span class="w"> </span><span class="k">in</span>
+<span class="w">      </span><span class="k">guard</span><span class="w"> </span><span class="kd">let</span><span class="w"> </span><span class="nv">rgbaBase</span><span class="w"> </span><span class="p">=</span><span class="w"> </span><span class="n">rgbaBuffer</span><span class="p">.</span><span class="n">baseAddress</span><span class="p">,</span>
+<span class="w">            </span><span class="kd">let</span><span class="w"> </span><span class="nv">inputBase</span><span class="w"> </span><span class="p">=</span><span class="w"> </span><span class="n">inputBuffer</span><span class="p">.</span><span class="n">baseAddress</span><span class="w"> </span><span class="k">else</span><span class="w"> </span><span class="p">{</span>
+<span class="w">        </span><span class="k">return</span>
+<span class="w">      </span><span class="p">}</span>
+
+<span class="w">      </span><span class="k">for</span><span class="w"> </span><span class="n">channel</span><span class="w"> </span><span class="k">in</span><span class="w"> </span><span class="mf">0.</span><span class="p">.&lt;</span><span class="mi">3</span><span class="w"> </span><span class="p">{</span>
+<span class="w">        </span><span class="kd">let</span><span class="w"> </span><span class="nv">source</span><span class="w"> </span><span class="p">=</span><span class="w"> </span><span class="n">rgbaBase</span><span class="p">.</span><span class="n">advanced</span><span class="p">(</span><span class="n">by</span><span class="p">:</span><span class="w"> </span><span class="n">channel</span><span class="p">)</span>
+<span class="w">        </span><span class="kd">let</span><span class="w"> </span><span class="nv">destination</span><span class="w"> </span><span class="p">=</span><span class="w"> </span><span class="n">inputBase</span><span class="p">.</span><span class="n">advanced</span><span class="p">(</span><span class="n">by</span><span class="p">:</span><span class="w"> </span><span class="n">channel</span><span class="w"> </span><span class="o">*</span><span class="w"> </span><span class="n">pixelCount</span><span class="p">)</span>
+<span class="w">        </span><span class="kd">var</span><span class="w"> </span><span class="nv">scale</span><span class="w"> </span><span class="p">=</span><span class="w"> </span><span class="mf">1.0</span><span class="w"> </span><span class="o">/</span><span class="w"> </span><span class="p">(</span><span class="mf">255.0</span><span class="w"> </span><span class="o">*</span><span class="w"> </span><span class="n">std</span><span class="p">[</span><span class="n">channel</span><span class="p">])</span>
+<span class="w">        </span><span class="kd">var</span><span class="w"> </span><span class="nv">bias</span><span class="w"> </span><span class="p">=</span><span class="w"> </span><span class="o">-</span><span class="n">mean</span><span class="p">[</span><span class="n">channel</span><span class="p">]</span><span class="w"> </span><span class="o">/</span><span class="w"> </span><span class="n">std</span><span class="p">[</span><span class="n">channel</span><span class="p">]</span>
+
+<span class="w">        </span><span class="n">vDSP_vfltu8</span><span class="p">(</span><span class="n">source</span><span class="p">,</span><span class="w"> </span><span class="mi">4</span><span class="p">,</span><span class="w"> </span><span class="n">destination</span><span class="p">,</span><span class="w"> </span><span class="mi">1</span><span class="p">,</span><span class="w"> </span><span class="bp">count</span><span class="p">)</span>
+<span class="w">        </span><span class="n">vDSP_vsmsa</span><span class="p">(</span><span class="n">destination</span><span class="p">,</span><span class="w"> </span><span class="mi">1</span><span class="p">,</span><span class="w"> </span><span class="p">&amp;</span><span class="n">scale</span><span class="p">,</span><span class="w"> </span><span class="p">&amp;</span><span class="n">bias</span><span class="p">,</span><span class="w"> </span><span class="n">destination</span><span class="p">,</span><span class="w"> </span><span class="mi">1</span><span class="p">,</span><span class="w"> </span><span class="bp">count</span><span class="p">)</span>
+<span class="w">      </span><span class="p">}</span>
+<span class="w">    </span><span class="p">}</span>
+<span class="w">  </span><span class="p">}</span>
+
+<span class="w">  </span><span class="k">return</span><span class="w"> </span><span class="n">Tensor</span><span class="p">&lt;</span><span class="nb">Float</span><span class="p">&gt;(</span><span class="n">input</span><span class="p">,</span><span class="w"> </span><span class="n">shape</span><span class="p">:</span><span class="w"> </span><span class="p">[</span><span class="mi">1</span><span class="p">,</span><span class="w"> </span><span class="mi">3</span><span class="p">,</span><span class="w"> </span><span class="n">size</span><span class="p">,</span><span class="w"> </span><span class="n">size</span><span class="p">])</span>
+<span class="p">}</span>
+</pre></div>
+</div>
+<p>On either platform, if your model is exported for <code class="docutils literal notranslate"><span class="pre">NHWC</span></code>, keep the same decoded pixels but pack them in row-major <code class="docutils literal notranslate"><span class="pre">[height,</span> <span class="pre">width,</span> <span class="pre">channels]</span></code> order and use shape <code class="docutils literal notranslate"><span class="pre">[1,</span> <span class="pre">height,</span> <span class="pre">width,</span> <span class="pre">3]</span></code>.</p>
+</section>
+</section>
+<section id="decode-common-cv-outputs">
+<h2>Decode common CV outputs<a class="headerlink" href="#decode-common-cv-outputs" title="Link to this heading">#</a></h2>
+<p>Output tensors are model-specific. Preserve the output schema used during export and keep a small validation test that compares app-side post-processing with PyTorch post-processing.</p>
+<p>For TorchVision models, check the <a class="reference external" href="https://docs.pytorch.org/vision/stable/models.html">models and pre-trained weights documentation</a> for model-specific transforms, categories, and task conventions.</p>
+<section id="image-classification">
+<h3>Image classification<a class="headerlink" href="#image-classification" title="Link to this heading">#</a></h3>
+<p>Image classifiers commonly return a logits tensor with shape <code class="docutils literal notranslate"><span class="pre">[1,</span> <span class="pre">num_classes]</span></code>. For top-1 classification, find the largest logit and map the index through the same labels file used during training or evaluation.</p>
+<div class="highlight-kotlin notranslate"><div class="highlight"><pre><span></span><span class="k">import</span><span class="w"> </span><span class="nn">org.pytorch.executorch.EValue</span>
+
+<span class="kd">val</span><span class="w"> </span><span class="nv">output</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">module</span><span class="p">.</span><span class="na">forward</span><span class="p">(</span><span class="n">EValue</span><span class="p">.</span><span class="na">from</span><span class="p">(</span><span class="n">inputTensor</span><span class="p">))</span><span class="o">[</span><span class="m">0</span><span class="o">]</span><span class="p">.</span><span class="na">toTensor</span><span class="p">()</span>
+<span class="kd">val</span><span class="w"> </span><span class="nv">logits</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">output</span><span class="p">.</span><span class="na">dataAsFloatArray</span>
+
+<span class="kd">var</span><span class="w"> </span><span class="nv">topIndex</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="m">0</span>
+<span class="k">for</span><span class="w"> </span><span class="p">(</span><span class="n">i</span><span class="w"> </span><span class="k">in</span><span class="w"> </span><span class="m">1</span><span class="w"> </span><span class="n">until</span><span class="w"> </span><span class="n">logits</span><span class="p">.</span><span class="na">size</span><span class="p">)</span><span class="w"> </span><span class="p">{</span>
+<span class="w">    </span><span class="k">if</span><span class="w"> </span><span class="p">(</span><span class="n">logits</span><span class="o">[</span><span class="n">i</span><span class="o">]</span><span class="w"> </span><span class="o">&gt;</span><span class="w"> </span><span class="n">logits</span><span class="o">[</span><span class="n">topIndex</span><span class="o">]</span><span class="p">)</span><span class="w"> </span><span class="p">{</span>
+<span class="w">        </span><span class="n">topIndex</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">i</span>
+<span class="w">    </span><span class="p">}</span>
+<span class="p">}</span>
+<span class="kd">val</span><span class="w"> </span><span class="nv">topScore</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">logits</span><span class="o">[</span><span class="n">topIndex</span><span class="o">]</span>
+</pre></div>
+</div>
+<p>Use <code class="docutils literal notranslate"><span class="pre">softmax</span></code> only when the UI needs probabilities. Ranking classes by logits and by softmax probabilities gives the same order.</p>
+</section>
+<section id="semantic-segmentation">
+<h3>Semantic segmentation<a class="headerlink" href="#semantic-segmentation" title="Link to this heading">#</a></h3>
+<p>Semantic segmentation models commonly return class scores with shape <code class="docutils literal notranslate"><span class="pre">[1,</span> <span class="pre">classes,</span> <span class="pre">height,</span> <span class="pre">width]</span></code>. For each output pixel, choose the class channel with the largest score, then resize the mask back to the displayed image size if needed.</p>
+<div class="highlight-kotlin notranslate"><div class="highlight"><pre><span></span><span class="kd">fun</span><span class="w"> </span><span class="nf">argmaxMask</span><span class="p">(</span><span class="n">scores</span><span class="p">:</span><span class="w"> </span><span class="n">FloatArray</span><span class="p">,</span><span class="w"> </span><span class="n">classes</span><span class="p">:</span><span class="w"> </span><span class="kt">Int</span><span class="p">,</span><span class="w"> </span><span class="n">height</span><span class="p">:</span><span class="w"> </span><span class="kt">Int</span><span class="p">,</span><span class="w"> </span><span class="n">width</span><span class="p">:</span><span class="w"> </span><span class="kt">Int</span><span class="p">):</span><span class="w"> </span><span class="n">IntArray</span><span class="w"> </span><span class="p">{</span>
+<span class="w">    </span><span class="kd">val</span><span class="w"> </span><span class="nv">mask</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">IntArray</span><span class="p">(</span><span class="n">height</span><span class="w"> </span><span class="o">*</span><span class="w"> </span><span class="n">width</span><span class="p">)</span>
+<span class="w">    </span><span class="k">for</span><span class="w"> </span><span class="p">(</span><span class="n">y</span><span class="w"> </span><span class="k">in</span><span class="w"> </span><span class="m">0</span><span class="w"> </span><span class="n">until</span><span class="w"> </span><span class="n">height</span><span class="p">)</span><span class="w"> </span><span class="p">{</span>
+<span class="w">        </span><span class="k">for</span><span class="w"> </span><span class="p">(</span><span class="n">x</span><span class="w"> </span><span class="k">in</span><span class="w"> </span><span class="m">0</span><span class="w"> </span><span class="n">until</span><span class="w"> </span><span class="n">width</span><span class="p">)</span><span class="w"> </span><span class="p">{</span>
+<span class="w">            </span><span class="kd">val</span><span class="w"> </span><span class="nv">offset</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">y</span><span class="w"> </span><span class="o">*</span><span class="w"> </span><span class="n">width</span><span class="w"> </span><span class="o">+</span><span class="w"> </span><span class="n">x</span>
+<span class="w">            </span><span class="kd">var</span><span class="w"> </span><span class="nv">bestClass</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="m">0</span>
+<span class="w">            </span><span class="kd">var</span><span class="w"> </span><span class="nv">bestScore</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">scores</span><span class="o">[</span><span class="n">offset</span><span class="o">]</span>
+<span class="w">            </span><span class="k">for</span><span class="w"> </span><span class="p">(</span><span class="n">c</span><span class="w"> </span><span class="k">in</span><span class="w"> </span><span class="m">1</span><span class="w"> </span><span class="n">until</span><span class="w"> </span><span class="n">classes</span><span class="p">)</span><span class="w"> </span><span class="p">{</span>
+<span class="w">                </span><span class="kd">val</span><span class="w"> </span><span class="nv">score</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">scores</span><span class="o">[</span><span class="n">c</span><span class="w"> </span><span class="o">*</span><span class="w"> </span><span class="n">height</span><span class="w"> </span><span class="o">*</span><span class="w"> </span><span class="n">width</span><span class="w"> </span><span class="o">+</span><span class="w"> </span><span class="n">offset</span><span class="o">]</span>
+<span class="w">                </span><span class="k">if</span><span class="w"> </span><span class="p">(</span><span class="n">score</span><span class="w"> </span><span class="o">&gt;</span><span class="w"> </span><span class="n">bestScore</span><span class="p">)</span><span class="w"> </span><span class="p">{</span>
+<span class="w">                    </span><span class="n">bestScore</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">score</span>
+<span class="w">                    </span><span class="n">bestClass</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">c</span>
+<span class="w">                </span><span class="p">}</span>
+<span class="w">            </span><span class="p">}</span>
+<span class="w">            </span><span class="n">mask</span><span class="o">[</span><span class="n">offset</span><span class="o">]</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">bestClass</span>
+<span class="w">        </span><span class="p">}</span>
+<span class="w">    </span><span class="p">}</span>
+<span class="w">    </span><span class="k">return</span><span class="w"> </span><span class="n">mask</span>
+<span class="p">}</span>
+</pre></div>
+</div>
+<p>See the <a class="reference external" href="https://github.com/meta-pytorch/executorch-examples/tree/main/dl3/android/DeepLabV3Demo">DeepLabV3 Android demo</a> for an end-to-end ExecuTorch segmentation app that exports a model, runs it on Android, and overlays the predicted mask on an image.</p>
+</section>
+<section id="object-detection-and-instance-segmentation">
+<h3>Object detection and instance segmentation<a class="headerlink" href="#object-detection-and-instance-segmentation" title="Link to this heading">#</a></h3>
+<p>Detection and instance segmentation models do not have a single universal output format. Common patterns include:</p>
+<ul class="simple">
+<li><p>boxes as <code class="docutils literal notranslate"><span class="pre">[num_detections,</span> <span class="pre">4]</span></code>, usually in <code class="docutils literal notranslate"><span class="pre">xyxy</span></code> or <code class="docutils literal notranslate"><span class="pre">xywh</span></code> coordinates</p></li>
+<li><p>labels as <code class="docutils literal notranslate"><span class="pre">[num_detections]</span></code></p></li>
+<li><p>scores as <code class="docutils literal notranslate"><span class="pre">[num_detections]</span></code></p></li>
+<li><p>masks as <code class="docutils literal notranslate"><span class="pre">[num_detections,</span> <span class="pre">height,</span> <span class="pre">width]</span></code> or <code class="docutils literal notranslate"><span class="pre">[num_detections,</span> <span class="pre">1,</span> <span class="pre">height,</span> <span class="pre">width]</span></code></p></li>
+</ul>
+<p>Check whether thresholding, non-maximum suppression, box decoding, and mask resizing are already part of the exported graph. If they are not, keep those steps in the app and document the expected coordinate system. When the model runs on a resized or cropped image, map boxes and masks back to the original image coordinates before rendering overlays.</p>
+</section>
+</section>
+<section id="validate-the-model-and-app-contract">
+<h2>Validate the model and app contract<a class="headerlink" href="#validate-the-model-and-app-contract" title="Link to this heading">#</a></h2>
+<p>Before shipping a CV model, validate these items:</p>
+<ul class="simple">
+<li><p>The app sends the same dtype, shape, layout, color order, and normalization that the exported graph expects.</p></li>
+<li><p>The app uses the same labels, palette, score threshold, and coordinate convention as the PyTorch reference.</p></li>
+<li><p>A known image produces matching top classes, masks, or detections in PyTorch and in the ExecuTorch app.</p></li>
+<li><p>The preprocessing is applied exactly once. Do not normalize in both the app and the exported model.</p></li>
+<li><p>The output code handles model-specific shapes instead of assuming all CV models return classifier logits.</p></li>
+</ul>
+<p>For the basic export and runtime flow, start with <a class="reference internal" href="getting-started.html"><span class="doc">Getting Started with ExecuTorch</span></a>. For mobile runtime integration, see <a class="reference internal" href="using-executorch-android.html"><span class="doc">Using ExecuTorch on Android</span></a> and <a class="reference internal" href="using-executorch-ios.html"><span class="doc">Using ExecuTorch on iOS</span></a>.</p>
+</section>
+</section>
+
+
+                </article>
+              
+</div>
+
+              
+              
+                <footer class="bd-footer-article">
+                  <div class="footer-article-items footer-article__inner">
+  
+    <div class="footer-article-item">
+<div class="feedback">
+  
+<div class="rating">
+    Rate this Page
+    <div class="stars">
+        
+        <span class="star" data-behavior="tutorial-rating" data-count="1" data-value="1">★</span>
+        
+        <span class="star" data-behavior="tutorial-rating" data-count="2" data-value="2">★</span>
+        
+        <span class="star" data-behavior="tutorial-rating" data-count="3" data-value="3">★</span>
+        
+        <span class="star" data-behavior="tutorial-rating" data-count="4" data-value="4">★</span>
+        
+        <span class="star" data-behavior="tutorial-rating" data-count="5" data-value="5">★</span>
+        
+    </div>
+</div>
+
+  <div class="feedback-send">
+    <button class="feedback-btn"
+            onclick="openGitHubIssue()"
+            data-bs-title="Create a GitHub Issue"
+            data-bs-placement="bottom"
+            data-bs-toggle="tooltip"
+            data-gtm="feedback-btn-click">Send Feedback
+    </button>
+  </div>
+</div>
+
+<div class="prev-next-area">
+    <a class="left-prev"
+       href="runtime-profiling.html"
+       title="previous page">
+      <i class="fa-solid fa-angle-left"></i>
+      <div class="prev-next-info">
+        <p class="prev-next-subtitle">previous</p>
+        <p class="prev-next-title">Profiling Models in ExecuTorch</p>
+      </div>
+    </a>
+    <a class="right-next"
+       href="kernel-library-advanced.html"
+       title="next page">
+      <div class="prev-next-info">
+        <p class="prev-next-subtitle">next</p>
+        <p class="prev-next-title">Kernel Library Deep Dive</p>
+      </div>
+      <i class="fa-solid fa-angle-right"></i>
+    </a>
+</div>
+
+<div class="footer-info">
+  <p class="copyright">
+    
+  </p>
+
+  <p class="theme-version">
+    Built with the <a href="https://pydata-sphinx-theme.readthedocs.io/en/stable/index.html">PyData Sphinx Theme</a> 0.15.4.
+  </p>
+</div>
+</div>
+  
+</div>
+                </footer>
+              
+              
+              
+                <footer class="prev-next-footer d-print-none">
+                  
+<div class="prev-next-area">
+    <a class="left-prev"
+       href="runtime-profiling.html"
+       title="previous page">
+      <i class="fa-solid fa-angle-left"></i>
+      <div class="prev-next-info">
+        <p class="prev-next-subtitle">previous</p>
+        <p class="prev-next-title">Profiling Models in ExecuTorch</p>
+      </div>
+    </a>
+    <a class="right-next"
+       href="kernel-library-advanced.html"
+       title="next page">
+      <div class="prev-next-info">
+        <p class="prev-next-subtitle">next</p>
+        <p class="prev-next-title">Kernel Library Deep Dive</p>
+      </div>
+      <i class="fa-solid fa-angle-right"></i>
+    </a>
+</div>
+                </footer>
+              
+            </div>
+            
+            
+              
+                <div class="bd-sidebar-secondary bd-toc">
+<div class="sidebar-secondary-items sidebar-secondary__inner">
+    
+       <div class="sidebar-secondary-item">
+<div
+    id="pst-page-navigation-heading-2"
+    class="page-toc tocsection onthispage">
+    <i class="fa-solid fa-list"></i> On this page
+  </div>
+  <nav class="bd-toc-nav page-toc" aria-labelledby="pst-page-navigation-heading-2">
+    <ul class="visible nav section-nav flex-column">
+<li class="toc-h2 nav-item toc-entry"><a class="reference internal nav-link" href="#choose-where-preprocessing-runs">Choose where preprocessing runs</a></li>
+<li class="toc-h2 nav-item toc-entry"><a class="reference internal nav-link" href="#convert-images-to-tensors-in-app-code">Convert images to tensors in app code</a><ul class="visible nav section-nav flex-column">
+<li class="toc-h3 nav-item toc-entry"><a class="reference internal nav-link" href="#android">Android</a></li>
+<li class="toc-h3 nav-item toc-entry"><a class="reference internal nav-link" href="#ios">iOS</a></li>
+</ul>
+</li>
+<li class="toc-h2 nav-item toc-entry"><a class="reference internal nav-link" href="#decode-common-cv-outputs">Decode common CV outputs</a><ul class="visible nav section-nav flex-column">
+<li class="toc-h3 nav-item toc-entry"><a class="reference internal nav-link" href="#image-classification">Image classification</a></li>
+<li class="toc-h3 nav-item toc-entry"><a class="reference internal nav-link" href="#semantic-segmentation">Semantic segmentation</a></li>
+<li class="toc-h3 nav-item toc-entry"><a class="reference internal nav-link" href="#object-detection-and-instance-segmentation">Object detection and instance segmentation</a></li>
+</ul>
+</li>
+<li class="toc-h2 nav-item toc-entry"><a class="reference internal nav-link" href="#validate-the-model-and-app-contract">Validate the model and app contract</a></li>
+</ul>
+  </nav></div>
+    
+       <div class="sidebar-secondary-item">
+
+  
+  <div class="tocsection editthispage">
+    <a href="https://github.com/pytorch/executorch/edit/main/docs/source/working-with-cv-models.md">
+      <i class="fa-solid fa-pencil"></i>
+      
+      
+        
+          Edit on GitHub
+        
+      
+    </a>
+  </div>
+</div>
+    
+       <div class="sidebar-secondary-item">
+    <div class="tocsection sourcelink">
+      <a href="_sources/working-with-cv-models.md.txt">
+        <i class="fa-solid fa-file-lines"></i> Show Source
+      </a>
+    </div>
+</div>
+    
+
+
+
+
+</div>
+</div>
+              
+            
+          </div>
+          <footer class="bd-footer-content">
+            
+          </footer>
+        
+      </main>
+    </div>
+  </div>
+  
+  <!-- Scripts loaded after <body> so the DOM is not blocked -->
+  <script src="_static/scripts/bootstrap.js?digest=dfe6caa3a7d634c4db9b"></script>
+<script src="_static/scripts/pydata-sphinx-theme.js?digest=dfe6caa3a7d634c4db9b"></script>
+
+  
+
+<div class="container-fluid docs-tutorials-resources" id="docs-tutorials-resources">
+  <div class="container">
+    <div class="row">
+      <div class="col-md-4">
+        <h2>Docs</h2>
+        <p>Access comprehensive developer documentation for PyTorch</p>
+        <a class="with-right-arrow" href="https://docs.pytorch.org/docs/stable/index.html">View Docs</a>
+      </div>
+
+      <div class="col-md-4">
+        <h2>Tutorials</h2>
+        <p>Get in-depth tutorials for beginners and advanced developers</p>
+        <a class="with-right-arrow" href="https://docs.pytorch.org/tutorials">View Tutorials</a>
+      </div>
+
+      <div class="col-md-4">
+        <h2>Resources</h2>
+        <p>Find development resources and get your questions answered</p>
+        <a class="with-right-arrow" href="https://pytorch.org/resources">View Resources</a>
+      </div>
+    </div>
+  </div>
+</div>
+
+
+
+
+<footer class="site-footer">
+
+  <div class="container footer-container">
+
+    <div class="newsletter" id="newsletter">
+
+      <p class="newsletter__title is-style-max-width-800"><strong>Stay in touch</strong> for updates, event info, and
+        the latest news</p>
+
+
+      <script charset="utf-8" type="text/javascript" src="//js.hsforms.net/forms/embed/v2.js"></script>
+      <script>
+        hbspt.forms.create({
+          region: "na1",
+          portalId: "8112310",
+          formId: "2fb2231c-000b-4ec5-88a0-1ab242549c9e"
+        });
+      </script>
+
+
+      <p class="newsletter__privacy">By submitting this form, I consent to receive marketing emails from the LF and its
+        projects regarding their events, training, research, developments, and related announcements. I understand that
+        I can unsubscribe at any time using the links in the footers of the emails I receive. <a
+          href="https://www.linuxfoundation.org/privacy/">Privacy Policy</a>.</p>
+
+    </div>
+
+    <div class="lf-grid">
+      <ul class="social-links">
+        <li><a href="https://www.facebook.com/pytorch" target="_blank" title="PyTorch on Facebook">
+            <svg xmlns="http://www.w3.org/2000/svg" viewbox="-0.51 -0.26 26.45 26.45" aria-label="Facebook">
+              <path fill="currentColor"
+                d="M25.497 13.075c0-2.45-.698-4.848-2.011-6.911a12.765 12.765 0 0 0-5.398-4.73A12.671 12.671 0 0 0 11.008.38a12.705 12.705 0 0 0-6.529 2.95A12.827 12.827 0 0 0 .563 9.358a12.896 12.896 0 0 0-.07 7.201 12.831 12.831 0 0 0 3.801 6.103 12.709 12.709 0 0 0 6.471 3.078v-8.957H7.53v-3.708h3.235v-2.824c0-3.213 1.903-4.988 4.813-4.988.956.014 1.909.097 2.852.25V8.67h-1.607a1.83 1.83 0 0 0-1.518.497 1.854 1.854 0 0 0-.561 1.505v2.404h3.535l-.563 3.708h-2.97v8.957a12.725 12.725 0 0 0 7.697-4.337 12.87 12.87 0 0 0 3.054-8.328z" />
+            </svg>
+          </a></li>
+        <li><a href="https://twitter.com/pytorch" target="_blank" title="PyTorch on X">
+            <svg xmlns="http://www.w3.org/2000/svg" viewbox="0 0 300 300" aria-label="X">
+              <path fill="currentColor"
+                d="M178.57 127.15 290.27 0h-26.46l-97.03 110.38L89.34 0H0l117.13 166.93L0 300.25h26.46l102.4-116.59 81.8 116.59h89.34M36.01 19.54H76.66l187.13 262.13h-40.66" />
+            </svg>
+          </a></li>
+        <li><a href="https://www.youtube.com/pytorch" target="_blank" title="PyTorch on YouTube">
+            <svg xmlns="http://www.w3.org/2000/svg" viewbox="0.21 0.27 34.45 25.07" aria-label="YouTube">
+              <path fill="currentColor"
+                d="M33.729 6.084s-.327-2.33-1.317-3.356a4.691 4.691 0 0 0-3.32-1.432c-4.634-.34-11.589-.34-11.589-.34h-.014s-6.954 0-11.59.342a4.692 4.692 0 0 0-3.32 1.432c-.993 1.025-1.315 3.354-1.315 3.354a52.189 52.189 0 0 0-.331 5.473v2.566c.014 1.829.125 3.656.331 5.472 0 0 .322 2.33 1.316 3.36 1.26 1.345 2.916 1.3 3.653 1.445 2.65.26 11.263.34 11.263.34s6.96-.01 11.597-.353a4.691 4.691 0 0 0 3.32-1.432c.993-1.026 1.316-3.356 1.316-3.356.206-1.817.316-3.644.33-5.473v-2.57a52.26 52.26 0 0 0-.33-5.472zM14.076 17.232V7.729l8.951 4.768-8.95 4.735z" />
+            </svg>
+          </a></li>
+        <li><a href="https://www.linkedin.com/company/pytorch" target="_blank" title="PyTorch on LinkedIn">
+            <svg xmlns="http://www.w3.org/2000/svg" viewbox="-10.23 -10.23 531.96 531.96" aria-label="LinkedIn">
+              <rect width="512" height="512" rx="0" fill="currentColor" />
+              <circle fill="#000" cx="142" cy="138" r="37" />
+              <path stroke="#000" stroke-width="66" d="M244 194v198M142 194v198" />
+              <path fill="#000"
+                d="M276 282c0-20 13-40 36-40 24 0 33 18 33 45v105h66V279c0-61-32-89-76-89-34 0-51 19-59 32" />
+            </svg>
+          </a></li>
+        <li><a href="https://pytorch.slack.com" target="_blank" title="PyTorch Slack">
+            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0.16 -0.03 21.19 21.19" aria-label="Slack">
+              <path fill="currentColor"
+                d="M4.896 13.27a2.147 2.147 0 0 1-2.141 2.142A2.147 2.147 0 0 1 .613 13.27c0-1.178.963-2.141 2.142-2.141h2.141v2.141zm1.08 0c0-1.178.962-2.141 2.141-2.141s2.142.963 2.142 2.141v5.363a2.147 2.147 0 0 1-2.142 2.141 2.147 2.147 0 0 1-2.141-2.142V13.27zm2.141-8.6a2.147 2.147 0 0 1-2.141-2.14c0-1.18.962-2.142 2.141-2.142s2.142.963 2.142 2.141v2.142H8.117zm0 1.08c1.179 0 2.141.962 2.141 2.141a2.147 2.147 0 0 1-2.141 2.142H2.755A2.147 2.147 0 0 1 .613 7.89c0-1.179.963-2.141 2.142-2.141h5.362zm8.599 2.141c0-1.179.963-2.141 2.141-2.141 1.179 0 2.143.962 2.143 2.14a2.147 2.147 0 0 1-2.142 2.142h-2.141V7.89zm-1.08 0a2.147 2.147 0 0 1-2.141 2.142 2.147 2.147 0 0 1-2.141-2.142V2.53c0-1.178.962-2.141 2.141-2.141s2.142.963 2.142 2.141v5.362zm-2.141 8.6c1.179 0 2.142.962 2.142 2.14a2.147 2.147 0 0 1-2.142 2.142 2.147 2.147 0 0 1-2.141-2.141V16.49h2.141zm0-1.08a2.147 2.147 0 0 1-2.141-2.141c0-1.179.962-2.142 2.141-2.142h5.362c1.179 0 2.142.963 2.142 2.142a2.147 2.147 0 0 1-2.142 2.142h-5.362z">
+              </path>
+            </svg>
+          </a></li>
+        <li><a href="https://pytorch.org/wechat" title="PyTorch on WeChat">
+            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0.14 -0.17 38.02 33.02" aria-label="WeChat">
+              <path fill="currentColor"
+                d="M26.289 10.976a12.972 12.972 0 0 0-8.742 3.53 10.386 10.386 0 0 0-3.224 8.795c-1.326-.164-2.535-.345-3.75-.448a2.332 2.332 0 0 0-1.273.216c-1.18.666-2.311 1.418-3.652 2.255.246-1.112.405-2.087.687-3.024a1.15 1.15 0 0 0-.523-1.52C1.737 17.902.02 13.601 1.307 9.165c1.189-4.1 4.11-6.587 8.077-7.884A13.54 13.54 0 0 1 24.18 5.617a10.135 10.135 0 0 1 2.109 5.359zM10.668 9.594a1.564 1.564 0 0 0-2.095-1.472 1.52 1.52 0 0 0-.895 1.964 1.502 1.502 0 0 0 1.391.966 1.545 1.545 0 0 0 1.598-1.46v.002zm8.15-1.566a1.567 1.567 0 0 0-1.528 1.543 1.528 1.528 0 0 0 1.571 1.492 1.52 1.52 0 0 0 1.375-2.117 1.518 1.518 0 0 0-1.415-.919l-.003.001z">
+              </path>
+              <path fill="currentColor"
+                d="M33.914 32.137c-1.075-.478-2.062-1.196-3.11-1.306-1.049-.11-2.145.494-3.24.605a10.821 10.821 0 0 1-8.781-2.864c-4.682-4.33-4.013-10.97 1.403-14.518 4.811-3.154 11.874-2.102 15.268 2.273a8.671 8.671 0 0 1-1.002 12.095c-1.046.929-1.422 1.693-.751 2.917.102.257.174.525.213.798zM21.68 20.292a1.264 1.264 0 1 0 .01-2.528 1.264 1.264 0 0 0-.01 2.528zm7.887-2.526a1.266 1.266 0 0 0-1.256 1.21 1.247 1.247 0 1 0 1.256-1.21z">
+              </path>
+            </svg>
+          </a></li>
+      </ul>
+    </div>
+    
+    <div class="privacy-policy">
+      <div class="copyright">
+      
+        <p>
+          &copy; PyTorch. Copyright © The Linux Foundation®. All rights reserved. The Linux Foundation has registered
+          trademarks and uses trademarks. For more information, including terms of use, privacy policy, and trademark
+          usage, please see our <a href="https://www.linuxfoundation.org/legal/policies">Policies</a> page. <a
+            href="https://www.linuxfoundation.org/trademark-usage">Trademark Usage</a>. <a
+            href="http://www.linuxfoundation.org/privacy">Privacy Policy</a>.
+        </p>
+        
+      </div>
+    </div>
+
+
+  </div>
+</footer>
+
+<div class="cookie-banner-wrapper">
+  <div class="container">
+    <p class="gdpr-notice">To analyze traffic and optimize your experience, we serve cookies on this site. By clicking or navigating, you agree to allow our usage of cookies. As the current maintainers of this site, Facebook’s Cookies Policy applies. Learn more, including about available controls: <a href="https://www.facebook.com/policies/cookies/">Cookies Policy</a>.</p>
+    <img class="close-button" src="_static/img/pytorch-x.svg">
+  </div>
+</div>
+  
+  <footer class="bd-footer">
+<div class="bd-footer__inner bd-page-width">
+  
+    <div class="footer-items__start">
+      
+        <div class="footer-item">
+
+  <p class="copyright">
+    
+      © Copyright 2024, ExecuTorch.
+      <br/>
+    
+  </p>
+</div>
+      
+        <div class="footer-item">
+
+  <p class="sphinx-version">
+    Created using <a href="https://www.sphinx-doc.org/">Sphinx</a> 7.2.6.
+    <br/>
+  </p>
+</div>
+      
+    </div>
+  
+  
+  
+    <div class="footer-items__end">
+      
+        <div class="footer-item">
+<p class="theme-version">
+  Built with the <a href="https://pydata-sphinx-theme.readthedocs.io/en/stable/index.html">PyData Sphinx Theme</a> 0.15.4.
+</p></div>
+      
+    </div>
+  
+</div>
+
+  </footer>
+  <script type="application/ld+json">
+    {
+       "@context": "https://schema.org",
+       "@type": "Article",
+       "name": "Working with Computer Vision Models",
+       "headline": "Working with Computer Vision Models",
+       "description": "PyTorch Documentation. Explore PyTorch, an open-source machine learning library that accelerates the path from research prototyping to production deployment.",
+       "url": "/working-with-cv-models.html",
+       "articleBody": "Working with Computer Vision Models# Computer vision deployments depend on the boundary between the app and the exported program being precise. Before exporting, write down the tensor contract that your app will satisfy: input shape, including whether the model expects NCHW ([batch, channels, height, width]) or NHWC ([batch, height, width, channels]) input dtype, such as float32 normalized image values or uint8 image bytes color channel order, such as RGB or BGR resize, crop, and normalization rules output tensors and the post-processing expected for each task ExecuTorch runs the graph that you export. It does not infer image layout, resize policy, label mappings, or task-specific post-processing from the model file. Choose where preprocessing runs# Treat preprocessing placement as part of the backend contract. Keep platform-dependent image work, such as decoding, orientation handling, resizing, cropping, and UI-driven transforms, in the app. Put tensor-only preprocessing in the exported graph when matching the PyTorch reference exactly is more important and the operations are supported by the target backend. For Core ML deployments, fixed-shape model inputs are often preferable. The Core ML backend documentation notes that true dynamic shapes use RangeDim and fall back to CPU or GPU instead of the Apple Neural Engine (ANE). When targeting the ANE, resize or crop images with iOS image APIs before tensor creation, or use enumerated shapes when the model needs a finite set of input sizes. See Partitioner API for details. This example accepts already resized and cropped float32 NCHW RGB input in [0, 1], normalizes it, and then calls the image classifier. import torch from torch import nn class ImageClassifierWithNormalization(nn.Module): def __init__(self, model: nn.Module) -\u003e None: super().__init__() self.model = model self.register_buffer( \"mean\", torch.tensor([0.485, 0.456, 0.406], dtype=torch.float32).view(1, 3, 1, 1), ) self.register_buffer( \"std\", torch.tensor([0.229, 0.224, 0.225], dtype=torch.float32).view(1, 3, 1, 1), ) def forward(self, image: torch.Tensor) -\u003e torch.Tensor: image = (image - self.mean) / self.std return self.model(image) wrapped_model = ImageClassifierWithNormalization(model).eval() sample_inputs = (torch.zeros(1, 3, 224, 224, dtype=torch.float32),) exported_program = torch.export.export(wrapped_model, sample_inputs) Validate app-side preprocessing against the same PyTorch preprocessing used during export. For example, if the app resizes and crops before creating the tensor, keep a small reference test that compares the packed tensor or final model output with the PyTorch path. If the model expects a crop after resizing, keep that policy in exactly one place. A fixed center crop can be implemented in the wrapper for backends where those tensor operations preserve the desired delegation. Camera- or UI-dependent crops, and iOS/Core ML paths that should keep ANE-friendly static shapes, are usually better handled before packing pixels into the input tensor. Convert images to tensors in app code# Most mobile image APIs expose decoded pixels as interleaved rows. Most PyTorch vision models expect channels-first tensors. If preprocessing stays in the app, explicitly pack pixels into the model\u2019s expected layout. Android# For production Android preprocessing, handle decoding, EXIF orientation, and camera-specific transforms before packing pixels into the input tensor. The following Kotlin helper keeps the layout conversion explicit: it resizes a Bitmap, reads RGB pixels, applies ImageNet-style normalization, and packs the result as NCHW float32 data for Tensor.fromBlob. import android.graphics.Bitmap import org.pytorch.executorch.Tensor fun bitmapToNchwTensor( bitmap: Bitmap, size: Int, mean: FloatArray = floatArrayOf(0.485f, 0.456f, 0.406f), std: FloatArray = floatArrayOf(0.229f, 0.224f, 0.225f) ): Tensor { val resized = Bitmap.createScaledBitmap(bitmap, size, size, true) val pixels = IntArray(size * size) resized.getPixels(pixels, 0, size, 0, 0, size, size) val input = FloatArray(3 * size * size) for (i in pixels.indices) { val pixel = pixels[i] val r = ((pixel shr 16) and 0xff) / 255.0f val g = ((pixel shr 8) and 0xff) / 255.0f val b = (pixel and 0xff) / 255.0f input[i] = (r - mean[0]) / std[0] input[size * size + i] = (g - mean[1]) / std[1] input[2 * size * size + i] = (b - mean[2]) / std[2] } return Tensor.fromBlob(input, longArrayOf(1, 3, size.toLong(), size.toLong())) } If the exported model accepts uint8 image bytes instead, use Tensor.fromBlobUnsigned(...) and keep dtype conversion inside the exported graph. val inputBytes = ByteArray(3 * width * height) // Pack bytes in the same layout expected by the model. For NCHW RGB, // write all red values, then green values, then blue values. val inputTensor = Tensor.fromBlobUnsigned( inputBytes, longArrayOf(1, 3, height.toLong(), width.toLong()) ) iOS# For production iOS preprocessing, prefer platform image APIs and Accelerate, such as vImage for resizing and color conversion and vDSP for normalization, especially for camera frames or other hot paths. The following Swift helper keeps the layout conversion explicit so the tensor contract is easy to inspect: it draws a UIImage into a fixed-size RGB buffer, uses vDSP to normalize RGB channels, and creates a channels-first Tensor\u003cFloat\u003e. import Accelerate import CoreGraphics import ExecuTorch import UIKit func imageToNchwTensor( _ image: UIImage, size: Int, mean: [Float] = [0.485, 0.456, 0.406], std: [Float] = [0.229, 0.224, 0.225] ) -\u003e Tensor\u003cFloat\u003e? { guard size \u003e 0, mean.count == 3, std.count == 3, let cgImage = image.cgImage else { return nil } let pixelCount = size * size var rgba = [UInt8](repeating: 0, count: pixelCount * 4) let colorSpace = CGColorSpaceCreateDeviceRGB() let didDraw = rgba.withUnsafeMutableBytes { buffer -\u003e Bool in guard let baseAddress = buffer.baseAddress, let context = CGContext( data: baseAddress, width: size, height: size, bitsPerComponent: 8, bytesPerRow: size * 4, space: colorSpace, bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue | CGBitmapInfo.byteOrder32Big.rawValue ) else { return false } context.draw(cgImage, in: CGRect(x: 0, y: 0, width: size, height: size)) return true } guard didDraw else { return nil } let count = vDSP_Length(pixelCount) var input = [Float](repeating: 0, count: 3 * pixelCount) rgba.withUnsafeBufferPointer { rgbaBuffer in input.withUnsafeMutableBufferPointer { inputBuffer in guard let rgbaBase = rgbaBuffer.baseAddress, let inputBase = inputBuffer.baseAddress else { return } for channel in 0..\u003c3 { let source = rgbaBase.advanced(by: channel) let destination = inputBase.advanced(by: channel * pixelCount) var scale = 1.0 / (255.0 * std[channel]) var bias = -mean[channel] / std[channel] vDSP_vfltu8(source, 4, destination, 1, count) vDSP_vsmsa(destination, 1, \u0026scale, \u0026bias, destination, 1, count) } } } return Tensor\u003cFloat\u003e(input, shape: [1, 3, size, size]) } On either platform, if your model is exported for NHWC, keep the same decoded pixels but pack them in row-major [height, width, channels] order and use shape [1, height, width, 3]. Decode common CV outputs# Output tensors are model-specific. Preserve the output schema used during export and keep a small validation test that compares app-side post-processing with PyTorch post-processing. For TorchVision models, check the models and pre-trained weights documentation for model-specific transforms, categories, and task conventions. Image classification# Image classifiers commonly return a logits tensor with shape [1, num_classes]. For top-1 classification, find the largest logit and map the index through the same labels file used during training or evaluation. import org.pytorch.executorch.EValue val output = module.forward(EValue.from(inputTensor))[0].toTensor() val logits = output.dataAsFloatArray var topIndex = 0 for (i in 1 until logits.size) { if (logits[i] \u003e logits[topIndex]) { topIndex = i } } val topScore = logits[topIndex] Use softmax only when the UI needs probabilities. Ranking classes by logits and by softmax probabilities gives the same order. Semantic segmentation# Semantic segmentation models commonly return class scores with shape [1, classes, height, width]. For each output pixel, choose the class channel with the largest score, then resize the mask back to the displayed image size if needed. fun argmaxMask(scores: FloatArray, classes: Int, height: Int, width: Int): IntArray { val mask = IntArray(height * width) for (y in 0 until height) { for (x in 0 until width) { val offset = y * width + x var bestClass = 0 var bestScore = scores[offset] for (c in 1 until classes) { val score = scores[c * height * width + offset] if (score \u003e bestScore) { bestScore = score bestClass = c } } mask[offset] = bestClass } } return mask } See the DeepLabV3 Android demo for an end-to-end ExecuTorch segmentation app that exports a model, runs it on Android, and overlays the predicted mask on an image. Object detection and instance segmentation# Detection and instance segmentation models do not have a single universal output format. Common patterns include: boxes as [num_detections, 4], usually in xyxy or xywh coordinates labels as [num_detections] scores as [num_detections] masks as [num_detections, height, width] or [num_detections, 1, height, width] Check whether thresholding, non-maximum suppression, box decoding, and mask resizing are already part of the exported graph. If they are not, keep those steps in the app and document the expected coordinate system. When the model runs on a resized or cropped image, map boxes and masks back to the original image coordinates before rendering overlays. Validate the model and app contract# Before shipping a CV model, validate these items: The app sends the same dtype, shape, layout, color order, and normalization that the exported graph expects. The app uses the same labels, palette, score threshold, and coordinate convention as the PyTorch reference. A known image produces matching top classes, masks, or detections in PyTorch and in the ExecuTorch app. The preprocessing is applied exactly once. Do not normalize in both the app and the exported model. The output code handles model-specific shapes instead of assuming all CV models return classifier logits. For the basic export and runtime flow, start with Getting Started with ExecuTorch. For mobile runtime integration, see Using ExecuTorch on Android and Using ExecuTorch on iOS.",
+       "author": {
+         "@type": "Organization",
+         "name": "PyTorch Contributors",
+         "url": "https://pytorch.org"
+       },
+       "image": "https://pytorch.org/docs/stable/_static/img/pytorch_seo.png",
+       "mainEntityOfPage": {
+         "@type": "WebPage",
+         "@id": "/working-with-cv-models.html"
+       },
+       "datePublished": "2023-01-01T00:00:00Z",
+       "dateModified": "2023-01-01T00:00:00Z"
+     }
+ </script>
+  <script>
+    // Tutorials Call to action event tracking
+    $("[data-behavior='call-to-action-event']").on('click', function () {
+      fbq('trackCustom', "Download", {
+        tutorialTitle: $('h1:first').text(),
+        downloadLink: this.href,
+        tutorialLink: window.location.href,
+        downloadTitle: $(this).attr("data-response")
+      });
+      if (typeof gtag === 'function') {
+        gtag('event', 'click', {
+          'event_category': $(this).attr("data-response"),
+          'event_label': $("h1").first().text(),
+          'tutorial_link': window.location.href
+        });
+      }
+    });
+  </script>
+  
+  </body>
+</html>
