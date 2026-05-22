@@ -62,6 +62,8 @@ _torch_to_numpy_dtype_dict = {
     torch.int16: np.int16,
     torch.int32: np.int32,
     torch.int64: np.int64,
+    torch.float8_e4m3fn: np.uint8,
+    torch.float8_e5m2: np.uint8,
     torch.float16: np.float16,
     torch.float32: np.float32,
     torch.float64: np.float64,
@@ -190,6 +192,10 @@ def torch_tensor_to_numpy(tensor: torch.Tensor) -> np.ndarray:
     if tensor.dtype == torch.bfloat16:
         # Numpy doesn't support bfloat16, use, uint16 instead. Dtype is inferred from model anyways.
         tensor = tensor.view(torch.uint16)
+    elif tensor.dtype == torch.float8_e4m3fn:
+        tensor = tensor.view(torch.uint8)
+    elif tensor.dtype == torch.float8_e5m2:
+        tensor = tensor.view(torch.uint8)
     return tensor.numpy()
 
 
