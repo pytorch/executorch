@@ -15,4 +15,3 @@ from .gemma4_attention import (  # noqa: F401
 from .gemma4_config import Gemma4Config  # noqa: F401
 from .gemma4_decoder_layer import Gemma4MLP  # noqa: F401
 from .gemma4_model import create_gemma4_model, Gemma4Model  # noqa: F401
-from .gemma4_norm import RMSNorm, RMSNormNoWeight  # noqa: F401
