@@ -20,6 +20,7 @@ namespace extension {
 namespace ET_MODULE_NAMESPACE {
 
 using ET_MERGED_DATA_MAP_NAMESPACE::MergedDataMap;
+using ET_RUNTIME_NAMESPACE::Kernel;
 using ET_RUNTIME_NAMESPACE::MethodMeta;
 using ET_RUNTIME_NAMESPACE::Program;
 
@@ -203,8 +204,49 @@ runtime::Error Module::load(const Program::Verification verification) {
 runtime::Error Module::load(
     const LoadBackendOptionsMap& backend_options,
     const Program::Verification verification) {
-  backend_options_ = &backend_options;
-  return load_internal(verification);
+  // load_internal does not read backend options, so run it first; on
+  // failure we skip the deep-copy work entirely and leave the prior
+  // installed options (if any) in place.
+  ET_CHECK_OK_OR_RETURN_ERROR(load_internal(verification));
+
+  // Deep-copy the input into local storage so the Module owns the
+  // BackendOption arrays for the lifetime of any methods loaded with
+  // these options. Build BOTH the storage and the map in locals so any
+  // mid-loop failure (or exception from emplace) leaves the prior
+  // installed state untouched -- the two members are only committed
+  // together at the end on full success.
+  //
+  // local_storage is reserve()'d up front, so emplace_back() never
+  // reallocates the outer buffer and the inner vectors keep stable
+  // addresses while we build local_map. The final move of
+  // local_storage into backend_options_storage_ uses std::vector's
+  // O(1) buffer transfer, so the heap buffers that local_map's spans
+  // point into remain valid after the move; the static_assert documents
+  // the inner-vector property we rely on for that span stability.
+  static_assert(
+      std::is_nothrow_move_constructible_v<std::vector<runtime::BackendOption>>,
+      "Moving local_storage must not move-construct the inner vectors; "
+      "local_map's spans reference their heap buffers.");
+
+  std::vector<std::vector<runtime::BackendOption>> local_storage;
+  local_storage.reserve(backend_options.size());
+  LoadBackendOptionsMap local_map;
+  for (size_t i = 0; i < backend_options.size(); ++i) {
+    const auto entry = backend_options.entry_at(i);
+    local_storage.emplace_back(entry.options.begin(), entry.options.end());
+    auto& owned = local_storage.back();
+    // The input map was already valid, so set_options should not fail
+    // here; assert it loudly rather than leaving partial state behind.
+    ET_CHECK_OK_OR_RETURN_ERROR(local_map.set_options(
+        entry.backend_id,
+        runtime::Span<runtime::BackendOption>(owned.data(), owned.size())));
+  }
+
+  // Single commit point: both members updated together.
+  backend_options_storage_ = std::move(local_storage);
+  backend_options_map_ = std::move(local_map);
+
+  return runtime::Error::Ok;
 }
 
 runtime::Error Module::load_internal(const Program::Verification verification) {
@@ -365,13 +407,17 @@ runtime::Error Module::load_method(
     const std::string& method_name,
     runtime::HierarchicalAllocator* planned_memory,
     torch::executor::EventTracer* event_tracer,
-    const LoadBackendOptionsMap* backend_options) {
+    const LoadBackendOptionsMap* backend_options,
+    std::vector<Kernel> kernel_registry) {
   if (!is_method_loaded(method_name)) {
     ET_CHECK_OK_OR_RETURN_ERROR(load());
 
-    // Use passed backend_options, or fall back to stored one from load()
-    const LoadBackendOptionsMap* effective_backend_options =
-        backend_options ? backend_options : backend_options_;
+    // Use passed backend_options, or fall back to stored ones from load().
+    // An empty stored map behaves identically to nullptr downstream, so we
+    // only forward the stored map when it actually has entries.
+    const LoadBackendOptionsMap* effective_backend_options = backend_options
+        ? backend_options
+        : (backend_options_map_.size() > 0 ? &backend_options_map_ : nullptr);
 
     MethodHolder method_holder;
 
@@ -402,12 +448,16 @@ runtime::Error Module::load_method(
 
     method_holder.memory_manager = std::make_unique<runtime::MemoryManager>(
         memory_allocator_.get(), planned_memory, temp_allocator_.get());
+    method_holder.kernel_registry = std::move(kernel_registry);
     auto res_method = program_->load_method(
         method_name.c_str(),
         method_holder.memory_manager.get(),
         event_tracer ? event_tracer : this->event_tracer(),
         merged_data_map_.get(),
-        effective_backend_options);
+        effective_backend_options,
+        runtime::Span<const Kernel>(
+            method_holder.kernel_registry.data(),
+            method_holder.kernel_registry.size()));
     if (!res_method.ok()) {
       return res_method.error();
     }

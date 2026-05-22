@@ -29,6 +29,9 @@ from executorch.backends.nxp.tests.executors import (
     ToNHWCPreprocess,
 )
 from executorch.backends.nxp.tests.graph_verifier import DetailedGraphVerifier
+from executorch.backends.nxp.tests.model_output_comparator import (
+    NumericalStatsOutputComparator,
+)
 from executorch.backends.nxp.tests.models import AvgPool2dConvModule, AvgPool2dModule
 
 from executorch.backends.nxp.tests.nsys_testing import lower_run_compare
@@ -312,6 +315,23 @@ class TestAvgPool2DNewNeutronFlow:
 
         lower_run_compare(
             model, input_shape, graph_verifier, use_new_flow_neutron_c=True
+        )
+
+    def test__basic_nsys_inference_qat(self, mocker):
+        input_shape = (2, 9, 6, 15)
+        model = AvgPool2dModule(False, 0)
+        comparator = NumericalStatsOutputComparator()
+        graph_verifier = DetailedGraphVerifier(
+            mocker, expected_delegated_ops={AvgPool2D: 1}, expected_non_delegated_ops={}
+        )
+
+        lower_run_compare(
+            model,
+            input_shape,
+            graph_verifier,
+            output_comparator=comparator,
+            use_new_flow_neutron_c=True,
+            use_qat=True,
         )
 
     def test__kernel_size_limit(self, mocker):

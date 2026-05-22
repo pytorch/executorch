@@ -159,18 +159,31 @@ try {
         }
         Write-Host "CUDA version check passed: $actualCudaVersion"
     }
+    $cmakeCudaArgs = @()
+    if (-not [string]::IsNullOrWhiteSpace($env:CUDA_HOME)) {
+        $cudaNvcc = Join-Path -Path $env:CUDA_HOME -ChildPath "bin\nvcc.exe"
+        if (-not (Test-Path -Path $cudaNvcc -PathType Leaf)) {
+            throw "CUDA compiler not found at '$cudaNvcc'"
+        }
+        $env:CUDACXX = $cudaNvcc
+        $cmakeCudaArgs = @(
+            "-T", "cuda=$env:CUDA_HOME",
+            "-DCMAKE_CUDA_COMPILER=$cudaNvcc",
+            "-DCUDAToolkit_ROOT=$env:CUDA_HOME"
+        )
+    }
     Write-Host "::endgroup::"
 
     Write-Host "::group::Build ExecuTorch (CUDA)"
     $numCores = [Math]::Max([Environment]::ProcessorCount - 1, 1)
-    cmake --preset llm-release-cuda
+    cmake --preset llm-release-cuda @cmakeCudaArgs
     cmake --build cmake-out --target install --config Release -j $numCores
     Write-Host "::endgroup::"
 
     Write-Host "::group::Build $runnerTarget"
     Push-Location (Join-Path -Path $executorchRoot -ChildPath "examples\models\$runnerPath")
     try {
-        cmake --preset $runnerPreset
+        cmake --preset $runnerPreset @cmakeCudaArgs
         cmake --build (Join-Path -Path $executorchRoot -ChildPath "cmake-out\examples\models\$runnerPath") --target $runnerTarget --config Release -j $numCores
     }
     finally {

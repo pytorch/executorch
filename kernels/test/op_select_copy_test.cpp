@@ -9,6 +9,7 @@
 #include <executorch/kernels/test/FunctionHeaderWrapper.h> // Declares the operator
 #include <executorch/kernels/test/TestUtil.h>
 #include <executorch/kernels/test/supported_features.h>
+#include <executorch/kernels/test/supported_features_skip.h>
 #include <executorch/runtime/core/exec_aten/exec_aten.h>
 #include <executorch/runtime/core/exec_aten/testing_util/tensor_factory.h>
 #include <executorch/runtime/core/exec_aten/testing_util/tensor_util.h>
@@ -395,9 +396,9 @@ TEST_F(OpSelectCopyIntOutTest, MismatchedDtypesDies) {
 }
 
 TEST_F(OpSelectCopyIntOutTest, OutMatchNumelLackDimAtEndDies) {
-  if (torch::executor::testing::SupportedFeatures::get()->is_aten) {
-    GTEST_SKIP() << "ATen kernel can handle out with mismatched dimensions";
-  }
+  ET_SKIP_IF(
+      torch::executor::testing::SupportedFeatures::get()->is_aten,
+      "ATen kernel can handle out with mismatched dimensions");
   TensorFactory<ScalarType::Int> tf;
   Tensor x = tf.zeros({1, 2, 2, 1});
 
@@ -410,9 +411,9 @@ TEST_F(OpSelectCopyIntOutTest, OutMatchNumelLackDimAtEndDies) {
 }
 
 TEST_F(OpSelectCopyIntOutTest, OutMatchNumelExtraDimAtFrontDies) {
-  if (torch::executor::testing::SupportedFeatures::get()->is_aten) {
-    GTEST_SKIP() << "ATen kernel can handle out with mismatched dimensions";
-  }
+  ET_SKIP_IF(
+      torch::executor::testing::SupportedFeatures::get()->is_aten,
+      "ATen kernel can handle out with mismatched dimensions");
   TensorFactory<ScalarType::Int> tf;
   Tensor x = tf.zeros({2, 2});
 
@@ -425,9 +426,9 @@ TEST_F(OpSelectCopyIntOutTest, OutMatchNumelExtraDimAtFrontDies) {
 }
 
 TEST_F(OpSelectCopyIntOutTest, OutSizeMismatchDimDies) {
-  if (torch::executor::testing::SupportedFeatures::get()->is_aten) {
-    GTEST_SKIP() << "ATen kernel can handle out with mismatched dimensions";
-  }
+  ET_SKIP_IF(
+      torch::executor::testing::SupportedFeatures::get()->is_aten,
+      "ATen kernel can handle out with mismatched dimensions");
   TensorFactory<ScalarType::Int> tf;
 
   Tensor x = tf.zeros({2, 4, 7, 5});
@@ -484,9 +485,9 @@ TEST_F(OpSelectCopyIntOutTest, DynamicShapeUpperBoundSameAsExpected) {
 }
 
 TEST_F(OpSelectCopyIntOutTest, DynamicShapeUpperBoundLargerThanExpected) {
-  if (!torch::executor::testing::SupportedFeatures::get()->output_resize) {
-    GTEST_SKIP() << "Dynamic shape not supported";
-  }
+  ET_SKIP_IF(
+      !torch::executor::testing::SupportedFeatures::get()->output_resize,
+      "Dynamic shape not supported");
   /* %python
   out_args = "{5, 5}, torch::executor::TensorShapeDynamism::DYNAMIC_BOUND"
   %rewrite(unary_op) */
@@ -521,9 +522,9 @@ TEST_F(OpSelectCopyIntOutTest, DynamicShapeUpperBoundLargerThanExpected) {
 }
 
 TEST_F(OpSelectCopyIntOutTest, DynamicShapeUnbound) {
-  if (!torch::executor::testing::SupportedFeatures::get()->output_resize) {
-    GTEST_SKIP() << "Dynamic shape not supported";
-  }
+  ET_SKIP_IF(
+      !torch::executor::testing::SupportedFeatures::get()->output_resize,
+      "Dynamic shape not supported");
   /* %python
   out_args = "{1, 1}, torch::executor::TensorShapeDynamism::DYNAMIC_UNBOUND"
   %rewrite(unary_op) */
