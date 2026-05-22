@@ -63,26 +63,29 @@ jobs:
             ${{ inputs.xnnpack && '--xnnpack --verbose-xnnpack' || '' }} \
             ${{ inputs.quantize && '--quantize' || '' }}
 
-          # Generate markdown table from riscv_test/${{ inputs.model }}_riscv.etdump.json, sorted by sum_ms
-          (
-            etdump_json="riscv_test/${{ inputs.model }}_riscv.etdump.json"
-            echo "### Model=${{ inputs.model }} XNNPACK=${{ inputs.xnnpack }} Quantize=${{ inputs.quantize }} QEMU_CPU='${QEMU_CPU}'"
-            jq -r '
-              def r3: (. * 1000 | round) / 1000;
-              ["Section","Op","Count","Sum (ms)","Avg (ms)","Max (ms)","Microkernels"],
-              ["---","---","---","---","---","---","---"],
-              ( [ (.ops[]       | . + {section: "ops"}),
-                  (.framework[] | . + {section: "framework"}) ]
-                | sort_by(-.sum_ms) | .[]
-                | [.section, .op, .count, (.sum_ms|r3), (.avg_ms|r3), (.max_ms|r3), ((.kernels // []) | join(", "))] )
-              | "| " + (map(tostring) | join(" | ")) + " |"
-            ' "${etdump_json}"
-            echo
-            echo "<details><summary>Registered XNNPACK microkernels</summary>"
-            echo
-            jq -r '.registered_kernels[] | "- `" + . + "`"' "${etdump_json}"
-            echo
-            echo "</details>"
-            echo
-          ) >> $GITHUB_STEP_SUMMARY
+          # We only generate riscv_test/${{ inputs.model }}_riscv.etdump.json from `--verbose-xnnpack`.
+          if ${{ inputs.xnnpack }}; then
+            # Generate markdown table from riscv_test/${{ inputs.model }}_riscv.etdump.json, sorted by sum_ms
+            (
+              etdump_json="riscv_test/${{ inputs.model }}_riscv.etdump.json"
+              echo "### Model=${{ inputs.model }} XNNPACK=${{ inputs.xnnpack }} Quantize=${{ inputs.quantize }} QEMU_CPU='${QEMU_CPU}'"
+              jq -r '
+                def r3: (. * 1000 | round) / 1000;
+                ["Section","Op","Count","Sum (ms)","Avg (ms)","Max (ms)","Microkernels"],
+                ["---","---","---","---","---","---","---"],
+                ( [ (.ops[]       | . + {section: "ops"}),
+                    (.framework[] | . + {section: "framework"}) ]
+                  | sort_by(-.sum_ms) | .[]
+                  | [.section, .op, .count, (.sum_ms|r3), (.avg_ms|r3), (.max_ms|r3), ((.kernels // []) | join(", "))] )
+                | "| " + (map(tostring) | join(" | ")) + " |"
+              ' "${etdump_json}"
+              echo
+              echo "<details><summary>Registered XNNPACK microkernels</summary>"
+              echo
+              jq -r '.registered_kernels[] | "- `" + . + "`"' "${etdump_json}"
+              echo
+              echo "</details>"
+              echo
+            ) >> $GITHUB_STEP_SUMMARY
+          fi
         done
