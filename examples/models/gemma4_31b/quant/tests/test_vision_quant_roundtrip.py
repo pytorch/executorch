@@ -49,12 +49,6 @@ _REPO_ROOT = "/home/gasoonjia/executorch"
 if _REPO_ROOT not in sys.path:
     sys.path.insert(0, _REPO_ROOT)
 
-from executorch.examples.models.gemma4_31b.vision_tower import (  # noqa: E402
-    Gemma4_31BVisionTower,
-    Gemma4VisionConfig,
-    hf_vision_key_map,
-    hf_vision_per_layer_key_map,
-)
 from executorch.examples.models.gemma4_31b.model import (  # noqa: E402
     Gemma4_31B,
     Gemma4_31BConfig,
@@ -65,7 +59,12 @@ from executorch.examples.models.gemma4_31b.quant.pack_vision_cuda import (  # no
     install_int8_pe_dispatch,
     quantize_vision_position_table,
 )
-from safetensors import safe_open  # noqa: E402
+from executorch.examples.models.gemma4_31b.vision_tower import (  # noqa: E402
+    Gemma4_31BVisionTower,
+    Gemma4VisionConfig,
+    hf_vision_key_map,
+    hf_vision_per_layer_key_map,
+)
 from safetensors.torch import save_file  # noqa: E402
 from torchao.prototype.safetensors.safetensors_support import (  # noqa: E402
     flatten_tensor_state_dict,
@@ -447,11 +446,6 @@ def test_pe_int8_quantize_and_install_roundtrip():
     pe._pet_int8 = state["vision_tower.patch_embedder._pet_int8"].clone()
     pe._pet_scale = state["vision_tower.patch_embedder._pet_scale"].clone()
     # Load the rest via load_state_dict (skip _pet_* — we already set them).
-    rest = {
-        k.removeprefix("vision_tower.").removeprefix("embed_vision."): v
-        for k, v in state.items()
-        if not k.endswith("._pet_int8") and not k.endswith("._pet_scale")
-    }
     # Build with our nested keys ("vision_tower.X" / "embed_vision.X")
     nested = {
         k: v

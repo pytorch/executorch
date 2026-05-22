@@ -50,15 +50,14 @@ from executorch.examples.models.gemma4.text_decoder import (
     Gemma4KVCache,
     Gemma4MLP,
 )
+from executorch.examples.models.gemma4_31b.sampler import sample
 from executorch.examples.models.gemma4_31b.vision_tower import (
-    Gemma4_31BVisionTower,
     Gemma4MultimodalEmbedder,
     Gemma4VisionConfig,
     Gemma4VisionTower,
     hf_vision_key_map,
     hf_vision_per_layer_key_map,
 )
-from executorch.examples.models.gemma4_31b.sampler import sample
 from torch.nn import functional as F
 
 

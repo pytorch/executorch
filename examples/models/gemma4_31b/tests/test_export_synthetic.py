@@ -41,19 +41,17 @@ Run from the executorch repo root with the ``et`` conda env::
 
 from __future__ import annotations
 
-import gc
 import os
 import tempfile
 
-import pytest
 import torch
-from executorch.examples.models.gemma4_31b.vision_tower import Gemma4VisionConfig
 
 from executorch.examples.models.gemma4_31b.model import (
     Gemma4_31B,
     Gemma4_31BConfig,
     materialize_runtime_buffers,
 )
+from executorch.examples.models.gemma4_31b.vision_tower import Gemma4VisionConfig
 
 
 _EXPECTED_METHODS = {"embed_text", "vision_encoder", "prefill", "decode"}

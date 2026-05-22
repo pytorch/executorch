@@ -61,9 +61,7 @@ For a fp32 reference run:
 from __future__ import annotations
 
 import json
-import os
-from dataclasses import dataclass, field
-from typing import Optional
+from dataclasses import dataclass
 
 import torch
 import torch.nn as nn
