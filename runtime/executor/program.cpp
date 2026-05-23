@@ -64,7 +64,10 @@ Result<executorch_flatbuffer::ExecutionPlan*> get_execution_plan(
       return plan;
     }
   }
-  ET_LOG(Error, "No method named '%s' in program", method_name);
+  ET_LOG(
+      Error,
+      "No method named '%s' in program. The requested method was not found in the loaded program; verify the method name spelling and that the program was exported with this method included. [bloaty-ci-verify-string]",
+      method_name);
   return Error::InvalidArgument;
 }
 
