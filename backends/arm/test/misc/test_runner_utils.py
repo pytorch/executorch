@@ -77,3 +77,39 @@ def test_run_corstone_uses_short_input_aliases_in_semihosting_cmd(
     assert "-i i1.bin" in semihosting_cmd_arg
     assert long_input_paths[0] not in semihosting_cmd_arg
     assert long_input_paths[1] not in semihosting_cmd_arg
+
+
+def test_get_elf_path_uses_repo_root_candidates(monkeypatch, tmp_path: Path) -> None:
+    elf_path = (
+        tmp_path
+        / "arm_test"
+        / "arm_semihosting_executor_runner_corstone-300"
+        / "arm_executor_runner"
+    )
+    elf_path.parent.mkdir(parents=True)
+    elf_path.write_bytes(b"")
+
+    monkeypatch.setattr(runner_utils, "_elf_search_roots", lambda: [tmp_path])
+    other_cwd = tmp_path / "elsewhere"
+    other_cwd.mkdir()
+    monkeypatch.chdir(other_cwd)
+
+    assert runner_utils.get_elf_path("corstone-300") == str(elf_path)
+
+
+def test_get_elf_path_accepts_nested_runner_output(monkeypatch, tmp_path: Path) -> None:
+    elf_path = (
+        tmp_path
+        / "arm_test"
+        / "arm_semihosting_executor_runner_corstone-300"
+        / "examples"
+        / "arm"
+        / "executor_runner"
+        / "arm_executor_runner"
+    )
+    elf_path.parent.mkdir(parents=True)
+    elf_path.write_bytes(b"")
+
+    monkeypatch.setattr(runner_utils, "_elf_search_roots", lambda: [tmp_path])
+
+    assert runner_utils.get_elf_path("corstone-300") == str(elf_path)

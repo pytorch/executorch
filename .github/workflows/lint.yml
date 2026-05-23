@@ -46,7 +46,7 @@ jobs:
       - name: Install dependencies
         run: |
           pip install torch --index-url https://download.pytorch.org/whl/cpu
-          pip install lintrunner==0.12.7 lintrunner-adapters==0.13.0
+          pip install lintrunner==0.12.7 lintrunner-adapters==0.14.0
           pip install -r requirements-lintrunner.txt
           USE_CPP=0 pip install --no-build-isolation third-party/ao
           pip install pytest numpy parameterized huggingface_hub transformers timm expecttest types-requests
@@ -93,7 +93,7 @@ jobs:
 
       - name: Install lintrunner and linters
         run: |
-          pip install lintrunner==0.12.7 lintrunner-adapters==0.13.0
+          pip install lintrunner==0.12.7 lintrunner-adapters==0.14.0
           pip install -r requirements-lintrunner.txt
           lintrunner init
 

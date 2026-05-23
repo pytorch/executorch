@@ -181,6 +181,7 @@ class ModelArgs:
     use_residual_gate: bool = False
     use_ffn_learnable_scales: bool = False
     output_soft_cap_temp: Optional[float] = None
+    output_linear_intermediate_dim: int = 0
 
     def __post_init__(self):  # noqa: C901
         if self.n_kv_heads is None:
