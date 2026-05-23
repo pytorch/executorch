@@ -3,11 +3,12 @@
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
 
-"""AOT export for the RISC-V smoke test.
+"""AOT export for the RISC-V smoke tests.
 
-Exports a small model to a BundledProgram (.bpte) that the portable
-executor_runner can load on a riscv64 target and verify against the embedded
-reference output, emitting ``Test_result: PASS`` on success.
+Exports the model selected by ``--model`` to a BundledProgram (.bpte) that
+either ``executor_runner`` (linux) or ``executor_runner_baremetal`` (qemu
+virt + semihosting) consumes. The bundled-IO comparison path inside the
+runner emits ``Test_result: PASS`` per testset, which is what run.sh greps.
 """
 
 import argparse
@@ -171,9 +172,19 @@ def main() -> None:
         help="Output .bpte path (default: <model>_riscv.bpte)",
     )
     parser.add_argument(
-        "--xnnpack",
-        action="store_true",
-        help="Lower through the XNNPACK partitioner",
+        "--backend",
+        choices=("portable", "xnnpack"),
+        default="portable",
+        help="AOT backend: 'portable' runs everything on the portable kernels, "
+        "'xnnpack' adds the XNNPACK partitioner (default: portable)",
+    )
+    parser.add_argument(
+        "--os",
+        choices=("linux", "baremetal"),
+        default="linux",
+        help="Target OS for the runner that will consume this .bpte. The .bpte "
+        "itself is OS-independent; the flag is logged so callers can verify "
+        "the AOT/runtime sides agree (default: linux)",
     )
     parser.add_argument(
         "--quantize",
@@ -186,6 +197,13 @@ def main() -> None:
         help="Enable XNNPACK partitioner DEBUG logging and dump the lowered graph",
     )
     args = parser.parse_args()
+
+    if args.debug_xnnpack and args.backend != "xnnpack":
+        parser.error("--debug-xnnpack requires --backend=xnnpack")
+
+    # xnnpack pulls in pthreads + dynamic loading; baremetal runner doesn't have those.
+    if args.os == "baremetal" and args.backend == "xnnpack":
+        parser.error("--backend=xnnpack is not supported on --os=baremetal")
 
     if args.debug_xnnpack:
         logging.basicConfig(level=logging.DEBUG)
@@ -209,7 +227,7 @@ def main() -> None:
 
     exported = export(model, example_inputs, strict=strict)
     partitioners = []
-    if args.xnnpack:
+    if args.backend == "xnnpack":
         from executorch.backends.xnnpack.partition.xnnpack_partitioner import (
             XnnpackPartitioner,
         )
@@ -223,7 +241,9 @@ def main() -> None:
         compile_config = EdgeCompileConfig(_check_ir_validity=False)
 
     edge = to_edge_transform_and_lower(
-        exported, partitioner=partitioners, compile_config=compile_config
+        exported,
+        partitioner=partitioners,
+        compile_config=compile_config,
     )
     delegated = sum(
         1
@@ -231,7 +251,7 @@ def main() -> None:
         if n.op == "call_function" and "call_delegate" in str(n.target)
     )
     print(
-        f"[aot_riscv] model={args.model} xnnpack={args.xnnpack} "
+        f"[aot_riscv] model={args.model} backend={args.backend} os={args.os} "
         f"quantize={args.quantize} delegated_nodes={delegated}"
     )
 

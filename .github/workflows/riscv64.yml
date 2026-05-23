@@ -10,8 +10,9 @@ on:
   pull_request:
     paths:
       - .github/workflows/riscv64.yml
+      - .github/workflows/_test_riscv.yml
       - .ci/scripts/test_riscv_qemu.sh
-      - tools/cmake/preset/riscv64_linux.cmake
+      - tools/cmake/preset/riscv64_*.cmake
       - examples/riscv/**
   workflow_dispatch:
   schedule:
@@ -35,33 +36,42 @@ jobs:
           - llama2
           - resnet18
           - yolo26
-        xnnpack: [true, false]
         quantize: [true, false]
+        backend: [portable, xnnpack]
+        os: [linux, baremetal]
+        arch: [rv64, rv32]
         exclude:
-          # We only enable quantization with XNNPACK
-          - xnnpack: false
-            quantize: true
-          # We don't test quantization for Yolo26
-          - model: yolo26
-            quantize: true
+          # Disable quantization testing with Portable Kernels
+          - { backend: portable, quantize: true }
+          # XNNPACK needs pthreads + dynamic loading (no baremetal)
+          - { backend: xnnpack, os: baremetal }
+          # No quantization recipe for Yolo26.
+          - { model: yolo26, quantize: true }
+          # No riscv32-linux-gnu cross is packaged on Ubuntu.
+          - { os: linux, arch: rv32 }
     permissions:
       id-token: write
       contents: read
     with:
       model: ${{ matrix.model }}
-      xnnpack: ${{ matrix.xnnpack }}
       quantize: ${{ matrix.quantize }}
-      # If XNNPACK, test with multiple RVV length, disabled otherwise
-      qemu-cpu: >-
+      backend: ${{ matrix.backend }}
+      os: ${{ matrix.os }}
+      arch: ${{ matrix.arch }}
+      # JSON array of QEMU -cpu *extension* strings (no rv32/rv64 prefix - that
+      # comes from `arch`). The script splices them as `<arch>,<ext>`. xnnpack
+      # benefits from RVV so it sweeps multiple vlen; everything else just uses
+      # the plain base ISA.
+      qemu-cpu-ext: >-
         ${{
           case(
-            matrix.xnnpack, '[
-              "rv64,zba=true,zbb=true,zbs=true,v=true,vlen=128,elen=64,vext_spec=v1.0",
-              "rv64,zba=true,zbb=true,zbs=true,v=true,vlen=256,elen=64,vext_spec=v1.0",
-              "rv64,zba=true,zbb=true,zbs=true,v=true,vlen=512,elen=64,vext_spec=v1.0"
+            matrix.backend == 'xnnpack', '[
+              "v=true,vext_spec=v1.0,vlen=128",
+              "v=true,vext_spec=v1.0,vlen=256",
+              "v=true,vext_spec=v1.0,vlen=512"
             ]',
             '[
-              "rv64,zba=true,zbb=true,zbs=true,v=false"
+              "v=false"
             ]'
           )
         }}

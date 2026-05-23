@@ -8,7 +8,7 @@
 # - gcc/g++/binutils for riscv64-linux-gnu (cross-compiler + sysroot)
 # - qemu-user-static (qemu-riscv64 user-mode emulator)
 
-set -eu
+set -euo pipefail
 
 script_dir=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" &> /dev/null && pwd)
 
@@ -20,6 +20,13 @@ fi
 SUDO=""
 if [[ $EUID -ne 0 ]]; then
     SUDO="sudo"
+fi
+
+source /etc/os-release
+
+GCC_VERSION=""
+if [[ "${VERSION_ID:-}" == "24.04" ]]; then
+    GCC_VERSION="14"
 fi
 
 ${SUDO} apt-get update
@@ -44,7 +51,7 @@ if [[ -n "${GCC_VERSION+x}" ]]; then
 fi
 
 riscv64-linux-gnu-gcc --version | head -n1
-qemu-riscv64-static --version | head -n1
+qemu-riscv64 --version | head -n1
 
 # Some python packages also need to be installed
 pip install -r "${script_dir}/requirements.txt"
