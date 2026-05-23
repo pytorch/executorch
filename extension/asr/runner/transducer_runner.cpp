@@ -200,7 +200,7 @@ Error TransducerRunner::load() {
   return Error::Ok;
 }
 
-Result<::executorch::extension::TensorPtr> TransducerRunner::preprocess(
+Result<PreprocessResult> TransducerRunner::preprocess(
     ::executorch::extension::TensorPtr raw_audio) {
   if (!is_loaded()) {
     ET_CHECK_OK_OR_RETURN_ERROR(load());
@@ -229,12 +229,18 @@ Result<::executorch::extension::TensorPtr> TransducerRunner::preprocess(
       "Preprocessor returned unexpected output.");
 
   auto mel = outputs[0].toTensor();
-  return std::make_shared<::executorch::aten::Tensor>(std::move(mel));
+  int64_t mel_len = mel.sizes()[1]; // default to tensor dim
+  if (outputs.size() >= 2 && outputs[1].isTensor()) {
+    mel_len = outputs[1].toTensor().const_data_ptr<int64_t>()[0];
+  }
+  return PreprocessResult{
+      std::make_shared<::executorch::aten::Tensor>(std::move(mel)), mel_len};
 }
 
 Result<std::vector<Token>> TransducerRunner::transcribe(
     ::executorch::extension::TensorPtr preprocessed_features,
-    std::function<void(const std::string&)> token_callback) {
+    std::function<void(const std::string&)> token_callback,
+    int64_t features_length) {
   if (!is_loaded()) {
     ET_CHECK_OK_OR_RETURN_ERROR(load());
   }
@@ -242,7 +248,9 @@ Result<std::vector<Token>> TransducerRunner::transcribe(
   stats_.inference_start_ms = ::executorch::extension::llm::time_in_ms();
 
   // --- Encode ---
-  int64_t mel_len_value = preprocessed_features->size(1);
+  // Use provided length, or fall back to tensor dimension
+  int64_t mel_len_value =
+      features_length > 0 ? features_length : preprocessed_features->size(1);
   std::vector<int64_t> mel_len_data = {mel_len_value};
   auto mel_len = ::executorch::extension::from_blob(
       mel_len_data.data(), {1}, ::executorch::aten::ScalarType::Long);
