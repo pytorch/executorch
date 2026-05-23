@@ -28,6 +28,8 @@ class _Op:
 
 
 class _Block:
+    __slots__ = ("operations",)
+
     def __init__(self, ops):
         self.operations = ops
 

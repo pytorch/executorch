@@ -84,12 +84,12 @@ def _ensure_compiled(model_path: str, tmpdir: str) -> str:
             tmpdir, os.path.basename(model_path).replace(".mlpackage", ".mlmodelc")
         )
         return str(ct.models.utils.compile_model(model_path, destination_path=dest))
-    raise ValueError(
-        f"Expected a .mlpackage or .mlmodelc path, got: {model_path}"
-    )
+    raise ValueError(f"Expected a .mlpackage or .mlmodelc path, got: {model_path}")
 
 
-def analyze_one(model_path: str, compute_units: ct.ComputeUnit) -> List[Tuple[str, str, str]]:
+def analyze_one(
+    model_path: str, compute_units: ct.ComputeUnit
+) -> List[Tuple[str, str, str]]:
     """Return [(function, operator_name, device)] for every op that has a plan.
 
     coremltools 9.0's ``MLComputePlan.load_from_path`` only exposes usage for
@@ -130,7 +130,11 @@ def _analyze_compiled(
                     # Constants and similar non-dispatched ops don't have a plan.
                     continue
                 rows.append(
-                    (fname, op.operator_name, _device_name(usage.preferred_compute_device))
+                    (
+                        fname,
+                        op.operator_name,
+                        _device_name(usage.preferred_compute_device),
+                    )
                 )
         return rows
 
@@ -161,7 +165,9 @@ def _project_to_single(src_mlpackage: str, function_name: str, tmpdir: str) -> s
     return dest
 
 
-def _print_report(label: str, rows: List[Tuple[str, str, str]], show_non_ane: bool) -> None:
+def _print_report(
+    label: str, rows: List[Tuple[str, str, str]], show_non_ane: bool
+) -> None:
     print(f"\n=== {label} ===")
     if not rows:
         print("  (no dispatched operations found)")
