@@ -89,6 +89,11 @@ case "${IMAGE_NAME}" in
     OS_VERSION=24.04
     GCC_VERSION=14
     ;;
+  executorch-ubuntu-26.04-gcc15)
+    LINTRUNNER=""
+    OS_VERSION=26.04
+    GCC_VERSION=15
+    ;;
   *)
     echo "Invalid image name ${IMAGE_NAME}"
     exit 1
