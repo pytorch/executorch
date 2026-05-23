@@ -1,0 +1,48 @@
+name: Bloaty size comment
+
+# Triggered by completion of .github/workflows/pull.yml (name: "pull").
+# If pull.yml is renamed, update `workflows:` below.
+
+on:
+  workflow_run:
+    workflows: ["pull"]
+    types: [completed]
+
+permissions:
+  pull-requests: write
+  issues: write
+  contents: read
+  actions: read
+
+jobs:
+  post-comment:
+    if: >
+      github.repository_owner == 'pytorch' &&
+      github.event.workflow_run.event == 'pull_request' &&
+      github.event.workflow_run.conclusion != 'cancelled' &&
+      github.event.workflow_run.conclusion != 'skipped'
+    runs-on: ubuntu-latest
+    concurrency:
+      # workflow_run.pull_requests is empty for fork PRs, so we key on the
+      # head branch identity instead — both pushes to the same PR share it.
+      group: bloaty-comment-${{ github.event.workflow_run.head_repository.full_name }}-${{ github.event.workflow_run.head_branch }}
+      cancel-in-progress: true
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Download bloaty artifacts
+        uses: actions/download-artifact@v4
+        with:
+          pattern: bloaty-arm-*
+          path: bloaty-artifacts
+          run-id: ${{ github.event.workflow_run.id }}
+          github-token: ${{ github.token }}
+
+      - name: Post sticky PR comment
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+          RUN_URL: ${{ github.event.workflow_run.html_url }}
+        run: |
+          python .github/scripts/bloaty_diff.py post \
+            --in-dir bloaty-artifacts \
+            --run-url "${RUN_URL}"

@@ -1,0 +1,45 @@
+# Bloaty custom data source for ExecuTorch binaries.
+#
+# Buckets demangled symbols into ExecuTorch-meaningful groups.
+# Use: `bloaty -c test/bloaty/executorch.bloaty -d executorch <binary>`.
+#
+# `base_data_source: shortsymbols` is load-bearing: bloaty's top-level
+# --demangle does NOT propagate into custom data sources, and shortsymbols
+# is the demangled-name source (it also collapses template instantiations).
+#
+# When new namespaces land in the codebase, anything unmatched falls into
+# `other`. Watch for this on real arm baselines and add rewrites as needed
+# (e.g. `^__aeabi_` -> arm-runtime, `^_(sbrk|write|read)` -> libc).
+
+custom_data_source: {
+  name: "executorch"
+  base_data_source: "shortsymbols"
+
+  rewrite: { pattern: "^executorch::runtime::"     replacement: "runtime" }
+  rewrite: { pattern: "^executorch::extension::"   replacement: "extension" }
+  rewrite: { pattern: "^executorch::backends::"    replacement: "backends" }
+  rewrite: { pattern: "^executorch::vec::"         replacement: "kernels" }
+  rewrite: { pattern: "^executorch::cpublas::"     replacement: "kernels" }
+  rewrite: { pattern: "^torch::executor::native::" replacement: "kernels" }
+  rewrite: { pattern: "^torch::executor::"         replacement: "runtime" }
+  rewrite: { pattern: "^executor::"                replacement: "runtime" }
+  rewrite: { pattern: "^executorch_flatbuffer"     replacement: "flatbuffer" }
+  rewrite: { pattern: "^flatbuffers::"             replacement: "flatbuffer" }
+  rewrite: { pattern: "^tokenizers::"              replacement: "tokenizers" }
+
+  rewrite: { pattern: "^std::"                     replacement: "stdlib" }
+  rewrite: { pattern: "^__gnu_cxx::"               replacement: "stdlib" }
+  rewrite: { pattern: "^__cxxabiv1::"              replacement: "stdlib" }
+
+  rewrite: { pattern: "^_(start|init|fini)$"       replacement: "startup" }
+  rewrite: { pattern: "^__libc_"                   replacement: "libc" }
+  rewrite: { pattern: "^_*memcpy"                  replacement: "libc" }
+  rewrite: { pattern: "^_*memset"                  replacement: "libc" }
+  rewrite: { pattern: "^_*memmove"                 replacement: "libc" }
+  rewrite: { pattern: "^_*malloc"                  replacement: "libc" }
+  rewrite: { pattern: "^_*free"                    replacement: "libc" }
+  rewrite: { pattern: "^_*printf"                  replacement: "libc" }
+  rewrite: { pattern: "^_*sprintf"                 replacement: "libc" }
+
+  rewrite: { pattern: ".*" replacement: "other" }
+}
