@@ -470,8 +470,9 @@ class TOSAQuantizer(Quantizer):
     """Manage quantization annotations for TOSA-compatible backends.
 
     .. warning::
-        Setting ``use_composable_quantizer=True`` enables an experimental API
-        surface that may change without notice.
+        The composable quantizer is now the default implementation. Setting
+        ``use_composable_quantizer=False`` is deprecated and will be removed in
+        two minor releases.
 
     """
 
@@ -483,8 +484,9 @@ class TOSAQuantizer(Quantizer):
         """Create a TOSA quantizer from a TOSA spec or Arm compile spec.
 
         .. warning::
-            Setting ``use_composable_quantizer=True`` enables an experimental
-            API surface that may change without notice.
+            The composable quantizer is now the default implementation.
+            Setting ``use_composable_quantizer=False`` is deprecated and will
+            be removed in two minor releases.
 
         """
         self.use_composable_quantizer = use_composable_quantizer
@@ -496,7 +498,7 @@ class TOSAQuantizer(Quantizer):
             self.quantizer = _TOSAQuantizerV2(compile_spec_or_tosa_spec)
         else:
             logger.info(
-                "Using default quantizer in the arm backend. This quantizer is planned to be replaced by the composable quantizer implementation in the future, see https://github.com/pytorch/executorch/issues/17701"
+                "Using deprecated legacy quantizer implementation in the arm backend. Setting use_composable_quantizer=False will be removed in two minor releases. See https://github.com/pytorch/executorch/issues/17701"
             )
             self.quantizer = _TOSAQuantizerV1(compile_spec_or_tosa_spec)
 
@@ -1239,20 +1241,24 @@ class EthosUQuantizer(TOSAQuantizer):
     """Quantizer supported by the Arm Ethos-U backend.
 
     .. warning::
-        Setting ``use_composable_quantizer=True`` enables an experimental API
-        surface that may change without notice.
+        The composable quantizer is now the default implementation. Setting
+        ``use_composable_quantizer=False`` is deprecated and will be removed in
+        two minor releases.
 
     Args:
         compile_spec (EthosUCompileSpec): Backend compile specification for
             Ethos-U targets.
-        use_composable_quantizer (bool): Whether to use the composable quantizer implementation. See https://github.com/pytorch/executorch/issues/17701" for details.
+        use_composable_quantizer (bool): Whether to use the composable
+            quantizer implementation. Setting this to ``False`` is deprecated
+            and will be removed in two minor releases. See
+            https://github.com/pytorch/executorch/issues/17701 for details.
 
     """
 
     def __init__(
         self,
         compile_spec: EthosUCompileSpec,
-        use_composable_quantizer: bool = False,
+        use_composable_quantizer: bool = True,
     ) -> None:
         super().__init__(compile_spec, use_composable_quantizer)
 
@@ -1261,19 +1267,23 @@ class VgfQuantizer(TOSAQuantizer):
     """Quantizer supported by the Arm Vgf backend.
 
     .. warning::
-        Setting ``use_composable_quantizer=True`` enables an experimental API
-        surface that may change without notice.
+        The composable quantizer is now the default implementation. Setting
+        ``use_composable_quantizer=False`` is deprecated and will be removed in
+        two minor releases.
 
     Args:
         compile_spec (VgfCompileSpec): Backend compile specification for Vgf
             targets.
-        use_composable_quantizer (bool): Whether to use the composable quantizer implementation. See https://github.com/pytorch/executorch/issues/17701" for details.
+        use_composable_quantizer (bool): Whether to use the composable
+            quantizer implementation. Setting this to ``False`` is deprecated
+            and will be removed in two minor releases. See
+            https://github.com/pytorch/executorch/issues/17701 for details.
 
     """
 
     def __init__(
         self,
         compile_spec: VgfCompileSpec,
-        use_composable_quantizer: bool = False,
+        use_composable_quantizer: bool = True,
     ) -> None:
         super().__init__(compile_spec, use_composable_quantizer)
