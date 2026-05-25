@@ -9,6 +9,7 @@
 #include <executorch/kernels/test/FunctionHeaderWrapper.h> // Declares the operator
 #include <executorch/kernels/test/TestUtil.h>
 #include <executorch/kernels/test/supported_features.h>
+#include <executorch/kernels/test/supported_features_skip.h>
 #include <executorch/runtime/core/exec_aten/exec_aten.h>
 #include <executorch/runtime/core/exec_aten/testing_util/tensor_factory.h>
 #include <executorch/runtime/core/exec_aten/testing_util/tensor_util.h>
@@ -216,9 +217,9 @@ TEST_F(OpExpandOutTest, BadOutDataTypeGoodShapeDeath) {
 }
 
 TEST_F(OpExpandOutTest, BadOutShapeGoodDataTypeDeath) {
-  if (torch::executor::testing::SupportedFeatures::get()->is_aten) {
-    GTEST_SKIP() << "ATen kernel can handle this";
-  }
+  ET_SKIP_IF(
+      torch::executor::testing::SupportedFeatures::get()->is_aten,
+      "ATen kernel can handle this");
   TensorFactory<ScalarType::Int> tf;
   Tensor a = tf.make(/*sizes*/ {1, 2}, /*data=*/{42, 96});
   Tensor out = tf.ones({2, 6, 4});
@@ -314,9 +315,9 @@ TEST_F(OpExpandOutTest, ResizedOutput) {
 #endif
 
 TEST_F(OpExpandOutTest, ImplicitTrue) {
-  if (torch::executor::testing::SupportedFeatures::get()->is_aten) {
-    GTEST_SKIP() << "ATen kernel can handle this";
-  }
+  ET_SKIP_IF(
+      torch::executor::testing::SupportedFeatures::get()->is_aten,
+      "ATen kernel can handle this");
   TensorFactory<ScalarType::Int> tf;
   Tensor a = tf.ones({2, 2});
   Tensor out = tf.zeros({2, 2});
@@ -378,9 +379,9 @@ TEST_F(OpExpandOutTest, DynamicShapeUpperBoundSameAsExpected) {
 }
 
 TEST_F(OpExpandOutTest, DynamicShapeUpperBoundLargerThanExpected) {
-  if (!torch::executor::testing::SupportedFeatures::get()->output_resize) {
-    GTEST_SKIP() << "Dynamic shape not supported";
-  }
+  ET_SKIP_IF(
+      !torch::executor::testing::SupportedFeatures::get()->output_resize,
+      "Dynamic shape not supported");
   /* %python
   out_args = "{10, 10, 10}, torch::executor::TensorShapeDynamism::DYNAMIC_BOUND"
   %rewrite(unary_op) */
@@ -418,9 +419,9 @@ TEST_F(OpExpandOutTest, DynamicShapeUpperBoundLargerThanExpected) {
 }
 
 TEST_F(OpExpandOutTest, DynamicShapeUnbound) {
-  if (!torch::executor::testing::SupportedFeatures::get()->output_resize) {
-    GTEST_SKIP() << "Dynamic shape not supported";
-  }
+  ET_SKIP_IF(
+      !torch::executor::testing::SupportedFeatures::get()->output_resize,
+      "Dynamic shape not supported");
   /* %python
   out_args = "{1, 1, 1}, torch::executor::TensorShapeDynamism::DYNAMIC_UNBOUND"
   %rewrite(unary_op) */

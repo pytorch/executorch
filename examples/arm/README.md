@@ -1,3 +1,10 @@
+<!--
+Copyright 2023-2026 Arm Limited and/or its affiliates.
+
+This source code is licensed under the BSD-style license found in the
+LICENSE file in the root directory of this source tree.
+-->
+
 ## ExecuTorch for Arm backends Ethos-U, VGF and Cortex-M
 
 This project contains scripts to help you setup and run a PyTorch
@@ -11,11 +18,18 @@ The main scripts are `setup.sh`, `run.sh` and
 `setup.sh` will install the needed tools and with --root-dir <FOLDER> 
 you can change the path to a scratch folder where it will download and generate build
 artifacts. If supplied, you must also supply the same folder to run.sh with
---scratch-dir=<FOLDER> If not supplied both script will use examples/arm/arm-scratch
+--scratch-dir=<FOLDER> If not supplied both scripts will use examples/arm/arm-scratch.
 
 `run.sh` can be used to build, run and test a model in an easy way and it will call cmake for you
 and in cases you want to run a simulator it will start it also. The script will call `aot_arm_compiler.py`
 to convert a model and include it in the build/run.
+
+For bare-metal Ethos-U builds `run.sh` configures the standalone
+`examples/arm/executor_runner/standalone` CMake entry point automatically. If
+`--build-dir` is omitted, the script creates and owns a build tree under
+`arm_test/<target>_<build_type>`. Supplying `--build-dir` reuses an existing tree
+(for example a VGF host build or out-of-tree configuration) and `run.sh`
+verifies it exposes the runner options it needs before compiling.
 
 Build and test artifacts are by default placed under the folder arm_test folder
 this can be changed with --et_build_root=<FOLDER>
@@ -23,10 +37,6 @@ this can be changed with --et_build_root=<FOLDER>
 `aot_arm_compiler.py` is used to convert a Python model or a saved .pt model to a PTE file and is used by `run.sh`
 and other test script but can also be used directly.
 
-If you prefer to use the ExecuTorch API, there is also the `ethos_u_minimal_example.ipynb` notebook example.
-This shows the workflow if you prefer to integrate a python torch.export and ExecuTorch flow directly into your
-model codebase. This is particularly useful if you want to perform more complex training, such as quantization
-aware training using the ArmQuantizer.
 
 ## Create a PTE file for Arm backends
 
@@ -63,6 +73,16 @@ $ python3 -m backends.arm.scripts.aot_arm_compiler --model_name=mv2 --target=eth
 
 
 `aot_arm_compiler.py` is called from the scripts below so you don't need to, but it can be useful to do by hand in some cases.
+
+## Host VGF example applications
+
+The Arm examples directory also contains host-side VGF reference flows for
+specific tasks:
+
+- `examples/arm/image_classification_example_vgf` for DEiT image
+  classification.
+- `examples/arm/super_resolution_example_vgf` for Swin2SR image
+  super-resolution.
 
 
 ## ExecuTorch on Arm Ethos-U55/U65 and U85

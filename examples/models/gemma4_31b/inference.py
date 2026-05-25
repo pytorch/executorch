@@ -6,12 +6,15 @@
 
 """Eager inference on Gemma 4 31B-IT (CUDA + torch.compile).
 
-Two input paths:
+Three input paths:
   --prequantized <dir>   Load a quantized checkpoint (from quantize_and_save.py).
   --gguf <file>          Load a GGUF file (e.g., Q4_K_M from the community).
+  --bf16 <dir>           Load the bf16 HF safetensors checkpoint via from_hf_checkpoint.
 
-Packs for the target backend (--backend cuda), materializes runtime buffers,
-optionally compiles with ``torch.compile``, and generates text autoregressively.
+Gemma 4 31B-IT is instruction-tuned and requires chat-template formatting.
+The ``--prompt`` is automatically wrapped with the Gemma 4 chat template
+(``<|turn>user\\n{prompt}<turn|>\\n<|turn>model\\n<|channel>thought\\n<channel|>``; BOS is prepended separately).
+Pass ``--raw-prompt`` to skip template wrapping (e.g., for pre-formatted input).
 
 Usage:
     python inference.py \\
@@ -33,7 +36,10 @@ import time
 import torch
 
 from executorch.examples.models.gemma4_31b.export import load_prequantized_model
-from executorch.examples.models.gemma4_31b.model import materialize_runtime_buffers
+from executorch.examples.models.gemma4_31b.model import (
+    Gemma4_31B,
+    materialize_runtime_buffers,
+)
 
 
 def _move_to_cuda(model, config) -> None:
@@ -63,12 +69,24 @@ def _move_to_cuda(model, config) -> None:
     materialize_runtime_buffers(model, dtype=torch.bfloat16, device="cuda")
 
 
+def apply_chat_template(prompt: str) -> str:
+    """Wrap a user prompt in the Gemma 4 IT chat template.
+
+    Does not include BOS — ``generate()`` prepends it at the token-ID level.
+    """
+    return (
+        "<|turn>user\n"
+        + prompt
+        + "<turn|>\n<|turn>model\n<|channel>thought\n<channel|>"
+    )
+
+
 def generate(
     model,
     tokenizer,
     prompt: str,
     max_new_tokens: int = 128,
-    temperature: float = 0.0,
+    temperature: float = 0.8,
     eos_token_ids=None,
     bos_token_id: int = 2,
 ) -> str:
@@ -131,6 +149,11 @@ def main() -> None:
         default=None,
         help="Path to a GGUF file (e.g., gemma-4-31B-it-Q4_K_M.gguf).",
     )
+    src.add_argument(
+        "--bf16",
+        default=None,
+        help="Path to a bf16 hf directory (e.g., gemma-4-31B).",
+    )
     parser.add_argument(
         "--tokenizer-path",
         default=None,
@@ -156,6 +179,11 @@ def main() -> None:
         help="KV cache length to allocate for this run.",
     )
     parser.add_argument(
+        "--raw-prompt",
+        action="store_true",
+        help="Skip chat-template wrapping (use if the prompt is already formatted).",
+    )
+    parser.add_argument(
         "--no-compile",
         action="store_true",
         help="Skip torch.compile (slower, but easier to debug).",
@@ -171,11 +199,33 @@ def main() -> None:
     if args.backend == "cuda" and not torch.cuda.is_available():
         parser.error("CUDA is required for the cuda backend.")
 
+    # ---- Tokenizer ----
+    if args.tokenizer_path:
+        tokenizer_path = args.tokenizer_path
+    elif args.prequantized:
+        tokenizer_path = os.path.join(args.prequantized, "tokenizer.json")
+    elif args.bf16:
+        tokenizer_path = os.path.join(args.bf16, "tokenizer.json")
+    else:
+        parser.error("--tokenizer-path is required with --gguf.")
+    from tokenizers import Tokenizer
+
+    tokenizer = Tokenizer.from_file(tokenizer_path)
+
+    prompt_str = args.prompt if args.raw_prompt else apply_chat_template(args.prompt)
+
+    # Gemma 4 EOS tokens (from generation_config.json: ids 1, 50, 106).
+    eos_token_ids = {1, 50, 106}
+
     if args.gguf:
         from executorch.examples.models.gemma4_31b.gguf_loader import load_gguf_model
 
         model, config = load_gguf_model(
             args.gguf, args.max_seq_len, backend=args.backend
+        )
+    elif args.bf16:
+        model, config = Gemma4_31B.from_hf_checkpoint(
+            args.bf16, max_seq_len=args.max_seq_len
         )
     else:
         print(f"Loading prequantized model from {args.prequantized}...")
@@ -191,19 +241,6 @@ def main() -> None:
         print("Compiling model with torch.compile...")
         model = torch.compile(model, mode="default")
 
-    if args.tokenizer_path:
-        tokenizer_path = args.tokenizer_path
-    elif args.prequantized:
-        tokenizer_path = os.path.join(args.prequantized, "tokenizer.json")
-    else:
-        parser.error("--tokenizer-path is required with --gguf.")
-    from tokenizers import Tokenizer
-
-    tokenizer = Tokenizer.from_file(tokenizer_path)
-
-    # Gemma 4 EOS tokens (from generation_config.json: ids 1, 50, 106).
-    eos_token_ids = {1, 50, 106}
-
     print(f"\nPrompt: {args.prompt}")
     print("-" * 40)
 
@@ -211,7 +248,7 @@ def main() -> None:
     output = generate(
         model,
         tokenizer,
-        args.prompt,
+        prompt_str,
         max_new_tokens=args.max_new_tokens,
         temperature=args.temperature,
         eos_token_ids=eos_token_ids,
