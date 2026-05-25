@@ -16,7 +16,6 @@
 #include <executorch/runtime/core/evalue.h>
 #include <executorch/runtime/executor/pte_data_map.h>
 
-#include <cinttypes>
 #include <memory>
 #include <mutex>
 
@@ -41,13 +40,6 @@ using executorch::runtime::EValue;
 using executorch::runtime::FreeableBuffer;
 using executorch::runtime::Result;
 using executorch::runtime::Span;
-
-// Global mutex for all XNNPACK operations. This is temporary, tracked by
-// T272407942.
-static std::mutex& global_xnnpack_mutex() {
-  static std::mutex m;
-  return m;
-}
 
 class XnnpackBackend final
     : public ::executorch::ET_RUNTIME_NAMESPACE::BackendInterface {
@@ -74,8 +66,6 @@ class XnnpackBackend final
       BackendInitContext& context,
       FreeableBuffer* processed,
       ArrayRef<CompileSpec> compile_specs) const override {
-    const std::lock_guard<std::mutex> global_lock(global_xnnpack_mutex());
-
     auto executor = context.get_runtime_allocator()
                         ->allocateInstance<xnnpack::delegate::XNNExecutor>();
     if (executor == nullptr) {
@@ -139,17 +129,6 @@ class XnnpackBackend final
           Error, "XNNCompiler::compileModel failed: 0x%x", (unsigned int)err);
       return err;
     }
-
-    ET_LOG(
-        Info,
-        "XnnpackBackend::init delegate=%p workspace_id=%" PRIu64
-        " workspace_ptr=%p program_id=0x%" PRIxPTR " weight_cache=%s",
-        (void*)executor,
-        workspace->id(),
-        (void*)workspace_ptr,
-        program_id,
-        use_weight_cache ? "true" : "false");
-
     return executor;
   }
 
@@ -157,19 +136,7 @@ class XnnpackBackend final
       BackendExecutionContext& context,
       DelegateHandle* handle,
       Span<EValue*> args) const override {
-    const std::lock_guard<std::mutex> global_lock(global_xnnpack_mutex());
-
     auto executor = static_cast<xnnpack::delegate::XNNExecutor*>(handle);
-
-    auto workspace = executor->get_workspace();
-    ET_LOG(
-        Info,
-        "XnnpackBackend::execute begin delegate=%p workspace_id=%" PRIu64
-        " num_args=%zu weight_cache=%s",
-        (void*)executor,
-        workspace->id(),
-        (size_t)args.size(),
-        executor->uses_weight_cache() ? "true" : "false");
 
     std::unique_lock<std::mutex> lock_weights_cache(
         weights_cache_mutex_, std::defer_lock);
@@ -177,7 +144,7 @@ class XnnpackBackend final
       lock_weights_cache.lock();
     }
 
-    auto [raii_lock, _] = workspace->acquire();
+    auto [raii_lock, _] = executor->get_workspace()->acquire();
 
     // Prepare Inputs/Outputs and Propagate Input Shapes
     Error err = executor->prepare_args(args);
@@ -194,29 +161,12 @@ class XnnpackBackend final
     // Convert output data types if necessary (e.g., int32 -> int64 for Long)
     err = executor->convert_outputs(args);
 
-    ET_LOG(
-        Info,
-        "XnnpackBackend::execute end delegate=%p workspace_id=%" PRIu64
-        " err=0x%x",
-        (void*)executor,
-        workspace->id(),
-        (unsigned int)err);
-
     return err;
   }
 
   void destroy(DelegateHandle* handle) const override {
     if (handle != nullptr) {
-      const std::lock_guard<std::mutex> global_lock(global_xnnpack_mutex());
-
       auto executor = static_cast<xnnpack::delegate::XNNExecutor*>(handle);
-      auto workspace = executor->get_workspace();
-
-      ET_LOG(
-          Info,
-          "XnnpackBackend::destroy delegate=%p workspace_id=%" PRIu64,
-          (void*)executor,
-          workspace->id());
 
 #ifdef ENABLE_XNNPACK_PROFILING
       executor->print_avg_op_timings();
@@ -233,6 +183,7 @@ class XnnpackBackend final
       // the same backend instance. Make sure to hold onto the workspace
       // shared_ptr, as the pointer in the executor is freed, which includes
       // the mutex referenced by raii_lock.
+      auto workspace = executor->get_workspace();
       auto [raii_lock, _] = workspace->acquire();
 
       // XNNExecutor is not trivially destructible. Since this was constructed
