@@ -28,7 +28,7 @@ fi
 script_dir=$(realpath "$(dirname "${BASH_SOURCE[0]}")")
 et_root_dir=$(realpath "${script_dir}/../../..")
 build_executorch="${et_root_dir}/backends/arm/scripts/build_executorch.sh"
-${build_executorch} --devtools --target_cpu="${target_cpu}" --cmake-args="-DCORTEX_M_ENABLE_ASSERTS=ON"
+${build_executorch} --devtools --target_cpu="${target_cpu}" --cmake-args="-DCORTEX_M_ENABLE_RUNTIME_CHECKS=ON"
 
 # Build executor runner with selected aten ops and semi hosting
 build_dir="${et_root_dir}/arm_test"

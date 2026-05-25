@@ -109,7 +109,7 @@ Tensor& quantized_batch_matmul_out(
     ctx.buf = scratch.mutable_data_ptr<int8_t>();
   }
 
-#ifdef CORTEX_M_ENABLE_ASSERTS
+#ifdef CORTEX_M_ENABLE_RUNTIME_CHECKS
   const int32_t runtime_buffer_bytes =
       arm_fully_connected_s8_get_buffer_size(&out_dims);
   if (ctx.size != static_cast<size_t>(runtime_buffer_bytes)) {

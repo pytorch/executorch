@@ -226,7 +226,7 @@ Tensor& quantized_depthwise_conv2d_out(
     cmsis_context.buf = scratch.mutable_data_ptr<int8_t>();
   }
 
-#ifdef CORTEX_M_ENABLE_ASSERTS
+#ifdef CORTEX_M_ENABLE_RUNTIME_CHECKS
   const int32_t runtime_buffer_bytes =
       arm_depthwise_conv_wrapper_s8_get_buffer_size(
           &dw_conv_params, &input_dims, &filter_dims, &output_dims);

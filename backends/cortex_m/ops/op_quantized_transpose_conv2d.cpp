@@ -193,7 +193,7 @@ Tensor& quantized_transpose_conv2d_out(
   if (output_context.size > 0) {
     output_context.buf = output_scratch.mutable_data_ptr<int8_t>();
   }
-#ifdef CORTEX_M_ENABLE_ASSERTS
+#ifdef CORTEX_M_ENABLE_RUNTIME_CHECKS
   const int32_t buffer_bytes = arm_transpose_conv_s8_get_buffer_size(
       &transpose_conv_params, &input_dims, &filter_dims, &output_dims);
   if (scratch.nbytes() != static_cast<size_t>(buffer_bytes)) {

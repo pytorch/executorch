@@ -30,7 +30,7 @@ set(CMSIS_NN_LOCAL_PATH
     ""
     CACHE PATH "Path to existing local CMSIS-NN installation"
 )
-option(CORTEX_M_ENABLE_ASSERTS
+option(CORTEX_M_ENABLE_RUNTIME_CHECKS
        "Enable additional Cortex-M runtime assertions and validation checks"
        OFF
 )
@@ -113,7 +113,8 @@ target_link_libraries(
 )
 target_compile_definitions(
   cortex_m_kernels
-  PRIVATE $<$<BOOL:${CORTEX_M_ENABLE_ASSERTS}>:CORTEX_M_ENABLE_ASSERTS>
+  PRIVATE
+    $<$<BOOL:${CORTEX_M_ENABLE_RUNTIME_CHECKS}>:CORTEX_M_ENABLE_RUNTIME_CHECKS>
 )
 
 # Include directories for cortex_m_kernels
