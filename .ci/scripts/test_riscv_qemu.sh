@@ -17,16 +17,19 @@ et_root_dir=$(realpath "${script_dir}/../..")
 model="add"
 xnnpack=false
 quantize=false
-verbose=false
+verbose_xnnpack=false
+debug_xnnpack=false
 
 usage() {
     cat <<EOF
 Usage: $(basename "$0") [options]
 Options:
-  --model=<NAME>  Which model to export and run (default: add)
-  --xnnpack       Enable the XNNPACK backend (AOT partitioner + runtime)
-  --quantize      Produce an 8-bit quantized model
-  -h, --help      Show this help
+  --model=<NAME>     Which model to export and run (default: add)
+  --xnnpack          Enable the XNNPACK backend (AOT partitioner + runtime)
+  --quantize         Produce an 8-bit quantized model
+  --verbose-xnnpack  Build XNNPACK with XNN_LOG_LEVEL=4 to log microkernel dispatch
+  --debug-xnnpack    Enable XNNPACK partitioner DEBUG logging and dump the lowered graph
+  -h, --help         Show this help
 EOF
 }
 
@@ -35,7 +38,8 @@ for arg in "$@"; do
         --model=*) model="${arg#*=}" ;;
         --xnnpack) xnnpack=true ;;
         --quantize) quantize=true ;;
-        --verbose) verbose=true ;;
+        --debug-xnnpack) debug_xnnpack=true ;;
+        --verbose-xnnpack) verbose_xnnpack=true ;;
         -h|--help) usage; exit 0 ;;
         *) echo "Unknown option: $arg" >&2; usage; exit 1 ;;
     esac
@@ -48,8 +52,11 @@ fi
 if ${quantize}; then
     run_extra_args+=(--quantize)
 fi
-if ${verbose}; then
-    run_extra_args+=(--verbose)
+if ${debug_xnnpack}; then
+    run_extra_args+=(--debug-xnnpack)
+fi
+if ${verbose_xnnpack}; then
+    run_extra_args+=(--verbose-xnnpack)
 fi
 
 bash "${et_root_dir}/examples/riscv/setup.sh"

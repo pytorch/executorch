@@ -13,6 +13,7 @@ from executorch.exir.dialects._ops import ops as exir_ops
 
 Abs = exir_ops.edge.aten.abs.default
 AdaptiveAvgPool2D = exir_ops.edge.aten._adaptive_avg_pool2d.default
+AddTensor = exir_ops.edge.aten.add.Tensor
 AvgPool2D = exir_ops.edge.aten.avg_pool2d.default
 Bmm = exir_ops.edge.aten.bmm.default
 ConstantPadND = exir_ops.edge.aten.constant_pad_nd.default
