@@ -912,7 +912,11 @@ class HybridTextDecoder(Component):
         # here we use a mechanism to make sure the encoding align correctly and
         # save AoT quantization time as well.
         # ---
-        if self.prefill.decoder is not None and self.prefill.model_args.use_kv_cache:
+        if (
+            self.prefill.decoder is not None
+            and self.prefill.model_args.use_kv_cache
+            and not request.method_data[TEXT_DECODER].skip_quantize
+        ):
             self._encoding_override(
                 decode_model=self.decode.decoder,
                 prefill_model=self.prefill.decoder,
@@ -1233,6 +1237,7 @@ class MultiModalManager(Component):
         self,
         compile_specs: Dict[str, List[CompileSpec]],
         pte_filenames: Dict[str, str],
+        skip_quantize: Dict[str, bool],
     ):
         compile_request = Request(
             inspect.currentframe().f_code.co_name,
@@ -1240,6 +1245,7 @@ class MultiModalManager(Component):
                 m: Request.Data(
                     compile_spec=compile_specs[m],
                     pte_filename=pte_filenames[m],
+                    skip_quantize=skip_quantize[m] if m in skip_quantize else False,
                 )
                 for m in self._modalities
             },

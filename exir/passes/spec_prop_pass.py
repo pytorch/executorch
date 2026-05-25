@@ -9,9 +9,6 @@
 import operator
 from typing import Optional
 
-# register llama.fallback
-import executorch.extension.llm.custom_ops.op_fallback  # noqa: F401
-
 import torch
 from executorch.exir.delegate import executorch_call_delegate
 from executorch.exir.dialects._ops import ops as exir_ops
@@ -21,6 +18,14 @@ from torch.export.exported_program import ExportGraphSignature
 from torch.fx.node import Node
 from torch.fx.passes.infra.pass_base import PassResult
 from torch.utils import _pytree as pytree
+
+# register llama.fallback (optional — only needed for QNN/llama sharding paths)
+try:
+    import executorch.extension.llm.custom_ops.op_fallback  # noqa: F401
+
+    _llama_fallback_default = exir_ops.edge.llama.fallback.default
+except (ImportError, AttributeError):
+    _llama_fallback_default = None
 
 
 # pyre-ignore
@@ -81,7 +86,7 @@ class SpecPropPass(ExportPass):
                         node.meta["spec"] = value_spec[node.args[1]]
                     elif node.op == "call_function" and node.target in (
                         executorch_call_delegate,
-                        exir_ops.edge.llama.fallback.default,
+                        _llama_fallback_default,
                     ):
                         # Note: We currently rely on delegate node specs not being regenerated,
                         # as the spec is set somewhat manually when adding the call delegate node.

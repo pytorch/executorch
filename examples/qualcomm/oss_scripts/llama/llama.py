@@ -193,7 +193,11 @@ def compile(
     )
 
     # perform compilation
-    multi_modal_mgr.compile(compile_specs=compile_specs, pte_filenames=pte_filenames)
+    multi_modal_mgr.compile(
+        compile_specs=compile_specs,
+        pte_filenames=pte_filenames,
+        skip_quantize=skip_quantize,
+    )
 
 
 def inference(
