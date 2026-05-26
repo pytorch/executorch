@@ -109,6 +109,80 @@ install_qnn() {
   echo "Set QNN_SDK_ROOT=${QNN_SDK_ROOT}"
 }
 
+# Install the Hexagon SDK required for direct-mode CI builds.
+install_hexagon_sdk() {
+  # Check if already configured externally and valid.
+  if [ -n "${HEXAGON_SDK_ROOT:-}" ] && [ -d "${HEXAGON_SDK_ROOT:-}" ] \
+     && [ -n "${HEXAGON_TOOLS_ROOT:-}" ] && [ -d "${HEXAGON_TOOLS_ROOT:-}" ]; then
+    echo "Hexagon SDK already set to ${HEXAGON_SDK_ROOT} - skipping installation"
+    return
+  fi
+
+  echo "Start installing Hexagon SDK v${HEXAGON_SDK_VERSION} (tools v${HEXAGON_TOOLS_VERSION})"
+  HEXAGON_INSTALLATION_DIR="/tmp/hexagon-sdk"
+  HEXAGON_SDK_DIR="${HEXAGON_INSTALLATION_DIR}/Hexagon_SDK/${HEXAGON_SDK_VERSION}"
+  HEXAGON_TOOLS_DIR="${HEXAGON_SDK_DIR}/tools/HEXAGON_Tools/${HEXAGON_TOOLS_VERSION}"
+
+  # Return if already exist
+  if [ -d "${HEXAGON_SDK_DIR}" ] && [ -d "${HEXAGON_TOOLS_DIR}" ]; then
+    echo "Hexagon SDK already installed at ${HEXAGON_SDK_DIR}"
+    export HEXAGON_SDK_ROOT="${HEXAGON_SDK_DIR}"
+    export HEXAGON_TOOLS_ROOT="${HEXAGON_TOOLS_DIR}"
+    return
+  fi
+
+  mkdir -p "${HEXAGON_INSTALLATION_DIR}"
+
+  HEXAGON_ZIP_FILE="Hexagon_SDK_Linux.zip"
+  # Match install_qnn's retry shape: --fail rejects HTTP errors,
+  # --retry-all-errors retries transport failures, and `unzip -t`
+  # validates the archive before we proceed.
+  HEXAGON_DOWNLOAD_MAX_ATTEMPTS=5
+  for attempt in $(seq 1 ${HEXAGON_DOWNLOAD_MAX_ATTEMPTS}); do
+    rm -f "/tmp/${HEXAGON_ZIP_FILE}"
+    if curl --fail --retry 3 --retry-delay 5 --retry-connrefused --retry-all-errors \
+         -Lo "/tmp/${HEXAGON_ZIP_FILE}" "${HEXAGON_SDK_ZIP_URL}" \
+       && unzip -tq "/tmp/${HEXAGON_ZIP_FILE}"; then
+      break
+    fi
+    ls -l "/tmp/${HEXAGON_ZIP_FILE}" 2>&1 || true
+    if [ "${attempt}" = "${HEXAGON_DOWNLOAD_MAX_ATTEMPTS}" ]; then
+      echo "ERROR: Hexagon SDK download failed after ${attempt} attempts" >&2
+      exit 1
+    fi
+    echo "Hexagon SDK download attempt ${attempt} failed; retrying in $((attempt * 10))s..."
+    sleep $((attempt * 10))
+  done
+  echo "Finishing downloading Hexagon SDK."
+
+  unzip -qo "/tmp/${HEXAGON_ZIP_FILE}" -d "${HEXAGON_INSTALLATION_DIR}"
+  echo "Finishing unzip Hexagon SDK."
+
+  export HEXAGON_SDK_ROOT="${HEXAGON_SDK_DIR}"
+  export HEXAGON_TOOLS_ROOT="${HEXAGON_TOOLS_DIR}"
+
+  # Verify the unzipped layout matches what build.sh and the QNN CMake
+  # files actually consume. If any of these are missing, a future SDK
+  # release likely changed the directory shape; updating
+  # HEXAGON_SDK_VERSION / HEXAGON_TOOLS_VERSION in qnn_config.sh (or the
+  # extraction layout below) is the fix.
+  for hexagon_required_path in \
+      "${HEXAGON_SDK_ROOT}" \
+      "${HEXAGON_SDK_ROOT}/build/cmake/hexagon_toolchain.cmake" \
+      "${HEXAGON_TOOLS_ROOT}" \
+      "${HEXAGON_TOOLS_ROOT}/Tools/target/hexagon"; do
+    if [ ! -e "${hexagon_required_path}" ]; then
+      echo "[Hexagon] ERROR: expected path not found: ${hexagon_required_path}" >&2
+      echo "[Hexagon] Hexagon SDK ${HEXAGON_SDK_VERSION} or tools ${HEXAGON_TOOLS_VERSION} layout differs from what we pinned." >&2
+      ls -la "$(dirname "${hexagon_required_path}")" >&2 || true
+      exit 1
+    fi
+  done
+
+  echo "Set HEXAGON_SDK_ROOT=${HEXAGON_SDK_ROOT}"
+  echo "Set HEXAGON_TOOLS_ROOT=${HEXAGON_TOOLS_ROOT}"
+}
+
 setup_libcpp() {
   clang_version=$1
   LLVM_VERSION="14.0.0"
