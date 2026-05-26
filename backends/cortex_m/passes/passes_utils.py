@@ -190,6 +190,64 @@ def is_qualified_int8_node(args) -> bool:
         return False
 
 
+def _stable_sigmoid(x: float) -> float:
+    # Always exponentiate the non-positive value so `math.exp` never overflows
+    # for unusually large `|x|` (e.g. wide-range input qparams). Algebraically
+    # identical to `1 / (1 + exp(-x))`.
+    if x >= 0:
+        return 1.0 / (1.0 + math.exp(-x))
+    e = math.exp(x)
+    return e / (1.0 + e)
+
+
+def _stable_silu(x: float) -> float:
+    return x * _stable_sigmoid(x)
+
+
+_ACTIVATION_FNS = {
+    "sigmoid": _stable_sigmoid,
+    "tanh": math.tanh,
+    "silu": _stable_silu,
+}
+
+
+def _round_half_away_from_zero(x: float) -> int:
+    # Matches the rounding convention `requantize_cmsis` (above) applies after
+    # the right-shift step: ties on positive values round toward +∞, ties on
+    # negative values round toward -∞. Python's built-in `round` would use
+    # banker's rounding instead and disagree at exact half-integers.
+    return int(math.copysign(math.floor(abs(x) + 0.5), x)) if x != 0 else 0
+
+
+def build_activation_lut(
+    kind: str,
+    input_scale: float,
+    input_zp: int,
+    output_scale: float,
+    output_zp: int,
+) -> torch.Tensor:
+    """AoT-compute a 256-entry int8 lookup table for a quantized activation.
+
+    The LUT is indexed by the input byte value biased by 128: for any int8
+    input `q_in`, the kernel reads `lut[q_in + 128]` to get the int8 output.
+    Because the LUT is computed in float and quantized once per entry, the
+    runtime kernel is a single memory-lookup with no requantization math.
+    """
+    if kind not in _ACTIVATION_FNS:
+        raise ValueError(
+            f"build_activation_lut: unknown activation '{kind}' "
+            f"(supported: {sorted(_ACTIVATION_FNS)})"
+        )
+    f = _ACTIVATION_FNS[kind]
+    lut = torch.empty(256, dtype=torch.int8)
+    for q in range(-128, 128):
+        x = (q - input_zp) * input_scale
+        y = f(x)
+        q_out = _round_half_away_from_zero(y / output_scale + output_zp)
+        lut[q + 128] = max(-128, min(127, q_out))
+    return lut
+
+
 def quantize_multiplier_aot(scale: float) -> tuple[int, int]:
     if scale == 0.0:
         return 0, 0

@@ -5,6 +5,7 @@
 
 import torch
 from executorch.backends.cortex_m.quantizer.pattern_checkers import (
+    CortexMActivationCheck,
     CortexMAddMulCheck,
     CortexMAvgPool2DCheck,
     CortexMBmmCheck,
@@ -119,6 +120,12 @@ SOFTMAX_OP_PATTERNS = {
     (torch.ops.aten.softmax.int,): CortexMSoftmaxCheck,
 }
 
+ACTIVATION_OP_PATTERNS = {
+    (torch.ops.aten.sigmoid.default,): CortexMActivationCheck,
+    (torch.ops.aten.tanh.default,): CortexMActivationCheck,
+    (torch.ops.aten.silu.default,): CortexMActivationCheck,
+}
+
 POOL_OP_PATTERNS = {
     (torch.ops.aten.avg_pool2d.default,): CortexMAvgPool2DCheck,
     (torch.ops.aten.max_pool2d.default,): CortexMMaxPool2DCheck,
@@ -161,4 +168,5 @@ CORTEX_M_QUANTIZER_SUPPORT_DICT = (
     | CONV_TRANSPOSE_OP_PATTERNS
     | POOL_OP_PATTERNS
     | BMM_OP_PATTERNS
+    | ACTIVATION_OP_PATTERNS
 )
