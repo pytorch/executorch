@@ -1,3 +1,4 @@
+// cppcheck-suppress-file unusedFunction
 /*
  * Copyright (c) Meta Platforms, Inc. and affiliates.
  * All rights reserved.

@@ -13,6 +13,7 @@ namespace cortex_m {
 namespace native {
 using KernelRuntimeContext = torch::executor::KernelRuntimeContext;
 
+// cppcheck-suppress unusedFunction
 Tensor& quantized_add_out(
     KernelRuntimeContext& context,
     const Tensor& input1_int8,
@@ -49,8 +50,7 @@ Tensor& quantized_add_out(
       input2_shift,
       output_zero_point,
       output_multiplier,
-      output_shift,
-      out);
+      output_shift);
 
   ET_LOG(
       Debug,
