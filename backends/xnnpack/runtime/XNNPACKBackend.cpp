@@ -42,13 +42,6 @@ using executorch::runtime::FreeableBuffer;
 using executorch::runtime::Result;
 using executorch::runtime::Span;
 
-// Global mutex for all XNNPACK operations. This is temporary, tracked by
-// T272407942.
-static std::mutex& global_xnnpack_mutex() {
-  static std::mutex m;
-  return m;
-}
-
 class XnnpackBackend final
     : public ::executorch::ET_RUNTIME_NAMESPACE::BackendInterface {
  public:
@@ -74,8 +67,6 @@ class XnnpackBackend final
       BackendInitContext& context,
       FreeableBuffer* processed,
       ArrayRef<CompileSpec> compile_specs) const override {
-    const std::lock_guard<std::mutex> global_lock(global_xnnpack_mutex());
-
     auto executor = context.get_runtime_allocator()
                         ->allocateInstance<xnnpack::delegate::XNNExecutor>();
     if (executor == nullptr) {
@@ -157,8 +148,6 @@ class XnnpackBackend final
       BackendExecutionContext& context,
       DelegateHandle* handle,
       Span<EValue*> args) const override {
-    const std::lock_guard<std::mutex> global_lock(global_xnnpack_mutex());
-
     auto executor = static_cast<xnnpack::delegate::XNNExecutor*>(handle);
 
     auto workspace = executor->get_workspace();
@@ -207,8 +196,6 @@ class XnnpackBackend final
 
   void destroy(DelegateHandle* handle) const override {
     if (handle != nullptr) {
-      const std::lock_guard<std::mutex> global_lock(global_xnnpack_mutex());
-
       auto executor = static_cast<xnnpack::delegate::XNNExecutor*>(handle);
       auto workspace = executor->get_workspace();
 
@@ -218,13 +205,14 @@ class XnnpackBackend final
           (void*)executor,
           workspace->id());
 
+      const std::lock_guard<std::mutex> lock_weights_cache(
+          weights_cache_mutex_);
+
 #ifdef ENABLE_XNNPACK_PROFILING
       executor->print_avg_op_timings();
 #endif
 
       if (executor->uses_weight_cache()) {
-        const std::lock_guard<std::mutex> lock_weights_cache(
-            weights_cache_mutex_);
         weights_cache_->delete_packed_data(executor->get_packed_data_names());
       }
 

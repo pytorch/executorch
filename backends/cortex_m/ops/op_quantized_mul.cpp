@@ -18,6 +18,7 @@ constexpr int32_t kInt8ActivationMax = std::numeric_limits<int8_t>::max();
 
 using KernelRuntimeContext = torch::executor::KernelRuntimeContext;
 
+// cppcheck-suppress unusedFunction
 Tensor& quantized_mul_out(
     KernelRuntimeContext& context,
     const Tensor& input1_int8,
@@ -50,8 +51,7 @@ Tensor& quantized_mul_out(
       kZeroShift,
       output_zero_point,
       output_multiplier,
-      output_shift,
-      out);
+      output_shift);
 
   // Extract quantization parameters
   int8_t* input1_ptr = input1_int8.data_ptr<int8_t>();

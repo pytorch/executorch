@@ -100,6 +100,7 @@ F dequantize_val(float scale, int32_t zero_point, Q qvalue) {
 } // namespace
 
 Tensor& dequantize_per_tensor_out(
+    // cppcheck-suppress constParameterReference
     KernelRuntimeContext& context,
     const Tensor& input,
     double scale,
