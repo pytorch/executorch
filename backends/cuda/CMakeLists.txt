@@ -152,8 +152,7 @@ endif()
 # retention.
 if(_cuda_is_msvc_toolchain)
   target_link_libraries(
-    aoti_cuda_shims PRIVATE cuda_platform CUDA::cudart
-                            ${CMAKE_DL_LIBS}
+    aoti_cuda_shims PRIVATE cuda_platform CUDA::cudart ${CMAKE_DL_LIBS}
   )
   # Link object library directly so symbols are pulled exactly once while
   # avoiding duplicate static/object inclusion and interface leakage.
@@ -179,10 +178,10 @@ install(
 
 # CUDA-specific AOTI sampler shim symbols (rand/randint via curand). Split out
 # of aoti_cuda_shims so the curand fatbin (~3.5MB precalc tables + Philox
-# kernels per arch) and the CUDA::curand dependency are only paid by the
-# small set of consumers that actually use them (e.g. qwen3_5_moe). Other
-# CUDA examples (voxtral, parakeet, whisper, dinov2, ...) link only
-# aoti_cuda_shims and stay small.
+# kernels per arch) and the CUDA::curand dependency are only paid by the small
+# set of consumers that actually use them (e.g. qwen3_5_moe). Other CUDA
+# examples (voxtral, parakeet, whisper, dinov2, ...) link only aoti_cuda_shims
+# and stay small.
 if(CMAKE_CUDA_COMPILER)
   add_library(aoti_cuda_sampler_shims SHARED runtime/shims/rand.cu)
 
@@ -217,19 +216,28 @@ if(CMAKE_CUDA_COMPILER)
   endif()
 
   # rand.cu calls into slim helpers (empty_strided, getCurrentCUDAStream,
-  # SlimTensor) which are linked into aoti_cuda_shims. Depend on that target
-  # so we resolve those symbols from the already-loaded shims library
-  # instead of duplicating slim's static archive into both DLLs.
+  # SlimTensor) which are linked into aoti_cuda_shims. Depend on that target so
+  # we resolve those symbols from the already-loaded shims library instead of
+  # duplicating slim's static archive into both DLLs.
+  #
+  # Also link `slimtensor` (INTERFACE / header-only) directly so the c10 include
+  # root (runtime/core/portable_type/c10) is on this target's compile command.
+  # aoti_cuda_shims links aoti_common_shims_slim PUBLIC on non-MSVC (so includes
+  # propagate transitively on Linux) but only PRIVATELY via the *_obj OBJECT lib
+  # on MSVC, which does NOT forward the slimtensor INTERFACE include dirs.
+  # Linking slimtensor here makes the include path explicit on both toolchains
+  # and keeps Windows MSVC happy without changing aoti_cuda_shims' propagation
+  # semantics.
   if(_cuda_is_msvc_toolchain)
     target_link_libraries(
       aoti_cuda_sampler_shims
       PRIVATE cuda_platform CUDA::cudart CUDA::curand ${CMAKE_DL_LIBS}
-              aoti_cuda_shims
+              aoti_cuda_shims slimtensor
     )
   else()
     target_link_libraries(
       aoti_cuda_sampler_shims
-      PRIVATE cuda_platform
+      PRIVATE cuda_platform slimtensor
       PUBLIC CUDA::cudart CUDA::curand ${CMAKE_DL_LIBS} aoti_cuda_shims
     )
   endif()

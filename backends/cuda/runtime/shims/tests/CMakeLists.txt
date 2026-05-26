@@ -93,6 +93,4 @@ endforeach()
 
 # rand symbols live in the separate aoti_cuda_sampler_shims DLL to keep the
 # curand-induced binary-size cost out of aoti_cuda_shims.
-target_link_libraries(
-  test_aoti_torch_cuda_rand PRIVATE aoti_cuda_sampler_shims
-)
+target_link_libraries(test_aoti_torch_cuda_rand PRIVATE aoti_cuda_sampler_shims)
