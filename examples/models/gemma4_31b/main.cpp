@@ -9,9 +9,9 @@
 // Gemma 4 31B-IT runner for ExecuTorch. Supports two backends:
 //   CUDA  — exports embed_text + vision_encoder + prefill + decode methods
 //           under the unified-prefill contract (Pin #4):
-//             embed_text(tokens [1,T] i64)              -> embeds [1,T,5376] bf16
-//             vision_encoder(pixels, pixel_position_ids) -> (image_embeds, mask)
-//             prefill(inputs_embeds [1,T,5376] bf16,
+//             embed_text(tokens [1,T] i64)              -> embeds [1,T,5376]
+//             bf16 vision_encoder(pixels, pixel_position_ids) -> (image_embeds,
+//             mask) prefill(inputs_embeds [1,T,5376] bf16,
 //                     input_pos [T] i64,
 //                     temperature [1] f32)              -> sampled [1,1] f32
 //             decode(tokens [1,1] i64,
@@ -109,10 +109,7 @@ DEFINE_int32(
     max_vision_soft_tokens,
     280,
     "Maximum number of vision soft tokens (post-pooling image embedding rows) "
-    "the runner asks the vision encoder for. The pooler emits up to this many "
-    "rows; the patchifier sizes the input patch grid accordingly. Must match "
-    "the value the .pte was exported with (one of {70,140,280,560,1120}). "
-    "Default 280 = the Gemma 4 vision tower default.");
+    "the runner asks the vision encoder for.");
 
 namespace llm = ::executorch::extension::llm;
 using ::executorch::extension::from_blob;
@@ -416,7 +413,6 @@ int main(int argc, char** argv) {
 
   std::vector<int64_t> prompt_tokens;
   int64_t num_prompt_tokens = 0;
-
 
   stats.inference_start_ms = llm::time_in_ms();
 

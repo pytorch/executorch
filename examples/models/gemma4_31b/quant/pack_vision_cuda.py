@@ -6,23 +6,6 @@
 
 """Vision-tower quantization + packing helpers.
 
-WHY this is a separate module from ``pack_cuda.py``:
-  The text decoder and the vision tower have very different quantization
-  policies, so unifying them would obscure both.
-
-  * Text decoder (pack_cuda.py): every linear gets INT4 group_size=32 via
-    torchao's ``Int4Tensor`` subclass; embedding is INT8 per-axis. The
-    packer just installs the subclass weight on each module.
-  * Vision tower (this file): every linear and norm STAYS bf16 (the tower
-    is small enough that bf16 is fine and INT4 hurts vision-question
-    accuracy on Gemma 4 PE-int8 experiments). The only "real" quantization
-    is the position-embedding table (~47 MB bf16 -> ~12 MB int8 per-channel),
-    installed via a monkey-patched ``_position_embeddings`` lookup.
-
-Mixing the two policies in one packer would mean every entrypoint has to
-branch on "is this a vision FQN?" -- the disjoint-prefix approach below
-keeps each module readable.
-
 This module is functionally ported from
 ``examples/models/gemma4/export_gemma4.py::_quantize_position_embedding_table``
 (the E2B/E4B vision PE-int8 packer); the math is identical, only the

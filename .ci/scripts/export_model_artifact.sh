@@ -196,8 +196,6 @@ case "$HF_MODEL" in
     PREPROCESSOR_OUTPUT=""
     ;;
   gasoonjia/gemma-4-31B-it-HQQ-INT4)
-    # Vision-aware prequant of Gemma 4 31B (image+text). The export script
-    # auto-detects the vision_config from the prequantized checkpoint.
     MODEL_NAME="gemma4_31b"
     TASK=""
     MAX_SEQ_LEN=""

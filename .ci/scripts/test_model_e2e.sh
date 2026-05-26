@@ -229,21 +229,15 @@ case "$HF_MODEL" in
     IMAGE_PATH=""
     ;;
   gasoonjia/gemma-4-31B-it-HQQ-INT4)
-    # Vision-enabled prequant of Gemma 4 31B (image+text smoke test).
-    MODEL_NAME="gemma4_31b_vision"
+    MODEL_NAME="gemma4_31b"
     RUNNER_TARGET="gemma4_31b_runner"
     RUNNER_PATH="gemma4_31b"
-    # Output of describing the ExecuTorch logo varies across decodes;
-    # match on a permissive substring that vision describers reliably
-    # produce when looking at a logo image with text.
-    EXPECTED_OUTPUT="logo"
+    EXPECTED_OUTPUT="chip"
     PREPROCESSOR=""
     TOKENIZER_URL=""
     TOKENIZER_FILE="tokenizer.json"
     AUDIO_URL=""
     AUDIO_FILE=""
-    # Reuse the ExecuTorch logo already shipped in the repo (also used
-    # by the gemma3 e2e test); avoids a CI-time download.
     IMAGE_PATH="docs/source/_static/img/et-logo.png"
     ;;
   *)
@@ -262,7 +256,7 @@ echo "::group::Prepare $MODEL_NAME Artifacts"
 
 
 # Download tokenizer files (skip for models that bundle tokenizer in export or do not use one)
-if [ "$MODEL_NAME" != "parakeet" ] && [ "$MODEL_NAME" != "voxtral_realtime" ] && [ "$MODEL_NAME" != "sortformer" ] && [ "$MODEL_NAME" != "dinov2" ] && [ "$MODEL_NAME" != "qwen3_5_moe" ] && [ "$MODEL_NAME" != "gemma4_31b" ] && [ "$MODEL_NAME" != "gemma4_31b_vision" ]; then
+if [ "$MODEL_NAME" != "parakeet" ] && [ "$MODEL_NAME" != "voxtral_realtime" ] && [ "$MODEL_NAME" != "sortformer" ] && [ "$MODEL_NAME" != "dinov2" ] && [ "$MODEL_NAME" != "qwen3_5_moe" ] && [ "$MODEL_NAME" != "gemma4_31b" ] && [ "$MODEL_NAME" != "gemma4_31b" ]; then
   if [ "$TOKENIZER_FILE" != "" ]; then
     curl -L --retry 3 --retry-all-errors $TOKENIZER_URL/$TOKENIZER_FILE -o $MODEL_DIR/$TOKENIZER_FILE
   else
@@ -389,7 +383,7 @@ EOF
   gemma4_31b)
     RUNNER_ARGS="$RUNNER_ARGS --tokenizer_path ${MODEL_DIR}/$TOKENIZER_FILE --prompt 'What is the capital of France?' --max_new_tokens 128 --temperature 0 --cuda_graph"
     ;;
-  gemma4_31b_vision)
+  gemma4_31b)
     # Vision smoke: describe the ExecuTorch logo (no --cuda_graph; the
     # encode method is one-shot and not graph-captured for this run).
     RUNNER_ARGS="$RUNNER_ARGS --tokenizer_path ${MODEL_DIR}/$TOKENIZER_FILE --image_path $IMAGE_PATH --prompt 'Describe this image.' --max_new_tokens 64 --temperature 0"

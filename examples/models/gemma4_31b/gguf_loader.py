@@ -233,9 +233,7 @@ def load_gguf_model(
             "+ embed_vision safetensors"
         )
     if not os.path.isdir(vision_hf_dir):
-        raise FileNotFoundError(
-            f"vision_hf_dir {vision_hf_dir!r} is not a directory."
-        )
+        raise FileNotFoundError(f"vision_hf_dir {vision_hf_dir!r} is not a directory.")
     has_index = os.path.exists(
         os.path.join(vision_hf_dir, "model.safetensors.index.json")
     )
@@ -278,9 +276,7 @@ def load_gguf_model(
     # Bring in vision_config (and any vision-relevant text overrides)
     # from the HF config.json so that vision_tower / embed_vision are
     # instantiated with matching dims.
-    config = Gemma4_31BConfig.from_hf_config(
-        os.path.join(vision_hf_dir, "config.json")
-    )
+    config = Gemma4_31BConfig.from_hf_config(os.path.join(vision_hf_dir, "config.json"))
     config.max_seq_len = max_seq_len
 
     print("Building model on meta device...")
