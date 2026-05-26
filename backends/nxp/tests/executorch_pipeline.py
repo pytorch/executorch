@@ -276,6 +276,8 @@ def to_quantized_executorch_program(
     dataset_dir: str | None = None,
     delegate_to_npu=True,
     use_new_flow_neutron_c: bool = False,
+    operators_not_to_delegate: list[str] = None,
+    remove_quant_io_ops: bool = False,
 ) -> ExecutorchProgramManager:
     if dataset_dir:
         # Extract calibration data from a directory.
@@ -295,6 +297,8 @@ def to_quantized_executorch_program(
         use_neutron_for_format_conversion=use_neutron_for_format_conversion,
         delegate_to_npu=delegate_to_npu,
         use_new_flow_neutron_c=use_new_flow_neutron_c,
+        operators_not_to_delegate=operators_not_to_delegate,
+        remove_quant_io_ops=remove_quant_io_ops,
         **get_calibration_inputs_fn,
     )
 
