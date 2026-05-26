@@ -11,7 +11,7 @@ import torch
 import torch.fx
 from executorch.backends.arm._passes.arm_pass_utils import get_first_fake_tensor
 from executorch.backends.cortex_m.passes.passes_utils import quantize_multiplier_aot
-from executorch.backends.cortex_m.target_config import CortexM, CortexMTargetConfig
+from executorch.backends.cortex_m.target_config import CortexMTargetConfig
 
 from executorch.backends.transforms.utils import (
     create_constant_placeholder,
@@ -38,12 +38,10 @@ class ConvertToCortexMPass(XNNPACKPass):
     def __init__(
         self,
         exported_program: ExportedProgram,
-        target_config: CortexMTargetConfig | None = None,
+        target_config: CortexMTargetConfig,
     ) -> None:
         super().__init__(exported_program)
-        # Default mirrors CortexMPassManager: MVE-capable M55 (the previous
-        # behavior for any caller that constructs the pass without a config).
-        self._target_config = target_config or CortexMTargetConfig(cpu=CortexM.M55)
+        self._target_config = target_config
 
     @property
     def target_config(self) -> CortexMTargetConfig:
