@@ -13,7 +13,11 @@ from executorch.backends.qualcomm._passes import (
 from executorch.backends.qualcomm.quantizer.quantizer import QnnQuantizer, QuantDtype
 from executorch.backends.qualcomm.serialization.qc_schema import QcomChipset
 from executorch.backends.qualcomm.tests.models import TopKandIndex
-from executorch.backends.qualcomm.utils.constants import QCOM_DTYPE, QCOM_ENCODING, QCOM_SCALE
+from executorch.backends.qualcomm.utils.constants import (
+    QCOM_DTYPE,
+    QCOM_ENCODING,
+    QCOM_SCALE,
+)
 from executorch.backends.qualcomm.utils.utils import (
     generate_htp_compiler_spec,
     generate_qnn_executorch_compiler_spec,
@@ -142,7 +146,9 @@ class TestPasses(unittest.TestCase):
         try:
             pass_instance._insert(gm)
         except KeyError as e:
-            self.fail(f"InsertIOQDQ raised KeyError for per_channel_group encoding: {e}")
+            self.fail(
+                f"InsertIOQDQ raised KeyError for per_channel_group encoding: {e}"
+            )
 
     def test_insert_reshape_for_argmax(self):
         class ArgmaxModule(torch.nn.Module):
