@@ -505,6 +505,13 @@ class OpQuantize:
 
 
 @dataclass(init=False, frozen=True)
+class OpRandomNormalLike:
+    op_name: str = "RandomNormalLike"
+    param_mean: str = "mean"
+    param_scale: str = "scale"
+
+
+@dataclass(init=False, frozen=True)
 class OpRandomUniformLike:
     op_name: str = "RandomUniformLike"
     param_low: str = "low"
@@ -585,6 +592,17 @@ class OpRmsNorm:
     op_name: str = "RmsNorm"
     param_epsilon: str = "epsilon"
     param_axes: str = "axes"
+
+
+@dataclass(init=False, frozen=True)
+class OpScatterElements:
+    op_name: str = "ScatterElements"
+    param_axis: str = "axis"
+    param_reduction: str = "reduction"
+
+    @unique
+    class Reduction(IntEnum):
+        NONE = 0
 
 
 @dataclass(init=False, frozen=True)

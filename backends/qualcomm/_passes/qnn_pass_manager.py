@@ -36,7 +36,9 @@ from executorch.backends.qualcomm._passes import (
     DecomposeReciprocal,
     DecomposeRemainder,
     DecomposeRoll,
+    DecomposeSelectScatter,
     DecomposeSilu,
+    DecomposeTan,
     DecomposeThreshold,
     DecomposeTriu,
     DecomposeTrunc,
@@ -112,6 +114,7 @@ def get_capture_program_passes():
         (DecomposeMinMaxDim, True),
         (DecomposePad, True),
         (DecomposeRemainder, True),
+        (DecomposeTan, True),
         (DecomposeTrunc, True),
         (ExpandBroadcastTensorShape, True),
         (FixedLinearKeepDim, True),
@@ -236,6 +239,7 @@ class QnnPassManager(PassManager):
         self.add_pass(DecomposeScaledDotProductAttention())
         self.add_pass(DecomposeRoll())
         self.add_pass(DecomposeSilu())
+        self.add_pass(DecomposeTan())
         self.add_pass(DecomposeThreshold())
         self.add_pass(DecomposeTriu())
         self.add_pass(DecomposeTrunc())
@@ -248,6 +252,7 @@ class QnnPassManager(PassManager):
         # TODO: Skip this pass for CPU backend (Dependency: Backend-aware passes manager)
         self.add_pass(DecomposeReciprocal())
         self.add_pass(DecomposeRemainder())
+        self.add_pass(DecomposeSelectScatter())
         self.add_pass(DecomposeLinalgVectorNorm(quantization_capture=True))
         self.add_pass(DecomposeLogVariants())
         self.add_pass(ReplaceInfValues())
@@ -263,6 +268,7 @@ class QnnPassManager(PassManager):
         self.add_pass(DecomposePad())
         self.add_pass(DecomposeScaledDotProductAttention())
         self.add_pass(DecomposeRoll())
+        self.add_pass(DecomposeSelectScatter())
         self.add_pass(DecomposeThreshold())
         self.add_pass(DecomposeTriu())
         self.add_pass(DecomposeLinalgVectorNorm(quantization_capture=True))

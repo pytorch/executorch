@@ -16,6 +16,7 @@ from executorch.backends.arm._passes.arm_pass_utils import (
     get_first_fake_tensor,
     get_param_tensor,
     is_persistent_buffer,
+    permute_fake_tensor_metadata,
 )
 from executorch.backends.arm._passes.fold_qdq_with_annotated_qparams_pass import (
     get_input_qparams,
@@ -421,9 +422,10 @@ class RewriteConvPass(ArmPass):
                         args=(x, list(pre_permute_dims)),
                         from_node=node,
                     )
-                x.meta["val"] = exir_ops.edge.aten.permute_copy.default(
-                    input_fake_tensor, list(pre_permute_dims)
+                input_tensor_for_tosa_fake = permute_fake_tensor_metadata(
+                    input_fake_tensor, pre_permute_dims
                 )
+                x.meta["val"] = input_tensor_for_tosa_fake
                 weight = self._rewrite_weight(
                     graph_module,
                     weight,
@@ -431,7 +433,6 @@ class RewriteConvPass(ArmPass):
                     permute_dims=OHWI_ORDER,
                     name_suffix="ohwi",
                 )
-                input_tensor_for_tosa_fake = input_fake_tensor.permute(pre_permute_dims)
                 weight_fake_tensor = get_first_fake_tensor(weight)
                 conv_args = (
                     x,
@@ -471,18 +472,16 @@ class RewriteConvPass(ArmPass):
                             args=(x, list(pre_permute_dims)),
                             from_node=node,
                         )
-                    x.meta["val"] = exir_ops.edge.aten.permute_copy.default(
-                        input_fake_tensor, list(pre_permute_dims)
+                    input_tensor_for_tosa_fake = permute_fake_tensor_metadata(
+                        input_fake_tensor, pre_permute_dims
                     )
+                    x.meta["val"] = input_tensor_for_tosa_fake
                     weight = self._rewrite_weight(
                         graph_module,
                         weight,
                         node,
                         permute_dims=ODHWI_ORDER,
                         name_suffix="odhwi",
-                    )
-                    input_tensor_for_tosa_fake = input_fake_tensor.permute(
-                        pre_permute_dims
                     )
                     weight_fake_tensor = get_first_fake_tensor(weight)
                 elif self._is_depthwise_conv2d(node):
@@ -496,9 +495,10 @@ class RewriteConvPass(ArmPass):
                             args=(x, list(pre_permute_dims)),
                             from_node=node,
                         )
-                    x.meta["val"] = exir_ops.edge.aten.permute_copy.default(
-                        input_fake_tensor, list(pre_permute_dims)
+                    input_tensor_for_tosa_fake = permute_fake_tensor_metadata(
+                        input_fake_tensor, pre_permute_dims
                     )
+                    x.meta["val"] = input_tensor_for_tosa_fake
                     kh, kw = weight_shape[2], weight_shape[3]
                     in_channels = input_fake_tensor.shape[1]
                     m_length = weight_shape[0] // in_channels
@@ -509,9 +509,6 @@ class RewriteConvPass(ArmPass):
                         permute_dims=HWCM_ORDER,
                         name_suffix="hwicm",
                         reshape_dims=(kh, kw, in_channels, m_length),
-                    )
-                    input_tensor_for_tosa_fake = input_fake_tensor.permute(
-                        pre_permute_dims
                     )
                     weight_fake_tensor = get_first_fake_tensor(weight)
                 else:
@@ -525,18 +522,16 @@ class RewriteConvPass(ArmPass):
                             args=(x, list(pre_permute_dims)),
                             from_node=node,
                         )
-                    x.meta["val"] = exir_ops.edge.aten.permute_copy.default(
-                        input_fake_tensor, list(pre_permute_dims)
+                    input_tensor_for_tosa_fake = permute_fake_tensor_metadata(
+                        input_fake_tensor, pre_permute_dims
                     )
+                    x.meta["val"] = input_tensor_for_tosa_fake
                     weight = self._rewrite_weight(
                         graph_module,
                         weight,
                         node,
                         permute_dims=NHWC_ORDER,
                         name_suffix="ohwi",
-                    )
-                    input_tensor_for_tosa_fake = input_fake_tensor.permute(
-                        pre_permute_dims
                     )
                     weight_fake_tensor = get_first_fake_tensor(weight)
 
@@ -612,8 +607,8 @@ class RewriteConvPass(ArmPass):
                 TosaSpecialDtype.meta_key()
             ):
                 node_replacement.meta[TosaSpecialDtype.meta_key()] = special_dtype
-            node_replacement.meta["val"] = exir_ops.edge.aten.permute_copy.default(
-                node_replacement_fake_tensor, list(post_permute_dims)
+            node_replacement.meta["val"] = permute_fake_tensor_metadata(
+                node_replacement_fake_tensor, post_permute_dims
             )
 
             node.replace_all_uses_with(node_replacement)

@@ -504,3 +504,14 @@ python_unittest(
         "//executorch/exir/passes:propagate_device_pass",
     ],
 )
+
+python_unittest(
+    name = "device_copy_ops",
+    srcs = [
+        "test_device_copy_ops.py",
+    ],
+    deps = [
+        "//caffe2:torch",
+        "//executorch/exir/passes:device_copy_ops_registry",
+    ],
+)
