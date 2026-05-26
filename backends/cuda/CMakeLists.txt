@@ -179,7 +179,7 @@ install(
 )
 
 # CUDA backend implementation
-set(_aoti_cuda_backend_sources runtime/cuda_backend.cpp)
+set(_aoti_cuda_backend_sources runtime/cuda_allocator.cpp runtime/cuda_backend.cpp)
 
 # CUDA backend implementation
 add_library(aoti_cuda_backend STATIC ${_aoti_cuda_backend_sources})
