@@ -399,3 +399,35 @@ def test_convolution_1d_vgf_quant_a8w4(test_data):
         get_symmetric_a8w4_quantization_config(is_per_channel=per_channel_quantization)
     )
     pipeline.run()
+
+
+@common.parametrize("test_data", test_data_INT)
+@common.XfailIfNoCorstone300
+def test_conv1d_a16w8_u55_INT(test_data):
+    model, per_channel_quantization = test_data()
+    pipeline = EthosU55PipelineINT[input_t](
+        model,
+        model.get_inputs(),
+        aten_op,
+        exir_op,
+        a16w8_quantization=True,
+        symmetric_io_quantization=True,
+        per_channel_quantization=per_channel_quantization,
+    )
+    pipeline.run()
+
+
+@common.parametrize("test_data", test_data_INT)
+@common.XfailIfNoCorstone320
+def test_conv1d_a16w8_u85_INT(test_data):
+    model, per_channel_quantization = test_data()
+    pipeline = EthosU85PipelineINT[input_t](
+        model,
+        model.get_inputs(),
+        aten_op,
+        exir_op,
+        a16w8_quantization=True,
+        symmetric_io_quantization=True,
+        per_channel_quantization=per_channel_quantization,
+    )
+    pipeline.run()

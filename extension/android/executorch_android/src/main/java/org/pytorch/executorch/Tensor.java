@@ -555,6 +555,122 @@ public abstract class Tensor {
   }
 
   /**
+   * Copies the tensor's data into a caller-provided {@link FloatBuffer}, avoiding the per-call
+   * {@code float[]} allocation that {@link #getDataAsFloatArray()} performs. The destination
+   * buffer's position is advanced by the number of elements written; its content from the starting
+   * position must have at least {@link #numel()} elements of remaining capacity.
+   *
+   * <p>Useful in steady-state inference loops where the same output tensor shape is read every
+   * frame: pre-allocate a {@code FloatBuffer} once (e.g. via {@link #allocateFloatBuffer(int)}) and
+   * reuse it across calls.
+   *
+   * <p>Supported by float32 (zero-copy bulk put) and float16 (per-element half→float widening,
+   * matching {@link #getDataAsFloatArray()} on that subclass). For raw fp16 bits without widening,
+   * use {@link #copyDataInto(ShortBuffer)}.
+   *
+   * @param dst the destination buffer; must have remaining capacity {@code >=} {@link #numel()}.
+   * @throws IllegalStateException if it is called for a tensor type that does not support a float
+   *     view.
+   * @throws java.nio.BufferOverflowException if {@code dst} does not have enough remaining
+   *     capacity.
+   */
+  public void copyDataInto(FloatBuffer dst) {
+    throw new IllegalStateException(
+        "Tensor of type " + getClass().getSimpleName() + " cannot copy data into FloatBuffer.");
+  }
+
+  /**
+   * Copies the tensor's data into a caller-provided {@link ByteBuffer}, avoiding the per-call
+   * {@code byte[]} allocation that {@link #getDataAsByteArray()} performs.
+   *
+   * @param dst the destination buffer; must have remaining capacity {@code >=} {@link #numel()}.
+   * @throws IllegalStateException if it is called for a non-int8 tensor.
+   * @throws java.nio.BufferOverflowException if {@code dst} does not have enough remaining
+   *     capacity.
+   */
+  public void copyDataInto(ByteBuffer dst) {
+    throw new IllegalStateException(
+        "Tensor of type " + getClass().getSimpleName() + " cannot copy data into ByteBuffer.");
+  }
+
+  /**
+   * Copies the tensor's data into a caller-provided {@link ByteBuffer}, avoiding the per-call
+   * {@code byte[]} allocation that {@link #getDataAsUnsignedByteArray()} performs. The bytes carry
+   * the raw uint8 bits — Java's signed {@code byte} representation, with values {@code >127}
+   * appearing negative; reinterpret with {@code & 0xFF} when reading.
+   *
+   * @param dst the destination buffer; must have remaining capacity {@code >=} {@link #numel()}.
+   * @throws IllegalStateException if it is called for a non-uint8 tensor.
+   * @throws java.nio.BufferOverflowException if {@code dst} does not have enough remaining
+   *     capacity.
+   */
+  public void copyDataIntoUnsigned(ByteBuffer dst) {
+    throw new IllegalStateException(
+        "Tensor of type "
+            + getClass().getSimpleName()
+            + " cannot copy data into ByteBuffer (unsigned).");
+  }
+
+  /**
+   * Copies the tensor's data into a caller-provided {@link IntBuffer}, avoiding the per-call {@code
+   * int[]} allocation that {@link #getDataAsIntArray()} performs.
+   *
+   * @param dst the destination buffer; must have remaining capacity {@code >=} {@link #numel()}.
+   * @throws IllegalStateException if it is called for a non-int32 tensor.
+   * @throws java.nio.BufferOverflowException if {@code dst} does not have enough remaining
+   *     capacity.
+   */
+  public void copyDataInto(IntBuffer dst) {
+    throw new IllegalStateException(
+        "Tensor of type " + getClass().getSimpleName() + " cannot copy data into IntBuffer.");
+  }
+
+  /**
+   * Copies the tensor's data into a caller-provided {@link LongBuffer}, avoiding the per-call
+   * {@code long[]} allocation that {@link #getDataAsLongArray()} performs.
+   *
+   * @param dst the destination buffer; must have remaining capacity {@code >=} {@link #numel()}.
+   * @throws IllegalStateException if it is called for a non-int64 tensor.
+   * @throws java.nio.BufferOverflowException if {@code dst} does not have enough remaining
+   *     capacity.
+   */
+  public void copyDataInto(LongBuffer dst) {
+    throw new IllegalStateException(
+        "Tensor of type " + getClass().getSimpleName() + " cannot copy data into LongBuffer.");
+  }
+
+  /**
+   * Copies the tensor's data into a caller-provided {@link DoubleBuffer}, avoiding the per-call
+   * {@code double[]} allocation that {@link #getDataAsDoubleArray()} performs.
+   *
+   * @param dst the destination buffer; must have remaining capacity {@code >=} {@link #numel()}.
+   * @throws IllegalStateException if it is called for a non-float64 tensor.
+   * @throws java.nio.BufferOverflowException if {@code dst} does not have enough remaining
+   *     capacity.
+   */
+  public void copyDataInto(DoubleBuffer dst) {
+    throw new IllegalStateException(
+        "Tensor of type " + getClass().getSimpleName() + " cannot copy data into DoubleBuffer.");
+  }
+
+  /**
+   * Copies the tensor's data into a caller-provided {@link ShortBuffer}, avoiding the per-call
+   * {@code short[]} allocation that {@link #getDataAsShortArray()} performs. For float16 tensors
+   * this writes the raw 16-bit half-precision bits with no widening; use {@link
+   * #copyDataInto(FloatBuffer)} if you want the values widened to fp32.
+   *
+   * @param dst the destination buffer; must have remaining capacity {@code >=} {@link #numel()}.
+   * @throws IllegalStateException if it is called for a tensor type whose backing storage is not a
+   *     {@code ShortBuffer}.
+   * @throws java.nio.BufferOverflowException if {@code dst} does not have enough remaining
+   *     capacity.
+   */
+  public void copyDataInto(ShortBuffer dst) {
+    throw new IllegalStateException(
+        "Tensor of type " + getClass().getSimpleName() + " cannot copy data into ShortBuffer.");
+  }
+
+  /**
    * @return a Java long array that contains the tensor data. This may be a copy or reference.
    * @throws IllegalStateException if it is called for a non-int64 tensor.
    */
@@ -605,6 +721,12 @@ public abstract class Tensor {
     }
 
     @Override
+    public void copyDataIntoUnsigned(ByteBuffer dst) {
+      data.rewind();
+      dst.put(data);
+    }
+
+    @Override
     public String toString() {
       return String.format("Tensor(%s, dtype=torch.uint8)", Arrays.toString(shape));
     }
@@ -634,6 +756,12 @@ public abstract class Tensor {
       byte[] arr = new byte[data.remaining()];
       data.get(arr);
       return arr;
+    }
+
+    @Override
+    public void copyDataInto(ByteBuffer dst) {
+      data.rewind();
+      dst.put(data);
     }
 
     @Override
@@ -669,6 +797,12 @@ public abstract class Tensor {
     }
 
     @Override
+    public void copyDataInto(IntBuffer dst) {
+      data.rewind();
+      dst.put(data);
+    }
+
+    @Override
     public String toString() {
       return String.format("Tensor(%s, dtype=torch.int32)", Arrays.toString(shape));
     }
@@ -688,6 +822,12 @@ public abstract class Tensor {
       float[] arr = new float[data.remaining()];
       data.get(arr);
       return arr;
+    }
+
+    @Override
+    public void copyDataInto(FloatBuffer dst) {
+      data.rewind();
+      dst.put(data);
     }
 
     @Override
@@ -733,6 +873,12 @@ public abstract class Tensor {
     }
 
     @Override
+    public void copyDataInto(ShortBuffer dst) {
+      data.rewind();
+      dst.put(data);
+    }
+
+    @Override
     public float[] getDataAsFloatArray() {
       data.rewind();
       int remaining = data.remaining();
@@ -741,6 +887,21 @@ public abstract class Tensor {
         arr[i] = halfBitsToFloat(data.get());
       }
       return arr;
+    }
+
+    @Override
+    public void copyDataInto(FloatBuffer dst) {
+      data.rewind();
+      int remaining = data.remaining();
+      // Match the all-or-nothing semantics of bulk FloatBuffer.put(FloatBuffer):
+      // verify capacity up front so an undersized destination throws before any
+      // partial widening is observed in dst.
+      if (dst.remaining() < remaining) {
+        throw new java.nio.BufferOverflowException();
+      }
+      for (int i = 0; i < remaining; i++) {
+        dst.put(halfBitsToFloat(data.get()));
+      }
     }
 
     @Override
@@ -801,6 +962,12 @@ public abstract class Tensor {
     }
 
     @Override
+    public void copyDataInto(LongBuffer dst) {
+      data.rewind();
+      dst.put(data);
+    }
+
+    @Override
     public String toString() {
       return String.format("Tensor(%s, dtype=torch.int64)", Arrays.toString(shape));
     }
@@ -830,6 +997,12 @@ public abstract class Tensor {
       double[] arr = new double[data.remaining()];
       data.get(arr);
       return arr;
+    }
+
+    @Override
+    public void copyDataInto(DoubleBuffer dst) {
+      data.rewind();
+      dst.put(data);
     }
 
     @Override

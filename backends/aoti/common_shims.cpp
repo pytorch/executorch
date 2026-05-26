@@ -7,6 +7,7 @@
  */
 
 #include <executorch/backends/aoti/common_shims.h>
+#include <executorch/runtime/platform/abort.h>
 #include <executorch/runtime/platform/log.h>
 #include <cstdint>
 
@@ -216,6 +217,25 @@ AOTI_SHIM_EXPORT void aoti_torch_warn(
     uint32_t line,
     const char* msg) {
   ET_LOG(Error, "[%s:%u] %s: %s", file, line, func, msg);
+}
+
+AOTI_SHIM_EXPORT void aoti_torch_check(
+    bool cond,
+    const char* func,
+    const char* file,
+    uint32_t line,
+    const char* msg) {
+  if (cond) {
+    return;
+  }
+  ET_LOG(
+      Fatal,
+      "[%s:%u] %s: %s",
+      file != nullptr ? file : "<unknown>",
+      line,
+      func != nullptr ? func : "<unknown>",
+      msg != nullptr ? msg : "AOTI check failed");
+  ::executorch::runtime::runtime_abort();
 }
 
 AOTI_SHIM_EXPORT AOTITorchError
