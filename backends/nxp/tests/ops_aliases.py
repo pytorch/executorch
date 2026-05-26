@@ -13,6 +13,7 @@ from executorch.exir.dialects._ops import ops as exir_ops
 
 Abs = exir_ops.edge.aten.abs.default
 AdaptiveAvgPool2D = exir_ops.edge.aten._adaptive_avg_pool2d.default
+AddTensor = exir_ops.edge.aten.add.Tensor
 AvgPool2D = exir_ops.edge.aten.avg_pool2d.default
 Bmm = exir_ops.edge.aten.bmm.default
 ConstantPadND = exir_ops.edge.aten.constant_pad_nd.default
@@ -36,6 +37,7 @@ Softmax = exir_ops.edge.aten._softmax.default
 Squeeze = exir_ops.edge.aten.squeeze.default
 SqueezeDim = exir_ops.edge.aten.squeeze.dim
 SqueezeDims = exir_ops.edge.aten.squeeze.dims
+SubTensor = exir_ops.edge.aten.sub.Tensor
 Unsqueeze = exir_ops.edge.aten.unsqueeze.default
 UpsampleBilinear2D = exir_ops.edge.aten.upsample_bilinear2d.vec
 UpsampleNearest2D = exir_ops.edge.aten.upsample_nearest2d.vec
