@@ -119,10 +119,19 @@ def define_op_library(name, deps, android_deps, aten_target, _allow_third_party_
         visibility = ["PUBLIC"],
         # kernels often have helpers with no prototypes just disabling the warning here as the headers
         # are codegend and linked in later
-        compiler_flags = select({
+        # -Wno-missing-prototypes is Clang-only for C++; GCC (used by Zephyr
+        # ARM cross-compilation) rejects it with -Werror, so exclude it for
+        # Zephyr and Windows builds. OSS bypasses the zephyr branch via
+        # runtime.is_oss since ovr_config//os:zephyr is not in the OSS
+        # buck2 prelude.
+        compiler_flags = (select({
                 "DEFAULT": ["-Wno-missing-prototypes"],
                 "ovr_config//os:windows": [],
-            }) + (
+                "ovr_config//os:zephyr": [],
+            }) if not runtime.is_oss else select({
+                "DEFAULT": ["-Wno-missing-prototypes"],
+                "ovr_config//os:windows": [],
+            })) + (
             # For shared library build, we don't want to expose symbols of
             # kernel implementation (ex torch::executor::native::tanh_out)
             # to library users. They should use kernels through registry only.

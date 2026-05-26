@@ -272,11 +272,14 @@ unsigned char* ethosu_fast_scratch = dedicated_sram;
 #endif
 
 [[maybe_unused]] void et_pal_init(void) {
-  // Enable ARM PMU Clock
+#if defined(__ARM_ARCH_8_1M_MAIN__)
+  // Armv8.1-M Mainline cores (M55, M85) have the optional PMU extension.
+  // Pre-Armv8.1-M cores lack ARM_PMU_*; et_pal_current_ticks() returns 0.
   ARM_PMU_Enable();
   DCB->DEMCR |= DCB_DEMCR_TRCENA_Msk; // Trace enable
   ARM_PMU_CYCCNT_Reset();
   ARM_PMU_CNTR_Enable(PMU_CNTENSET_CCNTR_ENABLE_Msk);
+#endif
 }
 
 /**
@@ -296,7 +299,11 @@ unsigned char* ethosu_fast_scratch = dedicated_sram;
 }
 
 [[maybe_unused]] et_timestamp_t et_pal_current_ticks(void) {
+#if defined(__ARM_ARCH_8_1M_MAIN__)
   return ARM_PMU_Get_CCNTR();
+#else
+  return 0;
+#endif
 }
 
 [[maybe_unused]] et_tick_ratio_t et_pal_ticks_to_ns_multiplier(void) {
