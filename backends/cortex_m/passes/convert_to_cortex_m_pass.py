@@ -307,6 +307,165 @@ class ConvertToCortexMPass(CortexMPass):
             )
             return exir_ops.edge.cortex_m.quantized_conv2d.default, new_args
 
+    def _lower_conv1d(self, node, graph_module):
+        """Lower a quantized 3D aten.convolution.default (conv1d) end-to-end.
+
+        Wraps the runtime input in `aten.unsqueeze_copy +
+        dim_order_ops._clone_dim_order` to a 4D NHWC tensor with H=1,
+        AoT-reshapes the weight to 4D OHWI / IHWO with H=1, calls the existing
+        cortex_m.quantized_conv2d kernel, then clones + squeezes back to 3D
+        NCW. Replaces uses of `node` with the terminal squeeze and erases
+        `node`. The caller does not need to do any further graph mutation.
+        """
+        (
+            x,
+            weight,
+            bias,
+            stride,
+            padding,
+            dilation,
+            _transposed,
+            _output_padding,
+            groups,
+        ) = node.args
+
+        stride_2d = [1, stride[0]]
+        padding_2d = [0, padding[0]]
+        dilation_2d = [1, dilation[0]]
+
+        input_scale = node.meta["input_qparams"][0].scale
+        input_zero_point = node.meta["input_qparams"][0].zp
+        weight_scales = node.meta["input_qparams"][1].scale
+        if not isinstance(weight_scales, list):
+            fake_weight_tensor = get_first_fake_tensor(weight)
+            weight_scales = [weight_scales] * fake_weight_tensor.shape[0]
+
+        output_qparams = node.meta["output_qparams"][0]
+        output_scale = output_qparams.scale
+        output_zero_point = output_qparams.zp
+        output_qmin = output_qparams.qmin
+        output_qmax = output_qparams.qmax
+
+        quantized_multipliers = []
+        quantized_shifts = []
+        for weight_scale in weight_scales:
+            quantized_multiplier, quantized_shift = quantize_multiplier_aot(
+                input_scale * weight_scale / output_scale
+            )
+            quantized_multipliers.append(quantized_multiplier)
+            quantized_shifts.append(quantized_shift)
+
+        param_weight_tensor = get_param_tensor(self.exported_program, weight)
+        if param_weight_tensor is None:
+            raise RuntimeError(
+                f"Expected conv1d weight parameter tensor for node {node.name}."
+            )
+
+        # Conv1d weight shape: (out_channels, in_channels/groups, K).
+        in_channels = param_weight_tensor.shape[1] * groups
+        out_channels = param_weight_tensor.shape[0]
+        is_depthwise = (in_channels == groups) and (out_channels % in_channels == 0)
+        batch_size = self._get_batch_size_from_conv(node)
+        use_depthwise_conv = is_depthwise and (batch_size == 1)
+
+        # Lift the weight to the 4D layout the existing quantized_conv2d kernels
+        # already consume: unsqueeze a singleton H=1, then permute by the same
+        # axes the 4D path uses (OHWI for regular, IHWO for depthwise).
+        param_weight_4d = param_weight_tensor.unsqueeze(2)
+        if use_depthwise_conv:
+            weight_permuted = param_weight_4d.permute(1, 2, 3, 0).contiguous()
+        else:
+            weight_permuted = param_weight_4d.permute(0, 2, 3, 1).contiguous()
+
+        with node.graph.inserting_after(weight):
+            weight_nhwc = create_constant_placeholder(
+                self.exported_program,
+                node.graph,
+                node.name + "_weight_nhwc",
+                InputKind.PARAMETER,
+                weight_permuted,
+            )
+            quantized_multiplier_tensor = create_constant_placeholder(
+                self.exported_program,
+                node.graph,
+                node.name + "_quantized_multiplier",
+                InputKind.PARAMETER,
+                torch.tensor(quantized_multipliers, dtype=torch.int32),
+            )
+            quantized_shift_tensor = create_constant_placeholder(
+                self.exported_program,
+                node.graph,
+                node.name + "_quantized_shift",
+                InputKind.PARAMETER,
+                torch.tensor(quantized_shifts, dtype=torch.int32),
+            )
+
+        # Build the input chain (NCW -> 4D NHWC), the conv, and the output chain
+        # (4D NHWC -> NCW), all inserted in graph order before the original conv.
+        with node.graph.inserting_before(node):
+            x_4d_nchw = node.graph.create_node(
+                "call_function",
+                target=exir_ops.edge.aten.unsqueeze_copy.default,
+                args=(x, 2),
+            )
+            x_4d_nhwc = node.graph.create_node(
+                "call_function",
+                target=exir_ops.edge.dim_order_ops._clone_dim_order.default,
+                args=(x_4d_nchw,),
+                kwargs={"dim_order": [0, 2, 3, 1]},
+            )
+            scratch = self._create_uninitialized_alloc_node()
+
+            # `is_depthwise` already required `out_channels % in_channels == 0`,
+            # so depth_multiplier is exact; pass it as the extra positional that
+            # the depthwise kernel takes between dilation and input_zero_point.
+            if use_depthwise_conv:
+                conv_op = exir_ops.edge.cortex_m.quantized_depthwise_conv2d.default
+                depth_multiplier_args = (out_channels // in_channels,)
+            else:
+                conv_op = exir_ops.edge.cortex_m.quantized_conv2d.default
+                depth_multiplier_args = ()
+
+            conv_args = (
+                x_4d_nhwc,
+                weight_nhwc,
+                bias,
+                stride_2d,
+                padding_2d,
+                dilation_2d,
+                *depth_multiplier_args,
+                -input_zero_point,
+                output_zero_point,
+                quantized_multiplier_tensor,
+                quantized_shift_tensor,
+                output_qmin,
+                output_qmax,
+                scratch,
+            )
+
+            conv_node = node.graph.create_node(
+                "call_function",
+                target=conv_op,
+                args=conv_args,
+                kwargs={},
+            )
+            self._initialize_alloc_node_size(conv_node)
+
+            out_4d_nchw = node.graph.create_node(
+                "call_function",
+                target=exir_ops.edge.dim_order_ops._clone_dim_order.default,
+                args=(conv_node,),
+                kwargs={"dim_order": [0, 1, 2, 3]},
+            )
+            out_3d = node.graph.create_node(
+                "call_function",
+                target=exir_ops.edge.aten.squeeze_copy.dims,
+                args=(out_4d_nchw, [2]),
+            )
+
+        node.replace_all_uses_with(out_3d)
+        graph_module.graph.erase_node(node)
+
     def _initialize_alloc_node_size(self, node: torch.fx.Node) -> None:
         """For nodes with a registered buffer size function for node.target, set the buffer sizes
         of the last n args, which should be exir.memory.alloc nodes. For nodes without a
@@ -535,6 +694,15 @@ class ConvertToCortexMPass(CortexMPass):
                 case exir_ops.edge.aten.convolution.default:
                     # Check if it's transposed convolution (arg index 6)
                     transposed = node.args[6] if len(node.args) > 6 else False
+                    # stride length is 1 for conv1d, 2 for conv2d. Conv1d is
+                    # lowered to the existing quantized_conv2d kernel with H=1
+                    # by inserting unsqueeze + dim-order clone around the call;
+                    # the helper handles its own replace_all_uses + erase.
+                    is_conv1d = len(node.args[3]) == 1
+                    if is_conv1d and not transposed:
+                        self._lower_conv1d(node, graph_module)
+                        modified = True
+                        continue
                     if transposed:
                         op, args = self._get_transpose_conv2d_replacement(node)
                     else:
