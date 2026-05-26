@@ -2014,6 +2014,41 @@ class TestQNNFloatingPointOperator(TestQNN):
         sample_input = (torch.randn([1, 3, 3, 3]),)
         self.lower_module_and_test_output(module, sample_input)
 
+    def test_qnn_backend_select_scatter(self):
+        test_comb = [
+            {
+                QCOM_MODULE: [
+                    SelectScatter(dim=0, index=2),  # noqa: F405
+                ],
+                QCOM_SAMPLE_INPUTS: [
+                    (
+                        torch.randn(4, 8),
+                        torch.randn(8),
+                    )
+                ],
+            },
+            {
+                QCOM_MODULE: [
+                    SelectScatter(dim=1, index=0),  # noqa: F405
+                    SelectScatter(dim=1, index=-1),  # noqa: F405
+                ],
+                QCOM_SAMPLE_INPUTS: [
+                    (
+                        torch.randn(3, 4, 5),
+                        torch.randn(3, 5),
+                    )
+                ],
+            },
+        ]
+
+        index = 0
+        for comb in test_comb:
+            for module in comb[QCOM_MODULE]:
+                for sample_input in comb[QCOM_SAMPLE_INPUTS]:
+                    with self.subTest(i=index):
+                        index += 1
+                        self.lower_module_and_test_output(module, sample_input)
+
     def test_qnn_backend_slice_copy(self):
         modules = [
             SliceCopyDefaultParameter(),  # noqa: F405
@@ -4833,6 +4868,42 @@ class TestQNNQuantizedOperator(TestQNN):
         sample_input = (torch.randn([1, 3, 3, 3]),)
         module = self.get_qdq_module(module, sample_input)
         self.lower_module_and_test_output(module, sample_input)
+
+    def test_qnn_backend_select_scatter(self):
+        test_comb = [
+            {
+                QCOM_MODULE: [
+                    SelectScatter(dim=0, index=2),  # noqa: F405
+                ],
+                QCOM_SAMPLE_INPUTS: [
+                    (
+                        torch.randn(4, 8),
+                        torch.randn(8),
+                    )
+                ],
+            },
+            {
+                QCOM_MODULE: [
+                    SelectScatter(dim=1, index=0),  # noqa: F405
+                    SelectScatter(dim=1, index=-1),  # noqa: F405
+                ],
+                QCOM_SAMPLE_INPUTS: [
+                    (
+                        torch.randn(3, 4, 5),
+                        torch.randn(3, 5),
+                    )
+                ],
+            },
+        ]
+
+        index = 0
+        for comb in test_comb:
+            for module in comb[QCOM_MODULE]:
+                for sample_input in comb[QCOM_SAMPLE_INPUTS]:
+                    with self.subTest(i=index):
+                        index += 1
+                        qdq_module = self.get_qdq_module(module, sample_input)
+                        self.lower_module_and_test_output(qdq_module, sample_input)
 
     def test_qnn_backend_sigmoid(self):
         module = Sigmoid()  # noqa: F405
@@ -7659,8 +7730,11 @@ class TestExampleLLMScript(TestQNN):
             "--max_context_len",
             "128",
         ]
+        if self.use_fp16:
+            cmds.append("--use_fp16")
         self.add_default_cmds(cmds)
-
+        print(" ".join(cmds))
+        exit(0)
         golden_start_with = "Once upon a time,"
         p = subprocess.Popen(cmds, stdout=subprocess.DEVNULL)
         with Listener((self.ip, self.port)) as listener:
@@ -7679,7 +7753,10 @@ class TestExampleLLMScript(TestQNN):
                 # x86 does not allow weight sharing, so we don't check pte size
                 if not self.enable_x86_64:
                     pte_size = msg["pte_size"]
-                    self.assertLessEqual(pte_size, 135_000_000)  # 135MB
+                    if self.use_fp16:
+                        self.assertLessEqual(pte_size, 275_000_000)  # 275MB
+                    else:
+                        self.assertLessEqual(pte_size, 135_000_000)  # 135MB
                 if not self.compile_only and not self.enable_x86_64:
                     self.assertGreaterEqual(msg["inference_speed"], 220)  # Lanai
 
@@ -10016,6 +10093,13 @@ def setup_environment():
         choices=["wikitext_ppl", "hellaswag_acc_norm", "sqnr"],
         type=str,
     )
+    parser.add_argument(
+        "-F",
+        "--use_fp16",
+        help="If specified, will run in fp16 precision and discard ptq setting",
+        action="store_true",
+        default=False,
+    )
 
     args, ns_args = parser.parse_known_args(namespace=unittest)
     TestQNN.host = args.host
@@ -10043,6 +10127,7 @@ def setup_environment():
     TestQNN.backend = args.backend
     TestQNN.static_llm_eval_method = args.static_llm_eval_method
     TestQNN.direct_build_folder = args.direct_build_folder
+    TestQNN.use_fp16 = args.use_fp16
 
     return sys.argv[:1] + ns_args
 

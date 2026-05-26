@@ -255,8 +255,54 @@ class TestTensor(unittest.TestCase):
         # dim[2] is broadcasting dim
         # shape = (5, 1, 15, 10)
         strides = (10, 10, 0, 1)
-        with self.assertRaises(ValueError):
+        # torch._check raises RuntimeError on concrete 0.
+        with self.assertRaises(RuntimeError):
             dim_order = dim_order_from_stride(strides)
+
+    def test_dim_order_from_stride_unbacked(self) -> None:
+        """
+        dim_order_from_stride should produce a sane permutation even when the
+        strides contain unbacked SymInts. The comparator falls back to
+        divisibility-based reasoning so common cases like (1, u0) and
+        (u0, 2 * u0) order correctly.
+        """
+        from torch.fx.experimental.symbolic_shapes import (
+            GuardOnDataDependentSymNode,
+            ShapeEnv,
+        )
+
+        shape_env = ShapeEnv()
+        u0 = shape_env.create_unbacked_symint()
+        u1 = shape_env.create_unbacked_symint()
+
+        # 1 < u0 should be True via divisibility (u0 % 1 == 0) + optimistic
+        # `1 != u0`. Descending sort puts u0 outer, stride 1 inner.
+        dim_order = dim_order_from_stride((1, u0))
+        self.assertEqual((1, 0), dim_order)
+
+        # u0 < 2 * u0 should be True via divisibility ((2*u0) % u0 == 0) and
+        # provable inequality (u0 != 0 after torch._check).
+        dim_order = dim_order_from_stride((u0, 2 * u0))
+        self.assertEqual((1, 0), dim_order)
+
+        # Mixed concrete + symbolic: (1, u0, 2 * u0). Descending stride order
+        # is (2*u0, u0, 1) -> indices (2, 1, 0).
+        dim_order = dim_order_from_stride((1, u0, 2 * u0))
+        self.assertEqual((2, 1, 0), dim_order)
+
+        # u0 < u1 (independent unbackeds) is genuinely ambiguous, so the
+        # comparator must fall back to the raw `<` and raise DDE.
+        with self.assertRaises(GuardOnDataDependentSymNode):
+            dim_order_from_stride((u0, u1))
+
+        # u0 < u0 is False both ways (symmetric); stable sort preserves order.
+        dim_order = dim_order_from_stride((u0, u0))
+        self.assertEqual((0, 1), dim_order)
+
+        # Unbacked stride of 0 (concrete 0 mixed with unbacked) -> RuntimeError
+        # via torch._check.
+        with self.assertRaises(RuntimeError):
+            dim_order_from_stride((u0, 0, 1))
 
     def test_strides_from_dim_order(self) -> None:
         sizes = []
