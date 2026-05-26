@@ -89,9 +89,11 @@ def load_prequantized_model(
     # Install int8 PE-table dispatch (drops the position_embedding_table param
     # so load_and_pack_for_cuda's "no meta params" check passes, and registers
     # _pet_int8 / _pet_scale buffers for the loader to fill).
-    from executorch.examples.models.gemma4_31b.quant import install_int8_pe_dispatch
+    # CUDA-only: MLX never traces the vision tower's int8 dispatch path.
+    if backend == "cuda":
+        from executorch.examples.models.gemma4_31b.quant import install_int8_pe_dispatch
 
-    install_int8_pe_dispatch(model.vision_tower, verbose=True)
+        install_int8_pe_dispatch(model.vision_tower, verbose=True)
 
     print(f"Loading quantized checkpoint from {safetensors_path}...")
     _pack_for_backend(model, safetensors_path, backend)
@@ -516,7 +518,12 @@ def _export_mlx(model: Gemma4_31B, config: Gemma4_31BConfig, output_dir: str) ->
     seq_dim = Dim("seq_len", min=1, max=max_prefill)
 
     print(f"Exporting (T in [1, {max_prefill}])...")
-    with torch.no_grad():
+    # Explicitly bind decode_forward for tracing. mlx_source_transformations
+    # already monkey-patches model.forward, but wrapping with
+    # _BoundMethodForward makes the intent explicit and guards against
+    # silent regressions if the monkey-patch is ever removed (the class
+    # default Gemma4_31B.forward expects inputs_embeds, not token IDs).
+    with _BoundMethodForward(model, model.decode_forward), torch.no_grad():
         exported = export(
             model,
             (

@@ -79,6 +79,10 @@ class TestMlxPipeline(unittest.TestCase):
 
         with torch.device("meta"):
             model = Gemma4_31B(TINY_CONFIG)
+        # Match build_random_tiny_model: drop vision tower since the state_dict
+        # was quantized from a text-only model.
+        del model.vision_tower
+        del model.embed_vision
         model.lm_head.weight = nn.Parameter(model.embed_tokens.weight.clone())
         pack_model(model, state_dict, DEFAULT_MLX_PACKERS)
         model.eval()
@@ -94,7 +98,7 @@ class TestMlxPipeline(unittest.TestCase):
         temp = torch.tensor([1e-6], dtype=torch.float32)
 
         with torch.no_grad():
-            out = model(tokens, input_pos, temp)
+            out = model.decode_forward(tokens, input_pos, temp)
 
         self.assertEqual(out.shape, torch.Size([1, 1]))
         self.assertFalse(torch.isnan(out).any())
@@ -106,6 +110,10 @@ class TestMlxPipeline(unittest.TestCase):
 
         with torch.device("meta"):
             model = Gemma4_31B(TINY_CONFIG)
+        # Match build_random_tiny_model: drop vision tower since the state_dict
+        # was quantized from a text-only model.
+        del model.vision_tower
+        del model.embed_vision
         model.lm_head.weight = nn.Parameter(model.embed_tokens.weight.clone())
         pack_model(model, state_dict, DEFAULT_MLX_PACKERS)
         model.eval()
@@ -122,7 +130,7 @@ class TestMlxPipeline(unittest.TestCase):
         temp = torch.tensor([1e-6], dtype=torch.float32)
 
         with torch.no_grad():
-            out = model(tokens, input_pos, temp)
+            out = model.decode_forward(tokens, input_pos, temp)
 
         self.assertEqual(out.shape, torch.Size([1, 1]))
         self.assertFalse(torch.isnan(out).any())
