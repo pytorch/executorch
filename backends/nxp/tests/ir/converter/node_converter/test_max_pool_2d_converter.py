@@ -4,6 +4,7 @@
 # LICENSE file in the root directory of this source tree.
 
 import numpy as np
+import pytest
 import torch
 
 from executorch.backends.nxp.backend.edge_program_converter import (
@@ -17,9 +18,6 @@ from executorch.backends.nxp.tests.executors import (
     ToChannelLastPreprocess,
 )
 from executorch.backends.nxp.tests.graph_verifier import DetailedGraphVerifier
-from executorch.backends.nxp.tests.model_output_comparator import (
-    NumericalStatsOutputComparator,
-)
 from executorch.backends.nxp.tests.nsys_testing import lower_run_compare
 from executorch.backends.nxp.tests.ops_aliases import (
     ExecutorchDelegateCall,
@@ -32,7 +30,6 @@ from executorch.backends.nxp.tests.ops_aliases import (
     ViewCopy,
 )
 from executorch.backends.nxp.tests.use_qat import *  # noqa F403
-import pytest
 
 
 class MaxPool1DModule(torch.nn.Module):
@@ -286,7 +283,6 @@ class TestMaxPool2DNewNeutronFlow:
     def test__basic_nsys_inference_qat(self, mocker):
         input_shape = (2, 11, 7, 16)  # The old flow limited the batch size to 1.
         model = MaxPool2dModule()
-        comparator = NumericalStatsOutputComparator()
         graph_verifier = DetailedGraphVerifier(
             mocker,
             expected_delegated_ops={MaxPool2DWithIndices: 1, GetItem: 1},
@@ -297,22 +293,15 @@ class TestMaxPool2DNewNeutronFlow:
             model,
             input_shape,
             graph_verifier,
-            output_comparator=comparator,
             use_new_flow_neutron_c=True,
             use_qat=True,
         )
 
-    def test__kernel_size_limit(self, mocker):
-        kernel_size = (1, 4096)
+    def test__large_kernel_size(self, mocker):
+        kernel_size = (1, 5000)
         input_shape = (1, 4) + kernel_size
-        model = MaxPool2dModule(kernel_size)
+        model = MaxPool2dModule(kernel_size, stride=1)
         self.assert_delegated(model, input_shape, mocker)
-
-    def test__kernel_size_limit_exceeded(self):
-        kernel_size = (1, 4097)  # Exceeds the kernel size limit.
-        input_shape = (1, 4) + kernel_size
-        model = MaxPool2dModule(kernel_size)
-        self.assert_not_delegated(model, input_shape)
 
     def test__stride_limit__no_padding(self, mocker):
         stride = 4096

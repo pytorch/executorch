@@ -252,6 +252,10 @@ Below is an overview of some of the testing options this script provides:
 | `test_arm_backend.sh test_pytest_models_vkml`      | Runs model unit tests for VGF specific use-cases.            |
 | `test_arm_backend.sh test_run_vkml`                | Runs end-to-end unit tests for VGF specific use-cases.       |
 | `test_arm_backend.sh test_model_smollm2_135M`      | Runs some models with Corstone FVP.                          |
+| `test_arm_backend.sh test_ootb_tests_ethos_u`      | Runs out-of-the-box tests for Ethos-U.                       |
+| `test_arm_backend.sh test_ootb_tests_tosa`         | Runs out-of-the-box tests for TOSA.                          |
+| `test_arm_backend.sh test_ootb_tests_vgf`          | Runs out-of-the-box tests for VGF.                           |
+| `test_arm_backend.sh test_deit_e2e_ethos_u`        | Runs DEiT end-to-end tests on Ethos-U.                       |
 | `test_arm_backend.sh test_smaller_stories_llama`   | Runs E2E model tests on Corstone FVP.                        |
 | `test_arm_backend.sh test_memory_allocation`       | Runs memory allocation tests for Ethos-U specific targets    |
 

@@ -269,6 +269,33 @@ test_run_vkml() {
     echo "${TEST_SUITE_NAME}: PASS"
 }
 
+# --------------------------------------
+# -------- Out-of-the-box tests --------
+# --------------------------------------
+test_ootb_tests_ethos_u() {
+    echo "${TEST_SUITE_NAME}: Run out-of-the-box tests for Arm Ethos-U"
+    backends/arm/test/test_arm_ootb.sh run_ootb_tests_ethos_u
+    echo "${TEST_SUITE_NAME}: PASS"
+}
+
+test_ootb_tests_tosa() {
+    echo "${TEST_SUITE_NAME}: Run out-of-the-box tests for TOSA"
+    backends/arm/test/test_arm_ootb.sh run_ootb_tests_tosa
+    echo "${TEST_SUITE_NAME}: PASS"
+}
+
+test_ootb_tests_vgf() {
+    echo "${TEST_SUITE_NAME}: Run out-of-the-box tests for VGF"
+    backends/arm/test/test_arm_ootb.sh run_ootb_tests_vgf
+    echo "${TEST_SUITE_NAME}: PASS"
+}
+
+test_deit_e2e_ethos_u() {
+    echo "${TEST_SUITE_NAME}: Run DEiT end-to-end test for Arm Ethos-U"
+    backends/arm/test/test_arm_ootb.sh run_deit_e2e_ethos_u
+    echo "${TEST_SUITE_NAME}: PASS"
+}
+
 # ------------------------------------
 # -------- Miscellaneous tests -------
 # ------------------------------------

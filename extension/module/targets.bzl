@@ -30,6 +30,7 @@ def define_common_targets():
                 "//executorch/runtime/backend:backend_options",
                 "//executorch/runtime/backend:backend_options_map",
                 "//executorch/runtime/executor:program_no_prim_ops" + aten_suffix,
+                "//executorch/runtime/core:device_memory_buffer",
             ],
         )
 
