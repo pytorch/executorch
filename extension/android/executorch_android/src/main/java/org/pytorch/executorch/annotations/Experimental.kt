@@ -15,5 +15,4 @@ package org.pytorch.executorch.annotations
  * This status is not permanent, and APIs marked with this annotation will need to be either made
  * more robust or removed in the future.
  */
-@Retention(AnnotationRetention.BINARY)
-annotation class Experimental
+@Retention(AnnotationRetention.BINARY) annotation class Experimental
