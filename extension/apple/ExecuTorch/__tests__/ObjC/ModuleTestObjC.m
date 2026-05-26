@@ -15,6 +15,55 @@
 
 @implementation ModuleTestObjC
 
+// Pins the deep-copy contract: -loadWithOptions: must not retain the
+// options wrapper. The C++ Module deep-copies the LoadBackendOptionsMap
+// (and its BackendOption arrays) into Module-owned storage, so dropping
+// the ObjC wrapper after loadWithOptions: returns must be safe and a
+// subsequent forward() must continue to work using the Module's owned
+// copy. If a future refactor reverts to the borrowed-pointer design and
+// reintroduces an ivar to retain the wrapper, this test fails (the
+// weak reference stays non-nil).
+- (void)testLoadWithOptionsDoesNotRetainOptions {
+  NSString *modelPath = [self requireFixture:@"add_coreml" ofType:@"pte"];
+  if (!modelPath) return;
+  NSError *error = nil;
+  ExecuTorchModule *module = [[ExecuTorchModule alloc] initWithFilePath:modelPath];
+
+  __weak ExecuTorchBackendOptionsMap *weakOptions = nil;
+  @autoreleasepool {
+    ExecuTorchBackendOptionsMap *options = [ExecuTorchBackendOptionsMap mapWithOptions:@{
+      @"CoreMLBackend": @[
+        [ExecuTorchBackendOption optionWithKey:@"compute_unit" stringValue:@"cpu_only"],
+      ],
+    } error:&error];
+    XCTAssertNotNil(options, @"%@", error);
+    weakOptions = options;
+    XCTAssertTrue([module loadWithOptions:options error:&error], @"%@", error);
+  }
+  // Local + autoreleased refs have drained. With deep-copy, the wrapper
+  // can be reclaimed and the C++ Module keeps its own copy of the
+  // backend options for any future lazy load_method calls.
+  XCTAssertNil(weakOptions,
+      @"loadWithOptions: must not retain the map (Module deep-copies). "
+      @"See module.cpp Module::load(LoadBackendOptionsMap, ...) deep-copy.");
+
+  // Forward must still execute against the Module-owned options copy.
+  ExecuTorchTensor *one =
+      [[ExecuTorchTensor alloc] initWithScalars:@[@1.0f] dataType:ExecuTorchDataTypeFloat];
+  NSArray<ExecuTorchValue *> *outputs =
+      [module forwardWithTensors:@[one, one] error:&error];
+  XCTAssertNotNil(outputs, @"%@", error);
+
+  __block float result = NAN;
+  [outputs.firstObject.tensorValue
+      bytesWithHandler:^(const void *bytes, NSInteger count, ExecuTorchDataType dt) {
+    if (dt == ExecuTorchDataTypeFloat && count >= 1) {
+      result = ((const float *)bytes)[0];
+    }
+  }];
+  XCTAssertEqual(result, 2.0f);
+}
+
 - (NSBundle *)resourceBundle {
 #if SWIFT_PACKAGE
   return SWIFTPM_MODULE_BUNDLE;

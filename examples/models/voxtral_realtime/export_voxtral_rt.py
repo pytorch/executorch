@@ -188,7 +188,7 @@ def export_all(
 
     programs = {}
     param_dtype = next(model.parameters()).dtype
-    device = "cuda" if backend == "cuda" else "cpu"
+    device = "cuda:0" if backend == "cuda" else "cpu"
 
     # 1. Audio encoder
     print("\nExporting audio_encoder...")
@@ -275,7 +275,7 @@ def export_streaming(
 
     programs = {}
     param_dtype = next(model.parameters()).dtype
-    device = "cuda" if backend == "cuda" else "cpu"
+    device = "cuda:0" if backend == "cuda" else "cpu"
 
     # 1. Streaming audio encoder
     print("\nExporting encode_audio_chunk...")
@@ -618,7 +618,7 @@ def main():
     # Move to CUDA for CUDA backend export (AOTInductor needs CUDA tensors)
     if backend_for_export == "cuda":
         print("Moving model to CUDA...")
-        model.cuda()
+        model.to(torch.device("cuda:0"))
 
     # Untie output/embedding weights before quantization so each layer gets
     # its own quantization config (embedding: 8w, output linear: 8da4w).

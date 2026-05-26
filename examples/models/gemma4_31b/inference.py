@@ -86,7 +86,7 @@ def generate(
     tokenizer,
     prompt: str,
     max_new_tokens: int = 128,
-    temperature: float = 0.0,
+    temperature: float = 0.8,
     eos_token_ids=None,
     bos_token_id: int = 2,
 ) -> str:
