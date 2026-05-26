@@ -221,6 +221,7 @@ class TestQNN(unittest.TestCase):
     static_llm_eval_method = ""
     direct_build_folder: str = ""
     dsp_heap_profile_filename = "htp_heap_usage.txt"
+    use_fp16 = False
 
     @classmethod
     def setUpClass(cls):
