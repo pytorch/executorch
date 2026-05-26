@@ -11,27 +11,25 @@ memory, remaps GGUF names to model FQNs, handles tied embed/lm_head, and
 packs for the target backend.
 
 Vision loading:
-    The loader first walks the GGUF tensor table looking for vision
-    tensors (anything matching the ``v.*`` / ``mm.*`` / ``vision.*`` /
-    ``mmproj.*`` prefixes used by community GGUFs). If any are present,
-    they are loaded directly from the GGUF file -- no companion HF
-    checkpoint is required.
+    Community GGUFs for Gemma 4 31B (e.g. Q4_K_M) pack the text decoder
+    only -- vision tensors are not included by llama.cpp convention. The
+    caller MUST supply an HF bf16 safetensors directory via the required
+    ``vision_hf_dir`` argument; ``vision_tower.*`` / ``embed_vision.*``
+    are streamed from that directory and the matching ``config.json``
+    provides the vision dims.
 
-    If no vision tensors are found (today's community Q4_K_M for
-    Gemma 4 31B falls in this bucket -- the published file packs the
-    text decoder only), the loader falls back to sourcing
-    ``vision_tower.*`` / ``embed_vision.*`` from an HF bf16 safetensors
-    directory next to the GGUF, resolved in this order:
-
-        1. ``GEMMA4_31B_HF_DIR`` environment variable
-        2. Well-known default ``/home/gasoonjia/models/gemma-4-31B``
-
-    If neither path resolves and the GGUF lacks vision tensors, a clear
-    error is raised. Drop a future GGUF with vision tensors into the
-    same loader -- no code change required.
+    If a future GGUF ships with in-band vision tensors (``v.*`` /
+    ``mm.*`` / ``vision.*`` / ``mmproj.*`` prefixes), the loader still
+    requires ``vision_hf_dir`` today because we need its ``config.json``
+    for vision dims; the in-band tensors are detected but not yet
+    routed.
 
 Usage:
-    model, config = load_gguf_model("model.gguf", backend="cuda")
+    model, config = load_gguf_model(
+        "model.gguf",
+        vision_hf_dir="/path/to/gemma-4-31B-it",
+        backend="cuda",
+    )
 """
 
 import os
@@ -43,40 +41,6 @@ import torch
 # (e.g. llama.cpp's mmproj convention) or the mostly-hypothetical case
 # where a future GGUF packs vision in-tree.
 _GGUF_VISION_PREFIXES: tuple[str, ...] = ("v.", "mm.", "vision.", "mmproj.")
-
-# Well-known default HF bf16 checkpoint directory used as a fallback when
-# the GGUF itself does not include vision tensors. See module docstring.
-_DEFAULT_HF_VISION_FALLBACK_DIR = "/home/gasoonjia/models/gemma-4-31B"
-
-
-def _is_valid_hf_dir(path: str) -> bool:
-    """An HF dir is valid if it contains a safetensors index or single shard."""
-    if not path or not os.path.isdir(path):
-        return False
-    return os.path.exists(
-        os.path.join(path, "model.safetensors.index.json")
-    ) or os.path.exists(os.path.join(path, "model.safetensors"))
-
-
-def _resolve_hf_vision_fallback() -> Optional[str]:
-    """Resolve an HF bf16 dir to source vision weights from, or return None.
-
-    Only consulted when the GGUF itself has no vision tensors. Returns
-    None if no usable directory is found; callers raise if vision is
-    still missing after this is consulted.
-    """
-    env_dir = os.environ.get("GEMMA4_31B_HF_DIR")
-    if env_dir:
-        if _is_valid_hf_dir(env_dir):
-            return env_dir
-        raise FileNotFoundError(
-            f"GEMMA4_31B_HF_DIR is set to {env_dir!r} but no HF bf16 "
-            f"safetensors checkpoint was found there. Expected "
-            f"model.safetensors.index.json or model.safetensors."
-        )
-    if _is_valid_hf_dir(_DEFAULT_HF_VISION_FALLBACK_DIR):
-        return _DEFAULT_HF_VISION_FALLBACK_DIR
-    return None
 
 
 def _is_vision_gguf_key(gguf_key: str) -> bool:
@@ -231,6 +195,7 @@ def _scan_gguf_for_vision(gguf_path: str) -> list[str]:
 
 def load_gguf_model(
     gguf_path: str,
+    vision_hf_dir: str,
     max_seq_len: int = 4096,
     backend: str = "cuda",
 ) -> tuple:
@@ -244,10 +209,15 @@ def load_gguf_model(
     while ``lm_head`` keeps the original Q4_K quantization (``nn.Linear``
     matmul via tinygemm).
 
-    Vision tower / multimodal embedder weights are sourced from the GGUF
-    file when it contains them, otherwise from an HF bf16 fallback
-    directory (see module docstring). The returned model is always a
-    full multimodal (text + vision) model.
+    ``vision_hf_dir`` is REQUIRED: community GGUFs for Gemma 4 31B are
+    text-only by llama.cpp convention. The caller must pass an HF bf16
+    safetensors directory; ``vision_tower.*`` / ``embed_vision.*`` are
+    streamed from it and the matching ``config.json`` provides vision
+    dims. Raises ``ValueError`` if ``vision_hf_dir`` is missing/empty
+    and ``FileNotFoundError`` if it does not contain a safetensors
+    checkpoint + ``config.json``.
+
+    The returned model is always a full multimodal (text + vision) model.
 
     Returns ``(model, config)``.
     """
@@ -256,6 +226,32 @@ def load_gguf_model(
     from executorch.examples.models.gemma4_31b.quant.gguf import iter_gguf_tensors
     from torchao.quantization.quantize_.workflows.int4.int4_tensor import Int4Tensor
 
+    if not vision_hf_dir:
+        raise ValueError(
+            "--vision-from-hf is required when using GGUF; community GGUFs "
+            "are text-only -- pass an HF bf16 dir containing vision_tower "
+            "+ embed_vision safetensors"
+        )
+    if not os.path.isdir(vision_hf_dir):
+        raise FileNotFoundError(
+            f"vision_hf_dir {vision_hf_dir!r} is not a directory."
+        )
+    has_index = os.path.exists(
+        os.path.join(vision_hf_dir, "model.safetensors.index.json")
+    )
+    has_single = os.path.exists(os.path.join(vision_hf_dir, "model.safetensors"))
+    if not (has_index or has_single):
+        raise FileNotFoundError(
+            f"vision_hf_dir {vision_hf_dir!r} contains no safetensors "
+            "checkpoint (expected model.safetensors.index.json or "
+            "model.safetensors)."
+        )
+    if not os.path.exists(os.path.join(vision_hf_dir, "config.json")):
+        raise FileNotFoundError(
+            f"vision_hf_dir {vision_hf_dir!r} is missing config.json "
+            "(needed for vision_config dims)."
+        )
+
     if backend == "cuda":
         from executorch.examples.models.gemma4_31b.quant import DEFAULT_CUDA_PACKERS
 
@@ -263,50 +259,27 @@ def load_gguf_model(
     else:
         raise ValueError(f"Unsupported backend: {backend!r}. Supported: 'cuda'.")
 
-    # Up-front scan: if the GGUF has vision tensors we will load them
-    # in-band; otherwise we resolve the HF bf16 fallback now so we fail
-    # fast before the multi-minute text-decoder stream.
+    # Up-front scan only for logging: in-band GGUF vision is not yet
+    # wired (community GGUFs are text-only), so we always source vision
+    # from the explicit HF dir below.
     gguf_vision_keys = _scan_gguf_for_vision(gguf_path)
-    hf_fallback_dir: Optional[str] = None
     if gguf_vision_keys:
         print(
             f"GGUF contains {len(gguf_vision_keys)} vision tensors; "
-            "loading vision in-band."
+            "in-band vision routing is not wired yet -- sourcing vision "
+            f"from {vision_hf_dir} per --vision-from-hf."
         )
-        # Vision dims come from the HF config.json colocated next to the
-        # tokenizer the user already has set up; reuse the HF fallback
-        # resolver to find it. If neither is available we use the
-        # in-repo defaults baked into Gemma4_31BConfig.
-        hf_fallback_dir = _resolve_hf_vision_fallback()
     else:
-        hf_fallback_dir = _resolve_hf_vision_fallback()
-        if hf_fallback_dir is None:
-            raise FileNotFoundError(
-                "GGUF text decoder was streamed successfully but vision_tower "
-                "could not be populated: this GGUF file does not pack vision "
-                "tensors (community Q4_K_M for Gemma 4 31B). Set "
-                "GEMMA4_31B_HF_DIR to an HF bf16 checkpoint directory, or "
-                f"place one at {_DEFAULT_HF_VISION_FALLBACK_DIR!r}."
-            )
         print(
-            "GGUF has no vision tensors; will source vision_tower / "
-            f"embed_vision from {hf_fallback_dir}"
+            "GGUF has no vision tensors (text-only by community convention); "
+            f"will source vision_tower / embed_vision from {vision_hf_dir}"
         )
 
-    # Bring in vision_config (and any vision-relevant text overrides) from
-    # the HF config.json so that vision_tower / embed_vision are
-    # instantiated with matching dims. The HF fallback dir is the only
-    # source of config.json today (the GGUF metadata doesn't carry the
-    # vision config block).
-    config_dir = hf_fallback_dir
-    if config_dir is None:
-        raise FileNotFoundError(
-            "Need an HF checkpoint directory to read vision config.json. "
-            "Set GEMMA4_31B_HF_DIR or place a checkpoint at "
-            f"{_DEFAULT_HF_VISION_FALLBACK_DIR!r}."
-        )
+    # Bring in vision_config (and any vision-relevant text overrides)
+    # from the HF config.json so that vision_tower / embed_vision are
+    # instantiated with matching dims.
     config = Gemma4_31BConfig.from_hf_config(
-        os.path.join(config_dir, "config.json")
+        os.path.join(vision_hf_dir, "config.json")
     )
     config.max_seq_len = max_seq_len
 
@@ -345,12 +318,12 @@ def load_gguf_model(
     _resolve_tied_lm_head(model, embed_quant, packers)
     del embed_quant
 
-    # Vision: always sourced from the HF fallback today (no shipped GGUF
-    # has vision yet for Gemma 4 31B). If a future GGUF arrives with
+    # Vision: sourced from the explicit --vision-from-hf dir today
+    # (community GGUFs are text-only). If a future GGUF arrives with
     # vision tensors the in-band path above will route them; this load
     # then becomes a no-op.
-    print(f"Loading vision_tower + embed_vision from {hf_fallback_dir}...")
-    _load_vision_from_hf(model, config, hf_fallback_dir)
+    print(f"Loading vision_tower + embed_vision from {vision_hf_dir}...")
+    _load_vision_from_hf(model, config, vision_hf_dir)
     _validate_no_meta(model)
 
     model.eval()

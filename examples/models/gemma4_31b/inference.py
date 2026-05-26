@@ -9,10 +9,10 @@
 Three input paths (all produce a full text + vision model):
   --prequantized <dir>   Load a quantized checkpoint (from quantize_and_save.py).
   --gguf <file>          Load a GGUF file (e.g., Q4_K_M from the community).
-                         The vision tower is sourced automatically from an
-                         HF bf16 directory resolved by the GGUF loader
-                         (env var ``GEMMA4_31B_HF_DIR`` or the well-known
-                         default ``/home/gasoonjia/models/gemma-4-31B``).
+                         REQUIRES ``--vision-from-hf <dir>``: community GGUFs
+                         are text-only by llama.cpp convention, so vision
+                         tower / multimodal embedder weights must be
+                         sourced from an explicit HF bf16 directory.
   --bf16 <dir>           Load the bf16 HF safetensors checkpoint via from_hf_checkpoint.
 
 Gemma 4 31B-IT is instruction-tuned and requires chat-template formatting.
@@ -43,12 +43,14 @@ Usage:
 
     python inference.py \\
         --gguf ./gemma-4-31B-it-Q4_K_M.gguf \\
+        --vision-from-hf ./gemma-4-31B-it \\
         --tokenizer-path ./tokenizer.json \\
         --prompt "Hello"
 
-    # GGUF + image: vision tower auto-loaded from the HF bf16 dir.
+    # GGUF + image: --vision-from-hf must point at an HF bf16 dir.
     python inference.py \\
         --gguf ./gemma-4-31B-it-Q4_K_S.gguf \\
+        --vision-from-hf ./gemma-4-31B-it \\
         --image-path ./some_image.png \\
         --prompt "Describe this image."
 """
@@ -384,6 +386,17 @@ def main() -> None:
         default=None,
         help="Path to tokenizer.json (required with --gguf, optional with --prequantized).",
     )
+    parser.add_argument(
+        "--vision-from-hf",
+        default=None,
+        help=(
+            "Path to an HF bf16 safetensors directory used to source "
+            "vision_tower / embed_vision weights. REQUIRED when --gguf "
+            "is set: community GGUFs are text-only by llama.cpp "
+            "convention, so vision must come from an explicit HF dir "
+            "(must contain model.safetensors[.index.json] + config.json)."
+        ),
+    )
     parser.add_argument("--prompt", default="Hello", help="Input prompt.")
     parser.add_argument(
         "--max-new-tokens",
@@ -462,11 +475,14 @@ def main() -> None:
     eos_token_ids = {1, 50, 106}
 
     if args.gguf:
+        if not args.vision_from_hf:
+            parser.error("--vision-from-hf is required when using --gguf")
         from executorch.examples.models.gemma4_31b.gguf_loader import load_gguf_model
 
         model, config = load_gguf_model(
             args.gguf,
-            args.max_seq_len,
+            vision_hf_dir=args.vision_from_hf,
+            max_seq_len=args.max_seq_len,
             backend=args.backend,
         )
     elif args.bf16:
