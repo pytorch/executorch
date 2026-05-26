@@ -8,11 +8,27 @@
 
 set -eu
 
+target="cortex-m55"
+for arg in "$@"; do
+    case $arg in
+      --target=*) target="${arg#*=}";;
+      *) ;;
+    esac
+done
+
+# Forward to build_executorch.sh so the core libs share the runner's -mcpu.
+if [[ ${target} =~ ^cortex-m([0-9]+(plus|p)?)(\+|$) ]]; then
+    target_cpu="cortex-m${BASH_REMATCH[1]}"
+else
+    echo "Error: build_test_runner.sh only supports cortex-m<X> targets, got: ${target}"
+    exit 1
+fi
+
 # Always rebuild executorch in case the cortex-m kernels has been updated.
 script_dir=$(realpath "$(dirname "${BASH_SOURCE[0]}")")
 et_root_dir=$(realpath "${script_dir}/../../..")
 build_executorch="${et_root_dir}/backends/arm/scripts/build_executorch.sh"
-${build_executorch} --devtools
+${build_executorch} --devtools --target_cpu="${target_cpu}" --cmake-args="-DCORTEX_M_ENABLE_RUNTIME_CHECKS=ON"
 
 # Build executor runner with selected aten ops and semi hosting
 build_dir="${et_root_dir}/arm_test"
@@ -32,4 +48,4 @@ aten::unsqueeze_copy.out,\
 aten::select_copy.int_out,\
 aten::amax.out"
 
-${build_executor_runner} --pte=semihosting --bundleio --target=ethos-u55-128 --output="${build_root_test_dir}" --select_ops_list="${select_ops_list}" --extra_build_flags="-DET_ATOL=5.0 -DET_RTOL=1.0"
+${build_executor_runner} --pte=semihosting --bundleio --target="${target}" --output="${build_root_test_dir}" --select_ops_list="${select_ops_list}" --extra_build_flags="-DET_ATOL=5.0 -DET_RTOL=1.0 -DET_ARM_BAREMETAL_SCRATCH_TEMP_ALLOCATOR_POOL_SIZE=0"
