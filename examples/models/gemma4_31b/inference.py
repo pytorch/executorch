@@ -88,11 +88,13 @@ def _move_to_cuda(model, config) -> None:
     """
     for name, p in model.named_parameters():
         if p.device.type == "meta":
-            # All checkpoints (prequant / GGUF / bf16) now produce a fully
-            # materialized text + vision model, so this branch should not
-            # trigger in normal use. Kept defensively so a partially-loaded
-            # model still moves what it can rather than crashing here.
-            continue
+            # All checkpoints (prequant / GGUF / bf16) produce a fully
+            # materialized text + vision model, so this branch is unreachable
+            # in normal use. Surface it loudly if it ever trips.
+            raise AssertionError(
+                f"_move_to_cuda: parameter {name!r} is still on meta — "
+                "checkpoint loader did not populate it."
+            )
         parts = name.rsplit(".", 1)
         parent = model.get_submodule(parts[0]) if len(parts) > 1 else model
         setattr(
@@ -154,8 +156,10 @@ def generate(
     # The 4-method export contract changed `model.forward` to take pre-computed
     # embeddings (used by the unified prefill). For the per-token text-only
     # eager loop we use `decode_forward(tokens, pos, temperature)` instead,
-    # which takes token inputs and internally runs `embed_text` → `_run_blocks`
-    # — same single-token semantics as before, just the right entry point.
+    # which takes token inputs and internally runs `embed_text` -> `_run_blocks`.
+    # `decode_forward` is NOT one of the methods that `torch.compile` wraps
+    # (only `forward` is); we go through `_orig_mod` so attribute access lands
+    # on the original module rather than the compile wrapper's proxy path.
     underlying = getattr(model, "_orig_mod", model)
 
     sampled = None

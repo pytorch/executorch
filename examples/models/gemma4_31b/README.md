@@ -36,9 +36,29 @@ Two built-in recipes (see `quantize_and_save.py`):
 | `default` | INT4 min_max linears, INT8 per-axis embedding |
 | `sensitive` | INT8 for edge-layer v_proj/down_proj, INT4 hqq elsewhere, INT8 per-axis embedding |
 
-The vision tower position-embedding table is additionally quantized to INT8
-on the fly (see `quant/pack_vision_cuda.py`); all other vision params stay
-in bf16 (~0.4 GB).
+The vision tower position-embedding table is quantized to INT8 per-channel
+inside `quantize_and_save.py` (via `quant/pack_vision_cuda.py::quantize_vision_position_table`)
+and persisted as int8 + fp32-scale buffers in the prequantized checkpoint;
+all other vision params stay in bf16 (~0.4 GB).
+
+## Recommended flow: prequantize once, then export
+
+The recommended flow is two separate steps -- there is no
+quantization-during-export path:
+
+1. **Prequantize once.** Run `quantize_and_save.py` on the bf16 HF checkpoint
+   to produce a prequantized safetensors checkpoint (~25 min, ~30 GB CPU RAM
+   peak). Do this once and reuse the result.
+2. **Export from the prequantized checkpoint.** Run `export.py --prequantized
+   <dir>` to produce `model.pte` + `model.ptd` (~30 min). Export does NOT
+   re-quantize; it simply lowers the already-quantized weights into the
+   backend graph.
+
+Eager inference (`inference.py`) and the runner both load the same
+prequantized checkpoint. The text decoder weights are stored as torchao
+`Int4Tensor` / `IntxUnpackedToInt8Tensor` subclasses; the vision tower is
+bf16 + the INT8 PE buffers; pack-time is a no-op (no requant happens on
+load).
 
 ## Prequantized checkpoint
 

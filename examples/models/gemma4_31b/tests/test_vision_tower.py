@@ -6,22 +6,16 @@
 
 """Validation gate for the Gemma 4 31B vision tower port.
 
-Updated for the 4-method unified contract (orchestrator pin #4):
-  forward(inputs_embeds, input_pos, temperature)  -> exported as `prefill`
-  decode_forward(tokens, input_pos, temperature)  -> exported as `decode`
-  embed_text(tokens) -> bf16                      -> exported as `embed_text`
-  Gemma4_31BVisionTower                           -> exported as `vision_encoder`
+Vision is always on; there is exactly one model shape (text + vision).
 
 Tests:
-  1. ``test_state_dict_keys_with_vision_is_strict_superset`` — vision attach
-     adds exactly +356 keys (no text-key drift).
-  2. ``test_forward_signature_takes_inputs_embeds`` — forward signature is the
-     new unified-prefill shape.
-  3. ``test_multimodal_methods_present`` — embed_text + decode_forward exist;
+  1. ``test_forward_signature_takes_inputs_embeds`` — forward signature is the
+     unified-prefill shape.
+  2. ``test_multimodal_methods_present`` — embed_text + decode_forward exist;
      legacy prefill_image is GONE.
-  4. ``test_decode_forward_equivalent_to_embed_then_forward`` — the fused
+  3. ``test_decode_forward_equivalent_to_embed_then_forward`` — the fused
      decode_forward matches forward(embed_text(tokens)) within bf16 tolerance.
-  5. ``test_vision_tower_matches_hf`` — cosine_sim > 0.99999 vs HF baseline.
+  4. ``test_vision_tower_matches_hf`` — cosine_sim > 0.99999 vs HF baseline.
 
 The HF reference is built by loading ONLY the vision sub-modules of
 ``Gemma4ForConditionalGeneration`` (so we don't pay the LM-loading cost) and
@@ -31,10 +25,8 @@ wrapping them in the same export-safe shape as
 
 from __future__ import annotations
 
-import json
 import os
 import sys
-from pathlib import Path
 
 import pytest
 import torch
@@ -58,44 +50,6 @@ from executorch.examples.models.gemma4_31b.vision_tower import (  # noqa: E402
 
 
 HF_MODEL_DIR = "/home/gasoonjia/models/gemma-4-31B"
-SNAPSHOT_PATH = Path(__file__).parent / "_text_only_state_dict_keys.json"
-
-
-# ---------------------------------------------------------------------------
-# Test 1: vision attach is additive (no text-key drift) — ADD-ONLY guarantee.
-# ---------------------------------------------------------------------------
-
-
-def _expected_text_only_keys() -> set[str]:
-    with open(SNAPSHOT_PATH, "r") as f:
-        return set(json.load(f))
-
-
-def test_state_dict_keys_with_vision_is_strict_superset():
-    """vision_config != None → adds exactly the vision_tower / embed_vision keys.
-
-    Even after the design pivot, this still holds: the model.py changes
-    affect forward semantics, not the on-checkpoint key layout. State dict =
-    833 text keys (snapshot) + 356 vision keys (attached when vision_config
-    is parsed from the HF config.json).
-    """
-    cfg = Gemma4_31BConfig.from_hf_config(os.path.join(HF_MODEL_DIR, "config.json"))
-    assert cfg.vision_config is not None
-    cfg.max_seq_len = 4096
-    with torch.device("meta"):
-        model = Gemma4_31B(cfg)
-    keys = set(model.state_dict().keys())
-    expected_text = _expected_text_only_keys()
-    extras = keys - expected_text
-    missing = expected_text - keys
-    assert not missing, f"Vision build dropped text keys: {sorted(missing)[:10]}"
-    bad_extras = [
-        k
-        for k in extras
-        if not (k.startswith("vision_tower.") or k.startswith("embed_vision."))
-    ]
-    assert not bad_extras, f"Unexpected non-vision extras: {bad_extras[:10]}"
-    assert len(extras) == 356, f"Expected 356 vision keys, got {len(extras)}"
 
 
 # ---------------------------------------------------------------------------
@@ -150,7 +104,7 @@ def test_decode_forward_equivalent_to_embed_then_forward():
     same answer.
     """
     cfg = Gemma4_31BConfig.from_hf_config(os.path.join(HF_MODEL_DIR, "config.json"))
-    # Vision is mandatory now \u2014 swap in a tiny vision_config so the model
+    # Vision is mandatory now -- swap in a tiny vision_config so the model
     # construction stays cheap without requiring HF's full 1152-dim tower.
     cfg.vision_config = Gemma4VisionConfig(
         hidden_size=32,
@@ -188,15 +142,15 @@ def test_decode_forward_equivalent_to_embed_then_forward():
         out_via_embeds = model.forward(inputs_embeds_fp32, input_pos, temperature=None)
 
     diff = (out_decode - out_via_embeds).abs().max().item()
-    # Tolerance covers bf16 round-trip in embed_text (≈ 3 decimal digits of
-    # precision × 2 transformer layers ≈ 5e-3 worst-case logit noise).
+    # Tolerance covers bf16 round-trip in embed_text (~3 decimal digits of
+    # precision x 2 transformer layers ~ 5e-3 worst-case logit noise).
     assert torch.allclose(
         out_decode, out_via_embeds, atol=1e-2, rtol=1e-2
     ), f"decode_forward vs embed+forward diverged: max diff {diff}"
 
 
 # ---------------------------------------------------------------------------
-# Test 3: HF-baseline cosine-sim parity for the vision tower forward.
+# HF-baseline cosine-sim parity for the vision tower forward.
 # ---------------------------------------------------------------------------
 
 
@@ -231,7 +185,7 @@ def _hf_to_our_vision_state_dict(hf_state: dict) -> dict:
                 matched = True
                 break
         if not matched:
-            # silently skip — keeps the helper robust to extra HF buffers.
+            # silently skip -- keeps the helper robust to extra HF buffers.
             pass
     return out
 
@@ -340,7 +294,7 @@ def test_vision_tower_matches_hf():
     dtype = torch.float32
 
     # Build inputs first (cheap) so a fast failure surfaces before HF load.
-    # max_patches = 36 = 6x6 grid → output_length = 36 / 9 = 4 soft tokens.
+    # max_patches = 36 = 6x6 grid -> output_length = 36 / 9 = 4 soft tokens.
     cfg = Gemma4VisionConfig.from_hf_config(os.path.join(HF_MODEL_DIR, "config.json"))
     pixel_values, pixel_position_ids = _make_inputs(
         batch=1, grid=6, patch_dim=cfg.patch_dim, seed=0, dtype=dtype

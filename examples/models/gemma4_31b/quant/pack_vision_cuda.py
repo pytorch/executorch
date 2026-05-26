@@ -4,12 +4,33 @@
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
 
-"""Vision-tower quantization + packing helpers (ADD-ONLY).
+"""Vision-tower quantization + packing helpers.
 
-The text-decoder pipeline (recipe.py / quantize.py / pack_cuda.py /
-quantize_and_save.py) is left untouched. This module adds:
+WHY this is a separate module from ``pack_cuda.py``:
+  The text decoder and the vision tower have very different quantization
+  policies, so unifying them would obscure both.
 
-  * ``quantize_vision_position_table(vision_tower)`` — in-place swap of
+  * Text decoder (pack_cuda.py): every linear gets INT4 group_size=32 via
+    torchao's ``Int4Tensor`` subclass; embedding is INT8 per-axis. The
+    packer just installs the subclass weight on each module.
+  * Vision tower (this file): every linear and norm STAYS bf16 (the tower
+    is small enough that bf16 is fine and INT4 hurts vision-question
+    accuracy on Gemma 4 PE-int8 experiments). The only "real" quantization
+    is the position-embedding table (~47 MB bf16 -> ~12 MB int8 per-channel),
+    installed via a monkey-patched ``_position_embeddings`` lookup.
+
+Mixing the two policies in one packer would mean every entrypoint has to
+branch on "is this a vision FQN?" -- the disjoint-prefix approach below
+keeps each module readable.
+
+This module is functionally ported from
+``examples/models/gemma4/export_gemma4.py::_quantize_position_embedding_table``
+(the E2B/E4B vision PE-int8 packer); the math is identical, only the
+hidden-size constants differ. See the per-function ``Ported from`` notes.
+
+Public API:
+
+  * ``quantize_vision_position_table(vision_tower)`` -- in-place swap of
     the patch embedder's bf16 ``position_embedding_table`` Parameter with
     two buffers ``_pet_int8`` (per-channel int8) and ``_pet_scale``
     (fp32). The Gemma 4 31B vision PE table is (2, 10240, 1152) ≈ 47 MB
@@ -70,6 +91,10 @@ VISION_PREFIXES: tuple[str, ...] = ("vision_tower.", "embed_vision.")
 def _patch_position_embeddings_int8(patch_embedder: nn.Module) -> None:
     """Monkey-patch ``_position_embeddings`` to dequantize + index the int8 PE table.
 
+    Ported from
+    ``examples/models/gemma4/export_gemma4.py::_position_embeddings_int8``
+    (Gemma 4 E2B/E4B int8 PE table lookup).
+
     Uses the same one-hot-matmul shape that HF's
     ``Gemma4VisionPatchEmbedder._position_embeddings`` produces, except we
     dequantize ``_pet_int8 * _pet_scale`` first. We also stick to
@@ -105,6 +130,11 @@ def quantize_vision_position_table(
 ) -> None:
     """Replace ``vision_tower.patch_embedder.position_embedding_table`` with
     int8 per-channel data + fp32 scale buffers, and patch the lookup method.
+
+    Ported from
+    ``examples/models/gemma4/export_gemma4.py::_quantize_position_embedding_table``
+    (the E2B/E4B vision PE-int8 packer). Same per-channel quant math; only the
+    hidden-size constant differs (1152 here vs 768 in the E2B port).
 
     Idempotent: a second call is a no-op.
     """

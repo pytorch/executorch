@@ -14,18 +14,10 @@ Two test classes:
   every other vision tensor stays bf16), and verifies cosine_sim > 0.999
   versus the HF reference output on a small fixed input.
 
-* ``TestBackwardCompatTextOnly`` — Gate 1 (regression) + Gate 3
-  (backward-compat read). On a tiny model:
-    1. Quantize + save with NO vision attached → safetensors keys must
-       equal the pre-port _text_only_state_dict_keys.json snapshot
-       (after the ``embed_tokens.weight`` torchao split).
-    2. Quantize + save with vision DETACHED in quantize_and_save (the
-       --no-vision code path) on a model that has vision attached must
-       produce the same on-disk key set.
-    3. ``load_prequantized_model`` on a text-only safetensors must
-       reconstruct a model whose state_dict keys match the text-only
-       snapshot (i.e. it does NOT attach a vision_tower submodule when
-       the file has no vision keys, and does not error).
+* ``test_no_vision_silently_skips_when_vision_attached`` — Exercises the
+  detach-then-quantize pattern from quantize_and_save.py: vision submodules
+  are removed before the text-decoder recipe runs so vision linears never
+  get INT4-quantized.
 
 These tests are CPU-only except for the cosine-sim check, which loads the
 HF reference (large) and is gated on ``GEMMA4_31B_HF_DIR`` existing.
@@ -72,14 +64,6 @@ from torchao.prototype.safetensors.safetensors_support import (  # noqa: E402
 
 
 HF_MODEL_DIR = "/home/gasoonjia/models/gemma-4-31B"
-SNAPSHOT_PATH = (
-    Path(__file__).parent.parent.parent / "tests" / "_text_only_state_dict_keys.json"
-)
-
-
-def _expected_text_only_keys() -> set[str]:
-    with open(SNAPSHOT_PATH, "r") as f:
-        return set(json.load(f))
 
 
 # ---------------------------------------------------------------------------
@@ -277,12 +261,6 @@ def _txt_keys_after_quantize(model: Gemma4_31B) -> tuple[set, set]:
     return set(tensors_data.keys()), set(json.loads(metadata.get("tensor_names", "[]")))
 
 
-# Removed: `test_text_only_save_keys_match_snapshot` and
-# `test_load_prequantized_text_only_no_vision_attached` \u2014 these tested the
-# old text-only branch (build a model without vision_config). Vision is now
-# mandatory; missing vision = error, so those scenarios are no longer valid.
-
-
 def test_no_vision_silently_skips_when_vision_attached():
     """Build a model WITH vision attached (vision_config != None), then run
     the quantize_and_save 'detach + skip' path: the resulting saved-keys set
@@ -379,13 +357,8 @@ def test_has_vision_keys_with_vision():
         assert has_vision_keys(path) is True
 
 
-# Removed: `_save_text_only_tiny_checkpoint` and
-# `test_load_prequantized_text_only_no_vision_attached` \u2014 the text-only
-# checkpoint case is no longer valid (vision is mandatory).
-
-
 # ---------------------------------------------------------------------------
-# Test 4 \u2014 install_int8_pe_dispatch + collect_vision_state_dict roundtrip.
+# Test 4 -- install_int8_pe_dispatch + collect_vision_state_dict roundtrip.
 # ---------------------------------------------------------------------------
 
 

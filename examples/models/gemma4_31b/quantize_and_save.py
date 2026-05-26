@@ -114,12 +114,16 @@ def main() -> None:
         print("Untying embed_tokens / lm_head...")
         model.lm_head.weight = nn.Parameter(model.embed_tokens.weight.clone())
 
-    # Detach vision submodules BEFORE calling quantize_model so the existing
-    # recipe \u2014 which matches `.*\.weight` \u2014 never sees them. The text-decoder
-    # path below remains bitwise-identical to its pre-vision behavior. Vision
-    # is processed separately as bf16 + INT8 PE-table only. Vision is mandatory
-    # for Gemma 4 31B \u2014 the attribute lookups below will raise AttributeError
-    # if the model was somehow built without vision (shouldn't happen).
+    # Vision-side weights have a separate quant policy from the text decoder:
+    #   - text decoder linears -> INT4 group_size=32 (default recipe)
+    #   - vision tower linears -> stay bf16 (small + sensitive); only the
+    #     position-embedding table is quantized, to INT8 per-channel.
+    # The text-decoder recipe rule `.*\.weight` would otherwise INT4-quantize
+    # vision linears, breaking the vision tower. We detach the vision submodules
+    # so the recipe never sees them, run the text-decoder quant, then handle
+    # vision separately via collect_vision_state_dict + quantize_vision_position_table.
+    # Vision is mandatory for Gemma 4 31B; the attribute lookups below will raise
+    # AttributeError if the model was somehow built without vision (shouldn't happen).
     vision_tower = model.vision_tower
     embed_vision = model.embed_vision
     del model.vision_tower
@@ -128,7 +132,7 @@ def main() -> None:
     print(f"Quantizing with recipe '{args.quant_recipe}'...")
     state_dict = quantize_model(model, recipe, verbose=True)
 
-    # Vision-side state dict \u2014 always saved (vision is mandatory).
+    # Vision-side state dict -- always saved (vision is mandatory).
     from executorch.examples.models.gemma4_31b.quant.pack_vision_cuda import (
         collect_vision_state_dict,
         quantize_vision_position_table,

@@ -108,9 +108,11 @@ DEFINE_string(
 DEFINE_int32(
     max_vision_soft_tokens,
     280,
-    "Maximum number of vision soft tokens emitted by the vision encoder. "
-    "Must match the value the .pte was exported with. 280 is the default "
-    "Gemma 4 vision tower.");
+    "Maximum number of vision soft tokens (post-pooling image embedding rows) "
+    "the runner asks the vision encoder for. The pooler emits up to this many "
+    "rows; the patchifier sizes the input patch grid accordingly. Must match "
+    "the value the .pte was exported with (one of {70,140,280,560,1120}). "
+    "Default 280 = the Gemma 4 vision tower default.");
 
 namespace llm = ::executorch::extension::llm;
 using ::executorch::extension::from_blob;
@@ -695,10 +697,60 @@ int main(int argc, char** argv) {
     prefill_pos += chunk_len;
   }
 #else // !EXECUTORCH_BUILD_CUDA
-  // Non-CUDA build: this runner doesn't actually function (no temperature
-  // tensor, no AOTI sampler), but we keep this branch so the file compiles.
-  ET_LOG(Error, "CPU build path is not supported for this runner.");
-  return 1;
+  // MLX build (Apple Silicon): the exported PTE has a single `forward(tokens,
+  // input_pos)` method (no on-device sampler, no embed_text split). Mirror
+  // the pre-vision text-only flow:
+  //   1. Encode the prompt with the chat template + BOS.
+  //   2. Chunked prefill via `forward`; the last chunk gives us the first
+  //      generated token via `llm::logits_to_token` (host-side sampling).
+  // The shared decode loop below handles subsequent tokens; the MLX branch
+  // there already calls `module->execute("forward", ...)` and host-samples.
+  {
+    auto encode_result = tokenizer->encode(prompt_text);
+    if (!encode_result.ok()) {
+      ET_LOG(Error, "Failed to encode prompt");
+      return 1;
+    }
+    auto token_vec = std::move(*encode_result);
+    // Gemma models require BOS at the start of the sequence.
+    token_vec.insert(token_vec.begin(), static_cast<uint64_t>(FLAGS_bos_id));
+    prompt_tokens.assign(token_vec.begin(), token_vec.end());
+  }
+  num_prompt_tokens = static_cast<int64_t>(prompt_tokens.size());
+  printf("Prompt tokens: %" PRId64 "\n", num_prompt_tokens);
+  stats.num_prompt_tokens = num_prompt_tokens;
+
+  while (prefill_pos < num_prompt_tokens) {
+    int64_t chunk_len =
+        std::min(num_prompt_tokens - prefill_pos, max_prefill_chunk);
+    std::vector<int64_t> token_data(
+        prompt_tokens.begin() + prefill_pos,
+        prompt_tokens.begin() + prefill_pos + chunk_len);
+    std::vector<int64_t> pos_data(chunk_len);
+    for (int64_t i = 0; i < chunk_len; ++i) {
+      pos_data[i] = prefill_pos + i;
+    }
+    auto tokens_tensor = from_blob(
+        token_data.data(),
+        {1, S(chunk_len)},
+        executorch::aten::ScalarType::Long);
+    auto pos_tensor = from_blob(
+        pos_data.data(), {S(chunk_len)}, executorch::aten::ScalarType::Long);
+
+    std::vector<EValue> inputs;
+    inputs.push_back(EValue(tokens_tensor));
+    inputs.push_back(EValue(pos_tensor));
+
+    auto result = module->execute("forward", inputs);
+    if (result.error() != Error::Ok) {
+      ET_LOG(Error, "forward failed at pos %" PRId64, prefill_pos);
+      return 1;
+    }
+    cur_token = static_cast<uint64_t>(
+        llm::logits_to_token(result.get()[0].toTensor(), temp_val));
+
+    prefill_pos += chunk_len;
+  }
 #endif
 
   stats.prompt_eval_end_ms = llm::time_in_ms();
