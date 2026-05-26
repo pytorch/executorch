@@ -821,6 +821,25 @@ def materialize_runtime_buffers(
             "inv_freq", attn._compute_inv_freq(device=device), persistent=False
         )
 
+    # Vision tower RoPE: recompute inv_freq for the vision encoder. This
+    # buffer is non-persistent (not in the HF checkpoint) and is built on the
+    # meta device during model construction, so the meta-buffer zeroing loop
+    # above leaves it at all-zeros. We must recompute it with real values.
+    vision_rotary = getattr(model, "vision_tower", None)
+    if vision_rotary is not None:
+        rotary_emb = model.vision_tower.encoder.rotary_emb
+        head_dim = rotary_emb.head_dim
+        rope_theta = rotary_emb.rope_theta
+        spatial_dim = head_dim // 2
+        vision_inv_freq = 1.0 / (
+            rope_theta
+            ** (
+                torch.arange(0, spatial_dim, 2, device=device, dtype=torch.float32)
+                / spatial_dim
+            )
+        )
+        rotary_emb.register_buffer("inv_freq", vision_inv_freq, persistent=False)
+
     model.register_buffer(
         "embed_normalizer",
         torch.tensor(config.hidden_size**0.5, device=device),
