@@ -17,7 +17,11 @@ from executorch.backends.arm.operators.operator_validation_utils import (
     validate_num_inputs,
     validate_valid_dtype,
 )
-from executorch.backends.arm.tosa.mapping import TosaArg  # type: ignore
+from executorch.backends.arm.tosa.mapping import (  # type: ignore
+    TOSA_CONTROL_FLOW_REGION_NAME_META,
+    TOSA_TENSOR_NAME_META,
+    TosaArg,
+)
 from torch.fx import Node
 
 
@@ -38,7 +42,12 @@ class CondVisitor(NodeVisitor):
         validate_cf_extension(self.target, self.tosa_spec)
 
         attr = ts.TosaSerializerAttribute()
-        if_graph, else_graph = (cast(Node, arg).target for arg in node.args[1:3])
+        if_graph, else_graph = (
+            cast(Node, arg).meta.get(
+                TOSA_CONTROL_FLOW_REGION_NAME_META, str(cast(Node, arg).target)
+            )
+            for arg in node.args[1:3]
+        )
         attr.CondIfAttribute(if_graph, else_graph)
 
         self._serialize_operator(
@@ -47,7 +56,11 @@ class CondVisitor(NodeVisitor):
             ts.Op.COND_IF,
             [
                 inputs[0].name,
-                *(subgraph_input.name for subgraph_input in inputs[-1].special),
+                *(
+                    subgraph_input.name
+                    + subgraph_input.meta.get(TOSA_TENSOR_NAME_META, "")
+                    for subgraph_input in inputs[-1].special
+                ),
             ],
             output.multiple_output_names,
             attr,

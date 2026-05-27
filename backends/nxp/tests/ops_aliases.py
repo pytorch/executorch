@@ -26,6 +26,7 @@ HardTanh = exir_ops.edge.aten.hardtanh.default
 HardTanh_ = exir_ops.edge.aten.hardtanh_.default
 LeakyRelu = exir_ops.edge.aten.leaky_relu.default
 MaxPool2DWithIndices = exir_ops.edge.aten.max_pool2d_with_indices.default
+MeanDim = exir_ops.edge.aten.mean.dim
 MulTensor = exir_ops.edge.aten.mul.Tensor
 QuantizePerChannel = exir_ops.edge.quantized_decomposed.quantize_per_channel.default
 QuantizePerTensor = exir_ops.edge.quantized_decomposed.quantize_per_tensor.default

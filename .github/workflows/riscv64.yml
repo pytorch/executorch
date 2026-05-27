@@ -28,21 +28,22 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        include:
-          - { model: add,        xnnpack: false, quantize: false }
-          - { model: add,        xnnpack: true,  quantize: false }
-          - { model: mv2,        xnnpack: false, quantize: false }
-          - { model: mv2,        xnnpack: true,  quantize: false }
-          - { model: mv2,        xnnpack: true,  quantize: true }
-          - { model: mobilebert, xnnpack: false, quantize: false }
-          - { model: mobilebert, xnnpack: true,  quantize: false }
-          - { model: mobilebert, xnnpack: true,  quantize: true }
-          - { model: llama2,     xnnpack: false, quantize: false }
-          - { model: llama2,     xnnpack: true,  quantize: false }
-          - { model: llama2,     xnnpack: true,  quantize: true }
-          - { model: resnet18,   xnnpack: false, quantize: false }
-          - { model: resnet18,   xnnpack: true,  quantize: false }
-          - { model: resnet18,   xnnpack: true,  quantize: true }
+        model:
+          - add
+          - mv2
+          - mobilebert
+          - llama2
+          - resnet18
+          - yolo26
+        xnnpack: [true, false]
+        quantize: [true, false]
+        exclude:
+          # We only enable quantization with XNNPACK
+          - xnnpack: false
+            quantize: true
+          # We don't test quantization for Yolo26
+          - model: yolo26
+            quantize: true
     permissions:
       id-token: write
       contents: read
