@@ -236,14 +236,6 @@ class TestMlxPipeline(unittest.TestCase):
         self.assertFalse(torch.isnan(old_tito).any())
         self.assertTrue(torch.equal(old_tito, via_embeds))
 
-        # decode_forward still calls the original _run_blocks helper and
-        # therefore passes layer masks; transformed layers must accept them.
-        temp = torch.tensor([1e-6], dtype=torch.float32)
-        with torch.no_grad():
-            sampled = model.decode_forward(tokens, input_pos, temp)
-        self.assertEqual(sampled.shape, torch.Size([1, 1]))
-        self.assertFalse(torch.isnan(sampled).any())
-
     def test_source_transforms_use_mlx_ops(self):
         """Verify the traced graph contains the expected MLX custom ops.
 

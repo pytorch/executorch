@@ -100,23 +100,14 @@ def _replace_attention_forward(attn: nn.Module) -> None:
 
 
 def _replace_layer_forward(layer: nn.Module) -> None:
-    """Replace Gemma4DecoderLayer's forward with the MLX attention path.
-
-    The transformed top-level ``forward`` calls layers as ``layer(x, input_pos)``,
-    but exported ``decode_forward`` still goes through the original ``_run_blocks``
-    helper, which calls ``layer(x, input_pos, sliding_mask, full_mask)``. Accept
-    and ignore the mask arguments so both entry points trace the same MLX path.
-    """
+    """Replace Gemma4DecoderLayer's forward with the MLX attention path."""
     import types
 
     def _mlx_layer_forward(
         self,
         x: torch.Tensor,
         input_pos: torch.Tensor,
-        sliding_mask: torch.Tensor | None = None,
-        full_mask: torch.Tensor | None = None,
     ) -> torch.Tensor:
-        del sliding_mask, full_mask
         residual = x
         h = self.input_layernorm(x)
         h = self.self_attn(h, input_pos)
