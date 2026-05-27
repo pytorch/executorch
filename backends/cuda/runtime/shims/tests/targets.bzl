@@ -47,8 +47,11 @@ def define_common_targets():
         name = "test_op__device_copy",
         srcs = ["test_op__device_copy.cpp"],
         deps = [
-            "//executorch/backends/cuda/runtime:cuda_allocator",
-            "//executorch/backends/cuda/runtime:op__device_copy",
+            "//executorch/backends/cuda/runtime:cuda_backend",
+            "//executorch/kernels/portable:generated_lib",
+            "//executorch/kernels/portable:generated_lib_headers",
+            "//executorch/kernels/portable/cpu:op__device_copy",
+            "//executorch/runtime/core:device_allocator",
             "//executorch/runtime/core/exec_aten:lib",
             "//executorch/runtime/core/portable_type:portable_type",
             "//executorch/runtime/kernel:kernel_runtime_context",

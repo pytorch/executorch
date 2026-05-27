@@ -152,13 +152,14 @@ int main(int argc, char** argv) {
     ET_LOG(Error, "Preprocessing failed.");
     return 1;
   }
-  auto mel_features = preprocess_result.get();
+  auto preprocess_out = preprocess_result.get();
 
   // --- Transcribe ---
   ET_LOG(Info, "Running TDT greedy decode...");
-  auto result = runner.transcribe(mel_features, [](const std::string& piece) {
-    std::cout << piece << std::flush;
-  });
+  auto result = runner.transcribe(
+      preprocess_out.features,
+      [](const std::string& piece) { std::cout << piece << std::flush; },
+      preprocess_out.length);
 
   if (!result.ok()) {
     ET_LOG(Error, "Transcription failed.");

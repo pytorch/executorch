@@ -7,7 +7,8 @@
  */
 
 #include <cuda_runtime.h>
-#include <executorch/backends/cuda/runtime/cuda_allocator.h>
+#include <executorch/kernels/portable/Functions.h>
+#include <executorch/runtime/core/device_allocator.h>
 #include <executorch/runtime/core/exec_aten/exec_aten.h>
 #include <executorch/runtime/core/portable_type/tensor_impl.h>
 #include <executorch/runtime/kernel/kernel_runtime_context.h>
@@ -29,40 +30,30 @@
 using executorch::aten::ScalarType;
 using executorch::aten::Tensor;
 using executorch::aten::TensorImpl;
-using executorch::backends::cuda::CudaAllocator;
+using executorch::runtime::Error;
+using executorch::runtime::get_device_allocator;
 using executorch::runtime::KernelRuntimeContext;
 using executorch::runtime::TensorShapeDynamism;
 using executorch::runtime::etensor::DeviceIndex;
 using executorch::runtime::etensor::DeviceType;
 
-namespace executorch::backends::cuda {
-Tensor& _h2d_copy_out(
-    KernelRuntimeContext& ctx,
-    const Tensor& self,
-    Tensor& out);
-Tensor& _d2h_copy_out(
-    KernelRuntimeContext& ctx,
-    const Tensor& self,
-    Tensor& out);
-} // namespace executorch::backends::cuda
-
 namespace {
 
 struct CudaDeleter {
   void operator()(void* ptr) const {
-    CudaAllocator::instance().deallocate(ptr, device_index);
+    if (ptr != nullptr) {
+      cudaFree(ptr);
+    }
   }
-
-  DeviceIndex device_index = 0;
 };
 
 using CudaPtr = std::unique_ptr<void, CudaDeleter>;
 
-CudaPtr allocate_cuda(size_t nbytes, DeviceIndex device_index = 0) {
-  auto result = CudaAllocator::instance().allocate(nbytes, device_index);
-  EXPECT_TRUE(result.ok()) << "CudaAllocator::allocate failed";
-  return CudaPtr(
-      result.ok() ? result.get() : nullptr, CudaDeleter{device_index});
+CudaPtr allocate_cuda(size_t nbytes) {
+  void* ptr = nullptr;
+  const cudaError_t err = cudaMalloc(&ptr, nbytes);
+  EXPECT_EQ(err, cudaSuccess) << "cudaMalloc failed";
+  return CudaPtr(ptr);
 }
 
 bool is_cuda_available() {
@@ -98,6 +89,8 @@ class CudaDeviceCopyOpTest : public ::testing::Test {
  protected:
   static void SetUpTestSuite() {
     executorch::runtime::runtime_init();
+    ASSERT_NE(get_device_allocator(DeviceType::CUDA), nullptr)
+        << "Linking cuda_backend should auto-register the CUDA allocator";
   }
 
   void SetUp() override {
@@ -105,11 +98,21 @@ class CudaDeviceCopyOpTest : public ::testing::Test {
       GTEST_SKIP() << "CUDA not available, skipping CUDA device copy op tests";
     }
   }
+
+  Tensor& op_h2d_copy_out(const Tensor& self, Tensor& out) {
+    return torch::executor::et_copy::_h2d_copy_outf(context_, self, out);
+  }
+
+  Tensor& op_d2h_copy_out(const Tensor& self, Tensor& out) {
+    return torch::executor::et_copy::_d2h_copy_outf(context_, self, out);
+  }
+
+  KernelRuntimeContext context_;
 };
 
 } // namespace
 
-TEST_F(CudaDeviceCopyOpTest, H2dCopyUsesCudaAllocatorCopy) {
+TEST_F(CudaDeviceCopyOpTest, H2dCopyUsesRegisteredCudaAllocator) {
   std::vector<float> src_data = {1.0f, 2.0f, 3.0f, 4.0f};
   auto device_data = allocate_cuda(src_data.size() * sizeof(float));
   ASSERT_NE(device_data.get(), nullptr);
@@ -142,14 +145,14 @@ TEST_F(CudaDeviceCopyOpTest, H2dCopyUsesCudaAllocatorCopy) {
       0);
   Tensor dst(&dst_impl);
 
-  KernelRuntimeContext ctx;
-  Tensor& result = executorch::backends::cuda::_h2d_copy_out(ctx, src, dst);
+  Tensor& result = op_h2d_copy_out(src, dst);
 
+  EXPECT_EQ(context_.failure_state(), Error::Ok);
   EXPECT_EQ(&result, &dst);
   EXPECT_EQ(copy_cuda_to_host(device_data.get(), src_data.size()), src_data);
 }
 
-TEST_F(CudaDeviceCopyOpTest, D2hCopyUsesCudaAllocatorCopy) {
+TEST_F(CudaDeviceCopyOpTest, D2hCopyUsesRegisteredCudaAllocator) {
   const std::vector<float> expected = {5.0f, 6.0f, 7.0f, 8.0f};
   auto device_data = allocate_cuda(expected.size() * sizeof(float));
   ASSERT_NE(device_data.get(), nullptr);
@@ -184,9 +187,9 @@ TEST_F(CudaDeviceCopyOpTest, D2hCopyUsesCudaAllocatorCopy) {
       0);
   Tensor dst(&dst_impl);
 
-  KernelRuntimeContext ctx;
-  Tensor& result = executorch::backends::cuda::_d2h_copy_out(ctx, src, dst);
+  Tensor& result = op_d2h_copy_out(src, dst);
 
+  EXPECT_EQ(context_.failure_state(), Error::Ok);
   EXPECT_EQ(&result, &dst);
   EXPECT_EQ(dst_data, expected);
 }

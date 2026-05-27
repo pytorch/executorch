@@ -16,10 +16,11 @@
 
 #include <gtest/gtest.h>
 
+#include <executorch/kernels/test/FunctionHeaderWrapper.h> // Declares the operator
+#include <executorch/kernels/test/TestUtil.h>
 #include <executorch/runtime/core/device_allocator.h>
 #include <executorch/runtime/core/exec_aten/exec_aten.h>
 #include <executorch/runtime/core/portable_type/tensor_impl.h>
-#include <executorch/runtime/kernel/kernel_runtime_context.h>
 #include <executorch/runtime/platform/runtime.h>
 
 using executorch::aten::ScalarType;
@@ -27,7 +28,6 @@ using executorch::aten::Tensor;
 using executorch::aten::TensorImpl;
 using executorch::runtime::DeviceAllocator;
 using executorch::runtime::Error;
-using executorch::runtime::KernelRuntimeContext;
 using executorch::runtime::register_device_allocator;
 using executorch::runtime::Result;
 using executorch::runtime::etensor::DeviceIndex;
@@ -35,19 +35,14 @@ using executorch::runtime::etensor::DeviceType;
 
 using TensorShapeDynamism = executorch::runtime::TensorShapeDynamism;
 
-// Forward declare the kernel functions from op__device_copy.cpp
-namespace executorch::runtime::native {
-Tensor&
-_h2d_copy_out(KernelRuntimeContext& ctx, const Tensor& self, Tensor& out);
-Tensor&
-_d2h_copy_out(KernelRuntimeContext& ctx, const Tensor& self, Tensor& out);
-} // namespace executorch::runtime::native
-
 namespace {
 
 class MockDeviceAllocator : public DeviceAllocator {
  public:
-  Result<void*> allocate(size_t nbytes, DeviceIndex index) override {
+  Result<void*> allocate(
+      size_t nbytes,
+      DeviceIndex index,
+      size_t alignment = kDefaultAlignment) override {
     return Error::NotSupported;
   }
 
@@ -94,14 +89,23 @@ class MockDeviceAllocator : public DeviceAllocator {
 
 static MockDeviceAllocator g_mock_cuda;
 
-class OpDeviceCopyTest : public ::testing::Test {
+class OpDeviceCopyTest : public OperatorTest {
  protected:
+  Tensor& op_h2d_copy_out(const Tensor& self, Tensor& out) {
+    return torch::executor::et_copy::_h2d_copy_outf(context_, self, out);
+  }
+
+  Tensor& op_d2h_copy_out(const Tensor& self, Tensor& out) {
+    return torch::executor::et_copy::_d2h_copy_outf(context_, self, out);
+  }
+
   static void SetUpTestSuite() {
     executorch::runtime::runtime_init();
     register_device_allocator(&g_mock_cuda);
   }
 
   void SetUp() override {
+    OperatorTest::SetUp();
     g_mock_cuda.h2d_call_count_ = 0;
     g_mock_cuda.d2h_call_count_ = 0;
     g_mock_cuda.last_h2d_nbytes_ = 0;
@@ -143,8 +147,7 @@ TEST_F(OpDeviceCopyTest, H2dCopyCopiesDataAndCallsAllocator) {
       0);
   Tensor dst(&dst_impl);
 
-  KernelRuntimeContext ctx{};
-  Tensor& result = executorch::runtime::native::_h2d_copy_out(ctx, src, dst);
+  Tensor& result = op_h2d_copy_out(src, dst);
 
   // Verify the allocator was called correctly.
   EXPECT_EQ(g_mock_cuda.h2d_call_count_, 1);
@@ -193,8 +196,7 @@ TEST_F(OpDeviceCopyTest, D2hCopyCopiesDataAndCallsAllocator) {
       0);
   Tensor dst(&dst_impl);
 
-  KernelRuntimeContext ctx{};
-  Tensor& result = executorch::runtime::native::_d2h_copy_out(ctx, src, dst);
+  Tensor& result = op_d2h_copy_out(src, dst);
 
   // Verify the allocator was called correctly.
   EXPECT_EQ(g_mock_cuda.d2h_call_count_, 1);
@@ -243,8 +245,7 @@ TEST_F(OpDeviceCopyTest, H2dCopyWithDeviceIndex1) {
       1);
   Tensor dst(&dst_impl);
 
-  KernelRuntimeContext ctx{};
-  executorch::runtime::native::_h2d_copy_out(ctx, src, dst);
+  op_h2d_copy_out(src, dst);
 
   EXPECT_EQ(g_mock_cuda.h2d_call_count_, 1);
   EXPECT_EQ(g_mock_cuda.last_h2d_device_index_, 1);
@@ -282,8 +283,7 @@ TEST_F(OpDeviceCopyTest, H2dCopyMultidimensionalTensor) {
       0);
   Tensor dst(&dst_impl);
 
-  KernelRuntimeContext ctx{};
-  executorch::runtime::native::_h2d_copy_out(ctx, src, dst);
+  op_h2d_copy_out(src, dst);
 
   EXPECT_EQ(g_mock_cuda.h2d_call_count_, 1);
   EXPECT_EQ(g_mock_cuda.last_h2d_nbytes_, 6 * sizeof(float));
