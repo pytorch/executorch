@@ -48,7 +48,7 @@ from executorch.backends.arm.util._factory import create_quantizer
 from executorch.backends.arm.vgf.compile_spec import VgfCompileSpec
 from executorch.backends.test.harness.stages import StageType
 from executorch.exir.pass_base import ExportPass
-from torch._export.pass_base import PassType
+from executorch.exir.pass_manager import PassType
 from torch.export.graph_signature import InputKind, OutputKind
 from torchao.quantization.pt2e.quantizer import QuantizationSpec
 
