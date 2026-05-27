@@ -116,8 +116,8 @@ ETDumpGen::ETDumpGen(Span<uint8_t> buffer) {
   if (buffer.data() != nullptr) {
     builder_ =
         (struct flatcc_builder*)internal::align_pointer(buffer.data(), 64);
-    uintptr_t buffer_with_builder = (uintptr_t)internal::align_pointer(
-        builder_ + sizeof(struct flatcc_builder), 64);
+    uintptr_t buffer_with_builder =
+        (uintptr_t)internal::align_pointer(builder_ + 1, 64);
     size_t builder_size =
         (size_t)(buffer_with_builder - (uintptr_t)buffer.data());
     size_t min_buf_size = max_alloc_buf_size + builder_size;

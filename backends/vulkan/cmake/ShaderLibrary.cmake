@@ -26,7 +26,7 @@ endif()
 
 find_program(GLSLC_PATH glslc PATHS $ENV{PATH})
 
-if(NOT GLSLC_PATH)
+if(NOT GLSLC_PATH AND EXECUTORCH_BUILD_VULKAN)
   message(
     FATAL_ERROR
       "glslc from the Vulkan SDK must be installed to build the Vulkan backend. "
@@ -51,6 +51,9 @@ function(gen_vulkan_shader_lib_cpp shaders_path)
     )
       list(APPEND GEN_SPV_ARGS "--replace-u16vecn")
     endif()
+  endif()
+  if(EXECUTORCH_VULKAN_USE_MEDIUMP_FOR_FP16)
+    list(APPEND GEN_SPV_ARGS "--auto-use-mediump")
   endif()
 
   # Add nthreads argument for shader compilation

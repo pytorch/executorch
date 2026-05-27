@@ -25,8 +25,10 @@ from executorch.exir.delegate import executorch_call_delegate
 from executorch.exir.passes.propagate_device_pass import (
     _get_target_device_from_compile_specs,
     _parse_device_spec_value,
+    PropagateDeviceConfig,
     TARGET_DEVICE_COMPILE_SPEC_KEY,
 )
+from executorch.exir.passes.memory_planning_pass import MemoryPlanningPass
 from executorch.exir.schema import DeviceType
 from executorch.exir.tensor import TensorSpec
 from torch.export import export
@@ -653,8 +655,8 @@ class TestPropagateDevicePass(unittest.TestCase):
         inputs = (torch.randn(2, 2), torch.randn(2, 2))
         et_config = ExecutorchBackendConfig(
             emit_stacktrace=False,
-            skip_h2d_for_method_inputs=True,
-            enable_non_cpu_memory_planning=True,
+            propagate_device_config=PropagateDeviceConfig(skip_h2d_for_method_inputs=True),
+            memory_planning_pass=MemoryPlanningPass(enable_non_cpu_memory_planning=True),
         )
 
         for pipeline, program, gm in self._get_executorch_program(
@@ -709,8 +711,8 @@ class TestPropagateDevicePass(unittest.TestCase):
         inputs = (torch.randn(2, 2), torch.randn(2, 2))
         et_config = ExecutorchBackendConfig(
             emit_stacktrace=False,
-            skip_d2h_for_method_outputs=True,
-            enable_non_cpu_memory_planning=True,
+            propagate_device_config=PropagateDeviceConfig(skip_d2h_for_method_outputs=True),
+            memory_planning_pass=MemoryPlanningPass(enable_non_cpu_memory_planning=True),
         )
 
         for pipeline, program, gm in self._get_executorch_program(
@@ -763,9 +765,11 @@ class TestPropagateDevicePass(unittest.TestCase):
         inputs = (torch.randn(2, 2), torch.randn(2, 2))
         et_config = ExecutorchBackendConfig(
             emit_stacktrace=False,
-            skip_h2d_for_method_inputs=True,
-            skip_d2h_for_method_outputs=True,
-            enable_non_cpu_memory_planning=True,
+            propagate_device_config=PropagateDeviceConfig(
+                skip_h2d_for_method_inputs=True,
+                skip_d2h_for_method_outputs=True,
+            ),
+            memory_planning_pass=MemoryPlanningPass(enable_non_cpu_memory_planning=True),
         )
 
         for pipeline, program, gm in self._get_executorch_program(
@@ -839,8 +843,8 @@ class TestPropagateDevicePass(unittest.TestCase):
         inputs = (torch.randn(2, 2), torch.randn(2, 2))
         et_config = ExecutorchBackendConfig(
             emit_stacktrace=False,
-            skip_h2d_for_method_inputs=True,
-            enable_non_cpu_memory_planning=True,
+            propagate_device_config=PropagateDeviceConfig(skip_h2d_for_method_inputs=True),
+            memory_planning_pass=MemoryPlanningPass(enable_non_cpu_memory_planning=True),
         )
 
         for pipeline, program, gm in self._get_executorch_program(

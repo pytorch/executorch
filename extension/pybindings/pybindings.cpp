@@ -807,6 +807,8 @@ struct PyModule final {
         cpp_inputs.push_back(EValue(py::cast<bool>(python_input)));
       } else if (py::isinstance<py::int_>(python_input)) {
         cpp_inputs.push_back(EValue(py::cast<int64_t>(python_input)));
+      } else if (py::isinstance<py::float_>(python_input)) {
+        cpp_inputs.push_back(EValue(py::cast<double>(python_input)));
       } else {
         throw std::runtime_error(
             "Unsupported python type " + type_str +
@@ -1135,6 +1137,8 @@ struct PyMethod final {
         cpp_inputs.push_back(EValue(py::cast<bool>(python_input)));
       } else if (py::isinstance<py::int_>(python_input)) {
         cpp_inputs.push_back(EValue(py::cast<int64_t>(python_input)));
+      } else if (py::isinstance<py::float_>(python_input)) {
+        cpp_inputs.push_back(EValue(py::cast<double>(python_input)));
       } else {
         throw std::runtime_error(
             "Unsupported python type " + type_str +

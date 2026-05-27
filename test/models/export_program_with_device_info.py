@@ -49,7 +49,7 @@ def main() -> None:
     et_prog = lowered.to_executorch(
         ExecutorchBackendConfig(  # type: ignore[call-arg]
             emit_stacktrace=False,
-            enable_non_cpu_memory_planning=True,
+            memory_planning_pass=exir.passes.MemoryPlanningPass(enable_non_cpu_memory_planning=True),
         )
     )
 

@@ -30,15 +30,15 @@ function(fetch_ethos_u_content ETHOS_SDK_PATH ET_DIR_PATH)
   execute_process(
     COMMAND
       bash -c
-      "pwd && source backends/arm/scripts/utils.sh && patch_repo ${ETHOS_SDK_PATH} ${ethos_u_base_rev} ${patch_dir}"
-    WORKING_DIRECTORY ${ET_DIR_PATH} COMMAND_ECHO STDOUT
+      "source backends/arm/scripts/utils.sh && patch_repo ${ETHOS_SDK_PATH} ${ethos_u_base_rev} ${patch_dir}"
+    WORKING_DIRECTORY ${ET_DIR_PATH}
   )
   # Get ethos_u externals only if core_platform folder does not already exist.
   if(NOT EXISTS "${ETHOS_SDK_PATH}/core_platform")
     execute_process(
       COMMAND ${PYTHON_EXECUTABLE} fetch_externals.py -c
               ${ethos_u_base_tag}.json fetch
-      WORKING_DIRECTORY ${ETHOS_SDK_PATH} COMMAND_ECHO STDOUT
+      WORKING_DIRECTORY ${ETHOS_SDK_PATH}
     )
   endif()
   # Patch core_software to remove unused projects.
@@ -46,16 +46,22 @@ function(fetch_ethos_u_content ETHOS_SDK_PATH ET_DIR_PATH)
   execute_process(
     COMMAND
       bash -c
-      "pwd && source backends/arm/scripts/utils.sh && patch_repo ${ETHOS_SDK_PATH}/core_software ${core_software_base_rev} ${patch_dir}"
-    WORKING_DIRECTORY ${ET_DIR_PATH} COMMAND_ECHO STDOUT
+      "source backends/arm/scripts/utils.sh && patch_repo ${ETHOS_SDK_PATH}/core_software ${core_software_base_rev} ${patch_dir}"
+    WORKING_DIRECTORY ${ET_DIR_PATH}
   )
-  # Always patch the core_platform repo since this is fast enough.
+  # Always patch the core_platform repo since this is fast enough. TODO:
+  # examples/arm/ethos-u-setup/core_platform/0002-*.patch and 0003-*.patch are
+  # transient bridges that guard Armv8-M-only MPU init and the Armv7-M-and-newer
+  # HardFault handler so the Corstone-300 target source compiles for older
+  # Cortex-M cores. Once the equivalent guards land upstream in
+  # ethos-u/core_platform and ${core_platform_base_rev} is bumped past those
+  # commits, delete the 0002 and 0003 patches.
   set(core_platform_base_rev "26.02")
   execute_process(
     COMMAND
       bash -c
-      "pwd && source backends/arm/scripts/utils.sh && patch_repo ${ETHOS_SDK_PATH}/core_platform ${core_platform_base_rev} ${patch_dir}"
-    WORKING_DIRECTORY ${ET_DIR_PATH} COMMAND_ECHO STDOUT
+      "source backends/arm/scripts/utils.sh && patch_repo ${ETHOS_SDK_PATH}/core_platform ${core_platform_base_rev} ${patch_dir}"
+    WORKING_DIRECTORY ${ET_DIR_PATH}
   )
 endfunction()
 

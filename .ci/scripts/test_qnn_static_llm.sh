@@ -47,11 +47,11 @@ if [[ "${TASK_NAME}" == "stories_110m" ]]; then
     $PYTHON_EXECUTABLE -m pytorch_tokenizers.tools.llama2c.convert -t tokenizer.model -o tokenizer.bin
 
     # Compile only as weight sharing is not applicable on x86.
-    $PYTHON_EXECUTABLE backends/qualcomm/tests/test_qnn_delegate.py -k TestExampleLLMScript.test_llama_stories_110m --model SM8650 --build_folder build-android/ --executorch_root . --artifact_dir ./stories_110m_pte_size --llama_artifacts . --compile_only
+    $PYTHON_EXECUTABLE backends/qualcomm/tests/test_qnn_delegate.py -k TestExampleLLMScript.test_llama_stories_110m --soc_model SM8650 --build_folder build-android/ --executorch_root . --artifact_dir ./stories_110m_pte_size --llama_artifacts . --compile_only
     exit_code1=$?
 
     # Checks accuracy with weight sharing disabled since x86 does not support weight sharing.
-    $PYTHON_EXECUTABLE backends/qualcomm/tests/test_qnn_delegate.py -k TestExampleLLMScript.test_llama_stories_110m --model SM8650 --build_folder build-x86/ --executorch_root . --artifact_dir ./stories_110m_accuracy --llama_artifacts . --enable_x86_64
+    $PYTHON_EXECUTABLE backends/qualcomm/tests/test_qnn_delegate.py -k TestExampleLLMScript.test_llama_stories_110m --soc_model SM8650 --build_folder build-x86/ --executorch_root . --artifact_dir ./stories_110m_accuracy --llama_artifacts . --enable_x86_64
     exit_code2=$?
 
     # Check the exit codes and print messages
@@ -84,7 +84,7 @@ elif [[ "${TASK_NAME}" == "smollm2_135m" ]]; then
     if [ -n "$2" ]; then
         EXTRA_FLAGS="$EXTRA_FLAGS --static_llm_eval_method $2"
     fi
-    $PYTHON_EXECUTABLE backends/qualcomm/tests/test_qnn_delegate.py -k TestExampleLLMScript.test_static_llm_model --model_name smollm2_135m --model SM8650 --build_folder build-x86/ --executorch_root . --artifact_dir ./static_smollm2 --enable_x86_64 $EXTRA_FLAGS
+    $PYTHON_EXECUTABLE backends/qualcomm/tests/test_qnn_delegate.py -k TestExampleLLMScript.test_static_llm_model --model_name smollm2_135m --soc_model SM8650 --build_folder build-x86/ --executorch_root . --artifact_dir ./static_smollm2 --enable_x86_64 $EXTRA_FLAGS
     exit_code1=$?
     if [ $exit_code1 -ne 0 ]; then
         exit 1

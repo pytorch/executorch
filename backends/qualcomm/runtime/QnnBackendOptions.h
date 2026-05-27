@@ -31,10 +31,24 @@ struct RuntimeOption {
  * If runtime option is provided, it will have a higher priority.
  *
  * @param aot_option The flatbuffer option under qc_compiler_spec.fbs.
+ * @param aot_key The key for the AOT option.
  */
 
 template <typename T>
-T get_option(T aot_option);
+T get_option(T aot_option, const char* aot_key);
+
+/**
+ * @brief
+ * Get the backend option.
+ * This method checks runtime option only.
+ *
+ * @param key The key of runtime option.
+ * @param backend_option The backend_option to be restored in runtime.
+ */
+
+executorch::runtime::Error get_runtime_option(
+    const char* key,
+    executorch::runtime::BackendOption& backend_option);
 
 } // namespace qnn
 } // namespace backends

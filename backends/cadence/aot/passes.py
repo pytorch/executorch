@@ -33,6 +33,7 @@ from executorch.backends.cadence.aot.reorder_ops import CadenceReorderOpsInGraph
 from executorch.backends.cadence.aot.replace_ops import (
     CadenceReplaceOpsInGraph,
     ReplaceMulTensorWithMulAndFullOpsPass,
+    ReplaceSafeSoftmaxWithSoftmax,
 )
 from executorch.backends.cadence.aot.simplify_ops import CadenceSimplifyOpsInGraph
 from executorch.backends.cadence.aot.type_dispatch import CompileTimeTypeDispatchPass
@@ -131,7 +132,8 @@ def apply_torch_ops_passes(expo_program: ExportedProgram) -> ExportedProgram:
     """
 
     aten_passes: List[Callable[[torch.fx.GraphModule], Optional[PassResult]]] = [
-        ReplaceMulTensorWithMulAndFullOpsPass()
+        ReplaceSafeSoftmaxWithSoftmax(),
+        ReplaceMulTensorWithMulAndFullOpsPass(),
     ]
     # TODO(T230417247): Use PassResult which is currently ignored.
     PassManager(aten_passes)(expo_program.graph_module)

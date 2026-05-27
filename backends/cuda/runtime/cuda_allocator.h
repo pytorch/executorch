@@ -28,7 +28,8 @@ class CudaAllocator final : public executorch::runtime::DeviceAllocator {
  public:
   executorch::runtime::Result<void*> allocate(
       size_t nbytes,
-      executorch::runtime::etensor::DeviceIndex index) override;
+      executorch::runtime::etensor::DeviceIndex index,
+      size_t alignment = kDefaultAlignment) override;
 
   void deallocate(void* ptr, executorch::runtime::etensor::DeviceIndex index)
       override;

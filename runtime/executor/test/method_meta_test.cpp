@@ -247,7 +247,7 @@ TEST_F(MethodMetaTest, MethodMetaBufferDeviceReturnsCudaForDeviceBuffer) {
       programs_["add_with_device"]->method_meta("forward");
   ASSERT_EQ(method_meta.error(), Error::Ok);
 
-  // ModuleAddWithDevice exports with enable_non_cpu_memory_planning=True.
+  // ModuleAddWithDevice exports with memory_planning_pass=MemoryPlanningPass(enable_non_cpu_memory_planning=True).
   // Device-aware memory planning may create separate buffers per device type,
   // so we iterate to find the CUDA buffer.
   size_t num_buffers = method_meta->num_memory_planned_buffers();

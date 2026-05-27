@@ -5,6 +5,7 @@
  * This source code is licensed under the BSD-style license found in the
  * LICENSE file in the root directory of this source tree.
  */
+#include <executorch/backends/qualcomm/aot/wrappers/TensorWrapper.h>
 #include <executorch/backends/qualcomm/runtime/backends/direct_mode/QnnExecuTorchIdlWrapper.h>
 #include <fcntl.h>
 #include <unistd.h>
@@ -32,6 +33,16 @@ using TimePoint = std::chrono::time_point<Clock>;
 namespace executorch {
 namespace backends {
 namespace qnn {
+
+size_t size_with_alignment_padding(size_t sz) {
+  return QNN_TENSOR_ALIGNMENT + sz;
+}
+
+void* align_ptr(void* ptr) {
+  void* addr = reinterpret_cast<void*>(
+      ((size_t)ptr + (QNN_TENSOR_ALIGNMENT - 1)) & ~(QNN_TENSOR_ALIGNMENT - 1));
+  return addr;
+}
 
 // Code logic below is similar to qnn_executor_runner to load pte file.
 QnnExecuTorchIdlWrapper::QnnExecuTorchIdlWrapper(
@@ -113,12 +124,13 @@ QnnExecuTorchIdlWrapper::QnnExecuTorchIdlWrapper(
   input_tensors_.resize(method_->inputs_size());
   for (int i = 0; i < input_tensors_.size(); i++) {
     Result<TensorInfo> tensor_info = method_meta_->input_tensor_meta(i);
-    input_tensors_[i].resize(tensor_info->nbytes());
+    input_tensors_[i].resize(
+        size_with_alignment_padding(tensor_info->nbytes()));
     input_tensor_impls_.emplace_back(TensorImpl(
         tensor_info->scalar_type(),
         tensor_info->sizes().size(),
         const_cast<TensorImpl::SizesType*>(tensor_info->sizes().data()),
-        input_tensors_[i].data(),
+        align_ptr(input_tensors_[i].data()),
         const_cast<TensorImpl::DimOrderType*>(
             tensor_info->dim_order().data())));
     Error ret = method_->set_input(Tensor(&input_tensor_impls_.back()), i);
@@ -131,9 +143,10 @@ QnnExecuTorchIdlWrapper::QnnExecuTorchIdlWrapper(
   output_tensors_.resize(method_->outputs_size());
   for (int i = 0; i < output_tensors_.size(); ++i) {
     Result<TensorInfo> tensor_info = method_meta_->output_tensor_meta(i);
-    output_tensors_[i].resize(tensor_info->nbytes());
+    output_tensors_[i].resize(
+        size_with_alignment_padding(tensor_info->nbytes()));
     Error ret = method_->set_output_data_ptr(
-        output_tensors_[i].data(), tensor_info->nbytes(), i);
+        align_ptr(output_tensors_[i].data()), tensor_info->nbytes(), i);
     if (ret != Error::Ok) {
       FARF(RUNTIME_ERROR, "Failed to set output tensor: %d", (int)ret);
       return;
@@ -190,9 +203,10 @@ Error QnnExecuTorchIdlWrapper::execute_all(
           status = Error::Internal;
           return status;
         }
-
-        ssize_t bytes =
-            read(fd, input_tensors_[i].data(), input_tensors_[i].size());
+        ssize_t bytes = read(
+            fd,
+            align_ptr(input_tensors_[i].data()),
+            method_meta_->input_tensor_meta(i)->nbytes());
         if (bytes < 0) {
           FARF(RUNTIME_ERROR, "Failed to read data from file to input_tensor.");
           status = Error::Internal;
@@ -231,10 +245,22 @@ Error QnnExecuTorchIdlWrapper::execute_all(
           return status;
         }
 
+        size_t expected_bytes = method_meta_->output_tensor_meta(i)->nbytes();
         ssize_t bytes =
-            write(fd, output_tensors_[i].data(), output_tensors_[i].size());
+            write(fd, align_ptr(output_tensors_[i].data()), expected_bytes);
         if (bytes < 0) {
           FARF(RUNTIME_ERROR, "Failed to write data to output file.");
+          close(fd);
+          status = Error::Internal;
+          return status;
+        }
+        if (static_cast<size_t>(bytes) != expected_bytes) {
+          FARF(
+              RUNTIME_ERROR,
+              "Output %zu: wrote %zd bytes, expected %zu bytes",
+              i,
+              bytes,
+              expected_bytes);
           close(fd);
           status = Error::Internal;
           return status;

@@ -103,13 +103,16 @@ install(
 )
 
 # CUDA-specific AOTI shim symbols (dynamically linked)
-set(_aoti_cuda_shim_sources runtime/shims/memory.cpp
+set(_aoti_cuda_shim_sources runtime/cuda_allocator.cpp runtime/shims/memory.cpp
                             runtime/shims/cuda_guard.cpp
 )
 
 # Only build CUDA-specific shims when CUDA language/toolchain is available.
 if(CMAKE_CUDA_COMPILER)
-  list(APPEND _aoti_cuda_shim_sources runtime/shims/int4mm.cu)
+  list(APPEND _aoti_cuda_shim_sources runtime/shims/int4mm.cu
+       runtime/shims/int4_plain_mm.cu runtime/shims/sort.cu
+       runtime/shims/rand.cu
+  )
   list(APPEND _aoti_cuda_shim_sources runtime/shims/randint.cu)
 endif()
 
@@ -178,8 +181,12 @@ install(
 
 # CUDA backend implementation
 set(_aoti_cuda_backend_sources runtime/cuda_backend.cpp)
+if(_cuda_is_msvc_toolchain)
+  # MSVC links aoti_cuda_backend into portable_lib without relying on C++
+  # symbols exported from aoti_cuda_shims.dll.
+  list(APPEND _aoti_cuda_backend_sources runtime/cuda_allocator.cpp)
+endif()
 
-# CUDA backend implementation
 add_library(aoti_cuda_backend STATIC ${_aoti_cuda_backend_sources})
 
 target_include_directories(

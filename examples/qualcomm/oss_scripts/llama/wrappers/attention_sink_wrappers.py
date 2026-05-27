@@ -13,10 +13,12 @@ from typing import Dict
 
 import torch
 from executorch.backends.qualcomm._passes import TagQuantIO
+from executorch.backends.qualcomm._passes.build_quant_io import BuildQuantIo
 from executorch.backends.qualcomm._passes.qnn_pass_manager import (
     get_capture_program_passes,
 )
 from executorch.backends.qualcomm.builders.utils import is_graph_output
+from executorch.backends.qualcomm.export_utils import make_quantizer
 from executorch.backends.qualcomm.quantizer.quantizer import QuantDtype
 from executorch.backends.qualcomm.utils.constants import (
     QCOM_DTYPE,
@@ -57,7 +59,6 @@ from executorch.examples.qualcomm.oss_scripts.llama.wrappers.base_component impo
     Processor,
     Request,
 )
-from executorch.examples.qualcomm.utils import make_quantizer
 from executorch.exir._serialize._program import deserialize_pte_binary
 from executorch.exir.capture._config import ExecutorchBackendConfig
 from executorch.exir.passes.memory_planning_pass import MemoryPlanningPass
@@ -436,7 +437,7 @@ class HybridAttentionSinkEvictor(Component):
         backend_options = generate_htp_compiler_spec(use_fp16=False)
         compiler_specs = [
             generate_qnn_executorch_compiler_spec(
-                soc_model=get_soc_to_chipset_map()[self.control_args.model],
+                soc_model=get_soc_to_chipset_map()[self.control_args.soc_model],
                 backend_options=backend_options,
                 shared_buffer=not self.control_args.enable_x86_64,
             )
@@ -460,6 +461,7 @@ class HybridAttentionSinkEvictor(Component):
                 alloc_graph_input=False,
                 alloc_graph_output=False,
             ),
+            passes=[BuildQuantIo()],
             extract_delegate_segments=True,
         )
         exec_prog_mgr = edge_prog_mgr.to_executorch(executorch_config)

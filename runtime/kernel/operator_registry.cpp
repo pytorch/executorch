@@ -20,13 +20,26 @@ namespace ET_RUNTIME_NAMESPACE {
 namespace {
 
 // Maximum number of operators and their associated kernels that can be
-// registered.
-#ifdef MAX_KERNEL_NUM
+// registered. Resolution order:
+//   1. User-defined -DMAX_KERNEL_NUM wins.
+//   2. Otherwise, if selective build generated selected_max_kernel_num.h and
+//      it defines EXECUTORCH_SELECTED_MAX_KERNEL_NUM, use that. (When a
+//      selective-build YAML opts into all operators the header is emitted
+//      without the define, and we fall through.)
+//   3. Otherwise, fall back to a conservative default of 2000 slots.
+#if defined(MAX_KERNEL_NUM)
 constexpr uint32_t kMaxRegisteredKernels = MAX_KERNEL_NUM;
+#else
+#if __has_include(<executorch/runtime/kernel/selected_max_kernel_num.h>)
+#include <executorch/runtime/kernel/selected_max_kernel_num.h>
+#endif
+#if defined(EXECUTORCH_SELECTED_MAX_KERNEL_NUM)
+constexpr uint32_t kMaxRegisteredKernels = EXECUTORCH_SELECTED_MAX_KERNEL_NUM;
 #else
 constexpr uint32_t kMaxOperators = 250;
 constexpr uint32_t kMaxKernelsPerOp = 8;
 constexpr uint32_t kMaxRegisteredKernels = kMaxOperators * kMaxKernelsPerOp;
+#endif
 #endif
 
 // Data that backs the kernel table. Since Kernel has a custom default
@@ -236,7 +249,8 @@ bool registry_has_op_function(
 
 Result<OpFunction> get_op_function_from_registry(
     const char* name,
-    Span<const TensorMeta> meta_list) {
+    Span<const TensorMeta> meta_list,
+    Span<const Kernel> kernel_list) {
   std::array<char, internal::kKernelKeyBufSize> key_string;
   Error err = internal::make_kernel_key_string(
       meta_list, key_string.data(), key_string.size());
@@ -247,22 +261,29 @@ Result<OpFunction> get_op_function_from_registry(
   KernelKey kernel_key = KernelKey(key_string.data());
 
   int32_t fallback_idx = -1;
-  for (size_t idx = 0; idx < num_registered_kernels; idx++) {
-    if (strcmp(registered_kernels[idx].name_, name) == 0) {
-      if (registered_kernels[idx].kernel_key_ == kernel_key) {
-        return registered_kernels[idx].op_;
+  for (size_t idx = 0; idx < kernel_list.size(); idx++) {
+    if (strcmp(kernel_list[idx].name_, name) == 0) {
+      if (kernel_list[idx].kernel_key_ == kernel_key) {
+        return kernel_list[idx].op_;
       }
-      if (registered_kernels[idx].kernel_key_.is_fallback()) {
+      if (kernel_list[idx].kernel_key_.is_fallback()) {
         fallback_idx = idx;
       }
     }
   }
   if (fallback_idx != -1) {
-    return registered_kernels[fallback_idx].op_;
+    return kernel_list[fallback_idx].op_;
   }
   ET_LOG(Error, "kernel '%s' not found.", name);
   ET_LOG_TENSOR_META(meta_list);
   return Error::OperatorMissing;
+}
+
+Result<OpFunction> get_op_function_from_registry(
+    const char* name,
+    Span<const TensorMeta> meta_list) {
+  return get_op_function_from_registry(
+      name, meta_list, get_registered_kernels());
 }
 
 Span<const Kernel> get_registered_kernels() {

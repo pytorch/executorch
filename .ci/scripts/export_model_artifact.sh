@@ -67,6 +67,9 @@ if [ -z "${1:-}" ]; then
   exit 1
 fi
 
+# Disable HF Xet storage to avoid stalled downloads on CI runners
+export HF_HUB_DISABLE_XET=1
+
 set -eux
 
 DEVICE="$1"
@@ -192,9 +195,17 @@ case "$HF_MODEL" in
     PREPROCESSOR_FEATURE_SIZE=""
     PREPROCESSOR_OUTPUT=""
     ;;
+  SocialLocalMobile/gemma-4-31B-it-HQQ-INT4)
+    MODEL_NAME="gemma4_31b"
+    TASK=""
+    MAX_SEQ_LEN=""
+    EXTRA_PIP=""
+    PREPROCESSOR_FEATURE_SIZE=""
+    PREPROCESSOR_OUTPUT=""
+    ;;
   *)
     echo "Error: Unsupported model '$HF_MODEL'"
-    echo "Supported models: mistralai/Voxtral-Mini-3B-2507, mistralai/Voxtral-Mini-4B-Realtime-2602, openai/whisper-{small, medium, large, large-v2, large-v3, large-v3-turbo}, google/gemma-3-4b-it, Qwen/Qwen3-0.6B, nvidia/diar_streaming_sortformer_4spk-v2, nvidia/parakeet-tdt, facebook/dinov2-small-imagenet1k-1-layer, SocialLocalMobile/Qwen3.5-35B-A3B-HQQ-INT4"
+    echo "Supported models: mistralai/Voxtral-Mini-3B-2507, mistralai/Voxtral-Mini-4B-Realtime-2602, openai/whisper-{small, medium, large, large-v2, large-v3, large-v3-turbo}, google/gemma-3-4b-it, Qwen/Qwen3-0.6B, nvidia/diar_streaming_sortformer_4spk-v2, nvidia/parakeet-tdt, facebook/dinov2-small-imagenet1k-1-layer, SocialLocalMobile/Qwen3.5-35B-A3B-HQQ-INT4, SocialLocalMobile/gemma-4-31B-it-HQQ-INT4"
     exit 1
     ;;
 esac
@@ -415,8 +426,80 @@ if [ "$MODEL_NAME" = "qwen3_5_moe" ]; then
 
   # Export to .pte/.ptd (short cache dir avoids objcopy symbol length issues)
   echo "::group::Export"
+  EXPORT_LOG=$(mktemp)
   TORCHINDUCTOR_CACHE_DIR="$INDUCTOR_CACHE" \
   python -m executorch.examples.models.qwen3_5_moe.export \
+      --prequantized "$LOCAL_MODEL_DIR" \
+      --output-dir "${OUTPUT_DIR}" \
+      --dense-prefill dequant \
+      --moe-activation-dtype int8 2>&1 | tee "$EXPORT_LOG"
+  EXPORT_RC=${PIPESTATUS[0]}
+  echo "::endgroup::"
+
+  if [ "$EXPORT_RC" -ne 0 ]; then
+    echo "ERROR: Qwen3.5 MoE export failed (exit $EXPORT_RC)"
+    rm -f "$EXPORT_LOG"
+    exit "$EXPORT_RC"
+  fi
+
+  # Gate peak GPU memory so we keep the export viable on consumer GPUs
+  # (e.g. RTX 4090 with 24 GB). The export script prints a machine-
+  # parseable marker line "EXPORT_GPU_PEAK_MEMORY_MB: <float>".
+  EXPORT_GPU_PEAK_MB_LIMIT="${EXPORT_GPU_PEAK_MB_LIMIT:-20480}"
+  PEAK_LINE=$(grep -E '^EXPORT_GPU_PEAK_MEMORY_MB:' "$EXPORT_LOG" | tail -1)
+  rm -f "$EXPORT_LOG"
+  if [ -z "$PEAK_LINE" ]; then
+    echo "ERROR: export did not emit EXPORT_GPU_PEAK_MEMORY_MB marker; cannot enforce GPU memory budget"
+    exit 1
+  fi
+  PEAK_MB=$(echo "$PEAK_LINE" | awk '{print $2}')
+  echo "Export GPU peak memory: ${PEAK_MB} MB (limit ${EXPORT_GPU_PEAK_MB_LIMIT} MB)"
+  if awk -v p="$PEAK_MB" -v l="$EXPORT_GPU_PEAK_MB_LIMIT" 'BEGIN{exit !(p>l)}'; then
+    echo "ERROR: export exceeded GPU memory budget (${PEAK_MB} MB > ${EXPORT_GPU_PEAK_MB_LIMIT} MB)"
+    echo "       — this would prevent the model from being exported on a 24 GB consumer GPU."
+    exit 1
+  fi
+
+  test -f "${OUTPUT_DIR}/model.pte"
+  test -f "${OUTPUT_DIR}/aoti_cuda_blob.ptd"
+  ls -al "${OUTPUT_DIR}"
+
+  exit 0
+fi
+
+# Gemma 4 31B uses a prequantized checkpoint and custom export script
+if [ "$MODEL_NAME" = "gemma4_31b" ]; then
+  pip install safetensors huggingface_hub gguf
+
+  # Download prequantized model outside OUTPUT_DIR to avoid uploading on failure
+  LOCAL_MODEL_DIR=$(mktemp -d)
+  INDUCTOR_CACHE=$(mktemp -d)
+  trap 'rm -rf "$LOCAL_MODEL_DIR" "$INDUCTOR_CACHE"' EXIT
+
+  python -c "from huggingface_hub import snapshot_download; snapshot_download('${HF_MODEL}', local_dir='${LOCAL_MODEL_DIR}')"
+
+  # Sanity check: run inference on the prequantized model
+  echo "::group::Inference sanity check"
+  INFERENCE_OUTPUT=$(python -m executorch.examples.models.gemma4_31b.inference \
+      --prequantized "$LOCAL_MODEL_DIR" \
+      --prompt "What is the capital of France?" \
+      --max-new-tokens 32 \
+      --temperature 0 \
+      --no-compile 2>&1)
+  echo "$INFERENCE_OUTPUT"
+  if ! echo "$INFERENCE_OUTPUT" | grep -q "Paris"; then
+    echo "ERROR: Inference sanity check failed — expected 'Paris' in output"
+    exit 1
+  fi
+  echo "::endgroup::"
+
+  # Copy tokenizer for the runner
+  cp "$LOCAL_MODEL_DIR/tokenizer.json" "${OUTPUT_DIR}/tokenizer.json"
+
+  # Export to .pte/.ptd (short cache dir avoids objcopy symbol length issues)
+  echo "::group::Export"
+  TORCHINDUCTOR_CACHE_DIR="$INDUCTOR_CACHE" \
+  python -m executorch.examples.models.gemma4_31b.export \
       --prequantized "$LOCAL_MODEL_DIR" \
       --output-dir "${OUTPUT_DIR}"
   echo "::endgroup::"
@@ -435,7 +518,7 @@ fi
 
 DEVICE_ARG=""
 if [ "$DEVICE" = "cuda" ] || [ "$DEVICE" = "cuda-windows" ]; then
-  DEVICE_ARG="--device cuda"
+  DEVICE_ARG="--device cuda:0"
 elif [ "$DEVICE" = "metal" ]; then
   DEVICE_ARG="--device mps"
 fi

@@ -2618,7 +2618,7 @@ class TestEmit(unittest.TestCase):
         )
         lowered = edge.to_backend(DeviceAwarePartitioner())
         et_prog = lowered.to_executorch(
-            config=ExecutorchBackendConfig(enable_non_cpu_memory_planning=True),
+            config=ExecutorchBackendConfig(memory_planning_pass=MemoryPlanningPass(enable_non_cpu_memory_planning=True)),
         )
         program = et_prog._emitter_output.program
 
@@ -2649,7 +2649,7 @@ class TestEmit(unittest.TestCase):
             compile_config=EdgeCompileConfig(_check_ir_validity=False),
         )
         et_prog = edge.to_executorch(
-            config=ExecutorchBackendConfig(enable_non_cpu_memory_planning=True),
+            config=ExecutorchBackendConfig(memory_planning_pass=MemoryPlanningPass(enable_non_cpu_memory_planning=True)),
         )
         program = et_prog._emitter_output.program
 
