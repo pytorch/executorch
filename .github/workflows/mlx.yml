@@ -47,6 +47,10 @@ jobs:
 
         ${CONDA_RUN} pip list
 
+        echo "::group::Install Python test requirements"
+        ${CONDA_RUN} pip install gguf
+        echo "::endgroup::"
+
         echo "::group::Build test runners"
         ${CONDA_RUN} cmake --build cmake-out --target op_test_runner multi_thread_test_runner -j$(( $(sysctl -n hw.ncpu) - 1 ))
         echo "::endgroup::"
