@@ -174,6 +174,12 @@ class MemoryPlanningPass(PassBase):
         self.alloc_mutable_buffers = alloc_mutable_buffers
         self.share_mutable_buffers = share_mutable_buffers
         self.alignment = alignment
+
+        # When True, memory planning partitions specs by device and runs the
+        # algorithm independently per device, producing separate buffers for CPU
+        # vs. accelerator memory.  Default False preserves the legacy behavior
+        # where all tensors are planned into CPU memory regardless of device.
+        # A dict can be used to set per-method values, keyed by method name.
         self.enable_non_cpu_memory_planning = enable_non_cpu_memory_planning
         self.state = _MemoryPlanningState()
 
