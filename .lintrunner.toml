@@ -112,6 +112,8 @@ include_patterns = [
     'backends/arm/**/*.cpp',
     'backends/arm/**/*.h',
     'backends/arm/**/*.hpp',
+    'backends/cortex_m/**/*.cpp',
+    'backends/cortex_m/**/*.h',
     'examples/arm/**/*.cpp',
     'examples/arm/**/*.h',
     'examples/arm/**/*.hpp',
