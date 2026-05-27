@@ -45,7 +45,7 @@ class XNNExecutor {
       : workspace_(workspace) {}
 
   ~XNNExecutor() {
-    ET_CHECK_MSG(
+    ET_DCHECK_MSG(
         !in_use_.load(std::memory_order_acquire),
         "XNNExecutor destroyed while in use");
     destroyed_.store(true, std::memory_order_release);

@@ -17,6 +17,19 @@ fbcode_target(_kind = python_binary,
 )
 
 fbcode_target(_kind = python_binary,
+    name = "coreml_compute_plan",
+    srcs = [
+        "coreml_compute_plan.py",
+    ],
+    main_function = "executorch.examples.apple.coreml.scripts.coreml_compute_plan.main",
+    deps = [
+        "//executorch/backends/apple/coreml:executorchcoreml",
+        "//executorch/exir:schema",
+        "//executorch/exir/_serialize:lib",
+    ],
+)
+
+fbcode_target(_kind = python_binary,
     name = "export",
     srcs = [
         "export.py",

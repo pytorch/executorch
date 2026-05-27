@@ -28,6 +28,7 @@ using executorch::aten::Tensor;
 using executorch::aten::TensorImpl;
 using executorch::runtime::DeviceAllocator;
 using executorch::runtime::Error;
+using executorch::runtime::get_device_allocator;
 using executorch::runtime::register_device_allocator;
 using executorch::runtime::Result;
 using executorch::runtime::etensor::DeviceIndex;
@@ -101,7 +102,9 @@ class OpDeviceCopyTest : public OperatorTest {
 
   static void SetUpTestSuite() {
     executorch::runtime::runtime_init();
-    register_device_allocator(&g_mock_cuda);
+    if (get_device_allocator(DeviceType::CUDA) == nullptr) {
+      register_device_allocator(&g_mock_cuda);
+    }
   }
 
   void SetUp() override {
