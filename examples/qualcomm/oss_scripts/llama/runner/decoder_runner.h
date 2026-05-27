@@ -8,6 +8,7 @@
 
 #pragma once
 
+#include <executorch/examples/qualcomm/oss_scripts/llama/runner/utils.h>
 #include <executorch/extension/llm/sampler/sampler.h>
 #include <executorch/extension/module/module.h>
 #include <executorch/extension/tensor/tensor.h>
@@ -56,19 +57,36 @@ class DecoderRunner {
   inline int32_t logits_to_token(
       const executorch::aten::Tensor& logits_tensor,
       int64_t pos) {
-    auto* logits = logits_tensor.mutable_data_ptr<uint16_t>();
+    std::byte* logits = logits_tensor.mutable_data_ptr<std::byte>();
     auto num_tokens = logits_tensor.size(1);
     auto vocab_size = logits_tensor.size(2);
     static std::vector<float> logits_f(vocab_size);
-    auto* logits_last = logits;
+    std::byte* logits_last = logits;
     // offset to the meaningful logit we want for prefill model.
+    executorch::aten::ScalarType logits_dtype = logits_tensor.scalar_type();
+    size_t logits_nbytes = getDtypeSize(logits_dtype);
     if (num_tokens > 1) {
-      logits_last += pos * vocab_size;
+      logits_last += pos * vocab_size * logits_nbytes;
     }
-    // Discard dequantization (converting uint16_t to float) because the
+    // Discard dequantization (converting std::byte to float) because the
     // relative order of elements remains the same without conversion
     for (int i = 0; i < vocab_size; i++) {
-      logits_f[i] = logits_last[i];
+      switch (logits_dtype) {
+        case executorch::aten::ScalarType::UInt16:
+          logits_f[i] = reinterpret_cast<uint16_t*>(logits_last)[i];
+          break;
+        case executorch::aten::ScalarType::Byte:
+          logits_f[i] = reinterpret_cast<uint8_t*>(logits_last)[i];
+          break;
+        case executorch::aten::ScalarType::Float:
+          logits_f[i] = reinterpret_cast<float*>(logits_last)[i];
+          break;
+        default:
+          ET_CHECK_MSG(
+              false,
+              "The scalar_type %s of logits is not supported",
+              executorch::runtime::toString(logits_dtype));
+      }
     }
     return sampler_->sample(logits_f.data());
   }

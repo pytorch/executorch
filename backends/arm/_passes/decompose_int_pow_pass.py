@@ -4,7 +4,7 @@
 # LICENSE file in the root directory of this source tree.
 
 
-from typing import Set, Type
+from typing import Optional, Set, Type
 
 from executorch.backends.arm._passes import ArmPass
 from executorch.exir.dialects._ops import ops as exir_ops
@@ -21,6 +21,18 @@ class DecomposeIntPowPass(ArmPass):
 
     _passes_required_after: Set[Type[ExportPass]] = set()
 
+    @staticmethod
+    def _get_decomposable_integer_exponent(exp) -> Optional[int]:
+        if isinstance(exp, int):
+            return exp
+        # Exported models can represent positive integer-valued exponents as
+        # floats, for example pow(x, 2.0). Only exact values are decomposed:
+        # rounding near-integer floats would change fractional pow semantics,
+        # especially for negative bases.
+        if isinstance(exp, float) and exp > 0 and exp.is_integer():
+            return int(exp)
+        return None
+
     def call_operator(self, op, args, kwargs, meta):
         if op != exir_ops.edge.aten.pow.Tensor_Scalar:
             return super().call_operator(op, args, kwargs, meta)
@@ -32,15 +44,28 @@ class DecomposeIntPowPass(ArmPass):
         x = args[0]
         exp = args[1]
 
-        # Handle zero first and return early
         if exp == 0:
-            # return a tensor of ones with the same shape as x
-            return super().call_operator(
+            zeros = super().call_operator(
+                exir_ops.edge.aten.sub.Tensor, (x, x), {}, meta, True
+            )
+            ones = super().call_operator(
                 exir_ops.edge.aten.full_like.default, (x, 1), {}, meta, True
             )
+            return super().call_operator(
+                exir_ops.edge.aten.add.Tensor, (zeros, ones), {}, meta, True
+            )
 
-        if not isinstance(exp, int):
+        exp = self._get_decomposable_integer_exponent(exp)
+        if exp is None:
             return super().call_operator(op, args, kwargs, meta)
+
+        if exp == 1:
+            ones = super().call_operator(
+                exir_ops.edge.aten.full_like.default, (x, 1), {}, meta, True
+            )
+            return super().call_operator(
+                exir_ops.edge.aten.mul.Tensor, (x, ones), {}, meta, True
+            )
 
         # Handle negative exponent
         if exp < 0:
