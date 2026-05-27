@@ -107,6 +107,47 @@ init_command = [
 is_formatter = true
 
 [[linter]]
+code = 'CPPCHECK'
+include_patterns = [
+    'backends/arm/**/*.cpp',
+    'backends/arm/**/*.h',
+    'backends/arm/**/*.hpp',
+    'backends/cortex_m/**/*.cpp',
+    'backends/cortex_m/**/*.h',
+    'examples/arm/**/*.cpp',
+    'examples/arm/**/*.h',
+    'examples/arm/**/*.hpp',
+]
+exclude_patterns = [
+]
+command = [
+    'python',
+    '-m',
+    'lintrunner_adapters',
+    'run',
+    'cppcheck_linter',
+    '--enable=warning,style,unusedFunction',
+    '--extra-arg=--check-level=exhaustive',
+    '--extra-arg=--std=c++17',
+    '--extra-arg=--language=c++',
+    '--extra-arg=--inline-suppr',
+    '--extra-arg=--inconclusive',
+    '--extra-arg=--suppress=unusedStructMember',
+    '--extra-arg=--suppress=toomanyconfigs',
+    '--',
+    '@{{PATHSFILE}}'
+]
+init_command = [
+    'python',
+    '-m',
+    'lintrunner_adapters',
+    'run',
+    'pip_init',
+    '--dry-run={{DRYRUN}}',
+    '--requirement=requirements-lintrunner.txt',
+]
+
+[[linter]]
 code = 'CMAKE'
 include_patterns = [
     "**/*.cmake",
@@ -361,6 +402,7 @@ include_patterns = [
     'devtools/visualization/**/*.py',
     'docs/**/*.py',
     # 'examples/**/*.py',
+    'examples/arm/**/*.py',
     'examples/openvino/**/*.py',
     # 'exir/**/*.py',
     # 'extension/**/*.py',

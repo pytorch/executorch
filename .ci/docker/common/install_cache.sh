@@ -34,7 +34,7 @@ install_ubuntu() {
 
 install_binary() {
   echo "Downloading sccache binary from S3 repo"
-  curl --retry 3 https://s3.amazonaws.com/ossci-linux/sccache -o /opt/cache/bin/sccache
+  curl --retry 3 --retry-all-errors https://s3.amazonaws.com/ossci-linux/sccache -o /opt/cache/bin/sccache
   chmod +x /opt/cache/bin/sccache
 }
 
@@ -76,6 +76,9 @@ init_sccache() {
   # This is the remote cache bucket
   export SCCACHE_BUCKET=ossci-compiler-cache-circleci-v2
   export SCCACHE_S3_KEY_PREFIX=executorch
+  export SCCACHE_REGION=us-east-1
+  export AWS_REGION=us-east-1
+  export AWS_DEFAULT_REGION=us-east-1
   export SCCACHE_IDLE_TIMEOUT=0
   export SCCACHE_ERROR_LOG=/tmp/sccache_error.log
   export RUST_LOG=sccache::server=error

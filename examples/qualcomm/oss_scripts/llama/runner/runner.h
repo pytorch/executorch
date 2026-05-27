@@ -46,12 +46,6 @@ enum DecoderModelVersion {
   kGemma2,
 };
 
-enum KvBitWidth {
-  kWidth8 = 8,
-  kWidth16 = 16,
-};
-
-template <typename T>
 class Runner : public executorch::extension::llm::IRunner {
  public:
   explicit Runner(
@@ -121,14 +115,15 @@ class Runner : public executorch::extension::llm::IRunner {
 
   DecoderModelVersion decoder_model_version_;
   std::unique_ptr<IMemAlloc> buffer_manager_;
-  std::unique_ptr<KVManager<T>> kv_manager_;
+  std::unique_ptr<KVManager> kv_manager_;
   std::unique_ptr<tokenizers::Tokenizer> tokenizer_;
   std::unique_ptr<DecoderRunner> decoder_runner_;
   std::unique_ptr<AttentionSinkRopeRunner> attention_sink_rope_runner_;
-  std::unique_ptr<PromptProcessor<T>> prompt_processor_;
-  std::unique_ptr<TokenGenerator<T>> token_generator_;
+  std::unique_ptr<PromptProcessor> prompt_processor_;
+  std::unique_ptr<TokenGenerator> token_generator_;
 
   // stats
   executorch::llm::Stats stats_;
 };
+
 } // namespace example

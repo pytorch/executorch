@@ -875,6 +875,31 @@ class Conv3dSequential(torch.nn.Module):
         return self.second(self.first(x))
 
 
+class ConvFull(torch.nn.Module):
+    def __init__(self, fill, full_shape):
+        super().__init__()
+        self.conv = torch.nn.Conv2d(8, 16, 3, padding=1)
+        self.fill = fill
+        self.full_shape = full_shape
+
+    def forward(self, x):
+        y = self.conv(x)
+        c = torch.full(self.full_shape, self.fill, dtype=y.dtype)
+        return torch.cat([y, c], dim=1)
+
+
+class ConvFullLike(torch.nn.Module):
+    def __init__(self, fill):
+        super().__init__()
+        self.conv = torch.nn.Conv2d(8, 16, 3, padding=1)
+        self.fill = fill
+
+    def forward(self, x):
+        y = self.conv(x)
+        c = torch.full_like(y, self.fill)
+        return torch.cat([y, c], dim=1)
+
+
 class ConvTranspose1dSingle(torch.nn.Module):
     def __init__(self, bias=True, dilation=1):
         super().__init__()
@@ -1929,6 +1954,14 @@ class Rand(torch.nn.Module):
         return torch.rand_like(x) + x
 
 
+class Randn(torch.nn.Module):
+    def __init__(self):
+        super().__init__()
+
+    def forward(self, x):
+        return torch.randn_like(x) + x
+
+
 class Reciprocal(torch.nn.Module):
     def __init__(self):
         super().__init__()
@@ -2168,6 +2201,15 @@ class ScaledDotProductAttention(torch.nn.Module):
         return attn_output
 
 
+class ScatterSrc(torch.nn.Module):
+    def __init__(self, dim=1):
+        super().__init__()
+        self.dim = dim
+
+    def forward(self, data, index, src):
+        return torch.scatter(data, self.dim, index, src)
+
+
 class SelectCopy(torch.nn.Module):
     def __init__(self):
         super().__init__()
@@ -2275,6 +2317,16 @@ class SliceCopyWithStep(torch.nn.Module):
             x[:, : seq_length : self.step]
             + self.position_ids[:, : seq_length : self.step]
         )
+
+
+class SelectScatter(torch.nn.Module):
+    def __init__(self, dim, index):
+        super().__init__()
+        self.dim = dim
+        self.index = index
+
+    def forward(self, x, y):
+        return x.select_scatter(y, dim=self.dim, index=self.index)
 
 
 class SliceScatter(torch.nn.Module):
@@ -2423,6 +2475,14 @@ class SwapAxes(torch.nn.Module):
 
     def forward(self, x):
         return torch.swapaxes(x, axis0=self.axis0, axis1=self.axis1)
+
+
+class Tan(torch.nn.Module):
+    def __init__(self):
+        super().__init__()
+
+    def forward(self, x):
+        return torch.tan(x)
 
 
 class Tanh(torch.nn.Module):

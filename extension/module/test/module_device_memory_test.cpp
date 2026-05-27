@@ -39,7 +39,11 @@ namespace {
 
 class MockCudaAllocator : public DeviceAllocator {
  public:
-  Result<void*> allocate(size_t nbytes, DeviceIndex index) override {
+  Result<void*> allocate(
+      size_t nbytes,
+      DeviceIndex index,
+      size_t alignment = kDefaultAlignment) override {
+    (void)alignment;
     allocate_count_++;
     last_allocate_size_ = nbytes;
     last_allocate_index_ = index;
