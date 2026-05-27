@@ -97,6 +97,7 @@ Q quantize_val(
 } // namespace
 
 Tensor& quantize_per_tensor_out(
+    // cppcheck-suppress constParameterReference
     KernelRuntimeContext& context,
     const Tensor& input,
     double scale,

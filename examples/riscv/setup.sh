@@ -33,7 +33,10 @@ ${SUDO} apt-get install -y --no-install-recommends \
     cmake \
     file \
     ca-certificates \
-    qemu-user-static
+    qemu-user-static \
+    libglib2.0-0t64 \
+    libxcb1 \
+    libgl1
 
 if [[ -n "${GCC_VERSION+x}" ]]; then
     ${SUDO} update-alternatives --install /usr/bin/riscv64-linux-gnu-gcc riscv64-linux-gnu-gcc /usr/bin/riscv64-linux-gnu-gcc${GCC_VERSION:+-${GCC_VERSION}} 100
