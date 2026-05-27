@@ -193,39 +193,7 @@ def _scan_gguf_for_vision(gguf_path: str) -> list[str]:
     return [t.name for t in reader.tensors if _is_vision_gguf_key(t.name)]
 
 
-def load_gguf_model(
-    gguf_path: str,
-    vision_hf_dir: str,
-    max_seq_len: int = 4096,
-    backend: str = "cuda",
-) -> tuple:
-    """Load a GGUF file, remap keys, and pack for the target backend.
-
-    Streams tensors one at a time for low peak memory.
-
-    GGUF ties ``embed_tokens`` and ``lm_head`` into a single Q4_K tensor.
-    We untie them: the embedding is dequantized to bf16 (``nn.Embedding``
-    needs gather, which ``Int4TilePackedTo4dTensor`` does not support),
-    while ``lm_head`` keeps the original Q4_K quantization (``nn.Linear``
-    matmul via tinygemm).
-
-    ``vision_hf_dir`` is REQUIRED: community GGUFs for Gemma 4 31B are
-    text-only by llama.cpp convention. The caller must pass an HF bf16
-    safetensors directory; ``vision_tower.*`` / ``embed_vision.*`` are
-    streamed from it and the matching ``config.json`` provides vision
-    dims. Raises ``ValueError`` if ``vision_hf_dir`` is missing/empty
-    and ``FileNotFoundError`` if it does not contain a safetensors
-    checkpoint + ``config.json``.
-
-    The returned model is always a full multimodal (text + vision) model.
-
-    Returns ``(model, config)``.
-    """
-    from executorch.examples.models.gemma4_31b.model import Gemma4_31B, Gemma4_31BConfig
-    from executorch.examples.models.gemma4_31b.quant import dequantize_weight, pack_one
-    from executorch.examples.models.gemma4_31b.quant.gguf import iter_gguf_tensors
-    from torchao.quantization.quantize_.workflows.int4.int4_tensor import Int4Tensor
-
+def _validate_vision_hf_dir(vision_hf_dir: str) -> None:
     if not vision_hf_dir:
         raise ValueError(
             "--vision-from-hf is required when using GGUF; community GGUFs "
@@ -234,6 +202,7 @@ def load_gguf_model(
         )
     if not os.path.isdir(vision_hf_dir):
         raise FileNotFoundError(f"vision_hf_dir {vision_hf_dir!r} is not a directory.")
+
     has_index = os.path.exists(
         os.path.join(vision_hf_dir, "model.safetensors.index.json")
     )
@@ -250,16 +219,16 @@ def load_gguf_model(
             "(needed for vision_config dims)."
         )
 
+
+def _get_backend_packers(backend: str):
     if backend == "cuda":
         from executorch.examples.models.gemma4_31b.quant import DEFAULT_CUDA_PACKERS
 
-        packers = DEFAULT_CUDA_PACKERS
-    else:
-        raise ValueError(f"Unsupported backend: {backend!r}. Supported: 'cuda'.")
+        return DEFAULT_CUDA_PACKERS
+    raise ValueError(f"Unsupported backend: {backend!r}. Supported: 'cuda'.")
 
-    # Up-front scan only for logging: in-band GGUF vision is not yet
-    # wired (community GGUFs are text-only), so we always source vision
-    # from the explicit HF dir below.
+
+def _log_gguf_vision_source(gguf_path: str, vision_hf_dir: str) -> None:
     gguf_vision_keys = _scan_gguf_for_vision(gguf_path)
     if gguf_vision_keys:
         print(
@@ -273,15 +242,11 @@ def load_gguf_model(
             f"will source vision_tower / embed_vision from {vision_hf_dir}"
         )
 
-    # Bring in vision_config (and any vision-relevant text overrides)
-    # from the HF config.json so that vision_tower / embed_vision are
-    # instantiated with matching dims.
-    config = Gemma4_31BConfig.from_hf_config(os.path.join(vision_hf_dir, "config.json"))
-    config.max_seq_len = max_seq_len
 
-    print("Building model on meta device...")
-    with torch.device("meta"):
-        model = Gemma4_31B(config)
+def _stream_text_gguf_weights(model, gguf_path: str, packers):
+    from executorch.examples.models.gemma4_31b.quant import dequantize_weight, pack_one
+    from executorch.examples.models.gemma4_31b.quant.gguf import iter_gguf_tensors
+    from torchao.quantization.quantize_.workflows.int4.int4_tensor import Int4Tensor
 
     embed_quant = None
     n_processed = 0
@@ -311,6 +276,58 @@ def load_gguf_model(
         if n_processed % 100 == 0:
             print(f"  Processed {n_processed} tensors...")
 
+    return embed_quant
+
+
+def load_gguf_model(
+    gguf_path: str,
+    vision_hf_dir: str,
+    max_seq_len: int = 4096,
+    backend: str = "cuda",
+) -> tuple:
+    """Load a GGUF file, remap keys, and pack for the target backend.
+
+    Streams tensors one at a time for low peak memory.
+
+    GGUF ties ``embed_tokens`` and ``lm_head`` into a single Q4_K tensor.
+    We untie them: the embedding is dequantized to bf16 (``nn.Embedding``
+    needs gather, which ``Int4TilePackedTo4dTensor`` does not support),
+    while ``lm_head`` keeps the original Q4_K quantization (``nn.Linear``
+    matmul via tinygemm).
+
+    ``vision_hf_dir`` is REQUIRED: community GGUFs for Gemma 4 31B are
+    text-only by llama.cpp convention. The caller must pass an HF bf16
+    safetensors directory; ``vision_tower.*`` / ``embed_vision.*`` are
+    streamed from it and the matching ``config.json`` provides vision
+    dims. Raises ``ValueError`` if ``vision_hf_dir`` is missing/empty
+    and ``FileNotFoundError`` if it does not contain a safetensors
+    checkpoint + ``config.json``.
+
+    The returned model is always a full multimodal (text + vision) model.
+
+    Returns ``(model, config)``.
+    """
+    from executorch.examples.models.gemma4_31b.model import Gemma4_31B, Gemma4_31BConfig
+
+    _validate_vision_hf_dir(vision_hf_dir)
+    packers = _get_backend_packers(backend)
+
+    # Up-front scan only for logging: in-band GGUF vision is not yet
+    # wired (community GGUFs are text-only), so we always source vision
+    # from the explicit HF dir below.
+    _log_gguf_vision_source(gguf_path, vision_hf_dir)
+
+    # Bring in vision_config (and any vision-relevant text overrides)
+    # from the HF config.json so that vision_tower / embed_vision are
+    # instantiated with matching dims.
+    config = Gemma4_31BConfig.from_hf_config(os.path.join(vision_hf_dir, "config.json"))
+    config.max_seq_len = max_seq_len
+
+    print("Building model on meta device...")
+    with torch.device("meta"):
+        model = Gemma4_31B(config)
+
+    embed_quant = _stream_text_gguf_weights(model, gguf_path, packers)
     _resolve_tied_lm_head(model, embed_quant, packers)
     del embed_quant
 

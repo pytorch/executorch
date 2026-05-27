@@ -228,6 +228,72 @@ jobs:
         fi
         echo "::endgroup::"
 
+  test-mlx-gemma4-31b:
+    # Requires HuggingFace secrets — skip on fork PRs.
+    # Maintainers can opt-in by applying the ciflow/mlx label.
+    if: github.event.pull_request.head.repo.full_name == github.repository || github.event_name != 'pull_request'
+    uses: pytorch/test-infra/.github/workflows/macos_job.yml@main
+    secrets: inherit
+    with:
+      default-packages: ""
+      job-name: test-mlx-gemma4-31b
+      runner: macos-15-xlarge
+      python-version: "3.12"
+      submodules: recursive
+      ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
+      secrets-env: EXECUTORCH_HF_TOKEN
+      timeout: 180
+      script: |
+        set -eux
+        export HF_HUB_DISABLE_XET=1
+
+        echo "::group::Install ExecuTorch"
+        ${CONDA_RUN} python install_executorch.py > /dev/null
+        echo "::endgroup::"
+
+        echo "::group::Install Gemma4 31B requirements"
+        ${CONDA_RUN} pip install -U "huggingface_hub[cli]<1.0" safetensors
+        ${CONDA_RUN} huggingface-cli login --token $SECRET_EXECUTORCH_HF_TOKEN
+        echo "::endgroup::"
+
+        ${CONDA_RUN} pip list
+
+        echo "::group::Download prequantized Gemma4 31B checkpoint"
+        HF_TOKEN=$SECRET_EXECUTORCH_HF_TOKEN ${CONDA_RUN} python -c "from huggingface_hub import snapshot_download; snapshot_download('gasoonjia/gemma-4-31B-it-HQQ-INT4', local_dir='/tmp/gemma4_31b_prequantized')"
+        echo "::endgroup::"
+
+        echo "::group::Export Gemma4 31B with MLX"
+        ${CONDA_RUN} python examples/models/gemma4_31b/export.py \
+          --prequantized /tmp/gemma4_31b_prequantized \
+          --output-dir /tmp/gemma4_31b_mlx \
+          --max-seq-len 4096 \
+          --backend mlx
+        test -f /tmp/gemma4_31b_mlx/model.pte
+        echo "::endgroup::"
+
+        echo "::group::Build Gemma4 31B MLX runner"
+        ${CONDA_RUN} make gemma4_31b-mlx
+        echo "::endgroup::"
+
+        echo "::group::Run Gemma4 31B MLX image inference"
+        OUTPUT=$(./cmake-out/examples/models/gemma4_31b/gemma4_31b_runner \
+          --model_path /tmp/gemma4_31b_mlx/model.pte \
+          --tokenizer_path /tmp/gemma4_31b_prequantized/tokenizer.json \
+          --image_path docs/source/_static/img/et-logo.png \
+          --prompt "Describe this image." \
+          --max_new_tokens 64 \
+          --temperature 0 2>&1)
+        echo "Runner output:"
+        echo "$OUTPUT"
+        if echo "$OUTPUT" | grep -Eiq "image|graphic|logo" && \
+           echo "$OUTPUT" | grep -Eiq "diamond|circular|red|symbol|center"; then
+          echo "Success: Gemma4 31B MLX image inference output matched expected visual description"
+        else
+          echo "Failed: expected image/logo description keywords not found in output"
+          exit 1
+        fi
+        echo "::endgroup::"
+
   test-mlx-voxtral:
     # Requires HuggingFace secrets — skip on fork PRs.
     # Maintainers can opt-in by applying the ciflow/mlx label, which

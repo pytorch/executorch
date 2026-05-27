@@ -30,7 +30,6 @@ import os
 import re as _re
 import sys
 import tempfile
-from pathlib import Path
 
 import pytest
 import torch

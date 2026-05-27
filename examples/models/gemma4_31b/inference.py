@@ -363,7 +363,7 @@ def generate_with_image(
     return tokenizer.decode(generated)
 
 
-def main() -> None:
+def _build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description="Eager inference on Gemma 4 31B-IT.")
     src = parser.add_mutually_exclusive_group(required=True)
     src.add_argument(
@@ -451,49 +451,41 @@ def main() -> None:
             "the Gemma 4 vision tower default."
         ),
     )
-    args = parser.parse_args()
+    return parser
 
-    if args.backend == "cuda" and not torch.cuda.is_available():
-        parser.error("CUDA is required for the cuda backend.")
 
-    # ---- Tokenizer ----
+def _resolve_tokenizer_path(args, parser: argparse.ArgumentParser) -> str:
     if args.tokenizer_path:
-        tokenizer_path = args.tokenizer_path
-    elif args.prequantized:
-        tokenizer_path = os.path.join(args.prequantized, "tokenizer.json")
-    elif args.bf16:
-        tokenizer_path = os.path.join(args.bf16, "tokenizer.json")
-    else:
-        parser.error("--tokenizer-path is required with --gguf.")
-    from tokenizers import Tokenizer
+        return args.tokenizer_path
+    if args.prequantized:
+        return os.path.join(args.prequantized, "tokenizer.json")
+    if args.bf16:
+        return os.path.join(args.bf16, "tokenizer.json")
+    parser.error("--tokenizer-path is required with --gguf.")
 
-    tokenizer = Tokenizer.from_file(tokenizer_path)
 
-    prompt_str = args.prompt if args.raw_prompt else apply_chat_template(args.prompt)
-
-    # Gemma 4 EOS tokens (from generation_config.json: ids 1, 50, 106).
-    eos_token_ids = {1, 50, 106}
-
+def _load_model_from_args(args, parser: argparse.ArgumentParser):
     if args.gguf:
         if not args.vision_from_hf:
             parser.error("--vision-from-hf is required when using --gguf")
         from executorch.examples.models.gemma4_31b.gguf_loader import load_gguf_model
 
-        model, config = load_gguf_model(
+        return load_gguf_model(
             args.gguf,
             vision_hf_dir=args.vision_from_hf,
             max_seq_len=args.max_seq_len,
             backend=args.backend,
         )
-    elif args.bf16:
-        model, config = Gemma4_31B.from_hf_checkpoint(
-            args.bf16, max_seq_len=args.max_seq_len
-        )
-    else:
-        print(f"Loading prequantized model from {args.prequantized}...")
-        model, config = load_prequantized_model(
-            args.prequantized, max_seq_len=args.max_seq_len, backend=args.backend
-        )
+    if args.bf16:
+        return Gemma4_31B.from_hf_checkpoint(args.bf16, max_seq_len=args.max_seq_len)
+
+    print(f"Loading prequantized model from {args.prequantized}...")
+    return load_prequantized_model(
+        args.prequantized, max_seq_len=args.max_seq_len, backend=args.backend
+    )
+
+
+def _prepare_model_for_inference(model, config, args, parser: argparse.ArgumentParser):
     _move_to_cuda(model, config)
     model.eval()
 
@@ -517,14 +509,15 @@ def main() -> None:
         print("Compiling model with torch.compile...")
         model = torch.compile(model, mode="default")
 
-    print(f"\nPrompt: {args.prompt}")
-    if args.image_path:
-        print(f"Image:  {args.image_path}")
-    print("-" * 40)
+    return model, vision_encoder
 
-    t0 = time.perf_counter()
+
+def _run_generation(model, vision_encoder, tokenizer, args, prompt_str: str) -> str:
+    # Gemma 4 EOS tokens (from generation_config.json: ids 1, 50, 106).
+    eos_token_ids = {1, 50, 106}
+
     if args.image_path:
-        output = generate_with_image(
+        return generate_with_image(
             model,
             vision_encoder,
             tokenizer,
@@ -535,15 +528,39 @@ def main() -> None:
             temperature=args.temperature,
             eos_token_ids=eos_token_ids,
         )
-    else:
-        output = generate(
-            model,
-            tokenizer,
-            prompt_str,
-            max_new_tokens=args.max_new_tokens,
-            temperature=args.temperature,
-            eos_token_ids=eos_token_ids,
-        )
+
+    return generate(
+        model,
+        tokenizer,
+        prompt_str,
+        max_new_tokens=args.max_new_tokens,
+        temperature=args.temperature,
+        eos_token_ids=eos_token_ids,
+    )
+
+
+def main() -> None:
+    parser = _build_parser()
+    args = parser.parse_args()
+
+    if args.backend == "cuda" and not torch.cuda.is_available():
+        parser.error("CUDA is required for the cuda backend.")
+
+    from tokenizers import Tokenizer
+
+    tokenizer = Tokenizer.from_file(_resolve_tokenizer_path(args, parser))
+    prompt_str = args.prompt if args.raw_prompt else apply_chat_template(args.prompt)
+
+    model, config = _load_model_from_args(args, parser)
+    model, vision_encoder = _prepare_model_for_inference(model, config, args, parser)
+
+    print(f"\nPrompt: {args.prompt}")
+    if args.image_path:
+        print(f"Image:  {args.image_path}")
+    print("-" * 40)
+
+    t0 = time.perf_counter()
+    output = _run_generation(model, vision_encoder, tokenizer, args, prompt_str)
     elapsed = time.perf_counter() - t0
 
     print(output)

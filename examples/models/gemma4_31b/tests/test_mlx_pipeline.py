@@ -21,6 +21,8 @@ import unittest
 import torch
 import torch.nn as nn
 
+from executorch.examples.models.gemma4_31b.export import _checkpoint_has_int8_vision_pe
+
 from executorch.examples.models.gemma4_31b.model import Gemma4_31B
 from executorch.examples.models.gemma4_31b.quant import (
     DEFAULT_MLX_PACKERS,
@@ -33,7 +35,7 @@ from executorch.examples.models.gemma4_31b.quant import (
 from executorch.examples.models.gemma4_31b.tests.test_pipeline import (
     build_random_tiny_model,
     config_dict,
-    save_checkpoint,
+    DEFAULT_RECIPE,
     TINY_CONFIG,
 )
 
@@ -54,8 +56,82 @@ TINY_SENSITIVE_RECIPE = QuantRecipe(
 )
 
 
+def save_vision_checkpoint(output_dir: str):
+    """Save a tiny checkpoint matching quantize_and_save.py's vision format."""
+    from executorch.examples.models.gemma4_31b.quant import (
+        collect_vision_state_dict,
+        quantize_vision_position_table,
+    )
+    from safetensors.torch import save_file
+    from torchao.prototype.safetensors.safetensors_support import (
+        flatten_tensor_state_dict,
+    )
+
+    torch.manual_seed(42)
+    model = Gemma4_31B(TINY_CONFIG).to(dtype=torch.bfloat16)
+    for p in model.parameters():
+        if p.device.type != "meta":
+            p.data.normal_(0, 0.02)
+    model.lm_head.weight = nn.Parameter(model.embed_tokens.weight.clone())
+
+    vision_tower = model.vision_tower
+    embed_vision = model.embed_vision
+    del model.vision_tower
+    del model.embed_vision
+
+    state_dict = quantize_model(model, DEFAULT_RECIPE)
+    quantize_vision_position_table(vision_tower, verbose=False)
+    state_dict.update(collect_vision_state_dict(vision_tower, embed_vision))
+
+    os.makedirs(output_dir, exist_ok=True)
+    td, md = flatten_tensor_state_dict(state_dict)
+    save_file(td, os.path.join(output_dir, "model.safetensors"), metadata=md)
+    with open(os.path.join(output_dir, "config.json"), "w") as f:
+        json.dump(config_dict(), f)
+
+
 class TestMlxPipeline(unittest.TestCase):
-    """End-to-end: quantize → pack for MLX → forward."""
+    """End-to-end: quantize -> pack for MLX -> forward."""
+
+    def test_checkpoint_has_int8_vision_pe(self):
+        """The MLX loader detects checkpoints with quantized vision PE buffers."""
+        from safetensors.torch import save_file
+        from torchao.prototype.safetensors.safetensors_support import (
+            flatten_tensor_state_dict,
+        )
+
+        with tempfile.TemporaryDirectory() as d:
+            path = os.path.join(d, "m.safetensors")
+            plain = {
+                "vision_tower.patch_embedder._pet_int8": torch.zeros(
+                    2, 4, 8, dtype=torch.int8
+                ),
+                "vision_tower.patch_embedder._pet_scale": torch.ones(
+                    2, 4, 1, dtype=torch.float32
+                ),
+            }
+            td, md = flatten_tensor_state_dict(plain)
+            save_file(td, path, metadata=md)
+            self.assertTrue(_checkpoint_has_int8_vision_pe(path))
+
+    def test_checkpoint_has_int8_vision_pe_rejects_incomplete_pair(self):
+        """The MLX loader rejects checkpoints with only one quantized PE buffer."""
+        from safetensors.torch import save_file
+        from torchao.prototype.safetensors.safetensors_support import (
+            flatten_tensor_state_dict,
+        )
+
+        with tempfile.TemporaryDirectory() as d:
+            path = os.path.join(d, "m.safetensors")
+            plain = {
+                "vision_tower.patch_embedder._pet_int8": torch.zeros(
+                    2, 4, 8, dtype=torch.int8
+                ),
+            }
+            td, md = flatten_tensor_state_dict(plain)
+            save_file(td, path, metadata=md)
+            with self.assertRaisesRegex(RuntimeError, "Incomplete quantized vision"):
+                _checkpoint_has_int8_vision_pe(path)
 
     def test_pack_for_mlx(self):
         """Quantize with sensitive recipe, pack for MLX, no meta weights."""
@@ -143,6 +219,9 @@ class TestMlxPipeline(unittest.TestCase):
 
         with torch.device("meta"):
             model = Gemma4_31B(TINY_CONFIG)
+        # Match build_random_tiny_model: the quantized state dict is text-only.
+        del model.vision_tower
+        del model.embed_vision
         model.lm_head.weight = nn.Parameter(model.embed_tokens.weight.clone())
         pack_model(model, state_dict, DEFAULT_MLX_PACKERS)
         model.eval()
@@ -157,8 +236,7 @@ class TestMlxPipeline(unittest.TestCase):
         mlx_source_transformations(model, dtype=torch.bfloat16)
         materialize_runtime_buffers(model, dtype=torch.bfloat16)
 
-        # After source transforms: signature is (tokens, input_pos) → (B, 1, V)
-        # Single-token decode
+        # After source transforms: token-input forward returns logits.
         tokens = torch.randint(0, TINY_CONFIG.vocab_size, (1, 1))
         input_pos = torch.tensor([0], dtype=torch.long)
         with torch.no_grad():
@@ -167,14 +245,25 @@ class TestMlxPipeline(unittest.TestCase):
         self.assertFalse(torch.isnan(out).any())
         self.assertFalse(torch.isinf(out).any())
 
-        # Multi-token prefill
+        # Multi-token prefill: token-input forward must be identical to the new
+        # exported path embed_text + mlx_prefill_forward.
         seq_len = 4
         tokens = torch.randint(0, TINY_CONFIG.vocab_size, (1, seq_len))
         input_pos = torch.arange(seq_len, dtype=torch.long)
         with torch.no_grad():
-            out = model(tokens, input_pos)
-        self.assertEqual(out.shape, torch.Size([1, TINY_CONFIG.vocab_size]))
-        self.assertFalse(torch.isnan(out).any())
+            old_tito = model(tokens, input_pos)
+            via_embeds = model.mlx_prefill_forward(model.embed_text(tokens), input_pos)
+        self.assertEqual(old_tito.shape, torch.Size([1, TINY_CONFIG.vocab_size]))
+        self.assertFalse(torch.isnan(old_tito).any())
+        self.assertTrue(torch.equal(old_tito, via_embeds))
+
+        # decode_forward still calls the original _run_blocks helper and
+        # therefore passes layer masks; transformed layers must accept them.
+        temp = torch.tensor([1e-6], dtype=torch.float32)
+        with torch.no_grad():
+            sampled = model.decode_forward(tokens, input_pos, temp)
+        self.assertEqual(sampled.shape, torch.Size([1, 1]))
+        self.assertFalse(torch.isnan(sampled).any())
 
     def test_source_transforms_use_mlx_ops(self):
         """Verify the traced graph contains the expected MLX custom ops.
@@ -198,6 +287,9 @@ class TestMlxPipeline(unittest.TestCase):
 
         with torch.device("meta"):
             model = Gemma4_31B(TINY_CONFIG)
+        # Match build_random_tiny_model: the quantized state dict is text-only.
+        del model.vision_tower
+        del model.embed_vision
         model.lm_head.weight = nn.Parameter(model.embed_tokens.weight.clone())
         pack_model(model, state_dict, DEFAULT_MLX_PACKERS)
         model.eval()
@@ -241,7 +333,7 @@ class TestMlxPipeline(unittest.TestCase):
         )
 
         with tempfile.TemporaryDirectory() as ckpt_dir, tempfile.TemporaryDirectory() as out_dir:
-            save_checkpoint(ckpt_dir)
+            save_vision_checkpoint(ckpt_dir)
             with open(os.path.join(ckpt_dir, "config.json"), "w") as f:
                 json.dump(config_dict(), f)
 

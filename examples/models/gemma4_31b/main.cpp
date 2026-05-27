@@ -22,8 +22,8 @@
 //           vision_encoder and splices image rows into the embeds at
 //           <image_token> placeholders. The exported model performs Gumbel-max
 //           sampling on-device and returns a single float token ID per call.
-//   MLX   — exports a single ``forward`` method with dynamic seq_len;
-//           returns last-token logits; the runner samples on the host via
+//   MLX   — exports the same four methods, but prefill/decode return
+//           last-token logits; the runner samples on the host via
 //           ``llm::logits_to_token`` with the same temperature semantics.
 
 #include <gflags/gflags.h>
@@ -66,6 +66,7 @@ extern "C" void et_pal_emit_log_message(
 
 #ifdef EXECUTORCH_BUILD_CUDA
 #include <cuda_runtime.h>
+#endif
 
 #define STB_IMAGE_IMPLEMENTATION
 #include <stb_image.h>
@@ -77,7 +78,6 @@ extern "C" void et_pal_emit_log_message(
 // with the impl macro defined produces redefinition errors.
 #define STB_IMAGE_RESIZE_IMPLEMENTATION
 #include <executorch/examples/models/gemma4/image_utils.h>
-#endif
 
 DEFINE_string(model_path, "", "Model .pte file path.");
 DEFINE_string(data_path, "", "Data file (.ptd) for CUDA backend.");
@@ -158,13 +158,13 @@ static uint64_t read_token(const executorch::aten::Tensor& output) {
   return static_cast<uint64_t>(llrintf(val));
 }
 
-#ifdef EXECUTORCH_BUILD_CUDA
 // Copy ``num_bytes`` from a runtime tensor's storage into ``dst`` on the
 // host, regardless of whether the storage lives on host or device. Used to
 // pull bf16 embedding rows back to host so we can splice them.
 static Error
 copy_to_host(const executorch::aten::Tensor& src, void* dst, size_t num_bytes) {
   const void* src_ptr = src.const_data_ptr();
+#ifdef EXECUTORCH_BUILD_CUDA
   cudaPointerAttributes attrs{};
   bool on_device = cudaPointerGetAttributes(&attrs, src_ptr) == cudaSuccess &&
       attrs.type == cudaMemoryTypeDevice;
@@ -177,7 +177,9 @@ copy_to_host(const executorch::aten::Tensor& src, void* dst, size_t num_bytes) {
           cudaGetErrorString(err));
       return Error::Internal;
     }
-  } else {
+  } else
+#endif
+  {
     memcpy(dst, src_ptr, num_bytes);
   }
   return Error::Ok;
@@ -231,7 +233,6 @@ static std::vector<int64_t> build_vision_input_ids(
   }
   return ids;
 }
-#endif
 
 int main(int argc, char** argv) {
   gflags::ParseCommandLineFlags(&argc, &argv, true);
@@ -244,15 +245,6 @@ int main(int argc, char** argv) {
     ET_LOG(Error, "Must specify --tokenizer_path");
     return 1;
   }
-
-#ifndef EXECUTORCH_BUILD_CUDA
-  if (!FLAGS_image_path.empty()) {
-    ET_LOG(
-        Error,
-        "--image_path requires the CUDA build (the runner is CUDA-only).");
-    return 1;
-  }
-#endif
 
   llm::Stats stats;
 
@@ -337,6 +329,12 @@ int main(int argc, char** argv) {
       return 1;
     }
   }
+#else
+  if (FLAGS_cuda_graph) {
+    ET_LOG(Info, "--cuda_graph ignored on non-CUDA build");
+  }
+#endif
+
   printf("Loading methods...\n");
   if (module->load_method("embed_text") != Error::Ok) {
     ET_LOG(Error, "Failed to load embed_text method");
@@ -346,12 +344,14 @@ int main(int argc, char** argv) {
     ET_LOG(Error, "Failed to load prefill method");
     return 1;
   }
+#ifdef EXECUTORCH_BUILD_CUDA
   if (module->load_method("decode") != Error::Ok) {
     ET_LOG(Error, "Failed to load decode method");
     return 1;
   }
   auto temp_tensor =
       from_blob(&temp_val, {1}, executorch::aten::ScalarType::Float);
+#endif
 
   const bool has_image = !FLAGS_image_path.empty();
   if (has_image) {
@@ -363,17 +363,6 @@ int main(int argc, char** argv) {
       return 1;
     }
   }
-#else
-  if (FLAGS_cuda_graph) {
-    ET_LOG(Info, "--cuda_graph ignored on non-CUDA build");
-  }
-  printf("Loading model...\n");
-  if (module->load_method("forward") != Error::Ok) {
-    ET_LOG(Error, "Failed to load forward method");
-    return 1;
-  }
-  const bool has_image = false;
-#endif
 
   stats.model_load_end_ms = llm::time_in_ms();
 
@@ -423,7 +412,6 @@ int main(int argc, char** argv) {
   std::vector<uint16_t> inputs_embeds_host_storage;
   int64_t hidden_size = 0;
 
-#ifdef EXECUTORCH_BUILD_CUDA
   // ===========================================================
   // 1. Build the prompt token sequence.
   //    - Image+text: chat template with BOI + image_token*N + EOI.
@@ -578,7 +566,7 @@ int main(int argc, char** argv) {
         Error,
         "hidden_size mismatch: vision=%" PRId64 " vs embed_text=%" PRId64,
         hidden_size,
-        text_embeds_tensor.size(2));
+        static_cast<int64_t>(text_embeds_tensor.size(2)));
     return 1;
   }
 
@@ -633,14 +621,6 @@ int main(int argc, char** argv) {
   //    `decode`'s graph is the same shape and runs faster than dispatching
   //    the dense prefill graph for a degenerate one-row input.
   // ===========================================================
-  int64_t max_prefill_chunk = (*metadata_result)[llm::kMaxSeqLen] - 1;
-  {
-    auto get_result = module->get("get_max_prefill_chunk");
-    if (get_result.ok()) {
-      max_prefill_chunk = get_result->toScalar().to<int64_t>();
-    }
-  }
-
   while (prefill_pos < num_prompt_tokens) {
     int64_t chunk_len =
         std::min(num_prompt_tokens - prefill_pos, max_prefill_chunk);
@@ -652,8 +632,15 @@ int main(int argc, char** argv) {
     auto pos_tensor = from_blob(
         pos_data.data(), {S(chunk_len)}, executorch::aten::ScalarType::Long);
 
-    if (chunk_len == 1) {
-      // decode fast path for the single-row degenerate case.
+#ifdef EXECUTORCH_BUILD_CUDA
+    const bool use_decode_fast_path = chunk_len == 1 &&
+        !(has_image && prompt_tokens[prefill_pos] == kImageTokenId);
+#else
+    const bool use_decode_fast_path = false;
+#endif
+    if (use_decode_fast_path) {
+      // CUDA token decode fast path for single-row text chunks. MLX keeps all
+      // KV-cache updates in prefill because MLX delegate state is method-local.
       int64_t tok_val = prompt_tokens[prefill_pos];
       auto chunk_tokens =
           from_blob(&tok_val, {1, 1}, executorch::aten::ScalarType::Long);
@@ -661,7 +648,9 @@ int main(int argc, char** argv) {
       std::vector<EValue> decode_inputs;
       decode_inputs.push_back(EValue(chunk_tokens));
       decode_inputs.push_back(EValue(pos_tensor));
+#ifdef EXECUTORCH_BUILD_CUDA
       decode_inputs.push_back(EValue(temp_tensor));
+#endif
 
       auto decode_result = module->execute("decode", decode_inputs);
       if (decode_result.error() != Error::Ok) {
@@ -669,7 +658,12 @@ int main(int argc, char** argv) {
             Error, "decode (chunk_len=1) failed at pos %" PRId64, prefill_pos);
         return 1;
       }
+#ifdef EXECUTORCH_BUILD_CUDA
       cur_token = read_token(decode_result.get()[0].toTensor());
+#else
+      cur_token = static_cast<uint64_t>(
+          llm::logits_to_token(decode_result.get()[0].toTensor(), temp_val));
+#endif
     } else {
       uint16_t* chunk_embeds_ptr =
           inputs_embeds_host_storage.data() + prefill_pos * hidden_size;
@@ -681,73 +675,24 @@ int main(int argc, char** argv) {
       std::vector<EValue> prefill_inputs;
       prefill_inputs.push_back(EValue(chunk_embeds_tensor));
       prefill_inputs.push_back(EValue(pos_tensor));
+#ifdef EXECUTORCH_BUILD_CUDA
       prefill_inputs.push_back(EValue(temp_tensor));
+#endif
 
       auto prefill_result = module->execute("prefill", prefill_inputs);
       if (prefill_result.error() != Error::Ok) {
         ET_LOG(Error, "prefill failed at pos %" PRId64, prefill_pos);
         return 1;
       }
+#ifdef EXECUTORCH_BUILD_CUDA
       cur_token = read_token(prefill_result.get()[0].toTensor());
-    }
-    prefill_pos += chunk_len;
-  }
-#else // !EXECUTORCH_BUILD_CUDA
-  // MLX build (Apple Silicon): the exported PTE has a single `forward(tokens,
-  // input_pos)` method (no on-device sampler, no embed_text split). Mirror
-  // the pre-vision text-only flow:
-  //   1. Encode the prompt with the chat template + BOS.
-  //   2. Chunked prefill via `forward`; the last chunk gives us the first
-  //      generated token via `llm::logits_to_token` (host-side sampling).
-  // The shared decode loop below handles subsequent tokens; the MLX branch
-  // there already calls `module->execute("forward", ...)` and host-samples.
-  {
-    auto encode_result = tokenizer->encode(prompt_text);
-    if (!encode_result.ok()) {
-      ET_LOG(Error, "Failed to encode prompt");
-      return 1;
-    }
-    auto token_vec = std::move(*encode_result);
-    // Gemma models require BOS at the start of the sequence.
-    token_vec.insert(token_vec.begin(), static_cast<uint64_t>(FLAGS_bos_id));
-    prompt_tokens.assign(token_vec.begin(), token_vec.end());
-  }
-  num_prompt_tokens = static_cast<int64_t>(prompt_tokens.size());
-  printf("Prompt tokens: %" PRId64 "\n", num_prompt_tokens);
-  stats.num_prompt_tokens = num_prompt_tokens;
-
-  while (prefill_pos < num_prompt_tokens) {
-    int64_t chunk_len =
-        std::min(num_prompt_tokens - prefill_pos, max_prefill_chunk);
-    std::vector<int64_t> token_data(
-        prompt_tokens.begin() + prefill_pos,
-        prompt_tokens.begin() + prefill_pos + chunk_len);
-    std::vector<int64_t> pos_data(chunk_len);
-    for (int64_t i = 0; i < chunk_len; ++i) {
-      pos_data[i] = prefill_pos + i;
-    }
-    auto tokens_tensor = from_blob(
-        token_data.data(),
-        {1, S(chunk_len)},
-        executorch::aten::ScalarType::Long);
-    auto pos_tensor = from_blob(
-        pos_data.data(), {S(chunk_len)}, executorch::aten::ScalarType::Long);
-
-    std::vector<EValue> inputs;
-    inputs.push_back(EValue(tokens_tensor));
-    inputs.push_back(EValue(pos_tensor));
-
-    auto result = module->execute("forward", inputs);
-    if (result.error() != Error::Ok) {
-      ET_LOG(Error, "forward failed at pos %" PRId64, prefill_pos);
-      return 1;
-    }
-    cur_token = static_cast<uint64_t>(
-        llm::logits_to_token(result.get()[0].toTensor(), temp_val));
-
-    prefill_pos += chunk_len;
-  }
+#else
+      cur_token = static_cast<uint64_t>(
+          llm::logits_to_token(prefill_result.get()[0].toTensor(), temp_val));
 #endif
+    }
+    prefill_pos += chunk_len;
+  }
 
   stats.prompt_eval_end_ms = llm::time_in_ms();
   // First generated token came from the last prefill chunk; TTFT is prefill.
@@ -785,15 +730,28 @@ int main(int argc, char** argv) {
     decode_token_data[0] = static_cast<int64_t>(cur_token);
     decode_pos_data[0] = pos;
 
+#ifdef EXECUTORCH_BUILD_CUDA
     std::vector<EValue> inputs;
     inputs.push_back(EValue(decode_tokens));
     inputs.push_back(EValue(decode_pos));
-
-#ifdef EXECUTORCH_BUILD_CUDA
     inputs.push_back(EValue(temp_tensor));
     auto result = module->execute("decode", inputs);
 #else
-    auto result = module->execute("forward", inputs);
+    auto embed_result = module->execute("embed_text", {EValue(decode_tokens)});
+    if (embed_result.error() != Error::Ok) {
+      ET_LOG(Error, "embed_text failed at decode step %d", step);
+      return 1;
+    }
+    auto& embed_outputs = embed_result.get();
+    if (embed_outputs.empty() || !embed_outputs[0].isTensor()) {
+      ET_LOG(Error, "embed_text produced no tensor at decode step %d", step);
+      return 1;
+    }
+    auto decode_embed = embed_outputs[0].toTensor();
+    std::vector<EValue> inputs;
+    inputs.push_back(EValue(decode_embed));
+    inputs.push_back(EValue(decode_pos));
+    auto result = module->execute("prefill", inputs);
 #endif
 
     if (result.error() != Error::Ok) {

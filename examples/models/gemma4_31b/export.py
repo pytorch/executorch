@@ -59,6 +59,26 @@ from executorch.examples.models.gemma4_31b.model import (
 # Load paths
 
 
+def _checkpoint_has_int8_vision_pe(safetensors_path: str) -> bool:
+    """Return True when the checkpoint stores the vision PE table as int8 buffers."""
+    from safetensors import safe_open
+
+    pet_int8_key = "vision_tower.patch_embedder._pet_int8"
+    pet_scale_key = "vision_tower.patch_embedder._pet_scale"
+    with safe_open(safetensors_path, framework="pt", device="cpu") as f:
+        keys = set(f.keys())
+
+    has_int8 = pet_int8_key in keys
+    has_scale = pet_scale_key in keys
+    if has_int8 != has_scale:
+        missing = pet_scale_key if has_int8 else pet_int8_key
+        raise RuntimeError(
+            "Incomplete quantized vision position-embedding table in checkpoint: "
+            f"missing {missing!r}."
+        )
+    return has_int8
+
+
 def load_prequantized_model(
     prequantized_dir: str,
     max_seq_len: int = 4096,
@@ -86,11 +106,12 @@ def load_prequantized_model(
     with torch.device("meta"):
         model = Gemma4_31B(config)
 
-    # Install int8 PE-table dispatch (drops the position_embedding_table param
-    # so load_and_pack_for_cuda's "no meta params" check passes, and registers
-    # _pet_int8 / _pet_scale buffers for the loader to fill).
-    # CUDA-only: MLX never traces the vision tower's int8 dispatch path.
-    if backend == "cuda":
+    # CUDA keeps the original loader behavior. MLX additionally supports the
+    # quantize_and_save.py checkpoint form where the vision PE table is stored
+    # as _pet_int8/_pet_scale buffers instead of position_embedding_table.
+    if backend == "cuda" or (
+        backend == "mlx" and _checkpoint_has_int8_vision_pe(safetensors_path)
+    ):
         from executorch.examples.models.gemma4_31b.quant import install_int8_pe_dispatch
 
         install_int8_pe_dispatch(model.vision_tower, verbose=True)
@@ -487,13 +508,12 @@ def _export_cuda(
 
 
 def _export_mlx(model: Gemma4_31B, config: Gemma4_31BConfig, output_dir: str) -> None:
-    """Export to .pte via torch.export + MLX backend.
+    """Export the MLX backend with a 3-method multimodal contract.
 
-    Unlike CUDA (which exports separate decode/prefill methods with an
-    Int4Tensor dispatch override), MLX uses a single method with dynamic
-    sequence length.  No int4_dispatch import — IntxUnpackedToInt8Tensor's
-    default dispatch produces the ``dequantize_affine → linear`` pattern
-    that MLX's QuantizedLinearHandler matches.
+    MLX exposes embed_text, vision_encoder, and prefill.  Prefill accepts
+    embeddings and returns softcapped logits; the runner samples those logits on
+    the host.  The old token-input forward remains installed by
+    ``mlx_source_transformations`` for equivalence tests, but is not shipped.
     """
     import gc
 
@@ -515,33 +535,73 @@ def _export_mlx(model: Gemma4_31B, config: Gemma4_31BConfig, output_dir: str) ->
     materialize_runtime_buffers(model, dtype=torch.bfloat16)
 
     max_prefill = min(config.max_seq_len - 1, config.sliding_window * 2)
+    hidden_size = config.hidden_size
     seq_dim = Dim("seq_len", min=1, max=max_prefill)
 
-    print(f"Exporting (T in [1, {max_prefill}])...")
-    # Explicitly bind decode_forward for tracing. mlx_source_transformations
-    # already monkey-patches model.forward, but wrapping with
-    # _BoundMethodForward makes the intent explicit and guards against
-    # silent regressions if the monkey-patch is ever removed (the class
-    # default Gemma4_31B.forward expects inputs_embeds, not token IDs).
-    with _BoundMethodForward(model, model.decode_forward), torch.no_grad():
-        exported = export(
+    print(f"Exporting MLX prefill (T in [1, {max_prefill}], inputs_embeds)...")
+    with _BoundMethodForward(model, model.mlx_prefill_forward), torch.no_grad():
+        prefill_ep = export(
             model,
             (
-                torch.tensor([[0, 1]], dtype=torch.long),
-                torch.tensor([0, 1], dtype=torch.long),
+                torch.zeros((1, max_prefill, hidden_size), dtype=torch.bfloat16),
+                torch.arange(max_prefill, dtype=torch.long),
             ),
             dynamic_shapes=({1: seq_dim}, {0: seq_dim}),
             strict=True,
         )
 
+    print(f"Exporting MLX embed_text (T in [1, {max_prefill}])...")
+    with _BoundMethodForward(model, model.embed_text), torch.no_grad():
+        embed_text_ep = export(
+            model,
+            (torch.zeros((1, max_prefill), dtype=torch.long),),
+            dynamic_shapes=({1: seq_dim},),
+            strict=True,
+        )
+
+    pks = config.vision_config.pooling_kernel_size
+    max_vision_soft_tokens = config.vision_config.default_output_length
+    max_patches = (pks * pks) * max_vision_soft_tokens
+    patch_dim = config.vision_config.patch_dim
+    print(
+        f"Exporting MLX vision_encoder "
+        f"(P in [{pks*pks}, {max_patches}], soft tokens up to "
+        f"{max_vision_soft_tokens})..."
+    )
+    ve_wrapper = _build_vision_encoder_wrapper(model, config)
+    num_groups_dim = Dim("mlx_vision_num_groups", min=1, max=max_vision_soft_tokens)
+    num_patches_dim = (pks * pks) * num_groups_dim
+    with torch.no_grad():
+        vision_encoder_ep = export(
+            ve_wrapper,
+            (
+                torch.zeros((1, max_patches, patch_dim), dtype=torch.float32),
+                torch.zeros((1, max_patches, 2), dtype=torch.long),
+            ),
+            dynamic_shapes=({1: num_patches_dim}, {1: num_patches_dim}),
+            strict=True,
+        )
+    del ve_wrapper
+
+    programs: dict[str, "torch.export.ExportedProgram"] = {
+        "embed_text": embed_text_ep,
+        "vision_encoder": vision_encoder_ep,
+        "prefill": prefill_ep,
+    }
+
     del model
     gc.collect()
 
-    print("Lowering to ExecuTorch with MLX backend...")
+    print(
+        "Lowering 3 methods to ExecuTorch with MLX backend: "
+        f"{', '.join(programs.keys())}..."
+    )
+    partitioner_map = {name: [MLXPartitioner()] for name in programs}
+    transform_passes = get_default_passes()
     et_prog = to_edge_transform_and_lower(
-        exported,
-        transform_passes=get_default_passes(),
-        partitioner=[MLXPartitioner()],
+        programs,
+        transform_passes=transform_passes,
+        partitioner=partitioner_map,
         compile_config=EdgeCompileConfig(
             _check_ir_validity=False,
             _skip_dim_order=True,
@@ -551,13 +611,14 @@ def _export_mlx(model: Gemma4_31B, config: Gemma4_31BConfig, output_dir: str) ->
             "get_vocab_size": config.vocab_size,
             "get_n_layers": config.num_hidden_layers,
             "get_max_prefill_chunk": max_prefill,
+            "get_max_vision_soft_tokens": int(max_vision_soft_tokens),
             "use_kv_cache": True,
             "use_sdpa_with_kv_cache": False,
             "enable_dynamic_shape": True,
         },
     )
 
-    del exported
+    del programs, prefill_ep, embed_text_ep, vision_encoder_ep
     gc.collect()
 
     et_program = et_prog.to_executorch(
@@ -588,8 +649,6 @@ def _export_mlx(model: Gemma4_31B, config: Gemma4_31BConfig, output_dir: str) ->
 
 
 def main() -> None:
-    from executorch.examples.models.gemma4_31b.quantize_and_save import _RECIPES
-
     parser = argparse.ArgumentParser(
         description="Export Gemma 4 31B-IT to ExecuTorch (4-method contract)."
     )
@@ -627,7 +686,7 @@ def main() -> None:
     parser.add_argument(
         "--quant-recipe",
         default="default",
-        choices=list(_RECIPES),
+        choices=["default", "sensitive"],
         help="Quantization recipe (only with --model-dir).",
     )
     parser.add_argument(
