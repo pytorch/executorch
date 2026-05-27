@@ -141,6 +141,7 @@ def define_common_targets():
         name = "model_sharding_py",
         srcs = [
             "model_sharding.py",
+            "op_fallback.py",
         ],
         visibility = ["PUBLIC"],
         deps = [
