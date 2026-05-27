@@ -7,6 +7,8 @@ $dokka.location:org.pytorch.executorch.extension.llm/LlmGenerationConfig.Compani
 $dokka.location:org.pytorch.executorch.extension.llm/LlmModule.Companion///PointingToDeclaration/org/pytorch/executorch/extension/llm/LlmModule.Companion.html
 $dokka.location:org.pytorch.executorch.extension.llm/LlmModuleConfig.Builder///PointingToDeclaration/org/pytorch/executorch/extension/llm/LlmModuleConfig.Builder.html
 $dokka.location:org.pytorch.executorch.extension.llm/LlmModuleConfig.Companion///PointingToDeclaration/org/pytorch/executorch/extension/llm/LlmModuleConfig.Companion.html
+$dokka.location:org.pytorch.executorch.training/SGD.Companion///PointingToDeclaration/org/pytorch/executorch/training/SGD.Companion.html
+$dokka.location:org.pytorch.executorch.training/TrainingModule.Companion///PointingToDeclaration/org/pytorch/executorch/training/TrainingModule.Companion.html
 $dokka.location:org.pytorch.executorch/DType.Companion///PointingToDeclaration/org/pytorch/executorch/DType.Companion.html
 $dokka.location:org.pytorch.executorch/EValue.Companion///PointingToDeclaration/org/pytorch/executorch/EValue.Companion.html
 $dokka.location:org.pytorch.executorch/ExecuTorchRuntime.Companion///PointingToDeclaration/org/pytorch/executorch/ExecuTorchRuntime.Companion.html
