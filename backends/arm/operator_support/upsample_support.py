@@ -13,7 +13,51 @@ from executorch.backends.arm.operator_support.tosa_supported_operators import (
     SupportedTOSAOperatorCheck,
 )
 from executorch.backends.arm.tosa import TosaSpecification
+from executorch.backends.arm.tosa.resize_utils import get_tosa_resize_validation_error
 from executorch.exir.dialects._ops import ops as exir_ops
+
+
+def _is_upsample_node_tosa_supported(
+    support_check: SupportedTOSAOperatorCheck,
+    node: fx.Node,
+    tosa_spec: TosaSpecification,
+    *,
+    align_corners: bool,
+) -> bool:
+    input_node = ensure_type(fx.Node, node.args[0])
+    input_size_yx = get_first_fake_tensor(input_node).shape[2:]
+    output_size_yx = get_first_fake_tensor(node).shape[2:]
+
+    try:
+        scale_y_n, scale_y_d, offset_y, border_y = (
+            RewriteUpsamplePass.get_resize_parameters_1d(
+                input_size_yx[0], output_size_yx[0], align_corners
+            )
+        )
+        scale_x_n, scale_x_d, offset_x, border_x = (
+            RewriteUpsamplePass.get_resize_parameters_1d(
+                input_size_yx[1], output_size_yx[1], align_corners
+            )
+        )
+    except RuntimeError as err:
+        support_check.reporter.report_reject(node, str(err))
+        return False
+
+    # Validate the exact TOSA RESIZE parameters that RewriteUpsamplePass will
+    # emit so support checks and fake-op validation reject the same cases.
+    validation_error = get_tosa_resize_validation_error(
+        input_hw=input_size_yx,
+        output_hw=output_size_yx,
+        scale=[scale_y_n, scale_y_d, scale_x_n, scale_x_d],
+        offset=[offset_y, offset_x],
+        border=[border_y, border_x],
+        tosa_spec=tosa_spec,
+    )
+    if validation_error is not None:
+        support_check.reporter.report_reject(node, validation_error)
+        return False
+
+    return True
 
 
 @register_tosa_support_check
@@ -23,9 +67,11 @@ class UpsampleNearest2dSupported(SupportedTOSAOperatorCheck):
     targets = [exir_ops.edge.aten.upsample_nearest2d.vec]
 
     def is_node_tosa_supported(
-        self, _node: fx.Node, _tosa_spec: TosaSpecification
+        self, node: fx.Node, tosa_spec: TosaSpecification
     ) -> bool:  # type: ignore[override, misc]
-        return True
+        return _is_upsample_node_tosa_supported(
+            self, node, tosa_spec, align_corners=False
+        )
 
 
 @register_tosa_support_check
@@ -37,33 +83,9 @@ class UpsampleBilinear2dSupported(SupportedTOSAOperatorCheck):
     targets = [exir_ops.edge.aten.upsample_bilinear2d.vec]
 
     def is_node_tosa_supported(
-        self, node: fx.Node, _tosa_spec: TosaSpecification
+        self, node: fx.Node, tosa_spec: TosaSpecification
     ) -> bool:  # type: ignore[override, misc]
-        input_node = ensure_type(fx.Node, node.args[0])
         align_corners = ensure_type(bool, node.args[2])
-        input_size_yx = get_first_fake_tensor(input_node).shape[2:]
-        output_size_yx = get_first_fake_tensor(node).shape[2:]
-
-        try:
-            scale_y_n, scale_y_d, _, _ = RewriteUpsamplePass.get_resize_parameters_1d(
-                input_size_yx[0], output_size_yx[0], align_corners
-            )
-            scale_x_n, scale_x_d, _, _ = RewriteUpsamplePass.get_resize_parameters_1d(
-                input_size_yx[1], output_size_yx[1], align_corners
-            )
-        except RuntimeError as err:
-            self.reporter.report_reject(node, str(err))
-            return False
-
-        # get_resize_parameters_1d() returns the TOSA RESIZE scale fraction for
-        # each spatial dimension. For align_corners=False, this is the effective
-        # output_size / input_size ratio, so the 1/16 boundary is checked
-        # directly in the same representation that RESIZE lowering will use.
-        if scale_y_d >= 16 * scale_y_n or scale_x_d >= 16 * scale_x_n:
-            self.reporter.report_reject(
-                node,
-                "Bilinear RESIZE downscale must be strictly greater than 1/16",
-            )
-            return False
-
-        return True
+        return _is_upsample_node_tosa_supported(
+            self, node, tosa_spec, align_corners=align_corners
+        )

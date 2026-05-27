@@ -198,6 +198,17 @@ def test_upsample_nearest2d_vec_tosa_FP_interpolate(test_data: torch.Tensor):
     pipeline.run()
 
 
+def test_upsample_nearest2d_vec_tosa_does_not_delegate_exact_one_sixteenth_downscale():
+    pipeline = OpNotSupportedPipeline[input_t1](
+        Interpolate(size=None, scale_factor=1.0 / 16.0),
+        (torch.randn(1, 3, 256, 448),),
+        {exir_op: 1},
+        n_expected_delegates=0,
+    )
+
+    pipeline.run()
+
+
 @common.parametrize("test_data", test_data_suite)
 def test_upsample_nearest2d_vec_tosa_INT(test_data: torch.Tensor):
     test_data, size, scale_factor, compare_outputs = test_data()
