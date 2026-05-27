@@ -27,7 +27,7 @@ jobs:
 
   test-models-macos-cpu:
     name: test-models-macos-cpu
-    uses: pytorch/test-infra/.github/workflows/macos_job.yml@release/2.12
+    uses: pytorch/test-infra/.github/workflows/macos_job.yml@main
     strategy:
       matrix:
         # Mac runners are expensive and limited, and non reliable.
@@ -65,7 +65,7 @@ jobs:
 
   test-arm-backend-zephyr:
     name: test-arm-backend-zephyr
-    uses: pytorch/test-infra/.github/workflows/linux_job.yml@release/2.12
+    uses: pytorch/test-infra/.github/workflows/linux_job.yml@main
     strategy:
       matrix:
         include:
@@ -96,7 +96,7 @@ jobs:
 
   test-models-linux-aarch64:
     name: test-models-linux-aarch64
-    uses: pytorch/test-infra/.github/workflows/linux_job_v2.yml@release/2.12
+    uses: pytorch/test-infra/.github/workflows/linux_job_v2.yml@main
     permissions:
       id-token: write
       contents: read
@@ -146,7 +146,7 @@ jobs:
 
   test-custom-ops-macos:
     name: test-custom-ops-macos
-    uses: pytorch/test-infra/.github/workflows/macos_job.yml@release/2.12
+    uses: pytorch/test-infra/.github/workflows/macos_job.yml@main
     strategy:
       matrix:
         include:
@@ -169,7 +169,7 @@ jobs:
 
   test-selective-build-macos:
     name: test-selective-build-macos
-    uses: pytorch/test-infra/.github/workflows/macos_job.yml@release/2.12
+    uses: pytorch/test-infra/.github/workflows/macos_job.yml@main
     strategy:
       matrix:
         include:
@@ -192,7 +192,7 @@ jobs:
 
   test-demo-backend-delegation:
     name: test-demo-backend-delegation
-    uses: pytorch/test-infra/.github/workflows/linux_job_v2.yml@release/2.12
+    uses: pytorch/test-infra/.github/workflows/linux_job_v2.yml@main
     permissions:
       id-token: write
       contents: read
@@ -219,7 +219,7 @@ jobs:
 
   test-arm-backend-ethos-u:
     name: test-arm-backend-ethos-u
-    uses: pytorch/test-infra/.github/workflows/linux_job_v2.yml@release/2.12
+    uses: pytorch/test-infra/.github/workflows/linux_job_v2.yml@main
     permissions:
       id-token: write
       contents: read
@@ -270,7 +270,7 @@ jobs:
 
   test-arm-backend-vkml:
     name: test-arm-backend-vkml
-    uses: pytorch/test-infra/.github/workflows/linux_job_v2.yml@release/2.12
+    uses: pytorch/test-infra/.github/workflows/linux_job_v2.yml@main
     permissions:
       id-token: write
       contents: read
@@ -318,7 +318,7 @@ jobs:
       contains(needs.changed-files.outputs.changed-files, '.ci/scripts/setup-conda.sh') ||
       contains(needs.changed-files.outputs.changed-files, '.github/workflows/trunk.yml')
     name: test-coreml-delegate
-    uses: pytorch/test-infra/.github/workflows/macos_job.yml@release/2.12
+    uses: pytorch/test-infra/.github/workflows/macos_job.yml@main
     with:
       default-packages: ""
       runner: macos-14-xlarge
@@ -348,7 +348,7 @@ jobs:
       contains(needs.changed-files.outputs.changed-files, '.ci/scripts/utils.sh') ||
       contains(needs.changed-files.outputs.changed-files, '.github/workflows/trunk.yml')
     name: test-static-llama-ane
-    uses: pytorch/test-infra/.github/workflows/macos_job.yml@release/2.12
+    uses: pytorch/test-infra/.github/workflows/macos_job.yml@main
     with:
       default-packages: ""
       runner: macos-m1-stable
@@ -371,7 +371,7 @@ jobs:
 
   test-llama-torchao-lowbit:
     name: test-llama-torchao-lowbit
-    uses: pytorch/test-infra/.github/workflows/macos_job.yml@release/2.12
+    uses: pytorch/test-infra/.github/workflows/macos_job.yml@main
     with:
       default-packages: ""
       runner: macos-m1-stable
@@ -393,7 +393,7 @@ jobs:
   test-llama-runner-linux:
     # Test Both linux x86 and linux aarch64
     name: test-llama-runner-linux
-    uses: pytorch/test-infra/.github/workflows/linux_job_v2.yml@release/2.12
+    uses: pytorch/test-infra/.github/workflows/linux_job_v2.yml@main
     permissions:
       id-token: write
       contents: read
@@ -468,7 +468,7 @@ jobs:
       contains(needs.changed-files.outputs.changed-files, '.ci/scripts/setup-macos.sh') ||
       contains(needs.changed-files.outputs.changed-files, '.github/workflows/trunk.yml')
     name: test-llama-runner-mac
-    uses: pytorch/test-infra/.github/workflows/macos_job.yml@release/2.12
+    uses: pytorch/test-infra/.github/workflows/macos_job.yml@main
     strategy:
       matrix:
         dtype: [fp32]
@@ -504,7 +504,7 @@ jobs:
 
   test-torchao-huggingface-checkpoints:
     name: test-torchao-huggingface-checkpoints
-    uses: pytorch/test-infra/.github/workflows/linux_job_v2.yml@release/2.12
+    uses: pytorch/test-infra/.github/workflows/linux_job_v2.yml@main
     permissions:
       id-token: write
       contents: read
@@ -552,7 +552,7 @@ jobs:
   test-multimodal-macos:
     if: ${{ !github.event.pull_request.head.repo.fork }}
     name: test-multimodal-macos
-    uses: pytorch/test-infra/.github/workflows/macos_job.yml@release/2.12
+    uses: pytorch/test-infra/.github/workflows/macos_job.yml@main
     permissions:
       id-token: write
       contents: read
@@ -592,7 +592,7 @@ jobs:
 
   test-qnn-model:
     name: test-qnn-model
-    uses: pytorch/test-infra/.github/workflows/linux_job_v2.yml@release/2.12
+    uses: pytorch/test-infra/.github/workflows/linux_job_v2.yml@main
     permissions:
       id-token: write
       contents: read
@@ -618,7 +618,7 @@ jobs:
 
   test-qnn-optimum-model:
     name: test-qnn-optimum-model
-    uses: pytorch/test-infra/.github/workflows/linux_job_v2.yml@release/2.12
+    uses: pytorch/test-infra/.github/workflows/linux_job_v2.yml@main
     permissions:
       id-token: write
       contents: read
@@ -653,7 +653,7 @@ jobs:
       contains(needs.changed-files.outputs.changed-files, '.ci/scripts/setup-macos.sh') ||
       contains(needs.changed-files.outputs.changed-files, '.github/workflows/trunk.yml')
     name: test-models-macos-coreml
-    uses: pytorch/test-infra/.github/workflows/macos_job.yml@release/2.12
+    uses: pytorch/test-infra/.github/workflows/macos_job.yml@main
     strategy:
       matrix:
         model: [dl3, edsr, efficient_sam, emformer_join, emformer_transcribe, ic3, ic4, mobilebert, mv2, mv3, resnet50, vit, w2l]
@@ -707,7 +707,7 @@ jobs:
       contains(needs.changed-files.outputs.changed-files, '.ci/scripts/setup-macos.sh') ||
       contains(needs.changed-files.outputs.changed-files, '.github/workflows/trunk.yml')
     name: test-models-macos-mps
-    uses: pytorch/test-infra/.github/workflows/macos_job.yml@release/2.12
+    uses: pytorch/test-infra/.github/workflows/macos_job.yml@main
     strategy:
       fail-fast: false
     with:
@@ -735,7 +735,7 @@ jobs:
     # NB: Don't run this on fork PRs because they won't have access to the secret and would fail anyway
     if: ${{ !github.event.pull_request.head.repo.fork }}
     name: test-huggingface-transformers-xnnpack
-    uses: pytorch/test-infra/.github/workflows/linux_job_v2.yml@release/2.12
+    uses: pytorch/test-infra/.github/workflows/linux_job_v2.yml@main
     permissions:
       id-token: write
       contents: read
@@ -835,7 +835,7 @@ jobs:
         contains(needs.changed-files.outputs.changed-files, '.github/workflows/trunk.yml')
       )
     name: test-huggingface-transformers-macos
-    uses: pytorch/test-infra/.github/workflows/macos_job.yml@release/2.12
+    uses: pytorch/test-infra/.github/workflows/macos_job.yml@main
     permissions:
       id-token: write
       contents: read
@@ -898,7 +898,7 @@ jobs:
 
   test-llama-runner-qnn-linux:
     name: test-llama-runner-qnn-linux
-    uses: pytorch/test-infra/.github/workflows/linux_job_v2.yml@release/2.12
+    uses: pytorch/test-infra/.github/workflows/linux_job_v2.yml@main
     permissions:
       id-token: write
       contents: read
@@ -955,7 +955,7 @@ jobs:
     needs: changes # has dependency on changes jobs defined above
     if: needs.changes.outputs.qnn == 'true'
     name: test-static-llama-qnn-eval-linux
-    uses: pytorch/test-infra/.github/workflows/linux_job_v2.yml@release/2.12
+    uses: pytorch/test-infra/.github/workflows/linux_job_v2.yml@main
     permissions:
       id-token: write
       contents: read
@@ -1000,7 +1000,7 @@ jobs:
       docker-image: ci-image:executorch-ubuntu-22.04-clang12
 
   test-models-windows:
-    uses: pytorch/test-infra/.github/workflows/windows_job.yml@release/2.12
+    uses: pytorch/test-infra/.github/workflows/windows_job.yml@main
     strategy:
       fail-fast: false
       matrix:
