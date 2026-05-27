@@ -18,14 +18,19 @@ ops_before_transforms: dict[str, int] = {
 }
 # Every Conv1d + ReLU pair fuses into a single cortex_m.quantized_conv2d call;
 # only the final log_softmax stays in aten until a quantized log_softmax lands.
+# Between consecutive Conv1ds the view_copy + _clone_dim_order wrap/unwrap
+# chain collapses to a direct conv2d -> conv2d hand-off (via FuseViewCopyTransform
+# + FoldInverseDimOrderClonePass). The model-boundary view_copy pair survives
+# (one at the model input, one at output). Only one _clone_dim_order survives:
+# the first Conv1d has in_channels==1, so its input NHWC clone is skipped
+# (channels-last == contiguous), leaving just the output-boundary clone.
 ops_after_transforms: dict[str, int] = {
     "executorch_exir_dialects_edge__ops_aten__log_softmax_default": 1,
-    "executorch_exir_dialects_edge__ops_aten_squeeze_copy_dims": 12,
-    "executorch_exir_dialects_edge__ops_aten_unsqueeze_copy_default": 12,
+    "executorch_exir_dialects_edge__ops_aten_view_copy_default": 2,
     "executorch_exir_dialects_edge__ops_cortex_m_dequantize_per_tensor_default": 2,
     "executorch_exir_dialects_edge__ops_cortex_m_quantize_per_tensor_default": 2,
     "executorch_exir_dialects_edge__ops_cortex_m_quantized_conv2d_default": 12,
-    "executorch_exir_dialects_edge__ops_dim_order_ops__clone_dim_order_default": 24,
+    "executorch_exir_dialects_edge__ops_dim_order_ops__clone_dim_order_default": 1,
 }
 
 model = Wav2LetterModel()

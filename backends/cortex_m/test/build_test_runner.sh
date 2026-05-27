@@ -45,7 +45,7 @@ aten::cat.out,\
 aten::full.out,\
 aten::ge.Tensor_out,\
 aten::unsqueeze_copy.out,\
-aten::squeeze_copy.dims_out,\
+aten::view_copy.out,\
 aten::select_copy.int_out,\
 aten::amax.out"
 

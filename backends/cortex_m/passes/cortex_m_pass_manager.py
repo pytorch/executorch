@@ -13,6 +13,7 @@ from executorch.backends.arm._passes import (
     ScalarsToAttributePass,
 )
 from executorch.backends.cortex_m.target_config import CortexM, CortexMTargetConfig
+from executorch.backends.transforms.fuse_view_copy import FuseViewCopyTransform
 from executorch.backends.transforms.remove_getitem_op import RemoveGetItemPass
 from executorch.backends.transforms.replace_scalar_with_tensor import (
     ReplaceScalarWithTensorArgPass,
@@ -27,6 +28,7 @@ from .clamp_hardswish_pass import ClampHardswishPass
 from .convert_to_cortex_m_pass import ConvertToCortexMPass
 from .decompose_hardswish_pass import DecomposeHardswishPass
 from .decompose_mean_pass import DecomposeMeanPass
+from .fold_inverse_dim_order_clone_pass import FoldInverseDimOrderClonePass
 from .quantized_clamp_activation_pass import QuantizedClampActivationPass
 from .quantized_op_fusion_pass import QuantizedOpFusionPass
 from .replace_quant_nodes_pass import ReplaceQuantNodesPass
@@ -46,6 +48,15 @@ class CortexMPassManager(PassManager):
         DecomposeHardswishPass,
         QuantizedOpFusionPass,
         ConvertToCortexMPass,
+        # Conv1d lowering inserts view_copy + _clone_dim_order wrappers around
+        # each conv2d call. Between consecutive conv1d layers these chain
+        # together to form an identity. FuseViewCopyTransform collapses the
+        # view_copy <-> view_copy chain (treating the dim_order clones as
+        # unary elementwise ops it walks through); FoldInverseDimOrderClonePass
+        # then removes the surviving _clone_dim_order pair whose composed
+        # dim_order is the identity.
+        FuseViewCopyTransform,
+        FoldInverseDimOrderClonePass,
     ]
 
     pass_list_transform_for_annotation: list[PassClass] = [
