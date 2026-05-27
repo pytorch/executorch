@@ -8,6 +8,9 @@ $dokka.location:org.pytorch.executorch.extension.llm/LlmModule.Companion///Point
 $dokka.location:org.pytorch.executorch.extension.llm/LlmModuleConfig.Builder///PointingToDeclaration/org/pytorch/executorch/extension/llm/LlmModuleConfig.Builder.html
 $dokka.location:org.pytorch.executorch.extension.llm/LlmModuleConfig.Companion///PointingToDeclaration/org/pytorch/executorch/extension/llm/LlmModuleConfig.Companion.html
 $dokka.location:org.pytorch.executorch/DType.Companion///PointingToDeclaration/org/pytorch/executorch/DType.Companion.html
+$dokka.location:org.pytorch.executorch/EValue.Companion///PointingToDeclaration/org/pytorch/executorch/EValue.Companion.html
+$dokka.location:org.pytorch.executorch/ExecuTorchRuntime.Companion///PointingToDeclaration/org/pytorch/executorch/ExecuTorchRuntime.Companion.html
+$dokka.location:org.pytorch.executorch/ExecutorchRuntimeException.Companion///PointingToDeclaration/org/pytorch/executorch/ExecutorchRuntimeException.Companion.html
 $dokka.location:org.pytorch.executorch/ExecutorchRuntimeException.ExecutorchInvalidArgumentException///PointingToDeclaration/org/pytorch/executorch/ExecutorchRuntimeException.ExecutorchInvalidArgumentException.html
 org.pytorch.executorch
 org.pytorch.executorch.annotations
