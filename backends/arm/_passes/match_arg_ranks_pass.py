@@ -57,6 +57,7 @@ class MatchArgRanksPass(ArmPass):
         exir_ops.edge.aten.ge.Tensor,
         exir_ops.edge.aten.lt.Tensor,
         exir_ops.edge.aten.le.Tensor,
+        exir_ops.edge.aten.ne.Tensor,
         exir_ops.edge.aten.pow.Tensor_Tensor,
         exir_ops.edge.aten.remainder.Tensor,
         exir_ops.edge.aten.where.self,
