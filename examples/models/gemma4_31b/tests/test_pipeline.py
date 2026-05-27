@@ -45,19 +45,6 @@ from torchao.prototype.safetensors.safetensors_support import (
 # ---------------------------------------------------------------------------
 # Shared fixtures — imported by test_cuda_pipeline.py.
 
-TINY_VISION_CONFIG = Gemma4VisionConfig(
-    hidden_size=32,
-    intermediate_size=64,
-    num_hidden_layers=1,
-    num_attention_heads=2,
-    num_key_value_heads=2,
-    head_dim=16,
-    patch_size=4,
-    pooling_kernel_size=2,
-    position_embedding_size=16,
-    standardize=True,
-)
-
 TINY_CONFIG = Gemma4_31BConfig(
     vocab_size=256,
     hidden_size=128,
@@ -77,7 +64,18 @@ TINY_CONFIG = Gemma4_31BConfig(
     final_logit_softcapping=30.0,
     tie_word_embeddings=True,
     sliding_window=16,
-    vision_config=TINY_VISION_CONFIG,
+    vision_config=Gemma4VisionConfig(
+        hidden_size=32,
+        intermediate_size=64,
+        num_hidden_layers=1,
+        num_attention_heads=2,
+        num_key_value_heads=2,
+        head_dim=16,
+        patch_size=4,
+        pooling_kernel_size=2,
+        position_embedding_size=16,
+        standardize=True,
+    ),
     max_seq_len=64,
 )
 
@@ -92,6 +90,10 @@ QUANT_8W_PER_AXIS = QuantConfig(
 DEFAULT_RECIPE = QuantRecipe(
     rules=[
         QuantRule(r"embed_tokens\.weight", QUANT_8W_PER_AXIS),
+        # Vision side stays bf16; the PE table is swapped to int8 buffers
+        # internally by quantize_model.
+        QuantRule(r"vision_tower\..*", None),
+        QuantRule(r"embed_vision\..*", None),
         QuantRule(r".*norm\.weight", None),
         QuantRule(r".*\.weight", QUANT_4W),
     ]
@@ -162,12 +164,7 @@ def config_dict() -> dict:
 
 def build_random_tiny_model() -> Gemma4_31B:
     torch.manual_seed(42)
-    model = Gemma4_31B(TINY_CONFIG)
-    # Vision is mandatory for construction; the text-decoder quantization
-    # tests below detach it before quantizing (mirroring quantize_and_save.py).
-    del model.vision_tower
-    del model.embed_vision
-    model.to(dtype=torch.bfloat16)
+    model = Gemma4_31B(TINY_CONFIG).to(dtype=torch.bfloat16)
     for p in model.parameters():
         if p.device.type != "meta":
             p.data.normal_(0, 0.02)
@@ -190,7 +187,13 @@ def build_hf_checkpoint(output_dir: str) -> None:
     model = build_random_tiny_model()
     sd = model.state_dict()
     sd.pop("lm_head.weight", None)
-    hf_sd = {f"model.language_model.{k}": v.contiguous() for k, v in sd.items()}
+    hf_sd = {}
+    for key, value in sd.items():
+        if key.startswith(("vision_tower.", "embed_vision.")):
+            hf_key = f"model.{key}"
+        else:
+            hf_key = f"model.language_model.{key}"
+        hf_sd[hf_key] = value.contiguous()
     save_file(hf_sd, os.path.join(output_dir, "model.safetensors"))
     with open(os.path.join(output_dir, "config.json"), "w") as f:
         json.dump(config_dict(), f)
@@ -220,6 +223,9 @@ class TestQuantizeSaveLoadRoundtrip(unittest.TestCase):
             loaded, _ = unflatten_tensor_state_dict(loaded_tensors, loaded_meta)
 
         self.assertEqual(set(state_dict.keys()), set(loaded.keys()))
+        self.assertIn("vision_tower.patch_embedder._pet_int8", loaded)
+        self.assertIn("vision_tower.patch_embedder._pet_scale", loaded)
+        self.assertIn("embed_vision.embedding_projection.weight", loaded)
         for fqn in state_dict:
             orig = state_dict[fqn]
             got = loaded[fqn]

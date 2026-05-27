@@ -35,14 +35,22 @@ from executorch.examples.models.gemma4_31b.quant import (
 )
 
 # ---------------------------------------------------------------------------
-# Production recipes for Gemma 4 31B.
+# Production recipes for Gemma 4 31B (vision + text in one rule set).
 #
-# Layer sensitivity:
+# Layer sensitivity (text decoder):
 #   - v_proj and down_proj are the most sensitive to quantization error
 #     (first/last quarter of layers especially so).
 #   - q_proj, k_proj, o_proj, gate_proj, up_proj tolerate 4-bit well.
 #   - embed_tokens is an index lookup — INT8 per-axis is nearly lossless.
 #   - Norms and layer_scalar are tiny and must stay unquantized.
+#
+# Vision modality:
+#   - Vision tower linears are small + accuracy-sensitive; they stay bf16.
+#   - The vision multimodal projector (``embed_vision.*``) also stays bf16.
+#   - The patch_embedder's position_embedding_table is the one "real" quant
+#     on the vision side: bf16 → INT8 per-channel. ``quantize_model``
+#     applies this transformation in-place when ``model.vision_tower`` is
+#     present, so the recipe does not need to (and cannot) describe it.
 
 _INT4 = QuantConfig(bits=4, group_size=32, symmetric=False, method="min_max")
 _INT4_HQQ = QuantConfig(bits=4, group_size=32, symmetric=False, method="hqq")
@@ -52,9 +60,20 @@ _INT8_PER_AXIS = QuantConfig(  # group_size = hidden_size (5376) for Gemma 4 31B
 )
 _EDGE_LAYERS = set(range(15)) | set(range(45, 60))
 
+# Shared vision rules: every vision-side weight stays bf16. The PE table is
+# absent from the parameter walk by the time the recipe runs (it has been
+# replaced with int8 buffers by quantize_model), so we do not need a rule
+# for it — but the catch-all vision_tower/embed_vision rules below would
+# also leave it alone if it were present.
+_VISION_RULES = [
+    QuantRule(r"vision_tower\..*", None),
+    QuantRule(r"embed_vision\..*", None),
+]
+
 GEMMA4_31B_DEFAULT_RECIPE = QuantRecipe(
     rules=[
         QuantRule(r"embed_tokens\.weight", _INT8_PER_AXIS),
+        *_VISION_RULES,
         QuantRule(r".*norm\.weight", None),
         QuantRule(r".*\.weight", _INT4),
     ]
@@ -63,6 +82,7 @@ GEMMA4_31B_DEFAULT_RECIPE = QuantRecipe(
 GEMMA4_31B_SENSITIVE_RECIPE = QuantRecipe(
     rules=[
         QuantRule(r"embed_tokens\.weight", _INT8_PER_AXIS),
+        *_VISION_RULES,
         QuantRule(r".*norm\.weight", None),
         QuantRule(r".*\.(v_proj|down_proj)\.weight", _INT8, layers=_EDGE_LAYERS),
         QuantRule(r".*\.weight", _INT4_HQQ),
@@ -114,40 +134,14 @@ def main() -> None:
         print("Untying embed_tokens / lm_head...")
         model.lm_head.weight = nn.Parameter(model.embed_tokens.weight.clone())
 
-    # Vision-side weights have a separate quant policy from the text decoder:
-    #   - text decoder linears -> INT4 group_size=32 (default recipe)
-    #   - vision tower linears -> stay bf16 (small + sensitive); only the
-    #     position-embedding table is quantized, to INT8 per-channel.
-    # The text-decoder recipe rule `.*\.weight` would otherwise INT4-quantize
-    # vision linears, breaking the vision tower. We detach the vision submodules
-    # so the recipe never sees them, run the text-decoder quant, then handle
-    # vision separately via collect_vision_state_dict + quantize_vision_position_table.
-    # Vision is mandatory for Gemma 4 31B; the attribute lookups below will raise
-    # AttributeError if the model was somehow built without vision (shouldn't happen).
-    vision_tower = model.vision_tower
-    embed_vision = model.embed_vision
-    del model.vision_tower
-    del model.embed_vision
-
+    # Single quantization entry point. ``quantize_model`` handles both
+    # modalities in one pass:
+    #   - text decoder linears -> INT4 / INT8 per the recipe;
+    #   - vision tower + embed_vision linears -> stay bf16 (recipe rule);
+    #   - vision PE table -> INT8 per-channel (handled internally because
+    #     ``model.vision_tower`` is present).
     print(f"Quantizing with recipe '{args.quant_recipe}'...")
     state_dict = quantize_model(model, recipe, verbose=True)
-
-    # Vision-side state dict -- always saved (vision is mandatory).
-    from executorch.examples.models.gemma4_31b.quant.pack_vision_cuda import (
-        collect_vision_state_dict,
-        quantize_vision_position_table,
-    )
-
-    print("Quantizing vision PE table (bf16 -> int8 per-channel)...")
-    quantize_vision_position_table(vision_tower, verbose=True)
-    vision_state = collect_vision_state_dict(vision_tower, embed_vision)
-    # Sanity: keys never collide with text-decoder keys (different prefixes).
-    assert not (set(vision_state) & set(state_dict)), (
-        "Vision state dict keys collide with text-decoder keys; "
-        "this should never happen given the disjoint prefixes."
-    )
-    state_dict.update(vision_state)
-    print(f"  Added {len(vision_state)} vision tensors to checkpoint")
 
     os.makedirs(args.output, exist_ok=True)
     safetensors_path = os.path.join(args.output, "model.safetensors")

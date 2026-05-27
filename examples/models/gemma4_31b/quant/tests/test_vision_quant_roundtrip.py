@@ -6,28 +6,29 @@
 
 """Validation gates for the gemma4_31b vision-tower quantization recipe.
 
-Two test classes:
+All tests build a random-init bf16 baseline of our own model/tower as
+the reference. No external HF checkpoint is required.
 
-* ``TestVisionQuantRoundtrip`` — Gate 2. Loads HF Gemma4VisionModel as bf16,
-  loads the same weights into our ported tower, applies the new
-  ``quantize_vision_position_table`` recipe (PE table → INT8 per-channel,
-  every other vision tensor stays bf16), and verifies cosine_sim > 0.999
-  versus the HF reference output on a small fixed input.
+Tests:
 
-* ``test_no_vision_silently_skips_when_vision_attached`` — Exercises the
-  detach-then-quantize pattern from quantize_and_save.py: vision submodules
-  are removed before the text-decoder recipe runs so vision linears never
-  get INT4-quantized.
+* ``test_pe_int8_quantize_and_install_roundtrip`` -- snapshot a random-
+  init bf16 tower's output, apply ``quantize_vision_position_table``,
+  collect the state dict, reinstall it on a freshly-built tower via
+  ``install_int8_pe_dispatch``, and verify the output round-trips with
+  cosine_sim > 0.999.
 
-These tests are CPU-only except for the cosine-sim check, which loads the
-HF reference (large) and is gated on ``GEMMA4_31B_HF_DIR`` existing.
+* ``test_unified_recipe_preserves_vision_bf16_and_quantizes_pe`` --
+  build a tiny Gemma4_31B with vision attached, run ``quantize_model``
+  with the unified recipe, and verify the vision linears stay bf16
+  while the PE table is swapped to int8 buffers.
+
+* ``test_has_vision_keys_*`` -- ``has_vision_keys`` sniff test on plain
+  safetensors files.
 """
 
 from __future__ import annotations
 
-import json
 import os
-import re as _re
 import sys
 import tempfile
 
@@ -35,192 +36,23 @@ import pytest
 import torch
 import torch.nn as nn
 
-# Make the repo importable as `executorch.*` regardless of which conda picks up.
-_REPO_ROOT = "/home/gasoonjia/executorch"
-if _REPO_ROOT not in sys.path:
-    sys.path.insert(0, _REPO_ROOT)
-
-from executorch.examples.models.gemma4_31b.model import (  # noqa: E402
-    Gemma4_31B,
-    Gemma4_31BConfig,
-)
-from executorch.examples.models.gemma4_31b.quant.pack_vision_cuda import (  # noqa: E402
+from executorch.examples.models.gemma4_31b.model import Gemma4_31B, Gemma4_31BConfig
+from executorch.examples.models.gemma4_31b.quant.pack_vision_cuda import (
     collect_vision_state_dict,
     has_vision_keys,
     install_int8_pe_dispatch,
     quantize_vision_position_table,
 )
-from executorch.examples.models.gemma4_31b.vision_tower import (  # noqa: E402
+from executorch.examples.models.gemma4_31b.vision_tower import (
     Gemma4_31BVisionTower,
     Gemma4VisionConfig,
-    hf_vision_key_map,
-    hf_vision_per_layer_key_map,
 )
-from safetensors.torch import save_file  # noqa: E402
-from torchao.prototype.safetensors.safetensors_support import (  # noqa: E402
-    flatten_tensor_state_dict,
-)
-
-
-HF_MODEL_DIR = "/home/gasoonjia/models/gemma-4-31B"
+from safetensors.torch import save_file
+from torchao.prototype.safetensors.safetensors_support import flatten_tensor_state_dict
 
 
 # ---------------------------------------------------------------------------
-# Test 1 — vision_tower with INT8 PE table matches HF bf16 reference.
-# ---------------------------------------------------------------------------
-
-
-def _hf_to_our_vision_state_dict(hf_state: dict) -> dict:
-    """Same key remap as tests/test_vision_tower.py (kept private here to
-    avoid cross-test imports)."""
-    fixed = hf_vision_key_map()
-    per_layer = hf_vision_per_layer_key_map()
-    out: dict = {}
-    for k, v in hf_state.items():
-        norm = k
-        if not (
-            norm.startswith("model.vision_tower.")
-            or norm.startswith("model.embed_vision.")
-        ):
-            norm = "model." + norm if not norm.startswith("model.") else norm
-        if norm in fixed:
-            out[fixed[norm]] = v
-            continue
-        for hf_pat, model_pat in per_layer.items():
-            regex = _re.escape(hf_pat).replace(r"\{\}", r"(\d+)")
-            m = _re.fullmatch(regex, norm)
-            if m:
-                out[model_pat.replace("{}", m.group(1), 1)] = v
-                break
-    return out
-
-
-def _build_hf_vision_wrapper(dtype: torch.dtype):
-    """Load just HF's vision_tower + embed_vision."""
-    from transformers import Gemma4ForConditionalGeneration
-
-    model = Gemma4ForConditionalGeneration.from_pretrained(
-        HF_MODEL_DIR,
-        dtype=dtype,
-        device_map="cpu",
-    )
-    vision_tower = model.model.vision_tower
-    embed_vision = model.model.embed_vision
-
-    class _HFVisionWrapper(torch.nn.Module):
-        def __init__(self, vt, ev):
-            super().__init__()
-            self.patch_embedder = vt.patch_embedder
-            self.encoder = vt.encoder
-            self.pooler = vt.pooler
-            self.embed_vision = ev
-            self.standardize = bool(getattr(vt.config, "standardize", False))
-            if self.standardize:
-                self.std_bias = vt.std_bias
-                self.std_scale = vt.std_scale
-            self.pooling_kernel_size = vt.config.pooling_kernel_size
-
-        def forward(self, pixel_values, pixel_position_ids):
-            pks = self.pooling_kernel_size
-            output_length = pixel_values.shape[1] // (pks * pks)
-            padding_positions = (pixel_position_ids == -1).all(dim=-1)
-            inputs_embeds = self.patch_embedder(
-                pixel_values, pixel_position_ids, padding_positions
-            )
-            encoder_output = self.encoder(
-                inputs_embeds=inputs_embeds,
-                attention_mask=~padding_positions,
-                pixel_position_ids=pixel_position_ids,
-            )
-            hidden_states, pooler_mask = self.pooler(
-                hidden_states=encoder_output.last_hidden_state,
-                pixel_position_ids=pixel_position_ids,
-                padding_positions=padding_positions,
-                output_length=output_length,
-            )
-            if self.standardize:
-                hidden_states = (hidden_states - self.std_bias) * self.std_scale
-                hidden_states = hidden_states.masked_fill(
-                    ~pooler_mask.unsqueeze(-1), 0.0
-                )
-            return self.embed_vision(hidden_states), pooler_mask
-
-    wrapper = _HFVisionWrapper(vision_tower, embed_vision).eval()
-    text_hidden = model.config.text_config.hidden_size
-
-    hf_state = {}
-    for k, v in vision_tower.state_dict().items():
-        hf_state["model.vision_tower." + k] = v
-    for k, v in embed_vision.state_dict().items():
-        hf_state["model.embed_vision." + k] = v
-
-    del model
-    import gc as _gc
-
-    _gc.collect()
-    return wrapper, hf_state, text_hidden
-
-
-def _make_inputs(batch: int, grid: int, patch_dim: int, dtype: torch.dtype):
-    g = torch.Generator().manual_seed(0)
-    num_patches = grid * grid
-    pixel_values = torch.rand(batch, num_patches, patch_dim, generator=g, dtype=dtype)
-    coords = torch.arange(grid, dtype=torch.long)
-    yy, xx = torch.meshgrid(coords, coords, indexing="ij")
-    pos = torch.stack([xx.flatten(), yy.flatten()], dim=-1)
-    pixel_position_ids = pos.unsqueeze(0).expand(batch, -1, -1).contiguous()
-    return pixel_values, pixel_position_ids
-
-
-@pytest.mark.skipif(
-    not os.path.exists(HF_MODEL_DIR), reason="HF Gemma 4 31B checkpoint not present"
-)
-def test_vision_quant_roundtrip():
-    """Cosine sim > 0.999 between HF eager bf16 and our packed
-    (PE-int8 + linears bf16) tower on a small fixed input."""
-    torch.manual_seed(0)
-    dtype = torch.bfloat16
-
-    cfg = Gemma4VisionConfig.from_hf_config(os.path.join(HF_MODEL_DIR, "config.json"))
-    pixel_values, pixel_position_ids = _make_inputs(
-        batch=1, grid=6, patch_dim=cfg.patch_dim, dtype=dtype
-    )
-
-    # ---- HF reference (bf16) ----
-    hf_wrapper, hf_state, text_hidden = _build_hf_vision_wrapper(dtype)
-    with torch.no_grad():
-        hf_emb, hf_mask = hf_wrapper(pixel_values, pixel_position_ids)
-
-    # ---- Our ported tower w/ INT8 PE table ----
-    our_tower = (
-        Gemma4_31BVisionTower(cfg, text_hidden_size=text_hidden).to(dtype).eval()
-    )
-    our_state = _hf_to_our_vision_state_dict(hf_state)
-    missing, unexpected = our_tower.load_state_dict(our_state, strict=False)
-    assert not unexpected, f"Unexpected keys after remap: {sorted(unexpected)[:5]}"
-    blocking_missing = [m for m in missing if not m.endswith(".inv_freq")]
-    assert not blocking_missing, f"Missing keys: {sorted(blocking_missing)[:5]}"
-
-    # Apply the new vision quant recipe (PE table → int8).
-    quantize_vision_position_table(our_tower.vision_tower, verbose=True)
-
-    with torch.no_grad():
-        our_emb, our_mask = our_tower(pixel_values, pixel_position_ids)
-
-    # ---- Compare ----
-    assert torch.equal(hf_mask.bool(), our_mask.bool()), "pooler mask mismatch"
-    cos = torch.nn.functional.cosine_similarity(
-        hf_emb.flatten().float(), our_emb.flatten().float(), dim=0
-    ).item()
-    print(f"\nVision quant cosine sim (HF bf16 vs our PE-int8): {cos:.7f}")
-    diff = (hf_emb - our_emb).abs()
-    print(f"  max abs diff: {diff.max().item():.3e}")
-    print(f"  mean abs diff: {diff.mean().item():.3e}")
-    assert cos > 0.999, f"cosine_sim {cos} below 0.999 threshold for vision quant"
-
-
-# ---------------------------------------------------------------------------
-# Test 2 — keys saved with vision detached match the text-only snapshot.
+# Test 1 -- unified recipe leaves vision linears bf16 and quantizes the PE table.
 # ---------------------------------------------------------------------------
 
 
@@ -229,7 +61,8 @@ def _tiny_recipe(hidden_size: int):
 
     Production recipe uses group_size=hidden_size (5376) for the per-axis
     embedding INT8 quant; that doesn't fit a 64-d test model. Functional
-    shape is identical: INT8 per-axis embed, skip norms, INT4 elsewhere.
+    shape is identical: INT8 per-axis embed, skip vision side + norms,
+    INT4 elsewhere.
     """
     from executorch.examples.models.gemma4_31b.quant import (
         QuantConfig,
@@ -244,33 +77,32 @@ def _tiny_recipe(hidden_size: int):
     return QuantRecipe(
         rules=[
             QuantRule(r"embed_tokens\.weight", int8_per_axis),
+            # Vision modality stays bf16; PE table is folded inside
+            # quantize_model.
+            QuantRule(r"vision_tower\..*", None),
+            QuantRule(r"embed_vision\..*", None),
             QuantRule(r".*norm\.weight", None),
             QuantRule(r".*\.weight", int4),
         ]
     )
 
 
-def _txt_keys_after_quantize(model: Gemma4_31B) -> tuple[set, set]:
-    """quantize + flatten + read keys, mimicking what quantize_and_save.py writes
-    for the text decoder when no vision tensors are added."""
-    from executorch.examples.models.gemma4_31b.quant import quantize_model
+def test_unified_recipe_preserves_vision_bf16_and_quantizes_pe():
+    """Build a model WITH vision attached, run the unified recipe, and check:
 
-    state_dict = quantize_model(model, _tiny_recipe(model.config.hidden_size))
-    tensors_data, metadata = flatten_tensor_state_dict(state_dict)
-    return set(tensors_data.keys()), set(json.loads(metadata.get("tensor_names", "[]")))
+    * vision_tower.* and embed_vision.* linear weights are saved (no
+      detach hack required);
+    * NO vision linear is quantized to Int4Tensor /
+      IntxUnpackedToInt8Tensor (they all stay bf16);
+    * the PE table has been swapped to int8 buffers (_pet_int8 +
+      _pet_scale) by quantize_model itself.
 
-
-def test_no_vision_silently_skips_when_vision_attached():
-    """Build a model WITH vision attached (vision_config != None), then run
-    the quantize_and_save 'detach + skip' path: the resulting saved-keys set
-    must NOT contain any vision key.
-
-    This guards the always-on vision behavior in quantize_and_save.py: the
-    `--no-vision` CLI flag was removed in the design pivot, but the underlying
-    detach pattern (which prevents the text-decoder recipe from quantizing
-    vision linears) is still exercised here.
+    The unified ``quantize_model`` API handles vision + text in a single
+    pass, replacing the old ``del model.vision_tower`` pattern.
     """
     from executorch.examples.models.gemma4_31b.quant import quantize_model
+    from torchao.quantization import IntxUnpackedToInt8Tensor
+    from torchao.quantization.quantize_.workflows.int4.int4_tensor import Int4Tensor
 
     cfg = Gemma4_31BConfig(
         vocab_size=128,
@@ -309,28 +141,43 @@ def test_no_vision_silently_skips_when_vision_attached():
     assert hasattr(model, "vision_tower")
     assert hasattr(model, "embed_vision")
 
-    # Mirror quantize_and_save.py's detach-then-quantize text-decoder flow:
-    del model.vision_tower
-    del model.embed_vision
-
     state_dict = quantize_model(model, _tiny_recipe(cfg.hidden_size))
-    _, metadata = flatten_tensor_state_dict(state_dict)
-    logical = set(json.loads(metadata["tensor_names"]))
-    leaked = [
+
+    # Vision-side linears must be present AND must stay bf16 (plain Tensor,
+    # not a quantized subclass).
+    vision_param_keys = [
         k
-        for k in logical
-        if k.startswith("vision_tower.") or k.startswith("embed_vision.")
+        for k in state_dict
+        if (k.startswith("vision_tower.") or k.startswith("embed_vision."))
+        and k.endswith(".weight")
     ]
-    assert not leaked, f"--no-vision still saved vision keys: {leaked[:5]}"
+    assert vision_param_keys, "expected vision_tower / embed_vision weights to be saved"
+    for k in vision_param_keys:
+        v = state_dict[k]
+        assert not isinstance(v, (Int4Tensor, IntxUnpackedToInt8Tensor)), (
+            f"vision weight {k} was quantized ({type(v).__name__}); "
+            "the vision_tower / embed_vision recipe rules should keep it bf16"
+        )
+        assert (
+            v.dtype == torch.bfloat16
+        ), f"vision weight {k} dtype is {v.dtype}, expected bfloat16"
+
+    # PE table is swapped to int8 buffers by quantize_model.
+    assert "vision_tower.patch_embedder._pet_int8" in state_dict
+    assert state_dict["vision_tower.patch_embedder._pet_int8"].dtype == torch.int8
+    assert "vision_tower.patch_embedder._pet_scale" in state_dict
+    assert state_dict["vision_tower.patch_embedder._pet_scale"].dtype == torch.float32
+    # Sanity: the bf16 PE Parameter is gone from the saved keys.
+    assert "vision_tower.patch_embedder.position_embedding_table" not in state_dict
 
 
 # ---------------------------------------------------------------------------
-# Test 3 — has_vision_keys() detects both kinds of saves.
+# Test 2 -- has_vision_keys() detects both kinds of saves.
 # ---------------------------------------------------------------------------
 
 
 def test_has_vision_keys_text_only():
-    """A safetensors with no vision keys → has_vision_keys returns False."""
+    """A safetensors with no vision keys -> has_vision_keys returns False."""
     with tempfile.TemporaryDirectory() as d:
         path = os.path.join(d, "m.safetensors")
         plain = {
@@ -342,7 +189,7 @@ def test_has_vision_keys_text_only():
 
 
 def test_has_vision_keys_with_vision():
-    """A safetensors with vision_tower.* → has_vision_keys returns True."""
+    """A safetensors with vision_tower.* -> has_vision_keys returns True."""
     with tempfile.TemporaryDirectory() as d:
         path = os.path.join(d, "m.safetensors")
         plain = {
@@ -357,13 +204,21 @@ def test_has_vision_keys_with_vision():
 
 
 # ---------------------------------------------------------------------------
-# Test 4 -- install_int8_pe_dispatch + collect_vision_state_dict roundtrip.
+# Test 3 -- quantize PE table + reinstall round-trips against the bf16 ref.
 # ---------------------------------------------------------------------------
 
 
 def test_pe_int8_quantize_and_install_roundtrip():
-    """quantize_vision_position_table + collect_vision_state_dict produce a
-    state_dict that round-trips via install_int8_pe_dispatch + load."""
+    """End-to-end PE-int8 round-trip on a random-init bf16 tower.
+
+    Snapshot the bf16 reference output, apply
+    ``quantize_vision_position_table`` in place, then collect the state
+    dict and reinstall it on a freshly-built tower via
+    ``install_int8_pe_dispatch`` + ``load_state_dict``. Cosine sim vs the
+    bf16 reference must exceed 0.999 after the int8 swap, and the
+    reload-then-forward path must match the in-place quantized forward to
+    > 0.99999.
+    """
     cfg = Gemma4VisionConfig(
         hidden_size=32,
         intermediate_size=64,
@@ -417,8 +272,7 @@ def test_pe_int8_quantize_and_install_roundtrip():
     pe = fresh.vision_tower.patch_embedder
     pe._pet_int8 = state["vision_tower.patch_embedder._pet_int8"].clone()
     pe._pet_scale = state["vision_tower.patch_embedder._pet_scale"].clone()
-    # Load the rest via load_state_dict (skip _pet_* — we already set them).
-    # Build with our nested keys ("vision_tower.X" / "embed_vision.X")
+    # Load the rest via load_state_dict (skip _pet_* -- we already set them).
     nested = {
         k: v
         for k, v in state.items()
@@ -426,7 +280,7 @@ def test_pe_int8_quantize_and_install_roundtrip():
     }
     missing, unexpected = fresh.load_state_dict(nested, strict=False)
     blocking_missing = [m for m in missing if "patch_embedder._pet_" not in m]
-    # std_bias / std_scale present, encoder.rotary_emb.inv_freq is non-persistent → may be in `missing`
+    # encoder.rotary_emb.inv_freq is non-persistent -> may be in `missing`
     blocking_missing = [m for m in blocking_missing if not m.endswith(".inv_freq")]
     assert not blocking_missing, f"Reinstall missing keys: {blocking_missing}"
 

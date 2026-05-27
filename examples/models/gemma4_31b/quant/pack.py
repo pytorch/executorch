@@ -39,7 +39,19 @@ def pack_model(
     Quantized weights (torchao tensor subclasses) are grouped by parent
     module and dispatched to per-module packers. Plain tensors are assigned
     directly as parameters or buffers.
+
+    Vision PE int8 dispatch is installed automatically. If the state dict
+    carries ``*._pet_int8`` keys, the matching ``vision_tower`` submodule
+    has its bf16 ``position_embedding_table`` parameter swapped for
+    placeholder ``_pet_int8`` / ``_pet_scale`` buffers + the int8
+    embedding-lookup monkey-patch (idempotent). This makes the load path
+    symmetric with the save path (``quantize_model`` folds in the
+    corresponding ``quantize_vision_position_table`` swap on the save
+    side) so callers do not need to invoke ``install_int8_pe_dispatch``
+    manually.
     """
+    _maybe_install_vision_pe_dispatch(model, state_dict.keys())
+
     # Separate quantized and unquantized
     for fqn, value in state_dict.items():
         if not _is_quantized(value):
@@ -73,6 +85,37 @@ def pack_model(
 
     for p in model.parameters():
         p.requires_grad_(False)
+
+
+def _maybe_install_vision_pe_dispatch(model: nn.Module, keys) -> None:
+    """Install the int8 PE dispatch for any vision_tower whose patch
+    embedder is referenced by ``*._pet_int8`` entries in ``keys``.
+
+    ``keys`` may be any iterable of logical FQNs (e.g. a state dict's
+    keys, or the ``tensor_names`` list pulled from safetensors metadata).
+    Idempotent — safe to call when dispatch is already installed.
+    """
+    pe_int8_keys = [k for k in keys if k.endswith("._pet_int8")]
+    if not pe_int8_keys:
+        return
+
+    from .pack_vision_cuda import install_int8_pe_dispatch
+
+    seen: set[str] = set()
+    for k in pe_int8_keys:
+        # Key shape: "<vision_tower_fqn>.patch_embedder._pet_int8"
+        patch_embedder_fqn = k[: -len("._pet_int8")]
+        vt_fqn = patch_embedder_fqn.rsplit(".", 1)[0]
+        if vt_fqn in seen:
+            continue
+        seen.add(vt_fqn)
+        try:
+            vision_tower = model.get_submodule(vt_fqn)
+        except AttributeError:
+            # State dict references a submodule that the model lacks; let
+            # the regular pack path produce the standard error.
+            continue
+        install_int8_pe_dispatch(vision_tower)
 
 
 def pack_one(

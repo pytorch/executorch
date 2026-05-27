@@ -74,13 +74,17 @@ def load_and_pack_for_cuda(
         unflatten_tensor_state_dict,
     )
 
-    from .pack import pack_one
+    from .pack import _maybe_install_vision_pe_dispatch, pack_one
 
     _packers = packers or DEFAULT_CUDA_PACKERS
     with safe_open(path, framework="pt", device="cpu") as f:
         metadata = f.metadata()
         all_keys = list(f.keys())
         tensor_names = json.loads(metadata.get("tensor_names", "[]"))
+
+        # Install the vision PE int8 dispatch before streaming any weights
+        # — mirrors the save-side swap in quantize_model.
+        _maybe_install_vision_pe_dispatch(model, tensor_names)
 
         for name in tensor_names:
             parts = name.rsplit(".", 1)

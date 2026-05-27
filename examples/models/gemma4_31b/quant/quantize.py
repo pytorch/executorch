@@ -9,9 +9,14 @@
 ``quantize_weight`` quantizes a single tensor given a ``QuantConfig``,
 returning an ``Int4Tensor`` (4-bit) or ``IntxUnpackedToInt8Tensor`` (8-bit).
 
-``quantize_model`` walks a model's parameters, applies a ``QuantRecipe``,
-and returns a single state dict containing both quantized subclass tensors
-and unquantized plain tensors.
+``quantize_model`` is the single user-facing entry point. It takes the
+whole model (text decoder + optional vision tower + multimodal embedder),
+walks all parameters, applies a ``QuantRecipe``, and returns a single
+state dict containing both quantized subclass tensors and unquantized
+plain tensors. Vision-specific transformations (notably the int8
+per-channel position-embedding-table swap) are invoked internally when
+``model.vision_tower`` is present — callers do not have to detach
+submodules or call vision helpers themselves.
 """
 
 import torch
@@ -285,12 +290,33 @@ def quantize_model(
     dtype: torch.dtype = torch.bfloat16,
     verbose: bool = False,
 ) -> dict[str, torch.Tensor]:
-    """Walk model parameters + persistent buffers, apply recipe.
+    """Quantize the entire model and return a single state dict.
 
-    Returns a single state dict containing quantized tensor subclasses
-    (``Int4Tensor``, ``IntxUnpackedToInt8Tensor``) and unquantized plain
-    tensors. Non-persistent buffers (KV cache, RoPE tables) are excluded.
+    Walks every parameter and persistent buffer of ``model``, applies the
+    ``QuantRecipe`` to parameters (first matching rule wins), and returns
+    a mixed dict of torchao tensor subclasses (``Int4Tensor``,
+    ``IntxUnpackedToInt8Tensor``) and plain tensors. Non-persistent
+    buffers (KV cache, RoPE tables) are excluded.
+
+    Vision support is built in. When ``model.vision_tower`` is present,
+    its bf16 ``position_embedding_table`` parameter is replaced in-place
+    with int8 per-channel ``_pet_int8`` / fp32 ``_pet_scale`` buffers
+    BEFORE the parameter walk runs. This means a single recipe can cover
+    both text and vision modalities: the recipe just needs rules that
+    leave vision linears unquantized (e.g. ``vision_tower\\..*`` → None,
+    ``embed_vision\\..*`` → None); the PE table is handled implicitly and
+    its int8 buffers are picked up by the persistent-buffer walk.
     """
+    # Vision PE table → int8 per-channel buffers (in-place, idempotent).
+    # Done up front so the subsequent parameter walk no longer sees the
+    # bf16 position_embedding_table Parameter, and the buffer walk picks
+    # up the new _pet_int8 / _pet_scale buffers via state_dict().
+    vision_tower = getattr(model, "vision_tower", None)
+    if vision_tower is not None:
+        from .pack_vision_cuda import quantize_vision_position_table
+
+        quantize_vision_position_table(vision_tower, verbose=verbose)
+
     state: dict[str, torch.Tensor] = {}
     persistent_keys = set(model.state_dict().keys())
 

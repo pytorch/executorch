@@ -79,11 +79,7 @@ from torch.nn import functional as F
 
 @dataclass
 class Gemma4VisionConfig:
-    """Mirror of HF ``Gemma4VisionConfig`` for the bits we actually use.
-
-    Defaults track the 31B checkpoint
-    (``/home/gasoonjia/models/gemma-4-31B/config.json``: vision_config block).
-    """
+    """Mirror of HF ``Gemma4VisionConfig`` for the bits we actually use."""
 
     hidden_size: int = 1152
     intermediate_size: int = 4304

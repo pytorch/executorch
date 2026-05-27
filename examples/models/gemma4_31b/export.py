@@ -106,16 +106,13 @@ def load_prequantized_model(
     with torch.device("meta"):
         model = Gemma4_31B(config)
 
-    # CUDA keeps the original loader behavior. MLX additionally supports the
-    # quantize_and_save.py checkpoint form where the vision PE table is stored
-    # as _pet_int8/_pet_scale buffers instead of position_embedding_table.
-    if backend == "cuda" or (
-        backend == "mlx" and _checkpoint_has_int8_vision_pe(safetensors_path)
-    ):
-        from executorch.examples.models.gemma4_31b.quant import install_int8_pe_dispatch
-
-        install_int8_pe_dispatch(model.vision_tower, verbose=True)
-
+    # ``pack_model`` (invoked underneath the loader for this backend) auto-
+    # installs the vision PE int8 dispatch when it sees ``_pet_int8`` keys
+    # in the state dict, so no explicit install call is needed here. For
+    # MLX, that also covers the alternate checkpoint form where the vision
+    # PE table is stored as _pet_int8/_pet_scale buffers; ``_checkpoint_has
+    # _int8_vision_pe`` remains useful for diagnostics but is no longer
+    # required to gate dispatch installation.
     print(f"Loading quantized checkpoint from {safetensors_path}...")
     _pack_for_backend(model, safetensors_path, backend)
     model.eval()

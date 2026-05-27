@@ -49,6 +49,11 @@ _EDGE_LAYERS = set(range(3))
 TINY_SENSITIVE_RECIPE = QuantRecipe(
     rules=[
         QuantRule(r"embed_tokens\.weight", _INT8_PER_AXIS),
+        # Vision side stays bf16 (PE table is folded into int8 buffers
+        # inside quantize_model; pack_model installs the load-side
+        # dispatch automatically).
+        QuantRule(r"vision_tower\..*", None),
+        QuantRule(r"embed_vision\..*", None),
         QuantRule(r".*norm\.weight", None),
         QuantRule(r".*\.(v_proj|down_proj)\.weight", _INT8, layers=_EDGE_LAYERS),
         QuantRule(r".*\.weight", _INT4),
@@ -58,30 +63,15 @@ TINY_SENSITIVE_RECIPE = QuantRecipe(
 
 def save_vision_checkpoint(output_dir: str):
     """Save a tiny checkpoint matching quantize_and_save.py's vision format."""
-    from executorch.examples.models.gemma4_31b.quant import (
-        collect_vision_state_dict,
-        quantize_vision_position_table,
-    )
     from safetensors.torch import save_file
     from torchao.prototype.safetensors.safetensors_support import (
         flatten_tensor_state_dict,
     )
 
-    torch.manual_seed(42)
-    model = Gemma4_31B(TINY_CONFIG).to(dtype=torch.bfloat16)
-    for p in model.parameters():
-        if p.device.type != "meta":
-            p.data.normal_(0, 0.02)
+    model = build_random_tiny_model()
     model.lm_head.weight = nn.Parameter(model.embed_tokens.weight.clone())
 
-    vision_tower = model.vision_tower
-    embed_vision = model.embed_vision
-    del model.vision_tower
-    del model.embed_vision
-
     state_dict = quantize_model(model, DEFAULT_RECIPE)
-    quantize_vision_position_table(vision_tower, verbose=False)
-    state_dict.update(collect_vision_state_dict(vision_tower, embed_vision))
 
     os.makedirs(output_dir, exist_ok=True)
     td, md = flatten_tensor_state_dict(state_dict)
@@ -155,10 +145,6 @@ class TestMlxPipeline(unittest.TestCase):
 
         with torch.device("meta"):
             model = Gemma4_31B(TINY_CONFIG)
-        # Match build_random_tiny_model: drop vision tower since the state_dict
-        # was quantized from a text-only model.
-        del model.vision_tower
-        del model.embed_vision
         model.lm_head.weight = nn.Parameter(model.embed_tokens.weight.clone())
         pack_model(model, state_dict, DEFAULT_MLX_PACKERS)
         model.eval()
@@ -186,10 +172,6 @@ class TestMlxPipeline(unittest.TestCase):
 
         with torch.device("meta"):
             model = Gemma4_31B(TINY_CONFIG)
-        # Match build_random_tiny_model: drop vision tower since the state_dict
-        # was quantized from a text-only model.
-        del model.vision_tower
-        del model.embed_vision
         model.lm_head.weight = nn.Parameter(model.embed_tokens.weight.clone())
         pack_model(model, state_dict, DEFAULT_MLX_PACKERS)
         model.eval()
@@ -219,9 +201,6 @@ class TestMlxPipeline(unittest.TestCase):
 
         with torch.device("meta"):
             model = Gemma4_31B(TINY_CONFIG)
-        # Match build_random_tiny_model: the quantized state dict is text-only.
-        del model.vision_tower
-        del model.embed_vision
         model.lm_head.weight = nn.Parameter(model.embed_tokens.weight.clone())
         pack_model(model, state_dict, DEFAULT_MLX_PACKERS)
         model.eval()
@@ -287,9 +266,6 @@ class TestMlxPipeline(unittest.TestCase):
 
         with torch.device("meta"):
             model = Gemma4_31B(TINY_CONFIG)
-        # Match build_random_tiny_model: the quantized state dict is text-only.
-        del model.vision_tower
-        del model.embed_vision
         model.lm_head.weight = nn.Parameter(model.embed_tokens.weight.clone())
         pack_model(model, state_dict, DEFAULT_MLX_PACKERS)
         model.eval()
