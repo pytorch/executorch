@@ -15,15 +15,17 @@
  * which was set during AOT serialization by PropagateDevicePass.
  */
 
-#include <executorch/extension/kernel_util/make_boxed_from_unboxed_functor.h>
 #include <executorch/runtime/core/device_allocator.h>
 #include <executorch/runtime/core/exec_aten/exec_aten.h>
 #include <executorch/runtime/kernel/kernel_includes.h>
 
-namespace executorch::runtime::native {
+namespace torch {
+namespace executor {
+namespace native {
 
-using executorch::aten::Tensor;
-using executorch::runtime::KernelRuntimeContext;
+using Tensor = executorch::aten::Tensor;
+using DeviceAllocator = executorch::runtime::DeviceAllocator;
+using Error = executorch::runtime::Error;
 
 /**
  * Copies tensor data from host (CPU) memory to device memory.
@@ -40,7 +42,8 @@ _h2d_copy_out(KernelRuntimeContext& ctx, const Tensor& self, Tensor& out) {
 
   ET_KERNEL_CHECK_MSG(
       ctx,
-      self.unsafeGetTensorImpl()->device_type() == etensor::DeviceType::CPU,
+      self.unsafeGetTensorImpl()->device_type() ==
+          executorch::runtime::etensor::DeviceType::CPU,
       InvalidArgument,
       out,
       "_h2d_copy: source tensor must be on CPU, got device_type=%d",
@@ -48,7 +51,7 @@ _h2d_copy_out(KernelRuntimeContext& ctx, const Tensor& self, Tensor& out) {
 
   ET_KERNEL_CHECK_MSG(
       ctx,
-      device_type != etensor::DeviceType::CPU,
+      device_type != executorch::runtime::etensor::DeviceType::CPU,
       InvalidArgument,
       out,
       "_h2d_copy: destination tensor must be on a non-CPU device");
@@ -63,7 +66,8 @@ _h2d_copy_out(KernelRuntimeContext& ctx, const Tensor& self, Tensor& out) {
       nbytes,
       out.nbytes());
 
-  DeviceAllocator* allocator = get_device_allocator(device_type);
+  DeviceAllocator* allocator =
+      executorch::runtime::get_device_allocator(device_type);
   ET_KERNEL_CHECK_MSG(
       ctx,
       allocator != nullptr,
@@ -99,14 +103,15 @@ _d2h_copy_out(KernelRuntimeContext& ctx, const Tensor& self, Tensor& out) {
 
   ET_KERNEL_CHECK_MSG(
       ctx,
-      device_type != etensor::DeviceType::CPU,
+      device_type != executorch::runtime::etensor::DeviceType::CPU,
       InvalidArgument,
       out,
       "_d2h_copy: source tensor must be on a non-CPU device");
 
   ET_KERNEL_CHECK_MSG(
       ctx,
-      out.unsafeGetTensorImpl()->device_type() == etensor::DeviceType::CPU,
+      out.unsafeGetTensorImpl()->device_type() ==
+          executorch::runtime::etensor::DeviceType::CPU,
       InvalidArgument,
       out,
       "_d2h_copy: destination tensor must be on CPU, got device_type=%d",
@@ -122,7 +127,8 @@ _d2h_copy_out(KernelRuntimeContext& ctx, const Tensor& self, Tensor& out) {
       nbytes,
       out.nbytes());
 
-  DeviceAllocator* allocator = get_device_allocator(device_type);
+  DeviceAllocator* allocator =
+      executorch::runtime::get_device_allocator(device_type);
   ET_KERNEL_CHECK_MSG(
       ctx,
       allocator != nullptr,
@@ -143,13 +149,6 @@ _d2h_copy_out(KernelRuntimeContext& ctx, const Tensor& self, Tensor& out) {
   return out;
 }
 
-} // namespace executorch::runtime::native
-
-EXECUTORCH_LIBRARY(
-    et_copy,
-    "_h2d_copy.out",
-    executorch::runtime::native::_h2d_copy_out);
-EXECUTORCH_LIBRARY(
-    et_copy,
-    "_d2h_copy.out",
-    executorch::runtime::native::_d2h_copy_out);
+} // namespace native
+} // namespace executor
+} // namespace torch

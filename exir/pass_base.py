@@ -6,10 +6,11 @@
 # LICENSE file in the root directory of this source tree.
 
 # pyre-strict
-
 import operator
 import traceback
+from abc import ABC, abstractmethod
 from contextlib import nullcontext
+from dataclasses import dataclass
 from typing import (
     Any,
     Callable,
@@ -27,9 +28,7 @@ from typing import (
 
 import torch
 from executorch.exir import memory
-
 from executorch.exir.delegate import executorch_call_delegate, is_lowered_module
-
 from executorch.exir.dialects.edge._ops import EdgeOpOverload
 from executorch.exir.error import ExportError, ExportErrorType
 from torch import fx
@@ -37,6 +36,7 @@ from torch._dispatch.python import enable_python_dispatcher
 from torch._subclasses import FakeTensorMode, UnsupportedFakeTensorException
 from torch._subclasses.fake_tensor import FakeTensor
 from torch._subclasses.functional_tensor import FunctionalTensor, FunctionalTensorMode
+from torch.export import ExportedProgram
 from torch.fx import traceback as fx_traceback
 from torch.fx.experimental.proxy_tensor import PythonKeyTracer
 from torch.fx.graph import CodeGen
@@ -150,11 +150,88 @@ class ProxyValue:
         yield from self.data
 
     def __bool__(self) -> bool:
+        if isinstance(self.data, (torch.SymInt, torch.SymFloat, torch.SymBool)):
+            raise ExportPassBaseError(
+                "ProxyValue with symbolic data cannot be used in boolean context."
+            )
         return bool(self.data)
+
+    def __int__(self):
+        if isinstance(self.data, torch.SymInt):
+            raise ExportPassBaseError(
+                "ProxyValue with SymInt data cannot be converted to int."
+            )
+        return int(self.data)
+
+    def __float__(self):
+        if isinstance(self.data, torch.SymFloat):
+            raise ExportPassBaseError(
+                "ProxyValue with SymFloat data cannot be converted to float."
+            )
+        return float(self.data)
+
+    def __index__(self):
+        if isinstance(self.data, torch.SymInt):
+            raise ExportPassBaseError(
+                "ProxyValue with SymInt data cannot be used in index context."
+            )
+        return self.__int__()
 
 
 class ExportPassBaseError(RuntimeError):
     pass
+
+
+@dataclass(frozen=True)
+class ExportedProgramPassResult:
+    exported_program: ExportedProgram
+    modified: bool
+
+
+class ExportedProgramPassBase(ABC):
+    """
+    Base interface for implementing passes that operate on ExportedProgram.
+    """
+
+    def __call__(self, exported_program: ExportedProgram) -> ExportedProgramPassResult:
+        """
+        Runs the precondition check, the pass itself, and the postcondition check.
+        """
+
+        self.requires(exported_program)
+        res = self.call(exported_program)
+        self.ensures(exported_program)
+        return res
+
+    @abstractmethod
+    def call(self, exported_program: ExportedProgram) -> ExportedProgramPassResult:
+        """
+        The pass that is run through the given exported program. To implement a
+        pass, it is required to implement this function.
+
+        Args:
+            exported_program: The exported program we will run a pass on
+        """
+
+    def requires(self, exported_program: ExportedProgram) -> None:  # noqa: B027
+        """
+        This function will be called before the pass is run and will check that
+        the given exported program contains the preconditions needed to run the
+        pass. It is not required to implement this function.
+
+        Args:
+            exported_program: The exported program we will run checks on
+        """
+
+    def ensures(self, exported_program: ExportedProgram) -> None:  # noqa: B027
+        """
+        This function will be called after the pass is run and will check that
+        the given exported program contains the postconditions needed to run the
+        pass. It is not required to implement this function.
+
+        Args:
+            exported_program: The exported program we will run checks on
+        """
 
 
 class _ExportPassBase(PassBase):

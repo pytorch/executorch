@@ -15,6 +15,12 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  # Emits PR diff file list; non-PR events emit '*' so the per-job
+  # `if:` short-circuits via `event_name != 'pull_request'`.
+  changed-files:
+    name: Get changed files
+    uses: ./.github/workflows/_get-changed-files.yml
+
   test-qnn-wheel-packages-linux:
     name: test-qnn-wheel-packages-linux
     uses: pytorch/test-infra/.github/workflows/linux_job_v2.yml@main
@@ -547,7 +553,7 @@ jobs:
         setup_script_args=""
         if [[ ${{ matrix.os}} == "bare_metal" ]]; then
           toolchain_prefix=arm-none-eabi-
-          threshold="111000" # 111 KiB
+          threshold="118000" # GCC 15.2 baseline: 115868 bytes, 2026-05-13
           toolchain_cmake=examples/arm/ethos-u-setup/arm-none-eabi-gcc.cmake
         elif [[ ${{ matrix.os}} == "zephyr-preset" ]]; then
           setup_script_args="--target-toolchain zephyr"
@@ -708,8 +714,8 @@ jobs:
         # Build QNN backend with Buck
         buck2 build //backends/qualcomm/...
 
-  unittest-arm-backend-with-no-deps:
-    name: unittest-arm-backend-with-no-deps
+  test-arm-backend-no-driver:
+    name: test-arm-backend-no-driver
     uses: pytorch/test-infra/.github/workflows/linux_job_v2.yml@main
     permissions:
       id-token: write
@@ -717,10 +723,10 @@ jobs:
     strategy:
       matrix:
         include:
-          - test_arm_baremetal: test_pytest_ops_no_target
-          - test_arm_baremetal: test_pytest_ops_tosa
-          - test_arm_baremetal: test_pytest_models_tosa
-          - test_arm_baremetal: test_run_tosa
+          - test_arm_backend: test_pytest_ops_no_target
+          - test_arm_backend: test_pytest_ops_tosa
+          - test_arm_backend: test_pytest_models_tosa
+          - test_arm_backend: test_run_tosa
       fail-fast: false
     with:
       runner: linux.2xlarge
@@ -738,10 +744,10 @@ jobs:
 
         .ci/scripts/setup-arm-baremetal-tools.sh --disable-ethos-u-deps
 
-        ARM_TEST=${{ matrix.test_arm_baremetal }}
+        ARM_TEST=${{ matrix.test_arm_backend }}
 
-        # Test test_arm_baremetal.sh with test
-        backends/arm/test/test_arm_baremetal.sh "${ARM_TEST}"
+        # Test test_arm_backend.sh with test
+        backends/arm/test/test_arm_backend.sh "${ARM_TEST}"
 
   test-llama-runner-qnn-linux:
     name: test-llama-runner-qnn-linux
@@ -1511,6 +1517,17 @@ jobs:
         python -m unittest backends/vulkan/test/test_vulkan_delegate.py -k "*torchao*"
 
   test-coreml-bc-macos:
+    needs: changed-files
+    if: |
+      github.event_name != 'pull_request' ||
+      contains(needs.changed-files.outputs.changed-files, 'backends/apple/coreml') ||
+      contains(needs.changed-files.outputs.changed-files, '.ci/scripts/test_coreml_bc.sh') ||
+      contains(needs.changed-files.outputs.changed-files, '.ci/scripts/utils.sh') ||
+      contains(needs.changed-files.outputs.changed-files, 'install_executorch.py') ||
+      contains(needs.changed-files.outputs.changed-files, 'install_executorch.sh') ||
+      contains(needs.changed-files.outputs.changed-files, 'install_requirements.py') ||
+      contains(needs.changed-files.outputs.changed-files, 'install_requirements.sh') ||
+      contains(needs.changed-files.outputs.changed-files, '.github/workflows/pull.yml')
     name: test-coreml-bc-macos (${{ matrix.runner }})
     uses: pytorch/test-infra/.github/workflows/macos_job.yml@main
     permissions:

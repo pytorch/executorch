@@ -12,12 +12,16 @@
 #include <executorch/extension/llm/runner/text_llm_runner.h>
 #include <executorch/extension/llm/runner/text_prefiller.h>
 #include <executorch/extension/llm/runner/text_token_generator.h>
+#include <executorch/extension/llm/sampler/logit_processor.h>
 #include <executorch/runtime/core/exec_aten/testing_util/tensor_factory.h>
 #include <gmock/gmock.h>
 #include <gtest/gtest.h>
 
+#include <limits>
+
 using namespace ::testing;
 using executorch::extension::llm::GenerationConfig;
+using executorch::extension::llm::LogitProcessor;
 using executorch::extension::llm::Stats;
 using executorch::extension::llm::TextDecoderRunner;
 using executorch::extension::llm::TextLLMRunner;
@@ -95,6 +99,29 @@ class MockTextPrefiller : public TextPrefiller {
       ());
   MOCK_METHOD(::executorch::runtime::Error, load, (), ());
   MOCK_METHOD(bool, is_loaded, (), ());
+};
+
+class MaskTokenProcessor : public LogitProcessor {
+ public:
+  explicit MaskTokenProcessor(int32_t banned_token)
+      : banned_token_(banned_token) {}
+
+  ::executorch::runtime::Error process(
+      ::executorch::aten::Tensor logits) override {
+    const int32_t vocab_size = logits.size(logits.dim() - 1);
+    int32_t offset = 0;
+    if (logits.dim() == 3) {
+      offset = (logits.size(1) - 1) * vocab_size;
+    }
+    float* data = logits.mutable_data_ptr<float>();
+    if (banned_token_ >= 0 && banned_token_ < vocab_size) {
+      data[offset + banned_token_] = -std::numeric_limits<float>::infinity();
+    }
+    return ::executorch::runtime::Error::Ok;
+  }
+
+ private:
+  int32_t banned_token_;
 };
 
 // Callback counter class for tests
@@ -616,6 +643,97 @@ TEST_F(RunnerTest, MultiTurnWithSeqLenRespectsPos) {
   EXPECT_EQ(err2, Error::Ok);
   // With correct pos_ accounting: min(20, 128) - 10 = 10 new tokens
   EXPECT_EQ(counter.getCount(), 10);
+}
+
+// Verify that a LogitProcessor injected into TextTokenGenerator actually
+// affects token selection. Without the processor, greedy argmax of
+// {0.1, 0.2, 0.3, 0.4} picks token 3. Masking token 3 should pick token 2.
+TEST_F(RunnerTest, TextTokenGeneratorWithProcessorMasksToken) {
+  auto tokenizer = createMockTokenizer();
+  auto text_decoder_runner = createMockTextDecoderRunner();
+  Stats stats;
+  auto generator = createTextTokenGenerator(
+      tokenizer.get(), text_decoder_runner.get(), &stats);
+
+  generator->add_logit_processor(
+      std::make_shared<MaskTokenProcessor>(/*banned_token=*/3));
+
+  std::vector<uint64_t> generated_tokens;
+  ON_CALL(*tokenizer, decode)
+      .WillByDefault(
+          [&](uint64_t,
+              uint64_t cur,
+              bool) -> ::tokenizers::Result<std::string> {
+            generated_tokens.push_back(cur);
+            return ::tokenizers::Result<std::string>(std::string("token"));
+          });
+
+  std::vector<uint64_t> tokens = {1, 2, 3};
+  auto result =
+      generator->generate(tokens, 3, 3, 0.0f, [](const std::string&) {});
+
+  EXPECT_TRUE(result.ok());
+  const std::vector<uint64_t> expected(3, 2);
+  EXPECT_EQ(generated_tokens, expected);
+}
+
+// Multiple processors in chain should all take effect.
+TEST_F(RunnerTest, TextTokenGeneratorProcessorChainMasksMultipleTokens) {
+  auto tokenizer = createMockTokenizer();
+  auto text_decoder_runner = createMockTextDecoderRunner();
+  Stats stats;
+  auto generator = createTextTokenGenerator(
+      tokenizer.get(), text_decoder_runner.get(), &stats);
+
+  generator->add_logit_processor(
+      std::make_shared<MaskTokenProcessor>(/*banned_token=*/3));
+  generator->add_logit_processor(
+      std::make_shared<MaskTokenProcessor>(/*banned_token=*/2));
+
+  std::vector<uint64_t> generated_tokens;
+  ON_CALL(*tokenizer, decode)
+      .WillByDefault(
+          [&](uint64_t,
+              uint64_t cur,
+              bool) -> ::tokenizers::Result<std::string> {
+            generated_tokens.push_back(cur);
+            return ::tokenizers::Result<std::string>(std::string("token"));
+          });
+
+  std::vector<uint64_t> tokens = {1, 2, 3};
+  auto result =
+      generator->generate(tokens, 3, 3, 0.0f, [](const std::string&) {});
+
+  EXPECT_TRUE(result.ok());
+  const std::vector<uint64_t> expected(3, 1);
+  EXPECT_EQ(generated_tokens, expected);
+}
+
+// Without any processors, greedy argmax picks token 3 (zero-overhead path).
+TEST_F(RunnerTest, TextTokenGeneratorWithoutProcessorPicksArgmax) {
+  auto tokenizer = createMockTokenizer();
+  auto text_decoder_runner = createMockTextDecoderRunner();
+  Stats stats;
+  auto generator = createTextTokenGenerator(
+      tokenizer.get(), text_decoder_runner.get(), &stats);
+
+  std::vector<uint64_t> generated_tokens;
+  ON_CALL(*tokenizer, decode)
+      .WillByDefault(
+          [&](uint64_t,
+              uint64_t cur,
+              bool) -> ::tokenizers::Result<std::string> {
+            generated_tokens.push_back(cur);
+            return ::tokenizers::Result<std::string>(std::string("token"));
+          });
+
+  std::vector<uint64_t> tokens = {1, 2, 3};
+  auto result =
+      generator->generate(tokens, 3, 3, 0.0f, [](const std::string&) {});
+
+  EXPECT_TRUE(result.ok());
+  const std::vector<uint64_t> expected(3, 3);
+  EXPECT_EQ(generated_tokens, expected);
 }
 
 } // namespace

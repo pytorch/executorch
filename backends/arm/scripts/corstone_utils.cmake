@@ -49,7 +49,13 @@ function(fetch_ethos_u_content ETHOS_SDK_PATH ET_DIR_PATH)
       "source backends/arm/scripts/utils.sh && patch_repo ${ETHOS_SDK_PATH}/core_software ${core_software_base_rev} ${patch_dir}"
     WORKING_DIRECTORY ${ET_DIR_PATH}
   )
-  # Always patch the core_platform repo since this is fast enough.
+  # Always patch the core_platform repo since this is fast enough. TODO:
+  # examples/arm/ethos-u-setup/core_platform/0002-*.patch and 0003-*.patch are
+  # transient bridges that guard Armv8-M-only MPU init and the Armv7-M-and-newer
+  # HardFault handler so the Corstone-300 target source compiles for older
+  # Cortex-M cores. Once the equivalent guards land upstream in
+  # ethos-u/core_platform and ${core_platform_base_rev} is bumped past those
+  # commits, delete the 0002 and 0003 patches.
   set(core_platform_base_rev "26.02")
   execute_process(
     COMMAND
