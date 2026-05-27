@@ -53,7 +53,7 @@ For bundled input/output and ETDump testing:
 For Cortex-M testing, use a Cortex-M target and bundled I/O:
 
 ```bash
-./examples/arm/run.sh --model_name=mv2 --target=cortex-m55+int8 --bundleio
+./examples/arm/run.sh --model_name=mv2 --target=cortex-m55 --bundleio
 ```
 
 ## Example Contents
@@ -90,8 +90,6 @@ For Cortex-M testing, use a Cortex-M target and bundled I/O:
   the example Ethos-U runtime integration to another target.
 - [export_standalone_tosa_graph.py](export_standalone_tosa_graph.py) -
   Example of exporting a standalone TOSA graph with multiple outputs.
-- [composable_quantizer_example.py](composable_quantizer_example.py) - Minimal
-  script showing experimental composable quantizer use.
 - [visualize.py](visualize.py) - Helper used by `run.sh --model_explorer` to
   visualize TOSA or PTE graphs.
 
