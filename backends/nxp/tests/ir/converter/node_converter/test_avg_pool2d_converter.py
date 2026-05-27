@@ -6,6 +6,7 @@
 import numpy as np
 import pytest
 import torch
+
 from executorch.backends.nxp.backend.edge_program_converter import (
     EdgeProgramToIRConverter,
 )
@@ -30,9 +31,7 @@ from executorch.backends.nxp.tests.executors import (
 )
 from executorch.backends.nxp.tests.graph_verifier import DetailedGraphVerifier
 from executorch.backends.nxp.tests.models import AvgPool2dConvModule, AvgPool2dModule
-
 from executorch.backends.nxp.tests.nsys_testing import lower_run_compare
-
 from executorch.backends.nxp.tests.ops_aliases import (
     AvgPool2D,
     ExecutorchDelegateCall,
@@ -42,6 +41,7 @@ from executorch.backends.nxp.tests.ops_aliases import (
     Unsqueeze,
     ViewCopy,
 )
+
 from torch.export import ExportedProgram
 from executorch.backends.nxp.tests.use_qat import *  # noqa F403
 
@@ -312,6 +312,21 @@ class TestAvgPool2DNewNeutronFlow:
 
         lower_run_compare(
             model, input_shape, graph_verifier, use_new_flow_neutron_c=True
+        )
+
+    def test__basic_nsys_inference_qat(self, mocker):
+        input_shape = (2, 9, 6, 15)
+        model = AvgPool2dModule(False, 0)
+        graph_verifier = DetailedGraphVerifier(
+            mocker, expected_delegated_ops={AvgPool2D: 1}, expected_non_delegated_ops={}
+        )
+
+        lower_run_compare(
+            model,
+            input_shape,
+            graph_verifier,
+            use_new_flow_neutron_c=True,
+            use_qat=True,
         )
 
     def test__kernel_size_limit(self, mocker):

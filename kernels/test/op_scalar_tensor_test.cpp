@@ -10,6 +10,7 @@
 #include <executorch/kernels/test/ScalarOverflowTestMacros.h>
 #include <executorch/kernels/test/TestUtil.h>
 #include <executorch/kernels/test/supported_features.h>
+#include <executorch/kernels/test/supported_features_skip.h>
 #include <executorch/runtime/core/exec_aten/exec_aten.h>
 #include <executorch/runtime/core/exec_aten/testing_util/tensor_factory.h>
 #include <executorch/runtime/core/exec_aten/testing_util/tensor_util.h>
@@ -91,28 +92,28 @@ class OpScalarTensorOutTest : public OperatorTest {
 
 ET_FORALL_REAL_TYPES_AND3(Half, Bool, BFloat16, GENERATE_TEST_0D)
 
-#define GENERATE_TEST(ctype, dtype)                                    \
-  TEST_F(OpScalarTensorOutTest, dtype##Tensors) {                      \
-    if (torch::executor::testing::SupportedFeatures::get()->is_aten) { \
-      GTEST_SKIP() << "ATen kernel resizes output to shape {}";        \
-    }                                                                  \
-    test_scalar_tensor_out_1d<ctype, ScalarType::dtype>(2);            \
-    test_scalar_tensor_out_2d<ctype, ScalarType::dtype>(2);            \
-    test_scalar_tensor_out_3d<ctype, ScalarType::dtype>(2);            \
-    test_scalar_tensor_out_1d<ctype, ScalarType::dtype>(4);            \
-    test_scalar_tensor_out_2d<ctype, ScalarType::dtype>(4);            \
-    test_scalar_tensor_out_3d<ctype, ScalarType::dtype>(4);            \
-    test_scalar_tensor_out_1d<ctype, ScalarType::dtype>(7);            \
-    test_scalar_tensor_out_2d<ctype, ScalarType::dtype>(7);            \
-    test_scalar_tensor_out_3d<ctype, ScalarType::dtype>(7);            \
+#define GENERATE_TEST(ctype, dtype)                                  \
+  TEST_F(OpScalarTensorOutTest, dtype##Tensors) {                    \
+    ET_SKIP_IF(                                                      \
+        torch::executor::testing::SupportedFeatures::get()->is_aten, \
+        "ATen kernel resizes output to shape {}");                   \
+    test_scalar_tensor_out_1d<ctype, ScalarType::dtype>(2);          \
+    test_scalar_tensor_out_2d<ctype, ScalarType::dtype>(2);          \
+    test_scalar_tensor_out_3d<ctype, ScalarType::dtype>(2);          \
+    test_scalar_tensor_out_1d<ctype, ScalarType::dtype>(4);          \
+    test_scalar_tensor_out_2d<ctype, ScalarType::dtype>(4);          \
+    test_scalar_tensor_out_3d<ctype, ScalarType::dtype>(4);          \
+    test_scalar_tensor_out_1d<ctype, ScalarType::dtype>(7);          \
+    test_scalar_tensor_out_2d<ctype, ScalarType::dtype>(7);          \
+    test_scalar_tensor_out_3d<ctype, ScalarType::dtype>(7);          \
   }
 
 ET_FORALL_REAL_TYPES_AND3(Half, Bool, BFloat16, GENERATE_TEST)
 
 TEST_F(OpScalarTensorOutTest, InvalidOutShapeFails) {
-  if (torch::executor::testing::SupportedFeatures::get()->is_aten) {
-    GTEST_SKIP() << "ATen kernel will reshape output";
-  }
+  ET_SKIP_IF(
+      torch::executor::testing::SupportedFeatures::get()->is_aten,
+      "ATen kernel will reshape output");
 
   TensorFactory<ScalarType::Int> tf;
   std::vector<int32_t> sizes{1, 2, 1};

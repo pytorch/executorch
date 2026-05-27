@@ -115,6 +115,7 @@ EXECUTORCH_DEFINED_MODELS = [
     "lfm2_350m",  # hybrid
     "lfm2_700m",  # hybrid
     "lfm2_1_2b",  # hybrid
+    "lfm2_5_350m",  # hybrid
     "lfm2_5_1_2b",  # hybrid
 ]
 TORCHTUNE_DEFINED_MODELS = ["llama3_2_vision"]
@@ -133,6 +134,7 @@ HUGGING_FACE_REPO_IDS = {
     "lfm2_350m": "LiquidAI/LFM2-350M",
     "lfm2_700m": "LiquidAI/LFM2-700M",
     "lfm2_1_2b": "LiquidAI/LFM2-1.2B",
+    "lfm2_5_350m": "LiquidAI/LFM2.5-350M",
     "lfm2_5_1_2b": "LiquidAI/LFM2.5-1.2B-Instruct",
 }
 
@@ -229,6 +231,8 @@ def build_args_parser() -> argparse.ArgumentParser:
             "vulkan_8w",
             "tosa_8a8w",
             "ethosu_8a8w",
+            "vgf_8a8w",
+            "vgf_16a8w",
         ],
         help="Use PT2E quantization. Comma separated options. e.g. xnnpack_dynamic (for per channel 8 bit weight), xnnpack_dynamic_qc4 (for per channel 4 bit weight), embedding.",
     )
@@ -456,6 +460,18 @@ def build_args_parser() -> argparse.ArgumentParser:
     )
     parser.add_argument("-V", "--vulkan", action="store_true")
     parser.add_argument("--vulkan-force-fp16", action="store_true")
+    parser.add_argument("--vgf", "--arm-vgf", dest="vgf", action="store_true")
+    parser.add_argument(
+        "--vgf-compile-spec",
+        default="TOSA-1.0+INT",
+        help="VGF compile spec, e.g. TOSA-1.0+INT or TOSA-1.0+INT+int16.",
+    )
+    parser.add_argument(
+        "--vgf-quantize-scope",
+        default="full",
+        choices=["full", "linear"],
+        help="VGF quantization scope. Use 'linear' to quantize only Linear modules.",
+    )
     parser.add_argument("--mps", action="store_true")
     parser.add_argument("--coreml", action="store_true")
     parser.add_argument(
@@ -847,6 +863,7 @@ def get_quantizer_and_quant_params(llm_config):
             llm_config.backend.vgf.compile_spec,
             llm_config.backend.vgf.compiler_flags,
             llm_config.quantization.pt2e_quantize.value,
+            llm_config.backend.vgf.quantize_scope.value,
         )
         quantizers.append(vgf_quantizer)
     if llm_config.backend.vulkan.enabled and llm_config.quantization.pt2e_quantize:

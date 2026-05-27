@@ -16,6 +16,15 @@
 
 namespace {
 
+// Returns the Armv8.1-M PMU cycle counter; 0 on cores without it.
+static inline uint64_t arm_pmu_cycles() {
+#if defined(__ARM_ARCH_8_1M_MAIN__)
+  return ARM_PMU_Get_CCNTR();
+#else
+  return 0;
+#endif
+}
+
 #if defined(ETHOSU55) || defined(ETHOSU65)
 const uint32_t ethosu_pmuCountersUsed = 4;
 #elif defined(ETHOSU85)
@@ -85,7 +94,7 @@ void ethosu_inference_begin(struct ethosu_driver* drv, void*) {
 
   // Save Cortex-M cycle clock to calculate total CPU cycles used in
   // ethosu_inference_end()
-  ethosu_ArmWhenNPURunCycleCountStart = ARM_PMU_Get_CCNTR();
+  ethosu_ArmWhenNPURunCycleCountStart = arm_pmu_cycles();
 }
 
 // Callback invoked at end of NPU execution
@@ -99,21 +108,21 @@ void ethosu_inference_end(struct ethosu_driver* drv, void*) {
   ETHOSU_PMU_Disable(drv);
   // Add Cortex-M cycle clock used during this NPU execution
   ethosu_ArmWhenNPURunCycleCount +=
-      (ARM_PMU_Get_CCNTR() - ethosu_ArmWhenNPURunCycleCountStart);
+      (arm_pmu_cycles() - ethosu_ArmWhenNPURunCycleCountStart);
 }
 
 // Callback invoked at start of ArmBackend::execute()
 void EthosUBackend_execute_begin() {
   // Save Cortex-M cycle clock to calculate total CPU cycles used in
   // ArmBackend_execute_end()
-  ethosu_ArmBackendExecuteCycleCountStart = ARM_PMU_Get_CCNTR();
+  ethosu_ArmBackendExecuteCycleCountStart = arm_pmu_cycles();
 }
 
 // Callback invoked at end of ArmBackend::execute()
 void EthosUBackend_execute_end() {
   // Add Cortex-M cycle clock used during this ArmBackend::execute()
   ethosu_ArmBackendExecuteCycleCount +=
-      (ARM_PMU_Get_CCNTR() - ethosu_ArmBackendExecuteCycleCountStart);
+      (arm_pmu_cycles() - ethosu_ArmBackendExecuteCycleCountStart);
 }
 }
 
@@ -126,14 +135,16 @@ void StartMeasurements() {
   for (size_t i = 0; i < ethosu_pmuCountersUsed; i++) {
     ethosu_pmuEventCounts[i] = 0;
   }
-  ethosu_ArmCycleCountStart = ARM_PMU_Get_CCNTR();
+  ethosu_ArmCycleCountStart = arm_pmu_cycles();
 }
 
 void StopMeasurements(int num_inferences) {
+#if defined(__ARM_ARCH_8_1M_MAIN__)
   ARM_PMU_CNTR_Disable(
       PMU_CNTENCLR_CCNTR_ENABLE_Msk | PMU_CNTENCLR_CNT0_ENABLE_Msk |
       PMU_CNTENCLR_CNT1_ENABLE_Msk);
-  uint32_t cycle_count = ARM_PMU_Get_CCNTR() - ethosu_ArmCycleCountStart;
+#endif
+  uint32_t cycle_count = arm_pmu_cycles() - ethosu_ArmCycleCountStart;
 
   // Number of comand streams handled by the NPU
   ET_LOG(Info, "NPU Inferences : %d", num_inferences);
@@ -171,7 +182,7 @@ void StopMeasurements(int num_inferences) {
       Info,
       "NOTE: CPU cycle values and ratio calculations require FPGA and identical CPU/NPU frequency");
 
-  // Avoid division with zero if ARM_PMU_Get_CCNTR() is not enabled properly.
+  // Avoid division with zero if arm_pmu_cycles() is not enabled properly.
   if (cycle_count == 0) {
     ET_LOG(Info, "Inference CPU ratio: ?.?? %%");
     ET_LOG(Info, "Inference NPU ratio: ?.?? %%");

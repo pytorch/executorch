@@ -9,6 +9,7 @@ __pycache__/
 
 # Build and tool-generated files
 arm_test/
+riscv_test/
 buck-out/
 buck2-bin/
 build/

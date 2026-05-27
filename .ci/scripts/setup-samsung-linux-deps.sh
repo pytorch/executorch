@@ -43,7 +43,7 @@ download_and_extract() {
   local out_file="$3"
 
   echo "Downloading from ${download_url}..."
-  curl -fsSL --retry 3 \
+  curl -fsSL --retry 3 --retry-all-errors \
     -H "apikey: ${API_KEY}" \
     -o "${out_file}" \
     "${download_url}"

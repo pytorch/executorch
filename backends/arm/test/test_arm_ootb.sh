@@ -7,6 +7,12 @@
 
 set -eo pipefail
 
+script_dir=$(cd -- "$( dirname -- "${BASH_SOURCE[0]}" )" &> /dev/null && pwd)
+et_root_dir=$(cd "${script_dir}/../../.." && pwd)
+ootb_requirements="${et_root_dir}/backends/arm/requirements-arm-ootb-test.txt"
+
+cd "${et_root_dir}"
+
 help() {
     echo "Usage:"
     echo " $0 [TESTNAME]"
@@ -22,14 +28,23 @@ if [[ "$1" == "-h" || "$1" == "--help" ]]; then
 fi
 
 if [[ $# -eq 0 ]]; then
-    TEST_SUITES=(run_ootb_tests_ethos_u run_ootb_tests_tosa run_ootb_tests_vgf run_deit_e2e_ethos_u)
+    TEST_SUITES=(run_ootb_tests_ethos_u run_ootb_tests_tosa run_ootb_tests_vgf run_deit_e2e_ethos_u run_swin2sr_e2e_vgf)
 else
     TEST_SUITES=("$1")
 fi
 
 
+install_ootb_test_requirements() {
+    python3 - <<'PY' || pip install -r "${ootb_requirements}"
+import notebook  # noqa: F401
+import nbconvert  # noqa: F401
+PY
+}
+
+
 run_ootb_tests_ethos_u() {
     echo "$FUNCNAME: Running out-of-the-box tests for Arm Ethos-U"
+    install_ootb_test_requirements
     jupyter nbconvert \
         --to notebook \
         --execute examples/arm/ethos_u_minimal_example.ipynb
@@ -38,6 +53,7 @@ run_ootb_tests_ethos_u() {
 
 run_ootb_tests_tosa() {
     echo "$FUNCNAME: Running out-of-the-box tests for TOSA"
+    install_ootb_test_requirements
     jupyter nbconvert \
         --to notebook \
         --execute backends/arm/scripts/TOSA_minimal_example.ipynb
@@ -46,6 +62,7 @@ run_ootb_tests_tosa() {
 
 run_ootb_tests_vgf() {
     echo "$FUNCNAME: Running out-of-the-box tests for VGF"
+    install_ootb_test_requirements
     jupyter nbconvert \
         --to notebook \
         --execute examples/arm/vgf_minimal_example.ipynb
@@ -55,9 +72,6 @@ run_ootb_tests_vgf() {
 run_deit_e2e_ethos_u() {
     echo "$FUNCNAME: Fine-tune, export, build, and run the DEiT e2e test"
 
-    local script_dir
-    script_dir=$(cd -- "$( dirname -- "${BASH_SOURCE[0]}" )" &> /dev/null && pwd)
-    et_root_dir=$(cd "${script_dir}/../../.." && pwd)
     local example_dir="${et_root_dir}/examples/arm/image_classification_example_ethos_u"
     local work_root="${et_root_dir}/arm_test/deit_tiny_ootb_smoke"
     local model_dir="${work_root}/deit_tiny_finetuned"
@@ -66,7 +80,7 @@ run_deit_e2e_ethos_u() {
     local image_path="${work_root}/dog.bmp"
     local pte_path="${export_dir}/deit_tiny_smoke.pte"
     local toolchain_file="${et_root_dir}/examples/arm/ethos-u-setup/arm-none-eabi-gcc.cmake"
-    echo "${FUNCNAME}: Work root is ${work_root}; existing artifacts will be reused if present"
+    echo "${FUNCNAME}: Work directory: ${work_root}; existing artifacts will be reused if present"
 
     mkdir -p "${model_dir}" "${export_dir}" "${build_dir}"
 
@@ -146,6 +160,135 @@ run_deit_e2e_ethos_u() {
         -C mps4_board.uart0.shutdown_on_eot=1 \
         -a "${elf}" \
         -C mps4_board.subsystem.ethosu.extra_args="--fast"
+
+    echo "${FUNCNAME}: PASS"
+}
+
+run_swin2sr_e2e_vgf() {
+    echo "$FUNCNAME: Prepare demo assets, export FP/INT8, build, and run the Swin2SR VGF e2e test"
+
+    local script_dir
+    script_dir=$(cd -- "$( dirname -- "${BASH_SOURCE[0]}" )" &> /dev/null && pwd)
+    et_root_dir=$(cd "${script_dir}/../../.." && pwd)
+    local example_dir="${et_root_dir}/examples/arm/super_resolution_example_vgf"
+    local work_root="${et_root_dir}/arm_test/swin2sr_vgf_ootb_smoke"
+    local demo_dir="${work_root}/demo_assets"
+    local runtime_dir="${demo_dir}/runtime"
+    local runner_path="${work_root}/executor_runner"
+    local input_image="${runtime_dir}/demo_lr_64.png"
+    local fp_pte_path="${demo_dir}/swin2sr_x2_vgf_fp.pte"
+    local int8_pte_path="${demo_dir}/swin2sr_x2_vgf_int8.pte"
+    local fp_output_image="${runtime_dir}/demo_fp_128.png"
+    local int8_output_image="${runtime_dir}/demo_int8_128.png"
+    local checkpoint_id="caidas/swin2SR-classical-sr-x2-64"
+    local checkpoint_revision="cee1c923c6a37361c6e5650b65dcf4be821e5d52"
+    echo "${FUNCNAME}: Work directory: ${work_root}; existing artifacts will be reused if present"
+
+    mkdir -p "${demo_dir}" "${runtime_dir}"
+
+    setup_path_script=${et_root_dir}/examples/arm/arm-scratch/setup_path.sh
+    source ${setup_path_script}
+
+    echo "${FUNCNAME}: Installing example requirements"
+    pip install -r "${example_dir}/requirements.txt"
+
+    echo "${FUNCNAME}: Preparing deterministic demo assets"
+    python3 "${example_dir}/model_export/prepare_demo_assets.py" \
+        --output-dir "${demo_dir}"
+
+    echo "${FUNCNAME}: Building VKML executor_runner"
+    "${et_root_dir}/backends/arm/scripts/build_executor_runner_vkml.sh" \
+        --output="${work_root}"
+
+    if [[ ! -f "${runner_path}" ]]; then
+        runner_path=$(find "${work_root}" -name executor_runner -type f | head -n 1)
+    fi
+    [[ -f "${runner_path}" ]] || {
+        echo "${FUNCNAME}: Missing executor_runner under ${work_root}"
+        return 1
+    }
+
+    echo "${FUNCNAME}: Exporting FP Swin2SR model"
+    python3 "${example_dir}/model_export/export_super_resolution.py" \
+        --model-name swin2sr \
+        --checkpoint "${checkpoint_id}" \
+        --checkpoint-revision "${checkpoint_revision}" \
+        --input-height 64 \
+        --input-width 64 \
+        --quantization-mode none \
+        --eval-lr-dir "${demo_dir}/eval/lr" \
+        --eval-hr-dir "${demo_dir}/eval/hr" \
+        --num-eval-samples 2 \
+        --output-path "${fp_pte_path}"
+
+    for artifact in \
+        "${fp_pte_path}" \
+        "${demo_dir}/swin2sr_x2_vgf_fp.json" \
+        "${demo_dir}/swin2sr_x2_vgf_fp_delegation.txt" \
+        "${demo_dir}/swin2sr_x2_vgf_fp_metrics.json"; do
+        [[ -f "${artifact}" ]] || {
+            echo "${FUNCNAME}: Missing FP export artifact ${artifact}"
+            return 1
+        }
+    done
+
+    echo "${FUNCNAME}: Exporting INT8 Swin2SR model"
+    python3 "${example_dir}/model_export/export_super_resolution.py" \
+        --model-name swin2sr \
+        --checkpoint "${checkpoint_id}" \
+        --checkpoint-revision "${checkpoint_revision}" \
+        --input-height 64 \
+        --input-width 64 \
+        --quantization-mode int8 \
+        --calibration-lr-dir "${demo_dir}/calibration/lr" \
+        --eval-lr-dir "${demo_dir}/eval/lr" \
+        --eval-hr-dir "${demo_dir}/eval/hr" \
+        --num-calibration-samples 4 \
+        --num-eval-samples 2 \
+        --output-path "${int8_pte_path}"
+
+    for artifact in \
+        "${int8_pte_path}" \
+        "${demo_dir}/swin2sr_x2_vgf_int8.json" \
+        "${demo_dir}/swin2sr_x2_vgf_int8_delegation.txt" \
+        "${demo_dir}/swin2sr_x2_vgf_int8_metrics.json"; do
+        [[ -f "${artifact}" ]] || {
+            echo "${FUNCNAME}: Missing INT8 export artifact ${artifact}"
+            return 1
+        }
+    done
+
+    echo "${FUNCNAME}: Running FP runtime smoke"
+    python3 "${example_dir}/runtime/run_super_resolution.py" \
+        --model-path "${fp_pte_path}" \
+        --runner "${runner_path}" \
+        --input-image "${input_image}" \
+        --output-image "${fp_output_image}" \
+        --working-dir "${runtime_dir}/fp_work"
+
+    [[ -f "${fp_output_image}" ]] || {
+        echo "${FUNCNAME}: Missing FP runtime output ${fp_output_image}"
+        return 1
+    }
+
+    if [[ "$(uname -s)" == "Linux" ]]; then
+        echo "${FUNCNAME}: Running INT8 runtime smoke"
+        python3 "${example_dir}/runtime/run_super_resolution.py" \
+            --model-path "${int8_pte_path}" \
+            --runner "${runner_path}" \
+            --input-image "${input_image}" \
+            --output-image "${int8_output_image}" \
+            --working-dir "${runtime_dir}/int8_work"
+
+        [[ -f "${int8_output_image}" ]] || {
+            echo "${FUNCNAME}: Missing INT8 runtime output ${int8_output_image}"
+            return 1
+        }
+    else
+        # TODO: MLETORCH-2105 remove this once the next ML SDK release supports
+        # quantized VKML runtime validation on Darwin.
+        echo "${FUNCNAME}: Skipping INT8 runtime on $(uname -s); quantized VKML runtime validation is Linux-only"
+    fi
 
     echo "${FUNCNAME}: PASS"
 }
