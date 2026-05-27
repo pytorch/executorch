@@ -206,52 +206,6 @@ def _parse_args() -> argparse.Namespace:
     return parser.parse_args()
 
 
-def _install_project_dependencies_without_pinned_packages(
-    optional_dependencies: list[str],
-) -> None:
-    pinned_package_names = {"pytorch-tokenizers", "torch", "torchao"}
-    with open("pyproject.toml") as f:
-        pyproject_lines = f.readlines()
-
-    dependencies = _read_pyproject_array(pyproject_lines, "dependencies")
-    for optional_dep in optional_dependencies:
-        dependencies.extend(_read_pyproject_array(pyproject_lines, optional_dep))
-
-    dependencies = [
-        dependency
-        for dependency in dependencies
-        if _dependency_name(dependency) not in pinned_package_names
-    ]
-    subprocess.run(
-        [sys.executable, "-m", "pip", "install", *dependencies],
-        check=True,
-    )
-
-
-def _read_pyproject_array(lines: list[str], name: str) -> list[str]:
-    dependencies: list[str] = []
-    for i, line in enumerate(lines):
-        if line.strip().startswith(f"{name}=") or line.strip().startswith(f"{name} ="):
-            for dependency_line in lines[i + 1 :]:
-                if dependency_line.strip().startswith("]"):
-                    return dependencies
-                dependency_line = dependency_line.strip()
-                if dependency_line.startswith(("'", '"')):
-                    dependencies.append(
-                        dependency_line[1:].split(dependency_line[0], 1)[0]
-                    )
-    raise ValueError(f"Could not find {name} dependencies in pyproject.toml")
-
-
-def _dependency_name(dependency: str) -> str:
-    dependency = dependency.split(";", 1)[0].strip()
-    if " @ " in dependency:
-        dependency = dependency.split(" @ ", 1)[0]
-    for separator in ("<", ">", "=", "!", "~", "["):
-        dependency = dependency.split(separator, 1)[0]
-    return dependency.strip().lower().replace("_", "-")
-
-
 def main(args):
     if not python_is_compatible():
         sys.exit(1)
@@ -284,9 +238,6 @@ def main(args):
         cmd = [sys.executable, "-m", "pip", "install", *optional_build_dependencies]
         subprocess.run(cmd, check=True)
 
-    if not use_pytorch_nightly:
-        _install_project_dependencies_without_pinned_packages(args.optional_dependency)
-
     # Step 3: Install core package
     package_spec = "."
     if args.optional_dependency:
@@ -303,9 +254,6 @@ def main(args):
         + [
             package_spec,
             "--no-build-isolation",
-        ]
-        + (["--no-deps"] if not use_pytorch_nightly else [])
-        + [
             "-v",
         ]
     )
