@@ -26,7 +26,7 @@ permissions: {}
 
 jobs:
   test-mlx:
-    uses: pytorch/test-infra/.github/workflows/macos_job.yml@main
+    uses: pytorch/test-infra/.github/workflows/macos_job.yml@release/2.12
     with:
       default-packages: ""
       job-name: test-mlx
@@ -77,7 +77,7 @@ jobs:
         echo "::endgroup::"
 
   test-mlx-qwen35-moe:
-    uses: pytorch/test-infra/.github/workflows/macos_job.yml@main
+    uses: pytorch/test-infra/.github/workflows/macos_job.yml@release/2.12
     with:
       default-packages: ""
       job-name: test-mlx-qwen35-moe
@@ -133,7 +133,7 @@ jobs:
       fail-fast: false
       matrix:
         suite: [models, operators]
-    uses: pytorch/test-infra/.github/workflows/macos_job.yml@main
+    uses: pytorch/test-infra/.github/workflows/macos_job.yml@release/2.12
     with:
       default-packages: ""
       job-name: test-mlx-backend-${{ matrix.suite }}
@@ -175,7 +175,7 @@ jobs:
         fi
 
   test-mlx-parakeet:
-    uses: pytorch/test-infra/.github/workflows/macos_job.yml@main
+    uses: pytorch/test-infra/.github/workflows/macos_job.yml@release/2.12
     with:
       default-packages: ""
       job-name: test-mlx-parakeet
@@ -233,7 +233,7 @@ jobs:
     # Maintainers can opt-in by applying the ciflow/mlx label, which
     # pushes a ciflow/mlx/<PR> tag that re-runs this workflow with secrets.
     if: github.event.pull_request.head.repo.full_name == github.repository || github.event_name != 'pull_request'
-    uses: pytorch/test-infra/.github/workflows/macos_job.yml@main
+    uses: pytorch/test-infra/.github/workflows/macos_job.yml@release/2.12
     secrets: inherit
     with:
       default-packages: ""
@@ -294,7 +294,7 @@ jobs:
     # Requires HuggingFace secrets — skip on fork PRs.
     # Maintainers can opt-in by applying the ciflow/mlx label.
     if: github.event.pull_request.head.repo.full_name == github.repository || github.event_name != 'pull_request'
-    uses: pytorch/test-infra/.github/workflows/macos_job.yml@main
+    uses: pytorch/test-infra/.github/workflows/macos_job.yml@release/2.12
     secrets: inherit
     with:
       default-packages: ""
@@ -372,7 +372,7 @@ jobs:
     # Requires HuggingFace secrets — skip on fork PRs.
     # Maintainers can opt-in by applying the ciflow/mlx label.
     if: github.event.pull_request.head.repo.full_name == github.repository || github.event_name != 'pull_request'
-    uses: pytorch/test-infra/.github/workflows/macos_job.yml@main
+    uses: pytorch/test-infra/.github/workflows/macos_job.yml@release/2.12
     secrets: inherit
     with:
       default-packages: ""
@@ -423,7 +423,7 @@ jobs:
 
 
   test-mlx-stories110m:
-    uses: pytorch/test-infra/.github/workflows/macos_job.yml@main
+    uses: pytorch/test-infra/.github/workflows/macos_job.yml@release/2.12
     with:
       default-packages: ""
       job-name: test-mlx-stories110m
@@ -516,7 +516,7 @@ jobs:
             use-custom: false
             qconfig: "4w"
             runner: "macos-15-xlarge"
-    uses: pytorch/test-infra/.github/workflows/macos_job.yml@main
+    uses: pytorch/test-infra/.github/workflows/macos_job.yml@release/2.12
     secrets: inherit
     with:
       default-packages: ""

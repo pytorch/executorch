@@ -20,7 +20,7 @@ concurrency:
 jobs:
   test-pico2-fp32-build:
     name: test-pico2-fp32-build
-    uses: pytorch/test-infra/.github/workflows/linux_job_v2.yml@main
+    uses: pytorch/test-infra/.github/workflows/linux_job_v2.yml@release/2.12
     permissions:
       id-token: write
       contents: read
@@ -90,7 +90,7 @@ jobs:
 
   test-pico2-cmsis-build:
     name: test-pico2-cmsis-nn-build
-    uses: pytorch/test-infra/.github/workflows/linux_job_v2.yml@main
+    uses: pytorch/test-infra/.github/workflows/linux_job_v2.yml@release/2.12
     permissions:
       id-token: write
       contents: read
