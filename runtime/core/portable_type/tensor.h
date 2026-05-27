@@ -115,6 +115,21 @@ class Tensor {
     return impl_->shape_dynamism();
   }
 
+  /// Returns the device where tensor data resides.
+  Device device() const {
+    return impl_->device();
+  }
+
+  /// Returns the type of device where tensor data resides.
+  DeviceType device_type() const {
+    return impl_->device_type();
+  }
+
+  /// Returns the device index, or 0 if default/unspecified.
+  DeviceIndex device_index() const {
+    return impl_->device_index();
+  }
+
   /// Returns a pointer of type T to the constant underlying data blob.
   template <typename T>
   inline const T* const_data_ptr() const {
