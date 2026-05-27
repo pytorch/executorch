@@ -486,12 +486,6 @@ class ConvertToCortexMPass(CortexMPass):
         )
         return exir_ops.edge.cortex_m.quantized_batch_matmul.default, args
 
-    _ACTIVATION_KINDS = {
-        exir_ops.edge.aten.sigmoid.default: "sigmoid",
-        exir_ops.edge.aten.tanh.default: "tanh",
-        exir_ops.edge.aten.silu.default: "silu",
-    }
-
     def _get_activation_replacement(self, node):
         """Lower a standalone quantized sigmoid / tanh / silu to a single
         cortex_m.quantized_activation call backed by an AoT-built 256-entry
@@ -500,9 +494,8 @@ class ConvertToCortexMPass(CortexMPass):
         """
         input_qparams = node.meta["input_qparams"][0]
         output_qparams = node.meta["output_qparams"][0]
-        kind = self._ACTIVATION_KINDS[node.target]
         lut_tensor = build_activation_lut(
-            kind,
+            node.target,
             float(input_qparams.scale),
             int(input_qparams.zp),
             float(output_qparams.scale),

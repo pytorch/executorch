@@ -205,9 +205,9 @@ def _stable_silu(x: float) -> float:
 
 
 _ACTIVATION_FNS = {
-    "sigmoid": _stable_sigmoid,
-    "tanh": math.tanh,
-    "silu": _stable_silu,
+    exir_ops.edge.aten.sigmoid.default: _stable_sigmoid,
+    exir_ops.edge.aten.tanh.default: math.tanh,
+    exir_ops.edge.aten.silu.default: _stable_silu,
 }
 
 
@@ -220,7 +220,7 @@ def _round_half_away_from_zero(x: float) -> int:
 
 
 def build_activation_lut(
-    kind: str,
+    target,
     input_scale: float,
     input_zp: int,
     output_scale: float,
@@ -228,17 +228,20 @@ def build_activation_lut(
 ) -> torch.Tensor:
     """AoT-compute a 256-entry int8 lookup table for a quantized activation.
 
+    `target` is the edge-dialect op being lowered (e.g.
+    `exir_ops.edge.aten.sigmoid.default`).
+
     The LUT is indexed by the input byte value biased by 128: for any int8
     input `q_in`, the kernel reads `lut[q_in + 128]` to get the int8 output.
     Because the LUT is computed in float and quantized once per entry, the
     runtime kernel is a single memory-lookup with no requantization math.
     """
-    if kind not in _ACTIVATION_FNS:
+    if target not in _ACTIVATION_FNS:
         raise ValueError(
-            f"build_activation_lut: unknown activation '{kind}' "
-            f"(supported: {sorted(_ACTIVATION_FNS)})"
+            f"build_activation_lut: unsupported activation target {target!r} "
+            f"(supported: {sorted(t.__name__ for t in _ACTIVATION_FNS)})"
         )
-    f = _ACTIVATION_FNS[kind]
+    f = _ACTIVATION_FNS[target]
     lut = torch.empty(256, dtype=torch.int8)
     for q in range(-128, 128):
         x = (q - input_zp) * input_scale
