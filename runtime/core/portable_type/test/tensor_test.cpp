@@ -13,6 +13,9 @@
 #include <executorch/runtime/platform/runtime.h>
 #include <executorch/test/utils/DeathTest.h>
 
+using executorch::runtime::etensor::Device;
+using executorch::runtime::etensor::DeviceIndex;
+using executorch::runtime::etensor::DeviceType;
 using executorch::runtime::etensor::ScalarType;
 using executorch::runtime::etensor::Tensor;
 using executorch::runtime::etensor::TensorImpl;
@@ -77,4 +80,42 @@ TEST_F(TensorTest, ModifyDataOfConstTensor) {
   EXPECT_EQ(a_impl.scalar_type(), ScalarType::Int);
   EXPECT_EQ(a.scalar_type(), ScalarType::Int);
   EXPECT_EQ(a.const_data_ptr<int32_t>()[0], 0);
+}
+
+TEST_F(TensorTest, DeviceForwardersDefaultCpu) {
+  TensorImpl::SizesType sizes[1] = {1};
+  TensorImpl::DimOrderType dim_order[1] = {0};
+  int32_t data[1] = {0};
+  // TensorImpl ctor defaults device to CPU/0 when not specified.
+  auto a_impl = TensorImpl(ScalarType::Int, 1, sizes, data, dim_order);
+  Tensor a(&a_impl);
+
+  EXPECT_EQ(a.device_type(), DeviceType::CPU);
+  EXPECT_EQ(a.device_index(), DeviceIndex(0));
+  EXPECT_EQ(a.device(), Device(DeviceType::CPU, 0));
+}
+
+TEST_F(TensorTest, DeviceForwardersNonCpu) {
+  TensorImpl::SizesType sizes[1] = {1};
+  TensorImpl::DimOrderType dim_order[1] = {0};
+  int32_t data[1] = {0};
+  auto a_impl = TensorImpl(
+      ScalarType::Int,
+      1,
+      sizes,
+      data,
+      dim_order,
+      /*strides=*/nullptr,
+      executorch::runtime::TensorShapeDynamism::STATIC,
+      DeviceType::CUDA,
+      /*device_index=*/3);
+  Tensor a(&a_impl);
+
+  // Each forwarder must agree with the underlying TensorImpl.
+  EXPECT_EQ(a.device_type(), a_impl.device_type());
+  EXPECT_EQ(a.device_index(), a_impl.device_index());
+  EXPECT_EQ(a.device(), a_impl.device());
+
+  EXPECT_EQ(a.device_type(), DeviceType::CUDA);
+  EXPECT_EQ(a.device_index(), DeviceIndex(3));
 }
