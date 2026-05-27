@@ -13,7 +13,10 @@ import torch.fx
 from executorch.backends.arm._passes.arm_pass_utils import get_first_fake_tensor
 
 from executorch.backends.cortex_m.passes.cortex_m_pass import CortexMPass
-from executorch.backends.cortex_m.passes.passes_utils import quantize_multiplier_aot
+from executorch.backends.cortex_m.passes.passes_utils import (
+    quantize_multiplier_aot,
+    to_physical_order,
+)
 from executorch.backends.cortex_m.passes.scratch_buffer_sizes import (
     required_cmsis_nn_buffer_sizes,
 )
@@ -483,6 +486,54 @@ class ConvertToCortexMPass(CortexMPass):
         )
         return exir_ops.edge.cortex_m.quantized_batch_matmul.default, args
 
+    def _get_avg_pool2d_replacement(self, node):
+        kernel_size = [int(v) for v in node.args[1]]
+        stride_arg = node.args[2] if len(node.args) > 2 else None
+        stride = [int(v) for v in stride_arg] if stride_arg else list(kernel_size)
+        padding_arg = node.args[3] if len(node.args) > 3 else None
+        padding = [int(v) for v in padding_arg] if padding_arg else [0, 0]
+        ceil_mode = bool(node.args[4]) if len(node.args) > 4 else False
+        count_include_pad = bool(node.args[5]) if len(node.args) > 5 else True
+        divisor_override = node.args[6] if len(node.args) > 6 else None
+
+        # CMSIS-NN avg pool does not model ceil_mode or divisor_override; leave
+        # the aten op in place so a portable kernel can handle it instead.
+        if ceil_mode or divisor_override is not None:
+            return None
+
+        input_node = node.args[0]
+        input_zp = node.meta["input_qparams"][0].zp
+        input_scale = node.meta["input_qparams"][0].scale
+        output_mult, output_shift = quantize_multiplier_aot(input_scale)
+
+        avg_padding = padding
+        if count_include_pad:
+            pad_h, pad_w = padding
+            input_tensor = get_first_fake_tensor(input_node)
+            pre_pad = post_pad = to_physical_order([0, 0, pad_h, pad_w], input_tensor)
+            with node.graph.inserting_before(node):
+                input_node = node.graph.create_node(
+                    "call_function",
+                    target=exir_ops.edge.cortex_m.pad.default,
+                    args=(input_node, pre_pad, post_pad, int(input_zp)),
+                )
+            avg_padding = [0, 0]
+
+        with node.graph.inserting_before(node):
+            scratch = self._create_uninitialized_alloc_node()
+
+        new_args = (
+            input_node,
+            kernel_size,
+            stride,
+            avg_padding,
+            int(input_zp),
+            int(output_mult),
+            int(output_shift),
+            scratch,
+        )
+        return exir_ops.edge.cortex_m.quantized_avg_pool2d.default, new_args
+
     def call(self, graph_module: torch.fx.GraphModule) -> PassResult:
         modified = False
         for node in graph_module.graph.nodes:
@@ -506,6 +557,11 @@ class ConvertToCortexMPass(CortexMPass):
                         op, args = self._get_convolution_replacement(node)
                 case exir_ops.edge.aten.bmm.default:
                     op, args = self._get_bmm_replacement(node)
+                case exir_ops.edge.aten.avg_pool2d.default:
+                    result = self._get_avg_pool2d_replacement(node)
+                    if result is None:
+                        continue
+                    op, args = result
                 case _:
                     continue
 

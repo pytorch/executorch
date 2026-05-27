@@ -66,6 +66,17 @@ test_cases = {
 }
 
 
+# ceil_mode=True is not supported by the CMSIS-NN avg_pool kernel; the convert
+# pass leaves aten.avg_pool2d in the graph for a portable kernel to handle. The
+# Cortex-M runner does not register aten.avg_pool2d, so this is dialect-only.
+fallback_test_cases = {
+    "avgpool_2x2_ceil_mode": McuTestCase(
+        CortexMAvgPool2d(kernel_size=2, stride=2, ceil_mode=True),
+        (ramp_tensor(0, 24, (1, 1, 5, 5)),),
+    ),
+}
+
+
 @parametrize("test_case", test_cases)
 def test_dialect_avg_pool2d(test_case):
     tester = CortexMTester(test_case.model, test_case.example_inputs)
@@ -75,6 +86,24 @@ def test_dialect_avg_pool2d(test_case):
     tester.test_dialect(
         test_case.model.ops_before_transforms,
         ops_after,
+        qtol=1,
+    )
+
+
+@parametrize("test_case", fallback_test_cases)
+def test_dialect_avg_pool2d_fallback(test_case):
+    tester = CortexMTester(test_case.model, test_case.example_inputs)
+    tester.test_dialect(
+        {
+            "executorch_exir_dialects_edge__ops_aten_avg_pool2d_default": 1,
+            "executorch_exir_dialects_edge__ops_quantized_decomposed_quantize_per_tensor_default": 2,
+            "executorch_exir_dialects_edge__ops_quantized_decomposed_dequantize_per_tensor_default": 2,
+        },
+        {
+            "executorch_exir_dialects_edge__ops_aten_avg_pool2d_default": 1,
+            "executorch_exir_dialects_edge__ops_cortex_m_quantize_per_tensor_default": 2,
+            "executorch_exir_dialects_edge__ops_cortex_m_dequantize_per_tensor_default": 2,
+        },
         qtol=1,
     )
 

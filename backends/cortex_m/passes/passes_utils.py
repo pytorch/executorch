@@ -259,6 +259,17 @@ def is_channels_last(tensor: torch.Tensor) -> bool:
     return dim_order[0:2] == [0, 2]
 
 
+_NHWC_DIM_ORDER = [0, 2, 3, 1]
+
+
+def to_physical_order(logical_pad: list[int], tensor: torch.Tensor) -> list[int]:
+    """Permute a 4-element NCHW-ordered list to NHWC physical memory order
+    when ``tensor`` is in channels_last format, otherwise return unchanged."""
+    if not is_channels_last(tensor):
+        return logical_pad
+    return [logical_pad[_NHWC_DIM_ORDER[i]] for i in range(4)]
+
+
 def is_channel_broadcast(tensor1: torch.Tensor, tensor2: torch.Tensor) -> bool:
     """
     Check if tensor1 is broadcasted to tensor2 along channel dimension.
