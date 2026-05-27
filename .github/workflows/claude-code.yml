@@ -8,7 +8,7 @@ on:
 
 jobs:
   claude-code:
-    uses: pytorch/test-infra/.github/workflows/_claude-code.yml@main
+    uses: pytorch/test-infra/.github/workflows/_claude-code.yml@release/2.12
     with:
       setup_script: |
         pip install lintrunner==0.12.7 lintrunner-adapters==0.14.0

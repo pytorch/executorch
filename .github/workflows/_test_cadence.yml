@@ -30,7 +30,7 @@ on:
 
 jobs:
   test-aot:
-    uses: pytorch/test-infra/.github/workflows/linux_job_v2.yml@main
+    uses: pytorch/test-infra/.github/workflows/linux_job_v2.yml@release/2.12
     with:
       job-name: test-aot
       runner: ${{ inputs.runner }}
@@ -50,7 +50,7 @@ jobs:
         python -m pytest backends/cadence/aot/tests/ -v -n auto --reruns 2 --reruns-delay 1
 
   test-ops:
-    uses: pytorch/test-infra/.github/workflows/linux_job_v2.yml@main
+    uses: pytorch/test-infra/.github/workflows/linux_job_v2.yml@release/2.12
     with:
       job-name: test-ops
       runner: ${{ inputs.runner }}

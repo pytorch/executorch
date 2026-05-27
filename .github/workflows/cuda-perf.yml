@@ -97,7 +97,7 @@ jobs:
   export-models:
     name: export-models
     needs: set-parameters
-    uses: pytorch/test-infra/.github/workflows/linux_job_v2.yml@main
+    uses: pytorch/test-infra/.github/workflows/linux_job_v2.yml@release/2.12
     permissions:
       id-token: write
       contents: read
@@ -148,7 +148,7 @@ jobs:
       - set-parameters
       - export-models
     if: always()
-    uses: pytorch/test-infra/.github/workflows/linux_job_v2.yml@main
+    uses: pytorch/test-infra/.github/workflows/linux_job_v2.yml@release/2.12
     permissions:
       id-token: write
       contents: read
@@ -414,7 +414,7 @@ jobs:
           echo "::endgroup::"
 
       - name: Upload benchmark results to dashboard
-        uses: pytorch/test-infra/.github/actions/upload-benchmark-results@main
+        uses: pytorch/test-infra/.github/actions/upload-benchmark-results@release/2.12
         with:
           benchmark-results-dir: benchmark-results/v3
           dry-run: false
