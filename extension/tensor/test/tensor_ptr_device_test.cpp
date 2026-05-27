@@ -15,6 +15,7 @@
 #include <cstring>
 
 #include <executorch/runtime/core/device_allocator.h>
+#include <executorch/runtime/core/test/mock_cuda_allocator.h>
 #include <executorch/runtime/platform/runtime.h>
 #include <executorch/test/utils/DeathTest.h>
 
@@ -22,94 +23,16 @@ using namespace ::executorch::extension;
 using namespace ::executorch::runtime;
 using executorch::runtime::etensor::DeviceIndex;
 using executorch::runtime::etensor::DeviceType;
+using executorch::runtime::testing::MockCudaAllocator;
 
-#ifndef USE_ATEN_LIB
-// All device tensor helpers are intentionally unsupported in USE_ATEN_LIB
-// builds (make_tensor_ptr cannot create on-device aten tensors), so the entire
-// test fixture is gated to the portable build.
+static MockCudaAllocator g_mock_cuda;
 
-namespace {
-
-// A fake device allocator that uses host memory (malloc/free/memcpy) to
-// simulate device memory operations, enabling end-to-end data roundtrip
-// verification without requiring actual device hardware.
-class FakeDeviceAllocator : public DeviceAllocator {
- public:
-  explicit FakeDeviceAllocator(DeviceType type) : type_(type) {}
-
-  Result<void*> allocate(
-      size_t nbytes,
-      DeviceIndex /*index*/,
-      size_t /*alignment*/ = kDefaultAlignment) override {
-    void* ptr = std::malloc(nbytes);
-    if (!ptr) {
-      return Error::MemoryAllocationFailed;
-    }
-    allocate_count_++;
-    return ptr;
-  }
-
-  void deallocate(void* ptr, DeviceIndex /*index*/) override {
-    std::free(ptr);
-    deallocate_count_++;
-  }
-
-  Error copy_host_to_device(
-      void* dst,
-      const void* src,
-      size_t nbytes,
-      DeviceIndex /*index*/) override {
-    std::memcpy(dst, src, nbytes);
-    h2d_count_++;
-    return Error::Ok;
-  }
-
-  Error copy_device_to_host(
-      void* dst,
-      const void* src,
-      size_t nbytes,
-      DeviceIndex /*index*/) override {
-    std::memcpy(dst, src, nbytes);
-    d2h_count_++;
-    return Error::Ok;
-  }
-
-  DeviceType device_type() const override {
-    return type_;
-  }
-
-  void reset_counters() {
-    allocate_count_ = 0;
-    deallocate_count_ = 0;
-    h2d_count_ = 0;
-    d2h_count_ = 0;
-  }
-
-  int allocate_count_ = 0;
-  int deallocate_count_ = 0;
-  int h2d_count_ = 0;
-  int d2h_count_ = 0;
-
- private:
-  DeviceType type_;
-};
-
-// Function-static singleton avoids non-const global allocator state.
-FakeDeviceAllocator& fake_cuda_allocator() {
-  static FakeDeviceAllocator allocator(DeviceType::CUDA);
-  return allocator;
-}
-
-// One-shot registration; the constructor runs at static init time and the
-// instance itself is immutable afterwards.
-struct RegisterFakeAllocator {
-  RegisterFakeAllocator() {
-    register_device_allocator(&fake_cuda_allocator());
+struct RegisterMockAllocator {
+  RegisterMockAllocator() {
+    register_device_allocator(&g_mock_cuda);
   }
 };
-const RegisterFakeAllocator s_register;
-
-} // namespace
+const RegisterMockAllocator s_register;
 
 class TensorPtrDeviceTest : public ::testing::Test {
  protected:
@@ -118,7 +41,10 @@ class TensorPtrDeviceTest : public ::testing::Test {
   }
 
   void SetUp() override {
-    fake_cuda_allocator().reset_counters();
+    g_mock_cuda.allocate_count_ = 0;
+    g_mock_cuda.deallocate_count_ = 0;
+    g_mock_cuda.h2d_count_ = 0;
+    g_mock_cuda.d2h_count_ = 0;
   }
 };
 
@@ -138,8 +64,8 @@ TEST_F(TensorPtrDeviceTest, CpuToDeviceTensor) {
       device_tensor->unsafeGetTensorImpl()->device_type(), DeviceType::CUDA);
   EXPECT_EQ(device_tensor->unsafeGetTensorImpl()->device_index(), 0);
 
-  EXPECT_EQ(fake_cuda_allocator().allocate_count_, 1);
-  EXPECT_EQ(fake_cuda_allocator().h2d_count_, 1);
+  EXPECT_EQ(g_mock_cuda.allocate_count_, 1);
+  EXPECT_EQ(g_mock_cuda.h2d_count_, 1);
 }
 
 TEST_F(TensorPtrDeviceTest, CpuToDeviceFromRawData) {
@@ -160,8 +86,8 @@ TEST_F(TensorPtrDeviceTest, CpuToDeviceFromRawData) {
   EXPECT_EQ(
       device_tensor->unsafeGetTensorImpl()->device_type(), DeviceType::CUDA);
 
-  EXPECT_EQ(fake_cuda_allocator().allocate_count_, 1);
-  EXPECT_EQ(fake_cuda_allocator().h2d_count_, 1);
+  EXPECT_EQ(g_mock_cuda.allocate_count_, 1);
+  EXPECT_EQ(g_mock_cuda.h2d_count_, 1);
 }
 
 // clone_tensor_ptr_to_cpu relies on TensorImpl device metadata which is only
@@ -183,7 +109,7 @@ TEST_F(TensorPtrDeviceTest, DeviceToCpuTensor) {
     EXPECT_FLOAT_EQ(result_data[i], original_data[i]);
   }
 
-  EXPECT_EQ(fake_cuda_allocator().d2h_count_, 1);
+  EXPECT_EQ(g_mock_cuda.d2h_count_, 1);
 }
 
 TEST_F(TensorPtrDeviceTest, DeviceToCpuPreservesShapeDynamism) {
@@ -255,10 +181,10 @@ TEST_F(TensorPtrDeviceTest, DeviceMemoryCleanup) {
     auto cpu_tensor = make_tensor_ptr({2}, {1.0f, 2.0f});
     auto device_tensor =
         clone_tensor_ptr_to_device(cpu_tensor, DeviceType::CUDA);
-    EXPECT_EQ(fake_cuda_allocator().allocate_count_, 1);
-    EXPECT_EQ(fake_cuda_allocator().deallocate_count_, 0);
+    EXPECT_EQ(g_mock_cuda.allocate_count_, 1);
+    EXPECT_EQ(g_mock_cuda.deallocate_count_, 0);
   }
-  EXPECT_EQ(fake_cuda_allocator().deallocate_count_, 1);
+  EXPECT_EQ(g_mock_cuda.deallocate_count_, 1);
 }
 
 TEST_F(TensorPtrDeviceTest, ScalarTensorRoundtrip) {
