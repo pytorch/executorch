@@ -1,14 +1,14 @@
 load("@fbsource//xplat/executorch/build:runtime_wrapper.bzl", "runtime")
 load("@fbsource//xplat/executorch/kernels/test:util.bzl", "codegen_function_header_wrapper", "op_test")
 
-def _common_op_test(name, kernels):
+def _common_op_test(name, kernels, deps = []):
     """
     Defines test targets in format of <kernel>_op_<op-name>_test
     For ATen kernel testing, let's use portable functions.yaml for tested ops.
     """
     for kernel in kernels:
-        deps = [":function_header_wrapper_{}".format(kernel)]
-        op_test(name, kernel_name = kernel, use_kernel_prefix = True, deps = deps)
+        op_deps = [":function_header_wrapper_{}".format(kernel)] + deps
+        op_test(name, kernel_name = kernel, use_kernel_prefix = True, deps = op_deps)
 
 def define_common_targets():
     """Defines targets that should be shared between fbcode and xplat.
@@ -115,7 +115,16 @@ def define_common_targets():
     runtime.cxx_library(
         name = "supported_features_header",
         srcs = [],
-        exported_headers = {"supported_features.h": ":supported_feature_header_gen[supported_features.h]"},
+        exported_headers = {
+            "supported_features.h": ":supported_feature_header_gen[supported_features.h]",
+            "supported_features_skip.h": "supported_features_skip.h",
+        },
+        # Set EXECUTORCH_INTERNAL=1 for fbcode-internal builds so the
+        # ET_SKIP_IF helper in supported_features_skip.h compiles to an
+        # early `return;` instead of GTEST_SKIP. This avoids TestX's
+        # "ConsistentlySkipping" / broken-test signal. OSS builds keep
+        # the canonical GTEST_SKIP behavior. See header for context.
+        exported_preprocessor_flags = [] if runtime.is_oss else ["-DEXECUTORCH_INTERNAL=1"],
         visibility = [
             "//executorch/kernels/...",
         ],
@@ -168,6 +177,14 @@ def define_common_targets():
     _common_op_test("op__clone_dim_order_test", ["aten", "portable"])
     _common_op_test("op__conj_physical_test", ["aten", "portable"])
     _common_op_test("op__adaptive_avg_pool2d_test", ["aten", "portable"])
+    _common_op_test(
+        "op__device_copy_test",
+        ["portable"],
+        deps = [
+            "//executorch/runtime/core:device_allocator",
+            "//executorch/runtime/platform:platform",
+        ],
+    )
     _common_op_test("op_abs_test", ["aten", "portable"])
     _common_op_test("op_acos_test", ["aten", "portable"])
     _common_op_test("op_acosh_test", ["aten", "portable"])
@@ -330,6 +347,7 @@ def define_common_targets():
     _common_op_test("op_upsample_bilinear2d_aa_test", ["portable"])
     _common_op_test("op_upsample_nearest2d_test", ["aten", "portable"])
     _common_op_test("op_var_test", ["aten", "portable"])
+    _common_op_test("op_var_mean_test", ["aten", "portable"])
     _common_op_test("op_view_as_real_copy_test", ["aten", "portable"])
     _common_op_test("op_view_copy_test", ["aten", "portable"])
     _common_op_test("op_where_test", ["aten", "portable"])

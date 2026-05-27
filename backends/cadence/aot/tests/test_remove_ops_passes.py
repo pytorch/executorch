@@ -28,6 +28,7 @@ from executorch.backends.cadence.aot.remove_ops import (
     RemoveNopLinalgVectorNormOpPass,
     RemoveNopMulOpPass,
     RemoveNopSliceOrViewOpPass,
+    RemovePermuteBeforeMeanPass,
     RemovePermutesAroundElementwiseOps,
     RemoveSqueezeViewBeforeElementwiseOps,
     RemoveToOpsPass,
@@ -1013,3 +1014,377 @@ class TestRemoveOpsPasses(unittest.TestCase):
 
         # Output should remain the same.
         self.assertTrue(torch.equal(graph_module(*inputs)[0], expected_outputs))
+
+    def test_remove_permute_before_mean_fully_removed(self) -> None:
+        """Permute → relu → mean where non-reduced dims preserve order → fully remove."""
+        builder = GraphBuilder()
+        x = builder.placeholder("x", torch.randn(2, 3, 4, 5))
+        permuted = builder.call_operator(
+            op=exir_ops.edge.aten.permute_copy.default, args=(x, [0, 2, 3, 1])
+        )
+        relu = builder.call_operator(
+            op=exir_ops.edge.aten.relu.default, args=(permuted,)
+        )
+        mean = builder.call_operator(
+            op=exir_ops.edge.aten.mean.dim, args=(relu, [1, 2], False)
+        )
+        builder.output([mean])
+        original = builder.get_graph_module()
+        gm_before = copy.deepcopy(original)
+
+        graph_after = cast(
+            PassResult, RemovePermuteBeforeMeanPass()(original)
+        ).graph_module
+
+        # Permute should be fully removed.
+        self.assertEqual(
+            count_node(graph_after, exir_ops.edge.aten.permute_copy.default), 0
+        )
+
+        # Mean reduction dims should be remapped to original space.
+        mean_nodes = graph_after.graph.find_nodes(
+            op="call_function", target=exir_ops.edge.aten.mean.dim
+        )
+        self.assertEqual(len(mean_nodes), 1)
+        self.assertEqual(mean_nodes[0].args[1], [2, 3])
+
+        validate(
+            gm_before,
+            graph_after,
+            (torch.randn(2, 3, 4, 5),),
+            "RemovePermuteBeforeMeanPass",
+        )
+
+    def test_remove_permute_before_mean_sunk_after(self) -> None:
+        """Permute → relu → mean where non-reduced dims reorder → move permute after mean."""
+        builder = GraphBuilder()
+        x = builder.placeholder("x", torch.randn(2, 3, 4, 5))
+        permuted = builder.call_operator(
+            op=exir_ops.edge.aten.permute_copy.default, args=(x, [2, 0, 3, 1])
+        )
+        relu = builder.call_operator(
+            op=exir_ops.edge.aten.relu.default, args=(permuted,)
+        )
+        mean = builder.call_operator(
+            op=exir_ops.edge.aten.mean.dim, args=(relu, [2, 3], False)
+        )
+        builder.output([mean])
+        original = builder.get_graph_module()
+        gm_before = copy.deepcopy(original)
+
+        graph_after = cast(
+            PassResult, RemovePermuteBeforeMeanPass()(original)
+        ).graph_module
+
+        # One permute should remain (after the mean).
+        self.assertEqual(
+            count_node(graph_after, exir_ops.edge.aten.permute_copy.default), 1
+        )
+
+        # Mean reduction dims should be remapped.
+        mean_nodes = graph_after.graph.find_nodes(
+            op="call_function", target=exir_ops.edge.aten.mean.dim
+        )
+        self.assertEqual(len(mean_nodes), 1)
+        self.assertEqual(mean_nodes[0].args[1], [3, 1])
+
+        # The permute should come after the mean, not before.
+        permute_nodes = graph_after.graph.find_nodes(
+            op="call_function", target=exir_ops.edge.aten.permute_copy.default
+        )
+        self.assertEqual(permute_nodes[0].args[0], mean_nodes[0])
+        self.assertEqual(permute_nodes[0].args[1], [1, 0])
+
+        validate(
+            gm_before,
+            graph_after,
+            (torch.randn(2, 3, 4, 5),),
+            "RemovePermuteBeforeMeanPass",
+        )
+
+    def test_remove_permute_before_mean_keepdim_true(self) -> None:
+        """Permute → relu → mean(keepdim=True) where only reduced dims shuffle → fully remove."""
+        builder = GraphBuilder()
+        x = builder.placeholder("x", torch.randn(2, 3, 4, 5))
+        permuted = builder.call_operator(
+            op=exir_ops.edge.aten.permute_copy.default, args=(x, [0, 1, 3, 2])
+        )
+        relu = builder.call_operator(
+            op=exir_ops.edge.aten.relu.default, args=(permuted,)
+        )
+        mean = builder.call_operator(
+            op=exir_ops.edge.aten.mean.dim, args=(relu, [2, 3], True)
+        )
+        builder.output([mean])
+        original = builder.get_graph_module()
+        gm_before = copy.deepcopy(original)
+
+        graph_after = cast(
+            PassResult, RemovePermuteBeforeMeanPass()(original)
+        ).graph_module
+
+        # Permute fully removed (only reduced dims were shuffled).
+        self.assertEqual(
+            count_node(graph_after, exir_ops.edge.aten.permute_copy.default), 0
+        )
+
+        validate(
+            gm_before,
+            graph_after,
+            (torch.randn(2, 3, 4, 5),),
+            "RemovePermuteBeforeMeanPass",
+        )
+
+    def test_remove_permute_before_mean_keepdim_true_sunk(self) -> None:
+        """Permute → relu → mean(keepdim=True) where non-reduced dims move → sink permute."""
+        builder = GraphBuilder()
+        x = builder.placeholder("x", torch.randn(2, 3, 4, 5))
+        permuted = builder.call_operator(
+            op=exir_ops.edge.aten.permute_copy.default, args=(x, [0, 2, 3, 1])
+        )
+        relu = builder.call_operator(
+            op=exir_ops.edge.aten.relu.default, args=(permuted,)
+        )
+        mean = builder.call_operator(
+            op=exir_ops.edge.aten.mean.dim, args=(relu, [1, 2], True)
+        )
+        builder.output([mean])
+        original = builder.get_graph_module()
+        gm_before = copy.deepcopy(original)
+
+        graph_after = cast(
+            PassResult, RemovePermuteBeforeMeanPass()(original)
+        ).graph_module
+
+        # One permute should remain (sunk after mean).
+        self.assertEqual(
+            count_node(graph_after, exir_ops.edge.aten.permute_copy.default), 1
+        )
+
+        # The post-mean permute uses the original perm since keepdim=True.
+        permute_nodes = graph_after.graph.find_nodes(
+            op="call_function", target=exir_ops.edge.aten.permute_copy.default
+        )
+        self.assertEqual(permute_nodes[0].args[1], [0, 2, 3, 1])
+
+        validate(
+            gm_before,
+            graph_after,
+            (torch.randn(2, 3, 4, 5),),
+            "RemovePermuteBeforeMeanPass",
+        )
+
+    def test_remove_permute_before_mean_no_permute(self) -> None:
+        """No permute before mean → no change."""
+        builder = GraphBuilder()
+        x = builder.placeholder("x", torch.randn(2, 3, 4, 5))
+        relu = builder.call_operator(op=exir_ops.edge.aten.relu.default, args=(x,))
+        mean = builder.call_operator(
+            op=exir_ops.edge.aten.mean.dim, args=(relu, [2, 3], False)
+        )
+        builder.output([mean])
+        original = builder.get_graph_module()
+
+        result = cast(PassResult, RemovePermuteBeforeMeanPass()(original))
+        self.assertFalse(result.modified)
+
+    def test_remove_permute_before_mean_multi_user(self) -> None:
+        """Permute with multiple users → no change."""
+        builder = GraphBuilder()
+        x = builder.placeholder("x", torch.randn(2, 3, 4, 5))
+        permuted = builder.call_operator(
+            op=exir_ops.edge.aten.permute_copy.default, args=(x, [0, 2, 3, 1])
+        )
+        relu = builder.call_operator(
+            op=exir_ops.edge.aten.relu.default, args=(permuted,)
+        )
+        mean = builder.call_operator(
+            op=exir_ops.edge.aten.mean.dim, args=(relu, [1, 2], False)
+        )
+        # Second user of the permute prevents optimization.
+        neg = builder.call_operator(op=exir_ops.edge.aten.neg.default, args=(permuted,))
+        builder.output([mean, neg])
+        original = builder.get_graph_module()
+
+        result = cast(PassResult, RemovePermuteBeforeMeanPass()(original))
+        self.assertFalse(result.modified)
+
+    def test_remove_permute_before_mean_reorder_unprofitable(self) -> None:
+        """Reorder skipped when reduction ratio is too small and mean becomes strided."""
+        # perm [2, 1, 0] reverses dims. reduction_dims [2] is trailing in the
+        # permuted layout (contiguous mean), but maps to dim 0 in the original
+        # layout (strided mean). With input_shape[0] = 3, R = 3 < 4, so the
+        # cost model rejects the reorder.
+        builder = GraphBuilder()
+        x = builder.placeholder("x", torch.randn(3, 4, 2))
+        permuted = builder.call_operator(
+            op=exir_ops.edge.aten.permute_copy.default, args=(x, [2, 1, 0])
+        )
+        mean = builder.call_operator(
+            op=exir_ops.edge.aten.mean.dim, args=(permuted, [2], False)
+        )
+        builder.output([mean])
+        original = builder.get_graph_module()
+
+        result = cast(PassResult, RemovePermuteBeforeMeanPass()(original))
+        self.assertFalse(result.modified)
+
+    def test_remove_permute_before_mean_reorder_profitable(self) -> None:
+        """Reorder applied when reduction ratio is large enough."""
+        # Same structure as the unprofitable case, but input_shape[0] = 8
+        # gives R = 8 >= 4, so the cost model accepts the reorder.
+        builder = GraphBuilder()
+        x = builder.placeholder("x", torch.randn(8, 4, 2))
+        permuted = builder.call_operator(
+            op=exir_ops.edge.aten.permute_copy.default, args=(x, [2, 1, 0])
+        )
+        mean = builder.call_operator(
+            op=exir_ops.edge.aten.mean.dim, args=(permuted, [2], False)
+        )
+        builder.output([mean])
+        original = builder.get_graph_module()
+        gm_before = copy.deepcopy(original)
+
+        graph_after = cast(
+            PassResult, RemovePermuteBeforeMeanPass()(original)
+        ).graph_module
+
+        # Permute should be sunk after the mean (reorder applied).
+        self.assertEqual(
+            count_node(graph_after, exir_ops.edge.aten.permute_copy.default), 1
+        )
+        mean_nodes = graph_after.graph.find_nodes(
+            op="call_function", target=exir_ops.edge.aten.mean.dim
+        )
+        permute_nodes = graph_after.graph.find_nodes(
+            op="call_function", target=exir_ops.edge.aten.permute_copy.default
+        )
+        self.assertEqual(permute_nodes[0].args[0], mean_nodes[0])
+
+        validate(
+            gm_before,
+            graph_after,
+            (torch.randn(8, 4, 2),),
+            "RemovePermuteBeforeMeanPass",
+        )
+
+    def test_remove_permute_before_mean_nontrailing_always_profitable(self) -> None:
+        """Reorder always applied when original permute doesn't make reduction dims trailing."""
+        # perm [1, 0, 2] with reduction_dims [0] -> dim 0 is NOT trailing in
+        # the permuted layout, so the original mean is already strided.
+        # Removing the permute is unconditionally profitable regardless of R.
+        builder = GraphBuilder()
+        x = builder.placeholder("x", torch.randn(2, 3, 4))
+        permuted = builder.call_operator(
+            op=exir_ops.edge.aten.permute_copy.default, args=(x, [1, 0, 2])
+        )
+        mean = builder.call_operator(
+            op=exir_ops.edge.aten.mean.dim, args=(permuted, [0], False)
+        )
+        builder.output([mean])
+        original = builder.get_graph_module()
+        gm_before = copy.deepcopy(original)
+
+        graph_after = cast(
+            PassResult, RemovePermuteBeforeMeanPass()(original)
+        ).graph_module
+
+        # Transformation applied even though R = input_shape[1] = 3 < 4,
+        # because the original mean was already strided.
+        self.assertTrue(
+            count_node(graph_after, exir_ops.edge.aten.permute_copy.default) <= 1
+        )
+
+        validate(
+            gm_before,
+            graph_after,
+            (torch.randn(2, 3, 4),),
+            "RemovePermuteBeforeMeanPass",
+        )
+
+    def test_permute_sunk_past_two_chained_means(self) -> None:
+        """Permute sinks past mean1 in first iteration, then removed in the second iteration."""
+        builder = GraphBuilder()
+        x = builder.placeholder("x", torch.randn(8, 3, 5))
+        permuted = builder.call_operator(
+            op=exir_ops.edge.aten.permute_copy.default, args=(x, [2, 1, 0])
+        )
+        mean1 = builder.call_operator(
+            op=exir_ops.edge.aten.mean.dim, args=(permuted, [2], False)
+        )
+        mean2 = builder.call_operator(
+            op=exir_ops.edge.aten.mean.dim, args=(mean1, [0], False)
+        )
+        builder.output([mean2])
+        original = builder.get_graph_module()
+        gm_before = copy.deepcopy(original)
+
+        graph_after = cast(
+            PassResult, RemovePermuteBeforeMeanPass()(original)
+        ).graph_module
+
+        # Both means should have correct meta shapes.
+        mean_nodes = graph_after.graph.find_nodes(
+            op="call_function", target=exir_ops.edge.aten.mean.dim
+        )
+        self.assertEqual(len(mean_nodes), 2)
+        self.assertEqual(list(mean_nodes[0].meta["val"].shape), [3, 5])
+        self.assertEqual(list(mean_nodes[1].meta["val"].shape), [3])
+        self.assertEqual(mean_nodes[0].args[1], [0])
+        self.assertEqual(mean_nodes[1].args[1], [1])
+
+        # Permute removed on the second iteration
+        self.assertEqual(
+            len(
+                graph_after.graph.find_nodes(
+                    op="call_function", target=exir_ops.edge.aten.permute_copy.default
+                )
+            ),
+            0,
+        )
+
+        validate(
+            gm_before,
+            graph_after,
+            (torch.randn(8, 3, 4),),
+            "RemovePermuteBeforeMeanPass",
+        )
+
+    def test_negative_reduction_dims(self) -> None:
+        """Negative reduction dims work correctly with permute removal."""
+        # perm=[0,2,3,1], mean([-1,-2]) in permuted space.
+        # Same as mean([2,3]) — should fully remove the permute.
+        builder = GraphBuilder()
+        x = builder.placeholder("x", torch.randn(2, 3, 4, 5))
+        permuted = builder.call_operator(
+            op=exir_ops.edge.aten.permute_copy.default, args=(x, [0, 2, 3, 1])
+        )
+        relu = builder.call_operator(
+            op=exir_ops.edge.aten.relu.default, args=(permuted,)
+        )
+        mean = builder.call_operator(
+            op=exir_ops.edge.aten.mean.dim, args=(relu, [-1, -2], False)
+        )
+        builder.output([mean])
+        original = builder.get_graph_module()
+        gm_before = copy.deepcopy(original)
+
+        graph_after = cast(
+            PassResult, RemovePermuteBeforeMeanPass()(original)
+        ).graph_module
+
+        self.assertEqual(
+            count_node(graph_after, exir_ops.edge.aten.permute_copy.default), 0
+        )
+        mean_nodes = graph_after.graph.find_nodes(
+            op="call_function", target=exir_ops.edge.aten.mean.dim
+        )
+        self.assertEqual(len(mean_nodes), 1)
+        self.assertEqual(list(mean_nodes[0].meta["val"].shape), [2, 4])
+
+        validate(
+            gm_before,
+            graph_after,
+            (torch.randn(2, 3, 4, 5),),
+            "RemovePermuteBeforeMeanPass",
+        )

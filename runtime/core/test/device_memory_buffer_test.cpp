@@ -29,9 +29,13 @@ class MockAllocator : public DeviceAllocator {
  public:
   explicit MockAllocator(DeviceType type) : type_(type) {}
 
-  Result<void*> allocate(size_t nbytes, DeviceIndex index) override {
+  Result<void*> allocate(
+      size_t nbytes,
+      DeviceIndex index,
+      size_t alignment = DeviceAllocator::kDefaultAlignment) override {
     allocate_count_++;
     last_allocate_size_ = nbytes;
+    last_allocate_alignment_ = alignment;
     return static_cast<void*>(buffer_);
   }
 
@@ -63,6 +67,7 @@ class MockAllocator : public DeviceAllocator {
   int allocate_count_ = 0;
   int deallocate_count_ = 0;
   size_t last_allocate_size_ = 0;
+  size_t last_allocate_alignment_ = 0;
   void* last_deallocate_ptr_ = nullptr;
   uint8_t buffer_[256] = {};
 
@@ -77,7 +82,12 @@ class DeviceMemoryBufferTest : public ::testing::Test {
  protected:
   static void SetUpTestSuite() {
     executorch::runtime::runtime_init();
-    register_device_allocator(DeviceType::CUDA, &g_mock_cuda);
+    // On platforms like AppleMac xctest, the same process may be reused
+    // across test invocations, so the static registry persists and
+    // re-registering would abort. Only register once.
+    if (get_device_allocator(DeviceType::CUDA) == nullptr) {
+      register_device_allocator(&g_mock_cuda);
+    }
   }
 
   void SetUp() override {
@@ -85,6 +95,7 @@ class DeviceMemoryBufferTest : public ::testing::Test {
     g_mock_cuda.allocate_count_ = 0;
     g_mock_cuda.deallocate_count_ = 0;
     g_mock_cuda.last_allocate_size_ = 0;
+    g_mock_cuda.last_allocate_alignment_ = 0;
     g_mock_cuda.last_deallocate_ptr_ = nullptr;
   }
 };
@@ -164,4 +175,19 @@ TEST_F(DeviceMemoryBufferTest, AsSpanWrapsDevicePointer) {
   auto span = buf.as_span();
   EXPECT_EQ(span.data(), static_cast<uint8_t*>(buf.data()));
   EXPECT_EQ(span.size(), 2048);
+}
+
+TEST_F(DeviceMemoryBufferTest, CreateUsesDefaultAlignmentWhenUnspecified) {
+  auto result = DeviceMemoryBuffer::create(1024, DeviceType::CUDA, 0);
+  ASSERT_TRUE(result.ok());
+  EXPECT_EQ(
+      g_mock_cuda.last_allocate_alignment_, DeviceAllocator::kDefaultAlignment);
+}
+
+TEST_F(DeviceMemoryBufferTest, CreateForwardsCustomAlignmentToAllocator) {
+  constexpr size_t kCustomAlignment = 512;
+  auto result =
+      DeviceMemoryBuffer::create(1024, DeviceType::CUDA, 0, kCustomAlignment);
+  ASSERT_TRUE(result.ok());
+  EXPECT_EQ(g_mock_cuda.last_allocate_alignment_, kCustomAlignment);
 }

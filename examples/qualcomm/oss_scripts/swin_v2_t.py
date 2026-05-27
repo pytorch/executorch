@@ -21,19 +21,21 @@ from executorch.backends.qualcomm._passes.qnn_pass_manager import (
     QCOM_PASS_ACTIVATE_KEY,
     QCOM_PASS_ARGS_KWARGS_DEFAULTS_KEY,
 )
+from executorch.backends.qualcomm.export_utils import (
+    build_executorch_binary,
+    make_quantizer,
+    QnnConfig,
+    setup_common_args_and_variables,
+    SimpleADB,
+)
 
 from executorch.backends.qualcomm.quantizer.quantizer import QuantDtype
 from executorch.backends.qualcomm.serialization.qc_schema import (
     QnnExecuTorchBackendType,
 )
 from executorch.examples.qualcomm.utils import (
-    build_executorch_binary,
-    get_backend_type,
     get_imagenet_dataset,
     make_output_dir,
-    make_quantizer,
-    setup_common_args_and_variables,
-    SimpleADB,
     topk_accuracy,
 )
 from executorch.exir.dialects._ops import ops as exir_ops
@@ -76,6 +78,8 @@ def main(args):
     # ensure the working directory exist.
     os.makedirs(args.artifact, exist_ok=True)
 
+    qnn_config = QnnConfig.load_config(args.config_file if args.config_file else args)
+
     data_num = 100
     if args.ci:
         inputs = [(torch.rand(1, 3, 224, 224),)]
@@ -99,45 +103,31 @@ def main(args):
     }
     passes_dep = get_passes_dependency_for_capture_program()
     passes_dep[RewritePartition] = [FoldQDQ]
-    backend = get_backend_type(args.backend)
     qnn_quantizer = {
         QnnExecuTorchBackendType.kGpuBackend: None,
         QnnExecuTorchBackendType.kHtpBackend: make_quantizer(
             quant_dtype=QuantDtype.use_8a8w,
             per_channel_linear=True,
-            backend=backend,
-            soc_model=args.model,
+            backend=qnn_config.backend,
+            soc_model=qnn_config.soc_model,
         ),
-    }[backend]
+    }[qnn_config.backend]
     build_executorch_binary(
-        instance,
-        inputs[0],
-        args.model,
-        f"{args.artifact}/{pte_filename}",
-        inputs,
+        model=instance,
+        qnn_config=qnn_config,
+        file_name=f"{args.artifact}/{pte_filename}",
+        dataset=inputs,
         custom_quantizer=qnn_quantizer,
-        backend=backend,
-        shared_buffer=args.shared_buffer,
         passes_job=passes_job,
         passes_dependency=passes_dep,
-        online_prepare=args.online_prepare,
     )
-
-    if args.compile_only:
-        return
 
     adb = SimpleADB(
-        qnn_sdk=os.getenv("QNN_SDK_ROOT"),
-        build_path=f"{args.build_folder}",
+        qnn_config=qnn_config,
         pte_path=f"{args.artifact}/{pte_filename}.pte",
         workspace=f"/data/local/tmp/executorch/{pte_filename}",
-        device_id=args.device,
-        host_id=args.host,
-        soc_model=args.model,
-        shared_buffer=args.shared_buffer,
-        target=args.target,
     )
-    adb.push(inputs=inputs, backends={backend})
+    adb.push(inputs=inputs)
     adb.execute()
 
     # collect output data
@@ -188,7 +178,7 @@ if __name__ == "__main__":
     )
 
     args = parser.parse_args()
-    args.validate(args)
+
     try:
         main(args)
     except Exception as e:

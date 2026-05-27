@@ -39,6 +39,7 @@ class TableOps:
         exir_ops.edge.aten.floor.default: torch.floor,
         exir_ops.edge.aten.log.default: torch.log,
         exir_ops.edge.aten.log1p.default: torch.log1p,
+        exir_ops.edge.aten.log10.default: torch.log10,
         exir_ops.edge.aten.reciprocal.default: torch.reciprocal,
         exir_ops.edge.aten.rsqrt.default: torch.rsqrt,
         exir_ops.edge.aten.sigmoid.default: torch.sigmoid,
@@ -99,9 +100,11 @@ class TableOps:
                         x, approximate=approximate
                     ).flatten()
                 case exir_ops.edge.aten.elu.default:
-                    input_alpha = cast(int, node.kwargs["alpha"])
-                    return lambda x: torch.nn.functional.elu(
-                        x, alpha=input_alpha
+                    input_alpha = cast(float, node.meta["float_alpha"])
+                    input_scale = cast(float, node.meta.get("float_input_scale", 1.0))
+                    scale = cast(float, node.meta.get("float_scale", 1.0))
+                    return lambda x: torch.ops.aten.elu.default(
+                        x, input_alpha, scale, input_scale
                     ).flatten()
                 case exir_ops.edge.aten.remainder.Scalar:
                     divisor = cast(float | int, node.args[1])
@@ -138,6 +141,17 @@ class InsertTableOpsPass(ArmPass):
         """Add buffer to self.exported_program.state_dict."""
         self.exported_program.state_dict[buffer_name] = buffer
 
+    @staticmethod
+    def _get_8bit_table_domain() -> torch.Tensor:
+        """Return the canonical 8-bit TOSA TABLE input domain."""
+        int8_info = torch.iinfo(torch.int8)
+        # torch.arange excludes the end value, so use max + 1 to include 127.
+        return torch.arange(
+            int8_info.min,
+            int8_info.max + 1,
+            dtype=torch.int8,
+        )
+
     def generate_8bit_table_values(
         self,
         torch_op: Callable[[torch.Tensor], torch.Tensor],
@@ -156,17 +170,10 @@ class InsertTableOpsPass(ArmPass):
             x = torch_op(x)
             return out_quantargs.quantize_value(x)
 
-        return (
-            f(
-                torch.linspace(
-                    start=in_quantargs.qmin,
-                    end=in_quantargs.qmax,
-                    steps=256,
-                    dtype=torch.int8,
-                )
-            ).to(dtype=torch.int8),
-            0,
+        effective_codes = self._get_8bit_table_domain().clamp(
+            in_quantargs.qmin, in_quantargs.qmax
         )
+        return (f(effective_codes).to(dtype=torch.int8), 0)
 
     def generate_16_bit_table_values(
         self,
@@ -273,11 +280,12 @@ class InsertTableOpsPass(ArmPass):
                     out_quantargs=output_qparams[0],
                 )
                 # Register buffer in self.exported_program.state_dict
+                # b_ prefix is important to be recognized as a constant in RemovePermutesAroundElementwiseOps
                 const_table_node = create_constant_placeholder(
                     exp_program=self.exported_program,
                     graph=node.graph,
                     kind=InputKind.BUFFER,
-                    name=node.name + "_table_constant",
+                    name="b_" + node.name + "_table_constant",
                     data=buffer,
                     persistent_buffer=True,
                 )

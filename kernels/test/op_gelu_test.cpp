@@ -9,6 +9,7 @@
 #include <executorch/kernels/test/FunctionHeaderWrapper.h> // Declares the operator
 #include <executorch/kernels/test/TestUtil.h>
 #include <executorch/kernels/test/supported_features.h>
+#include <executorch/kernels/test/supported_features_skip.h>
 #include <executorch/runtime/core/exec_aten/exec_aten.h>
 #include <executorch/runtime/core/exec_aten/testing_util/tensor_factory.h>
 #include <executorch/runtime/core/exec_aten/testing_util/tensor_util.h>
@@ -79,9 +80,7 @@ TEST_F(OpGeluTest, BFloat16Tensors) {
 }
 
 TEST_F(OpGeluTest, DoubleTensors) {
-  if (!SupportedFeatures::get()->op_gelu_dtype_double) {
-    GTEST_SKIP();
-  }
+  ET_SKIP_IF(!SupportedFeatures::get()->op_gelu_dtype_double, "");
 
   test_gelu_execution<ScalarType::Double>();
 }
@@ -213,8 +212,8 @@ TEST_F(OpGeluTest, DynamicShapeUpperBoundSameAsExpected) {
   EXPECT_TENSOR_CLOSE(out, expected_result);
 }
 
-TEST_F(OpGeluTest, DynamicShapeUpperBoundLargerThanExpected) {
-  GTEST_SKIP() << "Dynamic shape not supported";
+// DISABLED: Dynamic shape not supported
+TEST_F(OpGeluTest, DISABLED_DynamicShapeUpperBoundLargerThanExpected) {
   TensorFactory<ScalarType::Float> tf;
 
   Tensor x = tf.make(
@@ -240,8 +239,8 @@ TEST_F(OpGeluTest, DynamicShapeUpperBoundLargerThanExpected) {
   EXPECT_TENSOR_CLOSE(out, expected_result);
 }
 
-TEST_F(OpGeluTest, DynamicShapeUnbound) {
-  GTEST_SKIP() << "Dynamic shape not supported";
+// DISABLED: Dynamic shape not supported
+TEST_F(OpGeluTest, DISABLED_DynamicShapeUnbound) {
   TensorFactory<ScalarType::Float> tf;
 
   Tensor x = tf.make(

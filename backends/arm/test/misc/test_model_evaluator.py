@@ -27,7 +27,7 @@ def mocked_model_2(input: torch.Tensor) -> torch.Tensor:
 class TestModelEvaluator(unittest.TestCase):
     """Tests the Arm model evaluators."""
 
-    def test_get_model_error_no_target(self):
+    def test_get_model_error(self):
         example_input = torch.tensor([[1.0, 2.0, 3.0, 4.0]])
         evaluator = NumericalModelEvaluator(
             "dummy_model",
@@ -44,7 +44,7 @@ class TestModelEvaluator(unittest.TestCase):
         self.assertEqual(metrics["max_percentage_error"], 25.0)
         self.assertEqual(metrics["mean_absolute_error"], 0.25)
 
-    def test_get_compression_ratio_no_target(self):
+    def test_get_compression_ratio(self):
         with tempfile.NamedTemporaryFile(delete=True) as temp_bin:
             torch.save(COMPRESSION_RATIO_TEST, temp_bin)
 

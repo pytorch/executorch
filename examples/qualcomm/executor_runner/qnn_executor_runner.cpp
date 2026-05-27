@@ -29,6 +29,7 @@
 #include <executorch/runtime/platform/log.h>
 #include <executorch/runtime/platform/runtime.h>
 
+#include <c10/util/safe_numerics.h>
 #include <gflags/gflags.h>
 
 #include <chrono>
@@ -102,12 +103,52 @@ DEFINE_int32(
     "This is a runtime option and will override the performance mode set during AOT. "
     "Refer to QnnExecuTorchHtpPerformanceMode under qc_compiler_spec.fbs for more info.");
 DEFINE_int32(
+    lpai_fps,
+    0,
+    "Specify the fps rate number. "
+    "This is a runtime option and will override the fps set during AOT. "
+    "Refer to QnnExecuTorchLpaiBackendOptions under qc_compiler_spec.fbs for more info.");
+DEFINE_int32(
+    lpai_ftrt_ratio,
+    0,
+    "Specify the ftrt_ratio number. "
+    "This is a runtime option and will override the ftrt ratio set during AOT. "
+    "Refer to QnnExecuTorchLpaiBackendOptions under qc_compiler_spec.fbs for more info.");
+DEFINE_int32(
+    lpai_client_perf_type,
+    0,
+    "Select LPAI Client performance type from 1 or 2. "
+    "1: kRealTime; 2: kNonRealTime "
+    "This is a runtime option and will override the client type set during AOT. "
+    "Refer to QnnExecuTorchLpaiClientPerf under qc_compiler_spec.fbs for more info.");
+DEFINE_int32(
+    lpai_affinity,
+    0,
+    "Select LPAI affinity from 1 or 2.  "
+    "1: kSoft; 2: kHard "
+    "This is a runtime option and will override the affinity set during AOT. "
+    "Refer to QnnExecuTorchLpaiCoreAffinity under qc_compiler_spec.fbs for more info.");
+DEFINE_int32(
+    lpai_core_selection,
+    0,
+    "Specifies which core(s) to select. "
+    "1: selects core 0; 2: selects core 1.  "
+    "This is a runtime option and will override the core selection set during AOT. "
+    "Refer to QnnExecuTorchLpaiBackendOptions under qc_compiler_spec.fbs for more info.");
+DEFINE_int32(
     profile_level,
     0,
     "Profile level between 0-2. "
     "Level 3(Optrace) must be turned on during AOT and cannot be enabled during runtime. "
     "This is a runtime option and will override the profile level set during AOT. "
     "Refer to QnnExecuTorchProfileLevel under qc_compiler_spec.fbs for more info.");
+
+DEFINE_string(
+    heap_profiling_path,
+    "",
+    "Output path for QNN heap-profiling dump. "
+    "Empty disables heap profiling. "
+    "This is a runtime option and will override the path set during AOT.");
 
 using executorch::aten::Tensor;
 using executorch::aten::TensorImpl;
@@ -179,7 +220,7 @@ int main(int argc, char** argv) {
   }
 
   // Set runtime options
-  executorch::runtime::BackendOptions<3> backend_options;
+  executorch::runtime::BackendOptions<9> backend_options;
   if (!gflags::GetCommandLineFlagInfoOrDie("log_level").is_default) {
     ET_LOG(Info, "Setting runtime log level: %d", FLAGS_log_level);
     ET_CHECK_MSG(
@@ -207,6 +248,67 @@ int main(int argc, char** argv) {
             QNN_RUNTIME_PROFILE_LEVEL, FLAGS_profile_level) == Error::Ok,
         "Failed to set backend options: %s",
         QNN_RUNTIME_PROFILE_LEVEL);
+  }
+  if (!gflags::GetCommandLineFlagInfoOrDie("lpai_fps").is_default) {
+    ET_LOG(Info, "Setting runtime LPAI fps: %d", FLAGS_lpai_fps);
+    ET_CHECK_MSG(
+        backend_options.set_option(QNN_RUNTIME_LPAI_FPS, FLAGS_lpai_fps) ==
+            Error::Ok,
+        "Failed to set backend options: %s",
+        QNN_RUNTIME_LPAI_FPS);
+  }
+  if (!gflags::GetCommandLineFlagInfoOrDie("lpai_ftrt_ratio").is_default) {
+    ET_LOG(Info, "Setting runtime LPAI ftrt ratio: %d", FLAGS_lpai_ftrt_ratio);
+    ET_CHECK_MSG(
+        backend_options.set_option(
+            QNN_RUNTIME_LPAI_FTRT_RATIO, FLAGS_lpai_ftrt_ratio) == Error::Ok,
+        "Failed to set backend options: %s",
+        QNN_RUNTIME_LPAI_FTRT_RATIO);
+  }
+  if (!gflags::GetCommandLineFlagInfoOrDie("lpai_client_perf_type")
+           .is_default) {
+    ET_LOG(
+        Info,
+        "Setting runtime LPAI client type: %d",
+        FLAGS_lpai_client_perf_type);
+    ET_CHECK_MSG(
+        backend_options.set_option(
+            QNN_RUNTIME_LPAI_CLIENT_PERF_TYPE, FLAGS_lpai_client_perf_type) ==
+            Error::Ok,
+        "Failed to set backend options: %s",
+        QNN_RUNTIME_LPAI_CLIENT_PERF_TYPE);
+  }
+  if (!gflags::GetCommandLineFlagInfoOrDie("lpai_affinity").is_default) {
+    ET_LOG(Info, "Setting runtime LPAI affinity: %d", FLAGS_lpai_affinity);
+    ET_CHECK_MSG(
+        backend_options.set_option(
+            QNN_RUNTIME_LPAI_AFFINITY, FLAGS_lpai_affinity) == Error::Ok,
+        "Failed to set backend options: %s",
+        QNN_RUNTIME_LPAI_AFFINITY);
+  }
+  if (!gflags::GetCommandLineFlagInfoOrDie("lpai_core_selection").is_default) {
+    ET_LOG(
+        Info,
+        "Setting runtime LPAI core selection: %d",
+        FLAGS_lpai_core_selection);
+    ET_CHECK_MSG(
+        backend_options.set_option(
+            QNN_RUNTIME_LPAI_CORE_SELECTION, FLAGS_lpai_core_selection) ==
+            Error::Ok,
+        "Failed to set backend options: %s",
+        QNN_RUNTIME_LPAI_CORE_SELECTION);
+  }
+  if (!gflags::GetCommandLineFlagInfoOrDie("heap_profiling_path").is_default) {
+    ET_LOG(
+        Info,
+        "Setting runtime heap_profiling_path: %s",
+        FLAGS_heap_profiling_path.c_str());
+    ET_CHECK_MSG(
+        backend_options.set_option(
+            QNN_RUNTIME_HEAP_PROFILING_PATH,
+            FLAGS_heap_profiling_path.c_str()) == Error::Ok,
+        "Failed to set backend options: %s",
+        QNN_RUNTIME_HEAP_PROFILING_PATH);
   }
   ET_CHECK_MSG(
       set_option(QNN_BACKEND, backend_options.view()) == Error::Ok,
@@ -531,11 +633,19 @@ int main(int argc, char** argv) {
         auto output_tensor = outputs[output_index].toTensor();
         size_t nbytes = output_tensor.nbytes();
         if (!expected_output_shapes.empty()) {
-          nbytes = std::accumulate(
-              expected_output_shapes[output_index].begin(),
-              expected_output_shapes[output_index].end(),
-              executorch::runtime::elementSize(output_tensor.scalar_type()),
-              std::multiplies<int>());
+          size_t computed = static_cast<size_t>(
+              executorch::runtime::elementSize(output_tensor.scalar_type()));
+          for (int32_t dim : expected_output_shapes[output_index]) {
+            ET_CHECK_MSG(
+                dim >= 0,
+                "Negative dimension %d in expected output shape",
+                dim);
+            ET_CHECK_MSG(
+                !c10::mul_overflows(
+                    computed, static_cast<size_t>(dim), &computed),
+                "Overflow computing expected output nbytes");
+          }
+          nbytes = computed;
         }
         auto output_file_name = FLAGS_output_folder_path + "/output_" +
             std::to_string(inference_index) + "_" +

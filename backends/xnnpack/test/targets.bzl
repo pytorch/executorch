@@ -96,6 +96,9 @@ def define_common_targets():
     runtime.cxx_test(
         name = "test_workspace_manager",
         srcs = ["runtime/test_workspace_manager.cpp"],
+        preprocessor_flags = [
+            "-DXNNPACK_WORKSPACE_ALWAYS_LOCK",
+        ],
         deps = [
                 third_party_dep("XNNPACK"),
                 "//executorch/backends/xnnpack:xnnpack_backend",

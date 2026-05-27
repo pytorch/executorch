@@ -9,6 +9,7 @@
 #include <executorch/kernels/test/FunctionHeaderWrapper.h> // Declares the operator
 #include <executorch/kernels/test/TestUtil.h>
 #include <executorch/kernels/test/supported_features.h>
+#include <executorch/kernels/test/supported_features_skip.h>
 #include <executorch/runtime/core/exec_aten/exec_aten.h>
 #include <executorch/runtime/core/exec_aten/testing_util/tensor_factory.h>
 #include <executorch/runtime/core/exec_aten/testing_util/tensor_util.h>
@@ -430,9 +431,9 @@ TEST_F(OpMulOutTest, OptimizedPathIgnoresLeading1Dimensions) {
 
 // Mismatched shape tests.
 TEST_F(OpMulOutTest, MismatchedNonBroadcastableInputShapesDies) {
-  if (SupportedFeatures::get()->is_aten) {
-    GTEST_SKIP() << "ATen currently supports mismatched shapes";
-  }
+  ET_SKIP_IF(
+      SupportedFeatures::get()->is_aten,
+      "ATen currently supports mismatched shapes");
 
   TensorFactory<ScalarType::Int> tf;
 
@@ -519,9 +520,9 @@ TEST_F(OpMulOutTest, AllComplexDtypesSupported) {
 }
 
 TEST_F(OpMulOutTest, MismatchedOutputShapesDies) {
-  if (SupportedFeatures::get()->is_aten) {
-    GTEST_SKIP() << "ATen currently supports mismatched shapes";
-  }
+  ET_SKIP_IF(
+      SupportedFeatures::get()->is_aten,
+      "ATen currently supports mismatched shapes");
 
   TensorFactory<ScalarType::Int> tf;
 
@@ -711,8 +712,8 @@ TEST_F(OpMulOutTest, DynamicShapeUpperBoundLargerThanExpected) {
   EXPECT_TENSOR_CLOSE(out, expected_result);
 }
 
-TEST_F(OpMulOutTest, DynamicShapeUnbound) {
-  GTEST_SKIP() << "Dynamic shape not supported";
+// DISABLED: Dynamic shape not supported
+TEST_F(OpMulOutTest, DISABLED_DynamicShapeUnbound) {
   TensorFactory<ScalarType::Float> tf;
 
   Tensor x = tf.make(

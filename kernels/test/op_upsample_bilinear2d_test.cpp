@@ -9,6 +9,7 @@
 #include <executorch/kernels/test/FunctionHeaderWrapper.h> // Declares the operator
 #include <executorch/kernels/test/TestUtil.h>
 #include <executorch/kernels/test/supported_features.h>
+#include <executorch/kernels/test/supported_features_skip.h>
 #include <executorch/runtime/core/exec_aten/exec_aten.h>
 #include <executorch/runtime/core/exec_aten/testing_util/tensor_factory.h>
 #include <executorch/runtime/core/exec_aten/testing_util/tensor_util.h>
@@ -315,10 +316,9 @@ TEST_F(OpUpsampleBilinear2dTest, DType) {
 }
 
 TEST_F(OpUpsampleBilinear2dTest, MismatchedOutputSizeDies) {
-  if (SupportedFeatures::get()->output_resize) {
-    GTEST_SKIP()
-        << "The current kernel supports implicitly resizing output tensor";
-  }
+  ET_SKIP_IF(
+      SupportedFeatures::get()->output_resize,
+      "The current kernel supports implicitly resizing output tensor");
   TensorFactory<ScalarType::Float> tf;
 
   const auto input = tf.ones({1, 1, 1, 2});
@@ -471,9 +471,9 @@ TEST_F(OpUpsampleBilinear2dTest, ZeroComputedOutputSizeDies) {
 TEST_F(OpUpsampleBilinear2dTest, MismatchedDimOrderDies) {
   TensorFactory<ScalarType::Float> tf;
 
-  if (torch::executor::testing::SupportedFeatures::get()->is_aten) {
-    GTEST_SKIP() << "ATen kernel can implicitly convert dim order";
-  }
+  ET_SKIP_IF(
+      torch::executor::testing::SupportedFeatures::get()->is_aten,
+      "ATen kernel can implicitly convert dim order");
 
   const auto input = tf.ones({1, 1, 1, 2});
   auto out = tf.zeros_channels_last({1, 1, 1, 4});

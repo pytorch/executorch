@@ -9,6 +9,7 @@
 #include <executorch/kernels/test/FunctionHeaderWrapper.h> // Declares the operator
 #include <executorch/kernels/test/TestUtil.h>
 #include <executorch/kernels/test/supported_features.h>
+#include <executorch/kernels/test/supported_features_skip.h>
 #include <executorch/runtime/core/exec_aten/exec_aten.h>
 #include <executorch/runtime/core/exec_aten/testing_util/tensor_factory.h>
 #include <executorch/runtime/core/exec_aten/testing_util/tensor_util.h>
@@ -277,9 +278,9 @@ TEST_F(OpMinUnaryOutTest, EmptyFloatingInput) {
 }
 
 TEST_F(OpMinOutTest, MismatchedDimensionsDies) {
-  if (torch::executor::testing::SupportedFeatures::get()->is_aten) {
-    GTEST_SKIP() << "ATen kernel test fails";
-  }
+  ET_SKIP_IF(
+      torch::executor::testing::SupportedFeatures::get()->is_aten,
+      "ATen kernel test fails");
 #define TEST_ENTRY(ctype, dtype) \
   test_min_out_invalid_dimensions<ScalarType::dtype>();
   ET_FORALL_REAL_TYPES_AND(Bool, TEST_ENTRY);
@@ -287,9 +288,9 @@ TEST_F(OpMinOutTest, MismatchedDimensionsDies) {
 }
 
 TEST_F(OpMinOutTest, MismatchedDTypesDies) {
-  if (torch::executor::testing::SupportedFeatures::get()->is_aten) {
-    GTEST_SKIP() << "ATen kernel test fails";
-  }
+  ET_SKIP_IF(
+      torch::executor::testing::SupportedFeatures::get()->is_aten,
+      "ATen kernel test fails");
   TensorFactory<ScalarType::Float> tf_float;
   TensorFactory<ScalarType::Long> tf_long;
 
@@ -366,9 +367,9 @@ TEST_F(OpMinOutTest, DynamicShapeUpperBoundLargerThanExpected) {
 }
 
 TEST_F(OpMinOutTest, DynamicShapeUnbound) {
-  if (!torch::executor::testing::SupportedFeatures::get()->output_resize) {
-    GTEST_SKIP() << "Dynamic shape unbound not supported";
-  }
+  ET_SKIP_IF(
+      !torch::executor::testing::SupportedFeatures::get()->output_resize,
+      "Dynamic shape unbound not supported");
   test_dynamic_shape(
       {1, 1}, torch::executor::TensorShapeDynamism::DYNAMIC_UNBOUND);
 }

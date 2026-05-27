@@ -129,6 +129,9 @@ VkDevice create_logical_device(
 #ifdef VK_NV_cooperative_matrix2
       VK_NV_COOPERATIVE_MATRIX_2_EXTENSION_NAME,
 #endif /* VK_NV_cooperative_matrix2 */
+#ifdef VK_EXT_subgroup_size_control
+      VK_EXT_SUBGROUP_SIZE_CONTROL_EXTENSION_NAME,
+#endif /* VK_EXT_subgroup_size_control */
   };
 
   std::vector<const char*> enabled_device_extensions;
@@ -198,6 +201,19 @@ VkDevice create_logical_device(
   cooperative_matrix2_features.pNext = extension_list_top;
   extension_list_top = &cooperative_matrix2_features;
 #endif /* VK_NV_cooperative_matrix2 */
+
+#ifdef VK_EXT_subgroup_size_control
+  // Only enable the feature struct if the extension was actually requested
+  // and the feature flag is set on the physical device. The extension itself
+  // is filtered into enabled_device_extensions by
+  // find_requested_device_extensions.
+  VkPhysicalDeviceSubgroupSizeControlFeaturesEXT subgroup_size_control_features{
+      physical_device.subgroup_size_control_features};
+  if (physical_device.supports_subgroup_size_control) {
+    subgroup_size_control_features.pNext = extension_list_top;
+    extension_list_top = &subgroup_size_control_features;
+  }
+#endif /* VK_EXT_subgroup_size_control */
 
   device_create_info.pNext = extension_list_top;
 
@@ -405,7 +421,7 @@ std::string Adapter::stringize() const {
   ss << "    deviceType:    " << device_type << std::endl;
   ss << "    deviceName:    " << properties.deviceName << std::endl;
 
-#define PRINT_BOOL(value, name) \
+#define PRINT_VALUE(value, name) \
   ss << "      " << std::left << std::setw(36) << #name << value << std::endl;
 
 #define PRINT_PROP(struct, name)                                       \
@@ -452,7 +468,7 @@ std::string Adapter::stringize() const {
 #endif /* VK_KHR_8bit_storage */
 
   ss << "    Shader 16bit and 8bit Features {" << std::endl;
-  PRINT_BOOL(physical_device_.supports_int16_shader_types, shaderInt16)
+  PRINT_VALUE(physical_device_.supports_int16_shader_types, shaderInt16)
 #ifdef VK_KHR_shader_float16_int8
   PRINT_PROP(physical_device_.shader_float16_int8_types, shaderFloat16);
   PRINT_PROP(physical_device_.shader_float16_int8_types, shaderInt8);
@@ -460,8 +476,29 @@ std::string Adapter::stringize() const {
   ss << "    }" << std::endl;
 
   ss << "    Shader 64bit Features {" << std::endl;
-  PRINT_BOOL(physical_device_.supports_int64_shader_types, shaderInt64)
-  PRINT_BOOL(physical_device_.supports_float64_shader_types, shaderFloat64)
+  PRINT_VALUE(physical_device_.supports_int64_shader_types, shaderInt64)
+  PRINT_VALUE(physical_device_.supports_float64_shader_types, shaderFloat64)
+  ss << "    }" << std::endl;
+
+  ss << "    Subgroup Properties {" << std::endl;
+  PRINT_VALUE(subgroup_size(), subgroupSize)
+  PRINT_VALUE(supports_subgroup_compute_basic(), computeSubgroupBasic)
+  PRINT_VALUE(supports_subgroup_compute_shuffle(), computeSubgroupShuffle)
+  PRINT_VALUE(supports_subgroup_compute_ballot(), computeSubgroupBallot)
+  PRINT_VALUE(supports_subgroup_compute_vote(), computeSubgroupVote)
+  PRINT_VALUE(supports_subgroup_compute_arithmetic(), computeSubgroupArithmetic)
+  PRINT_VALUE(
+      supports_subgroup_compute_shuffle_relative(),
+      computeSubgroupShuffleRelative)
+  PRINT_VALUE(supports_subgroup_compute_clustered(), computeSubgroupClustered)
+  PRINT_VALUE(supports_subgroup_compute_quad(), computeSubgroupQuad)
+  PRINT_VALUE(min_subgroup_size(), minSubgroupSize)
+  PRINT_VALUE(max_subgroup_size(), maxSubgroupSize)
+  PRINT_VALUE(supports_subgroup_size_control(), subgroupSizeControl)
+  PRINT_VALUE(supports_compute_full_subgroups(), computeFullSubgroups)
+  PRINT_VALUE(
+      supports_required_subgroup_size_for_compute(),
+      requiredSubgroupSizeStages_compute)
   ss << "    }" << std::endl;
 
 #ifdef VK_KHR_shader_integer_dot_product
@@ -612,6 +649,25 @@ std::string Adapter::stringize() const {
 std::ostream& operator<<(std::ostream& os, const Adapter& adapter) {
   os << adapter.stringize() << std::endl;
   return os;
+}
+
+uint32_t resolve_required_subgroup_size(
+    const ShaderInfo& shader,
+    Adapter* adapter) {
+  if (shader.required_subgroup_size == 0u) {
+    return 0u;
+  }
+  if (!adapter->supports_required_subgroup_size_for_compute()) {
+    throw ShaderNotSupportedError(
+        shader.kernel_name, VulkanExtension::SUBGROUP_SIZE_CONTROL);
+  }
+  const uint32_t resolved = shader.required_subgroup_size;
+  if (resolved < adapter->min_subgroup_size() ||
+      resolved > adapter->max_subgroup_size()) {
+    throw ShaderNotSupportedError(
+        shader.kernel_name, VulkanExtension::SUBGROUP_SIZE_CONTROL);
+  }
+  return resolved;
 }
 
 } // namespace vkapi
