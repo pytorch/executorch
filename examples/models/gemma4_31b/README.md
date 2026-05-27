@@ -98,7 +98,7 @@ recipe. Writes `model.safetensors`, `config.json`, and `tokenizer.json` into
 
 ```bash
 python examples/models/gemma4_31b/export.py \
-    --prequantized ./gemma4_31b-it-HQQ-INT4-vision \
+    --prequantized ./gemma-4-31B-it-HQQ-INT4 \
     --output-dir ./gemma4_31b_exports \
     --max-seq-len 4096 \
     --backend cuda
@@ -113,7 +113,7 @@ inference. Text-only inference just skips the `vision_encoder` call.
 
 ```bash
 python examples/models/gemma4_31b/export.py \
-    --prequantized ./gemma4_31b_int4 \
+    --prequantized ./gemma-4-31B-it-HQQ-INT4 \
     --output-dir ./gemma4_31b_exports_mlx \
     --max-seq-len 4096 \
     --backend mlx
@@ -134,7 +134,7 @@ Pass `--raw-prompt` to skip template wrapping for pre-formatted input.
 
 ```bash
 python examples/models/gemma4_31b/inference.py \
-    --prequantized ./gemma4_31b-it-HQQ-INT4-vision \
+    --prequantized ./gemma-4-31B-it-HQQ-INT4 \
     --prompt "Write a short joke about saving RAM." \
     --max-new-tokens 128 \
     --temperature 0.8
@@ -144,7 +144,7 @@ python examples/models/gemma4_31b/inference.py \
 
 ```bash
 python examples/models/gemma4_31b/inference.py \
-    --prequantized ./gemma4_31b-it-HQQ-INT4-vision \
+    --prequantized ./gemma-4-31B-it-HQQ-INT4 \
     --image-path docs/source/_static/img/et-logo.png \
     --prompt "Describe this image." \
     --max-new-tokens 128 \
@@ -217,7 +217,7 @@ Pass `--raw_prompt` to skip template wrapping for pre-formatted input.
 ./cmake-out/examples/models/gemma4_31b/gemma4_31b_runner \
     --model_path  ./gemma4_31b_exports/model.pte \
     --data_path   ./gemma4_31b_exports/aoti_cuda_blob.ptd \
-    --tokenizer_path ./gemma4_31b-it-HQQ-INT4-vision/tokenizer.json \
+    --tokenizer_path ./gemma-4-31B-it-HQQ-INT4/tokenizer.json \
     --prompt "Write a short joke about saving RAM." \
     --max_new_tokens 128 \
     --temperature 0.8
@@ -229,7 +229,7 @@ Pass `--raw_prompt` to skip template wrapping for pre-formatted input.
 ./cmake-out/examples/models/gemma4_31b/gemma4_31b_runner \
     --model_path  ./gemma4_31b_exports/model.pte \
     --data_path   ./gemma4_31b_exports/aoti_cuda_blob.ptd \
-    --tokenizer_path ./gemma4_31b-it-HQQ-INT4-vision/tokenizer.json \
+    --tokenizer_path ./gemma-4-31B-it-HQQ-INT4/tokenizer.json \
     --image_path docs/source/_static/img/et-logo.png \
     --prompt "Describe this image." \
     --max_new_tokens 64 \
