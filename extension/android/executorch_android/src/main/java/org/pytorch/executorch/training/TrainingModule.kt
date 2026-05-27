@@ -25,8 +25,8 @@ import org.pytorch.executorch.annotations.Experimental
  * Warning: These APIs are experimental and subject to change without notice
  */
 @Experimental
-class TrainingModule
-private constructor(moduleAbsolutePath: String, dataAbsolutePath: String) : Closeable {
+class TrainingModule private constructor(moduleAbsolutePath: String, dataAbsolutePath: String) :
+    Closeable {
 
   private val mHybridData: HybridData = initHybrid(moduleAbsolutePath, dataAbsolutePath)
   private val mLock = ReentrantLock()
