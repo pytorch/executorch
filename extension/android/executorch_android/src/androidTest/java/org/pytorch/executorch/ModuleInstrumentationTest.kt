@@ -94,7 +94,7 @@ class ModuleInstrumentationTest {
           }
       Assert.assertEquals(
           ExecutorchRuntimeException.INVALID_ARGUMENT,
-          exception.getErrorCode(),
+          exception.errorCode,
       )
     } finally {
       module.destroy()
