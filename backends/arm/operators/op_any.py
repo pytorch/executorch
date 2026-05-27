@@ -47,7 +47,7 @@ class AnyVisitor(NodeVisitor):
             raise ValueError("This case should be handled by DecomposeAnyPass")
 
         attr = ts.TosaSerializerAttribute()
-        attr.ReduceAnyAttribute(inputs[0].dim_order.index(dim))
+        attr.ReduceAnyAttribute(dim)
 
         self._serialize_operator(
             node,

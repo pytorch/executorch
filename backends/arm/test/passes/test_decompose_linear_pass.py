@@ -25,7 +25,7 @@ class Linear(torch.nn.Module):
         return (torch.randn(1, 3, 16),)
 
 
-def test_decompose_linear_no_target_dynamic() -> None:
+def test_decompose_linear_dynamic() -> None:
     module = Linear()
     example_inputs = module.get_example_inputs()
     ep = export(

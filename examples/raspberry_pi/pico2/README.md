@@ -82,17 +82,38 @@ This involves two steps:
 
 ### Generate your model:
 
+**FP32 model (default):**
 ```bash
 cd examples/raspberry_pi/pico2
 python export_mlp_mnist.py # Creates balanced_tiny_mlp_mnist.pte
 ```
 
+**INT8 quantized model (CMSIS-NN accelerated):**
+```bash
+cd examples/raspberry_pi/pico2
+python export_mlp_mnist_cmsis.py # Creates balanced_tiny_mlp_mnist_cmsis.pte
+```
+
 ### Build firmware:
 
+**FP32 build:**
 ```bash
 # In the dir examples/raspberry_pi/pico2
-./build_firmware_pico.sh --model=balanced_tiny_mlp_mnist.pte # This creates executorch_pico.uf2, a firmware image for Pico2
+./build_firmware_pico.sh --model=balanced_tiny_mlp_mnist.pte
 ```
+
+**INT8 CMSIS-NN build:**
+```bash
+# In the dir examples/raspberry_pi/pico2
+./build_firmware_pico.sh --cmsis --model=balanced_tiny_mlp_mnist_cmsis.pte
+```
+
+**Script options:**
+| Flag | Description |
+|------|-------------|
+| `--model=FILE` | Specify model file to embed (relative to pico2/) |
+| `--cmsis` | Build with CMSIS-NN INT8 kernels for Cortex-M33 acceleration |
+| `--clean` | Clean build directories and exit (run separately before building) |
 
 ### Flash Firmware
 
@@ -105,9 +126,13 @@ The Pico2 LED blinks 10 times at 500ms intervals for successful execution. Via s
 ```bash
 ...
 ...
-PREDICTED: 4 (Expected: 4) ✅ CORRECT!
+🎯 PREDICTED: 4 (Expected: 4) ✅ CORRECT!
 
 ==================================================
+
+📊 Memory usage after method load:
+   Method allocator: 45632 / 204800 bytes used
+   Activation pool: 204800 bytes allocated
 
 === Digit 7 ===
 ############################
@@ -141,6 +166,7 @@ PREDICTED: 4 (Expected: 4) ✅ CORRECT!
 
 Input stats: 159 white pixels out of 784 total
 Running neural network inference...
+⏱️  Inference time: 245 us
 ✅ Neural network results:
   Digit 0: 370.000
   Digit 1: 0.000
@@ -153,11 +179,18 @@ Running neural network inference...
   Digit 8: -3.000
   Digit 9: -3.000
 
-� PREDICTED: 7 (Expected: 7) ✅ CORRECT!
+🎯 PREDICTED: 7 (Expected: 7) ✅ CORRECT!
 
 ==================================================
 
-🎉 All tests complete! PyTorch neural network works on Pico2!
+📊 Inference latency summary:
+  Digit 0: 312 us
+  Digit 1: 198 us
+  Digit 4: 267 us
+  Digit 7: 245 us
+  Average: 255 us
+
+🎉 All tests complete! ExecuTorch inference of neural network works on Pico2!
 ```
 
 ### Debugging via Serial Terminal
@@ -170,4 +203,21 @@ screen /dev/tty.usbmodem1101 115200
 
 Replace `/dev/tty.usbmodem1101` with your device path. If LED blinks 10 times at 100ms intervals, check logs for errors, but if it blinks 10 times at 500ms intervals, it is successful!
 
-Result: A complete PyTorch → ExecuTorch → Pico2 demo MNIST deployment! 🚀
+## CMSIS-NN INT8 Acceleration
+
+The Pico2 uses an RP2350 SoC with a Cortex-M33 core. The CMSIS-NN library provides optimized INT8 kernels that leverage the Cortex-M33's DSP instructions for faster inference compared to FP32 portable ops.
+
+### How it works
+
+1. `export_mlp_mnist_cmsis.py` uses `CortexMQuantizer` to quantize the model to INT8
+2. The model I/O remains float — quantize/dequantize nodes are inserted inside the graph
+3. `--cmsis` flag builds ExecuTorch with the Cortex-M backend and links CMSIS-NN kernels
+4. At runtime, quantized linear ops dispatch to CMSIS-NN instead of portable kernels
+
+### When to use CMSIS-NN
+
+- Lower latency on supported ops (linear, conv2d)
+- Smaller model size (INT8 weights vs FP32)
+- Trade-off: slight accuracy loss from quantization
+
+Result: A complete PyTorch → ExecuTorch → Pico2 demo MNIST deployment!

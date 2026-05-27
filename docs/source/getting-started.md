@@ -79,6 +79,8 @@ After successfully generating a .pte file, it is common to use the Python runtim
 
 For the MobileNet V2 model from torchvision used in this example, image inputs are expected as a normalized, float32 tensor with dimensions of (batch, channels, height, width). The output is a tensor containing class logits. See [torchvision.models.mobilenet_v2](https://pytorch.org/vision/main/models/generated/torchvision.models.mobilenet_v2.html) for more information on the input and output tensor format for this model.
 
+For more guidance on image preprocessing, channels-first and channels-last layouts, and CV output decoding, see [Working with Computer Vision Models](working-with-cv-models.md).
+
 ```python
 import torch
 from executorch.runtime import Runtime

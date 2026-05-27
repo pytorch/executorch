@@ -23,6 +23,28 @@ using executorch::runtime::is_contiguous_dim_order;
 using executorch::runtime::kTensorDimensionLimit;
 using executorch::runtime::Span;
 
+namespace {
+class InUseGuard {
+ public:
+  explicit InUseGuard(std::atomic<bool>& flag) : flag_(flag) {}
+  ~InUseGuard() {
+    if (!dismissed_) {
+      flag_.store(false, std::memory_order_release);
+    }
+  }
+  void dismiss() {
+    dismissed_ = true;
+  }
+
+  InUseGuard(const InUseGuard&) = delete;
+  InUseGuard& operator=(const InUseGuard&) = delete;
+
+ private:
+  std::atomic<bool>& flag_;
+  bool dismissed_ = false;
+};
+} // namespace
+
 /**
  * Initializes the XNNExecutor with the runtime and given number of
  * inputs/outputs externals_ is resized to the total number of inputs and
@@ -71,6 +93,21 @@ ET_NODISCARD Error XNNExecutor::initialize(
  * delegate->execute()
  */
 ET_NODISCARD Error XNNExecutor::prepare_args(Span<EValue*> args) {
+  ET_DCHECK_MSG(
+      !destroyed_.load(std::memory_order_acquire),
+      "XNNExecutor::prepare_args called after destroy");
+
+  bool was_in_use = in_use_.exchange(true, std::memory_order_acquire);
+  if (was_in_use) {
+    ET_LOG(Error, "XNNExecutor::prepare_args called concurrently");
+  }
+  ET_DCHECK_MSG(!was_in_use, "XNNExecutor::prepare_args called concurrently");
+
+  InUseGuard in_use_guard(in_use_);
+  if (was_in_use) {
+    in_use_guard.dismiss();
+  }
+
   ET_CHECK_OR_RETURN_ERROR(
       runtime_ != nullptr,
       Internal,
@@ -127,7 +164,7 @@ ET_NODISCARD Error XNNExecutor::prepare_args(Span<EValue*> args) {
           xnn_status_to_string(status));
     }
   }
-  // // Propagate Input Shape and Memory Plan for increased allocation
+  // Propagate Input Shape and Memory Plan for increased allocation
   status = xnn_reshape_runtime(runtime_.get());
 
   ET_CHECK_OR_RETURN_ERROR(
@@ -136,6 +173,13 @@ ET_NODISCARD Error XNNExecutor::prepare_args(Span<EValue*> args) {
       "Internal Error: Propagating input shapes failed with code: %s",
       xnn_status_to_string(status));
 
+  // Resize output tensors.
+  Error err = resize_outputs(args);
+  if (err != Error::Ok) {
+    return err;
+  }
+
+  in_use_guard.dismiss();
   return Error::Ok;
 }
 
@@ -146,6 +190,8 @@ ET_NODISCARD Error XNNExecutor::prepare_args(Span<EValue*> args) {
  * After which we then execute the runtime through invoke_runtime.
  */
 ET_NODISCARD Error XNNExecutor::forward(BackendExecutionContext& context) {
+  InUseGuard in_use_guard(in_use_);
+
   ET_CHECK_OR_RETURN_ERROR(
       runtime_ != nullptr,
       Internal,
@@ -154,11 +200,13 @@ ET_NODISCARD Error XNNExecutor::forward(BackendExecutionContext& context) {
   xnn_status status = xnn_setup_runtime_v2(
       runtime_.get(), externals_.size(), externals_.data());
 
-  ET_CHECK_OR_RETURN_ERROR(
-      status == xnn_status_success,
-      Internal,
-      "Internal Error: Setting up the runtime failed with code: %s",
-      xnn_status_to_string(status));
+  if (status != xnn_status_success) {
+    ET_LOG(
+        Error,
+        "Internal Error: Setting up the runtime failed with code: %s",
+        xnn_status_to_string(status));
+    return Error::Internal;
+  }
 
   auto error = profiler_.start(context.event_tracer());
   if (error != Error::Ok) {
@@ -188,14 +236,7 @@ ET_NODISCARD Error XNNExecutor::forward(BackendExecutionContext& context) {
 }
 
 /**
- * Prepares the outputs for ExecuTorch
- *
- * Resizes the output tensors based on the output shapes returned by
- * the xnnpack runtime.
- *
- * Note: For arg_max pooling, we recast the output index tensor. Since
- * XNNPACK gives the index tensor to us as int32, we need to convert it
- * back to int64 for ExecuTorch.
+ * Resizes output tensors to match XNNPACK's computed shapes.
  */
 ET_NODISCARD Error XNNExecutor::resize_outputs(Span<EValue*> args) const {
   size_t output_idx_start = input_ids_.size();
@@ -239,6 +280,22 @@ ET_NODISCARD Error XNNExecutor::resize_outputs(Span<EValue*> args) const {
       ET_LOG(Error, "Failed to resize output tensor for XNNExecutor");
       return err;
     }
+  }
+
+  return Error::Ok;
+}
+
+/**
+ * Converts output data types after XNNPACK execution.
+ *
+ * For arg_max pooling, XNNPACK outputs int32 index tensors that need
+ * to be converted to int64 for ExecuTorch.
+ */
+ET_NODISCARD Error XNNExecutor::convert_outputs(Span<EValue*> args) const {
+  size_t output_idx_start = input_ids_.size();
+  for (size_t i = output_idx_start; i < externals_.size(); ++i) {
+    uint32_t ext_id = externals_[i].id;
+    Tensor* out_tensor = &args[ext_id]->toTensor();
 
     // Output datatype is int64. However, XNNPACK doesn't support
     // int64. This means that the data was put into this tensor

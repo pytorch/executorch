@@ -52,6 +52,7 @@ class ModelType(str, Enum):
     lfm2_350m = "lfm2_350m"
     lfm2_700m = "lfm2_700m"
     lfm2_1_2b = "lfm2_1_2b"
+    lfm2_5_350m = "lfm2_5_350m"
     lfm2_5_1_2b = "lfm2_5_1_2b"
 
 
@@ -178,8 +179,8 @@ class ModelConfig:
             dim to take vectorized path in optimized kernels.
         use_attention_sink: Whether to use attention sink to support multi-round
             conversation. Structured as:
-            '<sink_size>,<window_size>,<batch_eviction_size>',
-            e.g., '4,2044,1024'.
+            '<sink_size>,<window_size>',
+            e.g., '4,2044'.
         output_prune_map: Path to the output pruning token mapping file (token_map.json).
         input_prune_map: Path to the output pruning token mapping file (token_map.json).
         use_kv_cache: Whether to use KV cache.
@@ -218,9 +219,9 @@ class ModelConfig:
     def _validate_attention_sink(self):
         if self.use_attention_sink:
             attention_sink_params = self.use_attention_sink.split(",")
-            if len(attention_sink_params) != 3:
+            if len(attention_sink_params) != 2:
                 raise ValueError(
-                    "The value of use_attention_sink must be structured like '<sink_size>,<window_size>,<batch_eviction_size>'"
+                    "The value of use_attention_sink must be structured like '<sink_size>,<window_size>'"
                 )
 
 
@@ -377,6 +378,7 @@ class Pt2eQuantize(str, Enum):
     tosa_8a8w = "tosa_8a8w"
     ethosu_8a8w = "ethosu_8a8w"
     vgf_8a8w = "vgf_8a8w"
+    vgf_16a8w = "vgf_16a8w"
 
 
 class SpinQuant(str, Enum):
@@ -429,6 +431,7 @@ class QuantizationConfig:
     calibration_limit: Optional[int] = None
     calibration_seq_length: Optional[int] = None
     calibration_data: str = "Once upon a time"
+    use_hqq: bool = True
 
     def __post_init__(self):
         if self.qmode:
@@ -586,6 +589,11 @@ class EthosUConfig:
     system_config: str = "default"
 
 
+class VgfQuantizeScope(str, Enum):
+    full = "full"
+    linear = "linear"
+
+
 @dataclass
 class VgfConfig:
     """
@@ -595,6 +603,7 @@ class VgfConfig:
     enabled: bool = False
     compile_spec: Optional[str] = "TOSA-1.0+INT"
     compiler_flags: List[str] = field(default_factory=list)
+    quantize_scope: VgfQuantizeScope = VgfQuantizeScope.full
 
 
 @dataclass
@@ -813,6 +822,16 @@ class LlmConfig:
             )
         if hasattr(args, "group_size") and args.group_size:
             llm_config.backend.openvino.nncf_compression_group_size = args.group_size
+
+        # VGF
+        if hasattr(args, "vgf"):
+            llm_config.backend.vgf.enabled = args.vgf
+        if hasattr(args, "vgf_compile_spec"):
+            llm_config.backend.vgf.compile_spec = args.vgf_compile_spec
+        if hasattr(args, "vgf_quantize_scope") and args.vgf_quantize_scope:
+            llm_config.backend.vgf.quantize_scope = VgfQuantizeScope(
+                args.vgf_quantize_scope
+            )
 
         # TorchAoKernels
         if any(

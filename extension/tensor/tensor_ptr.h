@@ -14,6 +14,7 @@
 #include <vector>
 
 #include <c10/macros/Macros.h>
+#include <c10/util/safe_numerics.h>
 #include <executorch/runtime/core/error.h>
 #include <executorch/runtime/core/exec_aten/exec_aten.h>
 #include <executorch/runtime/core/exec_aten/util/scalar_type_util.h>
@@ -32,8 +33,13 @@ using TensorPtr = std::shared_ptr<executorch::aten::Tensor>;
 /**
  * Creates a TensorPtr that manages a Tensor with the specified properties.
  *
+ * The `device_type` and `device_index` parameters set the TensorImpl's device
+ * metadata only — no data is allocated or copied. The caller is responsible
+ * for ensuring `data` already lives on the requested device. To copy CPU data
+ * to a device, use `clone_tensor_ptr_to_device` instead.
+ *
  * @param sizes A vector specifying the size of each dimension.
- * @param data A pointer to the data buffer.
+ * @param data A pointer to the data buffer (CPU or device, see device_type).
  * @param dim_order A vector specifying the order of dimensions.
  * @param strides A vector specifying the strides of the tensor.
  * @param type The scalar type of the tensor elements.
@@ -41,8 +47,9 @@ using TensorPtr = std::shared_ptr<executorch::aten::Tensor>;
  * @param deleter A custom deleter function for managing the lifetime of the
  * data buffer. If provided, this deleter will be called when the managed Tensor
  * object is destroyed.
- * @param device_type The target device type (default CPU, meaning no copy).
- * @param device_index The target device index (default 0).
+ * @param device_type The device on which `data` resides (default CPU). In
+ * USE_ATEN_LIB builds this must be CPU.
+ * @param device_index The device index for multi-device scenarios (default 0).
  * @return A TensorPtr that manages the newly created Tensor.
  */
 TensorPtr make_tensor_ptr(
@@ -62,15 +69,17 @@ TensorPtr make_tensor_ptr(
 /**
  * Creates a TensorPtr that manages a Tensor with the specified properties.
  *
+ * Convenience overload for the primary factory; see the primary overload for
+ * device semantics.
+ *
  * @param sizes A vector specifying the size of each dimension.
- * @param data A pointer to the data buffer.
+ * @param data A pointer to the data buffer (CPU or device, see device_type).
  * @param type The scalar type of the tensor elements.
  * @param dynamism Specifies the mutability of the tensor's shape.
  * @param deleter A custom deleter function for managing the lifetime of the
- * data buffer. If provided, this deleter will be called when the managed Tensor
- * object is destroyed.
- * @param device_type The target device type (default CPU, meaning no copy).
- * @param device_index The target device index (default 0).
+ * data buffer.
+ * @param device_type The device on which `data` resides (default CPU).
+ * @param device_index The device index for multi-device scenarios (default 0).
  * @return A TensorPtr that manages the newly created Tensor.
  */
 inline TensorPtr make_tensor_ptr(
@@ -106,6 +115,9 @@ inline TensorPtr make_tensor_ptr(
  * specified `type`. This allows for flexible creation of tensors with data
  * vectors of one type and a different scalar type.
  *
+ * The result is always a CPU tensor. To move it to a device, use
+ * `clone_tensor_ptr_to_device`.
+ *
  * @tparam T The C++ type of the tensor elements, deduced from the vector.
  * @param sizes A vector specifying the size of each dimension.
  * @param data A vector containing the tensor's data.
@@ -114,8 +126,6 @@ inline TensorPtr make_tensor_ptr(
  * @param type The scalar type of the tensor elements. If it differs from the
  * deduced type, the data will be cast to this type if allowed.
  * @param dynamism Specifies the mutability of the tensor's shape.
- * @param device_type The target device type (default CPU, meaning no copy).
- * @param device_index The target device index (default 0).
  * @return A TensorPtr that manages the newly created TensorImpl.
  */
 template <
@@ -129,19 +139,29 @@ inline TensorPtr make_tensor_ptr(
     std::vector<executorch::aten::StridesType> strides = {},
     executorch::aten::ScalarType type = deduced_type,
     executorch::aten::TensorShapeDynamism dynamism =
-        executorch::aten::TensorShapeDynamism::DYNAMIC_BOUND,
-    runtime::etensor::DeviceType device_type =
-        runtime::etensor::DeviceType::CPU,
-    runtime::etensor::DeviceIndex device_index = 0) {
+        executorch::aten::TensorShapeDynamism::DYNAMIC_BOUND) {
+  auto numel_result = executorch::aten::safe_numel(sizes.data(), sizes.size());
   ET_CHECK_MSG(
-      data.size() ==
-          executorch::aten::compute_numel(sizes.data(), sizes.size()),
+      numel_result.ok(),
+      "safe_numel failed: %d",
+      static_cast<int>(numel_result.error()));
+  ET_CHECK_MSG(
+      data.size() == static_cast<size_t>(numel_result.get()),
       "Data size does not match tensor size.");
   if (type != deduced_type) {
     ET_CHECK_MSG(
         runtime::canCast(deduced_type, type),
         "Cannot cast deduced type to specified type.");
-    std::vector<uint8_t> casted_data(data.size() * aten::elementSize(type));
+    size_t casted_bytes = 0;
+    ET_CHECK_MSG(
+        !c10::mul_overflows(
+            data.size(),
+            static_cast<size_t>(aten::elementSize(type)),
+            &casted_bytes),
+        "casted_data size overflow: %zu elements * %zu bytes/element",
+        data.size(),
+        static_cast<size_t>(aten::elementSize(type)));
+    std::vector<uint8_t> casted_data(casted_bytes);
 
     // Create a minimal context for error handling in ET_SWITCH
     struct {
@@ -168,9 +188,7 @@ inline TensorPtr make_tensor_ptr(
         std::move(strides),
         type,
         dynamism,
-        [data_ptr = std::move(data_ptr)](void*) {},
-        device_type,
-        device_index);
+        [data_ptr = std::move(data_ptr)](void*) {});
   }
   const auto raw_data_ptr = data.data();
   auto data_ptr = std::make_shared<std::vector<T>>(std::move(data));
@@ -181,9 +199,7 @@ inline TensorPtr make_tensor_ptr(
       std::move(strides),
       type,
       dynamism,
-      [data_ptr = std::move(data_ptr)](void*) {},
-      device_type,
-      device_index);
+      [data_ptr = std::move(data_ptr)](void*) {});
 }
 
 /**
@@ -191,18 +207,16 @@ inline TensorPtr make_tensor_ptr(
  *
  * This template overload is specialized for cases where the tensor data is
  * provided as a vector. The scalar type is automatically deduced from the
- * vector's data type. If the specified `type` differs from the deduced type of
- * the vector's elements, and casting is allowed, the data will be cast to the
- * specified `type`. This allows for flexible creation of tensors with data
- * vectors of one type and a different scalar type.
+ * vector's data type.
+ *
+ * The result is always a CPU tensor. To move it to a device, use
+ * `clone_tensor_ptr_to_device`.
  *
  * @tparam T The C++ type of the tensor elements, deduced from the vector.
  * @param data A vector containing the tensor's data.
  * @param type The scalar type of the tensor elements. If it differs from the
  * deduced type, the data will be cast to this type if allowed.
  * @param dynamism Specifies the mutability of the tensor's shape.
- * @param device_type The target device type (default CPU, meaning no copy).
- * @param device_index The target device index (default 0).
  * @return A TensorPtr that manages the newly created TensorImpl.
  */
 template <
@@ -213,21 +227,11 @@ inline TensorPtr make_tensor_ptr(
     std::vector<T> data,
     executorch::aten::ScalarType type = deduced_type,
     executorch::aten::TensorShapeDynamism dynamism =
-        executorch::aten::TensorShapeDynamism::DYNAMIC_BOUND,
-    runtime::etensor::DeviceType device_type =
-        runtime::etensor::DeviceType::CPU,
-    runtime::etensor::DeviceIndex device_index = 0) {
+        executorch::aten::TensorShapeDynamism::DYNAMIC_BOUND) {
   std::vector<executorch::aten::SizesType> sizes{
       executorch::aten::SizesType(data.size())};
   return make_tensor_ptr(
-      std::move(sizes),
-      std::move(data),
-      {0},
-      {1},
-      type,
-      dynamism,
-      device_type,
-      device_index);
+      std::move(sizes), std::move(data), {0}, {1}, type, dynamism);
 }
 
 /**
@@ -235,11 +239,10 @@ inline TensorPtr make_tensor_ptr(
  *
  * This template overload is specialized for cases where the tensor data is
  * provided as an initializer list. The scalar type is automatically deduced
- * from the initializer list's data type. If the specified `type` differs from
- * the deduced type of the initializer list's elements, and casting is allowed,
- * the data will be cast to the specified `type`. This allows for flexible
- * creation of tensors with data vectors of one type and a different scalar
- * type.
+ * from the initializer list's data type.
+ *
+ * The result is always a CPU tensor. To move it to a device, use
+ * `clone_tensor_ptr_to_device`.
  *
  * @tparam T The C++ type of the tensor elements, deduced from the initializer
  * list.
@@ -250,8 +253,6 @@ inline TensorPtr make_tensor_ptr(
  * @param type The scalar type of the tensor elements. If it differs from the
  * deduced type, the data will be cast to this type if allowed.
  * @param dynamism Specifies the mutability of the tensor's shape.
- * @param device_type The target device type (default CPU, meaning no copy).
- * @param device_index The target device index (default 0).
  * @return A TensorPtr that manages the newly created TensorImpl.
  */
 template <
@@ -265,19 +266,14 @@ inline TensorPtr make_tensor_ptr(
     std::vector<executorch::aten::StridesType> strides = {},
     executorch::aten::ScalarType type = deduced_type,
     executorch::aten::TensorShapeDynamism dynamism =
-        executorch::aten::TensorShapeDynamism::DYNAMIC_BOUND,
-    runtime::etensor::DeviceType device_type =
-        runtime::etensor::DeviceType::CPU,
-    runtime::etensor::DeviceIndex device_index = 0) {
+        executorch::aten::TensorShapeDynamism::DYNAMIC_BOUND) {
   return make_tensor_ptr(
       std::move(sizes),
       std::vector<T>(std::move(list)),
       std::move(dim_order),
       std::move(strides),
       type,
-      dynamism,
-      device_type,
-      device_index);
+      dynamism);
 }
 
 /**
@@ -285,11 +281,10 @@ inline TensorPtr make_tensor_ptr(
  *
  * This template overload allows creating a Tensor from an initializer list
  * of data. The scalar type is automatically deduced from the type of the
- * initializer list's elements. If the specified `type` differs from
- * the deduced type of the initializer list's elements, and casting is allowed,
- * the data will be cast to the specified `type`. This allows for flexible
- * creation of tensors with data vectors of one type and a different scalar
- * type.
+ * initializer list's elements.
+ *
+ * The result is always a CPU tensor. To move it to a device, use
+ * `clone_tensor_ptr_to_device`.
  *
  * @tparam T The C++ type of the tensor elements, deduced from the initializer
  * list.
@@ -297,8 +292,6 @@ inline TensorPtr make_tensor_ptr(
  * @param type The scalar type of the tensor elements. If it differs from the
  * deduced type, the data will be cast to this type if allowed.
  * @param dynamism Specifies the mutability of the tensor's shape.
- * @param device_type The target device type (default CPU, meaning no copy).
- * @param device_index The target device index (default 0).
  * @return A TensorPtr that manages the newly created TensorImpl.
  */
 template <
@@ -309,21 +302,11 @@ inline TensorPtr make_tensor_ptr(
     std::initializer_list<T> list,
     executorch::aten::ScalarType type = deduced_type,
     executorch::aten::TensorShapeDynamism dynamism =
-        executorch::aten::TensorShapeDynamism::DYNAMIC_BOUND,
-    runtime::etensor::DeviceType device_type =
-        runtime::etensor::DeviceType::CPU,
-    runtime::etensor::DeviceIndex device_index = 0) {
+        executorch::aten::TensorShapeDynamism::DYNAMIC_BOUND) {
   std::vector<executorch::aten::SizesType> sizes{
       executorch::aten::SizesType(list.size())};
   return make_tensor_ptr(
-      std::move(sizes),
-      std::move(list),
-      {0},
-      {1},
-      type,
-      dynamism,
-      device_type,
-      device_index);
+      std::move(sizes), std::move(list), {0}, {1}, type, dynamism);
 }
 
 /**
@@ -344,7 +327,8 @@ inline TensorPtr make_tensor_ptr(T value) {
  *
  * This overload accepts a raw memory buffer stored in a std::vector<uint8_t>
  * and a scalar type to interpret the data. The vector is managed, and the
- * memory's lifetime is tied to the TensorImpl.
+ * memory's lifetime is tied to the TensorImpl. The result is always a CPU
+ * tensor.
  *
  * @param sizes A vector specifying the size of each dimension.
  * @param data A vector containing the raw memory for the tensor's data.
@@ -352,8 +336,6 @@ inline TensorPtr make_tensor_ptr(T value) {
  * @param strides A vector specifying the strides of each dimension.
  * @param type The scalar type of the tensor elements.
  * @param dynamism Specifies the mutability of the tensor's shape.
- * @param device_type The target device type (default CPU, meaning no copy).
- * @param device_index The target device index (default 0).
  * @return A TensorPtr managing the newly created Tensor.
  */
 TensorPtr make_tensor_ptr(
@@ -363,24 +345,18 @@ TensorPtr make_tensor_ptr(
     std::vector<executorch::aten::StridesType> strides,
     executorch::aten::ScalarType type = executorch::aten::ScalarType::Float,
     executorch::aten::TensorShapeDynamism dynamism =
-        executorch::aten::TensorShapeDynamism::DYNAMIC_BOUND,
-    runtime::etensor::DeviceType device_type =
-        runtime::etensor::DeviceType::CPU,
-    runtime::etensor::DeviceIndex device_index = 0);
+        executorch::aten::TensorShapeDynamism::DYNAMIC_BOUND);
 
 /**
  * Creates a TensorPtr that manages a Tensor with the specified properties.
  *
- * This overload accepts a raw memory buffer stored in a std::vector<uint8_t>
- * and a scalar type to interpret the data. The vector is managed, and the
- * memory's lifetime is tied to the TensorImpl.
+ * Convenience overload for the raw-buffer factory; see above. The result is
+ * always a CPU tensor.
  *
  * @param sizes A vector specifying the size of each dimension.
  * @param data A vector containing the raw memory for the tensor's data.
  * @param type The scalar type of the tensor elements.
  * @param dynamism Specifies the mutability of the tensor's shape.
- * @param device_type The target device type (default CPU, meaning no copy).
- * @param device_index The target device index (default 0).
  * @return A TensorPtr managing the newly created Tensor.
  */
 inline TensorPtr make_tensor_ptr(
@@ -388,19 +364,9 @@ inline TensorPtr make_tensor_ptr(
     std::vector<uint8_t> data,
     executorch::aten::ScalarType type = executorch::aten::ScalarType::Float,
     executorch::aten::TensorShapeDynamism dynamism =
-        executorch::aten::TensorShapeDynamism::DYNAMIC_BOUND,
-    runtime::etensor::DeviceType device_type =
-        runtime::etensor::DeviceType::CPU,
-    runtime::etensor::DeviceIndex device_index = 0) {
+        executorch::aten::TensorShapeDynamism::DYNAMIC_BOUND) {
   return make_tensor_ptr(
-      std::move(sizes),
-      std::move(data),
-      {},
-      {},
-      type,
-      dynamism,
-      device_type,
-      device_index);
+      std::move(sizes), std::move(data), {}, {}, type, dynamism);
 }
 
 /**
@@ -413,6 +379,9 @@ inline TensorPtr make_tensor_ptr(
  * fits; otherwise it is left empty for the core factory to derive a valid
  * configuration. If `dim_order` is empty but `strides` is provided, `dim_order`
  * is left empty so the core may infer it from the provided strides.
+ *
+ * This overload always aliases — it never copies. To copy a tensor's data to
+ * a device, use `clone_tensor_ptr_to_device`.
  *
  * @param tensor The source tensor to alias.
  * @param sizes Optional sizes override.
@@ -434,8 +403,13 @@ inline TensorPtr make_tensor_ptr(
   const auto same_rank = sizes.size() == static_cast<size_t>(tensor.dim());
   const auto same_shape = same_rank &&
       std::equal(sizes.begin(), sizes.end(), tensor.sizes().begin());
-  const auto element_count =
-      executorch::aten::compute_numel(sizes.data(), sizes.size());
+  auto element_count_result =
+      executorch::aten::safe_numel(sizes.data(), sizes.size());
+  ET_CHECK_MSG(
+      element_count_result.ok(),
+      "safe_numel failed: %d",
+      static_cast<int>(element_count_result.error()));
+  const auto element_count = element_count_result.get();
   const auto parent_element_count = tensor.numel();
   ET_CHECK_MSG(
       element_count <= parent_element_count,
@@ -465,58 +439,29 @@ inline TensorPtr make_tensor_ptr(
 }
 
 /**
- * Clones a CPU TensorPtr to a device TensorPtr.
- *
- * Allocates memory on the specified device and copies the tensor data from
- * host to device using the DeviceAllocator registered for the given device
- * type. The returned TensorPtr owns the device memory and will free it via
- * the allocator when destroyed.
- *
- * Forward declaration to support make_tensor_ptr below usage.
- *
- * @param cpu_tensor The source CPU tensor whose data will be copied.
- * @param device_type The target device type (e.g., DeviceType::CUDA).
- * @param device_index The target device index (default 0).
- * @return A TensorPtr backed by device memory containing the copied data.
- */
-TensorPtr clone_tensor_ptr_to_device(
-    const TensorPtr& cpu_tensor,
-    runtime::etensor::DeviceType device_type,
-    runtime::etensor::DeviceIndex device_index = 0);
-
-/**
  * Convenience overload identical to make_tensor_ptr(*tensor_ptr, ...).
  * Keeps the original TensorPtr alive until the returned TensorPtr is destroyed.
- * When device_type is not CPU, the tensor data is additionally copied to the
- * specified device.
+ *
+ * This overload always aliases — it never copies. To copy a tensor's data to
+ * a device, use `clone_tensor_ptr_to_device`.
  *
  * @param tensor_ptr The source tensor pointer to alias.
  * @param sizes Optional sizes override.
  * @param dim_order Optional dimension order override.
  * @param strides Optional strides override.
- * @param device_type The target device type (default CPU, meaning no copy).
- * @param device_index The target device index (default 0).
- * @return A TensorPtr aliasing the same storage with requested metadata, or a
- * device TensorPtr if device_type is not CPU.
+ * @return A TensorPtr aliasing the same storage with requested metadata.
  */
 inline TensorPtr make_tensor_ptr(
     const TensorPtr& tensor_ptr,
     std::vector<executorch::aten::SizesType> sizes = {},
     std::vector<executorch::aten::DimOrderType> dim_order = {},
-    std::vector<executorch::aten::StridesType> strides = {},
-    runtime::etensor::DeviceType device_type =
-        runtime::etensor::DeviceType::CPU,
-    runtime::etensor::DeviceIndex device_index = 0) {
-  auto result = make_tensor_ptr(
+    std::vector<executorch::aten::StridesType> strides = {}) {
+  return make_tensor_ptr(
       *tensor_ptr,
       std::move(sizes),
       std::move(dim_order),
       std::move(strides),
       [tensor_ptr](void*) {});
-  if (device_type != runtime::etensor::DeviceType::CPU) {
-    return clone_tensor_ptr_to_device(result, device_type, device_index);
-  }
-  return result;
 }
 
 /**
@@ -586,6 +531,25 @@ ET_NODISCARD
 runtime::Error resize_tensor_ptr(
     TensorPtr& tensor,
     const std::vector<executorch::aten::SizesType>& sizes);
+
+/**
+ * Clones a CPU TensorPtr to a device TensorPtr.
+ *
+ * Allocates memory on the specified device and copies the tensor data from
+ * host to device using the DeviceAllocator registered for the given device
+ * type. The returned TensorPtr owns the device memory and will free it via
+ * the allocator when destroyed.
+ *
+ * @param cpu_tensor The source CPU tensor whose data will be copied.
+ * @param device_type The target device type (e.g., DeviceType::CUDA). Must not
+ * be CPU.
+ * @param device_index The target device index (default 0).
+ * @return A TensorPtr backed by device memory containing the copied data.
+ */
+TensorPtr clone_tensor_ptr_to_device(
+    const TensorPtr& cpu_tensor,
+    runtime::etensor::DeviceType device_type,
+    runtime::etensor::DeviceIndex device_index = 0);
 
 /**
  * Clones a device TensorPtr to a CPU TensorPtr.
