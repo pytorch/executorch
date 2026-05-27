@@ -13,7 +13,7 @@ fi
 which "${PYTHON_EXECUTABLE}"
 
 BASEDIR=$(dirname "$(realpath $0)")
-DEFAULT_GOLDEN_ARTIFACTS_BASE_URL="https://gha-artifacts.s3.amazonaws.com/pytorch/executorch"
+DEFAULT_GOLDEN_ARTIFACTS_BASE_URL="https://gha-artifacts.s3.amazonaws.com/pytorch/executorch" # @lint-ignore
 DEFAULT_GOLDEN_ARTIFACTS_BASE_URL+="/test-backend-artifacts/golden-artifacts-xnnpack"
 GOLDEN_ARTIFACTS_BASE_URL="${GOLDEN_ARTIFACTS_BASE_URL:-${DEFAULT_GOLDEN_ARTIFACTS_BASE_URL}}"
 export GOLDEN_ARTIFACTS_BASE_URL
