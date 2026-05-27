@@ -308,10 +308,19 @@ class TOSAQuantizationConfig(QuantizationConfig):
         elif node.target in _fixed_input_qspec_ops:
 
             input_act_qspec = super().get_input_act_qspec(node, input_node)
-            num_bits = torch.iinfo(input_act_qspec.dtype).bits
+            if not hasattr(input_act_qspec, "dtype") or not isinstance(
+                input_act_qspec.dtype, torch.dtype
+            ):
+                raise ValueError(
+                    f"{node.target} requires an input activation quantization "
+                    "spec to use fixed input qparams."
+                )
+            dtype = getattr(input_act_qspec, "dtype", None)
+            num_bits = torch.iinfo(dtype).bits
+
             qparams = _fixed_input_qspec_ops[node.target][num_bits]
             return FixedQParamsQuantizationSpec(
-                dtype=input_act_qspec.dtype,
+                dtype=dtype,
                 scale=qparams.scale,
                 zero_point=qparams.zero_point,
                 quant_min=input_act_qspec.quant_min,

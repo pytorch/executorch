@@ -31,7 +31,8 @@ Args:
 - **use_composable_quantizer (bool)**: Whether to use the composable
         quantizer implementation. Setting this to ``False`` is deprecated
         and will be removed in two minor releases. See
-- **https**://github.com/pytorch/executorch/issues/17701 for details.
+        [issue #17701](https://github.com/pytorch/executorch/issues/17701)
+        for details.
 
 ```python
 def EthosUQuantizer.add_quantizer(self, quantizer: 'Quantizer') -> 'TOSAQuantizer':
