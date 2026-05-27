@@ -4,6 +4,7 @@
 # LICENSE file in the root directory of this source tree.
 
 import numpy as np
+import torch
 from executorch.backends.nxp.backend.data_format import NXP_NODE_FORMAT
 from executorch.backends.nxp.backend.edge_helper import input_tensor
 from executorch.backends.nxp.backend.ir.converter.conversion import translator
@@ -31,6 +32,15 @@ class SliceTensorConverter(NodeConverter):
         parameters_mapping: dict[str, Parameter],
         custom_delegation_options: CustomDelegationOptions,
     ) -> bool:
+        if custom_delegation_options.use_new_flow_neutron_c:
+            supported_types = [torch.int8, torch.uint8]
+            if not NodeConverter.uses_quantization_type_for_io(
+                node, supported_types, [0], [0]
+            ):
+                return False
+
+            return True
+
         input_shape = input_tensor(node, 0).shape
         dim = node.args[1]
         if node.args[0].meta[NXP_NODE_FORMAT].is_channels_first():
@@ -94,6 +104,23 @@ class SliceTensorConverter(NodeConverter):
         size[dim] = max(end - start, 0)
         begin[dim] = start
 
+        # In the new Neutron flow, slicing can be done along any dim, so
+        # no additional `transpose` ops have to be added.
+        if self.context.custom_delegation_options.use_new_flow_neutron_c:
+            begin_tensor = self.builder.create_tensor_for_data(
+                np.asarray(begin, np.int32), "begin"
+            )
+            size_tensor = self.builder.create_tensor_for_data(
+                np.asarray(size, np.int32), "size"
+            )
+
+            t_op.tmp_inputs = [main_input, begin_tensor, size_tensor]
+            t_op.builtin_options = slice_options.Slice()
+            ops = OpsList(middle_op=t_op)
+
+            self.builder.append_operators(ops.flatten())
+            return None
+
         # We can slice only the channels dimension
         # So we swap the sliced dimension with the channels dimension
         begin[-1], begin[dim] = begin[dim], begin[-1]
@@ -130,6 +157,10 @@ class SliceTensorConverter(NodeConverter):
         input_shape = input_tensor(node, 0).shape
         _, dim, start, end = node.args
         sliced_tensor_rank = input_shape[dim]
+
+        # convert numbering `from the end` to `from the beginning`, ie. normalize
+        end = end + sliced_tensor_rank if end < 0 else end
+        start = start + sliced_tensor_rank if start < 0 else start
 
         end = int(np.clip(end, 0, sliced_tensor_rank))
         start = int(np.clip(start, 0, sliced_tensor_rank))
