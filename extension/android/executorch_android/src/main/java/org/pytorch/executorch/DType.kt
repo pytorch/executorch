@@ -6,17 +6,17 @@
  * LICENSE file in the root directory of this source tree.
  */
 
-package org.pytorch.executorch;
+package org.pytorch.executorch
 
-import org.pytorch.executorch.annotations.Experimental;
+import org.pytorch.executorch.annotations.Experimental
 
 /**
  * Codes representing tensor data types.
  *
- * <p>Warning: These APIs are experimental and subject to change without notice
+ * Warning: These APIs are experimental and subject to change without notice
  */
 @Experimental
-public enum DType {
+enum class DType(@JvmField val jniCode: Int) {
   // NOTE: "jniCode" must be kept in sync with scalar_type.h.
   // NOTE: Never serialize "jniCode", because it can change between releases.
 
@@ -68,18 +68,10 @@ public enum DType {
   BITS16(22),
   ;
 
-  final int jniCode;
-
-  DType(int jniCode) {
-    this.jniCode = jniCode;
-  }
-
-  public static DType fromJniCode(int jniCode) {
-    for (DType dtype : values()) {
-      if (dtype.jniCode == jniCode) {
-        return dtype;
-      }
-    }
-    throw new IllegalArgumentException("No DType found for jniCode " + jniCode);
+  companion object {
+    @JvmStatic
+    fun fromJniCode(jniCode: Int): DType =
+        entries.find { it.jniCode == jniCode }
+            ?: throw IllegalArgumentException("No DType found for jniCode $jniCode")
   }
 }

@@ -16,6 +16,7 @@
 #include <executorch/runtime/core/exec_aten/util/tensor_util.h>
 
 #include <xnnpack.h>
+#include <atomic>
 #include <memory>
 #include <vector>
 
@@ -36,10 +37,19 @@ class XNNExecutor {
   std::vector<xnn_external_value> externals_;
   std::vector<std::string> packed_data_names_;
   std::shared_ptr<XNNWorkspace> workspace_;
+  std::atomic<bool> in_use_{false};
+  std::atomic<bool> destroyed_{false};
 
  public:
   XNNExecutor(std::shared_ptr<XNNWorkspace> workspace)
       : workspace_(workspace) {}
+
+  ~XNNExecutor() {
+    ET_DCHECK_MSG(
+        !in_use_.load(std::memory_order_acquire),
+        "XNNExecutor destroyed while in use");
+    destroyed_.store(true, std::memory_order_release);
+  }
 
   inline size_t getNumInputs() {
     return input_ids_.size();

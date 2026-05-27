@@ -98,6 +98,7 @@ bool validate_conv2d_arguments(
 }
 } // namespace
 
+// cppcheck-suppress unusedFunction
 Tensor& quantized_conv2d_out(
     KernelRuntimeContext& context,
     const Tensor& input,
@@ -112,6 +113,7 @@ Tensor& quantized_conv2d_out(
     const Tensor& requantize_shifts,
     const int64_t activation_min,
     const int64_t activation_max,
+    const Tensor& scratch,
     Tensor& out) {
   if (!validate_conv2d_arguments(
           context,
@@ -182,31 +184,30 @@ Tensor& quantized_conv2d_out(
 
   cmsis_nn_context cmsis_context;
   cmsis_context.buf = nullptr;
-  cmsis_context.size = 0;
+  cmsis_context.size = scratch.nbytes();
+  if (cmsis_context.size > 0) {
+    cmsis_context.buf = scratch.mutable_data_ptr<int8_t>();
+  }
 
-  const int32_t buffer_bytes = arm_convolve_wrapper_s8_get_buffer_size(
+#ifdef CORTEX_M_ENABLE_RUNTIME_CHECKS
+  const int32_t runtime_buffer_bytes = arm_convolve_wrapper_s8_get_buffer_size(
       &conv_params, &input_dims, &filter_dims, &output_dims);
-  if (buffer_bytes < 0) {
+  if (runtime_buffer_bytes < 0) {
     ET_LOG(
         Error, "quantized_conv2d_out: CMSIS-NN buffer size calculation failed");
     context.fail(Error::Internal);
     return out;
   }
-  if (buffer_bytes > 0) {
-    auto buffer_or_error =
-        context.allocate_temp(buffer_bytes, kCortexMMveAlignment);
-    if (!buffer_or_error.ok()) {
-      ET_LOG(
-          Error,
-          "quantized_conv2d_out: failed to allocate scratch buffer (%d bytes, error %d)",
-          static_cast<int>(buffer_bytes),
-          static_cast<int>(buffer_or_error.error()));
-      context.fail(buffer_or_error.error());
-      return out;
-    }
-    cmsis_context.buf = buffer_or_error.get();
-    cmsis_context.size = buffer_bytes;
+  if (scratch.nbytes() != static_cast<size_t>(runtime_buffer_bytes)) {
+    ET_LOG(
+        Error,
+        "quantized_conv2d_out: scratch buffer size incorrect - actual: (%d) needed: (%d)",
+        static_cast<int>(scratch.nbytes()),
+        static_cast<int>(runtime_buffer_bytes));
+    context.fail(Error::Internal);
+    return out;
   }
+#endif
 
   const arm_cmsis_nn_status status = arm_convolve_wrapper_s8(
       &cmsis_context,
