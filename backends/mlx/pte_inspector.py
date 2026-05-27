@@ -403,6 +403,11 @@ def _extract_field(node, accessor_name: str, kind: str) -> Any:  # noqa: C901
             items.append(f"tid {s.Idx()}" if s else None)
         return items
 
+    if kind == "string_list":
+        length = getattr(node, f"{accessor_name}Length")()
+        getter = getattr(node, accessor_name)
+        return [getter(i).decode("utf-8") if getter(i) else None for i in range(length)]
+
     if kind == "int_or_vid_list":
         length = getattr(node, f"{accessor_name}Length")()
         getter = getattr(node, accessor_name)

@@ -828,6 +828,55 @@ lib.define(
 lib.impl(name, apply_rotary_emb_hf_impl, "CompositeExplicitAutograd")
 apply_rotary_emb_hf_op = getattr(getattr(torch.ops, namespace), name)
 
+##################################
+## apply_rotary_emb_interleaved ##
+##################################
+
+
+def apply_rotary_emb_interleaved_impl(
+    x: torch.Tensor, freqs_cis: torch.Tensor
+) -> torch.Tensor:
+    # EdgeTAM's pair-interleaved complex-number RoPE.
+    #   x:         [B, N, C] with (real, imag) pairs interleaved along C
+    #   freqs_cis: any rank whose flattened layout is [N, C]. Commonly 2D
+    #              [N, C] or 4D [1, N, C/2, 2] from
+    #              `torch.view_as_real(...).unsqueeze(0)`. The (cos, sin)
+    #              pairs are interleaved along the innermost axis in the
+    #              flattened view.
+    # Semantically equivalent to:
+    #   freqs_cis.reshape(N, C // 2, 2) -> (cos, sin)
+    #   out[2k]   = x[2k] * cos[k] - x[2k+1] * sin[k]
+    #   out[2k+1] = x[2k] * sin[k] + x[2k+1] * cos[k]
+    B, N, C = x.shape
+    a_real, a_imag = x.view(B, N, C // 2, 2).unbind(-1)
+    # Use reshape so callers may pass freqs_cis at any rank.
+    cs = freqs_cis.reshape(N, C // 2, 2)
+    b_real, b_imag = cs[..., 0], cs[..., 1]
+    out = torch.stack(
+        (a_real * b_real - a_imag * b_imag, a_real * b_imag + a_imag * b_real),
+        dim=-1,
+    )
+    return out.view(B, N, C)
+
+
+def apply_rotary_emb_interleaved_meta(
+    x: torch.Tensor, freqs_cis: torch.Tensor
+) -> torch.Tensor:
+    # Meta kernel: shape-only. Keeps the op opaque during torch.export (no
+    # inlining of view/reshape calls into the exported graph) and does not
+    # constrain the rank of freqs_cis — any shape with N * C elements is
+    # accepted by the Vulkan dispatcher.
+    return torch.empty_like(x)
+
+
+name = "apply_rotary_emb_interleaved"
+lib.define(f"{name}(Tensor x, Tensor freqs_cis) -> Tensor")
+# CPU kernel preserves eager-mode reference semantics.
+lib.impl(name, apply_rotary_emb_interleaved_impl, "CPU")
+# Meta kernel keeps the op opaque in the exported graph.
+lib.impl(name, apply_rotary_emb_interleaved_meta, "Meta")
+apply_rotary_emb_interleaved_op = getattr(getattr(torch.ops, namespace), name)
+
 ########################
 ## q8ta_add ##
 ########################
@@ -905,6 +954,39 @@ lib.define(
 lib.impl(name, q8ta_relu_impl, "CompositeExplicitAutograd")
 q8ta_relu_op = getattr(getattr(torch.ops, namespace), name)
 
+###########################
+## q8ta_pixel_shuffle    ##
+###########################
+
+
+def q8ta_pixel_shuffle_impl(
+    input: torch.Tensor,
+    input_scale: float,
+    input_zero_point: int,
+    output_inv_scale: float,
+    output_zero_point: int,
+    upscale_factor: int,
+):
+    # Reference Python impl for op registration. The runtime kernel does a
+    # fused byte-shuffle (and optional requantize when scales differ).
+    output_scale = 1.0 / output_inv_scale
+    dequant = torch.ops.quantized_decomposed.dequantize_per_tensor(
+        input, input_scale, input_zero_point, -128, 127, input.dtype
+    )
+    shuffled = torch.nn.functional.pixel_shuffle(dequant, upscale_factor)
+    requantized = torch.ops.quantized_decomposed.quantize_per_tensor(
+        shuffled, output_scale, output_zero_point, -128, 127, torch.int8
+    )
+    return requantized
+
+
+name = "q8ta_pixel_shuffle"
+lib.define(
+    f"{name}(Tensor input, float input_scale, int input_zero_point, float output_inv_scale, int output_zero_point, int upscale_factor) -> Tensor"
+)
+lib.impl(name, q8ta_pixel_shuffle_impl, "CompositeExplicitAutograd")
+q8ta_pixel_shuffle_op = getattr(getattr(torch.ops, namespace), name)
+
 ########################
 ## embedding_q4gsw ##
 ########################
@@ -959,3 +1041,52 @@ name = "select_as_symint"
 lib.define(f"{name}(Tensor x, int dim, int index) -> SymInt")
 lib.impl(name, select_as_symint_impl, "Meta")
 select_as_symint_op = getattr(getattr(torch.ops, namespace), name)
+
+##########
+## sdpa ##
+##########
+
+
+def sdpa_impl(
+    q: torch.Tensor,
+    k: torch.Tensor,
+    v: torch.Tensor,
+    attn_mask: Optional[torch.Tensor] = None,
+    scale: Optional[float] = None,
+):
+    if scale is None:
+        scale = 1.0 / (q.size(-1) ** 0.5)
+    attn = torch.matmul(q, k.transpose(-2, -1)) * scale
+    if attn_mask is not None:
+        attn = attn + attn_mask
+    attn = torch.softmax(attn, dim=-1)
+    return torch.matmul(attn, v)
+
+
+name = "sdpa"
+lib.define(
+    f"{name}(Tensor q, Tensor k, Tensor v, Tensor? attn_mask = None, float? scale = None) -> Tensor"
+)
+lib.impl(name, sdpa_impl, "CompositeExplicitAutograd")
+sdpa_op = getattr(getattr(torch.ops, namespace), name)
+
+################
+## rms_norm ##
+################
+
+
+def rms_norm_impl(
+    x: torch.Tensor,
+    weight: torch.Tensor,
+    eps: float,
+) -> torch.Tensor:
+    input_dtype = x.dtype
+    variance = x.float().pow(2).mean(-1, keepdim=True)
+    x_normed = x.float() * torch.rsqrt(variance + eps)
+    return (x_normed * weight.float()).to(input_dtype)
+
+
+name = "rms_norm"
+lib.define(f"{name}(Tensor x, Tensor weight, float eps) -> Tensor")
+lib.impl(name, rms_norm_impl, "CompositeExplicitAutograd")
+rms_norm_op = getattr(getattr(torch.ops, namespace), name)

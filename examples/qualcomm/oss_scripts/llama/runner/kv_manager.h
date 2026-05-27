@@ -8,6 +8,7 @@
 
 #pragma once
 #include <executorch/examples/qualcomm/oss_scripts/llama/runner/imem_alloc.h>
+#include <executorch/examples/qualcomm/oss_scripts/llama/runner/utils.h>
 #include <cstdint>
 #include <memory>
 #include <vector>
@@ -15,17 +16,15 @@
 namespace example {
 
 // Structure to hold key-value cache buffers
-template <typename T>
 struct KVCache {
-  T* buffer;
-  T* output_buffer;
+  std::byte* buffer;
+  std::byte* output_buffer;
 };
 
 /**
  * @class KVManager
  * @brief Class for kv cache update, rearrangement, and buffer allocatation.
  */
-template <typename T>
 class KVManager {
  public:
   struct Metadata {
@@ -36,7 +35,9 @@ class KVManager {
     int64_t num_heads;
     int64_t num_layers;
   };
-  KVManager(Metadata metadata);
+  KVManager(
+      Metadata metadata,
+      std::unique_ptr<executorch::runtime::MethodMeta> method_meta);
 
   /**
    * @brief Allocate buffer for KV cache and set the cur_ar_len_.
@@ -71,7 +72,7 @@ class KVManager {
    * @param n_past Number of past elements in the cache.
    */
   void init_attention_mask(
-      uint16_t* attention_mask,
+      std::byte* attention_mask,
       const std::vector<int32_t>& attention_map,
       int32_t ar_len,
       int32_t n_past);
@@ -98,7 +99,7 @@ class KVManager {
    * @param position_offset (optional) attention mask position offset of
    */
   void init_attention_mask(
-      uint16_t* attention_mask,
+      std::byte* attention_mask,
       const std::vector<int32_t>& attention_map,
       int32_t ar_len,
       int32_t n_past,
@@ -114,7 +115,7 @@ class KVManager {
    * @param n_update Number of elements to be updated.
    */
   void update_attention_mask(
-      uint16_t* attention_mask,
+      std::byte* attention_mask,
       int32_t ar_len,
       int32_t n_past,
       int32_t n_update);
@@ -132,7 +133,7 @@ class KVManager {
    * lookahead decoder
    */
   void update_attention_mask(
-      uint16_t* attention_mask,
+      std::byte* attention_mask,
       int32_t ar_len,
       int32_t n_past,
       int32_t n_update,
@@ -152,10 +153,10 @@ class KVManager {
       int32_t n_update,
       const std::vector<bool>& selected);
 
-  const std::vector<KVCache<T>>& get_k_cache_() const {
+  const std::vector<KVCache>& get_k_cache_() const {
     return k_cache_;
   }
-  const std::vector<KVCache<T>>& get_v_cache_() const {
+  const std::vector<KVCache>& get_v_cache_() const {
     return v_cache_;
   }
 
@@ -169,15 +170,19 @@ class KVManager {
 
  private:
   // Helper functions to rearrange and update key and value caches
-  void rearrange_key(KVCache<T>& k_cache, int32_t ar_len_dst);
-  void rearrange_value(KVCache<T>& v_cache, int32_t ar_len_dst);
+
+  void rearrange_key(KVCache& k_cache, int32_t ar_len_dst);
+
+  void rearrange_value(KVCache& v_cache, int32_t ar_len_dst);
+
   void update_key(
-      KVCache<T>& k_cache,
+      KVCache& k_cache,
       int32_t n_past,
       int32_t n_update,
       const std::vector<bool>& selected);
+
   void update_value(
-      KVCache<T>& v_cache,
+      KVCache& v_cache,
       int32_t n_past,
       int32_t n_update,
       const std::vector<bool>& selected);
@@ -186,10 +191,14 @@ class KVManager {
   Metadata metadata_;
   size_t total_cache_size_;
   int32_t cur_ar_len_;
+  executorch::aten::ScalarType attention_mask_dtype_ =
+      executorch::aten::ScalarType::Undefined;
+  executorch::aten::ScalarType kv_cache_dtype_ =
+      executorch::aten::ScalarType::Undefined;
   // Store start pointer of k and v cache for input and output
   // input: layer -> head * head_dim * max_cache_len
   // output: layer -> head * head_dim * max_ar_len
-  std::vector<KVCache<T>> k_cache_;
-  std::vector<KVCache<T>> v_cache_;
+  std::vector<KVCache> k_cache_;
+  std::vector<KVCache> v_cache_;
 };
 } // namespace example

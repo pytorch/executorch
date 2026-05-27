@@ -76,6 +76,41 @@ public:
     }
 
     /**
+     * Sets a custom cache directory for compiled model storage.
+     *
+     * When specified, the backend uses the new filesystem-based cache
+     * (ETCoreMLModelCache) at the given path instead of the default
+     * SQLite-based cache (ETCoreMLAssetManager).
+     *
+     * This enables per-model cache selection for experimentation:
+     * - Specify cache_dir to opt-in to the new filesystem cache
+     * - Omit cache_dir to use the default (legacy) cache
+     *
+     * @param path The directory path for the cache. Must be a valid
+     *             filesystem path with write permissions.
+     * @return Reference to this builder for chaining.
+     */
+    LoadOptionsBuilder& setCacheDirectory(const char* path) {
+        options_.set_option("cache_dir", path);
+        return *this;
+    }
+
+    /**
+     * Controls whether to use the new filesystem cache (ETCoreMLModelCache).
+     *
+     * This is a temporary runtime option for A/B testing the new cache
+     * implementation. It will be removed once the new cache is fully rolled out.
+     *
+     * @param enabled If true, uses the new filesystem cache.
+     *                If false (default), uses the legacy asset manager.
+     * @return Reference to this builder for chaining.
+     */
+    LoadOptionsBuilder& setUseNewCache(bool enabled) {
+        options_.set_option("_use_new_cache", enabled);
+        return *this;
+    }
+
+    /**
      * Returns the backend identifier for this options builder.
      */
     static constexpr const char* backend_id() { return "CoreMLBackend"; }

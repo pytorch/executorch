@@ -25,7 +25,7 @@ python export_parakeet_tdt.py --audio /path/to/audio.wav
 | Argument | Description |
 |----------|-------------|
 | `--output-dir` | Output directory for exports (default: `./parakeet_tdt_exports`) |
-| `--backend` | Backend for acceleration: `portable`, `xnnpack`, `metal`, `mlx`, `cuda`, `cuda-windows` (default: `xnnpack`) |
+| `--backend` | Backend for acceleration: `portable`, `xnnpack`, `vulkan`, `metal`, `mlx`, `cuda`, `cuda-windows` (default: `xnnpack`) |
 | `--dtype` | Data type: `fp32`, `bf16`, `fp16` (default: `fp32`). Metal backend supports `fp32` and `bf16` only (no `fp16`). |
 | `--audio` | Path to audio file for transcription test |
 
@@ -54,7 +54,7 @@ The export script supports quantizing encoder and decoder linear layers using [t
 |--------|-------------|----------|
 | `4w` | 4-bit weight only quantization | CUDA, MLX, XNNPACK (embedding only) |
 | `8w` | 8-bit weight only quantization | CUDA, MLX, XNNPACK (embedding only) |
-| `8da4w` | 8-bit dynamic activation, 4-bit weight | XNNPACK |
+| `8da4w` | 8-bit dynamic activation, 4-bit weight | Vulkan, XNNPACK |
 | `8da8w` | 8-bit dynamic activation, 8-bit weight | XNNPACK |
 | `fpa4w` | Floating point activation, 4-bit weight | Metal |
 | `nvfp4` | 4-bit weight only quantization using NVIDIA's FP4 dtype | MLX |
@@ -70,6 +70,21 @@ python export_parakeet_tdt.py \
     --qlinear_group_size 32 \
     --output-dir ./parakeet_quantized_xnnpack
 ```
+
+#### Example: Dynamic Quantization for Vulkan
+
+```bash
+python export_parakeet_tdt.py \
+    --backend vulkan \
+    --qlinear_encoder 8da4w \
+    --qlinear_encoder_group_size 32 \
+    --qlinear 8da4w \
+    --qlinear_group_size 32 \
+    --vulkan_force_fp16 \
+    --output-dir ./parakeet_quantized_vulkan
+```
+
+An additional `--vulkan_force_fp16` flag is available to have the Vulkan backend internally downcast FP32 tensors to FP16 within the Vulkan backend, forcing half-precision computation. Note that input/output tensors are still FP32, and the delegate will automatically convert them to/from FP16 upon entering and exiting the delegate. This will significantly improve latency but may slightly reduce transcription accuracy.
 
 #### Example: 4-bit Weight Quantization with Tile Packing for CUDA
 
@@ -217,6 +232,9 @@ make parakeet-cpu
 # Metal build (macOS)
 make parakeet-metal
 
+# Vulkan build (Linux / Android)
+make parakeet-vulkan
+
 # CUDA build (Linux)
 make parakeet-cuda
 
@@ -249,6 +267,12 @@ DYLD_LIBRARY_PATH=/usr/lib ./cmake-out/examples/models/parakeet/parakeet_runner 
   --model_path examples/models/parakeet/parakeet_metal/model.pte \
   --audio_path /path/to/audio.wav \
   --tokenizer_path examples/models/parakeet/parakeet_metal/tokenizer.model
+
+# Vulkan
+./cmake-out/examples/models/parakeet/parakeet_runner \
+  --model_path examples/models/parakeet/parakeet_vulkan/model.pte \
+  --audio_path /path/to/audio.wav \
+  --tokenizer_path examples/models/parakeet/parakeet_vulkan/tokenizer.model
 
 # CUDA (include .ptd data file)
 ./cmake-out/examples/models/parakeet/parakeet_runner \

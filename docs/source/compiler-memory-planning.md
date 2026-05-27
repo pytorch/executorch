@@ -90,11 +90,11 @@ program = edge_program.to_executorch(
 > slots, leading to incorrect memory layout.  If both features are enabled
 > simultaneously, `apply_algo` will raise a `NotImplementedError`.
 
-Users attempting to write a custom memory planning algorithm should start by looking at [the greedy algorithm's implementation](https://github.com/pytorch/executorch/blob/d62c41ca86435e5316e7ed292b6d68aff27a2fb7/exir/memory_planning.py#L459C1-L459C12).
+Users attempting to write a custom memory planning algorithm should start by looking at [the greedy algorithm's implementation](https://github.com/pytorch/executorch/blob/main/exir/memory_planning.py#L801).
 
 ## Device-Aware Memory Planning
 
-When `enable_non_cpu_memory_planning=True` is set on `ExecutorchBackendConfig`,
+When `enable_non_cpu_memory_planning=True` is set on `MemoryPlanningPass`,
 the memory planning pass partitions tensor specs by their device type and runs
 the planning algorithm independently for each device.  This produces separate
 memory buffers for each device (e.g. CPU vs. CUDA), ensuring that device memory
@@ -103,7 +103,7 @@ and host memory are never mixed.
 ```python
 program = edge_program.to_executorch(
             exir.ExecutorchBackendConfig(
-                enable_non_cpu_memory_planning=True,
+                memory_planning_pass=exir.passes.MemoryPlanningPass(enable_non_cpu_memory_planning=True),
             )
         )
 ```

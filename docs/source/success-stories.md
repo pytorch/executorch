@@ -156,7 +156,7 @@ Automate PyTorch model deployment to iOS, Android, and edge devices with ExecuTo
 
 - **LoRA adapter** - Export two LoRA adapters that share a single foundation weight file, saving memory and disk space. [Try →](https://github.com/meta-pytorch/executorch-examples/tree/main/program-data-separation/cpp/lora_example)
 
-- **OpenVINO from Intel** - Deploy [Yolo12](https://github.com/pytorch/executorch/tree/main/examples/models/yolo12), [Llama](https://github.com/pytorch/executorch/tree/main/examples/openvino/llama), and [Stable Diffusion](https://github.com/pytorch/executorch/tree/main/examples/openvino/stable_diffusion) on [OpenVINO from Intel](https://www.intel.com/content/www/us/en/developer/articles/community/optimizing-executorch-on-ai-pcs.html).
+- **OpenVINO from Intel** - Deploy [Yolo26](https://github.com/pytorch/executorch/tree/main/examples/models/yolo26), [Llama](https://github.com/pytorch/executorch/tree/main/examples/openvino/llama), and [Stable Diffusion](https://github.com/pytorch/executorch/tree/main/examples/openvino/stable_diffusion) on [OpenVINO from Intel](https://www.intel.com/content/www/us/en/developer/articles/community/optimizing-executorch-on-ai-pcs.html).
 
 - **Audio Generation** - Generate audio from text prompts using Stable Audio Open Small on Arm CPUs with XNNPACK and KleidiAI. [Try →](https://github.com/Arm-Examples/ML-examples/tree/main/kleidiai-examples/audiogen-et) • [Video →](https://www.youtube.com/watch?v=q2P0ESVxhAY) <!-- @lint-ignore -->
 

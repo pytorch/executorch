@@ -73,7 +73,12 @@ namespace {
  */
 class MockCudaAllocator : public DeviceAllocator {
  public:
-  Result<void*> allocate(size_t nbytes, DeviceIndex index) override {
+  Result<void*> allocate(
+      size_t nbytes,
+      DeviceIndex index,
+      size_t alignement = kDefaultAlignment) override {
+    (void)alignement;
+    (void)index;
     allocate_count_++;
     buffer_ = std::make_unique<uint8_t[]>(nbytes);
     buffer_size_ = nbytes;
@@ -122,7 +127,7 @@ class TensorParserDeviceTest : public ::testing::Test {
  protected:
   static void SetUpTestSuite() {
     executorch::runtime::runtime_init();
-    register_device_allocator(DeviceType::CUDA, &g_mock_cuda);
+    register_device_allocator(&g_mock_cuda);
   }
 
   void SetUp() override {

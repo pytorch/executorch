@@ -9,7 +9,7 @@ from collections import OrderedDict
 from typing import Dict
 
 from executorch.backends.qualcomm._passes import (
-    AnnotateAdaptiveAvgPool1D,
+    AnnotateAvgPool1D,
     AnnotateQuantAttrs,
     AnnotateStack,
     AnnotateUnbind,
@@ -20,6 +20,7 @@ from executorch.backends.qualcomm._passes import (
     ConvertSquareToPow,
     DecomposeAcos,
     DecomposeAny,
+    DecomposeAtan2,
     DecomposeBinaryAlpha,
     DecomposeCDist,
     DecomposeColIm,
@@ -31,9 +32,13 @@ from executorch.backends.qualcomm._passes import (
     DecomposeLogVariants,
     DecomposeMaxPool3d,
     DecomposeMinMaxDim,
+    DecomposePad,
     DecomposeReciprocal,
+    DecomposeRemainder,
     DecomposeRoll,
+    DecomposeSelectScatter,
     DecomposeSilu,
+    DecomposeTan,
     DecomposeThreshold,
     DecomposeTriu,
     DecomposeTrunc,
@@ -62,6 +67,9 @@ from executorch.backends.qualcomm._passes import (
 )
 from executorch.backends.qualcomm._passes.utils import (
     get_passes_dependency_for_capture_program,
+)
+from executorch.backends.qualcomm.serialization.qc_schema import (
+    QnnExecuTorchBackendType,
 )
 from executorch.backends.qualcomm.utils.constants import (
     QCOM_PASS_ACTIVATE_KEY,
@@ -92,17 +100,21 @@ def get_capture_program_passes():
     # The second value in each tuple in `default_passes_and_setting` indicates whether the corresponding pass is activated by default.
     # If a pass is activated, it will be executed by default.
     default_passes_and_setting = [
-        (AnnotateAdaptiveAvgPool1D, True),
+        (AnnotateAvgPool1D, True),
         (AnnotateQuantAttrs, True),
         (AnnotateStack, True),
         (AnnotateUnbind, True),
         (ConvertBmmToMatmul, False),
         (DecomposeAcos, True),
         (DecomposeAny, True),
+        (DecomposeAtan2, True),
         (DecomposeColIm, True),
         (DecomposeLogVariants, True),
         (DecomposeMaxPool3d, True),
         (DecomposeMinMaxDim, True),
+        (DecomposePad, True),
+        (DecomposeRemainder, True),
+        (DecomposeTan, True),
         (DecomposeTrunc, True),
         (ExpandBroadcastTensorShape, True),
         (FixedLinearKeepDim, True),
@@ -151,6 +163,7 @@ class QnnPassManager(PassManager):
         exported_program: ExportedProgram,
         passes_job: OrderedDict = None,
         dep_table: Dict = None,
+        backend_type: QnnExecuTorchBackendType = QnnExecuTorchBackendType.kHtpBackend,
     ):
         # TODO: remove this workaround when target could be correctly detected
         from executorch.backends.qualcomm.builders import node_visitor
@@ -183,6 +196,8 @@ class QnnPassManager(PassManager):
             kwargs = passes_job[p][QCOM_PASS_ARGS_KWARGS_DEFAULTS_KEY]
             if "edge_program" in kwargs:
                 kwargs["edge_program"] = exported_program
+            if "backend_type" in kwargs:
+                kwargs["backend_type"] = backend_type
             self.add_pass(p(**kwargs))
         assert isinstance(
             self.passes[-1], ResolveDebugHandle
@@ -216,12 +231,15 @@ class QnnPassManager(PassManager):
         self.add_pass(RecomposeRmsNorm(quantization_capture=True))
         self.add_pass(ReplaceArangeArgs())
         self.add_pass(DecomposeAcos())
+        self.add_pass(DecomposeAtan2())
         self.add_pass(DecomposeBinaryAlpha())
         self.add_pass(DecomposeCDist())
         self.add_pass(DecomposeMaxPool3d(quantization_capture=True))
+        self.add_pass(DecomposePad())
         self.add_pass(DecomposeScaledDotProductAttention())
         self.add_pass(DecomposeRoll())
         self.add_pass(DecomposeSilu())
+        self.add_pass(DecomposeTan())
         self.add_pass(DecomposeThreshold())
         self.add_pass(DecomposeTriu())
         self.add_pass(DecomposeTrunc())
@@ -233,6 +251,8 @@ class QnnPassManager(PassManager):
         # Decompose Reciprocal into Div for these 2 backend
         # TODO: Skip this pass for CPU backend (Dependency: Backend-aware passes manager)
         self.add_pass(DecomposeReciprocal())
+        self.add_pass(DecomposeRemainder())
+        self.add_pass(DecomposeSelectScatter())
         self.add_pass(DecomposeLinalgVectorNorm(quantization_capture=True))
         self.add_pass(DecomposeLogVariants())
         self.add_pass(ReplaceInfValues())
@@ -245,8 +265,10 @@ class QnnPassManager(PassManager):
     ):
         self.add_pass(DecomposeBinaryAlpha())
         self.add_pass(DecomposeCDist())
+        self.add_pass(DecomposePad())
         self.add_pass(DecomposeScaledDotProductAttention())
         self.add_pass(DecomposeRoll())
+        self.add_pass(DecomposeSelectScatter())
         self.add_pass(DecomposeThreshold())
         self.add_pass(DecomposeTriu())
         self.add_pass(DecomposeLinalgVectorNorm(quantization_capture=True))

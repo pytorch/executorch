@@ -535,6 +535,7 @@ def get_portable_lib_deps():
         "//executorch/kernels/portable/cpu:vec_ops",
         "//executorch/kernels/portable/cpu/pattern:all_deps",
         "//executorch/kernels/portable/cpu/util:all_deps",
+        "//executorch/runtime/core:device_allocator",
     ]
 
 def get_optimized_lib_deps():
@@ -542,12 +543,14 @@ def get_optimized_lib_deps():
         "//executorch/kernels/optimized/cpu:add_sub_impl",
         "//executorch/kernels/optimized/cpu:binary_ops",
         "//executorch/kernels/optimized/cpu:fft_utils",
+        "//executorch/kernels/optimized/cpu:grid_sampler_2d_fp16_hw_impl",
         "//executorch/kernels/optimized/cpu:moments_utils",
         "//executorch/kernels/optimized:libblas",
         "//executorch/kernels/optimized:libutils",
         "//executorch/kernels/optimized:libvec",
         "//executorch/runtime/core/portable_type/c10/c10:aten_headers_for_executorch",
         "//executorch/runtime/kernel:kernel_includes",
+        "fbsource//third-party/cpuinfo:cpuinfo",
     ] + get_vec_deps()
 
 def build_portable_header_lib(name, oplist_header_name, feature = None, **kwargs):
@@ -630,7 +633,14 @@ def build_portable_lib(
     # Currently fbcode links all dependent libraries through shared
     # library, and it blocks users like unit tests to use kernel
     # implementation directly. So we enable this for xplat only.
-    compiler_flags = ["-Wno-missing-prototypes"]
+    # -Wno-missing-prototypes is Clang-only for C++; GCC (used by Zephyr ARM
+    # cross-compilation) rejects it with -Werror, so exclude it for Zephyr.
+    # OSS bypasses the select since ovr_config//os:zephyr is not in the OSS
+    # buck2 prelude.
+    compiler_flags = select({
+        "DEFAULT": ["-Wno-missing-prototypes"],
+        "ovr_config//os:zephyr": [],
+    }) if not runtime.is_oss else ["-Wno-missing-prototypes"]
     if not expose_operator_symbols and is_xplat():
         # Removing '-fvisibility=hidden' exposes operator symbols.
         # This allows operators to be called outside of the kernel registry.
@@ -676,7 +686,14 @@ def build_optimized_lib(name, oplist_header_name, portable_header_lib, feature =
     # Currently fbcode links all dependent libraries through shared
     # library, and it blocks users like unit tests to use kernel
     # implementation directly. So we enable this for xplat only.
-    compiler_flags = ["-Wno-missing-prototypes", "-Wno-pass-failed", "-Wno-global-constructors", "-Wno-shadow"]
+    # -Wno-missing-prototypes and -Wno-global-constructors are Clang-only for
+    # C++; GCC (used by Zephyr ARM cross-compilation) rejects them with
+    # -Werror, so exclude them for Zephyr. OSS bypasses the select since
+    # ovr_config//os:zephyr is not in the OSS buck2 prelude.
+    compiler_flags = select({
+        "DEFAULT": ["-Wno-missing-prototypes", "-Wno-pass-failed", "-Wno-global-constructors", "-Wno-shadow"],
+        "ovr_config//os:zephyr": ["-Wno-pass-failed", "-Wno-shadow"],
+    }) if not runtime.is_oss else ["-Wno-missing-prototypes", "-Wno-pass-failed", "-Wno-global-constructors", "-Wno-shadow"]
     if not expose_operator_symbols and is_xplat():
         # Removing '-fvisibility=hidden' exposes operator symbols.
         # This allows operators to be called outside of the kernel registry.

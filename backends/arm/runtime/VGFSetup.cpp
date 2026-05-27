@@ -1,5 +1,5 @@
 /*
- * Copyright 2025 Arm Limited and/or its affiliates.
+ * Copyright 2025-2026 Arm Limited and/or its affiliates.
  *
  * This source code is licensed under the BSD-style license found in the
  * LICENSE file in the root directory of this source tree.
@@ -31,6 +31,7 @@ namespace {
 constexpr int64_t kScalarSentinelDimension = 1;
 }
 
+#if defined(ET_ARM_VGF_DEBUG)
 // Debug function to inspect memory properties
 static string memory_flags_to_string(VkMemoryPropertyFlags flags) {
   if (flags == 0)
@@ -54,7 +55,7 @@ static string memory_flags_to_string(VkMemoryPropertyFlags flags) {
 #undef TRY_FLAG
 
   if (flags) {
-    // any leftover bits we didn’t name
+    // Preserve any unrecognized bits in hex so debug logs stay complete.
     ostringstream hex;
     hex << "0x" << std::hex << flags;
     parts.emplace_back(hex.str());
@@ -68,6 +69,7 @@ static string memory_flags_to_string(VkMemoryPropertyFlags flags) {
   }
   return joined.str();
 }
+#endif
 
 /**
  * Tensor free helper function
@@ -173,7 +175,12 @@ VkResult allocate_tensor(
       .memoryTypeIndex = memory_index,
   };
 
-  vkAllocateMemory(device, &allocate_info, nullptr, memory);
+  result = vkAllocateMemory(device, &allocate_info, nullptr, memory);
+  if (result != VK_SUCCESS) {
+    ET_LOG(Error, "Failed to allocate tensor memory, error %d", result);
+    vkDestroyTensorARM(device, *tensor, nullptr);
+    return result;
+  }
 
   // Bind tensor to memory
   const VkBindTensorMemoryInfoARM bind_info = {
@@ -183,7 +190,13 @@ VkResult allocate_tensor(
       .memory = *memory,
       .memoryOffset = 0,
   };
-  vkBindTensorMemoryARM(device, 1, &bind_info);
+  result = vkBindTensorMemoryARM(device, 1, &bind_info);
+  if (result != VK_SUCCESS) {
+    ET_LOG(Error, "Failed to bind tensor memory, error %d", result);
+    vkDestroyTensorARM(device, *tensor, nullptr);
+    vkFreeMemory(device, *memory, nullptr);
+    return result;
+  }
 
   VkTensorViewCreateInfoARM tensor_view_info = {
       .sType = VK_STRUCTURE_TYPE_TENSOR_VIEW_CREATE_INFO_ARM,
@@ -236,6 +249,7 @@ static void debug_print_sequence(
   }
 }
 
+#if defined(ET_ARM_VGF_DEBUG)
 static void debug_print_resources(
     unique_ptr<vgflib::ModelResourceTableDecoder>& resource_decoder) {
   ET_LOG(Info, "Resources:");
@@ -260,7 +274,7 @@ static void debug_print_resources(
       case vgflib::ResourceCategory::INPUT:
       case vgflib::ResourceCategory::OUTPUT: {
         ET_LOG(Info, "    Category INPUT/OUTPUT");
-        // Get tensor shape and strides
+        // Log the tensor layout metadata carried in the resource table.
         auto shape = resource_decoder->getTensorShape(i);
         const vector<int64_t> the_shape(shape.begin(), shape.end());
         auto stride = resource_decoder->getTensorStride(i);
@@ -277,7 +291,15 @@ static void debug_print_resources(
               j,
               static_cast<long long>(the_shape[j]));
         }
-        // Allocate a tensor with bound memory
+        // Show the memory property combination the runtime currently targets.
+        ET_LOG(
+            Info,
+            "      memory flags %s",
+            memory_flags_to_string(
+                VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT |
+                VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT |
+                VK_MEMORY_PROPERTY_HOST_COHERENT_BIT)
+                .c_str());
         break;
       }
       case vgflib::ResourceCategory::INTERMEDIATE:
@@ -292,6 +314,7 @@ static void debug_print_resources(
     }
   }
 }
+#endif
 
 static void debug_print_modules(
     unique_ptr<vgflib::ModuleTableDecoder>& module_decoder) {
@@ -313,26 +336,38 @@ static void debug_print_modules(
   }
 }
 
-bool VgfRepr::process_vgf(const char* vgf_data, ArrayRef<CompileSpec> specs) {
+bool VgfRepr::process_vgf(
+    const char* vgf_data,
+    size_t vgf_size,
+    ArrayRef<CompileSpec> specs) {
   ET_LOG(Info, "Preparing VGF as Vulkan objects");
 
   VkResult result;
 
   // Prepare temporary decoders
   unique_ptr<vgflib::HeaderDecoder> header_decoder =
-      vgflib::CreateHeaderDecoder(vgf_data);
+      vgflib::CreateHeaderDecoder(vgf_data, vgflib::HeaderSize(), vgf_size);
+  if (!header_decoder) {
+    ET_LOG(Error, "Failed to create VGF header decoder");
+    return false;
+  }
+
   unique_ptr<vgflib::ModelSequenceTableDecoder> sequence_decoder =
       vgflib::CreateModelSequenceTableDecoder(
-          vgf_data + header_decoder->GetModelSequenceTableOffset());
+          vgf_data + header_decoder->GetModelSequenceTableOffset(),
+          header_decoder->GetModelSequenceTableSize());
   unique_ptr<vgflib::ModuleTableDecoder> module_decoder =
       vgflib::CreateModuleTableDecoder(
-          vgf_data + header_decoder->GetModuleTableOffset());
+          vgf_data + header_decoder->GetModuleTableOffset(),
+          header_decoder->GetModuleTableSize());
   unique_ptr<vgflib::ModelResourceTableDecoder> resource_decoder =
       vgflib::CreateModelResourceTableDecoder(
-          vgf_data + header_decoder->GetModelResourceTableOffset());
+          vgf_data + header_decoder->GetModelResourceTableOffset(),
+          header_decoder->GetModelResourceTableSize());
   unique_ptr<vgflib::ConstantDecoder> constant_decoder =
       vgflib::CreateConstantDecoder(
-          vgf_data + header_decoder->GetConstantsOffset());
+          vgf_data + header_decoder->GetConstantsOffset(),
+          header_decoder->GetConstantsSize());
   // Check the VGF decoders
   if (not(header_decoder && module_decoder && sequence_decoder &&
           resource_decoder && constant_decoder && header_decoder->IsValid() &&
@@ -347,6 +382,9 @@ bool VgfRepr::process_vgf(const char* vgf_data, ArrayRef<CompileSpec> specs) {
   const int segment_id = 0;
 
   debug_print_sequence(sequence_decoder);
+#if defined(ET_ARM_VGF_DEBUG)
+  debug_print_resources(resource_decoder);
+#endif
   if (sequence_decoder->modelSequenceTableSize() != 1) {
     ET_LOG(Error, "Expected sequence length 1");
     return false;
@@ -689,8 +727,7 @@ bool VgfRepr::process_vgf(const char* vgf_data, ArrayRef<CompileSpec> specs) {
   VkDataGraphPipelineCreateInfoARM graph_pipeline_info{
       .sType = VK_STRUCTURE_TYPE_DATA_GRAPH_PIPELINE_CREATE_INFO_ARM,
       .pNext = &shader_info,
-      .flags = VK_PIPELINE_CREATE_2_FAIL_ON_PIPELINE_COMPILE_REQUIRED_BIT |
-          VK_PIPELINE_CREATE_2_EARLY_RETURN_ON_FAILURE_BIT_KHR,
+      .flags = VK_PIPELINE_CREATE_2_EARLY_RETURN_ON_FAILURE_BIT_KHR,
       .layout = vk_pipeline_layout,
       .resourceInfoCount = static_cast<uint32_t>(data_graph_resources.size()),
       .pResourceInfos = data_graph_resources.data(),
@@ -756,9 +793,14 @@ bool VgfRepr::process_vgf(const char* vgf_data, ArrayRef<CompileSpec> specs) {
     return false;
   }
 
-  vector<VkDataGraphPipelineSessionBindPointRequirementARM>
-      bind_point_requirements;
-  bind_point_requirements.resize(bind_point_count);
+  vector<VkDataGraphPipelineSessionBindPointRequirementARM> bind_point_requirements(
+      bind_point_count,
+      {
+          .sType =
+              VK_STRUCTURE_TYPE_DATA_GRAPH_PIPELINE_SESSION_BIND_POINT_REQUIREMENT_ARM,
+          .pNext = nullptr,
+      });
+
   result = vkGetDataGraphPipelineSessionBindPointRequirementsARM(
       vk_device,
       &bind_point_requirements_info,
@@ -799,7 +841,10 @@ bool VgfRepr::process_vgf(const char* vgf_data, ArrayRef<CompileSpec> specs) {
         .bindPoint = bind_point_requirement.bindPoint,
         .objectIndex = 0, // NOTE: tied to numObjects assert above
     };
-    VkMemoryRequirements2 memory_requirements;
+    VkMemoryRequirements2 memory_requirements = {
+        .sType = VK_STRUCTURE_TYPE_MEMORY_REQUIREMENTS_2,
+        .pNext = nullptr,
+    };
     vkGetDataGraphPipelineSessionMemoryRequirementsARM(
         vk_device, &memory_requirements_info, &memory_requirements);
 

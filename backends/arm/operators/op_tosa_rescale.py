@@ -161,6 +161,8 @@ def _build_rescale(
     rounding_mode: ts.RoundingMode,
     per_channel: bool = False,
     is_scale32: bool = True,
+    input_unsigned: bool = False,
+    output_unsigned: bool = False,
 ):
     """Insert a TOSA RESCALE operator configured for the quantized path.
 
@@ -198,8 +200,8 @@ def _build_rescale(
         scale32=is_scale32,
         rounding_mode=rounding_mode,
         per_channel=per_channel,
-        input_unsigned=False,
-        output_unsigned=False,
+        input_unsigned=input_unsigned,
+        output_unsigned=output_unsigned,
     )
 
     tosa_fb.addOperator(
@@ -228,6 +230,14 @@ class RescaleVisitor(NodeVisitor):
         scales = cast(list[float], node.args[2])
         input_zp = cast(int, node.args[3])
         output_zp = cast(int, node.args[4])
+        if "input_unsigned" in node.kwargs:
+            input_unsigned = cast(bool, node.kwargs.get("input_unsigned", False))
+        else:
+            input_unsigned = cast(bool, node.args[5]) if len(node.args) > 5 else False
+        if "output_unsigned" in node.kwargs:
+            output_unsigned = cast(bool, node.kwargs.get("output_unsigned", False))
+        else:
+            output_unsigned = cast(bool, node.args[6]) if len(node.args) > 6 else False
 
         if (
             input_dtype
@@ -244,7 +254,6 @@ class RescaleVisitor(NodeVisitor):
             raise ValueError(
                 f"If output dtype is not int8 or int16, output_zp must be 0. Got {ts.DTypeNames[output_dtype]}, {output_zp=}"
             )
-
         _build_rescale(
             tosa_graph,
             scale=scales,
@@ -255,4 +264,6 @@ class RescaleVisitor(NodeVisitor):
             output_zp=[output_zp],
             rounding_mode=ts.RoundingMode.SINGLE_ROUND,
             per_channel=len(scales) > 1,
+            input_unsigned=input_unsigned,
+            output_unsigned=output_unsigned,
         )
