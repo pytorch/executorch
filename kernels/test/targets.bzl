@@ -1,14 +1,14 @@
 load("@fbsource//xplat/executorch/build:runtime_wrapper.bzl", "runtime")
 load("@fbsource//xplat/executorch/kernels/test:util.bzl", "codegen_function_header_wrapper", "op_test")
 
-def _common_op_test(name, kernels):
+def _common_op_test(name, kernels, deps = []):
     """
     Defines test targets in format of <kernel>_op_<op-name>_test
     For ATen kernel testing, let's use portable functions.yaml for tested ops.
     """
     for kernel in kernels:
-        deps = [":function_header_wrapper_{}".format(kernel)]
-        op_test(name, kernel_name = kernel, use_kernel_prefix = True, deps = deps)
+        op_deps = [":function_header_wrapper_{}".format(kernel)] + deps
+        op_test(name, kernel_name = kernel, use_kernel_prefix = True, deps = op_deps)
 
 def define_common_targets():
     """Defines targets that should be shared between fbcode and xplat.
@@ -177,6 +177,14 @@ def define_common_targets():
     _common_op_test("op__clone_dim_order_test", ["aten", "portable"])
     _common_op_test("op__conj_physical_test", ["aten", "portable"])
     _common_op_test("op__adaptive_avg_pool2d_test", ["aten", "portable"])
+    _common_op_test(
+        "op__device_copy_test",
+        ["portable"],
+        deps = [
+            "//executorch/runtime/core:device_allocator",
+            "//executorch/runtime/platform:platform",
+        ],
+    )
     _common_op_test("op_abs_test", ["aten", "portable"])
     _common_op_test("op_acos_test", ["aten", "portable"])
     _common_op_test("op_acosh_test", ["aten", "portable"])

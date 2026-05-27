@@ -42,3 +42,27 @@ def define_common_targets():
     cuda_shim_cpp_unittest("aoti_torch_new_tensor_handle")
     cuda_shim_cpp_unittest("aoti_torch_item_bool")
     cuda_shim_cpp_unittest("aoti_torch_assign_tensors_out")
+
+    cpp_unittest(
+        name = "test_op__device_copy",
+        srcs = ["test_op__device_copy.cpp"],
+        deps = [
+            "//executorch/backends/cuda/runtime:cuda_backend",
+            "//executorch/kernels/portable:generated_lib",
+            "//executorch/kernels/portable:generated_lib_headers",
+            "//executorch/kernels/portable/cpu:op__device_copy",
+            "//executorch/runtime/core:device_allocator",
+            "//executorch/runtime/core/exec_aten:lib",
+            "//executorch/runtime/core/portable_type:portable_type",
+            "//executorch/runtime/kernel:kernel_runtime_context",
+            "//executorch/runtime/platform:platform",
+        ],
+        external_deps = [
+            ("cuda", None, "cuda-lazy"),
+        ],
+        preprocessor_flags = ["-DCUDA_AVAILABLE=1"],
+        keep_gpu_sections = True,
+        remote_execution = re_test_utils.remote_execution(
+            platform = "gpu-remote-execution",
+        ),
+    )
