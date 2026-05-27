@@ -1,4 +1,7 @@
+import hashlib
 import sys
+
+import torch
 
 collect_ignore_glob: list[str] = []
 
@@ -10,3 +13,9 @@ if sys.platform == "win32":
     collect_ignore_glob += [
         "backends/apple/**",
     ]
+
+
+def pytest_runtest_setup(item):
+    # Set a stable seed for each test based on a hash of the test name.
+    seed = int(hashlib.sha256(item.nodeid.encode()).hexdigest(), 16) % (2**32)
+    torch.manual_seed(seed)

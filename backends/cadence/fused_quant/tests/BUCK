@@ -46,3 +46,14 @@ runtime.cxx_test(
         "//executorch/runtime/core/exec_aten/testing_util:tensor_util",
     ],
 )
+
+runtime.cxx_test(
+    name = "test_op_bmm",
+    srcs = ["test_op_bmm.cpp"],
+    platforms = CXX,
+    deps = [
+        "//executorch/backends/cadence/fused_quant:op_bmm",
+        "//executorch/kernels/test:gtest_utils",
+        "//executorch/runtime/core/exec_aten/testing_util:tensor_util",
+    ],
+)
