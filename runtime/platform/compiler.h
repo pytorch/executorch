@@ -138,8 +138,14 @@
 #define __has_builtin(x) (0)
 #endif
 
-#if __has_builtin(__builtin_strrchr)
+#if defined(__FILE_NAME__)
+/// __FILE_NAME__ provides just the filename at
+/// compile time, avoiding embedding full paths in the binary
+#define ET_SHORT_FILENAME __FILE_NAME__
+#elif __has_builtin(__builtin_strrchr)
 /// Name of the source file without a directory string.
+/// Note: This approach embeds the full path in .rodata even though only the
+/// basename is used at runtime. __FILE_NAME__ is preferred when available.
 #define ET_SHORT_FILENAME (__builtin_strrchr("/" __FILE__, '/') + 1)
 #else
 #define ET_SHORT_FILENAME __FILE__
