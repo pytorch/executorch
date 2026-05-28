@@ -456,11 +456,16 @@ class ReLUModule(torch.nn.Module):
 
 
 class Conv2dWithActivation(torch.nn.Module):
-    def __init__(self, activation: torch.nn.Module | Callable, in_channels: int = 3):
+    def __init__(
+        self,
+        activation: torch.nn.Module | Callable,
+        in_channels: int = 3,
+        out_channels: int = 64,
+    ):
         super().__init__()
 
         self.conv = torch.nn.Conv2d(
-            in_channels=in_channels, out_channels=64, kernel_size=(3, 3)
+            in_channels=in_channels, out_channels=out_channels, kernel_size=(3, 3)
         )
         self.activation = activation
 

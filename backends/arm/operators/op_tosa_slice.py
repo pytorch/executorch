@@ -42,6 +42,10 @@ class SliceVisitor(NodeVisitor):
             supported_dtypes.extend([ts.DType.FP16, ts.DType.FP32])
         if self.tosa_spec.support_extension("bf16"):
             supported_dtypes.append(ts.DType.BF16)
+        if self.tosa_spec.support_extension("fp8e4m3"):
+            supported_dtypes.append(ts.DType.FP8E4M3)
+        if self.tosa_spec.support_extension("fp8e5m2"):
+            supported_dtypes.append(ts.DType.FP8E5M2)
 
         validate_num_inputs(self.target, inputs, 3)
         validate_same_dtype(self.target, [inputs[0], output], ts)

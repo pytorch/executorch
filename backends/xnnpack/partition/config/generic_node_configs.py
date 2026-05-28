@@ -239,6 +239,27 @@ class CeilConfig(GenericNodePartitionerConfig):
         return [ConfigPrecisionType.FP32]
 
 
+class CloneConfig(GenericNodePartitionerConfig):
+    target_name = "clone.default"
+
+    def supported_precision_types(self) -> List[ConfigPrecisionType]:
+        return [ConfigPrecisionType.FP32]
+
+    def check_constraints(self, node: torch.fx.Node, ep: ExportedProgram) -> bool:
+        if not self.check_common_constraints(node, ep):
+            return False
+
+        input_meta = node.args[0].meta["val"]
+        output_meta = node.meta["val"]
+        input_dim_order = list(input_meta.dim_order())
+        output_dim_order = list(output_meta.dim_order())
+        if input_dim_order != output_dim_order:
+            why(node, reason="Only dim-order preserving clones are supported.")
+            return False
+
+        return True
+
+
 class ClampConfig(GenericNodePartitionerConfig):
     target_name = "clamp.default"
 
