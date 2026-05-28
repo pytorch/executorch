@@ -8,8 +8,11 @@
 
 #include <executorch/extension/llm/runner/jinja_chat_formatter.h>
 
+#include <jinja2cpp/generic_list.h>
+#include <jinja2cpp/generic_list_iterator.h>
 #include <jinja2cpp/reflected_value.h>
 #include <jinja2cpp/template.h>
+#include <jinja2cpp/user_callable.h>
 #include <jinja2cpp/value.h>
 
 #include <algorithm>
@@ -30,7 +33,11 @@ std::string readFileToString(const std::string& path) {
   }
   std::ostringstream buffer;
   buffer << file.rdbuf();
-  return buffer.str();
+  std::string contents = buffer.str();
+  if (contents.empty()) {
+    throw std::runtime_error("Template file is empty: " + path);
+  }
+  return contents;
 }
 
 bool templateIncludesBos(
@@ -54,6 +61,11 @@ std::string normalizeTemplate(std::string input) {
   // skip tool blocks for non-empty tools lists.
   // Keep longer `tools is ... none` patterns before the shorter
   // `tools is none` patterns to avoid partial replacements.
+  //
+  // `messages[1:]` is rewritten to a render-time call so each slice operates
+  // on the current value of `messages`. Templates reassign `messages`
+  // (e.g. `{%- set messages = messages[1:] %}`) and slice it again later, so a
+  // precomputed tail of the original list would be wrong for the second slice.
   constexpr std::array<std::pair<std::string_view, std::string_view>, 10>
       replacements = {{
           {"tools = none", "tools = []"},
@@ -64,7 +76,7 @@ std::string normalizeTemplate(std::string input) {
           {"not tools is None", "tools"},
           {"tools is none", "not tools"},
           {"tools is None", "not tools"},
-          {"messages[1:]", "messages_tail"},
+          {"messages[1:]", "_executorch_messages_tail(messages)"},
           {"{ \"output\": message.content } | tojson",
            "message.tool_output | tojson"},
       }};
@@ -103,6 +115,32 @@ std::string toLower(std::string value) {
         return static_cast<char>(std::tolower(c));
       });
   return value;
+}
+
+// Render-time equivalent of the Python slice `messages[1:]`: returns all
+// elements after the first. Used because Jinja2Cpp cannot parse slice syntax
+// and the slice must reflect the current value of `messages` at call time.
+// Jinja2Cpp may pass the list as either a GenericList or a ValuesList, so both
+// representations are handled without using the throwing asList() accessor on
+// the wrong variant.
+jinja2::ValuesList messagesTail(const jinja2::Value& messages) {
+  jinja2::ValuesList tail;
+  if (const auto* generic = messages.getPtr<jinja2::GenericList>()) {
+    bool is_first = true;
+    for (const auto& message : *generic) {
+      if (is_first) {
+        is_first = false;
+        continue;
+      }
+      tail.push_back(message);
+    }
+  } else if (messages.isList()) {
+    const auto& values = messages.asList();
+    for (size_t i = 1; i < values.size(); ++i) {
+      tail.push_back(values[i]);
+    }
+  }
+  return tail;
 }
 
 } // namespace
@@ -205,15 +243,13 @@ std::string JinjaChatFormatter::formatConversation(
     const ChatConversation& conversation) const {
   jinja2::ValuesMap params;
   params["messages"] = jinja2::ValuesList();
-  params["messages_tail"] = jinja2::ValuesList();
-  bool is_first = true;
   for (const auto& msg : conversation.messages) {
     params["messages"].asList().push_back(jinja2::Reflect(msg));
-    if (!is_first) {
-      params["messages_tail"].asList().push_back(jinja2::Reflect(msg));
-    }
-    is_first = false;
   }
+  // Backs the `messages[1:]` normalization so each slice reflects the current
+  // `messages` value rather than a precomputed snapshot.
+  params["_executorch_messages_tail"] =
+      jinja2::MakeCallable(messagesTail, jinja2::ArgInfo{"messages"});
   params["bos_token"] = conversation.bos_token;
   params["eos_token"] = conversation.eos_token;
   params["add_generation_prompt"] = conversation.add_generation_prompt;
@@ -221,8 +257,7 @@ std::string JinjaChatFormatter::formatConversation(
   // Templates that don't use these will simply ignore them.
   params["tools"] = jinja2::ValuesList();
   params["tool_choice"] = jinja2::Value();
-  // HuggingFace templates use a fixed date in their own regression fixtures.
-  params["date_string"] = std::string("26 Jul 2024");
+  params["date_string"] = conversation.date_string;
   params["chat_template_kwargs"] = jinja2::ValuesMap();
 
   auto rendered = compiled_template_->RenderAsString(params);

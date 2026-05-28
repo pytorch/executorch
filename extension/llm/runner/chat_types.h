@@ -23,6 +23,10 @@ struct ChatConversation {
   std::string bos_token;
   std::string eos_token;
   bool add_generation_prompt = true;
+  // Injected as the `date_string` template variable. Defaults to the fixed
+  // date used by HuggingFace/vLLM template fixtures so output stays
+  // deterministic; callers may override it.
+  std::string date_string = "26 Jul 2024";
 };
 
 } // namespace executorch::extension::llm

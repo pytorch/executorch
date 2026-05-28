@@ -371,3 +371,47 @@ TEST(JinjaChatFormatter, VllmLlama32PythonicToolTemplate) {
   EXPECT_THAT(
       result, HasSubstr("<|start_header_id|>assistant<|end_header_id|>"));
 }
+
+// `messages[1:]` must reflect the current `messages` value, not a precomputed
+// snapshot of the original list. Templates trim the system message and later
+// slice again; reusing the original tail would re-emit the first user message.
+TEST(JinjaChatFormatter, RepeatedMessageTailSlicesUseCurrentMessages) {
+  const std::string template_str =
+      "{%- if messages[0].role == 'system' -%}"
+      "{%- set messages = messages[1:] -%}"
+      "{%- endif -%}"
+      "{%- set first_user_message = messages[0].content -%}"
+      "{%- set messages = messages[1:] -%}"
+      "first={{ first_user_message }};"
+      "{%- for message in messages -%}"
+      "{{ message.role }}:{{ message.content }};"
+      "{%- endfor -%}";
+
+  auto formatter = JinjaChatFormatter::fromString(template_str);
+  ChatConversation conv;
+  conv.add_generation_prompt = false;
+  conv.messages = {
+      {"system", "system prompt"},
+      {"user", "first user"},
+      {"user", "second user"},
+  };
+
+  EXPECT_EQ(
+      formatter->formatConversation(conv),
+      "first=first user;user:second user;");
+}
+
+TEST(JinjaChatFormatter, DateStringIsOverridable) {
+  const std::string template_str = "{{ date_string }}";
+
+  auto formatter = JinjaChatFormatter::fromString(template_str);
+
+  ChatConversation default_conv;
+  default_conv.add_generation_prompt = false;
+  EXPECT_EQ(formatter->formatConversation(default_conv), "26 Jul 2024");
+
+  ChatConversation override_conv;
+  override_conv.add_generation_prompt = false;
+  override_conv.date_string = "01 Jan 2030";
+  EXPECT_EQ(formatter->formatConversation(override_conv), "01 Jan 2030");
+}
