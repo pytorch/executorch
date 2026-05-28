@@ -61,3 +61,22 @@ fb_native.constraint_value(
     constraint_setting = ":executorch-event-tracer",
     visibility = ["PUBLIC"],
 )
+
+fb_native.config_setting(
+    name = "executorch-program-verification-disabled",
+    constraint_values = [
+        ":program-verification-disabled",
+    ],
+    visibility = ["PUBLIC"],
+)
+
+fb_native.constraint_setting(
+    name = "executorch-program-verification",
+    visibility = ["PUBLIC"],
+)
+
+fb_native.constraint_value(
+    name = "program-verification-disabled",
+    constraint_setting = ":executorch-program-verification",
+    visibility = ["PUBLIC"],
+)
