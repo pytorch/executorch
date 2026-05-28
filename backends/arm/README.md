@@ -61,8 +61,6 @@ backends/arm/
 │   ├── models/                    # Model level unit tests
 │   └── tester/                    # Testing harnesses and utilities
 │
-├── third-party/                   # External dependencies
-│
 ├── tosa/                          # Shared TOSA backend implementation and dialect
 │
 └── vgf/                           # Implementations of VgfPartitioner and VgfBackend
