@@ -82,7 +82,7 @@ class CondOneArgTwoOutputs(torch.nn.Module):
             return arg + torch.sin(arg), arg - torch.sin(arg)
 
         def false_branch(arg: torch.Tensor) -> tuple[torch.Tensor, torch.Tensor]:
-            return arg - arg.mean(), arg + arg.mean()
+            return arg - torch.cos(arg), arg + torch.cos(arg)
 
         predicate = x.flatten().sum() > 0
         return torch.cond(predicate, true_branch, false_branch, [x])
@@ -250,8 +250,6 @@ def test_cond_tosa_INT(case: Callable[[], tuple[torch.nn.Module, tuple]]):
         example_inputs,
         aten_op,
         tosa_extensions=["cf"],
-        frobenius_threshold=0.8,
-        cosine_threshold=0.8,  # MLETORCH-1808
     )
     _set_branch_calibration_samples(pipeline, module, example_inputs)
     # Make sure no cond ops are left after partitioning.

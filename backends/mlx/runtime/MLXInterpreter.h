@@ -242,6 +242,11 @@ inline void exec_rope(const RopeNode& n, ExecutionState& st, StreamOrDevice s) {
     freqs_arr = st.const_tensor_ref(*n.freqs);
   }
 
+  // MLX requires exactly one of base or freqs — when freqs is provided,
+  // base must be nullopt.
+  std::optional<float> base =
+      freqs_arr ? std::nullopt : std::optional<float>(n.base);
+
   // MLX has two overloads: rope(..., int offset, ...) and rope(..., const
   // array& offset, ...) Call the appropriate one based on is_vid
   if (n.offset.is_vid) {
@@ -250,14 +255,14 @@ inline void exec_rope(const RopeNode& n, ExecutionState& st, StreamOrDevice s) {
     st.set_tensor(
         n.out,
         fast::rope(
-            x, n.dims, n.traditional, n.base, n.scale, offset, freqs_arr, s));
+            x, n.dims, n.traditional, base, n.scale, offset, freqs_arr, s));
   } else {
     // Tensor offset from Tid
     const array& offset = st.const_tensor_ref(n.offset.tid);
     st.set_tensor(
         n.out,
         fast::rope(
-            x, n.dims, n.traditional, n.base, n.scale, offset, freqs_arr, s));
+            x, n.dims, n.traditional, base, n.scale, offset, freqs_arr, s));
   }
 }
 
@@ -1380,6 +1385,13 @@ inline void exec_logical_not(
   st.set_tensor(n.out, logical_not(st.const_tensor_ref(n.x), s));
 }
 
+inline void exec_bitwise_invert(
+    const BitwiseInvertNode& n,
+    ExecutionState& st,
+    StreamOrDevice s) {
+  st.set_tensor(n.out, bitwise_invert(st.const_tensor_ref(n.x), s));
+}
+
 inline void exec_logical_and(
     const LogicalAndNode& n,
     ExecutionState& st,
@@ -1393,6 +1405,15 @@ inline void
 exec_logical_or(const LogicalOrNode& n, ExecutionState& st, StreamOrDevice s) {
   st.set_tensor(
       n.out, logical_or(st.const_tensor_ref(n.a), st.const_tensor_ref(n.b), s));
+}
+
+inline void exec_bitwise_and(
+    const BitwiseAndNode& n,
+    ExecutionState& st,
+    StreamOrDevice s) {
+  st.set_tensor(
+      n.out,
+      bitwise_and(st.const_tensor_ref(n.a), st.const_tensor_ref(n.b), s));
 }
 
 inline void exec_tri(const TriNode& n, ExecutionState& st, StreamOrDevice s) {
@@ -1726,6 +1747,13 @@ inline void exec_all(const AllNode& n, ExecutionState& st, StreamOrDevice s) {
   }
 }
 
+inline void exec_roll(const RollNode& n, ExecutionState& st, StreamOrDevice s) {
+  const auto& x = st.const_tensor_ref(n.x);
+  auto shifts = to_shape(n.shift, st);
+  std::vector<int> axes(n.axes.begin(), n.axes.end());
+  st.set_tensor(n.out, roll(x, shifts, axes, s));
+}
+
 inline void
 exec_repeat(const RepeatNode& n, ExecutionState& st, StreamOrDevice s) {
   const auto& x = st.const_tensor_ref(n.x);
@@ -2028,11 +2056,18 @@ class Interpreter {
       case OpCode::LOGICAL_NOT:
         ops::exec_logical_not(std::get<LogicalNotNode>(instr.node), st, s);
         break;
+      case OpCode::BITWISE_INVERT:
+        ops::exec_bitwise_invert(
+            std::get<BitwiseInvertNode>(instr.node), st, s);
+        break;
       case OpCode::LOGICAL_AND:
         ops::exec_logical_and(std::get<LogicalAndNode>(instr.node), st, s);
         break;
       case OpCode::LOGICAL_OR:
         ops::exec_logical_or(std::get<LogicalOrNode>(instr.node), st, s);
+        break;
+      case OpCode::BITWISE_AND:
+        ops::exec_bitwise_and(std::get<BitwiseAndNode>(instr.node), st, s);
         break;
       case OpCode::TRI:
         ops::exec_tri(std::get<TriNode>(instr.node), st, s);
@@ -2198,6 +2233,9 @@ class Interpreter {
         break;
       case OpCode::REPEAT:
         ops::exec_repeat(std::get<RepeatNode>(instr.node), st, s);
+        break;
+      case OpCode::ROLL:
+        ops::exec_roll(std::get<RollNode>(instr.node), st, s);
         break;
       case OpCode::SORT:
         ops::exec_sort(std::get<SortNode>(instr.node), st, s);

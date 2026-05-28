@@ -7,14 +7,15 @@
 
 # pyre-strict
 
+import atexit
+import contextlib
 import importlib.resources
 import os
 import re
-import shutil
 import stat
 import subprocess
-
 import tempfile
+import threading
 
 from dataclasses import dataclass
 from typing import Callable, Dict, List, Optional, Sequence
@@ -240,20 +241,41 @@ class _FlatbufferResult:
 # Name of an optional resource containing the `flatc` executable.
 _FLATC_RESOURCE_NAME: str = "flatbuffers-flatc"
 
+# Cached flatc binary path. In PAR files, importlib.resources.as_file()
+# extracts the binary to a temp file on each call. With 200+ XNNPACK
+# partitions this adds ~30 min of overhead. Caching avoids re-extraction.
+# The ExitStack is registered with atexit so the extracted temp file is
+# cleaned up on normal process exit.
+#
+# Fork safety: the child inherits the parent's atexit registry and cached
+# path. Without _reset_flatc_cache_after_fork, the child's atexit would
+# run the inherited handler and unlink the parent's temp file. The
+# before/after_in_parent callbacks hold _flatc_lock across fork so the
+# child never inherits a half-initialized cache.
+_flatc_cached_path: Optional[str] = None
+_flatc_exit_stack: Optional[contextlib.ExitStack] = None
+_flatc_lock: threading.Lock = threading.Lock()
 
-def _run_flatc(args: Sequence[str]) -> None:
-    """Runs the `flatc` command with the provided args.
 
-    If a resource matching _FLATC_RESOURCE_NAME exists, uses that executable.
-    Otherwise, expects the `flatc` tool to be available on the system path.
-    """
-    flatc_resource = importlib.resources.files(__package__).joinpath(
-        _FLATC_RESOURCE_NAME
-    )
-    if flatc_resource.is_file():
-        # Use the provided flatc binary.
-        with importlib.resources.as_file(flatc_resource) as flatc_path:
-            # Ensure the binary has execute permissions (needed for PAR files)
+def _get_flatc_path() -> str:
+    """Returns the path to the flatc executable, caching the result."""
+    global _flatc_cached_path, _flatc_exit_stack
+    # Double-checked locking: fast path avoids the lock once cached.
+    if _flatc_cached_path is not None:
+        return _flatc_cached_path
+
+    with _flatc_lock:
+        if _flatc_cached_path is not None:
+            return _flatc_cached_path
+
+        flatc_resource = importlib.resources.files(__package__).joinpath(
+            _FLATC_RESOURCE_NAME
+        )
+        if flatc_resource.is_file():
+            exit_stack = contextlib.ExitStack()
+            flatc_path = exit_stack.enter_context(
+                importlib.resources.as_file(flatc_resource)
+            )
             try:
                 current_mode = flatc_path.stat().st_mode
                 if not (current_mode & stat.S_IXUSR):
@@ -262,13 +284,49 @@ def _run_flatc(args: Sequence[str]) -> None:
                     )
             except OSError:
                 pass
-            subprocess.run([flatc_path] + list(args), check=True)
-    else:
-        # Expect the `flatc` tool to be on the system path or set as an env var.
-        flatc_path = os.getenv("FLATC_EXECUTABLE")
-        if not flatc_path:
-            flatc_path = "flatc"
-        subprocess.run([flatc_path] + list(args), check=True)
+            _flatc_exit_stack = exit_stack
+            # Clean up the extracted temp file on normal process exit.
+            atexit.register(exit_stack.close)
+            _flatc_cached_path = str(flatc_path)
+        else:
+            _flatc_cached_path = os.getenv("FLATC_EXECUTABLE", "flatc")
+
+        return _flatc_cached_path
+
+
+def _reset_flatc_cache_after_fork() -> None:
+    """Reset the flatc cache in the child after fork.
+
+    Unregister the inherited atexit handler (do NOT call .close() — the
+    parent still owns the file), clear the cached state so the child
+    re-extracts lazily, and replace the lock (the inherited one is held
+    by the `before` fork callback but the acquiring thread no longer
+    exists in the child).
+    """
+    global _flatc_cached_path, _flatc_exit_stack, _flatc_lock
+    if _flatc_exit_stack is not None:
+        atexit.unregister(_flatc_exit_stack.close)
+    _flatc_cached_path = None
+    _flatc_exit_stack = None
+    _flatc_lock = threading.Lock()
+
+
+# os.register_at_fork is Unix-only; guard for Windows importability.
+if hasattr(os, "register_at_fork"):
+    os.register_at_fork(
+        before=lambda: _flatc_lock.acquire(),
+        after_in_parent=lambda: _flatc_lock.release(),
+        after_in_child=_reset_flatc_cache_after_fork,
+    )
+
+
+def _run_flatc(args: Sequence[str]) -> None:
+    """Runs the `flatc` command with the provided args.
+
+    If a resource matching _FLATC_RESOURCE_NAME exists, uses that executable.
+    Otherwise, expects the `flatc` tool to be available on the system path.
+    """
+    subprocess.run([_get_flatc_path()] + list(args), check=True)
 
 
 def _flatc_compile(output_dir: str, schema_path: str, json_path: str) -> None:
@@ -323,72 +381,6 @@ def _flatc_decompile(
             bin_path,
         ]
     )
-
-
-def _program_json_to_flatbuffer(
-    program_json: str,
-    *,
-    constant_tensor_alignment: Optional[int] = None,
-    delegate_alignment: Optional[int] = None,
-) -> _FlatbufferResult:
-    """Converts Program-compatible JSON into binary flatbuffer data.
-
-    Args:
-        program_json: The JSON to convert. Must be compatible with the root
-            table type of //executorch/schema/program.fbs.
-        constant_tensor_alignment: If provided, the alignment to use for tensor
-            data embedded in the output flatbuffer data. If not provided, uses
-            the alignment in the schema.
-        delegate_alignment: If provided, the alignment to use for delegate
-            data embedded in the output flatbuffer data. If not provided, uses
-            the alignment in the schema.
-
-    Returns: The flatbuffer data and associated metadata.
-    """
-    with tempfile.TemporaryDirectory() as temp_dir:
-        schema_info = _prepare_schema(
-            out_dir=temp_dir,
-            constant_tensor_alignment=constant_tensor_alignment,
-            delegate_alignment=delegate_alignment,
-        )
-        file_stem = "data"
-        json_path = os.path.join(temp_dir, file_stem + ".json")
-        output_path = os.path.join(temp_dir, file_stem + ".pte")
-
-        with open(json_path, "wb") as json_file:
-            json_file.write(program_json.encode("ascii"))
-
-        try:
-            _flatc_compile(temp_dir, schema_info.root_path, json_path)
-        except Exception as err:
-            # It's helpful to save the breaking files for debugging. Optionally
-            # move them out of the auto-deleting temporary directory. Don't do
-            # this by default because some input files can be many GB in size,
-            # and these copies won't be auto-deleted.
-            should_save = os.getenv(_SAVE_FLATC_ENV, "").strip() not in {"", "0"}
-            extra_message = ""
-            if should_save:
-                try:
-                    saved_dir = tempfile.mkdtemp(prefix="exir-saved-flatc-")
-                    for f in os.listdir(temp_dir):
-                        shutil.move(src=os.path.join(temp_dir, f), dst=saved_dir)
-                    extra_message += f" Moved input files to '{saved_dir}'."
-                except Exception as err2:
-                    extra_message += (
-                        f" (Failed to save input files for debugging: {err2})"
-                    )
-            else:
-                extra_message += (
-                    f" Set {_SAVE_FLATC_ENV}=1 to save input files on failure."
-                )
-
-            raise RuntimeError(
-                f"Failed to compile {json_path} to {output_path}." + extra_message
-            ) from err
-        with open(output_path, "rb") as output_file:
-            return _FlatbufferResult(
-                data=output_file.read(), max_alignment=schema_info.max_alignment
-            )
 
 
 def _replace_infinity_in_json_file(content: bytes) -> bytes:

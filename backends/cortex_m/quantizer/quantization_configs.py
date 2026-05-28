@@ -2,6 +2,7 @@
 #
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
+import operator
 from typing import Any, Callable
 
 import torch
@@ -10,10 +11,6 @@ from executorch.backends.arm.quantizer.arm_quantizer_utils import (
     _get_int32_per_channel_bias_qspec,
 )
 from executorch.backends.arm.quantizer.quantization_config import QuantizationConfig
-from executorch.backends.cortex_m.quantizer.quantizer_reporter import (
-    SUPPORTED_QCONFIGS,
-    SUPPORTED_QSPECS,
-)
 from torch.fx import Node
 from torchao.quantization.pt2e import (
     HistogramObserver,
@@ -90,9 +87,44 @@ POOL_SHARE_OUTPUT_TARGETS = {
     torch.ops.aten.max_pool2d_with_indices.default,
 }
 
+POOL_FUSED_ACTIVATION_TARGETS = {
+    torch.ops.aten.relu.default,
+    torch.ops.aten.relu_.default,
+    torch.ops.aten.hardtanh.default,
+    torch.ops.aten.hardtanh_.default,
+    torch.ops.aten.clamp.default,
+    torch.ops.aten.clamp_.default,
+}
+
 
 class CortexMQuantizationConfig(QuantizationConfig):
     """Configures quantization, while enforcing cortex-m specific constraints."""
+
+    @staticmethod
+    def _get_shared_pool_input(node: Node | None) -> Node | None:
+        if node is None or len(node.args) == 0:
+            return None
+
+        input_node = node.args[0]
+        if not isinstance(input_node, Node):
+            return None
+
+        if input_node.target in POOL_SHARE_OUTPUT_TARGETS:
+            if len(input_node.args) > 0 and isinstance(input_node.args[0], Node):
+                return input_node.args[0]
+            return None
+
+        if input_node.target == operator.getitem and len(input_node.args) > 0:
+            pool_node = input_node.args[0]
+            if (
+                isinstance(pool_node, Node)
+                and pool_node.target in POOL_SHARE_OUTPUT_TARGETS
+                and len(pool_node.args) > 0
+                and isinstance(pool_node.args[0], Node)
+            ):
+                return pool_node.args[0]
+
+        return None
 
     def get_input_act_qspec(
         self, node: Node | None = None, input_node: Node | None = None
@@ -121,6 +153,10 @@ class CortexMQuantizationConfig(QuantizationConfig):
             if isinstance(input_node, Node):
                 return SharedQuantizationSpec((input_node, node))
             return super().get_output_act_qspec()
+        if node is not None and node.target in POOL_FUSED_ACTIVATION_TARGETS:
+            shared_pool_input = self._get_shared_pool_input(node)
+            if shared_pool_input is not None:
+                return SharedQuantizationSpec(shared_pool_input)
         return super().get_output_act_qspec()
 
     def get_weight_qspec(self, node: Node | None = None) -> QuantizationSpecBase | None:
@@ -156,6 +192,7 @@ INT8_PER_TENSOR_CONFIG = CortexMQuantizationConfig(
     INT8_ACTIVATION_PER_TENSOR_QSPEC,
     INT8_WEIGHT_PER_TENSOR_QSPEC,
     _get_int32_bias_qspec,
+    f"{__name__}.INT8_PER_TENSOR_CONFIG",
 )
 
 
@@ -164,25 +201,5 @@ INT8_PER_CHANNEL_CONFIG = CortexMQuantizationConfig(
     INT8_ACTIVATION_PER_TENSOR_QSPEC,
     INT8_WEIGHT_PER_CHANNEL_QSPEC,
     _get_int32_per_channel_bias_qspec,
-)
-
-
-# Register supported quantization configs and qspecs in the reporter for human-readable reporting
-# MLETORCH-1854: Temporary solution, refactor to automatically register these instead
-SUPPORTED_QCONFIGS.update(
-    {
-        INT8_PER_CHANNEL_CONFIG: f"{__name__}.INT8_PER_CHANNEL_QCONFIG",
-        INT8_PER_TENSOR_CONFIG: f"{__name__}.INT8_PER_TENSOR_QCONFIG",
-    }
-)
-
-SUPPORTED_QSPECS.update(
-    {
-        INT8_ACTIVATION_PER_TENSOR_QSPEC: "INT8_ACTIVATION_PER_TENSOR_QSPEC",
-        INT8_ACTIVATION_PER_CHANNEL_QSPEC: "INT8_ACTIVATION_PER_CHANNEL_QSPEC",
-        INT8_WEIGHT_PER_TENSOR_QSPEC: "INT8_WEIGHT_PER_TENSOR_QSPEC",
-        INT8_WEIGHT_PER_CHANNEL_QSPEC: "INT8_WEIGHT_PER_CHANNEL_QSPEC",
-        INT8_WEIGHT_PER_CHANNEL_TRANSPOSE_QSPEC: "INT8_WEIGHT_PER_CHANNEL_TRANSPOSE_QSPEC",
-        SOFTMAX_OUTPUT_FIXED_QSPEC: "SOFTMAX_OUTPUT_FIXED_QSPEC",
-    }
+    f"{__name__}.INT8_PER_CHANNEL_CONFIG",
 )

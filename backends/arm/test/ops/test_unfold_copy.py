@@ -120,6 +120,18 @@ test_data_int: dict[str, input_params] = {
     ),
 }
 
+test_data_bf16: dict[str, input_params] = {
+    "test_bf16_2d_dim1": (
+        torch.tensor(
+            [[0.1, 0.2, 0.3, 0.4, 0.5], [1.1, 1.2, 1.3, 1.4, 1.5]],
+            dtype=torch.bfloat16,
+        ),  # [B=2, T=5]
+        1,
+        3,
+        2,  # U=(5-3)//2+1=2 -> [B=2, U=2, C=3]
+    ),
+}
+
 
 @common.parametrize("test_data", test_data_fp)
 def test_unfold_copy_tosa_FP(test_data: input_params):
@@ -128,6 +140,18 @@ def test_unfold_copy_tosa_FP(test_data: input_params):
         test_data,
         aten_op=UnfoldCopy.aten_op,
         exir_op=UnfoldCopy.exir_op,
+    )
+    pipeline.run()
+
+
+@common.parametrize("test_data", test_data_bf16)
+def test_unfold_copy_tosa_FP_bf16(test_data: input_params):
+    pipeline = TosaPipelineFP[input_params](
+        UnfoldCopy(),
+        test_data,
+        aten_op=UnfoldCopy.aten_op,
+        exir_op=UnfoldCopy.exir_op,
+        tosa_extensions=["bf16"],
     )
     pipeline.run()
 
@@ -161,12 +185,6 @@ def test_unfold_copy_u55_INT(test_data: input_params):
 @common.parametrize(
     "test_data",
     test_data_int | test_data_fp,
-    xfails={
-        "test_int8_3d_dim_neg1": "MLETORCH-1732: rand test fails",
-        "test_int32_4d_dim_neg1": "MLETORCH-1732: rand test fails",
-        "test_fp32_3d_dim_neg1": "MLETORCH-1732: rand test fails",
-        "test_fp32_4d_dim_neg1": "MLETORCH-1732: rand test fails",
-    },
 )
 @common.XfailIfNoCorstone320
 def test_unfold_copy_u85_INT(test_data: input_params):

@@ -30,7 +30,6 @@ from executorch.backends.arm.tosa.specification import (
     TosaSpecification,
     TosaSpecMapping,
 )
-from torch.export import ExportedProgram
 
 logger = logging.getLogger(__name__)
 
@@ -39,7 +38,6 @@ class NodeVisitor:
     """Provide a visitor pattern to lower edge IR to TOSA.
 
     Attributes:
-        _exported_program (torch.export.ExportedProgram): Source program being lowered.
         tosa_spec (TosaSpecification): Active TOSA specification for lowering.
         debug_hook (Optional[DebugHook]): Optional hook for debug metadata.
 
@@ -54,11 +52,9 @@ class NodeVisitor:
 
     def __init__(
         self,
-        exported_program: ExportedProgram,
         tosa_spec: TosaSpecification,
         debug_hook: Optional[DebugHook] = None,
     ):
-        self._exported_program = exported_program
         self.tosa_spec = tosa_spec
         self.debug_hook = debug_hook
 

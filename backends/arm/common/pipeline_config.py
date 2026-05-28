@@ -14,24 +14,12 @@ class SoftmaxDecompositionConfig(Enum):
     STABLE = auto()  # Stable softmax, no masked fill decomposition
 
 
-class FuseDuplicateUsersConfig(Enum):
-    ENABLED = auto()
-    DISABLED = auto()
-
-
 @dataclass
 class ArmPassPipelineConfig:
     softmax: SoftmaxDecompositionConfig = SoftmaxDecompositionConfig.MASKED
-    fuse_duplicate_users: FuseDuplicateUsersConfig = FuseDuplicateUsersConfig.ENABLED
-
-    def disable_fuse_duplicate_users(self) -> None:
-        self.fuse_duplicate_users = FuseDuplicateUsersConfig.DISABLED
 
     def is_default(self) -> bool:
-        return (
-            self.softmax is SoftmaxDecompositionConfig.MASKED
-            and self.fuse_duplicate_users is FuseDuplicateUsersConfig.ENABLED
-        )
+        return self.softmax is SoftmaxDecompositionConfig.MASKED
 
     def to_dict(self) -> dict[str, str]:
         return {f.name: getattr(self, f.name).name for f in fields(self)}

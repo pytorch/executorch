@@ -633,3 +633,35 @@ class TestChannelsLastTaggedReshapePass(unittest.TestCase):
         ]
         self.assertEqual(1, len(view_nodes))
         self.assertTrue(ChannelsLastTaggedReshapePass(None).is_nchw_node(view_nodes[0]))
+
+    class ConvCat(torch.nn.Module):
+        def __init__(self):
+            super().__init__()
+            self.conv1 = torch.nn.Conv2d(3, 16, 3, padding=1)
+            self.conv2 = torch.nn.Conv2d(3, 16, 3, padding=1)
+
+        def forward(self, x):
+            return torch.cat([self.conv1(x), self.conv2(x)], dim=1)
+
+    def test_fp32_conv_cat_immutable_list(self):
+        model = self.ConvCat().eval()
+        x = torch.randn(1, 3, 8, 8)
+        self.run_tester(model, (x,))
+
+    def test_dq_conv_cat_immutable_list(self):
+        model = self.ConvCat().eval()
+        x = torch.randn(1, 3, 8, 8)
+        (
+            Tester(model, (x,))
+            .quantize(
+                Quantize(
+                    quantization_config=get_symmetric_quantization_config(
+                        is_dynamic=True
+                    )
+                )
+            )
+            .export()
+            .to_edge()
+            .run_passes(self.PassStage)
+            .run_method_and_compare_outputs()
+        )

@@ -95,8 +95,10 @@ echo "Cross compiling ExecuTorch baremetal ARM..."
 # Resolve the model path for selective build. Using EXECUTORCH_SELECT_OPS_MODEL
 # auto-detects the exact operators the model needs from the .pte file, avoiding
 # "Operator missing" errors at runtime.
+# Note: skip selective build for CMSIS-NN models — their cortex_m:: ops are
+# registered by the cortex_m backend, not by portable kernel codegen.
 SELECT_OPS_FLAGS=""
-if [ -n "$MODEL_INPUT" ] && [ -f "${PICO2_DIR}/${MODEL_INPUT}" ]; then
+if [ $USE_CMSIS -eq 0 ] && [ -n "$MODEL_INPUT" ] && [ -f "${PICO2_DIR}/${MODEL_INPUT}" ]; then
   MODEL_ABS_PATH="$(cd "${PICO2_DIR}" && realpath "${MODEL_INPUT}")"
   SELECT_OPS_FLAGS="-DEXECUTORCH_SELECT_OPS_MODEL=${MODEL_ABS_PATH}"
   echo "Using selective build from model: ${MODEL_ABS_PATH}"

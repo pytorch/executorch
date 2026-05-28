@@ -115,6 +115,7 @@ EXECUTORCH_DEFINED_MODELS = [
     "lfm2_350m",  # hybrid
     "lfm2_700m",  # hybrid
     "lfm2_1_2b",  # hybrid
+    "lfm2_5_350m",  # hybrid
     "lfm2_5_1_2b",  # hybrid
 ]
 TORCHTUNE_DEFINED_MODELS = ["llama3_2_vision"]
@@ -123,7 +124,7 @@ HUGGING_FACE_REPO_IDS = {
     "qwen2_5_1_5b": "Qwen/Qwen2.5-1.5B",
     "qwen2_5_coder_32b": "Qwen/Qwen2.5-Coder-32B-Instruct",
     "phi_4_mini": "microsoft/Phi-4-mini-instruct",
-    "smollm2": "HuggingFaceTB/SmolLM-135M",
+    "smollm2": "HuggingFaceTB/SmolLM2-135M",
     "qwen3_0_6b": "Qwen/Qwen3-0.6B",
     "qwen3_1_7b": "Qwen/Qwen3-1.7B",
     "qwen3_4b": "Qwen/Qwen3-4B",
@@ -133,6 +134,7 @@ HUGGING_FACE_REPO_IDS = {
     "lfm2_350m": "LiquidAI/LFM2-350M",
     "lfm2_700m": "LiquidAI/LFM2-700M",
     "lfm2_1_2b": "LiquidAI/LFM2-1.2B",
+    "lfm2_5_350m": "LiquidAI/LFM2.5-350M",
     "lfm2_5_1_2b": "LiquidAI/LFM2.5-1.2B-Instruct",
 }
 
@@ -229,6 +231,8 @@ def build_args_parser() -> argparse.ArgumentParser:
             "vulkan_8w",
             "tosa_8a8w",
             "ethosu_8a8w",
+            "vgf_8a8w",
+            "vgf_16a8w",
         ],
         help="Use PT2E quantization. Comma separated options. e.g. xnnpack_dynamic (for per channel 8 bit weight), xnnpack_dynamic_qc4 (for per channel 4 bit weight), embedding.",
     )
@@ -456,6 +460,18 @@ def build_args_parser() -> argparse.ArgumentParser:
     )
     parser.add_argument("-V", "--vulkan", action="store_true")
     parser.add_argument("--vulkan-force-fp16", action="store_true")
+    parser.add_argument("--vgf", "--arm-vgf", dest="vgf", action="store_true")
+    parser.add_argument(
+        "--vgf-compile-spec",
+        default="TOSA-1.0+INT",
+        help="VGF compile spec, e.g. TOSA-1.0+INT or TOSA-1.0+INT+int16.",
+    )
+    parser.add_argument(
+        "--vgf-quantize-scope",
+        default="full",
+        choices=["full", "linear"],
+        help="VGF quantization scope. Use 'linear' to quantize only Linear modules.",
+    )
     parser.add_argument("--mps", action="store_true")
     parser.add_argument("--coreml", action="store_true")
     parser.add_argument(
@@ -768,7 +784,8 @@ def _prepare_for_llama_export(llm_config: LlmConfig) -> LLMEdgeManager:
             expand_rope_table=llm_config.model.expand_rope_table,
             use_custom_sdpa_with_attention_mask=getattr(
                 llm_config.model, "use_custom_sdpa_with_attention_mask", False
-            ),
+            )
+            or bool(llm_config.model.use_attention_sink),
             use_sdpa_with_kv_cache=llm_config.model.use_sdpa_with_kv_cache,
             quantize_kv_cache=llm_config.model.quantize_kv_cache,
             use_kv_cache=llm_config.model.use_kv_cache,
@@ -793,10 +810,6 @@ def _prepare_for_llama_export(llm_config: LlmConfig) -> LLMEdgeManager:
             quantize_with_hqq=llm_config.quantization.use_hqq,
         )
     )
-
-    # Now cast to the dtype override after quantization, so non-quantized
-    # components use the desired computation dtype.
-    edge_manager.model = edge_manager.model.to(dtype=dtype_override.to_torch_dtype())
 
     return edge_manager
 
@@ -850,6 +863,7 @@ def get_quantizer_and_quant_params(llm_config):
             llm_config.backend.vgf.compile_spec,
             llm_config.backend.vgf.compiler_flags,
             llm_config.quantization.pt2e_quantize.value,
+            llm_config.backend.vgf.quantize_scope.value,
         )
         quantizers.append(vgf_quantizer)
     if llm_config.backend.vulkan.enabled and llm_config.quantization.pt2e_quantize:
@@ -1038,6 +1052,8 @@ def _to_edge_and_lower_llama_arm(
         partitioners.append(
             get_ethosu_partitioner(
                 llm_config.backend.ethosu.target,
+                llm_config.backend.ethosu.system_config,
+                llm_config.backend.ethosu.memory_mode,
             )
         )
         modelname = f"ethosu_{modelname}"
@@ -1328,6 +1344,13 @@ def _export_llama_multimethod(llm_config: LlmConfig) -> LLMEdgeManager:
     if llm_config.base.model_class.value in TORCHTUNE_DEFINED_MODELS:
         additional_passes = [InitializedMutableBufferPass(["kv_cache_pos"])]
 
+    # For attention sink models, cache_positions must be initialized to -1
+    # (sentinel for "empty slot"). Without this pass, ExecuTorch only serializes
+    # shape+dtype for mutable buffers, leaving them zero-initialized at runtime,
+    # which corrupts the causal mask computation.
+    if llm_config.model.use_attention_sink:
+        additional_passes.append(InitializedMutableBufferPass(["cache_positions"]))
+
     # Build dict of exported programs
     method_to_program: Dict[str, ExportedProgram] = {}
     first_builder = None
@@ -1400,6 +1423,13 @@ def _export_llama(llm_config: LlmConfig) -> LLMEdgeManager:  # noqa: C901
     additional_passes = []
     if llm_config.base.model_class.value in TORCHTUNE_DEFINED_MODELS:
         additional_passes = [InitializedMutableBufferPass(["kv_cache_pos"])]
+
+    # For attention sink models, cache_positions must be initialized to -1
+    # (sentinel for "empty slot"). Without this pass, ExecuTorch only serializes
+    # shape+dtype for mutable buffers, leaving them zero-initialized at runtime,
+    # which corrupts the causal mask computation.
+    if llm_config.model.use_attention_sink:
+        additional_passes.append(InitializedMutableBufferPass(["cache_positions"]))
 
     # export_to_edge
     builder_manager = _prepare_for_llama_export(llm_config)
@@ -1781,16 +1811,17 @@ def _get_source_transforms(  # noqa
     use_attention_mask_for_custom_sdpa = use_custom_sdpa_with_attention_mask
 
     if use_sdpa_with_kv_cache:
-        transforms.append(replace_kv_cache_with_custom_kv_cache)
-        # todo: do this optionally
-        # if use attention mask instead of causal attention
-        # then create partial function that sets use_attention_mask=True
+        # Replace SDPA first, then KV cache. Order matters: the KV cache
+        # replacement sets SDPACustom.use_attention_mask=True for ring buffer
+        # models (attention sink, sliding window). If SDPA is replaced after,
+        # a new SDPACustom(use_attention_mask=False) would overwrite it.
         if use_attention_mask_for_custom_sdpa:
             transforms.append(
                 partial(replace_sdpa_with_custom_op, use_attention_mask=True)
             )
         else:
             transforms.append(replace_sdpa_with_custom_op)
+        transforms.append(replace_kv_cache_with_custom_kv_cache)
 
     if quantize_kv_cache:
         assert use_kv_cache, "quantize_kv_cache requires use_kv_cache=True"
@@ -1856,6 +1887,12 @@ def _get_source_transforms(  # noqa
                 layer_sizes=local_global_attention,
             )
         )
+
+    # Cast to dtype_override after quantization transforms, so non-quantized
+    # components use the desired computation dtype. This must happen before
+    # _convert_model_for_aarch64 which converts IntxUnpackedToInt8Tensor to
+    # IntxOpaqueTensor (which doesn't support .to()).
+    transforms.append(lambda m: m.to(dtype=dtype_override.to_torch_dtype()))
 
     if any([use_torchao_kernels_linear, use_torchao_kernels_tied_embedding]):
         from torchao.prototype.tensor_conversion.api import _convert_model_for_aarch64

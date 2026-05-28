@@ -23,9 +23,6 @@ import torch
 
 import tosa_serializer as ts
 
-from executorch.backends.arm._passes.arm_pass_utils import (
-    get_cond_while_submodules_nested,
-)
 from executorch.backends.arm.common.arm_compile_spec import ArmCompileSpec
 from executorch.backends.arm.common.debug import debug_fail, debug_tosa_dump
 from executorch.backends.arm.debug.schema import DebugHook
@@ -35,15 +32,27 @@ from executorch.backends.arm.process_node import (
     process_placeholder,
 )
 from executorch.backends.arm.tosa.compile_spec import TosaCompileSpec
-from executorch.backends.arm.tosa.mapping import TOSA_TENSOR_NAME_META
+from executorch.backends.arm.tosa.mapping import (
+    TOSA_CONTROL_FLOW_REGION_NAME_META,
+    TOSA_TENSOR_NAME_META,
+)
 from executorch.exir.backend.backend_details import BackendDetails, PreprocessResult
 from executorch.exir.backend.compile_spec_schema import CompileSpec
-from executorch.exir.dim_order_utils import get_memory_format
+from executorch.exir.graph_module import get_cond_while_submodules
 from torch.export.exported_program import ExportedProgram
 from torch.fx import Graph, GraphModule, Node
 
 # TOSA backend debug functionality
 logger = logging.getLogger(__name__)
+
+
+def _qualify_control_flow_region_name(
+    parent_region_name: str | None, child_region_name: str
+) -> str:
+    """Return a globally unique TOSA region name for nested control flow."""
+    if parent_region_name is None:
+        return child_region_name
+    return f"{parent_region_name}__{child_region_name}"
 
 
 def _annotate_external_ids(ep_graph: Graph) -> Dict[str, int]:
@@ -119,12 +128,8 @@ def _sort_outputs(graph_module: GraphModule, node_to_id_map: dict[str, int]):
 
 
 def _get_matching_fake_tensor(node: Node):
-    """Return a fake tensor with the same properties as node, but with
-    .dim_order() == node.meta["tosa_dim_order"]
-    """
-    fake_tensor = node.meta["val"]
-    desired_dim_order = node.meta["tosa_dim_order"]
-    return fake_tensor.to(memory_format=get_memory_format(list(desired_dim_order)))
+    """Return the fake tensor of node."""
+    return node.meta["val"]
 
 
 def arm_get_first_delegation_tag(graph_module) -> str:
@@ -330,6 +335,43 @@ class TOSABackend(BackendDetails):
             RuntimeError: If an FX node with an unsupported op kind is found.
 
         """
+
+        def _annotate_control_flow_region_names(
+            graph_module: GraphModule, parent_region_name: str | None
+        ) -> None:
+            for node in graph_module.graph.nodes:
+                if node.op != "call_function":
+                    continue
+
+                match node.target:
+                    case torch.ops.higher_order.cond:
+                        arg_indices = [1, 2]
+                    case torch.ops.higher_order.while_loop:
+                        arg_indices = [0, 1]
+                    case _:
+                        continue
+
+                for arg_index in arg_indices:
+                    submodule_node = node.args[arg_index]
+                    if not isinstance(submodule_node, Node):
+                        raise RuntimeError(
+                            f"Expected control flow submodule arg {arg_index} to be a Node."
+                        )
+                    if submodule_node.op != "get_attr":
+                        raise RuntimeError(
+                            f"Expected control flow submodule arg {arg_index} to be a get_attr node."
+                        )
+                    if not isinstance(submodule_node.target, str):
+                        raise RuntimeError(
+                            "Expected control flow submodule target to be a string."
+                        )
+
+                    submodule_node.meta[TOSA_CONTROL_FLOW_REGION_NAME_META] = (
+                        _qualify_control_flow_region_name(
+                            parent_region_name, submodule_node.target
+                        )
+                    )
+
         tosa_spec = compile_spec.tosa_spec
         node_to_id_map = _annotate_external_ids(graph_module.graph)
         artifact_path = compile_spec._get_intermediate_path()
@@ -345,13 +387,15 @@ class TOSABackend(BackendDetails):
         # TODO: Fix the need to lazily import this.
         from executorch.backends.arm.operators.node_visitor import get_node_visitors
 
-        node_visitors = get_node_visitors(edge_program, tosa_spec, debug_hook)
+        node_visitors = get_node_visitors(tosa_spec, debug_hook)
 
         if output_order_workaround:
             logger.debug("Re-sorting outputs during TOSA lowering.")
             graph_module = _sort_outputs(graph_module, node_to_id_map)
         else:
             logger.debug("No re-sorting outputs (workaround) during TOSA lowering.")
+
+        _annotate_control_flow_region_names(graph_module, submodule_name)
 
         if submodule_name is not None:
             tosa_graph.startRegion(submodule_name)
@@ -401,7 +445,7 @@ class TOSABackend(BackendDetails):
                 raise
 
         # Recursively preprocess controlflow submodules.
-        for name, submodule, control_flow_node in get_cond_while_submodules_nested(
+        for name, submodule, control_flow_node in get_cond_while_submodules(
             graph_module
         ):
             TOSABackend._regularize_submodule(submodule, control_flow_node)
@@ -411,7 +455,7 @@ class TOSABackend(BackendDetails):
                 compile_spec,
                 tosa_graph,
                 debug_hook,
-                submodule_name=name,
+                submodule_name=_qualify_control_flow_region_name(submodule_name, name),
                 containing_graph_module=graph_module,
             )
 

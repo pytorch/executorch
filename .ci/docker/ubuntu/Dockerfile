@@ -62,9 +62,12 @@ RUN bash ./install_cache.sh && rm install_cache.sh utils.sh
 ENV SCCACHE_BUCKET ossci-compiler-cache-circleci-v2
 ENV SCCACHE_S3_KEY_PREFIX executorch
 ENV SCCACHE_REGION us-east-1
+ENV AWS_REGION us-east-1
+ENV AWS_DEFAULT_REGION us-east-1
 
 ARG TORCH_VERSION
 ARG SKIP_PYTORCH
+ARG PYTORCH_BUILD_MAX_JOBS
 COPY ./common/install_pytorch.sh install_pytorch.sh
 COPY ./common/utils.sh utils.sh
 RUN if [ -z "${SKIP_PYTORCH}" ]; then bash ./install_pytorch.sh; fi && rm install_pytorch.sh utils.sh

@@ -50,6 +50,8 @@ PLATFORM_SRCS = [
 
 EXECUTORCH_CORE_SRCS = sorted([
     "runtime/backend/interface.cpp",
+    "runtime/core/device_allocator.cpp",
+    "runtime/core/device_memory_buffer.cpp",
     "runtime/core/evalue.cpp",
     "runtime/core/exec_aten/util/tensor_shape_to_c_string.cpp",
     "runtime/core/exec_aten/util/tensor_util_portable.cpp",
@@ -267,6 +269,7 @@ OPTIMIZED_KERNELS_SRCS = [
     "kernels/optimized/cpu/op_fft_c2r.cpp",
     "kernels/optimized/cpu/op_fft_r2c.cpp",
     "kernels/optimized/cpu/op_gelu.cpp",
+    "kernels/optimized/cpu/op_grid_sampler_2d.cpp",
     "kernels/optimized/cpu/op_le.cpp",
     "kernels/optimized/cpu/op_linear.cpp",
     "kernels/optimized/cpu/op_log_softmax.cpp",
@@ -274,6 +277,7 @@ OPTIMIZED_KERNELS_SRCS = [
     "kernels/optimized/cpu/op_mul.cpp",
     "kernels/optimized/cpu/op_native_layer_norm.cpp",
     "kernels/optimized/cpu/op_sub.cpp",
+    "kernels/optimized/cpu/op_sum.cpp",
     "kernels/optimized/cpu/op_where.cpp",
 ]
 
