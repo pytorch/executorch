@@ -63,33 +63,23 @@ Restrictions:
 x,y    Must not overlap
 -------------------------------------------------------------------------*/
 
-#define IVP_ADDSN_2X32(b_, c_)         \
-  ({                                   \
-    xb_vecN_2x32v a_;                  \
-    xb_vecN_2x64w tmp_a_;              \
-    tmp_a_ = IVP_MULN_2X32(b_, 1);     \
-    IVP_MULAN_2X32(tmp_a_, c_, 1);     \
-    a_ = IVP_PACKVRN_2X64W(tmp_a_, 0); \
-    a_;                                \
-  })
-
 #if !HAVE_VFPU
-DISCARD_FUN(void, vsoftmaxf, (float32_t * y, const float32_t* x, int N))
+DISCARD_FUN(void, vsoftmaxf, (float32_t * y, const float32_t *x, int N))
 #else
-void vsoftmaxf(float32_t* y, const float32_t* x, int N) {
+void vsoftmaxf(float32_t *y, const float32_t *x, int N) {
 #if !defined(IVP_MULN_2X32)
 #else
-  const int* pTbl = (const int*)expftbl_Q30;
+  const int *pTbl = (const int *)expftbl_Q30;
 #endif
-  const xb_vecN_2xf32* restrict pX;
-  xb_vecN_2xf32* restrict pY;
+  const xb_vecN_2xf32 *restrict pX;
+  xb_vecN_2xf32 *restrict pY;
   xb_vecN_2xf32 norm, ysum, xmax;
   int n;
   valign al_X, al_R, al_Y;
   if (N < 0)
     return;
   xmax = minusInff.f;
-  pX = (const xb_vecN_2xf32*)x;
+  pX = (const xb_vecN_2xf32 *)x;
   al_X = IVP_LAN_2XF32_PP(pX);
   al_Y = IVP_ZALIGN();
   for (n = 0; n < (N >> (LOG2_IVP_SIMD_WIDTH - 1)); n++) {
@@ -99,17 +89,17 @@ void vsoftmaxf(float32_t* y, const float32_t* x, int N) {
   }
   if (N & (IVP_SIMD_WIDTH / 2 - 1)) {
     xb_vecN_2xf32 x;
-    IVP_LAVN_2XF32_XP(
-        x, al_X, pX, sizeof(float32_t) * (N & (IVP_SIMD_WIDTH / 2 - 1)));
-    IVP_MAXNUMN_2XF32T(
-        xmax, xmax, x, IVP_LTRSN_2((N & (IVP_SIMD_WIDTH / 2 - 1))));
+    IVP_LAVN_2XF32_XP(x, al_X, pX,
+                      sizeof(float32_t) * (N & (IVP_SIMD_WIDTH / 2 - 1)));
+    IVP_MAXNUMN_2XF32T(xmax, xmax, x,
+                       IVP_LTRSN_2((N & (IVP_SIMD_WIDTH / 2 - 1))));
   }
 
   xmax = IVP_REPN_2XF32(IVP_RMAXNUMN_2XF32(xmax), 0);
   __Pragma("no_reorder");
   ysum = 0.f;
-  pX = (const xb_vecN_2xf32*)x;
-  pY = (xb_vecN_2xf32*)y;
+  pX = (const xb_vecN_2xf32 *)x;
+  pY = (xb_vecN_2xf32 *)y;
   al_X = IVP_LAN_2XF32_PP(pX);
   {
     vboolN_2 bnan;
@@ -163,8 +153,8 @@ void vsoftmaxf(float32_t* y, const float32_t* x, int N) {
     }
     if (N & (IVP_SIMD_WIDTH / 2 - 1)) {
       xb_vecN_2xf32 x;
-      IVP_LAVN_2XF32_XP(
-          x, al_X, pX, sizeof(float32_t) * (N & (IVP_SIMD_WIDTH / 2 - 1)));
+      IVP_LAVN_2XF32_XP(x, al_X, pX,
+                        sizeof(float32_t) * (N & (IVP_SIMD_WIDTH / 2 - 1)));
       x = IVP_SUBN_2XF32(x, xmax);
       bnan |= IVP_UNN_2XF32(x, x);
       {
@@ -206,18 +196,18 @@ void vsoftmaxf(float32_t* y, const float32_t* x, int N) {
         zout = IVP_MULN_2XF32(gf, IVP_MOVN_2XF32_FROMN_2X32(exp));
         x = zout;
       }
-      IVP_ADDN_2XF32T(
-          ysum, ysum, x, IVP_LTRSN_2((N & (IVP_SIMD_WIDTH / 2 - 1))));
-      IVP_SAVN_2XF32_XP(
-          x, al_Y, pY, sizeof(float32_t) * (N & (IVP_SIMD_WIDTH / 2 - 1)));
+      IVP_ADDN_2XF32T(ysum, ysum, x,
+                      IVP_LTRSN_2((N & (IVP_SIMD_WIDTH / 2 - 1))));
+      IVP_SAVN_2XF32_XP(x, al_Y, pY,
+                        sizeof(float32_t) * (N & (IVP_SIMD_WIDTH / 2 - 1)));
     }
     IVP_SAPOSN_2XF32_FP(al_Y, pY);
     ysum = IVP_MOVN_2XF32T(qNaNf.f, ysum, bnan);
   }
   norm = XT_RECIP_S(IVP_RADDN_2XF32(ysum));
   __Pragma("no_reorder");
-  pX = (const xb_vecN_2xf32*)y;
-  pY = (xb_vecN_2xf32*)y;
+  pX = (const xb_vecN_2xf32 *)y;
+  pY = (xb_vecN_2xf32 *)y;
 
   al_R = IVP_LAN_2XF32_PP(pX);
 
@@ -229,11 +219,11 @@ void vsoftmaxf(float32_t* y, const float32_t* x, int N) {
   }
   if (N & (IVP_SIMD_WIDTH / 2 - 1)) {
     xb_vecN_2xf32 x;
-    IVP_LAVN_2XF32_XP(
-        x, al_R, pX, sizeof(float32_t) * (N & (IVP_SIMD_WIDTH / 2 - 1)));
+    IVP_LAVN_2XF32_XP(x, al_R, pX,
+                      sizeof(float32_t) * (N & (IVP_SIMD_WIDTH / 2 - 1)));
     x = IVP_MULN_2XF32(x, norm);
-    IVP_SAVN_2XF32_XP(
-        x, al_Y, pY, sizeof(float32_t) * (N & (IVP_SIMD_WIDTH / 2 - 1)));
+    IVP_SAVN_2XF32_XP(x, al_Y, pY,
+                      sizeof(float32_t) * (N & (IVP_SIMD_WIDTH / 2 - 1)));
   }
   IVP_SAPOSN_2XF32_FP(al_Y, pY);
 
