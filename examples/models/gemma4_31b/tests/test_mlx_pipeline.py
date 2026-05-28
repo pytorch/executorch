@@ -20,15 +20,17 @@ import unittest
 
 import torch
 import torch.nn as nn
+from executorch.examples.models.gemma4_31b.custom_quant import (
+    pack_model,
+    quantize_model,
+)
 
 from executorch.examples.models.gemma4_31b.export import _checkpoint_has_int8_vision_pe
 
 from executorch.examples.models.gemma4_31b.model import Gemma4_31B
 from executorch.examples.models.gemma4_31b.quant import (
     DEFAULT_MLX_PACKERS,
-    pack_model,
     QuantConfig,
-    quantize_model,
     QuantRecipe,
     QuantRule,
 )
@@ -50,8 +52,8 @@ TINY_SENSITIVE_RECIPE = QuantRecipe(
     rules=[
         QuantRule(r"embed_tokens\.weight", _INT8_PER_AXIS),
         # Vision side stays bf16 (PE table is folded into int8 buffers
-        # inside quantize_model; pack_model installs the load-side
-        # dispatch automatically).
+        # inside custom_quant.quantize_model; custom_quant.pack_model installs
+        # the load-side dispatch automatically).
         QuantRule(r"vision_tower\..*", None),
         QuantRule(r"embed_vision\..*", None),
         QuantRule(r".*norm\.weight", None),

@@ -106,8 +106,8 @@ def load_prequantized_model(
     with torch.device("meta"):
         model = Gemma4_31B(config)
 
-    # ``pack_model`` (invoked underneath the loader for this backend) auto-
-    # installs the vision PE int8 dispatch when it sees ``_pet_int8`` keys
+    # ``custom_quant`` loaders auto-install the vision PE int8 dispatch when
+    # they see ``_pet_int8`` keys
     # in the state dict, so no explicit install call is needed here. For
     # MLX, that also covers the alternate checkpoint form where the vision
     # PE table is stored as _pet_int8/_pet_scale buffers; ``_checkpoint_has
@@ -131,7 +131,10 @@ def load_and_quantize(
     backend: str = "cuda",
 ) -> tuple[Gemma4_31B, Gemma4_31BConfig]:
     """Load bf16 checkpoint, quantize, pack — one shot. Text-only path."""
-    from executorch.examples.models.gemma4_31b.quant import pack_model, quantize_model
+    from executorch.examples.models.gemma4_31b.custom_quant import (
+        pack_model,
+        quantize_model,
+    )
     from executorch.examples.models.gemma4_31b.quantize_and_save import _RECIPES
 
     recipe = _RECIPES[recipe_name]
@@ -186,11 +189,15 @@ def _get_packers(backend: str) -> dict:
 
 def _pack_for_backend(model: nn.Module, path: str, backend: str) -> None:
     if backend == "cuda":
-        from executorch.examples.models.gemma4_31b.quant import load_and_pack_for_cuda
+        from executorch.examples.models.gemma4_31b.custom_quant import (
+            load_and_pack_for_cuda,
+        )
 
         load_and_pack_for_cuda(path, model)
     elif backend == "mlx":
-        from executorch.examples.models.gemma4_31b.quant import load_and_pack_for_mlx
+        from executorch.examples.models.gemma4_31b.custom_quant import (
+            load_and_pack_for_mlx,
+        )
 
         load_and_pack_for_mlx(path, model)
     else:

@@ -8,7 +8,8 @@
 
 Produces a safetensors file containing torchao tensor subclasses
 (``Int4Tensor``, ``IntxUnpackedToInt8Tensor``) that can be loaded and
-packed for any backend via ``load_and_pack_for_cuda`` or ``pack_model``.
+packed for any backend via ``custom_quant.load_and_pack_for_cuda`` or
+``custom_quant.pack_model``.
 
 The default recipe runs on CPU. The sensitive recipe requires CUDA for
 HQQ asymmetric quantization.
@@ -25,11 +26,11 @@ import os
 import shutil
 
 import torch.nn as nn
+from executorch.examples.models.gemma4_31b.custom_quant import quantize_model
 
 from executorch.examples.models.gemma4_31b.model import Gemma4_31B
 from executorch.examples.models.gemma4_31b.quant import (
     QuantConfig,
-    quantize_model,
     QuantRecipe,
     QuantRule,
 )

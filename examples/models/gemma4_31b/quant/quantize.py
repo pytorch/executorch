@@ -297,26 +297,7 @@ def quantize_model(
     a mixed dict of torchao tensor subclasses (``Int4Tensor``,
     ``IntxUnpackedToInt8Tensor``) and plain tensors. Non-persistent
     buffers (KV cache, RoPE tables) are excluded.
-
-    Vision support is built in. When ``model.vision_tower`` is present,
-    its bf16 ``position_embedding_table`` parameter is replaced in-place
-    with int8 per-channel ``_pet_int8`` / fp32 ``_pet_scale`` buffers
-    BEFORE the parameter walk runs. This means a single recipe can cover
-    both text and vision modalities: the recipe just needs rules that
-    leave vision linears unquantized (e.g. ``vision_tower\\..*`` → None,
-    ``embed_vision\\..*`` → None); the PE table is handled implicitly and
-    its int8 buffers are picked up by the persistent-buffer walk.
     """
-    # Vision PE table → int8 per-channel buffers (in-place, idempotent).
-    # Done up front so the subsequent parameter walk no longer sees the
-    # bf16 position_embedding_table Parameter, and the buffer walk picks
-    # up the new _pet_int8 / _pet_scale buffers via state_dict().
-    vision_tower = getattr(model, "vision_tower", None)
-    if vision_tower is not None:
-        from .pack_vision_cuda import quantize_vision_position_table
-
-        quantize_vision_position_table(vision_tower, verbose=verbose)
-
     state: dict[str, torch.Tensor] = {}
     persistent_keys = set(model.state_dict().keys())
 

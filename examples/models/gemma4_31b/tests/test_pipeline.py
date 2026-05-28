@@ -21,6 +21,7 @@ import unittest
 
 import torch
 import torch.nn as nn
+from executorch.examples.models.gemma4_31b.custom_quant import quantize_model
 
 from executorch.examples.models.gemma4_31b.model import (
     Gemma4_31B,
@@ -29,7 +30,6 @@ from executorch.examples.models.gemma4_31b.model import (
 )
 from executorch.examples.models.gemma4_31b.quant import (
     QuantConfig,
-    quantize_model,
     QuantRecipe,
     QuantRule,
 )

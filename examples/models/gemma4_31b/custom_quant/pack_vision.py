@@ -27,9 +27,9 @@ Public API:
   * ``install_int8_pe_dispatch(vision_tower)`` — same monkey-patch /
     buffer-shape installation but without quantizing existing data. Used
     by the LOAD path: build model on meta, install zero placeholder
-    buffers + the int8 dispatcher, then let ``load_and_pack_for_cuda``
-    fill them from the safetensors (it treats unknown keys as
-    plain-tensor passthrough via ``pack_one``).
+    buffers + the int8 dispatcher, then let the Gemma4 custom_quant
+    loader wrappers fill them from the safetensors (they treat unknown
+    keys as plain-tensor passthrough via generic ``pack_one``).
 
   * ``collect_vision_state_dict(vision_tower, embed_vision)`` — return a
     flat dict of all vision-side tensors (linears, norms, multimodal
@@ -44,10 +44,10 @@ These keys ride alongside the quantized LM in the same safetensors file
 because torchao's ``flatten_tensor_state_dict`` accepts a mixed dict of
 quantized subclass tensors + plain tensors and lists every name in
 ``metadata['tensor_names']``. The existing
-``quant/pack_cuda.py::load_and_pack_for_cuda`` already iterates that
-list and routes plain tensors through ``pack_one``, which calls
-``register_buffer`` for non-Parameter attributes — exactly what we want
-for ``_pet_int8`` / ``_pet_scale``.
+the Gemma4 custom_quant loader wrappers iterate that list and route plain
+tensors through generic ``pack_one``, which calls ``register_buffer`` for
+non-Parameter attributes — exactly what we want for ``_pet_int8`` /
+``_pet_scale``.
 """
 
 from __future__ import annotations
@@ -166,10 +166,10 @@ def install_int8_pe_dispatch(
     Swaps the freshly-constructed ``position_embedding_table`` Parameter
     for zero placeholder buffers ``_pet_int8`` / ``_pet_scale`` and
     monkey-patches the lookup method. The placeholder buffers are
-    overwritten by ``load_and_pack_for_cuda`` (which calls
+    overwritten by the Gemma4 custom_quant loader wrappers (which call
     ``register_buffer`` again with the loaded tensors).
 
-    Use this from the LOAD path BEFORE calling load_and_pack_for_cuda;
+    Use this from the LOAD path BEFORE generic packing;
     otherwise that loader's "no meta params" check will trip on the
     unloaded position_embedding_table parameter.
     """
@@ -188,7 +188,7 @@ def install_int8_pe_dispatch(
     shape = tuple(pet.shape)  # (2, position_embedding_size, hidden_size)
     del pe.position_embedding_table
     # Persistent buffers so they show up in state_dict for downstream tooling
-    # AND so load_and_pack_for_cuda can write into them via register_buffer.
+    # AND so custom_quant loaders can write into them via register_buffer.
     pe.register_buffer(
         "_pet_int8",
         torch.zeros(shape, dtype=torch.int8, device="meta"),

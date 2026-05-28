@@ -35,14 +35,14 @@ import tempfile
 import pytest
 import torch
 import torch.nn as nn
-
-from executorch.examples.models.gemma4_31b.model import Gemma4_31B, Gemma4_31BConfig
-from executorch.examples.models.gemma4_31b.quant.pack_vision_cuda import (
+from executorch.examples.models.gemma4_31b.custom_quant import (
     collect_vision_state_dict,
     has_vision_keys,
     install_int8_pe_dispatch,
     quantize_vision_position_table,
 )
+
+from executorch.examples.models.gemma4_31b.model import Gemma4_31B, Gemma4_31BConfig
 from executorch.examples.models.gemma4_31b.vision_tower import (
     Gemma4_31BVisionTower,
     Gemma4VisionConfig,
@@ -100,7 +100,7 @@ def test_unified_recipe_preserves_vision_bf16_and_quantizes_pe():
     The unified ``quantize_model`` API handles vision + text in a single
     pass, replacing the old ``del model.vision_tower`` pattern.
     """
-    from executorch.examples.models.gemma4_31b.quant import quantize_model
+    from executorch.examples.models.gemma4_31b.custom_quant import quantize_model
     from torchao.quantization import IntxUnpackedToInt8Tensor
     from torchao.quantization.quantize_.workflows.int4.int4_tensor import Int4Tensor
 

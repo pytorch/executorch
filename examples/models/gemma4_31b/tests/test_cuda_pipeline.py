@@ -24,17 +24,17 @@ import executorch.backends.cuda.int4_dispatch  # noqa: F401
 
 import torch
 import torch.nn as nn
+from executorch.examples.models.gemma4_31b.custom_quant import (
+    pack_model,
+    quantize_model,
+)
 from executorch.examples.models.gemma4_31b.export import (
     export_and_lower,
     load_prequantized_model,
 )
 from executorch.examples.models.gemma4_31b.inference import _move_to_cuda, generate
 from executorch.examples.models.gemma4_31b.model import Gemma4_31B
-from executorch.examples.models.gemma4_31b.quant import (
-    DEFAULT_CUDA_PACKERS,
-    pack_model,
-    quantize_model,
-)
+from executorch.examples.models.gemma4_31b.quant import DEFAULT_CUDA_PACKERS
 from executorch.examples.models.gemma4_31b.tests.test_pipeline import (
     build_hf_checkpoint,
     DEFAULT_RECIPE,
