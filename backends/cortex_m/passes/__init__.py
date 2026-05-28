@@ -9,8 +9,9 @@ from importlib.util import find_spec
 def _missing_dependencies_error(missing: str) -> ModuleNotFoundError:
     return ModuleNotFoundError(
         "Cortex-M backend dependencies are not installed "
-        f"(missing: {missing}). Install ExecuTorch with "
-        "`pip install executorch[cortex_m]`, or if building from source run "
+        f"(missing: {missing}). Install them with "
+        "`pip install --no-dependencies -r "
+        "backends/cortex_m/requirements-cortex-m.txt`, or run "
         "`examples/arm/setup.sh --i-agree-to-the-contained-eula`."
     )
 
