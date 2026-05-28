@@ -1405,6 +1405,12 @@ ATEN_OPS = (
             "//executorch/kernels/portable/cpu/util:copy_ops_util",
         ],
     ),
+    op_target(
+        name = "op__device_copy",
+        deps = [
+            "//executorch/runtime/core:device_allocator",
+        ],
+    ),
 )
 
 # Operators that are not listed in `functions.yaml` (i.e., operators listed in
