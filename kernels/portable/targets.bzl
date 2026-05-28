@@ -66,15 +66,19 @@ def define_common_targets():
         "visibility": ["PUBLIC"],
     }
 
-    executorch_generated_lib(
-        name = "generated_lib",
-        deps = [
-            ":executorch_aten_ops",
-            ":executorch_custom_ops",
-        ],
-        kernel_deps = ["//executorch/kernels/portable:operators"],
-        **generated_lib_common_args
-    )
+    for support_exceptions in [True, False]:
+        exception_suffix = "_no_exceptions" if not support_exceptions else ""
+
+        executorch_generated_lib(
+            name = "generated_lib" + exception_suffix,
+            deps = [
+                ":executorch_aten_ops",
+                ":executorch_custom_ops",
+            ],
+            kernel_deps = ["//executorch/kernels/portable:operators"],
+            support_exceptions = support_exceptions,
+            **generated_lib_common_args
+        )
 
     if True in get_aten_mode_options():
         executorch_generated_lib(
