@@ -14,6 +14,7 @@ $dokka.location:org.pytorch.executorch/EValue.Companion///PointingToDeclaration/
 $dokka.location:org.pytorch.executorch/ExecuTorchRuntime.Companion///PointingToDeclaration/org/pytorch/executorch/ExecuTorchRuntime.Companion.html
 $dokka.location:org.pytorch.executorch/ExecutorchRuntimeException.Companion///PointingToDeclaration/org/pytorch/executorch/ExecutorchRuntimeException.Companion.html
 $dokka.location:org.pytorch.executorch/ExecutorchRuntimeException.ExecutorchInvalidArgumentException///PointingToDeclaration/org/pytorch/executorch/ExecutorchRuntimeException.ExecutorchInvalidArgumentException.html
+$dokka.location:org.pytorch.executorch/Module.Companion///PointingToDeclaration/org/pytorch/executorch/Module.Companion.html
 org.pytorch.executorch
 org.pytorch.executorch.annotations
 org.pytorch.executorch.extension.asr
