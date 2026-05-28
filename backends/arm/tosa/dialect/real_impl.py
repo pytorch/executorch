@@ -23,16 +23,26 @@ def _torch_tensor_to_numpy(tensor: torch.Tensor) -> np.ndarray:
     tensor = tensor.detach().cpu()
     if tensor.dtype == torch.bfloat16:
         tensor = tensor.view(torch.uint16)
+    elif tensor.dtype == torch.float8_e4m3fn:
+        tensor = tensor.view(torch.uint8)
+    elif tensor.dtype == torch.float8_e5m2:
+        tensor = tensor.view(torch.uint8)
     return tensor.numpy()
 
 
-def _numpy_to_torch_tensor(array: np.ndarray, dtype: torch.dtype) -> torch.Tensor:
+def _numpy_to_torch_tensor(
+    array: np.ndarray, expected_dtype: torch.dtype, expected_shape: torch.Size
+) -> torch.Tensor:
     if array.dtype.type is np.void:
-        return torch.frombuffer(array, dtype=dtype)
+        return torch.frombuffer(array, dtype=expected_dtype).reshape(expected_shape)
 
     tensor = torch.from_numpy(array)
-    if dtype == torch.bfloat16:
-        return tensor.view(torch.bfloat16)
+    if expected_dtype == torch.bfloat16:
+        tensor = tensor.view(torch.bfloat16)
+    elif expected_dtype == torch.float8_e4m3fn:
+        tensor = tensor.view(torch.float8_e4m3fn)
+    elif expected_dtype == torch.float8_e5m2:
+        tensor = tensor.view(torch.float8_e5m2)
     return tensor
 
 
@@ -129,9 +139,9 @@ def make_tosa_reference_model_impl(
                 f"TOSA reference model rejected tosa.{op_name} graph: {status}"
             )
 
-        return _numpy_to_torch_tensor(outputs_np[0], fake_output.dtype).to(
-            device=tensor_args[0].device
-        )
+        return _numpy_to_torch_tensor(
+            outputs_np[0], fake_output.dtype, fake_output.shape
+        ).to(device=tensor_args[0].device)
 
     return real_impl
 

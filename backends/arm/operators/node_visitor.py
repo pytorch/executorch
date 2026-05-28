@@ -250,6 +250,9 @@ def get_node_visitors(*args) -> Dict[str, NodeVisitor]:
 
 
 def get_node_visitor(target: str, tosa_spec: TosaSpecification):
+    # Ensure all operator modules are imported so visitors are registered.
+    import executorch.backends.arm.operators  # noqa: F401
+
     node_visitor_tuples = _node_visitor_tuples.get(tosa_spec)
     for target_name, node_visitor_cls in node_visitor_tuples:
         if target_name == target:
