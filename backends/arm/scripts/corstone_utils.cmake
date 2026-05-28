@@ -8,6 +8,7 @@ function(fetch_ethos_u_content ETHOS_SDK_PATH ET_DIR_PATH)
 
   file(MAKE_DIRECTORY ${ETHOS_SDK_PATH}/../ethos_u)
   include(FetchContent)
+  find_package(Python3 REQUIRED COMPONENTS Interpreter)
   set(ethos_u_base_tag "26.02")
   FetchContent_Declare(
     ethos_u
@@ -33,10 +34,13 @@ function(fetch_ethos_u_content ETHOS_SDK_PATH ET_DIR_PATH)
       "source backends/arm/scripts/utils.sh && patch_repo ${ETHOS_SDK_PATH} ${ethos_u_base_rev} ${patch_dir}"
     WORKING_DIRECTORY ${ET_DIR_PATH}
   )
-  # Get ethos_u externals only if core_platform folder does not already exist.
-  if(NOT EXISTS "${ETHOS_SDK_PATH}/core_platform")
+
+  # Get ethos_u externals only if core driver headers do not already exist.
+  if(NOT EXISTS
+     "${ETHOS_SDK_PATH}/core_software/core_driver/include/ethosu_driver.h"
+  )
     execute_process(
-      COMMAND ${PYTHON_EXECUTABLE} fetch_externals.py -c
+      COMMAND ${Python3_EXECUTABLE} fetch_externals.py -c
               ${ethos_u_base_tag}.json fetch
       WORKING_DIRECTORY ${ETHOS_SDK_PATH}
     )
