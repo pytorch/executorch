@@ -12,8 +12,9 @@ set -eux
 export TORCHINDUCTOR_CACHE_DIR="$(mktemp -d "${RUNNER_TEMP:-/tmp}/torchinductor_cache_XXXXXX")"
 trap 'rm -rf "${TORCHINDUCTOR_CACHE_DIR}"' EXIT
 
-# Run pytest with coverage
-${CONDA_RUN} pytest -n auto --cov=./ --cov-report=xml
+# Run pytest with coverage. --timeout surfaces hung tests with a thread dump
+# instead of letting them eat the entire job timeout.
+${CONDA_RUN} pytest -n auto --cov=./ --cov-report=xml --timeout=1800 --timeout-method=thread
 # Run gtest
 LLVM_PROFDATA="xcrun llvm-profdata" LLVM_COV="xcrun llvm-cov" \
 ${CONDA_RUN} test/run_oss_cpp_tests.sh
