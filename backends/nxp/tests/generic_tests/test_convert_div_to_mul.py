@@ -6,6 +6,7 @@
 import numpy as np
 import pytest
 import torch
+
 from executorch.backends.nxp.aten_passes.neutron_aten_pass_manager import (
     ConvertDivToMulPass,
     NeutronAtenPassManager,
@@ -13,6 +14,7 @@ from executorch.backends.nxp.aten_passes.neutron_aten_pass_manager import (
 from executorch.backends.nxp.backend.edge_program_converter import (
     EdgeProgramToIRConverter,
 )
+from executorch.backends.nxp.tests.dataset_creator import RandomDatasetCreator
 from executorch.backends.nxp.tests.executorch_pipeline import (
     neutron_target_spec,
     to_quantized_edge_program,
@@ -21,11 +23,13 @@ from executorch.backends.nxp.tests.executors import (
     convert_run_compare,
     graph_contains_any_of_ops,
 )
-
+from executorch.backends.nxp.tests.graph_verifier import DetailedGraphVerifier
 from executorch.backends.nxp.tests.models import (
     NonstaticDivLinearModel,
     StaticDivLinearModel,
 )
+from executorch.backends.nxp.tests.nsys_testing import lower_run_compare
+from executorch.backends.nxp.tests.ops_aliases import MulTensor
 from executorch.exir.dialects._ops import ops as exir_ops
 from torch.export import ExportedProgram
 
@@ -248,3 +252,59 @@ def test_convert_div_to_mul_full_pipeline(mocker, input_shape, is_scalar):
         input_data=example_input,
         tfl_model=neutron_ir_model,
     )
+
+
+class StaticDivModel(torch.nn.Module):
+    def __init__(self, divisor):
+        super().__init__()
+        self.divisor = divisor
+
+    def forward(self, x):
+        return x / self.divisor
+
+
+class TestConvertDivToMulNewNeutronFlow:
+
+    @pytest.mark.parametrize(
+        "input_shape",
+        [
+            (23,),
+            (3, 7),
+            (2, 3, 4),
+            (1, 2, 3, 4),
+            (1, 2, 3, 2, 1),
+        ],
+        ids=lambda shape: f"{len(shape)}D",
+    )
+    @pytest.mark.parametrize(
+        "is_scalar",
+        [False, True],
+        ids=lambda is_scalar: "scalar" if is_scalar else "tensor",
+    )
+    def test__static__full_pipeline(
+        self, mocker, input_shape: tuple[int, ...], is_scalar: bool
+    ):
+        if is_scalar:
+            divisor = np.random.uniform(0.01, 15)
+            model = StaticDivModel(divisor)
+        else:
+            divisor = torch.rand(input_shape) + 0.01
+            model = StaticDivModel(divisor)
+
+        graph_verifier = DetailedGraphVerifier(
+            mocker,
+            # By the time `DetailedGraphVerifier` checks for operators, the `div` has already been replaced by `mul`.
+            expected_delegated_ops={MulTensor: 1},
+            expected_non_delegated_ops={},
+        )
+
+        # Cover also negative values to thoroughly test the operator.
+        dataset_creator = RandomDatasetCreator(low=-2, high=2)
+
+        lower_run_compare(
+            model,
+            input_shape,
+            graph_verifier,
+            dataset_creator,
+            use_new_flow_neutron_c=True,  # Use the new flow.
+        )

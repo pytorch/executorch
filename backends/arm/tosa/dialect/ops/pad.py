@@ -33,6 +33,10 @@ def PAD(a: torch.Tensor, padding: List[int | torch.SymInt], *, value):
         supported_dtypes.update({torch.float16, torch.float32})
     if tosa_spec.support_extension("bf16"):
         supported_dtypes.add(torch.bfloat16)
+    if tosa_spec.support_extension("fp8e4m3"):
+        supported_dtypes.add(torch.float8_e4m3fn)
+    if tosa_spec.support_extension("fp8e5m2"):
+        supported_dtypes.add(torch.float8_e5m2)
     if a.dtype not in supported_dtypes:
         raise TosaValueError(
             f"Input tensor dtype {a.dtype} is not supported by the target TOSA specification."

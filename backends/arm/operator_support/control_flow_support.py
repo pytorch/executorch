@@ -19,6 +19,13 @@ from executorch.exir.backend.utils import WhyNoPartitionReporter
 from torch.fx.passes.operator_support import OperatorSupportBase
 
 
+def _owning_graph_module(node: fx.Node) -> fx.GraphModule:
+    graph_module = getattr(node.graph, "owning_module", None)
+    if not isinstance(graph_module, fx.GraphModule):
+        raise RuntimeError(f"Could not resolve owning GraphModule for node {node}")
+    return graph_module
+
+
 def _fully_partitioned(submodule: fx.GraphModule) -> bool:
     """Check that all nested control-flow ops within this submodule are also
     fully partitioned.
@@ -27,8 +34,8 @@ def _fully_partitioned(submodule: fx.GraphModule) -> bool:
 
     for submodule_node in submodule.graph.nodes:
         if submodule_node.target in ControlFlowOpSupported._targeted_ops:
-            if _submodules_fully_partitioned(submodule_node, submodule):
-                return True
+            if not _submodules_fully_partitioned(submodule_node, submodule):
+                return False
 
         if submodule_node.op != "call_function":
             continue
@@ -56,13 +63,18 @@ def _fully_partitioned(submodule: fx.GraphModule) -> bool:
     return True
 
 
-def _submodules_fully_partitioned(node: fx.Node, graph_module: fx.GraphModule) -> bool:
+def _submodules_fully_partitioned(
+    node: fx.Node, graph_module: fx.GraphModule | None = None
+) -> bool:
     """Returns whether the submodule arguments to a cond node were fully
     partitioned.
 
     Updates "val" meta of the submodules if they are.
 
     """
+    if graph_module is None:
+        graph_module = _owning_graph_module(node)
+
     match node.target:
         case torch.ops.higher_order.cond:
             submodule_args = node.args[1:3]
@@ -129,9 +141,7 @@ class ControlFlowSubmoduleSupported(OperatorSupportBase):
                         node, f"Submodule had unsupported user {user}"
                     )
                     return False
-                if not _submodules_fully_partitioned(
-                    user, self.exported_program.graph_module
-                ):
+                if not _submodules_fully_partitioned(user):
                     self.reporter.report_reject(
                         node, "One submodule was not fully partitioned"
                     )
@@ -174,9 +184,7 @@ class ControlFlowOpSupported(OperatorSupportBase):
                 )
                 return False
 
-            if not _submodules_fully_partitioned(
-                node, self.exported_program.graph_module
-            ):
+            if not _submodules_fully_partitioned(node):
                 self.reporter.report_reject(
                     node, "Submodule was not fully partitioned."
                 )

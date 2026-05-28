@@ -59,6 +59,14 @@ class XNNWorkspace {
     lock_required_ = false;
   }
 
+  void set_uses_weight_cache() {
+    uses_weight_cache_.store(true, std::memory_order_release);
+  }
+
+  bool uses_weight_cache() const {
+    return uses_weight_cache_.load(std::memory_order_acquire);
+  }
+
   static runtime::Result<std::shared_ptr<XNNWorkspace>> create() {
     // Because this class can't be moved, we need to construct it in-place.
     xnn_workspace_t workspace = nullptr;
@@ -80,6 +88,7 @@ class XNNWorkspace {
   std::mutex mutex_;
   uint64_t id_;
   bool lock_required_ = true;
+  std::atomic<bool> uses_weight_cache_{false};
   WorkspacePtr workspace_;
 };
 

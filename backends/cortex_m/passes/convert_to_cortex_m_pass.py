@@ -12,7 +12,7 @@ import torch
 import torch.fx
 from executorch.backends.arm._passes.arm_pass_utils import get_first_fake_tensor
 
-from executorch.backends.cortex_m.passes import CortexMPass
+from executorch.backends.cortex_m.passes.cortex_m_pass import CortexMPass
 from executorch.backends.cortex_m.passes.passes_utils import quantize_multiplier_aot
 from executorch.backends.cortex_m.passes.scratch_buffer_sizes import (
     required_cmsis_nn_buffer_sizes,

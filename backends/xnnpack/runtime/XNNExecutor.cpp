@@ -93,7 +93,7 @@ ET_NODISCARD Error XNNExecutor::initialize(
  * delegate->execute()
  */
 ET_NODISCARD Error XNNExecutor::prepare_args(Span<EValue*> args) {
-  ET_CHECK_MSG(
+  ET_DCHECK_MSG(
       !destroyed_.load(std::memory_order_acquire),
       "XNNExecutor::prepare_args called after destroy");
 
