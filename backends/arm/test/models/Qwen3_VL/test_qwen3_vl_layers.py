@@ -33,7 +33,7 @@ from transformers.models.qwen3_vl.modeling_qwen3_vl import (
     Qwen3VLVisionRotaryEmbedding,
 )
 
-input_t = Tuple[torch.Tensor, ...]
+input_t = Tuple[torch.Tensor | int, ...]
 
 
 def _make_qwen3_vl_2b_instruct_layer_config():
