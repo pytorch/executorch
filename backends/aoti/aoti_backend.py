@@ -9,7 +9,7 @@ import os
 import typing
 from abc import ABC, abstractmethod
 from enum import Enum
-from typing import Any, Dict, List, Optional, Set
+from typing import Any, Dict, List, Optional, Set, Tuple
 
 import torch
 from executorch.backends.aoti.passes.replace_view_copy_with_view import (
@@ -130,6 +130,29 @@ class AotiBackend(ABC):
         return
 
     @classmethod
+    def pre_aoti_transform_and_collect_named_data(
+        cls,
+        device_edge_program: ExportedProgram,
+        compile_specs: List[CompileSpec],
+    ) -> List[Tuple[str, bytes, int, Optional[str]]]:
+        """Backend hook for graph mutation + extra NamedDataStore entries.
+
+        Called between ``run_decompositions`` and ``aot_compile``, so
+        overrides can:
+          1. Mutate ``device_edge_program`` in place (e.g. insert
+             custom ops that the backend's AOTI c-shim registry
+             handles), and/or
+          2. Return ``[(key, blob, alignment, external_tag), ...]``
+             entries to be added to the same ``NamedDataStore`` that
+             carries ``_so_blob`` / ``_weights_blob``.
+
+        Default: no-op, returns ``[]``. CudaBackend overrides this to
+        wire weight offloading when its private compile-spec opt-in
+        is set.
+        """
+        return []
+
+    @classmethod
     @contextlib.contextmanager
     def collect_unsupported_fallback_kernels(cls, missing_fallback_kernels: Set[str]):
         """
@@ -182,7 +205,7 @@ class AotiBackend(ABC):
             )
 
     @classmethod
-    def preprocess(
+    def preprocess(  # noqa: C901
         cls,
         edge_program: ExportedProgram,
         compile_specs: List[CompileSpec],
@@ -216,6 +239,15 @@ class AotiBackend(ABC):
             device_edge_program = device_edge_program.run_decompositions(
                 decomposition_table
             )
+
+        # Backend extension point: mutate ``device_edge_program`` in
+        # place (e.g. insert custom ops the AOTI shim path will pick
+        # up) and return extra NamedDataStore entries to attach
+        # alongside ``_so_blob`` / ``_weights_blob`` after compile.
+        # Default: no-op.
+        extra_named_data = cls.pre_aoti_transform_and_collect_named_data(
+            device_edge_program, compile_specs
+        )
 
         edge_program_module = device_edge_program.module()
 
@@ -288,6 +320,11 @@ class AotiBackend(ABC):
         named_data_store.add_named_data(
             method_name + "_weights_blob", blob_data, 1, external_tag
         )
+
+        for extra_key, extra_blob, extra_align, extra_tag in extra_named_data:
+            named_data_store.add_named_data(
+                extra_key, extra_blob, extra_align, extra_tag
+            )
 
         # Clean up the generated files
         os.remove(so_path)
