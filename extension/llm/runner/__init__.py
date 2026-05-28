@@ -11,13 +11,15 @@ This module provides a Python interface to the ExecuTorch multimodal LLM runner,
 enabling processing of mixed inputs (text, images, audio) and text generation.
 """
 
-import torch  # preload libtorch shared libs for _llm_runner
-
 try:
     # Import shared components from the compiled C++ extension
     from executorch.extension.llm.runner._llm_runner import (  # noqa: F401
+        ChatConversation,
+        ChatMessage,
+        ChatTemplateType,
         GenerationConfig,
         Image,
+        JinjaChatFormatter,
         make_audio_input,
         make_image_input,
         make_raw_audio_input,
@@ -26,7 +28,6 @@ try:
         MultimodalInput,
         MultimodalRunner,
         Stats,
-        TextLLMRunner,
     )
 except ImportError:
     raise RuntimeError(
@@ -37,6 +38,7 @@ except ImportError:
 import logging
 from typing import Callable, List, Optional, Union
 
+import torch
 from transformers.feature_extraction_utils import BatchFeature
 
 
@@ -224,8 +226,12 @@ setattr(MultimodalRunner, "generate_text_hf", generate_text_hf)  # noqa B010
 
 
 __all__ = [
+    "ChatConversation",
+    "ChatMessage",
+    "ChatTemplateType",
     "GenerationConfig",
     "Image",
+    "JinjaChatFormatter",
     "make_audio_input",
     "make_image_input",
     "make_raw_audio_input",
@@ -233,6 +239,5 @@ __all__ = [
     "make_token_input",
     "MultimodalInput",
     "MultimodalRunner",
-    "TextLLMRunner",
     "Stats",
 ]

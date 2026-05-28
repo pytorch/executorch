@@ -48,6 +48,28 @@ set(TORCH_ROOT ${EXECUTORCH_ROOT}/third-party/pytorch)
 
 include(${EXECUTORCH_ROOT}/tools/cmake/Utils.cmake)
 
+# Jinja2Cpp is required by the chat formatter that the llama runner links
+# against. When this example CMake file is run standalone (i.e. without the
+# parent ExecuTorch build that already pulls Jinja2Cpp from
+# extension/llm/chat_template), declare it here as well so the target exists.
+# This guard prevents redeclaring it when the parent build has already added
+# the dependency.
+if(NOT TARGET jinja2cpp)
+  include(FetchContent)
+  cmake_policy(SET CMP0077 NEW)
+  FetchContent_Declare(
+    jinja2cpp
+    GIT_REPOSITORY https://github.com/jinja2cpp/Jinja2Cpp.git
+    GIT_TAG 1.3.2
+    GIT_SUBMODULES_RECURSE TRUE
+  )
+  set(JINJA2CPP_BUILD_TESTS OFF CACHE BOOL "" FORCE)
+  set(JINJA2CPP_BUILD_SHARED OFF CACHE BOOL "" FORCE)
+  set(JINJA2CPP_INSTALL OFF CACHE BOOL "" FORCE)
+  set(SUPPORT_REGEX_LOOKAHEAD ON CACHE BOOL "" FORCE)
+  FetchContent_MakeAvailable(jinja2cpp)
+endif()
+
 if(NOT PYTHON_EXECUTABLE)
   resolve_python_executable()
 endif()
@@ -107,13 +129,8 @@ else()
 endif()
 
 # quantized_ops_lib: Register quantized op kernels into the runtime
-if(TARGET quantized_ops_lib)
-  list(APPEND link_libraries quantized_kernels quantized_ops_lib)
-  get_target_property(_quantized_imported quantized_ops_lib IMPORTED)
-  if(NOT _quantized_imported)
-    executorch_target_link_options_shared_lib(quantized_ops_lib)
-  endif()
-endif()
+executorch_target_link_options_shared_lib(quantized_ops_lib)
+list(APPEND link_libraries quantized_kernels quantized_ops_lib)
 
 if(TARGET custom_ops)
   executorch_target_link_options_shared_lib(custom_ops)
@@ -168,15 +185,6 @@ if(TARGET xnnpack_backend)
   executorch_target_link_options_shared_lib(xnnpack_backend)
 endif()
 
-# CUDA backend
-if(EXECUTORCH_BUILD_CUDA)
-  find_package(CUDAToolkit REQUIRED)
-  list(APPEND link_libraries aoti_cuda_backend)
-  if(NOT MSVC)
-    executorch_target_link_options_shared_lib(aoti_cuda_backend)
-  endif()
-endif()
-
 # Vulkan backend
 if(TARGET vulkan_backend)
   list(APPEND link_libraries vulkan_backend)
@@ -201,12 +209,6 @@ if(TARGET mpsdelegate)
     "-weak_framework Metal"
   )
   executorch_target_link_options_shared_lib(mpsdelegate)
-endif()
-
-# MLX backend
-if(TARGET mlxdelegate)
-  list(APPEND link_libraries mlxdelegate mlx)
-  executorch_target_link_options_shared_lib(mlxdelegate)
 endif()
 
 # Openvino backend
@@ -236,11 +238,6 @@ if(ANDROID)
 endif()
 
 add_executable(llama_main ${_srcs})
-
-# Copy MLX metallib for runtime if MLX delegate is enabled
-if(TARGET mlxdelegate)
-  executorch_target_copy_mlx_metallib(llama_main)
-endif()
 
 # Only strip symbols for Release and MinSizeRel builds.
 if(CMAKE_BUILD_TYPE STREQUAL "Release" OR CMAKE_BUILD_TYPE STREQUAL
