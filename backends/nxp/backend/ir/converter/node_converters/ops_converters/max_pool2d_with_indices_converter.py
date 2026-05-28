@@ -152,9 +152,7 @@ class MaxPool2DWithIndicesConverter(NodeConverter):
         :return: Tuple of (kernel_size, stride, padding, dilation, ceil_mode).
         """
         kernel_size = node.args[1]
-        stride = node.args[
-            2
-        ]  # The default value is equal to the kernel_size, so it is never empty here.
+        stride = try_get_arg(node, 2) or kernel_size
         padding = try_get_arg(node, 3) or (0, 0)
         dilation = try_get_arg(node, 4) or (1, 1)
         ceil_mode = try_get_arg(node, 5) or False
