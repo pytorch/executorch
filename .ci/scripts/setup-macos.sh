@@ -126,22 +126,19 @@ fi
 
 # Install pinned torch before requirements-ci.txt so torchsr's transitive
 # torch dep is satisfied by the existing install and pip does not pull a
-# separate copy from PyPI. sccache is initialized above so source-build
-# cache misses still hit the cache.
+# separate copy from PyPI.
 print_cmake_info
 install_pytorch_and_domains
 
 install_pip_dependencies
 
-# install_executorch's --use-pt-pinned-commit skips re-installing torch since
-# install_pytorch_and_domains already installed the pinned build above.
 if [[ "$EDITABLE" == "true" ]]; then
-  install_executorch --use-pt-pinned-commit --editable
+  install_executorch --editable
 else
-  install_executorch --use-pt-pinned-commit
+  install_executorch
 fi
 build_executorch_runner "${BUILD_TOOL}" "${BUILD_MODE}"
 
 if [[ "${GITHUB_BASE_REF:-}" == *main* || "${GITHUB_BASE_REF:-}" == *gh* ]]; then
-  do_not_use_nightly_on_ci
+  verify_torch_matches_pin_on_ci
 fi

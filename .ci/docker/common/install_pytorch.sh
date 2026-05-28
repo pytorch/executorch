@@ -10,41 +10,47 @@ set -ex
 # shellcheck source=/dev/null
 source "$(dirname "${BASH_SOURCE[0]}")/utils.sh"
 
-install_domains() {
-  echo "Install torchvision and torchaudio"
-  pip_install --no-build-isolation --user "git+https://github.com/pytorch/audio.git@${TORCHAUDIO_VERSION}"
-  pip_install --no-build-isolation --user "git+https://github.com/pytorch/vision.git@${TORCHVISION_VERSION}"
-}
-
 install_pytorch_and_domains() {
-  git clone https://github.com/pytorch/pytorch.git
+  local cache_args=()
+  if [ "${TORCH_CHANNEL}" = "test" ]; then
+    cache_args=("--no-cache-dir")
+  fi
 
-  # Fetch the target commit
-  pushd pytorch || true
-  git checkout "${TORCH_VERSION}"
-  git submodule update --init --recursive
+  local wheelhouse
+  wheelhouse=$(mktemp -d)
+  chown ci-user:ci-user "${wheelhouse}"
 
-  chown -R ci-user .
+  local system_name
+  local system_arch
+  local python_version
+  system_name=$(uname)
+  system_arch=$(uname -m)
+  python_version=$(conda_run python -c 'import platform; v=platform.python_version_tuple(); print(f"{v[0]}{v[1]}")')
+  local torch_wheel_cache_path="cached_artifacts/pytorch/executorch/pytorch_wheels/${system_name}/${system_arch}/${python_version}/cpu/${TORCH_CHANNEL}"
+  local torch_wheel_cache_uri="s3://gha-artifacts/${torch_wheel_cache_path}"
 
-  export _GLIBCXX_USE_CXX11_ABI=1
-  # Then build and install PyTorch
-  conda_run python setup.py bdist_wheel
-  pip_install "$(echo dist/*.whl)"
+  # Do not cache test-channel wheels in S3: RC artifacts may be re-uploaded
+  # under the same package version.
+  if [[ "${TORCH_CHANNEL}" != "test" ]] && command -v aws >/dev/null 2>&1; then
+    aws s3 sync "${torch_wheel_cache_uri}" "${wheelhouse}" || true
+  fi
 
-  # Grab the pinned audio and vision commits from PyTorch
-  TORCHAUDIO_VERSION=release/2.11
-  export TORCHAUDIO_VERSION
-  TORCHVISION_VERSION=release/0.27
-  export TORCHVISION_VERSION
+  conda_run python -m pip download --progress-bar off --no-deps "${cache_args[@]}" \
+    --dest "${wheelhouse}" \
+    --find-links "${wheelhouse}" \
+    "${TORCH_SPEC}" "${TORCHVISION_SPEC}" "${TORCHAUDIO_SPEC}" \
+    --index-url "${TORCH_INDEX_URL}/cpu"
 
-  install_domains
+  if [[ "${TORCH_CHANNEL}" != "test" && -z "${GITHUB_RUNNER:-}" ]] && command -v aws >/dev/null 2>&1; then
+    aws s3 sync "${wheelhouse}" "${torch_wheel_cache_uri}" \
+      --exclude "*" --include "*.whl" || true
+  fi
 
-  popd || true
-  # Clean up the cloned PyTorch repo to reduce the Docker image size
-  rm -rf pytorch
-
-  # Print sccache stats for debugging
-  as_ci_user sccache --show-stats
+  pip_install --force-reinstall "${cache_args[@]}" \
+    --find-links "${wheelhouse}" \
+    "${TORCH_SPEC}" "${TORCHVISION_SPEC}" "${TORCHAUDIO_SPEC}" \
+    --index-url "${TORCH_INDEX_URL}/cpu"
+  rm -rf "${wheelhouse}"
 }
 
 install_pytorch_and_domains

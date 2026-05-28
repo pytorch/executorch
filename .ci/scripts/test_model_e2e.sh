@@ -272,7 +272,9 @@ elif [[ "$MODEL_NAME" == *whisper* ]] || [ "$MODEL_NAME" = "voxtral_realtime" ];
     fi
   fi
   pip install datasets soundfile
-  pip install torchcodec==0.11.0 --extra-index-url https://download.pytorch.org/whl/test/cpu
+  TORCHCODEC_PKG=$(python -c "from torch_pin import torchcodec_spec; print(torchcodec_spec())")
+  TORCHCODEC_INDEX=$(python -c "from torch_pin import torch_index_url_base; print(torch_index_url_base())")
+  pip install "$TORCHCODEC_PKG" --index-url "${TORCHCODEC_INDEX}/cpu"
   python -c "from datasets import load_dataset;import soundfile as sf;sample = load_dataset('distil-whisper/librispeech_long', 'clean', split='validation')[0]['audio'];sf.write('${MODEL_DIR}/$AUDIO_FILE', sample['array'][:sample['sampling_rate']*30], sample['sampling_rate'])"
 fi
 
