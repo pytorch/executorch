@@ -153,6 +153,11 @@ class TestCudaExport(unittest.TestCase):
                 ckpt_dir, max_seq_len=TINY_CONFIG.max_seq_len
             )
             model.lm_head.weight = nn.Parameter(model.embed_tokens.weight.clone())
+            from executorch.examples.models.gemma4_31b.pack_vision import (
+                quantize_vision_position_table,
+            )
+
+            quantize_vision_position_table(model.vision_tower)
             state_dict = quantize_model(model, DEFAULT_RECIPE)
 
             with torch.device("meta"):

@@ -12,11 +12,8 @@ tensor subclass, or target backend.
 """
 
 import re
-from collections.abc import Callable
 from dataclasses import dataclass, field
 from typing import Optional
-
-import torch.nn as nn
 
 
 @dataclass(frozen=True)
@@ -44,14 +41,9 @@ class QuantRule:
 
 @dataclass
 class QuantRecipe:
-    """Ordered list of rules. First match wins.
-
-    ``pre_quantize`` lets model-specific recipes rewrite modules before the
-    generic parameter walk runs, while keeping the core quantizer model-agnostic.
-    """
+    """Ordered list of rules. First match wins."""
 
     rules: list[QuantRule]
-    pre_quantize: Optional[Callable[[nn.Module], None]] = None
 
     def get_config(self, fqn: str) -> Optional[QuantConfig]:
         """Return the ``QuantConfig`` for a weight FQN, or ``None`` to skip."""

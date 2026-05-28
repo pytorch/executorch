@@ -26,14 +26,14 @@ from executorch.examples.models.gemma4_31b.model import (
     Gemma4_31BConfig,
     RingKVCache,
 )
+from executorch.examples.models.gemma4_31b.pack_vision import (
+    quantize_vision_position_table,
+)
 from executorch.examples.models.gemma4_31b.quant import (
     QuantConfig,
     quantize_model,
     QuantRecipe,
     QuantRule,
-)
-from executorch.examples.models.gemma4_31b.quantize_and_save import (
-    quantize_gemma4_vision_position_table,
 )
 from executorch.examples.models.gemma4_31b.vision_tower import Gemma4VisionConfig
 from safetensors import safe_open
@@ -92,14 +92,13 @@ QUANT_8W_PER_AXIS = QuantConfig(
 DEFAULT_RECIPE = QuantRecipe(
     rules=[
         QuantRule(r"embed_tokens\.weight", QUANT_8W_PER_AXIS),
-        # Vision side stays bf16; the PE table is swapped to int8 buffers by
-        # the recipe pre_quantize hook.
+        # Vision side stays bf16; the PE table is quantized explicitly before
+        # calling quantize_model.
         QuantRule(r"vision_tower\..*", None),
         QuantRule(r"embed_vision\..*", None),
         QuantRule(r".*norm\.weight", None),
         QuantRule(r".*\.weight", QUANT_4W),
     ],
-    pre_quantize=quantize_gemma4_vision_position_table,
 )
 
 
@@ -178,6 +177,7 @@ def build_random_tiny_model() -> Gemma4_31B:
 def save_checkpoint(output_dir: str):
     model = build_random_tiny_model()
     model.lm_head.weight = nn.Parameter(model.embed_tokens.weight.clone())
+    quantize_vision_position_table(model.vision_tower)
     state_dict = quantize_model(model, DEFAULT_RECIPE)
     os.makedirs(output_dir, exist_ok=True)
     td, md = flatten_tensor_state_dict(state_dict)
@@ -214,6 +214,7 @@ class TestQuantizeSaveLoadRoundtrip(unittest.TestCase):
 
         model = build_random_tiny_model()
         model.lm_head.weight = nn.Parameter(model.embed_tokens.weight.clone())
+        quantize_vision_position_table(model.vision_tower)
         state_dict = quantize_model(model, DEFAULT_RECIPE)
 
         with tempfile.TemporaryDirectory() as tmpdir:
@@ -248,6 +249,7 @@ class TestQuantizeSaveLoadRoundtrip(unittest.TestCase):
 
         model = build_random_tiny_model()
         model.lm_head.weight = nn.Parameter(model.embed_tokens.weight.clone())
+        quantize_vision_position_table(model.vision_tower)
         state_dict = quantize_model(model, DEFAULT_RECIPE)
 
         self.assertIn("embed_tokens.weight", state_dict)

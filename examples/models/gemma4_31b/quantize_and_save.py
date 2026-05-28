@@ -52,8 +52,8 @@ from executorch.examples.models.gemma4_31b.quant import (
 #   - Vision tower linears are small + accuracy-sensitive; they stay bf16.
 #   - The vision multimodal projector (``embed_vision.*``) also stays bf16.
 #   - The patch_embedder's position_embedding_table is the one "real" quant
-#     on the vision side: bf16 → INT8 per-channel, applied by the recipe
-#     pre_quantize hook before the generic parameter walk.
+#     on the vision side: bf16 → INT8 per-channel, applied explicitly before
+#     the generic quantize_model parameter walk.
 
 _INT4 = QuantConfig(bits=4, group_size=32, symmetric=False, method="min_max")
 _INT4_HQQ = QuantConfig(bits=4, group_size=32, symmetric=False, method="hqq")
@@ -64,8 +64,8 @@ _INT8_PER_AXIS = QuantConfig(  # group_size = hidden_size (5376) for Gemma 4 31B
 _EDGE_LAYERS = set(range(15)) | set(range(45, 60))
 
 # Shared vision rules: every vision-side weight stays bf16. The PE table is
-# absent from the parameter walk after the recipe pre_quantize hook replaces
-# it with int8 buffers.
+# absent from the parameter walk after quantize_gemma4_vision_position_table
+# replaces it with int8 buffers.
 
 
 def quantize_gemma4_vision_position_table(model: nn.Module) -> None:
@@ -86,7 +86,6 @@ GEMMA4_31B_DEFAULT_RECIPE = QuantRecipe(
         QuantRule(r".*norm\.weight", None),
         QuantRule(r".*\.weight", _INT4),
     ],
-    pre_quantize=quantize_gemma4_vision_position_table,
 )
 
 GEMMA4_31B_SENSITIVE_RECIPE = QuantRecipe(
@@ -97,7 +96,6 @@ GEMMA4_31B_SENSITIVE_RECIPE = QuantRecipe(
         QuantRule(r".*\.(v_proj|down_proj)\.weight", _INT8, layers=_EDGE_LAYERS),
         QuantRule(r".*\.weight", _INT4_HQQ),
     ],
-    pre_quantize=quantize_gemma4_vision_position_table,
 )
 
 _RECIPES = {
@@ -149,8 +147,9 @@ def main() -> None:
     # modalities in one pass:
     #   - text decoder linears -> INT4 / INT8 per the recipe;
     #   - vision tower + embed_vision linears -> stay bf16 (recipe rule);
-    #   - vision PE table -> INT8 per-channel (recipe pre_quantize hook).
+    #   - vision PE table -> INT8 per-channel (explicit pre-quantization call).
     print(f"Quantizing with recipe '{args.quant_recipe}'...")
+    quantize_gemma4_vision_position_table(model)
     state_dict = quantize_model(model, recipe, verbose=True)
 
     os.makedirs(args.output, exist_ok=True)

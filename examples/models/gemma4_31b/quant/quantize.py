@@ -9,14 +9,9 @@
 ``quantize_weight`` quantizes a single tensor given a ``QuantConfig``,
 returning an ``Int4Tensor`` (4-bit) or ``IntxUnpackedToInt8Tensor`` (8-bit).
 
-``quantize_model`` is the single user-facing entry point. It takes the
-whole model (text decoder + optional vision tower + multimodal embedder),
-walks all parameters, applies a ``QuantRecipe``, and returns a single
-state dict containing both quantized subclass tensors and unquantized
-plain tensors. Vision-specific transformations (notably the int8
-per-channel position-embedding-table swap) are invoked internally when
-``model.vision_tower`` is present — callers do not have to detach
-submodules or call vision helpers themselves.
+``quantize_model`` walks a model's parameters, applies a ``QuantRecipe``,
+and returns a single state dict containing both quantized subclass tensors
+and unquantized plain tensors.
 """
 
 import torch
@@ -290,17 +285,12 @@ def quantize_model(
     dtype: torch.dtype = torch.bfloat16,
     verbose: bool = False,
 ) -> dict[str, torch.Tensor]:
-    """Quantize the entire model and return a single state dict.
+    """Walk model parameters + persistent buffers, apply recipe.
 
-    Walks every parameter and persistent buffer of ``model``, applies the
-    ``QuantRecipe`` to parameters (first matching rule wins), and returns
-    a mixed dict of torchao tensor subclasses (``Int4Tensor``,
-    ``IntxUnpackedToInt8Tensor``) and plain tensors. Non-persistent
-    buffers (KV cache, RoPE tables) are excluded.
+    Returns a single state dict containing quantized tensor subclasses
+    (``Int4Tensor``, ``IntxUnpackedToInt8Tensor``) and unquantized plain
+    tensors. Non-persistent buffers (KV cache, RoPE tables) are excluded.
     """
-    if recipe.pre_quantize is not None:
-        recipe.pre_quantize(model)
-
     state: dict[str, torch.Tensor] = {}
     persistent_keys = set(model.state_dict().keys())
 

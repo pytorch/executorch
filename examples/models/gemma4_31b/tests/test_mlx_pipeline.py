@@ -26,15 +26,15 @@ from executorch.examples.models.gemma4_31b.export import (
 )
 
 from executorch.examples.models.gemma4_31b.model import Gemma4_31B
+from executorch.examples.models.gemma4_31b.pack_vision import (
+    quantize_vision_position_table,
+)
 from executorch.examples.models.gemma4_31b.quant import (
     pack_model,
     QuantConfig,
     quantize_model,
     QuantRecipe,
     QuantRule,
-)
-from executorch.examples.models.gemma4_31b.quantize_and_save import (
-    quantize_gemma4_vision_position_table,
 )
 from executorch.examples.models.gemma4_31b.tests.test_pipeline import (
     build_random_tiny_model,
@@ -53,15 +53,14 @@ _EDGE_LAYERS = set(range(3))
 TINY_SENSITIVE_RECIPE = QuantRecipe(
     rules=[
         QuantRule(r"embed_tokens\.weight", _INT8_PER_AXIS),
-        # Vision side stays bf16; the PE table is swapped to int8 buffers by
-        # the recipe pre_quantize hook.
+        # Vision side stays bf16; the PE table is quantized explicitly before
+        # calling quantize_model.
         QuantRule(r"vision_tower\..*", None),
         QuantRule(r"embed_vision\..*", None),
         QuantRule(r".*norm\.weight", None),
         QuantRule(r".*\.(v_proj|down_proj)\.weight", _INT8, layers=_EDGE_LAYERS),
         QuantRule(r".*\.weight", _INT4),
     ],
-    pre_quantize=quantize_gemma4_vision_position_table,
 )
 
 
@@ -75,6 +74,7 @@ def save_vision_checkpoint(output_dir: str):
     model = build_random_tiny_model()
     model.lm_head.weight = nn.Parameter(model.embed_tokens.weight.clone())
 
+    quantize_vision_position_table(model.vision_tower)
     state_dict = quantize_model(model, DEFAULT_RECIPE)
 
     os.makedirs(output_dir, exist_ok=True)
@@ -131,6 +131,7 @@ class TestMlxPipeline(unittest.TestCase):
         """Quantize with sensitive recipe, pack for MLX, no meta weights."""
         model = build_random_tiny_model()
         model.lm_head.weight = nn.Parameter(model.embed_tokens.weight.clone())
+        quantize_vision_position_table(model.vision_tower)
         state_dict = quantize_model(model, TINY_SENSITIVE_RECIPE)
 
         with torch.device("meta"):
@@ -145,6 +146,7 @@ class TestMlxPipeline(unittest.TestCase):
         """Model produces valid output after MLX packing."""
         model = build_random_tiny_model()
         model.lm_head.weight = nn.Parameter(model.embed_tokens.weight.clone())
+        quantize_vision_position_table(model.vision_tower)
         state_dict = quantize_model(model, TINY_SENSITIVE_RECIPE)
 
         with torch.device("meta"):
@@ -172,6 +174,7 @@ class TestMlxPipeline(unittest.TestCase):
     def test_multi_token_forward(self):
         model = build_random_tiny_model()
         model.lm_head.weight = nn.Parameter(model.embed_tokens.weight.clone())
+        quantize_vision_position_table(model.vision_tower)
         state_dict = quantize_model(model, TINY_SENSITIVE_RECIPE)
 
         with torch.device("meta"):
@@ -201,6 +204,7 @@ class TestMlxPipeline(unittest.TestCase):
         """Model produces valid output after MLX source transforms."""
         model = build_random_tiny_model()
         model.lm_head.weight = nn.Parameter(model.embed_tokens.weight.clone())
+        quantize_vision_position_table(model.vision_tower)
         state_dict = quantize_model(model, TINY_SENSITIVE_RECIPE)
 
         with torch.device("meta"):
@@ -252,6 +256,7 @@ class TestMlxPipeline(unittest.TestCase):
         torch.manual_seed(0)
         model = build_random_tiny_model()
         model.lm_head.weight = nn.Parameter(model.embed_tokens.weight.clone())
+        quantize_vision_position_table(model.vision_tower)
         state_dict = quantize_model(model, TINY_SENSITIVE_RECIPE)
 
         with torch.device("meta"):
@@ -315,6 +320,7 @@ class TestMlxPipeline(unittest.TestCase):
 
         model = build_random_tiny_model()
         model.lm_head.weight = nn.Parameter(model.embed_tokens.weight.clone())
+        quantize_vision_position_table(model.vision_tower)
         state_dict = quantize_model(model, TINY_SENSITIVE_RECIPE)
 
         with torch.device("meta"):

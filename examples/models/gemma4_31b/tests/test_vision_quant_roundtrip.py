@@ -43,9 +43,6 @@ from executorch.examples.models.gemma4_31b.pack_vision import (
     install_int8_pe_dispatch,
     quantize_vision_position_table,
 )
-from executorch.examples.models.gemma4_31b.quantize_and_save import (
-    quantize_gemma4_vision_position_table,
-)
 from executorch.examples.models.gemma4_31b.vision_tower import (
     Gemma4_31BVisionTower,
     Gemma4VisionConfig,
@@ -80,14 +77,13 @@ def _tiny_recipe(hidden_size: int):
     return QuantRecipe(
         rules=[
             QuantRule(r"embed_tokens\.weight", int8_per_axis),
-            # Vision modality stays bf16; PE table is folded by the recipe
-            # pre_quantize hook.
+            # Vision modality stays bf16; PE table is quantized explicitly before
+            # calling quantize_model.
             QuantRule(r"vision_tower\..*", None),
             QuantRule(r"embed_vision\..*", None),
             QuantRule(r".*norm\.weight", None),
             QuantRule(r".*\.weight", int4),
         ],
-        pre_quantize=quantize_gemma4_vision_position_table,
     )
 
 
@@ -145,6 +141,7 @@ def test_unified_recipe_preserves_vision_bf16_and_quantizes_pe():
     assert hasattr(model, "vision_tower")
     assert hasattr(model, "embed_vision")
 
+    quantize_vision_position_table(model.vision_tower)
     state_dict = quantize_model(model, _tiny_recipe(cfg.hidden_size))
 
     # Vision-side linears must be present AND must stay bf16 (plain Tensor,

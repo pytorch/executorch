@@ -53,7 +53,10 @@ from executorch.examples.models.gemma4_31b.model import (
     Gemma4_31BConfig,
     materialize_runtime_buffers,
 )
-from executorch.examples.models.gemma4_31b.pack_vision import pack_vision_patch_embedder
+from executorch.examples.models.gemma4_31b.pack_vision import (
+    pack_vision_patch_embedder,
+    quantize_vision_position_table,
+)
 from executorch.examples.models.gemma4_31b.vision_tower import Gemma4VisionPatchEmbedder
 
 
@@ -128,7 +131,7 @@ def load_and_quantize(
     max_seq_len: int = 4096,
     backend: str = "cuda",
 ) -> tuple[Gemma4_31B, Gemma4_31BConfig]:
-    """Load bf16 checkpoint, quantize, pack — one shot. Text-only path."""
+    """Load bf16 checkpoint, quantize, pack — one shot."""
     from executorch.examples.models.gemma4_31b.quant import pack_model, quantize_model
     from executorch.examples.models.gemma4_31b.quantize_and_save import _RECIPES
 
@@ -137,18 +140,12 @@ def load_and_quantize(
     print("Loading checkpoint (lazy, shard-by-shard)...")
     model, config = Gemma4_31B.from_hf_checkpoint(model_dir, max_seq_len=max_seq_len)
 
-    # Detach vision submodules for this text-only one-shot path. The 4-method
-    # contract requires vision; this --model-dir path is incompatible and will
-    # error out at export time.
-    del model.vision_tower
-    del model.embed_vision
-    config.vision_config = None
-
     if model.lm_head.weight.data_ptr() == model.embed_tokens.weight.data_ptr():
         print("Untying embed_tokens / lm_head...")
         model.lm_head.weight = nn.Parameter(model.embed_tokens.weight.clone())
 
     print(f"Quantizing with recipe '{recipe_name}'...")
+    quantize_vision_position_table(model.vision_tower)
     state_dict = quantize_model(model, recipe, verbose=True)
 
     print(f"Packing for {backend}...")
