@@ -49,6 +49,7 @@ from executorch.exir.passes import (
     OpReplacePass,
     remove_unused_parameters_pass,
 )
+from executorch.exir.passes.cse_pass import CSEPass
 from executorch.exir.passes.external_constants_pass import (
     external_constants_pass,
     external_mutable_weights_pass,
@@ -759,6 +760,9 @@ def edge_to_executorch_passes(
     Get the pre memory planning passes based on the method name, if the pass is not in the dict, use the default pass.
     """
     passes: List[PassType] = [
+        # Run CSE before any user-supplied or downstream passes so redundant
+        # non-delegated ops are deduped before spec/device propagation runs.
+        CSEPass(),
         # ExecuTorch backend ops are unable to handle unbacked symints. So after
         # this pass, passes cannot be Interpreter-based, because it will fail if
         # there exists an unbacked symint operation.
