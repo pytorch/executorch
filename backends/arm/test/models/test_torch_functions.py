@@ -97,8 +97,6 @@ test_parameters = {test[0]: test[1:] for test in module_tests}
     "test_data",
     test_parameters,
     xfails={
-        "nonzero": "torch.fx.experimental.symbolic_shapes.GuardOnDataDependentSymNode: Could not guard on data-dependent expression Eq(u4, 0). "
-        "Requires dynamic output shape.",
         "topk": "NotImplementedError: No registered serialization name for <class 'torch.return_types.topk'> found",
         "sort": "NotImplementedError: No registered serialization name for <class 'torch.return_types.sort'> found",
     },
@@ -124,8 +122,6 @@ def test_torch_functions_tosa_FP(test_data):
     "test_data",
     test_parameters,
     xfails={
-        "nonzero": "torch.fx.experimental.symbolic_shapes.GuardOnDataDependentSymNode: Could not guard on data-dependent expression Eq(u4, 0). "
-        "Requires dynamic output shape.",
         "topk": "NotImplementedError: No registered serialization name for <class 'torch.return_types.topk'> found",
         "sort": "NotImplementedError: No registered serialization name for <class 'torch.return_types.sort'> found",
     },
