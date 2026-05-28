@@ -51,6 +51,13 @@ from executorch.examples.models.gemma4.text_decoder import (
     Gemma4MLP,
 )
 from executorch.examples.models.gemma4_31b.sampler import sample
+from executorch.examples.models.gemma4_31b.vision_tower import (
+    Gemma4MultimodalEmbedder,
+    Gemma4VisionConfig,
+    Gemma4VisionTower,
+    hf_vision_key_map,
+    hf_vision_per_layer_key_map,
+)
 from torch.nn import functional as F
 
 
@@ -141,6 +148,12 @@ class Gemma4_31BConfig:
     # Hybrid attention pattern
     layer_types: list = field(default_factory=list)
 
+    # Vision tower config. Gemma 4 31B is multimodal-by-default — the
+    # vision_tower / embed_vision submodules are ALWAYS instantiated. Must be
+    # supplied at construction (parsed from the HF config.json's
+    # "vision_config" block by ``from_hf_config``).
+    vision_config: Gemma4VisionConfig = None
+
     # Runtime
     max_seq_len: int = 4096
 
@@ -168,6 +181,17 @@ class Gemma4_31BConfig:
         sliding_rope = rope_params.get("sliding_attention", {})
         full_rope = rope_params.get("full_attention", {})
 
+        # Parse vision_config from the original (non-text) section of the file.
+        # Gemma 4 31B is multimodal-by-default — missing vision_config in the
+        # checkpoint is a corrupt-checkpoint condition.
+        vision_config = Gemma4VisionConfig.from_hf_config(config_path)
+        if not isinstance(vision_config, Gemma4VisionConfig):
+            raise ValueError(
+                f"{config_path} has no 'vision_config' block. Gemma 4 31B is "
+                "multimodal-by-default; a checkpoint without vision_config is "
+                "considered corrupt."
+            )
+
         return Gemma4_31BConfig(
             vocab_size=cfg.get("vocab_size", 262144),
             hidden_size=cfg.get("hidden_size", 5376),
@@ -188,6 +212,7 @@ class Gemma4_31BConfig:
             tie_word_embeddings=cfg.get("tie_word_embeddings", True),
             sliding_window=cfg.get("sliding_window", 1024),
             layer_types=cfg.get("layer_types", []),
+            vision_config=vision_config,
         )
 
 
@@ -420,6 +445,16 @@ class Gemma4_31B(nn.Module):
         # Held separately so it can be untied + quantized at export time.
         self.lm_head = nn.Linear(config.hidden_size, config.vocab_size, bias=False)
 
+        # Vision tower / multimodal embedder. Attached as submodules of the LM
+        # (so they load with the same checkpoint). The text-only forward never
+        # touches them; they are exported separately as their own
+        # ExportedProgram by export.py. Vision is mandatory — Gemma 4 31B is
+        # multimodal-by-default and config.vision_config must be set.
+        self.vision_tower = Gemma4VisionTower(config.vision_config)
+        self.embed_vision = Gemma4MultimodalEmbedder(
+            config.vision_config, config.hidden_size
+        )
+
         # Constants (registered as buffers so they move with .to(device)).
         self.register_buffer(
             "embed_normalizer",
@@ -466,24 +501,19 @@ class Gemma4_31B(nn.Module):
 
         return sliding_mask, full_mask
 
-    def forward(
+    def _run_blocks(
         self,
-        tokens: torch.LongTensor,
+        x: torch.Tensor,
         input_pos: torch.LongTensor,
-        temperature: torch.Tensor,
+        temperature: Optional[torch.Tensor],
     ) -> torch.Tensor:
-        """Run the model.
+        """Shared inner stack: 60 decoder layers + final RMSNorm + lm_head + softcap.
 
-        Args:
-            tokens: (B, T) token IDs.
-            input_pos: (T,) absolute positions for RoPE / KV cache.
-            temperature: 1-D float tensor for Gumbel-max sampling.
-
-        Returns:
-            (B, 1) sampled token IDs as float.
+        ``x`` is the layer-0 input (already embedding-scaled). When
+        ``temperature is None`` (eager), returns full (B, T, V) softcapped
+        logits; otherwise returns the (B, 1) sampled token from the last query
+        position.
         """
-        x = self.embed_tokens(tokens) * self.embed_normalizer
-
         sliding_mask, full_mask = self._build_masks(input_pos)
         for layer in self.layers:
             x = layer(x, input_pos, sliding_mask, full_mask)
@@ -494,23 +524,107 @@ class Gemma4_31B(nn.Module):
         last = torch.tanh(last / cap) * cap
         return sample(last, temperature)
 
+    def forward(
+        self,
+        inputs_embeds: torch.Tensor,
+        input_pos: torch.LongTensor,
+        temperature: Optional[torch.Tensor] = None,
+    ) -> torch.Tensor:
+        """Run the model on PRE-COMPUTED EMBEDDINGS (unified prefill / decode-on-embeds).
+
+        This is the canonical forward for the new 4-method export contract:
+
+            prefill = forward(inputs_embeds [1,T,5376] bf16, input_pos [T] i64,
+                              temperature [1] f32) -> sampled [1,1] f32
+
+        Used for BOTH text-only and image+text. The runner is responsible for
+        producing ``inputs_embeds``: call ``embed_text(tokens)`` for the
+        text-token rows and (for image input) overwrite the rows at
+        ``image_token_id`` placeholders with the corresponding rows of
+        ``Gemma4_31BVisionTower(pixel_values, pixel_position_ids)[0]`` —
+        which are NOT pre-scaled by ``sqrt(hidden_size)`` (matches HF).
+
+        Args:
+            inputs_embeds: (B, T, hidden_size) tensor — already embedding-scaled.
+            input_pos: (T,) absolute positions for RoPE / KV cache.
+            temperature: optional 1-D float tensor controlling on-device sampling.
+                When None (eager), returns full (B, T, V) softcapped logits;
+                when set, returns the (B, 1) sampled token from the last
+                query position via Gumbel-max.
+
+        Returns:
+            (B, 1) token IDs when sampling, else (B, T, V) float32 logits.
+        """
+        return self._run_blocks(inputs_embeds, input_pos, temperature)
+
+    # ---------------- multimodal entry points ----------------
+
+    def embed_text(self, tokens: torch.LongTensor) -> torch.Tensor:
+        """Pure text-embedding lookup + ``sqrt(hidden_size)`` scale.
+
+        Returns ``embed_tokens(tokens) * sqrt(hidden_size)`` cast to bfloat16.
+        Used by the runner to build the ``inputs_embeds`` tensor passed into
+        ``forward`` (the unified prefill): compute this for every text token,
+        then OVERWRITE the rows at ``image_token_id`` placeholders with
+        vision-tower output rows. Exported as its own ExecuTorch method.
+
+        Returns:
+            (B, T, hidden_size) bf16.
+        """
+        return (self.embed_tokens(tokens) * self.embed_normalizer).to(torch.bfloat16)
+
+    def decode_forward(
+        self,
+        tokens: torch.LongTensor,
+        input_pos: torch.LongTensor,
+        temperature: Optional[torch.Tensor] = None,
+    ) -> torch.Tensor:
+        """Token-input single-step decode (the exported `decode` method).
+
+        Equivalent to ``forward(embed_text(tokens), input_pos, temperature)``
+        but in a single fused method to keep the decode export self-contained
+        (no need to chain ``embed_text`` -> ``forward`` from the C++ runner on
+        the per-token decode hot path). Used for BOTH text-only and image+text
+        decoding — by the time decode runs, all positions are sampled tokens.
+
+        Args:
+            tokens: (B, T=1) token IDs.
+            input_pos: (T=1,) absolute position.
+            temperature: required (decode is the sampling path).
+
+        Returns:
+            (B, 1) sampled token IDs.
+        """
+        x = self.embed_tokens(tokens) * self.embed_normalizer
+        return self._run_blocks(x, input_pos, temperature)
+
     # ---------------- checkpoint loading ----------------
 
     @staticmethod
     def from_hf_checkpoint(
-        model_dir: str, max_seq_len: int = 4096
+        model_dir: str,
+        max_seq_len: int = 4096,
     ) -> tuple["Gemma4_31B", Gemma4_31BConfig]:
         """Build the model on `meta` and load weights from the HF safetensors checkpoint.
 
         Uses lazy shard-by-shard loading + assign=True so peak memory stays at
         roughly one shard's worth of weights.
+
+        Vision is always loaded — Gemma 4 31B is multimodal-by-default. The
+        checkpoint's config.json MUST contain a ``vision_config`` block and the
+        safetensors shards MUST contain vision keys, or this raises.
+
+        Args:
+            model_dir: directory containing config.json + safetensors shards.
+            max_seq_len: max sequence length for KV cache sizing.
         """
         config = Gemma4_31BConfig.from_hf_config(os.path.join(model_dir, "config.json"))
         config.max_seq_len = max_seq_len
 
         print(
             f"Building Gemma4_31B on meta (layers={config.num_hidden_layers}, "
-            f"hidden={config.hidden_size}, max_seq_len={max_seq_len})..."
+            f"hidden={config.hidden_size}, max_seq_len={max_seq_len}, "
+            f"vision=on)..."
         )
         with torch.device("meta"):
             model = Gemma4_31B(config)
@@ -521,6 +635,15 @@ class Gemma4_31B(nn.Module):
         # Tied embeddings: copy embedding weight into lm_head when missing.
         if "lm_head.weight" not in state_dict and "embed_tokens.weight" in state_dict:
             state_dict["lm_head.weight"] = state_dict["embed_tokens.weight"]
+
+        # Vision keys are mandatory — the model declares vision_tower /
+        # embed_vision submodules and the checkpoint must populate them.
+        if not any(k.startswith("vision_tower.") for k in state_dict):
+            raise ValueError(
+                f"Checkpoint at {model_dir} is missing vision_tower.* keys. "
+                "Gemma 4 31B is multimodal-by-default; a text-only checkpoint "
+                "is not supported."
+            )
 
         missing, unexpected = model.load_state_dict(
             state_dict, strict=False, assign=True
@@ -577,20 +700,39 @@ _HF_KEY_MAP = {
     "model.layers.{}.mlp.down_proj.weight": "layers.{}.mlp.down_proj.weight",
 }
 
-# Multimodal keys we deliberately ignore for the text-only export.
-_IGNORED_PREFIXES = (
+# Multimodal HF prefixes the vision-aware key map handles. The model always
+# has vision_tower / embed_vision submodules (multimodal-by-default), so these
+# keys are always remapped and always consumed by load_state_dict.
+_VISION_PREFIXES = (
     "model.vision_tower.",
     "model.embed_vision.",
 )
 
 
 def _hf_to_model_key(hf_key: str) -> Optional[str]:
+    """Map an HF state-dict key to our model's flat key, or None if it should be skipped.
+
+    Vision keys (``model.vision_tower.*``, ``model.embed_vision.*``) are
+    always remapped through the vision key map and always consumed by the
+    receiving model (multimodal-by-default).
+    """
     # Gemma4ForConditionalGeneration stores the LM under model.language_model.*
     norm = hf_key
     if norm.startswith("model.language_model."):
         norm = norm.replace("model.language_model.", "model.", 1)
 
-    if norm.startswith(_IGNORED_PREFIXES):
+    if norm.startswith(_VISION_PREFIXES):
+        # Vision-aware remap (fixed and per-layer patterns).
+        fixed = hf_vision_key_map()
+        if norm in fixed:
+            return fixed[norm]
+        for hf_pat, model_pat in hf_vision_per_layer_key_map().items():
+            regex = re.escape(hf_pat).replace(r"\{\}", r"(\d+)")
+            m = re.fullmatch(regex, norm)
+            if m:
+                return model_pat.replace("{}", m.group(1), 1)
+        # An unknown vision key — silently skip (keeps loader robust to
+        # checkpoint additions like audio).
         return None
 
     for hf_pat, model_pat in _HF_KEY_MAP.items():
@@ -606,7 +748,11 @@ def _hf_to_model_key(hf_key: str) -> Optional[str]:
 
 
 def _load_and_remap_checkpoint(model_dir: str, config: Gemma4_31BConfig) -> dict:
-    """Stream-load safetensors shards and remap keys to model state_dict keys."""
+    """Stream-load safetensors shards and remap keys to model state_dict keys.
+
+    Vision keys are always remapped — the model always has the matching
+    submodules, so every vision tensor in the checkpoint is consumed.
+    """
     from safetensors import safe_open
 
     index_path = os.path.join(model_dir, "model.safetensors.index.json")
@@ -633,7 +779,7 @@ def _load_and_remap_checkpoint(model_dir: str, config: Gemma4_31BConfig) -> dict
                 # layer_scalar in checkpoint is shape (1,) bf16 — keep as-is.
                 state_dict[model_key] = tensor
     if skipped > 0:
-        print(f"  Skipped {skipped} non-text keys (vision tower, etc.)")
+        print(f"  Skipped {skipped} unknown / vision-extra keys")
     return state_dict
 
 
@@ -674,6 +820,25 @@ def materialize_runtime_buffers(
         attn.register_buffer(
             "inv_freq", attn._compute_inv_freq(device=device), persistent=False
         )
+
+    # Vision tower RoPE: recompute inv_freq for the vision encoder. This
+    # buffer is non-persistent (not in the HF checkpoint) and is built on the
+    # meta device during model construction, so the meta-buffer zeroing loop
+    # above leaves it at all-zeros. We must recompute it with real values.
+    vision_rotary = getattr(model, "vision_tower", None)
+    if vision_rotary is not None:
+        rotary_emb = model.vision_tower.encoder.rotary_emb
+        head_dim = rotary_emb.head_dim
+        rope_theta = rotary_emb.rope_theta
+        spatial_dim = head_dim // 2
+        vision_inv_freq = 1.0 / (
+            rope_theta
+            ** (
+                torch.arange(0, spatial_dim, 2, device=device, dtype=torch.float32)
+                / spatial_dim
+            )
+        )
+        rotary_emb.register_buffer("inv_freq", vision_inv_freq, persistent=False)
 
     model.register_buffer(
         "embed_normalizer",

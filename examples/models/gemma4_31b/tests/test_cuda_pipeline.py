@@ -25,16 +25,13 @@ import executorch.backends.cuda.int4_dispatch  # noqa: F401
 import torch
 import torch.nn as nn
 from executorch.examples.models.gemma4_31b.export import (
+    _get_packers,
     export_and_lower,
     load_prequantized_model,
 )
 from executorch.examples.models.gemma4_31b.inference import _move_to_cuda, generate
 from executorch.examples.models.gemma4_31b.model import Gemma4_31B
-from executorch.examples.models.gemma4_31b.quant import (
-    DEFAULT_CUDA_PACKERS,
-    pack_model,
-    quantize_model,
-)
+from executorch.examples.models.gemma4_31b.quant import pack_model, quantize_model
 from executorch.examples.models.gemma4_31b.tests.test_pipeline import (
     build_hf_checkpoint,
     DEFAULT_RECIPE,
@@ -156,11 +153,16 @@ class TestCudaExport(unittest.TestCase):
                 ckpt_dir, max_seq_len=TINY_CONFIG.max_seq_len
             )
             model.lm_head.weight = nn.Parameter(model.embed_tokens.weight.clone())
+            from executorch.examples.models.gemma4_31b.pack_vision import (
+                quantize_vision_position_table,
+            )
+
+            quantize_vision_position_table(model.vision_tower)
             state_dict = quantize_model(model, DEFAULT_RECIPE)
 
             with torch.device("meta"):
                 model = Gemma4_31B(config)
-            pack_model(model, state_dict, DEFAULT_CUDA_PACKERS)
+            pack_model(model, state_dict, _get_packers("cuda"))
             model.eval()
 
             export_and_lower(model, config, out_dir)
