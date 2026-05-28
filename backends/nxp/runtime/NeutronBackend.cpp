@@ -15,6 +15,12 @@
 #include "NeutronDriver.h"
 #include "NeutronErrors.h"
 
+// Hooks to power on/off the NPU for fine-grained control.
+extern "C" {
+void __attribute__((weak)) neutronPowerOn(void) {}
+void __attribute__((weak)) neutronPowerOff(void) {}
+}
+
 using namespace std;
 
 namespace torch {
@@ -515,7 +521,9 @@ class NeutronBackend final : public PyTorchBackendInterface {
 #endif
 
     // Run neutron compute.
+    neutronPowerOn();
     NeutronError neutronRC = neutronRunBlocking(cfg->nmh, &cfg->dcfg);
+    neutronPowerOff();
     if (neutronRC != ENONE) {
       ET_LOG(
           Error,
