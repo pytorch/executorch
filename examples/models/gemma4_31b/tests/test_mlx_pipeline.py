@@ -236,6 +236,63 @@ class TestMlxPipeline(unittest.TestCase):
         self.assertFalse(torch.isnan(old_tito).any())
         self.assertTrue(torch.equal(old_tito, via_embeds))
 
+    def test_sliding_window_wraparound_matches_reference(self):
+        """Sliding MLX ring-buffer attention masks only the active window."""
+        from executorch.examples.models.gemma4_31b.mlx_source_transformations import (
+            mlx_source_transformations,
+        )
+        from executorch.examples.models.gemma4_31b.model import (
+            materialize_runtime_buffers,
+        )
+
+        torch.manual_seed(0)
+        model = build_random_tiny_model()
+        model.lm_head.weight = nn.Parameter(model.embed_tokens.weight.clone())
+        state_dict = quantize_model(model, TINY_SENSITIVE_RECIPE)
+
+        with torch.device("meta"):
+            model = Gemma4_31B(TINY_CONFIG)
+        model.lm_head.weight = nn.Parameter(model.embed_tokens.weight.clone())
+        pack_model(model, state_dict, DEFAULT_MLX_PACKERS)
+        model.eval()
+
+        mlx_source_transformations(model, dtype=torch.bfloat16)
+        materialize_runtime_buffers(model, dtype=torch.bfloat16)
+
+        sliding_layer = next(
+            layer for layer in model.layers if layer.self_attn.is_sliding
+        )
+        attn = sliding_layer.self_attn
+        window = attn.kv_cache.window_size
+        buffer_size = attn.kv_cache.buffer_size
+        positions = [
+            0,
+            window - 1,
+            window,
+            buffer_size - 1,
+            buffer_size,
+            buffer_size + 1,
+        ]
+
+        for pos in positions:
+            tokens = torch.randint(0, TINY_CONFIG.vocab_size, (1, 1))
+            input_pos = torch.tensor([pos], dtype=torch.long)
+            with torch.no_grad():
+                out = model.mlx_prefill_forward(model.embed_text(tokens), input_pos)
+
+            self.assertEqual(out.shape, torch.Size([1, TINY_CONFIG.vocab_size]))
+            self.assertFalse(torch.isnan(out).any(), f"NaN at position {pos}")
+            self.assertFalse(torch.isinf(out).any(), f"Inf at position {pos}")
+
+        # The sliding cache path intentionally passes buffer_size - T to
+        # custom_sdpa so the fake op slices the whole ring buffer; the additive
+        # mask then selects the valid causal window even after wraparound.
+        mask = attn.kv_cache.create_sliding_window_mask(buffer_size + 1, 1)[0, 0, 0]
+        allowed_slots = torch.nonzero(mask == 0, as_tuple=False).flatten().tolist()
+        expected_slots = [0, 1] + list(range(buffer_size - window + 2, buffer_size))
+        self.assertEqual(allowed_slots, expected_slots)
+        self.assertEqual(len(allowed_slots), window)
+
     def test_source_transforms_use_mlx_ops(self):
         """Verify the traced graph contains the expected MLX custom ops.
 

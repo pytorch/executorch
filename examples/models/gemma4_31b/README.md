@@ -1,8 +1,8 @@
 # Gemma 4 31B-IT
 
 Export of Google's Gemma 4 31B-IT to ExecuTorch with INT4/INT8 weight
-quantization. Supports CUDA (with multimodal text + vision) and MLX
-(Apple Silicon, text-only) backends.
+quantization, text-image input, text output. Supports CUDA and MLX
+backends.
 
 For architecture and design notes see [model.md](model.md).
 
@@ -15,7 +15,7 @@ both export and eager inference:
 | Script | Purpose | Image input? | Peak memory |
 |---|---|---|---|
 | `quantize_and_save.py` | bf16 HF checkpoint → quantized checkpoint (one-time) | — | ~30 GB CPU |
-| `export.py --prequantized <dir>` | quantized checkpoint → `model.pte` + `model.ptd` (multimodal 4-method contract) | yes (runner-time) | ~24 GB CPU + CUDA for packing |
+| `export.py --prequantized <dir>` | quantized checkpoint → `model.pte` + optional `model.ptd` (CUDA: 4 methods; MLX: 3 methods) | yes (runner-time) | ~24 GB CPU + backend packing |
 | `inference.py --prequantized <dir>` | quantized checkpoint → eager generation under `torch.compile` | `--image-path` | ~24 GB GPU |
 | `inference.py --gguf <file>` | GGUF text decoder + HF vision tower (via `--vision-from-hf`) → eager generation | `--image-path` | ~24 GB GPU |
 | `inference.py --bf16 <dir>` | full bf16 HF safetensors → eager generation (debug only; ~62 GB) | `--image-path` | ~62 GB CPU + ~62 GB GPU |
@@ -70,8 +70,8 @@ huggingface-cli download gasoonjia/gemma-4-31B-it-HQQ-INT4 --local-dir gemma-4-3
 ```
 
 > **Note**: This checkpoint is intended for development and testing of the
-> ExecuTorch CUDA export pipeline. Output quality has not been formally
-> evaluated against the base model.
+> ExecuTorch CUDA and MLX export pipelines. Output quality has not been
+> formally evaluated against the base model.
 
 Use it directly with `--prequantized` in the export and inference scripts
 below — no need to run `quantize_and_save.py`.
@@ -104,10 +104,10 @@ python examples/models/gemma4_31b/export.py \
     --backend cuda
 ```
 
-For CUDA, the exported `.pte` is multimodal — it bundles four methods
-(`embed_text`, `vision_encoder`, unified prefill `forward`, and
-`decode_forward`), which the runner stitches together for image+text
-inference. Text-only inference just skips the `vision_encoder` call.
+For CUDA, the exported `.pte` is multimodal — it bundles four runtime
+methods: `embed_text`, `vision_encoder`, `prefill`, and `decode`. The runner
+stitches them together for image+text inference. Text-only inference just
+skips the `vision_encoder` call.
 
 ### MLX (Apple Silicon)
 
@@ -119,11 +119,14 @@ python examples/models/gemma4_31b/export.py \
     --backend mlx
 ```
 
-The same quantized checkpoint works for both backends. MLX exports a
-single `forward` method with dynamic sequence length and host-side
-sampling (text-only; no vision support on MLX yet).
+The same quantized checkpoint works for both backends. MLX exports three
+methods: `embed_text`, `vision_encoder`, and `prefill`. `prefill` accepts
+precomputed embeddings and returns logits; the C++ runner performs host-side
+sampling and reuses `prefill` for per-token decode. Image+text inference uses
+`vision_encoder` plus `embed_text`, then splices image rows into the embedding
+sequence before calling `prefill`.
 
-Writes `model.pte` (and optionally `model.ptd`) into `--output-dir`.
+Writes `model.pte` (and `model.ptd` for cuda) into `--output-dir`.
 
 ## Eager inference
 
@@ -236,5 +239,9 @@ Pass `--raw_prompt` to skip template wrapping for pre-formatted input.
     --temperature 0
 ```
 
-For benchmarking, add `--cuda_graph` to capture the decode method in a CUDA
-graph (decode is fully static — `T=1`).
+For MLX exports, omit `--data_path`; weights are stored in `model.pte`.
+
+For CUDA benchmarking, add `--cuda_graph` to capture the decode method in a
+CUDA graph (decode is fully static — `T=1`). MLX exports do not include a
+separate `decode` method; the runner feeds one-token embeddings through
+`prefill` for generation.
