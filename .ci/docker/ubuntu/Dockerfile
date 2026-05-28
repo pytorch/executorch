@@ -54,7 +54,7 @@ COPY ./common/install_conda.sh install_conda.sh
 COPY ./common/utils.sh utils.sh
 RUN bash ./install_conda.sh && rm install_conda.sh utils.sh /opt/conda/requirements-ci.txt /opt/conda/conda-env-ci.txt
 
-# Install sccache before building torch
+# Install sccache before building ExecuTorch.
 COPY ./common/install_cache.sh install_cache.sh
 ENV PATH /opt/cache/bin:$PATH
 COPY ./common/utils.sh utils.sh
@@ -65,7 +65,11 @@ ENV SCCACHE_REGION us-east-1
 ENV AWS_REGION us-east-1
 ENV AWS_DEFAULT_REGION us-east-1
 
-ARG TORCH_VERSION
+ARG TORCH_CHANNEL
+ARG TORCH_SPEC
+ARG TORCHAUDIO_SPEC
+ARG TORCHVISION_SPEC
+ARG TORCH_INDEX_URL
 ARG SKIP_PYTORCH
 ARG PYTORCH_BUILD_MAX_JOBS
 COPY ./common/install_pytorch.sh install_pytorch.sh

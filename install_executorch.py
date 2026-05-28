@@ -174,7 +174,9 @@ def _parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--use-pt-pinned-commit",
         action="store_true",
-        help="build from the pinned PyTorch commit instead of nightly",
+        help="legacy option: install plain `torch` (whatever pip resolves by "
+        "default). Without this flag, install the specific pinned version from "
+        "the channel selected in torch_pin.py (nightly / test / release).",
     )
     parser.add_argument(
         "--editable",
@@ -217,13 +219,13 @@ def main(args):
         return
 
     check_and_update_submodules()
-    # This option is used in CI to make sure that PyTorch build from the pinned commit
-    # is used instead of nightly. CI jobs wouldn't be able to catch regression from the
-    # latest PT commit otherwise
-    use_pytorch_nightly = not args.use_pt_pinned_commit
+    # By default install the specific pinned version from the channel selected
+    # in torch_pin.py. With --use-pt-pinned-commit, install plain `torch` using
+    # pip's default resolution.
+    install_pinned_version = not args.use_pt_pinned_commit
 
     # Step 1: Install core dependencies first
-    install_requirements(use_pytorch_nightly)
+    install_requirements(install_pinned_version)
 
     # Step 2: Install build dependencies for optional dependencies
     # They need to be installed before optional dependencies due to --no-build-isolation
@@ -261,7 +263,7 @@ def main(args):
 
     # Step 4: Extra (optional) packages that is only useful for running examples.
     if not args.minimal:
-        install_optional_example_requirements(use_pytorch_nightly)
+        install_optional_example_requirements(install_pinned_version)
 
 
 if __name__ == "__main__":

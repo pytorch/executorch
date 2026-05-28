@@ -82,110 +82,60 @@ dedupe_macos_loader_path_rpaths() {
   done
 }
 
-install_domains() {
-  echo "Install torchvision and torchaudio"
-  pip install --no-build-isolation --user "git+https://github.com/pytorch/audio.git@${TORCHAUDIO_VERSION}"
-  pip install --no-build-isolation --user "git+https://github.com/pytorch/vision.git@${TORCHVISION_VERSION}"
-}
-
 install_pytorch_and_domains() {
-  pushd .ci/docker || return
-  TORCH_VERSION=$(cat ci_commit_pins/pytorch.txt)
-  popd || return
-
-  git clone https://github.com/pytorch/pytorch.git
-
-  # Fetch the target commit
-  pushd pytorch || return
-  git checkout "${TORCH_VERSION}"
-
-  local system_name=$(uname)
-  if [[ "${system_name}" == "Darwin" ]]; then
-    local platform=$(python -c 'import sysconfig; import platform; v=platform.mac_ver()[0].split(".")[0]; platform=sysconfig.get_platform().split("-"); platform[1]=f"{v}_0"; print("_".join(platform))')
-  fi
-  local python_version=$(python -c 'import platform; v=platform.python_version_tuple(); print(f"{v[0]}{v[1]}")')
-  local torch_release=$(cat version.txt)
-  # Download key must match the upload key below (basename of dist/*.whl,
-  # which always carries setup.py's resolved +gitHASH). Branch-ref pins
-  # like `release/2.12` would otherwise produce `+gitrelease` here and
-  # never hit the cache.
-  local torch_short_hash=$(git rev-parse --short=7 HEAD)
-  local torch_wheel_path="cached_artifacts/pytorch/executorch/pytorch_wheels/${system_name}/${python_version}"
-  local torch_wheel_name="torch-${torch_release}%2Bgit${torch_short_hash}-cp${python_version}-cp${python_version}-${platform:-}.whl"
-
-  local cached_torch_wheel="https://gha-artifacts.s3.us-east-1.amazonaws.com/${torch_wheel_path}/${torch_wheel_name}"
-  # Cache PyTorch wheel is only needed on MacOS, Linux CI already has this as part
-  # of the Docker image
-  local torch_wheel_not_found=0
-  if [[ "${system_name}" == "Darwin" ]]; then
-    pip install "${cached_torch_wheel}" || torch_wheel_not_found=1
-  else
-    torch_wheel_not_found=1
+  # CWD is the executorch repo root, where torch_pin.py lives.
+  local torch_channel
+  local torch_spec
+  local torchvision_spec
+  local torchaudio_spec
+  local torch_index_url
+  local torch_cache_args_output
+  torch_channel=$(python -c "from torch_pin import CHANNEL; print(CHANNEL)")
+  torch_spec=$(python -c "from torch_pin import torch_spec; print(torch_spec())")
+  torchvision_spec=$(python -c "from torch_pin import torchvision_spec; print(torchvision_spec())")
+  torchaudio_spec=$(python -c "from torch_pin import torchaudio_spec; print(torchaudio_spec())")
+  torch_index_url=$(python -c "from torch_pin import torch_index_url_base; print(torch_index_url_base())")
+  torch_cache_args_output=$(python -c "from torch_pin import pip_cache_args; print(' '.join(pip_cache_args()))")
+  local torch_cache_args=()
+  if [[ -n "${torch_cache_args_output}" ]]; then
+    read -r -a torch_cache_args <<< "${torch_cache_args_output}"
   fi
 
-  # Found no such wheel, we will build it from source then
-  if [[ "${torch_wheel_not_found}" == "1" ]]; then
-    echo "No cached wheel found, continue with building PyTorch at ${TORCH_VERSION}"
+  local wheelhouse
+  wheelhouse=$(mktemp -d)
 
-    # Install PyTorch's own build-time deps so the source build does not
-    # silently inherit them from whatever else happens to be in the env
-    # (e.g. executorch's requirements-ci.txt).
-    pip install -r requirements-build.txt
-    git submodule update --init --recursive
-    if [[ "$(uname -m)" == "aarch64" ]]; then
-      export BUILD_IGNORE_SVE_UNAVAILABLE=1
-    fi
-    USE_DISTRIBUTED=1 python setup.py bdist_wheel
-    pip install "$(echo dist/*.whl)"
+  local system_name
+  local system_arch
+  local python_version
+  system_name=$(uname)
+  system_arch=$(uname -m)
+  python_version=$(python -c 'import platform; v=platform.python_version_tuple(); print(f"{v[0]}{v[1]}")')
+  local torch_wheel_cache_path="cached_artifacts/pytorch/executorch/pytorch_wheels/${system_name}/${system_arch}/${python_version}/cpu/${torch_channel}"
+  local torch_wheel_cache_uri="s3://gha-artifacts/${torch_wheel_cache_path}"
 
-    # Invariant: the basename setup.py just produced must match the cache
-    # URL we'd reconstruct on the next run. If they diverge (someone edits
-    # torch_wheel_name above, or PyTorch renames its wheels), the cache
-    # will silently miss and every macOS run will fall back to a ~30-min
-    # source build. Fail loudly so the regression is caught immediately.
-    shopt -s nullglob
-    local built_wheels=(dist/*.whl)
-    shopt -u nullglob
-    if [[ ${#built_wheels[@]} -ne 1 ]]; then
-      echo "ERROR: expected exactly 1 wheel in dist/, found ${#built_wheels[@]}" >&2
-      exit 1
-    fi
-    local built_wheel_name
-    built_wheel_name=$(basename "${built_wheels[0]}")
-    local expected_wheel_name="${torch_wheel_name//\%2B/+}"
-    if [[ "${built_wheel_name}" != "${expected_wheel_name}" ]]; then
-      echo "ERROR: built torch wheel name does not match cache URL key:" >&2
-      echo "  built:    ${built_wheel_name}" >&2
-      echo "  expected: ${expected_wheel_name}" >&2
-      echo "Fix torch_wheel_name construction in install_pytorch_and_domains" >&2
-      echo "in .ci/scripts/utils.sh" >&2
-      exit 1
-    fi
-
-    # Only AWS runners have access to S3
-    if command -v aws && [[ -z "${GITHUB_RUNNER:-}" ]]; then
-      for wheel_path in dist/*.whl; do
-        local wheel_name=$(basename "${wheel_path}")
-        echo "Caching ${wheel_name}"
-        aws s3 cp "${wheel_path}" "s3://gha-artifacts/${torch_wheel_path}/${wheel_name}"
-      done
-    fi
-  else
-    echo "Use cached wheel at ${cached_torch_wheel}"
+  # Do not cache test-channel wheels in S3: RC artifacts may be re-uploaded
+  # under the same package version.
+  if [[ "${torch_channel}" != "test" ]] && command -v aws >/dev/null 2>&1; then
+    aws s3 sync "${torch_wheel_cache_uri}" "${wheelhouse}" || true
   fi
 
+  python -m pip download --no-deps "${torch_cache_args[@]}" \
+    --dest "${wheelhouse}" \
+    --find-links "${wheelhouse}" \
+    "${torch_spec}" "${torchvision_spec}" "${torchaudio_spec}" \
+    --index-url "${torch_index_url}/cpu"
+
+  if [[ "${torch_channel}" != "test" && -z "${GITHUB_RUNNER:-}" ]] && command -v aws >/dev/null 2>&1; then
+    aws s3 sync "${wheelhouse}" "${torch_wheel_cache_uri}" \
+      --exclude "*" --include "*.whl" || true
+  fi
+
+  pip install --force-reinstall "${torch_cache_args[@]}" \
+    --find-links "${wheelhouse}" \
+    "${torch_spec}" "${torchvision_spec}" "${torchaudio_spec}" \
+    --index-url "${torch_index_url}/cpu"
   dedupe_macos_loader_path_rpaths
-  # Grab the pinned audio and vision commits from PyTorch
-  TORCHAUDIO_VERSION=release/2.11
-  export TORCHAUDIO_VERSION
-  TORCHVISION_VERSION=release/0.27
-  export TORCHVISION_VERSION
-
-  install_domains
-
-  popd || return
-  # Print sccache stats for debugging
-  sccache --show-stats || true
+  rm -rf "${wheelhouse}"
 }
 
 build_executorch_runner_buck2() {
@@ -252,18 +202,27 @@ download_stories_model_artifacts() {
   echo '{"dim": 768, "multiple_of": 32, "n_heads": 12, "n_layers": 12, "norm_eps": 1e-05, "vocab_size": 32000}' > params.json
 }
 
-do_not_use_nightly_on_ci() {
-  # An assert to make sure that we are not using PyTorch nightly on CI to prevent
-  # regression as documented in https://github.com/pytorch/executorch/pull/6564
-  TORCH_VERSION=$(pip list | grep -w 'torch ' | awk -F ' ' {'print $2'} | tr -d '\n')
+verify_torch_matches_pin_on_ci() {
+  local expected_torch_version
+  local installed_torch_version
+  expected_torch_version=$(python - <<'PY'
+from torch_pin import CHANNEL, NIGHTLY_VERSION, TORCH_VERSION
 
-  # The version of PyTorch building from source looks like 2.6.0a0+gitc8a648d that
-  # includes the commit while nightly (2.6.0.dev20241019+cpu) or release (2.6.0)
-  # won't have that. Note that we couldn't check for the exact commit from the pin
-  # ci_commit_pins/pytorch.txt here because the value will be different when running
-  # this on PyTorch CI
-  if [[ "${TORCH_VERSION}" != *"+git"* ]]; then
-    echo "Unexpected torch version. Expected binary built from source, got ${TORCH_VERSION}"
+if CHANNEL == "nightly":
+    print(f"{TORCH_VERSION}.{NIGHTLY_VERSION}")
+else:
+    print(TORCH_VERSION)
+PY
+)
+  installed_torch_version=$(python - <<'PY'
+import torch
+
+print(torch.__version__.split("+", 1)[0])
+PY
+)
+
+  if [[ "${installed_torch_version}" != "${expected_torch_version}" ]]; then
+    echo "Unexpected torch version. Expected ${expected_torch_version}, got ${installed_torch_version}"
     exit 1
   fi
 }
