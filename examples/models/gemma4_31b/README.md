@@ -25,7 +25,7 @@ The quantized checkpoint is a safetensors file containing torchao tensor
 subclasses (`Int4Tensor`, `IntxUnpackedToInt8Tensor`) and plain tensors.
 Metadata records each subclass's type and attributes. No backend-specific
 packing — packing for the target backend happens at load time via
-the generic quant packers plus Gemma4-specific `custom_quant` wrappers.
+the generic quant packers plus Gemma4-specific packers from `export.py`.
 
 ## Quantization recipes
 
@@ -37,7 +37,7 @@ Two built-in recipes (see `quantize_and_save.py`):
 | `sensitive` | INT8 for edge-layer v_proj/down_proj, INT4 hqq elsewhere, INT8 per-axis embedding |
 
 The vision tower position-embedding table is quantized to INT8 per-channel
-inside `quantize_and_save.py` (via `custom_quant.pack_vision::quantize_vision_position_table`)
+inside `quantize_and_save.py` (via `pack_vision.py::quantize_vision_position_table`)
 and persisted as int8 + fp32-scale buffers in the prequantized checkpoint;
 all other vision params stay in bf16 (~0.4 GB).
 

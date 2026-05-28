@@ -21,8 +21,6 @@ import unittest
 
 import torch
 import torch.nn as nn
-from executorch.examples.models.gemma4_31b.custom_quant import quantize_model
-
 from executorch.examples.models.gemma4_31b.model import (
     Gemma4_31B,
     Gemma4_31BConfig,
@@ -30,8 +28,12 @@ from executorch.examples.models.gemma4_31b.model import (
 )
 from executorch.examples.models.gemma4_31b.quant import (
     QuantConfig,
+    quantize_model,
     QuantRecipe,
     QuantRule,
+)
+from executorch.examples.models.gemma4_31b.quantize_and_save import (
+    quantize_gemma4_vision_position_table,
 )
 from executorch.examples.models.gemma4_31b.vision_tower import Gemma4VisionConfig
 from safetensors import safe_open
@@ -90,13 +92,14 @@ QUANT_8W_PER_AXIS = QuantConfig(
 DEFAULT_RECIPE = QuantRecipe(
     rules=[
         QuantRule(r"embed_tokens\.weight", QUANT_8W_PER_AXIS),
-        # Vision side stays bf16; the PE table is swapped to int8 buffers
-        # internally by quantize_model.
+        # Vision side stays bf16; the PE table is swapped to int8 buffers by
+        # the recipe pre_quantize hook.
         QuantRule(r"vision_tower\..*", None),
         QuantRule(r"embed_vision\..*", None),
         QuantRule(r".*norm\.weight", None),
         QuantRule(r".*\.weight", QUANT_4W),
-    ]
+    ],
+    pre_quantize=quantize_gemma4_vision_position_table,
 )
 
 

@@ -53,6 +53,8 @@ from executorch.examples.models.gemma4_31b.model import (
     Gemma4_31BConfig,
     materialize_runtime_buffers,
 )
+from executorch.examples.models.gemma4_31b.pack_vision import pack_vision_patch_embedder
+from executorch.examples.models.gemma4_31b.vision_tower import Gemma4VisionPatchEmbedder
 
 
 # ---------------------------------------------------------------------------
@@ -106,13 +108,9 @@ def load_prequantized_model(
     with torch.device("meta"):
         model = Gemma4_31B(config)
 
-    # ``custom_quant`` loaders auto-install the vision PE int8 dispatch when
-    # they see ``_pet_int8`` keys
-    # in the state dict, so no explicit install call is needed here. For
-    # MLX, that also covers the alternate checkpoint form where the vision
-    # PE table is stored as _pet_int8/_pet_scale buffers; ``_checkpoint_has
-    # _int8_vision_pe`` remains useful for diagnostics but is no longer
-    # required to gate dispatch installation.
+    # Gemma4-specific packers install the vision PE int8 dispatch when they
+    # see ``_pet_int8`` / ``_pet_scale`` keys, so no explicit install call is
+    # needed here.
     print(f"Loading quantized checkpoint from {safetensors_path}...")
     _pack_for_backend(model, safetensors_path, backend)
     model.eval()
@@ -131,10 +129,7 @@ def load_and_quantize(
     backend: str = "cuda",
 ) -> tuple[Gemma4_31B, Gemma4_31BConfig]:
     """Load bf16 checkpoint, quantize, pack — one shot. Text-only path."""
-    from executorch.examples.models.gemma4_31b.custom_quant import (
-        pack_model,
-        quantize_model,
-    )
+    from executorch.examples.models.gemma4_31b.quant import pack_model, quantize_model
     from executorch.examples.models.gemma4_31b.quantize_and_save import _RECIPES
 
     recipe = _RECIPES[recipe_name]
@@ -177,29 +172,32 @@ def _get_packers(backend: str) -> dict:
     if backend == "cuda":
         from executorch.examples.models.gemma4_31b.quant import DEFAULT_CUDA_PACKERS
 
-        return DEFAULT_CUDA_PACKERS
+        return {
+            **DEFAULT_CUDA_PACKERS,
+            Gemma4VisionPatchEmbedder: pack_vision_patch_embedder,
+        }
     if backend == "mlx":
         from executorch.examples.models.gemma4_31b.quant import DEFAULT_MLX_PACKERS
 
-        return DEFAULT_MLX_PACKERS
+        return {
+            **DEFAULT_MLX_PACKERS,
+            Gemma4VisionPatchEmbedder: pack_vision_patch_embedder,
+        }
     raise ValueError(
         f"Unsupported backend: {backend!r}. Supported: {_SUPPORTED_BACKENDS}."
     )
 
 
 def _pack_for_backend(model: nn.Module, path: str, backend: str) -> None:
+    packers = _get_packers(backend)
     if backend == "cuda":
-        from executorch.examples.models.gemma4_31b.custom_quant import (
-            load_and_pack_for_cuda,
-        )
+        from executorch.examples.models.gemma4_31b.quant import load_and_pack_for_cuda
 
-        load_and_pack_for_cuda(path, model)
+        load_and_pack_for_cuda(path, model, packers=packers)
     elif backend == "mlx":
-        from executorch.examples.models.gemma4_31b.custom_quant import (
-            load_and_pack_for_mlx,
-        )
+        from executorch.examples.models.gemma4_31b.quant import load_and_pack_for_mlx
 
-        load_and_pack_for_mlx(path, model)
+        load_and_pack_for_mlx(path, model, packers=packers)
     else:
         raise ValueError(
             f"Unsupported backend: {backend!r}. Supported: {_SUPPORTED_BACKENDS}."

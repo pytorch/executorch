@@ -298,6 +298,9 @@ def quantize_model(
     ``IntxUnpackedToInt8Tensor``) and plain tensors. Non-persistent
     buffers (KV cache, RoPE tables) are excluded.
     """
+    if recipe.pre_quantize is not None:
+        recipe.pre_quantize(model)
+
     state: dict[str, torch.Tensor] = {}
     persistent_keys = set(model.state_dict().keys())
 

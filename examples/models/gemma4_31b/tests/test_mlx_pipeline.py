@@ -20,19 +20,21 @@ import unittest
 
 import torch
 import torch.nn as nn
-from executorch.examples.models.gemma4_31b.custom_quant import (
-    pack_model,
-    quantize_model,
+from executorch.examples.models.gemma4_31b.export import (
+    _checkpoint_has_int8_vision_pe,
+    _get_packers,
 )
-
-from executorch.examples.models.gemma4_31b.export import _checkpoint_has_int8_vision_pe
 
 from executorch.examples.models.gemma4_31b.model import Gemma4_31B
 from executorch.examples.models.gemma4_31b.quant import (
-    DEFAULT_MLX_PACKERS,
+    pack_model,
     QuantConfig,
+    quantize_model,
     QuantRecipe,
     QuantRule,
+)
+from executorch.examples.models.gemma4_31b.quantize_and_save import (
+    quantize_gemma4_vision_position_table,
 )
 from executorch.examples.models.gemma4_31b.tests.test_pipeline import (
     build_random_tiny_model,
@@ -51,15 +53,15 @@ _EDGE_LAYERS = set(range(3))
 TINY_SENSITIVE_RECIPE = QuantRecipe(
     rules=[
         QuantRule(r"embed_tokens\.weight", _INT8_PER_AXIS),
-        # Vision side stays bf16 (PE table is folded into int8 buffers
-        # inside custom_quant.quantize_model; custom_quant.pack_model installs
-        # the load-side dispatch automatically).
+        # Vision side stays bf16; the PE table is swapped to int8 buffers by
+        # the recipe pre_quantize hook.
         QuantRule(r"vision_tower\..*", None),
         QuantRule(r"embed_vision\..*", None),
         QuantRule(r".*norm\.weight", None),
         QuantRule(r".*\.(v_proj|down_proj)\.weight", _INT8, layers=_EDGE_LAYERS),
         QuantRule(r".*\.weight", _INT4),
-    ]
+    ],
+    pre_quantize=quantize_gemma4_vision_position_table,
 )
 
 
@@ -134,7 +136,7 @@ class TestMlxPipeline(unittest.TestCase):
         with torch.device("meta"):
             model = Gemma4_31B(TINY_CONFIG)
         model.lm_head.weight = nn.Parameter(model.embed_tokens.weight.clone())
-        pack_model(model, state_dict, DEFAULT_MLX_PACKERS)
+        pack_model(model, state_dict, _get_packers("mlx"))
 
         for fqn, p in model.named_parameters():
             self.assertNotEqual(p.device.type, "meta", f"Weight '{fqn}' still on meta")
@@ -148,7 +150,7 @@ class TestMlxPipeline(unittest.TestCase):
         with torch.device("meta"):
             model = Gemma4_31B(TINY_CONFIG)
         model.lm_head.weight = nn.Parameter(model.embed_tokens.weight.clone())
-        pack_model(model, state_dict, DEFAULT_MLX_PACKERS)
+        pack_model(model, state_dict, _get_packers("mlx"))
         model.eval()
 
         from executorch.examples.models.gemma4_31b.model import (
@@ -175,7 +177,7 @@ class TestMlxPipeline(unittest.TestCase):
         with torch.device("meta"):
             model = Gemma4_31B(TINY_CONFIG)
         model.lm_head.weight = nn.Parameter(model.embed_tokens.weight.clone())
-        pack_model(model, state_dict, DEFAULT_MLX_PACKERS)
+        pack_model(model, state_dict, _get_packers("mlx"))
         model.eval()
 
         from executorch.examples.models.gemma4_31b.model import (
@@ -204,7 +206,7 @@ class TestMlxPipeline(unittest.TestCase):
         with torch.device("meta"):
             model = Gemma4_31B(TINY_CONFIG)
         model.lm_head.weight = nn.Parameter(model.embed_tokens.weight.clone())
-        pack_model(model, state_dict, DEFAULT_MLX_PACKERS)
+        pack_model(model, state_dict, _get_packers("mlx"))
         model.eval()
 
         from executorch.examples.models.gemma4_31b.mlx_source_transformations import (
@@ -255,7 +257,7 @@ class TestMlxPipeline(unittest.TestCase):
         with torch.device("meta"):
             model = Gemma4_31B(TINY_CONFIG)
         model.lm_head.weight = nn.Parameter(model.embed_tokens.weight.clone())
-        pack_model(model, state_dict, DEFAULT_MLX_PACKERS)
+        pack_model(model, state_dict, _get_packers("mlx"))
         model.eval()
 
         mlx_source_transformations(model, dtype=torch.bfloat16)
@@ -318,7 +320,7 @@ class TestMlxPipeline(unittest.TestCase):
         with torch.device("meta"):
             model = Gemma4_31B(TINY_CONFIG)
         model.lm_head.weight = nn.Parameter(model.embed_tokens.weight.clone())
-        pack_model(model, state_dict, DEFAULT_MLX_PACKERS)
+        pack_model(model, state_dict, _get_packers("mlx"))
         model.eval()
 
         mlx_source_transformations(model, dtype=torch.bfloat16)
