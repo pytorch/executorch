@@ -7,12 +7,12 @@
 from typing import Set, Type
 
 import torch
-from executorch.backends.arm._passes import ArmPass
+from executorch.backends.arm._passes import ArmOpTargetedPass
 from executorch.exir.dialects._ops import ops as exir_ops
 from executorch.exir.pass_base import ExportPass
 
 
-class RewriteBoolBitwiseToLogicalPass(ArmPass):
+class RewriteBoolBitwiseToLogicalPass(ArmOpTargetedPass):
     """Rewrites ``aten.bitwise_*`` on boolean tensors to ``aten.logical_*``.
 
     TOSA ``bitwise_*`` does not support boolean inputs. On boolean tensors,
@@ -32,9 +32,10 @@ class RewriteBoolBitwiseToLogicalPass(ArmPass):
         exir_ops.edge.aten.bitwise_xor.Tensor: exir_ops.edge.aten.logical_xor.default,
         exir_ops.edge.aten.bitwise_xor.Scalar: exir_ops.edge.aten.logical_xor.default,
     }
+    target_ops = tuple(_TARGET_TO_LOGICAL)
 
     def call_operator(self, op, args, kwargs, meta):
-        if op not in self._TARGET_TO_LOGICAL:
+        if op not in self.target_ops:
             return super().call_operator(op, args, kwargs, meta)
 
         if meta["val"].dtype == torch.bool:

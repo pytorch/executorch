@@ -550,7 +550,10 @@ class TOSAPartitioner(Partitioner):
         partition_tags = {tag: self.delegation_spec for tag in tags}
 
         tag_constant_data(exported_program)
-        if self.intermediate_path is not None and logger.level <= logging.INFO:
+        if (
+            self.intermediate_path is not None
+            and logger.getEffectiveLevel() <= logging.INFO
+        ):
             intermediate_path = Path(self.intermediate_path)
             intermediate_path.mkdir(parents=True, exist_ok=True)
             file_handler = logging.FileHandler(
