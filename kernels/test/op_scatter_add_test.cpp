@@ -9,6 +9,7 @@
 #include <executorch/kernels/test/FunctionHeaderWrapper.h> // Declares the operator
 #include <executorch/kernels/test/TestUtil.h>
 #include <executorch/kernels/test/supported_features.h>
+#include <executorch/kernels/test/supported_features_skip.h>
 #include <executorch/runtime/core/exec_aten/exec_aten.h>
 #include <executorch/runtime/core/exec_aten/testing_util/tensor_factory.h>
 #include <executorch/runtime/core/exec_aten/testing_util/tensor_util.h>
@@ -324,9 +325,9 @@ TEST_F(OpScatterAddOutTest, InvalidDimensionsDies) {
 }
 
 TEST_F(OpScatterAddOutTest, MismatchedShapeDies) {
-  if (torch::executor::testing::SupportedFeatures::get()->is_aten) {
-    GTEST_SKIP() << "ATen kernel can handle mismatched shape";
-  }
+  ET_SKIP_IF(
+      torch::executor::testing::SupportedFeatures::get()->is_aten,
+      "ATen kernel can handle mismatched shape");
 #define TEST_ENTRY(CTYPE, DTYPE) \
   test_scatter_add_out_mismatched_shape<ScalarType::DTYPE>();
   ET_FORALL_REAL_TYPES(TEST_ENTRY);
@@ -388,17 +389,17 @@ TEST_F(OpScatterAddOutTest, DynamicShapeUpperBoundSameAsExpected) {
 }
 
 TEST_F(OpScatterAddOutTest, DynamicShapeUpperBoundLargerThanExpected) {
-  if (!torch::executor::testing::SupportedFeatures::get()->output_resize) {
-    GTEST_SKIP() << "Dynamic shape not supported";
-  }
+  ET_SKIP_IF(
+      !torch::executor::testing::SupportedFeatures::get()->output_resize,
+      "Dynamic shape not supported");
   test_dynamic_shape(
       {10, 10, 10}, torch::executor::TensorShapeDynamism::DYNAMIC_BOUND);
 }
 
 TEST_F(OpScatterAddOutTest, DynamicShapeUnbound) {
-  if (!torch::executor::testing::SupportedFeatures::get()->output_resize) {
-    GTEST_SKIP() << "Dynamic shape not supported";
-  }
+  ET_SKIP_IF(
+      !torch::executor::testing::SupportedFeatures::get()->output_resize,
+      "Dynamic shape not supported");
   test_dynamic_shape(
       {1, 1, 1}, torch::executor::TensorShapeDynamism::DYNAMIC_UNBOUND);
 }

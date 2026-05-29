@@ -19,6 +19,8 @@ Three input paths:
 
 Backends:
   --backend cuda            (default) CUDA via tinygemm INT4 + CudaPartitioner.
+  --backend mlx             Apple Silicon via MLXPartitioner (single method,
+                            dynamic seq_len, host-side sampling).
 """
 
 import argparse
@@ -98,12 +100,21 @@ def load_and_quantize(
 # Backend dispatch helpers
 
 
+_SUPPORTED_BACKENDS = ("cuda", "mlx")
+
+
 def _get_packers(backend: str) -> dict:
     if backend == "cuda":
         from executorch.examples.models.gemma4_31b.quant import DEFAULT_CUDA_PACKERS
 
         return DEFAULT_CUDA_PACKERS
-    raise ValueError(f"Unsupported backend: {backend!r}. Supported: 'cuda'.")
+    if backend == "mlx":
+        from executorch.examples.models.gemma4_31b.quant import DEFAULT_MLX_PACKERS
+
+        return DEFAULT_MLX_PACKERS
+    raise ValueError(
+        f"Unsupported backend: {backend!r}. Supported: {_SUPPORTED_BACKENDS}."
+    )
 
 
 def _pack_for_backend(model: nn.Module, path: str, backend: str) -> None:
@@ -111,8 +122,14 @@ def _pack_for_backend(model: nn.Module, path: str, backend: str) -> None:
         from executorch.examples.models.gemma4_31b.quant import load_and_pack_for_cuda
 
         load_and_pack_for_cuda(path, model)
+    elif backend == "mlx":
+        from executorch.examples.models.gemma4_31b.quant import load_and_pack_for_mlx
+
+        load_and_pack_for_mlx(path, model)
     else:
-        raise ValueError(f"Unsupported backend: {backend!r}. Supported: 'cuda'.")
+        raise ValueError(
+            f"Unsupported backend: {backend!r}. Supported: {_SUPPORTED_BACKENDS}."
+        )
 
 
 # ---------------------------------------------------------------------------
@@ -128,8 +145,12 @@ def export_and_lower(
     """Export and lower the model to ExecuTorch for the given backend."""
     if backend == "cuda":
         _export_cuda(model, config, output_dir)
+    elif backend == "mlx":
+        _export_mlx(model, config, output_dir)
     else:
-        raise ValueError(f"Unsupported backend: {backend!r}. Supported: 'cuda'.")
+        raise ValueError(
+            f"Unsupported backend: {backend!r}. Supported: {_SUPPORTED_BACKENDS}."
+        )
 
 
 def _export_cuda(model: Gemma4_31B, config: Gemma4_31BConfig, output_dir: str) -> None:
@@ -258,6 +279,98 @@ def _export_cuda(model: Gemma4_31B, config: Gemma4_31BConfig, output_dir: str) -
     print("Done.")
 
 
+def _export_mlx(model: Gemma4_31B, config: Gemma4_31BConfig, output_dir: str) -> None:
+    """Export to .pte via torch.export + MLX backend.
+
+    Unlike CUDA (which exports separate decode/prefill methods with an
+    Int4Tensor dispatch override), MLX uses a single method with dynamic
+    sequence length.  No int4_dispatch import — IntxUnpackedToInt8Tensor's
+    default dispatch produces the ``dequantize_affine → linear`` pattern
+    that MLX's QuantizedLinearHandler matches.
+    """
+    import gc
+
+    from executorch.backends.mlx import MLXPartitioner
+    from executorch.backends.mlx.passes import get_default_passes
+
+    from executorch.examples.models.gemma4_31b.mlx_source_transformations import (
+        mlx_source_transformations,
+    )
+    from executorch.exir import (
+        EdgeCompileConfig,
+        ExecutorchBackendConfig,
+        to_edge_transform_and_lower,
+    )
+    from executorch.exir.passes import MemoryPlanningPass
+    from torch.export import Dim, export
+
+    mlx_source_transformations(model, dtype=torch.bfloat16)
+    materialize_runtime_buffers(model, dtype=torch.bfloat16)
+
+    max_prefill = min(config.max_seq_len - 1, config.sliding_window * 2)
+    seq_dim = Dim("seq_len", min=1, max=max_prefill)
+
+    print(f"Exporting (T in [1, {max_prefill}])...")
+    with torch.no_grad():
+        exported = export(
+            model,
+            (
+                torch.tensor([[0, 1]], dtype=torch.long),
+                torch.tensor([0, 1], dtype=torch.long),
+            ),
+            dynamic_shapes=({1: seq_dim}, {0: seq_dim}),
+            strict=True,
+        )
+
+    del model
+    gc.collect()
+
+    print("Lowering to ExecuTorch with MLX backend...")
+    et_prog = to_edge_transform_and_lower(
+        exported,
+        transform_passes=get_default_passes(),
+        partitioner=[MLXPartitioner()],
+        compile_config=EdgeCompileConfig(
+            _check_ir_validity=False,
+            _skip_dim_order=True,
+        ),
+        constant_methods={
+            "get_max_seq_len": config.max_seq_len,
+            "get_vocab_size": config.vocab_size,
+            "get_n_layers": config.num_hidden_layers,
+            "get_max_prefill_chunk": max_prefill,
+            "use_kv_cache": True,
+            "use_sdpa_with_kv_cache": False,
+            "enable_dynamic_shape": True,
+        },
+    )
+
+    del exported
+    gc.collect()
+
+    et_program = et_prog.to_executorch(
+        config=ExecutorchBackendConfig(
+            extract_delegate_segments=True,
+            memory_planning_pass=MemoryPlanningPass(alloc_graph_input=False),
+        ),
+    )
+
+    del et_prog
+    gc.collect()
+
+    os.makedirs(output_dir, exist_ok=True)
+    pte_path = os.path.join(output_dir, "model.pte")
+    print(f"Saving to {pte_path}...")
+    with open(pte_path, "wb") as f:
+        et_program.write_to_file(f)
+    print(f"  {os.path.getsize(pte_path) / 1024**2:.1f} MB")
+
+    if et_program._tensor_data:
+        et_program.write_tensor_data_to_file(output_dir)
+        print(f"  Saved tensor data (.ptd) to {output_dir}/")
+    print("Done.")
+
+
 # ---------------------------------------------------------------------------
 # CLI
 
@@ -302,7 +415,7 @@ def main() -> None:
     parser.add_argument(
         "--backend",
         default="cuda",
-        choices=["cuda"],
+        choices=list(_SUPPORTED_BACKENDS),
         help="Target backend for export.",
     )
     args = parser.parse_args()
@@ -330,7 +443,12 @@ def main() -> None:
             backend=args.backend,
         )
 
-    export_and_lower(model, config, args.output_dir, backend=args.backend)
+    if args.gguf and args.backend == "mlx":
+        os.environ["ET_MLX_ALLOW_NON_FUSED_QUANTIZED_OPS"] = "1"
+    try:
+        export_and_lower(model, config, args.output_dir, backend=args.backend)
+    finally:
+        os.environ.pop("ET_MLX_ALLOW_NON_FUSED_QUANTIZED_OPS", None)
 
 
 if __name__ == "__main__":

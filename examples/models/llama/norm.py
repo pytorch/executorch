@@ -41,20 +41,17 @@ class RMSNorm(torch.nn.Module):
         return output * self.weight.type_as(x)
 
 
-class ScalelessRMSNorm(torch.nn.RMSNorm):
-    """RMSNorm with weight hardcoded to ones and not trainable.
-
-    Equivalent to a scaleless RMSNorm (no learnable scaling) but implemented as a
-    torch.nn.RMSNorm so the op composes/decomposes cleanly for backends like QNN
-    instead of being expressed as a hand-rolled decomposition.
-    """
-
+class ScalelessRMSNorm(torch.nn.Module):
     def __init__(self, dim: int, eps: float = 1e-6):
-        super().__init__(dim, eps)
+        super().__init__()
         self.dim = dim
-        with torch.no_grad():
-            self.weight.fill_(1.0)
-        self.weight.requires_grad = False
+        self.eps = eps
+
+    def forward(self, x):
+        x_float = x.float()
+        return (
+            x_float * torch.rsqrt((x_float * x_float).mean(-1, keepdim=True) + self.eps)
+        ).type_as(x)
 
 
 class RMSNormCoreML(torch.nn.Module):
@@ -157,6 +154,14 @@ def replace_rms_norm_for_coreml_(model: torch.nn.Module) -> torch.nn.Module:
         # Preserve trained scale (no-op for ScalelessRMSNorm).
         if getattr(mod, "weight", None) is not None:
             new.weight = mod.weight
+        else:
+            # Source was weightless (e.g. ScalelessRMSNorm). The freshly-allocated
+            # `nn.Parameter(torch.ones(dim))` inside RMSNormCoreML defaults to fp32,
+            # which causes an fp32 leak in fp16 export. Match the model's existing
+            # parameter dtype/device.
+            ref = next((p for p in model.parameters() if p.is_floating_point()), None)
+            if ref is not None:
+                new.to(dtype=ref.dtype, device=ref.device)
         # Locate parent module via the dotted name and rebind the attribute.
         if "." in name:
             parent_name, attr = name.rsplit(".", 1)

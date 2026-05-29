@@ -39,6 +39,11 @@ def define_arm_tests():
         "ops/test_exp.py",
         "ops/test_reciprocal.py",
         "ops/test_mean_dim.py",
+        "ops/test_var.py",
+        "ops/test_conv1d.py",
+        "ops/test_gelu.py",
+        "ops/test_bmm.py",
+        "ops/test_split.py",
     ]
 
     # Quantization
@@ -52,7 +57,7 @@ def define_arm_tests():
         "misc/test_compile_spec.py",
         # "misc/test_evaluate_model.py",
         "misc/test_pass_pipeline_config.py",
-        "misc/test_tosa_dialect_resize.py",
+        "misc/tosa_dialect/test_tosa_resize.py",
         "misc/test_tosa_spec.py",
         "misc/test_bn_relu_folding_qat.py",
         "misc/test_custom_partition.py",

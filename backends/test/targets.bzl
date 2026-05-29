@@ -40,18 +40,38 @@ def define_common_targets(is_fbcode = False):
            "ET_XNNPACK_GENERATED_SUB_LARGE_PTE_PATH": "$(location fbcode//executorch/test/models:exported_xnnp_delegated_programs[ModuleSubLarge.pte])",
         }
 
+        multi_method_delegate_test_deps = [
+            "//executorch/runtime/executor:program",
+            "//executorch/extension/data_loader:file_data_loader",
+            "//executorch/extension/memory_allocator:malloc_memory_allocator",
+            "//executorch/kernels/portable:generated_lib",
+            "//executorch/backends/xnnpack:xnnpack_backend",
+            "//executorch/extension/runner_util:inputs",
+        ]
+
         runtime.cxx_test(
             name = "multi_method_delegate_test",
             srcs = [
                 "multi_method_delegate_test.cpp",
             ],
-            deps = [
-                "//executorch/runtime/executor:program",
-                "//executorch/extension/data_loader:file_data_loader",
-                "//executorch/extension/memory_allocator:malloc_memory_allocator",
-                "//executorch/kernels/portable:generated_lib",
-                "//executorch/backends/xnnpack:xnnpack_backend",
-                "//executorch/extension/runner_util:inputs",
-            ],
+            deps = multi_method_delegate_test_deps,
             env = modules_env,
+        )
+
+        # Sibling target that always builds and runs under ThreadSanitizer,
+        # regardless of the user's --config fbcode.sanitizer / @mode/* selection.
+        # This guarantees deterministic detection of the XNNWeightsCache data
+        # race fixed by D105753995 (the non-TSAN variant is timing-dependent
+        # and effectively flaky as a regression signal).
+        runtime.cxx_test(
+            name = "multi_method_delegate_test_tsan",
+            srcs = [
+                "multi_method_delegate_test.cpp",
+            ],
+            deps = multi_method_delegate_test_deps,
+            env = modules_env,
+            modifiers = [
+                "ovr_config//build_mode/constraints:sanitizer",
+                "ovr_config//build_mode:sanitizer_type[tsan]",
+            ],
         )

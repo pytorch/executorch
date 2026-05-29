@@ -47,6 +47,10 @@ jobs:
 
         ${CONDA_RUN} pip list
 
+        echo "::group::Install Python test requirements"
+        ${CONDA_RUN} pip install gguf
+        echo "::endgroup::"
+
         echo "::group::Build test runners"
         ${CONDA_RUN} cmake --build cmake-out --target op_test_runner multi_thread_test_runner -j$(( $(sysctl -n hw.ncpu) - 1 ))
         echo "::endgroup::"
@@ -60,6 +64,7 @@ jobs:
           backends/mlx/test/test_passes.py \
           backends/mlx/test/test_pattern_utils.py \
           backends/mlx/test/test_partitioner.py \
+          examples/models/gemma4_31b/tests/test_mlx_pipeline.py \
           -v
         echo "::endgroup::"
 
@@ -119,10 +124,10 @@ jobs:
           --prompt-len 4 \
           --max-new-tokens 5 2>&1)
         echo "$OUTPUT"
-        if echo "$OUTPUT" | grep -q "Generated token ids: \[167, 167, 81, 167, 81\]"; then
+        if echo "$OUTPUT" | grep -q "Generated token ids: \[167, 94, 253, 88, 227\]"; then
           echo "Success: Qwen 3.5 MoE MLX export + inference completed with expected output"
         else
-          echo "Failed: unexpected output (expected [167, 167, 81, 167, 81])"
+          echo "Failed: unexpected output (expected [167, 94, 253, 88, 227])"
           exit 1
         fi
         echo "::endgroup::"

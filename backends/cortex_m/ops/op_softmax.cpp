@@ -36,6 +36,7 @@ inline int64_t normalize_dim(const Tensor& tensor, int64_t dim) {
 
 } // namespace
 
+// cppcheck-suppress unusedFunction
 Tensor& softmax_out(
     KernelRuntimeContext& context,
     const Tensor& input,

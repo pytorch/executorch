@@ -608,6 +608,7 @@ def _get_caller_name():
 def execute_cmd(cmd, cwd="."):
     env = environ.copy()  # Copy the current environment
     env["LD_LIBRARY_PATH"] = str(NSYS_PATH.parent)
+    logger.debug(f"Running command: {cmd}")
 
     with subprocess.Popen(
         cmd,

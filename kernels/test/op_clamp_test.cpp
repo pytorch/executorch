@@ -12,6 +12,7 @@
 #include <executorch/kernels/test/FunctionHeaderWrapper.h> // Declares the operator
 #include <executorch/kernels/test/TestUtil.h>
 #include <executorch/kernels/test/supported_features.h>
+#include <executorch/kernels/test/supported_features_skip.h>
 #include <executorch/runtime/core/exec_aten/exec_aten.h>
 #include <executorch/runtime/core/exec_aten/testing_util/tensor_factory.h>
 #include <executorch/runtime/core/exec_aten/testing_util/tensor_util.h>
@@ -360,9 +361,9 @@ TEST_F(OpClampOutTest, DoubleTensors) {
 //
 
 TEST_F(OpClampOutTest, ByteTensorNegativeClampDies) {
-  if (torch::executor::testing::SupportedFeatures::get()->is_aten) {
-    GTEST_SKIP() << "ATen kernel can handle negative clamp on byte tensor";
-  }
+  ET_SKIP_IF(
+      torch::executor::testing::SupportedFeatures::get()->is_aten,
+      "ATen kernel can handle negative clamp on byte tensor");
   // Cannot be represented by a uint8_t.
   expect_bad_clamp_value_dies<ScalarType::Byte>(-1);
 }

@@ -113,15 +113,25 @@ class PatternMatcher:
         return []
 
     def _get_matches(
-        self, node_queue: List[Node], quantization_config: QuantizationConfig
+        self, node_queue: List[Node], quantization_config: Optional[QuantizationConfig]
     ) -> List[PatternMatchResult]:
         """Returns the longest accepted match starting at the first node of the
         queue as well as longer rejected matches.
         """
+        # Annotating with None means rejecting quantization - this is always supported.
+        if quantization_config is None:
+            node = node_queue[0]
+            if node.meta.get(self.Q_PATTERN_MATCHED_KEY, False):
+                return [
+                    PatternMatchResult([node], False, self.REJECT_PREVIOUSLY_ANNOTATED)
+                ]
+
+            node.meta[self.Q_PATTERN_MATCHED_KEY] = True
+            return [PatternMatchResult([node], True)]
+
         matches: list[PatternMatchResult] = []
         accepted = False
         max_match_length = len(node_queue)
-
         while max_match_length > 0 and not accepted:
             match = self._get_match(node_queue[:max_match_length])
             max_match_length = (
@@ -136,7 +146,7 @@ class PatternMatcher:
         return matches
 
     def _dequeue_and_get_matches(
-        self, node_queue: List[Node], quantization_config: QuantizationConfig
+        self, node_queue: List[Node], quantization_config: Optional[QuantizationConfig]
     ) -> List[PatternMatchResult]:
         """Dequeues the longest accepted match starting at the first node of the
         queue, and returns all potential matches that were checked (rejected
@@ -160,7 +170,7 @@ class PatternMatcher:
         return potential_matches
 
     def find_pattern_matches(
-        self, nodes: Iterator[Node], quantization_config: QuantizationConfig
+        self, nodes: Iterator[Node], quantization_config: Optional[QuantizationConfig]
     ) -> Iterator[PatternMatchResult]:
         """Match all given patterns in the graph and return match results with
         acceptance/rejection status. Each node can only be part of one match,

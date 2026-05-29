@@ -1,7 +1,7 @@
 # Gemma 4 31B-IT
 
 Text-only export of Google's Gemma 4 31B-IT to ExecuTorch with INT4/INT8
-weight quantization. Currently supports the CUDA backend.
+weight quantization. Supports CUDA and MLX (Apple Silicon) backends.
 
 For architecture and design notes see [model.md](model.md).
 
@@ -15,6 +15,7 @@ both export and eager inference:
 |---|---|---|
 | `quantize_and_save.py` | bf16 HF checkpoint → quantized checkpoint (one-time) | ~30 GB CPU |
 | `export.py --prequantized <dir>` | quantized checkpoint → `model.pte` + `model.ptd` | ~24 GB CPU + CUDA for packing |
+| `export.py --gguf <file> [--backend mlx]` | GGUF file (Q4_K_M, etc.) → `model.pte` + `model.ptd` | ~24 GB CPU |
 | `inference.py --prequantized <dir>` | quantized checkpoint → eager generation under `torch.compile` | ~24 GB GPU |
 | `inference.py --gguf <file>` | GGUF file (Q4_K_M, etc.) → eager generation | ~24 GB GPU |
 | `export.py --model-dir <hf>` | one-shot bf16 → quantize → export (no intermediate file) | ~30 GB CPU + CUDA for packing |
@@ -67,6 +68,8 @@ recipe. Writes `model.safetensors`, `config.json`, and `tokenizer.json` into
 
 ## Export to ExecuTorch
 
+### CUDA
+
 ```bash
 python examples/models/gemma4_31b/export.py \
     --prequantized ./gemma4_31b_int4 \
@@ -75,9 +78,25 @@ python examples/models/gemma4_31b/export.py \
     --backend cuda
 ```
 
-Writes `model.pte` and `model.ptd` into `--output-dir`.
+### MLX (Apple Silicon)
+
+```bash
+python examples/models/gemma4_31b/export.py \
+    --prequantized ./gemma4_31b_int4 \
+    --output-dir ./gemma4_31b_exports_mlx \
+    --max-seq-len 4096 \
+    --backend mlx
+```
+
+The same quantized checkpoint works for both backends. MLX exports a single
+method with dynamic sequence length and host-side sampling.
+
+Writes `model.pte` (and optionally `model.ptd`) into `--output-dir`.
 
 ## Eager inference
+
+The prompt is automatically wrapped with the Gemma 4 IT chat template.
+Pass `--raw-prompt` to skip template wrapping for pre-formatted input.
 
 ```bash
 python examples/models/gemma4_31b/inference.py \
@@ -102,12 +121,16 @@ model produces sensible text.
 ## Build the runner
 
 ```bash
-make gemma4_31b-cuda
+make gemma4_31b-cuda   # Linux — CUDA backend
+make gemma4_31b-mlx    # macOS — MLX backend (Apple Silicon)
 ```
 
 The binary lands at `cmake-out/examples/models/gemma4_31b/gemma4_31b_runner`.
 
 ## Run the .pte
+
+The prompt is automatically wrapped with the Gemma 4 IT chat template.
+Pass `--raw_prompt` to skip template wrapping for pre-formatted input.
 
 ```bash
 ./gemma4_31b_runner \

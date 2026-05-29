@@ -12,6 +12,7 @@ namespace native {
 
 using KernelRuntimeContext = torch::executor::KernelRuntimeContext;
 
+// cppcheck-suppress unusedFunction
 Tensor& quantized_avg_pool2d_out(
     KernelRuntimeContext& context,
     const Tensor& input,

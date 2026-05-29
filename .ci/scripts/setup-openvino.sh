@@ -37,7 +37,7 @@ else
   echo "Using OpenVINO stable release: ${OPENVINO_BUILD}"
 fi
 
-curl -Lo /tmp/openvino_toolkit.tgz --retry 3 --fail ${OPENVINO_URL}
+curl -Lo /tmp/openvino_toolkit.tgz --retry 3 --retry-all-errors --fail ${OPENVINO_URL}
 tar -xzf /tmp/openvino_toolkit.tgz
 mv "${OPENVINO_EXTRACTED_DIR}" openvino
 

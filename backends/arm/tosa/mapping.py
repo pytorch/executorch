@@ -17,6 +17,7 @@ import torch
 import tosa_serializer as ts
 from executorch.backends.arm.tosa.specification import TosaSpecification
 
+TOSA_CONTROL_FLOW_REGION_NAME_META = "tosa_control_flow_region_name"
 TOSA_TENSOR_NAME_META = "tosa_tensor_name"
 
 UNSUPPORTED_DTYPES = (
@@ -106,6 +107,8 @@ def map_dtype(data_type: torch.dtype) -> Any:
         torch.int32: ts.DType.INT32,
         torch.int: ts.DType.INT32,
         torch.bool: ts.DType.BOOL,
+        torch.float8_e4m3fn: ts.DType.FP8E4M3,
+        torch.float8_e5m2: ts.DType.FP8E5M2,
     }
     if data_type not in dtype_map:
         raise ValueError(f"Unknown type: {data_type}")
@@ -230,6 +233,12 @@ class TosaArg:
                     return False
             case ts.DType.BF16:
                 if not tosa_spec.support_extension("bf16"):
+                    return False
+            case ts.DType.FP8E4M3:
+                if not tosa_spec.support_extension("fp8e4m3"):
+                    return False
+            case ts.DType.FP8E5M2:
+                if not tosa_spec.support_extension("fp8e5m2"):
                     return False
 
         return True

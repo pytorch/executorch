@@ -12,6 +12,7 @@ and packs for the target backend.
 
 Usage:
     model, config = load_gguf_model("model.gguf", backend="cuda")
+    model, config = load_gguf_model("model.gguf", backend="mlx")
 """
 
 from typing import Optional
@@ -104,10 +105,11 @@ def load_gguf_model(
     Streams tensors one at a time for low peak memory.
 
     GGUF ties ``embed_tokens`` and ``lm_head`` into a single Q4_K tensor.
-    We untie them: the embedding is dequantized to bf16 (``nn.Embedding``
-    needs gather, which ``Int4TilePackedTo4dTensor`` does not support),
-    while ``lm_head`` keeps the original Q4_K quantization (``nn.Linear``
-    matmul via tinygemm).
+    We untie them so ``lm_head`` keeps the original Q4_K quantization.
+    On CUDA, the embedding is dequantized to bf16 because ``Int4Tensor``
+    does not support the gather op that ``nn.Embedding`` requires.  On
+    MLX, the embedding stays quantized — ``QuantizedEmbeddingHandler``
+    handles quantized gather natively.
 
     Returns ``(model, config)``.
     """
@@ -120,8 +122,12 @@ def load_gguf_model(
         from executorch.examples.models.gemma4_31b.quant import DEFAULT_CUDA_PACKERS
 
         packers = DEFAULT_CUDA_PACKERS
+    elif backend == "mlx":
+        from executorch.examples.models.gemma4_31b.quant import DEFAULT_MLX_PACKERS
+
+        packers = DEFAULT_MLX_PACKERS
     else:
-        raise ValueError(f"Unsupported backend: {backend!r}. Supported: 'cuda'.")
+        raise ValueError(f"Unsupported backend: {backend!r}. Supported: 'cuda', 'mlx'.")
 
     config = Gemma4_31BConfig(max_seq_len=max_seq_len)
 
@@ -143,7 +149,8 @@ def load_gguf_model(
 
         if model_key == "embed_tokens.weight" and isinstance(result, Int4Tensor):
             embed_quant = result
-            result = dequantize_weight(result, torch.bfloat16)
+            if backend == "cuda":
+                result = dequantize_weight(result, torch.bfloat16)
 
         pack_one(model, model_key, result, packers)
 

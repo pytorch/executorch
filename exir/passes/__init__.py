@@ -62,6 +62,7 @@ from executorch.exir.passes.sym_to_tensor_pass import SymToTensorPass
 
 from executorch.exir.passes.to_device_pass import ToDevicePass
 from executorch.exir.passes.weights_to_outputs_pass import weights_to_outputs_pass
+from executorch.exir.sym_util import eval_shape_upper_bound
 from torch import fx
 from torch._subclasses import FakeTensor
 from torch.fx.passes.infra.pass_base import PassBase, PassResult
@@ -281,31 +282,38 @@ def make_alloc_node(
     Note: tensor_metadata is only used in the case of a Tensor subclass, since
     fakifying a tensor subclass is not supported right now
     """
+
+    def materialize_alloc_spec(
+        shape: Union[torch.Size, Tuple[int, ...], List[int]],
+        dtype: torch.dtype,
+    ) -> memory.AllocSpec:
+        concrete_shape = eval_shape_upper_bound(shape)
+        if any(not isinstance(dim, int) for dim in concrete_shape):
+            raise RuntimeError(
+                "Memory allocator node requires concrete upper-bounded dimensions. "
+                f"Got shape {shape} and evaluated upper bounds {concrete_shape}."
+            )
+        return (tuple(concrete_shape), dtype)
+
     if val is None:
         if tensor_meta is not None:
             assert isinstance(tensor_meta, TensorMetadata)
-            alloc_spec = (tensor_meta.shape, tensor_meta.dtype)
+            alloc_spec = materialize_alloc_spec(tensor_meta.shape, tensor_meta.dtype)
         else:
             raise InternalError(
                 "Memory allocator node needs FakeTensor val or TensorMetadata to proceed"
             )
     elif isinstance(val, FakeTensor):
-        alloc_spec = (val.shape, val.dtype)
+        alloc_spec = materialize_alloc_spec(val.shape, val.dtype)
     else:
         assert isinstance(val, list) or isinstance(val, tuple)
         assert isinstance(tensor_meta, list) or isinstance(tensor_meta, tuple)
         alloc_spec: List[memory.AllocSpec] = []
         for v, t in zip(val, tensor_meta):
             if v is not None:
-                # pyre-fixme[6]: For 1st argument expected
-                #  `Union[List[Tuple[List[int], dtype]], Tuple[List[int], dtype]]` but
-                #  got `Tuple[Size, dtype]`.
-                alloc_spec.append((v.shape, v.dtype))
+                alloc_spec.append(materialize_alloc_spec(v.shape, v.dtype))
             elif t is not None:
-                # pyre-fixme[6]: For 1st argument expected
-                #  `Union[List[Tuple[List[int], dtype]], Tuple[List[int], dtype]]` but
-                #  got `Tuple[Size, dtype]`.
-                alloc_spec.append((t.shape, t.dtype))
+                alloc_spec.append(materialize_alloc_spec(t.shape, t.dtype))
             else:
                 raise InternalError(
                     "Memory allocator node needs FakeTensor val or TensorMetadata to proceed"

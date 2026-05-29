@@ -110,7 +110,7 @@ jobs:
       secrets-env: EXECUTORCH_HF_TOKEN
       runner: ${{ contains(matrix.model, 'Qwen3.5-35B-A3B') && 'linux.aws.a100' || 'linux.g5.4xlarge.nvidia.gpu' }}
       gpu-arch-type: cuda
-      gpu-arch-version: "12.6"
+      gpu-arch-version: "13.0"
       use-custom-docker-registry: false
       submodules: recursive
       upload-artifact: model-${{ matrix.model_safe }}-${{ matrix.quant }}
@@ -124,10 +124,11 @@ jobs:
         echo "::endgroup::"
 
         echo "::group::Setup Huggingface"
-        pip install -U "huggingface_hub[cli]<1.0" accelerate
-        huggingface-cli login --token $SECRET_EXECUTORCH_HF_TOKEN
+        pip install -U "huggingface_hub[cli]>=1.2.1,<2.0" accelerate "optimum~=2.0.0" "transformers==5.0.0rc1"
+        HF_AUTH_TOKEN="$(printf '%s' "$SECRET_EXECUTORCH_HF_TOKEN" | tr -d '\r\n')"
+        hf auth login --token "$HF_AUTH_TOKEN"
         OPTIMUM_ET_VERSION=$(cat .ci/docker/ci_commit_pins/optimum-executorch.txt)
-        pip install git+https://github.com/huggingface/optimum-executorch.git@${OPTIMUM_ET_VERSION}
+        pip install --no-deps git+https://github.com/huggingface/optimum-executorch.git@${OPTIMUM_ET_VERSION}
         echo "::endgroup::"
 
         echo "::group::Exporting model ${{ matrix.model }} with quantization ${{ matrix.quant }}"
@@ -158,7 +159,7 @@ jobs:
       timeout: 90
       runner: ${{ contains(matrix.model, 'Qwen3.5-35B-A3B') && 'linux.aws.a100' || 'linux.g5.4xlarge.nvidia.gpu' }}
       gpu-arch-type: cuda
-      gpu-arch-version: "12.6"
+      gpu-arch-version: "13.0"
       use-custom-docker-registry: false
       submodules: recursive
       download-artifact: model-${{ matrix.model_safe }}-${{ matrix.quant }}

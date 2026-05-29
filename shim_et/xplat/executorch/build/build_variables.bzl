@@ -50,6 +50,8 @@ PLATFORM_SRCS = [
 
 EXECUTORCH_CORE_SRCS = sorted([
     "runtime/backend/interface.cpp",
+    "runtime/core/device_allocator.cpp",
+    "runtime/core/device_memory_buffer.cpp",
     "runtime/core/evalue.cpp",
     "runtime/core/exec_aten/util/tensor_shape_to_c_string.cpp",
     "runtime/core/exec_aten/util/tensor_util_portable.cpp",

@@ -9,6 +9,7 @@
 #include <executorch/kernels/test/FunctionHeaderWrapper.h> // Declares the operator
 #include <executorch/kernels/test/TestUtil.h>
 #include <executorch/kernels/test/supported_features.h>
+#include <executorch/kernels/test/supported_features_skip.h>
 #include <executorch/runtime/core/exec_aten/exec_aten.h>
 #include <executorch/runtime/core/exec_aten/testing_util/tensor_factory.h>
 #include <executorch/runtime/core/exec_aten/testing_util/tensor_util.h>
@@ -765,9 +766,9 @@ TEST_F(OpSliceScatterTensorOutTest, MismatchedOutDtypesDies) {
 }
 
 TEST_F(OpSliceScatterTensorOutTest, OutSizeMismatchDimDies) {
-  if (torch::executor::testing::SupportedFeatures::get()->is_aten) {
-    GTEST_SKIP() << "ATen kernel can handle out with mismatched dimensions";
-  }
+  ET_SKIP_IF(
+      torch::executor::testing::SupportedFeatures::get()->is_aten,
+      "ATen kernel can handle out with mismatched dimensions");
   TensorFactory<ScalarType::Int> tf;
 
   Tensor input = tf.zeros({2, 4, 7, 5});
@@ -783,9 +784,9 @@ TEST_F(OpSliceScatterTensorOutTest, OutSizeMismatchDimDies) {
 }
 
 TEST_F(OpSliceScatterTensorOutTest, SrcSizeMismatchDimDies) {
-  if (torch::executor::testing::SupportedFeatures::get()->is_aten) {
-    GTEST_SKIP() << "ATen kernel can handle out with mismatched dimensions";
-  }
+  ET_SKIP_IF(
+      torch::executor::testing::SupportedFeatures::get()->is_aten,
+      "ATen kernel can handle out with mismatched dimensions");
   TensorFactory<ScalarType::Int> tf;
 
   Tensor input = tf.zeros({2, 4, 7, 5});

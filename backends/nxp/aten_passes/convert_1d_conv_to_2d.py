@@ -8,6 +8,7 @@ from executorch.backends.nxp.backend.edge_helper import (
     try_get_tensor_constant_from_node,
 )
 from executorch.backends.nxp.backend.graph_utils import is_batch_norm
+from executorch.backends.nxp.backend.neutron_target_spec import NeutronTargetSpec
 from torch._subclasses import FakeTensor, FakeTensorMode
 from torch.ao.quantization.fx.utils import get_new_attr_name_with_prefix
 from torch.export.unflatten import _assign_attr, _AttrKind
@@ -26,18 +27,21 @@ class ConvertConv1dToConv2dPass(PassBase):
     r"""
     The NXP backend supports only 2D convolutions. Rewrite 1D convolutions into an equivalent 2D form by
     inserting a singleton spatial dimension and then remove it again.
-    If batch norm is present after the convolution, it is also converted from 1D to 2D.
+    If batch norm and/or a fusable activation (as defined by the NeutronTargetSpec) follow the convolution,
+    they are also kept in 2D (before the squeeze) so the partitioner can fuse them with the convolution.
 
-    Without batch norm:
+    Without batch norm or activation:
+
+    Without batch norm or activation:
 
            x                         W                                x                           W
-      [N, C1, H]               [I/O, I/O, k]                     [N, C1, H]                [I/O, I/O, 1, k]
+       [N, C, H]               [I/O, I/O, k]                      [N, C, H]                [I/O, I/O, 1, k]
            │                         │                                │                           │
            │                         │                      ┌─────────▼──────────┐                │
            │                         │                      │  unsqueeze(x, -2)  │                │
            │                         │                      └─────────▼──────────┘                │
            │                         │                                │                           │
-           │                         │                          [N, C1, 1, H]                     │
+           │                         │                           [N, C, 1, H]                     │
            │                         │                                │                           │
            └────────┐       ┌────────┘                                └──────────┐     ┌──────────┘
                     │       │                                                    │     │
@@ -46,26 +50,26 @@ class ConvertConv1dToConv2dPass(PassBase):
            │   (1D/transposed 1D)   │          ────────────────►        │   (2D/transposed 2D)  │
            └────────────┬───────────┘                with               └───────────┬───────────┘
                         │                                                           │
-                        │                                                     [N, C2, 1, H]
+                        │                                                      [N, C, 1, H]
                         │                                                           │
                         │                                                 ┌─────────▼──────────┐
                         │                                                 │   squeeze(x, -2)   │
                         │                                                 └─────────┬──────────┘
                         │                                                           │
                         ▼                                                           ▼
-                   [N, C2, H]                                                  [N, C2, H]
+                    [N, C, H]                                                   [N, C, H]
                         y                                                           y
 
     With batch norm:
 
            x                         W                                x                           W
-      [N, C1, H]               [I/O, I/O, k]                     [N, C1, H]                [I/O, I/O, 1, k]
+       [N, C, H]               [I/O, I/O, k]                      [N, C, H]                [I/O, I/O, 1, k]
            │                         │                                │                           │
            │                         │                      ┌─────────▼──────────┐                │
            │                         │                      │  unsqueeze(x, -2)  │                │
            │                         │                      └─────────▼──────────┘                │
            │                         │                                │                           │
-           │                         │                         [N, C1, 1, H]                      │
+           │                         │                          [N, C, 1, H]                      │
            │                         │                                │                           │
            └────────┐       ┌────────┘                                └──────────┐     ┌──────────┘
                     │       │                                                    │     │
@@ -74,23 +78,101 @@ class ConvertConv1dToConv2dPass(PassBase):
            │   (1D/transposed 1D)   │          ────────────────►        │   (2D/transposed 2D)  │
            └────────────┬───────────┘                with               └───────────┬───────────┘
                         │                                                           │
-                    [N, C2, H]                                                [N, C2, 1, H]
+                    [N, C, H]                                                  [N, C, 1, H]
                         │                                                           │
                 ┌───────▼───────┐                                           ┌───────▼───────┐
                 │   batch_norm  │                                           │   batch_norm  │
                 │      (1D)     │                                           │      (2D)     │
                 └───────┬───────┘                                           └───────┬───────┘
                         │                                                           │
-                        │                                                     [N, C3, 1, H]
+                        │                                                      [N, C, 1, H]
                         │                                                           │
                         │                                                   ┌───────▼────────┐
                         │                                                   │   squeeze(-2)  │
                         │                                                   └───────┬────────┘
                         │                                                           │
                         ▼                                                           ▼
-                    [N, C3, H]                                                  [N, C3, H]
+                    [N, C, H]                                                   [N, C, H]
+                        y                                                           y
+
+    With activation (e.g. relu):
+
+           x                         W                                x                           W
+       [N, C, H]               [I/O, I/O, k]                      [N, C, H]                [I/O, I/O, 1, k]
+           │                         │                                │                           │
+           │                         │                      ┌─────────▼──────────┐                │
+           │                         │                      │  unsqueeze(x, -2)  │                │
+           │                         │                      └─────────▼──────────┘                │
+           │                         │                                │                           │
+           │                         │                           [N, C, 1, H]                     │
+           │                         │                                │                           │
+           └────────┐       ┌────────┘                                └──────────┐     ┌──────────┘
+                    │       │                                                    │     │
+           ┌────────▼───────▼───────┐                                   ┌────────▼─────▼────────┐
+           │       convolution      ◄──B [O]        replace             │      convolution      ◄──B [O]
+           │   (1D/transposed 1D)   │          ────────────────►        │   (2D/transposed 2D)  │
+           └────────────┬───────────┘                with               └───────────┬───────────┘
+                        │                                                           │
+                    [N, C, H]                                                  [N, C, 1, H]
+                        │                                                           │
+                ┌───────▼───────┐                                           ┌───────▼───────┐
+                │     relu      │                                           │     relu      │
+                └───────┬───────┘                                           └───────┬───────┘
+                        │                                                           │
+                        │                                                      [N, C, 1, H]
+                        │                                                           │
+                        │                                                   ┌───────▼────────┐
+                        │                                                   │   squeeze(-2)  │
+                        │                                                   └───────┬────────┘
+                        │                                                           │
+                        ▼                                                           ▼
+                    [N, C, H]                                                   [N, C, H]
+                        y                                                           y
+
+    With batch norm and activation:
+
+           x                         W                                x                           W
+       [N, C, H]               [I/O, I/O, k]                      [N, C, H]                [I/O, I/O, 1, k]
+           │                         │                                │                           │
+           │                         │                      ┌─────────▼──────────┐                │
+           │                         │                      │  unsqueeze(x, -2)  │                │
+           │                         │                      └─────────▼──────────┘                │
+           │                         │                                │                           │
+           │                         │                          [N, C, 1, H]                      │
+           │                         │                                │                           │
+           └────────┐       ┌────────┘                                └──────────┐     ┌──────────┘
+                    │       │                                                    │     │
+           ┌────────▼───────▼───────┐                                   ┌────────▼─────▼────────┐
+           │       convolution      ◄──B [O]        replace             │      convolution      ◄──B [O]
+           │   (1D/transposed 1D)   │          ────────────────►        │   (2D/transposed 2D)  │
+           └────────────┬───────────┘                with               └───────────┬───────────┘
+                        │                                                           │
+                    [N, C, H]                                                  [N, C, 1, H]
+                        │                                                           │
+                ┌───────▼───────┐                                           ┌───────▼───────┐
+                │   batch_norm  │                                           │   batch_norm  │
+                │      (1D)     │                                           │      (2D)     │
+                └───────┬───────┘                                           └───────┬───────┘
+                        │                                                           │
+                    [N, C, H]                                                 [N, C, 1, H]
+                        │                                                           │
+                ┌───────▼───────┐                                           ┌───────▼───────┐
+                │     relu      │                                           │     relu      │
+                └───────┬───────┘                                           └───────┬───────┘
+                        │                                                           │
+                        │                                                      [N, C, 1, H]
+                        │                                                           │
+                        │                                                   ┌───────▼────────┐
+                        │                                                   │   squeeze(-2)  │
+                        │                                                   └───────┬────────┘
+                        │                                                           │
+                        ▼                                                           ▼
+                    [N, C, H]                                                   [N, C, H]
                         y                                                           y
     """
+
+    def __init__(self, neutron_target_spec: NeutronTargetSpec):
+        self.neutron_target_spec = neutron_target_spec
 
     @staticmethod
     def _is_conv_1d(node: Node) -> bool:
@@ -204,12 +286,12 @@ class ConvertConv1dToConv2dPass(PassBase):
 
         return some_conv_node
 
-    def _create_sq_or_unsq_node(self, target, *sq_or_unsq_args) -> Node:
-        sq_or_unsq_node = self.graph_module.graph.call_function(target, sq_or_unsq_args)
+    def _create_generic_node_by_target(self, target, *args) -> Node:
+        new_node = self.graph_module.graph.call_function(target, args)
 
-        sq_or_unsq_node.meta["source_fn_stack"] = [(sq_or_unsq_node.name, target)]
+        new_node.meta["source_fn_stack"] = [(new_node.name, target)]
         with FakeTensorMode() as mode:
-            inp_node = sq_or_unsq_args[0]
+            inp_node = args[0]
             fake_input = FakeTensor.from_tensor(
                 torch.empty(
                     self._get_node_shape(inp_node), dtype=self._get_node_dtype(inp_node)
@@ -217,12 +299,12 @@ class ConvertConv1dToConv2dPass(PassBase):
                 mode,
             )
 
-            output = target(fake_input, *sq_or_unsq_args[1:])
-            sq_or_unsq_node.meta["val"] = FakeTensor.from_tensor(
+            output = target(fake_input, *args[1:])
+            new_node.meta["val"] = FakeTensor.from_tensor(
                 torch.empty(output.shape, dtype=output.dtype), mode
             )
 
-        return sq_or_unsq_node
+        return new_node
 
     @staticmethod
     def _get_conv_1d_transp_args(node: Node):
@@ -299,7 +381,7 @@ class ConvertConv1dToConv2dPass(PassBase):
             # input = [n, c, h] => [n, c, 1, h]
             unsqueeze_target = torch.ops.aten.unsqueeze.default
             inp_unsq_args = (input_node, -2)
-            inp_unsq_node = self._create_sq_or_unsq_node(
+            inp_unsq_node = self._create_generic_node_by_target(
                 unsqueeze_target, *inp_unsq_args
             )
 
@@ -357,35 +439,47 @@ class ConvertConv1dToConv2dPass(PassBase):
                 )
 
             old_1d_conv_users = list(old_1d_node.users.keys())
+            last_4d_node = new_2d_node
+            node_to_replace = old_1d_node
+            nodes_to_erase = []
+
+            old_1d_bn_users = old_1d_conv_users
+
             if len(old_1d_conv_users) == 1 and is_batch_norm(old_1d_conv_users[0]):
                 bn_1d_node = old_1d_conv_users[0]
-
-                # also convert batch_norm 1d to 2d
-                with self.graph_module.graph.inserting_after(new_2d_node):
+                with self.graph_module.graph.inserting_after(last_4d_node):
                     bn_2d_args = (new_2d_node,) + bn_1d_node.args[1:]
                     bn_2d_node = self._create_batch_norm_2d_node(*bn_2d_args)
+                last_4d_node = bn_2d_node
+                node_to_replace = bn_1d_node
+                nodes_to_erase.append(bn_1d_node)
+                old_1d_bn_users = list(bn_1d_node.users.keys())
 
-                with self.graph_module.graph.inserting_after(bn_2d_node):
-                    squeeze_target = torch.ops.aten.squeeze.dim
-
-                    out_sq_args = (bn_2d_node, -2)
-                    out_sq_node = self._create_sq_or_unsq_node(
-                        squeeze_target, *out_sq_args
+            if len(
+                old_1d_bn_users
+            ) == 1 and self.neutron_target_spec.neutron_target_info.is_supported_fused_activation__aten(
+                old_1d_bn_users[0]
+            ):
+                act_1d_node = old_1d_bn_users[0]
+                with self.graph_module.graph.inserting_after(last_4d_node):
+                    act_2d_args = (last_4d_node,) + act_1d_node.args[1:]
+                    act_2d_node = self._create_generic_node_by_target(
+                        act_1d_node.target, *act_2d_args
                     )
+                last_4d_node = act_2d_node
+                node_to_replace = act_1d_node
+                nodes_to_erase.append(act_1d_node)
 
-                bn_1d_node.replace_all_uses_with(out_sq_node)
-                self.graph_module.graph.erase_node(bn_1d_node)
+            with self.graph_module.graph.inserting_after(last_4d_node):
+                squeeze_target = torch.ops.aten.squeeze.dim
+                out_sq_args = (last_4d_node, -2)
+                out_sq_node = self._create_generic_node_by_target(
+                    squeeze_target, *out_sq_args
+                )
 
-            else:
-                with self.graph_module.graph.inserting_after(new_2d_node):
-                    squeeze_target = torch.ops.aten.squeeze.dim
-
-                    out_sq_args = (new_2d_node, -2)
-                    out_sq_node = self._create_sq_or_unsq_node(
-                        squeeze_target, *out_sq_args
-                    )
-
-                old_1d_node.replace_all_uses_with(out_sq_node)
+            node_to_replace.replace_all_uses_with(out_sq_node)
+            for n in reversed(nodes_to_erase):
+                self.graph_module.graph.erase_node(n)
 
             graph_module.graph.erase_node(old_1d_node)
             made_changes = True

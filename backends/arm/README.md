@@ -61,8 +61,6 @@ backends/arm/
 │   ├── models/                    # Model level unit tests
 │   └── tester/                    # Testing harnesses and utilities
 │
-├── third-party/                   # External dependencies
-│
 ├── tosa/                          # Shared TOSA backend implementation and dialect
 │
 └── vgf/                           # Implementations of VgfPartitioner and VgfBackend
@@ -116,6 +114,35 @@ Developers who need local source builds can use:
 The current flow lowers to TOSA and converts to VGF for use in external projects,
 so the `executor_runner` is not typically used here.
 
+### Compiling models with the Python API
+
+Use the Python API as the primary way to compile your own models. It lets you
+keep model construction, export inputs, quantization, custom passes, and artifact
+generation in your application code. The `aot_arm_compiler.py` script is useful
+for simple examples and smoke tests, but production code should call the
+ExecuTorch and Arm backend APIs directly.
+
+The delegated Python API flow is:
+
+1. Prepare the model and representative example inputs.
+2. Create a target-specific Arm compile spec.
+3. Export the model with `torch.export.export`.
+4. Optionally quantize with the target-specific Arm quantizer and re-export the
+   quantized graph.
+5. Create the matching Arm partitioner from the compile spec.
+6. Lower with `to_edge_transform_and_lower`.
+7. Convert to an ExecuTorch program and save the PTE file.
+
+For complete examples of that flow, including quantization and target-specific
+compile specs, see:
+
+- [Arm Ethos-U tutorial](../../docs/source/backends/arm-ethos-u/tutorials/ethos-u-getting-started.md)
+- [Arm VGF tutorial](../../docs/source/backends/arm-vgf/tutorials/vgf-getting-started.md)
+- [Arm Cortex-M backend overview](../../docs/source/backends/arm-cortex-m/arm-cortex-m-overview.md)
+- [Ethos-U porting guide](../../examples/arm/ethos-u-porting-guide.md)
+
+Additional examples are available in `examples/arm`.
+
 ### Direct Drive (experimental, Ethos-U85 on Linux) workflow
 
 Direct Drive enables execution on Ethos-U85 via the Linux driver stack.
@@ -159,7 +186,8 @@ scp -P 2222 arm_test/cmake-out/executor_runner root@127.0.0.1:/tmp/
 
 #### Direct Drive model (PTE) workflow
 
-Create a PTE file:
+For a quick test with the example `add` model,
+`aot_arm_compiler.py` can be used:
 
 ```
 python3 -m backends.arm.scripts.aot_arm_compiler \
@@ -170,50 +198,68 @@ python3 -m backends.arm.scripts.aot_arm_compiler \
   --direct_drive
 ```
 
+For production use, the Python API described in
+[Compiling models with the Python API](#compiling-models-with-the-python-api)
+should be used. Use an Ethos-U85 target and set the Direct Drive `extra_flags` when creating the `EthosUCompileSpec`:
+
+```python
+compile_spec = EthosUCompileSpec(
+    target="ethos-u85-256",
+    extra_flags=["--separate-io-regions", "--cop-format=COP2"],
+)
+```
+
+Then save the generated program as e.g. `model.pte` or
+update the copy and run commands below to match your output file name.
+
 Copy the `executor_runner` binary and the generated PTE file to the running FVP:
 
 ```
-scp -P 2222 arm_test/cmake-out/executor_runner add_arm_delegate_ethos-u85-256.pte root@127.0.0.1:/tmp/
+scp -P 2222 arm_test/cmake-out/executor_runner model.pte root@127.0.0.1:/tmp/
 ```
 
 Run the model on the FVP:
 
 ```
-ssh -p 2222 root@127.0.0.1 -t "/tmp/executor_runner -model_path /tmp/add_arm_delegate_ethos-u85-256.pte -num_executions 1"
+ssh -p 2222 root@127.0.0.1 -t "/tmp/executor_runner -model_path /tmp/model.pte -num_executions 1"
 ```
 
 ## Testing
 
 There are two approaches for running the tests for the Arm backend. This section will explain these two approaches:
 
-### Using test_arm_baremetal.sh
+### Using test_arm_backend.sh
 
-The backend provides a script `backends/arm/test/test_arm_baremetal.sh`, which is used in the `trunk` CI workflow.
+The backend provides a script `backends/arm/test/test_arm_backend.sh`, which is used in the `trunk` CI workflow.
 This approach is useful for checking your change against this workflow on your own machine.
 These scripts also install the necessary dependencies to run the tests.
 Below is an overview of some of the testing options this script provides:
 
 | Command                                              | Description                                                  |
 | ---------------------------------------------------- | ------------------------------------------------------------ |
-| `test_arm_baremetal.sh test_pytest_ops_no_target`    | Runs operator unit tests for non-target specific use-cases.  |
-| `test_arm_baremetal.sh test_pytest_models_no_target` | Runs model unit tests for non-target specific use-cases.     |
-| `test_arm_baremetal.sh test_pytest_ops_tosa`         | Runs operator unit tests for TOSA specific use-cases.        |
-| `test_arm_baremetal.sh test_pytest_models_tosa`      | Runs model unit tests for TOSA specific use-cases.           |
-| `test_arm_baremetal.sh test_run_tosa`                | Runs end-to-end unit tests for TOSA specific use-cases.      |
-| `test_arm_baremetal.sh test_pytest_ops_ethos_u55`    | Runs operator unit tests for Ethos-U55 specific use-cases.   |
-| `test_arm_baremetal.sh test_pytest_models_ethos_u55` | Runs model unit tests for Ethos-U55 specific use-cases.      |
-| `test_arm_baremetal.sh test_run_ethos_u55`           | Runs end-to-end unit tests for Ethos-U55 specific use-cases. |
-| `test_arm_baremetal.sh test_pytest_ops_ethos_u85`    | Runs operator unit tests for Ethos-U85 specific use-cases.   |
-| `test_arm_baremetal.sh test_pytest_models_ethos_u85` | Runs model unit tests for Ethos-U85 specific use-cases.      |
-| `test_arm_baremetal.sh test_run_ethos_u85`           | Runs end-to-end unit tests for Ethos-U85 specific use-cases. |
-| `test_arm_baremetal.sh test_pytest_ops_vkml`         | Runs operator unit tests for VGF specific use-cases.         |
-| `test_arm_baremetal.sh test_pytest_models_vkml`      | Runs model unit tests for VGF specific use-cases.            |
-| `test_arm_baremetal.sh test_run_vkml`                | Runs end-to-end unit tests for VGF specific use-cases.       |
-| `test_arm_baremetal.sh test_model_smollm2-135M`      | Runs some models with Corstone FVP.                          |
-| `test_arm_baremetal.sh test_smaller_stories_llama`   | Runs E2E model tests on Corstone FVP.                        |
-| `test_arm_baremetal.sh test_memory_allocation`       | Runs memory allocation tests for Ethos-U specific targets    |
+| `test_arm_backend.sh test_pytest_ops_no_target`    | Runs operator unit tests for non-target specific use-cases.  |
+| `test_arm_backend.sh test_pytest_models_no_target` | Runs model unit tests for non-target specific use-cases.     |
+| `test_arm_backend.sh test_pytest_ops_tosa`         | Runs operator unit tests for TOSA specific use-cases.        |
+| `test_arm_backend.sh test_pytest_models_tosa`      | Runs model unit tests for TOSA specific use-cases.           |
+| `test_arm_backend.sh test_run_tosa`                | Runs end-to-end unit tests for TOSA specific use-cases.      |
+| `test_arm_backend.sh test_pytest_ops_ethos_u55`    | Runs operator unit tests for Ethos-U55 specific use-cases.   |
+| `test_arm_backend.sh test_pytest_models_ethos_u55` | Runs model unit tests for Ethos-U55 specific use-cases.      |
+| `test_arm_backend.sh test_run_ethos_u55`           | Runs end-to-end unit tests for Ethos-U55 specific use-cases. |
+| `test_arm_backend.sh test_pytest_ops_ethos_u85`    | Runs operator unit tests for Ethos-U85 specific use-cases.   |
+| `test_arm_backend.sh test_pytest_models_ethos_u85` | Runs model unit tests for Ethos-U85 specific use-cases.      |
+| `test_arm_backend.sh test_run_ethos_u85`           | Runs end-to-end unit tests for Ethos-U85 specific use-cases. |
+| `test_arm_backend.sh test_pytest_ops_vkml`         | Runs operator unit tests for VGF specific use-cases.         |
+| `test_arm_backend.sh test_pytest_models_vkml`      | Runs model unit tests for VGF specific use-cases.            |
+| `test_arm_backend.sh test_run_vkml`                | Runs end-to-end unit tests for VGF specific use-cases.       |
+| `test_arm_backend.sh test_model_smollm2_135M`      | Runs some models with Corstone FVP.                          |
+| `test_arm_backend.sh test_ootb_tests_ethos_u`      | Runs out-of-the-box tests for Ethos-U.                       |
+| `test_arm_backend.sh test_ootb_tests_tosa`         | Runs out-of-the-box tests for TOSA.                          |
+| `test_arm_backend.sh test_ootb_tests_vgf`          | Runs out-of-the-box tests for VGF.                           |
+| `test_arm_backend.sh test_deit_e2e_ethos_u`        | Runs DEiT end-to-end tests on Ethos-U.                       |
+| `test_arm_backend.sh test_smaller_stories_llama`   | Runs E2E model tests on Corstone FVP.                        |
+| `test_arm_backend.sh test_memory_allocation`       | Runs memory allocation tests for Ethos-U specific targets    |
 
-For more information, please refer to the `backends/arm/test/test_arm_baremetal.sh` script.
+For more information, please refer to the `backends/arm/test/test_arm_backend.sh` script.
 
 ### Using pytest
 

@@ -9,6 +9,7 @@
 #include <executorch/kernels/test/FunctionHeaderWrapper.h> // Declares the operator
 #include <executorch/kernels/test/TestUtil.h>
 #include <executorch/kernels/test/supported_features.h>
+#include <executorch/kernels/test/supported_features_skip.h>
 #include <executorch/runtime/core/exec_aten/exec_aten.h>
 #include <executorch/runtime/core/exec_aten/testing_util/tensor_factory.h>
 #include <executorch/runtime/core/exec_aten/testing_util/tensor_util.h>
@@ -114,9 +115,9 @@ TEST_F(OpArangeOutTest, FloatNumberNotEqualIntSupport) {
 }
 
 TEST_F(OpArangeOutTest, OutDimUnsupportedDie) {
-  if (torch::executor::testing::SupportedFeatures::get()->is_aten) {
-    GTEST_SKIP() << "ATen kernel can handle mismatched out dim";
-  }
+  ET_SKIP_IF(
+      torch::executor::testing::SupportedFeatures::get()->is_aten,
+      "ATen kernel can handle mismatched out dim");
   TensorFactory<ScalarType::Float> tf;
 
   Scalar end = Scalar(5);
@@ -150,9 +151,9 @@ TEST_F(OpArangeOutTest, DynamicShapeUpperBoundLargerThanExpected) {
 }
 
 TEST_F(OpArangeOutTest, DynamicShapeUnbound) {
-  if (!torch::executor::testing::SupportedFeatures::get()->is_aten) {
-    GTEST_SKIP() << "Dynamic Unbound not supported";
-  }
+  ET_SKIP_IF(
+      !torch::executor::testing::SupportedFeatures::get()->is_aten,
+      "Dynamic Unbound not supported");
   TensorFactory<ScalarType::Float> tf;
 
   Tensor expected_result = tf.make({5}, {0, 1, 2, 3, 4});
@@ -196,9 +197,9 @@ TEST_F(OpArangeStartOutTest, FloatNumberNotEqualIntSupport) {
 }
 
 TEST_F(OpArangeStartOutTest, OutDimUnsupportedDie) {
-  if (torch::executor::testing::SupportedFeatures::get()->is_aten) {
-    GTEST_SKIP() << "ATen kernel can handle mismatched out dim";
-  }
+  ET_SKIP_IF(
+      torch::executor::testing::SupportedFeatures::get()->is_aten,
+      "ATen kernel can handle mismatched out dim");
   TensorFactory<ScalarType::Float> tf;
 
   Scalar start = Scalar(0);
@@ -235,9 +236,9 @@ TEST_F(OpArangeStartOutTest, DynamicShapeUpperBoundLargerThanExpected) {
 }
 
 TEST_F(OpArangeStartOutTest, DynamicShapeUnbound) {
-  if (!torch::executor::testing::SupportedFeatures::get()->is_aten) {
-    GTEST_SKIP() << "Dynamic Unbound not supported";
-  }
+  ET_SKIP_IF(
+      !torch::executor::testing::SupportedFeatures::get()->is_aten,
+      "Dynamic Unbound not supported");
   TensorFactory<ScalarType::Float> tf;
 
   Tensor expected_result = tf.make({5}, {0, 1, 2, 3, 4});

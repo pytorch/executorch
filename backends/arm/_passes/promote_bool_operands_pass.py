@@ -11,19 +11,19 @@ from typing import Set, Type
 
 import torch
 
-from executorch.backends.arm._passes.arm_pass import ArmPass
+from executorch.backends.arm._passes.arm_pass import ArmOpTargetedPass
 from executorch.exir.dialects._ops import ops as exir_ops
 from executorch.exir.pass_base import ExportPass
 
 
-class PromoteBoolOperandsPass(ArmPass):
+class PromoteBoolOperandsPass(ArmOpTargetedPass):
     """Promote boolean operands to the appropriate integer dtype for unsupported
     ops.
     """
 
     _passes_required_after: Set[Type[ExportPass]] = set()
 
-    targeted_ops = {
+    target_ops = {
         exir_ops.edge.aten.bitwise_and.Tensor,
         exir_ops.edge.aten.bitwise_or.Tensor,
         exir_ops.edge.aten.bitwise_xor.Tensor,
@@ -31,7 +31,7 @@ class PromoteBoolOperandsPass(ArmPass):
     }
 
     def call_operator(self, op, args, kwargs, meta):
-        if op not in self.targeted_ops:
+        if op not in self.target_ops:
             return super().call_operator(op, args, kwargs, meta)
 
         original_dtypes = [arg.data.dtype for arg in args]

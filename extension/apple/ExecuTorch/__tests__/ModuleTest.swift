@@ -525,22 +525,23 @@ class ModuleTest: XCTestCase {
   }
 
   // Mixed sequence on a multi-method delegated model:
-  //   1. load(optionsA)            — installs optionsA; the C++ Module
-  //      stores a raw pointer into optionsA's storage and the ObjC
-  //      wrapper retains optionsA via _loadedBackendOptions.
+  //   1. load(optionsA)              — installs optionsA. The C++ Module
+  //      deep-copies optionsA at load time; the Apple binding does NOT
+  //      retain the input map. After the autoreleasepool drains, the
+  //      caller's optionsA is dropped — the C++ Module's internal copy
+  //      keeps the configuration alive.
   //   2. load("mul", options: optionsB) — loads "mul" explicitly with
-  //      optionsB, synchronously. Must NOT release optionsA (doing so
-  //      would leave _module->backend_options_ dangling).
-  //   3. forward(inputs)           — triggers a lazy load_method on
-  //      "forward" which falls back to the stored pointer (into optionsA).
+  //      optionsB; the C++ Module deep-copies optionsB.
+  //   3. forward(inputs)             — triggers a lazy load_method on
+  //      "forward" which consults the deep-copied optionsA stored
+  //      inside the C++ Module.
   //
-  // The XCTAssertNotNil(weakA) after step 2 is the deterministic check:
-  // a buggy loadMethod:options: that assigns `_loadedBackendOptions =
-  // options` releases optionsA's last strong ref there, weakA becomes
-  // nil, and the assertion fails independent of heap layout. With the
-  // correct implementation weakA stays non-nil. The forward/execute
-  // assertions additionally verify the positive path end-to-end.
-  func testMixedLoadWithOptionsAndLoadMethodWithOptionsOnMultiMethodModel() throws {
+  // The XCTAssertNil(weakA) after step 1 is the deterministic check:
+  // it proves the Apple binding does not silently retain the input map
+  // (a regression would re-introduce a strong reference). The forward
+  // assertions verify the positive path: even though the caller has
+  // dropped optionsA, the deep-copied configuration is still applied.
+  func testMultiMethodLoadAndForwardWithBackendOptions() throws {
     let modelPath = try requireFixture("add_mul_coreml", ofType: "pte")
     let module = Module(filePath: modelPath)
 
@@ -552,7 +553,9 @@ class ModuleTest: XCTestCase {
       weakA = optionsA
       try module.load(options: optionsA)
     }
-    XCTAssertNotNil(weakA, "Module must retain optionsA after load(optionsA)")
+    XCTAssertNil(weakA,
+      "Apple binding must not retain the input BackendOptionsMap — " +
+      "the C++ Module deep-copies it at load time")
 
     try autoreleasepool {
       let optionsB = try BackendOptionsMap(options: [
@@ -561,11 +564,9 @@ class ModuleTest: XCTestCase {
       try module.load("mul", options: optionsB)
     }
     XCTAssertTrue(module.isLoaded("mul"))
-    XCTAssertNotNil(weakA,
-      "load(\"mul\", options: optionsB) must not release optionsA — " +
-      "_module->backend_options_ still points into its storage")
 
-    // Lazy load_method("forward") must still see valid optionsA storage.
+    // Lazy load_method("forward") must still apply the configuration
+    // from the now-released optionsA, via the C++ Module's deep copy.
     let inputs: [Tensor<Float>] = [Tensor([2]), Tensor([3])]
     let addOuts: [Value] = try module.forward(inputs)
     XCTAssertEqual(addOuts.first?.tensor(), Tensor([Float(5)]))

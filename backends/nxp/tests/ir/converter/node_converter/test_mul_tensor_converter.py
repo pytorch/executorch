@@ -20,7 +20,7 @@ from executorch.backends.nxp.tests.executors import (
     ToChannelFirstPreprocess,
     ToChannelLastPreprocess,
 )
-from executorch.backends.nxp.tests.graph_verifier import BaseGraphVerifier
+from executorch.backends.nxp.tests.graph_verifier import DetailedGraphVerifier
 from executorch.backends.nxp.tests.models import (
     MulTensorConvModule,
     MulTensorModule,
@@ -229,12 +229,11 @@ class TestMulTensorNewNeutronFlow:
             pytest.param((1, 4, 8, 8), id="4D."),
         ],
     )
-    def test__basic_nsys_inference(self, x_input_shape):
+    def test__basic_nsys_inference(self, x_input_shape, mocker):
         x_input_spec = ModelInputSpec(x_input_shape)
         model = MulTensorModule()
-        graph_verifier = BaseGraphVerifier(
-            exp_num_delegate_call_nodes=1,
-            exp_non_delegated_nodes=[],
+        graph_verifier = DetailedGraphVerifier(
+            mocker, expected_delegated_ops={MulTensor: 1}, expected_non_delegated_ops={}
         )
 
         lower_run_compare(
@@ -242,6 +241,28 @@ class TestMulTensorNewNeutronFlow:
             [x_input_spec, x_input_spec],
             graph_verifier,
             use_new_flow_neutron_c=True,
+        )
+
+    @pytest.mark.parametrize(
+        "x_input_shape",
+        [
+            pytest.param((1, 4, 8), id="3D."),
+            pytest.param((1, 4, 8, 8), id="4D."),
+        ],
+    )
+    def test__basic_nsys_inference_qat(self, x_input_shape, mocker):
+        x_input_spec = ModelInputSpec(x_input_shape)
+        model = MulTensorModule()
+        graph_verifier = DetailedGraphVerifier(
+            mocker, expected_delegated_ops={MulTensor: 1}, expected_non_delegated_ops={}
+        )
+
+        lower_run_compare(
+            model,
+            [x_input_spec, x_input_spec],
+            graph_verifier,
+            use_new_flow_neutron_c=True,
+            use_qat=True,
         )
 
     @pytest.mark.parametrize(
@@ -259,11 +280,10 @@ class TestMulTensorNewNeutronFlow:
             ),
         ],
     )
-    def test__correct_broadcast(self, input_spec):
+    def test__correct_broadcast(self, input_spec, mocker):
         model = MulTensorModule()
-        graph_verifier = BaseGraphVerifier(
-            exp_num_delegate_call_nodes=1,
-            exp_non_delegated_nodes=[],
+        graph_verifier = DetailedGraphVerifier(
+            mocker, expected_delegated_ops={MulTensor: 1}, expected_non_delegated_ops={}
         )
 
         lower_run_compare(
@@ -308,16 +328,17 @@ class TestMulTensorNewNeutronFlow:
             ),
         ],
     )
-    def test__w_conv(self, x_input_shape):
+    def test__w_conv(self, x_input_shape, mocker):
         model = MulTensorConvModule()
 
         n, c, h, w = x_input_shape
         y_input_spec = ModelInputSpec((n, 8, h, w))
         x_input_spec = ModelInputSpec(x_input_shape)
 
-        graph_verifier = BaseGraphVerifier(
-            exp_num_delegate_call_nodes=1,
-            exp_non_delegated_nodes=[],
+        graph_verifier = DetailedGraphVerifier(
+            mocker,
+            expected_delegated_ops={MulTensor: 1, Convolution: 1},
+            expected_non_delegated_ops={},
         )
 
         lower_run_compare(

@@ -157,3 +157,10 @@ install(
   PUBLIC_HEADER
     DESTINATION ${CMAKE_INSTALL_INCLUDEDIR}/executorch/kernels/quantized/
 )
+
+if(EXECUTORCH_BUILD_SHARED)
+  executorch_add_shared_library(
+    executorch_quantized_ops quantized_ops_lib quantized_kernels
+    executorch_shared
+  )
+endif()

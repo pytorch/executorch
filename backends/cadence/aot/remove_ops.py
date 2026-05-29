@@ -603,16 +603,16 @@ class RemovePermuteBeforeMeanPass(RemoveOrReplacePassInterface):
 
 @register_cadence_pass(CadencePassAttribute(opt_level=2))
 class RemovePermutesAroundElementwiseOps(_SharedRemovePermutesAroundElementwiseOps):
-    permutable_ops: set[EdgeOpOverload] = (
-        _SharedRemovePermutesAroundElementwiseOps.permutable_ops
-        | {
-            exir_ops.edge.cadence.quantize_per_tensor.default,
-            exir_ops.edge.cadence.dequantize_per_tensor.default,
-            exir_ops.edge.cadence.quantized_relu.per_tensor,
-            exir_ops.edge.cadence.requantize.per_tensor,
-            exir_ops.edge.cadence.quantized_add.per_tensor,
-        }
-    )
+    def __init__(self) -> None:
+        super().__init__(
+            extra_permutable_ops={
+                exir_ops.edge.cadence.quantize_per_tensor.default,
+                exir_ops.edge.cadence.dequantize_per_tensor.default,
+                exir_ops.edge.cadence.quantized_relu.per_tensor,
+                exir_ops.edge.cadence.requantize.per_tensor,
+                exir_ops.edge.cadence.quantized_add.per_tensor,
+            }
+        )
 
 
 @register_cadence_pass(CadencePassAttribute(opt_level=2))

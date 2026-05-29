@@ -24,6 +24,7 @@ Usage:
 See README.md in this directory for full documentation.
 """
 
+import os
 from typing import Callable, Dict, List, Optional, Tuple
 
 import torch
@@ -1795,6 +1796,82 @@ class RopeTest(OpTestCase):
             base=self.base,
             scale=self.scale,
         )
+
+    def create_inputs(self) -> Tuple[torch.Tensor, ...]:
+        q = torch.randn(self.batch_size, self.num_heads, self.seq_len, self.head_dim)
+        k = torch.randn(self.batch_size, self.num_heads, self.seq_len, self.head_dim)
+        pos_tensor = torch.tensor(self.pos, dtype=torch.int64)
+        return (q, k, pos_tensor)
+
+
+class RopeCustomFreqsModel(nn.Module):
+    """Model that applies RoPE with custom 1D frequencies (partial rotary)."""
+
+    def __init__(self, dims: int = 32, head_dim: int = 64):
+        super().__init__()
+        self.dims = dims
+        self.head_dim = head_dim
+        # Simulate proportional RoPE: compute freqs for rotary dims only
+        inv_freq = 1.0 / (
+            500000.0 ** (torch.arange(0, dims, 2, dtype=torch.float32) / head_dim)
+        )
+        self.register_buffer("freqs", 1.0 / inv_freq, persistent=False)
+
+    def forward(
+        self,
+        q: torch.Tensor,
+        k: torch.Tensor,
+        pos_tensor: torch.Tensor,
+    ) -> Tuple[torch.Tensor, torch.Tensor]:
+        pos = pos_tensor.item()
+        q_rot = torch.ops.mlx.rope(q, self.dims, pos, False, 0.0, 1.0, self.freqs)
+        k_rot = torch.ops.mlx.rope(k, self.dims, pos, False, 0.0, 1.0, self.freqs)
+        return q_rot, k_rot
+
+
+@register_test
+class RopeCustomFreqsTest(OpTestCase):
+    """Test RoPE with custom 1D frequencies (partial rotary, like Gemma 4)."""
+
+    name = "rope_custom_freqs"
+    rtol = 1e-4
+    atol = 1e-4
+
+    def __init__(
+        self,
+        batch_size: int = 1,
+        num_heads: int = 8,
+        seq_len: int = 4,
+        head_dim: int = 64,
+        dims: int = 32,
+        pos: int = 0,
+    ):
+        self.batch_size = batch_size
+        self.num_heads = num_heads
+        self.seq_len = seq_len
+        self.head_dim = head_dim
+        self.dims = dims
+        self.pos = pos
+        self.name = "rope_custom_freqs"
+
+    @classmethod
+    def get_test_configs(cls) -> List["RopeCustomFreqsTest"]:
+        configs = [
+            cls(),
+            cls(pos=10),
+            cls(head_dim=128, dims=64),
+        ]
+        for cfg in configs:
+            parts = ["rope_custom_freqs"]
+            if cfg.pos > 0:
+                parts.append(f"pos{cfg.pos}")
+            if cfg.head_dim != 64:
+                parts.append(f"hd{cfg.head_dim}")
+            cfg.name = "_".join(parts)
+        return configs
+
+    def create_model(self) -> nn.Module:
+        return RopeCustomFreqsModel(dims=self.dims, head_dim=self.head_dim)
 
     def create_inputs(self) -> Tuple[torch.Tensor, ...]:
         q = torch.randn(self.batch_size, self.num_heads, self.seq_len, self.head_dim)
@@ -5545,7 +5622,20 @@ class QuantizedLinearTest(OpTestCase):
             cls(group_size=128),
             cls(qdtype=torch.int2),
             cls(qdtype=torch.int8),
+            # group_size=16: exercises the non-fused dequantize+matmul path
+            # (requires ET_MLX_ALLOW_NON_FUSED_QUANTIZED_OPS=1).
+            cls(qdtype=torch.int8, group_size=16),
+            cls(qdtype=torch.int4, group_size=16),
+            cls(qdtype=torch.int8, group_size=16, bias=False),
         ]
+
+    def generate_test_files(self, verbose=False):
+        if self.group_size < 32:
+            os.environ["ET_MLX_ALLOW_NON_FUSED_QUANTIZED_OPS"] = "1"
+        try:
+            return super().generate_test_files(verbose=verbose)
+        finally:
+            os.environ.pop("ET_MLX_ALLOW_NON_FUSED_QUANTIZED_OPS", None)
 
     def create_model(self) -> nn.Module:
         model = LinearModel(self.in_features, self.out_features, bias=self.bias)

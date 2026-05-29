@@ -272,6 +272,8 @@ class ColIm(GeneralOpDef):
         torch.ops.aten.zeros_like.default,
         torch.ops.aten.ones.default,
         torch.ops.aten.ones_like.default,
+        torch.ops.aten.rand.default,
+        torch.ops.aten.randn.default,
     ],
     qnn_op=None,
 )
@@ -865,6 +867,44 @@ class Rsqrt(GeneralOpDef):
 @register_annotator([torch.ops.aten.scaled_dot_product_attention.default], qnn_op=None)
 class ScaledDotProductAttention(GeneralOpDef):
     pass
+
+
+@register_annotator(
+    [torch.ops.aten.scatter.src],
+    qnn_op=None,
+)
+class ScatterElements(GeneralOpDef):
+    @staticmethod
+    def annotate(node: Node, quantization_config: QuantizationConfig) -> None:
+        if _is_annotated([node]):
+            return
+
+        input_act = node.args[0]
+        if not isinstance(input_act, Node) or not _is_float_tensor(input_act):
+            return
+
+        input_qspec_map = {}
+        input_qspec_map[input_act] = quantization_config.input_activation
+
+        if (
+            len(node.args) > 3
+            and isinstance(node.args[3], Node)
+            and _is_float_tensor(node.args[3])
+        ):
+            input_qspec_map[node.args[3]] = SharedQuantizationSpec((input_act, node))
+
+        output_act_qspec = (
+            SharedQuantizationSpec((input_act, node))
+            if _is_float_tensor(node)
+            else None
+        )
+
+        if len(input_qspec_map) > 0 or output_act_qspec is not None:
+            node.meta[Q_ANNOTATION_KEY] = QuantizationAnnotation(
+                input_qspec_map=input_qspec_map,
+                output_qspec=output_act_qspec,
+                _annotated=True,
+            )
 
 
 @register_annotator(

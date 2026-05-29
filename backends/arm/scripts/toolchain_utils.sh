@@ -22,20 +22,20 @@ source "${script_dir}/utils.sh"
 
 function gcc_select_toolchain() {
     if [[ "${ARCH}" == "x86_64" ]] ; then
-        toolchain_url="https://armkeil.blob.core.windows.net/developer/Files/downloads/gnu/13.3.rel1/binrel/arm-gnu-toolchain-13.3.rel1-x86_64-arm-none-eabi.tar.xz"
-        toolchain_dir="arm-gnu-toolchain-13.3.rel1-x86_64-arm-none-eabi"
-        toolchain_md5_checksum="0601a9588bc5b9c99ad2b56133b7f118"
+        toolchain_url="https://developer.arm.com/-/media/Files/downloads/gnu/15.2.rel1/binrel/arm-gnu-toolchain-15.2.rel1-x86_64-arm-none-eabi.tar.xz"
+        toolchain_dir="arm-gnu-toolchain-15.2.rel1-x86_64-arm-none-eabi"
+        toolchain_md5_checksum="da62bef8821e7fc2a9b5d023871036e0"
         toolchain_archive="${toolchain_dir}.tar.xz"
     elif [[ "${ARCH}" == "aarch64" ]] || [[ "${ARCH}" == "arm64" ]] ; then
         if [[ "${OS}" == "Darwin" ]]; then
-            toolchain_url="https://armkeil.blob.core.windows.net/developer/Files/downloads/gnu/13.3.rel1/binrel/arm-gnu-toolchain-13.3.rel1-darwin-arm64-arm-none-eabi.tar.xz"
-            toolchain_dir="arm-gnu-toolchain-13.3.rel1-darwin-arm64-arm-none-eabi"
-            toolchain_md5_checksum="f1c18320bb3121fa89dca11399273f4e"
+            toolchain_url="https://developer.arm.com/-/media/Files/downloads/gnu/15.2.rel1/binrel/arm-gnu-toolchain-15.2.rel1-darwin-arm64-arm-none-eabi.tar.xz"
+            toolchain_dir="arm-gnu-toolchain-15.2.rel1-darwin-arm64-arm-none-eabi"
+            toolchain_md5_checksum="e91fd6348ba0f3e5ec35eeba1ad7e2b8"
             toolchain_archive="${toolchain_dir}.tar.xz"
         elif [[ "${OS}" == "Linux" ]]; then
-            toolchain_url="https://armkeil.blob.core.windows.net/developer/Files/downloads/gnu/13.3.rel1/binrel/arm-gnu-toolchain-13.3.rel1-aarch64-arm-none-eabi.tar.xz"
-            toolchain_dir="arm-gnu-toolchain-13.3.rel1-aarch64-arm-none-eabi"
-            toolchain_md5_checksum="303102d97b877ebbeb36b3158994b218"
+            toolchain_url="https://developer.arm.com/-/media/Files/downloads/gnu/15.2.rel1/binrel/arm-gnu-toolchain-15.2.rel1-aarch64-arm-none-eabi.tar.xz"
+            toolchain_dir="arm-gnu-toolchain-15.2.rel1-aarch64-arm-none-eabi"
+            toolchain_md5_checksum="458c5d9b362726c9ac20c96f1894ae13"
             toolchain_archive="${toolchain_dir}.tar.xz"
         fi
     else

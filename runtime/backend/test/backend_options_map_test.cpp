@@ -365,3 +365,32 @@ TEST_F(LoadBackendOptionsMapTest, SetOptionsWithBuilderUpdatesExisting) {
   }
   EXPECT_EQ(num_threads2, 8); // Should be updated value
 }
+
+// Test entry_at returns each (backend_id, options) pair in insertion order
+// and the spans reference the same data the corresponding get_options
+// calls return.
+TEST_F(LoadBackendOptionsMapTest, EntryAtEnumeratesAllEntries) {
+  LoadBackendOptionsMap map;
+
+  BackendOptions<2> opts1;
+  opts1.set_option("k1", 1);
+  ASSERT_EQ(map.set_options("BackendA", opts1.view()), Error::Ok);
+
+  BackendOptions<2> opts2;
+  opts2.set_option("k2", true);
+  opts2.set_option("k3", "v");
+  ASSERT_EQ(map.set_options("BackendB", opts2.view()), Error::Ok);
+
+  ASSERT_EQ(map.size(), 2u);
+
+  const auto e0 = map.entry_at(0);
+  EXPECT_STREQ(e0.backend_id, "BackendA");
+  EXPECT_EQ(e0.options.size(), 1u);
+  // Spans returned by entry_at point at the same storage as get_options.
+  EXPECT_EQ(e0.options.data(), map.get_options("BackendA").data());
+
+  const auto e1 = map.entry_at(1);
+  EXPECT_STREQ(e1.backend_id, "BackendB");
+  EXPECT_EQ(e1.options.size(), 2u);
+  EXPECT_EQ(e1.options.data(), map.get_options("BackendB").data());
+}

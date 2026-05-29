@@ -17,7 +17,7 @@ This is done in the example depending on the board you build for so if you build
 Set up FVP paths and macs used, this will also set `shutdown_on_eot` so the FVP auto stops after it has run the example.
 
 Config Zephyr Corstone300 FVP
-<!-- RUN setup_corstone300_fvp -->
+<!-- RUN setup_corstone300 -->
 ```
 export FVP_ROOT=$PWD/modules/lib/executorch/examples/arm/arm-scratch/FVP-corstone300
 export ARMFVP_BIN_PATH=${FVP_ROOT}/models/Linux64_GCC-9.3
@@ -72,7 +72,7 @@ west build -b mps3/corstone300/fvp modules/lib/executorch/zephyr/samples/hello-e
 Set up FVP paths, libs and macs used, this will also set `shutdown_on_eot` so the FVP auto stops after it has run the example.
 
 Config Zephyr Corstone320 FVP
-<!-- RUN setup_corstone320_fvp -->
+<!-- RUN setup_corstone320 -->
 ```
 export FVP_ROOT=$PWD/modules/lib/executorch/examples/arm/arm-scratch/FVP-corstone320
 export ARMFVP_BIN_PATH=${FVP_ROOT}/models/Linux64_GCC-9.3

@@ -26,7 +26,7 @@ You may encounter some rough edges and features which may be documented or plann
 ```{tip}
 If you are already familiar with this delegate, you may want to jump directly to the examples:
 * [Examples in the ExecuTorch repository](https://github.com/pytorch/executorch/tree/main/examples/arm)
-* [A commandline compiler for example models](https://github.com/pytorch/executorch/blob/main/backends/arm/scripts/aot_arm_compiler.py)
+* [A commandline compiler for quick tests and example models](https://github.com/pytorch/executorch/blob/main/backends/arm/scripts/aot_arm_compiler.py)
 ```
 
 This tutorial serves as an introduction to using ExecuTorch to deploy PyTorch models on VGF targets. The tutorial is based on `vgf_minimal_example.ipyb`, provided in Arm's example folder.
@@ -163,14 +163,15 @@ assert os.path.exists(pte_path), "Build failed; no .pte-file found"
 
 
 ```{tip}
-For a quick start, you can use the script `backends/arm/scripts/aot_arm_compiler.py` to produce the pte.
+For a quick test, you can use the script `backends/arm/scripts/aot_arm_compiler.py` to produce the pte.
 To produce a pte file equivalent to the one above, run
-`python -m backends.arm.scripts.aot_arm_compiler --model_name=add --delegate --quantize --output=simple_example.pte --target=vgf`
+`python -m backends.arm.scripts.aot_arm_compiler --model_name=add --delegate --quantize --output=simple_example.pte --target=vgf`.
+For production use, you should instead use the stable Python API shown above.
 ```
 
-### Runtime:
+## Runtime
 
-## Build executor runtime
+### Build executor runtime
 
 After the AOT compilation flow is done, we can build the executor runner target. For this tutorial, the default runner can be used. Build it with the following configuration:
 
@@ -200,7 +201,7 @@ The block diagram below demonstrates, at the high level, how the various build a
 ![](arm-delegate-runtime-build.svg)
 
 
-## Deploying and running on device
+### Deploying and running on device
 
 Since we are using the Vulkan emulation layer, we can run the executor runner with the VGF delegate on the host machine:
 

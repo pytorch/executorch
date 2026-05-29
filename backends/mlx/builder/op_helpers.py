@@ -334,7 +334,7 @@ def parse_dequant_node(
     if len(non_one) != 1:
         return None
     quantized_dim, group_size = non_one[0]
-    if group_size not in [32, 64, 128]:
+    if group_size not in [16, 32, 64, 128]:
         return None
 
     # TODO: MLX supports 3, 5, and 7, but we need to figure out the
