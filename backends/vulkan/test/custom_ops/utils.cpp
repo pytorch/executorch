@@ -622,7 +622,7 @@ void generate_randint_half_data(
   std::mt19937 gen(get_seed_or_explicit(explicit_seed));
   std::uniform_int_distribution<int32_t> dis(min_val, max_val);
   for (auto& val : data) {
-    val = static_cast<uint16_t>(std::abs(dis(gen)) % 65536);
+    val = float_to_half(static_cast<float>(dis(gen)));
   }
 }
 
@@ -1975,8 +1975,8 @@ void print_valuespec_data(
     case vkapi::kHalf: {
       const auto& data = spec.get_half_data();
       for (size_t i = 0; i < print_count; ++i) {
-        // Convert uint16_t back to float for display
-        float value = data[i] / 32767.0f;
+        // Convert IEEE 754 half-precision bit pattern back to float.
+        float value = half_to_float(data[i]);
         std::cout << value;
         if (i < print_count - 1)
           std::cout << ", ";

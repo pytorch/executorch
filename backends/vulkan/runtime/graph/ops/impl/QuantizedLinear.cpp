@@ -9,6 +9,7 @@
 #include <executorch/backends/vulkan/runtime/graph/ops/OperatorRegistry.h>
 
 #include <executorch/backends/vulkan/runtime/graph/ops/impl/Common.h>
+#include <executorch/backends/vulkan/runtime/graph/ops/impl/GemmCoopmat.h>
 #include <executorch/backends/vulkan/runtime/graph/ops/impl/QuantizeDequantize.h>
 #include <executorch/backends/vulkan/runtime/graph/ops/impl/QuantizedLinear.h>
 #include <executorch/backends/vulkan/runtime/graph/ops/impl/Staging.h>
@@ -63,6 +64,16 @@ utils::uvec3 quantized_linear_global_wg_size(
   // height
   const uint32_t M = utils::val_at(-2, out_sizes);
 
+  // Coopmat variants dispatch a 256-thread WG per 64x64 output tile.  Mirrors
+  // GemmCoopmat.cpp's pick_linear_coopmat_global_wg_size — the multiplication
+  // by kCoopmatInvocations cancels the framework's div_up, since
+  // local_wg = {256, 1, 1}.
+  if (shader.kernel_name.find("_coopmat") != std::string::npos) {
+    const uint32_t num_tiles_n = utils::div_up(N, kCoopmatTileN);
+    const uint32_t num_tiles_m = utils::div_up(M, kCoopmatTileM);
+    return {num_tiles_n * kCoopmatInvocations, num_tiles_m, 1};
+  }
+
   uint32_t N_per_tile = 4;
   uint32_t M_per_tile = 4;
 
@@ -91,6 +102,11 @@ utils::uvec3 quantized_linear_local_wg_size(
     const utils::uvec3& global_workgroup_size,
     const std::vector<ArgGroup>& args,
     const std::vector<ValueRef>& resize_args) {
+  // Coopmat variants use a 256-thread workgroup.
+  if (shader.kernel_name.find("_coopmat") != std::string::npos) {
+    return {kCoopmatInvocations, 1, 1};
+  }
+
   const bool use_coop_algorithm =
       shader.kernel_name.find("_coop") != std::string::npos;
 
@@ -100,6 +116,57 @@ utils::uvec3 quantized_linear_local_wg_size(
     return pick_hw_square_wg_size(
         graph, shader, global_workgroup_size, args, resize_args);
   }
+}
+
+// Returns true when the q4gsw coopmat shader can be dispatched for this
+// (M, N, K, dtype, output_storage, group_size) tuple. Preconditions match what
+// linear_q4gsw_coopmat.glsl assumes; the subgroup_size == 64 check scopes this
+// to wave64 devices (e.g. AMD RDNA), which the coopmat tiling is tuned for.
+static bool can_use_q4gsw_coopmat(
+    ComputeGraph* graph,
+    const ValueRef output,
+    const ValueRef fp_input,
+    int64_t group_size,
+    const ValueRef bias) {
+  // The coopmat shaders only build HAS_BIAS=false variants, so they would
+  // silently drop a bias. Fall back to the tiled path (which applies bias at
+  // runtime via the apply_bias spec constant) whenever a bias is present.
+  if (!graph->val_is_none(bias)) {
+    return false;
+  }
+  const auto* adapter = graph->context()->adapter_ptr();
+  if (!adapter->supports_cooperative_matrix()) {
+    return false;
+  }
+  if (adapter->subgroup_size() != 64) {
+    return false;
+  }
+  if (graph->storage_type_of(output) != utils::kBuffer) {
+    return false;
+  }
+  if (graph->dtype_of(output) != vkapi::kHalf) {
+    return false;
+  }
+
+  const std::vector<int64_t> out_sizes = graph->sizes_of(output);
+  const int64_t N = utils::val_at(-1, out_sizes);
+  const int64_t M = utils::val_at(-2, out_sizes);
+  const std::vector<int64_t> in_sizes = graph->sizes_of(fp_input);
+  const int64_t K = utils::val_at(-1, in_sizes);
+
+  if (M % static_cast<int64_t>(kCoopmatTileM) != 0) {
+    return false;
+  }
+  if (N % static_cast<int64_t>(kCoopmatTileN) != 0) {
+    return false;
+  }
+  if (K % static_cast<int64_t>(kCoopmatTileK) != 0) {
+    return false;
+  }
+  if (group_size % static_cast<int64_t>(kCoopmatTileK) != 0) {
+    return false;
+  }
+  return true;
 }
 
 vkapi::ShaderInfo pick_linear_qw_shader(
@@ -114,6 +181,24 @@ vkapi::ShaderInfo pick_linear_qw_shader(
 
   const bool weight_is_4bit = resize_args.at(0) != kDummyValueRef;
   const bool is_gemv_case = is_gemv(graph, fp_input);
+
+  // Use the coopmat shader for 4-bit, non-gemv, buffer-output, half-dtype
+  // dispatches when shape alignment allows; tiled remains the fallback.
+  if (weight_is_4bit && !is_gemv_case) {
+    const int64_t group_size =
+        graph->extract_scalar<int64_t>(resize_args.at(0));
+    if (can_use_q4gsw_coopmat(
+            graph, output, fp_input, group_size, resize_args.at(2))) {
+      std::string kernel_name = "linear_q4gsw_coopmat";
+      // Output storage is buffer (gated above); weight storage matches the
+      // existing variants.
+      add_storage_type_suffix(kernel_name, graph->storage_type_of(output));
+      add_storage_type_suffix(
+          kernel_name, graph->storage_type_of(packed_int_weight));
+      add_dtype_suffix(kernel_name, graph->dtype_of(output));
+      return VK_KERNEL_FROM_STR(kernel_name);
+    }
+  }
 
   std::string kernel_name = "linear_";
   if (weight_is_4bit) {
@@ -149,6 +234,36 @@ vkapi::ShaderInfo pick_linear_dqa_qw_shader(
 
   const bool weight_is_4bit = resize_args.at(0) != kDummyValueRef;
   const bool is_gemv_case = is_gemv(graph, fp_input);
+
+  // Use the coopmat<int8> shader for 4-bit dq8ca dispatches when the device
+  // exposes INT8 coopmat properties and the shape aligns; tiled otherwise.
+  if (weight_is_4bit && !is_gemv_case) {
+    const int64_t group_size =
+        graph->extract_scalar<int64_t>(resize_args.at(0));
+    if (can_use_q4gsw_coopmat(
+            graph, out, fp_input, group_size, resize_args.at(2))) {
+      std::string kernel_name = "linear_dq8ca_q4gsw_coopmat";
+      add_storage_type_suffix(kernel_name, graph->storage_type_of(out));
+      add_storage_type_suffix(kernel_name, graph->storage_type_of(int_weight));
+      add_dtype_suffix(kernel_name, graph->dtype_of(out));
+      return VK_KERNEL_FROM_STR(kernel_name);
+    }
+  }
+
+  // Use the coopmat<int8> shader for 8-bit per-channel dq8ca. Same matrix-unit
+  // path and shape/dtype preconditions; group_size doesn't apply for
+  // per-channel weights, so K is passed (it always satisfies
+  // group_size % kCoopmatTileK == 0 when K does).
+  if (!weight_is_4bit && !is_gemv_case) {
+    const int64_t K = graph->size_at<int64_t>(-1, fp_input);
+    if (can_use_q4gsw_coopmat(graph, out, fp_input, K, resize_args.at(2))) {
+      std::string kernel_name = "linear_dq8ca_q8csw_coopmat";
+      add_storage_type_suffix(kernel_name, graph->storage_type_of(out));
+      add_storage_type_suffix(kernel_name, graph->storage_type_of(int_weight));
+      add_dtype_suffix(kernel_name, graph->dtype_of(out));
+      return VK_KERNEL_FROM_STR(kernel_name);
+    }
+  }
 
   std::string kernel_name = "linear_";
   if (weight_is_4bit) {
@@ -365,8 +480,8 @@ void add_linear_qw_node(
       {},
       // Specialization Constants
       {apply_bias, K4_per_group},
-      // Resize args
-      {is_4bit_flag, weight_data},
+      // Resize args (resize_args.at(2) = bias_data, read by the coopmat gate)
+      {is_4bit_flag, weight_data, bias_data},
       // Resizing Logic
       resize_linear_qw_node));
 }
@@ -467,9 +582,16 @@ void add_linear_dqa_qw_node(
   VK_CHECK_COND(input_quant_config.nbits == 8);
   VK_CHECK_COND(input_quant_config.is_dynamic);
 
-  VK_CHECK_COND(weight_quant_config.granularity == kPerGroup);
+  // Allow per-channel symmetric INT8 weight alongside the original
+  // per-group INT4. Both flows reuse the same dq8ca packed-int8 input
+  // tile + integer accumulator; the shader picks the right inner loop
+  // based on the dispatched kernel name.
   VK_CHECK_COND(weight_quant_config.is_symmetric);
-  VK_CHECK_COND(weight_quant_config.nbits == 4);
+  VK_CHECK_COND(
+      (weight_quant_config.granularity == kPerGroup &&
+       weight_quant_config.nbits == 4) ||
+      (weight_quant_config.granularity == kPerChannel &&
+       weight_quant_config.nbits == 8));
 
   vkapi::ParamsBindList param_buffers = {
       graph.sizes_ubo(output), graph.sizes_ubo(fp_input)};
@@ -511,8 +633,8 @@ void add_linear_dqa_qw_node(
       {},
       // Specialization Constants
       {apply_bias, K4_per_group},
-      // Resize args
-      {is_4bit_flag, weight_data},
+      // Resize args (resize_args.at(2) = bias_data, read by the coopmat gate)
+      {is_4bit_flag, weight_data, bias_data},
       // Resizing Logic
       resize_linear_qw_node));
 }
@@ -649,9 +771,11 @@ void quantized_linear_impl(
     return;
   }
 
-  // Otherwise, input is dynamically quantized. Currently only per group 4-bit
-  // quantized weights is supported for this mode.
-  VK_CHECK_COND(weight_quant_config.nbits == 4);
+  // Otherwise, input is dynamically quantized. Supports either per-group
+  // 4-bit or per-channel 8-bit symmetric weights (both reuse the same
+  // dq8ca path, but with different shaders dispatched downstream).
+  VK_CHECK_COND(
+      weight_quant_config.nbits == 4 || weight_quant_config.nbits == 8);
 
   int64_t num_groups = 1;
   if (weight_quant_config.granularity == kPerGroup) {
@@ -822,11 +946,55 @@ void linear_dq8ca_q4gsw(
       output);
 }
 
+void linear_dq8ca_q8csw(
+    ComputeGraph& graph,
+    const std::vector<ValueRef>& args) {
+  // W8A8 dynamic: per-channel symmetric INT8 weights + per-token dynamic
+  // INT8 activations. No group_size — per-channel weight quant has no
+  // groups. We piggyback on the existing dq8ca pipeline by treating
+  // per-channel as a single group covering the whole K dim, so the
+  // quantize_and_pack_4h4w_with_group_sums helper degenerates to a
+  // single-group sum (which the q8csw shader ignores anyway, since the
+  // epilog uses (acc - input_zp * weight_sum) per-row instead).
+  int32_t idx = 0;
+  const ValueRef fp_input = args.at(idx++);
+  const ValueRef input_scale = args.at(idx++);
+  const ValueRef input_zp = args.at(idx++);
+  const ValueRef weight_data = args.at(idx++);
+  const ValueRef weight_sums_data = args.at(idx++);
+  const ValueRef weight_scales_data = args.at(idx++);
+  const ValueRef bias_data = args.at(idx++);
+  const ValueRef output = args.at(idx++);
+
+  QuantizationConfig input_quant_config(8, kPerChannel, {}, false, true);
+  QuantizationConfig weight_quant_config(8, kPerChannel, {});
+
+  // Synthesize group_size = K so num_groups = 1 in the existing flow.
+  const int64_t K = graph.size_at<int64_t>(-1, fp_input);
+  const ValueRef group_size_ref = graph.add_scalar<int64_t>(K);
+
+  quantized_linear_impl(
+      graph,
+      input_quant_config,
+      weight_quant_config,
+      fp_input,
+      input_scale,
+      input_zp,
+      weight_data,
+      weight_sums_data,
+      weight_scales_data,
+      kDummyValueRef, // weight_zeros_data
+      group_size_ref,
+      bias_data,
+      output);
+}
+
 REGISTER_OPERATORS {
   VK_REGISTER_OP(et_vk.linear_q8ta_q8csw.default, linear_q8ta_q8csw);
   VK_REGISTER_OP(et_vk.linear_q8csw.default, linear_q8csw);
   VK_REGISTER_OP(et_vk.linear_q4gsw.default, linear_q4gsw);
   VK_REGISTER_OP(et_vk.linear_dq8ca_q4gsw.default, linear_dq8ca_q4gsw);
+  VK_REGISTER_OP(et_vk.linear_dq8ca_q8csw.default, linear_dq8ca_q8csw);
 }
 
 } // namespace vkcompute

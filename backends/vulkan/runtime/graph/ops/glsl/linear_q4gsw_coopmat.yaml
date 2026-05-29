@@ -1,0 +1,30 @@
+# Copyright (c) Meta Platforms, Inc. and affiliates.
+# All rights reserved.
+#
+# This source code is licensed under the BSD-style license found in the
+# LICENSE file in the root directory of this source tree.
+
+# coopmat variant of linear_q4gsw_tiled (fp16 act x INT4 weight).
+# Forces buffer storage for activation/output (coopMatLoad/Store on buffers);
+# INT4 weight storage can be texture2d or buffer (matches the tiled path).
+# DTYPE = half only; fp32 activations are not supported.
+
+linear_q4gsw_coopmat:
+  parameter_names_with_default_values:
+    PRECISION: highp
+    HAS_BIAS: false
+    WEIGHT_STORAGE: texture2d
+    MMA_M: 16
+    MMA_N: 16
+    MMA_K: 16
+    WG_TILE_M: 64
+    WG_TILE_N: 64
+    WG_TILE_K: 32
+    SG_GRID_X: 2
+    SG_GRID_Y: 2
+    SUBGROUP_SIZE: 64
+  shader_variants:
+    - NAME: linear_q4gsw_coopmat_buffer_texture2d_half
+      WEIGHT_STORAGE: texture2d
+    - NAME: linear_q4gsw_coopmat_buffer_buffer_half
+      WEIGHT_STORAGE: buffer

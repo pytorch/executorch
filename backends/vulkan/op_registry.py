@@ -481,6 +481,23 @@ def register_linear_dq8ca_q4gsw():
     )
 
 
+@update_features(exir_ops.edge.et_vk.linear_dq8ca_q8csw.default)
+def register_linear_dq8ca_q8csw():
+    return OpFeatures(
+        inputs_storage=[
+            utils.CONTIGUOUS_ANY,  # input
+            utils.WIDTH_PACKED_TEXTURE,  # input_scale
+            utils.WIDTH_PACKED_TEXTURE,  # input_zero_point
+            utils.NO_STORAGE,  # weight (prepacked)
+            utils.NO_STORAGE,  # weight_sums (prepacked)
+            utils.NO_STORAGE,  # weight_scales (prepacked)
+            utils.NO_STORAGE,  # bias (prepacked)
+        ],
+        inputs_dtypes=utils.FP_T,
+        supports_prepacking=True,
+    )
+
+
 # =============================================================================
 # QuantizeDequantize.cpp
 # =============================================================================

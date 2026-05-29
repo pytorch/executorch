@@ -306,6 +306,42 @@ lib.define(
 lib.impl(name, linear_dq8ca_q4gsw, "CompositeExplicitAutograd")
 linear_dq8ca_q4gsw_op = getattr(getattr(torch.ops, namespace), name)
 
+
+#######################
+## linear_dq8ca_q8csw ##
+#######################
+
+
+def linear_dq8ca_q8csw(
+    x: torch.Tensor,
+    input_scale: torch.Tensor,
+    input_zero_point: torch.Tensor,
+    weights: torch.Tensor,
+    weight_sums: torch.Tensor,
+    weight_scales: torch.Tensor,
+    bias: Optional[torch.Tensor] = None,
+):
+    # Per-channel symmetric INT8 weight: dequant = weight.to(fp) * scales (per output channel)
+    weights_dq = weights.to(x.dtype) * weight_scales.unsqueeze(-1)
+    return torch.nn.functional.linear(x, weights_dq, bias)
+
+
+name = "linear_dq8ca_q8csw"
+lib.define(
+    f"""
+            {name}(
+                Tensor input,
+                Tensor input_scales,
+                Tensor input_zp,
+                Tensor weights,
+                Tensor weight_sums,
+                Tensor weight_scales,
+                Tensor? bias = None) -> Tensor
+            """
+)
+lib.impl(name, linear_dq8ca_q8csw, "CompositeExplicitAutograd")
+linear_dq8ca_q8csw_op = getattr(getattr(torch.ops, namespace), name)
+
 #################
 ## qaqw_linear ##
 #################

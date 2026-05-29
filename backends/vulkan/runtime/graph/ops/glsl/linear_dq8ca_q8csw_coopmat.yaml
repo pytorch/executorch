@@ -1,0 +1,30 @@
+# Copyright (c) Meta Platforms, Inc. and affiliates.
+# All rights reserved.
+#
+# This source code is licensed under the BSD-style license found in the
+# LICENSE file in the root directory of this source tree.
+
+# coopmat<int8> x coopmat<int8> -> coopmat<int32> variant of
+# linear_dq8ca_q8csw_tiled.  Requires VK_COMPONENT_TYPE_SINT8_KHR cooperative
+# matrix property to be enumerated on the device (e.g. Radeon 780M / Mesa RADV
+# exposes int8 16x16x16 Subgroup).
+
+linear_dq8ca_q8csw_coopmat:
+  parameter_names_with_default_values:
+    PRECISION: highp
+    HAS_BIAS: false
+    WEIGHT_STORAGE: texture2d
+    MMA_M: 16
+    MMA_N: 16
+    MMA_K: 16
+    WG_TILE_M: 64
+    WG_TILE_N: 64
+    WG_TILE_K: 32
+    SG_GRID_X: 2
+    SG_GRID_Y: 2
+    SUBGROUP_SIZE: 64
+  shader_variants:
+    - NAME: linear_dq8ca_q8csw_coopmat_buffer_texture2d_half
+      WEIGHT_STORAGE: texture2d
+    - NAME: linear_dq8ca_q8csw_coopmat_buffer_buffer_half
+      WEIGHT_STORAGE: buffer
