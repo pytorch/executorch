@@ -596,13 +596,15 @@ jobs:
 
         # Base build for the bloaty diff. Failures degrade the report to head-only.
         # Worktree must be named `executorch` — see CMakeLists.txt:420.
+        # actions/checkout's shallow fetch doesn't include the base SHA, so fetch it.
         base_elf=""
         base_sha=""
         if [[ "${{ github.event_name }}" == "pull_request" ]]; then
           base_sha="${{ github.event.pull_request.base.sha }}"
           base_worktree=/tmp/bloaty-base/executorch
           mkdir -p /tmp/bloaty-base
-          if git worktree add --force "${base_worktree}" "${base_sha}" \
+          if git fetch --depth=1 origin "${base_sha}" \
+             && git worktree add --force "${base_worktree}" "${base_sha}" \
              && ( cd "${base_worktree}" \
                   && git submodule update --init --recursive --depth=1 --jobs=8 \
                   && build_size_test "${{ matrix.os }}" ) \
@@ -622,6 +624,9 @@ jobs:
           if ! command -v bloaty >/dev/null; then
             conda install -y -p "${CONDA_ENV}" -c conda-forge bloaty || exit 1
           fi
+          # conda-forge's bloaty links against a newer libstdc++ than the system
+          # ships. Prepend the conda env's lib dir so its libstdc++ is found first.
+          export LD_LIBRARY_PATH="${CONDA_ENV}/lib:${LD_LIBRARY_PATH:-}"
           bloaty --version || exit 1
 
           tmp_out=/tmp/bloaty-out
