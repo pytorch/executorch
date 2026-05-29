@@ -12,8 +12,15 @@ set -eux
 export TORCHINDUCTOR_CACHE_DIR="$(mktemp -d "${RUNNER_TEMP:-/tmp}/torchinductor_cache_XXXXXX")"
 trap 'rm -rf "${TORCHINDUCTOR_CACHE_DIR}"' EXIT
 
-# Run pytest with coverage
-${CONDA_RUN} pytest -n auto --cov=./ --cov-report=xml
+# EXPERIMENT: drop xdist (`-n 1`) on macOS to test whether AOTI hangs are
+# caused by parallel-worker contention (clang/ld, dlopen lock, libomp
+# oversubscription) rather than a true deadlock. AOTI skips removed so we
+# can observe whether the previously-hung tests now pass serially.
+# --timeout surfaces hung tests with a thread dump and faulthandler_timeout
+# periodically dumps every worker's threads while tests are still running.
+${CONDA_RUN} pytest -n 1 --cov=./ --cov-report=xml \
+  --timeout=1500 --timeout-method=thread \
+  -o faulthandler_timeout=180
 # Run gtest
 LLVM_PROFDATA="xcrun llvm-profdata" LLVM_COV="xcrun llvm-cov" \
 ${CONDA_RUN} test/run_oss_cpp_tests.sh
