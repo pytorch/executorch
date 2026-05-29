@@ -67,8 +67,13 @@ from executorch.exir.passes.memory_format_ops_pass import DimOrderOpsRevertPass
 from executorch.exir.passes.normalize_view_copy_base_pass import (
     NormalizeViewCopyBasePass,
 )
-from executorch.exir.passes.remove_graph_asserts_pass import RemoveGraphAssertsPass
+from executorch.exir.passes.prune_empty_tensors_pass import PruneEmptyTensorsPass
+from executorch.exir.passes.remove_graph_asserts_pass import (
+    RemoveGraphAssertsPass,
+    RemoveNonCoreAtenOpGraphAssertsPass,
+)
 from executorch.exir.passes.remove_mixed_type_operators import RemoveMixedTypeOperators
+from executorch.exir.passes.remove_noop_pass import RemoveToCopyPass
 from executorch.exir.passes.replace_edge_with_backend_pass import EdgeToBackendOpsPass
 from executorch.exir.passes.replace_view_copy_with_view_pass import (
     ReplaceViewCopyWithViewPass,
@@ -77,6 +82,7 @@ from executorch.exir.passes.scalar_to_tensor_pass import ScalarToTensorPass
 from executorch.exir.passes.spec_prop_pass import SpecPropPass
 from executorch.exir.passes.sym_shape_eval_pass import ConstraintBasedSymShapeEvalPass
 from executorch.exir.passes.sym_to_tensor_pass import SymToTensorPass
+from executorch.exir.passes.to_device_pass import ToDevicePass
 from executorch.exir.program._program import lift_constant_tensor_pass
 from executorch.exir.schema import TensorShapeDynamism
 from executorch.exir.sym_util import eval_upper_bound
@@ -2831,3 +2837,185 @@ class TestCSEPass(unittest.TestCase):
         self.assertTrue(result.modified)
         self.assertEqual(self._count_ops(result.graph_module, neg_target), 1)
         self.assertEqual(self._count_ops(result.graph_module, abs_target), 1)
+
+
+class TestPassModifiedFlag(unittest.TestCase):
+    """
+    PassResult.modified is read by _transform_with_pass_manager in
+    exir/program/_program.py; a false-positive forces a full
+    ExportedProgram rebuild + verifier re-run. These tests pin the
+    contract: a pass with nothing to do must report modified=False.
+    """
+
+    @staticmethod
+    def _aten_gm(module, example_inputs):
+        return torch.export.export(module, example_inputs, strict=True).graph_module
+
+    @staticmethod
+    def _identity_aten_gm():
+        class Identity(torch.nn.Module):
+            def forward(self, x):
+                return x + 1
+
+        return TestPassModifiedFlag._aten_gm(Identity(), (torch.ones(2),))
+
+    # ---- RemoveNoopPass ----
+
+    def test_remove_noop_pass_noop_when_nothing_to_remove(self):
+        gm = self._identity_aten_gm()
+        result = RemoveNoopPass()(gm)
+        self.assertFalse(result.modified)
+
+    def test_remove_noop_pass_modified_when_redundant_to_dtype(self):
+        graph = torch.fx.Graph()
+        with FakeTensorMode() as fake_mode:
+            fake_input = fake_mode.from_tensor(torch.randn(2, 3))
+            x = graph.placeholder("x")
+            x.meta["val"] = fake_input
+            to_node = graph.call_function(
+                torch.ops.aten.to.dtype, args=(x, torch.float32)
+            )
+            to_node.meta["val"] = fake_input
+            graph.output(to_node)
+        gm = torch.fx.GraphModule(torch.nn.Module(), graph)
+
+        result = RemoveNoopPass()(gm)
+        self.assertTrue(result.modified)
+
+    # ---- RemoveToCopyPass ----
+
+    def test_remove_to_copy_pass_noop_when_nothing_to_remove(self):
+        gm = self._identity_aten_gm()
+        result = RemoveToCopyPass()(gm)
+        self.assertFalse(result.modified)
+
+    def test_remove_to_copy_pass_modified_when_redundant_copy(self):
+        # Build a graph with a redundant aten._to_copy.default whose
+        # output FakeTensor matches the input on dtype/device/shape/stride.
+        graph = torch.fx.Graph()
+        with FakeTensorMode() as fake_mode:
+            fake_input = fake_mode.from_tensor(torch.randn(2, 3))
+            x = graph.placeholder("x")
+            x.meta["val"] = fake_input
+            copy_node = graph.call_function(torch.ops.aten._to_copy.default, args=(x,))
+            copy_node.meta["val"] = fake_mode.from_tensor(torch.randn(2, 3))
+            graph.output(copy_node)
+        gm = torch.fx.GraphModule(torch.nn.Module(), graph)
+
+        result = RemoveToCopyPass()(gm)
+        self.assertTrue(result.modified)
+
+    # ---- PruneEmptyTensorsPass ----
+
+    def test_prune_empty_tensors_pass_noop_when_no_cat(self):
+        gm = self._identity_aten_gm()
+        result = PruneEmptyTensorsPass()(gm)
+        self.assertFalse(result.modified)
+
+    def test_prune_empty_tensors_pass_noop_when_cat_has_no_empty(self):
+        class Cat(torch.nn.Module):
+            def forward(self, x, y):
+                return torch.cat([x, y])
+
+        gm = self._aten_gm(Cat(), (torch.ones(2, 3), torch.ones(2, 3)))
+        result = PruneEmptyTensorsPass()(gm)
+        self.assertFalse(result.modified)
+
+    def test_prune_empty_tensors_pass_modified_when_empty_input(self):
+        class Cat(torch.nn.Module):
+            def forward(self, x):
+                return torch.cat([torch.empty((0, 3)), x])
+
+        gm = self._aten_gm(Cat(), (torch.ones(2, 3),))
+        result = PruneEmptyTensorsPass()(gm)
+        self.assertTrue(result.modified)
+
+    # ---- RemoveGraphAssertsPass ----
+
+    def test_remove_graph_asserts_pass_noop_when_no_asserts(self):
+        gm = self._identity_aten_gm()
+        result = RemoveGraphAssertsPass()(gm)
+        self.assertFalse(result.modified)
+
+    def test_remove_graph_asserts_pass_modified_when_asserts_present(self):
+        # Construct a graph with an _assert_async node directly so the test
+        # does not depend on torch.export's heuristics for which asserts
+        # survive constant folding.
+        graph = torch.fx.Graph()
+        x = graph.placeholder("x")
+        add = graph.call_function(torch.ops.aten.add.Tensor, args=(x, x))
+        graph.call_function(torch.ops.aten._assert_async.msg, args=(add, "asserted"))
+        graph.output(add)
+        gm = torch.fx.GraphModule(torch.nn.Module(), graph)
+
+        result = RemoveGraphAssertsPass()(gm)
+        self.assertTrue(result.modified)
+        remaining = [
+            n
+            for n in result.graph_module.graph.nodes
+            if n.op == "call_function" and n.target == torch.ops.aten._assert_async.msg
+        ]
+        self.assertEqual(remaining, [])
+
+    # ---- RemoveNonCoreAtenOpGraphAssertsPass ----
+
+    def test_remove_noncore_asserts_pass_noop_when_no_asserts(self):
+        gm = self._identity_aten_gm()
+        result = RemoveNonCoreAtenOpGraphAssertsPass()(gm)
+        self.assertFalse(result.modified)
+
+    def test_remove_noncore_asserts_pass_modified_when_metadata_assert(self):
+        graph = torch.fx.Graph()
+        x = graph.placeholder("x")
+        add = graph.call_function(torch.ops.aten.add.Tensor, args=(x, x))
+        graph.call_function(
+            torch.ops.aten._assert_tensor_metadata.default,
+            args=(add, None, None, torch.float32),
+        )
+        graph.output(add)
+        gm = torch.fx.GraphModule(torch.nn.Module(), graph)
+
+        result = RemoveNonCoreAtenOpGraphAssertsPass()(gm)
+        self.assertTrue(result.modified)
+
+    # ---- ReplaceSymSizeOpPass ----
+
+    def test_replace_sym_size_op_pass_noop_when_no_packets(self):
+        gm = self._identity_aten_gm()
+        result = ReplaceSymSizeOpPass()(gm)
+        self.assertFalse(result.modified)
+
+    def test_replace_sym_size_op_pass_modified_when_packet_present(self):
+        # Build a graph that references torch.ops.aten.sym_size (the
+        # OpOverloadPacket form) so the pass has something to rewrite.
+        graph = torch.fx.Graph()
+        x = graph.placeholder("x")
+        sym_node = graph.call_function(torch.ops.aten.sym_size, args=(x, 0))
+        graph.output(sym_node)
+        gm = torch.fx.GraphModule(torch.nn.Module(), graph)
+
+        result = ReplaceSymSizeOpPass()(gm)
+        self.assertTrue(result.modified)
+        new_targets = {
+            n.target for n in result.graph_module.graph.nodes if n.op == "call_function"
+        }
+        self.assertIn(torch.ops.aten.sym_size.int, new_targets)
+        self.assertNotIn(torch.ops.aten.sym_size, new_targets)
+
+    # ---- ToDevicePass ----
+
+    def test_to_device_pass_noop_when_already_target_device(self):
+        # The identity model has no device= kwargs and is already on CPU.
+        gm = self._identity_aten_gm()
+        result = ToDevicePass("cpu")(gm)
+        self.assertFalse(result.modified)
+
+    def test_to_device_pass_modified_when_kwarg_device_differs(self):
+        # arange has an explicit device kwarg in the exported graph.
+        class Arange(torch.nn.Module):
+            def forward(self, x):
+                return torch.arange(0, 4, device="cpu") + x
+
+        gm = self._aten_gm(Arange(), (torch.zeros(4),))
+        result = ToDevicePass("meta")(gm)
+        self.assertTrue(result.modified)

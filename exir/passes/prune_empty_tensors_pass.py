@@ -27,9 +27,10 @@ class PruneEmptyTensorsPass(ExportPass):
 
     def remove_empty_tensors_from_cat(
         self, graph_module: GraphModule, cat_node: Node
-    ) -> None:
+    ) -> bool:
         """
-        Removes empty tensors from the graph that are inputs to aten.cat.default
+        Removes empty tensors from the graph that are inputs to aten.cat.default.
+        Returns True if the cat node was rewritten.
         """
         concat_list = cast(List[Node], cat_node.args[0])
         pruned_concat_list = []
@@ -37,6 +38,9 @@ class PruneEmptyTensorsPass(ExportPass):
             input_arg_tensor = input_arg.meta["val"]
             if input_arg_tensor.numel() != 0:
                 pruned_concat_list.append(input_arg)
+
+        if len(pruned_concat_list) == len(concat_list):
+            return False
 
         cat_node.args = (pruned_concat_list,) + cat_node.args[1:]
         if len(pruned_concat_list) == 0:
@@ -52,16 +56,19 @@ class PruneEmptyTensorsPass(ExportPass):
                 )
                 full_like.meta = cat_node.meta
                 cat_node.replace_all_uses_with(full_like)
+        return True
 
     def call(self, graph_module: GraphModule) -> PassResult:
+        modified = False
         for node in graph_module.graph.nodes:
             if node.op != "call_function":
                 continue
 
             if node.target == torch.ops.aten.cat.default:
-                self.remove_empty_tensors_from_cat(graph_module, node)
+                modified |= self.remove_empty_tensors_from_cat(graph_module, node)
 
-        graph_module.graph.eliminate_dead_code()
-        graph_module.graph.lint()
+        if modified:
+            graph_module.graph.eliminate_dead_code()
+            graph_module.graph.lint()
 
-        return PassResult(graph_module, True)
+        return PassResult(graph_module, modified)

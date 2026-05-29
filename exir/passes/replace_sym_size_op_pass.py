@@ -26,10 +26,12 @@ class ReplaceSymSizeOpPass(PassBase):
     """
 
     def call(self, graph_module: torch.fx.GraphModule) -> PassResult:
+        modified = False
         for module in graph_module.modules():
             if not isinstance(module, torch.fx.GraphModule):
                 continue
             for node in module.graph.nodes:
                 if node.target in replacements:
                     node.target = replacements[node.target]
-        return PassResult(graph_module, True)
+                    modified = True
+        return PassResult(graph_module, modified)

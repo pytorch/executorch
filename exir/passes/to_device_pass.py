@@ -38,7 +38,7 @@ class ToDevicePass(ExportPass):
         if modified:
             graph_module.recompile()
 
-        return PassResult(graph_module, True)
+        return PassResult(graph_module, modified)
 
     def __call__(self, graph_module: torch.fx.GraphModule) -> PassResult:
         """Reimplement __call__ to avoid Optional[PassResult] type hint."""

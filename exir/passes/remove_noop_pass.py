@@ -30,7 +30,8 @@ _QUANT_OPS: Tuple[torch._ops.OpOverload] = (
 def eliminate_dq_q(
     graph_module: GraphModule,
     dequant_nodes: List[torch.fx.Node],
-) -> None:
+) -> bool:
+    modified = False
     for node in dequant_nodes:
         assert node.target in _DEQUANT_OPS
         for user in list(node.users):
@@ -41,6 +42,8 @@ def eliminate_dq_q(
                 if qparams_dq != qparams_q:
                     continue
                 user.replace_all_uses_with(node.args[0])  # pyre-fixme[6]
+                modified = True
+    return modified
 
 
 class RemoveNoopPass(ExportPass):
@@ -54,6 +57,7 @@ class RemoveNoopPass(ExportPass):
         # are removed in this pass and later check for redundant dq->q patterns and
         # remove them.
         dequant_nodes = []
+        modified = False
 
         for node in graph_module.graph.nodes:
             if node.op != "call_function":
@@ -74,6 +78,7 @@ class RemoveNoopPass(ExportPass):
                 if node.args[0].target in _DEQUANT_OPS:
                     dequant_nodes += [node.args[0]]
                 node.replace_all_uses_with(node.args[0])
+                modified = True
                 continue
 
             if node.target == torch.ops.aten.slice_copy.Tensor:
@@ -91,13 +96,16 @@ class RemoveNoopPass(ExportPass):
                         if node.args[0].target in _DEQUANT_OPS:
                             dequant_nodes += [node.args[0]]
                         node.replace_all_uses_with(node.args[0])
+                        modified = True
 
-        graph_module.graph.eliminate_dead_code()
-        eliminate_dq_q(graph_module, dequant_nodes)
-        graph_module.graph.lint()
-        graph_module.graph.eliminate_dead_code()
+        if modified:
+            graph_module.graph.eliminate_dead_code()
+        modified |= eliminate_dq_q(graph_module, dequant_nodes)
+        if modified:
+            graph_module.graph.lint()
+            graph_module.graph.eliminate_dead_code()
 
-        return PassResult(graph_module, True)
+        return PassResult(graph_module, modified)
 
 
 class RemoveToCopyPass(ExportPass):
@@ -106,6 +114,7 @@ class RemoveToCopyPass(ExportPass):
     """
 
     def call(self, graph_module: GraphModule) -> PassResult:
+        modified = False
         for node in graph_module.graph.nodes:
             if node.op != "call_function":
                 continue
@@ -122,8 +131,10 @@ class RemoveToCopyPass(ExportPass):
                 and orig_tensor.stride() == node.meta["val"].stride()
             ):
                 node.replace_all_uses_with(node.args[0])
+                modified = True
 
-        graph_module.graph.eliminate_dead_code()
-        graph_module.graph.lint()
+        if modified:
+            graph_module.graph.eliminate_dead_code()
+            graph_module.graph.lint()
 
-        return PassResult(graph_module, True)
+        return PassResult(graph_module, modified)
