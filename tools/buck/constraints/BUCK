@@ -80,3 +80,22 @@ fb_native.constraint_value(
     constraint_setting = ":executorch-program-verification",
     visibility = ["PUBLIC"],
 )
+
+fb_native.config_setting(
+    name = "executorch-builtin-function-name-disabled",
+    constraint_values = [
+        ":builtin-function-name-disabled",
+    ],
+    visibility = ["PUBLIC"],
+)
+
+fb_native.constraint_setting(
+    name = "executorch-builtin-function-name",
+    visibility = ["PUBLIC"],
+)
+
+fb_native.constraint_value(
+    name = "builtin-function-name-disabled",
+    constraint_setting = ":executorch-builtin-function-name",
+    visibility = ["PUBLIC"],
+)

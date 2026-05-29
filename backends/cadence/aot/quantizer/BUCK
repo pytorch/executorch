@@ -15,6 +15,21 @@ fbcode_target(_kind = runtime.python_library,
 )
 
 fbcode_target(_kind = runtime.python_library,
+    name = "pattern_utils",
+    srcs = [
+        "pattern_utils.py",
+    ],
+    typing = True,
+    deps = [
+        ":utils",
+        "//caffe2:torch",
+        "//executorch/backends/cadence/aot:compiler_utils",
+        "//executorch/backends/cadence/aot:pass_utils",
+        "//executorch/backends/cadence/aot:utils",
+    ],
+)
+
+fbcode_target(_kind = runtime.python_library,
     name = "patterns",
     srcs = [
         "patterns.py",
