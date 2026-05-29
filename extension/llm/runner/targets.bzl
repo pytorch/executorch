@@ -112,6 +112,8 @@ def define_common_targets():
         runtime.cxx_library(
             name = "runner_lib" + aten_suffix,
             exported_headers = [
+                "chat_types.h",
+                "jinja_chat_formatter.h",
                 "text_llm_runner.h",
                 "llm_runner_helper.h",
                 "constants.h",
@@ -120,7 +122,13 @@ def define_common_targets():
                 "text_llm_runner.cpp",
                 "llm_runner_helper.cpp",
                 "multimodal_runner.cpp",
-            ],
+            ] + select({
+                # jinja2cpp does not compile under Apple's libc++, so the Jinja
+                # chat formatter is excluded on iOS/macOS.
+                "DEFAULT": ["jinja_chat_formatter.cpp"],
+                "ovr_config//os:iphoneos": [],
+                "ovr_config//os:macos": [],
+            }),
             visibility = ["PUBLIC"],
             compiler_flags = [
                 "-Wno-missing-prototypes",
@@ -139,5 +147,14 @@ def define_common_targets():
                 "//pytorch/tokenizers:sentencepiece",
                 "//pytorch/tokenizers:tekken",
                 "//pytorch/tokenizers:tiktoken",
-            ],
+            ] + select({
+                # chat_templates + jinja2cpp are excluded on Apple because
+                # jinja2cpp does not compile under libc++.
+                "DEFAULT": [
+                    "//executorch/extension/llm/chat_template:chat_templates",
+                    "@fbsource//third-party/jinja2cpp:jinja2cpp",
+                ],
+                "ovr_config//os:iphoneos": [],
+                "ovr_config//os:macos": [],
+            }),
         )
