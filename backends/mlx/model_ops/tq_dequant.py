@@ -34,10 +34,6 @@ Usage::
 
 from __future__ import annotations
 
-from functools import reduce
-from operator import mul
-from typing import Optional, Union
-
 import torch
 from torch import Tensor
 from torch.fx.node import Node
@@ -89,15 +85,17 @@ def tq_dequant_fake(packed: Tensor, norms: Tensor, centroids: Tensor) -> Tensor:
 # MLX handler
 # ---------------------------------------------------------------------------
 
-from executorch.backends.mlx.builder.op_helpers import torch_dtype_to_scalar_type
+from executorch.backends.mlx.builder.op_helpers import (
+    emit_product,
+    emit_shape,
+    torch_dtype_to_scalar_type,
+)
 from executorch.backends.mlx.builder.op_registry import REGISTRY
 from executorch.backends.mlx.builder.program_builder import MLXProgramBuilder
 from executorch.backends.mlx.builder.slot_manager import Slot
 from executorch.backends.mlx.serialization.mlx_graph_schema import (
     IntOrVid,
     MetalKernelNode,
-    MultiplyIntNode,
-    SymSizeNode,
 )
 
 
@@ -137,74 +135,6 @@ _TQ_DEQUANT_SOURCE = """
         out[out_base + 2 * i + 1] = cent[idx_lo] * norm;
     }
 """
-
-
-def _compute_M(P: MLXProgramBuilder, packed_node: Node) -> Union[int, IntOrVid]:
-    """``M`` = numel(packed) / (D/2) = product of leading dims of ``packed``."""
-    val = packed_node.meta.get("val")
-    if val is None:
-        raise ValueError("mlx::tq_dequant: input has no meta['val']")
-    shape = val.shape
-
-    if not isinstance(shape[-1], int):
-        raise NotImplementedError(
-            "mlx::tq_dequant: last dim of packed must be statically known"
-        )
-
-    leading = list(shape[:-1])
-    if all(isinstance(s, int) for s in leading):
-        return reduce(mul, [int(s) for s in leading], 1)
-
-    in_slot = P.slot_map([packed_node])[0]
-    in_tid = P.slot_to_tid(in_slot)
-
-    acc_iov: Optional[IntOrVid] = None
-    for dim_idx, s in enumerate(leading):
-        if isinstance(s, int):
-            d_iov = IntOrVid.from_literal(int(s))
-        else:
-            _, d_val = P.make_tmp_value_slot()
-            P.emit(SymSizeNode(a=in_tid, dim=dim_idx, out=P.slot_to_vid(d_val)))
-            d_iov = P.to_int_or_vid(d_val)
-
-        if acc_iov is None:
-            acc_iov = d_iov
-        else:
-            _, acc_val = P.make_tmp_value_slot()
-            P.emit(MultiplyIntNode(a=acc_iov, b=d_iov, out=P.slot_to_vid(acc_val)))
-            acc_iov = P.to_int_or_vid(acc_val)
-
-    assert acc_iov is not None
-    return acc_iov
-
-
-def _output_shape_flat(
-    P: MLXProgramBuilder, packed_node: Node, packed_slot: Slot
-) -> list:
-    """Output shape: same as packed but with last dim doubled."""
-    val = packed_node.meta["val"]
-    shape = val.shape
-    last_idx = len(shape) - 1
-    out: list = []
-    for dim_idx, s in enumerate(shape):
-        if isinstance(s, int):
-            d = int(s) * 2 if dim_idx == last_idx else int(s)
-            out.append(IntOrVid.from_literal(d))
-        else:
-            if dim_idx == last_idx:
-                raise NotImplementedError(
-                    "mlx::tq_dequant: dynamic last-dim is not supported"
-                )
-            _, d_val = P.make_tmp_value_slot()
-            P.emit(
-                SymSizeNode(
-                    a=P.slot_to_tid(packed_slot),
-                    dim=dim_idx,
-                    out=P.slot_to_vid(d_val),
-                )
-            )
-            out.append(P.to_int_or_vid(d_val))
-    return out
 
 
 @REGISTRY.register(target=[torch.ops.mlx.tq_dequant.default])
@@ -247,9 +177,9 @@ def _tq_dequant_handler(P: MLXProgramBuilder, n: Node) -> Slot:
     out_dtype_int = torch_dtype_to_scalar_type(norms_meta.dtype)
 
     out = P.make_or_get_slot(n)
-    out_shape_flat = _output_shape_flat(P, packed_node, packed_slot)
-    M = _compute_M(P, packed_node)
-    M_iov: IntOrVid = IntOrVid.from_literal(int(M)) if isinstance(M, int) else M
+    leading = emit_shape(P, packed_node, packed_slot, end_dim=-1)
+    out_shape_flat = leading + [IntOrVid.from_literal(D)]
+    M_iov = emit_product(P, leading)
 
     P.emit(
         MetalKernelNode(
@@ -284,6 +214,3 @@ def _tq_dequant_handler(P: MLXProgramBuilder, n: Node) -> Slot:
     )
 
     return out
-
-
-_registered = True

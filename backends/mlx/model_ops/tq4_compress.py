@@ -30,10 +30,6 @@ Usage::
 
 from __future__ import annotations
 
-from functools import reduce
-from operator import mul
-from typing import Optional, Union
-
 import torch
 from torch import Tensor
 from torch.fx.node import Node
@@ -78,15 +74,17 @@ def tq4_compress_fake(values: Tensor, boundaries: Tensor) -> Tensor:
 # MLX handler
 # ---------------------------------------------------------------------------
 
-from executorch.backends.mlx.builder.op_helpers import torch_dtype_to_scalar_type
+from executorch.backends.mlx.builder.op_helpers import (
+    emit_product,
+    emit_shape,
+    torch_dtype_to_scalar_type,
+)
 from executorch.backends.mlx.builder.op_registry import REGISTRY
 from executorch.backends.mlx.builder.program_builder import MLXProgramBuilder
 from executorch.backends.mlx.builder.slot_manager import Slot
 from executorch.backends.mlx.serialization.mlx_graph_schema import (
     IntOrVid,
     MetalKernelNode,
-    MultiplyIntNode,
-    SymSizeNode,
 )
 
 
@@ -107,93 +105,6 @@ _TQ4_COMPRESS_SOURCE = """
     }
     out[gid] = (idx_hi << 4) | idx_lo;
 """
-
-
-def _compute_output_numel(P: MLXProgramBuilder, node: Node) -> Union[int, IntOrVid]:
-    """Output numel = numel(input) / 2. Returns a static int when the
-    full shape is known, else an IntOrVid built from SymSize +
-    MultiplyInt nodes."""
-    val = node.meta.get("val")
-    if val is None:
-        raise ValueError("mlx::tq4_compress: input node has no meta['val']")
-    shape = val.shape
-
-    if all(isinstance(s, int) for s in shape):
-        return reduce(mul, [int(s) for s in shape], 1) // 2
-
-    in_slot = P.slot_map([node])[0]
-    in_tid = P.slot_to_tid(in_slot)
-
-    last_idx = len(shape) - 1
-    acc_iov: Optional[IntOrVid] = None
-    for dim_idx in range(len(shape)):
-        s = shape[dim_idx]
-        if isinstance(s, int):
-            d = int(s)
-            if dim_idx == last_idx:
-                d //= 2
-            d_iov = IntOrVid.from_literal(d)
-        else:
-            if dim_idx == last_idx:
-                # The schema has no integer-divide-by-Vid op; require the
-                # last dim be static so the /2 stays a literal.
-                raise NotImplementedError(
-                    "mlx::tq4_compress: dynamic last-dim is not supported"
-                )
-            _, d_val = P.make_tmp_value_slot()
-            P.emit(
-                SymSizeNode(
-                    a=in_tid,
-                    dim=dim_idx,
-                    out=P.slot_to_vid(d_val),
-                )
-            )
-            d_iov = P.to_int_or_vid(d_val)
-
-        if acc_iov is None:
-            acc_iov = d_iov
-        else:
-            _, acc_val = P.make_tmp_value_slot()
-            P.emit(
-                MultiplyIntNode(
-                    a=acc_iov,
-                    b=d_iov,
-                    out=P.slot_to_vid(acc_val),
-                )
-            )
-            acc_iov = P.to_int_or_vid(acc_val)
-
-    assert acc_iov is not None
-    return acc_iov
-
-
-def _output_shape_flat(P: MLXProgramBuilder, node: Node, in_slot: Slot) -> list:
-    """Output shape: same as input but with last dim halved."""
-    val = node.meta["val"]
-    shape = val.shape
-    last_idx = len(shape) - 1
-    out: list = []
-    for dim_idx, s in enumerate(shape):
-        if isinstance(s, int):
-            d = int(s)
-            if dim_idx == last_idx:
-                d //= 2
-            out.append(IntOrVid.from_literal(d))
-        else:
-            if dim_idx == last_idx:
-                raise NotImplementedError(
-                    "mlx::tq4_compress: dynamic last-dim is not supported"
-                )
-            _, d_val = P.make_tmp_value_slot()
-            P.emit(
-                SymSizeNode(
-                    a=P.slot_to_tid(in_slot),
-                    dim=dim_idx,
-                    out=P.slot_to_vid(d_val),
-                )
-            )
-            out.append(P.to_int_or_vid(d_val))
-    return out
 
 
 @REGISTRY.register(target=[torch.ops.mlx.tq4_compress.default])
@@ -232,16 +143,18 @@ def _tq4_compress_handler(P: MLXProgramBuilder, n: Node) -> Slot:
         )
     if int(last_dim) % 2 != 0:
         raise ValueError(f"mlx::tq4_compress: last dim must be even; got {last_dim}")
+    half_last = int(last_dim) // 2
 
     in_dtype_int = torch_dtype_to_scalar_type(values_meta.dtype)
 
     out = P.make_or_get_slot(n)
-    out_shape_flat = _output_shape_flat(P, values_node, values_slot)
+    leading = emit_shape(P, values_node, values_slot, end_dim=-1)
+    half_last_iov = IntOrVid.from_literal(half_last)
+    out_shape_flat = leading + [half_last_iov]
 
-    n_out = _compute_output_numel(P, values_node)
-    n_out_iov: IntOrVid = (
-        IntOrVid.from_literal(int(n_out)) if isinstance(n_out, int) else n_out
-    )
+    # One thread per output byte, so the grid size is the output numel
+    # (product of leading dims times the halved last dim).
+    n_out_iov = emit_product(P, leading + [half_last_iov])
 
     P.emit(
         MetalKernelNode(
@@ -274,6 +187,3 @@ def _tq4_compress_handler(P: MLXProgramBuilder, n: Node) -> Slot:
     )
 
     return out
-
-
-_registered = True
