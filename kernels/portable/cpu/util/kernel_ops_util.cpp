@@ -380,6 +380,8 @@ bool check_convolution_args(
     int64_t groups,
     const Tensor& out) {
   ET_LOG_AND_RETURN_IF_FALSE(tensors_have_same_dtype(in, weight, out));
+  ET_LOG_AND_RETURN_IF_FALSE(
+      executorch::runtime::tensor_is_realhbf16_type(in));
 
   ET_LOG_AND_RETURN_IF_FALSE(tensor_is_default_or_channels_last_dim_order(in));
   ET_LOG_AND_RETURN_IF_FALSE(
@@ -395,6 +397,8 @@ bool check_convolution_args(
 
   if (bias.has_value()) {
     ET_LOG_AND_RETURN_IF_FALSE(tensor_is_rank(bias.value(), 1));
+    ET_LOG_AND_RETURN_IF_FALSE(
+        executorch::runtime::tensor_is_realhbf16_type(bias.value()));
     ET_CHECK_OR_RETURN_FALSE(
         bias.value().size(0) == transposed ? groups * weight.size(1)
                                            : weight.size(0),
@@ -510,6 +514,10 @@ bool check_cumsum_args(
     optional<ScalarType> dtype,
     Tensor& out) {
   ET_LOG_AND_RETURN_IF_FALSE(dim_is_valid(dim, in.dim()));
+  ET_LOG_AND_RETURN_IF_FALSE(
+      executorch::runtime::tensor_is_realhbbf16_type(in));
+  ET_LOG_AND_RETURN_IF_FALSE(
+      executorch::runtime::tensor_is_realhbbf16_type(out));
 
   if (dtype.has_value()) {
     ET_LOG_AND_RETURN_IF_FALSE(dtype.value() == out.scalar_type());

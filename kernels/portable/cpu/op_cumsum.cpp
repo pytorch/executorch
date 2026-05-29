@@ -44,6 +44,14 @@ void cumsum_tensors(
   if (self.numel() == 0) {
     return;
   }
+  // Defense-in-depth: get_load_to_compute_fn returns nullptr (and sets
+  // ctx.fail()) when the input tensor's scalar_type is outside the dispatcher's
+  // supported set. check_cumsum_args() in kernel_ops_util.cpp now rejects such
+  // inputs at the trust boundary, but we keep this guard so any future caller
+  // of cumsum_tensors is safe.
+  if (load_self == nullptr) {
+    return;
+  }
 
   const char* const input_data_base =
       reinterpret_cast<const char*>(self.const_data_ptr());

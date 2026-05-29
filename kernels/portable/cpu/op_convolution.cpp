@@ -203,6 +203,15 @@ void convolution_wrapper(
     bool transposed,
     int64_t groups,
     Tensor& out) {
+  // Defense-in-depth: get_load_to_compute_fn returns nullptr (and sets
+  // ctx.fail()) when bias' scalar_type is outside the dispatcher's
+  // supported set. check_convolution_args() in kernel_ops_util.cpp now
+  // rejects such bias tensors at the trust boundary, but we keep this guard
+  // so any future caller of convolution_wrapper is safe; load_bias is
+  // dereferenced inside the wrapper / conv2d_impl whenever bias has data.
+  if (bias.has_value() && load_bias == nullptr) {
+    return;
+  }
   SizesArrayRef in_sizes = in.sizes();
   SizesArrayRef weight_sizes = weight.sizes();
   SizesArrayRef out_sizes = out.sizes();
