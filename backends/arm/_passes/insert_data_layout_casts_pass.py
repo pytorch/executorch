@@ -6,13 +6,13 @@
 from typing import Set, Type
 
 import torch
-from executorch.backends.arm._passes import ArmPass
+from executorch.backends.arm._passes import ArmOpTargetedPass
 from executorch.backends.arm.tosa.specification import get_context_spec
 from executorch.exir.dialects._ops import ops as exir_ops
 from executorch.exir.pass_base import ExportPass, NodeMetadata
 
 
-class InsertDataLayoutCastsPass(ArmPass):
+class InsertDataLayoutCastsPass(ArmOpTargetedPass):
     """Insert casts around data layout operators when their dtype is not
     supported by the active TOSA specification.
 
@@ -45,7 +45,7 @@ class InsertDataLayoutCastsPass(ArmPass):
         exir_ops.edge.aten.slice_copy.Tensor,
         exir_ops.edge.aten.flip.default,
     }
-    targeted_ops = _concat_ops | _single_input_ops
+    target_ops = _concat_ops | _single_input_ops
 
     _fp_to_int_map = {
         torch.float16: torch.int16,
@@ -60,7 +60,7 @@ class InsertDataLayoutCastsPass(ArmPass):
     }
 
     def call_operator(self, op, args, kwargs, meta):
-        if op not in self.targeted_ops:
+        if op not in self.target_ops:
             return super().call_operator(op, args, kwargs, meta)
 
         if op in self._concat_ops:

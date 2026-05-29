@@ -6,7 +6,7 @@
 from typing import Set, Type
 
 import torch
-from executorch.backends.arm._passes import ArmPass
+from executorch.backends.arm._passes import ArmOpTargetedPass
 from executorch.exir.dialects._ops import ops as exir_ops
 from executorch.exir.pass_base import ExportPass
 
@@ -71,13 +71,15 @@ def _get_elu_parameters(op, args, kwargs):
     return alpha, scale, input_scale
 
 
-class ConvertEluFamilyToEluPass(ArmPass):
+class ConvertEluFamilyToEluPass(ArmOpTargetedPass):
     """Convert SELU/CELU ops to equivalent parameterized ELU ops."""
 
     _passes_required_after: Set[Type[ExportPass]] = set()
+    target_ops = selu_ops + celu_ops
+    check_allowed_to_transform = True
 
     def call_operator(self, op, args, kwargs, meta):
-        if op not in selu_ops + celu_ops or not self.allowed_to_transform(meta):
+        if op not in self.target_ops or not self.allowed_to_transform(meta):
             return super().call_operator(op, args, kwargs, meta, updated=False)
 
         input_ = args[0]
@@ -96,7 +98,7 @@ class ConvertEluFamilyToEluPass(ArmPass):
         )
 
 
-class DecomposeEluPass(ArmPass):
+class DecomposeEluPass(ArmOpTargetedPass):
     """A transformation pass that decomposes unsupported 'aten.elu' operations
     into a combination of supported TOSA-equivalent operations.
 
@@ -119,9 +121,10 @@ class DecomposeEluPass(ArmPass):
     """
 
     _passes_required_after: Set[Type[ExportPass]] = set()
+    target_ops = edge_elu_family_ops
 
     def call_operator(self, op, args, kwargs, meta):
-        if op not in edge_elu_family_ops:
+        if op not in self.target_ops:
             return super().call_operator(op, args, kwargs, meta, updated=False)
 
         if self._is_quantized_meta(meta):
