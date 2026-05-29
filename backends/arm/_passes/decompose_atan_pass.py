@@ -7,7 +7,7 @@ import logging
 from math import pi
 from typing import Set, Type
 
-from executorch.backends.arm._passes import ArmPass
+from executorch.backends.arm._passes import ArmOpTargetedPass
 from executorch.backends.arm._passes.insert_table_ops import InsertTableOpsPass
 from executorch.backends.arm._passes.match_arg_dtype_pass import MatchArgDtypePass
 from executorch.backends.arm._passes.match_arg_ranks_pass import MatchArgRanksPass
@@ -40,7 +40,7 @@ def _get_atan_ops(op):
     )
 
 
-class DecomposeAtanPass(ArmPass):
+class DecomposeAtanPass(ArmOpTargetedPass):
     """Decomposes the atan operator into a rational (Padé) approximation."""
 
     _passes_required_after: Set[Type[ExportPass]] = {
@@ -49,6 +49,7 @@ class DecomposeAtanPass(ArmPass):
         MatchArgDtypePass,
         ReplaceScalarWithTensorByProfilePass,
     }
+    target_ops = (edge_atan,)
 
     def _rational_approximation(self, z, ops, meta):
         """Creates a (2,1) Padé approximation for atan(x) on [-1, 1]."""
@@ -77,7 +78,7 @@ class DecomposeAtanPass(ArmPass):
         return super().call_operator(op_mul, (z, prod), {}, meta, updated=True)
 
     def call_operator(self, op, args, kwargs, meta):
-        if op is not edge_atan:
+        if op not in self.target_ops:
             return super().call_operator(op, args, kwargs, meta, updated=False)
 
         if self._is_quantized_meta(meta):

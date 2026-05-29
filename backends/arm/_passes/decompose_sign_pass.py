@@ -7,7 +7,7 @@ from typing import Set, Type
 
 import torch
 
-from executorch.backends.arm._passes import ArmPass
+from executorch.backends.arm._passes import ArmOpTargetedPass
 from executorch.exir.dialects._ops import ops as exir_ops
 from executorch.exir.pass_base import ExportPass
 
@@ -44,15 +44,16 @@ def get_ops(op):
         raise ValueError(f"Unsupported operator: {op}")
 
 
-class DecomposeSignPass(ArmPass):
+class DecomposeSignPass(ArmOpTargetedPass):
     """Decomposes the sign operator into a sequence of operations that are
     supported by the Arm backend.
     """
 
     _passes_required_after: Set[Type[ExportPass]] = set()
+    target_ops = (edge_sign, aten_sign)
 
     def call_operator(self, op, args, kwargs, meta):
-        if op not in (edge_sign, aten_sign) or not self.allowed_to_transform(meta):
+        if op not in self.target_ops or not self.allowed_to_transform(meta):
             return super().call_operator(op, args, kwargs, meta)
 
         gt_op, lt_op, where_op, neg_op, mul_op, add_op = get_ops(op)
