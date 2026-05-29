@@ -52,6 +52,7 @@ from executorch.backends.mlx.serialization.mlx_graph_schema import (
     Atan2Node,
     BitwiseAndNode,
     BitwiseInvertNode,
+    BitwiseOrNode,
     BroadcastToNode,
     CeilNode,
     ClipNode,
@@ -488,6 +489,12 @@ _BINARY_OPS: List[Tuple[List[Any], Any, str, bool]] = [
         [torch.ops.aten.bitwise_and.Tensor, torch.ops.aten.bitwise_and.Scalar],
         BitwiseAndNode,
         "aten.bitwise_and",
+        True,
+    ),
+    (
+        [torch.ops.aten.bitwise_or.Tensor, torch.ops.aten.bitwise_or.Scalar],
+        BitwiseOrNode,
+        "aten.bitwise_or",
         True,
     ),
     (
