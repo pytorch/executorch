@@ -5,7 +5,7 @@
 
 from typing import Set, Type
 
-from executorch.backends.arm._passes import ArmPass, DecomposeDivPass
+from executorch.backends.arm._passes import ArmOpTargetedPass, DecomposeDivPass
 from executorch.exir.dialects._ops import ops as exir_ops
 from executorch.exir.pass_base import ExportPass
 
@@ -13,13 +13,14 @@ from executorch.exir.pass_base import ExportPass
 edge_tan_op = exir_ops.edge.aten.tan.default
 
 
-class DecomposeTanPass(ArmPass):
+class DecomposeTanPass(ArmOpTargetedPass):
     """Decomposes tan to sin/cos."""
 
     _passes_required_after: Set[Type[ExportPass]] = {DecomposeDivPass}
+    target_ops = (edge_tan_op,)
 
     def call_operator(self, op, args, kwargs, meta, updated=False):
-        if op != edge_tan_op:
+        if op not in self.target_ops:
             return super().call_operator(op, args, kwargs, meta, updated)
         # Skip quantized tan - it is decomposed as one single table op
         if self._is_quantized_meta(meta):

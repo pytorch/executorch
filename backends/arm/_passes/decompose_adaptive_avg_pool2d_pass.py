@@ -8,7 +8,7 @@ from typing import Set, Type
 
 import torch
 
-from executorch.backends.arm._passes import ArmPass
+from executorch.backends.arm._passes import ArmOpTargetedPass
 from executorch.backends.arm._passes.decompose_avg_pool2d_pass import (
     DecomposeAvgPool2dPass,
 )
@@ -36,7 +36,7 @@ def _get_decomposition(op) -> tuple:
     raise RuntimeError(f"Unable to get decomposition for op {op}")
 
 
-class DecomposeAdaptiveAvgPool2dPass(ArmPass):
+class DecomposeAdaptiveAvgPool2dPass(ArmOpTargetedPass):
     """Decomposes AdaptiveAvgPool2d into AvgPool2d operations.
 
     An input tensor of shape (N, C, H, W) is transformed into an output tensor
@@ -47,9 +47,11 @@ class DecomposeAdaptiveAvgPool2dPass(ArmPass):
     """
 
     _passes_required_after: Set[Type[ExportPass]] = {DecomposeAvgPool2dPass}
+    target_ops = edge_ops + aten_ops
+    check_allowed_to_transform = True
 
     def call_operator(self, op, args, kwargs, meta, updated=False):
-        if op not in (edge_ops + aten_ops) or not self.allowed_to_transform(meta):
+        if op not in self.target_ops or not self.allowed_to_transform(meta):
             return super().call_operator(op, args, kwargs, meta, updated)
 
         avg_pool2d_op, slice_op, cat_op = _get_decomposition(op)
