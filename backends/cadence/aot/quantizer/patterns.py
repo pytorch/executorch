@@ -9,7 +9,7 @@
 import operator
 from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
-from typing import List, Tuple, Union
+from typing import List, Optional, Tuple, Union
 
 import torch
 from executorch.backends.cadence.aot.quantizer.utils import get_bias_qparams
@@ -78,6 +78,22 @@ class QuantizationPattern(ABC):
         the backend. Refer to the QuantFusion pass for examples.
         """
         pass
+
+    def anchor_ops(self) -> tuple[OpOverload, ...]:
+        return tuple(self.partition_types())
+
+    def fuse(
+        self,
+        gm: fx.GraphModule,
+        anchor_node: fx.Node,
+    ) -> Optional[fx.Node]:
+        """Replace the dq→op→q subgraph around ``anchor_node`` with a fused op.
+
+        Called by ``QuantFusionPass`` for each node matching ``anchor_ops()``.
+        Returns the new fused node on success, or ``None`` to skip this match.
+        Subclasses override to implement pattern-specific fusion logic.
+        """
+        return None
 
 
 class AddmmPattern(QuantizationPattern):

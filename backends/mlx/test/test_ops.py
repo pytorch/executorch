@@ -24,6 +24,7 @@ Usage:
 See README.md in this directory for full documentation.
 """
 
+import os
 from typing import Callable, Dict, List, Optional, Tuple
 
 import torch
@@ -5678,7 +5679,20 @@ class QuantizedLinearTest(OpTestCase):
             cls(group_size=128),
             cls(qdtype=torch.int2),
             cls(qdtype=torch.int8),
+            # group_size=16: exercises the non-fused dequantize+matmul path
+            # (requires ET_MLX_ALLOW_NON_FUSED_QUANTIZED_OPS=1).
+            cls(qdtype=torch.int8, group_size=16),
+            cls(qdtype=torch.int4, group_size=16),
+            cls(qdtype=torch.int8, group_size=16, bias=False),
         ]
+
+    def generate_test_files(self, verbose=False):
+        if self.group_size < 32:
+            os.environ["ET_MLX_ALLOW_NON_FUSED_QUANTIZED_OPS"] = "1"
+        try:
+            return super().generate_test_files(verbose=verbose)
+        finally:
+            os.environ.pop("ET_MLX_ALLOW_NON_FUSED_QUANTIZED_OPS", None)
 
     def create_model(self) -> nn.Module:
         model = LinearModel(self.in_features, self.out_features, bias=self.bias)
