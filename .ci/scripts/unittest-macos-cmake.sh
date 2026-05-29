@@ -12,13 +12,25 @@ set -eux
 export TORCHINDUCTOR_CACHE_DIR="$(mktemp -d "${RUNNER_TEMP:-/tmp}/torchinductor_cache_XXXXXX")"
 trap 'rm -rf "${TORCHINDUCTOR_CACHE_DIR}"' EXIT
 
-# EXPERIMENT: run without xdist entirely so output is unbuffered and each test
-# name prints immediately (with -n 1, xdist still buffers all output in a
-# worker process, hiding which test is hanging). -v prints test names as they
-# start; faulthandler_timeout dumps threads if a single test stalls.
+# AOTI-packaged .so invocation (torch._inductor.package._package.__call__)
+# hangs on macOS CI runners — the thread blocks in native code so
+# faulthandler cannot even dump a traceback. Skip every test that loads
+# and calls an AOTI-packaged module until the hang is root-caused.
+AOTI_SKIPS=(
+  --ignore=examples/models/llama3_2_vision/preprocess/test_preprocess.py
+  --ignore=examples/models/llama3_2_vision/vision_encoder/test/test_vision_encoder.py
+  --ignore=examples/models/llama3_2_vision/text_decoder/test/test_text_decoder.py
+  --deselect=extension/llm/modules/test/test_position_embeddings.py::TilePositionalEmbeddingTest::test_tile_positional_embedding_aoti
+  --deselect=extension/llm/modules/test/test_position_embeddings.py::TiledTokenPositionalEmbeddingTest::test_tiled_token_positional_embedding_aoti
+  --deselect=extension/llm/modules/test/test_attention.py::AttentionTest::test_attention_aoti
+)
+
+# Run without xdist so output is unbuffered; -v prints test names as they
+# complete; faulthandler_timeout dumps threads if a single test stalls.
 ${CONDA_RUN} pytest -p no:xdist -v --cov=./ --cov-report=xml \
   --timeout=1500 --timeout-method=thread \
-  -o faulthandler_timeout=180
+  -o faulthandler_timeout=180 \
+  "${AOTI_SKIPS[@]}"
 # Run gtest
 LLVM_PROFDATA="xcrun llvm-profdata" LLVM_COV="xcrun llvm-cov" \
 ${CONDA_RUN} test/run_oss_cpp_tests.sh
