@@ -37,6 +37,8 @@ from github_utils import (  # noqa: E402
 
 REPO_ROOT = Path(__file__).resolve().parent.parent.parent
 BLOATY_CONFIG = REPO_ROOT / "test" / "bloaty" / "executorch.bloaty"
+# BLOATY env var can hold a space-separated command (e.g. "conda run -p /env bloaty").
+BLOATY_CMD = os.environ.get("BLOATY", "bloaty").split()
 COMMENT_MARKER = "<!-- executorch-ci-comment kind=bloaty-binary-size -->"
 DELTA_NOISE_BYTES = 16
 COMMENT_BODY_CAP = 60_000  # GitHub hard limit is 65536; leave headroom.
@@ -48,7 +50,7 @@ BOT_LOGINS = {"github-actions[bot]", "pytorch-bot[bot]", "facebook-github-bot"}
 def run_bloaty(elf: Path, data_sources: str) -> List[Dict[str, int]]:
     """Parse `bloaty --csv -d <data_sources> -s file <elf>` into rows."""
     cmd = [
-        "bloaty",
+        *BLOATY_CMD,
         "-c",
         str(BLOATY_CONFIG),
         "-d",
@@ -80,7 +82,7 @@ def bloaty_text(
     elf: Path, base_elf: Optional[Path], data_sources: str, top_n: int
 ) -> str:
     cmd = [
-        "bloaty",
+        *BLOATY_CMD,
         "-c",
         str(BLOATY_CONFIG),
         "-d",

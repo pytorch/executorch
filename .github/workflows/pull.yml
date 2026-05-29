@@ -619,15 +619,16 @@ jobs:
         # `set -e` is disabled by the outer `|| true`, so commands need explicit
         # `|| exit 1` to abort the subshell on failure.
         (
-          # bloaty isn't in apt on the executorch-ubuntu-22.04-arm-sdk image;
-          # install via conda-forge (conda is already on PATH from the env setup).
-          if ! command -v bloaty >/dev/null; then
-            conda install -y -p "${CONDA_ENV}" -c conda-forge bloaty || exit 1
+          # bloaty isn't in apt on the executorch-ubuntu-22.04-arm-sdk image and
+          # the system libstdc++ is too old for the conda-forge build, so install
+          # bloaty into a dedicated conda env that also brings libstdcxx-ng.
+          # `conda run` then sets LD_LIBRARY_PATH for us.
+          bloaty_env=/tmp/bloaty-conda-env
+          if [[ ! -x "${bloaty_env}/bin/bloaty" ]]; then
+            conda create -y -p "${bloaty_env}" -c conda-forge bloaty libstdcxx-ng || exit 1
           fi
-          # conda-forge's bloaty links against a newer libstdc++ than the system
-          # ships. Prepend the conda env's lib dir so its libstdc++ is found first.
-          export LD_LIBRARY_PATH="${CONDA_ENV}/lib:${LD_LIBRARY_PATH:-}"
-          bloaty --version || exit 1
+          bloaty_cmd=("conda" "run" "--no-capture-output" "-p" "${bloaty_env}" "bloaty")
+          "${bloaty_cmd[@]}" --version || exit 1
 
           tmp_out=/tmp/bloaty-out
           rm -rf "${tmp_out}" && mkdir -p "${tmp_out}"
@@ -644,7 +645,7 @@ jobs:
           elif [[ "${{ github.event_name }}" == "pull_request" ]]; then
             measure_args+=(--base-build-failed --base-sha "${base_sha}")
           fi
-          python .github/scripts/bloaty_diff.py measure "${measure_args[@]}" || exit 1
+          BLOATY="${bloaty_cmd[*]}" python .github/scripts/bloaty_diff.py measure "${measure_args[@]}" || exit 1
           if [[ "${{ github.event_name }}" == "pull_request" ]]; then
             echo "${{ github.event.pull_request.number }}" > "${tmp_out}/pr_number.txt"
           fi
