@@ -4,11 +4,13 @@
 # LICENSE file in the root directory of this source tree.
 
 import numpy as np
+import torch
 
 from executorch.backends.nxp.backend.data_format import DataFormat, NXP_NODE_FORMAT
 from executorch.backends.nxp.backend.edge_helper import node_has_well_defined_shape
 from executorch.backends.nxp.backend.ir.converter.node_converter import (
     CustomDelegationOptions,
+    is_not_qdq_node,
     NodeConverter,
 )
 from executorch.backends.nxp.backend.ir.tflite_generator.builtin_options.resize_bilinear_options import (
@@ -16,11 +18,34 @@ from executorch.backends.nxp.backend.ir.tflite_generator.builtin_options.resize_
 )
 from executorch.backends.nxp.backend.neutron_target_spec import NeutronTargetSpec
 from torch.fx import Node
+from torch.fx.passes.infra.partitioner import Partition
 from torch.nn import Parameter
 
 
 # noinspection SpellCheckingInspection
 class UpsampleBilinear2DConverter(NodeConverter):
+
+    @classmethod
+    def supports_partitioning_result(
+        cls,
+        node: Node,
+        partition_list: list[Partition],
+        custom_delegation_options: CustomDelegationOptions,
+        neutron_target_spec: NeutronTargetSpec,
+        parameters_mapping: dict[str, Parameter],
+    ) -> bool:
+        input_shape = node.all_input_nodes[0].meta["val"].shape
+        output_shape = node.meta["val"].shape
+        is_alone_in_partition = cls.is_node_alone_in_partition(
+            node, partition_list, filter_fn=is_not_qdq_node
+        )
+
+        if is_alone_in_partition and input_shape == output_shape:
+            # The operator is a no-op, so the Neutron Converter will skip it. If it's the only node in the
+            #  partition, the graph would end up empty.
+            return False
+
+        return True
 
     @staticmethod
     def _is_supported_in_IR(
@@ -36,6 +61,14 @@ class UpsampleBilinear2DConverter(NodeConverter):
                 " format. Please report this."
             )
 
+        # The conversion requires the output shape to be known and static.
+        if not node_has_well_defined_shape(node):
+            return False
+
+        if len(node.meta["val"].shape) != 4:
+            # Unexpected case. The input should always be 4D.
+            return False
+
         return True
 
     @staticmethod
@@ -45,38 +78,58 @@ class UpsampleBilinear2DConverter(NodeConverter):
         parameters_mapping: dict[str, Parameter],
         custom_delegation_options: CustomDelegationOptions,
     ) -> bool:
-        # Neutron requires static shapes.
-        #  neutron-converter/src/OperatorC/UpsamplePlugin.cpp?at=NEUTRON_SOFTWARE_2.2.3#74
-        if not node_has_well_defined_shape(node):
-            return False
-
-        if len(node.meta["val"].shape) != 4:
-            # Unexpected case. The input should always be 4D.
-            return False
-
-        # The tensors here use the channels first format (NCHW).
+        # The tensors are always 4D and use the channels first format (NCHW).
         _, in_c, in_h, in_w = node.all_input_nodes[0].meta["val"].shape
         _, _, out_h, out_w = node.meta["val"].shape
 
-        # Neutron supports only the doubling and quadrupleing of both height and width at the same time.
-        #  neutron-library/src/utils/NeutronLibraryInterrogation.cpp?at=refs%2Ftags%2FNEUTRON_SOFTWARE_2.2.3#778
-        supported_scales = [2, 4]
-        if not any(
-            in_h * scale == out_h and in_w * scale == out_w
-            for scale in supported_scales
-        ):
-            return False
+        if custom_delegation_options.use_new_flow_neutron_c:
+            # Requirements specified by the new Neutron flow documentation.
 
-        # Neutron requires the input channels to be a multiple of `num_macs`.
-        #  neutron-library/src/utils/NeutronLibraryInterrogation.cpp?at=refs%2Ftags%2FNEUTRON_SOFTWARE_2.2.3#777
-        if in_c % neutron_target_spec.get_num_macs() != 0:
-            return False
+            if not NodeConverter.uses_quantization_type_for_io(
+                node,
+                supported_types=[torch.int8, torch.uint8],
+                input_indices=[0],
+                output_indices=[0],
+            ):
+                return False
+
+            supported_scales = [1, 2, 4, 8]
+            align_corners = node.args[2]
+            if align_corners:
+                if in_h == 1 or in_w == 1:
+                    return False  # Avoid division by 0.
+                h_scale = (out_h - 1) / (in_h - 1)
+                w_scale = (out_w - 1) / (in_w - 1)
+            else:
+                h_scale = out_h / in_h
+                w_scale = out_w / in_w
+
+            # The H and W scales don't need to be equal, but both must be supported.
+            if (h_scale not in supported_scales) or (w_scale not in supported_scales):
+                return False
+
+        else:
+            # Requirements of the old Neutron flow.
+
+            # Neutron supports only the doubling and quadrupleing of both height and width at the same time.
+            #  neutron-library/src/utils/NeutronLibraryInterrogation.cpp?at=refs%2Ftags%2FNEUTRON_SOFTWARE_2.2.3#778
+            supported_scales = [2, 4]
+            if not any(
+                in_h * scale == out_h and in_w * scale == out_w
+                for scale in supported_scales
+            ):
+                return False
+
+            # Neutron requires the input channels to be a multiple of `num_macs`.
+            #  neutron-library/src/utils/NeutronLibraryInterrogation.cpp?at=refs%2Ftags%2FNEUTRON_SOFTWARE_2.2.3#777
+            if in_c % neutron_target_spec.get_num_macs() != 0:
+                return False
 
         return True
 
     def convert(self, node: Node):
         """Convert the `aten.upsample_bilinear2d.vec` operator to Neutron IR `ResizeBilinear`.
-        The schema is:
+        The ExecuTorch schema is:
         aten::upsample_bilinear2d.vec(
             Tensor input,
             SymInt[]? output_size,
@@ -109,6 +162,7 @@ class UpsampleBilinear2DConverter(NodeConverter):
         #  and the second one is what NeutronIR uses when `align_corners == False and half_pixel_centers == True`.
         # https://github.com/tensorflow/tensorflow/blob/v2.20.0/tensorflow/lite/kernels/internal/reference/resize_bilinear.h#L82-L88
         # https://github.com/tensorflow/tensorflow/blob/v2.20.0/tensorflow/lite/kernels/internal/reference/resize_bilinear.h#L172-L180
+        # Also, the new Neutron flow requires that `align_corners` and `half_pixel_centers` are not True simultainiously.
         align_corners = node.args[2]
         half_pixel_centers = not align_corners
         t_op.builtin_options = ResizeBilinear(align_corners, half_pixel_centers)

@@ -278,6 +278,7 @@ jobs:
       matrix:
         include:
           - test_arm_backend: test_pytest_ops_vkml
+          - test_arm_backend: test_pytest_models_vkml
           - test_arm_backend: test_ootb_tests_vgf
       fail-fast: false
     with:

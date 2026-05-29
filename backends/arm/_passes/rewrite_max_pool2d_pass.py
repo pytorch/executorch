@@ -5,7 +5,7 @@
 
 from typing import Set, Type
 
-from executorch.backends.arm._passes import ArmPass
+from executorch.backends.arm._passes import ArmOpTargetedPass
 from executorch.backends.arm._passes.arm_pass_utils import to_2tuple
 from executorch.backends.arm.constants import NHWC_INVERSE_ORDER, NHWC_ORDER
 from executorch.backends.arm.operators.operator_validation_utils import (
@@ -17,13 +17,14 @@ from executorch.exir.pass_base import ExportPass
 edge_max_pool2d_ops = (exir_ops.edge.aten.max_pool2d.default,)
 
 
-class RewriteMaxPool2dPass(ArmPass):
+class RewriteMaxPool2dPass(ArmOpTargetedPass):
     """Rewrite max_pool2d ops to TOSA MAX_POOL2D."""
 
     _passes_required_after: Set[Type[ExportPass]] = set()
+    target_ops = edge_max_pool2d_ops
 
     def call_operator(self, op, args, kwargs, meta):
-        if op not in edge_max_pool2d_ops:
+        if op not in self.target_ops:
             return super().call_operator(op, args, kwargs, meta)
 
         x = args[0]
