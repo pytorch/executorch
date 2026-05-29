@@ -26,6 +26,10 @@ class InsertConstShapesPass(ArmPass):
         exir_ops.edge.aten.repeat.default,
     }
 
+    def __init__(self) -> None:
+        super().__init__()
+        self._const_shape_cache: dict[tuple[int, ...], Any] = {}
+
     @staticmethod
     def _is_shape_arg(arg: Any) -> bool:
         """Return True when `arg` looks like a literal shape list/tuple."""
@@ -46,13 +50,17 @@ class InsertConstShapesPass(ArmPass):
                     # Insert a const node for the shape argument
                     if op == exir_ops.edge.aten.view_copy.default:
                         arg = meta.data["val"].shape
-                    const_node = super().call_shape_operator(
-                        exir_ops.backend.tosa.CONST_SHAPE.default,
-                        (arg,),
-                        {},
-                        meta,
-                        True,
-                    )
+                    shape = tuple(arg)
+                    const_node = self._const_shape_cache.get(shape)
+                    if const_node is None:
+                        const_node = super().call_shape_operator(
+                            exir_ops.backend.tosa.CONST_SHAPE.default,
+                            (arg,),
+                            {},
+                            meta,
+                            True,
+                        )
+                        self._const_shape_cache[shape] = const_node
                     new_args.append(const_node)
                     updated = True
                 else:

@@ -793,9 +793,14 @@ bool VgfRepr::process_vgf(
     return false;
   }
 
-  vector<VkDataGraphPipelineSessionBindPointRequirementARM>
-      bind_point_requirements;
-  bind_point_requirements.resize(bind_point_count);
+  vector<VkDataGraphPipelineSessionBindPointRequirementARM> bind_point_requirements(
+      bind_point_count,
+      {
+          .sType =
+              VK_STRUCTURE_TYPE_DATA_GRAPH_PIPELINE_SESSION_BIND_POINT_REQUIREMENT_ARM,
+          .pNext = nullptr,
+      });
+
   result = vkGetDataGraphPipelineSessionBindPointRequirementsARM(
       vk_device,
       &bind_point_requirements_info,

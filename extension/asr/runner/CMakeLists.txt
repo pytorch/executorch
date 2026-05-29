@@ -22,7 +22,7 @@ endif()
 include(${EXECUTORCH_ROOT}/tools/cmake/Utils.cmake)
 
 set(runner_deps executorch_core extension_module extension_tensor
-                tokenizers::tokenizers
+                extension_llm_runner tokenizers::tokenizers
 )
 
 # Define runner library

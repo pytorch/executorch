@@ -28,7 +28,7 @@ fi
 script_dir=$(realpath "$(dirname "${BASH_SOURCE[0]}")")
 et_root_dir=$(realpath "${script_dir}/../../..")
 build_executorch="${et_root_dir}/backends/arm/scripts/build_executorch.sh"
-${build_executorch} --devtools --target_cpu="${target_cpu}"
+${build_executorch} --devtools --target_cpu="${target_cpu}" --cmake-args="-DCORTEX_M_ENABLE_RUNTIME_CHECKS=ON"
 
 # Build executor runner with selected aten ops and semi hosting
 build_dir="${et_root_dir}/arm_test"
@@ -48,4 +48,4 @@ aten::unsqueeze_copy.out,\
 aten::select_copy.int_out,\
 aten::amax.out"
 
-${build_executor_runner} --pte=semihosting --bundleio --target="${target}" --output="${build_root_test_dir}" --select_ops_list="${select_ops_list}" --extra_build_flags="-DET_ATOL=5.0 -DET_RTOL=1.0"
+${build_executor_runner} --pte=semihosting --bundleio --target="${target}" --output="${build_root_test_dir}" --select_ops_list="${select_ops_list}" --extra_build_flags="-DET_ATOL=5.0 -DET_RTOL=1.0 -DET_ARM_BAREMETAL_SCRATCH_TEMP_ALLOCATOR_POOL_SIZE=0"

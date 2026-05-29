@@ -30,6 +30,14 @@ using ::executorch::runtime::Error;
 using ::executorch::runtime::Result;
 
 /**
+ * Preprocessed audio features with actual (unpadded) length.
+ */
+struct PreprocessResult {
+  ::executorch::extension::TensorPtr features;
+  int64_t length; // Actual number of valid frames (excluding padding)
+};
+
+/**
  * A decoded token with frame-level timing information.
  */
 struct Token {
@@ -97,7 +105,7 @@ class ET_EXPERIMENTAL TransducerRunner {
    * @returns Preprocessed features tensor (e.g., mel spectrogram),
    *   ready to pass to transcribe().
    */
-  Result<::executorch::extension::TensorPtr> preprocess(
+  Result<PreprocessResult> preprocess(
       ::executorch::extension::TensorPtr raw_audio);
 
   /**
@@ -112,7 +120,8 @@ class ET_EXPERIMENTAL TransducerRunner {
    */
   Result<std::vector<Token>> transcribe(
       ::executorch::extension::TensorPtr preprocessed_features,
-      std::function<void(const std::string&)> token_callback = {});
+      std::function<void(const std::string&)> token_callback = {},
+      int64_t features_length = -1);
 
   /**
    * Returns a reference to the loaded tokenizer, or nullptr if not loaded.

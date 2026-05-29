@@ -30,6 +30,10 @@ set(CMSIS_NN_LOCAL_PATH
     ""
     CACHE PATH "Path to existing local CMSIS-NN installation"
 )
+option(CORTEX_M_ENABLE_RUNTIME_CHECKS
+       "Enable additional Cortex-M runtime assertions and validation checks"
+       OFF
+)
 
 # Try to find existing / local CMSIS-NN installation. This is useful for
 # debugging and testing with local changes. This is not common, as the CMSIS-NN
@@ -106,6 +110,11 @@ target_link_libraries(
   PRIVATE cmsis-nn
   PRIVATE executorch
   PRIVATE kernels_util_all_deps
+)
+target_compile_definitions(
+  cortex_m_kernels
+  PRIVATE
+    $<$<BOOL:${CORTEX_M_ENABLE_RUNTIME_CHECKS}>:CORTEX_M_ENABLE_RUNTIME_CHECKS>
 )
 
 # Include directories for cortex_m_kernels
