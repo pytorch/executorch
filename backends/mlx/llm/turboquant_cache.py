@@ -48,7 +48,7 @@ class TurboQuantKVCache(_SharedTurboQuantKVCache):
         max_batch_size: Must be 1 (TQ4 is batch=1 only).
         max_context_length: Maximum sequence length.
         n_heads: Number of KV heads.
-        head_dim: Per-head dimension. Must be even and a multiple of 32.
+        head_dim: Per-head dimension. Must be even and a multiple of 64.
         enable_dynamic_shape: Accepted for interface parity; ignored.
         dtype: Compute dtype (bf16). Used for pre-cast buffers.
         bits: Quantization bits (must be 4).
@@ -76,12 +76,15 @@ class TurboQuantKVCache(_SharedTurboQuantKVCache):
                 f"TurboQuantKVCache only supports bits=4 "
                 f"(16-entry codebook), got bits={bits}"
             )
-        # MLX-backend Metal kernels (``tq_dequant``, ``tq_norm``) hard-code
-        # 32 SIMD lanes per vector, so ``head_dim`` must be a multiple of 32
-        if head_dim % 32 != 0:
+        # MLX-backend Metal kernels need ``head_dim % 64 == 0``: ``tq_norm``
+        # uses 32 SIMD lanes (so D must be a multiple of 32), and
+        # ``tq_dequant`` packs 2 dims per byte across 32 lanes (so D must
+        # be a multiple of 64). Take the stricter constraint here.
+        if head_dim % 64 != 0:
             raise ValueError(
                 f"TurboQuantKVCache requires head_dim to be "
-                f"a multiple of 32 (Metal SIMD constraint), got {head_dim}"
+                f"a multiple of 64 (Metal SIMD + 4-bit pack constraint), "
+                f"got {head_dim}"
             )
         super().__init__(
             n_heads=n_heads,
@@ -222,6 +225,7 @@ class TurboQuantKVCache(_SharedTurboQuantKVCache):
         v_packed_live = self.v_packed[:, :, :end_pos, :]
         v_norms_live = self.v_norms[:, :, :end_pos, :]
 
+        # TODO: optimize with a fused dequant + SDPA
         k_rot = torch.ops.mlx.tq_dequant(k_packed_live, k_norms_live, self.centroids)
         v_rot = torch.ops.mlx.tq_dequant(v_packed_live, v_norms_live, self.centroids)
 

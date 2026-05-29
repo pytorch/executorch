@@ -17,7 +17,7 @@ Output is in **rotated space** — the inverse rotation, if needed, is
 left to the caller (typically MLX's tuned bf16 GEMM).
 
 Constraints:
-    * ``D`` (= ``packed.shape[-1] * 2``) must be a multiple of 32.
+    * ``D`` (= ``packed.shape[-1] * 2``) must be a multiple of 64.
     * ``centroids`` must be a 1-D tensor of length 16.
     * Output dtype matches ``norms.dtype``.
 
@@ -168,10 +168,10 @@ def _tq_dequant_handler(P: MLXProgramBuilder, n: Node) -> Slot:
         )
     half_D = int(last_dim_packed)
     D = half_D * 2
-    if D % 32 != 0:
+    if D % 64 != 0:
         raise NotImplementedError(
-            f"mlx::tq_dequant: unpacked dim must be a multiple of 32 (one "
-            f"per SIMD lane); got D={D}"
+            f"mlx::tq_dequant: unpacked dim must be a multiple of 64 "
+            f"(2 dims per packed byte, 32 SIMD lanes); got D={D}"
         )
 
     out_dtype_int = torch_dtype_to_scalar_type(norms_meta.dtype)
