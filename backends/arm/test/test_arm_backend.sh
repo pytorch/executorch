@@ -305,7 +305,7 @@ test_model_smollm2_135M() {
     backends/arm/scripts/build_executorch.sh
 
     # Build pte for smollm2
-    python -m extension.llm.export.export_llm \
+    python3 -m extension.llm.export.export_llm \
         base.model_class=smollm2 \
         base.params=examples/models/smollm2/135M_config.json \
         debug.verbose=True model.enable_dynamic_shape=False quantization.pt2e_quantize="ethosu_8a8w" \
