@@ -1406,7 +1406,9 @@ class StaticAttention(Attention):
             # Ungroup, add mask, and regroup
             attn_grouped = attn_grouped.view(1, self.n_heads, Tq, Tk)
             attn_grouped = attn_grouped + mask
-            attn_grouped = F.softmax(attn_grouped, dim=-1)
+            attn_max = attn_grouped.amax(dim=-1, keepdim=True)
+            attn_grouped = (attn_grouped - attn_max).exp()
+            attn_grouped = attn_grouped / attn_grouped.sum(dim=-1, keepdim=True)
             attn_grouped = attn_grouped.view(n_kv, n_rep, Tq, Tk)
 
             # Group v
