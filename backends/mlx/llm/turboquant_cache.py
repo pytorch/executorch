@@ -71,6 +71,18 @@ class TurboQuantKVCache(_SharedTurboQuantKVCache):
                 f"TurboQuantKVCache only supports max_batch_size=1, "
                 f"got {max_batch_size}"
             )
+        if bits != 4:
+            raise ValueError(
+                f"TurboQuantKVCache only supports bits=4 "
+                f"(16-entry codebook), got bits={bits}"
+            )
+        # MLX-backend Metal kernels (``tq_dequant``, ``tq_norm``) hard-code
+        # 32 SIMD lanes per vector, so ``head_dim`` must be a multiple of 32
+        if head_dim % 32 != 0:
+            raise ValueError(
+                f"TurboQuantKVCache requires head_dim to be "
+                f"a multiple of 32 (Metal SIMD constraint), got {head_dim}"
+            )
         super().__init__(
             n_heads=n_heads,
             head_dim=head_dim,

@@ -95,7 +95,6 @@ from executorch.backends.mlx.serialization.mlx_graph_schema import (
 # constant), and packs the two 4-bit indices into one byte.
 _TQ4_COMPRESS_SOURCE = """
     uint gid = thread_position_in_grid.x;
-    if (gid >= N_OUT) return;
     float v_hi = float(values[2 * gid]);
     float v_lo = float(values[2 * gid + 1]);
     uchar idx_hi = 0;
@@ -254,8 +253,9 @@ def _tq4_compress_handler(P: MLXProgramBuilder, n: Node) -> Slot:
             ],
             outputs=[P.slot_to_tid(out)],
             grid=[n_out_iov, IntOrVid.from_literal(1), IntOrVid.from_literal(1)],
+            # 32 threads per threadgroup so each TG fills one Apple-GPU SIMD group
             threadgroup=[
-                IntOrVid.from_literal(1),
+                IntOrVid.from_literal(32),
                 IntOrVid.from_literal(1),
                 IntOrVid.from_literal(1),
             ],
@@ -264,12 +264,11 @@ def _tq4_compress_handler(P: MLXProgramBuilder, n: Node) -> Slot:
             output_shapes_flat=out_shape_flat,
             output_shape_lengths=[len(out_shape_flat)],
             output_dtypes=[torch_dtype_to_scalar_type(torch.uint8)],
-            template_arg_names=["InT", "B", "N_OUT"],
-            template_arg_kinds=[2, 0, 0],  # 2=dtype, 0=int
+            template_arg_names=["InT", "B"],
+            template_arg_kinds=[2, 0],  # 2=dtype, 0=int
             template_arg_values=[
                 in_dtype_int,
                 15,
-                int(n_out) if isinstance(n_out, int) else (1 << 30),
             ],
         )
     )
