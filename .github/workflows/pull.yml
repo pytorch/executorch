@@ -595,24 +595,35 @@ jobs:
         cp "${elf}" /tmp/bloaty-elfs/head.elf
 
         # Base build for the bloaty diff. Failures degrade the report to head-only.
+        # Worktree must be named `executorch` — see CMakeLists.txt:420.
         base_elf=""
         base_sha=""
         if [[ "${{ github.event_name }}" == "pull_request" ]]; then
           base_sha="${{ github.event.pull_request.base.sha }}"
-          base_worktree=/tmp/base-worktree
-          (
-            set -e
-            git worktree add --force "${base_worktree}" "${base_sha}"
-            cd "${base_worktree}"
-            git submodule update --init --recursive --depth=1 --jobs=8
-            build_size_test "${{ matrix.os }}"
-          ) && cp "${base_worktree}/cmake-out/test/size_test" /tmp/bloaty-elfs/base.elf && base_elf="/tmp/bloaty-elfs/base.elf" || true
+          base_worktree=/tmp/bloaty-base/executorch
+          mkdir -p /tmp/bloaty-base
+          if git worktree add --force "${base_worktree}" "${base_sha}" \
+             && ( cd "${base_worktree}" \
+                  && git submodule update --init --recursive --depth=1 --jobs=8 \
+                  && build_size_test "${{ matrix.os }}" ) \
+             && cp "${base_worktree}/cmake-out/test/size_test" /tmp/bloaty-elfs/base.elf; then
+            base_elf="/tmp/bloaty-elfs/base.elf"
+          else
+            echo "base build failed; bloaty report will be head-only"
+          fi
         fi
 
         # Bloaty report. Best-effort: failures here never fail the size job.
+        # `set -e` is disabled by the outer `|| true`, so commands need explicit
+        # `|| exit 1` to abort the subshell on failure.
         (
-          set -e
-          sudo apt-get update -qq && sudo apt-get install -y -qq bloaty
+          # bloaty isn't in apt on the executorch-ubuntu-22.04-arm-sdk image;
+          # install via conda-forge (conda is already on PATH from the env setup).
+          if ! command -v bloaty >/dev/null; then
+            conda install -y -p "${CONDA_ENV}" -c conda-forge bloaty || exit 1
+          fi
+          bloaty --version || exit 1
+
           tmp_out=/tmp/bloaty-out
           rm -rf "${tmp_out}" && mkdir -p "${tmp_out}"
           measure_args=(
@@ -628,7 +639,7 @@ jobs:
           elif [[ "${{ github.event_name }}" == "pull_request" ]]; then
             measure_args+=(--base-build-failed --base-sha "${base_sha}")
           fi
-          python .github/scripts/bloaty_diff.py measure "${measure_args[@]}"
+          python .github/scripts/bloaty_diff.py measure "${measure_args[@]}" || exit 1
           if [[ "${{ github.event_name }}" == "pull_request" ]]; then
             echo "${{ github.event.pull_request.number }}" > "${tmp_out}/pr_number.txt"
           fi

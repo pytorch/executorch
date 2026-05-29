@@ -7,6 +7,19 @@ on:
   workflow_run:
     workflows: ["pull"]
     types: [completed]
+  # Manual trigger for verifying the workflow before it's on the default branch.
+  # workflow_run only fires from workflow files on the default branch, so the
+  # auto-trigger path can't be exercised from a PR branch. Remove after merge.
+  workflow_dispatch:
+    inputs:
+      run_id:
+        description: "pull workflow run ID whose artifacts to download"
+        required: true
+        type: string
+      pr_number:
+        description: "PR number to comment on"
+        required: true
+        type: string
 
 permissions:
   pull-requests: write
@@ -18,14 +31,15 @@ jobs:
   post-comment:
     if: >
       github.repository_owner == 'pytorch' &&
-      github.event.workflow_run.event == 'pull_request' &&
-      github.event.workflow_run.conclusion != 'cancelled' &&
-      github.event.workflow_run.conclusion != 'skipped'
+      (github.event_name == 'workflow_dispatch' ||
+       (github.event.workflow_run.event == 'pull_request' &&
+        github.event.workflow_run.conclusion != 'cancelled' &&
+        github.event.workflow_run.conclusion != 'skipped'))
     runs-on: ubuntu-latest
     concurrency:
       # workflow_run.pull_requests is empty for fork PRs, so we key on the
       # head branch identity instead — both pushes to the same PR share it.
-      group: bloaty-comment-${{ github.event.workflow_run.head_repository.full_name }}-${{ github.event.workflow_run.head_branch }}
+      group: bloaty-comment-${{ github.event.workflow_run.head_repository.full_name || 'manual' }}-${{ github.event.workflow_run.head_branch || inputs.pr_number }}
       cancel-in-progress: true
     steps:
       - uses: actions/checkout@v4
@@ -35,14 +49,17 @@ jobs:
         with:
           pattern: bloaty-arm-*
           path: bloaty-artifacts
-          run-id: ${{ github.event.workflow_run.id }}
+          run-id: ${{ github.event.workflow_run.id || inputs.run_id }}
           github-token: ${{ github.token }}
 
       - name: Post sticky PR comment
         env:
           GITHUB_TOKEN: ${{ github.token }}
-          RUN_URL: ${{ github.event.workflow_run.html_url }}
+          RUN_URL: ${{ github.event.workflow_run.html_url || format('https://github.com/{0}/actions/runs/{1}', github.repository, inputs.run_id) }}
+          PR_NUM: ${{ inputs.pr_number }}
         run: |
-          python .github/scripts/bloaty_diff.py post \
-            --in-dir bloaty-artifacts \
-            --run-url "${RUN_URL}"
+          args=(--in-dir bloaty-artifacts --run-url "${RUN_URL}")
+          if [[ -n "${PR_NUM}" ]]; then
+            args+=(--pr-num "${PR_NUM}")
+          fi
+          python .github/scripts/bloaty_diff.py post "${args[@]}"
