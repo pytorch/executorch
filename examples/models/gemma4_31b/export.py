@@ -484,5 +484,6 @@ def main() -> None:
     finally:
         os.environ.pop("ET_MLX_ALLOW_NON_FUSED_QUANTIZED_OPS", None)
 
+
 if __name__ == "__main__":
     main()
