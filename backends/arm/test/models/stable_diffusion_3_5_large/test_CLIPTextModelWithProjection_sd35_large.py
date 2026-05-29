@@ -7,13 +7,9 @@ from typing import Tuple
 
 import pytest
 import torch
-from executorch.backends.arm._passes import (
-    ConvertInt64ConstOpsToInt32Pass,
-    ConvertInt64OutputOpsToInt32Pass,
-    InsertInt32CastsAfterInt64PlaceholdersPass,
-)
 from executorch.backends.arm.test import common
 from executorch.backends.arm.test.models.stable_diffusion_3_5_large.test_configs_sd35_large import (
+    get_int64_to_int32_passes,
     get_tiny_sd35_large_text_encoder_2_config,
     get_tiny_sd35_large_text_encoder_config,
 )
@@ -28,12 +24,6 @@ from executorch.examples.models.stable_diffusion_3_5_large.model import (
 from transformers import CLIPTextModelWithProjection
 
 input_t = Tuple[torch.Tensor]
-
-_INT64_TO_INT32_PASSES = [
-    ConvertInt64ConstOpsToInt32Pass(),
-    ConvertInt64OutputOpsToInt32Pass(),
-    InsertInt32CastsAfterInt64PlaceholdersPass(),
-]
 
 
 class TestCLIPTextModelWithProjection:
@@ -126,7 +116,7 @@ def test_clip_text_model_with_projection_tosa_FP(config_factory, atol):
             exir_op=[],
             use_to_edge_transform_and_lower=True,
             atol=atol,
-            transform_passes=_INT64_TO_INT32_PASSES,
+            transform_passes=get_int64_to_int32_passes(),
         )
         pipeline.change_args(
             "check_count.exir", TestCLIPTextModelWithProjection.ops_after_partitioner_FP
@@ -187,7 +177,7 @@ def test_clip_text_model_with_projection_vgf_no_quant(config_factory):
             exir_op=[],
             use_to_edge_transform_and_lower=True,
             atol=5e-3,
-            transform_passes=_INT64_TO_INT32_PASSES,
+            transform_passes=get_int64_to_int32_passes(),
             quantize=False,
         )
         pipeline.change_args(

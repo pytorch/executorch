@@ -6,13 +6,9 @@
 from typing import Tuple
 
 import torch
-from executorch.backends.arm._passes import (
-    ConvertInt64ConstOpsToInt32Pass,
-    ConvertInt64OutputOpsToInt32Pass,
-    InsertInt32CastsAfterInt64PlaceholdersPass,
-)
 from executorch.backends.arm.test import common
 from executorch.backends.arm.test.models.stable_diffusion_3_5_large.test_configs_sd35_large import (
+    get_int64_to_int32_passes,
     get_tiny_sd35_large_t5_config,
 )
 from executorch.backends.arm.test.tester.test_pipeline import (
@@ -26,12 +22,6 @@ from executorch.examples.models.stable_diffusion_3_5_large.model import (
 from transformers import T5EncoderModel
 
 input_t = Tuple[torch.Tensor]
-
-_INT64_TO_INT32_PASSES = [
-    ConvertInt64ConstOpsToInt32Pass(),
-    ConvertInt64OutputOpsToInt32Pass(),
-    InsertInt32CastsAfterInt64PlaceholdersPass(),
-]
 
 
 class TestT5EncoderModel:
@@ -106,10 +96,9 @@ def test_t5_encoder_tosa_FP():
             test_helper.create_dummy_inputs(config),
             aten_op=[],
             exir_op=[],
-            run_on_tosa_ref_model=False,
             use_to_edge_transform_and_lower=True,
             atol=2e-2,
-            transform_passes=_INT64_TO_INT32_PASSES,
+            transform_passes=get_int64_to_int32_passes(),
         )
         pipeline.change_args(
             "check_count.exir", TestT5EncoderModel.ops_after_partitioner_FP
@@ -153,7 +142,7 @@ def test_t5_encoder_vgf_no_quant():
             exir_op=[],
             use_to_edge_transform_and_lower=True,
             atol=8e-3,
-            transform_passes=_INT64_TO_INT32_PASSES,
+            transform_passes=get_int64_to_int32_passes(),
             quantize=False,
         )
         pipeline.change_args(

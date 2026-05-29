@@ -10,6 +10,12 @@ import warnings
 from pathlib import Path
 from typing import Any
 
+from executorch.backends.arm._passes import (
+    ArmPass,
+    ConvertInt64ConstOpsToInt32Pass,
+    ConvertInt64OutputOpsToInt32Pass,
+    InsertInt32CastsAfterInt64PlaceholdersPass,
+)
 from transformers import CLIPTextConfig, T5Config
 
 
@@ -151,6 +157,14 @@ def _warn_if_sd35_large_config_differs_from_upstream(
             RuntimeWarning,
             stacklevel=2,
         )
+
+
+def get_int64_to_int32_passes() -> list[ArmPass]:
+    return [
+        ConvertInt64ConstOpsToInt32Pass(),
+        ConvertInt64OutputOpsToInt32Pass(),
+        InsertInt32CastsAfterInt64PlaceholdersPass(),
+    ]
 
 
 def get_tiny_sd35_large_text_encoder_config() -> CLIPTextConfig:
