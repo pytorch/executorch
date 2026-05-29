@@ -9,7 +9,7 @@
 import operator
 from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
-from typing import List, Tuple, Union
+from typing import List, Optional, Tuple, Union
 
 import torch
 from executorch.backends.cadence.aot.pass_utils import get_arg, replace_with_op
@@ -97,7 +97,7 @@ class QuantizationPattern(ABC):
         self,
         gm: fx.GraphModule,
         anchor_node: fx.Node,
-    ) -> fx.Node | None:
+    ) -> Optional[fx.Node]:
         """Replace the dq→op→q subgraph around ``anchor_node`` with a fused op.
 
         Called by ``QuantFusionPass`` for each node matching ``anchor_ops()``.

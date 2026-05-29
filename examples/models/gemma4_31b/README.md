@@ -15,6 +15,7 @@ both export and eager inference:
 |---|---|---|
 | `quantize_and_save.py` | bf16 HF checkpoint → quantized checkpoint (one-time) | ~30 GB CPU |
 | `export.py --prequantized <dir>` | quantized checkpoint → `model.pte` + `model.ptd` | ~24 GB CPU + CUDA for packing |
+| `export.py --gguf <file> [--backend mlx]` | GGUF file (Q4_K_M, etc.) → `model.pte` + `model.ptd` | ~24 GB CPU |
 | `inference.py --prequantized <dir>` | quantized checkpoint → eager generation under `torch.compile` | ~24 GB GPU |
 | `inference.py --gguf <file>` | GGUF file (Q4_K_M, etc.) → eager generation | ~24 GB GPU |
 | `export.py --model-dir <hf>` | one-shot bf16 → quantize → export (no intermediate file) | ~30 GB CPU + CUDA for packing |

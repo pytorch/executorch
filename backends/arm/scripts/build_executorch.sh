@@ -97,6 +97,9 @@ cmake_args=(
     -DEXECUTORCH_BUILD_ARM_ETDUMP=${build_with_etdump}
     -DEXECUTORCH_BAREMETAL_SKIP_INSTALL=OFF
 )
+if ((${#extra_cmake_args[@]})); then
+      cmake_args+=("${extra_cmake_args[@]}")
+fi
 
 if [[ ${#extra_cmake_args[@]} -gt 0 ]]; then
     cmake_args+=("${extra_cmake_args[@]}")

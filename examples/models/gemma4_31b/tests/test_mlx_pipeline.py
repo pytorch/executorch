@@ -244,5 +244,84 @@ class TestMlxPipeline(unittest.TestCase):
             self.assertTrue(os.path.exists(os.path.join(out_dir, "model.pte")))
 
 
+class TestGgufMlxPipeline(unittest.TestCase):
+    """Test GGUF → MLX loading path with synthetic Q6_K-like tensors."""
+
+    def test_load_gguf_model_mlx_backend(self):
+        """gguf_loader.load_gguf_model accepts backend='mlx'."""
+        try:
+            import gguf  # noqa: F401
+        except ModuleNotFoundError:
+            self.skipTest("gguf package not installed")
+
+        from executorch.examples.models.gemma4_31b.gguf_loader import load_gguf_model
+
+        # Will fail on missing file, but NOT on "Unsupported backend".
+        with self.assertRaisesRegex((FileNotFoundError, OSError, RuntimeError), ".*"):
+            load_gguf_model("/nonexistent.gguf", backend="mlx")
+
+    def test_mlx_backend_rejects_unknown(self):
+        from executorch.examples.models.gemma4_31b.gguf_loader import load_gguf_model
+
+        with self.assertRaisesRegex(ValueError, "Unsupported backend"):
+            load_gguf_model("/nonexistent.gguf", backend="tpu")
+
+    def test_gs16_packing_preserves_values(self):
+        """Q6_K-like weight (gs=16) preserves dequantized values after packing."""
+        from executorch.examples.models.gemma4_31b.quant.pack_mlx import pack_for_mlx
+        from executorch.examples.models.gemma4_31b.quant.quantize import (
+            dequantize_weight,
+        )
+        from torchao.quantization import IntxUnpackedToInt8Tensor
+
+        w = IntxUnpackedToInt8Tensor(
+            qdata=torch.randint(-32, 31, (64, 128), dtype=torch.int8),
+            scale=torch.randn(64, 8, dtype=torch.bfloat16),
+            zero_point=torch.zeros(64, 8, dtype=torch.int8),
+            target_dtype=torch.int8,
+            block_size=(1, 16),
+            dtype=torch.bfloat16,
+            activation_quantization=None,
+        )
+        before = dequantize_weight(w, torch.float32)
+
+        module = nn.Linear(128, 64, bias=False)
+        pack_for_mlx(module, {"weight": w})
+        after = dequantize_weight(module.weight.data, torch.float32)
+
+        self.assertTrue(
+            torch.allclose(before, after, atol=1e-5),
+            f"max diff: {(before - after).abs().max():.6g}",
+        )
+
+    def test_embedding_packing_preserves_values(self):
+        """MLX embedding packing preserves dequantized weight values."""
+        from executorch.examples.models.gemma4_31b.quant.pack_mlx import pack_for_mlx
+        from executorch.examples.models.gemma4_31b.quant.quantize import (
+            dequantize_weight,
+        )
+        from torchao.quantization import IntxUnpackedToInt8Tensor
+
+        w = IntxUnpackedToInt8Tensor(
+            qdata=torch.randint(-8, 7, (256, 128), dtype=torch.int8),
+            scale=torch.randn(256, 4, dtype=torch.bfloat16),
+            zero_point=torch.zeros(256, 4, dtype=torch.bfloat16),
+            target_dtype=torch.int4,
+            block_size=(1, 32),
+            dtype=torch.bfloat16,
+            activation_quantization=None,
+        )
+        before = dequantize_weight(w, torch.float32)
+
+        module = nn.Embedding(256, 128)
+        pack_for_mlx(module, {"weight": w})
+        after = dequantize_weight(module.weight.data, torch.float32)
+
+        self.assertTrue(
+            torch.allclose(before, after, atol=1e-5),
+            f"max diff: {(before - after).abs().max():.6g}",
+        )
+
+
 if __name__ == "__main__":
     unittest.main()
