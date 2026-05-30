@@ -453,8 +453,6 @@ def main() -> None:
     )
     args = parser.parse_args()
 
-    if args.turboquant and args.backend != "mlx":
-        parser.error("--turboquant requires --backend mlx.")
     if args.backend == "cuda" and not torch.cuda.is_available():
         parser.error("CUDA is required for the cuda backend.")
 
