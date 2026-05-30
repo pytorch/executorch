@@ -269,27 +269,35 @@ def _get_flatc_path() -> str:
         if _flatc_cached_path is not None:
             return _flatc_cached_path
 
-        flatc_resource = importlib.resources.files(__package__).joinpath(
-            _FLATC_RESOURCE_NAME
-        )
-        if flatc_resource.is_file():
-            exit_stack = contextlib.ExitStack()
-            flatc_path = exit_stack.enter_context(
-                importlib.resources.as_file(flatc_resource)
-            )
+        for package, resource_name in (
+            (__package__, _FLATC_RESOURCE_NAME),
+            ("executorch.data.bin", "flatc"),
+        ):
             try:
-                current_mode = flatc_path.stat().st_mode
-                if not (current_mode & stat.S_IXUSR):
-                    flatc_path.chmod(
-                        current_mode | stat.S_IXUSR | stat.S_IXGRP | stat.S_IXOTH
-                    )
-            except OSError:
-                pass
-            _flatc_exit_stack = exit_stack
-            # Clean up the extracted temp file on normal process exit.
-            atexit.register(exit_stack.close)
-            _flatc_cached_path = str(flatc_path)
-        else:
+                flatc_resource = importlib.resources.files(package).joinpath(
+                    resource_name
+                )
+            except ModuleNotFoundError:
+                continue
+            if flatc_resource.is_file():
+                exit_stack = contextlib.ExitStack()
+                flatc_path = exit_stack.enter_context(
+                    importlib.resources.as_file(flatc_resource)
+                )
+                try:
+                    current_mode = flatc_path.stat().st_mode
+                    if not (current_mode & stat.S_IXUSR):
+                        flatc_path.chmod(
+                            current_mode | stat.S_IXUSR | stat.S_IXGRP | stat.S_IXOTH
+                        )
+                except OSError:
+                    pass
+                _flatc_exit_stack = exit_stack
+                # Clean up the extracted temp file on normal process exit.
+                atexit.register(exit_stack.close)
+                _flatc_cached_path = str(flatc_path)
+                break
+        if _flatc_cached_path is None:
             _flatc_cached_path = os.getenv("FLATC_EXECUTABLE", "flatc")
 
         return _flatc_cached_path
