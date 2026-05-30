@@ -12,7 +12,6 @@ from dataclasses import dataclass, field
 from typing import List, Optional, Tuple, Union
 
 import torch
-from executorch.backends.cadence.aot.compiler_utils import get_shape
 from executorch.backends.cadence.aot.pass_utils import get_arg, replace_with_op
 from executorch.backends.cadence.aot.quantizer.pattern_utils import (
     DQ_PER_TENSOR,
