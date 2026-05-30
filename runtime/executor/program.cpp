@@ -56,6 +56,17 @@ bool IsAligned(const void* data) {
 Result<executorch_flatbuffer::ExecutionPlan*> get_execution_plan(
     const executorch_flatbuffer::Program* program,
     const char* method_name) {
+  // TEST DO NOT MERGE [bloaty-ci-verify-string]: ~265-byte string that
+  // survives Release mode + strip + --gc-sections because of the volatile
+  // global pointer + read below.
+  static const char kBloatyTestString[] =
+      "BLOATY_CI_VERIFY: this string exists to verify the bloaty CI report "
+      "shows a non-trivial regression when present. It is 256 bytes long, "
+      "lives in .rodata, and is referenced through a volatile pointer so "
+      "neither the compiler nor the linker can elide it. Remove me. xxx";
+  static const char* volatile kBloatyTestRef = kBloatyTestString;
+  (void)kBloatyTestRef[0];
+
   auto execution_plans = program->execution_plan();
   for (size_t i = 0; i < execution_plans->size(); i++) {
     auto plan = execution_plans->GetMutableObject(i);
@@ -64,10 +75,7 @@ Result<executorch_flatbuffer::ExecutionPlan*> get_execution_plan(
       return plan;
     }
   }
-  ET_LOG(
-      Error,
-      "No method named '%s' in program. The requested method was not found in the loaded program; verify the method name spelling and that the program was exported with this method included. [bloaty-ci-verify-string]",
-      method_name);
+  ET_LOG(Error, "No method named '%s' in program", method_name);
   return Error::InvalidArgument;
 }
 
