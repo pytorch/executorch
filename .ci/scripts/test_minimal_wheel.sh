@@ -76,7 +76,11 @@ python -m pip install --upgrade pip
 python -m pip install \
   "flatbuffers" \
   "numpy>=2.0.0" \
+  "packaging" \
+  "pyyaml" \
+  "ruamel.yaml" \
   "sympy" \
+  "tabulate" \
   "torch" \
   "torchvision" \
   "typing-extensions>=4.10.0" \

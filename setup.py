@@ -880,7 +880,7 @@ class CustomBuild(build):
         ]
 
         if minimal_build:
-            cmake_build_args += ["--target", "flatc"]
+            cmake_build_args += ["--target", "flatbuffers_ep"]
         elif cmake_cache.is_enabled("EXECUTORCH_BUILD_PYBIND"):
             cmake_build_args += ["--target", "portable_lib"]
             cmake_build_args += ["--target", "data_loader"]
