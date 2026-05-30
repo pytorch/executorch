@@ -9,8 +9,8 @@ set -euxo pipefail
 
 PYTHON_EXECUTABLE="${PYTHON_EXECUTABLE:-python}"
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
-BUILD_VENV="${REPO_ROOT}/.venv-export-only-build"
-TEST_VENV="${REPO_ROOT}/.venv-export-only-test"
+BUILD_VENV="${REPO_ROOT}/.venv-minimal-build"
+TEST_VENV="${REPO_ROOT}/.venv-minimal-test"
 
 rm -rf "${BUILD_VENV}" "${TEST_VENV}" "${REPO_ROOT}/dist" "${REPO_ROOT}/pip-out"
 
@@ -33,7 +33,7 @@ python -m pip install \
 
 (
   cd "${REPO_ROOT}"
-  EXECUTORCH_BUILD_EXPORT_ONLY=1 python setup.py bdist_wheel
+  EXECUTORCH_BUILD_MINIMAL=1 python setup.py bdist_wheel
 )
 
 WHEEL_FILE="$(find "${REPO_ROOT}/dist" -maxdepth 1 -name 'executorch-*.whl' | head -1)"
@@ -99,7 +99,7 @@ example_inputs = (torch.randn(1, 3, 224, 224),)
 edge_program = to_edge_transform_and_lower(export(model, example_inputs))
 executorch_program = edge_program.to_executorch()
 
-output_path = Path("mv2_export_only.pte")
+output_path = Path("mv2_minimal.pte")
 with output_path.open("wb") as output_file:
     executorch_program.write_to_file(output_file)
 

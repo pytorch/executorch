@@ -8,8 +8,8 @@ The `executorch` pip package is in beta.
 * Supported python versions: 3.10, 3.11, 3.12, 3.13
 * Compatible systems: Linux x86_64, Linux aarch64, macOS aarch64
 
-To build an export-only wheel from source, set
-`EXECUTORCH_BUILD_EXPORT_ONLY=1` when running `pip wheel` or `pip install`.
+To build a minimal wheel from source, set
+`EXECUTORCH_BUILD_MINIMAL=1` when running `pip wheel` or `pip install`.
 That wheel contains the Python EXIR export path and `flatc` for `.pte`
 serialization, but omits runtime pybindings, kernels, backend packages, headers,
 examples, and devtools.

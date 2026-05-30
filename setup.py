@@ -104,11 +104,11 @@ def _is_env_flag_enabled(name: str) -> bool:
     return os.environ.get(name, "").strip().upper() in {"1", "ON", "TRUE", "YES"}
 
 
-def _is_export_only_build() -> bool:
-    return _is_env_flag_enabled("EXECUTORCH_BUILD_EXPORT_ONLY")
+def _is_minimal_build() -> bool:
+    return _is_env_flag_enabled("EXECUTORCH_BUILD_MINIMAL")
 
 
-def _export_only_cmake_flags() -> List[str]:
+def _minimal_cmake_flags() -> List[str]:
     return [
         "-DEXECUTORCH_BUILD_COREML=OFF",
         "-DEXECUTORCH_BUILD_CUDA=OFF",
@@ -138,7 +138,7 @@ def _export_only_cmake_flags() -> List[str]:
     ]
 
 
-def _export_only_packages() -> List[str]:
+def _minimal_packages() -> List[str]:
     return sorted(
         find_namespace_packages(
             where="src",
@@ -643,7 +643,7 @@ class CustomBuildPy(build_py):
             ("schema/scalar_type.fbs", "exir/_serialize/scalar_type.fbs"),
             ("schema/program.fbs", "exir/_serialize/program.fbs"),
         ]
-        if not _is_export_only_build():
+        if not _is_minimal_build():
             src_to_dst += [
                 (
                     "devtools/bundled_program/schema/bundled_program_schema.fbs",
@@ -699,7 +699,7 @@ class CustomBuildPy(build_py):
         # runs. Directories created by CMake during the build (e.g. by
         # generate.py) are not in the package list and must be copied manually.
         generated_dirs = []
-        if not _is_export_only_build():
+        if not _is_minimal_build():
             generated_dirs.append("backends/mlx/serialization/_generated")
         for rel_dir in generated_dirs:
             src_dir = os.path.join("src/executorch", rel_dir)
@@ -758,7 +758,7 @@ class CustomBuild(build):
 
     def run(self):  # noqa C901
         self.dump_options()
-        export_only_build = _is_export_only_build()
+        minimal_build = _is_minimal_build()
         cmake_build_type = get_build_type(self.debug)
         # get_python_lib() typically returns the path to site-packages, where
         # all pip packages in the environment are installed.
@@ -789,13 +789,13 @@ class CustomBuild(build):
         cmake_configuration_args += [
             item for item in re.split(r"\s+", os.environ.get("CMAKE_ARGS", "")) if item
         ]
-        if export_only_build:
-            cmake_configuration_args += _export_only_cmake_flags()
+        if minimal_build:
+            cmake_configuration_args += _minimal_cmake_flags()
 
         # Check if CUDA is available, and if so, enable building the CUDA
         # backend by default.
         if (
-            not export_only_build
+            not minimal_build
             and install_utils.is_cuda_available()
             and install_utils.is_cmake_option_on(
                 cmake_configuration_args, "EXECUTORCH_BUILD_CUDA", default=True
@@ -807,7 +807,7 @@ class CustomBuild(build):
         # enable building the Qualcomm backend by default.
         qnn_sdk_root = os.environ.get("QNN_SDK_ROOT", "").strip()
         if (
-            not export_only_build
+            not minimal_build
             and qnn_sdk_root
             and install_utils.is_cmake_option_on(
                 cmake_configuration_args, "EXECUTORCH_BUILD_QNN", default=True
@@ -821,7 +821,7 @@ class CustomBuild(build):
         # Enable OpenVINO backend on Linux. The backend uses dlopen at
         # runtime so it has no build-time SDK dependency.
         if (
-            not export_only_build
+            not minimal_build
             and sys.platform == "linux"
             and install_utils.is_cmake_option_on(
                 cmake_configuration_args,
@@ -879,7 +879,7 @@ class CustomBuild(build):
             if item
         ]
 
-        if export_only_build:
+        if minimal_build:
             cmake_build_args += ["--target", "flatc"]
         elif cmake_cache.is_enabled("EXECUTORCH_BUILD_PYBIND"):
             cmake_build_args += ["--target", "portable_lib"]
@@ -929,8 +929,8 @@ class CustomBuild(build):
 
 
 setup_kwargs = {}
-if _is_export_only_build():
-    setup_kwargs["packages"] = _export_only_packages()
+if _is_minimal_build():
+    setup_kwargs["packages"] = _minimal_packages()
 
 
 setup(
@@ -960,7 +960,7 @@ setup(
         ),
         *(
             []
-            if _is_export_only_build()
+            if _is_minimal_build()
             else [
                 # Install the prebuilt pybindings extension wrapper for the runtime,
                 # portable kernels, and a selection of backends. This lets users
