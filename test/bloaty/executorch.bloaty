@@ -30,6 +30,9 @@ custom_data_source: {
   rewrite: { pattern: "^std::"                     replacement: "stdlib" }
   rewrite: { pattern: "^__gnu_cxx::"               replacement: "stdlib" }
   rewrite: { pattern: "^__cxxabiv1::"              replacement: "stdlib" }
+  rewrite: { pattern: "^__gxx_personality"         replacement: "stdlib" }
+  rewrite: { pattern: "^d_(print|type|expression|special|qualified|template|name|operator|substitution|number|abi_tag|cv_qualifiers|exprlist|growable|append|encoding|class_enum_type|local_name|unqualified_name|nested_name|prefix|cv|ref|ptrmem|array|function|java|hex|index|maybe|ctor|dtor|destructor|construct|count|callid|args|java_resource|lambda|unnamed_type|parmlist|expr_primary|operator_name|left|right|child)" replacement: "stdlib" }
+  rewrite: { pattern: "^cplus_demangle"             replacement: "stdlib" }
 
   rewrite: { pattern: "^_(start|init|fini)$"       replacement: "startup" }
   rewrite: { pattern: "^__libc_"                   replacement: "libc" }
@@ -40,6 +43,14 @@ custom_data_source: {
   rewrite: { pattern: "^_*free"                    replacement: "libc" }
   rewrite: { pattern: "^_*printf"                  replacement: "libc" }
   rewrite: { pattern: "^_*sprintf"                 replacement: "libc" }
+  # newlib reentrant variants (_r suffix): _vfprintf_r, _svfprintf_r, _dtoa_r, etc.
+  rewrite: { pattern: "^_v?f?i?printf_r$"          replacement: "libc" }
+  rewrite: { pattern: "^_s?v?f?i?printf_r$"        replacement: "libc" }
+  rewrite: { pattern: "^_dtoa_r"                   replacement: "libc" }
+  rewrite: { pattern: "^_(sbrk|write|read|close|fstat|lseek|isatty|exit|kill|getpid|open|stat|times|unlink|wait|gettimeofday)_r?$" replacement: "libc" }
+
+  # Section-level entries from bloaty (e.g. [section .debug_frame], [section .symtab]).
+  rewrite: { pattern: "^\\[section \\.(debug_|symtab|strtab|shstrtab)" replacement: "metadata" }
 
   rewrite: { pattern: ".*" replacement: "other" }
 }

@@ -48,13 +48,20 @@ BOT_LOGINS = {"github-actions[bot]", "pytorch-bot[bot]", "facebook-github-bot"}
 
 
 def run_bloaty(elf: Path, data_sources: str) -> List[Dict[str, int]]:
-    """Parse `bloaty --csv -d <data_sources> -s file <elf>` into rows."""
+    """Parse `bloaty --csv -d <data_sources> -s file <elf>` into rows.
+
+    Uses -n 0 (unlimited) to defeat bloaty's default top-20 cap. Diffing two
+    capped lists produces phantom regressions when a symbol drops below the
+    cutoff on one side.
+    """
     cmd = [
         *BLOATY_CMD,
         "-c",
         str(BLOATY_CONFIG),
         "-d",
         data_sources,
+        "-n",
+        "0",
         "--csv",
         "-s",
         "file",
