@@ -24,13 +24,12 @@ TurboQuant specifics live here.
 from __future__ import annotations
 
 import types
-from typing import Optional
-
-import torch
-import torch.nn as nn
 
 # Importing this module registers ``torch.ops.triton.tq4_sdpa``.
 import executorch.backends.cuda.triton.kernels.tq4_sdpa  # noqa: F401
+
+import torch
+import torch.nn as nn
 
 from executorch.examples.models.gemma4.text_decoder import apply_rotary_emb
 from executorch.extension.llm.modules.turboquant import TurboQuantKVCache
@@ -76,9 +75,7 @@ def _turboquant_attention_forward(
     # Compress + write. Returns the full compressed cache tensors —
     # tq4_sdpa decompresses per tile in its inner loop, so the full
     # uncompressed K/V is never materialized.
-    k_packed, k_norms, v_packed, v_norms = self.kv_cache.update(
-        input_pos, k, v
-    )
+    k_packed, k_norms, v_packed, v_norms = self.kv_cache.update(input_pos, k, v)
 
     # ``scale=self.scaling`` (= 1.0 for Gemma 4) — overrides tq4_sdpa's
     # default ``1/sqrt(D)`` because Gemma's QK-norm has absorbed the
