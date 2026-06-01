@@ -166,12 +166,13 @@ jinja2::Value toStableValue(
     string_store.emplace_back(view->begin(), view->end());
     return jinja2::Value(nonstd::string_view(string_store.back()));
   }
-  // getPtr<GenericMap> is checked before isMap()/asMap() so asMap() is only used
-  // on an owning (non-Generic) map.
+  // getPtr<GenericMap> is checked before isMap()/asMap() so asMap() is only
+  // used on an owning (non-Generic) map.
   if (const auto* generic_map = value.getPtr<jinja2::GenericMap>()) {
     jinja2::ValuesMap owned;
     for (const auto& key : generic_map->GetKeys()) {
-      owned[key] = toStableValue(generic_map->GetValueByName(key), string_store);
+      owned[key] =
+          toStableValue(generic_map->GetValueByName(key), string_store);
     }
     return jinja2::Value(std::move(owned));
   }
