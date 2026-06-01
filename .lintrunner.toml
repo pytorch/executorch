@@ -179,8 +179,6 @@ exclude_patterns = [
     'extension/kernel_util/make_boxed_from_unboxed_functor.h',
     'extension/kernel_util/test/**',
     'extension/llm/**',
-    'extension/llm/apple/**',
-    'extension/llm/custom_ops/spinquant/third-party/**',
     'extension/memory_allocator/**',
     'extension/module/**',
     'extension/named_data_map/**',
