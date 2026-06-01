@@ -25,7 +25,8 @@ on:
     tags:
       - ciflow/trunk/*
 
-permissions: {}
+permissions:
+  contents: read
 
 jobs:
   run-decision:
