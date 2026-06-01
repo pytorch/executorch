@@ -318,9 +318,10 @@ def cmd_measure(args: argparse.Namespace) -> int:
         report.groups_base = run_bloaty(base, "executorch")
         report.symbols_base = run_bloaty(base, "shortsymbols")
 
-    (out_dir / "full.txt").write_text(
-        bloaty_text(head, base, "sections,executorch,shortsymbols", top_n=100)
-    )
+    full_diff = bloaty_text(head, base, "sections,executorch,shortsymbols", top_n=100)
+    head_only = bloaty_text(head, None, "sections,executorch,shortsymbols", top_n=100)
+    (out_dir / "full.txt").write_text(full_diff)
+    (out_dir / "head_only.txt").write_text(head_only)
 
     # Atomic write so a partial failure can't ship a half-written metadata.json.
     metadata = {
@@ -359,6 +360,15 @@ def cmd_measure(args: argparse.Namespace) -> int:
                 f"Δ within ±{DELTA_NOISE_BYTES} bytes; nothing to report.\n"
             )
             f.write("\n")
+            if base is not None:
+                f.write(
+                    f"<details><summary>Full per-symbol diff ({report.job})</summary>\n\n"
+                    f"```\n{full_diff}```\n\n</details>\n\n"
+                )
+            f.write(
+                f"<details><summary>Full bloaty report for head binary ({report.job})</summary>\n\n"
+                f"```\n{head_only}```\n\n</details>\n\n"
+            )
 
     delta_str = (
         fmt_delta(report.stripped_delta) if report.stripped_delta is not None else "n/a"
