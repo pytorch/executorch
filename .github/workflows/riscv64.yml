@@ -12,7 +12,7 @@ on:
       - .github/workflows/riscv64.yml
       - .github/workflows/_test_riscv.yml
       - .ci/scripts/test_riscv_qemu.sh
-      - tools/cmake/preset/riscv64_*.cmake
+      - tools/cmake/preset/riscv_*.cmake
       - examples/riscv/**
   workflow_dispatch:
   schedule:

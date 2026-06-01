@@ -46,7 +46,7 @@ endif()
 include("${EXECUTORCH_ROOT}/tools/cmake/common/preset.cmake")
 if(NOT DEFINED EXECUTORCH_BUILD_PRESET_FILE)
   set(EXECUTORCH_BUILD_PRESET_FILE
-      "${EXECUTORCH_ROOT}/tools/cmake/preset/riscv64_baremetal.cmake"
+      "${EXECUTORCH_ROOT}/tools/cmake/preset/riscv_baremetal.cmake"
       CACHE PATH "Preset used when configuring the standalone baremetal runner"
   )
 endif()

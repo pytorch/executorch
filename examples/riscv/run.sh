@@ -193,7 +193,7 @@ fi
 
 echo "[run.sh] Step 3/3: run under ${qemu}"
 hash "${qemu}" 2>/dev/null || {
-    echo "[run.sh] ERROR: ${qemu} not found on PATH; install with examples/riscv/setup.sh" >&2
+    echo "[run.sh] ERROR: ${qemu} not found on PATH; install with examples/riscv/setup-${os}.sh" >&2
     exit 1
 }
 

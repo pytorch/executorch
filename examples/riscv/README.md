@@ -20,7 +20,7 @@ examples/riscv/run.sh               # export, cross-compile, run under qemu
 | `--quantize` | flag | off | XNNPACK quantizer (requires `--backend=xnnpack`) |
 | `--backend=<N>` | `portable`, `xnnpack` | `portable` | xnnpack is linux-only |
 | `--os=<N>` | `linux`, `baremetal` | `linux` | qemu-user vs qemu-system + semihosting |
-| `--arch=<N>` | `rv64` | `rv64` | (rv32 follow-up; no `riscv32-linux-gnu` cross is packaged on Ubuntu) |
+| `--arch=<N>` | `rv32`, `rv64` | `rv64` | valid <os>-<arch> pairs are `linux-rv64`, `baremetal-rv32`, `baremetal-rv64` |
 | `--qemu-cpu-ext=<S>` | e.g. `v=true,vlen=128` | empty | extensions appended after the arch base |
 
 ## Pipelines
@@ -33,4 +33,4 @@ The baremetal runner embeds the `.bpte` directly in `.rodata` via the same `exam
 
 ## CI
 
-`.github/workflows/riscv64.yml` is the entry point; it fans out into `_test_riscv.yml` over a `(model, backend, os, arch, quantize)` matrix and sweeps `qemu-cpu-ext` per backend. Runs on the `executorch-ubuntu-26.04-gcc15` docker image (needed for the `riscv64-unknown-elf` picolibc + libstdc++ packages - see [setup.sh](setup.sh)).
+`.github/workflows/riscv64.yml` is the entry point; it fans out into `_test_riscv.yml` over a `(model, backend, os, arch, quantize)` matrix and sweeps `qemu-cpu-ext` per backend. Runs on the `executorch-ubuntu-26.04-gcc15` docker image (needed for the `riscv64-unknown-elf` picolibc + libstdc++ packages - see [setup-linux.sh](setup-linux.sh) or [setup-baremetal.sh](setup-baremetal.sh)).
