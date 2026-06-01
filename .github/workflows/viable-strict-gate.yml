@@ -25,6 +25,8 @@ on:
     tags:
       - ciflow/trunk/*
 
+permissions: {}
+
 jobs:
   run-decision:
     uses: ./.github/workflows/_ci-run-decision.yml
@@ -44,6 +46,6 @@ jobs:
             exit 0
           fi
           echo "::error::Non-full-run commit (path-filtered CI). viable/strict cannot advance from this commit."
-          echo "Full CI runs on commits whose SHA ends in 0, 4, 8, or c (~25% of commits)."
+          echo "Full CI runs on every 4th commit on main / release/* (depth %% 4 == 0)."
           echo "To force a full run on this commit, push a 'ciflow/trunk/${{ github.sha }}' tag."
           exit 1

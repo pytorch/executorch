@@ -7,8 +7,8 @@ name: CI Run Decision
 # Returns ``is-full-run = 'true'`` for:
 #   - workflow_dispatch (manual run)
 #   - ciflow/* tag pushes (maintainer-forced full run)
-#   - push events whose SHA is in the deterministic 25% sample
-#     (last hex char in {0,4,8,c})
+#   - push events at every 4th commit by depth from main's root
+#     (deterministic 25% sample, hard cap of 4 commits between samples)
 #
 # Returns ``is-full-run = 'false'`` for:
 #   - pull_request / pull_request_target (use path filter instead)
@@ -25,12 +25,23 @@ on:
         description: "'true' if this commit should run all CI jobs regardless of path filter; 'false' otherwise."
         value: ${{ jobs.decide.outputs.is-full-run }}
 
+permissions:
+  contents: read
+
 jobs:
   decide:
     runs-on: ubuntu-latest
     outputs:
       is-full-run: ${{ steps.compute.outputs.is-full-run }}
     steps:
+      # Full history needed to compute commit depth via `git rev-list --count`.
+      # The depth-based sample (every 4th commit) needs the SHA to be reachable
+      # from the repo root.
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
       - name: Compute is-full-run
         id: compute
         env:
@@ -54,12 +65,17 @@ jobs:
               ;;
           esac
 
-          # Deterministic 25% sample on push: SHA's last hex char in {0,4,8,c}.
-          # Keep in sync with the sample in viable-strict-gate.yml.
+          # Depth-based 25% sample on push: every 4th commit (depth from
+          # the repo root, mod 4 == 0). Hard guarantees:
+          #   - Exactly 25% sample rate (no statistical variance).
+          #   - At most 3 non-sampled commits between any two samples.
+          # Re-runs of the same commit always have the same outcome.
           if [ "$IS_FULL" = "false" ] && [ "$EVENT_NAME" = "push" ]; then
-            case "$SHA" in
-              *0|*4|*8|*c) IS_FULL=true ;;
-            esac
+            DEPTH=$(git rev-list --count "$SHA")
+            if [ $((DEPTH % 4)) -eq 0 ]; then
+              IS_FULL=true
+            fi
+            echo "Depth:       $DEPTH (depth %% 4 = $((DEPTH % 4)))"
           fi
 
           echo "Event:       $EVENT_NAME"

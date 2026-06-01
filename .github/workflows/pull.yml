@@ -21,10 +21,6 @@ jobs:
     name: Get changed files
     uses: ./.github/workflows/_get-changed-files.yml
 
-  # Emits is-full-run='true' for PR/dispatch/tag/sampled-push commits
-  # (the ~25% of pushes that should run full CI) and 'false' otherwise.
-  # Per-job `if:` checks this to bypass path filtering on full-run
-  # commits while staying path-filtered on the 75% non-sampled pushes.
   run-decision:
     name: CI run decision
     uses: ./.github/workflows/_ci-run-decision.yml

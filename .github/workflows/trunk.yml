@@ -25,10 +25,6 @@ jobs:
     name: Get changed files
     uses: ./.github/workflows/_get-changed-files.yml
 
-  # Emits is-full-run='true' for PR/dispatch/tag/sampled-push commits
-  # (the ~25% of pushes that should run full CI) and 'false' otherwise.
-  # Per-job `if:` checks this to bypass path filtering on full-run
-  # commits while staying path-filtered on the 75% non-sampled pushes.
   run-decision:
     name: CI run decision
     uses: ./.github/workflows/_ci-run-decision.yml
@@ -36,10 +32,6 @@ jobs:
   test-models-macos-cpu:
     name: test-models-macos-cpu
     needs: run-decision
-    # Path-filter-on-push (sampled): runs on every PR / dispatch /
-    # ciflow tag, and on ~25% of pushes via _ci-run-decision.yml.
-    # The viable-strict-gate workflow blocks viable/strict from
-    # advancing on the 75% non-sampled pushes.
     if: |
       github.event_name == 'pull_request' ||
       needs.run-decision.outputs.is-full-run == 'true'
@@ -397,6 +389,10 @@ jobs:
 
   test-llama-torchao-lowbit:
     name: test-llama-torchao-lowbit
+    needs: run-decision
+    if: |
+      github.event_name == 'pull_request' ||
+      needs.run-decision.outputs.is-full-run == 'true'
     uses: pytorch/test-infra/.github/workflows/macos_job.yml@main
     with:
       default-packages: ""
