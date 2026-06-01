@@ -34,9 +34,11 @@ jobs:
     outputs:
       is-full-run: ${{ steps.compute.outputs.is-full-run }}
     steps:
-      # Full history needed to compute commit depth via `git rev-list --count`.
-      # The depth-based sample (every 4th commit) needs the SHA to be reachable
-      # from the repo root.
+      # Full history needed to compute commit depth via
+      # `git rev-list --first-parent --count`. The --first-parent flag
+      # follows only the linear main-branch history through merge
+      # commits, so the count maps 1:1 to pushes on main regardless of
+      # how many commits were in any merged PR.
       - name: Checkout
         uses: actions/checkout@v4
         with:
@@ -65,17 +67,21 @@ jobs:
               ;;
           esac
 
-          # Depth-based 25% sample on push: every 4th commit (depth from
-          # the repo root, mod 4 == 0). Hard guarantees:
-          #   - Exactly 25% sample rate (no statistical variance).
+          # Depth-based 25% sample on push: every 4th commit on the
+          # linear main-branch history (depth %% 4 == 0). --first-parent
+          # is required — plain `git rev-list --count` would walk all
+          # merge parents, so the count would jump by (1 + PR_size) at
+          # each merge commit and the sample rate would be unpredictable.
+          # Hard guarantees with --first-parent:
+          #   - Exactly 25% of pushes on main are sampled.
           #   - At most 3 non-sampled commits between any two samples.
           # Re-runs of the same commit always have the same outcome.
           if [ "$IS_FULL" = "false" ] && [ "$EVENT_NAME" = "push" ]; then
-            DEPTH=$(git rev-list --count "$SHA")
+            DEPTH=$(git rev-list --first-parent --count "$SHA")
             if [ $((DEPTH % 4)) -eq 0 ]; then
               IS_FULL=true
             fi
-            echo "Depth:       $DEPTH (depth %% 4 = $((DEPTH % 4)))"
+            echo "Depth:       $DEPTH (first-parent; depth %% 4 = $((DEPTH % 4)))"
           fi
 
           echo "Event:       $EVENT_NAME"

@@ -30,6 +30,9 @@ on:
 
 permissions:
   contents: write
+  # Needed to delete the failed `viable-strict-gate` run that the
+  # original push triggered — see the "Delete failed gate runs" step.
+  actions: write
 
 concurrency:
   # One in-flight promotion at a time; safer than racing tag pushes.
@@ -96,3 +99,41 @@ jobs:
           git push origin "$TAG"
 
           echo "::notice::Pushed $TAG. Watch the tag-triggered workflow runs (pull / trunk / viable-strict-gate); once they pass, the next update-viablestrict cron (every 30 min) will advance viable/strict."
+
+      # Defense-in-depth: the push that originally landed this commit
+      # triggered a `viable-strict-gate` run that failed (because the
+      # commit wasn't sampled). The tag push above triggers a NEW run
+      # of the gate workflow that will succeed. Standard PyTorch viable/
+      # strict resolves multiple runs by taking the latest conclusion,
+      # so this is usually fine — but to remove ambiguity (and keep the
+      # commit's HUD row clean), explicitly delete any prior failed/
+      # cancelled gate runs on this SHA.
+      - name: Delete failed viable-strict-gate runs on this SHA
+        env:
+          GH_TOKEN: ${{ github.token }}
+          SHA: ${{ inputs.sha }}
+          REPO: ${{ github.repository }}
+        run: |
+          set -euo pipefail
+
+          # List all viable-strict-gate runs for the SHA, filter to
+          # those that completed unsuccessfully, and delete each one.
+          # Failures here are non-fatal: the tag push above is the
+          # primary mechanism; this cleanup is best-effort.
+          RUNS=$(gh api "repos/$REPO/actions/runs?head_sha=$SHA&per_page=100" \
+                   --jq '.workflow_runs[]
+                          | select(.name == "viable-strict-gate")
+                          | select(.conclusion == "failure" or .conclusion == "cancelled" or .conclusion == "timed_out")
+                          | .id' 2>/dev/null || true)
+
+          if [ -z "$RUNS" ]; then
+            echo "No prior failed viable-strict-gate runs to clean up."
+            exit 0
+          fi
+
+          while IFS= read -r RUN_ID; do
+            [ -z "$RUN_ID" ] && continue
+            echo "Deleting failed viable-strict-gate run $RUN_ID"
+            gh api -X DELETE "repos/$REPO/actions/runs/$RUN_ID" || \
+              echo "::warning::Failed to delete run $RUN_ID; continuing anyway."
+          done <<< "$RUNS"

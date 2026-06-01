@@ -15,8 +15,10 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-  # Emits PR diff file list; non-PR events emit '*' so the per-job
-  # `if:` short-circuits via `event_name != 'pull_request'`.
+  # Emits PR diff file list; non-PR events emit '*' (every contains()
+  # check returns true). Gated jobs combine this with run-decision's
+  # is-full-run output: on push, jobs run only if a path matches OR
+  # the commit is a sampled full-run.
   changed-files:
     name: Get changed files
     uses: ./.github/workflows/_get-changed-files.yml
