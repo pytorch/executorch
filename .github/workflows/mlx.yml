@@ -47,6 +47,10 @@ jobs:
 
         ${CONDA_RUN} pip list
 
+        echo "::group::Install Python test requirements"
+        ${CONDA_RUN} pip install gguf
+        echo "::endgroup::"
+
         echo "::group::Build test runners"
         ${CONDA_RUN} cmake --build cmake-out --target op_test_runner multi_thread_test_runner -j$(( $(sysctl -n hw.ncpu) - 1 ))
         echo "::endgroup::"
@@ -74,6 +78,18 @@ jobs:
 
         echo "::group::Run gated_delta_rule op tests"
         ${CONDA_RUN} python -m executorch.backends.mlx.model_ops.test_gated_delta_rule run -v
+        echo "::endgroup::"
+
+        echo "::group::Run tq_norm op tests"
+        ${CONDA_RUN} python -m executorch.backends.mlx.model_ops.test_tq_norm run -v
+        echo "::endgroup::"
+
+        echo "::group::Run tq4_compress op tests"
+        ${CONDA_RUN} python -m executorch.backends.mlx.model_ops.test_tq4_compress run -v
+        echo "::endgroup::"
+
+        echo "::group::Run tq_dequant op tests"
+        ${CONDA_RUN} python -m executorch.backends.mlx.model_ops.test_tq_dequant run -v
         echo "::endgroup::"
 
   test-mlx-qwen35-moe:

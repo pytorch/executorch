@@ -42,6 +42,9 @@ swin2sr_int_lowered_outer_graph_ops = {
     "executorch_exir_dialects_edge__ops_quantized_decomposed_dequantize_per_tensor_default": 5,
     "executorch_exir_dialects_edge__ops_quantized_decomposed_quantize_per_tensor_default": 6,
 }
+swin2sr_vgf_quant_lowered_outer_graph_ops = {
+    "torch.ops.higher_order.executorch_call_delegate": 1,
+}
 
 
 class TinySwin2SR(torch.nn.Module):
@@ -110,7 +113,7 @@ def test_swin2sr_vgf_quant():
         quantize=True,
         run_on_vulkan_runtime=sys.platform == "linux",
     )
-    pipeline.change_args("check_count.exir", swin2sr_int_lowered_outer_graph_ops)
+    pipeline.change_args("check_count.exir", swin2sr_vgf_quant_lowered_outer_graph_ops)
     pipeline.run()
 
 
