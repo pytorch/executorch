@@ -15,13 +15,20 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-  # Emits PR diff file list; non-PR events emit '*' (every contains()
-  # check returns true). Gated jobs combine this with run-decision's
-  # is-full-run output: on push, jobs run only if a path matches OR
-  # the commit is a sampled full-run.
+  # Emits the list of changed files for the current PR or push commit.
+  # On PR: PR diff. On push: diff against `github.event.before`.
+  # On events without a diff base (workflow_dispatch, tag creation,
+  # initial push), emits '*' — note that `contains('*', 'path')` is
+  # false (literal substring match, not glob), so path-filtered jobs
+  # rely on run-decision's is-full-run output for those events.
   changed-files:
     name: Get changed files
     uses: ./.github/workflows/_get-changed-files.yml
+    with:
+      # Opt in to push-event diff so path-filtered jobs can skip pushes
+      # that don't touch their relevant paths. Without this, push events
+      # emit '*' and `contains('*', 'path')` is always false.
+      include-push-diff: true
 
   run-decision:
     name: CI run decision

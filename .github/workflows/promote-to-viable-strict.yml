@@ -72,7 +72,13 @@ jobs:
           # rewritten branches, etc.) that aren't part of the official
           # main/release history.
           REACHABLE=false
-          for branch in main $(git branch -r | grep -E 'origin/release/' | sed 's|origin/||'); do
+          # `git for-each-ref` produces clean refnames (no leading
+          # whitespace, no `origin/HEAD ->` lines), unlike `git branch -r`.
+          BRANCHES="main"
+          while IFS= read -r RELEASE_BRANCH; do
+            BRANCHES="$BRANCHES $RELEASE_BRANCH"
+          done < <(git for-each-ref --format='%(refname:lstrip=3)' refs/remotes/origin/release/)
+          for branch in $BRANCHES; do
             if git merge-base --is-ancestor "$SHA" "origin/$branch" 2>/dev/null; then
               echo "SHA is reachable from origin/$branch"
               REACHABLE=true
