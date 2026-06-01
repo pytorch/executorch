@@ -343,6 +343,23 @@ def cmd_measure(args: argparse.Namespace) -> int:
     tmp = out_dir / "metadata.json.tmp"
     tmp.write_text(json.dumps(metadata, indent=2))
     tmp.replace(out_dir / "metadata.json")
+
+    # If running under GitHub Actions, append the rendered comment to the
+    # job summary so it's visible without downloading the artifact.
+    # This is the same markdown the PR-comment poster would produce, but
+    # for this single job only.
+    summary_path = os.environ.get("GITHUB_STEP_SUMMARY")
+    if summary_path:
+        body = render_comment([report], run_url=None)
+        with open(summary_path, "a") as f:
+            f.write(
+                body
+                if body is not None
+                else f"## Binary size report — {report.job}\n\n"
+                f"Δ within ±{DELTA_NOISE_BYTES} bytes; nothing to report.\n"
+            )
+            f.write("\n")
+
     delta_str = (
         fmt_delta(report.stripped_delta) if report.stripped_delta is not None else "n/a"
     )
