@@ -1,4 +1,4 @@
-# Copyright 2025 NXP
+# Copyright 2025-2026 NXP
 # All rights reserved.
 #
 # This source code is licensed under the BSD-style license found in the
@@ -8,9 +8,13 @@ import unittest
 
 import kgb
 import numpy as np
+
+# noinspection PyUnusedImports
+import pytest
 import torch
 
 from executorch.backends.nxp.nxp_backend import EdgeProgramToIRConverter
+from executorch.backends.nxp.tests.dataset_creator import RandomDatasetCreator
 from executorch.backends.nxp.tests.executorch_pipeline import to_quantized_edge_program
 from executorch.backends.nxp.tests.executors import (
     convert_run_compare,
@@ -18,10 +22,13 @@ from executorch.backends.nxp.tests.executors import (
     ToChannelFirstPreprocess,
     ToChannelLastPreprocess,
 )
+from executorch.backends.nxp.tests.graph_verifier import DetailedGraphVerifier
 from executorch.backends.nxp.tests.models import Conv2dWithActivation
-from executorch.exir.dialects._ops import ops as exir_ops
+from executorch.backends.nxp.tests.nsys_testing import lower_run_compare
+from executorch.backends.nxp.tests.ops_aliases import Convolution, Tanh, Tanh_
 from parameterized import parameterized
 from torch.export import ExportedProgram
+from executorch.backends.nxp.tests.use_qat import *  # noqa F403
 
 
 class TestTanhConverter(unittest.TestCase):
@@ -73,10 +80,7 @@ class TestTanhConverter(unittest.TestCase):
             lowered_module_graph = (
                 quantized_program.graph_module.lowered_module_0.original_module.graph
             )
-            tanh_ops = [
-                exir_ops.edge.aten.tanh.default,
-                exir_ops.edge.aten.tanh_.default,
-            ]
+            tanh_ops = [Tanh, Tanh_]
             assert graph_contains_any_of_ops(graph=lowered_module_graph, ops=tanh_ops)
 
             input_data = (np.random.random(input_shape) * 50).astype(np.int8)
@@ -88,3 +92,82 @@ class TestTanhConverter(unittest.TestCase):
                 input_data=input_data,
                 atol=2.0,
             )
+
+
+class TanhModule(torch.nn.Module):
+    def __init__(self, inplace: bool = False):
+        super().__init__()
+        self.inplace = inplace
+
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        if self.inplace:
+            return torch.tanh_(x)
+        else:
+            return torch.tanh(x)
+
+
+class TestTanhNewNeutronFlow:
+
+    # noinspection PyMethodMayBeStatic
+    def assert_delegated(
+        self,
+        model,
+        input_shape,
+        mocker,
+        use_qat=False,
+        expected_delegated_ops=None,
+    ):
+        if expected_delegated_ops is None:
+            expected_delegated_ops = {Tanh: 1}
+
+        graph_verifier = DetailedGraphVerifier(
+            mocker,
+            expected_delegated_ops=expected_delegated_ops,
+            expected_non_delegated_ops={},
+        )
+
+        # Cover also negative values to thoroughly test the operator.
+        dataset_creator = RandomDatasetCreator(low=-2, high=2)
+
+        lower_run_compare(
+            model,
+            input_shape,
+            graph_verifier,
+            dataset_creator,
+            use_qat=use_qat,
+            use_new_flow_neutron_c=True,  # Use the new flow.
+        )
+
+    @pytest.fixture(params=[True, False], ids=lambda inplace: f"inplace = {inplace}")
+    def inplace(self, request):
+        return request.param
+
+    def test__qat__inplace(self, mocker, use_qat, inplace):
+        shape = (23,)
+        model = TanhModule(inplace)
+        self.assert_delegated(model, shape, mocker, use_qat=use_qat)
+
+    @pytest.mark.parametrize(
+        "shape",
+        [
+            (16,),
+            (3, 5),
+            (2, 3, 4),
+            (2, 3, 4, 5),
+            (2, 3, 2, 3, 2),
+        ],
+        ids=lambda shape: f"{len(shape)}D",
+    )
+    def test__shapes(self, mocker, shape):
+        model = TanhModule()
+        self.assert_delegated(model, shape, mocker)
+
+    def test__with_convolution(self, mocker):
+        input_shape = (1, 3, 12, 16)
+        channels = input_shape[1]
+        model = Conv2dWithActivation(
+            activation=torch.tanh, in_channels=channels, out_channels=channels
+        )
+        self.assert_delegated(
+            model, input_shape, mocker, expected_delegated_ops={Tanh: 1, Convolution: 1}
+        )

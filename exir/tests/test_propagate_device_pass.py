@@ -7,7 +7,10 @@
 import operator
 import unittest
 from copy import deepcopy
-from typing import Dict, final, List
+from typing import Dict, final, List, NamedTuple
+
+# Import to register et_copy ops
+import executorch.exir.passes._device_copy_ops_registry  # noqa: F401
 
 import torch
 from executorch.exir import EdgeCompileConfig, to_edge, to_edge_transform_and_lower
@@ -102,6 +105,13 @@ class CpuOnlyPartitioner(Partitioner):
         )
 
 
+class DeviceCopyNodes(NamedTuple):
+    h2d_nodes: List[torch.fx.Node]
+    d2h_nodes: List[torch.fx.Node]
+    delegate_nodes: List[torch.fx.Node]
+    getitem_nodes: List[torch.fx.Node]
+
+
 def _lower_model_to_executorch(
     model: torch.nn.Module,
     inputs: tuple,
@@ -124,6 +134,32 @@ def _lower_model_to_executorch(
         ("to_edge+to_backend", gm_1),
         ("to_edge_transform_and_lower", gm_2),
     ]
+
+
+def _collect_device_copy_nodes(gm: torch.fx.GraphModule) -> DeviceCopyNodes:
+    h2d_nodes = []
+    d2h_nodes = []
+    delegate_nodes = []
+    getitem_nodes = []
+
+    for node in gm.graph.nodes:
+        if node.op != "call_function":
+            continue
+        if node.target == torch.ops.et_copy._h2d_copy.out:
+            h2d_nodes.append(node)
+        elif node.target == torch.ops.et_copy._d2h_copy.out:
+            d2h_nodes.append(node)
+        elif node.target == executorch_call_delegate:
+            delegate_nodes.append(node)
+        elif node.target == operator.getitem:
+            getitem_nodes.append(node)
+
+    return DeviceCopyNodes(
+        h2d_nodes=h2d_nodes,
+        d2h_nodes=d2h_nodes,
+        delegate_nodes=delegate_nodes,
+        getitem_nodes=getitem_nodes,
+    )
 
 
 class TestPropagateDevicePass(unittest.TestCase):
@@ -163,6 +199,154 @@ class TestPropagateDevicePass(unittest.TestCase):
             self.assertEqual(s.device, expected_device, msg)
             if expected_index is not None:
                 self.assertEqual(s.device_index, expected_index)
+
+    # ---- Integration tests: copy nodes after to_executorch ----
+
+    def test_h2d_d2h_nodes_inserted(self):
+        """Verify H2D/D2H copy nodes are inserted and survive the full
+        to_executorch pipeline with correct .out variant targets, exact
+        counts, and proper graph ordering."""
+
+        class Model(torch.nn.Module):
+            def forward(self, a, b):
+                return torch.add(a, b)
+
+        model = Model()
+        inputs = (torch.randn(2, 2), torch.randn(2, 2))
+
+        for pipeline, gm in _lower_model_to_executorch(
+            model, inputs, DeviceAwarePartitioner("cuda:0")
+        ):
+            with self.subTest(pipeline=pipeline):
+                device_copy_nodes = _collect_device_copy_nodes(gm)
+                h2d_nodes = device_copy_nodes.h2d_nodes
+                d2h_nodes = device_copy_nodes.d2h_nodes
+                delegate_nodes = device_copy_nodes.delegate_nodes
+                getitem_nodes = device_copy_nodes.getitem_nodes
+
+                # Model has 2 inputs, 1 output → 2 H2D, 1 D2H
+                self.assertEqual(
+                    len(h2d_nodes),
+                    2,
+                    f"[{pipeline}] Expected 2 H2D copy nodes (one per "
+                    f"delegate input), got {len(h2d_nodes)}",
+                )
+                self.assertEqual(
+                    len(d2h_nodes),
+                    1,
+                    f"[{pipeline}] Expected 1 D2H copy node (one per "
+                    f"delegate output), got {len(d2h_nodes)}",
+                )
+                self.assertEqual(len(delegate_nodes), 1)
+
+                # Verify graph ordering:
+                # placeholder → h2d_copy → delegate → getitem → d2h_copy → output
+                all_nodes = list(gm.graph.nodes)
+                delegate_idx = all_nodes.index(delegate_nodes[0])
+                for h2d in h2d_nodes:
+                    self.assertLess(
+                        all_nodes.index(h2d),
+                        delegate_idx,
+                        f"[{pipeline}] H2D '{h2d.name}' must appear before "
+                        f"delegate '{delegate_nodes[0].name}'",
+                    )
+                for d2h in d2h_nodes:
+                    for gi in getitem_nodes:
+                        if gi.args[0] == delegate_nodes[0]:
+                            self.assertGreater(
+                                all_nodes.index(d2h),
+                                all_nodes.index(gi),
+                                f"[{pipeline}] D2H '{d2h.name}' must appear "
+                                f"after getitem '{gi.name}'",
+                            )
+
+    def test_e2e_copy_nodes_in_executorch_graph(self):
+        """End-to-end: copy nodes survive the full to_executorch pipeline
+        and have correct .out targets and device specs on TensorSpecs."""
+
+        class Model(torch.nn.Module):
+            def forward(self, a, b):
+                return torch.add(a, b)
+
+        model = Model()
+        inputs = (torch.randn(2, 2), torch.randn(2, 2))
+
+        for pipeline, gm in _lower_model_to_executorch(
+            model, inputs, DeviceAwarePartitioner("cuda:0")
+        ):
+            with self.subTest(pipeline=pipeline):
+                device_copy_nodes = _collect_device_copy_nodes(gm)
+                h2d_nodes = device_copy_nodes.h2d_nodes
+                d2h_nodes = device_copy_nodes.d2h_nodes
+
+                self.assertGreater(
+                    len(h2d_nodes),
+                    0,
+                    f"[{pipeline}] H2D copy nodes must survive to_executorch",
+                )
+                self.assertGreater(
+                    len(d2h_nodes),
+                    0,
+                    f"[{pipeline}] D2H copy nodes must survive to_executorch",
+                )
+
+                for h2d in h2d_nodes:
+                    spec = h2d.meta.get("spec")
+                    self.assertIsNotNone(
+                        spec,
+                        f"[{pipeline}] H2D node '{h2d.name}' missing spec",
+                    )
+                    if isinstance(spec, TensorSpec):
+                        self.assertEqual(
+                            spec.device,
+                            DeviceType.CUDA,
+                            f"[{pipeline}] H2D output '{h2d.name}' should be "
+                            f"on CUDA, got {spec.device.name}",
+                        )
+                        self.assertEqual(spec.device_index, 0)
+
+                for d2h in d2h_nodes:
+                    spec = d2h.meta.get("spec")
+                    self.assertIsNotNone(
+                        spec,
+                        f"[{pipeline}] D2H node '{d2h.name}' missing spec",
+                    )
+                    if isinstance(spec, TensorSpec):
+                        self.assertEqual(
+                            spec.device,
+                            DeviceType.CPU,
+                            f"[{pipeline}] D2H output '{d2h.name}' should be "
+                            f"on CPU, got {spec.device.name}",
+                        )
+
+    def test_no_copy_nodes_without_device(self):
+        """When the partitioner has no target_device CompileSpec, no H2D/D2H
+        copy nodes should be inserted in the final graph."""
+
+        class Model(torch.nn.Module):
+            def forward(self, a, b):
+                return torch.add(a, b)
+
+        model = Model()
+        inputs = (torch.randn(2, 2), torch.randn(2, 2))
+
+        for pipeline, gm in _lower_model_to_executorch(
+            model, inputs, CpuOnlyPartitioner()
+        ):
+            with self.subTest(pipeline=pipeline):
+                device_copy_nodes = _collect_device_copy_nodes(gm)
+                self.assertEqual(
+                    len(device_copy_nodes.h2d_nodes),
+                    0,
+                    f"[{pipeline}] Unexpected H2D copy nodes when no target_device is set",
+                )
+                self.assertEqual(
+                    len(device_copy_nodes.d2h_nodes),
+                    0,
+                    f"[{pipeline}] Unexpected D2H copy nodes when no target_device is set",
+                )
+
+        # ---- Integration tests: device consistency after to_executorch ----
 
     def test_device_consistency_cuda_1(self):
         """Verify device tags are correct with cuda:1 after to_executorch()
@@ -251,7 +435,20 @@ class TestPropagateDevicePass(unittest.TestCase):
                         continue
 
                     label = f"[{pipeline}] '{node.name}'"
-                    if node.target == executorch_call_delegate:
+                    if node.target == torch.ops.et_copy._h2d_copy.out:
+                        self._assert_specs_device(
+                            specs,
+                            DeviceType.CUDA,
+                            f"{label} H2D output should be CUDA",
+                            expected_index=0,
+                        )
+                    elif node.target == torch.ops.et_copy._d2h_copy.out:
+                        self._assert_specs_device(
+                            specs,
+                            DeviceType.CPU,
+                            f"{label} D2H output should be CPU",
+                        )
+                    elif node.target == executorch_call_delegate:
                         self._assert_specs_device(
                             specs,
                             DeviceType.CUDA,

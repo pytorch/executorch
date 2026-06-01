@@ -481,9 +481,6 @@ class ArmPassManager(PassManager):
                 ConvertFullLikeToFullPass(),
                 MatchArgDtypePass(),
                 UnsqueezeScalarPlaceholdersPass(exported_program),
-                # TODO: Move DecomposeNotEqualPass to before or after this block of
-                # passes. Ticket: MLETORCH-1540
-                DecomposeNotEqualPass(),
                 MatchArgRanksPass(exported_program),
             ]
         )
@@ -491,6 +488,7 @@ class ArmPassManager(PassManager):
         # Node transformation passes (post scalar-removal)
         self.add_passes(
             [
+                DecomposeNotEqualPass(),
                 NormalizeIndexPutNoneIndicesPass(),
                 NormalizeIndexPutBoolIndexTensorPass(),
                 RewriteIndexPutPass(),
