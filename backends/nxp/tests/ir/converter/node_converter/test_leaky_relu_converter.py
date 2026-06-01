@@ -4,18 +4,24 @@
 # LICENSE file in the root directory of this source tree.
 
 import numpy as np
+
+# noinspection PyUnusedImports
 import pytest
 import torch
 
 from executorch.backends.nxp.backend.edge_program_converter import (
     EdgeProgramToIRConverter,
 )
+from executorch.backends.nxp.tests.dataset_creator import RandomDatasetCreator
 from executorch.backends.nxp.tests.executorch_pipeline import to_quantized_edge_program
 from executorch.backends.nxp.tests.executors import (
     convert_run_compare,
     graph_contains_any_of_ops,
 )
-from executorch.exir.dialects._ops import ops as exir_ops
+from executorch.backends.nxp.tests.graph_verifier import DetailedGraphVerifier
+from executorch.backends.nxp.tests.nsys_testing import lower_run_compare
+from executorch.backends.nxp.tests.ops_aliases import ExecutorchDelegateCall, LeakyRelu
+from executorch.backends.nxp.tests.use_qat import *  # noqa F403
 
 
 @pytest.fixture(autouse=True)
@@ -24,17 +30,13 @@ def reseed_model_per_test_run():
     np.random.seed(23)
 
 
-ExecutorchDelegateCall = torch.ops.higher_order.executorch_call_delegate
-LeakyRelu2D = exir_ops.edge.aten.leaky_relu.default
-
-
 def _assert_successful_delegation(model, input_shape, mocker, atol=0):
     converter_spy = mocker.spy(EdgeProgramToIRConverter, "convert_program")
     delegated_ep = to_quantized_edge_program(model, input_shape).exported_program()
 
     # Make sure the `leaky_relu` was delegated.
     assert graph_contains_any_of_ops(delegated_ep.graph, [ExecutorchDelegateCall])
-    assert not graph_contains_any_of_ops(delegated_ep.graph, [LeakyRelu2D])
+    assert not graph_contains_any_of_ops(delegated_ep.graph, [LeakyRelu])
 
     # Verify correct behavior of the converted NeutronIR model.
     intermediate_ep = converter_spy.call_args.args[1]
@@ -45,7 +47,7 @@ def _assert_successful_delegation(model, input_shape, mocker, atol=0):
     ).astype(np.int8)
 
     # Make sure the tested program contains the `leaky_relu`.
-    assert graph_contains_any_of_ops(intermediate_ep.graph, [LeakyRelu2D])
+    assert graph_contains_any_of_ops(intermediate_ep.graph, [LeakyRelu])
 
     convert_run_compare(
         intermediate_ep, tfl_model=neutron_ir_model, input_data=input_data, atol=atol
@@ -121,3 +123,62 @@ def test_convert_leaky_relu__ranks(mocker, input_shape: tuple[int, ...]):
         mocker,
         atol=1,  # Common quantization rounding error.
     )
+
+
+class TestLeakyReluNewNeutronFlow:
+    # noinspection PyMethodMayBeStatic
+    def assert_delegated(self, model, input_shape, mocker, use_qat=False):
+        graph_verifier = DetailedGraphVerifier(
+            mocker,
+            expected_delegated_ops={LeakyRelu: 1},
+            expected_non_delegated_ops={},
+        )
+
+        # Create a RandomDatasetCreator that covers also negative numbers to properly test the operator.
+        dataset_creator = RandomDatasetCreator(low=-2, high=2)
+
+        lower_run_compare(
+            model,
+            input_shape,
+            graph_verifier,
+            dataset_creator,
+            use_qat=use_qat,
+            use_new_flow_neutron_c=True,  # Use the new flow.
+        )
+
+    @pytest.mark.parametrize(
+        "input_shape",
+        [
+            (2,),
+            (2, 3),
+            (2, 3, 4),
+            (2, 3, 4, 5),
+            (2, 3, 4, 5, 6),
+        ],
+        ids=lambda shape: f"{len(shape)}D",
+    )
+    def test__default_alpha__input_shapes(self, mocker, input_shape):
+        model = LeakyReluModule()
+        self.assert_delegated(model, input_shape, mocker)
+
+    def test__default_alpha__qat(self, mocker, use_qat):
+        model = LeakyReluModule()
+        input_shape = (23,)
+        self.assert_delegated(model, input_shape, mocker, use_qat)
+
+    @pytest.mark.parametrize(
+        "alpha",
+        [0.01, 3.14159, 0, 1, float("inf")],
+        ids=lambda alpha: f"alpha = {alpha}",
+    )
+    def test__specific_alpha(self, mocker, alpha):
+        model = LeakyReluModule(negative_slope=alpha)
+        self.assert_delegated(model, (23,), mocker)
+
+    def test__inplace(self, mocker):
+        model = LeakyReluModule(inplace=True)
+        self.assert_delegated(
+            model,
+            (23,),
+            mocker,
+        )

@@ -65,4 +65,5 @@ backends/arm-vgf/arm-vgf-overview
 build-run-openvino
 backends/nxp/nxp-overview
 backends-cadence
-backends/samsung/samsung-overview
+Samsung Exynos Backend <backends/samsung/samsung-overview>
+```

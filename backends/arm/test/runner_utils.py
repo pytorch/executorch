@@ -12,6 +12,7 @@ import shutil
 import subprocess  # nosec B404 - invoked only for trusted toolchain binaries
 import sys
 import tempfile
+from collections.abc import Iterable
 from pathlib import Path
 
 from types import NoneType
@@ -61,6 +62,8 @@ _torch_to_numpy_dtype_dict = {
     torch.int16: np.int16,
     torch.int32: np.int32,
     torch.int64: np.int64,
+    torch.float8_e4m3fn: np.uint8,
+    torch.float8_e5m2: np.uint8,
     torch.float16: np.float16,
     torch.float32: np.float32,
     torch.float64: np.float64,
@@ -189,6 +192,10 @@ def torch_tensor_to_numpy(tensor: torch.Tensor) -> np.ndarray:
     if tensor.dtype == torch.bfloat16:
         # Numpy doesn't support bfloat16, use, uint16 instead. Dtype is inferred from model anyways.
         tensor = tensor.view(torch.uint16)
+    elif tensor.dtype == torch.float8_e4m3fn:
+        tensor = tensor.view(torch.uint8)
+    elif tensor.dtype == torch.float8_e5m2:
+        tensor = tensor.view(torch.uint8)
     return tensor.numpy()
 
 
@@ -848,39 +855,98 @@ def vkml_emulation_layer_installed() -> bool:
     return layers_exists and deploy_exists
 
 
-def assert_elf_path_exists(elf_path):
-    if not os.path.exists(elf_path):
-        raise FileNotFoundError(
-            f"Did not find build arm_executor_runner or executor_runner in path {elf_path}, \
-            run setup_testing.sh or setup_testing_vkml.sh?"
-        )
+def _elf_search_roots() -> list[Path]:
+    roots: list[Path] = []
+
+    for env_var in (
+        "EXECUTORCH_ROOT",
+        "GITHUB_WORKSPACE",
+        "BUILD_WORKSPACE_DIRECTORY",
+    ):
+        env_root = os.environ.get(env_var)
+        if env_root:
+            roots.append(Path(env_root).expanduser())
+
+    cwd = Path.cwd().resolve()
+    search_parents = [cwd, *cwd.parents, *Path(__file__).resolve().parents]
+    for parent in search_parents:
+        if (parent / "examples" / "arm").is_dir() or (parent / "arm_test").exists():
+            roots.append(parent)
+
+    unique_roots: list[Path] = []
+    seen: set[Path] = set()
+    for root in roots:
+        resolved = root.resolve()
+        if resolved not in seen:
+            unique_roots.append(resolved)
+            seen.add(resolved)
+    return unique_roots
 
 
-def get_elf_path(target_board: str, use_portable_ops: bool = False) -> str:
-    elf_path = ""
-
+def _elf_path_candidates(
+    target_board: str, use_portable_ops: bool = False
+) -> list[Path]:
     if target_board not in VALID_TARGET:
         raise ValueError(f"Unsupported target: {target_board}")
 
-    if use_portable_ops:
-        portable_ops_str = "portable-ops_"
-    else:
-        portable_ops_str = ""
-
+    portable_ops_str = "portable-ops_" if use_portable_ops else ""
     if target_board in ("corstone-300", "corstone-320"):
-        elf_path = os.path.join(
+        build_dir = Path(
             "arm_test",
             f"arm_semihosting_executor_runner_{portable_ops_str}{target_board}",
-            "arm_executor_runner",
         )
-    elif target_board == "vkml_emulation_layer":
-        elf_path = os.path.join(
-            f"arm_test/arm_executor_runner_{portable_ops_str}vkml",
-            "executor_runner",
+        binary_name = "arm_executor_runner"
+    else:
+        build_dir = Path("arm_test", f"arm_executor_runner_{portable_ops_str}vkml")
+        binary_name = "executor_runner"
+
+    candidates: list[Path] = []
+    for root in _elf_search_roots():
+        root_build_dir = root / build_dir
+        candidates.extend(
+            [
+                root_build_dir / binary_name,
+                root_build_dir / "Release" / binary_name,
+                root_build_dir / "examples" / "arm" / "executor_runner" / binary_name,
+                root_build_dir
+                / "examples"
+                / "arm"
+                / "executor_runner"
+                / "Release"
+                / binary_name,
+            ]
         )
 
-    assert_elf_path_exists(elf_path)
-    return elf_path
+    unique_candidates: list[Path] = []
+    seen: set[Path] = set()
+    for candidate in candidates:
+        resolved = candidate.resolve(strict=False)
+        if resolved not in seen:
+            unique_candidates.append(resolved)
+            seen.add(resolved)
+    return unique_candidates
+
+
+def _resolve_existing_elf_path(elf_candidates: Iterable[Path]) -> Path:
+    checked: list[Path] = []
+    for elf_path in elf_candidates:
+        checked.append(elf_path)
+        if elf_path.exists():
+            return elf_path
+
+    checked_paths = ", ".join(str(path) for path in checked)
+    raise FileNotFoundError(
+        "Did not find build arm_executor_runner or executor_runner. "
+        f"Tried: {checked_paths}. "
+        "Run setup_testing.sh or setup_testing_vkml.sh?"
+    )
+
+
+def get_elf_path(target_board: str, use_portable_ops: bool = False) -> str:
+    elf_path = _resolve_existing_elf_path(
+        _elf_path_candidates(target_board, use_portable_ops=use_portable_ops)
+    )
+    return str(elf_path)
 
 
 def arm_executor_runner_exists(target_board: str, use_portable_ops: bool = False):

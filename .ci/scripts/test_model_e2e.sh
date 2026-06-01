@@ -258,17 +258,17 @@ echo "::group::Prepare $MODEL_NAME Artifacts"
 # Download tokenizer files (skip for models that bundle tokenizer in export or do not use one)
 if [ "$MODEL_NAME" != "parakeet" ] && [ "$MODEL_NAME" != "voxtral_realtime" ] && [ "$MODEL_NAME" != "sortformer" ] && [ "$MODEL_NAME" != "dinov2" ] && [ "$MODEL_NAME" != "qwen3_5_moe" ] && [ "$MODEL_NAME" != "gemma4_31b" ]; then
   if [ "$TOKENIZER_FILE" != "" ]; then
-    curl -L $TOKENIZER_URL/$TOKENIZER_FILE -o $MODEL_DIR/$TOKENIZER_FILE
+    curl -L --retry 3 --retry-all-errors $TOKENIZER_URL/$TOKENIZER_FILE -o $MODEL_DIR/$TOKENIZER_FILE
   else
-    curl -L $TOKENIZER_URL/tokenizer.json -o $MODEL_DIR/tokenizer.json
-    curl -L $TOKENIZER_URL/tokenizer_config.json -o $MODEL_DIR/tokenizer_config.json
-    curl -L $TOKENIZER_URL/special_tokens_map.json -o $MODEL_DIR/special_tokens_map.json
+    curl -L --retry 3 --retry-all-errors $TOKENIZER_URL/tokenizer.json -o $MODEL_DIR/tokenizer.json
+    curl -L --retry 3 --retry-all-errors $TOKENIZER_URL/tokenizer_config.json -o $MODEL_DIR/tokenizer_config.json
+    curl -L --retry 3 --retry-all-errors $TOKENIZER_URL/special_tokens_map.json -o $MODEL_DIR/special_tokens_map.json
   fi
 fi
 
 # Download test files
 if [ "$AUDIO_URL" != "" ]; then
-  curl -L $AUDIO_URL -o ${MODEL_DIR}/$AUDIO_FILE
+  curl -L --retry 3 --retry-all-errors $AUDIO_URL -o ${MODEL_DIR}/$AUDIO_FILE
 elif [[ "$MODEL_NAME" == *whisper* ]] || [ "$MODEL_NAME" = "voxtral_realtime" ]; then
   if ! command -v ffmpeg >/dev/null; then
     if [ "$(uname -s)" = "Linux" ] && command -v apt-get >/dev/null; then
@@ -290,7 +290,7 @@ fi
 
 # Download test image for vision models
 if [ -n "${IMAGE_URL:-}" ]; then
-  curl -L "$IMAGE_URL" -o "${MODEL_DIR}/test_image.jpg"
+  curl -L --retry 3 --retry-all-errors "$IMAGE_URL" -o "${MODEL_DIR}/test_image.jpg"
 fi
 
 ls -al

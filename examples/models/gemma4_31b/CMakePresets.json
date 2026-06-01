@@ -23,6 +23,17 @@
                 "string": "${hostSystemName}",
                 "list": ["Linux", "Windows"]
             }
+        },
+        {
+            "name": "gemma4-31b-mlx",
+            "displayName": "Gemma 4 31B runner (MLX)",
+            "inherits": ["gemma4-31b-base"],
+            "cacheVariables": {},
+            "condition": {
+                "type": "equals",
+                "lhs": "${hostSystemName}",
+                "rhs": "Darwin"
+            }
         }
     ],
     "buildPresets": [
@@ -30,6 +41,12 @@
             "name": "gemma4-31b-cuda",
             "displayName": "Build Gemma 4 31B runner (CUDA)",
             "configurePreset": "gemma4-31b-cuda",
+            "targets": ["gemma4_31b_runner"]
+        },
+        {
+            "name": "gemma4-31b-mlx",
+            "displayName": "Build Gemma 4 31B runner (MLX)",
+            "configurePreset": "gemma4-31b-mlx",
             "targets": ["gemma4_31b_runner"]
         }
     ],
@@ -45,6 +62,20 @@
                 {
                     "type": "build",
                     "name": "gemma4-31b-cuda"
+                }
+            ]
+        },
+        {
+            "name": "gemma4-31b-mlx",
+            "displayName": "Configure and build Gemma 4 31B runner (MLX)",
+            "steps": [
+                {
+                    "type": "configure",
+                    "name": "gemma4-31b-mlx"
+                },
+                {
+                    "type": "build",
+                    "name": "gemma4-31b-mlx"
                 }
             ]
         }

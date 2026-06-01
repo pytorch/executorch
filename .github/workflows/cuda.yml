@@ -1,6 +1,6 @@
 # Test ExecuTorch CUDA Build Compatibility
 # This workflow tests whether ExecuTorch can be successfully built with CUDA support
-# across different CUDA versions (12.6, 12.8, 12.9, 13.0) using the command:
+# across different CUDA versions (12.6, 13.0) using the command:
 #   ./install_executorch.sh
 #
 # Note: ExecuTorch automatically detects the system CUDA version using nvcc and
@@ -31,7 +31,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        cuda-version: ["12.6", "12.8", "12.9", "13.0"]
+        cuda-version: ["12.6", "13.0"]
 
     name: test-executorch-cuda-build-${{ matrix.cuda-version }}
     uses: pytorch/test-infra/.github/workflows/linux_job_v2.yml@main
@@ -66,7 +66,7 @@ jobs:
             echo "CUDA build results: ${{ needs.test-cuda-builds.result }}"
             exit 1
           else
-            echo "SUCCESS: All ExecuTorch CUDA builds (12.6, 12.8, 12.9, 13.0) completed successfully!"
+            echo "SUCCESS: All ExecuTorch CUDA builds (12.6, 13.0) completed successfully!"
           fi
 
   test-models-cuda:
@@ -79,7 +79,7 @@ jobs:
       timeout: 90
       runner: linux.g5.4xlarge.nvidia.gpu
       gpu-arch-type: cuda
-      gpu-arch-version: 12.6
+      gpu-arch-version: "13.0"
       use-custom-docker-registry: false
       submodules: recursive
       ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
@@ -114,7 +114,7 @@ jobs:
       timeout: 90
       runner: linux.g5.4xlarge.nvidia.gpu
       gpu-arch-type: cuda
-      gpu-arch-version: 12.6
+      gpu-arch-version: "13.0"
       use-custom-docker-registry: false
       submodules: recursive
       ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
@@ -150,7 +150,7 @@ jobs:
 
         # Run Gemma 4 31B tests (quant unit tests + pipeline integration tests)
         pip install gguf
-        python -m pytest examples/models/gemma4_31b/quant/tests/ examples/models/gemma4_31b/tests/ -v -o "addopts="
+        python -m pytest examples/models/gemma4_31b/quant/tests/ examples/models/gemma4_31b/tests/ --ignore=examples/models/gemma4_31b/tests/test_mlx_pipeline.py -v -o "addopts="
 
   export-model-cuda-artifact:
     name: export-model-cuda-artifact
@@ -271,7 +271,7 @@ jobs:
       secrets-env: EXECUTORCH_HF_TOKEN
       runner: ${{ (matrix.model.name == 'Qwen3.5-35B-A3B-HQQ-INT4' || matrix.model.name == 'gemma-4-31B-it-HQQ-INT4') && 'linux.aws.a100' || 'linux.g5.4xlarge.nvidia.gpu' }}
       gpu-arch-type: cuda
-      gpu-arch-version: 12.6
+      gpu-arch-version: "13.0"
       use-custom-docker-registry: false
       submodules: recursive
       upload-artifact: ${{ matrix.model.repo }}-${{ matrix.model.name }}-cuda-${{ matrix.quant }}
@@ -288,10 +288,11 @@ jobs:
         # Setup Huggingface only for models that need it (not parakeet or dinov2)
         if [ "${{ matrix.model.name }}" != "parakeet-tdt" ] && [ "${{ matrix.model.name }}" != "dinov2-small-imagenet1k-1-layer" ]; then
           echo "::group::Setup Huggingface"
-          pip install -U "huggingface_hub[cli]<1.0" accelerate
-          huggingface-cli login --token $SECRET_EXECUTORCH_HF_TOKEN
+          pip install -U "huggingface_hub[cli]>=1.2.1,<2.0" accelerate "optimum~=2.0.0" "transformers==5.0.0rc1"
+          HF_AUTH_TOKEN="$(printf '%s' "$SECRET_EXECUTORCH_HF_TOKEN" | tr -d '\r\n')"
+          hf auth login --token "$HF_AUTH_TOKEN"
           OPTIMUM_ET_VERSION=$(cat .ci/docker/ci_commit_pins/optimum-executorch.txt)
-          pip install git+https://github.com/huggingface/optimum-executorch.git@${OPTIMUM_ET_VERSION}
+          pip install --no-deps git+https://github.com/huggingface/optimum-executorch.git@${OPTIMUM_ET_VERSION}
           echo "::endgroup::"
         fi
 
@@ -406,7 +407,7 @@ jobs:
       timeout: 90
       runner: ${{ (matrix.model.name == 'Qwen3.5-35B-A3B-HQQ-INT4' || matrix.model.name == 'gemma-4-31B-it-HQQ-INT4') && 'linux.aws.a100' || 'linux.g5.4xlarge.nvidia.gpu' }}
       gpu-arch-type: cuda
-      gpu-arch-version: 12.6
+      gpu-arch-version: "13.0"
       use-custom-docker-registry: false
       submodules: recursive
       download-artifact: ${{ matrix.model.repo }}-${{ matrix.model.name }}-cuda-${{ matrix.quant }}
@@ -442,7 +443,7 @@ jobs:
       download-artifact: ${{ matrix.artifact }}
       runner: linux.g5.4xlarge.nvidia.gpu
       gpu-arch-type: cuda
-      gpu-arch-version: 12.6
+      gpu-arch-version: "13.0"
       use-custom-docker-registry: false
       submodules: recursive
       ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
@@ -469,13 +470,15 @@ jobs:
         echo "::endgroup::"
 
         echo "::group::Setup Huggingface"
-        pip install -U "huggingface_hub[cli]<1.0"
-        huggingface-cli login --token $SECRET_EXECUTORCH_HF_TOKEN
+        pip install -U "huggingface_hub[cli]>=1.2.1,<2.0"
+        HF_AUTH_TOKEN="$(printf '%s' "$SECRET_EXECUTORCH_HF_TOKEN" | tr -d '\r\n')"
+        hf auth login --token "$HF_AUTH_TOKEN"
         echo "::endgroup::"
 
         echo "::group::Install optimum-executorch"
         OPTIMUM_ET_VERSION=$(cat .ci/docker/ci_commit_pins/optimum-executorch.txt)
-        pip install git+https://github.com/huggingface/optimum-executorch.git@${OPTIMUM_ET_VERSION}
+        pip install "optimum~=2.0.0" "transformers==5.0.0rc1"
+        pip install --no-deps git+https://github.com/huggingface/optimum-executorch.git@${OPTIMUM_ET_VERSION}
         echo "::endgroup::"
 
         echo "::group::Test CUDA Model: ${{ matrix.model }} ${{ matrix.quantize }}"

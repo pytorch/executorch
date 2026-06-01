@@ -418,12 +418,12 @@ class NodeVisitor:
         elif is_graph_output(node):
             tensor_name = f"output_{tensor_name}"
 
-        # Save this for intermediate debugger
-        # Needs idx since node like topk has 2 outputs
-        if QCOM_TENSOR_NAME in node.meta:
-            node.meta[QCOM_TENSOR_NAME][wrapper_idx] = tensor_name
-        else:
-            node.meta[QCOM_TENSOR_NAME] = {wrapper_idx: tensor_name}
+        # Only add qcom_tensor_name when enable tensor dump.
+        # Only runs in qnn_preprocess (not op validation) since that's when
+        # tensor names are finalized and enable_tensor_dump is True.
+        if self.enable_tensor_dump:
+            node.meta.setdefault(QCOM_TENSOR_NAME, {})[wrapper_idx] = tensor_name
+
         return tensor_name
 
     def define_custom_tensor_wrapper(

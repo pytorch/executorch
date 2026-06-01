@@ -9,7 +9,7 @@ wheel  # For building the pip package archive.
 zstd  # Imported by resolve_buck.py.
 certifi  # Imported by resolve_buck.py.
 lintrunner==0.12.7
-lintrunner-adapters==0.13.0
+lintrunner-adapters==0.14.0
 
 pytest<9.0
 pytest-xdist

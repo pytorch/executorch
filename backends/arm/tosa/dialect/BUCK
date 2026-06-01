@@ -22,6 +22,7 @@ fbcode_target(_kind = runtime.python_library,
     deps = [
         ":core",
         "//caffe2:torch",
+        "//executorch/backends/arm/tosa:resize_utils",
         "//executorch/backends/arm/tosa:tosa",
     ],
 )

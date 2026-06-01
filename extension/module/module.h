@@ -14,7 +14,11 @@
 #include <unordered_set>
 #include <vector>
 
+#include <executorch/runtime/backend/backend_options_map.h>
+#include <executorch/runtime/backend/options.h>
 #include <executorch/runtime/executor/program.h>
+
+#include <executorch/runtime/core/device_memory_buffer.h>
 
 #ifdef USE_ATEN_LIB
 #define ET_MODULE_NAMESPACE module::aten
@@ -25,6 +29,7 @@
 namespace executorch {
 namespace extension {
 
+using ET_RUNTIME_NAMESPACE::Kernel;
 using ET_RUNTIME_NAMESPACE::Method;
 using ET_RUNTIME_NAMESPACE::MethodMeta;
 using ET_RUNTIME_NAMESPACE::NamedDataMap;
@@ -187,9 +192,18 @@ class Module {
   /**
    * Loads the program with per-delegate runtime options.
    *
-   * @param[in] backend_options A LoadBackendOptionsMap containing per-delegate
-   * load-time configuration options. The caller must ensure this object
-   * outlives any methods loaded with these options.
+   * The Module deep-copies `backend_options` into internal storage, so the
+   * caller may release the input (and any backing BackendOption arrays its
+   * Spans referenced) immediately after this call returns. Future lazy
+   * `load_method` calls (e.g. triggered by `forward`) consume the
+   * Module-owned copy.
+   *
+   * Transactional: on failure, the previously-installed backend options
+   * (if any) are left in place; the input is not committed.
+   *
+   * @param[in] backend_options A LoadBackendOptionsMap containing
+   * per-delegate load-time configuration options. Deep-copied into the
+   * Module on success; not retained on failure.
    * @param[in] verification The type of verification to do before returning
    * success.
    *
@@ -199,6 +213,21 @@ class Module {
       const LoadBackendOptionsMap& backend_options,
       const Program::Verification verification =
           Program::Verification::Minimal);
+
+  /**
+   * Returns the deep-copied LoadBackendOptionsMap most recently installed
+   * via `load(LoadBackendOptionsMap, ...)`. The returned reference is owned
+   * by the Module and remains valid until the next call to
+   * `load(LoadBackendOptionsMap, ...)` or until the Module is destroyed.
+   *
+   * If `load(LoadBackendOptionsMap, ...)` has never been called, returns a
+   * default-constructed (empty, `size() == 0`) map.
+   *
+   * @returns Const reference to the Module-owned LoadBackendOptionsMap.
+   */
+  inline const LoadBackendOptionsMap& backend_options() const {
+    return backend_options_map_;
+  }
 
   /**
    * Checks if the program is loaded.
@@ -255,7 +284,8 @@ class Module {
       const std::string& method_name,
       runtime::HierarchicalAllocator* planned_memory = nullptr,
       torch::executor::EventTracer* event_tracer = nullptr,
-      const LoadBackendOptionsMap* backend_options = nullptr);
+      const LoadBackendOptionsMap* backend_options = nullptr,
+      std::vector<Kernel> kernel_registry = {});
 
   ET_DEPRECATED ET_NODISCARD runtime::Error inline load_method(
       const std::string& method_name,
@@ -303,9 +333,14 @@ class Module {
   ET_NODISCARD inline runtime::Error load_forward(
       runtime::HierarchicalAllocator* planned_memory = nullptr,
       torch::executor::EventTracer* event_tracer = nullptr,
-      const LoadBackendOptionsMap* backend_options = nullptr) {
+      const LoadBackendOptionsMap* backend_options = nullptr,
+      std::vector<Kernel> kernel_registry = {}) {
     return load_method(
-        "forward", planned_memory, event_tracer, backend_options);
+        "forward",
+        planned_memory,
+        event_tracer,
+        backend_options,
+        std::move(kernel_registry));
   }
 
   ET_DEPRECATED ET_NODISCARD inline runtime::Error load_forward(
@@ -683,6 +718,11 @@ class Module {
   struct PlannedMemory {
     std::vector<std::vector<uint8_t>> planned_buffers;
     std::vector<runtime::Span<uint8_t>> planned_spans;
+    std::vector<runtime::DeviceMemoryBuffer> device_buffers;
+    /// Per-buffer Device (type + index) metadata used by
+    /// HierarchicalAllocator. Owns the storage backing the device span the
+    /// allocator references, so it must outlive `planned_memory`.
+    std::vector<runtime::etensor::Device> planned_devices;
     std::unique_ptr<runtime::HierarchicalAllocator> planned_memory;
   };
   std::unique_ptr<PlannedMemory> make_planned_memory(
@@ -690,6 +730,8 @@ class Module {
   std::unique_ptr<PlannedMemory> make_planned_memory_with_shared_arenas(
       const std::vector<size_t>& buffer_sizes,
       std::vector<std::vector<uint8_t>>& shared_arenas);
+  std::unique_ptr<PlannedMemory> make_planned_memory_with_devices(
+      const ET_RUNTIME_NAMESPACE::MethodMeta& method_meta);
   runtime::Result<std::vector<size_t>> get_mem_planned_buffer_sizes(
       const std::string& method_name);
   runtime::Result<std::vector<size_t>> get_max_mem_planned_buffer_sizes();
@@ -698,6 +740,7 @@ class Module {
     std::unique_ptr<PlannedMemory> planned_memory;
     std::unique_ptr<runtime::MemoryManager> memory_manager;
     std::unique_ptr<Method> method;
+    std::vector<Kernel> kernel_registry;
   };
 
   std::string file_path_;
@@ -713,7 +756,14 @@ class Module {
   std::unique_ptr<NamedDataMap> merged_data_map_;
   std::vector<std::vector<uint8_t>> shared_arenas_;
   ET_DEPRECATED std::vector<uint8_t> debug_buffer_;
-  const LoadBackendOptionsMap* backend_options_ = nullptr;
+  // Module-owned deep-copy of the backend options most recently installed
+  // via load(LoadBackendOptionsMap, ...). `backend_options_storage_` owns
+  // the per-backend BackendOption arrays; `backend_options_map_` is a
+  // LoadBackendOptionsMap whose Spans reference those owned arrays. An
+  // empty map (`size() == 0`) is observationally indistinguishable from
+  // "never set" by downstream consumers, so we don't track that bit.
+  std::vector<std::vector<runtime::BackendOption>> backend_options_storage_;
+  LoadBackendOptionsMap backend_options_map_;
   bool share_memory_arenas_;
 
   ET_NODISCARD runtime::Error load_internal(

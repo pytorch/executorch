@@ -20,7 +20,7 @@ In this tutorial you will learn how to export a simple PyTorch model for the Exe
 ```{tip}
 If you are already familiar with this delegate, you may want to jump directly to the examples:
 * [Examples in the ExecuTorch repository](https://github.com/pytorch/executorch/tree/main/examples/arm)
-* [A commandline compiler for example models](https://github.com/pytorch/executorch/blob/main/backends/arm/scripts/aot_arm_compiler.py)
+* [A commandline compiler for quick tests and example models](https://github.com/pytorch/executorch/blob/main/backends/arm/scripts/aot_arm_compiler.py)
 ```
 
 This tutorial serves as an introduction to using ExecuTorch to deploy PyTorch models on Arm&reg; Ethos&trade;-U targets. It is based on `ethos_u_minimal_example.ipynb`, provided in Arm’s examples folder.
@@ -142,42 +142,36 @@ save_pte_program(executorch_program_manager, "ethos_u_minimal_example.pte")
 
 
 ```{tip}
-For a quick start, you can use the script `backends/arm/scripts/aot_arm_compiler.py` to produce the pte.
+For a quick test, you can use the script `backends/arm/scripts/aot_arm_compiler.py` to produce the pte.
 To produce a pte file equivalent to the one above, run
-`python -m backends.arm.scripts.aot_arm_compiler --model_name=add --delegate --quantize --output=ethos_u_minimal_example.pte`
+`python -m backends.arm.scripts.aot_arm_compiler --model_name=add --delegate --quantize --output=ethos_u_minimal_example.pte`.
+For production use, you should instead use the stable Python API shown above.
 ```
 
 ### Runtime:
 
-After the AOT compilation flow is done, the runtime can be cross compiled and linked to the produced `.pte`-file using the Arm cross-compilation toolchain. This is done in two steps:
-
-First, build and install the ExecuTorch libraries and EthosUDelegate:
-```
-# In ExecuTorch top-level, with sourced setup_path.sh
-cmake -DCMAKE_BUILD_TYPE=Release --preset arm-baremetal -B cmake-out-arm .
-cmake --build cmake-out-arm --target install -j$(nproc)
-```
-Second, build and link the `arm_executor_runner` and generate kernel bindings for any non delegated ops. This is the actual program that will run on target.
+After the AOT compilation flow is done, the runtime can be cross compiled and linked to the produced `.pte`-file using the Arm cross-compilation toolchain. Configure the standalone Arm executor runner CMake project to pull in the ExecuTorch build graph, link the Ethos-U delegate, and generate kernel bindings for any non-delegated ops. This produces the `arm_executor_runner` program that will run on target.
 
 ```
 # In ExecuTorch top-level, with sourced setup_path.sh
-cmake -DCMAKE_TOOLCHAIN_FILE=`pwd`/examples/arm/ethos-u-setup/arm-none-eabi-gcc.cmake \
+cmake -S examples/arm/executor_runner/standalone \
+      -B ethos_u_minimal_example \
+      -DEXECUTORCH_ROOT=$(pwd) \
+      -DCMAKE_TOOLCHAIN_FILE=$(pwd)/examples/arm/ethos-u-setup/arm-none-eabi-gcc.cmake \
       -DCMAKE_BUILD_TYPE=Release \
       -DET_PTE_FILE_PATH=ethos_u_minimal_example.pte \
       -DTARGET_CPU=cortex-m55 \
       -DETHOSU_TARGET_NPU_CONFIG=ethos-u55-128 \
       -DMEMORY_MODE=Shared_Sram \
-      -DSYSTEM_CONFIG=Ethos_U55_High_End_Embedded \
-      -Bethos_u_minimal_example \
-      examples/arm/executor_runner
+      -DSYSTEM_CONFIG=Ethos_U55_High_End_Embedded
 cmake --build ethos_u_minimal_example -j$(nproc) -- arm_executor_runner
 ```
 
 ```{tip}
-For a quick start, you can use the script `backends/arm/scripts/build_executor_runner.sh` to build the runner.
+For a quick start, you can use the script `backends/arm/scripts/build_executor_runner.sh` to configure and build the standalone runner.
 To build a runner equivalent to the one above, run
 `./backends/arm/scripts/build_executor_runner.sh --pte=ethos_u_minimal_example.pte`
-````
+```
 
 The block diagram below shows, at the high level, how the various build artifacts are generated and are linked together to generate the final bare-metal executable.
 
@@ -196,7 +190,6 @@ The example application is by default built with an input of ones, so the expect
 ## Takeaways
 
 In this tutorial you have learned how to use ExecuTorch to export a PyTorch model to an executable that can run on an embedded target, and then run that executable on simulated hardware.
-
 To learn more, check out the [ExecuTorch on Arm Practical Labs](https://github.com/arm-education/executorch_on_arm_labs) series. This series provides a structured entry-point to developing with ExecuTorch on Arm, across both CPU and Ethos-U NPU.
 
 For quick learning paths showcasing short tutorials:

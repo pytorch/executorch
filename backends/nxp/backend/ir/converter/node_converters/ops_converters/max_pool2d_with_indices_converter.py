@@ -83,14 +83,10 @@ class MaxPool2DWithIndicesConverter(NodeConverter):
             ):
                 return False
 
-            maximum_supported_kernel_size = 4096
             # If there is no padding, Neutron allows maximum stride of 4096. Otherwise, it's 32. But the converter
             #  always inserts a `Pad` operator to add the padding, so the `MaxPool` never pads it's input itself, so
             #  4096 is always the limit. And similarly, the `MaxPool` input padding limitation does not apply either.
             maximum_supported_stride = 4096
-
-            if any(k > maximum_supported_kernel_size for k in kernel_size):
-                return False
             if any(s > maximum_supported_stride for s in stride):
                 return False
 
@@ -156,9 +152,7 @@ class MaxPool2DWithIndicesConverter(NodeConverter):
         :return: Tuple of (kernel_size, stride, padding, dilation, ceil_mode).
         """
         kernel_size = node.args[1]
-        stride = node.args[
-            2
-        ]  # The default value is equal to the kernel_size, so it is never empty here.
+        stride = try_get_arg(node, 2) or kernel_size
         padding = try_get_arg(node, 3) or (0, 0)
         dilation = try_get_arg(node, 4) or (1, 1)
         ceil_mode = try_get_arg(node, 5) or False

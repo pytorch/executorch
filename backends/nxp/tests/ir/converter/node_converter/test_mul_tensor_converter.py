@@ -21,9 +21,6 @@ from executorch.backends.nxp.tests.executors import (
     ToChannelLastPreprocess,
 )
 from executorch.backends.nxp.tests.graph_verifier import DetailedGraphVerifier
-from executorch.backends.nxp.tests.model_output_comparator import (
-    NumericalStatsOutputComparator,
-)
 from executorch.backends.nxp.tests.models import (
     MulTensorConvModule,
     MulTensorModule,
@@ -256,7 +253,6 @@ class TestMulTensorNewNeutronFlow:
     def test__basic_nsys_inference_qat(self, x_input_shape, mocker):
         x_input_spec = ModelInputSpec(x_input_shape)
         model = MulTensorModule()
-        comparator = NumericalStatsOutputComparator()
         graph_verifier = DetailedGraphVerifier(
             mocker, expected_delegated_ops={MulTensor: 1}, expected_non_delegated_ops={}
         )
@@ -265,7 +261,6 @@ class TestMulTensorNewNeutronFlow:
             model,
             [x_input_spec, x_input_spec],
             graph_verifier,
-            output_comparator=comparator,
             use_new_flow_neutron_c=True,
             use_qat=True,
         )

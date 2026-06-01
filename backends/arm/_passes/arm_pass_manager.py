@@ -20,6 +20,7 @@ from executorch.backends.arm._passes import (
     ConstantFoldingPass,
     ControlFlowConstInlinePass,
     Conv1dUnsqueezePass,
+    ConvertEluFamilyToEluPass,
     ConvertELUParamsPass,
     ConvertExpandCopyToRepeatPass,
     ConvertFullLikeToFullPass,
@@ -97,6 +98,7 @@ from executorch.backends.arm._passes import (
     DecomposeVarPass,
     DecomposeWhereScalarOtherPass,
     DecorateFp32toInt32CastingPass,
+    DeduplicateGetAttrPass,
     EnsureUniqueOutputNodesPass,
     FoldAndAnnotateQParamsPass,
     FuseBatchNorm2dPass,
@@ -402,6 +404,7 @@ class ArmPassManager(PassManager):
                 DecomposeLayerNormPass(),
                 DecomposeVarPass(),
                 DecomposeMeanDimPass(exported_program.graph_module, self.tosa_spec),
+                ConvertEluFamilyToEluPass(),
                 ConvertELUParamsPass(),
                 ControlFlowConstInlinePass(),
                 NormalizeWhileInitialArgsPass(use_exir_clone=True),
@@ -478,9 +481,6 @@ class ArmPassManager(PassManager):
                 ConvertFullLikeToFullPass(),
                 MatchArgDtypePass(),
                 UnsqueezeScalarPlaceholdersPass(exported_program),
-                # TODO: Move DecomposeNotEqualPass to before or after this block of
-                # passes. Ticket: MLETORCH-1540
-                DecomposeNotEqualPass(),
                 MatchArgRanksPass(exported_program),
             ]
         )
@@ -488,6 +488,7 @@ class ArmPassManager(PassManager):
         # Node transformation passes (post scalar-removal)
         self.add_passes(
             [
+                DecomposeNotEqualPass(),
                 NormalizeIndexPutNoneIndicesPass(),
                 NormalizeIndexPutBoolIndexTensorPass(),
                 RewriteIndexPutPass(),
@@ -606,6 +607,7 @@ class ArmPassManager(PassManager):
                     RewriteInplaceArithmeticPass(tfa_pass=True),
                     DecomposeAddSubAlphaPass(tfa_pass=True),
                     DecomposeLeakyReLUPass(tfa_pass=True),
+                    ConvertEluFamilyToEluPass(tfa_pass=True),
                     DecomposeGroupNormPass(tfa_pass=True),
                     DecomposeLayerNormPass(tfa_pass=True),
                     DecomposeVarPass(tfa_pass=True),
@@ -651,6 +653,7 @@ class ArmPassManager(PassManager):
                 [
                     ReplaceInfAndLimitValuesPass(tfa_pass=True),
                     DecomposeMaskedFillPass(tfa_pass=True),
+                    DeduplicateGetAttrPass(tfa_pass=True),
                 ]
             )
 

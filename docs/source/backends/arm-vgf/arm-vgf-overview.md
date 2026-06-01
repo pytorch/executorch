@@ -129,7 +129,7 @@ described in the rest of this guide but with a concrete end-to-end sample.
 
 **→{doc}`/backends/arm-vgf/arm-vgf-troubleshooting` — Debug common issues.**
 
-**→{doc}`/backends/arm-vgf/tutorials/arm-vgf-tutorials` — Tutorials.**
+**→{doc}`/backends/arm-vgf/tutorials/vgf-getting-started` — Getting started tutorial.**
 
 **→{doc}`/backends/arm-vgf/VGF_op_support` — VGF supported operators.**
 
@@ -142,6 +142,6 @@ described in the rest of this guide but with a concrete end-to-end sample.
 arm-vgf-partitioner
 arm-vgf-quantization
 arm-vgf-troubleshooting
-tutorials/arm-vgf-tutorials
+tutorials/vgf-getting-started
 VGF_op_support
 ```

@@ -237,6 +237,21 @@ We welcome contributions from the community!
 - 🐛 [**Issues**](https://github.com/pytorch/executorch/issues) — Report bugs or request features
 - 🤝 [**Contributing Guide**](CONTRIBUTING.md) — Guidelines and codebase structure
 
+## Citing ExecuTorch
+
+If you found ExecuTorch helpful in your research and would like to acknowledge it, please cite us using the following BibTeX:
+
+```bibtex
+@article{executorch2026,
+    title={{ExecuTorch} - A Unified {PyTorch} Solution to Run {AI} Models On-Device},
+    author={Nachin, Mergen and Desai, Digant and Jia, Sicheng Stephen and Lai, Chen and Liu, Mengwei and Szwejbka, Jacob and Alvarez, Raziel and Ascani, RJ and Bort, Dave and Candales, Manuel and
+  others},
+    journal={arXiv preprint arXiv:2605.08195},
+    url={https://github.com/pytorch/executorch},
+    year={2026}
+  }
+```
+
 ## License
 
 ExecuTorch is BSD licensed, as found in the [LICENSE](LICENSE) file.

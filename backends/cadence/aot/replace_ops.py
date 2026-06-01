@@ -162,14 +162,31 @@ class ReplacePT2DequantWithCadenceDequantPass(RemoveOrReplacePassInterface):
 
     def maybe_remove_or_replace(self, node: torch.fx.Node) -> bool:
         ns = exir_ops.edge if isinstance(node.target, EdgeOpOverload) else torch.ops
+        out_dtype = node.kwargs.get("out_dtype")
+        kwargs = {k: v for k, v in node.kwargs.items() if k != "out_dtype"}
         with node.graph.inserting_before(node):
             new_node = node.graph.call_function(
                 ns.cadence.dequantize_per_tensor.default,
                 args=node.args,
-                kwargs=node.kwargs,
+                kwargs=kwargs,
             )
-            new_node.meta = node.meta
-        node.replace_all_uses_with(new_node)
+            new_node.meta = node.meta.copy()
+            if (
+                out_dtype is not None
+                and out_dtype != torch.float32
+                and "val" in new_node.meta
+            ):
+                new_node.meta["val"] = new_node.meta["val"].to(torch.float32)
+        if out_dtype is not None and out_dtype != torch.float32:
+            with node.graph.inserting_after(new_node):
+                cast_node = node.graph.call_function(
+                    ns.aten.to.dtype,
+                    args=(new_node, out_dtype),
+                )
+                cast_node.meta = node.meta.copy()
+            node.replace_all_uses_with(cast_node)
+        else:
+            node.replace_all_uses_with(new_node)
         return True
 
 

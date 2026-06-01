@@ -171,6 +171,7 @@ runtime.cxx_library(
         "format/{}.pb.h".format(name): "fbsource//third-party/pypi/coremltools:exported-cpp-protoc[{}.pb.h]".format(name)
         for name in _PROTOS
     },
+    header_namespace = "",
     compiler_flags = [
         "-Wno-global-constructors",
     ],

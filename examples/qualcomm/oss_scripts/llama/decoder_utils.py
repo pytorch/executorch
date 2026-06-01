@@ -317,13 +317,9 @@ def retrieve_info_from_pte(pte_path: str) -> dict:
         pte_max_context_len = pte_max_seq_len
 
     # FP has no scale/zero_point, use following values, which is equivalent to not performing dequantize.
-    if kv_io_bit_width == 32:
+    if kv_io_bit_width == 32 or (logits_scale is None or logits_zero_point is None):
         logits_scale = 1
         logits_zero_point = 0
-    elif logits_scale is None or logits_zero_point is None:
-        raise RuntimeError(
-            "Unable to find scale/offset. The .pte file might be deprecated. Please generate a new .pte file"
-        )
     assert output_vocab_size is not None, "Couldn't find the vocab size"
     assert pte_max_seq_len is not None, "Couldn't find the max_seq_len from pte"
     meta_info = {

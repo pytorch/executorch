@@ -1,5 +1,6 @@
 # Copyright (c) Meta Platforms, Inc. and affiliates.
 # All rights reserved.
+# Copyright 2026 Arm Limited and/or its affiliates.
 #
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
@@ -60,6 +61,8 @@ def _scalar_type_str(scalar_type: ScalarType) -> str:
         ScalarType.QUINT8: "qui8",
         ScalarType.QINT32: "qi32",
         ScalarType.BFLOAT16: "bf16",
+        ScalarType.FLOAT8E5M2: "f8e5m2",
+        ScalarType.FLOAT8E4M3FN: "f8e4m3fn",
         ScalarType.QUINT4x2: "qui4x2",
         ScalarType.QUINT2x4: "qui2x4",
     }

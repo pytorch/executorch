@@ -19,6 +19,7 @@ from typing import Any, Dict, List
 import torch
 
 from executorch.backends.qualcomm._passes import FoldQDQ, I64toI32, TagQuantIO
+from executorch.backends.qualcomm._passes.build_quant_io import BuildQuantIo
 from executorch.backends.qualcomm._passes.qnn_pass_manager import (
     get_capture_program_passes,
 )
@@ -607,23 +608,28 @@ class TextDecoder(Component):
         ):
             return
 
+        data = request.method_data[TEXT_DECODER]
         # check bit width graph io
         fixed_point_type = {"kv_type": torch.float32, "io_type": torch.float32}
-        if self.quant_recipe.get_kv_io_bit_width() == 8:
-            fixed_point_type["kv_type"] = torch.uint8
-        elif self.quant_recipe.get_kv_io_bit_width() == 16:
-            fixed_point_type["kv_type"] = torch.uint16
+        if data.skip_quantize:
+            # already init as float32
+            return
         else:
-            raise RuntimeError(
-                f"unknown kv io bit width {self.quant_recipe.get_kv_io_bit_width()}"
-            )
+            if self.quant_recipe.get_kv_io_bit_width() == 8:
+                fixed_point_type["kv_type"] = torch.uint8
+            elif self.quant_recipe.get_kv_io_bit_width() == 16:
+                fixed_point_type["kv_type"] = torch.uint16
+            else:
+                raise RuntimeError(
+                    f"unknown kv io bit width {self.quant_recipe.get_kv_io_bit_width()}"
+                )
 
-        if self.quant_recipe.get_logits_output_bit_width() == 16:
-            fixed_point_type["io_type"] = torch.uint16
-        else:
-            raise RuntimeError(
-                f"unknown logits io bit width {self.quant_recipe.get_logits_output_bit_width()}"
-            )
+            if self.quant_recipe.get_logits_output_bit_width() == 16:
+                fixed_point_type["io_type"] = torch.uint16
+            else:
+                raise RuntimeError(
+                    f"unknown logits io bit width {self.quant_recipe.get_logits_output_bit_width()}"
+                )
 
         data = request.method_data[TEXT_DECODER]
         audio_turns = request.method_data[
@@ -906,7 +912,11 @@ class HybridTextDecoder(Component):
         # here we use a mechanism to make sure the encoding align correctly and
         # save AoT quantization time as well.
         # ---
-        if self.prefill.decoder is not None and self.prefill.model_args.use_kv_cache:
+        if (
+            self.prefill.decoder is not None
+            and self.prefill.model_args.use_kv_cache
+            and not request.method_data[TEXT_DECODER].skip_quantize
+        ):
             self._encoding_override(
                 decode_model=self.decode.decoder,
                 prefill_model=self.prefill.decoder,
@@ -973,6 +983,7 @@ class HybridTextDecoder(Component):
                     alloc_graph_input=False,
                     alloc_graph_output=False,
                 ),
+                passes=[BuildQuantIo()],
             )
             tok_embedding_exec_prog_mgr = tok_embedding_edge_prog_mgr.to_executorch(
                 executorch_config
@@ -1009,6 +1020,7 @@ class HybridTextDecoder(Component):
                 alloc_graph_input=False,
                 alloc_graph_output=False,
             ),
+            passes=[BuildQuantIo()],
         )
         exec_prog_mgr = edge_prog_mgr.to_executorch(executorch_config)
         data = request.method_data[TEXT_DECODER]
@@ -1127,7 +1139,9 @@ class Modality(Component):
         if self.control_args.verbose:
             print_delegation_info(edge_prog_mgr.exported_program().graph_module)
 
-        exec_prog_mgr = edge_prog_mgr.to_executorch(ExecutorchBackendConfig())
+        exec_prog_mgr = edge_prog_mgr.to_executorch(
+            ExecutorchBackendConfig(passes=[BuildQuantIo()])
+        )
         data = request.method_data[self.modality]
         with open(
             f"{self.control_args.artifact}/{data.pte_filename}.pte", "wb"
@@ -1223,6 +1237,7 @@ class MultiModalManager(Component):
         self,
         compile_specs: Dict[str, List[CompileSpec]],
         pte_filenames: Dict[str, str],
+        skip_quantize: Dict[str, bool],
     ):
         compile_request = Request(
             inspect.currentframe().f_code.co_name,
@@ -1230,6 +1245,7 @@ class MultiModalManager(Component):
                 m: Request.Data(
                     compile_spec=compile_specs[m],
                     pte_filename=pte_filenames[m],
+                    skip_quantize=skip_quantize[m] if m in skip_quantize else False,
                 )
                 for m in self._modalities
             },
