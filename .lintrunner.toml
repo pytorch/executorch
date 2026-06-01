@@ -125,7 +125,7 @@ exclude_patterns = [
     # PyTorch compatibility code kept in sync with upstream.
     'runtime/core/portable_type/c10/**',
 
-    # Generated and template-only sources.
+    # Generated sources, templates, and codegen tooling to onboard separately.
     'codegen/templates/**',
     'codegen/tools/selective_build.cpp',
     'exir/_serialize/**',
