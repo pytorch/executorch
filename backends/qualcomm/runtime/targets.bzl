@@ -1,6 +1,7 @@
 load(
     "@fbsource//tools/build_defs:default_platform_defs.bzl",
     "ANDROID",
+    "CXX",
 )
 load("@fbsource//xplat/executorch/build:runtime_wrapper.bzl", "runtime")
 load("@fbsource//xplat/executorch/backends/qualcomm/third-party:third_party_libs.bzl", "qnn_third_party_dep")
@@ -21,7 +22,7 @@ def define_common_targets():
             "Logging.h",
         ],
         define_static_target = True,
-        platforms = [ANDROID],
+        platforms = [ANDROID, CXX],
         visibility = ["PUBLIC"],
         deps = [
             qnn_third_party_dep("api"),
@@ -68,7 +69,7 @@ def define_common_targets():
             ),
             define_static_target = True,
             link_whole = True,  # needed for executorch/examples/models/llama:main to register QnnBackend
-            platforms = [ANDROID],
+            platforms = [ANDROID, CXX],
             visibility = ["PUBLIC"],
             resources = ({
                 "qnn_lib": qnn_third_party_dep("qnn_offline_compile_libs"),
