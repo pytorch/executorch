@@ -25,6 +25,12 @@ _VIEW_TARGETS: Dict[
     ops.edge.aten.slice_copy.Tensor: ops.edge.aten.slice.Tensor,
     torch.ops.aten.select_copy.int: torch.ops.aten.select.int,
     ops.edge.aten.select_copy.int: ops.edge.aten.select.int,
+    # ``split_copy`` has no c-shim and falls back to the proxy executor, which
+    # the AOTI runtime does not support. Its view form ``split`` (same arg
+    # signature, list-of-views return consumed by ``getitem``) is codegen'd
+    # natively by inductor, so map it here like the other view-copy ops.
+    torch.ops.aten.split_copy.Tensor: torch.ops.aten.split.Tensor,
+    ops.edge.aten.split_copy.Tensor: ops.edge.aten.split.Tensor,
 }
 
 
