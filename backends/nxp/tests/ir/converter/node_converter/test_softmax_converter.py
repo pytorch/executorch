@@ -25,11 +25,7 @@ from executorch.backends.nxp.tests.model_output_comparator import (
 )
 from executorch.backends.nxp.tests.models import SoftmaxModule
 from executorch.backends.nxp.tests.nsys_testing import lower_run_compare
-from executorch.backends.nxp.tests.ops_aliases import Softmax
-
-# noinspection PyProtectedMember
-
-ExecutorchDelegateCall = torch._higher_order_ops.executorch_call_delegate
+from executorch.backends.nxp.tests.ops_aliases import ExecutorchDelegateCall, Softmax
 
 
 @pytest.fixture(autouse=True)
