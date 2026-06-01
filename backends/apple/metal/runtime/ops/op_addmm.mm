@@ -77,6 +77,22 @@ AOTITorchError aoti_torch_mps_addmm_out(
         throw std::runtime_error(error_msg);
       }
 
+      // All operands must share mat1's dtype. The AOTI addmm fusion guarantees
+      // this, but guard against silently reinterpreting mismatched buffers.
+      if (mat2_tensor->scalar_type() != mat1_tensor->scalar_type() ||
+          bias_tensor->scalar_type() != mat1_tensor->scalar_type() ||
+          out_tensor->scalar_type() != mat1_tensor->scalar_type()) {
+        ET_LOG(
+            Error,
+            "aoti_torch_mps_addmm_out: dtype mismatch across operands "
+            "(mat1=%d, mat2=%d, self=%d, out=%d)",
+            static_cast<int>(mat1_tensor->scalar_type()),
+            static_cast<int>(mat2_tensor->scalar_type()),
+            static_cast<int>(bias_tensor->scalar_type()),
+            static_cast<int>(out_tensor->scalar_type()));
+        return Error::InvalidArgument;
+      }
+
       // Detect transposed mat2 (column-major), same as aoti_torch_mps_mm_out.
       bool mat2_is_transposed = false;
       int64_t mat2_stride_0 = mat2_tensor->strides()[0];
@@ -142,8 +158,15 @@ AOTITorchError aoti_torch_mps_addmm_out(
 
       GraphCacheKey cache_key;
       cache_key.op_name = "addmm";
-      cache_key.shape_params = {
-          M, K, N, bias_tensor->dim(), beta_bits, alpha_bits};
+      cache_key.shape_params = {M, K, N, beta_bits, alpha_bits};
+      // Include the full bias shape (rank + each dim), not just the rank, so
+      // graphs built for differently-shaped but equal-rank biases (e.g. [N]
+      // vs [1], or [M, N] vs [1, N]) don't collide and reuse a biasPlaceholder
+      // with the wrong shape.
+      cache_key.shape_params.push_back(bias_tensor->dim());
+      for (size_t i = 0; i < static_cast<size_t>(bias_tensor->dim()); ++i) {
+        cache_key.shape_params.push_back(bias_tensor->sizes()[i]);
+      }
       cache_key.dtype = dtype;
       cache_key.transpose_flag = mat2_is_transposed;
 
@@ -257,12 +280,14 @@ AOTITorchError aoti_torch_mps_addmm_out(
             [[exception name] UTF8String],
             [[exception reason] UTF8String]);
         throw std::runtime_error("MPSGraph execution failed with NSException");
+      } @finally {
+        // Runs on success and on both ObjC and C++ exception unwind, so the
+        // MPSGraphTensorData objects are never leaked on the failure path.
+        [mat1Data release];
+        [mat2Data release];
+        [biasData release];
+        [outputData release];
       }
-
-      [mat1Data release];
-      [mat2Data release];
-      [biasData release];
-      [outputData release];
 
       ET_LOG(Debug, "aoti_torch_mps_addmm_out: executed successfully");
       return Error::Ok;
