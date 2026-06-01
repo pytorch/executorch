@@ -118,7 +118,7 @@ exclude_patterns = [
     'third-party/**',
     'third_party/**',
     '**/third-party/**',
-    '**/third_party/**'
+    '**/third_party/**',
 
     # Mirrored sources under src/ (Python package layout). Prefer linting canonical paths.
     'src/executorch/**',
