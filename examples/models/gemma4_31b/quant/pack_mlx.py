@@ -22,7 +22,7 @@ import torch.nn as nn
 
 from .pack import ModulePackerFn, pack_model  # noqa: F401
 
-_MLX_SUPPORTED_GROUP_SIZES = (128, 64, 32)
+_MLX_SUPPORTED_GROUP_SIZES = (128, 64, 32, 16)
 
 
 # ---------------------------------------------------------------------------
@@ -126,7 +126,9 @@ def pack_for_mlx(module: nn.Module, weights: dict[str, torch.Tensor]) -> None:
     default dispatch produces the ``dequantize_affine → linear`` pattern
     MLX expects.  Regroups to a compatible group_size when needed (e.g.
     per-axis group_size=5376 → group_size=128) since MLX's
-    ``parse_dequant_node`` only accepts group_size in {32, 64, 128}.
+    ``parse_dequant_node`` only accepts group_size in {16, 32, 64, 128}.
+    Group sizes ≥ 32 use the fused ``QuantizedMatmulNode``; group_size=16
+    (e.g. GGUF Q6_K) falls back to ``DequantizeNode`` + matmul at export.
     """
     from torchao.quantization import IntxUnpackedToInt8Tensor
     from torchao.quantization.quantize_.workflows.int4.int4_tensor import Int4Tensor

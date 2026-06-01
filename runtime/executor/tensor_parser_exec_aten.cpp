@@ -129,6 +129,12 @@ ET_NODISCARD Error validateTensorLayout(
       "Scalar type mismatch. Expected %hhd, got %hhd.",
       static_cast<int8_t>(s_tensor->scalar_type()),
       static_cast<int8_t>(expected_layout.scalar_type()));
+  ET_CHECK_OR_RETURN_ERROR(
+      s_tensor->sizes() != nullptr, InvalidExternalData, "Missing sizes field");
+  ET_CHECK_OR_RETURN_ERROR(
+      s_tensor->dim_order() != nullptr,
+      InvalidExternalData,
+      "Missing dim_order field");
   int dim = s_tensor->sizes()->size();
   ET_CHECK_OR_RETURN_ERROR(
       dim >= 0, InvalidExternalData, "Dim is negative: %d", dim)

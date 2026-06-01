@@ -14,6 +14,7 @@ from typing import Any, cast, Optional, Union
 import torch
 from torch._inductor.decomposition import remove_decompositions
 from torch.fx import GraphModule
+from torch.fx.passes.infra.pass_base import PassBase, PassResult
 from torchao.quantization.pt2e.quantize_pt2e import prepare_pt2e, prepare_qat_pt2e
 from torchao.quantization.pt2e.quantizer import Quantizer
 
@@ -607,3 +608,32 @@ def sink_input_dequant_through_transparent_ops(
         graph_module.recompile()
 
     return modified
+
+
+class QuantFusionPass(PassBase):
+    """
+    Iterates patterns, finds anchor ops in the converted graph, and calls
+    pattern.fuse() to replace dq-op-q subgraphs with fused ops.
+    """
+
+    def __init__(self, patterns: Sequence[object]) -> None:
+        super().__init__()
+        self.patterns = patterns
+
+    def call(self, graph_module: GraphModule) -> Optional[PassResult]:
+        changed = False
+        for pattern in self.patterns:
+            pattern_changed = False
+            for target in pattern.anchor_ops():  # pyre-ignore[16]
+                for node in graph_module.graph.find_nodes(
+                    op="call_function", target=target
+                ):
+                    result = pattern.fuse(graph_module, node)  # pyre-ignore[16]
+                    if result is not None:
+                        changed = True
+                        pattern_changed = True
+            if pattern_changed:
+                graph_module.graph.eliminate_dead_code()
+        if changed:
+            graph_module.recompile()
+        return PassResult(graph_module, changed)

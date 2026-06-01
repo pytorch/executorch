@@ -67,6 +67,25 @@ def _validate_dimensions(
     return None
 
 
+def get_tosa_resize_output_hw_validation_error(
+    output_hw: Sequence[int | torch.SymInt] | None,
+) -> str | None:
+    if output_hw is None:
+        return None
+
+    output_hw_ints = _as_concrete_ints(output_hw)
+    if output_hw_ints is None:
+        return None
+
+    invalid_dimension = next(
+        (dimension for dimension in output_hw_ints if dimension <= 0), None
+    )
+    if invalid_dimension is not None:
+        return f"RESIZE output dimensions must be positive; got {invalid_dimension}"
+
+    return _validate_dimensions((), output_hw)
+
+
 def _validate_scale(
     scale: Sequence[int | torch.SymInt],
     tosa_spec: TosaSpecification,

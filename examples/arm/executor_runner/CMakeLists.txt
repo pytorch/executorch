@@ -349,7 +349,6 @@ elseif(FOUND_OPS_IN_FILE)
     "gen_oplist:  EXECUTORCH_SELECT_OPS_MODEL=${ET_PTE_FILE_PATH} is used to auto generate ops from"
   )
 else()
-  set(EXECUTORCH_SELECT_OPS_LIST "")
   set(EXECUTORCH_SELECT_OPS_MODEL "")
   message(
     "gen_oplist: No non delagated ops was found in ${ET_PTE_FILE_PATH} no ops added to build"

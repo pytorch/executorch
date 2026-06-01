@@ -134,6 +134,8 @@ command = [
     '--extra-arg=--inconclusive',
     '--extra-arg=--suppress=unusedStructMember',
     '--extra-arg=--suppress=toomanyconfigs',
+    '--extra-arg=--suppress=unusedFunction:*.h',
+    '--extra-arg=--suppress=unusedFunction:*.hpp',
     '--',
     '@{{PATHSFILE}}'
 ]

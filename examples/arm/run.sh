@@ -659,7 +659,7 @@ configure_ethosu_scratch_if_requested() {
         return
     fi
     local scratch_size
-    scratch_size=$(get_ethosu_scratch_size "$pte_path" || true)
+    scratch_size=$(get_ethosu_scratch_size "$pte_path" | tail -n 1)
     if [[ -z "${scratch_size}" ]]; then
         echo "WARNING: Failed to derive Ethos-U scratch size from ${pte_path}" >&2
         return

@@ -6,12 +6,12 @@
 
 from typing import Optional, Set, Type
 
-from executorch.backends.arm._passes import ArmPass
+from executorch.backends.arm._passes import ArmOpTargetedPass
 from executorch.exir.dialects._ops import ops as exir_ops
 from executorch.exir.pass_base import ExportPass
 
 
-class DecomposeIntPowPass(ArmPass):
+class DecomposeIntPowPass(ArmOpTargetedPass):
     """Replaces pow with integer exponent with a series of multiplications.
 
     Only handles pow.Tensor_Scalar and not pow.Tensor_Tensor. Needs to be run
@@ -20,6 +20,7 @@ class DecomposeIntPowPass(ArmPass):
     """
 
     _passes_required_after: Set[Type[ExportPass]] = set()
+    target_ops = (exir_ops.edge.aten.pow.Tensor_Scalar,)
 
     @staticmethod
     def _get_decomposable_integer_exponent(exp) -> Optional[int]:
@@ -34,7 +35,7 @@ class DecomposeIntPowPass(ArmPass):
         return None
 
     def call_operator(self, op, args, kwargs, meta):
-        if op != exir_ops.edge.aten.pow.Tensor_Scalar:
+        if op not in self.target_ops:
             return super().call_operator(op, args, kwargs, meta)
 
         if self._is_quantized_meta(meta):
