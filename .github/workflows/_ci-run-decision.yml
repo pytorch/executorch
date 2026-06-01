@@ -1,0 +1,69 @@
+name: CI Run Decision
+
+# Single source of truth for "should this commit force-run all CI jobs
+# regardless of path filter?". Used by per-job ``if:`` gates in pull.yml
+# and trunk.yml so the sampling logic isn't repeated per job.
+#
+# Returns ``is-full-run = 'true'`` for:
+#   - workflow_dispatch (manual run)
+#   - ciflow/* tag pushes (maintainer-forced full run)
+#   - push events whose SHA is in the deterministic 25% sample
+#     (last hex char in {0,4,8,c})
+#
+# Returns ``is-full-run = 'false'`` for:
+#   - pull_request / pull_request_target (use path filter instead)
+#   - push events not matching any of the above (path-filtered runs)
+#
+# See ``viable-strict-gate.yml``: viable/strict only advances on
+# commits where this is true, so the path-filtered fast path doesn't
+# silently advance partial signal.
+
+on:
+  workflow_call:
+    outputs:
+      is-full-run:
+        description: "'true' if this commit should run all CI jobs regardless of path filter; 'false' otherwise."
+        value: ${{ jobs.decide.outputs.is-full-run }}
+
+jobs:
+  decide:
+    runs-on: ubuntu-latest
+    outputs:
+      is-full-run: ${{ steps.compute.outputs.is-full-run }}
+    steps:
+      - name: Compute is-full-run
+        id: compute
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          REF: ${{ github.ref }}
+          SHA: ${{ github.sha }}
+        run: |
+          set -eu
+
+          IS_FULL=false
+
+          case "$EVENT_NAME" in
+            workflow_dispatch)
+              IS_FULL=true
+              ;;
+          esac
+
+          case "$REF" in
+            refs/tags/ciflow/*)
+              IS_FULL=true
+              ;;
+          esac
+
+          # Deterministic 25% sample on push: SHA's last hex char in {0,4,8,c}.
+          # Keep in sync with the sample in viable-strict-gate.yml.
+          if [ "$IS_FULL" = "false" ] && [ "$EVENT_NAME" = "push" ]; then
+            case "$SHA" in
+              *0|*4|*8|*c) IS_FULL=true ;;
+            esac
+          fi
+
+          echo "Event:       $EVENT_NAME"
+          echo "Ref:         $REF"
+          echo "SHA:         $SHA"
+          echo "is-full-run: $IS_FULL"
+          echo "is-full-run=$IS_FULL" >> "$GITHUB_OUTPUT"

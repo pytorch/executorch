@@ -21,6 +21,14 @@ jobs:
     name: Get changed files
     uses: ./.github/workflows/_get-changed-files.yml
 
+  # Emits is-full-run='true' for PR/dispatch/tag/sampled-push commits
+  # (the ~25% of pushes that should run full CI) and 'false' otherwise.
+  # Per-job `if:` checks this to bypass path filtering on full-run
+  # commits while staying path-filtered on the 75% non-sampled pushes.
+  run-decision:
+    name: CI run decision
+    uses: ./.github/workflows/_ci-run-decision.yml
+
   test-qnn-wheel-packages-linux:
     name: test-qnn-wheel-packages-linux
     uses: pytorch/test-infra/.github/workflows/linux_job_v2.yml@main
@@ -1517,9 +1525,8 @@ jobs:
         python -m unittest backends/vulkan/test/test_vulkan_delegate.py -k "*torchao*"
 
   test-coreml-bc-macos:
-    needs: changed-files
+    needs: [changed-files, run-decision]
     if: |
-      github.event_name != 'pull_request' ||
       contains(needs.changed-files.outputs.changed-files, 'backends/apple/coreml') ||
       contains(needs.changed-files.outputs.changed-files, '.ci/scripts/test_coreml_bc.sh') ||
       contains(needs.changed-files.outputs.changed-files, '.ci/scripts/utils.sh') ||
@@ -1527,7 +1534,8 @@ jobs:
       contains(needs.changed-files.outputs.changed-files, 'install_executorch.sh') ||
       contains(needs.changed-files.outputs.changed-files, 'install_requirements.py') ||
       contains(needs.changed-files.outputs.changed-files, 'install_requirements.sh') ||
-      contains(needs.changed-files.outputs.changed-files, '.github/workflows/pull.yml')
+      contains(needs.changed-files.outputs.changed-files, '.github/workflows/pull.yml') ||
+      needs.run-decision.outputs.is-full-run == 'true'
     name: test-coreml-bc-macos (${{ matrix.runner }})
     uses: pytorch/test-infra/.github/workflows/macos_job.yml@main
     permissions:
