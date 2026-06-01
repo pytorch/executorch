@@ -1,0 +1,23 @@
+# Copyright (c) Meta Platforms, Inc. and affiliates.
+# All rights reserved.
+#
+# This source code is licensed under the BSD-style license found in the
+# LICENSE file in the root directory of this source tree.
+#
+# Shared source of truth for the CUDA models that require an A100 runner.
+#
+# These models are exported and inference-tested on a single A100 runner each
+# (one shared export job + one shared e2e job) by:
+#   .ci/scripts/export_model_artifact_batch.sh
+#   .ci/scripts/test_model_e2e_batch.sh
+# both driven from .github/workflows/cuda.yml.
+#
+# Format: one model per line, whitespace-separated:
+#   <hf_repo>/<hf_name> <quant>
+# Blank lines and lines starting with '#' are ignored.
+#
+# To onboard a new A100 model, add a single line below. Its HF model id must
+# already be handled by both .ci/scripts/export_model_artifact.sh and
+# .ci/scripts/test_model_e2e.sh (their `case "$HF_MODEL"` blocks).
+SocialLocalMobile/Qwen3.5-35B-A3B-HQQ-INT4 quantized-int4-tile-packed
+SocialLocalMobile/gemma-4-31B-it-HQQ-INT4 quantized-int4-tile-packed
