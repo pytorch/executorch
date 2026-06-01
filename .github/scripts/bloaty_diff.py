@@ -45,6 +45,15 @@ COMMENT_BODY_CAP = 60_000  # GitHub hard limit is 65536; leave headroom.
 # Sticky-comment lookup trusts comments whose author login is in this set.
 # Prevents marker collision if a user quotes COMMENT_MARKER in their own comment.
 BOT_LOGINS = {"github-actions[bot]", "pytorch-bot[bot]", "facebook-github-bot"}
+# Buckets (from test/bloaty/executorch.bloaty) considered "ExecuTorch source".
+EXECUTORCH_SOURCE_BUCKETS = [
+    "runtime",
+    "extension",
+    "backends",
+    "kernels",
+    "tokenizers",
+    "flatbuffer",
+]
 
 
 def run_bloaty(elf: Path, data_sources: str) -> List[Dict[str, int]]:
@@ -352,6 +361,14 @@ def cmd_measure(args: argparse.Namespace) -> int:
     summary_path = os.environ.get("GITHUB_STEP_SUMMARY")
     if summary_path:
         body = render_comment([report], run_url=None)
+        # Per-bucket totals for ExecuTorch source code (no diff, head only).
+        groups_by_name = {r["executorch"]: r["filesize"] for r in report.groups_head}
+        src_rows = [
+            [b, str(groups_by_name[b])]
+            for b in EXECUTORCH_SOURCE_BUCKETS
+            if b in groups_by_name
+        ]
+        src_table = render_table(["bucket", "size"], src_rows) if src_rows else ""
         with open(summary_path, "a") as f:
             f.write(
                 body
@@ -360,6 +377,8 @@ def cmd_measure(args: argparse.Namespace) -> int:
                 f"Δ within ±{DELTA_NOISE_BYTES} bytes; nothing to report.\n"
             )
             f.write("\n")
+            if src_table:
+                f.write(f"\nExecuTorch source breakdown:\n{src_table}\n\n")
             if base is not None:
                 f.write(
                     f"<details><summary>Full per-symbol diff ({report.job})</summary>\n\n"
