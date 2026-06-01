@@ -17,6 +17,7 @@ from torch.fx.node import Node
 
 if TYPE_CHECKING:
     from executorch.backends.mlx.builder.program_builder import MLXProgramBuilder
+    from executorch.backends.mlx.serialization.mlx_graph_schema import IntOrVid
 
 # When True, always serialize the biases tensor for quantized ops.
 # When False, use init-time computation when zero_point is all zeros,
@@ -171,6 +172,117 @@ def emit_lifted_constant(P: "MLXProgramBuilder", value, dtype: torch.dtype) -> S
         )
     )
     return slot
+
+
+def emit_shape(
+    P: "MLXProgramBuilder",
+    node: Node,
+    slot: Slot,
+    *,
+    end_dim: "Optional[int]" = None,
+) -> "list[IntOrVid]":
+    """Return the shape of ``node`` as a list of ``IntOrVid``.
+
+    Each static dim becomes a literal ``IntOrVid``; each dynamic dim
+    emits a ``SymSizeNode`` against ``slot`` and is wrapped via
+    ``P.to_int_or_vid``.
+
+    Args:
+        P: program builder.
+        node: FX node whose shape to walk (must have ``meta['val']``).
+        slot: slot corresponding to ``node`` (used as the
+            ``SymSize`` source for any dynamic dim).
+        end_dim: stop index (exclusive). ``None`` means the full ndim.
+            Negative values index from the end (e.g. ``-1`` is "all
+            leading dims, drop the last").
+
+    Returns:
+        ``list[IntOrVid]`` of length ``end_dim`` (after normalization).
+    """
+    from executorch.backends.mlx.serialization.mlx_graph_schema import (
+        IntOrVid,
+        SymSizeNode,
+    )
+
+    shape = node.meta["val"].shape
+    ndim = len(shape)
+    if end_dim is None:
+        end_dim = ndim
+    elif end_dim < 0:
+        end_dim += ndim
+
+    out: "list[IntOrVid]" = []
+    for dim_idx in range(end_dim):
+        s = shape[dim_idx]
+        if isinstance(s, int):
+            out.append(IntOrVid.from_literal(int(s)))
+        else:
+            _, d_val = P.make_tmp_value_slot()
+            P.emit(
+                SymSizeNode(
+                    a=P.slot_to_tid(slot),
+                    dim=dim_idx,
+                    out=P.slot_to_vid(d_val),
+                )
+            )
+            out.append(P.to_int_or_vid(d_val))
+    return out
+
+
+def emit_product(
+    P: "MLXProgramBuilder",
+    dims: "list[IntOrVid]",
+) -> "IntOrVid":
+    """Multiplicative reduction over a list of ``IntOrVid`` values.
+
+    Folds all literal entries AOT into a single static product, then
+    emits ``MultiplyIntNode`` only for the dynamic entries (and one
+    final node combining the static product with the dynamic accumulator
+    when both contribute).
+
+    Args:
+        P: program builder.
+        dims: list of ``IntOrVid``. May be empty (returns
+            ``IntOrVid.from_literal(1)``), all literals, or a mix.
+
+    Returns:
+        An ``IntOrVid`` representing the product. Always literal when
+        every entry is literal (or ``dims`` is empty).
+    """
+    from executorch.backends.mlx.serialization.mlx_graph_schema import (
+        IntOrVid,
+        MultiplyIntNode,
+    )
+
+    static_product = 1
+    dynamic_dims: "list[IntOrVid]" = []
+    for d in dims:
+        if d.is_vid:
+            dynamic_dims.append(d)
+        else:
+            static_product *= d.literal
+
+    if not dynamic_dims:
+        return IntOrVid.from_literal(static_product)
+
+    acc = dynamic_dims[0]
+    for d in dynamic_dims[1:]:
+        _, acc_val = P.make_tmp_value_slot()
+        P.emit(MultiplyIntNode(a=acc, b=d, out=P.slot_to_vid(acc_val)))
+        acc = P.to_int_or_vid(acc_val)
+
+    if static_product == 1:
+        return acc
+
+    _, final_val = P.make_tmp_value_slot()
+    P.emit(
+        MultiplyIntNode(
+            a=IntOrVid.from_literal(static_product),
+            b=acc,
+            out=P.slot_to_vid(final_val),
+        )
+    )
+    return P.to_int_or_vid(final_val)
 
 
 def emit_quantized_biases(
