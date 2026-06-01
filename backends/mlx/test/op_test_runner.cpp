@@ -58,6 +58,7 @@ enum class DType : uint32_t {
   Int64 = 3,
   BFloat16 = 4,
   Bool = 5,
+  UInt8 = 6,
 };
 
 size_t dtype_size(DType dtype) {
@@ -73,6 +74,8 @@ size_t dtype_size(DType dtype) {
     case DType::BFloat16:
       return 2;
     case DType::Bool:
+      return 1;
+    case DType::UInt8:
       return 1;
     default:
       return 4;
@@ -93,6 +96,8 @@ exec_aten::ScalarType dtype_to_scalar_type(DType dtype) {
       return exec_aten::ScalarType::BFloat16;
     case DType::Bool:
       return exec_aten::ScalarType::Bool;
+    case DType::UInt8:
+      return exec_aten::ScalarType::Byte;
     default:
       return exec_aten::ScalarType::Float;
   }
@@ -112,6 +117,8 @@ DType scalar_type_to_dtype(exec_aten::ScalarType stype) {
       return DType::BFloat16;
     case exec_aten::ScalarType::Bool:
       return DType::Bool;
+    case exec_aten::ScalarType::Byte:
+      return DType::UInt8;
     default:
       return DType::Float32;
   }
@@ -316,6 +323,11 @@ int main(int argc, char* argv[]) {
         std::memcpy(data.data(), t.data.data(), t.data.size());
         tensor_ptr = make_tensor_ptr(
             sizes, std::move(data), {}, {}, exec_aten::ScalarType::Bool);
+      } else if (t.dtype == DType::UInt8) {
+        std::vector<uint8_t> data(t.data.size());
+        std::memcpy(data.data(), t.data.data(), t.data.size());
+        tensor_ptr = make_tensor_ptr(
+            sizes, std::move(data), {}, {}, exec_aten::ScalarType::Byte);
       } else {
         std::cerr << "Unsupported dtype: " << static_cast<int>(t.dtype)
                   << std::endl;
