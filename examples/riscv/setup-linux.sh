@@ -51,7 +51,7 @@ if [[ -n "${GCC_VERSION+x}" ]]; then
 fi
 
 riscv64-linux-gnu-gcc --version | head -n1
-qemu-riscv64 --version | head -n1
+qemu-riscv64-static --version | head -n1
 
 # Some python packages also need to be installed
 pip install -r "${script_dir}/requirements.txt"
