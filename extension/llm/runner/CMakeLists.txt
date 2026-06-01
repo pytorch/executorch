@@ -63,10 +63,10 @@ endif()
 list(APPEND runner_deps kernels_util_all_deps)
 
 target_link_libraries(extension_llm_runner PUBLIC ${runner_deps})
-# jinja2cpp is a private, build-tree-only dependency of the Jinja chat formatter.
-# It is a FetchContent static library that is not installed, so it must NOT leak
-# into the installed ExecuTorchTargets export -- otherwise downstream
-# find_package(executorch) consumers fail to link with `-ljinja2cpp`.
+# jinja2cpp is a private, build-tree-only dependency of the Jinja chat
+# formatter. It is a FetchContent static library that is not installed, so it
+# must NOT leak into the installed ExecuTorchTargets export -- otherwise
+# downstream find_package(executorch) consumers fail to link with `-ljinja2cpp`.
 # BUILD_INTERFACE keeps the dependency local to this build tree.
 if(TARGET jinja2cpp)
   target_link_libraries(
