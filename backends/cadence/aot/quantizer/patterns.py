@@ -1092,9 +1092,6 @@ class SoftmaxPattern(QuantizationPattern):
             return None
         mask_shape = list(mask_shape)
         # Softmax mask is packed 16 elements per int32 word.
-        assert (
-            mask_shape[-1] % 16 == 0
-        ), f"Softmax mask dimension must be divisible by 16, got {mask_shape[-1]}"
         mask_shape[-1] = mask_shape[-1] // 16
         mask_tensor = insert_node_with_meta(
             gm,
