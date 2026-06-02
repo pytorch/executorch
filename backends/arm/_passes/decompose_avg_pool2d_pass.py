@@ -7,7 +7,7 @@
 from typing import Set, Type
 
 import torch
-from executorch.backends.arm._passes.arm_pass import ArmPass
+from executorch.backends.arm._passes.arm_pass import ArmOpTargetedPass
 from executorch.backends.arm._passes.fuse_constant_ops_pass import (
     ComputeConstantOpsAOTPass,
 )
@@ -96,13 +96,13 @@ def _get_avgpool_post_pad(
     return [pad_w, post_w, pad_h, post_h], [0, 0]
 
 
-class DecomposeAvgPool2dPass(ArmPass):
+class DecomposeAvgPool2dPass(ArmOpTargetedPass):
     _passes_required_after: Set[Type[ExportPass]] = {ComputeConstantOpsAOTPass}
+    target_ops = edge_avg_pool2d + aten_avg_pool2d
+    check_allowed_to_transform = True
 
     def call_operator(self, op, args, kwargs, meta):
-        if op not in (
-            edge_avg_pool2d + aten_avg_pool2d
-        ) or not self.allowed_to_transform(meta):
+        if op not in self.target_ops or not self.allowed_to_transform(meta):
             return super().call_operator(op, args, kwargs, meta)
 
         pad_op, avgpool_op, mul_op = get_decomposition(op)

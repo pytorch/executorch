@@ -7733,8 +7733,6 @@ class TestExampleLLMScript(TestQNN):
         if self.use_fp16:
             cmds.append("--use_fp16")
         self.add_default_cmds(cmds)
-        print(" ".join(cmds))
-        exit(0)
         golden_start_with = "Once upon a time,"
         p = subprocess.Popen(cmds, stdout=subprocess.DEVNULL)
         with Listener((self.ip, self.port)) as listener:

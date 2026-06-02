@@ -63,6 +63,7 @@ bool validate_batch_matmul_arguments(
 
 } // namespace
 
+// cppcheck-suppress unusedFunction
 Tensor& quantized_batch_matmul_out(
     KernelRuntimeContext& context,
     const Tensor& lhs,

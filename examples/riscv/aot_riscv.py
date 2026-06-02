@@ -114,12 +114,45 @@ def build_resnet18():
     return model, example_inputs, test_inputs, False
 
 
+def build_yolo26():
+    # Mirrors examples/models/yolo26/export_and_validate.py: predict() once
+    # to materialise the predictor state Ultralytics expects pre-export.
+    import numpy as np
+    from ultralytics import YOLO
+
+    input_h, input_w = 320, 320
+    yolo = YOLO("yolo26n")
+    yolo.predict(
+        np.ones((input_h, input_w, 3)),
+        imgsz=(input_h, input_w),
+        device="cpu",
+    )
+
+    class Wrapper(torch.nn.Module):
+        def __init__(self):
+            super().__init__()
+            self.model = yolo.model.to(torch.device("cpu")).eval()
+
+        def forward(self, x):
+            # yolo.model emits (predictions, feature_maps) in eval; keep the
+            # predictions tensor so BundledIO sees a single tensor output.
+            out = self.model(x)
+            return out[0] if isinstance(out, (tuple, list)) else out
+
+    model = Wrapper().eval()
+    torch.manual_seed(0)
+    example_inputs = (torch.randn(1, 3, input_h, input_w),)
+    test_inputs = [example_inputs]
+    return model, example_inputs, test_inputs, False
+
+
 MODELS = {
     "add": build_add,
     "mv2": build_mv2,
     "mobilebert": build_mobilebert,
     "llama2": build_llama2,
     "resnet18": build_resnet18,
+    "yolo26": build_yolo26,
 }
 
 

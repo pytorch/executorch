@@ -50,6 +50,18 @@ test_data_suite_bf16 = {
         [(0, 1), (0, 5), (3, 5), (4, 10)],
     ),
 }
+test_data_suite_fp8 = {
+    "ones_slice_4_fp8e4m3": lambda: (
+        torch.ones((1, 12, 10, 10), dtype=torch.float32).to(torch.float8_e4m3fn),
+        [(0, 1), (0, 5), (3, 5), (4, 10)],
+        "fp8e4m3",
+    ),
+    "ones_slice_4_fp8e5m2": lambda: (
+        torch.ones((1, 12, 10, 10), dtype=torch.float32).to(torch.float8_e5m2),
+        [(0, 1), (0, 5), (3, 5), (4, 10)],
+        "fp8e5m2",
+    ),
+}
 
 
 class Slice(torch.nn.Module):
@@ -69,6 +81,20 @@ def test_slice_tensor_tosa_FP_bf16(test_data: torch.Tensor):
     pipeline = TosaPipelineFP[input_t1](
         Slice(), test_data(), aten_op, exir_op, tosa_extensions=["bf16"]
     )
+    pipeline.run()
+
+
+@common.parametrize("test_data", test_data_suite_fp8)
+def test_slice_tensor_tosa_FP_fp8(test_data):
+    input_data, slices, tosa_extension = test_data()
+    pipeline = TosaPipelineFP[input_t1](
+        Slice(),
+        (input_data, slices),
+        aten_op,
+        exir_op,
+        tosa_extensions=[tosa_extension],
+    )
+    pipeline.count_tosa_ops({"SLICE": 3})
     pipeline.run()
 
 

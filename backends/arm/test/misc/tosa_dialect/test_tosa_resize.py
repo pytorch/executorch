@@ -33,13 +33,14 @@ def _expr(sym: torch.SymInt) -> sympy.Expr:
     return sympy.sympify(getattr(sym.node, "expr", sym.node._expr))
 
 
-def test_bilinear_resize_rejects_exact_one_sixteenth_downscale():
+@pytest.mark.parametrize("resize_mode", ("nearest", "bilinear"))
+def test_resize_rejects_exact_one_sixteenth_downscale(resize_mode: str):
     with TosaLoweringContext(
         TosaSpecification.create_from_string("TOSA-1.0+INT")
     ), FakeTensorMode() as mode:
         with pytest.raises(
             TosaValueError,
-            match="Bilinear RESIZE downscale must be strictly greater than 1/16",
+            match="RESIZE downscale must be strictly greater than 1/16",
         ):
             exir_ops.backend.tosa.RESIZE.default(
                 mode.from_tensor(
@@ -48,7 +49,50 @@ def test_bilinear_resize_rejects_exact_one_sixteenth_downscale():
                 [2, 32, 2, 32],
                 [15, 15],
                 [-15, -15],
-                resize_mode="bilinear",
+                resize_mode=resize_mode,
+            )
+
+
+def test_resize_rejects_scale_numerator_over_tosa_limit():
+    with TosaLoweringContext(
+        TosaSpecification.create_from_string("TOSA-1.0+INT")
+    ), FakeTensorMode() as mode:
+        with pytest.raises(
+            TosaValueError,
+            match="RESIZE scale numerator must be <= 2048",
+        ):
+            exir_ops.backend.tosa.RESIZE.default(
+                mode.from_tensor(torch.randint(0, 10, (1, 3, 4, 2), dtype=torch.int8)),
+                # 2049 violates scale_n <= 1 << 11, while 2049/2 still stays
+                # within MAX_SCALE so this test isolates the numerator rule.
+                [2049, 2, 4, 2],
+                [0, 0],
+                [0, 0],
+                resize_mode="nearest",
+            )
+
+
+@pytest.mark.parametrize(
+    "offset,border",
+    (
+        ([1, 0], [-1, 0]),
+        ([0, 1], [0, -1]),
+    ),
+)
+def test_resize_rejects_non_positive_output_dimensions(offset, border):
+    with TosaLoweringContext(
+        TosaSpecification.create_from_string("TOSA-1.0+INT")
+    ), FakeTensorMode() as mode:
+        with pytest.raises(
+            TosaValueError,
+            match="RESIZE output dimensions must be positive",
+        ):
+            exir_ops.backend.tosa.RESIZE.default(
+                mode.from_tensor(torch.randint(0, 10, (1, 1, 1, 1), dtype=torch.int8)),
+                [1, 1, 1, 1],
+                offset,
+                border,
+                resize_mode="nearest",
             )
 
 

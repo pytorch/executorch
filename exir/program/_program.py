@@ -5,8 +5,7 @@
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
 
-# pyre-unsafe
-
+# pyre-strict
 import copy
 import io
 import logging
@@ -38,7 +37,8 @@ from executorch.exir.graph_module import get_control_flow_submodules
 from executorch.exir.operator.convert import _pybind_schema_to_native_schema
 from executorch.exir.operator.util import _QUANT_PRIMITIVES
 from executorch.exir.pass_base import PassBase
-from executorch.exir.pass_manager import PassType
+from executorch.exir.pass_manager import ExportedProgramPassManager, PassType
+
 from executorch.exir.passes import (
     base_post_op_replace_passes,
     base_pre_op_replace_passes,
@@ -88,17 +88,11 @@ from torch.export import ExportedProgram
 from torch.export._remove_auto_functionalized_pass import (
     unsafe_remove_auto_functionalized_pass,
 )
-from torch.export.exported_program import (
-    ConstantArgument,
-    ExportGraphSignature,
-    InputKind,
-    InputSpec,
-    OutputSpec,
-    TensorArgument,
-)
+from torch.export.exported_program import InputKind, InputSpec, TensorArgument
 from torch.fx import _pytree as fx_pytree
 from torch.fx._compatibility import compatibility
-from torch.fx.passes.infra.pass_manager import PassManager
+from torch.fx.passes.infra.pass_manager import PassManager as GraphModulePassManager
+
 from torch.utils import _pytree as pytree
 
 Val = Any
@@ -131,93 +125,10 @@ aten_op_to_transform_op = {}
 transform_op_to_aten_op = {}
 
 
-def _get_updated_range_constraints(gm):
-    def get_shape_env(gm):
-        vals = [
-            node.meta["val"]
-            for node in gm.graph.nodes
-            if node.meta.get("val", None) is not None
-        ]
-        from torch._guards import detect_fake_mode  # type: ignore[21]
-
-        fake_mode = detect_fake_mode(vals)
-        if fake_mode is not None:
-            return fake_mode.shape_env
-        for v in vals:
-            if isinstance(v, torch.SymInt):
-                return v.node.shape_env
-
-    shape_env = get_shape_env(gm)
-    if shape_env is None:
-        return {}
-    range_constraints = {
-        shape_env.replacements.get(k, k): v for k, v in shape_env.var_to_range.items()
-    }
-    # Only when we have an unbacked symint, and it's used as constructor inputs,
-    # runtime_var_to_range will make a difference compated to var_to_range.
-    # e.g. [2, oo) -> [0, oo)
-    for k, v in shape_env.var_to_range.items():
-        if k not in shape_env.replacements:
-            range_constraints[k] = v
-    return range_constraints
-
-
-def _get_updated_graph_signature(
-    old_signature: ExportGraphSignature,
-    new_gm: torch.fx.GraphModule,
-) -> ExportGraphSignature:
-    """
-    Update the graph signature's user_input/user_outputs.
-    """
-    new_input_specs = []
-    i = 0
-    for node in new_gm.graph.nodes:
-        if node.op != "placeholder":
-            continue
-
-        assert i < len(
-            old_signature.input_specs
-        ), "Number of inputs changed after transformation"
-        old_input_spec = old_signature.input_specs[i]
-        arg = (
-            old_input_spec.arg
-            if isinstance(old_input_spec.arg, ConstantArgument)
-            # pyre-fixme[20]: Argument `class_fqn` expected.
-            else type(old_input_spec.arg)(node.name)
-        )
-        new_input_specs.append(
-            InputSpec(
-                old_input_spec.kind,
-                arg,
-                old_input_spec.target,
-                persistent=old_input_spec.persistent,
-            )
-        )
-        i += 1
-
-    output_node = new_gm.graph.output_node()
-    assert output_node.op == "output"
-
-    new_output_specs = []
-    for i, node in enumerate(output_node.args[0]):
-        assert i < len(
-            old_signature.output_specs
-        ), "Number of outputs changed after transformation"
-        old_output_spec = old_signature.output_specs[i]
-        arg = (
-            old_output_spec.arg
-            if isinstance(old_output_spec.arg, ConstantArgument)
-            # pyre-fixme[20]: Argument `class_fqn` expected.
-            else type(old_output_spec.arg)(node.name)
-        )
-        new_output_specs.append(
-            OutputSpec(old_output_spec.kind, arg, old_output_spec.target)
-        )
-
-    new_signature = ExportGraphSignature(
-        input_specs=new_input_specs, output_specs=new_output_specs
-    )
-    return new_signature
+from executorch.exir._program_utils import (  # noqa: E402
+    _get_updated_graph_signature,
+    _get_updated_range_constraints,
+)
 
 
 def _transform(
@@ -243,13 +154,13 @@ def _transform(
     ), f"Expected all passes to be of PassType, not list or Verifier. Use override_verifiers kwarg instead. Got: {list(passes)}"
 
     return _transform_with_pass_manager(
-        self, PassManager(list(passes)), override_verifiers
+        self, ExportedProgramPassManager(list(passes)), override_verifiers
     )
 
 
 def _transform_with_pass_manager(
-    self,
-    pass_manager: PassManager,
+    self: ExportedProgram,
+    pass_manager: Union[ExportedProgramPassManager, GraphModulePassManager],
     override_verifiers: None | list[Type[Verifier]] = None,
 ) -> "ExportedProgram":
     """
@@ -258,22 +169,26 @@ def _transform_with_pass_manager(
     Args:
         self: The ExportedProgram instance to transform
         pass_manager: An instance of PassManager to apply transformations.
+            - ExportedProgramPassManager: operates on the full ExportedProgram
+            - GraphModulePassManager: operates on the GraphModule only
         override_verifiers: Optional list of verifier classes to use instead of the default verifiers.
             This is needed if the transforms yields illegal graph that the default verifier cannot handle.
 
     Returns:
         ExportedProgram: A new ExportedProgram with the transformations applied, or self if no changes were made
     """
-    res = pass_manager(self.graph_module)
-    transformed_gm = res.graph_module if res is not None else self.graph_module
-    assert transformed_gm is not None
-
-    if transformed_gm is self.graph_module and not res.modified:
-        return self
-
-    return _update_exported_program_graph_module(
-        self, transformed_gm, override_verifiers
-    )
+    if isinstance(pass_manager, ExportedProgramPassManager):
+        res = pass_manager(self, override_verifiers)
+        if not res.modified:
+            return self
+        return res.exported_program
+    else:
+        res = pass_manager(self.graph_module)
+        if not res.modified:
+            return self
+        return _update_exported_program_graph_module(
+            self, res.graph_module, override_verifiers
+        )
 
 
 def _update_exported_program_graph_module(
@@ -1324,7 +1239,12 @@ def collect_named_data_store_from_exported_program(
 def to_edge_transform_and_lower(  # noqa: C901
     programs: Union[ExportedProgram, Dict[str, ExportedProgram]],
     transform_passes: Optional[
-        Union[Sequence[PassType], Dict[str, Sequence[PassType]], PassManager]
+        Union[
+            Sequence[PassType],
+            Dict[str, Sequence[PassType]],
+            GraphModulePassManager,
+            ExportedProgramPassManager,
+        ]
     ] = None,
     partitioner: Optional[
         Union[List[Partitioner], Dict[str, List[Partitioner]]]
@@ -1359,7 +1279,7 @@ def to_edge_transform_and_lower(  # noqa: C901
             2) a dictionary -
                 only method names specified in the dictionary will be transformed
                 with their corresponding passes
-            3) an instance of a PassManager -
+            3) an instance of a PassManager (either a GraphModulePassManager or an ExportedProgramPassManager) -
                 all methods in the given EdgeProgramManager will be
                 transformed with the given PassManager instance.
 
@@ -1604,7 +1524,12 @@ class EdgeProgramManager:
     @et_logger("transform")
     def transform(
         self,
-        passes: Union[Sequence[PassType], Dict[str, Sequence[PassType]], PassManager],
+        passes: Union[
+            Sequence[PassType],
+            Dict[str, Sequence[PassType]],
+            ExportedProgramPassManager,
+            GraphModulePassManager,
+        ],
         compile_config: Optional[EdgeCompileConfig] = None,
     ) -> "EdgeProgramManager":
         """
@@ -1618,7 +1543,7 @@ class EdgeProgramManager:
                 2) a dictionary mapping method names to lists of passes -
                     only method names specified in the dictionary will be
                     transformed with their corresponding passes.
-                3) a PassManager instance -
+                3) a PassManager (either ExportedProgramPassManager or GraphModulePassManager) instance -
                     all methods in the given EdgeProgramManager will be
                     transformed with the given PassManager instance.
             compile_config: Compile config to use for veriy the correctness of model
@@ -1637,13 +1562,15 @@ class EdgeProgramManager:
         # Cast passes parameter upfront.
         passes_seq: Optional[Sequence[PassType]] = None
         passes_dict: Optional[Dict[str, Sequence[PassType]]] = None
-        pass_manager: Optional[PassManager] = None
+        pass_manager: Optional[
+            Union[ExportedProgramPassManager, GraphModulePassManager]
+        ] = None
 
         if isinstance(passes, Sequence):
             passes_seq = passes
         if isinstance(passes, dict):
             passes_dict = passes
-        if isinstance(passes, PassManager):
+        if isinstance(passes, (ExportedProgramPassManager, GraphModulePassManager)):
             pass_manager = passes
 
         for name, program in self._edge_programs.items():

@@ -52,6 +52,10 @@ def SLICE(a, start, size):
         supported_dtypes += [torch.float16, torch.float32]
     if tosa_spec.support_extension("bf16"):
         supported_dtypes += [torch.bfloat16]
+    if tosa_spec.support_extension("fp8e4m3"):
+        supported_dtypes += [torch.float8_e4m3fn]
+    if tosa_spec.support_extension("fp8e5m2"):
+        supported_dtypes += [torch.float8_e5m2]
 
     if a.dtype not in supported_dtypes:
         raise TosaValueError(
