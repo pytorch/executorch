@@ -625,7 +625,6 @@ class ArmPassManager(ExportedProgramPassManager):
                 DecomposePermuteForU55Pass(),
                 RewriteSlicePass(),
                 InsertConstShapesPass(),
-                ExirToTosaPass(exported_program),
             ]
         )
 
@@ -634,6 +633,7 @@ class ArmPassManager(ExportedProgramPassManager):
             [
                 CastInt64BuffersToInt32Pass(exported_program),
                 FuseEqualPlaceholdersPass(exported_program),
+                ExirToTosaPass(exported_program),
                 SymbolicToTosaShapesPass(),
                 InsertDynamicPaddingPass(),
                 FuseConsecutiveConcatShapesPass(),

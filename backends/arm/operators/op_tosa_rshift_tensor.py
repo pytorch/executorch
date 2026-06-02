@@ -3,11 +3,9 @@
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
 
-
 from typing import Any, List
 
-import torch
-
+import torch.fx
 import tosa_serializer as ts
 
 from executorch.backends.arm.operators.node_visitor import (
@@ -23,8 +21,8 @@ from executorch.backends.arm.tosa.mapping import TosaArg
 
 
 @register_node_visitor
-class MulVisitor(NodeVisitor):
-    target = "aten.mul.Tensor"
+class RshiftVisitor(NodeVisitor):
+    target = "tosa.ARITHMETIC_RIGHT_SHIFT.default"
 
     def define_node(
         self,
@@ -38,25 +36,22 @@ class MulVisitor(NodeVisitor):
         validate_valid_dtype(
             self.target,
             [*inputs, output],
-            [
-                ts.DType.INT8,
-                ts.DType.INT16,
-                ts.DType.INT32,
-                ts.DType.FP32,
-                ts.DType.BF16,
-                ts.DType.FP16,
-            ],
+            [ts.DType.INT8, ts.DType.INT16, ts.DType.INT32],
             self.tosa_spec,
         )
 
-        tosa_graph.addConst([1], ts.DType.INT8, 0, name=f"{output.name}_shift")
         attr = ts.TosaSerializerAttribute()
-        attr.MulAttribute()
+        round = False
+        if self.tosa_spec.is_U55_subset:
+            # U55 only supports INT32 and round == True
+            # TODO MLETORCH-525 Emulate round == False with different decomposition
+            round = True
+        attr.ArithmeticRightShiftAttribute(round=round)
         self._serialize_operator(
             node,
             tosa_graph,
-            ts.Op.MUL,
-            [inputs[0].name, inputs[1].name, f"{output.name}_shift"],
+            ts.Op.ARITHMETIC_RIGHT_SHIFT,
+            [inputs[0].name, inputs[1].name],
             [output.name],
             attr,
         )
