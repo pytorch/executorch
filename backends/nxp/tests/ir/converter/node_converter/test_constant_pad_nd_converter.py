@@ -303,27 +303,10 @@ class TestConstantPadNDNewNeutronFlow:
         [
             pytest.param((1, 4, 6, 8), tuple(range(2)), id="4D, padding W"),
             pytest.param((1, 4, 6, 8), tuple(range(4)), id="4D, padding H, W"),
+            pytest.param((1, 2, 6, 8), (0, 1, 2, 3, 1, 1), id="4D, padding H, W"),
         ],
     )
     def test__channels_first(self, mocker, input_shape, paddings):
-        model = ConstantPadNDConvModule(paddings)
-        graph_verifier = DetailedGraphVerifier(
-            mocker,
-            expected_delegated_ops={ConstantPadND: 1, Convolution: 1},
-            expected_non_delegated_ops={},
-        )
-
-        lower_run_compare(
-            model, input_shape, graph_verifier, use_new_flow_neutron_c=True
-        )
-
-    @pytest.mark.xfail(
-        strict=True,
-        raises=RuntimeError,
-        reason="Known issue in Neutron: https://jira.sw.nxp.com/browse/AIR-14624",  # @lint-ignore
-    )
-    def test__bugged_channels_first_case(self, mocker):
-        input_shape, paddings = (1, 2, 6, 8), (0, 1, 2, 3, 1, 1)
         model = ConstantPadNDConvModule(paddings)
         graph_verifier = DetailedGraphVerifier(
             mocker,

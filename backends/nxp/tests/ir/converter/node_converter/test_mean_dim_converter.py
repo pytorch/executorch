@@ -395,6 +395,7 @@ class TestMeanDimNewNeutronFlow:
             pytest.param((4, 2), (-2,), id="2D, dim = (-2,)."),
             pytest.param((2, 3, 4), (0, 2), id="3D, dim = (0, 2,)."),
             pytest.param((1, 3, 3, 7), (2, -3), id="4D, dim = (2, -3)."),
+            pytest.param((1, 3, 3, 7), -2, id="4D, dim = -2."),
             pytest.param((3, 1, 4, 1, 5), (3, -5, -4), id="5D, dim = (3, -5 ,-4)."),
         ],
     )
@@ -404,15 +405,6 @@ class TestMeanDimNewNeutronFlow:
         # TODO Replace with quantized dataset testing and `atol = 1`.
         atol = 0.015
         self.assert_delegated(model, input_shape, mocker, atol=atol)
-
-    def test__compute_error(self, mocker, keep_dim):
-        input_shape, dim = (1, 3, 3, 7), -2
-        model = MeanDimModule(dim, keep_dim)
-
-        # Neutron produces an incorrect result in this case (maximum absolute error ~= 0.0607 (more than 2 * scale)).
-        # This test detects the failure to alert us once the bug is fixed. It should be fixed in Neutron 3.1.2.
-        with pytest.raises(AssertionError):
-            self.assert_delegated(model, input_shape, mocker, atol=0.06)
 
     @pytest.mark.parametrize(
         "input_shape, dim",

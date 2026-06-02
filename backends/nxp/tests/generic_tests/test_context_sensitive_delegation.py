@@ -92,13 +92,9 @@ def test_single_view_copy_partition__forced_delegation():
     # Force the partitioner to delegate the node.
     cdo = CustomDelegationOptions(allow_no_op_partitions=True)
 
-    with pytest.raises(
-        RuntimeError,
-        match="Model converted with neutron-converter does not contain a NeutronGraph node.",
-    ):
-        to_quantized_edge_program(
-            module, input_shape, custom_delegation_options=cdo
-        ).exported_program()
+    to_quantized_edge_program(
+        module, input_shape, custom_delegation_options=cdo
+    ).exported_program()
 
     # Return to the original partition support check function.
     ViewCopyConverter.supports_partitioning_result = (
@@ -135,7 +131,7 @@ def test_noop_partitions__concatenate_one_tensor_and_add_zeros__forced_delegatio
 
     with pytest.raises(
         RuntimeError,
-        match="Model converted with neutron-converter does not contain a NeutronGraph node.",
+        match="Model converted with neutron-converter has `0` operators instead of `1`.",
     ):
         to_quantized_edge_program(
             module, input_shape, custom_delegation_options=cdo
@@ -172,7 +168,7 @@ def test_noop_partitions__add_mul_sub_div__forced_delegation():
 
     with pytest.raises(
         RuntimeError,
-        match="Model converted with neutron-converter does not contain a NeutronGraph node.",
+        match="Model converted with neutron-converter has `0` operators instead of `1`.",
     ):
         to_quantized_edge_program(
             module, input_shape, custom_delegation_options=cdo

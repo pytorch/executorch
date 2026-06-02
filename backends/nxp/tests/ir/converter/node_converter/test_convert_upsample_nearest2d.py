@@ -62,7 +62,6 @@ class UpsampleNearestAddModule(UpsampleNearestModule):
         pytest.param((1, 8, 3, 3), 12, id="4x upscale, 8 channels, scalar size"),
     ],
 )
-@pytest.mark.xfail(strict=True, reason="EIEX-881")
 def test_convert_upsample_nearest2d__size(mocker, input_shape, size):
     model = UpsampleNearestModule(size=size)
 
@@ -105,7 +104,6 @@ def test_convert_upsample_nearest2d__size(mocker, input_shape, size):
         pytest.param((1, 8, 2, 3), (4, 4), id="4x upscale, 8 channels, tuple scale"),
     ],
 )
-@pytest.mark.xfail(strict=True, reason="EIEX-881")
 def test_convert_upsample_nearest2d__scale_factor(mocker, input_shape, scale_factor):
     model = UpsampleNearestModule(scale=scale_factor)
 

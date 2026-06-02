@@ -330,6 +330,12 @@ class TestUpsampleBilinear2DNewNeutronFlow:
             ),
             pytest.param((2, 2, 4, 5), (4, 17), id="batch=2, scale_h=1, scale_w=4"),
             pytest.param((1, 2, 4, 5), (25, 9), id="batch=1, scale_h=8, scale_w=2"),
+            pytest.param((2, 2, 4, 5), (25, 9), id="batch=2, scale_h=8, scale_w=2"),
+            pytest.param(
+                (3, 3, 3, 5),
+                (5, 5),
+                id="batch=3, scale_h=2, scale_w=1 (no num_macs multiples)",
+            ),
         ],
     )
     def test__align_corners__output_size(self, mocker, input_shape, output_size):
@@ -337,28 +343,6 @@ class TestUpsampleBilinear2DNewNeutronFlow:
         model = UpsampleBilinearModule(size=output_size, align_corners=align_corners)
         atol = 0.016  # ~= output scale -> single bit error.
         self.assert_delegated(model, input_shape, mocker, atol=atol)
-
-    @pytest.mark.parametrize(
-        "input_shape, output_size",
-        [
-            pytest.param(
-                (2, 2, 4, 5), (25, 9), id="batch=2, scale_h=8, scale_w=2"
-            ),  # Error ~= 0.47
-            pytest.param(
-                (3, 3, 3, 5),
-                (5, 5),
-                id="batch=3, scale_h=2, scale_w=1 (no num_macs multiples)",
-            ),  # Error ~= 3.7
-        ],
-    )
-    def test__align_corners__output_size__incorrect_output(
-        self, mocker, input_shape, output_size
-    ):
-        align_corners = True
-        model = UpsampleBilinearModule(size=output_size, align_corners=align_corners)
-        atol = 0.45  # Huge tolerance (still not enough to pass).
-        with pytest.raises(AssertionError):
-            self.assert_delegated(model, input_shape, mocker, atol=atol)
 
     def test__align_corners__output_size__unsupported(self):
         align_corners = True
@@ -399,6 +383,16 @@ class TestUpsampleBilinear2DNewNeutronFlow:
                 (25 / 4, 9 / 5),
                 id="batch=1, scale_h=25/4, scale_w=9/5 (Neutron scales = (8, 2))",
             ),
+            pytest.param(
+                (2, 2, 4, 5),
+                (25 / 4, 9 / 5),
+                id="batch=3, scale_h=25/4, scale_w=9/5 (Neutron scales = (8, 2))",
+            ),
+            pytest.param(
+                (3, 3, 3, 5),
+                (5 / 3, 1),
+                id="batch=3, scale_h=5/3, scale_w=1 (Neutron scales = (2, 1))",
+            ),
         ],
     )
     def test__align_corners__scales(self, mocker, input_shape, scale):
@@ -406,28 +400,6 @@ class TestUpsampleBilinear2DNewNeutronFlow:
         model = UpsampleBilinearModule(scale=scale, align_corners=align_corners)
         atol = 0.016  # ~= output scale -> single bit error.
         self.assert_delegated(model, input_shape, mocker, atol=atol)
-
-    @pytest.mark.parametrize(
-        "input_shape, scale",
-        [
-            pytest.param(
-                (2, 2, 4, 5),
-                (25 / 4, 9 / 5),
-                id="batch=3, scale_h=25/4, scale_w=9/5 (Neutron scales = (8, 2))",
-            ),  # Error ~= 0.47
-            pytest.param(
-                (3, 3, 3, 5),
-                (5 / 3, 1),
-                id="batch=3, scale_h=5/3, scale_w=1 (Neutron scales = (2, 1))",
-            ),  # Error ~= 3.7
-        ],
-    )
-    def test__align_corners__scales__incorrect_output(self, mocker, input_shape, scale):
-        align_corners = True
-        model = UpsampleBilinearModule(scale=scale, align_corners=align_corners)
-        atol = 0.45  # Huge tolerance (still not enough to pass).
-        with pytest.raises(AssertionError):
-            self.assert_delegated(model, input_shape, mocker, atol=atol)
 
     def test__align_corners__scales__unsupported(self):
         align_corners = True
