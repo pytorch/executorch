@@ -28,6 +28,7 @@ from executorch.backends.qualcomm._passes.qnn_pass_manager import (
 from executorch.backends.qualcomm.export_utils import (
     get_backend_type,
     make_quantizer,
+    preprocess_binary,
     QnnConfig,
     SimpleADB,
 )
@@ -51,7 +52,6 @@ from executorch.backends.qualcomm.utils.utils import (
     to_edge_transform_and_lower_to_qnn,
 )
 from executorch.devtools import Inspector
-from executorch.examples.qualcomm.qaihub_scripts.utils.utils import preprocess_binary
 from executorch.exir import ExecutorchBackendConfig
 from executorch.exir.passes.memory_planning_pass import MemoryPlanningPass
 from torchao.quantization import pt2e
