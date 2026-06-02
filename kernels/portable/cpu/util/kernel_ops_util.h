@@ -493,7 +493,7 @@ bool check_embedding_args(
 Error resize_embedding_output(
     const Tensor& weight,
     const Tensor& indices,
-    const Tensor& out);
+    Tensor& out);
 
 bool check_alpha_type(
     const ScalarType alpha_type,

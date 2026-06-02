@@ -82,7 +82,6 @@ Tensor& embedding_out(
     bool scale_grad_by_freq,
     bool sparse,
     Tensor& out) {
-  (void)ctx;
   (void)padding_idx;
   (void)scale_grad_by_freq;
   (void)sparse;
@@ -90,11 +89,16 @@ Tensor& embedding_out(
   ET_KERNEL_CHECK(
       ctx, check_embedding_args(weight, indices, out), InvalidArgument, out);
 
-  ET_KERNEL_CHECK(
+  Error resize_err = resize_embedding_output(weight, indices, out);
+  ET_KERNEL_CHECK_MSG(
       ctx,
-      resize_embedding_output(weight, indices, out) == Error::Ok,
+      resize_err == Error::Ok,
       InvalidArgument,
-      out);
+      out,
+      "resize_embedding_output failed (Error %d). "
+      "Output may have been incorrectly exported as static. "
+      "Check dynamic_shapes propagation through to_edge_transform_and_lower.",
+      static_cast<int>(resize_err));
 
   ET_KERNEL_CHECK_MSG(
       ctx,

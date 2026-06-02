@@ -668,19 +668,35 @@ bool check_embedding_args(
 }
 
 Error resize_embedding_output(
-    const Tensor& weight,
+    const Tensor& weight
     const Tensor& indices,
-    const Tensor& out) {
-  Tensor::SizesType expected_output_size[kTensorDimensionLimit];
-  for (const auto i : c10::irange(indices.dim())) {
-    expected_output_size[i] = indices.size(i);
+    Tensor& out) {
+
+  const ssize_t embed_dim = weight.size(1);
+  const ssize_t ndim_out = indices.dim() + 1;
+
+  // Fast path: if out already has the correct shape, no resize needed.
+  if (out.dim() == ndim_out) {
+    bool already_correct = true;
+    for (ssize_t i = 0; i < indices.dim(); ++i) {
+      if (out.size(i) != indices.size(i)) {
+        already_correct = false;
+        break;
+      }
+    }
+    if (already_correct && out.size(ndim_out - 1) == embed_dim) {
+      return Error::Ok;
+    }
   }
-  const size_t embedding_dim = weight.size(1);
-  expected_output_size[out.dim() - 1] = embedding_dim;
+
+  Tensor::SizesType expected_size[kTensorDimensionLimit];
+  for (ssize_t i = 0; i < indices.dim(); ++i) {
+    expected_size[i] = static_cast<Tensor::SizesType>(indices.size(i));
+  }
+  expected_size[ndim_out - 1] = static_cast<Tensor::SizesType>(embed_dim);
 
   ArrayRef<Tensor::SizesType> output_size{
-      expected_output_size, static_cast<size_t>(out.dim())};
-
+      expected_size, static_cast<size_t>(ndim_out)};
   return resize_tensor(out, output_size);
 }
 
