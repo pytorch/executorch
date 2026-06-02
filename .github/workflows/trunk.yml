@@ -1037,6 +1037,10 @@ jobs:
       docker-image: ci-image:executorch-ubuntu-22.04-clang12
 
   test-models-windows:
+    needs: run-decision
+    if: |
+      github.event_name == 'pull_request' ||
+      needs.run-decision.outputs.is-full-run == 'true'
     uses: pytorch/test-infra/.github/workflows/windows_job.yml@main
     strategy:
       fail-fast: false
