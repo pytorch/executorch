@@ -21,6 +21,7 @@ class HtpContext : public QnnContext {
  public:
   HtpContext(
       QnnImplementation* implementation,
+      QnnSystemImplementation* system_implementation,
       QnnBackend* backend,
       QnnDevice* device,
       QnnBackendCache* cache,
@@ -29,6 +30,7 @@ class HtpContext : public QnnContext {
       const QnnExecuTorchProfileLevel& profile_level)
       : QnnContext(
             implementation,
+            system_implementation,
             backend,
             device,
             cache,
