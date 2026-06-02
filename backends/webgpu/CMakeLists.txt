@@ -26,9 +26,13 @@ if(NOT TARGET vulkan_schema)
 endif()
 
 set(WEBGPU_SRCS
-    runtime/WebGPUBackend.cpp runtime/WebGPUGraph.cpp
-    runtime/WebGPUDelegateHeader.cpp runtime/WebGPUDevice.cpp
-    runtime/ops/OperatorRegistry.cpp runtime/ops/add/BinaryOp.cpp
+    runtime/WebGPUBackend.cpp
+    runtime/WebGPUGraph.cpp
+    runtime/WebGPUDelegateHeader.cpp
+    runtime/WebGPUDevice.cpp
+    runtime/ops/OperatorRegistry.cpp
+    runtime/ops/add/BinaryOp.cpp
+    runtime/ops/rms_norm/RmsNorm.cpp
 )
 
 add_library(webgpu_backend ${WEBGPU_SRCS})
@@ -116,4 +120,35 @@ if(EXECUTORCH_BUILD_WEBGPU_TEST)
 
   target_compile_options(webgpu_native_test PRIVATE -fexceptions)
   set_property(TARGET webgpu_native_test PROPERTY CXX_STANDARD 17)
+
+  add_executable(webgpu_rms_norm_test test/native/test_rms_norm.cpp)
+
+  target_include_directories(
+    webgpu_rms_norm_test PRIVATE $<BUILD_INTERFACE:${EXECUTORCH_ROOT}/..>
+                                 "${WGPU_NATIVE_DIR}/include"
+  )
+
+  target_link_libraries(
+    webgpu_rms_norm_test
+    PRIVATE webgpu_backend
+            wgpu_native
+            executorch_core
+            extension_module_static
+            extension_data_loader
+            extension_tensor
+            portable_kernels
+            portable_ops_lib
+  )
+
+  if(APPLE)
+    target_link_libraries(
+      webgpu_rms_norm_test PRIVATE "-framework Metal" "-framework QuartzCore"
+                                   "-framework CoreGraphics"
+    )
+  else()
+    target_link_libraries(webgpu_rms_norm_test PRIVATE dl m pthread)
+  endif()
+
+  target_compile_options(webgpu_rms_norm_test PRIVATE -fexceptions)
+  set_property(TARGET webgpu_rms_norm_test PROPERTY CXX_STANDARD 17)
 endif()
