@@ -292,7 +292,7 @@ def tosa_support_factory(
 
     # Negative checks: Remove nodes from partitioning
     negative_checks: list[OperatorSupportBase] = [
-        CheckInt64InputsAndOutputs(exported_program, reporter),
+        CheckInt64InputsAndOutputs(exported_program, reporter, tosa_spec),
         RankCheck(reporter, max_rank=MAX_RANK),
         *[
             reporter.wrap_check(check, f"Rejected by {check.__class__.__name__}")
@@ -588,7 +588,10 @@ class CheckInt64InputsAndOutputs(OperatorSupportBase):
     """
 
     def __init__(
-        self, exported_program: ExportedProgram, reporter: WhyNoPartitionReporter
+        self,
+        exported_program: ExportedProgram,
+        reporter: WhyNoPartitionReporter,
+        tosa_spec: TosaSpecification,
     ):
         """Initialize the check with program context and reporter."""
         self.input_names = [
@@ -597,6 +600,7 @@ class CheckInt64InputsAndOutputs(OperatorSupportBase):
             if spec.kind == InputKind.USER_INPUT
         ]
         self.reporter = reporter
+        self.tosa_spec = tosa_spec
         self.int32_min = torch.iinfo(torch.int32).min
         self.int32_max = torch.iinfo(torch.int32).max
         super().__init__()
@@ -619,6 +623,46 @@ class CheckInt64InputsAndOutputs(OperatorSupportBase):
             return not self._is_tosa_argmax_supported(node)
         return any(tensor.dtype == torch.int64 for tensor in tensor_list)
 
+    def _is_tosa_argmax_dtype_supported(
+        self, node: torch.fx.Node, input_dtype: torch.dtype
+    ) -> bool:
+        if input_dtype == torch.int8:
+            if not self.tosa_spec.support_integer():
+                self.reporter.report_reject(
+                    node, "TOSA ARGMAX requires PRO-INT for int8 input."
+                )
+                return False
+        elif input_dtype == torch.int16:
+            if not (
+                self.tosa_spec.support_integer()
+                and self.tosa_spec.support_extension("int16")
+            ):
+                self.reporter.report_reject(
+                    node, "TOSA ARGMAX requires EXT-INT16 for int16 input."
+                )
+                return False
+        elif input_dtype in (torch.float16, torch.float32):
+            if not self.tosa_spec.support_float():
+                self.reporter.report_reject(
+                    node, f"TOSA ARGMAX requires PRO-FP for {input_dtype} input."
+                )
+                return False
+        elif input_dtype == torch.bfloat16:
+            if not (
+                self.tosa_spec.support_float()
+                and self.tosa_spec.support_extension("bf16")
+            ):
+                self.reporter.report_reject(
+                    node, "TOSA ARGMAX requires EXT-BF16 for bfloat16 input."
+                )
+                return False
+        else:
+            self.reporter.report_reject(
+                node, f"TOSA ARGMAX does not support {input_dtype} input."
+            )
+            return False
+        return True
+
     def _is_tosa_argmax_supported(self, node: torch.fx.Node) -> bool:
         dim = node.kwargs.get("dim", node.args[1] if len(node.args) > 1 else None)
         if dim is None:
@@ -633,7 +677,11 @@ class CheckInt64InputsAndOutputs(OperatorSupportBase):
             return False
 
         input_node = typing.cast(torch.fx.Node, node.args[0])
-        input_rank = len(get_first_fake_tensor(input_node).shape)
+        input_tensor = get_first_fake_tensor(input_node)
+        if not self._is_tosa_argmax_dtype_supported(node, input_tensor.dtype):
+            return False
+
+        input_rank = len(input_tensor.shape)
         if input_rank == 0:
             self.reporter.report_reject(
                 node, "TOSA ARGMAX requires an input with rank at least 1."

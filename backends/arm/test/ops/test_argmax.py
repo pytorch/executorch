@@ -72,6 +72,11 @@ class ArgmaxKeepDim(torch.nn.Module):
         return torch.argmax(x, dim=1, keepdim=True)
 
 
+class ArgmaxInt32(torch.nn.Module):
+    def forward(self, x: torch.Tensor):
+        return torch.argmax(x, dim=1).to(torch.int32)
+
+
 @common.parametrize(
     "test_data", Argmax.test_data | Argmax.test_data_fp16 | Argmax.test_data_bf16
 )
@@ -101,6 +106,15 @@ def test_argmax_keepdim_tosa_FP_not_delegated():
     pipeline = OpNotSupportedPipeline[input_t](
         ArgmaxKeepDim(),
         (torch.rand(2, 5),),
+        {exir_op: 1},
+    )
+    pipeline.run()
+
+
+def test_argmax_int32_tosa_FP_not_delegated():
+    pipeline = OpNotSupportedPipeline[input_t](
+        ArgmaxInt32(),
+        (torch.randint(0, 10, (2, 5), dtype=torch.int32),),
         {exir_op: 1},
     )
     pipeline.run()
