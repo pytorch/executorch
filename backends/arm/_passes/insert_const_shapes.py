@@ -40,6 +40,13 @@ class InsertConstShapesPass(ArmOpTargetedPass):
             and all(isinstance(x, int) for x in arg)
         )
 
+    def call(self, graph_module):
+        self._const_shape_cache.clear()
+        try:
+            return super().call(graph_module)
+        finally:
+            self._const_shape_cache.clear()
+
     def call_operator(self, op, args, kwargs, meta, updated: Optional[bool] = False):
         if op not in self.target_ops:
             return super().call_operator(op, args, kwargs, meta, updated)
