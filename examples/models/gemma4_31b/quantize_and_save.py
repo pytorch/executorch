@@ -8,7 +8,8 @@
 
 Produces a safetensors file containing torchao tensor subclasses
 (``Int4Tensor``, ``IntxUnpackedToInt8Tensor``) that can be loaded and
-packed for any backend via ``load_and_pack_for_cuda`` or ``pack_model``.
+packed for any backend via the generic ``load_and_pack_for_*`` APIs with
+Gemma4-specific custom packers.
 
 The default recipe runs on CPU. The sensitive recipe requires CUDA for
 HQQ asymmetric quantization.
@@ -27,6 +28,9 @@ import shutil
 import torch.nn as nn
 
 from executorch.examples.models.gemma4_31b.model import Gemma4_31B
+from executorch.examples.models.gemma4_31b.pack_vision import (
+    quantize_vision_position_table,
+)
 from executorch.examples.models.gemma4_31b.quant import (
     QuantConfig,
     quantize_model,
@@ -35,14 +39,21 @@ from executorch.examples.models.gemma4_31b.quant import (
 )
 
 # ---------------------------------------------------------------------------
-# Production recipes for Gemma 4 31B.
+# Production recipes for Gemma 4 31B (vision + text in one rule set).
 #
-# Layer sensitivity:
+# Layer sensitivity (text decoder):
 #   - v_proj and down_proj are the most sensitive to quantization error
 #     (first/last quarter of layers especially so).
 #   - q_proj, k_proj, o_proj, gate_proj, up_proj tolerate 4-bit well.
 #   - embed_tokens is an index lookup — INT8 per-axis is nearly lossless.
 #   - Norms and layer_scalar are tiny and must stay unquantized.
+#
+# Vision modality:
+#   - Vision tower linears are small + accuracy-sensitive; they stay bf16.
+#   - The vision multimodal projector (``embed_vision.*``) also stays bf16.
+#   - The patch_embedder's position_embedding_table is the one "real" quant
+#     on the vision side: bf16 → INT8 per-channel, applied explicitly before
+#     the generic quantize_model parameter walk.
 
 _INT4 = QuantConfig(bits=4, group_size=32, symmetric=False, method="min_max")
 _INT4_HQQ = QuantConfig(bits=4, group_size=32, symmetric=False, method="hqq")
@@ -52,21 +63,39 @@ _INT8_PER_AXIS = QuantConfig(  # group_size = hidden_size (5376) for Gemma 4 31B
 )
 _EDGE_LAYERS = set(range(15)) | set(range(45, 60))
 
+# Shared vision rules: every vision-side weight stays bf16. The PE table is
+# absent from the parameter walk after quantize_gemma4_vision_position_table
+# replaces it with int8 buffers.
+
+
+def quantize_gemma4_vision_position_table(model: nn.Module) -> None:
+    vision_tower = getattr(model, "vision_tower", None)
+    if vision_tower is not None:
+        quantize_vision_position_table(vision_tower)
+
+
+_VISION_RULES = [
+    QuantRule(r"vision_tower\..*", None),
+    QuantRule(r"embed_vision\..*", None),
+]
+
 GEMMA4_31B_DEFAULT_RECIPE = QuantRecipe(
     rules=[
         QuantRule(r"embed_tokens\.weight", _INT8_PER_AXIS),
+        *_VISION_RULES,
         QuantRule(r".*norm\.weight", None),
         QuantRule(r".*\.weight", _INT4),
-    ]
+    ],
 )
 
 GEMMA4_31B_SENSITIVE_RECIPE = QuantRecipe(
     rules=[
         QuantRule(r"embed_tokens\.weight", _INT8_PER_AXIS),
+        *_VISION_RULES,
         QuantRule(r".*norm\.weight", None),
         QuantRule(r".*\.(v_proj|down_proj)\.weight", _INT8, layers=_EDGE_LAYERS),
         QuantRule(r".*\.weight", _INT4_HQQ),
-    ]
+    ],
 )
 
 _RECIPES = {
@@ -114,7 +143,13 @@ def main() -> None:
         print("Untying embed_tokens / lm_head...")
         model.lm_head.weight = nn.Parameter(model.embed_tokens.weight.clone())
 
+    # Single quantization entry point. ``quantize_model`` handles both
+    # modalities in one pass:
+    #   - text decoder linears -> INT4 / INT8 per the recipe;
+    #   - vision tower + embed_vision linears -> stay bf16 (recipe rule);
+    #   - vision PE table -> INT8 per-channel (explicit pre-quantization call).
     print(f"Quantizing with recipe '{args.quant_recipe}'...")
+    quantize_gemma4_vision_position_table(model)
     state_dict = quantize_model(model, recipe, verbose=True)
 
     os.makedirs(args.output, exist_ok=True)

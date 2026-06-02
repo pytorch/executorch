@@ -25,16 +25,13 @@ import executorch.backends.cuda.int4_dispatch  # noqa: F401
 import torch
 import torch.nn as nn
 from executorch.examples.models.gemma4_31b.export import (
+    _get_packers,
     export_and_lower,
     load_prequantized_model,
 )
 from executorch.examples.models.gemma4_31b.inference import _move_to_cuda, generate
 from executorch.examples.models.gemma4_31b.model import Gemma4_31B
-from executorch.examples.models.gemma4_31b.quant import (
-    DEFAULT_CUDA_PACKERS,
-    pack_model,
-    quantize_model,
-)
+from executorch.examples.models.gemma4_31b.quant import pack_model, quantize_model
 from executorch.examples.models.gemma4_31b.tests.test_pipeline import (
     build_hf_checkpoint,
     DEFAULT_RECIPE,
@@ -114,16 +111,21 @@ class TestChunkedPrefill(unittest.TestCase):
             for i in range(prompt_len):
                 tok = prompt[:, i : i + 1]
                 pos = torch.tensor([i], dtype=torch.long, device="cuda")
-                token_seq = model_seq(tok, pos, temp)
+                # T=1 token-input single-step (model.forward now takes embeds).
+                token_seq = model_seq.decode_forward(tok, pos, temp)
 
         with torch.no_grad():
             chunk1 = prompt[:, :buf_size]
             pos1 = torch.arange(buf_size, dtype=torch.long, device="cuda")
-            model_chunk(chunk1, pos1, temp)
+            # Multi-token prefill: embed_text -> embeds-forward (the same fusion
+            # the exported token-input prefill performs).
+            model_chunk.forward(model_chunk.embed_text(chunk1), pos1, temp)
 
             chunk2 = prompt[:, buf_size:]
             pos2 = torch.arange(buf_size, prompt_len, dtype=torch.long, device="cuda")
-            token_chunk = model_chunk(chunk2, pos2, temp)
+            token_chunk = model_chunk.forward(
+                model_chunk.embed_text(chunk2), pos2, temp
+            )
 
         self.assertEqual(
             int(token_seq.item()),
@@ -156,11 +158,16 @@ class TestCudaExport(unittest.TestCase):
                 ckpt_dir, max_seq_len=TINY_CONFIG.max_seq_len
             )
             model.lm_head.weight = nn.Parameter(model.embed_tokens.weight.clone())
+            from executorch.examples.models.gemma4_31b.pack_vision import (
+                quantize_vision_position_table,
+            )
+
+            quantize_vision_position_table(model.vision_tower)
             state_dict = quantize_model(model, DEFAULT_RECIPE)
 
             with torch.device("meta"):
                 model = Gemma4_31B(config)
-            pack_model(model, state_dict, DEFAULT_CUDA_PACKERS)
+            pack_model(model, state_dict, _get_packers("cuda"))
             model.eval()
 
             export_and_lower(model, config, out_dir)
@@ -185,7 +192,9 @@ class TestInt4Inference(unittest.TestCase):
             tok = torch.tensor([[1]], dtype=torch.long, device="cuda")
             pos = torch.tensor([0], dtype=torch.long, device="cuda")
             temp = torch.tensor([1.0], dtype=torch.float32, device="cuda")
-            return self.model(tok, pos, temp)
+            # model.forward takes inputs_embeds now; use the token-input
+            # single-step decode entry point.
+            return self.model.decode_forward(tok, pos, temp)
 
     def test_int4_weights_preserved(self):
         """Packing passes Int4Tensor through without conversion."""
@@ -216,7 +225,7 @@ class TestInt4Inference(unittest.TestCase):
             pos = torch.tensor([0], dtype=torch.long, device="cuda")
             temp = torch.tensor([1.0], dtype=torch.float32, device="cuda")
             torch.manual_seed(99)
-            out2 = model2(tok, pos, temp)
+            out2 = model2.decode_forward(tok, pos, temp)
         self.assertEqual(int(out1.item()), int(out2.item()))
 
     def test_embedding_works(self):
