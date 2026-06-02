@@ -46,6 +46,7 @@ class ModuleInstrumentationTest {
     try {
       val results = module.forward(EValue.from(dummyInput()))
       Assert.assertTrue(results[0].isTensor)
+      Assert.assertArrayEquals(expectedOutputShape, results[0].toTensor().shape())
     } finally {
       module.destroy()
     }
@@ -60,6 +61,7 @@ class ModuleInstrumentationTest {
 
       val results = module.forward(EValue.from(dummyInput()))
       Assert.assertTrue(results[0].isTensor)
+      Assert.assertArrayEquals(expectedOutputShape, results[0].toTensor().shape())
     } finally {
       module.destroy()
     }
@@ -72,6 +74,7 @@ class ModuleInstrumentationTest {
     try {
       val results = module.execute(FORWARD_METHOD, EValue.from(dummyInput()))
       Assert.assertTrue(results[0].isTensor)
+      Assert.assertArrayEquals(expectedOutputShape, results[0].toTensor().shape())
     } finally {
       module.destroy()
     }
@@ -178,6 +181,7 @@ class ModuleInstrumentationTest {
     try {
       val results = module.forward(EValue.from(dummyInput()))
       Assert.assertTrue(results[0].isTensor)
+      Assert.assertArrayEquals(expectedOutputShape, results[0].toTensor().shape())
     } finally {
       module.destroy()
     }
@@ -190,6 +194,7 @@ class ModuleInstrumentationTest {
     try {
       val results = module.forward(EValue.from(dummyInput()))
       Assert.assertTrue(results[0].isTensor)
+      Assert.assertArrayEquals(expectedOutputShape, results[0].toTensor().shape())
     } finally {
       module.destroy()
     }
@@ -308,6 +313,7 @@ class ModuleInstrumentationTest {
     private const val FORWARD_METHOD = "forward"
     private const val NONE_METHOD = "none"
     private val inputShape = longArrayOf(1, 3, 224, 224)
+    private val expectedOutputShape = longArrayOf(1, 1000)
 
     private fun dummyInput(): Tensor = Tensor.ones(inputShape, DType.FLOAT)
   }

@@ -78,4 +78,21 @@ class ModuleE2ETest {
   fun testVitB16() {
     testGoldenModel("vit_b_16", longArrayOf(1, 3, 224, 224))
   }
+
+  @Test
+  fun testAdd() {
+    val x = Tensor.fromBlob(floatArrayOf(1f, 2f, 3f, 4f), longArrayOf(2, 2))
+    val y = Tensor.fromBlob(floatArrayOf(5f, 6f, 7f, 8f), longArrayOf(2, 2))
+
+    val pteStream = javaClass.getResourceAsStream("/ModuleAdd.pte")!!
+    val pteFile = File(getTestFilePath("/ModuleAdd.pte"))
+    FileUtils.copyInputStreamToFile(pteStream, pteFile)
+
+    val module = Module.load(pteFile.absolutePath)
+    val results = module.forward(EValue.from(x), EValue.from(y), EValue.from(1.0))
+    val actualOutput = results[0].toTensor().dataAsFloatArray
+
+    assertOutputsClose(actualOutput, floatArrayOf(6f, 8f, 10f, 12f))
+    module.destroy()
+  }
 }
