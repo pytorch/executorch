@@ -12,6 +12,7 @@
 
 #include <webgpu/webgpu.h>
 
+#include <algorithm>
 #include <cmath>
 #include <cstring>
 
@@ -49,6 +50,26 @@ void add_impl(WebGPUGraph& graph, const std::vector<int>& args) {
   const auto& out_tensor = graph.get_tensor(out_id);
   uint32_t num_elements =
       static_cast<uint32_t>(out_tensor.nbytes / sizeof(float));
+
+  // Clamp the workgroup size to the device limit (SwiftShader caps at 128).
+  WGPULimits limits = {};
+  uint32_t device_max =
+      wgpuDeviceGetLimits(device, &limits) == WGPUStatus_Success &&
+          limits.maxComputeInvocationsPerWorkgroup > 0
+      ? limits.maxComputeInvocationsPerWorkgroup
+      : kBinaryAddWorkgroupSize;
+  uint32_t wg_size = std::min(kBinaryAddWorkgroupSize, device_max);
+  uint32_t workgroup_count = (num_elements + wg_size - 1) / wg_size;
+
+  // Validate the 1D dispatch limit before allocating any GPU objects.
+  if (workgroup_count > 65535u) {
+    throw std::runtime_error(
+        "WebGPU add: workgroup count exceeds the 1D dispatch limit (65535)");
+  }
+
+  WGPUConstantEntry wg_size_constant = {};
+  wg_size_constant.key = {"wg_size", WGPU_STRLEN};
+  wg_size_constant.value = static_cast<double>(wg_size);
 
   // Create uniform buffer for params
   AddParams params = {};
@@ -115,6 +136,8 @@ void add_impl(WebGPUGraph& graph, const std::vector<int>& args) {
   pipeline_desc.layout = pipeline_layout;
   pipeline_desc.compute.module = shader;
   pipeline_desc.compute.entryPoint = {"main", WGPU_STRLEN};
+  pipeline_desc.compute.constantCount = 1;
+  pipeline_desc.compute.constants = &wg_size_constant;
   WGPUComputePipeline pipeline =
       wgpuDeviceCreateComputePipeline(device, &pipeline_desc);
 
@@ -146,16 +169,14 @@ void add_impl(WebGPUGraph& graph, const std::vector<int>& args) {
   bg_desc.entries = bg_entries;
   WGPUBindGroup bind_group = wgpuDeviceCreateBindGroup(device, &bg_desc);
 
-  uint32_t workgroup_count =
-      (num_elements + kBinaryAddWorkgroupSize - 1) / kBinaryAddWorkgroupSize;
-
   graph.add_dispatch({pipeline, bind_group, workgroup_count});
 
   // Release intermediate objects (pipeline and bind_group are kept by dispatch)
   wgpuShaderModuleRelease(shader);
   wgpuBindGroupLayoutRelease(bgl);
   wgpuPipelineLayoutRelease(pipeline_layout);
-  // uniform_buffer is kept alive by the bind group
+  // Drop our ref; the bind group keeps the uniform buffer alive until release.
+  wgpuBufferRelease(uniform_buffer);
 }
 
 } // namespace
