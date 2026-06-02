@@ -71,7 +71,10 @@ jobs:
               "v=true,vext_spec=v1.0,vlen=512"
             ]',
             '[
-              "v=false"
+              "v=false",
+              "v=true,vext_spec=v1.0,vlen=128",
+              "v=true,vext_spec=v1.0,vlen=256",
+              "v=true,vext_spec=v1.0,vlen=512"
             ]'
           )
         }}
