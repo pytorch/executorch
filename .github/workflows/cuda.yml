@@ -258,7 +258,7 @@ jobs:
             name: "dinov2-small-imagenet1k-1-layer"
           - repo: "SocialLocalMobile"
             name: "Qwen3.5-35B-A3B-HQQ-INT4"
-          - repo: "SocialLocalMobile"
+          - repo: "gasoonjia"
             name: "gemma-4-31B-it-HQQ-INT4"
         quant:
           - "non-quantized"
@@ -279,13 +279,13 @@ jobs:
               repo: "SocialLocalMobile"
               name: "Qwen3.5-35B-A3B-HQQ-INT4"
             quant: "quantized-int4-weight-only"
-          # Gemma 4 31B uses a prequantized checkpoint, only tile-packed
+          # Gemma 4 31B vision uses a prequantized checkpoint, only tile-packed
           - model:
-              repo: "SocialLocalMobile"
+              repo: "gasoonjia"
               name: "gemma-4-31B-it-HQQ-INT4"
             quant: "non-quantized"
           - model:
-              repo: "SocialLocalMobile"
+              repo: "gasoonjia"
               name: "gemma-4-31B-it-HQQ-INT4"
             quant: "quantized-int4-weight-only"
           # Voxtral Realtime only supports int4-tile-packed on CUDA
@@ -416,7 +416,7 @@ jobs:
             name: "dinov2-small-imagenet1k-1-layer"
           - repo: "SocialLocalMobile"
             name: "Qwen3.5-35B-A3B-HQQ-INT4"
-          - repo: "SocialLocalMobile"
+          - repo: "gasoonjia"
             name: "gemma-4-31B-it-HQQ-INT4"
         quant:
           - "non-quantized"
@@ -437,13 +437,13 @@ jobs:
               repo: "SocialLocalMobile"
               name: "Qwen3.5-35B-A3B-HQQ-INT4"
             quant: "quantized-int4-weight-only"
-          # Gemma 4 31B uses a prequantized checkpoint, only tile-packed
+          # Gemma 4 31B vision uses a prequantized checkpoint, only tile-packed
           - model:
-              repo: "SocialLocalMobile"
+              repo: "gasoonjia"
               name: "gemma-4-31B-it-HQQ-INT4"
             quant: "non-quantized"
           - model:
-              repo: "SocialLocalMobile"
+              repo: "gasoonjia"
               name: "gemma-4-31B-it-HQQ-INT4"
             quant: "quantized-int4-weight-only"
           # Voxtral Realtime only supports int4-tile-packed on CUDA

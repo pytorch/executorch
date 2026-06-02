@@ -223,30 +223,10 @@ std::vector<int64_t> Gemma4Runner::build_text_input_ids(
 std::vector<int64_t> Gemma4Runner::build_vision_input_ids(
     const std::string& prompt,
     int64_t num_vision_tokens) {
-  auto user_res = tokenizer_->encode("user\n", /*add_bos=*/0, /*add_eos=*/0);
-  auto prompt_res = tokenizer_->encode(prompt, /*add_bos=*/0, /*add_eos=*/0);
-  auto newline_res = tokenizer_->encode("\n", /*add_bos=*/0, /*add_eos=*/0);
-  auto model_res = tokenizer_->encode("model\n", /*add_bos=*/0, /*add_eos=*/0);
-
-  std::vector<int64_t> ids;
-  ids.push_back(kBosId);
-  ids.push_back(kTurnStartId);
-  for (auto t : user_res.get())
-    ids.push_back(static_cast<int64_t>(t));
-  ids.push_back(kBoiTokenId);
-  for (int64_t i = 0; i < num_vision_tokens; ++i)
-    ids.push_back(kImageTokenId);
-  ids.push_back(kEoiTokenId);
-  for (auto t : prompt_res.get())
-    ids.push_back(static_cast<int64_t>(t));
-  ids.push_back(kTurnEndId);
-  for (auto t : newline_res.get())
-    ids.push_back(static_cast<int64_t>(t));
-  ids.push_back(kTurnStartId);
-  for (auto t : model_res.get())
-    ids.push_back(static_cast<int64_t>(t));
-
-  return ids;
+  // Delegate to the single shared implementation (chat_template.h) so this
+  // runner and the gemma4_31b runner can never drift.
+  return ::executorch::examples::gemma4::build_vision_input_ids(
+      tokenizer_.get(), prompt, num_vision_tokens, kBosId);
 }
 
 TensorPtr Gemma4Runner::build_inputs_embeds(
