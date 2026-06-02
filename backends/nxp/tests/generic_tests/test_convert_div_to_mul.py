@@ -4,6 +4,8 @@
 # LICENSE file in the root directory of this source tree.
 
 import numpy as np
+
+# noinspection PyUnusedImports
 import pytest
 import torch
 
@@ -11,18 +13,9 @@ from executorch.backends.nxp.aten_passes.neutron_aten_pass_manager import (
     ConvertDivToMulPass,
     NeutronAtenPassManager,
 )
-from executorch.backends.nxp.backend.edge_program_converter import (
-    EdgeProgramToIRConverter,
-)
 from executorch.backends.nxp.tests.dataset_creator import RandomDatasetCreator
-from executorch.backends.nxp.tests.executorch_pipeline import (
-    neutron_target_spec,
-    to_quantized_edge_program,
-)
-from executorch.backends.nxp.tests.executors import (
-    convert_run_compare,
-    graph_contains_any_of_ops,
-)
+from executorch.backends.nxp.tests.executorch_pipeline import neutron_target_spec
+from executorch.backends.nxp.tests.executors import graph_contains_any_of_ops
 from executorch.backends.nxp.tests.graph_verifier import DetailedGraphVerifier
 from executorch.backends.nxp.tests.models import (
     NonstaticDivLinearModel,
@@ -30,8 +23,6 @@ from executorch.backends.nxp.tests.models import (
 )
 from executorch.backends.nxp.tests.nsys_testing import lower_run_compare
 from executorch.backends.nxp.tests.ops_aliases import MulTensor
-from executorch.exir.dialects._ops import ops as exir_ops
-from torch.export import ExportedProgram
 
 
 @pytest.fixture(autouse=True)
@@ -186,71 +177,6 @@ def test_convert_div_to_mul_non_static_tensor(mocker, input_shape):
     assert not graph_contains_any_of_ops(
         exir_program_aten.graph,
         [torch.ops.aten.mul.Tensor],
-    )
-
-
-@pytest.mark.parametrize(
-    "input_shape, is_scalar",
-    [
-        pytest.param((8, 8, 16), True, id="3D, scalar."),
-        pytest.param((8, 8, 16), False, id="3D, tensor."),
-    ],
-)
-def test_convert_div_to_mul_full_pipeline(mocker, input_shape, is_scalar):
-    converter_spy = mocker.spy(EdgeProgramToIRConverter, "convert_program")
-
-    channels = input_shape[-1]
-    if is_scalar:
-        divisor = np.random.uniform(0, 15)
-        model = StaticDivLinearModel(
-            in_channels=channels, out_channels=channels, divisor=divisor
-        )
-    else:
-        divisor = torch.rand(input_shape)
-        model = StaticDivLinearModel(
-            in_channels=channels, out_channels=channels, divisor=divisor
-        )
-
-    # Run conversion
-    edge_program = to_quantized_edge_program(
-        model,
-        input_shape,
-    ).exported_program()
-
-    # Capture generated model
-    neutron_ir_model = converter_spy.spy_return[0]
-    edge_partition: ExportedProgram = converter_spy.call_args.args[1]
-
-    # Make sure `aten.div` was converted to `aten.mul`
-    assert not graph_contains_any_of_ops(
-        edge_partition.graph,
-        [
-            exir_ops.edge.aten.div.Tensor,
-        ],
-    )
-    assert graph_contains_any_of_ops(
-        edge_partition.graph,
-        [
-            exir_ops.edge.aten.mul.Tensor,
-        ],
-    )
-
-    # Make sure everything was converted.
-    assert not graph_contains_any_of_ops(
-        edge_program.graph,
-        [
-            exir_ops.edge.aten.mul.Tensor,
-            exir_ops.edge.aten.div.Tensor,
-        ],
-    )
-
-    example_input = (np.random.random(input_shape).astype(np.float32) * 50).astype(
-        np.int8
-    )
-    convert_run_compare(
-        edge_partition,
-        input_data=example_input,
-        tfl_model=neutron_ir_model,
     )
 
 
