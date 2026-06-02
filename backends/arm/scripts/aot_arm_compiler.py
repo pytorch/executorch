@@ -989,6 +989,7 @@ def main() -> None:  # noqa: C901
         args.calibration_data, example_inputs
     )
     model = original_model.eval()
+    model.requires_grad_(False)
 
     # export under the assumption we quantize, the exported form also works
     # in to_edge if we don't quantize
@@ -1070,8 +1071,6 @@ def main() -> None:  # noqa: C901
 
     dump_delegation_info(edge, args.intermediates)
 
-    edge_program_manager_copy = copy.deepcopy(edge)
-
     try:
         exec_prog = edge.to_executorch(
             config=ExecutorchBackendConfig(extract_delegate_segments=False)
@@ -1130,6 +1129,7 @@ def main() -> None:  # noqa: C901
     if args.bundleio or args.etrecord:
         etrecord_file_name = os.path.splitext(output_file_name)[0] + "_etrecord.bin"
         try:
+            edge_program_manager_copy = copy.deepcopy(edge)
             generate_etrecord(etrecord_file_name, edge_program_manager_copy, exec_prog)
             print(f"ETRecord saved as {etrecord_file_name}")
         except Exception as e:
