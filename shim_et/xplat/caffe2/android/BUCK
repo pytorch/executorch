@@ -1,0 +1,16 @@
+# Copyright (c) Meta Platforms, Inc. and affiliates.
+#
+# This source code is licensed under the BSD-style license found in the
+# LICENSE file in the root directory of this source tree.
+
+# This is a shim for the caffe2 android tests.
+# The fbsource//xplat/caffe2/android:test_host target is a PyTorch Mobile test
+# that is not applicable to ExecuTorch. This empty target allows the build
+# to succeed without running PyTorch-specific tests against ExecuTorch.
+
+load("@prelude//java:java_library.bzl", "java_library")
+
+java_library(
+    name = "test_host",
+    visibility = ["PUBLIC"],
+)

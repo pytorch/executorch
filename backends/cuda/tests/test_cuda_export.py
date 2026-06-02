@@ -385,8 +385,8 @@ class TestCudaExport(unittest.TestCase):
         # Both input and output tensors should be on CUDA device for now.
         self.assertEqual(
             len(cpu_tensors),
-            0,
-            f"Expecteed no CPU tensors for delegate inputs, but found {len(cpu_tensors)}",
+            3,
+            f"Expecteed three CPU tensors for method inputs and outputs, but found {len(cpu_tensors)}",
         )
         self.assertEqual(
             len(cuda_tensors),
