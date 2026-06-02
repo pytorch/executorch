@@ -15,9 +15,13 @@
 #include <unordered_map>
 #include <vector>
 
+#include <executorch/runtime/core/named_data_map.h>
+
 namespace executorch {
 namespace backends {
 namespace webgpu {
+
+using executorch::runtime::NamedDataMap;
 
 struct WebGPUTensor {
   WGPUBuffer buffer = nullptr;
@@ -66,7 +70,10 @@ class WebGPUGraph {
 
   // Build the graph from a deserialized VkGraph flatbuffer and constant data.
   // The flatbuffer_data pointer must remain valid during build().
-  void build(const void* flatbuffer_data, const uint8_t* constant_data);
+  void build(
+      const void* flatbuffer_data,
+      const uint8_t* constant_data,
+      const NamedDataMap* named_data_map = nullptr);
 
   // Copy input tensor data from host pointers into GPU buffers.
   void copy_inputs(const std::vector<std::pair<const void*, size_t>>& inputs);
