@@ -13,7 +13,6 @@ from typing import Callable, Iterable
 import eiq_neutron_sdk
 import numpy as np
 import torch
-
 from executorch import exir
 from executorch.backends.nxp.backend.custom_delegation_options import (
     CustomDelegationOptions,
@@ -98,7 +97,7 @@ def _get_default_quantizer(target_spec: NeutronTargetSpec, use_qat: bool) -> Qua
 
 
 def to_model_input_spec(
-    input_spec: Iterable[ModelInputSpec] | tuple[int, ...] | list[tuple[int, ...]]
+    input_spec: Iterable[ModelInputSpec] | tuple[int, ...] | list[tuple[int, ...]],
 ) -> tuple[ModelInputSpec, ...]:
     match input_spec:
         case _ if isinstance(input_spec, Iterable) and all(
@@ -122,7 +121,7 @@ GetCalibrationInputsFn = Callable[
 
 def get_calibration_inputs_fn_from_dataset_dir(dataset_dir) -> GetCalibrationInputsFn:
     def _nested(
-        input_spec: tuple[ModelInputSpec, ...]
+        input_spec: tuple[ModelInputSpec, ...],
     ) -> Iterable[tuple[torch.Tensor, ...]]:
         data = sorted(os.listdir(dataset_dir))
         inputs_needed = len(input_spec)
@@ -156,7 +155,7 @@ def get_calibration_inputs_fn_from_dataset_dir(dataset_dir) -> GetCalibrationInp
 
 
 def _get_example_input(
-    input_spec: tuple[ModelInputSpec, ...]
+    input_spec: tuple[ModelInputSpec, ...],
 ) -> tuple[torch.Tensor, ...]:
     example_input = []
     for spec in input_spec:
@@ -193,8 +192,9 @@ def to_quantized_edge_program(
     use_new_flow_neutron_c: bool = False,
     delegate_to_npu=True,
 ) -> EdgeProgramManager:
-    _neutron_target_spec = NeutronTargetSpec(target)
-    custom_delegation_options.use_new_flow_neutron_c = use_new_flow_neutron_c
+    _neutron_target_spec = NeutronTargetSpec(
+        target, use_new_flow_neutron_c=use_new_flow_neutron_c
+    )
     if get_quantizer_fn is None:
         get_quantizer_fn = partial(
             _get_default_quantizer, _neutron_target_spec, use_qat
