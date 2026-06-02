@@ -15,15 +15,19 @@ git checkout main && git pull
 ## Build and measure baseline
 ```bash
 conda activate executorch
+# Runtime only (default; what arm-bare-metal CI uses):
 bash test/build_size_test.sh
+# Runtime + portable kernels (what linux CI uses):
+bash test/build_size_test.sh "-DEXECUTORCH_BUILD_SIZE_TEST_KERNELS=portable"
+# Runtime + optimized kernels:
+bash test/build_size_test.sh "-DEXECUTORCH_BUILD_SIZE_TEST_KERNELS=optimized"
+
 strip -o /tmp/size_test_stripped cmake-out/test/size_test
-strip -o /tmp/size_test_all_ops_stripped cmake-out/test/size_test_all_ops
-ls -la /tmp/size_test_stripped /tmp/size_test_all_ops_stripped
+ls -la /tmp/size_test_stripped
 ```
 
-Produces two binaries:
-- `cmake-out/test/size_test` — ExecuTorch runtime without operator implementations
-- `cmake-out/test/size_test_all_ops` — ExecuTorch runtime with portable ops
+Produces a single binary `cmake-out/test/size_test`, whose content depends on
+`EXECUTORCH_BUILD_SIZE_TEST_KERNELS={none,portable,optimized}` (default `none`).
 
 ## Analyze with bloaty
 ```bash
@@ -66,7 +70,7 @@ Set by `test/build_size_test.sh`:
 
 | Binary | This change (N vs N-1) | Cumulative (N vs main) |
 |---|---|---|
-| `size_test` (stripped) | -X | -Y |
-| `size_test_all_ops` (stripped) | -X | -Y |
+| `size_test` (stripped, no kernels) | -X | -Y |
+| `size_test` (stripped, portable kernels) | -X | -Y |
 
 5. Update the CI size threshold in `.github/workflows/pull.yml` if sizes decrease

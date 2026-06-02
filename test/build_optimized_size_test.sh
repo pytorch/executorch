@@ -34,22 +34,14 @@ cmake_install_executorch_lib() {
 }
 
 test_cmake_size_test() {
-    CXXFLAGS="-g" retry cmake -DCMAKE_BUILD_TYPE=MinSizeRel -DEXECUTORCH_BUILD_KERNELS_OPTIMIZED=ON -DCMAKE_INSTALL_PREFIX=cmake-out -Bcmake-out/test test
+    CXXFLAGS="-g" retry cmake -DCMAKE_BUILD_TYPE=MinSizeRel -DEXECUTORCH_BUILD_KERNELS_OPTIMIZED=ON -DEXECUTORCH_BUILD_SIZE_TEST_KERNELS=optimized -DCMAKE_INSTALL_PREFIX=cmake-out -Bcmake-out/test test
 
     echo "Build size test"
     cmake --build cmake-out/test -j9 --config MinSizeRel
 
-    echo 'ExecuTorch with no ops binary size, unstripped:'
+    echo 'ExecuTorch size_test with optimized ops, unstripped:'
     ls -al cmake-out/test/size_test
     size cmake-out/test/size_test
-
-    echo 'ExecuTorch with portable ops binary size, unstripped:'
-    ls -al cmake-out/test/size_test_all_ops
-    size cmake-out/test/size_test_all_ops
-
-    echo 'ExecuTorch with optimized ops binary size, unstripped:'
-    ls -al cmake-out/test/size_test_all_optimized_ops
-    size cmake-out/test/size_test_all_optimized_ops
 }
 
 if [[ -z $PYTHON_EXECUTABLE ]]; then

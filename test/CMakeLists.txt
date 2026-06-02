@@ -43,39 +43,43 @@ executorch_load_build_variables()
 # the source paths.
 list(TRANSFORM _size_test__srcs PREPEND "${EXECUTORCH_ROOT}/")
 
+set(EXECUTORCH_BUILD_SIZE_TEST_KERNELS
+    "none"
+    CACHE
+      STRING
+      "Which kernel library to link into size_test: none, portable, or optimized"
+)
+set_property(
+  CACHE EXECUTORCH_BUILD_SIZE_TEST_KERNELS PROPERTY STRINGS none portable
+                                                    optimized
+)
+
+# `set_property STRINGS` is a hint to cmake-gui only; enforce the allowed set
+# with IN_LIST so a typo fails loudly at configure time.
+set(_valid_size_test_kernels none portable optimized)
+if(NOT EXECUTORCH_BUILD_SIZE_TEST_KERNELS IN_LIST _valid_size_test_kernels)
+  message(
+    FATAL_ERROR
+      "EXECUTORCH_BUILD_SIZE_TEST_KERNELS='${EXECUTORCH_BUILD_SIZE_TEST_KERNELS}' "
+      "must be one of: ${_valid_size_test_kernels}"
+  )
+endif()
+
 #
-# size_test: minimal binary with no ops and no delegate backend
+# size_test: minimal binary, optionally linked with a kernel library.
 #
-# TODO(larryliu0820): Add EXECUTORCH_BUILD_EXECUTABLES to not build executable
-# when we cross compile to ios
 add_executable(size_test ${_size_test__srcs})
 target_link_libraries(size_test executorch extension_data_loader)
+if(EXECUTORCH_BUILD_SIZE_TEST_KERNELS STREQUAL "portable")
+  target_link_libraries(size_test portable_ops_lib portable_kernels)
+elseif(EXECUTORCH_BUILD_SIZE_TEST_KERNELS STREQUAL "optimized")
+  if(NOT EXECUTORCH_BUILD_KERNELS_OPTIMIZED)
+    message(FATAL_ERROR "EXECUTORCH_BUILD_SIZE_TEST_KERNELS=optimized requires "
+                        "EXECUTORCH_BUILD_KERNELS_OPTIMIZED=ON"
+    )
+  endif()
+  target_link_libraries(size_test optimized_native_cpu_ops_lib)
+endif()
 if(NOT CMAKE_BUILD_TYPE STREQUAL "Debug")
   target_link_options_gc_sections(size_test)
-endif()
-
-#
-# size_test_all_ops: binary with portable ops and no delegate backend
-#
-add_executable(size_test_all_ops ${_size_test__srcs})
-target_link_libraries(
-  size_test_all_ops executorch extension_data_loader portable_ops_lib
-  portable_kernels
-)
-if(NOT CMAKE_BUILD_TYPE STREQUAL "Debug")
-  target_link_options_gc_sections(size_test_all_ops)
-endif()
-
-#
-# size_test_all_optimized_ops: binary with optimized ops and no delegate backend
-#
-if(EXECUTORCH_BUILD_KERNELS_OPTIMIZED)
-  add_executable(size_test_all_optimized_ops ${_size_test__srcs})
-  target_link_libraries(
-    size_test_all_optimized_ops executorch extension_data_loader
-    optimized_native_cpu_ops_lib
-  )
-  if(NOT CMAKE_BUILD_TYPE STREQUAL "Debug")
-    target_link_options_gc_sections(size_test_all_optimized_ops)
-  endif()
 endif()
