@@ -15,13 +15,29 @@ except ImportError:
     )
 
 
-def convert_unsafe(neutron_converter, tflite_model, cctx, queue):
+def _build_compilation_context(compilation_opts):
+    """Build a CompilationContext from a plain dict of options."""
+    cctx = neutron_converter.CompilationContext()
+    cctx.targetOpts = neutron_converter.getNeutronTarget(compilation_opts["target"])
+    cctx.compilationOpts.minNumOpsPerGraph = compilation_opts["minNumOpsPerGraph"]
+    cctx.compilationOpts.excludeGraphPasses = compilation_opts["excludeGraphPasses"]
+    cctx.compilationOpts.fetchConstantsToSRAM = compilation_opts["fetchConstantsToSRAM"]
+    cctx.compilationOpts.dumpKernelSelectionCode = compilation_opts[
+        "dumpKernelSelectionCode"
+    ]
+    if hasattr(cctx.compilationOpts, "useNewFlowNeutronC"):
+        cctx.compilationOpts.useNewFlowNeutronC = compilation_opts["useNewFlowNeutronC"]
+    return cctx
+
+
+def convert_unsafe(tflite_model, compilation_opts, queue):
     """
-    Run neutron_converter on given tflite_model with compilation context cctx.
+    Run neutron_converter on given tflite_model with the provided compilation options.
     This routine is supposed to run in a separate process.
     If properly finished, the output queue contains the converted model,
     otherwise the neutron_converter exits and the output queue is empty.
     """
+    cctx = _build_compilation_context(compilation_opts)
     model_converted = neutron_converter.convertModel(list(tflite_model), cctx)
     queue.put(model_converted)
 
@@ -84,16 +100,14 @@ class NeutronConverterManager:
         # Neutron converter crashes if we provide invalid target -> verify.
         self.verify_target(target)
 
-        cctx = neutron_converter.CompilationContext()
-        cctx.targetOpts = neutron_converter.getNeutronTarget(target)
-        cctx.compilationOpts.minNumOpsPerGraph = 1
-        cctx.compilationOpts.excludeGraphPasses = (
-            "HoistSliceAboveTranspose,MergeTranspose"
-        )
-        cctx.compilationOpts.fetchConstantsToSRAM = fetch_constants_to_sram
-        cctx.compilationOpts.dumpKernelSelectionCode = self.dump_kernel_selection_code
-        if hasattr(cctx.compilationOpts, "useNewFlowNeutronC"):
-            cctx.compilationOpts.useNewFlowNeutronC = use_new_flow_neutron_c
+        compilation_opts = {
+            "target": target,
+            "minNumOpsPerGraph": 1,
+            "excludeGraphPasses": "HoistSliceAboveTranspose,MergeTranspose",
+            "fetchConstantsToSRAM": fetch_constants_to_sram,
+            "dumpKernelSelectionCode": self.dump_kernel_selection_code,
+            "useNewFlowNeutronC": use_new_flow_neutron_c,
+        }
 
         # Try to use multiprocessing for isolation, but fall back to direct execution
         # if the environment doesn't support it (e.g., in sandcastle/build environments)
@@ -104,7 +118,7 @@ class NeutronConverterManager:
 
             process = multiprocessing.Process(
                 target=convert_unsafe,
-                args=(neutron_converter, tflite_model, cctx, queue),
+                args=(tflite_model, compilation_opts, queue),
             )
             process.start()
             process.join()  # waits until the subprocess is complete
@@ -116,12 +130,13 @@ class NeutronConverterManager:
 
             model_converted = queue.get()
             process.close()
-        except (EOFError, OSError) as e:
+        except (EOFError, OSError, TypeError) as e:
             # Multiprocessing failed (likely due to environment restrictions)
             # Fall back to direct execution
             logging.warning(
                 f"Multiprocessing not available ({e}), running neutron converter directly"
             )
+            cctx = _build_compilation_context(compilation_opts)
             model_converted = neutron_converter.convertModel(list(tflite_model), cctx)
         if self.dump_kernel_selection_code:
             self._rename_partition_kernel_selection_file(delegation_tag)
