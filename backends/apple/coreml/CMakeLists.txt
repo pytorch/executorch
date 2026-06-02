@@ -230,12 +230,6 @@ if(APPLE)
 
   executorch_target_link_options_shared_lib(coremldelegate)
 
-  if(EXECUTORCH_COREML_BUILD_EXECUTOR_RUNNER)
-    target_link_libraries(
-      coremldelegate PRIVATE portable_ops_lib portable_kernels
-    )
-  endif()
-
   target_compile_options(
     coremldelegate PRIVATE -fobjc-arc -fno-exceptions -x objective-c++
                            -Wno-null-character -Wno-receiver-expr

@@ -1,0 +1,145 @@
+name: Promote commit to viable/strict
+
+# Manual escape hatch for the sampled-CI gating in
+# `_ci-run-decision.yml` + `viable-strict-gate.yml`.
+#
+# Pushes a `ciflow/trunk/<sha>` tag at a chosen commit, which:
+#   1. Re-triggers `pull.yml` / `trunk.yml` against that commit with
+#      ``is-full-run = true`` (every gated job runs regardless of
+#      path filter or SHA sample).
+#   2. Triggers `viable-strict-gate.yml` for that commit; the gate
+#      succeeds because tag pushes always count as a full-run.
+#
+# Once those tag-triggered runs all pass, the next
+# `update-viablestrict` cron run will be able to advance viable/strict
+# to the chosen commit.
+#
+# Use cases:
+#   - Bisecting a regression on a non-sampled commit.
+#   - Pre-release validation: pin viable/strict to a specific commit
+#     (e.g. release branch tip) regardless of its SHA's sample bit.
+#   - Recovering when recent sampled commits all happen to be red.
+
+on:
+  workflow_dispatch:
+    inputs:
+      sha:
+        description: "Full 40-char SHA on main / release/* to promote"
+        required: true
+        type: string
+
+permissions:
+  contents: write
+  # Needed to delete the failed `viable-strict-gate` run that the
+  # original push triggered — see the "Delete failed gate runs" step.
+  actions: write
+
+concurrency:
+  # One in-flight promotion at a time; safer than racing tag pushes.
+  group: promote-to-viable-strict
+  cancel-in-progress: false
+
+jobs:
+  push-ciflow-tag:
+    if: ${{ github.repository_owner == 'pytorch' }}
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Validate SHA and push ciflow tag
+        env:
+          SHA: ${{ inputs.sha }}
+        run: |
+          set -euo pipefail
+
+          # Reject anything that isn't a full 40-char lowercase hex SHA.
+          if [[ ! "$SHA" =~ ^[0-9a-f]{40}$ ]]; then
+            echo "::error::Input must be a full 40-char lowercase hex SHA; got: '$SHA'"
+            exit 1
+          fi
+
+          # The commit must exist locally (fetch-depth: 0 above pulls
+          # everything, but defensively confirm it's an object).
+          if ! git cat-file -e "$SHA^{commit}" 2>/dev/null; then
+            echo "::error::SHA $SHA is not a commit in this repository."
+            exit 1
+          fi
+
+          # Restrict promotion to commits reachable from a release-track
+          # branch. Prevents tagging arbitrary commits (PR heads,
+          # rewritten branches, etc.) that aren't part of the official
+          # main/release history.
+          REACHABLE=false
+          # `git for-each-ref` produces clean refnames (no leading
+          # whitespace, no `origin/HEAD ->` lines), unlike `git branch -r`.
+          BRANCHES="main"
+          while IFS= read -r RELEASE_BRANCH; do
+            BRANCHES="$BRANCHES $RELEASE_BRANCH"
+          done < <(git for-each-ref --format='%(refname:lstrip=3)' refs/remotes/origin/release/)
+          for branch in $BRANCHES; do
+            if git merge-base --is-ancestor "$SHA" "origin/$branch" 2>/dev/null; then
+              echo "SHA is reachable from origin/$branch"
+              REACHABLE=true
+              break
+            fi
+          done
+          if [ "$REACHABLE" = "false" ]; then
+            echo "::error::SHA $SHA is not reachable from main or any release/* branch."
+            exit 1
+          fi
+
+          TAG="ciflow/trunk/$SHA"
+
+          # If the tag already exists (e.g. someone already promoted
+          # this commit), exit cleanly — no-op is a valid outcome.
+          if git ls-remote --tags --exit-code origin "refs/tags/$TAG" >/dev/null 2>&1; then
+            echo "Tag $TAG already exists on origin; nothing to do."
+            exit 0
+          fi
+
+          git config user.name "pytorchbot"
+          git config user.email "pytorchbot@users.noreply.github.com"
+          git tag "$TAG" "$SHA"
+          git push origin "$TAG"
+
+          echo "::notice::Pushed $TAG. Watch the tag-triggered workflow runs (pull / trunk / viable-strict-gate); once they pass, the next update-viablestrict cron (every 30 min) will advance viable/strict."
+
+      # Defense-in-depth: the push that originally landed this commit
+      # triggered a `viable-strict-gate` run that failed (because the
+      # commit wasn't sampled). The tag push above triggers a NEW run
+      # of the gate workflow that will succeed. Standard PyTorch viable/
+      # strict resolves multiple runs by taking the latest conclusion,
+      # so this is usually fine — but to remove ambiguity (and keep the
+      # commit's HUD row clean), explicitly delete any prior failed/
+      # cancelled gate runs on this SHA.
+      - name: Delete failed viable-strict-gate runs on this SHA
+        env:
+          GH_TOKEN: ${{ github.token }}
+          SHA: ${{ inputs.sha }}
+          REPO: ${{ github.repository }}
+        run: |
+          set -euo pipefail
+
+          # List all viable-strict-gate runs for the SHA, filter to
+          # those that completed unsuccessfully, and delete each one.
+          # Failures here are non-fatal: the tag push above is the
+          # primary mechanism; this cleanup is best-effort.
+          RUNS=$(gh api "repos/$REPO/actions/runs?head_sha=$SHA&per_page=100" \
+                   --jq '.workflow_runs[]
+                          | select(.name == "viable-strict-gate")
+                          | select(.conclusion == "failure" or .conclusion == "cancelled" or .conclusion == "timed_out")
+                          | .id' 2>/dev/null || true)
+
+          if [ -z "$RUNS" ]; then
+            echo "No prior failed viable-strict-gate runs to clean up."
+            exit 0
+          fi
+
+          while IFS= read -r RUN_ID; do
+            [ -z "$RUN_ID" ] && continue
+            echo "Deleting failed viable-strict-gate run $RUN_ID"
+            gh api -X DELETE "repos/$REPO/actions/runs/$RUN_ID" || \
+              echo "::warning::Failed to delete run $RUN_ID; continuing anyway."
+          done <<< "$RUNS"
