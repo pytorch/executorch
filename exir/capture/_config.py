@@ -123,3 +123,15 @@ class ExecutorchBackendConfig:
     # vs. accelerator memory.  Default False preserves the legacy behavior
     # where all tensors are planned into CPU memory regardless of device.
     enable_non_cpu_memory_planning: bool = False
+
+    # When True, method-level input tensors that feed directly into a device
+    # delegate are NOT wrapped with _h2d_copy. The user must provide tensors
+    # already on the target device. Useful for pipelines where inputs are
+    # pre-staged on GPU.
+    skip_h2d_for_method_inputs: bool = False
+
+    # When True, device delegate outputs that are directly method outputs
+    # are NOT wrapped with _d2h_copy. The method outputs stay on device.
+    # Useful for cross-method GPU pipelines where the next method consumes
+    # GPU tensors directly.
+    skip_d2h_for_method_outputs: bool = False
