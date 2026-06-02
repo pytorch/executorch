@@ -57,6 +57,14 @@ if [[ "$FLOW" == *vulkan* ]]; then
     EXTRA_BUILD_ARGS+=" -DEXECUTORCH_BUILD_VULKAN=ON"
 fi
 
+if [[ "$FLOW" == *webgpu* ]]; then
+    # Setup swiftshader (software Vulkan adapter for GPU-less runners) and wgpu-native,
+    # which are required to build and run the WebGPU delegate.
+    source .ci/scripts/setup-webgpu-linux-deps.sh
+
+    EXTRA_BUILD_ARGS+=" -DEXECUTORCH_BUILD_WEBGPU=ON"
+fi
+
 if [[ "$FLOW" == *arm* ]]; then
     if [[ "$SUITE" == "operators" ]]; then
         PYTEST_RETRY_ARGS=(--reruns 2 --reruns-delay 1)
