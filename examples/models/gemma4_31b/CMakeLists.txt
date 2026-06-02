@@ -58,39 +58,35 @@ endif()
 # Tokenizer (HuggingFace tokenizer.json)
 list(APPEND link_libraries tokenizers::tokenizers)
 
-# stb_image / stb_image_resize: header-only image loading + bicubic resize.
-# Only the CUDA runner has the image (vision) path in this branch, so the stb
-# headers are only required for CUDA builds. (MLX vision is added in the
-# g4-vision-mlx branch, which removes this gating.) The deprecated/ subdir is
-# needed for the (older) stb_image_resize.h API used by image_utils.h.
+# stb_image / stb_image_resize: header-only image loading + bicubic resize. Both
+# CUDA and MLX runners support image input. The deprecated/ subdir is needed for
+# the (older) stb_image_resize.h API used by image_utils.h.
 #
 # Resolution order: 1. -DSTB_SOURCE_DIR=/path (or env
 # FETCHCONTENT_SOURCE_DIR_STB). 2. ${EXECUTORCH_ROOT}/third-party/stb (vendored
 # fallback for proxied/offline environments). 3. FetchContent download from
 # github.com/nothings/stb.
-if(EXECUTORCH_BUILD_CUDA)
-  if(NOT STB_SOURCE_DIR AND EXISTS
-                            "${EXECUTORCH_ROOT}/third-party/stb/stb_image.h"
+if(NOT STB_SOURCE_DIR AND EXISTS
+                          "${EXECUTORCH_ROOT}/third-party/stb/stb_image.h"
+)
+  set(STB_SOURCE_DIR "${EXECUTORCH_ROOT}/third-party/stb")
+endif()
+if(STB_SOURCE_DIR AND EXISTS "${STB_SOURCE_DIR}/stb_image.h")
+  message(STATUS "Using local stb headers from: ${STB_SOURCE_DIR}")
+  list(APPEND _common_include_directories ${STB_SOURCE_DIR}
+       ${STB_SOURCE_DIR}/deprecated
   )
-    set(STB_SOURCE_DIR "${EXECUTORCH_ROOT}/third-party/stb")
-  endif()
-  if(STB_SOURCE_DIR AND EXISTS "${STB_SOURCE_DIR}/stb_image.h")
-    message(STATUS "Using local stb headers from: ${STB_SOURCE_DIR}")
-    list(APPEND _common_include_directories ${STB_SOURCE_DIR}
-         ${STB_SOURCE_DIR}/deprecated
-    )
-  else()
-    include(FetchContent)
-    FetchContent_Declare(
-      stb
-      GIT_REPOSITORY https://github.com/nothings/stb.git
-      GIT_TAG f0569113c93ad095470c54bf34a17b36646bbbb5
-    )
-    FetchContent_MakeAvailable(stb)
-    list(APPEND _common_include_directories ${stb_SOURCE_DIR}
-         ${stb_SOURCE_DIR}/deprecated
-    )
-  endif()
+else()
+  include(FetchContent)
+  FetchContent_Declare(
+    stb
+    GIT_REPOSITORY https://github.com/nothings/stb.git
+    GIT_TAG f0569113c93ad095470c54bf34a17b36646bbbb5
+  )
+  FetchContent_MakeAvailable(stb)
+  list(APPEND _common_include_directories ${stb_SOURCE_DIR}
+       ${stb_SOURCE_DIR}/deprecated
+  )
 endif()
 
 add_executable(gemma4_31b_runner main.cpp)

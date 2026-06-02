@@ -16,6 +16,11 @@ on:
       - examples/models/parakeet/**
       - examples/models/voxtral_realtime/**
       - examples/models/qwen3_5_moe/**
+      # Do not add examples/models/gemma4_31b/** here: this workflow fan-out
+      # includes large MLX model jobs, and the full Gemma4 31B MLX e2e export
+      # OOMs on the largest available macOS runner. Gemma4 MLX coverage stays
+      # in the lightweight Python test that runs when this workflow is already
+      # triggered by MLX/backend changes.
   workflow_dispatch:
 
 concurrency:

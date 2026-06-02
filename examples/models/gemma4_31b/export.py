@@ -4,11 +4,9 @@
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
 
-"""Export Gemma 4 31B-IT to ExecuTorch (.pte + .ptd).
+"""Export Gemma 4 31B-IT to ExecuTorch (.pte + .ptd) — 4-method contract.
 
-CUDA backend — embeddings-based 4-method vision contract
-========================================================
-On CUDA, four methods are exported and lowered together so they share the
+Exactly FOUR methods are exported and lowered together so they share the
 underlying nn.Parameter / mutable-buffer storage:
 
   - "embed_text"     (tokens [1,T] i64) -> (embeds [1,T,5376] bf16)
@@ -23,27 +21,25 @@ underlying nn.Parameter / mutable-buffer storage:
                      builds inputs_embeds from embed_text + vision_encoder splice.
   - "decode"         (tokens [1,1] i64, input_pos [1] i64, temperature [1] f32)
                      -> sampled [1,1] f32
-                     Token-input single-step (model.decode_forward).
+                     Token-input single-step. Calls model.decode_forward
+                     internally (embed_tokens + _run_blocks fused).
 
-MLX backend — text-only (this branch)
-=====================================
-MLX still exports ``main``'s single token-input method (dynamic seq_len, host
-sampling) realized via a temporary fake-prefill wrapper, and drops the vision
-head before lowering. MLX vision support is added in the g4-vision-mlx branch.
+NO ``prefill_image`` method. NO ``--no-vision`` flag.
 
 Three input paths:
   --prequantized <dir>      Load a quantized checkpoint (from quantize_and_save.py)
                             and pack for the target backend. No re-quantization.
-                            Includes vision keys (used by the CUDA vision methods).
+                            Must include vision keys (the 4-method contract
+                            requires the vision tower).
   --gguf <file>             Load a GGUF file (e.g., Q4_K_M from the community).
+                            Text-only — incompatible with the 4-method contract.
   --model-dir <hf>          Load bf16 checkpoint, quantize, pack, and export
-                            in one shot.
+                            in one shot (text-only path).
 
 Backends:
   --backend cuda            (default) CUDA via tinygemm INT4 + CudaPartitioner.
-                            4-method vision contract.
-  --backend mlx             Apple Silicon via MLXPartitioner (single text-only
-                            method this branch; host-side sampling).
+  --backend mlx             Apple Silicon via MLXPartitioner (single method,
+                            dynamic seq_len, host-side sampling).
 """
 
 import argparse
@@ -272,19 +268,6 @@ class _BoundMethodForward:
         except AttributeError:
             pass
         return False
-
-
-def _drop_vision_head(model: nn.Module) -> None:
-    """Detach the multimodal head before a text-only (MLX) lowering.
-
-    Gemma 4 31B is multimodal-by-default, so ``vision_tower`` / ``embed_vision``
-    are always constructed and loaded. The MLX path is text-only this branch, so
-    we delete them here BEFORE ``materialize_runtime_buffers`` (which only
-    rebuilds the vision RoPE table when ``vision_tower`` is still attached).
-    """
-    for name in ("vision_tower", "embed_vision"):
-        if hasattr(model, name):
-            delattr(model, name)
 
 
 # ---------------------------------------------------------------------------
@@ -536,13 +519,12 @@ def _export_mlx(
     output_dir: str,
     use_turboquant: bool = False,
 ) -> None:
-    """Export to .pte via torch.export + MLX backend (text-only this branch).
+    """Export the MLX backend with a 3-method multimodal contract.
 
-    Exports a single token-input method with dynamic sequence length; MLX
-    samples on the host so there is no temperature input. The vision head is
-    dropped first and ``mlx_source_transformations`` installs the token-input
-    ``forward`` (``main``'s contract). MLX vision is added in the g4-vision-mlx
-    branch.
+    MLX exposes embed_text, vision_encoder, and prefill.  Prefill accepts
+    embeddings and returns softcapped logits; the runner samples those logits on
+    the host.  The old token-input forward remains installed by
+    ``mlx_source_transformations`` for equivalence tests, but is not shipped.
 
     When ``use_turboquant=True``, full-attention layers swap to
     ``MLXTurboQuantKVCache`` for ~3.8x KV cache memory savings. Sliding
@@ -564,38 +546,80 @@ def _export_mlx(
     from executorch.exir.passes import MemoryPlanningPass
     from torch.export import Dim, export
 
-    # Text-only contract: drop the vision head before transforming / exporting.
-    _drop_vision_head(model)
-
     mlx_source_transformations(
         model, dtype=torch.bfloat16, use_turboquant=use_turboquant
     )
 
     materialize_runtime_buffers(model, dtype=torch.bfloat16)
 
-    max_prefill = 256
+    max_prefill = min(config.max_seq_len - 1, config.sliding_window * 2)
+    hidden_size = config.hidden_size
     seq_dim = Dim("seq_len", min=1, max=max_prefill)
 
-    print(f"Exporting (T in [1, {max_prefill}])...")
-    with torch.no_grad():
-        exported = export(
+    print(f"Exporting MLX prefill (T in [1, {max_prefill}], inputs_embeds)...")
+    with _BoundMethodForward(model, model.mlx_prefill_forward), torch.no_grad():
+        prefill_ep = export(
             model,
             (
-                torch.tensor([[0, 1]], dtype=torch.long),
-                torch.tensor([0, 1], dtype=torch.long),
+                torch.zeros((1, max_prefill, hidden_size), dtype=torch.bfloat16),
+                torch.arange(max_prefill, dtype=torch.long),
             ),
             dynamic_shapes=({1: seq_dim}, {0: seq_dim}),
             strict=True,
         )
 
+    print(f"Exporting MLX embed_text (T in [1, {max_prefill}])...")
+    with _BoundMethodForward(model, model.embed_text), torch.no_grad():
+        embed_text_ep = export(
+            model,
+            (torch.zeros((1, max_prefill), dtype=torch.long),),
+            dynamic_shapes=({1: seq_dim},),
+            strict=True,
+        )
+
+    pks = config.vision_config.pooling_kernel_size
+    max_vision_soft_tokens = config.vision_config.default_output_length
+    max_patches = (pks * pks) * max_vision_soft_tokens
+    patch_dim = config.vision_config.patch_dim
+    print(
+        f"Exporting MLX vision_encoder "
+        f"(P in [{pks*pks}, {max_patches}], soft tokens up to "
+        f"{max_vision_soft_tokens})..."
+    )
+    ve_wrapper = _build_vision_encoder_wrapper(model, config)
+    num_groups_dim = Dim("mlx_vision_num_groups", min=1, max=max_vision_soft_tokens)
+    num_patches_dim = (pks * pks) * num_groups_dim
+    with torch.no_grad():
+        vision_encoder_ep = export(
+            ve_wrapper,
+            (
+                torch.zeros((1, max_patches, patch_dim), dtype=torch.float32),
+                torch.zeros((1, max_patches, 2), dtype=torch.long),
+            ),
+            dynamic_shapes=({1: num_patches_dim}, {1: num_patches_dim}),
+            strict=True,
+        )
+    del ve_wrapper
+
+    programs: dict[str, "torch.export.ExportedProgram"] = {
+        "embed_text": embed_text_ep,
+        "vision_encoder": vision_encoder_ep,
+        "prefill": prefill_ep,
+    }
+
     del model
     gc.collect()
 
-    print("Lowering to ExecuTorch with MLX backend...")
+    print(
+        "Lowering 3 methods to ExecuTorch with MLX backend: "
+        f"{', '.join(programs.keys())}..."
+    )
+    partitioner_map = {name: [MLXPartitioner()] for name in programs}
+    transform_passes = get_default_passes()
     et_prog = to_edge_transform_and_lower(
-        exported,
-        transform_passes=get_default_passes(),
-        partitioner=[MLXPartitioner()],
+        programs,
+        transform_passes=transform_passes,
+        partitioner=partitioner_map,
         compile_config=EdgeCompileConfig(
             _check_ir_validity=False,
             _skip_dim_order=True,
@@ -605,13 +629,14 @@ def _export_mlx(
             "get_vocab_size": config.vocab_size,
             "get_n_layers": config.num_hidden_layers,
             "get_max_prefill_chunk": max_prefill,
+            "get_max_vision_soft_tokens": int(max_vision_soft_tokens),
             "use_kv_cache": True,
             "use_sdpa_with_kv_cache": False,
             "enable_dynamic_shape": True,
         },
     )
 
-    del exported
+    del programs, prefill_ep, embed_text_ep, vision_encoder_ep
     gc.collect()
 
     et_program = et_prog.to_executorch(

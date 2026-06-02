@@ -107,11 +107,13 @@ def _replace_attention_forward(attn: nn.Module) -> None:
 
 
 def _replace_layer_forward(layer: nn.Module) -> None:
-    """Replace Gemma4DecoderLayer's forward to remove mask parameters."""
+    """Replace Gemma4DecoderLayer's forward with the MLX attention path."""
     import types
 
     def _mlx_layer_forward(
-        self, x: torch.Tensor, input_pos: torch.Tensor
+        self,
+        x: torch.Tensor,
+        input_pos: torch.Tensor,
     ) -> torch.Tensor:
         residual = x
         h = self.input_layernorm(x)
@@ -131,19 +133,18 @@ def _replace_layer_forward(layer: nn.Module) -> None:
 
 
 def _replace_model_forward(model: nn.Module) -> None:
-    """Replace the top-level Gemma4_31B forward with a sampler-free, mask-free
-    ``(tokens, input_pos) → (B, 1, V)`` variant.
+    """Install sampler-free MLX entry points.
 
-    MLX samples on the host, so the on-device sampler and temperature input
-    are dropped.  Each MLX attention builds its own mask via ``custom_sdpa``,
-    so ``_build_masks`` and the per-layer mask arguments are removed.
+    MLX samples on the host, so prefill returns softcapped logits.  The
+    legacy token-input ``forward`` is kept as a text-only convenience and must
+    stay equivalent to ``embed_text`` followed by ``mlx_prefill_forward``.
     """
     import types
 
-    def _mlx_model_forward(
-        self, tokens: torch.Tensor, input_pos: torch.Tensor
+    def _mlx_logits_from_embeds(
+        self, inputs_embeds: torch.Tensor, input_pos: torch.Tensor
     ) -> torch.Tensor:
-        x = self.embed_tokens(tokens) * self.embed_normalizer
+        x = inputs_embeds
         for layer in self.layers:
             x = layer(x, input_pos)
         x = self.norm(x)
@@ -151,6 +152,18 @@ def _replace_model_forward(model: nn.Module) -> None:
         cap = self.logit_softcap.float()
         return torch.tanh(last / cap) * cap
 
+    def _mlx_model_forward(
+        self, tokens: torch.Tensor, input_pos: torch.Tensor
+    ) -> torch.Tensor:
+        return self.mlx_prefill_forward(self.embed_text(tokens), input_pos)
+
+    def _mlx_prefill_forward(
+        self, inputs_embeds: torch.Tensor, input_pos: torch.Tensor
+    ) -> torch.Tensor:
+        return self.mlx_logits_from_embeds(inputs_embeds, input_pos)
+
+    model.mlx_logits_from_embeds = types.MethodType(_mlx_logits_from_embeds, model)
+    model.mlx_prefill_forward = types.MethodType(_mlx_prefill_forward, model)
     model.forward = types.MethodType(_mlx_model_forward, model)
 
 
@@ -162,14 +175,14 @@ def mlx_source_transformations(
     """Apply MLX source transformations to a Gemma 4 31B model in-place.
 
     Self-contained MLX adaptation. After calling this, the model has
-    signature ``(tokens, input_pos) → (B, 1, V)`` logits — no temperature,
-    no sampler, no attention masks.
+    sampler-free token and embedding entry points that return ``(B, V)`` logits
+    with no temperature input.
 
     - Replaces KV caches with MLX-optimized versions using ``mlx.kv_cache_update``
     - Rewrites attention forward to use ``mlx.rope`` and ``mlx.custom_sdpa``
     - Rewrites layer forward to drop mask parameters (each attention builds
       its own mask via ``custom_sdpa``)
-    - Rewrites model forward to drop the sampler and ``_build_masks``
+    - Installs sampler-free model entry points for text and embedding prefill
 
     Args:
         model: Gemma4_31B model to transform in place.

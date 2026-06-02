@@ -6,31 +6,25 @@
  * LICENSE file in the root directory of this source tree.
  */
 
-// Gemma 4 31B-IT runner for ExecuTorch.
-//
-//   CUDA  — vision (4-method) contract:
-//             embed_text(tokens [1,T] i64)                    -> embeds
-//             [1,T,5376] bf16 vision_encoder(pixels, pixel_position_ids) ->
-//             (image_embeds [1,N,5376]
-//                                                                 bf16,
-//                                                                 pooler_mask
-//                                                                 [1,N] bool)
-//             prefill(inputs_embeds [1,T,5376] bf16,
-//                     input_pos [T] i64, temperature [1] f32) -> sampled [1,1]
-//                     f32
+// Gemma 4 31B-IT runner for ExecuTorch. Supports two backends:
+//   CUDA  — exports embed_text + vision_encoder + prefill + decode methods
+//           under the unified-prefill contract (Pin #4):
+//             embed_text(tokens [1,T] i64)              -> embeds [1,T,5376]
+//             bf16 vision_encoder(pixels, pixel_position_ids) -> (image_embeds,
+//             mask) prefill(inputs_embeds [1,T,5376] bf16,
+//                     input_pos [T] i64,
+//                     temperature [1] f32)              -> sampled [1,1] f32
 //             decode(tokens [1,1] i64,
-//                    input_pos [1] i64, temperature [1] f32)  -> sampled [1,1]
-//                    f32
-//           The CUDA runner uses embed_text -> prefill; when --image_path is
-//           supplied it additionally runs vision_encoder and splices the valid
-//           image rows (respecting pooler_mask) into the embeds at
-//           <image_token> placeholders. Sampling is on-device (Gumbel-max), one
-//           float id/call.
-//
-//   MLX   — text-only this branch: a single token-input ``forward`` method with
-//           dynamic seq_len; the runner samples on the host via
-//           ``llm::logits_to_token``. The image path is CUDA-only here; MLX
-//           vision is added in the g4-vision-mlx branch.
+//                    input_pos [1] i64,
+//                    temperature [1] f32)               -> sampled [1,1] f32
+//           The runner ALWAYS uses embed_text → prefill (no token-based prefill
+//           path); when --image_path is supplied it additionally runs
+//           vision_encoder and splices image rows into the embeds at
+//           <image_token> placeholders. The exported model performs Gumbel-max
+//           sampling on-device and returns a single float token ID per call.
+//   MLX   — exports the same four methods, but prefill/decode return
+//           last-token logits; the runner samples on the host via
+//           ``llm::logits_to_token`` with the same temperature semantics.
 
 #include <gflags/gflags.h>
 
@@ -72,6 +66,7 @@ extern "C" void et_pal_emit_log_message(
 
 #ifdef EXECUTORCH_BUILD_CUDA
 #include <cuda_runtime.h>
+#endif
 
 #define STB_IMAGE_IMPLEMENTATION
 #include <stb_image.h>
@@ -84,10 +79,9 @@ extern "C" void et_pal_emit_log_message(
 #define STB_IMAGE_RESIZE_IMPLEMENTATION
 #include <executorch/examples/models/gemma4/image_utils.h>
 
-// Shared chat-template token IDs + build_vision_input_ids (mirrors the Python
-// examples/models/gemma4/chat_template.py).
+// Shared chat-template token IDs + build_vision_input_ids (single source of
+// truth; mirrors the Python examples/models/gemma4/chat_template.py).
 #include <executorch/examples/models/gemma4/runner/chat_template.h>
-#endif // EXECUTORCH_BUILD_CUDA
 
 DEFINE_string(model_path, "", "Model .pte file path.");
 DEFINE_string(data_path, "", "Data file (.ptd) for CUDA backend.");
@@ -114,7 +108,7 @@ DEFINE_string(
     "",
     "Optional: path to an image file (JPEG/PNG). When set, the runner uses "
     "the multimodal prefill path with the exported vision_encoder + "
-    "embed_text + prefill methods. CUDA only.");
+    "embed_text + prefill_image methods.");
 DEFINE_int32(
     max_vision_soft_tokens,
     280,
@@ -129,14 +123,17 @@ using ::executorch::runtime::EValue;
 
 using SizesType = executorch::aten::SizesType;
 
-#ifdef EXECUTORCH_BUILD_CUDA
+// Chat-template token IDs + build_vision_input_ids come from the shared
+// chat_template.h above (single source of truth, mirrored by the E2B/E4B
+// gemma4_runner and the Python chat_template.py).
 namespace g4 = ::executorch::examples::gemma4;
 
-// Read a sampled token ID from a scalar float output (CUDA on-device sampling).
+// Read a sampled token ID from a scalar float output (CUDA path).
 static uint64_t read_token(const executorch::aten::Tensor& output) {
   const void* ptr = output.const_data_ptr();
   float val = 0.0f;
 
+#ifdef EXECUTORCH_BUILD_CUDA
   cudaPointerAttributes attrs{};
   bool on_device = cudaPointerGetAttributes(&attrs, ptr) == cudaSuccess &&
       attrs.type == cudaMemoryTypeDevice;
@@ -153,16 +150,20 @@ static uint64_t read_token(const executorch::aten::Tensor& output) {
   } else {
     memcpy(&val, ptr, sizeof(float));
   }
+#else
+  memcpy(&val, ptr, sizeof(float));
+#endif
 
   return static_cast<uint64_t>(llrintf(val));
 }
 
-// Copy ``num_bytes`` from a runtime tensor's storage into ``dst`` on the host,
-// regardless of whether the storage lives on host or device. Used to pull bf16
-// embedding rows (and the bool pooler mask) back to host so we can splice.
+// Copy ``num_bytes`` from a runtime tensor's storage into ``dst`` on the
+// host, regardless of whether the storage lives on host or device. Used to
+// pull bf16 embedding rows back to host so we can splice them.
 static Error
 copy_to_host(const executorch::aten::Tensor& src, void* dst, size_t num_bytes) {
   const void* src_ptr = src.const_data_ptr();
+#ifdef EXECUTORCH_BUILD_CUDA
   cudaPointerAttributes attrs{};
   bool on_device = cudaPointerGetAttributes(&attrs, src_ptr) == cudaSuccess &&
       attrs.type == cudaMemoryTypeDevice;
@@ -175,12 +176,13 @@ copy_to_host(const executorch::aten::Tensor& src, void* dst, size_t num_bytes) {
           cudaGetErrorString(err));
       return Error::Internal;
     }
-  } else {
+  } else
+#endif
+  {
     memcpy(dst, src_ptr, num_bytes);
   }
   return Error::Ok;
 }
-#endif // EXECUTORCH_BUILD_CUDA
 
 int main(int argc, char** argv) {
   gflags::ParseCommandLineFlags(&argc, &argv, true);
@@ -249,36 +251,7 @@ int main(int argc, char** argv) {
   float temp_val =
       FLAGS_temperature <= 0.0 ? 1e-6f : static_cast<float>(FLAGS_temperature);
 
-  // Common: EOS ids + chat-template-wrapped prompt text (BOS prepended later).
-  auto eos_ids = llm::get_eos_ids(tokenizer.get(), module.get());
-  eos_ids.insert(static_cast<uint64_t>(FLAGS_eos_id));
-  {
-    auto turn_ids = tokenizer->encode("<turn|>", /*bos=*/0, /*eos=*/0);
-    if (turn_ids.ok() && turn_ids->size() == 1) {
-      eos_ids.insert(turn_ids.get()[0]);
-    }
-  }
-
-  std::string prompt_text = FLAGS_prompt;
-  if (!FLAGS_prompt_file.empty()) {
-    std::ifstream f(FLAGS_prompt_file);
-    if (!f.is_open()) {
-      ET_LOG(
-          Error, "Failed to open prompt file: %s", FLAGS_prompt_file.c_str());
-      return 1;
-    }
-    prompt_text = std::string(
-        (std::istreambuf_iterator<char>(f)), std::istreambuf_iterator<char>());
-  }
-  if (!FLAGS_raw_prompt) {
-    prompt_text = "<|turn>user\n" + prompt_text +
-        "<turn|>\n<|turn>model\n<|channel>thought\n<channel|>";
-  }
-
 #ifdef EXECUTORCH_BUILD_CUDA
-  // =====================================================================
-  // CUDA backend — embeddings-based 4-method vision contract.
-  // =====================================================================
   if (FLAGS_cuda_graph) {
     executorch::runtime::BackendOptions<2> cuda_opts;
     cuda_opts.set_option("enable_cuda_graph_for_method", "decode");
@@ -306,6 +279,11 @@ int main(int argc, char** argv) {
       return 1;
     }
   }
+#else
+  if (FLAGS_cuda_graph) {
+    ET_LOG(Info, "--cuda_graph ignored on non-CUDA build");
+  }
+#endif
 
   printf("Loading methods...\n");
   if (module->load_method("embed_text") != Error::Ok) {
@@ -316,12 +294,14 @@ int main(int argc, char** argv) {
     ET_LOG(Error, "Failed to load prefill method");
     return 1;
   }
+#ifdef EXECUTORCH_BUILD_CUDA
   if (module->load_method("decode") != Error::Ok) {
     ET_LOG(Error, "Failed to load decode method");
     return 1;
   }
   auto temp_tensor =
       from_blob(&temp_val, {1}, executorch::aten::ScalarType::Float);
+#endif
 
   const bool has_image = !FLAGS_image_path.empty();
   if (has_image) {
@@ -335,8 +315,40 @@ int main(int argc, char** argv) {
   }
 
   stats.model_load_end_ms = llm::time_in_ms();
+
+#ifdef EXECUTORCH_BUILD_CUDA
   cudaMemGetInfo(&gpu_free_bytes, &gpu_total_bytes);
   stats.gpu_free_after_load_bytes = gpu_free_bytes;
+#endif
+
+  auto eos_ids = llm::get_eos_ids(tokenizer.get(), module.get());
+  eos_ids.insert(static_cast<uint64_t>(FLAGS_eos_id));
+  auto turn_ids = tokenizer->encode("<turn|>", /*bos=*/0, /*eos=*/0);
+  if (turn_ids.ok() && turn_ids->size() == 1) {
+    eos_ids.insert(turn_ids.get()[0]);
+  }
+
+  // Read prompt
+  std::string prompt_text = FLAGS_prompt;
+  if (!FLAGS_prompt_file.empty()) {
+    std::ifstream f(FLAGS_prompt_file);
+    if (!f.is_open()) {
+      ET_LOG(
+          Error, "Failed to open prompt file: %s", FLAGS_prompt_file.c_str());
+      return 1;
+    }
+    prompt_text = std::string(
+        (std::istreambuf_iterator<char>(f)), std::istreambuf_iterator<char>());
+  }
+
+  // Wrap with Gemma 4 IT chat template unless --raw_prompt is set.
+  // BOS is prepended separately later; this adds the turn structure and the
+  // empty thought block required by the instruction-tuned model. The actual
+  // encoding happens later, inside the has_image / else branch.
+  if (!FLAGS_raw_prompt) {
+    prompt_text = "<|turn>user\n" + prompt_text +
+        "<turn|>\n<|turn>model\n<|channel>thought\n<channel|>";
+  }
 
   std::vector<int64_t> prompt_tokens;
   int64_t num_prompt_tokens = 0;
@@ -345,16 +357,22 @@ int main(int argc, char** argv) {
 
   uint64_t cur_token = 0;
   int64_t prefill_pos = 0;
-  std::vector<uint16_t> inputs_embeds_host_storage; // [T, hidden] bf16
+  // bf16 host buffer holding the full inputs_embeds tensor for prefill.
+  // Sized to num_prompt_tokens * hidden_size after we know the shape.
+  std::vector<uint16_t> inputs_embeds_host_storage;
   int64_t hidden_size = 0;
 
-  // ---- Vision: patchify image, run vision_encoder, pull rows to host ----
-  int64_t num_image_rows = 0; // vision_encoder output length N
+  // ===========================================================
+  // 1. Build the prompt token sequence.
+  //    - Image+text: chat template with BOI + image_token*N + EOI.
+  //    - Text-only: existing behavior (BOS prepended to encoded prompt).
+  // ===========================================================
+  int64_t num_soft_tokens = 0; // vision_encoder output length N (image-only)
   int64_t num_valid_soft_tokens = 0; // rows with pooler_mask == true
-  std::vector<uint16_t> image_host; // [N, hidden] bf16
   std::vector<uint8_t> pooler_mask_host; // [N] (1 = valid soft token)
 
   if (has_image) {
+    // ---------- Load + patchify the image ----------
     int img_w = 0, img_h = 0, img_c = 0;
     unsigned char* img_data =
         stbi_load(FLAGS_image_path.c_str(), &img_w, &img_h, &img_c, 3);
@@ -363,9 +381,9 @@ int main(int argc, char** argv) {
       return 1;
     }
 
-    g4::ImageData image_data;
+    executorch::examples::gemma4::ImageData image_data;
     try {
-      image_data = g4::patchify_rgb_image(
+      image_data = executorch::examples::gemma4::patchify_rgb_image(
           img_data, img_w, img_h, FLAGS_max_vision_soft_tokens);
     } catch (const std::exception& e) {
       ET_LOG(Error, "patchify_rgb_image failed: %s", e.what());
@@ -379,8 +397,11 @@ int main(int argc, char** argv) {
         img_w,
         img_h,
         image_data.num_valid_patches,
-        FLAGS_max_vision_soft_tokens * g4::kPoolingKernel * g4::kPoolingKernel);
+        FLAGS_max_vision_soft_tokens *
+            executorch::examples::gemma4::kPoolingKernel *
+            executorch::examples::gemma4::kPoolingKernel);
 
+    // ---------- Run vision_encoder ----------
     auto ve_result = module->execute(
         "vision_encoder",
         {EValue(image_data.pixel_values),
@@ -407,7 +428,7 @@ int main(int argc, char** argv) {
           (size_t)image_embeds_tensor.dim());
       return 1;
     }
-    num_image_rows = image_embeds_tensor.size(1);
+    num_soft_tokens = image_embeds_tensor.size(1);
     hidden_size = image_embeds_tensor.size(2);
     if (image_embeds_tensor.scalar_type() !=
         executorch::aten::ScalarType::BFloat16) {
@@ -418,16 +439,18 @@ int main(int argc, char** argv) {
       return 1;
     }
 
-    // Pull pooler_mask to host (1 byte / bool element) and count valid rows.
-    pooler_mask_host.assign(static_cast<size_t>(num_image_rows), 0);
+    // Pull the pooler mask to host and count valid soft tokens. Padded /
+    // invalid rows (mask == false) must be skipped during the splice so the
+    // C++ runner matches the Python inference path exactly.
+    pooler_mask_host.assign(static_cast<size_t>(num_soft_tokens), 0);
     if (copy_to_host(
             pooler_mask_tensor,
             pooler_mask_host.data(),
-            static_cast<size_t>(num_image_rows) * sizeof(uint8_t)) !=
+            static_cast<size_t>(num_soft_tokens) * sizeof(uint8_t)) !=
         Error::Ok) {
       return 1;
     }
-    for (int64_t i = 0; i < num_image_rows; ++i) {
+    for (int64_t i = 0; i < num_soft_tokens; ++i) {
       if (pooler_mask_host[i]) {
         ++num_valid_soft_tokens;
       }
@@ -436,24 +459,25 @@ int main(int argc, char** argv) {
     printf(
         "Vision encoder: %" PRId64 " soft tokens (%" PRId64
         " valid), hidden_size=%" PRId64 "\n",
-        num_image_rows,
+        num_soft_tokens,
         num_valid_soft_tokens,
         hidden_size);
 
-    // Pull image embeddings (all N rows) to host for splicing later.
-    image_host.assign(static_cast<size_t>(num_image_rows * hidden_size), 0);
+    // Pull image embeddings (all N rows) to a temporary host buffer for
+    // splicing later. (Done now so we don't have to keep the device-side
+    // output alive across the embed_text call below.)
+    inputs_embeds_host_storage.assign(
+        static_cast<size_t>(num_soft_tokens * hidden_size), 0);
     if (copy_to_host(
             image_embeds_tensor,
-            image_host.data(),
-            static_cast<size_t>(num_image_rows * hidden_size) *
-                sizeof(uint16_t)) != Error::Ok) {
+            inputs_embeds_host_storage.data(),
+            num_soft_tokens * hidden_size * sizeof(uint16_t)) != Error::Ok) {
       return 1;
     }
   }
 
-  // ---- Build the input_ids sequence ----
+  // ---------- Build the input_ids sequence ----------
   if (has_image) {
-    // One <image> placeholder per VALID soft token (matches the Python path).
     prompt_tokens = g4::build_vision_input_ids(
         tokenizer.get(),
         prompt_text,
@@ -466,6 +490,7 @@ int main(int argc, char** argv) {
       return 1;
     }
     auto token_vec = std::move(*encode_result);
+    // Gemma models require BOS at the start of the sequence.
     token_vec.insert(token_vec.begin(), static_cast<uint64_t>(FLAGS_bos_id));
     prompt_tokens.assign(token_vec.begin(), token_vec.end());
   }
@@ -476,7 +501,7 @@ int main(int argc, char** argv) {
       num_prompt_tokens);
   stats.num_prompt_tokens = num_prompt_tokens;
 
-  // ---- embed_text(tokens) -> embeds [1,T,5376] bf16 ----
+  // ---------- Run embed_text(tokens) -> embeds [1,T,5376] bf16 ----------
   auto tokens_tensor = from_blob(
       prompt_tokens.data(),
       {1, S(num_prompt_tokens)},
@@ -520,9 +545,21 @@ int main(int argc, char** argv) {
     return 1;
   }
 
-  // ---- Splice (host) ----
+  // ---------- Splice (host) ----------
+  // For text-only: just copy text embeds into the host buffer as-is.
+  // For image+text: stash text embeds first, then overwrite rows where
+  // tokens[i] == g4::kImageTokenId with the image rows we already pulled.
   int64_t total_elems = num_prompt_tokens * hidden_size;
+  std::vector<uint16_t> image_host;
+  if (has_image) {
+    // Move the image embeds we previously copied into a separate vector,
+    // because we need inputs_embeds_host_storage for the full T-row
+    // tensor.
+    image_host = std::move(inputs_embeds_host_storage);
+  }
   inputs_embeds_host_storage.assign(static_cast<size_t>(total_elems), 0);
+
+  // Pull text embeddings to host.
   if (copy_to_host(
           text_embeds_tensor,
           inputs_embeds_host_storage.data(),
@@ -533,17 +570,17 @@ int main(int argc, char** argv) {
   if (has_image) {
     // For every <image> placeholder, advance to the next VALID image row
     // (skipping rows whose pooler_mask is false) and overwrite the text row.
-    // This mirrors inference.py and keeps padded/invalid soft tokens out.
+    // Mirrors inference.py so padded/invalid soft tokens never get spliced.
     int64_t image_idx = 0;
     int64_t spliced = 0;
     for (int64_t i = 0; i < num_prompt_tokens; ++i) {
       if (prompt_tokens[i] != g4::kImageTokenId) {
         continue;
       }
-      while (image_idx < num_image_rows && !pooler_mask_host[image_idx]) {
+      while (image_idx < num_soft_tokens && !pooler_mask_host[image_idx]) {
         ++image_idx;
       }
-      if (image_idx >= num_image_rows) {
+      if (image_idx >= num_soft_tokens) {
         ET_LOG(
             Error,
             "Ran out of valid vision soft tokens at text position %" PRId64
@@ -570,7 +607,14 @@ int main(int argc, char** argv) {
     }
   }
 
-  // ---- Chunked prefill on the embeds tensor ----
+  // ===========================================================
+  // 2. Chunked prefill on the embeds tensor.
+  //    Sliding KV layers use a ring buffer sized 2*sliding_window. A single
+  //    prefill call must not exceed that, so we chunk on the seq dim.
+  //    For chunk_len == 1 we fall back to `decode` (token-based) since
+  //    `decode`'s graph is the same shape and runs faster than dispatching
+  //    the dense prefill graph for a degenerate one-row input.
+  // ===========================================================
   while (prefill_pos < num_prompt_tokens) {
     int64_t chunk_len =
         std::min(num_prompt_tokens - prefill_pos, max_prefill_chunk);
@@ -582,24 +626,38 @@ int main(int argc, char** argv) {
     auto pos_tensor = from_blob(
         pos_data.data(), {S(chunk_len)}, executorch::aten::ScalarType::Long);
 
-    // Single text rows use the faster token `decode` graph; image rows must go
-    // through `prefill` on the spliced embeds.
+#ifdef EXECUTORCH_BUILD_CUDA
     const bool use_decode_fast_path = chunk_len == 1 &&
         !(has_image && prompt_tokens[prefill_pos] == g4::kImageTokenId);
+#else
+    const bool use_decode_fast_path = false;
+#endif
     if (use_decode_fast_path) {
+      // CUDA token decode fast path for single-row text chunks. MLX keeps all
+      // KV-cache updates in prefill because MLX delegate state is method-local.
       int64_t tok_val = prompt_tokens[prefill_pos];
       auto chunk_tokens =
           from_blob(&tok_val, {1, 1}, executorch::aten::ScalarType::Long);
 
-      auto decode_result = module->execute(
-          "decode",
-          {EValue(chunk_tokens), EValue(pos_tensor), EValue(temp_tensor)});
+      std::vector<EValue> decode_inputs;
+      decode_inputs.push_back(EValue(chunk_tokens));
+      decode_inputs.push_back(EValue(pos_tensor));
+#ifdef EXECUTORCH_BUILD_CUDA
+      decode_inputs.push_back(EValue(temp_tensor));
+#endif
+
+      auto decode_result = module->execute("decode", decode_inputs);
       if (decode_result.error() != Error::Ok) {
         ET_LOG(
             Error, "decode (chunk_len=1) failed at pos %" PRId64, prefill_pos);
         return 1;
       }
+#ifdef EXECUTORCH_BUILD_CUDA
       cur_token = read_token(decode_result.get()[0].toTensor());
+#else
+      cur_token = static_cast<uint64_t>(
+          llm::logits_to_token(decode_result.get()[0].toTensor(), temp_val));
+#endif
     } else {
       uint16_t* chunk_embeds_ptr =
           inputs_embeds_host_storage.data() + prefill_pos * hidden_size;
@@ -608,24 +666,39 @@ int main(int argc, char** argv) {
           {1, S(chunk_len), S(hidden_size)},
           executorch::aten::ScalarType::BFloat16);
 
-      auto prefill_result = module->execute(
-          "prefill",
-          {EValue(chunk_embeds_tensor),
-           EValue(pos_tensor),
-           EValue(temp_tensor)});
+      std::vector<EValue> prefill_inputs;
+      prefill_inputs.push_back(EValue(chunk_embeds_tensor));
+      prefill_inputs.push_back(EValue(pos_tensor));
+#ifdef EXECUTORCH_BUILD_CUDA
+      prefill_inputs.push_back(EValue(temp_tensor));
+#endif
+
+      auto prefill_result = module->execute("prefill", prefill_inputs);
       if (prefill_result.error() != Error::Ok) {
         ET_LOG(Error, "prefill failed at pos %" PRId64, prefill_pos);
         return 1;
       }
+#ifdef EXECUTORCH_BUILD_CUDA
       cur_token = read_token(prefill_result.get()[0].toTensor());
+#else
+      cur_token = static_cast<uint64_t>(
+          llm::logits_to_token(prefill_result.get()[0].toTensor(), temp_val));
+#endif
     }
     prefill_pos += chunk_len;
   }
 
   stats.prompt_eval_end_ms = llm::time_in_ms();
+  // First generated token came from the last prefill chunk; TTFT is prefill.
   stats.first_token_ms = stats.prompt_eval_end_ms;
-  cudaDeviceSynchronize();
 
+#ifdef EXECUTORCH_BUILD_CUDA
+  cudaDeviceSynchronize();
+#endif
+
+  // Print the first generated token (from the last prefill chunk).
+  // Use the last prompt token as the streaming-decode prefix so any BPE
+  // partial-character handling stays correct.
   {
     auto first_str = tokenizer->decode(prompt_tokens.back(), cur_token);
     if (first_str.ok()) {
@@ -634,7 +707,9 @@ int main(int argc, char** argv) {
     }
   }
 
-  // ---- Decode loop (token `decode`, on-device sampling) ----
+  // ---------------------------------------------------------------
+  // Decode loop
+  // ---------------------------------------------------------------
   int64_t pos = num_prompt_tokens;
   std::vector<int64_t> decode_token_data = {static_cast<int64_t>(cur_token)};
   std::vector<int64_t> decode_pos_data = {pos};
@@ -649,16 +724,42 @@ int main(int argc, char** argv) {
     decode_token_data[0] = static_cast<int64_t>(cur_token);
     decode_pos_data[0] = pos;
 
-    auto result = module->execute(
-        "decode",
-        {EValue(decode_tokens), EValue(decode_pos), EValue(temp_tensor)});
+#ifdef EXECUTORCH_BUILD_CUDA
+    std::vector<EValue> inputs;
+    inputs.push_back(EValue(decode_tokens));
+    inputs.push_back(EValue(decode_pos));
+    inputs.push_back(EValue(temp_tensor));
+    auto result = module->execute("decode", inputs);
+#else
+    auto embed_result = module->execute("embed_text", {EValue(decode_tokens)});
+    if (embed_result.error() != Error::Ok) {
+      ET_LOG(Error, "embed_text failed at decode step %d", step);
+      return 1;
+    }
+    auto& embed_outputs = embed_result.get();
+    if (embed_outputs.empty() || !embed_outputs[0].isTensor()) {
+      ET_LOG(Error, "embed_text produced no tensor at decode step %d", step);
+      return 1;
+    }
+    auto decode_embed = embed_outputs[0].toTensor();
+    std::vector<EValue> inputs;
+    inputs.push_back(EValue(decode_embed));
+    inputs.push_back(EValue(decode_pos));
+    auto result = module->execute("prefill", inputs);
+#endif
+
     if (result.error() != Error::Ok) {
       ET_LOG(Error, "Decode step %d failed", step);
       return 1;
     }
 
     prev_token = cur_token;
+#ifdef EXECUTORCH_BUILD_CUDA
     cur_token = read_token(result.get()[0].toTensor());
+#else
+    cur_token = static_cast<uint64_t>(
+        llm::logits_to_token(result.get()[0].toTensor(), temp_val));
+#endif
     pos++;
 
     auto decode_str = tokenizer->decode(prev_token, cur_token);
@@ -666,6 +767,7 @@ int main(int argc, char** argv) {
       printf("%s", decode_str->c_str());
       fflush(stdout);
     }
+
     hit_eos = eos_ids.find(cur_token) != eos_ids.end();
   }
   printf("\n");
@@ -673,136 +775,13 @@ int main(int argc, char** argv) {
   stats.inference_end_ms = llm::time_in_ms();
   stats.num_generated_tokens = pos - num_prompt_tokens;
 
+#ifdef EXECUTORCH_BUILD_CUDA
   cudaMemGetInfo(&gpu_free_bytes, &gpu_total_bytes);
   stats.gpu_free_after_generate_bytes = gpu_free_bytes;
   stats.gpu_peak_usage_mb =
       (stats.gpu_total_bytes - gpu_free_bytes) / 1024.0 / 1024.0;
+#endif
 
   llm::print_report(stats);
   return 0;
-
-#else // EXECUTORCH_BUILD_CUDA
-  // =====================================================================
-  // MLX backend — text-only (single token-input `forward`, host sampling).
-  // The image path is CUDA-only this branch.
-  // =====================================================================
-  if (!FLAGS_image_path.empty()) {
-    ET_LOG(
-        Error,
-        "--image_path is only supported on the CUDA build in this branch; "
-        "MLX vision is added in the g4-vision-mlx branch.");
-    return 1;
-  }
-  if (FLAGS_cuda_graph) {
-    ET_LOG(Info, "--cuda_graph ignored on non-CUDA build");
-  }
-
-  printf("Loading methods...\n");
-  if (module->load_method("forward") != Error::Ok) {
-    ET_LOG(Error, "Failed to load forward method");
-    return 1;
-  }
-
-  stats.model_load_end_ms = llm::time_in_ms();
-
-  // Encode prompt + BOS.
-  auto encode_result = tokenizer->encode(prompt_text);
-  if (!encode_result.ok()) {
-    ET_LOG(Error, "Failed to encode prompt");
-    return 1;
-  }
-  auto prompt_tokens = std::move(*encode_result);
-  prompt_tokens.insert(
-      prompt_tokens.begin(), static_cast<uint64_t>(FLAGS_bos_id));
-  int64_t num_prompt_tokens = static_cast<int64_t>(prompt_tokens.size());
-  printf("Prompt tokens: %" PRId64 "\n", num_prompt_tokens);
-  stats.num_prompt_tokens = num_prompt_tokens;
-
-  stats.inference_start_ms = llm::time_in_ms();
-
-  // ---- Prefill (chunked token `forward`, host sampling) ----
-  uint64_t cur_token = 0;
-  int64_t prefill_pos = 0;
-  while (prefill_pos < num_prompt_tokens) {
-    int64_t chunk_len =
-        std::min(num_prompt_tokens - prefill_pos, max_prefill_chunk);
-
-    std::vector<int64_t> token_data(
-        prompt_tokens.begin() + prefill_pos,
-        prompt_tokens.begin() + prefill_pos + chunk_len);
-    std::vector<int64_t> pos_data(chunk_len);
-    for (int64_t i = 0; i < chunk_len; i++) {
-      pos_data[i] = prefill_pos + i;
-    }
-    auto tokens_tensor = from_blob(
-        token_data.data(),
-        {1, S(chunk_len)},
-        executorch::aten::ScalarType::Long);
-    auto pos_tensor = from_blob(
-        pos_data.data(), {S(chunk_len)}, executorch::aten::ScalarType::Long);
-
-    auto result =
-        module->execute("forward", {EValue(tokens_tensor), EValue(pos_tensor)});
-    if (result.error() != Error::Ok) {
-      ET_LOG(Error, "forward failed at pos %" PRId64, prefill_pos);
-      return 1;
-    }
-    cur_token = static_cast<uint64_t>(
-        llm::logits_to_token(result.get()[0].toTensor(), temp_val));
-    prefill_pos += chunk_len;
-  }
-
-  stats.prompt_eval_end_ms = llm::time_in_ms();
-  stats.first_token_ms = stats.prompt_eval_end_ms;
-
-  {
-    auto first_str = tokenizer->decode(prompt_tokens.back(), cur_token);
-    if (first_str.ok()) {
-      printf("%s", first_str->c_str());
-      fflush(stdout);
-    }
-  }
-
-  // ---- Decode loop (token `forward`, host sampling) ----
-  int64_t pos = num_prompt_tokens;
-  std::vector<int64_t> decode_token_data = {static_cast<int64_t>(cur_token)};
-  std::vector<int64_t> decode_pos_data = {pos};
-  auto decode_tokens = from_blob(
-      decode_token_data.data(), {1, 1}, executorch::aten::ScalarType::Long);
-  auto decode_pos = from_blob(
-      decode_pos_data.data(), {1}, executorch::aten::ScalarType::Long);
-
-  uint64_t prev_token = cur_token;
-  bool hit_eos = eos_ids.find(cur_token) != eos_ids.end();
-  for (int32_t step = 0; step < FLAGS_max_new_tokens && !hit_eos; step++) {
-    decode_token_data[0] = static_cast<int64_t>(cur_token);
-    decode_pos_data[0] = pos;
-
-    auto result =
-        module->execute("forward", {EValue(decode_tokens), EValue(decode_pos)});
-    if (result.error() != Error::Ok) {
-      ET_LOG(Error, "Decode step %d failed", step);
-      return 1;
-    }
-
-    prev_token = cur_token;
-    cur_token = static_cast<uint64_t>(
-        llm::logits_to_token(result.get()[0].toTensor(), temp_val));
-    pos++;
-
-    auto decode_str = tokenizer->decode(prev_token, cur_token);
-    if (decode_str.ok()) {
-      printf("%s", decode_str->c_str());
-      fflush(stdout);
-    }
-    hit_eos = eos_ids.find(cur_token) != eos_ids.end();
-  }
-  printf("\n");
-
-  stats.inference_end_ms = llm::time_in_ms();
-  stats.num_generated_tokens = pos - num_prompt_tokens;
-
-  llm::print_report(stats);
-  return 0;
-#endif // EXECUTORCH_BUILD_CUDA
 }
