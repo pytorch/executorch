@@ -364,9 +364,9 @@ def get_ethosu_quantizer(
     )
 
     compile_spec = EthosUCompileSpec(
-        target,
-        system_config,
-        memory_mode,
+        target=target,
+        system_config=None if system_config == "default" else system_config,
+        memory_mode=None if memory_mode == "default" else memory_mode,
         extra_flags=extra_flags,
     )
 
