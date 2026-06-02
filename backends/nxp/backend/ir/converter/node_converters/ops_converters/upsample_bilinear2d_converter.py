@@ -82,7 +82,7 @@ class UpsampleBilinear2DConverter(NodeConverter):
         _, in_c, in_h, in_w = node.all_input_nodes[0].meta["val"].shape
         _, _, out_h, out_w = node.meta["val"].shape
 
-        if custom_delegation_options.use_new_flow_neutron_c:
+        if neutron_target_spec.use_new_flow_neutron_c:
             # Requirements specified by the new Neutron flow documentation.
 
             if not NodeConverter.uses_quantization_type_for_io(
