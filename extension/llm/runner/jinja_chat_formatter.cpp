@@ -359,6 +359,11 @@ std::string JinjaChatFormatter::formatConversation(
   params["add_generation_prompt"] = conversation.add_generation_prompt;
   // Provide vLLM/HuggingFace-style defaults that templates often reference.
   // Templates that don't use these will simply ignore them.
+  // `tools` is intentionally an empty list (not null): Jinja2Cpp, like Python,
+  // treats an empty list as falsy, so `{% if tools %}` and the normalized
+  // `tools is not none` -> `tools` checks render the "no tools" path when none
+  // are supplied. See normalizeTemplate() and the UniversalJinjaToolsAware
+  // test.
   params["tools"] = jinja2::ValuesList();
   params["tool_choice"] = jinja2::Value();
   params["date_string"] = conversation.date_string;
