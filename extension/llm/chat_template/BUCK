@@ -10,9 +10,4 @@ non_fbcode_target(_kind = define_common_targets,)
 
 # !!!! fbcode/executorch/extension/llm/chat_template/TARGETS was merged into this file, see https://fburl.com/workplace/xl8l9yuo for more info !!!!
 
-# Any targets that should be shared between fbcode and xplat must be defined in
-# targets.bzl. This file can contain fbcode-only targets.
-
-load(":targets.bzl", "define_common_targets")
-
 fbcode_target(_kind = define_common_targets,)
