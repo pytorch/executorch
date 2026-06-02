@@ -42,6 +42,7 @@ from . import (  # noqa
     op_sub,
     op_sum,
     op_to_dim_order_copy,
+    op_tosa_argmax,
     op_tosa_avg_pool2d,
     op_tosa_avg_pool2d_adaptive,
     op_tosa_clamp,

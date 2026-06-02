@@ -592,6 +592,56 @@ class CheckInt64InputsAndOutputs(OperatorSupportBase):
         min_val, max_val = int(torch.min(data)), int(torch.max(data))
         return min_val >= self.int32_min and max_val <= self.int32_max
 
+    def has_rejected_int64_output(
+        self, node: torch.fx.Node, tensor_list: Sequence[typing.Any]
+    ) -> bool:
+        if node.target in (
+            torch.ops.aten.argmax.default,
+            exir_ops.edge.aten.argmax.default,
+        ):
+            return not self._is_tosa_argmax_supported(node)
+        return any(tensor.dtype == torch.int64 for tensor in tensor_list)
+
+    def _is_tosa_argmax_supported(self, node: torch.fx.Node) -> bool:
+        dim = node.kwargs.get("dim", node.args[1] if len(node.args) > 1 else None)
+        if dim is None:
+            self.reporter.report_reject(
+                node, "TOSA ARGMAX requires an explicit reduction dimension."
+            )
+            return False
+        if not isinstance(dim, int):
+            self.reporter.report_reject(
+                node, "TOSA ARGMAX requires a statically known reduction dimension."
+            )
+            return False
+
+        input_node = typing.cast(torch.fx.Node, node.args[0])
+        input_rank = len(get_first_fake_tensor(input_node).shape)
+        if input_rank == 0:
+            self.reporter.report_reject(
+                node, "TOSA ARGMAX requires an input with rank at least 1."
+            )
+            return False
+
+        axis = dim + input_rank if dim < 0 else dim
+        if axis < 0 or axis >= input_rank:
+            self.reporter.report_reject(
+                node,
+                f"TOSA ARGMAX axis must be in [0, {input_rank - 1}] but got {dim}.",
+            )
+            return False
+
+        keepdim = node.kwargs.get(
+            "keepdim", node.args[2] if len(node.args) > 2 else False
+        )
+        if keepdim:
+            self.reporter.report_reject(
+                node, "TOSA ARGMAX does not support keepdim=True."
+            )
+            return False
+
+        return True
+
     def is_node_supported(
         self, submodules: typing.Mapping[str, torch.nn.Module], node: fx.Node
     ) -> bool:
@@ -601,7 +651,7 @@ class CheckInt64InputsAndOutputs(OperatorSupportBase):
         vals = node.meta["val"]
         tensor_list = vals if isinstance(vals, (list, tuple)) else [vals]
 
-        any_int64 = any(tensor.dtype == torch.int64 for tensor in tensor_list)
+        any_int64 = self.has_rejected_int64_output(node, tensor_list)
         # Don't partition nodes with int64 output...
         if any_int64:
             # ... Except for constant ops that are directly cast to something non-int64.
