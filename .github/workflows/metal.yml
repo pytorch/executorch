@@ -288,17 +288,22 @@ jobs:
 
   test-model-metal-e2e:
     name: test-model-metal-e2e
-    # Same path filter as export-model-metal-artifact above. If export
-    # was skipped (fork PR, non-sampled push, or no path match), this
-    # job auto-skips via the `needs:` dependency.
+    # Same path filter as export-model-metal-artifact above. Also
+    # explicitly gated on the export job succeeding — when needs: jobs
+    # are *skipped* (e.g. fork PR), GitHub still evaluates this if:,
+    # so without the explicit success-check this job would run and then
+    # fail trying to download an artifact that was never produced.
     needs: [changed-files, export-model-metal-artifact, run-decision]
     if: |
-      contains(needs.changed-files.outputs.changed-files, 'backends/apple/metal') ||
-      contains(needs.changed-files.outputs.changed-files, 'backends/aoti') ||
-      contains(needs.changed-files.outputs.changed-files, 'examples/models/qwen3_5_moe') ||
-      contains(needs.changed-files.outputs.changed-files, 'extension/llm/export') ||
-      contains(needs.changed-files.outputs.changed-files, '.github/workflows/metal.yml') ||
-      needs.run-decision.outputs.is-full-run == 'true'
+      needs.export-model-metal-artifact.result == 'success' &&
+      (
+        contains(needs.changed-files.outputs.changed-files, 'backends/apple/metal') ||
+        contains(needs.changed-files.outputs.changed-files, 'backends/aoti') ||
+        contains(needs.changed-files.outputs.changed-files, 'examples/models/qwen3_5_moe') ||
+        contains(needs.changed-files.outputs.changed-files, 'extension/llm/export') ||
+        contains(needs.changed-files.outputs.changed-files, '.github/workflows/metal.yml') ||
+        needs.run-decision.outputs.is-full-run == 'true'
+      )
     uses: pytorch/test-infra/.github/workflows/macos_job.yml@main
     strategy:
       fail-fast: false
