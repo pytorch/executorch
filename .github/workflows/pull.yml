@@ -544,6 +544,7 @@ jobs:
       submodules: 'recursive'
       ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
       timeout: 90
+      upload-artifact: bloaty-arm-${{ matrix.os }}
       script: |
         # The generic Linux job chooses to use base env, not the one setup by the image
         CONDA_ENV=$(conda env list --json | jq -r ".envs | .[-1]")
@@ -599,6 +600,33 @@ jobs:
         python .github/scripts/run_nm.py -e ${elf}
         python .github/scripts/run_nm.py -e ${elf} -f "executorch" -p "${toolchain_prefix}"
         python .github/scripts/run_nm.py -e ${elf} -f "executorch_text" -p "${toolchain_prefix}"
+
+        # Bloaty per-bucket size report (best-effort; never fails the size job).
+        # Runs BEFORE the in-place strip below so the head ELF is still unstripped.
+        mkdir -p /tmp/bloaty-elfs
+        cp "${elf}" /tmp/bloaty-elfs/head.elf
+        (
+          # conda-forge bloaty depends on a newer libstdc++ than the docker image
+          # ships, so pull libstdcxx-ng into the same env and invoke via `conda run`.
+          bloaty_env=/tmp/bloaty-conda-env
+          if [[ ! -x "${bloaty_env}/bin/bloaty" ]]; then
+            conda create -y -p "${bloaty_env}" -c conda-forge bloaty libstdcxx-ng || exit 1
+          fi
+          bloaty_cmd=("conda" "run" "--no-capture-output" "-p" "${bloaty_env}" "bloaty")
+          "${bloaty_cmd[@]}" --version || exit 1
+
+          tmp_out=/tmp/bloaty-out
+          rm -rf "${tmp_out}" && mkdir -p "${tmp_out}"
+          BLOATY="${bloaty_cmd[*]}" python3 .github/scripts/bloaty_diff.py measure \
+            --head /tmp/bloaty-elfs/head.elf \
+            --job "arm-${{ matrix.os }}" \
+            --binary-name size_test \
+            --head-sha "${{ github.event.pull_request.head.sha || github.sha }}" \
+            --strip-tool "${toolchain_prefix}strip" \
+            --out "${tmp_out}" || exit 1
+          mkdir -p artifacts-to-be-uploaded
+          mv "${tmp_out}"/* artifacts-to-be-uploaded/
+        ) || echo "bloaty report failed; continuing"
 
         # Add basic guard - TODO: refine this!
         ${toolchain_prefix}strip ${elf}
