@@ -10,6 +10,7 @@
 #include <executorch/backends/webgpu/runtime/ops/OperatorRegistry.h>
 
 #include <executorch/backends/vulkan/serialization/schema_generated.h>
+#include <executorch/runtime/core/named_data_map.h>
 
 #include <executorch/backends/webgpu/runtime/WebGPUDevice.h>
 #include <webgpu/wgpu.h>
@@ -93,7 +94,8 @@ WebGPUGraph::~WebGPUGraph() {
 
 void WebGPUGraph::build(
     const void* flatbuffer_data,
-    const uint8_t* constant_data) {
+    const uint8_t* constant_data,
+    const executorch::runtime::NamedDataMap* named_data_map) {
   if (!device_) {
     auto* ctx = get_default_webgpu_context();
     if (ctx) {
@@ -165,6 +167,25 @@ void WebGPUGraph::build(
                 const uint8_t* src = constant_data + vk_bytes->offset();
                 wgpuQueueWriteBuffer(
                     queue_, tensor.buffer, 0, src, tensor.nbytes);
+              } else if (
+                  vk_bytes->named_key() != nullptr &&
+                  named_data_map != nullptr) {
+                // Constant stored in the PTE named-data map.
+                auto buf =
+                    named_data_map->get_data(vk_bytes->named_key()->c_str());
+                if (buf.ok() && buf->size() >= tensor.nbytes) {
+                  wgpuQueueWriteBuffer(
+                      queue_, tensor.buffer, 0, buf->data(), tensor.nbytes);
+                  buf->Free();
+                } else {
+                  throw std::runtime_error(
+                      std::string("WebGPU: named constant '") +
+                      vk_bytes->named_key()->c_str() +
+                      "' missing or undersized in NamedDataMap");
+                }
+              } else {
+                throw std::runtime_error(
+                    "WebGPU: constant has no inline offset and no named-data key");
               }
             }
           }
