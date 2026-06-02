@@ -61,7 +61,7 @@ from executorch.exir.passes.normalize_view_copy_base_pass import (
 )
 from executorch.exir.passes.propagate_device_pass import PropagateDevicePass
 from executorch.exir.passes.quant_fusion_pass import quant_fusion_and_const_prop_pass
-from executorch.exir.passes.reinplace import reinplace_pass
+from executorch.exir.passes.reinplace import DEFAULT_INPLACEABLE_OPS, reinplace_pass
 from executorch.exir.passes.remove_graph_asserts_pass import (
     RemoveGraphAssertsPass,
     RemoveNonCoreAtenOpGraphAssertsPass,
@@ -1683,8 +1683,12 @@ class EdgeProgramManager:
                         " Please set do_quant_fusion_and_const_prop to False in the ExecutorchBackendConfig."
                     )
                 program = quant_fusion_and_const_prop_pass(program)
-            if config.run_reinplace_pass:
-                program = reinplace_pass(program)
+            if config.run_reinplace_pass or config.reinplace_extra_ops:
+                extra = config.reinplace_extra_ops or frozenset()
+                program = reinplace_pass(
+                    program,
+                    ops_to_inplace=DEFAULT_INPLACEABLE_OPS | extra,
+                )
             program = weights_to_outputs_pass(program)
             program = unsafe_remove_auto_functionalized_pass(program)
             gm, new_signature = insert_write_back_for_buffers_pass(program)
