@@ -12,6 +12,8 @@ on:
       - .github/workflows/cuda-perf.yml
       - .ci/scripts/cuda_benchmark.py
       - .ci/scripts/cuda_perf_prompts/**
+      - .ci/scripts/export_model_artifact.sh
+      - .ci/scripts/test_model_e2e.sh
   workflow_dispatch:
     inputs:
       models:
@@ -56,6 +58,8 @@ jobs:
       contains(needs.changed-files.outputs.changed-files, '.github/workflows/cuda-perf.yml') ||
       contains(needs.changed-files.outputs.changed-files, '.ci/scripts/cuda_benchmark.py') ||
       contains(needs.changed-files.outputs.changed-files, '.ci/scripts/cuda_perf_prompts') ||
+      contains(needs.changed-files.outputs.changed-files, '.ci/scripts/export_model_artifact.sh') ||
+      contains(needs.changed-files.outputs.changed-files, '.ci/scripts/test_model_e2e.sh') ||
       needs.run-decision.outputs.is-full-run == 'true'
     runs-on: ubuntu-22.04
     outputs:
@@ -184,6 +188,8 @@ jobs:
         contains(needs.changed-files.outputs.changed-files, '.github/workflows/cuda-perf.yml') ||
         contains(needs.changed-files.outputs.changed-files, '.ci/scripts/cuda_benchmark.py') ||
         contains(needs.changed-files.outputs.changed-files, '.ci/scripts/cuda_perf_prompts') ||
+        contains(needs.changed-files.outputs.changed-files, '.ci/scripts/export_model_artifact.sh') ||
+        contains(needs.changed-files.outputs.changed-files, '.ci/scripts/test_model_e2e.sh') ||
         needs.run-decision.outputs.is-full-run == 'true'
       )
     uses: pytorch/test-infra/.github/workflows/linux_job_v2.yml@main
@@ -365,6 +371,8 @@ jobs:
         contains(needs.changed-files.outputs.changed-files, '.github/workflows/cuda-perf.yml') ||
         contains(needs.changed-files.outputs.changed-files, '.ci/scripts/cuda_benchmark.py') ||
         contains(needs.changed-files.outputs.changed-files, '.ci/scripts/cuda_perf_prompts') ||
+        contains(needs.changed-files.outputs.changed-files, '.ci/scripts/export_model_artifact.sh') ||
+        contains(needs.changed-files.outputs.changed-files, '.ci/scripts/test_model_e2e.sh') ||
         needs.run-decision.outputs.is-full-run == 'true'
       )
     runs-on: ubuntu-22.04
