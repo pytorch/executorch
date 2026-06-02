@@ -88,6 +88,7 @@ def assert_delegated(
     model,
     input_shape,
     mocker,
+    request,
     use_qat=False,
     expected_delegated_ops=None,
 ):
@@ -110,6 +111,7 @@ def assert_delegated(
         model,
         input_shape,
         graph_verifier,
+        request,
         dataset_creator,
         output_comparator,
         use_qat=use_qat,
@@ -131,10 +133,10 @@ class TestMeanDim:
     def keep_dim(self, request):
         return request.param
 
-    def test__basic_nsys_inference__qat(self, mocker, use_qat, keep_dim):
+    def test__basic_nsys_inference__qat(self, mocker, request, use_qat, keep_dim):
         input_shape = (23,)
         model = MeanDimModule(0, keep_dim)
-        assert_delegated(model, input_shape, mocker, use_qat=use_qat)
+        assert_delegated(model, input_shape, mocker, request, use_qat=use_qat)
 
     @pytest.mark.parametrize(
         "input_shape, dim",
@@ -148,9 +150,9 @@ class TestMeanDim:
             pytest.param((3, 1, 4, 1, 5), 0, id="5D, dim = 0."),
         ],
     )
-    def test__single_dims(self, mocker, input_shape, dim, keep_dim):
+    def test__single_dims(self, mocker, request, input_shape, dim, keep_dim):
         model = MeanDimModule(dim, keep_dim)
-        assert_delegated(model, input_shape, mocker)
+        assert_delegated(model, input_shape, mocker, request)
 
     @pytest.mark.parametrize(
         "input_shape, dim",
@@ -162,9 +164,9 @@ class TestMeanDim:
             pytest.param((3, 1, 4, 1, 5), (3, -5, -4), id="5D, dim = (3, -5 ,-4)."),
         ],
     )
-    def test__tuple_dims(self, mocker, input_shape, dim, keep_dim):
+    def test__tuple_dims(self, mocker, request, input_shape, dim, keep_dim):
         model = MeanDimModule(dim, keep_dim)
-        assert_delegated(model, input_shape, mocker)
+        assert_delegated(model, input_shape, mocker, request)
 
     @pytest.mark.parametrize(
         "input_shape, dim",
@@ -185,13 +187,14 @@ class TestMeanDim:
             pytest.param((3, 1, 4, 1, 5), -2, id="5D, dim = -2."),
         ],
     )
-    def test__noop__not_only_node__delegated(self, mocker, input_shape, dim):
+    def test__noop__not_only_node__delegated(self, mocker, request, input_shape, dim):
         keep_dim = True  # Reduction over a dimension of size `1` with `keep_dim=True` is a no-op.
         model = MeanDimAddModule(dim, keep_dim)
         assert_delegated(
             model,
             input_shape,
             mocker,
+            request,
             expected_delegated_ops={MeanDim: 1, AddTensor: 1},
         )
 
@@ -203,15 +206,17 @@ class TestMeanDim:
             pytest.param((1, 7, 3, 3), [0], id="4D, dim = [0]."),
         ],
     )
-    def test__no_reduction__keepdim_false__delegated(self, mocker, input_shape, dim):
+    def test__no_reduction__keepdim_false__delegated(
+        self, mocker, request, input_shape, dim
+    ):
         # These cases reduce over a dimension of size 1.
         # When `keep_dim=True` the node is a noop, and it's not delegated (see `test__noop__only_node__not_delegated`),
         # but with `keep_dim=False` it changes the shape so it's not a noop and is therefore delegated successfully.
         keep_dim = False
         model = MeanDimModule(dim, keep_dim)
-        assert_delegated(model, input_shape, mocker)
+        assert_delegated(model, input_shape, mocker, request)
 
-    def test__channels_first__keep_dim__true(self, mocker):
+    def test__channels_first__keep_dim__true(self, mocker, request):
         # Just 1 test case to verify correct handling of the `dim`.
         # Most cases fall into the single bit error case, and since this test uses 2 operators, the error accumulates
         #  and the final error is larger. We cannot with 100% certainty say that the error is only caused by the single
@@ -222,6 +227,7 @@ class TestMeanDim:
             model,
             input_shape,
             mocker,
+            request,
             expected_delegated_ops={MaxPool2DWithIndices: 1, GetItem: 1, MeanDim: 1},
         )
 
@@ -260,7 +266,7 @@ class TestMeanDim:
             ],
             ids=lambda dim: f"dim={dim}",
         )
-        def test__channels_first_input__reducing_channels(self, mocker, dim):
+        def test__channels_first_input__reducing_channels(self, mocker, request, dim):
             # If the channels dimension is reduced (removed), the `mean` output will always be equal in channels first
             #  and channels last, so no `Transpose` ops are added.
             input_shape = (1, 7, 3, 3)
@@ -271,6 +277,7 @@ class TestMeanDim:
                 model,
                 input_shape,
                 mocker,
+                request,
                 expected_delegated_ops={
                     MaxPool2DWithIndices: 1,
                     GetItem: 1,
@@ -295,7 +302,9 @@ class TestMeanDim:
             ],
             ids=lambda dim: f"dim={dim}",
         )
-        def test__channels_first_input__reducing_all_spatial_dims(self, mocker, dim):
+        def test__channels_first_input__reducing_all_spatial_dims(
+            self, mocker, request, dim
+        ):
             # If tall he spatial dimensions are reduced (removed), the `mean` output will always be equal in channels
             #  first and channels last, so no `Transpose` ops are added.
             input_shape = (1, 7, 3, 3)
@@ -306,6 +315,7 @@ class TestMeanDim:
                 model,
                 input_shape,
                 mocker,
+                request,
                 expected_delegated_ops={
                     MaxPool2DWithIndices: 1,
                     GetItem: 1,
@@ -332,7 +342,7 @@ class TestMeanDim:
             ids=lambda dim: f"dim={dim}",
         )
         def test__channels_first_input__not_reducing_channels_or_all_spatial_dims(
-            self, mocker, dim
+            self, mocker, request, dim
         ):
             # If the channels dimension is not reduced, a `Transpose` operator must be added to make the input channels
             #  first in Neutron IR.
@@ -345,6 +355,7 @@ class TestMeanDim:
                 model,
                 input_shape,
                 mocker,
+                request,
                 expected_delegated_ops={
                     MaxPool2DWithIndices: 1,
                     GetItem: 1,
@@ -371,7 +382,7 @@ class TestMeanDim:
             ],
             ids=lambda dim: f"dim={dim}",
         )
-        def test__channels_first_output(self, mocker, input_shape, dim):
+        def test__channels_first_output(self, mocker, request, input_shape, dim):
             model = MeanDimMaxPoolModule(dim, False)
 
             model_builder_finish_spy = mocker.spy(ModelBuilder, "finish")
@@ -379,6 +390,7 @@ class TestMeanDim:
                 model,
                 input_shape,
                 mocker,
+                request,
                 expected_delegated_ops={
                     MaxPool2DWithIndices: 1,
                     GetItem: 1,
