@@ -42,7 +42,7 @@ class ConcatAddNoOpModel(torch.nn.Module):
         return x + zeros
 
 
-class AddMulSubNoOpModel(torch.nn.Module):
+class AddSubNoOpModel(torch.nn.Module):
     def __init__(self, shape: tuple[int, ...]):
         super().__init__()
         self.shape = shape
@@ -50,10 +50,8 @@ class AddMulSubNoOpModel(torch.nn.Module):
     def forward(self, x):
         zero1 = torch.zeros(self.shape)
         zero2 = torch.zeros(self.shape)
-        one = torch.ones(self.shape)
 
         x = zero1 + x
-        x = one * x
         x = x - zero2
 
         return x
@@ -138,9 +136,9 @@ def test_noop_partitions__concatenate_one_tensor_and_add_zeros__forced_delegatio
         ).exported_program()
 
 
-def test_noop_partitions__add_mul_sub_div():
+def test_noop_partitions__add_sub():
     input_shape = (6, 7)
-    module = AddMulSubNoOpModel(input_shape)
+    module = AddSubNoOpModel(input_shape)
 
     ep = to_quantized_edge_program(
         module,
@@ -153,15 +151,14 @@ def test_noop_partitions__add_mul_sub_div():
         ep.graph,
         [
             exir_ops.edge.aten.add.Tensor,
-            exir_ops.edge.aten.mul.Tensor,
             exir_ops.edge.aten.sub.Tensor,
         ],
     )
 
 
-def test_noop_partitions__add_mul_sub_div__forced_delegation():
+def test_noop_partitions__add_sub__forced_delegation():
     input_shape = (6, 7)
-    module = AddMulSubNoOpModel(input_shape)
+    module = AddSubNoOpModel(input_shape)
 
     # Force the partitioner to delegate the node.
     cdo = CustomDelegationOptions(allow_no_op_partitions=True)

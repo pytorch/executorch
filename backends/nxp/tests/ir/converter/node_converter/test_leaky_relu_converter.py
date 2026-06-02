@@ -32,7 +32,7 @@ class LeakyReluModule(torch.nn.Module):
         return self.leaky_relu(x)
 
 
-class TestLeakyReluNewNeutronFlow:
+class TestLeakyRelu:
     # noinspection PyMethodMayBeStatic
     def assert_delegated(self, model, input_shape, mocker, use_qat=False):
         graph_verifier = DetailedGraphVerifier(
@@ -50,7 +50,6 @@ class TestLeakyReluNewNeutronFlow:
             graph_verifier,
             dataset_creator,
             use_qat=use_qat,
-            use_new_flow_neutron_c=True,  # Use the new flow.
         )
 
     @pytest.mark.parametrize(

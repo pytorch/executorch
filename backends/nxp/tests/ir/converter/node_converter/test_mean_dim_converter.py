@@ -61,7 +61,7 @@ class MaxPoolMeanDimModule(torch.nn.Module):
         return torch.mean(x, dim=self.dim, keepdim=self.keepdim)
 
 
-class TestMeanDimNewNeutronFlow:
+class TestMeanDim:
 
     # noinspection PyMethodMayBeStatic
     def assert_delegated(
@@ -95,14 +95,11 @@ class TestMeanDimNewNeutronFlow:
             dataset_creator,
             output_comparator,
             use_qat=use_qat,
-            use_new_flow_neutron_c=True,  # Use the new flow.
         )
 
     # noinspection PyMethodMayBeStatic
     def assert_not_delegated(self, model, input_shape):
-        delegated_ep = to_quantized_edge_program(
-            model, input_shape, use_new_flow_neutron_c=True
-        ).exported_program()
+        delegated_ep = to_quantized_edge_program(model, input_shape).exported_program()
 
         # Make sure the `mean` was NOT delegated.
         assert not graph_contains_any_of_ops(

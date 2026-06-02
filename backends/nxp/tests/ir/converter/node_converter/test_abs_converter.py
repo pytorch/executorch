@@ -59,7 +59,7 @@ class AbsModule(torch.nn.Module):
         return x.abs()
 
 
-class TestAbsNewNeutronFlow:
+class TestAbs:
     @staticmethod
     def _get_dataset_creator():
         # to test `abs` reliably, we need to include negative values
@@ -82,7 +82,6 @@ class TestAbsNewNeutronFlow:
             input_shape,
             graph_verifier,
             dataset_creator,
-            use_new_flow_neutron_c=True,
         )
 
     def test__basic_nsys_inference__big(self, mocker):
@@ -99,7 +98,6 @@ class TestAbsNewNeutronFlow:
             input_shape,
             graph_verifier,
             dataset_creator,
-            use_new_flow_neutron_c=True,
         )
 
     def test_basic_nsys_inference__with_conv(self, mocker):
@@ -120,5 +118,4 @@ class TestAbsNewNeutronFlow:
             input_shape,
             graph_verifier,
             dataset_creator,
-            use_new_flow_neutron_c=True,
         )

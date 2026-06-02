@@ -67,7 +67,7 @@ class AddClampModule(torch.nn.Module):
         return self.clamp(x)
 
 
-class TestClampNewNeutronFlow:
+class TestClamp:
     @pytest.mark.parametrize(
         "min, max",
         [
@@ -110,7 +110,6 @@ class TestClampNewNeutronFlow:
             input_spec=[x_input_spec],
             dlg_model_verifier=graph_verifier,
             output_comparator=comparator,
-            use_new_flow_neutron_c=True,
             use_qat=use_qat,
         )
 
@@ -173,7 +172,6 @@ class TestClampNewNeutronFlow:
         delegated_ep = to_quantized_edge_program(
             model,
             input_shape,
-            use_new_flow_neutron_c=True,
         ).exported_program()
 
         # Make sure the `clamp` was delegated.

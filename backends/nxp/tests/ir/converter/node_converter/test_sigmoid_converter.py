@@ -28,7 +28,7 @@ def reseed_model_per_test_run():
     np.random.seed(23)
 
 
-class TestSigmoidNewNeutronFlow:
+class TestSigmoid:
     # noinspection PyMethodMayBeStatic
     def assert_delegated(self, model, input_shape, mocker, use_qat=False, atol=None):
         graph_verifier = DetailedGraphVerifier(
@@ -50,7 +50,6 @@ class TestSigmoidNewNeutronFlow:
             dataset_creator,
             output_comparator,
             use_qat=use_qat,
-            use_new_flow_neutron_c=True,  # Use the new flow.
         )
 
     def test__basic_nsys_inference__qat(self, mocker, use_qat):

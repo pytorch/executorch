@@ -31,7 +31,7 @@ def reseed_model_per_test_run():
     np.random.seed(23)
 
 
-class TestAdaptiveAvgPool2DNewNeutronFlow:
+class TestAdaptiveAvgPool2D:
     @pytest.mark.parametrize(
         "input_shape, output_size",
         [
@@ -63,7 +63,6 @@ class TestAdaptiveAvgPool2DNewNeutronFlow:
             RandomDatasetCreator(low=-1, high=1),
             output_comparator=output_comparator,
             use_qat=use_qat,
-            use_new_flow_neutron_c=True,
         )
 
     @pytest.mark.xfail(
@@ -89,7 +88,6 @@ class TestAdaptiveAvgPool2DNewNeutronFlow:
             graph_verifier,
             RandomDatasetCreator(low=-1, high=1),
             output_comparator=output_comparator,
-            use_new_flow_neutron_c=True,
         )
 
     def test__kernel_size_and_stride_limit(self, mocker):
@@ -118,7 +116,6 @@ class TestAdaptiveAvgPool2DNewNeutronFlow:
             graph_verifier,
             RandomDatasetCreator(low=-1, high=1),
             output_comparator=output_comparator,
-            use_new_flow_neutron_c=True,
         )
 
     def test__kernel_size_and_stride_limit_exceeded(self):
@@ -131,9 +128,7 @@ class TestAdaptiveAvgPool2DNewNeutronFlow:
         # kernel_size = input_size - (output_size - 1) * stride = 4097 - 0 * 4097 = 4097
 
         model = AdaptiveAvgPool2dModule(output_size)
-        delegated_ep = to_quantized_edge_program(
-            model, input_shape, use_new_flow_neutron_c=True
-        ).exported_program()
+        delegated_ep = to_quantized_edge_program(model, input_shape).exported_program()
 
         # Make sure the `adaptive_avg_pool2d` was NOT delegated.
         assert not graph_contains_any_of_ops(

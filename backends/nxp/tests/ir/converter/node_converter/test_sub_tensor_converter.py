@@ -32,7 +32,7 @@ def reseed_model_per_test_run():
     np.random.seed(23)
 
 
-class TestSubTensorNewNeutronFlow:
+class TestSubTensor:
     @pytest.mark.parametrize(
         "x_input_shape",
         [
@@ -74,7 +74,6 @@ class TestSubTensorNewNeutronFlow:
             [x_input_spec, x_input_spec],
             graph_verifier,
             dataset_creator,
-            use_new_flow_neutron_c=True,
         )
 
     @pytest.mark.parametrize(
@@ -108,7 +107,6 @@ class TestSubTensorNewNeutronFlow:
             [x_input_spec, x_input_spec],
             graph_verifier,
             dataset_creator,
-            use_new_flow_neutron_c=True,
             use_qat=True,
         )
 
@@ -145,7 +143,6 @@ class TestSubTensorNewNeutronFlow:
             input_spec,
             graph_verifier,
             dataset_creator,
-            use_new_flow_neutron_c=True,
         )
 
     @pytest.mark.parametrize(
@@ -168,9 +165,7 @@ class TestSubTensorNewNeutronFlow:
         # Broadcast where at least one of the inputs is not equal to output is not supported
         model = SubTensorModule()
 
-        delegated_ep = to_quantized_edge_program(
-            model, input_spec, use_new_flow_neutron_c=True
-        ).exported_program()
+        delegated_ep = to_quantized_edge_program(model, input_spec).exported_program()
 
         # Make sure the `sub.Tensor` was NOT delegated.
         assert not graph_contains_any_of_ops(
@@ -205,7 +200,6 @@ class TestSubTensorNewNeutronFlow:
             [x_input_spec, y_input_spec],
             graph_verifier,
             dataset_creator,
-            use_new_flow_neutron_c=True,
         )
 
     @pytest.mark.parametrize(
@@ -236,7 +230,6 @@ class TestSubTensorNewNeutronFlow:
             input_spec,
             graph_verifier,
             dataset_creator,
-            use_new_flow_neutron_c=True,
         )
 
     @pytest.mark.parametrize(
@@ -255,9 +248,7 @@ class TestSubTensorNewNeutronFlow:
     def test__w_conv_unsupported(self, input_spec):
         model = SubTensorConvModule()
 
-        delegated_ep = to_quantized_edge_program(
-            model, input_spec, use_new_flow_neutron_c=True
-        ).exported_program()
+        delegated_ep = to_quantized_edge_program(model, input_spec).exported_program()
 
         # Make sure the `sub.Tensor` was NOT delegated.
         assert graph_contains_any_of_ops(delegated_ep.graph, [ExecutorchDelegateCall])

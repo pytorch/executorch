@@ -32,7 +32,7 @@ def reseed_model_per_test_run():
     np.random.seed(23)
 
 
-class TestAddTensorNewNeutronFlow:
+class TestAddTensor:
     @pytest.mark.parametrize(
         "x_input_shape",
         [
@@ -70,7 +70,6 @@ class TestAddTensorNewNeutronFlow:
             [x_input_spec, x_input_spec],
             graph_verifier,
             dataset_creator,
-            use_new_flow_neutron_c=True,
         )
 
     @pytest.mark.parametrize(
@@ -100,7 +99,6 @@ class TestAddTensorNewNeutronFlow:
             [x_input_spec, x_input_spec],
             graph_verifier,
             dataset_creator,
-            use_new_flow_neutron_c=True,
             use_qat=True,
         )
 
@@ -136,7 +134,6 @@ class TestAddTensorNewNeutronFlow:
             input_spec,
             graph_verifier,
             dataset_creator,
-            use_new_flow_neutron_c=True,
         )
 
     @pytest.mark.parametrize(
@@ -159,9 +156,7 @@ class TestAddTensorNewNeutronFlow:
         # Broadcast where at least one of the inputs is not equal to output is not supported
         model = AddTensorModule()
 
-        delegated_ep = to_quantized_edge_program(
-            model, input_spec, use_new_flow_neutron_c=True
-        ).exported_program()
+        delegated_ep = to_quantized_edge_program(model, input_spec).exported_program()
 
         # Make sure the `add.Tensor` was NOT delegated.
         assert not graph_contains_any_of_ops(
@@ -192,11 +187,7 @@ class TestAddTensorNewNeutronFlow:
         dataset_creator = RandomDatasetCreator(low=-1.0, high=1.0)
 
         lower_run_compare(
-            model,
-            [x_input_spec, y_input_spec],
-            graph_verifier,
-            dataset_creator,
-            use_new_flow_neutron_c=True,
+            model, [x_input_spec, y_input_spec], graph_verifier, dataset_creator
         )
 
     @pytest.mark.parametrize(
@@ -228,7 +219,6 @@ class TestAddTensorNewNeutronFlow:
             input_spec,
             graph_verifier,
             dataset_creator,
-            use_new_flow_neutron_c=True,
         )
 
     @pytest.mark.parametrize(
@@ -247,9 +237,7 @@ class TestAddTensorNewNeutronFlow:
     def test__w_conv_unsupported(self, input_spec):
         model = AddTensorConvModule()
 
-        delegated_ep = to_quantized_edge_program(
-            model, input_spec, use_new_flow_neutron_c=True
-        ).exported_program()
+        delegated_ep = to_quantized_edge_program(model, input_spec).exported_program()
 
         # Make sure the `add.Tensor` was NOT delegated.
         assert graph_contains_any_of_ops(delegated_ep.graph, [ExecutorchDelegateCall])

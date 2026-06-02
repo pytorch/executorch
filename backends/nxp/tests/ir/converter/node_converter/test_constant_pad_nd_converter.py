@@ -28,7 +28,7 @@ def reseed_model_per_test_run():
     np.random.seed(23)
 
 
-class TestConstantPadNDNewNeutronFlow:
+class TestConstantPadND:
     """The PyTorch padding is added to the individual dimensions from the back (slightly confusing), see:
     https://pytorch.org/docs/stable/generated/torch.nn.functional.pad.html#torch.nn.functional.pad
     """
@@ -46,7 +46,6 @@ class TestConstantPadNDNewNeutronFlow:
             input_shape,
             graph_verifier,
             use_qat=use_qat,
-            use_new_flow_neutron_c=True,
         )
 
     def assert_delegated_and_output_shape_equals(
@@ -124,6 +123,4 @@ class TestConstantPadNDNewNeutronFlow:
             expected_non_delegated_ops={},
         )
 
-        lower_run_compare(
-            model, input_shape, graph_verifier, use_new_flow_neutron_c=True
-        )
+        lower_run_compare(model, input_shape, graph_verifier)

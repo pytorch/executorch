@@ -189,7 +189,7 @@ class StaticDivModel(torch.nn.Module):
         return x / self.divisor
 
 
-class TestConvertDivToMulNewNeutronFlow:
+class TestConvertDivToMul:
 
     @pytest.mark.parametrize(
         "input_shape",
@@ -232,5 +232,4 @@ class TestConvertDivToMulNewNeutronFlow:
             input_shape,
             graph_verifier,
             dataset_creator,
-            use_new_flow_neutron_c=True,  # Use the new flow.
         )

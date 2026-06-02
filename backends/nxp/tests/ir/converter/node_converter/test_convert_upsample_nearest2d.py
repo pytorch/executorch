@@ -45,7 +45,7 @@ class UpsampleNearestAddModule(UpsampleNearestModule):
         return x + x
 
 
-class TestUpsampleNearest2DNewNeutronFlow:
+class TestUpsampleNearest2D:
 
     # noinspection PyMethodMayBeStatic
     def assert_delegated(
@@ -74,14 +74,11 @@ class TestUpsampleNearest2DNewNeutronFlow:
             graph_verifier,
             dataset_creator,
             use_qat=use_qat,
-            use_new_flow_neutron_c=True,  # Use the new flow.
         )
 
     # noinspection PyMethodMayBeStatic
     def assert_not_delegated(self, model, input_shape):
-        delegated_ep = to_quantized_edge_program(
-            model, input_shape, use_new_flow_neutron_c=True
-        ).exported_program()
+        delegated_ep = to_quantized_edge_program(model, input_shape).exported_program()
 
         assert not graph_contains_any_of_ops(
             delegated_ep.graph, [ExecutorchDelegateCall]

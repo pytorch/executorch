@@ -50,7 +50,7 @@ class UpsampleBilinearAddModule(UpsampleBilinearModule):
         return x + x
 
 
-class TestUpsampleBilinear2DNewNeutronFlow:
+class TestUpsampleBilinear2D:
     # TODO Use quantized dataset and `atol=1` in the tests.
 
     # noinspection PyMethodMayBeStatic
@@ -85,14 +85,11 @@ class TestUpsampleBilinear2DNewNeutronFlow:
             dataset_creator,
             output_comparator,
             use_qat=use_qat,
-            use_new_flow_neutron_c=True,  # Use the new flow.
         )
 
     # noinspection PyMethodMayBeStatic
     def assert_not_delegated(self, model, input_shape):
-        delegated_ep = to_quantized_edge_program(
-            model, input_shape, use_new_flow_neutron_c=True
-        ).exported_program()
+        delegated_ep = to_quantized_edge_program(model, input_shape).exported_program()
 
         assert not graph_contains_any_of_ops(
             delegated_ep.graph, [ExecutorchDelegateCall]

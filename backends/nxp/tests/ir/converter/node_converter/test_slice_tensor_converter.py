@@ -35,7 +35,7 @@ def reseed_model_per_test_run():
     np.random.seed(23)
 
 
-class TestSliceTensorConverterNewNeutronFlow:
+class TestSliceTensorConverter:
     @staticmethod
     def _slice_id(prefix, input_shape, dims, starts, ends):
         return f"{prefix}rank={len(input_shape)}_dims={str(dims)}_starts={str(starts)}_ends={str(ends)}"
@@ -56,15 +56,12 @@ class TestSliceTensorConverterNewNeutronFlow:
             graph_verifier,
             dataset,
             comparator,
-            use_new_flow_neutron_c=True,
             use_qat=use_qat,
         )
 
     @staticmethod
     def assert_model_without_slices(model, input_shape):
-        delegated_ep = to_quantized_edge_program(
-            model, input_shape, use_new_flow_neutron_c=True
-        ).exported_program()
+        delegated_ep = to_quantized_edge_program(model, input_shape).exported_program()
 
         # Check there are no slices and nothing is delegated
         assert not graph_contains_any_of_ops(
@@ -74,9 +71,7 @@ class TestSliceTensorConverterNewNeutronFlow:
 
     @staticmethod
     def assert_not_delegated(model, input_shape):
-        delegated_ep = to_quantized_edge_program(
-            model, input_shape, use_new_flow_neutron_c=True
-        ).exported_program()
+        delegated_ep = to_quantized_edge_program(model, input_shape).exported_program()
 
         # Make sure the `slice` was NOT delegated.
         assert not graph_contains_any_of_ops(
@@ -367,7 +362,6 @@ class TestSliceTensorConverterNewNeutronFlow:
             graph_verifier,
             dataset,
             comparator,
-            use_new_flow_neutron_c=True,
             use_qat=False,
         )
 

@@ -28,7 +28,7 @@ class TanhModule(torch.nn.Module):
             return torch.tanh(x)
 
 
-class TestTanhNewNeutronFlow:
+class TestTanh:
 
     # noinspection PyMethodMayBeStatic
     def assert_delegated(
@@ -57,7 +57,6 @@ class TestTanhNewNeutronFlow:
             graph_verifier,
             dataset_creator,
             use_qat=use_qat,
-            use_new_flow_neutron_c=True,  # Use the new flow.
         )
 
     @pytest.fixture(params=[True, False], ids=lambda inplace: f"inplace = {inplace}")

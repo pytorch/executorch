@@ -49,7 +49,7 @@ def reseed_model_per_test_run():
     np.random.seed(23)
 
 
-class TestMaxPool2DNewNeutronFlow:
+class TestMaxPool2D:
     # noinspection PyMethodMayBeStatic
     def assert_delegated(self, model, input_shape, mocker):
         graph_verifier = DetailedGraphVerifier(
@@ -58,15 +58,11 @@ class TestMaxPool2DNewNeutronFlow:
             expected_non_delegated_ops={},
         )
 
-        lower_run_compare(
-            model, input_shape, graph_verifier, use_new_flow_neutron_c=True
-        )
+        lower_run_compare(model, input_shape, graph_verifier)
 
     # noinspection PyMethodMayBeStatic
     def assert_not_delegated(self, model, input_shape):
-        delegated_ep = to_quantized_edge_program(
-            model, input_shape, use_new_flow_neutron_c=True
-        ).exported_program()
+        delegated_ep = to_quantized_edge_program(model, input_shape).exported_program()
 
         # Make sure the `max_pool2d` was NOT delegated.
         assert not graph_contains_any_of_ops(
@@ -92,7 +88,6 @@ class TestMaxPool2DNewNeutronFlow:
             model,
             input_shape,
             graph_verifier,
-            use_new_flow_neutron_c=True,
             use_qat=True,
         )
 
@@ -159,10 +154,10 @@ class TestMaxPool2DNewNeutronFlow:
         with pytest.raises(
             RuntimeError, match="pad should be at most half of effective kernel size"
         ):
-            to_quantized_edge_program(model, input_shape, use_new_flow_neutron_c=True)
+            to_quantized_edge_program(model, input_shape)
 
 
-class TestMaxPool1DNewNeutronFlow:
+class TestMaxPool1D:
 
     # Just a basic test to verify that the operator gets extended to the 2D variant correctly.
     def test__basic_nsys_inference__view_not_delegated(self, mocker):
@@ -175,6 +170,4 @@ class TestMaxPool1DNewNeutronFlow:
             expected_non_delegated_ops={ViewCopy: 2},
         )
 
-        lower_run_compare(
-            model, input_shape, graph_verifier, use_new_flow_neutron_c=True
-        )
+        lower_run_compare(model, input_shape, graph_verifier)

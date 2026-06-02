@@ -40,7 +40,7 @@ class AvgPool1DModule(torch.nn.Module):
         return self.avg_pool(x)
 
 
-class TestAvgPool2DNewNeutronFlow:
+class TestAvgPool2D:
     def test__basic_nsys_inference(self, mocker):
         input_shape = (2, 4, 6, 7)
         model = AvgPool2dModule(False, 0)
@@ -48,9 +48,7 @@ class TestAvgPool2DNewNeutronFlow:
             mocker, expected_delegated_ops={AvgPool2D: 1}, expected_non_delegated_ops={}
         )
 
-        lower_run_compare(
-            model, input_shape, graph_verifier, use_new_flow_neutron_c=True
-        )
+        lower_run_compare(model, input_shape, graph_verifier)
 
     def test__basic_nsys_inference_qat(self, mocker):
         input_shape = (2, 9, 6, 15)
@@ -63,7 +61,6 @@ class TestAvgPool2DNewNeutronFlow:
             model,
             input_shape,
             graph_verifier,
-            use_new_flow_neutron_c=True,
             use_qat=True,
         )
 
@@ -75,18 +72,14 @@ class TestAvgPool2DNewNeutronFlow:
             mocker, expected_delegated_ops={AvgPool2D: 1}, expected_non_delegated_ops={}
         )
 
-        lower_run_compare(
-            model, input_shape, graph_verifier, use_new_flow_neutron_c=True
-        )
+        lower_run_compare(model, input_shape, graph_verifier)
 
     def test__kernel_size_limit_exceeded(self):
         kernel_size = (1, 4097)  # Exceeds the kernel size limit.
         input_shape = (1, 4) + kernel_size
         model = AvgPool2dModule(False, 0, kernel_size)
 
-        delegated_ep = to_quantized_edge_program(
-            model, input_shape, use_new_flow_neutron_c=True
-        ).exported_program()
+        delegated_ep = to_quantized_edge_program(model, input_shape).exported_program()
 
         # Make sure the `avg_pool2d` was NOT delegated.
         assert not graph_contains_any_of_ops(
@@ -102,18 +95,14 @@ class TestAvgPool2DNewNeutronFlow:
             mocker, expected_delegated_ops={AvgPool2D: 1}, expected_non_delegated_ops={}
         )
 
-        lower_run_compare(
-            model, input_shape, graph_verifier, use_new_flow_neutron_c=True
-        )
+        lower_run_compare(model, input_shape, graph_verifier)
 
     def test__stride_limit_exceeded(self):
         stride = 4097  # Exceeds the stride limit.
         input_shape = (1, 4, 1, 4096)
         model = AvgPool2dModule(False, 0, 1, stride)
 
-        delegated_ep = to_quantized_edge_program(
-            model, input_shape, use_new_flow_neutron_c=True
-        ).exported_program()
+        delegated_ep = to_quantized_edge_program(model, input_shape).exported_program()
 
         # Make sure the `avg_pool2d` was NOT delegated.
         assert not graph_contains_any_of_ops(
@@ -122,7 +111,7 @@ class TestAvgPool2DNewNeutronFlow:
         assert graph_contains_any_of_ops(delegated_ep.graph, [AvgPool2D])
 
 
-class TestAvgPool1DNewNeutronFlow:
+class TestAvgPool1D:
 
     # Just a basic test to verify that the operator gets extended to the 2D variant correctly.
     def test__basic_nsys_inference__view_not_delegated(self, mocker):
@@ -134,6 +123,4 @@ class TestAvgPool1DNewNeutronFlow:
             expected_non_delegated_ops={ViewCopy: 2},
         )
 
-        lower_run_compare(
-            model, input_shape, graph_verifier, use_new_flow_neutron_c=True
-        )
+        lower_run_compare(model, input_shape, graph_verifier)
