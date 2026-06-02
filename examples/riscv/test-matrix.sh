@@ -29,7 +29,7 @@ os_filter=""
 arch_filter=""
 variant_filter=""
 backend_filter=""
-quantize_mode="both"   # both | only | none
+quantize_filter=""
 setup_only=false
 keep_build=false
 
@@ -42,8 +42,7 @@ Options:
   --arch=<rv64|rv32>
   --backend=<portable|xnnpack>
   --variant=<scalar|rvv128|rvv256|rvv512>
-  --quantize-only    Skip the non-quantized cells
-  --no-quantize      Skip the quantized cells
+  --quantize=<yes,no>
   --setup-only       Make sure both containers are ready, then exit
   --keep-build       Reuse riscv_test/<cell> dirs instead of starting fresh
   -h, --help
@@ -52,16 +51,15 @@ EOF
 
 for arg in "$@"; do
     case $arg in
-        --model=*)     model_filter="${arg#*=}"   ;;
-        --os=*)        os_filter="${arg#*=}"      ;;
-        --arch=*)      arch_filter="${arg#*=}"    ;;
-        --backend=*)   backend_filter="${arg#*=}" ;;
-        --variant=*)   variant_filter="${arg#*=}" ;;
-        --quantize-only) quantize_mode="only"     ;;
-        --no-quantize)   quantize_mode="none"     ;;
-        --setup-only)  setup_only=true            ;;
-        --keep-build)  keep_build=true            ;;
-        -h|--help)     usage; exit 0              ;;
+        --model=*)     model_filter="${arg#*=}"    ;;
+        --os=*)        os_filter="${arg#*=}"       ;;
+        --arch=*)      arch_filter="${arg#*=}"     ;;
+        --backend=*)   backend_filter="${arg#*=}"  ;;
+        --variant=*)   variant_filter="${arg#*=}"  ;;
+        --quantize=*)  quantize_filter="${arg#*=}" ;;
+        --setup-only)  setup_only=true             ;;
+        --keep-build)  keep_build=true             ;;
+        -h|--help)     usage; exit 0               ;;
         *)             echo "Unknown: $arg" >&2; usage; exit 1 ;;
     esac
 done
@@ -70,11 +68,8 @@ done
 LINUX_CTR=executorch-riscv-linux
 BAREMETAL_CTR=executorch-riscv-baremetal
 
-# `add`/`mv2`/`resnet18` are the only models with XNNPACK quantization recipes
-# in MODEL_NAME_TO_OPTIONS — others raise at AOT time when --quantize is set.
-QUANTIZED_MODELS="mv2 resnet18"
-ALL_MODELS="add mv2 resnet18 mobilebert llama2 yolo26"
-ALL_BACKENDS="portable xnnpack"
+MODELS="add mv2 resnet18 mobilebert llama2 yolo26"
+BACKENDS="portable xnnpack"
 
 # qemu-cpu-ext sweeps; keep parity with the JSON arrays in riscv64.yml.
 SCALAR_EXT="v=false"
@@ -209,42 +204,36 @@ run_cell() {
 # ---- iterate ---------------------------------------------------------------
 
 passed=0; total=0
+for m in ${MODELS}; do
+for backend in ${BACKENDS}; do
 for os_arch in "linux:rv64" "baremetal:rv64" "baremetal:rv32"; do
-    os="${os_arch%%:*}"; arch="${os_arch##*:}"
+for variant_lbl in "scalar:${SCALAR_EXT}" "rvv128:${RVV128_EXT}" "rvv256:${RVV256_EXT}" "rvv512:${RVV512_EXT}"; do
+    os="${os_arch%%:*}"; arch="${os_arch##*:}"; variant="${variant_lbl%%:*}"; ext="${variant_lbl#*:}"
+
+    if [[ -n "${model_filter}" && "${m}" != "${model_filter}" ]]; then continue; fi
+    if [[ -n "${backend_filter}" && "${backend}" != "${backend_filter}" ]]; then continue; fi
     if [[ -n "${os_filter}" && "${os}" != "${os_filter}" ]]; then continue; fi
     if [[ -n "${arch_filter}" && "${arch}" != "${arch_filter}" ]]; then continue; fi
+    if [[ -n "${variant_filter}" && "${variant}" != "${variant_filter}" ]]; then continue; fi
+
     if [[ "${os}" == "linux" ]]; then ctr="${LINUX_CTR}"; venv=/executorch/.venv-docker-linux;
     else                              ctr="${BAREMETAL_CTR}"; venv=/executorch/.venv-docker-baremetal; fi
 
-    for variant_lbl in "scalar:${SCALAR_EXT}" "rvv128:${RVV128_EXT}" "rvv256:${RVV256_EXT}" "rvv512:${RVV512_EXT}"; do
-        variant="${variant_lbl%%:*}"; ext="${variant_lbl#*:}"
-        if [[ -n "${variant_filter}" && "${variant}" != "${variant_filter}" ]]; then continue; fi
-
-        for backend in ${ALL_BACKENDS}; do
-            if [[ -n "${backend_filter}" && "${backend}" != "${backend_filter}" ]]; then continue; fi
-
-            # non-quantized models
-            if [[ "${quantize_mode}" != "only" ]]; then
-                for m in ${ALL_MODELS}; do
-                    if [[ -n "${model_filter}" && "${m}" != "${model_filter}" ]]; then continue; fi
-                    if should_exclude "${os}" "${arch}" "${backend}" "${variant}" "${m}" "false"; then continue; fi
-                    total=$((total+1))
-                    run_cell "${ctr}" "${venv}" "${os}" "${arch}" "${backend}" "${variant}" "${ext}" "${m}" "" \
-                        && passed=$((passed+1)) || exit 1
-                done
-            fi
-            # quantized — only the 3 models with XNNPACK recipes
-            if [[ "${quantize_mode}" != "none" ]]; then
-                for m in ${QUANTIZED_MODELS}; do
-                    if [[ -n "${model_filter}" && "${m}" != "${model_filter}" ]]; then continue; fi
-                    if should_exclude "${os}" "${arch}" "${backend}" "${variant}" "${m}" "true"; then continue; fi
-                    total=$((total+1))
-                    run_cell "${ctr}" "${venv}" "${os}" "${arch}" "${backend}" "${variant}" "${ext}" "${m}" "--quantize" \
-                        && passed=$((passed+1)) || exit 1
-                done
-            fi
-        done
-    done
+    if [[ -z "${quantize_filter}" || "${quantize_filter}" = "no" ]]; then
+        if should_exclude "${os}" "${arch}" "${backend}" "${variant}" "${m}" "false"; then continue; fi
+        total=$((total+1))
+        run_cell "${ctr}" "${venv}" "${os}" "${arch}" "${backend}" "${variant}" "${ext}" "${m}" "" \
+            && passed=$((passed+1)) || exit 1
+    fi
+    if [[ -z "${quantize_filter}" || "${quantize_filter}" = "yes" ]]; then
+        if should_exclude "${os}" "${arch}" "${backend}" "${variant}" "${m}" "true"; then continue; fi
+        total=$((total+1))
+        run_cell "${ctr}" "${venv}" "${os}" "${arch}" "${backend}" "${variant}" "${ext}" "${m}" "--quantize" \
+            && passed=$((passed+1)) || exit 1
+    fi
+done
+done
+done
 done
 
 echo ""
