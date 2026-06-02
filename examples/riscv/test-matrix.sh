@@ -41,7 +41,7 @@ Options:
   --os=<linux|baremetal>
   --arch=<rv64|rv32>
   --backend=<portable|xnnpack>
-  --variant=<scalar|rvv>
+  --variant=<scalar|rvv128|rvv256|rvv512>
   --quantize-only    Skip the non-quantized cells
   --no-quantize      Skip the quantized cells
   --setup-only       Make sure both containers are ready, then exit
@@ -77,8 +77,10 @@ ALL_MODELS="add mv2 resnet18 mobilebert llama2 yolo26"
 ALL_BACKENDS="portable xnnpack"
 
 # qemu-cpu-ext sweeps; keep parity with the JSON arrays in riscv64.yml.
-SCALAR_EXT="zba=true,zbb=true,zbs=true,v=false"
-RVV_EXT="zba=true,zbb=true,zbs=true,v=true,vlen=128,vext_spec=v1.0"
+SCALAR_EXT="v=false"
+RVV128_EXT="v=true,vext_spec=v1.0,vlen=128"
+RVV256_EXT="v=true,vext_spec=v1.0,vlen=256"
+RVV512_EXT="v=true,vext_spec=v1.0,vlen=512"
 
 # Check if a cell combination should be excluded (matching riscv64.yml excludes)
 should_exclude() {
@@ -214,7 +216,7 @@ for os_arch in "linux:rv64" "baremetal:rv64" "baremetal:rv32"; do
     if [[ "${os}" == "linux" ]]; then ctr="${LINUX_CTR}"; venv=/executorch/.venv-docker-linux;
     else                              ctr="${BAREMETAL_CTR}"; venv=/executorch/.venv-docker-baremetal; fi
 
-    for variant_lbl in "scalar:${SCALAR_EXT}" "rvv:${RVV_EXT}"; do
+    for variant_lbl in "scalar:${SCALAR_EXT}" "rvv128:${RVV128_EXT}" "rvv256:${RVV256_EXT}" "rvv512:${RVV512_EXT}"; do
         variant="${variant_lbl%%:*}"; ext="${variant_lbl#*:}"
         if [[ -n "${variant_filter}" && "${variant}" != "${variant_filter}" ]]; then continue; fi
 
