@@ -43,7 +43,7 @@ static inline void write_u8x4_ia(int8_t** out, uint32_t val) {
 
 // cppcheck-suppress unusedFunction
 Tensor& quantized_activation_out(
-    KernelRuntimeContext& context,
+    KernelRuntimeContext& /*context*/,
     const Tensor& input,
     const Tensor& lut,
     Tensor& out) {
@@ -80,8 +80,7 @@ Tensor& quantized_activation_out(
   // (bit-identical load), add 128 mod 256 to produce a uint8 LUT index, then
   // gather-load the int8 result from the LUT.
   for (; i + 15 < n; i += 16) {
-    uint8x16_t in_u8 =
-        vldrbq_u8(reinterpret_cast<const uint8_t*>(in_data + i));
+    uint8x16_t in_u8 = vldrbq_u8(reinterpret_cast<const uint8_t*>(in_data + i));
     uint8x16_t idx = vaddq_n_u8(in_u8, 128);
     int8x16_t result = vldrbq_gather_offset_s8(lut_data, idx);
     vstrbq_s8(out_data + i, result);
@@ -98,13 +97,16 @@ Tensor& quantized_activation_out(
   for (int64_t w = 0; w < word_iters; ++w) {
     const uint32_t in_word = read_u8x4_ia(&in_ptr);
     const uint32_t idx_word = __uadd8(in_word, 0x80808080u);
-    const uint32_t out_word =
-        static_cast<uint32_t>(static_cast<uint8_t>(lut_data[idx_word & 0xFFu])) |
-        (static_cast<uint32_t>(static_cast<uint8_t>(lut_data[(idx_word >> 8) & 0xFFu]))
+    const uint32_t out_word = static_cast<uint32_t>(static_cast<uint8_t>(
+                                  lut_data[idx_word & 0xFFu])) |
+        (static_cast<uint32_t>(
+             static_cast<uint8_t>(lut_data[(idx_word >> 8) & 0xFFu]))
          << 8) |
-        (static_cast<uint32_t>(static_cast<uint8_t>(lut_data[(idx_word >> 16) & 0xFFu]))
+        (static_cast<uint32_t>(
+             static_cast<uint8_t>(lut_data[(idx_word >> 16) & 0xFFu]))
          << 16) |
-        (static_cast<uint32_t>(static_cast<uint8_t>(lut_data[(idx_word >> 24) & 0xFFu]))
+        (static_cast<uint32_t>(
+             static_cast<uint8_t>(lut_data[(idx_word >> 24) & 0xFFu]))
          << 24);
     write_u8x4_ia(&out_ptr, out_word);
   }
