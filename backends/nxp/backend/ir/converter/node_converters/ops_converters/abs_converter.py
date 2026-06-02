@@ -5,7 +5,6 @@
 
 
 import torch
-
 from executorch.backends.nxp.backend.ir.converter.node_converter import (
     CustomDelegationOptions,
     NeutronTargetSpec,
@@ -36,7 +35,7 @@ class AbsConverter(NodeConverter):
         custom_delegation_options: CustomDelegationOptions,
     ) -> bool:
 
-        if custom_delegation_options.use_new_flow_neutron_c:
+        if neutron_target_spec.use_new_flow_neutron_c:
             # Requirements specified by the new Neutron flow documentation.
 
             supported_types = [torch.int8, torch.uint8]

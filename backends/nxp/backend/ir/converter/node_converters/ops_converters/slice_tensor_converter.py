@@ -32,7 +32,7 @@ class SliceTensorConverter(NodeConverter):
         parameters_mapping: dict[str, Parameter],
         custom_delegation_options: CustomDelegationOptions,
     ) -> bool:
-        if custom_delegation_options.use_new_flow_neutron_c:
+        if neutron_target_spec.use_new_flow_neutron_c:
             supported_types = [torch.int8, torch.uint8]
             if not NodeConverter.uses_quantization_type_for_io(
                 node, supported_types, [0], [0]
@@ -106,7 +106,7 @@ class SliceTensorConverter(NodeConverter):
 
         # In the new Neutron flow, slicing can be done along any dim, so
         # no additional `transpose` ops have to be added.
-        if self.context.custom_delegation_options.use_new_flow_neutron_c:
+        if self.neutron_target_spec.use_new_flow_neutron_c:
             begin_tensor = self.builder.create_tensor_for_data(
                 np.asarray(begin, np.int32), "begin"
             )
