@@ -24,7 +24,7 @@ struct Params {
 }
 @group(0) @binding(3) var<uniform> params: Params;
 
-@compute @workgroup_size(256)
+@compute @workgroup_size(64)
 fn main(@builtin(global_invocation_id) gid: vec3<u32>) {
     let idx = gid.x;
     if (idx >= params.num_elements) {
@@ -34,7 +34,7 @@ fn main(@builtin(global_invocation_id) gid: vec3<u32>) {
 }
 )";
 
-inline constexpr uint32_t kBinaryAddWorkgroupSize = 256;
+inline constexpr uint32_t kBinaryAddWorkgroupSize = 64;
 
 } // namespace webgpu
 } // namespace backends
