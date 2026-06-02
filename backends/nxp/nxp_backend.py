@@ -14,7 +14,6 @@ from typing import final, List, Optional
 
 import numpy as np
 import torch
-
 from executorch.backends.nxp.backend.custom_delegation_options import (
     CustomDelegationOptions,
 )
@@ -86,7 +85,9 @@ class NeutronCompileSpecBuilder:
         :return: self for method chaining
         """
 
-        self.config = NeutronTargetSpec(config)
+        self.config = NeutronTargetSpec(
+            config, use_new_flow_neutron_c=use_new_flow_neutron_c
+        )
 
         assert (
             self.output_format is None
@@ -230,11 +231,11 @@ class NeutronBackend(BackendDetails):
             )
             tflite_model, io_formats = EdgeProgramToIRConverter().convert_program(
                 edge_program,
-                neutron_target_spec=NeutronTargetSpec(target),
-                conversion_config=conversion_config,
-                custom_delegation_options=CustomDelegationOptions(
-                    use_new_flow_neutron_c=use_new_flow_neutron_c
+                neutron_target_spec=NeutronTargetSpec(
+                    target, use_new_flow_neutron_c=use_new_flow_neutron_c
                 ),
+                conversion_config=conversion_config,
+                custom_delegation_options=CustomDelegationOptions(),
             )
 
             neutron_model = NeutronConverterManager(dump_kernel_selection_code).convert(
