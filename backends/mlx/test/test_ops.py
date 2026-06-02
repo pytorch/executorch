@@ -348,6 +348,63 @@ class ClampTest(OpTestCase):
         return (x,)
 
 
+class HardtanhModel(nn.Module):
+    """Model that applies hardtanh with custom bounds."""
+
+    def __init__(self, min_val: float, max_val: float):
+        super().__init__()
+        self.min_val = min_val
+        self.max_val = max_val
+
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        return torch.nn.functional.hardtanh(
+            x, min_val=self.min_val, max_val=self.max_val
+        )
+
+
+@register_test
+class HardtanhTest(OpTestCase):
+    """Test case for hardtanh op with various min/max bounds."""
+
+    name = "hardtanh"
+    rtol = 1e-5
+    atol = 1e-5
+
+    def __init__(
+        self,
+        shape: Tuple[int, ...] = (2, 3, 4),
+        min_val: float = -1.0,
+        max_val: float = 1.0,
+    ):
+        self.shape = shape
+        self.min_val = min_val
+        self.max_val = max_val
+
+        shape_str = "x".join(str(s) for s in shape)
+        self.name = f"hardtanh_min{min_val}_max{max_val}_{shape_str}"
+
+    @classmethod
+    def get_test_configs(cls) -> List["HardtanhTest"]:
+        return [
+            # Default bounds
+            cls(shape=(2, 3, 4), min_val=-1.0, max_val=1.0),
+            # ReLU6
+            cls(shape=(4, 8), min_val=0.0, max_val=6.0),
+            # Symmetric custom bounds
+            cls(shape=(10,), min_val=-2.0, max_val=2.0),
+            # Asymmetric custom bounds, higher rank
+            cls(shape=(2, 8, 16), min_val=-0.25, max_val=0.75),
+        ]
+
+    def create_model(self) -> nn.Module:
+        return HardtanhModel(self.min_val, self.max_val)
+
+    def create_inputs(self) -> Tuple[torch.Tensor, ...]:
+        # Values span well beyond the bounds so clamping is actually exercised
+        x = torch.randn(self.shape) * 4
+        return (x,)
+
+
 class GELUModel(nn.Module):
     """Simple model using GELU activation."""
 

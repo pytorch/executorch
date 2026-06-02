@@ -577,6 +577,11 @@ Result<FreeableBuffer> Program::LoadSegment(
     ET_LOG(Error, "No segments in program: requested index %zu", index);
     return Error::NotFound;
   }
+  ET_CHECK_OR_RETURN_ERROR(
+      internal_program_->segments() != nullptr,
+      InvalidProgram,
+      "No segments in program: requested index %zu",
+      index);
   size_t num_segments = internal_program_->segments()->size();
   if (index >= num_segments) {
     ET_LOG(
@@ -652,6 +657,10 @@ Error Program::load_mutable_subsegment_into(
   size_t offset = segment_offsets->offsets()->Get(offset_index);
 
   // Grab the segment index
+  ET_CHECK_OR_RETURN_ERROR(
+      internal_program_->segments() != nullptr,
+      InvalidProgram,
+      "No segments in program");
   size_t num_segments = internal_program_->segments()->size();
   if (segment_offsets->segment_index() >= num_segments) {
     ET_LOG(

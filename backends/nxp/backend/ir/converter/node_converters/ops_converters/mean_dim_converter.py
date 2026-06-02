@@ -38,7 +38,7 @@ class MeanDimConverter(NodeConverter):
         neutron_target_spec: NeutronTargetSpec,
         parameters_mapping: dict[str, Parameter],
     ) -> bool:
-        if custom_delegation_options.use_new_flow_neutron_c:
+        if neutron_target_spec.use_new_flow_neutron_c:
             dim, keepdim = MeanDimConverter._get_attrs(node)
             input_shape = node.args[0].meta["val"].shape
 
@@ -64,7 +64,7 @@ class MeanDimConverter(NodeConverter):
         parameters_mapping: dict[str, Parameter],
         custom_delegation_options: CustomDelegationOptions,
     ) -> bool:
-        if custom_delegation_options.use_new_flow_neutron_c:
+        if neutron_target_spec.use_new_flow_neutron_c:
             # Requirements specified by the new Neutron flow documentation.
 
             if not NodeConverter.uses_quantization_type_for_io(

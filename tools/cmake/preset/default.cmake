@@ -195,10 +195,6 @@ define_overridable_option(
   EXECUTORCH_BUILD_VGF "Build the Arm VGF backend" BOOL OFF
 )
 define_overridable_option(
-  EXECUTORCH_COREML_BUILD_EXECUTOR_RUNNER "Build CoreML executor runner." BOOL
-  OFF
-)
-define_overridable_option(
   EXECUTORCH_BUILD_WASM "Build the ExecuTorch JavaScript API" BOOL OFF
 )
 define_overridable_option(

@@ -12,7 +12,6 @@ from collections import defaultdict
 
 import executorch.extension.pybindings.portable_lib
 import executorch.kernels.quantized  # noqa F401
-
 import torch
 from executorch.backends.nxp.backend.neutron_target_spec import NeutronTargetSpec
 from executorch.backends.nxp.edge_passes.neutron_edge_pass_manager import (
@@ -253,7 +252,9 @@ if __name__ == "__main__":  # noqa C901
     if args.debug:
         logging.basicConfig(level=logging.DEBUG, format=FORMAT, force=True)
 
-    neutron_target_spec = NeutronTargetSpec(target=args.target)
+    neutron_target_spec = NeutronTargetSpec(
+        target=args.target, use_new_flow_neutron_c=args.use_new_flow_neutron_c
+    )
 
     # 1. pick model from one of the supported lists
     model, example_inputs, calibration_inputs = get_model_and_inputs_from_name(

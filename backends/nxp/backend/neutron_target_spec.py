@@ -1,4 +1,4 @@
-# Copyright 2025 NXP
+# Copyright 2026 NXP
 #
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
@@ -8,12 +8,10 @@
 from enum import Enum
 
 import torch
-
 from executorch.backends.nxp.backend.neutron_converter_manager import (
     NeutronConverterManager,
 )
 from executorch.exir.dialects._ops import ops as exir_ops
-
 from torch.fx import Node
 
 
@@ -98,12 +96,16 @@ class NeutronTargetSpec:
     The functionality for probing the properties of Neutron Target.
     """
 
-    def __init__(self, target: str):
+    def __init__(self, target: str, use_new_flow_neutron_c: bool = False):
 
         converter_manager = NeutronConverterManager()
         converter_manager.verify_target(target)
         neutron_converter = converter_manager.get_converter()
         self.neutron_target = neutron_converter.getNeutronTarget(target)
+
+        # The new neutron converter flow has different constraints for supported operators. These need to be addressed when
+        # deciding is operator is delegated or not in _is_supported_on_target().
+        self.use_new_flow_neutron_c = use_new_flow_neutron_c
 
         if self.is_subsystem():
             raise ValueError(

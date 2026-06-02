@@ -25,6 +25,7 @@ def define_arm_tests():
         "ops/test_log10.py",
         "ops/test_max_pool1d.py",
         "ops/test_mul.py",
+        "ops/test_mxfp_linear.py",
         "ops/test_permute.py",
         "ops/test_rsqrt.py",
         "ops/test_slice.py",
@@ -62,6 +63,7 @@ def define_arm_tests():
         "misc/test_bn_relu_folding_qat.py",
         "misc/test_custom_partition.py",
         "misc/test_debug_hook.py",
+        "misc/test_mxfp_linear_ao.py",
         "misc/test_post_quant_device_switch.py",
         # "misc/test_dim_order.py", (TODO - T238390249)
     ]
@@ -104,6 +106,7 @@ def define_arm_tests():
                 "//executorch/backends/arm/test:arm_tester" if runtime.is_oss else "//executorch/backends/arm/test/tester/fb:arm_tester_fb",
                 "//executorch/backends/arm/test:conftest",
                 "//executorch/backends/arm/test/misc:dw_convs_shared_weights_module",
+                "//executorch/backends/arm:ao_ext",
                 "//executorch/backends/arm:ethosu",
                 "//executorch/backends/arm/tosa:compile_spec",
                 "//executorch/backends/arm/tosa:partitioner",
