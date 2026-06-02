@@ -26,7 +26,7 @@ class AddTensorConverter(NodeConverter):
         parameters_mapping: dict[str, Parameter],
         custom_delegation_options: CustomDelegationOptions,
     ) -> bool:
-        if custom_delegation_options.use_new_flow_neutron_c:
+        if neutron_target_spec.use_new_flow_neutron_c:
             if not NodeConverter.at_least_one_input_shape_matches_the_output_shape(
                 node
             ):
