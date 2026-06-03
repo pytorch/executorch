@@ -121,7 +121,13 @@ WebGPUContext create_webgpu_context() {
   device_cb.callback = on_device_request;
   device_cb.userdata1 = &device_result;
 
+  // Request the adapter's full limits; software adapters default many to 0.
+  WGPULimits supported_limits = {};
   WGPUDeviceDescriptor device_desc = {};
+  if (wgpuAdapterGetLimits(ctx.adapter, &supported_limits) ==
+      WGPUStatus_Success) {
+    device_desc.requiredLimits = &supported_limits;
+  }
   device_desc.uncapturedErrorCallbackInfo.callback = on_device_error;
 
   wgpuAdapterRequestDevice(ctx.adapter, &device_desc, device_cb);
