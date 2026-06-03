@@ -263,9 +263,15 @@ Error TextLLMRunner::generate(
     RUNNER_ET_LOG(config.warming, "Max new tokens %i reached!", max_new_tokens);
   }
 
-  stats_->num_prompt_tokens =
-      prompt.empty() ? static_cast<int64_t>(pos_) : num_prompt_tokens;
-  stats_->num_generated_tokens = num_generated_tokens;
+  // The prefill step produced and emitted one token (cur_token) before the
+  // token generator ran, so the total generated count is that token plus the
+  // generator's. For an empty prompt (continuation/prefix-reuse path) the
+  // prompt length is everything resident before this turn's generation (pos_
+  // already includes the generated tokens, so subtract them).
+  stats_->num_prompt_tokens = prompt.empty()
+      ? static_cast<int64_t>(pos_) - num_generated_tokens
+      : num_prompt_tokens;
+  stats_->num_generated_tokens = num_generated_tokens + 1;
 
   if (config.warming) {
     ET_LOG(Info, "Warmup run finished!");
@@ -354,6 +360,128 @@ void TextLLMRunner::reset() {
   stats_->reset();
   pos_ = 0;
   prefill_next_token_.reset();
+  prev_decode_token_.reset();
+}
+
+::executorch::runtime::Error TextLLMRunner::seek(int64_t pos) {
+  // Sliding-window / ring-buffer models (max_seq_len < max_context_len) recycle
+  // KV space, so pos_ is not an absolute position and the prefix [0, pos) may
+  // have slid out of the window. Rewinding would attend to stale/overwritten KV
+  // and silently corrupt output. Refuse (fail-safe) so the caller falls back to
+  // reset() + full re-prefill — the same conservative choice vLLM
+  // (common_prefix_blocks=0 for SWA layers) and llama.cpp (seq_rm/get_can_shift
+  // fail for SWA) make.
+  if (metadata_.at(kMaxSeqLen) < metadata_.at(kMaxContextLen)) {
+    ET_LOG(
+        Error,
+        "seek() is unsupported for sliding-window models "
+        "(max_seq_len %" PRId64 " < max_context_len %" PRId64 ")",
+        metadata_.at(kMaxSeqLen),
+        metadata_.at(kMaxContextLen));
+    return ::executorch::runtime::Error::NotSupported;
+  }
+  if (pos < 0 || pos > pos_) {
+    ET_LOG(Error, "seek(%" PRId64 ") out of range [0, %" PRId64 "]", pos, pos_);
+    return ::executorch::runtime::Error::InvalidArgument;
+  }
+  pos_ = pos;
+  prefill_next_token_.reset();
+  prev_decode_token_.reset();
+  return ::executorch::runtime::Error::Ok;
+}
+
+::executorch::runtime::Result<uint64_t> TextLLMRunner::prefill_tokens(
+    std::vector<uint64_t> tokens) {
+  if (!is_loaded()) {
+    ET_CHECK_OK_OR_RETURN_ERROR(load());
+  }
+  if (tokens.empty()) {
+    ET_LOG(Error, "prefill_tokens called with empty tokens");
+    return ::executorch::runtime::Error::InvalidArgument;
+  }
+  // Same context-capacity guard as generate(): a caller that seek()s then
+  // prefill_tokens()es a suffix must not push pos_ past the KV cache. This is
+  // the only place the bound is enforced for prefill_tokens() (the public
+  // prefix-cache primitive), since it doesn't go through generate(prompt).
+  const int64_t max_seq_len = metadata_.at(kMaxSeqLen);
+  const int64_t max_context_len = metadata_.at(kMaxContextLen);
+  const int num_tokens = static_cast<int>(tokens.size());
+  if (max_seq_len >= max_context_len) {
+    ET_CHECK_OR_RETURN_ERROR(
+        pos_ + num_tokens < max_context_len,
+        InvalidArgument,
+        "pos_ %" PRId64 " + num_tokens %d >= max_context_len %" PRId64
+        ", prefill_tokens would exceed KV cache capacity",
+        pos_,
+        num_tokens,
+        max_context_len);
+  } else {
+    ET_CHECK_OR_RETURN_ERROR(
+        num_tokens < max_context_len,
+        InvalidArgument,
+        "num_tokens %d >= max_context_len %" PRId64
+        ", prefill_tokens exceeds KV cache capacity",
+        num_tokens,
+        max_context_len);
+  }
+  auto prefill_res = text_prefiller_->prefill(tokens, pos_);
+  ET_CHECK_OK_OR_RETURN_ERROR(prefill_res.error());
+  prefill_next_token_ = prefill_res.get();
+  prev_decode_token_.reset();
+  return prefill_next_token_.value();
+}
+
+::executorch::runtime::Result<DecodeResult> TextLLMRunner::decode_one(
+    float temperature) {
+  if (!is_loaded()) {
+    ET_CHECK_OK_OR_RETURN_ERROR(load());
+  }
+  ET_CHECK_OR_RETURN_ERROR(
+      prefill_next_token_.has_value(),
+      InvalidState,
+      "decode_one requires a pending token; call prefill()/prefill_tokens() first");
+  if (metadata_.at(kMaxSeqLen) >= metadata_.at(kMaxContextLen)) {
+    ET_CHECK_OR_RETURN_ERROR(
+        pos_ < metadata_.at(kMaxContextLen),
+        InvalidArgument,
+        "decode_one would exceed KV cache capacity: pos_ %" PRId64
+        " >= max_context_len %" PRId64,
+        pos_,
+        metadata_.at(kMaxContextLen));
+  }
+
+  // The pending token is the one we emit this step.
+  const uint64_t token = prefill_next_token_.value();
+  const bool is_eos = text_token_generator_->is_eos(token);
+
+  // Decode the text piece with BPE context (previous token), like generate().
+  const uint64_t prev = prev_decode_token_.value_or(token);
+  std::string text_piece;
+  auto decode_res = tokenizer_->decode(prev, token);
+  if (decode_res.ok()) {
+    text_piece = std::move(*decode_res);
+  }
+
+  // Forward `token` at pos_ to predict the next pending token.
+  std::vector<uint64_t> tok_data = {token};
+  std::vector<::executorch::aten::SizesType> shape = {1, 1};
+  auto tok_tensor =
+      from_blob(tok_data.data(), shape, ::executorch::aten::ScalarType::Long);
+  auto logits_res = text_decoder_runner_->step(tok_tensor, pos_);
+  ET_CHECK_OK_OR_RETURN_ERROR(logits_res.error());
+  // Apply the same logit processors generate() does (grammar/tool masks,
+  // penalties, top-k/top-p) so the session decode path can't diverge from it.
+  ET_CHECK_OK_OR_RETURN_ERROR(
+      text_token_generator_->apply_logit_processors(logits_res.get()));
+  const float temp = (temperature < 0.0f)
+      ? (temperature_ == -1.0f ? 0.0f : temperature_)
+      : temperature;
+  prefill_next_token_ = static_cast<uint64_t>(
+      text_decoder_runner_->logits_to_token(logits_res.get(), temp));
+  prev_decode_token_ = token;
+  pos_ += 1;
+
+  return DecodeResult{token, std::move(text_piece), is_eos};
 }
 
 } // namespace executorch::extension::llm

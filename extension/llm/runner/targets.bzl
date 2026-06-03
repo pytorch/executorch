@@ -114,6 +114,7 @@ def define_common_targets():
             exported_headers = [
                 "text_llm_runner.h",
                 "llm_runner_helper.h",
+                "llm_session.h",
                 "constants.h",
             ],
             srcs = [

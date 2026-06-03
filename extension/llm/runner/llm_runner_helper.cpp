@@ -29,7 +29,17 @@
 namespace executorch::extension::llm {
 
 using ::executorch::extension::Module;
+using ::executorch::extension::Program;
 using ::executorch::runtime::Error;
+
+// Assembles the per-Module components (decoder/prefiller/token generator/io
+// manager/stats) into a TextLLMRunner. Shared by the path-based and the
+// shared-Program (TextLLMEngine session) construction paths.
+static std::unique_ptr<TextLLMRunner> assemble_text_llm_runner(
+    std::unique_ptr<Module> module,
+    std::unique_ptr<::tokenizers::Tokenizer> tokenizer,
+    float temperature,
+    const std::string& method_name);
 
 std::unique_ptr<tokenizers::Tokenizer> load_tokenizer(
     const std::string& tokenizer_path,
@@ -251,6 +261,15 @@ std::unique_ptr<TextLLMRunner> create_text_llm_runner(
             max_cached_memory_size_bytes_));
   }
 
+  return assemble_text_llm_runner(
+      std::move(module), std::move(tokenizer), temperature, method_name);
+}
+
+static std::unique_ptr<TextLLMRunner> assemble_text_llm_runner(
+    std::unique_ptr<Module> module,
+    std::unique_ptr<::tokenizers::Tokenizer> tokenizer,
+    float temperature,
+    const std::string& method_name) {
   // Get metadata from Module
   ET_LOG(Info, "Reading metadata from model");
   auto metadata_result = llm::get_llm_metadata(tokenizer.get(), module.get());
@@ -303,6 +322,164 @@ std::unique_ptr<TextLLMRunner> create_text_llm_runner(
       std::move(text_token_generator),
       std::move(stats),
       temperature);
+}
+
+std::unique_ptr<TextLLMRunner> create_text_llm_runner_from_program(
+    std::shared_ptr<Program> program,
+    std::unique_ptr<::tokenizers::Tokenizer> tokenizer,
+    float temperature,
+    const std::string& method_name) {
+  if (!tokenizer || !tokenizer->is_loaded()) {
+    ET_LOG(Error, "Tokenizer is null or not loaded");
+    return nullptr;
+  }
+  if (!program) {
+    ET_LOG(Error, "Program is null");
+    return nullptr;
+  }
+  // A Module over the already-loaded Program: it reuses that Program rather
+  // than re-loading it, and its loaded method allocates its own planned (KV)
+  // memory. Whether packed weights are physically shared vs. re-materialized
+  // per method instance is backend-dependent (serving_capacity() is the
+  // authority); on XNNPACK assume per-instance.
+  constexpr uint32_t kMaxCachedMemoryBytes = 1024 * 1024 * 10; // 10MB
+  auto module = std::make_unique<Module>(
+      std::move(program),
+      nullptr, // memory allocator
+      std::make_unique<executorch::extension::CPUCachingAllocator>(
+          kMaxCachedMemoryBytes));
+  return assemble_text_llm_runner(
+      std::move(module), std::move(tokenizer), temperature, method_name);
+}
+
+namespace {
+// The TextLLM adapter: implements the model-agnostic LLMSession over a
+// TextLLMRunner. TextLLMRunner is an implementation detail here — the engine
+// and server depend only on LLMSession.
+class TextLLMSession : public LLMSession {
+ public:
+  explicit TextLLMSession(std::unique_ptr<TextLLMRunner> runner)
+      : runner_(std::move(runner)) {}
+
+  Error prefill_tokens(std::vector<uint64_t> tokens) override {
+    return runner_->prefill_tokens(std::move(tokens)).error();
+  }
+  ::executorch::runtime::Result<DecodeResult> decode_one(
+      const SamplingConfig& sampling) override {
+    // Only temperature is plumbed today; top_p/top_k/seed need a per-session
+    // sampler (applied in a follow-up).
+    return runner_->decode_one(sampling.temperature);
+  }
+  Error seek(int64_t pos) override {
+    return runner_->seek(pos);
+  }
+  int64_t position() const override {
+    return runner_->position();
+  }
+  Error reset() override {
+    runner_->reset();
+    return Error::Ok;
+  }
+  void stop() override {
+    runner_->stop();
+  }
+
+ private:
+  std::unique_ptr<TextLLMRunner> runner_;
+};
+} // namespace
+
+TextLLMEngine::TextLLMEngine(
+    std::unique_ptr<Module> loader_module,
+    std::shared_ptr<Program> program,
+    std::string tokenizer_path,
+    float temperature,
+    std::string method_name,
+    std::unordered_map<std::string, int64_t> metadata)
+    : loader_module_(std::move(loader_module)),
+      program_(std::move(program)),
+      tokenizer_path_(std::move(tokenizer_path)),
+      temperature_(temperature),
+      method_name_(std::move(method_name)),
+      metadata_(std::move(metadata)) {}
+
+std::unique_ptr<TextLLMEngine> TextLLMEngine::create(
+    const std::string& model_path,
+    const std::string& tokenizer_path,
+    std::optional<const std::string> data_path,
+    float temperature,
+    const std::string& method_name,
+    Module::LoadMode load_mode) {
+  // External .ptd weights are not yet supported for shared sessions: each
+  // session Module built from the shared Program would also need the
+  // data_map_loader threaded into its load_method() to resolve external
+  // weights (see Module::load_method merged_data_map_). Fail loudly rather than
+  // silently produce sessions that error on first generate.
+  if (data_path.has_value()) {
+    ET_LOG(
+        Error,
+        "TextLLMEngine: external data_path (.ptd) is not yet supported for "
+        "shared sessions; use a self-contained .pte for now.");
+    return nullptr;
+  }
+  // Load the program ONCE; sessions reuse it (loaded a single time, per-session
+  // KV). Physical weight sharing across sessions is backend-dependent — see
+  // serving_capacity().
+  auto loader_module = std::make_unique<Module>(model_path, load_mode);
+  if (loader_module->load() != Error::Ok) {
+    ET_LOG(
+        Error,
+        "TextLLMEngine: failed to load program from %s",
+        model_path.c_str());
+    return nullptr;
+  }
+  auto program = loader_module->program();
+  if (!program) {
+    ET_LOG(Error, "TextLLMEngine: program is null after load");
+    return nullptr;
+  }
+  // Read model-level metadata once (shared by all sessions).
+  auto meta_tokenizer = load_tokenizer(tokenizer_path);
+  if (!meta_tokenizer) {
+    ET_LOG(
+        Error,
+        "TextLLMEngine: failed to load tokenizer from %s",
+        tokenizer_path.c_str());
+    return nullptr;
+  }
+  auto metadata_result =
+      get_llm_metadata(meta_tokenizer.get(), loader_module.get());
+  if (metadata_result.error() != Error::Ok) {
+    ET_LOG(Error, "TextLLMEngine: failed to read metadata");
+    return nullptr;
+  }
+  return std::unique_ptr<TextLLMEngine>(new TextLLMEngine(
+      std::move(loader_module),
+      std::move(program),
+      tokenizer_path,
+      temperature,
+      method_name,
+      metadata_result.get()));
+}
+
+::executorch::runtime::Result<std::unique_ptr<LLMSession>>
+TextLLMEngine::create_session() {
+  auto tokenizer = load_tokenizer(tokenizer_path_);
+  if (!tokenizer) {
+    ET_LOG(
+        Error,
+        "TextLLMEngine: failed to load tokenizer from %s",
+        tokenizer_path_.c_str());
+    return Error::InvalidState;
+  }
+  auto runner = create_text_llm_runner_from_program(
+      program_, std::move(tokenizer), temperature_, method_name_);
+  if (!runner) {
+    ET_LOG(Error, "TextLLMEngine: failed to build session runner");
+    return Error::InvalidState;
+  }
+  return std::unique_ptr<LLMSession>(
+      std::make_unique<TextLLMSession>(std::move(runner)));
 }
 
 std::unique_ptr<MultimodalRunner> create_multimodal_runner(

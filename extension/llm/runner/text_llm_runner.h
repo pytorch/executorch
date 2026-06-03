@@ -28,6 +28,8 @@
 // Helper functions are now in llm_runner_helper.h
 // These are provided for backward compatibility
 #include <executorch/extension/llm/runner/llm_runner_helper.h>
+// DecodeResult (returned by decode_one) lives with the Engine/Session API.
+#include <executorch/extension/llm/runner/llm_session.h>
 
 namespace executorch::extension::llm {
 
@@ -153,6 +155,76 @@ class ET_EXPERIMENTAL TextLLMRunner : public IRunner {
   void reset() override;
 
   /**
+   * @brief Truncate/rewind the KV cache to `pos` tokens.
+   *
+   * Sets the cache cursor so that subsequent attention reads positions
+   * [0, pos) and the next prefill() overwrites starting at `pos`. This enables
+   * prefix reuse across turns: rewind to the length of the prefix shared with
+   * the previous request, then prefill only the new suffix instead of
+   * re-prefilling the whole prompt. reset() is the special case pos == 0.
+   *
+   * Because the KV buffers are addressed by the position cursor (reset() does
+   * not clear them), no buffer manipulation is needed — stale entries beyond
+   * `pos` are ignored by attention and overwritten by the next prefill.
+   *
+   * @note Valid only for models exported with max_seq_len == max_context_len,
+   * where the cursor is an absolute position. Sliding-window/chunked models use
+   * a ring buffer in which positions are not absolute; do not seek() those.
+   *
+   * @param pos Target cache length in tokens; must be in [0, current position].
+   * @return Error::Ok on success, Error::InvalidArgument if `pos` is out of
+   * range.
+   */
+  ::executorch::runtime::Error seek(int64_t pos);
+
+  /**
+   * @brief Prefill pre-tokenized input at the current KV cache position.
+   *
+   * Like prefill(prompt), but takes token ids directly instead of a string, so
+   * the caller controls the exact tokens written — required for prefix reuse,
+   * where the server computes the shared-prefix length, seek()s to it, and
+   * prefills only the new suffix tokens (no detokenize/re-tokenize round trip
+   * that could write mismatched KV).
+   *
+   * Tokens are written starting at the current position (call seek() first to
+   * position the cursor). The predicted next token is stored for a following
+   * generate("") call.
+   *
+   * @param tokens The token ids to prefill. Must be non-empty.
+   * @return The next token predicted after prefill, or an error.
+   */
+  ::executorch::runtime::Result<uint64_t> prefill_tokens(
+      std::vector<uint64_t> tokens);
+
+  /**
+   * @brief Current KV cache position (number of tokens with resident KV).
+   *
+   * This is the upper bound for a valid seek(): tokens at positions [0, pos)
+   * have been through a forward pass and are reusable. Note the last *sampled*
+   * token of a generation is not forwarded, so it is not resident — callers
+   * tracking emitted tokens must cap any reuse length at this value.
+   */
+  int64_t position() const {
+    return pos_;
+  }
+
+  /**
+   * @brief Decodes a single token: emits the current pending token (predicted
+   * by the preceding prefill/prefill_tokens or decode_one), then forwards it to
+   * predict the next pending token. Calling this in a loop reproduces the token
+   * sequence of generate(), but returns the exact sampled token id (not just
+   * decoded text) — the canonical decode unit for prefix-cache id tracking and
+   * future batched/interleaved scheduling.
+   *
+   * Requires a pending token (a prior prefill/prefill_tokens). `temperature`
+   * follows GenerationConfig semantics (-1 => use the model default / greedy).
+   *
+   * @return DecodeResult{token_id, text_piece, is_eos}, or an error.
+   */
+  ::executorch::runtime::Result<DecodeResult> decode_one(
+      float temperature = -1.0f);
+
+  /**
    * @brief Stops the ongoing text generation process
    *
    * This method signals the generator to stop producing new tokens and
@@ -184,6 +256,9 @@ class ET_EXPERIMENTAL TextLLMRunner : public IRunner {
 
   // Token predicted by the last prefill() call, consumed by generate("").
   std::optional<uint64_t> prefill_next_token_;
+
+  // Previously emitted token, for BPE-context text decoding in decode_one().
+  std::optional<uint64_t> prev_decode_token_;
 
   // The position in KV cache of the input, starting from 0.
   int64_t pos_ = 0;
