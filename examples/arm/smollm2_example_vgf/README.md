@@ -34,7 +34,7 @@ If you want the broader Arm backend setup flow, see
 ## 1. Tokenizer (one-time)
 ```bash
 mkdir -p data/tokenizers/smollm2
-hf download HuggingFaceTB/SmolLM2-135M-Instruct tokenizer.json \
+huggingface-cli download HuggingFaceTB/SmolLM2-135M-Instruct tokenizer.json \
   --local-dir data/tokenizers/smollm2
 ```
 The download lives at `data/tokenizers/smollm2/tokenizer.json`. Use this path in the export and sampling commands below.

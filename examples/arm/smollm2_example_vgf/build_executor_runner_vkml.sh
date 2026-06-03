@@ -24,8 +24,6 @@ output_folder=$(realpath "${output_folder}")
 cmake \
     -S "${et_root_dir}" \
     -B "${output_folder}" \
-    -Wall \
-    -Werror \
     -DCMAKE_BUILD_TYPE=RelWithDebInfo \
     -DEXECUTORCH_BUILD_EXTENSION_DATA_LOADER=ON \
     -DEXECUTORCH_BUILD_EXTENSION_MODULE=ON \

@@ -151,7 +151,6 @@ Error load_input_files(
     }
 
     // Reserve memory for actual file contents.
-    // Reserve memory for actual file contents.
     inputs_storage.emplace_back(static_cast<size_t>(file_size), '\0');
 
     if (!input_file_handle.read(inputs_storage.back().data(), file_size)) {
@@ -161,6 +160,7 @@ Error load_input_files(
 
     input_buffers.emplace_back(
         inputs_storage.back().data(), static_cast<size_t>(file_size));
+  }
 
   return Error::Ok;
 }
@@ -506,6 +506,9 @@ int main(int argc, char** argv) {
   }
 
   if (FLAGS_server_mode) {
+    ET_CHECK_MSG(
+        !FLAGS_output_file.empty(),
+        "--output_file must be set in --server_mode so outputs can be retrieved.");
     ET_LOG(Info, "Running in server mode; waiting for stdin triggers.");
     std::vector<EValue> outputs(method->outputs_size());
     ET_LOG(Info, "%zu outputs: ", outputs.size());
@@ -568,6 +571,10 @@ int main(int argc, char** argv) {
                 out_filename, 255, "%s-%d.bin", FLAGS_output_file.c_str(), i);
             ET_LOG(Info, "Writing output to file: %s", out_filename);
             FILE* out_file = fopen(out_filename, "wb");
+            ET_CHECK_MSG(
+                out_file != nullptr,
+                "Failed to open output file: %s",
+                out_filename);
             fwrite(tensor.const_data_ptr<char>(), 1, tensor.nbytes(), out_file);
             fclose(out_file);
           }
@@ -662,6 +669,10 @@ int main(int argc, char** argv) {
         snprintf(out_filename, 255, "%s-%d.bin", FLAGS_output_file.c_str(), i);
         ET_LOG(Info, "Writing output to file: %s", out_filename);
         FILE* out_file = fopen(out_filename, "wb");
+        ET_CHECK_MSG(
+            out_file != nullptr,
+            "Failed to open output file: %s",
+            out_filename);
         fwrite(tensor.const_data_ptr<char>(), 1, tensor.nbytes(), out_file);
         fclose(out_file);
       }

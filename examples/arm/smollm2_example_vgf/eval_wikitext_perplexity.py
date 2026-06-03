@@ -9,21 +9,27 @@ from __future__ import annotations
 
 import argparse
 import math
+import sys
 from pathlib import Path
 from typing import Iterable, List, Tuple
 
 import numpy as np
 
+sys.path.insert(0, str(Path(__file__).resolve().parent))
 from generate_sampled import (  # type: ignore[import-not-found]
     prepare_input,
     RunnerSession,
 )
-from pytorch_tokenizers import get_tokenizer  # type: ignore[import-untyped]
+from pytorch_tokenizers import (  # type: ignore[import-not-found, import-untyped]
+    get_tokenizer,
+)
 
 
 def _load_wikitext_lines(split: str) -> Iterable[str]:
     try:
-        from datasets import load_dataset  # type: ignore[import-untyped]
+        from datasets import (  # type: ignore[import-not-found, import-untyped]
+            load_dataset,
+        )
     except ImportError as exc:
         raise ImportError(
             "The 'datasets' package is required. Install it in the active environment "
@@ -103,13 +109,6 @@ def read_prompts(path: Path, limit: int) -> List[str]:
     return prompts[:limit]
 
 
-def token_nll(logits: np.ndarray, target_id: int) -> float:
-    max_logit = float(np.max(logits))
-    shifted = logits - max_logit
-    log_denom = max_logit + math.log(float(np.exp(shifted).sum()))
-    return log_denom - float(logits[target_id])
-
-
 def reshape_full_logits(*, logits: np.ndarray, window: int) -> np.ndarray:
     if window <= 0:
         raise ValueError("window must be > 0")
@@ -153,13 +152,18 @@ def eval_prompt_nll(
     logits = runner.run(window_tokens)
     logits_2d = reshape_full_logits(logits=logits, window=window)
 
-    total_nll = 0.0
-    for pos, target_id in enumerate(target_ids[-valid_len:]):
-        if target_id >= logits_2d.shape[1]:
-            raise RuntimeError(
-                f"Target token id {target_id} out of inferred vocab size {logits_2d.shape[1]}."
-            )
-        total_nll += token_nll(logits_2d[pos], target_id)
+    # prepare_input keeps the scored tokens at positions [0, valid_len).
+    rows = logits_2d[:valid_len]
+    targets = np.asarray(target_ids[-valid_len:], dtype=np.int64)
+    if targets.size and (targets.min() < 0 or targets.max() >= rows.shape[1]):
+        raise RuntimeError(
+            f"Target token id out of inferred vocab size {rows.shape[1]}."
+        )
+
+    max_logits = rows.max(axis=1)
+    shifted = rows - max_logits[:, None]
+    log_denom = max_logits + np.log(np.exp(shifted).sum(axis=1))
+    total_nll = float((log_denom - rows[np.arange(valid_len), targets]).sum())
 
     return total_nll, valid_len
 

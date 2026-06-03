@@ -10,10 +10,12 @@ import secrets
 import subprocess  # nosec B404
 import tempfile
 from pathlib import Path
-from typing import List, Optional
+from typing import List, Optional, Tuple
 
 import numpy as np
-from pytorch_tokenizers import get_tokenizer  # type: ignore[import-untyped]
+from pytorch_tokenizers import (  # type: ignore[import-not-found, import-untyped]
+    get_tokenizer,
+)
 
 
 class RunnerSession:
@@ -130,6 +132,8 @@ class RunnerSession:
 
         assert self._input_path is not None
         tokens.tofile(self._input_path)
+        output_path = self._output_path()
+        output_path.unlink(missing_ok=True)
 
         if not self._persistent:
             cmd = self._base_cmd()
@@ -137,7 +141,6 @@ class RunnerSession:
                 cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT
             )
             out = proc.stdout.decode(errors="replace")
-            output_path = self._output_path()
 
             # Prefer checking for the output file instead of relying on stdout.
             if output_path.exists() and output_path.stat().st_size > 0:
@@ -173,6 +176,8 @@ class RunnerSession:
                 self._recent_stdout = self._recent_stdout[-400:]
             if "SERVER MODE DONE" in line:
                 break
+        if not output_path.exists() or output_path.stat().st_size == 0:
+            raise RuntimeError("executor_runner did not write logits output")
         return self._read_logits()
 
 
@@ -383,7 +388,7 @@ def select_last_token_logits(
     window: int,
     use_full_logits: bool,
     valid_len: int,
-) -> tuple[np.ndarray, Optional[int]]:
+) -> Tuple[np.ndarray, Optional[int]]:
     """Select the logits row used for sampling and infer vocab size.
 
     Args:
