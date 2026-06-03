@@ -295,7 +295,7 @@ class Box {
 };
 
 template <typename ValueType>
-void fill_tensor_with_default_value(Tensor& tensor) {
+[[maybe_unused]] void fill_tensor_with_default_value(Tensor& tensor) {
   ValueType fill_value{};
   if constexpr (std::is_same_v<ValueType, bool>) {
     fill_value = true;
@@ -1223,7 +1223,7 @@ size_t et_runner_outputs_size(void) {
  * On ESP-IDF, this is called from app_main() (see below).
  * The function can also be compiled for host testing without ESP-IDF.
  */
-void executor_runner_main(void) {
+[[maybe_unused]] void executor_runner_main(void) {
   if (!et_runner_init()) {
     return;
   }
