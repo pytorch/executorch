@@ -11,7 +11,12 @@ import torch
 from executorch.backends.cuda.cuda_backend import CudaBackend
 from executorch.backends.cuda.cuda_partitioner import CudaPartitioner
 from executorch.examples.models.toy_model import SdpaModule
-from executorch.exir import EdgeCompileConfig, schema, to_edge_transform_and_lower
+from executorch.exir import (
+    EdgeCompileConfig,
+    ExecutorchBackendConfig,
+    schema,
+    to_edge_transform_and_lower,
+)
 from executorch.exir.backend.compile_spec_schema import CompileSpec
 from torch.export import export
 
@@ -355,7 +360,9 @@ class TestCudaExport(unittest.TestCase):
         self.assertIsNotNone(edge_program_manager, "CUDA export failed")
 
         # Convert to ExecuTorch and access the serialized program
-        et_prog = edge_program_manager.to_executorch()
+        et_prog = edge_program_manager.to_executorch(
+            config=ExecutorchBackendConfig(enable_non_cpu_memory_planning=True),
+        )
         program = et_prog._emitter_output.program
 
         # Get the execution plan and verify delegate exists
