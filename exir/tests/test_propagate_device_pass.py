@@ -121,6 +121,7 @@ def _lower_model_to_executorch(
     """Lower model all the way through to_executorch for E2E tests."""
     if et_config is None:
         et_config = ExecutorchBackendConfig(emit_stacktrace=False)
+
     ep = export(model, inputs)
     ep_copied = deepcopy(ep)
 
@@ -314,7 +315,10 @@ class TestPropagateDevicePass(unittest.TestCase):
         inputs = (torch.randn(2, 2), torch.randn(2, 2))
 
         for pipeline, gm in _lower_model_to_executorch(
-            model, inputs, DeviceAwarePartitioner("cuda:0")
+            model,
+            inputs,
+            DeviceAwarePartitioner("cuda:0"),
+            ExecutorchBackendConfig(enable_non_cpu_memory_planning=True),
         ):
             with self.subTest(pipeline=pipeline):
                 nodes = _collect_device_copy_nodes(gm)
@@ -371,7 +375,10 @@ class TestPropagateDevicePass(unittest.TestCase):
         inputs = (torch.randn(2, 2), torch.randn(2, 2))
 
         for pipeline, gm in _lower_model_to_executorch(
-            model, inputs, DeviceAwarePartitioner("cuda:0")
+            model,
+            inputs,
+            DeviceAwarePartitioner("cuda:0"),
+            ExecutorchBackendConfig(enable_non_cpu_memory_planning=True),
         ):
             with self.subTest(pipeline=pipeline):
                 nodes = _collect_device_copy_nodes(gm)
@@ -444,6 +451,24 @@ class TestPropagateDevicePass(unittest.TestCase):
                     0,
                     f"[{pipeline}] Unexpected D2H copy nodes when no target_device is set",
                 )
+
+    def test_copy_nodes_require_non_cpu_memory_planning(self):
+        """Default lowering keeps legacy device tags without runtime copy ops."""
+
+        class Model(torch.nn.Module):
+            def forward(self, a, b):
+                return torch.add(a, b)
+
+        model = Model()
+        inputs = (torch.randn(2, 2), torch.randn(2, 2))
+
+        for pipeline, gm in _lower_model_to_executorch(
+            model, inputs, DeviceAwarePartitioner("cuda:0")
+        ):
+            with self.subTest(pipeline=pipeline):
+                device_copy_nodes = _collect_device_copy_nodes(gm)
+                self.assertEqual(len(device_copy_nodes.h2d_nodes), 0)
+                self.assertEqual(len(device_copy_nodes.d2h_nodes), 0)
 
         # ---- Integration tests: device consistency after to_executorch ----
 
@@ -523,7 +548,10 @@ class TestPropagateDevicePass(unittest.TestCase):
         inputs = (torch.randn(2, 2), torch.randn(2, 2))
 
         for pipeline, gm in _lower_model_to_executorch(
-            model, inputs, DeviceAwarePartitioner("cuda:0")
+            model,
+            inputs,
+            DeviceAwarePartitioner("cuda:0"),
+            ExecutorchBackendConfig(enable_non_cpu_memory_planning=True),
         ):
             with self.subTest(pipeline=pipeline):
                 for node in gm.graph.nodes:

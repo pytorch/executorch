@@ -767,6 +767,7 @@ def edge_to_executorch_passes(
         PropagateDevicePass(
             skip_h2d_for_method_inputs=config.skip_h2d_for_method_inputs,
             skip_d2h_for_method_outputs=config.skip_d2h_for_method_outputs,
+            enable_non_cpu_memory_planning=config.enable_non_cpu_memory_planning,
         ),
         EdgeToBackendOpsPass(),
         RemoveGraphAssertsPass(),
