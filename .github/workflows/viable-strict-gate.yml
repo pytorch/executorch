@@ -1,0 +1,52 @@
+name: viable-strict-gate
+
+# Sampled-full-run gating for viable/strict advancement.
+#
+# Path filtering on push to main saves runner cost but risks advancing
+# viable/strict on commits where many jobs were skipped — a partial
+# green from "no job ran" is indistinguishable from "everything passed"
+# at the workflow-conclusion level.
+#
+# This workflow runs on every push to main / release branches and
+# *fails* when ``_ci-run-decision.yml`` says this isn't a full-coverage
+# commit (i.e. the SHA isn't sampled and there's no ciflow/* tag).
+# Failure => the "viable-strict-gate" workflow conclusion is failure
+# => update-viablestrict refuses to advance viable/strict.
+#
+# To force a full run on a specific commit (e.g. before tagging a
+# release), push a ``ciflow/trunk/<sha>`` tag — on tag pushes
+# ``_ci-run-decision.yml`` always returns ``is-full-run = true``.
+
+on:
+  push:
+    branches:
+      - main
+      - release/*
+    tags:
+      - ciflow/trunk/*
+
+permissions:
+  contents: read
+
+jobs:
+  run-decision:
+    uses: ./.github/workflows/_ci-run-decision.yml
+
+  full-run-required:
+    needs: run-decision
+    name: Full CI required for viable/strict
+    runs-on: ubuntu-22.04
+    steps:
+      - name: Check whether this commit is a full-coverage run
+        env:
+          IS_FULL_RUN: ${{ needs.run-decision.outputs.is-full-run }}
+        run: |
+          set -eu
+          if [ "$IS_FULL_RUN" = "true" ]; then
+            echo "Full-coverage commit; viable/strict eligible."
+            exit 0
+          fi
+          echo "::error::Non-full-run commit (path-filtered CI). viable/strict cannot advance from this commit."
+          echo "Full CI runs on every 4th commit on main / release/* (depth %% 4 == 0)."
+          echo "To force a full run on this commit, push a 'ciflow/trunk/${{ github.sha }}' tag."
+          exit 1

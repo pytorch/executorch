@@ -93,6 +93,24 @@ method with dynamic sequence length and host-side sampling.
 
 Writes `model.pte` (and optionally `model.ptd`) into `--output-dir`.
 
+#### TurboQuant KV cache (long context, MLX only)
+
+For long-context inference, add `--turboquant` to swap the full-attention
+layers' KV cache for a TurboQuant TQ4 cache (4-bit codebook + nibble pack).
+This gives ~3.8× cache memory savings on the full-attention layers and lets
+you fit context lengths that wouldn't fit in bf16. Sliding-window layers are unaffected.
+
+```bash
+python examples/models/gemma4_31b/export.py \
+    --prequantized ./gemma4_31b_int4 \
+    --output-dir ./gemma4_31b_exports_mlx_tq \
+    --max-seq-len 65536 \
+    --backend mlx \
+    --turboquant
+```
+
+Use TurboQuant when you need context beyond what bf16 fits; otherwise leave it off.
+
 ## Eager inference
 
 The prompt is automatically wrapped with the Gemma 4 IT chat template.
