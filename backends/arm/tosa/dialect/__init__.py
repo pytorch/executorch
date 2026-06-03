@@ -16,6 +16,7 @@ from executorch.backends.arm.tosa.dialect.ops import (  # noqa F401
     max_pool2d,
     max_pool2d_adaptive,
     pad,
+    reduction_ops,
     rescale,
     resize,
     scatter,
