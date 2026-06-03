@@ -6,13 +6,14 @@
 
 # pyre-unsafe
 from dataclasses import dataclass, field
-from typing import Callable, Dict, List, Optional, Union
+from typing import Any, Callable, Dict, FrozenSet, List, Optional, Union
 
 import torch
 
 from executorch.exir.dynamic_shape import DynamicMemoryPlanningMode
 from executorch.exir.pass_manager import PassType
 from executorch.exir.passes import MemoryPlanningPass, ToOutVarPass
+from executorch.exir.passes.propagate_device_config import PropagateDeviceConfig
 from executorch.exir.passes.sym_shape_eval_pass import ConstraintBasedSymShapeEvalPass
 from executorch.exir.tracer import ExirDynamoConfig
 from torch.fx._compatibility import compatibility
@@ -60,6 +61,13 @@ class ExecutorchBackendConfig:
     # A single memory planning pass can be defined for all the programs in the
     # EdgeProgramManager or can be defined per program.
     memory_planning_pass: Union[PassType, Dict[str, PassType]] = MemoryPlanningPass()
+
+    # A single propagate device config can be defined for all the programs in the
+    # EdgeProgramManager or can be defined per program.
+    propagate_device_config: Union[
+        PropagateDeviceConfig, Dict[str, PropagateDeviceConfig]
+    ] = field(default_factory=PropagateDeviceConfig)
+
     to_out_var_pass: PassType = ToOutVarPass(ignore_to_out_var_failure=False)
     dynamic_memory_planning_mode: DynamicMemoryPlanningMode = (
         DynamicMemoryPlanningMode.UPPER_BOUND
@@ -124,14 +132,8 @@ class ExecutorchBackendConfig:
     # where all tensors are planned into CPU memory regardless of device.
     enable_non_cpu_memory_planning: bool = False
 
-    # When True, method-level input tensors that feed directly into a device
-    # delegate are NOT wrapped with _h2d_copy. The user must provide tensors
-    # already on the target device. Useful for pipelines where inputs are
-    # pre-staged on GPU.
-    skip_h2d_for_method_inputs: bool = False
-
-    # When True, device delegate outputs that are directly method outputs
-    # are NOT wrapped with _d2h_copy. The method outputs stay on device.
-    # Useful for cross-method GPU pipelines where the next method consumes
-    # GPU tensors directly.
-    skip_d2h_for_method_outputs: bool = False
+    # Add ops to the set of re-inplace ops to be used by the reinplace pass.
+    # Re-inplace pass checks the eligibility of an op to be re-inplaced and
+    # memory planning pass allcoates the output buffer of the op to be the same
+    # as the input buffer.
+    reinplace_extra_ops: Optional[FrozenSet[Any]] = None

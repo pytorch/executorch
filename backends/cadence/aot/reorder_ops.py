@@ -895,6 +895,77 @@ class PropagateSlice(RemoveOrReplacePassInterface):
         return should_swap(parent, node) and do_swap(parent, node)
 
 
+_QUANT_OVERLOAD_PACKETS = {
+    exir_ops.edge.quantized_decomposed.quantize_per_tensor,
+    exir_ops.edge.cadence.quantize_per_tensor,
+}
+
+_DEQUANT_OVERLOAD_PACKETS = {
+    exir_ops.edge.quantized_decomposed.dequantize_per_tensor,
+    exir_ops.edge.cadence.dequantize_per_tensor,
+}
+
+
+@register_cadence_pass(CadencePassAttribute(opt_level=1))
+class SplitDequantizedCatPass(RemoveOrReplacePassInterface):
+    """Split a cat node so that quantize consumers get their own copy.
+
+    Fires when a cat has all floating-point inputs, at least one dequantize
+    input, and at least one quantize consumer.  Quant consumers are grouped
+    by matching qparams; each group receives a dedicated duplicate of the
+    cat node.  Non-quant consumers stay on the original cat, whose
+    semantics are unchanged.
+
+    A later pass (e.g. AdvanceQuantizeOpAboveDefChainPass extended for cat)
+    can then hoist each quant above its single-consumer cat copy without
+    affecting the non-quant paths.
+    """
+
+    @property
+    def targets(self) -> list[EdgeOpOverload]:
+        return [exir_ops.edge.aten.cat.default]
+
+    def maybe_remove_or_replace(self, node: torch.fx.Node) -> bool:
+        cat_inputs = node.args[0]
+        if not isinstance(cat_inputs, (list, tuple)):
+            return False
+
+        has_dequant_input = False
+        for inp in cat_inputs:
+            assert isinstance(inp, torch.fx.Node)
+            val = inp.meta["val"]
+            if val is None or not val.is_floating_point():
+                return False
+            if get_overload_packet(inp.target) in _DEQUANT_OVERLOAD_PACKETS:
+                has_dequant_input = True
+
+        if not has_dequant_input:
+            return False
+
+        quant_groups: DefaultDict[Tuple, List[torch.fx.Node]] = defaultdict(list)
+        for user in list(node.users.keys()):
+            if get_overload_packet(user.target) in _QUANT_OVERLOAD_PACKETS:
+                quant_groups[user.args[1:]].append(user)
+
+        if not quant_groups:
+            return False
+
+        graph = node.graph
+        dim = get_arg(node, "dim", int)
+        for quant_consumers in quant_groups.values():
+            with graph.inserting_after(node):
+                dup_cat = graph.call_function(
+                    exir_ops.edge.aten.cat.default,
+                    args=(list(cat_inputs), dim),
+                )
+                dup_cat.meta = node.meta.copy()
+
+            for q_node in quant_consumers:
+                q_node.replace_input_with(node, dup_cat)
+
+        return True
+
+
 # The following class consolidates functions to reoder ops (i.e., either hoist
 # or sink some ops in the graph).
 class CadenceReorderOpsInGraph:

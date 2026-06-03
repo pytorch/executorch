@@ -284,3 +284,72 @@ TEST_F(XNNWeightsCacheTest, ReusePackedWeights) {
   packed_data_names = weight_cache.get_packed_data_names();
   ASSERT_EQ(packed_data_names.size(), 0);
 }
+
+#ifndef _WIN32
+// Verify pack-and-run works when packed weight allocations go to a
+// MAP_SHARED file instead of heap. The cache path is unique per test so
+// flock won't collide.
+TEST_F(XNNWeightsCacheTest, PackedWeightsToMmapFile) {
+  std::string cache_path = std::string("/tmp/xnn_weights_cache_test_") +
+      std::to_string(::getpid()) + ".packed_cache";
+  // Ensure cleanup if a previous run left a file behind.
+  ::unlink(cache_path.c_str());
+
+  XNNWeightsCache weight_cache;
+  weight_cache.set_packed_cache_path(cache_path);
+
+  std::vector<size_t> batches{1, 2, 3};
+  size_t num_batches = 1;
+  for (size_t batch_dim : batches) {
+    num_batches *= batch_dim;
+  }
+  size_t input_channels = 3;
+  size_t output_channels = 4;
+  size_t padding = 32;
+  std::vector<float> input_tensor(num_batches * input_channels + padding, 1.0f);
+  std::vector<float> output_tensor(num_batches * output_channels, 0.0f);
+
+  weight_cache.initialize_for_runtime(memory_allocator_.get(), data_map_.get());
+  BuildAndRunGraphWithWeightsCache(
+      weight_cache,
+      batches,
+      input_channels,
+      output_channels,
+      input_tensor.data(),
+      output_tensor.data());
+
+  // The cache file should have been created and contain packed weight bytes.
+  struct stat st {};
+  ASSERT_EQ(::stat(cache_path.c_str(), &st), 0);
+  ASSERT_GT(st.st_size, 0);
+
+  // delete_packed_data should release the mmap region without crashing.
+  weight_cache.delete_packed_data(weight_cache.get_packed_data_names());
+  ASSERT_EQ(weight_cache.get_packed_data_names().size(), 0);
+
+  ::unlink(cache_path.c_str());
+}
+
+// A second XNNWeightsCache pointing at the same cache file while the first
+// one still holds it must not corrupt the first instance's mmaps. The
+// second one falls back to heap and runs to completion.
+TEST_F(XNNWeightsCacheTest, PackedWeightsMmapPathLockCollision) {
+  std::string cache_path = std::string("/tmp/xnn_weights_cache_collision_") +
+      std::to_string(::getpid()) + ".packed_cache";
+  ::unlink(cache_path.c_str());
+
+  XNNWeightsCache cache_a;
+  cache_a.set_packed_cache_path(cache_path);
+  cache_a.initialize_for_runtime(memory_allocator_.get(), data_map_.get());
+
+  // Second cache holding the same path before cache_a is destroyed.
+  XNNWeightsCache cache_b;
+  cache_b.set_packed_cache_path(cache_path);
+  // Must not throw / abort — should log and fall back to heap.
+  Error err =
+      cache_b.initialize_for_runtime(memory_allocator_.get(), data_map_.get());
+  ASSERT_EQ(err, Error::Ok);
+
+  ::unlink(cache_path.c_str());
+}
+#endif

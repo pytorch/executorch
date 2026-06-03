@@ -129,13 +129,13 @@ class RewriteConvPass(ArmPass):
 
     def _is_conv3d(self, rank, groups) -> bool:
         if rank == 5:
-            # A Conv3D is considered depthwise if Group == InChannels and
-            # Group * N == OutChannels, where N is a possitive integer.
-            # Currently we do not support depthwise or grouped conv3d.
-            # @TODO Add grouped/depthwise conv3d support or reject in partitioner.
+            # Both grouped and depthwise Conv3D are decomposed into groups==1
+            # convolutions by DecomposeGroupedConvPass before reaching here.
+            # This guard is defense-in-depth for paths that bypass that pass.
             if groups != 1:
                 raise RuntimeError(
-                    "CONV3D with groups != 1 is not supported in the Arm backend."
+                    "CONV3D with groups != 1 reached unexpectedly; "
+                    "DecomposeGroupedConvPass should have decomposed it first."
                 )
             return True
         return False
