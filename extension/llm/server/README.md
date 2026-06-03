@@ -27,3 +27,56 @@ prefix cache (`--enable-prefix-cache`). Unsupported params (`top_p`, `seed`,
 `n>1`, `reasoning_effort`) are rejected with a structured 400 rather than
 silently ignored. See `python/README.md` to run it and `spec/README.md` for the
 exact contract.
+
+## Use from pi (or any OpenAI-compatible harness)
+
+Point pi at the server to use ExecuTorch as a local backend for tool-use
+workflows. Launch the server:
+
+```bash
+python -m executorch.extension.llm.server.python.server \
+  --model-path <model.pte> \
+  --tokenizer-path <tokenizer.model-or-json> \
+  --hf-tokenizer <hf-model-or-local-dir> \
+  --model-id <model-id> \
+  --host 127.0.0.1 \
+  --port 8000
+```
+
+Useful optional flags (full reference in `python/README.md`):
+
+- `--no-think` — default `enable_thinking=false` for templates that support it
+  (e.g. Qwen3-style).
+- `--enable-prefix-cache` — turn-to-turn KV reuse; only with `--hf-tokenizer`
+  that matches the exported model/tokenizer.
+- `--max-context N` — reject over-long prompts cleanly; use the export-time
+  context length.
+- `--allow-chatml-fallback` — approximate ChatML when the model has no HF
+  `chat_template`; experimentation only, not recommended for reliable tool use.
+
+Client settings (pi, or any OpenAI-compatible provider — keep generic if your
+client's schema differs):
+
+- `base_url: http://127.0.0.1:8000/v1`
+- `model: <model-id>`
+- `api_key:` any dummy value if the client requires one
+
+Supported contract for pi:
+
+- Endpoint `POST /v1/chat/completions`; streaming supported.
+- Tool calls: the model's Hermes/Qwen `<tool_call>...</tool_call>` output is
+  parsed and returned as OpenAI `tool_calls`.
+- `tool_choice`: only `"auto"`, `"none"`, or unset.
+- Rejected with a structured 400 (`unsupported_parameter`), not silently
+  ignored: `tool_choice="required"` or specific-function forcing,
+  `response_format` JSON/constrained output, `logprobs`, `top_p` other than
+  `1.0`, and `seed`.
+
+Reliability guidance:
+
+- Use the model's real HF `chat_template` (`--hf-tokenizer`) for tool use, kept
+  aligned with the exported tokenizer/model.
+- If tool calls come back as plain text, confirm the model is emitting the
+  Hermes/Qwen tool-call markers and that `tools` were included in the request.
+- If a request fails with `unsupported_parameter`, remove or disable that
+  OpenAI knob in your pi/client config.
