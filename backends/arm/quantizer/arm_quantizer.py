@@ -1220,6 +1220,10 @@ The following nodes are not marked for quantization and will not be decomposed i
             quantization_config, node_finder, self.pattern_matcher
         )
         self.global_config = quantization_config
+        # Let the shared-qspec pass initiate quantization from the global config
+        # for shared-op clusters that sit on the quantized I/O boundary but have
+        # no neighbor qspec to propagate (see SharedQspecQuantizer).
+        self.shared_qspec_quantizer.global_config = quantization_config
         return self
 
     def set_node_target(
