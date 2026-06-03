@@ -1,6 +1,7 @@
 # ExecuTorch LLM Server — Python
 
-A thin OpenAI-compatible HTTP server over ExecuTorch's `TextLLMRunner`.
+A thin OpenAI-compatible HTTP server over ExecuTorch's `LLMEngine`/`LLMSession`
+serving API (with `TextLLMRunner` as the underlying adapter).
 
 ## Install
 
