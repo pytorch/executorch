@@ -19,10 +19,15 @@ import subprocess  # nosec B404 - required to drive external converter CLI
 import tempfile
 from typing import final, List
 
+from executorch.backends.arm._passes import RewriteConvPass
+from executorch.backends.arm._passes.arm_pass_manager import (
+    register_pass_insertions_before,
+)
 from executorch.backends.arm.tosa.backend import (  # type: ignore[import-not-found]
     arm_get_first_delegation_tag,
     TOSABackend,
 )
+from executorch.backends.arm.vgf._passes import RewriteGridSamplerToTosaCustomPass
 
 from executorch.backends.arm.vgf.compile_spec import (  # type: ignore[import-not-found]
     VgfCompileSpec,
@@ -42,6 +47,20 @@ from torch.export.exported_program import ExportedProgram
 
 # debug functionality
 logger = logging.getLogger(__name__)
+
+_grid_sampler_rewrite_registered = False
+
+
+def _register_grid_sampler_rewrite_pass() -> None:
+    """Register VGF-only custom shader lowering passes."""
+    global _grid_sampler_rewrite_registered
+    if _grid_sampler_rewrite_registered:
+        return
+    register_pass_insertions_before(
+        RewriteConvPass,
+        [RewriteGridSamplerToTosaCustomPass()],
+    )
+    _grid_sampler_rewrite_registered = True
 
 
 @final
@@ -96,6 +115,7 @@ class VgfBackend(BackendDetails):
         """
         logger.info(f"{VgfBackend.__name__} preprocess")
 
+        _register_grid_sampler_rewrite_pass()
         compile_spec = VgfCompileSpec._from_list(compile_specs)
         # deduce TOSA compile_spec from VGF compile spec. We get a new
         # compile spec list, containing only elements relevant for the

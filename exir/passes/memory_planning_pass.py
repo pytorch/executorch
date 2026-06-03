@@ -194,6 +194,13 @@ class MemoryPlanningPass(PassBase):
                     if len(out_arg_names) == 1:
                         out_alloc_node = node.kwargs[out_arg_names[0]]
                         out_alloc_node.meta["spec"] = node.meta["spec"]
+                        share_idx = node.meta.get("_share_alloc_with_arg_idx")
+                        if share_idx is not None and share_idx < len(node.args):
+                            input_node = node.args[share_idx]
+                            if isinstance(input_node, Node):
+                                base_spec = input_node.meta.get("spec")
+                                if isinstance(base_spec, TensorSpec):
+                                    node.meta["spec"].inplace_base = base_spec
                         continue
                     specs = get_node_tensor_specs(node)
                     i = 0
