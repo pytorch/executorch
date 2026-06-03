@@ -7,12 +7,12 @@
  */
 
 #include <executorch/backends/webgpu/runtime/WebGPUGraph.h>
+#include <executorch/backends/webgpu/runtime/WebGPUUtils.h>
 #include <executorch/backends/webgpu/runtime/ops/OperatorRegistry.h>
 #include <executorch/backends/webgpu/runtime/ops/add/binary_add_wgsl.h>
 
 #include <webgpu/webgpu.h>
 
-#include <algorithm>
 #include <cmath>
 #include <cstring>
 
@@ -51,21 +51,10 @@ void add_impl(WebGPUGraph& graph, const std::vector<int>& args) {
   uint32_t num_elements =
       static_cast<uint32_t>(out_tensor.nbytes / sizeof(float));
 
-  // Clamp the workgroup size to the device limit (SwiftShader caps at 128).
-  WGPULimits limits = {};
-  uint32_t device_max =
-      wgpuDeviceGetLimits(device, &limits) == WGPUStatus_Success &&
-          limits.maxComputeInvocationsPerWorkgroup > 0
-      ? limits.maxComputeInvocationsPerWorkgroup
-      : kBinaryAddWorkgroupSize;
-  uint32_t wg_size = std::min(kBinaryAddWorkgroupSize, device_max);
-  uint32_t workgroup_count = (num_elements + wg_size - 1) / wg_size;
-
-  // Validate the 1D dispatch limit before allocating any GPU objects.
-  if (workgroup_count > 65535u) {
-    throw std::runtime_error(
-        "WebGPU add: workgroup count exceeds the 1D dispatch limit (65535)");
-  }
+  uint32_t wg_size =
+      utils::clamp_workgroup_size(device, kBinaryAddWorkgroupSize);
+  uint32_t workgroup_count =
+      utils::compute_1d_workgroup_count(device, num_elements, wg_size, "add");
 
   WGPUConstantEntry wg_size_constant = {};
   wg_size_constant.key = {"wg_size", WGPU_STRLEN};

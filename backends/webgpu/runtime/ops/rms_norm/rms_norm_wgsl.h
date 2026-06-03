@@ -13,6 +13,11 @@
 namespace executorch::backends::webgpu {
 
 // WGSL shader source for rms_norm: y = x * w * rsqrt(mean(x^2) + eps)
+//
+// NOTE: This inline string is the runtime source of truth — it is what gets
+// passed to wgpuDeviceCreateShaderModule. The sibling `rms_norm.wgsl` file
+// exists only for editor/tooling support and must be kept identical to this
+// string by hand; there is no build-time sync.
 inline constexpr const char* kRmsNormWGSL = R"(
 @group(0) @binding(0) var<storage, read_write> t_out: array<f32>;
 @group(0) @binding(1) var<storage, read> t_in: array<f32>;
