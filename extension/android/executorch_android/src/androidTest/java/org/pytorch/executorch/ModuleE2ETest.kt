@@ -84,15 +84,22 @@ class ModuleE2ETest {
     val x = Tensor.fromBlob(floatArrayOf(1f, 2f, 3f, 4f), longArrayOf(2, 2))
     val y = Tensor.fromBlob(floatArrayOf(5f, 6f, 7f, 8f), longArrayOf(2, 2))
 
-    val pteStream = javaClass.getResourceAsStream("/ModuleAdd.pte")!!
     val pteFile = File(getTestFilePath("/ModuleAdd.pte"))
-    FileUtils.copyInputStreamToFile(pteStream, pteFile)
+    javaClass.getResourceAsStream("/ModuleAdd.pte")!!.use {
+      FileUtils.copyInputStreamToFile(it, pteFile)
+    }
 
     val module = Module.load(pteFile.absolutePath)
-    val results = module.forward(EValue.from(x), EValue.from(y), EValue.from(1.0))
-    val actualOutput = results[0].toTensor().dataAsFloatArray
-
-    assertOutputsClose(actualOutput, floatArrayOf(6f, 8f, 10f, 12f))
-    module.destroy()
+    try {
+      // ModuleAdd computes torch.add(x, y, alpha=alpha). The alpha scalar is
+      // passed as a Double because EValue only exposes a Double scalar factory
+      // (TYPE_CODE_DOUBLE); the float32 output dtype is determined by x and y.
+      val results = module.forward(EValue.from(x), EValue.from(y), EValue.from(1.0))
+      assertTrue(results[0].isTensor)
+      val actualOutput = results[0].toTensor().dataAsFloatArray
+      assertOutputsClose(actualOutput, floatArrayOf(6f, 8f, 10f, 12f))
+    } finally {
+      module.destroy()
+    }
   }
 }
