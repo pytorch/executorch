@@ -455,11 +455,26 @@ void TextLLMRunner::reset() {
   const bool is_eos = text_token_generator_->is_eos(token);
 
   // Decode the text piece with BPE context (previous token), like generate().
+  // Surface tokenizer errors rather than hiding them as an empty piece (matches
+  // generate(), which logs and returns InvalidArgument).
   const uint64_t prev = prev_decode_token_.value_or(token);
-  std::string text_piece;
   auto decode_res = tokenizer_->decode(prev, token);
-  if (decode_res.ok()) {
-    text_piece = std::move(*decode_res);
+  if (!decode_res.ok()) {
+    ET_LOG(
+        Error,
+        "Tokenizers error code %d",
+        static_cast<uint32_t>(decode_res.error()));
+    return ::executorch::runtime::Error::InvalidArgument;
+  }
+  std::string text_piece = std::move(*decode_res);
+
+  // Stop at EOS WITHOUT forwarding it, like generate() (which breaks before the
+  // next step()): the EOS token is not made resident and pos_ does not advance,
+  // so position()/prefix reuse stay correct. No pending token remains, so a
+  // subsequent decode_one() correctly errors (generation is complete).
+  if (is_eos) {
+    prefill_next_token_.reset();
+    return DecodeResult{token, std::move(text_piece), true};
   }
 
   // Forward `token` at pos_ to predict the next pending token.
@@ -481,7 +496,7 @@ void TextLLMRunner::reset() {
   prev_decode_token_ = token;
   pos_ += 1;
 
-  return DecodeResult{token, std::move(text_piece), is_eos};
+  return DecodeResult{token, std::move(text_piece), false};
 }
 
 } // namespace executorch::extension::llm

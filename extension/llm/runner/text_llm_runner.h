@@ -172,8 +172,10 @@ class ET_EXPERIMENTAL TextLLMRunner : public IRunner {
    * a ring buffer in which positions are not absolute; do not seek() those.
    *
    * @param pos Target cache length in tokens; must be in [0, current position].
-   * @return Error::Ok on success, Error::InvalidArgument if `pos` is out of
-   * range.
+   * @return Error::Ok on success; Error::InvalidArgument if `pos` is out of
+   * range; Error::NotSupported for sliding-window/chunked models
+   * (max_seq_len < max_context_len), where seek is unsafe — callers should fall
+   * back to reset() + full prefill.
    */
   ::executorch::runtime::Error seek(int64_t pos);
 
