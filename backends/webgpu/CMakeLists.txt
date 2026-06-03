@@ -21,7 +21,7 @@ if(NOT TARGET vulkan_schema)
   # target), but vulkan_schema is unconditionally defined.
   add_subdirectory(
     ${CMAKE_CURRENT_SOURCE_DIR}/../vulkan
-    ${CMAKE_CURRENT_BINARY_DIR}/_vulkan_schema
+    ${CMAKE_CURRENT_BINARY_DIR}/_vulkan_schema EXCLUDE_FROM_ALL
   )
 endif()
 
