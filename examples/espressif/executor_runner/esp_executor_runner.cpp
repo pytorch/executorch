@@ -181,7 +181,12 @@ using torch::executor::etdump_result;
  * EXT_RAM_BSS_ATTR places the buffer in PSRAM .bss section.
  */
 #if defined(CONFIG_SPIRAM) && defined(ESP_PLATFORM)
+#include <esp_attr.h> // EXT_RAM_BSS_ATTR
 #include <esp_heap_caps.h>
+#ifndef EXT_RAM_BSS_ATTR
+// Fallback for static analysis where ESP-IDF headers are unavailable.
+#define EXT_RAM_BSS_ATTR
+#endif
 // Use PSRAM for large allocations
 static const size_t method_allocation_pool_size =
     ET_ESP_METHOD_ALLOCATOR_POOL_SIZE;
@@ -277,7 +282,7 @@ class Box {
   }
 
  private:
-  alignas(T) uint8_t mem[sizeof(T)];
+  alignas(T) uint8_t mem[sizeof(T)] = {};
   bool has_value = false;
 
   T* ptr() {
@@ -482,7 +487,7 @@ struct RunnerContext {
 #if defined(ET_EVENT_TRACER_ENABLED)
   Box<ETDumpGen> etdump_gen;
 #if defined(ET_DUMP_INTERMEDIATE_OUTPUTS) || defined(ET_DUMP_OUTPUTS)
-  void* debug_buffer;
+  void* debug_buffer = nullptr;
 #endif
 #endif
 };
@@ -605,7 +610,7 @@ void runner_init(RunnerContext& ctx, size_t pte_size) {
   ctx.debug_buffer = ctx.method_allocator->allocate(ET_DEBUG_BUFFER_SIZE, 16);
   if (ctx.debug_buffer != nullptr) {
     Span<uint8_t> debug_buffer_span(
-        (uint8_t*)ctx.debug_buffer, ET_DEBUG_BUFFER_SIZE);
+        reinterpret_cast<uint8_t*>(ctx.debug_buffer), ET_DEBUG_BUFFER_SIZE);
 
     Result<bool> result =
         ctx.etdump_gen.value().set_debug_buffer(debug_buffer_span);
@@ -859,6 +864,7 @@ void print_outputs(RunnerContext& ctx) {
   }
 }
 
+// cppcheck-suppress constParameterReference
 void write_etdump(RunnerContext& ctx) {
 #if defined(ET_EVENT_TRACER_ENABLED)
   ETDumpResult result = ctx.etdump_gen->get_etdump_data();
@@ -876,7 +882,8 @@ void write_etdump(RunnerContext& ctx) {
     ET_LOG(Info, "Writing etdump to file: %s", etdump_filename);
     FILE* f = fopen(etdump_filename, "wb");
     if (f) {
-      size_t bytes_written = fwrite((uint8_t*)result.buf, 1, result.size, f);
+      size_t bytes_written =
+          fwrite(reinterpret_cast<uint8_t*>(result.buf), 1, result.size, f);
       if (bytes_written != result.size) {
         ET_LOG(
             Error,
@@ -894,6 +901,9 @@ void write_etdump(RunnerContext& ctx) {
 #endif
 }
 
+// cppcheck-suppress constParameterReference
+// ET_BUNDLE_IO verification passes ctx.method into devtools/bundled_program
+// helpers, which currently require a non-const Method&.
 bool verify_result(RunnerContext& ctx, const void* model_pte) {
   bool model_ok = false;
 #if defined(ET_BUNDLE_IO)
