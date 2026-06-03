@@ -5,8 +5,8 @@
 
 import numpy as np
 import torch
-from executorch.backends.nxp.backend.data_format import DataFormat, NXP_NODE_FORMAT
 
+from executorch.backends.nxp.backend.data_format import DataFormat, NXP_NODE_FORMAT
 from executorch.backends.nxp.backend.edge_helper import (
     node_is_effectively_static_tensor,
 )
@@ -24,7 +24,6 @@ from executorch.backends.nxp.backend.ir.tflite_generator.builtin_options import 
     transpose_options,
 )
 from executorch.backends.nxp.backend.neutron_operator_support import (
-    is_tensor_invariant_permutation,
     transposition_is_supported_on_neutron,
 )
 from torch.fx import Node
@@ -32,10 +31,6 @@ from torch.nn import Parameter
 
 Permutation = list[int]
 PermutationSupportDict = dict[str, dict[str, bool | Permutation]]
-
-
-def _get_shape(node: torch.fx.Node) -> list[int]:
-    return list(node.meta["val"].shape)
 
 
 def get_supported_transpositions(
@@ -62,11 +57,15 @@ def get_supported_transpositions(
     output_shape = node.meta["val"].shape
     perm = list(node.args[1])
 
-    to_nchw_perm = translator.create_channels_last_to_channels_first_permutation(
-        len(input_shape), True
+    to_nchw_perm = list(
+        translator.create_channels_last_to_channels_first_permutation(
+            len(input_shape), True
+        )
     )
-    to_nhwc_perm = translator.create_channels_first_to_channels_last_permutation(
-        len(input_shape), True
+    to_nhwc_perm = list(
+        translator.create_channels_first_to_channels_last_permutation(
+            len(input_shape), True
+        )
     )
     channels_last_input_shape = translator.apply_permutation_to(
         input_shape, to_nhwc_perm
@@ -222,6 +221,11 @@ class PermuteCopyFormatHandler:
     def _handle_channels_first_input_and_output(
         self, perm_dict, node, t_op, ops
     ) -> Permutation:
+        """This method is currently far more complex than necessary, as Neutron C supports all permutations.
+        However, the function stays, as in the future the `Transpose` support may change (for example with the
+        introduction of Neutron S into ExecuTorch).
+        """
+
         # Both input and output must be permuted, or some merged permutations must be supported.
         if perm_dict["everything_merged"]["supported"]:
             # Combine all 3 permutations into 1.
@@ -249,7 +253,7 @@ class PermuteCopyFormatHandler:
                     t_op, 0, perm_dict["separate_pre"]["perm"]
                 )
             )
-            perm = perm_dict["everything_merged"]["supported"]
+            perm = perm_dict["merged_post"]["perm"]
 
         elif (
             perm_dict["separate_pre"]["supported"]
@@ -323,9 +327,7 @@ class PermuteCopyFormatHandler:
                 perm_dict, node, t_op, ops
             )
 
-        elif (
-            not input_format.is_channels_first()
-        ) and output_format.is_channels_first():
+        elif not input_format.is_channels_first() and output_format.is_channels_first():
             perm = self._handle_formatless_input_and_channels_first_output(
                 perm_dict, node, t_op, ops
             )
@@ -362,69 +364,15 @@ class PermuteCopyConverter(NodeConverter):
                 True  # The operator computes on static data. It will be removed later.
             )
 
-        input_shape = _get_shape(node.args[0])
-        perm = list(node.args[1])
+        if not NodeConverter.uses_quantization_type_for_io(
+            node,
+            supported_types=[torch.int8, torch.uint8],
+            input_indices=[0],
+            output_indices=[0],
+        ):
+            return False
 
-        to_nhwc_perm = translator.create_channels_first_to_channels_last_permutation(
-            len(input_shape), True
-        )
-        channels_last_input_shape = translator.apply_permutation_to(
-            input_shape, to_nhwc_perm
-        )
-
-        if is_tensor_invariant_permutation(
-            input_shape, perm
-        ) and is_tensor_invariant_permutation(channels_last_input_shape, perm):
-            # The `permute_copy` can always be represented as a Reshape.
-            return True
-
-        perm_dict = get_supported_transpositions(node, neutron_target_spec)
-
-        input_format, output_format = (
-            node.args[0].meta[NXP_NODE_FORMAT],
-            node.meta[NXP_NODE_FORMAT],
-        )
-        if input_format.is_channels_first() and (not output_format.is_channels_first()):
-            # Just the input must be permuted.
-            return (
-                perm_dict["separate_pre"]["supported"]
-                and perm_dict["main"]["supported"]
-            ) or perm_dict["merged_pre"]["supported"]
-
-        elif (
-            not input_format.is_channels_first()
-        ) and output_format.is_channels_first():
-            # Just the output must be permuted.
-            return (
-                perm_dict["separate_post"]["supported"]
-                and perm_dict["main"]["supported"]
-            ) or perm_dict["merged_post"]["supported"]
-
-        elif input_format.is_channels_first() and output_format.is_channels_first():
-            # Both input and output must be permuted.
-            return (
-                # Separate IO transpositions.
-                (
-                    perm_dict["separate_pre"]["supported"]
-                    and perm_dict["main"]["supported"]
-                    and perm_dict["separate_post"]["supported"]
-                )
-                # Separate input, merged output.
-                or (
-                    perm_dict["separate_pre"]["supported"]
-                    and perm_dict["merged_post"]["supported"]
-                )
-                # Merged input, separate output.
-                or (
-                    perm_dict["merged_pre"]["supported"]
-                    and perm_dict["separate_post"]["supported"]
-                )
-                # Merged input and output.
-                or perm_dict["everything_merged"]["supported"]
-            )
-        else:
-            # Simplest case. No format changes required.
-            return perm_dict["main"]["supported"]
+        return True
 
     @staticmethod
     def _is_supported_in_IR(

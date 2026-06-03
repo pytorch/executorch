@@ -8,27 +8,41 @@ import operator
 
 import torch
 
-from executorch.exir.dialects._ops import ops as exir_ops
+from executorch.backends.nxp.tests.ops_aliases import (
+    AddTensor,
+    Cat,
+    Clone,
+    CloneDimOrder,
+    DequantizePerChannel,
+    DequantizePerTensor,
+    MulTensor,
+    PermuteCopy,
+    QuantizePerChannel,
+    QuantizePerTensor,
+    SubTensor,
+    ViewCopy,
+)
 from torch.fx import GraphModule, Node
 from torch.fx.node import Argument
 from torch.nn import Parameter
 
 QUANTIZE_OPERATORS = [
-    exir_ops.edge.quantized_decomposed.quantize_per_channel.default,
-    exir_ops.edge.quantized_decomposed.quantize_per_tensor.default,
+    QuantizePerChannel,
+    QuantizePerTensor,
 ]
 
 DEQUANTIZE_OPERATORS = [
-    exir_ops.edge.quantized_decomposed.dequantize_per_channel.default,
-    exir_ops.edge.quantized_decomposed.dequantize_per_tensor.default,
+    DequantizePerChannel,
+    DequantizePerTensor,
 ]
 
 # A set of operators which could possibly be no-ops in certain conditions. The operators in this set will be proclaimed
 #  as no-ops (and potentially not delegated), if their input and output tensors are equal (when run on random data).
 no_op_candidates = {
-    exir_ops.edge.aten.add.Tensor,
-    exir_ops.edge.aten.mul.Tensor,
-    exir_ops.edge.aten.sub.Tensor,
+    AddTensor,
+    MulTensor,
+    PermuteCopy,
+    SubTensor,
 }
 
 
@@ -108,18 +122,14 @@ def try_get_tensor_constant_from_node(
 
 
 def _is_dequantize(node_: Node) -> bool:
-    return node_.op == "call_function" and node_.target in [
-        exir_ops.edge.quantized_decomposed.dequantize_per_tensor.default,
-        exir_ops.edge.quantized_decomposed.dequantize_per_channel.default,
+    return node_.op == "call_function" and node_.target in DEQUANTIZE_OPERATORS + [
         torch.ops.quantized_decomposed.dequantize_per_tensor.default,
         torch.ops.quantized_decomposed.dequantize_per_channel.default,
     ]
 
 
 def _is_quantize(node_: Node) -> bool:
-    return node_.op == "call_function" and node_.target in [
-        exir_ops.edge.quantized_decomposed.quantize_per_tensor.default,
-        exir_ops.edge.quantized_decomposed.quantize_per_channel.default,
+    return node_.op == "call_function" and node_.target in QUANTIZE_OPERATORS + [
         torch.ops.quantized_decomposed.quantize_per_tensor.default,
         torch.ops.quantized_decomposed.quantize_per_channel.default,
     ]
@@ -172,21 +182,11 @@ def get_non_qdq_users(node: Node) -> list[Node]:
     """
 
     quant_nodes = list(node.users)
-    if len(quant_nodes) != 1 or quant_nodes[0].target not in [
-        exir_ops.edge.quantized_decomposed.quantize_per_tensor.default,
-        exir_ops.edge.quantized_decomposed.quantize_per_channel.default,
-    ]:
+    if len(quant_nodes) != 1 or not _is_quantize(quant_nodes[0]):
         return []
 
     dequant_nodes = list(quant_nodes[0].users)
-    if any(
-        dequant_node.target
-        not in [
-            exir_ops.edge.quantized_decomposed.dequantize_per_tensor.default,
-            exir_ops.edge.quantized_decomposed.dequantize_per_channel.default,
-        ]
-        for dequant_node in dequant_nodes
-    ):
+    if any(not _is_dequantize(dequant_node) for dequant_node in dequant_nodes):
         return []
 
     res = []
@@ -277,14 +277,14 @@ def is_no_op_on_neutron(node: Node, parameters_mapping: dict[str, Parameter]) ->
         )
 
     if node.target in [
-        exir_ops.edge.aten.view_copy.default,
-        exir_ops.edge.dim_order_ops._clone_dim_order.default,
-        exir_ops.edge.aten.clone.default,
+        Clone,
+        ViewCopy,
+        CloneDimOrder,
     ]:
         # Known operators which are always no-ops on Neutron.
         return True
 
-    if node.target == exir_ops.edge.aten.cat.default and len(node.args[0]) == 1:
+    if node.target == Cat and len(node.args[0]) == 1:
         # Concatenation with 1 input is a no-op.
         return True
 
