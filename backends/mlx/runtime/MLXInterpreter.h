@@ -1837,6 +1837,8 @@ class Interpreter {
       st.begin_op(idx, op_name(instr.op));
       if (instr.op == OpCode::SCAN) {
         exec_scan(prog, std::get<ScanNode>(instr.node), st, stream);
+      } else if (instr.op == OpCode::IF) {
+        exec_if(prog, std::get<IfNode>(instr.node), st, stream);
       } else {
         dispatch(instr, st, stream);
       }
@@ -1846,6 +1848,20 @@ class Interpreter {
   }
 
  private:
+  void exec_if(
+      const MLXProgram& prog,
+      const IfNode& n,
+      ExecutionState& st,
+      StreamOrDevice s) const {
+    // Select one branch at runtime based on the integer condition.
+    // Nonzero -> then_chain, zero -> else_chain. The selected chain's
+    // instructions write the output slot(s) directly.
+    const int64_t cond = resolve_int(n.cond, st);
+    const uint32_t chain_idx =
+        (cond != 0) ? n.then_chain_idx : n.else_chain_idx;
+    run_chain(prog, chain_idx, st, s);
+  }
+
   void exec_scan(
       const MLXProgram& prog,
       const ScanNode& n,

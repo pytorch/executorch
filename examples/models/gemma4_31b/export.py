@@ -471,18 +471,13 @@ def main() -> None:
             backend=args.backend,
         )
 
-    if args.gguf and args.backend == "mlx":
-        os.environ["ET_MLX_ALLOW_NON_FUSED_QUANTIZED_OPS"] = "1"
-    try:
-        export_and_lower(
-            model,
-            config,
-            args.output_dir,
-            backend=args.backend,
-            use_turboquant=args.turboquant,
-        )
-    finally:
-        os.environ.pop("ET_MLX_ALLOW_NON_FUSED_QUANTIZED_OPS", None)
+    export_and_lower(
+        model,
+        config,
+        args.output_dir,
+        backend=args.backend,
+        use_turboquant=args.turboquant,
+    )
 
 
 if __name__ == "__main__":

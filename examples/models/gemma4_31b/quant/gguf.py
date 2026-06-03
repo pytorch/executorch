@@ -162,6 +162,22 @@ def _unpack_q6_k(data, shape: list[int]) -> torch.Tensor:
     )
 
 
+def _raw_q6_k(data, shape: list[int]) -> torch.Tensor:
+    """Return the raw GGUF Q6_K bytes as ``(N, n_blocks*210)`` uint8.
+
+    Unlike ``_unpack_q6_k`` (which dequantizes and deinterleaves into an
+    ``IntxUnpackedToInt8Tensor``), this preserves the exact GGUF ``block_q6_K``
+    byte layout so it can be consumed directly by the fused
+    ``mlx::gguf_linear`` Metal kernel.
+    """
+    N, K = shape
+    assert K % QK_K == 0, f"Q6_K requires K divisible by {QK_K}, got {K}"
+    block_bytes = 2 + QK_K // 2 + QK_K // 4 + QK_K // 16  # 210
+    n_blocks = N * (K // QK_K)
+    raw = _raw_tensor(data).reshape(n_blocks, block_bytes)
+    return raw.reshape(N, -1).clone()
+
+
 def unpack_gguf_tensor(
     tensor_data,
     tensor_type,
@@ -193,17 +209,28 @@ def unpack_gguf_tensor(
 
 def iter_gguf_tensors(
     path: str,
-) -> Iterator[tuple[str, torch.Tensor]]:
-    """Yield ``(name, result)`` for each tensor in a GGUF file.
+    q6k_raw: bool = False,
+) -> Iterator[tuple[str, torch.Tensor, object]]:
+    """Yield ``(name, result, tensor_type)`` for each tensor in a GGUF file.
 
     Processes one tensor at a time for low peak memory. Tensor names are
     GGUF names (e.g., ``blk.0.attn_q.weight``); the caller handles key
     remapping. GGUF shapes are reversed to PyTorch convention automatically.
+    ``tensor_type`` is the ``gguf.GGMLQuantizationType`` so callers can branch
+    on the quant format.
+
+    If ``q6k_raw`` is set, Q6_K tensors are yielded as the **raw**
+    ``(N, n_blocks*210)`` uint8 GGUF block blob (for the fused
+    ``mlx::gguf_linear`` path) instead of being dequantized/deinterleaved.
     """
-    from gguf import GGUFReader
+    from gguf import GGMLQuantizationType, GGUFReader
 
     reader = GGUFReader(path)
     for tensor in reader.tensors:
         shape = list(reversed(tensor.shape.tolist()))
-        result = unpack_gguf_tensor(tensor.data, tensor.tensor_type, shape)
-        yield tensor.name, result
+        if q6k_raw and tensor.tensor_type == GGMLQuantizationType.Q6_K:
+            # Keep the raw GGUF block bytes for the fused mlx::gguf_linear path.
+            result = _raw_q6_k(tensor.data, shape)
+        else:
+            result = unpack_gguf_tensor(tensor.data, tensor.tensor_type, shape)
+        yield tensor.name, result, tensor.tensor_type

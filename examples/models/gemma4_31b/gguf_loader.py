@@ -138,8 +138,12 @@ def load_gguf_model(
     embed_quant = None
     n_processed = 0
 
+    from gguf import GGMLQuantizationType
+
     print(f"Streaming GGUF from {gguf_path}...")
-    for gguf_name, result in iter_gguf_tensors(gguf_path):
+    for gguf_name, result, gguf_type in iter_gguf_tensors(
+        gguf_path, q6k_raw=(backend == "mlx")
+    ):
         model_key = gguf_to_model_key(gguf_name)
         if model_key is None:
             continue
@@ -151,6 +155,18 @@ def load_gguf_model(
             embed_quant = result
             if backend == "cuda":
                 result = dequantize_weight(result, torch.bfloat16)
+
+        # MLX Q6_K: keep the raw GGUF blob and swap the nn.Linear for a
+        # GGUFLinear that dispatches to the fused mlx::gguf_linear kernel,
+        # bypassing the slow group_size=16 non-fused affine path.
+        if backend == "mlx" and gguf_type == GGMLQuantizationType.Q6_K:
+            from executorch.examples.models.gemma4_31b.mlx_gguf_linear import (
+                replace_with_gguf_linear,
+            )
+
+            replace_with_gguf_linear(model, model_key, result, format="q6k")
+            n_processed += 1
+            continue
 
         pack_one(model, model_key, result, packers)
 

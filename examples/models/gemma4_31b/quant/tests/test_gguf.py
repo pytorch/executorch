@@ -278,5 +278,51 @@ class TestUnpackGgufTensor(unittest.TestCase):
             )
 
 
+@unittest.skipUnless(_HAS_GGUF, "gguf package not installed")
+class TestQ6KRawBlob(unittest.TestCase):
+    """``iter_gguf_tensors(q6k_raw=True)`` keeps the GGUF block bytes for
+    mlx::gguf_linear; ``_raw_q6_k`` produces them verbatim."""
+
+    def _block(self):
+        d = 0.5
+        scales_16 = list(range(1, 17))
+        qvals = [(i * 7 + 3) % 64 for i in range(256)]
+        return d, scales_16, qvals, _make_q6_k_block(d, scales_16, qvals)
+
+    def test_raw_blob_preserves_bytes(self):
+        from executorch.examples.models.gemma4_31b.quant.gguf import _raw_q6_k
+
+        _, _, _, block = self._block()
+        data = np.frombuffer(bytes(block), dtype=np.uint8).reshape(1, 210)
+        raw = _raw_q6_k(data, [1, 256])
+        self.assertEqual(raw.dtype, torch.uint8)
+        self.assertEqual(tuple(raw.shape), (1, 210))
+        self.assertTrue(
+            torch.equal(raw[0], torch.tensor(list(block), dtype=torch.uint8))
+        )
+
+    def test_raw_blob_dequant_matches_gguf_reference(self):
+        from executorch.backends.mlx.model_ops.gguf_linear import dequantize_q6_k
+        from executorch.examples.models.gemma4_31b.quant.gguf import _raw_q6_k
+
+        d, scales_16, qvals, block = self._block()
+        data = np.frombuffer(bytes(block), dtype=np.uint8).reshape(1, 210)
+        raw = _raw_q6_k(data, [1, 256])
+        deq = dequantize_q6_k(raw, 256)[0]
+        ref = torch.tensor(_q6_k_reference_dequant(d, scales_16, qvals))
+        self.assertTrue(
+            torch.allclose(deq, ref, atol=1e-3),
+            f"max diff: {(deq - ref).abs().max():.6g}",
+        )
+
+    def test_default_still_unpacks_to_intx(self):
+        from torchao.quantization import IntxUnpackedToInt8Tensor
+
+        _, _, _, block = self._block()
+        data = np.frombuffer(bytes(block), dtype=np.uint8).reshape(1, 210)
+        result = unpack_gguf_tensor(data, GGMLQuantizationType.Q6_K, [1, 256])
+        self.assertIsInstance(result, IntxUnpackedToInt8Tensor)
+
+
 if __name__ == "__main__":
     unittest.main()

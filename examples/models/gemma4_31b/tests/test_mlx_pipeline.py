@@ -323,5 +323,71 @@ class TestGgufMlxPipeline(unittest.TestCase):
         )
 
 
+class TestGgufLinearMlx(unittest.TestCase):
+    """Q6_K weights route to the fused mlx::gguf_linear op (raw-blob path)."""
+
+    def _make_blob(self, N: int, K: int) -> torch.Tensor:
+        from executorch.backends.mlx.model_ops.test_gguf_linear import pack_q6_k
+
+        torch.manual_seed(0)
+        w = torch.randn(N, K, dtype=torch.float32) * 0.1
+        return pack_q6_k(w)
+
+    def test_replace_with_gguf_linear_swaps_module(self):
+        from executorch.examples.models.gemma4_31b.mlx_gguf_linear import (
+            GGUFLinear,
+            replace_with_gguf_linear,
+        )
+
+        model = build_random_tiny_model()
+        # Pick a Linear whose in_features is a multiple of 256 (Q6_K requires
+        # K % 256 == 0) -- e.g. down_proj (in = intermediate_size).
+        target_fqn = None
+        for name, mod in model.named_modules():
+            if isinstance(mod, nn.Linear) and mod.in_features % 256 == 0:
+                target_fqn = name
+                N, K = mod.out_features, mod.in_features
+                break
+        self.assertIsNotNone(target_fqn, "no Linear with in_features % 256 == 0")
+
+        blob = self._make_blob(N, K)
+        replace_with_gguf_linear(model, target_fqn + ".weight", blob, format="q6k")
+
+        swapped = model.get_submodule(target_fqn)
+        self.assertIsInstance(swapped, GGUFLinear)
+        self.assertEqual(swapped.in_features, K)
+        self.assertEqual(swapped.out_features, N)
+        self.assertEqual(swapped.weight.dtype, torch.uint8)
+
+        # Forward dispatches to the op (eager fallback) and matches it exactly.
+        x = torch.randn(2, K, dtype=torch.bfloat16)
+        y = swapped(x)
+        ref = torch.ops.mlx.gguf_linear(x, blob, "q6k", None)
+        self.assertEqual(y.shape, torch.Size([2, N]))
+        self.assertTrue(torch.equal(y, ref))
+
+    def test_gguf_linear_appears_in_exported_graph(self):
+        from executorch.examples.models.gemma4_31b.mlx_gguf_linear import GGUFLinear
+        from torch.export import Dim, export
+
+        N, K = 256, 512
+        blob = self._make_blob(N, K)
+        m = GGUFLinear(blob, format="q6k").eval()
+
+        # Dynamic seq_len exercises the runtime-routed (IfNode) lowering path.
+        seq = Dim("seq", min=1, max=8)
+        ep = export(
+            m,
+            (torch.randn(4, K, dtype=torch.bfloat16),),
+            dynamic_shapes=({0: seq},),
+            strict=True,
+        )
+        targets = [str(n.target) for n in ep.graph.nodes if n.op == "call_function"]
+        self.assertTrue(
+            any("mlx.gguf_linear" in t for t in targets),
+            f"gguf_linear not in exported graph: {targets}",
+        )
+
+
 if __name__ == "__main__":
     unittest.main()

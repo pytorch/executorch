@@ -78,6 +78,7 @@ jobs:
           backends/mlx/test/test_pattern_utils.py \
           backends/mlx/test/test_partitioner.py \
           examples/models/gemma4_31b/tests/test_mlx_pipeline.py \
+          examples/models/gemma4_31b/quant/tests/test_gguf.py \
           -v
         echo "::endgroup::"
 
@@ -89,20 +90,15 @@ jobs:
           ./cmake-out/backends/mlx/test/multi_thread_test_runner
         echo "::endgroup::"
 
-        echo "::group::Run gated_delta_rule op tests"
-        ${CONDA_RUN} python -m executorch.backends.mlx.model_ops.test_gated_delta_rule run -v
-        echo "::endgroup::"
-
-        echo "::group::Run tq_norm op tests"
-        ${CONDA_RUN} python -m executorch.backends.mlx.model_ops.test_tq_norm run -v
-        echo "::endgroup::"
-
-        echo "::group::Run tq4_compress op tests"
-        ${CONDA_RUN} python -m executorch.backends.mlx.model_ops.test_tq4_compress run -v
-        echo "::endgroup::"
-
-        echo "::group::Run tq_dequant op tests"
-        ${CONDA_RUN} python -m executorch.backends.mlx.model_ops.test_tq_dequant run -v
+        echo "::group::Run model_ops op tests"
+        # Run every model_ops/test_*.py via its OpTestCase `run` CLI. Adding a
+        # new op test file requires no change here.
+        set -e
+        for t in backends/mlx/model_ops/test_*.py; do
+          mod="executorch.backends.mlx.model_ops.$(basename "$t" .py)"
+          echo "--- ${mod} ---"
+          ${CONDA_RUN} python -m "${mod}" run -v
+        done
         echo "::endgroup::"
 
   test-mlx-qwen35-moe:
