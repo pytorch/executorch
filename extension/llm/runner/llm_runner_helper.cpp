@@ -367,7 +367,15 @@ class TextLLMSession : public LLMSession {
   ::executorch::runtime::Result<DecodeResult> decode_one(
       const SamplingConfig& sampling) override {
     // Only temperature is plumbed today; top_p/top_k/seed need a per-session
-    // sampler (applied in a follow-up).
+    // sampler (a follow-up). Reject non-default values rather than silently
+    // ignoring them, so callers can't assume constraints are applied.
+    if (sampling.top_p != 1.0f || sampling.top_k != 0 || sampling.seed != 0) {
+      ET_LOG(
+          Error,
+          "TextLLMSession: only temperature is supported; top_p/top_k/seed are "
+          "not yet implemented");
+      return ::executorch::runtime::Error::NotSupported;
+    }
     return runner_->decode_one(sampling.temperature);
   }
   Error seek(int64_t pos) override {

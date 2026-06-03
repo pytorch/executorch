@@ -164,6 +164,13 @@ class PrefixCachingSession:
         # --- decode loop: bounded by max_new_tokens; stop on EOS or stop() ---
         max_new = self._resolved_max_new_tokens(config)
         if max_new is not None and max_new <= 0:
+            # KV was just mutated to this prompt by seek()/prefill_tokens() above,
+            # but _cached still describes the previous prompt. Reset and clear
+            # before raising (this is an error response anyway) so a released warm
+            # session can't be affinity-matched on stale _cached and seek() into KV
+            # that holds different tokens.
+            self._session.reset()
+            self._cached = []
             raise RuntimeError("No available context capacity for generation")
         temperature = (
             getattr(config, "temperature", -1.0) if config is not None else -1.0

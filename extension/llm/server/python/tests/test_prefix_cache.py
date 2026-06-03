@@ -177,6 +177,20 @@ def test_explicit_max_tokens_clamped_to_context_capacity():
     assert s.cached_tokens == list(b"abc") + [10, 11]
 
 
+def test_budget_exceeded_after_prefill_resets_and_clears_cache():
+    # The post-prefill context-budget check can fail AFTER seek()/prefill_tokens()
+    # already mutated KV to the new prompt. The session must reset + clear _cached
+    # before raising, so a released warm session can't be affinity-matched on a
+    # stale _cached and seek() into KV that holds different tokens.
+    session = FakeSession(gen_ids=[10])
+    s = PrefixCachingSession(session, FakeTokenizer(), max_context_len=3)
+    s._cached = list(b"prev")  # pretend a prior turn cached something
+    with pytest.raises(RuntimeError, match="context capacity"):
+        s.generate("abcde", None)  # 5 prompt tokens > max_context_len 3 -> budget 0
+    assert session.reset_count >= 1  # KV cleared, not left holding "abcde"
+    assert s.cached_tokens == []  # _cached no longer describes a stale prompt
+
+
 def test_warm_reuse_matches_cold_output():
     # A warm session (reuses a shared prefix) emits the same tokens as a cold
     # session that full-prefills the same prompt — reuse must not perturb output.

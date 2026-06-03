@@ -24,8 +24,10 @@
 
 namespace executorch::extension::llm {
 
-/// Per-decode sampling parameters. An adapter applies what it supports and
-/// reports the rest via capabilities(); -1 temperature means model default.
+/// Per-decode sampling parameters. An adapter applies the fields it supports
+/// and rejects non-default values of the rest rather than silently ignoring
+/// them (today only temperature is plumbed). -1 temperature means model
+/// default.
 struct SamplingConfig {
   float temperature = -1.0f;
   float top_p = 1.0f;
