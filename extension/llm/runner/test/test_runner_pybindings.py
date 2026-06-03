@@ -14,17 +14,49 @@ To run these tests:
 
 import os
 import tempfile
+
+import threading
 import unittest
 
 import torch
 from executorch.extension.llm.runner import (
     GenerationConfig,
     Image,
+    LLMEngine,
+    LLMSession,
     make_image_input,
     make_text_input,
     MultimodalInput,
     MultimodalRunner,
+    TextLLMRunner,
 )
+
+
+class TestSessionApiBoundary(unittest.TestCase):
+    """The Python serving boundary: token-step primitives live ONLY on
+    LLMSession, never on the legacy TextLLMRunner (whose token-step methods are
+    C++ implementation details behind TextLLMSession). Pure class introspection,
+    so no model/.pte is needed."""
+
+    TOKEN_STEP = ("prefill_tokens", "decode_one", "seek", "position")
+
+    def test_text_llm_runner_does_not_expose_token_step(self):
+        for name in self.TOKEN_STEP:
+            self.assertFalse(
+                hasattr(TextLLMRunner, name),
+                f"TextLLMRunner must not expose token-step method {name!r} to "
+                f"Python; drive sessions through LLMSession instead.",
+            )
+
+    def test_llm_session_exposes_token_step(self):
+        for name in (*self.TOKEN_STEP, "reset", "stop"):
+            self.assertTrue(
+                hasattr(LLMSession, name), f"LLMSession must expose {name!r}"
+            )
+
+    def test_llm_engine_exposes_serving_api(self):
+        for name in ("create_session", "serving_capacity"):
+            self.assertTrue(hasattr(LLMEngine, name), f"LLMEngine must expose {name!r}")
 
 
 class TestGenerationConfig(unittest.TestCase):
@@ -264,3 +296,103 @@ class TestHelperFunctions(unittest.TestCase):
         img_tensor_rgba = torch.ones((4, 50, 50), dtype=torch.uint8) * 128
         image_input_rgba = make_image_input(img_tensor_rgba)
         self.assertTrue(image_input_rgba.is_image())
+
+
+# Real-engine tests need a model; gated on env vars so they're skipped in CI
+# environments without one (fake-runner unit tests can't exercise the real
+# shared-Program / serialization behavior).
+_MODEL = os.environ.get("ET_TEST_TEXT_LLM_MODEL")
+_TOKENIZER = os.environ.get("ET_TEST_TEXT_LLM_TOKENIZER")
+
+
+@unittest.skipUnless(
+    _MODEL and _TOKENIZER,
+    "set ET_TEST_TEXT_LLM_MODEL and ET_TEST_TEXT_LLM_TOKENIZER to run",
+)
+class TestLLMEngineSessions(unittest.TestCase):
+    """LLMEngine: sessions share weights, stay isolated, and serialize backend
+    execution so concurrent sessions don't corrupt each other."""
+
+    @classmethod
+    def setUpClass(cls):
+        # LLM .pte files use custom/quantized ops; register them (the server's
+        # runner_pool does this automatically, but a direct engine test must).
+        try:
+            import executorch.extension.llm.custom_ops.custom_ops  # noqa: F401
+            import executorch.kernels.quantized  # noqa: F401
+        except Exception:  # noqa: BLE001 - assume statically linked otherwise
+            pass
+        # The session API takes token ids; tokenize prompts in Python (the server
+        # does the same). Load the model's tokenizer.json directly.
+        from tokenizers import Tokenizer as HFTokenizer
+
+        cls._hf = HFTokenizer.from_file(_TOKENIZER)
+
+    @classmethod
+    def _ids(cls, prompt):
+        return cls._hf.encode(prompt).ids
+
+    @staticmethod
+    def _gen_text(runner, prompt):  # standalone TextLLMRunner baseline
+        out = []
+        runner.reset()
+        runner.generate(
+            prompt,
+            GenerationConfig(echo=False, max_new_tokens=12, temperature=0.0),
+            lambda t: out.append(t),
+        )
+        return "".join(out)
+
+    def _session_ids(self, session, prompt_ids, n=12):
+        """Drive a session via prefill_tokens + a decode_one loop (the actual
+        new path); return the exact generated token ids."""
+        session.reset()
+        session.prefill_tokens(prompt_ids)
+        ids = []
+        for _ in range(n):
+            step = session.decode_one(0.0)
+            ids.append(step["token_id"])
+            if step["is_eos"]:
+                break
+        return ids
+
+    def test_sessions_isolated_and_match_baseline(self):
+        p1 = "<|im_start|>user\nName one primary color.<|im_end|>\n<|im_start|>assistant\n"
+        p2 = "<|im_start|>user\nWhat is 2+2?<|im_end|>\n<|im_start|>assistant\n"
+        base = TextLLMRunner(model_path=_MODEL, tokenizer_path=_TOKENIZER)
+        b1, b2 = self._gen_text(base, p1), self._gen_text(base, p2)
+
+        engine = LLMEngine(model_path=_MODEL, tokenizer_path=_TOKENIZER)
+        s1, s2 = engine.create_session(), engine.create_session()
+        ids1 = self._session_ids(s1, self._ids(p1))
+        ids2 = self._session_ids(s2, self._ids(p2))
+        ids1b = self._session_ids(s1, self._ids(p1))  # after s2 ran
+        # The session's decode_one ids, decoded, match the standalone generation.
+        self.assertEqual(self._hf.decode(ids1).strip(), b1.strip())
+        self.assertEqual(self._hf.decode(ids2).strip(), b2.strip())
+        self.assertEqual(ids1, ids1b, "session1 must be unaffected by session2")
+
+    def test_concurrent_sessions_do_not_crash(self):
+        # The original num_runners>1 path crashed (heap corruption) under
+        # concurrent backend calls; the engine lock must serialize them safely.
+        p = self._ids(
+            "<|im_start|>user\nCount to five.<|im_end|>\n<|im_start|>assistant\n"
+        )
+        engine = LLMEngine(model_path=_MODEL, tokenizer_path=_TOKENIZER)
+        s1, s2 = engine.create_session(), engine.create_session()
+        expect = self._session_ids(s1, p)
+        errors = []
+
+        def worker(sess):
+            try:
+                for _ in range(3):
+                    self.assertEqual(self._session_ids(sess, p), expect)
+            except Exception as e:  # noqa: BLE001
+                errors.append(repr(e))
+
+        threads = [threading.Thread(target=worker, args=(s,)) for s in (s1, s2)]
+        for t in threads:
+            t.start()
+        for t in threads:
+            t.join()
+        self.assertEqual(errors, [], "concurrent sessions crashed or drifted")
