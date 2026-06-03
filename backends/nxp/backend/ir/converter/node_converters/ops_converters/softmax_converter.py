@@ -62,9 +62,9 @@ class SoftmaxConverter(NodeConverter):
         if custom_delegation_options.use_new_flow_neutron_c:
             """New flow: Hardware constraints for the new flow:
             1. Input and Output must be INT8/UINT8
-            2. Channels < 4096 / num_pipes * 4
-            3. Total spatial size (N*H*W) <= 4096
-            4. (channels * spatial_size) / num_macs <= 65536
+            2. Channels <= 2040
+            3. Total spatial size (H*W) <= 4096
+            4. Total size (channels * spatial_size) <= 524288
             """
             # Constraint 1: Input and Output must be INT8/UINT8.
             supported_types = [torch.int8, torch.uint8]
@@ -74,9 +74,8 @@ class SoftmaxConverter(NodeConverter):
                 return False
 
             # Constraint 2: Channel size limit
-            num_pipes = neutron_target_spec.get_num_pipes()
             channels = SoftmaxConverter._get_channels(node)
-            if channels >= 4096 / num_pipes * 4:
+            if channels > 2040:
                 return False
 
             # Constraint 3: Spatial size limit
@@ -85,8 +84,7 @@ class SoftmaxConverter(NodeConverter):
                 return False
 
             # Constraint 4: Total processing size limit
-            num_macs = neutron_target_spec.get_num_macs()
-            if channels * total_spatial_size / num_macs > 65536:
+            if channels * total_spatial_size > 524288:
                 return False
 
             return True

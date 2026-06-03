@@ -18,7 +18,7 @@ from executorch.backends.nxp.tests.executors import (
     ToChannelLastPreprocess,
 )
 
-from executorch.backends.nxp.tests.graph_verifier import BaseGraphVerifier
+from executorch.backends.nxp.tests.graph_verifier import DetailedGraphVerifier
 
 from executorch.backends.nxp.tests.model_output_comparator import (
     NumericalStatsOutputComparator,
@@ -224,11 +224,12 @@ class TestSoftmaxNewNeutronFlow:
             pytest.param((5, 4, 3, 2, 180), -1, id="5D_dim_-1"),
         ],
     )
-    def test__basic_nsys_inference(self, input_shape, dim):
+    def test__basic_nsys_inference(self, mocker, input_shape, dim):
         model = SoftmaxModule(dim)
-        graph_verifier = BaseGraphVerifier(
-            exp_num_delegate_call_nodes=1,  # Delegated Softmax.
-            exp_non_delegated_nodes=[],
+        graph_verifier = DetailedGraphVerifier(
+            mocker,
+            expected_delegated_ops={Softmax: 1},
+            expected_non_delegated_ops={},
         )
         output_comparator = NumericalStatsOutputComparator(
             max_mse_error=0.001, is_classification_task=True
