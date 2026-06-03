@@ -15,14 +15,13 @@ from executorch.backends.arm.vgf.shaders.grid_sampler import (
     build_grid_sampler_2d_payload,
     CUSTOM_SHADER_DOMAIN_NAME,
     encode_payload,
-    GRID_SAMPLER_2D_OPERATOR_NAME,
+    grid_sampler_2d_operator_name,
 )
 from executorch.exir.dialects._ops import ops as exir_ops
 from executorch.exir.pass_base import ExportPass, PassResult
 from torch.fx.passes.shape_prop import _extract_tensor_metadata
 
 
-@register_fake_tosa(GRID_SAMPLER_2D_OPERATOR_NAME)
 def _grid_sampler_2d_custom_fake_impl(
     inputs, operator_name, domain_name, implementation_attrs
 ) -> list[torch.Tensor]:
@@ -40,6 +39,40 @@ def _grid_sampler_2d_custom_fake_impl(
             device=input_tensor.device,
         )
     ]
+
+
+def _register_grid_sampler_2d_custom_fake_impl(
+    interpolation_mode: int,
+    padding_mode: int,
+    align_corners: bool,
+) -> None:
+    operator_name = grid_sampler_2d_operator_name(
+        interpolation_mode=interpolation_mode,
+        padding_mode=padding_mode,
+        align_corners=align_corners,
+    )
+
+    def _grid_sampler_2d_custom_fake_impl_variant(
+        inputs, operator_name, domain_name, implementation_attrs
+    ) -> list[torch.Tensor]:
+        return _grid_sampler_2d_custom_fake_impl(
+            inputs,
+            operator_name,
+            domain_name,
+            implementation_attrs,
+        )
+
+    register_fake_tosa(operator_name)(_grid_sampler_2d_custom_fake_impl_variant)
+
+
+for interpolation_mode in (0, 1, 2):
+    for padding_mode in (0, 1, 2):
+        for align_corners in (False, True):
+            _register_grid_sampler_2d_custom_fake_impl(
+                interpolation_mode=interpolation_mode,
+                padding_mode=padding_mode,
+                align_corners=align_corners,
+            )
 
 
 def _set_fake_tensor_meta(node: torch.fx.Node, value) -> None:
@@ -87,6 +120,11 @@ class RewriteGridSamplerToTosaCustomPass(ArmPass):
                 padding_mode=padding_mode,
                 align_corners=align_corners,
             )
+            operator_name = grid_sampler_2d_operator_name(
+                interpolation_mode=interpolation_mode,
+                padding_mode=padding_mode,
+                align_corners=align_corners,
+            )
 
             with graph_module.graph.inserting_before(node):
                 nhwc_input = create_node(
@@ -107,7 +145,7 @@ class RewriteGridSamplerToTosaCustomPass(ArmPass):
                     op_target=exir_ops.backend.tosa.CUSTOM.default,
                     args=([nhwc_input, grid],),
                     kwargs={
-                        "operator_name": GRID_SAMPLER_2D_OPERATOR_NAME,
+                        "operator_name": operator_name,
                         "domain_name": CUSTOM_SHADER_DOMAIN_NAME,
                         "implementation_attrs": implementation_attrs,
                     },
@@ -124,7 +162,7 @@ class RewriteGridSamplerToTosaCustomPass(ArmPass):
                 )
                 custom_output = _grid_sampler_2d_custom_fake_impl(
                     [nhwc_input.meta["val"], grid.meta["val"]],
-                    GRID_SAMPLER_2D_OPERATOR_NAME,
+                    operator_name,
                     CUSTOM_SHADER_DOMAIN_NAME,
                     implementation_attrs,
                 )[0]

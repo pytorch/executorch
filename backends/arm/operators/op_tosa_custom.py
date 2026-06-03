@@ -81,6 +81,12 @@ def _validate_vulkan_custom_shader_payload(
     if domain_name != _VULKAN_CUSTOM_SHADER_DOMAIN:
         return
 
+    if not implementation_attrs:
+        raise ValueError(
+            "Vulkan custom shader tosa.CUSTOM requires non-empty JSON "
+            "implementation_attrs"
+        )
+
     payload = json.loads(bytes(implementation_attrs).decode("utf-8"))
 
     for input_idx, input_arg in enumerate(inputs):

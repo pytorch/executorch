@@ -16,11 +16,11 @@ from executorch.backends.arm.vgf._passes.rewrite_grid_sampler_to_tosa_custom imp
 from executorch.backends.arm.vgf.shaders.grid_sampler import (
     CUSTOM_SHADER_DOMAIN_NAME,
     decode_payload,
-    GRID_SAMPLER_2D_OPERATOR_NAME,
     GRID_SAMPLER_2D_SHADER_ENTRY_POINT,
     GRID_SAMPLER_2D_SHADER_LANGUAGE,
     GRID_SAMPLER_2D_VK_FORMAT,
     GRID_SAMPLER_2D_WORKGROUP_SIZES,
+    grid_sampler_2d_operator_name,
 )
 from executorch.exir import to_edge
 from executorch.exir.dialects._ops import ops as exir_ops
@@ -69,7 +69,11 @@ def test_rewrite_grid_sampler_to_tosa_custom_no_target():
     custom_node = next(
         node for node in nodes if node.target == exir_ops.backend.tosa.CUSTOM.default
     )
-    assert custom_node.kwargs["operator_name"] == GRID_SAMPLER_2D_OPERATOR_NAME
+    assert custom_node.kwargs["operator_name"] == grid_sampler_2d_operator_name(
+        interpolation_mode=0,
+        padding_mode=0,
+        align_corners=False,
+    )
     assert custom_node.kwargs["domain_name"] == CUSTOM_SHADER_DOMAIN_NAME
 
     payload = decode_payload(custom_node.kwargs["implementation_attrs"])

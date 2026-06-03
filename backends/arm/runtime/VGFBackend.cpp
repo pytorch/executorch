@@ -12,7 +12,6 @@ using namespace std;
 #include <executorch/runtime/backend/interface.h>
 #include <executorch/runtime/core/error.h>
 #include <executorch/runtime/core/evalue.h>
-#include <executorch/runtime/core/portable_type/scalar_type.h>
 
 using executorch::aten::Tensor;
 using executorch::runtime::ArrayRef;

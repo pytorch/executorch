@@ -25,7 +25,6 @@ from backends.arm.test._custom_vgf_test_utils import (
     rewrite_aten_grid_sample_to_test_shader,
     TEST_ADD_OPERATOR,
     TEST_GRID_READ_TENSOR_OPERATOR,
-    TEST_GRID_SAMPLE_OPERATOR,
     TEST_SHADER_DOMAIN,
     THREES_DOMAIN,
     THREES_OPERATOR,
@@ -37,7 +36,10 @@ from executorch.backends.arm.tosa.specification import (
 from executorch.backends.arm.vgf._passes.rewrite_grid_sampler_to_tosa_custom import (
     RewriteGridSamplerToTosaCustomPass,
 )
-from executorch.backends.arm.vgf.shaders.grid_sampler import decode_payload
+from executorch.backends.arm.vgf.shaders.grid_sampler import (
+    decode_payload,
+    grid_sampler_2d_operator_name,
+)
 from executorch.exir import to_edge
 from executorch.exir.dialects._ops import ops as exir_ops
 from torch.export import export
@@ -143,7 +145,11 @@ def test_in_tree_grid_sampler_lowers_to_tosa_custom():
         node for node in nodes if node.target == exir_ops.backend.tosa.CUSTOM.default
     )
 
-    assert custom_node.kwargs["operator_name"] == TEST_GRID_SAMPLE_OPERATOR
+    assert custom_node.kwargs["operator_name"] == grid_sampler_2d_operator_name(
+        interpolation_mode=0,
+        padding_mode=0,
+        align_corners=False,
+    )
     assert custom_node.kwargs["domain_name"] == "com.arm.VulkanCustomShader"
 
 
