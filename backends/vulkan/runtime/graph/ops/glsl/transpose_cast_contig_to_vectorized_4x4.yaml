@@ -1,0 +1,22 @@
+# Copyright (c) Meta Platforms, Inc. and affiliates.
+# All rights reserved.
+#
+# This source code is licensed under the BSD-style license found in the
+# LICENSE file in the root directory of this source tree.
+
+transpose_cast_contig_to_vectorized_4x4:
+  parameter_names_with_default_values:
+    DTYPE: float
+    OUT_DTYPE: half
+    IN_STORAGE: texture3d
+    OUT_STORAGE: buffer
+  generate_variant_forall:
+    combination:
+      parameter_names: [DTYPE, IN_STORAGE, OUT_DTYPE, OUT_STORAGE]
+      combos:
+        - parameter_values: [float, texture3d, half, buffer]
+        - parameter_values: [float, texture3d, float, buffer]
+        - parameter_values: [half, texture3d, half, buffer]
+        - parameter_values: [half, texture3d, float, buffer]
+  shader_variants:
+    - NAME: transpose_cast_contig_to_vectorized_4x4
