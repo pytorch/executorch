@@ -15,37 +15,7 @@ def define_arm_tests():
     test_files.remove("passes/test_ioquantization_pass.py")
 
     # Operators
-    test_files += [
-        "ops/test_add.py",
-        "ops/test_addmm.py",
-        "ops/test_avg_pool2d.py",
-        "ops/test_cat.py",
-        "ops/test_conv2d.py",
-        "ops/test_linear.py",
-        "ops/test_log10.py",
-        "ops/test_max_pool1d.py",
-        "ops/test_mul.py",
-        "ops/test_mxfp_linear.py",
-        "ops/test_permute.py",
-        "ops/test_rsqrt.py",
-        "ops/test_slice.py",
-        "ops/test_sigmoid.py",
-        "ops/test_softmax.py",
-        "ops/test_sub.py",
-        "ops/test_sum.py",
-        "ops/test_tanh.py",
-        "ops/test_view.py",
-        "ops/test_cos.py",
-        "ops/test_to_copy.py",
-        "ops/test_exp.py",
-        "ops/test_reciprocal.py",
-        "ops/test_mean_dim.py",
-        "ops/test_var.py",
-        "ops/test_conv1d.py",
-        "ops/test_gelu.py",
-        "ops/test_bmm.py",
-        "ops/test_split.py",
-    ]
+    test_files += native.glob(["ops/test_*.py"])
 
     # Quantization
     test_files += [
