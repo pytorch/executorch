@@ -9,6 +9,7 @@
 #pragma once
 
 #include <algorithm>
+#include <cstring>
 #include <memory>
 #include <numeric>
 #include <unordered_map>
@@ -16,6 +17,7 @@
 
 #include <c10/util/safe_numerics.h>
 #include <executorch/runtime/core/exec_aten/util/scalar_type_util.h>
+#include <executorch/runtime/core/named_data_map.h>
 #include <executorch/runtime/core/span.h>
 #include <executorch/runtime/executor/method.h>
 #include <executorch/runtime/platform/log.h>
@@ -459,6 +461,7 @@ class StaticAttentionIOManager {
     StaticAttentionUpdateStyle style = StaticAttentionUpdateStyle::SMART_MASK;
     bool generate_full_logits = true;
     std::optional<size_t> last_valid_token_pos_index = 0;
+    std::vector<size_t> lora_input_indices;
   };
 
   StaticAttentionIOManager(StaticAttentionIOConfig config)
@@ -600,6 +603,49 @@ class StaticAttentionIOManager {
 
   size_t input_pos() const {
     return input_pos_;
+  }
+
+  /**
+   * Load LoRA adapter weights from a NamedDataMap and bind them to the
+   * method's inputs.
+   *
+   * Keys are read in data-map index order and copied into internal buffers
+   * before binding, so the bound input memory remains valid after this call.
+   * If the data map and config_.lora_input_indices have different counts, this
+   * method binds only the first min(counts) entries and leaves any remaining
+   * configured LoRA inputs unchanged.
+   */
+  void load_lora_io_adapter(
+      torch::executor::Method& method,
+      const executorch::runtime::NamedDataMap& data_map) {
+    if (config_.lora_input_indices.empty()) {
+      return;
+    }
+    auto num_keys_result = data_map.get_num_keys();
+    ET_CHECK(num_keys_result.ok());
+    auto num_keys = num_keys_result.get();
+    if (num_keys != config_.lora_input_indices.size()) {
+      num_keys = config_.lora_input_indices.size();
+    }
+    if (num_keys != lora_buffers_.size()) {
+      lora_buffers_.resize(num_keys);
+    }
+    ET_LOG(Info, "Loading %u LoRA adapter tensors", num_keys);
+    for (uint32_t i = 0; i < num_keys; i++) {
+      auto key_result = data_map.get_key(i);
+      ET_CHECK(key_result.ok());
+
+      auto data_result = data_map.get_data(key_result.get());
+      ET_CHECK(data_result.ok());
+
+      auto nbytes = data_result.get().size();
+      lora_buffers_[i].resize(nbytes);
+      std::memcpy(lora_buffers_[i].data(), data_result.get().data(), nbytes);
+
+      set_input_raw(
+          method, config_.lora_input_indices[i], lora_buffers_[i].data());
+    }
+    ET_LOG(Info, "Loaded %u LoRA adapter tensors", num_keys);
   }
 
   /**
@@ -886,6 +932,24 @@ class StaticAttentionIOManager {
   }
 
  private:
+  void
+  set_input_raw(executorch::runtime::Method& method, size_t idx, void* data) {
+    auto methodMeta = method.method_meta();
+    auto inputMeta = methodMeta.input_tensor_meta(idx);
+    ET_CHECK(inputMeta.ok());
+    auto impl = ::executorch::runtime::etensor::TensorImpl(
+        inputMeta->scalar_type(),
+        inputMeta->sizes().size(),
+        const_cast<executorch::aten::TensorImpl::SizesType*>(
+            inputMeta->sizes().data()),
+        data,
+        const_cast<executorch::aten::TensorImpl::DimOrderType*>(
+            inputMeta->dim_order().data()));
+    executorch::runtime::etensor::Tensor t(&impl);
+    ET_CHECK(data != nullptr);
+    ET_CHECK(method.set_input(t, idx) == executorch::runtime::Error::Ok);
+  }
+
   template <typename T>
   void set_input(executorch::runtime::Method& method, size_t idx, T* data) {
     auto methodMeta = method.method_meta();
@@ -1015,6 +1079,7 @@ class StaticAttentionIOManager {
   std::vector<RopeT> rope_freqs_cos_override_;
   std::vector<RopeT> rope_freqs_sin_override_;
   int64_t last_valid_token_pos_;
+  std::vector<std::vector<uint8_t>> lora_buffers_;
 };
 
 } // namespace example

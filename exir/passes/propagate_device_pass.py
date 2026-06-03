@@ -165,10 +165,12 @@ class PropagateDevicePass(PassBase):
         self,
         skip_h2d_for_method_inputs: bool = False,
         skip_d2h_for_method_outputs: bool = False,
+        enable_non_cpu_memory_planning: bool = False,
     ) -> None:
         super().__init__()
         self.skip_h2d_for_method_inputs = skip_h2d_for_method_inputs
         self.skip_d2h_for_method_outputs = skip_d2h_for_method_outputs
+        self.enable_non_cpu_memory_planning = enable_non_cpu_memory_planning
 
     def _is_placeholder(self, node: torch.fx.Node) -> bool:
         """Check if a node is a graph-level input (placeholder)."""
@@ -282,7 +284,7 @@ class PropagateDevicePass(PassBase):
             )
         return True
 
-    def call(self, graph_module: torch.fx.GraphModule) -> PassResult:
+    def call(self, graph_module: torch.fx.GraphModule) -> PassResult:  # noqa: C901
         # Two-pass approach:
         #   Pass 1 – For each delegate with a target_device CompileSpec, insert
         #            H2D copy nodes before delegate inputs and tag the delegate
@@ -313,9 +315,18 @@ class PropagateDevicePass(PassBase):
                 target_device_type, device_index = result
                 device_delegates.add(node)
 
-                changed |= self._insert_h2d_copies(
-                    graph_module, node, target_device_type, device_index
-                )
+                if self.enable_non_cpu_memory_planning:
+                    changed |= self._insert_h2d_copies(
+                        graph_module, node, target_device_type, device_index
+                    )
+                else:
+                    for arg in node.args[1:]:
+                        if isinstance(arg, torch.fx.Node):
+                            changed |= _tag_specs_with_device(
+                                arg.meta.get("spec"),
+                                target_device_type,
+                                device_index,
+                            )
 
                 changed |= _tag_specs_with_device(
                     node.meta.get("spec"),
@@ -337,7 +348,26 @@ class PropagateDevicePass(PassBase):
             if node.op == "call_function" and node.target == operator.getitem:
                 source = node.args[0]
                 if isinstance(source, torch.fx.Node) and source in device_delegates:
-                    changed |= self._insert_d2h_for_getitem(graph_module, node)
+                    if self.enable_non_cpu_memory_planning:
+                        changed |= self._insert_d2h_for_getitem(graph_module, node)
+                    else:
+                        spec = node.meta.get("spec")
+                        source_specs = source.meta.get("spec")
+                        idx = node.args[1]
+                        if (
+                            isinstance(spec, TensorSpec)
+                            and isinstance(source_specs, (tuple, list))
+                            and isinstance(idx, int)
+                            and idx < len(source_specs)
+                        ):
+                            source_spec = source_specs[idx]
+                            if isinstance(source_spec, TensorSpec):
+                                _set_device_on_spec(
+                                    spec,
+                                    source_spec.device,
+                                    source_spec.device_index,
+                                )
+                                changed = True
 
         graph_module.recompile()
         return PassResult(graph_module, changed)

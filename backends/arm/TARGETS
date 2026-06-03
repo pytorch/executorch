@@ -87,15 +87,27 @@ runtime.python_library(
     name = "vgf",
     srcs = [
         "vgf/__init__.py",
+        "vgf/_passes/__init__.py",
+        "vgf/_passes/rewrite_grid_sampler_to_tosa_custom.py",
         "vgf/backend.py",
         "vgf/compile_spec.py",
         "vgf/model_converter.py",
         "vgf/partitioner.py",
+        "vgf/shaders/__init__.py",
+        "vgf/shaders/grid_sampler.py",
+    ],
+    resources = [
+        "vgf/shaders/grid_sampler.glsl",
+        "vgf/shaders/grid_sampler.spirv.b64",
     ],
     deps = [
         ":arm_compile_spec",
+        "//caffe2:torch",
+        "//executorch/backends/arm/_passes:passes",
+        "//executorch/backends/arm/tosa/dialect:lib",
         "//executorch/backends/arm/tosa:specification",
         "//executorch/backends/arm/tosa:partitioner",
+        "//executorch/exir:lib",
     ],
 )
 

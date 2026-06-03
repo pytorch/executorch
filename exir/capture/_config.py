@@ -6,7 +6,7 @@
 
 # pyre-unsafe
 from dataclasses import dataclass, field
-from typing import Callable, Dict, List, Optional, Union
+from typing import Any, Callable, Dict, FrozenSet, List, Optional, Union
 
 import torch
 
@@ -135,3 +135,9 @@ class ExecutorchBackendConfig:
     # Useful for cross-method GPU pipelines where the next method consumes
     # GPU tensors directly.
     skip_d2h_for_method_outputs: bool = False
+
+    # Add ops to the set of re-inplace ops to be used by the reinplace pass.
+    # Re-inplace pass checks the eligibility of an op to be re-inplaced and
+    # memory planning pass allcoates the output buffer of the op to be the same
+    # as the input buffer.
+    reinplace_extra_ops: Optional[FrozenSet[Any]] = None
