@@ -151,6 +151,7 @@ Error load_input_files(
     }
 
     // Reserve memory for actual file contents.
+    // Reserve memory for actual file contents.
     inputs_storage.emplace_back(static_cast<size_t>(file_size), '\0');
 
     if (!input_file_handle.read(inputs_storage.back().data(), file_size)) {
@@ -158,8 +159,8 @@ Error load_input_files(
       return Error::AccessFailed;
     }
 
-    input_buffers.emplace_back(&inputs_storage.back()[0], file_size);
-  }
+    input_buffers.emplace_back(
+        inputs_storage.back().data(), static_cast<size_t>(file_size));
 
   return Error::Ok;
 }
