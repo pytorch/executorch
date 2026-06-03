@@ -226,15 +226,17 @@ class RunnerTest : public Test {
   // capacity bound can be exercised directly).
   std::unique_ptr<TextLLMRunner> makeRunner(
       std::unordered_map<std::string, int64_t> metadata,
-      std::shared_ptr<LogitProcessor> logit_processor = nullptr) {
+      std::shared_ptr<LogitProcessor> logit_processor = nullptr,
+      uint64_t prefill_token = 42) {
     auto tokenizer = createMockTokenizer();
     auto text_decoder_runner = createMockTextDecoderRunner();
     auto text_prefiller = createMockTextPrefiller(text_decoder_runner.get());
     ON_CALL(*text_prefiller, prefill(_, _))
-        .WillByDefault([](std::vector<uint64_t>& tokens, int64_t& pos) {
-          pos += tokens.size();
-          return Result<uint64_t>(42);
-        });
+        .WillByDefault(
+            [prefill_token](std::vector<uint64_t>& tokens, int64_t& pos) {
+              pos += tokens.size();
+              return Result<uint64_t>(prefill_token);
+            });
     ON_CALL(*text_prefiller, is_loaded()).WillByDefault(Return(true));
     auto stats = std::make_unique<executorch::llm::Stats>();
     auto text_token_generator = createTextTokenGenerator(
@@ -605,6 +607,26 @@ TEST_F(RunnerTest, DecodeOneReturnsExactTokenIdAndAdvances) {
 // decode_one() without a pending token (no prior prefill) must error.
 TEST_F(RunnerTest, DecodeOneWithoutPendingTokenFails) {
   auto runner = makeRunner(createDefaultMetadata());
+  EXPECT_FALSE(runner->decode_one(0.0f).ok());
+}
+
+// decode_one() must stop at EOS WITHOUT forwarding it (like generate()): the
+// EOS token is not made resident, position() does not advance, and no pending
+// token remains — so prefix reuse stays correct and a further decode_one()
+// errors. (The fixture's EOS id is 100.)
+TEST_F(RunnerTest, DecodeOneStopsAtEosWithoutForwarding) {
+  auto runner =
+      makeRunner(createDefaultMetadata(), nullptr, /*prefill_token=*/100);
+  ASSERT_TRUE(runner->prefill_tokens(std::vector<uint64_t>{1, 2, 3}).ok());
+  EXPECT_EQ(runner->position(), 3);
+
+  auto r = runner->decode_one(0.0f);
+  ASSERT_TRUE(r.ok());
+  EXPECT_EQ(r.get().token_id, 100u);
+  EXPECT_TRUE(r.get().is_eos);
+  EXPECT_EQ(runner->position(), 3); // EOS not forwarded -> position unchanged
+
+  // No pending token remains -> a further decode_one() errors.
   EXPECT_FALSE(runner->decode_one(0.0f).ok());
 }
 
