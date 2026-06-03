@@ -73,7 +73,12 @@ _torch_to_numpy_dtype_dict = {
     torch.complex128: np.complex128,
 }
 
-VALID_TARGET = {"corstone-300", "corstone-320", "vkml_emulation_layer"}
+VALID_TARGET = {
+    "corstone-300",
+    "corstone-300-u65",
+    "corstone-320",
+    "vkml_emulation_layer",
+}
 
 
 class QuantizationParams:
@@ -450,11 +455,17 @@ def run_corstone(
         )
 
     match target_board:
-        case "corstone-300":
+        case "corstone-300" | "corstone-300-u65":
+            if target_board == "corstone-300":
+                fvp = "FVP_Corstone_SSE-300_Ethos-U55"
+                num_macs = 128
+            else:
+                fvp = "FVP_Corstone_SSE-300_Ethos-U65"
+                num_macs = 256
             command_args = [
-                "FVP_Corstone_SSE-300_Ethos-U55",
+                fvp,
                 "-C",
-                "ethosu.num_macs=128",
+                f"ethosu.num_macs={num_macs}",
                 "-C",
                 "mps3_board.visualisation.disable-visualisation=1",
                 "-C",
@@ -805,10 +816,19 @@ def _tosa_refmodel_loglevel(loglevel: int) -> str:
 
 
 def corstone300_installed() -> bool:
-    cmd = ["FVP_Corstone_SSE-300_Ethos-U55", "--version"]
+    cmd_u55 = ["FVP_Corstone_SSE-300_Ethos-U55", "--version"]
     try:
-        _run_cmd(cmd, check=True)
-    except:
+        _run_cmd(cmd_u55, check=True)
+    except Exception:
+        return False
+    return True
+
+
+def corstone300_u65_installed() -> bool:
+    cmd_u65 = ["FVP_Corstone_SSE-300_Ethos-U65", "--version"]
+    try:
+        _run_cmd(cmd_u65, check=True)
+    except Exception:
         return False
     return True
 
@@ -817,7 +837,7 @@ def corstone320_installed() -> bool:
     cmd = ["FVP_Corstone_SSE-320", "--version"]
     try:
         _run_cmd(cmd, check=True)
-    except:
+    except Exception:
         return False
     return True
 
@@ -898,7 +918,7 @@ def _elf_path_candidates(
         raise ValueError(f"Unsupported target: {target_board}")
 
     portable_ops_str = "portable-ops_" if use_portable_ops else ""
-    if target_board in ("corstone-300", "corstone-320"):
+    if target_board in ("corstone-300", "corstone-300-u65", "corstone-320"):
         build_dir = Path(
             "arm_test",
             f"arm_semihosting_executor_runner_"
@@ -969,7 +989,7 @@ def get_elf_path(
 def arm_executor_runner_exists(target_board: str, use_portable_ops: bool = False):
     try:
         get_elf_path(target_board, use_portable_ops=use_portable_ops)
-    except:
+    except Exception:
         return False
     else:
         return True
@@ -1021,6 +1041,8 @@ def get_target_board(compile_spec: ArmCompileSpec) -> str | None:
     if isinstance(compile_spec, EthosUCompileSpec):
         if "u55" in compile_spec.target:
             return "corstone-300"
+        if "u65" in compile_spec.target:
+            return "corstone-300-u65"
         if "u85" in compile_spec.target:
             return "corstone-320"
     return None

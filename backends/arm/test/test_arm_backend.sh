@@ -133,7 +133,7 @@ test_pytest_ops_ethos_u55() {
     backends/arm/scripts/build_executorch.sh
     backends/arm/test/setup_testing.sh
 
-    pytest "${PYTEST_RETRY_ARGS[@]}" --verbose --color=yes --numprocesses=auto --durations=10  backends/arm/test/ --ignore=backends/arm/test/models -k u55
+    pytest "${PYTEST_RETRY_ARGS[@]}" --verbose --color=yes --numprocesses=auto --durations=10  backends/arm/test/ --ignore=backends/arm/test/models -k "u55 or u65"
     echo "${TEST_SUITE_NAME}: PASS"
 }
 
