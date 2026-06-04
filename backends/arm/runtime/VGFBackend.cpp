@@ -280,7 +280,7 @@ class VGFBackend final : public ::executorch::runtime::BackendInterface {
     (void)context;
 #endif
 
-        // Copy all inputs from EValue to VkDeviceMemory
+    // Copy all inputs from EValue to VkDeviceMemory
     for (size_t input_arg_idx = 0; input_arg_idx < input_count;
          ++input_arg_idx) {
       const int io_idx = repr->model_input_io_index[input_arg_idx];
@@ -335,7 +335,7 @@ class VGFBackend final : public ::executorch::runtime::BackendInterface {
       memcpy(data, tensor->mutable_data_ptr(), io_size);
       repr->unmap_io(io);
     }
-    
+
 #ifdef ET_EVENT_TRACER_ENABLED
     event_tracer_end_profiling_delegate(event_tracer, copy_inputs_event);
 
@@ -371,7 +371,7 @@ class VGFBackend final : public ::executorch::runtime::BackendInterface {
         /*delegate_debug_id=*/-1);
 #endif
 
-        // Copy all outputs from VKDeviceMemory to EValue
+    // Copy all outputs from VKDeviceMemory to EValue
     for (size_t output_rel_idx = 0; output_rel_idx < output_count;
          ++output_rel_idx) {
       const size_t output_arg_idx = input_count + output_rel_idx;
@@ -426,7 +426,7 @@ class VGFBackend final : public ::executorch::runtime::BackendInterface {
       memcpy(tensor->mutable_data_ptr(), data, io_size);
       repr->unmap_io(io);
     }
-   
+
 #ifdef ET_EVENT_TRACER_ENABLED
     event_tracer_end_profiling_delegate(event_tracer, copy_outputs_event);
     event_tracer_end_profiling_delegate(event_tracer, vgf_execute_event);

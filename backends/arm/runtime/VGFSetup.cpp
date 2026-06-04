@@ -3201,14 +3201,16 @@ bool VgfRepr::process_vgf(
       auto set_count = sequence_decoder->getSegmentDescriptorSetInfosSize(
           segment.segment_id);
       for (uint32_t d_idx = 0; d_idx < set_count; d_idx++) {
-        auto descriptor_slots = sequence_decoder->getDescriptorBindingSlotsHandle(
-            segment.segment_id, d_idx);
+        auto descriptor_slots =
+            sequence_decoder->getDescriptorBindingSlotsHandle(
+                segment.segment_id, d_idx);
         auto descriptor_count =
             sequence_decoder->getBindingsSize(descriptor_slots);
         for (uint32_t i = 0; i < descriptor_count; i++) {
           auto mrt_i =
               sequence_decoder->getBindingSlotMrtIndex(descriptor_slots, i);
-          auto alias_group = get_resource_alias_group_id(resource_decoder, mrt_i);
+          auto alias_group =
+              get_resource_alias_group_id(resource_decoder, mrt_i);
           if (!alias_group.has_value()) {
             continue;
           }
@@ -3241,7 +3243,10 @@ bool VgfRepr::process_vgf(
         }
         for (auto image : alias_state.images) {
           record_image_layout_transition(
-              vk_execute_cmd, image, alias_state.current_layout, desired_layout);
+              vk_execute_cmd,
+              image,
+              alias_state.current_layout,
+              desired_layout);
         }
         alias_state.current_layout = desired_layout;
       }
@@ -3311,7 +3316,8 @@ bool VgfRepr::process_vgf(
         std::any_of(IOs.begin(), IOs.end(), [](const auto& io) {
           return !io.is_input &&
               (io.descriptor_type == VK_DESCRIPTOR_TYPE_STORAGE_IMAGE ||
-               io.descriptor_type == VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER ||
+               io.descriptor_type ==
+                   VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER ||
                io.descriptor_type == VK_DESCRIPTOR_TYPE_SAMPLED_IMAGE);
         });
 
