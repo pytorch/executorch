@@ -51,6 +51,10 @@ from .qconfig import (
     get_8a4w_qnn_ptq_config,
     get_8a8w_qnn_ptq_config,
     get_8a8w_qnn_qat_config,
+    get_fp16a8w_per_channel_quant_config,
+    get_fp16a8w_qat_per_channel_quant_config,
+    get_fp16a8w_qnn_ptq_config,
+    get_fp16a8w_qnn_qat_config,
     get_ptq_per_block_quant_config,
     get_ptq_per_channel_quant_config,
     get_qat_per_block_quant_config,
@@ -89,6 +93,7 @@ class QuantDtype(IntEnum):
     use_16a4w_block = 3
     use_8a8w = 4
     use_8a4w = 5
+    use_fp16a8w = 6
 
 
 QUANT_CONFIG_DICT = {
@@ -145,6 +150,16 @@ QUANT_CONFIG_DICT = {
             act_dtype=torch.uint8,
             weight_dtype=torch.int4,
         ),
+        None,
+    ),
+    (QuantDtype.use_fp16a8w, False): (
+        get_fp16a8w_qnn_ptq_config,
+        get_fp16a8w_per_channel_quant_config,
+        None,
+    ),
+    (QuantDtype.use_fp16a8w, True): (
+        get_fp16a8w_qnn_qat_config,
+        get_fp16a8w_qat_per_channel_quant_config,
         None,
     ),
     # QAT,
