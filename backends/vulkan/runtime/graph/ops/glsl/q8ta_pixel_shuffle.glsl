@@ -122,7 +122,7 @@ void main() {
   // helper call needed. (Assumes r*r == inner_block_size == 4, enforced by the
   // C++ dispatch's r==2 and packed_dim_block_size==4 asserts.)
   const int byte_stride =
-      int(stride_at(inp, get_packed_dim(inp_layout))) * get_block_numel(inp_layout);
+      int(safe_idx(inp.strides[0], get_packed_dim(inp_layout))) * get_block_numel(inp_layout);
 
   // lane is the byte position within an int32 word, which equals
   // (intra_block_idx % 4) since block_numel is a multiple of 4. And

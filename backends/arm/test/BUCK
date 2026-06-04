@@ -50,6 +50,42 @@ fbcode_target(_kind = runtime.python_library,
 )
 
 fbcode_target(_kind = runtime.python_library,
+    name = "custom_vgf_test_utils",
+    srcs = ["_custom_vgf_test_utils.py"],
+    resources = [
+        "assets/test_add_buffer.glsl",
+        "assets/test_grid_read_tensor_debug.glsl",
+        "assets/test_grid_sample_buffer_nchw_debug.glsl",
+        "assets/test_grid_sample_sampler.glsl",
+        "assets/test_grid_sample_sampler_buffer_debug.glsl",
+        "assets/test_identity_buffer.glsl",
+        "assets/test_identity_image_packed_buffer.glsl",
+        "assets/test_threes_buffer.glsl",
+        "assets/test_threes_image_packed_buffer.glsl",
+    ],
+    deps = [
+        "//caffe2:torch",
+        "//executorch/backends/arm:constants",
+        "//executorch/backends/arm/_passes:passes",
+        "//executorch/backends/arm/tosa/dialect:lib",
+        "//executorch/exir:lib",
+    ],
+)
+
+fbcode_target(_kind = runtime.python_library,
+    name = "vgf_runtime_test_utils",
+    srcs = ["runtime/_vgf_runtime_test_utils.py"],
+    deps = [
+        ":custom_vgf_test_utils",
+        ":runner_utils",
+        "//executorch/backends/arm:vgf",
+        "//executorch/backends/arm/_passes:passes",
+        "//executorch/exir:lib",
+        "fbsource//third-party/pypi/pytest:pytest",
+    ],
+)
+
+fbcode_target(_kind = runtime.python_library,
     name = "arm_tester_serialize",
     srcs = ["tester/serialize.py"],
     deps = [

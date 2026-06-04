@@ -59,6 +59,7 @@ from executorch.exir.passes.insert_write_back_for_buffers_pass import (
 from executorch.exir.passes.normalize_view_copy_base_pass import (
     NormalizeViewCopyBasePass,
 )
+from executorch.exir.passes.propagate_device_config import PropagateDeviceConfig
 from executorch.exir.passes.propagate_device_pass import PropagateDevicePass
 from executorch.exir.passes.quant_fusion_pass import quant_fusion_and_const_prop_pass
 from executorch.exir.passes.reinplace import DEFAULT_INPLACEABLE_OPS, reinplace_pass
@@ -758,6 +759,13 @@ def edge_to_executorch_passes(
     Returns a list of passes to lower from edge to executorch.
     Get the pre memory planning passes based on the method name, if the pass is not in the dict, use the default pass.
     """
+    # Handle propagate device config
+    propagate_device_config = config.propagate_device_config
+    if isinstance(propagate_device_config, dict):
+        device_cfg = propagate_device_config.get(name, PropagateDeviceConfig())
+    else:
+        device_cfg = propagate_device_config
+
     passes: List[PassType] = [
         # ExecuTorch backend ops are unable to handle unbacked symints. So after
         # this pass, passes cannot be Interpreter-based, because it will fail if
@@ -765,8 +773,8 @@ def edge_to_executorch_passes(
         *config.passes,
         SpecPropPass(),
         PropagateDevicePass(
-            skip_h2d_for_method_inputs=config.skip_h2d_for_method_inputs,
-            skip_d2h_for_method_outputs=config.skip_d2h_for_method_outputs,
+            skip_h2d_for_method_inputs=device_cfg.skip_h2d_for_method_inputs,
+            skip_d2h_for_method_outputs=device_cfg.skip_d2h_for_method_outputs,
             enable_non_cpu_memory_planning=config.enable_non_cpu_memory_planning,
         ),
         EdgeToBackendOpsPass(),
