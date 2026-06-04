@@ -63,7 +63,11 @@ else()
   set(CMAKE_TOOLCHAIN_IOS OFF)
 endif()
 
-set(_common_compile_options -Wno-deprecated-declarations -fPIC)
+if(MSVC)
+  set(_common_compile_options /wd4996)
+else()
+  set(_common_compile_options -Wno-deprecated-declarations -fPIC)
+endif()
 
 # Let files say "include <executorch/path/to/header.h>".
 set(_common_include_directories ${EXECUTORCH_ROOT}/..)
@@ -186,7 +190,9 @@ endif()
 # Qnn backend
 if(TARGET qnn_executorch_backend)
   list(APPEND link_libraries qnn_executorch_backend)
-  executorch_target_link_options_shared_lib(qnn_executorch_backend)
+  if(NOT MSVC)
+    executorch_target_link_options_shared_lib(qnn_executorch_backend)
+  endif()
 endif()
 
 # MPS backend
