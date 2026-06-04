@@ -1,0 +1,22 @@
+# Copyright (c) Meta Platforms, Inc. and affiliates.
+# All rights reserved.
+#
+# This source code is licensed under the BSD-style license found in the
+# LICENSE file in the root directory of this source tree.
+
+pack_q4_linear_weight__w_4x8:
+  parameter_names_with_default_values:
+    DTYPE: float
+    STORAGE: buffer
+    WEIGHT_KC: 0
+  shader_variants:
+    # 4K x 8N weight blocks, interleaved nibble layout (dp4a-style byte pairs,
+    # low nibble = even-N row, high nibble = odd-N row).
+    #
+    #   nc_buffer — N dim contiguous in memory; one ivec4 per (k4, n8) at
+    #               flat index `k4 * N8 + n8`. Adjacent n8 blocks are
+    #               contiguous in memory; adjacent k4 are stride N8.
+    #               Required by the GEMM ivec4 weight load.
+    - NAME: pack_q4_linear_weight__w_4x8_nc_buffer
+      STORAGE: buffer
+      WEIGHT_KC: 0
