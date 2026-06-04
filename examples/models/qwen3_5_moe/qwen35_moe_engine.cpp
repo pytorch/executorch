@@ -43,7 +43,7 @@ namespace {
 // session logic below stays backend-agnostic.
 // ---------------------------------------------------------------------------
 
-uint64_t read_sampled_token(
+Result<uint64_t> read_sampled_token(
     const executorch::aten::Tensor& output,
     float temperature) {
 #ifdef EXECUTORCH_BUILD_CUDA
@@ -56,8 +56,10 @@ uint64_t read_sampled_token(
   if (on_device) {
     if (cudaMemcpy(&val, ptr, sizeof(float), cudaMemcpyDeviceToHost) !=
         cudaSuccess) {
+      // Don't fabricate token id 0 (a valid token) on a copy failure — that is
+      // silent corruption. Surface it so the caller aborts the request.
       ET_LOG(Error, "read_sampled_token: cudaMemcpy D2H failed");
-      return 0;
+      return Error::Internal;
     }
   } else {
     std::memcpy(&val, ptr, sizeof(float));
@@ -164,11 +166,15 @@ class Qwen35MoESession : public LLMSession {
     }
     const int64_t T = static_cast<int64_t>(tokens.size());
     const auto ctx_it = metadata_.find(kMaxContextLen);
-    if (ctx_it != metadata_.end() && pos_ + T > ctx_it->second) {
+    // Require room for at least one generated token: after prefill, pos_ == T
+    // and decode_one() forwards the first token at pos_, which must be < the
+    // context length. Rejecting pos_ + T == max_context (not just > it) keeps a
+    // full prompt from reaching decode_one with no room to step.
+    if (ctx_it != metadata_.end() && pos_ + T >= ctx_it->second) {
       ET_LOG(
           Error,
-          "prefill_tokens would exceed context capacity (pos %" PRId64
-          " + %" PRId64 " > %" PRId64 ")",
+          "prefill_tokens would leave no room to generate (pos %" PRId64
+          " + %" PRId64 " >= max_context %" PRId64 ")",
           pos_,
           T,
           ctx_it->second);
@@ -202,7 +208,9 @@ class Qwen35MoESession : public LLMSession {
 #endif
     auto res = module_->execute(method, inputs);
     ET_CHECK_OK_OR_RETURN_ERROR(res.error());
-    pending_ = read_sampled_token(res.get()[0].toTensor(), first_token_temp);
+    auto sampled = read_sampled_token(res.get()[0].toTensor(), first_token_temp);
+    ET_CHECK_OK_OR_RETURN_ERROR(sampled.error());
+    pending_ = sampled.get();
     prev_decode_token_.reset();
     pos_ += T; // the prompt tokens are now resident in KV/state
 #ifdef EXECUTORCH_BUILD_CUDA
@@ -255,6 +263,21 @@ class Qwen35MoESession : public LLMSession {
           token, std::move(text_piece), is_eos, /*is_terminal=*/true};
     }
 
+    // Only a NON-EOS, non-stopped token is forwarded (made resident at pos_), so
+    // the capacity check belongs here — after the short-circuit, so a final EOS
+    // is still emitted when state is exactly full. Without it, decode would
+    // write KV/recurrent state past the context window.
+    const auto ctx_it = metadata_.find(kMaxContextLen);
+    if (ctx_it != metadata_.end()) {
+      ET_CHECK_OR_RETURN_ERROR(
+          pos_ < ctx_it->second,
+          InvalidArgument,
+          "decode_one would exceed context capacity: pos_ %" PRId64
+          " >= max_context %" PRId64,
+          pos_,
+          ctx_it->second);
+    }
+
     // Forward `token` at pos_ through the decode method to get the next pending
     // token. Update the persistent buffers in place (stable addresses).
     decode_token_data_[0] = static_cast<int64_t>(token);
@@ -268,7 +291,9 @@ class Qwen35MoESession : public LLMSession {
 #endif
     auto res = module_->execute("decode", inputs);
     ET_CHECK_OK_OR_RETURN_ERROR(res.error());
-    pending_ = read_sampled_token(res.get()[0].toTensor(), temperature_);
+    auto sampled = read_sampled_token(res.get()[0].toTensor(), temperature_);
+    ET_CHECK_OK_OR_RETURN_ERROR(sampled.error());
+    pending_ = sampled.get();
     prev_decode_token_ = token;
     pos_ += 1;
     return DecodeResult{
