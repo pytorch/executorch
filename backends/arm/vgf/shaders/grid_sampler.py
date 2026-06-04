@@ -40,6 +40,29 @@ def _mode_name(
     return names[mode]
 
 
+def grid_sampler_2d_operator_name(
+    interpolation_mode: int,
+    padding_mode: int,
+    align_corners: bool,
+) -> str:
+    interpolation = _mode_name(
+        int(interpolation_mode),
+        _INTERPOLATION_MODE_NAMES,
+        "interpolation_mode",
+    )
+    padding = _mode_name(
+        int(padding_mode),
+        _PADDING_MODE_NAMES,
+        "padding_mode",
+    )
+    return (
+        f"{GRID_SAMPLER_2D_OPERATOR_NAME}"
+        f".mode.{interpolation}"
+        f".padding.{padding}"
+        f".align_corners.{align_corners}"
+    )
+
+
 def build_grid_sampler_2d_payload(
     interpolation_mode: int,
     padding_mode: int,

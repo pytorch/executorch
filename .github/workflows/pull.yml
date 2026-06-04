@@ -484,6 +484,7 @@ jobs:
       submodules: 'recursive'
       ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
       timeout: 90
+      upload-artifact: bloaty-linux-gcc
       script: |
         # The generic Linux job chooses to use base env, not the one setup by the image
         CONDA_ENV=$(conda env list --json | jq -r ".envs | .[-1]")
@@ -492,6 +493,13 @@ jobs:
         ./install_requirements.sh
         # build module for executorch.extension.pybindings.portable_lib
         bash test/build_size_test.sh
+
+        # Bloaty per-bucket size report (best-effort; never fails the size job).
+        mkdir -p /tmp/bloaty-elfs
+        cp cmake-out/test/size_test /tmp/bloaty-elfs/head.elf
+        GITHUB_HEAD_SHA="${{ github.event.pull_request.head.sha || github.sha }}" \
+          bash .ci/scripts/bloaty-measure.sh "linux-gcc" /tmp/bloaty-elfs/head.elf strip
+
         strip cmake-out/test/size_test
         output=$(ls -la cmake-out/test/size_test)
         arr=($output)
@@ -519,6 +527,7 @@ jobs:
       submodules: 'recursive'
       ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
       timeout: 90
+      upload-artifact: bloaty-linux-clang
       script: |
         # The generic Linux job chooses to use base env, not the one setup by the image
         CONDA_ENV=$(conda env list --json | jq -r ".envs | .[-1]")
@@ -528,6 +537,13 @@ jobs:
 
         # build module for executorch.extension.pybindings.portable_lib
         bash test/build_size_test.sh
+
+        # Bloaty per-bucket size report (best-effort; never fails the size job).
+        mkdir -p /tmp/bloaty-elfs
+        cp cmake-out/test/size_test /tmp/bloaty-elfs/head.elf
+        GITHUB_HEAD_SHA="${{ github.event.pull_request.head.sha || github.sha }}" \
+          bash .ci/scripts/bloaty-measure.sh "linux-clang" /tmp/bloaty-elfs/head.elf strip
+
         strip cmake-out/test/size_test
         output=$(ls -la cmake-out/test/size_test)
         arr=($output)
@@ -557,6 +573,7 @@ jobs:
       submodules: 'recursive'
       ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
       timeout: 90
+      upload-artifact: bloaty-arm-${{ matrix.os }}
       script: |
         # The generic Linux job chooses to use base env, not the one setup by the image
         CONDA_ENV=$(conda env list --json | jq -r ".envs | .[-1]")
@@ -612,6 +629,13 @@ jobs:
         python .github/scripts/run_nm.py -e ${elf}
         python .github/scripts/run_nm.py -e ${elf} -f "executorch" -p "${toolchain_prefix}"
         python .github/scripts/run_nm.py -e ${elf} -f "executorch_text" -p "${toolchain_prefix}"
+
+        # Bloaty per-bucket size report (best-effort; never fails the size job).
+        # Runs BEFORE the in-place strip below so the head ELF is still unstripped.
+        mkdir -p /tmp/bloaty-elfs
+        cp "${elf}" /tmp/bloaty-elfs/head.elf
+        GITHUB_HEAD_SHA="${{ github.event.pull_request.head.sha || github.sha }}" \
+          bash .ci/scripts/bloaty-measure.sh "arm-${{ matrix.os }}" /tmp/bloaty-elfs/head.elf "${toolchain_prefix}strip"
 
         # Add basic guard - TODO: refine this!
         ${toolchain_prefix}strip ${elf}

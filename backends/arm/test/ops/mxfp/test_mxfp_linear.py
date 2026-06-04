@@ -6,13 +6,25 @@
 # LICENSE file in the root directory of this source tree.
 
 import copy
+from typing import Tuple
 
 import torch
 from executorch.backends.arm.ao_ext import MXFPOpConfig, to_mxfp
-from executorch.backends.arm.test import common
+from executorch.backends.arm.test import common as arm_common
+from executorch.backends.arm.test.ops.mxfp.common import (
+    MXFPTosaPipelineFP,
+    MXFPVgfPipeline,
+)
 from executorch.backends.arm.test.tester.analyze_output_utils import (
     compare_rel_frobenius_and_cosine_similarity,
 )
+
+aten_op = "torch.ops.tosa_mxfp.linear.default"
+
+input_t1 = Tuple[torch.Tensor]
+
+_MXFP_FROBENIUS_THRESHOLD = 0.06
+_MXFP_COSINE_THRESHOLD = 0.995
 
 
 def _block_input_rank1() -> torch.Tensor:
@@ -40,6 +52,12 @@ def _block_input_rank2() -> torch.Tensor:
             ),
         )
     )
+
+
+def _channels_last_rank4_input() -> torch.Tensor:
+    """Create a rank-4 input with channels-last dim order."""
+
+    return torch.rand(1, 2, 2, 64).to(memory_format=torch.channels_last)
 
 
 _test_data_rank1_fp = {
@@ -123,13 +141,33 @@ _test_data_block_fp = {
     ),
 }
 
+_test_data_dim_order_fp = {
+    "mxfp_linear_rank4_channels_last": lambda: (
+        _channels_last_rank4_input(),
+        8,
+        True,
+        False,
+    ),
+}
+
 test_data_fp = (
     _test_data_rank1_fp
     | _test_data_rank2_fp
     | _test_data_rank3_fp
     | _test_data_rank4_fp
     | _test_data_block_fp
+    | _test_data_dim_order_fp
 )
+
+test_data_vgf_fp = test_data_fp
+
+_vgf_xfail_reason = (
+    "MXFP is not yet supported in the VGF toolchain. Enable this test when "
+    "toolchain support is available."
+)
+_vgf_xfails: dict[str, str | tuple[str, type[Exception]]] = {
+    test_case: _vgf_xfail_reason for test_case in test_data_vgf_fp
+}
 
 
 class Linear(torch.nn.Module):
@@ -177,12 +215,60 @@ def _is_linear(module: torch.nn.Module, _fqn: str) -> bool:
     return isinstance(module, torch.nn.Linear)
 
 
-def _test_mxfp_linear_eager_cpu(
-    test_data: torch.Tensor,
-    config: MXFPOpConfig,
-    frobenius_threshold: float,
-    cosine_threshold: float,
-) -> None:
+@arm_common.parametrize("test_data", test_data_fp)
+def test_mxfp_linear_tosa_FP(test_data) -> None:
+    test_input, out_features, has_bias, set_block_weights = test_data()
+    in_features = test_input.shape[-1]
+    module = Linear(
+        in_features=in_features,
+        out_features=out_features,
+        bias=has_bias,
+    ).eval()
+
+    if set_block_weights:
+        module.set_block_test_weights()
+
+    pipeline = MXFPTosaPipelineFP[input_t1](
+        module,
+        (test_input,),
+        aten_op,
+        filter_fn=_is_linear,
+        frobenius_threshold=_MXFP_FROBENIUS_THRESHOLD,
+        cosine_threshold=_MXFP_COSINE_THRESHOLD,
+        tosa_version="1.1",
+        tosa_extensions=["mxfp"],
+    )
+    pipeline.run()
+
+
+@arm_common.parametrize("test_data", test_data_vgf_fp, xfails=_vgf_xfails)
+@arm_common.SkipIfNoModelConverter
+def test_mxfp_linear_vgf(test_data) -> None:
+    test_input, out_features, has_bias, set_block_weights = test_data()
+    in_features = test_input.shape[-1]
+    module = Linear(
+        in_features=in_features,
+        out_features=out_features,
+        bias=has_bias,
+    ).eval()
+
+    if set_block_weights:
+        module.set_block_test_weights()
+
+    pipeline = MXFPVgfPipeline[input_t1](
+        module,
+        (test_input,),
+        aten_op,
+        filter_fn=_is_linear,
+        frobenius_threshold=_MXFP_FROBENIUS_THRESHOLD,
+        cosine_threshold=_MXFP_COSINE_THRESHOLD,
+        tosa_spec="TOSA-1.1+FP+mxfp",
+    )
+    pipeline.run()
+
+
+@arm_common.parametrize("test_data", test_data_fp)
+def test_mxfp_linear_eager_cpu(test_data) -> None:
     test_input, out_features, has_bias, set_block_weights = test_data()
     in_features = test_input.shape[-1]
     ref_model = Linear(
@@ -194,7 +280,7 @@ def _test_mxfp_linear_eager_cpu(
         ref_model.set_block_test_weights()
     test_model = copy.deepcopy(ref_model).eval()
 
-    to_mxfp(test_model, config, filter_fn=_is_linear)
+    to_mxfp(test_model, MXFPOpConfig(), filter_fn=_is_linear)
 
     test_output = test_model(test_input)
     ref_output = ref_model(test_input)
@@ -203,24 +289,7 @@ def _test_mxfp_linear_eager_cpu(
         ref_output,
         test_output,
         quantization_parameters=None,
-        frobenius_threshold=frobenius_threshold,
-        cosine_threshold=cosine_threshold,
+        frobenius_threshold=_MXFP_FROBENIUS_THRESHOLD,
+        cosine_threshold=_MXFP_COSINE_THRESHOLD,
         clean_reference=False,
-    )
-
-
-@common.parametrize("test_data", test_data_fp)
-def test_mxfp_linear_eager_cpu(test_data: torch.Tensor) -> None:
-    """Check eager MXFP implementation.
-
-    The Arm lowering tests compare lowered output against the eager CPU
-    implementation, so the eager implementation must be accurate for it to be
-    used as a reference in other tests.
-
-    """
-    _test_mxfp_linear_eager_cpu(
-        test_data,
-        MXFPOpConfig(),
-        frobenius_threshold=0.06,
-        cosine_threshold=0.995,
     )

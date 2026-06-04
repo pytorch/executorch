@@ -6,7 +6,7 @@ PyTorch models to a TOSA representation. This representation is used to
 deploy to the following targets:
 
 - **Arm&reg; Ethos&trade;-U55/65/85** - Compiled using the Ethos-U Vela compiler.
-- **VGF Format, for ML extensions for Vulkan®** – a format containing SPIR-V™ ML operators for Vulkan-capable devices.
+- **VKML using VGF Format, for ML extensions for Vulkan®** – a format containing SPIR-V™ ML operators for Vulkan Machine Learning (VKML) devices.
 
 The backend provides an ahead-of-time (AOT) flow, that produces a PTE file for your
 chosen target. The AOT flow supports the following development operating systems:
@@ -248,15 +248,16 @@ Below is an overview of some of the testing options this script provides:
 | `test_arm_backend.sh test_pytest_ops_ethos_u85`    | Runs operator unit tests for Ethos-U85 specific use-cases.   |
 | `test_arm_backend.sh test_pytest_models_ethos_u85` | Runs model unit tests for Ethos-U85 specific use-cases.      |
 | `test_arm_backend.sh test_run_ethos_u85`           | Runs end-to-end unit tests for Ethos-U85 specific use-cases. |
-| `test_arm_backend.sh test_pytest_ops_vkml`         | Runs operator unit tests for VGF specific use-cases.         |
-| `test_arm_backend.sh test_pytest_models_vkml`      | Runs model unit tests for VGF specific use-cases.            |
-| `test_arm_backend.sh test_run_vkml`                | Runs end-to-end unit tests for VGF specific use-cases.       |
+| `test_arm_backend.sh test_pytest_ops_vkml`         | Runs operator unit tests for VKML/VGF specific use-cases.    |
+| `test_arm_backend.sh test_pytest_models_vkml`      | Runs model unit tests for VKML/VGF specific use-cases.       |
+| `test_arm_backend.sh test_run_vkml`                | Runs end-to-end unit tests for VKML/VGF specific use-cases.  |
 | `test_arm_backend.sh test_model_smollm2_135M`      | Runs some models with Corstone FVP.                          |
 | `test_arm_backend.sh test_ootb_tests_ethos_u`      | Runs out-of-the-box tests for Ethos-U.                       |
 | `test_arm_backend.sh test_ootb_tests_tosa`         | Runs out-of-the-box tests for TOSA.                          |
-| `test_arm_backend.sh test_ootb_tests_vgf`          | Runs out-of-the-box tests for VGF.                           |
+| `test_arm_backend.sh test_ootb_tests_vgf`          | Runs out-of-the-box tests for VKML/VGF.                      |
 | `test_arm_backend.sh test_deit_e2e_ethos_u`        | Runs DEiT end-to-end tests on Ethos-U.                       |
-| `test_arm_backend.sh test_smaller_stories_llama`   | Runs E2E model tests on Corstone FVP.                        |
+| `test_arm_backend.sh test_smaller_stories_llama_tosa` | Runs Llama model tests for TOSA.                          |
+| `test_arm_backend.sh test_smaller_stories_llama_vkml` | Runs Llama model tests for VKML/VGF.                      |
 | `test_arm_backend.sh test_memory_allocation`       | Runs memory allocation tests for Ethos-U specific targets    |
 
 For more information, please refer to the `backends/arm/test/test_arm_backend.sh` script.
