@@ -17,6 +17,19 @@ install_domains() {
 }
 
 install_pytorch_and_domains() {
+  if [ "${TORCH_CHANNEL}" != "nightly" ]; then
+    # Test/release: install the published wheels directly. The specs and URL
+    # are passed in as docker build args computed from torch_pin.py.
+    local cache_flag=""
+    if [ "${TORCH_CHANNEL}" = "test" ]; then
+      cache_flag="--no-cache-dir"
+    fi
+    pip_install --force-reinstall ${cache_flag} \
+      "${TORCH_SPEC}" "${TORCHVISION_SPEC}" "${TORCHAUDIO_SPEC}" \
+      --index-url "${TORCH_INDEX_URL}/cpu"
+    return
+  fi
+
   git clone https://github.com/pytorch/pytorch.git
 
   # Fetch the target commit
@@ -37,10 +50,10 @@ install_pytorch_and_domains() {
   conda_run python setup.py bdist_wheel
   pip_install "$(echo dist/*.whl)"
 
-  # Grab the pinned audio and vision commits from PyTorch
-  TORCHAUDIO_VERSION=release/2.11
+  # Defer to PyTorch's own pinned audio/vision commits.
+  TORCHAUDIO_VERSION=$(cat .github/ci_commit_pins/audio.txt)
   export TORCHAUDIO_VERSION
-  TORCHVISION_VERSION=release/0.27
+  TORCHVISION_VERSION=$(cat .github/ci_commit_pins/vision.txt)
   export TORCHVISION_VERSION
 
   install_domains
