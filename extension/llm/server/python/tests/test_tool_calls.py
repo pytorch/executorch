@@ -111,6 +111,72 @@ def test_mixed_valid_and_undefined_tool_degrades_to_text(make_client):
     assert "rm_rf" in content and "get_weather" in content  # full intent visible
 
 
+def test_tool_choice_none_omits_tools_from_prompt():
+    from executorch.extension.llm.server.python.chat_template import ChatTemplate
+    from executorch.extension.llm.server.python.runner_pool import RunnerPool
+    from executorch.extension.llm.server.python.server import build_app
+    from executorch.extension.llm.server.python.serving_chat import ServingChat
+    from executorch.extension.llm.server.python.tool_parsers import HermesDetector
+
+    # tool_choice="none" must NOT inject tool schemas into the chat template; if it
+    # did, the model could still emit a <tool_call> that we'd surface as plain text
+    # (parsing is disabled for "none"). Assert via a recording tokenizer.
+    from fastapi.testclient import TestClient
+
+    class _RecordingTok:
+        all_special_tokens: list = []
+
+        def __init__(self):
+            self.tools_seen = "UNSET"
+
+        def encode(self, text):
+            return [0]
+
+        def apply_chat_template(
+            self, messages, tools, add_generation_prompt, tokenize, **kwargs
+        ):
+            self.tools_seen = tools
+            return "PROMPT"
+
+    class _Runner:
+        def reset(self):
+            pass
+
+        def stop(self):
+            pass
+
+        def generate(self, prompt, config, token_callback=None, stats_callback=None):
+            if token_callback:
+                token_callback("ok")
+
+    rec = _RecordingTok()
+    template = ChatTemplate(hf_tokenizer_path=None, allow_fallback=True)
+    template._hf = rec
+    pool = RunnerPool(runner_factory=lambda: _Runner(), num_runners=1)
+    serving = ServingChat(
+        pool, template, "test-model", tool_detector_cls=HermesDetector
+    )
+    client = TestClient(build_app(serving, "test-model"))
+    body = {
+        "model": "test-model",
+        "messages": [{"role": "user", "content": "hi"}],
+        "tools": WEATHER_TOOLS,
+        "max_tokens": 8,
+    }
+
+    assert (
+        client.post(
+            "/v1/chat/completions", json={**body, "tool_choice": "none"}
+        ).status_code
+        == 200
+    )
+    assert rec.tools_seen is None  # tools omitted from the rendered prompt
+
+    # Control: default ("auto") still passes the tools through to the template.
+    assert client.post("/v1/chat/completions", json=body).status_code == 200
+    assert rec.tools_seen == WEATHER_TOOLS
+
+
 def test_malformed_tool_call_falls_back_to_text(make_client):
     # Broken JSON inside the markers must not crash; degrade to visible text.
     client, _ = make_client(tokens=["<tool_call>\n{not json}\n</tool_call>"])
