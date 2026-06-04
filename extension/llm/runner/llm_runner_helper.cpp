@@ -15,6 +15,7 @@
 #include <executorch/extension/llm/runner/multimodal_runner.h>
 #include <executorch/extension/llm/runner/stats.h>
 #include <executorch/extension/llm/runner/text_llm_runner.h>
+#include <executorch/extension/llm/runner/text_llm_session.h>
 #include <executorch/extension/llm/runner/text_prefiller.h>
 #include <executorch/extension/llm/runner/text_token_generator.h>
 #include <executorch/extension/memory_allocator/cpu_caching_malloc_allocator.h>
@@ -341,7 +342,7 @@ std::unique_ptr<TextLLMRunner> create_text_llm_runner_from_program(
   // than re-loading it, and its loaded method allocates its own planned (KV)
   // memory. Whether packed weights are physically shared vs. re-materialized
   // per method instance is backend-dependent (serving_capacity() is the
-  // authority); on XNNPACK assume per-instance.
+  // authority).
   constexpr uint32_t kMaxCachedMemoryBytes = 1024 * 1024 * 10; // 10MB
   auto module = std::make_unique<Module>(
       std::move(program),
@@ -352,50 +353,67 @@ std::unique_ptr<TextLLMRunner> create_text_llm_runner_from_program(
       std::move(module), std::move(tokenizer), temperature, method_name);
 }
 
-namespace {
+namespace detail {
 // The TextLLM adapter: implements the model-agnostic LLMSession over a
-// TextLLMRunner. TextLLMRunner is an implementation detail here — the engine
-// and server depend only on LLMSession.
-class TextLLMSession : public LLMSession {
- public:
-  explicit TextLLMSession(std::unique_ptr<TextLLMRunner> runner)
-      : runner_(std::move(runner)) {}
+// TextLLMRunner. TextLLMRunner's token-step methods are private; this adapter
+// is their only (friended) caller, so the engine and server depend solely on
+// LLMSession.
+TextLLMSession::TextLLMSession(std::unique_ptr<TextLLMRunner> runner)
+    : runner_(std::move(runner)) {}
 
-  Error prefill_tokens(std::vector<uint64_t> tokens) override {
-    return runner_->prefill_tokens(std::move(tokens)).error();
-  }
-  ::executorch::runtime::Result<DecodeResult> decode_one(
-      const SamplingConfig& sampling) override {
-    // Only temperature is plumbed today; top_p/top_k/seed need a per-session
-    // sampler (a follow-up). Reject non-default values rather than silently
-    // ignoring them, so callers can't assume constraints are applied.
-    if (sampling.top_p != 1.0f || sampling.top_k != 0 || sampling.seed != 0) {
+Error TextLLMSession::prefill_tokens(
+    std::vector<uint64_t> tokens,
+    const SamplingConfig* initial_sampling) {
+  // The model samples the FIRST generated token during prefill, so apply the
+  // request's sampling here (not a stale default). Only temperature is
+  // plumbed; reject non-default top_p/top_k/seed for parity with decode_one().
+  float temperature = -1.0f;
+  if (initial_sampling != nullptr) {
+    if (initial_sampling->top_p != 1.0f || initial_sampling->top_k != 0 ||
+        initial_sampling->seed != 0) {
       ET_LOG(
           Error,
-          "TextLLMSession: only temperature is supported; top_p/top_k/seed are "
-          "not yet implemented");
+          "TextLLMSession: only temperature is supported; top_p/top_k/seed "
+          "are not yet implemented");
       return ::executorch::runtime::Error::NotSupported;
     }
-    return runner_->decode_one(sampling.temperature);
+    temperature = initial_sampling->temperature;
   }
-  Error seek(int64_t pos) override {
-    return runner_->seek(pos);
-  }
-  int64_t position() const override {
-    return runner_->position();
-  }
-  Error reset() override {
-    runner_->reset();
-    return Error::Ok;
-  }
-  void stop() override {
-    runner_->stop();
-  }
+  return runner_->prefill_tokens(std::move(tokens), temperature).error();
+}
 
- private:
-  std::unique_ptr<TextLLMRunner> runner_;
-};
-} // namespace
+::executorch::runtime::Result<DecodeResult> TextLLMSession::decode_one(
+    const SamplingConfig& sampling) {
+  // Only temperature is plumbed today; top_p/top_k/seed need a per-session
+  // sampler (a follow-up). Reject non-default values rather than silently
+  // ignoring them, so callers can't assume constraints are applied.
+  if (sampling.top_p != 1.0f || sampling.top_k != 0 || sampling.seed != 0) {
+    ET_LOG(
+        Error,
+        "TextLLMSession: only temperature is supported; top_p/top_k/seed are "
+        "not yet implemented");
+    return ::executorch::runtime::Error::NotSupported;
+  }
+  return runner_->decode_one(sampling.temperature);
+}
+
+Error TextLLMSession::seek(int64_t pos) {
+  return runner_->seek(pos);
+}
+
+int64_t TextLLMSession::position() const {
+  return runner_->position();
+}
+
+Error TextLLMSession::reset() {
+  runner_->reset();
+  return Error::Ok;
+}
+
+void TextLLMSession::stop() {
+  runner_->stop();
+}
+} // namespace detail
 
 TextLLMEngine::TextLLMEngine(
     std::unique_ptr<Module> loader_module,
@@ -487,7 +505,7 @@ TextLLMEngine::create_session() {
     return Error::InvalidState;
   }
   return std::unique_ptr<LLMSession>(
-      std::make_unique<TextLLMSession>(std::move(runner)));
+      std::make_unique<detail::TextLLMSession>(std::move(runner)));
 }
 
 std::unique_ptr<MultimodalRunner> create_multimodal_runner(

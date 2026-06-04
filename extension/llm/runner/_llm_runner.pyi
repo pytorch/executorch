@@ -418,7 +418,12 @@ class LLMSession:
     (prefill_tokens/decode_one) are serialized across the engine's sessions by
     an engine-owned lock."""
 
-    def prefill_tokens(self, token_ids: List[int]) -> None: ...
+    def prefill_tokens(self, token_ids: List[int], temperature: float = -1.0) -> None:
+        """Prefill pre-tokenized input. `temperature` is the first-token sampling
+        for backends that sample during prefill (ignored by decode-time
+        samplers)."""
+        ...
+
     def decode_one(self, temperature: float = -1.0) -> dict:
         """One decode step -> {"token_id": int, "text": bytes, "is_eos": bool}."""
         ...
