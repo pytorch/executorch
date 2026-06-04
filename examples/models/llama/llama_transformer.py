@@ -239,7 +239,18 @@ class TransformerBlock(nn.Module):
             else:
                 out = h + ffn_out
         else:
-            ffn_out = self.feed_forward(self.ffn_norm(h))
+            # CoreML LoRA-as-IO Path-2: forward `lora_blob` (if any) from
+            # attn_options into LoRAFeedForward. FeedForward (no LoRA) does
+            # not accept the kwarg, so we conditionally pass it.
+            from executorch.examples.models.llama.feed_forward import LoRAFeedForward
+
+            if isinstance(self.feed_forward, LoRAFeedForward):
+                ffn_out = self.feed_forward(
+                    self.ffn_norm(h),
+                    lora_blob=attn_options.get("__lora_io_blob__"),
+                )
+            else:
+                ffn_out = self.feed_forward(self.ffn_norm(h))
             if hasattr(self, "post_ffn_norm"):
                 ffn_out = self.post_ffn_norm(ffn_out)
             if self.use_residual_gate:
