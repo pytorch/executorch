@@ -10,7 +10,8 @@
 #include <executorch/backends/qualcomm/runtime/Logging.h>
 #include <executorch/backends/qualcomm/runtime/backends/QnnFunctionInterface.h>
 
-#include <dlfcn.h>
+#include <pal/DynamicLoading.h>
+
 #include <string>
 namespace executorch {
 namespace backends {
@@ -18,7 +19,8 @@ namespace qnn {
 
 template <typename Fn>
 Fn loadQnnFunction(void* handle, const char* function_name) {
-  return reinterpret_cast<Fn>(dlsym(handle, function_name)); // NOLINT
+  return reinterpret_cast<Fn>( // NOLINT
+      pal::dynamic_loading::DlSym(handle, function_name));
 }
 
 class QnnImplementation {
