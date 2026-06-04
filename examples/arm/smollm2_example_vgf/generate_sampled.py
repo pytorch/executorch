@@ -421,22 +421,20 @@ def select_last_token_logits(
             logits_0 = logits_2d[-1]
         return logits_0, inferred_vocab_size
 
-    if window > 0 and logits.size % window == 0:
-        inferred_vocab_size = int(logits.size // window)
+    if use_full_logits and window > 0 and logits.size % window == 0:
+        candidate_vocab_size = int(logits.size // window)
 
         # Heuristic: treat as full logits when vocab is plausibly large.
-        if inferred_vocab_size >= 1024:
+        if candidate_vocab_size >= 1024:
+            inferred_vocab_size = candidate_vocab_size
             logits_2d = logits.reshape(window, inferred_vocab_size)
-            if use_full_logits:
-                if valid_len <= 0:
-                    raise RuntimeError("No valid tokens to score")
-                logits_0 = logits_2d[valid_len - 1]
-            else:
-                logits_0 = logits_2d[-1]
+            if valid_len <= 0:
+                raise RuntimeError("No valid tokens to score")
+            logits_0 = logits_2d[valid_len - 1]
             return logits_0, inferred_vocab_size
 
     logits_0 = logits.reshape(1, -1)[0]
-    return logits_0, inferred_vocab_size
+    return logits_0, None
 
 
 def print_topk_candidates(
