@@ -47,7 +47,6 @@ from . import (  # noqa
     op_tanh,
     op_to_dim_order_copy,
     op_tosa_avg_pool2d,
-    op_tosa_cast_to_block_scaled,
     op_tosa_conv2d,
     op_tosa_conv3d,
     op_tosa_custom,

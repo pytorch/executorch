@@ -296,13 +296,9 @@ def tosa_support_factory(
     disallowed_dtypes = [torch.float64]
     if not tosa_spec.support_extension("bf16"):
         disallowed_dtypes.append(torch.bfloat16)
-    if not (
-        tosa_spec.support_extension("fp8e4m3") or tosa_spec.support_extension("mxfp")
-    ):
+    if not tosa_spec.support_extension("fp8e4m3"):
         disallowed_dtypes.append(torch.float8_e4m3fn)
-    if not (
-        tosa_spec.support_extension("fp8e5m2") or tosa_spec.support_extension("mxfp")
-    ):
+    if not tosa_spec.support_extension("fp8e5m2"):
         disallowed_dtypes.append(torch.float8_e5m2)
     if tosa_spec.is_U55_subset:
         disallowed_dtypes.append(torch.bool)
