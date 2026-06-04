@@ -215,54 +215,53 @@ using ::executorch::runtime::Result;
 } // namespace torch
 
 /**
- * Unwrap a Result to obtain its value. If the Result contains an error,
- * propogate the error via trivial function return.
+ * Unwrap a Result to obtain its value, declaring var__ in the current
+ * scope. If the Result contains an error, propagate the error via trivial
+ * function return.
  *
  * Note: A function using ET_UNWRAP should itself return a Result or Error.
  *
+ * @param[in] var__ Name of the variable to declare and assign the unwrapped
+ *   value to.
  * @param[in] result__ Expression yielding the result to unwrap.
  * @param[in] ... Optional format string for the log error message and its
- * arguments.
+ *   arguments.
  */
-#define ET_UNWRAP(result__, ...) ET_INTERNAL_UNWRAP(result__, ##__VA_ARGS__)
+#define ET_UNWRAP(...)                                 \
+  ET_INTERNAL_UNWRAP_EXPAND(ET_INTERNAL_UNWRAP_SELECT( \
+      __VA_ARGS__, 11, 10, 9, 8, 7, 6, 5, 4, 3, 2, 1)(__VA_ARGS__))
 
 // Internal only: Use ET_UNWRAP() instead.
-#define ET_INTERNAL_UNWRAP(...)                                         \
-  ET_INTERNAL_UNWRAP_SELECT(__VA_ARGS__, 10, 9, 8, 7, 6, 5, 4, 3, 2, 1) \
-  (__VA_ARGS__)
+#define ET_INTERNAL_UNWRAP_EXPAND(x) x
 
 // Internal only: Use ET_UNWRAP() instead.
-#define ET_INTERNAL_UNWRAP_SELECT(                   \
-    _1, _2, _3, _4, _5, _6, _7, _8, _9, _10, N, ...) \
+#define ET_INTERNAL_UNWRAP_SELECT(                        \
+    _1, _2, _3, _4, _5, _6, _7, _8, _9, _10, _11, N, ...) \
   ET_INTERNAL_UNWRAP_##N
 
 // Internal only: Use ET_UNWRAP() instead.
-#define ET_INTERNAL_UNWRAP_1(result__) \
-  ({                                   \
-    auto et_result__ = (result__);     \
-    if (!et_result__.ok()) {           \
-      return et_result__.error();      \
-    }                                  \
-    std::move(*et_result__);           \
-  })
+#define ET_INTERNAL_UNWRAP_2(var__, result__) \
+  auto et_unwrap_result_##var__ = (result__); \
+  if (!et_unwrap_result_##var__.ok()) {       \
+    return et_unwrap_result_##var__.error();  \
+  }                                           \
+  auto var__ = std::move(*et_unwrap_result_##var__)
 
 // Internal only: Use ET_UNWRAP() instead.
-#define ET_INTERNAL_UNWRAP_2(result__, message__, ...) \
-  ({                                                   \
-    auto et_result__ = (result__);                     \
-    if (!et_result__.ok()) {                           \
-      ET_LOG(Error, message__, ##__VA_ARGS__);         \
-      return et_result__.error();                      \
-    }                                                  \
-    std::move(*et_result__);                           \
-  })
+#define ET_INTERNAL_UNWRAP_3(var__, result__, message__, ...) \
+  auto et_unwrap_result_##var__ = (result__);                 \
+  if (!et_unwrap_result_##var__.ok()) {                       \
+    ET_LOG(Error, message__, ##__VA_ARGS__);                  \
+    return et_unwrap_result_##var__.error();                  \
+  }                                                           \
+  auto var__ = std::move(*et_unwrap_result_##var__)
 
 // Internal only: Use ET_UNWRAP() instead.
-#define ET_INTERNAL_UNWRAP_3 ET_INTERNAL_UNWRAP_2
-#define ET_INTERNAL_UNWRAP_4 ET_INTERNAL_UNWRAP_2
-#define ET_INTERNAL_UNWRAP_5 ET_INTERNAL_UNWRAP_2
-#define ET_INTERNAL_UNWRAP_6 ET_INTERNAL_UNWRAP_2
-#define ET_INTERNAL_UNWRAP_7 ET_INTERNAL_UNWRAP_2
-#define ET_INTERNAL_UNWRAP_8 ET_INTERNAL_UNWRAP_2
-#define ET_INTERNAL_UNWRAP_9 ET_INTERNAL_UNWRAP_2
-#define ET_INTERNAL_UNWRAP_10 ET_INTERNAL_UNWRAP_2
+#define ET_INTERNAL_UNWRAP_4 ET_INTERNAL_UNWRAP_3
+#define ET_INTERNAL_UNWRAP_5 ET_INTERNAL_UNWRAP_3
+#define ET_INTERNAL_UNWRAP_6 ET_INTERNAL_UNWRAP_3
+#define ET_INTERNAL_UNWRAP_7 ET_INTERNAL_UNWRAP_3
+#define ET_INTERNAL_UNWRAP_8 ET_INTERNAL_UNWRAP_3
+#define ET_INTERNAL_UNWRAP_9 ET_INTERNAL_UNWRAP_3
+#define ET_INTERNAL_UNWRAP_10 ET_INTERNAL_UNWRAP_3
+#define ET_INTERNAL_UNWRAP_11 ET_INTERNAL_UNWRAP_3

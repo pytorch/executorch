@@ -12,6 +12,7 @@
 #include <cstring>
 #include <memory>
 
+#define STB_IMAGE_RESIZE_IMPLEMENTATION
 #include <stb_image_resize.h>
 
 #include <executorch/runtime/core/error.h>
