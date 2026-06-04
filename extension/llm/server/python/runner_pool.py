@@ -73,30 +73,33 @@ class GenStats:
     completion_tokens: int = 0
 
 
-def _admit_session_count(requested, engine, production, allow_weight_duplication):
-    """How many *physical* sessions to create. Bounded by what the backend hosts
-    without duplicating packed weights (engine.serving_capacity()), unless the
-    operator explicitly opts into duplication. XNNPACK on a self-contained .pte
-    is single-slot (1): N logical requests queue on one physical session rather
-    than loading N runtimes. Without an engine, production also forces 1 (a
-    standalone TextLLMRunner can't share weights or run concurrent backend
-    calls safely)."""
+def _admit_session_count(requested, capacity, production, allow_weight_duplication):
+    """How many *physical* sessions to create.
+
+    `capacity` is the authoritative serving-capacity dict — from the pool's own
+    engine, or explicitly supplied for a factory-backed pool (a model launcher
+    that builds sessions itself). When present, clamp to
+    max_physical_sessions_without_weight_duplication unless the operator opts
+    into duplication. This applies to BOTH the engine path and the factory path:
+    a factory-backed launcher MUST pass capacity so it cannot bypass enforcement
+    and silently duplicate weights / run unsafe concurrent backend calls (e.g. a
+    single-slot CUDA model would otherwise load N copies of its weights).
+
+    With no capacity: a standalone TextLLMRunner in production forces 1 (it can't
+    share weights or serialize concurrent backend calls). A bare test factory
+    (no capacity declared) keeps the requested N for convenience."""
     n = max(1, requested)
-    if engine is not None:
-        # The escape hatch relaxes ONLY the engine's weight-duplication clamp —
-        # the engine still serializes backend execution internally, so N sessions
-        # are safe (just memory-costly).
+    if capacity is not None:
+        # The escape hatch relaxes ONLY the weight-duplication clamp — the engine
+        # still serializes backend execution internally, so N sessions are safe
+        # (just memory-costly). It does not apply to the no-capacity path below.
         if allow_weight_duplication:
             return n
-        cap = int(
-            engine.serving_capacity().get(
-                "max_physical_sessions_without_weight_duplication", 1
-            )
-        )
+        cap = int(capacity.get("max_physical_sessions_without_weight_duplication", 1))
         limit = cap if cap > 0 else 1
         if n > limit:
             logger.warning(
-                "Engine hosts %d physical session(s) without weight duplication; "
+                "Backend hosts %d physical session(s) without weight duplication; "
                 "clamping num_runners %d->%d. Concurrent requests queue on the "
                 "resident session(s).",
                 limit,
@@ -105,10 +108,11 @@ def _admit_session_count(requested, engine, production, allow_weight_duplication
             )
             return limit
         return n
-    # No engine: standalone TextLLMRunner. N>1 in production is unsafe REGARDLESS
-    # of weight-duplication willingness — concurrent backend calls into separate
-    # Modules corrupt the heap (no engine-owned serialization), so the escape
-    # hatch does NOT relax this. Fix thread-safety or use the engine path first.
+    # No capacity declared: standalone TextLLMRunner. N>1 in production is unsafe
+    # REGARDLESS of weight-duplication willingness — concurrent backend calls into
+    # separate Modules corrupt the heap (no engine-owned serialization), so the
+    # escape hatch does NOT relax this. Fix thread-safety or use the engine path
+    # first.
     if production and n > 1:
         logger.warning(
             "No shared-weight engine (no --hf-tokenizer, or data_path set); forcing "
@@ -145,7 +149,14 @@ class RunnerPool:
         runner_factory: Optional[Callable[[], object]] = None,
         tokenizer: Optional[object] = None,
         allow_weight_duplication_for_parallel_runners: bool = False,
+        serving_capacity: Optional[dict] = None,
     ):
+        # serving_capacity: authoritative physical-session capacity for a
+        # factory-backed pool (a model launcher building its own sessions). The
+        # engine path derives this from the engine; a factory path MUST pass it
+        # (e.g. {"max_physical_sessions_without_weight_duplication": 1}) or N>1
+        # would silently duplicate weights — RunnerPool does not infer capacity
+        # from an opaque factory.
         # runner_factory is the test/extensibility seam: tests inject a fake.
         # Production wiring:
         #  - With a tokenizer (prefix cache enabled, --hf-tokenizer) and engine
@@ -206,9 +217,16 @@ class RunnerPool:
                 )
             return _StatelessRunner(runner)
 
+        # Capacity is authoritative from the owned engine; for a factory-backed
+        # pool it must be supplied explicitly (the factory is opaque to us).
+        capacity = (
+            self._engine.serving_capacity()
+            if self._engine is not None
+            else serving_capacity
+        )
         n = _admit_session_count(
             num_runners,
-            self._engine,
+            capacity,
             production,
             allow_weight_duplication_for_parallel_runners,
         )
@@ -262,9 +280,9 @@ class RunnerPool:
     ) -> AsyncIterator[str]:
         """Yield generated text tokens. If `stats` is given it's filled in place
         with token counts (per-request, so concurrent streams don't race)."""
+        out_stats = stats if stats is not None else GenStats()
         loop = asyncio.get_running_loop()
         queue: asyncio.Queue = asyncio.Queue()
-        out_stats = stats if stats is not None else GenStats()
 
         def token_cb(token: str) -> None:
             loop.call_soon_threadsafe(queue.put_nowait, token)

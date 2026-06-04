@@ -112,7 +112,26 @@ Python element-wise.
 | `runner_pool.py` | session pool + serving-capacity admission + affinity routing + async streaming bridge |
 | `serving_chat.py` | `/v1/chat/completions` (streaming + non-streaming, stop, tools) |
 | `prefix_cache.py` | turn-to-turn KV prefix-reuse policy over an `LLMSession` (opt-in) |
+| `session_generate.py` | model-agnostic `LLMSession` → `generate()` adapter (no prefix reuse) |
 | `tool_parsers/` | Hermes/Qwen `<tool_call>` parser only |
+
+### Model adapters
+
+The server is model-agnostic; the built-in path serves the text model
+(`TextLLMEngine`). A new model implements the C++ `LLMEngine`/`LLMSession`
+interfaces in its example, exposes them through the **generic pybind wrappers**
+(`extension/llm/runner/llm_pybind_wrappers.h`) — **no per-model pybind class** —
+and wires the generic server. The dependency points one way: a model example may
+import the generic server; the generic server never imports an example. Backend
+specifics (CUDA/AOTI; MLX/Metal is a future, non-validated extension point) stay
+inside the model's engine.
+
+A model that builds its own sessions and drives them through `RunnerPool`'s
+`runner_factory` seam (e.g. with `SessionGenerateAdapter`) **must pass
+`serving_capacity=` to `RunnerPool`** — the pool only auto-derives capacity from
+an engine it owns, so a factory-backed pool that omits it could otherwise create
+`--num-runners` physical sessions and silently duplicate weights. Capacity is
+authoritative either way.
 
 ## Scope & caveats
 
