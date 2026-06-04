@@ -59,7 +59,7 @@ class SoftmaxConverter(NodeConverter):
         parameters_mapping: dict[str, Parameter],
         custom_delegation_options: CustomDelegationOptions,
     ) -> bool:
-        if custom_delegation_options.use_new_flow_neutron_c:
+        if neutron_target_spec.use_new_flow_neutron_c:
             """New flow: Hardware constraints for the new flow:
             1. Input and Output must be INT8/UINT8
             2. Channels <= 2040
