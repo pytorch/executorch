@@ -17,14 +17,14 @@ import logging
 
 import torch
 from executorch.exir.dialects._ops import ops as exir_ops
-
 from torch.fx import GraphModule, Node
 from torch.fx.passes.infra.pass_base import PassBase, PassResult
 
 logger = logging.getLogger(__name__)
 
-# Integer dtypes we rewrite. float64 (53-bit mantissa) is exact for
-# |value| < 2**53, which covers these models' index ranges.
+# NOTE: Integer dtypes we rewrite. float64 (53-bit mantissa) is for
+# |value| < 2**53, which covers models' index ranges but not enough
+# for extreme large numbers.
 _INT_DTYPES = (torch.int64, torch.int32)
 
 # Edge ops that perform a floor-rounded integer division.
@@ -39,7 +39,8 @@ class ReplaceInt64FloorDivWithFloatPass(PassBase):
     # Work around a torch-2.12 AOTInductor/Inductor CUDA miscompile of integer
     # (int64) floor-division: fused/broadcast int64 floor_divide is mis-lowered
     # (truncation instead of floor; cross-division term bleed under dynamic shapes).
-    # Rewriting into a float64-domain floor lowers correctly. Upstream issue: TODO(link).
+    # TODO(gasoonjia): remove this pass once the upstream issue solved.
+    # Upstream issue: https://github.com/pytorch/pytorch/issues/186164
     """
     Pass to rewrite integer floor-division into a float64-domain floor.
 
