@@ -1352,6 +1352,12 @@ int main(int argc, const char* argv[]) {
     ET_LOG(Fatal, "Model data is not initialized");
     return 1;
   }
+#if defined(SEMIHOSTING)
+  if (ctx.output_basename == nullptr) {
+    ET_LOG(Fatal, "Missing required -o output_basename");
+    return 1;
+  }
+#endif
   ET_LOG(
       Info,
       "PTE @ %p [----%c%c%c%c]",
