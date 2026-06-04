@@ -325,7 +325,12 @@ static std::unique_ptr<TextLLMRunner> assemble_text_llm_runner(
       temperature);
 }
 
-std::unique_ptr<TextLLMRunner> create_text_llm_runner_from_program(
+// Builds a TextLLMRunner over an already-loaded Program: the runner's Module
+// reuses `program` while owning its own method state and KV cache. File-local —
+// the per-session construction path for TextLLMEngine (which keeps the backing
+// DataLoader alive for the runners' lifetime). External callers go through
+// LLMEngine -> LLMSession, not a raw shared-Program runner.
+static std::unique_ptr<TextLLMRunner> create_text_llm_runner_from_program(
     std::shared_ptr<Program> program,
     std::unique_ptr<::tokenizers::Tokenizer> tokenizer,
     float temperature,
@@ -412,6 +417,11 @@ Error TextLLMSession::reset() {
 
 void TextLLMSession::stop() {
   runner_->stop();
+}
+
+std::unique_ptr<LLMSession> make_text_llm_session(
+    std::unique_ptr<TextLLMRunner> runner) {
+  return std::make_unique<TextLLMSession>(std::move(runner));
 }
 } // namespace detail
 
@@ -504,8 +514,7 @@ TextLLMEngine::create_session() {
     ET_LOG(Error, "TextLLMEngine: failed to build session runner");
     return Error::InvalidState;
   }
-  return std::unique_ptr<LLMSession>(
-      std::make_unique<detail::TextLLMSession>(std::move(runner)));
+  return detail::make_text_llm_session(std::move(runner));
 }
 
 std::unique_ptr<MultimodalRunner> create_multimodal_runner(

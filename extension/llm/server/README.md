@@ -14,17 +14,20 @@ extension/llm/server/
 Why this layout: the OpenAI contract is identical across languages, so the
 **spec** and **conformance** suite are shared, and each language gets its own
 implementation directory. The real cross-language reuse comes from the C++
-`LLMEngine`/`LLMSession` primitives underneath (with `TextLLMRunner` as the
-current adapter) — each server is a thin protocol shell over that engine. See
-`python/README.md` to run it.
+`LLMEngine`/`LLMSession` primitives underneath, packaged as a process-isolated
+**worker binary** (`text_llm_worker`) that any control plane drives over a small
+JSONL protocol — the server is a thin protocol shell that spawns and talks to
+that worker. See `python/README.md` to run it.
 
 Status: experimental, reliability-first and deliberately narrow. Implemented:
 `/health`, `/v1/models`, `/v1/chat/completions` (streaming + non-streaming),
 Hugging Face chat templates (`--hf-tokenizer`), `temperature` / `max_tokens` /
-`max_completion_tokens` / `stop`, Hermes/Qwen tool calling
-(`<tool_call>...</tool_call>`, complete calls only) with `tool_choice="none"`,
-structured API errors, cancellation, and an opt-in conservative per-runner KV
-prefix cache (`--enable-prefix-cache`). Unsupported params (including `top_p`,
+`max_completion_tokens` / `stop`, Hermes tool calling by default
+(`<tool_call>...</tool_call>` JSON, complete calls only; model-specific launchers
+may select the Qwen XML format) with `tool_choice="none"`,
+structured API errors, and best-effort cancellation. V1 serving is single-slot
+(one worker, one session) with no prefix cache; KV prefix reuse, if it returns,
+lives inside the worker/session, not the control plane. Unsupported params (including `top_p`,
 `seed`, `n>1`, `reasoning_effort`, penalties, `logit_bias`, `response_format`,
 `logprobs`, and `tool_choice="required"`) are rejected with a structured 400
 rather than silently ignored. See `python/README.md` to run it and
