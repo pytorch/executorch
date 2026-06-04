@@ -8,7 +8,7 @@
 
 #include <executorch/backends/vulkan/runtime/graph/ops/impl/Preprocess.h>
 
-#include <executorch/backends/vulkan/runtime/graph/ops/OperatorRegistry.h>
+#include <executorch/backends/vulkan/runtime/graph/ops/DynamicDispatchNode.h>
 #include <executorch/backends/vulkan/runtime/graph/ops/impl/Common.h>
 #include <executorch/backends/vulkan/runtime/graph/ops/utils/ShaderNameUtils.h>
 
