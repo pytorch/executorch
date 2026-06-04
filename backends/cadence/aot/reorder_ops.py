@@ -248,12 +248,22 @@ class AdvanceQuantizeOpAboveDefInBranchPass(ExportPass):
 @register_cadence_pass(CadencePassAttribute(opt_level=1))
 class AdvanceQuantizeOpAboveDefChainPass(ExportPass):
     """
-    If the input to quantize op is linear chain of view, transpose, permute, or
-    slice ops that are trivially quantized, we can convert the pattern
-    view/transpose/permute/slice(fp32) -> quantize(int8/uint8) to
-    quantize(int8/uint8) -> view/transpose/permute/slice(int8/uint8).
-    The benefit of such reordering is that the view/transpose/permute/slice
-    will move far less data.
+    Advances a quantize op above data-movement ops to reduce data volume.
+
+    Handles two cases:
+
+    1. Linear chain: if the input to a quantize op is a chain of trivially
+       quantizable ops (view, transpose, permute, slice), rewrite
+       data_movement(fp32) -> quantize to quantize -> data_movement(quantized)
+       so the data movement operates on smaller quantized tensors.
+
+    2. Cat: if the input to a quantize op is a cat with a single user (the
+       quantize), advance the quantize above the cat by quantizing each cat
+       input individually.  A later pass can clean up any redundant
+       dequant-quant pairs on the inputs.
+
+    For the cat case, SplitDequantizedCatPass should run first to ensure
+    each cat has at most one quantize consumer.
     """
 
     def __init__(self):
@@ -302,6 +312,47 @@ class AdvanceQuantizeOpAboveDefChainPass(ExportPass):
         # All the conditions satisfied, we advance.
         return True
 
+    def _advance_above_cat(
+        self, quant_node: torch.fx.Node, cat_node: torch.fx.Node
+    ) -> None:
+        """Advance a quantize op above a cat by quantizing each cat input."""
+        graph = quant_node.graph
+        quant_params = quant_node.args[1:]
+
+        cat_inputs = cat_node.args[0]
+        assert isinstance(cat_inputs, (list, tuple))
+
+        new_inputs: list[torch.fx.Node] = []
+        for inp in cat_inputs:
+            # cat concatenates tensors, so every input must be a node.
+            assert isinstance(inp, torch.fx.Node)
+
+            with graph.inserting_before(cat_node):
+                new_quant = graph.call_function(
+                    # pyre-ignore[6]
+                    quant_node.target,
+                    args=(inp, *quant_params),
+                )
+                # This copies the fp32 input's meta, so meta["val"] keeps the
+                # fp32 dtype rather than the quantized output dtype. That's fine:
+                # nothing in this pass reads dtype from meta (only shape, which
+                # is correct), and call() re-runs super().call() to re-propagate
+                # fake tensors, making meta dtype-consistent before we return.
+                new_quant.meta = inp.meta.copy()
+            new_inputs.append(new_quant)
+
+        dim = get_arg(cat_node, "dim", int)
+        with graph.inserting_before(quant_node):
+            new_cat = graph.call_function(
+                # pyre-ignore[6]
+                cat_node.target,
+                args=(new_inputs, dim),
+            )
+            new_cat.meta = quant_node.meta.copy()
+
+        quant_node.replace_all_uses_with(new_cat)
+        graph.erase_node(quant_node)
+
     def advance_quantize_op(self, graph_module: torch.fx.GraphModule) -> bool:
         graph = graph_module.graph
         modified = False
@@ -312,6 +363,17 @@ class AdvanceQuantizeOpAboveDefChainPass(ExportPass):
                 exir_ops.edge.cadence.quantize_per_tensor,
                 torch.ops.cadence.quantize_per_tensor,
             ):
+                continue
+
+            inp = node.args[0]
+            if (
+                isinstance(inp, torch.fx.Node)
+                and get_overload_packet(inp.target)
+                in (exir_ops.edge.aten.cat, torch.ops.aten.cat)
+                and len(inp.users) == 1
+            ):
+                self._advance_above_cat(node, inp)
+                modified = True
                 continue
 
             if not self.advancing_feasible(node):

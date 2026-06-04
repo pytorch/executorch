@@ -19,6 +19,13 @@ import executorch.exir.schema as schema
 import torch
 from executorch.exir.delegate import executorch_call_delegate
 from executorch.exir.lowered_backend_module import LoweredBackendModule
+
+# Re-exported for backward compatibility; the dataclass lives in a lightweight
+# module so that ExecutorchBackendConfig can reference it without importing the
+# et_copy op registry above.
+from executorch.exir.passes.propagate_device_config import (  # noqa: F401
+    PropagateDeviceConfig,
+)
 from executorch.exir.tensor import TensorSpec
 from torch.fx.passes.infra.pass_base import PassBase, PassResult
 
@@ -171,6 +178,17 @@ class PropagateDevicePass(PassBase):
         self.skip_h2d_for_method_inputs = skip_h2d_for_method_inputs
         self.skip_d2h_for_method_outputs = skip_d2h_for_method_outputs
         self.enable_non_cpu_memory_planning = enable_non_cpu_memory_planning
+
+        if (
+            skip_h2d_for_method_inputs or skip_d2h_for_method_outputs
+        ) and not enable_non_cpu_memory_planning:
+            raise ValueError(
+                "skip_h2d_for_method_inputs and skip_d2h_for_method_outputs are "
+                "only meaningful when enable_non_cpu_memory_planning=True, since "
+                "they control host/device copy insertion which only happens during "
+                "device-aware memory planning. Set enable_non_cpu_memory_planning="
+                "True, or leave the skip options disabled."
+            )
 
     def _is_placeholder(self, node: torch.fx.Node) -> bool:
         """Check if a node is a graph-level input (placeholder)."""

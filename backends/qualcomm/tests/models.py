@@ -2250,13 +2250,21 @@ class Sin(torch.nn.Module):
 
 
 class SimpleModel(torch.nn.Module):
-    def __init__(self):
+    def __init__(self, kernel_size=3):
         super().__init__()
         kernel_sz = 32
-        self.conv1 = torch.nn.Conv2d(kernel_sz, kernel_sz, 3, padding=1, bias=True)
-        self.conv2 = torch.nn.Conv2d(kernel_sz, kernel_sz, 3, padding=1, bias=True)
-        self.conv3 = torch.nn.Conv2d(kernel_sz, kernel_sz, 3, padding=1, bias=False)
-        self.conv4 = torch.nn.Conv2d(kernel_sz, kernel_sz, 3, padding=1, bias=False)
+        self.conv1 = torch.nn.Conv2d(
+            kernel_sz, kernel_sz, kernel_size, padding=1, bias=True
+        )
+        self.conv2 = torch.nn.Conv2d(
+            kernel_sz, kernel_sz, kernel_size, padding=1, bias=True
+        )
+        self.conv3 = torch.nn.Conv2d(
+            kernel_sz, kernel_sz, kernel_size, padding=1, bias=False
+        )
+        self.conv4 = torch.nn.Conv2d(
+            kernel_sz, kernel_sz, kernel_size, padding=1, bias=False
+        )
         self.hardtanh = torch.nn.Hardtanh(min_val=0, max_val=6)
         self.relu = torch.nn.ReLU()
         self.batch_norm = torch.nn.BatchNorm2d(kernel_sz)

@@ -248,21 +248,30 @@ TEST_F(MethodMetaTest, MethodMetaBufferDeviceReturnsCudaForDeviceBuffer) {
   ASSERT_EQ(method_meta.error(), Error::Ok);
 
   // ModuleAddWithDevice exports with enable_non_cpu_memory_planning=True.
-  // The model delegates add(a,b) to CUDA, producing:
-  //   non_const_buffer_sizes: [0, 48]  (index 0 reserved)
-  //   non_const_buffer_device: [{buffer_idx=1, device_type=CUDA,
-  //   device_index=0}]
-  // So there is exactly 1 planned buffer (user-facing index 0), on CUDA.
-  ASSERT_EQ(method_meta->num_memory_planned_buffers(), 1);
+  // The model delegates add(a,b) to CUDA with H2D/D2H copies:
+  //   - non_const_buffer_sizes: [0, 32, 48]
+  //     (index 0 reserved, buffer 0 = 32 bytes CPU for inputs,
+  //      buffer 1 = 48 bytes CUDA for delegate output)
+  //   - non_const_buffer_device: [{buffer_idx=2, device_type=CUDA,
+  //     device_index=0}]
+  // So there are 2 planned buffers: user-facing index 0 (CPU) and index 1
+  // (CUDA).
+  ASSERT_EQ(method_meta->num_memory_planned_buffers(), 2);
 
-  // Buffer 0 should be CUDA device.
-  auto device = method_meta->memory_planned_buffer_device(0);
-  ASSERT_TRUE(device.ok());
-  EXPECT_EQ(device->type(), executorch::runtime::etensor::DeviceType::CUDA);
-  EXPECT_EQ(device->index(), 0);
+  // Buffer 0 should be CPU device (method inputs).
+  auto device0 = method_meta->memory_planned_buffer_device(0);
+  ASSERT_TRUE(device0.ok());
+  EXPECT_EQ(device0->type(), executorch::runtime::etensor::DeviceType::CPU);
+  EXPECT_EQ(device0->index(), 0);
+
+  // Buffer 1 should be CUDA device (delegate output).
+  auto device1 = method_meta->memory_planned_buffer_device(1);
+  ASSERT_TRUE(device1.ok());
+  EXPECT_EQ(device1->type(), executorch::runtime::etensor::DeviceType::CUDA);
+  EXPECT_EQ(device1->index(), 0);
 
   // Out of range should return error.
   EXPECT_EQ(
-      method_meta->memory_planned_buffer_device(1).error(),
+      method_meta->memory_planned_buffer_device(2).error(),
       Error::InvalidArgument);
 }

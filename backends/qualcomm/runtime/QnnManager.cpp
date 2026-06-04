@@ -7,6 +7,7 @@
  */
 
 #include <executorch/backends/qualcomm/runtime/QnnBackendOptions.h>
+#include <executorch/backends/qualcomm/runtime/QnnExecuTorch.h>
 #include <executorch/backends/qualcomm/runtime/QnnManager.h>
 #include <executorch/backends/qualcomm/runtime/SharedBuffer.h>
 #include <executorch/backends/qualcomm/runtime/backends/QnnBackendCommon.h>
