@@ -172,36 +172,49 @@ class VGFBackend final : public ::executorch::runtime::BackendInterface {
       DelegateHandle* handle,
       Span<EValue*> args) const override {
     VgfRepr* repr = static_cast<VgfRepr*>(handle);
+    const size_t input_count = repr->model_input_count;
+    const size_t output_count = repr->model_output_count;
+    ET_LOG(
+        Info,
+        "VGF execute: args=%zu IOs=%zu inputs=%zu outputs=%zu",
+        args.size(),
+        repr->IOs.size(),
+        input_count,
+        output_count);
+    if (args.size() < input_count + output_count) {
+      ET_LOG(Error, "Insufficient args for IOs");
+      return Error::InvalidArgument;
+    }
 
     // Copy all inputs from EValue to VkDeviceMemory
-    for (int i = 0; i < repr->IOs.size(); i++) {
-      if (!args[i]->isTensor()) {
+    for (size_t input_arg_idx = 0; input_arg_idx < input_count;
+         ++input_arg_idx) {
+      const int io_idx = repr->model_input_io_index[input_arg_idx];
+      if (io_idx < 0) {
+        ET_LOG(Error, "Missing IO mapping for input %zu", input_arg_idx);
+        return Error::InvalidArgument;
+      }
+      if (!args[input_arg_idx]->isTensor()) {
         ET_LOG(
             Error,
-            "Expected EValue %d to be tensor, got %d",
-            i,
-            static_cast<uint32_t>(args[i]->tag));
+            "Expected input EValue %zu to be tensor, got %d",
+            input_arg_idx,
+            static_cast<uint32_t>(args[input_arg_idx]->tag));
         return Error::InvalidArgument;
       }
 
-      Tensor* tensor = &args[i]->toTensor();
-      IO* io = &repr->IOs[i];
+      Tensor* tensor = &args[input_arg_idx]->toTensor();
+      IO* io = &repr->IOs[io_idx];
 
-      // skip non-inputs
-      if (!io->is_input)
-        continue;
-
-      size_t io_size = io->elt_size;
-      for (int64_t dim : io->size) {
-        ET_CHECK_OR_RETURN_ERROR(
-            dim >= 0,
-            InvalidArgument,
-            "Negative dimension in IO size: %" PRId64,
-            dim);
-        ET_CHECK_OR_RETURN_ERROR(
-            !c10::mul_overflows(io_size, static_cast<size_t>(dim), &io_size),
-            InvalidArgument,
-            "Overflow computing IO buffer size");
+      ET_LOG(Info, "Copy input IO[%d] -> args[%zu]", io_idx, input_arg_idx);
+      size_t io_size = tensor->nbytes();
+      if (io_size != io->allocation_size) {
+        ET_LOG(
+            Error,
+            "Input tensor byte size %zu does not match IO allocation %zu",
+            io_size,
+            io->allocation_size);
+        return Error::InvalidArgument;
       }
 
       void* data;
@@ -220,33 +233,34 @@ class VGFBackend final : public ::executorch::runtime::BackendInterface {
     }
 
     // Copy all outputs from VKDeviceMemory to EValue
-    for (int i = 0; i < repr->IOs.size(); i++) {
-      if (!args[i]->isTensor()) {
-        ET_LOG(
-            Error,
-            "Expected EValue %d to be tensor, got %d",
-            i,
-            static_cast<uint32_t>(args[i]->tag));
+    for (size_t output_rel_idx = 0; output_rel_idx < output_count;
+         ++output_rel_idx) {
+      const size_t output_arg_idx = input_count + output_rel_idx;
+      const int io_idx = repr->model_output_io_index[output_rel_idx];
+      if (io_idx < 0) {
+        ET_LOG(Error, "Missing IO mapping for output %zu", output_rel_idx);
         return Error::InvalidArgument;
       }
-      Tensor* tensor = &args[i]->toTensor();
-      IO* io = &repr->IOs[i];
+      if (!args[output_arg_idx]->isTensor()) {
+        ET_LOG(
+            Error,
+            "Expected output EValue %zu to be tensor, got %d",
+            output_arg_idx,
+            static_cast<uint32_t>(args[output_arg_idx]->tag));
+        return Error::InvalidArgument;
+      }
+      Tensor* tensor = &args[output_arg_idx]->toTensor();
+      IO* io = &repr->IOs[io_idx];
 
-      // skip non-outputs
-      if (io->is_input)
-        continue;
-
-      size_t io_size = io->elt_size;
-      for (int64_t dim : io->size) {
-        ET_CHECK_OR_RETURN_ERROR(
-            dim >= 0,
-            InvalidArgument,
-            "Negative dimension in IO size: %" PRId64,
-            dim);
-        ET_CHECK_OR_RETURN_ERROR(
-            !c10::mul_overflows(io_size, static_cast<size_t>(dim), &io_size),
-            InvalidArgument,
-            "Overflow computing IO buffer size");
+      ET_LOG(Info, "Copy output IO[%d] -> args[%zu]", io_idx, output_arg_idx);
+      size_t io_size = tensor->nbytes();
+      if (io_size != io->allocation_size) {
+        ET_LOG(
+            Error,
+            "Output tensor byte size %zu does not match IO allocation %zu",
+            io_size,
+            io->allocation_size);
+        return Error::InvalidArgument;
       }
 
       void* data;

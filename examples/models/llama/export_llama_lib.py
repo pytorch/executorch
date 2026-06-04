@@ -231,6 +231,7 @@ def build_args_parser() -> argparse.ArgumentParser:
             "vulkan_8w",
             "tosa_8a8w",
             "ethosu_8a8w",
+            "ethosu_16a8w",
             "vgf_8a8w",
             "vgf_16a8w",
         ],
@@ -845,9 +846,19 @@ def get_quantizer_and_quant_params(llm_config):
             llm_config.quantization.pt2e_quantize.value
         )
         quantizers.append(coreml_quantizer)
+    arm_quantize_scope = llm_config.quantization.quantize_scope.value
+    if (
+        arm_quantize_scope == "full"
+        and llm_config.backend.vgf.enabled
+        and llm_config.backend.vgf.quantize_scope.value != "full"
+    ):
+        arm_quantize_scope = llm_config.backend.vgf.quantize_scope.value
+
     if llm_config.backend.tosa.enabled and llm_config.quantization.pt2e_quantize:
         tosa_quantizer = get_tosa_quantizer(
-            llm_config.backend.tosa.version, llm_config.quantization.pt2e_quantize.value
+            llm_config.backend.tosa.version,
+            llm_config.quantization.pt2e_quantize.value,
+            arm_quantize_scope,
         )
         quantizers.append(tosa_quantizer)
     if llm_config.backend.ethosu.enabled and llm_config.quantization.pt2e_quantize:
@@ -855,7 +866,9 @@ def get_quantizer_and_quant_params(llm_config):
             llm_config.backend.ethosu.target,
             llm_config.backend.ethosu.system_config,
             llm_config.backend.ethosu.memory_mode,
+            llm_config.backend.ethosu.extra_flags,
             llm_config.quantization.pt2e_quantize.value,
+            arm_quantize_scope,
         )
         quantizers.append(ethosu_quantizer)
     if llm_config.backend.vgf.enabled and llm_config.quantization.pt2e_quantize:
@@ -1054,6 +1067,7 @@ def _to_edge_and_lower_llama_arm(
                 llm_config.backend.ethosu.target,
                 llm_config.backend.ethosu.system_config,
                 llm_config.backend.ethosu.memory_mode,
+                llm_config.backend.ethosu.extra_flags,
             )
         )
         modelname = f"ethosu_{modelname}"
