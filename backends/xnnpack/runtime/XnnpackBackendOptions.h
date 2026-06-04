@@ -41,6 +41,9 @@ class XnnpackBackendOptions {
   XNNWorkspaceManager& workspace_manager();
   const XNNWorkspaceManager& workspace_manager() const;
 
+  const std::string& get_packed_cache_path() const;
+  void set_packed_cache_path(const std::string& path);
+
  private:
   XNNWorkspaceManager workspace_manager_;
 
@@ -56,6 +59,8 @@ class XnnpackBackendOptions {
 #else
   std::atomic<bool> weight_cache_enabled_{false};
 #endif
+
+  std::string packed_cache_path_;
 };
 
 } // namespace executorch::backends::xnnpack
