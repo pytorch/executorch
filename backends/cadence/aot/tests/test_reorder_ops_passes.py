@@ -1268,3 +1268,74 @@ class TestSplitDequantizedCat(unittest.TestCase):
         )
         quant_cat_inputs = {node.args[0] for node in quant_nodes}
         self.assertEqual(len(quant_cat_inputs), 2)
+
+
+class TestAdvanceQuantAboveCat(unittest.TestCase):
+    def test_float_inputs_get_quantized(self) -> None:
+        """Float (non-dq) inputs to cat should get a quant inserted."""
+        builder = GraphBuilder()
+        a = builder.placeholder("a", torch.randn(2, 4))
+        b = builder.placeholder("b", torch.randn(2, 4))
+        cat = builder.call_operator(exir_ops.edge.aten.cat.default, args=([a, b], 0))
+        q = builder.call_operator(
+            exir_ops.edge.quantized_decomposed.quantize_per_tensor.default,
+            args=(cat, 0.01, 0, -128, 127, torch.int8),
+        )
+        builder.output([q])
+        gm = builder.get_graph_module()
+
+        result = AdvanceQuantizeOpAboveDefChainPass().call(gm)
+
+        self.assertTrue(result.modified)
+        converted = result.graph_module
+
+        # Two new quants (one per input) should exist; the original post-cat quant is gone.
+        self.assertEqual(
+            count_node(
+                converted,
+                exir_ops.edge.quantized_decomposed.quantize_per_tensor.default,
+            ),
+            2,
+        )
+
+        # Cat should take quantized inputs.
+        cat_nodes = converted.graph.find_nodes(
+            op="call_function", target=exir_ops.edge.aten.cat.default
+        )
+        self.assertEqual(len(cat_nodes), 1)
+        for inp in cat_nodes[0].args[0]:
+            self.assertEqual(
+                inp.target,
+                exir_ops.edge.quantized_decomposed.quantize_per_tensor.default,
+            )
+
+    def test_cat_with_multiple_users_not_advanced(self) -> None:
+        """Cat with multiple users should not be advanced (split pass handles this first)."""
+        builder = GraphBuilder()
+        x_int8 = builder.placeholder(
+            "x_int8", torch.randint(-128, 127, (2, 4), dtype=torch.int8)
+        )
+        dq = builder.call_operator(
+            exir_ops.edge.quantized_decomposed.dequantize_per_tensor.default,
+            args=(x_int8, 0.02, -5, -128, 127, torch.int8),
+        )
+        b = builder.placeholder("b", torch.randn(2, 4))
+        cat = builder.call_operator(exir_ops.edge.aten.cat.default, args=([dq, b], 0))
+        sliced = builder.call_operator(
+            exir_ops.edge.aten.slice_copy.Tensor, args=(cat, 0, 0, 2)
+        )
+        q = builder.call_operator(
+            exir_ops.edge.quantized_decomposed.quantize_per_tensor.default,
+            args=(cat, 0.02, -5, -128, 127, torch.int8),
+        )
+        q_dq = builder.call_operator(
+            exir_ops.edge.quantized_decomposed.dequantize_per_tensor.default,
+            args=(q, 0.02, -5, -128, 127, torch.int8),
+        )
+        builder.output([sliced, q_dq])
+        gm = builder.get_graph_module()
+
+        result = AdvanceQuantizeOpAboveDefChainPass().call(gm)
+
+        self.assertFalse(result.modified)
+        self.assertEqual(count_node(gm, exir_ops.edge.aten.cat.default), 1)
