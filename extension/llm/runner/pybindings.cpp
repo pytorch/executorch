@@ -13,6 +13,7 @@
 #include <torch/python.h>
 
 #include <executorch/extension/llm/runner/audio.h>
+#include <executorch/extension/llm/runner/llm_pybind_wrappers.h>
 #include <executorch/extension/llm/runner/llm_runner_helper.h>
 #include <executorch/extension/llm/runner/multimodal_input.h>
 #include <executorch/extension/llm/runner/multimodal_runner.h>
@@ -24,6 +25,7 @@
 #include <pytorch/tokenizers/tokenizer.h>
 
 #include <memory>
+#include <mutex>
 #include <stdexcept>
 #include <string>
 #include <vector>
@@ -42,6 +44,74 @@ using namespace executorch::runtime;
       throw std::runtime_error(msg_buf);                          \
     }                                                             \
   })
+
+namespace {
+
+// Length of the longest prefix of `s` that does not end in the middle of a
+// UTF-8 multi-byte sequence. Byte-level BPE tokenizers can emit a token that is
+// only part of a character (e.g. one byte of a 3-byte CJK codepoint or emoji),
+// so the std::string->str conversion must wait until the character is complete
+// or it throws UnicodeDecodeError and aborts generation.
+size_t utf8_complete_prefix_len(const std::string& s) {
+  size_t i = 0;
+  const size_t n = s.size();
+  while (i < n) {
+    const unsigned char c = static_cast<unsigned char>(s[i]);
+    size_t len;
+    if (c < 0x80) {
+      len = 1;
+    } else if ((c >> 5) == 0x6) {
+      len = 2;
+    } else if ((c >> 4) == 0xE) {
+      len = 3;
+    } else if ((c >> 3) == 0x1E) {
+      len = 4;
+    } else {
+      len = 1; // invalid lead byte; emit it and let "replace" handle it
+    }
+    if (i + len > n) {
+      break; // incomplete trailing sequence: hold it for the next token
+    }
+    i += len;
+  }
+  return i;
+}
+
+// Wraps a Python str token-callback so multi-byte characters split across
+// tokens are buffered and only forwarded once complete. `flush()` emits any
+// trailing (incomplete) bytes with replacement so nothing is silently dropped.
+class TokenStringCallback {
+ public:
+  explicit TokenStringCallback(py::object cb) : cb_(std::move(cb)) {}
+
+  void operator()(const std::string& token) {
+    buf_ += token;
+    const size_t n = utf8_complete_prefix_len(buf_);
+    if (n == 0) {
+      return;
+    }
+    py::gil_scoped_acquire acquire;
+    cb_(py::reinterpret_steal<py::object>(
+        PyUnicode_DecodeUTF8(buf_.data(), n, "replace")));
+    buf_.erase(0, n);
+  }
+
+  void flush() {
+    if (buf_.empty()) {
+      return;
+    }
+    py::gil_scoped_acquire acquire;
+    cb_(py::reinterpret_steal<py::object>(
+        PyUnicode_DecodeUTF8(buf_.data(), buf_.size(), "replace")));
+    buf_.clear();
+  }
+
+ private:
+  py::object cb_;
+  std::string buf_;
+};
+
+} // namespace
 
 // Python wrapper class for TextLLMRunner
 class PyTextLLMRunner {
@@ -79,10 +149,11 @@ class PyTextLLMRunner {
 
     // Convert Python callbacks to C++ std::function
     std::function<void(const std::string&)> cpp_token_callback = nullptr;
+    std::shared_ptr<TokenStringCallback> token_assembler;
     if (!token_callback.is_none()) {
-      cpp_token_callback = [token_callback](const std::string& token) {
-        py::gil_scoped_acquire acquire;
-        token_callback(token);
+      token_assembler = std::make_shared<TokenStringCallback>(token_callback);
+      cpp_token_callback = [token_assembler](const std::string& token) {
+        (*token_assembler)(token);
       };
     }
 
@@ -94,12 +165,15 @@ class PyTextLLMRunner {
       };
     }
 
-    // Release GIL during generation
+    // Release GIL during generation.
     {
       py::gil_scoped_release release;
       Error error = runner_->generate(
           prompt, config, cpp_token_callback, cpp_stats_callback);
       THROW_IF_ERROR(error, "Generation failed");
+    }
+    if (token_assembler) {
+      token_assembler->flush();
     }
   }
 
@@ -174,10 +248,11 @@ class PyMultimodalRunner {
 
     // Convert Python callbacks to C++ std::function
     std::function<void(const std::string&)> cpp_token_callback = nullptr;
+    std::shared_ptr<TokenStringCallback> token_assembler;
     if (!token_callback.is_none()) {
-      cpp_token_callback = [token_callback](const std::string& token) {
-        py::gil_scoped_acquire acquire;
-        token_callback(token);
+      token_assembler = std::make_shared<TokenStringCallback>(token_callback);
+      cpp_token_callback = [token_assembler](const std::string& token) {
+        (*token_assembler)(token);
       };
     }
 
@@ -195,6 +270,9 @@ class PyMultimodalRunner {
       Error error = runner_->generate(
           inputs, config, cpp_token_callback, cpp_stats_callback);
       THROW_IF_ERROR(error, "Generation failed");
+    }
+    if (token_assembler) {
+      token_assembler->flush();
     }
   }
 
@@ -734,6 +812,11 @@ PYBIND11_MODULE(_llm_runner, m) {
       .def("__repr__", [](const PyTextLLMRunner& runner) {
         return "<TextLLMRunner>";
       });
+
+  // Bind the model-agnostic Engine/Session serving API (LLMEngine, LLMSession).
+  // The wrappers live in a shared header so a model's example-local module can
+  // expose the SAME surface without writing its own pybind classes.
+  pybind_wrappers::bind_engine_session_api(m);
 
   // Bind PyMultimodalRunner
   py::class_<PyMultimodalRunner>(m, "MultimodalRunner")
