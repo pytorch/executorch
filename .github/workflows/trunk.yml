@@ -257,7 +257,7 @@ jobs:
           - test_arm_backend: test_pytest_ops_ethos_u85
           - test_arm_backend: test_pytest_models_ethos_u85
           - test_arm_backend: test_run_ethos_u85
-          - test_arm_backend: test_smaller_stories_llama
+          - test_arm_backend: test_smaller_stories_llama_tosa
           - test_arm_backend: test_memory_allocation
           - test_arm_backend: test_ootb_tests_ethos_u
           - test_arm_backend: test_ootb_tests_tosa
@@ -305,6 +305,7 @@ jobs:
           - test_arm_backend: test_pytest_ops_vkml
           - test_arm_backend: test_pytest_models_vkml
           - test_arm_backend: test_ootb_tests_vgf
+          - test_arm_backend: test_smaller_stories_llama_vkml
       fail-fast: false
     with:
       runner: linux.2xlarge.memory
@@ -1037,6 +1038,10 @@ jobs:
       docker-image: ci-image:executorch-ubuntu-22.04-clang12
 
   test-models-windows:
+    needs: run-decision
+    if: |
+      github.event_name == 'pull_request' ||
+      needs.run-decision.outputs.is-full-run == 'true'
     uses: pytorch/test-infra/.github/workflows/windows_job.yml@main
     strategy:
       fail-fast: false

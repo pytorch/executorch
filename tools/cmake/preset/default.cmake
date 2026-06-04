@@ -95,6 +95,9 @@ define_overridable_option(
   ON # Required by executor_runner
 )
 define_overridable_option(
+  EXECUTORCH_BUILD_EXTENSION_IMAGE "Build the Image extension" BOOL OFF
+)
+define_overridable_option(
   EXECUTORCH_BUILD_EXTENSION_LLM "Build the LLM extension" BOOL OFF
 )
 define_overridable_option(
@@ -193,6 +196,10 @@ define_overridable_option(
 )
 define_overridable_option(
   EXECUTORCH_BUILD_VGF "Build the Arm VGF backend" BOOL OFF
+)
+define_overridable_option(
+  EXECUTORCH_COREML_BUILD_EXECUTOR_RUNNER "Build CoreML executor runner." BOOL
+  OFF
 )
 define_overridable_option(
   EXECUTORCH_BUILD_WASM "Build the ExecuTorch JavaScript API" BOOL OFF
@@ -401,6 +408,11 @@ check_required_options_on(
   EXECUTORCH_BUILD_EXTENSION_DATA_LOADER
   EXECUTORCH_BUILD_EXTENSION_FLAT_TENSOR
   EXECUTORCH_BUILD_EXTENSION_MODULE
+  EXECUTORCH_BUILD_EXTENSION_TENSOR
+)
+
+check_required_options_on(
+  IF_ON EXECUTORCH_BUILD_EXTENSION_IMAGE REQUIRES
   EXECUTORCH_BUILD_EXTENSION_TENSOR
 )
 

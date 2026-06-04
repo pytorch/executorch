@@ -143,6 +143,10 @@ license-files = ["LICENSE"]
   # Some kernel libraries need their .yaml files.
   "*.yaml",
 ]
+"executorch.backends.arm.vgf.shaders" = [
+  "*.glsl",
+  "*.spirv.b64",
+]
 
 [tool.setuptools.exclude-package-data]
 "*" = ["*.pyc"]

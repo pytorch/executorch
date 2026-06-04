@@ -198,8 +198,8 @@ TEST_F(TensorParserDeviceTest, CUDADeviceParsedFromPteFile) {
 
   EXPECT_EQ(cuda_tensor_count, 3)
       << "Expected 3 CUDA tensors (2 delegate inputs + 1 delegate output)";
-  EXPECT_EQ(cpu_tensor_count, 0)
-      << "Expected 0 CPU tensors (all annotated as CUDA)";
+  EXPECT_EQ(cpu_tensor_count, 3)
+      << "Expected 3 CPU tensors (2 method inputs + 1 method output)";
 }
 
 TEST_F(TensorParserDeviceTest, NonDelegatedTensorsDefaultToCPU) {
@@ -260,7 +260,7 @@ TEST_F(TensorParserDeviceTest, CudaTensorDataPtrPointsToDeviceMemory) {
   //   non_const_buffer_sizes: [0, 48]  (index 0 reserved, buffer 0 = 48 bytes)
   //   non_const_buffer_device: [{buffer_idx=1, device_type=CUDA}]
   const size_t num_buffers = method_meta->num_memory_planned_buffers();
-  ASSERT_EQ(num_buffers, 1);
+  ASSERT_EQ(num_buffers, 2);
 
   // Set up device-aware planned memory.
   std::vector<Span<uint8_t>> planned_spans;
