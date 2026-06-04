@@ -1115,6 +1115,15 @@ class ExpM1(torch.nn.Module):
         return torch.special.expm1(x)
 
 
+class Fill(torch.nn.Module):
+    def __init__(self, value):
+        super().__init__()
+        self.value = value
+
+    def forward(self, x):
+        return torch.add(x, torch.fill(x, self.value))
+
+
 class Flip(torch.nn.Module):
     def __init__(self):
         super().__init__()

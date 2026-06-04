@@ -26,6 +26,7 @@ from executorch.backends.qualcomm._passes import (
     DecomposeColIm,
     DecomposeEinsum,
     DecomposeExpM1,
+    DecomposeFill,
     DecomposeFloorDivide,
     DecomposeGlu,
     DecomposeLinalgVectorNorm,
@@ -110,6 +111,7 @@ def get_capture_program_passes():
         (DecomposeAny, True),
         (DecomposeAtan2, True),
         (DecomposeColIm, True),
+        (DecomposeFill, True),
         (DecomposeLogVariants, True),
         (DecomposeMaxPool3d, True),
         (DecomposeMinMaxDim, True),
@@ -248,6 +250,7 @@ class QnnPassManager(PassManager):
         self.add_pass(DecomposeWrapWithAutocast())
         self.add_pass(DecomposeEinsum())
         self.add_pass(DecomposeExpM1())
+        self.add_pass(DecomposeFill())
         self.add_pass(DecomposeGlu())
         # HTP and GPU doesn't support ElementWiseUnary with operation=reciprocal
         # Decompose Reciprocal into Div for these 2 backend
@@ -275,6 +278,7 @@ class QnnPassManager(PassManager):
         self.add_pass(DecomposeTriu())
         self.add_pass(DecomposeLinalgVectorNorm(quantization_capture=True))
         self.add_pass(DecomposeExpM1())
+        self.add_pass(DecomposeFill())
         # DecomposeFloorDivide does not apply to the annotation pipeline,
         # since the CPU QDQ model would reduce accuracy.
         # We keep div and floor operations in floating-point to maintain precision.
