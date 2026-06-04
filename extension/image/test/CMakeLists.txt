@@ -17,7 +17,7 @@ set(EXECUTORCH_ROOT ${CMAKE_CURRENT_SOURCE_DIR}/../../..)
 
 include(${EXECUTORCH_ROOT}/tools/cmake/Test.cmake)
 
-set(_test_srcs image_processor_test.cpp)
+set(_test_srcs image_processor_test.cpp image_processor_apple_test.cpp)
 
 et_cxx_test(
   extension_image_test SOURCES ${_test_srcs} EXTRA_LIBS extension_image
