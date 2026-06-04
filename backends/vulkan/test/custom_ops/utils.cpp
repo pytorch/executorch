@@ -622,7 +622,7 @@ void generate_randint_half_data(
   std::mt19937 gen(get_seed_or_explicit(explicit_seed));
   std::uniform_int_distribution<int32_t> dis(min_val, max_val);
   for (auto& val : data) {
-    val = static_cast<uint16_t>(std::abs(dis(gen)) % 65536);
+    val = float_to_half(static_cast<float>(dis(gen)));
   }
 }
 

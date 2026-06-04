@@ -307,23 +307,25 @@ void main() {
   // position), each row stores directly without re-shuffling — the compiler
   // can issue the bias-add as another mad.f16 (rpt3) over the same N-lane
   // register block.
-  if (n + TILE_N - 1 < N) {
-    for (int h = 0; h < TILE_M4; ++h) {
-      if (h > 0 && m + h * 4 >= M) {
-        break;
-      }
-      if (full_m_tile) {
-        store_row(m + h * 4 + 0, n_tile, N4, acc_T[h * 4 + 0], bias_val);
-        store_row(m + h * 4 + 1, n_tile, N4, acc_T[h * 4 + 1], bias_val);
-        store_row(m + h * 4 + 2, n_tile, N4, acc_T[h * 4 + 2], bias_val);
-        store_row(m + h * 4 + 3, n_tile, N4, acc_T[h * 4 + 3], bias_val);
-      } else {
-        [[unroll]] for (int m_in_m4 = 0; m_in_m4 < 4; ++m_in_m4) {
-          const int row = m + h * 4 + m_in_m4;
-          if (row < M) {
-            store_row(
-                row, n_tile, N4, acc_T[h * 4 + m_in_m4], bias_val);
-          }
+  // No N-tail guard needed: N is a multiple of TILE_N (prepack-enforced, see
+  // prepack_q4_w_4x8_nc_buffer in Q4gswLinear.cpp) and the early-out above
+  // guarantees n < N, so every N-tile is full and the store is unconditional in
+  // N. The M guards (full_m_tile, row < M) below stay because M is NOT
+  // constrained to a multiple of TILE_M.
+  for (int h = 0; h < TILE_M4; ++h) {
+    if (h > 0 && m + h * 4 >= M) {
+      break;
+    }
+    if (full_m_tile) {
+      store_row(m + h * 4 + 0, n_tile, N4, acc_T[h * 4 + 0], bias_val);
+      store_row(m + h * 4 + 1, n_tile, N4, acc_T[h * 4 + 1], bias_val);
+      store_row(m + h * 4 + 2, n_tile, N4, acc_T[h * 4 + 2], bias_val);
+      store_row(m + h * 4 + 3, n_tile, N4, acc_T[h * 4 + 3], bias_val);
+    } else {
+      [[unroll]] for (int m_in_m4 = 0; m_in_m4 < 4; ++m_in_m4) {
+        const int row = m + h * 4 + m_in_m4;
+        if (row < M) {
+          store_row(row, n_tile, N4, acc_T[h * 4 + m_in_m4], bias_val);
         }
       }
     }
