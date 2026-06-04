@@ -1987,6 +1987,24 @@ document.write(`
 <h2>How do you visualize VGF files<a class="headerlink" href="#how-do-you-visualize-vgf-files" title="Link to this heading">#</a></h2>
 <p>The <a class="reference external" href="https://github.com/arm/vgf-adapter-model-explorer">VGF Adapter for Model Explorer</a> enables visualization of VGF files and can be useful for debugging.</p>
 </section>
+<section id="environment-preflight-commands">
+<h2>Environment preflight commands<a class="headerlink" href="#environment-preflight-commands" title="Link to this heading">#</a></h2>
+<p>The VGF backend provides a preflight helper that can be run before export or runtime execution:</p>
+<div class="highlight-bash notranslate"><div class="highlight"><pre><span></span>python<span class="w"> </span>-m<span class="w"> </span>executorch.backends.arm.vgf.check_env<span class="w"> </span>--aot
+python<span class="w"> </span>-m<span class="w"> </span>executorch.backends.arm.vgf.check_env<span class="w"> </span>--runtime
+python<span class="w"> </span>-m<span class="w"> </span>executorch.backends.arm.vgf.check_env<span class="w"> </span>--host-emulator
+python<span class="w"> </span>-m<span class="w"> </span>executorch.backends.arm.vgf.check_env<span class="w"> </span>--source-build<span class="w"> </span>--build-dir<span class="w"> </span>cmake-out
+</pre></div>
+</div>
+<p>Use <code class="docutils literal notranslate"><span class="pre">--aot</span></code> before export. It checks that the TOSA serializer and ML SDK model converter are available and that the converter can be launched.</p>
+<p>Use <code class="docutils literal notranslate"><span class="pre">--runtime</span></code> when debugging Python runtime availability. It checks whether the ExecuTorch runtime backend registry reports VgfBackend as available.</p>
+<p>Use <code class="docutils literal notranslate"><span class="pre">--host-emulator</span></code> before host-based emulator runs. It checks runtime availability plus Vulkan SDK and ML emulation layer environment variables.</p>
+<p>Use <code class="docutils literal notranslate"><span class="pre">--source-build</span> <span class="pre">--build-dir</span> <span class="pre">&lt;dir&gt;</span></code> when debugging a source build. It checks for VGF runtime build prerequisites such as <code class="docutils literal notranslate"><span class="pre">libvgf</span></code> and CMake options including <code class="docutils literal notranslate"><span class="pre">EXECUTORCH_BUILD_VGF</span></code> and <code class="docutils literal notranslate"><span class="pre">EXECUTORCH_BUILD_VULKAN</span></code>.</p>
+<p>For CI logs or bug reports, add <code class="docutils literal notranslate"><span class="pre">--json</span></code>:</p>
+<div class="highlight-bash notranslate"><div class="highlight"><pre><span></span>python<span class="w"> </span>-m<span class="w"> </span>executorch.backends.arm.vgf.check_env<span class="w"> </span>--aot<span class="w"> </span>--json
+</pre></div>
+</div>
+</section>
 </section>
 
 
@@ -2107,6 +2125,7 @@ document.write(`
   <nav class="bd-toc-nav page-toc" aria-labelledby="pst-page-navigation-heading-2">
     <ul class="visible nav section-nav flex-column">
 <li class="toc-h2 nav-item toc-entry"><a class="reference internal nav-link" href="#how-do-you-visualize-vgf-files">How do you visualize VGF files</a></li>
+<li class="toc-h2 nav-item toc-entry"><a class="reference internal nav-link" href="#environment-preflight-commands">Environment preflight commands</a></li>
 </ul>
   </nav></div>
     
@@ -2332,7 +2351,7 @@ document.write(`
        "headline": "Arm VGF Troubleshooting",
        "description": "PyTorch Documentation. Explore PyTorch, an open-source machine learning library that accelerates the path from research prototyping to production deployment.",
        "url": "/backends/arm-vgf/arm-vgf-troubleshooting.html",
-       "articleBody": "Arm VGF Troubleshooting# This page describes common issues that you may encounter when using the Arm VGF backend and how to debug and resolve them. How do you visualize VGF files# The VGF Adapter for Model Explorer enables visualization of VGF files and can be useful for debugging.",
+       "articleBody": "Arm VGF Troubleshooting# This page describes common issues that you may encounter when using the Arm VGF backend and how to debug and resolve them. How do you visualize VGF files# The VGF Adapter for Model Explorer enables visualization of VGF files and can be useful for debugging. Environment preflight commands# The VGF backend provides a preflight helper that can be run before export or runtime execution: python -m executorch.backends.arm.vgf.check_env --aot python -m executorch.backends.arm.vgf.check_env --runtime python -m executorch.backends.arm.vgf.check_env --host-emulator python -m executorch.backends.arm.vgf.check_env --source-build --build-dir cmake-out Use --aot before export. It checks that the TOSA serializer and ML SDK model converter are available and that the converter can be launched. Use --runtime when debugging Python runtime availability. It checks whether the ExecuTorch runtime backend registry reports VgfBackend as available. Use --host-emulator before host-based emulator runs. It checks runtime availability plus Vulkan SDK and ML emulation layer environment variables. Use --source-build --build-dir \u003cdir\u003e when debugging a source build. It checks for VGF runtime build prerequisites such as libvgf and CMake options including EXECUTORCH_BUILD_VGF and EXECUTORCH_BUILD_VULKAN. For CI logs or bug reports, add --json: python -m executorch.backends.arm.vgf.check_env --aot --json",
        "author": {
          "@type": "Organization",
          "name": "PyTorch Contributors",
