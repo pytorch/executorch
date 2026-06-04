@@ -1074,3 +1074,12 @@ jobs:
     uses: ./.github/workflows/_test_cortex_m_e2e.yml
     with:
       models: '["mv2", "mv3"]'
+
+  test-cortex-m-ops:
+    name: test-cortex-m-ops
+    permissions:
+      id-token: write
+      contents: read
+    uses: ./.github/workflows/_test_cortex_m_ops.yml
+    with:
+      targets: '["cortex-m7", "cortex-m0plus"]'

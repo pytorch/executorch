@@ -67,8 +67,10 @@ test_cases = {
 
 
 @parametrize("test_case", test_cases)
-def test_dialect_avg_pool2d(test_case):
-    tester = CortexMTester(test_case.model, test_case.example_inputs)
+def test_dialect_avg_pool2d(test_case, cortex_m_target):
+    tester = CortexMTester(
+        test_case.model, test_case.example_inputs, target_config=cortex_m_target
+    )
     ops_after = dict(test_case.model.ops_after_transforms)
     if test_case.model.pool.count_include_pad:
         ops_after["executorch_exir_dialects_edge__ops_cortex_m_pad_default"] = 1
@@ -80,6 +82,8 @@ def test_dialect_avg_pool2d(test_case):
 
 
 @parametrize("test_case", test_cases)
-def test_implementation_avg_pool2d(test_case):
-    tester = CortexMTester(test_case.model, test_case.example_inputs)
+def test_implementation_avg_pool2d(test_case, cortex_m_target):
+    tester = CortexMTester(
+        test_case.model, test_case.example_inputs, target_config=cortex_m_target
+    )
     tester.test_implementation(qtol=1)
