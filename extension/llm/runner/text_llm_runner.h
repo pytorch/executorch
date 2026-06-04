@@ -28,8 +28,14 @@
 // Helper functions are now in llm_runner_helper.h
 // These are provided for backward compatibility
 #include <executorch/extension/llm/runner/llm_runner_helper.h>
+// DecodeResult (returned by decode_one) lives with the Engine/Session API.
+#include <executorch/extension/llm/runner/llm_session.h>
 
 namespace executorch::extension::llm {
+
+namespace detail {
+class TextLLMSession;
+} // namespace detail
 
 class ET_EXPERIMENTAL TextLLMRunner : public IRunner {
  public:
@@ -161,6 +167,26 @@ class ET_EXPERIMENTAL TextLLMRunner : public IRunner {
   void stop() override;
 
  private:
+  // Internal serving hooks: the single-token-step primitives that detail::
+  // TextLLMSession composes into the LLMSession serving API. Not a public or
+  // ABI-stable surface — call them through LLMEngine/LLMSession, never
+  // directly. Friending the adapter keeps them out of every other caller (and
+  // out of the Python bindings) so nothing can take a dependency on this shape.
+  friend class detail::TextLLMSession;
+
+  ::executorch::runtime::Error seek(int64_t pos);
+
+  ::executorch::runtime::Result<uint64_t> prefill_tokens(
+      std::vector<uint64_t> tokens,
+      float temperature = -1.0f);
+
+  int64_t position() const {
+    return pos_;
+  }
+
+  ::executorch::runtime::Result<DecodeResult> decode_one(
+      float temperature = -1.0f);
+
   // Components
   std::unique_ptr<::tokenizers::Tokenizer> tokenizer_;
   std::unordered_map<std::string, int64_t> metadata_;
@@ -184,6 +210,9 @@ class ET_EXPERIMENTAL TextLLMRunner : public IRunner {
 
   // Token predicted by the last prefill() call, consumed by generate("").
   std::optional<uint64_t> prefill_next_token_;
+
+  // Previously emitted token, for BPE-context text decoding in decode_one().
+  std::optional<uint64_t> prev_decode_token_;
 
   // The position in KV cache of the input, starting from 0.
   int64_t pos_ = 0;

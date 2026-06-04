@@ -113,7 +113,9 @@ def define_common_targets():
             name = "runner_lib" + aten_suffix,
             exported_headers = [
                 "text_llm_runner.h",
+                "text_llm_session.h",
                 "llm_runner_helper.h",
+                "llm_session.h",
                 "constants.h",
             ],
             srcs = [

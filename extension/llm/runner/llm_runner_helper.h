@@ -18,6 +18,7 @@
 #include <vector>
 
 #include <executorch/extension/llm/runner/constants.h>
+#include <executorch/extension/llm/runner/llm_session.h>
 #include <executorch/extension/module/module.h>
 #include <executorch/runtime/core/result.h>
 #include <executorch/runtime/platform/compiler.h>
@@ -140,6 +141,89 @@ ET_EXPERIMENTAL std::unique_ptr<TextLLMRunner> create_text_llm_runner(
     std::unique_ptr<::executorch::runtime::EventTracer> event_tracer = nullptr,
     const std::string& method_name = "forward",
     Module::LoadMode load_mode = Module::LoadMode::MmapUseMlockIgnoreErrors);
+
+/**
+ * @brief Creates a TextLLMRunner over an already-loaded Program.
+ *
+ * Unlike create_text_llm_runner(model_path, ...), this does not load the model
+ * file again: the resulting runner's Module reuses `program` while owning its
+ * own method state and KV cache. This is the per-session construction path for
+ * TextLLMEngine — N sessions reuse one loaded Program but isolate their mutable
+ * KV state. Whether they also avoid re-materializing packed weights per session
+ * is backend-dependent (serving_capacity() is authoritative).
+ *
+ * The caller must keep the DataLoader backing `program` alive for the lifetime
+ * of every runner created from it (TextLLMEngine holds the loader Module).
+ *
+ * @param program Shared, already-loaded program.
+ * @param tokenizer Initialized tokenizer instance (owned by the new runner).
+ * @param temperature Optional temperature (deprecated; prefer
+ * GenerationConfig).
+ * @param method_name Name of the method to execute in the model.
+ * @return std::unique_ptr<TextLLMRunner> on success, or nullptr on failure.
+ */
+ET_EXPERIMENTAL std::unique_ptr<TextLLMRunner>
+create_text_llm_runner_from_program(
+    std::shared_ptr<Program> program,
+    std::unique_ptr<::tokenizers::Tokenizer> tokenizer,
+    float temperature = -1.0f,
+    const std::string& method_name = "forward");
+
+/**
+ * @brief Engine for multi-session text generation over one loaded Program.
+ *
+ * Loads the model's Program (weights/constants) once; create_session() builds a
+ * TextLLMRunner that reuses that Program but owns its own method/KV state. This
+ * is the correctness-first foundation for serving multiple conversations.
+ * Backend execution should be serialized by the caller until per-backend thread
+ * safety is proven (Module::execute is not assumed thread-safe). Whether extra
+ * sessions avoid duplicating packed weights is backend-dependent and reported
+ * by serving_capacity() (conservatively one).
+ */
+class ET_EXPERIMENTAL TextLLMEngine : public LLMEngine {
+ public:
+  static std::unique_ptr<TextLLMEngine> create(
+      const std::string& model_path,
+      const std::string& tokenizer_path,
+      std::optional<const std::string> data_path = std::nullopt,
+      float temperature = -1.0f,
+      const std::string& method_name = "forward",
+      Module::LoadMode load_mode = Module::LoadMode::MmapUseMlockIgnoreErrors);
+
+  // Returns a TextLLMSession (LLMSession) that reuses this engine's loaded
+  // Program (physical weight sharing is backend-dependent; see
+  // serving_capacity).
+  ::executorch::runtime::Result<std::unique_ptr<LLMSession>> create_session()
+      override;
+  // Conservative: a single physical session (no proven cross-session weight
+  // sharing). Raise on a backend proven to share packed weights.
+  LLMServingCapacity serving_capacity() const override {
+    return LLMServingCapacity{};
+  }
+  const std::unordered_map<std::string, int64_t>& metadata() const override {
+    return metadata_;
+  }
+
+  TextLLMEngine(const TextLLMEngine&) = delete;
+  TextLLMEngine& operator=(const TextLLMEngine&) = delete;
+
+ private:
+  TextLLMEngine(
+      std::unique_ptr<Module> loader_module,
+      std::shared_ptr<Program> program,
+      std::string tokenizer_path,
+      float temperature,
+      std::string method_name,
+      std::unordered_map<std::string, int64_t> metadata);
+
+  // Keeps the shared Program's DataLoader alive for the lifetime of sessions.
+  std::unique_ptr<Module> loader_module_;
+  std::shared_ptr<Program> program_;
+  std::string tokenizer_path_;
+  float temperature_;
+  std::string method_name_;
+  std::unordered_map<std::string, int64_t> metadata_;
+};
 
 /**
  * @brief Creates a MultimodalRunner instance with dependency injection

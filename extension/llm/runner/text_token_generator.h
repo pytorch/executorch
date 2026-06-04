@@ -55,6 +55,18 @@ class ET_EXPERIMENTAL TextTokenGenerator {
     return logit_processors_.size();
   }
 
+  /// Apply the registered logit processors (grammar/tool masks, penalties,
+  /// top-k/top-p, ...) to `logits` in order, before sampling. Both the
+  /// generate() loop and session decode_one() call this so the two decode paths
+  /// stay consistent.
+  inline ::executorch::runtime::Error apply_logit_processors(
+      executorch::aten::Tensor& logits) {
+    for (auto& processor : logit_processors_) {
+      ET_CHECK_OK_OR_RETURN_ERROR(processor->process(logits));
+    }
+    return ::executorch::runtime::Error::Ok;
+  }
+
   virtual ~TextTokenGenerator() = default;
 
   /**
@@ -126,9 +138,7 @@ class ET_EXPERIMENTAL TextTokenGenerator {
 
       prev_token = cur_token;
 
-      for (auto& processor : logit_processors_) {
-        ET_CHECK_OK_OR_RETURN_ERROR(processor->process(logits_tensor));
-      }
+      ET_CHECK_OK_OR_RETURN_ERROR(apply_logit_processors(logits_tensor));
 
       stats_->on_sampling_begin();
       cur_token =
@@ -178,6 +188,11 @@ class ET_EXPERIMENTAL TextTokenGenerator {
    */
   inline void stop() {
     should_stop_.store(true, std::memory_order_relaxed);
+  }
+
+  /// Whether `token` is an end-of-sequence token (used by single-step decode).
+  inline bool is_eos(uint64_t token) const {
+    return eos_ids_->find(token) != eos_ids_->end();
   }
 
   /**

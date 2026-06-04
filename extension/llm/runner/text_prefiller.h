@@ -32,22 +32,28 @@ class ET_EXPERIMENTAL TextPrefiller {
    * tokenizer.
    * @param start_pos The starting position in KV cache of the input in the LLM
    * Module.
+   * @param temperature Sampling temperature for the first generated token
+   * (which is sampled here during prefill). Defaults to greedy (0.0).
    * @return The next token of the LLM Module after prefill.
    */
   virtual ::executorch::runtime::Result<uint64_t> prefill(
       std::vector<uint64_t>& prompt_tokens,
-      int64_t& start_pos);
+      int64_t& start_pos,
+      float temperature = 0.0f);
 
   /**
    * Helper method to prefill a chunk of tokens.
    * @param prompt_tokens The chunk of text prompt tokens to process.
    * @param start_pos The starting position in KV cache of the input in the LLM
    * Module.
+   * @param temperature Sampling temperature for the token produced by this
+   * chunk. Defaults to greedy (0.0).
    * @return The next token of the LLM Module after prefilling this chunk.
    */
   virtual ::executorch::runtime::Result<uint64_t> prefill_chunk(
       std::vector<uint64_t>& prompt_tokens,
-      int64_t& start_pos);
+      int64_t& start_pos,
+      float temperature = 0.0f);
 
   /**
    * Load the necessary resources for the TextPrefiller.

@@ -10,6 +10,7 @@
 #include <executorch/extension/llm/runner/io_manager/io_manager.h>
 #include <executorch/extension/llm/runner/irunner.h>
 #include <executorch/extension/llm/runner/text_llm_runner.h>
+#include <executorch/extension/llm/runner/text_llm_session.h>
 #include <executorch/extension/llm/runner/text_prefiller.h>
 #include <executorch/extension/llm/runner/text_token_generator.h>
 #include <executorch/extension/llm/sampler/logit_processor.h>
@@ -20,13 +21,17 @@
 #include <limits>
 
 using namespace ::testing;
+using executorch::extension::llm::DecodeResult;
 using executorch::extension::llm::GenerationConfig;
+using executorch::extension::llm::LLMServingCapacity;
 using executorch::extension::llm::LogitProcessor;
+using executorch::extension::llm::SamplingConfig;
 using executorch::extension::llm::Stats;
 using executorch::extension::llm::TextDecoderRunner;
 using executorch::extension::llm::TextLLMRunner;
 using executorch::extension::llm::TextPrefiller;
 using executorch::extension::llm::TextTokenGenerator;
+using executorch::extension::llm::detail::TextLLMSession;
 using executorch::runtime::Error;
 using executorch::runtime::Result;
 using executorch::runtime::testing::TensorFactory;
@@ -95,8 +100,8 @@ class MockTextPrefiller : public TextPrefiller {
   MOCK_METHOD(
       Result<uint64_t>,
       prefill,
-      (std::vector<uint64_t>&, int64_t&),
-      ());
+      (std::vector<uint64_t>&, int64_t&, float),
+      (override));
   MOCK_METHOD(::executorch::runtime::Error, load, (), ());
   MOCK_METHOD(bool, is_loaded, (), ());
 };
@@ -190,7 +195,7 @@ class RunnerTest : public Test {
     ON_CALL(*text_prefiller, is_loaded()).WillByDefault(Return(true));
     // Set up default behavior for the text prefiller
     ON_CALL(*text_prefiller, prefill)
-        .WillByDefault([](const std::vector<uint64_t>&, int64_t) {
+        .WillByDefault([](const std::vector<uint64_t>&, int64_t, float) {
           return Result<uint64_t>(4);
         });
 
@@ -220,6 +225,46 @@ class RunnerTest : public Test {
     };
   }
 
+  // Builds a loaded TextLLMRunner with default mocks whose prefiller advances
+  // the position cursor by the number of tokens (so position()/seek() and the
+  // capacity bound can be exercised directly).
+  std::unique_ptr<TextLLMRunner> makeRunner(
+      std::unordered_map<std::string, int64_t> metadata,
+      std::shared_ptr<LogitProcessor> logit_processor = nullptr,
+      uint64_t prefill_token = 42) {
+    auto tokenizer = createMockTokenizer();
+    auto text_decoder_runner = createMockTextDecoderRunner();
+    auto text_prefiller = createMockTextPrefiller(text_decoder_runner.get());
+    ON_CALL(*text_prefiller, prefill(_, _, _))
+        .WillByDefault([prefill_token](
+                           std::vector<uint64_t>& tokens, int64_t& pos, float) {
+          pos += tokens.size();
+          return Result<uint64_t>(prefill_token);
+        });
+    ON_CALL(*text_prefiller, is_loaded()).WillByDefault(Return(true));
+    auto stats = std::make_unique<executorch::llm::Stats>();
+    auto text_token_generator = createTextTokenGenerator(
+        tokenizer.get(), text_decoder_runner.get(), stats.get());
+    if (logit_processor) {
+      text_token_generator->add_logit_processor(std::move(logit_processor));
+    }
+    auto module = std::make_unique<MockModule>();
+    auto io_manager =
+        std::make_unique<executorch::extension::llm::IOManager>(*module);
+    auto runner = std::make_unique<TextLLMRunner>(
+        std::move(metadata),
+        std::unique_ptr<::tokenizers::Tokenizer>(tokenizer.release()),
+        std::move(module),
+        std::move(text_decoder_runner),
+        std::unique_ptr<::executorch::extension::llm::TextPrefiller>(
+            text_prefiller.release()),
+        std::move(io_manager),
+        std::move(text_token_generator),
+        std::move(stats));
+    runner->load();
+    return runner;
+  }
+
  protected:
   Stats stats_;
   std::vector<float> return_logits_ = {0.1f, 0.2f, 0.3f, 0.4f};
@@ -242,8 +287,8 @@ TEST_F(RunnerTest, GenerateCallsCallbackExactlyMaxNewTokensTimes) {
       });
 
   // Set up expectations for the text prefiller
-  ON_CALL(*text_prefiller, prefill(_, _))
-      .WillByDefault([&](std::vector<uint64_t>&, int64_t&) {
+  ON_CALL(*text_prefiller, prefill(_, _, _))
+      .WillByDefault([&](std::vector<uint64_t>&, int64_t&, float) {
         return (Result<uint64_t>(4));
       });
 
@@ -310,8 +355,8 @@ TEST_F(RunnerTest, WarmupCallsGenerateWithWarmingFlag) {
       });
 
   // Set up expectations for the text prefiller
-  ON_CALL(*text_prefiller, prefill(_, _))
-      .WillByDefault([&](std::vector<uint64_t>&, int64_t&) {
+  ON_CALL(*text_prefiller, prefill(_, _, _))
+      .WillByDefault([&](std::vector<uint64_t>&, int64_t&, float) {
         return (Result<uint64_t>(4));
       });
 
@@ -396,8 +441,8 @@ TEST_F(RunnerTest, PrefillReturnsNextToken) {
             std::vector<uint64_t>{1, 2, 3});
       });
 
-  ON_CALL(*text_prefiller, prefill(_, _))
-      .WillByDefault([&](std::vector<uint64_t>& tokens, int64_t& pos) {
+  ON_CALL(*text_prefiller, prefill(_, _, _))
+      .WillByDefault([&](std::vector<uint64_t>& tokens, int64_t& pos, float) {
         pos += tokens.size();
         return Result<uint64_t>(42);
       });
@@ -442,8 +487,8 @@ TEST_F(RunnerTest, PrefillThenGenerateEmpty) {
             std::vector<uint64_t>{1, 2, 3});
       });
 
-  ON_CALL(*text_prefiller, prefill(_, _))
-      .WillByDefault([&](std::vector<uint64_t>& tokens, int64_t& pos) {
+  ON_CALL(*text_prefiller, prefill(_, _, _))
+      .WillByDefault([&](std::vector<uint64_t>& tokens, int64_t& pos, float) {
         pos += tokens.size();
         return Result<uint64_t>(4);
       });
@@ -488,6 +533,147 @@ TEST_F(RunnerTest, PrefillThenGenerateEmpty) {
   EXPECT_EQ(err, Error::Ok);
   // First token from prefill + remaining from decode loop
   EXPECT_EQ(counter.getCount(), config.max_new_tokens);
+}
+
+// prefill_tokens() must reject a suffix larger than the KV cache, mirroring the
+// capacity bound generate(prompt) enforces (prefill_tokens is the public
+// prefix-cache primitive and the only place this is checked for it).
+// The token-step methods are private on TextLLMRunner (internal serving hooks);
+// they are exercised through their sole friended caller,
+// detail::TextLLMSession, which is the LLMSession surface the server/engine
+// actually depend on.
+TEST_F(RunnerTest, PrefillTokensRejectsOverContext) {
+  TextLLMSession session(makeRunner(createDefaultMetadata())); // context = 128
+  EXPECT_EQ(
+      session.prefill_tokens(std::vector<uint64_t>(200, 1)), // 200 > 128
+      Error::InvalidArgument);
+}
+
+// seek() + prefill_tokens() across the boundary is rejected: a valid prefill
+// followed by a suffix that pushes pos_ past max_context_len must fail.
+TEST_F(RunnerTest, PrefillTokensRejectsWhenPosPlusSuffixExceedsContext) {
+  TextLLMSession session(makeRunner(createDefaultMetadata())); // 128
+  EXPECT_EQ(session.prefill_tokens(std::vector<uint64_t>(100, 1)), Error::Ok);
+  EXPECT_EQ(session.position(), 100);
+  EXPECT_EQ(
+      session.prefill_tokens(std::vector<uint64_t>(50, 1)), // 100 + 50 > 128
+      Error::InvalidArgument);
+  EXPECT_EQ(session.position(), 100); // rejected before advancing
+}
+
+// Empty tokens are rejected.
+TEST_F(RunnerTest, PrefillTokensRejectsEmpty) {
+  TextLLMSession session(makeRunner(createDefaultMetadata()));
+  EXPECT_EQ(
+      session.prefill_tokens(std::vector<uint64_t>{}), Error::InvalidArgument);
+}
+
+// position() tracks prefilled tokens; seek() rewinds within range and rejects
+// out-of-range targets.
+TEST_F(RunnerTest, SeekAndPositionTrackResidentTokens) {
+  TextLLMSession session(makeRunner(createDefaultMetadata()));
+  EXPECT_EQ(session.position(), 0);
+  EXPECT_EQ(session.prefill_tokens(std::vector<uint64_t>(10, 1)), Error::Ok);
+  EXPECT_EQ(session.position(), 10);
+  EXPECT_EQ(session.seek(5), Error::Ok);
+  EXPECT_EQ(session.position(), 5);
+  EXPECT_EQ(session.seek(999), Error::InvalidArgument); // past current position
+}
+
+// seek() is refused on sliding-window models (max_seq_len < max_context_len),
+// so the prefix cache falls back to a full reset+prefill instead of corrupting.
+TEST_F(RunnerTest, SeekRejectedForSlidingWindow) {
+  auto md = createDefaultMetadata();
+  md["get_max_seq_len"] = 64; // < get_max_context_len (128) => sliding window
+  TextLLMSession session(makeRunner(md));
+  EXPECT_EQ(session.seek(0), Error::NotSupported);
+}
+
+// decode_one() emits the pending token id exactly, then forwards it (advancing
+// position by one). Looping it reproduces a generation while exposing ids.
+TEST_F(RunnerTest, DecodeOneReturnsExactTokenIdAndAdvances) {
+  TextLLMSession session(makeRunner(createDefaultMetadata()));
+  ASSERT_EQ(session.prefill_tokens(std::vector<uint64_t>{1, 2, 3}), Error::Ok);
+  EXPECT_EQ(session.position(), 3);
+
+  auto r1 = session.decode_one(SamplingConfig{0.0f});
+  ASSERT_TRUE(r1.ok());
+  EXPECT_EQ(r1.get().token_id, 42u); // the prefill-pending token (mock prefill)
+  EXPECT_FALSE(r1.get().is_eos);
+  EXPECT_EQ(session.position(), 4); // forwarded one token
+
+  auto r2 = session.decode_one(SamplingConfig{0.0f});
+  ASSERT_TRUE(r2.ok());
+  EXPECT_EQ(r2.get().token_id, 3u); // argmax of canned logits {.1,.2,.3,.4}
+  EXPECT_EQ(session.position(), 5);
+}
+
+// decode_one() without a pending token (no prior prefill) must error.
+TEST_F(RunnerTest, DecodeOneWithoutPendingTokenFails) {
+  TextLLMSession session(makeRunner(createDefaultMetadata()));
+  EXPECT_FALSE(session.decode_one(SamplingConfig{0.0f}).ok());
+}
+
+// decode_one() must stop at EOS WITHOUT forwarding it (like generate()): the
+// EOS token is not made resident, position() does not advance, and no pending
+// token remains — so prefix reuse stays correct and a further decode_one()
+// errors. (The fixture's EOS id is 100.)
+TEST_F(RunnerTest, DecodeOneStopsAtEosWithoutForwarding) {
+  TextLLMSession session(
+      makeRunner(createDefaultMetadata(), nullptr, /*prefill_token=*/100));
+  ASSERT_EQ(session.prefill_tokens(std::vector<uint64_t>{1, 2, 3}), Error::Ok);
+  EXPECT_EQ(session.position(), 3);
+
+  auto r = session.decode_one(SamplingConfig{0.0f});
+  ASSERT_TRUE(r.ok());
+  EXPECT_EQ(r.get().token_id, 100u);
+  EXPECT_TRUE(r.get().is_eos);
+  EXPECT_EQ(session.position(), 3); // EOS not forwarded -> position unchanged
+
+  // No pending token remains -> a further decode_one() errors.
+  EXPECT_FALSE(session.decode_one(SamplingConfig{0.0f}).ok());
+}
+
+// decode_one() is the last-resort safety net for session drivers: even if a
+// caller forgets to resolve max_new_tokens, it must not step past KV capacity.
+TEST_F(RunnerTest, DecodeOneRejectsWhenContextFull) {
+  auto md = createDefaultMetadata(); // max_context_len = 128
+  TextLLMSession session(makeRunner(md));
+  ASSERT_EQ(session.prefill_tokens(std::vector<uint64_t>(127, 1)), Error::Ok);
+  auto r1 = session.decode_one(SamplingConfig{0.0f});
+  ASSERT_TRUE(r1.ok());
+  EXPECT_EQ(session.position(), 128);
+
+  auto r2 = session.decode_one(SamplingConfig{0.0f});
+  EXPECT_FALSE(r2.ok());
+  EXPECT_EQ(r2.error(), Error::InvalidArgument);
+}
+
+// decode_one() must apply the generator's logit processors before sampling,
+// exactly like generate(). Argmax of {0.1,0.2,0.3,0.4} is token 3; masking it
+// makes the next sampled (pending) token 2 — proving the session decode path
+// honors grammar/tool masks/penalties and can't diverge from generate().
+TEST_F(RunnerTest, DecodeOneAppliesLogitProcessors) {
+  TextLLMSession session(makeRunner(
+      createDefaultMetadata(), std::make_shared<MaskTokenProcessor>(3)));
+  ASSERT_EQ(session.prefill_tokens(std::vector<uint64_t>{1, 2, 3}), Error::Ok);
+
+  // r1 emits the prefill-pending token (42, not sampled here); its forward pass
+  // samples the next pending token from masked logits.
+  ASSERT_TRUE(session.decode_one(SamplingConfig{0.0f}).ok());
+  auto r2 = session.decode_one(SamplingConfig{0.0f});
+  ASSERT_TRUE(r2.ok());
+  EXPECT_EQ(r2.get().token_id, 2u); // token 3 masked -> argmax is now 2
+}
+
+// Serving capacity is conservatively a single physical session by default
+// (no proven cross-session weight sharing). TextLLMEngine::serving_capacity()
+// returns this default; the engine-backed end-to-end check is in the pybinding
+// test.
+TEST_F(RunnerTest, ServingCapacityIsSingleSlotByDefault) {
+  LLMServingCapacity cap;
+  EXPECT_EQ(cap.max_physical_sessions_without_weight_duplication, 1);
+  EXPECT_EQ(cap.estimated_bytes_per_session, 0);
 }
 
 // Test that generate("") without prior prefill() returns an error
@@ -591,8 +777,8 @@ TEST_F(RunnerTest, MultiTurnWithSeqLenRespectsPos) {
             std::vector<uint64_t>{1, 2, 3});
       });
 
-  ON_CALL(*text_prefiller, prefill(_, _))
-      .WillByDefault([&](std::vector<uint64_t>& tokens, int64_t& pos) {
+  ON_CALL(*text_prefiller, prefill(_, _, _))
+      .WillByDefault([&](std::vector<uint64_t>& tokens, int64_t& pos, float) {
         pos += tokens.size();
         return Result<uint64_t>(4);
       });
