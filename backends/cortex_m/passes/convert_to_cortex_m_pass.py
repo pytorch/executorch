@@ -116,15 +116,17 @@ class ConvertToCortexMPass(CortexMPass):
             (input_scale * weight_scale) / output_scale
         )
 
-        # TODO: Add support for configuring the backend to support other extensions.
-        # Kernel sum is only used in the CMSIS-NN implementation for the MVE extension,
-        # so this should be optional.
+        # The CMSIS-NN fully-connected kernel sources the bias differently per
+        # ISA: the MVE path seeds its accumulator from the precomputed
+        # kernel_sum and never reads the bias argument, while the DSP and scalar
+        # paths ignore kernel_sum and read the bias argument directly. Fold the
+        # bias into kernel_sum for MVE and also pass the bias node through for
+        # DSP/scalar; only one path runs in a given build, so it is applied once.
         weights = node.args[1]
         weights_tensor = get_param_tensor(self.exported_program, weights)
+        bias = node.args[2] if len(node.args) > 2 else None
         bias_tensor = (
-            get_param_tensor(self.exported_program, node.args[2])
-            if len(node.args) > 2
-            else None
+            get_param_tensor(self.exported_program, bias) if bias is not None else None
         )
         kernel_sum_tensor = self._compute_kernel_sum(
             weights_tensor, bias_tensor, -input_zp, -weight_zp
@@ -141,7 +143,7 @@ class ConvertToCortexMPass(CortexMPass):
         args = (
             node.args[0],
             weights,
-            None,
+            bias,
             kernel_sum,
             -input_zp,
             -weight_zp,
