@@ -91,7 +91,7 @@
 #
 # ==============================================================================
 
-.PHONY: voxtral-cuda voxtral-cpu voxtral-metal voxtral-mlx voxtral_realtime-cuda voxtral_realtime-cpu voxtral_realtime-metal voxtral_realtime-mlx voxtral_tts-cpu voxtral_tts-cuda whisper-cuda whisper-cuda-debug whisper-cpu whisper-metal parakeet-cuda parakeet-cuda-debug parakeet-cpu parakeet-metal parakeet-mlx parakeet-vulkan dinov2-cuda dinov2-cuda-debug sortformer-cuda sortformer-cpu silero-vad-cpu llama-cuda llama-cuda-debug llama-cpu lfm_2_5-mlx llava-cpu gemma3-cuda gemma3-cpu gemma4_31b-cuda gemma4_31b-mlx qwen3_5_moe-cuda qwen3_5_moe-metal clean help
+.PHONY: voxtral-cuda voxtral-cpu voxtral-metal voxtral-mlx voxtral_realtime-cuda voxtral_realtime-cpu voxtral_realtime-metal voxtral_realtime-mlx voxtral_tts-cpu voxtral_tts-cuda whisper-cuda whisper-cuda-debug whisper-cpu whisper-metal parakeet-cuda parakeet-cuda-debug parakeet-cpu parakeet-metal parakeet-mlx parakeet-vulkan dinov2-cuda dinov2-cuda-debug sortformer-cuda sortformer-cpu silero-vad-cpu llama-cuda llama-cuda-debug llama-cpu lfm_2_5-mlx llava-cpu gemma3-cuda gemma3-cpu gemma4_31b-cuda gemma4_31b-mlx qwen3_5_moe-cuda qwen3_5_moe-cuda-serve qwen3_5_moe-metal clean help
 
 help:
 	@echo "This Makefile adds targets to build runners for various models on various backends. Run using \`make <target>\`. Available targets:"
@@ -130,6 +130,7 @@ help:
 	@echo "  gemma4_31b-cuda     - Build Gemma 4 31B runner with CUDA backend"
 	@echo "  gemma4_31b-mlx      - Build Gemma 4 31B runner with MLX backend"
 	@echo "  qwen3_5_moe-cuda    - Build Qwen3.5 MoE runner with CUDA backend"
+	@echo "  qwen3_5_moe-cuda-serve - Build Qwen3.5 MoE runner + OpenAI serving module (CUDA)"
 	@echo "  qwen3_5_moe-metal   - Build Qwen3.5 MoE runner with Metal backend"
 	@echo "  clean               - Clean build artifacts"
 
@@ -454,6 +455,17 @@ gemma4_31b-mlx:
 	@echo ""
 	@echo "✓ Build complete!"
 	@echo "  Binary: cmake-out/examples/models/gemma4_31b/gemma4_31b_runner"
+
+qwen3_5_moe-cuda-serve:
+	@echo "==> Building and installing ExecuTorch with CUDA..."
+	cmake --workflow --preset llm-release-cuda
+	@echo "==> Building Qwen3.5 MoE runner + serving module with CUDA..."
+	cd examples/models/qwen3_5_moe && cmake --workflow --preset qwen3-5-moe-cuda-serve
+	@echo ""
+	@echo "✓ Build complete!"
+	@echo "  Binary: cmake-out/examples/models/qwen3_5_moe/qwen3_5_moe_runner"
+	@echo "  Serving module: cmake-out/examples/models/qwen3_5_moe/_qwen35_moe*.so"
+	@echo "  Launch: see examples/models/qwen3_5_moe/README.md (Serving)"
 
 qwen3_5_moe-metal:
 	@echo "==> Building and installing ExecuTorch with Metal..."

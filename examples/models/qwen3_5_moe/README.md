@@ -133,10 +133,94 @@ cmake-out/examples/models/qwen3_5_moe/qwen3_5_moe_runner \
 | `--data_path` | (none) | Path to `.ptd` delegate data file (required for CUDA) |
 | `--tokenizer_path` | (required) | Path to HuggingFace `tokenizer.json` |
 | `--prompt` | `"Hello"` | Input prompt text |
+| `--prompt_file` | (none) | Path to a file with the prompt (overrides `--prompt`) |
 | `--temperature` | `0.8` | Sampling temperature (0 = greedy) |
 | `--max_new_tokens` | `128` | Maximum tokens to generate |
+| `--cuda_graph` | off | Capture/replay the decode method as a CUDA graph (CUDA only). See the caveat below. |
+| `--warmup` | `0` | Warmup iterations to discard before timing (one model load; the session is reset between iterations) |
+| `--num_iters` | `1` | Timed iterations to average, after warmup |
+
+## Serving (OpenAI-compatible)
+
+Run an OpenAI-compatible HTTP server so an agent harness (pi, opencode, …) can
+use the model for local tool-use. Point your client at `http://<host>:<port>/v1`.
+
+Build the runner **and** the serving module:
+
+```bash
+make qwen3_5_moe-cuda-serve
+```
+
+Launch (the `LD_LIBRARY_PATH` shim is forwarded to the worker for the CUDA blob):
+
+```bash
+LD_LIBRARY_PATH=$CONDA_PREFIX/lib:$LD_LIBRARY_PATH \
+  python -m executorch.examples.models.qwen3_5_moe.serve \
+    --model-path  qwen35_moe_exports/model.pte \
+    --data-path   qwen35_moe_exports/aoti_cuda_blob.ptd \
+    --tokenizer-path ~/models/Qwen3.5-35B-A3B/tokenizer.json \
+    --hf-tokenizer   ~/models/Qwen3.5-35B-A3B \
+    --model-id qwen3.5-moe --no-think
+```
+
+### Architecture (process isolation)
+
+Two processes, one model load:
+
+```
+serve.py  (control plane: FastAPI/asyncio, OpenAI protocol, chat templating,
+           tool parsing, validation — NO CUDA)
+   │  JSONL over stdin/stdout
+   ▼
+worker.py (one Qwen35MoEEngine + one session, synchronous loop — the CUDA model;
+           NO asyncio server)
+```
+
+The model runs in a **separate worker process** because executing the AOTI CUDA
+model inside a live asyncio server process segfaults in the int4 matmul
+(reproducible, and isolated by elimination to the asyncio-loop × CUDA
+interaction). The worker runs the model like the CLI — a plain synchronous loop —
+which is reliable. The control plane only does blocking pipe I/O (no CUDA), which
+is safe under asyncio.
+
+### Serve Options
+
+| Flag | Default | Description |
+|------|---------|-------------|
+| `--model-path` | (required) | Path to exported `.pte` model |
+| `--data-path` | (none) | Path to `.ptd` delegate data file (required for CUDA) |
+| `--tokenizer-path` | (required) | Path to HuggingFace `tokenizer.json` |
+| `--hf-tokenizer` | (required) | HF tokenizer id/dir for the chat template + encoding |
+| `--model-id` | `qwen3.5-moe` | Model id reported on `/v1/models` |
+| `--host` / `--port` | `127.0.0.1` / `8000` | Bind address |
+| `--max-context` | (none) | Reject prompts that exceed it with 400 |
+| `--no-think` | off | Default reasoning off (`enable_thinking=False`) |
+
+### V1 limitations
+
+- **Single-slot** (`serving_capacity=1`): one worker, one session, one model
+  load. `--num-runners > 1` is rejected; concurrent requests queue on the worker.
+- **No prefix cache**: the recurrent/conv state cannot be rewound by position
+  (`seek()` is NotSupported), so turn-to-turn KV reuse is off.
+- Supports the chat-completions contract of the generic server; `top_p != 1`,
+  `seed`, `top_k`, `logprobs`, etc. are rejected (only temperature is plumbed).
 
 ## Troubleshooting
+
+- **Runner exits silently right after `Loading methods...`**: the AOTI CUDA blob
+  is compiled with the conda toolchain's `libstdc++`, which is newer than the
+  system one (it needs e.g. `GLIBCXX_3.4.34`). Prepend the conda lib dir so the
+  runner loads the matching `libstdc++`:
+
+  ```bash
+  LD_LIBRARY_PATH=$CONDA_PREFIX/lib:$LD_LIBRARY_PATH \
+    cmake-out/examples/models/qwen3_5_moe/qwen3_5_moe_runner ...
+  ```
+- **`aoti_torch_cuda_sort_stable ... API call failed` when re-running prefill
+  with `--cuda_graph`**: capturing the decode CUDA graph and then running another
+  prefill in the same process currently fails (allocator interaction). Use
+  `--cuda_graph` for single prefill+decode runs; omit it when looping with
+  `--warmup`/`--num_iters`.
 
 - **OOM during export**: The model requires significant GPU memory even
   with int4 quantization. Try reducing `--max-seq-len` or using a GPU

@@ -60,7 +60,7 @@ endif()
 # Tokenizer
 list(APPEND link_libraries tokenizers::tokenizers)
 
-add_executable(qwen3_5_moe_runner main.cpp)
+add_executable(qwen3_5_moe_runner main.cpp qwen35_moe_engine.cpp)
 target_include_directories(
   qwen3_5_moe_runner PUBLIC ${_common_include_directories}
 )
@@ -69,4 +69,25 @@ target_link_libraries(qwen3_5_moe_runner PUBLIC ${link_libraries})
 if(NOT CMAKE_BUILD_TYPE STREQUAL "Debug")
   target_link_options_gc_sections(qwen3_5_moe_runner)
   target_link_options(qwen3_5_moe_runner PRIVATE "LINKER:-s")
+endif()
+
+# Example-local serving module (_qwen35_moe) used by the worker subprocess
+# (worker.py). Off by default; enable with -DEXECUTORCH_BUILD_PYBIND=ON. It
+# builds a Qwen35MoEEngine via create_engine() and re-exposes the generic Engine
+# / Session surface (no Qwen-specific Python class). The generic
+# extension/llm/runner pybind is not touched, so the model-agnostic
+# server/runner never depend on Qwen.
+if(EXECUTORCH_BUILD_PYBIND)
+  add_subdirectory(
+    ${EXECUTORCH_ROOT}/third-party/pybind11
+    ${CMAKE_CURRENT_BINARY_DIR}/pybind11
+  )
+  pybind11_add_module(
+    _qwen35_moe SHARED qwen35_moe_pybindings.cpp qwen35_moe_engine.cpp
+  )
+  target_include_directories(_qwen35_moe PRIVATE ${_common_include_directories})
+  target_link_libraries(_qwen35_moe PRIVATE ${link_libraries})
+  set_target_properties(
+    _qwen35_moe PROPERTIES CXX_STANDARD 17 POSITION_INDEPENDENT_CODE ON
+  )
 endif()
