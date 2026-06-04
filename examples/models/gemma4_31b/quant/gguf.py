@@ -111,6 +111,9 @@ def _unpack_q4_k(data, shape: list[int]) -> torch.Tensor:
 def _unpack_q6_k(data, shape: list[int]) -> torch.Tensor:
     """Unpack Q6_K super-blocks into an ``IntxUnpackedToInt8Tensor``.
 
+    ``data`` may be a raw byte buffer or an already-materialized uint8 tensor of
+    the block bytes.
+
     Q6_K block layout (210 bytes per 256 values):
       - ql    (128B): lower 4 bits of 256 6-bit values
       - qh    (64B): upper 2 bits of 256 6-bit values
@@ -126,7 +129,8 @@ def _unpack_q6_k(data, shape: list[int]) -> torch.Tensor:
     assert K % QK_K == 0, f"Q6_K requires K divisible by {QK_K}, got {K}"
     n_blocks = N * (K // QK_K)
     block_bytes = 2 + QK_K // 2 + QK_K // 4 + QK_K // 16  # 210
-    raw = _raw_tensor(data).reshape(n_blocks, block_bytes)
+    raw_u8 = data if isinstance(data, torch.Tensor) else _raw_tensor(data)
+    raw = raw_u8.reshape(n_blocks, block_bytes)
 
     ql = raw[:, 0:128]
     qh = raw[:, 128:192]

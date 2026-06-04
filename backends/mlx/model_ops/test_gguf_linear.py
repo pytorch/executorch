@@ -63,10 +63,10 @@ def make_q6_k_blob(N: int, K: int, seed: int = 0) -> torch.Tensor:
     blocks[..., :192] = torch.randint(
         0, 256, (N, nb, 192), dtype=torch.uint8, generator=g
     )
-    # scales (192:208): modest positive int8 scales keep magnitudes sane.
-    blocks[..., 192:208] = torch.randint(
-        1, 17, (N, nb, 16), dtype=torch.uint8, generator=g
-    )
+    # scales (192:208): signed int8 scales (real Q6_K scales can be negative);
+    # a modest magnitude keeps dequantized values sane.
+    scales = torch.randint(-16, 17, (N, nb, 16), dtype=torch.int32, generator=g)
+    blocks[..., 192:208] = scales.to(torch.int8).view(torch.uint8)
     # d (208:210): a small finite fp16 super-block scale. Chosen so dequantized
     # element magnitudes (~ d * scale * (q-32)) are O(0.1), like real Q6_K
     # weights -- the mat-mat kernel stores tiles in half precision (as in

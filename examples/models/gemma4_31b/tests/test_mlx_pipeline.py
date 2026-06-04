@@ -364,15 +364,18 @@ class TestGgufLinearMlx(unittest.TestCase):
         self.assertEqual(y.shape, torch.Size([2, N]))
         self.assertTrue(torch.equal(y, ref))
 
-    def test_gguf_linear_appears_in_exported_graph(self):
+    def test_gguf_linear_delegates_to_mlx(self):
+        from executorch.backends.mlx import MLXPartitioner
+
         from executorch.examples.models.gemma4_31b.mlx_gguf_linear import GGUFLinear
+        from executorch.exir import to_edge_transform_and_lower
         from torch.export import Dim, export
 
         N, K = 256, 512
         blob = self._make_blob(N, K)
+        # GGUFLinear passes bias=None, so the lowered node has 3 args (no bias);
+        # dynamic seq_len exercises the runtime-routed (IfNode) lowering path.
         m = GGUFLinear(blob, format="q6k").eval()
-
-        # Dynamic seq_len exercises the runtime-routed (IfNode) lowering path.
         seq = Dim("seq", min=1, max=8)
         ep = export(
             m,
@@ -380,11 +383,72 @@ class TestGgufLinearMlx(unittest.TestCase):
             dynamic_shapes=({0: seq},),
             strict=True,
         )
-        targets = [str(n.target) for n in ep.graph.nodes if n.op == "call_function"]
-        self.assertTrue(
-            any("mlx.gguf_linear" in t for t in targets),
-            f"gguf_linear not in exported graph: {targets}",
+        et = to_edge_transform_and_lower(ep, partitioner=[MLXPartitioner()])
+        remaining = [
+            str(n.target)
+            for n in et.exported_program().graph.nodes
+            if n.op == "call_function" and "gguf_linear" in str(n.target)
+        ]
+        self.assertEqual(remaining, [], "gguf_linear was not delegated to MLX")
+
+
+class TestGgufEmbeddingMlx(unittest.TestCase):
+    """Q6_K token embedding routes to the fused mlx::gguf_embedding op."""
+
+    def _make_blob(self, vocab: int, K: int) -> torch.Tensor:
+        from executorch.backends.mlx.model_ops.test_gguf_linear import make_q6_k_blob
+
+        return make_q6_k_blob(vocab, K)
+
+    def test_replace_with_gguf_embedding_swaps_module(self):
+        from executorch.examples.models.gemma4_31b.mlx_gguf_linear import (
+            GGUFEmbedding,
+            replace_with_gguf_embedding,
         )
+
+        model = build_random_tiny_model()
+        # Q6_K needs embedding_dim % 256 == 0, so use a fixed valid dim (the
+        # tiny model's hidden_size is smaller); this test exercises the swapped
+        # module directly, not the full model forward.
+        vocab, K = 512, 256
+        blob = self._make_blob(vocab, K)
+        replace_with_gguf_embedding(model, "embed_tokens.weight", blob, format="q6k")
+
+        swapped = model.get_submodule("embed_tokens")
+        self.assertIsInstance(swapped, GGUFEmbedding)
+        self.assertEqual(swapped.num_embeddings, vocab)
+        self.assertEqual(swapped.embedding_dim, K)
+
+        idx = torch.randint(0, vocab, (2, 4), dtype=torch.int32)
+        y = swapped(idx)
+        ref = torch.ops.mlx.gguf_embedding(blob, idx, "q6k")
+        self.assertEqual(y.shape, torch.Size([2, 4, K]))
+        self.assertTrue(torch.equal(y, ref))
+
+    def test_gguf_embedding_delegates_to_mlx(self):
+        from executorch.backends.mlx import MLXPartitioner
+
+        from executorch.examples.models.gemma4_31b.mlx_gguf_linear import (
+            GGUFEmbedding,
+        )
+        from executorch.exir import to_edge_transform_and_lower
+        from torch.export import Dim, export
+
+        m = GGUFEmbedding(self._make_blob(512, 256), format="q6k").eval()
+        seq = Dim("seq", min=1, max=8)
+        ep = export(
+            m,
+            (torch.randint(0, 512, (4,), dtype=torch.int32),),
+            dynamic_shapes=({0: seq},),
+            strict=True,
+        )
+        et = to_edge_transform_and_lower(ep, partitioner=[MLXPartitioner()])
+        remaining = [
+            str(n.target)
+            for n in et.exported_program().graph.nodes
+            if n.op == "call_function" and "gguf_embedding" in str(n.target)
+        ]
+        self.assertEqual(remaining, [], "gguf_embedding was not delegated to MLX")
 
 
 if __name__ == "__main__":

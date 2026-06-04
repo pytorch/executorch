@@ -573,12 +573,16 @@ def _emit_q6k_matmul(
 def _gguf_linear_handler(P: MLXProgramBuilder, n: Node) -> Slot:
     """Lower ``mlx::gguf_linear`` to fused Q6_K Metal kernels."""
     args = P.args(n)
-    if len(args) != 4:
+    if len(args) == 4:
+        x_slot, weight_slot, fmt, bias_slot = args
+    elif len(args) == 3:
+        x_slot, weight_slot, fmt = args
+        bias_slot = None
+    else:
         raise ValueError(
-            f"mlx::gguf_linear: expected 4 args (x, weight, format, bias); "
+            f"mlx::gguf_linear: expected 3 or 4 args (x, weight, format[, bias]); "
             f"got {len(args)}"
         )
-    x_slot, weight_slot, fmt, bias_slot = args
     x_node = n.args[0]
     weight_node = n.args[1]
 

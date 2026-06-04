@@ -65,14 +65,22 @@ def gguf_to_model_key(gguf_key: str) -> Optional[str]:
     return None
 
 
-def _resolve_tied_lm_head(model, embed_quant, packers):
+def _resolve_tied_lm_head(model, embed_quant, embed_q6k_raw, packers):
     """Handle tied embed/lm_head after streaming all tensors."""
     from executorch.examples.models.gemma4_31b.quant import pack_one
 
     lm_head = getattr(model.lm_head, "weight", None)
     if lm_head is None or lm_head.device.type != "meta":
         return
-    if embed_quant is not None:
+    if embed_q6k_raw is not None:
+        # Tied Q6_K weights: lm_head is a matmul, so use the fused gguf_linear
+        # op (the embedding itself stays a quantized gather).
+        from executorch.examples.models.gemma4_31b.mlx_gguf_linear import (
+            replace_with_gguf_linear,
+        )
+
+        replace_with_gguf_linear(model, "lm_head.weight", embed_q6k_raw, format="q6k")
+    elif embed_quant is not None:
         pack_one(model, "lm_head.weight", embed_quant, packers)
     else:
         pack_one(
@@ -115,7 +123,11 @@ def load_gguf_model(
     """
     from executorch.examples.models.gemma4_31b.model import Gemma4_31B, Gemma4_31BConfig
     from executorch.examples.models.gemma4_31b.quant import dequantize_weight, pack_one
-    from executorch.examples.models.gemma4_31b.quant.gguf import iter_gguf_tensors
+    from executorch.examples.models.gemma4_31b.quant.gguf import (
+        _unpack_q6_k,
+        iter_gguf_tensors,
+    )
+    from torchao.quantization import IntxUnpackedToInt8Tensor
     from torchao.quantization.quantize_.workflows.int4.int4_tensor import Int4Tensor
 
     if backend == "cuda":
@@ -136,6 +148,7 @@ def load_gguf_model(
         model = Gemma4_31B(config)
 
     embed_quant = None
+    embed_q6k_raw = None  # raw Q6_K embedding blob, reused for a tied lm_head
     n_processed = 0
 
     from gguf import GGMLQuantizationType
@@ -151,22 +164,46 @@ def load_gguf_model(
         if type(result) is torch.Tensor and result.dtype == torch.float32:
             result = result.to(torch.bfloat16)
 
-        if model_key == "embed_tokens.weight" and isinstance(result, Int4Tensor):
-            embed_quant = result
-            if backend == "cuda":
-                result = dequantize_weight(result, torch.bfloat16)
-
-        # MLX Q6_K: keep the raw GGUF blob and swap the nn.Linear for a
-        # GGUFLinear that dispatches to the fused mlx::gguf_linear kernel,
-        # bypassing the slow group_size=16 non-fused affine path.
+        # MLX Q6_K: Linear weights use the fused gguf_linear op, the token
+        # embedding uses the fused gguf_embedding op -- both consume the raw
+        # GGUF blob (group_size=16 has no MLX affine kernel). The embedding's
+        # raw blob is also kept so a tied lm_head can use gguf_linear.
         if backend == "mlx" and gguf_type == GGMLQuantizationType.Q6_K:
             from executorch.examples.models.gemma4_31b.mlx_gguf_linear import (
+                replace_with_gguf_embedding,
                 replace_with_gguf_linear,
             )
 
-            replace_with_gguf_linear(model, model_key, result, format="q6k")
-            n_processed += 1
-            continue
+            parent = model.get_submodule(model_key.rsplit(".", 1)[0])
+            if isinstance(parent, torch.nn.Linear):
+                replace_with_gguf_linear(model, model_key, result, format="q6k")
+                n_processed += 1
+                continue
+            if isinstance(parent, torch.nn.Embedding):
+                if model_key == "embed_tokens.weight":
+                    embed_q6k_raw = result
+                replace_with_gguf_embedding(model, model_key, result, format="q6k")
+                n_processed += 1
+                continue
+
+            # Any other Q6_K module: fall back to a quantized tensor.
+            from executorch.backends.mlx.model_ops.gguf_linear import (
+                Q6K_BLOCK_BYTES,
+                QK_K,
+            )
+
+            n_rows, row_bytes = result.shape
+            result = _unpack_q6_k(
+                result.reshape(-1),
+                [n_rows, (row_bytes // Q6K_BLOCK_BYTES) * QK_K],
+            )
+
+        if model_key == "embed_tokens.weight" and isinstance(
+            result, (Int4Tensor, IntxUnpackedToInt8Tensor)
+        ):
+            embed_quant = result
+            if backend == "cuda":
+                result = dequantize_weight(result, torch.bfloat16)
 
         pack_one(model, model_key, result, packers)
 
@@ -174,7 +211,7 @@ def load_gguf_model(
         if n_processed % 100 == 0:
             print(f"  Processed {n_processed} tensors...")
 
-    _resolve_tied_lm_head(model, embed_quant, packers)
+    _resolve_tied_lm_head(model, embed_quant, embed_q6k_raw, packers)
     del embed_quant
 
     _validate_no_meta(model)
