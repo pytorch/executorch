@@ -565,7 +565,7 @@ if(SEMIHOSTING)
   target_compile_definitions(arm_executor_runner PUBLIC SEMIHOSTING)
 endif()
 
-if(ET_PTE_FILE_PATH)
+if(NOT ET_MODEL_PTE_ADDR AND NOT "${ET_PTE_FILE_PATH}" STREQUAL "")
   target_compile_definitions(arm_executor_runner PUBLIC ET_COMPILED_PTE)
 endif()
 
