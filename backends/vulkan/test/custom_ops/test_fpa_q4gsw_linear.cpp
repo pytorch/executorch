@@ -338,7 +338,11 @@ std::vector<TestCase> generate_gemm_test_cases() {
     LinearConfig cfg{32, 128, 128, group_size};
     for (auto dtype : {vkapi::kFloat, vkapi::kHalf}) {
       test_cases.push_back(create_test_case(
-          cfg, dtype, utils::kTexture3D, /*selector=*/0, /*is_gemv=*/false));
+          cfg,
+          dtype,
+          utils::kTexture3D,
+          /*impl_selector=*/0,
+          /*is_gemv=*/false));
     }
   }
 
@@ -349,7 +353,11 @@ std::vector<TestCase> generate_gemm_test_cases() {
     LinearConfig cfg{M, 128, 128, group_size};
     for (auto dtype : {vkapi::kFloat, vkapi::kHalf}) {
       test_cases.push_back(create_test_case(
-          cfg, dtype, utils::kTexture3D, /*selector=*/0, /*is_gemv=*/false));
+          cfg,
+          dtype,
+          utils::kTexture3D,
+          /*impl_selector=*/0,
+          /*is_gemv=*/false));
     }
   }
 
@@ -513,6 +521,8 @@ std::vector<TestCase> generate_all_test_cases() {
 }
 
 int main(int argc, char* argv[]) {
+  (void)argc;
+  (void)argv;
   set_debugging(false);
   set_print_output(false);
   set_print_latencies(false);

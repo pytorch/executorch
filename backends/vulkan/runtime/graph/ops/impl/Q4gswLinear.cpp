@@ -12,7 +12,6 @@
 
 #include <executorch/backends/vulkan/runtime/graph/ops/impl/Common.h>
 #include <executorch/backends/vulkan/runtime/graph/ops/impl/Preprocess.h>
-#include <executorch/backends/vulkan/runtime/graph/ops/impl/QuantizeDequantize.h>
 #include <executorch/backends/vulkan/runtime/graph/ops/impl/Staging.h>
 #include <executorch/backends/vulkan/runtime/graph/ops/utils/ShaderNameUtils.h>
 
@@ -156,7 +155,8 @@ vkapi::ShaderInfo pick_q4gsw_nc_coop_shader(
     const std::vector<ValueRef>& resize_args) {
   (void)resize_args;
   const ValueRef out = args.at(0).refs.at(0);
-  const uint32_t N = utils::val_at(-1, graph->sizes_of(out));
+  const uint32_t N =
+      utils::safe_downcast<uint32_t>(utils::val_at(-1, graph->sizes_of(out)));
 
   const CoopVariant v = pick_coop_variant_for_N(N);
   std::string kernel_name = "q4gsw_linear_gemv_coop__w_4x8_nc_buffer";
@@ -177,11 +177,13 @@ utils::uvec3 pick_q4gsw_nc_coop_global_wg(
   (void)resize_args;
   const ValueRef out = args.at(0).refs.at(0);
   const std::vector<int64_t> out_sizes = graph->sizes_of(out);
-  const uint32_t M = utils::val_at(-2, out_sizes);
+  const uint32_t M =
+      utils::safe_downcast<uint32_t>(utils::val_at(-2, out_sizes));
   if (M != 1u) {
     return {0u, 0u, 0u};
   }
-  const uint32_t N = utils::val_at(-1, out_sizes);
+  const uint32_t N =
+      utils::safe_downcast<uint32_t>(utils::val_at(-1, out_sizes));
   const uint32_t N8 = (N + 7u) / 8u;
   const CoopVariant v = pick_coop_variant_for_N(N);
   const uint32_t wgs_along_x = utils::div_up(N8, v.num_groups);
@@ -198,7 +200,8 @@ utils::uvec3 pick_q4gsw_nc_coop_local_wg(
   (void)global_workgroup_size;
   (void)resize_args;
   const ValueRef out = args.at(0).refs.at(0);
-  const uint32_t N = utils::val_at(-1, graph->sizes_of(out));
+  const uint32_t N =
+      utils::safe_downcast<uint32_t>(utils::val_at(-1, graph->sizes_of(out)));
   const CoopVariant v = pick_coop_variant_for_N(N);
   return {1u, v.num_groups, v.workers_per_group};
 }
@@ -216,8 +219,10 @@ utils::uvec3 pick_q4gsw_linear_gemm_global_wg(
   (void)resize_args;
   const ValueRef out = args.at(0).refs.at(0);
   const std::vector<int64_t> out_sizes = graph->sizes_of(out);
-  const uint32_t N = utils::val_at(-1, out_sizes);
-  const uint32_t M = utils::val_at(-2, out_sizes);
+  const uint32_t N =
+      utils::safe_downcast<uint32_t>(utils::val_at(-1, out_sizes));
+  const uint32_t M =
+      utils::safe_downcast<uint32_t>(utils::val_at(-2, out_sizes));
   // fp32 GEMM: 4M x 8N per-thread tile.
   return {utils::div_up(N, kGemmTileN), utils::div_up(M, kGemmTileM), 1u};
 }
@@ -247,8 +252,10 @@ utils::uvec3 pick_q4gsw_linear_tin_gemm_global_wg(
   (void)resize_args;
   const ValueRef out = args.at(0).refs.at(0);
   const std::vector<int64_t> out_sizes = graph->sizes_of(out);
-  const uint32_t N = utils::val_at(-1, out_sizes);
-  const uint32_t M = utils::val_at(-2, out_sizes);
+  const uint32_t N =
+      utils::safe_downcast<uint32_t>(utils::val_at(-1, out_sizes));
+  const uint32_t M =
+      utils::safe_downcast<uint32_t>(utils::val_at(-2, out_sizes));
   // fp16 tin GEMM: 8M x 4N per-thread tile. Shader x/y are swapped relative
   // to the fp32 GEMM — x = M tiles, y = N tiles.
   return {utils::div_up(M, kTinGemmTileM), utils::div_up(N, kTinGemmTileN), 1u};
@@ -282,7 +289,8 @@ utils::uvec3 pick_q4gsw_linear_gemm_gated_global_wg(
     const std::vector<ArgGroup>& args,
     const std::vector<ValueRef>& resize_args) {
   const ValueRef out = args.at(0).refs.at(0);
-  const uint32_t M = utils::val_at(-2, graph->sizes_of(out));
+  const uint32_t M =
+      utils::safe_downcast<uint32_t>(utils::val_at(-2, graph->sizes_of(out)));
   if (M == 1u) {
     return {0u, 0u, 0u};
   }
@@ -295,7 +303,8 @@ utils::uvec3 pick_q4gsw_linear_tin_gemm_gated_global_wg(
     const std::vector<ArgGroup>& args,
     const std::vector<ValueRef>& resize_args) {
   const ValueRef out = args.at(0).refs.at(0);
-  const uint32_t M = utils::val_at(-2, graph->sizes_of(out));
+  const uint32_t M =
+      utils::safe_downcast<uint32_t>(utils::val_at(-2, graph->sizes_of(out)));
   if (M == 1u) {
     return {0u, 0u, 0u};
   }
@@ -574,7 +583,8 @@ void add_q4gsw_linear_tin_w_4x8_node(
   }
 
   std::vector<int64_t> out_sizes = graph.sizes_of(output);
-  const uint32_t M_val = utils::val_at(-2, out_sizes);
+  const uint32_t M_val =
+      utils::safe_downcast<uint32_t>(utils::val_at(-2, out_sizes));
 
   // Allocate the transposed-input temp tensor using the current M. The
   // transpose dispatch self-gates on M==1 so the tensor is simply unused in
@@ -637,7 +647,7 @@ void q4gsw_linear(ComputeGraph& graph, const std::vector<ValueRef>& args) {
   const ValueRef weight_scales_data = args.at(idx++);
   const ValueRef group_size_ref = args.at(idx++);
   const ValueRef bias_data = args.at(idx++);
-  const ValueRef output = args.at(idx++);
+  const ValueRef output = args.at(idx);
 
   // Dtype-branched dispatch. Within each dtype, a single DynamicDispatchNode
   // switches between GEMM and GEMV via pick_shader_fn based on the current M.

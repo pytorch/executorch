@@ -124,6 +124,7 @@ const char* forced_kind_base_name(TestKernelKind kind) {
     case TestKernelKind::GEMV_COOP_W_4X8_NC_BUFFER_G8W8:
       return "q4gsw_linear_gemv_coop__w_4x8_nc_buffer_g8w8";
     case TestKernelKind::PROD:
+    case TestKernelKind::LEGACY:
     default:
       return "";
   }
@@ -183,7 +184,8 @@ utils::uvec3 pick_q4gsw_coop_global_wg(
   (void)resize_args;
   const ValueRef out = args.at(0).refs.at(0);
   const std::vector<int64_t> out_sizes = graph->sizes_of(out);
-  const uint32_t N = utils::val_at(-1, out_sizes);
+  const uint32_t N =
+      utils::safe_downcast<uint32_t>(utils::val_at(-1, out_sizes));
   const uint32_t N8 = (N + 7u) / 8u;
   const uint32_t wgs_along_x = utils::div_up(N8, NUM_GROUPS);
   return {wgs_along_x, NUM_GROUPS, WORKERS_PER_GROUP};
@@ -224,7 +226,8 @@ utils::uvec3 pick_q4gsw_legacy_gemv_global_wg(
   (void)shader;
   (void)resize_args;
   const ValueRef out = args.at(0).refs.at(0);
-  const uint32_t N = utils::val_at(-1, graph->sizes_of(out));
+  const uint32_t N =
+      utils::safe_downcast<uint32_t>(utils::val_at(-1, graph->sizes_of(out)));
   // Each thread owns one row-pair along x; y-dim splits K-blocks across waves.
   return {N / 2u, kGemvNumSubgroups, 1u};
 }
@@ -292,9 +295,11 @@ utils::uvec3 legacy_q4gsw_global_wg_size(
 
   std::vector<int64_t> out_sizes = graph->sizes_of(out);
   // width
-  const uint32_t N = utils::val_at(-1, out_sizes);
+  const uint32_t N =
+      utils::safe_downcast<uint32_t>(utils::val_at(-1, out_sizes));
   // height
-  const uint32_t M = utils::val_at(-2, out_sizes);
+  const uint32_t M =
+      utils::safe_downcast<uint32_t>(utils::val_at(-2, out_sizes));
 
   // For 4-bit weights, each output tile contains 8 columns
   uint32_t N_per_tile = 8;
@@ -553,6 +558,7 @@ void add_q4gsw_linear_coop_kc_forced_node(
   PickWgFn pick_global = nullptr;
   PickLocalWgFn pick_local = nullptr;
 
+  // NOLINTNEXTLINE(clang-diagnostic-switch-enum)
   switch (kind) {
     case TestKernelKind::GEMV_COOP_W_4X8_NC_BUFFER:
     case TestKernelKind::GEMV_COOP_W_4X8_NC_BUFFER_G1W64:
@@ -634,7 +640,8 @@ void add_q4gsw_linear_forced_node(
   const bool need_transpose = (kind == TestKernelKind::GEMM_TIN_W_4X8);
 
   std::vector<int64_t> in_sizes = graph.sizes_of(fp_input);
-  const uint32_t M_val = utils::val_at(-2, in_sizes);
+  const uint32_t M_val =
+      utils::safe_downcast<uint32_t>(utils::val_at(-2, in_sizes));
   const int64_t M4 = (static_cast<int64_t>(M_val) + 3) / 4;
 
   TmpTensor dummy_transposed_input(
@@ -675,6 +682,7 @@ void add_q4gsw_linear_forced_node(
   PickWgFn pick_global = nullptr;
   PickLocalWgFn pick_local = nullptr;
 
+  // NOLINTNEXTLINE(clang-diagnostic-switch-enum)
   switch (kind) {
     case TestKernelKind::GEMM_W_4X8:
       pick_shader = pick_forced_shader<TestKernelKind::GEMM_W_4X8>;
