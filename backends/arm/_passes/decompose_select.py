@@ -48,7 +48,9 @@ class DecomposeSelectPass(ArmPass):
             rank = len(input_tensor.size())
             shape = input_tensor.shape
             dim = dim % rank if dim < 0 else dim
-            index = index % shape[dim] if index < 0 else index
+            if index < 0:
+                size_at_dim = shape[dim]
+                index = size_at_dim - abs(index)
 
             with graph_module.graph.inserting_before(node):
                 slice_node = create_node(
