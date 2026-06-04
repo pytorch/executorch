@@ -18,8 +18,6 @@ try:
     from executorch.extension.llm.runner._llm_runner import (  # noqa: F401
         GenerationConfig,
         Image,
-        LLMEngine,
-        LLMSession,
         make_audio_input,
         make_image_input,
         make_raw_audio_input,
@@ -236,7 +234,5 @@ __all__ = [
     "MultimodalInput",
     "MultimodalRunner",
     "TextLLMRunner",
-    "LLMEngine",
-    "LLMSession",
     "Stats",
 ]

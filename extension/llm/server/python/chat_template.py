@@ -84,18 +84,14 @@ class ChatTemplate:
             getattr(self._hf, "chat_template", None) if self._hf is not None else None
         )
 
-    def tokenizer(self):
-        """The underlying HF tokenizer (for token-level prefix caching), or None.
-
-        Must match the runner's tokenizer (same model) for prefix reuse to be
-        valid — i.e. the recommended --hf-tokenizer matching the exported model.
-        """
-        return self._hf
-
     def count_tokens(self, prompt: str) -> Optional[int]:
         """Token count for the rendered prompt, or None if no tokenizer is available."""
         if self._hf is not None:
-            return len(self._hf.encode(prompt))
+            # The prompt is already rendered (apply_chat_template includes the
+            # control tokens), so encode without re-adding BOS/EOS — matching the
+            # session/prefix-cache paths, so the count isn't inflated and
+            # near-limit requests aren't falsely rejected under --max-context.
+            return len(self._hf.encode(prompt, add_special_tokens=False))
         return None
 
     def special_tokens(self) -> list[str]:
