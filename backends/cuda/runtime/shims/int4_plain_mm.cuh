@@ -21,6 +21,8 @@
 #include <cuda_bf16.h>
 #include <cuda_runtime.h>
 
+#include <unordered_map>
+
 #include <executorch/backends/aoti/common_shims_slim.h>
 #include <executorch/backends/aoti/slim/c10/core/ScalarType.h>
 #include <executorch/backends/aoti/utils.h>
@@ -183,8 +185,116 @@ __global__ void __launch_bounds__(MV_THREADS)
 }
 
 // ---------------------------------------------------------------------------
-// Persistent Q8 buffer (lazy init, not thread-safe — single-stream only)
+// Coalesced-scale W4A8 dp4a matvec
+//
+// Identical math to int4_w4a8_matvec_kernel, but reads scale/zero in the
+// transposed [N, n_groups] layout instead of [n_groups, N]. With group_size
+// >= 32, one uint4 (32 weights) maps to exactly one activation block and one
+// weight group, so within a warp the 32 lanes touch 32 consecutive groups.
+// In [N, n_groups] layout those 32 group scales are contiguous => a single
+// coalesced load, vs 32 stride-N cache lines in the native layout. For the
+// gemma group_size=32 weights this is the dominant decode-matvec cost.
 // ---------------------------------------------------------------------------
+
+__global__ void __launch_bounds__(MV_THREADS)
+    int4_w4a8_matvec_coalesced_kernel(
+        const uint8_t* __restrict__ qdata,
+        const __nv_bfloat16* __restrict__ w_scale_t, // [N, n_groups]
+        const __nv_bfloat16* __restrict__ w_zero_t, // [N, n_groups]
+        const Q8Block* __restrict__ q8,
+        __nv_bfloat16* __restrict__ out,
+        int32_t N,
+        int32_t K,
+        int32_t gs_shift,
+        int32_t n_groups) {
+  const int32_t n = blockIdx.x * MV_NWARPS + threadIdx.y;
+  const int32_t m = blockIdx.y;
+  if (n >= N)
+    return;
+
+  const int32_t K_half = K / 2;
+  const int32_t lane_id = threadIdx.x;
+  const int32_t n_q8_blocks = K / Q8_BLOCK_SIZE;
+
+  const uint8_t* qrow = qdata + static_cast<int64_t>(n) * K_half;
+  const __nv_bfloat16* scale_row =
+      w_scale_t + static_cast<int64_t>(n) * n_groups;
+  const __nv_bfloat16* zero_row =
+      w_zero_t + static_cast<int64_t>(n) * n_groups;
+  const Q8Block* q8_row = q8 + static_cast<int64_t>(m) * n_q8_blocks;
+
+  const uint4* qrow16 = reinterpret_cast<const uint4*>(qrow);
+  const int32_t K_half_16 = K_half / 16;
+
+  float sum = 0.0f;
+
+  int32_t prev_g = -1;
+  float ws = 0.0f, wz = 0.0f;
+
+  for (int32_t i = lane_id; i < K_half_16; i += MV_WARP_SIZE) {
+    uint4 packed16 = __ldg(&qrow16[i]);
+    int32_t k_base = i * 32;
+    uint32_t words[4] = {packed16.x, packed16.y, packed16.z, packed16.w};
+
+#pragma unroll
+    for (int32_t w = 0; w < 4; w++) {
+      uint32_t packed = words[w];
+      int32_t k_word = k_base + w * 8;
+      int32_t g = k_word >> gs_shift;
+
+      if (g != prev_g) {
+        ws = __bfloat162float(__ldg(&scale_row[g]));
+        wz = __bfloat162float(__ldg(&zero_row[g]));
+        prev_g = g;
+      }
+
+      int32_t vi_lo = packed & 0x0F0F0F0F;
+      int32_t vi_hi = (packed >> 4) & 0x0F0F0F0F;
+
+      int32_t q8_block_idx = k_word / Q8_BLOCK_SIZE;
+      int32_t q8_half_offset = (k_word % Q8_BLOCK_SIZE) / 2;
+      const Q8Block* qb = &q8_row[q8_block_idx];
+
+      int32_t a_even = *reinterpret_cast<const int32_t*>(
+          qb->qs_even + q8_half_offset);
+      int32_t a_odd = *reinterpret_cast<const int32_t*>(
+          qb->qs_odd + q8_half_offset);
+
+      int32_t dp = __dp4a(vi_lo, a_even, 0);
+      dp = __dp4a(vi_hi, a_odd, dp);
+
+      float a_scale = qb->d;
+
+      int32_t a_sum8 = __dp4a(0x01010101, a_even, 0);
+      a_sum8 = __dp4a(0x01010101, a_odd, a_sum8);
+
+      sum += ws * a_scale *
+          (static_cast<float>(dp) - wz * static_cast<float>(a_sum8));
+    }
+  }
+
+  for (int offset = MV_WARP_SIZE / 2; offset > 0; offset >>= 1)
+    sum += __shfl_xor_sync(0xffffffff, sum, offset);
+
+  if (lane_id == 0)
+    out[static_cast<int64_t>(m) * N + n] = __float2bfloat16(sum);
+}
+
+// Transpose bf16 [rows, cols] -> [cols, rows]. Used to repack scale/zero from
+// the native [n_groups, N] layout into the coalesced [N, n_groups] layout.
+__global__ void transpose_bf16_kernel(
+    const __nv_bfloat16* __restrict__ src,
+    __nv_bfloat16* __restrict__ dst,
+    int32_t rows,
+    int32_t cols) {
+  int64_t idx = static_cast<int64_t>(blockIdx.x) * blockDim.x + threadIdx.x;
+  int64_t total = static_cast<int64_t>(rows) * cols;
+  if (idx >= total)
+    return;
+  int32_t r = static_cast<int32_t>(idx / cols);
+  int32_t c = static_cast<int32_t>(idx % cols);
+  dst[static_cast<int64_t>(c) * rows + r] = src[idx];
+}
 
 static Q8Block* g_q8_buf = nullptr;
 static size_t g_q8_buf_size = 0;
@@ -201,6 +311,64 @@ static Q8Block* get_q8_buffer(size_t needed) {
     g_q8_buf_size = needed;
   }
   return g_q8_buf;
+}
+
+// ---------------------------------------------------------------------------
+// Transposed scale/zero cache ([n_groups, N] -> [N, n_groups]).
+//
+// Keyed by the (constant) scale tensor device pointer. Populated lazily on the
+// first call for each weight — which always happens during the CUDA-graph
+// warmup steps (cuda_backend kCudaGraphWarmupSteps == 3) — so by the time the
+// graph is captured every weight is a cache hit and no allocation/transpose is
+// captured into the graph. Buffers are cudaMalloc'd directly (stable for the
+// process lifetime) and are read-only after population. Single-stream only.
+// ---------------------------------------------------------------------------
+
+struct TransposedScales {
+  __nv_bfloat16* scale_t;
+  __nv_bfloat16* zero_t;
+};
+
+static std::unordered_map<const void*, TransposedScales> g_scale_cache;
+
+// Returns the transposed scale/zero buffers for this weight, or {nullptr,
+// nullptr} if they are not cached and cannot be created right now (i.e. we are
+// in the middle of CUDA-graph capture, where allocation is illegal). In that
+// case the caller falls back to the native-layout kernel.
+static TransposedScales get_transposed_scales(
+    const __nv_bfloat16* scale,
+    const __nv_bfloat16* zero,
+    int32_t n_groups,
+    int32_t N,
+    cudaStream_t stream) {
+  auto it = g_scale_cache.find(scale);
+  if (it != g_scale_cache.end())
+    return it->second;
+
+  cudaStreamCaptureStatus capture_status = cudaStreamCaptureStatusNone;
+  cudaStreamIsCapturing(stream, &capture_status);
+  if (capture_status != cudaStreamCaptureStatusNone)
+    return {nullptr, nullptr};
+
+  TransposedScales ts{nullptr, nullptr};
+  size_t bytes = static_cast<size_t>(n_groups) * N * sizeof(__nv_bfloat16);
+  if (cudaMalloc(&ts.scale_t, bytes) != cudaSuccess ||
+      cudaMalloc(&ts.zero_t, bytes) != cudaSuccess) {
+    if (ts.scale_t)
+      cudaFree(ts.scale_t);
+    return {nullptr, nullptr};
+  }
+
+  int32_t total = n_groups * N;
+  int32_t threads = 256;
+  int32_t blocks = (total + threads - 1) / threads;
+  transpose_bf16_kernel<<<blocks, threads, 0, stream>>>(
+      scale, ts.scale_t, n_groups, N);
+  transpose_bf16_kernel<<<blocks, threads, 0, stream>>>(
+      zero, ts.zero_t, n_groups, N);
+
+  g_scale_cache[scale] = ts;
+  return ts;
 }
 
 // ---------------------------------------------------------------------------
@@ -266,13 +434,32 @@ void _int4_plain_mm_cuda(
   // dp4a matvec
   dim3 grid((N + MV_NWARPS - 1) / MV_NWARPS, M);
   dim3 block(MV_WARP_SIZE, MV_NWARPS);
-  int4_w4a8_matvec_kernel<<<grid, block, 0, stream>>>(
-      reinterpret_cast<const uint8_t*>(qdata.data_ptr()),
+
+  int32_t n_groups = static_cast<int32_t>(scale.size(0));
+  TransposedScales ts = get_transposed_scales(
       reinterpret_cast<const __nv_bfloat16*>(scale.data_ptr()),
       reinterpret_cast<const __nv_bfloat16*>(zero.data_ptr()),
-      q8_buf,
-      reinterpret_cast<__nv_bfloat16*>(output->data_ptr()),
-      N, K, gs_shift);
+      n_groups,
+      N,
+      stream);
+
+  if (ts.scale_t != nullptr) {
+    int4_w4a8_matvec_coalesced_kernel<<<grid, block, 0, stream>>>(
+        reinterpret_cast<const uint8_t*>(qdata.data_ptr()),
+        ts.scale_t,
+        ts.zero_t,
+        q8_buf,
+        reinterpret_cast<__nv_bfloat16*>(output->data_ptr()),
+        N, K, gs_shift, n_groups);
+  } else {
+    int4_w4a8_matvec_kernel<<<grid, block, 0, stream>>>(
+        reinterpret_cast<const uint8_t*>(qdata.data_ptr()),
+        reinterpret_cast<const __nv_bfloat16*>(scale.data_ptr()),
+        reinterpret_cast<const __nv_bfloat16*>(zero.data_ptr()),
+        q8_buf,
+        reinterpret_cast<__nv_bfloat16*>(output->data_ptr()),
+        N, K, gs_shift);
+  }
 }
 
 } // namespace executorch::backends::cuda
