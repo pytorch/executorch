@@ -14,11 +14,11 @@ through the MLX ``QUANTIZED_LINEAR`` pattern.
 
 from __future__ import annotations
 
-import torch
-import torch.nn as nn
-
 # Importing the op module registers ``torch.ops.mlx.gguf_linear``.
 import executorch.backends.mlx.model_ops.gguf_linear  # noqa: F401
+
+import torch
+import torch.nn as nn
 from executorch.backends.mlx.model_ops.gguf_linear import Q6K_BLOCK_BYTES, QK_K
 
 
@@ -83,7 +83,5 @@ def replace_with_gguf_linear(
         )
     linear_fqn = parts[0]
     grandparent_fqn, _, child_name = linear_fqn.rpartition(".")
-    grandparent = (
-        model.get_submodule(grandparent_fqn) if grandparent_fqn else model
-    )
+    grandparent = model.get_submodule(grandparent_fqn) if grandparent_fqn else model
     setattr(grandparent, child_name, GGUFLinear(weight_blob, format=format))

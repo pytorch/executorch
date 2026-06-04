@@ -42,84 +42,36 @@ from executorch.backends.mlx.test.test_utils import OpTestCase
 
 
 # ---------------------------------------------------------------------------
-# GGUF Q6_K packing helper (mirrors quantize_row_q6_K_ref in ggml-quants.c).
-# Quantization quality is not important here -- we only need valid, deterministic
-# bytes that both the eager reference and the kernel will dequantize identically.
+# GGUF Q6_K test fixtures.
+#
+# The Python ``gguf`` package can dequantize Q6_K but does NOT implement Q6_K
+# quantization, so we build the packed weight here. Quantization quality is
+# irrelevant: the tests only compare the kernel against the eager op on the
+# *same* bytes, so we just emit valid random blocks (random ql/qh/scales plus a
+# small finite fp16 ``d`` -- the one field that must be finite).
 # ---------------------------------------------------------------------------
 
 
-def pack_q6_k(w: torch.Tensor) -> torch.Tensor:
-    """Pack a ``(N, K)`` float weight into the GGUF ``block_q6_K`` byte layout.
-
-    Returns ``(N, (K/256)*210)`` uint8.
-    """
-    assert w.dim() == 2
-    N, K = w.shape
+def make_q6_k_blob(N: int, K: int, seed: int = 0) -> torch.Tensor:
+    """Build a ``(N, (K/256)*210)`` uint8 tensor of valid GGUF Q6_K blocks."""
     assert K % QK_K == 0, f"K={K} must be a multiple of {QK_K}"
     nb = K // QK_K
-    w = w.to(torch.float32).cpu()
-
+    g = torch.Generator().manual_seed(seed)
     out = torch.empty(N, nb * Q6K_BLOCK_BYTES, dtype=torch.uint8)
-
-    for row in range(N):
-        for b in range(nb):
-            block = w[row, b * QK_K : (b + 1) * QK_K]  # (256,)
-            sub = block.view(QK_K // 16, 16)  # (16, 16)
-
-            # Per-sub-block scale via the simple max-abs / 32 scheme, then a
-            # super-block scale so sub-scales fit in int8 [-128, 127].
-            sub_max = sub.abs().amax(dim=1)  # (16,)
-            scales_f = sub_max / 32.0  # (16,)
-            max_scale = scales_f.abs().amax()
-            if max_scale < 1e-12:
-                # All-zero block.
-                continue
-            iscale = -128.0 / float(max_scale)
-            d = 1.0 / iscale
-            scales_i = torch.clamp(
-                torch.round(iscale * scales_f), max=127.0
-            ).to(torch.int32)  # (16,)
-
-            # Quantize each element with the realized per-sub-block scale.
-            L = torch.zeros(QK_K, dtype=torch.int32)
-            for j in range(QK_K // 16):
-                dj = d * float(scales_i[j])
-                seg = block[j * 16 : (j + 1) * 16]
-                if dj == 0.0:
-                    q = torch.zeros(16, dtype=torch.int32)
-                else:
-                    q = torch.clamp(torch.round(seg / dj), min=-32, max=31).to(
-                        torch.int32
-                    )
-                L[j * 16 : (j + 1) * 16] = q + 32  # 0..63
-
-            ql = torch.zeros(QK_K // 2, dtype=torch.int32)  # 128
-            qh = torch.zeros(QK_K // 4, dtype=torch.int32)  # 64
-            for half in range(2):  # 128 elems each
-                jbase = half * 128
-                qlb = half * 64
-                qhb = half * 32
-                for l in range(32):
-                    l1 = L[jbase + l + 0] & 0xF
-                    l2 = L[jbase + l + 32] & 0xF
-                    l3 = L[jbase + l + 64] & 0xF
-                    l4 = L[jbase + l + 96] & 0xF
-                    ql[qlb + l + 0] = l1 | (l3 << 4)
-                    ql[qlb + l + 32] = l2 | (l4 << 4)
-                    qh[qhb + l] = (
-                        (L[jbase + l + 0] >> 4)
-                        | ((L[jbase + l + 32] >> 4) << 2)
-                        | ((L[jbase + l + 64] >> 4) << 4)
-                        | ((L[jbase + l + 96] >> 4) << 6)
-                    )
-
-            blk = out[row, b * Q6K_BLOCK_BYTES : (b + 1) * Q6K_BLOCK_BYTES]
-            blk[0:128] = ql.to(torch.uint8)
-            blk[128:192] = qh.to(torch.uint8)
-            blk[192:208] = scales_i.to(torch.int8).view(torch.uint8)
-            d_bytes = torch.tensor([d], dtype=torch.float16).view(torch.uint8)
-            blk[208:210] = d_bytes
-
+    blocks = out.view(N, nb, Q6K_BLOCK_BYTES)
+    # ql (0:128) + qh (128:192): any byte values are valid 6-bit quants.
+    blocks[..., :192] = torch.randint(
+        0, 256, (N, nb, 192), dtype=torch.uint8, generator=g
+    )
+    # scales (192:208): modest positive int8 scales keep magnitudes sane.
+    blocks[..., 192:208] = torch.randint(
+        1, 17, (N, nb, 16), dtype=torch.uint8, generator=g
+    )
+    # d (208:210): a small finite fp16 super-block scale. Chosen so dequantized
+    # element magnitudes (~ d * scale * (q-32)) are O(0.1), like real Q6_K
+    # weights -- the mat-mat kernel stores tiles in half precision (as in
+    # llama.cpp), so unrealistically large magnitudes would exceed bf16 tol.
+    blocks[..., 208:210] = torch.tensor([7e-4], dtype=torch.float16).view(torch.uint8)
     return out
 
 
@@ -140,7 +92,9 @@ class GGUFLinearModel(nn.Module):
 
 _DTYPE_TOL = {
     torch.bfloat16: (2e-2, 2e-2),
-    torch.float16: (1e-3, 1e-3),
+    # The mat-mat (prefill) kernel stores tiles in half precision (as in
+    # llama.cpp), so fp16 outputs are accurate to ~half precision (~4e-3).
+    torch.float16: (5e-3, 5e-3),
     torch.float32: (1e-4, 1e-4),
 }
 _DTYPE_TAG = {torch.bfloat16: "bf16", torch.float16: "fp16", torch.float32: "fp32"}
@@ -187,8 +141,7 @@ class GGUFLinearTest(OpTestCase):
     def create_inputs(self) -> Tuple[torch.Tensor, ...]:
         torch.manual_seed(0)
         x = torch.randn(self.M, self.K, dtype=self.dtype)
-        w = torch.randn(self.N, self.K, dtype=torch.float32) * 0.1
-        weight = pack_q6_k(w)
+        weight = make_q6_k_blob(self.N, self.K)
         bias = torch.randn(self.N, dtype=self.dtype)
         return (x, weight, bias)
 
@@ -241,8 +194,7 @@ class GGUFLinearDynamicTest(OpTestCase):
         # Deterministic weight/bias so export-time and run-time (and the eager
         # reference) all use the same quantized weight (it is a runtime input).
         torch.manual_seed(0)
-        w = torch.randn(self.N, self.K, dtype=torch.float32) * 0.1
-        weight = pack_q6_k(w)
+        weight = make_q6_k_blob(self.N, self.K)
         bias = torch.randn(self.N, dtype=self.dtype)
         x = torch.randn(M, self.K, dtype=self.dtype)
         return (x, weight, bias)
@@ -255,15 +207,12 @@ class GGUFLinearDynamicTest(OpTestCase):
 
 
 def _eager_sanity() -> None:
-    """Quick CPU check: pack -> dequant -> matmul matches a direct reference."""
+    """Quick CPU check: dequant + matmul matches the eager op on the same bytes."""
     torch.manual_seed(0)
     N, K = 4, 512
-    w = torch.randn(N, K) * 0.1
-    packed = pack_q6_k(w)
+    packed = make_q6_k_blob(N, K)
     w_deq = dequantize_q6_k(packed, K)
-    # Round-trip error should be small for this benign distribution.
-    rel = (w_deq - w).norm() / w.norm()
-    print(f"pack/dequant relative error: {rel.item():.4f}")
+    print(f"dequant finite: {torch.isfinite(w_deq).all().item()}")
     x = torch.randn(3, K)
     ref = x @ w_deq.t()
     out = torch.ops.mlx.gguf_linear(x, packed, "q6k", None)
@@ -274,7 +223,7 @@ def _eager_sanity() -> None:
     try:
         torch.ops.mlx.gguf_linear(x, packed, "q4k", None)
         raise AssertionError("expected NotImplementedError for q4k")
-    except (NotImplementedError, RuntimeError) as e:
+    except RuntimeError as e:
         print(f"q4k correctly rejected: {type(e).__name__}")
     print("eager sanity OK")
 
@@ -302,8 +251,7 @@ if __name__ == "__main__":  # noqa: C901
         sys.exit(1)
 
     configs = (
-        GGUFLinearTest.get_test_configs()
-        + GGUFLinearDynamicTest.get_test_configs()
+        GGUFLinearTest.get_test_configs() + GGUFLinearDynamicTest.get_test_configs()
     )
 
     if args.action == "list":

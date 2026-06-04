@@ -327,11 +327,9 @@ class TestGgufLinearMlx(unittest.TestCase):
     """Q6_K weights route to the fused mlx::gguf_linear op (raw-blob path)."""
 
     def _make_blob(self, N: int, K: int) -> torch.Tensor:
-        from executorch.backends.mlx.model_ops.test_gguf_linear import pack_q6_k
+        from executorch.backends.mlx.model_ops.test_gguf_linear import make_q6_k_blob
 
-        torch.manual_seed(0)
-        w = torch.randn(N, K, dtype=torch.float32) * 0.1
-        return pack_q6_k(w)
+        return make_q6_k_blob(N, K)
 
     def test_replace_with_gguf_linear_swaps_module(self):
         from executorch.examples.models.gemma4_31b.mlx_gguf_linear import (

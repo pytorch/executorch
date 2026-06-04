@@ -315,6 +315,26 @@ class TestQ6KRawBlob(unittest.TestCase):
             f"max diff: {(deq - ref).abs().max():.6g}",
         )
 
+    def test_raw_blob_dequant_matches_gguf_lib(self):
+        # Cross-check our dequant against gguf's own Q6_K dequantizer (gguf can
+        # dequantize Q6_K even though it cannot quantize to it).
+        import gguf
+
+        from executorch.backends.mlx.model_ops.gguf_linear import dequantize_q6_k
+        from executorch.examples.models.gemma4_31b.quant.gguf import _raw_q6_k
+
+        _, _, _, block = self._block()
+        data = np.frombuffer(bytes(block), dtype=np.uint8).reshape(1, 210)
+        raw = _raw_q6_k(data, [1, 256])
+        ours = dequantize_q6_k(raw, 256)[0]
+        theirs = torch.tensor(
+            np.asarray(gguf.dequantize(data, GGMLQuantizationType.Q6_K))[0]
+        )
+        self.assertTrue(
+            torch.allclose(ours, theirs, atol=1e-3),
+            f"max diff: {(ours - theirs).abs().max():.6g}",
+        )
+
     def test_default_still_unpacks_to_intx(self):
         from torchao.quantization import IntxUnpackedToInt8Tensor
 

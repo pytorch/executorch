@@ -14,7 +14,7 @@
 The weight is stored in the **exact GGUF packed block layout** (no repacking),
 so weights converted by llama.cpp / gguf-py can be consumed directly. The
 ``format`` argument selects the GGUF quantization type; only ``"q6k"`` is
-supported initially and anything else raises ``NotImplementedError``.
+supported and anything else raises ``NotImplementedError``.
 
 Q6_K layout (per 256-element super-block, 210 bytes, see llama.cpp
 ``block_q6_K`` in ``ggml-common.h``)::
@@ -64,7 +64,7 @@ from torch.fx.node import Node
 
 
 # ---------------------------------------------------------------------------
-# Q6_K constants and pure-torch reference (also used by the eager fallback)
+# Q6_K constants and pure-torch dequant reference
 # ---------------------------------------------------------------------------
 
 QK_K = 256
@@ -627,8 +627,16 @@ def _gguf_linear_handler(P: MLXProgramBuilder, n: Node) -> Slot:
         # Static prefill -> tiled simdgroup mat-mat (literal grid).
         blocks_m = (M + tile - 1) // tile
         _emit_q6k_matmul(
-            P, n, x_node, x_slot, weight_slot, bias_slot, N, K,
-            IntOrVid.from_literal(blocks_m), out,
+            P,
+            n,
+            x_node,
+            x_slot,
+            weight_slot,
+            bias_slot,
+            N,
+            K,
+            IntOrVid.from_literal(blocks_m),
+            out,
         )
     else:
         # Dynamic seqlen -> emit both kernels in separate chains and select at
@@ -668,13 +676,19 @@ def _gguf_linear_handler(P: MLXProgramBuilder, n: Node) -> Slot:
 
         with P.new_chain() as then_idx:  # prefill / mat-mat
             _emit_q6k_matmul(
-                P, n, x_node, x_slot, weight_slot, bias_slot, N, K,
-                blocks_m_iov, out,
+                P,
+                n,
+                x_node,
+                x_slot,
+                weight_slot,
+                bias_slot,
+                N,
+                K,
+                blocks_m_iov,
+                out,
             )
         with P.new_chain() as else_idx:  # decode / mat-vec
-            _emit_q6k_matvec(
-                P, n, x_node, x_slot, weight_slot, bias_slot, N, K, out
-            )
+            _emit_q6k_matvec(P, n, x_node, x_slot, weight_slot, bias_slot, N, K, out)
 
         P.emit(
             IfNode(
