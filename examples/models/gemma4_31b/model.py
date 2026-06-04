@@ -459,19 +459,7 @@ class Gemma4_31B(nn.Module):
         seq_len = input_pos.shape[0]
         total_written = input_pos[0] + seq_len
         j = torch.arange(buf_size, dtype=torch.long, device=input_pos.device)
-        # NOTE(torch-2.12 AOTI/Inductor CUDA): int64 floor-division is
-        # mis-lowered for multi-token prefill (dynamic T>1). The negative
-        # numerators here (slot j > last-written position) truncate toward zero
-        # instead of flooring, and the fused index-math codegen scrambles the
-        # result further -- producing a wrong sliding-window mask, hence wrong
-        # attention and a wrong first prefill token. Decode (T=1) is unaffected
-        # because that lone, un-broadcast floor-div still lowers correctly (same
-        # "lone div OK / fused-broadcast div wrong" failure mode as the vision
-        # pooler bug). Values here are < 2**24, so doing the floor-division in
-        # float32 is bit-exact vs the int64 path and lowers correctly. Mirrors
-        # the Gemma4VisionPooler._avg_pool_by_positions fix in vision_tower.py.
-        wraps = torch.floor((total_written - 1 - j).float() / buf_size).long()
-        ring_pos = j + wraps * buf_size
+        ring_pos = j + ((total_written - 1 - j) // buf_size) * buf_size
         delta = q_pos - ring_pos.unsqueeze(0)
         sliding = (ring_pos >= 0) & (delta >= 0) & (delta < self.config.sliding_window)
         sliding_mask = sliding.unsqueeze(0).unsqueeze(0)  # (1, 1, T_q, buf_size)
