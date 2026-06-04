@@ -37,6 +37,16 @@
 #define QNN_EXECUTORCH_EXPORT __attribute__((__visibility__("default")))
 #endif
 
+#if defined(_MSC_VER)
+#if defined(QNN_EXECUTORCH_BUILDING_DLL)
+#define QNN_EXECUTORCH_EXPORT __declspec(dllexport)
+#else
+#define QNN_EXECUTORCH_EXPORT __declspec(dllimport)
+#endif
+#else
+#define QNN_EXECUTORCH_EXPORT __attribute__((__visibility__("default")))
+#endif
+
 #ifdef __cplusplus
 extern "C" {
 #endif // __cplusplus
@@ -91,6 +101,9 @@ QNN_EXECUTORCH_EXPORT void QnnExecuTorchAddCustomMemTensorAddr(
 
 /// Free the allocated shared memory.
 QNN_EXECUTORCH_EXPORT void QnnExecuTorchFreeCustomMem(void* buffer_ptr);
+
+/// Register the QnnBackend with the ExecuTorch runtime.
+QNN_EXECUTORCH_EXPORT void QnnExecuTorchBackendRegister(void* register_fn);
 
 #ifdef __cplusplus
 }

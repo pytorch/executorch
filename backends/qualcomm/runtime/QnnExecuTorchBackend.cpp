@@ -351,10 +351,37 @@ void QnnExecuTorchBackend::erase_cached_delegate(
 }
 
 namespace {
+#if !defined(_MSC_VER)
 auto cls = QnnExecuTorchBackend();
 executorch::runtime::Backend backend{QNN_BACKEND, &cls};
+// On non-Windows platforms a single copy of executorch_core is shared between
+// the DLL and the exe, so the static initializer writes into the correct
+// registered_backends[] array.
 static auto success_with_compiler = register_backend(backend);
+#endif
 } // namespace
+
+#if defined(_MSC_VER)
+static QnnExecuTorchBackend cls_msvc;
+static executorch::runtime::Backend backend_msvc{QNN_BACKEND, &cls_msvc};
+#endif
+
 } // namespace qnn
 } // namespace backends
 } // namespace executorch
+
+#if defined(_MSC_VER)
+// On Windows the DLL and the exe each carry a private copy of executorch_core
+// globals. The runner calls this function at startup, passing its own
+// register_backend() so registration happens in the exe's address space.
+void QnnExecuTorchBackendRegister(void* register_fn) {
+  using RegisterFn = executorch::runtime::Error (*)(
+      const executorch::runtime::Backend&);
+  reinterpret_cast<RegisterFn>(register_fn)(
+      executorch::backends::qnn::backend_msvc);
+}
+#else
+void QnnExecuTorchBackendRegister(void*) {
+  // No-op
+}
+#endif
