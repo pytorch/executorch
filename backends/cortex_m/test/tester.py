@@ -61,16 +61,22 @@ class CortexMRunPasses(RunPasses):
 
 
 class CortexMSerialize(Serialize):
-    def __init__(self):
+    def __init__(self, target_config: Optional[CortexMTargetConfig] = None):
+        target_config = target_config or CortexMTargetConfig(cpu=CortexM.M55)
         compile_spec = get_u55_compile_spec()
-        super().__init__(compile_spec, 1024)
+        # Select the runner built for this target (build_test_runner.sh writes
+        # one runner per target into a target-suffixed directory).
+        super().__init__(
+            compile_spec,
+            None,
+            build_dir_suffix=f"_{target_config.target_string}",
+        )
 
 
 cortex_m_stage_classes = {
     StageType.EXPORT: Export,
     StageType.QUANTIZE: CortexMQuantize,
     StageType.RUN_PASSES: CortexMRunPasses,
-    StageType.SERIALIZE: Serialize,
     StageType.TO_EDGE: CortexMToEdge,
     StageType.TO_EXECUTORCH: ToExecutorch,
     StageType.SERIALIZE: CortexMSerialize,
@@ -93,6 +99,9 @@ class CortexMTester(TesterBase):
             cortex_m_stage_classes
         )
         stage_classes[StageType.RUN_PASSES] = lambda: CortexMRunPasses(
+            target_config=target_config
+        )
+        stage_classes[StageType.SERIALIZE] = lambda: CortexMSerialize(
             target_config=target_config
         )
         super().__init__(module, resolved_example_inputs, stage_classes)
