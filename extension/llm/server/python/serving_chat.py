@@ -10,14 +10,11 @@ OpenAI-shaped responses (streaming and non-streaming)."""
 import json
 import logging
 import math
+from dataclasses import dataclass
 from typing import AsyncIterator, Optional
-
-from executorch.extension.llm.runner import GenerationConfig
 
 from .chat_template import ChatTemplate
 from .errors import APIError, ContextLengthExceeded, GenerationError
-
-logger = logging.getLogger(__name__)
 from .protocol import (
     _new_id,
     ChatCompletionChunk,
@@ -33,6 +30,22 @@ from .protocol import (
 )
 from .runner_pool import GenStats, RunnerPool
 from .tool_parsers import HermesDetector, ToolCallItem
+
+logger = logging.getLogger(__name__)
+
+
+@dataclass
+class GenConfig:
+    """Generation parameters the control plane forwards to a worker.
+
+    A plain dataclass (no runtime/pybind dependency): the control plane never
+    loads a model. The worker reads these fields off the JSONL request; only the
+    knobs we honor today are here (max_new_tokens, temperature). -1 max_new_tokens
+    means "unset / let the worker pick from model metadata".
+    """
+
+    max_new_tokens: int
+    temperature: float = 0.0
 
 
 def _earliest_stop(text: str, stops: list[str]) -> Optional[int]:
@@ -172,11 +185,11 @@ class ServingChat:
         if buf:
             yield buf
 
-    def _config(self, req: ChatCompletionRequest) -> GenerationConfig:
-        kwargs = {"echo": False, "max_new_tokens": req.resolved_max_tokens()}
-        if req.temperature is not None:
-            kwargs["temperature"] = req.temperature
-        return GenerationConfig(**kwargs)
+    def _config(self, req: ChatCompletionRequest) -> GenConfig:
+        return GenConfig(
+            max_new_tokens=req.resolved_max_tokens(),
+            temperature=req.temperature if req.temperature is not None else 0.0,
+        )
 
     def _finish_reason(
         self,
@@ -257,7 +270,8 @@ class ServingChat:
             raise APIError(
                 400,
                 f"Unsupported parameter(s): {', '.join(unsupported)}. This server honors "
-                "temperature, max_tokens/max_completion_tokens, stop, and tools (Hermes).",
+                "temperature, max_tokens/max_completion_tokens, stop, and tools for the "
+                "configured tool-call format.",
                 "invalid_request_error",
                 "unsupported_parameter",
             )
@@ -284,7 +298,7 @@ class ServingChat:
         return await self._complete(req, prompt, config)
 
     async def _complete(
-        self, req: ChatCompletionRequest, prompt: str, config: GenerationConfig
+        self, req: ChatCompletionRequest, prompt: str, config: GenConfig
     ) -> ChatCompletionResponse:
         stats = GenStats()
         async with self._pool.acquire(prompt) as runner:
@@ -318,7 +332,7 @@ class ServingChat:
         )
 
     async def _stream(
-        self, req: ChatCompletionRequest, prompt: str, config: GenerationConfig
+        self, req: ChatCompletionRequest, prompt: str, config: GenConfig
     ) -> AsyncIterator[str]:
         cid = _new_id("chatcmpl")
 

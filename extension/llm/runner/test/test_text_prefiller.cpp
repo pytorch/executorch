@@ -79,8 +79,8 @@ class TextPrefillerTest : public Test {
     MOCK_METHOD(
         ::executorch::runtime::Result<uint64_t>,
         prefill_chunk,
-        (std::vector<uint64_t>&, int64_t&),
-        ());
+        (std::vector<uint64_t>&, int64_t&, float),
+        (override));
   };
 
   // Create a mock TextPrefiller
@@ -112,9 +112,9 @@ TEST_F(TextPrefillerTest, PrefillCallsPrefillChunkOnceWhenPromptFits) {
   int64_t start_pos = 0;
 
   // Expect prefill_chunk to be called exactly once with the entire prompt
-  EXPECT_CALL(*prefiller, prefill_chunk(_, _))
+  EXPECT_CALL(*prefiller, prefill_chunk(_, _, _))
       .Times(1)
-      .WillOnce([&](std::vector<uint64_t>& tokens, int64_t& pos) {
+      .WillOnce([&](std::vector<uint64_t>& tokens, int64_t& pos, float) {
         // Verify the tokens passed to prefill_chunk
         EXPECT_EQ(tokens.size(), prompt_tokens.size());
         for (size_t i = 0; i < tokens.size(); i++) {
@@ -217,14 +217,14 @@ TEST_F(TextPrefillerTest, PrefillHandlesPrefillChunkErrorsCorrectly) {
     InSequence seq;
 
     // First chunk: tokens [1, 2, 3] - succeeds
-    EXPECT_CALL(*prefiller, prefill_chunk(_, _))
-        .WillOnce([&](std::vector<uint64_t>& tokens, int64_t& pos) {
+    EXPECT_CALL(*prefiller, prefill_chunk(_, _, _))
+        .WillOnce([&](std::vector<uint64_t>& tokens, int64_t& pos, float) {
           return Result<uint64_t>(10);
         });
 
     // Second chunk: tokens [4, 5] - fails
-    EXPECT_CALL(*prefiller, prefill_chunk(_, _))
-        .WillOnce([&](std::vector<uint64_t>& tokens, int64_t& pos) {
+    EXPECT_CALL(*prefiller, prefill_chunk(_, _, _))
+        .WillOnce([&](std::vector<uint64_t>& tokens, int64_t& pos, float) {
           return Result<uint64_t>(Error::InvalidArgument);
         });
   }

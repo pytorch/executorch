@@ -6,13 +6,13 @@
 
 """Fixtures for hermetic contract tests.
 
-We inject a FakeRunner through RunnerPool's runner_factory seam, so the tests
+We build a RunnerPool over a single FakeRunner worker handle, so the tests
 exercise the real server, protocol, templating, and streaming code over the
-HTTP boundary with NO model, tokenizer, or GPU. This mirrors ExecuTorch's
-fake_llm_executor approach: fake the engine, test the real surface.
+HTTP boundary with NO model, tokenizer, GPU, or worker subprocess. This mirrors
+ExecuTorch's fake_llm_executor approach: fake the worker, test the real surface.
 
-Requires a build where `executorch.extension.llm.runner` imports (for
-GenerationConfig), plus fastapi, pydantic, httpx, pytest.
+The control plane imports no runtime pybind; only fastapi, pydantic, httpx, and
+pytest are required.
 """
 
 import pytest
@@ -67,7 +67,7 @@ class _FakeTokenizer:
     def __init__(self, prompt_tokens):
         self._n = prompt_tokens
 
-    def encode(self, text):
+    def encode(self, text, add_special_tokens=False):
         return [0] * self._n
 
     def apply_chat_template(
@@ -85,7 +85,7 @@ def make_client():
         fail=False,
     ):
         fake = FakeRunner(tokens, fail=fail)
-        pool = RunnerPool(runner_factory=lambda: fake, num_runners=1)
+        pool = RunnerPool([fake])  # one fake worker handle
         template = ChatTemplate(hf_tokenizer_path=None, allow_fallback=True)
         if prompt_tokens is not None:
             template._hf = _FakeTokenizer(prompt_tokens)

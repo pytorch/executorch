@@ -18,6 +18,7 @@ class _FakeHF:
     def __init__(self):
         self.seen_kwargs = None
         self.seen_messages = None
+        self.encode_add_special = None
 
     def apply_chat_template(
         self, messages, tools, add_generation_prompt, tokenize, **kwargs
@@ -25,6 +26,12 @@ class _FakeHF:
         self.seen_kwargs = kwargs
         self.seen_messages = messages
         return "PROMPT"
+
+    # Default add_special_tokens=True mirrors real HF tokenizers (so a caller
+    # that forgets to disable specials would over-count).
+    def encode(self, text, add_special_tokens=True):
+        self.encode_add_special = add_special_tokens
+        return list(range(len(text)))  # 1 id per char, deterministic
 
 
 def _template_with_fake(defaults=None):
@@ -34,6 +41,17 @@ def _template_with_fake(defaults=None):
     fake = _FakeHF()
     t._hf = fake
     return t, fake
+
+
+def test_count_tokens_excludes_special_tokens():
+    # The rendered prompt already carries control tokens, so count_tokens must
+    # encode with add_special_tokens=False (matching the session/prefix-cache
+    # paths) — not the tokenizer's default True, which double-counts BOS/EOS and
+    # can falsely reject near-limit requests under --max-context.
+    t, fake = _template_with_fake()
+    n = t.count_tokens("PROMPT")
+    assert fake.encode_add_special is False
+    assert n == len("PROMPT")
 
 
 def test_default_template_kwargs_applied():

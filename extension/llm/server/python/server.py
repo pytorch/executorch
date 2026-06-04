@@ -9,6 +9,15 @@
 Point any OpenAI-compatible agent harness (pi, opencode, ...) at
 ``http://<host>:<port>/v1``.
 
+This process is the CONTROL PLANE only: FastAPI/uvicorn + OpenAI protocol, chat
+templating, tool parsing, request validation. It runs NO model code and imports
+no runtime pybind. Model execution lives in a separate C++ worker process
+(``text_llm_worker``) driven over JSONL via WorkerClient.
+
+V1 is single-slot: one worker hosts one session, so concurrent requests queue.
+There is no prefix cache in V1 serving; caching, if it returns, lives inside the
+worker/session, not the control plane.
+
 Example:
     python -m executorch.extension.llm.server.python.server \\
         --model-path model.pte --tokenizer-path tokenizer.bin \\
@@ -17,6 +26,8 @@ Example:
 
 import argparse
 import logging
+import os
+from pathlib import Path
 
 from fastapi import FastAPI
 from fastapi.responses import JSONResponse, StreamingResponse
@@ -27,8 +38,40 @@ from .protocol import ChatCompletionRequest, ModelCard, ModelList
 from .runner_pool import RunnerPool
 from .serving_chat import ServingChat
 from .tool_parsers import HermesDetector
+from .worker_client import spawn_worker
 
 logger = logging.getLogger(__name__)
+
+
+def _default_worker_bin() -> str:
+    repo_root = Path(__file__).resolve().parents[4]
+    return str(
+        repo_root
+        / "cmake-out"
+        / "extension"
+        / "llm"
+        / "server"
+        / "cpp"
+        / "text_llm_worker"
+    )
+
+
+def _spawn(args):
+    """Spawn the C++ text_llm_worker and return a ready WorkerClient."""
+    env = dict(os.environ)
+    conda = os.environ.get("CONDA_PREFIX")
+    if conda:
+        env["LD_LIBRARY_PATH"] = f"{conda}/lib:" + env.get("LD_LIBRARY_PATH", "")
+    worker_bin = args.worker_bin or _default_worker_bin()
+    cmd = [
+        worker_bin,
+        "--model_path",
+        args.model_path,
+        "--tokenizer_path",
+        args.tokenizer_path,
+    ]
+    logger.info("Starting model worker subprocess (loads the model once)...")
+    return spawn_worker(cmd, env=env)
 
 
 def build_app(serving: ServingChat, model_id: str) -> FastAPI:
@@ -60,14 +103,18 @@ def build_app(serving: ServingChat, model_id: str) -> FastAPI:
 
 def main() -> None:
     p = argparse.ArgumentParser(description="ExecuTorch OpenAI-compatible LLM server")
-    p.add_argument("--model-path", required=True, help="Path to the .pte model")
+    p.add_argument(
+        "--model-path",
+        required=True,
+        help="Path to the self-contained .pte model (external .ptd weights are not "
+        "supported by the generic text worker; use a model-specific launcher).",
+    )
     p.add_argument("--tokenizer-path", required=True, help="Path to the tokenizer")
-    p.add_argument("--data-path", default=None, help="Optional .ptd weights file")
     p.add_argument(
         "--hf-tokenizer",
         default=None,
         help="HF tokenizer id/dir for model-correct chat templating (required unless "
-        "--allow-chatml-fallback). Also required for --enable-prefix-cache.",
+        "--allow-chatml-fallback).",
     )
     p.add_argument(
         "--allow-chatml-fallback",
@@ -93,23 +140,25 @@ def main() -> None:
         "Set this to match the value used at export.",
     )
     p.add_argument(
-        "--num-runners", type=int, default=1, help="KV-cache instances (N x memory)"
+        "--num-runners",
+        type=int,
+        default=1,
+        help="V1 supports 1 only (single-slot: one worker serves one session).",
     )
     p.add_argument(
-        "--enable-prefix-cache",
-        action="store_true",
-        help="Enable conservative per-runner turn-to-turn KV prefix reuse. Off by default; "
-        "requires --hf-tokenizer and a non-sliding-window model (falls back to full prefill "
-        "on any reuse failure).",
+        "--worker-bin",
+        default=None,
+        help="Path to the text_llm_worker binary "
+        "(default: cmake-out/extension/llm/server/cpp/text_llm_worker).",
     )
     p.add_argument("--host", default="127.0.0.1")
     p.add_argument("--port", type=int, default=8000)
     args = p.parse_args()
     logging.basicConfig(level=logging.INFO)
 
-    if args.enable_prefix_cache and not args.hf_tokenizer:
+    if args.num_runners != 1:
         p.error(
-            "--enable-prefix-cache requires --hf-tokenizer (token-level prefix matching)."
+            "V1 is single-slot: one worker serves one session; concurrent requests queue."
         )
 
     default_template_kwargs = {"enable_thinking": False} if args.no_think else None
@@ -119,27 +168,27 @@ def main() -> None:
         default_template_kwargs=default_template_kwargs,
         allow_fallback=args.allow_chatml_fallback,
     )
-    cache_tokenizer = template.tokenizer() if args.enable_prefix_cache else None
-    if cache_tokenizer is not None:
-        logger.info("KV prefix caching enabled (conservative, per-runner).")
-    pool = RunnerPool(
-        model_path=args.model_path,
-        tokenizer_path=args.tokenizer_path,
-        data_path=args.data_path,
-        num_runners=args.num_runners,
-        tokenizer=cache_tokenizer,
-    )
+    worker = _spawn(args)  # one worker == one session (single-slot V1)
+    pool = RunnerPool([worker])
     serving = ServingChat(
         pool,
         template,
         args.model_id,
         max_context=args.max_context,
+        # Hermes JSON is the generic default; a model-specific server (e.g. a
+        # Qwen launcher) selects the Qwen XML detector instead.
         tool_detector_cls=HermesDetector,
     )
 
+    app = build_app(serving, args.model_id)
+
+    @app.on_event("shutdown")
+    def _stop_worker():
+        pool.close()
+
     import uvicorn  # imported here so build_app() is usable without the ASGI server
 
-    uvicorn.run(build_app(serving, args.model_id), host=args.host, port=args.port)
+    uvicorn.run(app, host=args.host, port=args.port)
 
 
 if __name__ == "__main__":

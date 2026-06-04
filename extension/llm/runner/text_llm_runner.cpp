@@ -293,6 +293,17 @@ Result<uint64_t> TextLLMRunner::prefill(
     const std::vector<MultimodalInput>& inputs,
     int32_t num_bos,
     int32_t num_eos) {
+  // No GenerationConfig on this overload: the deprecated temperature_ wins if
+  // set (mirroring generate()'s precedence), otherwise greedy.
+  return prefill_impl(
+      inputs, num_bos, num_eos, temperature_ == -1.0f ? 0.0f : temperature_);
+}
+
+Result<uint64_t> TextLLMRunner::prefill_impl(
+    const std::vector<MultimodalInput>& inputs,
+    int32_t num_bos,
+    int32_t num_eos,
+    float temperature) {
   if (!is_loaded()) {
     ET_CHECK_OK_OR_RETURN_ERROR(load());
   }
@@ -306,7 +317,9 @@ Result<uint64_t> TextLLMRunner::prefill(
           "Failed to encode prompt %s",
           input.get_text().c_str());
       std::vector<uint64_t> tokens = encode_res.get();
-      auto prefill_res = text_prefiller_->prefill(tokens, pos_);
+      // The first generated token is sampled here during prefill, so honor the
+      // requested temperature instead of defaulting to greedy.
+      auto prefill_res = text_prefiller_->prefill(tokens, pos_, temperature);
       ET_CHECK_OK_OR_RETURN_ERROR(prefill_res.error());
       prefill_next_token_ = prefill_res.get();
       num_bos = 0;
@@ -333,7 +346,13 @@ Result<uint64_t> TextLLMRunner::prefill(
 Result<uint64_t> TextLLMRunner::prefill(
     const std::string& prompt,
     const GenerationConfig& config) {
-  return prefill(prompt, config.num_bos, config.num_eos);
+  std::vector<MultimodalInput> inputs;
+  inputs.emplace_back(MultimodalInput(prompt));
+  // Honor the request's sampling for the first token (sampled during prefill),
+  // mirroring generate(): the deprecated temperature_ wins if set.
+  const float resolved_temp =
+      temperature_ == -1.0f ? config.temperature : temperature_;
+  return prefill_impl(inputs, config.num_bos, config.num_eos, resolved_temp);
 }
 
 Error TextLLMRunner::warmup(const std::string& prompt, int32_t max_new_tokens) {
@@ -352,6 +371,9 @@ Error TextLLMRunner::warmup(const std::string& prompt, int32_t max_new_tokens) {
 }
 
 void TextLLMRunner::stop() {
+  // Honored by both decode paths: generate() checks the token generator's flag,
+  // the token-step (session) loop checks stop_requested_ in decode_one().
+  stop_requested_.store(true, std::memory_order_relaxed);
   if (is_loaded()) {
     text_token_generator_->stop();
   } else {
@@ -364,6 +386,7 @@ void TextLLMRunner::reset() {
   pos_ = 0;
   prefill_next_token_.reset();
   prev_decode_token_.reset();
+  stop_requested_.store(false, std::memory_order_relaxed);
 }
 
 ::executorch::runtime::Error TextLLMRunner::seek(int64_t pos) {
@@ -443,6 +466,8 @@ void TextLLMRunner::reset() {
   const float temp = (temperature < 0.0f)
       ? (temperature_ == -1.0f ? 0.0f : temperature_)
       : temperature;
+  // A new prefill starts a fresh generation turn; clear any prior stop request.
+  stop_requested_.store(false, std::memory_order_relaxed);
   auto prefill_res = text_prefiller_->prefill(tokens, pos_, temp);
   ET_CHECK_OK_OR_RETURN_ERROR(prefill_res.error());
   prefill_next_token_ = prefill_res.get();
@@ -484,13 +509,16 @@ void TextLLMRunner::reset() {
   }
   std::string text_piece = std::move(*decode_res);
 
-  // Stop at EOS WITHOUT forwarding it, like generate() (which breaks before the
-  // next step()): the EOS token is not made resident and pos_ does not advance,
-  // so position()/prefix reuse stay correct. No pending token remains, so a
-  // subsequent decode_one() correctly errors (generation is complete).
-  if (is_eos) {
+  // Terminate WITHOUT forwarding the token — at EOS (like generate(), which
+  // breaks before the next step()) or at a cooperative stop() request observed
+  // at this token boundary. The token is not made resident and pos_ does not
+  // advance, so position()/prefix reuse stay correct; no pending token remains,
+  // so a subsequent decode_one() correctly errors (generation is complete).
+  // is_eos stays literal; is_terminal is set either way so the loop ends.
+  if (is_eos || stop_requested_.load(std::memory_order_relaxed)) {
     prefill_next_token_.reset();
-    return DecodeResult{token, std::move(text_piece), true};
+    return DecodeResult{
+        token, std::move(text_piece), is_eos, /*is_terminal=*/true};
   }
 
   // Only a NON-EOS token is forwarded (made resident at pos_), so the capacity
@@ -525,7 +553,8 @@ void TextLLMRunner::reset() {
   prev_decode_token_ = token;
   pos_ += 1;
 
-  return DecodeResult{token, std::move(text_piece), false};
+  return DecodeResult{
+      token, std::move(text_piece), /*is_eos=*/false, /*is_terminal=*/false};
 }
 
 } // namespace executorch::extension::llm

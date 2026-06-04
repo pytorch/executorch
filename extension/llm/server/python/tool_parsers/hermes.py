@@ -6,10 +6,11 @@
 
 """Hermes-style tool calls: <tool_call>{"name": ..., "arguments": {...}}</tool_call>.
 
-Used by Qwen2.5/Qwen3 (and Hermes models) — the only tool-call format this
-server supports. The server buffers a model's full output and parses it once
-into complete OpenAI tool_calls (no partial-fragment streaming). Parse failures
-fall back to visible text — never a crash or a silent drop.
+Used by Qwen2.5/Qwen3 (and Hermes models); the Qwen XML format is handled
+separately by QwenFunctionCallDetector. The server buffers a model's full output
+and parses it once into complete OpenAI tool_calls (no partial-fragment
+streaming). Parse failures fall back to visible text — never a crash or a silent
+drop.
 """
 
 import json

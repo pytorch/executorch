@@ -36,12 +36,19 @@ struct SamplingConfig {
 };
 
 /// One decoded step: the exact sampled token id (for prefix-cache id tracking
-/// and batching), its decoded text piece (raw bytes; may be a partial UTF-8
-/// sequence the caller assembles), and whether it is an EOS token.
+/// and batching) and its decoded text piece (raw bytes; may be a partial UTF-8
+/// sequence the caller assembles).
+///
+/// `is_eos` is literal: the sampled token is an end-of-sequence token (use it
+/// for the "stop" finish reason, metrics, cache/accounting). `is_terminal` is
+/// the loop signal: generation ended at this step — either EOS or a cooperative
+/// stop() took effect. A decode loop should end when is_terminal is set; every
+/// EOS step is also terminal, but a stop step is terminal without being EOS.
 struct DecodeResult {
   uint64_t token_id;
   std::string text_piece;
   bool is_eos;
+  bool is_terminal;
 };
 
 /// How many physical sessions an engine can host, so the server admits logical
@@ -96,8 +103,10 @@ class ET_EXPERIMENTAL LLMSession {
 
   /// Request that a decode_one() loop stop. This is a TOKEN-BOUNDARY,
   /// cooperative stop: it is safe to call from another thread, but it does not
-  /// abort a decode_one() that is already running — it takes effect before the
-  /// next decode_one() (the loop driver checks between tokens).
+  /// abort a decode_one() that is already running. It takes effect at the next
+  /// decode_one(), which then returns a terminal step (is_terminal set, is_eos
+  /// false) without forwarding a new token. The stop is cleared by the next
+  /// prefill_tokens() or reset().
   virtual void stop() = 0;
 };
 

@@ -152,7 +152,7 @@ def test_tool_choice_none_omits_tools_from_prompt():
     rec = _RecordingTok()
     template = ChatTemplate(hf_tokenizer_path=None, allow_fallback=True)
     template._hf = rec
-    pool = RunnerPool(runner_factory=lambda: _Runner(), num_runners=1)
+    pool = RunnerPool([_Runner()])
     serving = ServingChat(
         pool, template, "test-model", tool_detector_cls=HermesDetector
     )
