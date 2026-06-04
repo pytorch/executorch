@@ -126,8 +126,10 @@ def test_each_role_labeled():
 
 # Tool round-trip: a turn-2 request (assistant tool_call + tool result) must
 # serialize into the shape any HF chat template consumes — the multi-turn loop
-# breaks at turn 2 otherwise.
-def test_tool_call_roundtrip_messages_passthrough():
+# breaks at turn 2 otherwise. OpenAI sends tool-call arguments as a JSON string;
+# HF templates expect a mapping (Qwen renders `arguments|items`), so the server
+# decodes it before templating.
+def test_tool_call_arguments_decoded_for_template():
     t, fake = _template_with_fake()
     t.render(
         [
@@ -152,6 +154,30 @@ def test_tool_call_roundtrip_messages_passthrough():
     msgs = fake.seen_messages
     asst = next(m for m in msgs if m["role"] == "assistant")
     assert asst["tool_calls"][0]["function"]["name"] == "get_weather"
-    assert asst["tool_calls"][0]["function"]["arguments"] == '{"city": "Paris"}'
+    # Decoded from the JSON string into a mapping the template can iterate.
+    assert asst["tool_calls"][0]["function"]["arguments"] == {"city": "Paris"}
     tool = next(m for m in msgs if m["role"] == "tool")
     assert tool["tool_call_id"] == "c1" and "temp_c" in tool["content"]
+
+
+def test_tool_call_non_json_arguments_left_as_string():
+    # A non-JSON arguments value must not crash; it passes through unchanged.
+    t, fake = _template_with_fake()
+    t.render(
+        [
+            ChatMessage(
+                role="assistant",
+                content=None,
+                tool_calls=[
+                    ToolCall(
+                        index=0,
+                        id="c1",
+                        type="function",
+                        function=FunctionCall(name="f", arguments="not json"),
+                    )
+                ],
+            )
+        ]
+    )
+    asst = next(m for m in fake.seen_messages if m["role"] == "assistant")
+    assert asst["tool_calls"][0]["function"]["arguments"] == "not json"
