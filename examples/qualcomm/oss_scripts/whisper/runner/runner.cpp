@@ -171,8 +171,9 @@ Error Runner::transcribe(
     ++pos;
 
     if (token_callback) {
-      token_callback(
-          ET_UNWRAP_TOKENIZER(tokenizer_->decode(prev_token, cur_token)));
+      ET_UNWRAP_TOKENIZER(
+          decoded_token__, tokenizer_->decode(prev_token, cur_token));
+      token_callback(decoded_token__);
     }
     if (eos_ids_->count(cur_token) > 0) {
       ET_LOG(Info, "\nReached to the end of generation");

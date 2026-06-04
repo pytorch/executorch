@@ -223,8 +223,8 @@ Error QNNMultimodalRunner::load() {
 
   ET_LOG(Info, "Reading metadata from model");
   // retrieve any method meta, can be either prefill or kv
-  int64_t num_layers =
-      ET_UNWRAP(text_decoder_->get("get_n_layers")).toScalar().to<int64_t>();
+  ET_UNWRAP(num_layers_evalue__, text_decoder_->get("get_n_layers"));
+  int64_t num_layers = num_layers_evalue__.toScalar().to<int64_t>();
 
   ET_CHECK_MSG(num_layers != -1, "Could not retrieve num layers");
   // k_cache: [1, n_heads, head_dim, seq_len]
@@ -292,8 +292,9 @@ Error QNNMultimodalRunner::load() {
   // attention
   int32_t sliding_window = context_len_;
   if (text_decoder_->method_names()->count("get_sliding_window") > 0) {
-    sliding_window =
-        ET_UNWRAP(text_decoder_->get("get_sliding_window")).toInt();
+    ET_UNWRAP(
+        sliding_window_evalue__, text_decoder_->get("get_sliding_window"));
+    sliding_window = sliding_window_evalue__.toInt();
   }
   kv_manager_ = std::make_unique<KVManager>(
       KVManager::Metadata{
@@ -527,8 +528,9 @@ executorch::runtime::Error QNNMultimodalRunner::generate(
   // print the first token from prefill. No prev_token so use cur_token for
   // it.
   if (token_callback) {
-    token_callback(
-        ET_UNWRAP_TOKENIZER(tokenizer_->decode(cur_token, cur_token)));
+    ET_UNWRAP_TOKENIZER(
+        decoded_token__, tokenizer_->decode(cur_token, cur_token));
+    token_callback(decoded_token__);
   }
   ET_LOG(
       Info,
@@ -538,8 +540,15 @@ executorch::runtime::Error QNNMultimodalRunner::generate(
   // start the main loop
   prompt_tokens.push_back(cur_token);
 
-  int64_t num_generated_tokens = ET_UNWRAP(token_generator_->generate(
-      prompt_tokens, cur_pos_, seq_len, token_callback, dump_logits, nullptr));
+  ET_UNWRAP(
+      num_generated_tokens,
+      token_generator_->generate(
+          prompt_tokens,
+          cur_pos_,
+          seq_len,
+          token_callback,
+          dump_logits,
+          nullptr));
   stats_.inference_end_ms = time_in_ms();
   ET_LOG(
       Info,
