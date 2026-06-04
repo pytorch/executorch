@@ -50,17 +50,17 @@ set(WGPU_NATIVE_DIR
 )
 
 # Link the shared lib; the static .a carries LLVM bitcode that breaks LTO.
-if(NOT EXISTS "${WGPU_NATIVE_DIR}/lib/libwgpu_native.so")
+# Suffix resolves per platform: .so on Linux, .dylib on macOS.
+set(WGPU_LIB_NAME "libwgpu_native${CMAKE_SHARED_LIBRARY_SUFFIX}")
+set(WGPU_LIB "${WGPU_NATIVE_DIR}/lib/${WGPU_LIB_NAME}")
+if(NOT EXISTS "${WGPU_LIB}")
   message(FATAL_ERROR "wgpu-native not found at ${WGPU_NATIVE_DIR}. "
                       "Run: bash backends/webgpu/scripts/setup-wgpu-native.sh"
   )
 endif()
 
 add_library(wgpu_native SHARED IMPORTED)
-set_target_properties(
-  wgpu_native PROPERTIES IMPORTED_LOCATION
-                         "${WGPU_NATIVE_DIR}/lib/libwgpu_native.so"
-)
+set_target_properties(wgpu_native PROPERTIES IMPORTED_LOCATION "${WGPU_LIB}")
 
 target_include_directories(
   webgpu_backend PUBLIC $<BUILD_INTERFACE:${WGPU_NATIVE_DIR}/include>

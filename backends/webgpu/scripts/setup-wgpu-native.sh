@@ -16,22 +16,22 @@ WGPU_DIR="${SCRIPT_DIR}/../third-party/wgpu-native"
 WGPU_VERSION="v27.0.4.0"
 WGPU_BASE_URL="https://github.com/gfx-rs/wgpu-native/releases/download/${WGPU_VERSION}"
 
-if [[ -f "${WGPU_DIR}/lib/libwgpu_native.so" ]]; then
-    echo "wgpu-native already installed at ${WGPU_DIR}"
-    exit 0
-fi
-
 OS="$(uname -s)"
-ARCH="$(uname -m)"
-
 case "${OS}" in
-    Darwin) PLATFORM="macos" ;;
-    Linux)  PLATFORM="linux" ;;
+    Darwin) PLATFORM="macos"; LIB_EXT="dylib" ;;
+    Linux)  PLATFORM="linux"; LIB_EXT="so" ;;
     *)
         echo "Unsupported OS: ${OS}"
         exit 1
         ;;
 esac
+
+if [[ -f "${WGPU_DIR}/lib/libwgpu_native.${LIB_EXT}" ]]; then
+    echo "wgpu-native already installed at ${WGPU_DIR}"
+    exit 0
+fi
+
+ARCH="$(uname -m)"
 
 case "${ARCH}" in
     x86_64)  WGPU_ARCH="x86_64" ;;
