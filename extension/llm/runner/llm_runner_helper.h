@@ -150,8 +150,7 @@ ET_EXPERIMENTAL std::unique_ptr<TextLLMRunner> create_text_llm_runner(
  * own method state and KV cache. This is the per-session construction path for
  * TextLLMEngine — N sessions reuse one loaded Program but isolate their mutable
  * KV state. Whether they also avoid re-materializing packed weights per session
- * is backend-dependent (serving_capacity() is authoritative; XNNPACK repacks
- * per method instance, so assume per-session weights there).
+ * is backend-dependent (serving_capacity() is authoritative).
  *
  * The caller must keep the DataLoader backing `program` alive for the lifetime
  * of every runner created from it (TextLLMEngine holds the loader Module).
@@ -178,10 +177,8 @@ create_text_llm_runner_from_program(
  * is the correctness-first foundation for serving multiple conversations.
  * Backend execution should be serialized by the caller until per-backend thread
  * safety is proven (Module::execute is not assumed thread-safe). Whether extra
- * sessions actually avoid duplicating packed weights is a backend property
- * (e.g. AOTI/CUDA share device weights) reported by serving_capacity(); on the
- * XNNPACK path weights are repacked per method instance and the KV cache is
- * baked into the .pte, so it conservatively reports a single physical session.
+ * sessions avoid duplicating packed weights is backend-dependent and reported
+ * by serving_capacity() (conservatively one).
  */
 class ET_EXPERIMENTAL TextLLMEngine : public LLMEngine {
  public:
@@ -198,9 +195,8 @@ class ET_EXPERIMENTAL TextLLMEngine : public LLMEngine {
   // serving_capacity).
   ::executorch::runtime::Result<std::unique_ptr<LLMSession>> create_session()
       override;
-  // Conservative v1: a self-contained .pte repacks XNNPACK weights per runtime,
-  // so we don't claim multiple physical sessions share weights. Raise this on a
-  // backend/artifact proven to share packed weights.
+  // Conservative: a single physical session (no proven cross-session weight
+  // sharing). Raise on a backend proven to share packed weights.
   LLMServingCapacity serving_capacity() const override {
     return LLMServingCapacity{};
   }
