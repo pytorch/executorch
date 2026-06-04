@@ -4,7 +4,6 @@
 # LICENSE file in the root directory of this source tree.
 
 import torch
-
 from executorch.backends.nxp.backend.data_format import NXP_NODE_FORMAT
 from executorch.backends.nxp.backend.ir.converter.node_converter import (
     CustomDelegationOptions,
@@ -26,7 +25,7 @@ class MulTensorConverter(NodeConverter):
         parameters_mapping: dict[str, Parameter],
         custom_delegation_options: CustomDelegationOptions,
     ) -> bool:
-        if custom_delegation_options.use_new_flow_neutron_c:
+        if neutron_target_spec.use_new_flow_neutron_c:
             if not NodeConverter.at_least_one_input_shape_matches_the_output_shape(
                 node
             ):

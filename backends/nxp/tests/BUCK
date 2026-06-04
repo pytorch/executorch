@@ -113,6 +113,20 @@ fbcode_target(_kind = python_pytest,
 )
 
 fbcode_target(_kind = python_pytest,
+    name = "test_neutron_converter_manager",
+    srcs = [
+        "generic_tests/test_neutron_converter_manager.py",
+    ],
+    deps = [
+        "//executorch/backends/nxp:neutron_sdk",
+        "//executorch/exir:lib",
+        ":executorch_pipeline",
+        ":models",
+        "fbsource//third-party/pypi/pytest-mock:pytest-mock",  # @manual
+    ],
+)
+
+fbcode_target(_kind = python_pytest,
     name = "test_integration",
     srcs = [
         "generic_tests/test_integration.py",

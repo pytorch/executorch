@@ -502,6 +502,7 @@ python_unittest(
         "//executorch/exir/backend/test:backend_with_compiler_demo",
         "//executorch/exir/dialects:lib",
         "//executorch/exir/passes:propagate_device_pass",
+        "//executorch/exir/passes:device_copy_ops_registry",
     ],
 )
 

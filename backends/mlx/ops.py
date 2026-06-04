@@ -52,6 +52,7 @@ from executorch.backends.mlx.serialization.mlx_graph_schema import (
     Atan2Node,
     BitwiseAndNode,
     BitwiseInvertNode,
+    BitwiseOrNode,
     BroadcastToNode,
     CeilNode,
     ClipNode,
@@ -488,6 +489,12 @@ _BINARY_OPS: List[Tuple[List[Any], Any, str, bool]] = [
         [torch.ops.aten.bitwise_and.Tensor, torch.ops.aten.bitwise_and.Scalar],
         BitwiseAndNode,
         "aten.bitwise_and",
+        True,
+    ),
+    (
+        [torch.ops.aten.bitwise_or.Tensor, torch.ops.aten.bitwise_or.Scalar],
+        BitwiseOrNode,
+        "aten.bitwise_or",
         True,
     ),
     (
@@ -2921,6 +2928,34 @@ def _clamp_handler(P: MLXProgramBuilder, n: Node) -> Slot:
             out=P.slot_to_tid(out),
             a_min=a_min_tid,
             a_max=a_max_tid,
+        )
+    )
+    return out
+
+
+@REGISTRY.register(target=[torch.ops.aten.hardtanh.default])
+def _hardtanh_handler(P: MLXProgramBuilder, n: Node) -> Slot:
+    """Handle aten.hardtanh by clamping input to [min_val, max_val]."""
+    args = P.args(n)
+    require_args(args, 1, 3, "aten.hardtanh")
+    require_kwargs(P.kwargs(n), set(), "aten.hardtanh")
+
+    x = args[0]
+    min_val = float(args[1]) if len(args) > 1 else -1.0
+    max_val = float(args[2]) if len(args) > 2 else 1.0
+
+    x_meta = n.args[0].meta.get("val")
+    if x_meta is None:
+        raise ValueError("Input tensor metadata not found for hardtanh")
+    dtype = x_meta.dtype
+
+    out = P.make_or_get_slot(n)
+    P.emit(
+        ClipNode(
+            x=P.slot_to_tid(x),
+            out=P.slot_to_tid(out),
+            a_min=P.slot_to_tid(emit_lifted_constant(P, min_val, dtype)),
+            a_max=P.slot_to_tid(emit_lifted_constant(P, max_val, dtype)),
         )
     )
     return out

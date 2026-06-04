@@ -386,10 +386,12 @@ class TestCudaExport(unittest.TestCase):
         self.assertEqual(
             len(cpu_tensors),
             0,
-            f"Expecteed no CPU tensors for delegate inputs, but found {len(cpu_tensors)}",
+            f"Expected no CPU tensors: method inputs/outputs should be tagged "
+            f"CUDA, but found {len(cpu_tensors)}",
         )
         self.assertEqual(
             len(cuda_tensors),
             3,
-            "Expected CUDA tensors for delegate outputs",
+            f"Expected 3 CUDA tensors (2 method inputs + 1 method output), "
+            f"but found {len(cuda_tensors)}",
         )
