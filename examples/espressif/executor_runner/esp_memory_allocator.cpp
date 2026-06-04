@@ -16,7 +16,7 @@ void* EspMemoryAllocator::allocate(size_t size, size_t alignment) {
     // Keep used_ in sync with the underlying MemoryAllocator by computing it
     // from the returned pointer and requested size, which implicitly includes
     // any padding/alignment the base allocator applied.
-    uint8_t* end_ptr = static_cast<uint8_t*>(ret) + size;
+    const uint8_t* end_ptr = static_cast<uint8_t*>(ret) + size;
     used_ = static_cast<size_t>(end_ptr - base_address());
   }
   return ret;
