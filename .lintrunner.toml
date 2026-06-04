@@ -196,7 +196,6 @@ exclude_patterns = [
     'kernels/aten/**',
     'kernels/optimized/**',
     'kernels/portable/**',
-    'kernels/quantized/**',
     'kernels/test/**',
 
     # Runtime areas to onboard incrementally.
@@ -230,6 +229,12 @@ command = [
     '--extra-arg=--suppress=unknownMacro:*kernels/prim_ops/*',
     '--extra-arg=--suppress=syntaxError:*kernels/prim_ops/*',
     '--extra-arg=--suppress=unusedFunction:*kernels/prim_ops/*',
+    # Quantized kernels have NEON-gated code and registration helpers that
+    # cppcheck cannot see in every configuration.
+    '--extra-arg=--suppress=unreadVariable:*kernels/quantized/*',
+    '--extra-arg=--suppress=unusedFunction:*kernels/quantized/*',
+    '--extra-arg=--suppress=constParameterReference:*kernels/quantized/*',
+    '--extra-arg=--suppress=suspiciousFloatingPointCast:*kernels/quantized/*',
     '--',
     '@{{PATHSFILE}}'
 ]
