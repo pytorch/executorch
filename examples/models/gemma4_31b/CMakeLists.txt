@@ -58,11 +58,11 @@ endif()
 # Tokenizer (HuggingFace tokenizer.json)
 list(APPEND link_libraries tokenizers::tokenizers)
 
-# stb_image / stb_image_resize: header-only image loading + bicubic resize.
-# Only the CUDA runner has the image (vision) path in this branch, so the stb
-# headers are only required for CUDA builds. (MLX vision is added in the
-# g4-vision-mlx branch, which removes this gating.) The deprecated/ subdir is
-# needed for the (older) stb_image_resize.h API used by image_utils.h.
+# stb_image / stb_image_resize: header-only image loading + bicubic resize. Only
+# the CUDA runner has the image (vision) path in this branch, so the stb headers
+# are only required for CUDA builds. (MLX vision is added in the g4-vision-mlx
+# branch, which removes this gating.) The deprecated/ subdir is needed for the
+# (older) stb_image_resize.h API used by image_utils.h.
 #
 # Resolution order: 1. -DSTB_SOURCE_DIR=/path (or env
 # FETCHCONTENT_SOURCE_DIR_STB). 2. ${EXECUTORCH_ROOT}/third-party/stb (vendored
