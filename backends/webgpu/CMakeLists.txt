@@ -49,16 +49,17 @@ set(WGPU_NATIVE_DIR
     CACHE PATH "Path to wgpu-native installation"
 )
 
-if(NOT EXISTS "${WGPU_NATIVE_DIR}/lib/libwgpu_native.a")
+# Link the shared lib; the static .a carries LLVM bitcode that breaks LTO.
+if(NOT EXISTS "${WGPU_NATIVE_DIR}/lib/libwgpu_native.so")
   message(FATAL_ERROR "wgpu-native not found at ${WGPU_NATIVE_DIR}. "
                       "Run: bash backends/webgpu/scripts/setup-wgpu-native.sh"
   )
 endif()
 
-add_library(wgpu_native STATIC IMPORTED)
+add_library(wgpu_native SHARED IMPORTED)
 set_target_properties(
   wgpu_native PROPERTIES IMPORTED_LOCATION
-                         "${WGPU_NATIVE_DIR}/lib/libwgpu_native.a"
+                         "${WGPU_NATIVE_DIR}/lib/libwgpu_native.so"
 )
 
 target_include_directories(

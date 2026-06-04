@@ -16,7 +16,7 @@ WGPU_DIR="${SCRIPT_DIR}/../third-party/wgpu-native"
 WGPU_VERSION="v27.0.4.0"
 WGPU_BASE_URL="https://github.com/gfx-rs/wgpu-native/releases/download/${WGPU_VERSION}"
 
-if [[ -f "${WGPU_DIR}/lib/libwgpu_native.a" ]]; then
+if [[ -f "${WGPU_DIR}/lib/libwgpu_native.so" ]]; then
     echo "wgpu-native already installed at ${WGPU_DIR}"
     exit 0
 fi
