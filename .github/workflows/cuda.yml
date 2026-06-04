@@ -20,14 +20,42 @@ on:
       - .github/workflows/cuda.yml
       - backends/cuda/**
       - backends/aoti/**
+      - .ci/scripts/test-cuda-build.sh
+      - .ci/scripts/export_model_artifact.sh
+      - .ci/scripts/test_model_e2e.sh
   workflow_dispatch:
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.sha }}-${{ github.event_name == 'workflow_dispatch' }}-${{ github.event_name == 'schedule' }}
   cancel-in-progress: false
 
+permissions:
+  contents: read
+
 jobs:
+  changed-files:
+    name: Get changed files
+    uses: ./.github/workflows/_get-changed-files.yml
+    with:
+      include-push-diff: true
+
+  run-decision:
+    name: CI run decision
+    uses: ./.github/workflows/_ci-run-decision.yml
+
   test-cuda-builds:
+    needs: [changed-files, run-decision]
+    # Path-filtered: mirrors the workflow-level pull_request `paths:`
+    # filter so push commits that don't touch CUDA-relevant paths skip
+    # this job on non-sampled commits.
+    if: |
+      contains(needs.changed-files.outputs.changed-files, 'backends/cuda') ||
+      contains(needs.changed-files.outputs.changed-files, 'backends/aoti') ||
+      contains(needs.changed-files.outputs.changed-files, '.github/workflows/cuda.yml') ||
+      contains(needs.changed-files.outputs.changed-files, '.ci/scripts/test-cuda-build.sh') ||
+      contains(needs.changed-files.outputs.changed-files, '.ci/scripts/export_model_artifact.sh') ||
+      contains(needs.changed-files.outputs.changed-files, '.ci/scripts/test_model_e2e.sh') ||
+      needs.run-decision.outputs.is-full-run == 'true'
     strategy:
       fail-fast: false
       matrix:
@@ -55,9 +83,22 @@ jobs:
 
   # This job will fail if any of the CUDA versions fail
   check-all-cuda-builds:
-    needs: test-cuda-builds
+    needs: [changed-files, run-decision, test-cuda-builds]
     runs-on: ubuntu-latest
-    if: always()
+    # Run only if the test-cuda-builds matrix actually ran (i.e. the same
+    # path/sample gate as test-cuda-builds itself). Otherwise this job
+    # would fire on every commit and fail because needs.result == 'skipped'.
+    if: |
+      always() &&
+      (
+        contains(needs.changed-files.outputs.changed-files, 'backends/cuda') ||
+        contains(needs.changed-files.outputs.changed-files, 'backends/aoti') ||
+        contains(needs.changed-files.outputs.changed-files, '.github/workflows/cuda.yml') ||
+        contains(needs.changed-files.outputs.changed-files, '.ci/scripts/test-cuda-build.sh') ||
+        contains(needs.changed-files.outputs.changed-files, '.ci/scripts/export_model_artifact.sh') ||
+        contains(needs.changed-files.outputs.changed-files, '.ci/scripts/test_model_e2e.sh') ||
+        needs.run-decision.outputs.is-full-run == 'true'
+      )
     steps:
       - name: Check if all CUDA builds succeeded
         run: |
@@ -71,6 +112,15 @@ jobs:
 
   test-models-cuda:
     name: test-models-cuda
+    needs: [changed-files, run-decision]
+    if: |
+      contains(needs.changed-files.outputs.changed-files, 'backends/cuda') ||
+      contains(needs.changed-files.outputs.changed-files, 'backends/aoti') ||
+      contains(needs.changed-files.outputs.changed-files, '.github/workflows/cuda.yml') ||
+      contains(needs.changed-files.outputs.changed-files, '.ci/scripts/test-cuda-build.sh') ||
+      contains(needs.changed-files.outputs.changed-files, '.ci/scripts/export_model_artifact.sh') ||
+      contains(needs.changed-files.outputs.changed-files, '.ci/scripts/test_model_e2e.sh') ||
+      needs.run-decision.outputs.is-full-run == 'true'
     uses: pytorch/test-infra/.github/workflows/linux_job_v2.yml@main
     permissions:
       id-token: write
@@ -106,6 +156,15 @@ jobs:
 
   unittest-cuda:
     name: unittest-cuda
+    needs: [changed-files, run-decision]
+    if: |
+      contains(needs.changed-files.outputs.changed-files, 'backends/cuda') ||
+      contains(needs.changed-files.outputs.changed-files, 'backends/aoti') ||
+      contains(needs.changed-files.outputs.changed-files, '.github/workflows/cuda.yml') ||
+      contains(needs.changed-files.outputs.changed-files, '.ci/scripts/test-cuda-build.sh') ||
+      contains(needs.changed-files.outputs.changed-files, '.ci/scripts/export_model_artifact.sh') ||
+      contains(needs.changed-files.outputs.changed-files, '.ci/scripts/test_model_e2e.sh') ||
+      needs.run-decision.outputs.is-full-run == 'true'
     uses: pytorch/test-infra/.github/workflows/linux_job_v2.yml@main
     permissions:
       id-token: write
@@ -154,8 +213,22 @@ jobs:
 
   export-model-cuda-artifact:
     name: export-model-cuda-artifact
-    # Skip this job if the pull request is from a fork (HuggingFace secrets are not available)
-    if: github.event.pull_request.head.repo.full_name == github.repository || github.event_name != 'pull_request'
+    # Skip this job if the pull request is from a fork (HuggingFace secrets are not available).
+    # Path-filtered on push: mirrors the workflow-level pull_request `paths:`
+    # filter so push commits that don't touch CUDA-relevant paths skip
+    # this job on non-sampled commits.
+    needs: [changed-files, run-decision]
+    if: |
+      (github.event.pull_request.head.repo.full_name == github.repository || github.event_name != 'pull_request') &&
+      (
+        contains(needs.changed-files.outputs.changed-files, 'backends/cuda') ||
+        contains(needs.changed-files.outputs.changed-files, 'backends/aoti') ||
+        contains(needs.changed-files.outputs.changed-files, '.github/workflows/cuda.yml') ||
+        contains(needs.changed-files.outputs.changed-files, '.ci/scripts/test-cuda-build.sh') ||
+        contains(needs.changed-files.outputs.changed-files, '.ci/scripts/export_model_artifact.sh') ||
+        contains(needs.changed-files.outputs.changed-files, '.ci/scripts/test_model_e2e.sh') ||
+        needs.run-decision.outputs.is-full-run == 'true'
+      )
     uses: pytorch/test-infra/.github/workflows/linux_job_v2.yml@main
     permissions:
       id-token: write
@@ -300,7 +373,23 @@ jobs:
 
   test-model-cuda-e2e:
     name: test-model-cuda-e2e
-    needs: export-model-cuda-artifact
+    # Same path filter as export-model-cuda-artifact above. Also explicitly
+    # gated on the export job succeeding — when needs: jobs are *skipped*
+    # (e.g. fork PR), GitHub still evaluates this if:, so without the
+    # explicit success-check this job would run and then fail trying
+    # to download an artifact that was never produced.
+    needs: [changed-files, export-model-cuda-artifact, run-decision]
+    if: |
+      needs.export-model-cuda-artifact.result == 'success' &&
+      (
+        contains(needs.changed-files.outputs.changed-files, 'backends/cuda') ||
+        contains(needs.changed-files.outputs.changed-files, 'backends/aoti') ||
+        contains(needs.changed-files.outputs.changed-files, '.github/workflows/cuda.yml') ||
+        contains(needs.changed-files.outputs.changed-files, '.ci/scripts/test-cuda-build.sh') ||
+        contains(needs.changed-files.outputs.changed-files, '.ci/scripts/export_model_artifact.sh') ||
+        contains(needs.changed-files.outputs.changed-files, '.ci/scripts/test_model_e2e.sh') ||
+        needs.run-decision.outputs.is-full-run == 'true'
+      )
     uses: pytorch/test-infra/.github/workflows/linux_job_v2.yml@main
     permissions:
       id-token: write
@@ -417,8 +506,22 @@ jobs:
 
   test-cuda-pybind:
     name: test-cuda-pybind
-    needs: export-model-cuda-artifact
     # This job downloads models exported by export-model-cuda-artifact and runs them using pybind.
+    # Same gating as test-model-cuda-e2e — explicit success-check on the
+    # export job so a skipped export (fork PR, non-sampled push, no path
+    # match) auto-skips this job too.
+    needs: [changed-files, export-model-cuda-artifact, run-decision]
+    if: |
+      needs.export-model-cuda-artifact.result == 'success' &&
+      (
+        contains(needs.changed-files.outputs.changed-files, 'backends/cuda') ||
+        contains(needs.changed-files.outputs.changed-files, 'backends/aoti') ||
+        contains(needs.changed-files.outputs.changed-files, '.github/workflows/cuda.yml') ||
+        contains(needs.changed-files.outputs.changed-files, '.ci/scripts/test-cuda-build.sh') ||
+        contains(needs.changed-files.outputs.changed-files, '.ci/scripts/export_model_artifact.sh') ||
+        contains(needs.changed-files.outputs.changed-files, '.ci/scripts/test_model_e2e.sh') ||
+        needs.run-decision.outputs.is-full-run == 'true'
+      )
     uses: pytorch/test-infra/.github/workflows/linux_job_v2.yml@main
     permissions:
       id-token: write

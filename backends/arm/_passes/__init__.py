@@ -27,6 +27,7 @@ from .convert_squeezes_to_view import ConvertSqueezesToViewPass  # noqa
 from .convert_to_clamp_pass import ConvertToClampPass  # noqa
 from .decompose_acosh_pass import DecomposeAcoshPass  # noqa
 from .decompose_adaptive_avg_pool2d_pass import DecomposeAdaptiveAvgPool2dPass  # noqa
+from .decompose_adaptive_max_pool2d_pass import DecomposeAdaptiveMaxPool2dPass  # noqa
 from .decompose_add_sub_alpha_pass import DecomposeAddSubAlphaPass  # noqa
 from .decompose_addmm_pass import DecomposeAddmmPass  # noqa
 from .decompose_any_pass import DecomposeAnyPass  # noqa
@@ -164,6 +165,7 @@ from .rewrite_inplace_arithmetic_pass import RewriteInplaceArithmeticPass  # noq
 from .rewrite_le_lt_to_ge_gt_pass import RewriteLeLtToGeGtPass  # noqa
 from .rewrite_matmul import RewriteMatmulPass  # noqa
 from .rewrite_max_pool2d_pass import RewriteMaxPool2dPass  # noqa
+from .rewrite_mxfp_linear import RewriteMXFPLinearPass  # noqa
 from .rewrite_pad import RewritePadPass  # noqa
 from .rewrite_slice import RewriteSlicePass  # noqa
 from .rewrite_upsample import RewriteUpsamplePass  # noqa

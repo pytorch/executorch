@@ -32,6 +32,7 @@ from executorch.exir.dialects._ops import ops as exir_ops
 from executorch.exir.passes.propagate_device_pass import (
     _get_target_device_from_compile_specs,
     _parse_device_spec_value,
+    PropagateDeviceConfig,
     TARGET_DEVICE_COMPILE_SPEC_KEY,
 )
 from executorch.exir.schema import DeviceType
@@ -121,6 +122,7 @@ def _lower_model_to_executorch(
     """Lower model all the way through to_executorch for E2E tests."""
     if et_config is None:
         et_config = ExecutorchBackendConfig(emit_stacktrace=False)
+
     ep = export(model, inputs)
     ep_copied = deepcopy(ep)
 
@@ -314,7 +316,10 @@ class TestPropagateDevicePass(unittest.TestCase):
         inputs = (torch.randn(2, 2), torch.randn(2, 2))
 
         for pipeline, gm in _lower_model_to_executorch(
-            model, inputs, DeviceAwarePartitioner("cuda:0")
+            model,
+            inputs,
+            DeviceAwarePartitioner("cuda:0"),
+            ExecutorchBackendConfig(enable_non_cpu_memory_planning=True),
         ):
             with self.subTest(pipeline=pipeline):
                 nodes = _collect_device_copy_nodes(gm)
@@ -371,7 +376,10 @@ class TestPropagateDevicePass(unittest.TestCase):
         inputs = (torch.randn(2, 2), torch.randn(2, 2))
 
         for pipeline, gm in _lower_model_to_executorch(
-            model, inputs, DeviceAwarePartitioner("cuda:0")
+            model,
+            inputs,
+            DeviceAwarePartitioner("cuda:0"),
+            ExecutorchBackendConfig(enable_non_cpu_memory_planning=True),
         ):
             with self.subTest(pipeline=pipeline):
                 nodes = _collect_device_copy_nodes(gm)
@@ -444,6 +452,24 @@ class TestPropagateDevicePass(unittest.TestCase):
                     0,
                     f"[{pipeline}] Unexpected D2H copy nodes when no target_device is set",
                 )
+
+    def test_copy_nodes_require_non_cpu_memory_planning(self):
+        """Default lowering keeps legacy device tags without runtime copy ops."""
+
+        class Model(torch.nn.Module):
+            def forward(self, a, b):
+                return torch.add(a, b)
+
+        model = Model()
+        inputs = (torch.randn(2, 2), torch.randn(2, 2))
+
+        for pipeline, gm in _lower_model_to_executorch(
+            model, inputs, DeviceAwarePartitioner("cuda:0")
+        ):
+            with self.subTest(pipeline=pipeline):
+                device_copy_nodes = _collect_device_copy_nodes(gm)
+                self.assertEqual(len(device_copy_nodes.h2d_nodes), 0)
+                self.assertEqual(len(device_copy_nodes.d2h_nodes), 0)
 
         # ---- Integration tests: device consistency after to_executorch ----
 
@@ -523,7 +549,10 @@ class TestPropagateDevicePass(unittest.TestCase):
         inputs = (torch.randn(2, 2), torch.randn(2, 2))
 
         for pipeline, gm in _lower_model_to_executorch(
-            model, inputs, DeviceAwarePartitioner("cuda:0")
+            model,
+            inputs,
+            DeviceAwarePartitioner("cuda:0"),
+            ExecutorchBackendConfig(enable_non_cpu_memory_planning=True),
         ):
             with self.subTest(pipeline=pipeline):
                 for node in gm.graph.nodes:
@@ -738,7 +767,9 @@ class TestPropagateDevicePass(unittest.TestCase):
         inputs = (torch.randn(2, 2), torch.randn(2, 2))
         et_config = ExecutorchBackendConfig(
             emit_stacktrace=False,
-            skip_h2d_for_method_inputs=True,
+            propagate_device_config=PropagateDeviceConfig(
+                skip_h2d_for_method_inputs=True
+            ),
             enable_non_cpu_memory_planning=True,
         )
 
@@ -794,7 +825,9 @@ class TestPropagateDevicePass(unittest.TestCase):
         inputs = (torch.randn(2, 2), torch.randn(2, 2))
         et_config = ExecutorchBackendConfig(
             emit_stacktrace=False,
-            skip_d2h_for_method_outputs=True,
+            propagate_device_config=PropagateDeviceConfig(
+                skip_d2h_for_method_outputs=True
+            ),
             enable_non_cpu_memory_planning=True,
         )
 
@@ -848,8 +881,10 @@ class TestPropagateDevicePass(unittest.TestCase):
         inputs = (torch.randn(2, 2), torch.randn(2, 2))
         et_config = ExecutorchBackendConfig(
             emit_stacktrace=False,
-            skip_h2d_for_method_inputs=True,
-            skip_d2h_for_method_outputs=True,
+            propagate_device_config=PropagateDeviceConfig(
+                skip_h2d_for_method_inputs=True,
+                skip_d2h_for_method_outputs=True,
+            ),
             enable_non_cpu_memory_planning=True,
         )
 
@@ -924,7 +959,9 @@ class TestPropagateDevicePass(unittest.TestCase):
         inputs = (torch.randn(2, 2), torch.randn(2, 2))
         et_config = ExecutorchBackendConfig(
             emit_stacktrace=False,
-            skip_h2d_for_method_inputs=True,
+            propagate_device_config=PropagateDeviceConfig(
+                skip_h2d_for_method_inputs=True
+            ),
             enable_non_cpu_memory_planning=True,
         )
 

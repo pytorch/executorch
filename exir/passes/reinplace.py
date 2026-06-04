@@ -6,7 +6,7 @@
 
 # pyre-strict
 
-from typing import Any, Dict, FrozenSet, Iterable, Optional, Set, Tuple
+from typing import Any, Dict, FrozenSet, Iterable, Optional, Set, Tuple, Union
 
 import torch
 from executorch.exir.dialects._ops import ops
@@ -339,20 +339,17 @@ def reinplace_pass(  # noqa: C901
     # Overrides also enroll their key in the candidate set.
     op_set.update(overrides.keys())
 
-    # Validate every entry up front and pre-compute mutated_args so we
-    # don't re-do the schema introspection per node.
-    resolved: Dict[Any, Tuple[Any, Tuple[int, ...]]] = {}
+    _ANNOTATION_ONLY: Tuple[None, None] = (None, None)
+
+    resolved: Dict[Any, Union[Tuple[Any, Tuple[int, ...]], Tuple[None, None]]] = {}
     for functional_op in op_set:
         if functional_op in overrides:
             inplace_op = overrides[functional_op]
         else:
             inplace_op = _derive_edge_inplace_overload(functional_op)
             if inplace_op is None:
-                raise ValueError(
-                    f"Cannot auto-derive in-place form for "
-                    f"{functional_op}. Provide an explicit mapping via "
-                    f"`inplace_overrides={{{functional_op}: <inplace_op>}}`."
-                )
+                resolved[functional_op] = _ANNOTATION_ONLY
+                continue
         _validate_inplace_mapping(functional_op, inplace_op)
         mutated_args = _derive_mutated_args(inplace_op)
         resolved[functional_op] = (inplace_op, mutated_args)
@@ -371,62 +368,71 @@ def reinplace_pass(  # noqa: C901
     }
 
     for node in reversed(ep.graph.nodes):
-        entry = resolved.get(node.target) if node.op == "call_function" else None
-        if entry is not None:
-            inplace_op, mutated_args = entry
-            # Every mutated arg position must independently be safe.
-            all_safe = True
-            for arg_idx in mutated_args:
-                if arg_idx >= len(node.args):
-                    raise ValueError(
-                        f"reinplace: {node.target} call at {node} has "
-                        f"{len(node.args)} positional args, but the "
-                        f"schema declares position {arg_idx} as "
-                        f"Tensor(a!). Export should normalize mutated "
-                        f"args to positional; this graph violates that "
-                        f"assumption."
-                    )
-                arg_node = node.args[arg_idx]
-                if not isinstance(arg_node, torch.fx.Node):
-                    raise ValueError(
-                        f"reinplace: {node.target} call at {node} has a "
-                        f"non-Node value {arg_node!r} at position "
-                        f"{arg_idx}, but the schema declares it as "
-                        f"Tensor(a!). A Tensor input in an FX graph "
-                        f"must be a torch.fx.Node."
-                    )
-                if not _is_safe_to_reinplace(
-                    arg_node, seen_nodes, inputs, mutable_nodes
-                ):
-                    all_safe = False
+        if node.op != "call_function" or node.target not in resolved:
+            if node.op == "call_function":
+                seen_nodes.update(node.all_input_nodes)
+            continue
+
+        entry = resolved[node.target]
+
+        if entry is _ANNOTATION_ONLY:
+            first_tensor_idx = None
+            for idx, arg in enumerate(node.args):
+                if isinstance(arg, torch.fx.Node):
+                    first_tensor_idx = idx
                     break
-            if all_safe:
-                with ep.graph.inserting_before(node):
-                    # Forward both args and kwargs: the in-place overload
-                    # is schema-matched to the functional one, so any
-                    # kwarg valid on the functional op (e.g.
-                    # `accumulate=` for `index_put`) is also valid on
-                    # the in-place form. Dropping kwargs would silently
-                    # change semantics.
-                    new_node = ep.graph.call_function(
-                        inplace_op,
-                        args=node.args,
-                        kwargs=node.kwargs,
-                    )
-                    new_node.meta["val"] = node.meta["val"]
-                    node.replace_all_uses_with(new_node)
-                    ep.graph.erase_node(node)
-                # No explicit `seen_nodes` update needed: the new
-                # in-place node's target isn't in `op_set`, so the
-                # reverse iterator visits it next and falls through
-                # to the generic update below.
+            if first_tensor_idx is not None and _is_safe_to_reinplace(
+                node.args[first_tensor_idx],  # pyre-ignore[6]
+                seen_nodes,
+                inputs,
+                mutable_nodes,
+            ):
+                node.meta["_share_alloc_with_arg_idx"] = first_tensor_idx
                 continue
-        # Note: this intentionally falls through for mapping-matched
-        # nodes that failed the safety check. Their inputs *are* added
-        # to seen_nodes, so further-upstream candidates correctly see
-        # those tensors as "used later" and refuse to reinplace any op
-        # that mutates them.
-        # See test_unsafe_downstream_blocks_upstream_reinplace.
-        if node.op == "call_function":
             seen_nodes.update(node.all_input_nodes)
+            continue
+
+        inplace_op, mutated_args = entry
+        all_safe = True
+        for arg_idx in mutated_args:
+            if arg_idx >= len(node.args):
+                raise ValueError(
+                    f"reinplace: {node.target} call at {node} has "
+                    f"{len(node.args)} positional args, but the "
+                    f"schema declares position {arg_idx} as "
+                    f"Tensor(a!). Export should normalize mutated "
+                    f"args to positional; this graph violates that "
+                    f"assumption."
+                )
+            arg_node = node.args[arg_idx]
+            if not isinstance(arg_node, torch.fx.Node):
+                raise ValueError(
+                    f"reinplace: {node.target} call at {node} has a "
+                    f"non-Node value {arg_node!r} at position "
+                    f"{arg_idx}, but the schema declares it as "
+                    f"Tensor(a!). A Tensor input in an FX graph "
+                    f"must be a torch.fx.Node."
+                )
+            if not _is_safe_to_reinplace(arg_node, seen_nodes, inputs, mutable_nodes):
+                all_safe = False
+                break
+        if all_safe:
+            with ep.graph.inserting_before(node):
+                # Forward both args and kwargs: the in-place overload
+                # is schema-matched to the functional one, so any
+                # kwarg valid on the functional op (e.g.
+                # `accumulate=` for `index_put`) is also valid on
+                # the in-place form. Dropping kwargs would silently
+                # change semantics.
+                new_node = ep.graph.call_function(
+                    inplace_op,
+                    args=node.args,
+                    kwargs=node.kwargs,
+                )
+                new_node.meta["val"] = node.meta["val"]
+                node.replace_all_uses_with(new_node)
+                ep.graph.erase_node(node)
+            continue
+
+        seen_nodes.update(node.all_input_nodes)
     return ep
