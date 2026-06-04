@@ -7,13 +7,14 @@
 """Tests for the Qwen3.5 MoE process-isolated OpenAI launcher (serve.py).
 
 Hermetic: no model, GPU, or worker subprocess. Covers layering (Qwen stays an
-example; the control plane runs no CUDA), the single-slot CLI guard, and the
-WorkerRunner JSONL protocol against a fake worker. The live HTTP smoke test is
-documented in README.md and run on a CUDA box.
+example; the control plane runs no CUDA and imports no model pybind), the worker
+spawn command, and the single-slot CLI guard. The generic JSONL protocol is
+covered by extension/llm/server/python/tests/test_worker_client.py; the live
+HTTP smoke test is documented in README.md and run on a CUDA box.
 """
 
-import json
 import pathlib
+from types import SimpleNamespace
 
 import pytest
 
@@ -31,7 +32,7 @@ def test_generic_runner_pybind_has_no_qwen_include():
     assert "qwen3_5_moe" not in src and "qwen35_moe" not in src
 
 
-def test_generic_server_does_not_import_qwen():
+def test_generic_server_does_not_reference_qwen():
     server_dir = _REPO_ROOT / "extension/llm/server"
     offenders = [
         p
@@ -41,87 +42,65 @@ def test_generic_server_does_not_import_qwen():
     assert offenders == [], f"generic server must not reference Qwen: {offenders}"
 
 
-def test_control_plane_runs_no_cuda_model():
-    # serve.py is the control plane: it must NOT construct the CUDA engine; only
-    # the worker (worker.py) calls create_engine on the model module.
-    assert "create_engine" not in (_HERE / "serve.py").read_text()
-    assert "create_engine" in (_HERE / "worker.py").read_text()
+def test_control_plane_runs_no_model_code():
+    # serve.py is the control plane: it constructs no engine and imports no model
+    # pybind. Model execution lives entirely in the C++ worker.
+    serve_src = (_HERE / "serve.py").read_text()
+    assert "Qwen35MoEEngine" not in serve_src
+    assert "_qwen35_moe" not in serve_src
+    worker_src = (_HERE / "qwen35_moe_worker.cpp").read_text()
+    assert "Qwen35MoEEngine" in worker_src
 
 
-# --- WorkerRunner JSONL protocol (fake worker) ------------------------------
+def test_python_worker_and_pybind_are_gone():
+    # The Python worker and the model pybind have been replaced by the C++ worker.
+    assert not (_HERE / "worker.py").exists()
+    assert not (_HERE / "qwen35_moe_pybindings.cpp").exists()
 
 
-class _FakeStdin:
-    def __init__(self):
-        self.written = []
-
-    def write(self, s):
-        self.written.append(s)
-
-    def flush(self):
-        pass
+# --- Worker spawn wiring ----------------------------------------------------
 
 
-class _FakeStdout:
-    def __init__(self, lines):
-        self._lines = list(lines)
+def test_spawn_builds_worker_command(monkeypatch):
+    captured = {}
 
-    def readline(self):
-        return self._lines.pop(0) if self._lines else ""
+    def fake_spawn(cmd, env=None):
+        captured["cmd"] = cmd
+        return object()  # stand-in WorkerClient
 
-
-class _FakeProc:
-    def __init__(self, lines):
-        self.stdin = _FakeStdin()
-        self.stdout = _FakeStdout(lines)
-        self.returncode = None
-
-    def poll(self):
-        return None
-
-
-class _Cfg:
-    __slots__ = ("max_new_tokens", "temperature")
-
-    def __init__(self, max_new_tokens=16, temperature=0.0):
-        self.max_new_tokens = max_new_tokens
-        self.temperature = temperature
-
-
-def test_worker_runner_streams_tokens_and_stats():
-    proc = _FakeProc(
-        [
-            '{"token": "Hello"}\n',
-            '{"token": " world"}\n',
-            '{"done": true, "prompt_tokens": 5, "completion_tokens": 2}\n',
-        ]
+    monkeypatch.setattr(serve, "spawn_worker", fake_spawn)
+    serve._spawn(
+        SimpleNamespace(
+            worker_bin="/bin/qwen_worker",
+            model_path="m.pte",
+            tokenizer_path="t.json",
+            data_path="d.ptd",
+        )
     )
-    wr = serve.WorkerRunner(proc)
-    out, stats = [], {}
-    wr.generate(
-        "p",
-        _Cfg(temperature=0.7),
-        token_callback=out.append,
-        stats_callback=lambda s: stats.update(
-            p=s.num_prompt_tokens, g=s.num_generated_tokens
-        ),
+    assert captured["cmd"] == [
+        "/bin/qwen_worker",
+        "--model_path",
+        "m.pte",
+        "--tokenizer_path",
+        "t.json",
+        "--data_path",
+        "d.ptd",
+    ]
+
+
+def test_spawn_defaults_worker_bin_and_omits_empty_data_path(monkeypatch):
+    captured = {}
+    monkeypatch.setattr(
+        serve, "spawn_worker", lambda cmd, env=None: captured.update(cmd=cmd)
     )
-    assert out == ["Hello", " world"]
-    assert stats == {"p": 5, "g": 2}
-    sent = json.loads(proc.stdin.written[0])
-    assert sent["prompt"] == "p" and sent["temperature"] == 0.7
-
-
-def test_worker_runner_error_raises():
-    proc = _FakeProc(['{"error": "boom"}\n'])
-    with pytest.raises(RuntimeError, match="boom"):
-        serve.WorkerRunner(proc).generate("p", _Cfg(), token_callback=lambda t: None)
-
-
-def test_worker_runner_exit_midrequest_raises():
-    proc = _FakeProc([])  # readline() -> "" means the worker exited
-    with pytest.raises(RuntimeError, match="exited"):
-        serve.WorkerRunner(proc).generate("p", _Cfg())
+    serve._spawn(
+        SimpleNamespace(
+            worker_bin=None, model_path="m.pte", tokenizer_path="t.json", data_path=None
+        )
+    )
+    cmd = captured["cmd"]
+    assert cmd[0].endswith("qwen3_5_moe_worker")  # default binary path
+    assert "--data_path" not in cmd  # omitted when no .ptd
 
 
 # --- CLI guard --------------------------------------------------------------

@@ -175,6 +175,8 @@ class Qwen35MoESession : public LLMSession {
       return Error::InvalidArgument;
     }
 
+    // A new prefill starts a fresh generation turn; clear any prior stop.
+    stop_.store(false, std::memory_order_relaxed);
     std::vector<int64_t> token_data(tokens.begin(), tokens.end());
     std::vector<int64_t> pos_data(T);
     for (int64_t i = 0; i < T; ++i) {
@@ -243,11 +245,14 @@ class Qwen35MoESession : public LLMSession {
     }
     std::string text_piece = std::move(*dec);
 
-    // Stop at EOS WITHOUT forwarding it: like the reference runner, EOS is not
-    // made resident and position() does not advance. No pending token remains.
-    if (is_eos) {
+    // Terminate WITHOUT forwarding the token: at EOS (like the reference
+    // runner, EOS is not made resident and position() does not advance) or at a
+    // cooperative stop() observed at this boundary. No pending token remains.
+    // is_eos stays literal; is_terminal ends the loop either way.
+    if (is_eos || stop_.load(std::memory_order_relaxed)) {
       pending_.reset();
-      return DecodeResult{token, std::move(text_piece), true};
+      return DecodeResult{
+          token, std::move(text_piece), is_eos, /*is_terminal=*/true};
     }
 
     // Forward `token` at pos_ through the decode method to get the next pending
@@ -266,7 +271,8 @@ class Qwen35MoESession : public LLMSession {
     pending_ = read_sampled_token(res.get()[0].toTensor(), temperature_);
     prev_decode_token_ = token;
     pos_ += 1;
-    return DecodeResult{token, std::move(text_piece), false};
+    return DecodeResult{
+        token, std::move(text_piece), /*is_eos=*/false, /*is_terminal=*/false};
   }
 
   Error seek(int64_t pos) override {

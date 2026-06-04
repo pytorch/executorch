@@ -46,10 +46,13 @@ first chunk carries `delta.role = "assistant"`, subsequent chunks carry
 
 ### Tool calling
 
-Hermes/Qwen format only (`<tool_call>{"name":...,"arguments":{...}}</tool_call>`).
-The server buffers the model's full output and emits **complete** OpenAI
+Two output formats are accepted: Hermes-style JSON
+(`<tool_call>{"name":...,"arguments":{...}}</tool_call>`, used by Qwen2.5/Qwen3)
+and Qwen XML-style (`<function=NAME><parameter=K>V</parameter></function>`,
+typically wrapped in `<tool_call>`, used by Qwen3.5-MoE / Qwen3-Coder). The
+server buffers the model's full output and emits **complete** OpenAI
 `tool_calls` (no partial-argument fragments). Calls to tools absent from the
-request, and malformed tool JSON, degrade to visible text — never a crash or
+request, and malformed tool calls, degrade to visible text — never a crash or
 silent drop. `tool_choice="none"` disables tool parsing.
 
 ### Errors & cancellation
@@ -57,16 +60,14 @@ silent drop. `tool_choice="none"` disables tool parsing.
 Errors return `{"error": {"message", "type", "code"}}` with an appropriate
 status (e.g. `400 context_length_exceeded` when `--max-context` is set and the
 prompt exceeds it). A mid-stream failure emits an `error` SSE event then
-`[DONE]` rather than dropping the socket. A client disconnect cancels generation
-(the runner's `stop()` is called).
+`[DONE]` rather than dropping the socket. Cancellation is best-effort: on a
+client disconnect the control plane stops consuming the stream (`stop()`), but
+the worker runs the in-flight request to completion — V1 has no mid-generation
+interrupt protocol.
 
-### Prefix cache (opt-in, `--enable-prefix-cache`)
+### Prefix cache
 
-Off by default. When enabled (requires `--hf-tokenizer`), each runner reuses the
-longest common token prefix of consecutive prompts via `seek()` /
-`prefill_tokens()`, capped at the runner's resident KV position. It is
-conservative and fail-safe: any reuse failure (including sliding-window models,
-where it is disabled) falls back to a full prefill. Outputs are equivalent to
-cache-off but, on real models, not bit-identical (greedy decoding is sensitive
-to the tiny numerical differences between prefill chunkings — the same tradeoff
-vLLM/llama.cpp/SGLang make).
+Not in V1 serving. The control plane holds no KV state and does no prefix-reuse
+routing; each request is an independent prompt to the worker. If turn-to-turn KV
+prefix reuse returns, it will live inside the worker/session (where the KV cache
+is), not in the control plane.

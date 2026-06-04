@@ -182,7 +182,7 @@ int main(int argc, char** argv) {
         fwrite(d.text_piece.data(), 1, d.text_piece.size(), stdout);
         fflush(stdout);
       }
-      if (d.is_eos) {
+      if (d.is_terminal) {
         if (print_text) {
           printf("\n");
         }

@@ -145,7 +145,7 @@ cmake-out/examples/models/qwen3_5_moe/qwen3_5_moe_runner \
 Run an OpenAI-compatible HTTP server so an agent harness (pi, opencode, …) can
 use the model for local tool-use. Point your client at `http://<host>:<port>/v1`.
 
-Build the runner **and** the serving module:
+Build the runner **and** the serving worker:
 
 ```bash
 make qwen3_5_moe-cuda-serve
@@ -168,12 +168,12 @@ LD_LIBRARY_PATH=$CONDA_PREFIX/lib:$LD_LIBRARY_PATH \
 Two processes, one model load:
 
 ```
-serve.py  (control plane: FastAPI/asyncio, OpenAI protocol, chat templating,
-           tool parsing, validation — NO CUDA)
+serve.py            (control plane: FastAPI/asyncio, OpenAI protocol, chat
+                     templating, tool parsing, validation — NO CUDA, NO pybind)
    │  JSONL over stdin/stdout
    ▼
-worker.py (one Qwen35MoEEngine + one session, synchronous loop — the CUDA model;
-           NO asyncio server)
+qwen3_5_moe_worker  (C++ binary: one Qwen35MoEEngine + one session, synchronous
+                     loop — the CUDA model; NO asyncio server)
 ```
 
 The model runs in a **separate worker process** because executing the AOTI CUDA

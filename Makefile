@@ -130,7 +130,7 @@ help:
 	@echo "  gemma4_31b-cuda     - Build Gemma 4 31B runner with CUDA backend"
 	@echo "  gemma4_31b-mlx      - Build Gemma 4 31B runner with MLX backend"
 	@echo "  qwen3_5_moe-cuda    - Build Qwen3.5 MoE runner with CUDA backend"
-	@echo "  qwen3_5_moe-cuda-serve - Build Qwen3.5 MoE runner + OpenAI serving module (CUDA)"
+	@echo "  qwen3_5_moe-cuda-serve - Build Qwen3.5 MoE runner + OpenAI serving worker (CUDA)"
 	@echo "  qwen3_5_moe-metal   - Build Qwen3.5 MoE runner with Metal backend"
 	@echo "  clean               - Clean build artifacts"
 
@@ -459,12 +459,12 @@ gemma4_31b-mlx:
 qwen3_5_moe-cuda-serve:
 	@echo "==> Building and installing ExecuTorch with CUDA..."
 	cmake --workflow --preset llm-release-cuda
-	@echo "==> Building Qwen3.5 MoE runner + serving module with CUDA..."
+	@echo "==> Building Qwen3.5 MoE runner + serving worker with CUDA..."
 	cd examples/models/qwen3_5_moe && cmake --workflow --preset qwen3-5-moe-cuda-serve
 	@echo ""
 	@echo "✓ Build complete!"
 	@echo "  Binary: cmake-out/examples/models/qwen3_5_moe/qwen3_5_moe_runner"
-	@echo "  Serving module: cmake-out/examples/models/qwen3_5_moe/_qwen35_moe*.so"
+	@echo "  Serving worker: cmake-out/examples/models/qwen3_5_moe/qwen3_5_moe_worker"
 	@echo "  Launch: see examples/models/qwen3_5_moe/README.md (Serving)"
 
 qwen3_5_moe-metal:

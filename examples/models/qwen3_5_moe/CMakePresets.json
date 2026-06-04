@@ -26,11 +26,8 @@
         },
         {
             "name": "qwen3-5-moe-cuda-serve",
-            "displayName": "Qwen3.5 MoE runner + serving module (CUDA)",
-            "inherits": ["qwen3-5-moe-cuda"],
-            "cacheVariables": {
-                "EXECUTORCH_BUILD_PYBIND": "ON"
-            }
+            "displayName": "Qwen3.5 MoE runner + serving worker (CUDA)",
+            "inherits": ["qwen3-5-moe-cuda"]
         },
         {
             "name": "qwen3-5-moe-metal",
@@ -55,9 +52,9 @@
         },
         {
             "name": "qwen3-5-moe-cuda-serve",
-            "displayName": "Build Qwen3.5 MoE runner + serving module (CUDA)",
+            "displayName": "Build Qwen3.5 MoE runner + serving worker (CUDA)",
             "configurePreset": "qwen3-5-moe-cuda-serve",
-            "targets": ["qwen3_5_moe_runner", "_qwen35_moe"]
+            "targets": ["qwen3_5_moe_runner", "qwen3_5_moe_worker"]
         },
         {
             "name": "qwen3-5-moe-metal",
@@ -83,7 +80,7 @@
         },
         {
             "name": "qwen3-5-moe-cuda-serve",
-            "displayName": "Configure and build Qwen3.5 MoE runner + serving module (CUDA)",
+            "displayName": "Configure and build Qwen3.5 MoE runner + serving worker (CUDA)",
             "steps": [
                 {
                     "type": "configure",
