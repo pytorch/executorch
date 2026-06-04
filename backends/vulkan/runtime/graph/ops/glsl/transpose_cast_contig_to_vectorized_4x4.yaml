@@ -11,6 +11,9 @@ transpose_cast_contig_to_vectorized_4x4:
     IN_STORAGE: texture3d
     OUT_STORAGE: buffer
   generate_variant_forall:
+    # The shader also supports OUT_STORAGE: texture2d (see the imageStore branch
+    # in the .glsl), but those combos are deliberately not generated for now to
+    # reduce code size. Add the texture2d combos here when a consumer needs them.
     combination:
       parameter_names: [DTYPE, IN_STORAGE, OUT_DTYPE, OUT_STORAGE]
       combos:

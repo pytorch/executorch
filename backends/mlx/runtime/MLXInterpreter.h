@@ -1416,6 +1416,12 @@ inline void exec_bitwise_and(
       bitwise_and(st.const_tensor_ref(n.a), st.const_tensor_ref(n.b), s));
 }
 
+inline void
+exec_bitwise_or(const BitwiseOrNode& n, ExecutionState& st, StreamOrDevice s) {
+  st.set_tensor(
+      n.out, bitwise_or(st.const_tensor_ref(n.a), st.const_tensor_ref(n.b), s));
+}
+
 inline void exec_tri(const TriNode& n, ExecutionState& st, StreamOrDevice s) {
   int rows = resolve_int(n.n, st);
   int cols = resolve_int(n.m, st);
@@ -2068,6 +2074,9 @@ class Interpreter {
         break;
       case OpCode::BITWISE_AND:
         ops::exec_bitwise_and(std::get<BitwiseAndNode>(instr.node), st, s);
+        break;
+      case OpCode::BITWISE_OR:
+        ops::exec_bitwise_or(std::get<BitwiseOrNode>(instr.node), st, s);
         break;
       case OpCode::TRI:
         ops::exec_tri(std::get<TriNode>(instr.node), st, s);
