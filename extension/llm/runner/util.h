@@ -14,6 +14,7 @@
 #include <stdio.h>
 #include <time.h>
 #include <cctype>
+#include <string>
 #include <vector>
 #if defined(__linux__) || defined(__ANDROID__) || defined(__unix__)
 #include <sys/resource.h>
@@ -64,6 +65,37 @@ ET_EXPERIMENTAL void inline safe_printf(const char* piece) {
     }
   }
   printf("%s", piece);
+}
+
+// Length of the longest prefix of `s` that does not end in the middle of a
+// UTF-8 multi-byte sequence. A byte-level tokenizer can emit a token that is
+// only part of a character (e.g. one byte of a 3-byte CJK codepoint or emoji),
+// so a caller streaming text must hold the incomplete tail until it completes
+// rather than decode the partial bytes. An invalid lead byte counts as length 1
+// (emitted, so the caller can replace it) rather than stalling output.
+ET_EXPERIMENTAL size_t inline utf8_complete_prefix_len(const std::string& s) {
+  size_t i = 0;
+  const size_t n = s.size();
+  while (i < n) {
+    const unsigned char c = static_cast<unsigned char>(s[i]);
+    size_t len;
+    if (c < 0x80) {
+      len = 1;
+    } else if ((c >> 5) == 0x6) {
+      len = 2;
+    } else if ((c >> 4) == 0xE) {
+      len = 3;
+    } else if ((c >> 3) == 0x1E) {
+      len = 4;
+    } else {
+      len = 1; // invalid lead byte; emit it and let the caller replace it
+    }
+    if (i + len > n) {
+      break; // incomplete trailing sequence: hold it for more bytes
+    }
+    i += len;
+  }
+  return i;
 }
 
 // ----------------------------------------------------------------------------

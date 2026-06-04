@@ -143,33 +143,6 @@ ET_EXPERIMENTAL std::unique_ptr<TextLLMRunner> create_text_llm_runner(
     Module::LoadMode load_mode = Module::LoadMode::MmapUseMlockIgnoreErrors);
 
 /**
- * @brief Creates a TextLLMRunner over an already-loaded Program.
- *
- * Unlike create_text_llm_runner(model_path, ...), this does not load the model
- * file again: the resulting runner's Module reuses `program` while owning its
- * own method state and KV cache. This is the per-session construction path for
- * TextLLMEngine — N sessions reuse one loaded Program but isolate their mutable
- * KV state. Whether they also avoid re-materializing packed weights per session
- * is backend-dependent (serving_capacity() is authoritative).
- *
- * The caller must keep the DataLoader backing `program` alive for the lifetime
- * of every runner created from it (TextLLMEngine holds the loader Module).
- *
- * @param program Shared, already-loaded program.
- * @param tokenizer Initialized tokenizer instance (owned by the new runner).
- * @param temperature Optional temperature (deprecated; prefer
- * GenerationConfig).
- * @param method_name Name of the method to execute in the model.
- * @return std::unique_ptr<TextLLMRunner> on success, or nullptr on failure.
- */
-ET_EXPERIMENTAL std::unique_ptr<TextLLMRunner>
-create_text_llm_runner_from_program(
-    std::shared_ptr<Program> program,
-    std::unique_ptr<::tokenizers::Tokenizer> tokenizer,
-    float temperature = -1.0f,
-    const std::string& method_name = "forward");
-
-/**
  * @brief Engine for multi-session text generation over one loaded Program.
  *
  * Loads the model's Program (weights/constants) once; create_session() builds a
@@ -224,6 +197,20 @@ class ET_EXPERIMENTAL TextLLMEngine : public LLMEngine {
   std::string method_name_;
   std::unordered_map<std::string, int64_t> metadata_;
 };
+
+namespace detail {
+// Implementation detail (not a public API): wraps a TextLLMRunner in an
+// LLMSession (the runner -> session seam). The supported entry point is
+// LLMEngine::create_session(); this exists only so TextLLMEngine can build its
+// sessions and so unit tests can drive the runner's token-step primitives
+// through the public LLMSession surface (the concrete adapter type is private).
+// Do not depend on wrapping arbitrary runners.
+//
+// @param runner A loaded TextLLMRunner; ownership transfers to the session.
+// @return std::unique_ptr<LLMSession> wrapping `runner`.
+std::unique_ptr<LLMSession> make_text_llm_session(
+    std::unique_ptr<TextLLMRunner> runner);
+} // namespace detail
 
 /**
  * @brief Creates a MultimodalRunner instance with dependency injection
