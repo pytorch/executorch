@@ -49,12 +49,10 @@ struct DecodeResult {
 /// capacity* concern (engine-level), distinct from how a session advances a
 /// conversation (LLMSession) — keep backend memory flags off LLMSession.
 struct LLMServingCapacity {
-  // Physical sessions (loaded runtimes) creatable without duplicating packed
-  // weights. Conservatively 1: a self-contained .pte with inline constants
-  // repacks weights per XNNPACK runtime, so N logical requests queue on one
-  // physical session (llama.cpp single-slot), not N copies of the model. A
-  // backend that provably shares packed weights (XNNWeightsCache with named
-  // external data; CUDA/AOTI shared device weights) can report >1.
+  // Physical sessions creatable without duplicating packed weights.
+  // Conservatively 1 (some backends repack weights per runtime, so extra
+  // sessions would copy the whole model); raise only on a backend proven to
+  // share packed weights.
   int32_t max_physical_sessions_without_weight_duplication = 1;
   // Planned bytes one session adds (KV + activations), for memory-budget
   // admission. 0 = unknown; the server skips the memory clamp.
@@ -70,8 +68,14 @@ class ET_EXPERIMENTAL LLMSession {
 
   /// Prefill pre-tokenized input at the current position (call seek() first for
   /// prefix reuse). Must be non-empty and fit the context window.
+  ///
+  /// `initial_sampling` (optional): the sampling config for the FIRST generated
+  /// token, for backends that sample during prefill (e.g. in-graph sampling).
+  /// Pass it so the first token uses the request's sampling instead of a stale
+  /// default. Backends that only sample in decode_one() ignore it.
   virtual ::executorch::runtime::Error prefill_tokens(
-      std::vector<uint64_t> tokens) = 0;
+      std::vector<uint64_t> tokens,
+      const SamplingConfig* initial_sampling = nullptr) = 0;
 
   /// Decode one token from the pending state; looping reproduces a full
   /// generation while returning exact sampled token ids. A single decode_one()

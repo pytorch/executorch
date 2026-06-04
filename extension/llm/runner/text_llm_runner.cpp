@@ -113,6 +113,12 @@ Error TextLLMRunner::generate(
   int64_t max_seq_len = metadata_.at(kMaxSeqLen);
   int64_t max_context_len = metadata_.at(kMaxContextLen);
 
+  // Resolve sampling temperature once: the first token is sampled during
+  // prefill and the rest in the token generator, so both must use the same
+  // temperature.
+  const float resolved_temp =
+      temperature_ == -1.0f ? config.temperature : temperature_;
+
   uint64_t cur_token = 0;
   int num_prompt_tokens = 0;
   std::vector<uint64_t> prompt_tokens;
@@ -177,7 +183,8 @@ Error TextLLMRunner::generate(
     // Prefill first
     // Here feed all tokens to the model and get the next predicted token
     // after the prompt. After that we will enter generate loop.
-    auto prefill_res = text_prefiller_->prefill(prompt_tokens, pos_);
+    auto prefill_res =
+        text_prefiller_->prefill(prompt_tokens, pos_, resolved_temp);
     ET_CHECK_OK_OR_RETURN_ERROR(prefill_res.error());
     cur_token = prefill_res.get();
     prefill_next_token_.reset();
@@ -234,10 +241,6 @@ Error TextLLMRunner::generate(
 
   // Set ignore_eos based on config
   text_token_generator_->set_ignore_eos(config.ignore_eos);
-
-  // Use the configuration's temperature
-  float resolved_temp =
-      temperature_ == -1.0f ? config.temperature : temperature_;
 
   // Generate max_new_tokens - 1 because prefill already generated 1 token.
   auto generate_result = text_token_generator_->generate(
@@ -364,13 +367,16 @@ void TextLLMRunner::reset() {
 }
 
 ::executorch::runtime::Error TextLLMRunner::seek(int64_t pos) {
-  // Sliding-window / ring-buffer models (max_seq_len < max_context_len) recycle
-  // KV space, so pos_ is not an absolute position and the prefix [0, pos) may
-  // have slid out of the window. Rewinding would attend to stale/overwritten KV
-  // and silently corrupt output. Refuse (fail-safe) so the caller falls back to
-  // reset() + full re-prefill — the same conservative choice vLLM
-  // (common_prefix_blocks=0 for SWA layers) and llama.cpp (seq_rm/get_can_shift
-  // fail for SWA) make.
+  // Token-step primitives require a KV cache (a non-KV model has no resident KV
+  // to rewind); fail closed.
+  if (metadata_.at(kUseKVCache) == 0) {
+    ET_LOG(Error, "seek() requires a KV-cache model (use_kv_cache=true)");
+    return ::executorch::runtime::Error::NotSupported;
+  }
+  // Sliding-window models (max_seq_len < max_context_len) recycle KV space, so
+  // pos_ is not an absolute position and the prefix [0, pos) may have slid out
+  // of the window; rewinding would attend to stale KV. Refuse so the caller
+  // falls back to reset() + full re-prefill.
   if (metadata_.at(kMaxSeqLen) < metadata_.at(kMaxContextLen)) {
     ET_LOG(
         Error,
@@ -391,10 +397,18 @@ void TextLLMRunner::reset() {
 }
 
 ::executorch::runtime::Result<uint64_t> TextLLMRunner::prefill_tokens(
-    std::vector<uint64_t> tokens) {
+    std::vector<uint64_t> tokens,
+    float temperature) {
   if (!is_loaded()) {
     ET_CHECK_OK_OR_RETURN_ERROR(load());
   }
+  // The token-step primitives assume KV-cached decode (each step forwards only
+  // the new token at pos_). A non-KV model needs full-sequence re-forwarding,
+  // which this path does not implement — fail closed rather than decode wrong.
+  ET_CHECK_OR_RETURN_ERROR(
+      metadata_.at(kUseKVCache) != 0,
+      NotSupported,
+      "prefill_tokens/decode_one require a KV-cache model (use_kv_cache=true)");
   if (tokens.empty()) {
     ET_LOG(Error, "prefill_tokens called with empty tokens");
     return ::executorch::runtime::Error::InvalidArgument;
@@ -424,7 +438,12 @@ void TextLLMRunner::reset() {
         num_tokens,
         max_context_len);
   }
-  auto prefill_res = text_prefiller_->prefill(tokens, pos_);
+  // Resolve temperature like decode_one() so the first token (sampled here in
+  // prefill) honors the request instead of defaulting to greedy.
+  const float temp = (temperature < 0.0f)
+      ? (temperature_ == -1.0f ? 0.0f : temperature_)
+      : temperature;
+  auto prefill_res = text_prefiller_->prefill(tokens, pos_, temp);
   ET_CHECK_OK_OR_RETURN_ERROR(prefill_res.error());
   prefill_next_token_ = prefill_res.get();
   prev_decode_token_.reset();
@@ -436,19 +455,16 @@ void TextLLMRunner::reset() {
   if (!is_loaded()) {
     ET_CHECK_OK_OR_RETURN_ERROR(load());
   }
+  // See prefill_tokens(): single-token KV stepping is invalid without a KV
+  // cache.
+  ET_CHECK_OR_RETURN_ERROR(
+      metadata_.at(kUseKVCache) != 0,
+      NotSupported,
+      "decode_one requires a KV-cache model (use_kv_cache=true)");
   ET_CHECK_OR_RETURN_ERROR(
       prefill_next_token_.has_value(),
       InvalidState,
       "decode_one requires a pending token; call prefill()/prefill_tokens() first");
-  if (metadata_.at(kMaxSeqLen) >= metadata_.at(kMaxContextLen)) {
-    ET_CHECK_OR_RETURN_ERROR(
-        pos_ < metadata_.at(kMaxContextLen),
-        InvalidArgument,
-        "decode_one would exceed KV cache capacity: pos_ %" PRId64
-        " >= max_context_len %" PRId64,
-        pos_,
-        metadata_.at(kMaxContextLen));
-  }
 
   // The pending token is the one we emit this step.
   const uint64_t token = prefill_next_token_.value();
@@ -475,6 +491,19 @@ void TextLLMRunner::reset() {
   if (is_eos) {
     prefill_next_token_.reset();
     return DecodeResult{token, std::move(text_piece), true};
+  }
+
+  // Only a NON-EOS token is forwarded (made resident at pos_), so the capacity
+  // check belongs here — after the EOS short-circuit. This lets the final EOS
+  // be emitted even when the KV cache is exactly full.
+  if (metadata_.at(kMaxSeqLen) >= metadata_.at(kMaxContextLen)) {
+    ET_CHECK_OR_RETURN_ERROR(
+        pos_ < metadata_.at(kMaxContextLen),
+        InvalidArgument,
+        "decode_one would exceed KV cache capacity: pos_ %" PRId64
+        " >= max_context_len %" PRId64,
+        pos_,
+        metadata_.at(kMaxContextLen));
   }
 
   // Forward `token` at pos_ to predict the next pending token.
