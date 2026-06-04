@@ -14,6 +14,7 @@ approximate and cannot reproduce model-specific controls (e.g. enable_thinking),
 so it must be a deliberate choice rather than a silent default.
 """
 
+import json
 import logging
 from typing import Any, Optional
 
@@ -23,6 +24,29 @@ logger = logging.getLogger(__name__)
 
 
 _DEFAULT_SPECIAL_TOKENS = ["<|im_end|>", "<|endoftext|>", "<|eot_id|>", "<|end|>"]
+
+
+def _decode_tool_call_arguments(messages: list[dict[str, Any]]) -> None:
+    """In-place: parse each tool call's ``function.arguments`` from a JSON string
+    into an object.
+
+    OpenAI sends assistant tool-call arguments as a JSON-encoded string, but HF
+    chat templates expect a mapping (e.g. Qwen renders ``arguments|items`` into
+    ``<parameter=…>`` tags). Without this, a multi-turn tool conversation makes
+    the template raise "Can only get item pairs from a mapping". Left as-is if
+    the value isn't valid JSON, so a template that wants the raw string still works.
+    """
+    for m in messages:
+        for tc in m.get("tool_calls") or []:
+            fn = tc.get("function")
+            if not isinstance(fn, dict):
+                continue
+            args = fn.get("arguments")
+            if isinstance(args, str):
+                try:
+                    fn["arguments"] = json.loads(args)
+                except (ValueError, TypeError):
+                    pass
 
 
 class ChatTemplate:
@@ -69,8 +93,10 @@ class ChatTemplate:
     ) -> str:
         kwargs = {**self._defaults, **(template_kwargs or {})}
         if self._hf is not None:
+            dumped = [m.model_dump(exclude_none=True) for m in messages]
+            _decode_tool_call_arguments(dumped)
             return self._hf.apply_chat_template(
-                [m.model_dump(exclude_none=True) for m in messages],
+                dumped,
                 tools=tools,
                 add_generation_prompt=True,
                 tokenize=False,
