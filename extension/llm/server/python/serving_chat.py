@@ -265,8 +265,12 @@ class ServingChat:
     async def create(self, req: ChatCompletionRequest):
         self._reject_invalid_values(req)
         self._reject_unsupported_params(req)
+        # tool_choice="none" must hide tools from the model: if we still render
+        # the tool schemas, the model can emit a <tool_call> that we'd surface as
+        # plain text (parsing is disabled), instead of a normal answer.
+        template_tools = None if req.tool_choice == "none" else req.tools
         prompt = self._template.render(
-            req.messages, tools=req.tools, template_kwargs=req.chat_template_kwargs
+            req.messages, tools=template_tools, template_kwargs=req.chat_template_kwargs
         )
         # Pre-flight context check: reject cleanly instead of failing mid-generation
         # (only possible when a tokenizer is available to count, e.g. --hf-tokenizer).
