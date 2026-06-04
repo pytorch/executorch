@@ -41,8 +41,6 @@ ET_NORETURN void et_pal_abort(void) {
 #else
   abort();
 #endif
-  while (1) {
-  }
 }
 
 et_timestamp_t et_pal_current_ticks(void) {
@@ -90,6 +88,7 @@ void* et_pal_allocate(ET_UNUSED size_t size) {
   return nullptr;
 }
 
+// cppcheck-suppress constParameterPointer
 void et_pal_free(ET_UNUSED void* ptr) {}
 
 } // extern "C"
