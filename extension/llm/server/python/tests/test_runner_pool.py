@@ -34,60 +34,92 @@ class _FakeEngine:
         }
 
 
-# Admission clamps physical sessions to the engine's no-duplication capacity.
+def _cap(max_physical):
+    return _FakeEngine(max_physical).serving_capacity()
+
+
+# Admission clamps physical sessions to the no-duplication capacity.
 def test_admit_clamps_to_serving_capacity():
-    # Single-slot engine (XNNPACK): 4 requested -> 1 physical session.
+    # Single-slot (XNNPACK): 4 requested -> 1 physical session.
     assert (
         _admit_session_count(
-            4, _FakeEngine(1), production=True, allow_weight_duplication=False
+            4, _cap(1), production=True, allow_weight_duplication=False
         )
         == 1
     )
-    # Engine that hosts 4 without duplication: honor the request.
+    # Capacity hosts 4 without duplication: honor the request.
     assert (
         _admit_session_count(
-            4, _FakeEngine(4), production=True, allow_weight_duplication=False
+            4, _cap(4), production=True, allow_weight_duplication=False
         )
         == 4
     )
     # Request below capacity is untouched.
     assert (
         _admit_session_count(
-            2, _FakeEngine(4), production=True, allow_weight_duplication=False
+            2, _cap(4), production=True, allow_weight_duplication=False
         )
         == 2
     )
     # Unknown/zero capacity -> conservative 1.
     assert (
         _admit_session_count(
-            4, _FakeEngine(0), production=True, allow_weight_duplication=False
+            4, _cap(0), production=True, allow_weight_duplication=False
         )
         == 1
     )
-    # No engine in production -> force 1 (standalone can't share weights).
+    # No capacity in production -> force 1 (standalone can't share weights).
     assert (
         _admit_session_count(4, None, production=True, allow_weight_duplication=False)
         == 1
     )
-    # Explicit opt-in relaxes the ENGINE weight-duplication clamp (engine still
+    # Explicit opt-in relaxes the weight-duplication clamp (engine still
     # serializes execution, so N sessions are safe).
     assert (
-        _admit_session_count(
-            4, _FakeEngine(1), production=True, allow_weight_duplication=True
-        )
+        _admit_session_count(4, _cap(1), production=True, allow_weight_duplication=True)
         == 4
     )
-    # ...but opt-in does NOT relax the no-engine standalone safety clamp:
+    # ...but opt-in does NOT relax the no-capacity standalone safety clamp:
     # concurrent backend calls into separate Modules corrupt the heap.
     assert (
         _admit_session_count(4, None, production=True, allow_weight_duplication=True)
         == 1
     )
-    # Injected test factory (production=False, no engine) is left alone.
+    # Bare test factory (production=False, no capacity declared) is left alone.
     assert (
         _admit_session_count(4, None, production=False, allow_weight_duplication=False)
         == 4
     )
+
+
+# The footgun fix: a factory-backed pool that declares capacity is clamped too,
+# so a model launcher cannot silently duplicate weights via num_runners>1.
+def test_admit_clamps_factory_path_with_capacity():
+    # Factory path (production=False) + capacity=1 -> clamp to 1, NOT 4.
+    assert (
+        _admit_session_count(
+            4, _cap(1), production=False, allow_weight_duplication=False
+        )
+        == 1
+    )
+
+
+def test_runner_pool_factory_capacity_clamps_sessions():
+    # serving_capacity=1 with num_runners=4 must build exactly one session.
+    created = []
+
+    def factory():
+        r = _EchoRunner()
+        created.append(r)
+        return r
+
+    pool = RunnerPool(
+        runner_factory=factory,
+        num_runners=4,
+        serving_capacity={"max_physical_sessions_without_weight_duplication": 1},
+    )
+    assert len(created) == 1
+    assert len(pool._sessions) == 1
 
 
 class _BlockingRunner:
