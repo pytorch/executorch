@@ -14,18 +14,18 @@ dequant, so the bf16 outputs match exactly.
 
 Usage::
 
-    python -m executorch.backends.mlx.model_ops.test_gguf_embedding run
-    python -m executorch.backends.mlx.model_ops.test_gguf_embedding run --rebuild
+    python -m executorch.backends.mlx.custom_kernel_ops.test.test_gguf_embedding run
+    python -m executorch.backends.mlx.custom_kernel_ops.test.test_gguf_embedding run --rebuild
 """
 
 from typing import List, Tuple
 
-import executorch.backends.mlx.model_ops.gguf_embedding  # noqa: F401
+import executorch.backends.mlx.custom_kernel_ops.gguf_embedding  # noqa: F401
 
 import torch
 import torch.nn as nn
 
-from executorch.backends.mlx.model_ops.test_gguf_linear import make_q6_k_blob
+from executorch.backends.mlx.custom_kernel_ops.test.test_gguf_linear import make_q6_k_blob
 from executorch.backends.mlx.test.test_utils import OpTestCase
 
 
@@ -61,6 +61,7 @@ class GGUFEmbeddingTest(OpTestCase):
             cls(vocab=512, K=1024, idx_shape=(4,)),
             cls(vocab=300, K=256, idx_shape=(16,)),  # vocab not tile-aligned
             cls(vocab=512, K=256, idx_shape=(2, 3)),  # multi-dim indices
+            cls(vocab=262144, K=5376, idx_shape=(8,)),  # real Gemma-4-31B embed
         ]
 
     def create_model(self) -> nn.Module:

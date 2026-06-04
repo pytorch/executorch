@@ -19,20 +19,20 @@ runs the same .pte with M=1 and M>1 to exercise both branches of the runtime
 
 Usage::
 
-    python -m executorch.backends.mlx.model_ops.test_gguf_linear run
-    python -m executorch.backends.mlx.model_ops.test_gguf_linear run -v
-    python -m executorch.backends.mlx.model_ops.test_gguf_linear run --rebuild
-    python -m executorch.backends.mlx.model_ops.test_gguf_linear eager
+    python -m executorch.backends.mlx.custom_kernel_ops.test.test_gguf_linear run
+    python -m executorch.backends.mlx.custom_kernel_ops.test.test_gguf_linear run -v
+    python -m executorch.backends.mlx.custom_kernel_ops.test.test_gguf_linear run --rebuild
+    python -m executorch.backends.mlx.custom_kernel_ops.test.test_gguf_linear eager
 """
 
 from typing import List, Tuple
 
-import executorch.backends.mlx.model_ops.gguf_linear  # noqa: F401
+import executorch.backends.mlx.custom_kernel_ops.gguf_linear  # noqa: F401
 
 import torch
 import torch.nn as nn
 
-from executorch.backends.mlx.model_ops.gguf_linear import (
+from executorch.backends.mlx.custom_kernel_ops.gguf_linear import (
     dequantize_q6_k,
     Q6K_BLOCK_BYTES,
     QK_K,
@@ -133,6 +133,12 @@ class GGUFLinearTest(OpTestCase):
         # Ragged shapes (M and N not multiples of the 32-wide tile / row group).
         cfgs.append(cls(M=40, N=300, K=256, dtype=torch.bfloat16))
         cfgs.append(cls(M=1, N=300, K=256, dtype=torch.bfloat16))
+        # Real Gemma-4-31B shapes (hidden=5376, ffn=21504, vocab=262144) to
+        # exercise the kernels at production N/K (decode + prefill).
+        cfgs.append(cls(M=1, N=4096, K=5376, dtype=torch.bfloat16))  # attn_v
+        cfgs.append(cls(M=1, N=5376, K=21504, dtype=torch.bfloat16))  # ffn_down
+        cfgs.append(cls(M=8, N=5376, K=21504, dtype=torch.bfloat16))  # ffn_down prefill
+        cfgs.append(cls(M=1, N=262144, K=5376, dtype=torch.bfloat16))  # lm_head
         return cfgs
 
     def create_model(self) -> nn.Module:

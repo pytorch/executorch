@@ -15,12 +15,12 @@ non-fused dequantize paths that group_size=16 affine quant takes through the MLX
 from __future__ import annotations
 
 # Importing the op modules registers the custom ops.
-import executorch.backends.mlx.model_ops.gguf_embedding  # noqa: F401
-import executorch.backends.mlx.model_ops.gguf_linear  # noqa: F401
+import executorch.backends.mlx.custom_kernel_ops.gguf_embedding  # noqa: F401
+import executorch.backends.mlx.custom_kernel_ops.gguf_linear  # noqa: F401
 
 import torch
 import torch.nn as nn
-from executorch.backends.mlx.model_ops.gguf_linear import Q6K_BLOCK_BYTES, QK_K
+from executorch.backends.mlx.custom_kernel_ops.gguf_linear import Q6K_BLOCK_BYTES, QK_K
 
 
 class GGUFLinear(nn.Module):

@@ -21,7 +21,7 @@ bfloat16.
 
 Usage::
 
-    import executorch.backends.mlx.model_ops.gguf_embedding  # noqa: F401
+    import executorch.backends.mlx.custom_kernel_ops.gguf_embedding  # noqa: F401
 
     out = torch.ops.mlx.gguf_embedding(weight, indices, "q6k")
     # weight:  (vocab, (K/256)*210)  uint8  GGUF q6_K blob
@@ -35,7 +35,7 @@ import torch
 from torch import Tensor
 from torch.fx.node import Node
 
-from executorch.backends.mlx.model_ops.gguf_linear import (
+from executorch.backends.mlx.custom_kernel_ops.gguf_linear import (
     _Q6K_HEADER,
     dequantize_q6_k,
     Q6K_BLOCK_BYTES,

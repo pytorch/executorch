@@ -45,7 +45,7 @@ Two kernels are emitted depending on the number of activation rows ``M``:
 
 Usage::
 
-    import executorch.backends.mlx.model_ops.gguf_linear  # noqa: F401
+    import executorch.backends.mlx.custom_kernel_ops.gguf_linear  # noqa: F401
 
     out = torch.ops.mlx.gguf_linear(x, weight, "q6k", bias)
     # x:      (..., K)          bf16 / fp16 / fp32

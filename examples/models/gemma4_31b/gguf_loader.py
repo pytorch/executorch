@@ -187,7 +187,7 @@ def load_gguf_model(
                 continue
 
             # Any other Q6_K module: fall back to a quantized tensor.
-            from executorch.backends.mlx.model_ops.gguf_linear import (
+            from executorch.backends.mlx.custom_kernel_ops.gguf_linear import (
                 Q6K_BLOCK_BYTES,
                 QK_K,
             )

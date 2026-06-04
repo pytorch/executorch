@@ -77,6 +77,7 @@ jobs:
           backends/mlx/test/test_passes.py \
           backends/mlx/test/test_pattern_utils.py \
           backends/mlx/test/test_partitioner.py \
+          backends/mlx/test/test_gguf_dequant.py \
           examples/models/gemma4_31b/tests/test_mlx_pipeline.py \
           examples/models/gemma4_31b/quant/tests/test_gguf.py \
           -v
@@ -90,12 +91,12 @@ jobs:
           ./cmake-out/backends/mlx/test/multi_thread_test_runner
         echo "::endgroup::"
 
-        echo "::group::Run model_ops op tests"
-        # Run every model_ops/test_*.py via its OpTestCase `run` CLI. Adding a
+        echo "::group::Run custom_kernel_ops op tests"
+        # Run every custom_kernel_ops/test/test_*.py via its OpTestCase `run` CLI. Adding a
         # new op test file requires no change here.
         set -e
-        for t in backends/mlx/model_ops/test_*.py; do
-          mod="executorch.backends.mlx.model_ops.$(basename "$t" .py)"
+        for t in backends/mlx/custom_kernel_ops/test/test_*.py; do
+          mod="executorch.backends.mlx.custom_kernel_ops.test.$(basename "$t" .py)"
           echo "--- ${mod} ---"
           ${CONDA_RUN} python -m "${mod}" run -v
         done
