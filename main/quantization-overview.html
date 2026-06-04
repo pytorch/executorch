@@ -1958,7 +1958,7 @@ document.write(`
 <section id="quantization-in-executorch">
 <h1>Quantization in ExecuTorch<a class="headerlink" href="#quantization-in-executorch" title="Link to this heading">#</a></h1>
 <p>ExecuTorch uses <a class="reference external" href="https://github.com/pytorch/ao/tree/main/torchao">torchao</a> as its quantization library. This integration allows ExecuTorch to leverage PyTorch-native tools for preparing, calibrating, and converting quantized models.</p>
-<p>Quantization in ExecuTorch is backend-specific. Each backend defines how models should be quantized based on its hardware capabilities. Most ExecuTorch backends use the torchao <a class="reference external" href="https://docs.pytorch.org/ao/main/tutorials_source/pt2e_quant_ptq.html">PT2E quantization</a> flow, which works on models exported with torch.export and enables quantization that is tailored for each backend.</p>
+<p>Quantization in ExecuTorch is backend-specific. Each backend defines how models should be quantized based on its hardware capabilities. Most ExecuTorch backends use the torchao <a class="reference external" href="https://docs.pytorch.org/ao/stable/pt2e_quantization/pt2e_quant_ptq.html">PT2E quantization</a> flow, which works on models exported with torch.export and enables quantization that is tailored for each backend.</p>
 <p>The PT2E quantization workflow has three main steps:</p>
 <ol class="arabic simple">
 <li><p>Configure a backend-specific quantizer.</p></li>
