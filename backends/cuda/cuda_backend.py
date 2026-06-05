@@ -19,6 +19,9 @@ from executorch.backends.aoti.aoti_backend import AotiBackend
 from executorch.backends.cuda.passes.move_cond_predicate_to_cpu import (
     MoveCondPredicateToCpuPass,
 )
+from executorch.backends.cuda.passes.replace_int64_floordiv import (
+    ReplaceInt64FloorDivWithFloatPass,
+)
 from executorch.backends.cuda.triton.replacement_pass import (
     ReplaceEdgeOpWithTritonOpPass,
 )
@@ -257,7 +260,7 @@ class CudaBackend(AotiBackend, BackendDetails):
                         f"Expected 'ON' or 'OFF'."
                     )
                 triton_kernel_mode = mode
-        passes = [MoveCondPredicateToCpuPass()]
+        passes = [MoveCondPredicateToCpuPass(), ReplaceInt64FloorDivWithFloatPass()]
         if triton_kernel_mode == "ON":
             passes.append(ReplaceEdgeOpWithTritonOpPass())
         return passes

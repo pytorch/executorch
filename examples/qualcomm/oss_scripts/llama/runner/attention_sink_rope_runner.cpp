@@ -40,9 +40,9 @@ Error AttentionSinkRopeRunner::load(
   for (const std::string& method_name : method_names) {
     ET_CHECK_OK_OR_RETURN_ERROR(module_->load_method(method_name));
   }
-  eviction_batch_size_ = ET_UNWRAP(module_->get("get_eviction_batch_size"))
-                             .toScalar()
-                             .to<int64_t>();
+  ET_UNWRAP(
+      eviction_batch_size_evalue__, module_->get("get_eviction_batch_size"));
+  eviction_batch_size_ = eviction_batch_size_evalue__.toScalar().to<int64_t>();
   return Error::Ok;
 }
 

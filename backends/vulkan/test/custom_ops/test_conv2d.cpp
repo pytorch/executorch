@@ -612,7 +612,7 @@ int main(int argc, char* argv[]) {
 
   ReferenceComputeFunc ref_fn = reference_impl;
 
-  auto results = execute_test_cases(
+  execute_test_cases(
       generate_conv2d_test_cases,
       conv2d_flop_calculator,
       "Conv2d",

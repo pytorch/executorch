@@ -304,14 +304,18 @@ Conv2dMethod get_conv2d_method(
 // FP16 cases were routing/dispatch-validated only (the reference is float-only
 // for the large shapes, so FP16 outputs were not numerically checked).
 //
+// Only called for SlidingWindow conv2d (1x1 is routed to conv2d_pw and
+// Depthwise/Transposed are handled before the call site).
+//
 // Preconditions (fall back to direct conv if any fail — the im2col path is
 // either not applicable or not beneficial):
 //   - groups == 1
 //   - dilation == 1 (all dims)
-//   - Kh * Kw > 1 (1x1 already routed to the optimized conv2d_pw path)
 //
 // Selection rule: use im2col on Mali universally, or once the output channel
 // count is large enough to amortize the fixed ~N*K_total im2col gather cost.
+constexpr int64_t kIm2colMinCOut = 128;
+
 bool should_use_conv2d_im2col(
     ComputeGraph& graph,
     const ValueRef weight_data,
@@ -324,13 +328,8 @@ bool should_use_conv2d_im2col(
     return false;
   }
   const auto weight_sizes = graph.sizes_of(weight_data);
-  const int64_t kernel_h = weight_sizes.at(2);
-  const int64_t kernel_w = weight_sizes.at(3);
-  if (kernel_h * kernel_w <= 1) {
-    return false;
-  }
   const int64_t c_out = weight_sizes.at(0);
-  return graph.device_is_mali() || c_out >= 128;
+  return graph.device_is_mali() || c_out >= kIm2colMinCOut;
 }
 
 utils::uvec3 create_conv2d_global_wg_size(
@@ -524,9 +523,9 @@ void add_conv2d_node(
   // otherwise. `force_direct` bypasses the heuristic entirely and forces the
   // direct path (used by tests to exercise the direct shader regardless of
   // device); the default (false) reproduces the production routing exactly.
-  const bool use_im2col = force_direct
-      ? false
-      : should_use_conv2d_im2col(graph, weight_data, groups_val, kernel_params);
+  const bool use_im2col = !force_direct &&
+      method == Conv2dMethod::SlidingWindow &&
+      should_use_conv2d_im2col(graph, weight_data, groups_val, kernel_params);
   if (use_im2col) {
     return conv2d_gemm_impl(
         graph,
