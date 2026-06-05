@@ -577,8 +577,6 @@ Calibration data is required for compilation. There are two ways to supply it:
 
 For LLMs, provide at least one of the two; for multimodal models, `--calib_samples` is mandatory.
 
-Calibration and runtime evaluation use separate flag sets and can target different tasks or limits as needed:
-
 | Purpose | Flags |
 |---|---|
 | Calibration data (lm_eval tasks) | `--calib_tasks`, `--calib_limit`, `--calib_num_fewshot` |
@@ -610,19 +608,7 @@ Ready-to-use examples for each model type are provided under `assets/samples/`:
 | ALM (audio) | [assets/samples/audio.json](assets/samples/audio.json) |
 | VLM (vision) | [assets/samples/vision.json](assets/samples/vision.json) |
 
-#### Quantization Guidance
-
-To automatically identify sensitive layers and generate a mixed-precision recipe suggestion, add the `--quant_recipe_suggestion` flag. During calibration, the analyzer compares FP32 and QDQ intermediate outputs layer-by-layer using SQNR, then writes two files to the working directory:
-
-- `{model_name}_quantization_error.csv` — per-group SQNR statistics sorted by sensitivity (most sensitive first)
-- `{model_name}_suggest_recipe.py` — ready-to-use `StaticLLMQuantRecipe` subclasses optimized to apply higher-precision quantization to the most sensitive groups.
-
-Example:
-```bash
-python examples/qualcomm/oss_scripts/llama/llama.py --build_folder build-android --device ${SERIAL_NUM} --soc_model ${SOC_MODEL} --prompt "I would like to learn python, could you teach me with a simple example?" --temperature 0 --model_mode kv --max_seq_len 1024 --decoder_model qwen3-1_7b --calib_tasks wikitext --calib_limit 1 --quant_recipe_suggestion --compile_only
-```
-
-After the run, pick one of the generated classes from `qwen3-1_7b_suggest_recipe.py` as your new recipe. For a full walkthrough, see [quantization_guidance.md](quantization_guidance.md).
+For the full quantization workflow: PTQ (Post Training Quantization), QAT(Quantization Aware Training / Distillation), Mixed-precision, Quantization error analysis, see [quantization_guidance.md](quantization_guidance.md).
 
 #### Use attention sink for multi-turn conversations
 Attention sink is a way to evict cache when maximum context length be reached.

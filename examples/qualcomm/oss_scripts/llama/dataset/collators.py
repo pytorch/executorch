@@ -4,10 +4,15 @@
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
 
+import logging
 from typing import Dict, List, Tuple, Union
 
 import torch
 import torch.nn.functional as F
+from executorch.examples.qualcomm.oss_scripts.llama.dataset.targets import (
+    make_causal_labels,
+    make_conversation_labels,
+)
 from executorch.examples.qualcomm.oss_scripts.llama.masking_utils import AttentionMask
 
 
@@ -73,3 +78,50 @@ class LLMCalibCollator:
             "labels": None,
             "token_ids": token_ids,
         }
+
+
+class LLMTrainingCollator(LLMCalibCollator):
+    """Collator for QAT training batches — pads tokens, builds masks, and appends labels.
+
+    When assistant_masks are present (from HF chat datasets), only assistant-turn
+    positions are supervised. Otherwise causal next-token labels are used.
+    """
+
+    _warned_empty_assistant_mask = False
+
+    def __call__(
+        self, batch: List[Tuple]
+    ) -> Dict[str, Union[torch.Tensor, Tuple, List]]:
+        model_inputs = super().__call__(batch)
+        assistant_masks = [item[1] for item in batch]
+
+        model_inputs["labels"] = torch.stack(
+            [
+                torch.tensor(
+                    self._make_labels(seq, mask),
+                    dtype=torch.int64,
+                )
+                for seq, mask in zip(model_inputs["token_ids"], assistant_masks)
+            ]
+        )
+
+        return model_inputs
+
+    def _make_labels(self, tokens: List[int], assistant_mask: List[int]) -> List[int]:
+        """Assistant-only labels, warning once when a mask supervises nothing.
+
+        A None or all-zero mask means the sample has no assistant turns, so
+        make_conversation_labels falls back to full causal next-token labels.
+        """
+        if assistant_mask is None or not any(assistant_mask):
+            if not LLMTrainingCollator._warned_empty_assistant_mask:
+                logging.warning(
+                    "assistant_mask is empty or all zeros (plain-text corpus, or "
+                    "chat template missing `{%% generation %%}` markers); falling "
+                    "back to causal next-token labels. Supervision will cover the "
+                    "full sequence, not just assistant turns."
+                )
+                LLMTrainingCollator._warned_empty_assistant_mask = True
+            return make_causal_labels(tokens, self._max_context_len)
+
+        return make_conversation_labels(tokens, assistant_mask, self._max_context_len)

@@ -165,17 +165,19 @@ class Processor:
 @dataclass
 class Request:
     @dataclass
-    class CalibrationData:
-        datasets: Optional[DataLoader] = None
+    class QuantizationData:
+        calib_loader: Optional[DataLoader] = None
         intermediate_outputs: Optional[DataLoader] = None
         qdq_intermediate_outputs: Optional[DataLoader] = None
+        train_loader: Optional[DataLoader] = None
+        val_loader: Optional[DataLoader] = None
 
     @dataclass
     class Data:
         compile_spec: List[CompileSpec] = None
         pte_filename: str = None
         custom_annotation: Any = ()
-        calibration_data: Request.CalibrationData = None
+        quantization_data: Request.QuantizationData = None
         tokenizer: callable = None
         skip_quantize: bool = False
         backend: QnnExecuTorchBackendType = QnnExecuTorchBackendType.kHtpBackend

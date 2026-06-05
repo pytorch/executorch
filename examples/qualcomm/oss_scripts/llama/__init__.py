@@ -83,6 +83,7 @@ from executorch.examples.qualcomm.oss_scripts.llama.static_llm_quant_recipe impo
     Qwen2_5_1_5BQuantRecipe,
     Qwen3_0_6BQuantRecipe,
     Qwen3_1_7BQuantRecipe,
+    Smollm2QATQuantRecipe,
     Smollm2QuantRecipe,
     Smollm3QuantRecipe,
     SmolVLMQuantRecipe,
@@ -125,6 +126,8 @@ class LLMModelConfig(ABC):
     r2: Enable SpinQuant R2 quantization optimization.
     r3: Enable SpinQuant R3 quantization optimization.
     quant_recipe: Quantization recipe to use when setting quant configs for the model.
+    qat_recipe: Optional QAT-specific quantization recipe. Used only when --qat is set;
+                if None, falls back to quant_recipe.
     """
 
     repo_id: str
@@ -141,6 +144,7 @@ class LLMModelConfig(ABC):
     r2: bool
     r3: bool
     quant_recipe: StaticLLMQuantRecipe
+    qat_recipe: Optional[Type[StaticLLMQuantRecipe]] = None
 
     def __str__(self):  # noqa: C901
         """
@@ -541,6 +545,7 @@ class Smollm2_135M(LLMModelConfig):
     r2 = False
     r3 = True
     quant_recipe = Smollm2QuantRecipe
+    qat_recipe = Smollm2QATQuantRecipe
 
 
 @register_llm_model("smollm3-3b")
