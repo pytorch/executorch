@@ -337,3 +337,81 @@ class FromCalibrationDataDatasetCreator(DatasetCreator):
 
                 bin_file_name = f"{dataset_dir}/example_{label}_{cl}_{i}_i{str(inp_idx).zfill(2)}.bin"
                 dt.tofile(bin_file_name)
+
+
+class LinearRampDatasetCreator(DatasetCreator):
+    """Dataset creator that generates deterministic linear ramp input samples.
+
+    The generated data forms a monotonic sequence where values are evenly
+    distributed between a specified range (low to high) and span the full
+    interval. The first element is equal to `low` and the last element is
+    equal to `high`, with increments depending on the total number of elements.
+    """
+
+    def __init__(self, num_samples=2, low=0.0, high=1.0):
+        self._num_samples = num_samples
+        self.low = low
+        self.high = high
+
+    def generate_samples(
+        self, dataset_dir: str, input_spec: list[ModelInputSpec]
+    ) -> tuple[str, str]:
+        assert isinstance(input_spec, list) and all(
+            isinstance(spec, ModelInputSpec) for spec in input_spec
+        ), "Input_spec must be a list of ModelInputSpec."
+
+        calibration_dir, test_dir = (
+            _get_calibration_and_testing_dataset_directory_names(dataset_dir)
+        )
+
+        if any(spec.dim_order == torch.channels_last for spec in input_spec):
+            # We will need to generate a separate testing dataset, containing the same data as is in the calibration
+            #  dataset, just permuted to channels last where necessary.
+            self._gen_samples(test_dir, input_spec)
+
+        else:
+            # Use the calibration dataset for testing as well.
+            test_dir = calibration_dir
+
+        # Make sure the calibration dataset contains contiguous tensors.
+        contiguous_input_spec = deepcopy(input_spec)
+        for spec in contiguous_input_spec:
+            spec.dim_order = torch.contiguous_format
+
+        # Generate the calibration dataset. Calibration amd testing dataset s will contain
+        #  the same data (except for the permutation).
+        self._gen_samples(calibration_dir, contiguous_input_spec)
+
+        return calibration_dir, test_dir
+
+    def _gen_samples(self, dataset_dir: str, input_spec: list[ModelInputSpec]):
+        for idx in range(self._num_samples):
+            sample_dir = dataset_dir
+
+            # Multi-input, use a subdirectory containing the inputs for each sample
+            if len(input_spec) > 1:
+                sample_dir = os.path.join(dataset_dir, f"{str(idx).zfill(4)}")
+                mkdir(sample_dir)
+
+            for spec_idx, spec in enumerate(input_spec):
+                match spec.dim_order:
+                    case torch.contiguous_format:
+                        shape = spec.shape
+                    case torch.channels_last:
+                        shape = tuple(
+                            translator.dims_to_channels_last(list(spec.shape))
+                        )
+                    case _:
+                        raise ValueError(f"Unsupported dim_order: {spec.dim_order}")
+
+                sample_vector = (
+                    np.linspace(self.low, self.high, num=np.prod(shape))
+                    .astype(torch_type_to_numpy_type(spec.dtype))
+                    .reshape(shape)
+                )
+                file_name = (
+                    f"{str(spec_idx).zfill(2)}.bin"
+                    if len(input_spec) > 1
+                    else f"{str(idx).zfill(4)}.bin"
+                )
+                sample_vector.tofile(os.path.join(sample_dir, file_name))
