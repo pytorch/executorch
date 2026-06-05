@@ -3,6 +3,22 @@
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
 
+function(patch_ethos_u_repo REPO_PATH BASE_REV PATCH_DIR ET_DIR_PATH)
+  execute_process(
+    COMMAND
+      bash -c
+      "source backends/arm/scripts/utils.sh && patch_repo \"$1\" \"$2\" \"$3\""
+      patch_ethos_u_repo "${REPO_PATH}" "${BASE_REV}" "${PATCH_DIR}"
+    WORKING_DIRECTORY "${ET_DIR_PATH}"
+    RESULT_VARIABLE patch_result
+  )
+  if(patch_result)
+    message(
+      FATAL_ERROR "Failed to apply Ethos-U setup patches to ${REPO_PATH}."
+    )
+  endif()
+endfunction()
+
 function(fetch_ethos_u_content ETHOS_SDK_PATH ET_DIR_PATH)
   message(STATUS "Fetching Ethos-U content into ${ETHOS_SDK_PATH}")
 
@@ -28,11 +44,8 @@ function(fetch_ethos_u_content ETHOS_SDK_PATH ET_DIR_PATH)
   # Patch manifest to remove unused projects.
   set(patch_dir "${ET_DIR_PATH}/examples/arm/ethos-u-setup")
   set(ethos_u_base_rev "26.02")
-  execute_process(
-    COMMAND
-      bash -c
-      "source backends/arm/scripts/utils.sh && patch_repo ${ETHOS_SDK_PATH} ${ethos_u_base_rev} ${patch_dir}"
-    WORKING_DIRECTORY ${ET_DIR_PATH}
+  patch_ethos_u_repo(
+    "${ETHOS_SDK_PATH}" "${ethos_u_base_rev}" "${patch_dir}" "${ET_DIR_PATH}"
   )
 
   # Get ethos_u externals only if core driver headers do not already exist.
@@ -47,11 +60,9 @@ function(fetch_ethos_u_content ETHOS_SDK_PATH ET_DIR_PATH)
   endif()
   # Patch core_software to remove unused projects.
   set(core_software_base_rev "26.02")
-  execute_process(
-    COMMAND
-      bash -c
-      "source backends/arm/scripts/utils.sh && patch_repo ${ETHOS_SDK_PATH}/core_software ${core_software_base_rev} ${patch_dir}"
-    WORKING_DIRECTORY ${ET_DIR_PATH}
+  patch_ethos_u_repo(
+    "${ETHOS_SDK_PATH}/core_software" "${core_software_base_rev}"
+    "${patch_dir}" "${ET_DIR_PATH}"
   )
   # Always patch the core_platform repo since this is fast enough. TODO:
   # examples/arm/ethos-u-setup/core_platform/0002-*.patch and 0003-*.patch are
@@ -61,11 +72,9 @@ function(fetch_ethos_u_content ETHOS_SDK_PATH ET_DIR_PATH)
   # ethos-u/core_platform and ${core_platform_base_rev} is bumped past those
   # commits, delete the 0002 and 0003 patches.
   set(core_platform_base_rev "26.02")
-  execute_process(
-    COMMAND
-      bash -c
-      "source backends/arm/scripts/utils.sh && patch_repo ${ETHOS_SDK_PATH}/core_platform ${core_platform_base_rev} ${patch_dir}"
-    WORKING_DIRECTORY ${ET_DIR_PATH}
+  patch_ethos_u_repo(
+    "${ETHOS_SDK_PATH}/core_platform" "${core_platform_base_rev}"
+    "${patch_dir}" "${ET_DIR_PATH}"
   )
 endfunction()
 
