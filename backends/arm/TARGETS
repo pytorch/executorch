@@ -90,6 +90,7 @@ runtime.python_library(
         "vgf/_passes/__init__.py",
         "vgf/_passes/rewrite_grid_sampler_to_tosa_custom.py",
         "vgf/backend.py",
+        "vgf/check_env.py",
         "vgf/compile_spec.py",
         "vgf/model_converter.py",
         "vgf/partitioner.py",

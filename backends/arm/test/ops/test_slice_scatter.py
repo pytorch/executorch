@@ -264,12 +264,6 @@ def test_slice_scatter_u85_INT_stepN(test_module: input_t):
 @common.parametrize(
     "test_module",
     test_data_int_step1 | test_data_int_stepN | test_data_fp_step1 | test_data_fp_stepN,
-    xfails={
-        "rank2_step1_int8": "MLETORCH-1823: Fix quantized-node detection",
-        "rank2_prefix_empty_int8": "MLETORCH-1823: Fix quantized-node detection",
-        "rank2_suffix_empty_end_none_int8": "MLETORCH-1823: Fix quantized-node detection",
-        "rank3_step2_int32": "MLETORCH-1823: Fix quantized-node detection",
-    },
 )
 def test_slice_scatter_vgf_no_quant(test_module: input_t):
     pipeline = VgfPipeline[input_t](

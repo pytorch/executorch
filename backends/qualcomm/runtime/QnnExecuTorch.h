@@ -27,6 +27,16 @@
 #define QNN_RUNTIME_LPAI_CORE_SELECTION "qnn_runtime_lpai_core_selection"
 #define QNN_RUNTIME_HEAP_PROFILING_PATH "qnn_runtime_heap_profiling_path"
 
+#if defined(_MSC_VER)
+#if defined(QNN_EXECUTORCH_BUILDING_DLL)
+#define QNN_EXECUTORCH_EXPORT __declspec(dllexport)
+#else
+#define QNN_EXECUTORCH_EXPORT __declspec(dllimport)
+#endif
+#else
+#define QNN_EXECUTORCH_EXPORT __attribute__((__visibility__("default")))
+#endif
+
 #ifdef __cplusplus
 extern "C" {
 #endif // __cplusplus
@@ -69,18 +79,18 @@ struct CustomMemTensorInfo {
 /// alignment as MemoryAllocator::kDefaultAlignment.
 /// See runtime/core/memory_allocator.h. The function returns a valid pointer
 /// if allocation is successful.
-__attribute__((__visibility__("default"))) void* QnnExecuTorchAllocCustomMem(
+QNN_EXECUTORCH_EXPORT void* QnnExecuTorchAllocCustomMem(
     size_t bytes,
     size_t alignment);
 
 /// Add tensor to custom memory with custom type descriptor. Create memory
 /// handle to tensor wrapper during execution
-__attribute__((__visibility__("default"))) void
-QnnExecuTorchAddCustomMemTensorAddr(void* tensor_addr, void* custom_mem);
+QNN_EXECUTORCH_EXPORT void QnnExecuTorchAddCustomMemTensorAddr(
+    void* tensor_addr,
+    void* custom_mem);
 
 /// Free the allocated shared memory.
-__attribute__((__visibility__("default"))) void QnnExecuTorchFreeCustomMem(
-    void* buffer_ptr);
+QNN_EXECUTORCH_EXPORT void QnnExecuTorchFreeCustomMem(void* buffer_ptr);
 
 #ifdef __cplusplus
 }
