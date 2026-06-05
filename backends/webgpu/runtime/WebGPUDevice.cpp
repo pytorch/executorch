@@ -101,9 +101,14 @@ WebGPUContext create_webgpu_context() {
   adapter_cb.callback = on_adapter_request;
   adapter_cb.userdata1 = &adapter_result;
 
-  // No bundled fallback adapter in the release; SwiftShader via the Vulkan ICD.
+  // Release Dawn has no bundled fallback adapter; pick the platform backend
+  // (Metal on Apple, Vulkan elsewhere -- SwiftShader via VK_ICD_FILENAMES).
   WGPURequestAdapterOptions adapter_opts = {};
+#if defined(__APPLE__)
+  adapter_opts.backendType = WGPUBackendType_Metal;
+#else
   adapter_opts.backendType = WGPUBackendType_Vulkan;
+#endif
   adapter_opts.forceFallbackAdapter = false;
   wgpuInstanceRequestAdapter(ctx.instance, &adapter_opts, adapter_cb);
   while (!adapter_result.done) {
