@@ -12,8 +12,8 @@
 #include <executorch/backends/vulkan/serialization/schema_generated.h>
 #include <executorch/runtime/core/named_data_map.h>
 
+#include <executorch/backends/webgpu/runtime/WebGPUCompat.h>
 #include <executorch/backends/webgpu/runtime/WebGPUDevice.h>
-#include <webgpu/wgpu.h>
 
 #include <cstring>
 #include <stdexcept>
@@ -510,7 +510,17 @@ void WebGPUGraph::copy_outputs(std::vector<std::pair<void*, size_t>>& outputs) {
         cb_info);
   }
 
-  wgpuDevicePoll(device_, true, nullptr);
+  bool all_mapped = false;
+  while (!all_mapped) {
+    webgpu_poll(instance_, device_);
+    all_mapped = true;
+    for (size_t i = 0; i < count; i++) {
+      if (outputs[i].second != 0 && !cb_data[i].done) {
+        all_mapped = false;
+        break;
+      }
+    }
+  }
 
   for (size_t i = 0; i < count; i++) {
     if (outputs[i].second == 0) {
